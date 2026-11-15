@@ -8,10 +8,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import Credential, CredentialData, CredentialPool
-from openprogram.webui.routes.identity import accounts, providers
-from openprogram.webui.routes.settings import config
+from openprogram.models.auth.store import AuthStore, set_store_for_testing
+from openprogram.models.auth.types import Credential, CredentialData, CredentialPool
+from openprogram.interfaces.server.routes.identity import accounts, providers
+from openprogram.interfaces.server.routes.settings import config
 
 
 _LONG_SECRET = "sk-123456789abc4"
@@ -21,18 +21,18 @@ _NEW_SECRET = "sk-new-secret-abc4"
 @pytest.fixture
 def secret_api(tmp_path, monkeypatch):
     """Minimal route app with isolated config, environment and AuthStore."""
-    from openprogram import setup
-    from openprogram.auth.account import account_priority
-    from openprogram.auth.account import account_selection
-    from openprogram.auth import rotation
-    from openprogram.webui._model_listing import credentials
+    from openprogram.state import config as user_config
+    from openprogram.models.auth.account import account_priority
+    from openprogram.models.auth.account import account_selection
+    from openprogram.models.auth import rotation
+    from openprogram.models.listing import credentials
 
     config_path = tmp_path / "config.json"
-    monkeypatch.setattr(setup, "get_config_path", lambda: config_path)
+    monkeypatch.setattr(user_config, "get_config_path", lambda: config_path)
 
     sidecar_root = tmp_path / "sidecars"
     for module in (account_priority, account_selection, rotation):
-        monkeypatch.setattr(module, "DEFAULT_ROOT", sidecar_root)
+        monkeypatch.setattr(module, "default_root", lambda: sidecar_root)
 
     for name in (
         "OPENAI_API_KEY",
@@ -64,8 +64,8 @@ def secret_api(tmp_path, monkeypatch):
         yield SimpleNamespace(
             client=client,
             store=store,
-            read_config=setup._read_config,
-            write_config=setup._write_config,
+            read_config=user_config.read_config,
+            write_config=user_config.write_config,
         )
 
     set_store_for_testing(None)
@@ -400,7 +400,7 @@ def test_account_add_rejects_every_display_value_without_writing_storage(
 def test_account_update_non_api_key_account_is_404_without_probe(
     secret_api, monkeypatch, kind
 ):
-    from openprogram.webui._model_listing import credentials
+    from openprogram.models.listing import credentials
 
     _put_credential(secret_api.store, kind=kind, value="access-token")
     calls = []
@@ -423,7 +423,7 @@ def test_account_update_non_api_key_account_is_404_without_probe(
 def test_account_update_missing_account_is_404_without_probe(
     secret_api, monkeypatch
 ):
-    from openprogram.webui._model_listing import credentials
+    from openprogram.models.listing import credentials
 
     calls = []
     monkeypatch.setattr(
@@ -445,7 +445,7 @@ def test_account_update_missing_account_is_404_without_probe(
 def test_account_update_rejected_credential_does_not_mutate(
     secret_api, monkeypatch
 ):
-    from openprogram.webui._model_listing import credentials
+    from openprogram.models.listing import credentials
 
     _put_credential(secret_api.store)
     monkeypatch.setattr(
@@ -468,7 +468,7 @@ def test_account_update_rejected_credential_does_not_mutate(
 
 
 def test_account_update_validate_false_skips_probe(secret_api, monkeypatch):
-    from openprogram.webui._model_listing import credentials
+    from openprogram.models.listing import credentials
 
     _put_credential(secret_api.store)
 
@@ -488,8 +488,8 @@ def test_account_update_validate_false_skips_probe(secret_api, monkeypatch):
 
 
 def test_account_remove_has_exact_response_and_clears_active_pin(secret_api):
-    from openprogram.auth.account.account_selection import get_active_pin
-    from openprogram.auth.account.account_selection import set_active_account
+    from openprogram.models.auth.account.account_selection import get_active_pin
+    from openprogram.models.auth.account.account_selection import set_active_account
 
     _put_credential(secret_api.store)
     set_active_account("openai", "work")

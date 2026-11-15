@@ -14,9 +14,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
-import { PlugZapIcon, PlusIcon } from "@/components/animated-icons";
+import { PlugZapIcon, PlusIcon, SearchIcon } from "@/components/animated-icons";
 import { SearchInput } from "@/components/ui/search-input";
-import { ManagePageHeader, ManageRow, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManageEmptyState, ManagePageHeader, ManageRow, ManageSubnav, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { jsonFetch } from "@/lib/net/fetch-client";
@@ -30,7 +30,7 @@ import {
   type ServerStatus,
 } from "./mcp-detail-view";
 import { EditDialog, type EditTarget } from "./mcp-edit-dialog";
-import styles from "./mcp-page.module.css";
+import { confirmAction } from "@/components/ui/confirm-dialog";
 
 export function McpPage({
   embedded,
@@ -186,10 +186,12 @@ export function McpPage({
     });
   }
   async function doDelete(name: string) {
-    if (!confirm(text(
-      `Remove MCP server "${name}"? Config will be deleted.`,
-      `移除 MCP 服务器“${name}”？配置会被删除。`,
-    ))) return;
+    if (!(await confirmAction({
+      title: text(`Remove MCP server "${name}"?`, `移除 MCP 服务器“${name}”？`),
+      description: text("Config will be deleted.", "配置会被删除。"),
+      confirmLabel: text("Remove", "移除"),
+      destructive: true,
+    }))) return;
     await runAction("delete", async () => {
       await jsonFetch(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
       setServers((prev) => prev.filter((p) => p.name !== name));
@@ -282,7 +284,7 @@ export function McpPage({
           activeTab={tab}
           onTabChange={(id) => setTab(id as McpTab)}
           summary={text(
-            `${readyCount} available · ${issueCount} issues`,
+            `${readyCount} available · ${issueCount} ${issueCount === 1 ? "issue" : "issues"}`,
             `可用 ${readyCount} 个 · ${issueCount} 个问题`,
           )}
           action={{
@@ -327,11 +329,16 @@ export function McpPage({
             {loadErr && <div className={shared.errorBar} role="alert">{loadErr}</div>}
             <div className="space-y-1">
             {loading && servers.length === 0 ? (
-              <div className={shared.empty}>{text("Loading...", "加载中...")}</div>
+              <ManageLoadingState>{text("Loading…", "加载中…")}</ManageLoadingState>
             ) : shownServers.length === 0 ? (
-              <div className={shared.empty}>{filterValue.trim()
-                ? text("No matches", "没有匹配结果")
-                : text("No servers yet. Add one to make its tools available.", "还没有服务器。添加后即可使用其工具。")}</div>
+              filterValue.trim()
+                ? <ManageEmptyState compact icon={<SearchIcon size={20} />} title={text("No matching MCP servers", "没有匹配的 MCP 服务器")} description={text("Try a different search.", "换个关键词试试。")} />
+                : <ManageEmptyState
+                    compact
+                    icon={<PlugZapIcon size={20} />}
+                    title={text("No MCP servers yet", "还没有 MCP 服务器")}
+                    description={text("Add a server, or install one from Discover, to make its tools available.", "添加服务器，或在“发现”中安装，即可使用其工具。")}
+                  />
             ) : (
               shownServers.map((s) => {
                 const state = stateBadge(s);
@@ -352,9 +359,8 @@ export function McpPage({
                       <span className={shared.badge}>{s.type}</span>
                       <span className={`${shared.badge} ${s.ready ? shared.badgeGreen : s.error && s.error !== "disabled" ? shared.badgeRed : ""}`}>{stateLabel}</span>
                     </>}
-                    count={text(`${s.tool_count} tools`, `${s.tool_count} 个工具`)}
+                    count={text(`${s.tool_count} ${s.tool_count === 1 ? "tool" : "tools"}`, `${s.tool_count} 个工具`)}
                     onClick={() => setSelected(s.name)}
-                    title={text("Open MCP server details", "打开 MCP 服务器详情")}
                     actions={<Switch
                       checked={s.enabled}
                       disabled={busy !== null}

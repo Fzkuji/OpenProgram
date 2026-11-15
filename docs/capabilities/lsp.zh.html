@@ -1,0 +1,45 @@
+<title>Language server 工具</title>
+<meta name="description" content="三个工具向 language server 询问实时诊断、引用和定义。">
+<h1>Language server 工具</h1>
+<p>三个工具向 language server 询问类型检查器对当前工作树的了解，无需跑测试。</p>
+<table class="stack">
+<thead><tr><th scope="col">工具</th><th scope="col">参数</th><th scope="col">回答</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">lsp_diagnostics</code></th><td><code translate="no">file</code></td><td>该文件的错误和警告</td></tr>
+<tr><th scope="row"><code translate="no">lsp_references</code></th><td><code translate="no">file</code>、<code translate="no">line</code>、<code translate="no">column</code></td><td>该位置符号的每一处使用</td></tr>
+<tr><th scope="row"><code translate="no">lsp_definition</code></th><td><code translate="no">file</code>、<code translate="no">line</code>、<code translate="no">column</code></td><td>该符号的声明位置</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">file</code> 是绝对路径。<code translate="no">line</code> 和 <code translate="no">column</code> 从 1 开始，与 <code translate="no">read</code> 和 traceback 显示的一致，必须指向符号本身。结果过长时停在 50 条并给出剩余数量；请缩小问题。</p>
+<pre translate="no" tabindex="0"><code>runner.py: 2 diagnostics
+14:5 warning: "requests" is not accessed [pyright]
+27:12 error: "widget" is not defined [pyright]</code></pre>
+<pre translate="no" tabindex="0"><code data-claim="example">3 references
+openprogram/runtime/agent/loop/loop.py:88:9   result = dispatch(call)
+openprogram/runtime/agent/loop/loop.py:140:5  dispatch(retry)
+tests/unit/test_loop.py:31:11    monkeypatch.setattr(loop, "dispatch", fake)</code></pre>
+<p class="note"><code translate="no">lsp_definition</code> 同样是 <code translate="no">path:line:column</code> 形式。路径相对于 workspace 根。</p>
+<h2 id="install-a-server">装 server</h2>
+<table class="stack">
+<thead><tr><th scope="col">语言</th><th scope="col">扩展名</th><th scope="col">可执行文件</th><th scope="col">安装</th></tr></thead>
+<tbody>
+<tr><th scope="row">Python</th><td><code translate="no">.py</code>、<code translate="no">.pyi</code></td><td><code translate="no">pyright-langserver</code></td><td><code translate="no">npm install -g pyright</code></td></tr>
+<tr><th scope="row">TypeScript / JavaScript</th><td><code translate="no">.ts</code>、<code translate="no">.tsx</code>、<code translate="no">.js</code>、<code translate="no">.jsx</code>、<code translate="no">.mts</code>、<code translate="no">.cts</code></td><td><code translate="no">typescript-language-server</code></td><td><code translate="no">npm install -g typescript-language-server typescript</code></td></tr>
+</tbody>
+</table>
+<p class="note">工具总是注册。没有 server 时回答 <code translate="no">unavailable: install …</code> 并给出命令。其他扩展名会得到相应说明。</p>
+<h2 id="how-servers-run">Server 怎么跑</h2>
+<ul>
+<li>每种语言每个 workspace 一个 server。workspace 是最近的含 <code translate="no">pyproject.toml</code>、<code translate="no">setup.py</code>、<code translate="no">package.json</code>、<code translate="no">tsconfig.json</code> 或 <code translate="no">.git</code> 的祖先目录。</li>
+<li>首次使用时启动，进程内缓存，OpenProgram 退出时关闭。</li>
+<li>配置的<a href="../reference/design/runtime/security/sandbox-architecture.zh.html">沙箱</a>同样适用。<code translate="no">sandbox.mode</code> 默认 <code translate="no">off</code>，除非会话打开沙箱，server 不受限制。<code translate="no">workspace-write</code> 下，它读取 workspace，不向外写入。</li>
+</ul>
+<h2 id="compared-to-grep-and-codegraph">和 grep、CodeGraph 的分工</h2>
+<table class="stack">
+<thead><tr><th scope="col">工具</th><th scope="col">查找</th><th scope="col">局限或补充</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">grep</code></th><td>文本</td><td>会报告注释里的同名字符串，漏掉通过别名的调用</td></tr>
+<tr><th scope="row"><code translate="no">lsp_references</code></th><td>解析后的符号</td><td>没有这两种错误</td></tr>
+<tr><th scope="row">CodeGraph</th><td>预先建好的整库索引，适合自上而下读陌生代码</td><td>language server 补充针对磁盘上文件的实时诊断</td></tr>
+</tbody>
+</table>

@@ -1,11 +1,11 @@
 """release rollback tests."""
 from __future__ import annotations
+import os
 from ._support import (
     MACOS_DESKTOP_INSTALL,
     Path,
     ROOT,
     _fake_desktop_app,
-    os,
     plistlib,
     pytest,
     subprocess,

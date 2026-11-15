@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.providers.openai_completions import openai_completions
-from openprogram.providers.types import Context, Model, SimpleStreamOptions
+from openprogram.models.providers.adapters.openai_completions import openai_completions
+from openprogram.models.providers.types import Context, Model, SimpleStreamOptions
 
 
 class _EmptyStream:

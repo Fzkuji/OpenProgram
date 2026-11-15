@@ -1,0 +1,44 @@
+<title>Repository integration</title>
+<meta name="description" content="How branch work is merged into the development line and delivered.">
+<h1>Repository integration</h1>
+
+<p>The integration target is <code translate="no">dev</code>. <code translate="no">main</code> has an independent history and is written only by <code translate="no">scripts/publish-github.sh</code> (see <a href="distribution/github-publishing.html">Publishing source to GitHub</a>).</p>
+
+<h2 id="boundary">Boundary</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Audit</th><td>Each branch at its committed head; uncommitted files stay in their worktrees</td></tr>
+<tr><th scope="row">Preparation</th><td>In an isolated clean checkout</td></tr>
+<tr><th scope="row">Branch deletion</th><td>A separate operation</td></tr>
+<tr><th scope="row">Stays authoritative</th><td>The Agent and Context refactor; the official Anthropic API requirement</td></tr>
+</tbody>
+</table>
+
+<h2 id="merge-decisions">Merge decisions</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">The branch change</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">Is an ancestor</th><td>Already contained</td></tr>
+<tr><th scope="row">Is duplicate or superseded, often patch-equivalent with a different commit id</th><td>Keep the current implementation; record the branch ancestry only after comparing its unique patches</td></tr>
+<tr><th scope="row">Is genuinely new</th><td>Normal content merge</td></tr>
+<tr><th scope="row">References removed APIs</th><td>Keep the newer implementation</td></tr>
+<tr><th scope="row">Updates dependencies</th><td>Resolve together into one lockfile</td></tr>
+<tr><th scope="row">Blanket remote overwrite, or blanket acceptance of historical files</th><td>Rejected</td></tr>
+</tbody>
+</table>
+
+<h2 id="verification">Verification</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Requirement</th></tr></thead>
+<tbody>
+<tr><th scope="row">Branch inventory</th><td>Exact heads, containment, patch comparisons, reviews and remaining checks, in a private delivery ledger</td></tr>
+<tr><th scope="row">Ancestry</th><td>Every inventory head is an ancestor of the combined commit</td></tr>
+<tr><th scope="row">Checks on that commit</th><td>Repository contracts, affected public checks, dependency lock validation, Web tests, documentation checks</td></tr>
+<tr><th scope="row">Existing failures</th><td>Stay recorded as incomplete; never passing evidence</td></tr>
+<tr><th scope="row">Conflicts or failed writes</th><td>Candidate and original refs are preserved</td></tr>
+</tbody>
+</table>
+
+<h2 id="delivery">Delivery</h2>
+<p><code translate="no">openprogram dev deploy</code>, then <code translate="no">openprogram dev promote</code>; see <a href="distribution/dev-instance.html">Stable and development instances</a>. App acceptance uses the default profile and port <code translate="no">18100</code>.</p>

@@ -1,10 +1,10 @@
-"""The public health probe is non-identifying and needs no credential."""
+"""The public health probe names only the product release and needs no credential."""
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.webui.server import create_app
+from openprogram.interfaces.server.server import create_app
 
 
 @pytest.fixture
@@ -17,5 +17,7 @@ def client():
 def test_healthz_is_minimal_and_public(client) -> None:
     r = client.get("/healthz")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    payload = r.json()
+    assert payload.pop("version")
+    assert payload == {"status": "ok"}
     assert r.headers["cache-control"] == "no-store"

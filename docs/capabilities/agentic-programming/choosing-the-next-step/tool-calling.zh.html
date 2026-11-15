@@ -1,0 +1,64 @@
+<title>工具调用</title>
+<meta name="description" content="在一次模型调用中，模型每轮如何选择函数或结束。">
+<h1 id="tool-call-loop">工具调用</h1><figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="模型每轮返回一条助手消息。消息含 ToolCall 时，框架执行工具，把结果加入历史，模型再选一次。消息只有文本时，这段文本就是最终回复。">
+  <defs><marker id="tl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">执行工具</text>
+  <line class="ln" x1="262" y1="33" x2="110" y2="33" marker-end="url(#tl-a)"/>
+  <text class="t-soft" x="122" y="22">含 ToolCall</text>
+  <text class="t-big" x="274" y="40">模型回合</text>
+  <text class="t-soft" x="274" y="66">一条助手消息</text>
+  <line class="ln" x1="392" y1="33" x2="528" y2="33" marker-end="url(#tl-a)"/>
+  <text class="t-soft" x="404" y="22">只有文本</text>
+  <text class="t-big" x="540" y="40">结束</text>
+  <text class="t-soft" x="540" y="66">文本即回复</text>
+  <path class="ln" d="M40 54V116H320V80" marker-end="url(#tl-a)"/>
+  <text class="t-soft" x="56" y="138">结果进入历史，模型再选一次</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>模型回合</strong><small>一条助手消息</small></li>
+  <li class="via">含 <code translate="no">ToolCall</code></li>
+  <li><strong>执行工具</strong><small>结果进入历史，模型再选一次</small></li>
+  <li class="via">只有文本，无 <code translate="no">ToolCall</code></li>
+  <li class="flow-end"><strong>结束</strong><small>文本即回复</small></li>
+</ol>
+</figure>
+<p class="note">“选择”就是 Provider 消息里 <code translate="no">ToolCall</code> 与文本的区别；框架只解析并分支。循环：<code translate="no">openprogram/runtime/agent/loop/loop.py</code> 的 <code translate="no">_run_loop</code>。</p>
+<h2>入口</h2><pre translate="no" tabindex="0"><code>runtime.exec(content, tools=..., tool_choice=..., max_iterations=...)</code></pre><table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参数</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools</code></th><td>菜单：<code translate="no">Agent</code> 方法、<code translate="no">{"spec":..., "execute":...}</code> 字典，或带 <code translate="no">.spec</code> 和 <code translate="no">.execute</code> 的对象</td></tr>
+<tr><th scope="row"><code translate="no">toolset</code></th><td>它和 <code translate="no">tools</code> 都不传：完整注册表，即默认开启工具。<code translate="no">toolset="none"</code> 或 <code translate="no">tools=[]</code>：只输出文本。工具体内嵌套的 <code translate="no">exec</code> 继承外层 <code translate="no">tools=</code> 列表（<code translate="no">_current_tools</code> contextvar）。</td></tr>
+<tr><th scope="row"><code translate="no">tools_source</code>、<code translate="no">tools_allow</code>、<code translate="no">tools_deny</code></th><td>裁剪菜单</td></tr>
+<tr><th scope="row"><code translate="no">tool_choice</code></th><td><code translate="no">"auto"</code>（默认）、<code translate="no">"required"</code>、<code translate="no">"none"</code> 或 <code translate="no">{"type": "function", "name": "X"}</code>。由 Provider 映射（OpenAI、Anthropic、Gemini、Bedrock）。</td></tr>
+<tr><th scope="row"><code translate="no">parallel_tool_calls=False</code></th><td>在支持的 Provider 上每轮只选一个</td></tr>
+<tr><th scope="row"><code translate="no">max_iterations</code></th><td>轮数上限，实际为 <code translate="no">max(1, max_iterations)</code>。<code translate="no">runtime.exec</code> 默认 20；聊天回合没有上限。</td></tr>
+<tr><th scope="row"><code translate="no">choices</code></th><td>强制的结构化收尾：<a href="next-step-decision.zh.html">下一步决策</a></td></tr>
+</tbody>
+</table>
+<h2>执行所选函数</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">找不到工具</th><td><code translate="no">is_error</code> 结果</td></tr>
+<tr><th scope="row"><code translate="no">validate_tool_arguments</code> 失败</th><td><code translate="no">is_error</code> 结果</td></tr>
+<tr><th scope="row"><code translate="no">tool.execute</code> 抛异常</th><td>异常文本作为 <code translate="no">is_error</code> 结果</td></tr>
+<tr><th scope="row">成功</th><td><code translate="no">ToolResultMessage</code></td></tr>
+</tbody>
+</table>
+<p class="note">错误返回给模型让它自行修正，不会中断循环。一轮内的多个选择由 <code translate="no">_execute_tool_calls</code> 依次执行。期间排队的用户消息等这一轮调用执行完，再进入下一次模型决策。</p>
+<h2 id="termination">终止条件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">条件</th><th scope="col">结束方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">只有文本</th><td>正常结束，文本即结果</td></tr>
+<tr><th scope="row"><code translate="no">stop_reason</code> 为 <code translate="no">error</code> 或 <code translate="no">aborted</code></th><td>立即以错误或取消结束</td></tr>
+<tr><th scope="row">轮数超过上限</th><td>仅在设置了上限时</td></tr>
+</tbody>
+</table>
+<details>
+<summary>文本之后什么还会让循环继续</summary>
+<p>内层 <code translate="no">while</code> 也看 <code translate="no">pending_messages</code>，排队的用户消息会在纯文本回复后继续循环。退出后，<code translate="no">get_follow_up_messages</code> 可提供消息开启新一轮；否则运行结束并推送 <code translate="no">AgentEventAgentEnd</code>。</p>
+</details>
+<p>放进 <code translate="no">tools</code> 的 <code translate="no">Agent</code> 方法就是一个可选函数。若其函数体再调用 <code translate="no">runtime.exec</code>，会打开同一循环的新一层。</p>
+<p class="next"><a href="../../../reference/design/function/calling-unification.zh.html">函数调用设计</a>：注册表、门控、延迟加载</p>

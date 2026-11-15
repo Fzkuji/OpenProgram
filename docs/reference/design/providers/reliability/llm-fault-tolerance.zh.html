@@ -1,0 +1,135 @@
+<title>LLM 调用容错</title>
+<meta name="description" content="每次模型调用经过的同一套重试、超时和故障转移策略，以及与同类框架的对比。">
+<h1>LLM 调用容错</h1>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">策略</th></tr></thead>
+<tbody>
+<tr><th scope="row">限流、过载、服务端错误、超时、网络</th><td>重试：5 次，带抖动的指数退避，基数 2 秒，上限 30 秒</td></tr>
+<tr><th scope="row"><code translate="no">Retry-After</code>（毫秒、秒、HTTP 日期）</th><td>作为下限，最长 300 秒。更长则立即失败，标记耗尽并保留提示，让回退、切换凭据或用户来处理。</td></tr>
+<tr><th scope="row">认证、非法请求、上下文溢出、内容政策</th><td>不重试</td></tr>
+<tr><th scope="row">因请求形态被拒</th><td><a href="request-repair.zh.html">修复后重发</a></td></tr>
+<tr><th scope="row">流长时间沉默</th><td>10 分钟无字节或 15 分钟无真实数据才失败；无总时长限制</td></tr>
+<tr><th scope="row">死连接</th><td>连接超时 30 秒，TCP keepalive 约 60 秒发现</td></tr>
+<tr><th scope="row">已有内容后断开</th><td>Codex 保留部分回复，<code translate="no">stop_reason="length"</code>。其他提供商遇到传输失败时重发整个请求，已收到的部分作废，见<a href="error-and-timeout-mechanism.zh.html#resend">重发失败的回复</a>。</td></tr>
+<tr><th scope="row">网络不可达</th><td><a href="error-and-timeout-mechanism.zh.html#network-wait">等待网络</a></td></tr>
+<tr><th scope="row">换模型</th><td>默认关闭；只在首个 token 之前</td></tr>
+<tr><th scope="row">仍然失败</th><td><a href="error-taxonomy-propagation.zh.html">界面上的结构化错误</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="timeout-policy">为什么读超时要宽松</h2>
+<p>推理流不能有紧的读超时：单个 <code translate="no">timeout=120</code> 会限制正文读取，在缓冲代理后触发，杀掉健康的流。Codex 用 <code translate="no">Timeout(connect=30, read=660, write=30, pool=30)</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">预算</th><th scope="col">谁重置</th><th scope="col">抓什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SSE_IDLE_TIMEOUT_S</code> 600</th><td>任意一行，含 ping</td><td>死连接。Codex 自己的客户端给 5 分钟；10 分钟给缓冲代理留余地。</td></tr>
+<tr><th scope="row">流空闲上限 300</th><td>只有解析出的事件</td><td>连接还开着、回复却停了，含只剩 ping 的情况；会重试。所有提供商都有，见<a href="error-and-timeout-mechanism.zh.html#idle-bound">空闲上限</a></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_SSE_TOTAL_TIMEOUT_S</code> 0</th><td>无</td><td>正值表示启用期限</td></tr>
+</tbody>
+</table>
+
+<h2 id="transport-recovery">传输与恢复</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部件</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">utils/timeouts.py</code></th><td>唯一的超时来源，带上下文缩放</td></tr>
+<tr><th scope="row"><code translate="no">utils/http_client.py</code></th><td>按系统设置 keepalive。httpx 没有 Happy Eyeballs，强制 IPv4 绑定 IPv4 源地址。<code translate="no">get_shared_async_client</code> 按循环区分，Codex 跨轮复用 TLS。代理走 httpx <code translate="no">proxy=</code>。</td></tr>
+<tr><th scope="row"><code translate="no">utils/rate_limit.py</code></th><td>解析 <code translate="no">x-ratelimit-*</code>、<code translate="no">anthropic-ratelimit-*</code>；额度低时 Codex 警告</td></tr>
+<tr><th scope="row"><code translate="no">retry_after_beyond_cap</code></th><td>流重试和 <code translate="no">Runtime.exec</code> 共用的规则</td></tr>
+<tr><th scope="row">部分恢复，<code translate="no">openai_codex.py</code></th><td>有内容后的临时断开让本轮收尾；永久失败仍失败</td></tr>
+<tr><th scope="row">openai-completions 重试</th><td><code translate="no">EventStart</code> 后、内容前：可重试的 <code translate="no">APIError</code>（含 xAI 无状态码的 <code translate="no">Internal error during token generation</code>）在同模型重开。其余由外层处理器记录冷却并重新抛出。</td></tr>
+<tr><th scope="row">gemini_cli</th><td>同一客户端和超时</td></tr>
+</tbody>
+</table>
+
+<h2 id="failover">故障转移</h2>
+<p><code translate="no">utils/failover.py</code> 和 <code translate="no">stream_with_failover</code> 在内容前遇到值得转移的失败时逐个尝试回退模型，转发事件并去掉重复的 <code translate="no">start</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">model_fallback.mode</code></th><th scope="col">尝试</th><th scope="col">跨提供商</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">off</code>（默认）</th><td>不尝试；429 就显示该错误</td><td>–</td></tr>
+<tr><th scope="row"><code translate="no">same-provider</code></th><td>该提供商最多两个其他已启用模型，按配置行顺序，复用凭据</td><td>否</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td><code translate="no">model_fallback.models</code>，按顺序的 <code translate="no">provider/model</code> id</td><td>是</td></tr>
+</tbody>
+</table>
+<p class="note">设置 → System → Models，或 <code translate="no">openprogram config</code>。<code translate="no">OPENPROGRAM_FALLBACK_MODELS</code> 优先。回退模型的回复在 <code translate="no">AssistantMessage.failover</code> 记录跳过的模型。每次切换还写入 <a href="../routing-overview.html">路由总览</a>读取的 <code translate="no">route_events</code> 表。</p>
+
+<h2 id="tunables">环境变量</h2>
+<table class="stack">
+<thead><tr><th scope="col">变量</th><th scope="col">默认</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_SSE_IDLE_TIMEOUT_S</code></th><td>600</td><td>无字节</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_STREAM_IDLE_TIMEOUT_S</code></th><td>300</td><td>没有事件；0 关闭此上限</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S</code></th><td>同空闲上限</td><td>无真实数据，仅 Codex</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_SSE_TOTAL_TIMEOUT_S</code></th><td>0</td><td>单流期限；0 为无</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_HTTPX_CONNECT_TIMEOUT_S</code></th><td>30</td><td>连接</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_HTTPX_WRITE_TIMEOUT_S</code>、<code translate="no">_POOL_TIMEOUT_S</code></th><td>30</td><td>写、连接池</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_HTTPX_READ_TIMEOUT_S</code></th><td>idle + 60</td><td>读兜底</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></th><td>5</td><td>每条流的尝试次数</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_BACKOFF_S</code></th><td>2.0</td><td>退避基数</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S</code></th><td>30.0</td><td>指数上限</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code></th><td>300</td><td>最长等待；0 取消上限</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>1800</td><td>等待网络；0 关闭</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_MAX_RETRIES</code></th><td>3</td><td><code translate="no">Runtime.exec</code> 次数</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></th><td>0</td><td><code translate="no">exec</code> 期限；0 为无</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_ANTHROPIC_MAX_RETRIES</code></th><td>3</td><td>Anthropic SDK 重试</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_TCP_KEEPALIVE</code></th><td>1</td><td>死连接检测</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_TCP_KEEPIDLE_S</code>、<code translate="no">_KEEPINTVL_S</code>、<code translate="no">_KEEPCNT</code></th><td>30、10、3</td><td>探测时序</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td>0</td><td>IPv4 源地址，用于 IPv6 损坏的 VPN</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PARTIAL_RECOVERY</code></th><td>1</td><td>保留部分输出</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FALLBACK_MODELS</code></th><td>空，即用设置</td><td><code translate="no">same-provider</code>、列表，或 <code translate="no">off</code>/<code translate="no">none</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>与同类框架对比</summary>
+<table class="stack">
+<thead><tr><th scope="col">维度</th><th scope="col">openclaw</th><th scope="col">opencode</th><th scope="col">hermes-agent</th><th scope="col">pi-ai (codex)</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">次数</th><td>3（内层 +2）</td><td>2</td><td>3</td><td>3</td><td>5</td></tr>
+<tr><th scope="row">退避基数</th><td>300 毫秒</td><td>500 毫秒</td><td>5 秒</td><td>1 秒</td><td>2 秒</td></tr>
+<tr><th scope="row">退避上限</th><td>30 秒</td><td>10 秒</td><td>120 秒</td><td>无</td><td>30 秒</td></tr>
+<tr><th scope="row">抖动</th><td>对称、正向</td><td>±20%</td><td>去相关</td><td>无</td><td>对称、正向</td></tr>
+<tr><th scope="row">可重试状态码</th><td>408、409、429、5xx</td><td>429、503、504、529</td><td>429、5xx、524</td><td>429、5xx</td><td>429、5xx、正文模式</td></tr>
+<tr><th scope="row">Retry-After</th><td>毫秒、秒、日期</td><td>毫秒、秒、日期（上限 10 秒）</td><td>无</td><td>无</td><td>毫秒、秒、日期（上限 300 秒）</td></tr>
+<tr><th scope="row">空闲超时</th><td>30 分钟任意字节</td><td>无；WS 5 分钟</td><td>180 秒陈旧，可缩放</td><td>无</td><td>10 分钟任意字节，15 分钟数据</td></tr>
+<tr><th scope="row">连接超时</th><td>undici 默认</td><td>无；WS 15 秒</td><td>SDK 默认</td><td>无</td><td>30 秒</td></tr>
+<tr><th scope="row">首字节保护</th><td>30 秒（Azure）</td><td>不适用</td><td>120 秒（codex）</td><td>无</td><td>idle 和 read</td></tr>
+<tr><th scope="row">HTTP 版本</th><td>强制 1.1</td><td>默认</td><td>自动（h2）</td><td>不适用</td><td>httpx 默认（1.1）</td></tr>
+<tr><th scope="row">IPv6</th><td>autoSelectFamily</td><td>否</td><td>否</td><td>不适用</td><td>强制 IPv4 开关</td></tr>
+<tr><th scope="row">TCP keepalive</th><td>undici 默认</td><td>否</td><td>30/10/3</td><td>不适用</td><td>30/10/3</td></tr>
+<tr><th scope="row">连接复用</th><td>keep-alive</td><td>WS 池，55 分钟回收</td><td>共享，陈旧时重建</td><td>不适用</td><td>共享，按循环区分</td></tr>
+<tr><th scope="row">密钥轮换</th><td>有</td><td>无</td><td>池、冷却</td><td>不适用</td><td>池、冷却</td></tr>
+<tr><th scope="row">模型故障转移</th><td>有</td><td>仅 WS 到 HTTP</td><td>链</td><td>不适用</td><td>链，默认关闭</td></tr>
+<tr><th scope="row">首 token 后断开</th><td>报错</td><td>报错</td><td>部分回复并继续</td><td>报错</td><td>部分回复并继续（Codex）；重发（其他）</td></tr>
+<tr><th scope="row">OAuth 刷新</th><td>不适用</td><td>不适用</td><td>按请求</td><td>按调用</td><td>按调用</td></tr>
+<tr><th scope="row">限流头</th><td>不适用</td><td>有</td><td>Nous</td><td>不适用</td><td>有</td></tr>
+<tr><th scope="row">分类</th><td>有</td><td>标签联合</td><td>有</td><td>基础</td><td><code translate="no">ErrorReason</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>各项目的做法</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw（<code translate="no">references/openclaw</code>，TS）</th><td>undici 分发器上 30 分钟流超时，任意字节重置。强制 HTTP/1.1 和 Happy Eyeballs 避开 h2 重置和损坏的 IPv6。两层重试。密钥轮换，每个密钥内再做临时重试。故障转移类别用正则分组。有 Retry-After 时只加正向抖动；<code translate="no">x-should-retry</code>。</td></tr>
+<tr><th scope="row">hermes-agent（Python，最接近）</th><td>注入 keepalive socket，强制关 TCP 防 CLOSE_WAIT。用 <code translate="no">time_ns</code> 做种的去相关退避。按上下文缩放的陈旧超时，本地提供商关闭。首字节和事件间超时分开。带冷却的凭据池（401 5 分钟，429/402 1 小时，失效 24 小时）。按请求的 OAuth 钩子。部分回复加 <code translate="no">finish_reason=length</code>。</td></tr>
+<tr><th scope="row">opencode（TS）</th><td>HTTP 无正文超时。WS：连接 15 秒，空闲 5 分钟，55 分钟回收，失败 5 次改 HTTP。限流头解析成结构化对象。标签联合错误。</td></tr>
+<tr><th scope="row">pi-ai（TS，我们 Codex 提供商的来源）</th><td>3 次重试，基数 1 秒，429/5xx 和正文模式，无读超时</td></tr>
+<tr><th scope="row">claude-code（部分包）</th><td>HTTP 行为即 Anthropic SDK</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>分类器、重试和退避、超时、共享客户端、keepalive、IPv4 开关、限流头解析、可选故障转移，Codex、OpenAI Responses 和 completions 的内容前重试。Anthropic 用 SDK 重试，3 次。部分恢复：仅 Codex。</td></tr>
+<tr><th scope="row">有意关闭</th><td>单账号池的按调用冷却：冷却唯一凭据会把用户锁在外面。轮换（<code translate="no">auth/pool.py</code>）在凭据多于一个时自动启用。</td></tr>
+<tr><th scope="row">未实现</th><td>按请求的 OAuth 钩子：Codex 已按调用解析并刷新 bearer。</td></tr>
+</tbody>
+</table>

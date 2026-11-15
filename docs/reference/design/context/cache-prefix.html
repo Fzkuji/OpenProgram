@@ -1,0 +1,211 @@
+<title>Prompt cache prefix</title>
+<meta name="description" content="How every request's body is captured where its adapter serializes it, compared with the previous request on its lane, and how a broken cached prefix is recorded with its cause.">
+<meta name="covers" content="openprogram/models/providers/recording/capture.py openprogram/models/usage/prefix_fingerprint.py">
+<h1 id="cache-prefix">Prompt cache prefix</h1>
+<p>A provider reuses a cached prompt only while every byte before the new part matches an earlier request. Each request is captured as its adapter writes it and compared, unit by unit, with the last answered request on its lane. The first unit that differs is where the cache stops reading; it names the cause on the usage event.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="Two requests cut into units: tools, the system text, then history. The second request's system text differs in its open_work section, so the break is at unit 1 with cause system:open_work; everything before it is read from the cache.">
+  <text class="t-soft" x="0" y="22">Previous request</text>
+  <rect class="tile" x="0" y="32" width="96" height="36" rx="6"/><text class="t-cmd" x="12" y="55">tools:read</text>
+  <rect class="tile" x="104" y="32" width="268" height="36" rx="6"/><text class="t-cmd" x="116" y="55">system · base · open_work</text>
+  <rect class="tile" x="380" y="32" width="120" height="36" rx="6"/><text class="t-cmd" x="392" y="55">history:user</text>
+  <text class="t-soft" x="0" y="104">This request</text>
+  <rect class="tile" x="0" y="114" width="96" height="36" rx="6"/><text class="t-cmd" x="12" y="137">tools:read</text>
+  <rect class="gate" x="104" y="114" width="268" height="36" rx="6"/><text class="t-cmd" x="116" y="137">system · base · open_work</text>
+  <rect class="tile" x="380" y="114" width="120" height="36" rx="6"/><text class="t-cmd" x="392" y="137">history:user</text>
+  <rect class="tile" x="508" y="114" width="150" height="36" rx="6"/><text class="t-cmd" x="520" y="137">history:assistant</text>
+  <line class="ln-acc" x1="0" y1="172" x2="216" y2="172"/>
+  <text class="t-soft" x="0" y="194">read from the cache</text>
+  <line class="ln-no" x1="224" y1="172" x2="658" y2="172"/>
+  <text class="t-soft" x="224" y="194">read again: break_at 1, break_cause system:open_work</text>
+  <text class="t-soft" x="0" y="226">Measured on openai-codex: 5,248 cached tokens before and after the change, 221 re-read.</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Previous request</strong><small translate="no">tools:read, system (base, open_work), history:user</small></li>
+  <li><strong>This request</strong><small translate="no">tools:read, system (open_work changed), history:user, history:assistant</small></li>
+  <li class="flow-end"><strong>Break at unit 1</strong><small translate="no">break_cause system:open_work</small><small>Units before it are read from the cache</small></li>
+</ol>
+</figure>
+
+<h2 id="capture">One capture point</h2>
+<p>Every adapter calls <code translate="no">capture_request(model, body, wire=…)</code> with the body it is about to send, after <code translate="no">on_payload</code> and before any byte leaves the process. Nothing else observes request bytes; the prefix check, the request-bytes contract test and the turn benches all read them from here.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Listener</th><th scope="col">How it receives a request</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stream chokepoint</th><td>Each attempt in <code translate="no">streaming/stream.py</code> binds a <code translate="no">RequestSlot</code>; the adapter fills it, which runs the check before the request goes out. A slot takes one request, so an adapter called outside the chokepoint leaves it alone. When the attempt sends its request again, mended after the provider refused its shape (<code translate="no">request_repair.py</code>), it reopens the slot, so the slot holds the request that was answered</td></tr>
+<tr><th scope="row">Tests and scripts</th><td><code translate="no">capturing()</code> collects every body in the block. With <code translate="no">send=False</code> each request stops at the capture point with <code translate="no">RequestNotSent</code>, so a whole conversation can be serialized through every adapter without a network</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Wire</th><th scope="col">Adapters</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anthropic-messages</code></th><td><code translate="no">anthropic</code></td></tr>
+<tr><th scope="row"><code translate="no">openai-responses</code></th><td><code translate="no">openai_responses</code>, <code translate="no">azure_openai_responses</code>, <code translate="no">openai_codex</code></td></tr>
+<tr><th scope="row"><code translate="no">openai-completions</code></th><td><code translate="no">openai_completions</code>, which every OpenAI-compatible provider uses</td></tr>
+<tr><th scope="row"><code translate="no">google-generative-ai</code></th><td><code translate="no">google</code>, <code translate="no">google_gemini_cli</code></td></tr>
+<tr><th scope="row"><code translate="no">bedrock-converse</code></th><td><code translate="no">amazon_bedrock</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="units">Units</h2>
+<p>A captured body is cut into units in the order a provider reads a prompt: each tool, then each system text, then each history item.</p>
+<p>Anthropic and Bedrock messages are cut per content block, so a message that grows by a block still extends the one before it. Units match by the digest of their bytes alone; a label never decides a match.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Label</th><th scope="col">Unit</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools:&lt;name&gt;</code></th><td>One tool definition</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td>One system text, with the sections it was composed from: each a name, an end and a digest up to there. The runtime names them (<code translate="no">components.prompt_parts</code>, registered through <code translate="no">runtime/lower_layers.py</code>): the built sections such as <code translate="no">environment</code>, <code translate="no">agents_md</code>, <code translate="no">memory</code>, <code translate="no">open_work</code>, <code translate="no">capabilities</code>, <code translate="no">plan_mode</code>, then what a turn appends: <code translate="no">goal</code>, <code translate="no">goal_verification</code>, <code translate="no">pages</code>. A prompt it does not know as composed (sent again after a restart, or from a saved contract) has one section, <code translate="no">prompt</code>; its bytes still match</td></tr>
+<tr><th scope="row"><code translate="no">history:&lt;kind&gt;</code></th><td>One history item: a role, or an item type such as <code translate="no">function_call_output</code></td></tr>
+</tbody>
+</table>
+<p class="note">Breakpoint markers (<code translate="no">cache_control</code>, <code translate="no">cachePoint</code>) move from request to request by design and are left out of the units. The lifetime they ask for is a setting.</p>
+
+<h2 id="check">Two checks</h2>
+<dl class="pairs">
+<dt>Before the request</dt>
+<dd><code translate="no">check_request</code> compares the request with the last answered one on its lane, and only reads. A changed setting comes first: <code translate="no">model</code>, then <code translate="no">setting:cache_key</code>, <code translate="no">setting:ttl</code>, <code translate="no">setting:effort</code>, <code translate="no">setting:format</code>, <code translate="no">setting:tool_choice</code>.</dd>
+<dd>Then the units: the first that differs gives <code translate="no">break_at</code>, and its label gives <code translate="no">break_cause</code>. </dd>
+<dd>A changed system text is named by its first section past the longest start both texts share at a section end they both have: <code translate="no">system:open_work</code>. A request shorter than the previous one gives <code translate="no">removed:&lt;label&gt;</code>. No provider usage is needed, so a provider that reports no cache tokens is checked the same way.</dd>
+<dt>After the reply</dt>
+<dd><code translate="no">settle_check</code> looks at cached input. When the request was intact and cached input fell by more than 5% and more than 2,000 tokens since the previous request, the cause is <code translate="no">ttl</code> if more time passed than the cache lifetime (5 minutes, or the 1-hour or 24-hour setting), otherwise <code translate="no">server</code>.</dd>
+<dd>The answered request, with its cached input, then becomes the lane's baseline; a request that got no reply leaves the baseline as it was.</dd>
+</dl>
+
+<h2 id="lanes">Lanes</h2>
+<p>A lane is the session, the kind of call, the lane label, the Agent and the conversation branch. Only conversation-shaped calls have one: chat, Agent-method and subagent turns. Requests are compared only within one lane, so calls with other instructions do not report each other as breaks.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Call</th><th scope="col">Lane</th></tr></thead>
+<tbody>
+<tr><th scope="row">A conversation's own turns</th><td><code translate="no">chat</code> with no label. Turns from the App, the TUI, a channel or a check-in share it, so a prompt that changes with the source is reported</td></tr>
+<tr><th scope="row">A Goal verification turn</th><td>Label <code translate="no">goal_verification</code> (<code translate="no">UsageContext.prefix_lane</code>, set where the turn binds its usage context)</td></tr>
+<tr><th scope="row">A self-update turn</th><td>Label from its source, <code translate="no">self_update_*</code></td></tr>
+<tr><th scope="row">An Agent method or subagent turn</th><td>Its <code translate="no">call_kind</code> and <code translate="no">call_label</code></td></tr>
+<tr><th scope="row">Another branch of the conversation</th><td>The branch is the session's <code translate="no">active_branch_id</code>, bound once the turn's message is stored (<code translate="no">UsageContext.branch_id</code>). A new branch's first request is compared with the last request of the branch it left and records <code translate="no">branch</code> as expected; back on the old branch, a request is compared with that branch's own last request</td></tr>
+<tr><th scope="row">A side call, or a call outside any session</th><td>None. A permission check, memory writing, a summary, a title, a prediction or a tool's own call sends a prompt of its own each time: it gets a prefix hash but is not compared</td></tr>
+</tbody>
+</table>
+<p>Each lane's last answered request is kept in memory and in <code translate="no">prefix_baselines</code> in the usage database, written when the reply settles. The database is read only for a lane's first request in a process, so the first request after a Worker restart is compared with the last one before it. A lane not written to for 30 days is dropped.</p>
+
+<h2 id="expected">Breaks made on purpose</h2>
+<p>The runtime announces a break it makes with <code translate="no">expect_break(session, cause)</code>. With a session, every lane of that session is told; with none, only the lane of the call being prepared, as compaction rewrites the request about to go out.</p>
+<p>The next request on the lane records the cause in <code translate="no">expected</code> when it breaks; an announcement is used once, by the next answered request.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Cause</th><th scope="col">Announced by</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">compaction</code></th><td><code translate="no">engine.compact</code> after it stores a summary; <code translate="no">compaction/request.py</code> when a request summarizes part of its own history</td></tr>
+<tr><th scope="row"><code translate="no">rewind</code></th><td><code translate="no">rewind_marks.take_rewind_note</code>, when the note is taken onto the next turn's message</td></tr>
+<tr><th scope="row"><code translate="no">model_switch</code></th><td><code translate="no">session_model.write_session_chat_model</code>, when the pinned model changes</td></tr>
+<tr><th scope="row"><code translate="no">branch</code></th><td>The check itself, for a new branch's first request</td></tr>
+<tr><th scope="row"><code translate="no">effort_switch</code></th><td><code translate="no">branch_settings.write_branch_settings</code>, when a branch's reasoning effort changes</td></tr>
+<tr><th scope="row"><code translate="no">ttl_switch</code></th><td><code translate="no">settings.set_setting</code> for <code translate="no">models.prompt_cache_ttl</code>: the cache lifetime applies to every conversation, so every lane of every session is told (<code translate="no">expect_break_everywhere</code>)</td></tr>
+<tr><th scope="row"><code translate="no">tool_loaded</code></th><td>The agent loop, when a deferred tool is loaded on a provider without native loading and joins the array</td></tr>
+</tbody>
+</table>
+
+<h2 id="ledger">What the usage event records</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Column</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">prefix_hash</code></th><td>Hash of the request's settings and units</td></tr>
+<tr><th scope="row"><code translate="no">break_at</code></th><td>Index of the first unit that differs; none for an intact request and for <code translate="no">ttl</code> or <code translate="no">server</code></td></tr>
+<tr><th scope="row"><code translate="no">break_cause</code></th><td>The label, setting, <code translate="no">ttl</code> or <code translate="no">server</code></td></tr>
+<tr><th scope="row"><code translate="no">expected</code></th><td>The announced causes that explain the break, comma-separated</td></tr>
+</tbody>
+</table>
+<p class="note">All three ways a request is metered (unbudgeted, budgeted, Goal receipt) build the event with the check, so a receipt replayed after a restart keeps it.</p>
+
+<h2 id="kept">What keeps the prefix</h2>
+<p>A conversation's system prompt changes only when something the model must read there changes. Everything else reaches the model beside a turn's message, stored on that message, so later requests send the same bytes.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">One owner of the recorded prompt</th><td>Only the conversation's own turn records its branch's prompt and keeps it (<code translate="no">loop_runner.owns_conversation_contract</code>). A Goal verification and a background check-in build a prompt of their own and neither read nor write it</td></tr>
+<tr><th scope="row">Movable sections</th><td>When the new prompt differs from the recorded one only in <code translate="no">environment</code>, <code translate="no">agents_md</code>, <code translate="no">memory</code>, <code translate="no">open_work</code> or <code translate="no">capabilities</code>, the recorded prompt is sent again and each changed section's whole text goes beside the message (<code translate="no">turn_context.kept_sections</code>). Open Pages never go in the conversation's own prompt; they are a section beside the message. Any other change rebuilds the prompt</td></tr>
+<tr><th scope="row">Whole sections, not patches</th><td>A section is sent when its text differs from the last note of it the request renders, or from the prompt's section when none renders (compacted, clean or bounded history). A section that is gone gets a note saying it no longer applies</td></tr>
+<tr><th scope="row">One storage</th><td>The user node's <code translate="no">turn_context</code> list: the date, an interruption, a rewind note, the section notes, the plan-mode note, the Goal note, the todo reminder, recalled memory, the run note, in that order. A node from before the list renders from its old keys in the same order; new nodes are also written with the old keys</td></tr>
+<tr><th scope="row">Written when it happens</th><td>Recalled memory, the run note and a pending rewind note are written when the message is stored; the section notes and the notes decided from the view when the turn's first request is built. A message sent again keeps its rewind note and decides the rest from the same view</td></tr>
+<tr><th scope="row">Notes decided from the view</th><td>What the request's rendered history shows decides them (<code translate="no">turn_context.turn_view</code>): the date goes only when it differs from the last date in view; the plan-mode note on entering, then every fifth turn, every fifth note full and the rest short, one exit note on leaving</td></tr>
+<tr><th scope="row">Goal and todo notes</th><td>Decided from the same view: the Goal note in full when no full note in view has the same objective, status, revision, budget band (75%) and verification feedback, else one short note with the usage; the Goal's todo list after 10 turns without a <code translate="no">todo_*</code> call and without a reminder. A compaction that drops a note brings it back in full</td></tr>
+<tr><th scope="row">One tools array per epoch</th><td>The conversation's own turn sends every tool it may use. What depends on the turn leaves the tools in place: <code translate="no">chat_send</code> off a channel, a question with nobody to answer, <code translate="no">handoff</code> off the head, a scheduled run's <code translate="no">always_on_report</code>, a report preference from outside text, memory tools with memory off, <code translate="no">computer_use_agent</code> with no Page, the local <code translate="no">web_search</code> while the provider searches</td></tr>
+<tr><th scope="row">Refused, not removed</th><td>Calls to those tools are refused (<code translate="no">TOOL_UNAVAILABLE</code>, nothing is asked) and the <code translate="no">tool_availability</code> section beside the message lists them once. Plan mode and deny rules are refused at dispatch too (<a href="../function/deferred-tools.html">deferred tools</a>). A verification, a check-in and a self-update step drop such tools from their own array</td></tr>
+<tr><th scope="row">Memory off takes nothing back</th><td>Turning memory off stops new recalls and refuses the memory tools. Recalled memory and memory-section notes stay in the history, the recorded prompt keeps its memory section and the next message says it no longer applies. A compaction's input leaves recalled memory out (<code translate="no">turn_context.without_recall</code>), and the first prompt rebuilt after that compaction has no memory section</td></tr>
+<tr><th scope="row">One replay rule</th><td>Every render takes an explicit <code translate="no">audience</code>. Only the conversation's own request shows section notes; a call with a prompt of its own shows none. Whether a request recalls memory and whether it is told the date are the loop's own settings (<code translate="no">AgentLoopConfig.recall</code>, <code translate="no">dated</code>), not context variables</td></tr>
+<tr><th scope="row">The branch record is the prompt's authority</th><td>A checkpoint of the conversation's own turn keeps the hash of the prompt recorded on its branch (<code translate="no">system_prompt_sha256</code>), not its text; a resume reads the text from the record and is refused when the record no longer matches. A checkpoint with the text (older ones, turns with a prompt of their own) resumes from it</td></tr>
+<tr><th scope="row">Hash against hash</th><td>Two contracts that both name the prompt by hash, such as a checkpoint checked against itself when it is loaded, compare by that hash (<code translate="no">runtime_contract.validate_runtime_contract</code>). A turn is kept by hash only when its branch held a record before it began; the first turn's record sits at its own reply, so its checkpoint keeps the text</td></tr>
+<tr><th scope="row">One key for one-off calls</th><td>A call that names no conversation is keyed by its provider, model, instructions and tool names (<code translate="no">providers.shared.cache_key</code>), whether it goes through a Runtime or straight to an adapter</td></tr>
+</tbody>
+</table>
+
+<h2 id="why">Why this design</h2>
+<p>Anthropic's preserved-thinking models check the request: a rebuilt system prompt is <code translate="no">system_rerendered</code>, a tool added or removed is <code translate="no">tool_set_changed</code>, and either is refused or drops the model's reasoning. Every other provider re-reads everything after the first changed byte. So what changes during a conversation goes beside a message, and the system prompt and the tools stay as they were.</p>
+<h3 id="why-goal">The Goal</h3>
+<p>Follows Kimi Code's two Goal reminders: the full one when the Goal's state changed or after a compaction, a short one with the usage otherwise.</p>
+<p>Codex repeats the whole rules in every continuation message, which costs more tokens each turn. Any Goal text left in the system prompt would rebuild it when a Goal starts or ends.</p>
+<p>The todo list follows Claude Code: the model sees it in its todo tools' results, so it comes back only after 10 turns without them.</p>
+<h3 id="why-tools">The tools array</h3>
+<p>Follows Codex, which refuses at dispatch and states permission changes as a message section, and Hermes, which pins a session's <code translate="no">tools[]</code> and says which pinned tools are inert where they are.</p>
+<p>Claude Code removes tools that a deny rule names, but its rules are set at start; ours change mid-conversation, and the refusal at dispatch is what enforces them either way.</p>
+<h3 id="why-plan">Plan mode</h3>
+<p>Follows Claude Code's schedule (Kimi Code has the same two notes): full on entering, a note every five turns, every fifth note full. Codex sends its collaboration mode once per change, which leaves a long conversation without a reminder that it is still planning.</p>
+<h3 id="why-date">The date</h3>
+<p>Claude Code, Codex, Kimi Code and OpenCode all send the date only when it changed. Repeating it every turn tells the model nothing and fills a small window.</p>
+<h3 id="why-memory">Memory turned off</h3>
+<p>Hermes rereads memory only at a rebuild such as a compaction, and Codex and Claude Code keep what was recalled.</p>
+<p>Content already sent has reached the provider; taking it out of the history is a rewrite that breaks the prefix and, on the models above, is refused. Turning memory off means nothing more is read or written, which stopping recalls and refusing the memory tools achieves.</p>
+<h3 id="why-effort">Effort and cache lifetime</h3>
+<p>Claude Code, Codex and Pi apply a new effort at once and show no warning; Claude Code records it as the cause of the break. A change of either is applied at once and announced as expected, with no prompt to the person.</p>
+<h3 id="why-loop-settings">Recall and date as loop settings</h3>
+<p>Follows Codex, which passes each turn's state in an explicit <code translate="no">TurnContext</code>. A context variable set by one caller reached nested and parallel calls it was not meant for.</p>
+<h3 id="why-record">One record of the prompt</h3>
+<p>Codex resumes from the <code translate="no">base_instructions</code> it persisted, and Hermes replays a session's pinned prompt and tools until a compaction. Two copies (checkpoint and branch) drift apart across compactions, restarts and resumes, so the branch keeps the text and the checkpoint a hash that the resume check compares.</p>
+
+<h2 id="contract">Request bytes contract</h2>
+<p>A finished turn renders, in the next turn, the bytes its own requests sent. <code translate="no">tests/support/request_bytes.py</code> runs real turns (dispatcher, agent loop, DAG render) with a scripted reply and serializes each request with the real adapter in <code translate="no">capturing(send=False)</code>. Two suites use it.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Suite</th><th scope="col">What it holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tests/contracts/providers/test_request_bytes.py</code></th><td>Anthropic, Responses, Chat Completions and Codex: the next turn re-sends a tool call, a failed tool, a tool image, a user image, a long paste and a large <code translate="no">tool_search</code> result as they were sent</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/test_turn_prefix_cache.py</code></th><td>Codex and Anthropic: memory, run notes, journal resume, old tool results resent whole, midnight, the date once a day, plan mode in and out, a Goal's full and short notes, a refused tool; a scenario matrix that changes one thing between two turns, checks that the prefix check names it, and checks whether the prefix holds; and the preserved-thinking rule that every request on one model sends the same system and tools bytes</td></tr>
+</tbody>
+</table>
+<p>A known place where a later render differs is marked <code translate="no">xfail(strict=True)</code> with the gap it shows. The change that closes a gap removes its mark.</p>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Coverage</th></tr></thead>
+<tbody>
+<tr><th scope="row">In place</th><td>Capture, both checks, lanes with branches, baselines, announced breaks, the ledger columns and both suites; one owner of the recorded prompt, movable sections, one storage and replay rule, the rewind note on the message, one key for one-off calls</td></tr>
+<tr><th scope="row">Also in place</th><td>The Goal, plan mode, date and todo notes decided from the view; one tools array with refused calls and the availability section; memory off taking nothing back; checkpoints naming the prompt by hash; the loop's own recall and date settings; the cache lifetime announced on every lane</td></tr>
+<tr><th scope="row">Scenario matrix</th><td>Open work, an active Goal, a rewind, a browser Page, AGENTS.md, a skill, a worktree, memory changed, memory turned off, nobody to answer, a source switch, plan mode in and out, an added tool, a Worker restart</td></tr>
+<tr><th scope="row">The check alone</th><td>Goal verification beside the main turn, side calls, branches, a provider that reports no cached input, the cache lifetime</td></tr>
+<tr><th scope="row">Not yet in the matrix</th><td>Switching models and back, a compaction, resuming after an approval wait, toggling web search, loading a deferred tool on Anthropic, a small window's bounded tail</td></tr>
+</tbody>
+</table>
+<p>Neither suite marks a gap today: a failed tool, images, a picture-only message, a long paste and a large <code translate="no">tool_search</code> result are all re-sent as sent. One known break stays outside the suites: <code translate="no">tools:&lt;name&gt;</code> breaks when a tool joins the array, a new Program or MCP tool on a provider without native deferred loading.</p>
+<p>Not yet built:</p>
+<ul>
+<li>A new effort on Anthropic as a <code translate="no">role: system</code> message with <code translate="no">output_config.effort</code> (beta <code translate="no">mid-conversation-output-config-2026-07-01</code>), which keeps the cache. The message stays in every later request, so each turn's effort must be stored on its message; the 400 fallback needs a paid check. Until then a new effort goes in the top-level setting and is announced.</li>
+<li>One contract record on the branch with the epoch's tool names and schema hashes, the effort baseline and the cache lifetime, with a placeholder for a tool whose Program was removed: the branch keeps the prompt node, and the epoch's refused set lives in the deferred-tool epoch record.</li>
+<li>Announcing <code translate="no">web_search_toggle</code> when the provider's search option changes, and a one-time <code translate="no">goal_moved</code> when a conversation with an active Goal first sends its Goal beside the message.</li>
+</ul>
+
+<details>
+<summary>Files</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/recording/capture.py</code></th><td>Capture point, scopes, slot, units and settings per wire</td></tr>
+<tr><th scope="row"><code translate="no">models/usage/prefix_fingerprint.py</code></th><td>Fingerprint, both checks, lanes, baselines, <code translate="no">expect_break</code></td></tr>
+<tr><th scope="row"><code translate="no">models/providers/streaming/stream.py</code></th><td>Binds a slot per attempt, settles the check, passes it to metering</td></tr>
+<tr><th scope="row"><code translate="no">models/usage/ledger.py</code></th><td><code translate="no">prefix_baselines</code> and the four event columns</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/components.py</code></th><td><code translate="no">prompt_parts</code>, <code translate="no">remember_composed</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code></th><td>Composes the sent prompt from named parts; the tools array and <code translate="no">turn_availability</code>; the notes decided from the view; the prompt by reference in checkpoints</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/turn_context.py</code></th><td>Entries, <code translate="no">turn_view</code>, <code translate="no">date_to_send</code>, sections and <code translate="no">kept_sections</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/plan_mode.py</code></th><td>The plan-mode notes and their schedule</td></tr>
+<tr><th scope="row"><code translate="no">programs/tools/planning/goal/chat.py</code></th><td><code translate="no">goal_note</code>, <code translate="no">todo_reminder</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="composition.html">Composition: the layers a prompt is built from</a></p>

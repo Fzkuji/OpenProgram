@@ -8,53 +8,66 @@ const {
   dialog,
   ipcMain: nativeIpcMain,
   powerMonitor,
+  powerSaveBlocker,
+  Notification,
   session,
   shell,
   nativeTheme,
 } = require("electron");
-const { execFileSync, spawn } = require("child_process");
+const { execFile, execFileSync, spawn } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const https = require("https");
 const path = require("path");
 const { Buffer } = require("buffer");
-const { resolveAuthenticatedStartUrl, ownerAuthTokenFromStartUrl } = require("./worker-start-url");
-const { createSelfUpdateReopen, registerReopenIpc } = require("./self-update-reopen");
-const { registerUiVerificationIpc } = require("./self-update-ui");
-const { createUiVerificationGuard } = require("./self-update-ui-guard");
+const { resolveAuthenticatedStartUrl, ownerAuthTokenFromStartUrl } = require("./main/worker/worker-start-url");
+const webPort = require("./main/worker/web-port");
+const { createSelfUpdateReopen, registerReopenIpc } = require("./main/self-update/self-update-reopen");
+const { registerUiVerificationIpc } = require("./main/self-update/self-update-ui");
+const { createUiVerificationGuard } = require("./main/self-update/self-update-ui-guard");
 const uiVerificationGuard = createUiVerificationGuard(nativeIpcMain);
 const { ipcMain } = uiVerificationGuard;
-const { resolvePackagedWorker } = require("./packaged-runtime");
-const { DesktopUpdateService, desktopUpdateFetch } = require("./update-service");
+const { resolvePackagedWorker } = require("./main/self-update/packaged-runtime");
+const { loadInstance, resolveInstanceWorker } = require("./main/instance");
+const { useBrowserUserAgent, forgetClearanceOnChange } = require("./main/web-views/webtab-user-agent");
+const { readClientHints, registerClientHints } = require("./main/web-views/webtab-client-hints");
+const webTabPermissions = require("./main/web-views/webtab-permissions");
+const {
+  DesktopUpdateService,
+  desktopUpdateFetch,
+  parseUpgradeOutcome,
+  replaceAppImage,
+} = require("./main/self-update/update-service");
+const { DesktopAttentionService } = require("./main/windows/attention-service");
 const {
   killWindowsProcessTree,
   resolveTerminalCommand,
   waitForTerminalPid,
-} = require("./terminal-command");
-const { verifyWindowsAuthenticode } = require("./windows-signature");
+} = require("./main/terminal/terminal-command");
+const { readWindowsUpdateLine, verifyWindowsAuthenticode } = require("./main/self-update/windows-signature");
 const {
   loadTransferDecisions,
   saveTransferDecisionsAtomic,
   putTransferDecision,
   ackTransferDecision,
-} = require("./tab-transfer-store");
+} = require("./main/web-views/tab-transfer-store");
 const {
   recordVisit,
   listHistory,
   importHistoryEntries,
   deleteHistoryEntry,
   clearHistory,
-} = require("./browsing-history-store");
+} = require("./main/web-views/browsing-history-store");
 const {
   listBrowserSources,
   runBrowserImport,
-} = require("./browser-profile-import");
+} = require("./main/web-views/browser-profile-import");
 const {
   contextMenuRequestedX,
   clampContextMenuPanel,
   cascadeMenuGeometry,
-} = require("./menu-geometry");
+} = require("./main/windows/menu-geometry");
 const {
   createRecoveryState,
   createRecoveryCoordinator,
@@ -62,34 +75,57 @@ const {
   startRecoveryCycle,
   beginRecoveryProbe,
   finishRecoveryProbe,
-} = require("./worker-recovery-state");
-const { validateTransferPayload } = require("./tab-transfer-validation");
+  workerVersionAction,
+} = require("./main/worker/worker-recovery-state");
+const { installLockPath, installInProgress } = require("./main/self-update/install-lock");
+const { validateTransferPayload } = require("./main/web-views/tab-transfer-validation");
 const {
   STATE_FILE_NAME,
   loadPersistedState,
   attachWindowStatePersistence,
   browserWindowOptionsForPlan,
   applyRestoredChrome,
-} = require("./window-state");
+} = require("./main/windows/window-state");
 const {
   createMainWindowGate,
   registerSingleMainWindow,
-} = require("./window-lifecycle");
-const themeChrome = require("./theme-chrome");
+} = require("./main/windows/window-lifecycle");
+const sessionWindows = require("./main/windows/session-windows");
+const themeChrome = require("./main/windows/theme-chrome");
 const {
   browserWindowChromeOptions,
   applyNativeTitleBarChrome,
-} = require("./window-chrome");
+  registerNativeTitleBarIpc,
+} = require("./main/windows/window-chrome");
 
-// 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
-const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
+const INSTANCE = loadInstance(process.resourcesPath, app.isPackaged);
+// How the shell loader started this process (apps/desktop/shell/loader.js).
+// Null in embedded mode, where this file starts itself.
+let shellContext = null;
+if (INSTANCE.development) {
+  // Its own name and userData: window state, the single-instance lock and
+  // Chromium storage stay apart from the stable App's.
+  app.setName(INSTANCE.name);
+  app.setPath("userData", path.join(app.getPath("appData"), INSTANCE.name));
+}
+// 单实例：worker 单端口。端口由 worker 在本账户第一次启动时选定并记在
+// <state>/web-port（通常 18100），App 只读这些文件，见
+// main/worker/web-port.js 和 docs/reference/design/cli/single-port.html。
+const WEB_PORT_FILES = {
+  instance: INSTANCE,
+  stateDir: webPort.stateDirectory(),
+};
+const WEB_PORT_CHOICE = webPort.resolveWebPort(WEB_PORT_FILES);
+const WEB_PORT = String(WEB_PORT_CHOICE.port);
 const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
 const UI_ORIGIN = new URL(START_URL).origin;
 const selfUpdateReopen = createSelfUpdateReopen({ argv: process.argv, origin: UI_ORIGIN });
 const HEALTH_URL = new URL("/healthz", START_URL).toString();
 const WORKER_COMMAND = "openprogram worker start";
-const RECOVERY_INTERVAL_MS = 3_000;
+// A worker boot takes a few seconds; probing every second shows the UI
+// about as soon as it is up instead of up to three seconds later.
+const RECOVERY_INTERVAL_MS = 1_000;
 const TRANSFER_TIMEOUT_MS = 15_000;
 const DESTINATION_UNDO_TIMEOUT_MS = 2_000;
 const COMMIT_RECONCILE_INITIAL_MS = 100;
@@ -133,26 +169,104 @@ function scheduleAutomaticUpdateCheck(initial = false) {
   }, Math.min(delay, 2_147_000_000));
 }
 
+/** The release this App runs: a sealed version's own, otherwise the App's. */
+function runningReleaseVersion() {
+  if (!shellContext?.versionId) return app.getVersion();
+  const recorded = shellContext.runningRelease?.();
+  if (recorded) return recorded;
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version;
+  } catch {
+    return app.getVersion();
+  }
+}
+
+function updateFileFilters() {
+  if (process.platform === "win32") return [{ name: "Windows Installer", extensions: ["exe"] }];
+  if (process.platform === "darwin") return [{ name: "macOS Disk Image", extensions: ["dmg"] }];
+  return process.env.APPIMAGE
+    ? [{ name: "AppImage", extensions: ["AppImage"] }]
+    : [{ name: "Debian Package", extensions: ["deb"] }];
+}
+
+function canWriteBeside(file) {
+  try {
+    fs.accessSync(path.dirname(file), fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A sealed version updates through its own Python, which holds the fetcher. */
+function runVersionStoreUpdate() {
+  const launch = shellContext.resolveWorker();
+  const env = { ...process.env, ...webPort.workerPortEnv(WEB_PORT_CHOICE), ...launch.env };
+  // The worker lists this App among the version store's users, so the last
+  // uninstaller knows whether the store is still needed.
+  if (app.isPackaged) env.OPENPROGRAM_APP_PATH = path.dirname(process.execPath);
+  delete env.PYTHONHOME;
+  if (!launch.env.PYTHONPATH) delete env.PYTHONPATH;
+  return new Promise((resolve, reject) => {
+    let output = "";
+    const child = spawn(launch.authCommand, [...launch.authArgs, "upgrade", "--json"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      env,
+      windowsHide: process.platform === "win32",
+    });
+    child.stdout.on("data", (data) => { output += data; });
+    child.on("error", reject);
+    child.on("close", (code) => resolve(parseUpgradeOutcome(output, code)));
+  });
+}
+
 function initializeDesktopUpdates() {
+  const appImage = process.platform === "linux" ? process.env.APPIMAGE : "";
+  const versionStore = Boolean(shellContext?.versionId);
+  let windowsLine = null;
+  const readLine = () => {
+    windowsLine ||= readWindowsUpdateLine();
+    return windowsLine;
+  };
   desktopUpdates = new DesktopUpdateService({
-    currentVersion: app.getVersion(),
+    currentVersion: runningReleaseVersion(),
     arch: process.arch,
     platform: process.platform,
     statePath: path.join(app.getPath("userData"), "update-state.json"),
     fetchImpl: desktopUpdateFetch,
+    linuxFormat: appImage ? "appimage" : "deb",
+    windowsLine: readLine,
+    versionStore,
+    readCurrentVersion: versionStore ? runningReleaseVersion : null,
+    applyVersionUpdate: versionStore ? runVersionStoreUpdate : null,
     chooseSavePath: async (name) => {
-      const windowsInstaller = process.platform === "win32";
+      if (appImage && canWriteBeside(appImage)) return path.join(path.dirname(appImage), `.${name}.download`);
       const result = await dialog.showSaveDialog({
         title: "Download OpenProgram Update",
         defaultPath: path.join(app.getPath("downloads"), name),
-        filters: windowsInstaller
-          ? [{ name: "Windows Installer", extensions: ["exe"] }]
-          : [{ name: "macOS Disk Image", extensions: ["dmg"] }],
+        filters: updateFileFilters(),
       });
       return result.canceled ? null : result.filePath;
     },
-    verifyArtifact: (filePath) => verifyWindowsAuthenticode(filePath),
-    openPath: (filePath) => shell.openPath(filePath),
+    verifyArtifact: async (filePath) => verifyWindowsAuthenticode(filePath, {
+      line: process.platform === "win32" ? await readLine() : null,
+    }),
+    openPath: async (filePath) => {
+      if (appImage && path.dirname(filePath) === path.dirname(appImage)) {
+        try {
+          replaceAppImage(filePath, appImage);
+        } catch (error) {
+          return `The new version could not replace ${appImage}: ${error.message}`;
+        }
+        setTimeout(() => {
+          app.relaunch(shellContext?.relaunchOptions?.());
+          app.exit(0);
+        }, 300);
+        return "";
+      }
+      if (filePath.endsWith(".AppImage")) fs.chmodSync(filePath, 0o755);
+      return shell.openPath(filePath);
+    },
     emit: broadcastUpdateState,
   });
   scheduleAutomaticUpdateCheck(true);
@@ -191,32 +305,125 @@ function registerUpdateIpc() {
   });
 }
 
+function appDocumentWindow(sender) {
+  return BrowserWindow.getAllWindows().find((win) => !win.isDestroyed() && win.webContents === sender) || null;
+}
+
+// Notifications and keep-awake are reported by every app window; the
+// service collapses them into one notification and one power hold.
+function registerAttentionIpc() {
+  const attention = new DesktopAttentionService({
+    statePath: path.join(app.getPath("userData"), "attention-prefs.json"),
+    createNotification: (options) => new Notification(options),
+    listSystemSounds: () => process.platform !== "darwin" ? [] : fs.readdirSync("/System/Library/Sounds")
+      .filter((file) => file.endsWith(".aiff")).map((file) => file.slice(0, -".aiff".length)),
+    playSound: (name) => execFile("/usr/bin/afplay", [path.join("/System/Library/Sounds", `${name}.aiff`)], () => {}),
+    notificationsSupported: () => Notification.isSupported(),
+    powerSaveBlocker,
+    isAppFocused: () => Boolean(BrowserWindow.getFocusedWindow()),
+    openSession: (senderId, sessionId) => {
+      const win = BrowserWindow.getAllWindows().find((candidate) =>
+        !candidate.isDestroyed() && candidate.webContents.id === senderId,
+      ) || BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      if (sessionId) win.webContents.send("attention:open-session", sessionId);
+    },
+    emit: (prefs) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send("attention:prefs", prefs);
+      }
+    },
+  });
+  const tracked = new Set();
+  const track = (sender) => {
+    if (tracked.has(sender.id)) return;
+    tracked.add(sender.id);
+    const id = sender.id;
+    sender.once("destroyed", () => {
+      tracked.delete(id);
+      attention.forgetSender(id);
+    });
+  };
+  ipcMain.handle("attention:get-prefs", () => attention.getPrefs());
+  ipcMain.handle("attention:sounds", () => attention.getSounds());
+  ipcMain.handle("attention:preview-sound", (event, sound) => {
+    if (!appDocumentWindow(event.sender)) return false;
+    return attention.previewSound(sound);
+  });
+  ipcMain.handle("attention:set-prefs", (event, patch) => {
+    if (!appDocumentWindow(event.sender)) return attention.getPrefs();
+    return attention.setPrefs(patch);
+  });
+  ipcMain.on("attention:notify", (event, request) => {
+    if (!appDocumentWindow(event.sender)) return;
+    attention.notify(event.sender.id, request);
+  });
+  ipcMain.on("attention:busy", (event, busy) => {
+    if (!appDocumentWindow(event.sender)) return;
+    track(event.sender);
+    attention.reportBusy(event.sender.id, Boolean(busy));
+  });
+}
+
 // agent 接管内置浏览器的数据面通道：后端 browser 工具（engine=auto/app）经
 // CDP attach 这里的可见 web tab。Electron 默认只绑 127.0.0.1，不对外暴露；
 // 9222 留给后端 sidecar Chrome，互不冲突。必须在 app ready 之前设置。
-app.commandLine.appendSwitch("remote-debugging-port", "9223");
+app.commandLine.appendSwitch("remote-debugging-port", String(INSTANCE.debugPort));
 
 let currentChrome = themeChrome.chromeForTheme("beige-dark");
 
-function errorPageUrl() {
-  return themeChrome.buildErrorPageUrl(currentChrome, WORKER_COMMAND);
+function errorPageUrl(phase = "waiting") {
+  return themeChrome.buildErrorPageUrl(currentChrome, WORKER_COMMAND, phase, {
+    port: WEB_PORT,
+    holder: portHeldBy,
+    setting: WEB_PORT_CHOICE.source,
+    chinese: /^zh/i.test(app.getLocale?.() || ""),
+  });
 }
 
 function isErrorPageUrl(url) {
   return themeChrome.isErrorPageUrl(url);
 }
 
+/**
+ * Whether an installer (`install-app.sh`, the local refresh) is replacing
+ * this App right now. It quits the App and stops the worker first, so an
+ * App opened meanwhile finds no backend: it then waits for the installer
+ * instead of starting a worker from the half-installed runtime.
+ */
+function appInstallInProgress() {
+  if (shellContext?.switchingInProgress?.()) return true;
+  // The stable installers' lock says nothing about the development runtime.
+  if (!app.isPackaged || INSTANCE.development) return false;
+  return installInProgress(installLockPath(process.execPath));
+}
+
+/** Show the waiting page for `phase` unless the window already shows it. */
+function showWaitPage(ctx, phase) {
+  if (ctx.win.isDestroyed()) return;
+  if (themeChrome.waitPagePhase(ctx.win.webContents.getURL?.()) === phase) return;
+  void ctx.win.loadURL(errorPageUrl(phase)).catch(() => {});
+}
+
 function themePrefsPath() {
   return path.join(app.getPath("userData"), themeChrome.PREFS_FILE_NAME);
 }
 
-function resolveStartupChrome(source = "startup") {
-  let systemDark = true;
+/** The OS appearance; the App's pages read it through the preload (theme.systemDark). */
+function systemPrefersDark() {
   try {
-    systemDark = require("electron").nativeTheme.shouldUseDarkColors !== false;
+    return require("electron").nativeTheme.shouldUseDarkColors !== false;
   } catch {
     /* older Electron or tests without nativeTheme */
+    return true;
   }
+}
+
+function resolveStartupChrome(source = "startup") {
+  const systemDark = systemPrefersDark();
   const resolved = themeChrome.loadResolvedChrome({
     userDataPath: app.getPath("userData"),
     systemDark,
@@ -233,7 +440,9 @@ function applyWindowChrome(payload = {}) {
   const background = themeChrome.colorToHex(payload.backgroundColor) || fromTheme.bg;
   currentChrome = { ...fromTheme, bg: background };
   if (accentColor) currentChrome.link = accentColor;
-  for (const win of BrowserWindow.getAllWindows()) {
+  // App windows only: the agent cursor and other overlays are transparent
+  // windows, and a background colour would paint them as an opaque tile.
+  for (const { win } of windows.values()) {
     try {
       if (win.isDestroyed()) continue;
       win.setBackgroundColor(currentChrome.bg);
@@ -275,20 +484,69 @@ function probe(url, timeoutMs) {
   });
 }
 
+// A sealed version's worker starts through the launcher, so its version guard
+// counts the attempt. An attempt that dies is retried by the recovery cycle
+// until the guard moves the pointer back or the recovery page takes over.
+async function spawnManagedWorker(action) {
+  let launch;
+  try {
+    launch = shellContext.resolveWorker();
+    if (action === "restart") await shellContext.stopWorker();
+  } catch (error) {
+    recoveryCoordinator.workerSpawned = false;
+    console.error(`[desktop] worker start failed: ${error.message}`);
+    void shellContext.openRecovery("failed");
+    return;
+  }
+  const env = { ...process.env, ...webPort.workerPortEnv(WEB_PORT_CHOICE), ...launch.env };
+  // The worker lists this App among the version store's users, so the last
+  // uninstaller knows whether the store is still needed.
+  if (app.isPackaged) env.OPENPROGRAM_APP_PATH = path.dirname(process.execPath);
+  delete env.PYTHONHOME;
+  if (!launch.env.PYTHONPATH) delete env.PYTHONPATH;
+  const log = fs.openSync(launch.logFile, "a");
+  const child = spawn(launch.command, launch.args, {
+    detached: true,
+    stdio: ["ignore", log, log],
+    env,
+    windowsHide: process.platform === "win32",
+  });
+  fs.closeSync(log);
+  child.on("error", (error) => {
+    recoveryCoordinator.workerSpawned = false;
+    console.error(`[desktop] worker start failed: ${error.message}`);
+  });
+  child.on("exit", (code) => {
+    recoveryCoordinator.workerSpawned = false;
+    if (code === 0) return;
+    recoveryCoordinator.startRejected = true;
+    recoveryCoordinator.restartIssued = false;
+    recoveryCoordinator.unreachableProbes = 0;
+  });
+  child.unref();
+}
+
 function spawnWorker(action = "start") {
-  const env = { ...process.env, OPENPROGRAM_WEB_PORT: WEB_PORT };
+  if (shellContext) {
+    void spawnManagedWorker(action);
+    return;
+  }
+  const env = { ...process.env, ...webPort.workerPortEnv(WEB_PORT_CHOICE) };
   delete env.PYTHONHOME;
   delete env.PYTHONPATH;
   let launch;
-  if (app.isPackaged) {
+  if (INSTANCE.development) {
+    launch = resolveInstanceWorker(INSTANCE);
+    Object.assign(env, launch.env);
+  } else if (app.isPackaged) {
     env.OPENPROGRAM_IMMUTABLE_RUNTIME = "1";
     launch = resolvePackagedWorker(process.resourcesPath, app.getVersion());
     Object.assign(env, launch.env);
   } else {
     launch = { command: "openprogram", args: ["worker", "start"] };
   }
-  if (action === "restart") {
-    launch = { ...launch, args: [...launch.args.slice(0, -1), "restart"] };
+  if (action === "restart" || action === "stop") {
+    launch = { ...launch, args: [...launch.args.slice(0, -1), action] };
   }
   const child = spawn(launch.command, launch.args, {
     detached: true,
@@ -308,32 +566,174 @@ function spawnWorker(action = "start") {
   child.unref();
 }
 
+// Who holds this App's port when it is not this account's worker, as
+// `web auth-url` named it; null while the port is free or ours. Such a
+// listener is never given this account's token.
+let portHeldBy = null;
+function notePortHeld(holder) {
+  portHeldBy = holder || "another program or account";
+}
+
 function resolveWorkerStartUrl() {
-  if (!app.isPackaged) return resolveAuthenticatedStartUrl(START_URL);
-  const launch = resolvePackagedWorker(process.resourcesPath, app.getVersion());
-  return resolveAuthenticatedStartUrl(START_URL, process.env, [
+  portHeldBy = null;
+  return authenticatedStartUrl();
+}
+
+// The worker moved this account's port because another program or account
+// held it: the App's addresses are fixed for its run, so it starts again on
+// the new port. Once per run.
+let relaunchingForPort = false;
+function followMovedWebPort() {
+  if (relaunchingForPort) return true;
+  const moved = webPort.movedWebPort(WEB_PORT_CHOICE, WEB_PORT_FILES);
+  if (moved === null) return false;
+  relaunchingForPort = true;
+  console.log(`[desktop] the worker moved from port ${WEB_PORT} to ${moved}: reopening on it`);
+  // An AppImage relaunches from its file, not its mount, which goes away.
+  app.relaunch(shellContext?.relaunchOptions?.());
+  app.quit();
+  return true;
+}
+
+// While a port the user set is held by someone else, nothing changes until
+// they quit it; ask a little less often than the one-second startup probe.
+const PORT_HELD_INTERVAL_MS = 5_000;
+
+function authenticatedStartUrl() {
+  if (shellContext) {
+    let launch;
+    try {
+      launch = shellContext.resolveWorker();
+    } catch {
+      return null;
+    }
+    return resolveAuthenticatedStartUrl(START_URL, { ...process.env, ...launch.env }, [
+      { command: launch.authCommand, args: launch.authArgs },
+    ], notePortHeld);
+  }
+  if (!app.isPackaged) return resolveAuthenticatedStartUrl(START_URL, process.env, undefined, notePortHeld);
+  const launch = INSTANCE.development
+    ? resolveInstanceWorker(INSTANCE)
+    : resolvePackagedWorker(process.resourcesPath, app.getVersion());
+  return resolveAuthenticatedStartUrl(START_URL, { ...process.env, ...launch.env }, [
     {
       command: launch.authCommand || launch.command,
       args: ["-I", "-B", "-m", "openprogram"],
     },
-  ]);
+  ], notePortHeld);
+}
+
+function readLocalJson(url, headers = {}, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const request = http.get(url, { headers, timeout: timeoutMs }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => {
+        try {
+          resolve(response.statusCode === 200 ? JSON.parse(body) : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    request.on("timeout", () => request.destroy(new Error("timeout")));
+    request.on("error", () => resolve(null));
+  });
+}
+
+/** The version the worker on this App's port runs; older workers answer only with a token. */
+async function runningWorkerVersion(authenticatedUrl) {
+  const health = await readLocalJson(HEALTH_URL);
+  if (typeof health?.version === "string") return health.version;
+  const token = ownerAuthTokenFromStartUrl(authenticatedUrl);
+  if (!token) return null;
+  const system = await readLocalJson(new URL("/api/system/version", START_URL).toString(), {
+    Authorization: `Bearer ${token}`,
+  });
+  return typeof system?.currentVersion === "string" ? system.currentVersion : null;
+}
+
+/** The version a worker on this port should run, or null when any may. */
+function expectedWorkerVersion() {
+  if (INSTANCE.development || !app.isPackaged || process.env.OPENPROGRAM_DESKTOP_URL) return null;
+  if (shellContext) return shellContext.versionId && !shellContext.switchingInProgress?.() ? runningReleaseVersion() : null;
+  return app.getVersion();
+}
+
+// While a worker from another version is being replaced, its health answer is
+// not the one the windows are waiting for.
+const WORKER_VERSION_RESTART_MS = 60_000;
+let workerVersionRestart = null;
+
+async function restartWorkerFromOtherVersion(authenticatedUrl) {
+  const expected = expectedWorkerVersion();
+  if (!expected || recoveryCoordinator.workerVersionChecked) return false;
+  const running = await runningWorkerVersion(authenticatedUrl);
+  if (workerVersionAction(recoveryCoordinator, running, expected) !== "restart") return false;
+  console.log(`[desktop] the running worker is ${running}, this App is ${expected}: restarting it`);
+  workerVersionRestart = { expected, authenticatedUrl, until: Date.now() + WORKER_VERSION_RESTART_MS };
+  recoveryCoordinator.workerSpawned = true;
+  spawnWorker("restart");
+  return true;
+}
+
+async function workerVersionSettled() {
+  if (!workerVersionRestart) return true;
+  const { expected, authenticatedUrl, until } = workerVersionRestart;
+  if (Date.now() < until && await runningWorkerVersion(authenticatedUrl) !== expected) return false;
+  workerVersionRestart = null;
+  return true;
 }
 
 async function resolveStartUrl() {
+  if (followMovedWebPort()) return errorPageUrl();
   let workerWasReachable = false;
   for (let i = 0; i < 3; i++) {
-    if (await probe(HEALTH_URL, 1000)) {
+    const healthy = await probe(HEALTH_URL, 1000);
+    if (!healthy && !await webPort.portListening(WEB_PORT)) continue;
+    const authenticated = resolveWorkerStartUrl();
+    if (authenticated) {
       workerWasReachable = true;
       recoveryCoordinator.workerSpawned = false;
-      const authenticated = resolveWorkerStartUrl();
-      if (authenticated) return authenticated;
+      if (await restartWorkerFromOtherVersion(authenticated)) return errorPageUrl();
+      return authenticated;
+    }
+    if (portHeldBy !== null) {
+      // Not this account's worker. A port the user set stays theirs to free;
+      // a chosen one moves when this account's own worker starts.
+      if (webPort.portIsFixed(WEB_PORT_CHOICE)) return errorPageUrl("port");
+      break;
+    }
+    if (healthy) {
+      workerWasReachable = true;
+      recoveryCoordinator.workerSpawned = false;
     }
   }
+  if (!workerWasReachable && appInstallInProgress()) return errorPageUrl("updating");
   if (!workerWasReachable && !recoveryCoordinator.workerSpawned) {
     recoveryCoordinator.workerSpawned = true;
     spawnWorker();
   }
   return errorPageUrl();
+}
+
+// The shell's recovery page takes over when the version the launcher fell back
+// to does not come up either. Offered once per outage, so closing it sticks.
+let unreachableSince = null;
+let recoveryOffered = false;
+function watchManagedRecovery(reachable, installing) {
+  if (!shellContext?.recoveryDue) return;
+  if (reachable || installing) {
+    unreachableSince = null;
+    recoveryOffered = false;
+    return;
+  }
+  unreachableSince ??= Date.now();
+  if (!recoveryOffered && shellContext.recoveryDue(Date.now() - unreachableSince)) {
+    recoveryOffered = true;
+    void shellContext.openRecovery("failed");
+  }
 }
 
 function stopWindowRecovery(ctx) {
@@ -347,8 +747,27 @@ function stopWindowRecovery(ctx) {
 async function runWindowRecoveryProbe(ctx) {
   const state = ctx.recovery;
   if (ctx.win.isDestroyed() || !beginRecoveryProbe(state, Date.now())) return;
-  const reachable = await probe(HEALTH_URL, 1000);
-  const authenticated = reachable ? resolveWorkerStartUrl() : null;
+  if (followMovedWebPort()) return;
+  const healthy = await probe(HEALTH_URL, 1000) && await workerVersionSettled();
+  const listening = healthy || await webPort.portListening(WEB_PORT);
+  // A port nobody listens on any more is no longer held by anyone.
+  if (!listening) portHeldBy = null;
+  const authenticated = listening ? resolveWorkerStartUrl() : null;
+  const heldByOther = !authenticated && portHeldBy !== null;
+  if (heldByOther && webPort.portIsFixed(WEB_PORT_CHOICE)) {
+    // Starting a worker cannot help: it would refuse the held port too. Say
+    // who holds it, and keep checking so the UI loads once it is freed.
+    state.probeInFlight = false;
+    state.nextProbeAt = Date.now() + PORT_HELD_INTERVAL_MS;
+    watchManagedRecovery(true, false);
+    showWaitPage(ctx, "port");
+    return;
+  }
+  // Another account's worker or another program answering on a port this
+  // account chose is not reachable for it: its own worker starts and moves.
+  const reachable = healthy && !heldByOther;
+  const installing = !reachable && appInstallInProgress();
+  watchManagedRecovery(reachable, installing);
   const action = finishRecoveryProbe(
     state,
     recoveryCoordinator,
@@ -356,7 +775,14 @@ async function runWindowRecoveryProbe(ctx) {
     !!authenticated,
     Date.now(),
     RECOVERY_INTERVAL_MS,
+    installing,
   );
+  if (action === "installing") {
+    showWaitPage(ctx, "updating");
+  } else if (!reachable && !ctx.win.isDestroyed() && isErrorPageUrl(ctx.win.webContents.getURL?.())) {
+    // The installer is done (or was never there): back to the plain wait.
+    showWaitPage(ctx, "waiting");
+  }
   if (action === "spawn" || action === "restart") {
     spawnWorker(action === "restart" ? "restart" : "start");
   } else if (action === "load" && !ctx.win.isDestroyed()) {
@@ -376,9 +802,7 @@ function startWindowRecovery(ctx, showErrorPage = true) {
       RECOVERY_INTERVAL_MS,
     );
   }
-  if (showErrorPage && !isErrorPageUrl(ctx.win.webContents.getURL?.())) {
-    void ctx.win.loadURL(errorPageUrl()).catch(() => {});
-  }
+  if (showErrorPage) showWaitPage(ctx, appInstallInProgress() ? "updating" : "waiting");
   void runWindowRecoveryProbe(ctx);
 }
 
@@ -482,7 +906,7 @@ const {
   downloadReservationKey,
   uniqueDownloadPath,
   registerDownloads,
-} = require("./main/downloads").createDownloads({
+} = require("./main/web-views/downloads").createDownloads({
   DOWNLOAD_STATES,
   activeDownloads,
   app,
@@ -509,7 +933,7 @@ const {
   reparentRecords,
   restoreRecords,
   makeTransferCoordinator,
-} = require("./main/transfers").createTransfers({
+} = require("./main/web-views/transfers").createTransfers({
   COMMIT_DECISION_RETRY_LIMIT,
   COMMIT_RECONCILE_INITIAL_MS,
   COMMIT_RECONCILE_MAX_MS,
@@ -577,7 +1001,6 @@ function recordFor(ctx, id) {
 
 const debuggerHolds = new Map();
 const ACTION_CUE_MS = 2800;
-const ACTION_CUE_SIZE = 28;
 
 function acquireDebugger(webContents) {
   const client = webContents?.debugger;
@@ -647,17 +1070,17 @@ const {
   sendPendingCue,
   ensureActionCueWindow,
   bindHostOverlayRelayout,
+  layoutActionCue,
   placeActionCueWindow,
+  setControlGlow,
   cleanupCue,
   clearActionCue,
   showActionView,
-} = require("./main/action-cues").createActionCues({
+} = require("./main/windows/action-cues").createActionCues({
   ACTION_CUE_MS,
-  ACTION_CUE_SIZE,
   BrowserWindow,
   START_URL,
   WEB_PORT,
-  __dirname,
   clearTimeout,
   layoutControlOverlay: (...args) => layoutControlOverlay(...args),
   nativeTheme,
@@ -665,6 +1088,16 @@ const {
   path,
   recordFor: (...args) => recordFor(...args),
   setTimeout,
+});
+
+// The glow, badge and agent cursor over a desktop app an Agent controls.
+const agentControl = require("./main/worker/agent-control").createAgentControl({
+  BrowserWindow,
+  nativeTheme,
+  overlayUiOrigin,
+  path,
+  setTimeout,
+  clearTimeout,
 });
 
 const {
@@ -685,17 +1118,22 @@ const {
   restorePendingPipZoom,
   findView,
   stopFindView,
+  pickElementInView,
+  pickRegionInView,
+  cancelPickInView,
   captureView,
   zoomView,
   printPdfDefaultName,
   printView,
-} = require("./main/web-views").createWebViews({
+} = require("./main/web-views/web-views").createWebViews({
   Buffer,
   Menu,
   WebContentsView,
   app,
   boundsDiffer: (...args) => boundsDiffer(...args),
   clearActionCue: (...args) => clearActionCue(...args),
+  hideActionCueWindow: (...args) => hideActionCueWindow(...args),
+  layoutActionCue: (...args) => layoutActionCue(...args),
   clipboard,
   crypto,
   dialog,
@@ -707,6 +1145,7 @@ const {
   process,
   recordFor: (...args) => recordFor(...args),
   safeRecordVisit: (...args) => safeRecordVisit(...args),
+  withDebugger: (...args) => withDebugger(...args),
   tabTransfers,
 });
 
@@ -728,7 +1167,8 @@ const {
   runNativeNavigation,
   destroyView,
   clearOwnedViews,
-} = require("./main/view-layout").createViewLayout({
+} = require("./main/windows/view-layout").createViewLayout({
+  syncWebCorners: (...args) => syncWebCorners(...args),
   clearActionCue: (...args) => clearActionCue(...args),
   closeActionCueWindow: (...args) => closeActionCueWindow(...args),
   closeControlOverlay: (...args) => closeControlOverlay(...args),
@@ -740,6 +1180,28 @@ const {
   withDebugger: (...args) => withDebugger(...args),
 });
 
+const { syncWebCorners, closeWebCorners } = require("./main/windows/web-corners").createWebCorners({ WebContentsView });
+
+// Pages nobody has used for this long close their renderer process and
+// come back at the same URL when next shown or used (idle-discard.js).
+const PAGE_IDLE_SLEEP_MS = 10 * 60 * 1000;
+const idleDiscard = require("./main/web-views/idle-discard").createIdleDiscard({
+  now: () => Date.now(),
+  idleMs: PAGE_IDLE_SLEEP_MS,
+  destroyView: (...args) => destroyView(...args),
+  tabTransfers,
+});
+const idleSweepTimer = setInterval(() => {
+  for (const ctx of windows.values()) {
+    try {
+      idleDiscard.sweep(ctx);
+    } catch (_error) {
+      /* a Page that will not close stays as it is */
+    }
+  }
+}, 60 * 1000);
+idleSweepTimer?.unref?.();
+
 function cleanupWindowContext(ctx) {
   if (
     activeBrowserImport?.ownerId === ctx.id
@@ -748,9 +1210,10 @@ function cleanupWindowContext(ctx) {
     activeBrowserImport.controller.abort();
   }
   stopWindowRecovery(ctx);
-  closeMainMenu(ctx);
+  closeMainMenu(ctx, true);
   tabTransfers.contextDestroyed(ctx);
   clearOwnedViews(ctx);
+  closeWebCorners(ctx);
   ctx.views.clear();
   ctx.visibleViewIds = new Set();
   if (windows.get(ctx.id) === ctx) windows.delete(ctx.id);
@@ -800,7 +1263,7 @@ const {
   scheduleMainMenuClose,
   openMainMenu,
   contextForMenuSender,
-} = require("./main/menus").createMenus({
+} = require("./main/windows/menus").createMenus({
   CONTEXT_MENU_CHROME,
   CONTEXT_MENU_ROW_HEIGHT,
   CONTEXT_MENU_WIDTH,
@@ -811,7 +1274,6 @@ const {
   START_URL,
   WEB_PORT,
   WebContentsView,
-  __dirname,
   cascadeMenuGeometry,
   clampContextMenuPanel,
   clearTimeout,
@@ -832,11 +1294,11 @@ const {
   setControlOverlay,
   handleControlOverlayEvent,
   nativeMenuOwner,
-} = require("./main/control-overlays").createControlOverlays({
+  nativeContextMenus,
+} = require("./main/windows/control-overlays").createControlOverlays({
   Menu,
   UI_ORIGIN,
   WebContentsView,
-  __dirname,
   bindHostOverlayRelayout: (...args) => bindHostOverlayRelayout(...args),
   contextForSender: (...args) => contextForSender(...args),
   finiteNumber: (...args) => finiteNumber(...args),
@@ -850,6 +1312,7 @@ const {
 });
 
 function registerWebTabIpc() {
+  require("./main/web-views/clipboard").registerClipboardIpc(ipcMain, clipboard, nativeMenuOwner);
   ipcMain.handle("native-menu:popup", (event, opts) => {
     const ctx = nativeMenuOwner(event);
     if (!ctx) throw new Error("Unauthorized menu sender");
@@ -884,15 +1347,27 @@ function registerWebTabIpc() {
     const ctx = contextForMenuSender(event);
     if (ctx) resizeMenuOverlay(ctx, normalizedRendererBounds(event, size));
   });
-  ipcMain.on("main-menu:choose", (event, id) => {
+  ipcMain.on("main-menu:update-items", (event, items) => {
+    const ctx = nativeMenuOwner(event);
+    const view = ctx?.mainMenuView;
+    if (view && !view.webContents.isDestroyed() && Array.isArray(items)) {
+      view.webContents.send("main-menu:update", { items });
+    }
+  });
+  ipcMain.on("main-menu:choose", (event, id, options) => {
     const ctx = contextForMenuSender(event);
     if (!ctx) return;
     ctx.win.webContents.send("main-menu:action", id);
-    closeMainMenu(ctx);
+    if (options?.keepOpen !== true) closeMainMenu(ctx);
   });
   ipcMain.on("webtab:ensure", (event, id, url) => {
     const ctx = contextForSender(event);
-    if (ctx) ensureView(ctx, id, url);
+    // A Page gets its first view only at a URL the view loads (a restored
+    // about:blank popup tab gets none until it navigates): a view that never
+    // loads has no document and answers no DevTools command, which stalls
+    // every client of the App's DevTools endpoint, the Agent's browser tool
+    // among them, until it times out.
+    if (ctx && (ctx.views.has(id) || ctx.sleepingViews?.has(id) || isTabUrl(url))) ensureView(ctx, id, url);
   });
   ipcMain.on("webtab:navigate", (event, id, url) => {
     const ctx = contextForSender(event);
@@ -935,6 +1410,7 @@ function registerWebTabIpc() {
         ? items.map((item) => ({
             ...item,
             bounds: normalizedRendererBounds(event, item?.bounds),
+            corners: item?.corners ? { ...item.corners, zoom: rendererZoomFactor(event) } : null,
           }))
         : items;
       syncVisibleViews(ctx, normalizedItems);
@@ -945,6 +1421,7 @@ function registerWebTabIpc() {
     if (ctx && bounds) {
       withView(ctx, id, (record) => {
         record.view.setBounds(normalizedRendererBounds(event, bounds));
+        syncWebCorners(ctx, currentVisibleItems(ctx).map((item) => ({ ...item, record: recordFor(ctx, item.id) })));
       });
     }
   });
@@ -964,9 +1441,9 @@ function registerWebTabIpc() {
     const ctx = contextForSender(event);
     return ctx ? destroyView(ctx, id, { strict: true }) : false;
   });
-  ipcMain.on("webtab:reload", (event, id) => {
+  ipcMain.on("webtab:reload", (event, id, options) => {
     const ctx = contextForSender(event);
-    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.reload());
+    if (ctx) runNativeNavigation(ctx, id, (wc) => (options?.hard ? wc.reloadIgnoringCache() : wc.reload()));
   });
   ipcMain.on("webtab:stop", (event, id) => {
     const ctx = contextForSender(event);
@@ -988,25 +1465,44 @@ function registerWebTabIpc() {
     const ctx = contextForSender(event);
     if (ctx) stopFindView(ctx, id, action);
   });
+  ipcMain.handle("webtab:pick-element", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string" ? pickElementInView(ctx, id) : null;
+  });
+  ipcMain.handle("webtab:pick-region", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string" ? pickRegionInView(ctx, id) : null;
+  });
+  ipcMain.on("webtab:cancel-pick", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx && typeof id === "string") cancelPickInView(ctx, id);
+  });
   ipcMain.handle("webtab:zoom", (event, id, action) => {
     const ctx = contextForSender(event);
     return ctx ? zoomView(ctx, id, action) : null;
   });
-  ipcMain.on("webtab:set-pip-zoom", (event, id, width) => {
+  ipcMain.on("webtab:set-pip-zoom", (event, id, width, height) => {
     const ctx = contextForSender(event);
-    if (ctx) setPipZoom(ctx, id, width);
+    const zoom = rendererZoomFactor(event);
+    if (ctx) setPipZoom(ctx, id, width == null ? null : Math.round(width * zoom),
+      height == null ? undefined : Math.round(height * zoom));
   });
   ipcMain.handle("webtab:print", (event, id) => {
     const ctx = contextForSender(event);
     return ctx ? printView(ctx, id) : false;
   });
-  ipcMain.handle("webtab:capture", (event, id) => {
+  ipcMain.handle("webtab:capture", (event, id, mode) => {
     const ctx = contextForSender(event);
-    return ctx ? captureView(ctx, id) : null;
+    return ctx ? captureView(ctx, id, mode === "presentation" ? mode : undefined) : null;
   });
   ipcMain.handle("webtab:show-action", (event, id, marker) => {
     const ctx = contextForSender(event);
     return ctx && typeof id === "string" ? showActionView(ctx, id, marker) : false;
+  });
+  ipcMain.on("webtab:control-glow", (event, id, held) => {
+    const ctx = contextForSender(event);
+    if (!ctx || typeof id !== "string") return;
+    setControlGlow(ctx, id, held === true);
   });
   ipcMain.on("webtab:control-overlay", (event, id, payload) => {
     const ctx = contextForSender(event);
@@ -1022,7 +1518,17 @@ function registerWebTabIpc() {
   ipcMain.on("webtab:control-overlay-event", (event, payload) => {
     handleControlOverlayEvent(event, payload);
   });
-  ipcMain.on("webtab:action-cue-ready", (event) => {
+  ipcMain.on("native:action-cue", (event, cue) => {
+    if (!contextForSender(event)) return;
+    agentControl.showAction(cue);
+  });
+  ipcMain.on("native:control", (event, data) => {
+    if (!contextForSender(event)) return;
+    agentControl.showControl(data);
+  });
+  ipcMain.on("agent-control:ready", (event) => {
+    if (agentControl.markReady(event)) return;
+    // The same overlay page over a web page the Agent operates.
     const owner = actionCueOwner(event);
     if (!owner) return;
     owner.record.actionCueReady = true;
@@ -1173,6 +1679,7 @@ function registerWebTabIpc() {
       if (request.history) clearHistory(browsingHistoryFile());
       if (request.cookies) {
         await session.fromPartition("persist:webtabs").clearStorageData({ storages: ["cookies"] });
+        webTabPermissionDecisions?.clear();
       }
       return { ok: true };
     } catch (_error) {
@@ -1182,7 +1689,7 @@ function registerWebTabIpc() {
 
   // One native terminal resource, shared by manual views and Agent bindings.
   // The existing guarded IPC dispatcher continues to enforce UI verification.
-  require("./terminal-resource-ipc").registerTerminalResourceIpc({
+  require("./main/terminal/terminal-resource-ipc").registerTerminalResourceIpc({
     ipcMain, app, contextForSender, origin: UI_ORIGIN,
     getOwnerToken: () => ownerAuthTokenFromStartUrl(resolveWorkerStartUrl()),
     spawn: (...args) => require("node-pty").spawn(...args),
@@ -1215,6 +1722,31 @@ function registerWebTabIpc() {
     if (!win || win.isDestroyed()) return;
     const [x, y] = win.getPosition();
     win.setPosition(Math.round(x + dx), Math.round(y + dy));
+  });
+  // A snapshot of one region of this window's own page, given in CSS pixels.
+  // Only a window's main page may ask, and only for itself. By default it is
+  // a small JPEG for the window overview; `full` keeps the display
+  // resolution, for a pane that animates out as a still image.
+  ipcMain.handle("window:capture-region", async (event, rect, options) => {
+    const ctx = contextForSender(event);
+    if (!ctx || event.sender !== ctx.win.webContents) return null;
+    const values = [rect?.x, rect?.y, rect?.width, rect?.height];
+    if (!values.every((value) => Number.isFinite(value)) || rect.width < 1 || rect.height < 1) return null;
+    const zoom = event.sender.getZoomFactor() || 1;
+    try {
+      const image = await event.sender.capturePage({
+        x: Math.round(rect.x * zoom),
+        y: Math.round(rect.y * zoom),
+        width: Math.round(rect.width * zoom),
+        height: Math.round(rect.height * zoom),
+      });
+      if (!image || image.isEmpty()) return null;
+      if (options?.full === true) return `data:image/jpeg;base64,${image.toJPEG(92).toString("base64")}`;
+      const width = Math.min(image.getSize().width, 720);
+      return `data:image/jpeg;base64,${image.resize({ width, quality: "good" }).toJPEG(82).toString("base64")}`;
+    } catch (_error) {
+      return null;
+    }
   });
 }
 
@@ -1343,26 +1875,92 @@ function registerTabTransferIpc() {
 
 // --------------------------------------------------------------------- menu
 
+// With sealed versions there is always a way back, even when the backend is
+// broken: the shell's recovery page needs nothing from it.
+function goBackMenuItem() {
+  return { label: "Go back to a previous version", click: () => void shellContext.openRecovery("menu") };
+}
+
+function applicationMenu() {
+  return {
+    label: INSTANCE.name,
+    submenu: [
+      { role: "about", label: `About ${INSTANCE.name}` },
+      ...(shellContext?.openRecovery ? [goBackMenuItem()] : []),
+      { type: "separator" },
+      { role: "services" },
+      { type: "separator" },
+      { role: "hide", label: `Hide ${INSTANCE.name}` },
+      { role: "hideOthers" },
+      { role: "unhide" },
+      { type: "separator" },
+      { role: "quit", label: `Quit ${INSTANCE.name}` },
+    ],
+  };
+}
+
 function buildMenu() {
   const isMac = process.platform === "darwin";
   const send = (channel) => () => {
     const ctx = focusedContext();
     if (ctx) ctx.win.webContents.send(channel);
   };
+  // New chat and tab switching reach the app as an `op-tab-shortcut` DOM
+  // event (handled by the center tab strip). As menu accelerators they work
+  // while a native web page has keyboard focus too.
+  const shortcut = (detail) => () => {
+    const ctx = focusedContext();
+    if (!ctx || ctx.win.isDestroyed()) return;
+    const script = `window.dispatchEvent(new CustomEvent("op-tab-shortcut", { detail: ${JSON.stringify(detail)} }))`;
+    ctx.win.webContents.executeJavaScript(script).catch(() => {});
+  };
+  const selectTabItems = Array.from({ length: 9 }, (_, i) => ({
+    label: i === 8 ? "Last Tab" : `Tab ${i + 1}`,
+    accelerator: `CmdOrCtrl+${i + 1}`,
+    click: shortcut({ action: "select-tab", index: i + 1 }),
+  }));
   const template = [
-    ...(isMac ? [{ role: "appMenu" }] : []),
+    ...(isMac ? [applicationMenu()] : []),
     {
       label: "File",
       submenu: [
+        { label: "New Chat", accelerator: "CmdOrCtrl+N", click: shortcut({ action: "new-chat" }) },
         { label: "New Tab", accelerator: "CmdOrCtrl+T", click: send("menu:new-tab") },
         // Cmd+W goes to the renderer (close tab); window close is Cmd+Shift+W.
         { label: "Close Tab", accelerator: "CmdOrCtrl+W", click: send("menu:close-tab") },
+        { label: "Reopen Closed Tab", accelerator: "Shift+CmdOrCtrl+T", click: shortcut({ action: "reopen-tab" }) },
         { type: "separator" },
         { role: "close", accelerator: "Shift+CmdOrCtrl+W" },
+        // Windows and Linux have no application menu to put this in.
+        ...(!isMac && shellContext?.openRecovery ? [{ type: "separator" }, goBackMenuItem()] : []),
       ],
     },
     { role: "editMenu" },
-    { role: "viewMenu" },
+    {
+      // The View menu's reload roles would reload the App window and drop
+      // every web view; the renderer reloads the active page instead.
+      label: "View",
+      submenu: [
+        { label: "Reload", accelerator: "CmdOrCtrl+R", click: send("menu:reload") },
+        { label: "Force Reload", accelerator: "Shift+CmdOrCtrl+R", click: send("menu:force-reload") },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    {
+      label: "Tab",
+      submenu: [
+        { label: "Next Tab", accelerator: "CmdOrCtrl+Shift+]", click: shortcut({ action: "next-tab" }) },
+        { label: "Previous Tab", accelerator: "CmdOrCtrl+Shift+[", click: shortcut({ action: "previous-tab" }) },
+        { type: "separator" },
+        ...selectTabItems,
+      ],
+    },
     { role: "windowMenu" },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -1434,14 +2032,15 @@ function showWindowSmoothly(win) {
 }
 
 // Launch / dock-click / second-instance share one in-flight main-window
-// create. See docs/reference/design/ui/window-lifecycle.md.
+// create. See docs/reference/design/ui/desktop/window-lifecycle.html.
 const ensureMainWindow = createMainWindowGate({
   windows,
   createWindow,
 });
 registerReopenIpc({ ipcMain, windows, recovery: selfUpdateReopen, origin: UI_ORIGIN });
 registerUiVerificationIpc({ ipcMain, windows, app, origin: UI_ORIGIN,
-  request: selfUpdateReopen.requestVerification, guard: uiVerificationGuard });
+  request: selfUpdateReopen.requestVerification, guard: uiVerificationGuard,
+  sealedVersion: () => shellContext });
 
 async function createWindow(options = {}) {
   const state = loadWindowState();
@@ -1464,13 +2063,19 @@ async function createWindow(options = {}) {
     backgroundColor: currentChrome.bg,
     ...browserWindowChromeOptions(process.platform, currentChrome),
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "main", "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       additionalArguments: [`--openprogram-window-id=${windowId}`],
     },
   });
   applyNativeTitleBarChrome(win, process.platform, currentChrome);
+  win.webContents.on("did-finish-load", () => {
+    applyNativeTitleBarChrome(win, process.platform, currentChrome);
+  });
+  win.on("leave-full-screen", () => {
+    applyNativeTitleBarChrome(win, process.platform, currentChrome);
+  });
   if (!detached) {
     attachWindowStatePersistence(win, {
       filePath: stateFile(),
@@ -1479,6 +2084,7 @@ async function createWindow(options = {}) {
     applyRestoredChrome(win, state);
   }
   const ctx = makeWindowContext(windowId, win);
+  if (windowId === "main") win.webContents.once("did-finish-load", () => firstWindowLoaded?.());
   windows.set(windowId, ctx);
   contextsByBrowserWindowId.set(win.id, ctx);
   win.on("focus", () => { lastFocusedWindowId = ctx.id; });
@@ -1618,19 +2224,125 @@ ${themeChrome.directoryListingCss(currentChrome)}
   session.fromPartition("persist:webtabs").protocol.handle("file", handler);
 }
 
-registerSingleMainWindow({
+// Torn-off windows open at quit come back on the next launch, with their
+// tabs (each window's tabs persist under its id in the renderer).
+const sessionWindowsFile = () => path.join(app.getPath("userData"), sessionWindows.FILE_NAME);
+app.on("before-quit", () => {
+  try {
+    sessionWindows.recordOpenWindows(sessionWindowsFile(), [...windows.values()]
+      .filter((ctx) => ctx.id !== "main" && !ctx.pendingTransferToken && !ctx.win.isDestroyed())
+      .map((ctx) => ({ windowId: ctx.id, bounds: ctx.win.getBounds() })));
+  } catch (error) {
+    console.error(`[desktop] could not record open windows: ${error.message}`);
+  }
+});
+
+function boundsOnScreen(bounds) {
+  return !!bounds && currentDisplays().some(({ workArea: area }) =>
+    Math.min(bounds.x + bounds.width, area.x + area.width) - Math.max(bounds.x, area.x) >= 100
+    && Math.min(bounds.y + bounds.height, area.y + area.height) - Math.max(bounds.y, area.y) >= 100);
+}
+
+async function reopenSessionWindows() {
+  for (const entry of sessionWindows.takeOpenWindows(sessionWindowsFile())) {
+    if (windows.has(entry.windowId)) continue;
+    try {
+      const ctx = await createWindow({ windowId: entry.windowId, detached: true, show: false });
+      if (boundsOnScreen(entry.bounds)) ctx.win.setBounds(entry.bounds);
+      const reveal = () => { if (!ctx.win.isDestroyed()) ctx.win.showInactive(); };
+      if (ctx.readyToShow) reveal(); else ctx.win.once("ready-to-show", reveal);
+    } catch (error) {
+      console.error(`[desktop] could not reopen window ${entry.windowId}: ${error.message}`);
+    }
+  }
+}
+
+let webTabPermissionDecisions = null;
+
+// The window a web tab's WebContents is shown in (a WebContentsView child).
+function windowForWebContents(contents) {
+  return BrowserWindow.getAllWindows().find((win) =>
+    !win.isDestroyed() && win.contentView.children.some((view) => view.webContents === contents),
+  ) || BrowserWindow.getFocusedWindow() || null;
+}
+
+function webTabWatched(contents) {
+  const win = BrowserWindow.getAllWindows().find((candidate) =>
+    !candidate.isDestroyed() && candidate.contentView.children.some((view) => view.webContents === contents));
+  const view = win?.contentView.children.find((child) => child.webContents === contents);
+  return Boolean(win && view && win.isFocused() && view.getVisible?.() !== false);
+}
+
+// Web tabs present themselves as the Chromium they are and ask before a site
+// uses a device (main/web-views/webtab-client-hints.js, webtab-permissions.js).
+function registerWebTabIdentity() {
+  const webTabs = session.fromPartition("persist:webtabs");
+  registerClientHints(webTabs, () => readClientHints(webTabs));
+  webTabPermissionDecisions = webTabPermissions.registerWebTabPermissions(webTabs, {
+    filePath: path.join(app.getPath("userData"), webTabPermissions.FILE_NAME),
+    ask: async ({ origin, purpose, webContents }) => {
+      const options = {
+        type: "question",
+        message: `${new URL(origin).host} wants to ${purpose}`,
+        detail: origin,
+        buttons: ["Allow", "Block"],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      };
+      const parent = webContents ? windowForWebContents(webContents) : null;
+      // A page the user is not looking at (an Agent's, or one in a window
+      // behind another application) is not answered for them, and its
+      // question does not come in front of what they are doing.
+      if (webContents && !webTabWatched(webContents)) return null;
+      const result = parent
+        ? await dialog.showMessageBox(parent, options)
+        : await dialog.showMessageBox(options);
+      return result.response === 0;
+    },
+  });
+}
+
+const registerMainWindow = () => registerSingleMainWindow({
   app,
   BrowserWindow,
   ensureMainWindow,
+  afterFirstWindow: reopenSessionWindows,
   recoverErroredWindows,
   async onReady() {
     resolveStartupChrome();
     registerFileDirectoryListing();
+    const webTabUserAgent = useBrowserUserAgent(session.fromPartition("persist:webtabs"));
+    // Before any tab loads, so a restored tab does not meet its old challenge.
+    await forgetClearanceOnChange(session.fromPartition("persist:webtabs"),
+      path.join(app.getPath("userData"), "webtab-user-agent.json"), webTabUserAgent).catch(() => 0);
+    registerWebTabIdentity();
+    session.fromPartition("persist:webtabs").registerPreloadScript({ type: "frame", id: "webtab-pinch", filePath: path.join(__dirname, "main", "web-views", "webtab-preload.js") });
     registerDownloads();
     registerWebTabIpc();
     registerTabTransferIpc();
     registerOwnerAuthIpc();
+    require("./main/files/open-default").registerOpenFileIpc({
+      ipcMain, shell, fs, path, platform: process.platform, contextForSender,
+    });
     registerUpdateIpc();
+    require("./main/windows/pointer-follow").createPointerFollow({
+      ipcMain, screen: require("electron").screen, spawn: require("node:child_process").spawn,
+    });
+    registerAttentionIpc();
+    require("./main/windows/recording-bar").createRecordingBar({
+      BrowserWindow, ipcMain, path, screen: require("electron").screen,
+      uiOrigin: overlayUiOrigin,
+    });
+    require("./main/windows/pane-recording").createPaneRecording({
+      ipcMain, session: session.defaultSession, fs, path, homeDir: app.getPath("home"),
+      // Only a window's own page records, never an overlay or an embedded site.
+      ownsPage: (event) => {
+        const ctx = contextForSender(event);
+        return Boolean(ctx && event.sender === ctx.win.webContents);
+      },
+    });
+    registerNativeTitleBarIpc({ ipcMain, BrowserWindow, platform: process.platform, getChrome: () => currentChrome });
     ipcMain.on("theme:trace", (event, payload) => {
       // Only the app document can write diagnostics, not embedded websites.
       if (!BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.webContents === event.sender)) return;
@@ -1639,8 +2351,24 @@ registerSingleMainWindow({
     ipcMain.on("theme:set-chrome", (_event, payload) => {
       applyWindowChrome(payload || {});
     });
+    ipcMain.on("theme:system-dark", (event) => {
+      event.returnValue = systemPrefersDark();
+    });
     try {
+      let announcedDark = systemPrefersDark();
       require("electron").nativeTheme.on("updated", () => {
+        const dark = systemPrefersDark();
+        if (dark !== announcedDark) {
+          announcedDark = dark;
+          // Windows, menus and overlays each resolve "auto" themselves.
+          for (const contents of require("electron").webContents.getAllWebContents()) {
+            try {
+              if (!contents.isDestroyed()) contents.send("theme:system-changed", dark);
+            } catch (_error) {
+              /* A page being torn down reads the value on its next load. */
+            }
+          }
+        }
         const resolved = resolveStartupChrome("native-system");
         applyWindowChrome({
           theme: resolved.theme,
@@ -1652,10 +2380,52 @@ registerSingleMainWindow({
     } catch {
       /* nativeTheme.updated is best-effort */
     }
-    initializeDesktopUpdates();
+    // The development App moves with each deploy, never by release updates.
+    if (!INSTANCE.development) initializeDesktopUpdates();
     buildMenu();
+    createBackgroundTray();
   },
 });
+
+// The worker in the menu bar or notification area (main/worker/worker-tray.js).
+// "Stop background" stops the worker the way switching versions does, then
+// quits, because the App's windows would otherwise start it again.
+let workerTray = null;
+function createBackgroundTray() {
+  if (workerTray) return;
+  const electron = require("electron");
+  workerTray = require("./main/worker/worker-tray").createWorkerTray({
+    Tray: electron.Tray,
+    Menu,
+    nativeImage: electron.nativeImage,
+    iconRoot: path.join(__dirname, "main", "worker", "tray"),
+    probe: async () => ({ running: await probe(HEALTH_URL, 1000) }),
+    open: () => { void ensureMainWindow(); },
+    stop: async () => {
+      if (shellContext) await shellContext.stopWorker();
+      else spawnWorker("stop");
+      app.quit();
+    },
+  });
+}
+
+let firstWindowLoaded = null;
+let started = null;
+
+/**
+ * The contract with the shell loader. Resolves when this main process is ready
+ * and the first window has loaded a page, even if that page is the wait page.
+ */
+function start(context = null) {
+  if (started) return started;
+  shellContext = context;
+  started = new Promise((resolve) => { firstWindowLoaded = resolve; });
+  registerMainWindow();
+  return started;
+}
+
+if (typeof module !== "undefined") module.exports = { start };
+if (!globalThis.__OPENPROGRAM_SHELL_LOADER__) void start();
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

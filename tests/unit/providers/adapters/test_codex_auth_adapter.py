@@ -1,4 +1,4 @@
-"""Tests for providers.openai_codex.auth_adapter.
+"""Tests for providers.adapters.openai_codex.auth_adapter.
 
 These tests avoid real network calls by injecting a fake refresh via
 register_provider_config (last registration wins). Integration with a
@@ -11,23 +11,22 @@ import base64
 import json
 import time
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from openprogram.auth.credential_provider import (
+from openprogram.models.auth.credential_provider import (
     CredentialProvider,
     get_provider_config,
     register_provider_config,
     ProviderAuthConfig,
 )
-from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import (
+from openprogram.models.auth.store import AuthStore, set_store_for_testing
+from openprogram.models.auth.types import (
     Credential,
     CredentialData,
     CredentialPool,
 )
-from openprogram.providers.openai_codex import auth_adapter as adapter
+from openprogram.models.providers.adapters.openai_codex import auth_adapter as adapter
 
 
 @pytest.fixture
@@ -189,6 +188,48 @@ def test_manager_refreshes_expired_codex_credential(store):
     adapter.register_codex_auth()
 
 
+def test_rejected_token_is_refreshed_before_its_recorded_expiry(store, monkeypatch):
+    # The backend can revoke a session before the JWT's exp; a 401 then
+    # forces one refresh of exactly that credential, as the Codex CLI does.
+    from openprogram.models.auth import credential_provider as cp
+    from openprogram.models.providers.adapters.openai_codex import openai_codex as stream
+
+    live = Credential(
+        provider_id=adapter.PROVIDER_ID, account_id="default", kind="oauth",
+        payload=CredentialData(kind="oauth", auth_value="revoked", data={
+            "refresh_token": "R-old",
+            "expires_at_ms": int(time.time() * 1000) + 9 * 86400_000,
+            "client_id": adapter.OAUTH_CLIENT_ID,
+        }),
+    )
+    store.put_pool(CredentialPool(provider_id=adapter.PROVIDER_ID, account_id="default", credentials=[live]))
+    calls = []
+
+    def fake_refresh(cred):
+        calls.append(cred.payload.data["refresh_token"])
+        return Credential(
+            provider_id=cred.provider_id, account_id=cred.account_id, kind="oauth",
+            payload=CredentialData(kind="oauth", auth_value="NEW-ACCESS", data={
+                "refresh_token": "R-new",
+                "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                "client_id": adapter.OAUTH_CLIENT_ID,
+            }),
+            credential_id=cred.credential_id,
+        )
+
+    register_provider_config(ProviderAuthConfig(
+        provider_id=adapter.PROVIDER_ID, refresh_skew_seconds=60, refresh=fake_refresh,
+    ))
+    monkeypatch.setattr(cp, "_manager", CredentialProvider(store=store))
+    try:
+        assert stream._refresh_rejected_token("someone-else") == ""
+        assert stream._refresh_rejected_token("revoked") == "NEW-ACCESS"
+        assert calls == ["R-old"]
+        assert store.find_pool(adapter.PROVIDER_ID, "default").credentials[0].payload.auth_value == "NEW-ACCESS"
+    finally:
+        adapter.register_codex_auth()
+
+
 def test_acquire_sync_from_non_async_caller(store):
     # Seed with a fresh cred — no refresh needed, pure happy path.
     fresh = Credential(
@@ -301,8 +342,8 @@ def test_resolve_codex_bearer_reads_auth_value_not_access_token(monkeypatch):
     # Hermetic: patch the two lookups the resolver consults so it never
     # touches this machine's real openai-codex OAuth pool (which would leak a
     # live token and mask the attribute-vs-auth_value distinction).
-    import openprogram.providers.openai_codex.openai_codex as ocx
-    import openprogram.providers.env_api_keys as eak
+    import openprogram.models.providers.adapters.openai_codex.openai_codex as ocx
+    import openprogram.models.providers.settings.env_api_keys as eak
 
     monkeypatch.setattr(eak, "resolve_provider_key", lambda p: None)
 
@@ -324,6 +365,6 @@ def test_resolve_codex_bearer_reads_auth_value_not_access_token(monkeypatch):
     class _Mgr:
         def acquire_sync(self, provider_id, *a, **k):
             return cred
-    monkeypatch.setattr("openprogram.auth.credential_provider.get_credential_provider", lambda: _Mgr())
+    monkeypatch.setattr("openprogram.models.auth.credential_provider.get_credential_provider", lambda: _Mgr())
 
     assert ocx._resolve_codex_bearer_token(None) == "THE-BEARER-1952"

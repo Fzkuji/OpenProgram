@@ -14,9 +14,7 @@ from typing import Sequence
 
 
 SYMBOL_SCORES = {"●": 1.0, "◐": 0.5, "○": 0.5, "·": 0.0}
-HEADERS = (
-    "功能",
-    "我们",
+REFERENCE_NAMES = (
     "claude",
     "codex",
     "openclaw",
@@ -30,7 +28,11 @@ HEADERS = (
     "gm内",
     "buddy",
 )
-FRAMEWORK_NAMES = HEADERS[1:]
+REFERENCE_NAMES_EN = (*REFERENCE_NAMES[:8], "cc internal", "cx internal", "gm internal", "buddy")
+HEADERS = ("功能", "OpenProgram", "其他项目")
+HEADERS_EN = ("Feature", "OpenProgram", "Confirmed elsewhere")
+FRAMEWORK_NAMES = ("我们", *REFERENCE_NAMES)
+FRAMEWORK_NAMES_EN = ("Ours", *REFERENCE_NAMES_EN)
 EXPECTED_SNAPSHOT = "2fb471b3"
 EXPECTED_INTEGRATION_SNAPSHOT = "d91c3e66"
 JSON_SCHEMA_ROW = "按 JSON schema 约束输出"
@@ -60,100 +62,194 @@ class MatrixResult:
     snapshot: str
 
 
+def _is_hidden(attributes: dict[str, str | None]) -> bool:
+    style = (attributes.get("style") or "").replace(" ", "").lower()
+    return (
+        "hidden" in attributes
+        or attributes.get("aria-hidden") == "true"
+        or "display:none" in style
+        or "visibility:hidden" in style
+    )
+
+
+def _reference_cells(name: str, text: str) -> tuple[str, ...]:
+    """Expand "● claude, codex · ◐ buddy" into one status per reference column."""
+    aliases = {
+        alias: index
+        for names in (REFERENCE_NAMES, REFERENCE_NAMES_EN)
+        for index, alias in enumerate(names)
+    }
+    cells = ["·"] * len(REFERENCE_NAMES)
+    seen: set[int] = set()
+    if text in {"None confirmed", "无确认"}:
+        return tuple(cells)
+    for group in text.split(" · "):
+        status, _, members = group.partition(" ")
+        if status not in {"●", "◐", "○"} or not members:
+            raise MatrixError(f"{name!r} has invalid status {group!r}")
+        for member in members.split(", "):
+            index = aliases.get(member)
+            if index is None:
+                raise MatrixError(f"{name!r} has invalid status {member!r}")
+            if index in seen:
+                raise MatrixError(f"{name!r} lists {member!r} twice")
+            seen.add(index)
+            cells[index] = status
+    return tuple(cells)
+
+
 class _MatrixParser(HTMLParser):
+    """Read the feature rows: one folded table per category under ``#matrix``."""
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.table_count = 0
-        self.in_matrix = False
-        self.in_row = False
-        self.row_classes: set[str] = set()
-        self.in_cell = False
-        self.cell_classes: set[str] = set()
-        self.cell_name: list[str] = []
-        self.cell_full: list[str] = []
-        self.cells: list[tuple[set[str], str, str]] = []
-        self.source_span = False
+        self.section_count = 0
+        self.in_section = False
+        self.in_group = False
+        self.in_group_summary = False
+        self.group_summary: list[str] = []
         self.category = ""
+        self.declared_count = 0
+        self.group_rows = 0
+        self.in_table = False
+        self.in_row = False
+        self.in_cell = False
+        self.cell_scope: str | None = None
+        self.in_evidence = False
+        self.in_evidence_summary = False
+        self.cell_name: list[str] = []
+        self.cell_evidence: list[str] = []
+        self.cells: list[tuple[str, str, str]] = []
+        self.outside_row_header = False
         self.headers: list[tuple[str, ...]] = []
         self.rows: list[FeatureRow] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
-        classes = set((attributes.get("class") or "").split())
-        if tag == "table" and "fx" in classes:
-            style = (attributes.get("style") or "").replace(" ", "").lower()
-            if (
-                "hidden" in attributes
-                or attributes.get("aria-hidden") == "true"
-                or "display:none" in style
-                or "visibility:hidden" in style
-            ):
-                raise MatrixError("canonical matrix table must be visible")
-            self.table_count += 1
-            if self.in_matrix:
+        if tag == "h2" and attributes.get("id") == "matrix":
+            self.section_count += 1
+            if self.section_count > 1:
                 raise MatrixError("duplicate canonical matrix table")
-            self.in_matrix = True
-        elif tag == "td" and "fname" in classes and not self.in_matrix:
-            raise MatrixError("feature row exists outside the canonical matrix table")
-        if not self.in_matrix:
+            self.in_section = True
             return
-        if tag == "tr":
+        if tag == "h3" and attributes.get("id") == "cover":
+            self.in_section = False
+            return
+        if not self.in_section:
+            if tag == "th" and attributes.get("scope") == "row":
+                self.outside_row_header = True
+            elif tag == "details" and self.outside_row_header:
+                raise MatrixError("feature row exists outside the canonical matrix table")
+            return
+        if tag in {"details", "table", "tbody", "tr"} and _is_hidden(attributes):
+            raise MatrixError("canonical matrix table must be visible")
+        if tag == "details":
+            if self.in_cell:
+                self.in_evidence = True
+            elif self.in_group or self.in_table:
+                raise MatrixError("category tables must not nest")
+            else:
+                self.in_group = True
+                self.category = ""
+                self.declared_count = 0
+                self.group_rows = 0
+        elif tag == "summary":
+            if self.in_evidence:
+                self.in_evidence_summary = True
+            elif self.in_group:
+                self.in_group_summary = True
+                self.group_summary = []
+        elif tag == "table" and self.in_group:
+            if not self.category:
+                raise MatrixError("feature row appears before a category")
+            self.in_table = True
+        elif tag == "tr" and self.in_table:
             self.in_row = True
-            self.row_classes = classes
             self.cells = []
         elif self.in_row and tag in {"td", "th"}:
             self.in_cell = True
-            self.cell_classes = classes
+            self.cell_scope = attributes.get("scope")
             self.cell_name = []
-            self.cell_full = []
-        elif self.in_cell and tag == "span" and "src" in classes:
-            self.source_span = True
+            self.cell_evidence = []
 
     def handle_data(self, data: str) -> None:
-        if not self.in_cell:
+        if self.in_group_summary:
+            self.group_summary.append(data)
+        elif self.in_evidence_summary or not self.in_cell:
             return
-        self.cell_full.append(data)
-        if not self.source_span:
+        elif self.in_evidence:
+            self.cell_evidence.append(data)
+        else:
             self.cell_name.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if not self.in_matrix:
+        if tag == "th":
+            self.outside_row_header = False
+        if not self.in_section:
             return
-        if tag == "span" and self.source_span:
-            self.source_span = False
+        if tag == "summary":
+            if self.in_group_summary:
+                self.in_group_summary = False
+                heading = " ".join("".join(self.group_summary).split())
+                match = re.fullmatch(r"\d+\s+(.+?)\s+(\d+)\s*(?:项|features)", heading)
+                if not match:
+                    raise MatrixError("category heading is malformed")
+                self.category = match.group(1)
+                self.declared_count = int(match.group(2))
+            self.in_evidence_summary = False
+        elif tag == "details":
+            if self.in_evidence:
+                self.in_evidence = False
+            elif self.in_group:
+                self.in_group = False
+                if self.group_rows != self.declared_count:
+                    raise MatrixError(
+                        f"category heading count for {self.category} does not match its rows"
+                    )
         elif tag in {"td", "th"} and self.in_cell:
             name = " ".join("".join(self.cell_name).split())
-            full = " ".join("".join(self.cell_full).split())
-            self.cells.append((self.cell_classes, name, full))
+            evidence = " ".join("".join(self.cell_evidence).split())
+            self.cells.append((self.cell_scope or "", name, evidence))
             self.in_cell = False
         elif tag == "tr" and self.in_row:
-            if self.cells:
-                if "grp" in self.row_classes:
-                    match = re.search(r"\d+\s+(.+?)\s+\d+\s*项", self.cells[0][1])
-                    if not match:
-                        raise MatrixError("category heading is malformed")
-                    self.category = match.group(1)
-                elif (
-                    all("hc" not in classes for classes, _name, _full in self.cells)
-                    and self.cells[0][1] == "功能"
-                ):
-                    self.headers.append(tuple(cell[1] for cell in self.cells))
-                elif all(
-                    "hc" not in classes for classes, _name, _full in self.cells
-                ) and self.cells[0][0] == {"fname"}:
-                    if not self.category:
-                        raise MatrixError("feature row appears before a category")
-                    self.rows.append(
-                        FeatureRow(
-                            name=self.cells[0][1],
-                            evidence=self.cells[0][2],
-                            category=self.category,
-                            cells=tuple(cell[1] for cell in self.cells[1:]),
-                        )
-                    )
             self.in_row = False
+            if all(scope == "col" for scope, _name, _evidence in self.cells):
+                self.headers.append(tuple(cell[1] for cell in self.cells))
+                return
+            if len(self.cells) != 3 or self.cells[0][0] != "row":
+                raise MatrixError("feature row does not have status cells")
+            name = self.cells[0][1]
+            self.rows.append(
+                FeatureRow(
+                    name=name,
+                    evidence=self.cells[0][2],
+                    category=self.category,
+                    cells=(self.cells[1][1], *_reference_cells(name, self.cells[2][1])),
+                )
+            )
+            self.group_rows += 1
         elif tag == "table":
-            self.in_matrix = False
+            self.in_table = False
+
+
+def _published_rows(source: str, start_marker: str, end_marker: str, cells: int) -> list[tuple[str, ...]]:
+    """The body rows of a published summary table, as plain text."""
+    start = source.find(start_marker)
+    end = source.find(end_marker, start)
+    if start < 0 or end < 0:
+        raise MatrixError(f"missing published section {start_marker}")
+    rows: list[tuple[str, ...]] = []
+    for body in re.findall(r"<tr[^>]*>(.*?)</tr>", source[start:end], re.DOTALL):
+        if 'scope="col"' in body:
+            continue
+        values = tuple(
+            " ".join(unescape(re.sub(r"<[^>]+>", "", value)).split())
+            for value in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", body, re.DOTALL)
+        )
+        if len(values) != cells:
+            raise MatrixError(f"published row in {start_marker} is malformed")
+        rows.append(values)
+    return rows
 
 
 def _published_integer(source: str, pattern: str, label: str) -> int:
@@ -238,7 +334,7 @@ def _validate_detail_group_counts(
         classes = re.search(r'class="([^"]*)"', attrs)
         if classes and "grp" in classes.group(1).split():
             heading = re.search(
-                r"<b[^>]*>(.*?)</b>\s*<span[^>]*>(\d+)\s*项</span>",
+                r"<b[^>]*>(.*?)</b>\s*<span[^>]*>(\d+)\s*(?:项|features)</span>",
                 body,
                 re.DOTALL,
             )
@@ -270,12 +366,15 @@ def check_matrix(path: Path) -> MatrixResult:
     source = path.read_text(encoding="utf-8")
     parser = _MatrixParser()
     parser.feed(source)
-    if parser.table_count != 1:
+    if parser.section_count != 1:
         raise MatrixError(
-            f"expected one canonical matrix table, found {parser.table_count}"
+            f"expected one canonical matrix table, found {parser.section_count}"
         )
-    if parser.headers != [HEADERS]:
+    if not parser.headers or len(set(parser.headers)) != 1 or parser.headers[0] not in (HEADERS, HEADERS_EN):
         raise MatrixError("framework headers are stale")
+    framework_names = FRAMEWORK_NAMES_EN if parser.headers[0] == HEADERS_EN else FRAMEWORK_NAMES
+    if len({row.name for row in parser.rows}) != len(parser.rows):
+        raise MatrixError("feature row is duplicated")
     if len(parser.rows) != 160:
         raise MatrixError(f"feature row count is stale: {len(parser.rows)}")
 
@@ -292,7 +391,7 @@ def check_matrix(path: Path) -> MatrixResult:
         gaps += row.cells[0] == "·" and any(cell != "·" for cell in row.cells[1:])
         only += row.cells[0] != "·" and all(cell == "·" for cell in row.cells[1:])
 
-    json_rows = [row for row in parser.rows if row.name == JSON_SCHEMA_ROW]
+    json_rows = [row for row in parser.rows if row.name in {JSON_SCHEMA_ROW, "JSON-schema-constrained output"}]
     if len(json_rows) != 1:
         raise MatrixError("JSON Schema row is missing or duplicated")
     json_row = json_rows[0]
@@ -306,10 +405,11 @@ def check_matrix(path: Path) -> MatrixResult:
         raise MatrixError("published snapshot evidence is stale")
     if source.count(f"integrated candidate@{EXPECTED_INTEGRATION_SNAPSHOT}") < 3:
         raise MatrixError("integration snapshot evidence is stale")
-    if "runtime llm(response_format=…) 的 JSON schema 结构化输出" in source:
+    if ("runtime llm(response_format=…) 的 JSON schema 结构化输出" in source
+            or "runtime llm(response_format=…) JSON schema structured output" in source):
         raise MatrixError("old snapshot still claims complete JSON Schema support")
 
-    ssrf_rows = [row for row in parser.rows if row.name == SSRF_ROW]
+    ssrf_rows = [row for row in parser.rows if row.name in {SSRF_ROW, "Private-network access and SSRF protection"}]
     if len(ssrf_rows) != 1:
         raise MatrixError("SSRF row is missing or duplicated")
     ssrf_row = ssrf_rows[0]
@@ -318,43 +418,36 @@ def check_matrix(path: Path) -> MatrixResult:
     if EXPECTED_SSRF_SNAPSHOT not in ssrf_row.evidence:
         raise MatrixError("SSRF snapshot is stale")
 
-    score_svg = re.search(r'<svg viewBox="0 0 960 330".*?</svg>', source, re.DOTALL)
-    if not score_svg:
-        raise MatrixError("missing published score SVG")
-    score_rows = re.findall(
-        r'<g transform="translate\(0,[^)]+\)"><text[^>]*>([^<]+)</text>'
-        r'<rect[^>]+width="([0-9.]+)".*?<text[^>]*>([^<]+)</text></g>',
-        score_svg.group(),
-        re.DOTALL,
-    )
-    published_scores: dict[str, tuple[float, float]] = {}
-    for name, width, label in score_rows:
-        visible = re.match(r"[0-9.]+", label)
-        if not visible:
+    score_rows = _published_rows(source, '<h3 id="cover"', '<h3 id="bycat"', 2)
+    published_scores: dict[str, float] = {}
+    for name, label in score_rows:
+        if not re.fullmatch(r"[0-9.]+", label):
             raise MatrixError(f"published score for {name} is not numeric")
-        published_scores[name] = (float(width), float(visible.group()))
-    if set(published_scores) != set(FRAMEWORK_NAMES):
+        published_scores[name] = float(label)
+    if len(score_rows) != len(framework_names) or set(published_scores) != set(framework_names):
         raise MatrixError("published framework score rows are stale")
-    for name, expected in zip(FRAMEWORK_NAMES, scores):
-        width, visible = published_scores[name]
-        if visible != expected or width != max(2, expected * 4):
+    for name, expected in zip(framework_names, scores):
+        if published_scores[name] != expected:
             raise MatrixError(
                 f"published score for {name} does not match the canonical table"
             )
-    aria = re.search(r"OpenProgram为([0-9.]+)分", source)
-    if not aria or float(aria.group(1)) != scores[0]:
-        raise MatrixError("published score ARIA does not match the canonical table")
+    summary = re.findall(r"(?:Feature matrix, |功能矩阵、)([0-9.]+)(?: score| 分)", source)
+    if not summary or any(float(value) != scores[0] for value in summary):
+        raise MatrixError("published score summary does not match the canonical table")
 
     published_gaps = _published_integer(
         source,
-        r"(?:未确认的|参考列已确认的|这)\s*(\d+)\s*项|功能矩阵、[0-9.]+\s*分、(\d+)\s*个候选差异",
+        r"(?:未确认的|参考列已确认的|这)\s*(\d+)\s*项|功能矩阵、[0-9.]+\s*分、(\d+)\s*个候选差异"
+        r"|(\d+) features unconfirmed in OpenProgram|Feature matrix, [0-9.]+ score, (\d+) candidate differences",
         "gaps",
     )
     if published_gaps != gaps:
         raise MatrixError("published gaps do not match the canonical table")
     published_only = _published_integer(
         source,
-        r"仅 OpenProgram 确认的\s*(\d+)\s*项|功能矩阵、[0-9.]+\s*分、\d+\s*个候选差异、(\d+)\s*个快照差异",
+        r"仅 OpenProgram 确认的\s*(\d+)\s*项|功能矩阵、[0-9.]+\s*分、\d+\s*个候选差异、(\d+)\s*个快照差异"
+        r"|(\d+) features (?:currently )?confirmed only in OpenProgram"
+        r"|Feature matrix, [0-9.]+ score, \d+ candidate differences, (\d+) version-evidence differences",
         "OpenProgram-only count",
     )
     if published_only != only:
@@ -406,39 +499,10 @@ def check_matrix(path: Path) -> MatrixResult:
             "published OpenProgram-only detail rows do not match the canonical table"
         )
 
-    category_svg = re.search(r'<svg viewBox="0 0 960 400".*?</svg>', source, re.DOTALL)
-    if not category_svg:
-        raise MatrixError("missing published category SVG")
-    category_points: dict[
-        str, tuple[int, float, float, float, float, float, float, str]
-    ] = {}
-    for name, count, body in re.findall(
-        r'<g transform="translate\(0,[^)]+\)"><text[^>]*>([^<]+?)\s+(\d+)</text>'
-        r"(.*?)</g>",
-        category_svg.group(),
-        re.DOTALL,
-    ):
-        line = re.search(r'<line x1="([0-9.]+)"[^>]+x2="([0-9.]+)"', body)
-        markers = re.findall(
-            r'<line x1="([0-9.]+)"[^>]+x2="\1"[^>]*/>', body
-        )
-        openprogram = re.search(
-            r'<circle cx="([0-9.]+)"[^>]+fill="#[0-9a-fA-F]{6}"', body
-        )
-        if not line or len(markers) != 3 or not openprogram:
-            raise MatrixError(f"published category graphics for {name} are incomplete")
-        category_points[name] = (
-            int(count),
-            float(line.group(1)),
-            float(line.group(2)),
-            float(markers[0]),
-            float(markers[1]),
-            float(markers[2]),
-            float(openprogram.group(1)),
-            " ".join(unescape(re.sub(r"<[^>]+>", "", body)).split()),
-        )
+    category_rows_published = _published_rows(source, '<h3 id="bycat"', '<h2 id="gaps"', 3)
+    published_categories = {row[0]: row[1:] for row in category_rows_published}
     categories = {row.category for row in parser.rows}
-    if set(category_points) != categories:
+    if len(category_rows_published) != len(categories) or set(published_categories) != categories:
         raise MatrixError("published category rows are stale")
     for category in categories:
         category_rows = [row for row in parser.rows if row.category == category]
@@ -446,72 +510,33 @@ def check_matrix(path: Path) -> MatrixResult:
             sum(SYMBOL_SCORES[row.cells[index]] for row in category_rows)
             for index in range(13)
         ]
-        (
-            count,
-            line_x1,
-            line_x2,
-            marker_min_x,
-            marker_max_x,
-            median_x,
-            openprogram_x,
-            visible_label,
-        ) = category_points[category]
-        expected_openprogram = round(
-            200 + 600 * framework_scores[0] / len(category_rows)
-        )
-        reference_scores = [
+        reference_scores = sorted(
             score
             for index, score in enumerate(framework_scores[1:], start=1)
             if index not in {7, 8}
-        ]
-        expected_reference_min = round(
-            200 + 600 * min(reference_scores) / len(category_rows)
         )
-        expected_reference_max = round(
-            200 + 600 * max(reference_scores) / len(category_rows)
+        median = (
+            reference_scores[len(reference_scores) // 2 - 1]
+            + reference_scores[len(reference_scores) // 2]
+        ) / 2
+        percent = lambda value: round(100 * value / len(category_rows))
+        expected_ours = f"{percent(framework_scores[0])}%"
+        expected_range = (
+            f"{percent(reference_scores[0])}%–{percent(reference_scores[-1])}%, "
+            f"(?:median|中位数) {percent(median)}%"
         )
-        ordered_references = sorted(reference_scores)
-        expected_reference_median = round(
-            200
-            + 600
-            * (
-                ordered_references[len(ordered_references) // 2 - 1]
-                + ordered_references[len(ordered_references) // 2]
-            )
-            / 2
-            / len(category_rows)
-        )
-        expected_openprogram_percent = round(100 * framework_scores[0] / len(category_rows))
-        expected_reference_percent = round(100 * max(reference_scores) / len(category_rows))
-        expected_reference_names = {
-            FRAMEWORK_NAMES[index]
-            for index, score in enumerate(framework_scores[1:], start=1)
-            if index not in {7, 8} and score == max(reference_scores)
-        }
-        if (
-            count != len(category_rows)
-            or openprogram_x != expected_openprogram
-            or (line_x1, line_x2)
-            != (expected_reference_min, expected_reference_max)
-            or (marker_min_x, marker_max_x)
-            != (expected_reference_min, expected_reference_max)
-            or median_x != expected_reference_median
-            or f"{expected_reference_percent}%" not in visible_label
-            or not any(name in visible_label for name in expected_reference_names)
-            or (
-                framework_scores[0] > max(reference_scores)
-                and f"我们 {expected_openprogram_percent}%" not in visible_label
-            )
-        ):
+        ours, reference_range = published_categories[category]
+        if ours != expected_ours or not re.fullmatch(expected_range, reference_range):
             raise MatrixError(f"published category point for {category} is stale")
 
-    legend_start = source.index('<div class="card legend">', category_svg.end())
-    legend_end = source.index("</div>", legend_start)
+    legend_start = source.index('<h3 id="bycat"')
+    legend_start = source.index('<p class="note">', source.index("</figure>", legend_start))
+    legend_end = source.index("</p>", legend_start)
     legend = " ".join(
         unescape(re.sub(r"<[^>]+>", "", source[legend_start:legend_end])).split()
     )
     leaders: list[str] = []
-    gaps_by_category: list[tuple[float, str, int, int, int]] = []
+    gaps_by_category: list[tuple[int, str]] = []
     for category in categories:
         category_rows = [row for row in parser.rows if row.category == category]
         framework_scores = [
@@ -524,30 +549,15 @@ def check_matrix(path: Path) -> MatrixResult:
             if index not in {7, 8}
         ]
         op_percent = round(100 * framework_scores[0] / len(category_rows))
-        reference_min = round(100 * min(references) / len(category_rows))
         reference_max = round(100 * max(references) / len(category_rows))
         if framework_scores[0] > max(references):
             leaders.append(category)
-        gaps_by_category.append(
-            (
-                reference_max - op_percent,
-                category,
-                op_percent,
-                reference_min,
-                reference_max,
-            )
-        )
+        gaps_by_category.append((reference_max - op_percent, category))
     for category in leaders:
-        if category not in legend:
+        if category.casefold() not in legend.casefold():
             raise MatrixError("published category legend is stale")
-    for _gap, category, op_percent, reference_min, reference_max in sorted(
-        gaps_by_category, reverse=True
-    )[:3]:
-        if (
-            category not in legend
-            or f"{op_percent}%" not in legend
-            or f"{reference_min}%–{reference_max}%" not in legend
-        ):
+    for _gap, category in sorted(gaps_by_category, reverse=True)[:3]:
+        if category.casefold() not in legend.casefold():
             raise MatrixError("published category legend is stale")
 
     return MatrixResult(

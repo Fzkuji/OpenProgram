@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 
 import pytest
 
-from openprogram.webui.graph_builder import build_session_graph
-from openprogram.webui.ws_actions.chat import _persist_attachments_async
-from openprogram.webui.ws_actions.session import _session_io
-from openprogram.webui.ws_actions.session import handle_load_session
+from openprogram.state.store.session.graph.builder import build_session_graph
+from openprogram.runtime.conversation.session_config import SessionRunConfig
+from openprogram.interfaces.server.ws_actions.chat import _persist_attachments_async
+from openprogram.interfaces.server.ws_actions.session import _session_io
+from openprogram.interfaces.server.ws_actions.session import handle_load_session
 
 
 def test_attachment_io_keeps_heartbeat_and_waits_before_cancel(monkeypatch):
@@ -25,7 +27,7 @@ def test_attachment_io_keeps_heartbeat_and_waits_before_cancel(monkeypatch):
         return "stored"
 
     monkeypatch.setattr(
-        "openprogram.webui.ws_actions.chat._persist_attachments", persist,
+        "openprogram.interfaces.server.ws_actions.chat.attachments._persist_attachments", persist,
     )
 
     async def scenario():
@@ -58,7 +60,7 @@ def test_attachment_io_keeps_heartbeat_and_waits_before_cancel(monkeypatch):
 def test_graph_builder_uses_captured_messages_without_second_history_read(
     tmp_path, monkeypatch
 ):
-    from openprogram.store.session.session_store import SessionStore
+    from openprogram.state.store.session.session_store import SessionStore
 
     store = SessionStore(tmp_path / "sessions")
     store.create_session("s", "main", title="t")
@@ -66,7 +68,7 @@ def test_graph_builder_uses_captured_messages_without_second_history_read(
     store.append_message(
         "s", {"id": "a", "role": "assistant", "content": "r", "predecessor": "u"}
     )
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
     captured = store.get_messages("s")
     calls = 0
     original = store.get_messages
@@ -106,12 +108,12 @@ def test_session_store_read_keeps_event_loop_heartbeat(tmp_path):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("phase", ["read", "aggregate", "runtime", "page"])
+@pytest.mark.parametrize("phase", ["read", "aggregate", "runtime", "page", "page_snapshot"])
 def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
     tmp_path, monkeypatch, phase
 ):
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.webui import server
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.interfaces.server import server
 
     store = SessionStore(tmp_path / "sessions")
     store.create_session("s", "main", title="t")
@@ -129,29 +131,35 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
         assert release.wait(2)
         return list(old_rows)
 
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
     if phase == "read":
         monkeypatch.setattr(store, "get_messages", slow_messages)
     else:
         from importlib import import_module
         module_name, name = {
-            "aggregate": ("openprogram.webui.persistence", "aggregate_tool_messages"),
-            "runtime": ("openprogram.webui.ws_actions.session", "_rebuild_runtime_cards"),
-            "page": ("openprogram.webui.session_history", "page"),
+            "aggregate": ("openprogram.interfaces.server.persistence", "aggregate_tool_messages"),
+            "runtime": ("openprogram.interfaces.server.ws_actions.session.transcript", "_rebuild_runtime_cards"),
+            "page": ("openprogram.interfaces.server.transcript.reader", "first_read"),
+            "page_snapshot": ("openprogram.interfaces.server.transcript.reader", "first_read"),
         }[phase]
         module = import_module(module_name)
-        if phase == "page":
-            module = module.HistorySnapshot
         original_phase = getattr(module, name)
 
         def slow_phase(*args, **kwargs):
             started.set()
             assert release.wait(2)
-            return original_phase(*args, **kwargs)
+            result = original_phase(*args, **kwargs)
+            if phase == "page_snapshot":
+                # The publisher refreshes this same cached view after the page
+                # captured its window, before the event loop serializes it.
+                from openprogram.interfaces.server.transcript.turn_index import get_view
+                assert get_view(store, "s") is args[1]
+                assert args[1].head_id == "new"
+            return result
 
         monkeypatch.setattr(module, name, slow_phase)
     monkeypatch.setattr(
-        "openprogram.webui.ws_actions.session.reconcile_session_projection",
+        "openprogram.interfaces.server.ws_actions.session.load.reconcile_session_projection",
         lambda _sid: None,
         raising=False,
     )
@@ -161,33 +169,29 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
         "s": {"id": "s", "messages": [], "head_id": None},
     })
     monkeypatch.setattr(
-        "openprogram.agent.session_config.load_session_run_config",
-        lambda _sid: type("Cfg", (), {
-            "tools_enabled": None, "tools_override": None,
-            "thinking_effort": None, "permission_mode": None,
-            "additional_working_dirs": [], "sandbox_enabled": None,
-        })(),
+        "openprogram.runtime.conversation.session_config.load_session_run_config",
+        lambda _sid: SessionRunConfig(),
     )
     monkeypatch.setattr(
-        "openprogram.agent.session_config.project_defaults",
+        "openprogram.runtime.conversation.session_config.project_defaults",
         lambda _sid: {},
     )
     monkeypatch.setattr(
-        "openprogram.agent.session_config.permission_from_config",
+        "openprogram.runtime.conversation.session_config.permission_from_config",
         lambda _cfg, default=None: default or "ask",
     )
     monkeypatch.setattr(
-        "openprogram.agent.permissions.permission_state",
+        "openprogram.runtime.permissions.permission_state",
         lambda _sid: {"version": 1},
     )
-    monkeypatch.setattr("openprogram.sandbox.ui_state", lambda _enabled: {})
+    monkeypatch.setattr("openprogram.host.sandbox.ui_state", lambda _enabled: {})
     monkeypatch.setattr(
-        "openprogram.webui.graph_builder.build_session_graph",
+        "openprogram.state.store.session.graph.builder.build_session_graph",
         lambda *_args, **_kwargs: [],
     )
 
     class WS:
-        _history_protocol = 1
+        _history_protocol = 3
 
         def __init__(self):
             self.frames = []
@@ -196,6 +200,13 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
             self.frames.append(payload)
 
     async def scenario():
+        from openprogram.interfaces.server.transcript import publisher
+        from openprogram.interfaces.server.transcript.turn_index import forget_views
+
+        # No publisher from a previous test owns this read. The snapshot case
+        # below advances its shared view at a deterministic handoff instead.
+        publisher.stop()
+        forget_views()
         ws = WS()
         task = asyncio.create_task(handle_load_session(ws, {"session_id": "s"}))
         while not started.is_set():
@@ -213,11 +224,12 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
         store.set_head("s", "new")
         release.set()
         await task
-        assert ws.frames
-        assert '"type": "session_loaded"' in ws.frames[0]
+        frames = [json.loads(frame) for frame in ws.frames]
+        [loaded] = [frame["data"] for frame in frames if frame["type"] == "session_loaded"]
         assert server._sessions["s"]["head_id"] == "newer"
-        assert '"head_id": "a"' in ws.frames[0]
-        assert '"head_id": "new"' not in ws.frames[0]
+        assert loaded["window"]["head_id"] == "a"
+        assert loaded["head_id"] == loaded["window"]["head_id"]
+        publisher.release(ws)
 
     asyncio.run(scenario())
 
@@ -225,10 +237,10 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
 @pytest.mark.parametrize("kind", ["session_loaded", "full_tool_output"])
 def test_negotiated_history_delivery_does_not_disconnect_on_large_snapshot(kind):
     import json
-    from openprogram.webui.ws_delivery import QueuedWebSocket
+    from openprogram.interfaces.server.ws_delivery import QueuedWebSocket
 
     class Raw:
-        _history_protocol = 1
+        _history_protocol = 3
         def __init__(self):
             self.frames = []
             self.closed = False
@@ -255,7 +267,7 @@ def test_negotiated_history_delivery_does_not_disconnect_on_large_snapshot(kind)
 
 
 def test_branch_graph_preparation_keeps_event_loop_responsive(monkeypatch):
-    from openprogram.webui.ws_actions import branch
+    from openprogram.interfaces.server.ws_actions import branch
 
     started = threading.Event()
     release = threading.Event()

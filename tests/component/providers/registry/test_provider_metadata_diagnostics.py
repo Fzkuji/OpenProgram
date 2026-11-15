@@ -1,7 +1,7 @@
 import logging
 
-from openprogram.providers import metadata
-from openprogram.providers.sources import models_dev
+from openprogram.models.providers.catalog import metadata, plugin_dirs
+from openprogram.models.providers.catalog.sources import models_dev
 
 
 def test_malformed_provider_json_warns_without_content(tmp_path, monkeypatch, caplog):
@@ -9,7 +9,7 @@ def test_malformed_provider_json_warns_without_content(tmp_path, monkeypatch, ca
     provider_dir.mkdir()
     secret = "secret-provider-json-value"
     (provider_dir / "provider.json").write_text("{" + secret, encoding="utf-8")
-    monkeypatch.setattr(metadata, "_ROOT", tmp_path)
+    monkeypatch.setattr(plugin_dirs, "roots", lambda: [tmp_path])
 
     with caplog.at_level(logging.WARNING):
         assert metadata._endpoints("broken") == {}
@@ -28,7 +28,7 @@ def test_wrong_shaped_provider_json_warns_once_when_enumerated(
     provider_dir = tmp_path / "broken"
     provider_dir.mkdir()
     (provider_dir / "provider.json").write_text("[]", encoding="utf-8")
-    monkeypatch.setattr(metadata, "_ROOT", tmp_path)
+    monkeypatch.setattr(plugin_dirs, "roots", lambda: [tmp_path])
 
     with caplog.at_level(logging.WARNING):
         assert metadata.shipped_provider_ids() == []
@@ -39,7 +39,7 @@ def test_wrong_shaped_provider_json_warns_once_when_enumerated(
 
 
 def test_missing_provider_json_remains_silent(tmp_path, monkeypatch, caplog):
-    monkeypatch.setattr(metadata, "_ROOT", tmp_path)
+    monkeypatch.setattr(plugin_dirs, "roots", lambda: [tmp_path])
 
     with caplog.at_level(logging.WARNING):
         assert metadata._endpoints("missing") == {}
@@ -51,7 +51,7 @@ def test_invalid_utf8_provider_json_warns_and_falls_back(tmp_path, monkeypatch, 
     provider_dir = tmp_path / "broken"
     provider_dir.mkdir()
     (provider_dir / "provider.json").write_bytes(b"\xffSECRET")
-    monkeypatch.setattr(metadata, "_ROOT", tmp_path)
+    monkeypatch.setattr(plugin_dirs, "roots", lambda: [tmp_path])
 
     with caplog.at_level(logging.WARNING):
         assert metadata._endpoints("broken") == {}
@@ -67,7 +67,7 @@ def test_provider_json_disappearing_during_read_remains_silent(tmp_path, monkeyp
     provider_dir.mkdir()
     path = provider_dir / "provider.json"
     path.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(metadata, "_ROOT", tmp_path)
+    monkeypatch.setattr(plugin_dirs, "roots", lambda: [tmp_path])
     monkeypatch.setattr(
         metadata.Path,
         "read_text",
@@ -84,7 +84,7 @@ def test_provider_json_warning_omits_exception_message(tmp_path, monkeypatch, ca
     provider_dir = tmp_path / "broken"
     provider_dir.mkdir()
     (provider_dir / "provider.json").write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(metadata, "_ROOT", tmp_path)
+    monkeypatch.setattr(plugin_dirs, "roots", lambda: [tmp_path])
     monkeypatch.setattr(
         metadata.Path,
         "read_text",

@@ -1,0 +1,118 @@
+<title>斜杠命令参考</title>
+<meta name="description" content="五个其他项目如何实现斜杠命令，按功能逐项比较。">
+<h1>斜杠命令参考</h1>
+
+<p>参考代码在 <code translate="no">references/</code>。OpenProgram 自己的设计：<a href="slash-commands.zh.html">斜杠命令</a>。</p>
+
+<h2 id="feature-matrix">功能矩阵</h2>
+<table class="stack">
+<thead><tr><th scope="col">功能</th><th scope="col">claude-code</th><th scope="col">opencode</th><th scope="col">openclaw</th><th scope="col">hermes</th><th scope="col">pi-mono</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件系统扫描</th><td>递归，防符号链接</td><td>glob</td><td>无</td><td>单目录</td><td>无</td></tr>
+<tr><th scope="row">frontmatter 字段数</th><td>15+</td><td>5</td><td>不适用</td><td>约 6</td><td>0</td></tr>
+<tr><th scope="row"><code translate="no">$ARGUMENTS</code></th><td>有</td><td>有</td><td>无</td><td>有</td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">$0..$9</code></th><td>有</td><td>有</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">命名 <code translate="no">$name</code></th><td>有</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">${ENV_VAR}</code></th><td>有</td><td>无</td><td>无</td><td>有</td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">!&#96;shell&#96;</code></th><td>有</td><td>无</td><td>无</td><td>有，带超时</td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">@file</code></th><td>无</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">按 <code translate="no">paths</code> 条件激活</th><td>有</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">context: fork</code></th><td>有</td><td><code translate="no">subtask</code></td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">effort</code></th><td>有</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">MCP 自动成斜杠命令</th><td>有</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">内嵌 hook</th><td>有</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">多目录覆盖</th><td>有</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">realpath 去重</th><td>有</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">i18n</th><td>无</td><td>无</td><td>有</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">provider 路由</th><td>无</td><td>无</td><td>有</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">平台过滤</th><td>无</td><td>无</td><td>无</td><td>有</td><td>无</td></tr>
+<tr><th scope="row">依赖检查</th><td>无</td><td>无</td><td><code translate="no">requires</code>、<code translate="no">install</code></td><td>无</td><td>无</td></tr>
+<tr><th scope="row">热重载</th><td>有</td><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+</tbody>
+</table>
+<p class="note">五个都有 description 字段。三个及以上都有 name、description、正文模板、frontmatter 解析和区分执行模式。</p>
+
+<h2 id="choices">OpenProgram 采用什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">采用</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>整体设计：<code translate="no">context: fork</code>、<code translate="no">paths</code>、<code translate="no">hooks</code>、<code translate="no">effort</code>、realpath 去重、MCP 自动成斜杠命令</td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">$0-9</code> 和 <code translate="no">arguments[]</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">requires</code> 作为独立字段、安装提示；描述 i18n 记为可借鉴</td></tr>
+<tr><th scope="row">hermes</th><td><code translate="no">!</code> shell 块的超时、平台过滤的想法</td></tr>
+<tr><th scope="row">pi-mono</th><td>只在 <code translate="no">type: local</code> 内建命令上硬编码；其余是反例</td></tr>
+</tbody>
+</table>
+
+<h2 id="projects">各项目</h2>
+<details>
+<summary>claude-code</summary>
+<p class="note"><a href="https://code.claude.com/docs/en/skills">公开的 Skills 文档</a></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置</th><td>企业、个人 <code translate="no">~/.claude/skills/</code>、项目 <code translate="no">.claude/skills/</code>、嵌套、<code translate="no">--add-dir</code>、插件</td></tr>
+<tr><th scope="row">重名时</th><td>企业优先于个人，个人优先于项目；<code translate="no">.claude/commands/</code> 让位于 skill</td></tr>
+<tr><th scope="row">符号链接、重载</th><td>多个位置指向同一目标时只加载一次。监听 skill 目录，改动在运行中的会话里生效</td></tr>
+<tr><th scope="row">正文</th><td><code translate="no">$ARGUMENTS</code>、<code translate="no">$N</code>、<code translate="no">$name</code>、<code translate="no">${CLAUDE_SKILL_DIR}</code>、<code translate="no">${CLAUDE_SESSION_ID}</code>、<code translate="no">${CLAUDE_PROJECT_DIR}</code>、<code translate="no">${CLAUDE_EFFORT}</code>、<code translate="no">!&#96;cmd&#96;</code> 和 <code translate="no">&#96;&#96;&#96;!</code> 块。命令失败则中止本次调用</td></tr>
+<tr><th scope="row">参数</th><td>引号让多词参数保持完整。没有占位符接收的参数以 <code translate="no">ARGUMENTS: &lt;value&gt;</code> 追加</td></tr>
+<tr><th scope="row">模式</th><td>内联；<code translate="no">context: fork</code> 在 subagent 中运行</td></tr>
+<tr><th scope="row">Frontmatter</th><td><code translate="no">name</code>、<code translate="no">description</code>、<code translate="no">when_to_use</code>、<code translate="no">argument-hint</code>、<code translate="no">arguments</code>、<code translate="no">disable-model-invocation</code>、<code translate="no">user-invocable</code>、<code translate="no">allowed-tools</code>、<code translate="no">disallowed-tools</code>、<code translate="no">model</code>、<code translate="no">effort</code>、<code translate="no">context</code>、<code translate="no">agent</code>、<code translate="no">background</code>、<code translate="no">hooks</code>、<code translate="no">paths</code>、<code translate="no">shell</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>opencode</summary>
+<p class="note"><code translate="no">references/opencode/packages/opencode/src/config/command.ts</code></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源</th><td>glob <code translate="no">{command,commands}/**/*.md</code>，绝对路径。Effect Schema 校验并与内容合并。无去重、watch 或条件激活</td></tr>
+<tr><th scope="row">frontmatter</th><td><code translate="no">template</code>（必填）、<code translate="no">description</code>、<code translate="no">agent</code>、<code translate="no">model</code>（ConfigModelID）、<code translate="no">subtask</code>（boolean）</td></tr>
+<tr><th scope="row">模板</th><td>纯文本展开，<code translate="no">$ARGUMENTS</code>、<code translate="no">$0-9</code>；<code translate="no">arguments:</code> 声明列表</td></tr>
+<tr><th scope="row">特色</th><td>五个中类型安全最强；<code translate="no">subtask: true</code> 是简化的 fork；MCP skill 返回惰性 Promise</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>openclaw</summary>
+<p class="note"><code translate="no">references/openclaw/src/auto-reply/commands-registry.*</code></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源</th><td>数据驱动的硬编码注册表，无文件系统扫描，按 provider 映射（Slack、Mattermost）</td></tr>
+<tr><th scope="row"><code translate="no">ChatCommandDefinition</code></th><td><code translate="no">key</code>、<code translate="no">nativeName</code>、<code translate="no">nativeAliases?</code>、<code translate="no">description</code>、<code translate="no">descriptionLocalizations?</code>、<code translate="no">scope</code>（<code translate="no">text</code> 或 <code translate="no">native</code>）、<code translate="no">args?</code>、<code translate="no">acceptsArgs</code></td></tr>
+<tr><th scope="row">特色</th><td><code translate="no">resolveNativeName</code> 和 pluginProvider hook；i18n；参数选择菜单（<code translate="no">CommandArgChoiceContext</code>），类似 Discord 下拉</td></tr>
+<tr><th scope="row">Skill</th><td><code translate="no">SKILL.md</code> frontmatter 含 <code translate="no">emoji</code>、<code translate="no">requires.anyBins</code>、<code translate="no">requires.config</code>、<code translate="no">install[]</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>hermes-agent</summary>
+<p class="note"><code translate="no">references/hermes-agent/tools/skills_tool.py</code>、<code translate="no">agent/skill_commands.py</code>、<code translate="no">agent/skill_preprocessing.py</code></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源</th><td>单目录 <code translate="no">~/.hermes/skills/</code>：内置、hub 安装和编辑过的条目共存；<code translate="no">get_external_skills_dirs()</code> 扩展。trusted_roots 带路径穿越防护</td></tr>
+<tr><th scope="row">frontmatter</th><td><code translate="no">metadata.hermes.config</code>（变量）、<code translate="no">platforms</code>；<code translate="no">metadata.hermes.*</code> 优先于顶层字段</td></tr>
+<tr><th scope="row">正文</th><td><code translate="no">_substitute_template_vars</code>、<code translate="no">_expand_inline_shell</code>（超时）、注入 <code translate="no">[Skill config: ...]</code></td></tr>
+<tr><th scope="row">特色</th><td>平台过滤、134 条提示注入模式、<code translate="no">_secret_capture_callback</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>pi-mono</summary>
+<p class="note"><code translate="no">references/pi-ai/packages/coding-agent/src/core/slash-commands.ts</code></p>
+<p>硬编码内建（settings、model、export、import、fork、clone），不扫描。<code translate="no">SlashCommandSource</code> 有 extension、prompt、skill，实际只用 builtin。代表完全没有扩展机制的取舍。</p>
+</details>
+
+<h2 id="sync-procedure">同步</h2>
+<ol>
+<li><code translate="no">cd references &amp;&amp; git pull</code>，例如每季度一次。</li>
+<li>用上面的表逐项对比各项目。决定新字段、模板语法、模式和安全约束是否进入<a href="slash-commands.zh.html">斜杠命令</a>。</li>
+<li>更新本页。</li>
+</ol>

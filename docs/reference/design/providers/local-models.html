@@ -1,0 +1,41 @@
+<title>Local model providers</title>
+<meta name="description" content="Presets for Ollama, LM Studio, vLLM and llama.cpp, through the shared OpenAI Chat Completions transport.">
+<meta name="covers" content="openprogram/models/providers/adapters/ollama/ openprogram/models/providers/adapters/lmstudio/ openprogram/models/providers/adapters/vllm/">
+<h1>Local model providers</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Preset</th><th scope="col">Default</th><th scope="col">Notes</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://docs.ollama.com/api/openai-compatibility">Ollama</a></th><td><code translate="no">localhost:11434/v1</code></td><td>Installed model identifiers. Native management APIs excluded.</td></tr>
+<tr><th scope="row"><a href="https://lmstudio.ai/docs/developer/openai-compat">LM Studio</a></th><td><code translate="no">localhost:1234/v1</code></td><td>Models and streaming chat</td></tr>
+<tr><th scope="row"><a href="https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/">vLLM</a></th><td><code translate="no">localhost:8000/v1</code></td><td>Optional server API key</td></tr>
+<tr><th scope="row">llama.cpp, generic endpoint</th><td>Configured address</td><td>Resolved offline</td></tr>
+</tbody>
+</table>
+
+<p class="note">All go through the Chat Completions transport cloud providers use: streaming, tool calls, cancellation, retries and structured output. The user starts the server; OpenProgram does not install models, allocate GPUs or start inference servers.</p>
+
+<h2>Contract</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Address</th><td>Host-only URLs resolve to <code translate="no">/v1</code> the same way for discovery, validation and inference. Edits apply to later calls, including saved models.</td></tr>
+<tr><th scope="row">Discovery</th><td>From the configured server, never a cloud catalogue</td></tr>
+<tr><th scope="row">Credentials</th><td>Optional. Never inherits an unrelated OpenAI key. Sent only to the configured endpoint.</td></tr>
+<tr><th scope="row">URL security</th><td>Existing configured-URL checks apply</td></tr>
+<tr><th scope="row">Enablement</th><td>Persisted through the existing provider and model registry</td></tr>
+<tr><th scope="row">Settings</th><td>Address, optional accounts, connectivity, discovery, manual model IDs and limits</td></tr>
+<tr><th scope="row">Errors</th><td>Invalid URLs, missing servers, HTTP failures and non-JSON replies are reported as actionable failures</td></tr>
+<tr><th scope="row">Compatibility</th><td>Conservative OpenAI compatibility settings</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Request authentication</summary>
+<p>Without a key: an explicit SDK placeholder prevents environment fallback, and each Chat Completions request omits the Authorization header. The omission must be per request, because the SDK authentication validator ignores removal of a default header alone. With a key: the configured server key. Cloud requests still need their own credential.</p>
+</details>
+
+<h2 id="status">Implementation status</h2>
+
+<p>Inference against a real locally deployed model has not been exercised end to end; it needs an operator-provided server.</p>

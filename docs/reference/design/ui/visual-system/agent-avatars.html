@@ -1,0 +1,145 @@
+<title>Agent avatars</title>
+<meta name="description" content="How every Agent gets a picture: characters, storage, rendering, sizes, the picker and licences.">
+<h1>Agent avatars</h1>
+<p>Every Agent has a picture beside its name. One never given one shows a character derived from its id, so no surface falls back to a generic icon and no stored Agent needs a migration. Agents use the profile picture's <code translate="no">Avatar</code> and <code translate="no">AvatarConfig</code> (<code translate="no">apps/web/components/avatar/</code>); the character is one more <code translate="no">kind</code> beside <code translate="no">dicebear</code>, <code translate="no">upload</code> and <code translate="no">letter</code>.</p>
+
+<h2 id="the-character">The character</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Values</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shape</th><td>22: <code translate="no">chat</code>, <code translate="no">controller</code>, <code translate="no">mug</code>, <code translate="no">lightbulb</code>, <code translate="no">sprout</code>, <code translate="no">watering-can</code>, <code translate="no">barbell</code>, <code translate="no">book</code>, <code translate="no">brain</code>, <code translate="no">bull</code>, <code translate="no">bunny</code>, <code translate="no">camera</code>, <code translate="no">cat</code>, <code translate="no">cloud</code>, <code translate="no">ghost</code>, <code translate="no">magnifier</code>, <code translate="no">paint-brush</code>, <code translate="no">palette</code>, <code translate="no">rocket</code>, <code translate="no">shield</code>, <code translate="no">star</code>, <code translate="no">witch-hat</code></td></tr>
+<tr><th scope="row">Colour</th><td>8 named colours: <code translate="no">blue</code>, <code translate="no">orange</code>, <code translate="no">green</code>, <code translate="no">violet</code>, <code translate="no">pink</code>, <code translate="no">teal</code>, <code translate="no">yellow</code>, <code translate="no">red</code></td></tr>
+<tr><th scope="row">Eyes</th><td>white</td></tr>
+<tr><th scope="row">Mood</th><td><code translate="no">idle</code>, <code translate="no">thinking</code>, <code translate="no">happy</code></td></tr>
+</tbody>
+</table>
+<p class="note">Catalogue: <code translate="no">components/avatar/bot/catalog.ts</code>. A colour is stored by name and drawn in one fixed hex; character art is the one place outside the theme. Tiles, rings and labels use theme tokens.</p>
+
+<h2 id="the-character-an-id-gets">The character an id gets</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Function</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">botLookFor(id)</code>, <code translate="no">bot/identity.ts</code></th><td>32-bit FNV-1a: shape from the hash, colour from its high 16 bits, so they do not move together. Built-in Agents use a table (PR Verifier shield, Research Desk brain, Knowledge Keeper sprout); no two share a shape.</td></tr>
+<tr><th scope="row"><code translate="no">agentAvatarConfig(agent)</code>, <code translate="no">lib/agents/agent-avatar.ts</code></th><td>The saved avatar, or the id's character when there is none or an upload's picture is missing</td></tr>
+</tbody>
+</table>
+
+<h2 id="storage">Storage</h2>
+<p><code translate="no">AgentSpec.avatar</code> in <code translate="no">&lt;state&gt;/agents/&lt;id&gt;/agent.json</code>, in every Agent listing.</p>
+<table class="stack">
+<thead><tr><th scope="col">Field</th><th scope="col">Used by</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">kind</code></th><td>all</td><td><code translate="no">bot</code>, <code translate="no">dicebear</code>, <code translate="no">upload</code> or <code translate="no">letter</code>; required when the avatar is not empty</td></tr>
+<tr><th scope="row"><code translate="no">shape</code>, <code translate="no">color</code></th><td><code translate="no">bot</code></td><td>a short slug; the web catalogue decides which exist, and an unknown one draws the id's character</td></tr>
+<tr><th scope="row"><code translate="no">style</code>, <code translate="no">seed</code></th><td><code translate="no">dicebear</code></td><td>a slug; up to 120 characters</td></tr>
+<tr><th scope="row"><code translate="no">file</code></th><td><code translate="no">upload</code></td><td>a <code translate="no">data:image/</code> URL of at most 350,000 characters</td></tr>
+<tr><th scope="row"><code translate="no">letter</code>, <code translate="no">bg</code></th><td><code translate="no">letter</code></td><td>up to 2 and 40 characters</td></tr>
+</tbody>
+</table>
+<ul>
+<li><code translate="no">{}</code> means no avatar of its own, the default. A patch replaces the avatar whole.</li>
+<li>The API validates strictly and refuses with 400 (<code translate="no">validate_avatar</code> in <code translate="no">openprogram/runtime/agent_registry/manager.py</code>). Loading is tolerant: a stored avatar that no longer validates reads as <code translate="no">{}</code>.</li>
+<li>The Agent picker caps uploads at 256 KB, since every listing carries the picture.</li>
+<li>A trial conversation's configuration snapshot leaves the avatar out.</li>
+</ul>
+
+<h2 id="rendering">Rendering</h2>
+<table class="stack">
+<thead><tr><th scope="col">Mode</th><th scope="col">What is drawn</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row">Still</th><td>one static SVG</td><td><code translate="no">Avatar</code>'s default</td></tr>
+<tr><th scope="row">Live</th><td>a canvas that blinks, sways and looks around</td><td><code translate="no">live</code>; <code translate="no">AgentAvatar</code>'s default</td></tr>
+</tbody>
+</table>
+<p class="note">Renderer: <code translate="no">open-bot-avatar</code>, loaded on first use by <code translate="no">bot/runtime.ts</code>. <code translate="no">BotAvatar</code> mounts into a host element of the asked size. Live characters share one animation loop, pause off screen and when the page is hidden, and are the still picture under reduced motion.</p>
+<p class="note">The silhouette is the picture: no circle clip, no tile. Uploaded and generated Agent pictures keep a rounded-square frame. <code translate="no">app/styles/design/icons.css</code> keeps a character's drawing at its body box's size inside controls that size svgs as icons.</p>
+
+<details>
+<summary>Warm-up: no frame spent preparing shapes</summary>
+<p>The renderer infers a shape's volume from its outline on first draw, 25 to 90 ms a shape, kept for the page's life. Seventeen Agents at once cost over half a second in one frame, and a still picture needs the same work.</p>
+<p><code translate="no">bot/warm.ts</code> prepares one shape per task: a waiting one in the next task, the rest in idle time after the renderer loads. Until ready, and in server markup, a character is its flat glyph in the box the renderer will use; the renderer replaces it in the same commit.</p>
+</details>
+
+<details>
+<summary>Looking around</summary>
+<p>The built-in idle wander moves the eyes about a pixel at icon size, in step across a shape. <code translate="no">bot/wander.ts</code> gives each character its own <code translate="no">lookAt</code> targets instead:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Hold</th><td>0.9 to 2.6 s</td></tr>
+<tr><th scope="row">Reach</th><td>x up to 0.95, y up to 0.6 of the range; at least about a third to one side</td></tr>
+<tr><th scope="row">Straight ahead</th><td>One glance in four</td></tr>
+<tr><th scope="row">Cost</th><td>One timer per character, one firing per glance; random start and pauses</td></tr>
+<tr><th scope="row">Mood</th><td>Thinking or happy keeps its pose</td></tr>
+</tbody>
+</table>
+<p><code translate="no">followPointer</code> stays off: tracking the cursor reads as watching the user, and it would call <code translate="no">getBoundingClientRect</code> every frame.</p>
+</details>
+
+<h3 id="optical-size">Optical size</h3>
+<p>The drawings leave different margins in their 100-unit box: cloud 82 x 52, ghost 54 x 76. <code translate="no">BotAvatar</code> has a slot at the asked size and a body box inside, which the renderer draws into at the size that shows.</p>
+<table class="stack">
+<thead><tr><th scope="col">Fit</th><th scope="col">Used in</th><th scope="col">Rule</th><th scope="col">16px cloud</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">botFit</code></th><td>Everywhere else</td><td>Geometric mean side 0.8 of the slot, no side over 0.94, centred (from <code translate="no">BOT_EXTENTS</code>, checked by a test)</td><td>About 15 x 9.5px</td></tr>
+<tr><th scope="row"><code translate="no">botMarkFit</code>, <code translate="no">fit="mark"</code></th><td>Composer Agent chip, Agent menu rows (<a href="icons.html#the-composers-fill-rule">fill rule</a>)</td><td>Longer side equals the 16 x 16px slot, centred</td><td>16 x 10.1px</td></tr>
+</tbody>
+</table>
+<p class="note">Uploaded, letter and DiceBear avatars already fill the slot, so <code translate="no">fit="mark"</code> only gives them the 18px hover.</p>
+
+<h3 id="hover">Hover</h3>
+<p>The slot pops with its control exactly as an <a href="icons.html">icon</a> does: <code translate="no">components/ui/hover-pop.ts</code> holds the clickable-host selector, 1.12 scale and spring, shared by <code translate="no">SolarIcon</code> and <code translate="no">BotAvatar</code>. Outside a control it follows its own hover. In the composer's Agent chip and Agent menu rows it grows to exactly 18 x 18px (<code translate="no">HOVER_POP_FILL</code>). Reduced motion turns it off.</p>
+
+<h2 id="where-it-shows">Where it shows</h2>
+<table class="stack">
+<thead><tr><th scope="col">Surface</th><th scope="col">Size</th><th scope="col">Mode</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agents page: card, quick settings head</th><td>32</td><td>live</td></tr>
+<tr><th scope="row">Agents page: editor header</th><td>40</td><td>live</td></tr>
+<tr><th scope="row">Agents page: list rail</th><td>16</td><td>live</td></tr>
+<tr><th scope="row">Avatar picker shape tiles</th><td>34</td><td>still</td></tr>
+<tr><th scope="row">Composer Agent chip</th><td>16</td><td>live</td></tr>
+<tr><th scope="row">Agent menu rows</th><td>16</td><td>live</td></tr>
+<tr><th scope="row">Name above a reply from an Agent other than the default</th><td>18</td><td>live</td></tr>
+<tr><th scope="row">Activity panel: Always-on row</th><td>22</td><td>live, <code translate="no">thinking</code> while the Agent works</td></tr>
+<tr><th scope="row">Activity panel: Always-on detail head</th><td>16</td><td>live</td></tr>
+<tr><th scope="row">Settings: channel bindings</th><td>16</td><td>live</td></tr>
+<tr><th scope="row">Graph: agent reply and sub-agent start nodes, legend</th><td>16</td><td>flat glyph in the branch colour</td></tr>
+<tr><th scope="row">Activity panel: agent and sub-agent rows</th><td>22 (16 in a detail head)</td><td>flat glyph in the branch colour</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">AgentAvatar</code> is live unless a caller turns it off; picker tiles are samples, not Agents. Id-only surfaces use <code translate="no">AgentAvatarById</code>, which reads the shared <code translate="no">useAgents</code> list and shows the id's character until it loads; the Agents page writes to the same cache.</p>
+<p class="note">Page icons for Agents (navigation entry, center tab) and the <code translate="no">ghost</code> of sub-agent tool calls are icons of a kind of thing and stay icons.</p>
+
+<details>
+<summary>Flat glyph in coloured chips</summary>
+<p><code translate="no">bot/glyph.ts</code>, <code translate="no">BotGlyph</code> in React: the body's path in the current colour, eyes cut through it. Outlines wind clockwise and the body's winding number under each eye is 1, so each eye is a counter-clockwise pill and nonzero fill cuts it out; a test checks every shape. Its view box fits the body by <code translate="no">botFit</code>.</p>
+<p>It does not move, is cloned into the graph's SVG like a Solar icon, and takes the branch's colour (<a href="../../runtime/dag/rendering.html">graph rendering</a>). The main agent's glyph is the conversation Agent's character (<code translate="no">useConversationAgentShape</code>; an Agent with an upload or generated picture uses its id's character); a sub-agent's comes from its name.</p>
+</details>
+
+<h2 id="the-picker">The picker</h2>
+<p>The Agent editor's General section uses the profile's <code translate="no">AvatarPicker</code> with sources Character, Generated and Upload. Character shows shape tiles, previewing the current colour, and swatches. It edits the draft, so it saves and discards with the rest.</p>
+
+<details>
+<summary>Sources and licences</summary>
+<table class="stack">
+<thead><tr><th scope="col">Source</th><th scope="col">What it provides</th><th scope="col">Licence</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">open-bot-avatar</code> (npm, pinned)</th><td>the renderer and 7 shapes</td><td>MIT, Copyright Dominik Scholz</td></tr>
+<tr><th scope="row">The same project's repository gallery</th><td>15 more shapes, copied unchanged into <code translate="no">components/avatar/bot/gallery.ts</code> with the licence notice</td><td>MIT, Copyright Dominik Scholz</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Alternative</th><th scope="col">Why not</th></tr></thead>
+<tbody>
+<tr><th scope="row">Renderers extracted from the Grok Bot client, and replicas of its characters</th><td>The code or the character designs belong to xAI, whatever licence the repository states</td></tr>
+<tr><th scope="row"><code translate="no">@aora-bot/react</code></th><td>Its licence is not open source (attribution and team-size terms), and it needs React 19</td></tr>
+<tr><th scope="row"><code translate="no">agent-robot-avatar</code></th><td>One robot design whose character identity is reserved by its author</td></tr>
+<tr><th scope="row">DiceBear Bottts, Facehash, animated emoji sets</th><td>A different look from the one chosen: generated robots, letter faces, or emoji that do not read as one family</td></tr>
+</tbody>
+</table>
+<p class="note">The shapes are the project's own designs.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented. The <code translate="no">happy</code> mood is available to callers; no surface sets it yet.</p>

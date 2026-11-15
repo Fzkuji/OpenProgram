@@ -1,0 +1,227 @@
+<title>执行身份与沙箱</title>
+<meta name="description" content="每次工具调用的三项独立检查：认证身份、权限判定，以及已批准进程外的沙箱。">
+<h1>执行身份与沙箱</h1>
+
+<table class="stack" id="overview">
+<thead><tr><th scope="col">检查</th><th scope="col">回答</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">身份</th><td>谁在请求</td><td>每个请求带认证主体和固定的能力上限；嵌套 Agent 永远不能扩大它</td></tr>
+<tr><th scope="row">权限</th><td>这次操作能否运行</td><td>在执行所属分支的模式下做统一判定；模式可在轮次中途改变，下一次工具检查即采用。见<a href="permission-decision.zh.html">权限判定与拒绝</a>。</td></tr>
+<tr><th scope="row">沙箱</th><td>已批准的进程能碰什么</td><td>Seatbelt（macOS）或 bubblewrap（Linux）。这一轮所在对话分支的 Sandbox 开关打开时才生效。</td></tr>
+</tbody>
+</table>
+<p class="note">同一契约覆盖 Web、CLI、ACP、频道、嵌套 Agent、定时任务和续接。</p>
+
+<h2 id="authority">认证身份</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">已认证的本地入口</th><td>在持久接纳前把完整 Owner 身份附到 <code translate="no">TurnRequest</code>。审计主体和执行请求是两个值；只有接纳主体不能授权工具。</td></tr>
+<tr><th scope="row">已配对频道</th><td>保持配对等级</td></tr>
+<tr><th scope="row">嵌套请求</th><td>继承，不能扩大</td></tr>
+<tr><th scope="row">身份缺失或未知</th><td>按拒绝处理，带稳定原因代码</td></tr>
+<tr><th scope="row">恢复</th><td>绝不从来源标签或模型文本重建 Owner 身份。没有身份的旧请求必须经认证入口重新提交。</td></tr>
+</tbody>
+</table>
+
+<h2 id="flow">统一操作判定</h2>
+<p>审批清单和执行包装层使用同一判定。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner 委托的 Agent shell 和托管进程</th><td>使用接纳时的权限快照，不做一刀切的来源禁止</td></tr>
+<tr><th scope="row">MCP 调用方、非 Owner 派生的 Agent</th><td>保留该禁止；worktree 控制保留自己的限制</td></tr>
+<tr><th scope="row">Bypass permissions</th><td>跳过普通审批和 Auto 分类。不覆盖显式 ask、deny 规则或插件工具门。Sandbox 打开时命令仍在沙箱内。</td></tr>
+<tr><th scope="row">非法模式值</th><td>配置命令拒绝</td></tr>
+<tr><th scope="row">拒绝</th><td>说明原因和能力，不泄露机密</td></tr>
+<tr><th scope="row">Web 答复</th><td>规范等待命令被确认应用前，问题和所选答案都保留。投递结果未知时锁定选择并用同一命令标识重试；socket 发送本身不算完成。覆盖审批、提问、表单和讨论。</td></tr>
+</tbody>
+</table>
+
+<h3 id="delegated-audit">委托检查与审计隐私</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">写入和编辑目标</th><td>派生 Agent 和 MCP 调用需要非空字符串目标。显式空 patch 目标在 Bypass permissions 和 allow 规则之前被拒绝。</td></tr>
+<tr><th scope="row">相对目标</th><td>相对绑定的 worktree 解析；realpath 包含检查覆盖文件和父目录符号链接。共享文件安全助手对独立相对输入保持当前目录语义。</td></tr>
+<tr><th scope="row"><code translate="no">security.risky_tool_delegated</code></th><td>委托的高风险工具检查被 Bypass permissions 或 allow 规则放行</td></tr>
+<tr><th scope="row"><code translate="no">security.path_violation</code></th><td>写入目标被拒绝</td></tr>
+<tr><th scope="row">事件含义</th><td>权限检查，不是执行完成；在构建清单或协调时可能重复</td></tr>
+<tr><th scope="row">载荷</th><td>会话、工具、来源、身份和固定原因。不含命令、代码、目标路径或其他参数文本。origin 为 <code translate="no">system</code>，沿用现有事件日志路由和轮转。</td></tr>
+<tr><th scope="row">投递</th><td>尽力而为，既不授权也不阻塞</td></tr>
+</tbody>
+</table>
+
+<h2 id="modes">模式解析</h2>
+<p>先取这一轮所在对话分支的设置，再取项目默认，最后 Bypass permissions（<code translate="no">DEFAULT_PERMISSION</code>）。解析后的模式用于接纳和界面确认。<a href="permission-decision.zh.html#modes">各模式</a>与判定一起定义。</p>
+
+<h2 id="permission-lifecycle">权限的实时变更</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">状态</th><td><code translate="no">SessionStore</code> 为各分支持有带版本的 <code translate="no">permission_state</code> 字典，含模式和 Owner 主体。原子比较并设置防止旧客户端覆盖新选择。没有并行的审批数据库或通用策略引擎。</td></tr>
+<tr><th scope="row">设置命令</th><td>WebSocket；认证 Owner，校验会话和分支范围，返回权威模式、版本及分支身份。冲突保持为错误。</td></tr>
+<tr><th scope="row">生效点</th><td>服务器确认时，与进行中的模型请求无关。之后每次普通审批检查都采用，包括同一批次的后续调用。单次调用在分派期间保持判定；已授权调用不中断。无需重启或下一条消息。</td></tr>
+<tr><th scope="row">Web 和 App</th><td>立即用已确认版本发送，只有版本未知时才先读。请求中的选择与已确认的模式分开显示；旧确认和水合快照不能替换新状态；传输错误保持可见。</td></tr>
+<tr><th scope="row">未发送的草稿</th><td>在本地存选择，不创建会话；首次提交时带上</td></tr>
+<tr><th scope="row">模式变更时的待审批</th><td>用统一判定重新评估。现已允许的，经规范等待答复命令解决并从检查点恢复。ask 规则、外发暂扣、沙箱提权和用户提问继续等待。</td></tr>
+<tr><th scope="row">竞争与重启</th><td>设置变更期间发布的等待，在旧运行时释放取消令牌后复查。启动恢复重新评估已持久化的变更。过期、取消或完成的工作不会复活。</td></tr>
+<tr><th scope="row">派生 Agent</th><td>可信派生接纳时，运行中的 Owner 父级把有效模式和规则写入子级不可变输入，绑定同一主体和确切的运行父级。交互式父级先解析最新确认模式；嵌套的非交互父级传递已冻结快照。已有输入不改写。子级保持非交互：无人批准的 ask 被拒绝；继承的 Bypass permissions 只跳过普通审批。</td></tr>
+<tr><th scope="row">不接受实时覆盖</th><td>独立定时任务、已配对频道、无关会话</td></tr>
+<tr><th scope="row">Plan</th><td>在工具边界强制，切入后已提议的写入也被阻止。工具目录保持稳定，中途切出不破坏续接。只能从选择器进入；<code translate="no">exit_plan_mode</code> 恢复之前的模式。</td></tr>
+<tr><th scope="row">已存模式</th><td>没有带版本状态时，可读取已有的 <code translate="no">permission_mode</code></td></tr>
+<tr><th scope="row">一次性批准</th><td>自更新和无法表示精确规则的操作只提供单次允许；规范校验强制同一范围列表。答复经服务器确认才算数；重新加载后执行版本必须匹配；允许的范围由服务决定。</td></tr>
+</tbody>
+</table>
+
+<h2 id="boundaries">工具与主机边界</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">面</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件工具</th><td>进程内守卫</td></tr>
+<tr><th scope="row">本地子进程</th><td>Seatbelt 或 bubblewrap</td></tr>
+<tr><th scope="row">浏览器、Web Use</th><td>精确的表面授权</td></tr>
+<tr><th scope="row">Docker、SSH</th><td>各自的执行边界</td></tr>
+<tr><th scope="row">已配置的 MCP 进程</th><td>Owner 配置的信任，不算本地沙箱隔离</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">workspace-write</code></th><td>可写工作根，屏蔽受保护读取，过滤凭据环境变量，<code translate="no">sandbox.network</code> 未开时断网</td></tr>
+<tr><th scope="row"><code translate="no">danger-full-access</code></th><td>主机用户权限</td></tr>
+<tr><th scope="row">后端缺失</th><td>默认拒绝；显式 <code translate="no">warn</code> 是已确认的回退</td></tr>
+<tr><th scope="row">Sandbox 开关</th><td>分支覆盖，解析进不可变的轮次快照。变更影响之后的轮次，不影响当前进程、其他会话、定时任务或继承的子级策略。普通审批不会关闭它。</td></tr>
+<tr><th scope="row">定时命令和提示</th><td>触发时使用所属对话的设置</td></tr>
+</tbody>
+</table>
+
+<h3 id="protected-writes">受保护的写入</h3>
+<p>沙箱命令的逃逸方式是写入沙箱外稍后会运行的文件。Worker 在 home 启动，所以没有项目目录的对话以 home 为可写根。<code translate="no">host/sandbox/protected_writes.py</code> 在所有策略之上保持以下路径只读，没有配置能移除。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">范围</th><th scope="col">路径</th></tr></thead>
+<tbody>
+<tr><th scope="row">按名称，任意位置</th><td><code translate="no">.bashrc</code> <code translate="no">.bash_profile</code> <code translate="no">.bash_login</code> <code translate="no">.profile</code> <code translate="no">.zshrc</code> <code translate="no">.zprofile</code> <code translate="no">.zshenv</code> <code translate="no">.zlogin</code> <code translate="no">.gitconfig</code> <code translate="no">.gitmodules</code> <code translate="no">.ripgreprc</code> <code translate="no">.mcp.json</code> <code translate="no">.vscode/</code> <code translate="no">.idea/</code> <code translate="no">.claude/settings.json</code> <code translate="no">.claude/settings.local.json</code> <code translate="no">.claude/commands/</code> <code translate="no">.claude/agents/</code> <code translate="no">.claude/hooks/</code></td></tr>
+<tr><th scope="row">Home 目录</th><td><code translate="no">~/.ssh</code> <code translate="no">~/Library/LaunchAgents</code> <code translate="no">~/.config/autostart</code> <code translate="no">~/.config/systemd</code> <code translate="no">~/.config/git</code> <code translate="no">~/.claude</code>，以及每个 OpenProgram 状态目录（其配置可能在下一轮关闭沙箱）。位于其中的可写根（如会话 worktree）仍可写，名称规则在其内仍生效。</td></tr>
+<tr><th scope="row">启动时所在仓库</th><td>其 <code translate="no">.git/hooks</code> 和 <code translate="no">.git/config</code>。只限这个已有仓库，所以 <code translate="no">git init</code> 和 <code translate="no">git clone</code> 正常。</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>macOS</dt><dd>规则是 Seatbelt 配置中的模式</dd>
+<dt>Linux</dt><dd>bubblewrap 只把已存在的路径挂为只读：home 目录、各可写根及 home 顶层的具名文件、仓库的 git 路径。之后在工作区更深处新建的受保护名称不被覆盖。</dd>
+<dt>进程内写工具</dt><dd>通过 <code translate="no">validate_write_path</code> 使用同一规则</dd>
+<dt>解除</dt><dd>已批准的提权（可写根 <code translate="no">/</code>），仅对该命令</dd>
+</dl>
+<details>
+<summary>为什么不用 Anthropic 的 sandbox-runtime</summary>
+<p>列表沿用其强制拒绝路径。作为 macOS 替代方案测量后未采用；其进程边界与我们一致，所以只取列表。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">代价</th><th scope="col">测量</th></tr></thead>
+<tbody>
+<tr><th scope="row">启动</th><td>它是 Node 程序，每条命令都要启动 Node：约 120 ms，直接用 Seatbelt 约 10 ms</td></tr>
+<tr><th scope="row">打包</th><td>打包的运行时还需带上 Node 和 ripgrep</td></tr>
+<tr><th scope="row">Git</th><td>在所有仓库拒绝 <code translate="no">.git/config</code>，导致 <code translate="no">git init</code> 失败</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="escalation">沙箱提权</h2>
+<p>在命令运行前请求，与 Codex 相同：<code translate="no">bash</code> 带 <code translate="no">sandbox_permissions="require_escalated"</code> 和理由。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">卡片</th><td>在 Agent 安全点、任何副作用之前发布 <code translate="no">bash:sandbox-escalation</code> 清单；它覆盖普通 ask 本要问的内容</td></tr>
+<tr><th scope="row">谁批准</th><td>只有持 <code translate="no">approval.request</code> 的交互式本地 Owner。非 Bypass permissions 时，已配对频道、MCP 客户端、cron 和子代理不能提权。</td></tr>
+<tr><th scope="row">解除</th><td>可配置的限制；凭据过滤保留</td></tr>
+<tr><th scope="row">绑定</th><td>会话、执行、工具和工具调用；普通工具批准不能授权它</td></tr>
+<tr><th scope="row">对话范围</th><td>确切命令存在 Worker 内存中，从不写成权限规则，重启后再次询问</td></tr>
+<tr><th scope="row">没有生效的沙箱</th><td>请求被忽略</td></tr>
+<tr><th scope="row">Bypass permissions</th><td>无卡片直接离开沙箱</td></tr>
+<tr><th scope="row">运行后才发现的拒绝</th><td>访问标记，或 <code translate="no">sandbox.network</code> 关闭时的域名解析和网络不可达错误，绝不变成事后批准。结果指明应发起的请求。</td></tr>
+</tbody>
+</table>
+
+<h2 id="approved-file-writes">已批准的文件写入</h2>
+<p>已批准的 edit、write 和 apply_patch 共用 <code translate="no">file_state.write_checked</code>。分派器和该模块在 Windows 上无需 Unix 专用模块即可导入。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">顺序</th><td>检查已批准的内容和标识；不截断地打开；取排他锁；对已打开描述符求哈希；复查路径标识和解析后的目标；写入</td></tr>
+<tr><th scope="row">锁</th><td>现有兼容适配器（Unix 用 <code translate="no">fcntl</code>，Windows 用 <code translate="no">msvcrt</code> 字节锁），二进制模式；POSIX 保留 <code translate="no">O_NOFOLLOW</code>。移除链接检查或跳过加锁都不满足契约。</td></tr>
+<tr><th scope="row">复查</th><td>用元数据，不用第二个读句柄：Windows 字节锁可能拒绝同进程其他句柄的读取</td></tr>
+<tr><th scope="row">链接</th><td>拒绝符号链接和重解析项</td></tr>
+<tr><th scope="row">批准时不存在的目标</th><td>排他创建</td></tr>
+<tr><th scope="row">路径回退</th><td>写入前发现替换；不声称对每种并发祖先目录替换都有描述符级保护</td></tr>
+</tbody>
+</table>
+
+<h2 id="failures">失败与已知限制</h2>
+<ul>
+<li>身份缺失、版本过期、非法模式、能力被拒、显式规则、分类器失败和沙箱拒绝彼此可区分。任何失败都不会悄悄变成 Owner 或 Bypass permissions。</li>
+<li>主机进程可见性可能使 <code translate="no">ps</code>、<code translate="no">top</code>、<code translate="no">lsof</code> 不可用。Docker socket 不会自动暴露。Linux 通配符屏蔽有限制。浏览器和远程网络有各自的控制。</li>
+</ul>
+
+<details id="files">
+<summary>文件</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">模块</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">permissions/authority.py</code></th><td>身份和能力上限</td></tr>
+<tr><th scope="row"><code translate="no">permissions/state.py</code></th><td>带版本的分支状态、Owner 校验、原子更新</td></tr>
+<tr><th scope="row"><code translate="no">permissions/policy.py</code></th><td>统一判定和显式规则</td></tr>
+<tr><th scope="row"><code translate="no">permissions/classifier.py</code></th><td>Auto 风险分类；只有 JSON 布尔 <code translate="no">true</code> 才允许执行</td></tr>
+<tr><th scope="row"><code translate="no">permissions/approval.py</code></th><td>审批清单、精确消费等待、工具执行</td></tr>
+<tr><th scope="row"><code translate="no">permissions/lifecycle.py</code></th><td>实时调用快照、规范等待协调</td></tr>
+<tr><th scope="row"><code translate="no">conversation/session_config.py</code></th><td>旧设置和当前设置的解析</td></tr>
+<tr><th scope="row"><code translate="no">conversation/production_driver/</code></th><td>持久接纳、不可变恢复、等待发布</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/permissions.py</code></th><td>认证设置、规范等待重新评估</td></tr>
+<tr><th scope="row">Web 权限状态和输入框</th><td>已确认模式、等待和错误反馈、有序水合</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>实时变更：聊天接纳和安全工具；继承的 Bypass permissions；运行中 ask 与 Bypass permissions 互切；等待审批的续接；显式 ask 和 deny；Plan 切换；Owner 和会话隔离；过期版本；重新加载和重连；Sandbox 拒绝不变。</li>
+<li>文件写入：无 <code translate="no">fcntl</code> 时导入分派器；目标被改或删除；已有和新建文件；精确的 UTF-8 字节；替换和链接竞争；重复写入。Windows 安装冒烟导入分派器；平台 CI 在单元套件前运行审批回归。</li>
+</ul>
+</details>
+
+<details id="comparison">
+<summary>与其他框架的对比</summary>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">采用或改造</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>权限模式、独立 Sandbox、Auto 分类</td><td>身份和显式规则排在 Bypass permissions 之前。其<a href="https://code.claude.com/docs/en/permissions">权限</a>有 deny、ask、allow 优先序，规则实时变更和逐审批评论；这里没有实现“先执行、后送反馈”的审批评论。</td></tr>
+<tr><th scope="row">Codex CLI</th><td>结构化违规、精确批准后重试。<a href="https://openai.com/index/running-codex-safely/">沙箱执行与审批策略分离</a>。</td><td>没有按工具的沙箱覆盖。其记住的批准是会话级，我们是项目级。域名策略、企业托管强制和远程审计导出在这里没有对应能力。</td></tr>
+<tr><th scope="row">OpenClaw</th><td>凭据过滤、后端拒绝、嵌套工具分类</td><td>不自动选择 Docker</td></tr>
+<tr><th scope="row">Hermes Agent</th><td>硬规则先于 bypass、命令规范化、非交互拒绝</td><td>规范化 NFKC、ANSI、NUL 和环境包装</td></tr>
+<tr><th scope="row">OpenCode</th><td>按工具和资源的规则</td><td>权限不是 OS 隔离。<a href="https://opencode.ai/v2/docs/permissions">V2</a> 用最后匹配、项目级模式、同会话拒绝扩散和按子代理策略；我们是 deny 优先、精确操作授权、单一规范等待目标、子级接纳受父级约束。属有意差异。</td></tr>
+<tr><th scope="row">pi-mono</th><td>扩展拦截、非交互时按拒绝处理</td><td>拒绝项目静默覆盖全局安全约束</td></tr>
+<tr><th scope="row">Aider</th><td>Git 恢复作为独立设施</td><td>恢复不能替代凭据、网络或进程边界</td></tr>
+<tr><th scope="row">Goose、WeClaw 适配器</th><td>明确区分后端</td><td>拒绝外部自动 Owner 批准，以及把可选隔离当作默认</td></tr>
+</tbody>
+</table>
+<p class="note">各框架为调研时的状态，不代表上游最新版本。</p>
+</details>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">范围</th><th scope="col">已实现</th></tr></thead>
+<tbody>
+<tr><th scope="row">判定</th><td>每个入口的身份、统一判定、五种模式及带版本的实时变更、委托检查和审计事件</td></tr>
+<tr><th scope="row">隔离</th><td>Seatbelt 和 bubblewrap 隔离、精确提权、已批准文件写入</td></tr>
+<tr><th scope="row">审批</th><td>App 重新加载后保持相同选项；单次批准完成所请求的操作；拒绝结束执行且不启动托管进程</td></tr>
+<tr><th scope="row">输入</th><td>所有输入框形态通过同一个带确认的 hook 提交；提问工具在执行前声明持久等待</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">范围</th><th scope="col">未完成</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows</th><td>已批准文件写入通过本地回归；原生 x64 和 arm64 执行未验证；没有进程沙箱</td></tr>
+<tr><th scope="row">提问等待</th><td>持久声明的端到端验收</td></tr>
+<tr><th scope="row">规则持久化</th><td>永久规则保存失败路径没有用文件系统故障注入验证</td></tr>
+<tr><th scope="row">未实现</th><td>域名和端口网络白名单（需要托管代理和重定向检查）、资源配额、按工具的沙箱覆盖、完整的后台 Auto 分类器界面</td></tr>
+</tbody>
+</table>

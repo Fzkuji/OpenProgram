@@ -31,7 +31,7 @@ describe('BottomBar', () => {
 
   it('renders permission + thinking effort cycle indicators', () => {
     const ask = render(<BottomBar agent="main" permissionMode="ask" thinkingEffort="medium" />);
-    expect(stripAnsi(ask.lastFrame() ?? '')).toContain('ask');
+    expect(stripAnsi(ask.lastFrame() ?? '')).toContain('manual');
     const bypass = render(<BottomBar agent="main" permissionMode="bypass" thinkingEffort="high" />);
     expect(stripAnsi(bypass.lastFrame() ?? '')).toContain('bypass');
     expect(stripAnsi(bypass.lastFrame() ?? '')).toContain('high');

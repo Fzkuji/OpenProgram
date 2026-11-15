@@ -1,0 +1,140 @@
+<title>权限判定与拒绝</title>
+<meta name="description" content="决定工具调用能否运行的唯一函数，以及调用未运行时模型收到的文字的唯一来源。">
+<h1>权限判定与拒绝</h1>
+
+<dl class="pairs">
+<dt>Owner</dt><dd><code translate="no">authority_tier == "owner"</code> 且 <code translate="no">principal_id == owner_principal_id()</code>。有没有人在看不属于判断条件。</dd>
+<dt>可批准</dt><dd><code translate="no">can_approve(req)</code>：Owner、<code translate="no">speaker_kind == "owner"</code>、<code translate="no">interaction == "interactive"</code>、能力 <code translate="no">approval.request</code>；或请求带 <code translate="no">asks_through</code> 的前台助手，在调用方的卡片上询问（<a href="../collaboration/agent-collaboration.zh.html#permissions">Agent 协作</a>）</dd>
+<dt>Bypass permissions</dt><dd>存储和传输值为 <code translate="no">bypass</code> 的模式；默认模式</dd>
+</dl>
+
+<h2 id="the-decision-path">判定路径</h2>
+<p><code translate="no">openprogram/runtime/permissions/policy.py</code> 中的 <code translate="no">permission_decision(tool, req, args)</code> 是决定格式正确的调用能否运行的唯一函数。第一个命中的检查结束判定。</p>
+<table class="stack">
+<thead><tr><th scope="col">按顺序检查</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. 身份（<code translate="no">identity.py</code>，<code translate="no">decide</code>）。对 Owner 自己的轮次永不触发：能力（<code translate="no">decide_tool_authority</code>）、范围、非 Owner 发起的工作中的页面脚本；常驻检查读危险路径；交接链或自动 Goal 轮次，以及它们启动的子 Agent、嵌套程序和通知轮次中的页面脚本和破坏性删除</th><td>deny：<code translate="no">AUTHORITY_*</code>、<code translate="no">IDENTITY_SCOPE</code>、<code translate="no">IDENTITY_PAGE_SCRIPT</code>、<code translate="no">IDENTITY_CHECK_IN_READ</code>、<code translate="no">IDENTITY_OUTSIDE_TEXT</code></td></tr>
+<tr><th scope="row">2. Owner 的 deny 规则</th><td>deny：<code translate="no">RULE_DENY</code></td></tr>
+<tr><th scope="row">3. 选中 Plan，且工具标记 <code translate="no">unsafe_in</code> plan</th><td>deny：<code translate="no">PLAN_MODE_DENY</code>，保存的 <code translate="no">bash(git:*)</code> 也破不了 Plan 的只读承诺</td></tr>
+<tr><th scope="row">4. Owner 的 ask 规则</th><td>ask：<code translate="no">RULE_ASK</code></td></tr>
+<tr><th scope="row">5. 设置了 <code translate="no">hold_outbound</code> 的 Agent 调用发送工具</th><td>ask：<code translate="no">RULE_OUTBOUND_HOLD</code>，隐式 ask 规则；见<a href="outbound-hold.zh.html">外发暂扣</a></td></tr>
+<tr><th scope="row">6. Owner 的 allow 规则</th><td>allow：<code translate="no">RULE_ALLOW</code></td></tr>
+<tr><th scope="row">7. Bypass permissions</th><td>allow：<code translate="no">MODE_UNRESTRICTED</code></td></tr>
+<tr><th scope="row">8. Plan，工具是 <code translate="no">exit_plan_mode</code></th><td>ask：<code translate="no">PLAN_EXIT</code></td></tr>
+<tr><th scope="row">9. 无需判定的调用</th><td>allow：<code translate="no">SURFACE_GRANT</code>、<code translate="no">SESSION_POLL</code>、<code translate="no">APP_GRANT_FREE</code>、<code translate="no">SCHEDULED_MEMORY</code>、<code translate="no">SAFE_TOOL</code>（读取、计划，以及回复本轮自己的对话；<code translate="no">send_file</code> 属于这一类，在这里附上文件就是回复，所以 Auto 不送它去审查；见<a href="../../ui/chat/chat-attachments.zh.html#approval">聊天附件</a>）</td></tr>
+<tr><th scope="row">10. Accept edits，工作目录内的安全编辑</th><td>allow：<code translate="no">SAFE_EDIT</code></td></tr>
+<tr><th scope="row">11. Auto</th><td>之前的审查已覆盖同一屏幕时 allow：<code translate="no">AUTO_APP_GRANT</code>；否则模型审查：<code translate="no">AUTO_CLASSIFY</code></td></tr>
+<tr><th scope="row">12. 其余</th><td>ask：<code translate="no">MODE_APPROVAL</code></td></tr>
+</tbody>
+</table>
+<p>会话分支共享当前文件。切换分支不增加工作区对齐权限关卡；只有显式 Rewind 请求恢复文件。</p>
+<p class="note">规则默认为空，合并全局、项目和执行所属分支（<code translate="no">permissions/rule.py</code>）；<code translate="no">deny</code> 优先于 <code translate="no">ask</code> 优先于 <code translate="no">allow</code>，来源顺序只影响同一行为内部。</p>
+<p>所有 ask 都经过 <code translate="no">_ask_or_nobody</code>：<code translate="no">can_approve(req)</code> 为假时结果是 <code translate="no">deny</code>，代码 <code translate="no">NO_ONE_TO_APPROVE</code>；由其他 Agent 启动的助手则是 <code translate="no">HELPER_CANNOT_ASK</code>。不会为执行时必被拒绝的轮次发布卡片；<code translate="no">APPROVAL_LOCAL_OWNER_REQUIRED</code> 仍是恢复时的防御性断言。</p>
+
+<details>
+<summary>Decision 的字段</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">outcome</code></th><td><code translate="no">allow</code>、<code translate="no">ask</code>、<code translate="no">auto</code> 或 <code translate="no">deny</code></td></tr>
+<tr><th scope="row"><code translate="no">code</code></th><td>稳定的原因代码</td></tr>
+<tr><th scope="row"><code translate="no">layer</code></th><td><code translate="no">identity</code>、<code translate="no">rule</code>、<code translate="no">mode</code>，由设置驱动的门为 <code translate="no">setting</code></td></tr>
+<tr><th scope="row"><code translate="no">refusal</code></th><td><code translate="no">Refusal</code>，结果为 <code translate="no">deny</code> 时设置</td></tr>
+<tr><th scope="row"><code translate="no">rule</code></th><td>起决定作用的规则文本（如有）</td></tr>
+<tr><th scope="row"><code translate="no">authority</code></th><td>身份拒绝的结构化依据</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>格式错误的调用与 Pages</summary>
+<p>格式错误的调用不会到达判定。<code translate="no">openprogram/programs/_authoring/prechecks.py</code> 的 <code translate="no">call_problem(name, args)</code> 合并 <code translate="no">guides.missing_required</code>（<code translate="no">GUIDE_REQUIRED</code>）和 <code translate="no">prechecks.problem</code>（<code translate="no">INVALID_ARGUMENTS</code>）；<code translate="no">permissions/approval.py</code> 最先调用它：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用方</th><th scope="col">有问题时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_permission_preflight</code>、<code translate="no">_interaction_manifest</code></th><td>返回 <code translate="no">None</code>：不审查、无卡片</td></tr>
+<tr><th scope="row"><code translate="no">_gated_execute</code></th><td>普通工具错误：<code translate="no">is_error=True</code>，无 <code translate="no">denied</code> 标记，无 <code translate="no">mark_refused</code></td></tr>
+</tbody>
+</table>
+<p>它放在包装层而非 agent 循环，因此也覆盖 Python 程序的内层工具和 MCP 服务器。</p>
+<p>轮次能否使用 Pages 由 <code translate="no">surface_grant_applies(name, req, args)</code> 单独回答。浏览器目标的 <code translate="no">tabs</code> 动作判定为 <code translate="no">allow</code> 且 <code translate="no">surface_grant_applies</code> 成立时，<code translate="no">runtime_attach.py</code> 捕获 Page 快照，所以 Bypass permissions 下启动的 Program 也能拿到 Pages。</p>
+</details>
+
+<h2 id="modes">模式</h2>
+<table class="stack">
+<thead><tr><th scope="col">存储值</th><th scope="col">显示名</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">bypass</code></th><td>Bypass permissions</td><td>格式正确的调用都运行</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td>Auto</td><td>免判定调用运行，其余交模型审查。审查出错按拒绝处理；连续 3 次或累计 20 次拦截后，有人能批准时回退到卡片。</td></tr>
+<tr><th scope="row"><code translate="no">ask</code></th><td>Manual</td><td>免判定调用运行，其余询问。应用访问在首次触碰时询问，可为对话放行。</td></tr>
+<tr><th scope="row"><code translate="no">plan</code></th><td>Plan</td><td>同 Manual，且标记 <code translate="no">unsafe_in</code> plan 的工具被拒绝并隐藏</td></tr>
+<tr><th scope="row"><code translate="no">acceptEdits</code></th><td>Accept edits</td><td>未使用的选项，保留合法值以兼容已存对话</td></tr>
+</tbody>
+</table>
+
+<h2 id="where-each-kind-of-limit-lives">各类限制的位置</h2>
+<table class="stack">
+<thead><tr><th scope="col">类别</th><th scope="col">示例</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">身份</th><td>能力、非 Owner 范围、页面脚本、框架操作、引用的记忆</td><td><code translate="no">permissions/identity.py</code>、<code translate="no">tool_authority.py</code>、工具抛出的 <code translate="no">Refused</code></td></tr>
+<tr><th scope="row">规则</th><td>deny、ask、allow 规则，外发暂扣，hook</td><td><code translate="no">permissions/rule.py</code>、<code translate="no">runtime/events/tool_gate.py</code></td></tr>
+<tr><th scope="row">模式</th><td>上表</td><td><code translate="no">_mode_decision</code></td></tr>
+<tr><th scope="row">沙箱</th><td>沙箱外的路径和网络，仅在 Sandbox 打开时</td><td><code translate="no">host/sandbox/</code>、<code translate="no">programs/_host/execution.py</code></td></tr>
+<tr><th scope="row">正确性</th><td>参数检查、先读后写、审批期间文件被改、审查过期</td><td>工具代码，以错误或重试返回模型</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">auto</code> 机制、<code translate="no">attended.py</code>（从无人值守的轮次移除 <code translate="no">ask_user_question</code>）和 <code translate="no">state.py</code> 不在判定路径上。</p>
+
+<h2 id="refusal-contract">拒绝契约</h2>
+<p><code translate="no">permissions/refusal.py</code> 是唯一生产者。模型收到一行：</p>
+<pre translate="no" tabindex="0">[blocked by &lt;layer&gt;] &lt;what&gt; did not run: &lt;why&gt;. To change this: &lt;change&gt;.</pre>
+<dl class="pairs">
+<dt><code translate="no">Refusal</code></dt><dd><code translate="no">layer</code>、<code translate="no">code</code>、<code translate="no">what</code>（用平实语言描述调用）、<code translate="no">why</code>（原因，引用规则或点名模式）、<code translate="no">change</code>（Owner 在哪里改）</dd>
+<dt><code translate="no">Refused</code></dt><dd>工具代码抛出的异常；包裹 <code translate="no">Refusal</code>，只能经本模块的构造函数创建。<code translate="no">programs/_host/runtime.py</code> 的 <code translate="no">_execute_bound</code>、<code translate="no">_gated_execute</code> 和 agent 循环把它转成标准结果，所以 <code translate="no">AgentTool</code> 调用不会抛出它；直接用 Python 调用工具实现会抛出。</dd>
+<dt>结果 <code translate="no">details</code></dt><dd><code translate="no">denied: true</code>、<code translate="no">reason_code</code>、<code translate="no">layer</code>、<code translate="no">rule</code>、<code translate="no">mode</code>、<code translate="no">outcome: "not_started"</code>、<code translate="no">execution_started: false</code>。现有工具行显示这段文字。</dd>
+</dl>
+<p class="note">下表 why 和 change 的内容就是发给模型的英文原文或其所指位置。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">代码</th><th scope="col">层</th><th scope="col"><code translate="no">why</code></th><th scope="col"><code translate="no">change</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">AUTHORITY_*</code></th><td>identity</td><td><code translate="no">&lt;speaker&gt; is not the owner and may not &lt;capability&gt;</code></td><td>Channels 账户访问，或 MCP 服务器暴露的工具；群聊中用 <code translate="no">channels accounts group-users add</code> 加 <code translate="no">--access full</code>，或把账户的 <code translate="no">sender_access</code> 设为 <code translate="no">owner</code></td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_SCOPE</code></th><td>identity</td><td><code translate="no">work started by &lt;source&gt; may not &lt;action&gt;</code></td><td>须由 Owner 发起这项工作</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_CHECK_IN_READ</code></th><td>identity</td><td><code translate="no">an always-on check-in may not read this: &lt;reason&gt;</code></td><td>在报告里说明需要什么，由 Owner 在普通轮次查看</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_PAGE_SCRIPT</code></th><td>identity</td><td><code translate="no">page scripts run only in work the owner started</code></td><td>使用页面操作，或由 Owner 发起</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_OUTSIDE_TEXT</code></th><td>identity</td><td><code translate="no">this work came from text the owner did not write</code></td><td>在报告或最终消息里说明想做什么，由 Owner 操作</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_FRAMEWORK</code></th><td>identity</td><td><code translate="no">framework operations are the owner's</code></td><td>须由 Owner 发起这项工作</td></tr>
+<tr><th scope="row"><code translate="no">RULE_DENY</code></th><td>rule</td><td><code translate="no">your deny rule "&lt;rule&gt;" matches</code></td><td>全局、项目或对话的权限规则</td></tr>
+<tr><th scope="row"><code translate="no">HELPER_CANNOT_ASK</code></th><td>rule、mode 或 sandbox</td><td><code translate="no">this needs approval (&lt;rule or mode&gt;), and a sub-agent running in the background has no one to ask</code></td><td>助手不做这一步继续，并在最终回复里写明需要什么；由调用方去做或去问</td></tr>
+<tr><th scope="row"><code translate="no">NO_ONE_TO_APPROVE</code></th><td>rule、mode 或 sandbox</td><td><code translate="no">this needs approval (&lt;rule or mode&gt;) and this &lt;source&gt; turn has no one to approve it</code></td><td>取决于是什么要求审批。保留外发：把完整草稿写进最终消息或报告，所有者可在 Agent 的常驻标签页取消勾选。ask 规则：由所有者修改或移除指明的规则。离开沙箱：把底部模式设为 Bypass permissions，或关闭 Sandbox 开关。其他情况：把底部模式设为 Bypass permissions，或添加指明的 allow 规则</td></tr>
+<tr><th scope="row"><code translate="no">PLAN_MODE_DENY</code></th><td>mode</td><td><code translate="no">the conversation is in Plan mode, which only reads</code></td><td>消息框底部的模式选择器</td></tr>
+<tr><th scope="row"><code translate="no">TOOL_UNAVAILABLE</code></th><td>setting</td><td><code translate="no">&lt;why this turn cannot use it&gt;</code>. 不是审批：对话这个纪元的工具数组保留着、但这一轮用不了的工具（没有渠道、没人回答、memory 关闭、没有页面）。消息旁的一节列出它们，见缓存前缀设计</td><td>不用它，换别的办法</td></tr>
+<tr><th scope="row"><code translate="no">APPROVAL_DENIED</code></th><td>mode 或 rule</td><td><code translate="no">you declined it</code>，有附言时带上</td><td>再次询问，或更改模式</td></tr>
+<tr><th scope="row"><code translate="no">AUTO_CLASSIFIER_*</code>、<code translate="no">AUTO_HISTORY_UNAVAILABLE</code></th><td>mode</td><td><code translate="no">Auto review &lt;blocked / could not run&gt;: &lt;reason&gt;</code></td><td>模式选择器，或 allow 规则</td></tr>
+<tr><th scope="row"><code translate="no">SANDBOX_*</code> 及沙箱策略</th><td>sandbox</td><td><code translate="no">Sandbox is on and &lt;path or network&gt; is outside it</code></td><td>该对话的 Sandbox 开关，或沙箱设置</td></tr>
+<tr><th scope="row"><code translate="no">HOOK_DENIED</code></th><td>hook</td><td><code translate="no">a hook blocked it: &lt;message&gt;</code></td><td>设置中的 Hooks</td></tr>
+<tr><th scope="row"><code translate="no">AGENT_BUDGET</code></th><td>setting</td><td><code translate="no">this chain has reached &lt;limit&gt; &lt;generations, messages or agents&gt;</code></td><td><code translate="no">Settings &gt; Agent &gt; &lt;label&gt;</code>（<code translate="no">agent.&lt;key&gt;</code>）</td></tr>
+<tr><th scope="row"><code translate="no">COMPUTER_USE_REFUSED_APP</code></th><td>setting</td><td><code translate="no">&lt;app&gt; is on the refused list</code></td><td><code translate="no">Settings &gt; computer_use.refused_apps</code></td></tr>
+<tr><th scope="row"><code translate="no">COMPUTER_USE_OWN_WINDOW</code></th><td>mode</td><td><code translate="no">in &lt;mode&gt; the Agent may not operate OpenProgram's own window, where approval cards appear</code></td><td>消息框底部的模式选择器</td></tr>
+<tr><th scope="row"><code translate="no">COMPUTER_USE_PASSWORD_FIELD</code></th><td>setting</td><td><code translate="no">typing into password fields is turned off</code></td><td><code translate="no">Settings &gt; computer_use.refuse_password_fields</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>过期状态、MCP 文字和强制测试</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">过期状态</th><td><code translate="no">PERMISSION_REVIEW_STALE</code>、<code translate="no">APPROVAL_FILE_CHANGED</code> 和等待恢复不匹配，经 <code translate="no">refusal.stale(...)</code> 作为重试指令返回，不算拦截</td></tr>
+<tr><th scope="row">MCP 服务器</th><td>面向模型的文字按判定代码取自 <code translate="no">refusal.py</code>（<code translate="no">MCP_GATE_REFUSALS</code>），所以 <code translate="no">_trusted_approval_denial</code> 识别的正是门产生的字符串</td></tr>
+<tr><th scope="row">单一来源测试</th><td><code translate="no">tests/unit/security/test_refusal_single_source.py</code> 遍历 <code translate="no">openprogram/programs/</code>、<code translate="no">openprogram/runtime/permissions/</code>、<code translate="no">openprogram/runtime/agent/loop/</code> 和 <code translate="no">openprogram/extensions/mcp/server/</code>。在 <code translate="no">refusal.py</code> 之外发现方括号拒绝字面量、字典或 <code translate="no">details=</code> 中的 <code translate="no">"denied": True</code>、<code translate="no">"sandbox policy:"</code> 字面量或 <code translate="no">raise PermissionError(</code> 时失败。每个例外都在显式白名单上并写明原因。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>判定路径、<code translate="no">call_problem</code>、<code translate="no">identity.py</code>、<code translate="no">refusal.py</code>、<code translate="no">Refused</code>、MCP 表、默认模式和选择器已就绪。未完成：</p>
+<ul>
+<li><code translate="no">_DELEGATED_SOURCES</code> 仍为审计标记委托的高风险调用。</li>
+<li>Hook 拒绝带 hook 的消息，但不带它的名字。</li>
+</ul>

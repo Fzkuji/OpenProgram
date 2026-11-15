@@ -1,0 +1,96 @@
+<title>Features</title>
+<meta name="description" content="How automatic context, self-authored functions, conversation branches, memory, the DAG view and multiple accounts show up in use.">
+<h1>Features</h1>
+<p class="note">Why it works this way: <a href="../capabilities/agentic-programming/philosophy.html">Agentic Programming philosophy</a>.</p>
+
+<h2 id="automatic-context">Automatic context</h2>
+<p>Every <code translate="no">Agent</code> method call is a node in the session's conversation DAG, with user messages and LLM calls. Nested calls thread themselves: when <code translate="no">verify</code> calls the LLM, it already sees what <code translate="no">observe</code> and <code translate="no">click</code> returned.</p>
+<pre translate="no"><code>login_flow ✓ 8.8s
+├── observe ✓ 3.1s → "found login form at (200, 300)"
+├── click ✓ 2.5s → "clicked login button"
+└── verify ✓ 3.2s → "dashboard confirmed"</code></pre>
+<pre translate="no"><code>from openprogram import Agent
+
+class ExampleAgent(Agent):
+    method_options = {
+        'navigate': {'tool': True, 'expose': 'full', 'render_range': {'callers': 1}},
+    }
+
+    def navigate(self, target): ...</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Option</th><th scope="col">Controls</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">expose</code></th><td>What later calls see of this one: <code translate="no">io</code> input and output (default for tools), <code translate="no">llm</code> its LLM exchanges, <code translate="no">full</code> everything (default otherwise), <code translate="no">hidden</code> no node</td></tr>
+<tr><th scope="row"><code translate="no">render_range={"callers": N}</code></th><td>How much earlier history this function sees; <code translate="no">0</code> walls it off</td></tr>
+<tr><th scope="row"><code translate="no">render_range={"subcalls": N}</code></th><td>Its own in-frame history in long loops</td></tr>
+</tbody>
+</table>
+
+<h2 id="functions-that-author-functions">Functions that author functions</h2>
+<p>Writing and fixing <code translate="no">Agent</code> methods is ordinary agent work with file-editing tools, following the <a href="../reference/api/agent.html">agentic function API</a>. No <code translate="no">create()</code> or <code translate="no">fix()</code> framework calls exist. The skill is the spec: file location, decorator metadata, docstring versus <code translate="no">content</code>, a validation checklist and a smoke test. Programs improve through write, run, fail, fix.</p>
+
+<h2 id="conversation-as-a-git-dag">Conversation as a git DAG</h2>
+<p>Every exchange is a commit. Branches are first-class.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Operation</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Branch off</strong></th><td>Explore from any past exchange, keeping the original thread</td></tr>
+<tr><th scope="row"><strong>Attach</strong></th><td>Bring context from another session in as a labelled user message</td></tr>
+<tr><th scope="row"><strong>Merge</strong></th><td>Combine two or more branches into one aggregated reply</td></tr>
+</tbody>
+</table>
+<p class="note">Branches that touch files run in isolated git worktrees: the fork is of the underlying repository, not a copy of messages.</p>
+
+<h2 id="memory">Memory that writes itself</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="Finished turns collect until there is enough, or the conversation has been quiet for 30 minutes. One write pass then sorts facts by subject into topics files, and timeline is rebuilt from them. At 03:00 a sleep pass splits grown files, merges duplicates and repairs links. An invalid write is refused and leaves the workspace unchanged.">
+  <defs><marker id="mm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">Finished turns</text>
+  <text class="t-soft" x="0" y="60">collect until enough,</text>
+  <text class="t-soft" x="0" y="80">or 30 min of quiet</text>
+  <line class="ln" x1="160" y1="28" x2="222" y2="28" marker-end="url(#mm-a)"/>
+  <text class="t-big" x="234" y="34">One write pass</text>
+  <text class="t-soft" x="234" y="60">sorts facts by subject</text>
+  <line class="ln" x1="400" y1="28" x2="462" y2="28" marker-end="url(#mm-a)"/>
+  <text class="t-big" x="474" y="34">topics/</text>
+  <text class="t-soft" x="474" y="60">timeline/ rebuilt from it</text>
+  <text class="t-big" x="474" y="124">03:00 pass</text>
+  <text class="t-soft" x="474" y="150">splits, merges, repairs</text>
+  <path class="ln-faint" d="M520 70V104"/>
+  <text class="t-no" x="234" y="124">Invalid write: refused,</text>
+  <text class="t-no" x="234" y="146">workspace byte for byte unchanged</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Finished turns</strong><small>collect until enough, or 30 min of quiet</small></li>
+  <li><strong>One write pass</strong><small>sorts facts by subject</small><p class="refused">Invalid write: refused, workspace byte for byte unchanged</p></li>
+  <li><strong>topics/</strong><small>timeline/ rebuilt from it</small></li>
+  <li class="flow-end"><strong>03:00 pass</strong><small>splits, merges, repairs</small></li>
+</ol>
+</figure>
+<p>Paths, commands, tools and write guarantees: <a href="../capabilities/memory.html">Memory</a>.</p>
+
+<h2 id="mini-dag">DAG view</h2>
+<p>The right rail draws every node (user message, LLM call, code Call, attach) and edge. It scrolls with the chat, highlights the range in view, and clicking a node scrolls to its message. <a href="../reference/design/runtime/dag/rendering.html">Rendering rules</a>.</p>
+
+<h2 id="multi-account">Multiple accounts and key rotation</h2>
+<p>An account is a profile: an independent credential set for a provider. API-key providers hold a list of keys the same way.</p>
+<pre translate="no"><code>openprogram providers login openai --account work
+openprogram providers use openai work
+openprogram providers use openai                     # back to the default account
+openprogram providers list</code></pre>
+<p class="note">The same panel is in Web (Settings → LLM Providers) and TUI (<code translate="no">/login &lt;provider&gt;</code>, which completes OAuth, device code, CLI import or key paste in the terminal).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Key handling</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Add</th><td>Paste; validated first, then joins the list. Name each one</td></tr>
+<tr><th scope="row">Use</th><td>The active key is the one called. A key set through env or config is migrated in</td></tr>
+<tr><th scope="row">Rotation, optional, off by default</th><td>A failing key cools down while the next takes over</td></tr>
+<tr><th scope="row">Cooldown</th><td><code translate="no">429</code> about 1 to 5 minutes, <code translate="no">402</code> 24 hours for billing, <code translate="no">5xx</code> 30 seconds</td></tr>
+<tr><th scope="row">Strategy</th><td><code translate="no">in order</code>, <code translate="no">spread evenly</code>, <code translate="no">random</code>, <code translate="no">least used</code>, with ↑ ↓ priority</td></tr>
+</tbody>
+</table>
+<p class="note"><a href="../reference/design/providers/auth/unified-account-management.html">Design and status</a>.</p>
+
+<h2 id="multi-agent">Multiple agents and channels</h2>
+<p>A session already supports several <code translate="no">agent_id</code>s: each row records its producer, the sidebar can colour by author, and channels (Telegram, Discord, Slack, WeChat) map to per-account identities. Next: cross-channel routing and declarative tool availability.</p>
+

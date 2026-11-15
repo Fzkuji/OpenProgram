@@ -18,12 +18,11 @@ export interface Provider {
   /** User-added (tier-3) provider — a config-only OpenAI-compatible endpoint.
    *  Drives the "custom" badge + delete action + manual model-add input. */
   custom?: boolean;
+  local?: boolean;
   /**
    * Provider-specific setup instructions surfaced in the detail
    * panel. Backticked spans render as inline <code>; lines starting
-   * with `$ ` render as a command row. Used by claude-code (meridian /
-   * claude-max-api-proxy) and any other "local daemon" provider whose
-   * setup isn't an API key.
+   * with `$ ` render as a command row. Used for provider-specific setup instructions.
    */
   setup_hint?: string;
   /**
@@ -31,7 +30,7 @@ export interface Provider {
    * drive for this provider, excluding plain api_key (the ApiKey field handles
    * that). Present only for providers with a real native flow; absent/empty for
    * key-only providers. Drives the <ProviderLogin/> "Sign in" panel. Source of
-   * truth: openprogram/auth/login/login_method_registry.py.
+   * truth: openprogram/models/auth/login/login_method_registry.py.
    */
   login_methods?: { id: string; label: string }[];
 }
@@ -46,6 +45,9 @@ export interface ProviderAccountView {
   kind?: string;
   status?: string;
   is_active: boolean;
+  /** The account requests fall back to while nothing is pinned; it stays
+   *  in use until another account is chosen, so it has no off switch. */
+  is_fallback?: boolean;
   enabled?: boolean;
   has_value: boolean;
   masked_key: string;
@@ -60,7 +62,7 @@ export interface Model {
   vision?: boolean;
   video?: boolean;
   audio?: boolean;
-  tools?: boolean;
+  tools?: boolean | null;
   reasoning?: boolean;
   /** JSON-schema strict output mode */
   structured_output?: boolean;
@@ -119,5 +121,5 @@ export function formatCtx(n?: number): string {
  *  just disabled. Dynamic import: runtime-bridge/providers touches `window`
  *  at module scope, so a static import breaks Next prerendering. */
 export function refreshAgentChip(): void {
-  void import("@/lib/runtime-bridge/providers").then((m) => m.loadAgentSettings());
+  void import("@/lib/runtime-bridge/providers").then((m) => m.loadAgentSettings({ written: true }));
 }

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.self_update import (
+from openprogram.operations.self_update import (
     ActiveUpdateError,
     ConcurrentUpdateError,
     CorruptUpdateStateError,
@@ -48,7 +48,7 @@ def test_create_persists_private_record_and_rejects_second_active(
     assert state.phase is UpdatePhase.PREPARING
     assert store.load_active().request.update_id == "su_test"
     assert json.loads((tmp_path / "active.json").read_text())["update_id"] == "su_test"
-    from openprogram._compat import user_private_metadata
+    from openprogram.host._platform.filesystem import user_private_metadata
     assert user_private_metadata((tmp_path / "su_test" / "request.json").stat(), exact_mode=0o600)
     assert user_private_metadata((tmp_path / "su_test").stat(), exact_mode=0o700)
     with pytest.raises(ActiveUpdateError):
@@ -62,9 +62,9 @@ def test_transition_is_compare_and_swap_and_rejects_illegal_edges(
     store.create(_request())
 
     staged = store.transition(
-        "su_test", UpdatePhase.STAGING, expected_phase=UpdatePhase.PREPARING
+        "su_test", UpdatePhase.BUILDING, expected_phase=UpdatePhase.PREPARING
     )
-    assert staged.phase is UpdatePhase.STAGING
+    assert staged.phase is UpdatePhase.BUILDING
     assert staged.revision == 2
 
     with pytest.raises(ConcurrentUpdateError):
@@ -81,8 +81,8 @@ def test_verifier_claim_is_stable_and_lease_can_be_taken_over(tmp_path: Path) ->
     store = SelfUpdateStore(tmp_path)
     store.create(_request())
     for current, target in (
-        (UpdatePhase.PREPARING, UpdatePhase.STAGING),
-        (UpdatePhase.STAGING, UpdatePhase.READY),
+        (UpdatePhase.PREPARING, UpdatePhase.BUILDING),
+        (UpdatePhase.BUILDING, UpdatePhase.READY),
         (UpdatePhase.READY, UpdatePhase.ACTIVATING),
         (UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING),
     ):
@@ -192,7 +192,7 @@ def test_request_round_trip_keeps_evidence_and_iteration_policy() -> None:
             mode=IterationMode.BOUNDED_AUTO,
             max_attempts=2,
             deadline=1234,
-            allowed_paths=("openprogram/self_update/**",),
+            allowed_paths=("openprogram/operations/self_update/**",),
             required_tests=("python -m pytest -q tests/unit/self_update",),
         ),
     )
@@ -240,7 +240,7 @@ def test_load_repairs_state_committed_before_event_append(
     )
 
     with pytest.raises(OSError, match="event failure"):
-        store.transition("su_test", UpdatePhase.STAGING)
+        store.transition("su_test", UpdatePhase.BUILDING)
     monkeypatch.setattr(store, "_write_events", write_events)
 
     record = store.load("su_test")
@@ -248,7 +248,7 @@ def test_load_repairs_state_committed_before_event_append(
         json.loads(line)
         for line in (tmp_path / "su_test" / "events.jsonl").read_text().splitlines()
     ]
-    assert record.state.phase is UpdatePhase.STAGING
+    assert record.state.phase is UpdatePhase.BUILDING
     assert [event["revision"] for event in events] == [1, 2]
     assert events[-1] == record.state.last_event
 
@@ -256,7 +256,7 @@ def test_load_repairs_state_committed_before_event_append(
 def test_event_log_rejects_illegal_transition_evidence(tmp_path: Path) -> None:
     store = SelfUpdateStore(tmp_path)
     store.create(_request())
-    store.transition("su_test", UpdatePhase.STAGING)
+    store.transition("su_test", UpdatePhase.BUILDING)
     store.transition("su_test", UpdatePhase.READY)
     events_path = tmp_path / "su_test" / "events.jsonl"
     events = [json.loads(line) for line in events_path.read_text().splitlines()]
@@ -275,3 +275,77 @@ def test_claim_rejects_non_finite_time_and_update_ids_are_valid() -> None:
         SelfUpdateStore(Path("/tmp/unused")).claim_verifier(
             "su_test", owner="worker", now=float("nan"), lease_seconds=30
         )
+
+
+def _finish(store: SelfUpdateStore, update_id: str, phase: UpdatePhase, at: float) -> None:
+    """Create an update, carry it to a terminal phase and stamp when it got there."""
+    store.create(_request(update_id))
+    if phase is UpdatePhase.ABORTED:
+        store.transition(update_id, UpdatePhase.ABORTED)
+    else:
+        for step in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+            store.transition(update_id, step)
+        if phase is UpdatePhase.SUCCEEDED:
+            store.transition(update_id, UpdatePhase.VERIFYING)
+        store.transition(update_id, phase)
+    state_path = store.root / update_id / "state.json"
+    state = json.loads(state_path.read_text())
+    state["updated_at"] = at
+    state_path.write_text(json.dumps(state))
+    for name in ("artifact", "controller", "build-home", "build-tmp"):
+        (store.root / update_id / name).mkdir()
+        (store.root / update_id / name / "payload.bin").write_bytes(b"x" * 16)
+
+
+def _has_payloads(store: SelfUpdateStore, update_id: str) -> bool:
+    return (store.root / update_id / "artifact").is_dir() and (store.root / update_id / "controller").is_dir()
+
+
+def test_prune_payloads_keeps_records_recent_referenced_and_manual_recovery(tmp_path: Path) -> None:
+    store = SelfUpdateStore(tmp_path)
+    day = 86400.0
+    _finish(store, "su_old_success", UpdatePhase.SUCCEEDED, at=10 * day)
+    _finish(store, "su_old_abort", UpdatePhase.ABORTED, at=11 * day)
+    _finish(store, "su_pending_diagnosis", UpdatePhase.ROLLED_BACK, at=12 * day)
+    _finish(store, "su_manual", UpdatePhase.NEEDS_MANUAL_RECOVERY, at=13 * day)
+    _finish(store, "su_young", UpdatePhase.ROLLED_BACK, at=29 * day)
+    _finish(store, "su_third", UpdatePhase.SUCCEEDED, at=20 * day)
+    _finish(store, "su_second", UpdatePhase.ABORTED, at=21 * day)
+    # The payload-less events of su_old_abort stay readable later on.
+    (tmp_path / "diagnosis-pending.json").write_text(json.dumps({"schema": 1, "update_id": "su_pending_diagnosis"}))
+
+    removed = store.prune_payloads(now=30 * day)
+
+    # The newest two finished updates (su_young, which is also under seven days
+    # old, and su_second) keep their payloads; so do the referenced one and the
+    # one awaiting manual recovery. Everything older loses them.
+    for kept in ("su_young", "su_second", "su_pending_diagnosis", "su_manual"):
+        assert _has_payloads(store, kept), kept
+    for pruned in ("su_third", "su_old_success", "su_old_abort"):
+        assert not _has_payloads(store, pruned), pruned
+        assert not (tmp_path / pruned / "build-home").exists()
+        assert not (tmp_path / pruned / "build-tmp").exists()
+        # The durable record survives and still loads.
+        record = store.load(pruned)
+        assert record.request.update_id == pruned
+        assert (tmp_path / pruned / "events.jsonl").is_file()
+    assert sorted(p.parent.name for p in removed) == sorted(["su_old_abort"] * 4 + ["su_old_success"] * 4 + ["su_third"] * 4)
+    # A second pass finds nothing more to do.
+    assert store.prune_payloads(now=30 * day) == []
+
+
+def test_prune_payloads_skips_owner_repairs_and_the_active_update(tmp_path: Path) -> None:
+    store = SelfUpdateStore(tmp_path)
+    day = 86400.0
+    _finish(store, "su_repairing", UpdatePhase.ROLLED_BACK, at=1 * day)
+    (tmp_path / "su_repairing" / "owner-repair.json").write_text(json.dumps({"schema": 1, "repair_id": "a" * 32}))
+    _finish(store, "su_done", UpdatePhase.SUCCEEDED, at=2 * day)
+    store.create(_request("su_live"))
+    (tmp_path / "su_live" / "artifact").mkdir()
+
+    removed = store.prune_payloads(keep=0, now=40 * day)
+
+    assert _has_payloads(store, "su_repairing"), "a terminal update with a pending owner repair keeps its controller"
+    assert not _has_payloads(store, "su_done")
+    assert (tmp_path / "su_live" / "artifact").is_dir(), "the active update is never touched"
+    assert {p.parent.name for p in removed} == {"su_done"}

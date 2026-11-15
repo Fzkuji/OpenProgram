@@ -28,8 +28,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route, WebSocketRoute
 
-from openprogram.backend_endpoint import OwnerAuthError
-from openprogram.webui.owner_auth import (
+from openprogram.host.security.backend_endpoint import OwnerAuthError
+from openprogram.interfaces.server.owner_auth import (
     OwnerAuthMiddleware,
     OwnerAuthState,
 )
@@ -419,14 +419,13 @@ def test_reverse_proxy_forwarded_headers_and_origin_matrix(tmp_path: Path):
 
 
 def test_startup_logs_warn_about_plaintext_http_for_remote_origins(
-    monkeypatch, tmp_path: Path, capsys
+    monkeypatch, tmp_path: Path, capsys, caplog
 ):
     """A non-loopback http:// origin must be called out as unencrypted."""
-    from openprogram.webui import server as webui_server
+    from openprogram.interfaces.server import server as webui_server
 
     port = _free_port()
     monkeypatch.setattr(webui_server, "_server_thread", None)
-    monkeypatch.setattr(webui_server, "_restore_sessions", lambda: None)
     monkeypatch.setattr(
         webui_server,
         "_web_config",
@@ -435,7 +434,7 @@ def test_startup_logs_warn_about_plaintext_http_for_remote_origins(
             "allowed_origins": ("http://192.168.1.20:%d" % port,),
         },
     )
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     # Keep the uvicorn boot out of this test: the assertion is on the banner
     # start_server prints after the auth state exists.
     monkeypatch.setattr(
@@ -452,8 +451,10 @@ def test_startup_logs_warn_about_plaintext_http_for_remote_origins(
 
     assert "binding_scope=loopback" in printed
     assert "forwarded_proto_trust=loopback-peer-only" in printed
-    assert "WARNING: owner token traffic uses unencrypted HTTP" in printed
-    assert "http://192.168.1.20:%d" % port in printed
+    warnings = [r for r in caplog.records
+                if r.name == "openprogram.interfaces.server.server" and r.levelname == "WARNING"]
+    assert any("owner token traffic uses unencrypted HTTP" in r.getMessage()
+               and "http://192.168.1.20:%d" % port in r.getMessage() for r in warnings)
     assert "token_fingerprint=sha256:" in printed
 
 
@@ -524,7 +525,7 @@ def test_token_never_appears_in_logs_responses_urls_or_rendered_html(
 
 def test_snapshot_rejects_a_tampered_token_fingerprint(tmp_path: Path):
     """A snapshot that no longer matches the token file is not trusted."""
-    from openprogram.backend_endpoint import read_active_web_access
+    from openprogram.host.security.backend_endpoint import read_active_web_access
 
     state = OwnerAuthState.start(
         state_dir=tmp_path,
@@ -621,13 +622,15 @@ out.http_body = await post.text();
 const get = await fetch(`${base}/api/x`, { headers, redirect: 'error' });
 out.get_status = get.status;
 
-out.ws_status = await new Promise((resolve) => {
+out.ws_status = await new Promise((settle) => {
   const ws = new WebSocket(`${base.replace(/^http/, 'ws')}/ws`, { headers });
   let status = 0;
+  // A pending timer keeps node alive, so the first outcome clears it.
+  const timer = setTimeout(() => resolve(status || 'timeout'), 15000);
+  const resolve = (value) => { clearTimeout(timer); settle(value); };
   ws.on('upgrade', (m) => { status = m.statusCode; });
   ws.on('open', () => { ws.close(); resolve(status || 101); });
   ws.on('error', (e) => resolve(status || String(e)));
-  setTimeout(() => resolve(status || 'timeout'), 15000);
 });
 
 console.log(JSON.stringify(out));

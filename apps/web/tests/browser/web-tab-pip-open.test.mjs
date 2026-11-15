@@ -1,23 +1,23 @@
 import assert from "node:assert/strict";
-import test, { after } from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import test from "node:test";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { parseHTML } from "linkedom";
 
+import { scratchDir } from "../scratch-dir.mjs";
+
 const webPath = dirname(fileURLToPath(new URL("../../package.json", import.meta.url)));
-const dir = await mkdtemp(join(webPath, ".pip-open-test-"));
-after(() => rm(dir, { recursive: true, force: true }));
+const dir = scratchDir(webPath, "pip-open-test");
 const bundle = join(dir, "pip.mjs");
 await build({
   absWorkingDir: webPath,
   stdin: { contents: `
-    export { WebTabPip } from "./components/center-tabs/web-tab-pip";
+    export { WebTabPip } from "./components/center-tabs/pip/web-tab-pip";
     export { useCenterTabs } from "./lib/tabs/center-tabs-store";
-    export { useWebTabPip, getSnapshot, setSnapshot, usePipSnapshots } from "./lib/browser/web-tab-pip-store";
-    export { topLevelTabs } from "./lib/browser/web-page-management";
-    export { resetBrowserResources, getPreviewPreference, selectResourcePreview } from "./lib/chat/session-resources";
+    export { useWebTabPip, getSnapshot, setSnapshot, usePipSnapshots } from "./lib/browser/web-tab/web-tab-pip-store";
+    export { topLevelTabs } from "./lib/browser/web-tab/web-page-management";
+    export { resetBrowserResources, getPreviewPreference, selectResourcePreview } from "./lib/chat/resources/session-resources";
   `, resolveDir: webPath },
   bundle: true, format: "esm", jsx: "automatic", outfile: bundle,
   packages: "external", platform: "node", tsconfig: join(webPath, "tsconfig.json"),
@@ -27,13 +27,15 @@ await build({
     b.onResolve({ filter: /browser-control-bar/ }, () => ({ path: "control-bar", namespace: "test-services" }));
     b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents: a.path === "control-bar"
       ? "export function BrowserControlBar() { return null; } export function ActionCueTravel() { return null; } export function BrowserPageCue() { return null; }"
-      : "export function desktopBridge() { return null; }" }));
+      : "export function desktopBridge() { return null; } export function installDesktopMenuHandlers() {} export function ensureWebView() {} export function removeVisibleWebTabBounds() {} export function registerVisibleWebTabBounds() {} export function setWebTabReady() {}" }));
   }}],
 });
 const { window } = parseHTML("<html><body></body></html>");
 globalThis.window = window;
 globalThis.document = window.document;
 globalThis.CustomEvent = window.CustomEvent;
+// The preview dispatches its own geometry events on its element.
+globalThis.Event = window.Event;
 globalThis.HTMLElement = window.HTMLElement;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.localStorage = {
@@ -46,7 +48,11 @@ Object.defineProperty(window, "location", { value: { pathname: "/chat" } });
 Object.defineProperty(window, "navigator", { value: { language: "en", userAgent: "" } });
 window.innerWidth = 1200;
 window.innerHeight = 800;
-window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} };
+const resizeObservers = new Set();
+window.ResizeObserver = class {
+  constructor(callback) { this.callback = callback; resizeObservers.add(this); }
+  observe() {} disconnect() { resizeObservers.delete(this); } unobserve() {}
+};
 globalThis.ResizeObserver = window.ResizeObserver;
 window.requestAnimationFrame = () => 0;
 window.cancelAnimationFrame = () => {};
@@ -159,11 +165,15 @@ test("PiP toolbar Open page reveals the exact hidden page as the current top tab
   });
 });
 
-test("last-frame PiP keeps Open page on chrome and has no body duplicate", async () => {
+test("browser PiP embeds an interactive sandboxed page and keeps Open page on chrome", async () => {
   await withPip(async ({ host, page, hidden, session, prefBefore }) => {
     const pip = host.querySelector("[data-pip='true']");
     const chrome = pip.firstElementChild;
-    assert.ok(pip.textContent.includes("Last frame") || pip.textContent.includes("unavailable"));
+    const frame = pip.querySelector("iframe");
+    assert.ok(frame);
+    assert.equal(frame.getAttribute("src"), "https://page.test/1");
+    assert.equal(frame.getAttribute("sandbox"), "allow-scripts allow-same-origin allow-forms allow-popups");
+    assert.equal(pip.querySelector("img"), null);
     assert.equal(bodyOpenPage(host), undefined);
     const buttons = [...pip.querySelectorAll("button")];
     assert.ok(buttons.length > 0);
@@ -175,4 +185,72 @@ test("last-frame PiP keeps Open page on chrome and has no body duplicate", async
     assertRevealedExactPage({ page, hidden, session, prefBefore });
     assert.equal(host.querySelector("[data-pip='true']"), null, "opening the Page hides the chat preview");
   });
+});
+
+
+test("unsized preview follows its chat pane after layout hydration and resize", async () => {
+  const parent = document.body;
+  let chatWidth = 500;
+  let displayed = false;
+  const legacy = document.createElement("div");
+  legacy.className = "center-pane-chat";
+  parent.append(legacy);
+  const chat = document.createElement("div");
+  chat.dataset.centerTabId = "s:a";
+  chat.className = "center-pane-chat";
+  parent.append(chat);
+  const previousRect = parent.getBoundingClientRect;
+  parent.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 800);
+  chat.getBoundingClientRect = () => new DOMRect(0, 0, chatWidth, 800);
+  const previousStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = el => ({ display: el === chat && displayed ? "flex" : "none" });
+  Object.defineProperty(window.HTMLElement.prototype, "offsetParent", { configurable: true, get() { return parent; } });
+  try {
+    await withPip(async ({ host }) => {
+      assert.equal(useWebTabPip.getState().rect, null);
+      const pip = host.querySelector('[data-pip="true"]');
+      displayed = true;
+      await act(async () => { for (const ro of [...resizeObservers]) ro.callback(); });
+      assert.ok(parseFloat(pip.style.left) + parseFloat(pip.style.width) <= chatWidth);
+      chatWidth = 350;
+      await act(async () => { for (const ro of [...resizeObservers]) ro.callback(); });
+      assert.ok(parseFloat(pip.style.left) + parseFloat(pip.style.width) <= chatWidth);
+    });
+  } finally {
+    delete window.HTMLElement.prototype.offsetParent;
+    globalThis.getComputedStyle = previousStyle;
+    parent.getBoundingClientRect = previousRect;
+    chat.remove();
+    legacy.remove();
+  }
+});
+
+test("window release ends a drag when the native page consumes pointerup", async () => {
+  const previousEvent = globalThis.Event;
+  globalThis.Event = window.Event;
+  const pointer = (type, x, y) => {
+    const event = new window.Event(type, { bubbles: true });
+    Object.assign(event, { button: 0, buttons: 1, pointerId: 1, clientX: x, clientY: y });
+    return event;
+  };
+  try {
+    await withPip(async ({ host }) => {
+      const pip = host.querySelector('[data-pip="true"]');
+      const chrome = pip.firstElementChild;
+      await act(async () => {
+        chrome.dispatchEvent(pointer("pointerdown", 900, 100));
+        chrome.dispatchEvent(pointer("pointermove", 800, 160));
+        window.dispatchEvent(new window.Event("mouseup"));
+      });
+      const moved = useWebTabPip.getState().rect;
+      assert.ok(moved, "release must persist the moved rectangle");
+      const handle = pip.querySelector('[data-pip-resize="se"]');
+      await act(async () => {
+        handle.dispatchEvent(pointer("pointerdown", 800, 400));
+        handle.dispatchEvent(pointer("pointermove", 750, 370));
+        window.dispatchEvent(new window.Event("mouseup"));
+      });
+      assert.ok(useWebTabPip.getState().rect.width < moved.width, "next resize must not be blocked by the old drag");
+    });
+  } finally { globalThis.Event = previousEvent; }
 });

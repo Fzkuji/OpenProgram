@@ -1,0 +1,33 @@
+<title>Agent 图所有权</title>
+<meta name="description" content="哪次执行拥有哪张图、记录什么，以及一个 Agent 调用另一个 Agent 时继承什么。">
+<h1>由 Agent 分别管理执行 DAG</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">调用</th><th scope="col">记录在</th><th scope="col">父侧保留</th></tr></thead>
+<tbody>
+<tr><th scope="row">消息、模型请求、直接派发的工具</th><td>当前图</td><td>—</td></tr>
+<tr><th scope="row">注册工具派发</th><td>当前图</td><td>—</td></tr>
+<tr><th scope="row">普通 Python 辅助函数，含递归</th><td>不记录：零新增节点</td><td>—</td></tr>
+<tr><th scope="row">同一 Agent 的辅助方法</th><td>不记录，沿用所有者</td><td>—</td></tr>
+<tr><th scope="row">另一个 Agent</th><td>自己的独立图，返回后仍可读取</td><td>调用、结果和子会话引用</td></tr>
+</tbody>
+</table>
+
+<h2>跨越 Agent 边界</h2>
+<table class="stack">
+<thead><tr><th scope="col">内容</th><th scope="col">子 Agent</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行配置、权限限制、取消</th><td>继承</td></tr>
+<tr><th scope="row">图写入器、调用 ID、强制节点 ID、predecessor、上下文历史位置</th><td>本地；没有 caller ID 指向父图</td></tr>
+<tr><th scope="row">显式命名的 Context 内容</th><td>可用</td></tr>
+<tr><th scope="row">父图历史</th><td>不自动导入</td></tr>
+<tr><th scope="row">父侧绑定</th><td>返回、异常或取消后恢复</td></tr>
+</tbody>
+</table>
+
+<p class="note">工具期限到达时记录工具错误，不取消父轮次。浏览器期限控制是单独的范围。不增加数据库、公共装饰器或本地运行实例，既有历史不改写。</p>
+
+<h2>实现状态</h2>
+<p>图所有权和公共入口回归测试已在代码中，测试不需要 provider 或外部操作。可选记录诊断保留本地告警。源码测试不代表安装版 App 的行为。</p>
+
+<p class="next"><a href="overview.zh.html">会话 DAG 设计</a></p>

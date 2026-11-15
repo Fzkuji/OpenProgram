@@ -1,9 +1,8 @@
 /**
  * History DAG renderer — shared types + constants.
  *
- * Moved from ``apps/web/lib/runtime-bridge/history/types.ts`` as part of the
- * DAG module reorganisation. See ``./README.md`` for the full module
- * layout and ``docs/design/runtime/dag-node-model.md`` for the node-field
+ * See ``./README.md`` for the module layout and
+ * ``docs/reference/design/runtime/dag/rendering.html`` §1 for the node-field
  * semantics (function, role, _tier, _depth, _lane).
  */
 
@@ -18,11 +17,17 @@ export interface GNode {
   function?: string;
   name?: string;
   preview?: string;
+  /** Who sent a message send_message delivered here — the receipt line
+   *  the backend strips from ``preview``. */
+  message_from?: string;
   is_named?: boolean;
   head_msg_id?: string;
   children?: GNode[];
   _depth?: number;
   _lane?: number;
+  /** The lane whose colour the node wears: HEAD's, on the road to HEAD
+   *  (layout/assign-lanes.ts ``_stampPathLanes``), else its own. */
+  _pathLane?: number;
   _tier?: number;
   _internal?: boolean;
   _runNode?: boolean;
@@ -31,12 +36,19 @@ export interface GNode {
 }
 
 // Square grid: same vertical and horizontal step so the DAG reads
-// as a chessboard layout.
-export const ROW_H = 32;
-export const COL_W = 32;
-export const NODE_R = 5;
-export const PAD_X = 18;
-export const PAD_Y = 16;
+// as a chessboard layout. A 24px tile (render/tiles.ts) on a 40px step
+// leaves a 16px run of belt between neighbours.
+export const ROW_H = 40;
+export const COL_W = 40;
+// Room for the agent token that stands on a tile's corner (render/agents.ts).
+export const PAD_X = 30;
+export const PAD_Y = 30;
+
+/** Height the floating composer occupies at the bottom of the DAG pane,
+ *  in screen pixels. The canvas runs underneath it; a fit, a jump or a
+ *  wheel forwarded from the minimap centres in the strip above it, or
+ *  the graph lands where it has to be dragged out by hand. */
+export const COMPOSER_STRIP = 150;
 
 // Categorical branch palette — 唯一定义在 lib/format-utils/lane-colors.ts。
 export { LANE_COLORS } from "@/lib/format-utils/lane-colors";
@@ -60,4 +72,3 @@ export function layoutParent(n: GNode): string | null | undefined {
   return n._overview_parent || semanticParent(n);
 }
 
-export type HighlightMode = "viewport" | "context";

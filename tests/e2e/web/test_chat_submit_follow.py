@@ -17,10 +17,10 @@ ENTRY = r'''
 import React, {useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {useChatSubmit} from './components/chat/composer/submit/use-chat-submit';
-import {useChatAreaStick} from './components/chat/messages/use-chat-area-stick';
+import {useChatAreaStick} from './components/chat/messages/list/use-chat-area-stick';
 import {useSessionStore} from './lib/session-store';
-import {useSendQueue, queueFor} from './lib/chat/send-queue';
-import {peekTakeLatest} from './lib/chat/chat-scroll';
+import {useSendQueue, queueFor} from './lib/chat/send/send-queue';
+import {peekTakeLatest} from './lib/chat/history/chat-scroll';
 import {runtimeState, setSocket} from './lib/runtime-bridge/state';
 
 const EMPTY = [];
@@ -55,11 +55,12 @@ window.fetch = async (url, init = {}) => {
   }});
   throw new Error(`Unexpected request: ${path}`);
 };
-const messagesById = {}, messageOrder = {}, runningTasks = {};
+const rowsByView = {}, messageOrder = {}, runningTasks = {};
 for (const sid of ['main', 'peer']) {
   messageOrder[sid] = Array.from({length: 40}, (_, i) => `${sid}-${i}`);
+  rowsByView[sid] = {};
   for (const id of messageOrder[sid]) {
-    messagesById[id] = {id, role: 'user', content: id, status: 'done'};
+    rowsByView[sid][id] = {id, role: 'user', content: id, status: 'done'};
   }
   runningTasks[sid] = {
     session_id: sid, msg_id: `${sid}-39`, execution_id: `exec-${sid}`,
@@ -68,14 +69,14 @@ for (const sid of ['main', 'peer']) {
 }
 useSessionStore.setState({
   currentSessionId: 'main', activeChatKey: 'main', welcomeVisible: false,
-  messagesById, messageOrder, runningTasks, composerDrafts: {},
+  rowsByView, messageOrder, runningTasks, composerDrafts: {},
 });
 runtimeState.currentSessionId = 'main';
 window.readQueue = sid => queueFor(sid);
 window.readNote = sid => peekTakeLatest(sid, sid === 'peer' ? 'peer:peer' : 'main');
-window.grow = sid => useSessionStore.getState().appendMessage(sid, {
-  id: `${sid}-delayed-growth`, role: 'assistant', content: 'delayed growth', status: 'done',
-});
+window.grow = sid => useSessionStore.getState().applyLocalChange(sid, {kind: 'local_append', row: {
+  id: `${sid}-delayed-growth`, role: 'assistant', rowKind: 'assistant', content: 'delayed growth', status: 'done',
+}});
 
 function Pane({sid, peer = false}) {
   const areaRef = useRef(null), columnRef = useRef(null);
@@ -97,10 +98,9 @@ function Pane({sid, peer = false}) {
     input, isRunning: running, noEnabledModels: false, promptNeedModel() {},
     send: () => true, setComposerInputFor: setInput, setHistoryIndex() {},
     slash: {runCommand: () => false, close() {}}, pendingImages: [],
-    pendingDocs: attachment ? [{id: 'attached', filename: 'note.txt'}] : [],
-    clearAttachmentsAfterSubmit() {}, thinking: 'medium', toolsEnabled: true,
-    toolsProfile: '__agent__', webSearchEnabled: false, fastEnabled: false,
-    fastSupported: false, runningMessageMode: mode, dispatchFunction: () => false,
+    pendingDocs: attachment ? [{id: 'attached', filename: 'note.txt', loading: true}] : [],
+    clearAttachmentsAfterSubmit() {}, thinking: 'medium', webSearchEnabled: false, fastEnabled: false,
+    fastSupported: false, dispatchFunction: () => false,
   });
   return <section className="pane">
     <div id={peer ? undefined : 'chatArea'} ref={areaRef} className="area"
@@ -118,7 +118,7 @@ function Pane({sid, peer = false}) {
     </select>
     <label><input type="checkbox" checked={attachment}
       onChange={event => setAttachment(event.target.checked)} />Attachment {sid}</label>
-    <button onClick={() => void submit().then(
+    <button onClick={() => void submit(mode).then(
       () => { window.finishedSubmits += 1; },
       error => { window.submitErrors.push(String(error)); },
     )}>Send {sid}</button>
@@ -183,13 +183,16 @@ def test_running_submit_follows_without_moving_other_pane(submit_follow_bundle, 
             message = page.get_by_label(f"Message {sid}", exact=True)
             send = page.get_by_role("button", name=f"Send {sid}", exact=True)
 
-            # A rejected attachment must neither clear input nor move the view.
+            # Activation may leave a readable completed note. Rejection must
+            # preserve that exact note, not manufacture another follow intent.
+            note_before_rejection = page.evaluate("sid => window.readNote(sid)", sid)
+            # An attachment still loading must neither clear input nor move the view.
             page.get_by_label(f"Attachment {sid}", exact=True).check()
             message.fill("keep the attached draft")
             send.click()
             page.wait_for_function("window.finishedSubmits === 1")
             expect(message).to_have_value("keep the attached draft")
-            assert page.evaluate("sid => window.readNote(sid)", sid) is None
+            assert page.evaluate("sid => window.readNote(sid)", sid) == note_before_rejection
             assert page.evaluate("sid => window.readQueue(sid).length", sid) == 0
             assert area.evaluate("a => a.scrollTop") < 2
 
@@ -198,6 +201,10 @@ def test_running_submit_follows_without_moving_other_pane(submit_follow_bundle, 
             send.click()
             page.wait_for_function("window.finishedSubmits === 2")
             expect(message).to_have_value("")
+            accepted_note = page.evaluate("sid => window.readNote(sid)", sid)
+            assert accepted_note["sessionId"] == sid
+            assert accepted_note["scrollerKey"] == ("peer:peer" if sid == "peer" else "main")
+            assert accepted_note["generation"] > (note_before_rejection["generation"] if note_before_rejection else 0)
             page.wait_for_function(
                 "sid => {const a=document.querySelector(`[data-testid='${sid}-area']`);return Math.abs(a.scrollHeight-a.clientHeight-a.scrollTop)<2}",
                 arg=sid,

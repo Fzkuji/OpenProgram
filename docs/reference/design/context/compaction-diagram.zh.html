@@ -1,0 +1,116 @@
+<title>压缩层级</title>
+<meta name="description" content="OpenProgram 为把请求留在上下文窗口内所做的事情，按发生顺序排列，附状态。">
+<h1>压缩层级</h1>
+
+<table class="stack" id="s1">
+<thead><tr><th scope="col">时机</th><th scope="col">步骤</th><th scope="col">动作</th><th scope="col">LLM</th><th scope="col">破坏缓存</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">结果生成时</th><td>Budget Reduction</td><td>单个工具结果超过权重上限时截一次</td><td>否</td><td>否</td><td>已实现</td></tr>
+<tr><th scope="row">轮次前达到自动压缩比例；或 <code translate="no">/compact</code></th><td>Auto-Compact</td><td>每条链一份滚动摘要</td><td>一次</td><td>是</td><td>已实现</td></tr>
+<tr><th scope="row">轮次步骤之间达到自动压缩比例</th><td>Mid-turn</td><td>对该轮之前的历史做 Auto-Compact；每轮一次</td><td>一次</td><td>是</td><td>已实现</td></tr>
+<tr><th scope="row">provider 报告溢出</th><td>Reactive</td><td>Auto-Compact，再发同一个请求；每个请求一次，每轮两次</td><td>是</td><td>是</td><td>已实现</td></tr>
+<tr><th scope="row">每次 provider 请求，超预算时</th><td>请求检查点</td><td>只在该请求内对较早前缀做一个检查点</td><td>有界</td><td>是</td><td>已实现</td></tr>
+<tr><th scope="row">仍超，约 90%</th><td>Context Collapse</td><td>分段摘要，保留原文</td><td>每段一次</td><td>是</td><td>未实现</td></tr>
+</tbody>
+</table>
+<p class="note">摘要语义：<a href="compaction.zh.html">压缩</a>。Claude Code 的同类阶梯：<a href="claude-code-compaction.zh.html">Claude Code 压缩</a>。<code translate="no">/context</code> 显示 token 分布。</p>
+
+<details id="s3">
+<summary>Budget Reduction</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>只处理工具结果，不处理用户或助手消息</td></tr>
+<tr><th scope="row">阈值</th><td><code translate="no">spill.result_cap()</code>：权重 10,000（或模型的 <code translate="no">tool_output_weight</code>），不超过窗口的 30%；在结果生成时只截一次。旧结果从不老化，一直完整保留到自动压缩</td></tr>
+<tr><th scope="row">方法</th><td>在换行处保留头尾约 60/40，完整文字存进文件，并写明要读的行号</td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">agent/loop/tool_dispatch.py</code> 的 <code translate="no">_as_stored</code>、<code translate="no">state/store/session/spill.py</code> 的 <code translate="no">bound_text</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="s4-4">
+<summary>Auto-Compact 和 Reactive</summary>
+<p>Auto-Compact 就是<a href="compaction.zh.html">压缩</a>里的流水线。<code translate="no">/compact [tokens]</code> 指定保留多少最近 token。Mid-turn 和 Reactive 在 agent 循环里运行（<a href="compaction.zh.html#overflow-recovery">超长恢复</a>），作用于该轮所在的分支；Stop 会结束摘要请求。</p>
+</details>
+
+<details id="s4-3">
+<summary>Context Collapse（设计）</summary>
+<ul>
+<li>触发：仍超，约 90%；95% 阻塞。</li>
+<li>每段 5–10 轮，各摘要约 100–300 token；LLM 调用数等于段数（30 轮 3 段：3 次）。</li>
+<li>原文通过读时投影留在 collapse store。</li>
+</ul>
+</details>
+
+<h2 id="s2">函数调用节点</h2>
+<p>DAG 带来的新增部分，Claude Code 没有对应。</p>
+<table class="stack">
+<thead><tr><th scope="col">节点状态</th><th scope="col">上下文</th><th scope="col">压缩</th></tr></thead>
+<tbody>
+<tr id="s2-1"><th scope="row">运行中</th><td>内部：子树完全展开。调用方：默认 <code translate="no">expose=io</code>，只见输入输出。由 <code translate="no">render_context</code> 的 callers、subcalls、expose 控制</td><td>内部工具输出接受 Budget Reduction。</td></tr>
+<tr id="s2-2"><th scope="row">完成或出错</th><td><code translate="no">expose=io</code> 隐藏子树，无需额外操作；子节点仍可在 DAG 查看，也能通过工具读取</td><td>输入输出按对话节点对待</td></tr>
+</tbody>
+</table>
+
+<h2 id="rolling-summary-contract">滚动摘要</h2>
+<p class="note"><a href="compaction.zh.html">压缩</a>之外的约束：</p>
+<ul>
+<li>始终保留最新一个完整用户轮次，默认保留最新两个；token 预算可能允许少于二十条顶层消息。</li>
+<li>已发布的汇报也是边界，因此连续多条汇报之间即使没有用户消息也能折叠；只保留放得下的尾部。</li>
+<li>大的已完成工具轮次不能让压缩失效，因此切点移到下一个完整用户边界。活跃用户轮次绝不拆分，其工具证据不进摘要就不丢弃。</li>
+<li>摘要输入和 <code translate="no">covers_ids</code> 描述同一范围。</li>
+<li>估算包括摘要标记和工具结果。完成事件报告两个 token 数和摘要是否生效。</li>
+<li>历史上错误的摘要不重写；不迁移、不删除。</li>
+<li>会话图的压缩范围用同一消息快照，加载期间重复压缩也一致。</li>
+</ul>
+<details>
+<summary>验收</summary>
+<ul id="rolling-summary-status">
+<li>十六条顶层消息含大工具结果时，覆盖完整的旧轮次，上下文缩小。</li>
+<li>摘要收到每个被替换的用户请求和可见工具结果；最近轮次不变。</li>
+<li>等长或更长的摘要、取消、provider 错误和调用期间的编辑都不写入。</li>
+<li>重复压缩、切分支、占用统计和最终请求的渲染一致。</li>
+</ul>
+</details>
+
+<h2 id="intra-turn-request">请求检查点的范围</h2>
+<p class="note">规则：<a href="compaction.zh.html#inside-one-message">请求检查点</a>。此外：</p>
+<ul>
+<li>在消息转换、记忆注入和实际工具解析之后测量；每次发送和回退模型都重查。</li>
+<li>缓存属于当前 AgentContext，不跨函数视图。</li>
+<li>服务不能持久压缩的调用。不取代 DAG 摘要，也不保证语义无损或与 provider 计数完全一致。</li>
+</ul>
+
+<h2 id="request-checkpoints">请求检查点</h2>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">行为</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">预算</th><td>计入系统提示、工具、响应 schema、输出预留、历史</td><td>回退模型重新计算</td></tr>
+<tr><th scope="row">检查点</th><td>较早的完整纯文本前缀变成任务摘要</td><td>不拆工具组，不丢多模态或未解决内容</td></tr>
+<tr><th scope="row">摘要请求</th><td>全部源文本按预算分块，滚动摘要</td><td>取消、错误和预算耗尽时保留原文</td></tr>
+<tr><th scope="row">继续</th><td>只发送验证过的更小请求</td><td>原始消息和 DAG 节点不变</td></tr>
+</tbody>
+</table>
+<p>改编自 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs">Codex 本地压缩</a>，它保留用户消息并替换执行历史。OpenProgram 不复制 Rust 源码、不截断用户指令、不采用远程加密压缩，也不取代 DAG。检查点文本是助手数据，绝不是系统指令。</p>
+<details>
+<summary>验收</summary>
+<ul id="request-checkpoint-status">
+<li>长助手文本和工具参数超过模型窗口后，AgentLoop 能继续。</li>
+<li>每个保留的工具调用都有结果；最新执行和用户消息完全一致。</li>
+<li>摘要调用不超窗口、覆盖全部源文本，溢出时恢复且不丢输入。</li>
+<li>取消、前缀变化、切模型和非文本证据不复用不兼容的摘要。</li>
+<li>待完成：安装版 App 验收。</li>
+</ul>
+</details>
+
+<details id="s6">
+<summary>一次长会话，200K 上下文</summary>
+<ol>
+<li>0–30%：只有 Budget Reduction。</li>
+<li><code translate="no">paper_agent</code> 运行：内部工具调用展开，超大输出被截断；完成后 <code translate="no">expose=io</code> 隐藏。</li>
+<li>到达比例：Auto-Compact 用一份摘要替换旧轮次。</li>
+<li>一条消息内工具运行很长：Mid-turn 压缩它之前的历史。</li>
+<li>provider 溢出：Reactive，再发同一个请求。</li>
+<li>不能持久压缩的调用：请求检查点。</li>
+</ol>
+</details>

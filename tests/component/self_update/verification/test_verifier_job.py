@@ -5,7 +5,10 @@ import json
 
 import pytest
 
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
+from tests.component.agent import async_job_support as _async_job_support
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
 
 
 def _options():
@@ -20,16 +23,16 @@ def _options():
 
 @pytest.fixture
 def runner(store_fixture, monkeypatch):
-    from openprogram.agent.job.runner import JobRunner
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+    from openprogram.runtime.jobs.runner import JobRunner
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     instance = JobRunner(max_workers=1)
     yield instance
     instance.shutdown()
 
 
 def test_job_snapshot_survives_json_reload_without_caller_aliases(runner):
-    from openprogram.agent.job.store import load_job
-    from openprogram.agent.job.types import Job
+    from openprogram.runtime.jobs.store import load_job
+    from openprogram.runtime.jobs.types import Job
     options = _options()
     job_id = runner.spawn_job("p1", "verify", "main", defer_dispatch=True, **options)
     options["profile_snapshot"]["tools"].append("bash")
@@ -51,12 +54,12 @@ def test_job_snapshot_survives_json_reload_without_caller_aliases(runner):
 
 @pytest.mark.parametrize("borrowed", [False, True])
 def test_normal_and_borrowed_jobs_preserve_verifier_request(runner, store_fixture, monkeypatch, borrowed):
-    from openprogram.agent import dispatcher
-    from openprogram.agent.job.types import JobStatus
+    from openprogram.runtime.conversation import turn_runtime as dispatcher
+    from openprogram.runtime.jobs.types import JobStatus
     captured = []
     # This test isolates Job option transport. Startup authorization is covered
     # with real durable update/Job state in test_recovery.py.
-    monkeypatch.setattr("openprogram.self_update.control.recovery.require_verifier_execution", lambda **_: None)
+    monkeypatch.setattr("openprogram.operations.self_update.control.recovery.require_verifier_execution", lambda **_: None)
 
     def dispatch(req):
         if req.user_text == "parent":
@@ -91,10 +94,10 @@ def test_normal_and_borrowed_jobs_preserve_verifier_request(runner, store_fixtur
 
 @pytest.mark.parametrize("missing", ["profile_snapshot", "model_override", "tools_override", "response_format", "spawn_caller"])
 def test_verifier_does_not_fall_back_to_live_configuration(runner, monkeypatch, missing):
-    from openprogram.agent.job.types import JobStatus
+    from openprogram.runtime.jobs.types import JobStatus
     options = _options()
     options.pop(missing)
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", lambda req: pytest.fail("unsafe dispatch"))
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", lambda req: pytest.fail("unsafe dispatch"))
     job_id = runner.spawn_job("p1", "verify", "main", **options)
     result = runner.await_job(job_id, timeout=5)
     assert result.status is JobStatus.ERRORED
@@ -103,7 +106,7 @@ def test_verifier_does_not_fall_back_to_live_configuration(runner, monkeypatch, 
 
 def test_verifier_policy_cannot_be_expanded_by_explicit_tools():
     from openprogram.programs import agent_tools, apply_tool_policy
-    tools = agent_tools(names=["read", "bash", "write", "agent", "send_message", "self_update_prepare"])
+    tools = agent_tools(names=["read", "bash", "write", "agent", "send_message", "self_update"])
     assert "bash" in {tool.name for tool in tools}
     assert {tool.name for tool in apply_tool_policy(tools, source="self_update_verify", exposure_filter=False)} == {"read"}
     assert {tool.name for tool in agent_tools(names=[t.name for t in tools], source="self_update_verify")} == {"read"}
@@ -119,9 +122,9 @@ def test_verifier_has_a_canonical_live_observer_but_no_write_capability():
     {"advance_head": True}, {"context_mode": "inherit", "parent_msg_id": "a1"},
 ])
 def test_verifier_rejects_main_branch_context(runner, monkeypatch, overrides):
-    from openprogram.agent.job.types import JobStatus
+    from openprogram.runtime.jobs.types import JobStatus
     options = {**_options(), **overrides}
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", lambda req: pytest.fail("unsafe dispatch"))
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", lambda req: pytest.fail("unsafe dispatch"))
     job_id = runner.spawn_job("p1", "verify", "main", **options)
     result = runner.await_job(job_id, timeout=5)
     assert result.status is JobStatus.ERRORED
@@ -129,9 +132,9 @@ def test_verifier_rejects_main_branch_context(runner, monkeypatch, overrides):
 
 
 def test_verifier_requires_provider_qualified_model(runner, monkeypatch):
-    from openprogram.agent.job.types import JobStatus
+    from openprogram.runtime.jobs.types import JobStatus
     options = {**_options(), "model_override": "bare-model"}
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", lambda req: pytest.fail("unsafe dispatch"))
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", lambda req: pytest.fail("unsafe dispatch"))
     job_id = runner.spawn_job("p1", "verify", "main", **options)
     result = runner.await_job(job_id, timeout=5)
     assert result.status is JobStatus.ERRORED
@@ -141,7 +144,7 @@ def test_verifier_requires_provider_qualified_model(runner, monkeypatch):
 @pytest.mark.parametrize("name", ["read", "self_update_observe"])
 def test_verifier_rejects_a_custom_executor_using_a_read_tool_name(name):
     from openprogram.programs import get_agent_tool, apply_tool_policy
-    from openprogram.agent.internals._model_tools import resolve_tools
+    from openprogram.runtime.conversation.model_tools import resolve_tools
     original = get_agent_tool(name)
 
     async def custom_execute(*args, **kwargs):

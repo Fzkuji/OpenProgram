@@ -9,12 +9,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const chrome = require('../../../desktop/theme-chrome.js');
-const compiled = buildSync({ entryPoints: [fileURLToPath(new URL('../../lib/prefs/theme-bootstrap.ts', import.meta.url))], bundle: true, platform: 'node', format: 'cjs', write: false });
+const chrome = require('../../../desktop/main/windows/theme-chrome.js');
+const compiled = buildSync({ entryPoints: [fileURLToPath(new URL('../../lib/prefs/appearance/theme-bootstrap.ts', import.meta.url))], bundle: true, platform: 'node', format: 'cjs', write: false });
 const module = { exports: {} };
 vm.runInNewContext(compiled.outputFiles[0].text, { module, exports: module.exports });
 
-function bootstrap(mode = 'dark') {
+function bootstrap(mode = 'dark', desktopTheme = {}) {
   const values = new Map(Object.entries({ agentic_theme_schema: '3', agentic_theme_style: 'neutral', agentic_theme_mode: mode, agentic_custom_css_enabled: '0' }));
   const attrs = new Map();
   const traces = [];
@@ -22,7 +22,7 @@ function bootstrap(mode = 'dark') {
   const mq = { matches: false, addEventListener: (_, cb) => { handlers.system = cb; } };
   const root = { setAttribute: (k,v) => attrs.set(k,v), getAttribute: k => attrs.get(k) ?? null, removeAttribute: k => attrs.delete(k), style: { setProperty() {}, removeProperty() {} } };
   let observer;
-  const window = { localStorage: { getItem: k => values.get(k) ?? null, setItem: (k,v) => values.set(k,v) }, matchMedia: () => mq, addEventListener: (k,cb) => { handlers[k] = cb; }, openprogramDesktop: { theme: { setChrome() {}, trace: p => traces.push(p) } } };
+  const window = { localStorage: { getItem: k => values.get(k) ?? null, setItem: (k,v) => values.set(k,v) }, matchMedia: () => mq, addEventListener: (k,cb) => { handlers[k] = cb; }, openprogramDesktop: { theme: { setChrome() {}, trace: p => traces.push(p), ...desktopTheme } } };
   vm.runInNewContext(module.exports.THEME_BOOTSTRAP_SCRIPT, { window, document: { documentElement: root, getElementById: () => null }, MutationObserver: class { constructor(cb) { observer = cb; } observe() {} } });
   return { values, traces, attrs, handlers, mq, root, get observer() { return observer; } };
 }
@@ -52,6 +52,18 @@ test('auto follows system, fixed mode ignores system, unexpected DOM changes are
   const fixed = bootstrap('dark');
   fixed.handlers.system();
   assert.equal(fixed.attrs.get('data-theme'), 'dark');
+});
+
+test('in the desktop App auto follows the OS, not a media query a debugger can override', () => {
+  let osDark = true, announce;
+  const b = bootstrap('auto', { systemDark: () => osDark, onSystemChange: cb => { announce = cb; } });
+  b.handlers.system(); // an attached Playwright forces prefers-color-scheme: light
+  assert.equal(b.attrs.get('data-theme'), 'dark');
+  osDark = false; // the OS itself changes; the media query reports it too
+  announce(false);
+  b.handlers.system();
+  assert.equal(b.attrs.get('data-theme'), 'light');
+  assert.equal(b.traces.filter(t => t.source === 'system').length, 1);
 });
 
 test('desktop diagnostic log is bounded and excludes arbitrary data', () => {

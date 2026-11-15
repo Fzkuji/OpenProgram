@@ -1,333 +1,167 @@
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenProgram · 报错与超时机制（现状）</title>
-<style>
-  :root{
-    --bg:#0f1117; --panel:#171a23; --panel2:#1d2130; --ink:#e7e9ee; --muted:#9aa3b2;
-    --line:#2a2f3d; --accent:#6ea8fe; --accent2:#8b9cf0;
-    --ok:#3ddc97; --okbg:#10241c; --warn:#ffce6b; --warnbg:#2a2310; --bad:#ff6b6b; --badbg:#2a1414;
-    --mono:'SF Mono',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-    font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
-    -webkit-font-smoothing:antialiased}
-  .wrap{max-width:1080px;margin:0 auto;padding:40px 28px 96px}
-  h1{font-size:30px;letter-spacing:.2px;margin:0 0 6px}
-  h2{font-size:21px;margin:46px 0 14px;padding-top:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
-  h2 .n{font:600 13px/1 var(--mono);color:#0f1117;background:var(--accent);border-radius:6px;padding:6px 8px}
-  h3{font-size:16px;margin:26px 0 10px;color:#cfd5e1}
-  p{margin:10px 0}
-  .sub{color:var(--muted);margin:0 0 4px}
-  code,.mono{font-family:var(--mono);font-size:.9em}
-  code{background:#0b0d13;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#d7def0}
-  .cite{color:var(--accent);font-family:var(--mono);font-size:.82em;white-space:normal;overflow-wrap:anywhere}
-  a{color:var(--accent)}
-  .grid{display:grid;gap:14px}
-  .g3{grid-template-columns:repeat(3,1fr)}
-  .g2{grid-template-columns:repeat(2,1fr)}
-  @media(max-width:760px){.g3,.g2{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-  .card h4{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
-  .card .role{font-size:12.5px;color:var(--muted)}
-  .lead{background:linear-gradient(180deg,#191d2a,#141722);border:1px solid var(--line);
-    border-left:4px solid var(--accent);border-radius:12px;padding:18px 20px;margin:18px 0 4px}
-  .pill{display:inline-block;font:600 11px/1 var(--mono);padding:5px 8px;border-radius:999px;border:1px solid}
-  .p-ok{color:var(--ok);background:var(--okbg);border-color:#1f5c44}
-  .p-warn{color:var(--warn);background:var(--warnbg);border-color:#5c4a1f}
-  .p-bad{color:var(--bad);background:var(--badbg);border-color:#5c2424}
-  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.5px}
-  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
-  th{background:var(--panel2);font-weight:600;color:#cfd5e1}
-  tr:nth-child(even) td{background:#13161f}
-  td.c,th.c{text-align:center;white-space:nowrap}
-  /* call stack diagram */
-  .stack{display:flex;flex-direction:column;gap:0;margin:14px 0}
-  .layer{position:relative;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 26px;background:var(--panel)}
-  .layer:last-child{margin-bottom:0}
-  .layer::after{content:"▼";position:absolute;left:50%;bottom:-23px;transform:translateX(-50%);color:#454c5e;font-size:14px}
-  .layer:last-child::after{content:""}
-  .layer .t{font:600 14px/1.3 var(--mono);color:#cfe0ff}
-  .layer .d{font-size:13px;color:var(--muted);margin-top:4px}
-  .layer.ok{border-color:#1f5c44}
-  .layer.warn{border-color:#5c4a1f}
-  .layer.bad{border-color:#5c2424}
-  .tagrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-  pre{background:#0b0d13;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;
-    font-family:var(--mono);font-size:12.5px;line-height:1.55;color:#d7def0;margin:12px 0}
-  pre .k{color:#ff9d6b}.pre .s{color:#9be39b}
-  .cmt{color:#6b7488}
-  .num{color:#ffce6b}
-  .seq{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:14px 0}
-  .seq .row{display:grid;grid-template-columns:34px 1fr;border-top:1px solid var(--line)}
-  .seq .row:first-child{border-top:0}
-  .seq .ix{display:flex;align-items:center;justify-content:center;background:var(--panel2);font:600 13px/1 var(--mono);color:var(--accent)}
-  .seq .bd{padding:10px 14px}
-  .seq .bd b{color:#cfe0ff;font-weight:600}
-  .seq .bd .meta{color:var(--muted);font-size:12.5px}
-  .seq .row.bad .ix{color:var(--bad)}
-  .seq .row.bad .bd b{color:#ffb0b0}
-  .callout{border-radius:10px;padding:12px 15px;margin:12px 0;font-size:13.5px}
-  .co-bad{background:var(--badbg);border:1px solid #5c2424}
-  .co-warn{background:var(--warnbg);border:1px solid #5c4a1f}
-  .co-ok{background:var(--okbg);border:1px solid #1f5c44}
-  ul{margin:8px 0 8px 2px;padding-left:20px}li{margin:5px 0}
-  .small{font-size:12.5px;color:var(--muted)}
-  .kbd{font:600 11px/1 var(--mono);background:#0b0d13;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:3px 6px;color:#cdd6e6}
-  .foot{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
-  .arith{font-family:var(--mono);font-size:12.5px;background:#0b0d13;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0;white-space:pre;overflow:auto;color:#d7def0}
-</style>
-</head>
-<body>
-<div class="wrap">
-<section id="unbounded-answer">
-<h2>回答总时长与交互次数</h2>
-<p>默认聊天回答不设置工具交互次数上限，也不设置总处理时长上限。持续产生数据的 HTTP 模型流不因运行时间较长而中断。OPENPROGRAM_SSE_TOTAL_TIMEOUT_S 默认 0，表示无总时长限制；正数仍表示部署显式指定的单流期限。实现以正无穷 deadline 表示未设置上限，HTTP URL、重定向、响应大小检查保持原有规则。</p>
-<p>连接建立、写入、连接池等待、无数据和无有效数据检查仍然区分于回答总时长。用户取消始终有效。runtime.exec 的显式期限与程序调用轮数参数、GUI/browser 独立工具的声明预算不由聊天默认设置覆盖。</p>
-<p>验收使用实际 AgentSession 超过旧 200 次交互、managed HTTP 流经过旧 7200 秒且持续返回内容、显式期限仍终止等公共边界；不进行真实长时间等待或修改真实会话。</p>
-<h3>实现状态</h3><p>聊天交互循环和 HTTP 单流已默认不限次数与总时长。回归测试覆盖超过 200 次工具交互、持续响应超过原总时长、Google 同步与异步传输，以及显式总时长配置仍然生效。</p>
-</section>
+<title>Errors and timeouts</title>
+<meta name="description" content="What bounds one model call from runtime.exec() down to the socket, and how failures are classified.">
+<h1>Errors and timeouts</h1>
 
+<h2 id="timeout-owners">Three timeouts</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Bounds</th><th scope="col">Owner</th><th scope="col">Default</th></tr></thead>
+<tbody>
+<tr><th scope="row">Call</th><td>One HTTP request or SSE stream, and gaps within it</td><td>Provider transport</td><td>Always on</td></tr>
+<tr><th scope="row">Exec</th><td>One <code translate="no">exec</code>, retry sleeps included</td><td><code translate="no">runtime.exec(timeout_s=)</code>, or <code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></td><td>Unbounded (0)</td></tr>
+<tr><th scope="row">Task</th><td>One Agent turn or benchmark sample</td><td>The caller, which alone knows the budget</td><td>Caller's</td></tr>
+</tbody>
+</table>
 
-  <p class="sub">OpenProgram · 设计文档</p>
-  <h1>报错与超时机制（现状梳理）</h1>
-  <p class="small">范围：一次 <code>runtime.exec()</code> 从发起到失败/超时的完整路径——重试、退避、连接/流超时、错误分类、外层 watchdog。
-  目的：<b>先把现状写清楚再优化</b>。优化项在文末（§8）单列并标注实现状态与对应 commit。配套：<code>docs/design/llm-fault-tolerance.md</code>（跨框架对比）、<code>error-retry.md</code>。</p>
+<h2 id="unbounded-answer">Length of a reply</h2>
+<p>Chat replies have no limit on tool interactions or total time; a stream that keeps producing is never cut for running long. User cancellation always applies. Explicit <code translate="no">runtime.exec</code> deadlines, program call-round parameters and declared budgets of standalone GUI or browser tools are not overridden.</p>
 
-  <div class="lead">
-    <p style="margin-top:0"><b>一句话结论。</b> provider 层的连接/流超时基础设施是<span class="pill p-ok">成熟的</span>——mid-stream stall（连上后不再吐 token）已被 SSE idle/data-stall/total 预算主动限住。真正会导致「卡很久没有新行」的是
-    <span class="pill p-bad">三层重试循环相乘</span> +
-    <span class="pill p-bad">deadline 不穿透</span> +
-    <span class="pill p-bad">外层 watchdog 被 except 吞掉</span>。三者叠加，一次持续的 <code>ConnectError</code> 能跑数百秒到上千秒。</p>
-  </div>
+<h2 id="call-stack">Call stack</h2>
+<table class="stack">
+<thead><tr><th scope="col">Layer</th><th scope="col">Bounds</th><th scope="col">Retries</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Runtime.exec</code></th><td>Sets one absolute deadline in a ContextVar (<code translate="no">utils/deadline.py</code>); checks it before each attempt and each sleep</td><td><code translate="no">max_retries</code> 3 (<code translate="no">OPENPROGRAM_MAX_RETRIES</code>), <code translate="no">1.5·2^n</code> s, ±25%</td></tr>
+<tr><th scope="row"><code translate="no">Runtime._call</code> → <code translate="no">_run_async</code></th><td>No running loop: <code translate="no">asyncio.run</code> on this thread. Running loop (Web, worker): a pool thread, deadline forwarded</td><td>none</td></tr>
+<tr><th scope="row"><code translate="no">AgentSession._run_with_retry</code></th><td>Draws on the invocation's transport allowance</td><td>2 s, 4 s, 8 s</td></tr>
+<tr><th scope="row"><code translate="no">retry_stream</code> (Codex), retry loop (completions)</th><td>Reads the deadline before each attempt and sleep</td><td>5 attempts, 2 s base, 30 s cap</td></tr>
+<tr><th scope="row">Shared httpx client</th><td>Connect, write, pool 30 s; keepalive ~60 s; force-IPv4; proxy</td><td>none</td></tr>
+<tr><th scope="row"><code translate="no">_parse_sse_stream</code>, Codex WebSocket</th><td><code translate="no">wait = min(idle, stall, total, deadline)</code></td><td>none</td></tr>
+<tr><th scope="row"><code translate="no">streaming/stream._delivered</code></th><td>Every provider's stream passes here. Draws on the invocation's transport allowance; one attempt under a Goal or job reservation</td><td><a href="#resend">Re-sends</a> a transport failure: 5 attempts, 2 s base, 30 s cap</td></tr>
+<tr><th scope="row"><code translate="no">streaming/stream._metered</code></th><td>The <a href="#idle-bound">idle bound</a> for every provider that has none of its own</td><td>none</td></tr>
+</tbody>
+</table>
 
-  <div class="callout co-ok" style="margin-top:16px">
-    <b>实现状态 — 已落地（2026-06-01）。</b> §8 的 #1–#4（框架）与 #5（GUI harness）已实施并通过验证；#6 评估后暂缓（见该节）。下文 §2–§7 描述的是<u>修复前</u>的机制（保留以解释问题根因）；§5/§6 标了「已修复」，§8 标了每项状态与对应符号 / env。
-    <div style="margin-top:10px;font-family:var(--mono);font-size:12px;line-height:1.8">
-      <span class="pill p-ok">框架</span> OpenProgram <code>4e64ac95</code> — deadline 穿透 + <code>ExecInterrupt</code> + 不跨层重试 + <code>OPENPROGRAM_EXEC_TIMEOUT_S</code><br>
-      <span class="pill p-ok">harness</span> GUI-Agent-Harness <code>74bfd06</code> — <code>SampleTimeoutError(ExecInterrupt)</code> + <code>--exec-timeout-s</code> + 按 <code>LLMError.reason</code> 分类 + auth 中止 + <code>reraise_if_fatal</code><br>
-      <span class="small">文档更新提交于本仓后续 commit；上面两个是<b>实现</b> commit。行号仍为撰写时快照。</span>
-    </div>
-  </div>
+<h2 id="timeout-defaults">Transport budgets</h2>
+<table class="stack">
+<thead><tr><th scope="col">Budget</th><th scope="col">Default</th><th scope="col">Override</th></tr></thead>
+<tbody>
+<tr><th scope="row">Connect, write, pool</th><td>30 s</td><td><code translate="no">OPENPROGRAM_HTTPX_{CONNECT,WRITE,POOL}_TIMEOUT_S</code></td></tr>
+<tr><th scope="row">TCP dead-peer detection</th><td>~60 s (30 + 10 × 3)</td><td><code translate="no">OPENPROGRAM_TCP_KEEPALIVE</code></td></tr>
+<tr><th scope="row">No event (<a href="#idle-bound">idle bound</a>)</th><td>300 s</td><td><code translate="no">OPENPROGRAM_STREAM_IDLE_TIMEOUT_S</code> (0 turns it off); Codex also <code translate="no">OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S</code></td></tr>
+<tr><th scope="row">No bytes at all</th><td>600 s</td><td><code translate="no">OPENPROGRAM_SSE_IDLE_TIMEOUT_S</code></td></tr>
+<tr><th scope="row">Total for one stream</th><td>none (0)</td><td><code translate="no">OPENPROGRAM_SSE_TOTAL_TIMEOUT_S</code></td></tr>
+<tr><th scope="row">httpx read backstop</th><td>idle + 60 s</td><td><code translate="no">OPENPROGRAM_HTTPX_READ_TIMEOUT_S</code></td></tr>
+<tr><th scope="row">Large prompts</th><td>× 1.25 above 50k tokens, × 1.5 above 100k, × 2 above 200k</td><td>by <code translate="no">context_tokens</code></td></tr>
+<tr><th scope="row">Force IPv4, proxy</th><td>off, automatic</td><td><code translate="no">OPENPROGRAM_FORCE_IPV4</code>, <code translate="no">HTTP(S)_PROXY</code></td></tr>
+</tbody>
+</table>
 
-  <!-- ============================================================= -->
-  <h2><span class="n">1</span> 三层超时职责</h2>
-  <p>系统里有三种语义不同的「超时」，分属不同层、由不同代码负责。把它们混在一起是大多数困惑的来源。</p>
-  <div class="grid g3">
-    <div class="card">
-      <h4>① call-level <span class="pill p-ok">已覆盖</span></h4>
-      <div class="role">责任方：provider transport</div>
-      <p class="small" style="margin-bottom:0">一次 HTTP 请求 / 一条 SSE 流最多等多久；chunk 之间最大间隔。由 httpx 超时 + TCP keepalive + codex SSE 解析预算共同保证。</p>
-    </div>
-    <div class="card">
-      <h4>② exec-level <span class="pill p-warn">部分</span></h4>
-      <div class="role">责任方：<code>runtime.exec(timeout_s=)</code></div>
-      <p class="small" style="margin-bottom:0">整个 exec（含全部 retry sleep）的 wall-clock 上限。当前是「attempt 之间的软 deadline」，<b>不向下穿透</b>到内层 stream 重试，且默认 <code>None</code>=无界。</p>
-    </div>
-    <div class="card">
-      <h4>③ task-level <span class="pill p-bad">不可靠</span></h4>
-      <div class="role">责任方：调用方（runner / dispatcher）</div>
-      <p class="small" style="margin-bottom:0">一条 benchmark 样本 / 一个 agent turn 的总预算（OCR + 多轮 crop + gate + review + 重试）。只有调用方知道。ScreenSpot 现用 <code>signal.alarm</code>，会被框架吞掉。</p>
-    </div>
-  </div>
+<h2 id="idle-bound">Idle bound</h2>
+<p>A reply that stops arriving while its connection stays open ends its attempt after 300 s without an event, as <code translate="no">StreamIdleTimeout</code>: a transport error, retried by the layer that owns the attempt and shown as a retry.</p>
+<ul>
+<li>Keepalive pings and comment lines are not events.</li>
+<li>The wait for response headers counts as silence.</li>
+<li>The stalled stream is closed before the error is raised.</li>
+<li>A stop ends the wait at once.</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">Transport</th><th scope="col">Bounded in</th><th scope="col">Retried by</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex subscription, WebSocket and HTTP</th><td><code translate="no">read_budget.ReadBudget</code>, every frame or data line</td><td><code translate="no">retry_stream</code></td></tr>
+<tr><th scope="row">Chat Completions (DeepSeek, xAI, OpenAI-compatible)</th><td>The provider's request and chunk loop</td><td>Its own retry loop</td></tr>
+<tr><th scope="row">Gemini subscription</th><td>Each attempt's request and data lines; its own waits between attempts are not silence</td><td><code translate="no">stream._delivered</code></td></tr>
+<tr><th scope="row">OpenAI and Azure Responses, Anthropic, Google, Bedrock, plugin providers</th><td><code translate="no">stream._metered</code>, every event</td><td><code translate="no">stream._delivered</code></td></tr>
+</tbody>
+</table>
+<p>A provider that bounds itself sets <code translate="no">bounds_own_stream_idle</code>.</p>
+<p>boto3 blocks, so Bedrock reads on a thread of its own:</p>
+<ul>
+<li>The request and each event-stream read run there; each event is handed to the loop, so a stall never pauses other sessions.</li>
+<li>Closing the stream shuts its socket. botocore's own 60 s read timeout also applies to each read.</li>
+<li>The Bedrock SDK transport is disabled in the product until its network path is managed.</li>
+</ul>
+<p>A server-requested wait longer than <code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code> is not slept through: Gemini subscription fails at once with the rate-limit error, as <code translate="no">retry_stream</code> does.</p>
+<h2 id="resend">Re-sending a failed reply</h2>
+<p>A reply that stalls or whose connection drops before its final event says nothing about the request, so <code translate="no">stream._delivered</code> sends the same request again. It serves the conversation turn path, <code translate="no">AgentSession</code> and one-shot calls alike.</p>
+<table class="stack">
+<thead><tr><th scope="col">Case</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Failure before any content</th><td>Sent again after a <code translate="no">retry</code> event. Codex and Chat Completions do this in their own loops first; a failure they spent their attempts on arrives flagged and is not sent again</td></tr>
+<tr><th scope="row">Failure after reasoning, text or a tool call</th><td>The whole request is sent again and the partial is void, as Codex CLI and Claude Code do. The <code translate="no">retry</code> event carries <code translate="no">restart</code>; the reply's row and the loop's partial message drop the failed response's text and reasoning, so a steer during the wait commits none of it. Codex instead keeps the partial (<code translate="no">stop_reason="length"</code>) and the turn continues from it</td></tr>
+<tr><th scope="row">Tools</th><td>Never run twice: tools run only after a response's final event, and a failed response has none</td></tr>
+<tr><th scope="row">Reply going out to a channel</th><td>Paragraphs already sent cannot be recalled. The unsent text of the failed response is dropped, and the new response skips the opening it repeats word for word. A new response with other wording is sent whole after what went out</td></tr>
+<tr><th scope="row">Not re-sent</th><td>Rate limit, overload, auth or a bad request (SDK retries and failover own those); a request under a Goal or job reservation; anything after a stop</td></tr>
+<tr><th scope="row">Bound spent</th><td>The failure is flagged <code translate="no">transport_exhausted</code>, so neither <code translate="no">AgentSession</code> nor exec retries it again</td></tr>
+<tr><th scope="row">Usage</th><td>An attempt that reached the provider and ended without a final message is recorded: with the tokens it reported, or as one request whose cost is unknown. Reaching it means streamed content, reported tokens, or silence for the idle bound; an adapter's <code translate="no">start</code> event does not count. A refusal or a connection that failed before any content is not recorded</td></tr>
+</tbody>
+</table>
+<p>The consumer sees one <code translate="no">start</code> for the request, however many attempts it took. The redaction and failover wrappers own their producer task, so a stop reaches the provider request under them.</p>
+<table class="stack">
+<thead><tr><th scope="col">Why 300 s</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex CLI</th><td><code translate="no">stream_idle_timeout_ms</code> 300 000, then up to 5 stream retries, on the same backend</td></tr>
+<tr><th scope="row">Claude Code</th><td>Event-level stream watchdog 300 s; a smaller setting is raised to 300 s to absorb thinking pauses and proxy buffering</td></tr>
+<tr><th scope="row">Longest healthy silence measured</th><td>gpt-6.1-sol, xhigh, 15–18k reasoning tokens over 5–6 min: 14 s between events with a reasoning summary, 20 s without one. 2 697 of 2 700 recorded Codex requests reached their first content within 101 s</td></tr>
+</tbody>
+</table>
 
-  <!-- ============================================================= -->
-  <h2><span class="n">2</span> 完整调用栈</h2>
-  <p>从 benchmark 一路到网络 I/O。每层右下角标注它<b>自己持有的</b>超时/重试控制。注意有 <span class="pill p-bad">三层独立的重试循环</span>（locator、exec、stream_retry），彼此不共享 wall-clock。</p>
+<h2 id="stopping">Stopping a call</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mechanism</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Deadline</th><td>End to end; overrun bounded by one connect attempt. SSE waits are clamped to what remains.</td></tr>
+<tr><th scope="row"><code translate="no">transport_exhausted</code></th><td><code translate="no">retry_stream</code> marks a spent budget; exec does not restart it, and keeps reason and retryable honest</td></tr>
+<tr><th scope="row"><code translate="no">ExecInterrupt(BaseException)</code></th><td>Passes every <code translate="no">except Exception</code> retry layer. Only the outermost owner raises it.</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></th><td>Process default for <code translate="no">exec</code>; 0 is unbounded. Needs no signals, which Python delivers only to the main thread.</td></tr>
+<tr><th scope="row">Stop while a reply streams</th><td>The turn ends without waiting for the provider to close: the read in flight is cancelled and handed to the turn's loop (<code translate="no">event_stream.leave_unwinding</code>). A bounded close that runs out of time is handed over the same way, still running: cancelling it would cancel the provider a second time and cut its socket close short.</td></tr>
+<tr><th scope="row">The turn's loop closing</th><td>On a thread of its own, in <code translate="no">asyncio.run</code>'s order: the reads and closes a stop handed over get 2 s to end (a socket close is a round trip) and are cancelled after that, the provider clients close, the tasks the turn left are cancelled, async generators are shut down and the loop closes</td></tr>
+<tr><th scope="row">Tasks that appear while it closes</th><td>The close of an abandoned stream generator, or a socket close a cancelled task left running, runs to its end. Async generators are shut down only once no task is left, repeated until nothing new appears. This has 1 s; what is still running then is cancelled and named in a warning.</td></tr>
+<tr><th scope="row">Reply ended inside a block</th><td>Its final message holds the text and thinking as content blocks, not the adapter's working dict, at <code translate="no">stream._extract_final</code>. An unfinished tool call stays as the adapter left it.</td></tr>
+</tbody>
+</table>
+<p class="note">A benchmark runner with a sample budget subclasses <code translate="no">ExecInterrupt</code> for its watchdog, stops on authentication errors and scores by <code translate="no">LLMError.reason</code>.</p>
 
-  <div class="stack">
-    <div class="layer">
-      <div class="t">ScreenSpot runner · run_one()</div>
-      <div class="d">外层 <code>signal.alarm(sample_timeout_s)</code> 软中断；locator 内部还有自己的多轮重试。<span class="cite">benchmark 侧（不在本仓）</span></div>
-      <div class="tagrow"><span class="pill p-bad">retry loop #1（locator 轮次）</span><span class="pill p-bad">signal.alarm watchdog</span></div>
-    </div>
+<details>
+<summary>Not built: a hard limit on a synchronous <code translate="no">_call</code></summary>
+<p>Python cannot kill a thread: the caller would return while <code translate="no">_call</code> runs on until its socket fails, possibly writing model-call nodes or store state. The deadline, the idle bound and the SSE budgets already bound stalls. Subprocess isolation for benchmark samples is also not built.</p>
+</details>
 
-    <div class="layer warn">
-      <div class="t">Runtime.exec(content, …, timeout_s=None)</div>
-      <div class="d"><code>for attempt in range(max_retries)</code> 包 <code>except Exception</code>；deadline 只在 attempt <i>之间</i>检查，不打断正在跑的 <code>_call</code>。<span class="cite">runtime.py:750 / :780 / :754</span></div>
-      <div class="tagrow"><span class="pill p-bad">retry loop #2（max_retries=6）</span><span class="pill p-warn">软 deadline（要调用方传 timeout_s）</span></div>
-    </div>
+<h2 id="classification">Classification</h2>
+<p><code translate="no">classify_error</code> in <code translate="no">utils/errors.py</code>:</p>
+<table class="stack">
+<thead><tr><th scope="col">Order</th><th scope="col">Basis</th><th scope="col">Reason</th><th scope="col">Retryable</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>HTTP 429</td><td><code translate="no">RATE_LIMIT</code>; <code translate="no">AUTHORIZATION</code> if a spent quota</td><td>yes; no</td></tr>
+<tr><th scope="row">1</th><td>HTTP 500, 502, 503, 504</td><td><code translate="no">PROVIDER_INTERNAL</code></td><td>yes</td></tr>
+<tr><th scope="row">1</th><td>HTTP 401, 402, 403</td><td><code translate="no">AUTHORIZATION</code> if the body says the credit is spent (<code translate="no">BILLING_MARKERS</code>); else <code translate="no">AUTHENTICATION</code>, <code translate="no">AUTHORIZATION</code></td><td>no</td></tr>
+<tr><th scope="row">1</th><td>HTTP 403 whose body is a web page, not the API's JSON: the network edge in front of the provider refused the caller's address. The message keeps the page's words, not its markup</td><td><code translate="no">NETWORK_BLOCK</code></td><td>no</td></tr>
+<tr><th scope="row">1</th><td>HTTP 400</td><td><code translate="no">INVALID_REQUEST</code>, <code translate="no">CONTEXT_LENGTH</code>, <code translate="no">CONTENT_POLICY</code></td><td>no</td></tr>
+<tr><th scope="row">2</th><td>Transport exception type (<code translate="no">ConnectError</code>, <code translate="no">ReadTimeout</code>, ...); SDK <code translate="no">APIConnectionError</code>, <code translate="no">APITimeoutError</code>; anything caused by one</td><td><code translate="no">TRANSPORT</code></td><td>yes</td></tr>
+<tr><th scope="row">3</th><td>Message substring</td><td>matching reason</td><td>by reason</td></tr>
+<tr><th scope="row"></th><td>No match</td><td><code translate="no">UNKNOWN</code></td><td>no</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">LLMError</code> carries <code translate="no">reason</code>, <code translate="no">retryable</code>, <code translate="no">http_status</code>, <code translate="no">retry_after_s</code>, <code translate="no">attempts</code>, <code translate="no">elapsed_s</code>, <code translate="no">had_image</code>, <code translate="no">provider</code>, <code translate="no">model</code>, <code translate="no">last_error_type</code>, <code translate="no">cause</code>. A deadline hit is <code translate="no">TIMEOUT</code>, never retryable. A spent budget of a retryable error stays retryable: retry with a new budget, not at once.</p>
+<p class="note">An exception with no verdict may show as <code translate="no">UNKNOWN</code>, non-retryable; <code translate="no">error_retryable_inferred</code> marks that, and only such messages keep Runtime's bounded fallback. An explicit verdict, known reason or spent transport budget is authoritative.</p>
+<p class="note"><code translate="no">error_kind</code> names a finer, stable category beside the reason, found on the exception or anything it wraps: a stalled stream and a reset connection are both <code translate="no">TRANSPORT</code>, only the first is <code translate="no">stream_idle</code>. The others are <code translate="no">stream_total</code>, <code translate="no">memory_unavailable</code>, <code translate="no">model_unavailable</code> and <code translate="no">auth</code>.</p>
 
-    <div class="layer">
-      <div class="t">Runtime._call(content, model, response_format)</div>
-      <div class="d"><b>同步</b>方法；<u>不接收任何 timeout 参数</u>。委派给 <code>_call_via_providers</code> → <code>_run_async()</code>。<span class="cite">runtime.py:771 / :981 / :1007</span></div>
-      <div class="tagrow"><span class="pill p-bad">无 timeout 入参</span></div>
-    </div>
+<h2 id="transport-allowance">Recovery allowances</h2>
+<table class="stack">
+<thead><tr><th scope="col">Allowance</th><th scope="col">Spent by</th><th scope="col">Size</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">limit</code></th><td>Structured, length and repetitive-output repairs</td><td>2 by default</td></tr>
+<tr><th scope="row"><code translate="no">transport_limit</code></th><td><code translate="no">reserve("transport")</code></td><td>stream retries minus the first attempt: 4</td></tr>
+</tbody>
+</table>
+<p class="note">One <code translate="no">RecoveryState</code> per invocation. A dropped connection never spends a repair. A request that succeeds refunds its transport retries. An explicit limit of 0 disables both.</p>
 
-    <div class="layer warn">
-      <div class="t">_run_async(coro) · async→sync 桥</div>
-      <div class="d">无运行中的 loop → <code>asyncio.run(coro)</code> 跑在<b>当前线程</b>（CLI/benchmark 即主线程）；已有 loop（web/worker）→ offload 到 <b>线程池 worker 线程</b>。<span class="cite">runtime.py:1248–1261</span></div>
-      <div class="tagrow"><span class="pill p-warn">主线程：signal.alarm 能落进来</span><span class="pill p-bad">worker 线程：信号根本落不到</span></div>
-    </div>
+<h2 id="network-wait">Waiting for the network</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Starts when</th><td>Transport retries are spent on failures that cannot reach the endpoint (<code translate="no">ConnectError</code>, <code translate="no">ConnectTimeout</code>, <code translate="no">ConnectionRefusedError</code>, DNS, or an SDK error caused by one) and nothing was committed</td></tr>
+<tr><th scope="row">Does</th><td>Re-tries every 5, 10, 20, then 30 s, with a <code translate="no">retry</code> event of reason <code translate="no">network_wait</code>, shown as "Waiting for the network"</td></tr>
+<tr><th scope="row">Success</th><td>Continues the turn, refunds the outage's retries</td></tr>
+<tr><th scope="row">Other failure</th><td>Retryable: a fresh budget. Non-retryable: raised.</td></tr>
+<tr><th scope="row">Ends</th><td>At <code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code> (1800 s, 0 disables) or the deadline, flagged <code translate="no">transport_exhausted</code>; at once on cancel</td></tr>
+<tr><th scope="row">Never for</th><td>5xx, 429, committed output, a single-attempt policy, a recovery limit of 0</td></tr>
+<tr><th scope="row">Where</th><td><code translate="no">retry_stream</code> (Codex), openai-completions. Anthropic relies on its SDK and does not wait.</td></tr>
+</tbody>
+</table>
 
-    <div class="layer">
-      <div class="t">openai_codex · _run() → retry_stream(_attempt)</div>
-      <div class="d">codex provider 的一次完整调用，内部走 stream 重试编排。<span class="cite">openai_codex.py:134 / :210</span></div>
-    </div>
+<h2 id="dns-failures">DNS at the policy boundary</h2>
+<p>A <code translate="no">DNS_ERROR</code> from <code translate="no">socket.gaierror</code> is raised as <code translate="no">httpx.ConnectError</code>, so bounded transport recovery applies before anything is committed. Every attempt still resolves, validates and pins. Empty or malformed answers and denied origins stay policy failures. No DNS fallback, private-address exception or unbounded retry.</p>
 
-    <div class="layer bad">
-      <div class="t">retry_stream(attempt_fn, max_attempts=3)</div>
-      <div class="d"><code>for attempt in range(max_attempts)</code> 包 <code>except Exception</code>；<code>ConnectError</code> 判 <code>retryable=True</code>。<b>纯按次数，完全不知道任何 deadline。</b><span class="cite">stream_retry.py:230 / :238 / :51</span></div>
-      <div class="tagrow"><span class="pill p-bad">retry loop #3（max_attempts=3）</span><span class="pill p-bad">无 wall-clock 感知</span></div>
-    </div>
+<h2 id="nested-codex-auth">Nested Codex authentication</h2>
+<p>Codex Runtime uses the provider's active account, as direct chat does; an explicit profile pins its own. <code translate="no">CredentialProvider</code> refresh is authoritative. Synchronous and asynchronous calls keep the terminal reason, verdict and Retry-After through <code translate="no">AgentSession</code>. A rejected OAuth token, or any explicit non-retryable failure, makes exactly one provider request.</p>
 
-    <div class="layer ok">
-      <div class="t">httpx.AsyncClient.stream(...) · get_shared_async_client("openai-codex")</div>
-      <div class="d">硬化过的共享 client：connect/write/pool=30s、TCP keepalive ~60s 探死连接、force-IPv4 逃生、proxy。<span class="cite">http_client.py:107 / :48–104 / openai_codex.py:223</span></div>
-      <div class="tagrow"><span class="pill p-ok">connect 30s</span><span class="pill p-ok">keepalive ~60s</span></div>
-    </div>
-
-    <div class="layer ok">
-      <div class="t">_parse_sse_stream(response) · SSE 逐行</div>
-      <div class="d"><code>await asyncio.wait_for(line_iter.__anext__(), timeout=wait)</code>，<code>wait = min(idle_left, stall_left, total−now)</code>。<b>mid-stream stall 在这里被主动限住。</b><span class="cite">openai_codex.py:407 / :447 / :449 / :424</span></div>
-      <div class="tagrow"><span class="pill p-ok">idle 1800s</span><span class="pill p-ok">data-stall 900s</span><span class="pill p-ok">total 7200s</span></div>
-    </div>
-  </div>
-
-  <!-- ============================================================= -->
-  <h2><span class="n">3</span> 已有的超时防御（已 armed）</h2>
-  <p>这些都<b>已经在生效</b>，默认值全部可经 env 覆盖。集中定义在 <code>providers/utils/timeouts.py</code> 与 <code>http_client.py</code>。</p>
-  <table>
-    <thead><tr><th>防御</th><th>默认值</th><th>env 覆盖</th><th>生效点</th><th class="c">状态</th></tr></thead>
-    <tbody>
-      <tr><td>connect 超时</td><td class="c">30s</td><td><code>OPENPROGRAM_HTTPX_CONNECT_TIMEOUT_S</code></td><td class="cite">timeouts.py:39</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-      <tr><td>write / pool 超时</td><td class="c">30s</td><td><code>…_WRITE_/_POOL_…</code></td><td class="cite">timeouts.py:40–41</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-      <tr><td>TCP keepalive 探死连接</td><td class="c">~60s<br><span class="small">(30+10×3)</span></td><td><code>OPENPROGRAM_TCP_KEEPALIVE</code></td><td class="cite">http_client.py:48–79</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-      <tr><td>SSE idle（无任何字节）</td><td class="c">1800s</td><td><code>OPENPROGRAM_SSE_IDLE_TIMEOUT_S</code></td><td class="cite">timeouts.py:45 / codex:449</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-      <tr><td>SSE data-stall（无真实 data）</td><td class="c">900s</td><td><code>OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S</code></td><td class="cite">timeouts.py:47 / codex:447</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-      <tr><td>SSE 单流 total 上限</td><td class="c">7200s</td><td><code>OPENPROGRAM_SSE_TOTAL_TIMEOUT_S</code></td><td class="cite">timeouts.py:49 / codex:424</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-      <tr><td>httpx read backstop</td><td class="c">1860s<br><span class="small">(idle+60)</span></td><td><code>OPENPROGRAM_HTTPX_READ_TIMEOUT_S</code></td><td class="cite">timeouts.py:52–60</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-      <tr><td>大 prompt 预算缩放</td><td class="c">×1.25–2.0</td><td class="small">按 context_tokens 分档</td><td class="cite">timeouts.py:65–89</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-      <tr><td>force-IPv4 / proxy 逃生</td><td class="c">off / 自动</td><td><code>OPENPROGRAM_FORCE_IPV4</code>, <code>HTTP(S)_PROXY</code></td><td class="cite">http_client.py:92–101</td><td class="c"><span class="pill p-ok">on</span></td></tr>
-    </tbody>
-  </table>
-  <div class="callout co-ok"><b>含义。</b>「连上后服务器不再吐 token」这种典型卡死，已被 codex 的 <code>_parse_sse_stream</code> 用 <code>asyncio.wait_for</code> 主动限在 idle/data-stall/total 三个预算内——<u>不是裸奔</u>。所以「provider 缺 read-timeout」的判断对 codex <b>不成立</b>。</div>
-
-  <!-- ============================================================= -->
-  <h2><span class="n">4</span> exec 重试状态机</h2>
-  <p>一次 <code>exec()</code> 内部的重试逻辑。关键：<b>deadline 检查只发生在两次 <code>_call</code> 之间</b>（虚线框），无法打断正在执行的 <code>_call</code>。</p>
-  <pre><span class="cmt"># runtime.py:746–818（精简）</span>
-_deadline = start + timeout_s   <span class="cmt"># timeout_s=None ⇒ _deadline=None ⇒ 整段失效</span>
-<span class="num">for</span> attempt <span class="num">in</span> range(max_retries):          <span class="cmt"># 默认 6（_default_max_retries, :58）</span>
-
-    <span class="cmt">┌── 软 deadline 检查（仅 attempt 之间）─────────────┐</span>
-    <span class="num">if</span> _deadline <span class="num">and</span> now() &gt;= _deadline:           <span class="cmt"># :754</span>
-        <span class="num">raise</span> LLMError(reason=TIMEOUT, retryable=False)
-    <span class="cmt">└──────────────────────────────────────────────────┘</span>
-
-    <span class="num">try</span>:
-        reply = self._call(...)      <span class="cmt"># :771 同步阻塞，无 timeout 入参；卡这里时上面的检查到不了</span>
-        <span class="num">break</span>
-    <span class="num">except</span> (TypeError, NotImplementedError):
-        <span class="num">raise</span>                       <span class="cmt"># 编程错误，不重试</span>
-    <span class="num">except</span> Exception <span class="num">as</span> e:           <span class="cmt"># :780 ← 这里吞掉一切，包括外来的 TimeoutError</span>
-        permanent = _is_permanent_error(e)   <span class="cmt"># :782 只匹配图片/auth marker</span>
-        <span class="num">if</span> permanent <span class="num">or</span> attempt == max_retries-1:
-            <span class="num">raise</span> _build_llm_error(...)   <span class="cmt"># → LLMError(reason, retryable, cause, …)</span>
-        sleep_s = _retry_sleep_seconds(attempt)  <span class="cmt"># 1.5·2^n，±25% 抖动；attempt5 ≈ 48s（:81）</span>
-        <span class="num">if</span> _deadline <span class="num">and</span> now()+sleep_s &gt;= _deadline:  <span class="cmt"># :801 退避会越界就提前判 TIMEOUT</span>
-            <span class="num">raise</span> LLMError(reason=TIMEOUT, retryable=False)
-        time.sleep(sleep_s)          <span class="cmt"># :818</span></pre>
-
-  <h3><code>_is_permanent_error</code> 只认两类 <span class="cite">runtime.py:104–120</span></h3>
-  <p>marker 列表只有：<code>not a valid image</code> / <code>invalid image</code> / <code>image data is not</code> / <code>login expired</code> / <code>login failed</code> / <code>re-auth</code> / <code>unauthorized</code> / <code>invalid api key</code>。任何<b>超时类</b>异常都不命中 → <code>permanent=False</code> → <b>会被重试</b>。这正是外层 <code>SampleTimeoutError</code> 被当 transient 吃掉的直接原因。</p>
-
-  <!-- ============================================================= -->
-  <h2><span class="n">5</span> 核心缺陷：三层重试相乘，无人封顶 wall-clock</h2>
-  <p>持续 <code>ConnectError</code>（死路由 / VPN 黑洞 / proxy 不通，日志即 <code>openai-codex stream retry … ConnectError</code>）时，三层循环逐层相乘，<b>没有任何一层用 wall-clock 封顶</b>：</p>
-
-  <table>
-    <thead><tr><th>循环</th><th>位置</th><th class="c">次数</th><th>单次代价</th><th>退避</th><th class="c">deadline 感知</th></tr></thead>
-    <tbody>
-      <tr><td>#3 内层 stream</td><td class="cite">stream_retry.py:230</td><td class="c">max_attempts=3</td><td>connect ≤30s</td><td>1→2s（封顶30s）</td><td class="c"><span class="pill p-bad">无</span></td></tr>
-      <tr><td>#2 中层 exec</td><td class="cite">runtime.py:750</td><td class="c">max_retries=6</td><td>= 一整个内层循环</td><td>1.5→48s</td><td class="c"><span class="pill p-warn">软 / 需传 timeout_s</span></td></tr>
-      <tr><td>#1 外层 locator</td><td class="cite">benchmark 侧</td><td class="c">多轮</td><td>= 一整个中层循环</td><td>—</td><td class="c"><span class="pill p-bad">无</span></td></tr>
-    </tbody>
-  </table>
-
-  <div class="arith">connect 为<b>超时</b>（丢包、非 refused，每次吃满 30s）时的最坏 wall-clock：
-
-  内层 ≈ 3 × 30s（connect） + (1+2)s（退避）            ≈  <span class="num">93s</span>
-  中层 ≈ 6 × 93s + (1.5+3+6+12+24)s（退避）            ≈ <span class="num">605s</span>   ← 单次 exec()
-  外层 ≈ locator 再乘 N 轮                              ≈ <span class="num">&gt;900s</span>
-
-  传输层 connect 尝试总数 = 3 × 6 (× locator 轮) = <span class="num">18+</span> 次</div>
-
-  <div class="callout co-bad"><b>双层重复重试（设计味道）。</b> <code>ConnectError</code> 在内层已经被判 <code>retryable=True</code> 并重试满 3 次、抛出 <code>ProviderStreamError(retryable=True)</code>；交到 exec 后，<code>_is_permanent_error</code> 不命中 → exec <b>又</b>用全新的 6× 预算重试同一个传输错误。<u>同一个传输错误被两层各自重试</u>，这才是把 ~90s 的问题放大成 600s+ 的根本。</div>
-
-  <div class="callout co-ok"><b>已修复 <code>4e64ac95</code>。</b> exec 把单一 deadline 穿透进 <code>stream_retry</code>（每 attempt 前 + 退避前都检查），且 <code>stream_retry</code> 耗尽预算时给异常打 <code>transport_exhausted</code> 标志，exec 见到就<u>不再用新预算重试</u> —— 18 次（3×6）塌回内层 3 次。<code>_parse_sse_stream</code> 的 SSE 等待也 clamp 到 <code>min(budget, 剩余 deadline)</code>，单条流不再越过预算。</div>
-
-  <!-- ============================================================= -->
-  <h2><span class="n">6</span> watchdog 被吞掉的时序</h2>
-  <p>ScreenSpot 用 <code>signal.alarm</code> 想在 sample 总预算到点时硬停，但它抛的异常正好撞进上面两层的 <code>except Exception</code>。</p>
-  <div class="seq">
-    <div class="row"><div class="ix">1</div><div class="bd"><b>signal.alarm(900)</b> 起一个一次性闹钟。<span class="meta">benchmark run_one() 外层</span></div></div>
-    <div class="row"><div class="ix">2</div><div class="bd">进入 <b>exec → _call → _run_async → asyncio.run</b>（主线程），卡在持续 ConnectError 的嵌套重试里。</div></div>
-    <div class="row bad"><div class="ix">3</div><div class="bd"><b>900s 到点，SIGALRM 触发</b>，handler 在主线程下一个字节码边界 <code>raise SampleTimeoutError</code>（继承 <code>TimeoutError → Exception</code>）。</div></div>
-    <div class="row bad"><div class="ix">4</div><div class="bd">异常冒泡到 <b>stream_retry 的 <code>except Exception</code></b>（:238）或 <b>exec 的 <code>except Exception</code></b>（:780），被当成「一次普通调用失败」。</div></div>
-    <div class="row bad"><div class="ix">5</div><div class="bd"><code>_is_permanent_error</code> 不命中 → <code>permanent=False</code> → <b>继续 retry</b>。sample 语义（「整条样本已超时、必须停」）<u>丢失</u>。</div></div>
-    <div class="row bad"><div class="ix">6</div><div class="bd"><code>signal.alarm</code> 是一次性的，已消耗；外层 <code>finally: alarm(0)</code> 要等 run_one() 返回才执行——但它正卡着。<b>此后没有任何硬保护，继续跑。</b></div></div>
-  </div>
-  <div class="callout co-warn"><b>web / worker 语境更糟。</b> 当存在运行中的 event loop 时，<code>_run_async</code> 把 <code>asyncio.run</code> offload 到<b>线程池 worker 线程</b>（runtime.py:1260）。Python 只向主线程投递信号，所以 <code>signal.alarm</code> 在这种语境里<u>根本落不到</u>正在跑的 <code>_call</code> 上——软 watchdog 完全无效。</div>
-
-  <div class="callout co-ok"><b>已修复 框架 <code>4e64ac95</code> + harness <code>74bfd06</code>。</b> <code>SampleTimeoutError</code> 改继承 <code>ExecInterrupt(BaseException)</code>，两层 <code>except Exception</code> 都吞不住它 —— 它穿过 OpenProgram 重试层、由 <code>run_one()</code> 在 sample 边界接住记 <code>sample_timeout</code>（步骤 4/5 不再发生）。worker 线程语境里信号本就落不到，改由 <code>--exec-timeout-s</code> → <code>OPENPROGRAM_EXEC_TIMEOUT_S</code> 的 call-level deadline 兜底（不依赖信号），且 <code>_run_async</code> 现在把 deadline contextvar 带进 worker 线程。</div>
-
-  <!-- ============================================================= -->
-  <h2><span class="n">7</span> 错误分类与 retryable 判定</h2>
-  <p>exec 放弃时抛的是结构化 <code>LLMError</code>（<span class="cite">errors.py:62</span>），<b>已经</b>带够了上层精确计分所需的字段——上层不该一律记成 <code>wrong_format</code>。</p>
-  <div class="grid g2">
-    <div class="card">
-      <h4><code>ErrorReason</code> 枚举 <span class="cite">errors.py:31</span></h4>
-      <p class="small" style="margin-bottom:0"><code>TRANSPORT</code> · <code>RATE_LIMIT</code> · <code>PROVIDER_INTERNAL</code> · <code>AUTHENTICATION</code> · <code>AUTHORIZATION</code> · <code>INVALID_REQUEST</code> · <code>CONTEXT_LENGTH</code> · <code>CONTENT_POLICY</code> · <code>TIMEOUT</code> · <code>UNKNOWN</code></p>
-    </div>
-    <div class="card">
-      <h4><code>LLMError</code> 字段 <span class="cite">errors.py:62–85</span></h4>
-      <p class="small" style="margin-bottom:0"><code>reason</code> · <code>retryable</code> · <code>http_status</code> · <code>retry_after_s</code> · <code>attempts</code> · <code>elapsed_s</code> · <code>had_image</code> · <code>provider</code> · <code>model</code> · <code>last_error_type</code> · <code>cause</code></p>
-    </div>
-  </div>
-  <h3><code>classify_error</code> 判定顺序 <span class="cite">errors.py:191–258</span></h3>
-  <table>
-    <thead><tr><th class="c">优先级</th><th>依据</th><th>判定</th><th class="c">retryable</th></tr></thead>
-    <tbody>
-      <tr><td class="c">1</td><td>HTTP 429</td><td>RATE_LIMIT</td><td class="c"><span class="pill p-ok">是</span></td></tr>
-      <tr><td class="c">1</td><td>HTTP 500/502/503/504</td><td>PROVIDER_INTERNAL</td><td class="c"><span class="pill p-ok">是</span></td></tr>
-      <tr><td class="c">1</td><td>HTTP 401 / 403</td><td>AUTHENTICATION / AUTHORIZATION</td><td class="c"><span class="pill p-bad">否</span></td></tr>
-      <tr><td class="c">1</td><td>HTTP 400（+context/policy marker）</td><td>INVALID_REQUEST / CONTEXT_LENGTH / CONTENT_POLICY</td><td class="c"><span class="pill p-bad">否</span></td></tr>
-      <tr><td class="c">2</td><td>异常类型名 ∈ 传输集合<br><span class="small">ConnectError / ReadTimeout / …（stream_retry.py:72）</span></td><td>TRANSPORT</td><td class="c"><span class="pill p-ok">是</span></td></tr>
-      <tr><td class="c">3</td><td>消息子串兜底（auth / invalid / context / policy / rate-limit / 传输名）</td><td>对应 reason</td><td class="c"><span class="pill p-warn">视类</span></td></tr>
-      <tr><td class="c">—</td><td>都不命中</td><td>UNKNOWN</td><td class="c"><span class="pill p-bad">否</span></td></tr>
-    </tbody>
-  </table>
-  <p class="small">注意：<code>override_reason=TIMEOUT</code> 的 deadline 命中一律 <code>retryable=False</code>（<span class="cite">runtime.py:170–176</span>）；其余「预算耗尽但类型本可重试」保持 <code>retryable=True</code>，含义是「换个新预算可再试」，不是「立刻重试」。</p>
-
-  <!-- ============================================================= -->
-  <h2><span class="n">8</span> 优化项（实现状态）</h2>
-  <p class="small">两条线并行、职责不同：框架侧 #1–#4 让<u>任何</u>调用方（channels worker、web turn、benchmark）都不被嵌套重试拖死；harness 侧 #5 负责 sample-level 计分与可靠 watchdog。子进程不替代框架修复，框架修复也不免除 runner 的 watchdog。<b>#1–#4 已在框架 <code>4e64ac95</code> 落地，#5 在 harness <code>74bfd06</code> 落地（子进程隔离暂缓）；#6 暂缓。</b></p>
-  <table>
-    <thead><tr><th class="c">#</th><th>修复点</th><th>为什么</th><th class="c">价值</th><th>状态</th></tr></thead>
-    <tbody>
-      <tr><td class="c">1</td><td>把单一 deadline 从 <code>exec</code> 穿透到 <code>_call</code> → codex <code>_run</code> → <code>stream_retry</code>（SSE wait 取 <code>min(budget, 剩余)</code>）</td><td>现在 <code>exec(timeout_s)</code> 只管中层、且要调用方传；内层 stream_retry + SSE 预算都不知道它。穿透后才是真 end-to-end，溢出 ≤ 一次 connect。</td><td class="c"><span class="pill p-bad">最高</span></td><td><span class="pill p-ok">已实施 <code>4e64ac95</code></span><br><span class="small">新 <code>providers/utils/deadline.py</code>（ContextVar）；exec/async_exec set+reset；stream_retry & codex 读取</span></td></tr>
-      <tr><td class="c">2</td><td>传输层错误不跨层重复重试</td><td>stream_retry 已耗尽 3 次的 <code>ProviderStreamError</code> 到 exec 又被重试 6 次 = 18 次。exec 应识别「provider 自己的传输预算已耗尽」，几乎不再重试。</td><td class="c"><span class="pill p-bad">高</span></td><td><span class="pill p-ok">已实施 <code>4e64ac95</code></span><br><span class="small"><code>stream_retry</code> 打 <code>transport_exhausted</code> 标志；exec 见到即不再重试（reason 仍诚实 TRANSPORT/retryable）</span></td></tr>
-      <tr><td class="c">3</td><td>引入 <code>ExecInterrupt(BaseException)</code> 硬中断契约</td><td><code>exec</code> 与 <code>stream_retry</code> <b>都</b>有 <code>except Exception</code>；<code>BaseException</code> 同时穿透两层，外部 watchdog 一抛即退。</td><td class="c"><span class="pill p-bad">高</span></td><td><span class="pill p-ok">已实施 <code>4e64ac95</code></span><br><span class="small"><code>errors.ExecInterrupt</code>；两层显式 <code>except ExecInterrupt: raise</code></span></td></tr>
-      <tr><td class="c">4</td><td><code>exec(timeout_s)</code> 给默认值 / 入口必传</td><td>现默认 <code>None</code>=无界。dispatcher / worker / benchmark 任一未 arm 的调用方都裸奔。</td><td class="c"><span class="pill p-warn">中</span></td><td><span class="pill p-ok">已实施 <code>4e64ac95</code></span><br><span class="small"><code>OPENPROGRAM_EXEC_TIMEOUT_S</code> 进程级默认；默认 0=无界（opt-in，不改既有行为）</span></td></tr>
-      <tr><td class="c">5</td><td>ScreenSpot：可靠 watchdog + 按 <code>LLMError.reason</code> 计分（+ 子进程隔离）</td><td>sample-level 总预算只有 runner 知道。auth 直接停 run、timeout 单列、传输失败单列，不污染 wrong_format。</td><td class="c"><span class="pill p-warn">harness 侧</span></td><td><span class="pill p-warn">部分 <code>74bfd06</code></span><br><span class="small"><code>SampleTimeoutError(ExecInterrupt)</code>、<code>--exec-timeout-s</code>、reason 分类 + <code>provider_auth</code>、auth 中止 run、<code>reraise_if_fatal</code> 已做；<b>子进程硬隔离暂缓</b>（watchdog 已可靠 + 有 call-level deadline，优先级降低）</span></td></tr>
-      <tr><td class="c">6</td><td>同步 <code>_call</code> 线程 future 硬上限（兜底）</td><td>仅防「单次 <code>_call</code> 真无限挂」。SSE 预算已限住 stall，故降级为 belt-and-suspenders。</td><td class="c"><span class="pill p-ok">兜底</span></td><td><span class="pill p-bad">暂缓</span><br><span class="small">副作用见下；#1 已让 stall/connect 有界，单独 _call 无限挂的窗口已很小</span></td></tr>
-    </tbody>
-  </table>
-  <div class="callout co-warn"><b>关于线程 future 兜底的副作用（#6）。</b> Python 不能安全 kill 线程：超时后 caller 返回，但那个 <code>_call</code> 线程仍在后台跑，<u>直到 socket 自己报错才回收</u>；其间它可能仍去 append model-call node / 写 store/DAG，造成状态污染。所以 #6 只能当兜底，且必须依赖 #1 的 read-timeout 让泄漏窗口有界。理想路径是推动 provider 暴露 async，exec 主走 <code>asyncio.wait_for</code>（能真正取消到 await 点，无泄漏线程），同步线程方案仅作无 async 路径时的退路。</div>
-
-  <div class="foot">
-    现状基于对以下文件的只读核查：
-    <code>agentic_programming/runtime.py</code>（exec/retry/bridge）、
-    <code>providers/utils/timeouts.py</code>、<code>providers/utils/http_client.py</code>、
-    <code>providers/utils/stream_retry.py</code>、<code>providers/utils/errors.py</code>、
-    <code>providers/openai_codex/openai_codex.py</code>。
-    行号为撰写时快照，优化落地后需同步更新。配套对比见 <code>llm-fault-tolerance.md</code>。
-  </div>
-
-</div>
-</body>
-</html>
+<p class="next"><a href="llm-fault-tolerance.html">Fault-tolerance policy and comparison</a></p>

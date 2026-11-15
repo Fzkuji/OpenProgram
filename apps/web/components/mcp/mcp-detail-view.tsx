@@ -14,6 +14,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,8 @@ import { useTranslation } from "@/lib/i18n";
 import { PlugZapIcon } from "@/components/animated-icons";
 
 import styles from "./mcp-page.module.css";
+import { confirmAction } from "@/components/ui/confirm-dialog";
+import { showToast } from "@/lib/format-utils/toast";
 
 /**
  * A stored `env` / `header` value as the API returns it: presence and
@@ -146,7 +149,7 @@ export function DetailView({
       );
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
-        alert(text(`Update failed: ${d.detail || `HTTP ${r.status}`}`, `更新失败：${d.detail || `HTTP ${r.status}`}`));
+        showToast(text(`Update failed: ${d.detail || `HTTP ${r.status}`}`, `更新失败：${d.detail || `HTTP ${r.status}`}`), { tone: "error" });
         return;
       }
       setUpdateAvailable(false);
@@ -159,86 +162,74 @@ export function DetailView({
     <div className="flex w-full flex-col gap-4">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <span className="text-xl"><PlugZapIcon size={20} /></span>
-        <span style={{ color: "var(--accent-blue)" }}
-              className="font-mono text-lg font-semibold">
+        <span className="text-fs-title"><PlugZapIcon size={20} /></span>
+        <span className="text-fs-md font-semibold text-accent-blue">
           {server.name}
         </span>
         <Badge
           variant="outline"
-          className="uppercase"
-          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          className="border-border uppercase text-text-muted"
         >
-          <span className={cn(styles.serverDot, st.dotCls)}
-                style={{ marginRight: 6 }} />
+          <span className={cn(styles.serverDot, st.dotCls, "mr-1.5")} />
           {statusText}
         </Badge>
 
         <div className="ml-auto flex gap-2">
           {server.enabled ? (
-            <button className={styles.actionBtn} onClick={onDisable} disabled={isBusy}>
+            <Button variant="elevated" onClick={onDisable} disabled={isBusy}>
               {busy === "disable" ? text("Disabling...", "禁用中...") : text("Disable", "禁用")}
-            </button>
+            </Button>
           ) : (
-            <button className={styles.actionBtn} onClick={onEnable} disabled={isBusy}>
+            <Button variant="elevated" onClick={onEnable} disabled={isBusy}>
               {busy === "enable" ? text("Enabling...", "启用中...") : text("Enable", "启用")}
-            </button>
+            </Button>
           )}
-          <button
-            className={styles.actionBtn}
+          <Button variant="elevated"
             onClick={onRestart}
             disabled={isBusy || !server.enabled}
           >
             {busy === "restart" ? text("Restarting...", "重启中...") : text("Restart", "重启")}
-          </button>
-          <button className={styles.actionBtn} onClick={onEdit} disabled={isBusy}>
+          </Button>
+          <Button variant="elevated" onClick={onEdit} disabled={isBusy}>
             {text("Edit", "编辑")}
-          </button>
-          <button
-            className={cn(styles.actionBtn, styles.actionBtnDanger)}
+          </Button>
+          <Button variant="destructive"
             onClick={onDelete}
             disabled={isBusy}
           >
             {busy === "delete" ? text("Deleting...", "删除中...") : t("sidebar.delete")}
-          </button>
+          </Button>
         </div>
       </div>
 
       {updateAvailable && (
-        <div className="flex items-center gap-3 rounded-md border p-3"
-             style={{ borderColor: "var(--accent-blue)",
-                      background: "var(--bg-secondary)" }}>
-          <span className="text-xs font-semibold"
-                style={{ color: "var(--accent-blue)" }}>
+        <div className="flex items-center gap-3 rounded-md border border-accent-blue bg-bg-secondary p-3">
+          <span className="text-fs-2xs font-semibold text-accent-blue">
             ⬆ {text("Update available", "有可用更新")}
           </span>
-          <span className="flex-1 text-xs"
-                style={{ color: "var(--text-muted)" }}>
+          <span className="flex-1 text-fs-2xs text-text-muted">
             {text("The catalog at ", "目录 ")}
             <code>{server.source_catalog_url}</code>
             {text(" has a newer version of this server.", " 中有这个服务器的新版本。")}
           </span>
-          <button
-            className={cn(styles.actionBtn, styles.actionBtnPrimary)}
+          <Button
             onClick={() => void applyUpdate()}
             disabled={updateBusy}
           >
             {updateBusy ? text("Updating...", "更新中...") : text("Update", "更新")}
-          </button>
+          </Button>
         </div>
       )}
 
       {server.error && server.error !== "disabled" && (
-        <div className="flex flex-col gap-2 rounded-md border p-3"
-             style={{ borderColor: "var(--accent-red)" }}>
-          <div className="flex items-center gap-2 text-xs font-semibold"
-               style={{ color: "var(--accent-red)" }}>
+        <div className="flex flex-col gap-2 rounded-md border border-accent-red p-3">
+          <div className="flex items-center gap-2 text-fs-2xs font-semibold text-accent-red">
             {server.error_kind === "needs_reauth" && text("Re-authentication required", "需要重新认证")}
             {server.error_kind === "transient" && text("Reconnecting...", "正在重连...")}
             {server.error_kind === "fatal" && text("Connection failed", "连接失败")}
             {!server.error_kind && text("Error", "错误")}
           </div>
-          <div className="font-mono text-xs" style={{ color: "var(--accent-red)" }}>
+          <div className="text-fs-2xs text-accent-red">
             {server.error}
           </div>
           {server.error_kind === "needs_reauth" && (
@@ -248,8 +239,7 @@ export function DetailView({
       )}
 
       {/* Config */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border px-3 py-2 text-xs"
-           style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border bg-bg-secondary px-3 py-2 text-fs-2xs">
         <ConfigChip k={text("Transport", "传输")} v={server.type} />
         <Sep />
         {server.type === "local" ? (
@@ -267,25 +257,18 @@ export function DetailView({
                     {/* Stored credential shown as a mask so the user can
                         tell one is set — never as the value itself. */}
                     {server.auth.has_token && server.auth.masked_token && (
-                      <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>
+                      <span className="ml-1.5 text-text-muted">
                         {server.auth.masked_token}
                       </span>
                     )}
                     {server.auth.has_client_secret
                       && server.auth.masked_client_secret && (
-                      <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>
+                      <span className="ml-1.5 text-text-muted">
                         {server.auth.masked_client_secret}
                       </span>
                     )}
                     {server.auth.kind !== "none" && (
-                      <span
-                        style={{
-                          color: server.auth.authenticated
-                            ? "var(--accent-green)"
-                            : "var(--accent-red)",
-                          marginLeft: 6,
-                        }}
-                      >
+                      <span className={cn("ml-1.5", server.auth.authenticated ? "text-accent-green" : "text-accent-red")}>
                         {server.auth.authenticated ? "✓" : text("not authed", "未认证")}
                       </span>
                     )}
@@ -326,27 +309,23 @@ export function DetailView({
 
       {/* Tools */}
       <div className="mt-2 flex items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider"
-              style={{ color: "var(--text-muted)" }}>
-          {text("Tools", "工具")}
-        </span>
-        <span className="rounded-full px-1.5 text-[10px]"
-              style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}>
+        <SectionLabel>{text("Tools", "工具")}</SectionLabel>
+        <span className="rounded-full bg-bg-tertiary px-1.5 text-fs-2xs text-text-muted">
           {server.tool_count}
         </span>
         {!server.enabled && (
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          <span className="text-fs-2xs text-text-muted">
             {text("(server disabled; enable to load tool list)", "（服务器已禁用；启用后加载工具列表）")}
           </span>
         )}
       </div>
 
       {!detail ? (
-        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+        <div className="text-fs-xs text-text-muted">
           {text("Loading tools...", "正在加载工具...")}
         </div>
       ) : (detail.tool_schemas || []).length === 0 ? (
-        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+        <div className="text-fs-xs text-text-muted">
           {server.error === "disabled"
             ? text("Tool list will appear here after you enable the server.", "启用服务器后，工具列表会显示在这里。")
             : server.error
@@ -370,19 +349,21 @@ function ReauthButton({ name, onDone }: { name: string; onDone: () => void }) {
   const { text } = useTranslation();
   const [busy, setBusy] = useState(false);
   async function go() {
-    if (!confirm(
-      text(
-        `Re-authenticate "${name}"? This wipes stored tokens and re-opens the browser to complete a fresh OAuth flow.`,
-        `重新认证“${name}”？这会清除已存 token，并重新打开浏览器完成新的 OAuth 流程。`,
+    if (!(await confirmAction({
+      title: text(`Re-authenticate "${name}"?`, `重新认证“${name}”？`),
+      description: text(
+        "This wipes stored tokens and re-opens the browser to complete a fresh OAuth flow.",
+        "这会清除已存 token，并重新打开浏览器完成新的 OAuth 流程。",
       ),
-    )) return;
+      confirmLabel: text("Re-authenticate", "重新认证"),
+    }))) return;
     setBusy(true);
     try {
       const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/auth/reauth`,
         { method: "POST" });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
-        alert(text(`Re-auth failed: ${d.detail || `HTTP ${r.status}`}`, `重新认证失败：${d.detail || `HTTP ${r.status}`}`));
+        showToast(text(`Re-auth failed: ${d.detail || `HTTP ${r.status}`}`, `重新认证失败：${d.detail || `HTTP ${r.status}`}`), { tone: "error" });
         return;
       }
       onDone();
@@ -391,14 +372,13 @@ function ReauthButton({ name, onDone }: { name: string; onDone: () => void }) {
     }
   }
   return (
-    <button
-      className={cn(styles.actionBtn, styles.actionBtnPrimary)}
-      style={{ alignSelf: "flex-start" }}
+    <Button
+      className="self-start"
       onClick={() => void go()}
       disabled={busy}
     >
       {busy ? text("Opening browser...", "正在打开浏览器...") : text("Re-authenticate", "重新认证")}
-    </button>
+    </Button>
   );
 }
 
@@ -417,16 +397,12 @@ function SecretMapPanel({
 }) {
   const { text } = useTranslation();
   return (
-    <div className="rounded-md border p-3 font-mono text-xs"
-         style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider"
-           style={{ color: "var(--text-muted)" }}>
-        {title}
-      </div>
+    <div className="rounded-md border border-border bg-bg-secondary p-3 font-mono text-fs-2xs">
+      <SectionLabel className="mb-1 block">{title}</SectionLabel>
       {Object.entries(entries).map(([k, v]) => (
         <div key={k}>
           {k}{separator}
-          <span style={{ color: "var(--text-muted)" }}>
+          <span className="text-text-muted">
             {v.has_value ? v.masked : text("(empty)", "（空）")}
           </span>
         </div>
@@ -435,39 +411,39 @@ function SecretMapPanel({
   );
 }
 
+/** The small uppercase caption used for config keys and panel titles. */
+function SectionLabel({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={cn("text-fs-2xs font-semibold uppercase tracking-wider text-text-muted", className)}>
+      {children}
+    </span>
+  );
+}
+
 function Sep() {
   return (
-    <span aria-hidden style={{ color: "var(--text-muted)", opacity: 0.5 }}>·</span>
+    <span aria-hidden className="text-text-muted opacity-50">·</span>
   );
 }
 
 function ConfigChip({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-wider"
-            style={{ color: "var(--text-muted)" }}>
-        {k}
-      </span>
-      <span className="font-mono">{v}</span>
+      <SectionLabel>{k}</SectionLabel>
+      <span>{v}</span>
     </span>
   );
 }
 
 function ToolRow({ server, tool }: { server: string; tool: ToolSchema }) {
   return (
-    <div className="rounded-md border px-3 py-2 transition-colors"
-         style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
-      <div className="truncate font-mono text-sm font-medium"
-           style={{ color: "var(--accent-blue)" }}>
+    <div className="rounded-md border border-border bg-bg-secondary px-3 py-2 transition-colors">
+      <div className="truncate text-fs-xs font-medium text-accent-blue">
         {server}__{tool.name}
       </div>
-      <div className="mt-0.5 truncate text-xs" style={{ color: "var(--text-muted)" }}>
+      <div className="mt-0.5 truncate text-fs-2xs text-text-muted">
         {tool.description || tool.title || "—"}
       </div>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Edit / Add dialog
-// ---------------------------------------------------------------------------

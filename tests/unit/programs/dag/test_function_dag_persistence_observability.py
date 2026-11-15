@@ -1,18 +1,16 @@
 from __future__ import annotations
 
+from openprogram.runtime.agent import Agent
+
 import asyncio
 import logging
 
 import pytest
 
-from openprogram.agentic_programming.function import (
-    _call_id,
-    _current_runtime,
-    agentic_function,
-    traced,
-)
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.store import _store
+from openprogram.runtime.context.scope import _call_id
+from openprogram.runtime.agent.call_state import _current_runtime, traced
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.state.store import _store
 
 
 class _FailingStore:
@@ -61,11 +59,15 @@ def test_entry_failure_is_logged_without_changing_sync_result(
     runtime: Runtime,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    @agentic_function
-    def work(runtime=None):
-        return "ok"
+    class _WorkAgent(Agent):
+        method_options = {'work': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'work'}}
 
-    with caplog.at_level(logging.WARNING, logger="openprogram.agentic_programming.function"):
+        def work(self, runtime=None):
+            return "ok"
+
+    work = _WorkAgent().work
+
+    with caplog.at_level(logging.WARNING, logger="openprogram.runtime.agent.call_state"):
         result = _run_with_store(
             _FailingStore(fail_append=True),
             lambda: work(runtime=runtime),
@@ -83,11 +85,15 @@ def test_exit_failure_is_logged_without_changing_async_result(
     runtime: Runtime,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    @agentic_function
-    async def work(runtime=None):
-        return "ok"
+    class _WorkAgent(Agent):
+        method_options = {'work': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'work'}}
 
-    with caplog.at_level(logging.WARNING, logger="openprogram.agentic_programming.function"):
+        async def work(self, runtime=None):
+            return "ok"
+
+    work = _WorkAgent().work
+
+    with caplog.at_level(logging.WARNING, logger="openprogram.runtime.agent.call_state"):
         result = _run_with_store(
             _FailingStore(fail_update=True),
             lambda: asyncio.run(work(runtime=runtime)),
@@ -104,9 +110,13 @@ def test_exit_failure_is_logged_without_changing_async_result(
 def test_exit_persistence_failure_does_not_replace_function_error(
     runtime: Runtime,
 ) -> None:
-    @agentic_function
-    def work(runtime=None):
-        raise ValueError("function error")
+    class _WorkAgent(Agent):
+        method_options = {'work': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'work'}}
+
+        def work(self, runtime=None):
+            raise ValueError("function error")
+
+    work = _WorkAgent().work
 
     with pytest.raises(ValueError, match="function error"):
         _run_with_store(
@@ -122,7 +132,7 @@ def test_traced_uses_the_same_persistence_diagnostic(
     def work():
         return "ok"
 
-    with caplog.at_level(logging.WARNING, logger="openprogram.agentic_programming.function"):
+    with caplog.at_level(logging.WARNING, logger="openprogram.runtime.agent.call_state"):
         result = _run_with_store(_FailingStore(fail_update=True), work)
 
     assert result == "ok"
@@ -133,15 +143,23 @@ def test_hidden_and_no_store_remain_silent(
     runtime: Runtime,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    @agentic_function(expose="hidden")
-    def hidden(runtime=None):
-        return "ok"
+    class _HiddenAgent(Agent):
+        method_options = {'hidden': {'expose': "hidden", 'tool': True, 'capture_io': True, 'name': 'hidden'}}
 
-    @agentic_function
-    def standalone(runtime=None):
-        return "ok"
+        def hidden(self, runtime=None):
+            return "ok"
 
-    with caplog.at_level(logging.WARNING, logger="openprogram.agentic_programming.function"):
+    hidden = _HiddenAgent().hidden
+
+    class _StandaloneAgent(Agent):
+        method_options = {'standalone': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'standalone'}}
+
+        def standalone(self, runtime=None):
+            return "ok"
+
+    standalone = _StandaloneAgent().standalone
+
+    with caplog.at_level(logging.WARNING, logger="openprogram.runtime.agent.call_state"):
         assert _run_with_store(_FailingStore(fail_append=True), lambda: hidden(runtime=runtime)) == "ok"
         assert standalone(runtime=runtime) == "ok"
 
@@ -149,9 +167,13 @@ def test_hidden_and_no_store_remain_silent(
 
 
 def test_persistence_base_exception_is_not_downgraded(runtime: Runtime) -> None:
-    @agentic_function
-    def work(runtime=None):
-        return "unreachable"
+    class _WorkAgent(Agent):
+        method_options = {'work': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'work'}}
+
+        def work(self, runtime=None):
+            return "unreachable"
+
+    work = _WorkAgent().work
 
     with pytest.raises(KeyboardInterrupt):
         _run_with_store(_AbortStore(), lambda: work(runtime=runtime))
@@ -160,9 +182,13 @@ def test_persistence_base_exception_is_not_downgraded(runtime: Runtime) -> None:
 
 
 def test_exit_base_exception_still_restores_agentic_context(runtime: Runtime) -> None:
-    @agentic_function
-    def work(runtime=None):
-        return "ok"
+    class _WorkAgent(Agent):
+        method_options = {'work': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'work'}}
+
+        def work(self, runtime=None):
+            return "ok"
+
+    work = _WorkAgent().work
 
     with pytest.raises(KeyboardInterrupt):
         _run_with_store(_ExitAbortStore(), lambda: work(runtime=runtime))
@@ -181,7 +207,7 @@ def test_exit_base_exception_still_restores_traced_call_id() -> None:
 
 
 @pytest.mark.parametrize("parameter", ["runtime", "exec_runtime", "review_runtime"])
-def test_owned_runtime_alias_is_closed_after_entry_abort(
+def test_owned_runtime_alias_does_not_construct_provider_before_entry_abort(
     parameter: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -193,15 +219,29 @@ def test_owned_runtime_alias_is_closed_after_entry_abort(
             self.close_calls += 1
 
     owned = CloseCounter()
-    monkeypatch.setattr("openprogram.providers.registry.create_runtime", lambda: owned)
+    create_calls = []
+
+    def create():
+        create_calls.append(True)
+        return owned
+
+    monkeypatch.setattr("openprogram.runtime.agent.runtime.factory.create_runtime", create)
     namespace: dict = {}
-    exec(f"def work({parameter}=None):\n    return 'unreachable'", namespace)
-    work = agentic_function(as_tool=False)(namespace["work"])
+    namespace['Agent'] = Agent
+    exec(
+        "class WorkAgent(Agent):\n"
+        "    method_options = {'work': {'tool': False, 'capture_io': True, 'name': 'work'}}\n"
+        f"    def work(self, {parameter}=None):\n"
+        "        return 'unreachable'\n",
+        namespace,
+    )
+    work = namespace['WorkAgent']().work
 
     with pytest.raises(KeyboardInterrupt):
         _run_with_store(_AbortStore(), work)
 
-    assert owned.close_calls == 1
+    assert create_calls == []
+    assert owned.close_calls == 0
     assert _current_runtime.get() is None
 
 
@@ -211,16 +251,64 @@ def test_close_failure_does_not_replace_persistence_base_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.providers.registry.create_runtime",
+        "openprogram.runtime.agent.runtime.factory.create_runtime",
         _BadCloseRuntime,
     )
 
-    @agentic_function(as_tool=False)
-    def work(exec_runtime=None):
-        return "ok"
+    class _WorkAgent(Agent):
+        method_options = {'work': {'tool': False, 'expose': 'io', 'capture_io': True, 'name': 'work'}}
+
+        def work(self, exec_runtime=None):
+            return "ok"
+
+    work = _WorkAgent().work
 
     store = _AbortStore() if phase == "entry" else _ExitAbortStore()
     with pytest.raises(KeyboardInterrupt):
         _run_with_store(store, work)
     assert _current_runtime.get() is None
     assert _call_id.get() is None
+
+
+def test_ordinary_call_failure_restores_shared_scope_without_provider(monkeypatch):
+    from openprogram.runtime.agent.call_scope import managed_function
+    from openprogram.runtime.context.model import Context
+    from types import SimpleNamespace
+
+    nodes = {}
+    updates = []
+
+    class Writer:
+        def append(self, node):
+            nodes[node.id] = node
+
+        def load(self):
+            return SimpleNamespace(nodes=nodes)
+
+        def update(self, node_id, **fields):
+            updates.append((node_id, fields))
+
+    def unexpected_provider():
+        pytest.fail("An ordinary call must not construct a model provider")
+
+    monkeypatch.setattr("openprogram.runtime.agent.runtime.factory.create_runtime", unexpected_provider)
+
+    @managed_function
+    def fail(private_argument):
+        """Document the ordinary function scope."""
+        assert Context.current().call_id == _call_id.get()
+        raise ValueError("ordinary failure")
+
+    previous_context = Context.current()
+    previous_store = _store.get()
+    with pytest.raises(ValueError, match="ordinary failure"):
+        _run_with_store(Writer(), lambda: fail(object()))
+    assert Context.current() is previous_context
+    assert _store.get() is previous_store
+    assert _call_id.get() is None
+    assert _current_runtime.get() is None
+    assert len(nodes) == 1
+    node = next(iter(nodes.values()))
+    assert node.input == {}
+    assert node.metadata["doc"] == "Document the ordinary function scope."
+    assert updates[0][1]["output"] == {"error": "ordinary failure"}

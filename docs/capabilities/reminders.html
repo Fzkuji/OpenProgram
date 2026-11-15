@@ -1,0 +1,60 @@
+<title>Reminders</title>
+<meta name="description" content="Ask the agent to notify you at a time, or to come back and do something later.">
+<h1>Reminders</h1>
+<p>Say it in plain words in any conversation. The reply states the exact firing time, for example "fires Fri 2026-10-23 17:00 CST (in 2.5 h)".</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">You say</th><th scope="col">At that time</th></tr></thead>
+<tbody>
+<tr><th scope="row">Notification</th><td>"Remind me in 20 minutes to take the bread out."</td><td>You get the message</td></tr>
+<tr><th scope="row">Wakes the agent</th><td>"Tomorrow at 9, check whether the CI run passed and tell me what failed."</td><td>You get the message, then a turn starts in the same conversation</td></tr>
+</tbody></table>
+<p class="note">Asking to be reminded notifies; asking the agent to do something wakes it. Say which if it matters. To repeat work already done, with your corrections kept, save a <a href="skills.html#save-work-as-a-routine">routine</a>.</p>
+<h2 id="setting-one">Times</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">You say</th><th scope="col">Fires</th></tr></thead>
+<tbody>
+<tr><th scope="row">"in 20 minutes"</th><td>20 minutes from now</td></tr>
+<tr><th scope="row">"at 17:00"</th><td>The next 17:00: today if still ahead, otherwise tomorrow</td></tr>
+<tr><th scope="row">"on December 1 at 10:00"</th><td>That date and time</td></tr>
+<tr><th scope="row">"every weekday at 9:00"</th><td>Repeats; the agent writes a cron expression such as <code translate="no">0 9 * * 1-5</code></td></tr>
+</tbody></table>
+<p class="note">Your computer's local time zone unless you name another. Within a minute of the time. The agent uses its <code translate="no">remind</code> tool.</p>
+<h2 id="when-it-fires">When it fires</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open windows</th><td>A message in each</td></tr>
+<tr><th scope="row">System notification</th><td>Even while you use the App. The App posts it and a click opens the conversation; with no window open the worker posts it under the same name and icon. A pip-installed worker uses Script Editor on macOS and needs <code translate="no">notify-send</code> on Linux. On Windows the worker posts a toast through Windows PowerShell, under that name.</td></tr>
+<tr><th scope="row"><a href="../integrations/channels.html">Chat channel</a> conversation</th><td>Sent as a message</td></tr>
+<tr><th scope="row">Wake: new turn</th><td>Message begins with ⏰ and the text, under that conversation's permission mode and rules. In a chat channel the answer is also sent there.</td></tr>
+<tr><th scope="row">Wake: conversation busy</th><td>Waits up to 10 minutes for the running turn. Still busy: no turn starts, and a chat channel conversation gets the reminder text.</td></tr>
+<tr><th scope="row">Wake: conversation deleted</th><td>Notification only, no turn</td></tr>
+</tbody></table>
+<h2 id="see-pause-or-cancel-reminders">Manage</h2>
+<p><strong>Scheduler</strong> in the sidebar lists them as <strong>Reminder</strong> or <strong>Reminder · wakes agent</strong>. Pause, resume or delete there, or ask the agent; it uses the <code translate="no">scheduler</code> tool.</p>
+<h3 id="calendar-view">Calendar</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>List</strong> or <strong>Calendar</strong></th><td>Top of the page; remembered. Month, week and day views; an agenda replaces them in a narrow window. <strong>Today</strong> jumps back.</td></tr>
+<tr><th scope="row">On the calendar</th><td>One-time tasks at their run time. Recurring tasks and monitors at every cron firing in the dates shown, in this computer's time zone. A task firing very often shows only its first runs, and a note says so.</td></tr>
+<tr><th scope="row">Not on it</th><td>Paused tasks until resumed; webhook tasks</td></tr>
+<tr><th scope="row">Type tabs, search</th><td><strong>All tasks</strong>, <strong>One-time</strong>, <strong>Recurring</strong>, <strong>Monitors</strong> filter the calendar too</td></tr>
+<tr><th scope="row">Click a task or row</th><td>Schedule and what it runs; pause, resume, delete, edit</td></tr>
+<tr><th scope="row"><strong>Edit</strong></th><td>Title, time or cron schedule, prompt, memory reference, in the new-task form. Type stays.</td></tr>
+<tr><th scope="row">Click an empty day or time</th><td>New one-time task then</td></tr>
+</tbody></table>
+<h2 id="limits">Limits</h2>
+<ul>
+<li>Reminders run in this computer's worker. If it is down, a one-time reminder fires when it restarts. Keep it running with <code translate="no">openprogram worker install</code>.</li>
+<li>A repeating task whose time passed less than 12 hours ago runs once when the worker restarts; an older time shows as a missed run. A task turned on or edited after that time does not run for it.</li>
+<li>A task's agent run is skipped while its conversation is archived or its previous run is unfinished, including across a worker restart. Activity shows the skip. A waking reminder in an archived conversation only notifies.</li>
+<li>Changing the time of a one-time task that already fired makes it fire again at the new time.</li>
+<li>Focus and Do Not Disturb hold system notifications in Notification Center. The App's <strong>Notifications</strong> setting turns off its own too.</li>
+<li>Only the owner, or an agent working for the owner, can set reminders, in scheduled and background turns as well as chat.</li>
+<li>A scheduled agent run or command stops after 2 hours, counting time before a restart, and shows as a failed run.</li>
+</ul>
+<h2 id="run-your-own-command">Run your own command</h2>
+<p>Each firing is a <code translate="no">reminder.fired</code> event. A <code translate="no">hooks</code> entry in <code translate="no">config.json</code> gets it as JSON on standard input; hooks are read when the worker starts.</p>
+<pre translate="no" tabindex="0"><code>{"hooks": {"reminder.fired": [{"command": "python ~/bin/on_reminder.py", "timeout": 30}]}}</code></pre>
+<p class="note"><code translate="no">payload</code> carries <code translate="no">message</code>, <code translate="no">title</code>, <code translate="no">session_id</code>, <code translate="no">wake</code> and <code translate="no">fired_at</code>. <a href="../reference/design/proactive/event-layer.html">Event layer design</a></p>

@@ -1,0 +1,81 @@
+<title>Backup and restore</title>
+<meta name="description" content="Snapshot and restore OpenProgram memory, conversations, configuration and channel bindings with openprogram backup.">
+<meta name="covers" content="openprogram/operations/backup.py">
+<h1>Backup and restore</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Goal</th><th scope="col">Command</th></tr></thead>
+<tbody>
+<tr><th scope="row">Snapshot now</th><td><code translate="no">openprogram backup create</code></td></tr>
+<tr><th scope="row">See what exists</th><td><code translate="no">openprogram backup list</code></td></tr>
+<tr><th scope="row">See what a restore overwrites</th><td><code translate="no">openprogram backup restore &lt;name&gt; --dry-run</code></td></tr>
+<tr><th scope="row">Restore</th><td><code translate="no">openprogram backup restore &lt;name&gt;</code><span class="arg"><code translate="no">-y</code> skips the confirmation</span></td></tr>
+<tr><th scope="row">Delete all but the newest N</th><td><code translate="no">openprogram backup prune --keep 5</code><span class="arg">default 5; below 1 is rejected. Nothing is ever pruned automatically</span></td></tr>
+</tbody>
+</table>
+<p class="note">Archives: <code translate="no">~/.openprogram/backups/&lt;profile&gt;-&lt;timestamp&gt;.tar.gz</code>. Each command acts on the active profile only; under <code translate="no">--profile alpha</code>, <code translate="no">~/.openprogram-alpha/backups/</code>, and a restore cannot cross profiles.</p>
+
+<h2>Scope</h2>
+<p>An allowlist, so a new cache directory cannot start bloating archives.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Included</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">memory/</code>, <code translate="no">projects/</code></th><td>Memory, and projects with their chat history, run steps and memory</td></tr>
+<tr><th scope="row"><code translate="no">session_aliases.json</code>, <code translate="no">run_index.jsonl</code>, <code translate="no">revisions.jsonl</code></th><td>Chat names, which chat each run belongs to, Workflow versions</td></tr>
+<tr><th scope="row"><code translate="no">config.json</code>, <code translate="no">cli-config.json</code></th><td>Configuration</td></tr>
+<tr><th scope="row"><code translate="no">agents/</code>, <code translate="no">agents.json</code></th><td>Agent definitions</td></tr>
+<tr><th scope="row"><code translate="no">programs_meta.json</code>, <code translate="no">functions_meta.json</code>, <code translate="no">program-sources.json</code></th><td>Program and function metadata</td></tr>
+<tr><th scope="row"><code translate="no">channels/</code>, <code translate="no">bindings.json</code></th><td>Channel accounts and session bindings</td></tr>
+<tr><th scope="row"><code translate="no">skills/</code>, <code translate="no">skills.json</code>, <code translate="no">plugins/</code>, <code translate="no">marketplaces.json</code></th><td>Skills and plugins</td></tr>
+<tr><th scope="row"><code translate="no">mcp_servers.json</code>, <code translate="no">models/</code>, <code translate="no">commands/</code></th><td>MCP servers, model overrides, custom commands</td></tr>
+<tr><th scope="row"><code translate="no">owner.json</code>, <code translate="no">profiles/</code>, <code translate="no">worktrees.json</code>, <code translate="no">usage.db</code></th><td>Ownership, account metadata, worktrees, usage history</td></tr>
+<tr><th scope="row"><code translate="no">programs/</code>, <code translate="no">workflow_archives/</code>, <code translate="no">recordings/</code></th><td>Installed and your own programs, archived Workflows, recorded demonstrations</td></tr>
+<tr><th scope="row"><code translate="no">scheduler/</code>, <code translate="no">always_on/</code>, <code translate="no">memory-spaces/</code></th><td>Scheduled jobs, always-on agents, memory kept per agent</td></tr>
+<tr><th scope="row"><code translate="no">meetings/</code>, <code translate="no">project-file-history/</code>, <code translate="no">imports/</code></th><td>Meetings, earlier document versions, which outside sessions were imported</td></tr>
+<tr><th scope="row"><code translate="no">output-styles/</code>, <code translate="no">plugin-trust.json</code>, <code translate="no">plugins-enabled.json</code>, <code translate="no">AGENTS.md</code></th><td>Output styles, plugin trust and enablement, instructions for every project</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Left out, regenerated or not state</summary>
+<ul>
+<li><code translate="no">cache/</code>, <code translate="no">tool_results/</code>, <code translate="no">browser-states/</code>, <code translate="no">chrome-profile/</code>, <code translate="no">trash/</code>, <code translate="no">shadow-git/</code>, <code translate="no">logs/</code></li>
+<li><code translate="no">*.log</code>, <code translate="no">*.lock</code>, <code translate="no">*.pid</code>, <code translate="no">*.port</code>, <code translate="no">*.sock</code>, recovery copies of state files, the Web token</li>
+<li>Credential-writer temporaries such as <code translate="no">.env.tmp</code> and <code translate="no">*.json.tmp</code></li>
+<li>Credential-account <code translate="no">profiles/*/home/</code> trees; only <code translate="no">metadata.json</code> and the registered <code translate="no">.env</code> and AuthStore paths are eligible</li>
+<li><code translate="no">node_modules/</code> anywhere; symlinks, skipped rather than followed</li>
+</ul>
+</details>
+
+<h2 id="credentials">Credentials</h2>
+<table class="grid">
+<thead><tr><th scope="col">Data</th><th scope="col">Default</th><th scope="col"><code translate="no">--include-credentials</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">auth/</code>, <code translate="no">mcp_tokens/</code>, <code translate="no">plugin-options/</code>, profile AuthStore and <code translate="no">.env</code> files, Channel <code translate="no">channels/*/credentials.json</code></th><td class="deny">Left out</td><td class="ask">Archived, plaintext</td></tr>
+<tr><th scope="row"><code translate="no">config.json[api_keys]</code>; MCP env, header, bearer-token and OAuth client-secret fields</th><td class="review">Removed, rest of file kept</td><td class="ask">Archived, plaintext</td></tr>
+<tr><th scope="row">Web runtime token, pending Channel pairing codes</th><td class="deny">Left out</td><td class="deny">Left out</td></tr>
+</tbody>
+</table>
+<p class="note">Store an opted-in archive like the credentials themselves. To move machines, logging in again is usually safer. <code translate="no">backup-manifest.json</code> lists only the categories actually included, redacted or excluded, plus never-backup rules under <code translate="no">credential_policy</code>, with no secret values.</p>
+
+<h2 id="restoring">Restore</h2>
+<ol>
+<li><strong>Running-process check.</strong> A live worker or Web server refuses the restore. Run <code translate="no">openprogram stop</code> first.</li>
+<li><strong>Confirmation.</strong> Lists what will be overwritten and waits for <code translate="no">y</code>.</li>
+<li><strong>Safety snapshot.</strong> Current state goes to <code translate="no">&lt;profile&gt;-pre-restore-&lt;timestamp&gt;.tar.gz</code>. If the archive has credentials, so does the snapshot, and the command says so.</li>
+<li><strong>Replace</strong> only the entries in the archive. Caches and logs stay. A secret field a mixed file omits or redacts keeps this machine's value.</li>
+</ol>
+
+<details>
+<summary>Archive and restore safety</summary>
+<ul>
+<li>POSIX applies mode <code translate="no">0600</code>. Windows source checkouts keep the state directory's inherited NTFS ACL.</li>
+<li>An archive is written to a unique temporary file, flushed and published atomically; POSIX also flushes the directory.</li>
+<li>The whole archive is validated before any of it is visible: containment, member type, JSON shape of every registered secret file. Symlink, hardlink and traversal members are refused, and a rejected archive changes nothing.</li>
+<li>Files publish through the owner-only atomic writer and each publish is journalled. A restore stopped by a crash or full disk is reversed at the start of the next restore.</li>
+<li>POSIX uses descriptor-relative traversal. Windows has no <code translate="no">dir_fd</code>, so it validates containment and rejects symlinks, junctions and other reparse points before each path operation.</li>
+</ul>
+</details>
+
+<p class="next"><a href="configuration.html">Configuration and data directory</a></p>
+

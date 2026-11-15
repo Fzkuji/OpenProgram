@@ -1,12 +1,12 @@
 """MVP 三条 policy 的触发与误报防护。"""
 from __future__ import annotations
 
-from openprogram.events import make_event
-from openprogram.proactive.actions import Gate, Inject, Notify
-from openprogram.proactive.policies.dangerous_command import DangerousCommandGuard
-from openprogram.proactive.policies.unvalidated_completion import UnvalidatedCompletionNudge
-from openprogram.proactive.policies.test_gap import TestGapWatcher
-from openprogram.proactive.state import SessionState
+from openprogram.runtime.events import make_event
+from openprogram.runtime.proactive.actions import Gate, Inject, Notify
+from openprogram.runtime.proactive.policies.dangerous_command import DangerousCommandGuard
+from openprogram.runtime.proactive.policies.unvalidated_completion import UnvalidatedCompletionNudge
+from openprogram.runtime.proactive.policies.test_gap import TestGapWatcher
+from openprogram.runtime.proactive.state import SessionState
 
 
 def _before(cmd, tool="bash"):
@@ -82,7 +82,7 @@ def _completed():
 def test_gap_fires_core_change_no_test():
     p = TestGapWatcher()
     st = SessionState(turn_has_file_change=True,
-                      changed_files={"openprogram/agent/loop.py"})
+                      changed_files={"openprogram/runtime/agent/loop/loop.py"})
     a = p.evaluate(_completed(), st)
     assert isinstance(a, Notify) and "测试" in a.message
 
@@ -90,7 +90,7 @@ def test_gap_fires_core_change_no_test():
 def test_gap_silent_when_test_also_changed():
     p = TestGapWatcher()
     st = SessionState(turn_has_file_change=True,
-                      changed_files={"openprogram/agent/loop.py",
+                      changed_files={"openprogram/runtime/agent/loop/loop.py",
                                      "tests/agent/test_loop.py"})
     assert p.evaluate(_completed(), st) is None
 
@@ -105,11 +105,11 @@ def test_gap_silent_for_noncore_change():
 def test_gap_silent_when_no_change_this_turn():
     p = TestGapWatcher()
     st = SessionState(turn_has_file_change=False,
-                      changed_files={"openprogram/agent/loop.py"})
+                      changed_files={"openprogram/runtime/agent/loop/loop.py"})
     assert p.evaluate(_completed(), st) is None
 
 def test_unsuccessful_response_does_not_trigger_completion_advice():
-    state = SessionState(turn_has_file_change=True, changed_files={"openprogram/agent/loop.py"})
+    state = SessionState(turn_has_file_change=True, changed_files={"openprogram/runtime/agent/loop/loop.py"})
     for status in ("failed", "cancelled", "incomplete"):
         event = make_event("model.response_completed", "agent", {"is_error": True, "status": status}, {"session": "s"})
         for policy in (TestGapWatcher(), UnvalidatedCompletionNudge()):

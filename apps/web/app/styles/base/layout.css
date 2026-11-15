@@ -1,0 +1,358 @@
+/* ===== Layout: 3-column ===== */
+.app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  /* The page sits one step down; the two rails and the centre column
+     are floating cards on it (shadcn Sidebar `floating` + `inset`). */
+  background: var(--bg-secondary);
+}
+/* Centre column card: the chat (and every non-chat page) floats on the
+   page like the rails do — same corner and raised shadow, 7px off the
+   top and bottom edges; the rails' own gutters provide the side gaps. */
+.app .center-col {
+  position: relative;
+  margin: 7px 0;
+  background: var(--bg-primary);
+  /* Nova's floating Sidebar corner (rounded-lg), like the rails. */
+  border-radius: var(--radius-xl);
+  box-shadow: var(--composer-shadow);
+  overflow: hidden;
+}
+/* Split layout: the centre card dissolves and every pane becomes its own
+   card of the same material. The column steps out over the rails' inner
+   gutters and loses its top/bottom margin, so the canvas's 6px padding
+   + 1px pane inset put each pane card 7px from the rail cards and the
+   window edges — the same gap the rails keep. */
+.app .center-col[data-split] {
+  margin: 0 -7px;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+/* The window overview turns the centre card into open page, like the
+   desktop in Mission Control: no card edge or shadow around the cards.
+   It stays open page while a merge's canvas grows out of its card. */
+.app .center-col:has([data-canvas-overview], [data-canvas-landing]) {
+  background: var(--bg-secondary);
+  box-shadow: none;
+}
+.app .center-col[data-split] .center-canvas-content {
+  background: var(--bg-primary);
+  box-shadow: var(--composer-shadow);
+}
+/* Non-chat routes hide the right rail, whose gutter otherwise gives the
+   centre card its right-hand gap; keep the same 7px from the window. */
+.app .page-col {
+  margin-right: 7px;
+}
+/* Non-chat routes render their page frame inside the same card. Pages
+   size themselves to the viewport (100vh); clamp them to the card. */
+.app .page-col > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  max-height: 100%;
+}
+
+/* Pin the column order with explicit flex `order` so the layout
+   doesn't depend on DOM source order. Both sidebars are injected
+   asynchronously into `display: contents` wrappers (AppShell's
+   sidebarRef / rightSidebarRef and PageShell's hostRef), and at very
+   wide viewports the injection timing was occasionally putting the
+   right sidebar to the left of the main column. order is the cheapest
+   deterministic fix — left = 0, resize = 1, main = 2, right = 99. */
+/* No direct-child combinator here: the chat shell and right sidebar
+   are now rendered through ``display: contents`` wrappers in
+   AppShell, so .main and .right-sidebar are GRANDCHILDREN of .app
+   in the DOM tree. From flexbox's POV they're still flex items of
+   .app, but ``.app > .main`` doesn't match them — and without that
+   match, .main falls back to ``order: 0`` and ends up before
+   sidebarResize, which pushed the drag handle all the way to the
+   right viewport edge.
+
+   Descendant selectors below work regardless of how deeply the
+   wrappers nest, as long as the actual layout-participating element
+   carries the matching class / id. */
+.app #sidebar,
+.app .sidebar:not(.right-sidebar) { order: 0; }
+.app .col-resize,
+.app #sidebarResize { order: 1; }
+.app .main { order: 2; flex: 1; min-width: 0; }
+.app #rightSidebar,
+.app .right-sidebar,
+.app #detailResize { order: 99; }
+.app #rightSidebar { margin-left: auto; }
+
+.center-single-pane {
+  display: contents;
+}
+.center-split-primary {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 360px;
+  min-height: 0;
+}
+.center-split-primary.center-pane-chat {
+  flex: 0 0 auto;
+}
+.center-split-divider {
+  width: 6px;
+  flex: 0 0 6px;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--border);
+}
+.center-split-divider:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+.center-split-secondary {
+  display: flex;
+  flex: 1;
+  min-width: 480px;
+  min-height: 0;
+}
+
+/* Keep content clipped while the invisible handle crosses the divider. */
+.sidebar.rail-shell { overflow: visible; }
+.rail-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* ===== Opening and closing (components/layout/use-resizable-rail.ts) =====
+   Every part of a rail exists in both states: opening and closing never
+   mount, unmount or change the display of anything inside it. Only the
+   shell's width moves, from the click's frame, and `.collapsed` comes and
+   goes in that same frame. Each part is one of:
+   - in both states at one place (the left sidebar's icons): laid out
+     against the edge that stays put, so it never moves;
+   - in both states at two places (the toggles, the right panel's rows,
+     the left footer's avatar): it rides the card's moving edge, with an
+     inset that moves on the width's own duration and curve where the two
+     states' insets differ;
+   - open only (labels, the wordmark, the lists, the right panel's views,
+     the footer's name): laid out at the open width in both states against
+     the edge that stays put, clipped by the card, and faded (below), so
+     it never re-wraps; collapsed, it is invisible by opacity alone, and
+     from a close's settle to an open's settle it is inert (no pointer,
+     no focus, out of the accessibility tree), an attribute the hook
+     writes on the parts directly.
+   A move changes no inherited property of a part (`pointer-events`,
+   `visibility`, `color`, a custom property): the browser restyles the
+   whole subtree under a part whose inherited property changes, the
+   conversation list's 1,800 to 1,900 elements in the click's frame
+   (traced). Opacity, padding and transforms change only the element
+   itself. At the settle come `data-rail-closed`, which only what cannot
+   be seen keys on, and `inert`, whose restyle lands after the move.
+   A rule keyed on the rail's state (`.collapsed`, `data-rail-closed`,
+   `html[data-sidebar-closed]`) names its target by a class, an id or an
+   attribute of the target itself, never only `*` or a pseudo-class like
+   `:last-child`: a target without one makes every change of the state
+   restyle the rail's whole subtree (4,500 elements, about 27 ms of the
+   click's frame in the left sidebar, traced). */
+.rail-shell {
+  /* The card's width when open: the shell's p-2 gutter, two spacing
+     units a side. */
+  --rail-open-card-w: calc(var(--rail-open-w) - 4 * var(--spacing));
+}
+.rail-open-only,
+.rail-shell .rail-row > :is(.sidebar-nav-label, .sidebar-nav-text) {
+  transition: opacity var(--rail-move-duration) var(--rail-move-easing);
+}
+/* Opacity only: the card clips what lies beyond it, the rows clip their
+   labels, and `inert` (written at the settle) takes the rest out of reach. */
+.rail-shell.collapsed :is(.rail-open-only, .rail-row > .sidebar-nav-label, .rail-row > .sidebar-nav-text) {
+  opacity: 0;
+}
+/* A part as wide as the open card, against the edge that stays put: the
+   left sidebar grows from its left edge, the right panel from its right. */
+.rail-open-width {
+  width: var(--rail-open-card-w);
+  align-self: flex-start;
+}
+.right-sidebar .rail-open-width {
+  align-self: flex-end;
+}
+/* The header row: the toggle 8px in from the moving edge when open, and
+   centred in the collapsed card ((47 - 30) / 2 = 8.5px). The inset moves
+   on the width's curve, so the toggle rides the moving edge. */
+.rail-header {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  box-sizing: border-box;
+  height: 48px;
+  padding: 8px;
+  transition:
+    padding-left var(--rail-move-duration) var(--rail-move-easing),
+    padding-right var(--rail-move-duration) var(--rail-move-easing);
+}
+.sidebar:not(.right-sidebar) .rail-header { justify-content: flex-end; }
+.right-sidebar .rail-header { justify-content: flex-start; }
+.sidebar.collapsed:not(.right-sidebar) .rail-header {
+  padding-right: calc((var(--rail-collapsed-w) - 4 * var(--spacing) - var(--ui-list-h)) / 2);
+}
+.right-sidebar.collapsed .rail-header {
+  padding-left: calc((var(--rail-collapsed-w) - 4 * var(--spacing) - var(--ui-list-h)) / 2);
+}
+/* The toggle's two glyphs (hide, show) are stacked in one cell and
+   cross-fade with the move: only the chevron differs between them. */
+.rail-toggle-glyphs { display: grid; }
+.rail-toggle-glyphs > :is(.rail-toggle-close, .rail-toggle-open) {
+  grid-area: 1 / 1;
+  transition: opacity var(--rail-move-duration) var(--rail-move-easing);
+}
+.rail-shell.collapsed .rail-toggle-close,
+.rail-shell:not(.collapsed) .rail-toggle-open { opacity: 0; }
+html[data-sidebar-closed] #sidebar :is(.rail-toggle-close, .rail-toggle-open) { transition: none; }
+html[data-sidebar-closed] #sidebar .rail-toggle-close { opacity: 0; }
+html[data-sidebar-closed] #sidebar .rail-toggle-open { opacity: 1; }
+/* A rail's own nav row (New chat, the left links, the right panel's
+   views) is as wide as the card less 8px a side in both states, so its
+   box rides the moving edge and its icon keeps its place against the
+   row's left edge. What follows the icon keeps the open row's room and is
+   clipped by the row: the card less the rows' 8px inset a side, the
+   row's 1px border and 8px padding a side, the 16px icon and the 12px
+   gap. */
+.rail-shell .rail-row { overflow: hidden; }
+.rail-shell .rail-row > :is(.sidebar-nav-label, .sidebar-nav-text) {
+  flex: none;
+  width: calc(var(--rail-open-card-w) - 2 * 8px - 2 * 1px - 2 * 8px - 16px - 12px);
+}
+/* At rest collapsed, running markers in the hidden list stop. */
+.rail-shell[data-rail-closed] .rail-open-only :is(.convRunning, .convFinishing)::before,
+.rail-shell[data-rail-closed] .rail-open-only .animate-spin {
+  animation-play-state: paused;
+}
+.rail-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  width: 16px;
+  z-index: 10;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.rail-resize-handle[data-edge="left"] { left: -8px; }
+/* Closed or closing, the handle (mounted in both states) takes no pointer,
+   so it neither shows its cursor nor starts a drag. */
+.rail-resize-handle[data-off] { pointer-events: none; }
+.rail-resize-handle[data-edge="right"] { right: -8px; }
+.rail-resize-handle:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -7px; }
+/* The same short grip as a split's divider, centred in the 8px gap between
+   the two cards (the handle itself centres on the chat card's edge). It
+   turns the accent colour while a drag rests on the default width. */
+.rail-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  transform: translate(-50%, -50%);
+  transition: background var(--motion-medium) var(--ease-standard), height var(--motion-medium) var(--ease-standard);
+  pointer-events: none;
+}
+.rail-resize-handle[data-edge="left"]::after { left: calc(50% + 4px); }
+.rail-resize-handle[data-edge="right"]::after { left: calc(50% - 4px); }
+.rail-resize-handle:hover::after,
+.rail-resize-handle:focus-visible::after {
+  height: 48px;
+  background: var(--pane-divider-hover);
+}
+.rail-resize-handle[data-resizing="true"]::after {
+  height: 48px;
+  background: var(--pane-divider-active);
+  box-shadow: var(--pane-divider-active-ring);
+}
+.rail-resize-handle[data-snapped]::after { background: var(--accent-blue); }
+
+/* Column resize handle */
+/* Zero layout width — main content sits flush against the sidebar's own
+   border-right. The drag handle is an invisible absolute strip overlapping
+   the border (extends 2px into each side but never painted, so it doesn't
+   shrink any visible region). */
+.col-resize {
+  width: 0;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+.col-resize::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 5px;
+  cursor: col-resize;
+}
+
+/* ===== Responsive ===== */
+/* Narrow viewport: BOTH sidebars are always position: fixed so the
+   collapse/expand animation only changes their own width and never
+   reflows the main column. Expanding a sidebar simply grows its width
+   over the main column without pushing it around. This kills the
+   previous mid-transition jump where collapsing made main first shrink
+   (sidebar entering flow at full width) and then expand back as the
+   sidebar's width animated to 48px.
+   Gutters: the chat surface stays edge-to-edge (see the note at the end
+   of this block). Page frames reserve the collapsed 49px rail themselves:
+   Settings (.view in components/settings/settings-page.module.css) and the management pages
+   (.view in ui/manage-page.module.css). */
+@media (max-width: 900px) {
+  /* Floating over the content, the rail is only its card: the 8px gutter
+     around it stays clear, and the card itself casts the drawer shadow. */
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; z-index: var(--z-drawer);
+  }
+  .sidebar:not(.right-sidebar) { left: 0; }
+  /* The drawer shadow fades with the rail's move. */
+  .sidebar > [data-slot="sidebar-inner"] {
+    transition: box-shadow var(--rail-move-duration) var(--rail-move-easing);
+  }
+  .sidebar:not(.right-sidebar):not(.collapsed) > [data-slot="sidebar-inner"] {
+    box-shadow: var(--composer-shadow), var(--shadow-sidebar-left);
+  }
+  .right-sidebar,
+  .detail-panel {
+    position: fixed; top: 0; bottom: 0; right: 0; z-index: var(--z-drawer);
+  }
+  .right-sidebar:not(.collapsed) > [data-slot="sidebar-inner"] {
+    box-shadow: var(--composer-shadow), var(--shadow-sidebar-right);
+  }
+  .detail-panel:not(.collapsed) {
+    box-shadow: var(--shadow-sidebar-right);
+  }
+  /* The rule below that returns a collapsed rail to the flow beside a
+     split canvas applies once a close has settled (data-rail-closed,
+     use-resizable-rail.ts): until then the shrinking card still floats
+     over the page. Opening, it leaves the flow at once. There is no
+     backdrop, so nothing blocks clicks around the card. */
+
+  /* No gutter reserved — collapsed sidebars are position:fixed at the
+     edges (z-index 100) and may overlap main content briefly when
+     dragging. User preferred edge-to-edge main over a 48px reserve. */
+
+  /* A split canvas is the exception: like macOS sidebars beside tiled
+     windows, the collapsed rails keep their own columns so they never
+     cover a pane. An expanded sidebar still slides over as a drawer. */
+  .app:has(> .center-col[data-split]) .sidebar[data-rail-closed] {
+    position: relative;
+  }
+}
+
+@media (max-width: 600px) {
+  .message { padding: 12px 16px; }
+  .chat-messages .message.user .message-content { max-width: 88%; }
+  .input-area { padding: 12px 16px 16px; }
+  .welcome-examples { flex-direction: column; }
+}

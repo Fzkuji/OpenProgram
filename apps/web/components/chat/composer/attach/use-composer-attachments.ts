@@ -17,8 +17,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { refillItemIds, takeRefillFiles, takeRetractRefills, useRewindStore } from "@/lib/chat/rewind/rewind-store";
 import { desktopBridge } from "@/lib/desktop/desktop-bridge";
-import { localSourcePath } from "@/lib/chat/attachment-marker";
+import { localSourcePath } from "@/lib/chat/send/attachment-marker";
 import {
   type PendingImage,
   readDroppedTextFile,
@@ -26,8 +27,8 @@ import {
   readImageFile,
   planDroppedFiles,
   MAX_DOC_BYTES,
-} from "./image-attach";
-import type { PendingDoc } from "./file-tiles";
+} from "./image/image-attach";
+import type { PendingDoc } from "./strip/file-tiles";
 import { captureDropEntries, firstDirectoryLevel, type DroppedEntry } from "./folder-drop";
 import {
   attachmentOwnerIsClosed,
@@ -59,6 +60,8 @@ export interface UseComposerAttachmentsResult {
   composerRootRef: React.MutableRefObject<HTMLDivElement | null>;
   addImagesForOwner: (ownerKey: string | null, imgs: PendingImage[]) => void;
   removeImage: (id: string) => void;
+  /** Put an edited copy (an annotated screenshot) in place of a staged image. */
+  replaceImage: (id: string, file: File) => Promise<void>;
   setImageError: (s: string | null) => void;
   addDocs: (docs: PendingDoc[]) => void;
   removeDoc: (id: string) => void;
@@ -74,6 +77,19 @@ export interface UseComposerAttachmentsResult {
     ownerKey: string | null,
     captured?: { imageIds: string[]; docIds: string[] },
   ) => void;
+  /** Take the submitted items out of the composer as soon as the socket
+   *  accepts the frame, without revoking their previews. The backend ACK
+   *  can trail the send by seconds; `release` frees the previews on ACK and
+   *  `restore` puts the items back when the backend rejects the turn. */
+  detachForSubmit: (
+    ownerKey: string | null,
+    captured: { imageIds: string[]; docIds: string[] },
+  ) => SubmittedAttachments;
+}
+
+export interface SubmittedAttachments {
+  release: () => void;
+  restore: () => void;
 }
 
 function revokeAttachmentPreviews(data: StoredAttachments): void {
@@ -93,28 +109,33 @@ function releaseAttachmentPreviews(data: StoredAttachments): StoredAttachments {
   };
 }
 
+/** A split-view pane: a file dragged over one goes to that pane's composer. */
+export const DROP_PANE = ".peer-session-pane";
+/** An editor that takes the files dropped on it itself. */
+export const OWN_DROP = "[data-file-drop]";
+
 /**
  * @param boundChatKey  Bind attachments to THIS chat instead of the focused
- *   one (split-view pane). Also suppresses the window-level drag listeners:
- *   those are global, and with two composers mounted both would fire on a
- *   single drop. The unbound (focused) instance keeps owning window drops.
+ *   one (split-view pane).
+ * @param ownsPane  This is a pane's composer: a file dragged anywhere over its
+ *   pane is its to take. An editor inside a message takes only what lands on it.
  */
 export function useComposerAttachments(
   boundChatKey?: string | null,
+  transientInitial?: StoredAttachments,
+  ownsPane = false,
 ): UseComposerAttachmentsResult {
-  const isBound = boundChatKey != null;
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  // Latest unowned lists for submit callbacks that run outside a render.
+  const pendingImagesRef = useRef(pendingImages);
+  const pendingDocsRef = useRef(pendingDocs);
+  pendingImagesRef.current = pendingImages;
+  pendingDocsRef.current = pendingDocs;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRootRef = useRef<HTMLDivElement | null>(null);
-
-  // ``dragCounter`` tracks dragenter / dragleave net depth on the
-  // window so the overlay only fades out when the cursor truly leaves
-  // the window (lots of dragenter/leave events fire as the cursor
-  // crosses child elements — a counter is the documented workaround).
-  const dragCounter = useRef(0);
 
   // Per-chat persistence (IndexedDB). Provisional local_* draft ids are
   // stable too, so multiple unsent chats keep independent attachments.
@@ -123,8 +144,8 @@ export function useComposerAttachments(
   const mountedRef = useRef(true);
   const lifecycleEpochRef = useRef(0);
   const activeChatKeyRef = useRef<string | null>(activeChatKey);
-  const attachmentsByChatRef = useRef<AttachmentsByChat>(new Map());
-  const loadedAttachmentKeysRef = useRef(new Set<string>());
+  const attachmentsByChatRef = useRef<AttachmentsByChat>(new Map(boundChatKey && transientInitial ? [[boundChatKey, transientInitial]] : []));
+  const loadedAttachmentKeysRef = useRef(new Set<string>(boundChatKey && transientInitial ? [boundChatKey] : []));
   const loadingAttachmentKeysRef = useRef(new Set<string>());
   const dirtyAttachmentKeysRef = useRef(new Set<string>());
   const attachmentMergeChangesRef = useRef(
@@ -136,16 +157,20 @@ export function useComposerAttachments(
   useEffect(() => {
     mountedRef.current = true;
     const epoch = ++lifecycleEpochRef.current;
+    // The release pass checks the epoch after setup may have run again, so
+    // it reads the counter and the cache as they are by then.
+    const lifecycle = lifecycleEpochRef;
+    const cache = attachmentsByChatRef;
     return () => {
       mountedRef.current = false;
       // React Strict Mode immediately runs setup again after its development
       // cleanup. Delay resource release by one microtask so that setup can
       // cancel this pass; an actual unmount has no matching setup.
       queueMicrotask(() => {
-        if (mountedRef.current || lifecycleEpochRef.current !== epoch) return;
-        for (const [chatKey, data] of attachmentsByChatRef.current) {
+        if (mountedRef.current || lifecycle.current !== epoch) return;
+        for (const [chatKey, data] of cache.current) {
           setAttachmentsForChat(
-            attachmentsByChatRef.current,
+            cache.current,
             chatKey,
             releaseAttachmentPreviews(data),
           );
@@ -155,7 +180,7 @@ export function useComposerAttachments(
   }, []);
 
   const persistAttachments = useCallback((chatKey: string, data: StoredAttachments) => {
-    if (attachmentOwnerIsClosed(chatKey)) return;
+    if (transientInitial || attachmentOwnerIsClosed(chatKey)) return;
     const previous = attachmentWriteChainsRef.current.get(chatKey) ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
@@ -169,7 +194,7 @@ export function useComposerAttachments(
         attachmentWriteChainsRef.current.delete(chatKey);
       }
     });
-  }, []);
+  }, [transientInitial]);
 
   const publishAttachments = useCallback((chatKey: string, data: StoredAttachments) => {
     if (attachmentOwnerIsClosed(chatKey)) {
@@ -211,11 +236,6 @@ export function useComposerAttachments(
       ...current,
       [field]: [...ids, id],
     });
-  }, []);
-
-  const noteAttachmentsCleared = useCallback((chatKey: string) => {
-    if (loadedAttachmentKeysRef.current.has(chatKey)) return;
-    attachmentMergeChangesRef.current.set(chatKey, { cleared: true });
   }, []);
 
   useEffect(() => onAttachmentOwnerClosed((chatKey) => {
@@ -367,6 +387,25 @@ export function useComposerAttachments(
     [publishAttachments],
   );
 
+  /** Put an edited copy (an annotated screenshot) in place of a staged image. */
+  const replaceImage = useCallback(async (id: string, file: File) => {
+    const ownerKey = activeChatKeyRef.current;
+    const real = await readImageFile(file, file.name);
+    const previous = (ownerKey ? attachmentsByChatRef.current.get(ownerKey)?.images : pendingImagesRef.current)
+      ?.find((image) => image.id === id)?.previewUrl;
+    if (previous?.startsWith("blob:")) {
+      try { URL.revokeObjectURL(previous); } catch { /* already released */ }
+    }
+    updateImageForOwner(ownerKey, id, {
+      previewUrl: real.previewUrl,
+      attachment: real.attachment,
+      sizeBytes: file.size,
+      sourcePath: undefined,
+      loading: false,
+      error: undefined,
+    });
+  }, [updateImageForOwner]);
+
   const addDocsForOwner = useCallback((ownerKey: string | null, docs: PendingDoc[]) => {
     if (docs.length === 0) return;
     if (!ownerKey) {
@@ -445,7 +484,7 @@ export function useComposerAttachments(
   // Images go to the image strip, text files to inline tiles, binary
   // to placeholder tiles. Nothing is rejected — everything dropped
   // shows up so the user always sees feedback.
-  const processDroppedFiles = useCallback(async (files: File[], entries = new Map<File, DroppedEntry>()) => {
+  const processDroppedFiles = useCallback(async (files: File[], entries = new Map<File, DroppedEntry>(), refillId?: number) => {
     if (files.length === 0) return;
     const ownerKey = activeChatKeyRef.current;
     const current = (ownerKey
@@ -471,6 +510,7 @@ export function useComposerAttachments(
       sourcePath: localSourcePath(f, desktopBridge()),
       loading: true,
       order,
+      ...(refillId === undefined ? {} : { refillId }),
     }));
     const docPlaceholders: PendingDoc[] = planned.docs.map(({ file: f, order }) => ({
       id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -485,6 +525,7 @@ export function useComposerAttachments(
       sizeBytes: f.size,
       loading: true,
       order,
+      ...(refillId === undefined ? {} : { refillId }),
     }));
     addImagesForOwner(ownerKey, imagePlaceholders);
     addDocsForOwner(ownerKey, docPlaceholders);
@@ -527,10 +568,16 @@ export function useComposerAttachments(
       }
       if (placeholder.sourcePath) {
         // Native documents are references. The optional local preview is never sent.
-        updateDocForOwner(ownerKey, placeholder.id, { loading: false });
-        void readDroppedTextFile(f).then((preview) => {
-          updateDocForOwner(ownerKey, placeholder.id, { content: preview?.content ?? null });
-        });
+        const isPdf = placeholder.ext === "pdf" || f.type === "application/pdf";
+        void Promise.all([readDroppedTextFile(f), isPdf ? readFileAsBase64(f) : null])
+          .then(([preview, dataB64]) => {
+            updateDocForOwner(ownerKey, placeholder.id, {
+              content: preview?.content ?? null, dataB64, loading: false,
+            });
+          }).catch(() => {
+            // Preview failure does not invalidate a native path reference.
+            updateDocForOwner(ownerKey, placeholder.id, { loading: false });
+          });
         return;
       }
       Promise.all([readFileAsBase64(f), readDroppedTextFile(f)])
@@ -569,56 +616,57 @@ export function useComposerAttachments(
   // Window-level guard — without this Chrome treats a file drop on
   // any unhandled element (page background, sidebar, status bar,
   // etc.) as a navigation request and opens the file in a new tab.
-  // Even when the user lands on the composer the cancel happens too
-  // late sometimes. Adding ``preventDefault`` on both dragover + drop
-  // at the window level makes the drop zone effectively the whole
-  // page; when the user releases anywhere we synthesise a drop into
-  // the composer's handler.
+  // ``preventDefault`` on dragover + drop at the window level makes the
+  // drop zone the whole page.
+  //
+  // Every mounted composer listens, and exactly one takes a given drag:
+  // the one whose pane the pointer is over. Outside every split pane it is
+  // the focused pane's composer, or the single composer when not split.
   useEffect(() => {
     function hasFiles(e: DragEvent): boolean {
       return !!e.dataTransfer && e.dataTransfer.types.includes("Files");
     }
-    function blockNav(e: DragEvent) {
-      if (hasFiles(e)) e.preventDefault();
+    function mine(e: DragEvent): boolean {
+      const root = composerRootRef.current;
+      if (!root || root.getClientRects().length === 0) return false;
+      if (!(e.target instanceof Element) || e.target.closest(OWN_DROP)) return false;
+      const over = e.target.closest(DROP_PANE);
+      const own = root.closest(DROP_PANE);
+      if (over) return over === own;
+      return !own || own.getAttribute("data-pane-focused") === "true";
     }
-    function onEnter(e: DragEvent) {
+    function onOver(e: DragEvent) {
       if (!hasFiles(e)) return;
       e.preventDefault();
-      dragCounter.current++;
-      setDragActive(true);
+      setDragActive(mine(e));
     }
     function onLeave(e: DragEvent) {
-      if (!hasFiles(e)) return;
-      dragCounter.current = Math.max(0, dragCounter.current - 1);
-      if (dragCounter.current === 0) setDragActive(false);
+      // Leaving the window itself: nothing is being entered.
+      if (hasFiles(e) && !e.relatedTarget) setDragActive(false);
     }
     async function routeDrop(e: DragEvent) {
       if (!hasFiles(e)) return;
       e.preventDefault();
-      dragCounter.current = 0;
       setDragActive(false);
       const dt = e.dataTransfer;
-      if (!dt) return;
+      if (!dt || !mine(e)) return;
       const dropped: File[] = [];
       for (let i = 0; i < dt.files.length; i++) {
         dropped.push(dt.files[i]);
       }
       await processDroppedFiles(dropped, captureDropEntries(dt));
     }
-    // Only the focused (unbound) composer listens at window level — two
-    // sets of listeners would route one drop into both sessions.
-    if (isBound) return;
-    window.addEventListener("dragenter", onEnter);
-    window.addEventListener("dragleave", onLeave);
-    window.addEventListener("dragover", blockNav);
-    window.addEventListener("drop", routeDrop);
+    // Captured, so an editor that stops its own drop still ends this drag here.
+    if (!ownsPane) return;
+    window.addEventListener("dragover", onOver, true);
+    window.addEventListener("dragleave", onLeave, true);
+    window.addEventListener("drop", routeDrop, true);
     return () => {
-      window.removeEventListener("dragenter", onEnter);
-      window.removeEventListener("dragleave", onLeave);
-      window.removeEventListener("dragover", blockNav);
-      window.removeEventListener("drop", routeDrop);
+      window.removeEventListener("dragover", onOver, true);
+      window.removeEventListener("dragleave", onLeave, true);
+      window.removeEventListener("drop", routeDrop, true);
     };
-  }, [processDroppedFiles, isBound]);
+  }, [processDroppedFiles, ownsPane]);
 
   const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (e.dataTransfer.types.includes("Files")) {
@@ -682,7 +730,107 @@ export function useComposerAttachments(
       images: attachments.images.filter((image) => !imageIds.has(image.id)),
       docs: attachments.docs.filter((doc) => !docIds.has(doc.id)),
     });
-  }, [noteAttachmentRemoval, pendingDocs, pendingImages, publishAttachments]);
+  }, [noteAttachmentRemoval, publishAttachments]);
+
+  const detachForSubmit = useCallback((
+    ownerKey: string | null,
+    captured: { imageIds: string[]; docIds: string[] },
+  ): SubmittedAttachments => {
+    const imageIds = new Set(captured.imageIds);
+    const docIds = new Set(captured.docIds);
+    let held: StoredAttachments = { images: [], docs: [] };
+    let settled = false;
+    if (!ownerKey) {
+      if (activeChatKeyRef.current === null) {
+        held = {
+          images: pendingImagesRef.current.filter((image) => imageIds.has(image.id)),
+          docs: pendingDocsRef.current.filter((doc) => docIds.has(doc.id)),
+        };
+        setPendingImages((current) => current.filter((image) => !imageIds.has(image.id)));
+        setPendingDocs((current) => current.filter((doc) => !docIds.has(doc.id)));
+      }
+    } else {
+      const attachments = attachmentsByChatRef.current.get(ownerKey)
+        ?? { images: [], docs: [] };
+      held = {
+        images: attachments.images.filter((image) => imageIds.has(image.id)),
+        docs: attachments.docs.filter((doc) => docIds.has(doc.id)),
+      };
+      if (held.images.length > 0 || held.docs.length > 0) {
+        for (const image of held.images) noteAttachmentRemoval(ownerKey, "image", image.id);
+        for (const doc of held.docs) noteAttachmentRemoval(ownerKey, "doc", doc.id);
+        publishAttachments(ownerKey, {
+          images: attachments.images.filter((image) => !imageIds.has(image.id)),
+          docs: attachments.docs.filter((doc) => !docIds.has(doc.id)),
+        });
+      }
+    }
+    return {
+      release: () => {
+        if (settled) return;
+        settled = true;
+        revokeAttachmentPreviews(held);
+      },
+      restore: () => {
+        if (settled) return;
+        settled = true;
+        if (held.images.length === 0 && held.docs.length === 0) return;
+        // Put the items back beside anything added since; their original
+        // order values keep them where they were in the strip.
+        if (!ownerKey) {
+          if (activeChatKeyRef.current !== null) {
+            revokeAttachmentPreviews(held);
+            return;
+          }
+          setPendingImages((current) => [
+            ...current,
+            ...held.images.filter((image) => !current.some((item) => item.id === image.id)),
+          ]);
+          setPendingDocs((current) => [
+            ...current,
+            ...held.docs.filter((doc) => !current.some((item) => item.id === doc.id)),
+          ]);
+          return;
+        }
+        if (attachmentOwnerIsClosed(ownerKey)) {
+          revokeAttachmentPreviews(held);
+          return;
+        }
+        const current = attachmentsByChatRef.current.get(ownerKey)
+          ?? { images: [], docs: [] };
+        publishAttachments(ownerKey, {
+          images: [
+            ...current.images,
+            ...held.images.filter((image) => !current.images.some((item) => item.id === image.id)),
+          ],
+          docs: [
+            ...current.docs,
+            ...held.docs.filter((doc) => !current.docs.some((item) => item.id === doc.id)),
+          ],
+        });
+      },
+    };
+  }, [noteAttachmentRemoval, publishAttachments]);
+
+  // A rewind hands its message's attachments to this conversation's composer,
+  // and its Undo or the next rewind takes those same items back out. The
+  // session's own record is read because items added in this commit are not
+  // in the rendered lists yet.
+  const refillFiles = useRewindStore((state) => (activeChatKey ? state.refillFiles[activeChatKey] : undefined));
+  const retractRefills = useRewindStore((state) => (activeChatKey ? state.retractRefills[activeChatKey] : undefined));
+  useEffect(() => {
+    if (!activeChatKey || !refillFiles) return;
+    for (const group of takeRefillFiles(activeChatKey) ?? []) {
+      void processDroppedFiles(group.files, new Map(), group.refillId);
+    }
+  }, [activeChatKey, refillFiles, processDroppedFiles]);
+  useEffect(() => {
+    if (!activeChatKey || !retractRefills) return;
+    const refills = takeRetractRefills(activeChatKey) ?? [];
+    const held = attachmentsByChatRef.current.get(activeChatKey);
+    refillItemIds(held?.images ?? pendingImagesRef.current, refills).forEach(removeImage);
+    refillItemIds(held?.docs ?? pendingDocsRef.current, refills).forEach(removeDoc);
+  }, [activeChatKey, retractRefills, removeImage, removeDoc]);
 
   return {
     pendingImages,
@@ -693,6 +841,7 @@ export function useComposerAttachments(
     composerRootRef,
     addImagesForOwner,
     removeImage,
+    replaceImage,
     setImageError,
     addDocs,
     removeDoc,
@@ -703,5 +852,6 @@ export function useComposerAttachments(
     onDragLeave,
     onDrop,
     clearAfterSubmit,
+    detachForSubmit,
   };
 }

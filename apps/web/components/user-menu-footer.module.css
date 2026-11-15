@@ -27,18 +27,21 @@
      centers via flex alignment rather than physically fitting in
      content. Looks like a 64px-tall row with a 36px circle in it.
 
-     Horizontal padding uses a clamp tied to the trigger's own width
-     (which mirrors sidebar width). At full width (288): padding-left
-     resolves to 16. As sidebar collapses and width approaches 52
-     (avatar 36 + 16 padding), padding-left smoothly drops toward 6
-     (the centered position in a 49-wide rail). So the avatar stays
-     at x=16 during most of the collapse and only slides left in the
-     final few pixels — no teleport, no early move. */
+     Horizontal padding is 16px; in the collapsed left sidebar the left
+     padding is 5px (styles/base/sidebar.css), which places the avatar in
+     the 46px-wide collapsed card, and the right one 27px, so the name
+     keeps its width. Between the two it moves with the rail:
+     same duration and curve as the rail's width, read from the rail's
+     shell (--rail-move-duration / --rail-move-easing, set by
+     use-resizable-rail.ts), so the avatar glides from one resting
+     place to the other while the card grows or shrinks around it.
+     Outside a rail those variables are unset and the padding does not
+     animate. */
   height: 64px;
   padding-top: 32px;
   padding-bottom: 32px;
-  padding-left: max(6px, min(16px, calc(100% - 47px)));
-  padding-right: max(6px, min(16px, calc(100% - 47px)));
+  padding-left: 16px;
+  padding-right: 16px;
   box-sizing: border-box;
   border-radius: 0;
   cursor: pointer;
@@ -49,7 +52,10 @@
   text-align: left;
   font-family: inherit;
   color: var(--text-primary);
-  transition: background 0.15s ease;
+  transition:
+    background var(--motion-medium) var(--ease-standard),
+    padding-left var(--rail-move-duration, 0s) var(--rail-move-easing, linear),
+    padding-right var(--rail-move-duration, 0s) var(--rail-move-easing, linear);
   overflow: hidden;
 }
 .trigger:hover { background: var(--bg-hover); }
@@ -57,36 +63,27 @@
 .avatar {
   width: 36px;
   height: 36px;
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--primary-foreground);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: var(--fs-chat);
   font-weight: 600;
   flex-shrink: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion-medium) var(--ease-standard);
 }
 .trigger:hover .avatar {
   opacity: 0.92;
 }
 
-.info {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin-left: 12px;
-  padding-right: 4px;
-}
 .name {
   width: 100%;
-  /* Claude rgb(195,194,183) = #c3c2b7 = our --text-primary exactly. */
+  /* Claude's name ink (195 194 183) is our --text-primary exactly. */
   color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 510;
+  font-size: var(--fs-base);
+  font-weight: 500;
   line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
@@ -94,9 +91,9 @@
 }
 .subtitle {
   width: 100%;
-  /* Claude rgb(151,149,140) = #97958c = our --text-secondary exactly. */
+  /* Claude's subtitle ink (151 149 140) is our --text-secondary exactly. */
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 400;
   line-height: 16px;
   white-space: nowrap;
@@ -110,62 +107,34 @@
   color: var(--text-primary);
   margin-left: 8px;
   opacity: 0.85;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion-medium) var(--ease-standard);
 }
 .trigger:hover .chevron { opacity: 1; }
 
-/* Popover anchored above the trigger. Gap below matches left/right
-   8px so the menu floats with even breathing room. */
+/* Popover anchored above the trigger. Frame, rows and separator are the
+   shared menu classes (ui/menu/menu-styles.ts MENU_PANEL / itemCls /
+   MENU_SEPARATOR), so this menu cannot drift from the others; only the
+   placement lives here. Gap below matches left/right 8px. */
 .menu {
   position: absolute;
   left: 8px;
   right: 8px;
   bottom: calc(100% + 8px);
-  background: var(--bg-tertiary, var(--bg-secondary));
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-popover);
-  padding: 4px;
+  max-width: none;
   z-index: 50;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
 
-
+/* Rows are links and buttons: full width, no underline. Border and
+   fill come from Tailwind's preflight (layered), so itemCls's hover
+   fill still wins — an unlayered `background` here would hide it. */
 .item {
-  display: flex;
-  align-items: center;
-  /* Match `.conv-item` in the Recents list above so the menu's rows
-     are the same visual rhythm as the chat list: 32px row, 6px/8px
-     padding, 14px text, 12px gap, no oversized line-height. */
-  gap: 12px;
-  padding: 6px 8px;
-  height: 32px;
-  min-height: 32px;
-  max-height: 32px;
-  box-sizing: border-box;
-  line-height: 20px;
-  border-radius: var(--ui-list-radius);
-  font-size: 14px;
-  color: var(--text-primary);
-  text-decoration: none;
-  cursor: pointer;
-  background: transparent;
-  border: none;
   width: 100%;
   text-align: left;
+  text-decoration: none;
   font-family: inherit;
 }
-.item:hover { background: var(--bg-hover); color: var(--text-bright); }
-.item svg { color: var(--text-muted); flex-shrink: 0; }
+.item svg { color: var(--text-muted); }
 .item:hover svg { color: var(--text-primary); }
-
-.sep {
-  height: 1px;
-  background: var(--border);
-  margin: 4px 0;
-}
 
 /* Collapsed-sidebar rules live in app/styles/02-sidebar.css and
    target stable companion classes (`user-menu-footer-*`) so the

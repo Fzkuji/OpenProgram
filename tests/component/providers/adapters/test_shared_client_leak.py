@@ -17,8 +17,8 @@ import threading
 
 import pytest
 
-from openprogram.providers.utils import http_client as hc
-from openprogram.security.url_policy import OwnerURLException
+from openprogram.models.providers.utils import http_client as hc
+from openprogram.host.security.url_policy import OwnerURLException
 
 
 _SCOPE = {
@@ -106,7 +106,7 @@ def test_reap_leaves_other_loops_untouched():
 
 def test_run_async_does_not_accumulate_dead_entries():
     """Repeated _run_async calls (one throwaway loop each) leave no residue."""
-    from openprogram.agentic_programming.runtime import _run_async
+    from openprogram.runtime.agent.runtime import _run_async
 
     async def _one_exec():
         # Simulate a provider grabbing its shared client mid-call.
@@ -268,7 +268,7 @@ def test_shared_cache_retires_client_when_live_owner_policy_changes(
             }
         }
     }
-    monkeypatch.setattr("openprogram.setup._read_config", lambda: state)
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: state)
 
     async def _body():
         first = hc.get_shared_async_client("same", **_SCOPE)
@@ -300,7 +300,7 @@ def test_shared_cache_retires_client_when_live_owner_exception_is_revoked(
         "origin": _SCOPE["configured_origin"],
     }
     state = {"security": {"outbound_url": {"exceptions": [exception]}}}
-    monkeypatch.setattr("openprogram.setup._read_config", lambda: state)
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: state)
 
     async def _body():
         authorized = hc.get_shared_async_client("same", **_SCOPE)
@@ -332,3 +332,71 @@ def test_shared_cache_cap_ignores_closed_entries_and_rejects_open_overflow():
             hc.get_shared_async_client("overflow", **_SCOPE)
 
     asyncio.run(_body())
+
+
+def test_hand_driven_loop_shutdown_reaps_before_close(monkeypatch):
+    """A loop driven by hand (new_event_loop + run_until_complete + close)
+    cancels nothing on close, so the chat turn reaps its clients first."""
+    created = []
+
+    def _build(**kwargs):
+        client = _FakeAsyncClient(**kwargs)
+        created.append(client)
+        return client
+
+    monkeypatch.setattr(hc, "build_async_client", _build)
+
+    for index in range(hc._MAX_SHARED_CLIENTS_TOTAL * 2):
+        loop = asyncio.new_event_loop()
+
+        async def _turn():
+            hc.get_shared_async_client("openai-codex", **_SCOPE)
+
+        try:
+            loop.run_until_complete(_turn())
+        finally:
+            hc.shutdown_loop_clients(loop)
+            loop.close()
+        assert hc._shared == {}, f"turn {index} left a dead entry"
+        assert hc._loop_cleanup_tasks == {}
+
+    assert len(created) == hc._MAX_SHARED_CLIENTS_TOTAL * 2
+    assert all(client.closed for client in created)
+    assert all(client.closed_loop is client.owner_loop for client in created)
+
+
+# Each unreaped loop destroys its pending cleanup task on close: that is the
+# misbehaviour under test, not a finding.
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_closed_loop_entries_never_fill_the_cache(monkeypatch):
+    """A caller that closes its loop without reaping must not poison the
+    cache: dead-loop entries are evicted instead of counting against the
+    limit until every provider call fails."""
+    monkeypatch.setattr(hc, "build_async_client", lambda **kw: _FakeAsyncClient(**kw))
+
+    for _ in range(hc._MAX_SHARED_CLIENTS_TOTAL * 2):
+        loop = asyncio.new_event_loop()
+
+        async def _turn():
+            hc.get_shared_async_client("openai-codex", **_SCOPE)
+
+        try:
+            loop.run_until_complete(_turn())
+        finally:
+            loop.close()  # no reaping: the entry outlives its loop
+        assert len(hc._shared) <= 1
+
+    # The next well-behaved loop still gets a client, and reaps it.
+    async def _get_one():
+        return hc.get_shared_async_client("openai-codex", **_SCOPE)
+
+    loop = asyncio.new_event_loop()
+    try:
+        client = loop.run_until_complete(_get_one())
+    finally:
+        hc.shutdown_loop_clients(loop)
+        loop.close()
+    assert client.closed
+    assert hc._shared == {}
+    assert hc._loop_cleanup_tasks == {}
+

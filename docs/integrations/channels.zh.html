@@ -1,0 +1,254 @@
+<title>聊天渠道</title>
+<meta name="description" content="把 Telegram、Discord、Slack 和微信连到你的 Agent：设置、访问、群聊、路由、回复和错误。">
+<h1>聊天渠道</h1>
+<p>发给机器人的消息运行一轮 agent，回复回到同一个聊天。渠道运行在后台服务里，所以对话在 Web 和 TUI 里也实时可见。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 180" role="img" aria-label="收到的消息先过访问检查，然后绑定选择 agent，会话键选择对话，然后运行一轮并在同一聊天回复。未知发送者在私聊收到配对码，在群里没有反应。没有绑定的消息收到 no agent configured。">
+  <defs><marker id="ch-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">消息</text>
+  <line class="ln" x1="84" y1="33" x2="128" y2="33" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="140" y="40">访问</text>
+  <text class="t-soft" x="140" y="66">允许名单或</text>
+  <text class="t-soft" x="140" y="86">群名单</text>
+  <line class="ln" x1="212" y1="33" x2="264" y2="33" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="276" y="40">绑定</text>
+  <text class="t-soft" x="276" y="66">选择 agent</text>
+  <line class="ln" x1="354" y1="33" x2="404" y2="33" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="416" y="40">会话</text>
+  <text class="t-soft" x="416" y="66">会话键</text>
+  <text class="t-soft" x="416" y="86">选择对话</text>
+  <line class="ln" x1="494" y1="33" x2="552" y2="33" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="564" y="40">运行</text>
+  <text class="t-soft" x="564" y="66">在同一聊天</text>
+  <text class="t-soft" x="564" y="86">回复</text>
+  <path class="ln-no" d="M300 74V116"/>
+  <text class="t-no" x="300" y="136">没有绑定：[no agent configured]</text>
+  <path class="ln-no" d="M160 94V156"/>
+  <text class="t-no" x="160" y="174">未获允许：私聊收到配对码，群里没有反应</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>消息</strong></li>
+<li><strong>访问</strong><small>允许名单或群名单</small><p class="refused">未获允许：私聊收到配对码，群里没有反应</p></li>
+<li><strong>绑定</strong><small>选择 agent</small><p class="refused">没有绑定：[no agent configured]</p></li>
+<li><strong>会话</strong><small>会话键选择对话</small></li>
+<li class="flow-end"><strong>运行</strong><small>在同一聊天回复</small></li>
+</ol>
+</figure>
+<table class="stack">
+<thead><tr><th scope="col">平台</th><th scope="col">接收方式</th><th scope="col">登录</th><th scope="col">实时进度</th><th scope="col">收附件</th><th scope="col">发文件</th></tr></thead>
+<tbody>
+<tr><th scope="row">Telegram</th><td>Bot API 长轮询</td><td>BotFather 的 bot token</td><td>有</td><td>图片、文档、语音、音频、视频、GIF</td><td>图片、文档</td></tr>
+<tr><th scope="row">Discord</th><td>discord.py Gateway</td><td>bot token</td><td>有</td><td>有</td><td>有</td></tr>
+<tr><th scope="row">Slack</th><td>Socket Mode（<code translate="no">slack_sdk</code>）</td><td>bot token <code translate="no">xoxb-</code> 和 app token <code translate="no">xapp-</code></td><td>有</td><td>有，<code translate="no">files:read</code></td><td>有，<code translate="no">files:write</code></td></tr>
+<tr><th scope="row">微信</th><td>iLink 长轮询</td><td>个人微信扫码</td><td>无：不能编辑已发消息</td><td>图片、语音、文件、视频</td><td>图片、视频、文件</td></tr>
+</tbody></table>
+<p class="note">发行版和完整的源码开发安装都包含 Discord 和 Slack 依赖。</p>
+<h2 id="quick-start">快速开始</h2>
+<p>需要一个 agent（<code translate="no">openprogram agents add main</code>）和可用的模型服务商。向导选择平台、登录、绑定 agent 并启动 worker。</p>
+<ol>
+<li><code translate="no">openprogram channels setup</code></li>
+<li>给机器人发消息。第一条回复是配对码。</li>
+<li><code translate="no">openprogram channels access approve &lt;channel&gt; &lt;code&gt;</code></li>
+</ol>
+<p class="note">之后对话出现在会话列表里。</p>
+<h2 id="per-platform-prerequisites">各平台准备</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">平台</th><th scope="col">运行向导前</th></tr></thead>
+<tbody>
+<tr><th scope="row">Telegram</th><td><a href="https://t.me/BotFather">@BotFather</a>，<code translate="no">/newbot</code>，复制 token。不需要 webhook 或公网 IP。</td></tr>
+<tr><th scope="row">Discord</th><td>在 <a href="https://discord.com/developers/applications">Developer Portal</a> 创建应用和 bot。在 <strong>Bot</strong> 页开启 <strong>Message Content Intent</strong>，否则网关拒绝连接。把 bot 邀请到服务器。</td></tr>
+<tr><th scope="row">Slack</th><td>在 <a href="https://api.slack.com/apps">api.slack.com/apps</a> 创建并安装应用。开启 <strong>Socket Mode</strong>。bot token 权限：<code translate="no">chat:write</code>、<code translate="no">app_mentions:read</code> 和所订阅事件需要的 history 权限，如 <code translate="no">im:history</code>。app token 在 <strong>Basic Information → App-Level Tokens</strong>，带 <code translate="no">connections:write</code>。订阅 <code translate="no">message</code> 和 <code translate="no">app_mention</code>，适配器只处理这两种。两个 token 都必须有。</td></tr>
+<tr><th scope="row">微信</th><td>个人微信，不需要公众号。扫描终端二维码并确认。扫码人直接放行，无需配对码。凭证保留到出现 <code translate="no">bot token invalid — relogin required</code>。走腾讯 iLink 后端，其条款限个人使用。</td></tr>
+</tbody></table>
+<h2 id="two-ways-to-configure">命令</h2>
+<p>每个 <code translate="no">--id</code> 是一个 bot 登录，有自己的凭证和绑定。</p>
+<pre translate="no" tabindex="0"><code>openprogram channels list                              # 每个账号的状态
+openprogram channels accounts add telegram --id work   # 建一个账号槽位
+openprogram channels accounts login telegram --id work # 录入凭据（wechat 走扫码）
+openprogram channels accounts rm telegram work         # 删账号 + 其绑定
+
+openprogram channels bindings add main --channel telegram            # 兜底路由 → agent "main"
+openprogram channels bindings add main --channel telegram \
+    --account work --peer 123456 --peer-kind direct                  # 只路由一个 peer
+openprogram channels bindings list
+openprogram channels bindings rm &lt;binding_id&gt;</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">TUI 命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/login &lt;channel&gt;</code></th><td>注册并接到当前 agent</td></tr>
+<tr><th scope="row"><code translate="no">/attach &lt;channel&gt; &lt;peer&gt;</code></th><td>把一个对端路由到当前会话</td></tr>
+<tr><th scope="row"><code translate="no">/detach</code>、<code translate="no">/connections</code></th><td>撤销、列出</td></tr>
+</tbody></table>
+<h2 id="谁能和你的机器人说话">谁能和你的机器人说话</h2>
+<p>私聊使用配对。未列入的发送者的消息在到达 agent 前被丢弃，发送者收到八位配对码。批准只能通过本地 CLI 或 API，聊天里输入什么都不能批准任何人。没有关闭这道门的设置。</p>
+<pre translate="no" tabindex="0"><code>openprogram channels access list                       # 策略 + allowlist + 待批配对码
+openprogram channels access approve telegram K7XQ2MVR  # 按配对码批准
+openprogram channels access allow telegram 123456789   # 直接按 user id 加入 allowlist
+openprogram channels access revoke telegram 123456789  # 移除一个发信人</code></pre>
+<ul>
+<li>配对码一小时过期；被挡的发送者再次收到同一码，最多每分钟一次。</li>
+<li><code translate="no">access allow</code> 不用配对码直接加入已知的平台 ID。</li>
+<li>名单上的人都到达同一 agent 并代表你，记忆是整个实例一个工作区。只放你愿意把这台机器交给他的人。</li>
+</ul>
+<h3 id="what-approved-senders-may-do">批准的发送者能做什么</h3>
+<p>私聊轮次和 Web UI 工具相同，使用该聊天会话的模式和规则，所以默认 Bypass permissions 下可以不询问就在这台机器运行命令。审批作为聊天问题到达，用 <code translate="no">/answer</code> 回答。</p>
+<pre translate="no" tabindex="0"><code>openprogram channels accounts set wechat sender_access paired    # 或 owner，默认值（所有渠道）</code></pre>
+<p class="note"><code translate="no">paired</code> 让账号上所有人在私聊和群里都只有回复和记忆。要独立记忆，对方运行自己的实例：</p>
+<pre translate="no" tabindex="0"><code>openprogram --profile alice</code></pre>
+<p class="note"><a href="../install/profiles.zh.html">Profile</a></p>
+<h3 id="群聊">群聊</h3>
+<p>Telegram、Discord 和 Slack。微信 bot 只收私聊。</p>
+<table class="grid">
+<thead><tr><th scope="col">发送者</th><th scope="col">回复</th><th scope="col">记忆</th><th scope="col">所有工具，代表你</th></tr></thead>
+<tbody>
+<tr><th scope="row">绑定联系人或 <code translate="no">full</code> 访问</th><td class="run">是</td><td class="run">是</td><td class="run">是</td></tr>
+<tr><th scope="row"><code translate="no">chat</code> 访问</th><td class="run">是</td><td class="run">是</td><td class="deny">否</td></tr>
+<tr><th scope="row">其他人</th><td class="deny">无反应</td><td class="deny">否</td><td class="deny">否</td></tr>
+</tbody></table>
+<p class="note">其他人没有回复、配对码或错误，也不创建对话。新群名单为空。</p>
+<pre translate="no" tabindex="0"><code>openprogram channels accounts group-users add telegram 123456789 --access chat   # 只能回复和用记忆
+openprogram channels accounts group-users add discord 80351110224678912 --access full  # 代表你运行
+openprogram channels accounts group-users remove telegram 123456789
+openprogram channels accounts group-users list telegram</code></pre>
+<pre translate="no" tabindex="0"><code>openprogram channels accounts group-users add telegram 123456789 --access full --group -1001234567890
+openprogram channels accounts group-users remove telegram 123456789 --group -1001234567890   # 群的名单还在，空了也一样
+openprogram channels accounts group-users reset telegram --group -1001234567890              # 重新使用账号名单</code></pre>
+<ul>
+<li>第一段：账号级名单。第二段：单个群的名单，替代账号的；<code translate="no">remove</code> 后群名单保留即使为空，<code translate="no">reset</code> 回到账号的。绑定联系人保留完全访问。Discord 帖子用父频道的名单，除非有自己的。</li>
+<li>ID 是稳定的平台用户 ID：Telegram 和 Discord 是数字（开发者模式，复制用户 ID），Slack 以 <code translate="no">U…</code> 开头。worker 日志写出每个被忽略的发送者。下一条消息生效。</li>
+<li><strong>Settings > Channels</strong> 有账号级名单；单群名单只能用命令行。</li>
+<li><code translate="no">require_mention</code> 仍适用：名单上的人未提及时，消息只作为上下文等待。</li>
+<li><code translate="no">chat</code> 用户不能用 <code translate="no">/new</code>、<code translate="no">/reset</code>、<code translate="no">/activation</code>、<code translate="no">/memory</code>、<code translate="no">/stop</code>、<code translate="no">/help</code>。他们写的内容是之后代表你运行的轮次的上下文。</li>
+<li><code translate="no">access revoke</code> 只动允许名单；这些名单用 <code translate="no">group-users remove</code>。绑定联系人不能设为 <code translate="no">chat</code>：先撤销，这也结束其私聊。绑定列为 <code translate="no">chat</code> 的人会把他从名单移除。</li>
+<li>发送者输入什么都不能改这些名单。</li>
+</ul>
+<details>
+<summary>从有 group_access 的版本升级</summary>
+<p>该设置已移除，存储值被忽略。之前在群里通过配对码批准的同事只有回复和记忆；他们在允许名单上，现在在群里代表你运行。升级前运行 <code translate="no">openprogram channels access list</code>，然后对每位同事执行 <code translate="no">access revoke</code> 和 <code translate="no">group-users add &lt;channel&gt; &lt;user id&gt; --access chat</code>。</p>
+</details>
+<h2 id="channels-and-environments">渠道和环境</h2>
+<p>渠道决定消息镜像到哪里，对话的<a href="../capabilities/environments.zh.html">环境</a>决定工具在哪里运行。来自渠道的对话用默认环境。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">渠道标签</th><td>Web 和 App 输入框上方、环境标签旁：logo 和账号，或 <strong>No channel</strong>。圆点：黄色降级，红色不可达。打开后每个应用一行；选账号绑定或切换，<strong>Disconnect</strong> 停止，<strong>Manage channels</strong> 添加。</td></tr>
+<tr><th scope="row">绑定微信账号</th><td>你微信发给 bot 的消息到这里，不进单独对话。账号上每个聊天对象只归一个对话；在别处选择同一对象会移走，同账号其他对象的对话不受影响。没有已知对象的选择会占用整个账号。断开或切换后回到平常的对话。</td></tr>
+<tr><th scope="row">绑定对话的回复</th><td>每条助手回复都发出，不管谁启动的轮次：App 里输入、Goal 或提醒。只发回复：你输入的内容、工具进度和思考留在 App。常驻检查和定时任务改发报告，除非 Agent 的<strong>渠道</strong>设置已关闭。</td></tr>
+<tr><th scope="row">审批暂停</th><td>发送之前写的；批准后只发之后的</td></tr>
+<tr><th scope="row">没有接收方</th><td>未指定聊天的 Telegram、Discord、Slack 账号，回复留在 App</td></tr>
+<tr><th scope="row">投递失败</th><td>App 显示带渠道和错误类型的通知；回复已保存</td></tr>
+<tr><th scope="row">账号状态</th><td>设置的频道页，每个 bot 一行：<strong>运行中</strong>、<strong>已关闭</strong>、<strong>未登录</strong>、<strong>已退出登录</strong>（token 或登录已失效）、<strong>因错误停止</strong>、<strong>正在重连</strong>、<strong>没有响应</strong>或<strong>尚未启动</strong>。异常状态会写明该做什么，重新登录后 bot 自动启动。</td></tr>
+</tbody></table>
+<h2 id="how-chats-map-to-sessions">聊天和会话</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">平台</th><th scope="col">一个会话对应</th></tr></thead>
+<tbody>
+<tr><th scope="row">Telegram</th><td>聊天；群行为按账号配置（见下）</td></tr>
+<tr><th scope="row">Discord、Slack</th><td>（频道，用户）：同频道两人是两个对话，看不到也答不了对方的问题。记忆仍是一个工作区。</td></tr>
+<tr><th scope="row">微信</th><td>对端</td></tr>
+</tbody></table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_scope</code></th><td>默认 <code translate="no">per-account-channel-peer</code>。也可 <code translate="no">per-channel-peer</code>、<code translate="no">per-peer</code> 或 <code translate="no">main</code>；每个 agent 有自己的会话，两个用 <code translate="no">main</code> 的 agent 不共享</td></tr>
+<tr><th scope="row"><code translate="no">session_daily_reset: "HH:MM"</code>、<code translate="no">session_idle_minutes</code></th><td>每天或空闲后轮换</td></tr>
+<tr><th scope="row"><code translate="no">/new</code>、<code translate="no">/reset</code></th><td>立即新对话；旧的留在侧栏</td></tr>
+<tr><th scope="row">在 Web UI 删除</th><td>同样：下一条消息开始新对话</td></tr>
+</tbody></table>
+<h3 id="who-said-it">谁说的</h3>
+<p>每条渠道消息都带发送者，私聊也是（<code translate="no">main</code> 会把对端放在一起）。Web、CLI、TUI 轮次没有。</p>
+<pre translate="no" tabindex="0"><code>{"speaker_kind":"human","speaker_id":"7391","speaker_display":"Ada","content":"预算定 5 万"}
+{"speaker_kind":"human","speaker_id":"8022","speaker_display":"Bo","content":"改成 8 万"}</code></pre>
+<ul>
+<li>ID 在改名时不变，也能区分同名的人；记忆把事实记在说话人名下。</li>
+<li>显示名放成一行，最长 64 字符，方括号变圆括号。消息文本原样保留；在括号里打名字不能冒充。</li>
+<li>Web 记录在气泡上方显示小字，如 <code translate="no">WeChat · Ada</code>；微信发送者没有昵称，ID 缩短为首尾各四位。</li>
+</ul>
+<h3 id="群聊行为">群聊行为</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">模式</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">always</code></th><td>每条消息开始一轮</td></tr>
+<tr><th scope="row"><code translate="no">mention</code></th><td>只有 @ 或回复 bot 才开始，提及被去掉。下一轮得到最近 50 条其他消息和发送者，Web 记录里在“earlier messages in the chat”开关后面。</td></tr>
+<tr><th scope="row"><code translate="no">ambient</code></th><td>每条消息开始一轮，agent 决定是否用 <code translate="no">chat_send</code> 发言。对未提及消息的回复留在 Web 记录，标为“overheard”。没有输入状态或确认表情。提及的消息正常回答。每条消息一次模型调用。</td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>openprogram channels accounts set telegram require_mention on       # 或 off（discord、slack 同样可用）
+openprogram channels accounts set telegram group_sessions per-user  # 或 shared（仅 telegram）</code></pre>
+<ul>
+<li><code translate="no">require_mention</code> 设默认：<code translate="no">on</code> 是 <code translate="no">mention</code>，<code translate="no">off</code>（默认）是 <code translate="no">always</code>。</li>
+<li>有完全访问的人用 <code translate="no">/activation mention|always|ambient</code>；单独使用显示当前模式。私聊不受限。</li>
+<li><code translate="no">group_sessions</code>（Telegram，需重启 worker）：<code translate="no">shared</code>（默认）或 <code translate="no">per-user</code>。</li>
+<li>群成员能接触 agent 的记忆。<code translate="no">/memory read</code> 禁止写入，<code translate="no">/memory off</code> 移除，<code translate="no">/memory on</code>（默认）跟随 agent 设置。私聊始终跟随 agent。</li>
+<li>其他 bot 的消息被忽略，重复投递只开始一轮。每个群每分钟最多 10 轮，其余作为之前的消息等待。</li>
+</ul>
+<h3 id="chat-commands">聊天命令</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/new</code>、<code translate="no">/reset</code></th><td>新对话</td></tr>
+<tr><th scope="row"><code translate="no">/stop</code></th><td>立即停止这个对话正在进行的工作。群里每人各有对话时（Discord、Slack、Telegram <code translate="no">per-user</code>）只停你自己的。已在排队的消息仍会运行</td></tr>
+<tr><th scope="row"><code translate="no">/help</code></th><td>列出这些命令</td></tr>
+<tr><th scope="row"><code translate="no">/activation [mention|always|ambient]</code></th><td>查看或切换群模式</td></tr>
+<tr><th scope="row"><code translate="no">/memory [on|read|off]</code></th><td>查看或收窄群的记忆访问</td></tr>
+<tr><th scope="row"><code translate="no">/answer &lt;question_id&gt; &lt;choice&gt;</code></th><td>回答函数的问题（<code translate="no">runtime.ask</code>）或工具审批；可写自由文本</td></tr>
+<tr><th scope="row"><code translate="no">/decline &lt;question_id&gt;</code></th><td>拒绝</td></tr>
+</tbody></table>
+<p class="note">群里不用提及也能用；Telegram 也接受 <code translate="no">/new@yourbot</code>。只能回答本聊天会话的问题；群里只有发起该轮的人能回答。</p>
+<h2 id="replies-progress-and-long-messages">回复和进度</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Telegram</th><th scope="col">Discord</th><th scope="col">Slack</th><th scope="col">微信</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入状态</th><td>有</td><td>有</td><td>无</td><td>有</td></tr>
+<tr><th scope="row">进度</th><td><code translate="no">⏳ working...</code> 实时编辑（<code translate="no">⚙ bash</code> → <code translate="no">✓ bash</code>），最后换成回复</td><td>相同</td><td>相同</td><td>逐段，每段约 200 字符；工具前的文字先发</td></tr>
+<tr><th scope="row">格式</th><td>HTML</td><td>Markdown</td><td>mrkdwn</td><td>纯文本</td></tr>
+<tr><th scope="row">分割长度</th><td>4,000</td><td>1,800</td><td>39,000</td><td>1,800</td></tr>
+</tbody></table>
+<details>
+<summary>投递细节</summary>
+<ul>
+<li>长回复填满占位后在新消息继续。占位无法编辑时改发新消息。</li>
+<li>Slack 帖子和 Telegram 论坛话题里，占位、回复、文件、智能体自己发的消息和提问都留在原处；Telegram 话题里的“正在输入”也显示在该话题。同时发到频道的 Slack 帖子回复也算一条消息。</li>
+<li>编辑服务启动前发的 Telegram 消息不起作用。</li>
+<li><code translate="no">ack_reaction on</code>（微信除外）收到时加 👀；Slack 需要 <code translate="no">reactions:write</code>。</li>
+<li>长代码块在每条消息里都完整闭合，下一条接着打开。Discord 回复不会提醒任何人，包括 <code translate="no">@everyone</code>。Telegram 拒收的图片改为按文件发送。</li>
+<li>被限流时重试，有 <code translate="no">Retry-After</code> 就按它，最多三次，然后记录结构化错误。连接没建立时最多尝试四次；请求没到平台，不会重复送达。</li>
+<li>连接循环崩溃后指数退避重连，5 秒翻倍到 5 分钟。凭证失效保持停止，直到重新登录；被 API 拒绝的 Telegram token 也算。微信服务器出错时等待后重试，3 秒翻倍到 48 秒。</li>
+<li>服务每隔几秒检查账号：链接、登录、启用或禁用都无需重启。</li>
+</ul>
+</details>
+<p>一个对话同一时间只跑一轮，App 的轮次也算。另一轮在运行或等待回答时：</p>
+<ul>
+<li>聊天消息最多等 30 秒，之后机器人回复正忙，稍后再发一次即可。</li>
+<li><code translate="no">ambient</code> 模式下没提及机器人的群消息不回复，并入这个群的下一轮。</li>
+<li>App 里发消息会被拒绝，和其他轮次运行时一样。</li>
+<li><code translate="no">/new</code> 和 <code translate="no">/reset</code> 遇到聊天软件发起的轮次时最多等 30 秒，之后机器人回复正忙。</li>
+</ul>
+<p>同一个聊天的消息按到达顺序开启轮次，前一条的附件下载慢也一样。命令不排队。</p>
+<h2 id="attachments">附件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方向</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">接收</th><td>保存到 <code translate="no">&lt;state&gt;/channels/&lt;channel&gt;/accounts/&lt;account&gt;/attachments/</code>，每个 20 MB，列为 <code translate="no">[attachment: &lt;path&gt; (&lt;type&gt;, &lt;size&gt;)]</code>。4 MB 以内的图片也给模型。没能取到的文件会留一行说明。</td></tr>
+<tr><th scope="row">Telegram 语音</th><td>用“设置 → 语音”里的引擎转成文字加进消息，配文保留。需要 <code translate="no">ffmpeg</code>；转写失败时这一轮会写明原因，音频文件仍在附件里。</td></tr>
+<tr><th scope="row">微信媒体</th><td>从腾讯 CDN 加密下载后解密。语音有微信转写就用转写，否则保存为模型听不了的 <code translate="no">.silk</code>。</td></tr>
+<tr><th scope="row">回复消息</th><td>被引用的文字以 <code translate="no">&gt; quoted</code> 块显示在上方（Telegram、Discord 回复；Slack 帖子）</td></tr>
+<tr><th scope="row">发送</th><td>Telegram：图片或文档。Discord：上传并带说明。Slack：外部上传，<code translate="no">files:write</code>。微信：加密、上传、按类型发送，100 MB，说明作单独消息。只上传智能体用 <code translate="no">send_file</code> 交出的文件；它写在回复里的标记不发送任何文件，并变成一句简短说明。</td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>from openprogram.interfaces.channels.outbound import send_file
+send_file("telegram", "default", "123456", "/path/to/report.pdf", caption="周报")</code></pre>
+<h2 id="common-errors">错误</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">出了什么</th><th scope="col">怎么办</th></tr></thead>
+<tbody>
+<tr><th scope="row">收到配对码而不是回答</th><td><code translate="no">access approve &lt;channel&gt; &lt;code&gt;</code> 或 <code translate="no">access allow &lt;channel&gt; &lt;user-id&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">[no agent configured]</code></th><td><code translate="no">openprogram agents add main</code>，然后 <code translate="no">channels setup</code> 或 <code translate="no">channels bindings add</code></td></tr>
+<tr><th scope="row"><code translate="no">account … has no bot_token</code></th><td><code translate="no">openprogram channels accounts login &lt;channel&gt; --id &lt;account&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">Slack account … needs both bot_token (xoxb-...) and app_token (xapp-...)</code></th><td>重新登录并粘贴两个</td></tr>
+<tr><th scope="row"><code translate="no">Discord channel requires discord.py</code>、<code translate="no">Slack channel requires slack_sdk</code></th><td>runtime 不完整：重装发行版，或重跑完整的源码开发安装</td></tr>
+<tr><th scope="row">Discord 已连接但看不到消息</th><td>开启 Message Content Intent</td></tr>
+<tr><th scope="row"><code translate="no">bot token invalid — relogin required</code></th><td><code translate="no">openprogram channels accounts login wechat --id &lt;account&gt;</code> 并重新扫码</td></tr>
+<tr><th scope="row"><code translate="no">adapter crashed … reconnecting in Ns</code></th><td>自动重连。只有 <code translate="no">adapter exited on its own</code> 需要处理，通常是登录。</td></tr>
+<tr><th scope="row">“The reply was not delivered to WeChat (…)”</th><td><code translate="no">auth</code>：重新登录。<code translate="no">network</code>、<code translate="no">rate_limit</code>：重试后仍不可达或被限流。<code translate="no">channels_unavailable</code>：运行该轮的进程没有加载渠道。回复已保存。</td></tr>
+<tr><th scope="row">日志里的 <code translate="no">auth</code>、<code translate="no">rate_limit</code>、<code translate="no">bad_target</code></th><td>token 被撤销或过期、限流（已重试）、聊天或频道 ID 错误</td></tr>
+</tbody></table>
+<p class="next"><a href="../reference/design/channels/design.zh.html">渠道设计</a> · <a href="../interfaces/README.zh.html">界面</a> · <a href="../capabilities/always-on-agents.zh.html">常驻 Agent</a></p>

@@ -1,0 +1,91 @@
+/* Review pane diff: wrapped lines, one or two number columns, a sign
+   column, and tinted add/remove rows. Colours mix from the theme
+   accents so the same rules read on light and dark themes. */
+.diff {
+  --review-numbers: 44px 44px;
+  padding: 4px 0 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 20px;
+  color: var(--text-primary);
+}
+.oneNumber { --review-numbers: 48px; }
+
+.line {
+  display: grid;
+  grid-template-columns: var(--review-numbers) 18px minmax(0, 1fr);
+}
+.add { background: color-mix(in srgb, var(--accent-green) 9%, transparent); }
+.del { background: color-mix(in srgb, var(--accent-red) 9%, transparent); }
+
+.number {
+  padding-right: 10px;
+  text-align: right;
+  color: var(--text-muted);
+  opacity: 0.75;
+  user-select: none;
+}
+.sign { text-align: center; user-select: none; color: var(--text-muted); }
+.add .sign { color: var(--accent-green); }
+.del .sign { color: var(--accent-red); }
+.text {
+  min-width: 0;
+  padding-right: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hunk {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 4px;
+  padding: 0 16px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  color: var(--text-muted);
+}
+.diff > .hunk:first-child { margin-top: 4px; }
+.hunkContext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.note {
+  padding: 2px 16px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* Revert sits at the end of its hunk header; the comment button floats
+   over the end of the hovered line (only that line renders one). */
+.hunkAction {
+  margin-left: auto;
+  align-self: center;
+  color: var(--text-muted);
+}
+.line { position: relative; }
+.commentButton {
+  position: absolute;
+  top: -2px;
+  right: 8px;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+}
+.comment {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 16px 10px;
+  font-family: var(--font-sans);
+}
+.comment textarea { min-height: 64px; }
+.commentActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}

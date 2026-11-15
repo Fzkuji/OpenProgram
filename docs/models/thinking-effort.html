@@ -1,0 +1,25 @@
+<title>Thinking effort</title>
+<meta name="description" content="The unified reasoning-depth levels, each provider&#x27;s default, and where to change them.">
+<meta name="covers" content="openprogram/interfaces/server/thinking_effort.py apps/web/lib/effort/">
+<h1>Thinking effort</h1>
+<p>One slider over each vendor's own parameter; the provider translates the level before each request.</p>
+<pre translate="no"><code>minimal · low · medium · high · xhigh · max</code></pre>
+<p class="note"><code translate="no">off</code> is a setting value, never a picker level: it turns reasoning off where the provider has a way to, as <code translate="no">effort: "none"</code> on OpenAI Responses.</p>
+<p>The UI shows the levels the model supports. Opus 4.8 has five, low to max; DeepSeek reasoner is not adjustable; GitHub Copilot has none. Levels come from the <code translate="no">thinking</code> block in <code translate="no">provider.json</code>, with per-model overrides; Fetch refreshes them where the endpoint reports capabilities (Anthropic <code translate="no">/v1/models</code>, Codex subscription models). No declaration: low, medium, high.</p>
+<table class="stack">
+<thead><tr><th scope="col">Provider family</th><th scope="col">Default, <code translate="no">default_effort</code> in <code translate="no">provider.json</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenAI Responses and Completions, Codex, Azure OpenAI</th><td><code translate="no">xhigh</code></td></tr>
+<tr><th scope="row">Anthropic, Amazon Bedrock</th><td><code translate="no">high</code></td></tr>
+<tr><th scope="row">Google, Gemini CLI (via token budget), DeepSeek</th><td><code translate="no">medium</code></td></tr>
+<tr><th scope="row">No declaration</th><td><code translate="no">medium</code></td></tr>
+</tbody>
+</table>
+<h2>Change it</h2>
+<p>Inner layers override outer ones.</p>
+<ol>
+<li><strong>Agent</strong>: <code translate="no">thinking_effort</code> in agent settings</li>
+<li><strong>Project</strong>: project-level default</li>
+<li><strong>Turn</strong>: the picker by the Web UI input box, or <code translate="no">/effort</code> in the TUI. Persists with the session.</li>
+</ol>
+<p class="next"><a href="../reference/design/providers/models/thinking-effort.html">Mapping rules and detection</a></p>

@@ -1,0 +1,121 @@
+<title>对话生命周期</title>
+<meta name="description" content="转录、执行和输入框恢复期间，对话如何保持可读可操作。">
+<h1>对话生命周期</h1>
+
+<figure id="ownership">
+<svg class="fig-wide" viewBox="0 0 680 120" role="img" aria-label="连接就绪后先加载可见的转录，然后用有界请求恢复相关的执行状态，实时增量始终权威。">
+  <defs><marker id="cl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">连接就绪</text>
+  <line class="ln" x1="100" y1="33" x2="212" y2="33" marker-end="url(#cl-a)"/>
+  <text class="t-big" x="224" y="40">可见转录</text>
+  <text class="t-soft" x="224" y="66">最先请求</text>
+  <line class="ln" x1="320" y1="33" x2="436" y2="33" marker-end="url(#cl-a)"/>
+  <text class="t-big" x="448" y="40">有界的执行恢复</text>
+  <text class="t-soft" x="448" y="66">实时增量始终权威</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>连接就绪</strong></li>
+  <li><strong>可见转录</strong><small>最先请求</small></li>
+  <li class="flow-end"><strong>有界的执行恢复</strong><small>实时增量始终权威</small></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">归属</th><th scope="col">负责</th></tr></thead>
+<tbody>
+<tr><th scope="row">转录</th><td>每个视图的行，只由转录 reducer 根据读取、编号更新和有类型的本地变化写入；每个视图同时最多一个读取；分页、搜索目标、滚动锚点</td></tr>
+<tr><th scope="row">执行</th><td>单调游标和状态版本；当前任务和审批身份。快照恢复不模拟新的终止事件</td></tr>
+<tr><th scope="row">输入框</th><td>会话持有的草稿、附件、队列项和确认。导航或断线不清除未确认的输入</td></tr>
+<tr><th scope="row">连接代</th><td>定时器、待处理读取、分片缓冲。过期响应不能改变新连接或可见会话</td></tr>
+<tr><th scope="row">服务端</th><td>授权、执行、取消、审批。任何客户端优化都不能绕过</td></tr>
+</tbody>
+</table>
+<p class="note">存储失败只降低持久化，不影响事件投递。本设计不包含新的执行运行时、远程服务、账号集成或删除历史数据。</p>
+
+<h2 id="history-reads">转录读取</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">归属</th><td>每个会话和连接一个待处理的初始或刷新请求。导航复用；变更使其失效并保留一个使用最新选项的替换请求</td></tr>
+<tr><th scope="row">响应</th><td>每个响应回传请求 ID。过期、被替换和已关闭连接的响应被忽略</td></tr>
+<tr><th scope="row">期限</th><td>15 秒；会话内显示加载、断线或失败状态和重试按钮；缓存消息保持可见</td></tr>
+<tr><th scope="row">不合并</th><td>读取替换它所覆盖窗口里的服务端行。读取进行时，服务端暂存该视图的更新和文字帧，回复之后再发，所以读取不会撤销更新的进展。本地行（发送、函数占位、提示）和覆盖层在读取后保留；读取或更新带上某个本地行的 <code translate="no">clientRequestId</code> 时，这个本地行离开。没有第二个转录 store</td></tr>
+<tr><th scope="row">无效游标</th><td>围绕阅读锚点做一次无游标读取；失败可见可重试，自动翻页停止</td></tr>
+<tr><th scope="row">显式重试</th><td>保留分支头的无游标锚点读取；锚点不存在时有单独的“最新历史”动作</td></tr>
+<tr><th scope="row">安全</th><td>加载转换不重置指数重试延迟。读取重试绝不重复变更、提交、审批或取消</td></tr>
+</tbody>
+</table>
+
+<h2 id="streaming">流式</h2>
+<ul>
+<li>文本和思考帧合并成一次动画帧 store 更新，按偏移放进每个持有该行的视图。编号更新或读取先刷新待处理的文字。</li>
+<li>工具、步骤、引用、状态和终态行都以编号的 <code translate="no">transcript_update</code> 变化到达，和读取画出的行相同。</li>
+<li>文字帧的偏移超过行里已有的文字，说明丢了一帧；更新不接着视图的修订号，说明漏了一次。两种情况视图都在锚点读一次。</li>
+<li>连接关闭时先刷新已收到的文字，再清除每个轮次属于哪个会话的记录。</li>
+<li>渲染基础：有界历史窗口、按测量回收的行、工具输出懒加载、独立的跟随锁。</li>
+</ul>
+
+<h2 id="evidence">恢复读取</h2>
+<p>恢复读取使用只取快照模式：执行记录和事件游标来自同一个 SQLite 事务，不读事件正文，因为持久化的流可能超过 200 MB，而 Web 回放处理只消费快照。显式的事件历史客户端保持完整回放。</p>
+
+<details>
+<summary>促成这一设计的基线</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">指标</th><th scope="col">数值</th></tr></thead>
+<tbody>
+<tr><th scope="row">原生刷新到转录出现</th><td>11–14 秒</td></tr>
+<tr><th scope="row">直接的初始历史请求</th><td>0.18–0.20 秒</td></tr>
+<tr><th scope="row">第一次历史请求之前</th><td>处理 16 次恢复；一次刷新加载五次历史</td></tr>
+</tbody>
+</table>
+<p>重连路径在所选对话之前发送所有持久化游标，每个连接串行处理命令，回放快照进入实时更新路径并为终止执行再请求转录，游标存储在每帧同步持久化。这些是基线数据，不代表优化后的 App。</p>
+</details>
+
+<h2 id="resource-projection">对话加载期间的资源</h2>
+<p>资源轮询与转录加载共用 worker。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">复用</th><td>每个资源列表请求在所有可见资源间复用一张对话图、一个前驱索引以及缓存的来源和分支名结果；当前分支查询可用一份单独快照。这些只在该请求内存活</td></tr>
+<tr><th scope="row">权威</th><td>可见性、执行归属、控制对账和稳定分支引用选择仍然权威</td></tr>
+<tr><th scope="row">效果</th><td>受影响对话上同等查询从 5,741–5,760 ms 降到 124–147 ms（仅资源查询，不是页面加载）</td></tr>
+</tbody>
+</table>
+
+<h2 id="scenarios">验收</h2>
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">要求</th><th scope="col">证据</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开或重连（<code translate="no">useWS</code>）</th><td>可见历史先于保存的执行恢复请求。没有回放引发的转录风暴。最多一个恢复在途，重复需求合并</td><td>受控传输测试；原生冷热刷新计时</td></tr>
+<tr><th scope="row">切换 A → B → A</th><td>草稿和阅读位置保留。迟到的 A 响应不能替换 B。刷新时缓存内容保持</td><td>快速切换和延迟响应</td></tr>
+<tr><th scope="row">长历史、翻页、跳转</th><td>有界读取和 DOM、稳定的前插锚点、过期游标恢复、最早消息可达、显式重试</td><td>大转录、最早最新和搜索目标、中断翻页</td></tr>
+<tr><th scope="row">流式文本和工具</th><td>按帧批处理；读历史不被自动跟随打断。展开输出按需加载；完成时刷新最后增量</td><td>突发和延迟增量、输出展开、长内容渲染预算</td></tr>
+<tr><th scope="row">发送、排队、插话、停止</th><td>确认前保留输入；重连不重复；显式的排队、发送中或失败状态；取消不能复活旧轮次</td><td>确认前后断线、活动队列、重试、取消</td></tr>
+<tr><th scope="row">审批和提问</th><td>等待与生成可区分。重连恢复等待。过期回答不能解决更新的一代</td><td>提问或审批时刷新；终止清理</td></tr>
+<tr><th scope="row">后台和嵌套工作</th><td>状态恢复不重置前台转录，不合并子历史</td><td>双会话和嵌套执行测试</td></tr>
+<tr><th scope="row">错误和无障碍</th><td>可见、可键盘操作的恢复；没有假成功、无限转圈或丢草稿；减少动态和窄布局可用</td><td>传输故障、键盘检查、原生视觉检查</td></tr>
+</tbody>
+</table>
+
+<details id="references">
+<summary>参考</summary>
+<table class="stack">
+<thead><tr><th scope="col">参考</th><th scope="col">行为</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://developers.openai.com/codex/app-server/">Codex App Server</a></th><td>分开的存储线程读取、恢复、分页的轮次和条目、通知</td><td>转录和执行恢复分属不同所有者，基于 OpenProgram 协议。实验性分页只作参考，不是依赖</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/interactive-mode">Claude Code 交互模式</a></th><td>排队输入、打断、可编辑队列、后台任务、提示历史</td><td>草稿和附件独立于连接和执行；投递和审批状态明确</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/checkpointing">Claude Code 检查点</a></th><td>对话和文件恢复</td><td>保持自己的分支和回退语义；查看历史绝不执行或回退</td></tr>
+</tbody>
+</table>
+<p class="note">只参考可观察行为和公开协议，不代表私有实现或性能等同。</p>
+</details>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>恢复顺序、只取快照读取、关联的历史请求、可见重试、按会话的流式缓冲、资源投影、失败回复详情、流式插话打断、已停止轮次的历史保留</td></tr>
+<tr><th scope="row">自动化覆盖</th><td>有界大历史渲染、锚点恢复、游标续期失败和键盘重试、对等会话隔离、草稿和附件归属、队列回执、停止和插话顺序、提问重挂载、IME、窄布局和减少动态</td></tr>
+<tr><th scope="row">已安装 App</th><td>验收是单独的发布要求</td></tr>
+</tbody>
+</table>

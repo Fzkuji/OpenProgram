@@ -79,9 +79,8 @@ monkeypatch.
 - Web source structure: `apps/web/scripts/check-*.mjs`, only when structure itself is
   the contract.
 - Built-Web interaction: `tests/e2e/web/` with the `browser` marker.
-- CLI TypeScript: the existing Vitest suite; CI runs typecheck, test, and build.
-- Desktop: existing VM/fake-Electron component checks; CI runs
-  `npm run check`.
+- CLI TypeScript: the existing Vitest suite, with typecheck and build.
+- Desktop: existing VM/fake-Electron component checks, `npm run check`.
 
 Group Web Node tests by feature under `apps/web/tests/`. The test runner recursively
 collects every `*.test.mjs` file in deterministic order; helper and browser-entry files
@@ -89,29 +88,16 @@ are not collected as tests.
 
 ## Required checks
 
-Run the affected layer first, then the repository contracts:
+Run the tests the change affects; the selection always includes the contracts and the docs check:
 
 ```bash
-uv run --locked --extra dev python -m pytest -q tests/<layer>/<product-domain>
-uv run --locked --extra dev python -m pytest -q tests/contracts
-```
-
-For test infrastructure, shared fixtures, process state, or layer changes, run
-the required selection three consecutive times with the fixed worker count:
-
-```bash
-for run in 1 2 3; do
-  uv run --locked --extra dev python -m pytest -q -n 4 \
-    tests/contracts tests/unit tests/component tests/integration tests/e2e \
-    || exit 1
-done
+uv run --locked --extra dev python -m scripts.testing.affected_tests --run
 ```
 
 The repository contracts enforce tracked-file placement, declared top-level
 directories, generated package README freshness, and the unit resource
-boundary. CI separately executes contracts, unit on Python 3.11/3.12/3.13,
-component, integration, non-browser e2e, built-Web browser tests, Web, CLI,
-Desktop, documentation checks, and the unit coverage floor.
+boundary. Full-suite commands:
+[`CONTRIBUTING.md`](../.github/CONTRIBUTING.md#full-suite).
 
 External-service tests are explicit only:
 

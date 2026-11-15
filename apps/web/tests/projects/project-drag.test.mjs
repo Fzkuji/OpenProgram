@@ -8,7 +8,7 @@ globalThis.Event = window.Event;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { useProjectDrag } = await import('../../components/sidebar/sessions-list/use-project-drag.ts');
+const { useProjectDrag } = await import('../../components/sidebar/sessions/use-project-drag.ts');
 const { moveProject } = await import('../../lib/projects/project-groups.ts');
 
 test('pointer drag commits on release, cancels safely, and leaves normal clicks intact', async () => {

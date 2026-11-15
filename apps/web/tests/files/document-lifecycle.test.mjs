@@ -15,14 +15,14 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   return nextResolve(specifier, context);
 } });
 
-const { DocumentController } = await import("../../lib/files/document-controller.ts");
+const { DocumentController } = await import("../../lib/files/document/document-controller.ts");
 const {
   clearFileDraftsForPath,
   hasDirtyDraftsForPath,
   runServerRenameWithDrafts,
   setDraftStoreAdapterForTests,
-} = await import("../../lib/files/file-drafts.ts");
-const { MemoryDraftStore } = await import("../../lib/files/file-draft-store.ts");
+} = await import("../../lib/files/drafts/file-drafts.ts");
+const { MemoryDraftStore } = await import("../../lib/files/drafts/file-draft-store.ts");
 
 const revision = "a".repeat(64);
 const store = () => ({

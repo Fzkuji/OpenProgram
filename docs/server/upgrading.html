@@ -1,0 +1,74 @@
+<title>Upgrade source checkouts</title>
+<meta name="description" content="How openprogram upgrade moves a source checkout and restarts the worker only after the new code boots.">
+<span id="upgrading"></span>
+<h1>Upgrade source checkouts</h1>
+<p>A gated <code translate="no">git pull</code> and restart: a bad commit fails in a throwaway process rather than in the service you would use to fix it. For Desktop and managed releases, including v0.6.6 to v0.7.0: <a href="../install/upgrade.html">Upgrade</a>.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Goal</th><th scope="col">Command</th></tr></thead>
+<tbody>
+<tr><th scope="row">What would change? Read-only</th><td><code translate="no">openprogram upgrade status</code><span class="arg"><code translate="no">--json</code>: <code translate="no">head_sha</code>, <code translate="no">target_sha</code>, <code translate="no">update_available</code></span></td></tr>
+<tr><th scope="row">Print the plan</th><td><code translate="no">openprogram upgrade --dry-run</code></td></tr>
+<tr><th scope="row">Do it</th><td><code translate="no">openprogram upgrade</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="what-happens">Steps</h2>
+<table class="stack">
+<thead><tr><th scope="col">Step</th><th scope="col">Does</th><th scope="col">Fails with</th></tr></thead>
+<tbody>
+<tr><th scope="row">1 preflight</th><td>Refuses a dirty tree, resolves the target, asks before a downgrade</td><td><code translate="no">dirty-worktree</code>, <code translate="no">downgrade-needs-confirmation</code></td></tr>
+<tr><th scope="row">2 checkout</th><td>Fast-forwards to the target</td><td><code translate="no">checkout-failed</code></td></tr>
+<tr><th scope="row">3 deps</th><td><code translate="no">pip install -e .</code> if <code translate="no">pyproject.toml</code> or <code translate="no">setup.py</code> changed; <code translate="no">npm ci</code> if <code translate="no">package-lock.json</code> changed</td><td><code translate="no">deps-failed</code></td></tr>
+<tr><th scope="row">4 build</th><td>Rebuilds <code translate="no">apps/web</code> or <code translate="no">apps/cli</code> if that workspace or <code translate="no">package-lock.json</code> changed</td><td><code translate="no">build-failed</code></td></tr>
+<tr><th scope="row">5 probe</th><td>Boots the new code on a scratch port under an isolated profile, waits for <code translate="no">/healthz</code>, runs doctor, kills it</td><td><code translate="no">probe-failed</code></td></tr>
+<tr><th scope="row">6 restart</th><td>Restarts the real service</td><td><code translate="no">restart-failed</code></td></tr>
+<tr><th scope="row">7 verify</th><td>Polls until the service reports the new commit</td><td><code translate="no">verify-failed</code></td></tr>
+</tbody>
+</table>
+<p class="note">The running service is untouched before step 6. The first failure stops the chain, prints the code and exits non-zero. Progress: <code translate="no">~/.openprogram/upgrade-state.json</code>.</p>
+
+<h2 id="when-a-step-fails">When a step fails</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Code</th><th scope="col">What to do</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">dirty-worktree</code></th><td>Commit your changes</td></tr>
+<tr><th scope="row"><code translate="no">downgrade-needs-confirmation</code></th><td>The target is older, and old code may not read config written by new code. <code translate="no">--yes</code> if you mean it</td></tr>
+<tr><th scope="row"><code translate="no">probe-failed</code></th><td>The new code does not boot. Nothing restarted; the fix belongs upstream</td></tr>
+<tr><th scope="row"><code translate="no">verify-failed</code></th><td>The restart happened but the service does not report the new commit. No automatic rollback; run the printed command: <code translate="no">git -C &lt;repo&gt; checkout &lt;previous-sha&gt; &amp;&amp; openprogram restart</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="flags">Flags</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Flag</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--dry-run</code></th><td>Plans only; changes no checkout, worker or upgrade state. An explicit <code translate="no">--channel</code> is still persisted</td></tr>
+<tr><th scope="row"><code translate="no">--no-restart</code></th><td>Stops after the probe. The checkout moves; the service keeps old code until you restart it</td></tr>
+<tr><th scope="row"><code translate="no">--yes</code>, <code translate="no">-y</code></th><td>Allows a downgrade</td></tr>
+<tr><th scope="row"><code translate="no">--channel NAME</code></th><td>Follows another line and persists it as <code translate="no">update.channel</code>. Only <code translate="no">stable</code>, which here tracks <code translate="no">origin/main</code>, is built in. It is not the stable GitHub Release</td></tr>
+<tr><th scope="row"><code translate="no">--json</code></th><td>Machine-readable result with every step</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Sample output</summary>
+<pre translate="no"><code>$ openprogram upgrade status
+  channel        stable (origin/main)
+  head           f5671fd25e4c6ae89e6d77f3fcffc4d4a2c0570a
+  target         a2d7f95633527e182ac850e40aca727aa0f6a3e6
+  update         available
+
+$ openprogram upgrade --dry-run
+  [OK  ] preflight  stable → origin/main: 80d77d1ed44c → 1a4101433b13
+  [OK  ] checkout   planned (dry run)
+  [OK  ] deps       planned (dry run)
+  [OK  ] build      planned (dry run)
+  [OK  ] probe      planned (dry run)
+  [OK  ] restart    planned (dry run)
+  [OK  ] verify     planned (dry run)</code></pre>
+</details>
+<p class="note"><code translate="no">openprogram update</code> (<code translate="no">--check</code>, <code translate="no">--force</code>) is a leftover that raises <code translate="no">ImportError</code>. Use <code translate="no">openprogram upgrade</code>.</p>
+
+<p class="next"><a href="troubleshooting.html">Troubleshooting</a></p>
+

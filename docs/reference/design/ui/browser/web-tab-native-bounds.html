@@ -1,0 +1,118 @@
+<title>Native page bounds in the built-in browser</title>
+<meta name="description" content="How native web views keep the DOM's page bounds at any shell zoom, under overlays, and while panes move.">
+<h1>Native page bounds in the built-in browser</h1>
+
+<p>The Electron shell's DOM and each native <code translate="no">WebContentsView</code> keep the same page bounds at any shell zoom. <code translate="no">setBounds</code> takes DIP; the renderer measures CSS px.</p>
+
+<h2 id="unit-conversion">Unit conversion</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Renderer</th><td>Sends fractional CSS px from <code translate="no">getBoundingClientRect()</code></td></tr>
+<tr><th scope="row">IPC boundary</th><td>Main reads <code translate="no">event.sender.getZoomFactor()</code> on every call, converts to DIP, then rounds to integers and keeps sizes nonnegative. An invalid or nonpositive zoom counts as <code translate="no">1</code>.</td></tr>
+<tr><th scope="row">Entry points</th><td><code translate="no">webtab:sync-visible</code> and the compatibility <code translate="no">webtab:set-bounds</code> convert alike. Internal show, hide and transfer paths already use DIP and are not scaled again.</td></tr>
+<tr><th scope="row">Zoom change</th><td>The renderer's <code translate="no">resize</code> listener remeasures and sends current bounds</td></tr>
+<tr><th scope="row">Example, zoom about 1.095</th><td><code translate="no">x=812.63, width=518.64</code> CSS px becomes about <code translate="no">x=890, width=568</code> DIP. Unconverted, the page covers the chat pane and leaves a blank strip on the right.</td></tr>
+<tr><th scope="row">Left alone</th><td>User zoom, split ratios, DOM layout, preload APIs, site zoom, Browser Agent, dependencies, configuration</td></tr>
+</tbody>
+</table>
+
+<h2 id="unified-overlay-rules">Overlays</h2>
+<p>A DOM overlay hides a native page only when its visible rectangle intersects that page's body. Each <code translate="no">WebTabPane</code> tests its own body against the current overlays; there is no shared visible flag.</p>
+<table class="stack">
+<thead><tr><th scope="col">Overlay</th><th scope="col">Detected by</th><th scope="col">Native page</th></tr></thead>
+<tbody>
+<tr><th scope="row">Popover, dropdown, listbox, tab and split menus</th><td><code translate="no">role=dialog/menu/listbox</code></td><td>Only intersecting panes hide. Working-directory, project and permission menus inside the chat pane hide nothing next door.</td></tr>
+<tr><th scope="row">Full-screen modals, confirmation backdrops, attachment previews</th><td><code translate="no">data-native-view-occluder=true</code> or the merge backdrop</td><td>Every covered pane hides</td></tr>
+<tr><th scope="row">Tooltips, toasts, drag cues, ordinary portaled content</th><td>Excluded from the selector</td><td>Stays visible</td></tr>
+<tr><th scope="row">Desktop main, context and bookmark native menus</th><td>Own overlay owner in main</td><td>Native-menu lifecycle, not renderer DOM</td></tr>
+</tbody>
+</table>
+<p class="note">Zero area or edge-only contact hides nothing. MutationObserver, ResizeObserver and scroll and resize listeners republish bounds when an overlay closes, moves or resizes; global flush batches microtasks in one tick.</p>
+
+<h2 id="floating-preview">Floating preview</h2>
+<p>Agent picture-in-picture previews use the same <code translate="no">registerVisibleWebTabBounds</code> / <code translate="no">syncVisible</code> path and publish only the small window's body, so toolbar buttons and the lower-right resize handle stay outside the native view. Two layers: a still picture below, the live native page on top. The page shows only with no hold active (<code translate="no">PipHoldReason</code>, <code translate="no">apps/web/components/center-tabs/pip/web-tab-pip-surface.tsx</code>).</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Hold</th><th scope="col">While</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">gesture</code></th><td>Dragged or resized</td></tr>
+<tr><th scope="row"><code translate="no">clip</code></th><td>The scrolled dock column hides part of it</td></tr>
+<tr><th scope="row"><code translate="no">cover</code></th><td>A menu, dialog or popover overlaps it; the page goes down at once under its last picture</td></tr>
+<tr><th scope="row"><code translate="no">motion</code></th><td>It folds into or unfolds from the composer's web page chip</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Timing and layout</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">First hold</th><td>Captures a frame and shows it. A capture slower than 150 ms (<code translate="no">PIP_PICTURE_WAIT_MS</code>) shows the last cached picture until it arrives. Native bounds are withdrawn within those 150 ms either way.</td></tr>
+<tr><th scope="row">Last release</th><td>Final bounds are published; the picture goes once the page has painted there</td></tr>
+<tr><th scope="row">Layout</th><td><code translate="no">setPipZoom</code> lays the page out 1920 wide and as tall as the preview's shape makes it, scaled to fill edge to edge</td></tr>
+<tr><th scope="row">First show or new size</th><td>Laid out out of sight, then waits for a paint, 250 ms (<code translate="no">PIP_RELAYOUT_MS</code>) and another paint for script-driven pages. Never shows at standard size or half laid out.</td></tr>
+<tr><th scope="row">Folded</th><td>Keeps that layout, so it unfolds as it went. A pane that shows the page resets the user's zoom.</td></tr>
+<tr><th scope="row">Pictures</th><td>Cached per tab; the next unfold starts from one</td></tr>
+<tr><th scope="row">Motion</th><td>Closing from the chip or ✕ folds over 240 ms, showing unfolds over 280 ms (<code translate="no">apps/web/lib/browser/web-tab/web-tab-pip-motion.ts</code>). With Reduce Motion it appears and goes at once.</td></tr>
+<tr><th scope="row">Background pages</th><td>Untouched: the native view stays alive, only its bounds are withheld</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="residual">Residual: a split page ahead of its frame</h2>
+<p>The native page and the App's DOM reach the display as two compositor clients, so a split pane's page can show away from its frame during a move. The floating preview covers this with a hold; a split pane has none.</p>
+<dl class="pairs">
+<dt>Measured</dt><dd>Dev App, 24 split-sidebar moves at load 4.6 to 6.2: 112 of 979 draws away, by up to 13 px</dd>
+</dl>
+<details>
+<summary>Why per-frame reports cannot fix it</summary>
+<p>The renderer measures while laying out a frame and sends bounds in a microtask; main moves the view at once, and its frame reaches the display compositor about 1 ms later. The App's own frame still needs main frame, commit and raster.</p>
+<p>Both land together only while the App's frame meets the deadline: at 120 Hz good rounds have no slack, and a bad round arrives 0.3 to 0.7 ms late.</p>
+<p>Every frame of a move costs about the same, so one late frame leaves the page ahead for the whole move (16 to 18 draws, up to 14 px), in one move in twelve to one in four at load 4 to 8.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Attempt</th><th scope="col">Why not</th></tr></thead>
+<tbody>
+<tr><th scope="row">Renderer</th><td>Cannot know its frame will be late</td></tr>
+<tr><th scope="row">Main replays the move on its own schedule</th><td>Late against a late DOM frame in the same way</td></tr>
+<tr><th scope="row"><code translate="no">beginFrameSubscription</code></th><td>Arrives after the draw, leaving the page a frame behind every time</td></tr>
+</tbody>
+</table>
+<p>The display compositor keeps surfaces in step only when one compositor frame embeds the other, as for a <code translate="no">&lt;webview&gt;</code> guest or an out-of-process iframe.</p>
+</details>
+
+<h2 id="guests">Why pages are not guests of the App's frame</h2>
+<p>A <code translate="no">&lt;webview&gt;</code> guest moves, clips and folds with the DOM and takes no bounds. In 48 split-panel moves at load 6 to 12 on the Dev App and Electron 45, no draw showed it away from its frame, and move frames were slightly cheaper (median 3.2 to 3.4 ms against 3.7 to 3.9). Agent input decides against it:</p>
+<table class="stack">
+<thead><tr><th scope="col">Agent input</th><th scope="col">Guest</th><th scope="col">Native view</th></tr></thead>
+<tbody>
+<tr><th scope="row">Typed text and keys over CDP</th><td>Go to the App window's focused frame: into the composer, where Enter could send the user's message</td><td>Reach the page, App focus untouched</td></tr>
+<tr><th scope="row"><code translate="no">webContents.insertText</code></th><td>Reaches the focused element without touching App focus</td><td>Not needed</td></tr>
+<tr><th scope="row"><code translate="no">sendInputEvent</code> keys</th><td>Arrive only after the widget has held focus once; no editing commands, so Command+A does nothing</td><td>Shortcut commands work over CDP</td></tr>
+<tr><th scope="row">Clicks</th><td>Move the App's keyboard focus into the guest every time. Giving it back runs on the renderer thread; with it busy for 150 ms, the user's next keystroke landed in the page.</td><td>Never touch App focus</td></tr>
+</tbody>
+</table>
+<p class="note">The floating preview is where the Agent's page shows while the user types, so guests are no safer there. Switching a page between native and guest also reloads it: history, scroll and form values can be restored (<code translate="no">navigationHistory.restore</code>), script state, connections, <code translate="no">sessionStorage</code> and editors outside form fields cannot.</p>
+
+<details>
+<summary>Code and verification</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Code</th><td><code translate="no">apps/desktop/main.js</code>, <code translate="no">apps/web/components/center-tabs/browser/web-tab-pane.tsx</code>, <code translate="no">apps/web/lib/browser/web-tab/web-tab-bounds.ts</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/desktop/tests/check-webtab-zoom-bounds.js</code></th><td>100% and about 109.5% zoom, invalid zoom, both IPC entries, desktop regressions</td></tr>
+<tr><th scope="row"><code translate="no">check:web-split</code></th><td>Rectangle intersection per Web body: a left menu leaves a right page visible; dialog, menu, listbox and full-screen backdrops judged per pane; zero area and edge contact hide nothing. General <code translate="no">DialogOverlay</code>, permission confirmations, context click-catchers and scoped drop overlays enter through <code translate="no">data-native-view-occluder</code>.</td></tr>
+<tr><th scope="row">Installed App, about 109.5% zoom</th><td>DOM body and native viewport both <code translate="no">568×763</code> DIP; after resizing the window to <code translate="no">1350×800</code>, both <code translate="no">526×712</code> DIP. Also check splits and split-ratio changes.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Unit conversion, overlay rules, preview holds, automated gates</td></tr>
+<tr><th scope="row">Not built</th><td>Guests: no switch, <code translate="no">&lt;webview&gt;</code> wiring, adoption, preview surface or Agent relay exists</td></tr>
+<tr><th scope="row">Known residual</th><td>Split panes can show a page ahead of its frame</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="built-in-browser.html">Built-in browser</a></p>

@@ -1,0 +1,13 @@
+/* 主题即数据 —— 每个文件是一整套 token 契约。新增主题＝加一个文件 +
+   在这里 import + 在 lib/prefs/appearance/theme-config.ts 的 THEME_IDS 里登记。
+   fallback.css 是 :root 兜底，排在具名主题之前。 */
+@import "./fallback.css";
+@import "./beige-dark.css";
+@import "./beige-light.css";
+@import "./dark.css";
+@import "./light.css";
+@import "./aurora.css";
+@import "./aurora-light.css";
+@import "./vivid.css";
+@import "./vivid-light.css";
+@import "./custom-light.css";

@@ -85,6 +85,9 @@ class MoonshotProvider:
     def is_available(self) -> bool:
         return bool(_resolve_api_key())
 
+    def unavailable_reason(self) -> str:
+        return f"not configured (needs one of {' / '.join(_KEY_ENV_VARS)})"
+
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
         key = _resolve_api_key()
         if not key:

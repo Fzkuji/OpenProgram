@@ -1,0 +1,95 @@
+<title>Provider</title>
+<meta name="description" content="用 create_runtime 为任意 LLM provider 构造 Runtime，以及各 provider 的要求。">
+<h1>Provider</h1>
+<pre translate="no"><code>from openprogram.runtime.agent.runtime.factory import create_runtime
+
+rt = create_runtime()                                   # auto-detect
+rt = create_runtime(provider="anthropic")               # its default model
+rt = create_runtime(provider="openai-codex", model="gpt-5.5")</code></pre>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">provider</code></th><th scope="col">构造</th><th scope="col">默认模型</th><th scope="col">凭据</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anthropic</code></th><td><code translate="no">Runtime("anthropic:&lt;id&gt;")</code></td><td><code translate="no">claude-sonnet-4-6</code></td><td>Anthropic API key</td></tr>
+<tr><th scope="row"><code translate="no">openai</code></th><td><code translate="no">Runtime("openai:&lt;id&gt;")</code></td><td><code translate="no">gpt-4.1</code></td><td>OpenAI API key</td></tr>
+<tr><th scope="row"><code translate="no">gemini</code></th><td><code translate="no">Runtime("google:&lt;id&gt;")</code></td><td><code translate="no">gemini-2.5-flash</code></td><td>Google API key</td></tr>
+<tr><th scope="row"><code translate="no">openai-codex</code></th><td><code translate="no">OpenAICodexRuntime</code></td><td><code translate="no">gpt-5.5</code></td><td>ChatGPT 订阅 OAuth，<code translate="no">~/.codex/auth.json</code></td></tr>
+<tr><th scope="row"><code translate="no">gemini-cli</code></th><td><code translate="no">GeminiCLIRuntime</code></td><td><code translate="no">gemini-2.5-flash</code></td><td>Google 账号 OAuth，<code translate="no">~/.gemini/oauth_creds.json</code></td></tr>
+<tr><th scope="row">其他</th><td><code translate="no">Runtime("provider:model")</code></td><td>第一个已启用模型</td><td>该 provider 的 key</td></tr>
+</tbody>
+</table>
+<p class="note">API key 存在凭据库：<strong>设置 → Provider</strong>，或 <code translate="no">openprogram providers login &lt;provider&gt; --api-key</code>。Anthropic、OpenAI、Google SDK 是基础依赖；OAuth provider 直接走 HTTP。</p>
+<h2 id="create_runtime-detect_provider">函数</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">函数</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">create_runtime(provider=None, model=None, **kwargs)</code></th><td>返回可用的 <code translate="no">Runtime</code>。<code translate="no">None</code> 或 <code translate="no">"auto"</code> 运行 <code translate="no">detect_provider()</code>。<code translate="no">**kwargs</code> 转给构造函数。每个 runtime 都有权威的 <code translate="no">provider_id</code>。</td></tr>
+<tr><th scope="row"><code translate="no">detect_provider() -&gt; (name, default_model)</code></th><td>顺序见下。找不到时抛 <code translate="no">RuntimeError</code> 并给出配置指引。</td></tr>
+<tr><th scope="row"><code translate="no">check_providers() -&gt; dict</code></th><td>五个专用 provider 的 <code translate="no">{name: {"available": bool, "method": "CLI"|"API", "model": default}}</code>；<code translate="no">"default": True</code> 标记检测会选中的那个</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>from openprogram.models.providers.catalog.registry import detect_provider, check_providers</code></pre>
+<h3>检测顺序</h3>
+<ol>
+<li>环境变量：<code translate="no">AGENTIC_PROVIDER</code> / <code translate="no">AGENTIC_MODEL</code></li>
+<li><code translate="no">~/.openprogram/config.json</code> → <code translate="no">last_used_model</code></li>
+<li>调用环境：在 Codex CLI 内则使用它</li>
+<li>CLI 程序：<code translate="no">codex</code> → <code translate="no">openai-codex</code>，<code translate="no">gemini</code> → <code translate="no">gemini-cli</code></li>
+<li>已存 API key：anthropic → openai → google</li>
+</ol>
+<h2 id="anthropic">API key 服务商</h2>
+<pre translate="no"><code>rt = create_runtime(provider="anthropic", api_key="sk-ant-...", model="claude-sonnet-4-6")
+rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4.1")
+rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">参数</th><th scope="col">默认值</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">api_key</code></th><td><code translate="no">None</code></td><td><code translate="no">str | None</code>；<code translate="no">None</code> 从凭据库解析。<code translate="no">anthropic</code> 解析不到时抛 <code translate="no">ValueError</code>。</td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>见上表</td><td>provider 命名空间下的 id（<code translate="no">anthropic</code>、<code translate="no">openai</code>、<code translate="no">google</code>）</td></tr>
+<tr><th scope="row"><code translate="no">max_retries</code></th><td><code translate="no">OPENPROGRAM_MAX_RETRIES</code>，否则 6</td><td>转给基础 <code translate="no">Runtime</code> 的重试额度</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">provider</code></th><th scope="col">接口</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anthropic</code></th><td>Anthropic Messages</td><td><code translate="no">list_models()</code> 返回已启用模型 id</td></tr>
+<tr><th scope="row"><code translate="no">openai</code></th><td>OpenAI Responses</td><td>Azure 或本地 OpenAI 兼容服务：添加自定义 provider</td></tr>
+<tr><th scope="row"><code translate="no">gemini</code></th><td>Google Generative Language</td><td>添加 key 时接受的环境变量名：<code translate="no">GEMINI_API_KEY</code>、<code translate="no">GOOGLE_API_KEY</code>、<code translate="no">GOOGLE_GENERATIVE_AI_API_KEY</code></td></tr>
+</tbody>
+</table>
+<p class="note">都包含流式、工具循环和 DAG 记录。自定义 provider：<strong>设置 → Provider → 添加自定义 provider</strong>（名称和 base URL），然后 <code translate="no">Runtime(model="&lt;provider&gt;:&lt;model&gt;")</code> 或 <code translate="no">create_runtime(provider="&lt;provider&gt;")</code>。只有主机的 base URL 解析为 <code translate="no">/v1</code>；显式 API 路径保留。</p>
+<span id="openai"></span>
+<span id="gemini"></span>
+<h2 id="openai-codex">订阅 provider</h2>
+<span id="gemini-cli"></span>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">openai-codex</code></th><th scope="col"><code translate="no">gemini-cli</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">配置</th><td><code translate="no">npm install -g @openai/codex</code><br><code translate="no">codex login</code></td><td><code translate="no">npm install -g @google/gemini-cli</code><br><code translate="no">gemini</code></td></tr>
+<tr><th scope="row">登录</th><td>OAuth，不要选 API key</td><td>首次运行完成 OAuth</td></tr>
+<tr><th scope="row">后端</th><td>ChatGPT Responses。刷新后的 token 写回，Codex CLI 保持同步。</td><td>通过 HTTP 访问 Cloud Code Assist，无子进程</td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>默认 <code translate="no">gpt-5.5</code>；<code translate="no">openai-codex:</code> 前缀会去掉</td><td>默认 <code translate="no">gemini-2.5-flash</code>；须匹配注册表中的 <code translate="no">gemini-subscription/&lt;id&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td><code translate="no">str | None</code>，可选系统提示</td><td><code translate="no">str | None</code>，可选系统提示</td></tr>
+<tr><th scope="row"><code translate="no">profile</code></th><td>认证 profile，仅关键字；默认当前活动的</td><td>认证 profile，仅关键字；默认当前活动的</td></tr>
+<tr><th scope="row">凭据不对</th><td>只有 OpenAI API key 时抛 <code translate="no">AuthConfigError</code>，改用 <code translate="no">openai</code></td><td>只有 Google API key 时用 <code translate="no">gemini</code></td></tr>
+</tbody>
+</table>
+<p class="note">多余的关键字参数被接受并忽略。</p>
+<h2 id="every-other-provider">其他 provider</h2>
+<pre translate="no"><code>from openprogram.runtime.agent.runtime import Runtime
+rt = Runtime(model="deepseek:deepseek-chat")
+# or
+rt = create_runtime(provider="deepseek", model="deepseek-chat")</code></pre>
+<p class="note">deepseek、groq、openrouter、minimax、kimi 和目录中其余 provider 走模型注册表，与聊天分发器同一路径。未指定模型且无已注册模型时抛 <code translate="no">ValueError</code>：在<strong>设置 → Provider</strong> 中启用，或查看 <code translate="no">openprogram providers available &lt;provider&gt;</code>。</p>
+<h2 id="custom-providers">自定义 Provider</h2>
+<pre translate="no"><code>from openprogram.runtime.agent.runtime import Runtime
+
+class MyRuntime(Runtime):
+    def __init__(self, api_key, model="my-model"):
+        super().__init__(model=model)
+        self.api_key = api_key
+
+    def _call(self, content, model="default", response_format=None):
+        texts = [b["text"] for b in content if b["type"] == "text"]
+        return my_api_call("\n".join(texts), model=model)</code></pre>
+<p class="note"><code translate="no">_call()</code> 接收 <code translate="no">content: list[dict]</code>，返回 <code translate="no">str</code>。<code translate="no">Runtime(call=fn)</code> 无需子类也能达到同样效果。</p>
+<p class="next"><a href="runtime.zh.html">Runtime</a></p>

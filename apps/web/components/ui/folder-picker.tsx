@@ -110,22 +110,22 @@ export function useFolderPicker(): {
               )}
             </DialogDescription>
           </DialogHeader>
-          <label className="grid gap-2 text-sm font-medium">
+          <label className="grid gap-2 text-fs-base font-medium">
             {text("Absolute folder path", "文件夹绝对路径")}
             <input
               autoFocus
               value={manualPath}
               onChange={(event) => setManualPath(event.target.value)}
               placeholder={text("/home/user/project", "/home/user/project")}
-              className="h-10 w-full rounded-md border border-border bg-background px-3 font-mono text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+              className="h-(--ui-button-h) w-full rounded-md border border-border bg-background px-3 font-mono text-fs-base text-foreground outline-none focus:border-[color:var(--accent-blue)]"
               aria-invalid={manualError ? true : undefined}
             />
           </label>
           {manualError ? (
-            <p className="text-sm text-destructive" role="alert">{manualError}</p>
+            <p className="text-fs-base text-destructive" role="alert">{manualError}</p>
           ) : null}
           <DialogFooter>
-            <Button type="button" variant="ghost" disabled={validating} onClick={() => finishManual(null)}>
+            <Button type="button" variant="elevated" disabled={validating} onClick={() => finishManual(null)}>
               {text("Cancel", "取消")}
             </Button>
             <Button type="submit" disabled={validating || !manualPath.trim()}>

@@ -1,0 +1,191 @@
+/* 消息悬停操作条：复制/重试/编辑按钮、兄弟消息导航、时间戳、行内编辑态。
+   对应组件：components/chat/messages/bubbles/message-actions.tsx、user-bubble.tsx */
+
+/* Hover-reveal action bar (copy / retry / branch) — mirrors
+   ChatGPT/Claude UX. Hidden by default; fades in when the user mouses
+   over the bubble. Individual buttons have their own hover state for
+   the background pill. */
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--motion-medium) var(--ease-standard);
+}
+.message:hover .message-actions,
+.attach-card:hover .message-actions,
+.message-actions:focus-within,
+.message-actions.is-chapter-pinned {
+  opacity: 1;
+}
+@media (hover: none) {
+  .message .message-actions,
+  .attach-card .message-actions {
+    opacity: 1;
+  }
+}
+/* Bottom action row: copy/retry/branch buttons live at the END of a
+   message. They follow the message's side — user (right bubble) → bottom
+   RIGHT; assistant (left) → bottom LEFT. The eye lands where the message's
+   own edge is. */
+.message-actions-footer {
+  display: flex;
+  justify-content: flex-end;   /* default: right (user) */
+  margin-top: 4px;
+}
+.message.assistant .message-actions-footer {
+  justify-content: flex-start; /* assistant: bottom-left */
+  /* 与回复内各块同一个看得见的间距（bubbles.css "Reply block rhythm"）；
+     按钮行里时间戳文字上方自带约 3px 空白，扣掉。 */
+  margin-top: calc(var(--reply-gap, 12px) - 3px);
+}
+/* 时间戳自带 0 6px 内边距；行首那 6px 会让整排比正文右移，去掉。 */
+.message.assistant .message-actions-footer .message-timestamp {
+  padding-left: 0;
+}
+/* In the footer, the action bar must not keep its header-era
+   margin-left:auto (which would jam it to the right regardless of the
+   footer's justify-content). Let the footer's flex alignment decide. */
+.message-actions-footer .message-actions {
+  margin-left: 0;
+}
+/* Action and nav buttons are the official ghost round icon Button
+   (buttonVariants ghost / icon-xs, 24px): its classes own the size, the
+   round shape and the hover fill. This sheet only sets the resting muted
+   ink, the hover ink and the 16px glyph. These rules are unlayered, so
+   they never restate box geometry that would override the Button. */
+.message-action-btn,
+.message-nav-btn {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.message-action-btn:hover:not([disabled]),
+.message-nav-btn:hover:not([disabled]) {
+  color: var(--text-primary);
+}
+.message-action-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ContextGit — run-active gating. When an agent run is in flight,
+   grey out Edit and Retry buttons so the user can't fork mid-run
+   (the server rejects it anyway with 409, but the UI should make
+   the rule obvious). Copy and Branch stay enabled — they don't
+   fork the DAG. */
+[data-run-active="true"] .message-action-btn[data-action="retry"],
+[data-run-active="true"] .message-action-btn[data-action="edit"] {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* < N / M > sibling navigator. Lives INSIDE .message-actions so it
+   shares the bar's hover-gated visibility and sits on the same row
+   as the copy/retry/edit icons. */
+.message-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  user-select: none;
+}
+.message-nav-btn[disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
+.message-nav-btn svg { width: 16px; height: 16px; }
+.message-nav-label {
+  min-width: 34px;
+  text-align: center;
+}
+
+/* Timestamp badge inside the action bar. Small and unobtrusive;
+   hovering it shows the full date via the native title tooltip. Kept
+   separate from the bubble so the tooltip doesn't fire across the
+   whole message area. */
+.message-timestamp {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* Inline edit mode — the bubble's content swaps out for a textarea
+   and Save/Cancel buttons. */
+.message.is-editing .message-actions,
+.message.is-editing .message-nav {
+  display: none;
+}
+.message-edit-textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+.message-edit-textarea:focus {
+  border-color: var(--accent-blue);
+}
+.message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+.message-edit-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: var(--fs-base);
+}
+.message-edit-btn:hover:not([disabled]) {
+  background: var(--bg-hover);
+}
+.message-edit-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.message-edit-btn.message-edit-save {
+  background: var(--accent-fill);
+  color: var(--primary-foreground);
+  border-color: var(--accent-fill);
+}
+.message-edit-btn.message-edit-save:hover:not([disabled]) {
+  background: var(--accent-orange-hover);
+  border-color: var(--accent-orange-hover);
+}
+.message-action-btn svg {
+  width: 16px;
+  height: 16px;
+}
+/* Brief "Copied!" confirmation after Copy click. */
+.message-action-btn.is-copied,
+.message-action-btn.is-copied:hover:not([disabled]) {
+  color: var(--accent-green);
+}
+/* Pin as chapter, on: the bookmark is filled in the chapter purple on the
+   pressed fill, as the pinned turn's tick on the message rail is purple,
+   and the reply's row stays shown (.is-chapter-pinned above). */
+.message-action-btn.is-chapter,
+.message-action-btn.is-chapter:hover:not([disabled]) {
+  color: var(--accent-purple);
+  background-color: var(--muted);
+}
+.message-action-btn.is-chapter svg path {
+  fill: currentColor;
+}

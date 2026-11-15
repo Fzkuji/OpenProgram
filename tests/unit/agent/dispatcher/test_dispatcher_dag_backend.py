@@ -13,16 +13,17 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.store import SessionStore as DagSessionDB
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.state.store import SessionStore as DagSessionDB
 
 
 @pytest.fixture
 def dag_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> DagSessionDB:
     db = DagSessionDB(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: db)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
     return db
 
 
@@ -37,7 +38,7 @@ def _stub_loop(text: str, usage=None, tool_calls=None):
 
 def test_persists_user_and_assistant_on_dag(dag_db: DagSessionDB):
     events: list = []
-    req = D.TurnRequest(
+    req = agent_turn_request.TurnRequest(
         session_id="s-dag-1",
         agent_id="claude",
         user_text="hello dag",
@@ -57,7 +58,7 @@ def test_persists_user_and_assistant_on_dag(dag_db: DagSessionDB):
 
 
 def test_persists_agent_request_and_iteration_counters(dag_db: DagSessionDB):
-    req = D.TurnRequest(
+    req = agent_turn_request.TurnRequest(
         session_id="s-dag-counters",
         agent_id="claude",
         user_text="count",
@@ -84,7 +85,7 @@ def test_persists_agent_request_and_iteration_counters(dag_db: DagSessionDB):
 
 
 def test_head_id_advances_on_dag(dag_db: DagSessionDB):
-    req = D.TurnRequest(
+    req = agent_turn_request.TurnRequest(
         session_id="s-dag-2",
         agent_id="claude",
         user_text="ping",
@@ -113,7 +114,7 @@ def test_first_turn_spawn_leaves_head_off_root(dag_db: DagSessionDB):
     written and the session head stayed there for good. Ordinary sessions
     hid it because their first turn overwrites head milliseconds later.
     """
-    req = D.TurnRequest(
+    req = agent_turn_request.TurnRequest(
         session_id="s-dag-spawn",
         agent_id="claude",
         user_text="go",
@@ -145,7 +146,7 @@ def test_cross_session_exact_fork_persists_source_provenance(
         D, "_run_loop_blocking", side_effect=_stub_loop("target base")
     ):
         base = D.process_user_turn(
-            D.TurnRequest(
+            agent_turn_request.TurnRequest(
                 session_id="target-session",
                 agent_id="claude",
                 user_text="target prompt",
@@ -159,7 +160,7 @@ def test_cross_session_exact_fork_persists_source_provenance(
         D, "_run_loop_blocking", side_effect=_stub_loop("remote result")
     ):
         spawned = D.process_user_turn(
-            D.TurnRequest(
+            agent_turn_request.TurnRequest(
                 session_id="target-session",
                 agent_id="claude",
                 user_text="continue remotely",
@@ -187,7 +188,7 @@ def test_history_passed_to_loop_on_dag(dag_db: DagSessionDB):
         D, "_run_loop_blocking", side_effect=_stub_loop("reply 1")
     ):
         D.process_user_turn(
-            D.TurnRequest(session_id="s-dag-3", agent_id="claude",
+            agent_turn_request.TurnRequest(session_id="s-dag-3", agent_id="claude",
                           user_text="first", source="cli"),
             on_event=lambda _e: None,
         )
@@ -202,7 +203,7 @@ def test_history_passed_to_loop_on_dag(dag_db: DagSessionDB):
         D, "_run_loop_blocking", side_effect=_stub2
     ):
         D.process_user_turn(
-            D.TurnRequest(session_id="s-dag-3", agent_id="claude",
+            agent_turn_request.TurnRequest(session_id="s-dag-3", agent_id="claude",
                           user_text="second", source="cli"),
             on_event=lambda _e: None,
         )

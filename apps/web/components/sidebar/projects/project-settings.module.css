@@ -1,0 +1,94 @@
+.dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
+.heading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding-right: 22px;
+  text-align: left;
+}
+.preview {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-secondary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 24%, transparent);
+  color: var(--accent-blue);
+  font-size: var(--fs-lg);
+  overflow: hidden;
+}
+.headingCopy { display: grid; gap: 6px; min-width: 0; }
+.label { display: grid; gap: 7px; font-size: var(--fs-sm); color: var(--text-primary); }
+.field { font-size: var(--fs-sm); }
+.dialog .field {
+  transition: border-color var(--motion-medium) var(--ease-standard), box-shadow var(--motion-medium) var(--ease-standard), background-color var(--motion-medium) var(--ease-standard);
+}
+.dialog .field:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent-blue) 28%, var(--border)); }
+.dialog .field:focus {
+  border-color: var(--accent-blue);
+  outline: none;
+}
+.section legend { margin-bottom: 8px; font-size: var(--fs-sm); color: var(--text-primary); }
+.iconGrid { display: flex; flex-wrap: wrap; gap: 6px; }
+.iconOption {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  font-size: var(--fs-lg);
+  transition: background-color var(--motion-medium) var(--ease-standard), box-shadow var(--motion-medium) var(--ease-standard), transform var(--motion-medium) var(--ease-standard);
+}
+.iconOption:hover:not(:disabled) { background: var(--bg-hover); transform: translateY(-1px); }
+.iconOption[aria-pressed="true"] {
+  color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-secondary));
+  box-shadow: inset 0 0 0 1px var(--accent-blue), 0 0 10px color-mix(in srgb, var(--accent-blue) 18%, transparent);
+}
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-size: var(--fs-sm);
+}
+.folder > svg { flex-shrink: 0; color: var(--text-muted); }
+.folderCopy { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.hint { color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.5; }
+.trigger {
+  transition: opacity var(--motion-medium), background-color var(--motion-medium), box-shadow var(--motion-medium), color var(--motion-medium);
+}
+.trigger[data-state="open"], .trigger[data-active="true"] {
+  opacity: 1;
+  color: var(--text-bright);
+  background: var(--bg-selected);
+}
+.menuIcon { color: var(--text-muted); flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .dialog .field, .iconOption, .trigger { transition: none; }
+  .iconOption:hover:not(:disabled) { transform: none; }
+}
+@media (max-width: 480px) {
+  .heading { align-items: flex-start; }
+}
+/* Keep project selection/focus visible despite the app-wide button shadow reset. */
+.iconOption:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--accent-blue), 0 0 12px color-mix(in srgb, var(--accent-blue) 18%, transparent) !important;
+}
+
+.menu { z-index: var(--z-popover); }

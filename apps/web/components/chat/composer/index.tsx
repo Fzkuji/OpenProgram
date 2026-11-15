@@ -22,63 +22,92 @@
  */
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { platformKeys } from "@/lib/shortcut-keys";
+import { PendingDecisionPanels } from "../messages/runtime/decision-output";
+import { QueuedMessages } from "../messages/editing/queued-messages";
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCompactControlsRow } from "./controls/use-compact-controls-row";
 import { createPortal } from "react-dom";
 
+import { useBoundComposerSettings, useBoundSetComposerSettings } from "./state/use-composer-settings";
+import { settingOrigin } from "@/lib/session-store/branch-settings";
 import { useSessionStore } from "@/lib/session-store";
+import { useAwaitingAnswer } from "@/lib/chat/decisions/answer-wait";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import { getSocket } from "@/lib/runtime-bridge/state";
+import { sendRuntimeCommand } from "@/lib/runtime-bridge/session/session-load";
 import { useTranslation } from "@/lib/i18n";
 
 // Session-scope chips relocated from the dismantled 48px topbar row —
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
-import { CircleHelp } from "lucide-react";
 import { visibleParams } from "./modes/fn-form/fn-form";
 import { resolveComposerMode } from "./modes/resolve-mode";
 import { SendIcon, StopIcon } from "./icons";
 import { type AnimatedNavIconHandle } from "@/components/animated-icons";
+import { SolarIcon } from "@/components/solar-icons";
 import { type SlashCommand } from "./slash/slash-commands";
 import { SlashMenu } from "./slash/slash-menu";
-import { AttachmentStrip } from "./attach/attachment-strip";
+import { AttachmentStrip } from "./attach/strip/attachment-strip";
 import { attachmentsBlockSend } from "./attach/attachment-session-cache";
-import { useComposerAttachments } from "./attach/use-composer-attachments";
-import { useFileMention } from "./attach/use-file-mention";
+import { forgetRefill, setRewindUploading } from "@/lib/chat/rewind/rewind-store";
+import { DROP_PANE, useComposerAttachments } from "./attach/use-composer-attachments";
+import { useFileMention } from "./attach/mention/use-file-mention";
+import type { MentionSources } from "./attach/mention/mention-sources";
+import type { MentionScope } from "./attach/mention/at-mention";
+import { showToast } from "@/lib/format-utils/toast";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { runningApps } from "@/lib/net/computer-use-apps";
+import { onComposerFiles, takeComposerFiles } from "@/lib/chat/composer-inbox";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
 import { useFnFormSubmit } from "./modes/fn-form/use-fn-form-submit";
 import { useFunctionDispatch } from "./modes/fn-form/use-function-dispatch";
 import { useSlashMenu } from "./slash/use-slash-menu";
-import { useThinkingEffort } from "./controls/use-thinking-effort";
-import { useToolsToggles } from "./controls/use-tools-toggles";
-import { useModelAvailability } from "./controls/use-model-availability";
-import { useToolProfiles } from "./controls/use-tool-profiles";
-import { useUnattendedMode } from "./controls/use-unattended-mode";
-import { useSandboxToggle } from "./controls/use-sandbox-toggle";
+import { useThinkingEffort } from "./controls/effort/use-thinking-effort";
+import { useSessionAgentSettings } from "./state/use-session-agent-settings";
+import { useToolsToggles } from "./controls/toggles/use-tools-toggles";
+import { useModelAvailability } from "./controls/toggles/use-model-availability";
+import { useUnattendedMode } from "./controls/toggles/use-unattended-mode";
+import { useSandboxToggle } from "./controls/toggles/use-sandbox-toggle";
 import { ControlsCluster } from "./controls/controls-cluster";
+import { RIM_OUT, useTuckedControls } from "./controls/use-tucked-controls";
+import { TuckRow } from "./controls/tuck-row";
+import { useTuckBackdrop } from "./controls/use-tuck-backdrop";
 import { usePasteTokens } from "./paste/use-paste-tokens";
 import { useHistoryRecall } from "./input/use-history-recall";
 import { useChatSubmit } from "./submit/use-chat-submit";
 import "./submit/send-chat-message";
 import { useComposerKeyDown } from "./input/use-composer-keydown";
+import { useNextPrompt } from "./input/use-next-prompt";
 import { useComposerInputEffects } from "./input/use-composer-input-effects";
 import { EnvironmentRow } from "./environment-row/environment-row";
 import { ScopedDropOverlay } from "./attach/scoped-drop-overlay";
 import { ComposerBody } from "./modes/composer-body";
-import { useWaitAnswer } from "./modes/question/use-wait-answer";
-import { useDecisionDiscussion } from "./modes/question/use-decision-discussion";
-import { QuestionPanel } from "./modes/question/question-panel";
+import { useVoiceInput } from "./voice/use-voice-input";
+import { MicButton, VoiceStrip } from "./voice/voice-controls";
 import styles from "./composer.module.css";
+import { RecordDialog } from "../recording/record-dialog";
+import { RecordingTile } from "../recording/recording-card";
+import {
+  composerKey, listenForRecordingResults, recordingAvailable, useRecordingStore,
+} from "@/lib/recording/recording-store";
+import { recordingEnabled } from "@/lib/recording/recording-application";
+import { refreshApplications, useApplicationList } from "@/lib/net/application-list";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-/* Single shared WebSocket, owned by `lib/net/use-ws.ts` and reached
+/* Single shared WebSocket, owned by `lib/net/ws/use-ws.ts` and reached
    through `runtime-bridge/state`'s `getSocket()`. When the WS layer is
    migrated (next slice), this helper is replaced by ``useWS().send``
    and the call sites stay identical. */
-function wsSend(payload: unknown): boolean {
+export function wsSend(payload: unknown): boolean {
   const sock = getSocket();
   if (!sock || sock.readyState !== WebSocket.OPEN) return false;
   try {
-    sock.send(typeof payload === "string" ? payload : JSON.stringify(payload));
+    if (typeof payload !== "string") return sendRuntimeCommand(payload) && sock.readyState === WebSocket.OPEN;
+    sock.send(payload);
     return sock.readyState === WebSocket.OPEN;
   } catch (error) {
     console.error("[Composer] WebSocket send failed:", error);
@@ -86,7 +115,8 @@ function wsSend(payload: unknown): boolean {
   }
 }
 
-const noop = () => {};
+// An @ in the draft can name an open web tab or a running app, not only a file.
+const MENTION_SOURCES: MentionSources = { tabs: () => useCenterTabs.getState().tabs, apps: runningApps };
 
 /**
  * @param boundSessionId  Render this composer against a SPECIFIC session
@@ -121,7 +151,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const setComposerInputFor = useSessionStore((s) => s.setComposerInputFor);
   const focusTick = useSessionStore((s) => s.composerFocusTick);
 
-  const historyRecall = useHistoryRecall(bound, currentSessionId);
+  const historyRecall = useHistoryRecall(bound, currentSessionId, input);
   const { setHistoryIndex } = historyRecall;
 
   // Attachments — pending images, pending docs, drag-drop, file
@@ -137,19 +167,33 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     addImagesForOwner,
     addFiles,
     removeImage,
+    replaceImage,
     setImageError,
     removeDoc,
     onPickImages,
     onFileInputChange,
     clearAfterSubmit: clearAttachmentsAfterSubmit,
-  } = useComposerAttachments(bound);
+    detachForSubmit: detachAttachmentsForSubmit,
+  } = useComposerAttachments(bound, undefined, true);
+
+  // Files sent here from elsewhere in the window (a web tab's region
+  // screenshot) arrive as if dropped on this composer.
+  useEffect(() => {
+    if (!activeChatKey) return;
+    const take = () => {
+      const files = takeComposerFiles(activeChatKey);
+      if (files.length) void addFiles(files);
+    };
+    take();
+    return onComposerFiles(take);
+  }, [activeChatKey, addFiles]);
 
   // Refs declared up-front so the @file mention hook below can
   // reference them. The other refs (wrapper, sendBtn, plus menu,
   // thinking pill) get declared in their original spot.
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { pastedEntries, pasteMissing, onPaste, removePaste } = usePasteTokens({
+  const { pasteMissing, onPaste } = usePasteTokens({
     input,
     setInput,
     activeChatKey,
@@ -163,63 +207,41 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
-  // 系统等用户决定（runtime.ask / confirm / approval）的 FIFO 队列；队首占据
-  // 输入区呈现为 question mode（docs/design/ui/composer-interaction-modes.md）。
-  // 输入框状态跟会话走：只认「属于当前会话」的提问，切到别的会话就不显示
-  // （也就不会误把答案发到别的会话上）。
-  const pendingDecisions = useSessionStore((s) => s.pendingDecisions);
-  const dequeueDecision = useSessionStore((s) => s.dequeueDecision);
-  const pendingDecision =
-    pendingDecisions.find((d) => d.sessionId === currentSessionId) ?? null;
-
-  // ask/confirm（含 ask_user_question）走输入框顶部的 QuestionPanel。
-  // Goal 的问题是异步队列，只在 Goal 详情面板回答，不占用 composer。
-  const askDecision =
-    pendingDecision &&
-    (pendingDecision.kind === "ask" || pendingDecision.kind === "confirm")
-      ? pendingDecision
-      : null;
-  const activeDecision = askDecision ? null : pendingDecision;
   const send = wsSend;
-  const { sendAnswer: sendWaitCommand, answerPending, answerLocked } = useWaitAnswer(askDecision, dequeueDecision);
-
   const isRunning = runningTask !== null;
+  const modKey = platformKeys("⌘");
   const isCancelling = Boolean(runningTask?.cancelling);
   const fnFormActive = fnFormFunction !== null;
-  // 右下角圆按钮是否该显示红色停止 ■：仅当任务真在跑、且当前没有 decision
-  // 占据输入区。decision 在场时函数虽“运行”着，但它在等用户答题——此刻这个
-  // 按钮要当“提交”用，不能变停止键（否则点了是中断函数，不是交答案）。
-  // 跑着的时候输入框里有字 = 用户在写下一条消息（占位符就是这么提示的），
-  // 此刻圆钮必须是发送（送进队列）：显示成停止键的话，点下去杀的是任务
-  // 本身，写好的那句话一个字都没送出去。空输入才是停止键。
-  // askDecision（顶部面板在等答案）时同理：圆钮要当「提交答案」用，不能变
-  // 停止键。
-  const showStop =
-    isRunning && activeDecision === null && askDecision === null && !input.trim();
-
-  // 输入框当前处于哪个 mode —— 一个显式的派生值（含优先级），渲染时按它
-  // switch，不再散在 JSX 里嵌套三元。idle / fn-form / question / approval。
-  const composerMode = resolveComposerMode(activeDecision, fnFormFunction);
-  // 任何"输入框变形"态（fn-form / question / approval / form）都用 fn-form
-  // 那套容器样式（header/body 两段式 + 分割线定位），所以 wrapper 的 mode
-  // 类不只在 fn-form 时加。
+  // Decisions have their own output cards. Chat text always sends or queues
+  // a message. While a run goes on the action button is Stop, draft or not:
+  // Enter adds typed text to the turn or queues it, and Esc stops too.
+  // A run waiting on a request above still runs: Stop cancels it, and text
+  // typed here (sent with Enter) replies to the request.
+  const awaitingAnswer = useAwaitingAnswer(activeChatKey ?? currentSessionId) && !isRunning;
+  const showStop = (isRunning || awaitingAnswer) && !fnFormActive;
+  const composerMode = resolveComposerMode(fnFormFunction);
   const morphed = composerMode !== "idle";
-
-  // 冲突规则（docs/design/ui/composer-interaction-modes.md）：系统决定
-  // （runtime.ask / approval）撞上用户主动开的 fn-form → 取消 fn-form，让
-  // 系统决定占住输入区。用户主动开的东西丢弃无所谓；系统决定之间则由
-  // pendingDecisions 的 FIFO 队列天然排队（队首占据，答完出下一个）。
-  useEffect(() => {
-    if ((activeDecision || askDecision) && fnFormFunction) {
-      closeFnFormStore();
-    }
-  }, [activeDecision, askDecision, fnFormFunction, closeFnFormStore]);
+  // The chat this composer writes to, and where its `@path` mentions
+  // resolve: that chat's working directory, or for a chat not created yet
+  // the project picked for it.
+  const draftOwner = activeChatKey ?? currentSessionId;
+  const pendingProjectId = useSessionStore((s) => (draftOwner ? s.pendingProjectsByChat[draftOwner] : undefined));
+  const mentionScope = useMemo<MentionScope | null>(
+    () => (draftOwner ? { sessionId: draftOwner, projectId: pendingProjectId ?? null } : null),
+    [draftOwner, pendingProjectId],
+  );
+  // While the socket is down a message waits in the send queue; say so
+  // once the connection has been up (not during the first connect).
+  const wsStatus = useSessionStore((s) => s.wsStatus);
+  const everConnected = useRef(false);
+  if (wsStatus === "open") everConnected.current = true;
+  const disconnected = everConnected.current && wsStatus !== "open";
 
   // @file mention — state + debounced /api/file-search + popover
   // positioning + picker all live in ./use-file-mention now. The hook
   // owns the 6 useStates + 2 effects + pickFile callback that used to
   // sit here.
-  const fileMention = useFileMention({ input, setInput, textareaRef });
+  const fileMention = useFileMention({ input, setInput, textareaRef, sources: MENTION_SOURCES, scope: mentionScope });
 
   // Thinking-effort + plus-menu + tools toggles each live in their own
   // dedicated hooks now — see ./use-thinking-effort, ./use-tools-toggles.
@@ -230,21 +252,41 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     setMenuOpen: setThinkingMenuOpen,
     set: setThinking,
   } = useThinkingEffort();
+  // Agent settings feed the model chip below — this conversation's own
+  // (a split pane never shows or changes the other pane's model).
+  const agentSettings = useSessionAgentSettings();
+  const chatAgent = agentSettings.chat || {};
   // The effort picker only appears once a chat model is actually
   // selected; with no model picked it stays hidden.
-  const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
-  // Agent settings feed the relocated chat/exec model chips below —
-  // same store slice the old topbar row read (populated by
-  // `updateAgentBadges` in lib/runtime-bridge/providers.ts).
-  const agentSettings = useSessionStore((s) => s.agentSettings);
-  const chatAgent = agentSettings.chat || {};
-  const execAgent = agentSettings.exec || {};
+  const chatModel = chatAgent.model;
   const { noEnabledModels, promptNeedModel } = useModelAvailability();
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  // Demonstration recording: the + menu item, its start dialog and the
+  // finished recording waiting to go out with the next message.
+  const recordingComposer = composerKey(bound);
+  const pendingRecording = useRecordingStore((s) => s.pending[recordingComposer]);
+  const activeRecording = useRecordingStore((s) => s.active);
+  const [recordDialogOpen, setRecordDialogOpen] = useState(false);
+  const [canRecord, setCanRecord] = useState(false);
+  useEffect(() => {
+    setCanRecord(recordingAvailable());
+    listenForRecordingResults();
+  }, []);
+  // The recorder is the built-in application workflow_recording: the item
+  // shows only while it is enabled, and a recording left waiting when it
+  // is switched off goes with it.
+  const { builtin: builtinApplications, loaded: applicationsLoaded } = useApplicationList();
+  const recordingOn = recordingEnabled(builtinApplications);
+  useEffect(() => {
+    if (canRecord) void refreshApplications().catch(() => {});
+  }, [canRecord]);
+  useEffect(() => {
+    if (applicationsLoaded && !recordingOn && pendingRecording) {
+      useRecordingStore.getState().setPending(recordingComposer, null);
+    }
+  }, [applicationsLoaded, recordingOn, pendingRecording, recordingComposer]);
   const {
-    tools: toolsEnabled,
     webSearch: webSearchEnabled,
-    toggleTools,
     toggleWebSearch,
   } = useToolsToggles();
   // Per-turn "Fast" speed tier → sent as service_tier:"priority". Now
@@ -253,11 +295,14 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // request body and no-ops for providers that don't read service_tier.
   const fastByModel = useSessionScope((s) => s.settings.fastByModel);
   const fastModelKey = `${chatAgent.provider ?? ""}:${chatAgent.model ?? ""}`;
-  const fastEnabled = fastByModel?.[fastModelKey] ?? false;
+  const fastDefault = useSessionScope((s) => s.settings.fast);
+  const fastEnabled = fastByModel?.[fastModelKey] ?? fastDefault;
   // 有的模型没有 Fast 档（service_tier）——后端 agent_settings 按当前
   // 模型下发 chat.fast；不支持就整个隐藏开关/chip，也不随消息发送。
-  const fastSupported = useSessionStore((s) => !!s.agentSettings?.chat?.fast);
-  const setComposerSettings = useSessionScope((s) => s.patchSettings);
+  const fastSupported = !!chatAgent.fast;
+  const setComposerSettings = useBoundSetComposerSettings();
+  // Web search follows the Agent unless this branch set it (the chip's tooltip says which).
+  const webSearchOrigin = settingOrigin(useBoundComposerSettings().resolved, "web_search");
   const toggleFast = () => setComposerSettings({ fast: !fastEnabled, fastByModel: { ...fastByModel, [fastModelKey]: !fastEnabled } });
   const fastHint = chatAgent.fast_capability?.status === "unsupported"
     ? text("Fast is disabled for this connection.", "当前线路已禁用高速模式。")
@@ -266,20 +311,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     : chatAgent.fast_capability?.source === "xai-api"
       ? text("Fast · Priority processing, 2× token price. Thinking effort is unchanged.", "高速 · 优先处理，token 单价为标准档的 2 倍。思考强度不变。")
       : text("Fast · Increased usage may apply. Thinking effort is unchanged.", "高速 · 可能增加用量。思考强度不变。");
-  const runningMessageMode = useSessionScope(
-    (s) => s.settings.runningMessageMode ?? "queue",
-  );
-  const toggleRunningMessageMode = () => setComposerSettings({
-    runningMessageMode: runningMessageMode === "steer" ? "queue" : "steer",
-  });
   const { unattended, toggleUnattended } = useUnattendedMode(
     currentSessionId,
     send,
   );
   const { sandbox, sandboxAvailable, sandboxReason, toggleSandbox } =
     useSandboxToggle(activeChatKey ?? currentSessionId, !!currentSessionId);
-  const { toolProfiles, activeProfile, switchProfile } =
-    useToolProfiles();
 
   // Slash-menu state lives in its own hook (./use-slash-menu).
   // fn-form field state (values, error highlight, closing
@@ -289,6 +326,19 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const setFnFormClosingLocal = fnForm.setClosing;
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // Chat mode only: the function form keeps its own layout.
+  const tuck = useTuckedControls(wrapperRef, !fnFormActive);
+  const controlsRowRef = useRef<HTMLDivElement | null>(null);
+  useCompactControlsRow(controlsRowRef);
+  // Voice input dictates into this chat's draft (chat mode only).
+  const voice = useVoiceInput({
+    textareaRef,
+    input,
+    setInput,
+    wrapperRef,
+    disabled: fnFormActive,
+    owner: draftOwner,
+  });
   // Drives the animated send arrow from the whole button's hover.
   const sendIconRef = useRef<AnimatedNavIconHandle>(null);
   // `thinkingTriggerRef`: the effort pill expands inline (no portal).
@@ -314,10 +364,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       setFnFormClosingLocal(false);
     }, [closeFnFormStore, setFnFormClosingLocal]),
     wrapperRef,
-    // A system decision uses the same morphed container — drive the same
-    // wrapper-grow + button-glide-to-bottom for it. Its id keys the
-    // open-transition so each new decision re-pins the button.
-    decisionKey: activeDecision?.id ?? null,
   });
 
   const inputAreaRef = useComposerInputEffects({
@@ -326,6 +372,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     focusTick,
     textareaRef,
   });
+  // The mask above the box drops to just above it while the rows are tucked.
+  useTuckBackdrop(inputAreaRef, tuck.tucked);
 
   // Close the effort pill on outside click. It's INLINE inside the
   // composer wrapper, so a click in the textarea or on any other
@@ -382,7 +430,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     setCurrentConv,
   });
 
-  const { submit, stop } = useChatSubmit({
+  const { submit: submitDraft, stop, runSlash } = useChatSubmit({
     bound,
     input,
     activeChatKey,
@@ -397,41 +445,29 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     pendingImages,
     pendingDocs,
     clearAttachmentsAfterSubmit,
+    detachAttachmentsForSubmit,
     thinking,
-    toolsEnabled,
-    toolsProfile: activeProfile,
     webSearchEnabled,
     fastEnabled,
     fastSupported,
-    runningMessageMode,
     dispatchFunction,
+    mentionScope,
   });
-
-  // 顶部 ask / confirm 面板在场时，输入文本作为 PendingQuestion 的答案。
-  const submitWithPanel = useCallback(async () => {
-    const trimmed = input.trim();
-    if (askDecision && trimmed && askDecision.allow_custom) {
-      if (await sendWaitCommand("execution.wait.answer", askDecision.multi ? [trimmed] : trimmed) && !answerLocked) {
-        const draftKey = activeChatKey ?? currentSessionId;
-        if (draftKey && useSessionStore.getState().composerDrafts[draftKey] === input) {
-          setComposerInputFor(draftKey, "");
-        }
-      }
+  // Dictated text is still arriving: sending now would send half of it and
+  // type the rest into an emptied box.
+  const submit = (mode?: Parameters<typeof submitDraft>[0]) => {
+    if (voice.state !== "idle") {
+      voice.stop();
+      showToast(text(
+        "Dictation is still being transcribed. Send when the text has arrived.",
+        "听写还在转写，文字出来后再发送。",
+      ));
       return;
     }
-    await submit();
-  }, [
-    input,
-    askDecision,
-    sendWaitCommand,
-    answerLocked,
-    send,
-    dequeueDecision,
-    setComposerInputFor,
-    activeChatKey,
-    currentSessionId,
-    submit,
-  ]);
+    // What leaves the composer stops being a refill; a command does not.
+    if (draftOwner && !input.trimStart().startsWith("/")) forgetRefill(draftOwner);
+    return submitDraft(mode);
+  };
 
   // Pick a slash command. Commands with a REQUIRED argument (an
   // `<angle-bracket>` placeholder in `args`) fill the input so the
@@ -444,21 +480,32 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       requestAnimationFrame(() => textareaRef.current?.focus());
       return;
     }
-    if (slash.runCommand(cmd.name)) {
-      setInput("");
-      slash.close();
-    }
+    runSlash(cmd.name);
   }
 
-  const onKeyDown = useComposerKeyDown({
+  const composerKeyDown = useComposerKeyDown({
     input,
     setInput,
     fileMention,
     historyRecall,
     slash,
     selectSlashCommand,
-    submit: submitWithPanel,
+    submit,
+    // Esc stops a running turn whatever the draft holds; the draft stays.
+    canStop: isRunning && !fnFormActive && !isCancelling,
+    stop,
   });
+  const nextPrompt = useNextPrompt(currentSessionId, isRunning, input);
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Tab takes the suggested next message as a draft; it is not sent.
+    if (e.key === "Tab" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && nextPrompt.suggestion) {
+      e.preventDefault();
+      setInput(nextPrompt.suggestion);
+      nextPrompt.clear();
+      return;
+    }
+    composerKeyDown(e);
+  };
 
   function onMenuItemClick(cmd: SlashCommand) {
     selectSlashCommand(cmd);
@@ -487,35 +534,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     handleFnFormClose,
   });
 
-  // decision 在场时右下角是 mode 自己的 navButtons 按钮组（见 JSX），不走
-  // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
-  const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
+  // The send button is Enter: during a run it adds the message to the
+  // current turn; ⌘/Ctrl+Enter is the keyboard path that queues instead.
+  const onSendButtonClick = fnFormActive ? submitFnForm : () => void submit("steer");
 
-  const rejectDecision = useDecisionDiscussion({
-    decision: activeDecision,
-    thinking,
-    dequeue: dequeueDecision,
-  });
-
-  // 顶部提问面板的内容（真 ask 优先；morphed 时不叠面板 —— approval/form
-  // 占着输入区，答完再出）。点 pill = 立即提交（点击即时反馈）。
-  const panel = askDecision
-    ? {
-        badge: (
-          <>
-            <CircleHelp size={13} strokeWidth={2} />
-            <span>{text("Your input is needed", "需要你的输入")}</span>
-          </>
-        ),
-        prompt: askDecision.prompt,
-        options: answerLocked ? [{ label: text("Retry previous answer", "重试原答复") }]
-          : askDecision.options.map((label) => ({ label })),
-        disabled: answerPending,
-        onPick: (label: string) => {
-          void sendWaitCommand("execution.wait.answer", askDecision.multi ? [label] : label);
-        },
-      }
-    : null;
   // In chat mode: disabled when textarea is empty OR when a paste
   //   token references content that was lost (chip is red). Submitting
   //   in the "lost" state would silently strip the token — see the
@@ -541,7 +563,11 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // border instead. The button still LOOKS dim (data-fn-missing) and
   // its title spells out which field is blocking.
   const attachmentBlock = attachmentsBlockSend(pendingImages, pendingDocs);
-  const hasAttachments = pendingImages.length > 0 || pendingDocs.length > 0;
+  const attachmentsLoading = attachmentBlock === "loading";
+  useEffect(() => {
+    if (draftOwner) setRewindUploading(draftOwner, attachmentsLoading);
+  }, [draftOwner, attachmentsLoading]);
+  const hasAttachments = pendingImages.length > 0 || pendingDocs.length > 0 || !!pendingRecording;
   const sendDisabled = fnFormActive
     ? false
     : attachmentBlock != null
@@ -567,7 +593,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // Controls cluster — permission / plus menu / tool chips on the
   // left; model texts + effort pill + context ring on the right.
   // Always rendered in the detached .controlsRow below the wrapper, in
-  // every mode — opening a fn-form / question only grows the wrapper
+  // every mode — opening a fn-form only grows the wrapper
   // above it, the controls row itself never moves or restyles.
   const controlsCluster = (
     <ControlsCluster
@@ -575,29 +601,24 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       plusMenuOpen={plusMenuOpen}
       setPlusMenuOpen={setPlusMenuOpen}
       onPickImages={onPickImages}
+      onRecord={canRecord && recordingOn ? () => setRecordDialogOpen(true) : undefined}
+      recordingActive={!!activeRecording}
       pendingImagesCount={pendingImages.length}
       pendingDocsCount={pendingDocs.length}
-      toolsEnabled={toolsEnabled}
-      toggleTools={toggleTools}
       webSearchEnabled={webSearchEnabled}
+      webSearchOrigin={webSearchOrigin}
       toggleWebSearch={toggleWebSearch}
       fastEnabled={fastEnabled}
       fastSupported={fastSupported}
       fastHint={fastHint}
       toggleFast={toggleFast}
-      runningMessageMode={runningMessageMode}
-      toggleRunningMessageMode={toggleRunningMessageMode}
       unattended={unattended}
       toggleUnattended={toggleUnattended}
       sandboxEnabled={sandbox}
       sandboxAvailable={sandboxAvailable}
       sandboxReason={sandboxReason}
       toggleSandbox={toggleSandbox}
-      toolProfiles={toolProfiles}
-      activeProfile={activeProfile}
-      switchProfile={switchProfile}
       chatAgent={chatAgent}
-      execAgent={execAgent}
       chatModel={chatModel}
       noEnabledModels={noEnabledModels}
       thinking={thinking}
@@ -614,7 +635,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       ref={inputAreaRef}
       className={styles.inputArea}
       data-composer-input-area
-      data-pending-decision-id={activeDecision?.id || askDecision?.id || undefined}
+      data-tucked={tuck.covering ? "" : undefined}
+      onPointerDown={tuck.onAreaPointerDown}
+      onPointerMove={tuck.onAreaPointerMove}
+      onPointerLeave={tuck.onAreaPointerLeave}
     >
       {/* Drop overlay scoped to the chat main column (#chatArea) —
           covers the conversation surface but lets the sidebars stay
@@ -625,24 +649,26 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           changes between drags. */}
       {dragActive && typeof document !== "undefined"
         ? createPortal(
-            <ScopedDropOverlay />,
+            <ScopedDropOverlay within={wrapperRef.current?.closest<HTMLElement>(DROP_PANE)} />,
             document.body,
           )
         : null}
-      <EnvironmentRow
-        sessionId={currentSessionId}
-        toolsEnabled={toolsEnabled}
-        owningStatusId={bound === null}
-        onToggleAccess={toggleTools}
-        trailingControls={<div id="dagHudSlot" />}
-      />
+      <div className={styles.decisionColumn}><PendingDecisionPanels sessionId={activeChatKey ?? currentSessionId} /></div>
+      <TuckRow tucked={tuck.tucked} side="above" onSettled={tuck.onSettled}>
+        <EnvironmentRow sessionId={currentSessionId} />
+      </TuckRow>
+      {/* Messages typed during the run dock directly above the input box. */}
+      <QueuedMessages key={activeChatKey ?? currentSessionId ?? "new"} sessionId={activeChatKey ?? currentSessionId} />
       {/* composerStack wraps {slashClip, inputWrapper} so the slash
           menu's vertical anchor is the wrapper's top edge — not a
           magic-number offset from the inputArea bottom. composerStack
           is position:relative and naturally takes inputWrapper's
           height (slashClip is absolute, doesn't contribute), so
           slashClip's bottom:100% lands exactly at the wrapper top. */}
-      <div className={styles.composerStack}>
+      <div className={styles.composerStack} data-composer-session={currentSessionId}>
+      {/* The tuck band's outer half: a transparent ring behind the box
+          (use-tucked-controls.ts). */}
+      {tuck.enabled ? <div ref={tuck.bandRef} className={styles.tuckBand} style={{ borderRadius: `calc(var(--radius-xl) + ${RIM_OUT}px)` }} data-tuck-band aria-hidden="true" /> : null}
       <div className={styles.slashClip}>
         <SlashMenu
           visible={slash.visible}
@@ -661,25 +687,24 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           composerRootRef.current = el;
         }}
         className={`${styles.inputWrapper} ${morphed ? styles.morphed : ""}`}
+        data-tuckable={tuck.enabled ? "" : undefined}
+        data-voice={voice.state !== "idle" ? voice.state : undefined}
       >
-        {/* 提问面板 —— wrapper 顶部向上生长的附加区（ask / confirm）。
-            下面的 textarea / 底栏 / 圆形发送按钮全部原样。 */}
-        {panel && (
-          <QuestionPanel
-            badge={panel.badge}
-            prompt={panel.prompt}
-            options={panel.options}
-            onPick={panel.onPick}
-            disabled={panel.disabled}
+        {pendingRecording ? (
+          <RecordingTile
+            info={pendingRecording}
+            onRemove={() => useRecordingStore.getState().setPending(recordingComposer, null)}
           />
-        )}
+        ) : null}
         <AttachmentStrip
+          sessionId={currentSessionId}
           pendingImages={pendingImages}
           pendingDocs={pendingDocs}
           imageError={imageError}
           fileInputRef={fileInputRef}
           onFileInputChange={onFileInputChange}
           onRemoveImage={removeImage}
+          onReplaceImage={replaceImage}
           onRemoveDoc={removeDoc}
           onDismissError={() => setImageError(null)}
         />
@@ -687,9 +712,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         <ComposerBody
           bound={bound}
           composerMode={composerMode}
-          activeDecision={activeDecision}
-          dequeueDecision={dequeueDecision}
-          onChatAbout={rejectDecision}
           fnFormFunction={fnFormFunction}
           fnForm={fnForm}
           handleFnFormClose={handleFnFormClose}
@@ -698,66 +720,67 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           textareaRef={textareaRef}
           input={input}
           setInput={setInput}
-          isRunning={isRunning}
-          runningPlaceholder={text(
-            runningMessageMode === "steer"
-              ? "type to steer the current turn…"
-              : "type to queue the next message…",
-            runningMessageMode === "steer"
-              ? "输入消息并注入当前轮次…"
-              : "输入下一条消息，本轮结束后自动发送…",
+          isRunning={isRunning || awaitingAnswer}
+          runningPlaceholder={awaitingAnswer ? text(
+            "Reply to the request above, or tell the agent what to do instead",
+            "答复上面的请求，或者告诉 agent 改做什么",
+          ) : text(
+            `Enter adds to this turn · ${modKey}Enter queues · Esc stops`,
+            `回车插入当前轮 · ${modKey}回车排到下一轮 · Esc 停止`,
           )}
+          idlePlaceholder={disconnected ? text(
+            "Not connected. Messages wait and send once the connection is back.",
+            "未连接。消息会排队，连接恢复后发送。",
+          ) : undefined}
+          draftOwner={draftOwner ?? undefined}
+          suggestion={nextPrompt.suggestion}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           slash={slash}
           fileMention={fileMention}
-          pastedEntries={pastedEntries}
-          pasteMissing={pasteMissing}
-          removePaste={removePaste}
         />
 
-        {/* Single send/stop button anchored at the wrapper level — the
-            same 24px square in every mode. Chat mode: right edge of the
-            single-line input row. fn-form: the header right, beside the
-            close ✕ (`.morphed .actionBtn`). Decisions render nothing
-            here — QuestionMode lays its own nav buttons out as the last
-            row of its body.
-            decision 在场时（即便函数正“运行”——它其实在等用户答题）绝不能
-            显示成红色停止 ■：用户此刻要的是交答案，不是中断函数。 */}
-        {!activeDecision && (
-          <button
-            className={`${styles.actionBtn} ${showStop ? styles.stopBtn : styles.sendBtn}`}
-            onClick={showStop ? stop : onSendButtonClick}
-            disabled={isCancelling || (!showStop && sendDisabled)}
-            data-fn-missing={
-              !showStop && fnFormActive && missingFnParams.length > 0
-                ? "true"
-                : undefined
-            }
-            onMouseEnter={() => sendIconRef.current?.startAnimation?.()}
-            onMouseLeave={() => sendIconRef.current?.stopAnimation?.()}
-            title={
-              isCancelling
-                ? text("Cancelling…", "正在取消")
-                : showStop
-                  ? text("Cancel execution", "取消运行")
-                  : sendTitle
-            }
-            aria-label={
-              isCancelling
-                ? text("Cancelling…", "正在取消")
-                : showStop
-                  ? text("Cancel execution", "取消运行")
-                  : sendTitle
-            }
-            type="button"
-          >
-            {showStop ? <StopIcon /> : <SendIcon ref={sendIconRef} />}
-          </button>
-        )}
+        {/* Voice input: mic in the bottom-left corner, live level strip
+            before send in the bottom-right. */}
+        {!fnFormActive ? <MicButton state={voice.state} onToggle={voice.toggle} /> : null}
+        {!fnFormActive ? <VoiceStrip state={voice.state} levels={voice.levels} /> : null}
 
-        {/* Function-form close stays in the header; decisions own their footer. */}
-        {!activeDecision && fnFormActive && !fnForm.closing && (
+        {/* Chat and function-form actions stay independent of decision cards. */}
+        <button
+          className={`${cn(buttonVariants({
+            variant: showStop ? "destructive" : sendDisabled ? "ghost" : "default",
+            size: "icon-sm",
+          }))} ${styles.actionBtn} ${showStop ? "" : styles.sendBtn}`}
+          onClick={showStop ? stop : onSendButtonClick}
+          disabled={isCancelling || (!showStop && sendDisabled)}
+          data-fn-missing={
+            !showStop && fnFormActive && missingFnParams.length > 0
+              ? "true"
+              : undefined
+          }
+          onMouseEnter={() => sendIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => sendIconRef.current?.stopAnimation?.()}
+          title={
+            isCancelling
+              ? text("Cancelling…", "正在取消")
+              : showStop
+                ? text("Stop this reply (Esc)", "停止这次回复（Esc）")
+                : sendTitle
+          }
+          aria-label={
+            isCancelling
+              ? text("Cancelling…", "正在取消")
+              : showStop
+                ? text("Cancel execution", "取消运行")
+                : sendTitle
+          }
+          type="button"
+        >
+          {showStop ? <StopIcon /> : <SendIcon ref={sendIconRef} />}
+        </button>
+
+        {/* Function-form close stays in the header. */}
+        {fnFormActive && !fnForm.closing && (
           <button
             className={styles.closeBtn}
             type="button"
@@ -767,22 +790,19 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
             title={text("Close", "关闭")}
             aria-label={text("Close", "关闭")}
           >
-            <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
-              <path
-                d="M2 2L10 10M10 2L2 10"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-            </svg>
+            <SolarIcon name="close-circle" size={16} fit="fill" />
           </button>
         )}
       </div>
       </div>{/* /.composerStack */}
-      <div className={`${styles.controlsRow} composer-bottom-row`}>
-        {controlsCluster}
-      </div>
+      <TuckRow tucked={tuck.tucked} side="below" onSettled={tuck.onSettled}>
+        <div ref={controlsRowRef} className={`${styles.controlsRow} composer-bottom-row`}>
+          {controlsCluster}
+        </div>
+      </TuckRow>
+      {recordDialogOpen ? (
+        <RecordDialog composer={recordingComposer} onClose={() => setRecordDialogOpen(false)} />
+      ) : null}
     </div>
   );
 }

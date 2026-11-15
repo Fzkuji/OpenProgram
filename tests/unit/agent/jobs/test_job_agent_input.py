@@ -7,9 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.agent.job.input import JobAgentInputError, JobAgentInputV1
-from openprogram.agent.production_driver import AgentProductionDriver, CanonicalAgentEntry
-from openprogram.execution import ExecutionStore
+from openprogram.runtime.execution.job_input import JobAgentInputError
+from openprogram.runtime.jobs.input import JobAgentInputV1
+from openprogram.runtime.conversation.production_driver import AgentProductionDriver, CanonicalAgentEntry
+from openprogram.runtime.execution import ExecutionStore
 
 
 def _payload(*, caller=True, admission_id="admission-1"):
@@ -75,7 +76,7 @@ def test_existing_job_activation_reads_the_outer_input_without_minting_identity(
     store.admit_execution(
         execution_id="j_existing", run_id="run-1", session_id="session-1",
         revision_id=revision.revision_id, input_ref=f"job-input-v1:{encoded}",
-        input_hash=digest, entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        input_hash=digest, entrypoint="openprogram.runtime.conversation.production_driver:AgentProductionDriver",
         trusted_actor={"subject": "owner"}, config_snapshot_ref="config:job",
         capabilities=AgentProductionDriver.capabilities_for_payload({
             "version": 1, "kind": "chat", "request": payload["turn_request"],
@@ -93,11 +94,11 @@ def test_existing_job_activation_reads_the_outer_input_without_minting_identity(
         _governance_context=lambda _job: SimpleNamespace(job_id=job.id),
     )
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.runner_for_execution_store",
+        "openprogram.runtime.jobs.runner.runner_for_execution_store",
         lambda _store: job_runner,
     )
     monkeypatch.setattr(
-        "openprogram.worktree.manager.get_manager",
+        "openprogram.state.worktree.manager.get_manager",
         lambda: SimpleNamespace(
             get_worktree=lambda _worktree_id: SimpleNamespace(
                 worktree_path=str(tmp_path),
@@ -128,3 +129,70 @@ def test_existing_job_activation_reads_the_outer_input_without_minting_identity(
     assert seen["request"].session_id == "session-1"
     assert seen["context"]["job_context"]["caller"]["node_id"] == "node-1"
     assert store.get_execution("j_existing").execution_id == "j_existing"
+
+
+def _authority(tier):
+    from openprogram.runtime.permissions.authority import owner_authority, paired_channel_authority
+
+    if tier == "owner":
+        return owner_authority("owner/install/0123456789abcdef")
+    return paired_channel_authority("wechat", "account", "peer", "Peer") if tier else {}
+
+
+@pytest.mark.parametrize(("tier", "source", "mode"), [
+    ("owner", "agent_spawn", "bypass"),
+    ("owner", "self_update_verify", "bypass"),
+    ("paired", "agent_spawn", "ask"),
+    (None, "agent_spawn", "ask"),
+])
+def test_a_job_starts_in_the_default_only_when_the_owner_started_it(tier, source, mode):
+    from openprogram.runtime.jobs.types import Job
+
+    job = Job(id="j1", parent_session_id="p1", prompt="go", agent_id="main", source=source, **_authority(tier))
+    assert JobAgentInputV1.from_job(job).turn_request["permission_mode"] == mode
+
+
+def test_a_job_with_no_parent_to_inherit_from_runs_as_its_conversation(monkeypatch):
+    from openprogram.runtime.conversation import session_config
+    from openprogram.runtime.jobs.types import Job
+    from openprogram.runtime.permissions.modes import PermissionRules
+
+    monkeypatch.setattr(session_config, "conversation_permission", lambda session: {
+        "permission_mode": "ask", "permission_rules": PermissionRules(deny=["bash(rm:*)"])} if session == "p1" else {})
+    job = Job(id="j1", parent_session_id="p1", prompt="go", agent_id="main", source="agent_spawn", **_authority("owner"))
+    request = JobAgentInputV1.from_job(job).turn_request
+    assert request["permission_mode"] == "ask"
+    assert request["permission_rules"]["deny"] == ["bash(rm:*)"]
+    verifier = Job(id="j2", parent_session_id="p1", prompt="go", agent_id="main", source="self_update_verify",
+                   **_authority("owner"))
+    assert JobAgentInputV1.from_job(verifier).turn_request["permission_mode"] == "bypass"
+
+
+def test_a_job_with_a_parent_snapshot_keeps_the_parents_mode():
+    from openprogram.runtime.jobs.types import Job
+
+    job = Job(id="j1", parent_session_id="p1", prompt="go", agent_id="main", source="agent_spawn", **_authority("owner"))
+    snapshot = {"mode": "ask", "rules": {"allow": ["read"], "deny": [], "ask": []}}
+    request = JobAgentInputV1.from_job(job, permission_snapshot=snapshot).turn_request
+    assert (request["permission_mode"], request["permission_rules"]) == ("ask", snapshot["rules"])
+
+
+def test_only_a_delivered_message_names_its_origin_in_the_job_input():
+    from openprogram.runtime.jobs.types import Job
+
+    ordinary = Job(id="j1", parent_session_id="p1", prompt="go", agent_id="main", source="job", **_authority("owner"))
+    assert "message_origin" not in JobAgentInputV1.from_job(ordinary).turn_request
+
+    delivered = Job(id="j2", parent_session_id="p1", prompt="go", agent_id="main", source="job",
+                    message_origin="agent_delivery", **_authority("owner"))
+    assert JobAgentInputV1.from_job(delivered).to_turn_request().message_origin == "agent_delivery"
+
+
+def test_a_sub_agent_of_a_turn_with_no_window_is_marked_so_in_its_stored_input():
+    from openprogram.runtime.jobs.types import Job
+
+    job = Job(id="j1", parent_session_id="p1", prompt="go", agent_id="main", source="agent_spawn", **_authority("owner"))
+    marked = JobAgentInputV1.from_job(job, detached=True)
+    assert marked.turn_request["detached"] is True
+    assert marked.to_turn_request().detached is True
+    assert "detached" not in JobAgentInputV1.from_job(job).turn_request

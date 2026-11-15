@@ -1,0 +1,54 @@
+<title>Programs access selector</title>
+<meta name="description" content="How an Agent selects callable Programs without duplicating the Programs catalog.">
+<meta name="covers" content="apps/web/components/agents/ openprogram/runtime/agent_registry/">
+<h1>Programs access selector</h1>
+<p>Agents configures access. Programs manages the callable entities.</p>
+
+<h2 id="layout">Surfaces</h2>
+<table class="stack">
+<thead><tr><th scope="col">Surface</th><th scope="col">Shows</th><th scope="col">Interaction</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent panel</th><td>Policy, Functions, Workflows and Applications counts, collapsible effective entries</td><td>Expanding reads structure and changes nothing. A collapsed list is cheap.</td></tr>
+<tr><th scope="row">Selector left</th><td>Type and category navigation</td><td>Search, Selected only, Issues only</td></tr>
+<tr><th scope="row">Selector centre</th><td>Names, descriptions, selected and availability states</td><td>Checkboxes edit the Agent draft, not global enablement. The detailed catalog loads when <strong>Browse Programs</strong> opens.</td></tr>
+<tr><th scope="row">Inspector</th><td>Entry signature, input and output, direct dependencies, validation evidence</td><td>Opens Programs for source and full graph. Expands at most two levels.</td></tr>
+<tr><th scope="row">Workflow tree</th><td>Stable circular expand controls, continuous hierarchy lines</td><td>Keyboard-expandable, honours reduced motion. Preview and access editing are separate actions.</td></tr>
+<tr><th scope="row">MCP entries</th><td>Not repeated in Program choices</td><td>Managed in the MCP section. Runtime tools still use shared invocation.</td></tr>
+</tbody>
+</table>
+
+<h2 id="semantics">Selection and failures</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Modes</th><td>All, Selected, None, following the shared capability contract</td></tr>
+<tr><th scope="row">Preset</th><td>A reference. Preview shows expanded names and version. Switching to explicit selection copies names only, not Program definitions.</td></tr>
+<tr><th scope="row"><code translate="no">Selected=[]</code></th><td>Same effect as None</td></tr>
+<tr><th scope="row">Missing entry</th><td>Listed under Issues by stored name, removable, not invocable</td></tr>
+<tr><th scope="row">Catalog failure</th><td>Shown apart from an empty search result</td></tr>
+<tr><th scope="row">Done, Cancel</th><td>Done keeps local draft changes. Cancel restores the draft from when the selector opened. Neither saves.</td></tr>
+<tr><th scope="row">Save</th><td>The global Save commits every section under one <code translate="no">expected_revision</code></td></tr>
+<tr><th scope="row">Validated mark</th><td>Never from a title, source status or stale test count. Evidence shows apart from capability readiness. Catalog APIs supply the metadata before the inspector counts as complete.</td></tr>
+<tr><th scope="row">First-turn context</th><td>Resident schemas and scoped search guidance, not the full deferred inventory</td></tr>
+<tr><th scope="row">Nested Workflow</th><td>Enforces the existing program and trust boundary. Selecting a Workflow does not authorize hidden tool calls.</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">In place</th><td>Agents page, saved configurations with revisions, memory policy, mode summary, lazy catalog dialog with search and checkboxes</td></tr>
+<tr><th scope="row">Target</th><td>Two-level Workflow structure inspector, richer metadata</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Real expand, search, select, close and reopen actions; preserved scroll and drafts.</li>
+<li>Denied calls rejected through the public executor.</li>
+<li>Narrow-screen and keyboard behaviour.</li>
+<li>No additional Workflow execution engine.</li>
+</ul>
+</details>
+<p class="next"><a href="agent-configuration-ui.html">Configuration contract</a> · <a href="agent-core-configuration-ui.html">Editor and core fields</a> · <a href="agent-capability-configuration-ui.html">Capabilities</a> · <a href="agent-configuration-plan.html">Implementation plan</a></p>

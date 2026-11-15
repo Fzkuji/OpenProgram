@@ -229,7 +229,7 @@ describe('job resource picker and formatter', () => {
   it('reuses Picker for list, detail and stop', () => {
     const send = vi.fn();
     const base = {
-      client: { send } as never,
+      client: { send, on: () => () => {} } as never,
       pushSystem: vi.fn(),
       conversationId: 'session-1',
       jobsList: [job],
@@ -263,6 +263,42 @@ describe('job resource picker and formatter', () => {
       expected_version: 2,
       payload: {},
     }));
+  });
+
+  it('Stop job sends its cancel again at the version a stale refusal names', () => {
+    const sent: Record<string, unknown>[] = [];
+    let listener: ((ev: WsEnvelope) => void) | undefined;
+    const ctx = {
+      client: {
+        send: (req: Record<string, unknown>) => { sent.push(req); },
+        on: (fn: (ev: WsEnvelope) => void) => { listener = fn; return () => { listener = undefined; }; },
+      } as never,
+      pushSystem: vi.fn(),
+      conversationId: 'session-1',
+      jobsList: [job],
+      pickerKind: 'job_detail',
+      selectedJob: job,
+      setPickerKind: vi.fn(),
+      setSelectedJob: vi.fn(),
+    } as unknown as PickerCtx;
+
+    const detail = buildPickerNode(ctx)!;
+    detail.props.onSelect(detail.props.items.find(
+      (item: { value: string }) => item.value === 'stop',
+    ));
+    const first = sent.find((req) => req.action === 'execution.cancel')!;
+    expect(first).toMatchObject({ execution_id: 'job-1', expected_version: 2 });
+    expect(listener).toBeDefined();
+    listener!({
+      type: 'execution.command.updated',
+      command: {
+        command_id: first.command_id, execution_id: 'job-1', status: 'rejected',
+        rejection_code: 'stale_version',
+        latest_snapshot: { execution_id: 'job-1', status: 'running', status_version: 4 },
+      },
+    } as unknown as WsEnvelope);
+    const cancels = sent.filter((req) => req.action === 'execution.cancel');
+    expect(cancels).toEqual([first, { ...first, expected_version: 4 }]);
   });
 
   it('/jobs requests the current session and opens the list picker', () => {

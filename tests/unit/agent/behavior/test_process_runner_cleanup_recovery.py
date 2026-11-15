@@ -18,8 +18,8 @@ import pytest
 def test_parent_retries_child_exact_close_before_terminal_is_persisted(
     monkeypatch, close_results, original_status, cleanup_persists,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     closed_tabs = []
@@ -136,7 +136,7 @@ def test_parent_retries_child_exact_close_before_terminal_is_persisted(
         webtab, "release_binding", lambda binding_id: released.append(binding_id),
     )
 
-    result = process_runner.run_agentic_in_subprocess(
+    result = process_runner.run_agent_method_in_subprocess(
         tool_name="gui_agent",
         kwargs={},
         session_id="s",

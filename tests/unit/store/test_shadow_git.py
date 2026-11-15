@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.store.shadow_git.store import ShadowGitStore, _repo_dir_for
+from openprogram.state.store.shadow_git.store import ShadowGitStore, _repo_dir_for
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def shadow_root(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def store(project_dir: Path, shadow_root: Path) -> ShadowGitStore:
-    with patch("openprogram.store.shadow_git.store._shadow_root",
+    with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root):
         return ShadowGitStore(str(project_dir))
 
@@ -219,3 +219,62 @@ def test_same_size_edit_with_stale_mtime_still_commits(
     sha = store.commit_turn("t_same_size", [str(f)])
     assert sha, "same-size edit was dropped from the shadow repo"
     assert "+y" in store.diff(f"{sha}~1", sha)
+
+
+# ---------------------------------------------------------------------------
+# The shadow repository does not follow the user's Git configuration
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def windows_like_git_config(tmp_path: Path, monkeypatch) -> None:
+    """The global configuration Git for Windows installs, plus signing."""
+    config = tmp_path / "global.gitconfig"
+    config.write_text(
+        "[core]\n\tautocrlf = true\n\tsafecrlf = true\n"
+        "[commit]\n\tgpgsign = true\n"
+        "[gpg]\n\tprogram = /nonexistent/gpg\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+
+
+def test_non_ascii_file_name_is_listed_as_written(store: ShadowGitStore, project_dir: Path):
+    name = "笔记.md"
+    f = project_dir / name
+    f.write_text("一\n", encoding="utf-8")
+    first = store.commit_turn("turn_cn_1", [str(f)], "add")
+    f.write_text("一\n二\n", encoding="utf-8")
+    second = store.commit_turn("turn_cn_2", [str(f)], "edit")
+
+    assert [row["rel"] for row in store.name_status(first, second)] == [name]
+    assert store.numstat(first, second) == {name: (1, 0)}
+
+
+def test_restore_returns_the_exact_bytes(
+    store: ShadowGitStore, project_dir: Path, tmp_path: Path, windows_like_git_config,
+):
+    payloads = {
+        "crlf.txt": b"one\r\ntwo\r\n",
+        "lf.txt": b"one\ntwo\n",
+        "gbk.txt": "中文".encode("gbk"),
+        "image.bin": b"\x89PNG\r\n\x1a\n\x00\xff",
+    }
+    for name, payload in payloads.items():
+        (project_dir / name).write_bytes(payload)
+    sha = store.commit_turn(
+        "turn_bytes", [str(project_dir / name) for name in payloads], "bytes",
+    )
+    assert sha is not None
+
+    for name, payload in payloads.items():
+        dest = tmp_path / "restored" / name
+        assert store.restore_file(sha, name, str(dest))
+        assert dest.read_bytes() == payload
+
+
+def test_commit_does_not_ask_for_the_users_signing_key(
+    store: ShadowGitStore, project_dir: Path, windows_like_git_config,
+):
+    f = project_dir / "signed.txt"
+    f.write_text("x\n", encoding="utf-8")
+    assert store.commit_turn("turn_sign", [str(f)], "no key") is not None

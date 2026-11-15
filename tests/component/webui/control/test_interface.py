@@ -3,13 +3,13 @@ import asyncio
 import json
 import pytest
 
-from openprogram.framework import interface
+from openprogram.programs._host.framework import interface
 
 
 def test_interface_dispatch_and_forged_receipt():
     async def scenario():
         requests = []
-        from openprogram.agent.authority import owner_authority, owner_principal_id
+        from openprogram.runtime.permissions.authority import owner_authority, owner_principal_id
         class Socket:
             scope = {'state': {'authority': owner_authority(owner_principal_id())}}
             async def send_text(self, value):

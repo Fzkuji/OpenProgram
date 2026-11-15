@@ -15,7 +15,7 @@ suite makes them regression-proof.
 """
 from __future__ import annotations
 
-from openprogram.webui.graph_layout import annotate_graph
+from openprogram.state.store.session.graph.layout import annotate_graph
 
 
 def _annotate(nodes):
@@ -96,7 +96,7 @@ def test_manual_function_hangs_off_root():
     prior assistant reply ``l1``), exactly like a new chat turn — so it
     carries a real ``predecessor`` and continues the trunk lane rather
     than forking. Only a retry (sharing a fork point) is predecessor-less
-    off ROOT and gets its own lane; see ``run_agentic_function_call``."""
+    off ROOT and gets its own lane; see ``run_agent_method_call``."""
     by = _annotate([
         _root(),
         {"id": "u1", "role": "user", "caller": "ROOT", "predecessor": "ROOT", "created_at": 1},
@@ -290,6 +290,20 @@ def test_spawn_branch_gets_own_lane():
     by = _annotate(_spawn_turn())
     assert by["s1"]["_lane"] != by["u1"]["_lane"]
     assert by["sl1"]["_lane"] == by["s1"]["_lane"]
+
+
+def test_send_back_message_is_a_turn_on_the_receiving_chain():
+    """send_message 送回发起方的消息接在发起方的链上（predecessor），caller
+    只记录发出它的那轮：它按对话层 user 计 tier，回复仍在它右边一格。"""
+    by = _annotate(_spawn_turn() + [
+        {"id": "m1", "role": "user", "caller": "sl1", "predecessor": "l1",
+         "source": "agent_spawn", "created_at": 5},
+        {"id": "ml1", "role": "assistant", "caller": "", "predecessor": "m1",
+         "source": "agent_spawn", "created_at": 6},
+    ])
+    assert by["m1"]["_tier"] == 1
+    assert by["ml1"]["_tier"] == 2
+    assert by["m1"]["_lane"] == by["u1"]["_lane"]
 
 
 def test_followup_reply_without_attach_reparents_to_receiver():

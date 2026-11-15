@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.agent import attended
+from openprogram.runtime.permissions import attended
 from openprogram.programs import agent_tools
 
 

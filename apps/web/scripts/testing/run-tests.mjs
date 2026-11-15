@@ -16,7 +16,13 @@ if (!files.length) throw new Error('No Web tests discovered');
 if (process.argv.includes('--list')) {
   console.log(files.join('\n'));
 } else {
-  const result = spawnSync(process.execPath, ['--no-warnings', '--experimental-strip-types', '--test', ...files], { cwd: root, stdio: 'inherit' });
+  // The spec reporter ends with the list of failing tests; node's default when
+  // stdout is a pipe (TAP) buries each failure among 1400 "ok" lines.
+  const result = spawnSync(
+    process.execPath,
+    ['--no-warnings', '--experimental-strip-types', '--test', '--test-reporter=spec', '--test-reporter-destination=stdout', ...files],
+    { cwd: root, stdio: 'inherit' },
+  );
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
 }

@@ -1,0 +1,56 @@
+<title>Daily use</title>
+<meta name="description" content="Entry points, resuming and binding sessions, and message, version and branch actions in the Web UI.">
+<h1>Daily use</h1>
+
+<h2 id="entry-points">Entry points</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Opens</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>Terminal chat</td></tr>
+<tr><th scope="row"><code translate="no">openprogram web</code></th><td>Browser at <code translate="no">http://localhost:18100</code>, signed in</td></tr>
+<tr><th scope="row"><code translate="no">openprogram --print "…"</code></th><td>One question, one reply, exit</td></tr>
+<tr><th scope="row"><code translate="no">openprogram status</code>, <code translate="no">restart</code>, <code translate="no">stop</code></th><td>The background service: state, restart after code or config changes, stop</td></tr>
+</tbody>
+</table>
+<p class="note">Both interfaces share one history, stored in <code translate="no">~/.openprogram/projects/&lt;project-id&gt;/chats/&lt;session-id&gt;/</code>. Sessions with no project belong to the home project (id <code translate="no">default</code>, named after your home folder). Working folders hold project files, not conversation repositories.</p>
+
+<h2 id="sessions">Sessions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram sessions list</code></th><td>Every session across agents</td></tr>
+<tr><th scope="row"><code translate="no">openprogram --resume &lt;session_id&gt;</code></th><td>Continue in the terminal</td></tr>
+<tr><th scope="row"><code translate="no">openprogram sessions resume</code></th><td>Answer a session waiting for input</td></tr>
+<tr><th scope="row"><code translate="no">openprogram sessions attach</code></th><td>Route a channel user's messages (Telegram, Discord, Slack, WeChat) into a session</td></tr>
+<tr><th scope="row"><code translate="no">openprogram sessions detach</code></th><td>Back to default routing</td></tr>
+<tr><th scope="row"><code translate="no">openprogram sessions aliases</code></th><td>List session and channel-user bindings</td></tr>
+</tbody>
+</table>
+
+<h2 id="web-ui">In the Web UI</h2>
+<p>History is a conversation DAG, like git commits and branches. Message actions appear on hover.</p>
+<table class="stack">
+<thead><tr><th scope="col">Action</th><th scope="col">On</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Copy</strong></th><td>Any</td><td>Copies the content</td></tr>
+<tr><th scope="row"><strong>Regenerate</strong></th><td>Replies</td><td>New version of the reply</td></tr>
+<tr><th scope="row"><strong>Pin as chapter</strong></th><td>Replies</td><td>Lengthens, thickens and colours its tick on the left message rail, and keeps its action row shown. <strong>Unpin chapter</strong> removes it</td></tr>
+<tr><th scope="row"><strong>Edit message</strong></th><td>Yours</td><td>Changes it and regenerates; files stay as they are</td></tr>
+<tr><th scope="row"><strong>Rewind to here</strong></th><td>Yours</td><td>Returns the conversation, the files or both to before this message and refills the input; <strong>Undo rewind</strong> brings the conversation back</td></tr>
+<tr><th scope="row"><strong>Fork from here</strong></th><td>Yours</td><td>New conversation from this point; this one stays</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Previous and next arrows beside a message</th><td>Switch versions after an edit or regenerate</td></tr>
+<tr><th scope="row">Branch menu, top bar</th><td>List and switch branches</td></tr>
+<tr><th scope="row">Select text, <strong>Add to chat</strong></th><td>Quote part of a message</td></tr>
+<tr><th scope="row"><strong>Copy conversation</strong>, <code translate="no">⋯</code> at top right</th><td>New conversation with the same history, running on its own</td></tr>
+<tr><th scope="row">Right sidebar</th><td>The DAG: user messages, LLM calls, function calls. Scrolls with the chat; clicking a node scrolls to its message</td></tr>
+</tbody>
+</table>
+<p class="note">Branches that touch files run in isolated git worktrees, so concurrent branches do not fight over one source tree.</p>
+
+<p class="next"><a href="features.html">Features</a> · <a href="faq.html">FAQ</a></p>
+

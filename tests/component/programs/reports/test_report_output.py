@@ -1,5 +1,5 @@
 """Report display keeps internal state out of successful user-facing bodies."""
-from openprogram.programs.workflow._reports.output import body
+from openprogram.programs._authoring.reports.output import body
 
 
 def test_single_child_returns_only_body():

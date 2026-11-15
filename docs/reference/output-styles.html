@@ -1,0 +1,60 @@
+<title>Output styles</title>
+<meta name="description" content="Switch or write the text that shapes how OpenProgram writes replies.">
+<h1>Output styles</h1>
+<p>Text appended to the system prompt. It changes tone, length and structure, not tools, abilities or model. One style is active at a time, for every call through the prompt assembler: chat turns, agentic function bodies, background agents.</p>
+
+<h2>Switch</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">TUI</th><td><code translate="no">/style</code> lists and marks the active one; <code translate="no">/style concise</code> switches; <code translate="no">/style default</code> clears</td></tr>
+<tr><th scope="row">Shell</th><td><code translate="no">openprogram config get agent.output_style</code><br><code translate="no">openprogram config set agent.output_style concise</code></td></tr>
+<tr><th scope="row">Web</th><td>Settings, Agent group</td></tr>
+</tbody>
+</table>
+<p class="note">Global, stored as <code translate="no">agent.output_style</code> in <code translate="no">~/.openprogram/config.json</code>. Applies from the next turn.</p>
+
+<h2>Built-in</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Name</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">default</code></th><td>Appends nothing</td></tr>
+<tr><th scope="row"><code translate="no">concise</code></th><td>As few words as the question allows; result first, no preamble or closing summary</td></tr>
+<tr><th scope="row"><code translate="no">explanatory</code></th><td>Answer, then reasoning, trade-offs and how a change fits its surroundings</td></tr>
+<tr><th scope="row"><code translate="no">direct</code></th><td>Conclusions without hedging; drops caveats that do not change the decision; corrects wrong premises</td></tr>
+<tr><th scope="row"><code translate="no">detailed</code></th><td>Edge cases, failure modes, assumptions; headings or lists for longer answers</td></tr>
+</tbody>
+</table>
+
+<h2>Custom</h2>
+<p>A Markdown file. Its name is the style name; its body is the appended text.</p>
+<pre translate="no"><code>mkdir -p ~/.openprogram/output-styles
+cat &gt; ~/.openprogram/output-styles/lab-notes.md &lt;&lt;'END'
+## Output style: lab notes
+
+Report work as a lab notebook entry. State what was tried, what was observed,
+and what it implies. Record negative results as plainly as positive ones.
+END
+
+openprogram config set agent.output_style lab-notes</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">Precedence</th><th scope="col">Source</th><th scope="col">Path</th></tr></thead>
+<tbody>
+<tr><th scope="row">1, lowest</th><td>Built-in</td><td>the table above</td></tr>
+<tr><th scope="row">2</th><td>User</td><td><code translate="no">~/.openprogram/output-styles/&lt;name&gt;.md</code></td></tr>
+<tr><th scope="row">3, wins</th><td>Project</td><td><code translate="no">&lt;cwd&gt;/output-styles/&lt;name&gt;.md</code></td></tr>
+</tbody>
+</table>
+<p class="note">YAML frontmatter is stripped, so a <code translate="no">description:</code> never reaches the model. A file with an empty body is ignored.</p>
+
+<details>
+<summary>Where the text lands</summary>
+<ul>
+<li>A registered context component (<code translate="no">output_style</code>, layer L0), entering through the assembler in <code translate="no">openprogram/runtime/context/components.py</code>, not a user message.</li>
+<li>After identity and tool-use guidance, before the agent's inline system prompt, so the agent's instructions win a conflict.</li>
+<li><code translate="no">default</code> is empty and empty components are dropped: the prompt is byte-for-byte the one built with no component.</li>
+</ul>
+</details>
+
+<p class="next"><a href="config.html">Configuration</a> · <a href="design/context/composition.html">Context composition</a></p>
+

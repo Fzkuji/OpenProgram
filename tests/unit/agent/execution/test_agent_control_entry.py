@@ -1,10 +1,10 @@
-"""The standalone Agent exposes no process-local steering control."""
+"""The standalone LoopDriver exposes no process-local steering control."""
 
-from openprogram.agent.agent import Agent
+from openprogram.runtime.agent.loop.driver import LoopDriver
 
 
 def test_agent_has_no_local_steering_entry():
-    agent = Agent()
+    agent = LoopDriver()
 
     assert not hasattr(agent, "steer")
     assert not hasattr(agent, "_steering_queue")

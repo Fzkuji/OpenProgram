@@ -3,13 +3,13 @@ from fastapi.testclient import TestClient
 
 
 def test_session_resource_limit_route_returns_effective_dto_and_requires_owner(tmp_path, monkeypatch):
-    from openprogram.agent.session_db import SessionDB
+    from openprogram.runtime.context.session_db import SessionDB
     db = SessionDB(tmp_path / "sessions")
     db.create_session("s1", "main")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    monkeypatch.setattr("openprogram.agent.authority.owner_principal_id", lambda: "owner/id")
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.permissions.authority.owner_principal_id", lambda: "owner/id")
     app = FastAPI()
-    from openprogram.webui.routes.settings.config import register
+    from openprogram.interfaces.server.routes.settings.config import register
     register(app)
     client = TestClient(app)
     assert client.put("/api/sessions/s1/resource-limits", json={}).status_code == 400

@@ -17,9 +17,12 @@ import {
   BlocksIcon,
   CalendarDaysIcon,
   HistoryIcon,
+  InboxIcon,
 } from "../animated-icons";
 import { useTranslation } from "@/lib/i18n";
 import { refreshFunctionsList } from "@/lib/abilities/functions-actions";
+import { usePendingInbox } from "@/lib/agents/pending-inbox";
+import { Badge } from "@/components/ui/badge";
 import {
   sidebarNavActionClass,
   sidebarNavIconClass,
@@ -55,6 +58,7 @@ function SidebarNavLink({
       href={href}
       className={
         sidebarNavItemClass +
+        " rail-row" +
         className +
         (active ? " " + sidebarNavItemActiveClass : "")
       }
@@ -65,8 +69,17 @@ function SidebarNavLink({
       <span className={sidebarNavIconClass}>
         <Icon ref={iconRef} size={20} aria-hidden="true" />
       </span>
-      <span className={sidebarNavLabelClass}>{label}</span>
-      {action}
+      {/* What follows the icon is laid out at the open sidebar's width in
+          both states and fades with it (styles/base/layout.css .rail-row):
+          a row with an action keeps the label and the action together. */}
+      {action ? (
+        <span className="sidebar-nav-text flex min-w-0 items-center gap-[12px]">
+          <span className={sidebarNavLabelClass}>{label}</span>
+          {action}
+        </span>
+      ) : (
+        <span className={sidebarNavLabelClass}>{label}</span>
+      )}
     </Link>
   );
 }
@@ -82,6 +95,8 @@ export function SidebarPrimaryNav() {
       else if (kind === "plugins" || kind === "skills" || kind === "programs") setAbilityHref(`/${kind}`);
     } catch { /* ignore */ }
   }, [pathname]);
+  // Reports from always-on Agents still waiting for the user (/pending).
+  const { items: pending } = usePendingInbox();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
   const refreshSvgRef = useRef<SVGSVGElement>(null);
@@ -134,6 +149,13 @@ export function SidebarPrimaryNav() {
     className?: string;
   }> = [
     {
+      href: "/pending",
+      id: "navPending",
+      active: pathname.startsWith("/pending"),
+      label: text("Pending", "待处理"),
+      icon: InboxIcon,
+    },
+    {
       href: "/agents",
       id: "navAgents",
       active: pathname.startsWith("/agents"),
@@ -146,7 +168,6 @@ export function SidebarPrimaryNav() {
       active:
         pathname.startsWith("/skills")
         || pathname.startsWith("/plugins")
-        || pathname.startsWith("/plugin/")
         || pathname.startsWith("/mcp")
         || pathname.startsWith("/programs"),
       label: t("nav.ability"),
@@ -183,19 +204,19 @@ export function SidebarPrimaryNav() {
     <span
       className={
         sidebarNavActionClass +
-        " inline-flex size-[22px] items-center justify-center rounded-[5px]" +
+        " inline-flex size-(--ui-button-h-xs) items-center justify-center rounded-xs" +
         " [transition:background_0.15s,color_0.15s,opacity_0.15s]" +
         " hover:bg-bg-hover hover:text-text-bright hover:!opacity-100" +
         " active:bg-bg-tertiary" +
         (refreshing || refreshDone ? " !opacity-100" : "") +
-        (refreshDone ? " !text-[#4ade80]" : "")
+        (refreshDone ? " !text-[color:var(--status-refresh-done)]" : "")
       }
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
         doRefresh();
       }}
-      title={t("sidebar.refresh")}
+      data-tip={t("sidebar.refresh")}
       aria-label={t("sidebar.refresh")}
     >
       {refreshDone ? (
@@ -211,13 +232,19 @@ export function SidebarPrimaryNav() {
     </span>
   );
 
+  const pendingCount = pending.length > 0 ? (
+    <Badge className="ml-auto h-[18px] min-w-[18px] px-[6px] text-fs-2xs tabular-nums" aria-label={text(`${pending.length} waiting`, `${pending.length} 项待处理`)}>
+      {pending.length > 99 ? "99+" : pending.length}
+    </Badge>
+  ) : undefined;
+
   return (
     <div className="flex flex-col gap-px shrink-0 px-[8px] pt-px">
       {items.map((item) => (
         <SidebarNavLink
           key={item.id}
           {...item}
-          action={item.id === "navAbility" ? refreshAction : undefined}
+          action={item.id === "navAbility" ? refreshAction : item.id === "navPending" ? pendingCount : undefined}
         />
       ))}
     </div>

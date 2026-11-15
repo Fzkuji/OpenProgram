@@ -2,8 +2,8 @@
 import locale
 import subprocess
 
-from openprogram._compat import no_window_creation_flags
-from openprogram.worktree.manager import _run_git
+from openprogram.host._platform.process_ownership import no_window_creation_flags
+from openprogram.state.worktree.manager import _run_git
 from openprogram.programs.tools.system.self_update import _git
 
 

@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { PDFViewer, EventBus, PDFLinkService } from "pdfjs-dist/web/pdf_viewer.mjs";
-import type { DocumentController } from "@/lib/files/document-controller";
+import type { DocumentController } from "@/lib/files/document/document-controller";
 import { useTranslation } from "@/lib/i18n";
+import { SimpleSelect } from "@/components/ui/select";
 import { readPreviewBytes } from "@/lib/documents/read-preview-bytes";
 import { normalizePdfCopy } from "@/lib/documents/pdf-copy";
 import { bindPdfEditor } from "@/lib/documents/pdf-editor";
 import styles from "./pdf-preview.module.css";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const ROOT = "/document-assets/pdfjs/";
 type Outline = Awaited<ReturnType<PDFDocumentProxy["getOutline"]>>;
@@ -117,12 +119,12 @@ export default function PdfPreview({ sourceUrl, path, controller, saveStatus }: 
       <button type="button" disabled={!ready || page <= 1} aria-label={text("Previous page", "上一页")} onClick={() => go(page - 1)}>‹</button>
       <span aria-live="polite">{page} / {total}</span>
       <button type="button" disabled={!ready || page >= total} aria-label={text("Next page", "下一页")} onClick={() => go(page + 1)}>›</button>
-      <input className={styles.pageInput} aria-label={text("Go to page", "跳转页码")} type="number" min={1} max={total} defaultValue={page} key={page} onKeyDown={event => { if (event.key === "Enter") go(Number(event.currentTarget.value)); }} />
+      <input className="w-[48px]" aria-label={text("Go to page", "跳转页码")} type="number" min={1} max={total} defaultValue={page} key={page} onKeyDown={event => { if (event.key === "Enter") go(Number(event.currentTarget.value)); }} />
       <button type="button" disabled={!ready} aria-label={text("Zoom out", "缩小")} onClick={() => zoom(String(Math.max(0.25, scale / 100 - 0.25)))}>−</button>
-      <select aria-label={text("Zoom", "缩放")} value="current" disabled={!ready} onChange={event => zoom(event.target.value)}><option value="current">{scale}%</option><option value="page-width">{text("Fit width", "适合宽度")}</option><option value="page-fit">{text("Fit page", "适合页面")}</option>{[50, 75, 100, 125, 150, 200].map(value => <option key={value} value={value / 100}>{value}%</option>)}</select>
+      <SimpleSelect size="sm" aria-label={text("Zoom", "缩放")} value="current" disabled={!ready} onValueChange={zoom} options={[{ value: "current", label: `${scale}%` }, { value: "page-width", label: text("Fit width", "适合宽度") }, { value: "page-fit", label: text("Fit page", "适合页面") }, ...[50, 75, 100, 125, 150, 200].map(value => ({ value: String(value / 100), label: `${value}%` }))]} />
       <button type="button" disabled={!ready} aria-label={text("Zoom in", "放大")} onClick={() => zoom(String(Math.min(4, scale / 100 + 0.25)))}>+</button>
       {controller && <><span className={styles.divider} /><button type="button" disabled={!ready} aria-pressed={mode === 0} onClick={() => annotate(0)}>{text("Read", "阅读")}</button><button type="button" disabled={!ready} aria-pressed={mode === 9} onClick={() => annotate(9)}>{text("Highlight", "高亮")}</button><button type="button" disabled={!ready} aria-pressed={mode === 3} onClick={() => annotate(3)}>{text("Text note", "文字批注")}</button><button type="button" disabled={!ready} onClick={() => runtime.current?.bus.dispatch("editingaction", { name: "undo" })}>{text("Undo", "撤销")}</button><button type="button" disabled={!ready} onClick={() => runtime.current?.bus.dispatch("editingaction", { name: "redo" })}>{text("Redo", "重做")}</button><button type="button" disabled={!ready} onClick={() => void controller.flush().catch(() => undefined)}>{text("Save", "保存")}</button></>}
-      <form onSubmit={event => { event.preventDefault(); search(); }} className={styles.search}>
+      <form onSubmit={event => { event.preventDefault(); search(); }} className={`${styles.search} flex gap-[4px] items-center ml-[auto]`}>
         <input aria-label={text("Search PDF", "搜索 PDF")} placeholder={text("Search", "搜索")} value={query} onChange={event => { setQuery(event.target.value); activeSearch.current = false; setMatches({ current: 0, total: 0 }); runtime.current?.bus.dispatch("find", { query: "", type: "", highlightAll: true }); }} />
         <button type="submit" disabled={!ready || !query.trim()}>{text("Find", "查找")}</button>
         <button type="button" disabled={!ready || !query.trim()} aria-label={text("Previous match", "上一个匹配")} onClick={() => search(true)}>↑</button>
@@ -130,7 +132,7 @@ export default function PdfPreview({ sourceUrl, path, controller, saveStatus }: 
       </form>
       <a href={sourceUrl} download={path.split("/").pop()} aria-label={text("Download original PDF", "下载原始 PDF")}>↓</a>
     </div>
-    <div className={styles.options}>{controller && <span role="status">{saveStatus === "idle" ? text("Saved", "已保存") : saveStatus === "saving" ? text("Saving…", "保存中…") : saveStatus === "dirty" ? text("Unsaved changes", "有未保存的修改") : saveStatus === "error" || saveStatus === "conflict" ? text("Save failed", "保存失败") : ""}</span>}<label><input type="checkbox" checked={cleanCopy} onChange={event => setCleanCopy(event.target.checked)} />{text("Remove line breaks when copying", "复制时清除排版换行")}</label>{mode !== 0 && <span>{mode === 9 ? text("Select text to highlight", "选中文字添加高亮") : text("Click a page to add a text note", "点击页面添加文字批注")}</span>}</div>
+    <div className={styles.options}>{controller && <span role="status">{saveStatus === "idle" ? text("Saved", "已保存") : saveStatus === "saving" ? text("Saving…", "保存中…") : saveStatus === "dirty" ? text("Unsaved changes", "有未保存的修改") : saveStatus === "error" || saveStatus === "conflict" ? text("Save failed", "保存失败") : ""}</span>}<label><Checkbox checked={cleanCopy} onCheckedChange={checked => setCleanCopy(checked === true)} />{text("Remove line breaks when copying", "复制时清除排版换行")}</label>{mode !== 0 && <span>{mode === 9 ? text("Select text to highlight", "选中文字添加高亮") : text("Click a page to add a text note", "点击页面添加文字批注")}</span>}</div>
     {error && <div role="alert">{error} <a href={sourceUrl} download={path.split("/").pop()}>{text("Download original", "下载原文件")}</a></div>}
     <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
       {sidebar && <aside className={styles.sidebar} aria-label={text("PDF navigation", "PDF 导航")}><div><button type="button" aria-pressed={sidebarMode === "pages"} onClick={() => setSidebarMode("pages")}>{text("Pages", "页面")}</button><button type="button" aria-pressed={sidebarMode === "outline"} onClick={() => setSidebarMode("outline")}>{text("Outline", "目录")}</button></div>{sidebarMode === "outline" ? (outline?.length ? renderOutline(outline) : <p>{text("No outline", "没有目录")}</p>) : Array.from({ length: total }, (_, index) => <Thumbnail key={index} pdf={runtime.current?.pdf} page={index + 1} selected={page === index + 1} onClick={() => go(index + 1)} />)}</aside>}
@@ -163,7 +165,7 @@ function Thumbnail({ pdf, page, selected, onClick }: { pdf?: PDFDocumentProxy; p
     observer.observe(element);
     return () => { cancelled = true; observer.disconnect(); task?.cancel(); };
   }, [pdf, page]);
-  return <button type="button" className={styles.thumbnail} aria-label={`Page ${page}`} aria-current={selected ? "page" : undefined} onClick={onClick}><canvas ref={canvas} style={{ maxWidth: 120, maxHeight: 160 }} /><span>{page}</span></button>;
+  return <button type="button" className={`${styles.thumbnail} flex flex-col items-center gap-[6px] w-full m-[8px_0]`} aria-label={`Page ${page}`} aria-current={selected ? "page" : undefined} onClick={onClick}><canvas ref={canvas} style={{ maxWidth: 120, maxHeight: 160 }} /><span>{page}</span></button>;
 }
 
 export { PdfPreview };

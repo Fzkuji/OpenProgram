@@ -1,0 +1,59 @@
+<title>Agent 方法自递归防护</title>
+<meta name="description" content="嵌套上限如何阻止 Agent 方法无限重入自身。">
+<h1>Agent 方法自递归防护</h1>
+
+<p>不带工具参数的 <code translate="no">runtime.exec(content=...)</code> 使用 <code translate="no">DEFAULT_TOOLSET = "full"</code>，其中包含作为工具暴露的 Agent 方法，因此内层模型可以调用它正在运行的方法。防护是一个深度上限：同一方法嵌套进入超过 5 层时抛出 <code translate="no">RecursionError</code>。</p>
+
+<pre translate="no" tabindex="0">Agent method {name} exceeded max nesting depth 5</pre>
+
+<h2 id="depth">如何计数</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">上限</th><td><code translate="no">_MAX_AGENTIC_RECURSION_DEPTH = 5</code>, <code translate="no">openprogram/runtime/agent/call_state.py</code></td></tr>
+<tr><th scope="row">计数器</th><td><code translate="no">_recursion_depth</code>，一个 <code translate="no">ContextVar</code>，保存被包装函数到深度的映射</td></tr>
+<tr><th scope="row">键</th><td>可调用对象本身，不是显示名</td></tr>
+<tr><th scope="row">检查</th><td>在 <code translate="no">openprogram/runtime/agent/agent_method.py</code> 入口：已到上限则抛出，否则深度加一</td></tr>
+<tr><th scope="row">恢复</th><td>返回和异常时都重置 token</td></tr>
+<tr><th scope="row">范围</th><td>单个进程。在子进程中启动的函数从零开始。</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">调用链</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">A → A → A …</th><td>第六次进入时停止</td></tr>
+<tr><th scope="row">A → B</th><td>分别计数，B 嵌套再深也不占 A 的额度</td></tr>
+<tr><th scope="row">A → B → A → B …</th><td>有界：映射沿调用链传递，最先到 5 层的方法终止循环</td></tr>
+</tbody>
+</table>
+
+<h2 id="no-self-deny">工具保持可见</h2>
+
+<p>包装器不把方法自身的名字加入 <code translate="no">_current_tool_policy["deny"]</code>。该策略的其他用途不变：<code translate="no">source</code>、<code translate="no">allow</code>、<code translate="no">toolset</code> 和无人值守时的 deny。</p>
+
+<details>
+<summary>测试覆盖的行为</summary>
+<p><code translate="no">tests/unit/programs/runtime/test_self_recursion_guard.py</code></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">test_self_name_NOT_denied_during_call</code></th><td>自身名字不被拒绝</td></tr>
+<tr><th scope="row"><code translate="no">test_depth_increments_during_call</code></th><td>一层调用内深度为 1</td></tr>
+<tr><th scope="row"><code translate="no">test_depth_backstop_raises_past_limit</code></th><td>抛出时带名字和上限；函数体恰好运行 5 次</td></tr>
+<tr><th scope="row"><code translate="no">test_distinct_subcalls_not_collateral_damage</code></th><td>A → B 不共用计数</td></tr>
+<tr><th scope="row"><code translate="no">test_depth_restored_after_return</code></th><td>深度回到之前的值</td></tr>
+<tr><th scope="row"><code translate="no">test_depth_restored_after_exception</code></th><td>抛出后同样恢复</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="limits">局限</h2>
+
+<ul>
+<li>上限触发前，模型仍可能进行最多 5 层嵌套调用。</li>
+<li>防护不改变工具授权、会话图语义或统一的系统前缀。</li>
+</ul>
+
+<p class="next"><a href="../dag/overview.zh.html">会话图</a></p>

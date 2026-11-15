@@ -5,17 +5,17 @@
  *   * What kinds of avatar exist (``AvatarKind``).
  *   * Which DiceBear styles we ship (``AvatarStyle``).
  *   * The serialised config we persist (``AvatarConfig``) — used by
- *     ``<Avatar>``, ``<AvatarPicker>``, and the agent profile in
+ *     ``<Avatar>``, ``<AvatarPicker>``, and the user profile in
  *     localStorage.
  *
- * Keeping these decoupled from React lets the agent-style module (a
- * plain ``lib/`` file) reuse them on ``AgentProfilePrefs`` without
- * pulling in the React component tree.
+ * Keeping these decoupled from React lets ``lib/prefs/user-profile.ts``
+ * reuse them without pulling in the React component tree.
  */
 
 /** Render mode. ``letter`` and ``upload`` map to their own code paths
- *  in ``<Avatar>``; ``dicebear`` defers to ``style`` for the variant. */
-export type AvatarKind = "dicebear" | "upload" | "letter";
+ *  in ``<Avatar>``; ``dicebear`` defers to ``style`` for the variant;
+ *  ``bot`` is a character (``shape`` + ``color``, see ``./bot``). */
+export type AvatarKind = "dicebear" | "upload" | "letter" | "bot";
 
 /** The DiceBear styles we pre-bundle. Anything beyond this needs an
  *  extra ``@dicebear/<style>`` install + a row in ``STYLES`` /
@@ -39,8 +39,8 @@ export type AvatarStyle =
   | "initials";
 
 /**
- * Serialisable avatar config. Saved on ``AgentProfilePrefs.avatar``
- * (i.e. localStorage). All fields are optional so old profiles
+ * Serialisable avatar config. Saved on ``UserProfilePrefs.avatar``
+ * (i.e. localStorage) and on an Agent's ``avatar``. All fields are optional so old profiles
  * round-trip cleanly — see ``<Avatar>`` for the per-field defaults.
  */
 export interface AvatarConfig {
@@ -58,10 +58,10 @@ export interface AvatarConfig {
   letter?: string;
   /** Background colour for letter mode (CSS colour). */
   bg?: string;
+  /** Character shape id for ``kind === "bot"`` (``BOT_SHAPES``). Falls
+   *  back to the shape derived from the seed or the name. */
+  shape?: string;
+  /** Character colour id for ``kind === "bot"`` (``BOT_COLORS``). Falls
+   *  back the same way. */
+  color?: string;
 }
-
-/** Alias kept for ``lib/agent-style.ts`` callers that referenced
- *  ``AgentAvatarConfig`` before the feature was extracted to this
- *  module. Same shape — the extra name documents that this is the
- *  config persisted under ``AgentProfilePrefs.avatar``. */
-export type AgentAvatarConfig = AvatarConfig;

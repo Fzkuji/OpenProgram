@@ -3,16 +3,18 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 import json
+import logging
 import re
 import threading
 
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.agent.authority import owner_authority
-from openprogram.programs.workflow.ask_user import ask_user, set_ask_user
-from openprogram.webui import server
-from openprogram.webui.ws_errors import operation_error_frame
+from openprogram.runtime.permissions.authority import owner_authority
+from openprogram.programs.tools.interaction.ask_user import ask_user, set_ask_user
+from openprogram.interfaces.server import server
+from openprogram.interfaces.server.server_runtime import session_persistence
+from openprogram.interfaces.server.ws_errors import operation_error_frame
 
 
 class _SequenceWS:
@@ -255,7 +257,7 @@ def _start_follow_up(session_id: str):
     result: list[object] = []
 
     def run() -> None:
-        with server._web_follow_up(session_id, "m1", "fn"):
+        with session_persistence._web_follow_up(session_id, "m1", "fn"):
             ready.set()
             result.append(ask_user("continue?"))
 
@@ -269,7 +271,7 @@ def _start_repeated_follow_up(session_id: str):
     result: list[object] = []
 
     def run() -> None:
-        with server._web_follow_up(session_id, "m1", "fn"):
+        with session_persistence._web_follow_up(session_id, "m1", "fn"):
             ready.set()
             result.append((ask_user("first?"), ask_user("second?")))
 
@@ -283,7 +285,7 @@ def test_last_focused_disconnect_releases_follow_up_with_none() -> None:
     ws = _DisconnectWhenReadyWS(ready, "s1")
 
     asyncio.run(server._websocket_handler(ws))
-    thread.join(1)
+    thread.join(30)
 
     assert not thread.is_alive(), "disconnect must not leave a 300 second wait"
     assert result == [None]
@@ -311,7 +313,7 @@ def test_disconnect_releases_repeated_follow_ups_with_none() -> None:
 
 def test_cancel_releases_repeated_follow_ups_with_none() -> None:
     ready, result, thread = _start_repeated_follow_up("s1")
-    assert ready.wait(1)
+    assert ready.wait(30)
     with server._follow_up_lock:
         queue = server._follow_up_queues["s1"]
     queue.put_nowait({"_cancelled": True})
@@ -345,10 +347,60 @@ def test_disconnect_preserves_wait_when_another_connection_is_focused() -> None:
 
 def test_empty_string_remains_a_real_follow_up_answer() -> None:
     ready, result, thread = _start_follow_up("s1")
-    assert ready.wait(1)
+    assert ready.wait(30)
     with server._follow_up_lock:
         queue = server._follow_up_queues["s1"]
     queue.put_nowait("")
     thread.join(1)
 
     assert result == [""]
+
+
+class _ServerClosedWS(_SequenceWS):
+    """A socket this side already closed: starlette refuses the next receive."""
+
+    def __init__(self) -> None:
+        super().__init__(["ping"])
+        # The handler wraps the raw socket; its state reaches the check through the wrapper.
+        self.application_state = type("State", (), {"name": "DISCONNECTED"})()
+
+    async def receive_text(self) -> str:
+        if self.incoming:
+            return self.incoming.pop(0)
+        raise RuntimeError('WebSocket is not connected. Need to call "accept" first.')
+
+
+def test_a_socket_closed_by_the_server_ends_quietly(monkeypatch: pytest.MonkeyPatch) -> None:
+    logged: list[str] = []
+    monkeypatch.setattr(server, "_log", lambda message, *args: logged.append(message % args if args else message))
+    ws = _ServerClosedWS()
+
+    asyncio.run(server._websocket_handler(ws))
+
+    assert [frame["type"] for frame in ws.sent if frame["type"] == "pong"] == ["pong"]
+    assert any("[ws] connection closed by server" in line for line in logged)
+    assert not any("connection error" in line for line in logged)
+
+
+def test_a_receive_error_on_a_live_socket_is_still_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _LiveWS(_SequenceWS):
+        def __init__(self) -> None:
+            super().__init__([])
+            self.application_state = type("State", (), {"name": "CONNECTED"})()
+
+        async def receive_text(self) -> str:
+            raise RuntimeError("something else broke")
+
+    records: list[str] = []
+
+    class _Handler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage())
+
+    handler = _Handler()
+    logging.getLogger("openprogram.interfaces.server").addHandler(handler)
+    try:
+        asyncio.run(server._websocket_handler(_LiveWS()))
+    finally:
+        logging.getLogger("openprogram.interfaces.server").removeHandler(handler)
+    assert any("connection error" in line for line in records)

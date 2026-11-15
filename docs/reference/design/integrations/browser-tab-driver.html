@@ -1,0 +1,197 @@
+<title>Browser tab driver</title>
+<meta name="description" content="How the browser target drives the built-in tabs: identity, connection, several agents, single writes, coordinates and preview.">
+<meta name="covers" content="openprogram/programs/applications/browser/tabs.py">
+<h1>Browser tab driver</h1>
+
+
+<ul>
+<li><code translate="no">tabs.py</code> of the browser application drives the App's built-in tabs for the <code translate="no">browser</code> target.</li>
+<li>It is the only way a built-in tab is operated: the model, a Program's web tab commands and page resources all go through it.</li>
+<li>A call names a tab and an element; page context tokens, sessions, frames, leases and revision checks do not exist.</li>
+</ul>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 216" role="img" aria-label="open(url) asks whether an App window is connected. Yes: the page opens as a tab in the App, which the user can see and which has the App's sign-ins. No: it opens in the driver's own browser, which has no window and none of the App's sign-ins.">
+  <defs><marker id="td-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34" translate="no">open(url)</text>
+  <line class="ln" x1="112" y1="28" x2="196" y2="28" marker-end="url(#td-a)"/>
+  <text class="t-big" x="208" y="34">App window connected?</text>
+  <path class="ln" d="M320 48V74H166V98" marker-end="url(#td-a)"/>
+  <path class="ln" d="M320 74H514V98" marker-end="url(#td-a)"/>
+  <text class="t-soft" x="180" y="66">yes</text>
+  <text class="t-soft" x="476" y="66">no</text>
+  <rect class="tile" x="0" y="110" width="332" height="98" rx="8"/>
+  <text class="t-big" x="16" y="144">A tab in the App</text>
+  <text class="t-soft" x="16" y="168">the user can see it</text>
+  <text class="t-soft" x="16" y="188">has the App's sign-ins</text>
+  <rect class="tile" x="348" y="110" width="332" height="98" rx="8"/>
+  <text class="t-big" x="364" y="144">The driver's own browser</text>
+  <text class="t-soft" x="364" y="168">no window</text>
+  <text class="t-soft" x="364" y="188">none of the App's sign-ins</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong><code translate="no">open(url)</code></strong><small>App window connected?</small></li>
+  <li><strong>Yes: A tab in the App</strong><small>the user can see it; has the App's sign-ins</small></li>
+  <li class="flow-end"><strong>No: The driver's own browser</strong><small>no window; none of the App's sign-ins</small></li>
+</ol>
+</figure>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 248" role="img" aria-label="Four things close tabs. A scheduled run or a check-in ends: the tabs that run opened close. A ninth tab in one conversation: its least recently used tab closes. The conversation is archived or deleted: every tab it opened closes. The driver's own browser goes 30 minutes unused: the browser quits. The user's own tabs are never closed.">
+  <defs><marker id="td-b" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">Run ends</text>
+  <text class="t-soft" x="0" y="58">a scheduled run</text>
+  <text class="t-soft" x="0" y="78">or a check-in</text>
+  <line class="ln" x1="24" y1="92" x2="24" y2="122" marker-end="url(#td-b)"/>
+  <rect class="tile" x="0" y="134" width="158" height="70" rx="8"/>
+  <text class="t-note" x="12" y="162">closes the tabs</text>
+  <text class="t-note" x="12" y="184">that run opened</text>
+  <text class="t-big" x="174" y="34">Ninth tab</text>
+  <text class="t-soft" x="174" y="58">in one conversation</text>
+  <line class="ln" x1="198" y1="92" x2="198" y2="122" marker-end="url(#td-b)"/>
+  <rect class="tile" x="174" y="134" width="158" height="70" rx="8"/>
+  <text class="t-note" x="186" y="162">closes its least</text>
+  <text class="t-note" x="186" y="184">recently used</text>
+  <text class="t-big" x="348" y="34">Archived</text>
+  <text class="t-soft" x="348" y="58">or deleted</text>
+  <text class="t-soft" x="348" y="78">conversation</text>
+  <line class="ln" x1="372" y1="92" x2="372" y2="122" marker-end="url(#td-b)"/>
+  <rect class="tile" x="348" y="134" width="158" height="70" rx="8"/>
+  <text class="t-note" x="360" y="162">closes every tab</text>
+  <text class="t-note" x="360" y="184">it opened</text>
+  <text class="t-big" x="522" y="34">30 min idle</text>
+  <text class="t-soft" x="522" y="58">the driver's own</text>
+  <text class="t-soft" x="522" y="78">browser</text>
+  <line class="ln" x1="546" y1="92" x2="546" y2="122" marker-end="url(#td-b)"/>
+  <rect class="tile" x="522" y="134" width="158" height="70" rx="8"/>
+  <text class="t-note" x="534" y="162">the browser</text>
+  <text class="t-note" x="534" y="184">quits</text>
+  <text class="t-soft" x="0" y="236">The user's own tabs are never closed.</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Run ends</strong><small>a scheduled run or a check-in</small><small>Closes the tabs that run opened</small></li>
+  <li><strong>Ninth tab</strong><small>in one conversation</small><small>Closes its least recently used</small></li>
+  <li><strong>Archived</strong><small>or deleted conversation</small><small>Closes every tab it opened</small></li>
+  <li><strong>30 min idle</strong><small>the driver's own browser</small><small>The browser quits</small></li>
+  <li class="flow-end"><strong>The user's own tabs</strong><small>Never closed</small></li>
+</ol>
+</figure>
+
+<h2 id="tabs">Tabs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Identity</th><td>A tab is <code translate="no">(window_id, tab_id)</code> as the renderer lists it (<code translate="no">surface_context.capture_pages_for_listing</code>, which carries each tab's CDP <code translate="no">target_id</code>).</td></tr>
+<tr><th scope="row">Id</th><td>The driver names it <code translate="no">t</code> plus the first four base32 letters of the SHA-1 of <code translate="no">window_id</code> and <code translate="no">tab_id</code> (one letter more on a collision), so every process, the worker and a forked workflow subprocess alike, gives the same tab the same id in every turn, conversation and sub-agent, and listing again in any order does not rename.</td></tr>
+<tr><th scope="row">Moved tab</th><td>A tab that moved to another window keeps its id: a listed tab whose <code translate="no">target_id</code> belongs to a known tab takes that tab over.</td></tr>
+<tr><th scope="row">Changed target</th><td>A tab whose <code translate="no">target_id</code> changed (the App restarted) forgets its refs, document baselines and screenshots.</td></tr>
+<tr><th scope="row">Binding</th><td>Each listing binds every page again, so the binding a tab had is released when a new one replaces it.</td></tr>
+<tr><th scope="row">Default tab</th><td>An action without <code translate="no">tab</code> goes to the tab its agent used last (see below), else to the focused tab, else to the one visible tab.</td></tr>
+<tr><th scope="row">open, close, screenshot</th><td><code translate="no">open</code> asks the renderer for a background tab (<code translate="no">surface_context.open_page</code>) and makes it the current one; <code translate="no">close</code> and <code translate="no">screenshot</code> go through the tab's binding (<code translate="no">request_close_tab</code>, <code translate="no">request_bound_screenshot</code>), and a binding that expired is renewed by listing again.</td></tr>
+<tr><th scope="row">Ownership</th><td>A tab an agent opened is recorded in <code translate="no">browser_tabs_opened</code> (kept across restarts) with its conversation and, in <code translate="no">opened_in</code>, the execution that opened it. <code translate="no">tabs</code> lists the conversation's tabs and the current one; <code translate="no">tabs(all=true)</code> adds the rest. The guide tells the model to reuse an open page and close its tabs when done. Archiving or deleting a conversation closes every tab it opened (<code translate="no">close_conversation_tabs</code>). The user's own tabs are never closed.</td></tr>
+<tr><th scope="row">Run's tabs</th><td>When a scheduled run or a check-in ends, the tabs that run opened close, however it ended: finished, failed, stopped or cut off (<code translate="no">close_run_tabs</code>, called when the execution settles and when the Worker hears a scheduled run's ending). These runs start clean and end with their answer, so nothing they opened serves the next one. Only they are named on a tab's record (<code translate="no">opened_in</code>).</td></tr>
+<tr><th scope="row">Who waits for the closing</th><td>In the Worker the run's ending does not wait for it. A scheduled run's own process closes its tabs and waits before it exits, since a thread is cut off by the exit. A run whose process was killed is ended by the Worker as soon as it sees the process gone, and its tabs close then.</td></tr>
+<tr><th scope="row">Limit</th><td>A conversation keeps at most <code translate="no">TABS_PER_CONVERSATION</code> (8) tabs its agents opened: once one more has opened, the least recently used closes (<code translate="no">_keep_within_limit</code>) and the result's <code translate="no">note</code> says so. The new tab and a tab in front of the user stay; only tabs the turn can list count; failing to tidy never fails the open. This bounds whatever opens pages over and over, such as a monitor or a Goal running for days.</td></tr>
+</tbody>
+</table>
+
+<h2 id="connection">Connection</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner thread</th><td>Playwright's sync API belongs to one thread, so one owner thread holds the connection to the App (<code translate="no">attach_to_app</code> on <code translate="no">desktop_app_ws_url</code>) and runs every page call; callers wait on it with their context variables.</td></tr>
+<tr><th scope="row">Leaves the App as it is</th><td>Playwright treats adopted pages as a test browser: each one, the App's own window included, is told the system is light and the page focused, and downloads move to Playwright's folder. <code translate="no">attach_to_app</code> connects with <code translate="no">no_defaults</code>, so none of that reaches the App. It is the only caller of <code translate="no">connect_over_cdp</code>; a contract test keeps it so.</td></tr>
+<tr><th scope="row">Focus</th><td>A background page fires no focus events, so the driver turns focus emulation on for each tab it operates, and for no other page.</td></tr>
+<tr><th scope="row">Finding a page</th><td>A page is found by matching <code translate="no">Target.getTargetInfo</code> against the tab's <code translate="no">target_id</code>.</td></tr>
+<tr><th scope="row">Reconnect</th><td>A connection does not always learn of tabs the App opens after it, so a target that is not found makes the driver connect again and look once more; a dropped connection reconnects on the next call.</td></tr>
+<tr><th scope="row">Recording</th><td>When a page listener is first attached, the driver records its console, page errors and requests (the last 300 of each), and counts its document navigations and in-flight fetch/XHR requests.</td></tr>
+<tr><th scope="row">No App window</th><td>With no App window to open a tab in (<code translate="no">open_page</code> answers <code translate="no">desktop_unavailable</code>: the App is closed, or the process cannot reach it), <code translate="no">open</code> starts a browser of the driver's own with no window (<code translate="no">host/resources/background_browser.py</code>: the Chromium the runtime ships, else the installed Chrome or Edge as a program, with a fresh profile).</td></tr>
+<tr><th scope="row">Own browser's tabs</th><td>Window id <code translate="no">background</code>; the same ids, actions, locks and ownership records; no preview and none of the App's sign-ins, which the result of <code translate="no">open</code> says. They live in the process that opened them, on the same Playwright as the App connection: the browser closes with its last tab, after <code translate="no">OWN_IDLE_SECONDS</code> (30 min) without use, or with the process. A listing does not wait for an App that is not running, and reports one that is running and does not answer.</td></tr>
+</tbody>
+</table>
+
+<h2 id="several-agents">Several agents</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">No lease</th><td>Agents of one conversation share its session id, and sub-agents run in parallel, so no tab is leased to one agent for longer than one action or one list of actions: a lease held across turns would make a conversation refuse its own turns.</td></tr>
+<tr><th scope="row">Lock</th><td>Each <code translate="no">Tab</code> has a lock.</td></tr>
+<tr><th scope="row">Lock span</th><td>An action takes it before its first page call and keeps it through settling and its result, so another agent's input never lands between an action and the state it reports.</td></tr>
+<tr><th scope="row">Lists</th><td>A list of actions (<code translate="no">targets/browser.run</code> with several steps, inside <code translate="no">tabs.batch()</code>) keeps every lock it took until the list ends, so a form filled in one list is not interleaved.</td></tr>
+<tr><th scope="row">Waiting</th><td>Waiting for a lock polls with cancellation checks, and after <code translate="no">TAB_WAIT_SECONDS</code> (60 s) the action fails with <code translate="no">tab_busy</code>; two lists that each wait for the other's tab end that way rather than deadlock.</td></tr>
+<tr><th scope="row">Agent</th><td>The agent a call acts for is <code translate="no">&lt;session&gt;/&lt;execution&gt;</code> (the <code translate="no">_VIEWER</code> context variable, carried into the owner thread).</td></tr>
+<tr><th scope="row">Current tab</th><td>Each agent remembers its own current tab; an agent without one starts from the tab its conversation used last.</td></tr>
+<tr><th scope="row">Snapshots</th><td>Snapshots are tracked per agent (<code translate="no">track</code> = <code translate="no">openprogram:&lt;agent&gt;</code>, and each agent's document baseline), so an agent's changes cover everything since it last looked, including what other agents did.</td></tr>
+<tr><th scope="row">Write log</th><td>Each tab records its write actions with the agent that made them; a result adds a <code translate="no">note</code> when another agent acted on the tab since this agent's last result.</td></tr>
+<tr><th scope="row">Owner thread</th><td>Only single page calls run on the owner thread.</td></tr>
+<tr><th scope="row">Polling</th><td><code translate="no">wait</code> and the settling after an action poll on the caller's thread with short owner calls (<code translate="no">_shows</code>, <code translate="no">_activity</code>, <code translate="no">_loaded</code>), so one agent's wait never holds up another agent's click on another tab.</td></tr>
+</tbody>
+</table>
+
+<h2 id="writes-are-sent-once">Writes are sent once</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Retry</th><td>Only <code translate="no">tab_gone</code>, which <code translate="no">_page</code> raises before any input, makes the driver list the tabs again and try the action once more.</td></tr>
+<tr><th scope="row">Failed action</th><td>An action that failed after Playwright may have sent its input counts as a write, and its error says it may have taken effect when it timed out, with the page as it is; a tab that closed during the action is <code translate="no">tab_closed</code>.</td></tr>
+<tr><th scope="row">After success</th><td>Once an action succeeded, any failure while settling or reading the page comes back as a successful result with a <code translate="no">note</code>, never as an error the caller would retry.</td></tr>
+<tr><th scope="row">close</th><td><code translate="no">close</code> treats the renderer's response timeout as <code translate="no">close_uncertain</code>, an expired binding as <code translate="no">tab_gone</code> (nothing was sent), and other failures as <code translate="no">close_failed</code>.</td></tr>
+<tr><th scope="row">evaluate</th><td><code translate="no">evaluate</code> counts as a write.</td></tr>
+</tbody>
+</table>
+
+<h2 id="tabs-an-action-opens">Tabs an action opens</h2>
+<p>The connection discovers targets (<code translate="no">Target.setDiscoverTargets</code>) and counts each new page target. When the count changed during an action, the driver lists the tabs and the result's <code translate="no">opened</code> names the new ones whose <code translate="no">opener_tab_id</code> is the acted-on tab or unknown. The agent's current tab stays where it was.</p>
+
+<h2 id="coordinates">Coordinates</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Record</th><td>A screenshot records, per agent, the CSS-to-image ratio, the tab's last write, its URL, its scroll offset and the image.</td></tr>
+<tr><th scope="row">Click</th><td>A click by <code translate="no">x</code>,<code translate="no">y</code> needs that agent's screenshot, and fails with <code translate="no">screenshot_stale</code> when the tab navigated or scrolled since.</td></tr>
+<tr><th scope="row">Point check</th><td>When an agent wrote to the tab since, the driver captures the tab again and compares the 64 CSS px square around the point in both images (decoded with Core Graphics on macOS and by the driver's own PNG reader on Windows and Linux; up to 6 % of its pixels may differ by more than 32 per channel, for a caret or anti-aliasing).</td></tr>
+<tr><th scope="row">Decision</th><td>The click goes ahead while the point still shows what the screenshot showed, so typing elsewhere or a key that did nothing costs no new screenshot. It is refused when it does not, or when the pixels cannot be compared.</td></tr>
+<tr><th scope="row">Refusal</th><td>A refusal carries a new screenshot, recorded as the agent's, so the next <code translate="no">x</code>,<code translate="no">y</code> need no extra call.</td></tr>
+</tbody>
+</table>
+
+<h2 id="preview-follow">Preview follow</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Follow rule</th><td>The conversation's page preview follows the operations the driver reports: the frontend follows only a live <code translate="no">browser.resource</code> event whose <code translate="no">last_operation</code> is new and <code translate="no">dispatched</code> or <code translate="no">acknowledged</code>, never a snapshot.</td></tr>
+<tr><th scope="row">Write action</th><td>Every write action (anything but <code translate="no">read</code>, <code translate="no">console</code>, <code translate="no">network</code>, <code translate="no">wait</code>, <code translate="no">screenshot</code>, <code translate="no">tabs</code> and <code translate="no">close</code>) first retains the tab's resource row for the current execution (<code translate="no">publish_bound_page</code>), then reports <code translate="no">dispatched</code> with <code translate="no">follow</code> (<code translate="no">pages.report_browser_operation</code>), which stores the operation and sets the resource's control state to <code translate="no">active</code> before the input is sent.</td></tr>
+<tr><th scope="row">After the action</th><td>After the action it reports <code translate="no">acknowledged</code>, or <code translate="no">failed</code> with the reason code, under the same operation id; a failed one does not set the control state again.</td></tr>
+<tr><th scope="row">Operated</th><td>The page shows as operated only while the execution that set it is running: the resource projection turns <code translate="no">active</code> back into <code translate="no">idle</code> once that execution has ended.</td></tr>
+<tr><th scope="row">Marker point</th><td>A click's outcome carries the marker point: before clicking, <code translate="no">_aim</code> scrolls the element into view and records the centre of its bounding box, or the CSS point a click by <code translate="no">x</code>,<code translate="no">y</code> maps to, with the viewport's <code translate="no">innerWidth</code> and <code translate="no">innerHeight</code>; <code translate="no">sanitize_operation</code> turns that into <code translate="no">point</code> with the viewport size as <code translate="no">width</code> and <code translate="no">height</code>, which <code translate="no">browser-marker-geometry</code> maps onto the screenshot.</td></tr>
+<tr><th scope="row">Reads</th><td>Reads (<code translate="no">read</code>, <code translate="no">console</code>, <code translate="no">network</code>, <code translate="no">wait</code>, <code translate="no">screenshot</code>) report an <code translate="no">acknowledged</code> operation without <code translate="no">follow</code>, so the preview follows them and the page is not marked operated, and <code translate="no">open</code> reports the same for the new tab after publishing it, which makes it the tab followed.</td></tr>
+<tr><th scope="row">List steps</th><td>Each step of a list reports on its own.</td></tr>
+<tr><th scope="row">Reporting</th><td>Reporting never fails an action: errors are logged at debug level.</td></tr>
+</tbody>
+</table>
+
+<h2 id="workflow-subprocesses">Workflow subprocesses</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Driver</th><td>A forked child drops the parent's driver (<code translate="no">os.register_at_fork</code>), because its owner thread and connection belong to the parent, and starts its own.</td></tr>
+<tr><th scope="row">Renderer calls</th><td>Its renderer calls (<code translate="no">capture_pages_for_listing</code>, <code translate="no">open_page</code>, <code translate="no">request_close_tab</code>, <code translate="no">request_bound_screenshot</code>) go through the parent's webtab bridge, which confines them to the originating window, authorizes only bindings it handed out and closes the tabs the child opened when the child ends.</td></tr>
+<tr><th scope="row">Operation reports</th><td>The child holds no App connection, so its operation reports go to the worker as well: <code translate="no">pages.forward_operations_to_parent</code> hands each one to the child's event queue as <code translate="no">__op_browser_operation__</code>, and the worker reports it with <code translate="no">report_forwarded_operation</code>, which keeps only the operation's own fields and falls back to the execution it launched.</td></tr>
+<tr><th scope="row">Locks</th><td>Tab locks and the write log are per process, so a child and the worker on one tab interleave at single page calls.</td></tr>
+</tbody>
+</table>
+
+<p><strong>Access and cancellation.</strong> When the turn's surface has agent access disabled (<code translate="no">preview_status</code> <code translate="no">disabled</code>), every built-in browser action is refused with <code translate="no">page_access_disabled</code>. Waiting for a tab, <code translate="no">wait</code>, settling and each step of a list check for cancellation.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>the tab driver for the <code translate="no">browser</code> target, with unit tests for choosing tabs, ref recovery, both snapshot protocols and the result shape, and two end-to-end runs in the App in which an agent filled and submitted a local two-page form (text, email, radio, checkboxes, select, textarea, a confirmation box) through background tabs.</td></tr>
+<tr><th scope="row">Not built</th><td>A screenshot kept per run: what a run saw is the tool results on the run's own branch of the conversation.</td></tr>
+<tr><th scope="row">Not built</th><td>A profile the driver's own browser keeps between starts: a page that needs a sign-in needs the App open.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.html">Computer and browser use</a></p>

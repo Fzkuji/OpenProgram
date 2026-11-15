@@ -18,64 +18,64 @@
 
 <!-- 事件流 -->
 <rect class="box" x="56" y="56" width="500" height="74" rx="10" stroke="rgba(86,217,233,.5)"/>
-<text class="bt" x="78" y="84">事件流 <tspan class="bs faint">流水账 · 只往后记，不涂改</tspan></text>
+<text class="bt" x="78" y="84">Event stream <tspan class="bs faint">Append-only log · no rewrites</tspan></text>
 <g class="mono" font-size="12">
   <circle cx="92" cy="108" r="4" fill="#56d9e9"/><text class="bs cy" x="102" y="112">e1</text>
   <circle cx="142" cy="108" r="4" fill="#56d9e9"/><text class="bs cy" x="152" y="112">e2</text>
   <circle cx="192" cy="108" r="4" fill="#56d9e9"/><text class="bs cy" x="202" y="112">e3</text>
   <circle cx="242" cy="108" r="4" fill="#56d9e9"/><text class="bs cy" x="252" y="112">e4</text>
-  <circle cx="292" cy="108" r="4" fill="rgba(86,217,233,.4)"/><text class="bs faint" x="302" y="112">…不断变长</text>
+  <circle cx="292" cy="108" r="4" fill="rgba(86,217,233,.4)"/><text class="bs faint" x="302" y="112">…keeps growing</text>
   <line x1="92" y1="108" x2="290" y2="108" stroke="rgba(86,217,233,.3)"/>
 </g>
 
 <!-- fold → State -->
 <path class="flow" d="M556 92 C 640 92, 660 92, 718 92"/>
 <polygon class="arr" points="718,86 730,92 718,98"/>
-<text class="lbl cy" x="590" y="78">fold 累加（滚雪球）</text>
+<text class="lbl cy" x="590" y="78">Incremental fold</text>
 <rect class="box" x="732" y="56" width="252" height="120" rx="10"/>
-<text class="bt" x="754" y="84">State <tspan class="bs faint">当前状况</tspan></text>
-<text class="bs mono" x="754" y="110">改过的文件: {auth.py}</text>
-<text class="bs mono" x="754" y="130">bash 连续失败: 2</text>
-<text class="bs mono" x="754" y="150">本轮有验证动作: false</text>
+<text class="bt" x="754" y="84">State <tspan class="bs faint">Current state</tspan></text>
+<text class="bs mono" x="754" y="110">Changed files: {auth.py}</text>
+<text class="bs mono" x="754" y="130">Consecutive bash failures: 2</text>
+<text class="bs mono" x="754" y="150">Validated this turn: false</text>
 
 <!-- 新事件 → 规则 -->
 <path class="flow" d="M306 130 C 306 200, 380 230, 432 252"/>
 <polygon class="arr" points="427,247 442,256 431,262"/>
-<text class="lbl" x="318" y="200">新事件来了，唤起订阅它的规则</text>
+<text class="lbl" x="318" y="200">New events invoke subscribed policies</text>
 
 <!-- State → 规则 -->
 <path class="flowV" d="M858 176 C 858 230, 720 240, 640 254"/>
 <polygon class="arrV" points="644,248 630,257 645,262"/>
-<text class="lbl vi" x="760" y="218">规则读它</text>
+<text class="lbl vi" x="760" y="218">Policies read it</text>
 
 <!-- 规则们 -->
 <rect class="box" x="380" y="252" width="300" height="108" rx="12" stroke="rgba(86,217,233,.55)"/>
-<text class="bt mono cy" x="530" y="288" text-anchor="middle" font-size="18">规则们 · Policy</text>
-<text class="bs" x="530" y="314" text-anchor="middle">每条规则：盯某类事件 + 读 State</text>
-<text class="bs" x="530" y="334" text-anchor="middle">evaluate(event, state) → 动作 或 None</text>
+<text class="bt mono cy" x="530" y="288" text-anchor="middle" font-size="18">Policies</text>
+<text class="bs" x="530" y="314" text-anchor="middle">Each policy: subscribe to events + read State</text>
+<text class="bs" x="530" y="334" text-anchor="middle">evaluate(event, state) → action or None</text>
 
 <!-- 分流 -->
 <path class="flowAm" d="M448 360 C 400 400, 360 416, 320 436"/>
 <polygon class="arrAm" points="324,430 310,440 326,444"/>
 <path class="flow" d="M612 360 C 660 400, 700 416, 740 436"/>
 <polygon class="arr" points="734,430 750,440 732,444"/>
-<text class="lbl" x="500" y="404" text-anchor="middle">返回一个动作</text>
+<text class="lbl" x="500" y="404" text-anchor="middle">Return an action</text>
 
 <!-- 挡路的 -->
 <rect class="box" x="96" y="440" width="380" height="84" rx="10" stroke="rgba(242,181,68,.55)"/>
-<text class="bt" x="118" y="468">挡路的 <tspan class="bs mono am">gate · 同步 · 必须快</tspan></text>
-<text class="bs" x="118" y="492">在事情发生之前拦住</text>
-<text class="bs am" x="118" y="512">拦下 / 放行 / 问用户</text>
+<text class="bt" x="118" y="468">Gating <tspan class="bs mono am">gate · synchronous · must be fast</tspan></text>
+<text class="bs" x="118" y="492">Intercept before the operation</text>
+<text class="bs am" x="118" y="512">Deny / allow / ask user</text>
 
 <!-- 旁观的 -->
 <rect class="box" x="564" y="440" width="380" height="84" rx="10" stroke="rgba(86,217,233,.45)"/>
-<text class="bt" x="586" y="468">旁观的 <tspan class="bs mono cy">observer · 异步 · 可慢</tspan></text>
-<text class="bs" x="586" y="492">在事情发生之后看着，不耽误 agent</text>
-<text class="bs cy" x="586" y="512">提醒用户 / 给模型注入一句话 / 后台默默做准备</text>
+<text class="bt" x="586" y="468">Observing <tspan class="bs mono cy">observer · asynchronous · may be slow</tspan></text>
+<text class="bs" x="586" y="492">Observe afterward without delaying the agent</text>
+<text class="bs cy" x="586" y="512">Notify user / inject model context / prepare in background</text>
 
 <!-- 落地 -->
 <path class="flowAm" d="M286 524 C 286 552, 360 562, 420 568"/>
 <path class="flow" d="M754 524 C 754 552, 680 562, 620 568"/>
 <rect class="box" x="380" y="556" width="300" height="48" rx="24"/>
-<text class="bt" x="530" y="585" text-anchor="middle" font-size="14">框架去落地：弹窗 · 拦截 · 注入 · 起后台任务</text>
+<text class="bt" x="530" y="585" text-anchor="middle" font-size="14">Framework executes actions: prompt, deny, inject, or start a background task</text>
 </svg>

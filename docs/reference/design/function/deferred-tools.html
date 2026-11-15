@@ -1,0 +1,238 @@
+<title>Deferred tools</title>
+<meta name="description" content="How a deferred tool is listed, searched, loaded and called on every provider without breaking the cached prefix.">
+<h1>Deferred tools</h1>
+<p>A deferred tool is registered, but its schema reaches the model only after <code translate="no">tool_search</code> loads it. Search is the only way to load. The loaded set is read from the request's own messages, and inside an epoch the tools array only grows at its end.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Topic</th><th scope="col">Design</th><th scope="col">Follows</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="#anthropic">Loading on Anthropic</a></th><td><code translate="no">tool_reference</code> result plus a <code translate="no">defer_loading</code> array entry</td><td>Claude Code</td></tr>
+<tr><th scope="row"><a href="#catalog">Catalog</a></th><td>Beside the user message, full once, then Added / Removed</td><td>Claude Code, Codex</td></tr>
+<tr><th scope="row"><a href="#codex">A search that loads nothing</a></th><td>Says why in words the model receives; a tool already in the array is "already callable"</td><td>Claude Code, Codex</td></tr>
+<tr><th scope="row"><a href="#activation">Guides and applications</a></th><td>Name their tools; the model loads them</td><td>Codex</td></tr>
+<tr><th scope="row"><a href="#unavailable">Source gone</a></th><td>Entry stays; the call returns "unavailable"</td><td>Codex</td></tr>
+<tr><th scope="row"><a href="#not-loaded">Called before loading</a></th><td>Runs if valid; a failed check says how to load</td><td>Claude Code</td></tr>
+<tr><th scope="row"><a href="#epoch">Mode and deny changes</a></th><td>Array fixed per epoch; dispatch refuses</td><td>Codex</td></tr>
+<tr><th scope="row"><a href="#ranking">Ranking</a></th><td>BM25 over name, namespace, description and schema</td><td>Pi, Claude Code</td></tr>
+<tr><th scope="row"><a href="#aging">Old search results</a></th><td>Never aged</td><td>Claude Code, Codex</td></tr>
+<tr><th scope="row"><a href="#isolation">Branches and nested runs</a></th><td>Loads belong to the run whose messages hold them</td><td>Pi</td></tr>
+</tbody>
+</table>
+
+<h2 id="anthropic">Loading on Anthropic</h2>
+<p>A provider declares a native form under <code translate="no">tool_search</code> in <code translate="no">provider.json</code>. Anthropic declares <code translate="no">anthropic-reference</code> for <code translate="no">anthropic-messages</code>, with <code translate="no">models_off: ["haiku"]</code>.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">With the form</th><th scope="col">Without it</th></tr></thead>
+<tbody>
+<tr><th scope="row">Search result</th><td><code translate="no">tool_reference</code> blocks only, plus a sibling text block: the search's <a href="#codex">note</a>, or <code translate="no">Tool loaded.</code> when no text is there; the result text stays on the node for the UI</td><td>The result text</td></tr>
+<tr><th scope="row">Array</th><td>Loaded tools appended with <code translate="no">defer_loading: true</code>, in first-load order, from the definition the load record kept</td><td>Loaded tools appended as ordinary entries; the request records an expected break <code translate="no">tool_loaded</code></td></tr>
+<tr><th scope="row">Beta header</th><td><code translate="no">advanced-tool-use-2025-11-20</code>; on Vertex <code translate="no">tool-search-tool-2025-10-19</code></td><td>None</td></tr>
+<tr><th scope="row">Cache</th><td>Fingerprint skips deferred entries; breakpoint on the last ordinary tool</td><td>Unchanged</td></tr>
+<tr><th scope="row">No match, error, summary-carried tool</th><td>Plain text result; a carried tool is an ordinary entry</td><td>Same</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Compared</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>References in the result, <code translate="no">defer_loading</code> entries in the array; excludes haiku</td></tr>
+<tr><th scope="row">Anthropic <code translate="no">tool_addition</code></th><td>Announces a tool in history; few models and platforms support it</td></tr>
+<tr><th scope="row">Codex</th><td>Definition in a <code translate="no">tool_search_output</code> history item</td></tr>
+<tr><th scope="row">Pi</th><td>Appends to the array; one known reread</td></tr>
+<tr><th scope="row">Hermes</th><td>Bridge tools; deferred tools never enter the array</td></tr>
+</tbody>
+</table>
+<p>A <code translate="no">defer_loading</code> entry is validated only once a result names it, and appending one is allowed; adding an ordinary tool or rewriting one is rejected. Claude Code runs this in production, and with search the only loading path, references cover every case.</p>
+</details>
+
+<h2 id="catalog">Catalog</h2>
+<p>The list of loadable tools is the <code translate="no">deferred_catalog</code> section of <code translate="no">turn_context</code>, beside the user message. The conversation's system prompt holds none, so a server connecting mid-conversation changes no prefix byte.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Rule</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Built-in deferred tool</th><td>Listed by name</td></tr>
+<tr><th scope="row">MCP server or application</th><td>One namespace line, <code translate="no">N tools: a, b, …</code>, cut to 250 characters; an open application says so</td></tr>
+<tr><th scope="row">Full list</th><td>No baseline: the first turn, and the first turn after a summary</td></tr>
+<tr><th scope="row">Later turns</th><td><code translate="no">Added deferred tools</code> / <code translate="no">Removed deferred tools</code>; nothing when unchanged</td></tr>
+<tr><th scope="row">Size</th><td>At most 4 KiB, names first, then a count of what was left out</td></tr>
+<tr><th scope="row">Baseline</th><td>The last catalog the rendered history shows</td></tr>
+<tr><th scope="row">Own system prompt (Agent method, <code translate="no">runtime.exec</code>)</th><td>Catalog stays inline in that prompt</td></tr>
+<tr><th scope="row">No <code translate="no">tool_search</code> in the turn's tools</th><td>Nothing is deferred: every tool of the turn goes out with its schema, so there is no catalog. Without the loader a deferred tool could never be called; Claude Code also sends every tool up front when its tool search is off. <code translate="no">DEFAULT_TOOLS</code> holds the loader and a selected list with a deferred tool gets it, so this is an Agent that disabled <code translate="no">tool_search</code></td></tr>
+<tr><th scope="row">Closing sentence</th><td>Says only the listed tools need loading, and that every tool already in the tools list is callable as it is and is never searched for. The loader's description says the same</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Compared</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>Append-only names in a user-side reminder; all names again after compaction</td></tr>
+<tr><th scope="row">Codex</th><td>Developer-message delta by namespace, 250 characters a line, 4 KiB cap</td></tr>
+<tr><th scope="row">Pi</th><td>System-prompt section by server, same caps</td></tr>
+<tr><th scope="row">Hermes</th><td>Inside the search tool's description, degraded by budget</td></tr>
+</tbody>
+</table>
+<p>History is the only place that changes nothing already sent. <code translate="no">turn_context</code> already resends only changed sections. A <code translate="no">role: system</code> message is not used on Anthropic: Claude Code uses the user side there, and some models reject it.</p>
+</details>
+
+<h2 id="codex">A search that loads nothing</h2>
+<p>A <code translate="no">tool_search</code> result has two parts: the loads (<code translate="no">details["loads"]</code>) and a note (<code translate="no">details["note"]</code>), the words for everything it did not load. Both are stored on the tool node, so every later request sends the same bytes.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Asked for</th><th scope="col">Note</th><th scope="col">Loads</th></tr></thead>
+<tbody>
+<tr><th scope="row">A tool already in the array: resident, or made resident for the turn</th><td><code translate="no">`send_file` is already callable: it is in your tools list with its full schema. Call it now; it never needs tool_search.</code></td><td>None; the array is unchanged</td></tr>
+<tr><th scope="row">A name the turn does not offer</th><td><code translate="no">No tool named x is offered in this conversation.</code> plus which tools need a search</td><td>None</td></tr>
+<tr><th scope="row">Keywords with no match</th><td><code translate="no">No deferred tools matched query …</code> plus which tools need a search</td><td>None</td></tr>
+<tr><th scope="row">A deferred tool, loaded before or not</th><td>None</td><td>Its definition, recorded as a load</td></tr>
+<tr><th scope="row">A mix</th><td>The lines for what was not loaded</td><td>The rest</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Wire</th><th scope="col">Where the note goes</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex (<code translate="no">tool_search_output</code>)</th><td>The output carries the loaded definitions, <code translate="no">tools: []</code> when there are none; the note follows as a user item wrapped in <code translate="no">&lt;tool-search-result&gt;</code></td></tr>
+<tr><th scope="row">Anthropic references</th><td>With loads: the text block beside the <code translate="no">tool_reference</code> blocks. Without: the result text, which is the note</td></tr>
+<tr><th scope="row">Every other wire</th><td>The result text, which starts with the note</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Compared</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td><code translate="no">select:</code> of a tool that is already loaded returns that tool as a match, "a harmless no-op that lets the model proceed without retry churn"; the file-delivery tool is never deferred</td></tr>
+<tr><th scope="row">Codex</th><td>Searches deferred tools only and sends an empty <code translate="no">tool_search_output</code> for every miss; its loader's description names what a search covers</td></tr>
+<tr><th scope="row">Pi</th><td>Returns text on its own wire</td></tr>
+</tbody>
+</table>
+<p>An empty <code translate="no">tool_search_output</code> alone reads as "no such tool". A model that searched for <code translate="no">send_file</code>, which the array already held, answered that it could not send the file: the answer was in the result text, which this wire never sends.</p>
+<p>Claude Code's answer lets the model go on, so a search for a callable tool says so first and in the positive.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Rejected</th><th scope="col">Because</th></tr></thead>
+<tbody>
+<tr><th scope="row">The tool again in the output, kept in the array</th><td>Two entries of one name, a shape no client is known to send</td></tr>
+<tr><th scope="row">The tool in the output, out of the array</th><td>The array changes and the prefix is re-read</td></tr>
+<tr><th scope="row">Recording it as a load</th><td>A resident tool becomes a <code translate="no">defer_loading</code> entry on Anthropic</td></tr>
+</tbody>
+</table>
+<p>A message after a tool output is a shape every wire already uses for tool attachments.</p>
+<p>The search is avoided in the first place by saying which tools need one: the catalog and the loader's description name the deferred list as the only tools to search for.</p>
+</details>
+
+<h2 id="activation">Guides and applications</h2>
+<p>A guide that teaches deferred tools, and an application when it opens, end with <code translate="no">activation_note</code>: <code translate="no">Tools for this: `a`, `b`. Load them with `tool_search select:a,b`.</code> Neither loads anything; an open application's tools stay deferred.</p>
+<details><summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Compared</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>An explicitly mentioned app's tools stay deferred</td></tr>
+<tr><th scope="row">Claude Code, Pi</th><td>Loading only through search</td></tr>
+<tr><th scope="row">Hermes</th><td>Only searchable tools can be called</td></tr>
+</tbody>
+</table>
+<p>One loading path changes the array one way on every provider, and opening an application no longer rereads the prefix. The cost is one cheap, recorded <code translate="no">select:</code> call.</p>
+</details>
+
+<h2 id="unavailable">Source gone</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Event</th><th scope="col">Reason given</th></tr></thead>
+<tbody>
+<tr><th scope="row">Application closed</th><td><code translate="no">its application '&lt;id&gt;' was closed</code></td></tr>
+<tr><th scope="row">Owner unloaded</th><td><code translate="no">'&lt;owner&gt;' was unloaded</code></td></tr>
+<tr><th scope="row">MCP server disconnected</th><td><code translate="no">MCP server '&lt;name&gt;' is disconnected</code></td></tr>
+</tbody>
+</table>
+<p>The tools leave the registry and the catalog sends a Removed line. A loaded tool keeps its array entry; calling it returns <code translate="no">Tool &lt;name&gt; is unavailable: &lt;reason&gt;.</code> as an error. No <code translate="no">tool_removal</code> is sent.</p>
+<details><summary>Why this design</summary>
+<p>Codex keeps history and answers <code translate="no">unsupported call</code>; Anthropic advises keeping the definition and returning an ordinary error. Claude Code rewrites old references, which is a history edit. An array that never shrinks cannot fail validation or reread the prefix.</p>
+</details>
+
+<h2 id="not-loaded">Called before loading</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Call</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Valid arguments</th><td>Runs</td></tr>
+<tr><th scope="row">Failed check, not loaded</th><td>The error ends with <code translate="no">This tool's schema was not sent. Load it with `tool_search select:&lt;name&gt;`, then retry.</code></td></tr>
+<tr><th scope="row">Failed check, loaded</th><td>The error alone</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<p>This is Claude Code's <code translate="no">buildSchemaNotSentHint</code>. Refusing every unloaded call would waste a round trip on calls that were right.</p>
+</details>
+
+<h2 id="epoch">Mode and deny changes</h2>
+<p>An epoch is keyed by provider, model and first message (<code translate="no">tool_epoch.epoch_key</code>), so a summary or a model switch starts one. Its first request stores the withheld set with the tool snapshot.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Change</th><th scope="col">Array</th><th scope="col">Dispatch</th></tr></thead>
+<tbody>
+<tr><th scope="row">Plan mode on or off</th><td>Unchanged</td><td><code translate="no">permission_decision</code> refuses</td></tr>
+<tr><th scope="row"><code translate="no">exit_plan_mode</code> outside plan mode</th><td>Unchanged</td><td>Refused, <code translate="no">PLAN_MODE_NOT_ACTIVE</code></td></tr>
+<tr><th scope="row">Whole-tool deny rule, missing capability</th><td>Removed from the next epoch</td><td>Refused meanwhile</td></tr>
+<tr><th scope="row">Structured-output submit tool appears</th><td>New epoch record with it</td><td>—</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<p>Codex refuses at dispatch in plan mode; Claude Code refuses plan-mode calls but filters denied tools out; Anthropic advises against swapping tool lists in place. Changing the array mid-conversation fails on models that validate the tool set, and dispatch already enforces permission.</p>
+</details>
+
+<h2 id="ranking">Ranking</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Rule</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ranker</th><td><code translate="no">tool_rank</code>, Pi's BM25: k1 1.2, b 0.75, name weight 3, namespace weight 0.5</td></tr>
+<tr><th scope="row">Indexed</th><td>Name, namespace (MCP server or application), description, hint, schema property names and descriptions</td></tr>
+<tr><th scope="row">Tokens</th><td>Split on camelCase and <code translate="no">__</code>; stop words dropped; stemmed; CJK one character each</td></tr>
+<tr><th scope="row">Order</th><td>Exact name, then query terms matched, then score</td></tr>
+<tr><th scope="row">A tool's name</th><td><code translate="no">select:a,b</code> loads exactly the named tools. A query that is exactly one tool's name does the same and ranks nothing: <code translate="no">scheduler</code> loads <code translate="no">scheduler</code>, not <code translate="no">cron</code> and <code translate="no">remind</code> with it. A name is a tool; applications and MCP servers are not selectable</td></tr>
+<tr><th scope="row">Kept</th><td><code translate="no">select:</code>, comma lists, <code translate="no">+term</code> filters first, the Agent's allowed set; loaded tools included</td></tr>
+<tr><th scope="row">Default count</th><td>5</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<p>Pi and Codex use BM25; Claude Code uses fixed keyword scores. Pi's ranker spells out every rule and ports without a dependency. Every match is loaded for good, so the default stays at Claude Code's 5 rather than 8.</p>
+<p>The argument is itself named <code translate="no">select</code>, so a model asking for one tool writes <code translate="no">select: scheduler</code> as often as <code translate="no">select:scheduler</code>. Claude Code answers a query that is an exact tool name with that tool before any scoring; the same rule here makes both spellings load one tool.</p>
+<p>The catalog lists tool names only, so a group has no name to select: a keyword query reaches a server or application through the namespace field.</p>
+</details>
+
+<h2 id="aging">Old search results</h2>
+<p>A <code translate="no">tool_search</code> result is never shortened to a stub on any provider; tool output is not aged at all (<a href="../context/overview.html#cross-turn-tool-context">Tool output</a>).</p>
+<details><summary>Why this design</summary>
+<p>Claude Code's microcompact skips ToolSearch, and Codex never ages. The definition lives in the load record, so a stub saves little and is a history edit.</p>
+</details>
+
+<h2 id="isolation">Branches and nested runs</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Run</th><th scope="col">Tools it is sent</th></tr></thead>
+<tbody>
+<tr><th scope="row">Two branches at once</th><td>Each, what its own messages loaded</td></tr>
+<tr><th scope="row">Nested <code translate="no">runtime.exec</code></th><td>Its own loads; the outer chat never sees them</td></tr>
+<tr><th scope="row">Stopped or failed search</th><td>Nothing loaded</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<p>Pi writes loads into each branch's own state. Branches run in parallel, so loads cannot be conversation-wide state.</p>
+</details>
+
+<h2>Implementation status</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Open item</th><th scope="col">Waiting for</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">loaded_deferred_tools</code> in journal, safe points, checkpoints</th><td>Read-only for one release, then removed</td></tr>
+<tr><th scope="row">Anthropic three-request self-test with cache diagnosis</th><td>A paid live run</td></tr>
+<tr><th scope="row">Codex cache after a large load and after a summary</th><td>A live Codex run</td></tr>
+<tr><th scope="row">OpenAI and Azure Responses search form</th><td>A live check; not declared until then</td></tr>
+<tr><th scope="row">Copilot, Vercel, opencode with references</th><td>A live check; they keep the array-append path</td></tr>
+<tr><th scope="row">Empty thinking blocks skipped on Anthropic</th><td>A request comparison with a paid run</td></tr>
+<tr><th scope="row">Context breakdown and budget</th><td>Still estimate the catalog from the inline text</td></tr>
+<tr><th scope="row">Epoch records</th><td>Kept per conversation; branches sharing a first message share one</td></tr>
+</tbody>
+</table>
+
+<details><summary>Implementation files</summary>
+<ul>
+<li><code translate="no">openprogram/programs/_host/runtime.py</code>, <code translate="no">tool_rank.py</code></li>
+<li><code translate="no">openprogram/programs/_authoring/guides.py</code>, <code translate="no">openprogram/extensions/mcp/registry.py</code></li>
+<li><code translate="no">openprogram/models/providers/settings/tool_search_spec.py</code>, <code translate="no">adapters/anthropic/anthropic.py</code>, <code translate="no">shared/tool_loads.py</code></li>
+<li><code translate="no">openprogram/runtime/agent/loop/streaming.py</code>, <code translate="no">tool_dispatch.py</code>, <code translate="no">tool_epoch.py</code></li>
+<li><code translate="no">openprogram/runtime/context/turn_context.py</code>, <code translate="no">components.py</code></li>
+<li><code translate="no">openprogram/runtime/permissions/policy.py</code>, <code translate="no">lifecycle.py</code></li>
+</ul>
+</details>

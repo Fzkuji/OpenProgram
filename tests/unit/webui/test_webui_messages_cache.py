@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.session_db import SessionDB
+from openprogram.runtime.context.session_db import SessionDB
 
 
 @pytest.fixture
@@ -29,12 +29,17 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     actually has somewhere to read from.
     """
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db",
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db",
                         lambda: db)
+    # A last used model recorded by another test would pin every new
+    # conversation here; each test starts from its own config.
+    (tmp_path / "state").mkdir()
+    from openprogram.state import paths
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
 
     # Reset webui module state. We don't reimport — we just clear the
     # in-process structures so each test sees a clean slate.
-    from openprogram.webui import server as srv
+    from openprogram.interfaces.server import server as srv
     srv._sessions.clear()
     srv._msg_cache.clear()
     return srv, db
@@ -160,6 +165,30 @@ def test_append_msg_dual_writes_memory_and_db(server) -> None:
     assert [m["id"] for m in srv._get_messages("c1")] == ["m1"]
 
 
+def test_append_msg_strict_raises_and_restores_mirror(server, monkeypatch) -> None:
+    """A user message that starts a turn must reach the store: strict mode
+    raises the store failure and puts the mirror back, while the default
+    mode keeps logging and moving on."""
+    srv, db = server
+    conv = srv._get_or_create_session("c1", agent_id="main")
+    srv._append_msg(conv, {"id": "m1", "role": "user", "content": "x",
+                            "timestamp": 1.0})
+
+    def _fail(*_a, **_kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(db, "set_head", _fail)
+    with pytest.raises(OSError, match="disk full"):
+        srv._append_msg(conv, {"id": "m2", "role": "user", "content": "y",
+                                "timestamp": 2.0}, strict=True)
+    assert [m["id"] for m in conv["messages"]] == ["m1"]
+    assert conv["head_id"] == "m1"
+
+    srv._append_msg(conv, {"id": "m3", "role": "user", "content": "z",
+                            "timestamp": 3.0})
+    assert conv["head_id"] == "m3"
+
+
 def test_append_msg_invalidates_existing_cache(server) -> None:
     """Cache must drop after _append_msg so the next reader sees the
     new row. This is the regression-prone case where the old code wrote
@@ -177,12 +206,20 @@ def test_append_msg_invalidates_existing_cache(server) -> None:
     assert [m["id"] for m in srv._get_messages("c1")] == ["m1", "m2"]
 
 
-def test_set_active_head_syncs_db_memory_and_cache(server) -> None:
+@pytest.mark.parametrize("last_used", [False, True], ids=["fresh", "last_used_model"])
+def test_set_active_head_syncs_db_memory_and_cache(server, last_used) -> None:
     """_set_active_head is the unified branch-switch primitive used by
     retry / edit / sibling-checkout. It must update SessionDB,
     in-memory conv["head_id"], and invalidate the cache atomically
-    enough that the next reader sees a coherent view."""
+    enough that the next reader sees a coherent view.
+
+    With a last used model recorded (any install that has sent a message),
+    the new conversation still pins no model (it follows its Agent); the
+    switch must succeed there too."""
     srv, db = server
+    if last_used:
+        from openprogram.models.providers.catalog.last_used import record_last_used_model
+        record_last_used_model("openai-codex", "gpt-5")
     conv = srv._get_or_create_session("c1", agent_id="main")
     srv._append_msg(conv, {"id": "m1", "role": "user", "content": "x",
                             "timestamp": 1.0})
@@ -190,14 +227,33 @@ def test_set_active_head_syncs_db_memory_and_cache(server) -> None:
                             "timestamp": 2.0})
     srv._get_messages("c1")  # warm cache
 
-    srv._set_active_head("c1", "m1")    # rewind to m1
+    assert srv._set_active_head("c1", "m1") is True    # rewind to m1
 
+    if last_used:
+        assert db.get_session("c1").get("model_override") is None
+        assert db.get_session("c1")["agent_id"] == "main"
     # SessionDB
     assert db.get_session("c1")["head_id"] == "m1"
     # In-memory mirror
     assert conv["head_id"] == "m1"
     # Cache fresh + branch correct
     assert [m["id"] for m in srv._get_messages("c1")] == ["m1"]
+
+
+def test_set_active_head_on_a_record_without_agent(server) -> None:
+    """A session whose first record came from a settings write (a draft's
+    model pick) has no stored ``agent_id``; switching its head still works."""
+    srv, db = server
+    db.update_session("c2", provider_override="openai-codex", model_override="gpt-5")
+    db.append_message("c2", {"id": "m1", "role": "user", "content": "x",
+                              "timestamp": 1.0, "predecessor": None})
+    db.append_message("c2", {"id": "m2", "role": "assistant", "content": "y",
+                              "timestamp": 2.0, "predecessor": "m1"})
+    db.set_head("c2", "m2")
+    assert db.read_disk_meta("c2").get("agent_id") is None
+
+    assert srv._set_active_head("c2", "m1") is True
+    assert db.get_session("c2")["head_id"] == "m1"
 
 
 def test_set_active_head_to_none_clears(server) -> None:
@@ -211,7 +267,9 @@ def test_set_active_head_to_none_clears(server) -> None:
 
 
 def test_deepest_leaf_db_finds_subtree_tip(server) -> None:
-    srv, db = server
+    from openprogram.interfaces.server.server_runtime import session_persistence
+
+    _srv, db = server
     db.create_session("c1", "main")
     # root → a → b (leaf t=2)
     #          → c → d (leaf t=4)
@@ -226,21 +284,21 @@ def test_deepest_leaf_db_finds_subtree_tip(server) -> None:
     db.append_message("c1", {"id": "d", "role": "assistant", "content": "x",
                               "timestamp": 4.0, "predecessor": "c"})
 
-    assert srv._deepest_leaf_db("c1", "a") == "d"
-    assert srv._deepest_leaf_db("c1", "b") == "b"
-    assert srv._deepest_leaf_db("c1", "missing") is None
+    assert session_persistence._deepest_leaf_db("c1", "a") == "d"
+    assert session_persistence._deepest_leaf_db("c1", "b") == "b"
+    assert session_persistence._deepest_leaf_db("c1", "missing") is None
 
 
-def test_agentic_function_result_persists_via_append_msg(server) -> None:
+def test_agent_method_result_persists_via_append_msg(server) -> None:
     """The webui "run" action ends by calling _append_msg with the
-    @agentic_function's return value as an assistant message. After
+    Agent method's return value as an assistant message. After
     task #17 that single _append_msg writes through to SessionDB,
     so a fresh worker can hydrate the run result without depending
     on _save_conversation having flushed."""
     srv, db = server
     conv = srv._get_or_create_session("c1", agent_id="main")
     # Simulate run action: the assistant result. fn-form no longer
-    # writes a user-side anchor row — the @agentic_function's code node
+    # writes a user-side anchor row — the Agent method's code node
     # (predecessor=ROOT) is the canonical record, so the only _append_msg
     # here is the assistant result.
     srv._append_msg(conv, {

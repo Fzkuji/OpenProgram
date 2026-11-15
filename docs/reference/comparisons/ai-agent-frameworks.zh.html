@@ -1,0 +1,14 @@
+<title>OpenProgram 与 LangGraph、AutoGen、CrewAI 对比</title>
+<meta name="description" content="OpenProgram、LangGraph、AutoGen、CrewAI 公开编程模型的差别和各自适用场景。">
+<h1>OpenProgram 与 LangGraph、AutoGen、CrewAI 对比</h1>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">主要抽象</th><th scope="col">编排模型</th><th scope="col">适用于</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>OpenProgram</strong></th><td><code translate="no">Agent</code> 方法加执行 runtime</td><td>普通控制流、模型选择工具、共享执行 DAG</td><td>Agent 应能把新工作流写成可审查的函数，而不只是从固定图或团队中选择；一个 runtime 提供终端、Web、provider、工具、记忆、上下文和多 agent 能力；上下文表示为用户、模型、函数和工具调用的 DAG。</td></tr>
+<tr><th scope="row"><strong><a href="https://docs.langchain.com/oss/python/langgraph/overview">LangGraph</a></strong></th><td>节点和边的 Graph API，或带 <code translate="no">@entrypoint</code> 和 <code translate="no">@task</code> 的 <a href="https://docs.langchain.com/oss/python/langgraph/functional-api">Functional API</a></td><td>显式状态图或标准 Python 控制流，同一 runtime</td><td>需要持久执行、持久化、流式和人在回路的状态控制。它是底层 runtime；其概述建议用 LangChain agent 获得预置架构。</td></tr>
+<tr><th scope="row"><strong><a href="https://microsoft.github.io/autogen/">AutoGen</a></strong></th><td>AgentChat agent 和团队，或 Core agent 和 <a href="https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/framework/agent-and-agent-runtime.html">runtime</a></td><td>Agent 消息、团队模式、事件驱动的 Core API</td><td>设计围绕 agent 交换类型化消息或团队模式。涵盖团队、状态、人工反馈、自定义 agent、分布式 runtime。</td></tr>
+<tr><th scope="row"><strong><a href="https://docs.crewai.com/">CrewAI</a></strong></th><td>Agent、任务、crew、flow</td><td>基于角色的 crew 结合事件驱动的 flow</td><td>应用能映射为有角色、目标和任务的 agent，或调用 crew 的结构化 flow。</td></tr>
+</tbody>
+</table>
+<p class="note">比较各项目文档中的抽象，用于选型，而不是给功能排名。2026-08-13 对照链接文档核实。未列出的功能仍可能通过扩展实现；长期迁移前请查最新文档。</p>
+<p class="next"><a href="../../capabilities/agentic-programming/self-programming-ai-agents.zh.html">自编程 AI Agent</a> · <a href="../../capabilities/agentic-programming/README.zh.html">Agentic Programming</a> · <a href="../../start/GETTING_STARTED.zh.html">安装</a></p>

@@ -18,36 +18,36 @@
 
 <!-- 事件来了 -->
 <rect class="box" x="430" y="44" width="180" height="48" rx="24"/>
-<text class="bt" x="520" y="73" text-anchor="middle">事件来了</text>
+<text class="bt" x="520" y="73" text-anchor="middle">Event arrives</text>
 
 <!-- 分叉判断 -->
 <path class="flowA" d="M470 92 C 400 130, 330 144, 280 160"/>
 <polygon class="arrA" points="285,154 268,164 287,168"/>
 <path class="flowC" d="M570 92 C 640 130, 710 144, 760 160"/>
 <polygon class="arrC" points="753,154 772,164 751,168"/>
-<text class="bs am" x="300" y="124" text-anchor="end">是 tool.before（挡路时机）</text>
-<text class="bs cy" x="740" y="124">不管哪类事件，都走这条</text>
+<text class="bs am" x="300" y="124" text-anchor="end">Is tool.before (gate point)</text>
+<text class="bs cy" x="740" y="124">All event types use this path</text>
 
 <!-- 左：gate 同步 -->
 <rect class="abox" x="60" y="164" width="400" height="216" rx="12"/>
-<text class="bt am" x="84" y="196">挡路 · 同步 <tspan class="bs mono am">agent 在等，必须快</tspan></text>
-<text class="bs" x="84" y="228">① 同步叫醒所有挡路规则，挨个 evaluate</text>
-<text class="bs" x="84" y="256">② 有谁说 <tspan class="am">deny / ask</tspan> → 拦住，照做（拒绝 / 弹确认）</text>
-<text class="bs" x="84" y="284">③ 都说 allow → 放行，工具继续执行</text>
+<text class="bt am" x="84" y="196">Gate · synchronous <tspan class="bs mono am">Agent waits; must be fast</tspan></text>
+<text class="bs" x="84" y="228">① Invoke all gate policies synchronously; evaluate each</text>
+<text class="bs" x="84" y="256">② Any policy returns <tspan class="am">deny / ask</tspan> → enforce it (deny / ask for confirmation)</text>
+<text class="bs" x="84" y="284">③ All allow → execute the tool</text>
 <line x1="84" y1="306" x2="436" y2="306" stroke="rgba(242,181,68,.25)"/>
-<text class="bs faint" x="84" y="334">多方表态取最严：deny &gt; ask &gt; allow</text>
-<text class="bs faint" x="84" y="360">evaluate 里不许调 LLM / 不许慢 IO</text>
+<text class="bs faint" x="84" y="334">Strictest decision wins: deny &gt; ask &gt; allow</text>
+<text class="bs faint" x="84" y="360">No LLM calls or slow I/O in evaluate</text>
 
 <!-- 右：observer 异步 -->
 <rect class="cbox" x="580" y="164" width="400" height="216" rx="12"/>
-<text class="bt cy" x="604" y="196">旁观 · 异步 <tspan class="bs mono cy">agent 不等，不卡</tspan></text>
-<text class="bs" x="604" y="228">① 先记进事件流（流水账）</text>
-<text class="bs" x="604" y="256">② 旁观线在另一条线上慢慢消费：</text>
-<text class="bs" x="628" y="284">fold 更新 State → 叫醒订阅这类事件的旁观规则</text>
-<text class="bs" x="604" y="312">③ 有谁返回动作 → 框架去落地</text>
-<text class="bs cy" x="628" y="340">Notify 提醒 / Inject 注入 / Prepare 后台准备</text>
+<text class="bt cy" x="604" y="196">Observe · asynchronous <tspan class="bs mono cy">Agent continues without waiting</tspan></text>
+<text class="bs" x="604" y="228">① Append to the event stream</text>
+<text class="bs" x="604" y="256">② Consume asynchronously on a separate path:</text>
+<text class="bs" x="628" y="284">fold updates State → invoke subscribed observer policies</text>
+<text class="bs" x="604" y="312">③ Any action returned → framework executes it</text>
+<text class="bs cy" x="628" y="340">Notify user / Inject context / Prepare in background</text>
 
 <!-- 底注 -->
 <line x1="60" y1="416" x2="980" y2="416" stroke="rgba(154,178,204,.2)"/>
-<text class="bs" x="520" y="448" text-anchor="middle">挡路在主路上、同步、要快；旁观在旁路上、异步、可慢——<tspan class="cy">两类规则的时间要求是反的，所以分开，互不拖累</tspan></text>
+<text class="bs" x="520" y="448" text-anchor="middle">Gates run synchronously and must be fast; observers run asynchronously and may be slow.<tspan class="cy">Their timing requirements differ, so separate execution prevents mutual delays.</tspan></text>
 </svg>

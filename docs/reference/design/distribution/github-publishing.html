@@ -1,0 +1,249 @@
+<title>Publishing source to GitHub</title>
+<meta name="description" content="The three local branches, how a version is squashed onto main, and the hooks that keep the working history local.">
+<h1>Publishing source to GitHub</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="Three lines. dev takes every commit made with git commit, in the main checkout or a worktree, and feeds the development instance on port 18200. stable shares dev's history; openprogram dev promote alone fast-forwards it to a dev commit, and it runs the stable App on port 18100. main has its own history: scripts/publish-github.sh alone adds one commit per version, holding a stable tree on top of the previous version. GitHub carries main for source installs, CI and release tags. No dev commit is an ancestor of main and the lines never merge.">
+  <defs>
+    <marker id="p-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+
+  <text class="t-big" translate="no" x="0" y="44">dev</text>
+  <text class="t-soft" x="0" y="68">Every commit</text>
+  <text class="t-soft" x="0" y="88">Development instance, 18200</text>
+  <line class="ln" x1="200" y1="38" x2="680" y2="38"/>
+  <circle class="gate" cx="224" cy="38" r="4"/><circle class="gate" cx="248" cy="38" r="4"/><circle class="gate" cx="272" cy="38" r="4"/><circle class="gate" cx="296" cy="38" r="4"/><circle class="gate" cx="320" cy="38" r="4"/><circle class="gate" cx="344" cy="38" r="4"/><circle class="gate" cx="368" cy="38" r="4"/><circle class="gate" cx="392" cy="38" r="4"/><circle class="gate" cx="416" cy="38" r="4"/><circle class="gate" cx="440" cy="38" r="4"/><circle class="gate" cx="464" cy="38" r="4"/><circle class="gate" cx="488" cy="38" r="4"/><circle class="gate" cx="512" cy="38" r="4"/><circle class="gate" cx="536" cy="38" r="4"/><circle class="gate" cx="560" cy="38" r="4"/><circle class="gate" cx="584" cy="38" r="4"/><circle class="gate" cx="608" cy="38" r="4"/><circle class="gate" cx="632" cy="38" r="4"/><circle class="gate" cx="656" cy="38" r="4"/>
+
+  <line class="ln-faint" x1="272" y1="46" x2="272" y2="150" marker-end="url(#p-a)"/>
+  <line class="ln-faint" x1="368" y1="46" x2="368" y2="150" marker-end="url(#p-a)"/>
+  <line class="ln-faint" x1="464" y1="46" x2="464" y2="150" marker-end="url(#p-a)"/>
+  <text class="t-cmd mid" translate="no" x="576" y="104">openprogram dev promote</text>
+
+  <text class="t-big" translate="no" x="0" y="164">stable</text>
+  <text class="t-soft" x="0" y="188">Fast-forwarded to dev commits</text>
+  <text class="t-soft" x="0" y="208">Stable App, 18100</text>
+  <line class="ln" x1="200" y1="158" x2="680" y2="158"/>
+  <circle class="gate" cx="272" cy="158" r="5"/><circle class="gate" cx="368" cy="158" r="5"/><circle class="gate" cx="464" cy="158" r="5"/>
+
+  <line class="ln-acc" x1="464" y1="166" x2="464" y2="290" marker-end="url(#p-a)"/>
+  <text class="t-cmd mid" translate="no" x="340" y="232">scripts/publish-github.sh</text>
+  <text class="t-soft mid" x="340" y="252">Squash the tree into one commit</text>
+
+  <text class="t-big" translate="no" x="0" y="304">main</text>
+  <text class="t-soft" x="0" y="328">One commit per version</text>
+  <text class="t-soft" x="0" y="348">GitHub: source installs, CI, release tags</text>
+  <line class="ln" x1="240" y1="298" x2="680" y2="298"/>
+  <circle class="gate" cx="272" cy="298" r="5"/><circle class="gate" cx="368" cy="298" r="5"/><circle class="gate" cx="464" cy="298" r="5"/>
+</svg>
+
+<ol class="flow fig-narrow">
+  <li><strong translate="no">dev</strong><small>Every commit, by <code translate="no">git commit</code> in the main checkout or a worktree</small><small>Development instance, port 18200</small></li>
+  <li class="via"><code translate="no">openprogram dev promote</code></li>
+  <li><strong translate="no">stable</strong><small>Fast-forwarded to dev commits; same history as <code translate="no">dev</code></small><small>Stable App, port 18100</small></li>
+  <li class="via"><code translate="no">scripts/publish-github.sh</code></li>
+  <li class="flow-end"><strong translate="no">main</strong><small>One squashed commit per version, its own history</small><small>GitHub: source installs, CI, release tags</small></li>
+</ol>
+</figure>
+
+<p>GitHub carries <code translate="no">main</code> and nothing else. Its history never merges with the other lines, and nothing pulls GitHub's <code translate="no">main</code> back.</p>
+
+<h2 id="branches">Branches</h2>
+<p>Locally there are exactly these three. A worktree branch is merged into <code translate="no">dev</code> and deleted, or deleted when abandoned. One worth keeping goes under <code translate="no">refs/archive/</code>, which no command lists as a branch and nothing pushes.</p>
+
+<h2 id="publishing-a-version">Publishing a version</h2>
+<pre><code translate="no">scripts/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards" --dry-run
+scripts/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards"
+python scripts/release/release-version.py set 1.3.0
+scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip --dry-run
+scripts/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip</code></pre>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Flag</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">-m "summary"</code></th><td>Version summary; required for a new version</td></tr>
+<tr><th scope="row"><code translate="no">--source &lt;ref&gt;</code></th><td>Squash another commit on <code translate="no">dev</code>; default <code translate="no">stable</code></td></tr>
+<tr><th scope="row"><code translate="no">--dry-run</code></th><td>Show the message and checks, change nothing</td></tr>
+<tr><th scope="row"><code translate="no">--no-push</code></th><td>Stop after step 7</td></tr>
+<tr><th scope="row"><code translate="no">--tag vX.Y.Z</code></th><td>Step 9; cannot be combined with <code translate="no">--no-push</code></td></tr>
+<tr><th scope="row"><code translate="no">--office-archive &lt;file&gt;</code></th><td>With <code translate="no">--tag</code>: the local copy of the <a href="#office-archive">Office archive</a>, checked against its pin and put on the tag's draft release when GitHub has none</td></tr>
+</tbody>
+</table>
+
+<ol>
+<li>Install the guards into the shared <code translate="no">.git/hooks</code>, so every worktree has them.</li>
+<li>Refuse a source not on <code translate="no">dev</code>. When <code translate="no">main</code> already holds the source's tree there is no new version; go to step 8.</li>
+<li>Refuse a source whose tree, or a summary, names a <a href="#retired-accounts">retired account</a>, listing each <code translate="no">path:line</code>. This runs on every call, dry runs included.</li>
+<li>Scan added lines for live-looking credentials (GitHub tokens, Anthropic API keys, AWS access keys, private key blocks) and refuse on a hit. AWS's documented example key and one-line PEM strings in tests do not count.</li>
+<li>Refuse if <code translate="no">scripts.docs_site.check --all</code> fails on the source commit, read from a temporary checkout of it.</li>
+<li>Write the message: the summary, the number of local commits since the previous version, and a <code translate="no">Local-Source:</code> trailer.</li>
+<li>Create the commit with <code translate="no">git commit-tree</code>: the source's tree, the previous <code translate="no">main</code> as only parent (none for the first version), author and committer the <a href="#publishing-identity">publishing identity</a>. Move <code translate="no">main</code> and record the source in <code translate="no">refs/publish/last</code>, where the next version starts counting.</li>
+<li>Push <code translate="no">main</code> after checking GitHub's <code translate="no">main</code> is an earlier point of local <code translate="no">main</code>, so the push only fast-forwards. Refuse when any commit on <code translate="no">main</code> has another author or committer, or its message names a retired account.</li>
+<li><code translate="no">--tag vX.Y.Z</code> also labels that commit on GitHub, which triggers Release. Before anything moves it refuses:
+<ul>
+<li>a tag that already exists;</li>
+<li>a source where any <a href="#version-places">version place</a> says another version, naming each one;</li>
+<li>a source without <code translate="no">.github/release-notes/vX.Y.Z.md</code> starting with <code translate="no"># OpenProgram X.Y.Z Release Notes</code>;</li>
+<li>a given <code translate="no">--office-archive</code> that is not the pinned <a href="#office-archive">Office archive</a>;</li>
+<li>a real run when neither the newest release nor the tag's draft has the archive (asked with <code translate="no">gh</code>) and no file was given. With a file, it seeds the draft instead.</li>
+</ul>
+<code translate="no">--dry-run</code> runs these checks offline, skipping only the question to GitHub, says whether a local archive was given and matches, and shows the tag.</li>
+</ol>
+
+<h3 id="version-places">Version places</h3>
+<p>A release's version is written in six places. <code translate="no">python scripts/release/release-version.py set X.Y.Z</code> writes all of them, or none when one cannot be found; <code translate="no">check vX.Y.Z</code> names each that differs, and is what step 9 runs on the source commit.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Place</th><th scope="col">What stops a release that missed it</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">pyproject.toml</code>, <code translate="no">apps/desktop/package.json</code></th><td><code translate="no">verify-release-version.py --tag</code> in every build job</td></tr>
+<tr><th scope="row"><code translate="no">scripts/release/install-release.sh</code> and <code translate="no">.ps1</code> default version</th><td>The same check</td></tr>
+<tr><th scope="row"><code translate="no">uv.lock</code>, its <code translate="no">openprogram</code> entry</th><td><code translate="no">uv run --locked</code> and <code translate="no">uv sync --locked</code> in the wheel, runtime and Windows contract steps</td></tr>
+<tr><th scope="row"><code translate="no">package-lock.json</code>, its <code translate="no">apps/desktop</code> entry</th><td>Nothing in the build; kept with the others so the tree never names two versions</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Other refusals</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Condition</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">refs/publish/last</code> is not an ancestor of the source</th><td>Refused; nothing changes</td></tr>
+<tr><th scope="row">No <code translate="no">origin</code> remote</th><td>The version stays on local <code translate="no">main</code></td></tr>
+<tr><th scope="row">GitHub's <code translate="no">main</code> is not part of local <code translate="no">main</code></th><td>Push refused</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="publishing-identity">Publishing identity</h2>
+<p>Everything on GitHub is signed by one account: <code translate="no">FuzzyKuji</code>, <code translate="no">9404270+FuzzyKuji@users.noreply.github.com</code>, repository <code translate="no">FuzzyKuji/OpenProgram</code>. The script sets it on each version commit whatever identity the checkout commits with, and refuses to push a <code translate="no">main</code> holding any other. Author lines in <code translate="no">pyproject.toml</code>, <code translate="no">apps/desktop/package.json</code> and the README licence line name the same account.</p>
+
+<h2 id="retired-accounts">Retired accounts</h2>
+<p>The project once published under GitHub accounts it no longer has. Nothing published names them: no author, link, example, fixture or note.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">Check</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">scripts/retired_accounts.py</code></th><td>Holds each login, address and id only as the SHA-256 of its lowercase form, so the guard names none. Text is compared token by token; tokens are also split at <code translate="no">/ @ + . _ -</code> and percent-encoding (also double), HTML entities and <code translate="no">\u</code>/<code translate="no">\x</code> escapes are decoded, so a login inside a URL, an address or a file name is found; the main login is found inside longer words too, like <code translate="no">git grep -i</code></td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/config/test_no_retired_accounts.py</code></th><td>Fails when any tracked text file, or a tracked path, names one</td></tr>
+<tr><th scope="row"><code translate="no">scripts/publish-github.sh</code></th><td>Scans the source commit's tree, read from the object store rather than the checkout, the summary and the history of <code translate="no">main</code></td></tr>
+<tr><th scope="row"><code translate="no">scripts/update_readme_contributors.py</code></th><td>Never lists a retired login in the README contributor block</td></tr>
+</tbody>
+</table>
+<p>GitHub carries versions from 1.0.0 onward. <code translate="no">.github/release-notes/</code> holds notes for those versions only, and the 1.0.0 notes link to no earlier version.</p>
+
+<h2 id="website">The website</h2>
+<p>The landing page and the documentation are published to <code translate="no">FuzzyKuji/openprogram-site</code> by the docs-pages workflow and served by GitHub Pages at <code translate="no">https://fuzzykuji.github.io/openprogram-site/</code>, documentation under <code translate="no">docs/</code>. The address is one setting: <code translate="no">SITE_URL</code> in <code translate="no">openprogram/operations/project_site.py</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Point</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">Not <code translate="no">openprogram.io</code></th><td>GitHub will not attach the domain to the site repository: a retired Pages site still claims it. The domain answers GitHub's 404 on every path, so nothing links it any more</td></tr>
+<tr><th scope="row">Derived in code</th><td>Canonical and language links, the sitemap, Markdown copies, <code translate="no">llms.txt</code>, <code translate="no">robots.txt</code>, social-card URLs, the IndexNow host and key, the update source and its host. Files in <code translate="no">docs/_static_root</code> write <code translate="no">{{SITE_URL}}</code>; the build writes <code translate="no">CNAME</code> only for a custom domain</td></tr>
+<tr><th scope="row">Mount path</th><td>Links the build writes start with <code translate="no">OPENPROGRAM_DOCS_BASE</code>: <code translate="no">/docs/</code> in the worker, <code translate="no">project_site.DOCS_PATH</code> in the workflow. They stay root-absolute because the site script keeps the sidebar across page changes and matches it by path. Files that sit at the site root, such as <code translate="no">favicon.ico</code>, are linked through the parent of that path, so they resolve below the address's path too</td></tr>
+<tr><th scope="row">Relative</th><td>Links written between documentation pages, including the newest-download links to <code translate="no">../latest.html?&lt;name&gt;</code>, and every link on the landing page. <code translate="no">latest.js</code> reads only GitHub and the page's own query</td></tr>
+<tr><th scope="row">Written out</th><td>READMEs, release notes, install scripts, the landing page's canonical and social URLs, the desktop App's update source. <code translate="no">tests/unit/config/test_site_address.py</code> fails on any tracked file naming another site address, and on an absolute link between documentation pages</td></tr>
+<tr><th scope="row">Read at run time</th><td><code translate="no">install</code>, <code translate="no">install.ps1</code> and <code translate="no">install.cmd</code> at the site root; <code translate="no">update-source.json</code>, optional and read only when GitHub fails</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-a-release-builds">What a release builds</h2>
+<p>The Release workflow runs on the pushed tag. Every platform leg is independent.</p>
+<p>A tag never moves, so a release can be rehearsed first. Publish <code translate="no">main</code> without <code translate="no">--tag</code>, then run <code translate="no">gh workflow run release.yml -f tag=vX.Y.Z -f rehearse=true</code>: every leg builds from <code translate="no">main</code>, the same checks run and nothing is published.</p>
+<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;rehearsal run&gt;</code> installs that run's Windows files on a Windows runner. When both pass, <code translate="no">scripts/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> tags the same commit; without <code translate="no">--source</code>, a promotion made in between would become a new, unrehearsed version.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Point</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Failed leg</th><td>Its files are left out; the publish job uploads what succeeded</td></tr>
+<tr><th scope="row">Thin App without update files</th><td>The Windows or Linux App leg marks an error before building when its platform's update files were not built, then still builds and checks the App so the same run shows every other problem; publish leaves that App out and names why</td></tr>
+<tr><th scope="row">Windows checks</th><td>App leg: the platform contract tests in <code translate="no">scripts/release/windows-contracts.txt</code>, then the installer installs, launches to a healthy worker, makes one tool call and uninstalls keeping the data. A failed contract does not stop the build and the install check; a step before the upload keeps that App out. Runtime leg: the installed command makes one tool call. A failure leaves out only that package. A failed Windows leg keeps its logs as a <code translate="no">diagnostics-windows-*</code> artifact, never published</td></tr>
+<tr><th scope="row"><code translate="no">release-manifest.json</code></th><td>Lists only what exists</td></tr>
+<tr><th scope="row">Release notes</th><td>Gain a "Not in this release" section naming what is missing and why</td></tr>
+<tr><th scope="row">Planned package missing</th><td>After the release is public, the publish job fails and names each one, so the run cannot look complete</td></tr>
+<tr><th scope="row">Publishing refused</th><td>Only when the wheel or the <a href="#office-archive">Office archive</a> is missing, or no macOS or Linux command-line runtime was built</td></tr>
+</tbody>
+</table>
+<p>Certificates decide the form of a package, never whether it exists.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Package</th><th scope="col">With credentials</th><th scope="col">Without</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS App</th><td>Developer ID signed and notarized, <code translate="no">OpenProgram-X.Y.Z-mac-&lt;arch&gt;.dmg</code></td><td>Ad-hoc signature, <code translate="no">-unsigned</code> in the name</td></tr>
+<tr><th scope="row">Windows App</th><td>Authenticode signed, <code translate="no">OpenProgram-X.Y.Z-win-&lt;arch&gt;.exe</code></td><td><code translate="no">-unsigned.exe</code></td></tr>
+<tr><th scope="row">Linux App</th><td>AppImage and deb need none; built on Ubuntu 22.04, x86_64 and arm64</td><td>The same</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_UPDATE_SIGNING_KEY</code> absent or not listed in <code translate="no">RELEASE_PUBLIC_KEYS</code></th><td>Windows and Linux Apps are left out and named in the notes: a thin-layout App with no trusted update signing key could never update</td></tr>
+<tr><th scope="row">AppImage build fails</th><td>The deb still ships</td></tr>
+<tr><th scope="row">One copy per file</th><td>Each App is uploaded once, under its versioned name; newest-download links go through <code translate="no">latest.html</code> on the docs site (<a href="installation-packaging.html#one-copy-per-file">why</a>)</td></tr>
+</tbody>
+</table>
+<p>Repository variables adjust the legs. None is needed for a normal release.</p>
+<table class="stack">
+<thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_DESKTOP_MAC</code>, <code translate="no">_WINDOWS</code>, <code translate="no">_LINUX</code></th><td>On; <code translate="no">false</code> switches off</td><td>That platform's App</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_RUNTIME</code></th><td>On; <code translate="no">false</code> switches off</td><td>The Windows command-line runtime</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code></th><td>Off; <code translate="no">true</code> switches on</td><td>Windows on Arm, App and runtime</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code></th><td>Off; <code translate="no">true</code> switches on</td><td>The thin macOS App, once signing and the update key exist</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_CLI_SEEDS</code></th><td>Off; <code translate="no">true</code> switches on</td><td><code translate="no">-seed-</code> assets for the command-line installers, once the key exists</td></tr>
+</tbody>
+</table>
+<p>macOS stays on the full App, and command-line installs on the complete runtime, until those two switches are turned on: Apps and command lines from v1.0.0 need the existing DMG names, runtime archives and <code translate="no">release-manifest.json</code>, and a seed install needs a released network fetcher.</p>
+
+<h2 id="office-archive">The Office archive</h2>
+<p>The optional Office editor installs from one zip, about 699 MiB, whose name, size and SHA-256 are pinned in <code translate="no">openprogram/programs/applications/office_editor/install.py</code>; the download limit for <code translate="no">office.assets</code> in <code translate="no">safe_http.py</code> is the same size. Every release from 1.3.0 uploads it once; 1.0.0 to 1.2.0 carry none.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Point</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where the App looks</th><td>Its own version's release, then <code translate="no">releases/latest/download/</code>, which serves a build that has no release of its own while the pin is unchanged. Both copies are held to the pinned size and SHA-256</td></tr>
+<tr><th scope="row">Why not only the newest release</th><td>A fixed name on the newest release breaks every installed version the day a release changes the pack; a copy in each release keeps each version installable for as long as its release exists</td></tr>
+<tr><th scope="row">No release has it</th><td>The install answers <code translate="no">office_release_missing</code>: a version before 1.3.0 is told to update to 1.3.0 or newer, any other to update to the newest version. A retry is not offered as the fix</td></tr>
+<tr><th scope="row">Where a release gets it</th><td>It cannot be rebuilt in CI: the licensed fonts and the pinned editor build are the owner's inputs (<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a>). The <code translate="no">office</code> job downloads the newest published release's copy, or else the one on the tag's draft release, and checks its bytes</td></tr>
+<tr><th scope="row">First release to carry it</th><td><code translate="no">publish-github.sh --tag vX.Y.Z --office-archive /path/to/OfficeAssets-….zip</code> checks the file and, before anything moves, puts it on the tag's draft release (<code translate="no">office-archive.py seed</code>). Every later release carries the previous one's copy with no upload by hand</td></tr>
+<tr><th scope="row">Neither copy exists</th><td>The <code translate="no">office</code> job fails with the file name, size, SHA-256 and the seed command. Every build waits for it, so nothing is built or published</td></tr>
+<tr><th scope="row">After publishing</th><td>The check on the public latest release also requires exactly one copy of the archive</td></tr>
+<tr><th scope="row">A new pack</th><td>Needs a new file name, never new bytes under an old one, because installed versions pin the bytes behind each name. <code translate="no">office-archive.py pack</code> names it <code translate="no">OfficeAssets-&lt;editor&gt;-&lt;patch&gt;-&lt;pack&gt;.zip</code>, the last part from the pack's own manifest digest, so different bytes always get a different name</td></tr>
+</tbody>
+</table>
+
+<h3 id="rebuilding-the-office-archive">Rebuilding the archive</h3>
+<p>On the owner's machine, from a <code translate="no">dev</code> checkout. The <code translate="no">pack</code> step makes the same zip from the same prepared pack. An installed copy is a prepared pack: when <code translate="no">~/.openprogram/cache/office/&lt;source&gt;-&lt;patch&gt;/versions/&lt;manifest&gt;</code> validates against the pins in <code translate="no">office_editor/assets.py</code>, copy it out and go straight to the <code translate="no">pack</code> step; nothing is built or downloaded.</p>
+<ol>
+<li>Gather the inputs the <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a> names: a git checkout of <code translate="no">agentbridges-ai/onlyoffice-browser</code> at <code translate="no">d15d12b6945be4d8b0f3aa1806120e740d2950ee</code> (package 0.3.34); the licensed font input and the font pack made from it with <code translate="no">font-generation.mjs</code> and Document Server 9.3.0's generator, whose manifest digest must equal <code translate="no">OFFICE_FONT_MANIFEST_DIGEST</code> in <code translate="no">office_editor/assets.py</code>; npm registry access for <code translate="no">npm ci</code>.</li>
+<li>Set <code translate="no">OFFICE_LOCK_SHA256</code> in <code translate="no">office_editor/assets.py</code> to the SHA-256 of <code translate="no">scripts/release/office/package-lock.json</code>, the reviewed lock <code translate="no">prepare.py</code> builds with; the pack's last validation refuses any other lock.</li>
+<li><code translate="no">python scripts/release/office/prepare.py --source … --font-pack … --font-input … --output /path/to/prepared-office</code></li>
+<li><code translate="no">python scripts/release/office-archive.py pack /path/to/prepared-office /path/to/out</code> writes the zip and pins its name, size and SHA-256 in <code translate="no">install.py</code> and the download limit in <code translate="no">safe_http.py</code>.</li>
+<li>Run the affected tests, commit on <code translate="no">dev</code>, deploy and promote.</li>
+<li><code translate="no">scripts/publish-github.sh -m "…" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>, then the same without <code translate="no">--dry-run</code>.</li>
+</ol>
+
+<h2 id="the-guards">The guards</h2>
+<table class="stack">
+<thead><tr><th scope="col">Hook</th><th scope="col">Refuses</th><th scope="col">Allows</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-push</code></th><td>A push to <code translate="no">refs/heads/main</code> without <code translate="no">OPENPROGRAM_GITHUB_PUBLISH=1</code> (set by the script) or not sending local <code translate="no">main</code>; a push of any other branch, which would upload the working history; a tag not pushed by the script or not naming local <code translate="no">main</code>, because a pushed tag starts the Release workflow</td><td>Deleting a remote branch or tag</td></tr>
+<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-commit</code></th><td>A commit while <code translate="no">main</code> is checked out; a commit whose staged docs fail <code translate="no">scripts.docs_site.check</code></td><td>Every other branch</td></tr>
+</tbody>
+</table>
+<p class="note">The machine's global hooks (<code translate="no">core.hooksPath</code>) delegate both to the repository's <code translate="no">.git/hooks</code>, which is why the script installs them there.</p>
+
+<h2 id="rules-for-sessions">Rules for sessions</h2>
+<dl class="commands">
+<dt>Commit</dt><dd>to <code translate="no">dev</code> as often as the work needs; deploy and promote as in <a href="dev-instance.html">Stable and development instances</a></dd>
+<dt>Publish</dt><dd>when a version is ready, after many promotions, not after every feature</dd>
+<dt>Never</dt><dd class="struck">commit on <code translate="no">main</code></dd>
+<dt>Never</dt><dd class="struck"><code translate="no">git push</code> <code translate="no">main</code> by hand</dd>
+<dt>Never</dt><dd class="struck">merge <code translate="no">main</code> into <code translate="no">dev</code> or <code translate="no">stable</code></dd>
+<dt>Never</dt><dd class="struck">push another branch to GitHub</dd>
+<dt>Never</dt><dd class="struck">open a pull request from a local branch: it would list every local commit</dd>
+</dl>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td><code translate="no">scripts/publish-github.sh</code> with dry run, <code translate="no">--no-push</code>, <code translate="no">--tag</code>, credential scan, retired-account scan, publishing-identity check and <code translate="no">refs/publish/last</code>; both guards; the rules in <code translate="no">AGENTS.md</code>; the Release workflow's independent legs; the Office archive in every release and the App's download from its own release</td></tr>
+<tr><th scope="row">Not yet run</th><td>A complete Release run. The one run so far, for v1.1.0, published the macOS and Linux Apps and every command-line runtime; the Windows installer was built and left out, because the Windows update files failed. The 1.2.0 rehearsal ran once: the publish job's check named the three Apps that did not pass (both macOS legs at signing, Windows at its App smoke). The Windows install smoke workflow has not run</td></tr>
+<tr><th scope="row">Website not republished</th><td>The site still serves the build from before the address became a setting: its links point to <code translate="no">/docs/</code> at the host root, and pages added since, such as the download page, are missing until the docs-pages workflow runs again. The social card picture still shows <code translate="no">openprogram.io</code></td></tr>
+<tr><th scope="row">Waiting for 1.3.0</th><td>No release carries the Office archive yet. The pinned file, <code translate="no">OfficeAssets-d15d12b-dc31dd9d-24d2d8e1.zip</code>, is <a href="#rebuilding-the-office-archive">packed</a> from the installed pack and kept on the owner's machine at <code translate="no">~/OpenProgram-release/office/</code>; 1.3.0 is tagged with <code translate="no">--office-archive</code> pointing at it</td></tr>
+</tbody>
+</table>

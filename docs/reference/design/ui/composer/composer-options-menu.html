@@ -1,0 +1,55 @@
+<title>Composer options menu</title>
+<meta name="description" content="The options menu in the composer: rows, shared menu styling and acceptance.">
+<h1>Composer options menu</h1>
+
+<p>The <code translate="no">+</code> menu in <code translate="no">ControlsCluster</code>. Radix <code translate="no">DropdownMenu</code> on the tokens in <code translate="no">apps/web/components/ui/menu/menu-styles.ts</code>, like every other menu. No module CSS.</p>
+
+<h2>Rows</h2>
+<table class="stack">
+<thead><tr><th scope="col">Row</th><th scope="col">Type</th><th scope="col">On select</th></tr></thead>
+<tbody>
+<tr><th scope="row">Add files or photos</th><td>Action</td><td>Closes</td></tr>
+<tr><th scope="row">Record a workflow</th><td>Action; macOS desktop App only</td><td>Closes</td></tr>
+<tr><th scope="row">Web Search</th><td>Toggle, after a separator</td><td>Stays open</td></tr>
+<tr><th scope="row">Sandbox</th><td>Toggle. Unavailable: disabled, native <code translate="no">title</code> gives the reason</td><td>Stays open</td></tr>
+<tr><th scope="row">Unattended</th><td>Toggle, after a separator</td><td>Stays open</td></tr>
+</tbody>
+</table>
+<p class="note">Every row is <code translate="no">PlusMenuRow</code> (<code translate="no">controls/menu-pieces.tsx</code>): <code translate="no">itemCls(false)</code> plus <code translate="no">MENU_ITEM_STATES</code>. A 16px Solar icon column, label, optional metadata, check column. Checked rows show a 14px <code translate="no">check-circle</code> that pops in once; others reserve the column with <code translate="no">CHECK_SLOT_PAD</code>.</p>
+
+<dl class="pairs">
+<dt>Panel</dt><dd><code translate="no">MENU_PANEL</code>: <code translate="no">rounded-lg</code>, <code translate="no">p-1</code></dd>
+<dt>Row</dt><dd><code translate="no">itemCls</code>: 28px minimum, <code translate="no">rounded-md</code>, base text, hover is the only tint</dd>
+<dt>Separator</dt><dd><code translate="no">MENU_SEPARATOR</code>, full-bleed</dd>
+<dt>Position</dt><dd>Radix portal on body, <code translate="no">z-[200]</code>, <code translate="no">side="top" align="start" sideOffset={9}</code>; radix handles anchoring, flip and collisions</dd>
+</dl>
+
+<h2 id="no-tool-switch">No tool switch</h2>
+<p>No Tools switch and no Access preset. Which tools a chat can call is the Agent's configuration (Agents → Capabilities → Programs: all, a scope or preset, or none). The composer only overlays Web Search. See <a href="../../runtime/agent-configuration/tool-toggle-management.html">tool toggle management</a>.</p>
+
+<details>
+<summary>Options compared</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Option</th><th scope="col">Outcome</th></tr></thead>
+<tbody>
+<tr><th scope="row">Radix on shared tokens</th><td>Adopted: open state, portal, flip, roving focus, typeahead, Escape, outside press; one menu grammar</td></tr>
+<tr><th scope="row">Base UI <code translate="no">Menu</code> with CSS modules</th><td>Removed: a second library and a drifting copy of the styles</td></tr>
+<tr><th scope="row">Manual fixed positioning</th><td>Rejected: no portal order, flip or full keyboard behaviour</td></tr>
+<tr><th scope="row">Native Popover API</th><td>Not adopted: no roving focus or positioning contracts</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Panel, rows, separators and checks come from <code translate="no">menu-styles.ts</code>; <code translate="no">composer.module.css</code> has no <code translate="no">.plusMenu*</code> rules.</li>
+<li>No Tools row, Access preset submenu or Tools chip.</li>
+<li>No <code translate="no">menuPosition</code> or computed fixed coordinates.</li>
+</ul>
+<dl class="commands">
+<dt><code translate="no">node apps/web/scripts/chat/check-composer-options-menu.mjs</code></dt><dd>Menu grammar</dd>
+<dt><code translate="no">npx tsc --noEmit -p .</code></dt><dd>Types, in <code translate="no">apps/web</code></dd>
+<dt><code translate="no">npm run check</code>, <code translate="no">npm run test:unit</code></dt><dd>Frontend checks, in <code translate="no">apps/web</code></dd>
+</dl>
+</details>

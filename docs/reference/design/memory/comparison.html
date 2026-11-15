@@ -1,0 +1,353 @@
+<title>Write strategy comparison</title>
+<meta name="description" content="How eight frameworks turn conversations into long-term memory, and where OpenProgram's choices fit.">
+<h1>Write strategy comparison</h1>
+<p class="note">Mechanisms: <a href="architecture.html">Memory subsystem illustrated</a>. Authoritative text: <a href="overview.html">Overview</a>. Missing features stay listed, because not building one is a choice.</p>
+<details><summary>Where the claims come from</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td><a href="https://code.claude.com/docs/en/memory">Public documentation</a>; what it leaves unsaid reads Undocumented</td></tr>
+<tr><th scope="row">Other third parties</th><td>Code snapshots in <code translate="no">references/</code>, with recorded lines</td></tr>
+<tr><th scope="row">codex-cli</th><td>Its snapshot is an internal build larger than the public version, so some capabilities are absent from public releases</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="plan">Where our design fits</h2>
+<table class="stack">
+<thead><tr><th scope="col">Dimension</th><th scope="col">OpenProgram</th><th scope="col">Same as</th><th scope="col">Differs</th></tr></thead>
+<tbody>
+<tr><th scope="row">Storage</th><td>Files only</td><td>claude-code</td><td>openclaw adds an index, hermes external services</td></tr>
+<tr><th scope="row">Who writes</th><td>An agent outside the conversation</td><td>codex, openclaw</td><td>hermes relies on the main model remembering</td></tr>
+<tr><th scope="row">What is written</th><td>Originals and distilled facts</td><td>claude-code, codex, pi-mono</td><td>Only ours footnotes each statement to its source</td></tr>
+<tr><th scope="row">Retrieval</th><td>BM25 by default</td><td>hermes, codex</td><td>—</td></tr>
+<tr><th scope="row">Resident block</th><td><code translate="no">topics/core.md</code> rendered into <code translate="no">MEMORY.md</code> within 2000 tokens</td><td>Separates canonical content from budget, as claude-code, codex, openclaw</td><td>Deletes nothing</td></tr>
+<tr><th scope="row">Nightly organization</th><td>Yes</td><td>codex, openclaw</td><td>Writing without organizing grows without end</td></tr>
+<tr><th scope="row">Session structure</th><td>DAG inside one session</td><td>pi-mono</td><td>The others are linear or fork into new files</td></tr>
+<tr><th scope="row">Cursor</th><td>A workspace marker on each node</td><td>None</td><td>Follows from the session structure, see <a href="#branch">Branches</a></td></tr>
+</tbody>
+</table>
+<p class="note">Marker placement, fork traversal and recovery: <a href="written-marker.html">Written marker</a>, with diagrams in <a href="architecture.html">architecture section 04</a>.</p>
+
+<h2 id="have">Is there long-term memory</h2>
+<table class="stack">
+<thead><tr><th scope="col">Framework</th><th scope="col">Memory</th><th scope="col">Form</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>Yes</td><td>Files only: <code translate="no">MEMORY.md</code> index, topic files</td></tr>
+<tr><th scope="row">codex-cli</th><td>Yes, off by default</td><td><code translate="no">~/.codex/memories/</code>: <code translate="no">MEMORY.md</code>, summary pages, skill directory, session summaries; SQLite only schedules two-stage distillation</td></tr>
+<tr><th scope="row">openclaw</th><td>Yes</td><td><code translate="no">MEMORY.md</code> is canonical; SQLite is a rebuildable index of vector nearest neighbours and full-text ranking</td></tr>
+<tr><th scope="row">hermes-agent</th><td>Yes</td><td><code translate="no">MEMORY.md</code> and <code translate="no">USER.md</code>; eight optional hosted services, one at a time</td></tr>
+<tr><th scope="row">OpenProgram</th><td>Yes</td><td>Markdown workspace: <code translate="no">topics/</code> and <code translate="no">MEMORY.md</code>; footnotes link chat messages</td></tr>
+<tr><th scope="row">opencode</th><td>No</td><td>User-written <code translate="no">AGENTS.md</code> or <code translate="no">CLAUDE.md</code>; no memory tool</td></tr>
+<tr><th scope="row">pi-mono</th><td>No</td><td>JSONL session tree for replay and branching; only <code translate="no">AGENTS.md</code> crosses sessions</td></tr>
+<tr><th scope="row">pi-ai</th><td>No</td><td>Provider SDK, 12 files, no session concept; the caller owns the message array</td></tr>
+<tr><th scope="row">weclaw</th><td>No</td><td>WeChat bridge storing an opaque session id; the launched process owns memory</td></tr>
+</tbody>
+</table>
+<p class="note">Classify by whether content returns to context. weclaw saves pasted URLs as Markdown, but no prompt reads them back. codex, opencode and pi-mono keep full transcripts that nobody distills or reads across sessions: storing originals is not memory.</p>
+<details>
+<summary>Verified locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">memories/write/src/lib.rs:116-118</code><br><code translate="no">state/memory_migrations/0001_memories.sql:1-35</code><br>Default off: <code translate="no">features/src/lib.rs:996-999</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/memory/root-memory-files.ts:4,8</code><br><code translate="no">extensions/memory-core/src/memory/manager-db.ts:10</code><br><code translate="no">.../manager-search.ts:148</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/instruction.ts:60-68</code><br>Entire tool/ directory listed</td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/memory_tool.py:56-60,138-173</code><br><code translate="no">agent/memory_manager.py:258-280</code></td></tr>
+<tr><th scope="row">pi-ai</th><td>No repository-wide grep matches; only OAuth credentials persist</td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/coding-agent/src/core/session-manager.ts:428-436</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">agent/cli_agent.go:25,226-231</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/store.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="when">When writes happen</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Framework</th><th scope="col">Timing</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>Claude writes during the session; when is undocumented</td></tr>
+<tr><th scope="row">codex-cli</th><td>Fire-and-forget task at turn start; exits on low quota, handles only sessions idle over six hours, deduplicated by a database lease that records the watermark on completion</td></tr>
+<tr><th scope="row">openclaw</th><td>Cron, default daily 03:00; short-term entries promoted by six weighted criteria; no in-session writes</td></tr>
+<tr><th scope="row">hermes-agent</th><td>The model calls a tool whenever it chooses; a background agent reminds it every ten turns</td></tr>
+<tr><th scope="row">OpenProgram</th><td>Checked each turn; writes at 16k tokens (8k, 16k or 32k by setting), writes the rest after 30 idle minutes, reorganizes at 03:00</td></tr>
+<tr><th scope="row">pi-mono</th><td>No memory writes; original events persist synchronously</td></tr>
+<tr><th scope="row">opencode, pi-ai, weclaw</th><td>No writes</td></tr>
+</tbody>
+</table>
+<p class="note">Three of four writers work outside the conversation, because memory edits add a call and distract the model from the task.</p>
+<details>
+<summary>Verified locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">app-server/src/request_processors/turn_processor.rs:578-591</code><br><code translate="no">memories/write/src/start.rs:23-81</code><br><code translate="no">memories/write/src/phase1.rs:149-187</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/memory-host-sdk/dreaming.ts:17,36-39</code><br><code translate="no">extensions/memory-core/src/dreaming.ts:163-187</code></td></tr>
+<tr><th scope="row">opencode</th><td>No memory tools under tool/</td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/memory_tool.py:619-686</code><br><code translate="no">agent/conversation_loop.py:429-439</code><br><code translate="no">agent/background_review.py:34-43</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/coding-agent/src/core/agent-session.ts:515</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/local_backend.py</code><br><code translate="no">openprogram/state/memory/session_watcher.py</code><br><code translate="no">openprogram/state/memory/scheduler.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="what">What is written</h2>
+<table class="stack">
+<thead><tr><th scope="col">Stored</th><th scope="col">Who</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Originals only</th><td>opencode, weclaw</td><td>Kept to resume a conversation. In a new one they are effectively absent.</td></tr>
+<tr><th scope="row">Distilled facts only</th><td>hermes-agent</td><td>Small and fast. Tool text says: "Do not store logs; search past sessions for those." A wrong fact has no source to check.</td></tr>
+<tr><th scope="row">Both</th><td>claude-code, codex-cli, pi-mono, OpenProgram</td><td>Originals are append-only, facts may be rewritten. Only ours footnotes each statement to <code translate="no">/s/&lt;session&gt;#&lt;msg&gt;</code>.</td></tr>
+</tbody>
+</table>
+<p class="note">codex distills twice: per-session into raw memories and a summary, then an agent without network or approval prompts rewrites <code translate="no">MEMORY.md</code>, summary pages and skill directories from those and a workspace diff. Writing and organizing are separate roles, like ours, but split by pipeline stage rather than time.</p>
+
+<h2 id="cursor">How unwritten content is identified</h2>
+<table class="stack">
+<thead><tr><th scope="col">Framework</th><th scope="col">Form</th><th scope="col">Stored in</th></tr></thead>
+<tbody>
+<tr><th scope="row">hermes-agent</th><td>None; the model writes when it chooses. Persistence uses an integer index, compaction scans body markers.</td><td>—</td></tr>
+<tr><th scope="row">weclaw, pi-ai</th><td>None; weclaw has only a hard message-count cutoff</td><td>—</td></tr>
+<tr><th scope="row">codex-cli</th><td>Integer timestamp watermark per session file</td><td>SQLite task table with lease and retry count</td></tr>
+<tr><th scope="row">claude-code</th><td>Undocumented</td><td>—</td></tr>
+<tr><th scope="row">pi-mono</th><td>One entry id, <code translate="no">firstKeptEntryId</code>, scan backward</td><td>Compaction records in the transcript</td></tr>
+<tr><th scope="row">opencode</th><td>Message-level <code translate="no">summary: true</code> and a <code translate="no">tail_start_id</code></td><td>On the messages</td></tr>
+<tr><th scope="row">openclaw</th><td>Entry <code translate="no">promotedAt</code> timestamp plus an HTML deduplication comment, cross-checking</td><td>On entries and in the <code translate="no">MEMORY.md</code> body</td></tr>
+<tr><th scope="row">OpenProgram</th><td>Workspace marker <code translate="no">memory_written_scriptorium</code> on each node; inspect back from the branch tip to the first marked node</td><td>Session node metadata</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Verified locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">state/memory_migrations/0001_memories.sql:3,7,17-31</code><br><code translate="no">memories/write/src/phase1.rs:149-187</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">extensions/memory-core/src/short-term-promotion.ts:84,1602-1612,1666-1669,1737</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/message-v2.ts:535-586</code><br><code translate="no">.../compaction.ts:386,437-442</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">agent/agent_init.py:1026</code><br><code translate="no">agent/context_compressor.py:37-51,1215-1226</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/coding-agent/src/core/session-manager.ts:67-77,315-422</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">agent/http_agent.go:151-154</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/writing.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branch">Branches and restarts</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="Messages m1 to m6 on the main branch are written. A new branch leaves m3 and holds b4, b5 and b6, which are pending. Both share m1 to m3 under one session id.">
+<defs><marker id="br-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+<rect class="tile" x="0" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="28" y="43">m1</text>
+<line class="ln" x1="56" y1="38" x2="76" y2="38"/>
+<rect class="tile" x="76" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="104" y="43">m2</text>
+<line class="ln" x1="132" y1="38" x2="152" y2="38"/>
+<rect class="tile" x="152" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="180" y="43">m3</text>
+<line class="ln" x1="208" y1="38" x2="228" y2="38"/>
+<rect class="tile" x="228" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="256" y="43">m4</text>
+<line class="ln" x1="284" y1="38" x2="304" y2="38"/>
+<rect class="tile" x="304" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="332" y="43">m5</text>
+<line class="ln" x1="360" y1="38" x2="380" y2="38"/>
+<rect class="tile" x="380" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="408" y="43">m6</text>
+<text class="t-big" x="456" y="44">Main branch, written</text>
+<line class="ln-acc" x1="180" y1="56" x2="180" y2="111"/>
+<line class="ln-acc" x1="180" y1="111" x2="226" y2="111" marker-end="url(#br-a)"/>
+<rect class="gate" x="228" y="93" width="56" height="36"/><text class="mid t-cmd" translate="no" x="256" y="116">b4</text>
+<line class="ln-acc" x1="284" y1="111" x2="304" y2="111"/>
+<rect class="gate" x="304" y="93" width="56" height="36"/><text class="mid t-cmd" translate="no" x="332" y="116">b5</text>
+<line class="ln-acc" x1="360" y1="111" x2="380" y2="111"/>
+<rect class="gate" x="380" y="93" width="56" height="36"/><text class="mid t-cmd" translate="no" x="408" y="116">b6</text>
+<text class="t-big" x="456" y="117">New branch, pending</text>
+<text class="t-soft" x="0" y="90">Shared prefix,</text>
+<text class="t-soft" x="0" y="110">one session id</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>Shared prefix</strong><small>m1 m2 m3, one session id</small></li>
+<li><strong>Main branch, written</strong><small>m4 m5 m6</small></li>
+<li class="flow-end"><strong>New branch from m3, pending</strong><small>b4 b5 b6</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead><tr><th scope="col">Cursor on that DAG</th><th scope="col">Result for the new branch</th></tr></thead>
+<tbody>
+<tr><th scope="row">Position: written through 6</th><td>b4, b5, b6 have indices 4, 5, 6 and are skipped</td></tr>
+<tr><th scope="row">One id: written through m6</th><td>m6 never appears on this branch</td></tr>
+<tr><th scope="row">Per-node marker</th><td>b4, b5, b6 are unmarked: pending. m1 to m3 carry markers, so inspection stops there.</td></tr>
+</tbody>
+</table>
+
+<h3 id="branch-support">Session structure</h3>
+<table class="stack">
+<thead><tr><th scope="col">Framework</th><th scope="col">Branching</th><th scope="col">Implementation</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>Yes, most complete</td><td><code translate="no">/branch</code> copies the session; <code translate="no">/rewind</code> rewinds conversation, files or both; subagents write separate files</td></tr>
+<tr><th scope="row">codex-cli</th><td>Yes</td><td><code translate="no">codex fork</code> and TUI edits of earlier prompts create threads, source unchanged</td></tr>
+<tr><th scope="row">openclaw</th><td>Subagents only</td><td>Dispatch can inherit the parent transcript or start clean; no old-message edit found</td></tr>
+<tr><th scope="row">opencode</th><td>Copy; rewind deletes</td><td><code translate="no">fork</code> deep-copies. <code translate="no">revert</code> sets a marker, and the next prompt permanently deletes later messages, so editing an old message is irreversible unless forked first.</td></tr>
+<tr><th scope="row">hermes-agent</th><td>Yes</td><td><code translate="no">/branch</code> copies into a session linked by parent id; compaction also makes child sessions, and <code translate="no">/resume</code> follows the chain to the latest</td></tr>
+<tr><th scope="row">pi-mono</th><td>Trees</td><td>Editing an old message creates a sibling branch; leaving one can keep a generated summary</td></tr>
+<tr><th scope="row">OpenProgram</th><td>DAGs</td><td>Reasking, retrying and spawning agents branch from intermediate points; branches under one session id share prefixes</td></tr>
+<tr><th scope="row">weclaw</th><td>No</td><td>One session per WeChat contact; <code translate="no">/new</code> deletes the old one</td></tr>
+<tr><th scope="row">pi-ai</th><td>No sessions</td><td>—</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Verified locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">thread-store/src/types.rs:183-190</code><br><code translate="no">tui/src/app_backtrack.rs:7-8</code><br><code translate="no">rollout/src/recorder.rs:97-98</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/agents/tools/sessions-spawn-tool.ts:190,307,343-344</code><br>Message editing: no grep matches</td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/session.ts:733-774</code><br><code translate="no">.../revert.ts:100-134</code><br><code translate="no">.../prompt.ts:1155-1159</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">cli.py:6682-6809</code><br><code translate="no">agent/conversation_compression.py:381-397</code><br><code translate="no">hermes_state.py:1851-1869</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/agent/src/harness/agent-harness.ts:788-812</code><br><code translate="no">.../branch-summarization.ts:200-262</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">messaging/handler.go:340-345</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/store/session/session_store/branches.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="fork-cursor">The cursor after a fork</h3>
+<table class="stack">
+<thead><tr><th scope="col">Framework</th><th scope="col">Cursor scope after a fork</th><th scope="col">Prefix extracted again</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td>New <code translate="no">thread_id</code>, the cursor table's primary key</td><td>Yes, all of it; only Phase 2 consolidation merges semantically</td></tr>
+<tr><th scope="row">claude-code</th><td>Undocumented</td><td>—</td></tr>
+<tr><th scope="row">openclaw</th><td>New session, flush markers cleared on purpose</td><td>Yes; comments prefer repetition to omission from equal hashes</td></tr>
+<tr><th scope="row">opencode</th><td>New ids; <code translate="no">tail_start_id</code> translated through a lookup table</td><td>No</td></tr>
+<tr><th scope="row">hermes-agent</th><td>New session; index advanced by hand to the copied length</td><td>No. Compaction-created sessions reset to 0 because they start empty.</td></tr>
+<tr><th scope="row">pi-mono</th><td>No cursor needed: walk leaf to nearest common ancestor</td><td>No; traversal excludes it</td></tr>
+<tr><th scope="row">OpenProgram</th><td>Unchanged; markers read back from the current tip</td><td>No</td></tr>
+<tr><th scope="row">pi-ai, weclaw</th><td>No forks; weclaw's <code translate="no">/new</code> clears the session</td><td>—</td></tr>
+</tbody>
+</table>
+<p>Index and timestamp cursors need one line per scope, so they change scope at a fork, and that works because their forks copy content. Our forks copy nothing, so we record identities. pi-mono's alternative needs a comparison branch for every traversal; memory asks what is unwritten in the session and has no second branch to compare.</p>
+<details>
+<summary>Verified locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">thread-store/src/types.rs:78-79,97</code><br><code translate="no">state/memory_migrations/0001_memories.sql:1-12</code><br><code translate="no">state/src/runtime/memories.rs:104-108</code><br><code translate="no">memories/write/src/phase1.rs:290</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/auto-reply/reply/session.ts:756-767,793-799</code><br><code translate="no">src/config/sessions/types.ts:370-371</code><br><code translate="no">src/auto-reply/reply/memory-flush.ts:117-123</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/session.ts:748-758,767-769</code><br><code translate="no">.../compaction.ts:244-248</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">cli.py:6701-6705,6744-6756,6776-6777</code><br><code translate="no">agent/agent_init.py:1026</code><br><code translate="no">agent/conversation_compression.py:379-380,407-408</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/agent/src/harness/compaction/branch-summarization.ts:87-97</code><br><code translate="no">packages/agent/src/harness/agent-harness.ts:737-834</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">agent/http_agent.go:76-78</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/writing.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="recall">Retrieval</h2>
+<table class="stack">
+<thead><tr><th scope="col">Path</th><th scope="col">Who</th><th scope="col">How</th><th scope="col">Cost</th></tr></thead>
+<tbody>
+<tr><th scope="row">Inject everything</th><td>opencode, pi-mono</td><td>All of <code translate="no">AGENTS.md</code> enters the system prompt; the model greps for finer detail</td><td>No infrastructure; large files exhaust the budget</td></tr>
+<tr><th scope="row">Keyword</th><td>OpenProgram, hermes, codex</td><td>Ours: BM25, five results each turn, no model call (1 to 10 by setting; embedding, hybrid and agent are options). hermes: SQLite full-text session search. codex: line-by-line substring.</td><td>Fast and explainable; paraphrases may miss</td></tr>
+<tr><th scope="row">Vector</th><td>openclaw</td><td>Nearest neighbours combined with full-text ranking; a subagent also searches before the user turn and inserts conclusions</td><td>Embeddings, indexes, rebuilds: over half of 20,000-plus lines</td></tr>
+</tbody>
+</table>
+
+<h2 id="core">Resident content when full</h2>
+<table class="stack">
+<thead><tr><th scope="col">Block</th><th scope="col">Limit</th><th scope="col">When full</th><th scope="col">Disclosure</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code <code translate="no">MEMORY.md</code></th><td>200 lines or 25KB</td><td>The rest does not load at session start</td><td>Error telling Claude to rewrite the index</td></tr>
+<tr><th scope="row">claude-code <code translate="no">CLAUDE.md</code></th><td>4 MiB; under 200 lines advised</td><td>A file over 4 MiB is skipped</td><td>—</td></tr>
+<tr><th scope="row">codex-cli</th><td>Project <code translate="no">AGENTS.md</code> 32 KiB shared; summary 2500 tokens; global unlimited</td><td>Cut at the remaining-byte boundary</td><td>Log entry only</td></tr>
+<tr><th scope="row">openclaw <code translate="no">MEMORY.md</code></th><td>10000 characters</td><td>Removes only automatically promoted paragraphs, oldest first; handwritten text stays</td><td>Returns removed dates</td></tr>
+<tr><th scope="row">openclaw startup layer</th><td>12000 per file, 60000 total characters</td><td>75% head, 25% tail. <code translate="no">AGENTS.md</code>: 45% head, 35% regex-selected key lines, 15% tail.</td><td>System-prompt warning, by default every time</td></tr>
+<tr><th scope="row">hermes-agent</th><td>2200 and 1375 characters</td><td>Rejects the write; the model frees space with replace or remove</td><td>Usage and limit returned to the model</td></tr>
+<tr><th scope="row">OpenProgram</th><td>2000 tokens, counted with tiktoken</td><td>Renders paragraphs in file order until the next does not fit. <code translate="no">topics/core.md</code> is not changed.</td><td>Reports what was left out; it stays searchable</td></tr>
+<tr><th scope="row">opencode, pi-mono</th><td><code translate="no">AGENTS.md</code> unlimited, confirmed</td><td>—</td><td>—</td></tr>
+<tr><th scope="row">pi-ai, weclaw</th><td>No block; weclaw has a fixed configured prompt</td><td>—</td><td>—</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Verified locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">core/src/config/mod.rs:211</code><br><code translate="no">core/src/agents_md.rs:94,116-124</code><br><code translate="no">ext/memories/src/lib.rs:16</code></td></tr>
+<tr><th scope="row">openclaw MEMORY.md</th><td><code translate="no">extensions/memory-core/src/memory-budget.ts:25,100-164</code><br><code translate="no">short-term-promotion.ts:1719,1762</code></td></tr>
+<tr><th scope="row">openclaw startup</th><td><code translate="no">src/agents/pi-embedded-helpers/bootstrap.ts:88-89,96-102,158-165</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/instruction.ts:91-93,155-169</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/memory_tool.py:149,295-306,359-366</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/coding-agent/src/core/system-prompt.ts:61-68</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">config/config.go:28</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/management/config.py</code><br><code translate="no">openprogram/state/memory/runtime/derived_views.py</code><br><code translate="no">openprogram/state/memory/management/block_views.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="core-maintenance">Maintenance and new facts after saturation</h3>
+<table class="stack">
+<thead><tr><th scope="col">Framework</th><th scope="col">Canonical source</th><th scope="col">Maintenance</th><th scope="col">After saturation</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>Topic files; <code translate="no">MEMORY.md</code> is only an index</td><td>Claude is reminded to shorten the index near a limit</td><td>The write succeeds; Claude is told to rewrite the index</td></tr>
+<tr><th scope="row">codex-cli</th><td>SQLite, then raw-memory file, then <code translate="no">memory_summary.md</code></td><td>Full rewrite at session start with six-hour cooldown; prunes entries unused for 30 days</td><td>Rewritten each round; 2500-token cut at injection</td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">MEMORY.md</code>, hence ownership-based trimming</td><td>Daily 03:00 cron after the dream pipeline</td><td>Oldest automatic text trimmed first; writes continue</td></tr>
+<tr><th scope="row">hermes-agent</th><td>The file itself</td><td>None, the only one</td><td>The main model must first make room</td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">topics/core.md</code>; the block in <code translate="no">MEMORY.md</code> is derived</td><td>Rebuilt with other derived views after every installed transaction; nightly organization edits Topics only</td><td>Topics still accept writes; over-budget content stays retrievable</td></tr>
+<tr><th scope="row">opencode, pi-mono</th><td>Handwritten file</td><td>Not applicable</td><td>No limit</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Lessons on trimming</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Lesson</th><th scope="col">For us</th></tr></thead>
+<tbody>
+<tr><th scope="row">Line counts cannot limit long lines</th><td>Not adopted: another write-path gate would still exclude stable facts. Ours counts tokens at rendering.</td></tr>
+<tr><th scope="row">Trim by ownership, not age</th><td>Not adopted: it matters when the file is the sole copy. Our block is derived, so omission destroys nothing.</td></tr>
+<tr><th scope="row">Limit all relevant content</th><td>codex omits global <code translate="no">AGENTS.md</code>; claude-code stops a <code translate="no">CLAUDE.md</code> only at 4 MiB</td></tr>
+<tr><th scope="row">Disclose truncation</th><td>codex only logs it, so user and model never know. Ours reports it.</td></tr>
+</tbody>
+</table>
+<p>The decision and rationale: <a href="adoption.html">What to adopt after comparison</a>, section 02.</p>
+</details>
+<details>
+<summary>Verified locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">state/src/runtime/memories.rs:21</code><br><code translate="no">memories/write/src/phase2.rs:139-166</code><br><code translate="no">memories/write/src/phase1.rs:110-133</code><br><code translate="no">ext/memories/src/lib.rs:16</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/memory-host-sdk/dreaming.ts:17</code><br><code translate="no">extensions/memory-core/src/memory-budget.ts:25,100-164</code><br><code translate="no">.../short-term-promotion.ts:1706-1727</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/memory_tool.py:149,295-306</code><br>No matches: consolidate, distill, prune, compact, dream</td></tr>
+<tr><th scope="row">opencode, pi-mono</th><td><code translate="no">packages/opencode/src/session/instruction.ts:60-93</code><br><code translate="no">packages/coding-agent/src/core/resource-loader.ts:57-100</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="size">Implementation size</h2>
+<table class="stack">
+<thead><tr><th scope="col">Framework</th><th scope="col">Lines, no tests</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw</th><td>34,000</td><td>Vectors, full-text, dream pipeline, promotion ranking. Two alternative backends add 12,000, excluded.</td></tr>
+<tr><th scope="row">OpenProgram</th><td>11,600</td><td>All of <code translate="no">openprogram/state/memory/</code>: writing, transactions, retrieval, topic format, nightly organization. None is compaction.</td></tr>
+<tr><th scope="row">codex-cli</th><td>8,900 + 3,700</td><td>Two-stage distillation and read path. About 60,000 transcript and fork lines are not memory.</td></tr>
+<tr><th scope="row">hermes-agent</th><td>2,800 + 2,400</td><td>Eight optional service plugins total 11,600, all off by default</td></tr>
+<tr><th scope="row">pi-mono</th><td>5,000</td><td>Session tree and compaction, the same logic twice; 0 long-term memory</td></tr>
+<tr><th scope="row">opencode</th><td>1,550</td><td>Compaction and storage; 0 long-term memory</td></tr>
+<tr><th scope="row">weclaw</th><td>200</td><td>Session-id bookkeeping</td></tr>
+<tr><th scope="row">pi-ai</th><td>0</td><td>—</td></tr>
+</tbody>
+</table>
+<p class="note">Vectors, embedding caches, index rebuilds and hybrid ranking dominate openclaw. Maintaining an index, not having memory, is the divide.</p>
+
+<h2 id="practices">Practices worth borrowing</h2>
+<table class="stack">
+<thead><tr><th scope="col">From</th><th scope="col">Practice</th><th scope="col">Ours</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td>Writer lease from a SQLite table with retry counts and last watermark; checks quota first</td><td>Cross-process write lock, one-second timeout; the idle watcher keeps failures by the scope of their cause (conversation, memory, sign-in) in <code translate="no">ingest-state.json</code>; failures reach writer status and a <code translate="no">memory_writer_failed</code> frame</td></tr>
+<tr><th scope="row">codex-cli</th><td>The model embeds a hidden marker naming memory it used; the server counts it and strips it. Counts rank content at organization.</td><td>Not built; nightly organization merges by content</td></tr>
+<tr><th scope="row">openclaw</th><td>Deduplication in two copies that check each other</td><td>Node marks alone; Topic footnotes name the same messages without cross-checking</td></tr>
+<tr><th scope="row">pi-mono</th><td>A generated summary on leaving a branch</td><td>Not built</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td><code translate="no">topics/core.md</code> as canonical resident source, per-node workspace markers, live-branch enumeration at session boundaries, Topic footnotes preserving Source references</td></tr>
+<tr><th scope="row">Not yet</th><td>Index-free selection from Topic self-descriptions, retrieval usage as organization input, direct writer notification on head changes instead of post-turn thresholds or the idle watcher</td></tr>
+</tbody>
+</table>

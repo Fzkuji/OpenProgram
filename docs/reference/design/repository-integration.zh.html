@@ -1,0 +1,44 @@
+<title>仓库集成</title>
+<meta name="description" content="分支工作如何合入开发线并交付。">
+<h1>仓库集成</h1>
+
+<p>集成目标是 <code translate="no">dev</code>。<code translate="no">main</code> 的历史相互独立，只由 <code translate="no">scripts/publish-github.sh</code> 写入（见<a href="distribution/github-publishing.zh.html">向 GitHub 发布源码</a>）。</p>
+
+<h2 id="boundary">边界</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">审计</th><td>每条分支按已提交的头部；未提交文件留在各自的 worktree</td></tr>
+<tr><th scope="row">准备</th><td>在隔离的干净检出中</td></tr>
+<tr><th scope="row">删除分支</th><td>单独的操作</td></tr>
+<tr><th scope="row">仍为权威</th><td>Agent 与 Context 重构；官方 Anthropic API 要求</td></tr>
+</tbody>
+</table>
+
+<h2 id="merge-decisions">合并决策</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">分支改动</th><th scope="col">决策</th></tr></thead>
+<tbody>
+<tr><th scope="row">已是祖先</th><td>已包含</td></tr>
+<tr><th scope="row">重复或已被取代，常见补丁相同而提交 id 不同</th><td>保留当前实现；比较其独有补丁后才记录分支祖先关系</td></tr>
+<tr><th scope="row">确实是新内容</th><td>正常内容合并</td></tr>
+<tr><th scope="row">引用已删除的 API</th><td>保留较新的实现</td></tr>
+<tr><th scope="row">更新依赖</th><td>一起解决到一个 lockfile</td></tr>
+<tr><th scope="row">整体用远端覆盖，或整体接受历史文件</th><td>拒绝</td></tr>
+</tbody>
+</table>
+
+<h2 id="verification">验证</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">要求</th></tr></thead>
+<tbody>
+<tr><th scope="row">分支清单</th><td>确切头部、包含关系、补丁比较、评审和剩余检查，记在私有交付台账</td></tr>
+<tr><th scope="row">祖先关系</th><td>清单中每个头部都是合并后提交的祖先</td></tr>
+<tr><th scope="row">该提交上的检查</th><td>仓库契约、受影响的公开检查、依赖锁校验、Web 测试、文档检查</td></tr>
+<tr><th scope="row">已有失败</th><td>保持记录为未完成，绝不算作通过证据</td></tr>
+<tr><th scope="row">冲突或写入失败</th><td>保留候选引用和原引用</td></tr>
+</tbody>
+</table>
+
+<h2 id="delivery">交付</h2>
+<p><code translate="no">openprogram dev deploy</code>，然后 <code translate="no">openprogram dev promote</code>；见<a href="distribution/dev-instance.zh.html">稳定版与开发版实例</a>。App 验收使用默认 profile 和端口 <code translate="no">18100</code>。</p>

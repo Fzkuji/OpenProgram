@@ -1,0 +1,118 @@
+/* vivid-light — 彩色浅色：整套界面跟着标签栏颜色走。
+   标签栏颜色在设置里从 Chrome 同款色块中选（--tabrow-seed，base/desktop-chrome.css），
+   面板、文字、强调色都从同一色相派生，和 Chrome 彩色主题一样。 */
+[data-theme="vivid-light"] {
+  /* Every surface, text tier and the accent derive from the tab-strip
+     colour (--tabrow-seed, base/desktop-chrome.css) with the same hue, like Chrome's
+     colour themes: near-white panels with a trace of the hue, text a
+     tinted ink, the accent a saturated tone of it. */
+  --bg-primary: oklch(from var(--tabrow-seed) 0.99 calc(c * 0.08) h);
+  --bg-secondary: oklch(from var(--tabrow-seed) 0.965 calc(c * 0.2) h);
+  --bg-tertiary: oklch(from var(--tabrow-seed) 0.935 calc(c * 0.28) h);
+  --bg-hover: rgba(20, 20, 19, 0.05);
+  --bg-hover-contrast: #ffffff;
+  /* 纯白：composer 和用户气泡比极淡暖白的页面更亮，再靠阴影浮起来。 */
+  --bg-input: #ffffff;
+  --border: rgba(20, 20, 19, 0.08); /* subtle hairline */
+  --border-light: oklch(from var(--tabrow-seed) 0.89 calc(c * 0.35) h);          /* strong hairline */
+  /* Claude light text tiers: ink #141413 (bright), body #3d3d3a
+     (Claude's text-200 tier — the brief's four tiers skip it),
+     secondary #5e5d59, muted #91908c. The dim tier #b0aea7 has no
+     token; use it inline for placeholders if a component needs it. */
+  --text-primary: oklch(from var(--tabrow-seed) 0.33 calc(c * 0.15) h);
+  --text-secondary: oklch(from var(--tabrow-seed) 0.46 calc(c * 0.15) h);
+  --text-bright: oklch(from var(--tabrow-seed) 0.17 calc(c * 0.1) h);
+  --text-muted: oklch(from var(--tabrow-seed) 0.62 calc(c * 0.12) h);
+  --nav-color: oklch(from var(--tabrow-seed) 0.46 calc(c * 0.15) h);       /* lighter than text-primary so light-mode icons aren't black */
+  --nav-color-hover: oklch(from var(--tabrow-seed) 0.17 calc(c * 0.1) h); /* same as text-bright */
+  --bg-selected: rgba(20, 20, 19, 0.08); /* selected row, one step above hover */
+  /* Chat surfaces: the sent user bubble is the same raised surface as
+     the composer (--bg-input + --composer-shadow); the assistant
+     message sits flat on the page (no bubble tint). */
+  --user-msg-bg: var(--bg-input);
+  --assistant-msg-bg: oklch(from var(--tabrow-seed) 0.99 calc(c * 0.08) h);
+  /* Claude light is flat: hairlines + tint carry elevation, shadows
+     stay barely-there. */
+  --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.04);
+  --shadow: 0 2px 8px rgba(20, 20, 19, 0.05);
+  /* Popover / menu surface — pure white card, visibly raised off the
+     cream page (Claude style), ring baked into the shadow. */
+  --surface-popover: #ffffff;
+  /* 弹层边缘 = 真 border（--border-popover）而非藏在 shadow 里的
+     ring——ring 反复被反馈"看不见"。0.12 比 pill 发丝线(0.1)深半档，
+     浮层需要更明确的边界。shadow 只负责投影。 */
+  --border-popover: rgba(10, 10, 10, 0.12);
+  --shadow-popover: var(--glass-shadow);
+  --shadow-dialog: 0 10px 30px rgba(20, 20, 19, 0.10);
+  --shadow-sidebar-left: 4px 0 16px rgba(20, 20, 19, 0.06);
+  --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);
+  /* Collapsed `off` effort-pill chip — light-theme counterpart. */
+  --effort-off-bg: oklch(from var(--tabrow-seed) 0.935 calc(c * 0.28) h);
+  --accent-orange: oklch(from var(--tabrow-seed) 0.5 calc(c * 1.6) h);
+  --accent-fill: oklch(from var(--tabrow-seed) 0.5 calc(c * 1.6) h);
+  --accent-orange-hover: oklch(from var(--tabrow-seed) 0.44 calc(c * 1.6) h);
+  /* The tab strip shows the colour picked in Settings (base/desktop-chrome.css
+     --tabrow-color) at full strength. */
+  --tabrow-tint: 100%;
+  --accent-green: #3f7a4e; /* 4.86:1 as text on the light page; #6e9b76 was 3.0:1 */
+  --accent-red: #c24e42;
+  /* Deeper amber for the same reason — `#d4a346` is 2.18:1 as text
+     on cream; this one is 3.60:1. */
+  --accent-yellow: #a67c2e;
+  --accent-purple: #a371f7;
+  --accent-cyan: #3bc9db;
+  /* White-on-coral, same as dark. */
+  --primary-foreground: #ffffff;
+  /* Soft danger-tier accents — a touch deeper than the dark-theme set
+     so they hold contrast against the cream light background. */
+  --success-soft: #5f8a67;
+  --warning-soft: #b98f3d;
+  --danger-soft: #b04a3f;
+  /* Stream-terminal text on the light --bg-tertiary inset: bright
+     cyan/amber wash out (1.6–1.8:1), so drop to darker tones. */
+  --stream-tool: #0d6e77; /* teal, 4.78:1 on #e8e6dc */
+  --stream-info: var(--text-secondary);
+  color-scheme: light;
+
+  /* ===== Phase 2 语义 token ===== */
+  --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+  --focus-ring: color-mix(in srgb, var(--text-bright) 45%, transparent);
+  --scrim: rgba(0, 0, 0, 0.45);
+  --scrim-strong: rgba(0, 0, 0, 0.65);
+  /* Tooltips are Nova's inverted badge (components/ui/tooltip.tsx). */
+  --surface-tooltip: var(--foreground);
+  --text-on-tooltip: var(--background);
+  --composer-ring: rgba(10, 10, 10, 0.1);
+  --composer-ring-focus: rgba(10, 10, 10, 0.18);
+  /* Input box = shadcn Luma Card surface with no border: shadow-sm
+     at rest, shadow-md on hover / focus. */
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --composer-shadow-focus: 0 4px 6px -1px rgb(0 0 0 / 0.16), 0 2px 4px -2px rgb(0 0 0 / 0.16);
+  --chip-bg: #ffffff;
+  --chip-ring: rgba(10, 10, 10, 0.1);
+  --meter-fill: #3b82f6;
+  --meter-track: var(--bg-tertiary);
+  --provider-icon-bg: var(--bg-tertiary);
+  --dag-ghost: oklch(from var(--tabrow-seed) 0.78 calc(c * 0.15) h);
+}
+
+/* Pages inside the centre card (non-chat routes, Review, Agents and other
+   built-in tabs) use the chat's warm white: panels and headers are the
+   page colour, separated by hairlines, and controls sit on a light fill.
+   Tokens derived on :root (shadcn bridge, meters) are restated so they
+   resolve against the lighter values here. The window frame, the rails
+   and the chat pane keep the theme's own values. */
+[data-theme="vivid-light"] .page-col,
+[data-theme="vivid-light"] [data-page-surface] {
+  --bg-secondary: oklch(from var(--tabrow-seed) 0.99 calc(c * 0.08) h);
+  --bg-tertiary: oklch(from var(--tabrow-seed) 0.965 calc(c * 0.2) h);
+  --card: var(--bg-secondary);
+  --popover: var(--bg-input);
+  --secondary: var(--bg-tertiary);
+  --muted: var(--bg-tertiary);
+  --effort-off-bg: var(--bg-tertiary);
+  --meter-track: var(--bg-tertiary);
+  --provider-icon-bg: var(--bg-tertiary);
+}

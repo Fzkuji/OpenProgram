@@ -6,9 +6,9 @@
  */
 
 import { useSessionStore } from "@/lib/session-store";
-import { escHtml } from "./markdown-render";
+import { escHtml } from "./dom/markdown-render";
 
-export { escHtml, renderMathInChat, renderMd, sanitizeHtml } from "./markdown-render";
+export { escHtml, renderMathInChat, renderMd, sanitizeHtml } from "./dom/markdown-render";
 
 export function escAttr(s: unknown): string {
   if (typeof s !== "string") s = String(s ?? "");
@@ -34,7 +34,9 @@ export function autoResize(el: HTMLTextAreaElement): void {
   el.style.height = Math.min(el.scrollHeight, 200) + "px";
 }
 
-export function setWelcomeVisible(show: boolean): void {
+/** ``fade``: hiding because the chat sent its first message (see
+ *  WelcomeScreen). */
+export function setWelcomeVisible(show: boolean, fade = false): void {
   // Pure write-through to the React store — the NEW framework owns the
   // welcome layout end-to-end from here. `<WelcomeScreen />` renders (or
   // unmounts) the `.welcome` node off `welcomeVisible`, and the
@@ -44,7 +46,7 @@ export function setWelcomeVisible(show: boolean): void {
   // writes (inline `padding-bottom:150px`, the `.welcome-visible` class)
   // fought the stylesheet and only cleared on hide, which floated the
   // example row ~60px up and kept it there until a reload.
-  useSessionStore.getState().setWelcomeVisible(!!show);
+  useSessionStore.getState().setWelcomeVisible(!!show, fade);
 }
 
 export function addSystemMessage(text: string): void {
@@ -116,7 +118,7 @@ export function formatUsageBadge(usage: Usage): string {
     ? ' title="' + escAttr(result.tooltip) + '"'
     : "";
   return (
-    '<span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-left:auto;padding-left:8px"' +
+    '<span style="font-size:var(--fs-2xs);color:var(--text-muted);margin-left:auto;padding-left:8px"' +
     tip +
     ">" +
     escHtml(result.text) +

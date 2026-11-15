@@ -1,0 +1,28 @@
+<title>侧栏会话状态</title>
+<meta name="description" content="侧栏会话行显示哪种标记，以及运行扫光何时出现。">
+<h1>侧栏会话状态</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">优先级</th><th scope="col">状态</th><th scope="col">标记</th><th scope="col">背景</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>等待输入</td><td>琥珀色</td><td>无</td></tr>
+<tr><th scope="row">2</th><td>运行中</td><td>三个跳动的点，置顶时也一样</td><td>仅选中行有扫光</td></tr>
+<tr><th scope="row">3</th><td>未读</td><td>未读圆点</td><td>无</td></tr>
+<tr><th scope="row">4</th><td>置顶、空闲</td><td>置顶或空闲标记</td><td>无</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">ConvItem</code> 决定状态，<code translate="no">StatusMarker</code> 绘制。选中用 <code translate="no">aria-current="true"</code> 表示。CSS 在未选中行屏蔽运行和结束的伪元素。不涉及后端状态、任务执行、导航和对话持久化。</p>
+
+<details>
+<summary>安装和验收</summary>
+<p>TSX 和 CSS 走正常的发布资源流程，绝不手改已安装的压缩 JavaScript 和生成的资源名。工作区根目录的包清单保存工作区定义，与桌面端清单分开。</p>
+<ul>
+<li>Web 测试和检查、生产构建、桌面端检查、仓库契约和文档链接通过。</li>
+<li>每个已安装的前端 JavaScript 分块都能解析。</li>
+<li>App 打开受影响的对话和另一个对话都没有客户端异常。</li>
+<li>Worker 健康状态和已安装的源码版本与验证过的检出一致。只有源码检查不能说明已安装 App 健康。</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。</p>

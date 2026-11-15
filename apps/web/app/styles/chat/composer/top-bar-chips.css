@@ -1,0 +1,422 @@
+/* 输入框区域的 chips：状态/项目/工作目录/agent/权限等徽章与 hover tooltip。
+   对应组件：components/chat/top-bar/（index.tsx, project-menu.tsx,
+   working-dir-chips.tsx, permission-menu.tsx 等）、components/ui/tooltip.tsx。
+   外观（高度、圆角、底色、描边、字号）来自 shadcn Button 的
+   buttonVariants（outline / ghost, size xs）——这里只留内部布局。 */
+
+/* Each badge (status / branch / chat / exec) is a two-part chip: an
+   always-visible short label + an optional details span. Making the
+   badge itself an inline-flex container lets the details span
+   ellipsis-truncate independently of the short label. */
+.status-badge,
+.runtime-badge {
+  display: inline-flex;
+  align-items: center;
+  /* Chips do NOT shrink: a chip is shown at its full content width.
+     Letting it shrink (flex-shrink:1) squeezed labels down to a
+     0-width / 1-char stub, which is exactly what we're avoiding. */
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.badge-short {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.badge-details {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  /* Generous fixed cap: a normal model name shows in full; only a
+     pathologically long id ellipsizes. We never shrink it down to a
+     meaningless stub. */
+  max-width: 32ch;
+}
+
+.branch-name {
+  display: inline-block;
+  vertical-align: bottom;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 24ch;
+}
+
+/* Status badge carries a source name (potentially long, e.g.
+   "WeChat (xxx) · run analyze_sentiment") inside its short label.
+   Allow it to ellipsis-shrink — the other badges' .badge-short
+   (Chat / Exec / branch name) stays whole because they're short
+   already, so the default flex-shrink:0 rule above is fine for
+   them. */
+.status-badge .badge-short {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-badge .project-icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.project-badge .project-icon svg { display: block; }
+/* Let long project names ellipsize rather than push the other chips
+   off-screen (.badge-short is flex-shrink:0 by default). */
+.project-badge .badge-short {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Missing main directory — the project's folder is gone from disk. The
+   chip goes orange (the codebase's warning accent) and its menu offers
+   the relocate repair. Overrides the neutral palette above. */
+.runtime-badge.project-badge.project-badge-missing {
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
+}
+.project-badge-missing .project-icon { opacity: 1; }
+/* The warning line at the top of the project menu. 8px inset = the
+   rows' text inset (itemCls px-[8px]), like every menu note. */
+.project-menu-missing {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
+  color: var(--accent-orange);
+}
+.project-menu-missing svg { flex-shrink: 0; margin-top: 2px; }
+
+.workdir-badge .workdir-icon {
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+/* Working-dir chips: ✕ is dim until hovered so the row stays quiet. */
+.workdir-badge .badge-short {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workdir-badge .workdir-remove {
+  flex-shrink: 0;
+  cursor: pointer;
+  opacity: 0.5;
+}
+.workdir-badge .workdir-remove:hover {
+  opacity: 1;
+  color: var(--text-bright);
+}
+/* The hand-placed tips (collapsed-rail labels, components/control-tips.tsx)
+   wear Nova's tooltip colours: an inverted badge, --surface-tooltip =
+   foreground, --text-on-tooltip = background. Radix tips get the same
+   from components/ui/tooltip.tsx. */
+.hover-tip {
+  background: var(--surface-tooltip);
+  color: var(--text-on-tooltip);
+  border: none;
+}
+/* TipBody: title line + optional muted detail line (paths wrap anywhere). */
+.hover-tip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 320px;
+}
+.hover-tip-title { font-weight: 500; }
+.hover-tip-detail {
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  opacity: 0.68;
+  overflow-wrap: anywhere;
+}
+
+/* The topbar branch dropdown is the React <BranchMenu /> (shadcn
+   <Popover> + Tailwind) now — its `.branch-selector` / `.model-dd-*`
+   rules were removed. */
+
+/* The topbar agent / channel / branch dropdowns are React popovers
+   (shadcn <Popover> + Tailwind) now — the `.agent-selector` and
+   `.model-dropdown` chrome rules were removed. */
+
+/* Folder pill (components/chat/top-bar/chips/folder-pill.ts): one raised pill,
+   a folder segment and — inside a Git checkout — the git segment. Each
+   segment is its own hover target; a hairline element separates them. */
+/* .runtime-badge centres its content; a folder pill's segments must
+   stretch to the full pill height so their hover fill covers it. */
+.runtime-badge.folder-pill {
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+}
+/* Hairline between the folder and git segments (GitChip renders it).
+   The element is zero-width, so both segments' hover fills meet on the
+   same boundary whichever side is hovered; the full-height line is drawn
+   on top and fades while either side is hovered or open, so it never
+   reads as part of one fill. */
+.folder-pill-divider {
+  position: relative;
+  flex: 0 0 0;
+  width: 0;
+  align-self: stretch;
+  pointer-events: none;
+}
+.folder-pill-divider::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -0.5px;
+  width: 1px;
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+  transition: opacity 120ms ease;
+}
+/* Each segment has the spacing of the sm Button the other chips are
+   (px-2.5, gap-1), so a folder or project pill is no wider per label than
+   Local or a model chip. */
+.folder-pill-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0 0.625rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: color 120ms ease;
+}
+/* No fill on hover, like every raised pill: the shell's shadow deepens
+   (FOLDER_PILL) and the hovered segment's text brightens; the divider
+   stays put to keep the two halves apart. */
+.folder-pill-seg:hover,
+.folder-pill-seg[aria-expanded="true"] {
+  color: var(--text-bright);
+}
+.folder-pill-seg:focus-visible { box-shadow: inset 0 0 0 2px var(--ring); }
+.folder-pill-divider + .folder-pill-seg { padding-left: calc(0.625rem - 1px); }
+/* Icons at the sm Button's size-3.5; the composer's environment row raises them to 16px. */
+.folder-pill-seg svg { width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+/* Working-folder ✕: no width until the pill is hovered or focused. */
+.folder-pill-name { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.workdir-badge.folder-pill .workdir-remove {
+  display: inline-flex;
+  max-width: 0;
+  margin-left: -6px;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 140ms ease, margin 140ms ease, opacity 120ms ease;
+}
+.workdir-badge.folder-pill:hover .workdir-remove,
+.workdir-badge.folder-pill:focus-within .workdir-remove {
+  max-width: 13px;
+  margin-left: 0;
+  opacity: 0.5;
+}
+.workdir-badge.folder-pill .workdir-remove:hover { opacity: 1; }
+
+/* Git segment: branch icon, short branch name, +N −N diff badge. */
+.git-seg .git-icon { opacity: 0.8; flex-shrink: 0; }
+.git-seg-label {
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* +N −N as one small pill: the file card's .turn-files-diff (Claude's
+   DiffIndicator), two tinted halves. */
+.diff-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 18px;
+  border-radius: 4.5px;
+  overflow: hidden;
+  font-weight: 500;
+  font-size: var(--fs-2xs);
+  line-height: 14px;
+  font-family: var(--font-sans);
+}
+.diff-badge > span { display: flex; align-items: center; gap: 1px; padding: 0 6px; }
+.diff-badge .is-add {
+  color: var(--git-added);
+  background: color-mix(in srgb, var(--git-added) 20%, transparent);
+}
+.diff-badge .is-del {
+  color: var(--git-removed);
+  background: color-mix(in srgb, var(--git-removed) 20%, transparent);
+}
+/* The tightest row level swaps the badge for this half-green, half-red dot. */
+.git-seg-dot {
+  flex-shrink: 0;
+  width: 0;
+  height: 8px;
+  margin-left: -6px;
+  border-radius: 50%;
+  opacity: 0;
+  background: linear-gradient(90deg, var(--git-added) 50%, var(--git-removed) 50%);
+}
+.diff-badge .is-files {
+  color: var(--text-muted);
+  background: color-mix(in oklch, var(--foreground) 9%, transparent);
+}
+.git-seg-dot.is-files { background: var(--text-muted); }
+.git-menu-note {
+  padding: 2px 8px 4px;
+  font-size: var(--fs-xs);
+  line-height: 17px;
+  color: var(--text-muted);
+}
+/* Refusal card. Same inset as the rows (text at 8px), tinted, no native
+   disclosure widget: git's own output sits behind a plain text button. */
+.git-menu-error {
+  margin: 4px 0 0;
+  padding: 7px 8px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  line-height: 17px;
+  color: var(--text-bright);
+  background: color-mix(in srgb, var(--accent-orange) 12%, transparent);
+  overflow-wrap: anywhere;
+}
+.git-menu-error-title { color: var(--accent-orange); }
+.git-menu-error-files {
+  margin: 3px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+}
+.git-menu-error-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.git-menu-error-btn {
+  height: var(--ui-button-h-xs);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-bright);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.git-menu-error-btn:hover { background: color-mix(in srgb, var(--foreground) 16%, transparent); }
+.git-menu-error-more {
+  display: block;
+  margin-top: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.git-menu-error-more:hover { color: var(--text-bright); }
+.git-menu-error-detail {
+  margin: 4px 0 0;
+  max-height: 120px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 15px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+/* The one tag for metadata inside a menu row or header (MENU_TAG in
+   components/ui/menu/menu-styles.ts) — the git menu's "current" /
+   "worktree", the channel menu's account alias, the permission menu's
+   "Recommended". Claude's xxs neutral badge: 16px tall, 0 4px, 4px
+   radius, 10px/500 secondary text on a 5% foreground mix.
+   Lives next to the git-menu rules because that menu defined it first. */
+.menu-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  line-height: 13px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+.git-menu-dim { color: var(--text-muted); }
+/* Search field spans the row width, text aligned to the rows' 8px inset. */
+.git-menu-input {
+  margin: 2px 0 4px;
+  height: var(--ui-button-h-sm);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  outline: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-bright);
+  background: color-mix(in oklch, var(--bg-input), var(--foreground) 6%);
+}
+.git-menu-input::placeholder { color: var(--text-muted); }
+.git-menu-branches {
+  display: flex;
+  flex-direction: column;
+  max-height: 168px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+/* A lit menu row lights its parts with it (MenuRow, menu-parts.tsx):
+   hover, keyboard highlight, an open submenu or the active row turn the
+   muted icon, key tag and chevron bright, and the icon pops to 1.12
+   with a small overshoot — the composer icons' "pop". A tinted icon (a
+   folder, a destructive row) keeps its colour and only pops. */
+.menu-row .menu-row-icon {
+  transition: color 75ms, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* A key tag at rest sits one step above the menu — the ink at 12% over
+   the popover — never sunk below it the way --muted is in dark themes;
+   its text sits between muted and primary. */
+.menu-row-key {
+  --menu-key-bg: color-mix(in oklab, var(--text-bright) 12%, var(--popover));
+}
+.menu-row-key [data-slot="kbd"] {
+  color: color-mix(in oklab, var(--muted-foreground) 80%, var(--text-primary));
+}
+.menu-row .menu-row-key :is(svg, [data-slot="kbd"]),
+.menu-row .menu-row-chevron {
+  transition: color 75ms, fill 75ms, background-color 75ms;
+}
+:is(.menu-row:hover, .menu-row[data-highlighted], .menu-row[data-state="open"], .menu-row-active):not([data-disabled]) .menu-row-icon {
+  transform: scale(1.12);
+}
+:is(.menu-row:hover, .menu-row[data-highlighted], .menu-row[data-state="open"], .menu-row-active):not([data-disabled]) :is(.menu-row-icon, .menu-row-chevron).text-text-muted {
+  color: var(--text-bright);
+}
+:is(.menu-row:hover, .menu-row[data-highlighted], .menu-row[data-state="open"], .menu-row-active):not([data-disabled]) .menu-row-key {
+  /* The row's hover fill is the ink at 9% over the popover; the lit tag
+     is the ink at 22% over it (12% at rest), so it stays a distinct step
+     above the row.
+     Opaque, so the tip and plate overlap without a seam. */
+  --menu-key-bg: color-mix(in oklab, var(--text-bright) 22%, var(--popover));
+}
+:is(.menu-row:hover, .menu-row[data-highlighted], .menu-row[data-state="open"], .menu-row-active):not([data-disabled]) .menu-row-key [data-slot="kbd"] {
+  color: var(--text-bright);
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-row .menu-row-icon { transition: color 75ms; }
+  :is(.menu-row:hover, .menu-row[data-highlighted], .menu-row[data-state="open"], .menu-row-active) .menu-row-icon { transform: none; }
+}

@@ -12,8 +12,8 @@ from dataclasses import replace
 import httpcore
 import pytest
 
-from openprogram.security import safe_http
-from openprogram.security.safe_http import OutboundSecurityConfig
+from openprogram.host.security import safe_http
+from openprogram.host.security.safe_http import OutboundSecurityConfig
 
 
 def _reset_models_dev_cache(models_dev) -> None:
@@ -28,7 +28,7 @@ def _reset_models_dev_cache(models_dev) -> None:
 
 @pytest.fixture
 def _isolated_models_dev_cache(monkeypatch, tmp_path):
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     monkeypatch.setattr(
         models_dev, "_disk_cache_path", lambda: tmp_path / "models_dev.json"
@@ -80,6 +80,8 @@ class _Client:
             return _Response(
                 content=b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
             )
+        if "html.duckduckgo.com" in url:
+            return _Response(content=b'<div class="no-results">No results.</div>')
         if url.endswith("/status"):
             return _Response({"status": "COMPLETED"})
         if url.endswith("/result"):
@@ -168,6 +170,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         elif self.command == "POST" and "/fal-ai/" in self.path:
             base = f"http://public.test:{self.server.port}"
             payload = {"status_url": base + "/status", "response_url": base + "/result"}
+        elif headers.get("accept", "").startswith("text/html"):
+            body = b'<div class="no-results">No results.</div>'
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         elif "search_query=" in self.path:
             body = b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
             self.send_response(200)
@@ -464,7 +474,7 @@ def test_image_api_4xx_body_hides_credentials_and_signed_url(
         openai, "API_URL", origin + "/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
     )
     monkeypatch.setattr(
-        "openprogram.providers.env_api_keys.resolve_provider_key",
+        "openprogram.models.providers.settings.env_api_keys.resolve_provider_key",
         lambda _provider: "HEADER-SECRET",
     )
 
@@ -481,15 +491,15 @@ def test_image_api_4xx_body_hides_credentials_and_signed_url(
 
 def test_codex_probe_hides_4xx_peer_body(monkeypatch, server):
     test_provider = importlib.import_module(
-        "openprogram.webui._model_listing.test_provider"
+        "openprogram.models.listing.test_provider"
     )
     base = f"http://127.0.0.1:{server.port}/echo-error"
     monkeypatch.setattr(
-        "openprogram.providers.env_api_keys.resolve_api_key_with_auth_store",
+        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
         lambda _provider: "HEADER-SECRET",
     )
     monkeypatch.setattr(
-        "openprogram.providers.storage._resolve_base_url", lambda _provider: base
+        "openprogram.models.providers.settings.storage._resolve_base_url", lambda _provider: base
     )
 
     result = test_provider._codex_ping("openai-codex", "gpt-test", 1)
@@ -636,6 +646,7 @@ def test_web_search_adapters_use_registry_managed_http(
     ("module_name", "class_name", "env"),
     [
         ("arxiv", "ArxivProvider", {}),
+        ("duckduckgo", "DuckDuckGoProvider", {}),
         ("kagi", "KagiProvider", {"KAGI_API_KEY": "secret"}),
         ("jina", "JinaProvider", {"JINA_API_KEY": "secret"}),
         ("serper", "SerperProvider", {"SERPER_API_KEY": "secret"}),
@@ -704,7 +715,7 @@ def test_image_api_adapters_use_fixed_registry_client(
     monkeypatch.setenv("FAL_KEY", "secret")
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
     monkeypatch.setattr(
-        "openprogram.providers.env_api_keys.resolve_provider_key",
+        "openprogram.models.providers.settings.env_api_keys.resolve_provider_key",
         lambda _provider: "secret",
     )
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
@@ -769,6 +780,7 @@ def test_each_fixed_search_adapter_reaches_real_managed_transport(
     ("module_name", "class_name"),
     [
         ("arxiv", "ArxivProvider"),
+        ("duckduckgo", "DuckDuckGoProvider"),
         ("kagi", "KagiProvider"),
         ("jina", "JinaProvider"),
         ("serper", "SerperProvider"),
@@ -845,7 +857,7 @@ def test_each_image_adapter_reaches_real_managed_transport(
     monkeypatch.setattr(module, constant, origin + "/api")
     monkeypatch.setattr(provider, "_resolve_key", lambda: "secret", raising=False)
     monkeypatch.setattr(
-        "openprogram.providers.env_api_keys.resolve_provider_key",
+        "openprogram.models.providers.settings.env_api_keys.resolve_provider_key",
         lambda _provider: "secret",
     )
     registry = dict(safe_http.CONSUMER_REGISTRY)
@@ -908,7 +920,7 @@ def test_configured_search_keeps_credential_on_exact_origin_and_rejects_redirect
 
 def test_configured_search_passes_explicit_owner_exception(monkeypatch):
     from openprogram.programs.tools.web.web_search.providers import ollama
-    from openprogram.security.url_policy import OwnerURLException
+    from openprogram.host.security.url_policy import OwnerURLException
 
     calls = []
 

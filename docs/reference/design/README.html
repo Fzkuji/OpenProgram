@@ -1,0 +1,42 @@
+<title>Design documentation</title>
+<meta name="description" content="Designs and implementation boundaries by subsystem, with a reading order for the whole system.">
+<h1>Design documentation</h1>
+<h2 id="reading-order">Reading order</h2>
+<ol>
+<li>Understand the system: <a href="framework-overview.html">framework overview</a> → <a href="repository-structure.html">repository structure</a>.</li>
+<li>Trace an execution: <a href="runtime/execution/agent-call-flow.html">call flow</a> → <a href="runtime/execution/control.html">execution control</a> → <a href="runtime/session/storage.html">session storage</a>.</li>
+<li>Change a subsystem: pick a topic below, read its design and implementation-status appendix, then verify source ownership and acceptance requirements.</li>
+</ol>
+<h2 id="architecture">By area</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Read in this order</th></tr></thead>
+<tbody>
+<tr><th scope="row">Architecture</th><td><a href="framework-overview.html">Framework overview</a> · <a href="repository-structure.html">Repository structure</a> · <a href="implementation-status.html">Implementation navigation</a></td></tr>
+<tr><th scope="row">Execution and sessions</th><td><a href="runtime/execution/control.html">Execution control</a> · <a href="runtime/session/storage.html">Session storage</a> · <a href="runtime/dag/overview.html">Session DAG</a> · <a href="runtime/reliability/goal-and-recovery.html">Goals and restart recovery</a> · <a href="runtime/agent-configuration/agent-configuration-ui.html">Agent configuration</a></td></tr>
+<tr><th scope="row">Functions and workflows</th><td><a href="function/calling-unification.html">Function calling</a> · <a href="runtime/workflows/workflow.html">Workflows</a> · <a href="function/agentic-program.html">Program model</a> · <a href="runtime/programs/application-runtime.html">Application runtime</a> · <a href="runtime/workflows/report-suite.html">Report workflows</a></td></tr>
+<tr><th scope="row">Events and scheduling</th><td><a href="proactive/event-layer.html">Event layer</a> · <a href="proactive/execution-model.html">Rule execution</a> · <a href="scheduler/memory-integration.html">Scheduling and memory</a></td></tr>
+<tr><th scope="row">Context and memory</th><td><a href="context/overview.html">Context overview</a> · <a href="context/composition.html">Context composition</a> · <a href="context/compaction.html">Compaction</a> · <a href="memory/overview.html">Memory overview</a> · <a href="memory/entity-memory-proposal.html">Entity memory</a></td></tr>
+<tr><th scope="row">Interfaces</th><td><a href="ui/README.html">UI overview</a> · <a href="ui/state-layer.html">State layer</a> · <a href="ui/composer/composer-interaction-modes.html">Chat and composer</a> · <a href="ui/browser/built-in-browser.html">Built-in browser</a> · <a href="ui/workspace/project-workspace.html">Project workspace</a> · <a href="cli/README.html">CLI and TUI</a></td></tr>
+<tr><th scope="row">Models</th><td><a href="providers/models/overview.html">Model catalog</a> · <a href="providers/request-build.html">Request building</a> · <a href="providers/auth/unified-account-management.html">Account management</a> · <a href="providers/reliability/error-retry.html">Retry behavior</a> · <a href="usage-metering.html">Usage metering</a></td></tr>
+<tr><th scope="row">Connections</th><td><a href="integrations/harness-standard.html">Harness standard</a> · <a href="integrations/mcp-integration.html">MCP integration</a> · <a href="integrations/mcp-server.html">MCP server</a> · <a href="extension-gating/README.html">Extension gating</a> · <a href="channels/design.html">Channels</a></td></tr>
+<tr><th scope="row">Security and distribution</th><td><a href="runtime/security/sandbox-architecture.html">Authority and sandbox</a> · <a href="runtime/security/system-access.html">System access</a> · <a href="security/dependency-security.html">Dependency security</a> · <a href="distribution/installation-packaging.html">Installation and packaging</a> · <a href="distribution/automatic-updates.html">Automatic updates</a></td></tr>
+<tr><th scope="row">Engineering</th><td><a href="testing/test-system.html">Test system</a> · <a href="error-handling.html">Error handling</a> · <a href="docs-site.html">Documentation structure and rendering</a> · <a href="site-discoverability-performance.html">Site discoverability</a></td></tr>
+</tbody>
+</table>
+<p class="note">The sidebar has seven areas; expand an area, a module, then a page. Navigation expands the current path, and filtering matches page and category names.</p>
+<h2 id="supporting-material">Supporting material</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Kind</th><th scope="col">Is</th></tr></thead>
+<tbody>
+<tr><th scope="row">Prototypes</th><td>Layout and interaction experiments, not evidence of implemented behaviour. Own sidebar category.</td></tr>
+<tr><th scope="row">Implementation records</th><td>Migration steps, plans and discrepancies to verify. Read the current design first; these do not establish implementation status.</td></tr>
+<tr><th scope="row">Research</th><td>Exploratory proposals, threat analysis, evaluation notes; not product commitments.</td></tr>
+</tbody>
+</table>
+<h2 id="maintenance-rules">Maintenance rules</h2>
+<ul>
+<li>Every page has one sidebar category. Register pages and reading order in <code translate="no">scripts/docs_site/nav.py</code>; unclassified pages stay visible under Uncategorized. Category changes preserve URLs.</li>
+<li>One current design per topic. Diagrams, comparisons and records state their relation to it without copying its body.</li>
+<li>English by default, with synchronized Chinese. See <a href="docs-site.html">documentation conventions</a>.</li>
+<li>Documentation claims, source presence, passing tests, publication and installed-App acceptance are separate states. Categories do not indicate completeness.</li>
+</ul>

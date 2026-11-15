@@ -1,0 +1,40 @@
+.editor { width: 100%; min-width: 0; text-align: left; }
+.editor fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.editor textarea { max-height: 360px; overflow-y: auto; }
+.editor[data-dragging="true"] { outline: 2px solid var(--accent); border-radius: 19px; /* shape: the 16px bubble plus its 3px outline */ }
+.actions > span { flex: 1; }
+.existingItem :global(.user-attachments) { margin: 0; min-width: 0; }
+.error { color: var(--error-message-edit); font-size: var(--fs-sm); margin: 8px 12px; }
+.quotePopup {
+  position: fixed;
+  z-index: var(--z-fullscreen);
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 3px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid color-mix(in srgb, var(--text-bright) 14%, var(--surface-popover));
+  border-radius: var(--radius-md);
+  background: var(--surface-popover);
+  color: var(--text-bright);
+  box-shadow: var(--shadow-dialog);
+  cursor: pointer;
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+.quotePopup > button + button { position: relative; }
+.quotePopup > button + button::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-bright) 14%, var(--surface-popover));
+}
+.quotePopup svg { flex-shrink: 0; }

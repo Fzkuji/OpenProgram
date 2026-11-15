@@ -1,13 +1,15 @@
 "use client";
 
+import { jsonFetch } from "@/lib/net/fetch-client";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import styles from "../settings-page.module.css";
+import styles from "./provider-pane.module.css";
 import { useTranslation } from "@/lib/i18n";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** Preview of the id the backend derives from a name. Mirrors the server's
  *  _slugify — for display only; the response's id is authoritative. */
@@ -26,17 +28,25 @@ function slugify(name: string): string {
  *  POST /api/providers/custom. The user gives a Name and Base URL; the id is
  *  derived server-side. On success calls onCreated(id) with the id from the
  *  response so the parent reloads the list and selects the new provider. */
-export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => void }) {
+export function AddCustomProvider({ onCreated, defaultOpen = false, onCancel }: {
+  onCreated: (id: string) => void;
+  /** Start with the form open (Add provider's Custom tile). */
+  defaultOpen?: boolean;
+  /** Cancel leaves the form this way instead of folding it. */
+  onCancel?: () => void;
+}) {
   const { text } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [label, setLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [local, setLocal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function reset() {
     setLabel("");
     setBaseUrl("");
+    setLocal(false);
     setError(null);
     setOpen(false);
   }
@@ -45,12 +55,10 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
     setError(null);
     setBusy(true);
     try {
-      const r = await fetch("/api/providers/custom", {
+      const d = await jsonFetch<{ ok?: boolean; error?: string; id?: string }>("/api/providers/custom", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: label.trim(), base_url: baseUrl.trim() }),
+        body: JSON.stringify({ label: label.trim(), base_url: baseUrl.trim(), local }),
       });
-      const d = await r.json();
       if (!d.ok) {
         setError(d.error || text("Failed to create provider", "创建 Provider 失败"));
         return;
@@ -68,8 +76,7 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
   if (!open) {
     return (
       <Button
-        variant="outline"
-        size="sm"
+        variant="elevated"
         className={styles.addCustomTrigger}
         onClick={() => setOpen(true)}
       >
@@ -84,7 +91,7 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
 
   return (
     <div className={styles.addCustomForm}>
-      <div style={{ fontSize: 12, fontWeight: 600 }}>
+      <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600 }}>
         {text("Add custom provider", "添加自定义 Provider")}
       </div>
       <Input
@@ -96,8 +103,8 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
       {derivedId && (
         <div
           style={{
-            fontSize: 11,
-            color: "var(--muted-foreground, #888)",
+            fontSize: "var(--fs-2xs)",
+            color: "var(--muted-foreground)",
             marginTop: -2,
             // A pasted API key has no break points — without this the
             // one-word "id" line stretches the grid and the whole sidebar.
@@ -105,7 +112,6 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}
-          title={derivedId}
         >
           {text("id: ", "id：")}{derivedId}
         </div>
@@ -115,12 +121,13 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
         value={baseUrl}
         onChange={(e) => setBaseUrl(e.target.value)}
       />
-      {error && <div style={{ fontSize: 11, color: "var(--destructive, #e5484d)" }}>{error}</div>}
+      <label className="flex items-center gap-2 text-fs-xs"><Checkbox checked={local} onCheckedChange={(checked) => setLocal(checked === true)} />{text("Local server (API key optional)", "本地服务（API key 可选）")}</label>
+      {error && <div style={{ fontSize: "var(--fs-2xs)", color: "var(--destructive)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-        <Button variant="ghost" size="sm" onClick={reset} disabled={busy}>
+        <Button variant="ghost" onClick={() => { reset(); onCancel?.(); }} disabled={busy}>
           {text("Cancel", "取消")}
         </Button>
-        <Button size="sm" onClick={submit} disabled={!canSubmit || busy}>
+        <Button onClick={submit} disabled={!canSubmit || busy}>
           {busy ? text("Adding…", "添加中…") : text("Add", "添加")}
         </Button>
       </div>

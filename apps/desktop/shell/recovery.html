@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+<title>OpenProgram</title>
+<link rel="stylesheet" href="shell.css">
+</head>
+<body>
+<main class="shell">
+  <div class="shell-inner">
+    <h2 id="title">OpenProgram can't start right now</h2>
+    <p class="shell-copy" id="copy"></p>
+    <p class="notice" id="notice" role="status" hidden></p>
+    <section class="section">
+      <div class="heading">
+        <h3>Pick a version to start with</h3>
+        <p>These are the versions kept on this computer. OpenProgram restarts with the one you pick.</p>
+      </div>
+      <div class="card" id="versions"></div>
+    </section>
+    <section class="section">
+      <div class="heading"><h3>If none of these work</h3></div>
+      <div class="card">
+        <div class="row">
+          <div class="field-content">
+            <div class="field-title">Log file</div>
+            <div class="field-desc">What went wrong, for whoever helps you fix it. <span class="mono" id="log-path"></span></div>
+          </div>
+          <div class="controls"><button class="btn btn-elevated" type="button" id="copy-log">Copy path</button></div>
+        </div>
+        <div class="row">
+          <div class="field-content">
+            <div class="field-title">Restore the built-in copy</div>
+            <div class="field-desc">Use this only when the code folder is empty. It puts back the code that came with the App and never overwrites code that is already there.</div>
+          </div>
+          <div class="controls"><button class="btn btn-elevated" type="button" id="restore">Restore</button></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+<script src="recovery-page.js"></script>
+</body>
+</html>

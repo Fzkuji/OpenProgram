@@ -2,16 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.session_db import SessionDB
-from openprogram.webui import persistence as P
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.interfaces.server import persistence as P
 
 
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     monkeypatch.setattr(
-        "openprogram.agent.management.manager.sessions_dir",
+        "openprogram.runtime.agent_registry.manager.sessions_dir",
         lambda agent_id: tmp_path / "agents" / agent_id / "sessions",
     )
     return db

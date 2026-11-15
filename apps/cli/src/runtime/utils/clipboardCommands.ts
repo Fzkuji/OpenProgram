@@ -28,3 +28,14 @@ export function clipboardCommands(
   }
   return commands;
 }
+
+/**
+ * What to write to a clipboard helper's stdin. Windows' clip.exe reads a
+ * pipe in the console code page, so UTF-8 Chinese or emoji arrive as
+ * mojibake; it reads UTF-16LE correctly when the text starts with a byte
+ * order mark. Every other helper takes UTF-8.
+ */
+export function clipboardInput(binary: string, text: string): string | Buffer {
+  if (binary !== 'clip' && binary !== 'clip.exe') return text;
+  return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]);
+}

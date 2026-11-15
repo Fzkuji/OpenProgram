@@ -1,6 +1,6 @@
 """Shared session/worktree binding helpers for the worktree tool family.
 
-Each tool wraps :class:`openprogram.worktree.manager.WorktreeManager`
+Each tool wraps :class:`openprogram.state.worktree.manager.WorktreeManager`
 and returns a human-readable string so the LLM can act on the result
 without parsing structured JSON. Errors surface as
 ``[worktree_<op> error] <code>: <detail>``.
@@ -14,7 +14,9 @@ def _current_session_id() -> Optional[str]:
     """Pull the session id from the dispatcher's ContextVar — same
     source the agent tool uses."""
     try:
-        from openprogram.agent.run_control import _current_session_id as _sid
+        from openprogram.runtime.execution.run_control.binding import (
+            _current_session_id as _sid,
+        )
         return _sid.get(None)
     except Exception:
         return None
@@ -27,5 +29,5 @@ def clear_binding_if_no_active(mgr, sid: Optional[str]) -> None:
     if not sid:
         return
     if mgr.find_active_for_session(sid) is None:
-        from openprogram.worktree.context import clear_worktree
+        from openprogram.state.worktree.context import clear_worktree
         clear_worktree()

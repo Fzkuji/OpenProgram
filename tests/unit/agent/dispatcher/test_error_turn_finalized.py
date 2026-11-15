@@ -6,7 +6,7 @@ went wrong. The error node is now committed like any other terminal node,
 head stops on it, and a retry forks from its predecessor while the failed
 line stays in the graph without entering the retry's context.
 
-See docs/reference/design/runtime/dag/overview.md §"Failure and retry".
+See docs/reference/design/runtime/dag/overview.html §"Failure and retry".
 """
 from __future__ import annotations
 
@@ -16,23 +16,24 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.store import SessionStore
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.state.store import SessionStore
 
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
     store = SessionStore(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: store)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: store)
     return store
 
 
 def _persist_user(db: SessionStore, sid: str, uid: str, text: str) -> None:
     """Mirror of webui server._append_msg's SessionDB writes."""
-    from openprogram.context.nodes import Call, ROLE_USER
-    from openprogram.store import SessionNodeWriter
+    from openprogram.state.store.session.nodes import Call, ROLE_USER
+    from openprogram.state.store import SessionNodeWriter
 
     if db.get_session(sid) is None:
         db.create_session(sid, "main")
@@ -56,7 +57,7 @@ def _run_turn(sid: str, uid: str, text: str, reply: str) -> list[dict]:
 
     with patch.object(D, "_run_loop_blocking", side_effect=_stub):
         D.process_user_turn(
-            D.TurnRequest(session_id=sid, agent_id="claude", user_text=text,
+            agent_turn_request.TurnRequest(session_id=sid, agent_id="claude", user_text=text,
                           source="web", user_msg_id=uid,
                           user_already_persisted=True),
             on_event=lambda _e: None,
@@ -74,7 +75,7 @@ def _run_failing_turn(sid: str, uid: str, text: str,
 
     with patch.object(D, "_run_loop_blocking", side_effect=_boom):
         return D.process_user_turn(
-            D.TurnRequest(session_id=sid, agent_id="claude", user_text=text,
+            agent_turn_request.TurnRequest(session_id=sid, agent_id="claude", user_text=text,
                           source="web", user_msg_id=uid,
                           user_already_persisted=True),
             on_event=lambda _e: None,
@@ -93,9 +94,9 @@ def _retry_fork(db: SessionStore, sid: str, src_id: str, new_id: str) -> None:
     db.set_head(sid, new_id)
 
 
-def _commit_subjects(db: SessionStore, sid: str) -> list[str]:
-    git, _ = db._open(sid)
-    return [c.message for c in git.log(limit=100)]
+def _reread(db: SessionStore, sid: str) -> list[dict]:
+    """The session as a fresh process would load it from its log."""
+    return SessionStore(db.root_path).get_messages(sid)
 
 
 # --- the error node is a real terminal node --------------------------------
@@ -129,21 +130,18 @@ def test_head_stops_on_the_error_node(db: SessionStore):
     assert session.get("status") == "failed"
 
 
-def test_error_turn_is_committed_to_git(db: SessionStore):
+def test_error_turn_is_durable(db: SessionStore):
     """The hole this whole change exists to close."""
-    sid = "s-err-git"
+    sid = "s-err-durable"
     _persist_user(db, sid, "u1", "hello")
-    before = len(_commit_subjects(db, sid))
 
     _run_failing_turn(sid, "u1", "hello")
 
-    subjects = _commit_subjects(db, sid)
-    assert len(subjects) > before, "the failed turn produced no commit"
-    assert any("error" in s for s in subjects), (
-        f"no commit marks the errored turn: {subjects}")
+    node = next(m for m in _reread(db, sid) if m["id"] == "u1_reply")
+    assert node.get("status") == "error"
 
 
-def test_error_and_success_turns_both_commit(db: SessionStore):
+def test_error_and_success_turns_both_stay_on_record(db: SessionStore):
     """A failure between two good turns leaves no gap in the timeline."""
     sid = "s-err-mixed"
     _persist_user(db, sid, "u1", "first")
@@ -155,10 +153,8 @@ def test_error_and_success_turns_both_commit(db: SessionStore):
     _persist_user(db, sid, "u3", "third")
     _run_turn(sid, "u3", "third", "reply 3")
 
-    subjects = _commit_subjects(db, sid)
-    assert any("first" in s for s in subjects)
-    assert any("second" in s for s in subjects), "errored turn is missing"
-    assert any("third" in s for s in subjects)
+    ids = {m["id"] for m in _reread(db, sid)}
+    assert {"u1_reply", "u2_reply", "u3_reply"} <= ids
 
 
 # --- retry over a failed turn ---------------------------------------------
@@ -214,8 +210,8 @@ def test_render_context_skips_the_failed_branch(db: SessionStore):
     The error node stays in the graph and stays reachable; it is simply on
     a branch the new head does not descend from.
     """
-    from openprogram.context.nodes import render_context
-    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    from openprogram.runtime.context.nodes import render_context
+    from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
     sid = "s-err-render"
     _persist_user(db, sid, "u1", "first")

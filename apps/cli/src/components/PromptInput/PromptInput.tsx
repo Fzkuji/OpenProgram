@@ -14,9 +14,33 @@ import {
   previousGraphemeBoundary,
 } from '../../runtime/utils/intl.js';
 import { clearDraft, getDraft, setDraft } from '../../utils/draftStore.js';
+import { useKeybindings } from '../../keybindings/KeybindingsContext.js';
+import { QueuedMessages } from './QueuedMessages.js';
+import type { QueuedMessage } from '../../utils/messageQueue.js';
+import {
+  attachmentFromBytes,
+  attachmentFromPath,
+  nextAttachmentNumber,
+  pastedAttachmentPaths,
+  readClipboardImage,
+  type PendingAttachment,
+} from '../../utils/attachments.js';
 
 export interface PromptInputProps {
-  onSubmit: (text: string) => void;
+  /** Send now; `attachments` are the images and PDFs whose placeholder
+   *  is still in the text. */
+  onSubmit: (text: string, attachments?: PendingAttachment[]) => void;
+  /** Enter while busy: hold the message until the turn ends. */
+  onQueue?: (text: string, attachments: PendingAttachment[]) => void;
+  /** Messages waiting for the running turn, oldest first. */
+  queued?: QueuedMessage[];
+  /** Take a queued row out of the queue (to edit it). */
+  onTakeQueued?: (index: number) => QueuedMessage | undefined;
+  onRemoveQueued?: (index: number) => void;
+  /** A file that could not be attached, with the reason. */
+  onAttachError?: (message: string) => void;
+  /** Clipboard image reader; replaced in tests. */
+  readClipboard?: () => Promise<Buffer | null>;
   busy?: boolean;
   /** Called when the user hits esc while busy — REPL sends a stop. */
   onCancel?: () => void;
@@ -136,10 +160,28 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   onContextSearch,
   onShowShortcuts,
   draftKey,
+  onQueue,
+  queued = [],
+  onTakeQueued,
+  onRemoveQueued,
+  onAttachError,
+  readClipboard = readClipboardImage,
 }) => {
   const colors = useColors();
+  const keys = useKeybindings();
   const [value, setValue] = useState('');
   const [cursor, setCursor] = useState(0);
+  // Images and PDFs placed in this draft; each has a placeholder in the text.
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  // Which queued row ↑ has selected; null while the input has the keys.
+  const [queueIndex, setQueueIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (queueIndex !== null && queueIndex >= queued.length) {
+      setQueueIndex(queued.length ? queued.length - 1 : null);
+    }
+  }, [queued.length, queueIndex]);
   // A terminal can deliver several printable keys plus Enter in one stdin
   // read (notably ConPTY and programmatic paste). React batches that read, so
   // render-state alone is stale until every key has been dispatched. Keep the
@@ -234,45 +276,141 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   }, [value, draftKey]);
 
   const submitText = (text: string) => {
-    if (busy || !text.trim()) return;
+    if (!text.trim()) return;
+    if (busy && !onQueue) return;
+    const placed = attachmentsRef.current.filter((a) => text.includes(a.label));
     replaceInput('');
+    attachmentsRef.current = [];
+    setAttachments([]);
     setMenuIndex(0);
     setHistoryIndex(-1);
     // Submitted text leaves the draft slot empty so reopening the
     // session lands on a clean prompt instead of replaying the last
     // message.
     clearDraft(draftKey);
-    onSubmit(text);
+    // While a turn runs the message waits in the queue above the input.
+    if (busy) onQueue!(text, placed);
+    else onSubmit(text, placed);
   };
 
-  useInput((input, key) => {
+  const insertAtCursor = (text: string) => {
     const currentValue = valueRef.current;
     const currentCursor = inputCursorRef.current;
-    // While the agent is busy, esc cancels the in-flight turn.
-    if (busy) {
-      if (key.escape) onCancel?.();
+    const next = currentValue.slice(0, currentCursor) + text + currentValue.slice(currentCursor);
+    replaceInput(next, currentCursor + text.length);
+  };
+
+  /** Attach files and put their placeholders at the cursor. */
+  const attachPaths = (paths: string[]) => {
+    const added: PendingAttachment[] = [];
+    for (const path of paths) {
+      const made = attachmentFromPath(path, nextAttachmentNumber([...attachmentsRef.current, ...added]));
+      if ('error' in made) onAttachError?.(made.error);
+      else added.push(made);
+    }
+    if (!added.length) return;
+    attachmentsRef.current = [...attachmentsRef.current, ...added];
+    setAttachments(attachmentsRef.current);
+    insertAtCursor(added.map((a) => a.label).join(' ') + ' ');
+  };
+
+  const pasteClipboardImage = () => {
+    void readClipboard().then((bytes) => {
+      if (!bytes) {
+        onAttachError?.('No image in the clipboard.');
+        return;
+      }
+      const made = attachmentFromBytes(bytes, nextAttachmentNumber(attachmentsRef.current));
+      if ('error' in made) {
+        onAttachError?.(made.error);
+        return;
+      }
+      attachmentsRef.current = [...attachmentsRef.current, made];
+      setAttachments(attachmentsRef.current);
+      insertAtCursor(`${made.label} `);
+    });
+  };
+
+  useInput((input, key, event) => {
+    const currentValue = valueRef.current;
+    const currentCursor = inputCursorRef.current;
+
+    // A queued row is selected: its own keys, and esc goes back.
+    if (queueIndex !== null) {
+      if (keys.matches('queue.leave', input, key)) { setQueueIndex(null); return; }
+      if (keys.matches('queue.prev', input, key)) { setQueueIndex(Math.max(0, queueIndex - 1)); return; }
+      if (keys.matches('queue.next', input, key)) {
+        setQueueIndex(queueIndex + 1 >= queued.length ? null : queueIndex + 1);
+        return;
+      }
+      if (keys.matches('queue.remove', input, key)) {
+        onRemoveQueued?.(queueIndex);
+        setQueueIndex(queued.length > 1 ? Math.min(queueIndex, queued.length - 2) : null);
+        return;
+      }
+      if (keys.matches('queue.edit', input, key)) {
+        const row = onTakeQueued?.(queueIndex);
+        setQueueIndex(null);
+        if (row) {
+          attachmentsRef.current = row.attachments;
+          setAttachments(row.attachments);
+          replaceInput(row.text);
+          setHistoryIndex(-1);
+        }
+        return;
+      }
+      // Anything else types into the input again.
+      setQueueIndex(null);
+    }
+
+    // While the agent is busy, esc stops the in-flight turn; typing goes on.
+    if (busy && keys.matches('app.interrupt', input, key)) {
+      onCancel?.();
+      return;
+    }
+
+    // A paste: a path (or a drag) of images / PDFs attaches them; an empty
+    // paste is how some terminals hand over a copied image.
+    if (event?.keypress?.isPasted) {
+      if (input.trim() === '') {
+        pasteClipboardImage();
+        return;
+      }
+      const paths = pastedAttachmentPaths(input);
+      if (paths) {
+        attachPaths(paths);
+        return;
+      }
+    }
+    if (keys.matches('input.pasteImage', input, key)) {
+      pasteClipboardImage();
       return;
     }
 
     // Ctrl-R opens saved-context search. The old input-history search
     // remains covered by ↑/↓ recall and autosuggest.
-    if (key.ctrl && input === 'r') {
+    if (keys.matches('app.contextSearch', input, key)) {
       onContextSearch?.(currentValue);
       return;
     }
 
-    if (input === '?' && !key.ctrl && !key.meta && currentValue.length === 0) {
+    if (keys.matches('app.help', input, key) && currentValue.length === 0) {
       onShowShortcuts?.();
+      return;
+    }
+    // ↑ on an empty input with messages queued selects the newest one.
+    if (queued.length > 0 && currentValue.length === 0 && keys.matches('input.historyPrev', input, key)) {
+      setQueueIndex(queued.length - 1);
       return;
     }
     // Readline-compatible editing works consistently in PowerShell, cmd,
     // Windows Terminal and POSIX shells. Handle these before menu routing so
     // editing an incomplete slash command never triggers the picker.
-    if (key.ctrl && input === 'a') {
+    if (keys.matches('input.lineStart', input, key)) {
       moveCursor(0);
       return;
     }
-    if (key.ctrl && input === 'e') {
+    if (keys.matches('input.lineEnd', input, key)) {
       if (suggestion && currentCursor === currentValue.length) {
         replaceInput(currentValue + suggestion);
         setHistoryIndex(-1);
@@ -281,7 +419,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       }
       return;
     }
-    if (key.ctrl && input === 'w') {
+    if (keys.matches('input.deleteWord', input, key)) {
       let start = currentCursor;
       while (start > 0 && /\s/.test(currentValue[start - 1]!)) start--;
       while (start > 0 && !/\s/.test(currentValue[start - 1]!)) start--;
@@ -350,32 +488,34 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       }
     }
 
-    if (key.return) {
-      // alt+enter inserts a newline; plain enter submits.
-      if (key.meta) {
-        const next = currentValue.slice(0, currentCursor) + '\n' + currentValue.slice(currentCursor);
-        replaceInput(next, currentCursor + 1);
-        return;
-      }
+    // alt+enter inserts a newline; plain enter submits.
+    if (keys.matches('input.newline', input, key)) {
+      const next = currentValue.slice(0, currentCursor) + '\n' + currentValue.slice(currentCursor);
+      replaceInput(next, currentCursor + 1);
+      return;
+    }
+    if (keys.matches('input.submit', input, key)) {
       submitText(currentValue);
       return;
     }
-    if (key.escape) {
+    if (!busy && keys.matches('input.clear', input, key)) {
       replaceInput('');
+      attachmentsRef.current = [];
+      setAttachments([]);
       setMenuIndex(0);
       setHistoryIndex(-1);
       return;
     }
     // History recall: ↑ on an empty/inactive line walks backwards through
     // past submissions, ↓ walks forward toward the live input.
-    if (key.upArrow && history && history.length > 0) {
+    if (keys.matches('input.historyPrev', input, key) && history && history.length > 0) {
       const next = historyIndex < 0 ? history.length - 1 : Math.max(0, historyIndex - 1);
       setHistoryIndex(next);
       const v = history[next] ?? '';
       replaceInput(v);
       return;
     }
-    if (key.downArrow && history && historyIndex >= 0) {
+    if (keys.matches('input.historyNext', input, key) && history && historyIndex >= 0) {
       const next = historyIndex + 1;
       if (next >= history.length) {
         setHistoryIndex(-1);
@@ -425,8 +565,14 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   });
 
   const lineCount = value.length > 0 ? value.split('\n').length : 1;
+  const stopKey = keys.label('app.interrupt').split(' / ')[0];
+  const stopHint = stopKey ? `${stopKey} stop` : null;
+  const firstKey = (action: string) => keys.label(action).split(' / ')[0];
   const rightHint =
-    busy ? 'esc stop'
+    queueIndex !== null ? `${firstKey('queue.edit')} edit · ${firstKey('queue.remove')} remove`
+    : busy && queued.length > 0 && value.length === 0
+      ? [`${firstKey('input.historyPrev')} queued`, stopHint].filter(Boolean).join(' · ')
+    : busy ? stopHint
     : inFileMode ? 'tab insert'
     : inSlashMode ? 'tab fill'
     : suggestion ? '→ accept'
@@ -464,7 +610,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       2 +
       (inputViewport.prefix ? 1 : 0) +
       stringWidth(inputViewport.before),
-    active: !busy,
+    active: queueIndex === null,
   });
 
   return (
@@ -474,6 +620,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       ) : inSlashMode ? (
         <PromptInputHelpMenu items={matches} selectedIndex={menuIndex} />
       ) : null}
+      <QueuedMessages queued={queued} selected={queueIndex} width={width} />
       <Box
         borderStyle="round"
         borderColor={borderColor}

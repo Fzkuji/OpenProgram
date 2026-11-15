@@ -8,7 +8,7 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.webui.server import create_app
+from openprogram.interfaces.server.server import create_app
 
 
 ROOT = Path(__file__).resolve().parents[3]

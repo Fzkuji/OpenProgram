@@ -1,0 +1,135 @@
+/* Chats nav icon: two bubbles nudge apart on hover (Claude.ai detail) */
+.sidebar-nav-chats .nav-chats-bubble-l,
+.sidebar-nav-chats .nav-chats-bubble-r {
+  transition: transform var(--motion-slow) var(--ease-standard);
+}
+.sidebar-nav-chats:hover .nav-chats-bubble-l { transform: translateX(-0.5px); }
+.sidebar-nav-chats:hover .nav-chats-bubble-r { transform: translateX(0.5px); }
+.sidebar-nav-chats:active .nav-chats-bubble-l,
+.sidebar-nav-chats:active .nav-chats-bubble-r {
+  transform: translateX(0);
+}
+
+/* ===== The left sidebar's open and collapsed states =====
+   How a rail opens and closes, and the rules both rails share, are in
+   styles/base/layout.css ("Opening and closing"). Here: what only the left
+   sidebar has. */
+/* Collapsed, the list cannot be scrolled: what it holds is hidden. (The
+   shell itself keeps overflow: visible, so nothing clips its shadow.) */
+.sidebar.collapsed .rail-scroll,
+.sidebar.collapsed .sidebar-scroll,
+.sidebar.collapsed [data-scrollable] {
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+}
+/* The wordmark: at the card's left edge, clipped just before the toggle
+   (8px card inset + 30px toggle), so the toggle passing over it on a close
+   never covers its letters. Its text never re-wraps. */
+.rail-wordmark {
+  position: absolute;
+  inset-block: 8px;
+  left: 8px;
+  right: calc(8px + var(--ui-list-h));
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding-left: 8px;
+}
+
+/* 水合前的收起态：layout.tsx 的内联脚本读 localStorage 后在 <html>
+   上打 data-sidebar-closed。SSR HTML 是展开的，React 水合前浏览器
+   已经把它画出来了——这里在首帧就把宽度和收起态的样子按死，且不播
+   任何过渡，避免"先展开再收起"的闪动。水合后 Sidebar 组件移除该
+   属性、.collapsed 接管，算出的值相同，所以什么也不动。 */
+html[data-sidebar-closed] #sidebar {
+  width: var(--rail-collapsed-w) !important;
+  min-width: var(--rail-collapsed-w) !important;
+  transition: none !important;
+  overflow: hidden !important;
+}
+html[data-sidebar-closed] #sidebar :is(.rail-open-only, .rail-row > .sidebar-nav-label, .rail-row > .sidebar-nav-text, .user-menu-footer-info, .user-menu-footer-chevron) {
+  opacity: 0;
+  transition: none;
+}
+/* Out of reach before hydration, as `inert` keeps them once the sidebar
+   has mounted (use-resizable-rail.ts). This is the first paint, not a
+   move. */
+html[data-sidebar-closed] #sidebar .rail-open-only {
+  interactivity: inert;
+}
+html[data-sidebar-closed] #sidebar .rail-header {
+  padding-right: calc((var(--rail-collapsed-w) - 4 * var(--spacing) - var(--ui-list-h)) / 2);
+  transition: none;
+}
+html[data-sidebar-closed] #sidebar .rail-scroll {
+  overflow: hidden;
+}
+
+/* User menu footer — base styling lives in user-menu-footer.module.css;
+   here, how it opens and closes with the sidebar.
+   The footer is laid out at the open card's width in both states, against
+   the left edge, and the card clips it: its top border and its hover fill
+   reach across the card in both states, and the name never re-wraps.
+   - The avatar glides from 16px to 5px in from the card's left edge, its
+     collapsed place in the 46px card: the trigger's padding moves on the
+     rail's own duration and curve (user-menu-footer.module.css). The right
+     padding moves from 16px to 27px at the same time, so the name keeps
+     one width and moves with the avatar.
+   - The name and the chevron fade out and in. */
+.sidebar.rail-shell .user-menu-footer {
+  width: var(--rail-open-card-w);
+  align-self: flex-start;
+}
+.user-menu-footer-info {
+  transition: opacity var(--motion-medium) cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+.sidebar .user-menu-footer-chevron {
+  transition: opacity var(--motion-medium) var(--ease-standard);
+}
+/* Opacity only, like the rails' open-only parts (styles/base/layout.css):
+   the card clips both, beyond the collapsed card's edge. */
+.sidebar.collapsed .user-menu-footer-info {
+  opacity: 0;
+}
+.sidebar.collapsed .user-menu-footer-chevron {
+  opacity: 0;
+}
+.sidebar.collapsed .user-menu-footer-trigger {
+  padding-left: 5px;
+  padding-right: 27px;
+}
+/* Before hydration the server-rendered sidebar is open while the inline
+   script has already forced the collapsed width (rule above): the avatar
+   rests in its collapsed place from the first paint, and nothing glides
+   when React then marks the sidebar collapsed. */
+html[data-sidebar-closed] #sidebar .user-menu-footer-trigger {
+  padding-left: 5px;
+  padding-right: 27px;
+  transition: none;
+}
+
+/* Provider letter glyph (was 08-dropdown.css). Stays global: emitted
+   as a raw HTML string by `lib/conversations.ts::channelIcon` and used
+   by the settings provider list — neither can take a hashed module
+   class. */
+.provider-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.provider-icon img {
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
+}
+.provider-icon-letter {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}

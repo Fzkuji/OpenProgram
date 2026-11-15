@@ -1,12 +1,12 @@
 import pytest
 
-from openprogram.auth.types import (
+from openprogram.models.auth.types import (
     AuthConfigError,
     AuthCredentialProcessError,
     Credential,
     CredentialData,
 )
-from openprogram.auth.resolver import resolve_connection, ResolvedConnection
+from openprogram.models.auth.resolver import resolve_connection, ResolvedConnection
 
 
 def _cred(payload):

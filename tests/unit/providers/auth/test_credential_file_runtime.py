@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.cli.commands.doctor import _cmd_doctor_credentials
-from openprogram.auth.credentials import (
+from openprogram.interfaces.cli.commands.doctor import _cmd_doctor_credentials
+from openprogram.models.auth.credentials import (
     _private_atomic_write,
     _read_private_bytes,
     audit_credentials,
@@ -64,7 +64,7 @@ def test_atomic_write_fsync_reopens_temp_writable(
 
     def spy_open(path, flags, *args, **kwargs):
         fd = real_open(path, flags, *args, **kwargs)
-        if str(path).endswith(".tmp"):
+        if str(path).startswith(str(tmp_path)) and str(path).endswith(".tmp"):
             tmp_flags.append(flags)
         return fd
 

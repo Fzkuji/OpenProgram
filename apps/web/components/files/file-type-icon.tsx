@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 import { getBuiltInSpriteSheet, createFileTreeIconResolver } from "@pierre/trees";
-import { pierreTreeIcons } from "./pierre-tree-theme";
+import { pierreTreeIcons } from "./explorer/pierre-tree-theme";
 import styles from "./file-type-icon.module.css";
 
 const resolver = createFileTreeIconResolver(pierreTreeIcons);

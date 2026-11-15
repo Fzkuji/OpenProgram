@@ -8,15 +8,15 @@ chain" as its heuristic, which cannot tell a genuinely-missing earlier
 turn of THIS branch apart from the root of a DIFFERENT sibling branch —
 so forked/retried sessions leaked other branches' turns into the chat.
 
-``active_branch_chain`` fixes it by making the active-branch node-id set
+``active_branch_chain`` fixes it by making the active-branch node ids
 (from ``get_branch(head)``) authoritative: keep only ``all_msgs`` rows
-whose id is on the active branch, in seq order, with tool_calls already
+whose id is on the active branch, in branch order, with tool_calls already
 folded into their parent assistant. These tests pin that contract using
 the exact message shapes seen in real branched sessions.
 """
 from __future__ import annotations
 
-from openprogram.context.git import active_branch_chain
+from openprogram.runtime.context.git import active_branch_chain
 
 
 def _msg(mid: str, role: str, pred: str | None, ts: int, content: str = ""):
@@ -43,7 +43,7 @@ def test_mid_conversation_retry_excludes_other_branch():
         _msg("a2b", "assistant", "u2", 300, "ANSWER-B retry"),
     ]
     # get_branch(head=a2b) walks a2b→u2→a1→u1 (root-first after reverse).
-    branch_ids = {"u1", "a1", "u2", "a2b"}
+    branch_ids = ["u1", "a1", "u2", "a2b"]
     chain = active_branch_chain(all_msgs, branch_ids, head="a2b")
     ids = [m["id"] for m in chain]
     assert ids == ["u1", "a1", "u2", "a2b"], ids
@@ -59,7 +59,7 @@ def test_active_branch_is_oldest_first():
         _msg("u2", "user", "a1", 102),
         _msg("a2", "assistant", "u2", 103),
     ]
-    branch_ids = {"u1", "a1", "u2", "a2"}
+    branch_ids = ["u1", "a1", "u2", "a2"]
     chain = active_branch_chain(all_msgs, branch_ids, head="a2")
     assert [m["id"] for m in chain] == ["u1", "a1", "u2", "a2"]
 
@@ -73,7 +73,7 @@ def test_tool_calls_survive_the_branch_filter():
     a1["tool_calls"] = [{"tool_call_id": "t1", "tool": "bash",
                           "input": "ls", "result": "ok", "is_error": False}]
     all_msgs = [_msg("u1", "user", None, 100), a1]
-    branch_ids = {"u1", "a1"}  # tool node t1 is NOT here — it's a caller-child
+    branch_ids = ["u1", "a1"]  # tool node t1 is NOT here — it's a caller-child
     chain = active_branch_chain(all_msgs, branch_ids, head="a1")
     assert [m["id"] for m in chain] == ["u1", "a1"]
     assert chain[1]["tool_calls"][0]["tool"] == "bash"
@@ -87,11 +87,23 @@ def test_empty_branch_ids_falls_back_to_linear_history():
         _msg("u1", "user", None, 100),
         _msg("a1", "assistant", "u1", 101),
     ]
-    chain = active_branch_chain(all_msgs, set(), head="a1")
+    chain = active_branch_chain(all_msgs, [], head="a1")
     assert [m["id"] for m in chain] == ["u1", "a1"]
 
 
 def test_no_head_returns_all_msgs():
     all_msgs = [_msg("u1", "user", None, 100)]
-    chain = active_branch_chain(all_msgs, set(), head=None)
+    chain = active_branch_chain(all_msgs, [], head=None)
     assert [m["id"] for m in chain] == ["u1"]
+
+
+def test_a_reply_written_before_its_prompt_is_shown_after_it():
+    """A steer is written after the reply placeholder and then becomes the
+    reply's predecessor, so storage order and branch order differ."""
+    all_msgs = [
+        _msg("u1", "user", None, 100),
+        _msg("a1", "assistant", "s1", 101),
+        _msg("s1", "user", "u1", 102),
+    ]
+    chain = active_branch_chain(all_msgs, ["u1", "s1", "a1"], head="a1")
+    assert [m["id"] for m in chain] == ["u1", "s1", "a1"]

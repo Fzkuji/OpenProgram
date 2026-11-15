@@ -4,12 +4,7 @@
  * (/api/providers/{id}/accounts/*), so the two surfaces stay behaviourally
  * identical and we don't duplicate the logic.
  *
- * One client per provider via makeAccountsClient(providerId): claude-code is
- * just providerId='claude-code' (its routes are Meridian-backed); every other
- * provider is served generically from the AuthStore. The backend tells us how
- * "add account" works via `add_mode`:
- *   - "code_paste"  claude-code's interactive OAuth (startAdd → submitCode)
- *   - "login"       the shared /login/* flow (startLogin → pollLogin → submitLogin)
+ * Each provider uses the shared credential store and login endpoints.
  */
 import { backendBase, backendFetch } from './backend.js';
 
@@ -34,7 +29,7 @@ export interface AccountsState {
   ready: boolean;
   active: string | null;
   accounts: AccountInfo[];
-  add_mode?: 'code_paste' | 'login' | 'api_key';
+  add_mode?: 'login' | 'api_key';
   login_methods?: LoginMethod[];
   rotation?: boolean;
   strategy?: string;
@@ -86,8 +81,6 @@ async function getJson(path: string): Promise<any> {
 export interface AccountsClient {
   providerId: string;
   fetchAccounts(): Promise<AccountsState>;
-  startAdd(name: string): Promise<AddStarted>;
-  submitCode(session: string, code: string): Promise<{ ok?: boolean; error?: string; name?: string }>;
   useAccount(id: string): Promise<{ ok?: boolean; error?: string; active?: string }>;
   removeAccount(id: string): Promise<{ ok?: boolean; error?: string; removed?: boolean }>;
   renameAccount(id: string, label: string): Promise<{ ok?: boolean; error?: string; id?: string; label?: string; name?: string }>;
@@ -102,9 +95,7 @@ export function makeAccountsClient(providerId: string): AccountsClient {
   return {
     providerId,
     fetchAccounts: () => getJson(base) as Promise<AccountsState>,
-    startAdd: (name) => postTo(`${base}/add`, { name }),
-    submitCode: (session, code) => postTo(`${base}/add/code`, { session, code }),
-    useAccount: (id) => postTo(`${base}/use`, { id }),
+        useAccount: (id) => postTo(`${base}/use`, { id }),
     removeAccount: (id) => postTo(`${base}/remove`, { id }),
     renameAccount: (id, label) => postTo(`${base}/rename`, { id, name: label }),
     validateAccount: (id) => postTo(`${base}/${encodeURIComponent(id)}/validate?ping=true`, {}),

@@ -10,8 +10,8 @@ export function StateBadge(props: { state: StateName; count?: number }) {
         background: c.bg,
         color: c.fg,
         padding: "1px 6px",
-        borderRadius: 3,
-        fontSize: 10,
+        borderRadius: "var(--radius-2xs)",
+        fontSize: "var(--right-panel-meta-size, var(--fs-2xs))",
         whiteSpace: "nowrap",
       }}
     >

@@ -5,9 +5,9 @@ from dataclasses import replace
 
 import pytest
 
-from openprogram.self_update import IterationMode, IterationPolicy, UpdateRequest
-from openprogram.self_update.control.iteration import TestEvidence
-from openprogram.self_update.control.iteration import evaluate_iteration
+from openprogram.operations.self_update import IterationMode, IterationPolicy, UpdateRequest
+from openprogram.operations.self_update.control.iteration import TestEvidence
+from openprogram.operations.self_update.control.iteration import evaluate_iteration
 
 
 def _request() -> UpdateRequest:
@@ -68,20 +68,20 @@ def test_stopping_conditions(overrides, reason) -> None:
 @pytest.mark.parametrize("path", [
     "pyproject.toml", "apps/web/package.json", "uv.lock",
     "setup.py",
-    "openprogram/agent/permissions/approval.py",
-    "openprogram/agent/permissions/state.py", "openprogram/agent/permissions/classifier.py", "openprogram/agent/permissions/policy.py",
-    "openprogram/agent/permissions/lifecycle.py", "openprogram/agent/permissions/__init__.py", "openprogram/agent/authority.py",
-    "openprogram/agent/dispatcher/__init__.py", "openprogram/agent/dispatcher/loop_runner.py",
-    "openprogram/agent/agent_loop.py", "openprogram/agent/internals/_model_tools.py",
+    "openprogram/runtime/permissions/approval.py",
+    "openprogram/runtime/permissions/state.py", "openprogram/runtime/permissions/classifier.py", "openprogram/runtime/permissions/policy.py",
+    "openprogram/runtime/permissions/lifecycle.py", "openprogram/runtime/permissions/__init__.py", "openprogram/runtime/permissions/authority.py",
+    "openprogram/runtime/conversation/turn_runtime/__init__.py", "openprogram/runtime/conversation/turn_runtime/loop_runner.py",
+    "openprogram/runtime/agent/loop/loop.py", "openprogram/runtime/conversation/model_tools.py",
     "openprogram/programs/__init__.py",
-    "openprogram/programs/_runtime.py",
-    "openprogram/self_update/control/supervisor.py", "openprogram/sandbox/__init__.py",
+    "openprogram/programs/_host/runtime.py",
+    "openprogram/operations/self_update/control/supervisor.py", "openprogram/host/sandbox/__init__.py",
     "apps/desktop/scripts/install-app.sh",
 ])
-def test_sensitive_changes_require_approval_even_with_broad_scope(path) -> None:
+def test_no_path_needs_approval_of_its_own(path) -> None:
     request = _request()
     request = replace(request, iteration_policy=replace(request.iteration_policy, allowed_paths=("*",)))
-    assert _evaluate(request, changed_paths=(path,)).reason == "protected-change"
+    assert _evaluate(request, changed_paths=(path,)).reason == "within-approved-envelope"
 
 
 def test_bounded_policy_without_deadline_cannot_auto_activate() -> None:

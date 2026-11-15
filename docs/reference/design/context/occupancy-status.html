@@ -1,292 +1,120 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>上下文占用与压缩</title>
-<style>
-  :root {
-    --bg: #f7f7f5; --surface: #fff; --text: #202124; --muted: #6b7280;
-    --line: #deded9; --blue: #2563eb; --blue-soft: #eff6ff;
-    --green: #15803d; --green-soft: #f0fdf4; --amber: #a16207;
-    --amber-soft: #fffbeb; --red: #b42318; --red-soft: #fef2f2;
-    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  main { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
-  header { max-width: 760px; margin-bottom: 32px; }
-  .eyebrow { color: var(--blue); font: 600 12px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-  h1 { margin: 10px 0 12px; font-size: clamp(30px, 5vw, 44px); line-height: 1.12; letter-spacing: -.03em; }
-  h2 { margin: 0 0 12px; font-size: 21px; }
-  h3 { margin: 18px 0 8px; font-size: 16px; }
-  p { margin: 0 0 12px; }
-  code { font-family: var(--mono); font-size: .9em; background: #eeeeeb; padding: 2px 5px; border-radius: 4px; }
-  .meta { display: flex; flex-wrap: wrap; gap: 8px; }
-  .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; background: var(--surface); color: var(--muted); font-size: 12px; }
-  .pill.ok { color: var(--green); border-color: #bbdfc5; background: var(--green-soft); }
-  .pill.warn { color: var(--amber); border-color: #e8d39a; background: var(--amber-soft); }
-  .card { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
-  .card strong { display: block; margin-bottom: 6px; }
-  .card p { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; margin: 0; }
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  section { margin-top: 42px; }
-  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); }
-  th, td { padding: 12px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
-  th { color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; background: #f1f1ee; }
-  tr:last-child td { border-bottom: 0; }
-  .note { border-left: 4px solid var(--blue); background: var(--blue-soft); padding: 14px 16px; margin: 12px 0; }
-  .warning { border-left-color: var(--amber); background: var(--amber-soft); }
-  ul, ol { margin: 8px 0 0; padding-left: 20px; }
-  li { margin: 5px 0; }
-  .tree { padding: 16px 18px; background: #202124; color: #e5e7eb; border-radius: 10px; overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre; }
-  .path { font-family: var(--mono); font-size: 13px; color: var(--muted); }
-  .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: stretch; gap: 10px; }
-  .flow .step { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 14px; }
-  .flow .arrow { align-self: center; color: var(--muted); font-family: var(--mono); }
-  .states { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-  .ring-mock { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 10px; }
-  .ring-mock svg { display: block; }
-  @media (max-width: 760px) {
-    main { padding: 28px 16px 64px; }
-    .grid, .grid-2, .flow, .states { grid-template-columns: 1fr; }
-    .flow .arrow { transform: rotate(90deg); justify-self: center; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    * { transition: none !important; }
-  }
-</style>
-</head>
-<body>
-<main>
-  <header>
-    <div class="eyebrow">Context · Occupancy &amp; compaction</div>
-    <h1>占用和压缩共用一把尺子</h1>
-    <p>写给实现占用圆环、<code>/context</code> 面板和压缩管道的人。圆环、面板、压缩报告读同一份「模型下一轮实际读到的视图」。压缩不移动 HEAD，所以「HEAD 没变」不能当成「图没变」。</p>
-    <div class="meta">
-      <span class="pill">读者：实现</span>
-      <span class="pill ok">斜杠 /compact 已能发出去</span>
-      <span class="pill warn">闲时自动压：产品未定，不做</span>
-    </div>
-  </header>
+<title>Occupancy and compaction</title>
+<meta name="description" content="One occupancy measurement for the ring, the /context panel and compaction reports, and when a compaction counts as successful.">
+<h1>Occupancy and compaction</h1>
+<p>Ring, panel and compaction report read one view: what the model receives next turn. Compaction does not move HEAD, so an unchanged HEAD does not mean an unchanged graph.</p>
 
-  <section>
-    <h2>范围</h2>
-    <div class="grid-2">
-      <article class="card">
-        <strong>做</strong>
-        <p>一根占用尺子；无效压缩不再装成功；圆环接入进行中；面板可以立刻压；四种系统行自动压和手动共用。</p>
-      </article>
-      <article class="card">
-        <strong>不做</strong>
-        <p>不改 <code>insert_summary_node</code> 的不删旧轮设计。不做闲时自动压。不改 DAG 渲染管线。snip 仍只砍这一次要发出去的 history，不写回 DAG。</p>
-      </article>
-    </div>
-  </section>
+<h2 id="measurement">One measurement</h2>
+<p><code translate="no">rendered_history</code> is the effective summary plus the uncovered tail.</p>
+<table class="stack">
+<thead><tr><th scope="col">Consumer</th><th scope="col">View</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_stats.compute_breakdown</code></th><td><code translate="no">rendered_history</code></td><td>The sole metric. Counts messages after folding, thinking and tool blocks included</td></tr>
+<tr><th scope="row"><code translate="no">engine.compact</code></th><td><code translate="no">estimate_total_used</code></td><td>Once before and once after; written to <code translate="no">compaction_finished</code></td></tr>
+<tr><th scope="row"><code translate="no">refresh_context_stats</code></th><td>Breakdown and total</td><td>Bumps <code translate="no">_context_rev</code>, sets basis <code translate="no">estimated</code>. Runs after compaction, manual or automatic</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/sessions/{id}/context</code></th><td>Current snapshot</td><td>Reused only while the graph is unchanged</td></tr>
+<tr><th scope="row"><code translate="no">session_context_stats</code></th><td>Last request</td><td>Reused only while HEAD and <code translate="no">_context_rev</code> are both unchanged</td></tr>
+<tr><th scope="row"><code translate="no">_get_messages</code>, <code translate="no">get_branch</code></th><td>Unfolded branch</td><td>Chat history. Occupancy never uses it</td></tr>
+</tbody>
+</table>
+<p class="note">Symptom of a cache keyed on HEAD alone: <code translate="no">/compact</code> reports 40.7k while the panel still shows Messages 125k. The summary was stored; the snapshot is old.</p>
 
-  <section>
-    <h2>01 · 一根尺子</h2>
-    <p>模型下一轮读到的是 <code>rendered_history</code>：当前有效摘要 + 没被盖住的尾巴。圆环、面板、压缩报告都按这张视图计。</p>
-    <div class="grid">
-      <article class="card">
-        <strong>计数入口</strong>
-        <p><code>session_stats.compute_breakdown</code> 只吃 <code>rendered_history</code>。Messages 按折叠后计，带着 thinking / tool 块。这就是圆环和面板的分项。</p>
-      </article>
-      <article class="card">
-        <strong>压缩报告</strong>
-        <p><code>tokens_before</code> / <code>tokens_after</code> 走同一入口的总量（<code>estimate_total_used</code>），不再用只算可见正文的 <code>estimate_history_tokens</code>。</p>
-      </article>
-      <article class="card">
-        <strong>服务端缓存</strong>
-        <p>压缩不移动 HEAD。占用缓存不能只看 HEAD。图变了（压缩落地）必须重算，不能把压缩前的 measured / 分类快照钉住。</p>
-      </article>
-    </div>
-    <div class="note warning">
-      已压缩会话再 <code>/compact</code> 时，报告可以是 40.7k，面板却仍显示 Messages 125k——那是缓存把折叠前的实测钉住了，不是摘要没写入。
-    </div>
-    <h3>谁用哪张视图</h3>
-    <table>
-      <thead><tr><th>路径</th><th>视图</th><th>规则</th></tr></thead>
-      <tbody>
-        <tr>
-          <td><code>session_stats.compute_breakdown</code></td>
-          <td><code>rendered_history</code></td>
-          <td>唯一占用尺子。圆环和面板都从这里来。</td>
-        </tr>
-        <tr>
-          <td><code>engine.compact</code></td>
-          <td>同一把尺子的总量</td>
-          <td>压缩前后各估一次，写入 <code>compaction_finished</code>。</td>
-        </tr>
-        <tr>
-          <td><code>refresh_context_stats</code></td>
-          <td>重算 breakdown + 总量</td>
-          <td>压缩成功或手动压结束都要走。basis 翻成 <code>estimated</code>。</td>
-        </tr>
-        <tr>
-          <td><code>GET /api/sessions/{id}/context</code></td>
-          <td>当前占用快照</td>
-          <td>只在「图没变」时复用快照。压缩算图变，即使 HEAD 没动。</td>
-        </tr>
-        <tr>
-          <td><code>session_context_stats</code> 的 measured 复用</td>
-          <td>上一次真实请求</td>
-          <td>只在 HEAD 相同<strong>且</strong>占用代数未变时保留。压缩会加一代。</td>
-        </tr>
-        <tr>
-          <td><code>_get_messages</code> / <code>get_branch</code></td>
-          <td>未折叠枝</td>
-          <td>聊天记录缓存，不是占用。占用路径禁止走这里。</td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
+<h2 id="window">The window</h2>
+<p>The denominator is the context window of the model the request ran on: the same number compaction reads for the same Model. It is resolved each time it is shown and never read back from a saved record.</p>
+<table class="stack">
+<thead><tr><th scope="col">When</th><th scope="col">Model</th></tr></thead>
+<tbody>
+<tr><th scope="row">A request of a running turn reports usage</th><td>The Model the turn resolved. The report carries <code translate="no">provider/model</code> and its window; the conversation keeps both for the turn's final report</td></tr>
+<tr><th scope="row">Graph change, reload, panel</th><td>The first that names a model: picker pin, the model the last turn resolved, live runtime, the session row's pin, the Agent's model for a chat that follows it, the row's <code translate="no">model</code> from the last turn</td></tr>
+<tr><th scope="row">Read at a branch that is not selected</th><td>GET <code translate="no">/context?head_id=</code> for a tip another recorded branch ends at uses that branch's own model from its <code translate="no">branch_config</code>, else its Agent's. The selected branch's pin, last turn and runtime are not consulted</td></tr>
+<tr><th scope="row">Another branch is selected</th><td>The model and window the last turn resolved are dropped with the runtime: they belonged to the branch that was left. A branch with no model of its own then reads its Agent's</td></tr>
+<tr><th scope="row">Any stored model string</th><td><code translate="no">provider/model</code> and <code translate="no">provider:model</code> split at the first separator (<code translate="no">split_model_ref</code>); a bare id uses the session's provider</td></tr>
+<tr><th scope="row">The named model does not resolve</th><td>No window. Ring and panel show the token count without a limit or percentage. Only compaction keeps the 128k default, so it fires early</td></tr>
+</tbody>
+</table>
+<p class="note">A record saved while the lookup failed carries 128k. Loading the conversation, the panel route and the next broadcast each replace it with the window resolved then.</p>
 
-  <section>
-    <h2>02 · 压缩什么时候算做成了</h2>
-    <p>一次会话最多一条 active summary。再压是替换，不是叠。DAG 只追加，不删旧节点，HEAD 不动。</p>
-    <div class="flow" aria-label="发请求前的压缩">
-      <div class="step"><strong>prepare</strong><br>按 rendered 拼 prompt，算 budget_pct</div>
-      <div class="arrow">→</div>
-      <div class="step"><strong>≥ 80% 则 compact</strong><br>LLM 写摘要，追加 summary 节点</div>
-      <div class="arrow">→</div>
-      <div class="step"><strong>snip 兜底</strong><br>摘要仍超才砍这一次要发出去的 history</div>
-      <div class="arrow">→</div>
-      <div class="step"><strong>再 prepare</strong><br>这次请求读 summary + 尾巴</div>
-    </div>
-    <h3>四种结果</h3>
-    <table>
-      <thead><tr><th>结果</th><th>条件</th><th>事件</th></tr></thead>
-      <tbody>
-        <tr>
-          <td>开始</td>
-          <td>已经决定要打摘要 LLM</td>
-          <td><code>compaction_started</code></td>
-        </tr>
-        <tr>
-          <td>成功</td>
-          <td>摘要写入，<code>summarised_count &gt; 0</code></td>
-          <td><code>compaction_finished</code>（无 <code>no_op</code>）</td>
-        </tr>
-        <tr>
-          <td>无可压</td>
-          <td>rendered 已 ≤ keep 尾巴，或 <code>cut_idx ≤ 0</code> / 盖住 0 条 / insert 返回 None</td>
-          <td><code>compaction_finished</code> 带 <code>no_op: true</code>。调 LLM 之前能看出来的，不发 started、不烧摘要。</td>
-        </tr>
-        <tr>
-          <td>失败</td>
-          <td>摘要调用或管道异常</td>
-          <td><code>compaction_failed</code></td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="note">
-      触发仍是三条：手动 <code>/compact</code> 或面板按钮；发请求前 budget ≥ 80%；413 / prompt_too_long 抢救。圆环按占用比例着色，不另发建议态。
-    </div>
-  </section>
+<h2 id="outcomes">Compaction outcomes</h2>
+<ol>
+<li>Prepare: build the prompt from rendered history, calculate <code translate="no">budget_pct</code>.</li>
+<li>Compact at 80%: the model writes a summary, a summary node is appended.</li>
+<li>Prepare again: the request reads summary and tail.</li>
+</ol>
+<table class="stack">
+<thead><tr><th scope="col">Outcome</th><th scope="col">Condition</th><th scope="col">Event</th></tr></thead>
+<tbody>
+<tr><th scope="row">Started</th><td>Decision to call the summary model</td><td><code translate="no">compaction_started</code></td></tr>
+<tr><th scope="row">Succeeded</th><td>Summary stored, <code translate="no">summarised_count &gt; 0</code></td><td><code translate="no">compaction_finished</code></td></tr>
+<tr><th scope="row">Nothing to compact</th><td>Fewer than 4 messages, cut at or below the protected head, automatic retry held, or the summary covers nothing</td><td><code translate="no">compaction_finished</code> with <code translate="no">no_op: true</code>. Known before the model call: no started event, no request</td></tr>
+<tr><th scope="row">Failed</th><td>Summary-call or pipeline exception; or history kept with a reason: summary too long, no reduction, cancelled, context changed, invalid range, insert returned nothing</td><td><code translate="no">compaction_failed</code>; with a kept history also <code translate="no">no_op: true</code></td></tr>
+</tbody>
+</table>
+<p class="note">Triggers: <code translate="no">/compact</code> or the panel button; budget at 80% before a request; recovery from 413 or <code translate="no">prompt_too_long</code>. A session has at most one active summary. <code translate="no">insert_summary_node</code> retains old turns.</p>
 
-  <section>
-    <h2>03 · 圆环参与生命周期</h2>
-    <div class="states" aria-label="圆环两态">
-      <article class="card">
-        <div class="ring-mock" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 12 12">
-            <circle cx="6" cy="6" r="5" fill="none" stroke="#d1d5db" stroke-width="2"/>
-            <circle cx="6" cy="6" r="5" fill="none" stroke="#16a34a" stroke-width="2" stroke-dasharray="20 12" stroke-linecap="round" transform="rotate(-90 6 6)"/>
-          </svg>
-        </div>
-        <strong>平常</strong>
-        <p>中性底环，进度弧按占用比例着色。点开面板。数字来自同一把尺子。</p>
-      </article>
-      <article class="card">
-        <div class="ring-mock" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 12 12">
-            <circle cx="6" cy="6" r="5" fill="none" stroke="#d1d5db" stroke-width="2"/>
-            <circle cx="6" cy="6" r="5" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="8 24" stroke-linecap="round" transform="rotate(-90 6 6)"/>
-          </svg>
-        </div>
-        <strong>正在压</strong>
-        <p><code>compaction_started</code> 到 finished / failed：圆环忙碌态。面板按钮禁用。</p>
-      </article>
-    </div>
-    <p style="margin-top:16px">面板底部有「Compact now / 立即压缩」。点击发 <code>{action:"compact", session_id}</code>，和斜杠 <code>/compact</code> 同一条 WS。没有 session 或正在压时禁用。</p>
-  </section>
+<h2 id="ring">Ring and panel</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Display</th></tr></thead>
+<tbody>
+<tr><th scope="row">Normal</th><td>Neutral track, arc coloured by ratio. No suggestion border or state. Click opens the panel</td></tr>
+<tr><th scope="row">Source</th><td>Ring, tooltip and panel headline read one snapshot (<code translate="no">lib/chat/context-occupancy.ts</code>): the session's last <code translate="no">context_stats</code>; before the first one, the panel's cached snapshot (a new chat's estimate, marked est.); with no session, the draft estimate. They never show different numbers</td></tr>
+<tr><th scope="row">Draft becomes session</th><td>The first message's ack makes the draft a session under the draft's own key. The draft estimate is copied into that session's snapshot and its GET <code translate="no">/context</code> starts, so the count and window hold until the session estimate, then <code translate="no">context_stats</code>, replace them; they never drop to 0</td></tr>
+<tr><th scope="row">Branch without a snapshot</th><td>The cache answers a branch it has nothing for with the session's latest snapshot, counted against another branch's model. The ring shows it and reads this branch's own GET <code translate="no">/context</code> at once (<code translate="no">hasContextBreakdown</code>)</td></tr>
+<tr><th scope="row">Window unknown</th><td>Empty arc; tooltip and panel headline show tokens only. Category rows keep their share of the total</td></tr>
+<tr><th scope="row">Terminal client</th><td>The bottom bar keeps a window per conversation from <code translate="no">context_stats</code>. A frame whose <code translate="no">context_window</code> is null removes it: the bar shows the token counts without a limit or percentage, as the ring does</td></tr>
+<tr><th scope="row">Compacting</th><td>While the branch's running task is a <code translate="no">compact</code> operation or a turn in its compaction phase (<code translate="no">isCompacting</code>, from <code translate="no">compaction_started</code> to finished or failed): ring busy, panel button disabled</td></tr>
+<tr><th scope="row">Compact conversation</th><td>Panel row sends <code translate="no">{action:"compact", session_id}</code>, the WebSocket path of <code translate="no">/compact</code>. Disabled with no session or while compacting. Right after a compaction it stays enabled; the server answers nothing to compact</td></tr>
+</tbody>
+</table>
 
-  <section>
-    <h2>04 · 四种系统行</h2>
-    <p>自动压和手动压走 <code>chat-handlers.ts</code> 同一分支。文案双语。</p>
-    <table>
-      <thead><tr><th>事件</th><th>英文</th><th>中文</th></tr></thead>
-      <tbody>
-        <tr>
-          <td>started</td>
-          <td>Compacting context…</td>
-          <td>正在压缩上下文…</td>
-        </tr>
-        <tr>
-          <td>finished</td>
-          <td>Context compacted: covered N older messages, X → Y tokens</td>
-          <td>上下文已压缩：盖住 N 条旧消息，X → Y tokens</td>
-        </tr>
-        <tr>
-          <td>failed</td>
-          <td>Context compaction failed[: error]</td>
-          <td>上下文压缩失败[: error]</td>
-        </tr>
-        <tr>
-          <td>finished + <code>no_op</code></td>
-          <td>Context is already compacted; no older messages to fold.</td>
-          <td>当前上下文已是压缩后状态，没有可压缩的旧消息</td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
+<h2 id="messages">System messages</h2>
+<p>Automatic and manual compaction share one branch in <code translate="no">chat-handlers.ts</code>. Messages are bilingual.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Event</th><th scope="col">Text</th></tr></thead>
+<tbody>
+<tr><th scope="row">Started</th><td>No message: the run indicator shows "Compacting context…"</td></tr>
+<tr><th scope="row">Finished</th><td>Context compacted: covered N older messages. On the transcript's event slot: Context compacted here: covered N messages, estimated X → Y tokens. Shown only on a branch that holds the whole covered segment; a branch forked inside it was never compacted</td></tr>
+<tr><th scope="row">Failed</th><td>Context compaction failed[: error]</td></tr>
+<tr><th scope="row">Finished with <code translate="no">no_op</code></th><td>Context unchanged; no smaller summary was applied.</td></tr>
+</tbody>
+</table>
 
-  <section>
-    <h2>验收</h2>
-    <ol>
-      <li>压缩成功后，圆环和面板总量明显回落，并与 <code>compaction_finished.tokens_after</code> 同口径。</li>
-      <li>已压缩会话再压：不烧摘要 LLM，系统行是「无可压」，不是「盖住 0 条，X → X」。</li>
-      <li>低占用和高占用都没有建议外框；进度弧仍按比例着色。点「立即压缩」能发出 compact。</li>
-      <li>压缩进行中圆环忙碌，按钮禁用；结束回到平常态。</li>
-    </ol>
-  </section>
+<h2 id="acceptance">Acceptance</h2>
+<ul>
+<li>After success, ring and panel totals drop and match <code translate="no">compaction_finished.tokens_after</code>.</li>
+<li>Re-compacting does not call the summary model and reports nothing to compact, never "covered 0 messages, X → X".</li>
+<li>No suggestion border at any occupancy.</li>
+<li>The ring's limit equals <code translate="no">real_context_window</code> of the Model compaction uses, for a chat with its own model and for one that follows its Agent, during a turn and after reload.</li>
+<li>A branch with its own model shows that model's window when it is selected and when its tip is read while another branch is selected.</li>
+<li>After the model changes to one with no known window, the terminal bar shows no limit.</li>
+<li>During compaction the ring is busy and the button disabled; completion restores both.</li>
+</ul>
 
-  <section>
-    <h2>文件</h2>
-    <div class="tree">openprogram/context/
-├── session_stats.py     占用尺子（rendered_history）
-├── engine.py            compact / no_op / tokens_before|after
-├── summarize.py         find_cut_index；调 LLM 前可短路
-└── persistence.py       rendered_history；insert 不删旧轮
+<details>
+<summary>Files</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/session_stats.py</code></th><td>Occupancy metric; <code translate="no">model_ref_window</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/models/providers/catalog/models.py</code></th><td><code translate="no">split_model_ref</code>, <code translate="no">find_model_ref</code></td></tr>
+<tr><th scope="row"><code translate="no">tokens.py</code></th><td><code translate="no">known_context_window</code> for display, <code translate="no">real_context_window</code> for compaction</td></tr>
+<tr><th scope="row"><code translate="no">engine.py</code></th><td><code translate="no">compact</code>, <code translate="no">no_op</code>, <code translate="no">tokens_before</code>, <code translate="no">tokens_after</code></td></tr>
+<tr><th scope="row"><code translate="no">compaction/summarize.py</code></th><td><code translate="no">find_cut_index</code>; may short-circuit before the model call</td></tr>
+<tr><th scope="row"><code translate="no">persistence.py</code></th><td><code translate="no">rendered_history</code>; insert retains old turns</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/context_stats.py</code></th><td><code translate="no">_context_rev</code>, refresh, measured reuse, <code translate="no">_conv_model_ref</code>, <code translate="no">_branch_at_head</code></td></tr>
+<tr><th scope="row"><code translate="no">ws_actions/chat/commands.py</code></th><td>Refresh after manual compaction</td></tr>
+<tr><th scope="row"><code translate="no">ws_actions/chat/context_usage.py</code></th><td>Refresh after each measured request, automatic compaction included</td></tr>
+<tr><th scope="row"><code translate="no">routes/files/tree.py</code></th><td><code translate="no">GET /api/sessions/{id}/context</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/chat/badges/</code></th><td><code translate="no">context-badge.tsx</code>, <code translate="no">context-breakdown-panel.tsx</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/runtime-bridge/session/chat-handlers.ts</code></th><td>Compaction events</td></tr>
+<tr><th scope="row"><code translate="no">apps/cli/src/screens/repl/wsHandlers/handleChatResponse.ts</code></th><td>Terminal bar's window per conversation</td></tr>
+</tbody>
+</table>
+</details>
 
-apps/server/openprogram_server/
-├── server.py                 占用代数、refresh、measured 复用
-└── _webui/
-    ├── ws_actions/chat.py    手动 compact 结束后 refresh
-    ├── _execute/chat.py      自动压结束后 refresh
-    └── routes/tree.py        GET /context
-
-apps/web/
-├── components/chat/context-badge.tsx
-├── components/chat/context-breakdown-panel.tsx
-└── lib/runtime-bridge/chat-handlers.ts</div>
-    <p class="path" style="margin-top:16px">本页路径：<code>docs/reference/design/context/occupancy-status.html</code></p>
-  </section>
-
-  <section>
-    <h2>实现状态</h2>
-    <p>正文是目标设计。落地进度：</p>
-    <ul>
-      <li>斜杠可选参数立即执行、无 session 提示、started / 成功 / 失败系统行：已有。</li>
-      <li>自动压先 compact 再 snip：已有。</li>
-      <li>一根尺子（折叠后计 + 压缩后 refresh + 与 tokens_after 同口径）：已落地。</li>
-      <li>no_op 事件与第四种系统行：已落地。</li>
-      <li>圆环忙碌态、面板立即压缩：已落地。圆环没有建议外框。</li>
-      <li>闲时自动压：不做。</li>
-    </ul>
-  </section>
-</main>
-</body>
-</html>
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Optional slash parameters and no-session feedback; system messages; one metric; <code translate="no">no_op</code>; ring busy state; panel compaction</td></tr>
+<tr><th scope="row">Excluded</th><td>Idle auto-compaction; DAG rendering changes</td></tr>
+</tbody>
+</table>

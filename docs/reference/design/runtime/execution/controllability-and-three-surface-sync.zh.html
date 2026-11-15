@@ -1,0 +1,43 @@
+<title>跨界面的长任务</title>
+<meta name="description" content="长任务运行时如何保持可控，以及 Web 和终端界面如何显示相同状态。">
+<h1>跨界面的长任务</h1>
+
+<p>所有界面都连接同一个 Worker（<code translate="no">WorkerLock</code>）、同一个会话存储和同一个事件总线。每个操作都经过 Worker，界面不保留未同步的本地状态。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">需求</th><th scope="col">机制</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">无人值守时不提问</th><td>工具策略移除 <code translate="no">ask_user_question</code></td><td>已实现</td></tr>
+<tr><th scope="row">运行中改变方向</th><td>在循环检查点投递调整</td><td>已实现</td></tr>
+<tr><th scope="row">在任意界面回答问题</th><td>同一问题注册表和等待存储；各界面渲染事件</td><td>Web 和终端</td></tr>
+<tr><th scope="row">在任意界面看到运行中的会话</th><td>加载时发送运行状态和未决等待</td><td>回放状态和等待，不回放中间增量</td></tr>
+</tbody>
+</table>
+
+<h2 id="attended">值守模式</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">效果</th><td><code translate="no">denied_ask_tools</code> 把 <code translate="no">ask_user_question</code> 并入策略 deny，无论函数请求哪个工具集。没有该工具就无法提问；不确定的输出留给之后的模型推理。</td></tr>
+<tr><th scope="row">范围</th><td>按会话保存在 Worker 内存中，无会话的调用方使用进程级默认值</td></tr>
+<tr><th scope="row">默认</th><td>无人值守：裸运行或后台运行没有人看着</td></tr>
+<tr><th scope="row">Web</th><td>输入框开关</td></tr>
+<tr><th scope="row">终端界面</th><td><code translate="no">/attended [on|off]</code>, <code translate="no">/unattended</code></td></tr>
+<tr><th scope="row">同步</th><td><code translate="no">set_attended</code> 动作；Worker 广播 <code translate="no">attended_changed</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="steering">调整</h2>
+
+<p><code translate="no">agent_loop</code> 在轮次开始、一轮工具之后和后续之前调用 <code translate="no">get_steering_messages</code>。新指令在下一个检查点生效，当前步骤先完成。界面发送 <code translate="no">execution.steer</code>，命令先保存（<a href="control.zh.html#commands">控制操作</a>）。</p>
+
+<h2 id="questions">问题</h2>
+
+<p><code translate="no">QuestionRegistry</code> 进程级、线程安全、只能认领一次，有事件层和队列两种传输，以及子进程桥接。任何界面的答案都回到同一注册表。加载会话时回放未决等待。</p>
+
+<h2 id="stop">优雅停止</h2>
+
+<p><code translate="no">cancel_event</code> 贯穿全程；子进程通过 <code translate="no">process_runner.py</code> 的 <code translate="no">request_graceful_stop</code> 停止。</p>
+
+<p class="next"><a href="control.zh.html">活动与控制</a></p>

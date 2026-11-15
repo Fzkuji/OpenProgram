@@ -1,0 +1,164 @@
+<title>方案采用与适配</title>
+<meta name="description" content="OpenProgram 采用其他 Agent 的哪些记忆做法，每条如何放进自己的结构，以及为什么否掉一条。">
+<h1>方案采用与适配</h1>
+
+<p><a href="comparison.zh.html">框架横向对比</a>挑出的每条做法的去向。设计见<a href="overview.html">总览</a>，机制见<a href="architecture.zh.html">图解</a>。</p>
+
+<h2 id="board">四条判决</h2>
+<table class="stack">
+<thead><tr><th scope="col">做法</th><th scope="col">出处</th><th scope="col">判决</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="#recall">检索不建索引</a></th><td>claude-code</td><td>否掉</td><td>多出的模型调用买的是没有索引也能按意思找。索引已经有了，粒度还比文件细。</td></tr>
+<tr><th scope="row"><a href="#core">常驻内容按归属裁</a></th><td>openclaw</td><td>改造采纳，已实现</td><td>只有丢等于销毁时归属才要紧，所以把常驻内容做成派生。</td></tr>
+<tr><th scope="row"><a href="#branch">离开分支时生成摘要</a></th><td>pi-mono</td><td>改造采纳，已实现</td><td>目的保留，摘要节点不要：会话边界访问每条存活分支。</td></tr>
+<tr><th scope="row"><a href="#cursor">游标丢失就当没写过</a></th><td>claude-code</td><td>采纳，已实现</td><td>重复写的代价有限，悄悄停摆的代价没有上限。</td></tr>
+</tbody>
+</table>
+
+<h2 id="recall">检索不建索引</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">OpenProgram</th><th scope="col">claude-code</th></tr></thead>
+<tbody>
+<tr><th scope="row">怎么选</th><td>每轮开始前查索引</td><td>小模型从文件一句话自述的清单里挑</td></tr>
+<tr><th scope="row">结果</th><td><code translate="no">retrieval_top_k</code> 个段落（默认 5，最多 10），带块 ID 和脚注，围栏后进提示词</td><td>五个文件名，Agent 再去读</td></tr>
+<tr><th scope="row">每轮额外模型往返</th><td>0</td><td>1，用户等着</td></tr>
+<tr><th scope="row">要维护的</th><td>BM25 和 <code translate="no">retrieval/embedding.py</code> 索引</td><td>没有倒排、向量或缓存，这也是它实现规模最小的原因之一</td></tr>
+<tr><th scope="row">下限</th><td>只在 <code translate="no">lexical&lt;=0</code> 且 <code translate="no">adjustment&lt;=0.02</code> 时丢弃，共享一个词就算命中，无关的一轮照样塞段落</td><td>拿不准就不选，宁可返回空（<code translate="no">findRelevantMemories.ts</code>）</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">判决</th></tr></thead>
+<tbody>
+<tr><th scope="row">模型调用</th><td>不要。每轮付费买索引已经做的事。</td></tr>
+<tr><th scope="row">文件自述</th><td>不要。返回单位是段落，<code translate="no">topics/people/dave.md</code> 这样的路径已说明它唯一的主题。严格解析也拒绝介绍段落和 blockquote（<code translate="no">TopicFormatError: memory block ID required</code>），只有 HTML 注释能过。</td></tr>
+<tr><th scope="row">“宁可返回空”</th><td>收下，做成结果的最低分。</td></tr>
+</tbody>
+</table>
+
+<h3 id="retrieval-time">不同工作区大小的检索耗时</h3>
+<table class="stack">
+<thead><tr><th scope="col">Topic 字节数</th><th scope="col">首次检索</th><th scope="col">新进程，磁盘有缓存</th><th scope="col">同进程，文件未变</th></tr></thead>
+<tbody>
+<tr><th scope="row">0.5 MB</th><td>108 ms</td><td>57 ms</td><td>50 ms</td></tr>
+<tr><th scope="row">3.35 MB</th><td>584 ms</td><td>413 ms</td><td>342 ms</td></tr>
+<tr><th scope="row">9.8 MB</th><td>1832 ms</td><td>1216 ms</td><td>1101 ms</td></tr>
+</tbody>
+</table>
+<p class="note">按真实格式合成的工作区，每文件 12 个块，一台机器上三次取平均。解析按文件签名缓存，但每次检索都重建评分语料，所以耗时仍随字节数线性增长。这笔开销在本地，能修；多加的模型往返只能不加。</p>
+
+<h2 id="core">常驻内容怎么裁</h2>
+<p>常驻内容是 <code translate="no">MEMORY.md</code> 的 core 区，由 <code translate="no">topics/core.md</code> 渲染。</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">openclaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">谁写</th><td>自动升上来的和手写的，同在一个文件</td><td>写入 Agent 和人编辑 <code translate="no">topics/core.md</code>，Runtime 渲染 core 区</td></tr>
+<tr><th scope="row">上限</th><td>10000 字符</td><td>渲染预算 <code translate="no">core_max_tokens</code>，2000</td></tr>
+<tr><th scope="row">满了</th><td>丢最旧的自动段落，手写的不动（<code translate="no">memory-budget.ts</code>）</td><td>按文件顺序渲染，到下一段放不下为止；下面没内容的标题一并去掉</td></tr>
+<tr><th scope="row">丢等于销毁</th><td>是，所以要记归属</td><td>否：其余段落留在源文件，仍被索引，仍引证据</td></tr>
+<tr><th scope="row">何时运行</th><td>写入时</td><td>每次写入后，和 <code translate="no">timeline/</code>、<code translate="no">recent_events.jsonl</code>、<code translate="no">relations.json</code> 一起</td></tr>
+<tr><th scope="row">报告</th><td>丢掉的日期，返回调用方</td><td>渲染 token 数和未放入的块 ID，在 <code translate="no">last_core_block</code> 上</td></tr>
+</tbody>
+</table>
+<p class="note">想让一段常驻，就把它挪到文件前面。没有专门标记。</p>
+
+<details>
+<summary>为什么做成派生，为什么是预算而不是拒绝写入的上限</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">问题</th><th scope="col">影响</th></tr></thead>
+<tbody>
+<tr><th scope="row">块 ID</th><td>编辑前存在的块 ID 必须都留下，否则事务以 <code translate="no">block ID must not be removed</code> 失败。裁掉持有唯一 ID 的文件过不了这关。渲染出的 ID 永远是 <code translate="no">topics/</code> 里某个 ID 的副本。</td></tr>
+<tr><th scope="row">拒绝式上限</th><td>一次超限就回滚整个事务，连 Topic 改动一起；此后每条稳定事实都被劝走，core 区冻结。</td></tr>
+<tr><th scope="row">一种文件</th><td><code translate="no">topics/core.md</code> 遵守 Topic 契约。<code translate="no">validate_writable_path</code> 拒绝写 <code translate="no">topics/**/*.md</code> 之外的路径，错误码 <code translate="no">READ_ONLY_PATH</code>。</td></tr>
+<tr><th scope="row">旧的根目录 <code translate="no">core.md</code></th><td><code translate="no">promote_legacy_core</code> 把它一次性移进 <code translate="no">topics/</code>。</td></tr>
+<tr><th scope="row">重整</th><td>重整提示词要求 <code translate="no">topics/core.md</code> 只留对多数交互有用的事实；超出预算不是留下一段的理由。按大小拆分时跳过这个文件。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="reorganize-report">报告有没有真的改动</h3>
+<p>重整靠模型判断，模型觉得没事可做就什么都不做。<code translate="no">reorganize</code> 返回 <code translate="no">changed_files</code>，旁边的 <code translate="no">topics</code> 是看过的文件数，空列表因此看得见。</p>
+
+<h2 id="branch">离开的分支</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 290" role="img" aria-label="会话边界时的会话树。三个节点组成共享前缀，靠已写标记去重。从这里分出：当前 head 分支总是写入；用户离开的长分支在待写 token 达到阈值时写入；一轮的重试低于阈值，跳过；回退的片段被 get_branch 过滤。">
+  <path class="ln" d="M28 40H208M208 40H398"/>
+  <path class="ln" d="M208 40V110H398"/>
+  <path class="ln" d="M208 110V180H298"/>
+  <path class="ln-faint" d="M208 180V250H398"/>
+  <circle class="gate" cx="28" cy="40" r="7"/><circle class="gate" cx="118" cy="40" r="7"/><circle class="gate" cx="208" cy="40" r="7"/>
+  <circle class="gate" cx="298" cy="40" r="7"/><circle class="gate" cx="398" cy="40" r="7"/>
+  <circle class="gate" cx="298" cy="110" r="7"/><circle class="gate" cx="398" cy="110" r="7"/>
+  <circle class="gate" cx="298" cy="180" r="7"/>
+  <text class="t-soft mid" x="118" y="74">共享前缀</text>
+  <text class="t-big" x="430" y="38">当前 head</text>
+  <text class="t-soft" x="430" y="60">总是写入</text>
+  <text class="t-big" x="430" y="108">离开的长分支</text>
+  <text class="t-soft" x="430" y="130">达到 token 阈值时写入</text>
+  <text class="t-big" x="430" y="178">一轮的重试</text>
+  <text class="t-soft" x="430" y="200">低于阈值，跳过</text>
+  <text class="t-big" x="430" y="248">已回退</text>
+  <text class="t-soft" x="430" y="270">被 get_branch 过滤</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>当前 head</strong><small>总是写入</small></li>
+  <li class="flow-end"><strong>其他存活分支</strong><small>离开的长分支：达到 token 阈值时写入</small><small>一轮的重试：低于阈值，跳过</small><small>已回退：被 <code translate="no">get_branch</code> 过滤</small></li>
+</ol>
+</figure>
+<p class="note">空闲监视器的强制写入调用 <code translate="no">list_branches</code>，跳过已归档分支，再对每个分支端点调用 <code translate="no">get_branch(session_id, tip)</code>。已写标记覆盖共享前缀。每轮结束后的写入只走 head。</p>
+
+<details>
+<summary>为什么不要 pi-mono 的摘要节点（<code translate="no">branch-summarization.ts</code>）</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">要点</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">去处</th><td>pi-mono 只有会话 JSONL 和 <code translate="no">AGENTS.md</code>，摘要是被放弃内容唯一的去处。这里事实归 Topic 文件；DAG 上的节点没有脚注和块 ID，检索不到。</td></tr>
+<tr><th scope="row">又多一处</th><td><code translate="no">context/summary</code> 的压缩摘要已挂在 DAG 上，服务上下文窗口。再加一种就多一个要找的地方。</td></tr>
+<tr><th scope="row">没有离开事件</th><td>head 移动和切换分支都不是事件。写 head 的地方分散在 <code translate="no">set_head</code>、<code translate="no">append_message</code>、<code translate="no">SessionNodeWriter.append</code>、<code translate="no">update_session</code> 和回退，<code translate="no">SessionMemoryIndex.set_head</code> 直接丢弃旧值。照抄要新增事件并保留旧 head，而这件事放到会话结束时一样管用。</td></tr>
+<tr><th scope="row">主动放弃</th><td>不用猜：回退把片段标为 <code translate="no">rewound</code>，节点留在图里，离开对话路径。</td></tr>
+<tr><th scope="row">空闲条件</th><td><code translate="no">should_incremental_write</code> 在有待写内容且最后一条消息超过一小时时也会触发，离开的分支都满足。非 head 分支先查 token 阈值，所以一轮的重试被跳过。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="cursor">游标兜底</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>游标是消息 UUID。消息不见了就全部当没写过，因为返回零条会让这个会话的抽取就此停止。</td></tr>
+<tr><th scope="row">这里的规则</th><td>账读不出来就是什么都没写，绝不抛出让写入永远卡住的异常。重写一批的代价有限，事务会合并陈述同一事实的段落。</td></tr>
+<tr><th scope="row">节点标记</th><td>已写状态是会话节点上的标记（<code translate="no">memory_written_scriptorium</code>），没有会读不出来的游标文件。缺标记只造成重复工作。</td></tr>
+<tr><th scope="row"><code translate="no">runtime.json</code></th><td>缺失、解析失败或结构不对：<code translate="no">RuntimeStateStore.load</code> 返回空状态。这个文件计入工作区版本，恢复的内容不会配上更新的状态。</td></tr>
+<tr><th scope="row">升级</th><td>另一种一次性情形，取舍相同：见<a href="written-marker.zh.html">已写标记</a>。</td></tr>
+</tbody>
+</table>
+
+<h2 id="land">改动落在哪</h2>
+<p class="note">路径相对 <code translate="no">openprogram/state/memory/</code>。被否掉的那条不改任何文件。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">路径</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row" colspan="2">派生 core</th></tr>
+<tr><th scope="row"><code translate="no">runtime/derived_views.py</code></th><td><code translate="no">render_core_block</code>、<code translate="no">promote_legacy_core</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/memory_guide.py</code></th><td>把 core 写进 <code translate="no">MEMORY.md</code> 的标记之间</td></tr>
+<tr><th scope="row"><code translate="no">management/block_views.py</code></th><td>在其他视图之后调用渲染</td></tr>
+<tr><th scope="row"><code translate="no">management/transaction.py</code></th><td>可写路径</td></tr>
+<tr><th scope="row"><code translate="no">prompts/write.py</code>、<code translate="no">prompts/system.py</code>、<code translate="no">prompts/organize.py</code></th><td>让 Agent 写 <code translate="no">topics/core.md</code></td></tr>
+<tr><th scope="row" colspan="2">会话边界写全部分支</th></tr>
+<tr><th scope="row"><code translate="no">writing.py</code></th><td><code translate="no">_eligible_session_branches</code>、强制写入循环</td></tr>
+<tr><th scope="row"><code translate="no">session_watcher.py</code></th><td>空闲入口，<code translate="no">force=True</code></td></tr>
+<tr><th scope="row" colspan="2">读不出来的状态</th></tr>
+<tr><th scope="row"><code translate="no">runtime/state.py</code></th><td><code translate="no">load</code></td></tr>
+<tr><th scope="row" colspan="2">节点标记</th></tr>
+<tr><th scope="row"><code translate="no">runtime/online.py</code>、<code translate="no">writing.py</code></th><td>在 <code translate="no">_records</code> 边界读写标记</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>派生 core、会话边界写全部分支、读不出来的状态当空状态、节点标记、<code translate="no">changed_files</code></td></tr>
+<tr><th scope="row">尚未</th><td>结果最低分；不重建评分语料的检索；由 head 变化直接通知写入（目前靠每轮阈值和空闲监视器触发）</td></tr>
+</tbody>
+</table>

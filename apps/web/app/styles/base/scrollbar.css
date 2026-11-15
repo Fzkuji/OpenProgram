@@ -1,0 +1,49 @@
+/* ===== Scrollbar =====
+   Custom overlay scrollbars: native scrollbars are hidden everywhere —
+   macOS Chromium flashes them whenever the pointer enters a scrollable box —
+   and lib/runtime-bridge/dom/scrollbar.ts draws a thin floating thumb on
+   top of a box while it scrolls. The thumb is theme-aware, drag-to-scroll,
+   and takes no layout width. `:where` keeps the rule at zero specificity. */
+:where(*) {
+  scrollbar-width: none; /* hide native */
+}
+:where(*)::-webkit-scrollbar {
+  display: none; /* WebKit without scrollbar-width */
+}
+
+.overlay-thumb {
+  position: fixed;
+  width: 6px;
+  right: 0;
+  border-radius: var(--radius-sm);
+  background: var(--border-light);
+  /* A faded thumb is not there: only a shown one can be grabbed, or the
+     pointer crossing a box's edge would light it up. */
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity var(--motion-slow), background var(--motion-medium), width var(--motion-fast);
+  cursor: default;
+  user-select: none;
+}
+.overlay-thumb-x {
+  right: auto;
+  height: 6px;
+  transition: opacity var(--motion-slow), background var(--motion-medium), height var(--motion-fast);
+}
+/* The thumb of a box marked data-scrollbar-layer="content" stays in the
+   content layer: above the box's rows, under a control floating on the
+   box's edge (the width handle on the Agents page's divider is z 2). */
+.overlay-thumb-content {
+  z-index: 1;
+}
+.overlay-thumb.visible { opacity: 0.85; pointer-events: auto; }
+.overlay-thumb:hover,
+.overlay-thumb.dragging {
+  background: var(--text-muted);
+  width: 8px;
+}
+.overlay-thumb-x:hover,
+.overlay-thumb-x.dragging {
+  height: 8px;
+}

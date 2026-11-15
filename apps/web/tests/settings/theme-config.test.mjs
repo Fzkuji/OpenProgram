@@ -16,10 +16,10 @@ import {
   migrateAppearancePreferences,
   resolveThemePreference,
   rewriteCustomCssForOverlay,
-} from "../../lib/prefs/theme-config.ts";
+} from "../../lib/prefs/appearance/theme-config.ts";
 
-test("color style packages are Beige / Neutral / Aurora only", () => {
-  assert.deepEqual([...THEME_STYLES], ["beige", "neutral", "aurora"]);
+test("color style packages are Beige / Neutral / Aurora / Vivid only", () => {
+  assert.deepEqual([...THEME_STYLES], ["beige", "neutral", "aurora", "vivid"]);
   assert.equal("custom" in THEME_STYLE_PAIRS, false);
 });
 

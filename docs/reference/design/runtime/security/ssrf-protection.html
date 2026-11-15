@@ -1,0 +1,162 @@
+<title>Runtime outbound URL protection</title>
+<meta name="description" content="How Runtime-owned HTTP requests choose a policy, validate every address, dial only approved peers and keep credentials on their origin.">
+<h1>Runtime outbound URL protection</h1>
+
+<figure id="implementation">
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="A caller picks one immutable registry key, of 48 consumers in five trust classes, and for configured services supplies the exact origin. A pure policy decision normalizes the URL and origin, checks the complete DNS answer set and any exact exception, and returns a reason code. The managed transport dials only the approved IP, keeps the original Host, SNI and certificate name, follows redirects by hand and bounds the response. A refusal at the policy or the transport carries a sanitized reason code; there is no raw retry.">
+  <defs><marker id="ss-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">Registry key</text>
+  <text class="t-soft" x="0" y="62">48 immutable consumers</text>
+  <text class="t-soft" x="0" y="82">five trust classes</text>
+  <text class="t-soft" x="0" y="102">exact configured origin</text>
+  <line class="ln" x1="170" y1="28" x2="222" y2="28" marker-end="url(#ss-a)"/>
+  <text class="t-big" x="234" y="34">Policy decision</text>
+  <text class="t-soft" x="234" y="62">normalized URL and origin</text>
+  <text class="t-soft" x="234" y="82">every A and AAAA answer</text>
+  <text class="t-soft" x="234" y="102">exact exception, reason code</text>
+  <line class="ln" x1="430" y1="28" x2="482" y2="28" marker-end="url(#ss-a)"/>
+  <text class="t-big" x="494" y="34">Managed transport</text>
+  <text class="t-soft" x="494" y="62">dials the approved IP</text>
+  <text class="t-soft" x="494" y="82">keeps Host, SNI, cert name</text>
+  <text class="t-soft" x="494" y="102">manual redirects, limits</text>
+  <path class="ln-no" d="M330 116V142H580V116"/>
+  <text class="t-no" x="330" y="170">Refused: sanitized reason code, no raw retry</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Registry key</strong><small>48 immutable consumers, five trust classes, exact configured origin</small></li>
+  <li><strong>Policy decision</strong><small>normalized URL and origin, every A and AAAA answer, exact exception, reason code</small><p class="refused">Refused: sanitized reason code, no raw retry</p></li>
+  <li class="flow-end"><strong>Managed transport</strong><small>dials the approved IP, original Host, SNI and certificate name, manual redirects, bounded body</small></li>
+</ol>
+</figure>
+
+<h2 id="boundary">Components</h2>
+<table class="stack">
+<thead><tr><th scope="col">Component</th><th scope="col">Does</th><th scope="col">Does not</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/host/security/url_policy.py</code></th><td>URL and origin normalization; scheme, userinfo, host and port validation; full A/AAAA classification; exact owner exceptions; stable sanitized reason codes</td><td>Send requests or infer a caller's trust class</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/host/security/safe_http.py</code></th><td>Immutable consumer registry; sync and async peer-constrained transports; Host and SNI preservation; manual redirects; credential, header, MIME, decoded-body, encoding, timeout, proxy and atomic-download enforcement</td><td>Accept caller-created policy objects or expose <code translate="no">verify=False</code></td></tr>
+<tr><th scope="row">Consumer adapters</th><td>Select one registry key; for configured services or callbacks, supply the exact owner-configured origin</td><td>Implement a second private-address classifier or retry through a raw client</td></tr>
+<tr><th scope="row"><code translate="no">runtime_http_audit.py</code>, <code translate="no">doctor</code>, <code translate="no">scripts/check_runtime_http.py</code></th><td>Bounded sanitized denial state, owner exception and proxy reporting, AST inventory, SDK disposition, stale exclusion detection</td><td>Display userinfo, query, fragment, credentials, peer bodies or token-bearing paths</td></tr>
+</tbody>
+</table>
+
+<h2 id="trust-classes">Trust classes</h2>
+<table class="stack">
+<thead><tr><th scope="col">Class (<code translate="no">URLTrustClass</code>)</th><th scope="col">Targets</th><th scope="col">Consumers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">untrusted_public</code></th><td>Arbitrary public URLs; every resolved address must be global</td><td>4</td></tr>
+<tr><th scope="row"><code translate="no">fixed_public_service</code></th><td>A service origin shipped with the product</td><td>23</td></tr>
+<tr><th scope="row"><code translate="no">configured_service</code></th><td>The exact origin the owner configured, private or local allowed</td><td>18</td></tr>
+<tr><th scope="row"><code translate="no">loopback_callback</code></th><td>A local callback</td><td>1</td></tr>
+<tr><th scope="row"><code translate="no">owner_tool</code></th><td><code translate="no">tool.web_fetch.owner</code>, <code translate="no">tool.image_result.download.owner</code>: no address, port or method limits. Chosen only for a turn of the owner while <code translate="no">security.outbound_url.model_tools</code> is <code translate="no">open</code>, the default.</td><td>2</td></tr>
+</tbody>
+</table>
+
+<h2 id="surfaces">What is and is not covered</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Treatment</th></tr></thead>
+<tbody>
+<tr><th scope="row">Arbitrary and derived URLs</th><td><code translate="no">web_fetch</code>, attachments, generated assets, image result downloads, catalogs, marketplaces, updater metadata: managed clients, public or exact-service policy</td></tr>
+<tr><th scope="row">Fixed and configured APIs</th><td>Web search, image APIs, channel REST, TTS, provider listing, probes and OAuth, Web model listing, MCP HTTP and SSE, local probes: fixed or owner-configured exact origins</td></tr>
+<tr><th scope="row">Third-party SDKs</th><td>See <a href="#sdk">SDK dispositions</a></td></tr>
+<tr><th scope="row">Owner control-plane liveness probes</th><td>Narrow loopback-only exclusions, inventoried; not Runtime URL fetches</td></tr>
+<tr><th scope="row">Outside this design</th><td>Browser navigation, popups, Service Workers and page subresources (browser-control design and any owner egress isolation). Sandboxed code, plugins, external provider CLIs, package managers (sandbox, plugin trust, child-process and installation boundaries).</td></tr>
+</tbody>
+</table>
+<p class="note">The feature matrix scores this as partial for that reason.</p>
+
+<h2 id="transport">Transport and policy rules</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Public requests</th><td>Only registry-declared methods, schemes and ports. All resolved addresses must be global. Rejected: metadata, loopback, private, link-local, CGNAT, multicast, reserved, unspecified, documentation and test, mapped, ambiguous, malformed. DNS failure closes.</td></tr>
+<tr><th scope="row">Dialling</th><td>Sync and async <code translate="no">httpcore</code> backends dial only the approved IP tuple, verify the actual socket peer, and keep the normalized hostname for Host, SNI and certificate validation</td></tr>
+<tr><th scope="row">Connection pools</th><td>Identity includes consumer, trust class, normalized origin, approved IPs, proxy identity</td></tr>
+<tr><th scope="row">Redirects</th><td>Manual, each hop a new decision. Cross-origin configured-service redirects fail; public credentials are stripped.</td></tr>
+<tr><th scope="row">Privacy</th><td>URL userinfo is rejected. Logs and public errors keep no query, fragment, token path, cookie or peer-controlled body; errors are origin-only.</td></tr>
+<tr><th scope="row">Bounds</th><td>Headers, MIME, content encoding, decoded bytes, connect, read, write, pool and overall timeouts, temporary files</td></tr>
+<tr><th scope="row">Downloads</th><td>Replace the destination only after full validation, flush, <code translate="no">fsync</code> and cleanup-safe completion</td></tr>
+</tbody>
+</table>
+
+<h3 id="sdk">SDK dispositions</h3>
+<table class="stack">
+<thead><tr><th scope="col">Disposition</th><th scope="col">Consumers</th><th scope="col">Enforcement</th></tr></thead>
+<tbody>
+<tr><th scope="row">Injected transport</th><td><code translate="no">provider.openai.sdk</code>, <code translate="no">provider.anthropic.sdk</code>, <code translate="no">provider.google.sdk</code>, <code translate="no">mcp.configured.http</code>, <code translate="no">mcp.configured.sse</code></td><td>The SDK receives a scoped managed client or factory</td></tr>
+<tr><th scope="row">Exact origin</th><td>Telegram, WeChat, Feishu, Matrix, Slack, Discord, fixed and configured TTS, other REST consumers</td><td>Origin frozen before credentials attach; redirects cannot move credentials</td></tr>
+<tr><th scope="row">Derived URL extraction</th><td>Attachment, generated-asset and image-result consumers</td><td>The SDK or response yields a URL; Runtime transfers it through a dedicated managed consumer</td></tr>
+<tr><th scope="row">Disabled</th><td><code translate="no">provider.amazon_bedrock.sdk</code>, <code translate="no">channel.slack.gateway_sdk</code>, <code translate="no">channel.discord.gateway_sdk</code>, <code translate="no">tts.edge_sdk</code></td><td>Fails with <code translate="no">UNMANAGED_TRANSPORT</code> before importing or using the SDK. Bedrock covers the stream and model-list entries, before any boto3 credential or client activity.</td></tr>
+</tbody>
+</table>
+
+<h3 id="owner-config">Owner exceptions and policy proxy</h3>
+<dl class="pairs">
+<dt>Owner exception</dt><dd>A registered consumer plus exactly one normalized origin or canonical private or local CIDR. Rejects wildcards, suffixes, credentials, unknown fields, public and default-route networks, metadata, link-local ranges, and forms the consumer does not allow. Changed only through owner-authenticated settings.</dd>
+<dt>Policy proxy</dt><dd>Usable only with owner configuration <code translate="no">enforces_target_policy: true</code>. Runtime evaluates the target first, constrains the proxy peer separately, reports delegation through doctor and audit, and never retries direct.</dd>
+</dl>
+
+<details>
+<summary>Static checks and inventory exclusions</summary>
+<p><code translate="no">scripts/check_runtime_http.py</code> fails on an unregistered raw call, an active unmanaged SDK transport, a registry entry without a classified consumer, or a stale exclusion. <code translate="no">doctor</code> labels: <code translate="no">runtime-http-registry</code>, <code translate="no">runtime-http-owner-exceptions</code>, <code translate="no">runtime-http-policy-proxy</code>, <code translate="no">runtime-http-recent-denials</code>, <code translate="no">runtime-http-unmanaged-transport</code>.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Exclusion</th><th scope="col">Owner and narrow reason</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">security/safe_http.py</code></th><td>Managed transport; the only direct <code translate="no">httpcore</code> pool and proxy construction</td></tr>
+<tr><th scope="row"><code translate="no">programs/applications/browser/app_endpoint.py</code></th><td>Browser control; loopback probe of the App's CDP endpoint</td></tr>
+<tr><th scope="row"><code translate="no">cli/commands/mcp.py</code></th><td>Owner control plane; authenticated backend opener only</td></tr>
+<tr><th scope="row"><code translate="no">cli/ink.py</code>, <code translate="no">cli/commands/doctor.py</code>, <code translate="no">cli/commands/rescue.py</code></th><td>Owner control plane; exact loopback worker liveness socket only</td></tr>
+</tbody>
+</table>
+<p class="note">Publication requires policy and address tests, real sync and async socket and TLS peer tests, DNS-rebinding prevention, redirect and credential-origin tests, response, decompression and timeout cleanup, all consumers migrated, zero active unmanaged transports, owner-only exact exceptions, doctor, audit and static enforcement, and the consumer compatibility contract.</p>
+</details>
+
+<h2 id="decision">Design choices</h2>
+<table class="stack">
+<thead><tr><th scope="col">Choice</th><th scope="col">Mechanism</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Adopted</th><td>One pure URL and IP policy; all DNS answers must pass; every redirect reevaluated; origin-only errors; bounded decoded bodies</td><td>Covers target, redirect, credential and resource boundaries consistently</td></tr>
+<tr><th scope="row">Adopted</th><td>Distinct trust classes</td><td>Owner-configured local services stay usable without giving public consumers private-network access</td></tr>
+<tr><th scope="row">Adopted</th><td>Permission and network layering (Claude Code, CodeBuddy), structured deny reasons (Codex), fixed channel-media allowlists (CodeBuddy)</td><td>Permission answers who may request; transport policy answers which peer gets the connection and credentials</td></tr>
+<tr><th scope="row">Modified</th><td>Hermes's process-wide <code translate="no">allow_private_urls</code> becomes an exact consumer plus origin or CIDR</td><td>Metadata and link-local targets stay non-exceptable</td></tr>
+<tr><th scope="row">Modified</th><td>OpenClaw browser interception and Codex's whole-process proxy</td><td>Browser controls are a separate gate; a policy proxy is optional, owner-declared, peer constrained, visible in doctor, with no direct fallback</td></tr>
+<tr><th scope="row">Rejected</th><td>URL-string-only checks, one DNS preflight, implicit redirects, inherited environment proxies, disabling TLS verification, raw fallback</td><td>Each leaves a target, rebinding, credential or bypass path</td></tr>
+<tr><th scope="row">Rejected</th><td>User confirmation or hostname allow and deny as target enforcement</td><td>Neither validates every resolved address nor constrains the peer</td></tr>
+<tr><th scope="row">Rejected</th><td>Public-only for every client</td><td>Breaks configured local model endpoints, MCP servers, intranet services</td></tr>
+<tr><th scope="row">Rejected</th><td>Counting Origin and Host checks, CORS, owner authentication, browser checks or sandbox networking as this protection</td><td>Those guard other directions or execution boundaries</td></tr>
+</tbody>
+</table>
+
+<details id="references">
+<summary>How other projects compare</summary>
+<p class="note">From fixed audited snapshots; what a snapshot does not confirm is described as unconfirmed, not absent.</p>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">URL-fetch evidence</th><th scope="col">Network or permission boundary</th><th scope="col">Taken</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/NousResearch/hermes-agent/blob/main/tools/url_safety.py">Hermes</a></th><td>Shared <code translate="no">url_safety</code> for web, browser, vision, gateway media. DNS failure closed; loopback, RFC1918, link-local, CGNAT, metadata, reserved, multicast, unspecified rejected; hop-by-hop redirects; sanitized URLs; streamed limits.</td><td><a href="https://hermes-agent.nousresearch.com/docs/user-guide/security/"><code translate="no">allow_private_urls</code></a> relaxes several entries together; application checks do not replace OS isolation.</td><td>Shared fail-closed validation, full address set, redirect checks, sanitization, limits. Global switch made exact.</td></tr>
+<tr><th scope="row"><a href="https://docs.openclaw.ai/gateway/security">OpenClaw</a></th><td>Private, internal and special-use targets denied by default, exact or wildcard exceptions, checks before navigation, interaction-generated loads and final URLs. Documents speculative navigation and subresource risk.</td><td>Request interception is not a network firewall: redirects, popups, Service Workers and background resources can still need egress isolation or a policy proxy.</td><td>Strict defaults, explicit exceptions. Browser interception is a separate boundary.</td></tr>
+<tr><th scope="row">Claude Code</th><td><code translate="no">WebFetch(domain:...)</code> allow and deny. The hostname goes to <a href="https://code.claude.com/docs/en/data-usage">Anthropic's safety blocklist</a> first, cached five minutes; the owner may disable it.</td><td><a href="https://code.claude.com/docs/en/sandboxing">Bash sandbox</a> uses a Seatbelt or bubblewrap HTTP and SOCKS proxy inherited by children. It trusts the client hostname and does not inspect TLS, so broad domains and fronting stay risks.</td><td>Layered tool authorization, child-process egress policy. Hostname permission rejected as connect-time evidence.</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/network-proxy/README.md">Codex</a></th><td>Does not substitute one WebFetch string check for a network boundary.</td><td><code translate="no">codex-network-proxy</code>: HTTP and SOCKS5, exact or restricted wildcard domains, private-resolution rejection, limited read-only methods, MITM header hooks, Unix-socket control, structured audit; OS sandbox limits loopback bypass.</td><td>Structured deny reasons, audit, managed-policy concepts. Consumer-aware safe clients kept.</td></tr>
+<tr><th scope="row">CodeBuddy 2.109.3</th><td><code translate="no">WebFetch</code> applies Security Center domain policy, rejects IP literals, <code translate="no">localhost</code> and some private ranges. WeCom media: official CDN allowlist, no redirects.</td><td>Sandbox <code translate="no">allowedDomains</code> intersects WebFetch permission. Full A/AAAA validation, peer binding and hop-by-hop redirects unconfirmed.</td><td>Fixed channel allowlists, intersection of permission and network policy. Literal-IP-only protection rejected.</td></tr>
+<tr><th scope="row">Gemini CLI</th><td><a href="https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/tools.md">Documents</a> that <code translate="no">web_fetch</code> can reach localhost and private networks; Plan Mode can require confirmation. Core 0.35.3 has IP and DNS utilities, not a general boundary.</td><td>Confirmation is a permission decision; it does not constrain the peer.</td><td>Explicit risk documentation. Confirmation rejected as enforcement.</td></tr>
+<tr><th scope="row">OpenCode</th><td><code translate="no">webfetch</code> permissions on the full URL: allow, ask, deny. <a href="https://opencode.ai/v2/docs/permissions">Documentation</a> does not establish private-IP classification, full DNS results, hop-by-hop redirects or peer binding.</td><td><code translate="no">shell</code> uses the host user's network; string rules are best effort.</td><td>Uniform resource permissions. A permitted URL still passes transport policy.</td></tr>
+<tr><th scope="row">pi-mono</th><td>No built-in arbitrary-URL fetch confirmed; network comes from shell, installers, extensions.</td><td>No OS egress policy confirmed. Third-party <code translate="no">pi-sandbox</code> not counted.</td><td>Not an SSRF reference. Supports keeping third-party code outside this protection.</td></tr>
+<tr><th scope="row">pi-ai</th><td>Protocol reference source, no Runtime URL consumer.</td><td>Not applicable.</td><td>Excluded.</td></tr>
+<tr><th scope="row">weclaw</th><td>Messaging bridge to external agents; no independent URL fetch confirmed.</td><td>Inherits the launched CLI's tools and network.</td><td>Channel media and process launch are its relevant boundaries; not a safe-HTTP reference.</td></tr>
+<tr><th scope="row">cc-internal, cx-internal, gm-internal</th><td>Wrap upstream launchers or reuse Gemini CLI; no independent strengthening confirmed.</td><td>Inherit upstream behaviour; added authentication or endpoints create no SSRF boundary.</td><td>Only their extra endpoints, credential forwarding and configuration audited; not counted as independent designs.</td></tr>
+<tr><th scope="row"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP</a></th><td>Separates known-service allowlisting from arbitrary-public validation, restricts protocols, validates every A/AAAA result.</td><td>One DNS preflight still has pinning and time-of-check risk; network controls recommended too.</td><td>Separate trust classes, connect-time peer constraints. Single preflight rejected.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="future">Implementation status</h2>
+<p>Runtime-owned HTTP is implemented. Separate boundaries still to do:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Boundary</th><th scope="col">Needed before claiming it</th></tr></thead>
+<tbody>
+<tr><th scope="row">Browser navigation and page traffic</th><td>Policy and tests for navigation, popups, Service Workers, background resources, redirects, downloads, CDP and profiles across every backend; an enforcing egress boundary where interception is not enough</td></tr>
+<tr><th scope="row">Plugin and arbitrary-code networking</th><td>Trust and sandbox stay separate; an OS or policy-proxy egress boundary if these need restricted network</td></tr>
+<tr><th scope="row">Disabled SDK network features</th><td>Enable only after the SDK takes managed transport injection, or an enforcing policy proxy has equivalent tests</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="sandbox-architecture.html">Execution authority and sandbox</a> · <a href="../../providers/network-proxy.html">Network proxy</a> · <a href="../../feature-matrix.html">Feature matrix</a></p>

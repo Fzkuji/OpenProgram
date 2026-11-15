@@ -1,0 +1,208 @@
+"""Merge-branches WS action — aggregate N peer branches into one reply.
+
+Wire format::
+
+    in:  {"action": "merge_branches",
+          "session_id": "...",                  // target session
+          // Either / both of these — coalesced server-side:
+          "peers": [{session_id, head_id?}, ...],   // (session, head) pairs
+          "sub_sessions": ["sid_a", "sid_b"],       // session ids (=HEAD)
+          "message": "...",
+          "agent_id": "main"}
+    out: {"type": "merge_branches_result",
+          "data": {"session_id", "target_assistant_id", "commit_id",
+                   "commit_parents", "final_text", "failed", "error"?}}
+
+A "branch" is the abstraction: a ``(session_id, head_id)`` pair.
+Same-session merges pass two peers with the same ``session_id`` and
+different ``head_id``s. Cross-session merges pass peers from
+different sessions. Both go through one code path.
+
+``head_id`` omitted ⇒ that session's current HEAD. ``sub_sessions``
+is the legacy shorthand for "all-HEADs" and is kept for back-compat.
+"""
+from __future__ import annotations
+
+import logging
+import asyncio
+import json
+
+_log = logging.getLogger(__name__)
+
+
+def _run(
+    target_session_id: str,
+    peers: list[dict],
+    sub_sessions: list[str],
+    message: str,
+    agent_id: str,
+    base_peer: int | None,
+    branch_id: str | None = None,
+) -> dict:
+    from openprogram.runtime.conversation.merge import process_merge_turn
+    out = process_merge_turn(
+        target_session_id=target_session_id,
+        sub_sessions=sub_sessions,
+        peers=peers,
+        message=message,
+        agent_id=agent_id,
+        base_peer=base_peer,
+        target_branch_id=branch_id,
+    )
+    return {
+        "target_assistant_id": out.target_assistant_id,
+        "commit_id": out.commit_id,
+        "commit_parents": list(out.commit_parents),
+        "final_text": out.final_text,
+        "failed": out.failed,
+        "error": out.error,
+        "base_peer": out.base_peer,
+        "branch_id": out.branch_id,
+    }
+
+
+def _normalize_peers(raw) -> list[dict]:
+    """Accept ``[{session_id, head_id}]`` AND the shorthand string forms
+    ``"sid"`` / ``"sid:head"`` for convenience. Returns a flat list of
+    ``{session_id, head_id}`` dicts (head_id may be None)."""
+    out: list[dict] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if isinstance(item, dict):
+            sid = (item.get("session_id") or "").strip()
+            if not sid:
+                continue
+            head_id = item.get("head_id")
+            if isinstance(head_id, str):
+                head_id = head_id.strip() or None
+            else:
+                head_id = None
+            out.append({"session_id": sid, "head_id": head_id})
+        elif isinstance(item, str):
+            s = item.strip()
+            if not s:
+                continue
+            if ":" in s:
+                sid, head_id = s.split(":", 1)
+                sid = sid.strip()
+                head_id = head_id.strip() or None
+            else:
+                sid = s
+                head_id = None
+            if sid:
+                out.append({"session_id": sid, "head_id": head_id})
+    return out
+
+
+def _mirror_merge_head(_s, target_session_id: str, payload: dict) -> None:
+    """Move the in-memory head to the merge reply while its branch is selected."""
+    from openprogram.runtime.conversation.merge import still_selected
+    if still_selected(target_session_id, payload.get("branch_id")):
+        _s._set_active_head(target_session_id, payload["target_assistant_id"])
+
+
+async def handle_merge_branches(ws, cmd: dict) -> None:
+    target_session_id = (cmd.get("session_id") or "").strip()
+    peers = _normalize_peers(cmd.get("peers"))
+    sub_sessions = cmd.get("sub_sessions") or []
+    if not isinstance(sub_sessions, list):
+        sub_sessions = []
+    sub_sessions = [s for s in (str(b).strip() for b in sub_sessions) if s]
+    message = cmd.get("message") or ""
+    agent_id = (cmd.get("agent_id") or "main").strip() or "main"
+    base_peer = cmd.get("base_peer")
+    if isinstance(base_peer, bool):
+        base_peer = None
+    elif isinstance(base_peer, (int, float)):
+        base_peer = int(base_peer)
+    elif isinstance(base_peer, str) and base_peer.strip().lstrip("-").isdigit():
+        base_peer = int(base_peer.strip())
+    else:
+        base_peer = None
+
+    from openprogram.interfaces.server import server as _s
+
+    # A merge turn writes a new assistant node onto the target session
+    # and consumes the peer branches, so a run in flight on the target
+    # or any peer would race the HEAD move. Same guard as retry / edit.
+    _touched = {target_session_id} | {
+        p["session_id"] for p in peers if p.get("session_id")
+    } | set(sub_sessions)
+    # The run records are read under each conversation's lock: off the loop.
+    _busy = await asyncio.to_thread(
+        lambda: next((s for s in _touched if s and _s._is_run_active(s)), None))
+
+    if not target_session_id or not (peers or sub_sessions):
+        payload = {
+            "session_id": target_session_id,
+            "target_assistant_id": None,
+            "commit_id": None,
+            "commit_parents": [],
+            "final_text": "",
+            "failed": True,
+            "error": "session_id and at least one peer required",
+        }
+    elif _busy:
+        payload = {
+            "session_id": target_session_id,
+            "target_assistant_id": None,
+            "commit_id": None,
+            "commit_parents": [],
+            "final_text": "",
+            "failed": True,
+            "code": "run_active",
+            "error": _s.RUN_ACTIVE_ERROR,
+        }
+    else:
+        # The merge belongs to the branch selected when it was asked for.
+        branch_id = (cmd.get("branch_id") or "").strip() or await asyncio.to_thread(
+            _s._selected_branch, target_session_id)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: _run(
+                target_session_id, peers, sub_sessions, message, agent_id,
+                base_peer, branch_id,
+            ),
+        )
+        payload = {"session_id": target_session_id, **result}
+
+    await ws.send_text(json.dumps({
+        "type": "merge_branches_result",
+        "data": payload,
+    }, default=str))
+
+    if not payload.get("failed") and payload.get("target_assistant_id"):
+        # process_merge_turn advanced the store HEAD on the target
+        # session; mirror it into conv["head_id"] / conv["messages"]
+        # BEFORE clients reload, or the next _save_session flushes the
+        # stale pre-merge head back over it and orphans the merge reply.
+        # Only while the merge's branch is still selected.
+        try:
+            await asyncio.to_thread(_mirror_merge_head, _s, target_session_id, payload)
+        except Exception:
+            # The publisher notice below still runs; the next save may revert the merge head.
+            _log.warning(
+                "merge head not mirrored for session %s", target_session_id, exc_info=True)
+        try:
+            from openprogram.interfaces.server.transcript import publisher
+            publisher.notice_merged(target_session_id)
+        except Exception:
+            # Peers see the merge on their next load.
+            _log.warning(
+                "merge not announced for session %s", target_session_id, exc_info=True)
+    elif payload.get("failed"):
+        # Defect 6: the result frame was the only failure signal and had
+        # no consumer, so a failed merge was silent. Log server-side so
+        # the failure is diagnosable from the worker log too.
+        _s._log(
+            f"[merge_branches] FAILED session={target_session_id} "
+            f"peers={peers} sub_sessions={sub_sessions}: "
+            f"{payload.get('error')}"
+        )
+
+
+ACTIONS = {
+    "merge_branches": handle_merge_branches,
+}

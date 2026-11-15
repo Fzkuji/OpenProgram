@@ -1,26 +1,19 @@
-"""Self-recursion guard for @agentic_function (regression test).
+"""Self-recursion guard for Agent method (regression test).
 
 An agentic harness (e.g. ``wiki_agent``) runs an inner agent loop via
 ``runtime.exec()`` with the FULL toolset, and the FULL toolset is every
 exposed tool, harness entry points included (gui_agent /
-research_agent / wiki_agent). The inner
+wiki_agent). The inner
 model could in principle call ``wiki_agent`` from inside ``wiki_agent``
 → unbounded nesting (the "7-layer nesting" root cause).
 
-The guard is now two-layer (the old tool-policy *deny* that hid the
-function from its own toolset was removed):
+The guard is a recursion depth cap: the wrapper bumps a per-method
+callable identity depth counter and raises ``RecursionError`` if the SAME
+function re-enters itself past ``_MAX_AGENTIC_RECURSION_DEPTH``. The
+function's own tool stays visible.
 
-  1. Primary — situational steering: a prompt prefix injected by
-     ``runtime._situational_prefix`` tells the inner model it is already
-     running inside the function and must not call it. The function's
-     own tool stays VISIBLE; the model is steered away.
-  2. Backstop — recursion depth cap: the wrapper bumps a per-function
-     name depth counter and raises ``RecursionError`` if the SAME
-     function re-enters itself past ``_MAX_AGENTIC_RECURSION_DEPTH``.
+These tests assert the guard directly (no live LLM):
 
-These tests assert both layers directly (no live LLM):
-
-  * the situational prefix carries the recursion warning + function name;
   * the depth backstop raises past the limit;
   * legitimate distinct sub-calls (A→B) are NOT collateral damage;
   * the depth contextvar is restored after return / raise;
@@ -29,17 +22,19 @@ These tests assert both layers directly (no live LLM):
 
 from __future__ import annotations
 
-import pytest
+from openprogram.runtime.agent import Agent
 
-from openprogram.agentic_programming.function import (
-    agentic_function,
+import pytest
+import inspect
+
+from openprogram.runtime.agent.call_state import (
+
     _recursion_depth,
     _MAX_AGENTIC_RECURSION_DEPTH,
 )
-from openprogram.agentic_programming.runtime import (
+from openprogram.runtime.agent.runtime import (
     Runtime,
     _current_tool_policy,
-    _situational_prefix,
 )
 
 
@@ -52,54 +47,26 @@ def _deny() -> list[str]:
     return list((_current_tool_policy.get(None) or {}).get("deny") or [])
 
 
-def _depth(name: str) -> int:
-    return (_recursion_depth.get(None) or {}).get(name, 0)
+def _depth(method) -> int:
+    source = inspect.unwrap(method)
+    if inspect.ismethod(source):
+        source = source.__func__
+    return (_recursion_depth.get(None) or {}).get(source, 0)
 
-
-# --- Layer 1: situational steering prompt ---------------------------------
-
-def test_situational_prefix_warns_against_self_call():
-    text = _situational_prefix("wiki_agent", "Answer wiki questions.")
-    # Names the function and warns about recursion.
-    assert "wiki_agent" in text
-    assert "do NOT call it" in text
-    assert "recursion" in text.lower()
-    # Job is stated up front (main situational info); recursion warning after.
-    assert "Job: Answer wiki questions." in text
-    assert text.index("Answer wiki questions.") < text.index("recursion")
-    # Wrapped in a <situation> tag.
-    assert text.startswith("<situation>") and text.rstrip().endswith("</situation>")
-
-
-def test_situational_prefix_handles_empty_doc():
-    text = _situational_prefix("gui_agent", "")
-    assert "gui_agent" in text
-    assert "Job:" not in text
-
-
-def test_situational_prefix_optional_fields():
-    text = _situational_prefix(
-        "idea", "Generate ideas.",
-        call_path="research_agent → _pick_stage → idea",
-        position="idea stage, generate step",
-        output_contract="parsed as the idea list",
-    )
-    assert "Call path: research_agent → _pick_stage → idea" in text
-    assert "Position: idea stage, generate step" in text
-    assert "Your output: parsed as the idea list" in text
-
-
-# --- Self-deny removed: the tool stays visible ---------------------------
 
 def test_self_name_NOT_denied_during_call(runtime):
     """The old deny mechanism is gone: a function's own name must no
     longer be force-injected into the tool-policy deny set."""
     seen = {}
 
-    @agentic_function
-    def wiki_agent(task, runtime=None):
-        seen["deny"] = _deny()
-        return "ok"
+    class _WikiAgentAgent(Agent):
+        method_options = {'wiki_agent': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'wiki_agent'}}
+
+        def wiki_agent(self, task, runtime=None):
+            seen["deny"] = _deny()
+            return "ok"
+
+    wiki_agent = _WikiAgentAgent().wiki_agent
 
     assert wiki_agent("x", runtime=runtime) == "ok"
     assert "wiki_agent" not in seen["deny"]
@@ -110,10 +77,14 @@ def test_self_name_NOT_denied_during_call(runtime):
 def test_depth_increments_during_call(runtime):
     seen = {}
 
-    @agentic_function
-    def f(runtime=None):
-        seen["depth"] = _depth("f")
-        return "done"
+    class _FAgent(Agent):
+        method_options = {'f': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'f'}}
+
+        def f(self, runtime=None):
+            seen["depth"] = _depth(f)
+            return "done"
+
+    f = _FAgent().f
 
     assert f(runtime=runtime) == "done"
     assert seen["depth"] == 1
@@ -124,11 +95,15 @@ def test_depth_backstop_raises_past_limit(runtime):
     forever."""
     calls = {"n": 0}
 
-    @agentic_function
-    def loop(runtime=None):
-        calls["n"] += 1
-        # Re-enter ourselves unconditionally — a runaway model.
-        return loop(runtime=runtime)
+    class _LoopAgent(Agent):
+        method_options = {'loop': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'loop'}}
+
+        def loop(self, runtime=None):
+            calls["n"] += 1
+            # Re-enter ourselves unconditionally — a runaway model.
+            return loop(runtime=runtime)
+
+    loop = _LoopAgent().loop
 
     with pytest.raises(RecursionError) as exc:
         loop(runtime=runtime)
@@ -139,44 +114,60 @@ def test_depth_backstop_raises_past_limit(runtime):
 
 
 def test_distinct_subcalls_not_collateral_damage(runtime):
-    """A→B legitimate sub-call: distinct names have independent depth, so
+    """A→B legitimate sub-call: distinct methods have independent depth, so
     deep B nesting under A never trips A's limit and vice versa."""
     seen = {}
 
-    @agentic_function
-    def inner(runtime=None):
-        seen["inner_depth"] = _depth("inner")
-        seen["outer_depth_seen_from_inner"] = _depth("outer")
-        return "inner"
+    class _InnerAgent(Agent):
+        method_options = {'inner': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'inner'}}
 
-    @agentic_function
-    def outer(runtime=None):
-        seen["outer_depth"] = _depth("outer")
-        return inner(runtime=runtime)
+        def inner(self, runtime=None):
+            seen["inner_depth"] = _depth(inner)
+            seen["outer_depth_seen_from_inner"] = _depth(outer)
+            return "inner"
+
+    inner = _InnerAgent().inner
+
+    class _OuterAgent(Agent):
+        method_options = {'outer': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'outer'}}
+
+        def outer(self, runtime=None):
+            seen["outer_depth"] = _depth(outer)
+            return inner(runtime=runtime)
+
+    outer = _OuterAgent().outer
 
     assert outer(runtime=runtime) == "inner"
     assert seen["outer_depth"] == 1
     assert seen["inner_depth"] == 1
-    # inner does NOT inherit outer's count (per-name), and vice versa.
+    # inner does NOT inherit outer's count (per-method identity), and vice versa.
     assert seen["outer_depth_seen_from_inner"] == 1
 
 
 def test_depth_restored_after_return(runtime):
-    @agentic_function
-    def f(runtime=None):
-        return "done"
+    class _FAgent(Agent):
+        method_options = {'f': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'f'}}
 
-    before = _depth("f")
+        def f(self, runtime=None):
+            return "done"
+
+    f = _FAgent().f
+
+    before = _depth(f)
     f(runtime=runtime)
-    assert _depth("f") == before
+    assert _depth(f) == before
 
 
 def test_depth_restored_after_exception(runtime):
-    @agentic_function
-    def boom(runtime=None):
-        raise ValueError("kaboom")
+    class _BoomAgent(Agent):
+        method_options = {'boom': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'boom'}}
 
-    before = _depth("boom")
+        def boom(self, runtime=None):
+            raise ValueError("kaboom")
+
+    boom = _BoomAgent().boom
+
+    before = _depth(boom)
     with pytest.raises(ValueError):
         boom(runtime=runtime)
-    assert _depth("boom") == before
+    assert _depth(boom) == before

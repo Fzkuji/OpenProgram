@@ -1,5 +1,16 @@
-/* App styles — port from openprogram/webui/static/css/style.css */
-@import "./styles.css";
+/* The app's one stylesheet entry (imported by layout.tsx). Order:
+
+     tailwindcss          Tailwind's layers and default theme
+     styles/design/       the design system: tiers for every size, shape
+                          and ink, and Tailwind's names for them
+     styles/themes/       colour values per theme (data, one file each)
+     styles/              the app's global styles, by area
+
+   Unlayered app rules beat Tailwind's layered ones wherever they sit;
+   the design files come after tailwindcss so their @theme values
+   replace Tailwind's defaults. */
+@import "tailwindcss";
+@import "tw-animate-css";
 
 /* Inter Variable — loaded locally so the font picker's "Inter" option
    actually resolves (was a CSS reference to an uninstalled family).
@@ -8,176 +19,7 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
-/* 主题即数据 —— 每个文件是一整套 token 契约。新增主题＝加一个文件 +
-   在这里 import + 在 lib/prefs/theme-config.ts 的 THEME_IDS 里登记。
-   必须排在 styles.css（内含 base.css 的 :root 兜底）之后。 */
-@import "./styles/themes/beige-dark.css";
-@import "./styles/themes/beige-light.css";
-@import "./styles/themes/dark.css";
-@import "./styles/themes/light.css";
-@import "./styles/themes/aurora.css";
-@import "./styles/themes/aurora-light.css";
-@import "./styles/themes/custom-light.css";
-
-@import "tailwindcss";
-@import "tw-animate-css";
-
-/* v4 auto-detects sources from the CSS file's location, but this app is a
-   sub-package of a larger monorepo, so scope the scan explicitly to the
-   web/ source dirs (was `content: [...]` in tailwind.config.ts). */
-@source ".";
-@source "../components";
-@source "../pages";
-
-/* Dark mode is toggled by a `.dark` class on an ancestor (was
-   `darkMode: ["class"]` in the old tailwind.config.ts). */
-@custom-variant dark (&:where(.dark, .dark *));
-
-/* Design tokens → Tailwind utility names. Mirrors app/styles/base.css
-   (:root), which stays the single source of truth — this block only
-   hands Tailwind the utility aliases (was theme.extend in
-   tailwind.config.ts). CSS vars remain usable via `var(--xxx)` too. */
-@theme {
-  /* generic shadcn-style slots */
-  --color-border: var(--border);
-  --color-border-light: var(--border-light);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-
-  /* text / bg roles — auto theme-aware via var(--xxx) */
-  --color-text-primary: var(--text-primary);
-  --color-text-secondary: var(--text-secondary);
-  --color-text-bright: var(--text-bright);
-  --color-text-muted: var(--text-muted);
-  --color-bg-primary: var(--bg-primary);
-  --color-bg-secondary: var(--bg-secondary);
-  --color-bg-tertiary: var(--bg-tertiary);
-  --color-bg-hover: var(--bg-hover);
-  --color-bg-hover-contrast: var(--bg-hover-contrast);
-  --color-bg-input: var(--bg-input);
-  --color-bg-selected: var(--bg-selected);
-  --color-user-msg-bg: var(--user-msg-bg);
-  --color-assistant-msg-bg: var(--assistant-msg-bg);
-
-  /* fixed accents */
-  --color-accent-blue: var(--accent-blue);
-  --color-accent-green: var(--accent-green);
-  --color-accent-red: var(--accent-red);
-  --color-accent-yellow: var(--accent-yellow);
-  --color-accent-purple: var(--accent-purple);
-  --color-accent-cyan: var(--accent-cyan);
-  --color-accent-orange: var(--accent-orange);
-
-  /* sidebar nav colors — diverge from text-* in light mode */
-  --color-nav-color: var(--nav-color);
-  --color-nav-color-hover: var(--nav-color-hover);
-
-  /* radius. `--radius-lg` is defined in base.css :root as 12px; naming it
-     the same here would self-reference, so inline the literal (kept in
-     sync with base.css). --radius-md aliases base.css's --radius. */
-  --radius-lg: 12px;
-  --radius-md: var(--radius);
-  --radius-sm: 6px;
-  --radius-composer-corner: var(--composer-corner);
-
-  /* families. base.css :root already defines --font-mono / --font-sans;
-     re-aliasing them here would self-reference, so inline the same stacks
-     (kept in sync with base.css). */
-  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", ui-monospace, monospace;
-  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-
-  /* font sizes → text-fs-* */
-  --text-fs-sm: var(--fs-sm);
-  --text-fs-base: var(--fs-base);
-  --text-fs-md: var(--fs-md);
-  --text-fs-lg: var(--fs-lg);
-
-  /* spacing aliases */
-  --spacing-composer-button: var(--composer-button-size);
-  --spacing-composer-offset: var(--composer-button-offset);
-  --spacing-composer-pad: var(--composer-bottom-row-pad);
-  --spacing-composer-row: var(--composer-bottom-row-h);
-  --spacing-sidebar-w: var(--sidebar-width);
-  --spacing-detail-w: var(--detail-width);
-
-  /* transition timing */
-  --ease-composer: cubic-bezier(0.25, 0.1, 0.25, 1);
-
-  /* animations */
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
-  --animate-spin-refresh: spin-refresh 0.6s ease-in-out;
-}
-
-@keyframes accordion-down {
-  from { height: 0; }
-  to { height: var(--radix-accordion-content-height); }
-}
-@keyframes accordion-up {
-  from { height: var(--radix-accordion-content-height); }
-  to { height: 0; }
-}
-@keyframes spin-refresh {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* v4 compat: v4's default border colour is `currentColor` (v3 was
-   gray-200). ~43 bare `border` utilities across cards / inputs / dialogs /
-   popovers were written for the v3 default and now paint in text colour
-   (the orange picker ring, dark input outlines, etc.). Restore the app
-   hairline the v4-recommended way — the official `*` border shim — using
-   our own `--border` token as the value. CSS-module separators (sidebar,
-   tab strip, composer) already set `var(--border)` explicitly and are
-   unaffected; elements with an explicit `border-[...]` colour win on
-   specificity. */
-@layer base {
-  *,
-  ::after,
-  ::before {
-    border-color: var(--border);
-  }
-}
-
-/* shadcn token bridge so shadcn/ui components keep working */
-:root {
-  --background: var(--bg-primary);
-  --foreground: var(--text-primary);
-  --card: var(--bg-secondary);
-  --card-foreground: var(--text-primary);
-  --popover: var(--bg-tertiary);
-  --popover-foreground: var(--text-primary);
-  --primary: var(--accent-blue);
-  /* Defined per theme block in app/styles/base.css. Dark mode
-     wants near-black text on the brand-fill button so the warm
-     orange reads as a "press me" tile rather than a glowing
-     neon pill — pure white on orange has too much chroma. Light
-     mode keeps the classic white-on-coloured pattern. */
-  --secondary: var(--bg-tertiary);
-  --secondary-foreground: var(--text-primary);
-  --muted: var(--bg-tertiary);
-  --muted-foreground: var(--text-muted);
-  --accent: var(--bg-hover);
-  --accent-foreground: var(--text-bright);
-  --destructive: var(--accent-red);
-  --destructive-foreground: #ffffff;
-  --input: var(--bg-input);
-  --ring: var(--focus-ring);
-  --radius-lg: 12px;
-}
+@import "./styles/design/tailwind.css";
+@import "./styles/design/index.css";
+@import "./styles/themes/index.css";
+@import "./styles/index.css";

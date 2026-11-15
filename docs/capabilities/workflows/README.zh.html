@@ -1,0 +1,78 @@
+<title>Agentic 工作流</title>
+<meta name="description" content="安装、编写、触发和管理用 Agentic Programming 构建的 Workflow。">
+<h1>Agentic 工作流</h1>
+<p>Agentic 工作流在代码里叫 <strong>harness</strong> 或 <strong>agentic program</strong>，是一个包含 <code translate="no">Agent</code> 方法的 git 仓库，用 <a href="../agentic-programming/README.zh.html">Agentic Programming</a> 构建。发行版不捆绑任何工作流。安装后出现在聊天、Web UI 的 Programs 页和 <code translate="no">openprogram programs run</code> 里。</p>
+<h2 id="management-commands">命令</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram programs list</code></th><td>所有 Program：工具、应用、你的包、harness。<code translate="no">~/.openprogram/programs</code> 里每个 Workflow 是一行 <code translate="no">package</code>，带入口和状态：<code translate="no">loaded</code>、<code translate="no">error</code> 或 <code translate="no">pending</code>（暂不可调用：还没有提交通过检查）。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs install &lt;owner&gt;/&lt;repo&gt;</code></th><td>任意 harness，git URL 或目录也行。克隆、安装声明的依赖、记录批准的来源。只限可变环境：源码检出或 CLI/服务器安装。打包的桌面 runtime 拒绝。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs install &lt;ref&gt; --upgrade</code></th><td>重装或升级</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs uninstall &lt;name&gt;</code></th><td>把 harness 移到一边</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs run &lt;name&gt; -a key=value</code></th><td>直接运行。<code translate="no">--provider</code>（默认自动检测）和 <code translate="no">--model</code> 覆盖模型。</td></tr>
+</tbody></table>
+<span id="self-programming-workflows"></span>
+<h2 id="workflows-the-agent-writes-for-you">Agent 写的工作流</h2>
+<p>适合稳定的多阶段结构、重复使用或需要可审查历史的任务；一次性任务不需要。没有专门工具，用文件工具和命令行：</p>
+<ol>
+<li>把 <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> 建成 Git 仓库，写入角色、函数、<code translate="no">PROGRAM_ENTRIES</code>、<code translate="no">README.md</code> 和行为测试。</li>
+<li><code translate="no">openprogram programs check ~/.openprogram/programs/&lt;name&gt;</code> 导入包，在系统沙箱里跑测试，通过后提交并把该提交记录为已检查。</li>
+<li>失败时读报告、修复、再检查。</li>
+</ol>
+<p class="note">worker 几秒内加载通过检查的提交；入口无需重启就成为所有聊天里的工具并出现在 Programs 页。修改也一样。旧版本留在 Git 里。</p>
+<h2 id="how-to-trigger-them">触发</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">从</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web 表单</th><td>Programs 或侧栏收藏里的 <strong>Use</strong>。新标签页变成草稿聊天；已有聊天保留草稿和运行中的任务。填好需求后发送；打开或关闭不运行。</td></tr>
+<tr><th scope="row">聊天</th><td>入口注册为工具（<code translate="no">as_tool=True</code>）。描述任务，模型调用它们，如已安装的 <code translate="no">owner/paper-harness</code> 里的 <code translate="no">paper_agent</code>。操作应用、浏览器 Page 和虚拟机是 <a href="../computer-use.zh.html"><code translate="no">computer_use_agent</code></a>，不是工作流。</td></tr>
+<tr><th scope="row">命令行</th><td><code translate="no">openprogram programs run paper_agent -a task="Survey recent work on agent memory"</code></td></tr>
+<tr><th scope="row">Python</th><td>普通可导入函数</td></tr>
+</tbody></table>
+<p class="note">表单只问任务信息，不问执行设置。文本润色从文本推断风格。浏览器后端和会话句柄保持内部。页码范围和输出位置是可选需求。明确的 Python 调用者保留支持的覆盖项。</p>
+<h2 id="model-selection">模型选择</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">模型</th></tr></thead>
+<tbody>
+<tr><th scope="row">从聊天运行</th><td>内部调用继承本轮：单轮覆盖，然后会话选择，然后 agent 配置。也用于工具子进程。</td></tr>
+<tr><th scope="row">直接运行工具</th><td>内部调用需要明确的服务商和模型；不用全局检测或服务商默认值</td></tr>
+<tr><th scope="row">函数体不调用模型</th><td>没有配置也能运行</td></tr>
+<tr><th scope="row">模型或凭证不可用</th><td>函数体调用 Runtime 时失败，保留该模型的错误。无模型步骤仍运行，不换服务商。</td></tr>
+</tbody></table>
+<details>
+<summary>浏览器工作流</summary>
+<p>选择后端时保留明确的初始 URL。官方 MCP 后端支持受保护的等待并传递快照失败。页面恢复限于当前窗口范围，不重放失败的操作。验证过的结果保留实际证据和观察目标。</p>
+</details>
+<h2 id="writing-your-own">自己写</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">形式</th><th scope="col">指南</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness：<code translate="no">&lt;package&gt;/agentics/__init__.py</code> 暴露 <code translate="no">PROGRAM_ENTRIES</code></th><td><a href="../installing-programs.zh.html">安装 Program</a></td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs</code> 里的单个包</th><td><a href="authoring.zh.html">编写和检查 Workflow</a></td></tr>
+<tr><th scope="row">演示给 agent 看</th><td><a href="recording.zh.html">录制工作流</a></td></tr>
+</tbody></table>
+<h2 id="weekly-reports">周报</h2>
+<p>如果目录里有 <code translate="no">weekly_report</code>，把报告文本或要改的内容给它：提交本周周报、只更新下周计划、查看记录，或在指定路径起草本地草稿。</p>
+<details>
+<summary>如何写入飞书</summary>
+<ul>
+<li>读取配置的表单，写入前匹配姓名和年/周。没有记录时提交一次；已有可编辑记录时从提交历史打开并保存。部分更新保留未改字段。草稿和只读请求不提交。</li>
+<li>检查结果未知、登录失败和记录歧义时停止。提交上限本身不排除编辑已有记录。</li>
+<li>成功需要新的页面确认和持久化的值。结果不确定时报告，不重试。普通浏览器授权仍需要。用有界的浏览器步骤，不用 <code translate="no">goal()</code> 循环；不编造进展、指标或论文题目。</li>
+</ul>
+</details>
+<details>
+<summary>group_weekly_report</summary>
+<p><code translate="no">group_weekly_report(task)</code> 准备未发送的草稿，检查后自己发送。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">证据</th><td>从记忆、本地文件和微信收集范围、材料和作者</td></tr>
+<tr><th scope="row">缺口</th><td>缺字段不提问；未知作者和不可用来源会列出。缺少材料不等于没交</td></tr>
+<tr><th scope="row"><code translate="no">source: "supplied"</code></th><td>限于提供的材料。完整结构化的仅提供材料检查不用模型</td></tr>
+<tr><th scope="row">摘要</th><td>有界的逐成员上下文、核对过的引用、明确的不确定性</td></tr>
+<tr><th scope="row">文件</th><td><code translate="no">reports/group-weekly/&lt;week&gt;/&lt;unique-run&gt;/</code> 或 <code translate="no">output_dir</code></td></tr>
+</tbody></table>
+</details>
+<p class="next"><a href="reports.zh.html">周报</a></p>

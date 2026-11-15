@@ -7,16 +7,15 @@ import threading
 
 import pytest
 
-from openprogram.events import (
+from openprogram.runtime.events import (
     Event,
-    EventBus,
     WS_FRAME_EVENT,
     create_event_bus,
     emit_ws_frame,
     get_event_bus,
     make_event,
 )
-from openprogram.events.registry import EVENTS
+from openprogram.runtime.events.registry import EVENTS
 
 
 # Event / make_event
@@ -46,7 +45,7 @@ def test_event_is_frozen():
 
 
 def test_make_event_picks_up_turn_contextvar():
-    from openprogram.store import _current_turn_id
+    from openprogram.state.store import _current_turn_id
 
     token = _current_turn_id.set("turn_abc")
     try:
@@ -146,7 +145,7 @@ def test_emit_ws_frame_reaches_subscriber_verbatim(monkeypatch):
     _forward 就是这个角色）拿到原始帧、一字不变。这是事件层贯穿到前端的关键
     一环——webui 删了订阅就会断，这个测试守住它。"""
     bus = create_event_bus()
-    monkeypatch.setattr("openprogram.events.bus._event_bus", bus)
+    monkeypatch.setattr("openprogram.runtime.events.bus._event_bus", bus)
 
     got = []
     bus.subscribe(lambda ev: got.append(ev.payload.get("frame")),
@@ -161,7 +160,7 @@ def test_emit_ws_frame_reaches_subscriber_verbatim(monkeypatch):
 def test_ws_frame_subscriber_only_gets_ws_frames(monkeypatch):
     """订阅 WS_FRAME_EVENT 的 handler 不会被别的事件类型打扰。"""
     bus = create_event_bus()
-    monkeypatch.setattr("openprogram.events.bus._event_bus", bus)
+    monkeypatch.setattr("openprogram.runtime.events.bus._event_bus", bus)
     got = []
     bus.subscribe(lambda ev: got.append(ev), types={WS_FRAME_EVENT})
     bus.emit(make_event("tool.before", "agent", {"tool": "bash"}))

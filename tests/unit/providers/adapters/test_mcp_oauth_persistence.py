@@ -24,7 +24,7 @@ from mcp.shared.auth import (
     OAuthToken,
 )
 
-from openprogram.mcp.token_storage import (
+from openprogram.extensions.mcp.token_storage import (
     FileTokenStorage,
     PersistentOAuthProvider,
 )
@@ -32,7 +32,7 @@ from openprogram.mcp.token_storage import (
 
 @pytest.fixture()
 def state_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     return tmp_path
 
 
@@ -94,7 +94,7 @@ def test_clear_unlinks_symlink_without_deleting_target(tmp_path, monkeypatch):
     tokens = tmp_path / "mcp_tokens"
     tokens.mkdir()
     monkeypatch.setattr(
-        "openprogram.mcp.token_storage.get_tokens_dir", lambda: tokens
+        "openprogram.extensions.mcp.token_storage.get_tokens_dir", lambda: tokens
     )
     outside = tmp_path / "outside.json"
     outside.write_text("outside")
@@ -108,13 +108,13 @@ def test_clear_unlinks_symlink_without_deleting_target(tmp_path, monkeypatch):
 
 
 def test_clear_returns_no_success_when_unlink_fails(tmp_path, monkeypatch):
-    from openprogram.auth.credentials import PrivateAtomicWriteError
-    from openprogram.auth.credentials import io
+    from openprogram.models.auth.credentials import PrivateAtomicWriteError
+    from openprogram.models.auth.credentials import io
 
     tokens = tmp_path / "mcp_tokens"
     tokens.mkdir()
     monkeypatch.setattr(
-        "openprogram.mcp.token_storage.get_tokens_dir", lambda: tokens
+        "openprogram.extensions.mcp.token_storage.get_tokens_dir", lambda: tokens
     )
     storage = FileTokenStorage("srv")
     storage.path().write_text("{}")
@@ -298,8 +298,8 @@ def test_valid_token_used_directly(state_dir):
 # -- MCPClient._build_remote_auth ------------------------------------
 
 def test_build_remote_auth_reuses_registered_port(state_dir):
-    from openprogram.mcp.client import MCPClient
-    from openprogram.mcp.config import (
+    from openprogram.extensions.mcp.client import MCPClient
+    from openprogram.extensions.mcp.config import (
         AUTH_OAUTH,
         HTTP,
         MCPServerConfig,
@@ -325,8 +325,8 @@ def test_build_remote_auth_reuses_registered_port(state_dir):
 
 
 def test_build_remote_auth_seeds_preregistered_client(state_dir):
-    from openprogram.mcp.client import MCPClient
-    from openprogram.mcp.config import (
+    from openprogram.extensions.mcp.client import MCPClient
+    from openprogram.extensions.mcp.config import (
         AUTH_OAUTH,
         HTTP,
         MCPServerConfig,

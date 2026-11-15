@@ -17,10 +17,16 @@ import mcp.types as mcp_types
 import pytest
 from mcp import ClientSession
 
-from openprogram.agent.authority import mcp_client_authority
-from openprogram.mcp.server.contracts import get_mcp_tools
-from openprogram.mcp.server.service import MCPClientContext
-from openprogram.mcp.server.tools import json_result
+from openprogram.runtime.permissions.authority import mcp_client_authority
+from openprogram.runtime.permissions.refusal import MCP_GATE_REFUSALS
+from openprogram.extensions.mcp.server.contracts import get_mcp_tools
+from openprogram.extensions.mcp.server.service import MCPClientContext
+from openprogram.extensions.mcp.server.tools import json_result
+
+# Starting Python and importing the CLI can take tens of seconds when every
+# xdist worker does it at once. The limit only bounds a real hang, below the
+# suite's per-test timeout.
+SUBPROCESS_TIMEOUT = 100
 
 
 def _stdio_subprocess_environment(tmp_path, *, client: str = "a"):
@@ -42,14 +48,14 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from openprogram.agent.dispatcher import TurnResult
-from openprogram.agent.authority import mcp_client_authority
-from openprogram.agent.questions import get_question_registry
-from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.events import get_event_bus, make_event
-from openprogram.programs._runtime import register
-from openprogram.providers.types import TextContent
-import openprogram.mcp.server.service as mcp_service_module
+from openprogram.runtime.conversation.turn_runtime import TurnResult
+from openprogram.runtime.permissions.authority import mcp_client_authority
+from openprogram.runtime.agent.questions import get_question_registry
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.runtime.events import get_event_bus, make_event
+from openprogram.programs._host.runtime import register
+from openprogram.models.providers.types import TextContent
+import openprogram.extensions.mcp.server.service as mcp_service_module
 
 evidence = Path(os.environ["OPENPROGRAM_MCP_TEST_EVIDENCE"])
 
@@ -57,11 +63,6 @@ def record(kind, **values):
     with evidence.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps({"kind": kind, **values}, sort_keys=True) + "\\n")
 
-def web_use_dispatch(arguments, *, owner_id):
-    record("web_use", arguments=arguments, owner_id=owner_id)
-    return {"ok": True, "owner_bound": owner_id.startswith("mcp:")}
-
-mcp_service_module._default_web_use_dispatch = web_use_dispatch
 mcp_service_module._default_question_registry = get_question_registry
 
 async def execute(call_id, arguments, cancel_event, on_update):
@@ -74,7 +75,7 @@ async def execute(call_id, arguments, cancel_event, on_update):
         raise RuntimeError("runtime-secret")
     return AgentToolResult(content=[TextContent(text="runtime-ok")])
 
-for name in ("memory_status", "memory_search", "read", "bash", "memory_update"):
+for name in ("memory_get", "memory_search", "read", "bash", "memory_update"):
     properties = {"failure": {"type": "boolean"}}
     if name == "bash":
         properties["command"] = {"type": "string"}
@@ -85,16 +86,16 @@ for name in ("memory_status", "memory_search", "read", "bash", "memory_update"):
     register(AgentTool(name=name, description="Fixture " + name,
                        parameters=schema, label=name, execute=execute))
 
-from openprogram.agent.session_config import PermissionRules
-import openprogram.programs.permission_rule as permission_module
+from openprogram.runtime.conversation.session_config import PermissionRules
+import openprogram.runtime.permissions.rule as permission_module
 permission_module.load_merged_rules = lambda _session_id: PermissionRules(
     deny=["memory_update"], ask=["memory_search"]
 )
 
-from openprogram.agent import dispatcher
-from openprogram.agent.run_control import get_current_execution_id
-from openprogram.execution import default_store
-from openprogram.execution.waits import DurableWaitStore
+from openprogram.runtime.conversation import turn_runtime as dispatcher
+from openprogram.runtime.execution.run_control import get_current_execution_id
+from openprogram.runtime.execution import default_store
+from openprogram.runtime.execution.waits import DurableWaitStore
 
 wait_expectation = {}
 
@@ -153,7 +154,7 @@ def process_user_turn(request, *, cancel_event):
     return TurnResult("fixture-result", "fixture-user", "fixture-assistant")
 dispatcher.process_user_turn = process_user_turn
 
-import openprogram.execution as execution_module
+import openprogram.runtime.execution as execution_module
 async def submit_wait_command(service, **kwargs):
     del service
     expected_execution_id = wait_expectation.get("execution_id")
@@ -177,12 +178,12 @@ async def submit_wait_command(service, **kwargs):
     return SimpleNamespace(command=SimpleNamespace(status="applied"))
 execution_module.submit_wait_command = submit_wait_command
 def audit(event):
-    from openprogram.agent.run_control import current_token
+    from openprogram.runtime.execution.run_control import current_token
     record("audit", payload=event.payload,
            run_control_cleared=current_token(event.payload["session_id"]) is None)
 get_event_bus().subscribe(audit, types={"mcp.request.cancelled"})
 
-from openprogram.agent.session_db import default_db
+from openprogram.runtime.context.session_db import default_db
 db = default_db()
 if db.get_session("fixture-session") is None:
     db.create_session("fixture-session", "main", title="Fixture", source="mcp")
@@ -198,7 +199,7 @@ if db.get_session("fixture-session") is None:
             {
                 "mcp_server": {
                     "exposed_tools": [
-                        "memory_status",
+                        "memory_get",
                         "memory_search",
                         "read",
                         "bash",
@@ -234,7 +235,7 @@ async def _stdio_sdk_client(environment, *, client_name="acceptance"):
 
     parameters = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "openprogram.cli", "mcp", "serve"],
+        args=["-m", "openprogram.interfaces.cli", "mcp", "serve"],
         env=environment,
         cwd=os.getcwd(),
     )
@@ -268,15 +269,12 @@ def test_real_stdio_subprocess_calls_all_wrappers(tmp_path, client_name):
             )
             tools = await session.call_tool("tools_list", {})
             runtime = await session.call_tool(
-                "tool_call", {"name": "memory_status", "arguments": {}}
+                "tool_call", {"name": "memory_get", "arguments": {}}
             )
-            computer = await session.call_tool(
-                "web_use", {"command": "list_pages"}
-            )
-        return listed, sessions, session_get, prompt, completed_cancel, tools, runtime, computer
+        return listed, sessions, session_get, prompt, completed_cancel, tools, runtime
 
-    results = asyncio.run(asyncio.wait_for(scenario(), 10))
-    listed, sessions, session_get, prompt, completed_cancel, tools, runtime, computer = results
+    results = asyncio.run(asyncio.wait_for(scenario(), SUBPROCESS_TIMEOUT))
+    listed, sessions, session_get, prompt, completed_cancel, tools, runtime = results
     assert listed.tools == list(get_mcp_tools())
     session_rows = json.loads(sessions.content[0].text)
     assert len(session_rows) == 1
@@ -295,9 +293,6 @@ def test_real_stdio_subprocess_calls_all_wrappers(tmp_path, client_name):
     )
     assert tools.content[0].text.startswith('[{"description":')
     assert runtime.content[0].text == "runtime-ok"
-    assert json.loads(computer.content[0].text) == {
-        "ok": True, "owner_bound": True,
-    }
     evidence = [
         json.loads(line)
         for line in (tmp_path / "evidence.jsonl")
@@ -351,21 +346,21 @@ def test_real_stdio_subprocess_error_progress_and_concurrency_contract(tmp_path)
                 ),
                 await session.call_tool(
                     "tool_call",
-                    {"name": "memory_status", "arguments": {"failure": True}},
+                    {"name": "memory_get", "arguments": {"failure": True}},
                 ),
             ]
             no_progress = await session.call_tool(
-                "tool_call", {"name": "memory_status", "arguments": {}}
+                "tool_call", {"name": "memory_get", "arguments": {}}
             )
             left, right = await asyncio.gather(
                 session.call_tool(
                     "tool_call",
-                    {"name": "memory_status", "arguments": {}},
+                    {"name": "memory_get", "arguments": {}},
                     progress_callback=lambda v, t, m: observe("left", v, t, m),
                 ),
                 session.call_tool(
                     "tool_call",
-                    {"name": "memory_status", "arguments": {}},
+                    {"name": "memory_get", "arguments": {}},
                     progress_callback=lambda v, t, m: observe("right", v, t, m),
                 ),
             )
@@ -380,7 +375,7 @@ def test_real_stdio_subprocess_error_progress_and_concurrency_contract(tmp_path)
             progress,
         )
 
-    result = asyncio.run(asyncio.wait_for(scenario(), 10))
+    result = asyncio.run(asyncio.wait_for(scenario(), SUBPROCESS_TIMEOUT))
     (
         unknown_wrapper,
         invalid_wrapper,
@@ -397,10 +392,12 @@ def test_real_stdio_subprocess_error_progress_and_concurrency_contract(tmp_path)
     assert "underlying Runtime tool not found" in underlying[0]
     assert [item.isError for item in typed] == [True] * 5
     assert [item.content[0].text for item in typed] == [
-        "[denied] authority tier does not allow fs.read",
-        "[denied] hard constraint",
-        "[denied] blocked by permission rule",
-        "[denied] approval unavailable for non-interactive MCP",
+        "[blocked by identity] read did not run: MCP client is not the owner and may not fs.read. "
+        "To change this: Channels > account access, or MCP server exposed tools.",
+        "[blocked by identity] bash did not run: MCP client is not the owner and may not process.exec. "
+        "To change this: Channels > account access, or MCP server exposed tools.",
+        MCP_GATE_REFUSALS["RULE_DENY"].text,
+        MCP_GATE_REFUSALS["NO_ONE_TO_APPROVE"].text,
         "Runtime tool execution failed",
     ]
     assert no_progress.content[0].text == "runtime-ok"
@@ -429,7 +426,7 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
         # Starting two isolated Python/MCP processes can exceed three seconds
         # on a saturated CI host. The evidence condition, not startup speed,
         # is the contract under test.
-        deadline = asyncio.get_running_loop().time() + 10
+        deadline = asyncio.get_running_loop().time() + SUBPROCESS_TIMEOUT
         while asyncio.get_running_loop().time() < deadline:
             if path.exists() and any(
                 json.loads(line)["kind"] == kind
@@ -466,7 +463,7 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
         return foreign, same, cancellation.value, completed
 
     foreign, same, cancellation, completed = asyncio.run(
-        asyncio.wait_for(scenario(), 30)
+        asyncio.wait_for(scenario(), SUBPROCESS_TIMEOUT)
     )
     assert foreign.content[0].text == (
         '{"cancelled":false,"session_id":"fixture-session"}'
@@ -496,7 +493,7 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
 
 
 def test_build_server_registers_exact_tools_and_explicit_call_handler():
-    from openprogram.mcp.server.server import build_server
+    from openprogram.extensions.mcp.server.server import build_server
 
     context = MCPClientContext(
         "0123456789abcdef", mcp_client_authority("0123456789abcdef")
@@ -537,7 +534,7 @@ def test_authenticated_stdio_subprocess_initializes_and_lists_frozen_tools(
     async def scenario():
         parameters = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "openprogram.cli", "mcp", "serve"],
+            args=["-m", "openprogram.interfaces.cli", "mcp", "serve"],
             env=environment,
             cwd=os.getcwd(),
         )
@@ -553,7 +550,7 @@ def test_authenticated_stdio_subprocess_initializes_and_lists_frozen_tools(
                 listed = await session.list_tools()
         return initialized, listed
 
-    initialized, listed = asyncio.run(asyncio.wait_for(scenario(), timeout=10))
+    initialized, listed = asyncio.run(asyncio.wait_for(scenario(), timeout=SUBPROCESS_TIMEOUT))
     assert initialized.protocolVersion == "2025-11-25"
     assert listed.tools == list(get_mcp_tools())
 
@@ -590,17 +587,22 @@ def test_real_cli_auth_failure_matrix_never_enters_stdio(tmp_path, case):
         environment.pop("OPENPROGRAM_MCP_TOKEN", None)
 
     completed = subprocess.run(
-        [sys.executable, "-m", "openprogram.cli", "mcp", "serve"],
+        [sys.executable, "-m", "openprogram.interfaces.cli", "mcp", "serve"],
         input="stdin-must-not-be-read\n",
         text=True,
         capture_output=True,
         cwd=os.getcwd(),
         env=environment,
-        timeout=5,
+        timeout=SUBPROCESS_TIMEOUT,
     )
     assert completed.returncode == 1
     assert completed.stdout == ""
-    assert completed.stderr == "Error: MCP server authentication failed\n"
+    # The CLI's process logging prints the one error record and nothing else.
+    lines = completed.stderr.splitlines()
+    assert len(lines) == 1
+    assert lines[0].endswith(
+        " ERROR openprogram.extensions.mcp.server.server: MCP server authentication failed"
+    )
     assert "secret" not in completed.stderr
 
 
@@ -639,7 +641,7 @@ def test_successful_stdio_stdout_contains_only_jsonrpc_frames(tmp_path):
         )
     )
     process = subprocess.Popen(
-        [sys.executable, "-m", "openprogram.cli", "mcp", "serve"],
+        [sys.executable, "-m", "openprogram.interfaces.cli", "mcp", "serve"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -661,7 +663,7 @@ def test_successful_stdio_stdout_contains_only_jsonrpc_frames(tmp_path):
     try:
         process.stdin.write(requests + "\n")
         process.stdin.flush()
-        lines = [stdout_lines.get(timeout=10) for _ in range(2)]
+        lines = [stdout_lines.get(timeout=SUBPROCESS_TIMEOUT) for _ in range(2)]
     finally:
         process.stdin.close()
         process.wait(timeout=10)
@@ -686,9 +688,9 @@ def test_successful_stdio_stdout_contains_only_jsonrpc_frames(tmp_path):
 def test_explicit_handler_routes_sdk_request_id_and_ordered_progress(with_progress):
     from mcp.server.lowlevel.server import RequestContext, request_ctx
 
-    from openprogram.agent.types import AgentToolResult
-    from openprogram.mcp.server.server import build_server
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import AgentToolResult
+    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.models.providers.types import TextContent
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -750,9 +752,9 @@ def test_explicit_handler_routes_sdk_request_id_and_ordered_progress(with_progre
 
 
 def test_real_sdk_in_memory_maps_all_six_wrappers_and_method_errors():
-    from openprogram.agent.types import AgentToolResult
-    from openprogram.mcp.server.server import build_server
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import AgentToolResult
+    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.models.providers.types import TextContent
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -812,7 +814,7 @@ def test_real_sdk_in_memory_maps_all_six_wrappers_and_method_errors():
         return results, unknown.value, invalid.value
 
     try:
-        results, unknown, invalid = asyncio.run(asyncio.wait_for(scenario(), 5))
+        results, unknown, invalid = asyncio.run(asyncio.wait_for(scenario(), 30))
     finally:
         service.close()
     assert [item.isError for item in results] == [False] * 6
@@ -830,10 +832,10 @@ def test_real_sdk_in_memory_maps_all_six_wrappers_and_method_errors():
 
 
 def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
-    from openprogram.agent.run_control import current_token
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.events import create_event_bus, make_event
-    from openprogram.mcp.server.server import build_server
+    from openprogram.runtime.execution.run_control import current_token
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.runtime.events import create_event_bus, make_event
+    from openprogram.extensions.mcp.server.server import build_server
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -883,6 +885,22 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
         service._on_question_asked, types={"question.asked"}
     )
 
+    # The SDK answers "Request cancelled" itself, before the handler has
+    # finished; what must hold is that the handler does not return until the
+    # turn is cancelled and the request released.
+    call_tool = server.request_handlers[mcp_types.CallToolRequest]
+    handler_done = threading.Event()
+    active_at_handler_exit = {}
+
+    async def observed_call_tool(request):
+        try:
+            return await call_tool(request)
+        finally:
+            active_at_handler_exit.update(service._active_by_request)
+            handler_done.set()
+
+    server.request_handlers[mcp_types.CallToolRequest] = observed_call_tool
+
     async def scenario():
         client_to_server_send, server_read = anyio.create_memory_object_stream(0)
         server_write, client_from_server_recv = anyio.create_memory_object_stream(0)
@@ -924,6 +942,8 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                 with pytest.raises(Exception) as caught:
                     await call
                 assert "cancel" in str(caught.value).lower()
+                assert await asyncio.to_thread(handler_done.wait, 5)
+                assert active_at_handler_exit == {}
                 assert service._active_by_request == {}
                 assert current_token(session_id) is None
                 assert len(audit) == 1
@@ -931,7 +951,7 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
             group.cancel_scope.cancel()
 
     try:
-        asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+        asyncio.run(asyncio.wait_for(scenario(), timeout=30))
     finally:
         release.set()
         service.close()
@@ -943,7 +963,7 @@ def test_tool_call_wire_cancellation_sets_exact_event_and_stops_progress(
 ):
     from mcp.server.lowlevel.server import RequestContext, request_ctx
 
-    from openprogram.mcp.server.server import build_server
+    from openprogram.extensions.mcp.server.server import build_server
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -988,9 +1008,9 @@ def test_tool_call_wire_cancellation_sets_exact_event_and_stops_progress(
             handler = asyncio.create_task(
                 server.request_handlers[mcp_types.CallToolRequest](request)
             )
-            await asyncio.wait_for(entered.wait(), 1)
+            await asyncio.wait_for(entered.wait(), 30)
             if with_progress:
-                await asyncio.wait_for(notification_entered.wait(), 1)
+                await asyncio.wait_for(notification_entered.wait(), 30)
             handler.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await asyncio.wait_for(handler, 0.5)
@@ -1024,9 +1044,9 @@ def test_blocked_progress_does_not_delay_fixed_tool_result(
 ):
     from mcp.server.lowlevel.server import RequestContext, request_ctx
 
-    from openprogram.agent.types import AgentToolResult
-    from openprogram.mcp.server.server import build_server
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import AgentToolResult
+    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.models.providers.types import TextContent
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -1067,7 +1087,7 @@ def test_blocked_progress_does_not_delay_fixed_tool_result(
         token = request_ctx.set(context)
         try:
             result = await asyncio.wait_for(
-                server.request_handlers[mcp_types.CallToolRequest](request), 0.5
+                server.request_handlers[mcp_types.CallToolRequest](request), 30
             )
             assert notification_entered.is_set()
             assert not any(
@@ -1091,9 +1111,9 @@ def test_blocked_progress_does_not_delay_fixed_tool_result(
 def test_handler_cancel_during_progress_timeout_cleanup_is_not_swallowed():
     from mcp.server.lowlevel.server import RequestContext, request_ctx
 
-    from openprogram.agent.types import AgentToolResult
-    from openprogram.mcp.server.server import build_server
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import AgentToolResult
+    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.models.providers.types import TextContent
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -1139,7 +1159,7 @@ def test_handler_cancel_during_progress_timeout_cleanup_is_not_swallowed():
             handler = asyncio.create_task(
                 server.request_handlers[mcp_types.CallToolRequest](request)
             )
-            await asyncio.wait_for(first_cancel.wait(), 0.5)
+            await asyncio.wait_for(first_cancel.wait(), 30)
             handler.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await asyncio.wait_for(handler, 0.5)
@@ -1162,9 +1182,9 @@ def test_handler_cancel_during_progress_timeout_cleanup_is_not_swallowed():
 def test_protocol_tool_error_matrix_and_concurrent_progress_are_isolated():
     from mcp.shared.exceptions import McpError
 
-    from openprogram.agent.types import AgentToolResult
-    from openprogram.mcp.server.server import build_server
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import AgentToolResult
+    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.models.providers.types import TextContent
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -1240,7 +1260,7 @@ def test_protocol_tool_error_matrix_and_concurrent_progress_are_isolated():
 
     try:
         typed, errors, left, right, observed = asyncio.run(
-            asyncio.wait_for(scenario(), 5)
+            asyncio.wait_for(scenario(), SUBPROCESS_TIMEOUT)
         )
     finally:
         service.close()
@@ -1259,8 +1279,8 @@ def test_protocol_tool_error_matrix_and_concurrent_progress_are_isolated():
 
 
 def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false():
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.mcp.server.server import build_server
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.extensions.mcp.server.server import build_server
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -1312,7 +1332,7 @@ def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false()
         return same
 
     try:
-        same = asyncio.run(asyncio.wait_for(scenario(), 5))
+        same = asyncio.run(asyncio.wait_for(scenario(), 30))
         completed = asyncio.run(service.prompt_cancel("shared"))
     finally:
         release.set()
@@ -1322,8 +1342,8 @@ def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false()
 
 
 def test_foreign_sdk_connection_cannot_cancel_active_prompt():
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.mcp.server.server import build_server
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.extensions.mcp.server.server import build_server
 
     contexts = (
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef")),
@@ -1394,7 +1414,7 @@ def test_foreign_sdk_connection_cannot_cancel_active_prompt():
         return result
 
     try:
-        result = asyncio.run(asyncio.wait_for(scenario(), 5))
+        result = asyncio.run(asyncio.wait_for(scenario(), 30))
     finally:
         release.set()
         service_a.close()

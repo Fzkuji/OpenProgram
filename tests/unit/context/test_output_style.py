@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.context import output_style as os_mod
-from openprogram.context.components import build_system_prompt
+from openprogram.state import output_style as os_mod
+from openprogram.runtime.context.components import build_system_prompt
 
 
 @pytest.fixture
@@ -74,19 +74,19 @@ def test_empty_file_is_not_registered(tmp_path):
 
 
 def test_active_style_defaults_when_unset():
-    with patch("openprogram.setup._read_config", return_value={}):
+    with patch("openprogram.state.config.read_config", return_value={}):
         assert os_mod.get_active_style() == "default"
 
 
 def test_active_style_reads_config():
     cfg = {"agent": {"output_style": "concise"}}
-    with patch("openprogram.setup._read_config", return_value=cfg):
+    with patch("openprogram.state.config.read_config", return_value=cfg):
         assert os_mod.get_active_style() == "concise"
 
 
 def test_blank_config_value_falls_back_to_default():
     cfg = {"agent": {"output_style": "  "}}
-    with patch("openprogram.setup._read_config", return_value=cfg):
+    with patch("openprogram.state.config.read_config", return_value=cfg):
         assert os_mod.get_active_style() == "default"
 
 
@@ -141,7 +141,7 @@ def test_broken_style_lookup_does_not_break_the_prompt():
 
 
 def test_output_style_is_a_declared_setting():
-    from openprogram.config_schema import _BY_KEY
+    from openprogram.state.settings import _BY_KEY
     spec = _BY_KEY["agent.output_style"]
     assert spec.widget == "enum"
     assert spec.default == "default"

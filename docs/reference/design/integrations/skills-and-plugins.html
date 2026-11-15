@@ -1,0 +1,182 @@
+<title>Skills and plugins</title>
+<meta name="description" content="Skill and plugin formats, sources, trust, API routes, frontend and coverage of the reference implementations.">
+<h1>Skills and plugins</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Kind</th><th scope="col">What it is</th></tr></thead>
+<tbody>
+<tr><th scope="row">Skill</th><td>A directory with <code translate="no">SKILL.md</code> and optional <code translate="no">references/</code>, <code translate="no">templates/</code>. The description is listed in the system prompt; the <code translate="no">skill</code> tool loads the body</td></tr>
+<tr><th scope="row">Plugin</th><td>A manifest contributing skills, commands, agents, hooks, MCP servers and provider directories. Carries no code, so enabling one runs nothing in the worker</td></tr>
+</tbody>
+</table>
+<p class="note">Managed on the Abilities pages and with <code translate="no">openprogram skills</code>, <code translate="no">openprogram plugins</code>. Mounting: <a href="plugin-runtime.html">Plugin runtime</a>.</p>
+
+<h2 id="skill">Skills</h2>
+<pre translate="no" tabindex="0"><code>---
+name: my-skill
+description: One-line trigger description
+category: devops              # hermes-style grouping
+optional: false               # replaces hermes optional-skills directory
+allowed-tools: [Read, Edit]   # claude-code: restrict usable tools
+triggers:                     # OpenProgram extension
+  keywords: ["deploy", "ci"]
+  file_patterns: ["*.yml"]
+  slash: "/deploy"
+version: 1.0.0
+author: ...
+---</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Precedence, lowest first</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Remote cache</th><td><code translate="no">~/.openprogram/cache/skills/&lt;name&gt;/</code>, pulled from a remote index</td></tr>
+<tr><th scope="row">Plugin</th><td>Contributed by enabled plugins</td></tr>
+<tr><th scope="row">User</th><td><code translate="no">~/.openprogram/skills/&lt;name&gt;/</code></td></tr>
+<tr><th scope="row">Project</th><td><code translate="no">&lt;project&gt;/skills/&lt;name&gt;/</code></td></tr>
+</tbody>
+</table>
+<p class="note">A later source overrides on conflict. The name is the path relative to the source root (<code translate="no">anthropic-skills/docx</code>), so a collision means one skill from two sources.</p>
+
+<h2 id="plugin">Plugins</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Manifest form</th><th scope="col">From</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">.claude-plugin/plugin.json</code>, <code translate="no">.codex-plugin/plugin.json</code>, root <code translate="no">plugin.json</code></th><td>Claude Code, Codex</td></tr>
+<tr><th scope="row"><code translate="no">[tool.openprogram.plugin]</code> in <code translate="no">pyproject.toml</code></th><td>OpenProgram</td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code>, <code translate="no">opencode</code> or <code translate="no">hermes</code> field in <code translate="no">package.json</code></th><td>npm packages</td></tr>
+<tr><th scope="row"><code translate="no">plugin.yaml</code>, <code translate="no">plugin.yml</code></th><td>Hermes</td></tr>
+<pre translate="no" tabindex="0"><code>{
+  "name": "...",
+  "version": "...",
+  "description": "...",
+  "deprecated": false,
+  "compatibility": "&gt;=0.1.0",
+  "trust": "community",           // community | verified
+  "entrypoints": {
+    "commands":   "...",
+    "skills":     "./skills",
+    "agents":     "...",
+    "hooks":      "./hooks/hooks.json",
+    "mcpServers": "...",
+    "providers":  "..."
+  },
+  "options": { /* JSON Schema */ }
+}</code></pre>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">npm</th><td><code translate="no">~/.openprogram/plugins/node_modules/&lt;name&gt;/</code></td></tr>
+<tr><th scope="row">Local path, git clone</th><td><code translate="no">~/.openprogram/plugins/&lt;name&gt;/</code>; a link for a local path</td></tr>
+<tr><th scope="row">Project pin</th><td><code translate="no">&lt;project&gt;/.openprogram/plugins.json</code>: enablement, version, source</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Entrypoint</th><th scope="col">Injected into</th></tr></thead>
+<tbody>
+<tr><th scope="row">skills</th><td>Skill registry, merged with filesystem skills</td></tr>
+<tr><th scope="row">commands</th><td><code translate="no">availableFunctions</code>, tagged <code translate="no">source=plugin:&lt;name&gt;</code></td></tr>
+<tr><th scope="row">mcpServers</th><td>The <code translate="no">openprogram/extensions/mcp/</code> registry</td></tr>
+<tr><th scope="row">providers</th><td>Provider registry; same <code translate="no">provider.json</code> contract as built-in adapters</td></tr>
+<tr><th scope="row">agents</th><td>Subagent registry</td></tr>
+<tr><th scope="row">hooks</th><td>Event bus, as shell commands</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Trust</th><th scope="col">Loading</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">verified</code>, <code translate="no">community</code></th><td>Contents mount. Hooks and MCP servers run as their own processes</td></tr>
+<tr><th scope="row"><code translate="no">untrusted</code>, and any plugin not listed</th><td>Not enabled; the UI asks for trust. Stored in <code translate="no">~/.openprogram/plugin-trust.json</code></td></tr>
+</tbody>
+</table>
+<p class="note">A manifest naming code is refused; code that adds tools or a UI is an <a href="../function/program-model.html#4-plugins">application</a>. With no code in the worker there is no in-process or RPC mode.</p>
+
+<h2 id="code">Code</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/extensions/skills/</code></th><td><code translate="no">loader.py</code> four-source loading and prompt listing; <code translate="no">tool.py</code> the <code translate="no">skill</code> tool and trace; <code translate="no">discovery.py</code> remote pull; <code translate="no">watcher.py</code> watchdog hot reload and WS broadcast, 5-second polling without watchdog</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/extensions/plugins/</code></th><td><code translate="no">manifest.py</code>, <code translate="no">loader.py</code>, <code translate="no">installer.py</code>, <code translate="no">hooks.py</code>, <code translate="no">marketplace.py</code>, <code translate="no">trust.py</code>, <code translate="no">autoupdate.py</code>, <code translate="no">inspect.py</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/catalog/</code></th><td><code translate="no">skills.py</code>, <code translate="no">plugins.py</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/frontmatter.py</code></th><td><code translate="no">SKILL.md</code> parsing, shared with output styles and the CLI</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/skills/</code>, <code translate="no">apps/web/components/plugins/</code></th><td>Pages, <code translate="no">views/</code>, <code translate="no">dialogs/</code>, <code translate="no">discovery/</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/abilities/</code></th><td><code translate="no">skills-store.ts</code>, <code translate="no">plugins-store.ts</code>, subscribed to the WS events</td></tr>
+</tbody>
+</table>
+
+<details id="api">
+<summary>Skills API</summary>
+<table class="stack">
+<thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills</code></td><td>Merged list with source, enabled, category, optional</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills/_complete</code>, <code translate="no">_search</code>, <code translate="no">_resolve</code></td><td>Completion, search, resolution for the composer and <code translate="no">skill</code> tool</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills/{name}</code></td><td>Full text, frontmatter, resource tree</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills/{name}/file</code></td><td>One resource file</td></tr>
+<tr><th scope="row">POST, PUT</th><td><code translate="no">/api/skills</code>, <code translate="no">/api/skills/{name}</code></td><td>Create in project or user; edit</td></tr>
+<tr><th scope="row">DELETE</th><td><code translate="no">/api/skills/{name}</code></td><td>Project, user or remote cache only</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/skills/{name}/toggle</code></td><td>Enable or disable</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/skills/{name}/invoke-trace</code></td><td>Injection record of the last invocation</td></tr>
+<tr><th scope="row">GET, POST</th><td><code translate="no">/api/skills/discovery/sources</code></td><td>List or add remote indexes</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/skills/discovery/pull</code></td><td>Pull one skill into the cache</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills/discovery/suggested</code>, <code translate="no">browse</code>, <code translate="no">diff</code></td><td>Suggested indexes, browsing, comparing with the source</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/skills/discovery/install</code></td><td>Install from an index</td></tr>
+<tr><th scope="row">WS</th><td><code translate="no">skills:changed</code></td><td>From the watcher and mutating routes</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="plugins-api">
+<summary>Plugins API</summary>
+<table class="stack">
+<thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins</code></td><td>Installed list, status, errors</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/inspect</code></td><td>Live self-description for authors</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/updates</code></td><td>Available updates</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/commands</code>, <code translate="no">builtin</code></td><td>Contributed slash commands; built-in entries</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/{name}</code></td><td>Details, manifest, entrypoint status</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/install</code></td><td><code translate="no">{source: npm|git|path, spec, ref}</code>; code is refused</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/{name}/uninstall</code>, <code translate="no">toggle</code></td><td>Uninstall, enable or disable</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/{name}/reload</code></td><td>As claude-code <code translate="no">/reload-plugins</code></td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/{name}/validate</code></td><td>Dry run: manifest, entrypoints, dependencies, compatibility</td></tr>
+<tr><th scope="row">GET, POST</th><td><code translate="no">/api/plugins/{name}/options</code></td><td>Read or write options</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/{name}/trust</code></td><td>Set the trust level</td></tr>
+<tr><th scope="row">GET, POST</th><td><code translate="no">/api/plugins/marketplaces</code></td><td>List or add, claude-code schema compatible</td></tr>
+<tr><th scope="row">DELETE</th><td><code translate="no">/api/plugins/marketplaces/{id}</code></td><td>Remove</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/marketplace/{id}/index</code></td><td>Browse with search, category, pagination</td></tr>
+<tr><th scope="row">WS</th><td><code translate="no">plugins:changed</code>, <code translate="no">plugins:update_available</code></td><td>After changes; after update polling</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="frontend">
+<summary>Frontend</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Route</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Navigation</th><td>Under Abilities, next to Programs and MCP servers; active on <code translate="no">/skills</code>, <code translate="no">/plugins</code>, <code translate="no">/mcp</code>, <code translate="no">/programs</code></td></tr>
+<tr><th scope="row"><code translate="no">/skills</code></th><td>List by category with optional collapsed, details with invocation trace, create, remote indexes</td></tr>
+<tr><th scope="row"><code translate="no">/plugins</code></th><td>Installed, Marketplace, Errors tabs</td></tr>
+</tbody>
+</table>
+<p class="note">Skill detail views render <code translate="no">SKILL.md</code> as untrusted Markdown: raw HTML and HTML-like math show as text, and skill links gain no resource resolver or filesystem access.</p>
+</details>
+
+<details id="beyond">
+<summary>Beyond and across the reference implementations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Capability</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Invocation trace</th><td>Each call records <code translate="no">{ skill, injected_md_hash, accessed_refs, ts }</code>, shown on the detail page</td></tr>
+<tr><th scope="row">Hot reload</th><td>Source changes re-parse and broadcast, no <code translate="no">/reload</code></td></tr>
+<tr><th scope="row">Manifest unification</th><td>Every form above, no migration</td></tr>
+<tr><th scope="row">Marketplace interop</th><td>Claude Code marketplace schema adapter; official and third-party marketplaces</td></tr>
+<tr><th scope="row">Explicit triggers</th><td>A keyword, file or command hit surfaces an activation prompt</td></tr>
+<tr><th scope="row">Provider contribution</th><td>From opencode</td></tr>
+<tr><th scope="row">claude-code coverage</th><td>Bundled skills, frontmatter, skill tool, marketplace management, plugin management, reload, five entrypoints</td></tr>
+<tr><th scope="row">opencode coverage</th><td>Remote discovery, npm plugins, Provider plugin, compatibility and deprecated fields, concurrency and retry with httpx and tenacity</td></tr>
+<tr><th scope="row">hermes coverage</th><td>Category, optional, resource layout, <code translate="no">plugin.yaml</code>. A Python <code translate="no">plugin_api.py</code> or <code translate="no">dashboard/dist/</code> is an application</td></tr>
+</tbody>
+</table>
+<p class="note">References: <code translate="no">references/opencode/packages/opencode/src/{skill,plugin}</code>, <code translate="no">references/hermes-agent/{skills,plugins,optional-skills}</code>.</p>
+</details>

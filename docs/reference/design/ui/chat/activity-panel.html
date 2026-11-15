@@ -1,0 +1,277 @@
+<title>Activity panel</title>
+<meta name="description" content="What the right sidebar's Activity lists, how agents and runs are grouped, and what each page shows.">
+<h1>Activity panel</h1>
+
+<p>The right sidebar's Activity covers one conversation. What a run waits on is never a group: it is the row it concerns, with a red count on its glyph's corner. The one exception is Waiting for you, the reports left for the reader across conversations. Messages are never rows.</p>
+
+<h2 id="overview">Overview</h2>
+<p>These groups, in this order. Agents is always shown; every other group, header included, is shown only when it has something in it. Only Waiting for you carries a count in its header; Agents adds what its helpers cost. Hovering a group shows its <code translate="no">SectionHeader</code> chevron; clicking the header folds it (per-browser, <code translate="no">lib/prefs/activity-view.ts</code>).</p>
+<table class="stack">
+<thead><tr><th scope="col">Group</th><th scope="col">Rows</th><th scope="col">Status line</th></tr></thead>
+<tbody>
+<tr><th scope="row">Waiting for you</th><td>Reports from every always-on conversation still waiting for the reader (<code translate="no">lib/agents/pending-inbox</code>). Each opens its conversation.</td><td>"Finding · &lt;Agent&gt; · &lt;time&gt;"</td></tr>
+<tr><th scope="row">Agents</th><td>The main agent, always listed, with the <a href="#agent-roster">helpers it started</a> under it: a conversation whose turns left no execution record still has it, at rest with the conversation's last activity, and its page reads the runs from the transcript. With more than one branch, one equal row per branch. While the Agent is <a href="../../runtime/always-on-agents.html">always on</a>, the checked-out branch's row has a second line with its next wake.</td><td>Running (call or "Waiting for a sub-agent", time, blue); "Failed · &lt;time&gt;" (red); else its last message time. With its helpers folded: "· 3 active sub-agents". A branch in its own <a href="../../runtime/execution/agent-worktree.html">worktree</a> adds a "Worktree" tag and "3 files in worktree"</td></tr>
+<tr><th scope="row">Programs and commands</th><td>Running shell calls, shell calls cut short with their run, every background program. Running first, then newest; 20 at a time. <code translate="no">agent</code> calls never appear.</td><td>"Command · Running · 12 s"; "Command · Interrupted · Yesterday" (muted); "45 / 100 samples · 3.4/s"; "Completed · 10 / 10 epochs · 4 min 5 s"; "Failed at 62 / 200 · exit 1"</td></tr>
+<tr><th scope="row">Open work</th><td><a href="../../../../capabilities/agents.html#open-work">Open items</a>, one row each; done items leave</td><td>"Open · &lt;time&gt;"</td></tr>
+<tr><th scope="row">Scheduled tasks</th><td>Scheduler tasks, reminders and webhooks set from this conversation (the task's <code translate="no">session_id</code> or its signed spec's), newest first</td><td>"Webhook · when called"; "Recurring · 0 9 * * 1-5 · when its check changes"</td></tr>
+</tbody>
+</table>
+<p class="note">Statuses: Running, Completed, Failed, Cancelled, Interrupted, Waiting for your answer, Waiting for approval. A row at rest shows only its time. Calls and programs are placed only after executions are read, so they never flash as unowned; unlisted ones count as the main agent's.</p>
+
+<details id="agent-roster">
+<summary>Helpers under an agent</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Header</th><td>"Agents · $0.14": what the helpers cost together, known prices only. Stop all shows while a helper is going and cancels each topmost one; the stop reaches what it started.</td></tr>
+<tr><th scope="row">Row</th><td>Avatar, name, status badge, the cost of its subtree at the right edge; hovering shows its cost, tokens and tool calls. A row too narrow for all of them drops the cost first, then shortens the name. Indented 16 for each level under the agent. Clicking shows its conversation in the chat, as its card's Switch does.</td></tr>
+<tr><th scope="row">Badges</th><td>Running (filled, pulsing dot); Needs approval, Needs input and Stalled (outlined, yellow dot); Failed (red); Waiting (queued for a free slot) and Idle (outlined, muted). What runs or waits on the reader comes from the executions and the chat's open cards at once; stalled, queued and stopped by a limit come from the roster read.</td></tr>
+<tr><th scope="row">Listed</th><td>A helper that is going, needs the reader or failed. A finished one stays only while a helper under it is listed.</td></tr>
+<tr><th scope="row">"N finished"</th><td>The last row. It opens in place to the finished helpers, 50 at a time, each with Idle and its cost.</td></tr>
+<tr><th scope="row">"→ Name"</th><td>A message sent to another agent and not answered yet, Waiting until the other side starts on it. Clicking opens that conversation.</td></tr>
+<tr><th scope="row">Folding</th><td>The chevron after the agent's name, or Left and Right on its row, folds its helpers; Left on a helper folds the group and moves the focus to the agent's row. A row reached with the keyboard takes the hover fill. Folded, the row says how many helpers are still going and keeps its red count. Kept per conversation and agent in this browser (<code translate="no">foldedAgents</code> in <code translate="no">lib/prefs/activity-view.ts</code>).</td></tr>
+<tr><th scope="row">Height</th><td>The roster scrolls inside 360 pixels, so the groups below keep their place</td></tr>
+<tr><th scope="row">Read</th><td><code translate="no">GET /api/session/{id}/activity/roster</code> while the panel shows: on entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, at most once a second, and every 30 seconds</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Programs in the list</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Title</th><td>The bash call's <code translate="no">description</code>, else the script or module it runs, past setup steps such as <code translate="no">cd</code> and <code translate="no">mkdir</code>. The command sits under it in monospace.</td></tr>
+<tr><th scope="row">Running, amount known</th><td>Progress over a thin bar, time left at its end ("16s left")</td></tr>
+<tr><th scope="row">Running, no amount</th><td>How long it has run and its last output line, over a sweeping bar</td></tr>
+<tr><th scope="row">Retention</th><td>Record and output stay for a day after it ends (<code translate="no">RETENTION_SECONDS</code>, <code translate="no">openprogram/host/processes/store.py</code>), or a day after the last heartbeat for "Status unknown". The worker's process sweep then deletes it and any exit notice still due.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Branches in the Agents group</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td>Forks and edits the reader made in the DAG; status and sub-agent line from the runs on that branch (<code translate="no">branches[].execution_ids</code>). A sub-agent belongs to the branch of its top-level run.</td></tr>
+<tr><th scope="row">Row</th><td>The branch's name, a ghost in its lane colour, a Current tag on the checked-out one. No run listed: the branch's own time.</td></tr>
+<tr><th scope="row">Unowned</th><td>Unlisted calls and programs, and calls that started no sub-agent, count as the checked-out branch's</td></tr>
+<tr><th scope="row">Page</th><td>The Agent page for that branch, with Switch to this branch (the Branches panel's checkout) when not current</td></tr>
+<tr><th scope="row">Excluded</th><td>An older session's inline sub-agent turns: their tip, whose chain starts at a spawn root, comes marked <code translate="no">sub_agent</code> from <code translate="no">build_branches_payload</code> and is left out</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Reading always-on, open work and scheduled tasks</summary>
+<p>One read, <code translate="no">GET /api/sessions/{id}/work</code>, when the panel opens, on <code translate="no">always_on_update</code>, <code translate="no">always_on_report</code> and <code translate="no">open_work_update</code> frames, on focus, and every 30 seconds for Scheduler tasks, which publish no event.</p>
+</details>
+
+<h2 id="branches-runs-and-waits">Branches, runs and waits</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Term</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sub-agent</th><td>An execution with display kind <code translate="no">job_agent</code>; hangs under the nearest sub-agent above it, or the main agent</td></tr>
+<tr><th scope="row">Branch</th><td>Each execution belongs to one: a sub-agent's, covering everything under it that no deeper sub-agent owns; otherwise the main agent's</td></tr>
+<tr><th scope="row">Run</th><td>One message and all done for it, normally one top-level execution holding child executions, unreturned function calls and managed programs in its tree. Older runs exist only as messages. A row in its Agent page, never in the overview.</td></tr>
+<tr><th scope="row">Waits for the reader</th><td>Only a run paused on a question or approval (the model's <code translate="no">issues</code> filtered to paused executions)</td></tr>
+<tr><th scope="row">Interrupted</th><td>A call or run cut short by a restart. Muted history, nothing to do.</td></tr>
+<tr><th scope="row">Status unknown</th><td>A program whose supervisor is gone. Muted history, nothing to do.</td></tr>
+<tr><th scope="row">Ended</th><td>An execution whose only missing records are model responses (<code translate="no">provider_response_incomplete</code>)</td></tr>
+</tbody>
+</table>
+
+<h3 id="pairing">Pairing an <code translate="no">agent</code> call with its sub-agent</h3>
+<p>The server reads calls from transcripts, not effects, whose metadata carries whole provider payloads. A Job records the reply that spawned it (<code translate="no">spawn_caller</code>) and its prompt.</p>
+<ol>
+<li>A call with the same caller and prompt started it; calls that did not fail pair first, since a failed call may share its prompt with the retry.</li>
+<li>If prompts do not line up, a caller left with one Job and one non-failed call pairs those.</li>
+<li>No Job: the call failed to start (result <code translate="no">[agent error] …</code> or outcome <code translate="no">failed</code>) or did not start.</li>
+</ol>
+<p class="note">The caller names the branch: a <code translate="no">j_…</code> reply is a sub-agent's, anything else the main agent's.</p>
+
+<h2 id="pages">Pages</h2>
+<p>A row in the overview opens one page. Pages do not lead to other pages: what belongs to a row opens under it, in place, and stays open until it is closed. Activity at the top, Esc with focus in the panel, or Activity in the rail goes back, restoring the overview's scroll and focus.</p>
+<p>Pages move as on a phone, on the Launchpad's spring; with reduced motion they change at once.</p>
+<table class="stack">
+<thead><tr><th scope="col">Move</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open</th><td>The page slides in over the overview from the right</td></tr>
+<tr><th scope="row">Back</th><td>The page slides off; the overview comes up from a quarter of its width to the left, half dimmed</td></tr>
+<tr><th scope="row">Swipe towards the overview</th><td>Once the page's own track is at its left end, the page follows the fingers. Lifting them a third of the way across, or with a flick, finishes the way back; anything less lets the page spring home.</td></tr>
+<tr><th scope="row">Under the page</th><td>The overview is in the document only while the page moves</td></tr>
+</tbody>
+</table>
+<p>On an Agent page, Back and Esc go one step: one column of the chart back while it is past its first column, then the overview.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Page</th><th scope="col">Top to bottom</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent or branch</th><td>The name on the top line. Switch to this branch when it is not checked out. Then the time chart, described below.</td></tr>
+<tr><th scope="row">Call</th><td>Title from its description, state, task or command, its output once it returned. Cut short: Interrupted.</td></tr>
+<tr><th scope="row">Program</th><td>Titled like its row, with a bar and its progress in words, or when it ran, how long and its exit code. Stop program while running, then against a time axis Progress, Command, Output (open by itself) and Technical details. Read every second while open.</td></tr>
+<tr><th scope="row">Open work</th><td>Item, state, Mark done (Reopen once done), Remove (which returns to the overview), what the list is for, note, created date. No time axis.</td></tr>
+<tr><th scope="row">Scheduled task</th><td>Title and schedule, Open in Scheduler, a Task row holding its prompt, command, notes, created date, id, a webhook's address and key behind Copy (the key is never shown) and the watched command, then its recent runs from the task's record as in an Agent page</td></tr>
+<tr><th scope="row">Always-on</th><td>Opened from the Next wake block on top of the chart. Open: Wake now, what always-on means, Agent, standing goal, Goal, wake schedule, check-in model, last wake and its cost, today's spending, next wake; reports that never reached the chat; what it was told about reports, each opening to Delete.</td></tr>
+<tr><th scope="row">Report</th><td>A run whose message id starts <code translate="no">report_</code>, ticked rather than barred. While the always-on record holds it: body, kind, links, delivery results, Don't report things like this. Older ones show the message.</td></tr>
+</tbody>
+</table>
+<p class="note">A page whose item has gone says No longer here and stays until the reader leaves.</p>
+
+<h3 id="agent-chart">The Agent time chart</h3>
+<p>One vertical time chart, newest on top, with a column for each level: Topics, Messages, Steps, Inside a step. The sidebar's width decides how many columns show, and every column in view is whole.</p>
+<table class="stack">
+<thead><tr><th scope="col">Sidebar width</th><th scope="col">Columns</th></tr></thead>
+<tbody>
+<tr><th scope="row">288 (the default, first snap)</th><td>One, 256 pixels wide</td></tr>
+<tr><th scope="row">544 (second snap)</th><td>Two, 256 each</td></tr>
+<tr><th scope="row">800 (third snap, the maximum)</th><td>Three, 256 each</td></tr>
+<tr><th scope="row">Between two snaps</th><td>The smaller count, stretched to fill the width</td></tr>
+</tbody>
+</table>
+<p>The count is the chart's width over 256, rounded down, at least one and at most three (<code translate="no">columnsFor</code>). It is applied in the frame the width changes, so a drag of the handle shows the columns it lands on while it moves.</p>
+<p>Every block is a card on hover and can be clicked; a title or line cut short shows in full on hover. A block with more under it leads one column right. A block that is one call, one failure or a message with no steps opens in place, in the run list's words.</p>
+<p>An opened block grows, the blocks below move down, and its bars in the columns to the left grow with it. A second click closes it. It grows and closes in one 240 ms move on the standard curve, and its details stay until it has closed over them. A call still running has nothing to open.</p>
+<p>The view ends on the deepest column the reader went to, or starts at Topics when that fits. Opening a block whose next column is already in view moves nothing. With fewer columns than levels, the view moves one column at a time:</p>
+<table class="stack">
+<thead><tr><th scope="col">Move</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Click on a block</th><td>Its next column slides in; the block keeps its place on screen</td></tr>
+<tr><th scope="row">Back, Esc, Left on a block</th><td>One column back; on the first column, back to the overview</td></tr>
+<tr><th scope="row">Sideways swipe</th><td>The chart follows the fingers, one column at most. A new swipe takes it over wherever it is.</td></tr>
+<tr><th scope="row">Lifting the fingers</th><td>After 48 pixels or a flick it goes on to the column they were heading for; otherwise it returns. One move either way, and the momentum after the lift moves nothing.</td></tr>
+<tr><th scope="row">Past the last column</th><td>The chart gives up to 44 pixels and comes back with the settle</td></tr>
+<tr><th scope="row">Past the first column</th><td>The page itself follows: the way back</td></tr>
+<tr><th scope="row">Mouse wheel turned sideways</th><td>One step moves one column</td></tr>
+<tr><th scope="row">Keyboard focus on a block out of view</th><td>Its column comes into view</td></tr>
+</tbody>
+</table>
+<p>A move is one slide of the columns' track by its transform, and nothing else:</p>
+<ul>
+<li>240 ms for a whole column, less for the rest of one (never under 120 ms), on <code translate="no">--ease-standard</code>; a cut with reduced motion.</li>
+<li>The blocks are laid out for where the move ends before it starts. A column coming in is already at its final size; the clicked block, or the block at the top, holds its place on screen.</li>
+<li>A column deeper than the one the move ends on is not drawn, even while it slides out.</li>
+<li>Nothing grows, fades in or settles after the slide.</li>
+<li>The box never scrolls sideways, only up and down. Blocks more than a screen above or two below the view are not drawn.</li>
+</ul>
+<p>Why: the chart used to scroll sideways, with each block's height interpolated from the scroll position. Three things made a move feel wrong:</p>
+<ul>
+<li>Two motions: the heights finished within the first 64 pixels of a 256-pixel column, while an overdamped spring kept sliding on its long tail and the arriving column faded in on its own curve.</li>
+<li>Stutter: each frame wrote the top and height of every block, reset the vertical scroll and changed what was drawn, a full layout per frame.</li>
+<li>Part columns: columns were 256 pixels at any width, and a sideways scroll that was not a swipe settled on a column edge 160 ms after it stopped.</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">Rule</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Height</th><td>Set by the deepest column in view. A parent spans its children, so the same height is the same time in every column.</td></tr>
+<tr><th scope="row">Time</th><td>A block's top carries its latest moment: minutes for topics and messages, seconds for steps. Long silences and new days are a dashed row across the columns: a new day shows its date in the time column of every column, and a long silence says how long beside the first one.</td></tr>
+<tr><th scope="row">Colour</th><td>Colour says which topic a block belongs to, never how it went. Each topic takes a main colour by when it first appeared, so one that comes back keeps it. Messages are shades of it, and steps and their insides go on from there. Runs nobody asked for, and messages not sorted yet, are grey. Failure and running are in the words.</td></tr>
+<tr><th scope="row">Steps</th><td>Calls of one function in a row share a line, each call in the last column. A failure stands alone with its error under it. A sub-agent's own steps are in the last column. A group in the last column is at most four rows tall and scrolls inside its cell.</td></tr>
+<tr><th scope="row">Buttons</th><td>Only on running, paused or waiting messages. Add instruction turns the buttons into one input, so the block keeps its height.</td></tr>
+<tr><th scope="row">Data</th><td><code translate="no">activity/runs?chart=true</code> returns the page with a short form of every event (input clipped, a result kept only when the step failed) and each run's topic. Finished runs are cached by revision.</td></tr>
+</tbody>
+</table>
+
+<h3 id="topics">Topics</h3>
+<p>Each message the user sent has one topic, kept in <code translate="no">topics.json</code> beside the session's messages: topics in the order they first appeared, and which topic each message has. Nothing is written to the messages.</p>
+<ul>
+<li>After each turn a background pass sorts what has no topic, on the same background model as chat titles. It sees the user's words only.</li>
+<li>A short reply such as "continue" stays with the message before it and costs no call.</li>
+<li>The first time an older chat's chart is opened, the same pass sorts its messages, 40 to a call. Until then they read Not sorted yet.</li>
+<li>When a call fails or no model is available, messages stay unsorted and draw with the message before them. The next message tries again; opening the chart tries again after 10 minutes.</li>
+</ul>
+
+<h3 id="run-rows">Inside a run</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Run row</th><td>First line of its reply, else what was asked, over "Failed · 02:00 · 1m 44s". A bar from start to end; a retry is its own run.</td></tr>
+<tr><th scope="row">Opens by itself</th><td>The newest run, once per page, if it failed, could not check, waits or runs. A close sticks.</td></tr>
+<tr><th scope="row">Events</th><td>In time order: Asked or Check-in, steps in the chat's words (<code translate="no">presentTool</code>) with Input and Result, Paused or Failed · Attempt N with the stored failure text or else its reason code, sub-agents, Replied</td></tr>
+<tr><th scope="row">Sub-agent</th><td>Nested in the run that started it, 16 further per level. Asked, the error or reply, what it started, Open its conversation, its controls, Technical details. One that never started reads Failed · never started.</td></tr>
+<tr><th scope="row">Waiting</th><td>The last event: the question, then Answer in chat or Review in chat, which goes to the composer's card (<code translate="no">data-decision-output</code>)</td></tr>
+<tr><th scope="row">Actions</th><td>Pause, Continue, Add instruction, Cancel, as the run allows. A run that ended has stopped: these pages offer no Retry. Not connected: disabled, and the status line says so.</td></tr>
+<tr><th scope="row">Technical details</th><td>Step, Create branch, code policy on resume, guidance, ids, wait forms the chat cannot show, checkpoint inspector, resource wait, effects, last 50 raw events</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Reading</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Read</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/session/{id}/activity/runs</code></th><td>On entry, on <code translate="no">op:execution-update</code> and <code translate="no">op:job-status</code>, and every 30 seconds, for as many runs as are shown. Rows are replaced by id, so a refresh closes nothing and moves nothing. A run keeps its row when its reply arrives.</td></tr>
+<tr><th scope="row"><code translate="no">…/activity/runs/{run}/events</code></th><td>When a row opens, and again when its revision moves or it is live. An unopened row reads nothing.</td></tr>
+<tr><th scope="row">Debugger and last 50 events</th><td>Per open run that has an execution, when its version moves</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>The two halves and the time axis</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Track</th><td>One scroller holds both halves. With card width C: V = C − 16, L = min(V, 256), R = min(416, max(L, V − L − 16)), track = L + 16 + R, plot = R − 88. Both show at once when V ≥ track.</td></tr>
+<tr><th scope="row">Timeline</th><td>Snaps sideways between halves; the button hides when there is under 48 to scroll and turns at the halfway point</td></tr>
+<tr><th scope="row">Width</th><td>A <code translate="no">ResizeObserver</code> writes CSS variables; marks are percents of the plot, so widening never re-renders</td></tr>
+<tr><th scope="row">Axis</th><td>Covers the longest finished run listed and the events of open runs: 60, 180, 300, 600, 1800 or 3600 seconds. Longer runs fill the width. A flat right end means no end was saved or it is still running.</td></tr>
+<tr><th scope="row">Opened rows</th><td>As wide as the left half when narrow, the whole width when both halves fit. Long values stop at 8 lines with their own Show all.</td></tr>
+<tr><th scope="row">Panel width</th><td>The right rail's width is kept in this browser (<code translate="no">useResizableRail</code> with a <code translate="no">storageKey</code>), restored before the first paint and written when a drag ends. Left and Right on the handle change it by 24; a double-click or Enter returns it to the default. A drag rests on 288, 544 and 800 as it passes them, where one, two or three chart columns fit whole. The left rail works the same way, with its default as its only snap.</td></tr>
+<tr><th scope="row">Program and task axes</th><td>A program's axis is its own length, rounded up to a multiple of 3 up to 60 seconds and then the list above. Open work and calls have no axis and no right half.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Keyboard</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Key</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tab</th><td>One stop among the rows (roving tabindex, kept in the DOM so a refresh cannot move it)</td></tr>
+<tr><th scope="row">Up, Down, Home, End</th><td>Between rows. Focus never changes the sideways scroll.</td></tr>
+<tr><th scope="row">Right, Left</th><td>Open and close the row; with Shift, go between the halves</td></tr>
+<tr><th scope="row">Enter, Space</th><td>Same as a click</td></tr>
+<tr><th scope="row">Esc</th><td>Only with focus in the panel: leaves a dialog or text box first, then goes back, one step at a time on an Agent page</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Program page and progress parsing</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Head</th><td>The bar and the progress in words</td></tr>
+<tr><th scope="row">Progress row, running</th><td>Opens to elapsed, speed and time left</td></tr>
+<tr><th scope="row">Progress row, ended</th><td>Opens to duration, end time and exit code</td></tr>
+<tr><th scope="row">Output</th><td>As a terminal shows it: a line redrawn with carriage returns keeps its last frame, colours stay, and the view follows new lines while the reader is at the end (marked Live)</td></tr>
+</tbody>
+</table>
+<p><code translate="no">openprogram/host/processes/progress.py</code> reads progress from output, most trusted first:</p>
+<ol>
+<li><code translate="no">##progress 45/100 samples</code> lines (the bash tool asks the model to print them for long loops)</li>
+<li>the OSC 9;4 terminal progress sequence</li>
+<li>tqdm and pip bars</li>
+<li>counters such as <code translate="no">Epoch 3/10</code>, <code translate="no">step 120 of 1000</code>, <code translate="no">[45/100]</code></li>
+</ol>
+<p>Once a more trusted source speaks, less trusted ones are ignored, so an inner per-batch bar never overwrites a sample count. Speed and time left are the bar's own, or measured since the count began. A redrawn bar takes one line of the 2,000-line limit, and the agent reading a background command gets each redraw once.</p>
+</details>
+
+<h2 id="look">Look</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Style</th></tr></thead>
+<tbody>
+<tr><th scope="row">Row at rest</th><td>No frame: bare glyph in its kind's colour, name over a one-line status coloured by tone (no dot), chevron</td></tr>
+<tr><th scope="row">Hover</th><td>Raised card: the file cards' shadow over a solid fill 4% toward the text colour, since the panel is the input surface and a same-colour card shows no edge. Corners are the list-row radius, the same as the left sidebar's rows</td></tr>
+<tr><th scope="row">Second level</th><td>The same row, with one size pair (14 and 13, 11 for monospace and the Current tag) and weight 400. Ink is bright for titles, secondary otherwise; red only for failure. Motion is a 160 ms fade on what newly appears, the chevron turning, the spring that pages travel on, and the 240 ms slide between chart columns; none with reduced motion.</td></tr>
+<tr><th scope="row">Bars and ticks</th><td>A bar is one run or sub-agent, a tick one step. Muted at rest, red on failure, amber on a failed check or a wait, blue while running.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Code</summary>
+<p><code translate="no">apps/web/components/right-sidebar/running/running-panel.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/agent-roster.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/use-agent-roster.ts</code>, <code translate="no">apps/web/lib/execution/agent-roster.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/activity-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/use-page-slide.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/sideways.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/activity-page-row.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/activity-page-geometry.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/activity-run-wording.ts</code>, <code translate="no">apps/web/components/right-sidebar/running/run-list.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/run-insides.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/sub-agent-row.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/execution-controls.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/program-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/command-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/scheduled-task-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/open-work-page.tsx</code>, <code translate="no">apps/web/components/right-sidebar/running/always-on-row.tsx</code>, <code translate="no">apps/web/lib/net/execution/activity-runs-client.ts</code>, <code translate="no">apps/web/lib/execution/activity-model.ts</code>, <code translate="no">apps/web/lib/prefs/activity-view.ts</code>, <code translate="no">apps/web/lib/chat/conversation-work.ts</code>, <code translate="no">openprogram/runtime/execution/activity_calls.py</code>, <code translate="no">openprogram/runtime/execution/activity_runs.py</code>, <code translate="no">openprogram/interfaces/server/routes/execution/activity_runs.py</code>, <code translate="no">openprogram/interfaces/server/routes/execution/conversation_work.py</code></p>
+</details>
+
+<p class="next"><a href="../visual-system/indicator-dots.html">Status dots</a> · <a href="sub-agent-row.html">A sub-agent's own conversation</a></p>

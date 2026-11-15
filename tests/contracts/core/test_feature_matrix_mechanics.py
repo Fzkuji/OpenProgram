@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import html
 from pathlib import Path
 import re
 import subprocess
@@ -16,11 +17,26 @@ MATRIX = ROOT / "docs/reference/design/feature-matrix.html"
 FRAMEWORK_COMPARISON = ROOT / "docs/reference/design/framework-comparison.html"
 
 
+@pytest.fixture(params=["", ".zh"])
+def matrix_path(request) -> Path:
+    return MATRIX.with_name(f"feature-matrix{request.param}.html")
+
+
+def _label(text: str, chinese: str, english: str) -> str:
+    return english if "<title>Feature matrix</title>" in text else chinese
+
+
+def _replace_number(text: str, chinese: str, english: str, number: str) -> str:
+    label = _label(text, chinese, english)
+    return text.replace(label, label.replace(number, "999"), 1)
+
+
 def _demote_json_schema_row(text: str) -> str:
-    start = text.index('<tr><td class="fname">按 JSON schema 约束输出')
-    old = '<td class="g1 us">●</td>'
+    name = _label(text, "按 JSON schema 约束输出", "JSON-schema-constrained output")
+    start = text.index(f'<tr><th scope="row">{name}')
+    old = "<td>●</td>"
     cell = text.index(old, start)
-    return text[:cell] + '<td class="g2 us">◐</td>' + text[cell + len(old) :]
+    return text[:cell] + "<td>◐</td>" + text[cell + len(old) :]
 
 
 def _rename_section_item(text: str, section: str, old: str) -> str:
@@ -32,12 +48,12 @@ def _rename_section_item(text: str, section: str, old: str) -> str:
     return text[:start] + changed + text[end:]
 
 
-def test_feature_matrix_published_values_match_canonical_table() -> None:
-    result = check_matrix(MATRIX)
+def test_feature_matrix_published_values_match_canonical_table(matrix_path: Path) -> None:
+    result = check_matrix(matrix_path)
 
     assert result.feature_count == 160
-    assert result.openprogram_score == 94.5
-    assert result.openprogram_gaps == 56
+    assert result.openprogram_score == 92.0
+    assert result.openprogram_gaps == 59
     assert result.openprogram_only == 6
     assert result.json_schema_status == "●"
     assert result.snapshot == "2fb471b3"
@@ -56,44 +72,80 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
             "integration snapshot",
         ),
         (
-            lambda text: text.replace("OpenProgram为94.5分", "OpenProgram为999分", 1),
+            lambda text: _replace_number(
+                text,
+                '<th scope="row">我们</th><td>92.0</td>',
+                '<th scope="row">Ours</th><td>92.0</td>',
+                "92.0",
+            ),
             "score",
         ),
         (
-            lambda text: text.replace(
-                "参考列已确认的 56 项", "参考列已确认的 999 项", 1
-            ),
+            lambda text: _replace_number(text, "功能矩阵、92.0 分", "Feature matrix, 92.0 score", "92.0"),
+            "score summary",
+        ),
+        (
+            lambda text: _replace_number(text, "参考列已确认的 59 项", "59 features unconfirmed in OpenProgram", "59"),
             "gaps",
         ),
         (
-            lambda text: text.replace(
-                "仅 OpenProgram 确认的 6 项", "仅 OpenProgram 确认的 999 项", 1
-            ),
+            lambda text: _replace_number(text, "仅 OpenProgram 确认的 6 项", "6 features confirmed only in OpenProgram", "6"),
             "OpenProgram-only",
         ),
         (
-            lambda text: text.replace(
-                '<circle cx="500" cy="8" r="5" fill="#4f8ef7"',
-                '<circle cx="999" cy="8" r="5" fill="#4f8ef7"',
-                1,
+            lambda text: _replace_number(
+                text,
+                '<th scope="row">编辑器集成</th><td>50%</td>',
+                '<th scope="row">Editor integration</th><td>50%</td>',
+                "50",
             ),
             "category point",
         ),
         (
-            lambda text: _rename_section_item(text, "gaps", "终端快捷键自动配置"),
+            lambda text: _replace_number(
+                text,
+                "<td>6%–78%, 中位数 44%</td>",
+                "<td>6%–78%, median 44%</td>",
+                "44",
+            ),
+            "category point",
+        ),
+        (
+            lambda text: _replace_number(text, "01 编辑器集成 9 项", "01 Editor integration 9 features", "9"),
+            "category heading count",
+        ),
+        (
+            lambda text: text.replace("</td><td>● buddy</td></tr>", "</td><td>● nobody</td></tr>", 1),
+            "invalid status",
+        ),
+        (
+            lambda text: text.replace("</td><td>● buddy</td></tr>", "</td><td>● buddy, buddy</td></tr>", 1),
+            "twice",
+        ),
+        (
+            lambda text: text.replace("</td><td>● buddy</td></tr>", "</td><td>● claude</td></tr>", 1),
+            "score",
+        ),
+        (
+            lambda text: text.replace("<details>\n<summary>01 ", "<details hidden>\n<summary>01 ", 1),
+            "visible",
+        ),
+        (
+            lambda text: _rename_section_item(text, "gaps", _label(text, "终端快捷键自动配置", "Automatic terminal-shortcut configuration")),
             "gap detail",
         ),
         (
-            lambda text: text.replace(
-                '进入后续评估</b> <span style="color:#6b6a63">29 项',
-                '进入后续评估</b> <span style="color:#6b6a63">999 项',
-                1,
+            lambda text: _replace_number(
+                text,
+                '进入后续评估</b> <span>32 项',
+                'For further assessment</b> <span>32 features',
+                "32",
             ),
             "gap detail group count",
         ),
         (
             lambda text: _rename_section_item(
-                text, "ours", "函数调用树写进<br>同一张会话图"
+                text, "ours", _label(text, "函数调用树写进<br>同一张会话图", "Function-call trees in<br>the same session graph")
             ),
             "OpenProgram-only detail",
         ),
@@ -102,10 +154,11 @@ def test_feature_matrix_published_values_match_canonical_table() -> None:
 )
 def test_feature_matrix_checker_rejects_published_drift(
     tmp_path: Path,
+    matrix_path: Path,
     mutation,
     message: str,
 ) -> None:
-    original = MATRIX.read_text(encoding="utf-8")
+    original = matrix_path.read_text(encoding="utf-8")
     changed = mutation(original)
     assert changed != original
     candidate = tmp_path / "feature-matrix.html"
@@ -143,13 +196,14 @@ def test_framework_documents_pin_the_same_current_release_versions() -> None:
         assert all(len(tags) == 1 for tags in found.values())
         return {repo: next(iter(tags)) for repo, tags in found.items()}
 
-    assert versions(MATRIX) == expected
-    assert versions(FRAMEWORK_COMPARISON) == expected
+    for path in (MATRIX, FRAMEWORK_COMPARISON):
+        assert versions(path) == expected
+        assert versions(path.with_name(path.stem + ".zh.html")) == expected
 
 
 def test_framework_documents_publish_the_current_event_count() -> None:
     module = ast.parse(
-        (ROOT / "openprogram/events/registry.py").read_text(encoding="utf-8")
+        (ROOT / "openprogram/runtime/events/registry.py").read_text(encoding="utf-8")
     )
     event_dict = next(
         node.value
@@ -163,13 +217,17 @@ def test_framework_documents_publish_the_current_event_count() -> None:
 
     matrix = MATRIX.read_text(encoding="utf-8")
     comparison = FRAMEWORK_COMPARISON.read_text(encoding="utf-8")
-    assert f"我们 {count} 个" in matrix
-    assert comparison.count(f"{count}事件") == 2
+    assert f"ours {count}" in matrix.casefold()
+    assert comparison.count(f"{count} events") == 2
+    chinese_matrix = MATRIX.with_name("feature-matrix.zh.html").read_text(encoding="utf-8")
+    chinese_comparison = FRAMEWORK_COMPARISON.with_name("framework-comparison.zh.html").read_text(encoding="utf-8")
+    assert f"我们 {count} 个" in chinese_matrix
+    assert chinese_comparison.count(f"{count}事件") + chinese_comparison.count(f"{count} 个事件") == 2
 
 
 def test_runtime_docs_publish_structured_return_and_error_contracts() -> None:
-    english = (ROOT / "docs/reference/api/runtime.md").read_text(encoding="utf-8")
-    chinese = (ROOT / "docs/reference/api/runtime.zh.md").read_text(encoding="utf-8")
+    english = html.unescape((ROOT / "docs/reference/api/runtime.html").read_text(encoding="utf-8"))
+    chinese = html.unescape((ROOT / "docs/reference/api/runtime.zh.html").read_text(encoding="utf-8"))
 
     for text in (english, chinese):
         assert "StructuredOutputSchemaError" in text
@@ -188,25 +246,12 @@ def test_runtime_docs_publish_structured_return_and_error_contracts() -> None:
         assert "Python JSON" in text
 
     for text in (english, chinese):
-        assert "stream_fn=None) -> Any" in text
-        assert "timeout_s=None, on_retry=None) -> Any" in text
+        assert 'execution_kind="agent") -> Any' in text
+        assert "timeout_s=None, on_retry=None," in text
         assert "stream_fn=None) -> str" not in text
         assert "timeout_s=None, on_retry=None) -> str" not in text
-        assert (
-            'Runtime._call(content, model="default", response_format=None) -> Any'
-            in text
-        )
-        assert (
-            'Runtime._async_call(content, model="default", response_format=None) -> Any'
-            in text
-        )
-        assert (
-            'Runtime._call(content, model="default", response_format=None) -> str'
-            not in text
-        )
-        assert (
-            'Runtime._async_call(content, model="default", response_format=None) -> str'
-            not in text
-        )
-    assert "With `response_format=None`, returns" in english
-    assert "`response_format=None` 时返回" in chinese
+        assert '_call(content, model="default", response_format=None)' in text
+        assert "_async_call(...)" in text
+        assert 'response_format=None) -> str' not in text
+    assert '<code translate="no">response_format=None</code></th><td>Reply' in english
+    assert '<code translate="no">response_format=None</code></th><td>回复' in chinese

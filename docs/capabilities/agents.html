@@ -1,0 +1,176 @@
+<title>Configure an Agent</title>
+<meta name="description" content="Models, instructions, capabilities, memory, built-in Agents and trial conversations.">
+<h1>Configure an Agent</h1>
+<p><strong>Agents</strong> in the sidebar. An Agent saves a reusable configuration; it need not represent a specialized task.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Place</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Cards</th><td>One per Agent, in two groups by the always-on switch: <strong>Chat</strong> and <strong>Always-on</strong>. Shows avatar, name, description and <strong>Default</strong>. Always-on cards carry lines of surf in the card's colour, one field across them.</td></tr>
+<tr><th scope="row">Header</th><td>Search by name, ID or description. <strong>New Agent</strong>: name and model; the ID is generated; it starts as Chat.</td></tr>
+<tr><th scope="row">Choose a card</th><td>Quick settings beside the cards: name, description, model, reasoning effort, Always-on, <strong>Try draft</strong>, <strong>New conversation</strong>.</td></tr>
+<tr><th scope="row"><strong>Expand settings</strong> handle, or <strong>Manage</strong></th><td>Full editor; the cards fold into a list in the same two groups. Header chips open their sections.</td></tr>
+<tr><th scope="row"><strong>Collapse settings</strong> handle or Esc</th><td>Back to the cards</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Section</th><th scope="col">Changes</th></tr></thead>
+<tbody>
+<tr><th scope="row">General</th><td>Display name, description, <a href="#avatar">avatar</a>, provider, model, reasoning effort</td></tr>
+<tr><th scope="row">Programs</th><td>Automatic tool availability, selected programs or none</td></tr>
+<tr><th scope="row">Skills</th><td>Available skills and exclusions</td></tr>
+<tr><th scope="row">MCP</th><td>Allowed, excluded and required servers</td></tr>
+<tr><th scope="row">Memory</th><td>Off, read only or read and write; readable and writable spaces</td></tr>
+<tr><th scope="row">Context</th><td>Channel conversation isolation, idle reset, daily reset</td></tr>
+<tr><th scope="row">Always-on</th><td>Wake to work on a standing goal and report (<a href="always-on-agents.html">Always-on Agents</a>)</td></tr>
+<tr><th scope="row">Advanced</th><td>Channel identity, mention patterns, system prompt, which <a href="agents-md.html">AGENTS.md</a> files apply</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Saving and model choice</summary>
+<ul>
+<li>Sections share one draft; <strong>Save</strong> writes all of it. Changing Agents or a destructive action offers Save, Discard or Cancel. A failed save keeps the draft.</li>
+<li>If another editor saved first, compare before choosing. Keeping your draft does not overwrite the newer version; review and save again.</li>
+<li>The model picker reads the provider catalog without changing another conversation. <strong>Last used model</strong> runs each conversation on your most recent model.</li>
+<li>An unavailable model or unsupported effort stays visible until you change it. Missing required MCP servers stop execution before a model request.</li>
+</ul>
+</details>
+
+<h2 id="avatar">Avatar</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Type</th><th scope="col">Choose</th></tr></thead>
+<tbody>
+<tr><th scope="row">Character</th><td>One of 22 shapes and 8 colours</td></tr>
+<tr><th scope="row">Generated</th><td>A style, then a variant</td></tr>
+<tr><th scope="row">Upload</th><td>Up to 256 KB: PNG, JPG, SVG, WebP or GIF; animated files play</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Without one, a character chosen from the ID; each built-in has one that fits its job. Change it in <strong>General</strong>.</li>
+<li>Shown on its card and editor, the composer chip and menu, the name above replies from a non-default Agent, the Always-on row of the <a href="../interfaces/web.html#conversation-activity">Activity panel</a>, and channel bindings in Settings.</li>
+<li>Part of the draft; a duplicate keeps it.</li>
+<li>Characters blink, sway and look around, and look busy in the Activity panel while the Agent works. Picker tiles are still; reduced motion stills them all.</li>
+</ul>
+
+<h2 id="built-in-agents">Built-in Agents</h2>
+<p>Complete configurations saved as ordinary cards: edit, duplicate or delete them. The server installs those this instance has never had at startup; a deleted one is not recreated. One you have not changed picks up new versions on its own; one you have changed stays as you left it.</p>
+<h3>For chat, always-on off</h3>
+<table class="stack">
+<thead><tr><th scope="col">Agent</th><th scope="col">Purpose</th><th scope="col">Capabilities</th></tr></thead>
+<tbody>
+<tr><th scope="row">Assistant (default, id <code translate="no">main</code>)</th><td>General; new conversations start on it</td><td>Every tool</td></tr>
+<tr><th scope="row">Decision</th><td>Select one of the supplied options with <code translate="no">Agent.choose()</code></td><td>One model turn, no tools, no automatic re-pick</td></tr>
+<tr><th scope="row">Lightweight helper</th><td>Extract, classify, format, summarize, predict next messages</td><td>No tools</td></tr>
+<tr><th scope="row">Coordinator</th><td>Plan dependencies, delegate authorized tasks, check results</td><td>Read, search, Agent coordination</td></tr>
+<tr><th scope="row">Explorer</th><td>Search and read code, files and the web for another agent, and report what it found</td><td>Read, search, web; never writes</td></tr>
+</tbody>
+</table>
+<p class="note">Decision, Lightweight helper and Coordinator have no prompt of their own; the task comes from the call and its Context. Memory, Skills and MCP start disabled. Pick a low-cost model for the helper and a strong reasoning model for the coordinator: names guarantee neither. Predicted messages are suggestions, not authorization; a planning-only request does not authorize delegated execution.</p>
+<h3>For work while you are away, always-on on</h3>
+<p><strong>Butler</strong> is the general <a href="always-on-agents.html">always-on</a> Agent: every tool and read-write memory. Tell it what to watch or keep going; that conversation wakes when something is due, otherwise follows the <a href="always-on-agents.html#check-ins">check-in ladder</a>, and reports only what is worth your attention.</p>
+<table class="stack">
+<thead><tr><th scope="col">Job Agent</th><th scope="col">Job</th><th scope="col">Tools</th><th scope="col">Memory</th><th scope="col">Looks around when woken</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chief of Staff</th><td>Keeps open work moving, routes tasks to other Agents, reports</td><td>Read, web, conversations, open work, messages to other Agents, reminders, Goals</td><td>Read and write</td><td>Yes</td></tr>
+<tr><th scope="row">Spec Writer</th><td>Turns a request into a specification with acceptance criteria</td><td>Read, web, conversations, write files</td><td>Read only</td><td>No</td></tr>
+<tr><th scope="row">Bug Reproducer</th><td>Finds the smallest failing case and pins it as a failing test</td><td>Read, shell, code navigation, worktrees</td><td>Off</td><td>No</td></tr>
+<tr><th scope="row">PR Producer</th><td>Implements a specified change with tests in a worktree</td><td>Read, shell, edit, worktrees</td><td>Off</td><td>No</td></tr>
+<tr><th scope="row">PR Verifier</th><td>Checks a change against its specification and tests; never edits</td><td>Read, shell, code navigation</td><td>Off</td><td>No</td></tr>
+<tr><th scope="row">Research Desk</th><td>Follows topics, reads sources, keeps a cited brief</td><td>Web, PDF, write files, reminders</td><td>Read and write</td><td>Yes</td></tr>
+<tr><th scope="row">Inbox Triage</th><td>Sorts new messages and drafts replies; nothing is sent</td><td>Read, conversations, write files, reminders</td><td>Read and write</td><td>Yes</td></tr>
+<tr><th scope="row">Career Scout</th><td>Scans job boards, ranks matches, prepares applications</td><td>Web, browser, PDF, write files</td><td>Read and write</td><td>Yes</td></tr>
+<tr><th scope="row">Knowledge Keeper</th><td>Distils finished conversations into memory, merges and corrects</td><td>Read, conversations, edit files</td><td>Read and write</td><td>Yes</td></tr>
+<tr><th scope="row">Writer</th><td>Turns material into finished text in the requested form</td><td>Read, web, edit files, canvas, images</td><td>Read only</td><td>No</td></tr>
+</tbody>
+</table>
+<p class="note">Each has a prompt stating job, deliverable, what it never does, when it is done, how it works and its first task; only the tools it needs; memory on its own space. There is no fixed interval: each schedules its own wakes and follows the <a href="always-on-agents.html#check-ins">check-in ladder</a> if it set none. No conversation, no wakes, no cost.</p>
+<ul>
+<li>Producer and verifier are separate so the Agent that wrote a change never passes it.</li>
+<li>Agents that handle mail or posts stop at a draft; their prompts forbid sending.</li>
+<li>They cooperate by <a href="always-on-agents.html#hand-work-to-another-conversation">messaging each other</a> by Agent name or conversation title: one conversation per Agent, each clearly titled; tell the planning conversation which does what.</li>
+</ul>
+<details>
+<summary>From Python</summary>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+from openprogram.runtime.agent_registry import manager
+
+helper = Agent.from_spec(manager.get("utility"))
+result = helper("Extract the city from: the event is in Singapore.")
+
+selector = Agent.from_spec(manager.get("decision"))
+selected = selector.choose("Classify this message.", {"A": "Question", "B": "Statement"})</code></pre>
+<ul>
+<li><code translate="no">choose()</code> returns the selected ID, uses the current Context and DAG, disables tools and web search and never re-asks. An invalid answer raises <code translate="no">DecisionError</code>. Model and reasoning are caller configuration. <code translate="no">__call__()</code> stays available.</li>
+<li><code translate="no">create_builtin_agents()</code> in <code translate="no">openprogram.runtime.agent_registry.builtin_agents</code> installs what was never installed, updates copies nobody has changed and leaves edited ones as they are. Assistant goes first, so it is the default on a fresh install. Server startup, setup and <code translate="no">openprogram chat</code> run it; registry reads never install.</li>
+</ul>
+</details>
+
+<h2 id="start-a-conversation-or-try-a-draft">Start a conversation or try a draft</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><strong>New conversation</strong></th><th scope="col"><strong>Try draft</strong></th></tr></thead>
+<tbody>
+<tr><th scope="row">Uses</th><td>The saved configuration</td><td>The current draft, unsaved; snapshot taken at the first message and kept on resume</td></tr>
+<tr><th scope="row">Long-term memory</th><td>As configured</td><td>Never written. Off stays Off; otherwise read only.</td></tr>
+</tbody>
+</table>
+<h3 id="change-a-conversations-agent">Change a conversation's Agent</h3>
+<p>The Agent chip beside the model in the composer. Lists Chat Agents, then <a href="always-on-agents.html">Always-on</a>; <strong>Manage Agents</strong> opens this page.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Unsent chat</th><td>Applies from the first message. Each unsent conversation keeps its own Agent and overrides; a rejected first message keeps the selection. A model change applies only there.</td></tr>
+<tr><th scope="row">Started conversation</th><td>Switches at once, except during a running turn. Later turns use the new instructions, capabilities and memory, and its model if it sets one. Earlier messages stay.</td></tr>
+<tr><th scope="row">Saved instruction, capability or memory change</th><td>Applies to later executions with that Agent</td></tr>
+<tr><th scope="row">Existing conversation's model</th><td>Kept from when it started or last switched Agent, with any explicit reasoning choice. Unset effort follows the Agent default. Explicit overrides stay.</td></tr>
+<tr><th scope="row">Trial</th><td>Keeps its snapshot</td></tr>
+<tr><th scope="row">Context reset settings</th><td>Channel conversations only; new chats and trials start with new history</td></tr>
+</tbody>
+</table>
+
+<h2 id="memory-access">Memory access</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Off</th><td>No framework memory reads or writes</td></tr>
+<tr><th scope="row">Read only</th><td>Reads, no extraction or new records</td></tr>
+<tr><th scope="row">Read and write</th><td>The write destination must be in the readable spaces</td></tr>
+<tr><th scope="row"><strong>This Agent</strong></th><td>Separate memory for the Agent</td></tr>
+<tr><th scope="row"><strong>Shared legacy memory</strong></th><td>The pre-existing profile-wide store</td></tr>
+<tr><th scope="row"><strong>Require memory to be available</strong></th><td>Unavailable memory stops execution. Unset: execution continues and records the degradation.</td></tr>
+</tbody>
+</table>
+<p class="note">New Agents start Off; configurations without a memory field keep legacy shared access. Background extraction and derived results preserve recorded write restrictions, so turning memory on does not ingest earlier restricted turns. Turning it off or deleting an Agent keeps stored memory. These settings do not govern file tools. The <a href="memory.html">Memory page</a> edits the shared store, not each Agent's space.</p>
+
+<h2 id="limits-on-delegation">Limits on delegation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Caps</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent.max_spawn_depth</code></th><td><code translate="no">1</code>: your Agent may start helpers, a helper does its work itself</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_running_agents</code></th><td><code translate="no">6</code> helpers running at once in a conversation; the rest wait</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_tree_usd</code></th><td><code translate="no">2</code> dollars for everything one request delegates; then its helpers stop</td></tr>
+<tr><th scope="row"><code translate="no">agent.stall_minutes</code></th><td><code translate="no">10</code> quiet minutes before a helper is reported stalled</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_agent_hours</code></th><td><code translate="no">2</code> hours before a helper is stopped</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_hops</code></th><td><code translate="no">4</code> times a message may be passed on</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_sends_per_hour</code></th><td><code translate="no">20</code> messages a conversation sends per hour</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_messages</code></th><td>Messages in one chain; off by default</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_spawn_fanout</code></th><td>Agents one turn may create; off by default</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">0</code> turns a limit off. A call past a limit is refused with the setting's name; a stopped or stalled helper is reported in the conversation that started it.</p>
+
+<h2 id="open-work">Open work</h2>
+<details>
+<summary>What counts as a commitment</summary>
+<p>What the Agent still owes you in a conversation after the task at hand: a reply it waits on, a promised check, an unanswered draft.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Open items</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shown in</th><td>Its instructions every turn, and the <a href="../interfaces/web.html#conversation-activity">Activity panel</a></td></tr>
+<tr><th scope="row">Changed by</th><td>The Agent, with the <code translate="no">open_work</code> tool. Ask it in chat to add, change or drop one, or mark one done in the panel.</td></tr>
+<tr><th scope="row">Finished items</th><td>The latest 50 stay in history and leave the instructions</td></tr>
+</tbody>
+</table>
+</details>
+<p class="note">Not the <a href="../interfaces/web.html#task-list">task list</a>, which plans the task at hand and ends with it. What another conversation should know belongs in <a href="memory.html">memory</a>.</p>
+
+<h2 id="duplicate-and-delete">Duplicate and delete</h2>
+<p>Duplicate copies the configuration under a new ID, not conversations or private memory. A <code translate="no">self</code> memory reference resolves to the new Agent's space; an explicit legacy shared reference stays shared. The default Agent cannot be deleted until another is made default.</p>

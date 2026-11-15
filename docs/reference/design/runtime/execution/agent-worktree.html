@@ -1,0 +1,243 @@
+<title>Agent worktrees</title>
+<meta name="description" content="How an agent makes risky changes in an isolated git worktree of the user's repository, then merges, discards or hands it over.">
+<h1>Agent worktrees</h1>
+<p>An agent changes the user's real repository in an isolated directory, around <code translate="no">git worktree add</code> and <code translate="no">remove</code>. A worktree belongs to one conversation branch, or to one sub-agent run; the other branches keep working in the checkout.</p>
+
+<h2 id="tools">Tools</h2>
+<table class="stack">
+<thead><tr><th scope="col">Tool</th><th scope="col">Parameters</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">worktree_create</code></th><td><code translate="no">source_repo</code>, <code translate="no">branch_name</code>, <code translate="no">base_ref</code> = <code translate="no">HEAD</code>, <code translate="no">label</code>, <code translate="no">pr</code></td><td>Creates and binds as the active worktree of the turn's branch</td></tr>
+<tr><th scope="row"><code translate="no">worktree_merge</code></th><td><code translate="no">worktree_id</code>, <code translate="no">strategy</code> = <code translate="no">ff-only</code> (or <code translate="no">squash</code>, <code translate="no">no-ff</code>, <code translate="no">auto</code>), <code translate="no">delete_branch</code> = false</td><td>Merges into <code translate="no">source_repo</code>, removes the directory, keeps the branch</td></tr>
+<tr><th scope="row"><code translate="no">worktree_discard</code></th><td><code translate="no">worktree_id</code>, <code translate="no">force</code> = false, <code translate="no">delete_branch</code> = true</td><td>Removes without merging; the record stays</td></tr>
+<tr><th scope="row"><code translate="no">worktree_keep</code></th><td><code translate="no">worktree_id</code></td><td>Detaches; directory and branch stay for the user</td></tr>
+<tr><th scope="row"><code translate="no">worktree_list</code></th><td><code translate="no">status_filter</code>, <code translate="no">scope</code> = <code translate="no">session</code></td><td>Lists records</td></tr>
+<tr><th scope="row"><code translate="no">agent</code></th><td><code translate="no">isolation</code> = <code translate="no">"worktree"</code></td><td>The spawned sub-agent runs in a worktree of its own (see <a href="#branches">Branches and sub-agents</a>)</td></tr>
+</tbody>
+</table>
+
+<p class="note">Of these, only discard asks for approval. Tools return one text line, or <code translate="no">[tool error] code: detail</code>. The WebSocket offers <code translate="no">session_worktrees</code>, <code translate="no">create_branch_worktree</code>, list, get, merge, discard and keep (<code translate="no">ws_actions/worktree.py</code>). No switch tool: one active worktree per branch, and more only through sub-agents and jobs.</p>
+
+<h2 id="states">States</h2>
+<table class="stack">
+<thead><tr><th scope="col">From</th><th scope="col">Event</th><th scope="col">To</th><th scope="col">On disk</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">active</code></th><td>Merge begins (<code translate="no">git merge</code> runs, gating concurrent merges)</td><td><code translate="no">committing</code></td><td>Unchanged</td></tr>
+<tr><th scope="row"><code translate="no">committing</code></th><td>Success</td><td><code translate="no">merged</code></td><td>Directory removed, branch kept unless asked</td></tr>
+<tr><th scope="row"><code translate="no">committing</code></th><td><code translate="no">merge_conflict</code>, <code translate="no">not_fast_forward</code>, <code translate="no">merge_failed</code></td><td><code translate="no">active</code>, with <code translate="no">error</code></td><td>Directory kept for inspection; a conflicting merge is aborted in <code translate="no">source_repo</code>, so the checkout is never left mid-merge</td></tr>
+<tr><th scope="row"><code translate="no">active</code>, <code translate="no">errored</code></th><td>Discard</td><td><code translate="no">discarded</code></td><td>Directory removed, branch deleted by default</td></tr>
+<tr><th scope="row"><code translate="no">active</code>, <code translate="no">errored</code></th><td>Keep</td><td><code translate="no">kept</code></td><td>Untouched; the user takes over</td></tr>
+<tr><th scope="row"><code translate="no">active</code>, <code translate="no">committing</code></th><td>Reserved: the state machine allows it, no current path writes it</td><td><code translate="no">errored</code></td><td>Unchanged; can return to <code translate="no">active</code></td></tr>
+</tbody>
+</table>
+
+<p class="note">Merged, discarded and kept are terminal. Illegal transitions raise. Merge and discard on a dirty tree refuse <code translate="no">worktree_dirty</code>, unless <code translate="no">force</code> on discard or <code translate="no">commit_pending</code> on merge, which commits everything in the worktree first. The agent's tool never sets <code translate="no">commit_pending</code>; the Merge button does, because the person asked to merge what the worktree holds. Discard has no backup.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Merge</th><th scope="col">Git</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ff-only</code></th><td><code translate="no">merge --ff-only</code></td><td>Default; else <code translate="no">not_fast_forward</code></td></tr>
+<tr><th scope="row"><code translate="no">squash</code></th><td><code translate="no">merge --squash</code>, then a generic commit</td><td>Many exploratory commits</td></tr>
+<tr><th scope="row"><code translate="no">no-ff</code></th><td>Always a merge commit</td><td>Preserve history</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td><code translate="no">ff-only</code> when <code translate="no">source_repo</code>'s HEAD is an ancestor of the branch, else <code translate="no">no-ff</code></td><td>The Merge button: the checkout may have moved on while the branch worked</td></tr>
+</tbody>
+</table>
+
+<h2 id="record">Record</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code></th><td><code translate="no">wt_</code> + 12 hex</td></tr>
+<tr><th scope="row"><code translate="no">source_repo</code>, <code translate="no">worktree_path</code>, <code translate="no">branch_name</code>, <code translate="no">base_ref</code></th><td><code translate="no">worktree_path</code> is <code translate="no">&lt;state&gt;/worktrees/&lt;id&gt;-&lt;slug&gt;</code>; branch defaults to <code translate="no">op/wt/&lt;slug&gt;-&lt;id6&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">status</code>, <code translate="no">created_at</code>, <code translate="no">completed_at</code></th><td>Timestamps are unix</td></tr>
+<tr><th scope="row"><code translate="no">parent_session</code>, <code translate="no">parent_job</code></th><td>Owning session and bound job</td></tr>
+<tr><th scope="row"><code translate="no">parent_branch</code></th><td>The conversation branch whose turns run here; empty for a conversation-wide worktree. A sub-agent's worktree carries the branch that spawned it beside <code translate="no">parent_job</code></td></tr>
+<tr><th scope="row"><code translate="no">base_sha</code></th><td>The commit the worktree started from; "what changed" is measured from it after the checkout moves</td></tr>
+<tr><th scope="row"><code translate="no">ephemeral</code></th><td>Made for one isolated sub-agent run; removed when the run ends with nothing changed</td></tr>
+<tr><th scope="row"><code translate="no">merge_strategy</code>, <code translate="no">merge_sha</code>, <code translate="no">files_changed</code>, <code translate="no">error</code></th><td>Outcome</td></tr>
+<tr><th scope="row"><code translate="no">pr_number</code></th><td>Set for a PR worktree</td></tr>
+<tr><th scope="row"><code translate="no">include_synced</code>, <code translate="no">include_failed</code></th><td><code translate="no">.worktreeinclude</code> results</td></tr>
+</tbody>
+</table>
+
+<p class="note">Stored in <code translate="no">&lt;state&gt;/worktrees.json</code>. Not cleaned up when a session closes.</p>
+
+<h2 id="binding">Where tools run</h2>
+<p>The <code translate="no">_current_worktree_path</code> context variable (<code translate="no">state/worktree/context.py</code>) carries the path; no tool has a cwd argument. <code translate="no">worktree_create</code> binds it for the rest of its own turn. Each turn binds the first of these (<code translate="no">turn_context.py</code>, <code translate="no">runtime_location_for</code>):</p>
+<ol>
+<li>The worktree of the job it runs for.</li>
+<li>The worktree of its own branch (<code translate="no">req.branch_id</code>; without one, the selected branch, <code translate="no">store.current_branch_for</code>).</li>
+<li>A conversation-wide worktree.</li>
+<li>The project folder.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">bash</th><td>Starts at the worktree each time, in a fresh subprocess. <code translate="no">cd ..</code> can leave: a default location, not a sandbox. Hard isolation is the docker backend</td></tr>
+<tr><th scope="row">read, write, edit, list, apply_patch (<code translate="no">path_resolve.py</code>)</th><td>Relative paths resolve against the worktree. An absolute path outside gets an <code translate="no">[outside worktree]</code> warning and is not blocked</td></tr>
+<tr><th scope="row">glob, grep</th><td>No <code translate="no">path</code> searches the worktree; a relative one resolves inside it (<code translate="no">resolve_root</code>)</td></tr>
+<tr><th scope="row">Dispatch path check (<code translate="no">_host/execution.py</code>)</th><td>Read and write paths are anchored to the worktree before the sandbox check, so the check looks at the file the tool opens</td></tr>
+<tr><th scope="row">terminal_use</th><td>Its <code translate="no">workdir</code> is relative to the worktree</td></tr>
+<tr><th scope="row">Runtime subprocess (<code translate="no">--cd</code>)</th><td>Prefers the worktree over the session workdir</td></tr>
+<tr><th scope="row">System prompt (<code translate="no">environment_block</code>)</th><td>Names the worktree, its source checkout and branch, and says earlier paths name the same files by relative path and to re-read before editing</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">One binding for every tool</th><td>Claude Code's tools all read the session cwd that <code translate="no">EnterWorktreeTool</code> moves; none takes a folder argument. Before, glob and grep searched the default workdir and list and apply_patch refused relative paths, so a branch could write a file in its worktree and not find it again</td></tr>
+<tr><th scope="row">Re-read notice</th><td>Follows Claude Code's <code translate="no">buildWorktreeNotice</code>: inherited context names files in the checkout, and a worktree started from a commit lacks the checkout's uncommitted edits</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branches">Branches and sub-agents</h2>
+<table class="stack">
+<thead><tr><th scope="col">Who</th><th scope="col">How it starts</th><th scope="col">How it ends</th></tr></thead>
+<tbody>
+<tr><th scope="row">A conversation branch</th><td>The input box's worktree chip, Own worktree (<code translate="no">create_branch_worktree</code>), or <code translate="no">worktree_create</code> on that branch. The branch's next turn runs there</td><td>Merge, Squash, Keep as a git branch or Discard on the chip; the agent's own merge and discard tools</td></tr>
+<tr><th scope="row">A sub-agent</th><td><code translate="no">agent(isolation="worktree")</code>: a worktree of the repository of the folder the calling turn works in, with <code translate="no">parent_job</code>, the calling branch and <code translate="no">ephemeral</code></td><td>No changes: removed when the run ends (sync result, or the job's terminal projection). Changes: the result names the worktree for <code translate="no">worktree_merge</code>; the chip lists it under Sub-agent worktrees</td></tr>
+</tbody>
+</table>
+<p class="note">A branch made from an isolated branch by edit, retry or fork starts in the checkout: one worktree serves one branch, so two parallel branches never share a working tree. A sub-agent of a branch that runs in a worktree gets a worktree of that worktree and merges back into it. A cancelled job still discards its worktree with <code translate="no">force</code>.</p>
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Opt-in, per branch or sub-agent</th><td>Claude Code: the checkout is the default; isolation is chosen per agent (<code translate="no">isolation: "worktree"</code>), and an untouched worktree is removed when the agent ends. Worktrees are per branch here because branches run in parallel. A background sub-agent whose tools can write gets one by default in a git repository, since two writers in one folder corrupt each other's edits; a foreground or read-only one shares the checkout (<a href="../collaboration/agent-collaboration.html#agent-settings">Agent settings</a>)</td></tr>
+<tr><th scope="row">Created for the next turn</th><td>Codex accepts <code translate="no">--worktree</code> only for a new session or a fork, never for a resumed one. A branch is the fork, so its worktree applies from its next turn, never under a running one</td></tr>
+<tr><th scope="row">A git branch, not a patch</th><td>Maka leases a worktree per child session and returns a patch artifact; a patch drops the commits and needs its own apply step. A git branch merged by git keeps both</td></tr>
+<tr><th scope="row">Start from a commit</th><td>Grok Build copies the checkout's uncommitted files into the new worktree. Copying half-finished edits into parallel branches makes both merges conflict, so the worktree starts from a commit and the turn re-reads</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="app">In the app</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">What</th></tr></thead>
+<tbody>
+<tr><th scope="row">Input box, environment row (<code translate="no">worktree-chip.tsx</code>)</th><td>A chip beside the environment chip: Checkout, or the worktree's branch with its changed-file count. Its menu chooses Checkout or Own worktree, and for an open worktree offers Merge into checkout, Squash into one commit, Keep as a git branch and Discard. Discard opens the confirmation dialog. Shown once the conversation's folder is in a git repository, or while any worktree of the branch is open. Merge, keep and discard wait while the branch is running</td></tr>
+<tr><th scope="row">Transcript (<code translate="no">worktree-branch-marker.tsx</code>)</th><td>One line at the top of the branch: where it runs and how many files changed, or that its worktree was merged, kept or discarded</td></tr>
+<tr><th scope="row">Activity (<code translate="no">running-panel.tsx</code>)</th><td>A Worktree tag on the branch's agent row and the changed-file count on its status line</td></tr>
+</tbody>
+</table>
+<p class="note">All three read one copy of the conversation's worktrees (<code translate="no">lib/worktrees/session-worktrees.ts</code>), re-read on every <code translate="no">worktree_status</code> broadcast.</p>
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">In the input box</th><td>Codex puts the Local / Worktree choice where the person decides where the next turn runs. The chip reuses the environment chip's control and menu instead of a new panel</td></tr>
+<tr><th scope="row">Merge on the same chip</th><td>The chip names the worktree, so its actions sit there. Discard alone asks first: it deletes work</td></tr>
+<tr><th scope="row">Marker on the branch</th><td>The transcript line reuses the sub-agent branch strip, so a branch says where it ran wherever it is read</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="source">Choosing the repository</h2>
+<ol>
+<li>The <code translate="no">source_repo</code> argument.</li>
+<li>The conversation's project folder (the selected Project).</li>
+<li>The configured default folder: <code translate="no">OPENPROGRAM_WORKDIR</code>, then <code translate="no">default_workdir</code>.</li>
+</ol>
+<p class="note">Never the worker's own cwd: that is wherever the worker started, a checkout of OpenProgram under a test run, and an installed app has no checkout. An <code translate="no">isolation="worktree"</code> sub-agent uses the same chain after the turn's own worktree.</p>
+<p class="note">None found: <code translate="no">source_repo_not_resolved</code>. OpenProgram never runs <code translate="no">git init</code> for the user. A dirty source repository is fine: the worktree starts from <code translate="no">base_ref</code>. Function forms hold only parameters; the Project stays the source.</p>
+
+<h2 id="isolation">Isolation and commits</h2>
+<ul>
+<li>Neither <code translate="no">source_repo</code> nor the worktree may sit under <code translate="no">&lt;state&gt;/projects</code>, the session store: <code translate="no">worktree_in_sessions_dir</code>.</li>
+<li>Discard leaves <code translate="no">source_repo</code>'s HEAD and working tree untouched.</li>
+<li>A kept branch is never deleted.</li>
+<li>The agent commits through bash, so it writes the message. Only the person's Merge commits pending work, with a generic message.</li>
+<li>File diffs are git's job; tool results enter context as usual.</li>
+</ul>
+
+<h2 id="jobs">Jobs and sessions</h2>
+<table class="stack">
+<thead><tr><th scope="col">Scenario</th><th scope="col">Flow</th><th scope="col">Outcome</th></tr></thead>
+<tbody>
+<tr><th scope="row">One change</th><td>create, edit, test, commit, merge</td><td><code translate="no">merged</code></td></tr>
+<tr><th scope="row">Failed attempt</th><td>create, discard (<code translate="no">force</code>), create, merge</td><td>One <code translate="no">discarded</code>, one <code translate="no">merged</code>; one active per branch at a time</td></tr>
+<tr><th scope="row">Plan agent, three jobs</th><td>One worktree per job; the plan agent activates none, lists them, merges one</td><td>Others discarded; a later merge may need another strategy if HEAD moved</td></tr>
+<tr><th scope="row">User takes over</th><td><code translate="no">worktree_keep</code>; later turns return to the source repository</td><td><code translate="no">kept</code></td></tr>
+</tbody>
+</table>
+
+<p class="note">A job cancel discards its worktree with <code translate="no">force=True</code> (<code translate="no">jobs/runner/projection.py</code>); any other end removes an ephemeral worktree that holds nothing. A completed job never auto-merges. Light jobs need no worktree. Worktree tools are synchronous git calls; git's own lock serialises concurrent adds.</p>
+
+<h2 id="pull-requests">From a pull request</h2>
+<p><code translate="no">pr</code> accepts <code translate="no">123</code>, <code translate="no">#123</code> or a GitHub PR URL (<code translate="no">state/worktree/pr_ref.py</code>) and ignores <code translate="no">branch_name</code> and <code translate="no">base_ref</code>.</p>
+<ol>
+<li><code translate="no">gh pr view &lt;n&gt; --json headRefName,headRepositoryOwner,isCrossRepository</code>.</li>
+<li>Fetch: same repository <code translate="no">git fetch origin &lt;headRefName&gt;:&lt;ref&gt;</code>; fork <code translate="no">git fetch origin pull/&lt;n&gt;/head:&lt;ref&gt;</code>, so no remote is registered.</li>
+<li>Normal <code translate="no">git worktree add</code> on branch <code translate="no">op/wt/pr-&lt;n&gt;-&lt;id6&gt;</code>; the throwaway ref is deleted.</li>
+</ol>
+
+<h2 id="worktreeinclude">.worktreeinclude</h2>
+<p><code translate="no">git worktree add</code> checks out tracked files only, so <code translate="no">.env</code> and local overrides are missing. Patterns in <code translate="no">source_repo/.worktreeinclude</code> name untracked files to copy, right after the add, in <code translate="no">create_worktree</code> (<code translate="no">include_sync.py</code>), the one point every creation path shares.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Pattern</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">#…</code>, blank</th><td>Ignored</td></tr>
+<tr><th scope="row"><code translate="no">*</code>, <code translate="no">?</code>, <code translate="no">[...]</code></th><td>Globs</td></tr>
+<tr><th scope="row">No <code translate="no">/</code></th><td>Basename anywhere</td></tr>
+<tr><th scope="row">Contains <code translate="no">/</code></th><td>Anchored to the repository root</td></tr>
+<tr><th scope="row">Trailing <code translate="no">/</code></th><td>Directory and contents</td></tr>
+<tr><th scope="row"><code translate="no">!</code>, <code translate="no">**</code></th><td>Not supported</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Copy semantics</summary>
+<ul>
+<li>Candidates: <code translate="no">git ls-files --others</code>, without <code translate="no">--exclude-standard</code>, so ignored files appear.</li>
+<li>An existing destination is left alone. Symlinks stay links. Permissions are preserved (<code translate="no">shutil.copy2</code>).</li>
+<li>One failure does not stop the rest; both lists reach the record and the tool's return.</li>
+<li>No file: no git calls.</li>
+<li>Matching is <code translate="no">fnmatch</code> and <code translate="no">pathlib</code>: git has no include-filter plumbing, <code translate="no">core.excludesFile</code> injection is refused here, and <code translate="no">pathspec</code> is not a base dependency.</li>
+</ul>
+</details>
+
+<h2 id="errors">Errors</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Code</th><th scope="col">What happened, what to do</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">not_a_git_repo</code></th><td>Not a repository; run <code translate="no">git init</code> first</td></tr>
+<tr><th scope="row"><code translate="no">source_repo_not_resolved</code></th><td>Pass an absolute path or set the workdir</td></tr>
+<tr><th scope="row"><code translate="no">already_active</code></th><td>Merge, discard or keep the active one first</td></tr>
+<tr><th scope="row"><code translate="no">worktree_dirty</code></th><td>Commit or stash, or discard with <code translate="no">force</code></td></tr>
+<tr><th scope="row"><code translate="no">not_fast_forward</code></th><td>Rebase or use another strategy</td></tr>
+<tr><th scope="row"><code translate="no">merge_conflict</code>, <code translate="no">merge_failed</code></th><td>Resolve in the worktree with edit and bash, retry</td></tr>
+<tr><th scope="row"><code translate="no">worktree_in_sessions_dir</code></th><td>Choose a repository outside the session store</td></tr>
+<tr><th scope="row"><code translate="no">worktree_exists</code></th><td>Path or branch taken; pass another label or <code translate="no">branch_name</code></td></tr>
+<tr><th scope="row"><code translate="no">invalid_branch_name</code>, <code translate="no">invalid_base_ref</code></th><td>Empty, NUL, or starting with <code translate="no">-</code></td></tr>
+<tr><th scope="row"><code translate="no">pr_ref_error</code></th><td><code translate="no">pr</code> did not parse; <code translate="no">gh_not_found</code>, <code translate="no">gh_not_authenticated</code>, or <code translate="no">gh</code> failed. Never falls back to <code translate="no">base_ref</code></td></tr>
+<tr><th scope="row"><code translate="no">pr_worktree_exists</code></th><td>Names the open worktree for this PR</td></tr>
+</tbody>
+</table>
+
+<p class="note">A missing <code translate="no">base_ref</code> passes through git's stderr.</p>
+
+<h2>Out of scope</h2>
+<p>Remote push (use bash), cherry-pick or rebase between worktrees, a conflict-resolution UI, worktrees across repositories, backup before discard, chroot or namespace sandboxing.</p>
+
+<h2>Implementation status</h2>
+<table class="stack">
+<thead><tr><th scope="col">Designed, not built</th><th scope="col">Intended</th></tr></thead>
+<tbody>
+<tr><th scope="row">After keep</th><td>An Open in editor item for a kept worktree</td></tr>
+<tr><th scope="row">DAG markers and <code translate="no">worktree_id</code> on tool items</th><td>Create, merge, discard and keep as marker nodes in context commits; a badge on tool calls. The transcript line and the Activity tag mark the branch today</td></tr>
+<tr><th scope="row">Running state per branch</th><td>The chip holds merge and discard while the conversation's shown branch runs; another branch's run does not hold it, and a merge does not check whether a sub-agent is still writing in its worktree</td></tr>
+<tr><th scope="row">Uncommitted edits into a new worktree</th><td>Not copied (Grok Build does); the turn re-reads</td></tr>
+<tr><th scope="row"><code translate="no">outside_worktree</code> metadata</th><td>Only the tool warning exists today</td></tr>
+<tr><th scope="row">Missing-directory detection</th><td><code translate="no">worktree_list</code> marks a vanished path <code translate="no">discarded</code>; after a restart, still-active ones become <code translate="no">kept</code></td></tr>
+</tbody>
+</table>
+
+<p class="note">Manager, store, tools, branch and job binding, every file tool, the chip, the transcript line, the Activity tag and the sub-agent isolation are in code. <code translate="no">tests/component/core/test_worktree_branch_e2e.py</code> drives them against a real temporary repository.</p>
+
+<p class="next"><a href="async-job-lifecycle.html">Async job lifecycle</a></p>

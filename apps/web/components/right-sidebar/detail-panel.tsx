@@ -3,7 +3,11 @@
 import type { ReactNode } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import { renderMarkdown, useMarkdownReady } from "../chat/messages/markdown";
+import { renderMarkdown, useMarkdownReady } from "../chat/messages/bubbles/markdown";
+import { LlmNodeContent } from "../chat/messages/execution/llm-node-content";
+import type { TNode } from "../chat/messages/execution/tree-types";
+import { GuiToolDetail } from "./running/gui-tool-detail";
+import { guiToolView } from "../chat/messages/execution/gui-tool-view";
 
 export const VIEW_DETAIL = "detail";
 export const VIEW_CONTEXT = "context";
@@ -136,15 +140,21 @@ export function DetailPanel() {
       )
     : null;
 
+  const guiView = guiToolView(node);
+
   return (
     <div id="detailBody" className="detail-body">
-      <div className="detail-section">
-        <div className="detail-section-title">Status</div>
-        <div className={`detail-badge ${node.status}`}>
-          {statusIcon} {node.status}
-          {duration ? <> &middot; {duration}</> : null}
+      {/* A GUI call states its outcome in the activity card; a second
+          transport-level status here would contradict it. */}
+      {guiView ? <GuiToolDetail node={node} view={guiView} /> : (
+        <div className="detail-section">
+          <div className="detail-section-title">Status</div>
+          <div className={`detail-badge ${node.status}`}>
+            {statusIcon} {node.status}
+            {duration ? <> &middot; {duration}</> : null}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="detail-section">
         <div className="detail-section-title">Path</div>
@@ -160,7 +170,9 @@ export function DetailPanel() {
             : null
         }
       />
-      <DetailBlock title="Output" value={node.output ?? null} />
+      {node.node_type !== "exec" ? (
+        <DetailBlock title="Output" value={node.output ?? null} />
+      ) : null}
       <DetailBlock title="Error" value={node.error || null} danger />
 
       {node.node_type === "exec" ? (
@@ -173,11 +185,17 @@ export function DetailPanel() {
                 : null
             }
           />
-          <DetailBlock title="LLM Reply" value={node.raw_reply ?? null} />
+          <div className="detail-section">
+            <div className="detail-section-title">Content</div>
+            <LlmNodeContent
+              nodeId={node.path}
+              treeRoot={node.tree_root as TNode | undefined}
+              fallbackText={node.raw_reply ?? (typeof node.output === "string" ? node.output : null)}
+              fallbackThinking={node.thinking ?? null}
+            />
+          </div>
         </>
-      ) : (
-        <DetailBlock title="Raw LLM Reply" value={node.raw_reply ?? null} />
-      )}
+      ) : null}
 
       <DetailBlock
         title={`Attempts (${node.attempts?.length || 0})`}

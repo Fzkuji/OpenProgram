@@ -1,0 +1,546 @@
+"""
+LoopDriver — mirrors the Agent class in packages/agent/src/agent.ts
+
+Stateful wrapper around the agent loop.
+"""
+from __future__ import annotations
+
+import asyncio
+import time
+from typing import Any, Callable
+
+from openprogram.models.providers.types import (
+    AssistantMessage,
+    ImageContent,
+    Message,
+    Model,
+    TextContent,
+    ThinkingBudgets,
+    Transport,
+    Usage,
+    UserMessage,
+)
+
+from openprogram.runtime.agent.loop import agent_loop, agent_loop_continue
+from openprogram.runtime.agent.loop.types import (
+    AgentContext,
+    AgentEvent,
+    AgentEventAgentEnd,
+    AgentLoopConfig,
+    AgentMessage,
+    AgentState,
+    StreamFn,
+    ThinkingLevel,
+)
+from openprogram.models.providers.types import AgentTool
+import logging
+
+_log = logging.getLogger(__name__)
+
+#: ``ErrorReason`` values that are the provider's own stated refusal.
+_REFUSAL_REASONS = {"auth": "authentication", "authz": "not authorized"}
+#: ``failure_cause`` values that are, in the words the log line uses.
+_REFUSAL_CAUSES = {
+    "quota_exhausted": "no credit or quota left",
+    "invalid_key": "credential rejected",
+    "not_available": "not available on this plan or region",
+}
+
+
+def _provider_refusal(reason: str | None, cause: dict | None) -> str | None:
+    """Why a provider refused a request no retry can recover, or ``None``
+    for any other failure (which keeps its traceback)."""
+    named = _REFUSAL_CAUSES.get((cause or {}).get("cause") or "")
+    return named or _REFUSAL_REASONS.get(reason or "")
+
+
+def _default_convert_to_llm(messages: list[AgentMessage]) -> list[Message]:
+    """Default converter: keep only LLM-compatible messages."""
+    return [
+        m for m in messages
+        if hasattr(m, "role") and m.role in ("user", "assistant", "toolResult")
+    ]
+
+
+class LoopDriverOptions:
+    """Options for constructing a LoopDriver. Mirrors the AgentOptions interface."""
+
+    def __init__(
+        self,
+        initial_state: dict[str, Any] | None = None,
+        convert_to_llm: Callable[[list[AgentMessage]], list[Message]] | None = None,
+        transform_context: Callable | None = None,
+        follow_up_mode: str = "one-at-a-time",
+        stream_fn: StreamFn | None = None,
+        session_id: str | None = None,
+        get_api_key: Callable | None = None,
+        on_payload: Callable[[Any, Model], Any | None] | None = None,
+        thinking_budgets: ThinkingBudgets | None = None,
+        transport: Transport = "sse",
+        max_retry_delay_ms: int | None = None,
+        tool_choice: Any | None = None,
+        parallel_tool_calls: bool | None = None,
+        max_iterations: int | None = None,
+        stop_after_tool_round: bool = False,
+        web_search: bool | None = None,
+        response_format: Any | None = None,
+        recall: bool = True,
+        dated: bool = False,
+    ):
+        self.initial_state = initial_state
+        self.convert_to_llm = convert_to_llm
+        self.transform_context = transform_context
+        self.follow_up_mode = follow_up_mode
+        self.stream_fn = stream_fn
+        self.session_id = session_id
+        self.get_api_key = get_api_key
+        self.on_payload = on_payload
+        self.thinking_budgets = thinking_budgets
+        self.transport = transport
+        self.max_retry_delay_ms = max_retry_delay_ms
+        self.tool_choice = tool_choice
+        self.parallel_tool_calls = parallel_tool_calls
+        self.max_iterations = max_iterations
+        self.stop_after_tool_round = stop_after_tool_round
+        self.web_search = web_search
+        self.response_format = response_format
+        self.recall = recall
+        self.dated = dated
+
+    @classmethod
+    def from_dict(cls, opts_dict: dict[str, Any]) -> "LoopDriverOptions":
+        """Construct LoopDriverOptions from a dict (mirrors TS object literal usage)."""
+        return cls(**opts_dict)
+
+
+class LoopDriver:
+    """
+    Stateful agent wrapper around the agent loop.
+    Mirrors the Agent class in TypeScript.
+    """
+
+    def __init__(self, opts: LoopDriverOptions | dict[str, Any] | None = None) -> None:
+        # Support dict (like TS object literal) or LoopDriverOptions instance
+        if isinstance(opts, dict):
+            opts = LoopDriverOptions.from_dict(opts)
+        opts = opts or LoopDriverOptions()
+
+        # No hardcoded seed model: it would crash construction whenever that
+        # provider has no enabled rows (post enabled-models migration). The
+        # real model is applied from ``opts.initial_state`` just below;
+        # AgentSession always supplies one.
+        self._state = AgentState(
+            system_prompt="",
+            model=None,
+            thinking_level="off",
+            tools=[],
+            messages=[],
+            is_streaming=False,
+            stream_message=None,
+            pending_tool_calls=set(),
+            error=None,
+        )
+
+        if opts.initial_state:
+            for key, value in opts.initial_state.items():
+                if hasattr(self._state, key):
+                    setattr(self._state, key, value)
+
+        self._convert_to_llm = opts.convert_to_llm or _default_convert_to_llm
+        self._transform_context = opts.transform_context
+        self._follow_up_mode: str = opts.follow_up_mode
+        self.stream_fn: StreamFn | None = opts.stream_fn
+        self._session_id: str | None = opts.session_id
+        self.get_api_key = opts.get_api_key
+        self._on_payload = opts.on_payload
+        self._thinking_budgets: ThinkingBudgets | None = opts.thinking_budgets
+        self._transport: Transport = opts.transport
+        self._max_retry_delay_ms: int | None = opts.max_retry_delay_ms
+        self._tool_choice: Any | None = opts.tool_choice
+        self._parallel_tool_calls: bool | None = opts.parallel_tool_calls
+        self._max_iterations: int | None = opts.max_iterations
+        self._stop_after_tool_round = opts.stop_after_tool_round
+        self._recall = getattr(opts, "recall", True)
+        self._dated = getattr(opts, "dated", False)
+        self._web_search: bool | None = opts.web_search
+        self._response_format = opts.response_format
+
+        self._listeners: set[Callable[[AgentEvent], None]] = set()
+        self._cancel_event: asyncio.Event | None = None
+        self._follow_up_queue: list[AgentMessage] = []
+        self._running_task: asyncio.Task | None = None
+
+        # TS parity: expose `agent.continue()` despite Python keyword constraints.
+        setattr(self, "continue", self.continue_from_context)
+
+    # Properties
+
+    @property
+    def session_id(self) -> str | None:
+        return self._session_id
+
+    @session_id.setter
+    def session_id(self, value: str | None) -> None:
+        self._session_id = value
+
+    @property
+    def thinking_budgets(self) -> ThinkingBudgets | None:
+        return self._thinking_budgets
+
+    @thinking_budgets.setter
+    def thinking_budgets(self, value: ThinkingBudgets | None) -> None:
+        self._thinking_budgets = value
+
+    @property
+    def transport(self) -> Transport:
+        return self._transport
+
+    def set_transport(self, value: Transport) -> None:
+        self._transport = value
+
+    @property
+    def max_retry_delay_ms(self) -> int | None:
+        return self._max_retry_delay_ms
+
+    @max_retry_delay_ms.setter
+    def max_retry_delay_ms(self, value: int | None) -> None:
+        self._max_retry_delay_ms = value
+
+    @property
+    def state(self) -> AgentState:
+        return self._state
+
+    # Subscriptions
+
+    def subscribe(self, fn: Callable[[AgentEvent], None]) -> Callable[[], None]:
+        """Subscribe to agent events. Returns unsubscribe function."""
+        self._listeners.add(fn)
+        return lambda: self._listeners.discard(fn)
+
+    def _emit(self, event: AgentEvent) -> None:
+        for listener in list(self._listeners):
+            listener(event)
+
+    # State mutators
+
+    def set_system_prompt(self, v: str) -> None:
+        self._state.system_prompt = v
+
+    def set_model(self, m: Model) -> None:
+        self._state.model = m
+
+    def set_thinking_level(self, level: ThinkingLevel) -> None:
+        self._state.thinking_level = level
+
+    def set_follow_up_mode(self, mode: str) -> None:
+        self._follow_up_mode = mode
+
+    def get_follow_up_mode(self) -> str:
+        return self._follow_up_mode
+
+    def set_tools(self, tools: list[AgentTool]) -> None:
+        self._state.tools = tools
+
+    def replace_messages(self, messages: list[AgentMessage]) -> None:
+        self._state.messages = list(messages)
+
+    def append_message(self, message: AgentMessage) -> None:
+        self._state.messages = [*self._state.messages, message]
+
+    def clear_messages(self) -> None:
+        self._state.messages = []
+
+    def follow_up(self, message: AgentMessage) -> None:
+        """Queue a follow-up message to be processed after the agent finishes."""
+        self._follow_up_queue.append(message)
+
+    def clear_follow_up_queue(self) -> None:
+        self._follow_up_queue = []
+
+    def clear_all_queues(self) -> None:
+        self._follow_up_queue = []
+
+    def has_queued_messages(self) -> bool:
+        return bool(self._follow_up_queue)
+
+    async def _async_dequeue_follow_up(self) -> list[AgentMessage]:
+        return self._dequeue_follow_up_messages()
+
+    def _dequeue_follow_up_messages(self) -> list[AgentMessage]:
+        if self._follow_up_mode == "one-at-a-time":
+            if self._follow_up_queue:
+                first = self._follow_up_queue[0]
+                self._follow_up_queue = self._follow_up_queue[1:]
+                return [first]
+            return []
+        msgs = list(self._follow_up_queue)
+        self._follow_up_queue = []
+        return msgs
+
+    def abort(self) -> None:
+        """Cancel the current operation."""
+        if self._cancel_event:
+            from openprogram.runtime.execution.run_control.wakeups import set_and_fire
+            set_and_fire(self._cancel_event)
+        if self._running_task and not self._running_task.done():
+            self._running_task.cancel()
+
+    async def wait_for_idle(self) -> None:
+        """Wait until the agent is done processing."""
+        if self._running_task and not self._running_task.done():
+            try:
+                await self._running_task
+            except (asyncio.CancelledError, Exception):
+                # The running task reports its own outcome; waiting only needs it done.
+                _log.debug("running task ended with an error or cancellation", exc_info=True)
+
+    def reset(self) -> None:
+        self._state.messages = []
+        self._state.is_streaming = False
+        self._state.stream_message = None
+        self._state.pending_tool_calls = set()
+        self._state.error = None
+        self._follow_up_queue = []
+
+    # Prompt / Continue
+
+    async def prompt(
+        self,
+        input: str | AgentMessage | list[AgentMessage],
+        images: list[ImageContent] | None = None,
+    ) -> None:
+        """Send a prompt to the agent."""
+        if self._state.is_streaming:
+            raise RuntimeError(
+                "Agent is already processing a prompt. Use follow_up() to queue messages."
+            )
+
+        if not self._state.model:
+            raise RuntimeError("No model configured")
+
+        msgs: list[AgentMessage]
+
+        if isinstance(input, list):
+            msgs = input
+        elif isinstance(input, str):
+            content: list[TextContent | ImageContent] = [TextContent(type="text", text=input)]
+            if images:
+                content.extend(images)
+            msgs = [UserMessage(
+                role="user",
+                content=content,
+                timestamp=int(time.time() * 1000),
+            )]
+        else:
+            msgs = [input]
+
+        await self._run_loop(msgs)
+
+    async def continue_from_context(self) -> None:
+        """Continue from current context (for retries)."""
+        if self._state.is_streaming:
+            raise RuntimeError("Agent is already processing.")
+
+        messages = self._state.messages
+        if not messages:
+            raise RuntimeError("No messages to continue from")
+
+        last = messages[-1]
+        if hasattr(last, "role") and last.role == "assistant":
+            queued_follow = self._dequeue_follow_up_messages()
+            if queued_follow:
+                await self._run_loop(queued_follow)
+                return
+
+            raise RuntimeError("Cannot continue from message role: assistant")
+
+        await self._run_loop(None)
+
+    async def _run_loop(
+        self,
+        messages: list[AgentMessage] | None,
+    ) -> None:
+        """Run the agent loop."""
+        model = self._state.model
+        if not model:
+            raise RuntimeError("No model configured")
+
+        self._cancel_event = asyncio.Event()
+        self._state.is_streaming = True
+        self._state.stream_message = None
+        self._state.error = None
+
+        reasoning = None if self._state.thinking_level == "off" else self._state.thinking_level
+
+        context = AgentContext(
+            system_prompt=self._state.system_prompt,
+            messages=list(self._state.messages),
+            tools=self._state.tools,
+        )
+
+        config = AgentLoopConfig(
+            model=model,
+            reasoning=reasoning,
+            session_id=self._session_id,
+            transport=self._transport,
+            thinking_budgets=self._thinking_budgets,
+            max_retry_delay_ms=self._max_retry_delay_ms,
+            tool_choice=self._tool_choice,
+            parallel_tool_calls=self._parallel_tool_calls,
+            max_iterations=self._max_iterations,
+            stop_after_tool_round=self._stop_after_tool_round,
+            recall=self._recall,
+            dated=self._dated,
+            web_search=self._web_search,
+            response_format=self._response_format,
+            convert_to_llm=self._convert_to_llm,
+            transform_context=self._transform_context,
+            get_api_key=self.get_api_key,
+            on_payload=self._on_payload,
+            get_follow_up_messages=self._async_dequeue_follow_up,
+        )
+
+        partial: AgentMessage | None = None
+        ev_stream = None
+
+        try:
+            if messages is not None:
+                ev_stream = agent_loop(messages, context, config, self._cancel_event, self.stream_fn)
+            else:
+                ev_stream = agent_loop_continue(context, config, self._cancel_event, self.stream_fn)
+
+            self._running_task = asyncio.current_task()
+
+            async for event in ev_stream:
+                # Update internal state
+                if event.type == "message_start":
+                    partial = event.message
+                    self._state.stream_message = event.message
+
+                elif event.type == "message_update":
+                    partial = event.message
+                    self._state.stream_message = event.message
+
+                elif event.type == "message_end":
+                    partial = None
+                    self._state.stream_message = None
+                    self.append_message(event.message)
+
+                elif event.type == "tool_execution_start":
+                    s = set(self._state.pending_tool_calls)
+                    s.add(event.tool_call_id)
+                    self._state.pending_tool_calls = s
+
+                elif event.type == "tool_execution_end":
+                    s = set(self._state.pending_tool_calls)
+                    s.discard(event.tool_call_id)
+                    self._state.pending_tool_calls = s
+
+                elif event.type == "turn_end":
+                    if hasattr(event.message, "error_message") and event.message.error_message:
+                        self._state.error = event.message.error_message
+
+                elif event.type == "agent_end":
+                    self._state.is_streaming = False
+                    self._state.stream_message = None
+
+                self._emit(event)
+
+            # Handle remaining partial
+            if partial and hasattr(partial, "role") and partial.role == "assistant":
+                only_empty = not any(
+                    (hasattr(c, "thinking") and c.thinking.strip()) or
+                    (hasattr(c, "text") and c.text.strip()) or
+                    (hasattr(c, "name") and c.name.strip())
+                    for c in getattr(partial, "content", [])
+                )
+                if not only_empty:
+                    self.append_message(partial)
+                else:
+                    if self._cancel_event and self._cancel_event.is_set():
+                        raise RuntimeError("Request was aborted")
+
+        except asyncio.CancelledError:
+            if self._cancel_event is not None:
+                from openprogram.runtime.execution.run_control.wakeups import set_and_fire
+                set_and_fire(self._cancel_event)
+            if ev_stream is not None:
+                await ev_stream.cancel_producer()
+            raise
+        except Exception as err:
+            from openprogram.runtime.agent.engine_link import raise_if_worker_stopping
+            raise_if_worker_stopping()
+            # Structured-output negotiation and validation errors are typed
+            # caller contract failures. Preserve them so Runtime can bypass
+            # its provider retry policy instead of converting them to a generic
+            # assistant error message.
+            from openprogram.models.providers.structured_output import StructuredOutputError
+            if isinstance(err, StructuredOutputError):
+                raise
+            is_aborted = self._cancel_event.is_set() if self._cancel_event else False
+            # ``str(err)`` is empty for bare exceptions (e.g. RuntimeError()),
+            # which would surface downstream as a content-free
+            # "Agent session failed". Always carry the exception TYPE so the
+            # error_message is never empty.
+            err_text = f"{type(err).__name__}: {err}" if str(err) else type(err).__name__
+            # Structured taxonomy so surfaces above the provider layer can tell
+            # a retryable rate-limit from a fatal auth/context failure instead of
+            # just a string. See docs/design/providers/reliability/error-taxonomy-propagation.md.
+            err_reason = err_retryable = err_retry_after_s = err_cause = None
+            if not is_aborted:
+                try:
+                    from openprogram.models.providers.utils.errors import failure_cause, taxonomy_fields
+                    err_reason, err_retryable, err_retry_after_s = taxonomy_fields(err)
+                    err_cause = failure_cause(err)
+                except Exception:
+                    # Taxonomy is optional detail; the error message still carries the text.
+                    _log.debug("error taxonomy unavailable for %s", type(err).__name__, exc_info=True)
+                # A refusal the provider states outright (no credit, a spent
+                # quota, a rejected login, a plan or region it does not serve)
+                # is fully described by its reason: one warning line. Anything
+                # else is unexpected, so its traceback goes to stderr where
+                # the real cause can be recovered.
+                refusal = _provider_refusal(err_reason, err_cause)
+                if refusal:
+                    _log.warning(
+                        "provider %s refused the request (%s): %s",
+                        (err_cause or {}).get("provider") or model.provider,
+                        refusal,
+                        " ".join(err_text.split())[:300],
+                    )
+                else:
+                    import traceback as _tb
+                    import sys as _sys
+                    _tb.print_exception(type(err), err, err.__traceback__, file=_sys.stderr)
+            error_msg = AssistantMessage(
+                role="assistant",
+                content=[TextContent(type="text", text="")],
+                api=model.api,
+                provider=model.provider,
+                model=model.id,
+                usage=Usage(),
+                stop_reason="aborted" if is_aborted else "error",
+                error_message=err_text,
+                error_reason=err_reason,
+                error_retryable=(
+                    False
+                    if getattr(err, "transport_exhausted", False)
+                    else err_retryable
+                ),
+                error_retry_after_s=err_retry_after_s,
+                error_cause=err_cause,
+                error_retryable_inferred=getattr(err, "retryable", None) is None,
+                error_transport_exhausted=bool(
+                    getattr(err, "transport_exhausted", False)
+                ),
+                timestamp=int(time.time() * 1000),
+            )
+            self.append_message(error_msg)
+            self._state.error = err_text
+            self._emit(AgentEventAgentEnd(messages=[error_msg]))
+        finally:
+            self._state.is_streaming = False
+            self._state.stream_message = None
+            self._state.pending_tool_calls = set()
+            self._cancel_event = None
+            self._running_task = None

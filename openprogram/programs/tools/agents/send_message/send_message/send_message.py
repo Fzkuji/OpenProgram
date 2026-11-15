@@ -1,50 +1,54 @@
-"""send_message — the single branch-to-branch communication primitive.
+"""send_message — the one way to reach an agent that already exists.
 
-Deliver a message to an EXISTING branch → trigger that branch to run
-one turn → its reply auto-returns to the sender. ``to`` names the
-branch:
+Deliver a message to an EXISTING agent → it runs one turn → its reply
+comes back to the sender as a notice. ``to`` names the target:
 
-  * ``"sid:head"``       — deliver to an existing branch. The node names
-                           the BRANCH, not a fork point: delivery always
-                           lands on the branch's current tip, so a stale
-                           head (the branch ran more turns since) is
-                           still a valid address.
-  * ``"<branch name>"``  — address a named branch directly.
+  * ``"sid:head"``       — a branch. The node names the BRANCH, not a fork
+                           point: delivery always lands on the branch's
+                           current tip.
+  * ``"<branch name>"``  — a named branch, or a helper by its description.
+  * a conversation's id or exact title, or a saved Agent's name or id —
+                           that conversation (the always-on handoff's
+                           addressing, which this tool took over together
+                           with ``agent(to=…)``).
 
-Creating agents is the ``agent`` tool's job (spawn = ``agent(...)``,
-fork off a node = ``agent(start_from="SID:MSG_ID")``); send_message only
-talks to branches that already exist.
+Every message is a tracked Job (``dispatch.py``) with an
+``execution_id``; a busy target queues it and is never interrupted. The
+chain limits are ``depth.py``'s: 4 hops and 20 sends per conversation per
+hour, no approval between agents.
 
-Delivery is always asynchronous: the call returns immediately with a
-delivery id; the target runs in the background and its reply comes back
-to the sender automatically (the task runner's followup).
+Creating agents is the ``agent`` tool's job.
 
-Design: docs/reference/design/runtime/agent-collaboration.md. This
-module is the entry point: the @function binding plus the main delivery
-flow. Concern-specific pieces live alongside: ``prompt.py`` (LLM-facing
-description), ``addressing.py`` (`to` parsing + branch-name lookup),
-``delivery.py`` (receipt header, busy-target inbox),
-``depth.py`` (the chain's spawn / message budgets).
+Design: docs/reference/design/runtime/collaboration/agent-collaboration.html.
 """
 from __future__ import annotations
 
-from openprogram.programs._runtime import function
-from openprogram.programs.tools.agents.send_message.shared import _emit_branch_ui
+import logging
+
+from openprogram.programs._host.runtime import function
 
 from .addressing import (
+    AddressRefused,
     _parse_to,
+    resolve_conversation,
     resolve_existing_target,
 )
-from .delivery import (
-    enqueue_for_busy_target,
-    sender_header,
-)
+from .delivery import target_label
 from .depth import (
+    claim_send,
+    closes_cycle,
+    current_chain_ancestors,
     current_chain_generations,
     current_chain_messages,
+    hops_left,
+    max_hops,
     max_messages,
+    max_sends_per_hour,
+    release_send,
 )
 from .prompt import DESCRIPTION
+
+_log = logging.getLogger(__name__)
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
@@ -57,19 +61,21 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     valid parent anchor, which is what callers actually need. This is
     what fixes the "no active parent turn" the model sometimes hit."""
     try:
-        from openprogram.agent.run_control import _current_session_id
+        from openprogram.runtime.execution.run_control.binding import (
+            _current_session_id,
+        )
         sid = _current_session_id.get(None)
     except Exception:
         sid = None
     try:
-        from openprogram.store import _current_turn_id
+        from openprogram.state.store import _current_turn_id
         aid = _current_turn_id.get()
     except Exception:
         aid = None
     agent_id = None
     if sid:
         try:
-            from openprogram.agent.session_db import default_db
+            from openprogram.runtime.context.session_db import default_db
             sess = default_db().get_session(sid) or {}
             agent_id = sess.get("agent_id")
             if not aid:
@@ -80,15 +86,44 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     return sid, aid, agent_id
 
 
+def _resolve_target(to: str, sid: str) -> tuple[str, object]:
+    """``to`` as a branch (``SID:HEAD``, a branch or helper name), else as a
+    conversation (its id or exact title), else as a saved Agent's name or
+    id, which reaches that Agent's one conversation."""
+    status, payload = resolve_existing_target(to, sid)
+    if status == "ok":
+        return status, payload
+    try:
+        target = resolve_conversation(sid, to)
+    except AddressRefused as exc:
+        return "error", (f"{payload} As a conversation or Agent: {exc} To start a "
+                         "saved Agent that has no conversation, use agent(agent=…).")
+    except Exception:  # noqa: BLE001 — an unreadable store leaves the branch answer
+        _log.debug("conversation addressing failed for %r", to, exc_info=True)
+        return "error", payload
+    head = target.get("head_id")
+    if not head:
+        # A title match comes from a listing row, which may not carry the head.
+        try:
+            from openprogram.runtime.context.session_db import default_db
+            head = (default_db().get_session(target.get("id")) or {}).get("head_id")
+        except Exception:  # noqa: BLE001
+            head = None
+    if not head:
+        # A conversation nobody has written in yet: the message is its
+        # first turn (the always-on hand-off reached these too).
+        return "ok", (str(target["id"]), "")
+    return resolve_existing_target(f"{target['id']}:{head}", sid)
+
+
 def _send_message_impl(
     message: str,
     to: str = "",
     agent_id: str = "",
+    notify_when_idle: bool = False,
 ) -> str:
     """Implementation body, pulled out of the @function binding so tests
     can drive it with their own ContextVars."""
-    from openprogram.events import emit_safe
-
     sid, aid, parent_agent = _resolve_parent()
     if not sid or not aid:
         return (
@@ -96,126 +131,110 @@ def _send_message_impl(
             "from inside an assistant turn (the dispatcher sets the session "
             "+ turn ContextVars on entry)."
         )
-    from openprogram.agent.authority import authority_from_message
+    from openprogram.runtime.permissions import refusal
+    from openprogram.runtime.permissions.authority import authority_from_message
     caller_authority = authority_from_message(sid, aid)
 
-    # Message-budget guard (§5.1): refuse deliveries once the chain has
-    # spent its messages, so A↔B / runaway recursion can't blow up. The
-    # reply-followup inherits the same count, so back-and-forth also
-    # counts toward it. 0 = no limit.
-    # A message creates no agent, so the generation count travels
-    # through untouched — only the message count moves.
+    # Chain budget: the older message budget when someone set it, and the
+    # hop limit (4) taken over from handoff. A message creates no agent, so
+    # the generation count travels through untouched.
     messages = current_chain_messages()
     generations = current_chain_generations()
     limit = max_messages()
     if limit and messages >= limit:
-        return (
-            f"[send_message refused] this chain has passed {messages} "
-            f"messages, the maximum ({limit}). Finish the work here "
-            "instead of delegating further."
-        )
+        raise refusal.agent_budget("send_message", "messages", limit,
+                                   "finish the work here instead of delegating further")
+    if not hops_left():
+        raise refusal.agent_budget("send_message", "hops", max_hops(),
+                                   "finish the work here and answer with what you have")
 
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
     kind, _, _ = _parse_to(to)
     if kind == "spawn_syntax":
         return (
             f"[send_message error] to={to!r} is not a valid target — "
-            "send_message only talks to EXISTING branches. To create a "
-            "new agent, use the `agent` tool (fork off a node with "
-            "agent(start_from=\"SID:MSG_ID\"))."
+            "send_message only talks to EXISTING agents. To create a "
+            "new agent, use the `agent` tool."
         )
     if not (to or "").strip():
         return (
-            "[send_message error] `to` is required — pass a SID:HEAD "
-            "address or a branch name (see list_agents)."
+            "[send_message error] `to` is required — an agent's name, a "
+            "conversation's title or id, or a SID:HEAD address (see list_agents)."
         )
 
-    # Resolve the target: deliver onto an existing branch = run one more
-    # turn off its head (the branch "continues" with the message).
-    # Resolution (SID:HEAD → current tip, or branch name lookup) is the
-    # shared resolver — the agent tool's to= dispatch uses the same one.
-    # It normalizes stale heads onto the branch tip BEFORE the
+    # Resolution normalizes stale heads onto the branch tip BEFORE the
     # self-target guard below, so an old head of the sender's own chain
     # still trips the loop check.
-    status, payload = resolve_existing_target(to, sid)
+    status, payload = _resolve_target(to.strip(), sid)
     if status != "ok":
         return f"[send_message error] {payload}"
     run_session, branch_from = payload  # type: ignore[misc]
-    # Self-target guard: messaging your own current turn is a direct loop.
     if run_session == sid and branch_from == aid:
         return (
             "[send_message refused] target is your own current turn — "
-            "that's a direct loop. Pick a different branch, or use the "
-            "`agent` tool to spawn a new one."
+            "that's a direct loop. Pick a different agent, or use the "
+            "`agent` tool to start a new one."
         )
-
-    # Every delivery carries a sender-receipt header so the receiver
-    # knows who sent it and that replying is optional.
-    delivery_body = message
-    delivery_message = sender_header(sid, aid) + delivery_body
-
-    # Busy target → inbox (design §5.4). Only cross-session sends can
-    # race another turn: a same-session send runs inside the sender's
-    # own turn, which is the very token is_turn_running would see.
-    if run_session != sid:
-        queued = enqueue_for_busy_target(
-            run_session,
-            branch_from,
-            delivery_body,
-            sender_session_id=sid,
-            sender_msg_id=aid,
-            sender_agent_id=parent_agent,
-            agent_id=chosen_agent,
-            chain_messages=messages,
-            chain_generations=generations,
-            authority=caller_authority,
+    if run_session != sid and closes_cycle(run_session, branch_from):
+        # A→B→A: the conversation is already waiting on this chain, and
+        # its answer reaches it on its own (the hand-off's cycle rule).
+        return (
+            f"[send_message refused] {to!r} is already waiting on this chain of "
+            "messages; your final reply goes back to it on its own. Answer "
+            "there instead of sending it a new message."
         )
-        if queued is not None:
-            return queued
+    if run_session != sid and not (agent_id or "").strip():
+        # Another conversation answers as its own Agent, as a handoff did.
+        try:
+            from openprogram.runtime.context.session_db import default_db
+            chosen_agent = (default_db().get_session(run_session) or {}).get("agent_id") or chosen_agent
+        except Exception:
+            pass
 
-    emit_safe(
-        "branch.message_sent",
-        "agent",
-        {
-            "from": f"{sid}:{aid}",
-            "to": f"{run_session}:{branch_from}",
-        },
+    # A watch, not a message: one notice when the target goes idle.
+    if notify_when_idle and not (message or "").strip():
+        return _watch(sid, aid, parent_agent or chosen_agent, run_session, branch_from,
+                      messages, generations, caller_authority)
+
+    if not claim_send(sid):
+        raise refusal.agent_budget("send_message", "sends this hour", max_sends_per_hour(),
+                                   "wait, or finish the work here")
+    from .dispatch import deliver
+    # Who waits on the message from here on: this chain's waiters and,
+    # across conversations, this one.
+    ancestors = [*current_chain_ancestors()]
+    if run_session != sid and sid not in ancestors:
+        ancestors.append(sid)
+    out = deliver(
+        message=message, sid=sid, aid=aid, parent_agent=parent_agent,
+        chosen_agent=chosen_agent, run_session=run_session, target_tip=branch_from,
+        caller_authority=caller_authority, messages=messages, generations=generations,
+        ancestors=ancestors,
     )
-    # Also push a UI frame so the sender's session shows a "message sent"
-    # line in its chat stream (front-end useWS handles `branch_message`).
-    _emit_branch_ui(sid, "sent", f"{run_session}:{branch_from}", message)
+    if out.startswith("[send_message error]") or out.startswith("[send_message] duplicate"):
+        release_send(sid)
+    return out
 
-    # Submit to the task runner. It runs the target branch on a worker
-    # thread, writes the attach pointer, and dispatches a followup back
-    # to THIS session when done — that followup IS the auto-return of
-    # the reply to the sender.
-    try:
-        from openprogram.agent.sub_agent_run import run_agent_turn_async
-        job_id = run_agent_turn_async(
-            session_id=run_session,
-            prompt=delivery_message,
-            agent_id=chosen_agent,
-            branch_from=branch_from,
-            context_mode="inherit",
-            label=message[:60],  # Stage-1 placeholder name (Stage-2 LLM refines later)
-            subject=message[:60],
-            description=delivery_message,
-            caller_msg_id=aid,
-            caller_session_id=sid,  # reply returns to the sender
-            creates_agent=False,
-            chain_messages=messages + 1,  # target runs at count+1 (loop guard)
-            # No agent is created, so the target and the reply turn both
-            # run at the generation count this send was made at.
-            chain_generations=generations,
-            caller_chain_generations=generations,
-            authority=caller_authority,
-        )
-    except Exception as e:  # noqa: BLE001
-        return f"[send_message error] {type(e).__name__}: {e}"
+
+def _watch(sid, aid, agent_id, run_session, branch_from, messages, generations, authority) -> str:
+    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.jobs import notices
+    address = f"{run_session}:{branch_from}"
+    if not inbox.target_busy(run_session, branch_from, sid):
+        reply = notices.tip_reply(run_session, branch_from) or "(no text)"
+        # The sender has this reply now; a notice for the job that wrote it
+        # would only repeat it.
+        notices.consume_reply(sid, run_session, branch_from)
+        return f"[idle] {address} is not running anything. Its latest reply:\n{reply}"
+    if not notices.watch(
+        sender_session_id=sid, target_session_id=run_session, target_head_id=branch_from,
+        label=target_label(run_session, branch_from, sid), agent_id=agent_id, chain_messages=messages,
+        chain_generations=generations, authority=authority,
+    ):
+        return "[send_message error] this session cannot hold a watch"
     return (
-        f"[delivered, running async] delivery_id={job_id}\n"
-        "The target branch is running; its reply will come back to you "
-        "automatically when it finishes. You are not blocked — continue."
+        f"[watching] {address} is busy. You will get one notice with its "
+        "latest reply when it goes idle. You are not blocked — continue."
     )
 
 
@@ -225,14 +244,25 @@ def _send_message_impl(
     toolset=["core"],
 )
 def send_message(
-    message: str,
     to: str,
-    agent_id: str = "",
+    message: str = "",
+    notify_when_idle: bool = False,
 ) -> str:
-    """Deliver a message to an existing branch; its reply comes back
-    to the sender automatically when the target finishes."""
+    """Send a message to an existing agent; its reply comes back to the
+    sender automatically when the target finishes.
+
+    Args:
+        to: Who to reach: a saved Agent's name (reaches its conversation),
+            a conversation's title or id, a helper's name, or a SID:HEAD
+            address from list_agents.
+        message: What to tell the target. Leave it empty together with
+            ``notify_when_idle`` to only watch the target.
+        notify_when_idle: With an empty message, send nothing and get
+            one notice carrying the target's latest reply when it next
+            goes idle (it answers at once if the target is idle now).
+    """
     return _send_message_impl(
         message=message,
         to=to,
-        agent_id=agent_id,
+        notify_when_idle=notify_when_idle,
     )

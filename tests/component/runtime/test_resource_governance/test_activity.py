@@ -1,11 +1,11 @@
 """governance activity tests."""
 from __future__ import annotations
+from openprogram.runtime.jobs.resource_governance import build_job_resource_view
 from ._support import (
     Job,
     ResourceGovernor,
     ResourceLimits,
     UsageLedger,
-    build_job_resource_view,
     pytest,
     resolve_resource_limits,
 )
@@ -22,18 +22,14 @@ def test_time_limits_start_at_live_claim_and_exclude_queue_wait(tmp_path) -> Non
         Job(id="timed", parent_session_id="s1", prompt="timed", agent_id="a"),
         persist=lambda _job: None,
     )
-    queued = ledger.connection().execute(
-        "SELECT started_at, last_activity_at FROM job_admissions WHERE job_id = 'timed'"
-    ).fetchone()
+    queued = ledger.run_tables().handle.first("job_admissions", job_id="timed")
 
-    assert tuple(queued) == (None, None)
+    assert (queued["started_at"], queued["last_activity_at"]) == (None, None)
     assert governor.job_time_limits("timed") == (10, 4)
-    claim = governor.claim_next(owner_instance_id="worker")
-    live = ledger.connection().execute(
-        "SELECT started_at, last_activity_at FROM job_admissions WHERE job_id = 'timed'"
-    ).fetchone()
-    assert live[0] is not None
-    assert live[1] == live[0]
+    governor.claim_next(owner_instance_id="worker")
+    live = ledger.run_tables().handle.first("job_admissions", job_id="timed")
+    assert live["started_at"] is not None
+    assert live["last_activity_at"] == live["started_at"]
 
 
 
@@ -114,11 +110,12 @@ def test_meaningful_activity_is_owner_fenced_and_keepalive_is_ignored(
         persist=lambda _job: None,
     )
     claim = governor.claim_next(owner_instance_id="worker")
-    before = ledger.connection().execute(
-        "SELECT last_activity_at FROM job_admissions WHERE job_id = 'timed'"
-    ).fetchone()[0]
+    before = ledger.run_tables().handle.first(
+        "job_admissions",
+        job_id="timed",
+    )["last_activity_at"]
     monkeypatch.setattr(
-        "openprogram.agent.resource_governance.governor.time.time", lambda: before + 5,
+        "openprogram.runtime.jobs.resource_governance.governor.time.time", lambda: before + 5,
     )
 
     assert governor.record_activity(
@@ -136,9 +133,10 @@ def test_meaningful_activity_is_owner_fenced_and_keepalive_is_ignored(
         lease_generation=claim.lease_generation,
         activity_kind="tool_progress",
     ) is True
-    after = ledger.connection().execute(
-        "SELECT last_activity_at FROM job_admissions WHERE job_id = 'timed'"
-    ).fetchone()[0]
+    after = ledger.run_tables().handle.first(
+        "job_admissions",
+        job_id="timed",
+    )["last_activity_at"]
     assert after == before + 5
 
 
@@ -159,7 +157,7 @@ def test_child_progress_updates_live_parent_activity(tmp_path, monkeypatch) -> N
     governor.claim_next(owner_instance_id="worker")
     child_claim = governor.claim_next(owner_instance_id="worker")
     monkeypatch.setattr(
-        "openprogram.agent.resource_governance.governor.time.time", lambda: 1234.5,
+        "openprogram.runtime.jobs.resource_governance.governor.time.time", lambda: 1234.5,
     )
 
     assert governor.record_activity(
@@ -167,9 +165,7 @@ def test_child_progress_updates_live_parent_activity(tmp_path, monkeypatch) -> N
         lease_generation=child_claim.lease_generation,
         activity_kind="child_progress",
     ) is True
-    rows = ledger.connection().execute(
-        "SELECT job_id, last_activity_at FROM job_admissions ORDER BY job_id"
-    ).fetchall()
+    rows = ledger.run_tables().handle.rows("job_admissions", order="job_id")
     assert [(row["job_id"], row["last_activity_at"]) for row in rows] == [
         ("child", 1234.5), ("parent", 1234.5),
     ]

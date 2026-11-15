@@ -1,0 +1,194 @@
+<title>OpenClaw</title>
+<meta name="description" content="在 OpenClaw 里把 Agentic Programming 用作技能、库或 MCP 工具提供方。">
+<h1>OpenClaw</h1>
+<table class="stack">
+<thead><tr><th scope="col">OpenClaw</th><th scope="col">Agentic Programming</th></tr></thead>
+<tbody>
+<tr><th scope="row">编排 agent、管理会话、路由消息</th><td>让单个函数能够思考，模型在循环内</td></tr>
+</tbody></table>
+<p class="note">OpenClaw 的技能可以在内部使用 agentic 函数。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">没有 Agentic Programming</th><th scope="col">有它</th></tr></thead>
+<tbody>
+<tr><th scope="row">所有推理在一次模型调用里</th><td>拆成专注的函数调用</td></tr>
+<tr><th scope="row">上下文无限增长</th><td>结构化 DAG，按函数限定范围</td></tr>
+<tr><th scope="row">难以知道 agent 想了什么</th><td>每次调用是会话 DAG 节点，可在 Web UI 或会话文件里查看</td></tr>
+<tr><th scope="row">重试整个 agent 轮次</th><td>只重试失败的函数</td></tr>
+</tbody></table>
+<h2 id="setup">准备</h2>
+<pre translate="no" tabindex="0"><code># 在 OpenClaw 工作区
+cd ~/.openclaw/workspace
+
+# 克隆 OpenProgram
+git clone https://github.com/FuzzyKuji/OpenProgram.git
+
+# 准备源码环境
+cd OpenProgram
+uv sync --locked</code></pre>
+<h2 id="usage-pattern-1">在技能里</h2>
+<pre data-claim="example" translate="no" tabindex="0"><code>~/.openclaw/workspace/skills/my-agentic-skill/
+├── SKILL.md
+└── scripts/
+    └── analyze.py</code></pre>
+<pre translate="no" tabindex="0"><code>#!/usr/bin/env python3
+"""
+使用 Agentic Programming 的 OpenClaw skill 脚本。
+Agent 通过 exec 工具调用。
+"""
+import sys
+import os
+
+# 把源码 checkout 加入脚本 path
+sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/OpenProgram"))
+
+from openprogram import Agent
+from openprogram.runtime.agent import llm
+from openprogram.runtime.agent.runtime.factory import create_runtime
+
+class ExampleAgent(Agent):
+    method_options = {
+        'decompose': {'tool': True},
+        'assess': {'tool': True},
+        'plan': {'tool': True},
+    }
+
+    def decompose(self, task):
+        """把复杂任务拆解成可执行的步骤。"""
+        return llm([
+            {"type": "text", "text": f"把这个任务拆解成 3-5 个具体、可执行的步骤：\n{task}\n\n编号，要具体。"},
+        ])
+
+    def assess(self, step):
+        """评估一个步骤的难度和时间。"""
+        return llm([
+            {"type": "text", "text": f"对这个步骤给出：难度（简单/中等/困难）和时间估计。\n格式：[难度] ~X小时\n\n步骤：{step}"},
+        ])
+
+    def plan(self, task):
+        """为任务创建详细计划。"""
+        steps_text = self.decompose(task=task)
+
+        lines = [l.strip() for l in steps_text.split("\n") if l.strip() and l.strip()[0].isdigit()]
+        assessments = []
+        for line in lines[:5]:
+            a = self.assess(step=line)
+            assessments.append(f"{line}\n   → {a}")
+
+        return "\n\n".join(assessments)
+
+_example_agent = ExampleAgent(runtime=create_runtime(provider="anthropic", model="claude-haiku-4-5"))
+decompose = _example_agent.decompose
+assess = _example_agent.assess
+plan = _example_agent.plan
+
+
+if __name__ == "__main__":
+    task = " ".join(sys.argv[1:]) if len(sys.argv) &gt; 1 else "构建一个带认证的 REST API"
+    result = plan(task=task)
+    print(result)</code></pre>
+<pre translate="no" tabindex="0"><code>---
+name: my-agentic-skill
+description: Plan and decompose tasks using Agentic Programming with automatic context tracking.
+---
+
+# my-agentic-skill
+
+当用户要求规划、分解或拆解任务时，运行：
+
+\`\`\`bash
+uv run --project ~/.openclaw/workspace/OpenProgram python \
+  ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py \
+  "任务描述"
+\`\`\`</code></pre>
+<p class="note">依次是目录、<code translate="no" data-claim="example">scripts/analyze.py</code>、<code translate="no">SKILL.md</code>。OpenClaw 要求 front matter，agent 按 <code translate="no">name</code> 和 <code translate="no">description</code> 匹配。命令使用检出目录的锁定环境；系统 Python 没有 OpenProgram 的依赖。</p>
+<p class="note">两个产品都用兼容 AgentSkills 的 <code translate="no">SKILL.md</code>，用户、项目或插件技能可以共用。</p>
+<details>
+<summary>作为 Agent 脚本里的 Python 库</summary>
+<pre translate="no" tabindex="0"><code>"""
+OpenClaw agent 调用的代码审查脚本。
+"""
+from openprogram import Agent
+from openprogram.runtime.agent import llm
+from openprogram.runtime.agent.runtime.factory import create_runtime
+
+class ExampleAgent(Agent):
+    method_options = {
+        'review_code': {'tool': True},
+        'suggest_tests': {'tool': True},
+        'code_analysis': {'tool': True},
+    }
+
+    def review_code(self, code, language="python"):
+        """审查代码的 bug、风格问题和改进建议。"""
+        return llm([
+            {"type": "text", "text": f"审查这段 {language} 代码。列出：\n1. Bug（如果有）\n2. 风格问题\n3. 改进建议\n\n```{language}\n{code}\n```"},
+        ])
+
+    def suggest_tests(self, code):
+        """为代码建议测试用例。"""
+        return llm([
+            {"type": "text", "text": f"为这段代码建议 3 个测试用例。每个给出：测试名称、输入、期望输出。\n\n```python\n{code}\n```"},
+        ])
+
+    def code_analysis(self, code):
+        """完整代码分析：审查 + 测试建议。"""
+        review = self.review_code(code=code)
+        tests = self.suggest_tests(code=code)
+        return f"## 代码审查\n{review}\n\n## 建议测试\n{tests}"
+
+_example_agent = ExampleAgent(runtime=create_runtime(provider="anthropic", model="claude-haiku-4-5"))
+review_code = _example_agent.review_code
+suggest_tests = _example_agent.suggest_tests
+code_analysis = _example_agent.code_analysis</code></pre>
+</details>
+<details>
+<summary>作为 MCP 工具包装</summary>
+<pre translate="no" tabindex="0"><code>#!/usr/bin/env python3
+"""
+MCP 兼容的 tool server，暴露 agentic function。
+"""
+import json
+import sys
+
+from openprogram import Agent
+from openprogram.runtime.agent import llm
+from openprogram.runtime.agent.runtime.factory import create_runtime
+
+class ExampleAgent(Agent):
+    method_options = {
+        'summarize_notes': {'tool': True},
+    }
+
+    def summarize_notes(self, text, style="bullet_points"):
+        """按指定风格总结文本。"""
+        style_instructions = {
+            "bullet_points": "用 3-5 个要点总结。",
+            "one_paragraph": "用一段话总结。",
+            "eli5": "用 5 岁小孩能听懂的话解释。",
+        }
+        instruction = style_instructions.get(style, style_instructions["bullet_points"])
+
+        return llm([
+            {"type": "text", "text": f"{instruction}\n\n文本：\n{text}"},
+        ])
+
+_example_agent = ExampleAgent(runtime=create_runtime(provider="anthropic", model="claude-haiku-4-5"))
+summarize_notes = _example_agent.summarize_notes
+
+
+if __name__ == "__main__":
+    request = json.loads(sys.stdin.read())
+    tool = request.get("tool")
+    args = request.get("args", {})
+
+    if tool == "summarize":
+        result = summarize_notes(**args)
+        print(json.dumps({"result": result}))
+    else:
+        print(json.dumps({"error": f"未知工具: {tool}"}))</code></pre>
+</details>
+<h2 id="tips">提示</h2>
+<ul>
+<li>用 Web UI 或 <code translate="no">openprogram sessions list</code> 找到会话，查看执行记录。</li>
+<li>每个 <code translate="no">Agent</code> 方法只做一件事，让 Python 组合它们。</li>
+</ul>

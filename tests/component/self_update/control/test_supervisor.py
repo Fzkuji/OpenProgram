@@ -13,9 +13,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
-from openprogram.self_update.control.supervisor import Artifact
-from openprogram.self_update.control.supervisor import run_supervisor
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
+from openprogram.operations.self_update.control.supervisor import Artifact
+from openprogram.operations.self_update.control.supervisor import run_supervisor
 
 
 def _staging(root: Path, *, timeout_seconds: int = 1800) -> SelfUpdateStore:
@@ -38,7 +38,7 @@ def _staging(root: Path, *, timeout_seconds: int = 1800) -> SelfUpdateStore:
             timeout_seconds=timeout_seconds,
         )
     )
-    store.transition("su_supervisor", UpdatePhase.STAGING)
+    store.transition("su_supervisor", UpdatePhase.BUILDING)
     return store
 
 
@@ -52,8 +52,8 @@ def _installer(root: Path) -> str:
 def test_build_failure_aborts_before_maintenance_or_activation(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from openprogram import paths
-    from openprogram.self_update.control import supervisor
+    from openprogram.state import paths
+    from openprogram.operations.self_update.control import supervisor
 
     profile = tmp_path / "profile"
     root = profile / "self-updates"
@@ -85,8 +85,8 @@ def test_build_failure_aborts_before_maintenance_or_activation(
 def test_success_persists_transaction_before_verifying(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from openprogram import paths
-    from openprogram.self_update.control import supervisor
+    from openprogram.state import paths
+    from openprogram.operations.self_update.control import supervisor
 
     profile = tmp_path / "profile"
     root = profile / "self-updates"
@@ -110,7 +110,7 @@ def test_success_persists_transaction_before_verifying(
         return str(transaction)
     monkeypatch.setattr(supervisor, "_activate", activate)
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
-    monkeypatch.setattr("openprogram.self_update.verification.system_probe.probe_current_system",
+    monkeypatch.setattr("openprogram.operations.self_update.verification.system_probe.probe_current_system",
                         lambda *_: {"candidate_sha": "3" * 40})
     gate = {"worker_pid": os.getpid(), "receipt": "real-probe-boundary"}
     observations = []
@@ -119,7 +119,7 @@ def test_success_persists_transaction_before_verifying(
         assert record.state.detail["transaction_dir"] == str(transaction)
         observations.append(record.request.candidate_sha)
         return gate
-    monkeypatch.setattr("openprogram.self_update.verification.system_probe.probe_system", probe)
+    monkeypatch.setattr("openprogram.operations.self_update.verification.system_probe.probe_system", probe)
     monkeypatch.setattr(supervisor, "_finish_verification", lambda *_: 0)  # Isolate gate publication.
 
     assert run_supervisor(
@@ -137,8 +137,8 @@ def test_success_persists_transaction_before_verifying(
 def test_quiescence_timeout_aborts_without_activation(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from openprogram import paths
-    from openprogram.self_update.control import supervisor
+    from openprogram.state import paths
+    from openprogram.operations.self_update.control import supervisor
 
     profile = tmp_path / "profile"
     root = profile / "self-updates"
@@ -173,9 +173,9 @@ def test_quiescence_timeout_aborts_without_activation(
     (stage, restore) for stage in ("activate", "system") for restore in ("ok", "installer_failed", "probe_failed")
 ] + [("preflight", "ok"), ("expired", "ok")])
 def test_activation_failure_restores_before_reporting_rollback(tmp_path, monkeypatch, failed_stage, restoration):
-    from openprogram import paths
-    from openprogram.self_update.control import supervisor
-    from openprogram.self_update.verification import system_probe
+    from openprogram.state import paths
+    from openprogram.operations.self_update.control import supervisor
+    from openprogram.operations.self_update.verification import system_probe
 
     profile = tmp_path / "profile"
     store = _staging(profile / "self-updates", timeout_seconds=1 if failed_stage == "expired" else 1800)
@@ -243,9 +243,9 @@ def test_activation_failure_restores_before_reporting_rollback(tmp_path, monkeyp
 
 
 def test_quiescence_waits_without_cancelling_sessions_or_jobs(monkeypatch) -> None:
-    from openprogram.agent.job import store as job_store
-    from openprogram.self_update.control import supervisor
-    from openprogram import store as session_store
+    from openprogram.runtime.jobs import store as job_store
+    from openprogram.operations.self_update.control import supervisor
+    from openprogram.state import store as session_store
 
     from types import SimpleNamespace
     polls = 0
@@ -271,8 +271,8 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from openprogram.programs.tools.system import self_update as tool_module
-    from openprogram.self_update.control import supervisor
-    from openprogram.worktree import manager
+    from openprogram.operations.self_update.control import supervisor
+    from openprogram.state.worktree import manager
 
     root = tmp_path / "profile" / "self-updates"
     store = _staging(root)
@@ -311,7 +311,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     )
     calls: list[dict] = []
     signing_order = []
-    from openprogram.self_update.delivery import local_signing
+    from openprogram.operations.self_update.delivery import local_signing
     monkeypatch.setattr(local_signing, "prepare_app",
                         lambda app: signing_order.append(("prepare", app)))
 
@@ -333,7 +333,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
 
     monkeypatch.setattr(supervisor.subprocess, "run", run)
     monkeypatch.setattr(
-        "openprogram.self_update.delivery.controller_bundle.build_inputs",
+        "openprogram.operations.self_update.delivery.controller_bundle.build_inputs",
         lambda *_args, **_kwargs: nullcontext(
             {
                 "UV_OFFLINE": "1",
@@ -397,8 +397,39 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
 
 
 @pytest.mark.macos
+def test_candidate_sandbox_reads_a_worktree_under_the_protected_state_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.operations.self_update.control import supervisor
+
+    sandbox = Path("/usr/bin/sandbox-exec")
+    if not sandbox.is_file():
+        pytest.skip("requires macOS sandbox-exec")
+    home = tmp_path / "home"
+    state = home / ".openprogram"
+    candidate = state / "worktrees" / "wt_1-candidate"
+    update = state / "self-updates" / "su_1"
+    artifact, build_home, build_tmp = (update / name for name in ("artifact", "build-home", "build-tmp"))
+    for directory in (candidate, artifact, build_home, build_tmp):
+        directory.mkdir(parents=True)
+    (candidate / "build.sh").write_text("pwd; cat entry.txt\n")
+    (candidate / "entry.txt").write_text("candidate source\n")
+    (state / "secret.json").write_text("owner state")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    prefix = [str(sandbox), "-p", supervisor._sandbox_profile(candidate, artifact, build_home, build_tmp)]
+    environment = {"PATH": "/usr/bin:/bin", "HOME": str(build_home), "TMPDIR": str(build_tmp)}
+    build = subprocess.run([*prefix, "/bin/bash", str(candidate / "build.sh")], cwd=candidate,
+                           env=environment, capture_output=True, text=True, timeout=10)
+    assert build.returncode == 0, build.stderr
+    assert build.stdout.splitlines() == [str(candidate.resolve()), "candidate source"]
+    secret = subprocess.run([*prefix, "/bin/cat", str(state / "secret.json")], env=environment,
+                            capture_output=True, text=True, timeout=10)
+    assert secret.returncode != 0 and "owner state" not in secret.stdout
+
+
+@pytest.mark.macos
 def test_candidate_sandbox_reads_platform_without_allowing_external_writes(tmp_path: Path) -> None:
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     sandbox = Path("/usr/bin/sandbox-exec")
     if not sandbox.is_file():
@@ -468,7 +499,7 @@ def test_candidate_sandbox_reads_platform_without_allowing_external_writes(tmp_p
 
 @pytest.mark.macos
 def test_candidate_sandbox_cannot_mutate_saved_controller_runtime(tmp_path: Path) -> None:
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     sandbox = Path("/usr/bin/sandbox-exec")
     if not sandbox.is_file():
@@ -518,7 +549,7 @@ def test_candidate_sandbox_cannot_mutate_saved_controller_runtime(tmp_path: Path
 def test_candidate_sandbox_reads_but_cannot_modify_trusted_inputs_under_state_home(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     sandbox = Path("/usr/bin/sandbox-exec")
     if not sandbox.is_file():
@@ -594,7 +625,7 @@ def test_candidate_sandbox_reads_but_cannot_modify_trusted_inputs_under_state_ho
 
 @pytest.mark.macos
 def test_candidate_sandbox_cannot_read_installed_app(tmp_path: Path) -> None:
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     sandbox = Path("/usr/bin/sandbox-exec")
     installed_app = Path("/Applications/OpenProgram.app")
@@ -639,7 +670,7 @@ def test_candidate_sandbox_cannot_read_installed_app(tmp_path: Path) -> None:
 
 
 def test_artifact_digest_rejects_symlink_outside_bundle(tmp_path: Path) -> None:
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     app = tmp_path / "OpenProgram.app"
     app.mkdir()
@@ -652,7 +683,7 @@ def test_artifact_digest_rejects_symlink_outside_bundle(tmp_path: Path) -> None:
 
 
 def test_controller_lock_does_not_follow_symlink(tmp_path: Path) -> None:
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     outside = tmp_path / "outside"
     outside.write_text("unchanged", encoding="utf-8")
@@ -665,7 +696,7 @@ def test_controller_lock_does_not_follow_symlink(tmp_path: Path) -> None:
 
 
 def test_supervisor_rejects_update_id_before_using_path(tmp_path, monkeypatch) -> None:
-    from openprogram import paths
+    from openprogram.state import paths
 
     profile = tmp_path / "profile"
     root = profile / "self-updates"
@@ -680,7 +711,7 @@ def test_supervisor_rejects_update_id_before_using_path(tmp_path, monkeypatch) -
 
 
 def test_supervisor_rejects_symlink_update_directory(tmp_path, monkeypatch) -> None:
-    from openprogram import paths
+    from openprogram.state import paths
 
     profile = tmp_path / "profile"
     root = profile / "self-updates"
@@ -698,7 +729,7 @@ def test_supervisor_rejects_symlink_update_directory(tmp_path, monkeypatch) -> N
 def test_prepare_uses_hash_pinned_snapshot_and_prepare_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     update_dir = tmp_path / "su_prepare"
     app = update_dir / "artifact" / "OpenProgram.app"
@@ -737,7 +768,7 @@ def test_prepare_uses_hash_pinned_snapshot_and_prepare_mode(
 
 
 def test_prepare_rejects_missing_reopen_protocol_before_installer(tmp_path, monkeypatch):
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     update_dir = tmp_path / "su_protocol"
     app = update_dir / "artifact" / "OpenProgram.app"
@@ -755,7 +786,7 @@ def test_prepare_rejects_missing_reopen_protocol_before_installer(tmp_path, monk
 
 
 def test_prepare_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     update_dir = tmp_path / "update"
     app = update_dir / "artifact" / "OpenProgram.app"
@@ -775,7 +806,7 @@ def test_prepare_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:
 
 
 def test_activate_uses_only_the_prepared_transaction(tmp_path, monkeypatch):
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
     update_dir = tmp_path / "su_activate"
     digest = _installer_at(update_dir)
     tx = tmp_path / "transaction"
@@ -799,3 +830,142 @@ def _installer_at(update_dir: Path) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_plan(root: Path, restart: str, components: tuple[str, ...]) -> None:
+    from openprogram.operations.self_update.delivery.activation import ActivationPlan
+
+    plan = ActivationPlan("incremental", restart, components, "1" * 40, "fixture")
+    (root / "su_supervisor" / "activation.json").write_text(json.dumps(plan.to_dict()))
+
+
+@pytest.mark.parametrize("restart", ["hot", "worker"])
+def test_only_a_hot_swap_skips_maintenance_and_requests_dispatch(tmp_path, monkeypatch, restart) -> None:
+    from openprogram.state import paths
+    from openprogram.operations.self_update.control import supervisor
+
+    profile = tmp_path / "profile"
+    root = profile / "self-updates"
+    _staging(root)
+    installer_sha256 = _installer(root)
+    _write_plan(root, restart, ("web",) if restart == "hot" else ("python",))
+    app = root / "su_supervisor" / "artifact" / "OpenProgram.app"
+    app.mkdir(parents=True)
+    transaction = root / "su_supervisor" / "transaction"
+    transaction.mkdir()
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    monkeypatch.setattr(supervisor, "_build_candidate", lambda *_args: Artifact(path=app, sha256="a" * 64))
+    quiesced: list[bool] = []
+    monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_args: quiesced.append(True) or True)
+    monkeypatch.setattr(supervisor, "_prepare_install", lambda *_args: str(transaction))
+    monkeypatch.setattr(supervisor, "_prepare_reopen_activation", lambda *_: None)
+    maintenance: list[bool] = []
+    monkeypatch.setattr(supervisor, "_activate",
+                        lambda *_args: maintenance.append((root / "maintenance.json").exists()) or str(transaction))
+    monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+    monkeypatch.setattr("openprogram.operations.self_update.verification.system_probe.probe_current_system",
+                        lambda *_: {"candidate_sha": "3" * 40})
+    monkeypatch.setattr("openprogram.operations.self_update.verification.system_probe.probe_system",
+                        lambda *_: {"worker_pid": os.getpid()})
+    dispatched: list[UpdatePhase] = []
+    monkeypatch.setattr("openprogram.operations.self_update.verification.system_probe.request_dispatch",
+                        lambda record: dispatched.append(record.state.phase))
+    monkeypatch.setattr(supervisor, "_finish_verification", lambda *_: 0)
+
+    assert run_supervisor("su_supervisor", state_root=root, installer_sha256=installer_sha256) == 0
+    hot = restart == "hot"
+    assert maintenance == [not hot]
+    assert quiesced == ([] if hot else [True])
+    assert dispatched == ([UpdatePhase.VERIFYING] if hot else [])
+
+
+def test_installer_prepare_carries_the_planned_restart(tmp_path, monkeypatch) -> None:
+    from openprogram.operations.self_update.control import supervisor
+
+    update_dir = tmp_path / "su_supervisor"
+    update_dir.mkdir()
+    (update_dir / "controller").mkdir()
+    installer = update_dir / "controller" / "install-app.sh"
+    installer.write_text("#!/bin/sh\n")
+    sha = hashlib.sha256(installer.read_bytes()).hexdigest()
+    calls = []
+    monkeypatch.setattr(supervisor.subprocess, "run", lambda args, **_kwargs: calls.append(args) or
+                        subprocess.CompletedProcess(args, 0, "OPENPROGRAM_TRANSACTION_DIR=/tx\n", ""))
+    supervisor._installer_command(tmp_path / "app", update_dir, sha, "--prepare")
+    assert calls[-1][2:4] == ["--reopen-update=su_supervisor", "--prepare"]
+    plan = {"schema": 1, "scope": "incremental", "restart": "worker", "components": ["python"],
+            "installed_revision": "1" * 40, "reason": "fixture"}
+    (update_dir / "activation.json").write_text(json.dumps(plan))
+    supervisor._installer_command(tmp_path / "app", update_dir, sha, "--prepare")
+    assert calls[-1][2:5] == ["--reopen-update=su_supervisor", "--restart=worker", "--prepare"]
+    supervisor._installer_command(tmp_path / "tx", update_dir, sha, "--activate")
+    assert calls[-1][2:4] == ["--activate", str(tmp_path / "tx")]
+
+
+def test_incremental_build_clones_the_installed_app_and_runs_the_partial_entry(tmp_path, monkeypatch) -> None:
+    from openprogram.programs.tools.system import self_update as tool_module
+    from openprogram.operations.self_update.control import supervisor
+    from openprogram.operations.self_update.delivery import local_signing
+    from openprogram.operations.self_update.delivery.activation import ActivationPlan
+    from openprogram.state.worktree import manager
+
+    root = tmp_path / "profile" / "self-updates"
+    store = _staging(root)
+    record = store.load("su_supervisor")
+    candidate = tmp_path / "candidate"
+    script = candidate / "apps/desktop/scripts/package-incremental-app.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\n")
+    worktree = SimpleNamespace(source_repo=str(tmp_path), worktree_path=str(candidate),
+                               branch_name="codex/candidate", parent_session="session-1")
+    monkeypatch.setattr(manager, "get_manager", lambda: SimpleNamespace(get_worktree=lambda _id: worktree))
+    monkeypatch.setattr(tool_module, "_recorded_path", lambda value, _name: Path(value))
+    monkeypatch.setattr(tool_module, "_validate_registered_worktree", lambda *_: None)
+    monkeypatch.setattr(tool_module, "_validate_candidate_snapshot", lambda *_: None)
+    monkeypatch.setattr(supervisor, "_sandbox_executable", lambda: Path("/usr/bin/sandbox-exec"))
+    monkeypatch.setattr(local_signing, "prepare_app", lambda _app: None)
+    monkeypatch.setattr(local_signing, "sign_app", lambda _app: None)
+    plan = ActivationPlan("incremental", "hot", ("web", "docs"), "1" * 40, "fixture")
+    monkeypatch.setattr(supervisor, "_activation_plan", lambda *_: plan)
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[0] == "/bin/cp":
+            marker = Path(args[-1]) / "Contents/Resources/openprogram-source-revision"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("1" * 40 + "\n")
+        return subprocess.CompletedProcess(args, 0, "built\n", "")
+
+    monkeypatch.setattr(supervisor.subprocess, "run", run)
+    monkeypatch.setattr("openprogram.operations.self_update.delivery.controller_bundle.build_inputs",
+                        lambda *_args, **_kwargs: nullcontext({
+                            "OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST": str(tmp_path / "electron.zip")}))
+    probes = []
+    monkeypatch.setattr(supervisor, "_complete_icon_probe", lambda *_a, **_k: probes.append("icon"))
+    monkeypatch.setattr(supervisor, "_complete_browser_probe", lambda *_a, **_k: probes.append("browser"))
+    monkeypatch.setattr(supervisor, "_validate_artifact_protocols", lambda _app: probes.append("protocols"))
+
+    artifact = supervisor._build_candidate(record, root / "su_supervisor")
+    assert calls[0] == ["/bin/cp", "-cR", "/Applications/OpenProgram.app", str(artifact.path)]
+    assert calls[1][4:] == [str(script), "--app", str(artifact.path), "--components", "web,docs"]
+    assert probes == ["protocols"]
+    assert json.loads((root / "su_supervisor/activation.json").read_text()) == plan.to_dict()
+
+
+@pytest.mark.parametrize("finished", [True, False])
+def test_a_finished_supervisor_unloads_its_kept_alive_job(tmp_path, monkeypatch, finished) -> None:
+    from openprogram.operations.self_update.control import supervisor
+    from openprogram.operations.self_update.delivery import bootstrap, launcher
+
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(supervisor, "run_supervisor", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(supervisor, "_canonical_store",
+                        lambda root: SimpleNamespace(load=lambda update_id: "record"))
+    monkeypatch.setattr(bootstrap, "cleanup_bootstrap", lambda store, update_id: None)
+    monkeypatch.setattr(bootstrap, "_finished", lambda store, record: finished)
+    monkeypatch.setattr(launcher, "_launchctl", lambda *args: calls.append(args) or (0, ""))
+
+    assert supervisor.main(["--state-root", str(tmp_path), "--installer-sha256", "a" * 64, "su_done"]) == 0
+
+    assert calls == ([("remove", "ai.openprogram.self-update.su_done")] if finished else [])

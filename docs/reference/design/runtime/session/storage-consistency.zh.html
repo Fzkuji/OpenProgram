@@ -1,0 +1,242 @@
+<title>存储一致性</title>
+<meta name="description" content="SessionStore 的时间、快照、分支记录、merged heads、锁范围和目录删除合同。">
+<h1 id="session-storage-consistency">存储一致性</h1>
+<p>数据模型见<a href="storage.zh.html">会话存储</a>。</p>
+
+<h2 id="registry">注册表时间与快照</h2>
+<p><code translate="no">updated_at</code> 是最后一次内容追加的时间，不是最后一次元数据写入的时间。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">合同</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_persist_meta</code></th><td>改名、置顶、已读、分支标记和 HEAD 不改变时间；追加才推进。分支记录取盘上的（<a href="#branch-records">分支记录</a>）。</td></tr>
+<tr><th scope="row"><code translate="no">_index</code>、<code translate="no">list_sessions()</code></th><td>读者拿到每行的点时副本；并发创建、更新、删除不撕裂字段，也不破坏迭代。</td></tr>
+<tr><th scope="row">延迟 flush</th><td>旧快照不能覆盖新快照；发布期间的更新保持 dirty，由下一次 flush 保存。</td></tr>
+</tbody>
+</table>
+
+<h3 id="registry-flow">状态流</h3>
+<ol>
+<li>追加时生成一个时间值，同时写入会话元数据和注册表条目。</li>
+<li>注册表更新持有状态锁；列表在锁内复制行，在锁外过滤和排序。</li>
+<li>保存者取得写锁，在状态锁内捕获 JSON 并只清除已覆盖的 dirty，然后释放状态锁。</li>
+<li>原子发布在状态锁之外执行。</li>
+<li>并发更新重新标记 dirty，由定时器或退出 flush 发布。</li>
+</ol>
+
+<h3 id="failure-compatibility">失败与兼容</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">写盘失败</th><td>告警；内存继续服务；下一次更新或 flush 重试。</td></tr>
+<tr><th scope="row">返回的行</th><td>是副本，调用方修改不影响注册表。</td></tr>
+<tr><th scope="row">创建</th><td>保留显式传入的历史时间；重建不迁移 schema。</td></tr>
+<tr><th scope="row">排序</th><td>按 <code translate="no">updated_at</code> 降序，缺失视为 0；wire shape 不变。</td></tr>
+</tbody>
+</table>
+
+<details id="mechanisms">
+<summary>机制与否决方案</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">边界</th><td>与 <code translate="no">SessionMemoryIndex</code> 相同：锁内更新状态，释放后做文件 I/O。</td></tr>
+<tr><th scope="row">锁</th><td>标准 <code translate="no">threading</code>：一把状态锁保护字典、dirty 和定时器，一把写锁保证发布顺序。</td></tr>
+<tr><th scope="row">替换</th><td><code translate="no">atomic_write_text</code></td></tr>
+<tr><th scope="row">否决</th><td>给所有 store 调用加全局锁；每次追加同步写注册表；新增时间字段；数据库；跨进程注册表锁；新后台服务。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="registry-acceptance">
+<summary>注册表验收</summary>
+<table class="stack">
+<thead><tr><th scope="col">公共入口</th><th scope="col">场景</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">update_session</code></th><td>改名、置顶或标已读</td><td>时间和列表顺序不变</td></tr>
+<tr><th scope="row"><code translate="no">append_message</code></th><td>追加内容</td><td>元数据和索引同时推进，列表用新时间</td></tr>
+<tr><th scope="row"><code translate="no">list_sessions</code></th><td>修改返回行</td><td>下一次列表不受影响</td></tr>
+<tr><th scope="row">延迟 flush</th><td>旧快照写入期间发生更新</td><td>下一次 flush 后 <code translate="no">index.json</code> 含新字段</td></tr>
+<tr><th scope="row">更新、列表、flush 并发</th><td>读者和写者同时运行</td><td>无迭代异常；JSON 可解析；最终内存与磁盘一致</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branch-records">分支记录</h2>
+<p>分支记录（<code translate="no">meta["branches"][tip]</code>：名字、自动命名状态、轮数、归档标记）有几个可能同时落下的写入者：<code translate="no">close_agent</code> 归档正在运行的 Agent、被它打断的那一轮收尾（<code translate="no">carry_branch_entry</code>、<code translate="no">bump_branch_turns</code>）、后台自动命名（<code translate="no">set_branch_name</code>）、Web 端改名、删除。每个写入者只改自己负责的字段，改的是盘上的那份记录。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">唯一合并点</th><td><code translate="no">_update_meta</code> 在会话写锁内读 <code translate="no">meta.json</code>，应用写入者的改动并写盘，再只把写过的键复制进缓存。没有写入者用早先读到的副本整条替换记录。</td></tr>
+<tr><th scope="row">整份缓存写入</th><td><code translate="no">_persist_meta</code>、<code translate="no">commit_turn</code>、追加和删除节点写缓存时，<code translate="no">branches</code>、<code translate="no">branch_refs</code>、<code translate="no">active_branch_id</code> 取盘上的（<code translate="no">_meta_for_write</code>），漏掉别的写入者的缓存不会把旧记录写回去。追加在锁内读到的盘上那份上移动分支记录。</td></tr>
+<tr><th scope="row">切换与回退</th><td>切换分支和回退只说明要做的改动，不带整张表的副本：<code translate="no">compare_and_set_head</code> 在锁内读到的记录上应用 <code translate="no">branch_checkout</code>（<code translate="no">apply_checkout</code>）和 <code translate="no">branch_record_moves</code>。更新里整份的 <code translate="no">branches</code>、<code translate="no">branch_refs</code>、<code translate="no">active_branch_id</code> 一律丢弃，包括这条规则之前记进意图日志的。</td></tr>
+<tr><th scope="row">名字只有一处</th><td>所有读取者，包括分支列表，不论分支是否选中，都从分支末端的记录取名字（<code translate="no">branch_record</code>）。末端记录总是优先于暂存副本；后台运行带着未选中分支往前走时，记录一起带走。</td></tr>
+<tr><th scope="row">记录跟着末端走</th><td>分支每加一条消息，同一次写入就移动它的记录：选中分支在 <code translate="no">advance_branch</code> 里用 <code translate="no">follow_line</code>，其他分支用 <code translate="no">carry_branch</code> 和 <code translate="no">point_branch</code>。新末端上已有的记录合并进来，以它自己的字段为准。</td></tr>
+<tr><th scope="row">迟到的末端</th><td>写给分支已经越过的末端（最近一轮延伸的那条消息，或这一轮的用户消息）的写入，落到分支现在的记录上（<code translate="no">_record_tip</code>）。设置和 worktree 绑定按分支 id 存，不随末端移动。</td></tr>
+<tr><th scope="row">共用末端</th><td>回退到同一条消息的几个分支没法共用一条末端记录：选中的那个拥有它，其余的把自己的暂存在各自的 ref 上（<code translate="no">label</code>，离开时在锁内写下，再次选中时放回）。</td></tr>
+<tr><th scope="row">归档不可撤销</th><td>已归档的记录保留 <code translate="no">archived</code>、<code translate="no">archived_at</code>、<code translate="no">archived_reason</code>，之后的写入设什么都不变。</td></tr>
+<tr><th scope="row">不复活</th><td>对已不在会话里的消息计轮数或自动命名，什么都不写。分支写入从不创建会话。归档和普通命名可以给已受理、尚未写入的回复开记录。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>归档为什么会丢</summary>
+<p>旧的写入者先在缓存里合并记录，再把整份缓存写盘。两步之间，一个在锁内读 <code translate="no">meta.json</code> 的写入者（收尾那一轮的 <code translate="no">update_branch_fields</code>）用盘上还没有归档的副本替换了缓存；归档自己的写入随后保存了不含归档的缓存，自动命名再开了一条新记录。</p>
+<p>分支设置（<code translate="no">update_branch_config</code>）、worktree 绑定（<code translate="no">update_session</code>）和 Goal（带版本检查的 <code translate="no">update_session_dict</code>）本来就在锁内对盘上数据读改写。</p>
+<p>切换分支时名字也是这样丢的。切换在加锁前读了整张 <code translate="no">branches</code> 和 <code translate="no">branch_refs</code>，用离开时暂存的副本覆盖了目标的记录，再随 HEAD 移动把两张表写回。</p>
+<p>所以未选中分支的改名（列表只读暂存副本，看不到）在切换时连同锁一起丢了，自动命名也一样。</p>
+<p>一轮运行时改名会丢掉分支的轮数。选中分支的记录一直留在旧末端直到这一轮结束，改名在屏幕上的末端另开一条记录，轮末带走的是这条。</p>
+<p>Worker 在移动分支 ref 和记录之间卡住时，会留下两行：一行在旧位置、用原始 id 命名，一行在回复上、有名字但没有分支 id。</p>
+<p>加载时不修复这一对。ref 落在一段延续之后，回退也会留下同样的形状，读取方不靠猜测分不开两者。现在 ref 和记录在同一把锁内一起移动。</p>
+<p>验收：两个线程写会话、计轮数的同时归档 60 个 tip，一个不丢；同一目录上的两个 store（两个进程）对同一批 tip 归档和命名，两个字段都在；删除后迟到的取消归档、命名和计轮数都不改变任何东西。</p>
+</details>
+
+<h2 id="merged-heads">Merged heads 原子更新</h2>
+<p><code translate="no">mark_merged(session_id, head_ids)</code> 是集合并集。子 Agent 完成、task runner 和 Web 分支操作可能同时调用，每次更新都要保留。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">属性</th><th scope="col">要求</th></tr></thead>
+<tbody>
+<tr><th scope="row">原子性</th><td>在会话写锁内的同一个 <code translate="no">_update_meta</code> 中读盘、去重、追加并写盘。</td></tr>
+<tr><th scope="row">顺序</th><td>保留既有顺序；新的非空、strip 后的 ID 按输入顺序追加。</td></tr>
+<tr><th scope="row">幂等</th><td>重复不新增；没有新值就不写盘。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>范围与验收</summary>
+<ul>
+<li>两个调用方并发写入不同 head：内存和重载后都含两者。</li>
+<li>空白和重复输入保持清理与幂等语义。</li>
+</ul>
+</details>
+
+<h2 id="lock-scope">Store 锁范围</h2>
+<p>一个会话的慢 I/O 不能阻塞其他会话。</p>
+<table class="stack">
+<thead><tr><th scope="col">资源</th><th scope="col">锁</th><th scope="col">要求</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_locations</code>、<code translate="no">_sessions</code>、LRU 顺序</th><td><code translate="no">_lock</code></td><td>只碰内存：不扫目录、不原子写、不 fsync、不递归删除。</td></tr>
+<tr><th scope="row">单个会话的加载、重建、删除和失效</th><td>会话的进程锁（<code translate="no">conversation_lock</code>）</td><td>同一会话串行，不同会话并行。每个进程每个会话一把，所有 store 共用；它是写锁的前一半。没有 transaction 层。</td></tr>
+<tr><th scope="row"><code translate="no">locations.json</code> 发布</th><td><code translate="no">_locations_write_lock</code></td><td>在状态锁内捕获，释放后写入；旧快照不能覆盖新快照。</td></tr>
+<tr><th scope="row"><code translate="no">SessionMemoryIndex</code> 持久化</th><td><code translate="no">_persist_lock</code>，然后 <code translate="no">idx._lock</code></td><td>保持锁序和 stale rebuild 语义；<code translate="no">idx._lock</code> 内不做 I/O。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>范围与验收</summary>
+<p>文件格式、LRU 容量、删除语义、跨进程 stale 检测和 Windows 行为不变。</p>
+<ul>
+<li>A 阻塞在 <code translate="no">read_meta</code> 或 <code translate="no">list_history</code> 时，B 的缓存读取在有界时间内完成。</li>
+<li>A 的递归删除阻塞时，B 的读取不等待。</li>
+<li>并发首次加载只发布一个缓存对象；加载不会重新发布已删除的对象。</li>
+<li>两个会话并发更新位置后，重载的 <code translate="no">locations.json</code> 含两项。</li>
+</ul>
+</details>
+
+<h2 id="lock-order">会话锁的顺序</h2>
+<p>所有路径按同一顺序取一个会话的锁；持有任何一把时都不等模型、网络或另一个会话的锁。</p>
+<ol>
+<li>进程锁：每个会话一把可重入锁，本进程的 store、服务端和 job、事件、checkpoint 辅助代码共用。</li>
+<li><code translate="no">projects/.locks/&lt;id&gt;.lock</code> 上的 flock，经 <code translate="no">session_interprocess_lock</code> 获取，它先取第 1 步。持有者只用一个文件描述符；同一线程里嵌套获取在它上面计数，不再打开第二个描述符（第二个会等第一个）。</li>
+<li>内层锁：索引的 <code translate="no">_persist_lock</code> 和 <code translate="no">_lock</code>、store 的映射、注册表文件、回退 intent 锁和工作区锁。</li>
+</ol>
+<p>回退，以及一轮文件的撤销和重做，从查幂等键开始，经过计划和写 intent，到出结果，一直持有第 1、2 步；恢复也在它们之下重放日志，所以恢复不会重放一个仍在执行的回退。</p>
+<p>同一个键的第二个请求等第一个结束，返回它记下的结果，不论提交还是失败：不会按第一个留下的状态重新计划，不会把未完成的 intent 当成待恢复的，也不会再执行一次。</p>
+<p>回退和撤销也在恢复范围内执行：持有工作区锁期间会话被挤出 store 缓存时，检查 head 引起的重新打开不会重放它自己的 intent；否则会第二次去拿工作区锁，等的是它自己。</p>
+<p>两步等待都有上限（默认 60 秒，调用方传了超时就用更短的）：超过后抛 <code translate="no">SessionLockTimeout</code>，写明会话和持有者（本进程的某个线程或另一个进程），请求失败，而不是让 Worker 线程一直卡住。</p>
+<details>
+<summary>原因与验收</summary>
+<p>分支记录合并把更多写入放进 flock 之下后，两条路径以相反顺序取这两半：切换分支持有 store 的锁、等 flock，页面加载持有 flock、等 store 的锁来读会话；运行准入也一样。</p>
+<p>之后这个会话上的所有请求都排在这一对后面，Worker 不再响应。</p>
+<ul>
+<li>十六个线程同时操作一个有五个分支的会话：两个分支上的轮次、改名、换模型、删分支、并发切换、回退计划、页面加载、运行准入和缓存失效，全部完成，连续 200 次；看门狗在卡住时带着各线程栈让测试失败，而不是挂住。</li>
+<li>会话被一个卡住的线程持有时，下一个写入者在等待期内拿到写明该会话的错误；其他会话不受影响。</li>
+<li>获取与释放之间出错（被拒的切换、过期的计划）会释放锁。</li>
+<li>两个进程和两个线程同时往一个会话追加，每条消息都写入；持有 flock 的进程被杀后，已在等待的写入者继续；执行中途会话被挤出缓存的撤销照常提交。</li>
+<li>同一个键的两次回退或两次撤销：第一个在写 intent 之前或之后暂停时，第二个等它，然后返回它提交的结果；第一个已提交或已失败时，第二个返回那个结果；文件和 head 只变一次。</li>
+</ul>
+</details>
+
+<h2 id="off-the-event-loop">不在事件循环上等锁</h2>
+<p>Worker 的事件循环服务所有连接，所以没有请求应在它上面等会话锁：读写会话的工作放到工作线程里做，所以一个会话被轮次、冷启动的首次加载或别的进程占着时，只拖慢需要它的那个请求。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">WebSocket 动作</th><td>处理器仍是协程，负责发帧；帧之间的存储工作在该会话的通道里执行（<code translate="no">run_for_conversation</code>），一帧要读很多次时合成一个普通函数（<code translate="no">_session_loaded_data</code>、<code translate="no">run_state_data</code>、<code translate="no">_checkout_branch</code>、<code translate="no">_attach_branch</code>）。</td></tr>
+<tr><th scope="row">HTTP 路由</th><td>没有要 await 的路由写成普通函数，由 FastAPI 放进线程池；要 await 的路由把存储调用放进该会话的通道。</td></tr>
+<tr><th scope="row">执行控制</th><td><code translate="no">submit_execution_control</code>（停止、暂停、继续、单步、引导、回答）在工作线程里读写执行记录，按命令一直以来的顺序逐步进行，命令 id 不变；只有通知执行方、激活和引导的附件在循环上 await。停止一写入命令就送到正在运行的执行方，且只送一次。Agent 驱动的激活在工作线程里读（日志、节点、模型固定）并在那里启动执行线程。</td></tr>
+<tr><th scope="row">大量等待</th><td>一条通道最多占通道共用线程池（<code translate="no">POOL_SIZE</code>，64）的 <code translate="no">LANE_WIDTH</code>（2）个线程，不用循环的默认线程池。超出的请求在循环上按到达顺序等，不占线程，所以一个被占住的会话不会占掉其他会话的线程，别处在 <code translate="no">asyncio.to_thread</code> 里等的工作也挡不住通道。已持有某个会话锁的线程就地执行。</td></tr>
+<tr><th scope="row">函数运行</th><td><code translate="no">POST /api/function/{name}</code>、函数运行的 Retry 和输入的本地命令在工作线程里调用 <code translate="no">run_agent_method_call</code>（会话、运行槽位、执行记录、代码节点）。</td></tr>
+<tr><th scope="row">漏掉的位置</th><td>服务器把自己的循环交给锁（<code translate="no">watch_event_loop</code>；存储层从不导入服务器）。锁在这个循环上被获取时记一条警告，每个调用位置一次，带调用栈（<code translate="no">_note_event_loop_acquisition</code>），据此找到并移走。</td></tr>
+</tbody>
+</table>
+<p>占用运行槽位时按存储自己的时限等锁（<code translate="no">admission_lock_wait</code>，60 秒），而不是四分之一秒：持锁者只做文件工作，大会话的首次加载可能超过这个时间。</p>
+<p>到时仍拿不到锁，回答 <code translate="no">conversation_locked</code>（可重试，什么都没开始，文本留给下次发送）；只有槽位确实被占才是 <code translate="no">run_active</code>，客户端据此把消息排在一轮之后。</p>
+<p>不是用户输入的轮次经 <code translate="no">run_slot.reserve</code> 占槽位，<code translate="no">lock_wait</code> 限定等锁时间（<code translate="no">0</code> 表示完全不等）。拿不到锁时各调用方的做法：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用方</th><th scope="col">拿不到锁</th></tr></thead>
+<tbody>
+<tr><th scope="row">群聊房间事件（ambient）</th><td>什么都不等：会话锁、正在收尾的轮次、会话里正在跑的渠道轮次都不等。直接跳过，和槽位被占时一样。</td></tr>
+<tr><th scope="row">渠道消息</th><td>在槽位的 30 秒内等锁；超过后告诉发送者这条没有送达，可以再发一次。</td></tr>
+<tr><th scope="row">提醒唤醒、转交的消息</th><td>当作忙：<code translate="no">start_owner_turn_when_free</code> 在等待时间内继续重试。</td></tr>
+<tr><th scope="row">OpenAI 兼容 API</th><td>503 <code translate="no">conversation_locked</code>；有轮次在运行仍是 409 <code translate="no">conversation_busy</code>。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>原因与验收</summary>
+<p>页面加载、运行状态查询、切换分支、改名和设置都在 <code translate="no">async def</code> 处理器里读会话。一轮占着会话，或别的进程在写它，所有连接都会冻结，最长到锁的 60 秒等待。</p>
+<p>槽位准入只等 0.25 秒，并把超时当成有轮次在运行，于是发往冷启动的大会话的消息被拒绝为 <code translate="no">run_active</code>，排到一个并不存在的轮次后面。</p>
+<p>Codex 每个线程一个写入锁文件（<code translate="no">~/.codex/thread-writer-locks</code>），由异步运行时服务客户端；等线程写入者的请求在自己的任务里等。这里是同一条规则：循环从不等会话。</p>
+<ul>
+<li>另一线程持有会话锁时，加载、运行状态、切换分支、改名、完整工具输出、Sandbox 和标为已读都等它，循环上 10 毫秒的心跳从不停顿超过四分之一秒；同样的读取放在循环上会让它停顿整段持锁时间。</li>
+<li>页面打开会话时调用的路由也一样：上下文覆盖、上下文明细、分支 token 和会话 token。</li>
+<li>attach 分支、流重新订阅、项目绑定与移动、额外文件夹、标记、上下文 commit、删除节点、渠道绑定、压缩、原地分叉、导出和回退点也一样；记录排队消息（<code translate="no">goal_queue</code>）完全不等。</li>
+<li>会话被占时，停止一个还没开始的轮次会写入它的已取消回复，循环心跳低于四分之一秒；同一个停止向运行中的执行方并发发五次，只有一条命令、只送达一次，用时不到一秒；执行方要 50 ms 才回应时也一样。</li>
+<li>四十个请求等同一个被占的会话时，另一个会话的运行状态在半秒内回答；换成循环的默认线程池会超时。</li>
+<li>房间事件遇到被锁的会话或忙的渠道轮次时不等；会话一直被锁的渠道消息回答为没有送达。</li>
+<li>锁被占 0.6 秒期间提出的槽位请求，在锁释放后被准入。</li>
+<li>超过等待时间后，发送、发往分支的发送、操作和多分支操作都回答 <code translate="no">conversation_locked</code>，不占用任何东西；被占的槽位仍是 <code translate="no">run_active</code>。</li>
+</ul>
+</details>
+
+<h2 id="cache-snapshot">缓存快照新鲜度</h2>
+<ol>
+<li>缓存重建和首次加载在读取历史与元数据之前获取磁盘指纹。</li>
+<li>重建后的索引只记录这个指纹，绝不记录更新的指纹。</li>
+<li>并发原子替换会改变指纹，下一次公共读取因此重建。</li>
+</ol>
+<details>
+<summary>验收</summary>
+<p>两个真实 <code translate="no">SessionStore</code> 实例。写入发生在读者加载旧快照之后、标记同步之前；下一次 <code translate="no">get_nodes</code> 或 <code translate="no">get_session</code> 看到新值，缓存和首次加载路径都覆盖。取消重试保留原有时限，并读取实际的取消文件。</p>
+</details>
+
+<h2 id="windows-removal">Windows 会话目录删除</h2>
+<p>显式删除、过期清理和容量清理共用一个平台适配器（<code translate="no">openprogram/host/_platform/filesystem.py</code>）。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">失败</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">普通 Git 对象，只读属性</th><td>清除属性，重试该次删除一次。</td></tr>
+<tr><th scope="row">其他权限失败</th><td>沿用调用方的尽力处理；不改 ACL，不跟随链接。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>验收</summary>
+<p>公开的 reopen 和 <code translate="no">delete_session</code> 入口配只读 Git 对象；目录确实消失，而不只是从索引移除。必须原生 Windows CI。遵循 <a href="https://docs.python.org/3/library/shutil.html#rmtree-example">shutil 只读文件删除示例</a>，回调兼容 Python 3.11。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/</code></th><td>时间、注册表锁、快照、延迟 flush、merged heads 和 store 锁</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_node_writer.py</code></th><td>每次追加一个 activity 时间，元数据和索引共用</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_session_index_consistency.py</code></th><td>排序、快照和并发写入的公共回归</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_lock.py</code></th><td>会话锁：进程锁、flock 持有记录、有界等待</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_stress.py</code></th><td>多线程操作同一会话；卡住的会话返回错误</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_processes.py</code></th><td>两个进程操作同一会话；持有者被杀；缓存失效的撤销</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/</code>、<code translate="no">openprogram/interfaces/server/routes/</code></th><td>处理器的存储工作放在工作线程</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/session_lifecycle.py</code></th><td>槽位准入等锁；<code translate="no">conversation_locked</code> 与 <code translate="no">run_active</code> 分开</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/conversation_work.py</code></th><td>会话的通道，在通道自己的线程池里</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/execution/control/</code></th><td>控制命令的存储工作放在执行的通道里（<code translate="no">off_loop</code>）</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/channels/_conversation.py</code>、<code translate="no">openprogram/runtime/conversation/owner_turn.py</code></th><td>拿不到锁：房间事件跳过，渠道消息不送达，唤醒重试</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/webui/chat/test_conversation_lock_off_loop.py</code></th><td>每个处理器在被占会话下的循环心跳；停止；四十个等待者；慢锁被准入；拿不到锁报告为锁住</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_conversation_work.py</code></th><td>通道宽度与顺序、取消、上下文、已持锁、fork、默认线程池占满</td></tr>
+</tbody>
+</table>
+<p>还没进通道的：不属于单个会话的处理器（设置、目录、录音）的存储工作仍经 <code translate="no">asyncio.to_thread</code> 在循环的默认线程池执行，不在循环上但没有上限；Job 的等待恢复调度在调用方的循环上调用。</p>

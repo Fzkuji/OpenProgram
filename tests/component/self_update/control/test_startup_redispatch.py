@@ -4,18 +4,22 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from openprogram.self_update import UpdatePhase
-from openprogram.self_update.delivery.launcher import launch_supervisor
-from openprogram.self_update.control.recovery import recover_pending_updates
+from openprogram.operations.self_update import UpdatePhase
+from openprogram.operations.self_update.delivery.launcher import launch_supervisor
+from openprogram.operations.self_update.control.recovery import recover_pending_updates
 from tests.component.self_update.control.test_launcher import _request, _trusted_installer, _ready
-from tests.component.self_update.recovery.test_recovery import environment
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
+from tests.component.self_update.recovery import test_recovery as _test_recovery
+from tests.component.agent import async_job_support as _async_job_support
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+environment = _test_recovery.environment
+store_fixture = _async_job_support.store_fixture
 
 
-@pytest.mark.parametrize("phase", [UpdatePhase.PREPARING, UpdatePhase.STAGING, UpdatePhase.READY])
+@pytest.mark.parametrize("phase", [UpdatePhase.PREPARING, UpdatePhase.BUILDING, UpdatePhase.READY])
 def test_startup_redispatches_original_controller_after_installed_app_changes(tmp_path, monkeypatch, phase):
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     store = _request(profile)
@@ -33,7 +37,7 @@ def test_startup_redispatches_original_controller_after_installed_app_changes(tm
     monkeypatch.setattr(launcher, "_launchctl", launchctl)
     launch_supervisor("su_launch")
     if phase is not UpdatePhase.PREPARING:
-        store.transition("su_launch", UpdatePhase.STAGING)
+        store.transition("su_launch", UpdatePhase.BUILDING)
     if phase is UpdatePhase.READY:
         store.transition("su_launch", UpdatePhase.READY)
     installed.write_text("replacement installer")
@@ -46,8 +50,8 @@ def test_startup_redispatches_original_controller_after_installed_app_changes(tm
 
 @pytest.mark.parametrize("damage", ["missing_bundle", "changed_runtime", "missing_script", "script_symlink"])
 def test_startup_never_snapshots_replacement_app_or_dispatches_on_damage(tmp_path, monkeypatch, damage):
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     store = _request(profile)
@@ -70,7 +74,7 @@ def test_startup_never_snapshots_replacement_app_or_dispatches_on_damage(tmp_pat
             (update / "supervisor.sh").symlink_to(update / "retained-supervisor.sh")
     installed.write_text("replacement installer must never be copied")
     monkeypatch.setattr(launcher, "_launchctl", lambda *_: pytest.fail("damaged controller launched"))
-    monkeypatch.setattr("openprogram.self_update.delivery.controller_bundle._installed_resources",
+    monkeypatch.setattr("openprogram.operations.self_update.delivery.controller_bundle._installed_resources",
                         lambda: pytest.fail("recovery inspected the replacement App"))
     assert recover_pending_updates() is False
     assert store.load("su_launch").state.dispatch is None
@@ -80,7 +84,7 @@ def test_startup_never_snapshots_replacement_app_or_dispatches_on_damage(tmp_pat
 
 
 def test_concurrent_startup_reuses_controller_and_creates_one_real_job(environment, tmp_path, monkeypatch):
-    from openprogram.self_update.delivery import launcher
+    from openprogram.operations.self_update.delivery import launcher
     store, runner, calls, request, release = environment
     installed, digest = _trusted_installer(tmp_path, monkeypatch)
     update = store.root / request.update_id
@@ -109,8 +113,8 @@ def test_concurrent_startup_reuses_controller_and_creates_one_real_job(environme
 
 
 def test_terminal_update_is_not_relaunched(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
     profile = tmp_path / "profile"
     store = _request(profile)
     store.transition("su_launch", UpdatePhase.ABORTED)
@@ -121,10 +125,10 @@ def test_terminal_update_is_not_relaunched(tmp_path, monkeypatch):
     assert not result.submitted and not result.already_running
 
 
-@pytest.mark.parametrize("phase", [UpdatePhase.PREPARING, UpdatePhase.STAGING, UpdatePhase.READY])
+@pytest.mark.parametrize("phase", [UpdatePhase.PREPARING, UpdatePhase.BUILDING, UpdatePhase.READY])
 def test_successful_redispatch_cannot_clear_durable_startup_failure(tmp_path, monkeypatch, phase):
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
     profile = tmp_path / "profile"
     store = _request(profile)
     _, digest = _trusted_installer(tmp_path, monkeypatch)
@@ -141,7 +145,7 @@ def test_successful_redispatch_cannot_clear_durable_startup_failure(tmp_path, mo
     monkeypatch.setattr(launcher, "_launchctl", launchctl)
     launch_supervisor("su_launch")
     if phase is not UpdatePhase.PREPARING:
-        store.transition("su_launch", UpdatePhase.STAGING)
+        store.transition("su_launch", UpdatePhase.BUILDING)
     if phase is UpdatePhase.READY:
         store.transition("su_launch", phase)
     fail = True

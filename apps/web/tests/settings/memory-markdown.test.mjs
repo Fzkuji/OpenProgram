@@ -4,12 +4,12 @@ import test from "node:test";
 import { parseHTML } from "linkedom";
 import { marked } from "marked";
 
-import { renderObsidianMarkdown } from "../../components/memory/obsidian-markdown.ts";
+import { renderObsidianMarkdown } from "../../components/memory/markdown/obsidian-markdown.ts";
 
 const { window } = parseHTML("<!doctype html><html><body></body></html>");
 globalThis.window = window;
 globalThis.document = window.document;
-const { sanitizeHtml } = await import("../../lib/runtime-bridge/markdown-render.ts");
+const { sanitizeHtml } = await import("../../lib/runtime-bridge/dom/markdown-render.ts");
 
 function render(source) {
   const html = sanitizeHtml(renderObsidianMarkdown(
@@ -155,4 +155,38 @@ test("Memory preview distinguishes container code from list continuation", () =>
   assert.match(host.textContent, /Quoted code \[\^known\] \^quoted-code-block/);
   assert.doesNotMatch(host.textContent, /\^para-block/);
   assert.ok(host.querySelector('[id="^para-block"]'));
+});
+
+const { groupTimelineDays } = await import("../../components/memory/markdown/format.ts");
+
+test("the timeline groups days by year then month, newest first", () => {
+  const grouped = groupTimelineDays([
+    { date: "2026-08-07", size: 20, mtime: 2 },
+    { date: "2025-12-31", size: 10, mtime: 1 },
+    { date: "2026-08-15", size: 30, mtime: 3 },
+  ], "en");
+  assert.deepEqual(
+    grouped.map((year) => [year.year, year.entryCount, year.months.map((month) => [month.label, month.days.map((day) => day.dayLabel)])]),
+    [["2026", 2, [["August", ["15", "07"]]]], ["2025", 1, [["December", ["31"]]]]],
+  );
+});
+
+test("the timeline drops impossible dates", () => {
+  assert.deepEqual(groupTimelineDays([
+    { date: "2026-13-01", size: 1, mtime: 1 },
+    { date: "2026-02-31", size: 1, mtime: 1 },
+    { date: "not-a-date", size: 1, mtime: 1 },
+  ]), []);
+});
+
+test("year and month overview files sit on their year and month, and early years keep four digits", () => {
+  const grouped = groupTimelineDays([
+    { date: "2026", size: 1, mtime: 1 },
+    { date: "2026-08", size: 1, mtime: 1 },
+    { date: "0099-01-01", size: 1, mtime: 1 },
+  ], "en");
+  assert.deepEqual(
+    grouped.map((year) => [year.year, year.entryCount, year.entries.map((entry) => entry.label), year.months.map((month) => [month.label, month.entries.map((entry) => entry.label), month.days.map((day) => day.dayLabel)])]),
+    [["2026", 2, ["Year overview"], [["August", ["Month overview"], []]]], ["0099", 1, [], [["January", [], ["01"]]]]],
+  );
 });

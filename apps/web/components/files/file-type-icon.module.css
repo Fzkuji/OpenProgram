@@ -1,31 +1,31 @@
 /* Adapted from Pierre Trees style.css; see public/third-party/pierre for licenses. */
 .icon { flex-shrink: 0; color: var(--pierre-gray); }
 .icon { --pierre-gray: #84848a; }
-:global(.dark) .icon { --pierre-gray: #adadb1; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-gray: #adadb1; }
 .icon { --pierre-red: #d52c36; }
-:global(.dark) .icon { --pierre-red: #ff6762; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-red: #ff6762; }
 .icon { --pierre-vermilion: #ff8c5b; }
-:global(.dark) .icon { --pierre-vermilion: #d5512f; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-vermilion: #d5512f; }
 .icon { --pierre-orange: #d47628; }
-:global(.dark) .icon { --pierre-orange: #ffa359; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-orange: #ffa359; }
 .icon { --pierre-yellow: #d5a910; }
-:global(.dark) .icon { --pierre-yellow: #ffd452; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-yellow: #ffd452; }
 .icon { --pierre-green: #199f43; }
-:global(.dark) .icon { --pierre-green: #5ecc71; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-green: #5ecc71; }
 .icon { --pierre-teal: #17a5af; }
-:global(.dark) .icon { --pierre-teal: #64d1db; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-teal: #64d1db; }
 .icon { --pierre-cyan: #1ca1c7; }
-:global(.dark) .icon { --pierre-cyan: #68cdf2; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-cyan: #68cdf2; }
 .icon { --pierre-blue: #1a85d4; }
-:global(.dark) .icon { --pierre-blue: #69b1ff; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-blue: #69b1ff; }
 .icon { --pierre-indigo: #693acf; }
-:global(.dark) .icon { --pierre-indigo: #9d6afb; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-indigo: #9d6afb; }
 .icon { --pierre-purple: #a631be; }
-:global(.dark) .icon { --pierre-purple: #d568ea; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-purple: #d568ea; }
 .icon { --pierre-pink: #d32a61; }
-:global(.dark) .icon { --pierre-pink: #ff678d; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-pink: #ff678d; }
 .icon { --pierre-mauve: #594c5b; }
-:global(.dark) .icon { --pierre-mauve: #79697b; }
+:global(:root:not([data-theme-mode="light"])) .icon { --pierre-mauve: #79697b; }
 .icon[data-file-icon="default"] { color: var(--pierre-gray); }
 .icon[data-file-icon="astro"] { color: var(--pierre-purple); }
 .icon[data-file-icon="babel"] { color: var(--pierre-yellow); }

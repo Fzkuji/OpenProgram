@@ -1,0 +1,71 @@
+<title>输入框本地路径</title>
+<meta name="description" content="桌面版输入框如何保留拖入文件、图片和文件夹的原始绝对路径。">
+<h1>输入框本地路径</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 110" role="img" aria-label="拖入或选择的 File 经过 preload 桥的 getPathForFile，进入待发送状态和带 JSON 编码绝对路径的消息标记。">
+  <defs><marker id="lp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">拖入或选择</text>
+  <text class="t-cmd" translate="no" x="0" y="66">File</text>
+  <line class="ln" x1="150" y1="33" x2="206" y2="33" marker-end="url(#lp-a)"/>
+  <text class="t-big" x="218" y="40">Preload</text>
+  <text class="t-cmd" translate="no" x="218" y="66">getPathForFile(file)</text>
+  <line class="ln" x1="384" y1="33" x2="436" y2="33" marker-end="url(#lp-a)"/>
+  <text class="t-big" x="448" y="40">待发送状态、标记</text>
+  <text class="t-cmd" translate="no" x="443" y="66">[attachment: … @json "/abs"]</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>拖入或选择</strong><small>File</small></li>
+  <li><strong>Preload</strong><small>getPathForFile(file)</small></li>
+  <li class="flow-end"><strong>待发送状态、标记</strong><small>[attachment: … @json "/abs"]</small></li>
+</ol>
+</figure>
+<p class="note">桥封装 Electron 的 <code translate="no">webUtils.getPathForFile</code>，是渲染进程获取原生路径的唯一来源；渲染进程没有 Node 文件系统权限。每个 <code translate="no">File</code> 在任何读取前查询一次。</p>
+
+<h2>按项目</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">有字节的文档</th><td>沿用上传和预览。标记用原始路径；后端可另存会话副本。</td></tr>
+<tr><th scope="row">图片</th><td>多模态载荷加一个原始路径标记。派发给提供商前从附件元数据移除 <code translate="no">source_path</code>。</td></tr>
+<tr><th scope="row">文件夹或不可读项</th><td>没有字节的有效路径引用，不标“太大，未发送”</td></tr>
+<tr><th scope="row">剪贴板 blob、普通浏览器文件</th><td>没有原生路径：沿用上传和生成的会话路径</td></tr>
+</tbody>
+</table>
+
+<h2>标记</h2>
+<dl class="pairs">
+<dt><code translate="no">@json</code></dt><dd>原始路径的 JSON 字符串，给 Agent。保留方括号、引号、反斜杠和尾部空格。读取方兼容旧的无引号标记。</dd>
+<dt><code translate="no">@previewjson</code></dt><dd>不可变的会话副本路径，给 UI。没有它的旧消息仍可读。原始文件端点不把源路径的父目录加入可读根。</dd>
+<dt><code translate="no">source_path</code></dt><dd>在每个上传附件上。只有该附件的确切源路径存在时，后端才保留前端标记，同名上传因此不混淆。</dd>
+</dl>
+
+<h2>项目与附加文件夹</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">项目 chip</th><td>草稿的主工作目录。首个已提交轮次后只读：cwd、权限基线和会话仓库位置已固定。</td></tr>
+<tr><th scope="row">文件夹加号</th><td>附加工作目录；会话中可编辑。没有会话时按草稿待选项目确定主项目，不把它列为选项。</td></tr>
+<tr><th scope="row">选择</th><td>已有项目只更新草稿。新文件夹创建或解析项目并选中结果。</td></tr>
+<tr><th scope="row">后端不可用</th><td>以已连接后端的回复为准；控件保持原状态</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>边界与否决方案</summary>
+<p>不涉及：附件卡片样式、目录遍历、浏览器递归上传、文件系统扫描、新 IPC 处理器、上传大小、Programs UI、依赖。</p>
+<p>否决：旧的 <code translate="no">File.path</code>；渲染进程开启 Node 集成；可读文件只发路径；在普通浏览器捏造相对路径；枚举拖入的目录。</p>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>Preload 对同一 <code translate="no">File</code> 返回确切路径；能处理桥缺失、空结果和异常。</li>
+<li>文档、图片、不可读文件夹的标记含完整路径；带括号的文件名显示安全。</li>
+<li>含 <code translate="no">]</code>、引号、尾部空格的路径在两个解析器间往返不变。</li>
+<li>无路径附件保持原标记；同名和混合来源附件不混淆；持久化不重复已带路径的附件。</li>
+</ul>
+</details>
+
+<h2>实现状态</h2>
+<p>已实现。Preload 边界在 VM 中用同一 <code translate="no">File</code> 对象验证，没有做真实窗口拖动。</p>

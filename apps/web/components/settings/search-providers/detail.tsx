@@ -1,7 +1,8 @@
 "use client";
 
 import { ApiKey } from "../providers";
-import styles from "../settings-page.module.css";
+import styles from "../providers/provider-pane.module.css";
+import { Button } from "@/components/ui/button";
 import { SearchConnectivity } from "./connectivity";
 import { SearchProviderGlyph } from "./glyph";
 import { SearchProviderSetup } from "./setup";
@@ -25,16 +26,16 @@ export function SearchProviderDetail({
   const isDefault = provider.id === defaultId;
 
   return (
-    <div className={styles.detailSurface}>
+    <div className={`${styles.detailSurface} flex flex-col gap-[16px] min-w-0 p-[16px_20px_20px]`}>
       <div className={styles.detailHeader}>
-        <div className={styles.detailIcon}>
+        <div className={`${styles.detailIcon} w-[40px] h-[40px] flex items-center justify-center`}>
           <SearchProviderGlyph id={provider.id} size={40} />
         </div>
-        <div className={styles.detailTitleWrap}>
+        <div className="flex-1 min-w-0">
           <div className={styles.detailTitle}>
             {provider.name}
             {provider.tier && (
-              <span className={styles.searchTierChip} title={text("Pricing / availability", "价格 / 可用性")}>
+              <span className={styles.searchTierChip} data-tip={text("Pricing / availability", "价格 / 可用性")}>
                 {provider.tier}
               </span>
             )}
@@ -50,7 +51,7 @@ export function SearchProviderDetail({
             )}
           </div>
         </div>
-        <div className={styles.detailHeaderActions}>
+        <div className={`${styles.detailHeaderActions} flex items-center shrink-0 gap-[12px]`}>
           <span
             className={
               styles.providerDot +
@@ -99,17 +100,16 @@ export function SearchProviderDetail({
           fall back to whatever else is configured. Users switch the
           default by selecting another provider and clicking Set as
           default there — no explicit "clear" needed. */}
-      <button
+      <Button
         type="button"
+        variant="elevated"
+        className={isDefault ? "disabled:opacity-100" : undefined}
+        aria-pressed={isDefault}
         disabled={!provider.available || saving || isDefault}
         onClick={() => onSetDefault(provider.id)}
-        className={
-          styles.setDefaultBtn +
-          (isDefault ? " " + styles.setDefaultActive : "")
-        }
       >
-        {isDefault ? text("Default backend", "默认后端") : text("Set as default", "设为默认")}
-      </button>
+        {isDefault ? text("✓ Default backend", "✓ 默认后端") : text("Set as default", "设为默认")}
+      </Button>
 
       {provider.env_var && (
         <ApiKey
@@ -122,7 +122,7 @@ export function SearchProviderDetail({
       {/* Live connectivity check — runs a tiny real query against the
           backend so users can confirm the key actually works before
           relying on it from the chat plus-menu. */}
-      <SearchConnectivity providerId={provider.id} disabled={!provider.configured} />
+      <SearchConnectivity providerId={provider.id} disabled={!provider.configured} needsKey={Boolean(provider.env_var)} />
 
       {!provider.env_var && (
         <div className={styles.searchDescription}>

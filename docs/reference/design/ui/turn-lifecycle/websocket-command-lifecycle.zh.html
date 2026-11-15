@@ -1,0 +1,79 @@
+<title>WebSocket 命令生命周期</title>
+<meta name="description" content="单个 WebSocket 命令失败、断线和旧版 ask_user 等待的行为。">
+<h1>WebSocket 命令生命周期</h1>
+
+<h2 id="data-flow">命令和断线流程</h2>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">响应</th><th scope="col">之后</th></tr></thead>
+<tbody>
+<tr><th scope="row">JSON 无效</th><td>记录脱敏诊断；发错误帧且不回显原文</td><td>继续接收</td></tr>
+<tr><th scope="row">未知动作</th><td><code translate="no">operation_error(code=unknown_action)</code>，回传有效的 <code translate="no">request_id</code></td><td>继续接收</td></tr>
+<tr><th scope="row">处理器异常</th><td>只记录动作、会话和类型；在同一连接返回 <code translate="no">code=handler_error</code></td><td>继续接收</td></tr>
+<tr><th scope="row">传输断开</th><td>把连接移出集合</td><td>检查是否还有别的连接聚焦该会话</td></tr>
+<tr><th scope="row">没有别的连接，且存在旧版跟进队列</th><td>放入 <code translate="no">_FOLLOW_UP_DISCONNECTED</code></td><td><code translate="no">_web_follow_up</code> 的等待方收到</td></tr>
+<tr><th scope="row">等待方收到哨兵</th><td>变成 <code translate="no">None</code>；真正的空字符串仍是 <code translate="no">""</code></td><td>其 <code translate="no">finally</code> 删除队列</td></tr>
+</tbody>
+</table>
+
+<h2 id="boundaries">入口</h2>
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">行为</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_websocket_handler</code>（<code translate="no">server_runtime/websocket_dispatch.py</code>）</th><td>隔离 JSON 解析和处理器异常；处理器失败返回 <code translate="no">operation_error</code> 并继续接收</td><td><code translate="no">WebSocketDisconnect</code> 和发送错误帧失败会结束连接；写连接不无限重试</td></tr>
+<tr><th scope="row"><code translate="no">_handle_ws_command</code></th><td>同一连接上的动作按顺序执行，慢的会拖住其后所有帧。耗时 2 秒以上的动作按名称和会话记日志，并注明其后的帧是否等过。未知动作返回 <code translate="no">unknown_action</code>；已注册处理器的异常传到循环</td><td>传输响应只含受限的动作、会话、请求元数据和注册的错误类别</td></tr>
+<tr><th scope="row"><code translate="no">CONCURRENT_ACTIONS</code></th><td>客户端按自己的请求 id 认回复的只读动作（<code translate="no">load_session</code>、<code translate="no">project_folder_size</code>、<code translate="no">project_file_info</code>、<code translate="no">project_file_tree</code>、<code translate="no">project_file_search</code>）各自作为任务在有序通道旁执行：排在它之前的帧和同一动作的上一帧之后。慢的文件夹遍历、搜索或长对话的首次读取不会拖住 <code translate="no">chat</code> 或 <code translate="no">stop</code>。<code translate="no">list_projects</code> 仍按顺序执行：网页按类型认 <code translate="no">projects_list</code>，在后发的 <code translate="no">create_project</code> 之后才回的列表会被当成最新列表</td><td>同一动作的回复保持顺序；每个连接同时最多 32 个旁路读取，再来的在接收循环里等；连接结束时取消这些任务</td></tr>
+<tr><th scope="row"><code translate="no">load_session</code> 与回合并行</th><td>网页按请求 id 认 <code translate="no">session_loaded</code> 和历史分页；这个对话的行帧停放到读取的帧入队之后；运行帧带 <code translate="no">run_seq</code>。帧发出后先发运行中的任务和未答的问题，再统计上下文</td><td>首次读取期间发的 chat 或 stop 立即开始</td></tr>
+<tr><th scope="row"><code translate="no">_web_follow_up</code>（<code translate="no">server_runtime/session_persistence.py</code>）</th><td>等待会话队列；最后观察者断开或取消时返回 <code translate="no">None</code></td><td>进程内状态；跨 worker 重启不持久恢复</td></tr>
+<tr><th scope="row">停止、删除</th><td>取消对象和哨兵都不算回答；持有者的 <code translate="no">finally</code> 清理队列</td><td>分发器绝不按会话清理。获取资源的动作用自己的持有者 token 回滚，如 <code translate="no">_release_run_reservation(session_id, msg_id)</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="trust">信任和兼容</h2>
+<ul>
+<li>客户端数据不可信。错误帧绝不回显负载、异常信息、路径、凭据或回溯；回溯只写本地日志。</li>
+<li>前端仍能消费旧服务端的 <code translate="no">action_error</code>。</li>
+<li>还有别的连接聚焦该会话时，关闭一个标签不取消问题。</li>
+<li><code translate="no">follow_up_answer</code> 的传输形状不变；字符串和真正的空字符串都有效。</li>
+</ul>
+
+<details>
+<summary>取舍和排除</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">决定</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">采用</th><td>命令级错误帧（Starlette：<code translate="no">WebSocketDisconnect</code> 结束连接，清理放 <code translate="no">finally</code>）；最后观察者断开时发哨兵；按持有者清理；来自 <code translate="no">QuestionRegistry.cancel_session()</code> 的“取消不是回答”；旧版队列可返回 <code translate="no">None</code></td></tr>
+<tr><th scope="row">拒绝</th><td>任一标签断开就取消；分发器按会话删除预留；应用异常后关闭连接；把哨兵传给业务函数</td></tr>
+<tr><th scope="row">范围外</th><td>把旧版 <code translate="no">set_ask_user</code> 迁到 QuestionRegistry；改动 <code translate="no">runtime.ask</code>、ACP、频道提问、发送队列或运行预留协议；持久错误存储、确认和重连恢复</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="interaction-responsiveness">交互响应</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时刻</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">连接写入成功后</th><td>只清除捕获的草稿，并在所属对话里显示本地待确认用户消息。新对话在 <code translate="no">chat_ack</code> 之前没有对话 id，消息列表这段时间按它的临时 <code translate="no">local_*</code> 键显示，确认来得再晚，消息和等待中的回复也都在。预留保留文字和附件直到确认。这不代表执行已开始。</td></tr>
+<tr><th scope="row">服务端确认</th><td>对齐本地身份，不重复</td></tr>
+<tr><th scope="row">拒绝</th><td>保留可恢复消息，不覆盖更新的草稿</td></tr>
+<tr><th scope="row">无关工作</th><td>资源投影和会话或侧栏工作不能延迟接受，也不能阻塞事件循环</td></tr>
+<tr><th scope="row">关闭资源</th><td>针对精确的页面和关联身份，保持代和序号顺序，不扫描无关输入。本地反馈与原生确认分开；失败或更新的代不能被旧的待处理动作掩盖</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>验收</summary>
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">场景</th><th scope="col">断言</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_websocket_handler</code></th><td>第一个动作抛 <code translate="no">KeyError</code>，第二个是 ping</td><td>同一连接先收到脱敏 <code translate="no">operation_error</code>，再收到 pong</td></tr>
+<tr><th scope="row"><code translate="no">_websocket_handler</code></th><td>无效 JSON</td><td>不回显该帧；处理下一帧</td></tr>
+<tr><th scope="row"><code translate="no">_web_follow_up</code> 加断线</th><td>唯一聚焦的连接断开</td><td>等待方在测试期限内返回 <code translate="no">None</code>，不是 300 秒后；队列被删除</td></tr>
+<tr><th scope="row">断线</th><td>另一连接仍聚焦该会话</td><td>不发哨兵；返回另一连接的回答</td></tr>
+<tr><th scope="row"><code translate="no">follow_up_answer</code></th><td>空字符串</td><td>返回 <code translate="no">""</code>，不当作断线</td></tr>
+</tbody>
+</table>
+<p class="note">回归：<code translate="no">tests/component/webui/runtime/test_websocket_command_lifecycle.py</code>。受控测试还覆盖延迟确认、拒绝、会话切换、绑定的输入框、排队和插话、资源关闭顺序和事件循环进度。不从合成计时推断生产延迟。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现：命令级隔离、脱敏的 <code translate="no">operation_error</code>、旧帧兼容、跟进断线语义、交互响应。</p>

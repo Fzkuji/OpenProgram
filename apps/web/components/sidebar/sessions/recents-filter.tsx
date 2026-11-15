@@ -1,0 +1,268 @@
+"use client";
+
+/**
+ * RecentsFilter — the sliders-icon dropdown on the "Recents" header.
+ *
+ * Replicates Claude.ai/code's filter menu: a CASCADING menu where each
+ * row shows its current value + a ▸ chevron and opens a flyout
+ * sub-menu to the right. Built on Radix `DropdownMenu`
+ * (Root / Sub / SubTrigger / SubContent / Item) — the same nested-menu
+ * primitive Claude uses (`role="menuitem" aria-haspopup="menu"`).
+ *
+ * Rows mirror Claude exactly:
+ *   Status · Project · Environment · Last activity
+ *   ──────────────── (separator)
+ *   Group by · Sort by
+ *
+ * Status / Last activity are applied by the sidebar today; Project /
+ * Environment are wired to the view-pref store but have a single "All"
+ * option until a backend supplies the lists (the UI is complete and
+ * ready — the filtering hook just needs real data).
+ *
+ * View prefs persist per-browser via `useRecentsView` / `setRecentsView`
+ * (lib/recents-view.ts).
+ */
+
+import { Fragment, useMemo, useRef, useState } from "react";
+import * as DM from "@radix-ui/react-dropdown-menu";
+import { ChevronRight } from "lucide-react";
+
+import { CHECK_SLOT_PAD, MENU_PANEL, MENU_SEPARATOR, itemCls } from "@/components/ui/menu/menu-styles";
+import { useTranslation } from "@/lib/i18n";
+import { useSessionStore } from "@/lib/session-store";
+import {
+  type AnimatedNavIconHandle,
+  GalleryVerticalEndIcon,
+} from "@/components/animated-icons";
+import {
+  useRecentsView,
+  setRecentsView,
+  DEFAULT_RECENTS_VIEW,
+  type RecentsStatus,
+  type RecentsGroupBy,
+  type RecentsSort,
+  type RecentsActivity,
+} from "@/lib/prefs/recents-view";
+import { MenuCheck } from "@/components/ui/menu/menu-check";
+
+// Panel chrome = the canonical MENU_PANEL (the exact same frame as the
+// topbar dropdowns and the Recents ⋮ context menu — one shared style so
+// every menu in the app reads identically), plus this menu's open/close
+// animation. The popover layer keeps it above the sidebar.
+const surface =
+  MENU_PANEL +
+  " z-(--z-popover) text-text-primary" +
+  " data-[state=open]:animate-in data-[state=closed]:animate-out" +
+  " data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" +
+  " data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95";
+
+// A cascading row (SubTrigger / flyout Item) on the shared `itemCls`
+// (32px tall · 13px) so these match the context-menu + topbar rows.
+const rowCls =
+  itemCls(false) +
+  " select-none outline-none data-[state=open]:bg-accent" +
+  " data-[state=open]:text-text-bright data-[highlighted]:bg-accent" +
+  " data-[highlighted]:text-text-bright";
+
+export function RecentsFilter({projects = []}: {projects?: readonly {id:string;name:string}[]} = {}) {
+  const { t, text } = useTranslation();
+  const view = useRecentsView();
+  const [open, setOpen] = useState(false);
+  const filterIconRef = useRef<AnimatedNavIconHandle>(null);
+
+  const conversations = useSessionStore((s) => s.conversations);
+  const projectOptions = useMemo<[string, string][]>(() => [
+    ["all", t("sidebar.all_projects")],
+    ...projects.map(p=>[p.id,p.name] as [string,string]).sort((a,b)=>a[1].localeCompare(b[1])),
+  ], [projects, t]);
+
+  const archivedCount = useMemo(
+    () =>
+      Object.values(conversations || {}).filter(
+        (c) => (c as { archived?: boolean }).archived,
+      ).length,
+    [conversations],
+  );
+
+  // Any non-default selection lights the trigger so an active filter
+  // is visible without opening the menu.
+  const active =
+    view.status !== DEFAULT_RECENTS_VIEW.status ||
+    view.project !== DEFAULT_RECENTS_VIEW.project ||
+    view.environment !== DEFAULT_RECENTS_VIEW.environment ||
+    view.lastActivity !== DEFAULT_RECENTS_VIEW.lastActivity ||
+    view.groupBy !== DEFAULT_RECENTS_VIEW.groupBy ||
+    view.sort !== DEFAULT_RECENTS_VIEW.sort;
+
+  return (
+    <DM.Root open={open} onOpenChange={setOpen}>
+      <DM.Trigger asChild>
+        <button
+          type="button"
+          aria-label={t("sidebar.filter")}
+          title={t("sidebar.filter")}
+          onClick={(e) => e.stopPropagation()}
+          onMouseEnter={() => filterIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => filterIconRef.current?.stopAnimation?.()}
+          className={
+            "flex size-(--ui-button-h-xs) items-center justify-center rounded-sm" +
+            " transition-colors hover:bg-bg-hover outline-none " +
+            // Stay lit while the menu is open — driven off the component's
+            // own `open` state (reliable base utilities) rather than a
+            // data-[state] Tailwind variant, which didn't generate here.
+            (open ? "bg-bg-hover " : "") +
+            (open || active
+              ? "text-text-secondary"
+              : "text-text-muted")
+          }
+        >
+          <GalleryVerticalEndIcon ref={filterIconRef} size={20} />
+        </button>
+      </DM.Trigger>
+
+      <DM.Portal>
+        <DM.Content
+          align="end"
+          sideOffset={6}
+          className={surface + " min-w-[176px]"}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {view.groupBy !== "project" && <Row<RecentsStatus>
+            label={t("sidebar.status")}
+            value={view.status}
+            options={[
+              ["active", t("sidebar.status_active")],
+              ["archived", t("sidebar.status_archived")],
+              ["all", t("sidebar.status_all")],
+            ]}
+            counts={{ archived: archivedCount }}
+            onPick={(status) => setRecentsView({ status })}
+          />}
+          <Row<string>
+            label={t("sidebar.project")}
+            value={view.project}
+            options={projectOptions}
+            onPick={(project) => setRecentsView({ project })}
+          />
+          <Row<string>
+            label={t("sidebar.environment")}
+            value={view.environment}
+            options={[["all", t("sidebar.filter_all")]]}
+            onPick={(environment) => setRecentsView({ environment })}
+          />
+          <Row<RecentsActivity>
+            label={t("sidebar.last_activity")}
+            value={view.lastActivity}
+            options={[
+              ["all", t("sidebar.activity_all")],
+              ["1d", t("sidebar.activity_1d")],
+              ["7d", t("sidebar.activity_7d")],
+              ["30d", t("sidebar.activity_30d")],
+            ]}
+            onPick={(lastActivity) => setRecentsView({ lastActivity })}
+          />
+
+          <DM.Separator className={MENU_SEPARATOR} />
+
+          <Row<RecentsGroupBy>
+            label={t("sidebar.group_by")}
+            value={view.groupBy}
+            options={[
+              ["none", t("sidebar.group_date")],
+              ["project", t("sidebar.group_project")],
+              ["state", t("sidebar.group_state")],
+              ["flat", t("sidebar.group_none")],
+            ]}
+            // "None" (flat) sits last, set off by a divider — like Claude.
+            separateLast
+            onPick={(groupBy) => setRecentsView({ groupBy })}
+          />
+          <Row<RecentsSort>
+            label={text("Chat order", "聊天排序")}
+            value={view.sort}
+            options={[
+              ["title", t("sidebar.sort_title")],
+              ["created", t("sidebar.sort_created")],
+              ["recency", t("sidebar.sort_recency")],
+            ]}
+            onPick={(sort) => setRecentsView({ sort, sortDirection: sort === "title" ? "asc" : view.sortDirection })}
+          />
+          <Row<"asc" | "desc">
+            label={text("Chat direction", "聊天排序方向")}
+            value={view.sortDirection}
+            options={[["desc", text("Newest first / Z–A", "新到旧 / Z–A")], ["asc", text("Oldest first / A–Z", "旧到新 / A–Z")]]}
+            onPick={(sortDirection) => setRecentsView({ sortDirection })}
+          />
+          {view.groupBy === "project" ? <Row
+            label={text("Project order", "项目排序")}
+            value={view.projectSort}
+            options={[["recency", text("Recent activity first", "最近活动优先")], ["oldest", text("Oldest activity first", "最早活动优先")], ["name", text("Name", "名称")], ["manual", text("Manual", "手动")]]}
+            onPick={(projectSort) => setRecentsView({ projectSort })}
+          /> : null}
+        </DM.Content>
+      </DM.Portal>
+    </DM.Root>
+  );
+}
+
+/** One cascading row: ``label   <currentValue> ›`` that opens a flyout
+ *  of options with an amber check on the selected one. A single-option
+ *  row (Project / Environment until backed) still opens — the flyout
+ *  just shows the one choice, keeping the layout consistent and ready
+ *  for more options later. */
+function Row<T extends string>({
+  label,
+  value,
+  options,
+  onPick,
+  separateLast,
+  counts,
+}: {
+  label: string;
+  value: T;
+  options: [T, string][];
+  onPick: (v: T) => void;
+  /** Optional per-option count badge (e.g. how many archived sessions). */
+  counts?: Partial<Record<T, number>>;
+  /** Render a divider before the last option (e.g. "None" in Group by). */
+  separateLast?: boolean;
+}) {
+  const current = options.find(([v]) => v === value)?.[1] ?? "";
+  return (
+    <DM.Sub>
+      <DM.SubTrigger className={rowCls}>
+        <span className="flex-1 text-left">{label}</span>
+        <span className="text-text-muted">{current}</span>
+        <ChevronRight size={14} className="shrink-0 text-text-muted" />
+      </DM.SubTrigger>
+      <DM.Portal>
+        <DM.SubContent className={surface + " min-w-[160px]"} sideOffset={8} alignOffset={-4}>
+          {options.map(([val, optLabel], i) => {
+            const selected = val === value;
+            const divider = separateLast && i === options.length - 1;
+            return (
+              <Fragment key={val}>
+                {divider ? (
+                  <DM.Separator className={MENU_SEPARATOR} />
+                ) : null}
+                <DM.Item onSelect={() => onPick(val)} className={rowCls}>
+                  <span className="flex-1 text-left">{optLabel}</span>
+                  {counts?.[val] ? (
+                    <span className="shrink-0 text-text-muted">
+                      {counts[val]}
+                    </span>
+                  ) : null}
+                  {selected ? (
+                    <MenuCheck />
+                  ) : (
+                    <span className={CHECK_SLOT_PAD} />
+                  )}
+                </DM.Item>
+              </Fragment>
+            );
+          })}
+        </DM.SubContent>
+      </DM.Portal>
+    </DM.Sub>
+  );
+}

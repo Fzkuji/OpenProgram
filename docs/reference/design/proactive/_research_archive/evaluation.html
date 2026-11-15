@@ -1,0 +1,75 @@
+<title>Proactive evaluation</title>
+<meta name="description" content="How the proactive layer would be evaluated for a paper: contributions, related work, experiments, baselines, metrics and dataset.">
+<meta name="covers" content="openprogram/runtime/proactive/">
+<h1>Evaluating the proactive layer</h1>
+
+<p>Research plan for a future paper. Not implemented.</p>
+
+<h2 id="contributions">Contributions</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Contribution</th><th scope="col">Prior work lacks</th></tr></thead>
+<tbody>
+<tr><th scope="row">C1</th><td>Git-as-truth event sourcing and <a href="replay.html">replay as policy test</a>: decisions are a pure fold over the stream</td><td>Claude Code hooks and AgentSpec intercept immediately, with no event sourcing or offline replay</td></tr>
+<tr><th scope="row">C2</th><td>Framework-enforced interruption budgets and dismiss-triggered circuit breakers (<a href="../execution-model.html">execution model</a> §5)</td><td>Hooks are open-loop: no feedback or self-muting</td></tr>
+<tr><th scope="row">C3</th><td>Lazy L2 inference written back as derived events (<a href="../events-and-state.html">events and state</a> §4)</td><td>Inference that becomes recorded data reproducing the result</td></tr>
+</tbody>
+</table>
+<ul>
+<li>The two channels (synchronous gate, asynchronous observer) are not a contribution: they follow admission webhooks versus controllers. Present them as a design decision, with agent-specific evidence: measured 10 ms p99, fail-closed incident analysis, gates applying through sub-agent bypass.</li>
+<li>PRL, an unpublished internal design, is appendix motivation, never a baseline: reviewers cannot check it, and it was never implemented.</li>
+</ul>
+
+<h2 id="related-work">Related work to address</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Work</th><th scope="col">Relationship</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code hooks <code translate="no">PreToolUse</code> (allow, ask, deny)</th><td>The gate lane looks like a reimplementation; the gate-only baseline must compare</td></tr>
+<tr><th scope="row">AgentSpec (arXiv 2503.18666), runtime enforcement</th><td>Gate semantics, no C1 or C2</td></tr>
+<tr><th scope="row">Horvitz 1999, interruption-cost literature</th><td>Predecessors of budgets and feedback; compare breaker thresholds with expected utility</td></tr>
+<tr><th scope="row">ProactiveBench (arXiv 2410.12361)</th><td>Annotated proactive evaluation: use it, extend it or justify why not</td></tr>
+<tr><th scope="row">Levels of automation</th><td>Explain why autonomy levels are outside the contribution</td></tr>
+</tbody>
+</table>
+
+<h2 id="experiments">Experiments</h2>
+<p>Two weeks of one author's own use is anecdote: self-written policies, Hawthorne effects, 20–50 events.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Experiment</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Large-scale replay</th><td>Map thousands of public trajectories (SWE-bench, SWE-agent, OpenHands) to the Event schema. At least two annotators on would-have-fired; report precision and Cohen's kappa</td></tr>
+<tr><th scope="row">Recall</th><td>Independently annotated should-have-fired set; <a href="replay.html#recall">replay cannot show false negatives</a></td></tr>
+<tr><th scope="row">Human deployment</th><td>8–12 developers, 1–2 weeks each. Derive session count for power from the expected event rate</td></tr>
+</tbody>
+</table>
+
+<h2 id="baselines">Baselines</h2>
+<table class="stack">
+<thead><tr><th scope="col">Baseline</th><th scope="col">Description</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">prompt-only</th><td>The three policy intents in the system prompt, at zero runtime cost</td><td>The most consequential: at similar acceptance the runtime layer has no rationale</td></tr>
+<tr><th scope="row">no-proactive</th><td>Layer off</td><td>Lower bound</td></tr>
+<tr><th scope="row">gate-only</th><td>Gate lane only, roughly Claude Code hooks</td><td>Isolates observers and feedback</td></tr>
+</tbody>
+</table>
+
+<h2 id="metrics">Metrics</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Metric</th><th scope="col">Measure</th></tr></thead>
+<tbody>
+<tr><th scope="row">TestGapWatcher (primary)</th><td>Share of triggered modules that actually gain tests; their later bug rate</td></tr>
+<tr><th scope="row">UnvalidatedCompletionNudge (primary)</th><td>Share of accepted suggestions that actually reveal regressions</td></tr>
+<tr><th scope="row">Accept or dismiss (auxiliary)</th><td>Confounded by wrong advice, timing, prior knowledge, reflexive dismissal</td></tr>
+<tr><th scope="row">Breaker sensitivity</th><td>Muting and missed-intervention curves for N∈{2,3,5}. Justify a counter over expected utility: no calibrated cold-start data</td></tr>
+</tbody>
+</table>
+
+<h2 id="supporting">Supporting evaluations</h2>
+<ul>
+<li>L1 and L2 inference separately: 100–200 annotated examples each for path-prefix → <code translate="no">touched_modules</code> (error-prone in monorepos), <code translate="no">claimed_completion</code> and similar; report accuracy separately.</li>
+<li>When policy precision is poor, separate state errors from decision errors.</li>
+<li>Ablations: no breaker; all-synchronous or all-asynchronous; L1 only. Measure precision loss and added latency. Added turn latency from synchronous observers supports the two channels.</li>
+<li>L2 cost: dollars and latency for at most two inferences per turn, against prompt-only.</li>
+</ul>
+
+<h2 id="dataset">Dataset release</h2>
+<p>Replay and annotations as a dataset: opportunity taxonomy, two annotators, fire and no-fire cases, should-have-fired set. Apply the redaction schema first (<a href="threat-model.html">threat model</a> §5: events contain secrets and private code). Release augmented-mode L2 caches and model fingerprints to reproduce the annotation set, not the inference.</p>

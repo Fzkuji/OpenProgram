@@ -7,6 +7,7 @@ callable names do not depend on this source hierarchy.
 
 from . import agents as _agents_self_register  # noqa: F401
 from . import code as _code_self_register  # noqa: F401
+from . import computer_use as _computer_use_self_register  # noqa: F401
 from . import files as _files_self_register  # noqa: F401
 from . import interaction as _interaction_self_register  # noqa: F401
 from . import jobs as _jobs_self_register  # noqa: F401

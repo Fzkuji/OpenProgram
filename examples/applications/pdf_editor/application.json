@@ -1,0 +1,895 @@
+{
+  "id": "example.pdf-editor",
+  "title": "PDF editor",
+  "description": "Reads and edits the project's PDFs: annotate, reorganise pages, fill forms. Saves only when you say.",
+  "icon": "file-pdf",
+  "version": "3.1.0",
+  "scope": "project",
+  "dataSchema": 1,
+  "ui": {
+    "root": "ui",
+    "entry": "index.html"
+  },
+  "capabilities": [
+    "storage.app",
+    "model.invoke",
+    "files.project.read",
+    "files.project.write"
+  ],
+  "backend": {
+    "kind": "python",
+    "entry": "backend:operations"
+  },
+  "operations": {
+    "list_files": {
+      "agent": true,
+      "description": "List the PDF files in the bound project, newest first, with size and modification time.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Only paths containing this text"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "info": {
+      "agent": true,
+      "description": "Describe a PDF: page count, title, author, outline (bookmarks with page numbers), number of annotations and form fields, size and revision. Call this before editing to learn the page count.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "read_text": {
+      "agent": true,
+      "description": "Extracted text of a page range (1-based, inclusive; defaults to the whole file, up to max_chars).",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project"
+          },
+          "start_page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "end_page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_chars": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 400000
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "find": {
+      "agent": true,
+      "description": "Find a phrase (case-insensitive unless case_sensitive; whitespace-insensitive). Returns the pages and a snippet per match. Use it to check wording before annotate.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project"
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "path",
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "summarize": {
+      "agent": true,
+      "description": "Summarize a PDF page range, or supplied text, with the configured model. focus steers what the summary covers.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "start_page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "end_page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "focus": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "list_annotations": {
+      "agent": true,
+      "description": "List the annotations of a PDF (links, form widgets and popups are left out). Each has an id (use it with remove_annotation), page, type (highlight, underline, strikethrough, squiggly, note, free_text, ink, rectangle, ellipse, line, arrow, polygon, stamp, \u2026), rect in PDF points, color, author, contents (the comment) and, for text markup, the marked text. Filter with pages or types.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "pages": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "description": "1-based page numbers and ranges, e.g. [1, 3, \"5-7\", \"9-end\"]"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these types, e.g. [\"highlight\", \"note\"]"
+          },
+          "draft": {
+            "type": "string",
+            "pattern": "^d_[0-9a-f]{32}$",
+            "description": "Editor only: a staged draft instead of path"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "annotate": {
+      "agent": true,
+      "description": "Add an annotation and save the PDF in place (or to output). type highlight / underline / strikethrough / squiggly: give text, a phrase that appears in the PDF (whitespace-insensitive); it is located on page (or every page) and marked; occurrence picks \"first\" (default), \"all\", or the Nth match. type note: a sticky-note comment with note as its text, placed after the phrase in text, or at at=[x, y] on page (PDF points from the bottom-left corner; default near the top-left). type rectangle / ellipse: rect=[x0, y0, x1, y1] on page; line / arrow: points=[[x1, y1], [x2, y2]] on page; free_text: a text box with note as its text in rect on page. note also attaches a comment to markup types. Returns the new annotation ids and the matched text. Fails without changing the file when the phrase is not found.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "highlight",
+              "underline",
+              "strikethrough",
+              "squiggly",
+              "note",
+              "rectangle",
+              "ellipse",
+              "line",
+              "arrow",
+              "free_text"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Phrase to mark (markup types) or to anchor a note after"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page; required for shapes, free_text and notes without text"
+          },
+          "occurrence": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "first",
+                  "all"
+                ]
+              },
+              {
+                "type": "integer",
+                "minimum": 1
+              }
+            ],
+            "description": "Which matches to mark (default first)"
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string",
+            "description": "Comment text (notes, free_text, or a comment on markup)"
+          },
+          "color": {
+            "type": "string",
+            "description": "#rrggbb or yellow, green, blue, pink, red, orange, purple, black, gray"
+          },
+          "author": {
+            "type": "string",
+            "description": "Author shown in viewers (default Agent)"
+          },
+          "at": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "Note position [x, y] in PDF points"
+          },
+          "rect": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "[x0, y0, x1, y1] in PDF points"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 48,
+            "description": "Line width in points for shapes"
+          },
+          "fill": {
+            "type": "string",
+            "description": "#rrggbb or yellow, green, blue, pink, red, orange, purple, black, gray"
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0.05,
+            "maximum": 1
+          },
+          "font_size": {
+            "type": "number",
+            "minimum": 4,
+            "maximum": 144
+          },
+          "output": {
+            "type": "string",
+            "minLength": 5,
+            "description": "Write the result to this new project-relative .pdf path instead of changing the source file"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Allow output to replace an existing file (default false)"
+          }
+        },
+        "required": [
+          "path",
+          "type"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "remove_annotation": {
+      "agent": true,
+      "description": "Delete annotations by id (ids come from list_annotations) and save the PDF in place (or to output). Their popups and replies go too. Unknown ids fail without changing the file.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A single id (instead of ids)"
+          },
+          "output": {
+            "type": "string",
+            "minLength": 5,
+            "description": "Write the result to this new project-relative .pdf path instead of changing the source file"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Allow output to replace an existing file (default false)"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "pages": {
+      "agent": true,
+      "description": "Change the pages of a PDF and save it in place (or to output). action: rotate (pages, degrees 90/180/270/-90), delete (pages; at least one page must remain), duplicate (pages; each copy follows its original), move (pages to position to: the first moved page becomes page to), reorder (order: every page number exactly once, in the new order), insert_blank (after: 0 for before page 1, count, optional size a4/letter/legal/a5; default the neighbouring page's size), extract (pages written to the new file output; the source is unchanged). Annotations and form fields move with their pages.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "rotate",
+              "delete",
+              "duplicate",
+              "move",
+              "reorder",
+              "insert_blank",
+              "extract"
+            ]
+          },
+          "pages": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "description": "1-based page numbers and ranges, e.g. [1, 3, \"5-7\", \"9-end\"]"
+          },
+          "degrees": {
+            "type": "integer",
+            "enum": [
+              90,
+              180,
+              270,
+              -90,
+              -180,
+              -270
+            ]
+          },
+          "to": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "a4",
+              "letter",
+              "legal",
+              "a5"
+            ]
+          },
+          "output": {
+            "type": "string",
+            "minLength": 5,
+            "description": "Write the result to this new project-relative .pdf path instead of changing the source file"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Allow output to replace an existing file (default false)"
+          }
+        },
+        "required": [
+          "path",
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "merge": {
+      "agent": true,
+      "description": "Insert every page of one or more other project PDFs into a PDF after page after (0 = at the start; default the end) and save it in place, or write the combined PDF to output.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "sources": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+            },
+            "description": "PDFs to insert, in order"
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "output": {
+            "type": "string",
+            "minLength": 5,
+            "description": "Write the result to this new project-relative .pdf path instead of changing the source file"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Allow output to replace an existing file (default false)"
+          }
+        },
+        "required": [
+          "path",
+          "sources"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "split": {
+      "agent": true,
+      "description": "Split a PDF into new files named \"<name> (part N).pdf\" beside it (or in folder). Give exactly one of: every (pages per file), at (page numbers that start a new part) or ranges (e.g. [\"1-3\", \"4-end\"]). The source is unchanged.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "every": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "at": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "description": "1-based page numbers and ranges, e.g. [1, 3, \"5-7\", \"9-end\"]"
+          },
+          "ranges": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": [
+                "string",
+                "integer",
+                "array"
+              ]
+            }
+          },
+          "folder": {
+            "type": "string",
+            "description": "Project-relative folder for the parts"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Allow output to replace an existing file (default false)"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "form_fields": {
+      "agent": true,
+      "description": "List the fillable form fields of a PDF: name, type (text, checkbox, radio, combo, list, signature, button), page, current value, options (for checkbox, radio and choice fields), label, readonly, required, multiline and max_length.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "draft": {
+            "type": "string",
+            "pattern": "^d_[0-9a-f]{32}$",
+            "description": "Editor only: a staged draft instead of path"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "fill_form": {
+      "agent": true,
+      "description": "Set form field values and save the PDF in place (or to output). values maps field names (from form_fields) to text for text fields, true/false for checkboxes, one of the options for radio and choice fields. Unknown names, read-only fields and values outside the options fail without changing the file.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "values": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "output": {
+            "type": "string",
+            "minLength": 5,
+            "description": "Write the result to this new project-relative .pdf path instead of changing the source file"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Allow output to replace an existing file (default false)"
+          }
+        },
+        "required": [
+          "path",
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "chunk": {
+      "agent": false,
+      "description": "Editor only: a base64 slice of a project PDF (path + revision) or of a staged draft, for the page to render.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600000
+          },
+          "revision": {
+            "type": "string"
+          },
+          "draft": {
+            "type": "string",
+            "pattern": "^d_[0-9a-f]{32}$"
+          }
+        },
+        "required": [
+          "offset"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "upload": {
+      "agent": false,
+      "description": "Editor only: one base64 chunk of the PDF PDF.js serialised; the final chunk makes it a staged draft.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "upload": {
+            "type": "string",
+            "pattern": "^u_[0-9a-f]{32}$"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "data": {
+            "type": "string"
+          },
+          "final": {
+            "type": "boolean"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "offset",
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "draft_apply": {
+      "agent": false,
+      "description": "Editor only: apply new annotations, restyled or removed annotations, a page sequence or form values to a draft (or the file) and return a new draft.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "draft": {
+            "type": "string",
+            "pattern": "^d_[0-9a-f]{32}$"
+          },
+          "annotations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "update": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "color": {
+                  "type": "string"
+                },
+                "fill": {
+                  "type": "string"
+                },
+                "width": {
+                  "type": "number"
+                },
+                "opacity": {
+                  "type": "number"
+                },
+                "contents": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "sequence": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "fill": {
+            "type": "object"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "save": {
+      "agent": false,
+      "description": "Editor only: write a draft into the project, over its file (checking base_revision) or as a copy.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "draft": {
+            "type": "string",
+            "pattern": "^d_[0-9a-f]{32}$"
+          },
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "base_revision": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "as_copy": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "export": {
+      "agent": false,
+      "description": "Editor only: write groups of pages of a draft or project PDF to new files (extract and split).",
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+          },
+          "draft": {
+            "type": "string",
+            "pattern": "^d_[0-9a-f]{32}$"
+          },
+          "parts": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "pages": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": [
+                      "integer",
+                      "string"
+                    ]
+                  },
+                  "description": "1-based page numbers and ranges, e.g. [1, 3, \"5-7\", \"9-end\"]"
+                },
+                "output": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "PDF path relative to the project root, e.g. papers/draft.pdf"
+                }
+              },
+              "required": [
+                "pages",
+                "output"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "overwrite": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "parts"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}

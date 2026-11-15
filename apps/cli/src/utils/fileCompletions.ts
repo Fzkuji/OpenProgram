@@ -1,5 +1,5 @@
 import { readdirSync, statSync } from 'fs';
-import { join, basename, relative, resolve } from 'path';
+import { join, basename, isAbsolute, relative, resolve, sep } from 'path';
 
 export interface FileMatch {
   /** Path relative to cwd, e.g. "src/index.tsx". */
@@ -59,7 +59,7 @@ export function fileCompletions(
         continue;
       }
       scanned++;
-      const rel = relative(cwd, full);
+      const rel = mentionPath(relative(cwd, full));
       const isDir = st.isDirectory();
       const lowerRel = rel.toLowerCase();
       const lowerBase = basename(rel).toLowerCase();
@@ -103,3 +103,21 @@ export function findAtToken(
 
 /** Resolve a relative path back to absolute; useful for file viewers. */
 export const absolutize = (rel: string, cwd: string = process.cwd()) => resolve(cwd, rel);
+
+/**
+ * A path as it is written after `@`: forward slashes on every platform, so
+ * `@src/ind` finds `src\index.tsx` on Windows and the inserted mention reads
+ * the same everywhere. Windows opens forward-slash paths as they are.
+ */
+export const mentionPath = (rel: string, separator: string = sep) =>
+  separator === '/' ? rel : rel.split(separator).join('/');
+
+type PathRules = { isAbsolute(path: string): boolean; resolve(...parts: string[]): string };
+
+/** Where `/export <name>` writes: the name itself when it is a full path
+ *  (`C:\notes\a.md`, `\\server\share\a.md`, `/tmp/a.md`), otherwise under cwd. */
+export const exportTarget = (
+  name: string,
+  cwd: string = process.cwd(),
+  rules: PathRules = { isAbsolute, resolve },
+) => (rules.isAbsolute(name) ? name : rules.resolve(cwd, name));

@@ -1,0 +1,276 @@
+<title>Agent and Context</title>
+<meta name="description" content="The Python API for model calls, Agent classes, Context, method options, durable steps and session turns.">
+<h1>Agent and Context</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Entry</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent()</code> / <code translate="no">agent_async()</code></th><td>Runs a model tool loop</td></tr>
+<tr><th scope="row"><code translate="no">Agent</code></th><td>Stores reusable configuration, scopes ordinary subclass methods</td></tr>
+<tr><th scope="row"><code translate="no">Context</code></th><td>Supplies named content and history selection</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>from openprogram import Agent, agent, agent_async
+
+answer = agent("Summarize this text", tools=[])
+
+class Researcher(Agent):
+    instructions = "Return a short, factual answer."
+    tools = []
+
+    def prepare(self, question):
+        """Remove surrounding whitespace."""
+        return question.strip()
+
+    def research(self, question):
+        """Answer the prepared question."""
+        return self(self.prepare(question))
+
+researcher = Researcher(model="configured-model")
+answer = researcher.research("A question")
+# In async code: answer = await researcher.arun("A question")
+# Or: answer = await agent_async("A question", tools=[])</code></pre>
+<p class="note">All entries use the existing Runtime and Session DAG. Ordinary calls need no manual Context.</p>
+<h2 id="direct-calls-and-agent-classes">Direct calls and Agent classes</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Option</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">prompt</code></th><td>A string or content blocks</td></tr>
+<tr><th scope="row"><code translate="no">model</code>, <code translate="no">effort</code>, <code translate="no">runtime</code></th><td>Common options. Tool execution options: <a href="runtime.html">Runtime</a></td></tr>
+<tr><th scope="row"><code translate="no">tools</code></th><td><code translate="no">None</code> resolves available tools. <code translate="no">[]</code> requests none.</td></tr>
+<tr><th scope="row"><code translate="no">choices</code></th><td>The closing reply becomes a <a href="../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.html">next-step decision</a>; returns the resolved pick</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Agent(model=, instructions=, context=, tools=, runtime=, effort=, **options)</code></th><td>Instance settings override class defaults; per-call options override instance settings. <code translate="no">**options</code> accepts the keyword options of <code translate="no">agent()</code>.</td></tr>
+<tr><th scope="row"><code translate="no">Agent.from_spec(spec, **overrides)</code></th><td>Uses an AgentSpec configuration without creating a saved Agent entry</td></tr>
+<tr><th scope="row">Construction</th><td>No model request, no execution session</td></tr>
+<tr><th scope="row">Invocation</th><td>Inherits an active execution, otherwise owns a separate one and releases its resources. Reusing an instance does not continue an earlier independent conversation.</td></tr>
+<tr><th scope="row">Methods</th><td>Instance, static and class methods get automatic call scopes, including single-underscore helpers. Dunder methods and generators are excluded. Recording registers no model tool.</td></tr>
+</tbody>
+</table>
+<p class="note">The class-and-method interface takes inspiration from <a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents">NVIDIA-labs OO Agents</a>. OpenProgram does not claim NOOA API compatibility.</p>
+<h2 id="context-content-and-visibility">Context</h2>
+<pre translate="no"><code>from openprogram import Agent, Context
+
+context = Context(
+    {"notes": "Use the project terminology."},
+    providers={"current_topic": lambda current: "Agent context"},
+)
+researcher = Agent(context=context, tools=[])</code></pre>
+<p class="note">The framework derives and binds Context automatically; this is optional. Content is separate from system instructions and tool authority.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Name</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Context(blocks=None, *, parent=None, providers=None, history=, call_id=, store=None, head_id=None)</code></th><td>Mutable mapping of named content</td></tr>
+<tr><th scope="row"><code translate="no">derive()</code></th><td>Child with independent content</td></tr>
+<tr><th scope="row"><code translate="no">Context.current()</code></th><td>The task binding, or <code translate="no">None</code></td></tr>
+<tr><th scope="row"><code translate="no">merge(other)</code></th><td>Overlays named content and explicit selection; keeps the scope call identity</td></tr>
+<tr><th scope="row"><code translate="no">bind()</code></th><td>For host integrations that need an explicit binding</td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>Synchronous callables taking the current Context, run for each model request. A failure aborts that request. Expression strings are never executed.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">history</code></th><th scope="col">The request sees</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">None</code></th><td>Nothing</td></tr>
+<tr><th scope="row"><code translate="no">"thread"</code></th><td>Only earlier requests made with this same Context object</td></tr>
+<tr><th scope="row"><code translate="no">"chat"</code></th><td>The visible conversation (Context default)</td></tr>
+<tr><th scope="row">callable</th><td><code translate="no">(node, context)</code> filters conversation nodes after the visibility checks</td></tr>
+<tr><th scope="row">unset in a Workflow role call</th><td>No history</td></tr>
+</tbody>
+</table>
+<p class="note">These settings cannot expand tool permissions. Model interactions stay in the execution session.</p>
+<h2 id="explicit-session-lifetime">Explicit session lifetime</h2>
+<p>To make several independent calls continue one session, pass an existing <code translate="no">SessionNodeWriter</code>.</p>
+<pre translate="no"><code>from openprogram import Agent, Context
+from openprogram.state.store import SessionStore, SessionNodeWriter
+
+store = SessionStore(root_path="/var/lib/myapp/sessions")
+store.create_session("research", agent_id="main")
+writer = SessionNodeWriter(store, "research")
+researcher = Agent(context=Context(store=writer), tools=[])
+try:
+    first = researcher("List the project requirements.")
+    second = researcher("Review the requirements from the previous call.")
+finally:
+    store.close()</code></pre>
+<ul>
+<li><code translate="no">head_id</code> selects an existing branch tip; <code translate="no">None</code> continues the current head.</li>
+<li>The caller owns and closes the store. Execution scopes do not.</li>
+<li>This supplies the event lifetime for NOOA-style repeated instance calls. The Agent still stores configuration; its default calls stay independent.</li>
+</ul>
+<h2 id="method-behavior">Method options</h2>
+<pre translate="no"><code>from openprogram import Agent
+from openprogram.runtime.agent import llm
+
+class ExampleAgent(Agent):
+    method_options = {
+        'f': {'tool': True},
+    }
+
+    def f(self, x: str) -&gt; str:
+        """One-line summary of what f does."""
+        return llm([{"type": "text", "text": f"...{x}..."}])
+
+_example_agent = ExampleAgent()
+f = _example_agent.f</code></pre>
+<p class="note">Signature and docstring supply names, types, defaults and summaries; <code translate="no">method_options</code> supplies the rest, with no decorator. Agent owns method execution and registration. Context resolves request content and visible history.</p>
+<h3 id="execution-and-context-settings">Execution and Context</h3>
+<table class="stack">
+<thead><tr><th scope="col">Parameter</th><th scope="col">Type</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">capture_io</code></th><td><code translate="no">bool</code></td><td>method <code translate="no">False</code>, tool <code translate="no">True</code></td><td>Record arguments and return values. Structural call identity stays available without them.</td></tr>
+<tr><th scope="row"><code translate="no">resumable</code></th><td><code translate="no">bool</code></td><td><code translate="no">False</code></td><td>Opt in to <a href="#durable-steps-and-code-selection">durable steps</a></td></tr>
+<tr><th scope="row"><code translate="no">expose</code></th><td><code translate="no">str</code></td><td>method <code translate="no">"full"</code>, tool <code translate="no">"io"</code></td><td>What others see of this function in the DAG (table below). Any other value raises <code translate="no">ValueError</code>.</td></tr>
+<tr><th scope="row"><code translate="no">render_range</code></th><td><code translate="no">dict</code></td><td><code translate="no">None</code></td><td>How many history nodes this function's <code translate="no">llm()</code> reads: <code translate="no">{"callers": N, "subcalls": M}</code>, sliced by <code translate="no">seq</code></td></tr>
+<tr><th scope="row"><code translate="no">input</code></th><td><code translate="no">dict</code></td><td><code translate="no">None</code></td><td>Per-parameter UI metadata for the WebUI form: <code translate="no">description</code>, <code translate="no">placeholder</code>, <code translate="no">multiline</code>, <code translate="no">options</code> (dropdown and JSON-schema <code translate="no">enum</code>), <code translate="no">hidden</code> (out of the form and tool schema)</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td><code translate="no">str</code></td><td><code translate="no">None</code></td><td>System prompt for this function's LLM calls; restored afterwards</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">expose</code></th><th scope="col">Name and return value</th><th scope="col">LLM exchanges</th><th scope="col">Nested code calls</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">"io"</code></th><td>visible</td><td>hidden</td><td>hidden</td></tr>
+<tr><th scope="row"><code translate="no">"llm"</code></th><td>hidden</td><td>visible</td><td>hidden</td></tr>
+<tr><th scope="row"><code translate="no">"full"</code></th><td>visible, with docstring and parameters</td><td>visible</td><td>visible</td></tr>
+<tr><th scope="row"><code translate="no">"hidden"</code></th><td>no DAG nodes written</td><td>no DAG nodes written</td><td>no DAG nodes written</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">render_range</code> key</th><th scope="col">Counts nodes</th><th scope="col">Default</th><th scope="col">Values</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">callers</code></th><td>written before this frame started; newest N</td><td><code translate="no">None</code>, unlimited</td><td><code translate="no">0</code> is a full wall</td></tr>
+<tr><th scope="row"><code translate="no">subcalls</code></th><td>written after this frame started; newest N</td><td><code translate="no">-1</code>, unlimited, so the frame sees its own progress</td><td><code translate="no">N&gt;=0</code> truncates; <code translate="no">0</code> walls off the frame</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Tool registration parameters</summary>
+<p>With <code translate="no">tool=True</code> the method registers as an LLM-callable tool in <code translate="no">openprogram.programs</code>, beside <code translate="no">@function</code> tools. Names and semantics match <code translate="no">@function</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Parameter</th><th scope="col">Type</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tool</code> / <code translate="no">as_tool</code></th><td><code translate="no">bool</code></td><td><code translate="no">False</code></td><td>Register as a tool. <code translate="no">False</code>: Python-direct only</td></tr>
+<tr><th scope="row"><code translate="no">name</code></th><td><code translate="no">str</code></td><td><code translate="no">None</code></td><td>Override; default <code translate="no">__name__</code></td></tr>
+<tr><th scope="row"><code translate="no">description</code></th><td><code translate="no">str</code></td><td><code translate="no">None</code></td><td>Override; default docstring</td></tr>
+<tr><th scope="row"><code translate="no">parameters</code></th><td><code translate="no">dict</code></td><td><code translate="no">None</code></td><td>JSON-schema override; default from type hints and <code translate="no">input</code>, excluding runtime-injected and <code translate="no">hidden</code> parameters</td></tr>
+<tr><th scope="row"><code translate="no">label</code></th><td><code translate="no">str</code></td><td><code translate="no">None</code></td><td>Label in tool UIs</td></tr>
+<tr><th scope="row"><code translate="no">toolset</code></th><td><code translate="no">tuple</code></td><td><code translate="no">()</code></td><td>Toolset names, used by <code translate="no">exec(toolset=...)</code></td></tr>
+<tr><th scope="row"><code translate="no">unsafe_in</code></th><td><code translate="no">tuple</code></td><td><code translate="no">()</code></td><td>Channel sources where the tool is filtered out</td></tr>
+<tr><th scope="row"><code translate="no">check_fn</code></th><td><code translate="no">Callable</code></td><td><code translate="no">None</code></td><td>Per-call gate before dispatch; falsy blocks</td></tr>
+<tr><th scope="row"><code translate="no">requires_env</code></th><td><code translate="no">tuple</code></td><td><code translate="no">()</code></td><td>Env variables that must be set for it to be offered</td></tr>
+<tr><th scope="row"><code translate="no">can_use</code></th><td><code translate="no">Callable</code></td><td><code translate="no">None</code></td><td>Availability predicate at tool resolution</td></tr>
+<tr><th scope="row"><code translate="no">max_result_weight</code></th><td><code translate="no">int</code></td><td><code translate="no">None</code></td><td>A smaller bound for this tool's result than the model's, in weight (a CJK character 1, anything else 0.25). The tool never cuts its text: the agent loop bounds it once and keeps the whole text in the conversation's <code translate="no">tool_results/</code></td></tr>
+<tr><th scope="row"><code translate="no">requires_approval</code></th><td>—</td><td><code translate="no">None</code></td><td>Forwarded to the tool registry, same shape as <code translate="no">@function</code></td></tr>
+<tr><th scope="row"><code translate="no">cache</code></th><td><code translate="no">bool</code></td><td><code translate="no">False</code></td><td>Memoize tool-dispatched calls on <code translate="no">(name, args)</code></td></tr>
+<tr><th scope="row"><code translate="no">cache_ttl</code></th><td><code translate="no">float</code></td><td><code translate="no">300.0</code></td><td>Seconds, with <code translate="no">cache=True</code></td></tr>
+<tr><th scope="row"><code translate="no">timeout</code></th><td><code translate="no">float</code></td><td><code translate="no">None</code></td><td>Hard wall-clock kill in seconds; the model receives an error result</td></tr>
+<tr><th scope="row"><code translate="no">available_if</code></th><td><code translate="no">Callable</code></td><td><code translate="no">None</code></td><td>Falsy or raising skips registration; method scopes stay active</td></tr>
+<tr><th scope="row"><code translate="no">defer</code></th><td><code translate="no">bool</code></td><td><code translate="no">False</code></td><td>Deferred tool: schema loaded on demand</td></tr>
+<tr><th scope="row"><code translate="no">register_globally</code></th><td><code translate="no">bool</code></td><td><code translate="no">True</code></td><td><code translate="no">False</code> keeps it out of the global registry</td></tr>
+</tbody>
+</table>
+</details>
+<h3 id="choosing-the-runtime">Runtime for a method</h3>
+<p>A method runs on its Agent's Runtime, or the caller's when the Agent has none: <code translate="no">ExampleAgent(runtime=rt).f("x")</code> runs <code translate="no">f</code>, its model requests and the Agent methods it calls on <code translate="no">rt</code>. Configure Runtimes where the program starts, not through method arguments. For two models in one workflow, give the second role its own Agent instance.</p>
+<details>
+<summary>Older functions: runtime injection</summary>
+<p>Parameters named <code translate="no">runtime</code>, <code translate="no">exec_runtime</code> or <code translate="no">review_runtime</code> are filled when the caller passes none: from the current call chain, or for an entry-point call from <code translate="no">create_runtime()</code>, closed when the function returns. Several such parameters get the same runtime. They never appear in the tool schema or WebUI form. New methods do not declare them.</p>
+</details>
+<details>
+<summary>Introspection and safety</summary>
+<ul>
+<li><code translate="no">fn.spec</code>: generated tool spec <code translate="no">{"name", "description", "parameters"}</code>. <code translate="no">fn.execute(**kwargs)</code> invokes with LLM-provided kwargs.</li>
+<li>Re-entering itself more than 5 levels deep raises <code translate="no">RecursionError</code>; an injected situational prompt also steers the model away.</li>
+<li><code translate="no">add_pre_invocation_hook</code> / <code translate="no">remove_pre_invocation_hook</code>: hooks run at the top of every call and may raise <code translate="no">CancelledError</code> to abort it, as the WebUI stop button does.</li>
+</ul>
+</details>
+<details>
+<summary>Recording to the DAG</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Moment</th><th scope="col">Write</th></tr></thead>
+<tbody>
+<tr><th scope="row">Enter the function</th><td><code translate="no">code</code> node (<code translate="no">output=None</code>, <code translate="no">status="running"</code>); docstring in <code translate="no">metadata.doc</code>, prepended to <code translate="no">function_name(args)</code> when rendering</td></tr>
+<tr><th scope="row">Each <code translate="no">llm()</code> in the body</th><td>One <code translate="no">llm</code> node</td></tr>
+<tr><th scope="row">Exit</th><td>Backfill the same <code translate="no">code</code> node's <code translate="no">output</code> and <code translate="no">status</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">expose="hidden"</code> writes nothing. With no DAG store installed, recording is a no-op.</p>
+</details>
+<h2 id="durable-steps-and-code-selection">Durable steps and code selection</h2>
+<pre translate="no"><code>from openprogram import Agent
+from openprogram.runtime.agent.durable_steps import step
+
+class ExampleAgent(Agent):
+    method_options = {
+        'report': {'tool': True, 'resumable': True},
+    }
+
+    def report(self, topic: str):
+        research = step("research", collect_research, topic)
+        return step("write", write_report, research)
+
+_example_agent = ExampleAgent()
+report = _example_agent.report</code></pre>
+<p class="note">Execution is restored at explicit steps, not arbitrary Python stack frames. <code translate="no">collect_research</code> and <code translate="no">write_report</code> are ordinary source-defined functions.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Construct</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">step(name, fn, *args, **kwargs)</code></th><td>JSON-compatible inputs and results. A completed step returns its saved result without calling the action again. Repeated names are distinguished by occurrence; keep order and completed inputs stable.</td></tr>
+<tr><th scope="row"><code translate="no">workflow(name, fn, *args, **kwargs)</code></th><td>Nested orchestration</td></tr>
+<tr><th scope="row"><code translate="no">parallel({"branch": (fn, args, kwargs)})</code></th><td>Named workflows run concurrently, each with independent durable progress; waits for every branch before releasing ownership</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">execution.code_change_policy</code></th><th scope="col">After a restart</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">keep_original</code> (default)</th><td>Retained source runs. After adopting B, a later restart keeps B even if the installed code is C.</td></tr>
+<tr><th scope="row"><code translate="no">use_latest</code></th><td>Completed results stay; the current function runs the remaining compatible steps</td></tr>
+</tbody>
+</table>
+<p class="note">The task's Continue control can override the policy.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Outcome</th><th scope="col">Cases</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pauses</th><td>Deleted or reordered recorded steps, changed completed inputs, an unavailable or changed pinned dependency</td></tr>
+<tr><th scope="row">Keeps the active version</th><td>A candidate that fails compatibility before adopting any remaining step</td></tr>
+<tr><th scope="row">Still checked</th><td>Permission and tool parameter contract changes</td></tr>
+<tr><th scope="row">Rejected before steps run</th><td>Imports inside retained helpers, dynamic import APIs, generated code, third-party and user package objects as opaque dependencies (only the pinned standard library is supported)</td></tr>
+<tr><th scope="row">Unsupported</th><td>Calls and external mutations outside steps, asynchronous orchestration, generators, live handles, non-JSON results</td></tr>
+<tr><th scope="row">Needs reconciliation</th><td>The process died after an external action started but before its result was committed; recovery cannot assume it failed</td></tr>
+<tr><th scope="row">Never an automatic retry</th><td>Explicit pauses, cancellation, unanswered approvals, uncertain external results</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Authoring notes</summary>
+<ul>
+<li>Pass persistent state through JSON step inputs and results. Do not share mutable globals, closures or defaults between steps.</li>
+<li>Import step dependencies at module scope. Source-defined Python helpers are retained recursively.</li>
+<li>If B needs a different local state shape, write the conversion as pure orchestration over saved JSON before its remaining steps.</li>
+<li>Manual calls resume the same execution and function record. Chat calls return their eventual result to the original pending tool call.</li>
+<li>Restart-owned interruptions follow <code translate="no">execution.auto_resume_window_seconds</code> (default <code translate="no">-1</code>, no limit; <code translate="no">0</code> disables automatic restart).</li>
+<li>The function run dialog distinguishes functions that declare this contract from ordinary ones, which need a new run after interruption.</li>
+</ul>
+</details>
+<h2 id="managed-program-sources">Managed Program sources</h2>
+<table class="stack">
+<thead><tr><th scope="col">Captured</th><th scope="col">Not captured</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source-defined functions, submodules and nested definitions inside authorized package roots: selected first-party sources, installed and catalogued Program packages, owner-recorded external harnesses, published Programs, retained source snapshots</th><td>Arbitrary host files, unrelated dependencies, lambdas, generated code, unavailable source</td></tr>
+</tbody>
+</table>
+<p class="note">A package lists public entries in <code translate="no">PROGRAM_ENTRIES</code>; a plain entry can carry an <code translate="no">__agent_options__</code> mapping. Captured helpers do not become tools. Explicit method metadata is preserved; generators are excluded.</p>
+<h2 id="session-turns-and-continuation">Session turns and continuation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Name</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Agent.run_turn(request, *, context=None, on_event=None, cancel_event=None, execution_context=None)</code></th><td>Returns <code translate="no">TurnResult</code>. Instance configuration applies before a fresh turn. Import <code translate="no">TurnRequest</code> and <code translate="no">TurnResult</code> from <code translate="no">openprogram</code>.</td></tr>
+<tr><th scope="row"><code translate="no">arun_turn(request, **options)</code></th><td>Same, asynchronous, with cooperative cancellation</td></tr>
+<tr><th scope="row"><code translate="no">resume_turn(continuation, **options)</code>, <code translate="no">aresume_turn(...)</code></th><td>Reuse the checkpoint's request without repeating admission</td></tr>
+<tr><th scope="row"><code translate="no">Context.for_session(store, session_id, head_id=, blocks=, providers=)</code></th><td>Binds a persistent store and branch. A request for another session is rejected. <code translate="no">Context.session_id</code> exposes the graph identity.</td></tr>
+<tr><th scope="row"><code translate="no">ChatAgent</code></th><td>Production conversation type; inherits this contract. Overriding turn entry methods does not wrap them as helper calls.</td></tr>
+</tbody>
+</table>
+<p class="note">Event callbacks receive the runtime event dictionaries and run on the execution thread. Durable pause and steering keep the existing execution-control owner and safe-point protocol.</p>
+<p class="next"><a href="runtime.html">Runtime</a></p>

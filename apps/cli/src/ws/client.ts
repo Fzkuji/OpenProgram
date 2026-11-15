@@ -4,6 +4,8 @@ import { backendAuthHeaders, isBackendUrl } from '../utils/backend.js';
 export type ChatRequest = {
   action: 'chat';
   session_id?: string;
+  /** Names this send, so a stop can reach its turn before the ack names the execution. */
+  client_request_id?: string;
   agent_id?: string;
   text: string;
   thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -34,8 +36,18 @@ export type WsRequest =
       expected_version: number;
       payload?: Record<string, unknown>;
     }
+  | {
+      // A stop that names a send (its session and client_request_id) before
+      // the ack names the execution; only for a Worker that announces
+      // `cancel_by_request`.
+      action: 'execution.cancel';
+      type: 'execution.command';
+      command_id: string;
+      session_id: string;
+      client_request_id: string;
+      payload?: Record<string, unknown>;
+    }
   | { action: 'set_attended'; session_id: string; attended: boolean }
-  | { action: 'browser'; verb: string; args?: Record<string, unknown> }
   | { action: 'list_models' }
   | { action: 'switch_model'; model: string; provider?: string; session_id?: string }
   | { action: 'list_agents' }
@@ -75,7 +87,7 @@ export type WsRequest =
   | { action: 'sandbox'; session_id?: string }
   | { action: 'context'; session_id?: string }
   | { action: 'compact'; session_id: string }
-  | { action: 'rewind'; session_id: string }
+  | { action: 'operation.cancel'; session_id: string; op_id: string }
   // Branch surface — mirrors webui/ws_actions/branch.py. handler.ts and
   // pickerRouter drive these from /branch and the branch picker;
   // head_msg_id omitted = the branch the session is checked out to.
@@ -259,18 +271,12 @@ export interface ChannelAccountAddedEnvelope {
   data: { ok?: boolean; channel?: string; account_id?: string; error?: string };
 }
 
-export interface BrowserResultEnvelope {
-  type: 'browser_result';
-  data: { verb: string; result: string };
-}
-
 export interface SessionLoadedEnvelope {
   type: 'session_loaded';
   data: {
     id: string;
     messages: Array<{ role: string; content: string; [k: string]: unknown }>;
     settings?: {
-      tools_enabled?: boolean | null;
       tools_override?: string[] | null;
       thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null;
       permission_mode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass' | null;
@@ -422,6 +428,8 @@ export interface QuestionAskedEnvelope {
     /** approval-only: the gated tool + its args, for the danger summary. */
     tool?: string;
     args?: Record<string, unknown>;
+    /** A foreground sub-agent's request names it. */
+    asked_by?: string;
     /** form-only: flat-object field schema (field name → field def). */
     schema?: Record<string, unknown>;
     /** ask_many-only: a packed group of questions. */
@@ -459,7 +467,6 @@ export type WsEnvelope =
   | SessionAliasChangedEnvelope
   | ChannelAccountsEnvelope
   | ChannelAccountAddedEnvelope
-  | BrowserResultEnvelope
   | ChannelTurnEnvelope
   | QrLoginEnvelope
   | SearchResultsEnvelope
@@ -541,7 +548,8 @@ export type WsEnvelope =
   | { type: 'branches_list'; data: { session_id: string; branches?: unknown[]; active?: string } }
   | { type: 'branch_renamed'; data: { session_id: string; head_msg_id?: string; name?: string } }
   | { type: 'branch_name_deleted'; data: { session_id: string; head_msg_id?: string } }
-  | { type: 'branch_deleted'; data: { session_id: string; head_msg_id?: string } }
+  | { type: 'branch_deleted'; data: { session_id: string; head_msg_id?: string; ok?: boolean;
+                                      deleted?: number; new_head?: string | null; error?: string | null } }
   | { type: 'branch_checked_out'; data: { session_id: string; head_msg_id?: string } }
   | { type: 'pong' };
 
@@ -561,6 +569,8 @@ export class BackendClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
   private executionCursors = new Map<string, number>();
+  // What the Worker on the current socket announced (`worker_capabilities`).
+  private capabilities = new Set<string>();
 
   constructor(url: string) {
     this.url = url;
@@ -586,6 +596,8 @@ export class BackendClient {
       isBackendUrl(this.url) ? { headers: backendAuthHeaders() } : undefined,
     );
     this.ws.on('open', () => {
+      // A new socket may reach another Worker; it announces itself again.
+      this.capabilities.clear();
       this.setState('connected');
       this.hasConnected = true;
       this.retry = 0;
@@ -600,6 +612,7 @@ export class BackendClient {
         const parsed = JSON.parse(String(raw));
         if (parsed && typeof parsed === 'object' && typeof parsed.type === 'string') {
           this.trackExecutionCursor(parsed as Record<string, unknown>);
+          if (parsed.type === 'worker_capabilities') this.noteCapabilities(parsed.data);
           for (const l of this.listeners) l(parsed as WsEnvelope);
         }
       } catch {
@@ -641,6 +654,19 @@ export class BackendClient {
     if (previous !== undefined && next > previous + 2) {
       this.send({ action: 'execution.replay', execution_id: cursor.execution_id, after_sequence: previous });
     }
+  }
+
+  private noteCapabilities(data: unknown): void {
+    this.capabilities.clear();
+    if (!data || typeof data !== 'object') return;
+    for (const [name, on] of Object.entries(data as Record<string, unknown>)) {
+      if (on === true) this.capabilities.add(name);
+    }
+  }
+
+  /** Whether the Worker on the current socket announced `name`. */
+  hasCapability(name: string): boolean {
+    return this.capabilities.has(name);
   }
 
   on(listener: WsListener): () => void {

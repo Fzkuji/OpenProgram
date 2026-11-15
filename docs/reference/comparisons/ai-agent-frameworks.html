@@ -1,0 +1,15 @@
+<title>OpenProgram vs LangGraph, AutoGen, and CrewAI</title>
+<meta name="description" content="How the public programming models of OpenProgram, LangGraph, AutoGen and CrewAI differ, and when to choose each.">
+<meta name="covers" content="none">
+<h1>OpenProgram vs LangGraph, AutoGen, and CrewAI</h1>
+<table class="stack">
+<thead><tr><th scope="col">Framework</th><th scope="col">Primary abstraction</th><th scope="col">Orchestration</th><th scope="col">Choose when</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>OpenProgram</strong></th><td><code translate="no">Agent</code> method plus an execution runtime</td><td>Ordinary control flow, model-selected tools, a shared execution DAG</td><td>An agent should author a new workflow as a reviewable function, not only select from a fixed graph or team. One runtime should provide terminal, Web, provider, tool, memory, context and multi-agent surfaces. Context should be a DAG of user, model, function and tool calls.</td></tr>
+<tr><th scope="row"><strong><a href="https://docs.langchain.com/oss/python/langgraph/overview">LangGraph</a></strong></th><td>Graph API with nodes and edges, or <a href="https://docs.langchain.com/oss/python/langgraph/functional-api">Functional API</a> with <code translate="no">@entrypoint</code> and <code translate="no">@task</code></td><td>Explicit state graphs or standard Python control flow, same runtime</td><td>You need durable execution, persistence, streaming and human-in-the-loop state control. It is a low-level runtime; its overview recommends LangChain agents for prebuilt architectures.</td></tr>
+<tr><th scope="row"><strong><a href="https://microsoft.github.io/autogen/">AutoGen</a></strong></th><td>AgentChat agents and teams, or Core agents and <a href="https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/framework/agent-and-agent-runtime.html">runtimes</a></td><td>Agent messages, team patterns, event-driven Core API</td><td>The design centres on agents exchanging typed messages or team patterns. Covers teams, state, human feedback, custom agents, distributed runtimes.</td></tr>
+<tr><th scope="row"><strong><a href="https://docs.crewai.com/">CrewAI</a></strong></th><td>Agents, tasks, crews, flows</td><td>Role-based crews combined with event-driven flows</td><td>The application maps to agents with roles, goals and tasks, or to structured flows that invoke crews.</td></tr>
+</tbody>
+</table>
+<p class="note">Compares abstractions documented by each project, to help choose one, not to rank features. Verified against the linked documentation on 2026-08-13. An unlisted feature may still be possible through extensions; check current docs before a long-term migration.</p>
+<p class="next"><a href="../../capabilities/agentic-programming/self-programming-ai-agents.html">Self-Programming AI Agents</a> · <a href="../../capabilities/agentic-programming/README.html">Agentic Programming</a> · <a href="../../start/GETTING_STARTED.html">Install</a></p>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executionNeedsAttention, executionStatusLabel, executionGuidance } from "../../components/right-sidebar/debugger-presentation.ts";
+import { executionNeedsAttention, executionStatusLabel, executionGuidance } from "../../components/right-sidebar/debugger/debugger-presentation.ts";
 const text = en => en;
 
 test("ended provider receipt belongs in history with an explicit incomplete label", () => {

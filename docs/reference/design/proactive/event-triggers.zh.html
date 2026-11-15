@@ -1,0 +1,84 @@
+<title>事件触发器</title>
+<meta name="description" content="Scheduler 任务的 watch 和 webhook 触发器：什么会启动运行、HTTP 路由如何应答、外部文本如何到达运行。">
+<h1>事件触发器</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Watch</th><th scope="col">Webhook</th></tr></thead>
+<tbody>
+<tr><th scope="row">适用</th><td>带 <code translate="no">watch</code> 的 <code translate="no">recurring</code>、<code translate="no">monitor</code> 任务（最多 4,000 字符）</td><td><code translate="no">webhook</code> 任务：没有 <code translate="no">cron</code> 和 <code translate="no">run_at</code>，<code translate="no">_entry_due</code> 不会触发</td></tr>
+<tr><th scope="row">何时启动</th><td>命令输出变化</td><td>外部服务 POST 到它</td></tr>
+<tr><th scope="row">事件来源</th><td><code translate="no">watch</code></td><td><code translate="no">webhook</code></td></tr>
+<tr><th scope="row">事件文本</th><td>命令和统一 diff，最多 6,000 字符</td><td>请求体（JSON 时美化），有 <code translate="no">X-GitHub-Event</code> 时加前缀，最多 8,000 字符</td></tr>
+<tr><th scope="row">信任</th><td colspan="2">两者都复用任务的签名执行规格。事件文本是不可信数据。</td></tr>
+</tbody>
+</table>
+
+<h2>Watch</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">检查结果</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令首次检查</th><td>作为基线，不启动</td></tr>
+<tr><th scope="row">命令变了</th><td>新基线</td></tr>
+<tr><th scope="row">摘要未变</th><td>不启动</td></tr>
+<tr><th scope="row">摘要变化</th><td>带事件调用 <code translate="no">_spawn</code></td></tr>
+<tr><th scope="row">失败或超时</th><td>记录，基线不变</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">监视检查</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">冻结</th><td><code translate="no">watch</code> 与任务主体一起在签名规格里，改任务文件改变不了运行内容</td></tr>
+<tr><th scope="row">到期 tick</th><td><code translate="no">_tick</code> 调 <code translate="no">_check_watch</code> 而不是 <code translate="no">_spawn</code>；每分钟的认领与普通任务相同，所以一次 tick 只检查一次</td></tr>
+<tr><th scope="row">运行</th><td>先验证规格，再由守护线程经 <code translate="no">_task_invocation</code> 按会话的沙箱开关运行命令；超时 120 秒</td></tr>
+<tr><th scope="row">状态</th><td><code translate="no">&lt;schedule dir&gt;/watch-state.json</code>，在存储锁下，按任务保存命令和输出的 SHA-256，以及输出前 20,000 字符</td></tr>
+</tbody>
+</table>
+
+<h2>Webhook</h2>
+<p><code translate="no">POST /hooks/{task_id}</code> 是 <code translate="no">OwnerAuthMiddleware</code> 唯一不要求登录就放行的 HTTP 路径，且只限这个形状的 <code translate="no">POST</code>；Host 和 Origin 检查照常。最多读 64 KB，在工作线程调用 <code translate="no">hooks.receive</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态码</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">202</code></th><td>运行已启动</td></tr>
+<tr><th scope="row"><code translate="no">404</code></th><td>任务不存在、类型不符或密钥错误，三者不可区分</td></tr>
+<tr><th scope="row"><code translate="no">409</code></th><td>已暂停</td></tr>
+<tr><th scope="row"><code translate="no">429</code></th><td>每任务每进程 10 秒内超过一次</td></tr>
+</tbody>
+</table>
+<p class="note">创建时保存随机 24 字节 URL 安全的 <code translate="no">hook_key</code>；工具结果打印 URL（<code translate="no">hooks.url</code>，来自当前 Web 访问快照）和密钥。接受 <code translate="no">X-OpenProgram-Key</code>，或作为 <code translate="no">X-Hub-Signature-256</code>（GitHub）的 HMAC-SHA256 密钥，常量时间比较。</p>
+
+<h2>事件以数据形式到达运行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主体类型</th><th scope="col">传递方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">prompt</th><td><code translate="no">event_note</code> 把文本放进 <code translate="no">&lt;event source="…" trust="untrusted"&gt;</code>，转义其中的 <code translate="no">&lt;/event&gt;</code>，并附一行说明它是数据。普通非交互调度轮次（<code translate="no">source="scheduler"</code>，会话的权限模式）：需要审批的调用被拒绝。</td></tr>
+<tr><th scope="row">reminder</th><td><code translate="no">reminders.fire</code> 把 <code translate="no">event</code> 加进 <code translate="no">reminder.fired</code>。唤醒型提醒写明来源并带同样的说明；<code translate="no">_wake</code> 调用 <code translate="no">start_owner_turn</code>，审批在该会话中等待。</td></tr>
+<tr><th scope="row">command</th><td>环境变量：<code translate="no">OPENPROGRAM_EVENT</code>、<code translate="no">OPENPROGRAM_EVENT_SOURCE</code></td></tr>
+</tbody>
+</table>
+<p class="note">任务日志记在 <code translate="no"># started by &lt;source&gt;:</code> 下。</p>
+
+<details>
+<summary>各部分的位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">文件</th></tr></thead>
+<tbody>
+<tr><th scope="row">任务类型、<code translate="no">watch</code>、钩子密钥</th><td><code translate="no">openprogram/runtime/scheduler/service.py</code></td></tr>
+<tr><th scope="row">签名规格</th><td><code translate="no">openprogram/programs/tools/jobs/cron/cron.py</code></td></tr>
+<tr><th scope="row">检查、传递</th><td><code translate="no">openprogram/programs/tools/jobs/cron/worker.py</code></td></tr>
+<tr><th scope="row">Webhook 校验、限流</th><td><code translate="no">openprogram/runtime/scheduler/hooks.py</code></td></tr>
+<tr><th scope="row">路由</th><td><code translate="no">openprogram/interfaces/server/routes/execution/scheduler.py</code></td></tr>
+<tr><th scope="row">免登录</th><td><code translate="no">openprogram/interfaces/server/owner_auth.py</code></td></tr>
+<tr><th scope="row">唤醒轮次</th><td><code translate="no">openprogram/runtime/conversation/owner_turn.py</code>、<code translate="no">openprogram/runtime/scheduler/reminders.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>以上全部，以及 Scheduler 页面标签</td></tr>
+<tr><th scope="row">未实现</th><td>页面上创建 watch 和 webhook 任务的表单（用 <code translate="no">scheduler</code> 工具，或 <code translate="no">POST /api/scheduler/tasks</code> 带 <code translate="no">watch</code> 或 <code translate="no">"type": "webhook"</code>）。创建后再次显示 URL 和密钥（密钥在 <code translate="no">GET /api/scheduler/tasks/{id}</code>）。</td></tr>
+</tbody>
+</table>

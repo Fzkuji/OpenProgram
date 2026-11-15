@@ -2,17 +2,30 @@ name: Windows install smoke
 
 # Smoke-tests scripts/install.ps1 on a real Windows runner: a complete
 # source-development install from a checkout, plus the minimal off-the-web
-# bootstrap path (clone + handoff).
+# bootstrap path (clone + handoff). Given a release tag, it also walks what a
+# new Windows user does with that release's x64 files, on an x64 runner and
+# under emulation on an Arm one, through one real tool call; given a Release
+# rehearsal run as well, it installs that run's files before the tag is
+# published.
+# Runs only when started by hand: pushes, pull requests and schedules start
+# nothing, so publishing a version does not set off CI runs.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * 1"
+    inputs:
+      tag:
+        description: Release to install (vX.Y.Z); empty checks only the source install
+        required: false
+        type: string
+      older_tag:
+        description: Older release to install first, to prove installing over it works
+        required: false
+        type: string
+      run_id:
+        description: Release rehearsal run to take the Windows files from, when the tag is not published yet
+        required: false
+        type: string
 
-# Push/PR checks follow the newest revision. Give explicit and scheduled
-# acceptance runs unique groups so neither running nor pending runs are lost.
+# Each run started by hand has its own group, so none cancels another.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event_name == 'push' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
@@ -52,7 +65,7 @@ jobs:
           $py = ".\.venv\Scripts\python.exe"
           & $py -c "import openprogram; print('openprogram OK:', openprogram.__file__)"
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          & $py -c "from openprogram.agent.dispatcher import process_user_turn; assert callable(process_user_turn)"
+          & $py -c "from openprogram.runtime.conversation.turn_runtime import process_user_turn; assert callable(process_user_turn)"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           if (-not (Test-Path .\apps\web\.next\BUILD_ID)) {
             Write-Error "web production build marker missing"; exit 1
@@ -87,3 +100,153 @@ jobs:
           if (-not (Test-Path $env:TEMP\op-bootstrap-clone\pyproject.toml)) {
             Write-Error "bootstrap clone missing"; exit 1
           }
+
+  release-install:
+    if: inputs.tag != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        # The x64 files on both: Windows on Arm runs them under emulation.
+        runner: [windows-2025, windows-11-vs2026-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      RUN_ID: ${{ inputs.run_id }}
+      OLDER_TAG: ${{ inputs.older_tag }}
+      OPENPROGRAM_REPOSITORY: ${{ github.repository }}
+      OPENPROGRAM_WEB_PORT: "19100"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Show the Windows toolchain
+        continue-on-error: true
+        shell: pwsh
+        run: ./scripts/release/show-windows-toolchain.ps1
+      - name: Download the release files
+        id: download
+        shell: powershell
+        run: |
+          $Assets = "$env:RUNNER_TEMP\release-assets"
+          if ($env:RUN_ID) {
+            # A rehearsal publishes nothing; its files are the run's artifacts, one folder each.
+            $Downloaded = "$env:RUNNER_TEMP\run-artifacts"
+            gh run download $env:RUN_ID --repo $env:GITHUB_REPOSITORY --dir $Downloaded `
+              --name product-runtime-windows-x86_64 --name desktop-thin-win-x86_64
+            if ($LASTEXITCODE -ne 0) { throw "could not download the Windows files of run $env:RUN_ID" }
+            New-Item -ItemType Directory -Force -Path $Assets | Out-Null
+            Get-ChildItem -LiteralPath $Downloaded -Recurse -File | Move-Item -Destination $Assets
+          } else {
+            gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --dir $Assets `
+              --pattern "OpenProgram-*-runtime-windows-x86_64.zip*" --pattern "OpenProgram-*-win-x64*.exe"
+            if ($LASTEXITCODE -ne 0) { throw "could not download the Windows files of $env:TAG" }
+          }
+          # gh succeeds when only one pattern matched, so name what the release lacks.
+          foreach ($Kind in "zip", "exe") {
+            if (-not (Get-ChildItem -LiteralPath $Assets -Filter "*.$Kind")) {
+              throw "$env:TAG has no Windows $Kind; see 'Not in this release' in its notes"
+            }
+          }
+          if ($env:OLDER_TAG) {
+            gh release download $env:OLDER_TAG --repo $env:GITHUB_REPOSITORY --dir "$env:RUNNER_TEMP\older-assets" `
+              --pattern "OpenProgram-*-win-x64*.exe"
+            if ($LASTEXITCODE -ne 0) { throw "could not download the Windows files of $env:OLDER_TAG" }
+          }
+      # The bootstrap reads the published release, which a rehearsal does not have.
+      - name: Windows PowerShell 5.1 under Restricted runs the piped bootstrap
+        if: inputs.run_id == ''
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy Restricted -Scope LocalMachine -Force
+          Set-ExecutionPolicy -ExecutionPolicy Restricted -Scope CurrentUser -Force
+          # The runner sets this for its own scripts; a user's shell does not have it.
+          Remove-Item Env:PSExecutionPolicyPreference -ErrorAction SilentlyContinue
+          $env:OPENPROGRAM_VERSION = $env:TAG.Substring(1)
+          $env:OPENPROGRAM_STATE_DIR = "$env:RUNNER_TEMP\bootstrap-state"
+          $env:OPENPROGRAM_BIN_DIR = "$env:RUNNER_TEMP\bootstrap-bin"
+          $Command = @'
+          if ($PSVersionTable.PSVersion.Major -ne 5) { throw "expected Windows PowerShell 5.1" }
+          if ((Get-ExecutionPolicy) -ne "Restricted") { throw "the policy is not Restricted: $(Get-ExecutionPolicy)" }
+          Get-Content -Raw -LiteralPath docs\_static_root\install.ps1 | Invoke-Expression
+          '@
+          powershell.exe -NoProfile -NonInteractive -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command)))
+          if ($LASTEXITCODE -ne 0) { throw "the piped bootstrap failed under Restricted" }
+          & "$env:OPENPROGRAM_BIN_DIR\openprogram.cmd" --version
+          if ($LASTEXITCODE -ne 0) { throw "the bootstrap install does not run" }
+      - name: The release ZIP installs and starts a healthy worker
+        id: zip
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:OPENPROGRAM_VERSION = $env:TAG.Substring(1)
+          $env:OPENPROGRAM_RUNTIME_ARCHIVE = (
+            Get-ChildItem "$env:RUNNER_TEMP\release-assets" -Filter "*.zip" | Select-Object -First 1
+          ).FullName
+          $env:OPENPROGRAM_STATE_DIR = "$env:RUNNER_TEMP\zip-state"
+          $env:OPENPROGRAM_BIN_DIR = "$env:RUNNER_TEMP\zip-bin"
+          $env:USERPROFILE = "$env:RUNNER_TEMP\zip-home"
+          New-Item -ItemType Directory -Force -Path $env:USERPROFILE | Out-Null
+          scripts/install-release.ps1
+          $Command = "$env:OPENPROGRAM_BIN_DIR\openprogram.cmd"
+          & $Command --version
+          if ($LASTEXITCODE -ne 0) { throw "the ZIP install does not run" }
+          & $Command worker start
+          if ($LASTEXITCODE -ne 0) { throw "the worker did not start" }
+          try {
+            $Health = Invoke-RestMethod "http://127.0.0.1:$env:OPENPROGRAM_WEB_PORT/healthz"
+            if ($Health.status -ne "ok") { throw "the worker is not healthy" }
+            # One real tool call through the worker, in the shell it resolves.
+            python scripts/release/smoke-tool-call.py --openprogram $Command --home $env:USERPROFILE
+            if ($LASTEXITCODE -ne 0) { throw "one tool call through the ZIP install failed" }
+          } finally {
+            & $Command worker stop
+          }
+      # The ZIP check above does not stop the installer check below, so one
+      # run reports both; the step after them turns the job red for either.
+      # A new user's whole first run, under a user folder with a Chinese name:
+      # install, first launch, seed unpack, worker start. The newer App also
+      # proves no console window, a worker log, UTF-8 mode, the shortcut's id,
+      # path lengths, one tool call through its worker, and that uninstalling
+      # stops the worker and keeps the data.
+      - name: Silent installer, first launch to a healthy worker, older then newer
+        shell: pwsh
+        run: |
+          function Get-Installer([string]$Directory) {
+            (Get-ChildItem $Directory -Filter "*.exe" | Select-Object -First 1).FullName
+          }
+          if ($env:OLDER_TAG) {
+            ./scripts/release/smoke-windows-desktop.ps1 -Installer (Get-Installer "$env:RUNNER_TEMP\older-assets") -HealthOnly
+          }
+          ./scripts/release/smoke-windows-desktop.ps1 -Installer (Get-Installer "$env:RUNNER_TEMP\release-assets") `
+            -ExpectedVersion $env:TAG.Substring(1) -ToolCall -Uninstall `
+            -LogDirectory "$env:RUNNER_TEMP\windows-diagnostics\app-smoke"
+      # Windows PowerShell 5.1 is what a user's machine has; the same script must read there.
+      - name: The smoke script parses under Windows PowerShell 5.1
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $Errors = $null
+          [void][Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/release/smoke-windows-desktop.ps1), [ref]$null, [ref]$Errors)
+          if ($Errors) { $Errors | Out-String | Write-Error; exit 1 }
+      - name: The release ZIP check passed
+        if: ${{ !cancelled() && steps.zip.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          Write-Error "The release ZIP did not install or answer; see 'The release ZIP installs and starts a healthy worker' above."
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() || steps.zip.outcome == 'failure' }}
+        with:
+          name: diagnostics-windows-install-${{ runner.arch }}
+          path: |
+            ${{ runner.temp }}/windows-diagnostics
+            ${{ runner.temp }}/zip-home/.openprogram/**/*.log
+            ${{ runner.temp }}/zip-state/**/*.log
+          if-no-files-found: ignore

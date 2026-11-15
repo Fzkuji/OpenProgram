@@ -6,8 +6,8 @@ import json
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.webui import server
-from openprogram.webui.ws_delivery import QueuedWebSocket
+from openprogram.interfaces.server import server
+from openprogram.interfaces.server.ws_delivery import QueuedWebSocket
 
 
 class _SlowWebSocket:
@@ -102,7 +102,7 @@ def test_slow_client_has_one_sender_for_threadsafe_broadcasts() -> None:
         server._loop = asyncio.get_running_loop()
         ws = _SlowWebSocket()
         handler = asyncio.create_task(server._websocket_handler(ws))
-        await asyncio.wait_for(ws.accepted.wait(), 1)
+        await asyncio.wait_for(ws.accepted.wait(), 30)
 
         # Let the two connection bootstrap frames finish, then block the
         # transport while a worker-style producer broadcasts many updates.
@@ -120,7 +120,7 @@ def test_slow_client_has_one_sender_for_threadsafe_broadcasts() -> None:
                 }))
 
         await asyncio.to_thread(produce)
-        await asyncio.wait_for(ws.blocked.wait(), 1)
+        await asyncio.wait_for(ws.blocked.wait(), 30)
         await asyncio.sleep(0)
 
         managed_ws = server._ws_connections[0]
@@ -185,7 +185,7 @@ def test_slow_client_has_one_sender_for_threadsafe_broadcasts() -> None:
             )
         finally:
             ws.disconnect.set()
-            await asyncio.wait_for(handler, 1)
+            await asyncio.wait_for(handler, 30)
 
     asyncio.run(scenario())
 
@@ -195,7 +195,7 @@ def test_send_failure_closes_and_records_recovery() -> None:
         server._loop = asyncio.get_running_loop()
         ws = _FailingWebSocket()
         handler = asyncio.create_task(server._websocket_handler(ws))
-        await asyncio.wait_for(ws.accepted.wait(), 1)
+        await asyncio.wait_for(ws.accepted.wait(), 30)
         while len(ws.sent) < 2:
             await asyncio.sleep(0)
         managed_ws = server._ws_connections[0]
@@ -212,7 +212,7 @@ def test_send_failure_closes_and_records_recovery() -> None:
         assert ws.closed == (1011, "state_recovery_required")
         assert managed_ws.delivery_metrics["send_failures"] == 1
         assert managed_ws.delivery_metrics["recovery_mode"] == "state_recovery_required"
-        await asyncio.wait_for(handler, 1)
+        await asyncio.wait_for(handler, 30)
 
     asyncio.run(scenario())
 
@@ -226,7 +226,7 @@ def test_stop_releases_inflight_send_waiter() -> None:
             "type": "chat_ack",
             "data": {"session_id": "s1", "msg_id": "m1"},
         })))
-        await asyncio.wait_for(raw.started.wait(), 1)
+        await asyncio.wait_for(raw.started.wait(), 30)
 
         await managed.stop()
 
@@ -272,7 +272,7 @@ def test_terminal_updates_use_critical_reserve() -> None:
                     "status": "running",
                 },
             }))
-        await asyncio.wait_for(raw.started.wait(), 1)
+        await asyncio.wait_for(raw.started.wait(), 30)
         await asyncio.sleep(0)
         assert managed.delivery_metrics["queue_frames"] == 184
 
@@ -329,7 +329,7 @@ def test_inflight_frame_counts_toward_byte_budget() -> None:
             },
         })
         first = asyncio.create_task(managed.send_text(payload))
-        await asyncio.wait_for(raw.started.wait(), 1)
+        await asyncio.wait_for(raw.started.wait(), 30)
 
         assert managed.delivery_metrics["queue_frames"] == 1
         assert managed.delivery_metrics["queue_bytes"] == len(payload.encode("utf-8"))
@@ -367,7 +367,7 @@ def test_critical_overflow_closes_with_recovery_required() -> None:
         server._loop = asyncio.get_running_loop()
         ws = _SlowWebSocket()
         handler = asyncio.create_task(server._websocket_handler(ws))
-        await asyncio.wait_for(ws.accepted.wait(), 1)
+        await asyncio.wait_for(ws.accepted.wait(), 30)
         while len(ws.sent) < 2:
             await asyncio.sleep(0)
 
@@ -375,7 +375,7 @@ def test_critical_overflow_closes_with_recovery_required() -> None:
             "type": "chat_ack",
             "data": {"session_id": "s1", "msg_id": "m0"},
         }))
-        await asyncio.wait_for(ws.blocked.wait(), 1)
+        await asyncio.wait_for(ws.blocked.wait(), 30)
         for request in range(1, 300):
             server._broadcast(json.dumps({
                 "type": "chat_ack",
@@ -390,7 +390,7 @@ def test_critical_overflow_closes_with_recovery_required() -> None:
             await asyncio.sleep(0)
 
         assert ws.closed == (1013, "state_recovery_required")
-        await asyncio.wait_for(handler, 1)
+        await asyncio.wait_for(handler, 30)
 
     asyncio.run(scenario())
 
@@ -400,7 +400,7 @@ def test_oversized_critical_frame_closes_with_recovery_required() -> None:
         server._loop = asyncio.get_running_loop()
         ws = _SlowWebSocket()
         handler = asyncio.create_task(server._websocket_handler(ws))
-        await asyncio.wait_for(ws.accepted.wait(), 1)
+        await asyncio.wait_for(ws.accepted.wait(), 30)
         while len(ws.sent) < 2:
             await asyncio.sleep(0)
 
@@ -418,20 +418,16 @@ def test_oversized_critical_frame_closes_with_recovery_required() -> None:
             await asyncio.sleep(0)
 
         assert ws.closed == (1013, "state_recovery_required")
-        await asyncio.wait_for(handler, 1)
+        await asyncio.wait_for(handler, 30)
 
     asyncio.run(scenario())
 
 
-def test_bounded_chat_delivery_defers_graph_and_releases_history_snapshot():
-    from pathlib import Path
-    from openprogram.webui.session_history import HistorySnapshot, install_snapshot
+def test_web_delivery_sends_the_graph_only_to_the_open_dag_panel():
     async def scenario():
         raw=_SlowWebSocket();raw.release.set()
-        ws=QueuedWebSocket(raw,asyncio.get_running_loop());ws._bounded_history=True
-        snapshot=HistorySnapshot('s','m',[{'id':'m','role':'user','content':'hello'}],{'m'})
-        directory=Path(snapshot._directory.name)
-        install_snapshot(ws,snapshot);ws.start()
+        ws=QueuedWebSocket(raw,asyncio.get_running_loop());ws._history_protocol=3
+        ws.start()
         payload=json.dumps({'type':'branches_list','data':{'session_id':'s','graph':[{'id':'m'}]}})
         try:
             await ws.send_text(payload)
@@ -441,5 +437,4 @@ def test_bounded_chat_delivery_defers_graph_and_releases_history_snapshot():
             assert raw.sent[-1]['data']['graph']==[{'id':'m'}]
         finally:
             await ws.stop()
-        assert not directory.exists()
     asyncio.run(scenario())

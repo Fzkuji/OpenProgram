@@ -1,0 +1,66 @@
+<title>Read and edit Memory</title>
+<meta name="description" content="Edit Memory documents, read their history, and see what happens when automatic writing or format checks fail.">
+<meta name="covers" content="openprogram/state/memory/ apps/web/components/memory/">
+<h1>Read and edit Memory</h1>
+<p>Open <strong>History → Memory</strong> and select a topic. Documents and Core source records open in Preview; <strong>Edit</strong> changes the Markdown. There are no save controls.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Saving</th><td>Each edit goes to this browser's draft storage and is queued for file persistence. Writes are serialized, so an earlier response cannot overwrite newer typing.</td></tr>
+<tr><th scope="row">Undo</th><td>Cmd+Z or Ctrl+Z. Redo: Cmd+Shift+Z, Ctrl+Shift+Z or Ctrl+Y. Autosave keeps undo history while the app stays open.</td></tr>
+<tr><th scope="row">Conflict or rejection</th><td>The draft stays and the error shows. <strong>Review latest</strong> compares saved text with the draft in History; <strong>Replace latest with this draft</strong> retries against that version. A further concurrent change is still rejected.</td></tr>
+</tbody>
+</table>
+<h2 id="history">History</h2>
+<table class="stack">
+<thead><tr><th scope="col">Change</th><th scope="col">Git commit</th></tr></thead>
+<tbody>
+<tr><th scope="row">Manual edits</th><td>Five-minute checkpoints by the server, tolerance 15 seconds. The deadline survives restart and needs no open editor. The state before the interval is retained.</td></tr>
+<tr><th scope="row">Background write</th><td>Its own, named for the conversation</td></tr>
+<tr><th scope="row">Reorganizing a write triggers</th><td>Its own</td></tr>
+<tr><th scope="row">Nightly reorganization</th><td>One per file it splits</td></tr>
+<tr><th scope="row"><code translate="no">memory_update</code> by the agent</th><td>Its own, named for the conversation</td></tr>
+<tr><th scope="row">Edits outside OpenProgram</th><td>Committed alone just before the next write, so restoring a write never takes them along</td></tr>
+</tbody>
+</table>
+<p class="note">A write that fails its checks changes neither files nor history.</p>
+<p><strong>History</strong> lists revisions newest first with local time; selecting one shows added and removed lines. <strong>Restore this version</strong> records the current state, then the restoration as a new commit, so it can be reversed. It keeps valid source references and refuses to break links from other Memory documents.</p>
+<h2 id="when-automatic-writing-stops">When automatic writing stops</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Problem</th><th scope="col">Automatic repair</th></tr></thead>
+<tbody>
+<tr><th scope="row">Writer model unusable (rejected sign-in, plan without access, unknown model, exhausted plan)</th><td>Switches to the default agent's model, then the last used model</td></tr>
+<tr><th scope="row">Edits fail format checks</th><td>Sent back to fix in place up to three times, then redoes the turn once</td></tr>
+<tr><th scope="row">Topic files written by you or another tool</th><td>Remembered as written: search finds them and recall can bring them in, marked "added by person" or "outside file" instead of a source. Memory never rewrites a file another tool wrote; a file that is not text is named once on the Memory page and the rest of memory goes on</td></tr>
+<tr><th scope="row">Citing a message by hand</th><td>End the paragraph with a footnote whose source is <code translate="no">[keyword](/s/&lt;conversation&gt;#&lt;message&gt;)</code>: the conversation ID ends the link <strong>Copy link</strong> copies (keep only the <code translate="no">/s/…</code> part), the message ID is what <strong>Copy ID</strong> copies for its node in the context graph. A conversation with memory off cannot be cited.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>When a memory write fails</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Last run still failed</th><td>Red strip at the top of Memory: why, last write, turns waiting</td></tr>
+<tr><th scope="row">Retried on its own</th><td>Strip only. An outage or usage limit waits from 5 minutes up to 6 hours and is never given up on. A failure in the conversation is tried three times, an hour apart, then waits for the conversation to change. A sign-in failure, or a memory the writer cannot start from, stops writing once until the sign-in, the configuration or that memory changes</td></tr>
+<tr><th scope="row">Nothing will retry</th><td>Strip plus one notice, repeated only if the reason changes</td></tr>
+<tr><th scope="row">Unwritten turns</th><td>Retried</td></tr>
+<tr><th scope="row">Nothing worth keeping</th><td>Counts as written</td></tr>
+</tbody></table>
+</details>
+<h2 id="format-checks">Format checks</h2>
+<p>Every Topic paragraph ends in a footnote citing its chat message: <code translate="no">[keyword](/s/&lt;session&gt;#&lt;message&gt;)</code>. Memory keeps no copy of the conversation.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Footnote</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Missing on a substantive paragraph</th><td><code translate="no">INVALID_TOPIC_FORMAT</code> before any write; a rejected batch commits nothing</td></tr>
+<tr><th scope="row">New citation of a message the chat does not hold, or one not a person's or the assistant's words, such as a tool result</th><td>Same</td></tr>
+<tr><th scope="row">Definition written twice, or left behind by a moved or deleted paragraph</th><td>Removed, not rejected</td></tr>
+</tbody>
+</table>
+<p class="note">The background writer runs these checks after every file it changes and fixes breaks before its turn ends.</p>
+<p>Clicking a footnote shows the message with the turns around it, and <strong>Open original session</strong> jumps there. If the session was deleted the view says <strong>Original session deleted</strong> and the memory remains. Archiving hides a session, keeps content and links, and never deletes it by age or capacity.</p>
+<details>
+<summary>Workspaces with a sources folder</summary>
+<p>On first use, an older workspace's <code translate="no">sources/</code> footnotes are rewritten to chat links and the folder is removed, in one commit, <code translate="no">memory: cite chats directly</code>. Git history keeps the old copy.</p>
+</details>
+<p class="next">Agent-specific memory modes and spaces: <a href="agents.html">Agents</a></p>

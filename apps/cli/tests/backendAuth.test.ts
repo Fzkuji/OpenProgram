@@ -161,11 +161,18 @@ describe('against the real backend listener', () => {
   expect(
     existsSync(join(repoRoot, 'tests/support/helpers/owner_auth_listener.py')),
   ).toBe(true);
+  // The checkout's own environment: openprogram.interfaces.server resolves
+  // through its editable install, not through whatever python3 is on PATH.
   const python = (() => {
-    const r = spawnSync('python3', ['-c', 'import openprogram, uvicorn'], {
-      cwd: repoRoot,
-    });
-    return r.status === 0 ? 'python3' : null;
+    const venv = join(repoRoot, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    for (const candidate of [venv, 'python3']) {
+      if (candidate === venv && !existsSync(venv)) continue;
+      const r = spawnSync(candidate, ['-c', 'import openprogram.interfaces.server.owner_auth, uvicorn'], {
+        cwd: repoRoot,
+      });
+      if (r.status === 0) return candidate;
+    }
+    return null;
   })();
 
   let server: ReturnType<typeof spawn> | null = null;

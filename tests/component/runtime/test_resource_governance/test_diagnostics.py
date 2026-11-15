@@ -1,15 +1,12 @@
 """governance diagnostics tests."""
 from __future__ import annotations
-from ._support import (
-    Job,
-    ResourceGovernor,
-    ResourceLimits,
-    UsageEvent,
-    UsageLedger,
-    build_job_resource_view,
-    resolve_resource_limits,
-    store_fixture,
-)
+from openprogram.models.usage.event import UsageEvent
+from openprogram.runtime.jobs.resource_governance import build_job_resource_view
+from ._support import Job, ResourceGovernor, ResourceLimits, UsageLedger, resolve_resource_limits
+from . import _support
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _support.store_fixture
 
 
 def test_legacy_job_resource_view_is_unmetered(tmp_path) -> None:
@@ -271,11 +268,12 @@ def test_shared_remaining_ignores_released_reservation(tmp_path) -> None:
         assert governor.admit_job(job, persist=lambda _job: None).accepted
     reserved = governor.reserve_tokens(sibling.id, 30)
     assert reserved.accepted
-    ledger.connection().execute(
-        "UPDATE usage_reservations SET state = 'released' WHERE reservation_id = ?",
-        (reserved.reservation_id,),
-    )
-    ledger.connection().commit()
+    with ledger.run_tables().transaction() as tables:
+        tables.update(
+            "usage_reservations",
+            {"state": "released"},
+            reservation_id=reserved.reservation_id,
+        )
 
     view = build_job_resource_view(target, ledger=ledger, resolved=resolved)
 
@@ -303,7 +301,7 @@ def test_resource_view_reason_metadata_sets_retryable_and_human_key(tmp_path) ->
 def test_job_runner_exposes_one_canonical_resource_view_read(
     tmp_path, store_fixture, monkeypatch,
 ) -> None:
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.runtime.jobs.runner import JobRunner
 
     ledger = UsageLedger(tmp_path / "usage.db")
     resolved = resolve_resource_limits(
@@ -311,7 +309,7 @@ def test_job_runner_exposes_one_canonical_resource_view_read(
     )
     governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
     monkeypatch.setattr(
-        "openprogram.paths.get_execution_db_path",
+        "openprogram.state.paths.get_run_state_path",
         lambda: tmp_path / "executions.sqlite3",
     )
     runner = JobRunner(max_workers=1, governor=governor)
@@ -344,17 +342,16 @@ def test_resource_view_reports_live_runtime_and_idle_usage(tmp_path, monkeypatch
     )
     assert governor.admit_job(job, persist=lambda _job: None).accepted
     assert governor.claim_next(owner_instance_id="worker") is not None
-    row = ledger.connection().execute(
-        "SELECT started_at, last_activity_at FROM job_admissions WHERE job_id = ?",
-        (job.id,),
-    ).fetchone()
+    row = ledger.run_tables().handle.first("job_admissions", job_id=job.id)
     monkeypatch.setattr(
-        "openprogram.agent.resource_governance.governor.time.time", lambda: row[0] + 12.5,
+        "openprogram.runtime.jobs.resource_governance.governor.time.time", lambda: row["started_at"] + 12.5,
     )
-    ledger.connection().execute(
-        "UPDATE job_admissions SET last_activity_at = ? WHERE job_id = ?",
-        (row[0] + 9.0, job.id),
-    )
+    with ledger.run_tables().transaction() as tables:
+        tables.update(
+            "job_admissions",
+            {"last_activity_at": row["started_at"] + 9.0},
+            job_id=job.id,
+        )
 
     view = build_job_resource_view(job, ledger=ledger, resolved=resolved)
 

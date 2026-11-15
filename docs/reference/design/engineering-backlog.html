@@ -1,0 +1,49 @@
+<title>Engineering backlog</title>
+<meta name="description" content="Unresolved engineering proposals awaiting a decision, and a regression checklist.">
+<h1>Engineering backlog</h1>
+<p>Proposals awaiting a decision. Delivery status: <a href="implementation-status.html">Implementation status and handoff</a>. Validate each against current source first; remove it once its decision is in its canonical design.</p>
+
+<h2 id="frontend-state-consolidation">Frontend state consolidation</h2>
+<p>Two state paths exist beside the store: untyped <code translate="no">window.dispatchEvent</code> events, and <code translate="no">apps/web/lib/net/ws/use-ws.ts</code> rebroadcasting store frames as CustomEvents (<code translate="no">op:dag-nodes</code>, <code translate="no">op:execution-update</code>, <code translate="no">op:job-status</code> and others). Review them together, along with module-level <code translate="no">runtimeState</code>.</p>
+
+<h2 id="repository-structure">Repository structure</h2>
+<p>Intended layering: core (<code translate="no">openprogram/</code>) at the bottom; the Server (<code translate="no">openprogram/interfaces/server</code>) and CLI (<code translate="no">openprogram/interfaces/cli</code>) depend on it, never the reverse.</p>
+<p>Open: <code translate="no">site-*</code> and <code translate="no">repository-*</code> pages sit loose in <code translate="no">docs/reference/design/</code>. Proposal: subfolders by area, keeping <code translate="no">nav.py</code> routing.</p>
+
+<h2 id="modules-with-multiple-responsibilities">Modules with multiple responsibilities</h2>
+<p>Re-measure when scheduling. Vendored yoga-layout and ink under <code translate="no">apps/cli/src/runtime/</code> are out of scope.</p>
+<ul>
+<li><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/macos.py</code>, <code translate="no">windows.py</code></li>
+<li><code translate="no">openprogram/state/store/snapshot/checkpoint/store.py</code></li>
+<li><code translate="no">openprogram/host/security/safe_http.py</code></li>
+<li><code translate="no">apps/desktop/main.js</code></li>
+<li><code translate="no">openprogram/runtime/conversation/process_runner.py</code></li>
+<li><code translate="no">openprogram/programs/applications/browser/pages.py</code></li>
+<li><code translate="no">openprogram/interfaces/server/routes/catalog/programs.py</code></li>
+<li><code translate="no">openprogram/programs/_host/runtime.py</code></li>
+</ul>
+
+<h2 id="regression-review-checklist">Regression review checklist</h2>
+<p>To verify, not a claim that anything is broken. Reproduce against current source and the public UI before opening a task; record completion in the canonical design.</p>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">Behavior to verify</th><th scope="col">Source or entry</th></tr></thead>
+<tbody>
+<tr><th scope="row">Command delivery</th><td>A closed WebSocket neither counts as success nor clears the draft</td><td><code translate="no">wsSend</code>, composer submit</td></tr>
+<tr><th scope="row">Slash commands</th><td>Opening <code translate="no">/</code> does not run compact; missing <code translate="no">/skill</code> names and <code translate="no">/task</code> prompts are rejected with feedback</td><td><code translate="no">slash-commands.ts</code></td></tr>
+<tr><th scope="row">Command menu</th><td>Closing animation neither consumes Return nor blocks history Up/Down; required arguments stay editable</td><td><code translate="no">selectSlashCommand</code>, composer key handlers</td></tr>
+<tr><th scope="row">Session requirement</th><td>Commands without a session give feedback instead of clearing input</td><td>Composer, slash commands</td></tr>
+<tr><th scope="row">Compaction</th><td>Busy, suggested, completed, failed and no-op are visible; reactive events get UI feedback</td><td><code translate="no">loop_runner.py</code>, <code translate="no">reactive.py</code>, <code translate="no">chat-handlers.ts</code></td></tr>
+<tr><th scope="row">Context history</th><td>Compaction keeps old turns and the DAG head; summary expansion verified visibly</td><td>Context details, transcript</td></tr>
+<tr><th scope="row">Help and doctor</th><td>Help exposes and focuses the command menu; doctor presents a result with and without a session</td><td><code translate="no">/help</code>, <code translate="no">/doctor</code></td></tr>
+<tr><th scope="row">Overlapping controls</th><td>Jump-to-latest and slash menu usable where they are; observe, not inferred from z-index</td><td>Chat UI</td></tr>
+<tr><th scope="row">Attachments</th><td>Unsupported or oversized files give explicit feedback</td><td><code translate="no">image-attach.ts</code></td></tr>
+<tr><th scope="row">Desktop startup</th><td>Window appears at its layout, not resizing from the corner</td><td>Installed desktop App</td></tr>
+<tr><th scope="row">CLI resume</th><td>Argument reaches the Ink runtime with the intended session</td><td><code translate="no">openprogram/interfaces/cli/ink.py</code>, <code translate="no">apps/cli/src/index.tsx</code></td></tr>
+<tr><th scope="row">SSO, speech, plugin isolation</th><td>Docs separate implemented methods and providers from unimplemented entries; community plugin execution matches its isolation contract</td><td><code translate="no">models/auth/methods/sso.py</code>, <code translate="no">interfaces/speech/tts.py</code>, plugin loader</td></tr>
+<tr><th scope="row">Function recovery</th><td>Same-frame resume differs from a sibling retry; indirect cycles follow the recursion policy</td><td><code translate="no">ws_actions/chat/retry.py</code>, <code translate="no">agent/call_state.py</code></td></tr>
+<tr><th scope="row">Function metadata</th><td>Dynamic metadata and literal source declarations follow the form contract</td><td>Function forms, metadata docs</td></tr>
+<tr><th scope="row">Distribution</th><td>Linux desktop artifacts, upgrade failure recovery, manual workflow publication and sandbox gates match the install docs</td><td>Installation, source upgrades, Workflow publishing</td></tr>
+<tr><th scope="row">Command registry</th><td>Duplicate names have a defined lookup order and an unambiguous menu</td><td><code translate="no">runCommand</code>, command menu</td></tr>
+</tbody>
+</table>
+<p class="note">Idle automatic compaction is a product decision, not an assumed bug. Environment-variable discovery does not replace the AuthStore boundary. External issue counts and old snapshots are not evidence.</p>

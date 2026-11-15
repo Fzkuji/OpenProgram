@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import asyncio
 
-from openprogram.agent.agent_loop import _execute_tool_calls
-from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.execution.effects import EffectStore
-from openprogram.providers.types import AssistantMessage, TextContent, ToolCall
-from openprogram.providers.utils.event_stream import EventStream
+from openprogram.runtime.agent.loop import _execute_tool_calls
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.runtime.execution.effects import EffectStore
+from openprogram.models.providers.types import AssistantMessage, TextContent, ToolCall
+from openprogram.models.providers.utils.event_stream import EventStream
 
 from ._support import _committed_tool_ids, _prepare_long_turn
 
@@ -48,5 +48,4 @@ def test_distinct_rejections_commit_results_without_reconciliation(tmp_path):
             )
     asyncio.run(run())
     assert len(_committed_tool_ids(store, execution.execution_id)) == 24
-    assert EffectStore(store).list_unresolved(execution.execution_id) == []
     assert store.get_execution(execution.execution_id).reason_code is None

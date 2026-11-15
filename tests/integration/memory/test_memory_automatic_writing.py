@@ -41,11 +41,11 @@ def _configure_runtime(
     *,
     available_model: bool = True,
 ):
-    from openprogram import paths
-    from openprogram.agent import authority
-    from openprogram.agent.management import manager
-    from openprogram.agent.session_db import SessionDB
-    from openprogram.memory import set_backend
+    from openprogram.state import paths
+    from openprogram.runtime.permissions import authority
+    from openprogram.runtime.agent_registry import manager
+    from openprogram.runtime.context.session_db import SessionDB
+    from openprogram.state.memory import set_backend
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority._reset_owner_cache_for_tests()
@@ -70,12 +70,12 @@ def _configure_runtime(
         make_default=True,
     )
     db = SessionDB(tmp_path / "sessions")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     return db
 
 
 def _append_paired_turn(db) -> float:
-    from openprogram.agent import authority
+    from openprogram.runtime.permissions import authority
 
     paired = authority.paired_channel_authority(
         "telegram", "main", "telegram-user-42", "B",
@@ -103,9 +103,9 @@ def test_idle_writer_composes_real_runtime_and_installs_topic(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Removing any production handoff leaves no installed, marked result."""
-    from openprogram.memory import get_backend, session_watcher, store
-    from openprogram.memory.local_backend import LocalMemoryBackend
-    from openprogram.providers import api_registry
+    from openprogram.state.memory import get_backend, session_watcher, store
+    from openprogram.state.memory.local_backend import LocalMemoryBackend
+    from openprogram.models.providers.catalog import api_registry
 
     db = _configure_runtime(tmp_path, monkeypatch)
     scripted = ScriptedProvider()
@@ -135,19 +135,14 @@ def test_idle_writer_composes_real_runtime_and_installs_topic(
         memory = store.root()
         topic = (memory / "topics/core.md").read_text(encoding="utf-8")
         assert "B prefers exact answers." in topic
-        assert SOURCE_ID in topic
+        assert f"(/s/{SESSION_ID}#u1)" in topic
         assert "[^e1]" not in topic
         block = re.search(r"(?m) \^([0-9a-f]{8})$", topic)
         assert block is not None
         assert re.search(r"\[\^e-[0-9a-f]{10}\]", topic)
 
-        source = (
-            memory / f"sources/openprogram/_v2/{SESSION_ID}.md"
-        ).read_text(encoding="utf-8")
-        assert source.startswith("<!-- openprogram-source-archive:v2 -->\n\n")
-        assert f"<!-- source-id:{SOURCE_ID} -->" in source
-        assert "<!-- speaker-id:telegram%2Duser%2D42 -->" in source
-        assert "] B (telegram-user-42): I prefer exact answers." in source
+        # The chat is the record: memory keeps no copy of it.
+        assert not (memory / "sources").exists()
 
         recent = [
             json.loads(line)
@@ -173,8 +168,9 @@ def test_idle_writer_composes_real_runtime_and_installs_topic(
             "backlinks": {}, "outbound": {block.group(1): []},
         }
         assert "B prefers exact answers." in (
-            memory / "core.md"
+            memory / "MEMORY.md"
         ).read_text(encoding="utf-8")
+        assert not (memory / "core.md").exists()
 
         branch = db.get_branch(SESSION_ID)
         assert branch[0]["memory_written_scriptorium"] == store.workspace_id()
@@ -192,10 +188,10 @@ def test_idle_writer_composes_real_runtime_and_installs_topic(
             "Read", "Write", "Edit", "Grep", "Glob", "shell",
         }
         prompt = _prompt_text(first_call)
-        assert f'"ref":"{SOURCE_ID}"' in prompt
+        assert f'"ref":"/s/{SESSION_ID}#u1"' in prompt
         assert '"speaker":"B (telegram-user-42)"' in prompt
     finally:
-        from openprogram.memory import set_backend
+        from openprogram.state.memory import set_backend
 
         set_backend(None)
         _close_store(db)
@@ -228,9 +224,9 @@ def test_permanent_writer_startup_failure_is_not_offered_next_poll(
     reason_fragment: str,
 ):
     """Raw config/auth failures are durable non-retry verdicts."""
-    from openprogram.memory import get_backend, session_watcher, store
-    from openprogram.memory.local_backend import LocalMemoryBackend
-    from openprogram.providers import api_registry
+    from openprogram.state.memory import get_backend, session_watcher, store
+    from openprogram.state.memory.local_backend import LocalMemoryBackend
+    from openprogram.models.providers.catalog import api_registry
 
     db = _configure_runtime(
         tmp_path,
@@ -243,7 +239,7 @@ def test_permanent_writer_startup_failure_is_not_offered_next_poll(
 
     events: list[tuple[str, dict]] = []
     monkeypatch.setattr(
-        "openprogram.events.emit_safe",
+        "openprogram.runtime.events.emit_safe",
         lambda name, actor, payload=None, meta=None: events.append(
             (name, payload or {})
         ),
@@ -255,7 +251,17 @@ def test_permanent_writer_startup_failure_is_not_offered_next_poll(
 
         assert session_watcher._scan(idle_minutes=0) == 0
         processed = session_watcher._load_processed()
-        assert processed == {SESSION_ID: updated_at}
+        if failure == "lazy-credential":
+            # A missing key is the writer's sign-in, the same for every
+            # conversation: it is recorded once, nothing is given up on,
+            # and the conversation is written once a sign-in changes.
+            assert processed == {}
+            state = session_watcher.load_state()
+            assert state["credentials"]["writer"]["reason_code"] == (
+                "MODEL_AUTHENTICATION"
+            )
+        else:
+            assert processed == {SESSION_ID: updated_at}
         ended = [
             payload for name, payload in events
             if name == "memory.ingest_ended"
@@ -265,17 +271,14 @@ def test_permanent_writer_startup_failure_is_not_offered_next_poll(
         assert ended[0]["retryable"] is False
         assert reason_fragment in ended[0]["reason"]
 
-        source_path = (
-            store.root() / f"sources/openprogram/_v2/{SESSION_ID}.md"
-        )
-        archived_once = source_path.read_bytes()
+        topics_before = sorted((store.root() / "topics").rglob("*.md"))
         assert db.get_branch(SESSION_ID)[0].get(
             "memory_written_scriptorium"
         ) is None
 
         assert session_watcher._scan(idle_minutes=0) == 0
         assert session_watcher._load_processed() == processed
-        assert source_path.read_bytes() == archived_once
+        assert sorted((store.root() / "topics").rglob("*.md")) == topics_before
         assert len([
             name for name, _payload in events
             if name == "memory.ingest_ended"
@@ -284,7 +287,7 @@ def test_permanent_writer_startup_failure_is_not_offered_next_poll(
             1 if failure == "lazy-credential" else 0
         )
     finally:
-        from openprogram.memory import set_backend
+        from openprogram.state.memory import set_backend
 
         set_backend(None)
         _close_store(db)

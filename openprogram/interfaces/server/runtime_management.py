@@ -1,0 +1,758 @@
+"""
+Runtime / provider management for the web UI.
+
+Owns the globals for chat + exec provider selection, runtime creation,
+provider detection, and runtime switching. Broadcasts use a late import
+to avoid a circular dep with server.py.
+"""
+
+from __future__ import annotations
+
+import logging
+import json
+import threading
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Globals — live here so server.py doesn't own provider state directly.
+# ---------------------------------------------------------------------------
+
+_CLI_PROVIDERS = {"openai-codex", "gemini-cli"}
+
+_runtime_lock = threading.Lock()
+
+_chat_provider: Optional[str] = None
+_chat_model: Optional[str] = None
+_chat_runtime = None
+
+_exec_provider: Optional[str] = None
+_exec_model: Optional[str] = None
+
+_default_provider: Optional[str] = None
+_default_runtime = None
+_providers_initialized = False
+
+_available_providers: dict[str, dict] = {}
+
+
+def _log(text: str) -> None:
+    """Log line — surfaces to webui clients and writes to a log file.
+
+    Earlier versions just ``print(text)`` to stdout as a fallback when
+    the webui ``_log`` import failed. That polluted CLI chat with
+    "[probe] xxx unavailable" lines on every startup. Now: broadcast
+    via webui when available, always write to
+    the active profile's ``logs/runtime.log``, only mirror to stderr when
+    ``OPENPROGRAM_DEBUG_RUNTIME=1``. Per-call sites that DO want to
+    surface a one-liner to the user (e.g. "no provider available")
+    use ``_user_log`` instead.
+    """
+    try:
+        from openprogram.interfaces.server.server import _log as _srv_log
+        _srv_log(text)
+    except Exception:
+        # Server not running (CLI use); the file log below still records the
+        # line.
+        logger.debug("webui log forward failed", exc_info=True)
+    try:
+        from openprogram.state.paths import get_logs_dir
+
+        log_dir = get_logs_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        with open(log_dir / "runtime.log", "a", encoding="utf-8") as f:
+            import time as _time
+            f.write(f"{_time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n")
+    except OSError:
+        pass
+    import os as _os
+    if _os.environ.get("OPENPROGRAM_DEBUG_RUNTIME", "").strip() in ("1", "true", "yes"):
+        import sys as _sys
+        print(text, file=_sys.stderr, flush=True)  # noqa: T201 - runtime.log mirror
+
+
+def _any_agent_has_pinned_provider() -> bool:
+    """True if any saved agent has a non-empty ``model.provider``.
+
+    Used by ``_init_providers`` to suppress the "no provider available"
+    warning when auto-detection fails but an agent has a pin that the
+    CLI's ``_get_chat_runtime`` will honour next. Best-effort: any
+    error means "we don't know" which we treat conservatively as False
+    so a genuinely-broken install still gets the warning.
+    """
+    try:
+        from openprogram.runtime.agent_registry import manager as _A
+        for spec in _A.list_all():
+            if spec.model and (spec.model.provider or "").strip():
+                return True
+    except Exception:
+        logger.debug(
+            "agent registry unreadable while checking for a configured model", exc_info=True)
+    return False
+
+
+def _user_log(text: str) -> None:
+    """Important event that should surface to the user.
+
+    Used sparingly — e.g. "no provider available, run `openprogram
+    providers setup`". Goes through the same broadcast + file-log path
+    as ``_log`` plus a stderr print so the user sees it even when
+    running bare ``openprogram`` without other diagnostic output.
+    """
+    _log(text)
+    try:
+        import sys as _sys
+        print(text, file=_sys.stderr, flush=True)  # noqa: T201 - user-facing notice
+    except Exception:
+        # stderr may be closed (detached worker); the line is already logged.
+        logger.debug("user log line not printed to stderr", exc_info=True)
+
+
+def _broadcast(msg: str) -> None:
+    try:
+        from openprogram.interfaces.server.server import _broadcast as _srv_bc
+        _srv_bc(msg)
+    except Exception:
+        # Server not running (CLI use); nothing to broadcast to.
+        logger.debug("broadcast skipped", exc_info=True)
+
+
+def _broadcast_chat_response(session_id: str, msg_id: str, response: dict) -> None:
+    try:
+        from openprogram.interfaces.server.server import _broadcast_chat_response as _srv_bcr
+        _srv_bcr(session_id, msg_id, response)
+    except Exception:
+        # Server not running (CLI use); nothing to broadcast to.
+        logger.debug(
+            "chat response broadcast skipped for session %s", session_id, exc_info=True)
+
+
+def _get_sessions():
+    """Return (conversations dict, lock). Late import to avoid cycle."""
+    from openprogram.interfaces.server.server import _sessions, _sessions_lock
+    return _sessions, _sessions_lock
+
+
+# ---------------------------------------------------------------------------
+# Runtime inspection
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Runtime creation — provider-specific setup
+# ---------------------------------------------------------------------------
+
+def _preferred_default_model(provider: str) -> str | None:
+    """Pick a non-hardcoded model for a provider based on user config.
+
+    Priority:
+      1. The last used model, when it belongs to this provider.
+      2. First id in ``providers.<provider>.models`` (spec rows) if the user
+         has any models enabled for this provider — falling back to the legacy
+         ``enabled_models`` id list for a not-yet-migrated config.
+      3. ``None`` — caller uses its hardcoded fallback.
+    """
+    try:
+        from openprogram.models.providers.settings.storage import _read_providers_cfg
+        from openprogram.state.paths import get_config_path
+        import json
+        try:
+            with open(get_config_path(), "r", encoding="utf-8") as f:
+                root_cfg = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            root_cfg = {}
+        from openprogram.models.providers.catalog.last_used import last_used_in_config
+        last = last_used_in_config(root_cfg)
+        if last and last[0] == provider:
+            return last[1]
+        pcfg = _read_providers_cfg().get(provider, {})
+        spec_ids = [r.get("id") for r in (pcfg.get("models") or []) if r.get("id") and r.get("enabled") is not False]
+        enabled = spec_ids if "models" in pcfg else list(pcfg.get("enabled_models") or [])
+        if enabled:
+            return enabled[0]
+    except Exception:
+        # Unreadable config: the caller uses its hardcoded fallback.
+        logger.debug(
+            "default model lookup failed for provider %s", provider, exc_info=True)
+    return None
+
+
+def _create_runtime_for_visualizer(provider: str, model: str | None = None):
+    """Create a runtime appropriate for the web UI.
+
+    Two shapes:
+      - Provider listed in ``registry.PROVIDERS``: route through
+        ``create_runtime`` so their
+        per-provider conventions (Codex search=True, key resolution with
+        guidance, ...) apply.
+      - Any other provider id present in the HTTP model registry (openrouter,
+        groq, cerebras, minimax, mistral, ...): build a plain ``Runtime`` with
+        ``model="<provider>:<id>"``. These go through AgentSession end-to-end.
+    """
+    from openprogram.runtime.agent.runtime.factory import create_runtime
+    from openprogram.models.providers.catalog.registry import PROVIDERS
+
+    # Persisted session meta stores ``runtime.model`` verbatim, which for
+    # CLI/OAuth runtimes is the PREFIXED id (``openai-codex:gpt-5.5``). The
+    # restore path (server.py) feeds that back as ``model=`` here. Strip a
+    # leading ``<provider>:`` so it's treated as the bare id it names, not a
+    # new model — otherwise it misses the registry and dynamic registration
+    # mints a ghost row (id ``openai-codex:gpt-5.5`` → "GPT-openai Codex:5.5").
+    while isinstance(model, str) and model.startswith(f"{provider}:"):
+        model = model.split(":", 1)[1]
+
+    # If caller didn't pin a model, prefer user config (default_model or
+    # the first entry in enabled_models) over the hardcoded PROVIDERS
+    # default. Keeps fresh installs on the hardcoded fallback while
+    # letting users promote e.g. Opus to default by enabling it in
+    # Settings — no manual switch needed every session.
+    if model is None:
+        model = _preferred_default_model(provider)
+
+    if provider in PROVIDERS:
+        kwargs = {"provider": provider}
+        if provider == "openai-codex":
+            kwargs["search"] = True
+        if model:
+            kwargs["model"] = model
+        return create_runtime(**kwargs)
+
+    # Registry-based provider. Pick a default model if caller didn't specify.
+    from openprogram.runtime.agent.runtime import Runtime
+    from openprogram.models.providers import get_model as _get_model, get_models as _get_models
+    if model is None:
+        models = _get_models(provider)
+        # Static registry empty? Fall back to the user's enabled spec rows
+        # (post-Fetch rows or hand-pinned ones) before giving up — same
+        # rule that drives the Settings model table. Legacy ``custom_models``
+        # is a fallback for a not-yet-migrated config.
+        if not models:
+            from openprogram.models.providers.settings.storage import _read_providers_cfg
+            pcfg = _read_providers_cfg().get(provider, {})
+            customs = (pcfg.get("models") or []) or (pcfg.get("custom_models") or [])
+            if not customs:
+                raise RuntimeError(f"Provider {provider!r} has no models registered")
+            model = customs[0].get("id")
+            if not model:
+                raise RuntimeError(f"Provider {provider!r} has no models registered")
+        else:
+            model = models[0].id
+    # ``custom_models`` (fetched + manual) are valid runtime targets
+    # too. ``get_model`` only looks at the static ENABLED_MODELS dict baked
+    # into ``providers/catalog/enabled_models.py``; without this side-effect
+    # registration, every model the user pulled via Fetch
+    # (DeepSeek V4, claude-sonnet-4-6, …) trips the
+    # ``raise ValueError("Unknown model ...")`` inside Runtime.__init__
+    # and the picker switch 500s — even though Settings → Models
+    # happily toggles those rows enabled.
+    if _get_model(provider, model) is None:
+        from openprogram.models.providers.catalog.enabled_models import register_model_from_config
+        if not register_model_from_config(provider, model):
+            from openprogram.models.providers.catalog.suggestions import unknown_model_message
+
+            raise RuntimeError(unknown_model_message(provider, model))
+    return Runtime(model=f"{provider}:{model}")
+
+
+_PROVIDER_PRIORITY = ("openai-codex", "gemini-cli", "anthropic", "gemini", "openai")
+_CLI_BINS = {"openai-codex": "codex", "gemini-cli": "gemini"}
+
+
+def _build_model_caps(provider_name: str, model_ids: list[str]) -> dict[str, dict]:
+    """Return {model_id: {vision, video, audio, reasoning, tools}} for each model."""
+    try:
+        from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
+        caps: dict[str, dict] = {}
+        for mid in model_ids:
+            # Try provider-qualified key first, then bare id
+            key = f"{provider_name}/{mid}"
+            m = ENABLED_MODELS.get(key) or ENABLED_MODELS.get(mid)
+            if m is None:
+                # Fallback: scan for any key whose model.id matches
+                for k, v in ENABLED_MODELS.items():
+                    if v.id == mid and (v.provider == provider_name or v.api == provider_name):
+                        m = v
+                        break
+            if m:
+                inputs = list(getattr(m, "input", []) or [])
+                caps[mid] = {
+                    "vision": "image" in inputs,
+                    "video": "video" in inputs,
+                    "audio": "audio" in inputs,
+                    "reasoning": bool(getattr(m, "reasoning", False)),
+                    "tools": True,
+                }
+        return caps
+    except Exception:
+        return {}
+
+
+def _probe_one_provider(p_name: str):
+    """Probe a single provider. Returns (name, runtime, models) or None on failure.
+
+    `runtime` is kept open so a successful probe can be reused as the default
+    runtime without rebuilding. Caller is responsible for closing the ones it
+    doesn't keep.
+
+    Constructibility ≠ usability. ``Runtime.__init__`` for HTTP-based
+    providers like ``claude-code`` only stamps a base_url + model list
+    onto the runtime; nothing actually hits the network. So the
+    structural probe alone is happy to pick a provider whose backing
+    daemon isn't running, or whose credential is stale-but-present.
+    That gets persisted into the new session's ``provider_name`` field
+    and then explodes at send time. Defer to ``_is_configured`` — the
+    same predicate the Settings page uses — so the auto-detect default
+    only picks providers that pass the catalog's own usability check
+    (API key present / CLI binary on PATH / local proxy actually
+    answering on its port).
+    """
+    try:
+        from openprogram.models.providers.catalog.metadata import is_configured as _is_configured
+        if not _is_configured(p_name):
+            raise RuntimeError(f"{p_name} not configured")
+        if p_name in _CLI_PROVIDERS:
+            import shutil as _shutil
+            if not _shutil.which(_CLI_BINS.get(p_name, p_name)):
+                raise RuntimeError(f"{p_name} not installed")
+        rt = _create_runtime_for_visualizer(p_name)
+        models = rt.list_models() if hasattr(rt, "list_models") else []
+        if rt.model and rt.model not in models:
+            models = [rt.model] + models
+        return p_name, rt, models
+    except Exception as e:
+        _log(f"[probe] {p_name} unavailable: {e}")
+        return None
+
+
+def _probe_order() -> list[str]:
+    """Provider probe order: the last used model's provider first, then
+    ``_PROVIDER_PRIORITY``.
+
+    Probing only prepares runtimes; it never chooses the chat model.
+    """
+    order = list(_PROVIDER_PRIORITY)
+    try:
+        from openprogram.models.providers.catalog.last_used import read_last_used_model
+        pair = read_last_used_model()
+    except Exception:
+        pair = None
+    if pair:
+        order = [pair[0]] + [p for p in order if p != pair[0]]
+    return order
+
+
+def _detect_default_provider() -> tuple:
+    """Kept as a back-compat shim; new code goes through `_init_providers`."""
+    for p in _probe_order():
+        result = _probe_one_provider(p)
+        if result is not None:
+            _, rt, _models = result
+            return p, rt
+    return None, None
+
+
+def _apply_last_used_model(provider: str, rt, models: list) -> None:
+    """Point ``rt.model`` at the last used model when it belongs to
+    ``provider`` and is still enabled, else leave the probe's own pick."""
+    try:
+        from openprogram.models.providers.catalog.last_used import read_last_used_model
+        pair = read_last_used_model()
+    except Exception:
+        return
+    if not pair or pair[0] != provider:
+        return
+    want = pair[1]
+    avail = {m for m in (models or []) if isinstance(m, str)}
+    if want in avail or _default_is_enabled(provider, want):
+        rt.model = want
+        if want not in avail:
+            models.insert(0, want)
+
+
+def _last_used_chat_model() -> tuple[str | None, str | None]:
+    """Model for a conversation with no pin and no Agent model of its own.
+
+    There is no default model: this is the model the user ran last, and
+    ``(None, None)`` until something has been used or when that model is
+    no longer enabled.
+    """
+    try:
+        from openprogram.models.providers.catalog.last_used import read_last_used_model
+        pair = read_last_used_model()
+    except Exception:
+        pair = None
+    if pair and _default_is_enabled(*pair):
+        return pair
+    return None, None
+
+
+_rest_probe_started = False
+
+
+def _probe_rest_async(skip: str | None) -> None:
+    """Probe the non-default providers in a background thread.
+
+    The default is already in `_available_providers` from the foreground
+    `_init_providers` call. This fills in the rest so the Settings UI has a
+    complete provider/model list without blocking startup on it.
+    """
+    global _rest_probe_started
+    if _rest_probe_started:
+        return
+    _rest_probe_started = True
+
+    def _run():
+        from concurrent.futures import ThreadPoolExecutor
+        targets = [p for p in _probe_order() if p != skip]
+        with ThreadPoolExecutor(max_workers=len(targets) or 1) as ex:
+            for r in ex.map(_probe_one_provider, targets):
+                if r is None:
+                    continue
+                name, rt, models = r
+                _available_providers[name] = {"models": models, "default_model": rt.model, "model_caps": _build_model_caps(name, models)}
+                if hasattr(rt, "close"):
+                    try:
+                        rt.close()
+                    except Exception:
+                        # The probe runtime is discarded; its models are
+                        # already recorded.
+                        logger.debug("closing probe runtime failed", exc_info=True)
+
+    threading.Thread(target=_run, name="probe-rest-providers", daemon=True).start()
+
+
+def _init_providers():
+    """Initialize chat and exec provider defaults.
+
+    Foreground only probes providers in priority order until one succeeds;
+    the rest are probed asynchronously to populate `_available_providers`
+    for the Settings UI without blocking startup.
+    """
+    global _chat_provider, _chat_model, _chat_runtime
+    global _exec_provider, _exec_model
+    global _default_provider, _default_runtime
+    global _providers_initialized
+
+    with _runtime_lock:
+        if _providers_initialized:
+            return
+        _providers_initialized = True
+
+        provider_name = None
+        rt = None
+        for p in _probe_order():
+            result = _probe_one_provider(p)
+            if result is None:
+                continue
+            name, probe_rt, models = result
+            _apply_last_used_model(name, probe_rt, models)
+            _available_providers[name] = {"models": models, "default_model": probe_rt.model}
+            provider_name = name
+            rt = probe_rt
+            break
+
+        if provider_name:
+            # Quiet — banner will show the active provider; users don't
+            # need a separate "detect: OK" line above it. Diagnostic
+            # path still logs to file via ``_log``.
+            _log(f"[detect] {provider_name} OK")
+        else:
+            # Auto-detect failed, but an agent may still have a pinned
+            # provider that bypasses ``_is_configured`` (e.g.
+            # ``_is_configured("openai-codex")`` returns False under
+            # some config-file layouts even when an OAuth token is in
+            # CredentialProvider). Suppress the user-visible "no provider"
+            # warning when any agent has a pinned model.provider —
+            # ``cli.repl.setup._get_chat_runtime`` will try it next
+            # and the banner will say so.
+            _log("[detect] no provider via auto-detect")
+            if not _any_agent_has_pinned_provider():
+                _user_log(
+                    "openprogram: no LLM provider configured.\n"
+                    "  Run `openprogram providers setup` to connect one,\n"
+                    "  or `openprogram providers login <name>` for a specific provider."
+                )
+
+        _chat_provider, _chat_model = _last_used_chat_model()
+        _chat_runtime = rt
+
+        _exec_provider = provider_name
+        _exec_model = rt.model if rt else None
+
+        _default_provider = provider_name
+        _default_runtime = rt
+
+    _probe_rest_async(skip=provider_name)
+
+
+def _get_session_runtime(session_id: str, msg_id: str = None):
+    """Get chat runtime for a conversation, creating if needed.
+
+    Resolution order for the runtime's provider/model:
+      1. The conversation's already-attached runtime (sticky once created).
+      2. Explicit user choice (``provider_override`` set by ``/model``).
+      3. The conversation's agent's configured ``model.provider`` /
+         ``model.id`` (agent.json). Honouring this is what makes the
+         agent setting load-bearing instead of cosmetic — the previous
+         version always used the global auto-detected default and
+         silently ignored what the user picked in the agents UI.
+      4. Global ``_chat_provider`` fallback.
+    """
+    _init_providers()
+
+    _sessions, _ = _get_sessions()
+    conv = _sessions.get(session_id)
+    if conv and conv.get("runtime"):
+        return conv["runtime"]
+
+    provider, model = _resolve_session_provider_model(conv)
+
+    if not provider:
+        raise RuntimeError(
+            "No model available. Enable a model in Settings → Providers "
+            "(or install a CLI such as codex/claude/gemini, or set an API key)."
+        )
+
+    rt = _create_runtime_for_visualizer(provider, model=model)
+    if conv:
+        conv["runtime"] = rt
+        conv["provider_name"] = provider
+    return rt
+
+
+def _resolve_session_provider_model(conv: dict | None, *, snapshot: bool = False) -> tuple[str | None, str | None]:
+    """Pick (provider, model) for a conversation.
+
+    Resolution order:
+      1. Explicit ``provider_override`` on the conv (set by ``/model``
+         switch). The older ``provider_name`` field is deliberately NOT
+         consulted as a user choice — past versions of
+         ``_get_session_runtime`` polluted it with the global default, so
+         persisted ``provider_name`` is treated as a runtime-cache only.
+      2. The conversation's agent's configured model (agent.json
+         ``model.provider`` / ``model.id``).
+      3. The last used model when no agent / no model. There is no
+         default model: with nothing used yet the conversation has none.
+
+    All three are short-circuited when the user has NOTHING enabled in
+    Settings: disabling every provider must mean "no chat runs", even for
+    a conversation whose agent pins a model whose credentials still
+    happen to be present. Otherwise a send after "disable all" silently
+    executes on the pinned default — the exact surprise the user hit.
+    """
+    if not _enabled_model_keys():
+        return None, None
+
+    session_id = conv.get("id") if conv else None
+    if session_id and not snapshot:
+        from openprogram.runtime.conversation.session_model import read_session_chat_model
+        provider, model = read_session_chat_model(session_id)
+        if provider:
+            return provider, model
+    if conv:
+        if conv.get("provider_override"):
+            return conv["provider_override"], conv.get("model_override")
+
+        agent_id = conv.get("agent_id")
+        if agent_id:
+            try:
+                from openprogram.runtime.agent_registry.manager import get as _get_agent
+                spec = _get_agent(agent_id)
+            except Exception:
+                spec = None
+            if spec is not None:
+                ap = (spec.model.provider or "").strip()
+                am = (spec.model.id or "").strip()
+                if ap:
+                    return ap, am or None
+
+    # Final fallback = the last used model, gated on the user-enabled set
+    # so a model the user since disabled never answers silently. With
+    # nothing usable the send path raises a clear "choose a model" error.
+    return _last_used_chat_model()
+
+
+def _enabled_model_keys() -> set[tuple[str, str]]:
+    """Set of ``(provider_id, model_id)`` for every model the user has
+    enabled in Settings. Empty when all providers are disabled.
+
+    This is the SAME source the chat model picker reads
+    (``list_enabled_models``), so "the picker is empty" and "the top bar
+    shows no default" stay in lockstep.
+    """
+    try:
+        from openprogram.models.listing.listing import list_enabled_models
+        keys: set[tuple[str, str]] = set()
+        for m in list_enabled_models():
+            pid, mid = m.get("provider"), m.get("id")
+            if pid and mid:
+                keys.add((pid, mid))
+        return keys
+    except Exception:
+        return set()
+
+
+def _default_is_enabled(provider: str | None, model: str | None) -> bool:
+    """True when ``(provider, model)`` is among the user-enabled models.
+
+    Used to suppress a STALE global default: the chat/exec provider+model
+    globals are set once at startup from auto-detect, so after the user
+    disables every provider the top bar must show no model and the send
+    path must not fall back to it.
+    """
+    if not provider:
+        return False
+    keys = _enabled_model_keys()
+    if not keys:
+        return False
+    if model:
+        bare = model.split(":", 1)[1] if ":" in model else model
+        return (provider, model) in keys or (provider, bare) in keys
+    # Provider set but no specific model → enabled iff the provider has
+    # at least one enabled model.
+    return any(p == provider for (p, _m) in keys)
+
+
+def _switch_runtime(provider: str, session_id: str = None, msg_id: str = None):
+    """Switch provider. Updates current conversation + global default."""
+    global _default_provider, _default_runtime
+
+    with _runtime_lock:
+        if session_id and msg_id:
+            _broadcast_chat_response(session_id, msg_id, {
+                "type": "status",
+                "content": f"Switching to {provider}...",
+            })
+
+        try:
+            if provider == "auto":
+                name, rt = _detect_default_provider()
+                if name is None:
+                    raise RuntimeError("No provider available")
+            else:
+                name, rt = provider, _create_runtime_for_visualizer(provider)
+        except Exception as e:
+            if session_id and msg_id:
+                _broadcast_chat_response(session_id, msg_id, {
+                    "type": "error",
+                    "content": f"Failed to set up {provider}: {e}",
+                })
+            raise
+
+        _default_provider = name
+        _default_runtime = rt
+
+        if session_id:
+            _sessions, _sessions_lock = _get_sessions()
+            with _sessions_lock:
+                conv = _sessions.get(session_id)
+            if conv:
+                conv["runtime"] = _create_runtime_for_visualizer(name)
+                conv["provider_name"] = name
+                # User-explicit switch — record as override so future
+                # resolutions don't fall back to agent config.
+                conv["provider_override"] = name
+                conv["model_override"] = getattr(rt, "model", None)
+
+        if session_id and msg_id:
+            _broadcast_chat_response(session_id, msg_id, {
+                "type": "status",
+                "content": f"Using {name} ({rt.model})",
+            })
+
+        _broadcast(json.dumps({
+            "type": "provider_changed",
+            "data": _get_provider_info(session_id),
+        }))
+
+        return rt
+
+
+def _provider_info_from_snapshot(row: dict) -> dict:
+    """Resolve a captured branch's effective model without consulting its live selection."""
+    provider, model = _resolve_session_provider_model(row, snapshot=True)
+    return {
+        "provider": provider, "model": model,
+        "type": ("CLI" if provider in _CLI_PROVIDERS else "API") if provider else None,
+        "runtime": None, "session_id": None,
+    }
+
+
+def _get_provider_info(session_id: str = None) -> dict:
+    """Get provider info. If session_id given, return that conversation's provider.
+
+    When the conversation has no live runtime yet (lazy restore — runtime
+    is only built on the first turn after a server restart), resolve
+    provider/model from agent config instead of falling through to the
+    global default. Otherwise pre-chat displays show the auto-detected
+    fallback even after the user fixed the agent's model.
+    """
+    if session_id:
+        _sessions, _sessions_lock = _get_sessions()
+        with _sessions_lock:
+            conv = _sessions.get(session_id)
+        if conv:
+            runtime = conv.get("runtime")
+            if runtime is not None:
+                provider_name = conv.get("provider_name") or _default_provider
+                provider_type = "CLI" if provider_name in _CLI_PROVIDERS else "API"
+                return {
+                    "provider": provider_name,
+                    "type": provider_type,
+                    "model": runtime.model,
+                    "runtime": getattr(runtime, "provider_id", None),
+                    "session_id": getattr(runtime, "_session_id", None),
+                }
+            provider_name, model = _resolve_session_provider_model(conv)
+            if provider_name:
+                provider_type = "CLI" if provider_name in _CLI_PROVIDERS else "API"
+                return {
+                    "provider": provider_name,
+                    "type": provider_type,
+                    "model": model,
+                    "runtime": None,
+                    "session_id": None,
+                }
+
+    # Before a conversation exists the chip shows the last used model, or
+    # nothing on a fresh install — never a model picked by auto-detect.
+    provider_name, model = _last_used_chat_model()
+    if not provider_name:
+        return {"provider": None, "type": None, "model": None,
+                "runtime": None, "session_id": None}
+    provider_type = "CLI" if provider_name in _CLI_PROVIDERS else "API"
+    return {
+        "provider": provider_name,
+        "type": provider_type,
+        "model": model,
+        "runtime": None,
+        "session_id": None,
+    }
+
+
+# 
+# Usage sync — dispatcher 直接走 stream_simple, 不通过 runtime.exec,
+# 所以 runtime.last_usage 永远是 None / 0. 把 TurnResult.usage 拷过去,
+# 让 _broadcast_context_stats 这种读 runtime.last_usage 的下游能拿到
+# 真实 token 数. server.py 调一行: sync_turn_usage_to_runtime(runtime, turn_result.usage).
+# 
+
+
+def sync_turn_usage_to_runtime(runtime, turn_usage: Optional[dict]) -> None:
+    """Mirror TurnResult.usage onto runtime.last_usage for downstream readers."""
+    if not runtime or not turn_usage:
+        return
+    try:
+        runtime.last_usage = {
+            "input_tokens":  int(turn_usage.get("input_tokens") or 0),
+            "output_tokens": int(turn_usage.get("output_tokens") or 0),
+            "cache_read":    int(turn_usage.get("cache_read_tokens") or 0),
+            "cache_create":  int(turn_usage.get("cache_write_tokens") or 0),
+            "total_tokens":  int(turn_usage.get("total_tokens") or 0),
+            "context_tokens": int(turn_usage.get("context_tokens") or 0),
+        }
+    except Exception:
+        # Usage display is cosmetic; a malformed usage dict must not fail the
+        # turn.
+        logger.debug("runtime.last_usage not recorded", exc_info=True)

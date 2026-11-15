@@ -1,0 +1,191 @@
+<title>文档治理</title>
+<meta name="description" content="一条命令让 HTML 文档保持格式正确、简短、属实，并跟上代码。">
+<h1>文档治理</h1>
+<p>Agent 只跑一条命令。程序能判断的问题直接失败，并列出这次改动可能过时的页面。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 280" role="img" aria-label="四个调用方运行同一条命令。pre-commit 传暂存页面；测试选择器传 worktree 的改动或给定路径；部署传上次部署以来的提交，只报告；发布检查全部。命令输出会阻断的错误，以及只提示的警告和受影响页面。">
+  <defs><marker id="g-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-cmd" translate="no" x="0" y="40">pre-commit</text>
+  <text class="t-soft" x="0" y="62">暂存的页面</text>
+  <line class="ln" x1="240" y1="44" x2="316" y2="136" marker-end="url(#g-a)"/>
+  <text class="t-cmd" translate="no" x="0" y="102">affected_tests</text>
+  <text class="t-soft" x="0" y="124">改动的文件</text>
+  <line class="ln" x1="240" y1="106" x2="316" y2="136" marker-end="url(#g-a)"/>
+  <text class="t-cmd" translate="no" x="0" y="164">refresh-dev-instance.sh</text>
+  <text class="t-soft" x="0" y="186">上次部署以来，只报告</text>
+  <line class="ln" x1="240" y1="168" x2="316" y2="136" marker-end="url(#g-a)"/>
+  <text class="t-cmd" translate="no" x="0" y="226">publish-github.sh</text>
+  <text class="t-soft" x="0" y="248">全部页面</text>
+  <line class="ln" x1="240" y1="230" x2="316" y2="136" marker-end="url(#g-a)"/>
+  <rect class="tile" x="320" y="100" width="168" height="76" rx="8"/>
+  <text class="t-cmd mid" translate="no" x="404" y="134">docs_site.check</text>
+  <text class="t-soft mid" x="404" y="156">一条命令</text>
+  <line class="ln-acc" x1="488" y1="138" x2="536" y2="60" marker-end="url(#g-a)"/>
+  <text class="t-big" x="544" y="60">错误</text>
+  <text class="t-soft" x="544" y="82">文件、行号、修法</text>
+  <line class="ln-acc" x1="488" y1="138" x2="536" y2="138" marker-end="url(#g-a)"/>
+  <text class="t-big" x="544" y="138">警告</text>
+  <text class="t-soft" x="544" y="160">内容预警区间</text>
+  <line class="ln-acc" x1="488" y1="138" x2="536" y2="216" marker-end="url(#g-a)"/>
+  <text class="t-big" x="544" y="216">受影响页面</text>
+  <text class="t-soft" x="544" y="238">去看，或记录已检查</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><code translate="no">pre-commit</code><small>暂存的页面</small></li>
+  <li><code translate="no">affected_tests</code><small>改动的文件</small></li>
+  <li><code translate="no">refresh-dev-instance.sh</code><small>上次部署以来，只报告</small></li>
+  <li><code translate="no">publish-github.sh</code><small>全部页面</small></li>
+  <li class="via"><code translate="no">docs_site.check</code></li>
+  <li class="flow-end"><strong>错误</strong><small>文件、行号、修法</small><small>警告: 内容预警区间</small><small>受影响页面: 去看，或记录已检查</small></li>
+</ol>
+</figure>
+<h2 id="entry">入口</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no" data-claim="example">python -m scripts.docs_site.check a.py docs/x.html</code></th><td>指定路径。会阻断。</td></tr>
+<tr><th scope="row"><code translate="no">… check</code></th><td>相对 HEAD 的改动。在 worktree 中阻断；在 <code translate="no">dev</code> 共享检出中只报告。</td></tr>
+<tr><th scope="row"><code translate="no">… check --base REV</code></th><td>一段提交范围。会阻断。</td></tr>
+<tr><th scope="row"><code translate="no">… check --staged</code></th><td>读 index，供 hook 用。会阻断。</td></tr>
+<tr><th scope="row"><code translate="no">… check --all</code></th><td>所有页面和全站规则。会阻断。</td></tr>
+<tr><th scope="row"><code translate="no">--report-only</code></th><td>除非工具本身失败，否则退出码为 0</td></tr>
+<tr><th scope="row"><code translate="no">--json</code></th><td>发现项和影响，供脚本读取</td></tr>
+<tr><th scope="row"><code translate="no">--unfiltered</code></th><td>关闭差异过滤：列出引用改动文件的每一页</td></tr>
+<tr><th scope="row"><code translate="no">--ack PAGE … --reason TEXT</code></th><td>记录某页面已针对这次改动检查过</td></tr>
+</tbody>
+</table>
+<p class="note">预算：改动模式 5 秒，全量 15 秒。只用标准库和 CLI parser：不需要 node、不构建站点、不联网。 退出码 0：范围内没有错误，或用了 <code translate="no">--report-only</code>。1：范围内有错误。2：工具本身失败，或用法错误，如 <code translate="no">--ack</code> 写错。</p>
+<h2 id="format">格式</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">修法</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">format.style-element</code> <code translate="no">format.script-element</code></th><td>移到 <code translate="no">site.css</code>，或删除</td></tr>
+<tr><th scope="row"><code translate="no">format.event-handler</code> <code translate="no">format.javascript-url</code> <code translate="no">format.embed</code></th><td>删掉：页面不运行、不嵌入代码</td></tr>
+<tr><th scope="row"><code translate="no">format.style-attribute</code> <code translate="no">format.stylesheet-link</code></th><td>使用站点 class</td></tr>
+<tr><th scope="row"><code translate="no">format.missing-title</code> <code translate="no">format.missing-description</code> <code translate="no">format.missing-h1</code> <code translate="no">format.multiple-h1</code></th><td>每页各有且仅有一个</td></tr>
+<tr><th scope="row"><code translate="no">format.missing-pair</code> <code translate="no">format.orphan-zh</code></th><td>补上另一语言</td></tr>
+<tr><th scope="row"><code translate="no">format.structure-mismatch</code></th><td>两种语言的标题、表格、行、列表项、代码、折叠和图的顺序一致</td></tr>
+<tr><th scope="row"><code translate="no">format.unregistered</code></th><td>加入 <code translate="no">TAB_SECTIONS</code> 的某个分区；设计页的分区标题要列在 <code translate="no">DESIGN_AREAS</code> 里。改 <code translate="no">nav.py</code> 时所有页面都重新检查。</td></tr>
+<tr><th scope="row"><code translate="no">format.cjk-in-english</code></th><td>把文字移到 <code translate="no">.zh.html</code></td></tr>
+<tr><th scope="row"><code translate="no">format.markdown-source</code></th><td>转成 HTML。只有生成的参考页保留 Markdown。</td></tr>
+<tr><th scope="row"><code translate="no">format.prototype-stale</code></th><td>清单里的原型页没有脚本：从清单删除</td></tr>
+<tr><th scope="row"><code translate="no">format.zh-stale</code></th><td>警告：英文正文变了，中文页没动</td></tr>
+<tr><th scope="row"><code translate="no">links.broken</code> <code translate="no">links.fragment</code></th><td>修正源码里的链接。直接检查源文件，不需要构建。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">清单外的失败页面</th><td><code translate="no">build.py</code> 抛出 <code translate="no">DocsFormatError</code>，带文件、行号和修法，没有 iframe 回退。</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DOCS_FORMAT=quarantine</code></th><td>不安全的标记才发布成可见的错误页，且只限出错的语言；其余问题写日志，页面照常渲染。只由部署和自更新设置。</td></tr>
+<tr><th scope="row"><code translate="no">PROTOTYPE_PAGES</code></th><td>清单在 <code translate="no">governance/policy.py</code>。新增页面要在 <code translate="no">LOOSENED_BECAUSE</code> 里写明原因。</td></tr>
+</tbody>
+</table>
+<h2 id="content">内容</h2>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">度量</th><th scope="col">在 363 个英文页上测得</th><th scope="col">错误</th><th scope="col">警告</th></tr></thead>
+<tbody>
+<tr><th scope="row">段落词数</th><td>p50 19，p95 48，p99 64，最大 78</td><td>> 80</td><td>> 60</td></tr>
+<tr><th scope="row">页面正文词数</th><td>p50 188，p95 1139，p99 1957，最大 10199</td><td>> 2000</td><td>> 1500</td></tr>
+<tr><th scope="row">正文占比（正文 ≥ 150 词）</th><td>27 页超过 0.60，8 页超过 0.70</td><td>> 0.70</td><td>> 0.60</td></tr>
+<tr><th scope="row">同一页重复句子</th><td>0</td><td>任何</td><td>–</td></tr>
+<tr><th scope="row">跨页重复句子：≥ 6 实词，Jaccard 0.8</th><td>7 对</td><td>任何</td><td>–</td></tr>
+<tr><th scope="row">句子被一行表格、不超过 4 行的整张表或一张图覆盖：≥ 6 实词；表格行计入列标题</th><td>7077 句中，0.8 有 0 句，0.7 有 17 句</td><td>≥ 0.8</td><td>≥ 0.7</td></tr>
+<tr><th scope="row">单个表格单元格词数</th><td>p50 6，p95 27，p99 42，最大 138</td><td>> 140</td><td>> 80</td></tr>
+<tr><th scope="row">只有列表的小节（不计注释）</th><td>115 节，21 节 ≥ 6 项，最多 15</td><td>≥ 8 项</td><td>≥ 6 项</td></tr>
+<tr><th scope="row">≥ 10 页的 Tab 中同一分块序列（仅 <code translate="no">--all</code>）</th><td>最高：<code translate="no">reference</code> 8%，<code translate="no">capabilities</code> 3%，<code translate="no">design</code> 1%</td><td>> 25%</td><td>> 15%</td></tr>
+</tbody>
+</table>
+<p class="note">仓库有 726 个 HTML 源文件，共 363 对。内容规则只读英文；中文靠结构对齐跟随。正文指 <code translate="no">p</code>、<code translate="no">li</code>、<code translate="no">dd</code>、<code translate="no">blockquote</code>、<code translate="no">figcaption</code> 以及直接写在容器里的文字，不含表格、图、代码和 flow 双份。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">基线</th><th scope="col"><code translate="no">governance/baseline.json</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">可记录的内容</th><td>只限内容规则，绝不收录格式和事实校验</td></tr>
+<tr><th scope="row">记录项</th><td><code translate="no">rule</code>、<code translate="no">path</code>、<code translate="no">subject</code> 哈希和不少于 20 个字符的 <code translate="no">reason</code>；页面级规则还存 <code translate="no">max</code>，即实测值</td></tr>
+<tr><th scope="row">增长</th><td>固定基准（<code translate="no">refs/publish/last</code>，否则与 <code translate="no">stable</code> 的合并基点）中没有的记录项，每次运行都算错误，也不会隐藏发现项</td></tr>
+<tr><th scope="row">缩减</th><td>不再匹配的记录项算错误：删掉</td></tr>
+<tr><th scope="row">改动文字</th><td>句子和段落规则：哈希改变，发现项重新出现。页面级规则：页面不能超过 <code translate="no">max</code>，它只能下调。</td></tr>
+</tbody>
+</table>
+<h2 id="claims">事实校验</h2>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">引用</th><th scope="col">校验依据</th><th scope="col">实测</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令和 flag</th><td>以 <code translate="no">openprogram</code> 开头的行，用 <code translate="no">shlex</code> 切分，沿 <code translate="no">build_parser()</code> 逐级走</td><td>505 条命令</td></tr>
+<tr><th scope="row">被删的动词和 flag</th><td>本次范围删掉的动词或 flag，整段写在一个代码片段里。别的命令还保留的 flag，只在提到它所属命令的页面上算。顶层动词只在页面写了 <code translate="no">openprogram</code> 加它、或把它和两个以上其他顶层动词列在一起时才算，因为这样的词常常同时是应用名或目标名。</td><td>只在改动了解析器的范围里出现</td></tr>
+<tr><th scope="row">仓库路径</th><td>已跟踪的文件或目录；被 git 忽略的构建产物也算；通配模式跳过</td><td>1004 个</td></tr>
+<tr><th scope="row">部分路径和裸文件名</th><td>产品页上，带源码后缀且顶层段已知的必须能解析到。任何页面上，改动前能解析、改动后不能解析的都算。</td><td>1310 和 1080；规则前产品页 7 处、工程记录 229 处解析不到</td></tr>
+<tr><th scope="row">模块</th><td>解析到文件或其属性的 <code translate="no">openprogram.*</code>；排除域名</td><td>134 个</td></tr>
+<tr><th scope="row">路由</th><td>在 <code translate="no">interfaces/server</code> 中找到（字面路由优先；本次改动删除了该字面路由时参数路由不算；只有以 <code translate="no">*</code> 结尾的引用才匹配其下路径）的 <code translate="no">/api/*</code> 和 <code translate="no">/healthz</code></td><td>235 个</td></tr>
+<tr><th scope="row">环境变量</th><td>已跟踪文件中存在的 <code translate="no">OPENPROGRAM_*</code></td><td>74 个不同变量</td></tr>
+<tr><th scope="row">设置项</th><td><code translate="no">openprogram config</code> 的参数，或范围内从 <code translate="no">SETTINGS</code> 消失、页面仍在提到的 key</td><td>139 个精确匹配；74 个形似但不是设置</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">标记</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">&lt;code data-claim="example"&gt;</code></th><td>示意路径或命令，或设计中否决的名称，不校验。</td></tr>
+<tr><th scope="row"><code translate="no">data-claim="invalid"</code></th><td>故意写错的命令。真实命令不能标成示例。</td></tr>
+<tr><th scope="row"><code translate="no">references/</code></th><td>被 git 忽略的同类项目克隆：只校验路径语法</td></tr>
+</tbody>
+</table>
+<h2 id="impact">代码到文档</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">引用</th><td>上面校验到的文件路径，或 3 层以上的目录。裸文件名只有唯一时才算。</td></tr>
+<tr><th scope="row">命令、key、路由</th><td>映射到来源：<code translate="no">cli/parser.py</code>、<code translate="no">state/settings.py</code>、<code translate="no">interfaces/server/routes/</code>。与某个 key 完全相同的代码片段算设置引用。</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">&lt;meta name="covers" content="openprogram/x/ scripts/y.py"&gt;</code></th><td>显式声明，只写在英文页，总是生效。没有任何引用的页面需要它。<code translate="no">content="none"</code> 声明这是不描述代码的索引或调研页。</td></tr>
+<tr><th scope="row">过滤</th><td>某文件被超过 3 页引用时，页面的代码词必须是改动行里的标识符才算，字符串、注释和调用关键字不算。<code translate="no">cli/parser.py</code> 由解析器差异决定：只算命令在改动命令路径之下的页面。<code translate="no">state/settings.py</code> 中，被改动块的 key 视为改动。输出会说明滤掉多少页；<code translate="no">--unfiltered</code> 关闭过滤。</td></tr>
+<tr><th scope="row">报告</th><td>该页英文正文没变，也没有记录；有改动但可见文字没变的页面标为“已编辑，请确认”；排序后全部显示</td></tr>
+</tbody>
+</table>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">回放 252 个提交</th><th scope="col">页数 p50</th><th scope="col">页数 p90</th><th scope="col">无结果的提交</th><th scope="col">预测命中的文档提交（共 123）</th></tr></thead>
+<tbody>
+<tr><th scope="row">任意目录引用</th><td>17</td><td>34</td><td>2</td><td>42</td></tr>
+<tr><th scope="row">精确文件 + 深目录</th><td>7</td><td>23</td><td>21</td><td>40</td></tr>
+<tr><th scope="row">再对所有文件做 diff 过滤</th><td>5</td><td>17</td><td>37</td><td>38</td></tr>
+<tr><th scope="row">超过 3 页时才做 diff 过滤（采用）</th><td>6</td><td>17</td><td>24</td><td>40</td></tr>
+</tbody>
+</table>
+<p class="note">加上 <code translate="no">covers</code> 声明后：p50 6，p90 26，12 个提交没有受影响页；同时改了代码和文档的 41 个提交中预测到 36 个。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">记录已检查</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">键</th><td>页面、改动文件、这次决定对应的起止 blob。范围模式只有在记录能从基点连到末端时才算。</td></tr>
+<tr><th scope="row">存放</th><td><code translate="no">&lt;git-common-dir&gt;/openprogram-docs/acknowledgements.jsonl</code>，worktree 共享，追加写入</td></tr>
+<tr><th scope="row">再次改动文件</th><td>blob 变化，重新询问</td></tr>
+<tr><th scope="row">限制</th><td>必须逐页点名，且页面必须在这次的影响报告里；只记录指向该页的文件；共享检出必须写明路径。脚本循环 <code translate="no">--json</code> 仍可盲目记录。</td></tr>
+<tr><th scope="row">存放丢失</th><td>警告重现，不影响别的，所以不需要进版本库。</td></tr>
+</tbody>
+</table>
+<h2 id="wiring">运行位置</h2>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">运行</th><th scope="col">阻断</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">主检出提交</th><td><code translate="no">pre-commit</code>，<code translate="no">--staged</code>，暂存了 docs、基线或策略时</td><td>暂存页面的错误</td><td>作者明确；使用 <code translate="no">git commit -- &lt;paths&gt;</code> 时 index 不含其他会话的文件</td></tr>
+<tr><th scope="row">worktree 提交</th><td><code translate="no">commit_gate.py</code> 作为 PreToolUse hook，配置在纳入版本管理的 <code translate="no">.claude/settings.json</code> 里，拦截 <code translate="no">git commit</code> 和 <code translate="no">git merge</code>。</td><td>分支内的错误</td><td><code translate="no">~/.git-hooks</code> 在第一个空格截断 <code translate="no">.git</code> 路径，这里 Git hook 不运行</td></tr>
+<tr><th scope="row">主检出 merge 或快进</th><td><code translate="no">post-merge</code>：<code translate="no">--base ORIG_HEAD --report-only</code></td><td>不阻断</td><td>不会运行 pre-commit；cherry-pick 什么都不运行，由下次部署报告或发布时发现</td></tr>
+<tr><th scope="row"><code translate="no">affected_tests --run</code></th><td>每次改动</td><td>指定路径或 worktree 自身改动的错误</td><td>Agent 本来就跑它</td></tr>
+<tr><th scope="row"><code translate="no">affected_tests --run</code>，共享检出，未指定路径</th><td>每次改动</td><td>不阻断，只报告</td><td>工作区里有其他会话的页面</td></tr>
+<tr><th scope="row"><code translate="no">refresh-dev-instance.sh</code></th><td><code translate="no">--base &lt;上次部署&gt; --report-only</code>，再以隔离模式构建</td><td>不阻断</td><td>这里的提交来自所有会话</td></tr>
+<tr><th scope="row"><code translate="no">publish-github.sh</code></th><td><code translate="no">--all</code>，在推送前</td><td>所有错误</td><td>整个产品离开本机；很少且有意为之</td></tr>
+</tbody>
+</table>
+<p class="note">受影响页面和警告只提示：页面是否要重写需要判断。Hook 不进版本库，所以 <code translate="no">scripts/git-hooks/install.sh</code> 在每次部署和发布时复制，同时在旁边记下来源提交，旧检出不会把它们降级；主检出发现 hook 过期时会提示。Hook 找不到 venv 或工具退出码为 2 时都不阻断。</p>
+<h2 id="selection">测试选择</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">只改 <code translate="no">apps/web</code></th><td>任何非空改动都构建图并运行全部 27 个契约文件，579 项测试，21 秒</td></tr>
+<tr><th scope="row">只改文档</th><td><code translate="no">Selection.docs_check</code> 运行入口命令。<code translate="no">docs/_site</code> 不存在时 <code translate="no">checklinks</code> 失败。</td></tr>
+<tr><th scope="row">代码改动</th><td>每次改动都运行入口命令看影响</td></tr>
+<tr><th scope="row">worktree 没有 <code translate="no">node_modules</code></th><td><code translate="no">--run</code> 用 <code translate="no">cp -c</code> 从主检出克隆两份 <code translate="no">node_modules</code>，与 <code translate="no">stage-release-assets.sh</code> 相同：10 秒，160 MB。绝不建链接。</td></tr>
+<tr><th scope="row">选中的 Python 测试要运行 <code translate="no">node</code></th><td>按源码标记识别，同样触发克隆；克隆不了就排除并计数，退出码 2</td></tr>
+<tr><th scope="row">无处可克隆，或没有 <code translate="no">node</code></th><td>退出码 2，说明多少测试无法运行及原因</td></tr>
+<tr><th scope="row">Web 运行报告 <code translate="no">tests 0</code>，或真实改动一个都没选中</th><td>算失败，绝不算成功</td></tr>
+</tbody>
+</table>
+<h2 id="status">实现状态</h2>
+<p>以上全部已实现。<code translate="no">baseline.json</code> 里的三个页面还需要按内容拆分。暂存和范围检查从快照读 <code translate="no">nav.py</code> 和 <code translate="no">parser.py</code>，但 provider 子命令来自磁盘，所以它们有未提交改动时相关校验只警告。</p>

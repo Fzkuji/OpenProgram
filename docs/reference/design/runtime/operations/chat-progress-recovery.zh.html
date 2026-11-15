@@ -1,0 +1,32 @@
+<title>聊天进度恢复</title>
+<meta name="description" content="部分思考、文本和工具块如何在重载、出错和重试时保留。">
+<h1>聊天进度恢复</h1>
+
+<p>生成进行时，dispatcher 把有序的思考、文本和工具块持久化到所属助手占位消息的 <code translate="no">extra.blocks</code>。会话加载用与已完成轮次相同的方式读取。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">流监听</th><td>只接受所属会话和消息身份；嵌套运行时事件保留自己的存储</td></tr>
+<tr><th scope="row">文本增量</th><td>在相邻块内合并</td></tr>
+<tr><th scope="row">工具结果</th><td>更新对应的块</td></tr>
+<tr><th scope="row">成功</th><td>最终持久化仍然权威</td></tr>
+<tr><th scope="row">出错</th><td>元数据与已存进度合并；块保留，并附加错误提示</td></tr>
+<tr><th scope="row">During a read</th><td>该会话的 <code translate="no">stream_event</code> 和 <code translate="no">transcript_update</code> 帧排在读取回复之后按序到达，所以先前捕获的读取不会撤销错误。错误作为 transcript 更新到达那一行；终态 <code translate="no">chat_response</code> 只结束运行</td></tr>
+<tr><th scope="row">Reasoning</th><td>只包含已实时显示的思考事件</td></tr>
+</tbody>
+</table>
+
+<h2>重试可见性</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">事件</th><td>每次自动续写或 provider 重试都发出关联的流事件，含次数、上限、原因，以及已知的延迟</td></tr>
+<tr><th scope="row">显示</th><td>轮次活跃时助手气泡显示重试状态，即使已有文本</td></tr>
+<tr><th scope="row">清除</th><td>之后的成功、终止性失败或取消</td></tr>
+<tr><th scope="row">绝不</th><td>创建第二个用户轮次或把该轮标记为完成</td></tr>
+</tbody>
+</table>
+
+<p class="note">没有仅浏览器存储，也不重放截断的事件缓冲。</p>

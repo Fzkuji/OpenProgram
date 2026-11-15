@@ -1,7 +1,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { EventBus } from "pdfjs-dist/web/pdf_viewer.mjs";
-import type { DocumentController } from "@/lib/files/document-controller";
-import type { RichDocumentEditor } from "@/lib/files/document-types";
+import type { DocumentController } from "@/lib/files/document/document-controller";
+import type { RichDocumentEditor } from "@/lib/files/document/document-types";
 
 /** Persist standard PDF annotations through the document owner's revision lease. */
 export function bindPdfEditor(pdf: PDFDocumentProxy, bus: EventBus, host: HTMLElement, controller: DocumentController) {

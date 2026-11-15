@@ -1,0 +1,43 @@
+<title>Long runs across interfaces</title>
+<meta name="description" content="How the agent stays controllable during long runs, and how Web and terminal interfaces show the same state.">
+<h1>Long runs across interfaces</h1>
+
+<p>All interfaces reach one Worker (<code translate="no">WorkerLock</code>), one session store and one event bus. Every action goes through the Worker; no interface keeps its own unsynchronized state.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Need</th><th scope="col">Mechanism</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">Do not ask while unattended</th><td>Tool policy removes <code translate="no">ask_user_question</code></td><td>Implemented</td></tr>
+<tr><th scope="row">Change direction during a run</th><td>Steering delivered at loop checkpoints</td><td>Implemented</td></tr>
+<tr><th scope="row">Answer questions anywhere</th><td>One question registry and wait store; each interface renders the event</td><td>Web and terminal</td></tr>
+<tr><th scope="row">See a running session anywhere</th><td>Running state and open waits are sent on load</td><td>State and waits replayed; intermediate deltas are not</td></tr>
+</tbody>
+</table>
+
+<h2 id="attended">Attended mode</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Effect</th><td><code translate="no">denied_ask_tools</code> folds <code translate="no">ask_user_question</code> into the policy deny, whichever toolset a function requests. Without the tool the agent cannot ask; uncertain output is left for later model reasoning.</td></tr>
+<tr><th scope="row">Scope</th><td>Per session in Worker memory, with a process-wide default for callers with no session</td></tr>
+<tr><th scope="row">Default</th><td>Unattended: a bare or background run has nobody watching</td></tr>
+<tr><th scope="row">Web</th><td>Composer toggle</td></tr>
+<tr><th scope="row">Terminal interface</th><td><code translate="no">/attended [on|off]</code>, <code translate="no">/unattended</code></td></tr>
+<tr><th scope="row">Sync</th><td><code translate="no">set_attended</code> action; the Worker broadcasts <code translate="no">attended_changed</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="steering">Steering</h2>
+
+<p><code translate="no">agent_loop</code> calls <code translate="no">get_steering_messages</code> at turn start, after a tool round and before follow-up. A new instruction takes effect at the next checkpoint; the current step finishes first. Interfaces send <code translate="no">execution.steer</code>, which saves the command first (<a href="control.html#commands">controls</a>).</p>
+
+<h2 id="questions">Questions</h2>
+
+<p><code translate="no">QuestionRegistry</code> is process-wide, thread-safe and claim-once, with an event-layer and a queue transport plus a subprocess bridge. The answer returns to the same registry from any interface. Open waits are replayed when a session loads.</p>
+
+<h2 id="stop">Graceful stop</h2>
+
+<p><code translate="no">cancel_event</code> runs end to end; subprocesses stop through <code translate="no">request_graceful_stop</code> in <code translate="no">process_runner.py</code>.</p>
+
+<p class="next"><a href="control.html">Activity and control</a></p>

@@ -1,0 +1,99 @@
+<title>侧栏项目</title>
+<meta name="description" content="侧栏中项目的排序、可见性、菜单和元数据。">
+<h1>侧栏项目与会话</h1>
+
+<p>登记表拥有项目成员关系。<code translate="no">projectGroups</code> 联接应用所选排序和置顶；会话归属绝不改变。</p>
+
+<h2>列表与排序</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">置顶</th><td>项目列表上方单独的顶层列表，标题样式和缩进相同，折叠状态独立。每个项目只出现一次。为空时省略。</td></tr>
+<tr><th scope="row">项目</th><td>标题即使为空也保留，用于过滤。自定义分区是平级列表，为空时仍可管理。</td></tr>
+<tr><th scope="row">项目排序</th><td>最近活动（最新会话）、最早活动、字母顺序，拖动后为手动。与会话排序相互独立。</td></tr>
+<tr><th scope="row">会话排序</th><td>明确的升序或降序</td></tr>
+<tr><th scope="row">可见性</th><td>只显示有可见、未归档会话的项目，置顶项目也一样。归档最后一个会话时隐藏项目，恢复一个会话后重新显示。登记、选择、管理、归档内容和保存的顺序都不受影响。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>保存的顺序</summary>
+<p>最近视图偏好中的项目 ID 数组，按浏览器保存，通过 storage 事件在窗口间同步。忽略未知 ID，新项目按回退排序，其他项目移动时隐藏项目保持位置。无效数组回退到默认顺序。存储失败时当前窗口保持可见顺序，并提示保存失败。</p>
+</details>
+
+<h2>拖动</h2>
+<dl class="pairs">
+<dt>开始</dt><dd>指针捕获和 6px 移动阈值，无额外依赖</dd>
+<dt>动效</dt><dd>分组纵向跟随指针，相邻分组用收藏程序的弹簧移动（stiffness 600、damping 40）。没有插入线或名称预览。减少动态时去掉弹簧。</dd>
+<dt>放下</dt><dd>保存顺序并切到手动排序；分区和置顶位置随目标变化。会话随项目移动。</dd>
+<dt>取消</dt><dd>按 Escape 或放到列表外不做改变</dd>
+<dt>键盘</dt><dd><code translate="no">Alt+ArrowUp</code> 和 <code translate="no">Alt+ArrowDown</code> 保持焦点并播报结果</dd>
+</dl>
+
+<h2>项目菜单</h2>
+<p>右键和选项按钮打开同一菜单。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">置顶、取消置顶</th><td>只在这里；行上没有置顶按钮</td></tr>
+<tr><th scope="row">编辑</th><td>名称、纯文本图标或 emoji、描述、源文件夹。与项目设置共用一个编辑器。</td></tr>
+<tr><th scope="row">分区</th><td>本地视图偏好。删除分区后其项目回到默认分区。</td></tr>
+<tr><th scope="row">在文件管理器中显示</th><td>平台文件管理器操作</td></tr>
+<tr><th scope="row">新建 worktree</th><td>从源 HEAD 建新的用户命名分支，位于源检出之外的绝对路径；由 Git 校验两者。重复请求会登记已有的同一 worktree。源检出和未提交文件不变。</td></tr>
+<tr><th scope="row">归档全部对话</th><td>先持久化每个对话再广播；失败时报告已完成的 ID</td></tr>
+<tr><th scope="row">移除</th><td>只设置登记表的隐藏标记。归属、文件和内容保留，历史仍可通过日期或平铺分组访问。项目页或重新打开文件夹可恢复。默认主目录项目不能移除。</td></tr>
+<tr><th scope="row">另有</th><td>项目设置、新建项目会话</td></tr>
+</tbody>
+</table>
+
+<h2>元数据</h2>
+<ul>
+<li>更新校验支持的字段、长度和已存在的绝对目录，然后在锁内原子替换登记表，并通知所有窗口。</li>
+<li>编辑绝不改变主文件夹或成员关系；迁移是项目设置中的操作。文件夹移动见<a href="../workspace/project-location.zh.html">项目位置</a>。</li>
+<li>对话没有明确的文件夹配置时，源文件夹作为默认值；有意留空的列表保持为空。</li>
+<li>过滤使用登记表 ID，改名不影响过滤。</li>
+<li>保存失败时保留表单并显示错误。</li>
+</ul>
+
+<details>
+<summary>行控件和反馈</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">新建对话、选项</th><td>同一个类（<code translate="no">sidebarProjectActionClass</code>）：24px 正方形、无内边距、15px 图标，悬停比行深一档；两者间距 2px，结束于行内 4px，与对话行的选项对齐。用像素固定，不受 14px 根字号影响。</td></tr>
+<tr><th scope="row">文件夹图标</th><td>随分组开合，是唯一的展开提示。自定义图标保持不变。</td></tr>
+<tr><th scope="row">项目行</th><td>只在指针悬停或菜单打开时显示中性背景。点击、键盘激活、草稿和会话变化都不保留选中态。</td></tr>
+<tr><th scope="row">会话行</th><td>菜单打开时保持悬停背景和选项按钮，指针移入菜单时也是。选中的行保持常规背景。无发光或阴影。</td></tr>
+<tr><th scope="row">选项触发器</th><td>菜单或编辑器打开时保持可见</td></tr>
+<tr><th scope="row">置顶菜单项</th><td>悬停和键盘聚焦时播放动画，离开或失焦后回到静止；减少动态时为静态</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>右键菜单</summary>
+<ul>
+<li>桌面端项目和会话菜单使用 <a href="https://www.electronjs.org/docs/latest/api/menu">Electron <code translate="no">Menu.popup</code></a>。坐标是触发点的 CSS 像素，按渲染层缩放换算；键盘触发时使用聚焦的控件。</li>
+<li>Web 回退使用同一触发点并处理视口碰撞，原生菜单失败时也由它接手。</li>
+<li>桥接层只接受来自所属外壳框架的有界纯菜单描述，只返回选中的动作 ID。</li>
+<li>取消、渲染层导航、卸载和窗口销毁都会结束请求并清除临时反馈。</li>
+</ul>
+</details>
+<details>
+<summary>项目设置编辑器</summary>
+<ul>
+<li>使用应用的 Input 和 Textarea、主题变量和系统字体。聚焦字段有细的强调色边框和柔和发光；对话框有克制的强调色边缘。</li>
+<li>图标选项有持续的选中状态，头部预览所选图标。</li>
+<li>标签 13px，字段使用共用的 10px 圆角，内容左对齐，窄屏时主体可滚动。文件夹路径换行且不挤开移除控件。</li>
+<li>对话框和遮罩位于窄屏侧栏之上，编辑器及其文件夹选择器保持可见。</li>
+<li>减少动态时关闭新增的过渡。</li>
+</ul>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>向上或向下拖动只在放下时改变顺序，重载后保留。</li>
+<li>折叠、新建会话按钮、成员关系和过滤不受影响。</li>
+<li>真实菜单入口、计算出的聚焦和选中样式、亮暗主题、减少动态、取消和不变的保存载荷。</li>
+</ul>
+</details>
+<p class="note">已全部实现。来源：<code translate="no">apps/web/lib/projects/project-groups.ts</code>、<code translate="no">apps/web/components/sidebar/sessions/use-project-drag.ts</code>、<code translate="no">apps/web/components/sidebar/projects/project-menu.tsx</code>、<code translate="no">apps/web/lib/prefs/recents-view.ts</code>、<code translate="no">openprogram/state/store/project/project_store.py</code>。</p>

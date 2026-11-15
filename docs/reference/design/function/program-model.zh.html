@@ -1,0 +1,175 @@
+<title>Program 模型</title>
+<meta name="description" content="什么是 Program、两种类型、ProgramContext、插件、暴露层级、用户目录和 CLI。">
+<h1>Program 模型</h1>
+<p>Agent 能用的一切都是 Program。Program 在 <code translate="no">PROGRAM_ENTRIES</code> 列出可调用入口（可选 <code translate="no">ENTRY_OPTIONS</code>），每个入口成为共享注册表里的一个工具。未列出的普通函数不被记录。</p>
+
+<h2 id="1-programs-and-their-directory">目录</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">openprogram/programs/ 下</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools/</code></th><td>随核心发布，始终交给 Agent</td></tr>
+<tr><th scope="row"><code translate="no">applications/</code></th><td>逐个启用，可带 UI</td></tr>
+<tr><th scope="row"><code translate="no">_authoring/</code></th><td>Program 代码导入的内容：错误、JSON 解析、报告、工具辅助、provider 注册表、指南、预检、应用客户端</td></tr>
+<tr><th scope="row"><code translate="no">_host/runtime.py</code></th><td><code translate="no">@function</code> 与共享注册表</td></tr>
+<tr><th scope="row"><code translate="no">_host/context.py</code></th><td><code translate="no">ProgramContext</code></td></tr>
+<tr><th scope="row"><code translate="no">_host/services.py</code></th><td>Program 与插件共享的命名服务</td></tr>
+<tr><th scope="row"><code translate="no">_host/registry.py</code></th><td>加载每个 Program，保存其 context</td></tr>
+<tr><th scope="row"><code translate="no">_host/packages.py</code></th><td>Python 包：入口登记、用户的包</td></tr>
+<tr><th scope="row"><code translate="no">_host/sources.py</code></th><td>Harness 目录、owner 记录的 program 来源</td></tr>
+<tr><th scope="row"><code translate="no">_host/check.py</code></th><td><code translate="no">openprogram programs check</code></td></tr>
+<tr><th scope="row"><code translate="no">_host/ui/</code></th><td>应用加载器、目录、UI、操作运行时</td></tr>
+</tbody>
+</table>
+
+<h2 id="2-two-kinds-tools-and-applications">工具与应用</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">tools/</code></th><th scope="col"><code translate="no">applications/</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">随谁发布</th><td>核心</td><td>核心，或用户安装</td></tr>
+<tr><th scope="row">交给 Agent</th><td>始终</td><td>仅启用时</td></tr>
+<tr><th scope="row">可单独禁用</th><td>否</td><td>是</td></tr>
+<tr><th scope="row">UI</th><td>无</td><td>可带，在 App 窗口显示</td></tr>
+<tr><th scope="row"><code translate="no">setup(ctx)</code></th><td>否</td><td>可选</td></tr>
+<tr><th scope="row">入口</th><td>至少一个。常驻，冷门的延迟</td><td>可以没有。延迟，窗口打开时也是</td></tr>
+<tr><th scope="row">归属条件</th><td>没有它 Agent 失去基本能力，且不需要自己的屏幕</td><td>其余一切：浏览器、用户工作流、已安装应用、外部 harness</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">位置</th><th scope="col">内置内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools/interaction/ask_user.py</code></th><td><code translate="no">ask_user</code>：运行中的 Program 询问用户并等待</td></tr>
+<tr><th scope="row"><code translate="no">tools/planning/goal/</code></th><td>聊天 Goals：<code translate="no">create_goal</code>、<code translate="no">get_goal</code>、<code translate="no">update_goal</code>、<code translate="no">goal</code> Program</td></tr>
+<tr><th scope="row"><code translate="no">applications/browser/</code></th><td>没有入口；服务 <code translate="no">browser</code>，在 <code translate="no">computer_use_agent(target="browser")</code> 背后</td></tr>
+<tr><th scope="row"><code translate="no">applications/workflow_recording/</code></th><td>无入口；服务 <code translate="no">workflow_recording</code></td></tr>
+<tr><th scope="row"><code translate="no">applications/office_editor/</code></th><td>无入口；文档窗口 Office 路由背后的服务 <code translate="no">office_editor</code></td></tr>
+<tr><th scope="row"><code translate="no">_authoring/</code></th><td><code translate="no">errors</code>、<code translate="no">json_parsing</code>、<code translate="no">reports</code>，导入路径 <code translate="no">openprogram.programs._authoring.&lt;module&gt;</code></td></tr>
+</tbody>
+</table>
+<p class="note">多数工具在导入 <code translate="no">openprogram.programs.tools</code> 时用 <code translate="no">@function</code> 注册。带 <code translate="no">PROGRAM_ENTRIES</code> 的工具包登记在 <code translate="no">registry.TOOL_PROGRAMS</code>（只有 <code translate="no">goal</code>），通过自己的 context 注册。</p>
+
+<details id="application-packages"><summary>应用包</summary>
+<p>两种形式之一，或同一目录兼有：</p>
+<ul>
+<li>Python：<code translate="no">__init__.py</code> 带 <code translate="no">PROGRAM_ENTRIES</code>、<code translate="no">ENTRY_OPTIONS</code>，可选 <code translate="no">setup(ctx)</code>。</li>
+<li>声明式：<code translate="no">application.json</code>、UI（<code translate="no">index.html</code> 或 <code translate="no">ui/</code>），可选 <code translate="no">backend.py</code>，其操作由 manifest 声明。</li>
+</ul>
+<p><code translate="no">programs/_host/ui/loader.py</code> 的 <code translate="no">mount(ctx, root)</code> 挂载声明式包，内置（manifest id 即目录名）或已安装都一样。它读取 manifest，计算目录摘要，并注册：</p>
+<ul>
+<li>UI，按该摘要从应用自己的目录提供。</li>
+<li>资源 provider <code translate="no">application.&lt;id&gt;</code>。</li>
+<li>每个标 <code translate="no">agent: true</code> 的操作一个入口，名为 <code translate="no">&lt;id&gt;__&lt;operation&gt;</code>，<code translate="no">[A-Za-z0-9_-]</code> 之外的字符替换为 <code translate="no">_</code>。接收 <code translate="no">input</code>（项目作用域的应用还有 <code translate="no">project_id</code>），经 worker 的应用服务运行，每个操作一个进程并做 manifest 能力检查，返回完成的运行。延迟、需审批、不在 <code translate="no">DEFAULT_TOOLS</code>。<code translate="no">agent: false</code> 没有入口。</li>
+</ul>
+<p>已安装：按源目录记录在 <code translate="no">~/.openprogram/programs/catalog.json</code>，不复制。在 worker 启动时、安装启用禁用后、watcher 发现变化时加载。禁用即 dispose context；源变化时 dispose 后用新摘要重新加载。</p>
+<p>内置：一条 <code translate="no">builtin-application</code> 行（<code translate="no">{"id": "browser", "enabled": false}</code>），由 <code translate="no">catalog.builtin_enabled</code> 读取。<code translate="no">registry.sync_builtin_application</code> 每次加载时对齐，所以设置在每个进程和重启后都成立；<code translate="no">PATCH /api/applications/&lt;id&gt;</code> 实时生效。重新启用的入口仍是同一工具，toolset 和层级不变。</p>
+</details>
+
+<h2 id="3-programcontext">ProgramContext</h2>
+<p>唯一的注册接口；每个应用包和插件各一个。每次注册都记录撤销操作，<code translate="no">ctx.dispose()</code> 从新到旧执行，恢复宿主状态。它写入宿主已有的注册表。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方法</th><th scope="col">注册</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ctx.tool(fn)</code>、<code translate="no">ctx.tools_from(module)</code></th><td><code translate="no">PROGRAM_ENTRIES</code> 作为工具，归 <code translate="no">ctx.owner</code></td></tr>
+<tr><th scope="row"><code translate="no">ctx.on</code>、<code translate="no">ctx.gate</code>、<code translate="no">ctx.transform</code></th><td>事件总线订阅</td></tr>
+<tr><th scope="row"><code translate="no">ctx.context(name, build, ...)</code></th><td>上下文段 <code translate="no">&lt;owner&gt;:&lt;name&gt;</code>：系统提示（<code translate="no">L0</code>、<code translate="no">L1</code>）或单次调用提示（<code translate="no">L2</code>）</td></tr>
+<tr><th scope="row"><code translate="no">ctx.provide</code>、<code translate="no">ctx.service</code></th><td>命名服务。核心用 <code translate="no">services.lookup(name)</code>，没有时为 <code translate="no">None</code></td></tr>
+<tr><th scope="row"><code translate="no">ctx.resource(provider)</code></th><td><code translate="no">resource</code> 工具的 provider；<code translate="no">application.&lt;id&gt;</code> 为保留名</td></tr>
+<tr><th scope="row"><code translate="no">ctx.command</code>、<code translate="no">ctx.skills</code>、<code translate="no">ctx.mcp_server</code>、<code translate="no">ctx.provider_root</code>、<code translate="no">ctx.api_provider</code></th><td>斜杠命令、skill 根目录、MCP server、provider 目录、模型 wire 实现</td></tr>
+<tr><th scope="row"><code translate="no">ctx.effect(dispose)</code></th><td>其他任何东西，附带给定的撤销操作</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>def setup(ctx):
+    @ctx.tool
+    def word_count(text: str) -> int:
+        '''Count the words in a text.'''
+        return len(text.split())
+
+    ctx.on("tool.after", lambda event: ctx.log.info(event.payload["tool"]))</code></pre>
+<details><summary>Owner 与重新加载</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Owner（<code translate="no">_program_owner</code>）</th><th scope="col">对应</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tool:&lt;name&gt;</code></th><td><code translate="no">TOOL_PROGRAMS</code> 里的工具包</td></tr>
+<tr><th scope="row"><code translate="no">application:&lt;name&gt;</code></th><td>内置应用</td></tr>
+<tr><th scope="row">包名</th><td>用户 Program</td></tr>
+<tr><th scope="row"><code translate="no">external:&lt;package&gt;</code></th><td>外部 harness</td></tr>
+<tr><th scope="row"><code translate="no">plugin:&lt;name&gt;</code></th><td>插件</td></tr>
+</tbody>
+</table>
+<p><code translate="no">tool:</code>、<code translate="no">plugin:</code> 之外的 owner 都是应用，通过其 context 注册的入口初始为延迟。</p>
+<p>注册表保存 owner → context。再次加载复用它，不重复记录。卸载或热重载（<code translate="no">programs/_host/watcher.py</code>）调用 <code translate="no">dispose_program(owner)</code>，重载用新 context 注册。</p>
+</details>
+
+<h2 id="4-plugins">插件</h2>
+<p>只指 Claude Code、Codex、OpenCode 或 Hermes 格式的声明式包：manifest 描述的 skills、斜杠命令、agents、hooks、MCP server 和 provider 目录。<code translate="no">plugins/manifest.py</code> 读取，并通过 <code translate="no">plugin:&lt;name&gt;</code> 的 context 挂载。Hooks 是经 <code translate="no">ctx.gate</code>、<code translate="no">ctx.on</code> 订阅的 shell 命令。插件代码不在 worker 里运行。</p>
+<p>manifest 指向代码（<code translate="no">python</code>、<code translate="no">module</code>、<code translate="no">setup</code>、<code translate="no">main</code>、<code translate="no">tools</code>、<code translate="no">client</code>、<code translate="no">web</code>、<code translate="no">sidebar</code>、<code translate="no">module:name</code> hook 映射、Hermes <code translate="no">__init__.py</code>）时，安装和加载都会拒绝：请用 <code translate="no">application.json</code> 打包成应用，并运行 <code translate="no">openprogram programs install &lt;dir&gt;</code>。<a href="../integrations/plugin-runtime.zh.html">插件运行时</a></p>
+
+<h2 id="5-exposure-tiers">暴露层级</h2>
+<table class="stack">
+<thead><tr><th scope="col">层级</th><th scope="col">模型看到</th><th scope="col">分配给</th></tr></thead>
+<tbody>
+<tr><th scope="row">resident</th><td>schema 在每个 tools 数组里</td><td><code translate="no">RESIDENT_TOOLS</code> 里的工具：默认集（其中带着加载器 <code translate="no">tool_search</code>）减去冷门大 schema，加 <code translate="no">read_conversation</code></td></tr>
+<tr><th scope="row">deferred</th><td>只有名称；<code translate="no">tool_search</code> 加载 schema</td><td>其他工具、以 <code translate="no">defer=True</code> 注册的工具、应用入口（<code translate="no">ProgramContext._adopt_tools</code>）：内置、已安装、外部 harness、用户包</td></tr>
+<tr><th scope="row">hidden</th><td>什么都看不到；只供 Python</td><td><code translate="no">expose=False</code></td></tr>
+</tbody>
+</table>
+<p class="note">存为 <code translate="no">_tier</code>，用 <code translate="no">set_tier</code> 设置（<code translate="no">programs._host.runtime.Tier</code>）。审批（<code translate="no">requires_approval</code>，可以是参数的函数）独立于层级：延迟的入口可以需要审批，常驻的也可以不需要。<code translate="no">_defer</code> 镜像层级，供计价和持久化 tools 数组的读取方使用。<code translate="no">openprogram programs list</code> 和 <code translate="no">/api/plugins/inspect</code> 显示层级。</p>
+<details><summary>在窗口中打开</summary>
+<p>信号是会话的应用绑定（<code translate="no">programs/_host/ui/bindings.py</code>，表 <code translate="no">resource_bindings</code>）。指明会话的 <code translate="no">open</code> 绑定一个实例：App 窗口经 <code translate="no">POST /api/applications/&lt;id&gt;/open</code> 带 <code translate="no">session_id</code>，或 Agent 经 <code translate="no">application.&lt;id&gt;</code> 调用。<code translate="no">release</code> 或 <code translate="no">POST /api/applications/&lt;id&gt;/close</code> 解除。</p>
+<p>每轮开始 <code translate="no">TurnBindings</code> 读取 <code translate="no">open_application_ids(session_id)</code> 并安装（<code translate="no">_runtime.install_open_applications</code>）。打开不加载任何工具：打开的应用在目录里的那一行注明这一点，并以 <code translate="no">activation_note</code> 结尾，由模型按名字加载（<a href="deferred-tools.zh.html">延迟工具</a>）。</p>
+<p><code translate="no">split_tools_for_dispatch</code> 和 <code translate="no">tool_search</code> 读 <code translate="no">resident_now</code>：常驻入口和用 <code translate="no">tool_search</code> 加载过的延迟入口进入 tools 数组。注册层级不变；单次请求的副本是 <code translate="no">as_resident</code>。</p>
+</details>
+
+<h2 id="6-user-directory">用户目录</h2>
+<p>每个 profile 一个，由 <code translate="no">openprogram/state/program_directory.py</code> 解析，不导入注册表。命名 profile 用 <code translate="no">~/.openprogram-&lt;profile&gt;/programs/</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">~/.openprogram/programs/ 下</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">&lt;name&gt;/</code></th><td>Program 源码：Python 包、应用目录或两者兼有。以 <code translate="no">.</code> 或 <code translate="no">_</code> 开头的名称、符号链接和普通文件不扫描</td></tr>
+<tr><th scope="row"><code translate="no">catalog.json</code></th><td>按源目录记录应用及设置。源在别处的（如 <code translate="no">examples/applications/</code>）保留 <code translate="no">enabled</code>、<code translate="no">hidden</code>、<code translate="no">display_title</code></td></tr>
+<tr><th scope="row"><code translate="no">.runtime/</code></th><td><code translate="no">data/</code>、<code translate="no">runs/</code>、<code translate="no">environments/</code>、<code translate="no">staging/</code>、<code translate="no">state.sqlite</code>、<code translate="no">versions/</code>（只在应用源丢失时读取）</td></tr>
+<tr><th scope="row"><code translate="no">.removed/</code></th><td><code translate="no">openprogram programs uninstall</code> 移走的目录</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">.runtime/</code>、<code translate="no">.removed/</code> 下的文件不是源码：从那里发起的 role 调用没有调用点。</p>
+<details><summary>各类如何加载</summary>
+<ul>
+<li><strong>包</strong>：<code translate="no">_host/packages.py</code>，以目录名加载（须是不遮蔽其他模块的 Python 标识符）。每个包是自己的 Git 仓库；只加载干净、已提交的 checkout，所以 <code translate="no">openprogram programs check</code> 通过后改动才可调用。有未提交改动时继续提供上次加载的版本。</li>
+<li><strong>应用</strong>：worker 里的 <code translate="no">loader.mount</code>。没有目录行的目录在下一次 <code translate="no">loader.sync</code> 被记录（<code translate="no">catalog.adopt_user_applications</code>），除非需要信任（Python 后端或 <code translate="no">files.project.write</code>）：那要等 <code translate="no">openprogram programs install &lt;dir&gt; --trust</code>。已卸载的行不会被重新记录。</li>
+<li><strong>Harness 克隆</strong>（带 <code translate="no">&lt;package&gt;/agentics/__init__.py</code> 的仓库）从 git 安装：记录在 <code translate="no">program-sources.json</code>，owner 为 <code translate="no">external:&lt;package&gt;</code>。</li>
+</ul>
+<p>一次扫描（<code translate="no">program_directory.program_dirs</code>）服务两个加载器。Watcher 对顶层、每个包的文件和 Git 状态、目录及每个已启用应用的源取指纹，变化时重新发现。</p>
+</details>
+<details><summary>从旧布局迁移</summary>
+<p><code translate="no">program_directory.migrate_user_directory</code> 在 worker 启动、任何加载之前，为该 profile 运行：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">从</th><th scope="col">到</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">workflows/&lt;entry&gt;</code></th><td><code translate="no">programs/&lt;entry&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">applications/catalog.json</code> 及其锁</th><td><code translate="no">programs/</code></td></tr>
+<tr><th scope="row"><code translate="no">applications/</code> 其余内容</th><td><code translate="no">programs/.runtime/</code></td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">openprogram/programs/packages/</code> 或 <code translate="no">applications/</code> 下的克隆（运行中的包，或记录为 <code translate="no">catalog_root</code> 的 checkout）</th><td><code translate="no">programs/&lt;name&gt;</code>，并改写其 <code translate="no">program-sources.json</code>、<code translate="no">catalog.json</code> 行</td></tr>
+</tbody>
+</table>
+<p>只重命名，不复制。目标已存在的项留在原处并记日志。清空的目录被删除；指向其中的目录行被改写。每次移动记一行日志；第二次启动无事可做。没有设置项指向这两个目录。</p>
+</details>
+
+<h2 id="7-cli">CLI</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">openprogram programs</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list [--json]</code></th><td>每个 Program：类型、owner、加载状态、目录、启用状态、入口和层级</td></tr>
+<tr><th scope="row"><code translate="no">run NAME [--arg k=v]</code></th><td>在当前进程调用入口</td></tr>
+<tr><th scope="row"><code translate="no">run APP OPERATION [--input JSON] [--project ID] [--request-key KEY]</code></th><td>在 worker 启动 Agent 可见的操作；该 key 让重试启动安全</td></tr>
+<tr><th scope="row"><code translate="no">status RUN_ID</code>、<code translate="no">cancel RUN_ID</code></th><td>查看或取消操作运行</td></tr>
+<tr><th scope="row"><code translate="no">check DIRECTORY [-m MSG] [--json]</code></th><td>包：校验，在 OS 沙箱跑测试，提交。应用：校验</td></tr>
+<tr><th scope="row"><code translate="no">install SOURCE [--upgrade] [--replace] [--trust]</code></th><td>记录本地应用目录；把本地包仓库、git URL 或 <code translate="no">owner/repo</code> 克隆到 <code translate="no">~/.openprogram/programs/&lt;name&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">uninstall NAME</code></th><td>注销应用（数据保留），或把目录移到 <code translate="no">.removed/</code></td></tr>
+<tr><th scope="row"><code translate="no">enable ID</code>、<code translate="no">disable ID</code></th><td>加载或移除应用的 UI、资源、服务和入口；工具会被拒绝</td></tr>
+</tbody>
+</table>
+<p class="note">改变状态的应用命令走 owner API（<code translate="no">/api/applications/*</code>）；<code translate="no">list</code>、<code translate="no">check</code> 不需要 worker。REPL 的 <code translate="no">/programs</code> 列出同样的行。代码：<code translate="no">openprogram/interfaces/cli/commands/programs.py</code>。</p>
+
+<h2>实现状态</h2>
+<p>以上全部已实现。核心只通过服务访问 <code translate="no">browser</code>，没有它也能运行（<a href="../integrations/computer-and-browser-use.zh.html#浏览器应用">浏览器应用</a>）。应用新增能力 <code translate="no">files.project.write</code>。工具名、toolset 和选项不变，Programs 页保留 Web 应用使用的 <code translate="no">workflow/&lt;name&gt;</code> 路径，owner API 保留 <code translate="no">/api/applications/*</code> 路由。用户包从 <code translate="no">openprogram.programs._authoring.reports</code> 导入报告辅助。</p>
+<p>已移除：<code translate="no">programs/workflow/</code> 及其导入路径；<code translate="no">agent_browser</code>、<code translate="no">browser_agent</code>、<code translate="no">playwright_browser</code>、CLI <code translate="no">/browser</code>；<code translate="no" data-claim="invalid">openprogram workflows</code>、<code translate="no" data-claim="invalid">openprogram apps</code>、<code translate="no">programs apps</code>、<code translate="no">programs available</code>、<code translate="no">gui</code> 和 <code translate="no">all</code> 安装选择器；pip 作为插件来源；插件 Web 模块、页面和侧栏行。</p>
+<p class="next"><a href="calling-unification.zh.html">函数调用</a></p>

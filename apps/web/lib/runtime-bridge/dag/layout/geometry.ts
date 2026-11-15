@@ -104,9 +104,10 @@ export function computeGeometry(
     return (startCol[lane] || 0) + (n._tier || 0) - (minTierOf[lane] || 0)
       + (forkLanes.has(lane) ? 1 : 0);
   };
-  const usedCols = new Set<number>();
+  // Which chain nodes stand in each column, for the thread seat test.
+  const colMembers: Record<number, string[]> = Object.create(null);
   laneKeys.forEach((lane) => {
-    lanesOf[lane].forEach((id) => usedCols.add(colOf(id)));
+    lanesOf[lane].forEach((id) => (colMembers[colOf(id)] ||= []).push(id));
   });
 
   // ── Rows: depth-compressed, then per-lane pre-order ──
@@ -214,16 +215,27 @@ export function computeGeometry(
   // each chain-anchor place(), later chain rows (and already-placed
   // thread rows at/below the insertion) shift down by the occupied
   // span — otherwise later triangles stay on the thread's rows and
-  // the vertical in the anchor's column runs through them. Each
-  // assigned thread column is reserved immediately so a second open
-  // thread walks to the next free column instead of stacking.
+  // the vertical in the anchor's column runs through them.
+  //
+  // A thread takes the nearest column right of its anchor that no line
+  // runs down across: one with something above the insertion row and
+  // something at or below it, whose line the inserted rows would cut.
+  // Whatever lies wholly above stays clear, and whatever lies below is
+  // pushed down past the thread — so threads on different rows share a
+  // column instead of each walking one further right.
   const threadColOf: Record<string, number> = Object.create(null);
   const threadRowsOf: Record<string, number[]> = Object.create(null);
+  const crossed = (c: number, startRow: number): boolean => {
+    const rows = (colMembers[c] || []).map((id) => rowOf[id] || 0);
+    Object.keys(threadColOf).forEach((a) => {
+      if (threadColOf[a] === c) rows.push(...(threadRowsOf[a] || []));
+    });
+    return rows.some((r) => r < startRow) && rows.some((r) => r >= startRow);
+  };
   const place = (anchor: string, baseCol: number, startRow: number): number => {
     let c = baseCol;
-    while (usedCols.has(c)) c++;
+    while (crossed(c, startRow)) c++;
     threadColOf[anchor] = c;
-    usedCols.add(c);
     let cursor = startRow;
     const rows: number[] = [];
     (thread.events[anchor] || []).forEach((ev) => {

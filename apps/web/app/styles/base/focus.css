@@ -1,0 +1,55 @@
+/* ===== Shared Claude-style primitives ===== */
+/* Warm coral-tinted text selection, readable in both themes. */
+::selection { background: var(--selection-bg); }
+/* Keyboard focus for fields and top-level navigation uses each theme's
+   --focus-ring. Mouse focus does not match :focus-visible. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* Buttons never draw an outer focus halo. Top tabs are the sole exception and
+   use role="tab", so they keep their theme-owned focus treatment. Clearing the
+   Tailwind ring variables also covers components that use focus:ring-* while
+   preserving their ordinary non-focus shadow. */
+button:focus:not([role="tab"]),
+[role="button"]:focus {
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-inset-ring-shadow: 0 0 #0000 !important;
+}
+button:focus-visible:not([role="tab"]),
+[role="button"]:focus-visible {
+  box-shadow: none !important;
+  filter: brightness(1.08);
+}
+/* Popover / dropdown / menu panels receive programmatic focus when they
+   open (Radix moves focus into the panel). That's not keyboard navigation,
+   so the focus ring above must not paint a ring around the whole
+   floating panel. Radix wraps every
+   popover/dropdown in [data-radix-popper-content-wrapper]; suppress the
+   ring on the wrapper and on any panel it contains. A Select popup opens
+   item-aligned, outside that wrapper, and its rows show focus as a fill. */
+[data-radix-popper-content-wrapper] :focus-visible,
+[data-radix-popper-content-wrapper] :focus,
+[data-slot="select-content"] :focus-visible,
+[role="menu"]:focus-visible,
+[role="dialog"] > :focus-visible {
+  outline: none;
+}
+/* Text-entry controls use their existing border as the only focus boundary.
+   Important resets prevent page-specific outlines and Tailwind shadows from
+   adding another frame. Compound controls keep their borderless inner field. */
+/* Preserve the existing native-control reset, including non-text inputs. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"],
+                 [type="file"], [type="button"], [type="submit"], [type="reset"],
+                 [type="image"], [type="hidden"]), textarea, select):not(:where(.pdfViewer *)):focus {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: var(--accent-blue);
+}

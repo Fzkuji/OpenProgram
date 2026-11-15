@@ -1,0 +1,49 @@
+<title>Record a workflow</title>
+<meta name="description" content="Do a task once on your Mac while OpenProgram records it, and the agent turns it into a Workflow.">
+<h1>Record a workflow</h1>
+<p>Do a task once in any application or several, and the chat agent turns the recording into a Workflow.</p>
+<h2 id="before-you-start">Needs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Requirement</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Desktop App on macOS</th><td>The <strong>+</strong> menu does not offer it in a browser or elsewhere</td></tr>
+<tr><th scope="row"><strong>Workflow Recording</strong> application</th><td>On by default. Off on <strong>Applications</strong> or with <code translate="no">openprogram programs disable workflow_recording</code>: no menu item. <a href="../applications.html">Applications</a></td></tr>
+<tr><th scope="row">Accessibility and Screen & System Audio Recording</th><td>System Settings → Privacy & Security. If one is missing, the start dialog says which and opens its pane.</td></tr>
+<tr><th scope="row">Narration (optional)</th><td>The engine from <strong>Settings → Voice</strong> and a microphone. Without an engine, no narration.</td></tr>
+</tbody></table>
+<h2 id="record">Record</h2>
+<ol>
+<li>Composer <strong>+</strong> menu → <strong>Record a workflow</strong>.</li>
+<li>Set <strong>Narrate with the microphone</strong> and the microphone, then <strong>Start recording</strong>.</li>
+<li>A bar stays above every window: recording dot, elapsed time, step count, microphone switch, <strong>Discard</strong> (trash) and red <strong>Stop</strong>. Do the task as usual. Say what changes next time ("the date is always last Monday").</li>
+<li><strong>Stop</strong>. The window returns with the recording in the composer: "Recorded demonstration · 12 steps · 48.3 s · 9 images".</li>
+<li>Add a sentence, such as when it should run, and send.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Without a chat</th><td><strong>Workflow Recording</strong> on the new tab page, or <strong>Open</strong> on <strong>Applications</strong>. Starting opens a new chat; the recording waits in its composer.</td></tr>
+<tr><th scope="row">After sending</th><td>The agent reads steps and screenshots, asks about anything that decides inputs, writes the package, runs <code translate="no">openprogram programs check</code> and summarizes steps, inputs and assumptions for correction. The card shows each step with its screenshot.</td></tr>
+<tr><th scope="row">Ten minutes</th><td>Stops by itself as if clicked; the bar warns 30 seconds before</td></tr>
+<tr><th scope="row"><strong>Discard</strong></th><td>Stops and deletes</td></tr>
+<tr><th scope="row">Removed from the composer</th><td>Stays on disk</td></tr>
+</tbody></table>
+<h2 id="what-is-recorded">What is recorded</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Recorded</th><th scope="col">Not recorded</th></tr></thead>
+<tbody>
+<tr><th scope="row">Clicks, with application, window and control</th><td>Text in password fields (the step says only that one was typed)</td></tr>
+<tr><th scope="row">Typed text; Return, Tab, Escape, shortcuts; scrolling; application and window switches</th><td>Anything in OpenProgram, password managers, Keychain Access, system credential prompts</td></tr>
+<tr><th scope="row">Display screenshots at clicks, Return and window switches</th><td>OpenProgram's own windows</td></tr>
+<tr><th scope="row">Narration, as text</th><td>Audio: the sound is discarded</td></tr>
+</tbody></table>
+<p class="note">Stored in <code translate="no">~/.openprogram/recordings/&lt;id&gt;/</code>: <code translate="no">session.json</code>, <code translate="no">events.jsonl</code> (one line per step), <code translate="no">images/</code>. Sending gives the model the step list and up to 12 screenshots, like other message content. Delete a folder any time; its card then says the recording is gone.</p>
+<h2 id="recording-as-context">Recording as context</h2>
+<p>With purpose <code translate="no">context</code> instead of <code translate="no">workflow</code>, the agent uses it only as context for that message and writes no Workflow unless asked. The start dialog records for a Workflow; <code translate="no">context</code> comes from <code translate="no">POST /api/recordings</code> with <code translate="no">{"purpose": "context"}</code>.</p>
+<h2 id="tips">Tips</h2>
+<ul>
+<li>One task per recording, from its usual starting point.</li>
+<li>Use the real inputs of one typical run; the agent turns changing values into parameters and asks when unsure.</li>
+<li>With enough in the conversation you need no recording: ask for the Workflow, and gaps are filled from earlier conversations and memory before asking.</li>
+</ul>
+<p class="next"><a href="authoring.html">Write and check a Workflow</a></p>

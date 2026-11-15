@@ -1,0 +1,174 @@
+<title>应用目标</title>
+<meta name="description" content="computer_use_agent 的 app 目标：动作、结果、序号、占用应用、菜单、OCR 和音频。">
+<h1>应用目标</h1>
+
+
+<h2 id="形态-1">形态</h2>
+<pre translate="no" tabindex="0"><code>computer_use_agent(target="app", action, args={app, element_index | x,y, …})</code></pre>
+<p>动作分三组：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">读取</th><td><code translate="no">list_apps</code>、<code translate="no">list_windows</code>、<code translate="no">get_app_state</code>（<code translate="no">include</code> = all / tree / screenshot，<code translate="no">window</code> 或 <code translate="no">window_id</code>）、<code translate="no">zoom</code>（以完整像素密度查看上一张截图的一块区域）、<code translate="no">find</code>（在上一棵树里按文字和角色查找）。</td></tr>
+<tr><th scope="row">执行</th><td>，即 Codex 的目标 API：<code translate="no">click</code>（按钮、次数、按住的修饰键、按住时长）、<code translate="no">type_text</code>、<code translate="no">press_key</code>、<code translate="no">set_value</code>、<code translate="no">scroll</code>（按页或按像素）、<code translate="no">drag</code>、<code translate="no">perform_secondary_action</code>、<code translate="no">select_text</code>、<code translate="no">paste</code>；以及来自 Claude App <code translate="no">app_*</code> 一组的 <code translate="no">copy</code>、<code translate="no">focus</code>、<code translate="no">menu</code>、<code translate="no">show_window</code>；还有 <code translate="no">open_file</code>（macOS）。</td></tr>
+<tr><th scope="row">多个步骤</th><td>（<code translate="no">actions</code>）：对同一个应用按顺序执行至多 20 个执行类步骤，遇到第一个错误即停止；最后只等待稳定一次、只返回一次状态。末尾的 <code translate="no">get_app_state</code> 步骤决定这份状态是什么：只要树、完整的树，或另一个窗口。</td></tr>
+</tbody>
+</table>
+
+<h2>结果与元素树</h2>
+<p>只有 <code translate="no">list_apps</code> 不需要授权。<code translate="no">actions</code> 里的步骤不能指定别的应用，因为这次调用携带的授权只点名调用本身的应用。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">动作结果</th><td>每个执行动作的调用返回 <code translate="no">Done: &lt;摘要&gt;</code>，后面跟 Accessibility 树相对模型上次所见状态的 <strong>diff</strong>：<code translate="no">- 行</code> 是消失的元素，<code translate="no">+ 序号 行</code> 是新增或变化的。</td></tr>
+<tr><th scope="row">整棵树</th><td>变化行数超过一半（且至少十二行）时改为返回整棵树，因为重建后视图的 diff 比视图本身还长。</td></tr>
+<tr><th scope="row">完整树</th><td><code translate="no">get_app_state(full=true)</code> 按需返回全树。</td></tr>
+<tr><th scope="row">渲染</th><td>树上限 1500 个节点，每元素一行：序号、角色（<code translate="no">AXTextField</code> → <code translate="no">text field</code>，子角色放括号里）、标签、值、占位符、标记（<code translate="no">focused</code>、<code translate="no">selected</code>、<code translate="no">checked</code>、<code translate="no">disabled</code>、<code translate="no">secure</code>、<code translate="no">settable</code>……）以及除主按压之外的次级动作。</td></tr>
+<tr><th scope="row">双向标记</th><td>有些应用给数字包上的双向文字标记会从渲染和 <code translate="no">find</code> 中去掉。</td></tr>
+</tbody>
+</table>
+<p>树覆盖窗口、它旁边的菜单、弹出框和对话框，以及只展开已打开菜单的菜单栏。未打开的菜单由 <code translate="no">menu</code> 动作读取，所以每次读取的范围一致，diff 里不会出现整条菜单栏凭空出现或消失。</p>
+<p>没有改变任何东西的结果会被标记：<code translate="no">menu</code> 的列表、<code translate="no">copy</code> 和窗口本已可见时的 <code translate="no">show_window</code> 返回 <code translate="no">Report</code>，工具直接返回它，不等待稳定，也不再读取状态。</p>
+
+<h2 id="稳定序号">稳定序号</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">依据</th><td><code translate="no">tree.number</code> 参照窗口上一次的 <code translate="no">Snapshot</code>（不含序号的各行、它们的序号和下一个未用序号）分配序号。</td></tr>
+<tr><th scope="row">相同的行</th><td>相同的行保留原序号。</td></tr>
+<tr><th scope="row">变化的块</th><td>在一块变化的行里，深度、角色和标签都与先前某行相同的行，就是那个元素换了值或状态，不论这一块把它挪到哪里都保留原序号，所以它上方新增的行不会占它的位置；剩下的行在深度和角色不变时按原位配对（按钮改名）。</td></tr>
+<tr><th scope="row">新行</th><td>其他新行取下一个未用序号，被移除元素释放的序号永不复用。</td></tr>
+<tr><th scope="row">保证</th><td>因此模型先前拿到的序号在其上方插入新元素后也不会指向别的元素——Codex 按位置编号做不到这一点。</td></tr>
+</tbody>
+</table>
+
+<h2 id="被替换的元素">被替换的元素</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">原因</th><td>应用（尤其是网页）会在窗口显示的控件不变的情况下重建自己的辅助功能元素，可能是自己重绘，也可能是另一个 agent 的操作引起的。</td></tr>
+<tr><th scope="row">失效元素</th><td>后端从上次读取留下的元素这时已经失效，而它那一行还在。</td></tr>
+<tr><th scope="row">检测</th><td>各后端的 <code translate="no">_element</code> 发现这种情况后重新读取同一个窗口，用 <code translate="no">tree.rebind</code> 对上：新树参照模型上次看到的内容编号，只要该序号的那一行读起来没变，或者深度、角色和名字（标签或占位符）没变，就采用它，步骤在活的元素上执行。</td></tr>
+<tr><th scope="row">执行</th><td>然后步骤在活元素上运行。</td></tr>
+<tr><th scope="row">仍然失败</th><td>没有名字又变了的控件、已经消失的行、已经关闭的窗口，仍然在任何输入之前以 “element N no longer exists” 失败。</td></tr>
+<tr><th scope="row">最后视图</th><td>修复过程中保留模型上次的视图（<code translate="no">WindowState.snapshot</code>），所以步骤之后返回的状态仍然报告自那次视图以来的全部变化。</td></tr>
+</tbody>
+</table>
+
+<h2 id="同一时间只有一个-agent">同一时间只有一个 agent</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>同一对话里的 agent（主回合和它启动的 agent）各自保存对窗口的读取，而窗口只有一个。</td></tr>
+<tr><th scope="row">占用</th><td><code translate="no">targets/app.py</code> 在一次调用期间占住这个应用：单个动作连同它的等待稳定和状态、一串动作，或一次 <code translate="no">get_app_state</code>。</td></tr>
+<tr><th scope="row">等待</th><td>别的 agent 对这个应用的调用会等待，等待时轮询并检查取消，超过 <code translate="no">APP_WAIT_SECONDS</code>（60 秒）则失败且不发送任何输入（<code translate="no">action_dispatched: false</code>）。</td></tr>
+<tr><th scope="row">身份</th><td>应用以后端给它的身份为准（<code translate="no">app_key</code>，macOS 上是 bundle id，所以名字、bundle id 和路径指的是同一个应用），没有时用写下的名字。</td></tr>
+<tr><th scope="row">其他 agent</th><td>每个应用记录对它的操作类调用以及是哪个 agent 做的；自这个 agent 上次的结果以来有别的 agent 操作过时，结果开头会注明，它列出的变化包含对方的改动。</td></tr>
+<tr><th scope="row">不占用</th><td><code translate="no">list_apps</code>、<code translate="no">list_windows</code>、<code translate="no">zoom</code> 和 <code translate="no">find</code> 不占用。</td></tr>
+<tr><th scope="row">代码步骤</th><td>代码里的步骤每一步占用一次。</td></tr>
+</tbody>
+</table>
+
+<h2 id="等待稳定">等待稳定</h2>
+<p>动作之后，工具从 0.3 秒起每 0.2 秒对前 400 个元素取一次轻量指纹，两次指纹一致即停止；最多 1.5 秒，存在忙碌指示器或未完成的进度指示器时最多 5 秒——对应 Codex 的"约一秒，加载时最多五秒"。</p>
+
+<h2 id="菜单栏">菜单栏</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">路径</th><td><code translate="no">menu</code> 按标题遍历 <code translate="no">AXMenuBar</code>，不分大小写，忽略末尾的 <code translate="no">…</code> 或 <code translate="no">...</code>。</td></tr>
+<tr><th scope="row">列出</th><td>路径停在子菜单时列出其菜单项，带快捷键符号（由 <code translate="no">AXMenuItemCmdModifiers</code> 得到 <code translate="no">⌃⌥⇧⌘</code>）、<code translate="no">[checked]</code> 和 <code translate="no">[disabled]</code>；末端项用 <code translate="no">AXPress</code> 按下。</td></tr>
+<tr><th scope="row">副作用</th><td>经 Accessibility 读菜单树不会在屏幕上打开任何东西。</td></tr>
+<tr><th scope="row">copy</th><td><code translate="no">copy</code> 按下应用自己快捷键为 ⌘C 的菜单项——按快捷键而非本地化标题查找——找不到时退回发送 ⌘C；该菜单项存在但被禁用（没有选区，或焦点在控件上）时立即如实报告。</td></tr>
+<tr><th scope="row">剪贴板</th><td>否则它等待粘贴板的 change count 变化，读出字符串，再恢复先前的粘贴板。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">无需先读状态</th><td>不带 <code translate="no">element_index</code> 的 <code translate="no">copy</code>、<code translate="no">press_key</code>、<code translate="no">type_text</code> 和 <code translate="no">paste</code> 作用于应用当前的焦点，不需要先 <code translate="no">get_app_state</code>；<code translate="no">menu</code>、<code translate="no">show_window</code> 和 <code translate="no">wait</code> 从不需要。</td></tr>
+<tr><th scope="row">hover 和 wait</th><td>来自 Claude computer-use 工具的有 <code translate="no">hover</code>（向进程投递三个逐步接近目标点的 <code translate="no">mouseMoved</code> 事件，再停留 0.8 秒；真实光标不动）和 <code translate="no">wait</code>（最多 10 秒，可取消，之后照常等待稳定并返回树 diff）。</td></tr>
+<tr><th scope="row">focus</th><td><code translate="no">focus</code> 设置 <code translate="no">AXFocused</code> 并最多等半秒让应用报告它，因为应用会在之后的 run loop 轮次才应用焦点。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">截图</th><td>截图是经 ScreenCaptureKit 抓取的窗口自身图像，缩放到长边至多 1568 像素；模型发来的坐标是这张图上的像素。</td></tr>
+<tr><th scope="row">坐标</th><td>每一步用生成截图的比例（Retina 屏为 2，大窗口按更小比例抓取时更小）和窗口服务器此刻报告的窗口原点把它换算成屏幕点（先 <code translate="no">_follow_window</code>，再 <code translate="no">screen_point</code>），所以用户在读取之后移动过窗口，点击仍落在模型指的位置。</td></tr>
+</tbody>
+</table>
+
+<h2 id="截图上的文字">截图上的文字</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">稀疏窗口</th><td>窗口自身遍历出的元素少于 12 个（窗框、标题栏按钮之外几乎没有）时，说明它绕开了辅助功能自行绘制。</td></tr>
+<tr><th scope="row">识别</th><td>对这样的窗口，每次完整读取或仅截图读取都会对刚拍下的截图运行 Vision 的精确文字识别，把每行列成 <code translate="no">"text" at (cx, cy), WxH</code>，单位是截图像素，按从上到下、从左到右排列，最多 150 行。</td></tr>
+<tr><th scope="row">语言</th><td>识别语言列表的第一项决定 Vision 用哪个模型，所以语言只作提示（用户首选语言，然后是中文、日文、韩文和英文），由语言检测按每张图选择。</td></tr>
+<tr><th scope="row">find 回退</th><td><code translate="no">find</code> 带 <code translate="no">text</code> 时，若没有元素匹配就退回到这些文字行；对不稀疏的窗口，它会以相同比例重新抓取并识别一次，因此位置对动作仍然有效。</td></tr>
+<tr><th scope="row">不进树</th><td>OCR 文字没有序号，也不进入树的 diff：它是坐标动作的依据，识别器失败时读取结果里就不带它。</td></tr>
+<tr><th scope="row">形状</th><td>同样的读取还会列出不带文字的图标和控件（<code translate="no">ocr.detect_shapes</code>）：Vision 的轮廓检测跑两遍，一遍找浅色窗口上的深色图形，一遍找深色上的浅色，长边最多 1024 像素。</td></tr>
+<tr><th scope="row">合并与丢弃</th><td>相距 3 点以内的顶层轮廓合并成一个形状；形状盖住两个字符以上的识别文字行、短边小于 8 点、长边大于 80 点、长宽比超过 4:1，或贴着截图边缘（窗口的圆角和边框）时丢弃。</td></tr>
+<tr><th scope="row">单字符</th><td>单字符的文字行不排除形状，因为识别器常把图标读成一个字。</td></tr>
+<tr><th scope="row">顺序</th><td>两遍都找到的形状只保留一次，按 16 点一行、从左到右排序，最多 60 个。</td></tr>
+<tr><th scope="row">无名称</th><td>形状没有名字：模型对照截图分辨齿轮和垃圾桶。</td></tr>
+</tbody>
+</table>
+
+<h2 id="音频">音频</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>Codex 用 <code translate="no">start_audio_recording</code> / <code translate="no">stop_audio_recording</code> 录电脑声音（默认 60 秒，最多 300 秒），并把录音作为音频输入交给模型。</td></tr>
+<tr><th scope="row">保留</th><td>OpenProgram 保留这两个动作及其上限。</td></tr>
+<tr><th scope="row">片段</th><td>录音落成磁盘上的 WAV，再加上设置 → 语音引擎给出的转写文字，任何模型都能读。</td></tr>
+<tr><th scope="row">内容块</th><td><code translate="no">ToolReturn.audio</code> 还把 WAV 作为 <code translate="no">AudioContent</code> 块带上。</td></tr>
+<tr><th scope="row">音频输入</th><td>模型的输入模态里有 <code translate="no">audio</code> 时，Gemini 转换器把它作为内联音频、Chat Completions 转换器把它作为 <code translate="no">input_audio</code>，放在那组工具结果之后的用户轮里（工具结果必须连在一起）。</td></tr>
+<tr><th scope="row">Chat Completions</th><td>由于 <code translate="no">tool</code> 消息只能放文字，Chat Completions 的这个用户轮也为视觉模型带上那组结果里的截图。</td></tr>
+<tr><th scope="row">其他转换器</th><td>Responses 和 Anthropic 转换器跳过音频块，工具结果里的媒体也不写进对话历史，所以对听不了音频的模型没有额外开销。</td></tr>
+<tr><th scope="row">采集</th><td><code translate="no">audio.py</code> 打开一个 <code translate="no">SCStream</code>，过滤器是只包含目标应用的显示器，要求 16 kHz 单声道 float 采样，排除 OpenProgram 自身进程，并只挂音频输出：2×2、每秒一帧的视频那一侧从不被消费。</td></tr>
+<tr><th scope="row">上限</th><td>超过上限的采样被丢弃，计时器在上限后半秒停掉流，所以忘了停止的录音也会释放采集。</td></tr>
+<tr><th scope="row">存储</th><td>每个对话同时只有一段录音；停止时转成 16 位 PCM 并保存在状态目录下，保留最新的 20 个。</td></tr>
+<tr><th scope="row">审批</th><td>这个动作沿用按应用的审批：录音里只有所指定应用的声音。</td></tr>
+<tr><th scope="row">静音</th><td>峰值始终低于 1e-4 的录音报告为静音，不做转写。</td></tr>
+<tr><th scope="row">无窗口</th><td>没有窗口的应用没有 <code translate="no">SCRunningApplication</code>，无法录音。</td></tr>
+</tbody>
+</table>
+
+<details id="模块布局-1">
+<summary>后端模块</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">模块</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/base.py</code></th><td>各后端共用的部分：<code translate="no">ComputerUseError</code>、<code translate="no">Report</code>、<code translate="no">Observation</code>、<code translate="no">AudioClip</code>、参数检查、录音保存</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/backends.py</code></th><td>按主机给出 <code translate="no">support()</code> 和 <code translate="no">backend()</code>：Darwin 用 <code translate="no">macos</code>，Linux 用 <code translate="no">linux</code>，Windows 用 <code translate="no">windows</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/keys.py</code></th><td>xdotool 组合键解析为 macOS 键码和修饰键标志（<code translate="no">super+shift+z</code>、<code translate="no">ctrl++</code>、<code translate="no">KP_0</code>、单独修饰键）</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/tree.py</code></th><td><code translate="no">Node</code>、渲染、签名、稳定编号（<code translate="no">Snapshot</code>、<code translate="no">number</code>）、被替换元素的重新对应（<code translate="no">rebind</code>）和 diff</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/audio.py</code></th><td>单个应用的 ScreenCaptureKit 音频采集、采样上限、WAV 编码</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/ocr.py</code></th><td>Vision 文字识别（Linux 上为 tesseract TSV）、识别框换算为截图像素、阅读顺序、语言提示、轮廓形状</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/skylight.py</code></th><td>SkyLight 的 ctypes 绑定，用于后台指针和键盘路由</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/macos.py</code></th><td><code translate="no">MacComputer</code>：应用解析、窗口选择、抓图、树遍历、全部动作</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/linux.py</code></th><td><code translate="no">LinuxComputer</code>：同一接口，基于 AT-SPI、xdotool、Gdk 抓图和 PipeWire/PulseAudio</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/windows.py</code></th><td><code translate="no">WindowsComputer</code>：同一接口，基于 UI Automation（comtypes）、窗口消息、<code translate="no">SendInput</code> 和 <code translate="no">PrintWindow</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/windows_audio.py</code></th><td>用 WASAPI 进程回环采集一个进程树的声音</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/targets/app.py</code></th><td><code translate="no">app</code> 目标：步骤校验、多个步骤、一次调用期间占住应用、结果拼装</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="实现状态">实现状态</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>macOS 上 <code translate="no">app</code> 目标的上述读取与执行动作，稳定序号，自适应等待，后台指针与键盘投递，树 diff，四个范围的按应用审批，系统访问门控，Web 展示，按键/树编号/菜单匹配/多个步骤/规则/审批接线的单元测试。</td></tr>
+<tr><th scope="row">已实现</th><td>为树稀疏的窗口提供 OCR 文字，并作为 <code translate="no">find</code> 的回退，附带一个经 Vision 识别渲染图像的测试。</td></tr>
+<tr><th scope="row">已实现</th><td>按应用录音，输出 WAV，并用语音引擎转写。</td></tr>
+<tr><th scope="row">已实现</th><td>对 Gemini 和 Chat Completions 的音频模型，把录音作为音频输入；Chat Completions 视觉模型能看到工具结果里的截图。</td></tr>
+<tr><th scope="row">已实现</th><td>稀疏窗口里不带文字的图标和控件的轮廓。</td></tr>
+<tr><th scope="row">未实现</th><td>在 cua-driver 的 Python SDK 之上做 Wayland 会话的 Linux 后端。已在 macOS 上安装 SDK 并测过读取调用的耗时，没有运行它的操作，也没有在 Linux 上运行。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.zh.html">操控电脑与浏览器</a></p>

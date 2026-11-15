@@ -1,0 +1,105 @@
+<title>项目存储与位置</title>
+<meta name="description" content="工作文件夹移动、断开或被复制时，项目如何保留历史。">
+<h1>移动项目并保留历史</h1>
+<p>会话存放在用户目录下，按稳定的项目 ID 分组。工作文件夹里不写聊天记录。</p>
+
+<pre translate="no" tabindex="0">~/.openprogram/
+  projects/
+    projects.json                    # registry / location / identity
+    &lt;project-id&gt;/                    # project settings
+  sessions/
+    index.json                       # rebuildable listing
+    locations.json                   # legacy compatibility
+    projects/
+      &lt;project-id&gt;/
+        &lt;session-id&gt;/                # complete session Git repository
+        .file-recovery/&lt;session-id&gt;/ # external rewind data
+    &lt;legacy-session-id&gt;/             # existing default sessions
+  memory/                            # memory store, unchanged
+&lt;working folder&gt;/.openprogram/project.json  # versioned random identity token</pre>
+
+<h2 id="case-1">文件夹发生变化时</h2>
+<table class="stack">
+<thead><tr><th scope="col">情形</th><th scope="col">历史</th><th scope="col">新任务</th><th scope="col">App 的处理</th></tr></thead>
+<tbody>
+<tr id="case-2"><th scope="row">移动或改名，含关闭期间</th><td>保留</td><td>在新路径运行</td><td>在限定搜索内找到 token 即更新位置。ID、标题、会话和归档状态不变，聊天文件不动。在搜索范围外：重新打开或 Locate 一次。</td></tr>
+<tr id="case-3"><th scope="row">磁盘断开</th><td>可读</td><td>阻止</td><td>留在侧栏。提示工作文件夹不可用，可读历史，重连后再运行任务。文件及引用它们的附件等待重连和身份校验。应用存储本身离线时历史也不可用。</td></tr>
+<tr id="case-4"><th scope="row">已复制，原件还在</th><td>各自独立</td><td>可运行</td><td>打开副本注册新项目，写入新 token。</td></tr>
+<tr><th scope="row">复制后删除原件</th><td>保留</td><td>可运行</td><td>只有一个候选：按移动处理，跨盘也一样。与移动无法区分。</td></tr>
+<tr><th scope="row">发现多个副本</th><td>保留</td><td>阻止</td><td>显式 Locate。</td></tr>
+<tr id="case-5"><th scope="row">旧路径上换了文件夹</th><td>保留</td><td>阻止</td><td>["The folder at this location has changed." “此位置的文件夹已变化。”定位原文件夹或确认替换。已注册给其他项目的位置绝不接管。</td></tr>
+<tr id="case-7"><th scope="row">旧会话，源盘离线</th><td>不可用</td><td>阻止</td><td>注册保留。提示旧会话尚未迁移，需重连原盘。绝不用空会话代替。</td></tr>
+</tbody>
+</table>
+<span id="case-0"></span>
+
+<h2 id="case-6">项目显示在哪</h2>
+<table class="grid">
+<thead><tr><th scope="col">项目</th><th scope="col">侧栏</th><th scope="col">选择器与管理页</th></tr></thead>
+<tbody>
+<tr><th scope="row">有未归档会话</th><td class="run">显示</td><td class="run">显示</td></tr>
+<tr><th scope="row">无会话</th><td class="ask">隐藏</td><td class="run">显示</td></tr>
+<tr><th scope="row">全部归档</th><td class="ask">隐藏</td><td class="run">显示，归档数单列</td></tr>
+</tbody>
+</table>
+<p class="note">由当前有效会话集推导，不看 <code translate="no">session_count</code>。移除注册、归档、永久删除会话和删除工作文件夹互相独立，绝不波及工作文件。</p>
+
+<h2>修复</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">机制</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">发现</th><td>在启动、项目列表请求、文件或执行访问、Locate、打开文件夹时运行，空闲时不跑。在已注册父目录或最近存活祖先下，最多 3 层、4,000 项。排除主目录及其祖先、隐藏和依赖目录、目录软链。搜索不完整或多匹配时不改位置。</td></tr>
+<tr><th scope="row">项目列表</th><td>从内存回复：已解析的注册表和会话索引。显示的是注册表记录的位置，不碰任何项目文件夹，所以耗时不随项目数量增长，已删除的文件夹没有任何开销；不搜索、不拿注册表锁、不占事件循环。</td></tr>
+<tr><th scope="row">列表之后的检查</th><td>回复之后在后台运行，同时只跑一次、最多每 10 秒一次；间隔内的列表请求会在间隔结束时排一次运行。文件夹还在原处的项目只查一次文件夹、读一次标记；所有找不到的项目共用一次有上限的遍历。状态变了（文件夹搬走、删除或恢复，推迟的迁移完成）就记录下来并广播 <code translate="no">projects_changed</code>，所有页面重新列出。</td></tr>
+<tr><th scope="row">别处的改动</th><td>从任一连接新建、改名、移动或隐藏项目，改动一存下就广播 <code translate="no">projects_changed</code>，在回复请求方之前：请求方马上断开（CLI、脚本、Agent）也照样通知到其他页面。所有打开的页面不用刷新就重新列出。已经打开的项目菜单原地重新列出，滚动位置不变。</td></tr>
+<tr><th scope="row">重新列出没有回复</th><td>什么都不变：项目菜单保留原来的行，文件面板的“找不到项目文件夹”提示保留说明和修复按钮。</td></tr>
+<tr><th scope="row">打开子文件夹</th><td>无 token 的文件夹，若最近带 token 的祖先属于已不在记录位置的项目，项目移到该祖先（<code translate="no">reattach_enclosing_project</code>）。不读主目录及其祖先。</td></tr>
+<tr><th scope="row">同级移动</th><td>找到一个项目后，同一旧父目录下其他缺失项目在新父目录下尝试，名字一致时继续往外层（<code translate="no">follow_sibling_moves</code>）。只有找到项目自己的 token 才接受：一次 Locate 修好整个目录。</td></tr>
+<tr><th scope="row">修复入口</th><td>项目菜单、项目页和文件树，共用 <code translate="no">lib/projects/project-location.ts</code>。记录路径上身份不同，或旧记录无法校验（云同步文件夹 inode 会变）：显示路径后一键确认。Locate 打开选择器。</td></tr>
+<tr><th scope="row">文件树刷新</th><td>窗口重新聚焦时重列已展开文件夹，最多每 3 秒一次，不重算大小，走同一位置检查。</td></tr>
+<tr><th scope="row">迁移之后</th><td>重试报告所有会话完成或已删除时，等待中的项目开放。工作目录副本已无、发布目录有该会话元数据的日志行视为完成。</td></tr>
+</tbody>
+</table>
+
+<details id="implementation">
+<summary>身份、标记与重定位规则</summary>
+<ul>
+<li>列表不读任何文件夹，因为每次文件系统调用都会让出解释器锁，只要有别的线程在计算，就要等满一个切换间隔（5 毫秒）才能拿回来。每个项目查一次文件夹、读一次标记（126 个项目约 800 次调用）单独运行只要 6 毫秒，在一个忙线程旁边要 4 秒，两个忙线程旁边要 14 秒。</li>
+<li>列表之后的检查先在已发布的注册表里查已删除会话的引用，不拿锁；只有要写入改动时才拿锁，所以一轮对话绑定会话时不会等一次什么都没发现的检查。找不到的项目的遍历只在确实有项目找不到时才开始。</li>
+<li>已注册 ID 不变，含路径派生的。新项目在校验规范路径后生成 UUID；冲突重试，绝不合并。会话 ID 全局唯一，名字只作显示。位置记录含路径、版本和 token。</li>
+<li>普通编辑和位置检查不写标记。注册和 Locate 原子创建，拒绝软链或畸形元数据，不覆盖其他项目的标记。标记是身份而非授权，权限在新路径重新校验。</li>
+<li>记录路径上 device/inode 一致的旧记录升级一次，其余 Locate 一次。之后不用 device/inode 和原生书签。Git remote 相同不算证明。</li>
+<li>自动重定位要 token 匹配且位置唯一。手动 Locate 显示新旧路径后可替换。两者在提交时重查版本、权限和归属。旧布局修复走持久日志，完成前显示“正在更新位置”。</li>
+</ul>
+</details>
+<details>
+<summary>执行与引用</summary>
+<ul>
+<li>读历史不需要工作文件夹。新任务被阻止，不回退到 HOME、服务端 cwd 或会话工作目录。运行中的子进程不改目标，后续文件操作重校验。worktree 单独检查。</li>
+<li>历史消息、授权快照和回退清单不改写。新文件引用用项目 ID 加相对路径；不可用的旧路径保持不可用。回退目标在旧位置已缺失时报告，不创建文件。</li>
+<li>项目位置优先于过期的 <code translate="no">work_dir</code>。旧根内的附加目录和 <code translate="no">source_folders</code> 按相对后缀重定基并校验；外部目录保持绝对路径，单独检查。缺失的必需目录阻止相关操作并提供修复。</li>
+<li>记忆文本和历史保留；永久删除来源会话时移除或标记其链接，不建副本。已归档来源仍可访问。</li>
+</ul>
+</details>
+<details>
+<summary>迁移与删除</summary>
+<ul>
+<li>所有会话写入方先静止：模型任务、fork 子进程、作业、检查点、附件写入。初次迁移在执行开始前；重连的旧来源同样要此边界，读取时绝不暗中移动。</li>
+<li>所有写入方（CLI、worker、fork 子进程、回退）共用按会话 ID 的跨进程锁，拿到后重读版本和位置。超时则推迟，绝不杀任务或并发复制。迁移独占该锁。不支持多版本写同一 profile，旧进程先经生命周期管理停止。</li>
+<li>日志记录来源、目的地、身份和清单。复制到私有暂存，校验内容和来源未变，持久发布会话和恢复数据，原子发布位置，然后清理。发布失败绝不允许删除来源。恢复时不覆盖冲突。</li>
+<li>消息、Git 历史、分支、恢复备份和附件一并校验。删除与迁移串行，并持久记录意图，恢复时不会复活。只有一个权威可写位置。</li>
+<li>索引从两种布局重建；暂时不可用的迁移中会话绝不当作空会话清理。迁移中提示“正在迁移会话，完成后开始任务”。</li>
+</ul>
+</details>
+<details>
+<summary>与其他工具对比</summary>
+<ul>
+<li>采用：Claude Code、Codex、DeepSeek Harness 的应用自有存储；按项目分组，但用稳定 ID 而非路径编码；ID 与根目录分离，同 <a href="https://github.com/openai/codex/blob/da20788df913189878ebca7f4963d8a363ee6bf2/codex-rs/state/src/runtime/projects.rs#L230-L283">Codex</a> 和 <a href="https://github.com/anomalyco/opencode/blob/dev/packages/core/src/project.ts">OpenCode</a>；Locate 来自 <a href="https://github.com/desktop/desktop/blob/development/app/src/ui/missing-repository.tsx">GitHub Desktop</a>。OpenProgram 保留 Git 会话仓库、分支和恢复，不改 JSONL。</li>
+<li>不采用：DeepSeek 的<a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/workspace/workspace/src/types.ts#L26-L112">不可变 workspace 路径</a>；把平台书签和事件作为必需身份（<a href="https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/AccessingFilesandDirectories/AccessingFilesandDirectories.html">Apple</a>、<a href="https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-openfilebyid">Windows</a>、<a href="https://man7.org/linux/man-pages/man7/inotify.7.html">inotify</a>）。</li>
+<li>依据：<a href="https://github.com/openai/codex/blob/da20788df913189878ebca7f4963d8a363ee6bf2/codex-rs/rollout/src/recorder.rs#L1700-L1721">Codex 存储</a>和 <a href="https://github.com/openai/codex/blob/da20788df913189878ebca7f4963d8a363ee6bf2/codex-rs/rollout/src/recorder.rs#L2162-L2222">cwd 匹配</a>按记录的 cwd 过滤；<a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/session/session-persistence-jsonl/src/format.ts#L216-L305">DeepSeek 存储</a>和 <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/workspace/workspace/src/entity.ts#L110-L145">workspace 成员</a>用不可变头部 cwd 校验真实路径。Claude Code 原生发行版内嵌的 JavaScript 选择 <code translate="no">~/.claude/projects/encoded-path/session-id.jsonl</code>，来自本地检查。</li>
+</ul>
+</details>
+<details id="implementation-status">
+<summary>实现状态</summary>
+<p>已实现。<code translate="no">openprogram/state/store/project/</code> 下：<code translate="no">identity.py</code>、<code translate="no">discovery.py</code>、<code translate="no">location.py</code>、<code translate="no">project_store.py</code>；执行守卫 <code translate="no">openprogram/runtime/conversation/workdir.py</code>。界面：<code translate="no">apps/web/lib/projects/project-location.ts</code>、<code translate="no">apps/web/components/files/project-location-notice.tsx</code>。测试：<code translate="no">tests/component/store/test_project_portable_identity.py</code>。验收覆盖改名重启、父目录移动、复制后删除、搜索范围外目的地、同时存在副本、标记冲突、搜索不完整、只读或软链元数据、各迁移阶段失败、错误目录拒绝、无空闲扫描。</p>
+</details>

@@ -1,0 +1,102 @@
+<title>自我更新</title>
+<meta name="description" content="Agent 修改 OpenProgram 自身；新版本失败时回到原来运行的版本。">
+<h1>自我更新</h1>
+<p>Agent 可以修改 OpenProgram 自身：工具、界面，甚至负责更新的代码。写改动不受限制，受检查的只是上线。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="已提交的工作先构建，并在数据副本上试运行，这里失败时线上没有任何改动。然后由旧版本在 worker 之外切换。新版本用一轮真实对话验证，并观察 120 秒，这里失败时回到原来运行的版本。">
+  <defs>
+    <marker id="sf-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="sf-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <text class="t-big" x="0" y="46">构建和试运行</text>
+  <text class="t-soft" x="0" y="72">你的数据副本</text>
+  <line class="ln" x1="150" y1="39" x2="222" y2="39" marker-end="url(#sf-a)"/>
+  <text class="t-big" x="234" y="46">切换</text>
+  <text class="t-soft" x="234" y="72">由旧版本执行</text>
+  <line class="ln" x1="410" y1="39" x2="494" y2="39" marker-end="url(#sf-a)"/>
+  <text class="t-big" x="506" y="46">验证</text>
+  <text class="t-soft" x="506" y="72">真实对话，再观察 120 秒</text>
+  <line class="ln-no" x1="50" y1="88" x2="50" y2="146" marker-end="url(#sf-n)"/>
+  <text class="t-no" x="62" y="122">失败</text>
+  <text class="t-soft" x="0" y="172">线上没有改动</text>
+  <line class="ln-no" x1="556" y1="88" x2="556" y2="146" marker-end="url(#sf-n)"/>
+  <text class="t-no" x="568" y="122">失败</text>
+  <text class="t-soft" x="506" y="172">回退</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>构建和试运行</strong><small>你的数据副本</small><small>失败时线上没有改动</small></li>
+  <li><strong>切换</strong><small>由旧版本执行</small></li>
+  <li class="flow-end"><strong>验证</strong><small>真实对话，再观察 120 秒</small><small>失败时回退</small></li>
+</ol>
+</figure>
+<p>本页说的是从封存版本运行的安装方式，位于 <code translate="no">&lt;state&gt;/runtime</code>。源码 checkout 见<a href="#developer-mode">开发者模式</a>和<a href="../install/upgrade.zh.html">升级</a>。</p>
+<p class="note">Windows 已实现，但还没有在 Windows 机器上跑过。Windows 试运行没有操作系统沙箱，临时数据目录、独立端口和净化过的副本是仅有的隔离，每一份 Windows 结果都会说明。</p>
+<h2 id="actions">Agent 如何修改自己</h2>
+<p>在对话里提出要改什么。Agent 使用一个工具 <code translate="no">self_update</code>，计划模式下不可用。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">动作</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">begin(task)</code></th><td>在 <code translate="no">work/&lt;task&gt;</code> 打开一份私有代码副本，作为本轮的工作目录</td></tr>
+<tr><th scope="row"><code translate="no">prepare(task, goal, assertions)</code></th><td>把已提交的工作交出去构建、检查和切换</td></tr>
+<tr><th scope="row"><code translate="no">status</code></th><td>进度和队列，默认动作</td></tr>
+<tr><th scope="row"><code translate="no">retry(update_id)</code></th><td>失败后开始下一次尝试，一条链最多三次</td></tr>
+<tr><th scope="row"><code translate="no">cancel(update_id)</code></th><td>在切换前停止更新，或移除排队中的请求</td></tr>
+<tr><th scope="row"><code translate="no">versions</code></th><td>列出保留的版本</td></tr>
+<tr><th scope="row"><code translate="no">undo(target)</code></th><td><a href="#undo">回退</a></td></tr>
+</tbody>
+</table>
+<p><code translate="no">prepare</code> 要求工作区干净，并且有运行中代码之外的提交，否则会说明缺什么。基于较旧提交的改动会自动 rebase。</p>
+<h2 id="after-prepare"><code translate="no">prepare</code> 之后</h2>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">做什么</th><th scope="col">失败时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">building</code></th><td>从提交构建一个封存版本</td><td>停止，worktree 保留</td></tr>
+<tr><th scope="row"><code translate="no">trial</code></th><td>在你的数据副本上、用独立端口、不带凭据并用假模型运行，由独立的验收者检查断言。</td><td>停止，线上没有改动</td></tr>
+<tr><th scope="row"><code translate="no">ready</code></th><td>运行中的代码变了就 rebase 后重试，最多三次</td><td>停止并列出冲突的文件</td></tr>
+<tr><th scope="row"><code translate="no">quiescing</code></th><td>最多等 10 分钟的空闲时刻，然后给运行中的任务做检查点，30 分钟后放弃。</td><td>停止，没有关闭任何东西</td></tr>
+<tr><th scope="row"><code translate="no">activating</code></th><td>停止 worker，移动 <code translate="no">current</code> 指针，启动新版本</td><td>回退</td></tr>
+<tr><th scope="row"><code translate="no">verifying</code></th><td>探测，跑一轮真实的 Agent 对话，观察 120 秒</td><td>回退</td></tr>
+</tbody>
+</table>
+<details><summary>切换期间和之后</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">谁来切换</th><td>旧版本，在 worker 之外。新的更新器从下一次切换起生效。</td></tr>
+<tr><th scope="row">多个请求</th><td>同一时间只运行一个更新，其余排队。</td></tr>
+<tr><th scope="row">切换期间的消息</th><td>消息、定时任务和常驻唤醒被保存，显示 "Switching versions; this runs as soon as that finishes."，切换后立刻在起来的版本上运行。</td></tr>
+<tr><th scope="row">新版本失败</th><td>对话里说明原因，并启动只读诊断。</td></tr>
+<tr><th scope="row">旧版本起不来</th><td>以 <code translate="no">needs_manual_recovery</code> 结束，原因写在 <code translate="no">&lt;state&gt;/runtime/recovery.log</code>。</td></tr>
+</tbody>
+</table>
+</details>
+<h2 id="undo">撤销</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">目标</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">仍保留的版本 id</th><td>试运行该版本并切换过去，之后的提交会保存。</td></tr>
+<tr><th scope="row">单个提交</th><td>只还原这一个提交，走正常流程。有冲突时撤销停止并列出文件。</td></tr>
+<tr><th scope="row">终端</th><td>不经试运行，运行中的版本坏了也能用：</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>openprogram versions list
+openprogram versions use &lt;id&gt;</code></pre>
+<h2 id="versions">版本</h2>
+<p>每个版本是 <code translate="no">versions/</code> 下一个封存的目录，文件 <code translate="no">current</code> 说明运行哪个。OpenProgram 保留当前版本、上一个好版本、再前一个，以及最近的若干版本。一个版本在观察期内异常退出两次，或之后十分钟内异常退出三次，就换回上一个好版本，下次启动时会说明。</p>
+<h2 id="data">你的数据</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">改动</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">回退</th><td>只改代码，对话、设置和文件不变。</td></tr>
+<tr><th scope="row">数据结构和配置</th><td>只能增量，旧版本才能读你的数据，试运行会强制检查。</td></tr>
+<tr><th scope="row">破坏性迁移</th><td>必须在提交里声明。切换时备份数据库、对话、记忆和 <code translate="no">config.json</code>，结果里写明备份位置：</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>openprogram versions restore-data &lt;backup&gt;</code></pre>
+<details><summary>直接修改运行中的版本</summary>
+<p>不会被拒绝。下次启动时 launcher 把改过的文件和补丁存到 <code translate="no">unapplied/</code>，恢复版本，并告诉你一次有多少文件被放到一边。Agent 可以把这个补丁带进任务，走正常流程。</p>
+</details>
+<details id="developer-mode"><summary>开发者模式</summary>
+<p><code translate="no">&lt;state&gt;/runtime/developer.json</code> 写入 <code translate="no">{&quot;checkout&quot;, &quot;python&quot;}</code> 后从源码 checkout 运行：没有指针、试运行和自动回退，<code translate="no">self_update</code> 不激活任何东西。在 checkout 里提交，然后重启 worker。</p>
+</details>
+<p class="next"><a href="../install/upgrade.zh.html">升级</a></p>

@@ -18,29 +18,27 @@ def test_file_history_restores_files_tree_and_branches_forward_history(tmp_path:
     script = r'''
 const {build}=require("esbuild");
 const mocks={
-  "@/lib/files/file-drafts":'export const hasDocumentDraftsForPath=()=>false;',
+  "@/lib/files/drafts/file-drafts":'export const hasDocumentDraftsForPath=()=>false;',
   "@/lib/i18n":'export const useTranslation=()=>({text:(en)=>en,t:(key)=>key});',
-  "@/lib/net/ws-request":`export const wsRequest=(action,payload)=>globalThis.__fileRequest(action,payload);
+  "@/lib/net/ws/ws-request":`export const wsRequest=(action,payload)=>globalThis.__fileRequest(action,payload);
     export const wsMutationRequest=()=>Promise.resolve(null); export const reconcileWsMutation=()=>{};
     export const idempotencyKeyFor=()=>"test"; export class MutationRegistryCapacityError extends Error {}`,
-  "@/lib/tabs/session-store":'export const useSessionStore=Object.assign((selector)=>selector({currentSessionId:null,activeChatKey:null,pendingProjectsByChat:{}}),{getState:()=>({currentSessionId:null})});',
-  "@/components/ui/popover":'export const Popover=({children})=>children; export const PopoverAnchor=({children})=>children; export const PopoverContent=({children})=>children;',
-  "@/components/sidebar/sessions-list/confirm-dialog":'export const ConfirmDialog=()=>null;',
-  "@/components/sidebar/use-sidebar-menu":'export const useSidebarMenu=()=>({open:false,show:()=>{},close:()=>{}});',
-  "./tree-context-menu":'export const TreeContextMenu=()=>null; export const treeClipboard={};',
-  "./explorer-header":'export const ExplorerHeader=()=>null; export const copyText=()=>Promise.resolve();',
-  "./file-tree-render":'export const InlineNameInput=()=>null;',
-  "./file-management":`export const FileBreadcrumb=()=>null; export const FileDetails=()=>null; export const FileSortMenu=()=>null;
+  "@/lib/session-store":'export const useSessionStore=Object.assign((selector)=>selector({currentSessionId:null,activeChatKey:null,pendingProjectsByChat:{}}),{getState:()=>({currentSessionId:null})});',
+  "@/components/ui/confirm-dialog":'export const ConfirmDialog=()=>null;',
+  "../explorer/tree-context-menu":'export const TreeContextMenu=()=>null; export const treeClipboard={};',
+  "../explorer/explorer-header":'export const ExplorerHeader=()=>null; export const copyText=()=>Promise.resolve();',
+  "../explorer/move-to-dialog":'export const MoveToDialog=()=>null;',
+  "../file-management":`export const FileBreadcrumb=()=>null; export const FileDetails=()=>null; export const FileSortMenu=()=>null;
     export const useFileSort=()=>["name",()=>{}]; export const invalidateFolderSizes=()=>{}; export const formatFileBytes=x=>String(x);
     export const useFolderSize=()=>({value:{bytes:0,state:"ready"}});`,
   "@/components/ui/tooltip":'export const HoverTip=({children})=>children;',
 };
 build({stdin:{contents:`
-import {setNavigate} from "./lib/navigate";
+import {setNavigate} from "./lib/nav/navigate";
 setNavigate(path=>window.history.pushState(null,"",path));
 import React,{useEffect} from "react";import{createRoot}from"react-dom/client";
-import{PageNavigation}from"./components/center-tabs/page-navigation";
-import{FileTree}from"./components/files/file-tree";import{useCenterTabs}from"./lib/tabs/center-tabs-store";
+import{PageNavigation}from"./components/center-tabs/browser/toolbar/page-navigation";
+import{FileTree}from"./components/files/tree/file-tree";import{useCenterTabs}from"./lib/tabs/center-tabs-store";
 function App(){
  const active=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
  useEffect(()=>{useCenterTabs.getState().openBuiltinTab("files")},[]);

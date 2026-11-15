@@ -1,4 +1,4 @@
-"""Unit tests for ``openprogram.worktree.include_sync.sync_include_files``.
+"""Unit tests for ``openprogram.state.worktree.include_sync.sync_include_files``.
 
 Covers the ``.worktreeinclude`` contract: gitignore-style pattern
 matching (glob / dir / comments / blanks) via ``git ls-files
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.worktree.include_sync import sync_include_files
+from openprogram.state.worktree.include_sync import sync_include_files
 
 
 def _init_repo(path: Path) -> None:
@@ -183,3 +183,25 @@ def test_permissions_preserved(repo, dst):
 
     assert result.copied == ["script.sh"]
     assert (dst / "script.sh").stat().st_mode & 0o777 == 0o755
+
+
+def test_a_directory_link_is_made_as_a_directory_link(repo, dst, monkeypatch):
+    # Windows creates a file link unless told otherwise, and a file link that
+    # points at a directory cannot be opened.
+    from openprogram.state.worktree import include_sync
+    (repo / "shared").mkdir()
+    (repo / "shared" / "cert.pem").write_text("x", encoding="utf-8")
+    (repo / "certs.local").symlink_to("shared", target_is_directory=True)
+    (repo / "one.local").symlink_to("tracked.txt")
+    (repo / ".worktreeinclude").write_text("certs.local\none.local\n", encoding="utf-8")
+    made: dict[str, bool] = {}
+    real_symlink = include_sync.os.symlink
+
+    def symlink(target, link, target_is_directory=False, **kwargs):
+        made[Path(link).name] = target_is_directory
+        return real_symlink(target, link, target_is_directory=target_is_directory, **kwargs)
+
+    monkeypatch.setattr(include_sync.os, "symlink", symlink)
+    result = include_sync.sync_include_files(str(repo), str(dst))
+    assert not result.failed
+    assert made == {"certs.local": True, "one.local": False}

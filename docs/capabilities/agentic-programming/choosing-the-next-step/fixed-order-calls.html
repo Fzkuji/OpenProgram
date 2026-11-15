@@ -1,0 +1,68 @@
+<title>Fixed-order calls</title>
+<meta name="description" content="Call sub-functions in an order hard-coded in Python, with or without the LLM.">
+<h1>Fixed-order calls</h1><pre translate="no" tabindex="0"><code>from openprogram import Agent
+from openprogram.runtime.agent import llm
+
+class ExampleAgent(Agent):
+    method_options = {
+        'survey_pipeline': {'tool': True, 'input': {'task': {'description': 'Research topic.'}}},
+    }
+
+    def survey_pipeline(self, task: str) -&gt; dict:
+        """Run the full research pipeline: survey, find gaps, generate ideas."""
+        survey = survey_topic(topic=task)
+        gaps = identify_gaps(survey=survey)
+        ideas = generate_ideas(gaps=gaps)
+
+        return {"survey": survey, "gaps": gaps, "ideas": ideas}
+
+        # Or summarise with one model call instead:
+        # return llm([{"type": "text", "text": f"Survey:\n{survey}\n\nGaps:\n{gaps}\n\nIdeas:\n{ideas}"}])
+
+_example_agent = ExampleAgent()
+survey_pipeline = _example_agent.survey_pipeline</code></pre>
+<p class="note">Survey, gaps, ideas. Also: draft, review, revise; collect, clean, analyze.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Point</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">llm()</code></th><td>Optional, any number of calls in one function, mixed with any number of <code translate="no">Agent</code> method calls</td></tr>
+<tr><th scope="row">Data</th><td>Plain Python variables: one return value is the next argument</td></tr>
+<tr><th scope="row">Runtime</th><td>Sub-methods run on the caller's; no <code translate="no">runtime</code> argument between steps</td></tr>
+</tbody>
+</table>
+<h2>Python between steps</h2><pre translate="no" tabindex="0"><code>survey = survey_topic(topic=task)
+
+# plain Python processing in between
+key_points = extract_key_points(survey)
+filtered = [p for p in key_points if p["relevance"] &gt; 0.5]
+
+gaps = identify_gaps(survey="\n".join(filtered))</code></pre>
+<h2>Session DAG</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Call</th><th scope="col">Recorded as</th></tr></thead>
+<tbody>
+<tr><th scope="row">The method that starts the execution</th><td>One node</td></tr>
+<tr><th scope="row">Each <code translate="no">llm()</code> or model request</th><td>One child node, <code translate="no">caller</code> pointing at that method</td></tr>
+<tr><th scope="row">Helper or method on the same Agent</th><td>No node of its own; shares the active call</td></tr>
+<tr><th scope="row">Another Agent</th><td>Its own DAG; the parent stores the result and a <code translate="no">child_session_id</code> reference</td></tr>
+</tbody>
+</table>
+<h2>Errors</h2><pre translate="no" tabindex="0"><code>try:
+    survey = survey_topic(topic=task)
+except Exception as e:
+    return {"error": f"Survey failed: {e}"}</code></pre>
+<p class="note">A raised exception reaches the orchestrator; a recorded call's node ends with <code translate="no">status='error'</code>.</p>
+<details>
+<summary>A sub-function that returns an error string</summary><pre translate="no" tabindex="0"><code>survey = survey_topic(topic=task)
+if not survey or "error" in survey.lower():
+    return {"error": "Survey failed", "survey": survey}</code></pre>
+</details>
+<h2>Versus LLM-selected calls</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Fixed order</th><th scope="col"><a href="tool-calling.html">Tool calling</a> or <a href="next-step-decision.html">decision</a></th></tr></thead>
+<tbody>
+<tr><th scope="row">Order decided by</th><td>Python</td><td>The LLM</td></tr>
+<tr><th scope="row">Sub-functions run</th><td>All of them</td><td>Tool loop: many, across rounds. Decision menu: one.</td></tr>
+<tr><th scope="row">Flexibility</th><td>Fixed pipeline</td><td>Varies with the task</td></tr>
+</tbody>
+</table>

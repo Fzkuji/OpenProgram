@@ -7,7 +7,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
-import { wsRequest } from "@/lib/net/ws-request";
+import { SimpleSelect } from "@/components/ui/select";
+import { SettingsRow, SettingsSection } from "@/components/settings/settings-ui";
+import { wsRequest } from "@/lib/net/ws/ws-request";
 import { getSocket } from "@/lib/runtime-bridge/state";
 
 type Config = {
@@ -47,14 +49,16 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
     {
       key: "permission_mode",
       label: text("Default permission mode", "默认权限模式"),
-      // 无 "Not set"——没设就是内置默认档 Ask permissions（对齐 Claude Code）。
-      fallback: "ask",
+      // 无 "Not set"——没设就是内置默认档 Bypass。
+      fallback: "bypass",
       opts: [
-        { v: "ask", label: text("Ask permissions", "逐次确认") },
-        { v: "acceptEdits", label: text("Accept edits", "接受编辑") },
-        { v: "plan", label: text("Plan mode", "计划模式") },
-        { v: "auto", label: text("Auto mode", "自动判定") },
-        { v: "bypass", label: text("Bypass permissions", "绕过权限") },
+        { v: "bypass", label: "Bypass permissions" },
+        { v: "auto", label: "Auto" },
+        { v: "ask", label: "Manual" },
+        { v: "plan", label: "Plan" },
+        ...(cfg.permission_mode === "acceptEdits"
+          ? [{ v: "acceptEdits", label: "Accept edits" }]
+          : []),
       ],
     },
     {
@@ -74,32 +78,20 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
   ];
 
   return (
-    <div>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
-        {text(
-          "New chats in this project start with these.",
-          "该项目的新会话默认用这些设置。",
-        )}
-      </p>
+    <SettingsSection
+      title={text("Default Settings", "默认设置")}
+      description={text("New chats in this project start with these.", "该项目的新会话默认用这些设置。")}
+    >
       {rows.map((r) => (
-        <div key={r.key} style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "8px 0", gap: 16,
-        }}>
-          <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{r.label}</span>
-          <select
+        <SettingsRow key={r.key} label={r.label}>
+          <SimpleSelect
+            aria-label={r.label}
             value={cfg[r.key] || r.fallback}
-            onChange={(e) => setField(r.key, e.target.value)}
-            style={{
-              padding: "6px 10px", borderRadius: 8,
-              border: "1px solid var(--border)", background: "var(--bg-primary)",
-              color: "var(--text-primary)", minWidth: 160,
-            }}
-          >
-            {r.opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-          </select>
-        </div>
+            onValueChange={(value) => setField(r.key, value)}
+            options={r.opts.map((o) => ({ value: o.v, label: o.label }))}
+          />
+        </SettingsRow>
       ))}
-    </div>
+    </SettingsSection>
   );
 }

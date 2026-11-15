@@ -5,7 +5,7 @@
 import { Buffer } from 'buffer'
 
 import { env } from '../../utils/env.js'
-import { clipboardCommands } from '../../utils/clipboardCommands.js'
+import { clipboardCommands, clipboardInput } from '../../utils/clipboardCommands.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
 
 import { BEL, ESC, ESC_TYPE, SEP } from './ansi.js'
@@ -220,7 +220,7 @@ function copyNative(text: string): void {
 
       const cached = commands.find(([binary]) => binary === linuxCopy)
       if (cached) {
-        void execFileNoThrow(cached[0], [...cached[1]], opts)
+        void execFileNoThrow(cached[0], [...cached[1]], { ...opts, input: clipboardInput(cached[0], text) })
 
         return
       }
@@ -229,7 +229,7 @@ function copyNative(text: string): void {
       // remember the first one that accepts the text.
       void (async () => {
         for (const [binary, args] of commands) {
-          const result = await execFileNoThrow(binary, [...args], opts)
+          const result = await execFileNoThrow(binary, [...args], { ...opts, input: clipboardInput(binary, text) })
           if (result.code === 0) {
             linuxCopy = binary
             return
@@ -242,9 +242,9 @@ function copyNative(text: string): void {
     }
 
     case 'win32':
-      // clip.exe is always available on Windows. Unicode handling is
-      // imperfect (system locale encoding) but good enough for a fallback.
-      void execFileNoThrow('clip', [], opts)
+      // clip.exe is always available on Windows; it needs UTF-16 to keep
+      // text outside the console code page.
+      void execFileNoThrow('clip', [], { ...opts, input: clipboardInput('clip', text) })
 
       return
   }

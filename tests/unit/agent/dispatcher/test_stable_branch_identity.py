@@ -1,6 +1,7 @@
-from openprogram.context.nodes import Call
-from openprogram.store import SessionNodeWriter
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.nodes import Call
+from openprogram.state.store.session.branch_config import branch_identity
+from openprogram.state.store import SessionNodeWriter
+from openprogram.state.store.session.session_store import SessionStore
 
 
 def _lineage(db, sid):
@@ -16,7 +17,7 @@ def _lineage(db, sid):
 
 
 def test_original_path_keeps_fixed_identity_when_head_moves(tmp_path):
-    from openprogram.browser_resources import current_branch, resolve_stable_branch
+    from openprogram.programs.applications.browser.pages import current_branch, resolve_stable_branch
 
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "conversation")
@@ -38,7 +39,7 @@ def test_original_path_keeps_fixed_identity_when_head_moves(tmp_path):
 
 
 def test_later_explicit_rename_wins_on_the_same_origin(tmp_path):
-    from openprogram.browser_resources import resolve_stable_branch
+    from openprogram.programs.applications.browser.pages import resolve_stable_branch
 
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "conversation")
@@ -49,12 +50,12 @@ def test_later_explicit_rename_wins_on_the_same_origin(tmp_path):
     writer.append(Call(id="a2", role="llm", predecessor="u2", seq=4))
     db.set_branch_name("conversation", "a2", "renamed-label")
     branch_id, name = resolve_stable_branch("conversation", "a2", session_store=db)
-    assert branch_id.endswith(":u1")
+    assert branch_id == branch_identity("conversation", None)
     assert name == "renamed-label"
 
 
 def test_distinct_fork_names_stay_separate(tmp_path):
-    from openprogram.browser_resources import resolve_stable_branch
+    from openprogram.programs.applications.browser.pages import resolve_stable_branch
 
     db = SessionStore(tmp_path / "sessions")
     _lineage(db, "conversation")
@@ -72,8 +73,8 @@ def test_distinct_fork_names_stay_separate(tmp_path):
     earlier_id, earlier_name = resolve_stable_branch(
         "conversation", "a1", session_store=db,
     )
-    assert original_id.endswith(":u1")
-    assert sibling_id.endswith(":a2retry")
+    assert original_id == branch_identity("conversation", None)
+    assert sibling_id == branch_identity("conversation", "a2retry")
     assert later_id == sibling_id
     assert earlier_id == original_id
     assert original_name == "trunk-label"
@@ -83,7 +84,7 @@ def test_distinct_fork_names_stay_separate(tmp_path):
 
 
 def test_missing_branch_name_stays_null(tmp_path):
-    from openprogram.browser_resources import current_branch, resolve_stable_branch
+    from openprogram.programs.applications.browser.pages import current_branch, resolve_stable_branch
 
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "conversation")
@@ -92,14 +93,14 @@ def test_missing_branch_name_stays_null(tmp_path):
     branch_id, name = resolve_stable_branch("conversation", "a1", session_store=db)
     db.set_head("conversation", "a1")
     current_id, current_name = current_branch("conversation", session_store=db)
-    assert branch_id.endswith(":u1")
+    assert branch_id == branch_identity("conversation", None)
     assert name is None
     assert current_id == branch_id
     assert current_name is None
 
 
 def test_nested_fork_uses_deepest_divergence(tmp_path):
-    from openprogram.browser_resources import resolve_stable_branch
+    from openprogram.programs.applications.browser.pages import resolve_stable_branch
 
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "conversation")
@@ -113,13 +114,13 @@ def test_nested_fork_uses_deepest_divergence(tmp_path):
     writer.append(Call(id="a3b", role="llm", predecessor="u3", seq=8))
     parent_fork, _ = resolve_stable_branch("conversation", "a3", session_store=db)
     nested, _ = resolve_stable_branch("conversation", "a3b", session_store=db)
-    assert parent_fork.endswith(":a2retry")
-    assert nested.endswith(":a3b")
+    assert parent_fork == branch_identity("conversation", "a2retry")
+    assert nested == branch_identity("conversation", "a3b")
     assert parent_fork != nested
 
 
 def test_later_sibling_gets_its_own_fixed_anchor(tmp_path):
-    from openprogram.browser_resources import resolve_stable_branch
+    from openprogram.programs.applications.browser.pages import resolve_stable_branch
 
     db = SessionStore(tmp_path / "sessions")
     _lineage(db, "conversation")
@@ -128,12 +129,12 @@ def test_later_sibling_gets_its_own_fixed_anchor(tmp_path):
     retry, _ = resolve_stable_branch("conversation", "a2retry", session_store=db)
     assert original != sibling
     assert sibling == retry
-    assert sibling.endswith(":a2retry")
-    assert original.endswith(":u1")
+    assert sibling == branch_identity("conversation", "a2retry")
+    assert original == branch_identity("conversation", None)
 
 
 def test_branch_refs_are_reused_when_they_name_the_same_lineage(tmp_path):
-    from openprogram.browser_resources import resolve_stable_branch
+    from openprogram.programs.applications.browser.pages import resolve_stable_branch
 
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "conversation")
@@ -160,7 +161,7 @@ def test_branch_refs_are_reused_when_they_name_the_same_lineage(tmp_path):
 
 
 def test_active_branch_ref_keeps_name_when_ref_head_is_not_a_tip(tmp_path):
-    from openprogram.browser_resources import current_branch
+    from openprogram.programs.applications.browser.pages import current_branch
 
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "conversation")

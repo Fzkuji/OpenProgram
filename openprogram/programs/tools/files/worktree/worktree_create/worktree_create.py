@@ -10,42 +10,33 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.files.worktree.shared import _current_session_id
-from openprogram.worktree.context import set_worktree
-from openprogram.worktree.manager import WorktreeError, get_manager
+from openprogram.state.worktree.context import set_worktree
+from openprogram.state.worktree.manager import WorktreeError, get_manager
 
 
-def _resolve_source_repo(source_repo: str) -> Optional[str]:
+def _resolve_source_repo(source_repo: str, session_id: Optional[str] = None) -> Optional[str]:
     """Source-repo fallback chain (D5):
 
       1. Explicit ``source_repo`` parameter wins.
-      2. ``OPENPROGRAM_WORKDIR`` env / selected Project config.
-      3. ``git rev-parse --show-toplevel`` from the worker's cwd.
+      2. The conversation's project folder.
+      3. The configured default folder (``OPENPROGRAM_WORKDIR`` env /
+         ``default_workdir`` config).
 
-    Returns the absolute path of a candidate git repo (caller is
-    responsible for verifying it's a real git repo via the manager).
-    Returns None if all three fail.
+    Never the worker's own working directory: that is wherever the
+    worker started (a checkout of OpenProgram, under a test run), not
+    a folder the person chose. Returns the absolute path of a candidate
+    git repo (the manager verifies it), or None.
     """
     if source_repo and source_repo.strip():
         return os.path.abspath(os.path.expanduser(source_repo.strip()))
-    try:
-        from openprogram.paths import get_default_workdir
-        wd = get_default_workdir()
-        if wd:
-            return os.path.abspath(os.path.expanduser(wd))
-    except Exception:
-        pass
-    try:
-        import subprocess
-        proc = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if proc.returncode == 0 and proc.stdout.strip():
-            return proc.stdout.strip()
-    except Exception:
-        pass
+    from openprogram.runtime.conversation.workdir import project_workdir_for
+    from openprogram.state.paths import configured_workdir
+    folder = project_workdir_for(session_id) if session_id else None
+    wd = str(folder) if folder is not None else configured_workdir()
+    if wd:
+        return os.path.abspath(os.path.expanduser(wd))
     return None
 
 
@@ -54,16 +45,16 @@ def _resolve_source_repo(source_repo: str) -> Optional[str]:
     description=(
         "Create an isolated `git worktree` on a real git repository "
         "(the user's source code, NOT OpenProgram's own session "
-        "storage). Subsequent bash / edit / write / read calls in "
-        "this session default their cwd to the new worktree, so the "
-        "agent can experiment freely without touching the source "
-        "repo's working tree. Use worktree_merge to ship the changes "
-        "back, worktree_discard to drop them.\n"
+        "storage). Subsequent bash / edit / write / read / glob / grep "
+        "/ list / apply_patch calls on this conversation branch resolve "
+        "relative paths and their default folder against the new "
+        "worktree; other branches keep the checkout. Use worktree_merge "
+        "to ship the changes back, worktree_discard to drop them.\n"
         "\n"
         "Args:\n"
         "  source_repo: absolute path of the source git repo. If "
-        "omitted, falls back to the session's default workdir, then "
-        "to git rev-parse --show-toplevel from the worker cwd.\n"
+        "omitted, uses the conversation's project folder, then the "
+        "configured default folder.\n"
         "  branch_name: branch to create the worktree on. Defaults "
         "to op/wt/<slug>-<id6>. Must not already exist in the source "
         "repo. Ignored when pr is set.\n"
@@ -81,7 +72,8 @@ def _resolve_source_repo(source_repo: str) -> Optional[str]:
         "for this PR, returns its path instead of creating a duplicate."
     ),
     toolset=["core"],
-    requires_approval=True,
+    # Creating a worktree changes nothing the user has; only discarding
+    # one (a deletion) asks first.
 )
 def worktree_create(
     source_repo: str = "",
@@ -104,6 +96,8 @@ def worktree_create(
     """
     sid = _current_session_id()
     mgr = get_manager()
+    from openprogram.state.worktree.store import current_branch_for
+    branch = current_branch_for(sid) if sid else None
 
     # Enforce one-active-worktree-per-session at the tool layer.
     if sid:
@@ -116,7 +110,7 @@ def worktree_create(
                 f"first."
             )
 
-    repo = _resolve_source_repo(source_repo)
+    repo = _resolve_source_repo(source_repo, sid)
     if not repo:
         return (
             "[worktree_create error] source_repo_not_resolved: pass an "
@@ -131,6 +125,7 @@ def worktree_create(
             base_ref=(base_ref or "HEAD").strip() or "HEAD",
             label=label.strip() or None,
             parent_session=sid,
+            parent_branch=branch,
             pr=pr.strip() or None,
         )
     except WorktreeError as e:
@@ -147,8 +142,8 @@ def worktree_create(
     msg = (
         f"[worktree_create] id={wt.id} path={wt.worktree_path} "
         f"branch={wt.branch_name} base={wt.base_ref}\n"
-        f"Active for this session. bash / edit / write / read now "
-        f"default cwd here."
+        f"Active for this branch. File tools and bash now resolve "
+        f"relative paths here."
     )
     if wt.include_synced:
         msg += f"\n.worktreeinclude: copied {len(wt.include_synced)} file(s): " \

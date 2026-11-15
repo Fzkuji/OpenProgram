@@ -1,0 +1,15 @@
+/* Motion tiers. A transition names one duration and the one easing
+   instead of writing its own milliseconds.
+
+     fast    120ms  hover, press, colour and border changes
+     medium  160ms  reveals, fades, small movements
+     slow    240ms  panels, drawers, larger movements
+   Looping animations (spinners, pulses) and spring curves written as
+   their own cubic-bezier keep their timing. */
+:root {
+  --motion-fast: 120ms;
+  --motion-medium: 160ms;
+  --motion-slow: 240ms;
+  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+

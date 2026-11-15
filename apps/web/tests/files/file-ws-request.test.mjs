@@ -62,8 +62,10 @@ const {
   reconcileWsMutation,
   resetWsMutationReconciliation,
   wsMutationRequest,
+  wsDispatcherAttached,
+  wsListen,
   wsRequest,
-} = await import("../../lib/net/ws-request.ts");
+} = await import("../../lib/net/ws/ws-request.ts");
 const { fileResponseMatchesOwner } = await import("../../lib/files/files-shared.ts");
 
 after(() => resetWsMutationReconciliation());
@@ -596,4 +598,56 @@ test("reset prevents a pending operation from starting a late reconciler", async
   assert.equal((await operation)?.status, "ready");
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(socket.sent.length, 0);
+});
+
+test("concurrent requests share one listener and get replies routed by request_id", async () => {
+  const socket = new FakeSocket();
+  setSocket(socket);
+  let parses = 0;
+  const realParse = JSON.parse;
+  JSON.parse = (...args) => { parses += 1; return realParse(...args); };
+  try {
+    const first = wsRequest("review_scope", { scope: "a" }, "review_scope_result", {}, 4000);
+    const second = wsRequest("review_scope", { scope: "b" }, "review_scope_result", {}, 4000);
+    const plain = wsRequest("list_projects", {}, "projects_list", undefined, 4000);
+    assert.equal(socket.listeners.get("message").size, 1);
+    assert.equal(socket.listeners.get("close").size, 1);
+    const [{ request_id: firstId }, { request_id: secondId }] = socket.sent;
+    parses = 0;
+    socket.emit("message", JSON.stringify({
+      type: "review_scope_result", data: { request_id: secondId, action: "review_scope", scope: "b" },
+    }));
+    socket.emit("message", JSON.stringify({
+      type: "review_scope_result", data: { request_id: firstId, action: "review_scope", scope: "a" },
+    }));
+    socket.emit("message", JSON.stringify({ type: "projects_list", data: { projects: [] } }));
+    assert.equal(parses, 3);
+    assert.equal((await first).scope, "a");
+    assert.equal((await second).scope, "b");
+    assert.deepEqual(await plain, { projects: [] });
+  } finally {
+    JSON.parse = realParse;
+  }
+  assert.equal(socket.listeners.get("message").size, 0);
+  assert.equal(socket.listeners.get("close").size, 0);
+  assert.equal(wsDispatcherAttached(socket), false);
+});
+
+test("timeouts and wsListen unsubscribe release the shared listener", async () => {
+  const socket = new FakeSocket();
+  setSocket(socket);
+  const heard = [];
+  const stop = wsListen("progress", (data) => heard.push(data.n));
+  const pending = wsRequest("list_projects", {}, "projects_list", undefined, 5);
+  socket.emit("message", "not json");
+  socket.emit("message", JSON.stringify({ type: "progress", data: { n: 1 } }));
+  // The request timer is unref'd; hold the loop open until it fires.
+  const keepAlive = setTimeout(() => {}, 1000);
+  assert.equal(await pending, null);
+  clearTimeout(keepAlive);
+  assert.equal(socket.listeners.get("message").size, 1);
+  stop();
+  socket.emit("message", JSON.stringify({ type: "progress", data: { n: 2 } }));
+  assert.deepEqual(heard, [1]);
+  assert.equal(socket.listeners.get("message").size, 0);
 });

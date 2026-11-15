@@ -8,28 +8,29 @@ atomically, and fails closed when accounting is unavailable.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
-from openprogram.agent.resource_governance import (
+from openprogram.runtime.jobs.resource_governance import (
     ResourceGovernor,
     ResourceLimits,
     resolve_resource_limits,
 )
-from openprogram.agent.agent_loop import agent_loop
-from openprogram.agent.types import AgentContext, AgentLoopConfig
-from openprogram.agent.job.types import Job
-from openprogram.providers.api_registry import ApiProviderSnapshot
-from openprogram.providers.budget import (
+from openprogram.runtime.agent.loop import agent_loop
+from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
+from openprogram.runtime.jobs.types import Job
+from openprogram.models.providers.catalog.api_registry import ApiProviderSnapshot
+from openprogram.models.providers.streaming.budget import (
     QuotaExceeded,
     provider_retry_attempts,
     provider_sdk_retries,
 )
-from openprogram.providers.structured_output import (
+from openprogram.models.providers.structured_output import (
     JsonSchemaOutput,
     StructuredOutputCapabilities,
 )
-from openprogram.providers.types import (
+from openprogram.models.providers.types import (
     AssistantMessage,
     Context,
     EventDone,
@@ -38,15 +39,16 @@ from openprogram.providers.types import (
     ModelCost,
     SimpleStreamOptions,
     StreamOptions,
+    TextContent,
     Usage,
     ImageContent,
     UserMessage,
 )
-from openprogram.usage import context as _ctx_mod
-from openprogram.usage import recorder as _recorder
-from openprogram.usage.context import UsageContext
-from openprogram.usage.ledger import UsageLedger
-from openprogram.usage.event import UsageEvent
+from openprogram.models.usage import context as _ctx_mod
+from openprogram.models.usage import recorder as _recorder
+from openprogram.models.usage.context import UsageContext
+from openprogram.models.usage.ledger import UsageLedger
+from openprogram.models.usage.event import UsageEvent
 
 
 @pytest.fixture(autouse=True)
@@ -113,7 +115,7 @@ def _model(**kw):
 def wired(tmp_path, monkeypatch):
     """A governed live job whose provider calls run through stream.py."""
     import importlib
-    stream_mod = importlib.import_module("openprogram.providers.stream")
+    stream_mod = importlib.import_module("openprogram.models.providers.streaming.stream")
 
     ledger = UsageLedger(tmp_path / "usage.db")
     monkeypatch.setattr(_recorder, "default_ledger", ledger)
@@ -124,7 +126,7 @@ def wired(tmp_path, monkeypatch):
     )
 
     def build(*, limits=None, model=None, usage=None, fail_before_start=None):
-        import openprogram.providers.api_registry as registry_mod
+        import openprogram.models.providers.catalog.api_registry as registry_mod
         resolved = resolve_resource_limits(
             limits or ResourceLimits(), scheduler_capacity=1,
         )
@@ -145,7 +147,7 @@ def wired(tmp_path, monkeypatch):
             stream_mod, "get_api_provider",
             lambda api: provider if api == used_model.api else None,
         )
-        from openprogram.agent.job.runner import JobGovernanceContext
+        from openprogram.runtime.jobs.runner import JobGovernanceContext
         governance_context = JobGovernanceContext(
             job_id=job.id,
             budget_scope_id=job.budget_scope_id,
@@ -156,7 +158,7 @@ def wired(tmp_path, monkeypatch):
             activity_callback=lambda _kind: True,
         )
         monkeypatch.setattr(
-            "openprogram.agent.job.runner.current_job_resource_context",
+            "openprogram.runtime.jobs.runner.current_job_resource_context",
             lambda: governance_context,
         )
         return {
@@ -173,7 +175,7 @@ def _drain(model, opts):
 
 
 def _drain_entry(entry, model, opts):
-    from openprogram.providers import stream, stream_simple
+    from openprogram.models.providers import stream, stream_simple
 
     stream_fn = stream_simple if entry == "stream_simple" else stream
 
@@ -190,9 +192,7 @@ def _drain_entry(entry, model, opts):
 
 def _reservation_states(ledger):
     return sorted(
-        row[0] for row in ledger.connection().execute(
-            "SELECT state FROM usage_reservations"
-        )
+        row["state"] for row in ledger.run_tables().handle.rows("usage_reservations")
     )
 
 
@@ -217,11 +217,11 @@ def _drain_agent_loop(model, get_api_key, stream_fn=None):
 def _bind_agent_provider(monkeypatch, provider):
     snapshot = ApiProviderSnapshot(provider, StructuredOutputCapabilities())
     monkeypatch.setattr(
-        "openprogram.providers.api_registry.resolve_api_provider_snapshot",
+        "openprogram.models.providers.catalog.api_registry.resolve_api_provider_snapshot",
         lambda _model: snapshot,
     )
     monkeypatch.setattr(
-        "openprogram.providers.utils.failover.resolve_fallback_models",
+        "openprogram.models.providers.utils.failover.resolve_fallback_models",
         lambda _model: [],
     )
 
@@ -264,11 +264,26 @@ def test_agent_loop_default_provider_denial_precedes_config_credentials(
     assert env["provider"].seen_opts == []
 
 
+def _complete_agent_response(provider):
+    # Credential checks need a completed answer; empty responses intentionally
+    # trigger the agent's continuation policy and additional provider calls.
+    async def stream(model, context, opts):
+        async for event in provider.stream_simple(model, context, opts):
+            if isinstance(event, EventDone):
+                event.message.content = [TextContent(text="done")]
+            yield event
+
+    return stream
+
+
 def test_agent_loop_default_provider_resolves_config_credentials_once_after_preflight(
     wired, monkeypatch,
 ):
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
-    _bind_agent_provider(monkeypatch, env["provider"])
+    _bind_agent_provider(monkeypatch, SimpleNamespace(
+        requires_credentials=True,
+        stream_simple=_complete_agent_response(env["provider"]),
+    ))
     resolver_calls = []
 
     _drain_agent_loop(
@@ -279,9 +294,7 @@ def test_agent_loop_default_provider_resolves_config_credentials_once_after_pref
     assert resolver_calls == ["fakeprov"]
     assert len(env["provider"].seen_opts) == 1
     assert env["provider"].seen_opts[0].api_key == "agent-key"
-    assert env["ledger"].connection().execute(
-        "SELECT COUNT(*) FROM usage_reservations"
-    ).fetchone()[0] == 1
+    assert env["ledger"].run_tables().handle.count("usage_reservations") == 1
 
 
 def test_agent_loop_injected_stream_fn_keeps_config_credential_semantics(wired):
@@ -291,7 +304,7 @@ def test_agent_loop_injected_stream_fn_keeps_config_credential_semantics(wired):
     _drain_agent_loop(
         env["model"],
         lambda provider: resolver_calls.append(provider) or "agent-key",
-        stream_fn=env["provider"].stream_simple,
+        stream_fn=_complete_agent_response(env["provider"]),
     )
 
     assert resolver_calls == ["fakeprov"]
@@ -354,7 +367,7 @@ def test_small_request_remains_usable_under_strict_budget(wired):
 
 
 def test_budgeted_high_resolution_image_fails_closed_before_provider(wired):
-    from openprogram.providers import stream_simple
+    from openprogram.models.providers import stream_simple
 
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
     context = Context(messages=[UserMessage(
@@ -371,6 +384,26 @@ def test_budgeted_high_resolution_image_fails_closed_before_provider(wired):
     with pytest.raises(QuotaExceeded, match="multimodal"):
         asyncio.run(go())
     assert env["provider"].seen_opts == []
+
+
+def test_unbudgeted_job_reserves_its_context_window_for_an_image(wired):
+    """With no token or cost ceiling, the context window bounds media input."""
+    from openprogram.models.providers import stream_simple
+
+    env = wired()
+    context = Context(messages=[UserMessage(
+        content=[ImageContent(data="screenshot", mime_type="image/png")],
+        timestamp=0,
+    )])
+
+    async def go():
+        async for _ in stream_simple(
+            env["model"], context, SimpleStreamOptions(session_id="s1", max_tokens=100),
+        ):
+            pass
+
+    asyncio.run(go())
+    assert env["provider"].seen_opts
 
 
 def test_output_cap_is_clamped_to_remaining_budget(wired):
@@ -392,7 +425,7 @@ def test_reasoning_budget_is_reserved_and_left_room_for(wired):
     """Anthropic raises max_tokens by the thinking budget when the declared
     cap is lower, so the reservation must cover reasoning and the cap handed
     to the provider must leave room for it."""
-    from openprogram.providers.budget import requested_output_cap
+    from openprogram.models.providers.streaming.budget import requested_output_cap
 
     opts = SimpleStreamOptions(session_id="s1", max_tokens=1_000, reasoning="high")
     model = _model(max_tokens=100_000)
@@ -440,7 +473,7 @@ def test_known_api_name_with_unaudited_implementation_fails_closed_pre_io(
     model = _model(api=api)
     env = wired(limits=ResourceLimits(max_total_tokens=100_000), model=model)
     monkeypatch.setattr(
-        "openprogram.providers.api_registry.has_audited_accounting",
+        "openprogram.models.providers.catalog.api_registry.has_audited_accounting",
         lambda _provider, _registered_api: False,
     )
 
@@ -520,8 +553,8 @@ def test_accounting_outage_fails_closed_and_is_retryable(wired, monkeypatch):
 
 
 def test_recording_transform_preserves_registry_audited_identity(tmp_path):
-    from openprogram.providers import api_registry
-    from openprogram.providers.recording import RecordingProvider
+    from openprogram.models.providers.catalog import api_registry
+    from openprogram.models.providers.recording.recording import RecordingProvider
 
     state = (
         dict(api_registry._registry), dict(api_registry._original_registry),
@@ -551,7 +584,7 @@ def test_recording_transform_preserves_registry_audited_identity(tmp_path):
 
 
 def test_public_registry_override_cannot_self_declare_accounting_capability():
-    from openprogram.providers import api_registry
+    from openprogram.models.providers.catalog import api_registry
 
     malicious = _FakeProvider(_model())
     malicious._budget_accounting_api = "openai-completions"
@@ -598,7 +631,7 @@ def test_credential_failure_releases_reserved_exposure(
     import importlib
 
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
-    stream_mod = importlib.import_module("openprogram.providers.stream")
+    stream_mod = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
         stream_mod, "resolve_provider_key",
         lambda _provider: (_ for _ in ()).throw(RuntimeError("credential read failed")),
@@ -620,7 +653,7 @@ def test_generator_construction_failure_releases_reserved_exposure(
     import importlib
 
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
-    stream_mod = importlib.import_module("openprogram.providers.stream")
+    stream_mod = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
         stream_mod, "get_api_provider", lambda _api: _ConstructionFailureProvider(),
     )
@@ -677,11 +710,12 @@ def test_crash_before_settle_leaves_started_exposure_for_recovery(wired):
         requested_max_output_tokens=20, model=env["model"],
     )
     governor.start_provider_request(reservation.reservation_id)
-    ledger.connection().execute(
-        "UPDATE usage_reservations SET expires_at = 0 WHERE reservation_id LIKE ?",
-        (reservation.reservation_id + ":%",),
-    )
-    ledger.connection().commit()
+    with ledger.run_tables().transaction() as tables:
+        tables.update(
+            "usage_reservations",
+            {"expires_at": 0},
+            where=lambda row: row["reservation_id"].startswith(reservation.reservation_id + ":"),
+        )
 
     # Expiry reclaims only never-started requests.
     assert governor.recover_provider_reservations(now=1) == 0
@@ -703,8 +737,9 @@ def test_concurrent_budgeted_calls_share_one_job_budget(wired):
 
     assert accepted, "at least one call must fit the budget"
     assert refused, "the budget must stop the rest"
-    reserved = env["ledger"].connection().execute(
-        "SELECT COALESCE(SUM(reserved_tokens), 0) FROM usage_reservations "
-        "WHERE kind = 'token' AND state IN ('reserved','started')"
-    ).fetchone()[0]
+    reserved = sum(row["reserved_tokens"] for row in env["ledger"].run_tables().handle.rows(
+        "usage_reservations",
+        kind="token",
+        state=("reserved", "started"),
+    ))
     assert reserved <= 400

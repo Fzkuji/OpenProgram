@@ -1,0 +1,126 @@
+<title>不打扰用户</title>
+<meta name="description" content="Agent 操作应用、浏览器和 App 时，用户屏幕上哪些东西保持不变，以及每一种抢占前台的情况如何处理。">
+<meta name="covers" content="openprogram/host/_platform/front.py">
+<h1>不打扰用户</h1>
+
+<p>Agent 操作某个应用、浏览器或页面时，用户在别处继续工作。用户的七样东西保持原样。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">保持</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">前台应用</th><td>用户所在的应用仍然是接收其按键的那个。</td></tr>
+<tr><th scope="row">窗口前后顺序</th><td>没有窗口移到用户留下位置的前面或后面。</td></tr>
+<tr><th scope="row">正在看的标签页</th><td>用户自己浏览器里和 App 里正在看的标签页不变。</td></tr>
+<tr><th scope="row">鼠标指针</th><td>真实指针不移动。</td></tr>
+<tr><th scope="row">键盘焦点</th><td>用户输入的内容仍然进入原来的位置。</td></tr>
+<tr><th scope="row">剪贴板</th><td>用户复制的内容还在。</td></tr>
+<tr><th scope="row">桌面空间</th><td>不切换桌面，窗口不换空间。</td></tr>
+</tbody>
+</table>
+
+<h2 id="两层">两层</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层</th><th scope="col">覆盖范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">投递时不占用任何东西</th><td>每个目标发送输入时都不激活应用、不抬起窗口：应用走辅助功能和按进程投递的事件（<a href="computer-use-macos.zh.html">macOS 投递</a>），内置浏览器向隐藏页面发送可信输入（<a href="browser-tab-driver.zh.html">浏览器标签页驱动</a>），用户的 Chrome 或 Edge 里用后台标签页。</td></tr>
+<tr><th scope="row">被占用的还回去</th><td>应用启动，或打开页面、文档、对话框时，可能自己激活自己，发送方没有选项能阻止。在 macOS 15 上实测：只要有标签页在前台打开，Chrome 就会到所有应用前面，无论标签页是命令行打开、<code translate="no">open -g</code> 打开还是 AppleScript 打开。<code translate="no">openprogram/host/_platform/front.py</code> 在一处处理所有这类情况。</td></tr>
+</tbody>
+</table>
+
+<h2 id="把前台还回去">把前台还回去</h2>
+<p>窗口服务器先换前台应用，之后才用事件通知各个应用。应用收到自己的事件，才把窗口带到前面、画出菜单栏，原来的应用才把标题栏变灰。这些事件被拦下，所以这次变化什么都不会画出来。</p>
+<ol class="flow">
+<li>步骤开始：<code translate="no">front.kept(operated)</code> 记下前台应用和窗口顺序。所有正在运行的步骤共用一个事件拦截点。</li>
+<li class="via">通知用户的应用“失去前台”的事件，先到拦截点，后到应用。</li>
+<li>被操作的应用在前台：在拦截点里就把前台还给用户的应用，并丢弃这个事件。</li>
+<li>随后的事件也丢弃：被操作应用的“获得”和“失去”，用户应用的“获得”。两个应用都不知道发生过。</li>
+<li class="via">之后 0.5 s 内每 4 ms 读一次窗口顺序。应用仍然自己把窗口移到前面时，原先排在它上面的窗口从最深的开始重新抬起。</li>
+<li class="flow-end">步骤立即返回；监视再持续 0.8 s，因为应用可能稍后才激活自己。</li>
+</ol>
+<p class="note">在 macOS 15 上对三种情况实测：计算器在前台启动、运行中的计算器被激活、Chrome 在前台打开标签页。每次读到的窗口顺序里最上面都是用户的窗口，标题栏一个像素都没变，事件到达后 1.4 到 2.8 ms 前台就已还回。同样的事件放行时，计算器的窗口到了最上面，标题栏变灰。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">变化算谁的</th><td><code translate="no">operated(pid)</code> 指明一个步骤操作哪些进程：<code translate="no">args.app</code> 指的应用（<code translate="no">front.named</code>），用户的 Chrome 或 Edge，或内置浏览器所在的 App（<code translate="no">front.bundles</code>）。其他应用到了前台，就是用户自己切过去的：留在那里，之后前台还给它。</td></tr>
+<tr><th scope="row">用户本来就在</th><td>步骤开始时用户就在被操作的应用里，则不监视。</td></tr>
+<tr><th scope="row">有上限</th><td>一个步骤反复抢前台时，还回去六次，之后不再处理。</td></tr>
+<tr><th scope="row">拦下的事件</th><td>在带标注的会话位置设一个主动拦截点，接收类型 19（失去前台）、20（获得前台）和子类型为 1 或 2 的类型 13（应用启动期间收到的那一对）。只有前台确实还回去之后才丢弃事件，所以不会让应用相信不属实的状态。</td></tr>
+<tr><th scope="row">授权</th><td>拦截点需要辅助功能授权；没有授权时不去申请，因为申请会在用户面前弹出提示。</td></tr>
+<tr><th scope="row">没有拦截点时</th><td>每 50 ms 读一次前台，还回去，再把窗口重新抬起；这时被操作应用的窗口会在屏幕上出现 15 到 43 ms。有拦截点时，这种读取只处理连续两次看到的占用。</td></tr>
+<tr><th scope="row">读取前台</th><td><code translate="no">GetFrontProcess</code>，每次 0.6 ms。<code translate="no">NSWorkspace</code> 靠主运行循环更新结果，工作线程不转动它。</td></tr>
+<tr><th scope="row">还回前台</th><td><code translate="no">SetFrontProcessWithOptions</code>，只带最前窗口的选项，2 ms。从工作线程调用 <code translate="no">NSRunningApplication.activateWithOptions</code> 要等一秒才生效。</td></tr>
+<tr><th scope="row">窗口顺序</th><td>按窗口服务器 id 找到每个窗口并执行 <code translate="no">AXRaise</code>；窗口在步骤开始时就查好，抬起只需一次调用。与被操作应用的窗口都不重叠的窗口不动。消息超时设为 0.25 s，不等待忙碌的应用。没有辅助功能授权时，前台应用照样还回去，顺序不恢复。</td></tr>
+<tr><th scope="row">记录</th><td>每一次都带应用名写入日志，并保存在该代码块的 <code translate="no">Watch.taken</code> 中。</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">入口</th><th scope="col">使用者</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">kept(operated)</code></th><td><code translate="no">targets/app.py</code> 和 <code translate="no">targets/browser.py</code> 包住每一次调用，结构化步骤和代码模式都覆盖。</td></tr>
+<tr><th scope="row"><code translate="no">watch_for(operated, seconds)</code></th><td>自更新切换，在桌面外壳重新启动的 30 s 内。</td></tr>
+<tr><th scope="row"><code translate="no">front.py &lt;bundle path&gt; &lt;seconds&gt;</code></th><td><code translate="no">scripts/refresh-local-app.sh</code> 和 <code translate="no">scripts/install-dev-app.sh</code> 单独运行这个文件；这时它只需要标准库，没有辅助功能授权时每 50 ms 读一次前台。</td></tr>
+</tbody>
+</table>
+
+<h2 id="什么会占用屏幕以及处理方式">什么会占用屏幕，以及处理方式</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">来源</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">为某个步骤启动应用</th><td>用 <code translate="no">open -g</code> 启动；仍然自己激活的，把前台还回去。</td></tr>
+<tr><th scope="row">坐标点击让被点的窗口在其层级内上移</th><td>原先叠在它上面的窗口重新抬起（<a href="computer-use-macos.zh.html">macOS 投递</a>）。</td></tr>
+<tr><th scope="row">用户的浏览器打开扩展连接页</th><td>前台还回去。连接页作为该浏览器的一个标签页留着。</td></tr>
+<tr><th scope="row">扩展连上后聚焦浏览器窗口</th><td>设置了 token 时，连接链接带上扩展自己的 <code translate="no">background=true</code>。</td></tr>
+<tr><th scope="row">Playwright 在前台开标签页、把选中的标签页拉到前面</th><td><code translate="no">playwright_background_tabs.cjs</code> 让标签页以非活动方式打开，并去掉那次调用。</td></tr>
+<tr><th scope="row">没有 token 时连接</th><td>用户要在那个页面上同意连接，所以这一次调用里浏览器留在前台。</td></tr>
+<tr><th scope="row">Agent 在内置页面里按 Cmd/Ctrl+F、L、K 或 P</th><td>只有页面显示在聚焦窗口里并且持有键盘时，App 才把它们当作自己的快捷键；否则按键留在页面里。</td></tr>
+<tr><th scope="row">页面要求确认离开</th><td>没人在看的页面直接离开，不弹对话框。</td></tr>
+<tr><th scope="row">网站请求摄像头、位置或通知</th><td>来自没人在看的页面时：这一次拒绝，不记住，用户打开该页面时再问。</td></tr>
+<tr><th scope="row">Agent 在用户自己的标签页里点击后弹出新页面</th><td>新页面在旁边打开；正在看的标签页和路由不变。</td></tr>
+<tr><th scope="row">App 被重新安装，或因更新重新启动</th><td>只有关闭时用户正在用它，才回到前台。</td></tr>
+<tr><th scope="row">工作进程自行连接 MCP 服务器时需要登录</th><td>不打开浏览器；链接留在 <code translate="no">/api/mcp/auth/pending</code>，重新连接该服务器时再打开。</td></tr>
+</tbody>
+</table>
+
+<h2 id="用户仍然会看到的">用户仍然会看到的</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">显示</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent 光标和窗口标记</th><td>不激活、可穿透点击的覆盖层，让用户知道 Agent 正在用哪个窗口（<a href="computer-use-interface.zh.html">Computer use 界面</a>）。</td></tr>
+<tr><th scope="row">对话里的页面预览</th><td>在 App 内，只对屏幕上的对话显示；用户隐藏后不再出现。</td></tr>
+<tr><th scope="row">通知</th><td>只在没有 App 窗口聚焦时出现；点击通知后 App 才到前面。</td></tr>
+<tr><th scope="row">命令打开的东西</th><td>Agent 为了展示而运行的 shell 命令（<code translate="no">open report.html</code>）按要求在前台打开。</td></tr>
+</tbody>
+</table>
+
+<h2 id="Linux-和-Windows">Linux 和 Windows</h2>
+<p>这两个系统没有能拦下事件的位置，所以读取前台、还回去，再把窗口顺序放回。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"></th><th scope="col">Windows</th><th scope="col">Linux，X11</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取前台</th><td>每 20 ms 调用 <code translate="no">GetForegroundWindow</code></td><td><code translate="no">xprop -spy</code> 在活动窗口和堆叠顺序每次变化时报告</td></tr>
+<tr><th scope="row">还回前台</th><td>接入前台线程的输入队列后调用 <code translate="no">SetForegroundWindow</code></td><td><code translate="no">windowactivate</code></td></tr>
+<tr><th scope="row">窗口顺序</th><td>不激活的 <code translate="no">SetWindowPos</code></td><td><code translate="no">windowraise</code>，窗口管理器可能不采纳</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">变化算谁的</th><td>应用按进程区分。后端把解析到的进程告诉保护（<code translate="no">front.note</code>）；启动应用期间（<code translate="no">front.starting</code>），步骤开始时没有窗口的进程就是新启动的那个。浏览器按可执行文件名区分（<code translate="no">front.programs</code>）。</td></tr>
+<tr><th scope="row">有意上前</th><td>这些系统只交给前台窗口的输入，会让窗口在该步骤上前（<a href="computer-use-linux-windows.zh.html">非 macOS 后端</a>）；同意卡片上会说明。这时保护让开（<code translate="no">front.forward</code>），后端自己把前台窗口、指针和窗口在顺序里的位置放回去。</td></tr>
+<tr><th scope="row">Wayland</th><td>应用没有合成器发的令牌就拿不到焦点；不运行任何东西。</td></tr>
+</tbody>
+</table>
+<p class="note">在带 Xvfb 和 Openbox 的 Debian 容器里实测：运行中的应用自己激活后 8.6 ms 失去前台，之后读到的堆叠顺序相同；有意上前的窗口没有被处理；用户自己的切换没有被处理。</p>
+
+<h2 id="实现状态">实现状态</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已在 macOS 实现</th><td>应用步骤、用户的浏览器和内置浏览器的前台不可见地归还，已对计算器的启动和激活、Chrome 打开标签页实测（前台应用、窗口顺序和用户的标题栏）；App 在用户身后重新打开；内置页面的快捷键、离开页面、权限和弹出页规则；无人值守的 MCP 登录不开浏览器。单元测试用替身桌面覆盖这些规则。</td></tr>
+<tr><th scope="row">已在 Linux（X11）实现</th><td>还回前台和窗口顺序，实测如上。</td></tr>
+<tr><th scope="row">已实现，尚未在 Windows 上运行</th><td>还回前台和窗口顺序。构建它的 macOS 机器没有 Windows 虚拟机；规则有用替身桌面的单元测试。</td></tr>
+<tr><th scope="row">未实现</th><td>Windows：<code translate="no">paste</code> 只把文本还给剪贴板。</td></tr>
+</tbody>
+</table>

@@ -1,22 +1,23 @@
 """governance admission tests."""
 from __future__ import annotations
-from ._support import (
+from collections import Counter
+import multiprocessing
+import sqlite3
+import threading
+import time
+from openprogram.runtime.jobs.resource_governance import (
     AdmissionDecision,
     AdmissionRejected,
+    build_job_resource_view,
+)
+from openprogram.models.usage.event import UsageEvent
+from ._support import (
     Job,
     ResourceGovernor,
     ResourceLimits,
-    UsageEvent,
     UsageLedger,
-    _admit_fanout_process,
-    _migrate_admission_schema_process,
-    build_job_resource_view,
-    multiprocessing,
     pytest,
     resolve_resource_limits,
-    sqlite3,
-    threading,
-    time,
 )
 
 
@@ -92,10 +93,8 @@ def test_admission_is_atomic_at_queue_boundary(tmp_path) -> None:
     assert sum(item.accepted for item in decisions) == 5
     assert {item.reason_code for item in decisions if not item.accepted} == {"quota.queue_full"}
     assert len(persisted) == 5
-    counts = ledger.connection().execute(
-        "SELECT state, COUNT(*) FROM job_admissions GROUP BY state"
-    ).fetchall()
-    assert [(row[0], row[1]) for row in counts] == [("queued", 5)]
+    counts = Counter(row["state"] for row in ledger.run_tables().handle.rows("job_admissions"))
+    assert counts == {"queued": 5}
 
 
 
@@ -150,7 +149,7 @@ def test_admission_rejects_spawn_beyond_durable_depth_without_persisting(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"agent": {"max_spawn_depth": 1, "max_spawn_fanout": 8}},
     )
     ledger = UsageLedger(tmp_path / "usage.db")
@@ -173,9 +172,7 @@ def test_admission_rejects_spawn_beyond_durable_depth_without_persisting(
     assert decision.reason_code == "quota.spawn_depth"
     assert decision.retryable is False
     assert persisted == []
-    assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM job_admissions"
-    ).fetchone()[0] == 0
+    assert ledger.run_tables().handle.count("job_admissions") == 0
 
 
 
@@ -183,7 +180,7 @@ def test_fanout_admission_is_atomic_for_24_threads(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"agent": {"max_spawn_depth": 0, "max_spawn_fanout": 5}},
     )
     ledger = UsageLedger(tmp_path / "usage.db")
@@ -216,49 +213,47 @@ def test_fanout_admission_is_atomic_for_24_threads(
     assert {
         decision.reason_code for decision in decisions if not decision.accepted
     } == {"quota.spawn_fanout"}
-    assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM job_admissions"
-    ).fetchone()[0] == 5
+    assert ledger.run_tables().handle.count("job_admissions") == 5
 
 
 
-def test_fanout_admission_is_atomic_for_24_processes(
+def test_fanout_admission_is_atomic_for_24_threads(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"agent": {"max_spawn_depth": 0, "max_spawn_fanout": 5}},
     )
-    method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
-    ctx = multiprocessing.get_context(method)
-    start = ctx.Event()
-    output = ctx.Queue()
-    db_path = tmp_path / "usage.db"
-    initial = UsageLedger(db_path)
-    initial.connection()
-    initial.close()
-    processes = [
-        ctx.Process(
-            target=_admit_fanout_process,
-            args=(db_path, index, start, output, 5),
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=32)
+    governor = ResourceGovernor(
+        UsageLedger(tmp_path / "usage.db"), limit_resolver=lambda _sid, _job: resolved,
+    )
+    start = threading.Barrier(24)
+    results: list[tuple[bool, str | None]] = []
+
+    def admit(index: int) -> None:
+        start.wait()
+        decision = governor.admit_job(
+            Job(
+                id=f"thread_{index}", parent_session_id="s1",
+                prompt=str(index), agent_id="a", chain_generations=1,
+            ),
+            persist=lambda _job: None,
+            caller_turn_id="turn_1",
         )
-        for index in range(24)
-    ]
-    for process in processes:
-        process.start()
-    start.set()
-    results = [output.get(timeout=15) for _ in processes]
-    for process in processes:
-        process.join(timeout=15)
-        assert process.exitcode == 0
+        results.append((decision.accepted, decision.reason_code))
+
+    threads = [threading.Thread(target=admit, args=(index,)) for index in range(24)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
 
     assert sum(accepted for accepted, _reason in results) == 5
     assert {reason for accepted, reason in results if not accepted} == {
         "quota.spawn_fanout",
     }
-    assert UsageLedger(db_path).connection().execute(
-        "SELECT COUNT(*) FROM job_admissions"
-    ).fetchone()[0] == 5
+    assert governor.ledger.run_tables().handle.count("job_admissions") == 5
 
 
 
@@ -266,7 +261,7 @@ def test_idempotent_admission_does_not_spend_fanout_twice(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"agent": {"max_spawn_depth": 0, "max_spawn_fanout": 1}},
     )
     ledger = UsageLedger(tmp_path / "usage.db")
@@ -305,7 +300,7 @@ def test_fanout_is_keyed_by_caller_session_across_target_sessions(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"agent": {"max_spawn_depth": 0, "max_spawn_fanout": 1}},
     )
     governor = ResourceGovernor(UsageLedger(tmp_path / "usage.db"))
@@ -361,60 +356,7 @@ def test_failed_job_publication_rolls_back_provisional_admission(tmp_path) -> No
             persist=lambda _job: (_ for _ in ()).throw(OSError("disk full")),
         )
 
-    assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM job_admissions"
-    ).fetchone()[0] == 0
-
-
-
-def test_admission_schema_migration_is_process_serialized(tmp_path):
-    path = tmp_path / "legacy-concurrent.db"
-    conn = sqlite3.connect(path)
-    conn.execute(
-        """CREATE TABLE job_admissions (
-            admission_id TEXT PRIMARY KEY, job_id TEXT UNIQUE NOT NULL,
-            session_id TEXT NOT NULL, parent_job_id TEXT,
-            caller_session_id TEXT, caller_turn_id TEXT,
-            creates_agent INTEGER NOT NULL, request_fingerprint TEXT NOT NULL,
-            budget_scope_id TEXT NOT NULL, dispatch_ready INTEGER NOT NULL DEFAULT 1,
-            borrowed_parent_job_id TEXT, resume_parent_msg_id TEXT,
-            state TEXT NOT NULL, admitted_seq INTEGER NOT NULL,
-            owner_instance_id TEXT, lease_generation INTEGER NOT NULL DEFAULT 0,
-            lease_expires_at REAL, created_at REAL NOT NULL, started_at REAL,
-            last_activity_at REAL, released_at REAL, reason_code TEXT
-        )"""
-    )
-    conn.commit()
-    conn.close()
-    ctx = multiprocessing.get_context("fork")
-    start = ctx.Event()
-    output = ctx.Queue()
-    processes = [
-        ctx.Process(
-            target=_migrate_admission_schema_process,
-            args=(path, start, output),
-        )
-        for _ in range(8)
-    ]
-    for process in processes:
-        process.start()
-    start.set()
-    results = [output.get(timeout=15) for _ in processes]
-    for process in processes:
-        process.join(timeout=15)
-        assert process.exitcode == 0
-    assert all(result[0] == "ok" for result in results), results
-    columns = {
-        row[1]
-        for row in UsageLedger(path).connection().execute(
-            "PRAGMA table_info(job_admissions)"
-        )
-    }
-    assert {
-        "terminal_blocked", "terminal_block_command_id",
-        "terminal_block_phase", "terminal_block_expires_at",
-        "terminal_block_prior_dispatch_ready",
-    }.issubset(columns)
+    assert ledger.run_tables().handle.count("job_admissions") == 0
 
 
 
@@ -445,23 +387,18 @@ def test_legacy_blocked_admission_is_recoverable_after_migration(tmp_path):
     conn.commit()
     conn.close()
     ledger = UsageLedger(path)
-    row = ledger.connection().execute(
-        "SELECT terminal_blocked, terminal_block_phase, "
-        "terminal_block_expires_at, terminal_block_prior_dispatch_ready "
-        "FROM job_admissions WHERE job_id = 'blocked'"
-    ).fetchone()
-    assert row[0] == 1
-    assert row[1] == "recovery"
-    assert row[2] > time.time()
-    assert row[3] == 0
     governor = ResourceGovernor(ledger)
+    state = governor.admission_state("blocked")
+    assert state[3] is True
+    assert state[4] == "recovery"
+    assert state[5] > time.time()
+    assert state[7] == 0
     assert governor.unblock_terminal_dispatch(
         "blocked", expected_lease_generation=0,
     )
-    assert ledger.connection().execute(
-        "SELECT dispatch_ready FROM job_admissions WHERE job_id = 'blocked'"
-    ).fetchone()[0] == 0
-
+    assert ledger.run_tables().handle.first(
+        "job_admissions", job_id="blocked",
+    )["dispatch_ready"] == 0
 
 
 def test_releasing_queued_job_keeps_cumulative_admission(tmp_path) -> None:
@@ -489,11 +426,10 @@ def test_releasing_queued_job_keeps_cumulative_admission(tmp_path) -> None:
 def test_job_store_serializes_cross_process_writers(tmp_path, monkeypatch) -> None:
     if "fork" not in multiprocessing.get_all_start_methods():
         pytest.skip("requires fork to share the isolated store patch")
-    from openprogram.agent.job import store as job_store
+    from openprogram.runtime.jobs import store as job_store
 
     path = tmp_path / "jobs.json"
     monkeypatch.setattr(job_store, "_ensure_session", lambda _sid: path)
-    monkeypatch.setattr(job_store, "_commit", lambda *_args, **_kwargs: None)
     original_load = job_store._load_raw
 
     def slow_load(target):

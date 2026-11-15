@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from openprogram.cli import build_parser
-from openprogram.cli.commands.web import _cmd_web_auth_url
-from openprogram.backend_endpoint import (
+from openprogram.interfaces.cli.application import build_parser
+from openprogram.interfaces.cli.commands.web import _cmd_web_auth_url
+from openprogram.host.security.backend_endpoint import (
     ActiveWebAccess,
     OwnerAuthError,
     build_owner_auth_url,
@@ -66,15 +66,15 @@ def test_web_auth_url_command_prints_only_the_requested_bootstrap_url(
     capsys,
 ):
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.read_worker_port",
+        "openprogram.operations.worker.lifecycle.read_worker_port",
         lambda: 18100,
     )
     monkeypatch.setattr(
-        "openprogram.cli.commands.web._backend_is_ours",
+        "openprogram.interfaces.cli.commands.web._backend_is_ours",
         lambda _port: True,
     )
     monkeypatch.setattr(
-        "openprogram.backend_endpoint.read_active_web_access",
+        "openprogram.host.security.backend_endpoint.read_active_web_access",
         lambda: ActiveWebAccess(
             bind_host="127.0.0.1",
             port=18100,
@@ -83,7 +83,7 @@ def test_web_auth_url_command_prints_only_the_requested_bootstrap_url(
         ),
     )
     monkeypatch.setattr(
-        "openprogram.backend_endpoint.read_web_token",
+        "openprogram.host.security.backend_endpoint.read_web_token",
         lambda: TOKEN,
     )
     # The requested URL must prove it is this server before a token is
@@ -95,7 +95,7 @@ def test_web_auth_url_command_prints_only_the_requested_bootstrap_url(
         return True
 
     monkeypatch.setattr(
-        "openprogram._ports.backend_accepts_owner_challenge", accept
+        "openprogram.operations.worker.ports.backend_accepts_owner_challenge", accept
     )
 
     assert _cmd_web_auth_url("http://127.0.0.1:18100") == 0
@@ -107,8 +107,11 @@ def test_web_auth_url_command_prints_only_the_requested_bootstrap_url(
 
 def test_web_auth_url_command_fails_without_an_active_server(monkeypatch, capsys):
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.read_worker_port",
+        "openprogram.operations.worker.lifecycle.read_worker_port",
         lambda: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.interfaces.cli.commands.web._port_in_use", lambda _port: False,
     )
 
     assert _cmd_web_auth_url("http://127.0.0.1:18100") == 1
@@ -125,15 +128,15 @@ def test_web_auth_url_does_not_disclose_token_to_an_unowned_port(
         raise AssertionError("token was read")
 
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.read_worker_port",
+        "openprogram.operations.worker.lifecycle.read_worker_port",
         lambda: 18100,
     )
     monkeypatch.setattr(
-        "openprogram.cli.commands.web._backend_is_ours",
+        "openprogram.interfaces.cli.commands.web._backend_is_ours",
         lambda _port: False,
     )
     monkeypatch.setattr(
-        "openprogram.backend_endpoint.read_web_token",
+        "openprogram.host.security.backend_endpoint.read_web_token",
         fail_if_token_is_read,
     )
 
@@ -143,3 +146,28 @@ def test_web_auth_url_does_not_disclose_token_to_an_unowned_port(
     assert captured.err == (
         "error: active Web server is not owned by this profile\n"
     )
+
+
+def test_web_start_that_never_binds_says_how_to_open_the_page_signed_in(monkeypatch, capsys):
+    # A slow first start must not end in a page opened without its sign-in
+    # link: that page loads with every list empty.
+    from openprogram.interfaces.cli.commands import web
+
+    opened: list[str] = []
+    monkeypatch.setattr(web, "_port_in_use", lambda _port: False)
+    monkeypatch.setattr("openprogram.operations.worker.spawn_detached", lambda: 0)
+    # The worker names the port it settled on as it starts.
+    monkeypatch.setattr("openprogram.operations.worker.lifecycle.read_worker_port", lambda: 18100)
+    waits: list[float] = []
+    monkeypatch.setattr("openprogram.interfaces.cli.ink._wait_until_listening", lambda port, timeout: waits.append(timeout) or False)
+    monkeypatch.setattr("openprogram.host._platform.environment.tui_worker_ready_timeout_seconds", lambda: 120.0)
+    monkeypatch.setattr("openprogram.host._platform.environment.open_browser_url", lambda url: opened.append(url) or True)
+
+    web._cmd_web(18100, True)
+
+    assert opened == []
+    out = capsys.readouterr().out
+    assert "still starting" in out
+    assert "Run `openprogram web` again" in out
+    # As long as the TUI waits: a first Windows start runs under Defender's scan.
+    assert len(waits) == 1 and 119.0 < waits[0] <= 120.0

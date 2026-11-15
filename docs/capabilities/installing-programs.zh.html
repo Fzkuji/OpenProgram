@@ -1,0 +1,138 @@
+<title>安装程序</title>
+<meta name="description" content="安装、升级、校验和移除程序包，以及编写可安装的 harness。">
+<h1>安装程序</h1>
+<p>发行版不捆绑程序：内置工具和应用之外的一切都这样安装。用户要求安装 agent 没有的程序时，按本页操作。</p>
+<pre translate="no" tabindex="0"><code>openprogram programs install https://github.com/&lt;owner&gt;/&lt;repo&gt;
+openprogram programs install &lt;owner&gt;/&lt;repo&gt;
+openprogram programs install ~/work/my-program
+openprogram programs install file:///path/to/checkout
+
+openprogram programs list
+openprogram programs install &lt;source&gt; --upgrade
+openprogram programs uninstall &lt;name&gt;</code></pre>
+<p class="note">运行中的 worker 会拾取克隆；新进程在启动时加载。已安装的程序出现在<strong>能力 → Programs → Applications</strong> 下，文件夹以目录命名，内含其 Agent 入口。</p>
+<h2 id="what-a-source-can-be">来源可以是什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">git URL（<code translate="no">https://</code>、<code translate="no">ssh://</code>、<code translate="no">git@</code>、<code translate="no">file://</code>）</th><td>浅克隆到 Programs 目录，然后检查</td></tr>
+<tr><th scope="row">GitHub <code translate="no">owner/repo</code></th><td>展开为 <code translate="no">https://github.com/owner/repo</code> 并克隆</td></tr>
+<tr><th scope="row">本地应用目录（<code translate="no">application.json</code>）</th><td>记录到 catalog，原地加载，不复制</td></tr>
+<tr><th scope="row">本地包仓库（<code translate="no">__init__.py</code> 和 <code translate="no">.git</code>）</th><td>像 git URL 一样克隆。先提交；不是 Git 仓库的目录会被拒绝。</td></tr>
+<tr><th scope="row">已在 Programs 目录中的包</th><td>无需安装；<code translate="no">openprogram programs check &lt;directory&gt;</code> 使其可调用</td></tr>
+</tbody>
+</table>
+<p class="note">Programs 目录：<code translate="no">~/.openprogram/programs/&lt;name&gt;/</code>，命名 profile 下为 <code translate="no">~/.openprogram-&lt;profile&gt;/programs/&lt;name&gt;/</code>。旧版放在 <code translate="no" data-claim="example">openprogram/programs/packages/</code> 或 <code translate="no">openprogram/programs/applications/</code> 的检出，在新版 worker 首次启动时移过去，名称和来源不变。</p>
+<h2 id="what-the-clone-becomes">克隆会成为什么</h2>
+<p>一个仓库可以同时是多种。都不是时会报告，不加载任何内容，也不影响其他程序。</p>
+<table class="stack">
+<thead><tr><th scope="col">形态</th><th scope="col">判断依据</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">Package</th><td>克隆根目录有 <code translate="no">__init__.py</code></td><td>按仓库名转成合法导入名（<code translate="no">My-Tools</code> → <code translate="no">my_tools</code>）。通过 <code translate="no">openprogram programs check</code> 后加载。<code translate="no">PROGRAM_ENTRIES</code> 和检查见 <a href="workflows/README.zh.html#self-programming-workflows">Workflow 自动化</a>。</td></tr>
+<tr><th scope="row">Application</th><td><code translate="no">application.json</code></td><td>记录到 catalog，见<a href="applications.zh.html">应用</a>。<code translate="no">--trust</code> 授权审查过的 Python 后端；<code translate="no">--replace</code> 接受变化的 digest。</td></tr>
+<tr><th scope="row">Harness</th><td><code translate="no">&lt;package&gt;/agentics/__init__.py</code></td><td>从 <code translate="no">pyproject.toml</code>/<code translate="no">setup.py</code>（优先）或 <code translate="no">requirements.txt</code> 安装它自己声明的依赖，并记录为 owner 批准的来源。下次扫描后 <code translate="no">PROGRAM_ENTRIES</code> 出现在聊天、Programs 页和 <code translate="no">openprogram programs run</code>。</td></tr>
+</tbody>
+</table>
+<h2 id="upgrade-and-uninstall">升级、卸载、校验</h2>
+<span id="verify-an-install"></span>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram programs install &lt;source&gt; --upgrade</code></th><td><code translate="no">git pull --ff-only</code>，重新解析依赖</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs uninstall &lt;name&gt;</code></th><td>目录名：把克隆移到 <code translate="no">~/.openprogram/programs/.removed/</code>，可手动恢复，绝不删除。应用 id：取消注册并保留数据，兼容的重新安装可恢复。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs list [--json]</code></th><td>所有 Program 及状态，含 harness</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list</code></th><td>显示损坏的 harness 为何没加载。PowerShell：<code translate="no">$env:OPENPROGRAM_DEBUG_REGISTRY=1; openprogram programs list</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs run &lt;fn&gt; -a key=value</code></th><td>运行函数；聊天中同样可调用</td></tr>
+</tbody>
+</table>
+<p class="note">同名的开发符号链接：<code translate="no">install</code> 校验 harness 契约并记录链接，不改动目标。同名但不是 git 克隆的目录被拒绝。对符号链接 <code translate="no">uninstall</code> 只移动链接。</p>
+<details>
+<summary>没有 GitHub 访问，或正在开发程序</summary>
+<p>镜像：</p>
+<pre translate="no" tabindex="0"><code>git clone &lt;repo-url&gt; /path/to/Program-Name
+openprogram programs install file:///path/to/Program-Name</code></pre>
+<p>命令把来源克隆到 Programs 目录并记录；只有已记录且满足契约的目录才加载。</p>
+<p>你自己的检出：安装后添加为远程，再 <code translate="no">git pull work main</code>。拉取的提交在下次重启生效。</p>
+<pre translate="no" tabindex="0"><code>openprogram programs install file:///path/to/your/Program-Checkout
+cd ~/.openprogram/programs/Program-Checkout &amp;&amp; git remote add work /path/to/your/Program-Checkout</code></pre>
+</details>
+<details>
+<summary>平台说明</summary>
+<ul>
+<li>CLI 和服务器 release 运行在 macOS、Linux 上，v1.2.0 起也运行在 Windows x64 上，Windows App 同样从 v1.2.0 起提供。Windows 上的沙箱命令可选用 WSL2 加 bubblewrap。</li>
+<li>不需要符号链接：安装器记录真实检出。</li>
+<li>程序自身代码可以限定平台，请查看其 README 和依赖。</li>
+<li>OpenProgram 的工具都是 UTF-8 且基于 <code translate="no">os.path</code>，程序也应如此。</li>
+</ul>
+</details>
+<h2 id="troubleshooting">故障排查</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">症状</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">重启后没有 harness 函数</th><td>确认 <code translate="no">&lt;pkg&gt;/agentics/__init__.py</code> 存在并导出 <code translate="no">PROGRAM_ENTRIES</code>。用 <code translate="no">OPENPROGRAM_DEBUG_REGISTRY=1</code> 运行。</td></tr>
+<tr><th scope="row"><code translate="no">[!] … neither a package (__init__.py), an application (application.json) nor a harness</code></th><td>仓库不符合这三种形态</td></tr>
+<tr><th scope="row">harness 依赖 <code translate="no">ModuleNotFoundError</code></th><td>依赖安装失败。重新运行 <code translate="no">openprogram programs install &lt;source&gt; --upgrade</code> 并查看错误。</td></tr>
+<tr><th scope="row">harness 内 <code translate="no">from &lt;pkg&gt;.x import y</code> 失败</th><td>包文件夹名必须等于导入名，并有 <code translate="no">__init__.py</code></td></tr>
+<tr><th scope="row">已有开发符号链接没加载</th><td>运行一次 <code translate="no">openprogram programs install &lt;git-source&gt;</code> 校验并记录</td></tr>
+<tr><th scope="row">Windows 上安装或运行失败</th><td>查看程序的 README 和依赖标记；它可能只提供 macOS/Linux 后端</td></tr>
+</tbody>
+</table>
+<h2 id="writing-your-own-installable-harness">编写可安装的 harness</h2>
+<span id="the-contract"></span>
+<pre translate="no" tabindex="0"><code>&lt;Harness-Name&gt;/                仓库，名称不限
+├── pyproject.toml             只声明 harness 自己的依赖
+└── &lt;package&gt;/                 可导入的包，ascii 名称
+    ├── __init__.py            保持轻依赖
+    └── agentics/
+        └── __init__.py        PROGRAM_ENTRIES = [...]</code></pre>
+<p class="note">启动时 OpenProgram 导入 <code translate="no">&lt;package&gt;.agentics</code> 并注册 <code translate="no">PROGRAM_ENTRIES</code>。根目录可附带其他包：发现机制找到含 <code translate="no">agentics/</code> 的包，并把根目录加入 <code translate="no">sys.path</code>，<code translate="no">from &lt;package&gt;.foo import bar</code> 可解析。</p>
+<pre translate="no" tabindex="0"><code># &lt;package&gt;/agentics/__init__.py
+from openprogram import Agent
+
+
+class ExampleAgent(Agent):
+    method_options = {
+        'my_tool': {'tool': True},
+    }
+
+    def my_tool(self, text: str = "") -&gt; str:
+        "One line: what this does (shown in catalogs)."
+        return text.upper()
+
+
+_example_agent = ExampleAgent()
+my_tool = _example_agent.my_tool
+
+PROGRAM_ENTRIES = [my_tool]</code></pre>
+<pre translate="no" tabindex="0"><code># pyproject.toml
+[project]
+name = "my-harness"
+version = "0.1.0"
+requires-python = "&gt;=3.10"
+dependencies = []          # 只写 harness 自己的依赖，绝不写 openprogram</code></pre>
+<h3 id="two-hard-rules">两条硬性规则</h3>
+<ol>
+<li><strong>绝不把 <code translate="no">openprogram</code> 声明为依赖</strong>，<code translate="no">pyproject.toml</code> 和 <code translate="no">requirements.txt</code> 都不行。<code translate="no">openprogram @ git+…</code> 会让 pip 从 git 重装宿主，覆盖用户的安装。</li>
+<li><strong>保持 <code translate="no">&lt;package&gt;/__init__.py</code> 轻依赖，并保护重导入。</strong> 发现机制每次启动都导入 <code translate="no">&lt;package&gt;.agentics</code>，包括没装可选依赖的机器。顶层导入 <code translate="no">cv2</code> 或 <code translate="no">torch</code> 会破坏整个注册表加载。放到函数体内导入，并保护入口：</li>
+</ol>
+<pre translate="no" tabindex="0"><code># agentics/__init__.py
+try:
+    from my_package.main import my_tool
+    PROGRAM_ENTRIES = [my_tool]
+except ImportError:
+    PROGRAM_ENTRIES = []</code></pre>
+<h3 id="test-locally-before-publishing">测试与发布</h3>
+<span id="publish"></span>
+<pre translate="no" tabindex="0"><code>cd /path/to/My-Harness &amp;&amp; git add -A &amp;&amp; git commit -m wip
+openprogram programs install file:///path/to/My-Harness
+openprogram programs list             # Harnesses 下列出 My-Harness
+OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list   # 函数是否存在
+openprogram programs run my_tool -a text=hello           # 冒烟测试
+openprogram programs uninstall My-Harness                # 移到一边</code></pre>
+<ul>
+<li><code translate="no">&lt;package&gt;/agentics/__init__.py</code> 导出 <code translate="no">PROGRAM_ENTRIES</code></li>
+<li>pyproject 和 requirements 中没有 <code translate="no">openprogram</code></li>
+<li>只装了 OpenProgram 的干净 venv 中 <code translate="no">python -c "import &lt;package&gt;.agentics"</code> 成功</li>
+<li>上面的 <code translate="no">file://</code> 往返通过</li>
+</ul>
+<p>推送到 GitHub。用户运行 <code translate="no">openprogram programs install &lt;owner&gt;/&lt;Harness-Name&gt;</code>，无需在别处注册。</p>

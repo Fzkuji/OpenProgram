@@ -1,6 +1,6 @@
 """Long conversations must retain complete layout without recursive walks."""
-from openprogram.webui.graph_layout import annotate_graph
-from openprogram.webui.graph_layout import depth as depth_module
+from openprogram.state.store.session.graph.layout import annotate_graph
+from openprogram.state.store.session.graph.layout import depth as depth_module
 
 
 def test_long_conversation_layout_is_stack_safe_and_visits_parents_once(monkeypatch):
@@ -33,7 +33,7 @@ def test_cycle_and_nodes_leading_into_cycle_remain_independent_roots():
 
 
 def test_wide_forks_place_columns_without_rescanning_previous_lanes(monkeypatch):
-    import openprogram.webui.graph_layout as layout
+    import openprogram.state.store.session.graph.layout as layout
 
     count = 2_000
     rows = [{'id': 'ROOT', 'display': 'root', 'created_at': 0}]
@@ -56,11 +56,11 @@ def test_wide_forks_place_columns_without_rescanning_previous_lanes(monkeypatch)
 
 
 def test_followup_reply_normalization_preserves_chained_rewrites():
-    from openprogram.webui.graph_layout.filter import normalize_followup
+    from openprogram.state.store.session.graph.layout.filter import bridge_hidden
 
     rows = [{'id': 'root'},
             {'id': 'u1', 'role': 'user', 'source': 'job_followup', 'predecessor': 'u2'},
             {'id': 'u2', 'role': 'user', 'source': 'job_followup', 'predecessor': 'root'},
             {'id': 'a', 'role': 'assistant', 'source': 'job_followup', 'predecessor': 'u1'}]
-    normalize_followup(rows)
+    bridge_hidden(rows)
     assert rows[-1]['predecessor'] == 'root'

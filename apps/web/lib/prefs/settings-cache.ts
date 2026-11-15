@@ -28,6 +28,12 @@ type Entry<T = unknown> = {
 
 const cache = new Map<string, Entry>();
 
+/** Read a still-fresh response for synchronous page initialization. */
+export function readCachedSettings<T = unknown>(url: string): T | undefined {
+  const entry = cache.get(url) as Entry<T> | undefined;
+  return entry && Date.now() - entry.ts < TTL_MS ? entry.data : undefined;
+}
+
 export async function cachedFetch<T = unknown>(
   url: string,
   init?: RequestInit,
@@ -40,7 +46,17 @@ export async function cachedFetch<T = unknown>(
   }
   const p = (async () => {
     const r = await fetch(url, init);
-    if (!r.ok) throw new Error(`${url} → ${r.status}`);
+    if (!r.ok) {
+      // Keep what the server said went wrong, so a page can show it.
+      let detail = "";
+      try {
+        const body = (await r.json()) as { error?: unknown };
+        if (typeof body?.error === "string") detail = body.error;
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(detail || `${url} → ${r.status}`);
+    }
     const data = (await r.json()) as T;
     cache.set(url, { data, ts: Date.now() });
     return data;

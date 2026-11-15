@@ -1,0 +1,63 @@
+/* App-global styles, split by area. Order matters for the cascade:
+   base (document, layout, shared primitives) loads first, then the chat
+   column, then the right dock, then the DAG surfaces. Each file is one
+   UI component's styles; the header comment inside names the owning
+   tsx/ts source. Tokens are in ./design/, colours in ./themes/. */
+
+/* ── 文档与外壳（app/、components/layout/、components/sidebar/） ── */
+@import "./base/document.css";
+@import "./base/focus.css";
+@import "./base/list-row.css";
+@import "./base/layout.css";
+@import "./base/scrollbar.css";
+@import "./base/sidebar.css";
+@import "./base/desktop-chrome.css";
+@import "./base/motion.css";
+@import "./base/canvas-drag.css";
+
+/* ── 聊天列（components/chat/） ─────────────────────────────── */
+@import "./chat/pane/layout.css";
+@import "./chat/composer/top-bar-chips.css";
+@import "./chat/pane/transcript.css";
+@import "./chat/pane/peer-session-pane.css";
+@import "./chat/messages/bubbles.css";
+@import "./chat/messages/file-links.css";
+@import "./chat/messages/a2ui.css";
+@import "./chat/messages/visual.css";
+@import "./chat/messages/message-actions.css";
+@import "./chat/execution/typing-indicator.css";
+@import "./chat/welcome/code-rain-style.css";
+@import "./chat/execution/indicator-dot.css";
+@import "./chat/execution/runtime-program.css";
+@import "./tool-tones.css";
+@import "./chat/execution/execution-strip.css";
+@import "./chat/pane/jump-latest.css";
+@import "./chat/messages/message-rail.css";
+@import "./chat/cards/attach-card.css";
+@import "./chat/cards/agent-event-row.css";
+@import "./chat/messages/stream-blocks.css";
+@import "./chat/composer/context-badge.css";
+@import "./chat/composer/effort-pill.css";
+@import "./chat/cards/turn-files-card.css";
+@import "./chat/cards/sub-agent-transcript.css";
+@import "./chat/cards/file-diff.css";
+@import "./chat/messages/user-attachments.css";
+@import "./chat/pane/center-pane.css";
+@import "./chat/pane/agent-branch-banner.css";
+
+/* ── 右侧栏（components/right-sidebar/） ────────────────────── */
+@import "./right-dock/detail.css";
+@import "./right-dock/view-host.css";
+@import "./right-dock/section-header.css";
+
+/* ── DAG 画布（lib/runtime-bridge/dag/） ────────────────────── */
+@import "./dag/view-host.css";
+@import "./dag/dag-flash.css";
+@import "./dag/graph/canvas.css";
+@import "./dag/graph/edges.css";
+@import "./dag/graph/nodes.css";
+@import "./dag/graph/badges.css";
+@import "./dag/panels/tooltip.css";
+@import "./dag/panels/inspector.css";
+@import "./dag/panels/legend.css";
+@import "./dag/panels/tools.css";

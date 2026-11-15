@@ -21,21 +21,17 @@ def meta_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _set_test_home(monkeypatch, home)
     monkeypatch.delenv("OPENPROGRAM_PROFILE", raising=False)
 
-    import openprogram.paths as paths
-    import openprogram.webui as compatibility_webui
-    from openprogram.webui import server
-    from openprogram.webui.routes.files import tree
+    import openprogram.state.paths as paths
+    from openprogram.programs._host import meta_storage
+    from openprogram.interfaces.server import server
+    from openprogram.interfaces.server.routes.files import tree
 
     monkeypatch.setattr(paths, "_migration_checked", True)
-    monkeypatch.setattr(
-        compatibility_webui,
-        "__file__",
-        str(legacy_dir / "__init__.py"),
-    )
+    monkeypatch.setattr(meta_storage, "_legacy_directory", lambda: legacy_dir)
     monkeypatch.setattr(
         server,
         "__file__",
-        str(tmp_path / "apps/server/openprogram_server/server.py"),
+        str(tmp_path / "openprogram/interfaces/server/server.py"),
     )
     app = FastAPI()
     tree.register(app)
@@ -51,20 +47,20 @@ def test_program_meta_is_profile_scoped_and_never_written_to_package(
 
     response = client.post(
         "/api/programs/meta",
-        json={"favorites": ["research_agent"], "icons": {}},
+        json={"favorites": ["demo_agent"], "icons": {}},
     )
 
     assert response.status_code == 200
     alpha_path = home / ".openprogram-alpha" / "programs_meta.json"
     assert json.loads(alpha_path.read_text(encoding="utf-8"))["favorites"] == [
-        "research_agent"
+        "demo_agent"
     ]
     assert not (legacy_dir / "programs_meta.json").exists()
 
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "beta")
     assert client.get("/api/programs/meta").json()["favorites"] == []
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "alpha")
-    assert client.get("/api/programs/meta").json()["favorites"] == ["research_agent"]
+    assert client.get("/api/programs/meta").json()["favorites"] == ["demo_agent"]
 
 
 def test_default_profile_copies_legacy_tool_profiles_into_state(meta_app):
@@ -86,28 +82,18 @@ def test_default_profile_copies_legacy_tool_profiles_into_state(meta_app):
     assert legacy.exists()
 
 
-def test_program_meta_migrates_application_directory_favorites(meta_app):
+def test_program_meta_drops_the_retired_gui_agent_favorite(meta_app):
     client, home, _ = meta_app
-    legacy_names = [
-        "gui_harness",
-        "research_harness",
-        "wiki_agent_harness",
-        "gui_agent",
-    ]
     assert client.post(
         "/api/programs/meta",
-        json={"favorites": legacy_names, "icons": {}},
+        json={"favorites": ["demo_agent", "gui_agent"], "icons": {}},
     ).status_code == 200
 
-    assert client.get("/api/programs/meta").json()["favorites"] == [
-        "gui_agent",
-        "research_agent",
-        "wiki_agent",
-    ]
+    assert client.get("/api/programs/meta").json()["favorites"] == ["demo_agent"]
     stored = json.loads(
         (home / ".openprogram" / "programs_meta.json").read_text(encoding="utf-8")
     )
-    assert stored["favorites"] == ["gui_agent", "research_agent", "wiki_agent"]
+    assert stored["favorites"] == ["demo_agent"]
 
 
 def test_toolset_resolution_reads_the_active_profile_state(
@@ -117,7 +103,7 @@ def test_toolset_resolution_reads_the_active_profile_state(
     home = tmp_path / "home"
     _set_test_home(monkeypatch, home)
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "runtime")
-    import openprogram.paths as paths
+    import openprogram.state.paths as paths
 
     monkeypatch.setattr(paths, "_migration_checked", True)
     state = home / ".openprogram-runtime"
@@ -139,15 +125,20 @@ def test_failed_meta_write_keeps_the_previous_complete_file(
     home = tmp_path / "home"
     _set_test_home(monkeypatch, home)
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "atomic")
-    import openprogram.paths as paths
-    from openprogram.programs.meta_storage import PROGRAMS_META, save_meta
+    import openprogram.state.paths as paths
+    from openprogram.programs._host.meta_storage import PROGRAMS_META, save_meta
 
     monkeypatch.setattr(paths, "_migration_checked", True)
     save_meta(PROGRAMS_META, {"favorites": ["old"]})
     state = home / ".openprogram-atomic"
     target = state / PROGRAMS_META
 
+    original_write_text = Path.write_text
+
     def partial_then_fail(self: Path, data: str, **kwargs):
+        # Only writes into this profile fail; other callers keep working.
+        if not self.is_relative_to(state):
+            return original_write_text(self, data, **kwargs)
         with self.open("w", encoding="utf-8") as handle:
             handle.write(data[:8])
         raise OSError("write interrupted")

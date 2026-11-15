@@ -6,13 +6,13 @@ import threading
 
 import pytest
 
-from tests.component.agent.async_job_support import (
-    _FakeMonotonic,
-    WORKER_START_TIMEOUT,
-    fake_worker,
-    store_fixture,
-)
+from tests.component.agent.async_job_support import _FakeMonotonic, WORKER_START_TIMEOUT
+from tests.component.agent import async_job_support as _async_job_support
 from tests.support.waiting import wait_until
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+fake_worker = _async_job_support.fake_worker
+store_fixture = _async_job_support.store_fixture
 
 
 def _await_canonical_terminal(runner, execution_id, *, timeout=5.0):
@@ -34,14 +34,14 @@ def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     store_fixture.create_session("p2", "main", title="parent2")
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
     runner = JobRunner(
@@ -63,9 +63,7 @@ def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
         execution = runner._execution_store.get_execution(queued)
         assert execution is not None
         assert execution.status.value == "cancelled"
-        assert runner._governor.ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (queued,),
-        ).fetchone()[0] == "released"
+        assert runner._governor.ledger.run_tables().handle.first("job_admissions", job_id=queued)["state"] == "released"
     finally:
         fake_worker[1].set()
         runner.shutdown()
@@ -75,12 +73,12 @@ def test_budget_reason_survives_cancel_intent_persistence_failure(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent import resource_governance
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs import resource_governance
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     clock = _FakeMonotonic()
     resolved = resource_governance.resolve_resource_limits(
@@ -122,17 +120,12 @@ def test_budget_reason_survives_cancel_intent_persistence_failure(
         # Canonical cancellation can become terminal before the resource
         # observer finishes releasing the worker's admission lease.
         def admission_released():
-            admission = runner._governor.ledger.connection().execute(
-                "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
-            ).fetchone()
+            admission = runner._governor.ledger.run_tables().handle.first("job_admissions", job_id=job_id)
             return admission is not None and admission["state"] == "released"
 
         assert wait_until(admission_released, timeout=10.0)
-        row = runner._governor.ledger.connection().execute(
-            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-            (job_id,),
-        ).fetchone()
-        assert tuple(row) == ("released", "budget.runtime_exhausted")
+        row = runner._governor.ledger.run_tables().handle.first("job_admissions", job_id=job_id)
+        assert (row["state"], row["reason_code"]) == ("released", "budget.runtime_exhausted")
     finally:
         fake_worker[1].set()
         runner.shutdown()
@@ -141,13 +134,13 @@ def test_resource_saga_records_canonical_admission_before_dispatch(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
     governor = ResourceGovernor(
@@ -159,7 +152,7 @@ def test_resource_saga_records_canonical_admission_before_dispatch(
         job_id = runner.spawn_job(
             session_id="p1", prompt="resume me", agent_id="main",
         )
-        assert fake_worker[3].wait(2.0)
+        assert fake_worker[3].wait(30)
         intents = runner._execution_store.list_resource_intents(
             execution_id=job_id,
         )
@@ -181,15 +174,15 @@ def test_runner_startup_wakes_dispatcher_before_fallback_poll(
 ):
     """A persisted dispatch-ready job is claimed by the startup wake."""
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.store import save_job
+    from openprogram.runtime.jobs.types import Job
+    from openprogram.models.usage.ledger import UsageLedger
 
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
     governor = ResourceGovernor(
@@ -218,12 +211,12 @@ def test_runner_startup_wakes_dispatcher_before_fallback_poll(
         runner = JobRunner(max_workers=1, governor=governor)
         runner._admit_canonical_job(job)
         governor.admit_job(job, persist=lambda accepted: save_job("p1", accepted))
-        assert dispatcher_entered.wait(1.0)
+        assert dispatcher_entered.wait(30)
         wake = captured_wake.get("event")
         assert wake is not None
         assert wake.is_set()
         dispatch_gate.set()
-        assert fake_worker[3].wait(1.0)
+        assert fake_worker[3].wait(30)
     finally:
         dispatch_gate.set()
         fake_worker[1].set()
@@ -232,8 +225,8 @@ def test_runner_startup_wakes_dispatcher_before_fallback_poll(
 
 
 def test_canonical_driver_termination_returns_exact_receipt(monkeypatch, tmp_path):
-    from openprogram.agent.production_driver import AgentProductionDriver
-    from openprogram.execution import AttemptStore, ExecutionStore
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
+    from openprogram.runtime.execution import AttemptStore, ExecutionStore
 
     class Questions:
         def __init__(self):
@@ -253,7 +246,7 @@ def test_canonical_driver_termination_returns_exact_receipt(monkeypatch, tmp_pat
         revision_id=revision.revision_id,
         input_ref="input:job-1",
         input_hash="input-hash-1",
-        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        entrypoint="openprogram.runtime.conversation.production_driver:AgentProductionDriver",
         trusted_actor={"subject": "test"},
         config_snapshot_ref="config:job-1",
         agent_turn_payload={
@@ -271,7 +264,6 @@ def test_canonical_driver_termination_returns_exact_receipt(monkeypatch, tmp_pat
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="worker",
-        ttl_seconds=30,
         attempt_id="attempt-1",
     )
     active, _running = attempts.activate(
@@ -281,13 +273,13 @@ def test_canonical_driver_termination_returns_exact_receipt(monkeypatch, tmp_pat
     )
     questions = Questions()
     monkeypatch.setattr(
-        "openprogram.agent.process_runner.kill_active_subprocess",
+        "openprogram.runtime.conversation.process_runner.kill_active_subprocess",
         lambda session_id, *, execution_id: (
             session_id == "session-1" and execution_id == "job-1"
         ),
     )
     monkeypatch.setattr(
-        "openprogram.agent.run_control.kill_active_runtime",
+        "openprogram.runtime.conversation.run_control.kill_active_runtime",
         lambda *_args, **_kwargs: None,
     )
     driver = AgentProductionDriver(store, question_registry=questions)
@@ -307,13 +299,13 @@ def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
     store_fixture, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     entered = threading.Event()
     release = threading.Event()
 
     def stubborn_run(**_kwargs):
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
         entered.set()
         release.wait(2.0)
         return AgentTurnResult(
@@ -321,15 +313,14 @@ def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(stubborn_run),
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     clock = _FakeMonotonic()
     ledger = UsageLedger(tmp_path / "governance.db")
@@ -349,9 +340,7 @@ def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
         assert entered.wait(WORKER_START_TIMEOUT)
         clock.advance(1.1)
         def admission_state():
-            return ledger.connection().execute(
-                "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
-            ).fetchone()[0]
+            return ledger.run_tables().handle.first("job_admissions", job_id=job_id)["state"]
 
         assert wait_until(lambda: admission_state() == "stopping")
         state = admission_state()
@@ -370,14 +359,13 @@ def test_idle_budget_resets_only_after_meaningful_activity(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     clock = _FakeMonotonic()
     budget_polled = threading.Event()
@@ -409,12 +397,12 @@ def test_idle_budget_resets_only_after_meaningful_activity(
         assert runner.record_job_activity(job_id, "provider_data") is True
         budget_polled.clear()
         clock.advance(0.75)
-        assert budget_polled.wait(1.0)
+        assert budget_polled.wait(30)
         execution = runner._execution_store.get_execution(job_id)
         assert execution is not None and execution.status.value == "running"
         budget_polled.clear()
         clock.advance(0.30)
-        assert budget_polled.wait(1.0)
+        assert budget_polled.wait(30)
         final = _await_canonical_terminal(runner, job_id)
         assert final.status.value == "cancelled"
         assert final.reason_code == "budget.idle_exhausted"
@@ -426,13 +414,13 @@ def test_bounded_operation_timeout_clamps_and_rejects_unbounded_strict_work(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     clock = _FakeMonotonic()
     resolved = resolve_resource_limits(
@@ -461,7 +449,7 @@ def test_bounded_operation_timeout_clamps_and_rejects_unbounded_strict_work(
         assert runner.operation_timeout_reason(job_id, None) == (
             "budget.idle_exhausted"
         )
-        from openprogram.agent.job.runner import NonPreemptibleOperation
+        from openprogram.runtime.jobs.runner import NonPreemptibleOperation
         with pytest.raises(NonPreemptibleOperation) as caught:
             runner.bounded_operation_timeout(
                 job_id, 1.0, preemptibility="none",

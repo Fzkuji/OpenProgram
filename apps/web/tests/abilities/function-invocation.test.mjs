@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { parseHTML } from "linkedom";
@@ -81,6 +81,9 @@ setSocket({
   send(payload) { wsFrames.push(JSON.parse(payload)); },
 });
 
+const { disposeSessionLoads } = await import("../../lib/runtime-bridge/session/session-load.ts");
+after(() => disposeSessionLoads(runtimeState.ws));
+
 const guiAgent = {
   name: "gui_agent",
   description: "GUI agent",
@@ -136,20 +139,19 @@ const {
   parseFunctionInvocation,
   userFunctionParams,
 } = await import("../../lib/execution/function-invocation.ts");
-const pendingUserText = await import("../../lib/chat/pending-user-text.ts");
+const pendingUserText = await import("../../lib/chat/send/pending-user-text.ts");
 const { useSessionStore } = await import("../../lib/session-store/index.ts");
 const {
   handleRunningTaskClear,
   wsHandleChatAck,
   wsHandleChatResponse,
-  settleFunctionReloadAfterSessionLoad,
 } = await import(
-  "../../lib/runtime-bridge/chat-handlers.ts"
+  "../../lib/runtime-bridge/session/chat-handlers.ts"
 );
 const {
   draftChannelChoiceHost,
   setDraftChannelChoice,
-} = await import("../../lib/runtime-bridge/draft-channel-choice.ts");
+} = await import("../../lib/runtime-bridge/actions/draft-channel-choice.ts");
 
 async function submitThroughComposer(input, sessionKey, overrides = {}) {
   let hook;
@@ -187,12 +189,9 @@ async function submitThroughComposer(input, sessionKey, overrides = {}) {
       pendingDocs: overrides.pendingDocs ?? [],
       clearAttachmentsAfterSubmit() {},
       thinking: "medium",
-      toolsEnabled: true,
-      toolsProfile: "__agent__",
       webSearchEnabled: false,
       fastEnabled: false,
       fastSupported: false,
-      runningMessageMode: "queue",
       dispatchFunction,
     });
     return null;
@@ -227,18 +226,16 @@ function releaseChatReservation(sessionKey) {
 const exact =
   'gui_agent(task="Verify title", surface="browser", max_steps=3, max_seconds=90)';
 
-test("Goal explicit limits and role settings reach function dispatch unchanged", async () => {
+function bodyWithoutRequestId(raw) {
+  const { client_request_id: requestId, ...body } = JSON.parse(raw);
+  assert.equal(typeof requestId, "string");
+  return body;
+}
+
+test("Goal form dispatches only its objective", async () => {
   const goal = {
     name: "goal",
-    params_detail: [
-      { name: "prompt", type: "str", required: true },
-      ...["max_rounds", "max_tokens"].map(name => ({ name, type: "int | None", hidden: true, advanced: true })),
-      ...["max_elapsed_s", "max_cost_usd", "timeout_s", "judge_timeout_s"].map(name => ({ name, type: "float | None", hidden: true, advanced: true })),
-      ...["model", "effort", "judge_model", "judge_effort", "context_mode"].map(name => ({ name, type: "str", hidden: true, advanced: true })),
-      { name: "resume", type: "bool", hidden: true },
-      { name: "expected_goal", type: "dict | None", hidden: true },
-      { name: "runtime", type: "Runtime", hidden: true },
-    ],
+    params_detail: [{ name: "prompt", type: "str", required: true }],
   };
   const sessionKey = "local_goal_explicit_controls";
   runtimeState.availableFunctions = [goal];
@@ -246,21 +243,12 @@ test("Goal explicit limits and role settings reach function dispatch unchanged",
   resetObservations();
   nextHttpResponse = { ok: true, status: 200, payload: { session_id: sessionKey } };
   try {
-    await submitThroughComposer(
-      'goal(prompt="write an article", max_rounds=5, max_elapsed_s=600, timeout_s=120, judge_model="reviewer:model", judge_timeout_s=90)',
-      sessionKey,
-    );
+    await submitThroughComposer('goal(prompt="write an article")', sessionKey);
     assert.equal(wsFrames.some(frame => frame.action === "chat"), false);
     assert.equal(httpCalls.length, 1);
     assert.equal(httpCalls[0].url, "/api/function/goal");
-    assert.deepEqual(JSON.parse(httpCalls[0].init.body).kwargs, {
-      prompt: "write an article", max_rounds: 5, max_elapsed_s: 600,
-      timeout_s: 120, judge_model: "reviewer:model", judge_timeout_s: 90,
-    });
-    assert.deepEqual(normalizeFunctionArguments(goal, { prompt: "write", max_rounds: "5", timeout_s: "120" }), {
-      ok: true, kwargs: { prompt: "write", max_rounds: 5, timeout_s: 120 },
-    });
-    for (const argument of ['resume=True', 'runtime="secret"', 'expected_goal=None', 'max_rounds="wrong"']) {
+    assert.deepEqual(JSON.parse(httpCalls[0].init.body).kwargs, { prompt: "write an article" });
+    for (const argument of ["max_rounds=5", "resume=True", 'judge_model="reviewer:model"']) {
       assert.equal(parseFunctionInvocation(`goal(prompt="write", ${argument})`, [goal]).kind, "invalid");
     }
   } finally {
@@ -285,7 +273,7 @@ test("an exact registered function expression dispatches as a function", async (
   assert.equal(pendingUserText.getPendingUserText(sessionKey), undefined);
   assert.equal(httpCalls.length, 1);
   assert.equal(httpCalls[0].url, "/api/function/gui_agent");
-  assert.deepEqual(JSON.parse(httpCalls[0].init.body), {
+  assert.deepEqual(bodyWithoutRequestId(httpCalls[0].init.body), {
     kwargs: {
       task: "Verify title",
       surface: "browser",
@@ -330,52 +318,6 @@ test("a successful response without a session id rolls back the direct run", asy
     ),
     false,
   );
-});
-
-test("a function completion never reloads a session left in the background", () => {
-  const sessionKey = "function-background-after-dispatch";
-  const previousRuntimeSession = runtimeState.currentSessionId;
-  resetObservations();
-  runtimeState.currentSessionId = "different-session";
-  runtimeState.__reloadOnTaskClear.clear();
-  runtimeState.__reloadOnTaskClear.add(sessionKey);
-
-  assert.equal(handleRunningTaskClear(sessionKey, { force: true }), true);
-  assert.equal(runtimeState.__reloadOnTaskClear.size, 0);
-  assert.deepEqual(wsFrames, []);
-
-  runtimeState.currentSessionId = previousRuntimeSession;
-});
-
-test("only a terminal head clears a late completion reload", () => {
-  const sessionKey = "function-clear-before-http-response";
-  runtimeState.__reloadOnTaskClear.clear();
-  runtimeState.__reloadOnTaskClear.add(sessionKey);
-
-  settleFunctionReloadAfterSessionLoad(sessionKey, "running");
-  assert.equal(runtimeState.__reloadOnTaskClear.has(sessionKey), true);
-  settleFunctionReloadAfterSessionLoad(sessionKey, "completed");
-  assert.equal(runtimeState.__reloadOnTaskClear.has(sessionKey), false);
-});
-
-test("function completion reloads are tracked independently per session", () => {
-  const previousRuntimeSession = runtimeState.currentSessionId;
-  resetObservations();
-  runtimeState.__reloadOnTaskClear.clear();
-  runtimeState.__reloadOnTaskClear.add("function-session-a");
-  runtimeState.__reloadOnTaskClear.add("function-session-b");
-  runtimeState.currentSessionId = "function-session-a";
-
-  handleRunningTaskClear("function-session-a", { force: true });
-
-  assert.deepEqual(wsFrames, [{
-    action: "load_session",
-    session_id: "function-session-a",
-  }]);
-  assert.equal(runtimeState.__reloadOnTaskClear.has("function-session-a"), false);
-  assert.equal(runtimeState.__reloadOnTaskClear.has("function-session-b"), true);
-  runtimeState.__reloadOnTaskClear.clear();
-  runtimeState.currentSessionId = previousRuntimeSession;
 });
 
 test("explanatory text remains a chat message", async () => {
@@ -465,13 +407,10 @@ test("a bound function call does not mark or navigate the focused session", asyn
   const focusedSession = "focused-A";
   const boundSession = "bound-B";
   const previousRuntimeSession = runtimeState.currentSessionId;
-  const previousReloads = [...runtimeState.__reloadOnTaskClear];
   const store = useSessionStore.getState();
   store.setRunningTaskFor(focusedSession, null);
   store.setRunningTaskFor(boundSession, null);
   runtimeState.currentSessionId = focusedSession;
-  runtimeState.__reloadOnTaskClear.clear();
-  runtimeState.__reloadOnTaskClear.add(focusedSession);
   resetObservations();
   nextHttpResponse = {
     ok: true,
@@ -495,13 +434,8 @@ test("a bound function call does not mark or navigate the focused session", asyn
     dispatchFrames.some((frame) => frame.action === "load_session"),
     false,
   );
-  assert.deepEqual([...runtimeState.__reloadOnTaskClear], [focusedSession]);
   releaseChatReservation(boundSession);
   runtimeState.currentSessionId = previousRuntimeSession;
-  runtimeState.__reloadOnTaskClear.clear();
-  for (const sessionId of previousReloads) {
-    runtimeState.__reloadOnTaskClear.add(sessionId);
-  }
 });
 
 test("a failed bound function call rolls back only its own session", async () => {
@@ -551,7 +485,7 @@ test("a successful function response binds channel and project before navigation
     draftSession,
   );
 
-  assert.deepEqual(JSON.parse(httpCalls[0].init.body), {
+  assert.deepEqual(bodyWithoutRequestId(httpCalls[0].init.body), {
     kwargs: {
       task: "Verify title",
       surface: "browser",
@@ -579,13 +513,8 @@ test("a successful function response binds channel and project before navigation
     },
   ]);
   assert.deepEqual(activatedSessions, [createdSession]);
-  assert.equal(runtimeState.__reloadOnTaskClear.has(createdSession), true);
   assert.equal(handleRunningTaskClear(createdSession, { force: true }), true);
-  assert.deepEqual(wsFrames, [{
-    action: "load_session",
-    session_id: createdSession,
-  }]);
-  assert.equal(runtimeState.__reloadOnTaskClear.has(createdSession), false);
+  assert.deepEqual(wsFrames.filter((frame) => frame.action === "load_session"), []);
   assert.equal(
     useSessionStore.getState().pendingProjectsByChat[draftSession],
     undefined,
@@ -783,7 +712,7 @@ test("hidden advanced parameters are user-visible but internal parameters are no
 
 
 test("real retry handlers settle accepted and rejected dispatches", async (t) => {
-  const { startFunctionRetry } = await import("../../lib/runtime-bridge/function-retry.ts");
+  const { startFunctionRetry } = await import("../../lib/runtime-bridge/actions/function-retry.ts");
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   const observed = [];
   function begin(id) {

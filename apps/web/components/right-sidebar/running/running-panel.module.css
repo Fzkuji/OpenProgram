@@ -1,0 +1,80 @@
+.panel { display: flex; flex-direction: column; min-height: 0; height: 100%; color: var(--text); font-size: var(--right-panel-text-size, var(--fs-sm)); line-height: var(--right-panel-line-height, 1.5); font-family: var(--font-sans); }
+/* A page over the overview. It is the sidebar's own surface, so it covers
+   what it slides over, with a hairline on the edge that leads; use-page-slide.ts
+   writes where it is. */
+.page { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; min-height: 0; background: var(--color-sidebar); box-shadow: -1px 0 0 var(--border); }
+.notice { margin: 0; padding: 0 16px 12px; color: var(--text-secondary); font-size: var(--right-panel-meta-size, var(--fs-sm)); }
+.error { margin: 8px; color: var(--accent-red); font-size: var(--right-panel-meta-size, var(--fs-sm)); }
+/* The view host already leaves 12px under the nav; the first label adds
+   4px so it sits 16px below the nav like every other section label. */
+.scroll > :first-child > .sectionHeader { padding-top: 4px; }
+
+/* A row: bare glyph, name over a status line, a chevron. No frame at rest;
+   hover lifts it into the raised card the file cards use. */
+.row { display: flex; align-items: center; gap: 10px; width: 100%; height: auto; min-height: var(--ui-button-h); padding: 7px 8px; border: 0; border-radius: var(--ui-list-radius); justify-content: flex-start; font: inherit; font-weight: 400; line-height: 1.4; color: inherit; text-align: left; cursor: pointer; transition: box-shadow var(--motion-medium), background-color var(--motion-medium); }
+.panel .row { position: relative; z-index: 1; }
+/* The panel is the input surface itself, so the lifted card is tinted a
+   step toward the text colour to show its edge. */
+.row:hover { background: var(--row-raised-bg); box-shadow: var(--composer-shadow-focus); color: inherit; }
+.row:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--text-bright); }
+.current { flex: none; padding: 0 6px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--accent-blue) 14%, transparent); color: color-mix(in srgb, var(--accent-blue) 80%, var(--text-primary)); font-size: var(--fs-2xs); font-weight: 400; line-height: 1.6; }
+/* A program's command under its title. */
+.sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-2xs); line-height: 1.45; }
+.chevron { flex: none; color: var(--text-muted); }
+
+/* The kind's colour, as on the chat timeline's tool rows. */
+.glyph { flex: none; width: 18px; height: 18px; display: grid; place-items: center; color: var(--tool-tone-function); }
+/* Agents: the sidebar folders' colour and icon family, a size up. */
+.agentGlyph { flex: none; width: 22px; height: 22px; display: grid; place-items: center; color: var(--folder-color); }
+.agentGlyph[data-small] { width: 18px; height: 18px; }
+/* The row button shrinks unsized svgs to 1rem; an unlayered rule outranks it. */
+.agentGlyph svg { width: 22px; height: 22px; }
+/* Programs: the agents' size, so the two lists line up. */
+.glyph[data-large] { width: 22px; height: 22px; }
+.glyph[data-large] svg { width: 22px; height: 22px; }
+.agentGlyph[data-small] svg { width: 16px; height: 16px; }
+.glyph[data-tone="run"] { color: var(--text-secondary); }
+.glyph[data-tone="shell"] { color: var(--tool-tone-shell); }
+.glyph[data-tone="agent"] { color: var(--tool-tone-agent); }
+.glyph[data-tone="edit"] { color: var(--tool-tone-edit); }
+.glyph[data-tone="read"] { color: var(--tool-tone-read); }
+.glyph[data-tone="search"] { color: var(--tool-tone-search); }
+.glyph[data-tone="web"] { color: var(--tool-tone-web); }
+.glyph[data-tone="memory"] { color: var(--tool-tone-memory); }
+.glyph[data-tone="plan"] { color: var(--tool-tone-plan); }
+.glyph[data-tone="media"] { color: var(--tool-tone-media); }
+.glyph[data-tone="system"] { color: var(--tool-tone-system); }
+
+.status { display: flex; align-items: center; gap: 2px; min-width: 0; font-size: var(--right-panel-meta-size, var(--fs-xs)); color: var(--text-secondary); }
+.statusText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status[data-tone="warn"] { color: color-mix(in srgb, var(--accent-yellow) 85%, var(--text-primary)); }
+.status[data-tone="err"] { color: var(--accent-red); }
+.status :global(.indicator-dot.is-muted) { --dot-color: var(--text-muted); }
+
+.countBadge { position: absolute; top: -5px; right: -7px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--radius-md); background: var(--accent-red); color: var(--ink-on-fill); font-size: var(--fs-2xs); line-height: 15px; text-align: center; box-shadow: 0 0 0 2px var(--color-sidebar); pointer-events: none; }
+.status[data-tone="run"] { color: var(--accent-blue); }
+
+/* ---- Agents roster: the rows under an agent ---- */
+/* The agent's row is a disclosure: its open state is the chevron, not a fill. */
+.row[aria-expanded]:not(:hover) { background: transparent; }
+.disclosure { flex: none; display: grid; place-items: center; width: 14px; height: 14px; color: var(--text-secondary); cursor: pointer; }
+.disclosure svg, .finishedChevron svg { width: 14px; height: 14px; }
+.row:hover .disclosure, .row:focus-visible .disclosure { color: var(--text-primary); }
+/* A helper: avatar, name, status badge, cost at the right edge. */
+.agentRow { display: flex; align-items: center; gap: 8px; width: 100%; height: auto; min-height: var(--ui-button-h); padding: 5px 8px 5px calc(8px + var(--indent, 0px)); border: 0; border-radius: var(--ui-list-radius); justify-content: flex-start; font: inherit; font-weight: 400; line-height: 1.4; color: inherit; text-align: left; cursor: pointer; transition: box-shadow var(--motion-medium), background-color var(--motion-medium); }
+.panel .agentRow { position: relative; z-index: 1; }
+.agentRow:hover { background: var(--row-raised-bg); box-shadow: var(--composer-shadow-focus); color: inherit; }
+.agentRow[aria-expanded]:not(:hover) { background: transparent; }
+/* Buttons draw no focus ring (base/focus.css); a row reached with the
+   keyboard takes the hover fill, so Left and Right show where they act. */
+.agentRow:focus-visible, .row[aria-expanded]:focus-visible { background: var(--row-raised-bg); }
+.agentRow .agentGlyph { width: 20px; height: 20px; }
+.agentRow .agentGlyph svg { width: 20px; height: 20px; }
+.agentRow[data-outgoing] .name { color: var(--text-secondary); }
+.arrow { color: var(--text-muted); }
+.cost { flex: none; margin-left: auto; font-size: var(--right-panel-meta-size, var(--fs-xs)); color: var(--text-secondary); }
+.finishedChevron { flex: none; display: grid; place-items: center; width: 20px; height: 20px; color: var(--text-muted); }
+.finishedLabel { color: var(--text-secondary); font-size: var(--right-panel-meta-size, var(--fs-xs)); }
+/* The group's total after its name. */
+.sum { color: var(--text-muted); }

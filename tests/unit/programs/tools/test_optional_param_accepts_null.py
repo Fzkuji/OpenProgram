@@ -8,9 +8,8 @@ Applies to EVERY tool, not just agent.
 """
 from __future__ import annotations
 
-from typing import Optional
 
-from openprogram.programs._runtime import (
+from openprogram.programs._host.runtime import (
     _build_parameters_schema,
     _allow_null,
     _widen_optionals_to_null,
@@ -108,17 +107,16 @@ def test_allow_null_oneof_adds_null_variant():
     assert any(v.get("type") == "null" for v in out["oneOf"])
 
 
-# ── object schemas get additionalProperties:false (OpenAI strict) ──
+# Declared fields remain closed; anonymous objects retain dynamic keys.
 
 def test_object_type_closed():
     out = _close_objects({"type": "object", "properties": {}})
     assert out["additionalProperties"] is False
 
 
-def test_object_or_null_closed():
-    # get_mcp_prompt.arguments is ["object","null"] — must still be closed.
+def test_anonymous_object_or_null_remains_mapping():
     out = _close_objects({"type": ["object", "null"]})
-    assert out["additionalProperties"] is False
+    assert out["additionalProperties"] is True
 
 
 def test_nested_object_closed():
@@ -140,24 +138,48 @@ def test_close_objects_idempotent():
     assert _close_objects(once) == once
 
 
-def test_get_mcp_prompt_arguments_closed():
+def test_get_mcp_prompt_arguments_retain_dynamic_keys():
     from openprogram.programs import agent_tools
     t = next((x for x in agent_tools(toolset="full") if x.name == "get_mcp_prompt"), None)
     assert t is not None
     args = t.parameters["properties"]["arguments"]
-    assert args.get("additionalProperties") is False
+    assert args.get("additionalProperties") == {}  # dict[str, Any] values remain free-form.
 
 
-# ── the actual bug: the agent tool's agent_id ──
+# ── the actual bug: the agent tool's optional saved-Agent parameter ──
+# (named ``agent``; ``agent_id`` is its older name, accepted but not advertised)
 
-def test_agent_tool_agent_id_accepts_null():
+def test_agent_tool_agent_param_accepts_null():
     from openprogram.programs import agent_tools
     tool = next((t for t in agent_tools(toolset="full") if t.name == "agent"), None)
     assert tool is not None, "agent tool must be registered"
     params = tool.parameters
     assert params, "agent tool must expose a parameters schema"
     props = params["properties"]
-    assert "agent_id" in props
-    assert _accepts_null(props["agent_id"]), props["agent_id"]
-    # agent_id is optional → not in required
-    assert "agent_id" not in params.get("required", [])
+    assert "agent" in props
+    assert _accepts_null(props["agent"]), props["agent"]
+    # optional → not in required
+    assert "agent" not in params.get("required", [])
+
+
+# The Codex backend fails a request whose type list with "null" describes an
+# object with declared fields or an array of them; such optionals use anyOf.
+
+def test_allow_null_object_with_fields_uses_any_of():
+    steps = {"type": "array", "description": "steps",
+             "items": {"type": "object", "properties": {"x": {"type": "number"}}}}
+    out = _allow_null(steps)
+    assert out == {"anyOf": [{"type": "array", "items": steps["items"]}, {"type": "null"}], "description": "steps"}
+    assert _allow_null(out) == out
+    assert _allow_null({"type": "object", "properties": {}})["anyOf"][1] == {"type": "null"}
+
+
+def test_allow_null_free_form_object_keeps_type_list():
+    assert _allow_null({"type": "object"})["type"] == ["object", "null"]
+    assert _allow_null({"type": "array", "items": {"type": "string"}})["type"] == ["array", "null"]
+
+
+def test_gemini_folds_a_nullable_union_back_into_its_schema():
+    from openprogram.models.providers.schema.dialects import gemini_openapi
+    out = gemini_openapi(_allow_null({"type": "object", "properties": {"x": {"type": "number"}}}))
+    assert out == {"type": "object", "properties": {"x": {"type": "number"}}, "nullable": True}

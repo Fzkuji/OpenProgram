@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.execution import EventCursor, JobResourceDTO
+from openprogram.runtime.execution import EventCursor, JobResourceDTO
 
 
 def _view(
@@ -124,7 +124,7 @@ class _Runner:
     ],
 )
 def test_job_resource_commands_parse(argv: list[str], verb: str) -> None:
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     args = build_parser().parse_args(argv)
 
@@ -134,7 +134,7 @@ def test_job_resource_commands_parse(argv: list[str], verb: str) -> None:
 
 @pytest.mark.parametrize("verb", ["pause", "continue", "step", "cancel"])
 def test_execution_control_commands_parse(verb: str) -> None:
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     args = build_parser().parse_args([
         "execution", verb, "job-1", "--expected-version", "3",
@@ -149,8 +149,8 @@ def test_subagent_list_json_is_a_list_of_canonical_views(
     monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
     runner = _Runner(_view())
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram.cli.commands.subagent import _cmd_subagent_list
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
+    from openprogram.interfaces.cli.commands.subagent import _cmd_subagent_list
 
     assert _cmd_subagent_list("session-1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == [_view()]
@@ -160,8 +160,8 @@ def test_subagent_show_json_is_the_canonical_view(
     monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
     runner = _Runner(_view())
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram.cli.commands.subagent import _cmd_subagent_show
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
+    from openprogram.interfaces.cli.commands.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == _view()
@@ -187,7 +187,7 @@ def test_execution_control_sends_canonical_command_and_cursor(
             "event_cursor": canonical["event_cursor"],
         }
 
-    from openprogram.cli.commands import execution
+    from openprogram.interfaces.cli.commands import execution
 
     monkeypatch.setattr(execution, "_worker_request", worker_request)
     assert execution._cmd_execution_control(
@@ -217,8 +217,8 @@ def test_subagent_human_view_shows_canonical_resource_payload(
     monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
     runner = _Runner(_view())
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram.cli.commands.subagent import _cmd_subagent_show
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
+    from openprogram.interfaces.cli.commands.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=False) == 0
     output = capsys.readouterr().out
@@ -241,8 +241,8 @@ def test_subagent_human_view_treats_missing_resource_as_unmetered(
             return SimpleNamespace(id=job_id, status="running")
 
     runner = LegacyRunner(_view())
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
-    from openprogram.cli.commands.subagent import _cmd_subagent_show
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
+    from openprogram.interfaces.cli.commands.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=False) == 0
     assert "Resource state: untracked" in capsys.readouterr().out

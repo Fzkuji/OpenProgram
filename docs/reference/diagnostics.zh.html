@@ -1,0 +1,34 @@
+<title>诊断包</title>
+<meta name="description" content="openprogram diagnostics 在问题报告 zip 里放了什么，以及会移除哪些凭据。">
+<h1>诊断包</h1>
+
+<pre translate="no"><code>openprogram diagnostics                           # ./openprogram-diagnostics-&lt;date&gt;.zip
+openprogram diagnostics --output /tmp/report.zip</code></pre>
+<p class="note">命令会打印写入的文件。</p>
+
+<h2>内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">version.json</code></th><td>OpenProgram 和 Python 版本、Python 可执行文件、平台、机器</td></tr>
+<tr><th scope="row"><code translate="no">config.json</code></th><td>你的 <code translate="no">config.json</code>，形似凭据的值已替换</td></tr>
+<tr><th scope="row"><code translate="no">credentials.json</code></th><td>有凭据的 provider 及账户数，只有名称和数量</td></tr>
+<tr><th scope="row"><code translate="no">environment.json</code></th><td><code translate="no">openprogram doctor</code> 的检查项、Web 构建状态、状态与日志目录权限</td></tr>
+<tr><th scope="row"><code translate="no">logs/worker.log</code>、<code translate="no">logs/runtime.log</code>、<code translate="no">logs/ink-startup.log</code></th><td>各自最后 2000 行，已脱敏；日志不存在则没有</td></tr>
+<tr><th scope="row"><code translate="no">manifest.json</code></th><td>每个文件、来源和大小</td></tr>
+</tbody>
+</table>
+
+<h2>移除的内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层</th><th scope="col">替换为 <code translate="no">[secret removed]</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">键名</th><td>键名包含 <code translate="no">api_key</code>、<code translate="no">token</code>、<code translate="no">password</code>、<code translate="no">client_secret</code>、<code translate="no">authorization</code>、<code translate="no">cookie</code>、<code translate="no">auth</code>、<code translate="no">credential</code>、<code translate="no">session_id</code> 等，所以 <code translate="no">openai_api_key</code> 和 <code translate="no">github_token</code> 都会命中。整棵子树一起替换。</td></tr>
+<tr><th scope="row">值的形状，文本中任何位置</th><td><code translate="no">sk-</code> 密钥、<code translate="no">Bearer</code> 和 <code translate="no">Basic</code> 请求头、GitHub <code translate="no">ghp_</code> 等令牌、Slack <code translate="no">xox</code> 令牌、AWS access key id、Google <code translate="no">AIza</code> 密钥、JWT、URL 里的凭据</td></tr>
+<tr><th scope="row">凭据文件</th><td>从不读取。<code translate="no">credentials.json</code> 来自列出认证存储下的目录名。</td></tr>
+</tbody>
+</table>
+<p class="note">两层都作用于每个文本文件，包括日志和堆栈。它们无法判断路径、项目名或提示词片段对你是否敏感：贴到公开 issue 前先读一遍 zip。</p>
+
+<p class="next"><a href="cli.zh.html">CLI 参考</a> · <a href="config.zh.html">配置参考</a></p>
+

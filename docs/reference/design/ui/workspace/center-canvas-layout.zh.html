@@ -1,0 +1,264 @@
+<title>中间画布布局</title>
+<meta name="description" content="中间区域如何切分成任意布局：模型、把手、贴靠、窗口总览、动画和持久化。">
+<h1>中间画布布局</h1>
+
+<p>每个布局占一个顶层标签。任何标签内容都能进格子：会话、网页、终端、文件预览、程序视图。格数的实际限制是<a href="#dividers">格子的最小尺寸</a>。浮动窗口归画中画；格子不跨窗口共享。</p>
+
+<h2 id="model">布局树</h2>
+<pre translate="no" tabindex="0">type LayoutNode =
+  | { kind: "pane";  id: string; content: string | null }   // null = empty pane
+  | { kind: "split"; id: string; dir: "row" | "col";
+      children: LayoutNode[]; sizes: number[] };
+
+type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: string };</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">每次修改后规范化</th><td>只有一个子节点的切分用子节点替换；与父节点同向的切分并入父节点，权重相乘；权重重新归一并按最小尺寸夹紧</td></tr>
+<tr><th scope="row">内容</th><td>一个布局里只出现一次</td></tr>
+<tr><th scope="row">迁移</th><td>两格分组变成带原比例的 row 切分</td></tr>
+<tr><th scope="row">空格</th><td>列出标签栏的内容，点一下填入</td></tr>
+<tr><th scope="row">焦点</th><td>只有一格；键盘输入、关闭、贴靠快捷键和右侧栏上下文都跟随它</td></tr>
+<tr><th scope="row">填满</th><td>把一格铺满画布；其他格不卸载，只隐藏</td></tr>
+</tbody>
+</table>
+<p class="note">代码：<code translate="no">apps/web/lib/tabs/canvas/canvas-layout.ts</code>。</p>
+
+<h2 id="pane-grip">格子把手</h2>
+<p>没有常驻工具栏，也没有标题栏。顶部正中一个 <code translate="no">•••</code> 把手，可点范围 88×22px。按下不选中文字，只准备拖动：不提交 store、不改焦点和路由。点一下才聚焦。</p>
+<table class="stack">
+<thead><tr><th scope="col">按钮</th><th scope="col">点击</th><th scope="col">其他</th></tr></thead>
+<tbody>
+<tr><th scope="row">红</th><td>走标签栏的关闭流程关闭标签，先保存打开的文件</td><td>无菜单</td></tr>
+<tr><th scope="row">黄</th><td>把格子收回标签栏；会话不关</td><td>无菜单</td></tr>
+<tr><th scope="row">绿</th><td>单独打开这个标签</td><td>停留 250ms：贴靠菜单与把手连成一块，指针离开即收起。绿灯上按 <kbd>↓</kbd> 或右键把手：不自动收起的菜单。</td></tr>
+</tbody>
+</table>
+<p class="note">按在按钮上移动 6px 就是拖动，不会点击；拖动开始后才捕获指针。关掉的格子，空间让给相邻格。</p>
+<details>
+<summary>把手动效</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">动效</th></tr></thead>
+<tbody>
+<tr><th scope="row">底片</th><td>指针移上去，把手从顶边垂下一片灰色底片，两肩带弧度接到顶边，从窄缝长开，带一点回弹</td></tr>
+<tr><th scope="row">三个点</th><td>就是静止的窗口按钮：依次散开、长成红黄绿，符号随后淡入</td></tr>
+<tr><th scope="row">离开</th><td>倒放</td></tr>
+<tr><th scope="row">菜单</th><td>随把手变宽从底片长出；关闭时保留 200ms 折回，再让把手变窄</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="tiling-menu">贴靠菜单</h2>
+<p>对应 macOS 绿色按钮菜单，用小布局图示。提示行说出指向图示的名字，平时提示按住 Option 显示四分之一。macOS 上还会写出快捷键；Windows 和 Linux 没有平铺快捷键，提示行不写按键，Option 写作 Alt。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">分组</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">移动与调整大小（这一格）</th><td>左、右、上、下半边；按住 Option 换成四个四分之一。其他格保持顺序进入另一半；目标四分之一已被一格完整占着时两格交换。</td></tr>
+<tr><th scope="row">填满与排列</th><td>填满；左右；左 + 右侧上下；四宫格。这一格在前，内容按阅读顺序，多的退回标签栏，多余的格子留空。</td></tr>
+<tr><th scope="row">还原上次布局</th><td>先退出填满，再回到上次贴靠、排列、拖放、等分、关闭或拖动缝隙之前。按涉及的标签或分组查找，拖出分屏的格子也能放回。</td></tr>
+<tr><th scope="row">均分大小</th><td>各格大小相等</td></tr>
+<tr><th scope="row">更多布局</th><td>上下、单屏、九宫格、十六宫格、已保存布局、保存布局…</td></tr>
+</tbody>
+</table>
+
+<h2 id="shortcuts">快捷键</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">按键</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><kbd>⌃⌥</kbd> + 方向键</th><td>焦点格去半边。用 Control + Option 是因为 Fn + Control 归 macOS。</td></tr>
+<tr><th scope="row"><kbd>⌃⌥⇧</kbd> + 方向键</th><td>排列成左右或上下，焦点格在箭头一侧；只有一格时另一边留空</td></tr>
+<tr><th scope="row"><kbd>⌃⌥F</kbd>、<kbd>⌘⇧↩</kbd></th><td>填满 / 退出填满</td></tr>
+<tr><th scope="row"><kbd>⌃⌥R</kbd></th><td>还原上次布局</td></tr>
+<tr><th scope="row"><kbd>⌘\</kbd>、<kbd>⌘⇧\</kbd></th><td>向右、向下切分</td></tr>
+<tr><th scope="row"><kbd>⌘W</kbd></th><td>多格布局中关闭焦点格</td></tr>
+<tr><th scope="row"><kbd>⌥⌘</kbd> + 方向键</th><td>按方位移动焦点</td></tr>
+</tbody>
+</table>
+<p class="note">Windows 和 Linux 上 <kbd>⌘</kbd> 是 Control。</p>
+
+<h2 id="dividers">分隔线</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">外观</th><td>平时不画，指针停在缝上时正中出现一小段灰色短条。整条缝都能拖。</td></tr>
+<tr><th scope="row">最小值</th><td>格子将小于 240×160px 时停住；本来更小的格子不再被压缩</td></tr>
+<tr><th scope="row">吸附</th><td>1/3、1/2、2/3 附近 10px 内；显示比例</td></tr>
+<tr><th scope="row">等分</th><td>双击，相邻两格</td></tr>
+<tr><th scope="row">键盘</th><td>聚焦分隔线后方向键，每次 2%</td></tr>
+<tr><th scope="row">拖动开销</th><td><code translate="no">previewCanvas</code> 每帧最多重绘一次，只改内存；松手时 <code translate="no">setCanvas</code> 提交一次</td></tr>
+<tr><th scope="row">窄于 900px</th><td>分屏时收起的侧栏占自己的列，不盖住格子</td></tr>
+</tbody>
+</table>
+
+<h2 id="split-tab">标签栏里的分屏</h2>
+<p>分屏窗口只占一个标签，宽度与普通标签相同，和 Chrome、Arc 的分屏一样：焦点格的图标和标题、分屏缩略图（焦点格填深色）和格数。关闭按钮作用于整个窗口。</p>
+<p>分屏里关掉一格而分屏仍在时，这一格在点击的同一 tick 移除，由画布播放关闭。焦点变化或刚合并成分屏时，图标和名字 200ms 上浮出现。</p>
+
+<h2 id="overview">窗口总览</h2>
+<p>仿 macOS 调度中心和 iPad 后台切换。中间区域退成页面底色，标签栏里每个窗口都成为网格上的卡片，尽量放大，不超过区域宽度的一半。</p>
+<p>卡片保持窗口的分屏，用同一棵树和同一套几何绘制。格子内部没有落点：在当前画面上，下半边和角落很难分清。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">打开方式</th><th scope="col">模式</th></tr></thead>
+<tbody>
+<tr><th scope="row">标签竖直拖出标签栏，把手开始移动</th><td>拖动</td></tr>
+<tr><th scope="row">主菜单旁的按钮，在中间区域或标签栏上捏合</th><td>浏览</td></tr>
+</tbody>
+</table>
+
+<svg class="fig-wide" viewBox="0 0 680 164" role="img" aria-label="卡片的落点。左右各四分之一放在整个窗口旁边。中间一半按指针所在半边放在上方或下方。">
+  <rect class="tile" x="1" y="1" width="480" height="162" rx="10"/>
+  <line class="ln" x1="121" y1="1" x2="121" y2="163"/>
+  <line class="ln" x1="361" y1="1" x2="361" y2="163"/>
+  <line class="ln" x1="121" y1="82" x2="361" y2="82"/>
+  <text class="t-soft mid" x="61" y="87">放在左边</text>
+  <text class="t-soft mid" x="421" y="87">放在右边</text>
+  <text class="t-soft mid" x="241" y="47">放在上面</text>
+  <text class="t-soft mid" x="241" y="127">放在下面</text>
+  <text class="t-soft" x="498" y="76">调用 dockCanvas，</text>
+  <text class="t-soft" x="498" y="96">传入 root 和方向</text>
+</svg>
+<table class="stack fixed fig-narrow">
+<thead class="sr"><tr><th scope="col">指针位置</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">左右各四分之一</th><td>放在整个窗口旁边</td></tr>
+<tr><th scope="row">中间一半</th><td>按指针所在半边放在上方或下方</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">松手位置</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">标签栏</th><td>重新排序；格子恢复为独立标签，显示与停靠相同的蓝色圆角预览，跟随标签栏实际范围</td></tr>
+<tr><th scope="row">卡片的某区域</th><td>用 <code translate="no">dockCanvas(拖动的标签, 卡片标签, "root", 方向)</code> 合并。格子放到自己窗口的卡片上就移到那一半。卡片变大，这一半高亮，提示写明窗口和方向。</td></tr>
+<tr><th scope="row">空白处</th><td>在空位单独打开</td></tr>
+<tr><th scope="row">Resources 面板</th><td>把网页绑定成会话资源</td></tr>
+<tr><th scope="row">窗口以外</th><td>新开窗口</td></tr>
+<tr><th scope="row">Esc，或拖回标签栏</th><td>取消；回到普通排序</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">点卡片</th><td>放大前先切换到那个窗口，落位时底下已是实时画面</td></tr>
+<tr><th scope="row">Esc、双指张开</th><td>把当前窗口放大回去</td></tr>
+<tr><th scope="row">点总览以外</th><td>关闭</td></tr>
+<tr><th scope="row">点卡片之间</th><td>无反应</td></tr>
+<tr><th scope="row">浏览时在卡片上按下并移动 6px</th><td>拿起这个窗口，或分屏卡片的一格，副本与卡片同大；在卡片上方时半透明</td></tr>
+<tr><th scope="row">在自己缩放的内容上捏合</th><td>上下文图保留手势</td></tr>
+<tr><th scope="row">在网页上捏合</th><td><code translate="no">main/web-views/webtab-preload.js</code>（隔离环境，不暴露任何东西）只在手势开始时 <code translate="no">visualViewport.scale</code> 为 1 才打开总览。双指张开原生放大，1× 到 3×；已放大的网页捏合只缩回。</td></tr>
+</tbody>
+</table>
+<p class="note">总览只盖住中间区域，是原生视图遮挡层。和调度中心一样，不标出当前窗口。浏览时保留提示条的位置，但隐藏。</p>
+
+<details>
+<summary>卡片上的画面</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">存储</th><td>按标签存在内存和 IndexedDB（<code translate="no">lib/tabs/canvas/window-snapshots.ts</code>），只存一个主题：换主题全部丢弃，其他主题下存的不恢复，否则卡片会和实时窗口闪一下。启动时标签列表暂空不触发清理。</td></tr>
+<tr><th scope="row">截取时机</th><td>任何总览打开前，含被拖标签的格子（其预览先隐藏）；切换或改布局后 900ms；App 失焦或隐藏时；5 秒无操作后每 30 秒</td></tr>
+<tr><th scope="row">页面类格子</th><td><code translate="no">window:capture-region</code> IPC，只允许主页面截自己；JPEG 最宽 720px</td></tr>
+<tr><th scope="row">网页格子</th><td>从自己的视图截，不在屏幕上也是最新。视图只含网页，所以屏幕上的格子先截区域，再把网页画进 <code translate="no">[data-web-frame]</code>；工具栏那一条存下来，拼到屏幕外网页上，保持格子比例。</td></tr>
+<tr><th scope="row">卡片形状</th><td>整个窗口缩小：单格贴边（1rem 圆角），分屏每格在格位内缩 1px（16px 圆角），都按卡片比例绘制，落地不跳</td></tr>
+<tr><th scope="row">内容干净</th><td>截图前两帧隐藏把手</td></tr>
+<tr><th scope="row">从未截到</th><td>只在正中显示标签图标；名字在卡片说明里</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>在总览上拖动</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">原标签槽位</th><td><code translate="no">data-drag-out</code> 按宽度收拢（flex-basis、宽度、内边距到 0，收回 8px 间距），160ms，后面的标签和 + 左移。合并或移到别的窗口时保持收拢；只有标签留下才由 <code translate="no">data-slot-reopen</code> 撑开。</td></tr>
+<tr><th scope="row">被拖标签</th><td>跟随指针的小窗：上面标签，下面最近画面，宽 240px，高 110 到 190px，200ms 展开，回到标签栏上方 140ms 收回。从未截图的保持标签，拿到画面再展开。</td></tr>
+<tr><th scope="row">卡片</th><td>标签离开自己的卡片；没有标签的卡片消失；指针下的卡片稍微放大</td></tr>
+<tr><th scope="row">空位</th><td>总览 store 的 <code translate="no">slot</code>，表示标签单独放的位置。起初在被拖窗口处，或拖出格子的窗口之后。卡片按“卡片加空位”算大小，拿起时不改变尺寸。不在卡片上时，比任何卡片都近就不动，否则移到最近卡片旁指针一侧；距离用布局 offset，不含 framer-motion 的 transform。空白处描边。</td></tr>
+<tr><th scope="row">放进空位</th><td>带 <code translate="no">before</code>；<code translate="no">commitCanvasDrop</code> 调 <code translate="no">moveTab</code>（格子先拆出）或 <code translate="no">moveGroup</code>，标签栏与总览顺序一致。只有拆出的格子被激活。总览继续浏览：<code translate="no">holdOverviewLanding</code>，然后清空 <code translate="no">sourceIds</code>，标签的卡片回来。</td></tr>
+<tr><th scope="row">拖卡片</th><td>与其他拖动一样经 <code translate="no">overviewDropAt</code>：卡片一侧合并，空白处把窗口移到空位（格子成为单独窗口），除合并外继续浏览（<code translate="no">browseOverview</code>）；Esc 取消。</td></tr>
+<tr><th scope="row">模式</th><td>同一区域和按钮，切换不丢图片；不重播淡入（<code translate="no">data-opened-as</code>）；空白处只给提示条上色</td></tr>
+<tr><th scope="row">动效</th><td>打开和关闭的缩放是 framer-motion 布局动画，340ms，占位块保住位置；拖动总览淡入。网格变化用布局弹簧；新卡片在落点放大，只在挂载时播放。</td></tr>
+<tr><th scope="row">合并后的标签栏</th><td><code translate="no">placeDockedTabs</code> 把并入的标签移到目标窗口前，分屏保持目标窗口的位置</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>合并落地</summary>
+<p>只有一次放大，松手就开始。提交要等桌面端取消转移（约 50ms）和渲染分屏（约 40ms），若等待，这约 90ms 里小窗已消失而卡片没变。</p>
+<ol>
+<li>松手时总览保持打开，记下落点和标签，设置 <code translate="no">landing</code>。目标卡片从网格位置在 340ms 内等比放大到中间区域，transform 动画贯穿等待。窗口在下面被激活，让位时各格已加载好。</li>
+<li><code translate="no">commitCanvasDrop</code> 把合并交给 <code translate="no">landOverview</code>，后者先拿着并标记 <code translate="no">landed</code>。</li>
+<li>已 landed 且放大已开始（约十分之一秒后），总览读出放大卡片里每格的矩形，换算到画布未缩放坐标，连同起点、曲线和进度交给 <code translate="no">captureCanvasLanding</code>。</li>
+<li>总览关闭，在同一 tick 提交合并。兜底计时器也会提交，但无动画。</li>
+<li>外壳播放记录：各格的真实几何进入分屏；并入的标签按最终尺寸从放下一侧进入（平移出去，用 <code translate="no">clip-path</code> 在画布边裁掉），同为 300ms，分界线一起移动，内容不重新换行。</li>
+<li>未缩放状态量完后，画布根元素接过放大，用相同关键帧和卡片动画的 <code translate="no">startTime</code>，同一时钟，放大的是实时内容而不是会糊的 JPEG。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">细节</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">startTime</code></th><td>创建时显式设定：否则合成线程在播放而主线程仍是 pending</td></tr>
+<tr><th scope="row"><code translate="no">data-canvas-landing</code></th><td>期间保持中间列周围为页面底色</td></tr>
+<tr><th scope="row">其他卡片</th><td>80ms 淡出；提示淡出但保留位置，网格不重新居中</td></tr>
+<tr><th scope="row">合并失败</th><td>桌面端保留标签：总览立即关闭</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="layout-animation">布局动画</h2>
+<p>窗口按钮、贴靠菜单、填满和还原上次布局造成的变化，像 macOS 移动窗口一样带动画（<code translate="no">lib/tabs/canvas/canvas-transition.ts</code>）。“减少动态效果”时跳过；拖动分隔线不做动画。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">格子</th><th scope="col">动画</th></tr></thead>
+<tbody>
+<tr><th scope="row">留下</th><td>真实几何（<code translate="no">left</code>、<code translate="no">top</code>、<code translate="no">width</code>、<code translate="no">height</code>），Web Animations，300ms，文字重新换行；内联 <code translate="no">calc()</code> 不动</td></tr>
+<tr><th scope="row">新出现</th><td>淡入</td></tr>
+<tr><th scope="row">红灯</th><td>副本淡出下沉 180ms，盖在接手的格子上。被保存提示拦住时，等标签真正关闭再播放。</td></tr>
+<tr><th scope="row">黄灯</th><td>神灯效果折进标签，600ms</td></tr>
+<tr><th scope="row">黄灯，标签不在上方</th><td>副本向标签缩小，340ms</td></tr>
+<tr><th scope="row">绿灯、填满</th><td>被遮挡的格子在放大的格子下淡出</td></tr>
+</tbody>
+</table>
+<details>
+<summary>播放方式</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">记录</th><td>变化前按 tab id 记下每格矩形并留静态副本。外壳在提交这次变化的 layout effect 里播放，首帧绘制之前。1.5s 内没有对应提交就作废。</td></tr>
+<tr><th scope="row">对应</th><td>按 tab id，会话从对等格换到单独聊天外壳也能连贯。隐藏的外壳在布局的同一 tick 切到留下的会话，不等几次渲染。</td></tr>
+<tr><th scope="row">对话</th><td>只有切换后才到达的行才淡入；单条消息只在到达后一秒内播放出现动画，重新挂载时直接显示</td></tr>
+<tr><th scope="row">移动期间</th><td>按拖动处理：网页显示快照，聊天只重排可见行；格子边框和分隔线淡出再淡回</td></tr>
+<tr><th scope="row">神灯</th><td>桌面端拍全分辨率静态图（<code translate="no">captureRegion</code> 带 <code translate="no">full</code>；最多等 160ms）。每帧按 2px 一行画到同一 canvas，拉伸到漏斗两边之间，颈口在标签底边。靠近标签的边先收窄，然后格子从颈口倾入并裁掉。标签按钮亮一下；接手的格子晚 90ms。</td></tr>
+<tr><th scope="row">神灯，普通浏览器</th><td>副本切成 6 到 20 条（越重越少），每条用 <code translate="no">matrix3d</code> 映射到四边形</td></tr>
+<tr><th scope="row">从分屏收起</th><td>新标签按钮从原标签旁滑出，后面的标签让位（260ms，只动 transform 和 opacity）；折叠瞄准按钮终点，晚 80ms 开始</td></tr>
+<tr><th scope="row">折叠时钟</th><td>每帧最多前进 34ms：主线程忙时暂停而不跳过</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="drag-lifecycle">拖动的生命周期</h2>
+<p>画布以后要承载各种小窗口应用，每次拖动都要干净结束，不打扰其他格子。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">任何结束方式</th><td>松手、Esc、pointercancel、窗口失焦或查找落点出错，都走同一个清理且只执行一次：移除标签和预览，恢复把手，释放捕获，清除 <code translate="no">data-canvas-dragging</code>。查找失败按无落点处理。</td></tr>
+<tr><th scope="row">漏掉的松手</th><td>在窗口拖动区、原生视图或别的应用上松手，页面收不到 pointerup。每个拖动向 <code translate="no">setCanvasDragging(true, owner)</code> 登记；第一次无按键的 pointermove 视为松手；新的按下先取消旧拖动。拖动期间没有 <code translate="no">-webkit-app-region: drag</code>。</td></tr>
+<tr><th scope="row">把手状态</th><td><code translate="no">data-pane-dragging</code> 通过 CSS 隐藏，不写内联样式；新拖动清掉残留</td></tr>
+<tr><th scope="row">原生网页</th><td>先截图，拿到或 160ms 后隐藏，不闪“已暂停”</td></tr>
+<tr><th scope="row">落点预览</th><td>无背景模糊；120ms 缓出，无回弹</td></tr>
+</tbody>
+</table>
+
+<h2 id="rendering">渲染和原生视图</h2>
+<ul>
+<li>递归几何计算输出给稳定的内容宿主：改树和放大不会重新挂载文件编辑器、终端和会话。</li>
+<li>小于 150×110px 的格子显示标题、类型和放大操作。</li>
+<li>每个网页格子上报自己的 bounds（<code translate="no">registerVisibleWebTabBounds</code>）。拖动中、过小或超过 8 个可见原生视图时显示截图。选中暂停的视图会优先恢复。隐藏的视图保持存活，不终止进程。</li>
+</ul>
+
+<h2 id="persistence">持久化</h2>
+<p>窗口的标签数据保存每组的树、焦点和放大状态，只存标签引用。失效的引用变成空格。跨窗口数据校验独立限制树深度、节点数和序列化大小。Resources 绑定沿用现有后端归属操作。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现：以上全部。</p>

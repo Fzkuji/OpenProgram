@@ -1,0 +1,171 @@
+<title>稳定版与开发版实例</title>
+<meta name="description" content="一个源码 checkout 如何驱动稳定版和开发版两个实例，提交如何在两者之间移动。">
+<h1>稳定版与开发版实例</h1>
+
+<p>提交先在开发版跑，只能通过晋升进入稳定版。部署时稳定版不重启，所以稳定版里的对话可以部署，再打开 <code translate="no">http://127.0.0.1:18200</code> 或调用它的 API 看结果。</p>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">稳定版</th><th scope="col">开发版</th></tr></thead>
+<tbody>
+<tr><th scope="row">代码</th><td><code translate="no">stable</code> 分支</td><td>最近一次部署的提交，默认来自 <code translate="no">dev</code></td></tr>
+<tr><th scope="row">运行</th><td><code translate="no">/Applications/OpenProgram.app</code></td><td><code translate="no">/Applications/OpenProgram Dev.app</code>（macOS）或浏览器；运行时在 <code translate="no">~/.openprogram-dev/runtime</code></td></tr>
+<tr><th scope="row">端口</th><td><code translate="no">18100</code></td><td><code translate="no">18200</code></td></tr>
+<tr><th scope="row">浏览器调试端口</th><td><code translate="no">9223</code></td><td><code translate="no">9224</code></td></tr>
+<tr><th scope="row">数据</th><td><code translate="no">~/.openprogram</code>（默认 profile）</td><td><code translate="no">~/.openprogram-dev</code>（<code translate="no">dev</code> profile）</td></tr>
+<tr><th scope="row">更新方式</th><td><code translate="no">openprogram dev promote</code>，再运行 <code translate="no">scripts/refresh-local-app.sh</code></td><td><code translate="no">openprogram dev deploy</code>，再运行 <code translate="no">scripts/refresh-dev-instance.sh</code></td></tr>
+</tbody>
+</table>
+
+<p class="note">规则在 <code translate="no">openprogram/operations/worker/dev_instance.py</code>。<code translate="no">openprogram dev status</code> 显示两个实例和晋升会带来的提交。</p>
+
+<h2 id="deploying-to-the-development-instance">部署到开发版</h2>
+
+<p><code translate="no">openprogram dev deploy [ref]</code>（默认 <code translate="no">dev</code>）把提交检出到 detached worktree <code translate="no">~/.openprogram-dev/source</code>，在那里运行 <code translate="no">scripts/refresh-dev-instance.sh</code>。稳定版不会被停止或写入。</p>
+
+<ol>
+<li>拒绝未提交或未跟踪的文件。同一时间只跑一次部署，第二次等待。</li>
+<li>同步 Git hooks，报告上次部署以来的文档问题，但不中止。构建 Web 资源和 OpenProgram wheel；违反格式的页面变成可见的错误页。</li>
+<li>在运行时里安装一次完整的 CPython 3.12（<code translate="no">uv python install --install-dir</code>），同步到发布版使用的锁定依赖，重装 wheel。</li>
+<li>macOS：构建 helper <code translate="no">OpenProgram Dev.app</code>（<code translate="no">ai.openprogram.runtime.dev</code>），让 <code translate="no">runtime-manifest.json</code> 指向它。worker 有自己的身份，屏幕录制、辅助功能等权限与稳定版分开授予。</li>
+<li>设置 <code translate="no">dev</code> profile 的端口，绑定 Program 目录。</li>
+<li>只安装或重启 <code translate="no">dev</code> worker，作为登录服务（launchd 或 systemd；其他系统直接停止再启动）。最多等 120 秒 <code translate="no">/healthz</code>，再把提交记入 <code translate="no">runtime/source-revision</code>。</li>
+<li>把 wheel 和 TUI 包留在 <code translate="no">~/.openprogram-dev/artifacts</code> 供晋升使用。</li>
+<li>macOS：运行 <code translate="no">scripts/install-dev-app.sh</code>。</li>
+</ol>
+
+<details>
+<summary>开发版 App</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">身份</th><td><code translate="no">/Applications/OpenProgram Dev.app</code>，bundle id <code translate="no">ai.openprogram.desktop.dev</code>；仅 macOS</td></tr>
+<tr><th scope="row">内容</th><td>已部署提交的 Desktop 外壳，不带运行时。<code translate="no">Contents/Resources/instance.json</code> 写明 <code translate="no">dev</code> profile、端口、调试端口和运行时，由 <code translate="no">apps/desktop/main/instance.js</code> 读取。</td></tr>
+<tr><th scope="row">Worker</th><td>在 <code translate="no">OPENPROGRAM_PROFILE=dev</code> 下，通过开发版运行时启动和认证</td></tr>
+<tr><th scope="row">Electron 数据</th><td><code translate="no">~/Library/Application Support/OpenProgram Dev</code></td></tr>
+<tr><th scope="row">忽略</th><td>稳定版安装器的锁和发布版更新</td></tr>
+<tr><th scope="row">构建</th><td><code translate="no">scripts/release/build-desktop-shell.sh</code>：electron-builder 使用发布配置但不带运行时，所以 <code translate="no">apps/desktop/package.json</code> 锁定的 Electron 先在这里运行</td></tr>
+<tr><th scope="row">签名</th><td><code translate="no">local-macos-signing.py sign --development</code>，本地身份，只签外层 App</td></tr>
+<tr><th scope="row">安装</th><td>构建在稳定版 App 旁边，绝不写进它。App 关闭时替换 bundle，之前开着就重新打开，只有用户当时正在用它才回到前台。</td></tr>
+<tr><th scope="row">浏览器工具</th><td><code translate="no">programs/applications/browser/app_endpoint.py</code> 按 profile 选调试端口，开发版 Agent 不会操作稳定版 App 的标签页</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="signing-in">登录</h3>
+<p>worker 每次启动都生成新的 owner token，所以一次部署会让浏览器掉登录。开发版 App 自己取新 token。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram dev open</code></th><td>用默认浏览器打开，已登录；掉登录的提示会写出这条命令</td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev auth-url</code></th><td>打印登录链接，给其他浏览器用</td></tr>
+</tbody>
+</table>
+
+<h3 id="state-and-models">数据与模型</h3>
+<p>凭据库的根目录是当前 profile 的数据目录，所以 <code translate="no">dev</code> profile 不读取也不刷新默认 profile 的登录。<code translate="no">openprogram dev copy-models</code> 复制模型配置：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">复制</th><th scope="col">不复制</th></tr></thead>
+<tbody>
+<tr><th scope="row">配置项 <code translate="no">providers</code>、<code translate="no">api_keys</code>、<code translate="no">last_used_model</code></th><td>OAuth 登录：refresh token 会轮换，两个实例会互相挤掉登录。需要时重新登录。</td></tr>
+<tr><th scope="row">API key 和 CLI 委托凭据（按引用读取其他工具的登录）</th><td>对话、Agent、记忆</td></tr>
+</tbody>
+</table>
+<p>ChatGPT 登录是共享的：开发版读取 Codex CLI 的 <code translate="no">~/.codex/auth.json</code>，稳定版把同一账号的登录同步进这个文件。两边都采用对方写入的更新登录，不去花已经用过的 refresh token（<a href="../providers/auth/unified-auth-storage.zh.html#codex-shared-login">一台机器一个 ChatGPT 登录</a>）。</p>
+
+<h3 id="from-a-conversation">从对话里</h3>
+<p>有 <code translate="no">stable</code> 分支时，<code translate="no">self_update(action="prepare")</code> 走 <code translate="no">dev_stable</code> 后端：开发版是试运行，晋升是切换。调用保存请求并启动脱离的控制器，其余步骤在发起调用的那一轮保存之后才开始。</p>
+<table class="stack">
+<thead><tr><th scope="col">步骤</th><th scope="col">做什么</th><th scope="col">阶段</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>在候选的 worktree 里 rebase 到 <code translate="no">dev</code> 上</td><td><code translate="no">staging</code></td></tr>
+<tr><th scope="row">2</th><td>在主 checkout 里 <code translate="no">git merge --ff-only</code>。<code translate="no">dev</code> 移动或 <code translate="no">index.lock</code> 被占用时退避重试，最多 10 次</td><td><code translate="no">staging</code></td></tr>
+<tr><th scope="row">3</th><td><code translate="no">openprogram dev deploy &lt;sha&gt;</code></td><td><code translate="no">staging</code></td></tr>
+<tr><th scope="row">4</th><td>对端口 18200 和 <code translate="no">dev</code> 状态目录做系统探测，再做浏览器探测：打开已登录的 Web 应用，直到消息框出现</td><td><code translate="no">staging</code></td></tr>
+<tr><th scope="row">5</th><td>等稳定版没有运行中的任务，最多 30 分钟。这期间照常接收对话</td><td><code translate="no">ready</code></td></tr>
+<tr><th scope="row">6</th><td><code translate="no">stable</code> 已包含该提交时不晋升。否则运行 <code translate="no">openprogram dev promote &lt;sha&gt;</code>，始终带明确提交，等待期间不会发出别的会话部署的内容。开发版被别的部署占用时，重新部署并探测一次后再晋升</td><td><code translate="no">activating</code></td></tr>
+<tr><th scope="row">7</th><td>对端口 18100 做系统探测</td><td><code translate="no">verifying</code></td></tr>
+<tr><th scope="row">8</th><td>稳定版 worker 恢复后，结果经常规投递和后续轮次回到发起的对话</td><td><code translate="no">succeeded</code></td></tr>
+</tbody>
+</table>
+<p class="note">每个探测把 doctor 各行与同一实例改动前的结果比较，本来就失败的行（比如开发版没有的登录）不挡更新。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">结束状态</th><th scope="col">条件</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">aborted</code></th><td>rebase 冲突或挡路的脏文件（列出文件）；第 3 或第 4 步失败（提交留在 <code translate="no">dev</code> 上，结果会说明）；第二次晋升被拒绝</td></tr>
+<tr><th scope="row"><code translate="no">rolled_back</code></th><td>刷新失败（<code translate="no">stable</code> 和 App 都留在之前的版本），或稳定版没有恢复健康。<code translate="no">stable</code> 从不后退：一个 revert 提交落到 <code translate="no">dev</code>，让它保持可晋升，再部署并晋升，结果写明该提交</td></tr>
+<tr><th scope="row"><code translate="no">needs_manual_recovery</code></th><td>修复也失败（给出两个原因），或后来的晋升已带上该提交，这种提交绝不 revert</td></tr>
+</tbody>
+</table>
+<details>
+<summary>控制器</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">后端</th><td><code translate="no">openprogram/operations/self_update/control/backend.py</code> 选择，这个是 <code translate="no">control/dev_stable.py</code></td></tr>
+<tr><th scope="row">位置</th><td><code translate="no">&lt;state&gt;/self-updates/&lt;id&gt;/controller</code> 下的运行时私有副本，在 App 和开发版运行时之外：它的步骤会替换这两者，而代码是懒加载的</td></tr>
+<tr><th scope="row">运行方式</th><td>macOS 上是 launchd 任务，其他系统是脱离的会话。挂掉时由 worker 启动拉起</td></tr>
+<tr><th scope="row">环境</th><td>没有 <code translate="no">OPENPROGRAM_SESSION_ID</code>：设置了它，<code translate="no">scripts/refresh-local-app.sh</code> 会脱离并立刻报告成功</td></tr>
+<tr><th scope="row">重启</th><td>步骤幂等。更新目录里的日志记录落地的提交和 rebase 基点，重启后从所在阶段继续</td></tr>
+<tr><th scope="row">别的会话晋升</th><td>它在新 worker 健康后才移动 <code translate="no">stable</code>，控制器继续等 App 服务该提交</td></tr>
+<tr><th scope="row">撤销</th><td><code translate="no">self_update(action="undo", target=&lt;提交&gt;)</code> 在 <code translate="no">dev</code> 的 worktree 里 <code translate="no">git revert</code>，作为普通 <code translate="no">prepare</code> 提交</td></tr>
+<tr><th scope="row">重试</th><td><code translate="no">self_update(action="retry")</code> 不适用，修复就是新的 <code translate="no">prepare</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="promoting-to-stable">晋升到稳定版</h2>
+
+<p><code translate="no">openprogram dev promote [revision]</code> 有意只做成命令，没有设置按钮：它是开发步骤，由 owner 或 owner 要求的 Agent 执行。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">要求</th><th scope="col">拒绝信息</th></tr></thead>
+<tbody>
+<tr><th scope="row">提交正是 <code translate="no">~/.openprogram-dev/runtime/source-revision</code> 记录的那个，且不是脏构建</th><td><code translate="no">serves no clean commit</code> 或 <code translate="no">only the commit the development instance serves can be promoted</code></td></tr>
+<tr><th scope="row">开发版响应 <code translate="no">/healthz</code></th><td><code translate="no">the development instance is not healthy</code></td></tr>
+<tr><th scope="row">提交包含当前的 <code translate="no">stable</code></th><td><code translate="no">promotion only fast-forwards</code></td></tr>
+<tr><th scope="row">10 分钟内稳定版没有运行中的工作，判定规则与自更新控制器相同。从稳定版 worker 内的 shell 调用时只等几秒，因为那一轮在等待期间不会结束。稳定版 worker 没有存活时没有可打断的工作，跳过等待；等待之后会重新核对上面的条件</th><td><code translate="no">the stable instance is still busy</code>，并列出这些工作</td></tr>
+</tbody>
+</table>
+
+<ol>
+<li>趁旧 worker 还在服务，备份稳定版 profile（<code translate="no">openprogram backup</code>，标签 <code translate="no">pre-promote</code>，保留最新 5 份）。</li>
+<li>把提交检出到 <code translate="no">~/.openprogram/release-source</code>。</li>
+<li>运行 <code translate="no">scripts/refresh-local-app.sh</code>，<code translate="no">OPENPROGRAM_PROMOTE_FROM</code> 设为上面读到的 <code translate="no">stable</code> 位置，即使在对话里调用也等它结束。它复用开发版对同一提交的构建，按下面的事务安装。</li>
+<li>新 worker 健康后，脚本从那个位置 compare-and-swap 把 <code translate="no">refs/heads/stable</code> 移到该提交：两次晋升不会互相覆盖，<code translate="no">stable</code> 只会快进。</li>
+</ol>
+
+<p>刷新失败不再重跑：失败后稳定版仍在运行原来的版本，重跑只会重复同样的失败和停机。报错只有一行：提交为什么没晋升、<code translate="no">stable</code> 指向哪里、App 运行哪个提交、是否响应，以及刷新日志位置。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">刷新步骤</th><th scope="col">旧 App 和 worker</th><th scope="col">失败时</th></tr></thead>
+<tbody>
+<tr><th scope="row">把已安装的 App 复制到旁边的 <code translate="no">.openprogram-refresh.*</code>；在这份运行时里安装包、组装、用 <code translate="no">verify-product-runtime.py --write</code> 校验、放入 App 文件、签名；然后安装命令行包</th><td>照常服务</td><td>删除副本。没有停止或替换任何东西</td></tr>
+<tr><th scope="row">退出 App，停止 worker，两个 App 以改名互换，启动新 worker，等 <code translate="no">/healthz</code>，检查它的解释器，移动 <code translate="no">stable</code></th><td>已停止；旧 App 作为 <code translate="no">previous.app</code> 等着</td><td>把旧 App 改名放回，用同样的步骤启动并检查它的 worker，重新打开 App。脚本以非零退出，写明失败的步骤，并说明之前的版本已重新运行；如果恢复也失败，写明两个步骤并保留这些文件。恢复按文件判断切换进行到哪一步，而不靠信号可能抢先的标记；移动 <code translate="no">stable</code> 和记下这一步之间也不会被信号打断</td></tr>
+<tr><th scope="row">重新打开 App</th><td>旧 App 被删除</td><td>保留新版本；脚本说明这一点并以非零退出。<code translate="no">stable</code> 已经移动，所以晋升报告提交已晋升并给出警告，自更新控制器不会撤销它</td></tr>
+</tbody>
+</table>
+
+<p>App 安装器（<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><code translate="no">install-app.sh</code></a>）也是这样替换 App：整个包在同一卷上准备好，再以改名切换，所以停机只覆盖切换和 worker 启动，新版本上可能失败的步骤都不在已安装的 App 上执行。</p>
+
+<p>晋升只读取稳定版的数据存储，用来查看正在运行的工作。只有持有 <code translate="no">worker.lock</code> 的进程写运行状态，所以由重启后的新代码 worker 接管（见<a href="../runtime/execution/control.zh.html#store-schema-ownership">谁拥有运行状态</a>）。</p>
+
+<details>
+<summary>刷新闸门与 Electron 升级</summary>
+<p>stable 分支存在后，<code translate="no">scripts/refresh-local-app.sh</code> 只安装 <code translate="no">refs/heads/stable</code>；从其他提交运行会被拒绝，并指向开发版。晋升时它改为安装要晋升的提交，但要求 <code translate="no">stable</code> 仍是晋升读到的位置且该提交包含它，构建前检查一次，App 停止前再检查一次，否则拒绝。</p>
+<p>稳定版刷新替换 <code translate="no">app.asar</code>，保留 App 的 Electron。当 <code translate="no">apps/desktop/package.json</code> 锁定了另一个 Electron 或版本更新时，脚本构建同样的外壳，把 frameworks、可执行文件、<code translate="no">Info.plist</code> 和 locales 搬入准备好的 App，所以晋升带来的是开发版 App 已经跑过的 Electron。</p>
+</details>
+
+<h2 id="publishing">发布</h2>
+<p>两个实例都不推送任何内容。见<a href="github-publishing.zh.html">发布源码到 GitHub</a>。</p>
+
+<h2 id="source-checkout">源码 checkout</h2>
+<p>两个命令通过 <code translate="no">OPENPROGRAM_SOURCE_REPO</code> 找到仓库，否则读 <code translate="no">~/.openprogram/source-repo</code>。两个刷新脚本都会写入它，记录的是主 checkout，不是构建 worktree。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>两个刷新脚本、<code translate="no">stable</code> 闸门、<code translate="no">openprogram dev status|deploy|open|auth-url|copy-models|promote</code>、晋升检查和备份、开发版运行时的 macOS 身份和登录服务、按 profile 隔离的凭据、通过 <code translate="no">dev_stable</code> 控制器完成的对话内自更新</td></tr>
+<tr><th scope="row">尚未</th><td>开发版只能从本机访问</td></tr>
+</tbody>
+</table>

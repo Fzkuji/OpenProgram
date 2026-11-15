@@ -1,16 +1,16 @@
 """governance reservations tests."""
 from __future__ import annotations
+import threading
+from types import SimpleNamespace
+from openprogram.models.usage.event import UsageEvent
+from openprogram.runtime.jobs.resource_governance import build_job_resource_view
 from ._support import (
     Job,
     ResourceGovernor,
     ResourceLimits,
-    SimpleNamespace,
-    UsageEvent,
     UsageLedger,
-    build_job_resource_view,
     pytest,
     resolve_resource_limits,
-    threading,
 )
 
 
@@ -73,12 +73,12 @@ def test_provider_reservation_recovery_and_settlement_are_idempotent(
         job.id, input_token_upper_bound=10,
         requested_max_output_tokens=20, model=model,
     )
-    ledger.connection().execute(
-        "UPDATE usage_reservations SET expires_at = 0 "
-        "WHERE reservation_id LIKE ?",
-        (expired.reservation_id + ":%",),
-    )
-    ledger.connection().commit()
+    with ledger.run_tables().transaction() as tables:
+        tables.update(
+            "usage_reservations",
+            {"expires_at": 0},
+            where=lambda row: row["reservation_id"].startswith(expired.reservation_id + ":"),
+        )
     assert governor.recover_provider_reservations(now=1) == 1
 
     started = governor.reserve_provider_request(
@@ -87,16 +87,16 @@ def test_provider_reservation_recovery_and_settlement_are_idempotent(
     )
     governor.start_provider_request(started.reservation_id)
     assert governor.release_provider_request(started.reservation_id) is False
-    assert ledger.connection().execute(
-        "SELECT DISTINCT state FROM usage_reservations WHERE reservation_id LIKE ?",
-        (started.reservation_id + ":%",),
-    ).fetchone()[0] == "started"
-    ledger.connection().execute(
-        "UPDATE usage_reservations SET expires_at = 0 "
-        "WHERE reservation_id LIKE ?",
-        (started.reservation_id + ":%",),
-    )
-    ledger.connection().commit()
+    assert {row["state"] for row in ledger.run_tables().handle.rows(
+        "usage_reservations",
+        where=lambda row: row["reservation_id"].startswith(started.reservation_id + ":"),
+    )} == {"started"}
+    with ledger.run_tables().transaction() as tables:
+        tables.update(
+            "usage_reservations",
+            {"expires_at": 0},
+            where=lambda row: row["reservation_id"].startswith(started.reservation_id + ":"),
+        )
     assert governor.recover_provider_reservations(now=1) == 0
 
     event = UsageEvent(
@@ -112,10 +112,10 @@ def test_provider_reservation_recovery_and_settlement_are_idempotent(
     monkeypatch.setattr(ledger, "append_in_transaction", fail_append)
     with pytest.raises(RuntimeError, match="usage write failed"):
         governor.settle_provider_request(started.reservation_id, event)
-    assert ledger.connection().execute(
-        "SELECT DISTINCT state FROM usage_reservations WHERE reservation_id LIKE ?",
-        (started.reservation_id + ":%",),
-    ).fetchone()[0] == "started"
+    assert {row["state"] for row in ledger.run_tables().handle.rows(
+        "usage_reservations",
+        where=lambda row: row["reservation_id"].startswith(started.reservation_id + ":"),
+    )} == {"started"}
     assert ledger.connection().execute(
         "SELECT COUNT(*) FROM usage_events WHERE reservation_id = ?",
         (started.reservation_id + ":token",),
@@ -184,9 +184,7 @@ def test_cost_budget_fails_closed_when_price_is_unknown(tmp_path) -> None:
 
     assert denied.accepted is False
     assert denied.reason_code == "quota.cost_unavailable"
-    assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM usage_reservations"
-    ).fetchone()[0] == 0
+    assert ledger.run_tables().handle.count("usage_reservations") == 0
 
 
 

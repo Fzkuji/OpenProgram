@@ -1,0 +1,84 @@
+<title>Worker 概览</title>
+<meta name="description" content="启动、停止和查看本地 OpenProgram worker，以及端口和日志的位置。">
+<h1>Worker 概览</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 120" role="img" aria-label="终端 UI、Web UI 和 CLI 都连接同一个本地 worker。一个端口，默认 18100，同时提供 API、WebSocket 和 Web UI。">
+  <defs><marker id="wk-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">终端 UI</text>
+  <text class="t-big" x="0" y="66">Web UI</text>
+  <text class="t-big" x="0" y="102">CLI</text>
+  <path class="ln" d="M110 24H180V54H250M110 60H250M110 96H180V66H250" marker-end="url(#wk-a)"/>
+  <rect class="tile" x="262" y="14" width="196" height="92" rx="8"/>
+  <text class="t-big" x="282" y="52">Worker</text>
+  <text class="t-soft" x="282" y="78">每个 profile 一个</text>
+  <text class="t-soft" x="490" y="40">端口 18100：</text>
+  <text class="t-soft" x="490" y="62">API、WebSocket、</text>
+  <text class="t-soft" x="490" y="84">Web UI</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>终端 UI、Web UI、CLI</strong></li>
+  <li class="flow-end"><strong>Worker</strong><small>端口 18100：API、WebSocket、Web UI</small></li>
+</ol>
+</figure>
+
+<h2>控制</h2>
+<p>运行 <code translate="no">openprogram</code> 时，如果没有 worker 会自动在后台启动。<code translate="no">OPENPROGRAM_NO_AUTO_WORKER=1</code> 让终端 UI 只连接已有的 worker。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram worker start</code></th><td>后台启动并返回</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker run</code></th><td>前台运行，用于调试；Ctrl-C 停止</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker status</code>、<code translate="no">openprogram status</code></th><td>是否运行、PID、端口、运行时长；顶层命令还显示日志路径和服务是否安装</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker stop</code>、<code translate="no">openprogram stop</code></th><td>停止。已安装的服务保持停止，直到下次 start 或登录</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker restart</code>、<code translate="no">openprogram restart</code></th><td>停止并重新启动，用于代码或配置变更后</td></tr>
+<tr><th scope="row"><code translate="no">openprogram web</code></th><td>在当前终端启动并打开 <code translate="no">http://localhost:18100</code></td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>$ openprogram status
+openprogram: running (PID 82472, port 18100, up 48m)
+  logs: ~/.openprogram/worker.log</code></pre>
+
+<h2 id="port">端口</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">优先级</th><th scope="col">设置方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td><code translate="no">openprogram web --web-port &lt;p&gt;</code></td></tr>
+<tr><th scope="row">2</th><td><code translate="no">OPENPROGRAM_WEB_PORT</code></td></tr>
+<tr><th scope="row">3</th><td><code translate="no">openprogram ports --port 8101</code>，持久化</td></tr>
+<tr><th scope="row">4</th><td>本账户第一次启动时选定：18100，被别的东西占着时取下一个空闲端口</td></tr>
+</tbody>
+</table>
+
+<h2 id="logs">日志</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram logs list</code></th><td>所有日志、大小、最后更新</td></tr>
+<tr><th scope="row"><code translate="no">openprogram logs tail [name]</code><span class="arg"><code translate="no">-n LINES</code>，默认 50</span><span class="arg"><code translate="no">-f</code> 跟随</span></th><td>最后若干行</td></tr>
+<tr><th scope="row"><code translate="no">openprogram logs path [name]</code></th><td>绝对路径</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">名称</th><th scope="col">文件</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">worker</code>（默认）</th><td><code translate="no">~/.openprogram/worker.log</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td><code translate="no">~/.openprogram/logs/runtime.log</code></td></tr>
+<tr><th scope="row"><code translate="no">ink-startup</code></th><td><code translate="no">~/.openprogram/logs/ink-startup.log</code>，终端 UI 启动日志</td></tr>
+</tbody>
+</table>
+<p class="note">支持前缀：<code translate="no">logs tail ink</code>。worker 日志超过 16 MB 时在启动时轮转到 <code translate="no">worker.log.1</code>，最多到 <code translate="no">.3</code>。</p>
+
+<h2 id="running-as-a-login-service">登录服务</h2>
+<p><code translate="no">openprogram worker install</code> 让 worker 在登录时启动、崩溃后重启；<code translate="no">uninstall</code> 移除。</p>
+<table class="stack">
+<thead><tr><th scope="col">平台</th><th scope="col">服务</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td>launchd，<code translate="no">~/Library/LaunchAgents/ai.openprogram.worker.plist</code></td><td><code translate="no">stop</code> 卸载任务，崩溃重启不会把它拉起</td></tr>
+<tr><th scope="row">Linux</th><td>systemd <code translate="no">--user</code></td><td>每个命名 <a href="../install/profiles.zh.html">profile</a> 有独立 unit</td></tr>
+<tr><th scope="row">Windows 源码 checkout</th><td>最小权限的按用户任务计划条目</td><td><code translate="no">OpenProgram Worker</code>；每个命名 profile 有自己的任务。<code translate="no">stop</code> 同时结束任务的这次运行，重试不会把 worker 带回来</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">start</code>、<code translate="no">stop</code>、<code translate="no">restart</code> 走已安装的服务，不会另建脱离的进程。<code translate="no">start</code> 和 <code translate="no">restart</code> 还会用当前 CLI 运行时重新生成 plist、unit 或任务的启动脚本，升级后不会继续启动旧版本。</p>
+
+<p class="next"><a href="configuration.zh.html">配置</a> · <a href="backup.zh.html">备份</a> · <a href="troubleshooting.zh.html">故障排查</a></p>

@@ -12,13 +12,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
 const require = createRequire(import.meta.url);
 const bundle = await build({
-  stdin: { contents: 'export * from "./components/files/explorer-header"; export * from "./components/files/file-management"; export * from "./components/files/file-tree"; export * from "./components/files/pierre-file-tree";', resolveDir: fileURLToPath(new URL("../../", import.meta.url)), loader: "tsx" },
+  stdin: { contents: 'export * from "./components/files/explorer/explorer-header"; export * from "./components/files/file-management"; export * from "./components/files/tree/file-tree"; export * from "./components/files/explorer/pierre-file-tree";', resolveDir: fileURLToPath(new URL("../../", import.meta.url)), loader: "tsx" },
   bundle: true, write: false, format: "cjs", platform: "node", jsx: "automatic", loader: { ".css": "empty" },
   plugins: [{ name: "host", setup(builder) {
     builder.onLoad({ filter: /\.css$/ }, () => ({ contents: "export default {};", loader: "js" }));
     builder.onResolve({ filter: /^react(?:-dom)?(?:\/.*)?$/ }, ({ path }) => ({ path: require.resolve(path), external: true }));
     builder.onResolve({ filter: /^@\/lib\/i18n$/ }, () => ({ path: "i18n", namespace: "fake" }));
-    builder.onResolve({ filter: /^@\/lib\/net\/ws-request$/ }, () => ({ path: "ws", namespace: "fake" }));
+    builder.onResolve({ filter: /^@\/lib\/net\/ws\/ws-request$/ }, () => ({ path: "ws", namespace: "fake" }));
     builder.onResolve({ filter: /^@\/lib\/(state\/center-tabs-store|session-store|navigate)$/ }, ({ path }) => ({ path, namespace: "state" }));
     builder.onLoad({ filter: /.*/, namespace: "state" }, ({ path }) => ({ contents: path.endsWith("center-tabs-store") ? 'const state={tabs:[],activeId:null,openFileTab:()=>{}}; export const useCenterTabs=Object.assign(fn=>fn(state),{getState:()=>state});' : path.endsWith("session-store") ? 'export const useSessionStore={getState:()=>({currentSessionId:null})};' : 'export const navigate=()=>{};', loader: "js" }));
     builder.onLoad({ filter: /.*/, namespace: "fake" }, ({ path }) => ({ contents: path === "i18n" ? 'export const useTranslation=()=>({text:(en)=>en});' : 'export const wsRequest=(action,payload)=>globalThis.__fileManagementQuery?.(action,payload) ?? Promise.resolve(null); export const idempotencyKeyFor=()=>"test"; export class MutationRegistryCapacityError extends Error {} export const reconcileWsMutation=()=>{}; export const wsMutationRequest=()=>{};', loader: "js" }));
@@ -81,7 +81,7 @@ for (const state of ["incomplete", "complete"]) test(`refresh preserves ${state}
   const root = createRoot(document.getElementById("root"));
   const held = [];
   const projectId = `provenance-${state}`;
-  globalThis.__fileManagementQuery = async (_action, payload) => payload.operation === "start"
+  globalThis.__fileManagementQuery = async (_action, payload) => payload.operation === "measure"
     ? { state, bytes: 12, entries: 2, skipped: state === "complete" ? 0 : 1, token: null }
     : { state: "unknown" };
   try {
@@ -105,7 +105,7 @@ for (const state of ["incomplete", "complete"]) test(`refresh preserves ${state}
   }
 });
 
-test("renewed visibility and details activation revalidate one shared size job", async () => {
+test("renewed visibility and details reuse one shared sample until explicit refresh", async () => {
   const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
   const saved = { window: globalThis.window, document: globalThis.document, IntersectionObserver: globalThis.IntersectionObserver };
   globalThis.window = parsed.window; globalThis.document = parsed.document;
@@ -119,7 +119,7 @@ test("renewed visibility and details activation revalidate one shared size job",
   const projectId = "reactivate";
   globalThis.__fileManagementQuery = async (action, payload) => {
     if (action === "project_file_info") return { type: "dir", name: "src", absolute_path: "/src", size: null, mtime: 1, created_at: null, permissions: "drwxr-xr-x" };
-    if (payload.operation === "start") { starts++; return { state: "complete", bytes, entries: 1, skipped: 0, token: null }; }
+    if (payload.operation === "measure") { starts++; return { state: "complete", bytes, entries: 1, skipped: 0, token: null }; }
     return { state: "unknown" };
   };
   const root = createRoot(document.getElementById("root"));
@@ -130,12 +130,50 @@ test("renewed visibility and details activation revalidate one shared size job",
     await act(async () => root.render(null));
     bytes = 999; starts = 0;
     await act(async () => root.render(h(Fragment, null, row("sidebar"), row("central"))));
-    assert.equal(starts, 1, "both visible views must share the verification");
-    assert.equal((document.body.textContent.match(/999 B/g) ?? []).length, 2);
+    assert.equal(starts, 0, "both visible views reuse the cached sample without a scan");
+    assert.equal((document.body.textContent.match(/12 B/g) ?? []).length, 2);
     bytes = 50; starts = 0;
     await act(async () => root.render(h(Fragment, null, row("sidebar"), row("central"), h(api.FileDetails, { projectId, path: "src", onClose: noop, inline: true }))));
-    assert.equal(starts, 1, "opening details verifies the existing shared sample");
+    assert.equal(starts, 0, "opening details reuses the existing shared sample");
+    assert.equal((document.body.textContent.match(/12 B/g) ?? []).length, 3);
+    await act(async () => api.invalidateFolderSizes(projectId));
+    assert.equal(starts, 1, "explicit refresh scans once for all subscribers");
     assert.equal((document.body.textContent.match(/50 B/g) ?? []).length, 3);
+  } finally {
+    await act(async () => root.unmount());
+    Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
+  }
+});
+
+for (const complete of [true, false]) test(`persisted terminal sample is displayed without scanning (complete=${complete})`, async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, IntersectionObserver: globalThis.IntersectionObserver };
+  globalThis.window = parsed.window; globalThis.document = parsed.document;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.IntersectionObserver = class {
+    constructor(callback) { this.callback = callback; }
+    observe() { queueMicrotask(() => this.callback([{ isIntersecting: true }])); }
+    disconnect() {}
+  };
+  const requests = [];
+  globalThis.__fileManagementQuery = async (action, payload) => {
+    if (action === "project_file_info") return { type: "dir", name: "src", absolute_path: "/src", size: null, mtime: 1, created_at: null, permissions: "drwxr-xr-x" };
+    requests.push(payload.operation ?? "peek");
+    return payload.operation === "start" ? { state: "complete", bytes: 999, complete: true } : { state: "cached", bytes: 12, complete, skipped: complete ? 0 : 1, token: null };
+  };
+  const root = createRoot(document.getElementById("root"));
+  const projectId = `persisted-${complete}`;
+  try {
+    await act(async () => root.render(h(api.FolderSize, { projectId, path: "src" })));
+    assert.equal(document.body.textContent, "12 B");
+    assert.deepEqual(requests, ["measure"], "a terminal cache hit must not start a recursive scan");
+    await act(async () => root.render(h(api.FileDetails, { projectId, path: "src", onClose: noop, inline: true })));
+    assert.match(document.body.textContent, complete ? /≈ 12 B/ : /≥ 12 B/);
+    assert.deepEqual(requests, ["measure"]);
+    const recalculate = [...document.querySelectorAll("button")].find(button => button.textContent === "Recalculate");
+    await act(async () => recalculate.dispatchEvent(new window.Event("click", { bubbles: true })));
+    assert.deepEqual(requests, ["measure", "start"]);
+    assert.match(document.body.textContent, /≈ 999 B/);
   } finally {
     await act(async () => root.unmount());
     Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
@@ -147,8 +185,8 @@ test("breadcrumb uses available width and reveals more ancestors when resized", 
   const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver };
   globalThis.window = parsed.window; globalThis.document = parsed.document;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  let available = 300, resize;
-  const widths = { fzkuji: 30, "…": 10, Desktop: 70, EasyEdit: 65, easyeditor: 60, evaluate: 60 };
+  let available = 400, resize;
+  const widths = { alex: 30, Desktop: 70, EasyEdit: 65, easyeditor: 60, evaluate: 60 };
   const prototype = parsed.window.HTMLElement.prototype;
   const oldRect = prototype.getBoundingClientRect;
   const oldWidth = Object.getOwnPropertyDescriptor(prototype, "clientWidth");
@@ -157,20 +195,22 @@ test("breadcrumb uses available width and reveals more ancestors when resized", 
   globalThis.ResizeObserver = class { constructor(callback) { resize = callback; } observe() {} disconnect() {} };
   const root = createRoot(document.getElementById("root"));
   try {
-    await act(async () => root.render(h(api.FileBreadcrumb, { root: "fzkuji", path: "Desktop/EasyEdit/easyeditor/evaluate", onLocate: noop })));
-    const visible = () => [...document.querySelectorAll('nav button')].map(button => button.textContent);
-    assert.deepEqual(visible(), ["fzkuji", "Desktop", "EasyEdit", "easyeditor", "evaluate"], "compact separators expose another ancestor");
-    available = 190;
+    await act(async () => root.render(h(api.FileBreadcrumb, { root: "alex", path: "Desktop/EasyEdit/easyeditor/evaluate", onLocate: noop })));
+    const visible = () => [...document.querySelectorAll('nav button')].map(button => button.dataset.path === undefined ? "…" : button.textContent);
+    assert.deepEqual(visible(), ["alex", "Desktop", "EasyEdit", "easyeditor", "evaluate"], "every ancestor fits");
+    assert.ok(document.querySelector('nav[data-slot="breadcrumb"] ol[data-slot="breadcrumb-list"]'), "the path is shadcn's Nova Breadcrumb");
+    assert.equal(document.querySelector('button[aria-current="page"]').textContent, "evaluate");
+    available = 250;
     await act(async () => resize());
-    assert.deepEqual(visible(), ["fzkuji", "…", "easyeditor", "evaluate"], "compact arrows fit the ancestor without truncation");
+    assert.deepEqual(visible(), ["alex", "…", "easyeditor", "evaluate"], "compact arrows fit the ancestor without truncation");
     const partial = document.querySelector('button[data-path="Desktop/EasyEdit/easyeditor"]');
     assert.equal(partial.parentElement.style.maxWidth, "");
     available = 400;
     await act(async () => resize());
-    assert.deepEqual(visible(), ["fzkuji", "Desktop", "EasyEdit", "easyeditor", "evaluate"]);
-    available = 220;
+    assert.deepEqual(visible(), ["alex", "Desktop", "EasyEdit", "easyeditor", "evaluate"]);
+    available = 330;
     await act(async () => resize());
-    assert.deepEqual(visible(), ["fzkuji", "…", "EasyEdit", "easyeditor", "evaluate"]);
+    assert.deepEqual(visible(), ["alex", "…", "EasyEdit", "easyeditor", "evaluate"], "spare room shows part of one more ancestor");
   } finally {
     await act(async () => root.unmount());
     prototype.getBoundingClientRect = oldRect;
@@ -184,7 +224,7 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
   const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
   const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver, IntersectionObserver: globalThis.IntersectionObserver };
   globalThis.window = parsed.window; globalThis.document = parsed.document;
-  const browserGlobals = ["HTMLDivElement", "ShadowRoot", "HTMLElement", "HTMLStyleElement", "Element", "HTMLTemplateElement", "SVGElement", "HTMLInputElement", "Node", "MutationObserver", "customElements"];
+  const browserGlobals = ["Event", "HTMLDivElement", "ShadowRoot", "HTMLElement", "HTMLStyleElement", "Element", "HTMLTemplateElement", "SVGElement", "HTMLInputElement", "Node", "MutationObserver", "customElements"];
   for (const key of browserGlobals) { saved[key] = globalThis[key]; globalThis[key] = parsed.window[key]; }
   Object.defineProperties(parsed.window.HTMLElement.prototype, {
     scrollTop: { configurable: true, writable: true, value: 0 },
@@ -205,15 +245,14 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
   let holdSize = true; const sizeWaiters = [];
   const requests = []; const held = []; let holding = false; let refreshed = false; const heldPages = [];
   let holdingPages = false; let failPage = true;
-  const entry = (name, type, size = 0) => ({ name, type, size, mtime: 1 });
+  // Mid-1970, so the rendered year is 1970 in every time zone.
+  const entry = (name, type, size = 0) => ({ name, type, size, mtime: 15_000_000 });
   globalThis.__fileManagementQuery = async (action, payload) => {
     if (action === "list_projects") return { projects: [{ id: projectId, path: "/project" }, { id: "other-project", path: "/other" }] };
     if (action === "project_folder_size") {
+      if (payload.operation === "cancel") return { state: "cancelled", token: null };
       sizeRequests++;
-      if (holdSize) {
-        if (!payload.operation) return {state:"cached",bytes:1024,complete:false};
-        return new Promise(resolve => sizeWaiters.push(resolve));
-      }
+      if (holdSize) return new Promise(resolve => sizeWaiters.push(resolve));
       return { state: "complete", bytes: 2048, complete: true };
     }
     if (action !== "project_file_tree") return null;
@@ -231,13 +270,15 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
   try {
     await act(async () => root.render(h(api.FileTree, { projectId })));
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
-    assert.ok(sizeRequests > 0, "visible folder starts a size scan after shadow renderer mounts");
+    assert.equal(sizeRequests, 1, "a visible folder asks for its size once");
     const pulse = () => query('[data-item-section="decoration"] span[style*="--op-size-scanning"]');
-    assert.equal(pulse()?.textContent, "1.0 KiB");
-    await act(async()=>sizeWaiters.shift()({state:"partial",bytes:2048,token:"scan"}));
-    assert.equal(pulse()?.textContent, "2.0 KiB", "existing number updates while pulsing");
+    await act(async()=>sizeWaiters.shift()({state:"partial",bytes:1024,token:"scan"}));
+    assert.match(query('[data-item-path="src/"] [data-item-section="decoration"]').textContent, /1.0 KiB/);
+    assert.equal(sizeRequests, 1, "a partial answer is not followed by automatic continue requests");
+    await act(async () => api.invalidateFolderSizes(projectId));
+    assert.equal(pulse()?.textContent, "1.0 KiB", "the existing number pulses while it is re-measured");
     holdSize = false;
-    await act(async()=>sizeWaiters.shift()({state:"complete",bytes:2048,complete:true}));
+    await act(async()=>sizeWaiters.shift()({state:"complete",bytes:1024,complete:true}));
     assert.equal(pulse(), null, "completion stops pulse even when byte value does not change");
     assert.doesNotMatch(query('[data-item-path="src/"] [data-item-section="decoration"]').textContent, /计算中|Calculating|—|…/);
 
@@ -312,6 +353,15 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     assert.equal(query('[data-item-path="src/nested/"]'), null);
     await click('[data-item-path="src/"]');
     assert.ok(query('[data-item-path="src/nested/empty.txt"]'), "refresh of a collapsed ancestor retains expanded child caches");
+    const metadata = query('[data-item-path="src/data.bin"] [data-item-section="decoration"] > span').children;
+    assert.match(metadata[1].textContent, /1970/, "listing mtime reaches the public tree");
+    assert.equal(metadata[2].textContent, "BIN file");
+    const beforeSort = requests.length;
+    await click('[role="columnheader"][aria-label="Size"] button');
+    assert.ok(requests.slice(beforeSort).some(p => p.path === "" && p.sort === "size:desc:folders:hidden:ignored"), "header uses existing server sorting");
+    assert.equal(document.querySelector('[role="columnheader"][aria-label="Size"]').getAttribute("aria-sort"), "descending");
+    await click('[role="columnheader"][aria-label="Size"] button');
+    assert.ok(requests.some(p => p.sort === "size:asc:folders:hidden:ignored"));
     await act(async () => root.render(h(api.FileTree, { projectId: "other-project" })));
     assert.doesNotMatch(path(), /data.bin/);
     assert.equal(query('[data-item-path="src/data.bin"]'), null);
@@ -407,18 +457,74 @@ test("Pierre nested folder collapse survives state synchronization and refresh",
     await act(async()=>row("src/").dispatchEvent(new window.MouseEvent("click",{bubbles:true,composed:true})));
     assert.equal(row("src/nested/").getAttribute("aria-expanded"),"true","child expansion survives parent collapse");
     assert.ok(row("src/nested/file.txt"));
+    assert.equal(document.querySelectorAll(".overlay-thumb").length, 1, "the tree scrolls with the app's overlay thumb");
+    assert.ok(shadow.querySelector('[data-file-tree-virtualized-scroll="true"]').classList.contains("scroll-overlay"));
+    await act(async()=>root.unmount());
+    assert.equal(document.querySelectorAll(".overlay-thumb").length, 0, "unmounting removes the thumb");
   } finally { await act(async()=>root.unmount()); Object.assign(globalThis,saved); }
 });
 
-test("breadcrumb copy confirms success and context menu copies the clicked ancestor", async () => {
+test("a new entry starts unnamed: leaving it empty drops it, a typed name creates it", async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver, IntersectionObserver: globalThis.IntersectionObserver };
+  globalThis.window = parsed.window; globalThis.document = parsed.document;
+  const browserGlobals = ["Event", "HTMLDivElement", "ShadowRoot", "HTMLElement", "HTMLStyleElement", "Element", "HTMLTemplateElement", "SVGElement", "HTMLInputElement", "Node", "MutationObserver", "customElements"];
+  for (const key of browserGlobals) { saved[key] = globalThis[key]; globalThis[key] = parsed.window[key]; }
+  Object.defineProperties(parsed.window.HTMLElement.prototype, {
+    scrollTop: { configurable: true, writable: true, value: 0 },
+    clientHeight: { configurable: true, get: () => 600 },
+    clientWidth: { configurable: true, get: () => 300 },
+  });
+  parsed.window.HTMLElement.prototype.scrollTo = function(options) { this.scrollTop = options.top ?? this.scrollTop; };
+  saved.requestAnimationFrame = globalThis.requestAnimationFrame;
+  saved.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = callback => setTimeout(callback, 0);
+  globalThis.cancelAnimationFrame = clearTimeout;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+  globalThis.IntersectionObserver = class { observe() {} disconnect() {} };
+  const root = createRoot(document.getElementById("root"));
+  const entries = [{path:"src",type:"dir",size:0},{path:"src/a.txt",type:"file",size:1}];
+  // linkedom has no text selection; Pierre selects the name it opens.
+  for (const method of ["select", "setSelectionRange", "focus"]) parsed.window.HTMLInputElement.prototype[method] ??= function() {};
+  const committed = []; let cancelled = 0;
+  const frames = () => act(async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setTimeout(resolve, 0)); });
+  function Harness({ draft }) {
+    return h(api.PierreFileTree,{projectId:"draft",entries,expanded:new Set(["src"]),selected:null,draft,
+      onExpandedChange:noop,onSelect:noop,onOpen:noop,onContextMenu:noop,
+      onDraftCommit:name=>committed.push(name),onDraftCancel:()=>{ cancelled++; }});
+  }
+  try {
+    await act(async()=>root.render(h(Harness,{draft:{dir:"src",kind:"file"}})));
+    await frames();
+    const shadow=document.querySelector("file-tree-container").shadowRoot;
+    let input=shadow.querySelector("input[data-item-rename-input]");
+    assert.equal(input.value, "", "the name starts empty");
+    assert.equal(input.placeholder, "untitled", "the default name is only a hint");
+    await act(async()=>input.dispatchEvent(new window.Event("blur")));
+    assert.equal(cancelled, 1, "leaving with nothing typed drops the entry");
+    assert.deepEqual(committed, []);
+
+    await act(async()=>root.render(h(Harness,{draft:null})));
+    await act(async()=>root.render(h(Harness,{draft:{dir:"src",kind:"file"}})));
+    await frames();
+    input=shadow.querySelector("input[data-item-rename-input]");
+    assert.equal(input.value, "", "a new draft starts empty again");
+    input.value="notes.md";
+    await act(async()=>input.dispatchEvent(new window.Event("input",{bubbles:true,composed:true})));
+    await act(async()=>input.dispatchEvent(new window.Event("blur")));
+    assert.deepEqual(committed, ["notes.md"], "a typed name creates the entry on blur");
+  } finally { await act(async()=>root.unmount()); Object.assign(globalThis,saved); }
+});
+
+test("breadcrumb copy confirms success only after the clipboard write completes", async () => {
   const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
   const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver };
   const clipboard = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   Object.assign(globalThis, { window: parsed.window, document: parsed.document, ResizeObserver: class { observe() {} disconnect() {} } });
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  const writes = []; let finishCopy, menu, select;
+  const writes = []; let finishCopy;
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: value => { writes.push(value); return new Promise(resolve => { finishCopy = resolve; }); } } } });
-  window.openprogramDesktop = { contextMenu: { popup: request => { menu = request; return new Promise(resolve => { select = resolve; }); }, close() {} } };
   const root = createRoot(document.getElementById("root"));
   const click = async node => act(async () => node.dispatchEvent(new window.Event("click", { bubbles: true })));
   try {
@@ -429,16 +535,9 @@ test("breadcrumb copy confirms success and context menu copies the clicked ances
     assert.ok(document.querySelector('button[aria-label="Copied"] svg'));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 1550)); });
     assert.ok(document.querySelector('button[aria-label="Copy absolute path"]'));
-    const ancestor = document.querySelector('button[data-path="src"]');
-    await act(async () => ancestor.dispatchEvent(new window.Event("contextmenu", {bubbles:true})));
-    assert.deepEqual(menu.items.map(item => item.id), ["relative","absolute","name"]);
-    await act(async () => select("absolute"));
-    assert.equal(writes.at(-1), "/project/src");
-    await act(async () => finishCopy());
-    await act(async () => ancestor.dispatchEvent(new window.Event("contextmenu", {bubbles:true})));
-    await act(async () => select("relative"));
-    assert.equal(writes.at(-1), "src");
-    await act(async () => finishCopy());
+    assert.deepEqual(writes, ["/project/src/file.txt"]);
+    // Actual ancestor context-menu actions use the Chromium acceptance test in
+    // tests/e2e/web/test_browser_control_menu.py.
   } finally {
     await act(async () => root.unmount());
     Object.assign(globalThis, saved);
@@ -483,4 +582,58 @@ test("stale pagination retains rendered rows while replacing its snapshot", asyn
     assert.ok(document.querySelector("file-tree-container").shadowRoot.querySelector('[data-item-path="visible.txt"]'),"keep rows mounted during stale snapshot recovery instead of collapsing viewport to zero");
     await act(async()=>release()); release=null;
   } finally {if(release)await act(async()=>release());await act(async()=>root.unmount());Object.assign(globalThis,saved);delete globalThis.__fileManagementQuery;}
+});
+
+test("a mounted tree asks once per large folder and again only after a Files change", async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const browserGlobals = ["Event", "HTMLDivElement", "ShadowRoot", "HTMLElement", "HTMLStyleElement", "Element", "HTMLTemplateElement", "SVGElement", "HTMLInputElement", "Node", "MutationObserver", "customElements"];
+  const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver, IntersectionObserver: globalThis.IntersectionObserver, requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame };
+  globalThis.window = parsed.window; globalThis.document = parsed.document;
+  for (const key of browserGlobals) { saved[key] = globalThis[key]; globalThis[key] = parsed.window[key]; }
+  Object.defineProperties(parsed.window.HTMLElement.prototype, {
+    scrollTop: { configurable: true, writable: true, value: 0 },
+    clientHeight: { configurable: true, get: () => 600 },
+    clientWidth: { configurable: true, get: () => 300 },
+  });
+  parsed.window.HTMLElement.prototype.scrollTo = function() {};
+  globalThis.requestAnimationFrame = callback => setTimeout(callback, 0);
+  globalThis.cancelAnimationFrame = clearTimeout;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+  globalThis.IntersectionObserver = class { observe() {} disconnect() {} };
+  const projectId = "large-folders";
+  const folders = ["a", "b", "c", "d", "e", "f"];
+  const sizes = [];
+  globalThis.__fileManagementQuery = async (action, payload) => {
+    if (action === "list_projects") return { projects: [{ id: projectId, path: "/project" }] };
+    if (action === "project_folder_size") {
+      sizes.push(`${payload.operation ?? "peek"}${payload.fresh ? ":fresh" : ""}`);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      // Every folder is too large to finish inside one bounded walk.
+      return payload.operation === "cancel" ? { state: "cancelled", bytes: 1000 } : { state: "partial", bytes: 1000, complete: false, token: `t-${payload.path}` };
+    }
+    if (action !== "project_file_tree") return null;
+    return { project_id: payload.project_id, path: payload.path, snapshot_id: "s", next_cursor: null, entries: payload.path === "" ? folders.map(name => ({ name, type: "dir", size: 0, mtime: 15_000_000 })) : [] };
+  };
+  const root = createRoot(document.getElementById("root"));
+  const wait = async (ms) => { for (let t = 0; t < ms; t += 25) await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)); }); };
+  try {
+    await act(async () => root.render(h(api.FileTree, { projectId })));
+    await wait(1500);
+    // Before the fix each large folder sent a peek, a start and 19 continues (126 here).
+    assert.deepEqual(sizes, folders.map(() => "measure"), "one request per visible folder");
+    await act(async () => root.render(null));
+    await act(async () => root.render(h(api.FileTree, { projectId })));
+    await wait(500);
+    assert.equal(sizes.length, folders.length, "remounting reuses the answers");
+    sizes.length = 0;
+    await act(async () => window.dispatchEvent(new window.CustomEvent("project-files-changed", { detail: { project_id: projectId } })));
+    await wait(1000);
+    assert.equal(sizes.filter(op => op === "measure:fresh").length, folders.length, "a Files change re-measures each folder once");
+    assert.equal(sizes.filter(op => op.startsWith("continue") || op.startsWith("start")).length, 0);
+  } finally {
+    await act(async () => root.unmount());
+    Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
+    delete parsed.window.HTMLElement.prototype.scrollTo;
+  }
 });

@@ -1,0 +1,1290 @@
+{
+  "README.html": {
+    "en": "Overview",
+    "zh": "概览"
+  },
+  "capabilities/README.html": {
+    "en": "Overview",
+    "zh": "概览"
+  },
+  "capabilities/agentic-programming/README.html": {
+    "en": "Guide",
+    "zh": "指南"
+  },
+  "capabilities/agentic-programming/choosing-the-next-step/fixed-order-calls.html": {
+    "en": "Fixed-order calls",
+    "zh": "顺序调用"
+  },
+  "capabilities/agentic-programming/choosing-the-next-step/next-step-decision.html": {
+    "en": "Next-step selection",
+    "zh": "步骤选择"
+  },
+  "capabilities/agentic-programming/choosing-the-next-step/tool-calling.html": {
+    "en": "Tool-call loops",
+    "zh": "工具循环"
+  },
+  "capabilities/agentic-programming/embedding-in-your-own-stack.html": {
+    "en": "Framework embedding",
+    "zh": "框架嵌入"
+  },
+  "capabilities/agentic-programming/philosophy.html": {
+    "en": "Philosophy",
+    "zh": "设计原则"
+  },
+  "capabilities/agentic-programming/self-programming-ai-agents.html": {
+    "en": "Self-programming agents",
+    "zh": "自编程智能体"
+  },
+  "capabilities/agentic-programming/writing-functions/agent.html": {
+    "en": "Agentic functions",
+    "zh": "智能体函数"
+  },
+  "capabilities/agentic-programming/writing-functions/function-metadata.html": {
+    "en": "Function metadata",
+    "zh": "函数元数据"
+  },
+  "capabilities/agentic-programming/writing-functions/pure-python.html": {
+    "en": "Python functions",
+    "zh": "Python 函数"
+  },
+  "capabilities/applications.html": {
+    "en": "Applications",
+    "zh": "应用"
+  },
+  "capabilities/commit-push-pr.html": {
+    "en": "Commits and PRs",
+    "zh": "提交与拉取请求"
+  },
+  "capabilities/framework-control.html": {
+    "en": "Framework tools",
+    "zh": "框架工具"
+  },
+  "capabilities/goal.html": {
+    "en": "Goals",
+    "zh": "目标"
+  },
+  "capabilities/installing-programs.html": {
+    "en": "Installing programs",
+    "zh": "安装程序"
+  },
+  "capabilities/lsp.html": {
+    "en": "Language servers",
+    "zh": "语言服务器"
+  },
+  "capabilities/mcp.html": {
+    "en": "MCP",
+    "zh": "MCP"
+  },
+  "capabilities/memory.html": {
+    "en": "Memory management",
+    "zh": "记忆管理"
+  },
+  "capabilities/permissions.html": {
+    "en": "Tool permissions",
+    "zh": "工具权限"
+  },
+  "capabilities/plugins.html": {
+    "en": "Plugins",
+    "zh": "插件"
+  },
+  "capabilities/skills.html": {
+    "en": "Skills",
+    "zh": "技能"
+  },
+  "capabilities/computer-use.html": {
+    "en": "Computer use",
+    "zh": "操控电脑"
+  },
+  "capabilities/tools.html": {
+    "en": "Built-in tools",
+    "zh": "内置工具"
+  },
+  "capabilities/workflows/README.html": {
+    "en": "Workflows",
+    "zh": "工作流"
+  },
+  "capabilities/workflows/authoring.html": {
+    "en": "Workflow authoring",
+    "zh": "工作流编写"
+  },
+  "capabilities/workflows/reports.html": {
+    "en": "Weekly reports",
+    "zh": "每周报告"
+  },
+  "reference/comparisons/ai-agent-frameworks.html": {
+    "en": "Framework comparison",
+    "zh": "框架对比"
+  },
+  "reference/comparisons/related-projects.html": {
+    "en": "Related projects",
+    "zh": "相关项目"
+  },
+  "install/download.html": {
+    "en": "Download",
+    "zh": "下载"
+  },
+  "install/install.html": {
+    "en": "Install",
+    "zh": "安装"
+  },
+  "install/profiles.html": {
+    "en": "Profiles",
+    "zh": "多实例与 Profile"
+  },
+  "install/upgrade.html": {
+    "en": "Upgrade",
+    "zh": "升级"
+  },
+  "install/conversational-self-update.html": {
+    "en": "Update from chat",
+    "zh": "在对话里更新"
+  },
+  "install/self-update-verification.html": {
+    "en": "Self-update verification",
+    "zh": "自更新验收计划"
+  },
+  "install/self-update-rollback.html": {
+    "en": "Self-update rollback",
+    "zh": "自更新回退之后"
+  },
+  "install/development-checkout.html": {
+    "en": "Development checkout",
+    "zh": "开发 checkout"
+  },
+  "integrations/channels.html": {
+    "en": "Chat channels",
+    "zh": "聊天渠道"
+  },
+  "integrations/anthropic.html": {
+    "en": "Anthropic API",
+    "zh": "Anthropic API"
+  },
+  "integrations/openclaw.html": {
+    "en": "OpenClaw",
+    "zh": "OpenClaw"
+  },
+  "interfaces/README.html": {
+    "en": "Interfaces",
+    "zh": "界面"
+  },
+  "interfaces/acp.html": {
+    "en": "Editor integration",
+    "zh": "编辑器集成"
+  },
+  "interfaces/openai-api.html": {
+    "en": "OpenAI-compatible API",
+    "zh": "OpenAI 兼容接口"
+  },
+  "interfaces/cli.html": {
+    "en": "CLI",
+    "zh": "命令行"
+  },
+  "interfaces/desktop.html": {
+    "en": "Desktop App",
+    "zh": "桌面应用"
+  },
+  "interfaces/tui.html": {
+    "en": "Terminal UI",
+    "zh": "终端界面"
+  },
+  "interfaces/web.html": {
+    "en": "Web UI",
+    "zh": "网页界面"
+  },
+  "models/README.html": {
+    "en": "Model configuration",
+    "zh": "模型配置"
+  },
+  "models/auth.html": {
+    "en": "Authentication",
+    "zh": "认证"
+  },
+  "models/fast-tier.html": {
+    "en": "Fast mode",
+    "zh": "高速模式"
+  },
+  "models/providers.html": {
+    "en": "Providers",
+    "zh": "模型服务"
+  },
+  "models/thinking-effort.html": {
+    "en": "Thinking effort",
+    "zh": "推理强度"
+  },
+  "models/token-tracking.html": {
+    "en": "Token accounting",
+    "zh": "Token 计量"
+  },
+  "reference/API.html": {
+    "en": "API reference",
+    "zh": "API 参考"
+  },
+  "reference/README.html": {
+    "en": "Overview",
+    "zh": "概览"
+  },
+  "reference/api/agent.html": {
+    "en": "Function API",
+    "zh": "函数 API"
+  },
+  "reference/api/providers.html": {
+    "en": "Provider API",
+    "zh": "模型服务 API"
+  },
+  "reference/api/runtime.html": {
+    "en": "Runtime API",
+    "zh": "运行时 API"
+  },
+  "reference/design/context/claude-code-compaction.html": {
+    "en": "Claude Code compaction",
+    "zh": "Claude 压缩"
+  },
+  "reference/cli.html": {
+    "en": "CLI reference",
+    "zh": "CLI 参考"
+  },
+  "reference/config.html": {
+    "en": "Configuration reference",
+    "zh": "配置项参考"
+  },
+  "reference/design/README.html": {
+    "en": "Design guide",
+    "zh": "设计指南"
+  },
+  "reference/design/channels/README.html": {
+    "en": "Channels",
+    "zh": "通信渠道"
+  },
+  "reference/design/channels/audit.html": {
+    "en": "Requirements",
+    "zh": "需求约束"
+  },
+  "reference/design/channels/design.html": {
+    "en": "Architecture",
+    "zh": "架构"
+  },
+  "reference/design/cli/README.html": {
+    "en": "CLI and TUI",
+    "zh": "命令行与终端"
+  },
+  "reference/design/cli/config-write-safety.html": {
+    "en": "Configuration safety",
+    "zh": "配置安全"
+  },
+  "reference/design/cli/drop-run-command.html": {
+    "en": "Function execution",
+    "zh": "函数执行"
+  },
+  "reference/design/cli/naming.html": {
+    "en": "Naming conventions",
+    "zh": "命名规范"
+  },
+  "reference/design/cli/ports.html": {
+    "en": "Port configuration",
+    "zh": "端口配置"
+  },
+  "reference/design/cli/redesign.html": {
+    "en": "Configuration interface",
+    "zh": "配置界面"
+  },
+  "reference/design/cli/single-port.html": {
+    "en": "Single-port architecture",
+    "zh": "单端口架构"
+  },
+  "reference/design/cli/headless-print.html": {
+    "en": "Headless print runs",
+    "zh": "无头 print 运行"
+  },
+  "reference/design/cli/slash-commands-references.html": {
+    "en": "Command comparison",
+    "zh": "命令对比"
+  },
+  "reference/design/cli/slash-commands.html": {
+    "en": "Slash commands",
+    "zh": "斜杠命令"
+  },
+  "reference/design/cli/tui-upgrade.html": {
+    "en": "Transcript rendering",
+    "zh": "会话记录渲染"
+  },
+  "reference/design/community-discoverability.html": {
+    "en": "Community discovery",
+    "zh": "社区检索"
+  },
+  "reference/design/context/README.html": {
+    "en": "Reading guide",
+    "zh": "阅读指南"
+  },
+  "reference/design/context/compaction-diagram.html": {
+    "en": "Compaction diagram",
+    "zh": "压缩图解"
+  },
+  "reference/design/context/compaction.html": {
+    "en": "Compaction",
+    "zh": "压缩"
+  },
+  "reference/design/context/comparison.html": {
+    "en": "Design comparison",
+    "zh": "方案对比"
+  },
+  "reference/design/context/composition.html": {
+    "en": "Composition",
+    "zh": "组成"
+  },
+  "reference/design/context/memory-introspection.html": {
+    "en": "Memory introspection",
+    "zh": "记忆自查"
+  },
+  "reference/design/context/occupancy-status.html": {
+    "en": "Occupancy",
+    "zh": "占用状态"
+  },
+  "reference/design/context/overview.html": {
+    "en": "Overview",
+    "zh": "概览"
+  },
+  "reference/design/context/statistics.html": {
+    "en": "Accounting rules",
+    "zh": "统计口径"
+  },
+  "reference/design/distribution/automatic-updates.html": {
+    "en": "Automatic updates",
+    "zh": "自动更新"
+  },
+  "reference/design/distribution/developer-id.html": {
+    "en": "Developer ID",
+    "zh": "Developer ID"
+  },
+  "reference/design/distribution/implementation-plan.html": {
+    "en": "Distribution plan",
+    "zh": "分发计划"
+  },
+  "reference/design/distribution/installation-packaging.html": {
+    "en": "Packaging and releases",
+    "zh": "打包与发布"
+  },
+  "reference/design/distribution/windows-support.html": {
+    "en": "Windows support",
+    "zh": "Windows 支持"
+  },
+  "reference/design/docs-site.html": {
+    "en": "Documentation site",
+    "zh": "文档站"
+  },
+  "reference/design/documentation-gaps.html": {
+    "en": "Documentation gaps",
+    "zh": "文档差异"
+  },
+  "reference/design/engineering-backlog.html": {
+    "en": "Engineering backlog",
+    "zh": "工程待办"
+  },
+  "reference/design/error-handling.html": {
+    "en": "Error handling",
+    "zh": "错误处理"
+  },
+  "reference/design/extension-gating/README.html": {
+    "en": "Extension controls",
+    "zh": "扩展控制"
+  },
+  "reference/design/extension-gating/future-work.html": {
+    "en": "Future work",
+    "zh": "后续工作"
+  },
+  "reference/design/extension-gating/implementation.html": {
+    "en": "Implementation map",
+    "zh": "实现对应关系"
+  },
+  "reference/design/extension-gating/reference-comparison.html": {
+    "en": "Reference comparison",
+    "zh": "参考对比"
+  },
+  "reference/design/feature-matrix.html": {
+    "en": "Feature matrix",
+    "zh": "功能矩阵"
+  },
+  "reference/design/framework-comparison.html": {
+    "en": "Framework comparison",
+    "zh": "框架对比"
+  },
+  "reference/design/framework-capability-differences.html": {
+    "en": "Capability differences",
+    "zh": "能力差异"
+  },
+  "reference/design/framework-overview.html": {
+    "en": "Framework overview",
+    "zh": "框架总览"
+  },
+  "reference/design/function/README.html": {
+    "en": "Functions",
+    "zh": "函数"
+  },
+  "reference/design/function/agentic-program.html": {
+    "en": "Agentic Program",
+    "zh": "Agentic Program"
+  },
+  "reference/design/function/calling/code-call.html": {
+    "en": "Fixed-order calls",
+    "zh": "顺序调用"
+  },
+  "reference/design/function/calling-unification.html": {
+    "en": "Function calling",
+    "zh": "函数调用"
+  },
+  "reference/design/implementation-status.html": {
+    "en": "Implementation index",
+    "zh": "实现索引"
+  },
+  "reference/design/integrations/README.html": {
+    "en": "Integrations",
+    "zh": "集成"
+  },
+  "reference/design/integrations/editor-integration.html": {
+    "en": "Editor integration",
+    "zh": "编辑器集成"
+  },
+  "reference/design/integrations/extension-management.html": {
+    "en": "Extension management",
+    "zh": "扩展管理"
+  },
+  "reference/design/integrations/harness-standard.html": {
+    "en": "Harness standard",
+    "zh": "运行环境规范"
+  },
+  "reference/design/integrations/mcp-integration.html": {
+    "en": "MCP tools",
+    "zh": "MCP 工具"
+  },
+  "reference/design/integrations/mcp-server.html": {
+    "en": "MCP server",
+    "zh": "MCP 服务端"
+  },
+  "reference/design/integrations/openai-compatible-endpoint.html": {
+    "en": "OpenAI-compatible endpoint",
+    "zh": "OpenAI 兼容端点"
+  },
+  "reference/design/integrations/skills-and-plugins.html": {
+    "en": "Skills and plugins",
+    "zh": "技能与插件"
+  },
+  "reference/design/integrations/computer-and-browser-use.html": {
+    "en": "Computer and browser use",
+    "zh": "操控电脑与浏览器"
+  },
+  "reference/design/integrations/computer-use-approval.html": {
+    "en": "Screen approval",
+    "zh": "屏幕审批"
+  },
+  "reference/design/integrations/computer-use-app-target.html": {
+    "en": "Application target",
+    "zh": "应用目标"
+  },
+  "reference/design/integrations/computer-use-macos.html": {
+    "en": "macOS delivery",
+    "zh": "macOS 投递"
+  },
+  "reference/design/integrations/working-behind-the-user.html": {
+    "en": "Working behind the user",
+    "zh": "不打扰用户"
+  },
+  "reference/design/integrations/computer-use-linux-windows.html": {
+    "en": "Linux and Windows backends",
+    "zh": "非 macOS 后端"
+  },
+  "reference/design/integrations/computer-use-interface.html": {
+    "en": "Computer use interface",
+    "zh": "操控电脑的界面"
+  },
+  "reference/design/integrations/browser-application.html": {
+    "en": "Browser application",
+    "zh": "浏览器应用"
+  },
+  "reference/design/integrations/browser-tab-driver.html": {
+    "en": "Browser tab driver",
+    "zh": "浏览器标签页驱动"
+  },
+  "reference/design/integrations/browser-tab-actions.html": {
+    "en": "Browser tab actions",
+    "zh": "浏览器标签页动作"
+  },
+  "reference/design/memory/README.html": {
+    "en": "Reading guide",
+    "zh": "阅读指南"
+  },
+  "reference/design/memory/adoption.html": {
+    "en": "Design adoption",
+    "zh": "方案采用"
+  },
+  "reference/design/memory/architecture.html": {
+    "en": "Architecture diagrams",
+    "zh": "架构图解"
+  },
+  "reference/design/memory/authority-handoff.html": {
+    "en": "Authority and pairing",
+    "zh": "权限与配对"
+  },
+  "reference/design/memory/authority-landscape.html": {
+    "en": "Authority comparison",
+    "zh": "权限对比"
+  },
+  "reference/design/memory/comparison.html": {
+    "en": "Write comparison",
+    "zh": "写入对比"
+  },
+  "reference/design/memory/editor.html": {
+    "en": "Editor and history",
+    "zh": "编辑与历史"
+  },
+  "reference/design/memory/entity-memory-proposal.html": {
+    "en": "Entity memory proposal",
+    "zh": "实体记忆提案"
+  },
+  "reference/design/memory/overview.html": {
+    "en": "Architecture overview",
+    "zh": "架构概览"
+  },
+  "reference/design/memory/settings-ui.html": {
+    "en": "Settings proposal",
+    "zh": "设置提案"
+  },
+  "reference/design/memory/speaker-identity.html": {
+    "en": "Speaker identity",
+    "zh": "发言人身份"
+  },
+  "reference/design/memory/virtual-memory.html": {
+    "en": "Virtual memory",
+    "zh": "抽象记忆"
+  },
+  "reference/design/memory/written-marker.html": {
+    "en": "Write cursor",
+    "zh": "写入游标"
+  },
+  "reference/design/plans/cache-control-passthrough.html": {
+    "en": "Cache control",
+    "zh": "缓存控制"
+  },
+  "reference/design/plans/credential-connection-unification.html": {
+    "en": "Credential migration",
+    "zh": "凭据迁移"
+  },
+  "reference/design/plans/mcp-server-implementation.html": {
+    "en": "MCP implementation",
+    "zh": "MCP 实施计划"
+  },
+  "reference/design/plans/proactive-implementation.html": {
+    "en": "Proactive implementation",
+    "zh": "主动执行实施计划"
+  },
+  "reference/design/proactive/README.html": {
+    "en": "Proactive execution",
+    "zh": "主动执行"
+  },
+  "reference/design/proactive/_research_archive/evaluation.html": {
+    "en": "Evaluation",
+    "zh": "评估"
+  },
+  "reference/design/proactive/_research_archive/replay.html": {
+    "en": "Policy replay",
+    "zh": "策略回放"
+  },
+  "reference/design/proactive/_research_archive/threat-model.html": {
+    "en": "Threat model",
+    "zh": "威胁模型"
+  },
+  "reference/design/proactive/event-layer.html": {
+    "en": "Event layer",
+    "zh": "事件层"
+  },
+  "reference/design/proactive/event-reference.html": {
+    "en": "Event reference",
+    "zh": "事件参考"
+  },
+  "reference/design/proactive/events-and-state.html": {
+    "en": "Events and state",
+    "zh": "事件与状态"
+  },
+  "reference/design/proactive/execution-model.html": {
+    "en": "Rule execution",
+    "zh": "规则执行"
+  },
+  "reference/design/proactive/framework-evolution.html": {
+    "en": "Signal routing",
+    "zh": "信号路由"
+  },
+  "reference/design/proactive/invariants.html": {
+    "en": "Invariants",
+    "zh": "不变量"
+  },
+  "reference/design/proactive/overview.html": {
+    "en": "Scenario overview",
+    "zh": "场景概览"
+  },
+  "reference/design/proactive/policies-mvp.html": {
+    "en": "Rule templates",
+    "zh": "规则模板"
+  },
+  "reference/design/providers/README.html": {
+    "en": "Providers",
+    "zh": "模型服务"
+  },
+  "reference/design/providers/auth/api-key-resolution-unification.html": {
+    "en": "Credential resolution",
+    "zh": "凭据解析"
+  },
+  "reference/design/providers/auth/credential-connection-unification.html": {
+    "en": "Credential connections",
+    "zh": "凭据连接"
+  },
+  "reference/design/providers/auth/credential-file-hardening.html": {
+    "en": "File credentials",
+    "zh": "文件凭据"
+  },
+  "reference/design/providers/auth/credential-status-redesign.html": {
+    "en": "Credential status",
+    "zh": "凭据状态"
+  },
+  "reference/design/providers/auth/credential-validation-unification.html": {
+    "en": "Credential validation",
+    "zh": "凭据校验"
+  },
+  "reference/design/providers/auth/unified-account-management.html": {
+    "en": "Account rotation",
+    "zh": "账号轮换"
+  },
+  "reference/design/providers/auth/unified-auth-storage.html": {
+    "en": "Credential storage",
+    "zh": "凭据存储"
+  },
+  "reference/design/providers/bailian-model-catalog.html": {
+    "en": "Bailian catalog",
+    "zh": "百炼模型目录"
+  },
+  "reference/design/providers/custom-openai-compatible-provider.html": {
+    "en": "OpenAI compatibility",
+    "zh": "OpenAI 兼容"
+  },
+  "reference/design/providers/json-schema-structured-output.html": {
+    "en": "Structured output",
+    "zh": "结构化输出"
+  },
+  "reference/design/providers/metadata-load-diagnostics.html": {
+    "en": "Metadata diagnostics",
+    "zh": "元数据诊断"
+  },
+  "reference/design/providers/models/fast-tier.html": {
+    "en": "Fast tier",
+    "zh": "高速档位"
+  },
+  "reference/design/providers/models/overview.html": {
+    "en": "Model catalog",
+    "zh": "模型目录"
+  },
+  "reference/design/providers/models/thinking-effort.html": {
+    "en": "Thinking effort",
+    "zh": "推理强度"
+  },
+  "reference/design/providers/network-proxy.html": {
+    "en": "Network proxy",
+    "zh": "网络代理"
+  },
+  "reference/design/providers/record-replay.html": {
+    "en": "Recording and replay",
+    "zh": "录制与回放"
+  },
+  "reference/design/providers/reliability/error-and-timeout-mechanism.html": {
+    "en": "Errors and timeouts",
+    "zh": "错误与超时"
+  },
+  "reference/design/providers/reliability/error-retry.html": {
+    "en": "Retry decisions",
+    "zh": "重试决策"
+  },
+  "reference/design/providers/reliability/error-taxonomy-propagation.html": {
+    "en": "Error propagation",
+    "zh": "错误传播"
+  },
+  "reference/design/providers/reliability/llm-fault-tolerance.html": {
+    "en": "Fault tolerance",
+    "zh": "容错"
+  },
+  "reference/design/providers/request-build.html": {
+    "en": "Request construction",
+    "zh": "请求构建"
+  },
+  "reference/design/providers/responses-reasoning-replay.html": {
+    "en": "Reasoning replay",
+    "zh": "推理记录回放"
+  },
+  "reference/design/repository-structure-implementation.html": {
+    "en": "Repository migration",
+    "zh": "仓库迁移"
+  },
+  "reference/design/repository-structure.html": {
+    "en": "Repository structure",
+    "zh": "仓库结构"
+  },
+  "reference/design/runtime/README.html": {
+    "en": "Runtime",
+    "zh": "运行时"
+  },
+  "reference/design/runtime/session/additional-working-directories.html": {
+    "en": "Working directories",
+    "zh": "工作目录"
+  },
+  "reference/design/runtime/agent-configuration/agent-capability-configuration-ui.html": {
+    "en": "Capability settings",
+    "zh": "能力设置"
+  },
+  "reference/design/runtime/collaboration/agent-collab-architecture.html": {
+    "en": "Collaboration tools",
+    "zh": "协作工具"
+  },
+  "reference/design/runtime/collaboration/agent-collab-comparison.html": {
+    "en": "Collaboration comparison",
+    "zh": "协作对比"
+  },
+  "reference/design/runtime/collaboration/agent-collaboration.html": {
+    "en": "Agent communication",
+    "zh": "智能体通信"
+  },
+  "reference/design/runtime/agent-configuration/agent-configuration-plan.html": {
+    "en": "Agent implementation plan",
+    "zh": "Agent 实施计划"
+  },
+  "reference/design/runtime/agent-configuration/agent-configuration-ui.html": {
+    "en": "Agent settings",
+    "zh": "智能体设置"
+  },
+  "reference/design/runtime/agent-configuration/agent-core-configuration-ui.html": {
+    "en": "Core settings",
+    "zh": "基础设置"
+  },
+  "reference/design/runtime/reliability/agent-resource-governance.html": {
+    "en": "Resource quotas",
+    "zh": "资源配额"
+  },
+  "reference/design/runtime/agent-configuration/agent-tool-configuration-ui.html": {
+    "en": "Tool settings",
+    "zh": "工具设置"
+  },
+  "reference/design/runtime/execution/agentic-llm-streaming.html": {
+    "en": "Nested LLM streaming",
+    "zh": "嵌套 LLM 流式"
+  },
+  "reference/design/runtime/programs/application-runtime.html": {
+    "en": "Application runtime",
+    "zh": "应用运行时"
+  },
+  "reference/design/runtime/agent-configuration/chat-search-settings.html": {
+    "en": "Chat search",
+    "zh": "聊天搜索"
+  },
+  "reference/design/runtime/execution/controllability-and-three-surface-sync.html": {
+    "en": "Task controllability",
+    "zh": "任务可控性"
+  },
+  "reference/design/runtime/dag/branch-collaboration.html": {
+    "en": "Branch collaboration",
+    "zh": "分支协作"
+  },
+  "reference/design/runtime/dag/external-program-run-node.html": {
+    "en": "Program nodes",
+    "zh": "程序节点"
+  },
+  "reference/design/runtime/dag/layout.html": {
+    "en": "Layout specification",
+    "zh": "布局规范"
+  },
+  "reference/design/runtime/dag/live-layout.html": {
+    "en": "Live layout",
+    "zh": "实时布局"
+  },
+  "reference/design/runtime/dag/overview.html": {
+    "en": "Design overview",
+    "zh": "设计概览"
+  },
+  "reference/design/runtime/dag/persistence-observability.html": {
+    "en": "Agent DAG ownership",
+    "zh": "Agent 图所有权"
+  },
+  "reference/design/runtime/dag/rendering.html": {
+    "en": "Rendering specification",
+    "zh": "渲染规范"
+  },
+  "reference/design/runtime/reliability/durable-tool-results.html": {
+    "en": "Tool result storage",
+    "zh": "工具结果存储"
+  },
+  "reference/design/runtime/execution/agent-action-lifecycle.html": {
+    "en": "Action lifecycle",
+    "zh": "操作生命周期"
+  },
+  "reference/design/runtime/execution/agent-call-flow.html": {
+    "en": "Call flow",
+    "zh": "调用流程"
+  },
+  "reference/design/runtime/execution/agent-worktree.html": {
+    "en": "Worktrees",
+    "zh": "工作树"
+  },
+  "reference/design/runtime/execution/agentic-self-recursion.html": {
+    "en": "Recursion guard",
+    "zh": "递归保护"
+  },
+  "reference/design/runtime/execution/async-job-lifecycle.html": {
+    "en": "Async tasks",
+    "zh": "异步任务"
+  },
+  "reference/design/runtime/execution/control.html": {
+    "en": "Execution control",
+    "zh": "执行控制"
+  },
+  "reference/design/runtime/execution/dispatcher-split.html": {
+    "en": "Dispatcher structure",
+    "zh": "调度器结构"
+  },
+  "reference/design/runtime/execution/next-step-decision.html": {
+    "en": "Next-step decisions",
+    "zh": "下一步决策"
+  },
+  "reference/design/runtime/reliability/goal-and-recovery.html": {
+    "en": "Goals and recovery",
+    "zh": "目标与恢复"
+  },
+  "reference/design/runtime/workflows/group-weekly-report.html": {
+    "en": "Group reports",
+    "zh": "小组报告"
+  },
+  "reference/design/runtime/execution/llm-and-agent.html": {
+    "en": "Execution unification",
+    "zh": "执行统一方案"
+  },
+  "reference/design/runtime/dag/nested-llm-node-content.html": {
+    "en": "LLM node content",
+    "zh": "LLM 节点内容"
+  },
+  "reference/design/runtime/operations/branch-naming.html": {
+    "en": "Branch naming",
+    "zh": "分支命名"
+  },
+  "reference/design/runtime/operations/chat-progress-recovery.html": {
+    "en": "Progress recovery",
+    "zh": "进度恢复"
+  },
+  "reference/design/runtime/operations/edge-field-rename.html": {
+    "en": "Edge naming",
+    "zh": "边字段命名"
+  },
+  "reference/design/runtime/operations/file-management.html": {
+    "en": "Files and recovery",
+    "zh": "文件与恢复"
+  },
+  "reference/design/runtime/operations/streaming-resume.html": {
+    "en": "Stream recovery",
+    "zh": "流式恢复"
+  },
+  "reference/design/runtime/operations/unify-parent-called-by.html": {
+    "en": "Caller identity",
+    "zh": "调用者标识"
+  },
+  "reference/design/runtime/operations/user-input-requests.html": {
+    "en": "Input requests",
+    "zh": "输入请求"
+  },
+  "reference/design/runtime/execution/p3-three-surface-sync.html": {
+    "en": "Interface synchronization",
+    "zh": "界面同步"
+  },
+  "reference/design/runtime/programs/programs-architecture.html": {
+    "en": "Program structure",
+    "zh": "程序结构"
+  },
+  "reference/design/runtime/workflows/report-delivery-intent.html": {
+    "en": "Report delivery",
+    "zh": "报告交付"
+  },
+  "reference/design/runtime/workflows/report-suite.html": {
+    "en": "Report workflows",
+    "zh": "报告工作流"
+  },
+  "reference/design/runtime/security/sandbox-architecture.html": {
+    "en": "Authority and sandbox",
+    "zh": "权限与沙箱"
+  },
+  "reference/design/runtime/self-programmed-agentic-workflow.html": {
+    "en": "Workflow overview",
+    "zh": "工作流概览"
+  },
+  "reference/design/runtime/self-programming-workflow-authoring.html": {
+    "en": "Workflow authoring",
+    "zh": "工作流编写"
+  },
+  "reference/design/runtime/self-programming-workflow-model.html": {
+    "en": "Program responsibilities",
+    "zh": "程序职责"
+  },
+  "reference/design/runtime/workflows/self-programming-workflow-ui.html": {
+    "en": "Program interface",
+    "zh": "程序界面"
+  },
+  "reference/design/runtime/self-update.html": {
+    "en": "Self-updates",
+    "zh": "自主更新"
+  },
+  "reference/design/runtime/session/README.html": {
+    "en": "Reading guide",
+    "zh": "阅读指南"
+  },
+  "reference/design/runtime/session/comparison.html": {
+    "en": "Management comparison",
+    "zh": "管理对比"
+  },
+  "reference/design/runtime/session/context.html": {
+    "en": "Context",
+    "zh": "上下文"
+  },
+  "reference/design/runtime/session/external-import.html": {
+    "en": "Importing other agents",
+    "zh": "导入其他 agent"
+  },
+  "reference/design/runtime/session/name.html": {
+    "en": "Title generation",
+    "zh": "标题生成"
+  },
+  "reference/design/runtime/session/operations.html": {
+    "en": "Operations",
+    "zh": "操作流程"
+  },
+  "reference/design/runtime/session/storage-consistency.html": {
+    "en": "Storage consistency",
+    "zh": "存储一致性"
+  },
+  "reference/design/runtime/session/storage.html": {
+    "en": "Data model",
+    "zh": "数据模型"
+  },
+  "reference/design/runtime/security/ssrf-protection.html": {
+    "en": "SSRF protection",
+    "zh": "SSRF 防护"
+  },
+  "reference/design/runtime/reliability/structured-generation-recovery.html": {
+    "en": "Generation recovery",
+    "zh": "生成恢复"
+  },
+  "reference/design/runtime/security/system-access.html": {
+    "en": "System access",
+    "zh": "系统访问"
+  },
+  "reference/design/runtime/agent-configuration/tool-toggle-management.html": {
+    "en": "Toolsets",
+    "zh": "工具集"
+  },
+  "reference/design/runtime/session/unified-session-context.html": {
+    "en": "Context creation",
+    "zh": "上下文创建"
+  },
+  "reference/design/runtime/reliability/web-frontend-spawn.html": {
+    "en": "Frontend processes",
+    "zh": "前端进程"
+  },
+  "reference/design/runtime/reliability/web-runtime-reliability.html": {
+    "en": "Web reliability",
+    "zh": "网页可靠性"
+  },
+  "reference/design/runtime/workflows/weekly-report.html": {
+    "en": "Weekly reports",
+    "zh": "每周报告"
+  },
+  "reference/design/scheduler/memory-integration.html": {
+    "en": "Memory interface",
+    "zh": "记忆接口"
+  },
+  "reference/design/security/dependency-security.html": {
+    "en": "Dependency security",
+    "zh": "依赖安全"
+  },
+  "reference/design/site-discoverability-performance.html": {
+    "en": "Site discovery",
+    "zh": "站点检索"
+  },
+  "reference/design/site-indexnow-discovery.html": {
+    "en": "IndexNow discovery",
+    "zh": "IndexNow 检索"
+  },
+  "reference/design/testing/test-system.html": {
+    "en": "Test system",
+    "zh": "测试系统"
+  },
+  "reference/design/testing/windows-ci.html": {
+    "en": "Windows CI",
+    "zh": "Windows CI"
+  },
+  "reference/design/ui/README.html": {
+    "en": "Web UI",
+    "zh": "网页界面"
+  },
+  "reference/design/ui/desktop/app-icon.html": {
+    "en": "App icon",
+    "zh": "应用图标"
+  },
+  "reference/design/ui/chat/attachment-handling.html": {
+    "en": "Attachment options",
+    "zh": "附件方案"
+  },
+  "reference/design/ui/settings/avatar-randomization.html": {
+    "en": "Avatars",
+    "zh": "头像"
+  },
+  "reference/design/ui/browser/browser-control-surfaces.html": {
+    "en": "Browser task control",
+    "zh": "网页任务控制"
+  },
+  "reference/design/ui/browser/browser-extensions.html": {
+    "en": "Browser extensions",
+    "zh": "浏览器扩展"
+  },
+  "reference/design/ui/browser/built-in-browser.html": {
+    "en": "Built-in browser",
+    "zh": "内置浏览器"
+  },
+  "reference/design/ui/workspace/center-tabs-and-split-layout.html": {
+    "en": "Tab placement",
+    "zh": "标签布局"
+  },
+  "reference/design/ui/chat/chat-attachments.html": {
+    "en": "Attachment delivery",
+    "zh": "附件传递"
+  },
+  "reference/design/ui/chat/chat-transcript-follow.html": {
+    "en": "Transcript following",
+    "zh": "会话记录跟随"
+  },
+  "reference/design/ui/chat/chat-turn-visual-spec.html": {
+    "en": "Chat turn layout",
+    "zh": "聊天轮次布局"
+  },
+  "reference/design/ui/composer/composer-fast-control.html": {
+    "en": "Speed control",
+    "zh": "速度控制"
+  },
+  "reference/design/ui/composer/composer-interaction-modes.html": {
+    "en": "Composer interaction",
+    "zh": "输入框交互"
+  },
+  "reference/design/ui/composer/composer-interaction-prototype.html": {
+    "en": "Composer prototype",
+    "zh": "输入框原型"
+  },
+  "reference/design/ui/composer/composer-local-attachment-paths.html": {
+    "en": "Attachment paths",
+    "zh": "附件路径"
+  },
+  "reference/design/ui/composer/composer-responsive-controls.html": {
+    "en": "Responsive controls",
+    "zh": "响应式控件"
+  },
+  "reference/design/ui/composer/composer-options-menu.html": {
+    "en": "Composer options menu",
+    "zh": "输入框选项菜单"
+  },
+  "reference/design/ui/visual-system/file-type-icons.html": {
+    "en": "File icons",
+    "zh": "文件图标"
+  },
+  "reference/design/ui/gui-agent.html": {
+    "en": "GUI Agent",
+    "zh": "界面智能体"
+  },
+  "reference/design/ui/visual-system/indicator-dots.html": {
+    "en": "Status indicators",
+    "zh": "状态指示"
+  },
+  "reference/design/ui/workspace/integrated-terminal.html": {
+    "en": "Integrated terminal",
+    "zh": "内置终端"
+  },
+  "reference/design/ui/interaction-feedback.html": {
+    "en": "Interaction feedback",
+    "zh": "交互反馈"
+  },
+  "reference/design/ui/invariants.html": {
+    "en": "UI invariants",
+    "zh": "界面不变量"
+  },
+  "reference/design/ui/visual-system/layout-density-prototype.html": {
+    "en": "Density prototype",
+    "zh": "密度原型"
+  },
+  "reference/design/ui/programs/programs-explorer-template.html": {
+    "en": "Program explorer",
+    "zh": "程序浏览器"
+  },
+  "reference/design/ui/programs/programs-source-categories.html": {
+    "en": "Source categories",
+    "zh": "源码分类"
+  },
+  "reference/design/ui/workspace/project-location.html": {
+    "en": "Project location",
+    "zh": "项目位置"
+  },
+  "reference/design/ui/sidebar/project-order.html": {
+    "en": "Project order",
+    "zh": "项目排序"
+  },
+  "reference/design/ui/workspace/project-workspace-prototype.html": {
+    "en": "Workspace prototype",
+    "zh": "工作区原型"
+  },
+  "reference/design/ui/workspace/project-workspace.html": {
+    "en": "Project workspace",
+    "zh": "项目工作区"
+  },
+  "reference/design/ui/remote-web-access.html": {
+    "en": "Remote access",
+    "zh": "远程访问"
+  },
+  "reference/design/ui/resources/resource-panel-preview-plan.html": {
+    "en": "Resource preview",
+    "zh": "资源预览"
+  },
+  "reference/design/ui/sidebar/right-sidebar-files.html": {
+    "en": "File tree",
+    "zh": "文件树"
+  },
+  "reference/design/ui/turn-lifecycle/send-queue-reliability.html": {
+    "en": "Queue and steering",
+    "zh": "队列与执行引导"
+  },
+  "reference/design/ui/sidebar/session-auto-rename.html": {
+    "en": "Session naming",
+    "zh": "会话命名"
+  },
+  "reference/design/ui/resources/session-resources.html": {
+    "en": "Session resources",
+    "zh": "会话资源"
+  },
+  "reference/design/ui/sidebar/session-status.html": {
+    "en": "Session status",
+    "zh": "会话状态"
+  },
+  "reference/design/ui/workspace/session-tab-identity.html": {
+    "en": "Tab identity",
+    "zh": "标签身份"
+  },
+  "reference/design/ui/settings/settings-collapsible-columns.html": {
+    "en": "Settings navigation",
+    "zh": "设置导航"
+  },
+  "reference/design/ui/sidebar/sidebar-hierarchy-prototype.html": {
+    "en": "Sidebar prototype",
+    "zh": "侧栏原型"
+  },
+  "reference/design/ui/sidebar/sidebars-resizing.html": {
+    "en": "Sidebar sizing",
+    "zh": "侧栏宽度"
+  },
+  "reference/design/ui/composer/slash-and-compact.html": {
+    "en": "Slash commands",
+    "zh": "斜杠命令"
+  },
+  "reference/design/ui/state-layer.html": {
+    "en": "State stores",
+    "zh": "状态存储"
+  },
+  "reference/design/ui/visual-system/surface-system.html": {
+    "en": "UI surfaces",
+    "zh": "界面层次"
+  },
+  "reference/design/ui/visual-system/theme-system.html": {
+    "en": "Themes",
+    "zh": "主题"
+  },
+  "reference/design/ui/turn-lifecycle/turn-occupancy.html": {
+    "en": "Turn occupancy",
+    "zh": "轮次占用"
+  },
+  "reference/design/ui/visual-system/unification-work.html": {
+    "en": "UI unification",
+    "zh": "界面统一"
+  },
+  "reference/design/ui/visual-system/web-styles.html": {
+    "en": "Style organization",
+    "zh": "样式组织"
+  },
+  "reference/design/ui/browser/web-tab-home-button.html": {
+    "en": "Browser home",
+    "zh": "浏览器主页"
+  },
+  "reference/design/ui/browser/web-tab-native-bounds.html": {
+    "en": "Native page bounds",
+    "zh": "原生页面边界"
+  },
+  "reference/design/ui/turn-lifecycle/websocket-command-lifecycle.html": {
+    "en": "WebSocket lifecycle",
+    "zh": "WebSocket 周期"
+  },
+  "reference/design/ui/desktop/window-lifecycle.html": {
+    "en": "Window lifecycle",
+    "zh": "窗口生命周期"
+  },
+  "reference/design/ui/desktop/window-state.html": {
+    "en": "Window state",
+    "zh": "窗口状态"
+  },
+  "reference/design/usage-metering.html": {
+    "en": "Usage metering",
+    "zh": "用量统计"
+  },
+  "reference/diagnostics.html": {
+    "en": "Diagnostics",
+    "zh": "诊断"
+  },
+  "reference/output-styles.html": {
+    "en": "Output styles",
+    "zh": "输出风格"
+  },
+  "reference/session-export.html": {
+    "en": "Session export",
+    "zh": "会话导出"
+  },
+  "reference/session-import.html": {
+    "en": "Session import",
+    "zh": "会话导入"
+  },
+  "server/README.html": {
+    "en": "Overview",
+    "zh": "概览"
+  },
+  "server/backup.html": {
+    "en": "Backup and restore",
+    "zh": "备份与恢复"
+  },
+  "server/configuration.html": {
+    "en": "Server configuration",
+    "zh": "服务端配置"
+  },
+  "server/troubleshooting.html": {
+    "en": "Troubleshooting",
+    "zh": "故障排查"
+  },
+  "server/upgrading.html": {
+    "en": "Source upgrades",
+    "zh": "源码升级"
+  },
+  "start/GETTING_STARTED.html": {
+    "en": "Getting started",
+    "zh": "快速上手"
+  },
+  "start/daily-use.html": {
+    "en": "Daily use",
+    "zh": "日常操作"
+  },
+  "start/faq.html": {
+    "en": "FAQ",
+    "zh": "常见问题"
+  },
+  "start/features.html": {
+    "en": "Features",
+    "zh": "功能"
+  }
+}

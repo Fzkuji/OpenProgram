@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-_PATH = Path(__file__).resolve().parents[3] / "openprogram" / "terminal_resources.py"
+_PATH = Path(__file__).resolve().parents[3] / "openprogram" / "host" / "resources" / "terminal.py"
 _SPEC = importlib.util.spec_from_file_location("terminal_ticket_contract", _PATH)
 module = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = module
@@ -89,7 +89,7 @@ def test_raw_input_is_preserved_not_appended_or_shell_parsed():
 def test_claim_route_requires_native_owner_bearer_and_loopback(monkeypatch, authorization, peer, allowed):
     # Only the installation's token verifier and loopback helper are replaced.
     endpoint = SimpleNamespace(is_loopback_host=lambda value: value == "127.0.0.1")
-    monkeypatch.setitem(sys.modules, "openprogram.backend_endpoint", endpoint)
+    monkeypatch.setitem(sys.modules, "openprogram.host.security.backend_endpoint", endpoint)
     broker = module.TerminalTickets()
     monkeypatch.setattr(module, "_tickets", broker)
     app = FastAPI()

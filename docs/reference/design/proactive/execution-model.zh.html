@@ -1,0 +1,50 @@
+<title>规则与运行方式</title>
+<meta name="description" content="一条主动规则声明什么、gate 和 observer 两条车道的区别，以及引擎如何处理每种动作。">
+<h1>规则与运行方式</h1>
+
+<pre translate="no"><code>class Policy:
+    on: set[str]          # event types watched
+    lane: "gate" | "observer"
+    cooldown_s: float     # silence after acting
+    name: str             # defaults to the class name
+
+    def evaluate(self, event, state) -&gt; Action | None: ...
+    def dedup_key(self, event, state) -&gt; str: ...   # what counts as "the same situation"</code></pre>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">gate</th><th scope="col">observer</th></tr></thead>
+<tbody>
+<tr><th scope="row">时机</th><td>事前：只看 <code translate="no">tool.before</code></td><td>事后：任意事件</td></tr>
+<tr><th scope="row">路径</th><td>同步，经 <code translate="no">tool.before</code> gate</td><td>总线订阅者；先折叠状态，再唤醒 <code translate="no">on</code> 中的规则</td></tr>
+<tr><th scope="row">速度</th><td>要快：不调 LLM，不读网络，不读需要推断的状态</td><td>可以慢，但绝不能拖慢 Agent</td></tr>
+<tr><th scope="row">返回</th><td><code translate="no">Gate.allow()</code>、<code translate="no">Gate.deny(reason)</code>、<code translate="no">Gate.ask(reason)</code></td><td><code translate="no">Notify</code>、<code translate="no">Inject</code>、<code translate="no">Prepare</code></td></tr>
+<tr><th scope="row">多条规则命中</th><td>取最严：deny、ask、allow</td><td>各自出手</td></tr>
+<tr><th scope="row">子 Agent</th><td>覆盖；gate 在审批包装之外，<code translate="no">bypass</code> 跳不过</td><td>同一事件流覆盖</td></tr>
+</tbody>
+</table>
+<p class="note">两条车道：<code translate="no">cooldown_s</code> 按 <code translate="no">dedup_key</code> 用事件时钟检查。<code translate="no">evaluate</code> 抛错时记录，并按不出手处理。</p>
+
+<h2>动作</h2>
+<table class="stack">
+<thead><tr><th scope="col">动作</th><th scope="col">设计</th><th scope="col">当前</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Gate.deny</code></th><td>拦截，理由给模型</td><td>与设计一致</td></tr>
+<tr><th scope="row"><code translate="no">Gate.ask</code></th><td>经审批流程询问用户</td><td>按 deny 拦截，措辞提示手动放行后重试</td></tr>
+<tr><th scope="row"><code translate="no">Notify</code></th><td>不打断的提醒</td><td><code translate="no">proactive.notify</code> WebSocket 帧</td></tr>
+<tr><th scope="row"><code translate="no">Inject</code></th><td>模型下一轮前的提示，不打扰用户</td><td>只记录 <code translate="no">proactive.inject</code> 事件；转向尚未接通</td></tr>
+<tr><th scope="row"><code translate="no">Prepare</code></th><td>只读后台任务先核实，再决定是否 Notify</td><td>只记录 <code translate="no">proactive.prepare_requested</code>；没有执行者</td></tr>
+</tbody>
+</table>
+
+<h2>新增规则</h2>
+<ol>
+<li>在 <code translate="no">openprogram/runtime/proactive/policies/</code> 写一个类，定义 <code translate="no">on</code>、<code translate="no">lane</code>、<code translate="no">cooldown_s</code>。</li>
+<li>写 <code translate="no">evaluate</code>。</li>
+<li><code translate="no">register_policy</code> 注册（同名重复注册被忽略）。</li>
+</ol>
+<p class="note">引擎、事件流和折叠都不用动。打扰预算和自动熔断不在范围内，<code translate="no">cooldown_s</code> 是唯一的旋钮。gate 机制见<a href="event-layer.zh.html">事件层</a>。</p>
+
+<h2>实现状态</h2>
+<p>引擎、注册表和三条规则都已存在并有测试。worker 启动时没有调用 <code translate="no">install_proactive()</code> 和 <code translate="no">install_mvp_policies()</code>，所以生产环境中没有规则运行。</p>
+
+<p class="next"><a href="policies-mvp.zh.html">三条模板规则</a></p>

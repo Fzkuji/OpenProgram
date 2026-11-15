@@ -3,6 +3,9 @@
 // Zustand store). Re-exported from ./index so `@/lib/session-store`
 // import paths are unchanged.
 
+import type { RowKind, RowOrigin } from "../chat/transcript/wire-types.generated";
+import type { FailureCause } from "../models/provider-state";
+
 export type MessageStatus =
   | "pending"
   | "streaming"
@@ -18,7 +21,7 @@ export type MessageStatus =
 export interface FnParam {
   name: string;
   /** Friendly label shown in the function form. Falls back to `name`
-   *  when omitted; backend `@agentic_function(input={...})` can set
+   *  when omitted; backend `Agent.method_options input metadata` can set
    *  `label: "..."` to rename cryptic param names (e.g. `fn` → "function"). */
   label?: string;
   type?: string;
@@ -56,19 +59,24 @@ export interface ChatToolCall {
   messageId?: string;
   nodeId?: string;
   isError?: boolean;
-  status: "running" | "done" | "error";
+  /** The model's provider ran this call server-side (a provider web search);
+   *  the runtime only reports it. */
+  providerExecuted?: boolean;
+  status: "running" | "done" | "error" | "cancelled";
 }
 
 /** A "system needs a decision" request surfaced in the composer — the
  *  `data` payload of a question.asked frame (runtime.ask / confirm /
- *  tool approval). See composer modes (docs/design/ui/composer-interaction-modes.md). */
+ *  tool approval). See composer modes (docs/reference/design/ui/composer/composer-interaction-modes.html). */
 export interface PendingDecision {
   id: string;
-  /** 这条提问属于哪个会话 —— 卡片只在该会话的输入框里显示（输入框状态跟
-   *  会话走，切到别的会话不该看到、更不该误答到别的会话上）。 */
+  /** Owning conversation; output cards never target the active composer. */
   sessionId: string;
   /** Exact canonical wait target.  A question card never infers these from a session. */
   executionId: string;
+  /** The reply this decision was asked in, when it was asked while this
+   *  window watched the run: its settled card stays under that reply. */
+  anchorId?: string;
   waitGeneration: number;
   expectedVersion: number;
   kind: "ask" | "confirm" | "approval" | "form" | "ask_many";
@@ -83,12 +91,14 @@ export interface PendingDecision {
   /** approval-only: danger level for card highlighting. */
   risk_level?: "low" | "medium" | "high";
   allowedScopes?: string[];
+  /** The sub-agent that asks, when it is not the conversation's own agent. */
+  askedBy?: string;
   /** form-only: flat-object field schema (field name → {type, title,
    *  description, enum, default, …}). The answer is an object (field → value).
    *  See runtime.form / docs/design/runtime/user-input-requests.md Phase 4a. */
   schema?: Record<string, FormFieldSchema>;
-  /** ask_many-only: a packed group of questions answered one screen with
-   *  prev/next switching, submitted together. The answer is a list (one
+  /** ask_many-only: a group navigated one question at a time and submitted together.
+   *  The answer is an ordered list (one
    *  per question). See runtime.ask_many. */
   questions?: AskOne[];
 }
@@ -96,23 +106,26 @@ export interface PendingDecision {
 /** One question inside an ask_many group. */
 export interface AskOne {
   prompt: string;
+  /** Presentation metadata; option strings remain the canonical answer values. */
+  question_title?: string;
+  option_descriptions?: Record<string, string>;
   options: string[];
   multi: boolean;
   allow_custom: boolean;
 }
 
-/** Per-session composer settings — tool toggles + thinking effort.
+/** Per-session composer settings — web search / sandbox toggles + thinking effort.
  *  Persisted per session (see composerSettingsBySession) so each chat
  *  keeps its own; "" thinking means "model default". */
 export interface ComposerSettings {
+  /** Stable identity of the branch whose settings are currently loaded. */
+  active_branch_id?: string | null;
+  /** First-turn Agent intent, scoped and persisted with this composer draft. */
+  agentInvocation?: import("@/lib/agents/start-conversation").AgentConversationIntent;
   thinking: string;
-  tools: boolean;
   webSearch: boolean;
-  toolsProfile?: string;
   fast: boolean;
   fastByModel?: Record<string, boolean>;
-  /** What Enter does while this session already has a running turn. */
-  runningMessageMode: "queue" | "steer";
   /** Permission mode for this session's tool calls: ask/acceptEdits/
    *  plan/auto/bypass. "" means inherit (backend resolves session →
    *  project → ask). */
@@ -128,6 +141,24 @@ export interface ComposerSettings {
   /** Session Sandbox override. true/false is explicit; omitted inherits
    *  the project/global default (system default is on). */
   sandbox?: boolean;
+  /** Controls the person changed in a draft (``thinking``, ``webSearch``):
+   *  its first message carries only these; the rest follow the Agent. */
+  draftTouched?: string[];
+  /** The loaded branch's settings as the server resolves them: each
+   *  value, its source (``branch``, ``agent``, ``project``, ``global``) and
+   *  what it is when the branch sets nothing (``inherited``). */
+  resolved?: ResolvedBranchSettings;
+  /** Environment a draft will run in (local / an SSH or Docker
+   *  environment id). Sent with the first message, which pins it; the
+   *  conversation's own environment_id decides afterwards. */
+  environment?: string;
+}
+
+/** ``resolved`` of a branch-settings read (``branch_settings.resolved_settings``). */
+export interface ResolvedBranchSettings {
+  values?: Record<string, unknown>;
+  sources?: Record<string, string>;
+  inherited?: Record<string, unknown>;
 }
 
 /** One field in a runtime.form schema (MCP-elicitation flat object). */
@@ -141,37 +172,107 @@ export interface FormFieldSchema {
   maximum?: number;
 }
 
+/** One finished agent in a background-agent notice. */
+export interface NoticeItem {
+  /** report: a sub-agent's report is in context; reply: a branch
+   *  answered a message; idle: a watched branch went idle; stalled: a
+   *  sub-agent has had no activity for a while and is still running. */
+  kind: "report" | "reply" | "idle" | "stalled";
+  name: string;
+  failed: boolean;
+  address: string;
+  /** The line that starts this agent's part of the notice text. */
+  line: string;
+}
+
+/** An automatic retry the reply is waiting on (chat-turn-visual-spec.html §1). */
+export interface RetryStatus {
+  attempt: number;
+  maxAttempts?: number;
+  /** transport | network_wait | output_limit | incomplete_response | a structured-output issue code */
+  reason?: string;
+  /** Wait before the next attempt, counted from `receivedAt`. */
+  delayMs?: number;
+  /** What failed, one short line. */
+  error?: string;
+  /** When the client received the notice (ms since epoch). */
+  receivedAt?: number;
+}
+
 export interface ChatMsg {
   id: string;                  // msg_id from server, or local generated for user msgs
   role: "user" | "assistant" | "system";
   content: string;             // final assistant text / user text
+  /** User turns: pasted spans shown collapsed (lib/chat/send/paste-elements.ts). */
+  pastedElements?: import("../chat/send/paste-elements.ts").PastedTextElement[];
+  /** An always-on report posted as a message: its id, kind, where it came
+   *  from and title. Older reports have no title. */
+  reportId?: string;
+  reportKind?: string;
+  reportSource?: string;
+  reportTitle?: string;
   /** Event-divider rows (compaction / snip). Other system rows omit this. */
   kind?: "compaction" | "snip" | "event";
   /** ``card`` = fold summary at the covered segment; ``event`` = execution marker. */
   slot?: "card" | "event";
   /** Covered-message count on reconstructed compaction rows. */
   summarisedCount?: number;
-  coversIds?: string[];
   tokensBefore?: number;
   tokensAfter?: number;
   /** Reasoning tokens streamed under a collapsible "Thinking" block. */
   thinking?: string;
+  /** Live status for an automatic retry within this assistant turn. */
+  retryStatus?: RetryStatus;
   /** Tool calls made during this assistant turn, in emit order. */
   tools?: ChatToolCall[];
   status?: MessageStatus;
   function?: string;           // if this is a direct function run
   display?: "runtime" | "normal";
+  /** Transient request from a newly completed foreground reply; history never sets it. */
+  autoPreviewFiles?: boolean;
+  goalVerification?: import("../chat/decisions/goal-verification").GoalVerification;
   /** Pass-through of metadata.source from the server so the client
    *  can distinguish "real user typed" vs internal synthetic turns
    *  (job_followup, merge_turn, agent_spawn). */
   source?: string;
+  /** On a job_followup notice: one entry per agent it reports
+   *  (agent/job/notices.py ``notice_items``). */
+  notice?: NoticeItem[];
+  /** What started a runtime turn: "restart" for the turn that carries on
+   *  work a worker restart cut off (turn_runtime/prep.py). */
+  trigger?: "restart";
+  /** User rows: the message that set a Goal (``/goal <objective>``); the
+   *  bubble labels it Goal. Its content is the objective alone. */
+  startsGoal?: boolean;
+  /** On a reply a restart cut off: the reply that continues it, which
+   *  draws both (lib/chat/transcript/restart-continuation.ts). */
+  continuedBy?: string;
+  /** The person who sent a channel message (a group holds several). */
+  speaker?: { id?: string; display?: string };
   /** User message injected into an already-running agent turn. */
   steering?: boolean;
+  /** Rendered at an ordered boundary inside this reply, not twice. */
+  steeringReplyId?: string;
+  /** Which branch of the row dispatch this row takes: the server's word on
+   *  its rows, the local writer's on a local row. Every row carries one. */
+  rowKind: RowKind;
+  /** Server rows, on a card or child of a reply: the block that owns it, null when none does. */
+  blockId?: string | null;
+  /** Server rows: the compaction card that folds this row. */
+  coveredBy?: string;
+  /** Server rows, on user rows: who wrote it. */
+  origin?: RowOrigin;
+  /** The send this row belongs to: a local row names its own, a server row the one it answers. */
+  clientRequestId?: string;
+  /** Local rows only: where the row is drawn, since it belongs to no turn. */
+  localAnchor?: "tail" | { afterRowId: string };
+  /** Server rows, on a continuation: the replies a restart cut, oldest first. */
+  continues?: string[];
   /** Pass-through of the wire ``predecessor`` (conversation-chain
    *  edge) so we can correlate internal-source msgs (e.g.
    *  job_followup) and runtime/attach rows with the turn they hang
    *  off. Runtime + attach rows are written with ``predecessor``
-   *  only and no ``caller`` (see webui/_execute), so this really is
+   *  only and no ``caller`` (see turn_runtime/slash_actions.py), so this really is
    *  the right edge here despite the historical field name. */
   calledBy?: string;
   /** When this user msg is the root of a spawned sub-branch, points
@@ -189,9 +290,18 @@ export interface ChatMsg {
    *  whether it's retryable, and a server retry hint. Lets the bubble
    *  render an actionable error. See
    *  docs/design/providers/reliability/error-taxonomy-propagation.md. */
+  /** Failure detail is separate from the partial reply text. */
+  errorDetail?: string;
   errorReason?: string;
   errorRetryable?: boolean;
   errorRetryAfterS?: number;
+  /** Which limit or refusal stopped the reply (`errors.failure_cause`):
+   *  a spent quota names its provider, limit, reset and the key's other
+   *  limits, and draws the spent-quota card. */
+  errorCause?: FailureCause | null;
+  /** Stream position (`seq` of the reply's stream events) this row's
+   *  content reflects; later events apply on top, earlier ones are dropped. */
+  streamSeq?: number;
   /** Execution tree captured with a function result, rendered inside the
    *  runtime block. */
   contextTree?: TreeNode;
@@ -204,6 +314,11 @@ export interface ChatMsg {
   turnFiles?: TurnFileSummary;
   /** Persisted single-turn history state; enables Redo after reload. */
   reverted?: boolean;
+  /** On a user message: when its turn was pinned as a chapter (epoch
+   *  seconds, from the node's ``metadata.chapter.pinned_at``). Unset when
+   *  the turn is not pinned. The message rail tints a pinned turn's tick
+   *  in the theme accent. */
+  chapterPinnedAt?: number;
   /** Sibling-version navigator state (the `< N/M >` strip). Populated
    *  from a loaded conversation when the turn has been retried/edited;
    *  the prev/next ids are what `/api/chat/checkout` targets. */
@@ -215,6 +330,8 @@ export interface ChatMsg {
    *  ``function === "attach"``. Drives the AttachCard rendering +
    *  drawer open behavior. */
   attach?: {
+    /** The tool call that started this agent, when its writer recorded it. */
+    tool_call_id?: string;
     session_id?: string;
     head_id?: string;
     commit_id?: string;
@@ -248,6 +365,20 @@ export interface ChatMsg {
     /** Canonical execution identity and optimistic-concurrency version. */
     execution_id?: string;
     status_version?: number;
+    /** What the finished agent used, with the agents it started: seconds,
+     *  tool calls, tokens and cost in USD (null when a price is unknown). */
+    usage?: {
+      duration_s?: number | null;
+      tool_calls?: number | null;
+      tokens?: number | null;
+      cost_usd?: string | null;
+    };
+    /** How the agent ended, in the result block's words, and why a limit
+     *  or the person stopped it. */
+    result_status?: "completed" | "failed" | "stopped" | "stalled";
+    result_reason?: string;
+    /** What an agent with its own worktree changed there. */
+    files?: { count: number; branch?: string; dirty?: boolean };
   };
   /** Which agent produced this turn. Same-session multi-agent: a
    *  conversation can have N agents writing branches in the same
@@ -255,19 +386,20 @@ export interface ChatMsg {
    *  each turn by author. */
   agentId?: string;
   /** Runtime-block child rows belonging to this assistant turn (LLM-
-   *  issued @agentic_function calls — gui_agent / research_agent /
-   *  wiki_agent). Populated at the data-loading layer (conv-mapper for
-   *  history, chat-stream for live runs) so the parent assistant
-   *  bubble can render them INSIDE its own card instead of as
-   *  standalone top-level rows. Top-level MessageList skips any row
+   *  issued Agent method calls — gui_agent).
+   *  The server projection nests them (transcript/children.py) so the
+   *  parent assistant bubble renders them INSIDE its own card instead
+   *  of as standalone top-level rows. Top-level MessageList skips any row
    *  that lives here. Only assistant rows ever populate this. */
   runtimeChildren?: ChatMsg[];
+  /** A runtime child's tool call, when its record names one. */
+  toolCallId?: string;
   /** Spawned/attach cards anchored to this assistant turn（在哪调用就
    *  画在哪）: each row records a task() spawn made DURING this turn.
    *  The bubble renders each card right after the tool block that
-   *  spawned it (FIFO over blocks with tool==="agent"), i.e. thinking →
-   *  tool call → Spawned card → … → final text. Populated by
-   *  conv-mapper; rows living here are skipped at the top level. */
+   *  spawned it (the block its blockId names), i.e. thinking →
+   *  tool call → Spawned card → … → final text. The server projection
+   *  nests them; rows living here are skipped at the top level. */
   attachCards?: ChatMsg[];
   /** caller 链折出来的调用树（agent 调函数的层级，TNode 形状）：
    *  时间线的 FunctionStep 按工具名 FIFO 认领并递归渲染。 */
@@ -277,7 +409,7 @@ export interface ChatMsg {
    *  block-by-block so tool cards / RuntimeBlocks land at the exact
    *  position in the LLM output where the tool was called, instead
    *  of all stacked at the bottom. Tool blocks with an agentic name
-   *  (gui_agent / research_agent / wiki_agent) claim entries from
+   *  (gui_agent) claim entries from
    *  ``runtimeChildren`` in order — the runtime rows carry no
    *  ``tool_call_id`` back-reference. */
   blocks?: AssistantBlock[];
@@ -301,10 +433,28 @@ export interface TurnFileSummary {
   added: number | null;
   removed: number | null;
   recoverability?: "exact" | "unavailable";
+  /** Set by the chat, never the server: the list includes files from a part
+   *  of a restart-joined reply other than the last. Undo and the server's
+   *  file list work on one turn, so neither can stand for this list. */
+  spansTurns?: boolean;
+}
+
+/** A source the provider cited for a span of a text block. `start`/`end`
+ *  are character offsets into the block's text, null when unknown. */
+export interface Citation {
+  url: string;
+  title?: string | null;
+  start?: number | null;
+  end?: number | null;
 }
 
 export interface AssistantBlock {
-  type: "thinking" | "text" | "tool";
+  /** "restart" marks where a worker restart cut the reply off. */
+  type: "thinking" | "text" | "tool" | "steering" | "restart";
+  /** Server rows: this block's stable id and its stored position. */
+  id?: string;
+  index?: number;
+  timestamp?: number;
   /** thinking / text payload */
   text?: string;
   /** tool block fields */
@@ -314,10 +464,18 @@ export interface AssistantBlock {
   result?: string;
   truncated?: boolean;
   total_bytes?: number;
+  /** Tool block: the agent loop bounded the result for the model; the card
+   *  shows the head of the tool's own output and this says how long the
+   *  whole output is. "View full output" reads the saved file. */
+  full_output?: { total_lines?: number; total_chars?: number; shown_chars?: number };
   message_id?: string;
   node_id?: string;
   is_error?: boolean;
-  outcome?: "not_started" | "failed" | "completed" | "unknown" | "waiting" | "recovered";
+  /** Tool block: the provider ran this call itself (provider web search). */
+  provider_executed?: boolean;
+  /** Text block: sources the provider cited for this text. */
+  citations?: Citation[];
+  outcome?: "not_started" | "failed" | "cancelled" | "completed" | "unknown" | "waiting" | "recovered";
 }
 
 export interface ConvSummary {
@@ -326,11 +484,17 @@ export interface ConvSummary {
   created_at?: number;
   /** Last-activity timestamp — the sidebar's recency-sort key. */
   updated_at?: number;
+  /** Sidebar placement (see sessions-list helpers' LegacyConv). */
+  sort_at?: number;
+  sort_since?: number;
   agent_id?: string;
   source?: string;
   peer_display?: string;
   channel?: string;
   account_id?: string;
+  /** Where the conversation runs; null/undefined = the default environment
+   *  (conversations created before environments existed). */
+  environment_id?: string | null;
   peer?: string;
   preview?: string | null;
   pinned?: boolean;
@@ -351,11 +515,25 @@ export interface ConvSummary {
 export interface RunningTask {
   session_id: string;
   msg_id: string;
+  /** The reply row the server writes for this turn, as the server names it. */
+  reply_id?: string;
   func_name?: string;
   started_at?: number;
   execution_id?: string;
   status_version?: number;
   cancelling?: boolean;
+  /** What the branch's foreground operation is: a reply, `compact`, a
+   *  `rewind`, a `retry` or `edit`, a `function` run. */
+  op_kind?: string;
+  /** The operation's id; Stop names it for an operation with no execution. */
+  op_id?: string;
+  /** The id the page gave the request that started this run (a function
+   *  run, a retry); Stop names the run by it before the server's answer
+   *  names its execution. */
+  client_request_id?: string;
+  /** A step the running turn is in that the run indicator names
+   *  (`compact` while the turn compacts its context). */
+  phase?: string;
 }
 
 export interface TreeNode {
@@ -375,17 +553,16 @@ export interface TreeNode {
 /**
  * Normalized shape.
  *
- * ``messagesById`` holds every message ever observed, keyed by its id.
- * ``messageOrder[sessionId]`` holds the ordered id list for one
- * conversation. Split this way so a streaming delta only touches one
- * entry in ``messagesById`` and leaves ``messageOrder`` untouched —
+ * ``rowsByView[viewKey]`` holds one view's rows, keyed by id.
+ * ``messageOrder[viewKey]`` holds that view's ordered id list. Split this
+ * way so a streaming delta only touches one row and leaves
+ * ``messageOrder`` untouched —
  * components that subscribe to the id list (e.g. the scroll container)
  * don't re-render per token, only bubbles subscribed to *their own*
  * id do. Matches the pattern Claude.ai / ChatGPT webapps use.
  *
- * Cross-conversation cleanup: removing a conversation drops its ids
- * from the order map AND removes the referenced messages from
- * ``messagesById`` (no dangling entries).
+ * Cross-conversation cleanup: removing a conversation drops its views
+ * from both maps.
  */
 /** Per-agent settings state, mirrors ``window._agentSettings``
  *  shape. The TopBar reads this to render the Chat / Exec badges; legacy
@@ -401,6 +578,8 @@ export interface AgentBadgeInfo {
    *  "高速"开关（与 thinking_levels 为空隐藏思考菜单同一模式）。 */
   fast?: boolean;
   fast_capability?: { status: string; source: string };
+  /** The model's effort levels and default, as GET /api/agent_settings sends them. */
+  thinking?: { options?: { value: string; desc?: string }[]; default?: string };
 }
 export interface AgentSettingsState {
   chat?: AgentBadgeInfo;

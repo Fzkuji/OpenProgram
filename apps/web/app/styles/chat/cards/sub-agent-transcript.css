@@ -1,0 +1,44 @@
+/* A sub-agent's own conversation under its step row in the timeline
+   (components/chat/messages/cards/sub-agent-transcript.tsx). The step
+   row's own body (.tl-step-body) is the well; this only scrolls. */
+.sub-agent-body {
+  max-height: min(520px, 60vh);
+  overflow-y: auto;
+}
+.sub-agent-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sub-agent-empty { padding: 4px 0; font-size: var(--fs-xs); color: var(--text-muted); }
+.sub-agent-prompt {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  margin: 2px 0;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-input);
+  box-shadow: var(--composer-shadow);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.sub-agent-prompt-label { font-size: var(--fs-2xs); font-weight: 600; color: var(--text-muted); }
+.sub-agent-prompt-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sub-agent-prompt[data-open="1"] .sub-agent-prompt-text { display: block; }
+.message.assistant.sub-agent-reply {
+  padding: 6px 0;
+  animation: none;
+}

@@ -9,7 +9,7 @@ server-side product runtime.
 `next build` produces the static export in `apps/web/out/`. The Python worker serves
 that export from the same origin as its REST and WebSocket APIs, normally on
 port `18100`. Formal releases copy the export into
-`apps/server/openprogram_server/_webui/_frontend/`; source checkouts can rebuild
+`openprogram/interfaces/server/_frontend/`; source checkouts can rebuild
 it from this workspace. The Desktop App loads the same interface through its
 worker.
 

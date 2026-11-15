@@ -1,0 +1,43 @@
+{
+  "name": "fh-v1-tb21",
+  "description": "The 21 Terminal-Bench tasks of FrontierHarness Eval v1, OpenProgram beside a pinned Codex CLI in the same job, one model and one reasoning effort for both.",
+  "sources": [
+    "FrontierHarness Eval v1 benchmark.json: task_sources.terminal_bench (21 tasks) and task_ids",
+    "FrontierHarness skills/frontierharness-eval/scripts/run-trials.sh: harbor run -d terminal-bench@2.0 -r 2 for each task, its whole run of one task (setup, every attempt Harbor retries, the verifier) under timeout 5400 (trial-worker.sh); Harbor keeps each task's own agent timeout",
+    "terminal-bench-2 at 69671fba, task.toml of the 21 tasks: agent timeout_sec 600 to 1800",
+    "FrontierHarness metadata/harness-versions.json: codex 0.148.0"
+  ],
+  "dataset": {"name": "terminal-bench", "version": "2.0", "task_prefix": ""},
+  "tasks": [
+    "build-cython-ext", "chess-best-move", "code-from-image", "constraints-scheduling",
+    "db-wal-recovery", "dna-insert", "extract-elf", "gcode-to-text", "git-leak-recovery",
+    "kv-store-grpc", "largest-eigenval", "log-summary-date-ranges", "merge-diff-arc-agi-task",
+    "modernize-scientific-stack", "multi-source-data-merger", "openssl-selfsigned-cert",
+    "polyglot-c-py", "regex-log", "sanitize-git-repo", "sqlite-db-truncate", "vulnerable-secret"
+  ],
+  "attempts": 3,
+  "selection": "first_valid_attempt",
+  "retry": {"max_retries": 2},
+  "trial_wall_clock_cap_min": 90,
+  "overrides_allowed": true,
+  "model": "openai/gpt-5.6-terra",
+  "reasoning_effort": "medium",
+  "control": {"agent": "codex", "version": "0.148.0"},
+  "harbor_version": "0.25.0",
+  "comparable_environments": ["runta"],
+  "disable_web_search": false,
+  "pilot": {
+    "source": "FrontierHarness results/eval-data.json: each task's passes over every v1 harness's trials, in three tiers so the pilot sees the cost tail and the timeouts of hard tasks as well as easy ones",
+    "tiers": [
+      {"name": "hard", "pass_share": "0.2 or less", "tasks": ["kv-store-grpc", "dna-insert", "extract-elf"]},
+      {"name": "medium", "pass_share": "0.3 to 0.5", "tasks": ["chess-best-move", "gcode-to-text"]},
+      {"name": "easy", "pass_share": "0.8 or more", "tasks": ["regex-log", "sanitize-git-repo", "build-cython-ext"]}
+    ]
+  },
+  "harbor": {"agent_setup_timeout_multiplier": 3.0, "environment_build_timeout_multiplier": 3.0},
+  "prices": {
+    "source": "models.dev, read 2026-11-12; base tier, prompts up to 272,000 tokens",
+    "unit_tokens": 1000000,
+    "models": {"openai/gpt-5.6-terra": {"input": 2.0, "cached_input": 0.2, "output": 12.0}}
+  }
+}

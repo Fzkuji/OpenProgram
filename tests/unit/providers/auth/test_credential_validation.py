@@ -1,6 +1,6 @@
 """Unit tests for the unified credential validator.
 
-``openprogram/webui/_model_listing/credentials.py`` is the single entry point
+``openprogram/models/listing/credentials.py`` is the single entry point
 for "is this provider key valid?" across every surface (save-key verify, the
 connectivity button, the batch status rows). It maps HTTP status codes to a
 closed status enum per provider KIND, with a 60s cache and a layer-1 (auth-only)
@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.webui._model_listing import credentials as cr
-from openprogram.providers import storage as st
-import openprogram.providers.env_api_keys as ek
+from openprogram.models.listing import credentials as cr
+from openprogram.models.providers.settings import storage as st
+import openprogram.models.providers.settings.env_api_keys as ek
 
 
 # pure classifiers
@@ -241,7 +241,7 @@ class _FakeClient:
 
 
 def _patch_layer2(monkeypatch, response):
-    from openprogram.security import safe_http
+    from openprogram.host.security import safe_http
 
     monkeypatch.setattr(
         safe_http,
@@ -300,7 +300,7 @@ def test_oauth_check_reads_auth_value_and_valid_status(monkeypatch):
             return _Cred()
 
     monkeypatch.setattr(
-        "openprogram.auth.credential_provider.get_credential_provider",
+        "openprogram.models.auth.credential_provider.get_credential_provider",
         lambda: _Provider(),
     )
     r = cr._oauth_check("openai-codex", "oauth")
@@ -321,7 +321,7 @@ def test_xai_subscription_check_hits_cli_proxy(monkeypatch):
             return _Cred()
 
     monkeypatch.setattr(
-        "openprogram.auth.credential_provider.get_credential_provider",
+        "openprogram.models.auth.credential_provider.get_credential_provider",
         lambda: _Provider(),
     )
     calls = {}
@@ -419,3 +419,22 @@ def test_prove_usable_without_model_stays_unknown(monkeypatch, stub_base):
     r = cr.validate_credential("deepseek", api_key="k", use_cache=False, prove_usable=True)
     assert r.status == cr.UNKNOWN and not r.ok
     assert "no model" in (r.detail or "").lower()
+
+
+_CREDITS_401 = ('{"type":"error","error":{"type":"CreditsError",'
+                '"message":"Insufficient balance. Manage your billing here: https://opencode.ai/billing"}}')
+
+
+def test_layer1_401_credits_error_is_no_balance_not_rejected(monkeypatch, stub_base):
+    """The body decides before the status: a 401 that says the balance is spent is no credit."""
+    _patch_http_get(monkeypatch, (401, _CREDITS_401, 12))
+    r = cr.validate_credential("deepseek", api_key="k", use_cache=False)
+    assert r.status == cr.VALID_NO_BALANCE
+    assert cr.persist_status_from_probe(r.status) == "billing_blocked"
+
+
+def test_layer2_401_credits_error_is_no_balance(monkeypatch):
+    monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://api.example/v1")
+    _patch_layer2(monkeypatch, _FakeResp(401, _CREDITS_401))
+    r = cr.validate_credential("deepseek", model="deepseek-chat", api_key="k", use_cache=False)
+    assert r.status == cr.VALID_NO_BALANCE

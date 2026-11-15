@@ -1,0 +1,50 @@
+<title>Self-programming AI agents</title>
+<meta name="description" content="An OpenProgram agent can write, check and then call its own executable workflows.">
+<h1>Self-programming AI agents</h1>
+<ol>
+<li>The agent writes a Workflow package in <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> with its normal file tools.</li>
+<li><code translate="no">openprogram programs check</code> tests it, commits it and records it as checked.</li>
+<li>The worker loads it without restarting; later turns call its entries from the same registry as existing tools.</li>
+</ol>
+<p>Writing to the package is not refused; the check decides what runs. An edit or a plain <code translate="no">git commit</code> stays out of use until the check passes.</p>
+<h2>What the agent writes</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, Context
+
+reviewer = Agent(instructions="You find concrete defects.", tools=[])
+editor = Agent(instructions="You revise drafts.", tools=[])
+
+
+def review_then_revise(draft: str) -&gt; str:
+    """Review a draft, then revise it against the review."""
+    ctx = Context({"draft": draft})
+    review = reviewer("Identify concrete defects in this draft", context=ctx)
+    return editor("Revise the draft using the review",
+                  context=ctx.derive({"review": review}))
+
+
+PROGRAM_ENTRIES = [review_then_revise]</code></pre>
+<p class="note">Python fixes the order; two roles do the semantic steps, each seeing only the blocks its Context holds.</p>
+<h2>Ask for one</h2>
+<pre translate="no" tabindex="0"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+openprogram</code></pre><pre translate="no" tabindex="0"><code>Create a Workflow named review_then_revise. It must review a draft, revise it
+against the review, return only the final text, and include a behavior test.</code></pre>
+<h2>Controls that still apply</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool access</th><td>Each role's <code translate="no">tools</code> and the configured approval policy</td></tr>
+<tr><th scope="row">Record</th><td>Each role call and its exact request, in the session graph</td></tr>
+<tr><th scope="row">Limits, cancellation, structured output validation, provider accounting</th><td>The runtime</td></tr>
+<tr><th scope="row">Source</th><td>Ordinary files with their own Git history: inspectable, testable, revertable. Only a checked commit loads, from an extracted copy that later edits cannot reach. If it fails to import, the version before it keeps running and the Program shows <code translate="no">error</code> with a note naming both.</td></tr>
+</tbody>
+</table>
+<h2>When to use it</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Task</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row">Repeated, needs a reusable and inspectable process, semantic steps need judgment</th><td>Self-programming</td></tr>
+<tr><th scope="row">Entirely deterministic</th><td>A plain function</td></tr>
+<tr><th scope="row">Already has a stable implementation</th><td>An existing tool</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../workflows/authoring.html">Write and check a Workflow</a> · <a href="README.html">Agentic Programming guide</a> · <a href="../../reference/api/agent.html"><code translate="no">Agent</code> reference</a> · <a href="philosophy.html">Design philosophy</a></p>

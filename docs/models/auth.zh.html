@@ -1,0 +1,68 @@
+<title>认证</title>
+<meta name="description" content="Provider 凭据的来源、存放位置，以及如何导入和轮换。">
+<h1>认证</h1>
+<p>OpenProgram 要求安全、合法、合规地使用 Anthropic 服务：官方 API、合法获取的 API 密钥、按 API 账户计费，所有调用遵守 Anthropic 的服务条款和使用政策。</p>
+<h2>存放位置</h2>
+<p><code translate="no">~/.openprogram/auth/&lt;provider&gt;/&lt;account&gt;.json</code>，权限 0600。用 <code translate="no">--profile &lt;name&gt;</code> 时根目录是 <code translate="no">~/.openprogram-&lt;name&gt;/</code>。</p>
+<p>运行时只读凭据库。环境变量里的密钥要先导入，之后改变量不影响已导入的凭据。例外，运行时自动检测：Amazon Bedrock（<code translate="no">AWS_PROFILE</code>、访问密钥、bearer token 等）和 Google Vertex（ADC）。</p>
+<h2>来源</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">API 密钥</th><td><code translate="no">openprogram providers login deepseek</code>，或 <code translate="no">printf %s "$KEY" | openprogram providers login deepseek --api-key-stdin</code>。<code translate="no">--api-key</code> 也可用，但会留在 shell 历史里。</td></tr>
+<tr><th scope="row">Anthropic</th><td><code translate="no">openprogram providers login anthropic</code>，再输入 Anthropic API 密钥</td></tr>
+<tr><th scope="row"><code translate="no">openai-codex</code></th><td>ChatGPT 订阅，浏览器 PKCE；或导入已有的 <code translate="no">codex</code> 登录</td></tr>
+<tr><th scope="row"><code translate="no">gemini-subscription</code></th><td>导入 <code translate="no">~/.gemini/oauth_creds.json</code>；先用 Gemini CLI 登录</td></tr>
+<tr><th scope="row"><code translate="no">google-gemini-cli</code></th><td>直接读 <code translate="no">~/.gemini/oauth_creds.json</code>，不经 discover</td></tr>
+<tr><th scope="row"><code translate="no">github-copilot</code></th><td>浏览器里的 GitHub 设备码，或导入 <code translate="no">COPILOT_GITHUB_TOKEN</code>、<code translate="no">GH_TOKEN</code>、<code translate="no">GITHUB_TOKEN</code>。短期 Copilot token 按需换取，从不落盘。</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">login</code> 自动选择方式；<code translate="no">--method</code> 可强制指定。</p>
+<h3>从本机导入</h3>
+<pre translate="no"><code>openprogram providers discover        # 只列出，不写入
+openprogram providers adopt codex_cli # 导入一项；--all 导入全部</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">来源</th><th scope="col">位置</th><th scope="col">导入到</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex CLI</th><td><code translate="no">~/.codex/auth.json</code></td><td><code translate="no">openai-codex</code></td></tr>
+<tr><th scope="row">Qwen CLI</th><td><code translate="no">~/.qwen/oauth_creds.json</code></td><td><code translate="no">qwen</code></td></tr>
+<tr><th scope="row">gh CLI</th><td><code translate="no">~/.config/gh/hosts.yml</code></td><td><code translate="no">github</code></td></tr>
+<tr><th scope="row">环境变量</th><td><code translate="no">OPENAI_API_KEY</code>、<code translate="no">ANTHROPIC_API_KEY</code> 等</td><td>对应的 Provider</td></tr>
+</tbody>
+</table>
+<p class="note">外部 CLI 还在时存一个指针，每次调用重读其文件。否则复制 token，由 OpenProgram 刷新。</p>
+<h3>辅助命令</h3>
+<p>适用于由 <code translate="no">aws</code>、<code translate="no">sso-helper</code>、<code translate="no">token-fetcher</code> 这类 CLI 签发的 token：在设置 → Provider 添加类型 <code translate="no">credential_process</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">含义</th><th scope="col">默认</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">command</code></th><td>argv 列表，不经 shell 运行</td><td>必填</td></tr>
+<tr><th scope="row"><code translate="no">parses</code></th><td><code translate="no">json</code>，或 <code translate="no">text</code> 取去空白的 stdout</td><td><code translate="no">json</code></td></tr>
+<tr><th scope="row"><code translate="no">json_key_path</code></th><td>逐层取键，如 <code translate="no">["creds", "token"]</code>。为空时整个文档必须是字符串</td><td><code translate="no">[]</code></td></tr>
+<tr><th scope="row"><code translate="no">cache_seconds</code></th><td>token 复用时长。<code translate="no">0</code> 每次调用都运行</td><td><code translate="no">300</code></td></tr>
+<tr><th scope="row"><code translate="no">timeout_seconds</code></th><td>单次运行上限</td><td><code translate="no">60</code></td></tr>
+</tbody>
+</table>
+<p class="note">登录冒烟测试会运行一次。失败（非零退出、超时、输出无法解析、缺键路径）时请求失败并给出命令和 stderr，绝不回退到其他凭据。修好辅助命令，或删除它改用其他来源。</p>
+<p class="note">企业 SSO（<code translate="no">sso</code>）未实现；API 和解析器都会拒绝。</p>
+<h2>管理</h2>
+<p>命令见<a href="README.html">配置模型</a>。</p>
+<p>每个 Provider 支持多个命名账户，一个账户的池可放多个 API 密钥。返回 401、402、429 或 503 的密钥进入冷却，下一个健康密钥处理后续请求。策略：<code translate="no">fill_first</code>（默认，备用密钥）、<code translate="no">round_robin</code>、<code translate="no">random</code>、<code translate="no">least_used</code>。跨整个账户轮换是单独的 Provider 开关，默认关闭。</p>
+<details>
+<summary>Codex 登录</summary>
+<ul>
+<li>Program 调用使用 Provider 的当前账户，包括用 <code translate="no">openprogram providers use openai-codex &lt;account&gt;</code> 设定的账户。脚本可固定另一个：<code translate="no">create_runtime(provider="openai-codex", profile="&lt;account&gt;")</code>。</li>
+<li>终端认证失败和标记为不可重试的错误在一次请求后停止，错误类别在 Program 运行时中保留。其他回调失败仍走 Program 的有界恢复。</li>
+<li>回调监听在授权页打开前启动。保持 Provider 面板打开，直到显示成功。</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">问题</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">页面没打开</th><td><strong>Open sign-in page</strong></td></tr>
+<tr><th scope="row">回调到不了 App</th><td>把回调 URL 粘贴到登录面板；必须属于当前这次登录</td></tr>
+<tr><th scope="row">授权码过期或已用过</th><td>重新登录</td></tr>
+<tr><th scope="row">token 交换返回 HTTP 403</th><td>OpenAI 拒绝了；原因可能是账户权限或网络。面板会标出已识别的授权错误，并显示连接重试。</td></tr>
+</tbody>
+</table>
+<p class="note">取消或离开面板即结束这次登录。</p>
+</details>

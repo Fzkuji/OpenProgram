@@ -1,4 +1,4 @@
-import type { JobResourceView } from "../net/ws-events";
+import type { JobResourceView } from "../net/ws/ws-events";
 
 export type JobResourceDetail = {
   key: "state" | "tokens" | "cost" | "runtime" | "idle" | "reason";

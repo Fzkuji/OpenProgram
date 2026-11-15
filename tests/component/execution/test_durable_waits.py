@@ -5,14 +5,14 @@ import asyncio
 
 import pytest
 
-import openprogram.execution as execution_module
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.control import RuntimeControlService
-from openprogram.execution.checkpoints import CheckpointFragment
-from openprogram.execution.driver import DriverRegistry
-from openprogram.execution.model import CapabilitySet, CommandKind
-from openprogram.execution.store import ExecutionConflict, ExecutionStore
-from openprogram.execution.waits import DurableWaitStore, WaitStatus
+import openprogram.runtime.execution as execution_module
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.control import RuntimeControlService
+from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.driver import DriverRegistry
+from openprogram.runtime.execution.model import CapabilitySet, CommandKind
+from openprogram.runtime.execution.store import ExecutionConflict, ExecutionStore
+from openprogram.runtime.execution.waits import DurableWaitStore, WaitStatus
 
 
 def _active_execution(
@@ -33,7 +33,7 @@ def _active_execution(
     attempts = AttemptStore(executions)
     leased, reserved = attempts.lease(
         execution.execution_id, expected_version=execution.status_version,
-        owner_id=f"worker_{execution_id}", ttl_seconds=30, attempt_id=attempt_id,
+        owner_id=f"worker_{execution_id}", attempt_id=attempt_id,
     )
     attempt, execution = attempts.activate(
         leased.attempt_id, generation=leased.generation,
@@ -160,7 +160,7 @@ def test_reclaim_expired_claim_then_cancel_is_durable(tmp_path) -> None:
 
 
 def test_startup_reclaims_claim_after_owner_is_fenced(tmp_path) -> None:
-    from openprogram.execution.startup import recover_execution_startup
+    from openprogram.runtime.execution.startup import recover_execution_startup
 
     executions, attempts, execution, attempt = _active_execution(tmp_path)
     waits = DurableWaitStore(executions)
@@ -187,7 +187,7 @@ def test_expired_wait_rejects_command_without_losing_timeout_record(tmp_path) ->
         policy_snapshot={"version": 1}, expires_at=9_999_999_999,
     )
     with executions._transaction() as connection:
-        connection.execute("UPDATE execution_waits SET expires_at = 1 WHERE wait_id = ?", (wait.wait_id,))
+        connection.update("execution_waits", {"expires_at": 1}, wait_id=wait.wait_id)
     dispatch = asyncio.run(RuntimeControlService(executions, attempts, DriverRegistry()).request_wait_answer(
         command_id="expired_answer", execution_id=execution.execution_id,
         expected_version=execution.status_version, actor={"surface": "test"},
@@ -208,8 +208,8 @@ def test_ws_public_command_requires_exact_wait_generation(monkeypatch, tmp_path)
     service = RuntimeControlService(executions, attempts, DriverRegistry())
     monkeypatch.setattr(execution_module, "default_store", lambda: executions)
     monkeypatch.setattr(execution_module, "default_control_service", lambda: service)
-    from openprogram.webui.ws_actions.runtime import submit_execution_control
-    from openprogram.agent.authority import owner_authority
+    from openprogram.interfaces.server.ws_actions.runtime import submit_execution_control
+    from openprogram.runtime.permissions.authority import owner_authority
 
     command, updated = asyncio.run(submit_execution_control(
         {
@@ -311,7 +311,7 @@ def test_answer_reactivates_exact_wait_checkpoint_without_replaying_wait_attempt
 
 @pytest.mark.parametrize("resume_blocked", [False, True])
 def test_startup_recovers_committed_wait_outcome_once(tmp_path, resume_blocked) -> None:
-    from openprogram.execution.startup import recover_execution_startup
+    from openprogram.runtime.execution.startup import recover_execution_startup
 
     executions, attempts, execution, attempt = _active_execution(tmp_path)
     activations = []
@@ -348,9 +348,9 @@ def test_startup_recovers_committed_wait_outcome_once(tmp_path, resume_blocked) 
         # A prior resume already checked and rejected an incompatible runtime.
         # The old answer must not repeatedly trigger that operation on restart.
         with executions._transaction() as connection:
-            connection.execute(
-                "UPDATE executions SET reason_code = 'continuation_contract_mismatch' WHERE execution_id = ?",
-                (execution.execution_id,),
+            connection.update(
+                "executions", {"reason_code": "continuation_contract_mismatch"},
+                execution_id=execution.execution_id,
             )
     recover_execution_startup(control_service=service)
     # The saga scan is safe to repeat while the resumed owner is active.
@@ -366,7 +366,7 @@ def test_startup_recovers_committed_wait_outcome_once(tmp_path, resume_blocked) 
 
 
 def test_timeout_policy_is_persisted_and_settled_on_startup(tmp_path) -> None:
-    from openprogram.execution.startup import recover_execution_startup
+    from openprogram.runtime.execution.startup import recover_execution_startup
 
     executions, attempts, execution, attempt = _active_execution(tmp_path)
     service = RuntimeControlService(executions, attempts, DriverRegistry())
@@ -387,7 +387,7 @@ def test_timeout_policy_is_persisted_and_settled_on_startup(tmp_path) -> None:
         wait_id="wait_timeout",
     )
     with executions._transaction() as connection:
-        connection.execute("UPDATE execution_waits SET expires_at = 1 WHERE wait_id = ?", (suspended.wait.wait_id,))
+        connection.update("execution_waits", {"expires_at": 1}, wait_id=suspended.wait.wait_id)
 
     recover_execution_startup(control_service=service)
 
@@ -550,7 +550,7 @@ def test_system_access_reconciliation_uses_one_fresh_report_per_pass(tmp_path, m
     )
     reports = []
     monkeypatch.setattr(
-        "openprogram.system_access.report",
+        "openprogram.host.system_access.report",
         lambda: reports.append("fresh") or {
             "capabilities": [{"id": "screen_recording", "status": "granted"}],
         },
@@ -569,9 +569,9 @@ def test_system_access_reconciliation_uses_one_fresh_report_per_pass(tmp_path, m
 @pytest.mark.parametrize('change', ['unchanged', 'modified', 'deleted'])
 def test_file_approval_rechecks_durable_state_on_resume(tmp_path, monkeypatch, change):
     from types import SimpleNamespace
-    from openprogram.agent.permissions.approval import await_user_approval
-    from openprogram.agent.permissions.file_state import capture
-    from openprogram.agent.run_control import set_preapproved_wait_id, reset_preapproved_wait_id
+    from openprogram.runtime.permissions.approval import await_user_approval
+    from openprogram.runtime.permissions.file_state import capture
+    from openprogram.runtime.conversation.run_control import set_preapproved_wait_id, reset_preapproved_wait_id
     path = tmp_path / 'approved.txt'
     path.write_text('original')
     args = {'file_path': str(path), 'content': 'replacement'}
@@ -604,6 +604,40 @@ def test_file_approval_rechecks_durable_state_on_resume(tmp_path, monkeypatch, c
         assert 'no longer exists' in reason
         assert not path.exists()
     if change == 'modified': assert path.read_text() == 'user contents'
+
+
+@pytest.mark.parametrize("reason", [None, "Keep build/; just run npm run build"])
+def test_a_declined_approval_hands_the_users_reason_to_the_tool(tmp_path, monkeypatch, reason):
+    from types import SimpleNamespace
+    from openprogram.runtime.permissions.approval import UserDeclineReason, await_user_approval
+    from openprogram.runtime.conversation.run_control import set_preapproved_wait_id, reset_preapproved_wait_id
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    wait = DurableWaitStore(executions).open_wait(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, kind='approval', expires_at=0,
+        request={'prompt': 'Allow?', 'tool': 'bash', 'args': {'command': 'rm -rf build'}},
+        policy_snapshot={'version': 1},
+    )
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    asyncio.run(service.request_wait_decline(
+        command_id='deny', execution_id=execution.execution_id,
+        expected_version=execution.status_version, actor={'surface': 'test'},
+        wait_id=wait.wait_id, generation=0, reason=reason,
+    ))
+    monkeypatch.setattr(execution_module, 'default_store', lambda: ExecutionStore(tmp_path / 'executions.db'))
+    token = set_preapproved_wait_id(wait.wait_id)
+    try:
+        approved, got, _ = asyncio.run(await_user_approval(
+            req=SimpleNamespace(session_id=execution.session_id), tool_name='bash',
+            args={'command': 'rm -rf build'}, on_event=lambda _: None,
+        ))
+    finally:
+        reset_preapproved_wait_id(token)
+    assert approved is False
+    if reason is None:
+        assert got is None
+    else:
+        assert isinstance(got, UserDeclineReason) and got == reason
 
 
 def _decision_fragment(step_id: str = "provider:decision") -> CheckpointFragment:
@@ -645,7 +679,7 @@ def _running_attempt(attempts, executions, execution_id):
 def test_startup_ignores_historical_wait_resume_and_recovers_current_wait(
     tmp_path,
 ) -> None:
-    from openprogram.execution.startup import recover_execution_startup
+    from openprogram.runtime.execution.startup import recover_execution_startup
 
     executions, attempts, execution, attempt = _active_execution(tmp_path)
     activations = []
@@ -705,7 +739,7 @@ def test_startup_ignores_historical_wait_resume_and_recovers_current_wait(
 
 @pytest.mark.parametrize("stale_kind", ["fail", "cancel", "scheduler", "null_checkpoint"])
 def test_stale_wait_outcome_does_not_own_later_wait_frontier(tmp_path, stale_kind) -> None:
-    from openprogram.execution.startup import recover_execution_startup
+    from openprogram.runtime.execution.startup import recover_execution_startup
 
     executions, attempts, execution, attempt = _active_execution(tmp_path)
     activations = []
@@ -752,10 +786,7 @@ def test_stale_wait_outcome_does_not_own_later_wait_frontier(tmp_path, stale_kin
     )
     if stale_kind == "null_checkpoint":
         with executions._transaction() as connection:
-            connection.execute(
-                "UPDATE execution_waits SET checkpoint_id = NULL WHERE wait_id = ?",
-                ("wait_a",),
-            )
+            connection.update("execution_waits", {"checkpoint_id": None}, wait_id="wait_a")
     if stale_kind == "scheduler":
         service.set_wait_resume_scheduler(lambda wait, _execution: scheduled.append(wait.wait_id))
 

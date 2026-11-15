@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.self_update.repair.repair_candidate import _edits
-from openprogram.self_update.types import IterationMode
+from openprogram.operations.self_update.repair.repair_candidate import _edits
+from openprogram.operations.self_update.types import IterationMode
 
 
 def _request():

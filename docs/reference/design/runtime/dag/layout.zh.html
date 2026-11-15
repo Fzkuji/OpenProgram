@@ -1,0 +1,133 @@
+<title>布局规格</title>
+<meta name="description" content="DAG 节点在各场景中的位置、分支端点的定义，以及渲染器的模块划分。">
+<h1>布局规格</h1>
+
+<p>位置 =（泳道起始列 + 层级，行）。规则见 <a href="rendering.html">DAG 渲染</a>；这里是规则产生的结果。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字母</th><th scope="col">节点</th></tr></thead>
+<tbody>
+<tr><th scope="row">R</th><td>ROOT</td></tr>
+<tr><th scope="row">U</th><td>你的消息</td></tr>
+<tr><th scope="row">A</th><td>Agent 回复</td></tr>
+<tr><th scope="row">F</th><td>函数调用或 Program 运行</td></tr>
+<tr><th scope="row">M</th><td>合并</td></tr>
+</tbody>
+</table>
+<p class="note">字母代替真实圆形节点上的图标。泳道 0 为实心，其他泳道为描边。窄屏按“列,行”列出节点。</p>
+
+<h2 id="conversation">对话</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 544" role="img" aria-label="一条消息、两轮对话，以及展开调用的手动函数。"><g transform="translate(0 0)"><text x="0" y="16">一条消息</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">你好</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">回复</text></g><g transform="translate(340 0)"><text x="0" y="16">两轮</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M22 44 V164 H62"/><path class="ln" d="M62 164 V204 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">你好</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">回复 1</text><circle class="tile" cx="62" cy="164" r="13"/><text class="t-soft mid" x="62" y="168">U</text><text class="t-soft" x="80" y="168">天气</text><circle class="tile" cx="102" cy="204" r="13"/><text class="t-soft mid" x="102" y="208">A</text><text class="t-soft" x="120" y="208">回复 2</text></g><g transform="translate(0 252)"><text x="0" y="16">手动函数，展开</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M22 44 V164 H62"/><path class="ln" d="M62 164 V204 H102 M62 204 V244 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">你好</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">回复</text><circle class="tile" cx="62" cy="164" r="13"/><text class="t-soft mid" x="62" y="168">F</text><text class="t-soft" x="80" y="168">gui_agent</text><circle class="tile" cx="102" cy="204" r="13"/><text class="t-soft mid" x="102" y="208">F</text><text class="t-soft" x="120" y="208">gui_step</text><circle class="tile" cx="102" cy="244" r="13"/><text class="t-soft mid" x="102" y="248">F</text><text class="t-soft" x="120" y="248">conclusion</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>一条消息</strong><small>ROOT 0,0 · 你好 1,1 · 回复 2,2</small></li>
+<li><strong>两轮</strong><small>ROOT 0,0 · 你好 1,1 · 回复 1 2,2 · 天气 1,3 · 回复 2 2,4</small></li>
+<li><strong>手动函数，展开</strong><small>ROOT 0,0 · 你好 1,1 · 回复 2,2 · gui_agent 1,3 · gui_step 2,4 · conclusion 2,5</small></li>
+</ol>
+</figure>
+<ul>
+<li>每一轮和每个手动 Program 都挂在 ROOT 下，不挂在上一条回复下。</li>
+<li>函数内部的调用是一列按时间排列的平铺节点，不论嵌套多深。</li>
+</ul>
+
+<h2 id="retry">重试</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 344" role="img" aria-label="重试在同一行打开新泳道，同一轮的三个版本占三条泳道。"><g transform="translate(0 0)"><text x="0" y="16">重试</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">你好</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">回复 1</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">编辑后</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">回复 1′</text></g><g transform="translate(0 172)"><text x="0" y="16">同一轮的三个版本</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln-acc" d="M222 84 H382" stroke-dasharray="6 4"/><path class="ln-acc" d="M382 84 H422"/><path class="ln-acc" d="M422 84 V124 H462"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">v1</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">r1</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft mid" x="222" y="67">v2</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">r2</text><circle class="gate" cx="422" cy="84" r="13"/><text class="t-soft mid" x="422" y="88">U</text><text class="t-soft" x="440" y="88">v3</text><circle class="gate" cx="462" cy="124" r="13"/><text class="t-soft mid" x="462" y="128">A</text><text class="t-soft" x="480" y="128">r3</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>重试</strong><small>ROOT 0,0 · 你好 1,1 · 回复 1 2,2 · 编辑后 5,1 · 回复 1′ 6,2</small></li>
+<li><strong>同一轮的三个版本</strong><small>ROOT 0,0 · v1 1,1 · r1 2,2 · v2 5,1 · r2 6,2 · v3 10,1 · r3 11,2</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">列</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row">3</th><td>间隔：表示这是并行版本</td></tr>
+<tr><th scope="row">4</th><td>分叉泳道的空脊线，虚线桥落在这里</td></tr>
+<tr><th scope="row">5, 6</th><td>分叉的消息和回复</td></tr>
+</tbody>
+</table>
+
+<h2 id="threads">调用线程</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 584" role="img" aria-label="一轮的调用折叠成计数；展开时插入行，泳道不移动。"><g transform="translate(0 0)"><text x="0" y="16">折叠</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">天气</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="114" y="114">3</text><text class="t-soft" x="120" y="128">回复</text></g><g transform="translate(340 0)"><text x="0" y="16">展开</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M102 124 V244 H142 M102 164 H142 M102 204 H142"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">天气</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">回复</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text><text class="t-soft" x="160" y="168">bash</text><circle class="tile" cx="142" cy="204" r="13"/><text class="t-soft mid" x="142" y="208">F</text><text class="t-soft" x="160" y="208">web_fetch</text><circle class="tile" cx="142" cy="244" r="13"/><text class="t-soft mid" x="142" y="248">F</text><text class="t-soft" x="160" y="248">open_meteo</text></g><g transform="translate(0 292)"><text x="0" y="16">折叠：默认</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln" d="M22 44 V164 H62"/><path class="ln" d="M62 164 V204 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">问题</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="114" y="114">1</text><text class="t-soft" x="120" y="128">回复</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">编辑后</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">A′</text><circle class="tile" cx="62" cy="164" r="13"/><text class="t-soft mid" x="62" y="168">U</text><text class="t-soft" x="80" y="168">追问</text><circle class="tile" cx="102" cy="204" r="13"/><text class="t-soft mid" x="102" y="208">A</text><text class="t-soft" x="120" y="208">回复 2</text></g><g transform="translate(340 292)"><text x="0" y="16">展开：插入行，列不动</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln" d="M22 44 V204 H62"/><path class="ln" d="M62 204 V244 H102"/><path class="ln" d="M102 124 V164 H142"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">问题</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">回复</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">编辑后</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">A′</text><circle class="tile" cx="62" cy="204" r="13"/><text class="t-soft mid" x="62" y="208">U</text><text class="t-soft" x="80" y="208">追问</text><circle class="tile" cx="102" cy="244" r="13"/><text class="t-soft mid" x="102" y="248">A</text><text class="t-soft" x="120" y="248">回复 2</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text><text class="t-soft" x="160" y="168">web_search</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>折叠</strong><small>ROOT 0,0 · 天气 1,1 · 回复 2,2</small></li>
+<li><strong>展开</strong><small>ROOT 0,0 · 天气 1,1 · 回复 2,2 · bash 3,3 · web_fetch 3,4 · open_meteo 3,5</small></li>
+<li><strong>折叠：默认</strong><small>ROOT 0,0 · 问题 1,1 · 回复 2,2 · 编辑后 5,1 · A′ 6,2 · 追问 1,3 · 回复 2 2,4</small></li>
+<li><strong>展开：插入行，列不动</strong><small>ROOT 0,0 · 问题 1,1 · 回复 2,2 · 编辑后 5,1 · A′ 6,2 · 追问 1,4 · 回复 2 2,5 · web_search 3,3</small></li>
+</ol>
+</figure>
+<p class="note">线程项不占泳道宽度。收起线程即归还它占用的行。</p>
+
+<h2 id="branches">分支之间</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 704" role="img" aria-label="合并、分支间消息，以及调用线程上派出的 Agent。"><g transform="translate(0 0)"><text x="0" y="16">合并</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln" d="M102 124 V164"/><path class="ln-acc" d="M262 124 V164 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">问题</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">回复 A</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">编辑后</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">B</text><circle class="tile" cx="102" cy="164" r="13"/><text class="t-soft mid" x="102" y="168">M</text><text class="t-soft mid" x="102" y="193">merge</text></g><g transform="translate(340 0)"><text x="0" y="16">send_message</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M102 124 V164 H142"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222 M182 84 V164 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln-acc" d="M222 164 V204 H262"/><path class="ln-acc" d="M142 164 H222" stroke-dasharray="1 5"/><path class="ln-acc" d="M262 204 V244 H62" stroke-dasharray="1 5"/><path class="ln" d="M22 44 V244 H62"/><path class="ln" d="M62 244 V284 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">问题</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">A</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text><text class="t-soft mid" x="142" y="193">send</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">分支 B</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">B</text><circle class="gate" cx="222" cy="164" r="13"/><text class="t-soft mid" x="222" y="168">U</text><circle class="gate" cx="262" cy="204" r="13"/><text class="t-soft mid" x="262" y="208">A</text><circle class="tile" cx="62" cy="244" r="13"/><text class="t-soft mid" x="62" y="248">U</text><text class="t-soft mid" x="62" y="227">来自 B</text><circle class="tile" cx="102" cy="284" r="13"/><text class="t-soft mid" x="102" y="288">A</text><text class="t-soft" x="120" y="288">A 回应</text></g><g transform="translate(0 332)"><text x="0" y="16">线程上派出 Agent，都展开</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M102 124 V324 H142 M102 164 H142 M102 204 H142"/><path class="ln-acc" d="M142 204 V284 H182 M142 244 H182"/><rect class="tile" x="164" y="193" width="86" height="22" rx="6"/><text class="t-soft" x="172" y="208">Researcher</text><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">问题</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">A</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text><text class="t-soft" x="160" y="168">read</text><circle class="tile" cx="142" cy="204" r="13"/><text class="t-soft mid" x="142" y="208">F</text><circle class="gate" cx="182" cy="244" r="13"/><text class="t-soft mid" x="182" y="248">A</text><circle class="gate" cx="182" cy="284" r="13"/><text class="t-soft mid" x="182" y="288">F</text><text class="t-soft" x="200" y="288">bash</text><circle class="tile" cx="142" cy="324" r="13"/><text class="t-soft mid" x="142" y="328">F</text><text class="t-soft" x="160" y="328">write</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>合并</strong><small>ROOT 0,0 · 问题 1,1 · 回复 A 2,2 · 编辑后 5,1 · B 6,2 · merge 2,3</small></li>
+<li><strong>send_message</strong><small>ROOT 0,0 · 问题 1,1 · A 2,2 · send 3,3 · 分支 B 5,1 · B 6,2 · U 5,3 · A 6,4 · 来自 B 1,5 · A 回应 2,6</small></li>
+<li><strong>线程上派出 Agent，都展开</strong><small>ROOT 0,0 · 问题 1,1 · A 2,2 · read 3,3 · F 3,4 · A 4,5 · bash 4,6 · write 3,7</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">场景</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">合并</th><td>一个多父节点，位于基准泳道。每个对端分支尖端用对端颜色的粗线汇入。</td></tr>
+<tr><th scope="row"><code translate="no">send_message</code></th><td>立即返回，两边都不阻塞。消息落在目标分支末尾。答复作为新的用户层轮次返回，并标出发送者名字。点线只在悬停时显示。</td></tr>
+<tr><th scope="row">派出</th><td>调用线程上的一个方块，位于发生时的位置，并带名字标签。它自己的线程再右移一列，把后面的项往下推。没有返回线：后续回复并入同一锚点。</td></tr>
+</tbody>
+</table>
+
+<h2 id="states">节点状态与标记</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">画法</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中</th><td>节点自身的图标动起来，通向它的传送带上有珠子移动。没有占位节点。</td></tr>
+<tr><th scope="row">出错</th><td>红色 <code translate="no">!</code> 标在节点右上缘；这一轮的其他节点不变。</td></tr>
+<tr><th scope="row">已取消</th><td>整个节点变淡，形状不变。</td></tr>
+<tr><th scope="row">计数</th><td>右上肩的数字：折叠了多少事件。不是节点。</td></tr>
+<tr><th scope="row"><code translate="no">↗</code></th><td>跨会话派出，两侧都标：来源节点和目标分支根。</td></tr>
+</tbody>
+</table>
+
+<h2 id="badges">分支名徽标</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 424" role="img" aria-label="徽标贴在分支最深可见节点旁，碰撞时下移一行。"><g transform="translate(0 0)"><text x="0" y="16">贴在最深可见节点右侧</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><rect class="tile" x="124" y="113" width="60" height="22" rx="6"/><text class="t-soft" x="132" y="128">你好</text><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">问题</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="114" y="114">1</text></g><g transform="translate(340 0)"><text x="0" y="16">跟随展开的线程</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M102 124 V164 H142"/><rect class="tile" x="164" y="153" width="60" height="22" rx="6"/><text class="t-soft" x="172" y="168">你好</text><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">问题</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text></g><g transform="translate(0 212)"><text x="0" y="16">碰撞：后放置的名字下移一行</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><rect class="ln-faint" x="124" y="113" width="170" height="22" rx="6"/><rect class="tile" x="124" y="153" width="170" height="22" rx="6"/><text class="t-soft" x="132" y="168">上海明天白天的天气预报</text><rect class="tile" x="284" y="113" width="34" height="22" rx="6"/><text class="t-soft" x="292" y="128">B</text><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">问题</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">编辑后</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>贴在最深可见节点右侧</strong><small>ROOT 0,0 · 问题 1,1 · A 2,2</small></li>
+<li><strong>跟随展开的线程</strong><small>ROOT 0,0 · 问题 1,1 · A 2,2 · F 3,3</small></li>
+<li><strong>碰撞：后放置的名字下移一行</strong><small>ROOT 0,0 · 问题 1,1 · A 2,2 · 编辑后 5,1 · A 6,2</small></li>
+</ol>
+</figure>
+<ul>
+<li>碰撞按实测像素盒判断，所有可见节点都算障碍。</li>
+<li>徽标只来自活跃的 <code translate="no">list_branches</code> 行。分支合并后徽标消失，名字转入合并节点的提示。</li>
+</ul>
+
+<h2 id="branch-tips">什么算分支端点</h2>
+<p><code translate="no">SessionStore.list_branches()</code> 位于 <code translate="no">openprogram/state/store/session/session_store/branches.py</code> ，只返回对话前驱图的真实叶子，以及 head。</p>
+<table class="stack">
+<thead><tr><th scope="col">延续对话</th><th scope="col">不延续</th></tr></thead>
+<tbody>
+<tr><td>用户和回复节点；顶层 Program（caller 为空或 ROOT）；运行时调度的用户行</td><td>内部执行子节点、其他运行时行、结构行和根行、 <code translate="no">attach</code>、<code translate="no">context/*</code></td></tr>
+</tbody>
+</table>
+<p class="note">依次运行的顶层 Program 只留最后一个端点；并行的同级各自是端点。</p>
+
+<h2 id="retry-projection">重试与泳道</h2>
+<p>ROOT 下的顶层 Program 按时间留在 ROOT 泳道。只有持久化的 <code translate="no">metadata.retry_of</code> 才打开分叉泳道。Retry 入口写入它； <code translate="no">build_session_graph()</code> 把它交给布局。</p>
+
+<h2 id="modules">前端模块</h2>
+<p>位于 <code translate="no">apps/web/lib/runtime-bridge/dag/</code>：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">目录</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">passes/</code></th><td>数据投影</td></tr>
+<tr><th scope="row"><code translate="no">layout/</code></th><td>几何计算</td></tr>
+<tr><th scope="row"><code translate="no">render/</code></th><td>绘制</td></tr>
+<tr><th scope="row"><code translate="no">interaction/</code></th><td>交互和相机</td></tr>
+<tr><th scope="row">根目录</th><td>公开入口、类型、绘制门控、流水线</td></tr>
+</tbody>
+</table>
+<p class="note">提示内容与 DOM 生命周期分开，图准备与 SVG 提交分开，节点分类与归属计算分开。单文件一般不超过 500 行。拆分文件不得改变公开入口、DOM 类名、SVG 结构、测试可见状态或相机行为。</p>
+
+<p class="next"><a href="live-layout.html">用示例数据试布局算法</a></p>

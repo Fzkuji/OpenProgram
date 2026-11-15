@@ -1,0 +1,231 @@
+"""Function source / editor / create / delete endpoints.
+
+Powers the program editor UI: read source, save edits, meta-edit via LLM,
+create from description, delete a user function. Also includes
+``/api/node/{path}`` which inspects the function tree.
+"""
+from __future__ import annotations
+
+import inspect
+import os
+import re
+import threading
+import uuid
+from pathlib import Path
+
+import openprogram
+from fastapi.responses import JSONResponse
+
+
+def _programs_root() -> Path:
+    return Path(openprogram.__file__).resolve().parent / "programs"
+
+
+def register(app):
+    @app.get("/api/node/{path:path}")
+    async def get_node(path: str):
+        """Legacy tree-Context node lookup. Returns 410 — the tree
+        listing it walked is gone; DAG-based node fetching will
+        replace this endpoint once the new viewer ships."""
+        return JSONResponse(
+            content={"error": "tree-Context node lookup retired"},
+            status_code=410,
+        )
+
+    @app.get("/api/function/{name}/source")
+    async def get_function_source(name: str):
+        """Return full source code of a function."""
+        from openprogram.interfaces.server import server as _s
+        programs_root = os.fspath(_programs_root())
+        # Legacy layout: each function is its own package
+        # (functions/agentic/<name>/__init__.py), or a flat
+        # functions/agentic/<name>.py.
+        agentics_base = os.path.join(programs_root, "functions", "agentic")
+        candidates = [
+            (os.path.join(agentics_base, name, "__init__.py"), "agentic"),
+            (os.path.join(agentics_base, f"{name}.py"), "agentic"),
+        ]
+        for filepath, category in candidates:
+            if os.path.isfile(filepath):
+                with open(filepath, encoding="utf-8") as f:
+                    source = f.read()
+                return JSONResponse(content={
+                    "name": name,
+                    "source": source,
+                    "filepath": filepath,
+                    "category": category,
+                })
+        # Harness apps: <applications>/<package>/.../main.py
+        applications_base = os.path.join(programs_root, "applications")
+        if os.path.isdir(applications_base):
+            for d in os.listdir(applications_base):
+                full_path = os.path.join(applications_base, d)
+                if os.path.isdir(full_path):
+                    for root, dirs, files in os.walk(full_path):
+                        dirs[:] = [x for x in dirs if not x.startswith(("_", "."))]
+                        if "main.py" in files:
+                            main_py = os.path.join(root, "main.py")
+                            with open(main_py, encoding="utf-8") as f:
+                                source = f.read()
+                            info = _s._extract_function_info(main_py, None, "application")
+                            if info and info["name"] == name:
+                                return JSONResponse(content={
+                                    "name": name,
+                                    "source": source,
+                                    "filepath": main_py,
+                                    "category": "application",
+                                })
+                            break
+        # Internal function via inspect
+        fn = _s._load_function(name)
+        if fn is None:
+            fn = getattr(_s, name, None)
+        if fn is not None and callable(fn):
+            try:
+                inner = inspect.unwrap(getattr(fn, '_fn', None) or fn)
+                source = inspect.getsource(inner)
+                return JSONResponse(content={
+                    "name": name,
+                    "source": source,
+                    "filepath": inspect.getfile(inner),
+                    "category": "internal",
+                })
+            except (OSError, TypeError):
+                pass
+        # Agent method registry
+        from openprogram.programs._host.runtime import _registry
+        if name in _registry:
+            reg_fn = inspect.unwrap(_registry[name]._python_callable)
+            try:
+                source = inspect.getsource(reg_fn)
+                return JSONResponse(content={
+                    "name": name,
+                    "source": source,
+                    "filepath": inspect.getfile(reg_fn),
+                    "category": "external",
+                })
+            except (OSError, TypeError):
+                pass
+
+        # Grep harness-app directories (handles symlinked externals)
+        apps_dir = os.path.join(programs_root, "applications")
+        func_pattern = re.compile(rf'def\s+{re.escape(name)}\s*\(')
+        if os.path.isdir(apps_dir):
+            for root, dirs, files in os.walk(apps_dir, followlinks=True):
+                dirs[:] = [d for d in dirs if not d.startswith(('.', '_'))
+                           and d not in {'node_modules', 'vendor', '__pycache__',
+                                         'desktop_env', 'libs', 'build', 'dist',
+                                         'benchmarks', 'docs', 'tests', 'memory',
+                                         'cache', 'skills', 'actions', 'platforms'}]
+                for f in files:
+                    if not f.endswith('.py'):
+                        continue
+                    filepath = os.path.join(root, f)
+                    try:
+                        with open(filepath, encoding="utf-8") as fh:
+                            source = fh.read()
+                        if func_pattern.search(source):
+                            return JSONResponse(content={
+                                "name": name,
+                                "source": source,
+                                "filepath": filepath,
+                                "category": "external",
+                            })
+                    except (OSError, UnicodeDecodeError):
+                        continue
+
+        return JSONResponse(content={"error": f"Function '{name}' not found"}, status_code=404)
+
+    @app.post("/api/function/{name}/edit")
+    async def edit_function_source(name: str, body: dict = None):
+        """Save edited source code for a function."""
+        if not body or "source" not in body:
+            return JSONResponse(content={"error": "no source provided"}, status_code=400)
+        programs_root = os.fspath(_programs_root())
+        # Save edited source to the unified agentics layout. Prefer the
+        # package form (<name>/__init__.py); fall back to a flat file
+        # only when one already exists from a legacy path.
+        agentics_base = os.path.join(programs_root, "functions", "agentic")
+        pkg_init = os.path.join(agentics_base, name, "__init__.py")
+        flat_py = os.path.join(agentics_base, f"{name}.py")
+        filepath = flat_py if os.path.isfile(flat_py) else pkg_init
+        try:
+            compile(body["source"], filepath, "exec")
+        except SyntaxError as e:
+            return JSONResponse(content={"error": f"Syntax error: {e}"}, status_code=400)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(body["source"])
+        return JSONResponse(content={"saved": True, "filepath": filepath})
+
+    # NOTE: The original file registers a SECOND handler for the same
+    # path that runs the meta-edit() helper. FastAPI keeps both; the
+    # second one wins for matching requests. Preserved verbatim.
+    @app.post("/api/function/{name}/edit")
+    async def edit_function(name: str, body: dict = None):
+        """Run meta edit() on a function."""
+        from openprogram.interfaces.server import server as _s
+        session_id = (body or {}).get("session_id")
+        from openprogram.state.store.session.conversation_work import run_for_conversation
+        conv = await run_for_conversation(session_id, _s._get_or_create_session, session_id)
+        msg_id = uuid.uuid4().hex
+
+        def _do_edit():
+            _s._broadcast_chat_response(session_id, msg_id, {
+                "type": "error",
+                "content": (
+                    "The /edit endpoint has been removed. Ask the agent in chat "
+                    "to edit the Program directly using its file-editing tools "
+                    "and the agentic function API."
+                ),
+            })
+
+        threading.Thread(target=_do_edit, daemon=True).start()
+        return JSONResponse(content={"session_id": conv["id"], "msg_id": msg_id})
+
+    @app.delete("/api/function/{name}")
+    async def delete_function(name: str):
+        """Delete a user function file."""
+        programs_root = os.fspath(_programs_root())
+        # Legacy agentic functions live as packages under functions/agentic/<name>/__init__.py.
+        agentics_dir = os.path.join(
+            programs_root, "functions", "agentic", name
+        )
+        filepath_pkg = os.path.join(agentics_dir, "__init__.py")
+        filepath_flat = os.path.join(
+            programs_root, "functions", "agentic", f"{name}.py"
+        )
+        if os.path.isfile(filepath_pkg):
+            filepath = filepath_pkg
+        elif os.path.isfile(filepath_flat):
+            filepath = filepath_flat
+        else:
+            return JSONResponse(content={"error": "not found"}, status_code=404)
+        if name == "ask_user":
+            return JSONResponse(content={"error": "cannot delete built-in function"}, status_code=403)
+        os.remove(filepath)
+        return JSONResponse(content={"deleted": True})
+
+    @app.post("/api/function/create")
+    async def create_function(body: dict = None):
+        """Create a new function from description."""
+        from openprogram.interfaces.server import server as _s
+        if not body or "description" not in body:
+            return JSONResponse(content={"error": "no description"}, status_code=400)
+        session_id = body.get("session_id")
+        from openprogram.state.store.session.conversation_work import run_for_conversation
+        conv = await run_for_conversation(session_id, _s._get_or_create_session, session_id)
+        msg_id = uuid.uuid4().hex
+
+        def _do_create():
+            _s._broadcast_chat_response(session_id, msg_id, {
+                "type": "error",
+                "content": (
+                    "The /create endpoint has been removed. Ask the agent in chat "
+                    "to create the Program directly using its file-editing tools "
+                    "and the agentic function API."
+                ),
+            })
+
+        threading.Thread(target=_do_create, daemon=True).start()
+        return JSONResponse(content={"session_id": conv["id"], "msg_id": msg_id})

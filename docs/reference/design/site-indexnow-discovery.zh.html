@@ -1,0 +1,41 @@
+<title>IndexNow 部署发现</title>
+<meta name="description" content="每次站点发布成功后如何把全部 sitemap URL 通知搜索引擎。">
+<h1>IndexNow 部署发现</h1>
+
+<p>每次成功发布到站点仓库后，<code translate="no">scripts/docs_site/indexnow.py</code> 把全部规范 sitemap URL 提交到 <code translate="no">https://api.indexnow.org/indexnow</code>。</p>
+
+<figure>
+<ol class="flow">
+<li><strong>构建</strong><small>可信的文档构建器写出 <code translate="no">_publish/sitemap.xml</code></small></li>
+<li><strong>校验</strong><small>严格的 sitemap 0.9 <code translate="no">loc</code> 元素；HTTPS 且位于配置的网站地址之下；空输入或外部主机在联网前失败</small></li>
+<li><strong>分批</strong><small>去重，每次请求 10,000 个 URL，写入临时 runner 目录；清除旧批次</small></li>
+<li class="flow-end"><strong>提交</strong><small>标准库客户端，有超时和重试；某批失败不跳过后续批次，全部尝试后才报告失败</small></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">请求</th><td>主机、公钥、公钥位置、URL 列表</td></tr>
+<tr><th scope="row">所有权</th><td>公开密钥文件 <code translate="no">7c5062acbc32b8a88d2e6b627d65cbfa.txt</code>；无需仓库密钥</td></tr>
+<tr><th scope="row">失败</th><td><code translate="no">continue-on-error</code>：绝不阻塞或回滚发布</td></tr>
+<tr><th scope="row">顺序</th><td>等待站点仓库的发布动作，不等下游 Pages 部署，因此通知可能早于 Pages 处理完成</td></tr>
+<tr><th scope="row">依赖</th><td>只用 Python 3.12 标准库</td></tr>
+<tr><th scope="row">Sitemap、robots、Google 验证</th><td>不变</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>机制比较</summary>
+<table class="stack">
+<thead><tr><th scope="col">机制</th><th scope="col">覆盖</th><th scope="col">选择</th></tr></thead>
+<tbody>
+<tr><th scope="row">被动 sitemap 发现</th><td>所有支持 sitemap 的爬虫</td><td>保留；变化时不会通知</td></tr>
+<tr><th scope="row"><a href="https://www.indexnow.org/documentation">IndexNow 批量</a></th><td>参与的搜索引擎</td><td>每次发布后使用</td></tr>
+<tr><th scope="row">Google Search Console</th><td>Google，不使用 IndexNow</td><td>单独验证；不增加部署凭据</td></tr>
+</tbody>
+</table>
+<p class="note">排名、抓取时间和收录不受系统控制。</p>
+</details>
+
+<p class="note">工作流步骤：<code translate="no">.github/workflows/docs-pages.yml</code>。测试：<code translate="no">tests/unit/config/test_docs_publish_indexnow.py</code>。</p>

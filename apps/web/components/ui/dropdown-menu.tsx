@@ -2,11 +2,14 @@
 
 /**
  * Thin radix wrapper, mirroring ui/popover.tsx. Same rule as popover:
- * the Content wrapper carries NO frame — callers put MENU_PANEL from
- * `components/chat/top-bar/menu-styles` on it (or on an inner div), so
- * every menu in the app shares one visual definition. Radix supplies
- * the parts popovers make us hand-roll: roving focus, typeahead, Esc,
- * outside-click, and `role="menu"/"menuitem"` semantics.
+ * the Content wrapper carries NO frame and NO width — callers put
+ * MENU_PANEL from `components/ui/menu/menu-styles` on it (or on an
+ * inner div), so every menu in the app shares one visual definition and
+ * fits its content (MENU_PANEL caps the width). Radix supplies the parts
+ * popovers make us hand-roll: roving focus, typeahead, Esc,
+ * outside-click, and `role="menu"/"menuitem"` semantics. A submenu sits
+ * where shadcn's radix-nova one does (no offsets): against its trigger
+ * row, top edges level.
  */
 
 import * as React from "react"
@@ -28,7 +31,7 @@ const DropdownMenuContent = React.forwardRef<
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 min-w-[200px] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+        "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
         className
       )}
       {...props}
@@ -48,14 +51,16 @@ const DropdownMenuSubTrigger = DropdownMenuPrimitive.SubTrigger
 const DropdownMenuSubContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
->(({ className, sideOffset = 2, alignOffset = -6, ...props }, ref) => (
+// A submenu stands 4px off its parent panel (the offset is measured from
+// the row, inside the panel's p-1), and its first row lines up with that row.
+>(({ className, sideOffset = 8, alignOffset = -4, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       sideOffset={sideOffset}
       alignOffset={alignOffset}
       className={cn(
-        "z-50 outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         className
       )}
       {...props}

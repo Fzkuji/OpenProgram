@@ -1,0 +1,43 @@
+<title>事件与状态</title>
+<meta name="description" content="主动层如何把事件流折叠成规则可读的按会话状态。">
+<h1>事件与状态</h1>
+
+<p>规则读取状态，没有人手动维护它。它是事件流从空开始、逐条折叠的结果。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">读取的载荷</th><th scope="col">之后的 <code translate="no">SessionState</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">user.prompt_submitted</code></th><td></td><td><code translate="no">turn_has_file_change</code>、<code translate="no">turn_has_verification</code> 重置为假</td></tr>
+<tr><th scope="row"><code translate="no">tool.before</code></th><td><code translate="no">tool</code>、<code translate="no">args.command</code></td><td>设置 <code translate="no">last_tool</code>；属于验证时 <code translate="no">turn_has_verification</code> 为真</td></tr>
+<tr><th scope="row"><code translate="no">file.changed</code></th><td><code translate="no">path</code></td><td><code translate="no">changed_files</code> 加入；<code translate="no">turn_has_file_change</code> 为真</td></tr>
+<tr><th scope="row"><code translate="no">tool.after</code>，<code translate="no">is_error</code></th><td><code translate="no">tool</code></td><td><code translate="no">tool_fail_count[tool]</code> 加 1</td></tr>
+<tr><th scope="row"><code translate="no">tool.after</code>，成功</th><td><code translate="no">tool</code></td><td><code translate="no">tool_fail_count[tool]</code> 归零</td></tr>
+</tbody>
+</table>
+<p class="note">验证指工具名含 <code translate="no">pytest</code>、<code translate="no">test</code>、<code translate="no">chrome</code>、<code translate="no">browser</code>、<code translate="no">navigate</code>，或 <code translate="no">bash</code>、<code translate="no">test</code> 工具的命令含 <code translate="no">test</code>、<code translate="no">pytest</code>、<code translate="no">npm run</code>、<code translate="no">make </code>。</p>
+
+<h2>折叠</h2>
+<pre translate="no"><code>state = empty_state()
+for event in stream:
+    state = update(state, event)</code></pre>
+<p>从头折叠是定义。<code translate="no">StateStore.apply</code> 增量更新，结果必须相同。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">性质</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">事件流</th><td>有序、只追加，任意时刻都能重新算出。事件定义见<a href="event-layer.zh.html">事件层</a>。</td></tr>
+<tr><th scope="row">并发</th><td>每个 <code translate="no">metadata["session"]</code> 一份状态。子 Agent 折叠在一起，会把一个的改动和另一个的情况配对。</td></tr>
+<tr><th scope="row"><code translate="no">origin</code></th><td>框架自己引起的事件不折叠，也不交给规则：<a href="invariants.zh.html">不变式</a>。</td></tr>
+<tr><th scope="row">深度</th><td>只有机械事实（L0）。启发式层和 LLM 层等规则需要时再加。</td></tr>
+</tbody>
+</table>
+
+<h2>读取状态</h2>
+<pre translate="no"><code>class StuckToolWatcher(Policy):
+    on = {"tool.after"}
+    def evaluate(self, event, state):
+        tool = event.payload["tool"]
+        if state.tool_fail_count.get(tool, 0) &gt;= 3:
+            return Notify(f"{tool} has failed repeatedly, may be stuck")</code></pre>
+
+<p class="next"><a href="execution-model.zh.html">规则与运行方式</a></p>

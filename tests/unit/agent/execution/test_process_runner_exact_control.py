@@ -2,7 +2,7 @@
 
 import pytest
 
-from openprogram.agent import process_runner
+from openprogram.runtime.conversation import process_runner
 
 
 @pytest.mark.parametrize(

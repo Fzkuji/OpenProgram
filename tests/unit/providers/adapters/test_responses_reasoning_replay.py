@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from openprogram.providers._shared.openai_responses import convert_responses_messages
-from openprogram.providers.types import AssistantMessage, Context, Model, ThinkingContent
+from openprogram.models.providers.shared.openai_responses import convert_responses_messages
+from openprogram.models.providers.types import AssistantMessage, Context, Model, ThinkingContent
 
 
 @pytest.mark.parametrize("encrypted", [None, "opaque"])

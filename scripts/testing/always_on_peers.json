@@ -1,0 +1,19 @@
+{
+  "peers": [
+    {
+      "name": "OpenDots",
+      "repository": "https://github.com/CopilotKit/OpenDots",
+      "baseline": "d4214aff1"
+    },
+    {
+      "name": "OpenMausBot",
+      "repository": "https://github.com/milind-soni/OpenMausBot",
+      "baseline": "d7ce39ea0"
+    },
+    {
+      "name": "open-super-agent",
+      "repository": "https://github.com/kadaliao/open-super-agent",
+      "baseline": "5233f7627"
+    }
+  ]
+}

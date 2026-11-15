@@ -1,0 +1,72 @@
+<title>Memory 设置界面</title>
+<meta name="description" content="Memory 页、设置中的 Memory 页、控件及其加载约定。">
+<h1>Memory 设置界面</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路由</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/memory</code></th><td>标准 64px 标题栏，带 <strong>Memory settings</strong> 链接。Topic 树上方是 Topics、Timeline、Recent、Core。还没有 Topic 时显示带设置链接的空状态。</td></tr>
+<tr><th scope="row"><code translate="no">/settings/memory</code></th><td>生命周期摘要和下列控件，使用设置页共用的头部、边距、分区和行样式。摘要是唯一专属 Memory 的结构。</td></tr>
+</tbody>
+</table>
+<p class="note">生命周期摘要：采集、写入（写入模型）、存储（本地 + Git，或已关闭）、检索（方法；需要的 embedding 缺失时警告）。720px 时分区列表、树和内容纵向堆叠，Memory 导航保留。</p>
+
+<h2 id="controls">控件</h2>
+<table class="stack">
+<thead><tr><th scope="col">控件</th><th scope="col">键</th><th scope="col">取值，<strong>默认</strong></th></tr></thead>
+<tbody>
+<tr><th scope="row">启用 Memory</th><td><code translate="no">memory.backend</code></td><td><strong>开</strong>（<code translate="no">local</code>），关（<code translate="no">none</code>）。需要重启。</td></tr>
+<tr><th scope="row">存储</th><td></td><td>只读：Topic Markdown、派生视图、Git 历史</td></tr>
+<tr><th scope="row">写入模型</th><td><code translate="no">memory.writer.model</code></td><td><strong>自动</strong>（默认 Agent 的模型，否则最近使用的）或已启用的模型</td></tr>
+<tr><th scope="row">自动写入</th><td><code translate="no">memory.writer.enabled</code></td><td><strong>开</strong></td></tr>
+<tr><th scope="row">写入频率</th><td><code translate="no">memory.writer.trigger_tokens</code></td><td>8K、<strong>16K</strong>、32K</td></tr>
+<tr><th scope="row">写入后校验</th><td><code translate="no">memory.writer.verify</code></td><td><strong>关</strong></td></tr>
+<tr><th scope="row">检索方法</th><td><code translate="no">memory.retrieval.method</code></td><td>Agent、<strong>关键词（BM25）</strong>、语义、混合</td></tr>
+<tr><th scope="row">Embedding 模型</th><td></td><td>状态；缺失时有 <strong>Install</strong>：含依赖约 1 GB，不含约 90 MB</td></tr>
+<tr><th scope="row">混合权重</th><td><code translate="no">memory.retrieval.hybrid.weighting</code></td><td>权重见<a href="../../../capabilities/memory-settings.zh.html">记忆设置</a>。默认<strong>自动</strong>。仅混合。</td></tr>
+<tr><th scope="row">同主题加权</th><td><code translate="no">memory.retrieval.hybrid.file_boost</code></td><td><strong>开</strong>。仅混合。</td></tr>
+<tr><th scope="row">检索数量</th><td><code translate="no">memory.retrieval.top_k</code></td><td>3、<strong>5</strong>、8、10。Agent 模式下禁用。</td></tr>
+<tr><th scope="row">项目记忆</th><td><code translate="no">memory.layers.project</code></td><td><strong>开</strong></td></tr>
+<tr><th scope="row">写入项目记忆</th><td><code translate="no">memory.layers.project_writes</code></td><td><strong>开</strong>。需要项目记忆。</td></tr>
+<tr><th scope="row">每次聊天注入核心记忆</th><td><code translate="no">memory.core.inject</code></td><td><strong>开</strong>；与检索方法无关</td></tr>
+<tr><th scope="row">Recent 视图大小</th><td><code translate="no">memory.recent.limit</code></td><td>25、<strong>50</strong>、100</td></tr>
+<tr><th scope="row">工作区</th><td></td><td>只读路径；Runtime 管理的文件保持只读</td></tr>
+</tbody>
+</table>
+<ul>
+<li>设置、CLI、TUI 共用一个 schema。</li>
+<li>每次改动立即 <code translate="no">POST /api/settings</code>，没有保存按钮。写入被拒时恢复旧值并显示内联错误。</li>
+<li>启用 Memory 在说明里写明需要重启，不显示“下次启动”徽标：API 没有待重启状态。</li>
+<li>不提供外部 API 权限控件。</li>
+</ul>
+
+<h2 id="agent-mode">Agent 模式</h2>
+<p><strong>Agent · 按需查看</strong>不运行自动的 BM25、embedding 或混合查询。Agent 用 <code translate="no">memory_get</code> 读取，<code translate="no">memory_search</code> 退回精确行匹配。</p>
+
+<h2 id="embedding-install">Embedding 安装</h2>
+<ol>
+<li><code translate="no">POST /api/memory/embedding/install</code> 在 Intel macOS 上立即拒绝，提示使用 BM25 或受支持的平台。</li>
+<li>在工作线程中安装 <code translate="no">sentence-transformers</code> 和 torch，再下载固定的编码器配置、分词器和 safetensors 权重。</li>
+<li>验证依赖可解析、每个必需文件存在且非空，不构造编码器。</li>
+</ol>
+<p>失败返回 502 和错误，不改变检索方法。依赖和快照都就绪前，语义和混合保持禁用；保存这两项时会重新做完整可用性检查。见<a href="overview.zh.html#recall">检索</a>。</p>
+
+<h2 id="loading">加载</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">进入时的请求</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/settings?scope=memory</code></th><td><code translate="no">memory.*</code> 各行。失败时显示错误，控件保持禁用。</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/memory/status?settings=true</code></th><td><code translate="no">workspace_path</code>、<code translate="no">embedding_available</code>、<code translate="no">embedding_packages</code>。跳过 <code translate="no">store.ensure()</code> 和工作区检查；只查文件和包 spec，不导入数值计算代码，不加载权重。</td></tr>
+<tr><th scope="row"><code translate="no">/api/models/enabled</code></th><td>写入模型选项。在 FastAPI 工作线程运行，不占事件循环。</td></tr>
+</tbody>
+</table>
+<p class="note">三个请求都结束后页面一次完整出现。状态或模型请求失败不妨碍设置行。不请求 Agent 运行时设置。</p>
+<details>
+<summary>布局与相邻页面</summary>
+<ul>
+<li>生命周期卡片在滚动列中保持固有高度，不会 flex 收缩到 <code translate="no">overflow: hidden</code> 之后。</li>
+<li>过长的写入模型标签在控件区内收缩，不挤压左侧标题和说明。</li>
+<li>进入设置只预取 Token Usage 和 System。Providers、Search、Channels 打开时才请求数据。</li>
+</ul>
+</details>
+<p class="next"><a href="overview.zh.html">Memory 总览</a></p>

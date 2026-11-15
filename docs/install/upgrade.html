@@ -1,0 +1,150 @@
+<title>Upgrade</title>
+<meta name="description" content="Upgrade OpenProgram Desktop, CLI and server releases, and recover an App that cannot start.">
+<span id="upgrading"></span>
+<h1>Upgrade</h1>
+
+<table class="stack" id="by-install">
+<thead><tr><th scope="col">Installed as</th><th scope="col">Update</th><th scope="col">Go back</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS App</th><td data-label="Update"><strong>Settings → General → Application → Check now</strong> (also checked automatically), then <strong>Download and open installer</strong>. Save the DMG, quit OpenProgram with Command-Q, drag it onto the copy in Applications and choose <strong>Replace</strong>.</td><td data-label="Go back">Download that version's DMG from <a href="https://github.com/FuzzyKuji/OpenProgram/releases">GitHub Releases</a> and replace the App the same way.</td></tr>
+<tr><th scope="row">Windows or Linux App</th><td data-label="Update">Same two buttons; the new version installs in place. When a release needs a newer App:<br>Windows: run the installer the button opens.<br>deb: <code translate="no">sudo apt install ./OpenProgram-X.Y.Z-linux-amd64.deb</code><br>AppImage: the file replaces itself and restarts.</td><td data-label="Go back"><strong>Settings → Versions → Go back</strong>. <a href="#app-recovery">If the App can't start</a>.</td></tr>
+<tr><th scope="row">Terminal or server, every system</th><td data-label="Update"><code translate="no">openprogram upgrade</code>, then <code translate="no">openprogram worker restart</code></td><td data-label="Go back"><a href="install.html#exact-version">Install the older version</a> with its exact number, then <code translate="no">openprogram worker restart</code></td></tr>
+<tr><th scope="row">Source checkout</th><td data-label="Update"><a href="development-checkout.html"><code translate="no">openprogram dev deploy</code>, then <code translate="no">promote</code></a>, or <a href="../server/upgrading.html"><code translate="no">openprogram upgrade</code></a>. Restarts by itself.</td><td data-label="Go back"><a href="conversational-self-update.html#undoing-a-change">Undo a change</a></td></tr>
+</tbody>
+</table>
+<p class="note">Stable installations move only between published versions and never follow <code translate="no">origin/main</code>. State under <code translate="no">~/.openprogram</code> is left unchanged. If the terminal command itself is broken, reinstall the latest version:</p>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></pre>
+
+<details>
+<summary>What the App updater does</summary>
+<ul>
+<li>macOS: picks the complete DMG for the architecture, downloads it to the location you choose, verifies byte count and SHA-256, and opens it. The shell and complete product runtime are replaced together. Unsigned packages: <a href="install.html#macos">Open Anyway</a>.</li>
+<li>Windows, Linux: run <code translate="no">openprogram upgrade</code> in the version store and take the App file only when the release needs a newer shell.</li>
+<li>Windows App file: verifies release metadata, file length and SHA-256. A signed App also requires a valid Authenticode signature from the same publisher; only an App built unsigned accepts an unsigned installer.</li>
+<li>Downloads go through the system proxy and resume after a dropped connection. When GitHub's API refuses or does not answer, the App finds the release through GitHub's web pages.</li>
+</ul>
+</details>
+
+<details id="app-recovery">
+<summary>When an App that manages versions can't start</summary>
+<p>A thin-shell App keeps its code as numbered versions under <code translate="no">~/.openprogram/runtime</code> (<code translate="no">%USERPROFILE%\.openprogram\runtime</code> on Windows). First start unpacks the bundled code behind a progress page, about a minute.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Opens the recovery page</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Automatic</th><td>The running version has not answered for two minutes and is not mid-switch</td></tr>
+<tr><th scope="row">macOS</th><td><strong>OpenProgram &gt; Go back to a previous version</strong>, under About</td></tr>
+<tr><th scope="row">Windows, Linux</th><td>Same item, bottom of the <strong>File</strong> menu</td></tr>
+<tr><th scope="row">macOS, Windows</th><td>Hold Shift while opening the App</td></tr>
+<tr><th scope="row">Linux deb</th><td>The launcher's <strong>Go back to a previous version</strong> action, or <code translate="no">openprogram-desktop --recovery</code></td></tr>
+<tr><th scope="row">Linux AppImage</th><td><code translate="no">./OpenProgram-X.Y.Z-linux-x86_64.AppImage --recovery</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>Lists the versions kept on the computer, as Settings does. Pick one and the App restarts with it. Conversations and files are not touched.</li>
+<li>Shows the log path, <code translate="no">recovery.log</code> in the same folder. With an empty code folder it offers to restore the bundled code; it never overwrites existing code.</li>
+<li>Apps with a built-in runtime have neither page nor menu item: every macOS App published so far and those <code translate="no">scripts/refresh-local-app.sh</code> installs.</li>
+</ul>
+</details>
+
+<h2 id="cli-and-server-release">CLI and server release</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Goal</th><th scope="col">Command</th></tr></thead>
+<tbody>
+<tr><th scope="row">Is a new stable release available?</th><td><code translate="no">openprogram upgrade --check</code></td></tr>
+<tr><th scope="row">Install or go back to one version</th><td><a href="install.html#exact-version">Exact-version installer command</a></td></tr>
+</tbody>
+</table>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 176" role="img" aria-label="The versioned installer from the immutable release tag runs four stages. Download the runtime archive for this platform. Verify its checksum and capability manifest in a staging directory. Cold-start the worker. Activate: macOS and Linux switch the current symlink, Windows replaces its launchers. A failure before activation keeps the previous version selected and removes the unpublished staging runtime.">
+  <defs><marker id="up-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Download</text>
+  <text class="t-soft" x="0" y="66">runtime archive</text>
+  <text class="t-soft" x="0" y="86">from the release tag</text>
+  <line class="ln" x1="104" y1="33" x2="160" y2="33" marker-end="url(#up-a)"/>
+  <text class="t-big" x="172" y="40">Verify</text>
+  <text class="t-soft" x="172" y="66">checksum and manifest</text>
+  <text class="t-soft" x="172" y="86">in staging</text>
+  <line class="ln" x1="242" y1="33" x2="332" y2="33" marker-end="url(#up-a)"/>
+  <text class="t-big" x="344" y="40">Cold-start</text>
+  <text class="t-soft" x="344" y="66">worker, before the</text>
+  <text class="t-soft" x="344" y="86">version is live</text>
+  <line class="ln" x1="451" y1="33" x2="504" y2="33" marker-end="url(#up-a)"/>
+  <text class="t-big" x="516" y="40">Activate</text>
+  <text class="t-soft" x="516" y="66">macOS, Linux:</text>
+  <text class="t-soft" x="516" y="86">current symlink</text>
+  <text class="t-soft" x="516" y="106">Windows: launchers</text>
+  <path class="ln-no" d="M40 100V122H384V100M212 100V122"/>
+  <text class="t-no" x="40" y="150">Fails: previous version stays selected, unpublished staging runtime removed</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Download</strong><small>runtime archive from the release tag</small></li>
+  <li><strong>Verify</strong><small>checksum and manifest in staging</small></li>
+  <li><strong>Cold-start</strong><small>worker, before the version is live</small><p class="refused">Any stage before Activate fails: previous version stays selected, unpublished staging runtime removed</p></li>
+  <li class="flow-end"><strong>Activate</strong><small>macOS, Linux: current symlink</small><small>Windows: launchers</small></li>
+</ol>
+</figure>
+<p class="note">macOS and Linux serialize upgrades. Version directories are kept, which is what makes rollback the same command. A running worker is not restarted.</p>
+
+<details>
+<summary>Windows launcher replacement</summary>
+<ul>
+<li>One <code translate="no">openprogram.cmd</code> launcher is prepared before activation and replaced atomically. The previous one stays as <code translate="no">openprogram.previous.cmd</code>. Older <code translate="no">openprogram.ps1</code> launchers are removed, because the default script policy would refuse them.</li>
+<li>A validated runtime is retained for retry even when launcher activation fails.</li>
+</ul>
+</details>
+
+<details id="releases-that-carry-a-seed">
+<summary>Releases that carry a seed</summary>
+<ul>
+<li>When a release publishes <code translate="no">OpenProgram-&lt;version&gt;-seed-&lt;platform&gt;-&lt;arch&gt;.tar.gz</code>, <code translate="no">install.sh</code> and <code translate="no">install.ps1</code> put it in the version store a thin App uses, <code translate="no">&lt;state&gt;/runtime</code>; <code translate="no">openprogram</code> runs the version <code translate="no">current</code> names.</li>
+<li><code translate="no">openprogram versions list</code> shows what is kept.</li>
+<li>Without that asset, the plain runtime above is installed.</li>
+<li>An interrupted install starts over on the next run. A run on an existing version store updates it through <code translate="no">openprogram upgrade</code> and reports what that did.</li>
+</ul>
+</details>
+
+<h2 id="official-updates">Official updates on a version-store installation</h2>
+<p>Takes a release as signed files and carries your own commits over. The Windows and Linux Apps update this way. The macOS App and plain terminal installs use the routes above.</p>
+<pre translate="no"><code>openprogram upgrade --check
+openprogram upgrade
+openprogram upgrade --from &lt;directory&gt;     # files already on this computer</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Release file</th><th scope="col">Contents</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">version-&lt;platform&gt;.tar.zst</code></th><td>Sealed version for one platform, e.g. <code translate="no">macos-arm64</code></td></tr>
+<tr><th scope="row"><code translate="no">repo.bundle</code></th><td>Official source line up to this release</td></tr>
+<tr><th scope="row"><code translate="no">base-&lt;platform&gt;.tar.zst</code></th><td>Python and third-party packages. Downloaded only when this computer does not have that base</td></tr>
+<tr><th scope="row"><code translate="no">toolchain-&lt;platform&gt;.tar.zst</code></th><td>The Web build's <code translate="no">node_modules</code>. Downloaded only when you have commits of your own to build</td></tr>
+<tr><th scope="row"><code translate="no">SHA256SUMS</code></th><td>Hash of each file above</td></tr>
+<tr><th scope="row"><code translate="no">update-manifest.json</code> <code translate="no">update-manifest.json.sig</code></th><td>Release contents and their Ed25519 signature</td></tr>
+</tbody>
+</table>
+<p class="note">Signature, checksums and every file this platform needs are checked first. An unsigned or altered release changes nothing.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Outcome</th></tr></thead>
+<tbody>
+<tr><th scope="row">No commits of your own</th><td>The prebuilt version is unpacked and tried</td></tr>
+<tr><th scope="row">Your commits</th><td>Applied on the release oldest first, then built and tried</td></tr>
+<tr><th scope="row">Commit conflicts</th><td>It is saved; the others carry on</td></tr>
+<tr><th scope="row">Release already contains it</th><td>Skipped</td></tr>
+<tr><th scope="row">Build or trial fails</th><td>Your newest commit is saved and the rest retried, ending at the unmodified release. After 5 retries the remaining commits are saved together and the unmodified release is tried.</td></tr>
+<tr><th scope="row">Unmodified release fails</th><td>Nothing changes: current version, your commits kept</td></tr>
+<tr><th scope="row">Needs a newer signed shell, or another Python minor version than the launcher</th><td>Waits for the shell update: nothing unpacked, official line does not move</td></tr>
+</tbody>
+</table>
+<p class="note">The result lists replayed and saved commits. Saved ones are <code translate="no">git format-patch</code> files at <code translate="no">&lt;state&gt;/runtime/unreplayable/&lt;release&gt;/&lt;commit&gt;.patch</code>, ready to apply as a new change.</p>
+
+<h2 id="other-routes">Other routes</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Route</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr id="conversational-self-update"><th scope="row"><a href="conversational-self-update.html">Update from chat</a></th><td><code translate="no">self_update</code>, from a conversation</td></tr>
+<tr id="recovering-a-conversational-self-update"><th scope="row"><a href="conversational-self-update.html#recovering-a-conversational-self-update">Recover a chat update</a></th><td>App stuck in maintenance, or cannot start</td></tr>
+<tr id="undoing-a-change"><th scope="row"><a href="conversational-self-update.html#undoing-a-change">Undo a change</a></th><td>Back to a version, or revert one commit</td></tr>
+<tr id="what-an-update-restarts"><th scope="row"><a href="conversational-self-update.html#what-an-update-restarts">What an update restarts</a></th><td>Changed paths, rebuild and restart</td></tr>
+<tr id="development-checkout"><th scope="row"><span id="macos-signing"></span><a href="development-checkout.html">Development checkout</a></th><td><code translate="no">openprogram dev deploy</code>, then <code translate="no">promote</code>; macOS signing</td></tr>
+</tbody>
+</table>

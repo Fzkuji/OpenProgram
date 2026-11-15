@@ -1,0 +1,108 @@
+<title>工具组摘要</title>
+<meta name="description" content="一段折叠工具调用的单行标题：语法、运行中状态、改动徽标和代码。">
+<h1>工具组摘要</h1>
+
+<p>一段折叠工具调用上方的那一行，由客户端根据记录里已有的调用生成。不调用模型，不改后端。</p>
+
+<dl class="pairs">
+<dt>结束后</dt><dd>读取了 3 个文件，搜索了"tl-toggle"，修改了 execution-strip.tsx <code translate="no">+12 −4</code></dd>
+<dt>运行中</dt><dd>读取了 2 个文件，正在运行命令…</dd>
+<dt>失败</dt><dd>修改了 app.tsx，运行了 2 条命令 · 1 个失败 <code translate="no">+3 −3</code></dd>
+</dl>
+
+<h2>短语</h2>
+<p>调用按种类分桶。每桶一个短语，放在它第一次调用的位置，用“，”连接（英文 ", "，首字母大写）。</p>
+<table class="stack">
+<thead><tr><th scope="col">种类（工具）</th><th scope="col">一个</th><th scope="col">多个</th><th scope="col">运行中</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令 <code translate="no">bash terminal_use write_stdin execute_code</code></th><td>运行了 1 条命令</td><td>运行了 3 条命令</td><td>正在运行命令…</td></tr>
+<tr><th scope="row">创建文件 <code translate="no">write</code> 到新路径，<code translate="no">apply_patch</code> Add File</th><td>创建了 pill-shadow.html</td><td>创建了 2 个文件</td><td>正在创建 pill-shadow.html…</td></tr>
+<tr><th scope="row">修改文件 <code translate="no">edit</code>，<code translate="no">write</code> 覆盖文件，<code translate="no">apply_patch</code> Update</th><td>修改了 app.tsx</td><td>修改了 4 个文件</td><td>正在修改 app.tsx…</td></tr>
+<tr><th scope="row">删除文件 <code translate="no">apply_patch</code> Delete File</th><td>删除了 old.css</td><td>删除了 2 个文件</td><td>正在删除 old.css…</td></tr>
+<tr><th scope="row">读取 <code translate="no">read pdf</code></th><td>读取了 package.json</td><td>读取了 3 个文件</td><td>正在读取 package.json…</td></tr>
+<tr><th scope="row">列目录 <code translate="no">list</code></th><td>列出了 1 个目录</td><td>列出了 2 个目录</td><td>正在列出目录…</td></tr>
+<tr><th scope="row">代码搜索 <code translate="no">grep glob semble_* lsp_*</code></th><td>搜索了"tl-toggle"</td><td>搜索了 3 次</td><td>正在搜索"tl-toggle"…</td></tr>
+<tr><th scope="row">网页搜索 <code translate="no">web_search</code></th><td>搜索了网页</td><td>搜索了 2 次网页</td><td>正在搜索网页…</td></tr>
+<tr><th scope="row">抓取 <code translate="no">web_fetch</code></th><td>抓取了 docs.anthropic.com</td><td>抓取了 3 个网页</td><td>正在抓取 docs.anthropic.com…</td></tr>
+<tr><th scope="row">旧的浏览器工具 <code translate="no">web_use</code>、<code translate="no">playwright_browser</code>、<code translate="no">browser_use</code></th><td>操作了浏览器</td><td>操作了浏览器</td><td>正在操作浏览器…</td></tr>
+<tr><th scope="row">GUI 与电脑 <code translate="no">computer_use_agent</code>、GUI 工具</th><td>执行了 1 次 GUI 调用；操作了应用</td><td>执行了 2 次 GUI 调用</td><td>正在执行 GUI 调用…；正在操作应用…</td></tr>
+<tr><th scope="row">子代理 <code translate="no">agent task send_message mixture_of_agents</code></th><td>运行了子代理 Reviewer</td><td>运行了 2 个子代理</td><td>正在运行子代理 Reviewer…</td></tr>
+<tr><th scope="row">对等会话 <code translate="no">send_message</code> 发往另一个会话</th><td>给另一个会话发了消息</td><td>每个会话只计一次</td><td>正在给另一个会话发消息…</td></tr>
+<tr><th scope="row">图片 <code translate="no">image_generate</code>、<code translate="no">image_analyze</code></th><td>生成了 1 张图片；分析了 1 张图片</td><td>生成了 2 张图片；分析了 2 张图片</td><td>正在生成图片…；正在分析图片…</td></tr>
+<tr><th scope="row">待办 <code translate="no">todo_*</code></th><td>更新了待办</td><td>更新了待办</td><td>正在更新待办…</td></tr>
+<tr><th scope="row">提问 <code translate="no">ask_user_question</code></th><td>提了 1 个问题</td><td>提了 2 个问题</td><td>正在提问…</td></tr>
+<tr><th scope="row">记忆 <code translate="no">memory_*</code></th><td>读写了记忆</td><td>读写了记忆</td><td>正在读写记忆…</td></tr>
+<tr><th scope="row">程序、技能</th><td>运行了程序 deploy；使用了技能 pdf</td><td>运行了 2 个程序</td><td>正在运行程序 deploy…</td></tr>
+<tr><th scope="row">其他（MCP、自定义）</th><td>使用了 linear_search；使用了 linear_search 2 次</td><td>使用了 linear_search 和 jira_create；使用了 3 个工具</td><td>正在使用 linear_search…</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">思考</th><td>只有组里没有别的内容时才写“思考”或“思考中…”</td></tr>
+<tr><th scope="row">名称</th><td>桶里恰好一个不同目标时才写目标名。同一文件的重复调用只算一次。文件写 basename，搜索词加引号并截到 24 字符，抓取只写域名，命令从不写出。</td></tr>
+<tr><th scope="row">数字</th><td>英文一个用 "a"/"an"，更多用数字。中文始终用数字加量词（<code translate="no">1 条命令</code>、<code translate="no">3 个文件</code>、<code translate="no">2 次</code>）。</td></tr>
+<tr><th scope="row">失败</th><td>标签后跟柔和的红色“· N 个失败”。失败的调用计入它的桶，但不计入徽标。</td></tr>
+<tr><th scope="row">运行中</th><td>进行中调用的桶移到行尾，用现在时加“…”，闪光保留。调用结束后回到第一次出现的位置，恢复过去时。</td></tr>
+<tr><th scope="row">宽度</th><td>单行 28px。标签 <code translate="no">min-width:0</code> 加 CSS 省略号；失败提示、徽标、箭头 <code translate="no">flex:none</code>。没有字符预算。</td></tr>
+<tr><th scope="row">悬停</th><td>没有提示：这是记录内容，展开就能看到每次调用</td></tr>
+<tr><th scope="row">文字</th><td><code translate="no">text(en, zh)</code>。中文过去时用<code translate="no">了</code>，现在时用<code translate="no">正在</code>：<code translate="no">读取了 2 个文件，正在运行命令…</code></td></tr>
+</tbody>
+</table>
+
+<h2>改动徽标</h2>
+<p>至少一个写文件调用成功，且每个成功的调用计数都已知时显示。求和，显示零（<code translate="no">+16 −0</code>），复用 <code translate="no">.turn-files-diff</code> 胶囊。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">计数</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apply_patch</code></th><td>补丁正文的 <code translate="no">+</code> 和 <code translate="no">-</code> 行。精确。</td></tr>
+<tr><th scope="row"><code translate="no">edit</code></th><td><code translate="no">old_string</code> 与 <code translate="no">new_string</code> 的行 diff，乘以替换次数。任一侧超过 2,000 行时用行数。</td></tr>
+<tr><th scope="row"><code translate="no">write</code></th><td><code translate="no">turnFiles</code> 为 <code translate="no">create</code>：<code translate="no">+lines(content) −0</code>。为 <code translate="no">modify</code> 且本轮对该路径的写入都在这一组：取 <code translate="no">turnFiles</code> 的数字。否则未知，徽标等轮次结束。</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">turnFiles</code> 出现之前，<code translate="no">write</code> 只有在本轮没有读过或改过该路径时才算“创建”。<code translate="no">modify</code> 则算“修改”。</p>
+
+<details>
+<summary>每次调用携带什么</summary>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">来源</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tool</code></th><td>block</td><td>分类；未覆盖的回落到 <code translate="no">presentTool()</code>，和时间线行一致</td></tr>
+<tr><th scope="row"><code translate="no">input</code></th><td>block，完整 JSON</td><td>路径、命令、搜索词、URL；<code translate="no">old_string</code>/<code translate="no">new_string</code>、<code translate="no">content</code>、补丁</td></tr>
+<tr><th scope="row"><code translate="no">result</code>、<code translate="no">is_error</code>、<code translate="no">outcome</code></th><td>block</td><td>成败；<code translate="no">(N replacements)</code>；<code translate="no">Added</code>、<code translate="no">Updated</code>、<code translate="no">Deleted</code></td></tr>
+<tr><th scope="row">运行中</th><td><code translate="no">msg.tools[].status</code></td><td>正在进行的调用</td></tr>
+<tr><th scope="row"><code translate="no">turnFiles</code></th><td>assistant 消息，finalize 时取自变更日志</td><td>整轮每个文件的 <code translate="no">op</code>、<code translate="no">added</code>、<code translate="no">removed</code>。没有 tool-call id，所以分组统计从参数推导，<code translate="no">turnFiles</code> 补缺。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>不做轮次级摘要行</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">版本</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">确定性</th><td>零成本，但重复文件卡片的总计和各组标题</td></tr>
+<tr><th scope="row">模型生成</th><td>每轮多一次<a href="../sidebar/session-auto-rename.zh.html">标题模型路径</a>的调用：耗 token、有延迟、只能在轮次结束后出现、内容再发一次，且多半和回复说的一样</td></tr>
+</tbody>
+</table>
+<p>必须把一轮折成一行的界面（消息缩略图、悬停预览）调用确定性聚合。</p>
+</details>
+
+<details>
+<summary>代码</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">assistant-bubble.tsx</code></th><td>拆分有序 <code translate="no">blocks</code>：连续的思考和工具成为一个 <code translate="no">ExecutionStrip</code>。传入本段和整轮的 blocks、<code translate="no">msg.turnFiles</code>、运行中 id 和是否实时尾部。</td></tr>
+<tr><th scope="row"><code translate="no">tool-group-summary.ts</code></th><td>纯模块。<code translate="no">summarizeToolGroup(blocks, options)</code> 返回 <code translate="no">{label, failed, added, removed}</code>；无徽标时计数为 <code translate="no">null</code>。持有 <code translate="no">SPAWNING_TOOL_NAMES</code>；导出 <code translate="no">lineDiff()</code>（<code translate="no">LINE_DIFF_CAP</code> = 2,000）和 <code translate="no">parsePatch()</code>。</td></tr>
+<tr><th scope="row"><code translate="no">execution-strip.tsx</code></th><td><code translate="no">label: string | ToolGroupSummary</code>。纯字符串（workflow 卡片、调试面板）不带提示和徽标。</td></tr>
+<tr><th scope="row"><code translate="no">LegacyRuntimeTrace</code></th><td>没有有序 blocks 的记录：每次调用变成以函数命名的 block。旧子代理条只传派生标签。</td></tr>
+<tr><th scope="row"><code translate="no">execution-strip.css</code></th><td><code translate="no">.tl-label</code>、<code translate="no">.tl-fail</code>、<code translate="no">.tl-diff</code>、<code translate="no">.tl-chev</code></td></tr>
+<tr><th scope="row"><code translate="no">tool-group-summary.test.mjs</code></th><td><code translate="no">apps/web/tests/chat/messages/</code>：语法、单复数、顺序、时态、失败、徽标来源、补丁解析、限长 diff</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>实现状态</h2>
+<p>已实现。未实现：在变更日志条目上记 tool-call id 并按调用发送 <code translate="no">{path, op, added, removed}</code>，那样流式时和分组的 <code translate="no">write</code> 计数都能精确；覆盖已有文件的 <code translate="no">write</code> 要等轮次结束才显示徽标。</p>

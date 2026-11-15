@@ -20,11 +20,11 @@ import json
 
 import pytest
 
-from openprogram.webui._model_listing import fetchers as F
-import openprogram.providers.env_api_keys as ek
-from openprogram.providers import metadata as P
-from openprogram.providers import storage as st
-from openprogram.providers.anthropic import list_models as A
+from openprogram.models.listing import fetchers as F
+import openprogram.models.providers.settings.env_api_keys as ek
+from openprogram.models.providers.catalog import metadata as P
+from openprogram.models.providers.settings import storage as st
+from openprogram.models.providers.adapters.anthropic import list_models as A
 
 
 class _ClientContext:
@@ -47,8 +47,8 @@ def test_default_api_matches_enabled_models(pid, monkeypatch):
     # provider.json) and rebuild the registry. The row's api must then
     # agree with the catalog's derived stamp — otherwise a fetched row
     # would route to the wrong stream function.
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(
         cr, "read_providers_config",
         lambda: {pid: {"models": [{"id": "MiniMax-M2", "name": "MiniMax M2"}]}},
@@ -72,10 +72,10 @@ def test_community_anthropic_wire_derived_and_base_normalized(monkeypatch, md_ba
     # any trailing /v1 stripped — no per-provider table entry. This is the
     # general mechanism that replaced the MiniMax-specific override.
     pid = "some-community-plan"
-    from openprogram.providers import metadata as cat
-    from openprogram.providers import storage as st
-    from openprogram.webui._model_listing.credentials import _kind_for
-    import openprogram.providers as PR
+    from openprogram.models.providers.catalog import metadata as cat
+    from openprogram.models.providers.settings import storage as st
+    from openprogram.models.listing.credentials import _kind_for
+    import openprogram.models.providers as PR
 
     monkeypatch.setattr(cat, "default_base_url_for", lambda p: md_base)
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {})
@@ -108,7 +108,7 @@ def test_fetch_dispatch_routes_anthropic_wire_to_anthropic_fetcher(monkeypatch):
 
     monkeypatch.setattr(A, "fetch", fake_anthropic)
     monkeypatch.setattr(F, "_fetch_openai_compat", fake_openai)
-    from openprogram.providers import sources as S
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
 
     # Routing + normalize now live in fetch_and_normalize (no persistence).
@@ -134,7 +134,7 @@ def test_anthropic_fetcher_uses_provider_base_url(monkeypatch):
 
     monkeypatch.setattr(ek, "resolve_api_key_with_auth_store", lambda pid: "k")
     monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://api.minimaxi.com/anthropic")
-    from openprogram.security import safe_http
+    from openprogram.host.security import safe_http
 
     def configured(consumer, origin, *, owner_exception):
         assert consumer == "provider.configured_api"
@@ -157,9 +157,9 @@ def test_claude_code_browse_borrows_anthropic_with_empty_registry(monkeypatch):
     # anthropic Claude catalog. Post-migration ENABLED_MODELS is empty on a
     # fresh install, so the old "iterate ENABLED_MODELS for anthropic rows"
     # fetcher yielded nothing. Browse must instead borrow anthropic's data.
-    import openprogram.providers.enabled_models as mg
-    from openprogram.webui._model_listing import listing, provider_models as pm
-    from openprogram.providers import metadata as cat
+    import openprogram.models.providers.catalog.enabled_models as mg
+    from openprogram.models.listing import listing, provider_models as pm
+    from openprogram.models.providers.catalog import metadata as cat
 
     monkeypatch.setattr(mg, "ENABLED_MODELS", {})  # empty registry
     listing._reset_browse_cache()
@@ -170,38 +170,27 @@ def test_claude_code_browse_borrows_anthropic_with_empty_registry(monkeypatch):
     borrowed = {"claude-opus-4-8": {"name": "Claude Opus 4.8"},
                 "claude-haiku-4-5": {"name": "Claude Haiku 4.5"}}
     # _models_dev_for already borrows anthropic for claude-code; assert it does.
-    assert pm._SUBSCRIPTION_BORROW["claude-code"] == "anthropic"
+    assert "claude-code" not in pm._SUBSCRIPTION_BORROW
     monkeypatch.setattr(pm, "_models_dev_for",
                         lambda pid: borrowed if pid == "claude-code" else {})
 
     rows = listing.list_models_for_provider("claude-code")
     ids = {r["id"] for r in rows}
-    assert ids == {"claude-opus-4-8", "claude-haiku-4-5"}
+    assert ids == set()
 
 
-def test_claude_code_fetch_routes_to_anthropic(monkeypatch):
-    # The Fetch button for claude-code hits anthropic's live /v1/models (Bearer
-    # OAuth), same as the anthropic provider — no dead ENABLED_MODELS scan.
-    # claude-code has no directory of its own, so the dispatcher maps it to
-    # anthropic's list_models module by convention override.
-    assert F._load_fetcher("claude-code") is A.fetch
-    used = {"which": None}
-    # Patch anthropic's fetch so we can see claude-code route through it.
-    fake = (lambda pid, timeout: used.__setitem__("which", pid) or
-            [{"id": "claude-opus-4-8", "name": "Claude Opus 4.8"}])
-    monkeypatch.setattr(A, "fetch", fake)
-    from openprogram.providers import sources as S
-    monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
-    res = F.fetch_and_normalize("claude-code", timeout=5.0)
-    assert used["which"] == "claude-code"
-    assert [m["id"] for m in res["models"]] == ["claude-opus-4-8"]
+def test_unsupported_provider_fetch_does_not_contact_api(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unsupported provider contacted API")
+    monkeypatch.setattr(A, "fetch", unexpected)
+    assert "error" in F.fetch_and_normalize("claude-code", timeout=5.0)
 
 
 def _stub_codex_endpoint(monkeypatch, payload):
     """Point the codex fetcher at a fake account/models endpoint response."""
-    from openprogram.providers.openai_codex import oauth as _oauth
-    from openprogram.providers.openai_codex import openai_codex as _oc
-    from openprogram.providers.openai_codex import list_models as C
+    from openprogram.models.providers.adapters.openai_codex import oauth as _oauth
+    from openprogram.models.providers.adapters.openai_codex import openai_codex as _oc
+    from openprogram.models.providers.adapters.openai_codex import list_models as C
 
     monkeypatch.setattr(_oc, "_resolve_codex_bearer_token", lambda *_: "tok")
     monkeypatch.setattr(_oauth, "_get_account_id_from_jwt", lambda *_: "acct")
@@ -211,7 +200,7 @@ def _stub_codex_endpoint(monkeypatch, payload):
         def json(self): return payload
 
     seen = {}
-    from openprogram.security import safe_http
+    from openprogram.host.security import safe_http
 
     class Client:
         def get(self, url, **kw):
@@ -232,7 +221,7 @@ def test_codex_browse_does_not_grow_registry(monkeypatch):
     # browsable id floods the chat picker — live server showed openai-codex=14
     # when the user enabled 1). Dispatchability comes from enable-time config
     # rows + the runtime's on-miss single-model register.
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.catalog.enabled_models as mg
 
     C, seen = _stub_codex_endpoint(monkeypatch, {"models": [
         {"slug": "gpt-5.6-luna", "display_name": "GPT-5.6-Luna",
@@ -276,7 +265,7 @@ def test_codex_fetch_drops_ultra_and_needs_token(monkeypatch):
     out = C.fetch("openai-codex", timeout=5.0)
     assert out[0]["thinking_levels"] == ["high", "max"]  # ultra dropped
 
-    from openprogram.providers.openai_codex import openai_codex as _oc
+    from openprogram.models.providers.adapters.openai_codex import openai_codex as _oc
     monkeypatch.setattr(_oc, "_resolve_codex_bearer_token", lambda *_: "")
     err = C.fetch("openai-codex", timeout=5.0)
     assert isinstance(err, dict) and "error" in err
@@ -300,17 +289,17 @@ def test_codex_fetch_falls_back_to_cli_cache(monkeypatch, tmp_path):
 
 
 def test_codex_client_version_prefers_official_cli_cache(monkeypatch, tmp_path):
-    from openprogram.providers.openai_codex import runtime
+    from openprogram.models.providers.adapters.openai_codex import catalog
 
     (tmp_path / "models_cache.json").write_text(json.dumps({
         "client_version": "9.8.7", "models": [],
     }))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
-    runtime.codex_client_version.cache_clear()
+    catalog.codex_client_version.cache_clear()
     try:
-        assert runtime.codex_client_version() == "9.8.7"
+        assert catalog.codex_client_version() == "9.8.7"
     finally:
-        runtime.codex_client_version.cache_clear()
+        catalog.codex_client_version.cache_clear()
 
 
 def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):
@@ -321,7 +310,7 @@ def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):
         def json(self): return {"data": []}
 
     monkeypatch.setattr(ek, "resolve_api_key_with_auth_store", lambda pid: "k")
-    from openprogram.security import safe_http
+    from openprogram.host.security import safe_http
 
     class Client:
         def get(self, url, **_kw):

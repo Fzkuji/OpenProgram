@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useTranslation } from "@/lib/i18n";
-import styles from "@/components/settings/settings-page.module.css";
+import styles from "../../../components/settings/settings-page.module.css";
 
 /**
  * Suspense fallback for /settings/<tab>. Renders immediately when the
@@ -18,12 +18,15 @@ import styles from "@/components/settings/settings-page.module.css";
  *    grey rectangle. The body is still a skeleton until the page
  *    chunk lands.
  */
-const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"settings.tab.channels"|"settings.tab.general"|"settings.tab.memory"> = {
+const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"settings.tab.channels"|"settings.tab.general"|"settings.tab.memory"|"settings.tab.usage"|"settings.tab.system"|"settings.tab.browser"> = {
   providers: "settings.tab.providers",
   search: "settings.tab.search",
   channels: "settings.tab.channels",
   general: "settings.tab.general",
   memory: "settings.tab.memory",
+  usage: "settings.tab.usage",
+  system: "settings.tab.system",
+  browser: "settings.tab.browser",
 };
 
 export default function SettingsLoading() {

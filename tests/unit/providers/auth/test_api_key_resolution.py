@@ -1,5 +1,5 @@
 """Unit tests for provider key resolution in
-``openprogram/providers/env_api_keys.py``.
+``openprogram/models/providers/settings/env_api_keys.py``.
 
 LLM provider keys live in the AuthStore ONLY (settings UI "add a key" /
 ``openprogram providers login <provider> --api-key``). Environment variables
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.providers import env_api_keys as ek
+from openprogram.models.providers.settings import env_api_keys as ek
 
 _AWS = [
     "AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
@@ -32,7 +32,7 @@ def _no_auth_store(monkeypatch):
     ~/.openprogram/auth credentials can't leak into assertions. Tests
     that want a stored key monkeypatch resolve_store_api_key_sync
     themselves."""
-    import openprogram.auth.resolver as _resolver
+    import openprogram.models.auth.resolver as _resolver
     monkeypatch.setattr(
         _resolver, "resolve_store_api_key_sync", lambda *a, **k: None
     )
@@ -53,7 +53,7 @@ def test_env_vars_for(monkeypatch):
     # fallback offline so a stale models.dev cache cannot start its refresh
     # thread during the unit runtime-boundary fixture.
     monkeypatch.setattr(
-        "openprogram.providers.metadata._models_dev_info",
+        "openprogram.models.providers.catalog.metadata._models_dev_info",
         lambda _provider_id: {},
     )
     assert ek.env_vars_for("google") == ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]
@@ -68,7 +68,7 @@ def test_env_vars_for(monkeypatch):
 # resolve_provider_key: AuthStore is the only key source
 
 def test_store_key_resolves(env, monkeypatch):
-    import openprogram.auth.resolver as _resolver
+    import openprogram.models.auth.resolver as _resolver
     monkeypatch.setattr(
         _resolver, "resolve_store_api_key_sync",
         lambda provider, *a, **k: "storekey" if provider == "deepseek" else None,
@@ -97,7 +97,7 @@ def test_no_store_no_key(env):
 
 def test_is_configured_follows_the_store(env, monkeypatch):
     assert ek.is_configured("deepseek") is False
-    import openprogram.auth.resolver as _resolver
+    import openprogram.models.auth.resolver as _resolver
     monkeypatch.setattr(
         _resolver, "resolve_store_api_key_sync", lambda *a, **k: "k"
     )

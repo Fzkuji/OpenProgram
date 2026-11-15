@@ -11,6 +11,8 @@ _WS_RE = re.compile(r"\s+")
 
 
 def plain_text(html: str, limit: int = 2000) -> str:
+    html = re.sub(r"<(script|style)\b[^>]*>.*?</\1\s*>", " ", html, flags=re.I | re.S)
+    html = re.sub(r"<!--.*?-->", " ", html, flags=re.S)
     text = _TAG_RE.sub(" ", html)
     text = (text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
                 .replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " "))

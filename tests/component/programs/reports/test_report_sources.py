@@ -1,6 +1,6 @@
 """Source discovery must preserve dates, privacy boundaries and original text."""
 import json
-from openprogram.programs.workflow import report_sources as sources
+from openprogram.programs._authoring.reports import sources
 
 
 def test_discovery_keeps_current_originals_and_excludes_old_test_and_symlink(tmp_path, monkeypatch):
@@ -36,9 +36,9 @@ def test_denied_root_is_not_read(tmp_path, monkeypatch):
 
 
 def test_memory_discovery_uses_week_dates_and_excludes_pending_sources(tmp_path, monkeypatch):
-    from openprogram import memory
-    from openprogram.memory import store
-    from openprogram.memory.retrieval import inspect
+    from openprogram.state import memory
+    from openprogram.state.memory import store
+    from openprogram.state.memory.retrieval import inspect
     seen = []
     monkeypatch.setattr(memory, 'is_enabled', lambda: True)
     monkeypatch.setattr(store, 'root', lambda: tmp_path)
@@ -76,9 +76,9 @@ def test_unrelated_json_request_does_not_abort_discovery(tmp_path, monkeypatch):
 
 
 def test_coarse_memory_dates_cannot_be_relabelled_as_current_week(tmp_path, monkeypatch):
-    from openprogram import memory
-    from openprogram.memory import store
-    from openprogram.memory.retrieval import inspect
+    from openprogram.state import memory
+    from openprogram.state.memory import store
+    from openprogram.state.memory.retrieval import inspect
     monkeypatch.setattr(memory, 'is_enabled', lambda: True)
     monkeypatch.setattr(store, 'root', lambda: tmp_path)
     monkeypatch.setattr(inspect, 'search', lambda *a, **k: {'results':[
@@ -130,19 +130,20 @@ def test_exported_originals_without_reference_are_not_reimported(tmp_path, monke
     assert sources.collect('2026-W37', [str(tmp_path)])['materials'] == []
 
 
-def test_memory_prioritizes_latest_owner_correction_over_generated_notes(tmp_path, monkeypatch):
-    from openprogram import memory
-    from openprogram.memory import store
-    from openprogram.memory.retrieval import inspect
+def test_memory_notes_are_newest_first_and_never_owner_words(tmp_path, monkeypatch):
+    """Owner corrections come from the chat; a Topic paragraph is the writer's note."""
+    from openprogram.state import memory
+    from openprogram.state.memory import store
+    from openprogram.state.memory.retrieval import inspect
     monkeypatch.setattr(memory, 'is_enabled', lambda: True)
     monkeypatch.setattr(store, 'root', lambda: tmp_path)
     monkeypatch.setattr(inspect, 'search', lambda *a, **k: {'results':[
-        {'path':'sources/old.md','speaker_kind':'owner','speaker_trusted':True,'date':'2026-09-11','content':'早先计划'},
+        {'path':'topics/old.md','date':'2026-09-11','content':'早先计划'},
         {'path':'topics/note.md','date':'2026-09-13','content':'模型汇总'},
-        {'path':'sources/new.md','speaker_kind':'owner','speaker_trusted':True,'date':'2026-09-12','content':'修订计划'}]})
+        {'path':'topics/new.md','date':'2026-09-12','content':'修订计划'}]})
     rows = sources.memory_candidates('2026-W37', '腾讯')
-    assert [r['text'] for r in rows] == ['修订计划','早先计划','模型汇总']
-    assert rows[0]['trusted_owner'] is True and rows[0]['source_date'] == '2026-09-12'
+    assert [r['text'] for r in rows] == ['模型汇总','修订计划','早先计划']
+    assert not any(r['trusted_owner'] for r in rows)
 
 
 def test_detail_queries_are_bounded_deduplicated_and_keep_week(monkeypatch):
@@ -171,3 +172,81 @@ def test_detail_failure_preserves_known_actions_and_context_limit(monkeypatch):
     assert found['candidates'][0]['id'] == 'known'
     assert sum(len(json.dumps(r, ensure_ascii=False).encode()) for r in found['candidates']) <= 18000
     assert any('denied' in w for w in found['warnings'])
+
+
+def test_collect_discovers_dated_owner_conversation_without_memory(tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from openprogram.state.store import SessionStore
+    from openprogram.runtime.context import session_db
+    from openprogram.runtime.permissions.authority import owner_authority
+    db = SessionStore(tmp_path / 'sessions')
+    db.create_session('weekly', agent_id='main')
+    predecessor = None
+    for mid, role, day, content, authority in [
+        ('old', 'user', '2026-09-06', '上周完成旧评估', owner_authority('owner/install/' + 'a' * 16)),
+        ('draft', 'assistant', '2026-09-09', '模型拟定的成果', {}),
+        ('unknown', 'user', '2026-09-10', '未归属消息', {}),
+        ('current', 'user', '2026-09-11', '本周腾讯评估仍在运行，尚无最终结论', owner_authority('owner/install/' + 'a' * 16)),
+    ]:
+        db.append_message('weekly', {'id':mid, 'role':role, 'predecessor':predecessor,
+            'timestamp':datetime.fromisoformat(day).replace(tzinfo=ZoneInfo('Asia/Shanghai')).timestamp(),
+            'content':content, **authority})
+        predecessor = mid
+    monkeypatch.setattr(session_db, 'default_db', lambda: db)
+    monkeypatch.setattr(sources, 'memory_candidates', lambda *a: [])
+    found = sources.collect('2026-W37', [str(tmp_path / 'empty')])
+    assert [r['text'] for r in found['candidates']] == ['本周腾讯评估仍在运行，尚无最终结论']
+    row = found['candidates'][0]
+    assert row['source'] == 'conversation:weekly#current'
+    assert row['source_date'] == '2026-09-11' and row['trusted_owner'] is True
+
+
+def test_conversation_discovery_honors_read_denial(tmp_path, monkeypatch):
+    from openprogram.runtime.context import session_db
+    from openprogram.state.store import SessionStore
+    db = SessionStore(tmp_path / 'sessions')
+    db.create_session('private', agent_id='main')
+    monkeypatch.setattr(session_db, 'default_db', lambda: db)
+    monkeypatch.setattr('openprogram.host.sandbox.validate_read_path', lambda p: 'denied')
+    monkeypatch.setattr(db, 'get_messages', lambda *a, **k: (_ for _ in ()).throw(AssertionError('denied conversation read')))
+    assert sources.conversation_candidates('2026-W37') == []
+
+
+def test_copied_conversation_references_are_not_original_tencent_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(sources, 'memory_candidates', lambda *a: [])
+    monkeypatch.setattr(sources, 'conversation_candidates', lambda *a: [])
+    (tmp_path/'copied.json').write_text(json.dumps([{'id':'derived','week':'2026-W37',
+        'audience':'tencent','text':'旧进度','source':'conversation:old#message'}]))
+    assert sources.collect('2026-W37', [str(tmp_path)])['materials'] == []
+
+
+def test_real_sandbox_blocks_cached_conversation_and_public_tool(tmp_path, monkeypatch):
+    import asyncio
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from openprogram.state.store import SessionStore
+    from openprogram.runtime.context import session_db
+    from openprogram.runtime.permissions.authority import owner_authority
+    from openprogram.host.sandbox import SandboxPolicy
+    from openprogram.programs.tools.knowledge.read_conversation import read_conversation
+    db = SessionStore(tmp_path / 'sessions')
+    db.create_session('private', agent_id='main')
+    db.append_message('private', {'id':'original', 'role':'user', 'content':'PRIVATE_OWNER_REPORT_FACT',
+        'timestamp':datetime(2026,9,30,tzinfo=ZoneInfo('Asia/Shanghai')).timestamp(),
+        **owner_authority('owner/install/' + 'a' * 16)})
+    monkeypatch.setattr(session_db, 'default_db', lambda: db)
+    monkeypatch.setattr(sources, 'memory_candidates', lambda *a: [])
+    session_dir = db._session_dir('private')
+    file_path = session_dir/'main.jsonl'
+    assert file_path.is_file()
+    for denied in (str(session_dir) + '/**', str(file_path)):
+        monkeypatch.setattr('openprogram.host.sandbox.resolve_policy', lambda: SandboxPolicy(deny_read=(denied,)))
+        result = asyncio.run(read_conversation.execute('read', {'session_id':'private'}, None, None))
+        assert 'PRIVATE_OWNER_REPORT_FACT' not in str(result)
+        assert 'denied' in str(result).lower()
+        found = sources.collect('2026-W40', [str(tmp_path/'empty')])
+        assert found['materials'] == [] and found['candidates'] == []
+    monkeypatch.setattr('openprogram.host.sandbox.resolve_policy', lambda: SandboxPolicy())
+    assert 'PRIVATE_OWNER_REPORT_FACT' in str(asyncio.run(read_conversation.execute('read', {'session_id':'private'}, None, None)))
+    assert sources.collect('2026-W40', [str(tmp_path/'empty')])['candidates'][0]['text'] == 'PRIVATE_OWNER_REPORT_FACT'

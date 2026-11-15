@@ -1,0 +1,119 @@
+<title>Command sessions</title>
+<meta name="description" content="How the agent runs shell commands with bash and write_stdin, and how they relate to terminal_use.">
+<meta name="covers" content="openprogram/host/processes/">
+<h1>Command sessions</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Family</th><th scope="col">Tools</th><th scope="col">Whose process</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent commands</th><td><code translate="no">bash</code>, <code translate="no">write_stdin</code></td><td>The agent. Results reach only the agent.</td></tr>
+<tr><th scope="row">Terminal panel</th><td><code translate="no">terminal_use</code></td><td>A terminal tab, opened by the agent (<code translate="no">terminal-resource:</code> id) or the user</td></tr>
+</tbody>
+</table>
+
+<p class="note">The split follows risk: a user's tab holds sign-ins and running work. The model follows Codex's <code translate="no">exec_command</code> / <code translate="no">write_stdin</code> and Claude Code's background-task notice; Codex reaches the user's terminal only read-only, and Claude Code has <code translate="no">Bash</code> plus panel tools.</p>
+
+<h2 id="bash">bash</h2>
+
+<p><code translate="no">bash(command, workdir, yield_time_ms, tty, description)</code></p>
+
+<ol>
+<li><code translate="no">prepare_command</code> resolves <code translate="no">workdir</code> (worktree, sandbox checks, remote <code translate="no">cd</code> guard).</li>
+<li><code translate="no">session.run</code> checks the session cap, and <code translate="no">processes.start</code> launches the command under a detached supervisor.</li>
+<li><code translate="no">collect</code> reads output every 50 ms into a 1 MiB head and tail buffer until the command ends or the yield time passes.</li>
+<li>Ended: <code translate="no">Process exited with code N</code> plus output, and the record is removed. Running: the record gets <code translate="no">background=True</code> and the reply is <code translate="no">Process running with session ID &lt;id&gt;</code>.</li>
+</ol>
+
+<details>
+<summary>Reply and edge cases</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Header</th><td><code translate="no">Wall time</code>, exit or session line, <code translate="no">Output:</code>, plus <code translate="no">cwd=</code> and a non-local <code translate="no">backend=</code>. stdout and stderr are one stream.</td></tr>
+<tr><th scope="row">Nonzero exit, supervisor failure</th><td>Error result; a running session is not</td></tr>
+<tr><th scope="row"><code translate="no">is_sandbox_denial</code> matches a sandboxed command's output</th><td>Sandbox explanation appended</td></tr>
+<tr><th scope="row">Turn cancelled during the first wait</th><td>Stops the command (<code translate="no">check_cancelled</code>). A background session ignores later cancellations.</td></tr>
+<tr><th scope="row">No trusted conversation (a script or test)</th><td>Runs once through <code translate="no">backend.run</code> with a ten-minute limit and the <code translate="no">exit_code=</code> format</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="write_stdin">write_stdin</h2>
+
+<p><code translate="no">write_stdin(session_id, chars, yield_time_ms)</code> finds the session in the conversation (same <code translate="no">session_id</code>, or an execution in its scope).</p>
+
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">chars</code></th><th scope="col">tty</th><th scope="col">pipe</th></tr></thead>
+<tbody>
+<tr><th scope="row">empty</th><td>poll</td><td>poll</td></tr>
+<tr><th scope="row"><code translate="no">"\x03"</code></th><td>written to the terminal; line discipline sends SIGINT</td><td><code translate="no">interrupt</code> command: SIGINT to the process group</td></tr>
+<tr><th scope="row">other</th><td><code translate="no">write</code> command, raw bytes, 100 ms before reading</td><td>refused: stdin is closed</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Call</th><th scope="col">Yield, ms</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">bash</code></th><td>default 30000, 250–30000</td></tr>
+<tr><th scope="row"><code translate="no">write_stdin</code>, writing</th><td>default 250, 250–30000</td></tr>
+<tr><th scope="row"><code translate="no">write_stdin</code>, empty poll</th><td>5000–300000</td></tr>
+</tbody>
+</table>
+
+<p class="note">A reply that shows the exit marks the record <code translate="no">reported</code>.</p>
+
+<h2 id="cap">Session cap</h2>
+
+<p>64 live sessions per conversation. At the cap, the least recently used session outside the eight most recent is stopped and marked <code translate="no">reported</code>, and the new reply names it. There is no idle timeout.</p>
+
+<h2 id="exit-notices">Exit notices</h2>
+
+<p><code translate="no">run_exit_notices</code> runs in the worker and sweeps every 2 s.</p>
+
+<ol>
+<li><code translate="no">unreported_exits()</code>: <code translate="no">background</code>, not <code translate="no">reported</code>, status <code translate="no">exited</code> or <code translate="no">failed</code>. A <code translate="no">stopped</code> command sends nothing.</li>
+<li>Skip while the conversation has a running turn or nonterminal execution; retried after it.</li>
+<li>Clone the newest chat request, set <code translate="no">source="process_exit"</code>, a fresh user message id and the notice text (command, exit code, duration, last 2000 characters), and admit with key <code translate="no">process_exit:&lt;id&gt;</code>. No chat execution: marked reported without a notice.</li>
+<li>The user node is <code translate="no">display="runtime"</code>, and memory skips it.</li>
+</ol>
+
+<h2 id="approvals">Approvals</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">write_stdin</code>, empty or <code translate="no">"\x03"</code></th><td>No decision (<code translate="no">SESSION_POLL</code>); <code translate="no">bash</code> already approved the command</td></tr>
+<tr><th scope="row"><code translate="no">write_stdin</code>, other input</th><td>Follows the mode, as <code translate="no">bash</code>. Counts as a risky tool in Auto, MCP and delegated constraints and dangerous allow rules.</td></tr>
+<tr><th scope="row"><code translate="no">terminal_use</code> <code translate="no">input</code>, <code translate="no">interrupt</code>, <code translate="no">close</code></th><td>Follows the mode on any tab. The card (<code translate="no">TerminalApproval</code>) names the tab, its directory, whether a command is running, unfinished human input and the exact input with control characters spelled out.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Processes layer</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">group_guard</code>, pipe</th><td>Runs the command with stdin <code translate="no">/dev/null</code></td></tr>
+<tr><th scope="row"><code translate="no">group_guard</code>, tty</th><td>Opens a pty as the controlling terminal of its own session, foregrounds its group, sets 30×120 and pumps master and supervisor pipes. Stops reading once its group and every other group of its session (a <code translate="no">set -m</code> job, a setpgid child) are empty, at most two seconds after the group: on macOS no end of output arrives while it holds the terminal, and a fully closed pty drops unread output</td></tr>
+<tr><th scope="row"><code translate="no">group_guard</code>, signals</th><td>Ignores SIGINT and SIGTERM, so an interrupt reaches the command</td></tr>
+<tr><th scope="row">Supervisor</th><td><code translate="no">write</code> adds no newline; <code translate="no">interrupt</code> sends SIGINT to the group (Windows: terminates the tree)</td></tr>
+<tr><th scope="row"><code translate="no">ProcessStore</code></th><td>Records <code translate="no">tty</code>, <code translate="no">sandboxed</code>, <code translate="no">background</code>, <code translate="no">reported</code>, <code translate="no">last_used</code>. <code translate="no">take()</code> returns unread output and bytes dropped before reading.</td></tr>
+<tr><th scope="row">tty support</th><td>Local backend on macOS or Linux</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="interface">Interface</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Activity</th><td>Background sessions only; a command in its first wait is an active tool call</td></tr>
+<tr><th scope="row">Resources</th><td>Running background sessions in the Terminal group as Background terminal; retained output read-only in xterm with Stop; refreshes on the 3 s managed-process poll</td></tr>
+<tr><th scope="row">Tool rows</th><td><code translate="no">write_stdin</code>: "Waited for output", "Interrupted", "Typed". <code translate="no">terminal_use</code> input: "Typed in terminal".</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<p>Implemented as described. Not adopted from Codex: zsh fork, shell snapshots, the <code translate="no">shell</code>, <code translate="no">login</code> and <code translate="no">max_output_tokens</code> parameters, and stdin approval on policy drift.</p>

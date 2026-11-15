@@ -1,0 +1,26 @@
+<title>Web 前端子进程创建</title>
+<meta name="description" content="worker 如何启动和重启 Next.js 前端，以及启动失败时的行为。">
+<h1>Web 前端子进程创建</h1>
+
+<p>worker 通过 <code translate="no">openprogram/operations/worker/web.py</code> 的 <code translate="no">start_web_frontend</code> 启动 Next.js，并在 <code translate="no">.next/BUILD_ID</code> 变化时重启。两处启动都传入 <code translate="no">openprogram.host._platform.process_ownership</code> 的 <code translate="no">no_window_creation_flags()</code>，各自在函数作用域内导入。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">POSIX 标志</th><td>零</td></tr>
+<tr><th scope="row">Windows 标志</th><td>后台窗口</td></tr>
+<tr><th scope="row">首次启动抛出 <code translate="no">OSError</code></th><td>报告错误，返回 <code translate="no">None</code></td></tr>
+<tr><th scope="row">重建后启动抛出 <code translate="no">OSError</code></th><td>报告错误，watcher 仍能看到下一次构建</td></tr>
+<tr><th scope="row">关闭</th><td>停止最新一个启动成功的子进程</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>验收与边界</summary>
+<ul>
+<li>组件测试用假子进程调用公开启动入口，捕获生产 watcher 回调而不启动无界线程。临时 <code translate="no">BUILD_ID</code> 文件驱动连续重建。</li>
+<li>检查首次和重复启动的标志、关闭最新子进程、启动出错后的恢复。进程创建和端口回收都已隔离，不影响运行中的 App。</li>
+<li>命令构造、环境传递、端口回收和 manifest 补丁与这些标志无关。watcher 调度、关闭取消和其他平台行为不在范围内。</li>
+<li>不改依赖、API、配置和安全边界。</li>
+</ul>
+</details>

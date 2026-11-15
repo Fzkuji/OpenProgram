@@ -1,0 +1,154 @@
+<title>渠道上的聊天机器人行为</title>
+<meta name="description" content="聊天室对 agent 的要求、参考系统的回答，以及 OpenProgram 的房间、投递和权限设计。">
+<h1>渠道上的聊天机器人行为</h1>
+<p>聊天机器人就是同一个 <code translate="no">Agent</code>，runtime、工具和记忆都相同，只是前面有房间层（哪些消息变成回合）和投递层（回复如何发出），都在 <code translate="no">channels/</code> 中。OpenClaw 和 Hermes 也是这样构建的。</p>
+<h2 id="what-a-room-needs">房间需要什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">需求</th><th scope="col">聊天的不同之处</th></tr></thead>
+<tbody>
+<tr><th scope="row">知道谁在说话</th><td>群或 <code translate="no">session_scope: main</code> 的 agent 让多人处于同一对话</td></tr>
+<tr><th scope="row">默认安静</th><td>群消息大多是人之间的交流</td></tr>
+<tr><th scope="row">仍要听见房间</th><td>“@bot”之后的问题依赖之前的消息</td></tr>
+<tr><th scope="row">决定开口</th><td>有用的助手只在有话可说时加入</td></tr>
+<tr><th scope="row">像人一样回复</th><td>短段落写好即发，显示输入状态，没有工具记录</td></tr>
+<tr><th scope="row">限制陌生人</th><td>接触所有者机器的工具只留给所有者</td></tr>
+<tr><th scope="row">不与机器人无限对话</th><td>两个机器人会一直互答，直到被阻止</td></tr>
+<tr><th scope="row">跨应用识别同一人</th><td>微信和 Telegram 上的同一人在记忆中是一个主体</td></tr>
+<tr><th scope="row">主动开口</th><td>提醒、跟进、问候</td></tr>
+</tbody>
+</table>
+<h2 id="reference-systems">参考系统</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">侧重</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://docs.openclaw.ai/channels">OpenClaw</a></th><td>最完整的房间层：<a href="https://docs.openclaw.ai/channels/groups">群组</a>、<a href="https://docs.openclaw.ai/channels/ambient-room-events">环境房间</a>、<a href="https://docs.openclaw.ai/concepts/session">会话</a>、<a href="https://docs.openclaw.ai/concepts/streaming">流式</a>、<a href="https://docs.openclaw.ai/concepts/typing-indicators">输入状态</a>、<a href="https://docs.openclaw.ai/channels/bot-loop-protection">机器人循环保护</a></td></tr>
+<tr><th scope="row"><a href="https://hermes-agent.nousresearch.com/docs/">Hermes Agent</a> (<a href="https://github.com/NousResearch/hermes-agent">repo</a>)</th><td>机器人学到什么：自管理的 <code translate="no">MEMORY.md</code> 和 <code translate="no">USER.md</code>，定期提示保存，从已解决任务生成 skill，全文回忆。一个网关约二十个平台，跨平台一个身份；定时任务可投递到任意平台。</td></tr>
+<tr><th scope="row"><a href="https://poke.com">Poke</a></th><td>住在 iMessage 和短信里，声音固定，邮件或日历需要关注时主动发消息，把这些账号当记忆。主动开口和个性让它有存在感。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>OpenClaw 的组成</summary>
+<ul>
+<li>访问：私聊配对、白名单；每群 <code translate="no">groupPolicy</code> 为 allowlist、open 或 disabled。</li>
+<li>提及门控：<code translate="no">requireMention</code>、<code translate="no">mentionPatterns</code>，回复机器人算提及；<code translate="no">/activation mention|always</code>。</li>
+<li>待处理历史：未提及消息保留（<code translate="no">historyLimit</code>，默认 50）供下次触发回合使用。</li>
+<li>环境房间：<code translate="no">unmentionedInbound: "room_event"</code> 配 <code translate="no">visibleReplies: "message_tool"</code>：所有消息都到 agent，最终文本保持私有，房间只听到 <code translate="no">message</code> 工具的内容；不显示输入状态。</li>
+<li>按群和发送者的工具策略（<code translate="no">tools</code>、<code translate="no">toolsBySender</code>）；非主会话沙箱。</li>
+<li>会话：<code translate="no">dmScope</code>、<code translate="no">identityLinks</code>、每日或空闲重置、<code translate="no">/new</code>、<code translate="no">/reset</code>。</li>
+<li>投递：分块流式（<code translate="no">minChars</code>、<code translate="no">maxChars</code>、合并、换行模式）、预览编辑、输入状态保活、ack 表情。</li>
+<li>机器人循环保护、一次性群介绍、跳过群的心跳、语音转写、双向媒体。</li>
+<li><a href="https://docs.openclaw.ai/channels/wechat">微信</a>：腾讯微信团队维护的插件；私聊和媒体，无群聊，iLink 二维码登录。</li>
+</ul>
+</details>
+<table class="stack">
+<thead><tr><th scope="col">能力</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">平台</th><td>34 个，微信靠插件</td><td>Telegram、Discord、Slack、微信（iLink）</td></tr>
+<tr><th scope="row">私聊配对、白名单</th><td>有</td><td>有</td></tr>
+<tr><th scope="row">向模型提供发送者身份</th><td>文本标签加元数据块</td><td>结构化 <code translate="no">speaker_*</code> 字段</td></tr>
+<tr><th scope="row">网页记录显示发送者</th><td>—</td><td>气泡上方显示平台和发送者</td></tr>
+<tr><th scope="row">提及门控</th><td>所有群、模式、回复机器人</td><td>Telegram、Discord、Slack；回复机器人；无自定义模式</td></tr>
+<tr><th scope="row"><code translate="no">/activation</code>, <code translate="no">/new</code>, <code translate="no">/reset</code></th><td>有</td><td>有</td></tr>
+<tr><th scope="row">待处理群历史</th><td>有</td><td>有</td></tr>
+<tr><th scope="row">环境房间</th><td>有</td><td><code translate="no">/activation ambient</code>, <code translate="no">chat_send</code></td></tr>
+<tr><th scope="row">按群或发送者的工具策略</th><td>有</td><td>按账号 <code translate="no">sender_access</code>；按用户的群列表（full 或 chat），按账号或群；<code translate="no">/memory</code>；仅提问者可回答</td></tr>
+<tr><th scope="row">会话范围、重置</th><td>有</td><td><code translate="no">session_scope</code>，每日或空闲</td></tr>
+<tr><th scope="row">跨渠道身份关联</th><td>有</td><td>无</td></tr>
+<tr><th scope="row">实时进度</th><td>预览编辑</td><td>用工具步骤编辑占位</td></tr>
+<tr><th scope="row">运行中分段</th><td>有</td><td>微信；可编辑平台保留占位</td></tr>
+<tr><th scope="row">输入状态</th><td>有</td><td>Telegram、Discord、微信</td></tr>
+<tr><th scope="row">ack 表情</th><td>有</td><td>Telegram、Discord、Slack（<code translate="no">ack_reaction</code>）</td></tr>
+<tr><th scope="row">机器人循环保护</th><td>有</td><td>丢弃机器人消息，按房间限回合</td></tr>
+<tr><th scope="row">群介绍</th><td>有</td><td>无</td></tr>
+<tr><th scope="row">双向媒体</th><td>有</td><td>有</td></tr>
+<tr><th scope="row">语音转写</th><td>有</td><td>微信自带转写；未转写语音保存为 SILK</td></tr>
+<tr><th scope="row">向用户提问</th><td>—</td><td><code translate="no">/answer</code>, <code translate="no">/decline</code></td></tr>
+<tr><th scope="row">主动投递</th><td>心跳、cron</td><td>常驻 agent 投递到渠道</td></tr>
+<tr><th scope="row">自管理记忆、skill</th><td>Hermes</td><td>共享记忆工作区，按人主题</td></tr>
+</tbody>
+</table>
+<h2 id="room-modes">房间模式</h2>
+<table class="stack">
+<thead><tr><th scope="col">模式</th><th scope="col">开始回合</th><th scope="col">其他消息</th><th scope="col">回复到达房间</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>mention</strong>（默认）</th><td>提及或回复机器人</td><td>待处理历史</td><td>是</td></tr>
+<tr><th scope="row"><strong>always</strong></th><td>每条消息</td><td>—</td><td>是</td></tr>
+<tr><th scope="row"><strong>ambient</strong></th><td>每条消息</td><td>—</td><td>点名时是，否则只能通过 <code translate="no">chat_send</code>。</td></tr>
+</tbody>
+</table>
+<ul>
+<li>未点名的 ambient 消息以 <code translate="no">[room event]</code> 开头，不运行 ack 和输入状态，最终文本留在记录中，网页标为“overheard”。房间事件计入洪泛限制。</li>
+<li>账号的 <code translate="no">require_mention</code> 提供默认值；<code translate="no">/activation</code> 把按群覆盖写入 <code translate="no">rooms.json</code>。适配器只设置 <code translate="no">ChannelMessage.mentioned</code> 并去掉提及；决定在 <code translate="no">channels/_room.py</code>，各平台一致。私聊从不门控。</li>
+<li><code translate="no">chat_send(text)</code> 发到回合所在聊天，按会话 key 在 <code translate="no">channels/_active_turns.py</code> 中查找（<code translate="no">session_scope: main</code> 的会话含多个聊天）。只需 <code translate="no">reply</code> 能力，在安全自动允许列表中，对非渠道来源隐藏，每回合最多五条。点名回合中用于长任务前的简短说明；最终回复仍会发送。</li>
+</ul>
+<h2 id="pending-history">待处理历史</h2>
+<pre translate="no"><code>[earlier messages in this chat]
+&gt; {"speaker": "...", "content": "..."}
+&gt; {"speaker": "...", "content": "..."}</code></pre>
+<ul>
+<li>按房间保存在内存中，带发言者字段。下一回合在其消息前取最新 50 条。JSON 转义换行，待处理消息无法伪造其他发言者的行。</li>
+<li>已消费条目被清除；<code translate="no">/new</code> 也会清除；worker 重启后丢失。它不会唤醒 agent。网页把这段折叠在气泡顶部。</li>
+</ul>
+<h2 id="delivery">投递</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入状态</th><td>贯穿整个回合。Telegram <code translate="no">sendChatAction</code> 每 4 秒，Discord 每 8 秒，微信每 5 秒。微信需要用用户最新 <code translate="no">context_token</code> 从 iLink <code translate="no">getconfig</code> 取票；回合结束发送 iLink 取消。</td></tr>
+<tr><th scope="row">不能编辑的平台（微信）</th><td>达到 200 字符后在空行处发出；工具调用开始时发出缓冲；未闭合代码块不拆分；分块不超上限。最终回复（含 <code translate="no">send_file</code> 标记）补齐其余部分。</td></tr>
+<tr><th scope="row">可编辑平台</th><td>保留实时占位</td></tr>
+<tr><th scope="row">ack 表情</th><td>可选，标记消息已接收</td></tr>
+<tr><th scope="row">工具步骤</th><td>ambient 模式和微信都不显示</td></tr>
+</tbody>
+</table>
+<h2 id="who-may-do-what">谁能做什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">发送者</th><th scope="col">群结果</th><th scope="col">回合身份</th><th scope="col">房间命令</th></tr></thead>
+<tbody>
+<tr><th scope="row">在白名单或 <code translate="no">group_full_access</code></th><td><code translate="no">full</code></td><td><code translate="no">sender_access</code> 层级</td><td>允许</td></tr>
+<tr><th scope="row">在 <code translate="no">group_chat_only</code></th><td><code translate="no">chat</code></td><td><code translate="no">paired</code> 层级</td><td>拒绝 <code translate="no">/new</code>、<code translate="no">/reset</code>、<code translate="no">/activation</code>、<code translate="no">/memory</code></td></tr>
+<tr><th scope="row">其他人或无用户 id</th><td>丢弃</td><td>无回复、配对码、待处理条目或会话；worker 日志记录 id</td><td>—</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">_access.group_sender_access</code> 根据稳定用户 id 决定，从不写入。私聊中白名单发送者使用 <code translate="no">sender_access</code> 层级。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">sender_access</code></th><th scope="col">整个账号的上限</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">owner</code>（默认）</th><td>所有者身份和层级，交互式审批；会话权限模式和规则照常。审批作为问题到达聊天，用 <code translate="no">/answer</code> 回答。发言者字段仍标明发送者。</td></tr>
+<tr><th scope="row"><code translate="no">paired</code></th><td>只能回复、<code translate="no">chat_send</code> 和记忆，群里也一样；拒绝文件、shell 和网络工具</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">/memory</code></th><th scope="col"><code translate="no">TurnRequest.memory_policy_override</code>，只能收窄</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">on</code></th><td>agent 自身设置</td></tr>
+<tr><th scope="row"><code translate="no">read</code></th><td>隐藏写入工具</td></tr>
+<tr><th scope="row"><code translate="no">off</code></th><td>停止回忆，隐藏记忆工具</td></tr>
+</tbody>
+</table>
+<ul>
+<li>列表在账号的 <code translate="no">access.json</code> 中。群可以在 <code translate="no">rooms.json</code> 的激活设置旁有自己的一对列表；一旦存在就取代账号列表，只有 <code translate="no">reset</code> 能删除，清空后该群关闭。</li>
+<li>Discord thread 有自己的 chat id，回退到父频道的列表。</li>
+<li>白名单适用于所有群，所以把已绑定联系人列为 <code translate="no">chat</code> 会被拒绝，绑定某人会把他从 chat 列表移除。</li>
+<li>列表只能从本地 CLI 和设置页修改。CLI 和 worker 都写 <code translate="no">rooms.json</code>，使用与 <code translate="no">access.json</code> 相同的跨进程文件锁。</li>
+<li><code translate="no">runtime.ask</code> 的问题属于发起回合的人；群里回合运行时，其他人的 <code translate="no">/answer</code> 和 <code translate="no">/decline</code> 被拒绝。</li>
+</ul>
+<h2 id="loops-and-floods">循环与洪泛</h2>
+<p>机器人消息被丢弃。一个房间滑动一分钟内最多开始 10 个回合，超出的消息进入待处理历史。同一消息被投递两次（Slack <code translate="no">message</code> 和 <code translate="no">app_mention</code>）只开始一个回合。</p>
+<h2 id="wechat">微信</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方向</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">入站媒体</th><td>iLink 的图片、语音、文件、视频项指向腾讯 C2C CDN 上的 AES-128-ECB 对象并带密钥。它们变成带密钥的附件，共享路径边下载边解密。CDN 返回 <code translate="no">application/octet-stream</code>，图片类型取自解密后的文件头。</td></tr>
+<tr><th scope="row">语音</th><td>微信转写作为文本，不下载音频。没有转写时是 SILK，保存为 <code translate="no">voice.silk</code>。</td></tr>
+<tr><th scope="row">发送文件</th><td><code translate="no">getuploadurl</code>，用新密钥加密，上传到 CDN，发送含下载参数和密钥的图片、视频或文件项。说明文字作为单独文本发送。使用固定到 CDN 源的 <code translate="no">channel.wechat.cdn</code> HTTP consumer。</td></tr>
+<tr><th scope="row">限制</th><td>无群聊和编辑：始终分段，不用占位</td></tr>
+</tbody>
+</table>
+<h2 id="appendix-implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>配对、白名单；结构化发言者身份；会话范围和重置；房间模式；待处理历史；ambient 和 <code translate="no">chat_send</code>；输入状态；微信分段；ack 表情；<code translate="no">sender_access</code>；群列表；房间记忆；仅提问者回答；丢弃机器人消息；回合限制；重复抑制；实时占位；按平台 markdown 和上限拆分；四个平台的附件；<code translate="no">/answer</code>、<code translate="no">/decline</code>；常驻投递</td></tr>
+<tr><th scope="row">已设计未实现</th><td>自定义提及模式。身份关联：<code translate="no">channel:speaker_id</code> 对映射到一个人 id，记忆归入同一主题，绑定可以给关联的人一个私聊会话。agent 配置中的渠道人设（语气、长度、emoji），只用于渠道回合。记忆安排的跟进投递到此人最近活跃的渠道，心跳跳过群。群介绍。转写没有平台文本的语音（微信 SILK、Telegram 和 Discord 语音）。</td></tr>
+</tbody>
+</table>

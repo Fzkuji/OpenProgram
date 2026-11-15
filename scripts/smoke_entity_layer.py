@@ -67,7 +67,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 def main() -> int:
-    from openprogram.paths import get_state_dir
+    from openprogram.state.paths import get_state_dir
     state = get_state_dir()
     print(f"# state dir = {state}")
     # Safety assertion: we must be in the throwaway profile, not real state.
@@ -80,8 +80,8 @@ def main() -> int:
         _rmtree_retry(state)
         state.mkdir(parents=True, exist_ok=True)
 
-    from openprogram.store.session.session_store import SessionStore, _default_root
-    from openprogram.store.project import project_store as P
+    from openprogram.state.store.session.session_store import SessionStore, _default_root
+    from openprogram.state.store.project import project_store as P
     # A scratch dir to act as the user's "real project directory".
     proj_dir = Path(tempfile.mkdtemp(prefix="op_proj_"))
 
@@ -233,7 +233,7 @@ def main() -> int:
               f"{len(log)} commits")
 
         # ── 7. project_commit dispatcher wiring (auto-commit, default ON) ──
-        from openprogram.store.project import project_commit as PC
+        from openprogram.state.store.project import project_commit as PC
         # 7a. default is ON (no env, no config).
         os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
         check("auto-commit ON by default", PC.is_enabled() is True, "default on")
@@ -382,7 +382,7 @@ def main() -> int:
             _rmtree_retry(proj_dir3)
 
         # ── 8. snapshot GC actually evicts beyond the cap ──
-        from openprogram.store.snapshot.file_backup import BackupStore, gc_evict_old
+        from openprogram.state.store.snapshot.file_backup import BackupStore, gc_evict_old
         store.create_session("gc1", "main", title="gc")
         gc_dir = store._session_dir("gc1")
         bs = BackupStore(gc_dir)
@@ -391,7 +391,7 @@ def main() -> int:
         tmpf.write_text("x", encoding="utf-8")
         for i in range(5):
             bs.backup_before_edit(f"turn{i}", str(tmpf))
-        from openprogram.store.snapshot.file_backup.paths import session_backup_root
+        from openprogram.state.store.snapshot.file_backup.paths import session_backup_root
         root = session_backup_root(gc_dir)
         before = len([p for p in root.iterdir() if p.is_dir()])
         removed = gc_evict_old(gc_dir, max_turns=2)

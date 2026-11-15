@@ -1,0 +1,17 @@
+<title>Agent 可读文档</title>
+<meta name="description" content="每个文档页都发布供 Agent 读取的 Markdown 副本并加以声明。">
+<h1>Agent 可读文档</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">来源</th><th scope="col">发布的副本</th><th scope="col">声明方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">Markdown 页</th><td><code translate="no">page.html.md</code>，逐字节相同</td><td>alternate 链接，<code translate="no">text/markdown</code></td></tr>
+<tr><th scope="row">HTML 文档</th><td><code translate="no">page.html.md</code>，由正文生成：每张图一次、折叠展开、站内链接绝对化</td><td>alternate 链接，<code translate="no">text/markdown</code></td></tr>
+<tr><th scope="row">文档索引</th><td><code translate="no">index.html.md</code></td><td>alternate 链接</td></tr>
+<tr><th scope="row">旧的独立可视化</th><td>无；只有 HTML 和可读性资源</td><td>只有 <code translate="no">llms.txt</code> 指引</td></tr>
+</tbody>
+</table>
+
+<p class="note">中英文副本分开。落地页、外壳和原始页通过 <code translate="no">rel=describedby</code> 声明站点根的 <code translate="no">llms.txt</code>。没有运行时 API、认证或网络请求。</p>
+
+<p class="note"><code translate="no">scripts/docs_site/build.py</code>、<code translate="no">html_source.py</code>、<code translate="no">template.py</code>、<code translate="no">check_landing.py</code>；<code translate="no">tests/unit/config/test_docs_agent_readable.py</code>、<code translate="no">test_docs_html_source.py</code>。</p>

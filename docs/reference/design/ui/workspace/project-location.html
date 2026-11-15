@@ -1,0 +1,105 @@
+<title>Project storage and location</title>
+<meta name="description" content="How projects keep their history when working folders move, disconnect or are copied.">
+<h1>Move projects while retaining history</h1>
+<p>Conversations live under the user directory, grouped by stable project id. No chat records are written into working folders.</p>
+
+<pre translate="no" tabindex="0">~/.openprogram/
+  projects/
+    projects.json                    # registry / location / identity
+    &lt;project-id&gt;/                    # project settings
+  sessions/
+    index.json                       # rebuildable listing
+    locations.json                   # legacy compatibility
+    projects/
+      &lt;project-id&gt;/
+        &lt;session-id&gt;/                # complete session Git repository
+        .file-recovery/&lt;session-id&gt;/ # external rewind data
+    &lt;legacy-session-id&gt;/             # existing default sessions
+  memory/                            # memory store, unchanged
+&lt;working folder&gt;/.openprogram/project.json  # versioned random identity token</pre>
+
+<h2 id="case-1">What happens to the folder</h2>
+<table class="stack">
+<thead><tr><th scope="col">Situation</th><th scope="col">History</th><th scope="col">New tasks</th><th scope="col">What the App does</th></tr></thead>
+<tbody>
+<tr id="case-2"><th scope="row">Moved or renamed, also while closed</th><td>Kept</td><td>Run at the new path</td><td>Token found in the bounded search: location updates. Id, title, conversations and archive state stay; chat files do not move. Outside the search: reopen or Locate once.</td></tr>
+<tr id="case-3"><th scope="row">Drive disconnected</th><td>Readable</td><td>Blocked</td><td>Stays in the sidebar. "Working folder unavailable. Read history now; reconnect before running tasks." Files and attachments referring to them wait for reconnection and identity check. If app storage itself is offline, history is unavailable too.</td></tr>
+<tr id="case-4"><th scope="row">Copied, original still there</th><td>Separate</td><td>Run</td><td>Opening the copy registers a new project with a fresh token.</td></tr>
+<tr><th scope="row">Copied then original deleted</th><td>Kept</td><td>Run</td><td>One candidate: treated as a move, also across drives. It cannot be told apart from a move.</td></tr>
+<tr><th scope="row">Several copies found</th><td>Kept</td><td>Blocked</td><td>Explicit Locate.</td></tr>
+<tr id="case-5"><th scope="row">Another folder at the old path</th><td>Kept</td><td>Blocked</td><td>["The folder at this location has changed." Locate the original or confirm a replacement. A location registered to another project is never taken over.</td></tr>
+<tr id="case-7"><th scope="row">Legacy conversation, source drive offline</th><td>Unavailable</td><td>Blocked</td><td>Registration stays. "This legacy conversation has not migrated. Reconnect the original drive to finish." Never an empty session in its place.</td></tr>
+</tbody>
+</table>
+<span id="case-0"></span>
+
+<h2 id="case-6">Where projects appear</h2>
+<table class="grid">
+<thead><tr><th scope="col">Project</th><th scope="col">Sidebar</th><th scope="col">Picker and management</th></tr></thead>
+<tbody>
+<tr><th scope="row">Unarchived conversations</th><td class="run">shown</td><td class="run">shown</td></tr>
+<tr><th scope="row">No conversation</th><td class="ask">hidden</td><td class="run">shown</td></tr>
+<tr><th scope="row">All archived</th><td class="ask">hidden</td><td class="run">shown, archived count separate</td></tr>
+</tbody>
+</table>
+<p class="note">Derived from the current valid session set; <code translate="no">session_count</code> is not the predicate. Registration removal, archiving, permanent conversation deletion and working-folder deletion are distinct and never cascade into working files.</p>
+
+<h2>Repair</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mechanism</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Discovery</th><td>At startup, project-list requests, file or execution access, Locate and opening a folder; never idle. Registered parents or their nearest surviving ancestor, up to 3 levels and 4,000 entries. Excludes home and its ancestors, hidden and dependency directories, directory symlinks. Incomplete or multiple matches do not relocate.</td></tr>
+<tr><th scope="row">Project list</th><td>Answers from memory: the parsed registry and the conversation index. It shows the location the registry records and touches no project folder, so its cost does not grow with the number of projects and a deleted folder costs nothing; no search, no registry lock, off the event loop.</td></tr>
+<tr><th scope="row">Check behind the list</th><td>After the reply, in the background, one run at a time and at most every 10 seconds; a listing inside that interval queues one run for its end. A folder in place costs one folder check and one marker read; all missing projects share one bounded walk. A changed state (folder moved, deleted or back, a deferred migration settled) is recorded and broadcast as <code translate="no">projects_changed</code>, and every page lists again.</td></tr>
+<tr><th scope="row">A change made elsewhere</th><td>Creating, renaming, moving or hiding a project from any connection broadcasts <code translate="no">projects_changed</code> as soon as the change is stored, before the requester gets its reply: a requester that hangs up at once (the CLI, a script, an agent) still reaches the others. Every open page lists again without a reload. An open project menu re-lists in place and keeps its scroll position.</td></tr>
+<tr><th scope="row">A re-list with no answer</th><td>Changes nothing: the project menu keeps its rows, and the file panel's folder-unavailable notice keeps its message and repair buttons.</td></tr>
+<tr><th scope="row">Opening a subfolder</th><td>A folder with no token, whose nearest token ancestor belongs to a project missing from its recorded place, moves that project to the ancestor (<code translate="no">reattach_enclosing_project</code>). Home and its ancestors are never read.</td></tr>
+<tr><th scope="row">Sibling moves</th><td>When one project is found, other missing projects under the same old parent are tried under the new parent, and outer parents while names agree (<code translate="no">follow_sibling_moves</code>). Only where a project's own token is found: one Locate repairs a moved directory.</td></tr>
+<tr><th scope="row">Where repair is offered</th><td>Project menu, Projects page and file tree, from <code translate="no">lib/projects/project-location.ts</code>. Identity differs at the recorded path, or a legacy record cannot be verified (a cloud-synced folder can change inode): one click confirms after showing the path. Locate opens the picker.</td></tr>
+<tr><th scope="row">File tree refresh</th><td>Open folders re-list when the window regains focus, at most every 3 seconds, no size recount, through the same location check.</td></tr>
+<tr><th scope="row">After migration</th><td>A waiting project opens when the retry reports every session done or deleted. A journal row whose workdir copy is gone but whose published directory holds the session metadata is done.</td></tr>
+</tbody>
+</table>
+
+<details id="implementation">
+<summary>Identity, markers and relocation rules</summary>
+<ul>
+<li>The list reads no folder: a file-system call gives up the interpreter lock and waits a 5 ms switch interval to get it back while another thread computes. A folder check and marker read per project (800 calls for 126 projects) answers in 6 ms alone, 4 seconds beside one busy thread, 14 beside two.</li>
+<li>The check behind the list looks for dead conversation references in the published registry without its lock and takes the lock only to write a change, so a turn binding its conversation never waits on a pass that finds nothing. The walk for missing projects starts only when one is missing.</li>
+<li>Registered ids stay, including path-derived ones. New projects get UUIDs after checking canonical paths; collisions retry, never merge. Session ids are globally unique, names are display only. Location records carry path, revision and token.</li>
+<li>Ordinary edits and location checks never write a marker. Registration and Locate create it atomically, refuse symlinked or malformed metadata, and do not overwrite another project's. Marker is identity, not authorization: permissions are revalidated at the new path.</li>
+<li>Legacy records with a matching device/inode at the recorded path upgrade once; others need Locate once. Device/inode and native bookmarks are not used afterwards. Git remote equality is not proof.</li>
+<li>Automatic relocation needs a matching token and one unambiguous location. Manual Locate allows a replacement after showing old and new paths. Both recheck revision, permissions and ownership at commit. Legacy placement repairs use a durable journal and show "Updating location" until complete.</li>
+</ul>
+</details>
+<details>
+<summary>Execution and references</summary>
+<ul>
+<li>History reads need no working folder. New tasks are blocked with no fallback to HOME, server cwd or session workdir. Running subprocesses are not retargeted; later file operations revalidate. Worktrees are checked separately.</li>
+<li>Historical messages, authorization snapshots and rewind manifests are not rewritten. New file references are project id plus relative path; unavailable legacy paths stay unavailable. Rewind targeting a missing old location reports it and creates nothing.</li>
+<li>Project location overrides stale <code translate="no">work_dir</code>. Additional directories and <code translate="no">source_folders</code> inside the old root are rebased by relative suffix and revalidated; external ones keep absolute paths and their own checks. Missing required directories block dependent operations with a repair option.</li>
+<li>Memory text and history stay; permanently deleting a source conversation removes or marks its link, without creating a copy. Archived sources stay accessible.</li>
+</ul>
+</details>
+<details>
+<summary>Migration and deletion</summary>
+<ul>
+<li>Every session writer quiesces first: model tasks, fork children, jobs, checkpoints, attachment writers. Initial migration runs before execution; a reconnecting legacy source needs the same boundary, never a hidden move during reads.</li>
+<li>All writers (CLI, worker, fork children, rewind) share an interprocess lock keyed by session id and re-read revision and location after acquiring it. On timeout, defer; never kill tasks or copy concurrently. Migration holds it exclusively. Mixed-version writes to one profile are unsupported; older processes stop through lifecycle management first.</li>
+<li>Journal source, destination, identities, inventory. Copy to private staging, verify content and unchanged source, durably publish session and recovery data, atomically publish placement, then clean. Publication failure never allows source deletion. Resume without overwriting conflicts.</li>
+<li>Messages, Git history, branches, recovery backups and stored attachments are verified together. Deletion is serialized with migration, with durable intent so recovery cannot resurrect. One authoritative writable location.</li>
+<li>Indexes rebuild from both layouts; a temporarily unavailable migrating session is never pruned as empty. During migration: "Migrating conversations · Tasks start after completion."</li>
+</ul>
+</details>
+<details>
+<summary>Comparison with other tools</summary>
+<ul>
+<li>Adopted: application-owned storage as Claude Code, Codex and DeepSeek Harness have; grouping by project, with stable ids instead of path encodings; id separate from roots as in <a href="https://github.com/openai/codex/blob/da20788df913189878ebca7f4963d8a363ee6bf2/codex-rs/state/src/runtime/projects.rs#L230-L283">Codex</a> and <a href="https://github.com/anomalyco/opencode/blob/dev/packages/core/src/project.ts">OpenCode</a>; Locate from <a href="https://github.com/desktop/desktop/blob/development/app/src/ui/missing-repository.tsx">GitHub Desktop</a>. OpenProgram keeps Git session repositories, branches and recovery instead of JSONL.</li>
+<li>Not adopted: DeepSeek's <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/workspace/workspace/src/types.ts#L26-L112">immutable workspace path</a>; platform bookmarks and events as required identity (<a href="https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/AccessingFilesandDirectories/AccessingFilesandDirectories.html">Apple</a>, <a href="https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-openfilebyid">Windows</a>, <a href="https://man7.org/linux/man-pages/man7/inotify.7.html">inotify</a>).</li>
+<li>Evidence: <a href="https://github.com/openai/codex/blob/da20788df913189878ebca7f4963d8a363ee6bf2/codex-rs/rollout/src/recorder.rs#L1700-L1721">Codex storage</a> and <a href="https://github.com/openai/codex/blob/da20788df913189878ebca7f4963d8a363ee6bf2/codex-rs/rollout/src/recorder.rs#L2162-L2222">cwd matching</a> filter on recorded cwd; <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/session/session-persistence-jsonl/src/format.ts#L216-L305">DeepSeek storage</a> and <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/workspace/workspace/src/entity.ts#L110-L145">workspace membership</a> validate real paths against an immutable header cwd. The Claude Code native distribution embeds JavaScript selecting <code translate="no">~/.claude/projects/encoded-path/session-id.jsonl</code>, from local inspection.</li>
+</ul>
+</details>
+<details id="implementation-status">
+<summary>Implementation status</summary>
+<p>Implemented. In <code translate="no">openprogram/state/store/project/</code>: <code translate="no">identity.py</code>, <code translate="no">discovery.py</code>, <code translate="no">location.py</code>, <code translate="no">project_store.py</code>; execution guard <code translate="no">openprogram/runtime/conversation/workdir.py</code>. UI: <code translate="no">apps/web/lib/projects/project-location.ts</code>, <code translate="no">apps/web/components/files/project-location-notice.tsx</code>. Tests: <code translate="no">tests/component/store/test_project_portable_identity.py</code>. Acceptance covers rename and restart, parent moves, copy then delete, destinations outside discovery, simultaneous copies, conflicting markers, incomplete discovery, read-only or symlinked metadata, failure at each migration stage, wrong-directory refusal, no idle scanning.</p>
+</details>

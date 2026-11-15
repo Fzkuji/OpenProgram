@@ -1,0 +1,51 @@
+/* ===== Reset & Base ===== */
+/* Tailwind v4's preflight (in @layer base) already applies
+   box-sizing:border-box, margin:0 and padding:0. Re-declaring it here as
+   an UNLAYERED `*` rule made it beat every `@layer utilities` spacing
+   utility (px-2, p-4, …) — unlayered rules always win over layered ones —
+   which zeroed out all Tailwind padding across the app. Removed; preflight
+   covers it. */
+
+/* Equal-width digits everywhere (Settings > Font); off via the switch. */
+html:not([data-tabular-nums="off"]) {
+  font-variant-numeric: tabular-nums;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+  /* Lock font rendering to grayscale antialiasing in BOTH themes.
+     Without this, macOS / Safari swap to subpixel rendering on
+     light backgrounds and to a different smoothing on dark, so
+     identical font-weight rules visually read as "lighter in
+     dark mode, heavier in light mode" — a swap of theme drifts
+     the perceived boldness. Forcing antialiased + grayscale keeps
+     weight consistent across the switch. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Native form elements default to the browser's UI font instead of
+   inheriting from <body>, so without this rule buttons/inputs/selects
+   ignored the global font switch on /settings/general. Force them to
+   pick up `--font-sans` like everything else. Anything intentionally
+   monospace declares its own `font-family: var(--font-mono)` later
+   and overrides this. */
+button, input, select, textarea, optgroup {
+  font-family: inherit;
+}
+
+/* A Chinese page stays hidden until useTranslation has switched the
+   exported English text (see lib/i18n). The delayed reveal is a safety net
+   for a page whose script never runs. */
+html[data-locale-pending] body {
+  visibility: hidden;
+  animation: op-locale-reveal 0s linear 1.5s forwards;
+}
+@keyframes op-locale-reveal { to { visibility: visible; } }

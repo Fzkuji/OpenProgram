@@ -1,0 +1,211 @@
+<title>提示缓存前缀</title>
+<meta name="description" content="每个请求的请求体在适配器序列化处被采集，与同一通道上一次请求比较；缓存前缀断开时，用量事件记下位置和原因。">
+<meta name="covers" content="openprogram/models/providers/recording/capture.py openprogram/models/usage/prefix_fingerprint.py">
+<h1 id="cache-prefix">提示缓存前缀</h1>
+<p>只有新内容之前的每个字节都和更早的请求相同，provider 才会复用缓存的提示。每个请求在适配器序列化它的地方被采集，切成单元，再和同一通道上一次得到回复的请求比较。第一个不同的单元就是缓存停止读取的位置，它给出用量事件记下的原因。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="两个请求切成单元：tools、系统文本、history。第二个请求的系统文本在 open_work 节有变化，断点在第 1 个单元，原因 system:open_work；它之前的部分从缓存读取。">
+  <text class="t-soft" x="0" y="22">上一次请求</text>
+  <rect class="tile" x="0" y="32" width="96" height="36" rx="6"/><text class="t-cmd" x="12" y="55">tools:read</text>
+  <rect class="tile" x="104" y="32" width="268" height="36" rx="6"/><text class="t-cmd" x="116" y="55">system · base · open_work</text>
+  <rect class="tile" x="380" y="32" width="120" height="36" rx="6"/><text class="t-cmd" x="392" y="55">history:user</text>
+  <text class="t-soft" x="0" y="104">这次请求</text>
+  <rect class="tile" x="0" y="114" width="96" height="36" rx="6"/><text class="t-cmd" x="12" y="137">tools:read</text>
+  <rect class="gate" x="104" y="114" width="268" height="36" rx="6"/><text class="t-cmd" x="116" y="137">system · base · open_work</text>
+  <rect class="tile" x="380" y="114" width="120" height="36" rx="6"/><text class="t-cmd" x="392" y="137">history:user</text>
+  <rect class="tile" x="508" y="114" width="150" height="36" rx="6"/><text class="t-cmd" x="520" y="137">history:assistant</text>
+  <line class="ln-acc" x1="0" y1="172" x2="216" y2="172"/>
+  <text class="t-soft" x="0" y="194">从缓存读取</text>
+  <line class="ln-no" x1="224" y1="172" x2="658" y2="172"/>
+  <text class="t-soft" x="224" y="194">重新读取：break_at 1，break_cause system:open_work</text>
+  <text class="t-soft" x="0" y="226">在 openai-codex 上实测：改动前后缓存读取都是 5,248 token，重新读取 221。</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>上一次请求</strong><small translate="no">tools:read, system (base, open_work), history:user</small></li>
+  <li><strong>这次请求</strong><small translate="no">tools:read, system（open_work 已变）, history:user, history:assistant</small></li>
+  <li class="flow-end"><strong>断在第 1 个单元</strong><small translate="no">break_cause system:open_work</small><small>它之前的单元从缓存读取</small></li>
+</ol>
+</figure>
+
+<h2 id="capture">唯一的采集点</h2>
+<p>每个适配器在 <code translate="no">on_payload</code> 之后、任何字节离开进程之前，用要发送的请求体调用 <code translate="no">capture_request(model, body, wire=…)</code>。没有别的地方观察请求字节；前缀检查、请求字节契约测试和轮次测试台都从这里读取。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">接收方</th><th scope="col">怎样拿到请求</th></tr></thead>
+<tbody>
+<tr><th scope="row">流的汇合点</th><td><code translate="no">streaming/stream.py</code> 每次尝试绑定一个 <code translate="no">RequestSlot</code>；适配器填入它，于是检查在请求发出前运行。一个 slot 只接一个请求，所以在汇合点之外调用的适配器不会碰它。provider 拒绝请求形状、这次尝试修好后重发时（<code translate="no">request_repair.py</code>），先重新打开 slot，所以 slot 里是得到回复的那个请求</td></tr>
+<tr><th scope="row">测试和脚本</th><td><code translate="no">capturing()</code> 收集块内的每个请求体。<code translate="no">send=False</code> 时每个请求在采集点以 <code translate="no">RequestNotSent</code> 停下，所以整段对话可以不联网地经过每个适配器序列化</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">线格式</th><th scope="col">适配器</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anthropic-messages</code></th><td><code translate="no">anthropic</code></td></tr>
+<tr><th scope="row"><code translate="no">openai-responses</code></th><td><code translate="no">openai_responses</code>、<code translate="no">azure_openai_responses</code>、<code translate="no">openai_codex</code></td></tr>
+<tr><th scope="row"><code translate="no">openai-completions</code></th><td><code translate="no">openai_completions</code>，所有兼容 OpenAI 的 provider 都用它</td></tr>
+<tr><th scope="row"><code translate="no">google-generative-ai</code></th><td><code translate="no">google</code>、<code translate="no">google_gemini_cli</code></td></tr>
+<tr><th scope="row"><code translate="no">bedrock-converse</code></th><td><code translate="no">amazon_bedrock</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="units">单元</h2>
+<p>采集到的请求体按 provider 读提示的顺序切成单元：每个工具，然后每段系统文本，然后每条历史。</p>
+<p>Anthropic 和 Bedrock 的消息按内容块切，所以多了一个块的消息仍然延续上一条。单元只按字节的摘要匹配，标签从不决定是否匹配。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">标签</th><th scope="col">单元</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools:&lt;name&gt;</code></th><td>一个工具定义</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td>一段系统文本，带着它由哪些节拼成：每节记名字、结束位置和到此为止的摘要。运行时给出这些节（<code translate="no">components.prompt_parts</code>，经 <code translate="no">runtime/lower_layers.py</code> 注册）：先是构建出的节，如 <code translate="no">environment</code>、<code translate="no">agents_md</code>、<code translate="no">memory</code>、<code translate="no">open_work</code>、<code translate="no">capabilities</code>、<code translate="no">plan_mode</code>，再是一轮追加的部分：<code translate="no">goal</code>、<code translate="no">goal_verification</code>、<code translate="no">pages</code>。运行时不认得是自己拼成的提示（重启后再次发出的，或来自保存的 contract）只有一节 <code translate="no">prompt</code>，字节照样匹配</td></tr>
+<tr><th scope="row"><code translate="no">history:&lt;kind&gt;</code></th><td>一条历史：一个角色，或一种条目类型，如 <code translate="no">function_call_output</code></td></tr>
+</tbody>
+</table>
+<p class="note">断点标记（<code translate="no">cache_control</code>、<code translate="no">cachePoint</code>）本来就会随请求移动，不计入单元。它们要求的缓存时长算作一项设置。</p>
+
+<h2 id="check">两道检查</h2>
+<dl class="pairs">
+<dt>请求发出前</dt>
+<dd><code translate="no">check_request</code> 把请求和同一通道上一次得到回复的请求比较，只读不写。先看设置：<code translate="no">model</code>，然后 <code translate="no">setting:cache_key</code>、<code translate="no">setting:ttl</code>、<code translate="no">setting:effort</code>、<code translate="no">setting:format</code>、<code translate="no">setting:tool_choice</code>。</dd>
+<dd>再看单元：第一个不同的单元给出 <code translate="no">break_at</code>，它的标签给出 <code translate="no">break_cause</code>。</dd>
+<dd>变化的系统文本按节命名：两段文本在双方都有的节结束位置上共有的最长开头之后的第一节，例如 <code translate="no">system:open_work</code>。比上一次短的请求给出 <code translate="no">removed:&lt;label&gt;</code>。这一步不依赖 provider 的用量，所以不报缓存 token 的 provider 也一样检查。</dd>
+<dt>回复之后</dt>
+<dd><code translate="no">settle_check</code> 看缓存读取。请求完好、缓存读取比上一次下降超过 5% 且超过 2,000 token 时，若间隔超过缓存时长（5 分钟，或设置的 1 小时、24 小时），原因是 <code translate="no">ttl</code>，否则是 <code translate="no">server</code>。</dd>
+<dd>随后这个得到回复的请求连同它的缓存读取成为通道的基线；没有得到回复的请求不改基线。</dd>
+</dl>
+
+<h2 id="lanes">通道</h2>
+<p>通道由会话、调用类型、通道标签、Agent 和对话分支组成。只有对话形态的调用有通道：chat、Agent 方法和子 agent 的轮次。请求只在同一通道内比较，所以指令不同的调用不会互相报成断点。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用</th><th scope="col">通道</th></tr></thead>
+<tbody>
+<tr><th scope="row">对话自己的轮次</th><td><code translate="no">chat</code>，没有标签。来自 App、TUI、渠道或 check-in 的轮次共用它，所以随来源变化的提示会被报出</td></tr>
+<tr><th scope="row">Goal 验证轮</th><td>标签 <code translate="no">goal_verification</code>（<code translate="no">UsageContext.prefix_lane</code>，在轮次绑定用量上下文处设置）</td></tr>
+<tr><th scope="row">自更新轮</th><td>标签取自来源 <code translate="no">self_update_*</code></td></tr>
+<tr><th scope="row">Agent 方法或子 agent 轮次</th><td>它的 <code translate="no">call_kind</code> 和 <code translate="no">call_label</code></td></tr>
+<tr><th scope="row">对话的另一个分支</th><td>分支取会话的 <code translate="no">active_branch_id</code>，在这一轮的消息存下后绑定（<code translate="no">UsageContext.branch_id</code>）。新分支的第一个请求和它离开的分支的最后一个请求比较，并把 <code translate="no">branch</code> 记为预期；回到原分支后，请求和该分支自己的最后一个请求比较</td></tr>
+<tr><th scope="row">旁路调用，或不属于任何会话的调用</th><td>没有通道。权限检查、写 memory、摘要、标题、预测或工具自己的调用每次发的都是自己的提示：有前缀哈希，但不比较</td></tr>
+</tbody>
+</table>
+<p>每个通道上一次得到回复的请求存在内存里，也在回复结算时写进用量数据库的 <code translate="no">prefix_baselines</code>。只有一个进程里通道的第一个请求才读数据库，所以 Worker 重启后的第一个请求和重启前最后一个请求比较。30 天没有写入的通道会被删除。</p>
+
+<h2 id="expected">有意的断点</h2>
+<p>运行时用 <code translate="no">expect_break(session, cause)</code> 预告自己造成的断点。给了会话就告诉该会话的每个通道；没给就只告诉正在准备的这个调用的通道，因为压缩改写的是即将发出的请求。</p>
+<p>通道的下一个请求如果断开，就把原因记进 <code translate="no">expected</code>；一次预告只由下一个得到回复的请求用一次。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">原因</th><th scope="col">预告方</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">compaction</code></th><td><code translate="no">engine.compact</code> 存下摘要之后；<code translate="no">compaction/request.py</code> 在请求摘要自己的一部分历史时</td></tr>
+<tr><th scope="row"><code translate="no">rewind</code></th><td><code translate="no">rewind_marks.take_rewind_note</code>，把说明取到下一轮的消息上时</td></tr>
+<tr><th scope="row"><code translate="no">model_switch</code></th><td><code translate="no">session_model.write_session_chat_model</code>，固定的模型改变时</td></tr>
+<tr><th scope="row"><code translate="no">branch</code></th><td>检查本身，用于新分支的第一个请求</td></tr>
+<tr><th scope="row"><code translate="no">effort_switch</code></th><td><code translate="no">branch_settings.write_branch_settings</code>，分支的推理强度改变时</td></tr>
+<tr><th scope="row"><code translate="no">ttl_switch</code></th><td><code translate="no">settings.set_setting</code> 写 <code translate="no">models.prompt_cache_ttl</code> 时：缓存时长对所有对话生效，所以告诉每个会话的每个通道（<code translate="no">expect_break_everywhere</code>）</td></tr>
+<tr><th scope="row"><code translate="no">tool_loaded</code></th><td>agent 循环，在不支持原生延迟加载的 provider 上加载延迟工具、工具加入数组时</td></tr>
+</tbody>
+</table>
+
+<h2 id="ledger">用量事件记下什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">列</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">prefix_hash</code></th><td>请求设置和单元的哈希</td></tr>
+<tr><th scope="row"><code translate="no">break_at</code></th><td>第一个不同单元的序号；请求完好时，以及 <code translate="no">ttl</code>、<code translate="no">server</code> 时为空</td></tr>
+<tr><th scope="row"><code translate="no">break_cause</code></th><td>标签、设置、<code translate="no">ttl</code> 或 <code translate="no">server</code></td></tr>
+<tr><th scope="row"><code translate="no">expected</code></th><td>解释这次断开的预告原因，逗号分隔</td></tr>
+</tbody>
+</table>
+<p class="note">请求的三种计量方式（不计预算、计预算、Goal 收据）都带着检查结果构建事件，所以重启后重放的收据也保留它。</p>
+
+<h2 id="kept">前缀靠什么保住</h2>
+<p>对话的系统提示只在模型必须从那里读到的东西变了时才变。其余内容放在一轮消息旁，存在那条消息上，之后的请求发出同样的字节。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">记录的提示只有一个 owner</th><td>只有对话自己的一轮记录并保留它所在分支的提示（<code translate="no">loop_runner.owns_conversation_contract</code>）。Goal 验证和后台 check-in 自己组装提示，既不读也不写</td></tr>
+<tr><th scope="row">可移动的节</th><td>新提示和记录的提示只在 <code translate="no">environment</code>、<code translate="no">agents_md</code>、<code translate="no">memory</code>、<code translate="no">open_work</code> 或 <code translate="no">capabilities</code> 上不同时，原样再发记录的提示，每个变了的节把整节文字放在消息旁（<code translate="no">turn_context.kept_sections</code>）。打开的页面从不进对话自己的提示，而是消息旁的一节。其他变化会重建提示</td></tr>
+<tr><th scope="row">整节替换，不发补丁</th><td>一节的文字和本请求渲染出的最后一条该节说明不同，或者没有渲染出说明（被压缩、干净历史、有界尾部）而和提示里的该节不同，就发出。消失的节发一条“不再适用”的说明</td></tr>
+<tr><th scope="row">一种存储</th><td>用户节点上的 <code translate="no">turn_context</code> 列表：日期、中断说明、回退说明、各节说明、计划模式说明、Goal 说明、待办提醒、召回的 memory、运行说明，按这个顺序。列表出现之前的节点按旧键以同样顺序渲染；新节点也同时写旧键</td></tr>
+<tr><th scope="row">事件发生时写入</th><td>召回的 memory、运行说明和待发的回退说明在消息存储时写入；各节说明和按视图决定的说明在这一轮第一个请求组装时写入。再次发送的消息保留它的回退说明，其余按同一个视图重新决定</td></tr>
+<tr><th scope="row">按视图决定的说明</th><td>由本请求渲染出的历史决定（<code translate="no">turn_context.turn_view</code>）：日期只在和视图里最后一个日期不同时发；计划模式说明在进入时发，之后每 5 轮发一次，每第 5 条发完整版、其余发简短版，退出时发一条退出说明</td></tr>
+<tr><th scope="row">Goal 和待办说明</th><td>由同一视图决定：Goal 说明在视图里没有一条目标、状态、修订号、预算档位（75%）和验证反馈都相同的完整说明时发完整版，否则发一条带用量的简短版；Goal 的待办列表在 10 轮没有 <code translate="no">todo_*</code> 调用、也没有提醒之后发。压缩丢掉某条说明后，下一轮重新发完整版</td></tr>
+<tr><th scope="row">一个纪元一份工具数组</th><td>对话自己的一轮发出它可能用到的所有工具。取决于这一轮的条件不再把工具拿掉：不在渠道里的 <code translate="no">chat_send</code>、没人回答时的提问工具、不在头部时的 <code translate="no">handoff</code>、定时运行的 <code translate="no">always_on_report</code>、外部文字驱动的报告偏好、memory 关闭时的 memory 工具、没有页面时的 <code translate="no">computer_use_agent</code>、provider 自己搜索时的本地 <code translate="no">web_search</code></td></tr>
+<tr><th scope="row">拒绝而不拿掉</th><td>对这些工具的调用被拒绝（<code translate="no">TOOL_UNAVAILABLE</code>，不询问任何人），消息旁的 <code translate="no">tool_availability</code> 节列出它们一次。计划模式和 deny 规则也在派发时拒绝（<a href="../function/deferred-tools.zh.html">延迟工具</a>）。验证、check-in 和自更新步骤从自己的数组里去掉这些工具</td></tr>
+<tr><th scope="row">关闭 memory 不撤回</th><td>关闭 memory 后不再召回，memory 工具被拒绝。已经召回的内容和 memory 节说明留在历史里，记录的提示保留它的 memory 节，下一条消息说明它不再适用。压缩的输入不含召回内容（<code translate="no">turn_context.without_recall</code>），压缩之后第一次重建的提示没有 memory 节</td></tr>
+<tr><th scope="row">一条回放规则</th><td>每次渲染都显式传入 <code translate="no">audience</code>。只有对话自己的请求显示各节说明；带自己提示的调用一律不显示。请求是否召回 memory、是否带日期是循环自己的设置（<code translate="no">AgentLoopConfig.recall</code>、<code translate="no">dated</code>），不是 context variable</td></tr>
+<tr><th scope="row">分支记录是提示的权威</th><td>对话自己一轮的 checkpoint 只存分支上记录的提示的哈希（<code translate="no">system_prompt_sha256</code>），不存正文；续跑从记录读正文，记录对不上就拒绝续跑。带正文的 checkpoint（旧的，或带自己提示的轮次）按正文续跑</td></tr>
+<tr><th scope="row">哈希对哈希</th><td>两份都按哈希指向提示的契约，比如加载 checkpoint 时拿它和自己比，按哈希比较（<code translate="no">runtime_contract.validate_runtime_contract</code>）。只有开始前分支上已有记录的轮次按哈希存；第一轮的记录在它自己的回复上，所以它的 checkpoint 存正文</td></tr>
+<tr><th scope="row">一次性调用只有一个 key</th><td>不属于任何对话的调用按 provider、模型、instructions 和工具名取 key（<code translate="no">providers.shared.cache_key</code>），无论经过 Runtime 还是直接调 adapter</td></tr>
+</tbody>
+</table>
+
+<h2 id="why">为什么这样设计</h2>
+<p>Anthropic 的 preserved-thinking 模型会检查请求：系统提示被重建是 <code translate="no">system_rerendered</code>，增删工具是 <code translate="no">tool_set_changed</code>，两者都会被拒绝或丢掉模型的推理。其他 provider 从第一个变化的字节起整段重读。所以对话过程中变化的东西放在消息旁，系统提示和工具保持原样。</p>
+<h3 id="why-goal">Goal</h3>
+<p>照 Kimi Code 的两档 Goal 提醒：状态变了或压缩之后发完整版，其余发带用量的简短版。</p>
+<p>Codex 在每条续跑消息里重复整段规则，每轮花的 token 更多；系统提示里只要留一个 Goal 的字，开始或结束 Goal 都会重建它。</p>
+<p>待办列表照 Claude Code：模型在 todo 工具的结果里已经看得到，所以 10 轮没用才再提醒。</p>
+<h3 id="why-tools">工具数组</h3>
+<p>照 Codex（派发时拒绝，权限变化作为消息里的一节）和 Hermes（每个会话固定一份 <code translate="no">tools[]</code>，当前用不了的工具在消息旁说明）。</p>
+<p>Claude Code 会删掉 deny 规则点名的工具，但它的规则在启动时就定了；我们的规则会在对话中途改，而且无论哪种做法，真正起作用的都是派发时的拒绝。</p>
+<h3 id="why-plan">计划模式</h3>
+<p>照 Claude Code 的节奏（Kimi Code 也是同样的两档）：进入时完整版，每 5 轮一条，每第 5 条完整版。Codex 只在模式变化时发一次，长对话里模型会忘了自己还在计划。</p>
+<h3 id="why-date">日期</h3>
+<p>Claude Code、Codex、Kimi Code 和 OpenCode 都只在日期变化时发。每轮重复没有信息量，还占小窗口。</p>
+<h3 id="why-memory">关闭 memory</h3>
+<p>Hermes 只在压缩这类重建时重新读 memory，Codex 和 Claude Code 保留已召回的内容。</p>
+<p>已经发出的内容已经到过 provider；从历史里删掉是一次改写，会断开前缀，在上面那些模型上会被拒绝。关闭 memory 的意思是以后不再读写，停止召回、拒绝 memory 工具就做到了。</p>
+<h3 id="why-effort">推理强度和缓存时长</h3>
+<p>Claude Code、Codex 和 Pi 都立即应用新的推理强度，不提示；Claude Code 把它记为断点原因。两者改变时立即生效，登记为预期断点，不给用户加任何提示。</p>
+<h3 id="why-loop-settings">召回和日期是循环的设置</h3>
+<p>照 Codex：它把每轮的状态放在显式传递的 <code translate="no">TurnContext</code> 里。由某个调用方设置的上下文变量，会传到不该影响的嵌套调用和并行调用里。</p>
+<h3 id="why-record">提示只有一份记录</h3>
+<p>Codex 从持久化的 <code translate="no">base_instructions</code> 恢复，Hermes 回放会话固定的提示和工具，直到压缩。两份副本（checkpoint 和分支）会在压缩、重启和续跑交错时分叉，所以正文只存在分支上，checkpoint 存一个哈希，由续跑检查比对。</p>
+
+<h2 id="contract">请求字节契约</h2>
+<p>一轮结束后，下一轮渲染出的是这一轮自己发过的字节。<code translate="no">tests/support/request_bytes.py</code> 用脚本化的回复跑真实轮次（调度器、agent 循环、DAG 渲染），在 <code translate="no">capturing(send=False)</code> 里用真实适配器序列化每个请求。两组测试用它。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">测试</th><th scope="col">守住什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tests/contracts/providers/test_request_bytes.py</code></th><td>Anthropic、Responses、Chat Completions 和 Codex：下一轮按原样重发工具调用、失败的工具、工具图片、用户图片、长粘贴和大的 <code translate="no">tool_search</code> 结果</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/test_turn_prefix_cache.py</code></th><td>Codex 和 Anthropic：memory、运行说明、从 journal 恢复、旧工具结果完整重发、跨午夜、一天只发一次日期、进出计划模式、Goal 的完整和简短说明、被拒绝的工具；场景矩阵：两轮之间改一处，检查前缀检查能说出改了哪里，以及前缀是否保住；以及 preserved-thinking 规则：同一模型上每个请求的系统提示和工具字节都相同</td></tr>
+</tbody>
+</table>
+<p>已知后续渲染会不同的地方标为 <code translate="no">xfail(strict=True)</code>，写明对应的缺口。修好缺口的改动同时去掉标记。</p>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">覆盖</th></tr></thead>
+<tbody>
+<tr><th scope="row">已就位</th><td>采集、两道检查、带分支的通道、基线、预告断点、用量列和两组测试；记录的提示只有一个 owner、可移动的节、一种存储和回放规则、回退说明存在消息上、一次性调用只有一个 key</td></tr>
+<tr><th scope="row">也已就位</th><td>按视图决定的 Goal、计划模式、日期和待办说明；一份工具数组、拒绝调用和可用性节；关闭 memory 不撤回；checkpoint 按哈希指向提示；循环自己的召回和日期设置；缓存时长在每个通道上预告</td></tr>
+<tr><th scope="row">场景矩阵</th><td>open work、进行中的 Goal、回退、浏览器页面、AGENTS.md、skill、worktree、memory 变化、关闭 memory、没人回答、来源切换、进出计划模式、新增工具、Worker 重启</td></tr>
+<tr><th scope="row">只用检查本身</th><td>Goal 验证轮和主轮次交替、旁路调用、分支、不报缓存读取的 provider、缓存时长</td></tr>
+<tr><th scope="row">矩阵里还没有</th><td>换模型再切回、压缩、审批等待后续跑、web search 开关、Anthropic 上加载延迟工具、小窗口的有界尾部</td></tr>
+</tbody>
+</table>
+<p>两个测试现在都没有标出缺口：失败的工具、图片、只有图片的消息、长粘贴和大的 <code translate="no">tool_search</code> 结果都按原样重发。还有一处已知断开不在测试里：<code translate="no">tools:&lt;name&gt;</code> 在有工具加入数组时断开，即不支持原生延迟加载的 provider 上新的 Program 或 MCP 工具。</p>
+<p>尚未构建：</p>
+<ul>
+<li>Anthropic 上把新的推理强度作为带 <code translate="no">output_config.effort</code> 的 <code translate="no">role: system</code> 消息发出（beta <code translate="no">mid-conversation-output-config-2026-07-01</code>），保住缓存：这条消息要留在之后的每个请求里，所以每轮的推理强度要存在它的消息上；返回 400 时的回退还要一次付费确认。在此之前新的推理强度走顶层设置并登记预期断点。</li>
+<li>分支上的一份 contract 记录，带纪元的工具名和 schema 哈希、推理强度基线和缓存时长，Program 被删除的工具留占位定义：目前分支保留提示节点，纪元的拒绝集合在延迟工具的纪元记录里。</li>
+<li>provider 搜索选项变化时登记 <code translate="no">web_search_toggle</code>；有进行中 Goal 的对话第一次把 Goal 放到消息旁时登记一次 <code translate="no">goal_moved</code>。</li>
+</ul>
+
+<details>
+<summary>文件</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/recording/capture.py</code></th><td>采集点、作用域、slot、各线格式的单元和设置</td></tr>
+<tr><th scope="row"><code translate="no">models/usage/prefix_fingerprint.py</code></th><td>指纹、两道检查、通道、基线、<code translate="no">expect_break</code></td></tr>
+<tr><th scope="row"><code translate="no">models/providers/streaming/stream.py</code></th><td>每次尝试绑定 slot，结算检查，交给计量</td></tr>
+<tr><th scope="row"><code translate="no">models/usage/ledger.py</code></th><td><code translate="no">prefix_baselines</code> 和事件的四列</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/components.py</code></th><td><code translate="no">prompt_parts</code>、<code translate="no">remember_composed</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/loop_runner.py</code></th><td>用有名字的部分拼出发送的提示；工具数组和 <code translate="no">turn_availability</code>；按视图决定的说明；checkpoint 里按哈希指向提示</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/turn_context.py</code></th><td>条目、<code translate="no">turn_view</code>、<code translate="no">date_to_send</code>、各节和 <code translate="no">kept_sections</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/plan_mode.py</code></th><td>计划模式说明和它的节奏</td></tr>
+<tr><th scope="row"><code translate="no">programs/tools/planning/goal/chat.py</code></th><td><code translate="no">goal_note</code>、<code translate="no">todo_reminder</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="composition.zh.html">组成：提示由哪些层构建</a></p>

@@ -1,0 +1,76 @@
+<title>CLI 和 TUI 配置界面</title>
+<meta name="description" content="一份设置 schema 驱动 CLI、setup 向导、TUI 面板和 Web 页面。">
+<h1>CLI 和 TUI 配置界面</h1>
+
+<p>一份 schema 描述所有设置，每个界面只负责渲染。新增设置就是一个 <code translate="no">SettingSpec</code>，各处自动出现，不用按界面写代码。没有只能在 Web 改的设置。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">界面</th><th scope="col">访问 schema 的方式</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram config list</code>、<code translate="no">get KEY</code>、<code translate="no">set KEY VALUE</code></th><td><code translate="no">get_settings</code>、<code translate="no">set_setting</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram setup</code> 向导、<code translate="no">openprogram ports</code></th><td><code translate="no">get_settings</code>、<code translate="no">set_setting</code></td></tr>
+<tr><th scope="row">TUI <code translate="no">/config</code> 面板</th><td>现有 <code translate="no">BackendClient</code> 上的 WebSocket <code translate="no">get_settings</code>、<code translate="no">set_setting</code></td></tr>
+<tr><th scope="row">Web 页面</th><td>REST <code translate="no">/api/settings</code></td></tr>
+</tbody>
+</table>
+<p class="note">代码：<code translate="no">openprogram/state/settings.py</code>、<code translate="no">interfaces/server/ws_actions/settings.py</code>、<code translate="no">apps/cli/src/components/SettingsPanel.tsx</code>。命令语法：<a href="naming.zh.html">CLI 命名约定</a>。没有新传输或新进程。</p>
+
+<h2 id="command-model">命令</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">模式是动词</th><td><code translate="no">openprogram web</code> 启动 Web UI，裸 <code translate="no">openprogram</code> 启动聊天。没有 <code translate="no">--tui</code>、<code translate="no">--web</code>、<code translate="no">--cli</code>。</td></tr>
+<tr><th scope="row">容器动词（<code translate="no">programs</code>、<code translate="no">skills</code>、<code translate="no">plugins</code>、<code translate="no">sessions</code>、<code translate="no">channels</code>、<code translate="no">memory</code>、<code translate="no">worker</code>、<code translate="no">mcp</code>、<code translate="no">subagent</code>）</th><td>裸调用时打印子命令列表并以非零退出，统一走 <code translate="no">_need_subcommand(parser)</code>，因为各分发器自己调 <code translate="no">print_help()</code> 会走样</td></tr>
+<tr><th scope="row">有真实默认动作的动词</th><td><code translate="no">providers</code> 列 pool，<code translate="no">ports</code> 显示端口，<code translate="no">config</code> 列设置</td></tr>
+<tr><th scope="row">自文档</th><td>每个 <code translate="no">add_argument</code>、<code translate="no">add_parser</code> 都有 <code translate="no">help=</code>；顶层 <code translate="no">--help</code> 带常用命令 epilog</td></tr>
+<tr><th scope="row"><code translate="no">setup</code></th><td>首次运行流程；<code translate="no">setup &lt;section&gt;</code> 跳到某节，<code translate="no">setup menu</code> 打开选择器</td></tr>
+<tr><th scope="row"><code translate="no">config get</code>、<code translate="no">config set</code></th><td>可脚本化，是文档的稳定目标；和面板编辑走同一条校验路径</td></tr>
+</tbody>
+</table>
+
+<h2 id="settings-schema">Schema</h2>
+<pre translate="no" tabindex="0">@dataclass(frozen=True)
+class SettingSpec:
+    key: str             # 稳定 id，如 "ui.web_port"
+    path: tuple[str, ...]  # config.json 中的点路径
+    group: str           # "Ports"、"Memory" ...
+    label: str
+    widget: str          # "number"、"toggle"、"enum"、"text"、"json"
+    apply: str           # "live" 或 "next_start"
+    default: Any = None
+    choices: Callable[[], list[str]] | None = None
+    validate: Callable[[Any], str | None] | None = None  # 错误或 None
+    help: str = ""
+    secret: bool = False
+    minimum: int | None = None</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SETTINGS</code></th><td>有序列表，事实来源</td></tr>
+<tr><th scope="row"><code translate="no">get_settings()</code></th><td>读一次 <code translate="no">config.json</code>，解析当前值，惰性计算 <code translate="no">choices()</code>，遮蔽密钥</td></tr>
+<tr><th scope="row"><code translate="no">set_setting(key, value)</code></th><td>校验后，有专用写入函数就用（<code translate="no">ui.*</code> 用 <code translate="no">set_ui_ports</code>），否则走通用点路径写入。返回 <code translate="no">{applied, value}</code> 或 <code translate="no">{error}</code></td></tr>
+<tr><th scope="row">阻止的键</th><td>点路径写入在每一层都拒绝 <code translate="no">__proto__</code>、<code translate="no">constructor</code>、<code translate="no">prototype</code></td></tr>
+<tr><th scope="row">位置</th><td><code translate="no">~/.openprogram/config.json</code>，经 profile 感知的 <code translate="no">get_config_path()</code></td></tr>
+<tr><th scope="row">动态键</th><td><code translate="no">tools.disabled.&lt;name&gt;</code> 开关工具，即时生效。<code translate="no">providers.*</code> 状态行只读</td></tr>
+<tr><th scope="row">生效</th><td><code translate="no">live</code>：每次使用时重读。<code translate="no">next_start</code>：绑定时读一次（<code translate="no">ui.web_port</code>、<code translate="no">memory.backend</code>）。界面在编辑当下说明</td></tr>
+</tbody>
+</table>
+<p class="note">每个 Agent 的模型、effort 和 skill 留在 Agent 记录里，通过下面的动作行修改。</p>
+
+<h2 id="tui-panel">TUI 面板</h2>
+<p><code translate="no">/config</code>，也可从 Ctrl+K 面板进入：持续存在、编辑实时状态的编辑器，基于 <code translate="no">Picker</code>，分组、字段、编辑器三层。枚举字段复用 <code translate="no">Picker</code>，数字和文本用 <code translate="no">LineInput</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">区域</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">schema 分组</th><td>Ports、Models、Memory、Search、Tools、Execution、Security、Voice 以及 <code translate="no">SETTINGS</code> 的其余分组，按注册顺序</td></tr>
+<tr><th scope="row">动作行</th><td>模型、thinking effort、权限模式、主题和 Claude 账户分别启动 <code translate="no">/model</code>、<code translate="no">/effort</code>、<code translate="no">/permissions</code>、<code translate="no">/theme</code>、<code translate="no">/login</code>，不重复实现</td></tr>
+<tr><th scope="row">端口</th><td><code translate="no">config set</code> 通过 <code translate="no">with_port_owner_note</code> 附上占用者。面板只报告，不抢占</td></tr>
+<tr><th scope="row">主题</th><td>光标移动时预览，ESC 回滚；没有 Apply 步骤</td></tr>
+<tr><th scope="row">Provider、channel</th><td>显示状态和动作，绝不内联输入密钥；OAuth 不在文本框里重做</td></tr>
+<tr><th scope="row">快捷键</th><td>没有设置分组：TUI 没有快捷键配置文件</td></tr>
+</tbody>
+</table>
+<p class="note">Ctrl+K 用同一个 <code translate="no">Picker</code> 渲染斜杠命令注册表（名称和描述）并带快捷键提示；<code translate="no">/config</code>、<code translate="no">/model</code>、<code translate="no">/theme</code> 在这里统一出现。不改变语法。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>schema、各渲染界面和传输均已实现。</p>

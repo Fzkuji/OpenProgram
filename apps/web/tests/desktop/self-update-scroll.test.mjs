@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 
 test("verification scroll updates visible state without persisting temporary position", () => {
-  const source = readFileSync(new URL("../../components/chat/messages/use-chat-area-stick.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../components/chat/messages/list/use-chat-area-stick.ts", import.meta.url), "utf8");
   const file = ts.createSourceFile("message-list.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const owner = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "useChatAreaStick");
   let callback;
@@ -21,7 +21,7 @@ test("verification scroll updates visible state without persisting temporary pos
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText, { area: { clientHeight: 600, scrollTop: 400, hasAttribute: () => marked },
     syncDetached: () => { synced++; }, scrollTopRef: position, activeKeyRef: { current: "p1" },
-    pointerArmedRef: { current: false }, programmaticRef: { current: false },
+    pointerArmedRef: { current: false }, programmaticRef: { current: false }, stuckRef: { current: false },
     cancelPending() {},
     writeChatScroll: () => { persisted++; }, window: { sessionStorage: {} } });
   handler();
@@ -55,7 +55,7 @@ test("perspective verification suppresses every center-tab persistence writer wh
 });
 
 test("native perspective target names the real session toggle and invokes its actual handler", () => {
-  const source = readFileSync(new URL("../../components/chat/view-controls.tsx", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../components/chat/pane/view-controls.tsx", import.meta.url), "utf8");
   const file = ts.createSourceFile("view-controls.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let button;
   function visit(node) {

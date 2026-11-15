@@ -1,0 +1,249 @@
+"""Translate between MCP wire types and our AgentTool framework types.
+
+Pure helpers — no global state, no I/O beyond what's already opened
+by the caller. Three concerns live here:
+
+  * **Tool name mangling** — :func:`namespace_tool_name` prefixes a
+    remote tool with its server name so cross-server collisions
+    don't clobber the registry.
+  * **Input schema normalisation** — :func:`normalize_input_schema`
+    coerces the JSON Schema MCP gives us into the shape our
+    framework expects on ``AgentTool.parameters``.
+  * **Result conversion** — :func:`convert_call_result` maps an
+    MCP :class:`~mcp.types.CallToolResult` (text / image / resource
+    blocks) into our :class:`~openprogram.agent.types.AgentToolResult`.
+
+Why split from :mod:`.registry`: lifecycle (load / shutdown /
+``_main_loop`` capture) is the manager's job; format translation is
+stateless. Two files each focused on one concern keeps either side
+short and testable without dragging the other in.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any, Optional
+
+from mcp.types import (
+    CallToolResult,
+    EmbeddedResource,
+    ImageContent as MCPImageContent,
+    TextContent as MCPTextContent,
+    Tool,
+)
+
+from openprogram.models.providers.types import AgentToolResult
+from openprogram.models.providers.types import ImageContent, TextContent
+
+from openprogram.programs._host.runtime import _build_and_register_tool
+
+from .client import MCPClient
+
+_log = logging.getLogger(__name__)
+
+
+def register_remote_tool(client: MCPClient, tool: Tool) -> Optional[str]:
+    """Wrap one MCP tool as an AgentTool + register globally.
+
+    Returns the registered AgentTool name, or ``None`` if the tool's
+    input schema couldn't be coerced into a usable parameters dict.
+    """
+    namespaced = namespace_tool_name(client.config.name, tool.name)
+    description = (tool.description or tool.title or namespaced).strip()
+
+    parameters = normalize_input_schema(tool.inputSchema)
+    if parameters is None:
+        _log.warning("tool '%s' has unusable inputSchema — skipping", namespaced)
+        return None
+
+    # Capture client + raw tool name in the closure. The wrapper
+    # adheres to the AgentTool execute contract: (call_id, args,
+    # cancel_event, on_update_cb) -> AgentToolResult.
+    async def _execute(call_id: str,
+                        args: dict[str, Any],
+                        cancel_event,
+                        on_update_cb) -> AgentToolResult:
+        import asyncio
+        try:
+            result = await client.call_tool(tool.name, args)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            return AgentToolResult(
+                content=[TextContent(text=(
+                    f"[mcp error] {client.config.name}__{tool.name}: "
+                    f"{type(e).__name__}: {e}"
+                ))],
+                details={"mcp_server": client.config.name},
+                is_error=True,
+            )
+        return convert_call_result(result, server=client.config.name,
+                                    tool_name=tool.name)
+
+    # Deferred-loading policy (mirrors claude-code's isDeferredTool):
+    #
+    #   1. The whole MCP server can opt out via `always_load=true` in
+    #      its config — every tool ships its full schema from turn 1.
+    #   2. Per-tool, the remote may signal opt-out via
+    #      `_meta['anthropic/alwaysLoad'] == true` — same key claude-code
+    #      uses, so MCP servers written for it work here unchanged.
+    #   3. Otherwise defer: only the name lands in the system-prompt
+    #      catalog, the LLM fetches the schema via `tool_search` when
+    #      it actually wants to use the tool. This is what keeps a
+    #      35-tool Linear server from blowing 20k tokens per request.
+    meta = getattr(tool, "_meta", None) or {}
+    always_load_tool = (
+        client.config.always_load
+        or meta.get("anthropic/alwaysLoad") is True
+    )
+    # Optional per-tool search hint — a short capability phrase the
+    # ToolSearch keyword matcher can rank against. We store it on the
+    # AgentTool for future use (current ToolSearch is name-based only).
+    search_hint = meta.get("anthropic/searchHint")
+    if isinstance(search_hint, str):
+        search_hint = " ".join(search_hint.split()).strip() or None
+    else:
+        search_hint = None
+
+    agent_tool = _build_and_register_tool(
+        name=namespaced,
+        description=description,
+        parameters=parameters,
+        label=namespaced,
+        execute=_execute,
+        toolsets=["mcp", f"mcp:{client.config.name}"],
+        defer=not always_load_tool,
+    )
+    # Sidecar attrs for the MCP origin + search hint — the dispatcher
+    # and any future ToolSearch keyword mode reach in through these.
+    setattr(agent_tool, "_mcp_server", client.config.name)
+    setattr(agent_tool, "_search_hint", search_hint)
+    setattr(agent_tool, "_sends_on_behalf", sends_on_behalf(tool))
+    return namespaced
+
+
+# Verbs that put something in front of other people. A read verb first
+# ("get_posts", "list_messages") or ``readOnlyHint`` rules a tool out.
+_SEND_VERBS = frozenset({
+    "send", "reply", "respond", "post", "publish", "forward", "invite",
+    "share", "comment", "tweet", "broadcast", "notify", "dm",
+})
+_CREATE_VERBS = frozenset({"create", "add", "new", "write", "compose"})
+_OUTBOUND_NOUNS = frozenset({
+    "message", "messages", "email", "emails", "mail", "comment", "comments",
+    "reply", "post", "posts", "tweet", "invite", "invitation", "dm",
+})
+_READ_VERBS = frozenset({
+    "get", "list", "read", "search", "fetch", "find", "query", "view",
+    "describe", "count", "check", "lookup",
+})
+
+
+def _name_tokens(name: str) -> list[str]:
+    import re
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name or "")
+    return [token for token in re.split(r"[^A-Za-z0-9]+", spaced.lower()) if token]
+
+
+def sends_on_behalf(tool: Tool) -> bool:
+    """An MCP tool that sends, posts or replies for the user: "send_email",
+    "chat.postMessage", "create_comment". Drafts ("create_draft") and reads
+    are not; a tool that declares ``readOnlyHint`` never is."""
+    annotations = getattr(tool, "annotations", None)
+    if getattr(annotations, "readOnlyHint", None) is True:
+        return False
+    tokens = _name_tokens(getattr(tool, "name", "") or "")
+    if not tokens or tokens[0] in _READ_VERBS:
+        return False
+    if _SEND_VERBS & set(tokens):
+        return True
+    return tokens[0] in _CREATE_VERBS and bool(_OUTBOUND_NOUNS & set(tokens[1:]))
+
+
+def namespace_tool_name(server: str, tool: str) -> str:
+    """Compose ``{server}__{tool}`` with simple sanitisation.
+
+    Replaces anything outside ``[A-Za-z0-9_-]`` with ``_`` so the
+    final name passes OpenAI's and Anthropic's tool-name regex.
+    Truncates to 64 chars (OpenAI's limit) keeping the tool suffix
+    intact — collisions there are the user's problem.
+    """
+    def _clean(s: str) -> str:
+        return "".join(c if c.isalnum() or c in "_-" else "_" for c in s)
+    name = f"{_clean(server)}__{_clean(tool)}"
+    if len(name) <= 64:
+        return name
+    keep_tail = 64 - len(_clean(server)) - 2  # room for "{server}__"
+    if keep_tail < 8:
+        # Pathological server name length — just trim end.
+        return name[:64]
+    return f"{_clean(server)}__{_clean(tool)[-keep_tail:]}"
+
+
+def normalize_input_schema(schema: Optional[dict]) -> Optional[dict]:
+    """Coerce an MCP tool's ``inputSchema`` into the AgentTool
+    parameters format.
+
+    MCP tools provide a JSON-schema object directly. We require it to
+    be either an object schema (``type: "object"``) or an empty
+    no-args descriptor. Anything else (mainly bad servers) is
+    rejected — returning ``None`` makes :func:`register_remote_tool`
+    skip the tool with a warning.
+    """
+    if schema is None:
+        return {"type": "object", "properties": {}}
+    if not isinstance(schema, dict):
+        return None
+    if schema.get("type", "object") != "object":
+        return None
+    # Force a clean copy so later mutation can't leak across tools.
+    out: dict[str, Any] = {"type": "object"}
+    props = schema.get("properties")
+    if isinstance(props, dict):
+        out["properties"] = props
+    else:
+        out["properties"] = {}
+    required = schema.get("required")
+    if isinstance(required, list):
+        out["required"] = [str(x) for x in required]
+    return out
+
+
+def convert_call_result(result: CallToolResult,
+                         *, server: str,
+                         tool_name: str) -> AgentToolResult:
+    """Translate MCP content blocks → AgentToolResult content.
+
+    MCP supports ``text`` / ``image`` / ``resource`` content blocks
+    plus an ``isError`` flag. Map text and image straight through;
+    summarise resources as text (we don't ship the raw resource
+    bytes through the chat history).
+    """
+    out_content: list[Any] = []
+    for block in result.content:
+        if isinstance(block, MCPTextContent):
+            out_content.append(TextContent(text=block.text))
+        elif isinstance(block, MCPImageContent):
+            out_content.append(ImageContent(
+                data=block.data,
+                media_type=block.mimeType or "image/png",
+            ))
+        elif isinstance(block, EmbeddedResource):
+            ref = getattr(getattr(block, "resource", None), "uri", "?")
+            out_content.append(TextContent(
+                text=f"[resource: {ref}]"
+            ))
+        else:
+            # Forward-compatible: any new MCP content type renders as
+            # its repr so the LLM at least sees that something was
+            # returned. Better than silently dropping it.
+            out_content.append(TextContent(text=repr(block)))
+
+    if not out_content:
+        out_content.append(TextContent(text=""))
+
+    details: dict[str, Any] = {"mcp_server": server, "mcp_tool": tool_name}
+    return AgentToolResult(
+        content=out_content,
+        details=details,
+        is_error=bool(result.isError),
+    )

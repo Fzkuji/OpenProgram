@@ -1,0 +1,261 @@
+/* Launchpad on the new-tab page. */
+
+/* Standard theme: the app's own surface and text colours. The Gradient
+   theme (Settings → General → Theme, html[data-backdrop="gradient"]) adds
+   the blurred indigo / violet / teal backdrop and white labels. */
+.root {
+  --lp-label: var(--text-bright);
+  --lp-label-shadow: none;
+  --lp-field: var(--bg-input);
+  --lp-field-border: var(--border-light);
+  --lp-field-text: var(--text-secondary);
+  --lp-dot: color-mix(in srgb, var(--text-secondary) 45%, transparent);
+  --lp-dot-on: var(--text-bright);
+  --lp-panel: color-mix(in srgb, var(--surface-popover) 82%, transparent);
+  --lp-panel-border: var(--border-popover);
+  --lp-folder: var(--bg-hover);
+  --lp-select: var(--bg-selected);
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  /* clip, not hidden: focus or a drop must never scroll the page strip sideways. */
+  overflow: clip;
+  outline: none;
+  user-select: none;
+  background: var(--bg-primary);
+  isolation: isolate;
+}
+:global(html[data-backdrop="gradient"]) .root {
+  --lp-glass: var(--theme-scene-gradient-glass);
+  --lp-label: var(--lp-glass);
+  --lp-label-shadow: 0 1px 3px var(--launchpad-label-shadow);
+  --lp-field: color-mix(in srgb, var(--lp-glass) 12%, transparent);
+  --lp-field-border: color-mix(in srgb, var(--lp-glass) 22%, transparent);
+  --lp-field-text: color-mix(in srgb, var(--lp-glass) 62%, transparent);
+  --lp-dot: color-mix(in srgb, var(--lp-glass) 35%, transparent);
+  --lp-dot-on: var(--lp-glass);
+  --lp-panel: var(--theme-scene-gradient-glass-panel);
+  --lp-panel-border: color-mix(in srgb, var(--lp-glass) 12%, transparent);
+  --lp-folder: color-mix(in srgb, var(--lp-glass) 16%, transparent);
+  --lp-select: color-mix(in srgb, var(--lp-glass) 18%, transparent);
+  background: var(--theme-scene-gradient-base);
+}
+:global(html[data-backdrop="gradient"][data-theme-mode="light"]) .root {
+  --lp-ink: var(--theme-scene-gradient-light-ink);
+  --lp-rule: var(--theme-scene-gradient-light-rule);
+  --lp-label: var(--lp-ink);
+  --lp-label-shadow: none;
+  --lp-field: color-mix(in srgb, var(--lp-glass) 60%, transparent);
+  --lp-field-border: color-mix(in srgb, var(--lp-rule) 12%, transparent);
+  --lp-field-text: color-mix(in srgb, var(--lp-ink) 50%, transparent);
+  --lp-dot: color-mix(in srgb, var(--lp-ink) 22%, transparent);
+  --lp-dot-on: var(--lp-ink);
+  --lp-panel: color-mix(in srgb, var(--lp-glass) 50%, transparent);
+  --lp-panel-border: color-mix(in srgb, var(--lp-rule) 8%, transparent);
+  --lp-folder: color-mix(in srgb, var(--lp-glass) 55%, transparent);
+  --lp-select: color-mix(in srgb, var(--lp-rule) 8%, transparent);
+  background: var(--theme-scene-gradient-light-base);
+}
+
+.backdrop {
+  display: none;
+  position: absolute;
+  inset: -60px;
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(30px);
+  background:
+    radial-gradient(40% 50% at 18% 22%, var(--theme-scene-gradient-1) 0, transparent 70%),
+    radial-gradient(38% 46% at 82% 30%, var(--theme-scene-gradient-2) 0, transparent 70%),
+    radial-gradient(45% 50% at 60% 90%, var(--theme-scene-gradient-3) 0, transparent 70%),
+    radial-gradient(35% 40% at 15% 85%, var(--theme-scene-gradient-4) 0, transparent 70%),
+    var(--theme-scene-gradient-base);
+}
+:global(html[data-backdrop="gradient"]) .backdrop { display: block; }
+.backdrop::after { content: ""; position: absolute; inset: 0; background: var(--theme-scene-gradient-veil); }
+:global(html[data-theme-mode="light"]) .backdrop {
+  background:
+    radial-gradient(40% 50% at 18% 22%, var(--theme-scene-gradient-light-1) 0, transparent 70%),
+    radial-gradient(38% 46% at 82% 30%, var(--theme-scene-gradient-light-2) 0, transparent 70%),
+    radial-gradient(45% 50% at 60% 90%, var(--theme-scene-gradient-light-3) 0, transparent 70%),
+    radial-gradient(35% 40% at 15% 85%, var(--theme-scene-gradient-light-4) 0, transparent 70%),
+    var(--theme-scene-gradient-light-base);
+}
+:global(html[data-theme-mode="light"]) .backdrop::after { background: var(--theme-scene-gradient-light-veil); }
+
+.searchRow { position: absolute; top: 34px; left: 0; right: 0; display: flex; justify-content: center; transition: filter var(--motion-slow), opacity var(--motion-slow); }
+.search {
+  width: 238px;
+  height: var(--ui-button-h-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--lp-field-border);
+  background: var(--lp-field);
+  color: var(--lp-field-text);
+  backdrop-filter: blur(20px);
+  cursor: text;
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--lp-label);
+  font: inherit;
+  font-size: var(--fs-base);
+}
+.search input::placeholder { color: var(--lp-field-text); }
+/* Empty and unfocused, the icon and placeholder sit centred, as on macOS. */
+.search:not([data-active]):not(:focus-within) { justify-content: center; }
+.search:not([data-active]):not(:focus-within) input { flex: 0 1 auto; width: 4.2em; }
+
+/* The Button's own face; only its place is the Launchpad's. */
+.done {
+  position: absolute;
+  top: 30px;
+  right: 32px;
+  z-index: 3;
+}
+
+.viewport { position: absolute; inset: 0; transition: filter var(--motion-slow), opacity var(--motion-slow); }
+/* Opening an item: everything else fades where it is while the chosen
+   icon grows about its own centre, then fades too. */
+.root[data-launching] .searchRow, .root[data-launching] .dots,
+.root[data-launching] .cellButton:not([data-launching]) { opacity: 0; transition: opacity var(--motion-medium) var(--ease-standard); }
+.cellButton[data-launching] > .tile, .cellButton[data-launching] > .folderTile {
+  transform: scale(1.3);
+  transform-origin: center;
+  filter: none;
+  opacity: 0;
+  transition: transform var(--motion-slow) cubic-bezier(0.2, 0.6, 0.2, 1), opacity var(--motion-medium) ease-in 0.1s;
+}
+.cellButton[data-launching] > .label { opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard); }
+@media (prefers-reduced-motion: reduce) { .root[data-launching] * { transition: none !important; } }
+.strip { position: absolute; inset: 0; will-change: transform; }
+.viewport[data-dim], .searchRow[data-dim], .dots[data-dim] { filter: blur(14px); opacity: 0.45; pointer-events: none; }
+
+.cellButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+  outline: none;
+  touch-action: none;
+  position: relative;
+}
+.cellButton:active > .tile, .cellButton:active > .folderTile { filter: brightness(0.72); }
+.cellButton[data-dragging] { opacity: 0; }
+.cellButton[data-selected] > .tile, .cellButton[data-selected] > .folderTile,
+.cellButton:focus-visible > .tile, .cellButton:focus-visible > .folderTile { box-shadow: 0 0 0 6px var(--lp-select); }
+/* An icon about to become a folder grows a folder backdrop, as on macOS. */
+.cellButton[data-merge] > .tile { transform: scale(0.82); }
+.cellButton[data-merge]::before {
+  content: "";
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  width: 120%;
+  aspect-ratio: 1;
+  translate: -50% 0;
+  border-radius: 26%;
+  background: var(--lp-folder);
+  backdrop-filter: blur(20px);
+  z-index: -1;
+}
+.cellButton[data-merge] > .folderTile { transform: scale(1.12); }
+
+.tile {
+  display: grid;
+  place-items: center;
+  transition: transform var(--motion-medium), filter var(--motion-fast), box-shadow var(--motion-medium);
+}
+.tile > svg { display: block; filter: drop-shadow(0 6px 10px var(--launchpad-icon-shadow)); }
+.folderTile {
+  display: grid;
+  place-content: center;
+  background: var(--lp-folder);
+  border: 1px solid var(--lp-panel-border);
+  backdrop-filter: blur(20px);
+  transition: transform var(--motion-medium), filter var(--motion-fast), box-shadow var(--motion-medium);
+}
+.mini > svg { display: block; }
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+  color: var(--lp-label);
+  text-shadow: var(--lp-label-shadow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Edit mode: icons wobble in two phases so neighbours move apart. */
+.cell[data-wobble] .cellButton { animation: wobble-a 0.26s ease-in-out infinite alternate; animation-delay: inherit; }
+.cell[data-wobble="1"] .cellButton { animation-name: wobble-b; }
+@keyframes wobble-a { from { rotate: -1.6deg; } to { rotate: 1.6deg; } }
+@keyframes wobble-b { from { rotate: 1.6deg; } to { rotate: -1.6deg; } }
+@media (prefers-reduced-motion: reduce) { .cell[data-wobble] .cellButton { animation: none; } }
+
+.remove {
+  position: absolute;
+  z-index: 2;
+  width: var(--ui-control-inline);
+  height: var(--ui-control-inline);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--launchpad-remove-ring);
+  background: var(--launchpad-remove-bg);
+  color: var(--ink-on-fill);
+  box-shadow: 0 1px 4px var(--launchpad-remove-shadow);
+  cursor: pointer;
+}
+
+.dots { position: absolute; bottom: 28px; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; transition: filter var(--motion-slow), opacity var(--motion-slow); }
+.dot { width: 18px; height: 18px; padding: 0; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
+.dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--lp-dot); transition: background var(--motion-slow); }
+.dot[data-on]::before { background: var(--lp-dot-on); }
+
+.empty { grid-column: 1 / -1; padding-top: 40px; text-align: center; color: var(--lp-field-text); font-size: var(--fs-chat); }
+
+.folderLayer { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; }
+.folderTitle {
+  width: 360px;
+  max-width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  text-align: center;
+  font: inherit;
+  font-size: var(--fs-display);
+  font-weight: 600;
+  color: var(--lp-label);
+  text-shadow: var(--lp-label-shadow);
+  border-radius: var(--radius-md);
+}
+.folderTitle:focus { background: var(--lp-field); }
+.folderTitle::placeholder { color: var(--lp-label); opacity: 1; }
+.folderPanel {
+  max-width: 100%;
+  max-height: calc(100vh - 260px);
+  overflow: auto;
+  padding: 28px 30px;
+  border-radius: 30px; /* shape: Launchpad folder panel, the macOS shape */
+  border: 1px solid var(--lp-panel-border);
+  background: var(--lp-panel);
+  backdrop-filter: blur(40px) saturate(150%);
+  box-shadow: 0 20px 60px var(--launchpad-folder-shadow);
+}
+.lifted { transform: scale(1.08); filter: drop-shadow(0 12px 24px var(--launchpad-icon-lifted-shadow)); cursor: grabbing; }

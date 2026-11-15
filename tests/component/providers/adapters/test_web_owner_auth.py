@@ -17,24 +17,30 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.backend_endpoint import (
+from openprogram.host.security.backend_endpoint import (
     OwnerAuthError,
     canonicalize_bind_host,
     canonicalize_origin,
     create_owner_challenge_proof,
     read_active_web_access,
 )
-from openprogram.webui.owner_auth import (
+from openprogram.interfaces.server.owner_auth import (
     OwnerAuthMiddleware,
     OwnerAuthState,
 )
-from openprogram.webui.routes import docs as docs_route
+from openprogram.interfaces.server.routes import docs as docs_route
 
 
 RAW_TOKEN = bytes(range(32))
 OWNER_SUFFIX = "0123456789abcdef"
 OWNER_PRINCIPAL_ID = f"owner/install/{OWNER_SUFFIX}"
 LOCAL_ORIGIN = "http://127.0.0.1:18100"
+
+
+def assert_public_health(body: dict) -> None:
+    """Before authentication /healthz says it is alive and which release it is, nothing else."""
+    assert set(body) == {"status", "version"}
+    assert body["status"] == "ok" and isinstance(body["version"], str)
 
 
 def _state(
@@ -152,7 +158,7 @@ def test_access_snapshot_failure_removes_owned_token_and_releases_lock(
     monkeypatch,
     tmp_path: Path,
 ):
-    from openprogram.webui import owner_auth
+    from openprogram.interfaces.server import owner_auth
 
     write_private_text = owner_auth._write_private_text
     writes = 0
@@ -314,6 +320,19 @@ def test_scheduler_shell_is_public_before_cookie_bootstrap():
         assert client.get("/scheduler").status_code == 404
 
 
+def test_every_frontend_page_is_public_before_cookie_bootstrap():
+    # A page loaded before sign-in must get the shell, which says it isn't
+    # signed in; a missing route answered a bare authentication_required.
+    from openprogram.interfaces.server.owner_auth import _PUBLIC_FRONTEND_ROUTES
+
+    shell = Path(__file__).resolve().parents[4] / "apps" / "web" / "app" / "(shell)"
+    pages = {"/" + str(p.parent.relative_to(shell)).split(os.sep)[0] for p in shell.rglob("page.tsx")}
+    assert pages and pages <= _PUBLIC_FRONTEND_ROUTES
+    state = _state()
+    with TestClient(_app(state), base_url=LOCAL_ORIGIN) as client:
+        assert client.get("/agents").status_code == 404
+
+
 def test_static_docs_are_public_but_keep_host_and_method_guards():
     state = _state()
     with TestClient(_app(state), base_url=LOCAL_ORIGIN) as client:
@@ -365,8 +384,7 @@ def test_installed_package_prefers_bundled_docs(tmp_path, monkeypatch):
     bundled = (
         tmp_path
         / "site-packages"
-        / "openprogram_server"
-        / "_webui"
+        / "openprogram" / "interfaces" / "server"
         / "_frontend"
         / "docs"
     )
@@ -406,7 +424,7 @@ def test_public_challenge_can_bind_proof_to_the_running_revision(monkeypatch):
     state = _state()
     nonce = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
     revision = "a" * 40
-    monkeypatch.setattr("openprogram.webui.routes.settings.misc._HEAD_SHA", revision)
+    monkeypatch.setattr("openprogram.interfaces.server.routes.settings.misc._HEAD_SHA", revision)
     with TestClient(_app(state), base_url=LOCAL_ORIGIN) as client:
         response = client.get(
             f"/api/auth/challenge?nonce={nonce}&revision={revision}"
@@ -631,16 +649,13 @@ def test_non_loopback_peer_forwarded_scheme_headers_are_ignored():
 
 
 def test_create_app_enforces_owner_auth_and_public_health(monkeypatch):
-    from openprogram.webui.server import create_app
+    from openprogram.interfaces.server.server import create_app
 
-    monkeypatch.setattr(
-        "openprogram.webui.server._restore_sessions", lambda: None
-    )
     state = _state()
     app = create_app(owner_auth=state, port=18100)
     assert app.state.owner_auth is state
     with TestClient(app, base_url=LOCAL_ORIGIN) as client:
-        assert client.get("/healthz").json() == {"status": "ok"}
+        assert_public_health(client.get("/healthz").json())
         assert client.get("/api/diagnostics").status_code == 401
         detailed = client.get("/api/diagnostics", headers=_bearer(state))
         assert detailed.status_code == 200

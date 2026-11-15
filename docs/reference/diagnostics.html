@@ -1,0 +1,34 @@
+<title>Diagnostics bundle</title>
+<meta name="description" content="What openprogram diagnostics puts in a bug-report zip and which credentials it removes.">
+<h1>Diagnostics bundle</h1>
+
+<pre translate="no"><code>openprogram diagnostics                           # ./openprogram-diagnostics-&lt;date&gt;.zip
+openprogram diagnostics --output /tmp/report.zip</code></pre>
+<p class="note">Prints the files it wrote.</p>
+
+<h2>Contents</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Contents</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">version.json</code></th><td>OpenProgram and Python versions, Python executable, platform, machine</td></tr>
+<tr><th scope="row"><code translate="no">config.json</code></th><td>Your <code translate="no">config.json</code>, credential-shaped values replaced</td></tr>
+<tr><th scope="row"><code translate="no">credentials.json</code></th><td>Providers with credentials and account counts. Names and counts only</td></tr>
+<tr><th scope="row"><code translate="no">environment.json</code></th><td><code translate="no">openprogram doctor</code> checks, Web build state, state and log directory modes</td></tr>
+<tr><th scope="row"><code translate="no">logs/worker.log</code>, <code translate="no">logs/runtime.log</code>, <code translate="no">logs/ink-startup.log</code></th><td>Last 2000 lines of each, redacted. Absent if the log does not exist</td></tr>
+<tr><th scope="row"><code translate="no">manifest.json</code></th><td>Every file, its source and size</td></tr>
+</tbody>
+</table>
+
+<h2>Removed</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Replaced with <code translate="no">[secret removed]</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Key names</th><td>Any key containing <code translate="no">api_key</code>, <code translate="no">token</code>, <code translate="no">password</code>, <code translate="no">client_secret</code>, <code translate="no">authorization</code>, <code translate="no">cookie</code>, <code translate="no">auth</code>, <code translate="no">credential</code>, <code translate="no">session_id</code> and similar, so <code translate="no">openai_api_key</code> and <code translate="no">github_token</code> match. The whole subtree goes.</td></tr>
+<tr><th scope="row">Value shapes, anywhere in text</th><td><code translate="no">sk-</code> keys, <code translate="no">Bearer</code> and <code translate="no">Basic</code> headers, GitHub <code translate="no">ghp_</code> and similar tokens, Slack <code translate="no">xox</code> tokens, AWS access key ids, Google <code translate="no">AIza</code> keys, JWTs, credentials in URLs</td></tr>
+<tr><th scope="row">Credential files</th><td>Never read. <code translate="no">credentials.json</code> comes from listing directory names in the auth store.</td></tr>
+</tbody>
+</table>
+<p class="note">Both layers run over every text file, logs and tracebacks included. They cannot know that a path, project name or prompt fragment is sensitive to you: read the zip before attaching it to a public issue.</p>
+
+<p class="next"><a href="cli.html">CLI reference</a> · <a href="config.html">Configuration reference</a></p>
+

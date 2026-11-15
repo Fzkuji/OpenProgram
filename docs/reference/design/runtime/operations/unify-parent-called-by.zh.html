@@ -1,0 +1,52 @@
+<title>对话边与调用边</title>
+<meta name="description" content="会话节点上的两条父边、各由谁读取，以及节点如何变成聊天消息。">
+<h1>对话边与调用边</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">边</th><th scope="col">回答</th><th scope="col">取值</th><th scope="col">读取方</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>聊天顺序上我跟在谁后面</td><td>每个节点只有一条入边。会话首节点和显式根分叉为 <code translate="no">"ROOT"</code>；spawn 分支根为 <code translate="no">None</code>。</td><td><code translate="no">linear_history</code>、<code translate="no">get_branch</code>、<code translate="no">_annotate_spawn_origin</code>、<code translate="no">turn_groups</code>、回退</td></tr>
+<tr><th scope="row"><code translate="no">caller</code></th><td>谁调用我执行</td><td>对话链上的轮次为 <code translate="no">"ROOT"</code> 或空。Agent 方法执行子树内的节点指向另一个调用。</td><td><code translate="no">_rebuild_runtime_cards</code>、<code translate="no">aggregate_tool_messages</code>、<code translate="no">turn_groups</code></td></tr>
+</tbody>
+</table>
+<p class="note">Schema：<code translate="no">openprogram/state/store/session/nodes.py</code>。时间顺序用 <code translate="no">seq</code>，它不是边。<code translate="no">reads</code> 是第三条边：影响某次 LLM 提示内容的节点。</p>
+
+<h2 id="branch-walk">分支遍历</h2>
+<p><code translate="no">get_branch</code> 只沿 <code translate="no">predecessor</code> 走，不靠 <code translate="no">caller</code> 或 <code translate="no">seq</code> 猜测。没有 predecessor 的节点必须是合法终点，否则数据有误，遍历抛错。</p>
+<dl class="pairs">
+<dt>合法终点</dt><dd>spawn 分支根、ROOT 节点、开启运行分支的代码节点、会话首节点、覆盖会话开头的压缩摘要</dd>
+<dt>聊天显示</dt><dd><code translate="no">active_branch_chain</code> 用 <code translate="no">get_branch</code> 返回的 id 过滤已聚合工具的消息行；head 过期或为空时退回 predecessor 遍历或全部消息行</dd>
+<dt>Attach 指针</dt><dd>通过 <code translate="no">predecessor</code> 挂在某条消息上，但不进入对话链，写入时用 <code translate="no">advance_head=False</code>，不会移动 head；由 <code translate="no">splice_attach_pointers</code> 插入显示列表</dd>
+</dl>
+
+<h2 id="two-data-structures">节点与聊天消息</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">DAG 节点</th><th scope="col">聊天消息</th></tr></thead>
+<tbody>
+<tr><th scope="row">服务对象</th><td>运行时：<code translate="no">render_context</code></td><td>显示：消息列表、工具调用卡片</td></tr>
+<tr><th scope="row">工具调用</th><td>每个工具一个节点</td><td>折叠进 assistant 的 <code translate="no">tool_calls[]</code></td></tr>
+<tr><th scope="row">Thinking</th><td>在 <code translate="no">extra</code> 字段里</td><td>提取到 <code translate="no">blocks[]</code></td></tr>
+<tr><th scope="row">结构</th><td><code translate="no">{role, name, input, output, predecessor, caller, seq}</code></td><td><code translate="no">{role, content, tool_calls, blocks, predecessor, caller}</code></td></tr>
+<tr><th scope="row">构建时机</th><td>写入时</td><td>加载时，由 <code translate="no">aggregate_tool_messages</code> 完成</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">_msg_adapter.py</code> 只从 <code translate="no">Call</code> 的顶层字段取 <code translate="no">predecessor</code>，metadata 里的多余副本不能覆盖它。</p>
+
+<details>
+<summary>代码</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/_msg_adapter.py</code></th><td>节点转消息</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/branches.py</code></th><td><code translate="no">get_branch</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/git/dag.py</code></th><td><code translate="no">linear_history</code>、<code translate="no">active_branch_chain</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/persistence.py</code></th><td><code translate="no">aggregate_tool_messages</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/transcript/turn_index.py</code></th><td><code translate="no">turn_groups</code>、<code translate="no">splice_attach_pointers</code>、分支视图</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/session/load.py</code></th><td><code translate="no">handle_load_session</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/session/transcript.py</code></th><td><code translate="no">_rebuild_runtime_cards</code>、<code translate="no">_annotate_spawn_origin</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。会话节点不再带 <code translate="no">parent_id</code> 或 <code translate="no">called_by</code>；代码其他位置的 <code translate="no">parent_id</code> 属于别的记录，例如运行控制和频道。</p>

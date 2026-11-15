@@ -1,6 +1,17 @@
 import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
 import type React from "react";
+
+// globals.css adds the font-size steps text-fs-*. Unregistered, twMerge
+// reads them as text colours and drops the real colour beside them
+// (a primary Button with text-fs-sm lost text-primary-foreground).
+const twMerge = extendTailwindMerge({
+  extend: {
+    theme: {
+      text: ["fs-2xs", "fs-xs", "fs-sm", "fs-base", "fs-chat", "fs-md", "fs-title", "fs-lg", "fs-display"],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

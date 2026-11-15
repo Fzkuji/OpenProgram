@@ -1,0 +1,122 @@
+<title>Cross-module UI invariants</title>
+<meta name="description" content="What the UI modules must jointly guarantee: model availability, broadcasts, event routing, spawn semantics, display order and SSR.">
+<h1>Cross-module UI invariants</h1>
+
+<p>Breaking a rule changes this list first, then the code. Each rule should have a pinning test under <code translate="no">tests/unit/</code>.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 206" role="img" aria-label="A model or provider toggle, or deleting a custom provider, runs _clear_stale_defaults, then emits agent_settings_changed through the event bus. The WebSocket handler refetches agent settings for the chips and invalidates the models-enabled query for the dropdowns.">
+  <defs><marker id="iv-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="28">Change</text>
+  <text class="t-soft" x="0" y="54">model or provider toggle</text>
+  <text class="t-soft" x="0" y="74">custom provider deleted</text>
+  <text class="t-big" x="200" y="28">Forget</text>
+  <text class="t-cmd notranslate" translate="no" x="200" y="54">_clear_stale_defaults</text>
+  <text class="t-soft" x="200" y="74">last used, chat, exec,</text>
+  <text class="t-soft" x="200" y="94">default agent</text>
+  <text class="t-big" x="200" y="150">Broadcast</text>
+  <text class="t-cmd notranslate" translate="no" x="200" y="176">agent_settings_changed</text>
+  <text class="t-soft" x="200" y="196">through the event bus</text>
+  <text class="t-big" x="460" y="150">Refetch</text>
+  <text class="t-soft" x="460" y="176">agent settings: chips</text>
+  <text class="t-soft" x="460" y="196">models-enabled: dropdowns</text>
+  <line class="ln" x1="90" y1="21" x2="190" y2="21" marker-end="url(#iv-a)"/>
+  <line class="ln" x1="210" y1="104" x2="210" y2="126" marker-end="url(#iv-a)"/>
+  <line class="ln" x1="350" y1="143" x2="450" y2="143" marker-end="url(#iv-a)"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Change</strong><small>model or provider toggle</small><small>custom provider deleted</small></li>
+  <li><strong>Forget</strong><small><code translate="no">_clear_stale_defaults</code></small><small>last used, chat, exec,</small><small>default agent</small></li>
+  <li><strong>Broadcast</strong><small><code translate="no">agent_settings_changed</code></small><small>through the event bus</small></li>
+  <li class="flow-end"><strong>Refetch</strong><small>agent settings: chips</small><small>models-enabled: dropdowns</small></li>
+</ol>
+</figure>
+<p class="note">Rules 1 to 3. A new entry point that changes the set (config import, bulk operations, CLI writes) hooks the same broadcast; Settings may be in another tab.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Rule</th><th scope="col">Holds through</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. The enabled set is the only model gate</th><td><code translate="no">list_enabled_models()</code>: spec rows in the providers config. Disabled means no picker, no default, no chip</td></tr>
+<tr><th scope="row">2. Enabled-set changes broadcast</th><td>Every consumer reacts, as drawn</td></tr>
+<tr><th scope="row">3. Disabling the last used model forgets it</th><td>New conversations start on <code translate="no">last_used_model</code> in <code translate="no">config.json</code>; there is no default. Hiding would keep it serving background work and bring it back on re-enable</td></tr>
+<tr><th scope="row">4. The frontend store can express cleared</th><td><code translate="no">setAgentSettings</code> field: object replaces, <code translate="no">null</code> clears, <code translate="no">undefined</code> keeps. <code translate="no">??</code> alone cannot overwrite a stale value; any field the backend can report gone needs this</td></tr>
+<tr><th scope="row">5. Backend-to-frontend frames go through the event bus</th><td><code translate="no">emit_ws_frame({"type": ..., "data": ...})</code>; one server subscriber forwards to the sockets (<a href="../proactive/event-layer.html">event layer</a>). <code translate="no">_s._broadcast</code> hides a frame from bus consumers (proactive, logging) and audit. Exempt, carrying session routing: <code translate="no">_broadcast_envelope</code>, <code translate="no">_broadcast_chat_response</code></td></tr>
+<tr><th scope="row">6. The three spawn entry points share one semantics</th><td>Clean mode: <code translate="no">spawn_caller</code> makes the branch root's <code translate="no">caller</code> the opening turn, not ROOT. Change and test together</td></tr>
+<tr><th scope="row">7. The chat sibling switcher appears only on real forks</th><td><code translate="no">&lt; N/M &gt;</code> sets group by fork point (<code translate="no">predecessor</code>, else <code translate="no">caller</code>; ROOT means none) and hold conversation turns only</td></tr>
+<tr><th scope="row">8. Instant interaction feedback</th><td><a href="interaction-feedback.html">Interaction feedback</a>. Function runs pay about 1s of subprocess cold start, which must never feel like a dead click</td></tr>
+<tr><th scope="row">9. Display order may change; data order may not</th><td>The attach pointer stays at the tail for head movement, yet the Spawned card renders before the reply it fed. Solved in the server projection (<code translate="no">transcript/children.py</code>), never in persisted order or head semantics</td></tr>
+<tr><th scope="row">10. SSR boundary: no window at module scope</th><td><code translate="no">apps/web/lib/runtime-bridge/*</code> may read <code translate="no">window</code> at module scope (<code translate="no">session/chat-handlers.ts</code>); a static import from a prerendered page breaks. New modules keep this or defer window access into function bodies</td></tr>
+<tr><th scope="row">11. A transcript row draws what the server sent</th><td>The main chat, a split pane and an expanded sub-agent all draw through <code translate="no">TranscriptRows</code>. Each row dispatches on its <code translate="no">rowKind</code> with no default branch and takes its conversation from the row list, never from the focused one</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Rule 1: surfaces</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Surface</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">Top-bar chat and exec chips</th><td>the gated <code translate="no">GET /api/agent_settings</code></td></tr>
+<tr><th scope="row">Reads of that endpoint</th><td>One request in flight per conversation and branch (<code translate="no">lib/agents/agent-settings-request.ts</code>): the socket connecting, the conversation loading and the composer mounting share its answer, and nothing is kept after it. <code translate="no">agent_settings_changed</code> or this page's own write makes later callers ask again</td></tr>
+<tr><th scope="row">Model picker dropdowns</th><td><code translate="no">/api/models/enabled</code></td></tr>
+<tr><th scope="row">Default resolution on send</th><td><code translate="no">_resolve_session_provider_model</code>, including the <code translate="no">agent.json</code> model path</td></tr>
+<tr><th scope="row">Function execution</th><td>the exec runtime</td></tr>
+</tbody>
+</table>
+<p class="note">Empty picker, no model in the top bar and the enable-a-model send error hold together.</p>
+</details>
+<details>
+<summary>Rule 3: what is cleared</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Record</th><th scope="col">Cleared when</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">last_used_model</code> (<code translate="no">openprogram/models/providers/catalog/last_used.py</code>)</th><td>It leaves the enabled set</td></tr>
+<tr><th scope="row"><code translate="no">runtime_management</code> chat global, default agent's <code translate="no">model</code> in <code translate="no">agent.json</code></th><td>The chat global's model leaves the set</td></tr>
+<tr><th scope="row"><code translate="no">runtime_management</code> exec global</th><td>The exec global's model leaves the set</td></tr>
+</tbody>
+</table>
+<p class="note">All in <code translate="no">_clear_stale_defaults</code>.</p>
+</details>
+<details>
+<summary>Rule 6: entry points and budgets</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Entry</th><th scope="col">Path</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent()</code>, synchronous</th><td><code translate="no">openprogram/programs/tools/agents/agent/agent/agent.py</code></td></tr>
+<tr><th scope="row">Asynchronous runner</th><td><code translate="no">openprogram/runtime/jobs/runner/</code></td></tr>
+<tr><th scope="row"><code translate="no">send_message</code></th><td><code translate="no">openprogram/programs/tools/agents/send_message/</code></td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Setting</th><th scope="col">Default</th><th scope="col">Counts</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent.max_spawn_depth</code></th><td>1</td><td>Generations of new agents; only creating one counts. At 1 a spawned agent's <code translate="no">agent()</code> spawn is refused and it does the work itself</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_messages</code></th><td>0, no limit</td><td>Messages in the chain, whatever the tool, replies included</td></tr>
+</tbody>
+</table>
+<p class="note">Tool exposure is binary: <code translate="no">agent</code> leaves the listing when messages or generations run out, except in a fork, which keeps its caller's tool list for the shared prompt cache and is refused at run time. <code translate="no">read_conversation</code> stays. An agent reading a worker's result keeps its own generation count, so it can spawn the next wave. See <a href="../runtime/collaboration/agent-collaboration.html#limits">agent collaboration</a>.</p>
+</details>
+<details>
+<summary>Rule 7: never joins</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Row</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool and code sub-call rows, ROOT</th><td>They have no predecessor and would pollute the root set</td></tr>
+<tr><th scope="row"><code translate="no">source=agent_spawn</code> branch roots</th><td>Grouped apart from the user's turns: an agent-opened branch is not a pageable alternative</td></tr>
+<tr><th scope="row"><code translate="no">display=runtime</code> cards</th><td>Function-run cards have their own navigation</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Rule 10: how pages load it</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Importer</th><th scope="col">Load</th></tr></thead>
+<tbody>
+<tr><th scope="row">App Router pages and the shell</th><td><code translate="no">next/dynamic</code> with <code translate="no">ssr: false</code></td></tr>
+<tr><th scope="row">Settings components</th><td>Dynamic <code translate="no">import()</code>, as <code translate="no">refreshAgentChip</code> does</td></tr>
+<tr><th scope="row">Components inside the shell</th><td>May import statically: never prerendered</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Not yet: rule 5 holds for external sources and part of the server. Other routes and WebSocket actions (<code translate="no">routes/chat.py</code>, <code translate="no">routes/catalog/</code>, <code translate="no">ws_actions/</code>) still call <code translate="no">_broadcast</code> directly.</p>

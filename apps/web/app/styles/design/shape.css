@@ -1,0 +1,33 @@
+/* Spacing unit and radius tiers. These are names Tailwind owns, so they
+   are set in @theme (this file is imported after tailwindcss): the
+   utilities (p-2, gap-3, rounded-lg …) and CSS modules
+   (var(--radius-lg)) read the same values, on every surface. The unit
+   is 4px, not Tailwind's 0.25rem, because the root font is 14px and a
+   rem unit lands on half pixels (p-3 = 10.5px).
+
+     --radius-2xs   2px  hairline bars, progress tracks, carets
+     --radius-xs    4px  tags, kbd, checkboxes, inline code
+     --radius-sm    6px  chips and small controls inside a row
+     --radius-md    8px  buttons, inputs, selects (every Button size)
+     --radius-lg   10px  list rows, menus, popovers, cards
+     --radius-xl   12px  the centre card, page panels, dialogs
+     --radius-2xl  16px  large floating surfaces (Launchpad, overview)
+     rounded-full / 50%  pills, avatars, dots */
+@theme {
+  --spacing: 4px;
+  --radius-2xs: 2px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: initial;
+  --radius-4xl: initial;
+}
+
+/* Pills and dots. Not a Tailwind theme name (rounded-full is built in),
+   so it is a plain variable for CSS. */
+:root {
+  --radius-full: 9999px;
+}

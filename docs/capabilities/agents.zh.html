@@ -1,0 +1,176 @@
+<title>配置 Agent</title>
+<meta name="description" content="模型、指令、能力、记忆、内置 Agent 和试运行对话。">
+<h1>配置 Agent</h1>
+<p>在侧栏打开 <strong>Agents</strong>。Agent 保存一份可复用的配置，不要求对应某种专门任务。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">卡片</th><td>每个 Agent 一张，按常驻开关分两组：<strong>对话</strong>和<strong>常驻</strong>。显示头像、名称、描述和<strong>默认</strong>。常驻卡片有卡片本色的浪线，所有常驻卡片共用一片海。</td></tr>
+<tr><th scope="row">页头</th><td>按名称、ID 或描述搜索。<strong>新建 Agent</strong>：填名称和模型，ID 自动生成，初始为对话组。</td></tr>
+<tr><th scope="row">点选卡片</th><td>卡片旁打开快速设置：名称、描述、模型、思考强度、常驻、<strong>试运行草稿</strong>、<strong>新对话</strong>。</td></tr>
+<tr><th scope="row"><strong>展开设置</strong>手柄或<strong>管理</strong></th><td>完整编辑区，卡片收成同样分两组的列表。顶部标签打开对应分区。</td></tr>
+<tr><th scope="row"><strong>收起设置</strong>手柄或 Esc</th><td>回到卡片</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">分区</th><th scope="col">修改内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">常规</th><td>显示名称、描述、<a href="#头像">头像</a>、Provider、模型、思考强度</td></tr>
+<tr><th scope="row">程序</th><td>自动提供工具、指定程序或不使用</td></tr>
+<tr><th scope="row">技能</th><td>可用技能和排除项</td></tr>
+<tr><th scope="row">MCP</th><td>允许、排除和必需的服务器</td></tr>
+<tr><th scope="row">长期记忆</th><td>关闭、只读或读写；读取和写入范围</td></tr>
+<tr><th scope="row">上下文</th><td>频道对话隔离、空闲重置、每日重置</td></tr>
+<tr><th scope="row">常驻</th><td>醒来推进常驻目标并汇报（<a href="always-on-agents.zh.html">常驻 Agent</a>）</td></tr>
+<tr><th scope="row">高级</th><td>频道身份、提及规则、系统指令、哪些 <a href="agents-md.zh.html">AGENTS.md</a> 文件生效</td></tr>
+</tbody>
+</table>
+<details>
+<summary>保存和模型选择</summary>
+<ul>
+<li>所有分区共用一份草稿，<strong>保存</strong>写入全部。切换 Agent 或执行破坏性操作时可选保存、放弃或取消。保存失败会保留草稿。</li>
+<li>其他编辑器先保存时，先比较再选择。保留草稿不会覆盖较新版本，需复核后再次保存。</li>
+<li>模型选择器读取 Provider 目录，不改变其他对话。<strong>上次使用的模型</strong>让每个对话使用你最近用过的模型。</li>
+<li>不可用的模型或不支持的思考强度会保留显示，直到你修改。缺少必需的 MCP 服务器时，在模型请求之前停止执行。</li>
+</ul>
+</details>
+
+<h2 id="头像">头像</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类型</th><th scope="col">选择</th></tr></thead>
+<tbody>
+<tr><th scope="row">角色</th><td>22 种形状、8 种颜色</td></tr>
+<tr><th scope="row">生成</th><td>选风格，再选变体</td></tr>
+<tr><th scope="row">上传</th><td>最大 256 KB：PNG、JPG、SVG、WebP 或 GIF；动图会播放</td></tr>
+</tbody>
+</table>
+<ul>
+<li>未设置时按 ID 选一个角色；每个内置 Agent 有符合职责的角色。在<strong>常规</strong>里修改。</li>
+<li>显示在卡片和编辑区、输入框的 Agent 标签和菜单、非默认 Agent 回复上方的名字、<a href="../interfaces/web.zh.html#conversation-activity">活动面板</a>的常驻行，以及设置里的频道绑定。</li>
+<li>属于草稿的一部分；复制时保留。</li>
+<li>角色会眨眼、摇摆、四处看，Agent 工作时在活动面板里显得忙碌。选择器的形状图是静止的；开启减少动态后全部静止。</li>
+</ul>
+
+<h2 id="内置-agent">内置 Agent</h2>
+<p>保存成普通卡片的完整配置：可编辑、复制或删除。服务器启动时安装本实例从未有过的内置 Agent；删除后不会重建。没改过的内置 Agent 会自动跟上新版本；改过的保持你改的样子。</p>
+<h3>对话，常驻关闭</h3>
+<table class="stack">
+<thead><tr><th scope="col">Agent</th><th scope="col">用途</th><th scope="col">能力</th></tr></thead>
+<tbody>
+<tr><th scope="row">助手（默认，id <code translate="no">main</code>）</th><td>通用，新对话默认使用</td><td>全部工具</td></tr>
+<tr><th scope="row">决策</th><td>用 <code translate="no">Agent.choose()</code> 从给定选项中选一项</td><td>一次模型回合，无工具，不自动重选</td></tr>
+<tr><th scope="row">轻量助手</th><td>提取、分类、格式转换、摘要、预测下一句</td><td>无工具</td></tr>
+<tr><th scope="row">统筹规划</th><td>规划依赖、委派已授权任务、核对结果</td><td>读取、搜索、Agent 协调</td></tr>
+<tr><th scope="row">Explorer</th><td>替其他 Agent 搜索和阅读代码、文件和网页，并报告发现</td><td>读取、搜索、网页；从不写入</td></tr>
+</tbody>
+</table>
+<p class="note">决策、轻量助手和统筹规划没有自己的提示词，任务来自调用及其 Context。记忆、Skills 和 MCP 初始关闭。请为轻量助手选低成本模型，为统筹规划选强推理模型，名称不保证价格或质量。预测的消息只是建议，不构成授权；仅规划的请求不授权委派执行。</p>
+<h3>离开时继续工作，常驻开启</h3>
+<p><strong>管家</strong>是通用的<a href="always-on-agents.zh.html">常驻</a> Agent：全部工具，记忆读写。告诉它要关注或持续推进什么；那个会话会在有事到期时醒来，没有安排时按<a href="always-on-agents.zh.html#check-ins">检查节奏</a>醒来，只汇报值得注意的内容。</p>
+<table class="stack">
+<thead><tr><th scope="col">任务 Agent</th><th scope="col">职责</th><th scope="col">工具</th><th scope="col">记忆</th><th scope="col">醒来时主动查看</th></tr></thead>
+<tbody>
+<tr><th scope="row">统筹助理</th><td>推动未完成事项，把任务分给其他 Agent，汇报</td><td>读取、网页、会话、未完成事项、给其他 Agent 发消息、提醒、目标</td><td>读写</td><td>是</td></tr>
+<tr><th scope="row">需求规格</th><td>把需求写成带验收标准的规格</td><td>读取、网页、会话、写文件</td><td>只读</td><td>否</td></tr>
+<tr><th scope="row">缺陷复现</th><td>找到最小失败用例，固定为失败测试</td><td>读取、Shell、代码导航、worktree</td><td>关闭</td><td>否</td></tr>
+<tr><th scope="row">实现</th><td>在 worktree 里实现指定改动并写测试</td><td>读取、Shell、编辑、worktree</td><td>关闭</td><td>否</td></tr>
+<tr><th scope="row">评审</th><td>对照规格和测试检查改动，从不修改</td><td>读取、Shell、代码导航</td><td>关闭</td><td>否</td></tr>
+<tr><th scope="row">研究简报</th><td>跟踪主题、阅读来源、维护带引用的简报</td><td>网页、PDF、写文件、提醒</td><td>读写</td><td>是</td></tr>
+<tr><th scope="row">收件箱分拣</th><td>分拣新消息并起草回复，不发送</td><td>读取、会话、写文件、提醒</td><td>读写</td><td>是</td></tr>
+<tr><th scope="row">求职侦察</th><td>浏览招聘网站、排序匹配、准备申请</td><td>网页、浏览器、PDF、写文件</td><td>读写</td><td>是</td></tr>
+<tr><th scope="row">知识库管理</th><td>把结束的会话提炼进记忆，合并并更正</td><td>读取、会话、编辑文件</td><td>读写</td><td>是</td></tr>
+<tr><th scope="row">文稿</th><td>把材料写成指定形式的成稿</td><td>读取、网页、编辑文件、画布、图片</td><td>只读</td><td>否</td></tr>
+</tbody>
+</table>
+<p class="note">每个都有提示词，写明职责、产出、绝不做的事、完成条件、工作方式和首个任务；只有需要的工具；记忆在自己的空间。没有固定间隔：各自安排醒来时间，没安排时按<a href="always-on-agents.zh.html#check-ins">检查节奏</a>。没有会话就不会醒来，也不产生费用。</p>
+<ul>
+<li>实现和评审分开，写改动的 Agent 不能自己通过。</li>
+<li>处理邮件或帖子的 Agent 止于草稿，提示词禁止发送。</li>
+<li>它们按 Agent 名称或会话标题<a href="always-on-agents.zh.html#hand-work-to-another-conversation">互相发消息</a>协作：每个 Agent 一个会话，标题清楚；告诉负责规划的会话谁做什么。</li>
+</ul>
+<details>
+<summary>从 Python 调用</summary>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+from openprogram.runtime.agent_registry import manager
+
+helper = Agent.from_spec(manager.get("utility"))
+result = helper("Extract the city from: the event is in Singapore.")
+
+selector = Agent.from_spec(manager.get("decision"))
+selected = selector.choose("Classify this message.", {"A": "Question", "B": "Statement"})</code></pre>
+<ul>
+<li><code translate="no">choose()</code> 返回所选 ID，使用当前 Context 和 DAG，禁用工具和网页搜索，不重复询问。无效答案抛 <code translate="no">DecisionError</code>。模型和推理由调用方配置。<code translate="no">__call__()</code> 仍可用。</li>
+<li><code translate="no">openprogram.runtime.agent_registry.builtin_agents</code> 的 <code translate="no">create_builtin_agents()</code> 安装从未安装过的内置 Agent，更新没人改过的副本，改过的不变。助手最先安装，所以全新安装时是默认 Agent。服务器启动、setup 和 <code translate="no">openprogram chat</code> 会运行它；读取注册表不会安装。</li>
+</ul>
+</details>
+
+<h2 id="开始对话和试运行草稿">开始对话和试运行草稿</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><strong>新对话</strong></th><th scope="col"><strong>试运行草稿</strong></th></tr></thead>
+<tbody>
+<tr><th scope="row">使用</th><td>已保存的配置</td><td>当前草稿，不保存；第一条消息时记录快照，恢复执行时沿用</td></tr>
+<tr><th scope="row">长期记忆</th><td>按配置</td><td>从不写入。关闭仍为关闭，其余只读。</td></tr>
+</tbody>
+</table>
+<h3 id="更换对话的-agent">更换对话的 Agent</h3>
+<p>输入框底部模型旁的 Agent 标签。先列对话 Agent，再列<a href="always-on-agents.zh.html">常驻</a>；<strong>管理 Agents</strong> 打开本页。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">未发送的对话</th><td>从第一条消息起生效。每个未发送的对话保留自己的 Agent 和覆盖项；首条消息被拒时保留选择。修改模型只影响该对话。</td></tr>
+<tr><th scope="row">已开始的对话</th><td>立即切换，运行中的回合除外。之后的回合使用新 Agent 的指令、能力和记忆，以及它设置的模型。之前的消息不变。</td></tr>
+<tr><th scope="row">保存指令、能力或记忆的修改</th><td>对该 Agent 之后的执行生效</td></tr>
+<tr><th scope="row">已有对话的模型</th><td>沿用开始时或上次切换 Agent 时的模型，以及明确选择的思考强度。未设强度时跟随 Agent 默认值。明确的覆盖项保持有效。</td></tr>
+<tr><th scope="row">试运行</th><td>保留快照</td></tr>
+<tr><th scope="row">上下文重置设置</th><td>仅用于频道对话；新对话和试运行从新历史开始</td></tr>
+</tbody>
+</table>
+
+<h2 id="记忆权限">记忆权限</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">关闭</th><td>框架不读写记忆</td></tr>
+<tr><th scope="row">只读</th><td>可读，不提取也不新增</td></tr>
+<tr><th scope="row">读写</th><td>写入目标必须在读取范围内</td></tr>
+<tr><th scope="row"><strong>此 Agent</strong></th><td>该 Agent 单独的记忆</td></tr>
+<tr><th scope="row"><strong>旧版共享记忆</strong></th><td>既有的全 profile 记忆库</td></tr>
+<tr><th scope="row"><strong>要求记忆可用</strong></th><td>记忆不可用时停止执行。未开启时继续执行并记录降级。</td></tr>
+</tbody>
+</table>
+<p class="note">新 Agent 初始关闭；没有记忆字段的配置保留旧版共享访问。后台提取和派生结果保留已记录的写入限制，重新开启不会吸收之前受限的回合。关闭或删除 Agent 不删除已存记忆。这些设置不管文件工具。<a href="memory.zh.html">记忆页面</a>编辑共享库，不是各 Agent 的空间。</p>
+
+<h2 id="委派的上限">委派的上限</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">限制</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent.max_spawn_depth</code></th><td><code translate="no">1</code>：你的 Agent 可以启动助手，助手亲自完成工作</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_running_agents</code></th><td>一个对话同时运行 <code translate="no">6</code> 个助手，其余等待</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_tree_usd</code></th><td>一次请求委派出去的全部工作共 <code translate="no">2</code> 美元，超出后其助手停止</td></tr>
+<tr><th scope="row"><code translate="no">agent.stall_minutes</code></th><td>安静 <code translate="no">10</code> 分钟后报告助手卡住</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_agent_hours</code></th><td>助手运行 <code translate="no">2</code> 小时后停止</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_hops</code></th><td>一条消息最多被转交 <code translate="no">4</code> 次</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_sends_per_hour</code></th><td>一个对话每小时发送 <code translate="no">20</code> 条消息</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_messages</code></th><td>一条链上的消息数；默认关闭</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_spawn_fanout</code></th><td>一个回合可创建的 Agent 数；默认关闭</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">0</code> 关闭该限制。超限的调用会被拒绝，并给出设置名称；被停止或卡住的助手会在启动它的对话里报告。</p>
+
+<h2 id="未完成事项">未完成事项</h2>
+<details>
+<summary>什么算承诺</summary>
+<p>当前任务完成后，Agent 在这个对话里还欠你的事：等待的回复、承诺的检查、没有回应的草稿。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">未完成项</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">显示在</th><td>每回合的指令里，以及<a href="../interfaces/web.zh.html#conversation-activity">活动面板</a></td></tr>
+<tr><th scope="row">由谁修改</th><td>Agent 用 <code translate="no">open_work</code> 工具。可在对话里让它增删改，或在面板标记完成。</td></tr>
+<tr><th scope="row">已完成项</th><td>最近 50 个保留在历史中，并离开指令</td></tr>
+</tbody>
+</table>
+</details>
+<p class="note">不同于<a href="../interfaces/web.zh.html#task-list">任务列表</a>，后者规划当前任务并随之结束。其他会话也要知道的内容放进<a href="memory.zh.html">记忆</a>。</p>
+
+<h2 id="复制和删除">复制和删除</h2>
+<p>复制会以新 ID 复制配置，不复制对话或私有记忆。<code translate="no">self</code> 记忆引用指向新 Agent 的空间；明确的旧版共享引用仍指向共享库。默认 Agent 要先把别的 Agent 设为默认才能删除。</p>

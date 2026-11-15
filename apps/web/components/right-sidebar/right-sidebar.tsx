@@ -11,7 +11,7 @@
  * so those ids stay plain divs here.
  *
  * The session context DAG is NOT here: it is a center perspective
- * (`components/chat/dag-view.tsx`), reached from the chat pane's
+ * (`components/chat/dag/dag-view.tsx`), reached from the chat pane's
  * top-right view toggle. Clicking a node in that graph is what
  * populates the Detail / Context views below.
  *
@@ -21,12 +21,13 @@
  * stale tab from before the migration restores into the same state.
  *
  * Imperative entry points for callers that don't own this component
- * (`rightDock.{show, close, toggle, restore}` from `lib/tabs/right-dock.ts`)
+ * (`rightDock.{show, close, toggle, restore}` from `lib/tabs/panes/right-dock.ts`)
  * are registered on mount — see `setRightDockApi` below.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { SessionResourcesPanel } from "../session-resources/session-resources-panel";
+import { BrowserResourceProjection } from "@/lib/browser/browser-resource-projection";
 import { usePathname } from "next/navigation";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -38,6 +39,7 @@ import {
   sidebarNavLabelClass,
   sidebarToggleClass,
 } from "../sidebar/nav-classes";
+import { Sidebar as SidebarShell } from "@/components/ui/sidebar";
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
   ActivityIcon,
@@ -47,11 +49,13 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
 } from "../animated-icons";
-import { FileTree } from "../files/file-tree";
-import { RunningPanel } from "./running-panel";
+import { FileTree } from "../files/tree/file-tree";
+import { RunningPanel } from "./running/running-panel";
+import { PANEL_SNAP_WIDTHS } from "./running/agent-chart-model";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { resourceSessionId } from "@/lib/chat/resources/session-resources";
 import { useCurrentProject } from "@/lib/files/files-shared";
-import { setRightDockApi } from "@/lib/tabs/right-dock";
+import { setRightDockApi } from "@/lib/tabs/panes/right-dock";
 import { activateOnKey } from "@/lib/utils";
 import { useResizableRail } from "../layout/use-resizable-rail";
 import {
@@ -81,16 +85,27 @@ export function RightSidebar() {
     document.addEventListener("visibilitychange", update);
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
-  const { style: railStyle, resizeHandleProps } = useResizableRail({
+  const [activityResetSignal, setActivityResetSignal] = useState(0);
+  const {
+    style: railStyle,
+    shellProps: railShellProps,
+    resizeHandleProps,
+  } = useResizableRail({
     open,
     minWidth: 240,
-    maxWidth: 720,
-    defaultWidth: 288,
+    // A drag rests where one, two or three columns of an Agent's time chart
+    // fit whole (288, 544, 800); the first is the default.
+    maxWidth: PANEL_SNAP_WIDTHS[PANEL_SNAP_WIDTHS.length - 1],
+    defaultWidth: PANEL_SNAP_WIDTHS[0],
+    snapWidths: PANEL_SNAP_WIDTHS,
     direction: -1,
+    storageKey: "openprogram.right-sidebar-width",
+    maxWindowShare: 0.5,
   });
   // Animated nav icons (pqoqubbw/icons), driven from each row's / the
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
+  const toggleOpenIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
   const runningIconRef = useRef<AnimatedNavIconHandle>(null);
   const resourcesIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -99,16 +114,36 @@ export function RightSidebar() {
   const activeTab = useCenterTabs((s) =>
     s.tabs.find((tab) => tab.id === s.activeId),
   );
+  const canvasGroup = useCenterTabs(s => s.groups.find(group =>
+    group.canvas && group.visibleIds.includes(s.activeId ?? "")));
   const pathname = usePathname();
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const [lastCanvasSessionId, setLastCanvasSessionId] = useState<string | null>(null);
+  const canvasSessionId = useCenterTabs(s => {
+    if (!canvasGroup) return null;
+    if (activeTab?.kind === "session") return resourceSessionId(activeTab);
+    const sessions = s.tabs.filter(tab => tab.kind === "session" && !tab.draft
+      && canvasGroup.visibleIds.includes(tab.id));
+    return sessions.find(tab => tab.sessionId === lastCanvasSessionId)?.sessionId
+      ?? sessions.find(tab => tab.sessionId === currentSessionId)?.sessionId
+      ?? sessions[0]?.sessionId ?? null;
+  });
+  useEffect(() => {
+    if (canvasGroup && activeTab?.kind === "session") {
+      setLastCanvasSessionId(resourceSessionId(activeTab));
+    }
+  }, [canvasGroup, activeTab]);
   // Tab metadata can briefly retain the previous session while /chat resets.
   // Never query or show that session unless the visible route and chat agree.
-  const activitySessionId = activeTab?.kind === "session" && !activeTab.draft
-    && activeTab.sessionId === currentSessionId
-    && pathname === `/s/${encodeURIComponent(currentSessionId ?? "")}`
-    ? activeTab.sessionId ?? null
-    : null;
-  const currentProject = useCurrentProject();
+  const activitySessionId = canvasGroup ? canvasSessionId
+    : activeTab?.kind === "session"
+      ? !activeTab.draft && activeTab.sessionId === currentSessionId
+        && pathname === `/s/${encodeURIComponent(currentSessionId ?? "")}`
+        ? activeTab.sessionId ?? null : null
+      : resourceSessionId(activeTab);
+  const currentProject = useCurrentProject(canvasGroup || activitySessionId
+    ? { sessionId: activitySessionId, chatKey: activitySessionId }
+    : undefined);
   const treeProjectId =
     activeTab?.kind === "file"
       ? (activeTab.projectId ?? null)
@@ -164,70 +199,75 @@ export function RightSidebar() {
   function onNavClick(v: string) {
     // History / Execution Detail nav buttons only switch view +
     // ensure the panel is open. Collapsing is the top toggle's job.
+    if (v === VIEW_RUNNING && view === VIEW_RUNNING) setActivityResetSignal(value => value + 1);
     setRightDockView(v);
     if (!open) setRightDockOpen(true);
   }
 
   // The `data-view` attr drives which child of `.right-view-host` shows
   // (`.right-sidebar[data-view="files"] .right-view[data-view="files"]
-  // { display: flex }` in right-dock.css). The .collapsed class drives
-  // the icon-rail-only width (defined in 02-sidebar.css).
+  // { display: flex }` in right-dock/view-host.css). `.collapsed` comes
+  // and goes with `open`: the views, mounted in both states at the open
+  // width, fade, and the toggle and the rows ride the card's moving left
+  // edge (styles/base/layout.css, "Opening and closing").
   return (
-    <aside
+    <SidebarShell
       id="rightSidebar"
-      // Shell layout via Tailwind (parity with the left `<Sidebar />`).
-      // `border-l` instead of `border-r` is the only directional diff.
-      // `.sidebar` + `.right-sidebar` + `.collapsed` classes are kept
-      // for the cascade rules in 09-right-dock.css (`.right-sidebar
-      // [data-view="..."]` view switching, `.right-sidebar.collapsed
-      // .right-view-host { display: none }`) and the small
-      // `.sidebar.collapsed *` override in 02-sidebar.css.
+      side="right"
+      // The shadcn floating shell (components/ui/sidebar.tsx), parity
+      // with the left `<Sidebar />`. `.sidebar` + `.right-sidebar` +
+      // `.collapsed` classes are kept for the cascade rules in
+      // right-dock/view-host.css (`.right-sidebar [data-view="..."]`
+      // view switching) and the rail rules in styles/base/layout.css.
       className={
-        "sidebar right-sidebar relative flex shrink-0 flex-col rail-shell " +
-        "bg-bg-secondary border-l border-[var(--border)] " +
+        "sidebar right-sidebar relative shrink-0 rail-shell " +
         (open ? "" : "collapsed")
       }
       style={railStyle}
+      {...railShellProps}
       data-view={view}
     >
-      {open && (
-        <div
-          {...resizeHandleProps}
-          title={t("right.resize_panel")}
-        />
-      )}
+      <BrowserResourceProjection sessionId={activitySessionId} />
+      {/* The resize handle draws nothing and stays mounted in both
+          states; closed or closing, it takes no pointer
+          (use-resizable-rail.ts). */}
+      <div
+        {...resizeHandleProps}
+        aria-label={t("right.resize_panel")}
+      />
       <div className="rail-content">
-      {/* Header — same 48px row + 8px padding as the left sidebar
-          header, but `justify-start` keeps the toggle pinned to the
-          LEFT edge so it mirrors the left sidebar's toggle (which
-          sits flush against the RIGHT edge there).
-          TODO(sidebar-headers): still 48px while the center strip is
-          40px now — the sidebar-header team owns shrinking these. */}
-      <div className="flex h-[48px] shrink-0 items-center justify-start p-[8px] box-border">
+      {/* Header — the same 48px row as the left sidebar's, with the
+          toggle at the LEFT edge, mirroring the left sidebar's toggle at
+          its right edge: 8px in when open, centred in the collapsed card,
+          riding the card's moving edge in between (.rail-header in
+          styles/base/layout.css). */}
+      <div className="rail-header">
         <button
           className={sidebarToggleClass}
           onClick={onToggleRail}
-          onMouseEnter={() => toggleIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => toggleIconRef.current?.stopAnimation?.()}
-          title={t("right.toggle_panel")}
+          onMouseEnter={() => (open ? toggleIconRef : toggleOpenIconRef).current?.startAnimation?.()}
+          onMouseLeave={() => (open ? toggleIconRef : toggleOpenIconRef).current?.stopAnimation?.()}
+          aria-label={open ? text("Hide panel", "隐藏面板") : text("Show panel", "显示面板")}
           type="button"
         >
           {/* Mirror of the LEFT toggle — same components flipped on X,
               so the line weight is identical and the chevron points the
-              opposite way. Open → ›, collapsed → ‹. */}
-          {open ? (
+              opposite way. Open → ›, collapsed → ‹. Both stay mounted and
+              cross-fade with the rail's move (.rail-toggle-glyphs). */}
+          <span className="rail-toggle-glyphs" aria-hidden="true">
             <PanelLeftCloseIcon
               ref={toggleIconRef}
               size={20}
+              className="rail-toggle-close"
               style={{ transform: "scaleX(-1)" }}
             />
-          ) : (
             <PanelLeftOpenIcon
-              ref={toggleIconRef}
+              ref={toggleOpenIconRef}
               size={20}
+              className="rail-toggle-open"
               style={{ transform: "scaleX(-1)" }}
             />
-          )}
+          </span>
         </button>
       </div>
 
@@ -238,7 +278,7 @@ export function RightSidebar() {
         <div
           className={
             sidebarNavItemClass +
-            " right-nav-item" +
+            " right-nav-item rail-row" +
             (view === VIEW_FILES ? " " + sidebarNavItemActiveClass : "")
           }
           data-view={VIEW_FILES}
@@ -248,7 +288,8 @@ export function RightSidebar() {
           role="button"
           tabIndex={0}
           onKeyDown={activateOnKey(() => onNavClick(VIEW_FILES))}
-          title={text("Project files", "项目文件")}
+          aria-label={text("Project files", "项目文件")}
+          data-rail-tip={text("Files", "文件")}
         >
           <span className={sidebarNavIconClass}>
             <FolderOpenIcon ref={filesIconRef} size={20} />
@@ -258,7 +299,7 @@ export function RightSidebar() {
         <div
           className={
             sidebarNavItemClass +
-            " right-nav-item" +
+            " right-nav-item rail-row" +
             (view === VIEW_RUNNING ? " " + sidebarNavItemActiveClass : "")
           }
           data-view={VIEW_RUNNING}
@@ -268,7 +309,8 @@ export function RightSidebar() {
           role="button"
           tabIndex={0}
           onKeyDown={activateOnKey(() => onNavClick(VIEW_RUNNING))}
-          title={text("Agents and programs in this conversation", "当前会话的 Agent 和程序")}
+          aria-label={text("Agents and programs in this conversation", "当前会话的 Agent 和程序")}
+          data-rail-tip={text("Activity", "运行记录")}
         >
           <span className={sidebarNavIconClass}>
             <ActivityIcon ref={runningIconRef} size={20} />
@@ -279,13 +321,13 @@ export function RightSidebar() {
         </div>
 
         <div role="button" tabIndex={0}
-          className={sidebarNavItemClass + " right-nav-item" + (view === VIEW_RESOURCES ? " " + sidebarNavItemActiveClass : "")}
+          className={sidebarNavItemClass + " right-nav-item rail-row" + (view === VIEW_RESOURCES ? " " + sidebarNavItemActiveClass : "")}
           data-view={VIEW_RESOURCES}
+          data-resource-drop-session={activitySessionId || undefined}
           onClick={() => onNavClick(VIEW_RESOURCES)}
           onKeyDown={activateOnKey(() => onNavClick(VIEW_RESOURCES))}
           onMouseEnter={() => resourcesIconRef.current?.startAnimation?.()}
           onMouseLeave={() => resourcesIconRef.current?.stopAnimation?.()}
-          title={text("Session resources", "会话资源")}
           aria-label={text("Session resources", "会话资源")}
           aria-expanded={open && view === VIEW_RESOURCES}
           aria-controls="sessionResourcesPanel">
@@ -294,14 +336,19 @@ export function RightSidebar() {
         </div>
       </div>
 
-      <div className="right-view-host">
+      {/* Mounted in both states at the open width, against the card's
+          right edge, which stays put; collapsed, faded out, and inert
+          once the close has settled (use-resizable-rail.ts).
+          What polls or streams in the views runs only while the panel is
+          open (`active`). */}
+      <div className="right-view-host rail-open-only rail-open-width">
         {/* Files view — the default: a plain project file tree. */}
         <div className="right-view" data-view={VIEW_FILES}>
           {treeProjectId ? (
             <FileTree projectId={treeProjectId} />
           ) : (
             <div
-              style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}
+              style={{ padding: 16, fontSize: "var(--right-panel-meta-size, var(--fs-sm))", color: "var(--text-secondary)" }}
             >
               {text("Bind a project to browse files", "绑定项目后可浏览文件")}
             </div>
@@ -309,10 +356,10 @@ export function RightSidebar() {
         </div>
         {/* One conversation-owned view for Agents and their managed programs. */}
         <div className="right-view" data-view={VIEW_RUNNING}>
-          <RunningPanel key={activitySessionId || "no-session"} sessionId={activitySessionId} active={open && visible && view === VIEW_RUNNING} />
+          <RunningPanel key={activitySessionId || "no-session"} sessionId={activitySessionId} active={open && visible && view === VIEW_RUNNING} resetSignal={activityResetSignal} />
         </div>
-        <div id="sessionResourcesPanel" className="right-view" data-view={VIEW_RESOURCES}>
-          {open && visible && view === VIEW_RESOURCES && <SessionResourcesPanel />}
+        <div id="sessionResourcesPanel" className="right-view" data-view={VIEW_RESOURCES} data-resource-drop-session={open && view === VIEW_RESOURCES ? activitySessionId || undefined : undefined}>
+          {view === VIEW_RESOURCES && <SessionResourcesPanel sessionId={activitySessionId} active={open && visible} />}
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template
@@ -328,6 +375,6 @@ export function RightSidebar() {
         </div>
       </div>
       </div>
-    </aside>
+    </SidebarShell>
   );
 }

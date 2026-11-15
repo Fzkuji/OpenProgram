@@ -44,14 +44,14 @@ def _rmtree_retry(p: Path, tries: int = 5) -> None:
 
 
 def main() -> int:
-    from openprogram.paths import get_state_dir
+    from openprogram.state.paths import get_state_dir
     state = get_state_dir()
     assert "revuxtest" in state.name, f"refusing to run against {state}"
     if state.exists():
         _rmtree_retry(state)
     print(f"# state dir = {state}")
 
-    from openprogram.store.project.project_store import ProjectGit
+    from openprogram.state.store.project.project_store import ProjectGit
 
     # ── A1. clean reset path ──────────────────────────────────────
     d1 = Path(tempfile.mkdtemp(prefix="op_revux1_"))
@@ -120,9 +120,9 @@ def main() -> int:
         _rmtree_retry(d3)
 
     # ── B. revert_turn end-to-end with a project commit ───────────
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.store.project import project_commit as PC
-    from openprogram.agent._revert import revert_turn
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.state.store.project import project_commit as PC
+    from openprogram.runtime.conversation.revert import revert_turn
 
     proj = Path(tempfile.mkdtemp(prefix="op_revux_e2e_"))
     try:
@@ -147,12 +147,7 @@ def main() -> int:
         node = _idx.nodes_by_id.get(amid)
         node.metadata = {**(node.metadata or {}),
                          "project_commit": {"repo": str(proj), "sha": sha}}
-        import json as _json
-        rl = (node.role or "x")[0]
-        fp = _g.path / "history" / f"{node.seq:04d}-{rl}-{node.id}.json"
-        if fp.exists():
-            fp.write_text(_json.dumps(node.to_dict(), ensure_ascii=False, default=str),
-                          encoding="utf-8")
+        _g.patch_node(node.id, {}, {"project_commit": {"repo": str(proj), "sha": sha}})
 
         res = revert_turn("rv1", amid)
         gu = res.get("git_undo") or {}

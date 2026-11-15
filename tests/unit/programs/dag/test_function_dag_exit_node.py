@@ -1,4 +1,4 @@
-"""@agentic_function exit-time FunctionCall persistence.
+"""Agent method exit-time FunctionCall persistence.
 
 Verifies:
   - When ``_store`` is installed, decorated function exits cause a
@@ -8,7 +8,7 @@ Verifies:
   - ``expose='hidden'`` suppresses the FunctionCall node.
   - Error path produces a node with status=error and result.error.
   - ``caller`` reflects the logical caller (enclosing
-    @agentic_function), not chronological predecessor.
+    Agent method), not chronological predecessor.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agentic_programming.function import agentic_function
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.store import SessionNodeWriter, SessionStore, _store as _store_var
+from openprogram.runtime.agent import Agent
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.state.store import SessionNodeWriter, SessionStore, _store as _store_var
 
 
 @pytest.fixture
@@ -44,9 +44,13 @@ def runtime() -> Runtime:
 
 
 def test_exit_appends_function_call_node(runtime, store):
-    @agentic_function
-    def add(a, b, runtime=None):
-        return a + b
+    class _AddAgent(Agent):
+        method_options = {'add': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'add'}}
+
+        def add(self, a, b, runtime=None):
+            return a + b
+
+    add = _AddAgent().add
 
     result = add(2, 3, runtime=runtime)
     assert result == 5
@@ -66,9 +70,13 @@ def test_exit_appends_function_call_node(runtime, store):
 def test_no_store_installed_means_no_dag_write(runtime, tmp_path):
     """Without an installed ``_store``, decorated functions still run
     but no DAG nodes are written."""
-    @agentic_function
-    def hello(name, runtime=None):
-        return f"hi {name}"
+    class _HelloAgent(Agent):
+        method_options = {'hello': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'hello'}}
+
+        def hello(self, name, runtime=None):
+            return f"hi {name}"
+
+    hello = _HelloAgent().hello
 
     # No store installed — decorated function runs normally.
     result = hello("world", runtime=runtime)
@@ -79,9 +87,13 @@ def test_no_store_installed_means_no_dag_write(runtime, tmp_path):
 
 
 def test_expose_hidden_skips_node(runtime, store):
-    @agentic_function(expose="hidden")
-    def secret(x, runtime=None):
-        return x * 10
+    class _SecretAgent(Agent):
+        method_options = {'secret': {'expose': "hidden", 'tool': True, 'capture_io': True, 'name': 'secret'}}
+
+        def secret(self, x, runtime=None):
+            return x * 10
+
+    secret = _SecretAgent().secret
 
     secret(5, runtime=runtime)
     g = store.load()
@@ -89,9 +101,13 @@ def test_expose_hidden_skips_node(runtime, store):
 
 
 def test_expose_full_recorded_in_metadata(runtime, store):
-    @agentic_function(expose="full")
-    def transparent(x, runtime=None):
-        return x
+    class _TransparentAgent(Agent):
+        method_options = {'transparent': {'expose': "full", 'tool': True, 'capture_io': True, 'name': 'transparent'}}
+
+        def transparent(self, x, runtime=None):
+            return x
+
+    transparent = _TransparentAgent().transparent
 
     transparent(42, runtime=runtime)
     g = store.load()
@@ -103,9 +119,13 @@ def test_expose_full_recorded_in_metadata(runtime, store):
 
 
 def test_exception_records_error_node(runtime, store):
-    @agentic_function
-    def explode(runtime=None):
-        raise RuntimeError("boom")
+    class _ExplodeAgent(Agent):
+        method_options = {'explode': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'explode'}}
+
+        def explode(self, runtime=None):
+            raise RuntimeError("boom")
+
+    explode = _ExplodeAgent().explode
 
     with pytest.raises(RuntimeError, match="boom"):
         explode(runtime=runtime)
@@ -121,36 +141,41 @@ def test_exception_records_error_node(runtime, store):
 # Nested calls: caller is the logical caller
 
 
-def test_nested_agentic_functions_chain_in_dag(runtime, store):
-    @agentic_function
-    def inner(x, runtime=None):
-        return x + 1
+def test_nested_agent_methods_chain_in_dag(runtime, store):
+    class _InnerAgent(Agent):
+        method_options = {'inner': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'inner'}}
 
-    @agentic_function
-    def outer(x, runtime=None):
-        a = inner(x, runtime=runtime)
-        b = inner(a, runtime=runtime)
-        return b
+        def inner(self, x, runtime=None):
+            return x + 1
+
+    inner = _InnerAgent().inner
+
+    class _OuterAgent(Agent):
+        method_options = {'outer': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'outer'}}
+
+        def outer(self, x, runtime=None):
+            a = inner(x, runtime=runtime)
+            b = inner(a, runtime=runtime)
+            return b
+
+    outer = _OuterAgent().outer
 
     result = outer(10, runtime=runtime)
     assert result == 12
 
     g = store.load()
     fcs = [n for n in g if n.is_code()]
-    # Two inner + one outer = three nodes
-    names = [n.function_name for n in fcs]
-    assert names.count("inner") == 2
-    assert names.count("outer") == 1
-
     outer_fc = next(n for n in fcs if n.function_name == "outer")
-    # Top-level call has no enclosing function
-    assert outer_fc.caller == ""
-
-    # Both inner calls are made from within outer's body → their
-    # logical caller is outer, regardless of chronological order.
-    inner_fcs = [n for n in fcs if n.function_name == "inner"]
-    for fc in inner_fcs:
-        assert fc.caller == outer_fc.id
+    links = [n for n in fcs if n.metadata.get('child_session_id')]
+    assert len(links) == 2
+    assert not any(n.function_name == 'inner' for n in fcs)
+    assert outer_fc.caller == ''
+    for link in links:
+        assert link.caller == outer_fc.id
+        child = SessionNodeWriter(store.store, link.metadata['child_session_id']).load()
+        inner_fc = next(n for n in child if n.function_name == 'inner')
+        assert not inner_fc.caller
+        assert inner_fc.output == link.output
 
 
 # Entry-append / exit-update lifecycle
@@ -162,14 +187,18 @@ def test_entry_appends_running_node_visible_mid_execution(runtime, store):
     in-flight calls."""
     seen_during_call: list = []
 
-    @agentic_function
-    def slow(runtime=None):
-        # Inside the body: capture DAG. Wrapper already appended a
-        # placeholder for `slow`, so we should see it here.
-        g = store.load()
-        slow_nodes = [n for n in g if n.is_code() and n.name == "slow"]
-        seen_during_call.extend(slow_nodes)
-        return "ok"
+    class _SlowAgent(Agent):
+        method_options = {'slow': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'slow'}}
+
+        def slow(self, runtime=None):
+            # Inside the body: capture DAG. Wrapper already appended a
+            # placeholder for `slow`, so we should see it here.
+            g = store.load()
+            slow_nodes = [n for n in g if n.is_code() and n.name == "slow"]
+            seen_during_call.extend(slow_nodes)
+            return "ok"
+
+    slow = _SlowAgent().slow
 
     slow(runtime=runtime)
 
@@ -183,9 +212,13 @@ def test_exit_updates_output_in_place(runtime, store):
     """After the function returns, the same node's output gets filled
     (no second node) and status flips to 'completed' (unified vocabulary,
     dag/overview.md decision 2)."""
-    @agentic_function
-    def double(x, runtime=None):
-        return x * 2
+    class _DoubleAgent(Agent):
+        method_options = {'double': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'double'}}
+
+        def double(self, x, runtime=None):
+            return x * 2
+
+    double = _DoubleAgent().double
 
     double(7, runtime=runtime)
     g = store.load()
@@ -198,9 +231,13 @@ def test_exit_updates_output_in_place(runtime, store):
 
 
 def test_exception_updates_to_error_in_place(runtime, store):
-    @agentic_function
-    def explode(runtime=None):
-        raise RuntimeError("boom")
+    class _ExplodeAgent(Agent):
+        method_options = {'explode': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'explode'}}
+
+        def explode(self, runtime=None):
+            raise RuntimeError("boom")
+
+    explode = _ExplodeAgent().explode
 
     with pytest.raises(RuntimeError):
         explode(runtime=runtime)
@@ -219,14 +256,22 @@ def test_exception_updates_to_error_in_place(runtime, store):
 
 def test_top_level_sibling_calls_have_empty_caller(runtime, store):
     """Two sibling top-level calls both have caller="" because
-    neither has an enclosing @agentic_function on the call stack."""
-    @agentic_function
-    def one(runtime=None):
-        return 1
+    neither has an enclosing Agent method on the call stack."""
+    class _OneAgent(Agent):
+        method_options = {'one': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'one'}}
 
-    @agentic_function
-    def two(runtime=None):
-        return 2
+        def one(self, runtime=None):
+            return 1
+
+    one = _OneAgent().one
+
+    class _TwoAgent(Agent):
+        method_options = {'two': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'two'}}
+
+        def two(self, runtime=None):
+            return 2
+
+    two = _TwoAgent().two
 
     one(runtime=runtime)
     two(runtime=runtime)

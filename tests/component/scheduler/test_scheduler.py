@@ -15,8 +15,8 @@ import pytest
 
 @pytest.fixture
 def scheduler_env(tmp_path, monkeypatch):
-    import openprogram.paths as paths
-    from openprogram.agent import authority
+    import openprogram.state.paths as paths
+    from openprogram.runtime.permissions import authority
     from openprogram.programs.tools.jobs.cron import cron as cron_tool
 
     schedule = tmp_path / "scheduler" / "tasks.json"
@@ -28,8 +28,8 @@ def scheduler_env(tmp_path, monkeypatch):
 
 
 def test_scheduler_creates_once_recurring_and_monitor_tasks(scheduler_env):
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.scheduler import service
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
     once = service.create_task(
@@ -71,8 +71,8 @@ def test_scheduler_creates_once_recurring_and_monitor_tasks(scheduler_env):
 def test_scheduler_rejects_cron_that_the_worker_cannot_execute(
     scheduler_env, cron,
 ):
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.scheduler import service
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
     with pytest.raises(ValueError, match="cron"):
@@ -87,7 +87,7 @@ def test_scheduler_rejects_cron_that_the_worker_cannot_execute(
 
 
 def test_scheduler_default_path_is_profile_scoped(tmp_path, monkeypatch):
-    import openprogram.paths as paths
+    import openprogram.state.paths as paths
     from openprogram.programs.tools.jobs.cron import cron as cron_tool
 
     monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
@@ -99,7 +99,7 @@ def test_scheduler_default_path_is_profile_scoped(tmp_path, monkeypatch):
 
 
 def test_scheduler_moves_legacy_cron_store_with_signing_state(tmp_path, monkeypatch):
-    import openprogram.paths as paths
+    import openprogram.state.paths as paths
     from openprogram.programs.tools.jobs.cron import cron as cron_tool
 
     monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
@@ -121,7 +121,7 @@ def test_scheduler_moves_legacy_cron_store_with_signing_state(tmp_path, monkeypa
 
 
 def test_legacy_cron_store_migration_is_concurrency_safe(tmp_path, monkeypatch):
-    import openprogram.paths as paths
+    import openprogram.state.paths as paths
     from openprogram.programs.tools.jobs.cron import cron as cron_tool
 
     monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
@@ -151,14 +151,14 @@ def test_legacy_cron_store_migration_is_concurrency_safe(tmp_path, monkeypatch):
 
 
 def test_scheduler_resolves_memory_refs_at_execution_time(scheduler_env):
-    from openprogram.memory import references, store
+    from openprogram.state.memory import references, store
 
     _tmp_path, _schedule = scheduler_env
     topics = store.ensure() / "topics"
     (topics / "projects").mkdir(parents=True)
     (topics / "projects" / "memory.md").write_text(
         "# Memory\n\nUse the unified API.[^src-a] ^mem-project\n\n"
-        "[^src-a]: Time: `2026-08-14`; Sources: [D1:1](D1:1)\n",
+        "[^src-a]: Time: `2026-08-14`; Sources: [chat](/s/d1#m1)\n",
         encoding="utf-8",
     )
     ref = {"workspace_id": store.workspace_id(), "memory_id": "mem-project"}
@@ -167,14 +167,14 @@ def test_scheduler_resolves_memory_refs_at_execution_time(scheduler_env):
     assert first[0]["content"] == "Use the unified API."
     (topics / "projects" / "memory.md").write_text(
         "# Memory\n\nUse the Scheduler API.[^src-a] ^mem-project\n\n"
-        "[^src-a]: Time: `2026-08-14`; Sources: [D1:1](D1:1)\n",
+        "[^src-a]: Time: `2026-08-14`; Sources: [chat](/s/d1#m1)\n",
         encoding="utf-8",
     )
     second = references.resolve([ref])
     assert second[0]["content"] == "Use the Scheduler API."
     context = references.render_context([ref])
     assert "topics/projects/memory.md" in context
-    assert "memory_status" in context
+    assert "memory_get" in context
     assert "memory_update" in context
     assert "delete it only when no durable value remains" in context
     with pytest.raises(ValueError, match="workspace"):
@@ -186,7 +186,7 @@ def test_scheduler_resolves_memory_refs_at_execution_time(scheduler_env):
 def test_scheduler_context_keeps_every_ref_when_content_is_truncated(
     scheduler_env,
 ):
-    from openprogram.memory import references, store
+    from openprogram.state.memory import references, store
 
     _tmp_path, _schedule = scheduler_env
     topics = store.ensure() / "topics"
@@ -194,12 +194,12 @@ def test_scheduler_context_keeps_every_ref_when_content_is_truncated(
     (topics / "first.md").write_text(
         "# First\n\n"
         f"{long_content}[^e-first] ^mem-first\n\n"
-        "[^e-first]: Time: `2026-08-14`; Sources: [D1:1](D1:1)\n",
+        "[^e-first]: Time: `2026-08-14`; Sources: [chat](/s/d1#m1)\n",
         encoding="utf-8",
     )
     (topics / "second.md").write_text(
         "# Second\n\nSECOND RECORD[^e-second] ^mem-second\n\n"
-        "[^e-second]: Time: `2026-08-14`; Sources: [D1:1](D1:1)\n",
+        "[^e-second]: Time: `2026-08-14`; Sources: [chat](/s/d1#m1)\n",
         encoding="utf-8",
     )
     workspace_id = store.workspace_id()
@@ -218,9 +218,9 @@ def test_scheduler_context_keeps_every_ref_when_content_is_truncated(
 def test_once_task_fires_only_once_and_recurring_task_keeps_running(
     scheduler_env, monkeypatch,
 ):
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
     from openprogram.programs.tools.jobs.cron import worker
-    from openprogram.scheduler import service
+    from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
     once = service.create_task(
@@ -260,9 +260,9 @@ def test_once_task_fires_only_once_and_recurring_task_keeps_running(
 def test_worker_persists_each_claim_and_continues_after_spawn_failure(
     scheduler_env, monkeypatch,
 ):
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
     from openprogram.programs.tools.jobs.cron import worker
-    from openprogram.scheduler import service
+    from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
     first = service.create_task(
@@ -437,9 +437,9 @@ def test_run_once_keeps_tick_fail_fast(scheduler_env, monkeypatch):
 
 
 def test_two_workers_claim_a_once_task_only_once(scheduler_env, monkeypatch):
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
     from openprogram.programs.tools.jobs.cron import worker
-    from openprogram.scheduler import service
+    from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
     service.create_task(
@@ -470,9 +470,9 @@ def test_two_workers_claim_a_once_task_only_once(scheduler_env, monkeypatch):
 def test_claim_write_failure_does_not_spawn_or_block_later_task(
     scheduler_env, monkeypatch,
 ):
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
     from openprogram.programs.tools.jobs.cron import worker
-    from openprogram.scheduler import service
+    from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
     first = service.create_task(
@@ -518,9 +518,9 @@ def test_claim_write_failure_does_not_spawn_or_block_later_task(
 
 
 def test_scheduler_concurrent_creates_do_not_lose_tasks(scheduler_env, monkeypatch):
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
     from openprogram.programs.tools.jobs.cron import cron as cron_tool
-    from openprogram.scheduler import service
+    from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
     original_load = cron_tool._load
@@ -548,9 +548,9 @@ def test_scheduler_concurrent_creates_do_not_lose_tasks(scheduler_env, monkeypat
 
 
 def test_scheduler_rejects_unresolved_memory_refs_before_persisting(scheduler_env):
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.memory import store
-    from openprogram.scheduler import service
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.memory import store
+    from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
     missing = {
@@ -573,9 +573,9 @@ def test_scheduler_rejects_unresolved_memory_refs_before_persisting(scheduler_en
 def test_legacy_open_commitments_migrate_once_and_archive_source(
     scheduler_env,
 ):
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.memory import store
-    from openprogram.scheduler import migration, service
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.memory import store
+    from openprogram.runtime.scheduler import migration, service
 
     _tmp_path, _schedule = scheduler_env
     memory_root = store.ensure()
@@ -617,9 +617,9 @@ def test_legacy_open_commitments_migrate_once_and_archive_source(
 
 
 def test_legacy_commitment_migration_is_serialized(scheduler_env):
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.memory import store
-    from openprogram.scheduler import migration, service
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.memory import store
+    from openprogram.runtime.scheduler import migration, service
 
     _tmp_path, _schedule = scheduler_env
     memory_root = store.ensure()
@@ -647,7 +647,7 @@ def test_legacy_commitment_migration_is_serialized(scheduler_env):
 
 
 def test_scheduler_tool_names_and_authority_compatibility():
-    from openprogram.agent.authority import capability_for_tool
+    from openprogram.runtime.permissions.tool_authority import capability_for_tool
     from openprogram.programs import agent_tools
 
     default_names = {tool.name for tool in agent_tools()}
@@ -664,9 +664,9 @@ def test_scheduler_tool_names_and_authority_compatibility():
 def test_legacy_migration_preserves_a_new_source_when_archive_exists(
     scheduler_env,
 ):
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.memory import store
-    from openprogram.scheduler import migration
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.memory import store
+    from openprogram.runtime.scheduler import migration
 
     _tmp_path, _schedule = scheduler_env
     memory_root = store.ensure()
@@ -696,9 +696,9 @@ def test_legacy_migration_preserves_a_new_source_when_archive_exists(
 def test_legacy_migration_refuses_to_overwrite_a_conflicting_hash_archive(
     scheduler_env,
 ):
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.memory import store
-    from openprogram.scheduler import migration
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.memory import store
+    from openprogram.runtime.scheduler import migration
 
     _tmp_path, _schedule = scheduler_env
     memory_root = store.ensure()
@@ -728,8 +728,8 @@ def test_legacy_migration_refuses_to_overwrite_a_conflicting_hash_archive(
 
 
 def test_memory_status_contract_has_no_commitments(scheduler_env):
-    from openprogram.memory import store
-    from openprogram.memory.retrieval import inspect
+    from openprogram.state.memory import store
+    from openprogram.state.memory.retrieval import inspect
 
     status = inspect.status(store.ensure())
     assert "commitments" not in status
@@ -738,8 +738,8 @@ def test_memory_status_contract_has_no_commitments(scheduler_env):
 def test_scheduler_rest_api_crud_omits_frozen_execution_spec(scheduler_env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.scheduler import service
-    from openprogram.webui.routes.execution import scheduler as routes
+    from openprogram.runtime.scheduler import service
+    from openprogram.interfaces.server.routes.execution import scheduler as routes
 
     tmp_path, _schedule = scheduler_env
     app = FastAPI()
@@ -777,3 +777,39 @@ def test_scheduler_rest_api_crud_omits_frozen_execution_spec(scheduler_env):
     assert stored["execution"]["signature"]
     assert client.delete(f"/api/scheduler/tasks/{task['id']}").status_code == 200
     assert client.get("/api/scheduler/tasks").json() == []
+
+
+def test_scheduler_creates_a_task_without_memory_refs_while_memory_is_off(
+    scheduler_env, monkeypatch,
+):
+    """A task that names no memory needs no memory access: the Agent's
+    memory being off must not refuse it. Refs, when given, still are."""
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.scheduler import service
+    from openprogram.state.memory import policy, store
+
+    def memory_off(**_kw):
+        raise policy.MemoryPolicyError("Memory is off for this execution")
+
+    monkeypatch.setattr(policy, "check", memory_off)
+    tmp_path, _schedule = scheduler_env
+    task = service.create_task(
+        title="Echo once",
+        task_type="once",
+        command="echo hi",
+        run_at="2026-08-15T09:00:00+08:00",
+        cwd=str(tmp_path),
+        authority=local_owner_authority(),
+    )
+    assert task["title"] == "Echo once"
+    assert [row["title"] for row in service.list_tasks()] == ["Echo once"]
+    with pytest.raises(policy.MemoryPolicyError):
+        service.create_task(
+            title="Uses memory",
+            task_type="recurring",
+            prompt="Use memory.",
+            cron="0 * * * *",
+            memory_refs=[{"workspace_id": store.workspace_id(), "memory_id": "m1"}],
+            cwd=str(tmp_path),
+            authority=local_owner_authority(),
+        )

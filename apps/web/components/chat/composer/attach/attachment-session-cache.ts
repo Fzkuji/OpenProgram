@@ -1,5 +1,5 @@
-import type { PendingDoc } from "./file-tiles";
-import type { PendingImage } from "./image-attach";
+import type { PendingDoc } from "./strip/file-tiles";
+import type { PendingImage } from "./image/image-attach";
 
 export interface StoredAttachments {
   images: PendingImage[];

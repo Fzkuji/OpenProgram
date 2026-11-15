@@ -1,0 +1,184 @@
+<title>Web state layer</title>
+<meta name="description" content="Where each kind of Web frontend state lives: one store instance per session, shared data in one global store.">
+<h1>Web state layer</h1>
+<p>A component reads "my draft", and the enclosing <code translate="no">SessionScopeProvider</code> decides whose, so rendering it twice against two sessions cannot collide.</p>
+
+<h2 id="the-design">Layers</h2>
+<table class="stack">
+<thead><tr><th scope="col">Layer</th><th scope="col">Contains</th><th scope="col">Access</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Global store</strong></th><td><code translate="no">wsStatus</code>, <code translate="no">agentSettings</code>, <code translate="no">conversations</code> (the list), <code translate="no">rowsByView</code>, <code translate="no">rightDock</code>, and the durable per-session maps (<code translate="no">composerDrafts</code>, <code translate="no">composerSettingsBySession</code>, <code translate="no">runningTasks</code>)</td><td><code translate="no">useSessionStore</code></td></tr>
+<tr><th scope="row"><strong>Per-session store instance</strong></th><td>this session's <code translate="no">draft</code>, <code translate="no">settings</code>, <code translate="no">running</code>, <code translate="no">contextPanelOpen</code></td><td><code translate="no">useSessionScope</code>, inside a <code translate="no">SessionScopeProvider</code></td></tr>
+<tr><th scope="row"><strong>View state</strong></th><td>tab strip, pane layout, split ratio, which pane has focus</td><td><code translate="no">center-tabs-store</code>; belongs to the window, not a session</td></tr>
+</tbody>
+</table>
+<p class="note">Split by ownership, not storage shape.</p>
+
+<h3 id="the-pieces">Scope</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">lib/session-store/session-scope-registry.ts</code></th><td>Store factory and a module-level <code translate="no">Map&lt;sid, store&gt;</code>. Instances survive pane unmount; <code translate="no">dropSessionStore</code> drops them only when the session is deleted (<code translate="no">removeConversation</code>, <code translate="no">dropChatDraft</code>).</td></tr>
+<tr><th scope="row"><code translate="no">lib/session-store/session-scope.tsx</code></th><td><code translate="no">SessionScopeProvider sid=…</code>, <code translate="no">useSessionScope(selector)</code>. Throws with no provider: a silent fallback to the focused session is the bug this removes.</td></tr>
+<tr><th scope="row">Providers</th><td><code translate="no">FocusedComposer</code> in <code translate="no">components/app-shell.tsx</code> (single-session composer, focused chat key) and <code translate="no">PeerSessionPane</code> (each split pane)</td></tr>
+</tbody>
+</table>
+
+<h3 id="durable-state">Scope and global stay in step</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Direction</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope to global</th><td>A setter updates its instance first, so the pane repaints on the same tick, then writes through to the global keyed setter. Hooks come from <code translate="no">installScopeWriteThrough</code> at the global store's init, keeping the import one-directional.</td></tr>
+<tr><th scope="row">Global to scope</th><td><code translate="no">setComposerInputFor</code>, <code translate="no">setComposerSettings</code>, <code translate="no">setRunningTaskFor</code> call <code translate="no">pushToSessionStore</code>, so a WS frame, legacy bridge or tab transfer reaches the live instance.</td></tr>
+<tr><th scope="row">Seeding</th><td>An instance seeds from the global maps on first render, so a remount after reload shows the persisted draft.</td></tr>
+</tbody>
+</table>
+<p class="note">No mirrors: the global store has no <code translate="no">composerInput</code>, <code translate="no">composerSettings</code>, <code translate="no">runningTask</code> or <code translate="no">contextPanelFor</code>. The focused draft is <code translate="no">composerDrafts[activeChatKey]</code>, computed where needed. Anything that must outlive the tab (localStorage, tab-transfer wire format, cross-session sidebar views) stays in the global keyed maps.</p>
+
+<details>
+<summary>Why instances rather than a keyed global slice</summary>
+<table class="stack">
+<thead><tr><th scope="col">Approach</th><th scope="col">Example</th><th scope="col">Trade-off</th></tr></thead>
+<tbody>
+<tr><th scope="row">Store per instance (chosen)</th><td>VS Code editor groups; Zustand supports it</td><td>Strongest isolation. Shared data needs a separate layer.</td></tr>
+<tr><th scope="row">One global store, keyed, with a scope tag</th><td>Redux normalization, TanStack Query, Slack-style multi-channel UIs</td><td>Easy debugging and cross-session features, but discipline by convention: one read of the global pointer regresses it.</td></tr>
+<tr><th scope="row">Physical isolation</th><td>Chrome renderer processes</td><td>Justified by running untrusted code; process memory and IPC cost for no gain in an app's own split view.</td></tr>
+</tbody>
+</table>
+<p>With a keyed slice every read and write supplies the key; a wrong one, or an omitted one meaning the focused session, stays type-correct. With an instance the provider supplies the key once. A keystroke also notifies only that session's subscribers. Parallel <code translate="no">Record&lt;sid, T&gt;</code> maps stay, with transcript rows keyed by view: instances persist through them.</p>
+</details>
+
+<details id="failure-mode">
+<summary>The failure a global singleton produces</summary>
+<p>A component rendered twice reads state that exists once. Both copies show the same value or the last write wins. The type system allows it, and it shows only in split view after a specific interaction.</p>
+<p><code translate="no">/context</code> badge: a global boolean opens both popovers. A <code translate="no">contextPanelFor: sid</code> pointer fixes that, but each consumer must still compare the right id. In the scope it is a plain <code translate="no">contextPanelOpen</code>.</p>
+<p>A mirror, a global copy of the focused session's keyed entry, is worse: every write updates both, every switch swaps it, components branch on whether they are bound, and the window-to-window transfer has to rebuild it.</p>
+</details>
+
+<h2 id="main-store">Main store fields</h2>
+<p><code translate="no">apps/web/lib/session-store/index.ts</code>, shape in <code translate="no">ConvState</code>.</p>
+
+<h3 id="group-a">Per session</h3>
+<p class="note"><code translate="no">Record&lt;sessionId, T&gt;</code> maps.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Field</th><th scope="col">What it holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">conversations</code></th><td>sidebar summary per session (keyed, but see Group C — it is a <em>list</em>, not per-session view state)</td></tr>
+<tr><th scope="row"><code translate="no">rowsByView</code></th><td>the transcript rows of each view (a conversation, or one sub-agent's transcript), keyed by view and row id; the same id in two views is two rows. Read through <code translate="no">selectRow(viewKey, id)</code>, which draws a row with its overlays. Written only through <code translate="no">apply-transcript-update.ts</code>: <code translate="no">applyRead</code> for reads, numbered <code translate="no">transcript_update</code> changes and text frames for the server's live rows, and <code translate="no">applyLocalChange</code> for rows and overlays only this browser holds.</td></tr>
+<tr><th scope="row"><code translate="no">messageOrder</code></th><td>ordered row-id list per view</td></tr>
+<tr><th scope="row"><code translate="no">overlaysByView</code>, <code translate="no">heldFramesByView</code></th><td>fields this browser shows ahead of the server over a row, each with the event that ends it, and text frames waiting for the row they belong to</td></tr>
+<tr><th scope="row"><code translate="no">pendingProjectsByChat</code></th><td>project chosen for an unsent chat, keyed by provisional chat key</td></tr>
+<tr><th scope="row"><code translate="no">runningTasks</code></th><td>per-session running task; drives each composer's send/stop button</td></tr>
+<tr><th scope="row"><code translate="no">trees</code></th><td>latest live context tree per session</td></tr>
+<tr><th scope="row"><code translate="no">tokens</code></th><td>token usage per session</td></tr>
+<tr><th scope="row"><code translate="no">contextWindow</code></th><td>context-window size per session</td></tr>
+<tr><th scope="row"><code translate="no">heads</code></th><td>active DAG head (selected branch tip) per session</td></tr>
+<tr><th scope="row"><code translate="no">additionalWorkingDirsBySession</code></th><td>extra working directories per session</td></tr>
+<tr><th scope="row"><code translate="no">composerDrafts</code></th><td>unsent composer text per session, persisted to localStorage</td></tr>
+<tr><th scope="row"><code translate="no">composerSettingsBySession</code></th><td>active-branch tool toggles / thinking effort and branch identity, keyed by session for the visible projection; durable settings belong to branch references</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">pendingDecisions</code> is a flat FIFO whose entries carry <code translate="no">sessionId</code> (<code translate="no">session-store/types.ts</code>); every consumer filters it, and a mis-scoped one would swallow or duplicate another session's question.</p>
+
+<h3 id="group-b">Global values that describe one session</h3>
+<p class="note">Each moves onto <code translate="no">SessionScopeState</code>, as the table under <a href="#where-fields-go">Where they go</a> sets out.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Field</th><th scope="col">Why it should be scoped</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">currentSessionId</code></th><td>"the" active session. With two panes there are two, and one is merely the <em>focused</em> one.</td></tr>
+<tr><th scope="row"><code translate="no">activeChatKey</code></th><td>same, for unsent drafts using a provisional <code translate="no">local_*</code> id</td></tr>
+<tr><th scope="row"><code translate="no">composerFocusTick</code></th><td>a counter bumped to ask "the" composer to focus its textarea; with two composers it is ambiguous which one obeys</td></tr>
+<tr><th scope="row"><code translate="no">fnFormFunction</code></th><td>which function's parameter form has replaced the textarea. Belongs to one composer, not the app.</td></tr>
+<tr><th scope="row"><code translate="no">fnFormPrefill</code></th><td>prefilled arguments for that form</td></tr>
+<tr><th scope="row"><code translate="no">fnFormForkOf</code></th><td>fork anchor node for a re-run</td></tr>
+<tr><th scope="row"><code translate="no">fnFormClosing</code></th><td>close-animation flag for that form</td></tr>
+<tr><th scope="row"><code translate="no">welcomeVisible</code></th><td>whether the chat area shows the welcome screen — a per-pane condition</td></tr>
+<tr><th scope="row"><code translate="no">transcriptLoadingId</code></th><td>holds <em>one</em> in-flight session id; two panes can be loading at once</td></tr>
+<tr><th scope="row"><code translate="no">branchInfo</code></th><td>branch chip for "the current conversation"</td></tr>
+<tr><th scope="row"><code translate="no">statusBadge</code></th><td>topbar status label; derived from one session's run state</td></tr>
+<tr><th scope="row"><code translate="no">paused</code></th><td>pause flag, per running session in principle</td></tr>
+<tr><th scope="row"><code translate="no">providerInfo</code></th><td>provider/model shown in the header for the current session</td></tr>
+<tr><th scope="row"><code translate="no">detailNode</code></th><td>selected DAG node shown in the right rail</td></tr>
+<tr><th scope="row"><code translate="no">nodeSelected</code></th><td>"a DAG node is selected" gate</td></tr>
+</tbody>
+</table>
+
+<h3 id="group-c">Genuinely global</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">Field</th><th scope="col">What it is</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">wsStatus</code></th><td>WebSocket connection state</td></tr>
+<tr><th scope="row"><code translate="no">agentSettings</code></th><td>Chat model badge, mirrored from <code translate="no">runtimeState._agentSettings</code></td></tr>
+<tr><th scope="row"><code translate="no">conversations</code></th><td>the session <em>list</em> for the sidebar (a catalogue of all sessions, not one session's view state)</td></tr>
+<tr><th scope="row"><code translate="no">rightDock</code></th><td>right sidebar open/collapsed and which view, persisted to localStorage</td></tr>
+</tbody>
+</table>
+
+<h3 id="where-fields-go">Where the single-session fields go</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Destination</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">fnFormFunction</code>, <code translate="no">fnFormPrefill</code>, <code translate="no">fnFormForkOf</code>, <code translate="no">fnFormClosing</code></th><td>One <code translate="no">fnForm</code> property. Sidebar and favourites name an explicit target session. Consumers: <code translate="no">resolve-mode.ts</code>, <code translate="no">use-fn-form-state.ts</code>, <code translate="no">use-fn-form-wrapper.ts</code>, <code translate="no">use-pending-run-function.ts</code>, <code translate="no">favorites-list.tsx</code>, <code translate="no">sidebar.tsx</code>, <code translate="no">runtime-block.tsx</code>, <code translate="no">functions-panel.ts</code></td></tr>
+<tr><th scope="row"><code translate="no">welcomeVisible</code>, <code translate="no">transcriptLoadingId</code></th><td>Per-session booleans read by <code translate="no">welcome-screen.tsx</code> and <code translate="no">message-list.tsx</code></td></tr>
+<tr><th scope="row"><code translate="no">composerFocusTick</code></th><td>Per-session counter, so focusing one pane does not yank the other</td></tr>
+<tr><th scope="row"><code translate="no">branchInfo</code>, <code translate="no">statusBadge</code>, <code translate="no">paused</code>, <code translate="no">providerInfo</code></th><td>Per session; the topbar reads the focused scope</td></tr>
+<tr><th scope="row"><code translate="no">currentSessionId</code>, <code translate="no">activeChatKey</code></th><td>Stay global as focus pointers, meaning "the focused pane's session"; <code translate="no">center-tabs-store</code> tracks it through <code translate="no">activeId</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="other-stores">Other stores</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">lib/tabs/center-tabs-store.ts</code>, <code translate="no">lib/tabs/store/</code></th><td>Tab strip and pane layout: <code translate="no">tabs</code>, <code translate="no">activeId</code>, <code translate="no">groups</code>, <code translate="no">splitWebTabId</code>, <code translate="no">splitRatio</code>. Global view state; the scope tree gets its session ids here.</td></tr>
+<tr><th scope="row"><code translate="no">lib/tabs/center-tab-groups.ts</code></th><td>Pure functions over the layout; no state</td></tr>
+<tr><th scope="row"><code translate="no">lib/chat/history/chat-scroll.ts</code></th><td>Scroll position by chat key, through a storage interface</td></tr>
+<tr><th scope="row"><code translate="no">lib/abilities/functions-store.ts</code>, <code translate="no">skills-store.ts</code>, <code translate="no">plugins-store.ts</code></th><td>Page catalogues and their filter, sort and search state; global</td></tr>
+<tr><th scope="row"><code translate="no">lib/files/files-shared.ts</code></th><td>Project list, file reads, drafts by path; per file</td></tr>
+</tbody>
+</table>
+
+<h2 id="legacy-layer">Legacy runtime state</h2>
+<p><code translate="no">runtimeState</code> (<code translate="no">lib/runtime-bridge/state.ts</code>) is a module-level singleton predating the React store. WebSocket frames reach the runtime bridge, which updates it and writes through to the store; <code translate="no">conv-store-mirror.ts</code> keeps <code translate="no">store.conversations</code> authoritative. It is transitional.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">currentSessionId</code></th><td>The legacy active session. Frames gated on <code translate="no">session_id === runtimeState.currentSessionId</code> in <code translate="no">chat-handlers.ts</code> and <code translate="no">conversations.ts</code> are dropped or misrouted for a non-focused session.</td></tr>
+<tr><th scope="row"><code translate="no">conversations</code></th><td>Heavy per-session map with full messages, distinct from the store's summaries</td></tr>
+<tr><th scope="row"><code translate="no">isRunning</code></th><td>One global flag</td></tr>
+</tbody>
+</table>
+<p>It is still the default for message rendering outside split view, session switching, branch badge refresh and most frame routing. The split pane bypasses it: <code translate="no">#chatView</code> is a singleton addressed by hardcoded ids in about ten bridge modules, so AppShell hides it while split, each pane renders React off the store and sends its own <code translate="no">load_session</code>.</p>
+
+<details>
+<summary>What removing it requires</summary>
+<ol>
+<li>Every <code translate="no">currentSessionId</code> gate in <code translate="no">chat-handlers.ts</code> and <code translate="no">conversations.ts</code> is a store write keyed on <code translate="no">data.session_id</code>, so background frames land. Needs the focus pointers first.</li>
+<li><code translate="no">runtimeState.conversations</code> has no readers the keyed maps do not cover, making <code translate="no">conv-store-mirror.ts</code> unnecessary.</li>
+<li><code translate="no">isRunning</code> has no readers; <code translate="no">runningTasks</code> covers it.</li>
+<li>The <code translate="no">#chatView</code> shell is gone, replaced by the React path <code translate="no">PeerSessionPane</code> proves. The heaviest condition.</li>
+</ol>
+<p>A wrong gate removal silently drops frames, so each pairs with a check that the frame still reaches its session.</p>
+</details>
+
+<h2 id="non-goals">Non-goals</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stays</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">detailNode</code>, <code translate="no">nodeSelected</code>, <code translate="no">rightDock</code></th><td>The right sidebar and DAG are one dock following the focused session; nothing renders them twice</td></tr>
+<tr><th scope="row">Topbar badge display, settings-page stores</th><td>Focused or global by definition</td></tr>
+<tr><th scope="row">Parallel <code translate="no">Record&lt;sid, T&gt;</code> maps</th><td>Instances seed from and persist through them</td></tr>
+<tr><th scope="row">More than two panes</th><td>The mechanism allows it; nothing is designed or verified for it</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Scope registry and provider; mirrors removed; wire formats (<code translate="no">SessionTransferSnapshot</code>, <code translate="no">ChatTransferState</code>) carry no duplicates of focused keyed entries</td></tr>
+<tr><th scope="row">Not yet</th><td>The single-session fields still sit in the global store: each is a move onto <code translate="no">SessionScopeState</code>, fn-form the largest with eight consumers. Retiring the legacy runtime state spans <code translate="no">lib/runtime-bridge/</code>, is sequenced last, and is done per module in one pass, since partial completion is worse than either endpoint.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="workspace/center-tabs-and-split-layout.html">Center tabs and split layout</a> · <a href="composer/composer-interaction-modes.html">Composer modes</a> · <a href="invariants.html">UI invariants</a> · <a href="interaction-feedback.html">Interaction feedback</a></p>

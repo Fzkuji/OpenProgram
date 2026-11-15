@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 type ExecFileOptions = {
-  input?: string
+  input?: string | Buffer
   timeout?: number
   useCwd?: boolean
   env?: NodeJS.ProcessEnv
@@ -20,7 +20,8 @@ export function execFileNoThrow(
     const child = spawn(file, args, {
       cwd: options.useCwd ? process.cwd() : undefined,
       env: options.env,
-      stdio: 'pipe'
+      stdio: 'pipe',
+      windowsHide: true
     })
 
     let stdout = ''

@@ -11,11 +11,17 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from openprogram.agent import run_control
-from openprogram.backend_endpoint import BackendEndpoint
-from openprogram.context.nodes import Call, ROLE_CODE
-from openprogram.store import SessionNodeWriter
-from openprogram.store.session.session_store import SessionStore
+from openprogram.runtime.execution.run_control import tokens as run_control_tokens
+from openprogram.runtime.execution.run_control import owners as run_control_owners
+from openprogram.host.security.backend_endpoint import BackendEndpoint
+from openprogram.state.store.session.nodes import Call, ROLE_CODE
+from openprogram.state.store import SessionNodeWriter
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.runtime.execution import run_control as execution_run_control
+# The worker stand-ins below cancel through the execution control plane, which
+# reaches job records over a hook the jobs engine registers on import; a real
+# worker process has it loaded, and the spawned child re-imports this module.
+import openprogram.runtime.jobs  # noqa: F401
 
 
 _FAKE_TOKEN = "A" * 43
@@ -24,8 +30,8 @@ _FAKE_TOKEN = "A" * 43
 @pytest.fixture
 def store(tmp_path, monkeypatch) -> SessionStore:
     value = SessionStore(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: value)
-    import openprogram.store.session.session_store as store_module
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: value)
+    import openprogram.state.store.session.session_store as store_module
 
     monkeypatch.setattr(store_module.shared, "_default_store", value)
     return value
@@ -33,22 +39,22 @@ def store(tmp_path, monkeypatch) -> SessionStore:
 
 @pytest.fixture(autouse=True)
 def clean_runtime_control():
-    with run_control._cancel_flags_lock:
-        run_control._current_tokens.clear()
-    run_control._owners.clear()
-    run_control._grace_threads.clear()
-    run_control._finalizing.clear()
+    with run_control_tokens._cancel_flags_lock:
+        run_control_tokens._current_tokens.clear()
+    run_control_owners._owners.clear()
+    run_control_owners._grace_threads.clear()
+    run_control_owners._finalizing.clear()
     yield
-    with run_control._cancel_flags_lock:
-        run_control._current_tokens.clear()
-    run_control._owners.clear()
-    run_control._grace_threads.clear()
-    run_control._finalizing.clear()
+    with run_control_tokens._cancel_flags_lock:
+        run_control_tokens._current_tokens.clear()
+    run_control_owners._owners.clear()
+    run_control_owners._grace_threads.clear()
+    run_control_owners._finalizing.clear()
 
 
 def _run_cli(monkeypatch, argv: list[str], origin: str) -> tuple[int, str]:
-    from openprogram.cli import main
-    from openprogram.cli.commands import execution as execution_cmd
+    from openprogram.interfaces.cli.application import main
+    from openprogram.interfaces.cli.commands import execution as execution_cmd
 
     monkeypatch.setattr(
         execution_cmd,
@@ -72,7 +78,7 @@ def _serve_cancel(store: SessionStore) -> tuple[HTTPServer, str]:
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
             body = json.loads(raw.decode("utf-8") or "{}")
-            from openprogram.agent.run_control import (
+            from openprogram.runtime.execution.run_control import (
                 ExecutionNotCancellable,
                 ExecutionNotFound,
                 cancel_execution,
@@ -111,20 +117,42 @@ def _serve_cancel(store: SessionStore) -> tuple[HTTPServer, str]:
 
 def test_cli_execution_cancel_is_idempotent(store, monkeypatch):
     store.create_session("cli-session", "main")
-    SessionNodeWriter(store, "cli-session").append(Call(
-        id="cli-exec",
-        role=ROLE_CODE,
-        name="cancellation_probe",
-        output="partial output",
-        metadata={"status": "queued", "execution_kind": "agentic_function"},
-    ))
+    SessionNodeWriter(store, "cli-session").append(
+        Call(
+            id="cli-exec",
+            role=ROLE_CODE,
+            name="cancellation_probe",
+            output="partial output",
+            metadata={"status": "queued", "execution_kind": "agent_method"},
+        )
+    )
     server, origin = _serve_cancel(store)
     try:
         code1, out1 = _run_cli(
-            monkeypatch, ["execution", "cancel", "cli-exec", "--expected-version", "0", "--command-id", "cancel-cli-1"], origin,
+            monkeypatch,
+            [
+                "execution",
+                "cancel",
+                "cli-exec",
+                "--expected-version",
+                "0",
+                "--command-id",
+                "cancel-cli-1",
+            ],
+            origin,
         )
         code2, out2 = _run_cli(
-            monkeypatch, ["execution", "cancel", "cli-exec", "--expected-version", "0", "--command-id", "cancel-cli-1"], origin,
+            monkeypatch,
+            [
+                "execution",
+                "cancel",
+                "cli-exec",
+                "--expected-version",
+                "0",
+                "--command-id",
+                "cancel-cli-1",
+            ],
+            origin,
         )
     finally:
         server.shutdown()
@@ -138,8 +166,7 @@ def test_cli_execution_cancel_is_idempotent(store, monkeypatch):
     assert "PID" not in out1 and "pid" not in out1
     assert "SIG" not in out1 and "signal" not in out1.lower()
     node = next(
-        node for node in store.get_nodes("cli-session")
-        if node.id == "cli-exec"
+        node for node in store.get_nodes("cli-session") if node.id == "cli-exec"
     )
     assert node.metadata["status"] == "cancelled"
     assert node.metadata["reason_code"] == "cancel.user"
@@ -149,25 +176,26 @@ def test_cli_execution_cancel_is_idempotent(store, monkeypatch):
 def _worker_main(ready, signalled, store_path, session_id, exec_id):
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-    from openprogram.agent import run_control as rc
-    from openprogram.context.nodes import Call as Node, ROLE_CODE as CODE
-    from openprogram.store import SessionNodeWriter as Writer
-    from openprogram.store.session import session_store as store_module
-    from openprogram.store.session.session_store import SessionStore as Store
+    from openprogram.state.store.session.nodes import Call as Node, ROLE_CODE as CODE
+    from openprogram.state.store import SessionNodeWriter as Writer
+    from openprogram.state.store.session import session_store as store_module
+    from openprogram.state.store.session.session_store import SessionStore as Store
 
     store = Store(store_path)
     store_module.shared._default_store = store
     store.create_session(session_id, "main")
-    Writer(store, session_id).append(Node(
-        id=exec_id,
-        role=CODE,
-        name="cancellation_probe",
-        output="partial",
-        metadata={"status": "running", "execution_kind": "agentic_function"},
-    ))
+    Writer(store, session_id).append(
+        Node(
+            id=exec_id,
+            role=CODE,
+            name="cancellation_probe",
+            output="partial",
+            metadata={"status": "running", "execution_kind": "agent_method"},
+        )
+    )
     live = True
-    token = rc.CancellationToken(session_id, exec_id)
-    rc.register_execution_owner(
+    token = execution_run_control.CancellationToken(session_id, exec_id)
+    execution_run_control.register_execution_owner(
         exec_id,
         session_id,
         token=token,
@@ -179,7 +207,7 @@ def _worker_main(ready, signalled, store_path, session_id, exec_id):
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
             body = json.loads(raw.decode("utf-8") or "{}")
-            record = rc.cancel_execution(body["execution_id"])
+            record = execution_run_control.cancel_execution(body["execution_id"])
             if token.is_cancelled():
                 signalled.set()
             data = json.dumps({"execution": record}).encode("utf-8")
@@ -201,8 +229,7 @@ def _worker_main(ready, signalled, store_path, session_id, exec_id):
 
 def _node_status(store, session_id, execution_id):
     return next(
-        node for node in store.get_nodes(session_id)
-        if node.id == execution_id
+        node for node in store.get_nodes(session_id) if node.id == execution_id
     ).metadata["status"]
 
 
@@ -219,9 +246,11 @@ def test_cli_cancel_signals_owner_in_worker_process(tmp_path, monkeypatch):
     try:
         port = ready.get(timeout=20)
         origin = f"http://127.0.0.1:{port}"
-        local_before = "remote-exec" in run_control._owners
+        local_before = "remote-exec" in run_control_owners._owners
         code, out = _run_cli(
-            monkeypatch, ["execution", "cancel", "remote-exec", "--expected-version", "0"], origin,
+            monkeypatch,
+            ["execution", "cancel", "remote-exec", "--expected-version", "0"],
+            origin,
         )
         persisted = ready.get(timeout=20)
         token_tripped = ready.get(timeout=5)
@@ -232,7 +261,7 @@ def test_cli_cancel_signals_owner_in_worker_process(tmp_path, monkeypatch):
             proc.join(2)
 
     assert local_before is False
-    assert "remote-exec" not in run_control._owners
+    assert "remote-exec" not in run_control_owners._owners
     assert code == 0
     assert "status=" in out
     assert signalled.is_set()

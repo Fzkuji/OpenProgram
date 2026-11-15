@@ -1,0 +1,69 @@
+/* "跳到最新" 悬浮按钮。
+   对应组件：components/chat/messages/list/message-list.tsx */
+
+/* 钉在 #chatView（列，不滚）上，贴着输入框上方。
+   不要 portal 进 #chatArea：那是滚动层，absolute bottom 会落到
+   整篇内容底，往上翻时按钮正好出屏。 */
+.jump-latest-anchor {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--main-composer-height, 0px) + 12px);
+  height: 0;
+  z-index: 7;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+/* Effort card opens upward into this chip's slot. Hide it while the
+   picker is open so the two don't stack. */
+#chatView:has([data-effort-expanded="true"]) .jump-latest-anchor,
+.peer-session-pane:has([data-effort-expanded="true"]) .jump-latest-anchor {
+  opacity: 0;
+  pointer-events: none;
+}
+/* The chip itself is the shadcn Button (variant "elevated", size "sm"),
+   like the composer's pills; this file only places and animates it. */
+.jump-latest {
+  pointer-events: auto;
+  animation: jumpLatestIn 180ms ease-out;
+}
+.jump-latest-anchor.is-leaving .jump-latest {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--motion-slow) var(--ease-standard), transform var(--motion-slow) var(--ease-standard);
+  animation: none;
+  pointer-events: none;
+}
+.jump-latest-live {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+  width: 14px;
+}
+.jump-latest-live i {
+  display: block;
+  width: 2.5px;
+  height: 4px;
+  border-radius: var(--radius-2xs);
+  background: currentColor;
+  transform-origin: center bottom;
+  animation: jumpLatestBar 0.9s ease-in-out infinite;
+}
+.jump-latest-live i:nth-child(2) { animation-delay: 0.15s; height: 7px; }
+.jump-latest-live i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes jumpLatestIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes jumpLatestBar {
+  0%, 100% { transform: scaleY(0.45); opacity: 0.55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jump-latest { animation: none; transition: none; }
+  .jump-latest-anchor.is-leaving .jump-latest { opacity: 0; }
+  .jump-latest-live i { animation: none; opacity: 0.8; }
+}

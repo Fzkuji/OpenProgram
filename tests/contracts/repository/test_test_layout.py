@@ -229,8 +229,8 @@ def test_unit_tests_do_not_depend_on_component_resources() -> None:
             {"threading.Thread"},
         ),
         (
-            "from openprogram.agent.job import runner as runner_mod\n"
-            'monkeypatch.setattr(runner_mod.threading, "Thread", fake)',
+            "from openprogram.runtime.jobs import runner as runner_mod\n"
+            'monkeypatch.setattr(runner_mod.shared.threading, "Thread", fake)',
             {"threading.Thread"},
         ),
         ('monkeypatch.setattr("threading.Thread", fake)', {"threading.Thread"}),

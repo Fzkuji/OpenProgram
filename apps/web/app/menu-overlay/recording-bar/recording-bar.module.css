@@ -1,0 +1,100 @@
+/* The recording bar sits centred in its small frameless window; the
+   window is GUTTER (24px, recording-bar.js) larger on every side so the
+   popover shadow has room. The bar drags the window, the buttons do not. */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-sm);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+/* The record mark: a solid red dot whose soft halo breathes. The red is
+   --recording-red (styles/design/color.css): the record dot of the
+   application's icon, fixed art like the icon, not the theme's muted accent. */
+.mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+
+.mark > span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--recording-red);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--recording-red) 18%, transparent);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--recording-red) 8%, transparent); }
+}
+
+@keyframes pulse {
+  50% { opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark > span { animation: none; }
+}
+
+.time {
+  margin-left: 6px;
+  font-weight: 600;
+  min-width: 36px;
+}
+
+.label {
+  margin-right: 6px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.label[data-warning="true"] {
+  color: var(--accent-orange);
+}
+
+/* The icon actions are muted until narration is on or someone speaks. */
+.quiet {
+  color: var(--text-muted);
+}
+
+.quiet:hover:not(:disabled),
+.quiet[data-on="true"] {
+  color: var(--text-primary);
+}
+
+.quiet[data-speaking="true"] {
+  color: var(--accent-green);
+}
+
+/* Stop: the red disc with a white square, the bar's one strong action. */
+.stop {
+  margin-left: 2px;
+  color: var(--ink-on-fill);
+  background: var(--recording-red);
+}
+
+.stop:hover:not(:disabled) {
+  color: var(--ink-on-fill);
+  background: var(--recording-red-pressed);
+}
+
+.stop[data-ending="true"] {
+  animation: pulse 1s ease-in-out infinite;
+}

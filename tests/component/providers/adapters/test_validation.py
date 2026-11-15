@@ -1,5 +1,5 @@
-from openprogram.providers.types import Tool, ToolCall
-from openprogram.providers.utils.validation import validate_tool_arguments
+from openprogram.models.providers.types import Tool, ToolCall
+from openprogram.models.providers.utils.validation import validate_tool_arguments
 
 
 def test_validate_tool_arguments_coerces_trimmed_numeric_and_boolean_strings():

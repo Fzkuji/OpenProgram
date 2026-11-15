@@ -1,4 +1,4 @@
-"""Unit tests for openprogram.auth.pool."""
+"""Unit tests for openprogram.models.auth.pool."""
 from __future__ import annotations
 
 import time
@@ -6,14 +6,14 @@ from collections import Counter
 
 import pytest
 
-from openprogram.auth import (
+from openprogram.models.auth import (
     AuthEventType,
     AuthPoolExhaustedError,
     Credential,
     CredentialData,
     CredentialPool,
 )
-from openprogram.auth.pool import (
+from openprogram.models.auth.pool import (
     PoolFailurePolicy,
     clear_cooldown,
     health,
@@ -144,7 +144,7 @@ def test_needs_reauth_emits_its_own_event():
 
 def test_unknown_reason_gets_short_cooldown():
     p = _pool("a")
-    ev = mark_failure(p.credentials[0], "cosmic_ray", now_ms=0)
+    mark_failure(p.credentials[0], "cosmic_ray", now_ms=0)
     assert p.credentials[0].cooldown_until_ms > 0
 
 

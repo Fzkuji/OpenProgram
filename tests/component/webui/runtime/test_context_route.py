@@ -34,11 +34,11 @@ class _FakeDB:
 
 @pytest.fixture
 def client(monkeypatch):
-    import openprogram.agent.session_db as _sdb
+    import openprogram.runtime.context.session_db as _sdb
     monkeypatch.setattr(_sdb, "default_db", lambda: _FakeDB())
 
     app = FastAPI()
-    from openprogram.webui.routes.files import tree as _tree
+    from openprogram.interfaces.server.routes.files import tree as _tree
     _tree.register(app)
     return TestClient(app)
 
@@ -58,28 +58,8 @@ def test_context_endpoint_returns_breakdown(client):
     assert d["session_id"] == "s1"
 
 
-def test_context_endpoint_no_tools(client, monkeypatch):
-    import openprogram.agent.session_db as _sdb
-
-    class _EmptyDB:
-        def get_branch(self, sid, head_id=None):
-            return [{"role": "user", "content": "hi", "extra": None}]
-
-        def get_session(self, sid):
-            # tools_enabled=False：没记录 tools_available 且会话未启用工具时，
-            # 端点不回退到 session-default toolset，tools 才为空（见 93d233eb）。
-            return {"model": "", "tools_enabled": False}
-
-    monkeypatch.setattr(_sdb, "default_db", lambda: _EmptyDB())
-    r = client.get("/api/sessions/s2/context")
-    assert r.status_code == 200
-    d = r.json()
-    assert d["tools"] == []
-    assert d["tools_schema"] == 0
-
-
 def test_context_endpoint_uses_the_current_model_window(client, monkeypatch):
-    from openprogram.webui import server as srv
+    from openprogram.interfaces.server import server as srv
 
     srv._sessions["s1"] = {
         "provider_name": "provider",

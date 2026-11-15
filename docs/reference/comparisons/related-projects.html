@@ -1,0 +1,30 @@
+<title>Related projects</title>
+<meta name="description" content="Projects that share the typed-Python agent idea, where each goes its own way, and what OpenProgram builds on.">
+<h1>Related projects</h1>
+<p>Several groups arrived independently at agents as typed Python: the <strong>docstring is the prompt</strong>, the <strong>signature is the contract</strong>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Shared idea</th><th scope="col">Where it goes its own way</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents"><strong>NVIDIA NOOA</strong></a> (Apache-2.0)</th><td>Agents are Python objects; <code translate="no">...</code> bodies are LLM-implemented; docstrings are prompts, annotations contracts</td><td>State on <code translate="no">self</code>; the model <strong>writes Python into a Jupyter-style REPL</strong> (CodeAct). OpenProgram has the model <strong>choose among registered functions</strong>: a narrower action space, easier to sandbox and replay.</td></tr>
+<tr><th scope="row"><a href="https://github.com/stanfordnlp/dspy"><strong>DSPy</strong></a> (MIT)</th><td>A typed <strong>Signature</strong> replaces the hand-written prompt</td><td>Optimizes the prompt against a metric. We keep prompts fixed and readable and work on execution structure: DAG, retries, context scoping. Complementary.</td></tr>
+<tr><th scope="row"><a href="https://github.com/PrefectHQ/marvin"><strong>Marvin</strong></a> (Apache-2.0), <a href="https://github.com/Mirascope/mirascope"><strong>Mirascope</strong></a> (MIT)</th><td>A decorated function's docstring and return annotation drive a structured call</td><td>Focus on the single typed call. OpenProgram adds what happens <strong>across</strong> calls: shared DAG, <code translate="no">spawn</code>, forking, per-call context budgets.</td></tr>
+<tr><th scope="row"><a href="https://github.com/langchain-ai/langgraph"><strong>LangGraph</strong></a> (MIT)</th><td>Runs should be an inspectable graph with checkpoints</td><td>The graph is declared up front. Ours is <strong>recorded from the call stack</strong>: plain Python, and the DAG traces what ran. See <a href="ai-agent-frameworks.html">the comparison</a>.</td></tr>
+<tr><th scope="row"><a href="https://github.com/huggingface/smolagents"><strong>smolagents</strong></a> (Apache-2.0)</th><td>Act through code rather than rigid tool JSON</td><td>Code-writing agents in a sandbox. We bind code at <strong>authoring</strong> time via <code translate="no">Agent</code> methods, so deterministic parts are reviewable before anything runs.</td></tr>
+<tr><th scope="row"><strong>Scriptorium</strong></th><td>Readable agent memory; Markdown notes; facts cited to source messages; MCP for Claude Code</td><td>Memory the model writes as ordinary files: open, diff, trace every fact to its message</td></tr>
+</tbody>
+</table>
+<p class="note">Mischaracterized or missing? Open a PR or an issue.</p>
+<h2 id="acknowledgements">Acknowledgements</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Project</th><th scope="col">Ported or adapted</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/openclaw/openclaw"><strong>OpenClaw</strong></a> (MIT)</th><td>Tool registry layout (<code translate="no">name / description / parameters / execute</code>), provider abstraction with <code translate="no">check_fn</code> + <code translate="no">requires_env</code>, <code translate="no">TOOLSETS</code> presets, skill loading via SKILL.md frontmatter and late-bound <code translate="no">read</code>. A clone lives under <code translate="no">references/openclaw/</code> (gitignored).</td></tr>
+<tr><th scope="row"><a href="https://github.com/himanshuishere/hermes-agent"><strong>hermes-agent</strong></a> (MIT)</th><td>Starting point for <code translate="no">execute_code</code> (Docker and Modal layers trimmed), <code translate="no">mixture_of_agents</code>, shape of the multi-provider <code translate="no">web_search</code>, <code translate="no">image_generate</code>, <code translate="no">image_analyze</code></td></tr>
+<tr><th scope="row"><a href="https://github.com/mariozechner/pi-coding-agent"><strong>pi-coding-agent</strong></a> (MIT)</th><td>Via OpenClaw: the AgentSkill shape (<code translate="no">&lt;available_skills&gt;</code> XML, name, description, location)</td></tr>
+<tr><th scope="row"><a href="https://www.anthropic.com/claude-code"><strong>Claude Code</strong></a></th><td>Ergonomics of <code translate="no">DEFAULT_TOOLS</code> (bash, read, write, edit, glob, grep, list, apply_patch, todo board) and the todo tools' JSON schema</td></tr>
+<tr><th scope="row"><strong>Anthropic, OpenAI, Google SDKs</strong></th><td>Wire contracts and the clients first-party providers stream through; base dependencies. CLI-backed and OAuth providers talk raw HTTP.</td></tr>
+</tbody>
+</table>
+<p class="note">Tool files name more specific inspirations in file-level docstrings. MIT-licensed components keep their MIT terms; the combined work is AGPL-3.0.</p>
+<h2 id="contributing">Contributing</h2>
+<p>This is a <strong>paradigm proposal</strong> with a reference implementation. Discussions, implementations in other languages, use cases that validate or challenge it, and bug reports are welcome. Setup, tests and PR expectations: <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p>

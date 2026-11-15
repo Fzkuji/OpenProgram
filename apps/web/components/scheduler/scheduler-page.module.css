@@ -7,33 +7,6 @@
   width: clamp(150px, 24vw, 320px);
 }
 
-.layout {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.nav {
-  display: flex;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-  gap: 6px;
-  padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
-}
-
-.navButton:focus-visible {
-  outline: 1.5px solid var(--accent-blue);
-  outline-offset: -1px;
-}
-
-.filterLabel {
-  min-width: 0;
-}
-
 .content {
   flex: 1;
   min-width: 0;
@@ -42,33 +15,12 @@
   padding: 16px 24px 24px;
 }
 
-.sectionHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px 10px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
 .taskIndex {
-  color: var(--text-tertiary);
-  font: 500 11px/1 var(--font-mono, ui-monospace, monospace);
-  font-variant-numeric: tabular-nums;
-}
-
-.description {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: var(--fs-2xs);
+  line-height: 1;
+  font-family: var(--font-sans);
 }
 
 .description > span {
@@ -82,8 +34,9 @@
   padding: 0;
   background: transparent;
   color: var(--text-muted);
-  font: 11px/1.4 var(--font-mono, ui-monospace, monospace);
-  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-2xs);
+  line-height: 1.4;
+  font-family: var(--font-sans);
 }
 
 .memory {
@@ -91,90 +44,13 @@
   align-items: center;
   gap: 3px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   white-space: nowrap;
 }
 
 .memory svg {
   width: 12px;
   height: 12px;
-}
-
-.actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.actions button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: var(--ui-list-radius);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.actions button:hover {
-  background: var(--bg-hover);
-  color: var(--text-bright);
-}
-
-.actions button:focus-visible {
-  outline: 1.5px solid var(--accent-blue);
-}
-
-.actions svg {
-  width: 15px;
-  height: 15px;
-}
-
-.suggestions {
-  width: 100%;
-  max-width: 960px;
-  margin: 0 auto;
-  padding: clamp(24px, 6cqi, 80px) 0 24px;
-}
-
-.emptyIntro {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 40px;
-  text-align: center;
-}
-
-.emptyIntro > svg {
-  width: 32px;
-  height: 32px;
-  color: var(--text-tertiary);
-}
-
-.emptyIntro div {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.emptyIntro strong {
-  color: var(--text-bright);
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.emptyIntro span {
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.suggestionList {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .suggestionRow {
@@ -190,7 +66,7 @@
 }
 
 .suggestionIcon {
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   margin-bottom: 16px;
 }
 
@@ -201,7 +77,7 @@
 
 .suggestionRow h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text-bright);
 }
@@ -209,21 +85,15 @@
 .suggestionSchedule {
   margin: 6px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 
 .suggestionPrompt {
   flex: 1;
   margin: 12px 0 20px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
 }
 
 .form label {
@@ -231,11 +101,9 @@
   flex-direction: column;
   gap: 6px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 
-.form input,
-.form select,
 .form textarea {
   width: 100%;
   padding: 9px 10px;
@@ -247,14 +115,6 @@
   font: inherit;
   box-sizing: border-box;
 }
-.form input,
-.form select {
-  height: var(--ui-button-h);
-  padding: 0 10px;
-}
-
-.form input:focus,
-.form select:focus,
 .form textarea:focus {
   border-color: var(--accent-blue);
 }
@@ -265,13 +125,47 @@
 
 .error {
   color: var(--accent-red);
-  font-size: 12px;
+  font-size: var(--fs-xs);
+}
+
+.calendarNote {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.detail {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.detail dt {
+  color: var(--text-secondary);
+}
+
+.detail dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.detailBody {
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  /* The header toolbar has its own full-width row here; let search fill it. */
+  .headerSearch {
+    width: auto;
+    flex: 1 1 120px;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 700px) {
-  .headerSearch {
-    width: 132px;
-  }
 
   .content {
     padding-right: 14px;
@@ -279,7 +173,9 @@
   }
 
   .description {
-    align-items: flex-start;
+    /* stretch, not flex-start: the prompt span must take the column width
+       for its ellipsis to apply. */
+    align-items: stretch;
     flex-direction: column;
     gap: 2px;
   }
@@ -290,28 +186,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .nav {
-    padding: 10px 14px;
-  }
-
-  .navButton {
-    padding: 0 8px;
-  }
-
-  .emptyIntro {
-    margin-bottom: 28px;
-  }
-}
-
-@container scheduler (max-width: 520px) {
-  .headerSearch {
-    width: 90px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .navButton,
-  .actions button,
   .suggestionRow {
     transition: none;
   }

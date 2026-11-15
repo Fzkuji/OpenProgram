@@ -1,0 +1,230 @@
+<title>会话记录交付步骤</title>
+<meta name="description" content="批准关口、每个交付步骤的改动、修复、验证、回滚和规模，以及每个缺陷由哪一步关闭。">
+<h1 id="title">会话记录交付步骤</h1>
+<p class="note">属于<a href="transcript-model.zh.html">会话记录模型</a>工程记录。目前已完成的内容：<a href="transcript-model.zh.html#status">实现状态</a>。</p>
+<h2 id="delivery">交付</h2>
+<h3>批准关口，在步骤 1 之前</h3>
+<p>一份用用户主题绘制的新旧对比，覆盖下面每一处可见变化，在步骤 1 之前需要得到同意。之后任何增加新可见差异的步骤，都需要在落地前有自己的对比和同意。</p>
+<ol>
+<li>在页边界或由 <code translate="no">/task</code> 启动时画成独立 AttachCard 的子代理，在同一位置画成普通的 SubAgentStep。手动和跨会话的 attach 保持 AttachCard。</li>
+<li>子代理（包括同步的）在启动时出现，显示运行中，能打开实时视图，并会落定。</li>
+<li>不再出现幽灵空行、永久的 Running 步骤和被标记为运行中的 user 行。</li>
+<li>用户自己的 <code translate="no">/spawn</code> 和 <code translate="no">/merge</code> 行保持可见。</li>
+<li>插话和重启续接不再被画两次，也不再在页边界丢失。</li>
+<li>在机器人视图中，插话位于它所改变方向的回复之前，而不是之后。</li>
+<li>向上滚动的读者在后台活动时停留在原处，较旧的页不再落到最新行之后。</li>
+<li>工具步骤下的嵌套调用树在重新加载后保留。</li>
+<li>流式过程中显示引用。</li>
+<li>回复更新时，打开的步骤保持打开并留在原位。</li>
+<li>分屏显示与主视图相同的行，并在没有焦点时更新。</li>
+<li>展开的子代理视图显示工具、思考、终态和之后的轮次。</li>
+<li>重启合并的回复的复制和文件覆盖整个回复；常驻代理发送的文件会出现。</li>
+<li>一个人打的以 <code translate="no">[task from</code> 开头的文字仍是他自己的消息。</li>
+<li>版本箭头不再计入压缩摘要，也不会落到 attach 行上。</li>
+<li>读取失败显示重试，而不是形状不同的会话记录。</li>
+<li>在块中展开被截断的工具结果可以工作；迟到的工具结果会出现在原本没有它的行上。</li>
+<li>最终写入失败的回复在执行结束时落定。</li>
+<li>对话正在被读取时，它的文本短暂保持，然后追上。</li>
+<li>历史按完整轮次加载，所以一次加载带来的行数可能略有不同。</li>
+<li>服务端在接受前拒绝的消息，在其 "Not sent" 行上显示原因，下面不再出现单独的红色回复。</li>
+</ol>
+<p>其他一切保持位置和外观。</p>
+<h3>步骤 0. 测试装置和基线（只有测试）</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动</th><td>基于真实 <code translate="no">SessionStore</code> 的 Python 夹具构建器，覆盖每种旧形状。录制来自真实发送函数的帧。运行器把帧送入生产 reducer 和组件，比较实时与冷读；已知失败以 todo 起步。新的 300,000 节点真实服务端基准（首次打开、页读取、被淘汰的会话、外部写入重建、每视图内存）。<code translate="no">test_scalable_chat_history.py</code> 只在浏览器中用假 socket，以上一项也证明不了。</td></tr>
+<tr><th scope="row">修复</th><td>无。</td></tr>
+<tr><th scope="row">验证</th><td>测试装置在当前代码上运行，已知失败列为 todo，其余全部通过。基准记录基线。</td></tr>
+<tr><th scope="row">回滚</th><td>移除测试文件。</td></tr>
+<tr><th scope="row">规模</th><td>约 700 行，2 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 1. 服务端数据修复，线路不变</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动</th><td><code translate="no">_is_chat_lane</code> 拒绝 <code translate="no">covers_ids</code>。<code translate="no">deepest_leaf</code> 和 <code translate="no">latest_child</code> 只跳过 <code translate="no">_is_side_row</code>，所以顶层运行和 <code translate="no">display=runtime</code> 提示仍可遍历，也不向 checkout 或 <code translate="no">set_head</code> 增加拒绝。<code translate="no">active_branch_chain</code> 按分支顺序。<code translate="no">_execution_rows</code> 取自原始行，只发给会折叠它们的客户端：带后代的根，加上同一回复里同名的调用，每个回复的调用树共用一个字节上限。<code translate="no">tool_output.py</code> 匹配 <code translate="no">&lt;message_id&gt;_t_&lt;node_id&gt;</code>。<code translate="no">aggregate_tool_messages</code> 复制列表，并对没有 <code translate="no">extra</code> 的行应用迟到调用合并。读取失败返回可重试错误而不是 <code translate="no">conv_snapshot</code>；断链遍历保留，记录日志，输入相同。分成多个小提交。</td></tr>
+<tr><th scope="row">修复</th><td>F17（冷读）、F19、F22、F23、F24、F41、F42。</td></tr>
+<tr><th scope="row">验证</th><td>每个修复在 <code translate="no">tests/unit/webui</code> 和 <code translate="no">tests/component/webui/chat/test_session_tool_output_transport.py</code> 中各有一个测试，在其提交之前失败。版本箭头能越过运行行和 <code translate="no">job_followup</code> 行，且绝不落到 attach 行。没有 <code translate="no">extra</code> 的行带上其迟到调用，重复加载不增长。</td></tr>
+<tr><th scope="row">回滚</th><td>回退单个提交。</td></tr>
+<tr><th scope="row">规模</th><td>约 240 行，2 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 2. 整轮分页，线路不变</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动</th><td><code translate="no">HistorySnapshot</code> 按轮次为分组键，切分前用成员规则按显示顺序遍历，压缩行留在确切位置。每个行 id 都进入 <code translate="no">_positions</code>。搜索返回行 id。上限改为 6 轮或 128 KiB，以及 25 轮或 512 KiB。移除无用的 <code translate="no">history_page</code>。客户端不动。重写 <code translate="no">chat-turn-visual-spec</code> 中的分页单位和 <code translate="no">runtime/reliability/web-runtime-reliability</code> 中的页上限，先英文后中文。</td></tr>
+<tr><th scope="row">修复</th><td>F1、F5（页边界）、F40（分支上的 id）。</td></tr>
+<tr><th scope="row">验证</th><td><code translate="no" data-claim="example">test_session_history_pages.py</code>：attach、占位、插话或重启行都不作为分组之首；每个边界的扫描等于不分页读取；重启续接轮次内的压缩行保持位置；长常驻链保持每轮一行；服务端基准不超基线。</td></tr>
+<tr><th scope="row">回滚</th><td>回退；客户端和数据不变。</td></tr>
+<tr><th scope="row">规模</th><td>约 250 行，2 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 3. 写入方记录归属</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动：子代理卡片</th><td>同步 spawn 从 <code translate="no">on_accepted</code> 写占位，带 <code translate="no">job.id</code>、<code translate="no">tool_call_id</code>、<code translate="no">delivery=tool_result</code>；<code translate="no">run_agent_turn</code> 传递 <code translate="no">attach_pointer_id</code>；结束写入是补丁；没有 head 的结果和失败路径补丁为 errored；占位失败时回退到在结束时追加。启动对账见<a href="transcript-model-live.zh.html#sub-agent">子代理</a>。attach 写入方盖上 <code translate="no">tool_call_id</code>。</td></tr>
+<tr><th scope="row">改动：id 与元数据</th><td><code translate="no">append_message(advance_head=False)</code>，head 恢复去掉，保留 <code translate="no">branch.py:562-565</code> 的镜像刷新。送达的消息写 <code translate="no">origin=agent_delivery</code>，手打的写 <code translate="no">origin=person</code>。<code translate="no">metadata.client_request_id</code> 经 <code translate="no">_build_user_msg</code>、<code translate="no">run_agent_method_call</code>、<code translate="no">retry.py</code> 和 <code translate="no">POST /api/function/{name}</code> 写到 user 节点和预创建的函数运行节点。</td></tr>
+<tr><th scope="row">改动：流式</th><td><code translate="no">stream_tap</code> 经安静的 <code translate="no">durable=False</code> 路径先持久化再发送，并增加 <code translate="no">row_id</code>、<code translate="no">item_id</code>、<code translate="no">item_index</code>、<code translate="no">offset</code>。<code translate="no">ws_delivery</code> 只合并连续偏移。<code translate="no">memory_index.rebuild</code> 原子交换。取消时最终块是 <code translate="no">tap.blocks</code>，否则是 <code translate="no">_ordered_blocks or tap.blocks</code>，所以终态写入保留已收到的轨迹，Stop 保留部分文本。</td></tr>
+<tr><th scope="row">改动：状态与记录</th><td><code translate="no">event_effects</code> 在执行终态时落定未结束的锚定行，并写入 <code translate="no">paused</code> 及回到 <code translate="no">running</code>（<a href="transcript-model-live.zh.html#run-end">运行结束状态</a>）。更新 <code translate="no">sub-agent-row</code> 和 <code translate="no">unify-parent-called-by</code>，先英文后中文。</td></tr>
+<tr><th scope="row">修复</th><td>F18 和 F36 的写入、F33（存储修复）、F39（偏移）；F2 的前提。</td></tr>
+<tr><th scope="row">验证</th><td>真实行上的写入方测试。tap 测试：持久化的行在每次发送时不落后。带运行中占位的夹具会话上 <code translate="no">render_context</code> 字节相等。attach 写入期间 head 不动。同步 spawn 的卡片有作业 id，运行期间能打开，并在成功、失败和 worker 死亡时落定。Web user 节点、每个入口的函数运行节点和重试都带 <code translate="no">client_request_id</code>。完成消息之后的 Stop 保留部分文本。暂停的执行向其行写 <code translate="no">paused</code>，恢复的写 <code translate="no">running</code>，追赶时重放的旧事件都不写。CLI 和 ACP 流测试不变。在此对照步骤 0 在繁忙机器上测量增量延迟和 fsync 次数。</td></tr>
+<tr><th scope="row">回滚</th><td>回退；多余的元数据和帧字段被旧读取方忽略，只有仍在作业队列中的投递消息例外：它带有来源字段，旧的作业读取方会拒绝。跨回退的运行留下的占位由作业恢复通过 <code translate="no">attach_pointer_id</code> 关闭。</td></tr>
+<tr><th scope="row">规模</th><td>约 230 行，2-3 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 4. 气泡按 id 拥有数据，旧传输</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动</th><td><code translate="no">owned-children.ts</code> 按 <code translate="no">tool_call_id</code> 配对，旧顺序作兜底，气泡从它绘制。稳定的块 key 和每视图展开表。<code translate="no">row-status.ts</code> 取代 15 份手写列表。<code translate="no">runtime-block.tsx:343-352</code> 的硬编码 Running 分支去掉；步骤从行状态绘制。同会话的 <code translate="no">/task</code> 在其位置画成 SubAgentStep，只有手动或跨会话才用 AttachCard。机器人视图从内容读取文件标记。<code translate="no">joinedReply</code> 包含内容和轮次文件。</td></tr>
+<tr><th scope="row">修复</th><td>F6、F18（配对）、F33（表）、F34、F35（工具块）、F37、F38。</td></tr>
+<tr><th scope="row">验证</th><td>两个同名 agent 调用顺序相反时配对正确。打开的步骤在块重建时保持打开。没有树的已完成运行时行不显示转圈。状态表测试覆盖每个线路值。<code translate="no">/task</code> 和工具启动的 agent 渲染同一个组件。<code translate="no">restart-continuation.test.mjs</code> 覆盖内容。</td></tr>
+<tr><th scope="row">回滚</th><td>单独回退；数据不变。</td></tr>
+<tr><th scope="row">规模</th><td>约 450 行，3 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 5. 投影、轮次索引和读取切换</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动：投影与读取</th><td>加入 transcript 包。黄金对照在每个夹具上运行当前映射器与投影，之后任何 TypeScript 映射器改动都会使其失败。投影出的行在未改动的 <code translate="no">kind</code> 和 <code translate="no">slot</code> 旁边带上 <code translate="no">rowKind</code>，所以压缩卡片、系统事件行和覆盖在旧分发上继续工作。在 dev profile 上运行 <code translate="no" data-claim="example">compare_transcript_projection.py</code> 并清除不匹配。接上版本 3 读取，包括 <code translate="no">_bounded_history</code> 以及分片和分页门。轮次和窗口直接进入存储；页保存轮次 id。</td></tr>
+<tr><th scope="row">改动：页回复</th><td>页回复用完整加载的规则防止未结束行被旧帧倒退，但限定在页内：<code translate="no">session-history-loader.ts</code> 在发送页请求时捕获视图的行，回复时用限制在回复行 id 内的基线和当前行调用 <code translate="no">retainChangedRows</code>。于是它只能在该页的行和同 id 的实时行之间选择，不能追加任何内容。页外已持有的行留在原处，页按 <code translate="no">window.start</code> 放置。<code translate="no">session-load.ts:65</code> 的线路级调用在版本 3 上没有线路行可比，跳过；<code translate="no">:32</code> 的行级调用为完整加载保留。</td></tr>
+<tr><th scope="row">改动：客户端</th><td>切换所需的客户端改动：窗口存在性判断代替 <code translate="no">use-history-window.ts:42</code>、<code translate="no">session-history-loader.ts:58,127,136,178</code>、<code translate="no">history-window.ts:20</code> 的 <code translate="no">snapshot</code> 判断；<code translate="no">page-shell.tsx:288-303</code> 判断已持有轮次；<code translate="no">use-ws.ts:726</code> 从轮次取 head 状态；<code translate="no">conversation-find.tsx:36</code> 去掉令牌；<code translate="no">search.py</code> 改用 <code translate="no">reader.search</code>。<code translate="no">createSessionLoads.accept</code> 先应用完成的回复，再发待发读取。</td></tr>
+<tr><th scope="row">改动：测试</th><td>用假 socket 驱动 Web 客户端的测试改用 <code translate="no">turns</code> 和 <code translate="no">window</code> 回答：<code translate="no">tests/e2e/web/test_scalable_chat_history.py</code>（300,000 行用例，改述为 300,000 个单行轮次）、<code translate="no">test_automatic_chat_history.py</code>、<code translate="no">test_chat_history_interactions.py</code>、<code translate="no">test_chat_transcript_follow.py</code>、<code translate="no">apps/web/tests/chat/history/history-window.test.mjs</code>、<code translate="no">session-history.test.mjs</code> 和 <code translate="no">apps/web/tests/chat/messages/chat-activation.test.mjs</code>；只要回滚路径存在，它们的版本 2 用例就并列保留。</td></tr>
+<tr><th scope="row">改动：落地与记录</th><td>包和切换在几天内落地。更新 <code translate="no">chat-turn-visual-spec</code> 和 <code translate="no">unify-parent-called-by</code>；修正 <code translate="no">history-window.ts:9</code> 和 <code translate="no">load.py:231-232</code> 的注释。先英文后中文。</td></tr>
+<tr><th scope="row">修复</th><td>F4、F9、F11（丢弃回复）、F27、F35（块 id）、F40（未知游标）、F42（在 <code translate="no">legacy.py</code> 中具名的断链遍历）、F43。</td></tr>
+<tr><th scope="row">验证</th><td>黄金对照，列出有意的差异。投影输出上的页边界扫描。打开后变化的行读到新内容。有残留行的窗格会读取。压缩卡片、snip 行和覆盖的绘制与切换前相同。页回复保留未结束行，不在末尾增加行。锚点恢复、查找和切换到缓存对话在版本 3 上工作。无图回复。分屏焦点仍只是焦点记录。对照步骤 0 的服务端基准：首次打开、页读取和被淘汰的会话。</td></tr>
+<tr><th scope="row">回滚</th><td>把客户端协议常量改回 2；服务端仍提供它，版本 2 客户端路径完好。</td></tr>
+<tr><th scope="row">规模</th><td>新增约 1600 行，移除 200 行，5-6 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 6. 每视图的行和子代理读取</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动：行存储</th><td><code translate="no">rowsByView</code> 成为 <code translate="no">selectRow</code> 背后的行存储，在落地时用脚本应用，因为这些路径每周有几十个提交。现有写入函数保持名字，按传入的视图键路由：<code translate="no">updateMessage</code> 不再忽略第一个参数，<code translate="no">setMessages</code> 只替换该视图。如果写入函数指明的视图并不持有该行，则回退到唯一持有它的视图，因为此前调用方什么都可能传；有多个持有者时不写入并记录日志。</td></tr>
+<tr><th scope="row">改动：索引</th><td><code translate="no">messagesById</code> 保留到步骤 8，作为旧读取方的只读索引，其中包括 <code translate="no">chat-stream.ts:619</code> 和 <code translate="no">:653</code> 的 <code translate="no">Object.entries</code> 扫描。存储刷新它写的每一行的条目，主视图行优先于同 id 的子代理行，只有没有任何视图持有时 id 才离开。</td></tr>
+<tr><th scope="row">改动：读取方与记录</th><td>组件和子代理视图通过 <code translate="no">selectRow(viewKey, id)</code> 读取。子代理视图以自己的视图键经 <code translate="no">reader.py</code> 读取。<code translate="no">handleSubAgentResponse</code>、其 <code translate="no">finalize</code> 路径以及 <code translate="no">sub-agent-transcripts.ts:81,126</code> 的写入保留到步骤 8。作业状态重读保留到步骤 8。更新 <code translate="no">sub-agent-row</code> 和 <code translate="no">ui/state-layer</code> 中的行存储，先英文后中文。</td></tr>
+<tr><th scope="row">修复</th><td>F31、F30（读取）。</td></tr>
+<tr><th scope="row">验证</th><td>主视图和子代理视图中相同的行 id 保持分离，替换一个视图不影响另一个视图的行和索引条目。<code translate="no">test_sub_agent_transcript.py</code>：打开后展开视图中出现工具、思考和终态；作业文本绝不进入父级。</td></tr>
+<tr><th scope="row">回滚</th><td>回退；有选择器，这是一个提交。</td></tr>
+<tr><th scope="row">规模</th><td>约 350 行，大部分是生成的，2 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 7. 观察者、发布器、非回复更新</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动：发布内容</th><td><code translate="no">SessionLog</code> 观察者、发布器、带编号的 <code translate="no">transcript_update</code>、本步发布的变更的 reducer、<code translate="no">transcript_update</code>、<code translate="no">stream_event</code> 和终态 <code translate="no">chat_response</code> 的暂存、<code translate="no">transcript_gap</code>、<code translate="no">transcript</code> 帧种类、<code translate="no">branches_changed</code>、带视图上限的 <code translate="no">close_view</code>。<code translate="no">PUBLISH_CHAT_ROWS = False</code>：user 行、回复行、插话和重启提示留在旧帧上。发布的有：已持有行上进入 <code translate="no">attachCards</code> 的 attach 条目；系统行；常驻报告起始行；非未结束行的默认行分支；<code translate="no">window_stale</code>；非回复行的子代理视图扩展。</td></tr>
+<tr><th scope="row">改动：旧写入方</th><td><code translate="no">callRoots</code> 和 <code translate="no">runtimeChildren</code> 保留旧写入方（<code translate="no">tree_update</code>、<code translate="no">handleRuntimeRow</code>），从步骤 8 开始发布。<code translate="no">attachCards</code> 有一个旧写入方，即以 <code translate="no">card_id</code> 为键的 <code translate="no">sub_agent</code> 流事件。<code translate="no">card_id</code> 是 attach 行的 id，所以两者 upsert 同一个条目，而发布器的帧在写入后从存储读取，携带最终状态。</td></tr>
+<tr><th scope="row">改动：重新加载与记录</th><td>对版本 3 socket，<code translate="no">_enqueue</code> 只为本步完全交付的原因丢弃 <code translate="no">session_reload</code>，且只在持有该会话视图的 socket 上。全新对话不发 <code translate="no">load_session</code>，它的 socket 不持有视图：它保留这些重新加载，第一次重新加载运行的 <code translate="no">load_session</code> 加入视图。聊天动作的加入和 <code translate="no">first_read</code> 留在步骤 8，因为 <code translate="no">first_read</code> 按 <code translate="no">clientRequestId</code> 替换待发送的行，而本地行从那时起才带它。更新 <code translate="no">chat-progress-recovery</code>、<code translate="no">always-on-agents</code>、<code translate="no">dag/rendering</code> 和 <code translate="no">event-reference</code>，先英文后中文。</td></tr>
+<tr><th scope="row">修复</th><td>F2、F3、F10（spawn、attach、报告和提示的重新加载）、F26（重新加载交付）。</td></tr>
+<tr><th scope="row">验证</th><td>真实发送路径上不注入 id 的契约测试：同步 spawn 的卡片在运行期间出现并落定，重新加载后位置相同。在本标签页开始、从未发送 <code translate="no">load_session</code> 的对话中，spawn 的卡片经保留的重新加载出现，之后的变化以 <code translate="no">item_upsert</code> 到达。读取期间的终态错误帧暂存在其文本帧之后，该行保持错误。处于较旧历史的读者经 100 次后台更新保持窗口和锚点。spawn 不产生 <code translate="no">window_stale</code>。fork 的子进程不触发观察者。溢出恰好产生一个 gap。attach 之后 DAG 面板刷新。已持有视图的更新通过一次读取到达重建视图的持有者。恢复的续接错误仍通过保留的重新加载清除。</td></tr>
+<tr><th scope="row">回滚</th><td>回退；版本 3 socket 重新遵守每个 <code translate="no">session_reload</code>。</td></tr>
+<tr><th scope="row">规模</th><td>约 750 行，4 天。</td></tr>
+</tbody>
+</table>
+<h4 id="reload-reasons">版本 3 socket 上的 <code translate="no">session_reload</code> 原因</h4>
+<table class="stack">
+<thead><tr><th scope="col">原因</th><th scope="col">交付方式</th><th scope="col">丢弃于</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">job_attach</code>、<code translate="no">task_tool_spawn</code>、<code translate="no">spawn</code>、<code translate="no">spawn_async</code>、<code translate="no">attach</code></th><td>attach 行上的 <code translate="no">item_upsert</code></td><td>7</td></tr>
+<tr><th scope="row"><code translate="no">always_on_report</code></th><td><code translate="no">turn_upsert</code></td><td>7</td></tr>
+<tr><th scope="row"><code translate="no">self_update_result</code>、<code translate="no">owner_notice</code> 的 <code translate="no">SOURCE</code></th><td>默认行分支或 <code translate="no">turn_upsert</code></td><td>7</td></tr>
+<tr><th scope="row"><code translate="no">merge</code>、<code translate="no">delete_nodes</code></th><td><code translate="no">window_stale</code></td><td>7</td></tr>
+<tr><th scope="row"><code translate="no">execution_cancelled</code>、<code translate="no">execution.cancelled</code>、<code translate="no">continuation_recovered</code>、<code translate="no">continuation_contract_mismatch</code>、<code translate="no">wait_declined</code>、<code translate="no">wait_timeout</code>、<code translate="no">job_&lt;status&gt;</code>、<code translate="no">job_errored</code>、<code translate="no">job_cancelled</code>、<code translate="no">self_update_held</code></th><td>终态回复行</td><td>8</td></tr>
+</tbody>
+</table>
+<h3>步骤 8. 实时走一条路径</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动：标志与发布</th><td><code translate="no">PUBLISH_CHAT_ROWS = True</code>。这个标志把关本步整个服务端：回复行、<code translate="no">callRoots</code> 和 <code translate="no">runtimeChildren</code> 的发布，<code translate="no">notice_tree</code>，版本 3 帧过滤，聊天动作的视图加入和 <code translate="no">first_read</code>，以及反向的终态 <code translate="no">chat_response</code> 暂存。回复行、插话和重启提示经发布器，带派生字段重算和 Stop 规则。偏移缺口规则。<code translate="no">text_end</code> 引用。三个目标的 <code translate="no">notice_tree</code>。</td></tr>
+<tr><th scope="row">改动：本地行与覆盖层</th><td>带 <code translate="no">clientRequestId</code> 和锚的本地行，每个本地行都带类型化的 <code translate="no">rowKind</code>；<code translate="no">use-function-dispatch.ts</code> 和 Retry 动作发送 <code translate="no">client_request_id</code>。聊天动作加入视图，确认携带 <code translate="no">first_read</code>。带类型的覆盖层，包括 Stop 拒绝路径；<a href="transcript-model-live.zh.html#optimistic-writes">乐观写入</a>中的每个调用点都已分类。确认前的错误路径画在本地行上。</td></tr>
+<tr><th scope="row">改动：过滤与移除</th><td>版本 3 帧过滤，包括其余的 <code translate="no">session_reload</code> 原因。<code translate="no">use-ws.ts:406</code>、<code translate="no">chat-handlers.ts:288,960</code> 和 <code translate="no" data-claim="example">transcript-hydration.ts:22</code> 的焦点门控路径去掉。子代理实时路径走同一协议。<a href="transcript-model-wire.zh.html#deleted">删除的内容</a>中标为步骤 8 的全部内容。<code translate="no">createSessionLoads</code> 持有修复和页读取。</td></tr>
+<tr><th scope="row">改动：测试</th><td>测试随移除一起移动：<code translate="no">apps/web/tests/chat/session/session-load.test.mjs</code>、<code translate="no">chat/session/running-task-stand-in.test.mjs</code>、<code translate="no">chat/transcript/stream-delta-raf.test.mjs</code>、<code translate="no">chat/transcript/stream-turn-settle.test.mjs</code>、<code translate="no">abilities/function-invocation.test.mjs</code>、<code translate="no">chat/rewind-actions.test.mjs</code>、<code translate="no">chat/messages/message-action-row.test.mjs</code>、<code translate="no">desktop/self-update-reopen.test.mjs</code> 以及 <code translate="no">tests/e2e/web/test_chat_history_interactions.py</code> 中的 <code translate="no">preserveSessionReadRows</code> 用例。被移除行为的测试删除，由实时等于冷读的场景代替。引用存储写入函数或 <code translate="no">messagesById</code> 的 43 个测试文件通过 <code translate="no">apps/web/tests/_support/transcript-rows.mjs</code> 写行，它把每行作为一个 <code translate="no">turn_upsert</code> 或带类型的本地变更喂给 <code translate="no">apply-transcript-update.ts</code>，并用 <code translate="no">selectRow(viewKey, id)</code> 读取，所以唯一写入者契约在测试中也成立。</td></tr>
+<tr><th scope="row">改动：记录</th><td>重写 <code translate="no">turn-occupancy</code>、<code translate="no">conversation-lifecycle</code>、<code translate="no">streaming-resume</code>、<code translate="no">chat-turn-visual-spec</code> 的更新归属部分、<code translate="no">ui/interaction-feedback</code> 的快速确认和流式回填行，以及 <code translate="no">ui/state-layer</code> 的 <code translate="no">messagesById</code> 和 <code translate="no">messageOrder</code> 行，先英文后中文。步骤 5 到 8 紧挨着落地，以缩短合并层和新读取共存的时间。</td></tr>
+<tr><th scope="row">修复</th><td>F5（实时）、F7、F8、F10（其余）、F11（其余）、F12、F13、F14、F15、F16、F17（实时）、F20（部分）、F21、F25（部分）、F26（其余）、F30（实时）、F32（部分）、F33（其余）、F35（实时）、F39。</td></tr>
+<tr><th scope="row">验证：收敛</th><td>实时等于冷读，经生产 reducer 和组件，覆盖每个列出的场景，在 dev 实例和夹具上都验证，只记录不匹配项。相同帧交付两次不改变任何内容。丢失的文本帧用一次读取修复；流式期间的读取不造成循环或收缩。<code translate="no">/spawn</code> 行保留。未知行不创建任何内容。全新对话从第一帧开始流式。</td></tr>
+<tr><th scope="row">验证：服务端行</th><td>插话出现在其位置，其待发送气泡清除。重启在实时中隐藏被截断的回复。章节固定、回退和执行效果重写以一个 <code translate="no">row_upsert</code> 到达。发给运行中已展开代理的第二条消息出现。Stop 后文本停止，终态行在没有后续写入的情况下发出。引用来自真实帧。</td></tr>
+<tr><th scope="row">验证：发送、Stop 与调用树</th><td>抢在确认前的 <code translate="no">turn_upsert</code> 替换本地行，确认丢失后的重连只留下一个 user 行。被拒绝的 Stop 清除其覆盖层，行回到运行中，之后的文本出现。因系统访问暂停后恢复的运行先画 paused 再画 running，暂停期间的读取一致。被拒绝的发送在 Not sent 行显示原因，重新加载前后都没有 <code translate="no">_reply</code>。模型发起的函数的树实时更新其 <code translate="no">callRoots</code>，函数卡片在存储写入仍是外部时依终态树落定。对照步骤 0 的增量延迟。</td></tr>
+<tr><th scope="row">回滚</th><td>设置 <code translate="no">PUBLISH_CHAT_ROWS = False</code> 并回退本步骤的客户端提交。版本 3 socket 随后得到步骤 7 的过滤和被回退客户端读取的旧帧，为无视图 socket 保留的重新加载再次生效，步骤 7 保持。</td></tr>
+<tr><th scope="row">规模</th><td>新增约 800 行，移除 1600 行，5-6 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 9. 只画服务端发来的内容</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动</th><td>按 <code translate="no">rowKind</code> 分发，没有默认分支，本地行也一样；<code translate="no">kind</code> 和 <code translate="no">slot</code> 保留为 <code translate="no">SystemEventRow</code> 读取的子类型；<code translate="no">coveredBy</code> 取代 <code translate="no">coversIds</code>；两个窗格共享 <code translate="no">TranscriptRows</code>；会话范围取自行列表。更新 <code translate="no">ui/invariants</code>，先英文后中文。</td></tr>
+<tr><th scope="row">修复</th><td>F28、F29（部分）、F36。</td></tr>
+<tr><th scope="row">验证</th><td>同一轮次在 <code translate="no">MessageList</code>、<code translate="no">PeerSessionPane</code> 和内嵌子代理视图中渲染相同。手打的 <code translate="no">[task from</code> 行仍是 user 行。旧的已送达消息仍显示为收到。在 dev 实例上做真实屏幕比较。</td></tr>
+<tr><th scope="row">回滚</th><td>回退组件提交。</td></tr>
+<tr><th scope="row">规模</th><td>新增约 350 行，移除 400 行，3 天。</td></tr>
+</tbody>
+</table>
+<h3>步骤 10. 移除旧路径并完成记录</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">改动</th><td><a href="transcript-model-wire.zh.html#deleted">删除的内容</a>中标为步骤 10 的全部内容。CLI、<code translate="no">worker_turn</code>、<code translate="no">rehearsal</code> 和 HTTP 路由读取 <code translate="no">flat_rows</code>。映射器移除之前，黄金对照的期望输出冻结为步骤 0 夹具旁的 JSON，之后对照测试把投影与这些文件比较。测试随移除一起移动：步骤 5 移动的测试的版本 2 用例；<code translate="no">tests/component/self_update/versions/test_direct_edit_capture.py:205</code> 和 <code translate="no">tests/component/scheduler/test_scheduled_run_endings.py:365</code> 中的 <code translate="no">_broadcast_session_reload</code> monkeypatch；<code translate="no">tests/unit/agent/test_always_on.py:306</code>、<code translate="no">tests/component/agent/execution/test_agent_continuation_real.py:1801</code>、<code translate="no">tests/component/agent/jobs/test_job_attach_integration.py:252</code>、<code translate="no">tests/component/agent/jobs/test_async_job_recovery.py:485</code>、<code translate="no">tests/component/webui/execution/test_execution_cancellation.py:131,264,301,642</code> 中的断言，以及 <code translate="no">test_webui_head_mirror_and_run_guard.py</code>、<code translate="no">test_chat_transcript_follow.py</code>、<code translate="no">test_sub_agent_run.py</code>、<code translate="no">test_session_branch_consistency.py</code> 中的引用；<code translate="no" data-claim="example">tests/unit/webui/test_session_history_pages.py</code>、<code translate="no">tests/component/webui/chat/</code>（五个文件）、<code translate="no">tests/component/webui/runtime/</code>（两个文件）、<code translate="no">tests/e2e/web/test_chat_history_interactions.py</code>、<code translate="no">apps/web/tests/chat/history/session-history.test.mjs</code> 中 <code translate="no">HistorySnapshot</code> 和 <code translate="no">close_snapshots</code> 的使用方。从 <code translate="no">error-taxonomy-propagation</code>、<code translate="no">agent-collab-architecture</code>、<code translate="no">agent-call-flow</code> 中移除 <code translate="no" data-claim="example">conv-mapper</code> 的提及。<code translate="no">runtime/reliability/web-runtime-reliability</code> 用 <code translate="no">transcript/reader.py</code> 代替 <code translate="no" data-claim="example">session_history.py</code>。关闭 <code translate="no">transcript-model</code> 的“实现状态”附录。先英文后中文。允许列表清空。</td></tr>
+<tr><th scope="row">修复</th><td>没有新增。</td></tr>
+<tr><th scope="row">验证</th><td>空允许列表的契约测试。<code translate="no">session_loaded</code> 和流式的 CLI 测试。<code translate="no">worker_turn</code> 恢复按 id 找到回复。<code translate="no">rehearsal</code> 读取对话。HTTP <code translate="no">load_session</code> 测试。<code translate="no">python -m scripts.docs_site.checklinks</code> 报告 0 个死链。</td></tr>
+<tr><th scope="row">回滚</th><td>回退移除提交；之前的步骤保持。</td></tr>
+<tr><th scope="row">规模</th><td>移除约 3000 行，2-3 天。</td></tr>
+</tbody>
+</table>
+<h3>缺陷与步骤</h3>
+<table class="stack">
+<thead><tr><th scope="col">缺陷</th><th scope="col">问题</th><th scope="col">步骤</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">F1</th><td>attach 行成为自己的显示分组，分页把它和父回复分开</td><td>2</td><td>关闭</td></tr>
+<tr><th scope="row">F2</th><td>实时的 <code translate="no">sub_agent</code> 帧从未到达 reducer</td><td>3, 7</td><td>关闭</td></tr>
+<tr><th scope="row">F3</th><td>为交付子代理卡片而发的重新加载输给仍在流式的行</td><td>7</td><td>关闭</td></tr>
+<tr><th scope="row">F4</th><td>分页保留父行的存储副本，丢弃新折叠的那份</td><td>5</td><td>关闭</td></tr>
+<tr><th scope="row">F5</th><td>插话和重启续接在页边界被画两次或丢失</td><td>2, 8</td><td>关闭</td></tr>
+<tr><th scope="row">F6</th><td>没有树的已完成运行时行画出永久的 Running 步骤</td><td>4</td><td>关闭</td></tr>
+<tr><th scope="row">F7</th><td>完整加载期间落地的较旧页被追加到最新行之后</td><td>8</td><td>关闭</td></tr>
+<tr><th scope="row">F8</th><td><code translate="no">setMessages</code> 抖动让未变的行看起来被编辑过，过期行压过终态加载</td><td>8</td><td>关闭</td></tr>
+<tr><th scope="row">F9</th><td>重新获取的页来自冻结的快照</td><td>5</td><td>关闭</td></tr>
+<tr><th scope="row">F10</th><td>每次后台重新加载都把读者的窗口重置到最新页</td><td>7, 8</td><td>关闭</td></tr>
+<tr><th scope="row">F11</th><td>比加载往返更快到达的重新加载丢弃每个回复</td><td>5, 8</td><td>关闭</td></tr>
+<tr><th scope="row">F12</th><td><code translate="no">/spawn</code> 和 <code translate="no">/merge</code> 的结果覆盖用户自己的消息行，该行随后什么都不画</td><td>8</td><td>关闭</td></tr>
+<tr><th scope="row">F13</th><td>两个写入者用不同规则应用终态结果</td><td>8</td><td>关闭</td></tr>
+<tr><th scope="row">F14</th><td>未知行的 <code translate="no">tree_update</code> 造出幽灵 <code translate="no">&lt;id&gt;_reply</code> 运行时行，加载还保留它</td><td>8</td><td>关闭</td></tr>
+<tr><th scope="row">F15</th><td>乐观函数占位在成功时没有移除者</td><td>8</td><td>关闭</td></tr>
+<tr><th scope="row">F16</th><td><code translate="no">running_task</code> 可能把 user 行标为运行中，加载还保留</td><td>8</td><td>关闭</td></tr>
+<tr><th scope="row">F17</th><td>工具步骤下的嵌套调用树只存在于实时内存</td><td>1, 8</td><td>关闭</td></tr>
+<tr><th scope="row">F18</th><td>卡片和调用树按顺序和名字而非 id 与工具调用配对</td><td>3, 4</td><td>新行关闭；旧行靠启发式</td></tr>
+<tr><th scope="row">F19</th><td>在块中展开被截断的工具结果失败</td><td>1</td><td>关闭；长度限制见<a href="transcript-model-limits.zh.html#limits">仍然存在的限制</a></td></tr>
+<tr><th scope="row">F20</th><td>同一工具结果有三种长度，加载更多行为各不相同</td><td>8</td><td>部分</td></tr>
+<tr><th scope="row">F21</th><td>流式期间缺少 provider 引用</td><td>8</td><td>关闭</td></tr>
+<tr><th scope="row">F22</th><td>压缩摘要被算作第一条被覆盖消息的一个版本</td><td>1</td><td>关闭</td></tr>
+<tr><th scope="row">F23</th><td>切换版本可能把 HEAD 放到 attach 指针行上</td><td>1</td><td>关闭</td></tr>
+<tr><th scope="row">F24</th><td>子代理分支被检出时可能把回复显示在提示之上</td><td>1, 8</td><td>关闭</td></tr>
+<tr><th scope="row">F25</th><td>实时行保留和分页对仅客户端、未持久化的行意见不一</td><td>8</td><td>部分</td></tr>
+<tr><th scope="row">F26</th><td>分屏收不到重新加载信号</td><td>7, 8</td><td>关闭</td></tr>
+<tr><th scope="row">F27</th><td>存储已持有部分行时，窗格打开的是片段</td><td>5</td><td>关闭</td></tr>
+<tr><th scope="row">F28</th><td>分屏中的卡片以聚焦会话为准判断自己</td><td>9</td><td>关闭</td></tr>
+<tr><th scope="row">F29</th><td>同一对话在分屏中的会话记录是缩减版</td><td>9</td><td>部分：消息导轨和查找只在主视图（<a href="transcript-model-limits.zh.html#limits">仍然存在的限制</a>）</td></tr>
+<tr><th scope="row">F30</th><td>内联子代理视图只保留文本流和终态帧</td><td>6, 8</td><td>关闭</td></tr>
+<tr><th scope="row">F31</th><td><code translate="no">messagesById</code> 是全局的，而 <code translate="no">setMessages</code> 按聊天键删除</td><td>6</td><td>关闭</td></tr>
+<tr><th scope="row">F32</th><td>实时回复缺少重新加载才提供的字段</td><td>8</td><td>部分</td></tr>
+<tr><th scope="row">F33</th><td>状态在各处分别判定，列表互相矛盾</td><td>3, 4, 8</td><td>关闭</td></tr>
+<tr><th scope="row">F34</th><td>子代理用什么组件取决于它的启动方式</td><td>4</td><td>关闭</td></tr>
+<tr><th scope="row">F35</th><td>块重建时打开的步骤折叠或移动</td><td>4, 5, 8</td><td>关闭，一个边界情况见<a href="transcript-model-limits.zh.html#limits">仍然存在的限制</a></td></tr>
+<tr><th scope="row">F36</th><td>用户打的文字可能改变行的类型</td><td>3, 9</td><td>关闭</td></tr>
+<tr><th scope="row">F37</th><td>常驻对话发送的文件可能缺失</td><td>4</td><td>关闭</td></tr>
+<tr><th scope="row">F38</th><td>重启合并的回复只复制和附带最后一段</td><td>4</td><td>关闭</td></tr>
+<tr><th scope="row">F39</th><td>丢失的文本帧要到轮次结束才被发现</td><td>3, 8</td><td>关闭；最后一帧由终态行修复</td></tr>
+<tr><th scope="row">F40</th><td>恢复的阅读锚点可能指向服务端无法翻到的行</td><td>2, 5</td><td>关闭</td></tr>
+<tr><th scope="row">F41</th><td>经兜底存储路径写入的行每次加载都改变形状并增长工具调用</td><td>1</td><td>关闭</td></tr>
+<tr><th scope="row">F42</th><td>读取失败时悄悄换成形状不同的会话记录</td><td>1, 5</td><td>关闭；断链遍历在 <code translate="no">legacy.py</code> 中具名</td></tr>
+<tr><th scope="row">F43</th><td>粘贴元素在重新加载后丢失：存储把 <code translate="no">extra</code> 展平到行上，而映射器只读 <code translate="no">extra</code></td><td>5</td><td>关闭</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="transcript-model-limits.zh.html">限制与约束</a></p>

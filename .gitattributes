@@ -1,3 +1,6 @@
+# Check every text file out with LF on every platform. Source-contract
+# tests read sources as strings, and a Windows CRLF checkout breaks them.
+* text=auto eol=lf
 # Keep shell scripts LF so they run on macOS/Linux regardless of core.autocrlf.
 # A CRLF shebang breaks bash ("bad interpreter: /usr/bin/env bash^M").
 *.sh text eol=lf

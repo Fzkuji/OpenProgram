@@ -50,19 +50,19 @@
   <rect x="1" y="1" width="958" height="778" rx="16" fill="url(#bg)" stroke="var(--border)"/>
 
   <!-- Title -->
-  <text x="480" y="38" text-anchor="middle" font-size="20" font-weight="700" class="t">Session Name 生命周期</text>
-  <text x="480" y="58" text-anchor="middle" font-size="11" class="s">三个来源可互相覆盖，所有路径汇入同一个写入入口</text>
+  <text x="480" y="38" text-anchor="middle" font-size="20" font-weight="700" class="t">Session name lifecycle</text>
+  <text x="480" y="58" text-anchor="middle" font-size="11" class="s">Three sources can overwrite one another; all use the same write entry</text>
 
   <!-- ============================================================ -->
   <!-- LEFT: 自动命名 — 紫色 -->
   <!-- ============================================================ -->
 
-  <text x="250" y="82" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">自动命名（首轮，一次性）</text>
+  <text x="250" y="82" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">Automatic naming (first turn, once)</text>
 
   <!-- 触发 -->
   <g filter="url(#soft)">
     <rect x="60" y="92" width="380" height="40" rx="20" fill="var(--purple-fill)" stroke="#bc8cf2" stroke-width="1.4"/>
-    <text x="250" y="117" text-anchor="middle" font-size="13" font-weight="600" fill="#bc8cf2">用户发送第一条消息</text>
+    <text x="250" y="117" text-anchor="middle" font-size="13" font-weight="600" fill="#bc8cf2">User sends the first message</text>
   </g>
 
   <line x1="250" y1="132" x2="250" y2="152" stroke="#bc8cf2" stroke-width="1.2" marker-end="url(#aPurple)"/>
@@ -78,27 +78,27 @@
   <!-- 幂等判断: _auto_titled? -->
   <g filter="url(#soft)">
     <polygon points="250,206 345,236 250,266 155,236" fill="var(--amber-fill)" stroke="#d9a73a" stroke-width="1.2"/>
-    <text x="250" y="238" text-anchor="middle" font-size="10" font-weight="600" fill="#d9a73a">首次?</text>
-    <text x="250" y="252" text-anchor="middle" font-size="7.5" class="s">_auto_titled 幂等</text>
+    <text x="250" y="238" text-anchor="middle" font-size="10" font-weight="600" fill="#d9a73a">First?</text>
+    <text x="250" y="252" text-anchor="middle" font-size="7.5" class="s">_auto_titled guard</text>
   </g>
 
   <!-- 已触发过 → 跳过 -->
   <line x1="345" y1="236" x2="420" y2="236" stroke="#d9a73a" stroke-width="1.2" marker-end="url(#aAmber)"/>
-  <text x="378" y="229" font-size="9" fill="#d9a73a">否</text>
+  <text x="378" y="229" font-size="9" fill="#d9a73a">No</text>
   <g filter="url(#soft)">
     <rect x="420" y="222" width="80" height="28" rx="8" fill="var(--grey-fill)" stroke="var(--grey-border)"/>
-    <text x="460" y="240" text-anchor="middle" font-size="9.5" class="s">跳过</text>
+    <text x="460" y="240" text-anchor="middle" font-size="9.5" class="s">Skip</text>
   </g>
 
   <!-- 首次 → 继续 -->
   <line x1="250" y1="266" x2="250" y2="288" stroke="#bc8cf2" stroke-width="1.2" marker-end="url(#aPurple)"/>
-  <text x="263" y="280" font-size="9" fill="#bc8cf2">是</text>
+  <text x="263" y="280" font-size="9" fill="#bc8cf2">Yes</text>
 
   <!-- 同步: 立即截取 -->
   <g filter="url(#soft)">
     <rect x="70" y="288" width="360" height="46" rx="10" fill="var(--purple-fill)" stroke="#bc8cf2" stroke-width="1.4"/>
-    <text x="250" y="308" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">同步: 立即截取名字写入</text>
-    <text x="250" y="324" text-anchor="middle" font-size="9" class="s">title = 用户消息前 50 字符 → 侧边栏零延迟显示</text>
+    <text x="250" y="308" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">Synchronous: write a truncated name immediately</text>
+    <text x="250" y="324" text-anchor="middle" font-size="9" class="s">title = first 50 characters of user message → immediate sidebar display</text>
   </g>
 
   <line x1="250" y1="334" x2="250" y2="358" stroke="#bc8cf2" stroke-width="1.2" marker-end="url(#aPurple)"/>
@@ -106,11 +106,11 @@
   <!-- 异步: 后台 LLM -->
   <g filter="url(#soft)">
     <rect x="50" y="358" width="400" height="82" rx="10" fill="var(--purple-fill)" stroke="#bc8cf2" stroke-width="1.4"/>
-    <text x="250" y="378" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">异步: 后台 daemon 线程调用 LLM</text>
+    <text x="250" y="378" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">Asynchronous: daemon thread calls the LLM</text>
     <text x="250" y="396" text-anchor="middle" font-size="9" class="s">prompt: "Generate a concise title (3-7 words)..."</text>
-    <text x="250" y="410" text-anchor="middle" font-size="9" class="s">输入: &lt;session&gt; 包裹（防注入）· 语言跟随对话内容</text>
-    <text x="250" y="424" text-anchor="middle" font-size="9" class="s">模型: small_model → build_default_llm() fallback</text>
-    <text x="250" y="436" text-anchor="middle" font-size="8" class="s">后处理: 去 &lt;think&gt;（兼容推理模型）· 去引号 · 去前缀 · 截断 80 字符</text>
+    <text x="250" y="410" text-anchor="middle" font-size="9" class="s">Input wrapped in &lt;session&gt; (injection protection); language follows the conversation</text>
+    <text x="250" y="424" text-anchor="middle" font-size="9" class="s">Model: small_model → build_default_llm() fallback</text>
+    <text x="250" y="436" text-anchor="middle" font-size="8" class="s">Postprocess: remove &lt;think&gt;, quotes, and prefixes; truncate to 80 characters</text>
   </g>
 
   <!-- Arrow down to 成功? -->
@@ -119,29 +119,29 @@
   <!-- Decision: 成功? -->
   <g filter="url(#soft)">
     <polygon points="250,470 350,502 250,534 150,502" fill="var(--amber-fill)" stroke="#d9a73a" stroke-width="1.2"/>
-    <text x="250" y="506" text-anchor="middle" font-size="12" font-weight="600" fill="#d9a73a">成功?</text>
+    <text x="250" y="506" text-anchor="middle" font-size="12" font-weight="600" fill="#d9a73a">Success?</text>
   </g>
 
   <!-- ===== 成功 (左下) ===== -->
   <line x1="150" y1="502" x2="70" y2="502" stroke="#3fb950" stroke-width="1.2"/>
   <line x1="70" y1="502" x2="70" y2="568" stroke="#3fb950" stroke-width="1.2" marker-end="url(#aGreen)"/>
-  <text x="106" y="495" font-size="10" fill="#3fb950">成功</text>
+  <text x="106" y="495" font-size="10" fill="#3fb950">Success</text>
 
   <g filter="url(#soft)">
     <rect x="20" y="568" width="220" height="48" rx="10" fill="var(--green-fill)" stroke="#3fb950" stroke-width="1.4"/>
-    <text x="130" y="590" text-anchor="middle" font-size="11" font-weight="600" fill="#3fb950">LLM 生成的名字</text>
-    <text x="130" y="606" text-anchor="middle" font-size="9" class="s">覆盖截取名</text>
+    <text x="130" y="590" text-anchor="middle" font-size="11" font-weight="600" fill="#3fb950">LLM-generated name</text>
+    <text x="130" y="606" text-anchor="middle" font-size="9" class="s">Replace truncated name</text>
   </g>
 
   <!-- ===== 失败 (右下) ===== -->
   <line x1="350" y1="502" x2="430" y2="502" stroke="#d9a73a" stroke-width="1.2"/>
   <line x1="430" y1="502" x2="430" y2="568" stroke="#d9a73a" stroke-width="1.2" marker-end="url(#aAmber)"/>
-  <text x="386" y="495" font-size="10" fill="#d9a73a">失败</text>
+  <text x="386" y="495" font-size="10" fill="#d9a73a">Failure</text>
 
   <g filter="url(#soft)">
     <rect x="290" y="568" width="280" height="48" rx="10" fill="var(--purple-fill)" stroke="var(--purple-border)"/>
-    <text x="430" y="590" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">截取名留存</text>
-    <text x="430" y="606" text-anchor="middle" font-size="9" class="s">用户消息前 50 字符，侧边栏已显示</text>
+    <text x="430" y="590" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">Keep truncated name</text>
+    <text x="430" y="606" text-anchor="middle" font-size="9" class="s">First 50 characters already displayed in the sidebar</text>
   </g>
 
   <!-- 两条路汇合 -->
@@ -154,7 +154,7 @@
   <!-- 写入汇合点 -->
   <g filter="url(#soft)">
     <rect x="310" y="632" width="60" height="28" rx="14" fill="var(--purple-fill)" stroke="#bc8cf2" stroke-width="1.2"/>
-    <text x="340" y="650" text-anchor="middle" font-size="9.5" fill="#bc8cf2">写入</text>
+    <text x="340" y="650" text-anchor="middle" font-size="9.5" fill="#bc8cf2">Write</text>
   </g>
 
   <!-- Arrow to shared -->
@@ -165,14 +165,14 @@
   <!-- RIGHT: 用户主动操作 — 蓝色 -->
   <!-- ============================================================ -->
 
-  <text x="720" y="82" text-anchor="middle" font-size="11" font-weight="600" fill="#58a6ff">用户主动操作（随时，不受幂等限制）</text>
+  <text x="720" y="82" text-anchor="middle" font-size="11" font-weight="600" fill="#58a6ff">User actions (any time; not subject to the once-only guard)</text>
 
   <!-- 手动改名 -->
   <g filter="url(#soft)">
     <rect x="560" y="92" width="320" height="70" rx="12" fill="var(--blue-fill)" stroke="#58a6ff" stroke-width="1.4"/>
-    <text x="720" y="118" text-anchor="middle" font-size="13" font-weight="600" fill="#58a6ff">手动输入名字</text>
-    <text x="720" y="138" text-anchor="middle" font-size="9" class="s">UI rename / /rename "新名字" / agent rename 工具</text>
-    <text x="720" y="152" text-anchor="middle" font-size="9" class="s">直接写入，不经 LLM</text>
+    <text x="720" y="118" text-anchor="middle" font-size="13" font-weight="600" fill="#58a6ff">Enter a name manually</text>
+    <text x="720" y="138" text-anchor="middle" font-size="9" class="s">UI rename / /rename "New name" / agent rename tool</text>
+    <text x="720" y="152" text-anchor="middle" font-size="9" class="s">Write directly without an LLM</text>
   </g>
 
   <line x1="640" y1="162" x2="640" y2="662" stroke="#58a6ff" stroke-width="1.2" marker-end="url(#aBlue)"/>
@@ -180,9 +180,9 @@
   <!-- 请求 LLM 重新生成 -->
   <g filter="url(#soft)">
     <rect x="560" y="200" width="320" height="70" rx="12" fill="var(--blue-fill)" stroke="#58a6ff" stroke-width="1.4"/>
-    <text x="720" y="226" text-anchor="middle" font-size="13" font-weight="600" fill="#58a6ff">请求 LLM 重新生成</text>
-    <text x="720" y="246" text-anchor="middle" font-size="9" class="s">/rename（无参数）/ UI 按钮</text>
-    <text x="720" y="260" text-anchor="middle" font-size="9" class="s">同步调 _generate_llm_title() → 后处理 → 写入</text>
+    <text x="720" y="226" text-anchor="middle" font-size="13" font-weight="600" fill="#58a6ff">Request an LLM-generated name</text>
+    <text x="720" y="246" text-anchor="middle" font-size="9" class="s">/rename (no arguments) / UI button</text>
+    <text x="720" y="260" text-anchor="middle" font-size="9" class="s">Call _generate_llm_title() synchronously → postprocess → write</text>
   </g>
 
   <line x1="800" y1="270" x2="800" y2="662" stroke="#58a6ff" stroke-width="1.2" marker-end="url(#aBlue)"/>
@@ -193,7 +193,7 @@
 
   <g filter="url(#soft)">
     <rect x="530" y="662" width="360" height="50" rx="10" fill="var(--green-fill)" stroke="#3fb950" stroke-width="1.4"/>
-    <text x="710" y="683" text-anchor="middle" font-size="12" font-weight="600" fill="#3fb950">写入 + 广播（共享入口）</text>
+    <text x="710" y="683" text-anchor="middle" font-size="12" font-weight="600" fill="#3fb950">Write + broadcast (shared entry)</text>
     <text x="710" y="700" text-anchor="middle" font-size="9" class="s">db.update_session(title=...) → _broadcast(session_updated)</text>
   </g>
 
@@ -203,7 +203,7 @@
   <!-- Frontend -->
   <g filter="url(#soft)">
     <rect x="570" y="732" width="280" height="36" rx="8" fill="var(--green-fill)" stroke="var(--green-border)"/>
-    <text x="710" y="754" text-anchor="middle" font-size="11" font-weight="600" fill="#3fb950">前端侧边栏实时更新</text>
+    <text x="710" y="754" text-anchor="middle" font-size="11" font-weight="600" fill="#3fb950">Sidebar updates immediately</text>
   </g>
 
   <!-- ============================================================ -->
@@ -212,13 +212,13 @@
 
   <g transform="translate(40, 670)">
     <rect x="0" y="0" width="260" height="90" rx="8" fill="var(--card)" stroke="var(--border)" opacity="0.8"/>
-    <text x="15" y="20" font-size="10" font-weight="600" class="t">图例</text>
+    <text x="15" y="20" font-size="10" font-weight="600" class="t">Legend</text>
     <rect x="15" y="32" width="12" height="12" rx="3" fill="var(--purple-fill)" stroke="#bc8cf2"/>
-    <text x="34" y="43" font-size="9" fill="#bc8cf2">自动命名（首轮一次性，幂等）</text>
+    <text x="34" y="43" font-size="9" fill="#bc8cf2">Automatic (first turn, once, idempotent)</text>
     <rect x="15" y="52" width="12" height="12" rx="3" fill="var(--blue-fill)" stroke="#58a6ff"/>
-    <text x="34" y="63" font-size="9" fill="#58a6ff">用户主动（随时，可互覆盖）</text>
+    <text x="34" y="63" font-size="9" fill="#58a6ff">User initiated (any time; can overwrite)</text>
     <rect x="15" y="72" width="12" height="12" rx="3" fill="var(--green-fill)" stroke="#3fb950"/>
-    <text x="34" y="83" font-size="9" fill="#3fb950">共享写入 + 广播</text>
+    <text x="34" y="83" font-size="9" fill="#3fb950">Shared write + broadcast</text>
   </g>
 
 </svg>

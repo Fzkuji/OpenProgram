@@ -1,0 +1,77 @@
+<title>Programs page</title>
+<meta name="description" content="How the Programs page separates file location from call logic, and how a Program form opens in the right tab.">
+<h1>Programs page</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 230" role="img" aria-label="Left, the file tree: programs, workflows, with paper_search, literature_review and survey_pipeline each appearing once. Right, the call tree of the selected survey_pipeline: it calls literature_review directly, which calls paper_search, a transitive dependency.">
+  <text class="t-big" x="0" y="24">File tree</text>
+  <text class="t-soft" x="0" y="46">where the code is</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="84">programs/</text>
+  <text class="t-cmd notranslate" translate="no" x="20" y="110">workflows/</text>
+  <text class="t-cmd notranslate" translate="no" x="40" y="136">paper_search</text>
+  <text class="t-cmd notranslate" translate="no" x="40" y="162">literature_review</text>
+  <text class="t-cmd notranslate" translate="no" x="40" y="188">survey_pipeline</text>
+  <line class="ln-faint" x1="250" y1="10" x2="250" y2="220"/>
+  <text class="t-big" x="280" y="24">Call tree or graph</text>
+  <text class="t-soft" x="280" y="46">who calls whom</text>
+  <text class="t-cmd notranslate" translate="no" x="280" y="84">survey_pipeline</text>
+  <text class="t-soft" x="520" y="84">selected</text>
+  <path class="ln" d="M292 94V124H316"/>
+  <text class="t-cmd notranslate" translate="no" x="324" y="130">literature_review</text>
+  <text class="t-soft" x="520" y="130">direct</text>
+  <path class="ln" d="M336 140V170H360"/>
+  <text class="t-cmd notranslate" translate="no" x="368" y="176">paper_search</text>
+  <text class="t-soft" x="520" y="176">transitive</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>File tree</strong><small>where the code is; each Program appears once</small></li>
+  <li><strong>Call tree or graph</strong><small><code translate="no">survey_pipeline</code>, selected</small><small><code translate="no">literature_review</code>, direct</small><small><code translate="no">paper_search</code>, transitive</small></li>
+</ol>
+</figure>
+<p class="note">Direction of calls, not folder containment. Tree and graph share the same relationship data, derived from source (static Program imports and Agentic Programming calls). Code: <code translate="no">apps/web/components/programs/programs-page.tsx</code>.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">File tree</th><td>Folders, files, counts and Git state (clean, modified)</td></tr>
+<tr><th scope="row">Detail header</th><td>Path, description, kind, HEAD state, signature, direct and transitive Workflow counts, branch and commit</td></tr>
+<tr><th scope="row">Call row</th><td>Name, relationship, how it is reached</td></tr>
+</tbody>
+</table>
+
+<section id="portable-workflow-integration">
+<h2>Catalog and form launching</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Catalog</th><td>One callable catalog for the Programs page, favorites bar and parameter forms; HTTP refreshes and WebSocket updates feed one store</td></tr>
+<tr><th scope="row">Refresh fails</th><td>Keeps the last good cache</td></tr>
+<tr><th scope="row">Stale response</th><td>Cannot overwrite a newer one</td></tr>
+<tr><th scope="row">Use</th><td>Only opens the form</td></tr>
+<tr><th scope="row">Missing function</th><td>Refreshes the catalog and shows an explicit error</td></tr>
+<tr><th scope="row">Chat switch</th><td>Cancels the previous form request</td></tr>
+</tbody>
+</table>
+<p class="note">Contract: <a href="workflow.html">Workflow package</a>.</p>
+
+<h3 id="tab-ownership">Tab ownership</h3>
+<p>The launcher captures selected tab and chat before resolving a Program. An older request, cancellation, chat switch or tab switch opens nothing in another view.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Selected view</th><th scope="col">On success</th></tr></thead>
+<tbody>
+<tr><th scope="row">Active session</th><td>Keeps its draft and running task</td></tr>
+<tr><th scope="row">New-tab page</th><td>Becomes a draft session in place</td></tr>
+<tr><th scope="row">Any other view</th><td>Opens a separate draft and keeps its tab</td></tr>
+</tbody>
+</table>
+<p class="note">The draft is selected and initialized before its form opens. A catalog failure leaves the view intact with an error. Nothing runs or submits until an explicit send.</p>
+
+<details>
+<summary>Verification</summary>
+<ul>
+<li>Click a real sidebar favorite on a new-tab page, edit its task field and close without submitting.</li>
+<li>Preserve another active task and its draft. Cancel catalog resolution when the tab changes.</li>
+<li>Program launcher unit tests, rendered launcher browser tests, Web unit and source checks, TypeScript, production export, repository contracts, documentation links. Installed-App acceptance is a separate gate.</li>
+<li>Runtime and browser APIs are retained; external product parity and dependency upgrades are excluded.</li>
+</ul>
+</details>
+</section>

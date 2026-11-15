@@ -10,13 +10,12 @@ No network: the registry-keyed safe client is stubbed at the seam models_dev bin
 """
 from __future__ import annotations
 
-import copy
 
 import pytest
 
-from openprogram.providers.sources import models_dev as md
-from openprogram.webui._model_listing import listing
-from openprogram.providers import storage as st
+from openprogram.models.providers.catalog.sources import models_dev as md
+from openprogram.models.listing import listing
+from openprogram.models.providers.settings import storage as st
 
 
 def _reset_mem_cache() -> None:

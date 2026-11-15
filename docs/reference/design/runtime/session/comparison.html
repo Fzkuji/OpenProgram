@@ -1,0 +1,237 @@
+<title>Management comparison</title>
+<meta name="description" content="How Claude Code, OpenCode, OpenClaw and OpenProgram store, list, name, compact and maintain sessions.">
+<meta name="covers" content="none">
+<h1 id="session-management-comparison">Management comparison</h1>
+
+<table class="stack even">
+<thead><tr><th scope="col">Dimension</th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Design philosophy</th><td>File as data, append-only</td><td>Relational database, structured queries</td><td>Registry + transcript</td><td>Append-only session log + DAG + registry</td></tr>
+<tr><th scope="row">Listing performance</th><td>Slowest (scan directory + read files)</td><td>Fastest (database index)</td><td>Fast (read one JSON file)</td><td>Fast (in-memory resident registry)</td></tr>
+<tr><th scope="row">Metadata richness</th><td>Low (title + a few status markers)</td><td>Medium (10 fields)</td><td>Highest (around 70 fields)</td><td>Medium (around 20 fields)</td></tr>
+<tr><th scope="row">Maintenance capability</th><td>None</td><td>None</td><td>Most complete (expiry/capacity/rotation/budget)</td><td>Startup repair and quarantine; no expiry or cap</td></tr>
+<tr><th scope="row">Concurrency capability</th><td>Weak (single-process writes)</td><td>Strong (SQLite WAL)</td><td>Medium (file lock + queue)</td><td>Medium (per-session locks, one writer per log, single worker)</td></tr>
+<tr><th scope="row">Branching capability</th><td>Yes (DAG, UI does not expose it)</td><td>None</td><td>None</td><td>Yes (DAG, UI can switch)</td></tr>
+<tr><th scope="row">Channel support</th><td>None</td><td>None</td><td>Yes (full routing fields)</td><td>Yes (channel/account_id/peer)</td></tr>
+<tr><th scope="row">Archive/pin</th><td>None</td><td>None</td><td>None</td><td>Yes (pinned/archived/group)</td></tr>
+<tr><th scope="row">Crash recovery</th><td>No automatic recovery</td><td>Not needed (single process)</td><td>No automatic recovery</td><td>Startup status repair, runs continued from the journal, registry rebuilt from logs</td></tr>
+<tr><th scope="row">Empty-shell protection</th><td>Not needed (file is content)</td><td>Not needed (data exists on INSERT)</td><td>Not needed</td><td>Immediate first append + startup quarantine</td></tr>
+</tbody>
+</table>
+
+<details id="section-1">
+<summary>Storage Format</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Storage medium</th><td>Filesystem (one JSONL per session)</td><td>SQLite database (single file <code translate="no">opencode.db</code>)</td><td>JSON registry (<code translate="no">sessions.json</code>) + one JSONL per session</td><td>One directory per session holding append-only JSONL logs + JSON registry (<code translate="no">.chats-index.json</code>)</td></tr>
+<tr><th scope="row">Metadata location</th><td>Mixed into the JSONL (<code translate="no">ai-title</code>, <code translate="no">custom-title</code>, <code translate="no">mode</code>, and other entries)</td><td><code translate="no">sessions</code> table (10 fields)</td><td>The SessionEntry in <code translate="no">sessions.json</code> (around 70 fields)</td><td><code translate="no">meta.patch</code> lines in the session log; <code translate="no">.chats-index.json</code> caches a summary</td></tr>
+<tr><th scope="row">Message location</th><td>Same JSONL file (<code translate="no">user</code>, <code translate="no">assistant</code> entries)</td><td>Dedicated <code translate="no">messages</code> table + <code translate="no">parts</code> column (JSON array)</td><td>Dedicated <code translate="no">&lt;id&gt;.jsonl</code> transcript file</td><td><code translate="no">node.*</code> lines in the session log (DAG)</td></tr>
+<tr><th scope="row">File snapshots</th><td><code translate="no">file-history-snapshot</code> entries in the JSONL</td><td>Dedicated <code translate="no">files</code> table (path, content, version)</td><td>None</td><td><code translate="no">.file-recovery/&lt;session_id&gt;/&lt;turn&gt;/</code> per-turn undo recovery; a session can also work in a Git worktree</td></tr>
+<tr><th scope="row">Storage path</th><td><code translate="no">~/.claude/projects/&lt;slug&gt;/&lt;uuid&gt;.jsonl</code></td><td><code translate="no">&lt;data_dir&gt;/opencode.db</code></td><td><code translate="no">&lt;state&gt;/agents/&lt;id&gt;/sessions/sessions.json</code> + <code translate="no">&lt;id&gt;.jsonl</code></td><td><code translate="no">&lt;state&gt;/projects/&lt;project_id&gt;/chats/&lt;id&gt;/</code> (<code translate="no">main.jsonl</code>, <code translate="no">agents/</code>, …) + <code translate="no">&lt;state&gt;/projects/.chats-index.json</code></td></tr>
+<tr><th scope="row">Metadata/message separation</th><td>Not separated, all in one file</td><td>Separated (different tables)</td><td>Separated (different files)</td><td>Same log, separate line types; the registry holds summaries</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-2">
+<summary>Session Metadata Fields</summary>
+<table class="stack even">
+<thead><tr><th scope="col">Field category</th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">id</th><td>JSONL filename (UUID)</td><td><code translate="no">sessions.id</code> (UUID)</td><td><code translate="no">sessionId</code></td><td><code translate="no">id</code> (UUID)</td></tr>
+<tr><th scope="row">Title</th><td>Two separate entries, <code translate="no">aiTitle</code> + <code translate="no">customTitle</code></td><td>Single <code translate="no">sessions.title</code> field</td><td><code translate="no">displayName</code> + <code translate="no">label</code></td><td>Single <code translate="no">title</code> field</td></tr>
+<tr><th scope="row">Title priority</th><td><code translate="no">customTitle &gt; aiTitle &gt; summaryHint &gt; firstPrompt &gt; id</code></td><td>Last value written</td><td><code translate="no">displayName &gt; label</code></td><td>Last value written; a typed title locks it (<code translate="no">_user_titled</code>)</td></tr>
+<tr><th scope="row">Created time</th><td>timestamp of the first message in the JSONL</td><td><code translate="no">sessions.created_at</code></td><td><code translate="no">startedAt</code></td><td><code translate="no">created_at</code></td></tr>
+<tr><th scope="row">Updated time</th><td>File mtime or sidecar</td><td><code translate="no">sessions.updated_at</code> (trigger-driven)</td><td><code translate="no">updatedAt</code> (written by the application layer)</td><td><code translate="no">updated_at</code> (written by the application layer)</td></tr>
+<tr><th scope="row">Message count</th><td>None</td><td><code translate="no">sessions.message_count</code> (trigger-driven +1/-1)</td><td>None</td><td>None</td></tr>
+<tr><th scope="row">token stats</th><td>None (present in <code translate="no">usage</code> but not aggregated)</td><td><code translate="no">prompt_tokens</code> / <code translate="no">completion_tokens</code> / <code translate="no">cost</code></td><td><code translate="no">inputTokens</code> / <code translate="no">outputTokens</code> / <code translate="no">totalTokens</code> / <code translate="no">estimatedCostUsd</code> / <code translate="no">cacheRead</code> / <code translate="no">cacheWrite</code> / <code translate="no">contextTokens</code></td><td>None (accounted in <code translate="no">usage.db</code>)</td></tr>
+<tr><th scope="row">Run status</th><td><code translate="no">status</code> in <code translate="no">~/.claude/sessions/&lt;pid&gt;.json</code> (idle/busy)</td><td>None</td><td><code translate="no">status</code> (running/done/failed/killed/timeout)</td><td><code translate="no">status</code> enum (idle/running/needs_input/done/failed/interrupted/cancelled), repaired on startup</td></tr>
+<tr><th scope="row">Parent/child relationships</th><td>None</td><td><code translate="no">parent_session_id</code> (child sessions used for title generation and tasks)</td><td><code translate="no">spawnedBy</code> / <code translate="no">parentSessionKey</code> / <code translate="no">spawnDepth</code> (0=main, 1=subagent, 2=sub-subagent)</td><td>No session field; a Job records <code translate="no">parent_session_id</code></td></tr>
+<tr><th scope="row">Channel/source</th><td>None</td><td>None</td><td><code translate="no">channel</code> / <code translate="no">groupId</code> / <code translate="no">origin</code> (includes label/provider/surface/chatType/from/to/nativeChannelId/accountId/threadId) + <code translate="no">lastChannel</code> / <code translate="no">lastTo</code> / <code translate="no">lastAccountId</code> / <code translate="no">lastThreadId</code></td><td><code translate="no">source</code> / <code translate="no">channel</code> / <code translate="no">account_id</code> / <code translate="no">peer_display</code> / <code translate="no">peer_id</code></td></tr>
+<tr><th scope="row">Model/config</th><td><code translate="no">mode</code>, <code translate="no">permission-mode</code> entries in the JSONL</td><td>None (runtime state)</td><td><code translate="no">providerOverride</code> / <code translate="no">modelOverride</code> / <code translate="no">modelOverrideSource</code> / <code translate="no">authProfileOverride</code> / <code translate="no">thinkingLevel</code> / <code translate="no">fastMode</code> / <code translate="no">verboseLevel</code>, etc.</td><td>A settings record per conversation branch in session metadata (Agent, model, effort, permission mode); additional working directories per session</td></tr>
+<tr><th scope="row">Compaction</th><td><code translate="no">system:compact_boundary</code> entry (preTokens/postTokens/preservedSegment)</td><td><code translate="no">summary_message_id</code> points to the summary message</td><td><code translate="no">compactionCount</code> / <code translate="no">compactionCheckpoints</code> array (each entry has tokensBefore/tokensAfter/summary)</td><td>compactionSummary message node (a special node in the DAG, source="compaction")</td></tr>
+<tr><th scope="row">Project binding</th><td>Implicitly bound via the directory path (<code translate="no">projects/&lt;slug&gt;/</code>)</td><td>None</td><td>None (implicit via the agent directory)</td><td><code translate="no">project_id</code> field + placement under <code translate="no">projects/&lt;project_id&gt;/chats/</code></td></tr>
+<tr><th scope="row">Git branch</th><td><code translate="no">gitBranch</code> field in the JSONL</td><td>None</td><td>None</td><td>DAG branches (<code translate="no">head_id</code> + branches map)</td></tr>
+<tr><th scope="row">Preview</th><td>No dedicated field (firstPrompt extracted from the tail when listing)</td><td>None</td><td>None</td><td><code translate="no">preview</code> (registry field, updated on <code translate="no">append_message</code>)</td></tr>
+<tr><th scope="row">Archive/pin/group</th><td>None</td><td>None</td><td>None</td><td><code translate="no">pinned</code> / <code translate="no">archived</code> / <code translate="no">group</code></td></tr>
+<tr><th scope="row">Unread marker</th><td>None</td><td>None</td><td>None</td><td><code translate="no">unread</code> (set when a background run completes, cleared on open)</td></tr>
+<tr><th scope="row">Queue policy</th><td>None</td><td>None</td><td><code translate="no">queueMode</code> (7 modes: steer/followup/collect/interrupt, etc.) / <code translate="no">queueDebounceMs</code> / <code translate="no">queueCap</code> / <code translate="no">queueDrop</code></td><td>None</td></tr>
+<tr><th scope="row">Subagent role</th><td>None</td><td>None</td><td><code translate="no">subagentRole</code> (orchestrator/leaf) / <code translate="no">subagentControlScope</code></td><td>None</td></tr>
+<tr><th scope="row">Heartbeat</th><td>None</td><td>None</td><td><code translate="no">lastHeartbeatText</code> / <code translate="no">lastHeartbeatSentAt</code> / <code translate="no">heartbeatTaskState</code></td><td>None</td></tr>
+<tr><th scope="row">Memory flush</th><td>None</td><td>None</td><td><code translate="no">memoryFlushAt</code> / <code translate="no">memoryFlushCompactionCount</code> / <code translate="no">memoryFlushContextHash</code></td><td>None</td></tr>
+<tr><th scope="row">CLI binding</th><td>None</td><td>None</td><td><code translate="no">cliSessionIds</code> / <code translate="no">cliSessionBindings</code> / <code translate="no">claudeCliSessionId</code></td><td>None</td></tr>
+<tr><th scope="row">Auto-naming marker</th><td>None (inferred from whether a <code translate="no">customTitle</code> entry exists)</td><td>None (inferred from an <code translate="no">isDefaultTitle</code> regex)</td><td>None</td><td><code translate="no">_auto_titled</code> (no re-truncation), <code translate="no">_user_titled</code> (lock), <code translate="no">_title_gen_count</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-3">
+<summary>Session Listing</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Mechanism</th><td>Scan directory + read file tails</td><td>SQL query</td><td>Read sessions.json</td><td>Read the <code translate="no">.chats-index.json</code> registry</td></tr>
+<tr><th scope="row">Index</th><td>None</td><td>Database index</td><td>The registry itself</td><td>Registry (<code translate="no">.chats-index.json</code>)</td></tr>
+<tr><th scope="row">Detailed flow</th><td><code translate="no">readdir</code> → <code translate="no">stat</code> to get mtime → sort by mtime descending → batch-read tail content (32 per batch) → string-search to extract title and other fields</td><td><code translate="no">SELECT * FROM sessions WHERE parent_session_id IS NULL ORDER BY created_at DESC</code></td><td><code translate="no">fs.readFileSync</code> → <code translate="no">JSON.parse</code> → return the entire <code translate="no">Record&lt;string, SessionEntry&gt;</code></td><td>On startup, read <code translate="no">.chats-index.json</code> into memory → <code translate="no">list_sessions()</code> is a pure in-memory traversal</td></tr>
+<tr><th scope="row">Read volume</th><td>Read tail content of each file (string search, no JSON.parse)</td><td>One SQL statement</td><td>One file</td><td>One file (on startup), pure in-memory thereafter</td></tr>
+<tr><th scope="row">Filtering</th><td>Scans only the current project directory (implicit per-project filtering)</td><td><code translate="no">WHERE parent_session_id IS NULL</code> (filters out child sessions)</td><td>None</td><td>Archived rows hidden by default; field filters</td></tr>
+<tr><th scope="row">Sorting</th><td>By file mtime descending</td><td><code translate="no">ORDER BY created_at DESC</code></td><td>The caller sorts on its own</td><td>In memory, by <code translate="no">updated_at</code> descending</td></tr>
+<tr><th scope="row">Pagination</th><td>None</td><td>None</td><td>None</td><td><code translate="no">limit</code> + <code translate="no">offset</code></td></tr>
+<tr><th scope="row">Search</th><td>None</td><td>None</td><td>None</td><td>None</td></tr>
+<tr><th scope="row">Cache</th><td>Optional sidecar <code translate="no">.ccr-tip.json</code> (stores last event ID + update time, avoids reading file content)</td><td>SQLite page cache (8MB)</td><td>mtime + fileSize used to decide whether to re-read (TTL 45 seconds)</td><td>Resident in memory (write operations update memory + disk in sync)</td></tr>
+<tr><th scope="row">Timeout protection</th><td>Yes (listing timeout fallback)</td><td>Not needed</td><td>Not needed</td><td>Not needed</td></tr>
+<tr><th scope="row">Complexity</th><td>O(n) file I/O</td><td>O(log n) database query</td><td>O(1) file read + O(n) in-memory traversal</td><td>O(n) in-memory traversal (no disk access)</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-4">
+<summary>Session Creation</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry points</th><td>1: create the JSONL file</td><td>3: <code translate="no">Create</code> (normal) / <code translate="no">CreateTitleSession</code> (title child session) / <code translate="no">CreateTaskSession</code> (task child session)</td><td>1: add a key to the store inside <code translate="no">updateSessionStore</code></td><td>3: <code translate="no">dispatcher.process_user_turn</code> / channel handler / <code translate="no">session_context</code></td></tr>
+<tr><th scope="row">ID generation</th><td>UUID filename</td><td>UUID / <code translate="no">"title-" + parentId</code> / toolCallID</td><td>sessionKey</td><td><code translate="no">"local_" + uuid</code>; <code translate="no">session_context</code> mints <code translate="no">session_&lt;id&gt;</code></td></tr>
+<tr><th scope="row">Registration</th><td>No registration needed (discovered by scanning the directory)</td><td>Queryable automatically after a database INSERT</td><td>Written to sessions.json</td><td>Written to the <code translate="no">.chats-index.json</code> registry</td></tr>
+<tr><th scope="row">Event notification</th><td>None</td><td>pubsub <code translate="no">CreatedEvent</code></td><td>None</td><td>None (creation is not broadcast; the frontend discovers it via <code translate="no">list_sessions</code>)</td></tr>
+<tr><th scope="row">Atomicity</th><td>File creation is itself atomic</td><td><code translate="no">INSERT ... RETURNING</code> database transaction</td><td>read-modify-write inside a file lock</td><td>Dispatcher and channel append the first message right after creation; <code translate="no">session_context</code> creates on enter</td></tr>
+<tr><th scope="row">Empty-shell protection</th><td>None (session = file, content exists on creation)</td><td>None (a title is required on INSERT)</td><td>None</td><td>Partial: immediate first append; startup quarantines log-less shells</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-5">
+<summary>Session Deletion</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Method</th><td>Delete the JSONL file</td><td><code translate="no">DELETE FROM sessions WHERE id = ?</code></td><td>Delete the key from sessions.json</td><td><code translate="no">delete_session</code> records a delete intent, removes the directory, drops the registry row</td></tr>
+<tr><th scope="row">Cascade cleanup</th><td>Deletes a single file only (metadata and messages live in the same file)</td><td><code translate="no">ON DELETE CASCADE</code> automatically clears messages and files</td><td>Manually archive the transcript file (<code translate="no">archiveSessionTranscripts</code>, not a direct delete)</td><td>Session directory + <code translate="no">.file-recovery/&lt;id&gt;</code> + run tables</td></tr>
+<tr><th scope="row">Event notification</th><td>None</td><td>pubsub <code translate="no">DeletedEvent</code></td><td>None</td><td>WebSocket <code translate="no">session_deleted</code> broadcast</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-6">
+<summary>Session Resume</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Method</th><td>Read the whole JSONL, rebuild the message chain via <code translate="no">uuid</code>/<code translate="no">parentUuid</code>, restore state such as mode/permissionMode/title</td><td>SQL query for session + messages, ordered by created_at</td><td>Read the transcript JSONL, restore the message sequence</td><td><code translate="no">get_branch(session_id, head_id)</code> walks back along the parent_id chain in the DAG and returns a linear message sequence</td></tr>
+<tr><th scope="row">Compaction handling</th><td>The retained range is determined from the <code translate="no">preservedSegment</code> of the <code translate="no">compact_boundary</code> entry</td><td>If <code translate="no">summary_message_id != ""</code>, skip all messages before that message</td><td>Restore from <code translate="no">compactionCheckpoints</code></td><td>The compactionSummary node becomes the new branch start; old messages are kept in the DAG but are not on the active branch</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-7">
+<summary>Compaction (Context Compression)</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Trigger</th><td>Manual + automatic</td><td>Manual</td><td>Automatic (by token threshold)</td><td>Manual (<code translate="no">/compact</code>) + automatic (<code translate="no">context.auto_compact_percent</code>)</td></tr>
+<tr><th scope="row">Implementation</th><td>Append a <code translate="no">system:compact_boundary</code> entry to the JSONL</td><td>Generate a summary with a dedicated <code translate="no">summarizeProvider</code>, write it as a new message, and point <code translate="no">summary_message_id</code> at it</td><td>Generate a summary, record a checkpoint (tokensBefore/tokensAfter/summary), update <code translate="no">compactionCount</code></td><td>LLM generates a summary → write a compactionSummary node (source="compaction") → reattach the retained tail messages under the summary node → move head_id</td></tr>
+<tr><th scope="row">Recorded information</th><td>trigger/preTokens/postTokens/preservedSegment/durationMs</td><td>summary_message_id</td><td>compactionCount + the compactionCheckpoints array</td><td>Summary content lives in the node content; tokens_before/tokens_after live on the summary node</td></tr>
+<tr><th scope="row">Old messages</th><td>Kept in the JSONL, with preservedSegment marking which are active</td><td>Kept in the database, skipped before the summary on load</td><td>Kept in the transcript</td><td>Kept in the DAG (append-only), but not on the active branch</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-8">
+<summary>Active Process Tracking</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Mechanism</th><td>A dedicated <code translate="no">~/.claude/sessions/&lt;pid&gt;.json</code> file</td><td>None (single-process TUI)</td><td>The <code translate="no">status</code> field of SessionEntry</td><td><code translate="no">status</code> field (session metadata + registry)</td></tr>
+<tr><th scope="row">Fields</th><td>pid, sessionId, cwd, startedAt, version, kind (interactive), entrypoint (cli), status (idle/busy), updatedAt, name, bridgeSessionId</td><td>—</td><td>status (running/done/failed/killed/timeout), runtimeMs, abortedLastRun</td><td><code translate="no">status</code> (idle/running/needs_input/done/failed/interrupted/cancelled)</td></tr>
+<tr><th scope="row">Crash recovery</th><td>The file lingers after the process exits (requires external cleanup)</td><td>—</td><td>status may get stuck at running (no automatic recovery)</td><td>Registry load resets <code translate="no">running</code> → <code translate="no">idle</code>; run reconciliation marks a row still running <code translate="no">interrupted</code></td></tr>
+<tr><th scope="row">Relationship to session listing</th><td>Not involved in listing</td><td>—</td><td>Involved in listing (status is part of SessionEntry)</td><td>Involved in listing (<code translate="no">status</code> is in the registry)</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-9">
+<summary>Concurrency Control</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Mechanism</th><td>File level (single-process writes; multiple processes coordinate via pid files)</td><td>SQLite WAL mode + 8MB page cache</td><td>File lock (lockfile) + in-process FIFO queue</td><td>Python locks + inter-process session locks + one writer per log file</td></tr>
+<tr><th scope="row">Lock granularity</th><td>Per JSONL file</td><td>Database level</td><td>Per sessions.json file</td><td>Per session; separate registry state and write locks</td></tr>
+<tr><th scope="row">In-process</th><td>Single-threaded</td><td>Handled by SQLite</td><td>FIFO queue serializes writes to the same storePath</td><td>Per-session <code translate="no">RLock</code>; <code translate="no">SessionStore._lock</code> guards maps and the LRU cache only</td></tr>
+<tr><th scope="row">Cross-process</th><td>pid file marker (<code translate="no">sessions/&lt;pid&gt;.json</code>)</td><td>Built into SQLite</td><td>lockfile exclusive lock (stale detection 30 minutes + PID liveness check)</td><td><code translate="no">worker.lock</code> owns runs; inter-process session locks; each process has its own log file</td></tr>
+<tr><th scope="row">Lock timeout/watchdog</th><td>None</td><td>None (SQLite busy timeout)</td><td>Watchdog patrols every 60 seconds, hold timeout 5 minutes</td><td>None</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-10">
+<summary>Data Maintenance</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Expiry cleanup</th><td>None</td><td>None</td><td><code translate="no">pruneStaleEntries</code>: entries not updated in 30 days</td><td>None; archived sessions stay until deleted</td></tr>
+<tr><th scope="row">Capacity limit</th><td>None</td><td>None</td><td><code translate="no">capEntryCount</code>: at most 500 entries, deleting the oldest when exceeded</td><td>None</td></tr>
+<tr><th scope="row">File rotation</th><td>None</td><td>None</td><td><code translate="no">rotateSessionFile</code>: rotate sessions.json when it exceeds 10MB, keeping the 3 most recent backups</td><td>None</td></tr>
+<tr><th scope="row">Disk budget</th><td>None</td><td>None</td><td><code translate="no">enforceSessionDiskBudget</code>: optional, cleans up by total disk usage</td><td>None</td></tr>
+<tr><th scope="row">Archive on delete</th><td>None (deletes the file directly)</td><td>None (CASCADE deletes directly)</td><td>Yes (transcript file is archived rather than deleted directly)</td><td>None (deletes the directory directly)</td></tr>
+<tr><th scope="row">Maintenance mode</th><td>—</td><td>—</td><td>"warn" (default, warn only) / "enforce" (actually execute)</td><td>—</td></tr>
+<tr><th scope="row">updated_at maintenance</th><td>Implicit (file mtime)</td><td>SQLite trigger-driven</td><td>Written by the application layer</td><td>Written by the application layer when a message is appended; metadata-only writes do not advance recency</td></tr>
+<tr><th scope="row">message_count maintenance</th><td>Not tracked</td><td>SQLite trigger-driven +1/-1</td><td>Not tracked</td><td>Not tracked</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-11">
+<summary>Title (Naming)</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Auto-naming</th><td>Asynchronous LLM generation after the first turn</td><td>Forked asynchronous LLM generation after the first turn (dedicated title agent)</td><td>None (set displayName manually)</td><td>At replies 1, 6, 16, 40 (also 2, 3 after small talk): first-line truncation on the first, background LLM title each time</td></tr>
+<tr><th scope="row">Manual naming</th><td>A <code translate="no">custom-title</code> entry overrides</td><td>None (no rename feature)</td><td>Set <code translate="no">displayName</code> / <code translate="no">label</code></td><td>UI rename / <code translate="no">/rename</code> / agent rename tool</td></tr>
+<tr><th scope="row">LLM regeneration</th><td>None</td><td>None</td><td>None</td><td><strong>Auto rename</strong> or <code translate="no">/rename</code> with no argument</td></tr>
+<tr><th scope="row">Injection protection</th><td>Wrapped in <code translate="no">&lt;session&gt;</code> tags + a "treat as data" instruction</td><td>None (the title agent's prompt is concatenated directly)</td><td>—</td><td>Wrapped in <code translate="no">&lt;session&gt;</code> tags + a "treat as data" instruction</td></tr>
+<tr><th scope="row">Language following</th><td>The prompt requires using the conversation's language</td><td>The prompt requires using the conversation's language</td><td>—</td><td>The prompt requires using the conversation's language</td></tr>
+<tr><th scope="row">Post-processing</th><td>JSON schema structured output</td><td>Strip <code translate="no">&lt;think&gt;</code> tags, take the first non-empty line, truncate to 100 characters</td><td>—</td><td>JSON schema structured output; Unicode trim; 80-code-point guard</td></tr>
+<tr><th scope="row">Idempotency marker</th><td>None (inferred from whether an <code translate="no">ai-title</code> entry already exists)</td><td>Inferred from an <code translate="no">isDefaultTitle</code> regex</td><td>—</td><td><code translate="no">_auto_titled</code> bool; <code translate="no">_user_titled</code> lock</td></tr>
+<tr><th scope="row">Race protection</th><td>None</td><td>None</td><td>—</td><td>The background thread checks that the title is still the truncated value before writing</td></tr>
+<tr><th scope="row">Title broadcast</th><td>None (the frontend re-reads the JSONL)</td><td>None (the TUI reads the database directly)</td><td>—</td><td>WebSocket <code translate="no">session_updated {id, title}</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-12">
+<summary>Message Storage Model</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Structure</th><td>Linear JSONL (a tree can be built via uuid/parentUuid)</td><td>Flat table (ordered by session_id + created_at)</td><td>Linear JSONL</td><td>DAG (each message has a parent_id, supports branching)</td></tr>
+<tr><th scope="row">Branching</th><td>Yes (parentUuid supports a tree structure, but the UI does not expose it)</td><td>None</td><td>None</td><td>Yes (head_id + branches map, the UI can switch branches)</td></tr>
+<tr><th scope="row">Message ID</th><td>uuid (per message)</td><td>id (per message)</td><td>No explicit ID (by line order)</td><td>id (per message)</td></tr>
+<tr><th scope="row">Message format</th><td><code translate="no">{type, message: {role, content}, uuid, parentUuid, timestamp, ...}</code></td><td><code translate="no">{id, session_id, role, parts, model, created_at, ...}</code></td><td><code translate="no">{role, content, ...}</code></td><td><code translate="no">{id, role, content, parent_id, timestamp, ...}</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-13">
+<summary>JSONL Entry Types (Claude Code only)</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Type</th><th scope="col">Purpose</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">user</code></th><td>User message (includes uuid, parentUuid, timestamp, cwd, gitBranch)</td></tr>
+<tr><th scope="row"><code translate="no">assistant</code></th><td>Assistant reply (includes usage, model, requestId)</td></tr>
+<tr><th scope="row"><code translate="no">attachment</code></th><td>Attachment (file, image)</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td>System event (subtypes: turn_duration / away_summary / compact_boundary / api_error / local_command / informational / bridge_status / scheduled_task_fire)</td></tr>
+<tr><th scope="row"><code translate="no">ai-title</code></th><td>LLM auto-generated title</td></tr>
+<tr><th scope="row"><code translate="no">custom-title</code></th><td>User-set title</td></tr>
+<tr><th scope="row"><code translate="no">agent-name</code></th><td>Agent name</td></tr>
+<tr><th scope="row"><code translate="no">last-prompt</code></th><td>Last prompt position (leafUuid)</td></tr>
+<tr><th scope="row"><code translate="no">mode</code></th><td>Conversation mode (normal/plan/...)</td></tr>
+<tr><th scope="row"><code translate="no">permission-mode</code></th><td>Permission mode</td></tr>
+<tr><th scope="row"><code translate="no">file-history-snapshot</code></th><td>File snapshot (used for revert)</td></tr>
+<tr><th scope="row"><code translate="no">bridge-session</code></th><td>Bridge session ID</td></tr>
+<tr><th scope="row"><code translate="no">queue-operation</code></th><td>Queue operation</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="storage.html">Data model</a></p>

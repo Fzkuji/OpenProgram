@@ -16,6 +16,7 @@
  *     supplies all three; this checks each such panel actually calls it.
  */
 import assert from "node:assert/strict";
+import ts from "typescript";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -33,50 +34,35 @@ function walk(dir, out = []) {
 
 const files = [...walk(root + "components"), ...walk(root + "app")];
 
-/** Index just past a JSX opening tag's `>`. Brace-depth aware, so the
- *  `>` in `onClick={() => …}` (and any comparison inside an expression
- *  attribute) does not end the tag early. */
-function tagEnd(chunk) {
-  let depth = 0;
-  for (let i = 0; i < chunk.length; i++) {
-    const c = chunk[i];
-    if (c === "{") depth++;
-    else if (c === "}") depth--;
-    else if (c === ">" && depth === 0) return i + 1;
-  }
-  return chunk.length;
-}
-
 /* ---- 1) role="button" implies a tab stop + key activation ---------- */
 
-// Element-by-element rather than per-file: a file may hold several, and
-// only the ones carrying the role are subject to the rule.
+// Parse JSX so generics inside expression attributes cannot split a tag.
 const roleGaps = [];
 for (const file of files) {
-  const src = readFileSync(file, "utf8");
-  // Split on tag openings so each chunk holds one element's attributes.
-  const parts = src.split(/<(?=[A-Za-z])/);
-  for (let n = 0; n < parts.length; n++) {
-    const chunk = parts[n];
-    if (!/role=\{?["']button["']/.test(chunk)) continue;
-    // A Radix `asChild` trigger clones tabIndex + the key handlers onto
-    // its single child at runtime, so that child is already reachable —
-    // writing them out again would be dead weight. Recognised by the
-    // immediately preceding tag.
-    if (/Trigger[\s\S]*\basChild\b[^<]*$/.test(parts[n - 1] ?? "")) continue;
-    // Only the attribute list, not the children that follow it. The tag
-    // ends at the first `>` that is not part of an arrow function (`=>`)
-    // or a comparison inside a JSX expression — scan and skip those.
-    const attrs = chunk.slice(0, tagEnd(chunk));
-    const focusable = /tabIndex=/.test(attrs);
-    const activates = /onKeyDown=/.test(attrs);
-    if (!focusable || !activates) {
-      roleGaps.push(
-        `${file.slice(root.length)}: role="button" without ` +
-          `${focusable ? "" : "tabIndex "}${activates ? "" : "onKeyDown"}`.trim(),
-      );
+  const tree = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const attributes = (node) => node.attributes.properties.filter(ts.isJsxAttribute);
+  function visit(node) {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const attrs = attributes(node);
+      const role = attrs.find((attr) => attr.name.getText(tree) === "role");
+      const value = role?.initializer;
+      const literal = value && ts.isJsxExpression(value) ? value.expression : value;
+      if (literal && ts.isStringLiteral(literal) && literal.text === "button") {
+        const element = ts.isJsxOpeningElement(node) ? node.parent : node;
+        const parent = element.parent;
+        const trigger = ts.isJsxElement(parent) ? parent.openingElement : null;
+        const radixChild = trigger && /Trigger$/.test(trigger.tagName.getText(tree))
+          && attributes(trigger).some((attr) => attr.name.getText(tree) === "asChild");
+        const names = new Set(attrs.map((attr) => attr.name.getText(tree)));
+        if (!radixChild && (!names.has("tabIndex") || !names.has("onKeyDown"))) {
+          roleGaps.push(`${file.slice(root.length)}: role="button" without ` +
+            `${names.has("tabIndex") ? "" : "tabIndex "}${names.has("onKeyDown") ? "" : "onKeyDown"}`.trim());
+        }
+      }
     }
+    ts.forEachChild(node, visit);
   }
+  visit(tree);
 }
 assert.deepEqual(
   roleGaps,
@@ -93,7 +79,21 @@ for (const file of files) {
   const src = readFileSync(file, "utf8");
   // The tell for a hand-rolled modal: a backdrop element whose click
   // dismisses it. Radix-based dialogs never look like this.
-  if (!/className=\{?["'`]?[^"'`\n]*[Bb]ackdrop/.test(src)) continue;
+  const tree = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let dismissibleBackdrop = false;
+  function visit(node) {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const attrs = node.attributes.properties.filter(ts.isJsxAttribute);
+      const className = attrs.find(attr => attr.name.getText(tree) === "className");
+      if (className && /[Bb]ackdrop/.test(className.getText(tree))
+          && attrs.some(attr => attr.name.getText(tree) === "onClick")) {
+        dismissibleBackdrop = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  if (!dismissibleBackdrop) continue;
   if (src.includes("useModalA11y")) continue;
   modalGaps.push(file.slice(root.length));
 }

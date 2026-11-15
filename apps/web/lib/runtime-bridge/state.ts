@@ -36,7 +36,7 @@ export interface ProgramsMeta {
 }
 
 export interface RuntimeState {
-  /** Shared app WebSocket, owned by `lib/net/use-ws.ts`. */
+  /** Shared app WebSocket, owned by `lib/net/ws/use-ws.ts`. */
   ws: WebSocket | null;
   /** File trees for the active session. */
   trees: TreeEntry[];
@@ -63,7 +63,6 @@ export interface RuntimeState {
   _agentSettings: AgentSettings;
   _elapsedTimer: ReturnType<typeof setInterval> | null;
   _hasActiveSession: boolean;
-  _toolsEnabled: boolean;
   _webSearchEnabled: boolean;
   _webSearchProviderLabel: string;
   _webSearchProviderTier: string;
@@ -78,7 +77,6 @@ export interface RuntimeState {
   /** Sessions whose branch was just moved by retry/edit: the next turn
    *  result triggers a wholesale load_session instead of a mirror push
    *  (chat-handlers self-heal — the reload and the stream race). */
-  _pendingBranchReload: Record<string, boolean>;
   /** DAG node id → lane colour, published by the DAG render pass so the
    *  branches panel can match its rows to the graph's lanes. */
   _branchLaneColorMap: Record<string, string>;
@@ -92,7 +90,6 @@ export interface RuntimeState {
   _pendingExpandAttach: { head: string; anchor: string } | null;
   /** Session ids whose transcripts must be reloaded when their running tasks
    *  clear (dispatched function runs whose cards are already on disk). */
-  __reloadOnTaskClear: Set<string>;
   /** Optimistic exact-cancel entries awaiting their command acknowledgement.
    *  The command frame is the only response that can distinguish a stale
    *  rejection from the terminal execution update that follows it. */
@@ -111,10 +108,17 @@ export interface RuntimeState {
     previousMessageStatus?: string;
   }>;
   /** Stops issued while a chat turn still has only its local placeholder.
-   *  `chat_ack` upgrades these to an exact execution cancel command. */
+   *  The stop went out naming the send when its request id was known
+   *  (`commandId`); otherwise `chat_ack` sends it naming the execution.
+   *  This is the composer's stop guard, as Claude Code's `queryGuard`
+   *  (`forceEnd()` bumps its generation): the ack of a send always leaves
+   *  the server before the stop frame is read, so only the page can keep
+   *  a stopped turn from showing as running again when the ack arrives. */
   _optimisticStops: Record<string, {
     messageId?: string;
     previousMessageStatus?: string;
+    /** The stop already sent naming the send (`client_request_id`). */
+    commandId?: string;
   }>;
 }
 
@@ -158,17 +162,14 @@ export const runtimeState: RuntimeState = {
   _hasActiveSession: false,
   // ui.ts hydrates these from localStorage on first plus-menu render;
   // `false` matches the previous `undefined` (falsy) starting point.
-  _toolsEnabled: false,
   _webSearchEnabled: false,
   _webSearchProviderLabel: "",
   _webSearchProviderTier: "",
   _pendingChannelChoice: null,
   _branchesByConv: {},
-  _pendingBranchReload: {},
   _branchLaneColorMap: {},
   _postCheckoutScrollTo: null,
   _pendingExpandAttach: null,
-  __reloadOnTaskClear: new Set<string>(),
   _optimisticCancels: {},
   _optimisticStops: {},
 };

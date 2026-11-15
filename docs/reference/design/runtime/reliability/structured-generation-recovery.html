@@ -1,0 +1,113 @@
+<title>Structured generation recovery</title>
+<meta name="description" content="How shared Agent and Runtime calls recover from truncated, invalid or interrupted structured model output.">
+<h1>Structured generation recovery</h1>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Failure</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row">Structured output cut off by length</th><td>Regenerate from the last complete tool boundary. Partial tool arguments are never executed; partial JSON is never concatenated.</td></tr>
+<tr><th scope="row">Stream ends with no terminal event, empty or partial</th><td>Same as length truncation. Partial content is never submitted or executed.</td></tr>
+<tr><th scope="row">Invalid JSON or schema value</th><td>Repair under the same allowance</td></tr>
+<tr><th scope="row">Repetitive output (<code translate="no">repetitive_output</code>)</th><td>Detected with no token or wall-clock quota. Stops only that response, keeps completed tool rounds, uses the same allowance, exposes its reason.</td></tr>
+<tr><th scope="row">Transient transport</th><td>Provider classification and <code translate="no">Retry-After</code> decide; a separate transport allowance</td></tr>
+<tr><th scope="row">Cancellation, refusal, invalid configuration</th><td>No automatic retry</td></tr>
+<tr><th scope="row">Unknown external outcome</th><td>Reconcile before any repeated effect</td></tr>
+</tbody>
+</table>
+
+<h2 id="recovery-accounting">Recovery accounting</h2>
+<p>One <code translate="no">RecoveryState</code> (<code translate="no">openprogram/models/providers/utils/recovery.py</code>) per invocation.</p>
+<table class="stack">
+<thead><tr><th scope="col">Allowance</th><th scope="col">Default</th><th scope="col">Spent by</th><th scope="col">Bounded</th></tr></thead>
+<tbody>
+<tr><th scope="row">Failure</th><td>2 extra attempts; <code translate="no">max_retries</code> 0 or 1 disables</td><td>Length, EOF, schema, repetition</td><td>Across the invocation</td></tr>
+<tr><th scope="row">Transport</th><td><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code> (5) minus 1</td><td>A stream that stalls past the idle bound or drops before its final event; the whole request is sent again and the partial reply is void. Never a repair</td><td>Per request: a request that succeeds returns its retries</td></tr>
+</tbody>
+</table>
+<ul>
+<li>A successful tool round spends nothing. Provider dispatch count is diagnostic, not a second allowance. The structured-output call budget (Runtime <code translate="no">max_retries</code> requests) credits every transport retry back.</li>
+<li>When this state exists it is the only retry authority for <code translate="no">AgentSession</code>: no hidden local cap, no restart of completed tools. Explicit retry disabling holds. Standalone <code translate="no">AgentSession</code> callers keep their own retry settings.</li>
+<li>Each retry reports reason and attempt identity through existing structured-output and execution-stream events. A regeneration instruction asks for a complete value and excludes the invalid candidate. Completed tool results stay in context.</li>
+<li>Cancellation, explicit caller deadlines and non-retryable external effects stay authoritative.</li>
+</ul>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">End state</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Exhausted</th><td>Paused before the error reaches Runtime persistence. Keeps the original cause and a terminal recovery phase; marked transport-exhausted so Runtime cannot restart the invocation.</td></tr>
+<tr><th scope="row">Cancelled</th><td>Cancelled</td></tr>
+<tr><th scope="row">Normal return</th><td>Not evidence of success; canonical execution status decides</td></tr>
+<tr><th scope="row">At model capacity</th><td>Decomposition is the workflow's explicit choice, never guessed by the generic runtime</td></tr>
+</tbody>
+</table>
+
+<h2 id="output-parameters">Output parameters</h2>
+<dl class="pairs">
+<dt>Workflow token quota</dt><dd>None by default; explicit user limits hold</dd>
+<dt>Context reservation</dt><dd>A planning estimate, not the provider output cap</dd>
+<dt>Default output cap</dt><dd>Model capacity, constrained by available context</dd>
+<dt>Explicit limit</dt><dd>Validated, never silently reduced</dd>
+<dt>Unknown model limit</dt><dd>Left to the adapter</dd>
+<dt>Long reasoning</dt><dd>Not a timeout by itself</dd>
+</dl>
+
+<h2 id="persistence">Persistence</h2>
+<ul>
+<li>Actual requests, effective parameters, stop reasons, available usage and retries are distinguishable. Unknown usage stays unknown.</li>
+<li>Error paths keep metadata without requiring reasoning or sensitive partial text. Paused is distinct from actively retrying.</li>
+<li>Durable execution and effect records own restart and side-effect reconciliation; there is no parallel scheduler.</li>
+<li>Report stages keep resolved scope, supplied materials, retrieved evidence and validated drafts. A text-only <code translate="no">resume_task</code> is a restart request, not a durable continuation.</li>
+</ul>
+
+<h2 id="browser-workflow">Browser workflows</h2>
+<table class="stack">
+<thead><tr><th scope="col">Failure</th><th scope="col">Behaviour</th><th scope="col">Accepted when</th></tr></thead>
+<tbody>
+<tr><th scope="row">Text imitating a tool call</th><td>Rejected as evidence; real observations come through the public tool boundary</td><td>No form action follows an unobserved claim</td></tr>
+<tr><th scope="row">Repetitive model output</th><td>See the table above</td><td>Repeated stream recovers, healthy long output completes, cancellation and exhaustion stay failures</td></tr>
+<tr><th scope="row">Fixed stage deadline</th><td>No Workflow-wide limit. Individual browser operations stay bounded; caller cancellation, explicit limits and retry accounting hold.</td><td>No hard-coded 300/600 second aggregate deadline</td></tr>
+<tr><th scope="row">Exception turned into successful text</th><td>Typed errors propagate. Function DAG persistence and subprocess IPC keep failed <code translate="no">ToolReturn</code> and <code translate="no">AgentToolResult</code> values even on a normal Python return. An unknown write outcome is a non-retryable failure that needs observation before another write.</td><td>Public function nodes end in error; completed sibling results stay in diagnostics</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Browser tool contract and Desktop registration</summary>
+<ul>
+<li>Stages expose only <code translate="no">computer_use_agent</code>, and accept only its browser target in the built-in browser; prompts describe <code translate="no">tabs</code>, <code translate="no">read</code>, <code translate="no">open</code> and the four actions a stage may take. Missing tools, login and permission failures stay explicit and never authorize another transport or a write.</li>
+<li>With an origin window and no bound Page, the <code translate="no">tabs</code> listing keeps that origin. With no authorized origin, inventory does not fall back to all desktop windows.</li>
+<li>In a subprocess, inventory goes through the parent webtab bridge, which accepts only the originating window and bindings authorized for that execution. The child's own registry mints and consumes its Page tokens; tokens do not cross registries.</li>
+<li>Opening a URL through <code translate="no">computer_use_agent</code> and page recovery creates a background Page through Resources, with no foreground chat route, mounted Browser pane or existing page needed. Window registration and native Page target availability are separate failure stages.</li>
+<li>The direct MCP entry keeps a failed browser result as <code translate="no">ToolReturn(is_error=True)</code>; HTTP dispatch success is not browser success.</li>
+<li>The Desktop bridge registers its exact window identifier on startup and reconnection, before awaiting retained-view or resource restoration, and may repeat that idempotently afterward. Pending restoration does not block a first page. Registration never selects another window or broadens ownership.</li>
+<li><code translate="no">desktop_unavailable</code>: the worker cannot use a registered Desktop WebTab at that moment. It differs from a model imitating a tool call and from page network or content errors.</li>
+<li>Report writes need a real observed save or submit and a matching post-action observation with positive success evidence. Explicit failure or missing confirmation is an unknown, non-retryable outcome.</li>
+<li>Out of scope: a second scheduler, durable checkpoints inferred from strings, browser-permission bypass, a new durable report state machine.</li>
+</ul>
+</details>
+
+<h2 id="model-routing">Model routing and group reports</h2>
+<ul>
+<li>A subscription provider keeps an explicit model id in the request body and the routing header. The Grok proxy routes by <code translate="no">x-grok-model-override</code>; <code translate="no">grok-build</code> is only the fallback for an empty id, and an alias stays an alias.</li>
+<li>Native function calls run only from provider function-call events, never parsed from prose.</li>
+<li>The <code translate="no">read</code> tool treats a null <code translate="no">offset</code> or <code translate="no">limit</code> as omitted, because strict schemas make optional fields required and nullable. Text defaults: line 1, 2000 lines. PDF defaults: page 1, 20 pages. No global null removal.</li>
+<li>Group-report parsing may use prompt-based schema validation when the provider cannot express the schema. Runtime errors are execution errors, not successful <code translate="no">BLOCKED</code> strings. Missing member attribution asks for clarification and never invents authors. A local draft authorizes no messaging or submission.</li>
+</ul>
+
+<details>
+<summary>Acceptance</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Covered by</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reproduce</th><td>Truncation through <code translate="no">agent_loop</code> and Runtime public calls, sync and async</td></tr>
+<tr><th scope="row">Scenarios</th><td>Truncation then success, exhaustion, mixed failure counts, empty and partial EOF, disabled recovery, cancellation, completed-tool non-replay, partial-tool rejection, returned provider errors, explicit output cap, default capacity, context legality, restart, unknown effect reconciliation, combined transport and format repair</td></tr>
+<tr><th scope="row">Files</th><td><code translate="no">runtime/context/compaction/request.py</code>, <code translate="no">runtime/agent/loop/</code>, <code translate="no">models/providers/structured_output.py</code>, <code translate="no">runtime/agent/runtime/providers.py</code> and <code translate="no">execution.py</code>, provider retry utilities, stream persistence</td></tr>
+<tr><th scope="row">Test paths</th><td><code translate="no">tests/unit/agent/execution</code>, <code translate="no">tests/component/programs/tools</code>, <code translate="no">tests/component/context</code>, <code translate="no">tests/component/providers</code>, <code translate="no">tests/contracts</code>; expand for any other production boundary touched</td></tr>
+<tr><th scope="row">Browser, live</th><td>From an empty inventory, open and observe a URL with no manual Browser creation. The installed service passes only when a <code translate="no">computer_use_agent</code> browser call lists the tabs and reads one, returning its title and element refs, without submitting or saving anything.</td></tr>
+<tr><th scope="row">Group report, live</th><td>Real-provider routing comparison, native read-only tool call, the original material parse in its actual prompt-validated mode, a local draft from explicitly attributed test data</td></tr>
+</tbody>
+</table>
+<p class="note">Fake-provider tests do not prove a real report; passing deterministic checks does not prove a live external write.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented: shared accounting, output-cap separation, length and EOF regeneration, paused and cancelled states, browser origin forwarding, immediate Desktop registration, repetitive-response recovery, receipt retention, truthful error propagation. Quota removal and parse checkpoints live in the separately versioned <code translate="no">weekly_report</code> and <code translate="no">personal_weekly_report</code> packages. Open: removal of the compatibility request counter; real end-to-end report submission.</p>

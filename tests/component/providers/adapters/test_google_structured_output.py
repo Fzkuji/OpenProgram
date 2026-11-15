@@ -1,20 +1,20 @@
-from openprogram.providers.google import google
-from openprogram.providers.google.google import _build_config
+from openprogram.models.providers.adapters.google import google
+from openprogram.models.providers.adapters.google.google import _build_config
 import asyncio
 
 import pytest
 
-from openprogram.agent.agent_loop import agent_loop
-from openprogram.agent.types import AgentContext, AgentLoopConfig
-from openprogram.providers.api_registry import get_structured_output_capabilities
-from openprogram.providers.structured_output import (
+from openprogram.runtime.agent.loop import agent_loop
+from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
+from openprogram.models.providers.catalog.api_registry import get_structured_output_capabilities
+from openprogram.models.providers.structured_output import (
     StructuredOutputSchemaError,
     StructuredOutputUnsupportedError,
     negotiate_structured_output,
     normalize_response_format,
 )
-from openprogram.providers.types import Context, EventError, Model, SimpleStreamOptions, UserMessage
-from openprogram.providers.types import EventDone
+from openprogram.models.providers.types import Context, EventError, Model, SimpleStreamOptions, UserMessage
+from openprogram.models.providers.types import EventDone
 
 import json
 import time
@@ -495,7 +495,7 @@ def test_google_shared_schema_dag_preflight_is_linear_time():
 
 @pytest.mark.parametrize("limit", ["depth", "nodes", "edges"])
 def test_google_schema_graph_limits_fail_closed_with_bounded_issue(monkeypatch, limit):
-    import openprogram.providers.structured_output as structured_output
+    import openprogram.models.providers.structured_output as structured_output
 
     if limit == "depth":
         monkeypatch.setattr(structured_output, "_GOOGLE_SCHEMA_MAX_DEPTH", 3)
@@ -523,7 +523,7 @@ def test_google_schema_graph_limits_fail_closed_with_bounded_issue(monkeypatch, 
 
 
 def test_google_schema_depth_at_configured_limit_is_accepted(monkeypatch):
-    import openprogram.providers.structured_output as structured_output
+    import openprogram.models.providers.structured_output as structured_output
 
     monkeypatch.setattr(structured_output, "_GOOGLE_SCHEMA_MAX_DEPTH", 8)
     schema = {"type": "string"}
@@ -540,7 +540,7 @@ def test_google_public_schema_depth_never_leaks_recursion_error(depth):
 
 
 def test_google_public_schema_depth_boundary_matches_configured_limit():
-    import openprogram.providers.structured_output as structured_output
+    import openprogram.models.providers.structured_output as structured_output
 
     assert structured_output._GOOGLE_SCHEMA_MAX_DEPTH == 100
     assert _negotiate_google(_nested_array_schema(100)).mode == "native"
@@ -675,7 +675,7 @@ def test_google_terminal_reason_precedes_mixed_function_call(
     assert events[-1].reason == expected_reason
     assert events[-1].reason != "toolUse"
 
-    from openprogram.agent.types import AgentTool, AgentToolResult
+    from openprogram.models.providers.types import AgentTool, AgentToolResult
 
     executed = []
 

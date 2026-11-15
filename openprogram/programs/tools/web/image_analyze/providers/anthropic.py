@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 from openprogram.programs.tools.web.web_search._http import post_json
 
-from .._encode import read_b64, sniff_mime
+from .._encode import read_b64
 from ..registry import ImageInput
 
 
@@ -33,7 +32,7 @@ class AnthropicVisionProvider:
 
     @staticmethod
     def _resolve_key() -> str:
-        from openprogram.providers.env_api_keys import resolve_provider_key
+        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
         return resolve_provider_key("anthropic") or ""
 
     def analyze(

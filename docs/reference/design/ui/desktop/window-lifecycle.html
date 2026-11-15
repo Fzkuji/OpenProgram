@@ -1,0 +1,60 @@
+<title>Desktop window lifecycle</title>
+<meta name="description" content="Why the desktop shell has one main window and how launch, Dock clicks and second copies reach it.">
+<h1>Desktop window lifecycle</h1>
+
+<p>One process, one main window. Torn-off windows are extra and short-lived.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 186" role="img" aria-label="Three events, app ready, macOS activate and second-instance, all go through ensureMainWindow, which holds at most one in-flight create and yields one main window.">
+  <defs><marker id="wl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-cmd" translate="no" x="0" y="34">app.whenReady()</text>
+  <text class="t-soft" x="0" y="54">first launch</text>
+  <text class="t-cmd" translate="no" x="0" y="94">activate</text>
+  <text class="t-soft" x="0" y="114">Dock click, even during launch</text>
+  <text class="t-cmd" translate="no" x="0" y="154">second-instance</text>
+  <text class="t-soft" x="0" y="176">click while still starting</text>
+  <path class="ln" d="M236 34H264V86H304" marker-end="url(#wl-a)"/>
+  <path class="ln" d="M236 90H304" marker-end="url(#wl-a)"/>
+  <path class="ln" d="M236 150H264V94H304" marker-end="url(#wl-a)"/>
+  <rect class="tile" x="316" y="56" width="178" height="68" rx="8"/>
+  <text class="t-cmd mid" translate="no" x="405" y="86">ensureMainWindow</text>
+  <text class="t-soft mid" x="405" y="108">one in-flight create</text>
+  <line class="ln" x1="494" y1="90" x2="544" y2="90" marker-end="url(#wl-a)"/>
+  <text class="t-big" x="556" y="97">Main window</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>app.whenReady, activate, second-instance</strong><small>launch, Dock click, click while starting</small></li>
+  <li><strong>ensureMainWindow</strong><small>one in-flight create</small></li>
+  <li class="flow-end"><strong>Main window</strong></li>
+</ol>
+</figure>
+<p class="note"><code translate="no">createWindow</code> is async. Until its first <code translate="no">BrowserWindow</code> exists, <code translate="no">getAllWindows()</code> is empty, so unguarded events would each create a window with id <code translate="no">main</code>, leaving two identical windows.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Event</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ready, no live main</th><td>Create one</td></tr>
+<tr><th scope="row">Any of the three, create in flight</th><td>Join it</td></tr>
+<tr><th scope="row">Live main exists</th><td>Restore, show, focus</td></tr>
+<tr><th scope="row">Main was destroyed</th><td>Create one</td></tr>
+<tr><th scope="row">Second OS process</th><td>Quit; the first handles the click</td></tr>
+<tr><th scope="row">Torn-off window</th><td>Not a main: own id, no persisted bounds</td></tr>
+</tbody>
+</table>
+
+<h2>Code</h2>
+<dl class="pairs">
+<dt><code translate="no">windows.get("main")</code></dt><dd>The live main</dd>
+<dt><code translate="no">createMainWindowGate({ windows, createWindow })</code></dt><dd>Returns <code translate="no">ensureMainWindow</code>, the only entry that creates or reuses it</dd>
+<dt><code translate="no">registerSingleMainWindow({ app, BrowserWindow, ensureMainWindow, recoverErroredWindows, onReady })</code></dt><dd>Takes the single-instance lock and wires the events. <code translate="no">onReady</code> (IPC, menu, theme) runs once, before the first <code translate="no">ensureMainWindow()</code>.</dd>
+<dt><code translate="no">createWindow({ detached: true })</code></dt><dd>The tear-off path</dd>
+</dl>
+<p class="note"><code translate="no">apps/desktop/main/windows/window-lifecycle.js</code>, <code translate="no">apps/desktop/main.js</code>. Harness: <code translate="no">apps/desktop/tests/check-window-lifecycle.js</code>.</p>
+
+<h2>Not windows</h2>
+<ul>
+<li>The LaunchAgent <code translate="no">ai.openprogram.worker</code> keeps the worker on port 18100. A slow worker may flash the error page and reload, in one window.</li>
+<li>Worker start, <code translate="no">ui.open_browser</code> and packing the <code translate="no">.app</code> do not create the main <code translate="no">BrowserWindow</code>. With the desktop shell as UI, do not open the system browser to <code translate="no">127.0.0.1:18100</code>.</li>
+</ul>
+
+<p class="next"><a href="window-state.html">Window state</a> · <a href="window-tab-transfer.html">Moving tabs between windows</a></p>

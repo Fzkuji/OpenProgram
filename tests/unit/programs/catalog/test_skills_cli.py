@@ -4,9 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
-from openprogram.cli import _cmd_skills_doctor, _cmd_skills_list
+from openprogram.interfaces.cli.application import _cmd_skills_doctor, _cmd_skills_list
 
 
 def _write_skill(dir_path: Path, slug: str, name: str, desc: str) -> None:

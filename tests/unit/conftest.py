@@ -19,6 +19,6 @@ def _task_runner_owns_worker_lock(request, monkeypatch):
         yield
         return
     monkeypatch.setattr(
-        "openprogram.worker.lock.is_held_by", lambda _pid: True,
+        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True,
     )
     yield

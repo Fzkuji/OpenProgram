@@ -1,0 +1,361 @@
+{
+  "ai21": {
+    "file": "ai21.svg",
+    "mono": true
+  },
+  "aihubmix": {
+    "file": "aihubmix-color.svg",
+    "mono": false
+  },
+  "alibaba": {
+    "file": "alibaba-color.svg",
+    "mono": false
+  },
+  "alibaba-cn": {
+    "file": "alibaba-color.svg",
+    "mono": false
+  },
+  "alibaba-coding-plan": {
+    "file": "alibaba-color.svg",
+    "mono": false
+  },
+  "alibaba-coding-plan-cn": {
+    "file": "alibaba-color.svg",
+    "mono": false
+  },
+  "alibaba-token-plan": {
+    "file": "alibaba-color.svg",
+    "mono": false
+  },
+  "alibaba-token-plan-cn": {
+    "file": "alibaba-color.svg",
+    "mono": false
+  },
+  "amazon-bedrock": {
+    "file": "bedrock-color.svg",
+    "mono": false
+  },
+  "anthropic": {
+    "file": "claude-color.svg",
+    "mono": false
+  },
+  "arcee": {
+    "file": "arcee-color.svg",
+    "mono": false
+  },
+  "atlascloud": {
+    "file": "atlascloud.svg",
+    "mono": true
+  },
+  "azure": {
+    "file": "azure-color.svg",
+    "mono": false
+  },
+  "azure-openai-responses": {
+    "file": "azure-color.svg",
+    "mono": false
+  },
+  "baseten": {
+    "file": "baseten.svg",
+    "mono": true
+  },
+  "cerebras": {
+    "file": "cerebras-color.svg",
+    "mono": false
+  },
+  "chutes": {
+    "file": "chutes.svg",
+    "mono": true
+  },
+  "cloudflare-ai-gateway": {
+    "file": "cloudflare-color.svg",
+    "mono": false
+  },
+  "cloudflare-workers-ai": {
+    "file": "cloudflare-color.svg",
+    "mono": false
+  },
+  "cohere": {
+    "file": "cohere-color.svg",
+    "mono": false
+  },
+  "crusoe": {
+    "file": "crusoe-color.svg",
+    "mono": false
+  },
+  "deepinfra": {
+    "file": "deepinfra-color.svg",
+    "mono": false
+  },
+  "deepseek": {
+    "file": "deepseek-color.svg",
+    "mono": false
+  },
+  "digitalocean": {
+    "file": "digitalocean.svg",
+    "mono": true
+  },
+  "fireworks-ai": {
+    "file": "fireworks-color.svg",
+    "mono": false
+  },
+  "friendli": {
+    "file": "friendli.svg",
+    "mono": true
+  },
+  "gemini-subscription": {
+    "file": "gemini-color.svg",
+    "mono": false
+  },
+  "github-copilot": {
+    "file": "githubcopilot.svg",
+    "mono": true
+  },
+  "gmicloud": {
+    "file": "gmicloud.svg",
+    "mono": true
+  },
+  "google": {
+    "file": "gemini-color.svg",
+    "mono": false
+  },
+  "google-gemini-cli": {
+    "file": "gemini-color.svg",
+    "mono": false
+  },
+  "groq": {
+    "file": "groq.svg",
+    "mono": true
+  },
+  "huggingface": {
+    "file": "huggingface-color.svg",
+    "mono": false
+  },
+  "inception": {
+    "file": "inception.svg",
+    "mono": true
+  },
+  "inceptron": {
+    "file": "inceptron-color.svg",
+    "mono": false
+  },
+  "inference": {
+    "file": "inference.svg",
+    "mono": true
+  },
+  "io-net": {
+    "file": "ionet.svg",
+    "mono": true
+  },
+  "kimi-coding": {
+    "file": "kimi-color.svg",
+    "mono": false,
+    "plate": "dark"
+  },
+  "llama": {
+    "file": "meta-color.svg",
+    "mono": false
+  },
+  "lmstudio": {
+    "file": "lmstudio.svg",
+    "mono": true
+  },
+  "longcat": {
+    "file": "longcat-color.svg",
+    "mono": false
+  },
+  "meta": {
+    "file": "meta-color.svg",
+    "mono": false
+  },
+  "minimax": {
+    "file": "minimax-color.svg",
+    "mono": false
+  },
+  "minimax-cn": {
+    "file": "minimax-color.svg",
+    "mono": false
+  },
+  "minimax-cn-coding-plan": {
+    "file": "minimax-color.svg",
+    "mono": false
+  },
+  "minimax-coding-plan": {
+    "file": "minimax-color.svg",
+    "mono": false
+  },
+  "mistral": {
+    "file": "mistral-color.svg",
+    "mono": false
+  },
+  "modelscope": {
+    "file": "modelscope-color.svg",
+    "mono": false
+  },
+  "moonshotai": {
+    "file": "kimi-color.svg",
+    "mono": false,
+    "plate": "dark"
+  },
+  "moonshotai-cn": {
+    "file": "kimi-color.svg",
+    "mono": false,
+    "plate": "dark"
+  },
+  "morph": {
+    "file": "morph-color.svg",
+    "mono": false
+  },
+  "nebius": {
+    "file": "nebius.svg",
+    "mono": true
+  },
+  "nova": {
+    "file": "nova-color.svg",
+    "mono": false
+  },
+  "novita-ai": {
+    "file": "novita-color.svg",
+    "mono": false
+  },
+  "nvidia": {
+    "file": "nvidia-color.svg",
+    "mono": false
+  },
+  "ollama": {
+    "file": "ollama.svg",
+    "mono": true
+  },
+  "ollama-cloud": {
+    "file": "ollama.svg",
+    "mono": true
+  },
+  "openai": {
+    "file": "openai.svg",
+    "mono": true
+  },
+  "openai-codex": {
+    "file": "openai.svg",
+    "mono": true
+  },
+  "opencode": {
+    "file": "opencode.svg",
+    "mono": true
+  },
+  "opencode-go": {
+    "file": "opencode.svg",
+    "mono": true
+  },
+  "openrouter": {
+    "file": "openrouter-color.svg",
+    "mono": false
+  },
+  "perplexity": {
+    "file": "perplexity-color.svg",
+    "mono": false
+  },
+  "poe": {
+    "file": "poe-color.svg",
+    "mono": false
+  },
+  "poolside": {
+    "file": "poolside-color.svg",
+    "mono": false
+  },
+  "qiniu-ai": {
+    "file": "qiniu-color.svg",
+    "mono": false
+  },
+  "sakana": {
+    "file": "sakana-color.svg",
+    "mono": false
+  },
+  "sensenova": {
+    "file": "sensenova-color.svg",
+    "mono": false
+  },
+  "stepfun": {
+    "file": "stepfun-color.svg",
+    "mono": false
+  },
+  "stepfun-ai": {
+    "file": "stepfun-color.svg",
+    "mono": false
+  },
+  "submodel": {
+    "file": "submodel-color.svg",
+    "mono": false
+  },
+  "tencent-coding-plan": {
+    "file": "tencent-color.svg",
+    "mono": false
+  },
+  "tencent-token-plan": {
+    "file": "tencent-color.svg",
+    "mono": false
+  },
+  "togetherai": {
+    "file": "together-color.svg",
+    "mono": false
+  },
+  "upstage": {
+    "file": "upstage-color.svg",
+    "mono": false
+  },
+  "v0": {
+    "file": "v0.svg",
+    "mono": true
+  },
+  "venice": {
+    "file": "venice-color.svg",
+    "mono": false
+  },
+  "vercel": {
+    "file": "vercel.svg",
+    "mono": true
+  },
+  "vercel-ai-gateway": {
+    "file": "vercel.svg",
+    "mono": true
+  },
+  "volcengine": {
+    "file": "volcengine-color.svg",
+    "mono": false
+  },
+  "volcengine-coding-plan": {
+    "file": "volcengine-color.svg",
+    "mono": false
+  },
+  "wandb": {
+    "file": "wandb-color.svg",
+    "mono": false
+  },
+  "xai": {
+    "file": "grok.svg",
+    "mono": true
+  },
+  "xai-subscription": {
+    "file": "grok.svg",
+    "mono": true
+  },
+  "zai": {
+    "file": "zai.svg",
+    "mono": true
+  },
+  "zai-coding-plan": {
+    "file": "zai.svg",
+    "mono": true
+  },
+  "zenmux": {
+    "file": "zenmux.svg",
+    "mono": true
+  },
+  "zhipuai": {
+    "file": "zhipu-color.svg",
+    "mono": false
+  },
+  "zhipuai-coding-plan": {
+    "file": "zhipu-color.svg",
+    "mono": false
+  }
+}

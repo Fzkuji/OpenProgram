@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store import SessionStore
-from openprogram.store.session.export import (
+from openprogram.state.store import SessionStore
+from openprogram.state.store.session.export import (
     collect_turns,
     export_session,
     render_html,

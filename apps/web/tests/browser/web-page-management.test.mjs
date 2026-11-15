@@ -29,7 +29,7 @@ registerHooks({
 });
 
 const { useCenterTabs } = await import("../../lib/tabs/center-tabs-store.ts");
-const { topLevelTabs, groupWebPages, revealExistingWebTab } = await import("../../lib/browser/web-page-management.ts");
+const { topLevelTabs, groupWebPages, revealExistingWebTab } = await import("../../lib/browser/web-tab/web-page-management.ts");
 const { normalizeCenterTabsPayload } = await import("../../lib/tabs/center-tabs-persistence.ts");
 
 test("agent pages retain session ownership, pinning and popup provenance", () => {
@@ -42,7 +42,8 @@ test("agent pages retain session ownership, pinning and popup provenance", () =>
   store.openWebTab("https://manual.test/");
   let state = useCenterTabs.getState();
   assert.equal(topLevelTabs(state.tabs, state.groups).length, 1);
-  assert.deepEqual(groupWebPages(state.tabs).map(g => g.sessionId), ["session-a", "session-b", null]);
+  // The manual page opened from the active tab sits right of it.
+  assert.deepEqual(groupWebPages(state.tabs).map(g => g.sessionId), ["session-a", null, "session-b"]);
   store.setWebTabPinned(a, true);
   assert.equal(topLevelTabs(useCenterTabs.getState().tabs, []).length, 2);
   const popup = store.openPopupWebTab("https://popup.test/", a);
@@ -184,4 +185,82 @@ test("deleting a conversation removes its forward page after returning to New ta
   assert.equal(canNavigateTabPage(useCenterTabs.getState().tabs[0], 1), false);
   s.navigateSessionHistory(1);
   assert.equal(useCenterTabs.getState().tabs[0].kind, "ntp");
+});
+
+test("human tab dismissal retains a session Page and reopens its exact navigated identity", () => {
+  useCenterTabs.setState({ tabs: [], groups: [], activeId: null, splitWebTabId: null });
+  const store = useCenterTabs.getState();
+  store.openSessionTab("owner", "Conversation");
+  const id = store.ensureExclusiveWebTab("https://original.test");
+  store.markAgentWebTab(id, "owner");
+  revealExistingWebTab(id, useCenterTabs.getState());
+  store.updateWebTab(id, { url: "https://navigated.test", title: "User navigation" });
+  store.closeTab(id, { retainSessionResources: true });
+  const hidden = useCenterTabs.getState();
+  assert.equal(hidden.tabs.find(tab => tab.id === id)?.url, "https://navigated.test");
+  assert.equal(hidden.tabs.find(tab => tab.id === id)?.agentSessionId, "owner");
+  assert.ok(!topLevelTabs(hidden.tabs, hidden.groups).some(tab => tab.id === id));
+  assert.equal(hidden.activeId, "s:owner");
+  const restored = normalizeCenterTabsPayload(hidden);
+  assert.ok(restored.tabs.some(tab => tab.id === id));
+  assert.ok(!topLevelTabs(restored.tabs, restored.groups).some(tab => tab.id === id));
+  revealExistingWebTab(id, useCenterTabs.getState());
+  assert.equal(useCenterTabs.getState().activeId, id);
+  assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.id === id).length, 1);
+  store.closeTab(id);
+  assert.ok(!useCenterTabs.getState().tabs.some(tab => tab.id === id), "explicit resource close still destroys");
+});
+
+test("human tab dismissal retains manually associated Pages without changing their provenance", async () => {
+  const { ingestBrowserResource, resetBrowserResources, sessionResourceRows, listedBrowserResources } = await import("../../lib/chat/resources/session-resources.ts");
+  const { agentCanAccessWebTab } = await import("../../lib/browser/web-tab/web-page-management.ts");
+  resetBrowserResources();
+  useCenterTabs.setState({ tabs: [], groups: [], activeId: null, splitWebTabId: null });
+  const store = useCenterTabs.getState();
+  store.openWebTab("https://attached.test");
+  const id = useCenterTabs.getState().activeId;
+  ingestBrowserResource({ id: "attached-association", resource_id: "attached-page", source: "browser", kind: "web",
+    session_id: "owner", conversation_session_id: "owner", tab_id: id, window_id: "main", title: "Attached",
+    target: "https://attached.test", status: "idle", control_state: "idle", generation: 1, sequence: 1 }, "owner");
+  store.closeTab(id, { retainSessionResources: true });
+  const state = useCenterTabs.getState();
+  assert.ok(state.tabs.some(tab => tab.id === id));
+  assert.equal(state.tabs.find(tab => tab.id === id).agentOpened, undefined);
+  assert.equal(state.activeId, null);
+  assert.deepEqual(topLevelTabs(state.tabs, state.groups), []);
+  assert.equal(sessionResourceRows(state.tabs, listedBrowserResources(), "owner").length, 1);
+  assert.equal(agentCanAccessWebTab(id, "owner", state), true);
+  assert.equal(agentCanAccessWebTab(id, "other", state), false);
+  store.openWebTab("https://attached.test");
+  assert.ok(topLevelTabs(useCenterTabs.getState().tabs, []).some(tab => tab.id === id));
+  resetBrowserResources();
+});
+
+test("dismissal removes a retained page from splits and closes only unassociated pages", () => {
+  const page = { id: "w:split", kind: "web", title: "Page", url: "https://split.test", agentOpened: true, agentSessionId: "owner", webPinned: true };
+  const manual = { id: "w:manual", kind: "web", title: "Manual", url: "https://manual.test" };
+  useCenterTabs.setState({ tabs: [page, manual], activeId: page.id, splitWebTabId: page.id,
+    groups: [{ id: "g:both", memberIds: [page.id, manual.id], visibleIds: [page.id, manual.id], focusedId: page.id }] });
+  const store = useCenterTabs.getState();
+  store.closeTab(page.id, { retainSessionResources: true });
+  const state = useCenterTabs.getState();
+  assert.ok(state.tabs.some(tab => tab.id === page.id));
+  assert.ok(state.groups.every(group => !group.memberIds.includes(page.id)));
+  assert.equal(state.splitWebTabId, null);
+  assert.equal(state.activeId, manual.id);
+  store.closeTab(manual.id, { retainSessionResources: true });
+  assert.equal(useCenterTabs.getState().activeId, null);
+  assert.deepEqual(useCenterTabs.getState().tabs.map(tab => tab.id), [page.id]);
+});
+
+test("a tab opened from another one goes to its right, after the ones it opened before", () => {
+  const tab = id => ({ id, kind: "web", title: id, url: `https://${id}.test/` });
+  useCenterTabs.setState({ tabs: [tab("a"), tab("b"), tab("c")], groups: [], activeId: "a", splitWebTabId: null });
+  const store = useCenterTabs.getState();
+  const first = store.openPopupWebTab("https://one.test/", "a");
+  const second = store.openPopupWebTab("https://two.test/", "a");
+  assert.deepEqual(useCenterTabs.getState().tabs.map(t => t.id), ["a", first, second, "b", "c"]);
+  useCenterTabs.setState({ activeId: "b" });
+  store.openWebTab("https://link.test/");
+  assert.deepEqual(useCenterTabs.getState().tabs.map(t => t.url).slice(3, 5), ["https://b.test/", "https://link.test/"]);
 });

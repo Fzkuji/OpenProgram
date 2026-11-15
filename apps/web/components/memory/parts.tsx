@@ -4,42 +4,36 @@
  * Memory page subcomponents — tab button, tree group rows,
  * editor panel, loading skeleton, empty state, placeholder.
  */
-import { cloneElement, isValidElement, useRef, type ReactElement } from "react";
+import { useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-import { sidebarNavItemClass, sidebarNavItemActiveClass, sidebarNavIconClass, sidebarNavLabelClass } from "@/components/sidebar/nav-classes";
-import { parseFrontmatter, renderMarkdown } from "./markdown";
-import { formatDate } from "./format";
-import { DocIcon, TypeBadge } from "./icons";
+import { SolarIcon } from "@/components/solar-icons";
+import { RailBadge, RailCount, RailItem } from "@/components/ui/secondary-rail";
+import { parseFrontmatter, renderMarkdown } from "./markdown/markdown";
+import { markOrigins, type TopicOrigins } from "./markdown/origin-marks";
+import { Badge } from "@/components/ui/badge";
+import { formatDate } from "./markdown/format";
+import { DocIcon } from "./icons";
 import { useTranslation } from "@/lib/i18n";
-import { type AnimatedNavIconHandle, XIcon } from "@/components/animated-icons";
-import type { EditorState, TopicPage } from "./types";
+import { type AnimatedNavIconHandle, ClockIcon, FileTextIcon, XIcon } from "@/components/animated-icons";
+import { ManageEmptyState } from "@/components/ui/manage-page";
+import type { EditorState, TopicPage } from "./data/types";
 import styles from "./memory-page.module.css";
 
+/** One Memory section (Topics, Timeline, …) in the rail. */
 export function TabButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
-  // Whole-tab hover drives the icon's animation (claude.ai-style): the
-  // button owns the hover target, the icon just listens via its ref.
-  const iconRef = useRef<AnimatedNavIconHandle>(null);
-  return (
-    <button
-      className={`${sidebarNavItemClass} ${styles.tabBtn} ${active ? sidebarNavItemActiveClass : ""}`}
-      onClick={onClick}
-      onMouseEnter={() => iconRef.current?.startAnimation?.()}
-      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-    >
-      <span className={sidebarNavIconClass}>{isValidElement(icon)
-        ? cloneElement(icon as ReactElement, { ref: iconRef, size: 20 } as Record<string, unknown>)
-        : icon}</span>
-      <span className={sidebarNavLabelClass}>{children}</span>
-    </button>
-  );
+  return <RailItem icon={icon} label={children} active={active} onClick={onClick} />;
 }
 
-export function DisclosureChevron({ className }: { className: string }) {
-  return (
-    <svg viewBox="0 0 10 10" fill="none" width="14" height="14" className={`${styles.disclosureChevron} ${className}`} aria-hidden="true" focusable="false">
-      <path d="M3 2l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
+/** The folder glyph is the disclosure state, as in the main sidebar's
+    project list: the same Solar folder, in --folder-color. */
+export function FolderGlyph({ open }: { open: boolean }) {
+  return <SolarIcon name={open ? "folder-open" : "folder"} size={16} motionPreset="none" className="text-[var(--folder-color)]" aria-hidden="true" />;
+}
+
+export function DocGlyph() {
+  return <SolarIcon name="file-text" size={16} motionPreset="none" className="text-text-muted" aria-hidden="true" />;
 }
 
 export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelect, forceOpen }: {
@@ -52,42 +46,40 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
   onSelect: (p: TopicPage) => void;
 }) {
   const { locale } = useTranslation();
-  const isExpanded = !folder || expanded.has(folder) || forceOpen;
+  const isExpanded = !folder || expanded.has(folder) || Boolean(forceOpen);
   return (
-    <div className={styles.treeGroup}>
+    <>
       {folder && (
-        <button className={`${styles.folderRow} ${styles.sidebarRow}`} onClick={() => onToggle(folder)} aria-expanded={isExpanded}>
-          <DisclosureChevron className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`} />
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" width="12" height="12">
-            <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 6v6A1.5 1.5 0 0 1 13 13.5H3.5A1.5 1.5 0 0 1 2 12V4.5z"/>
-          </svg>
-          <span className={styles.folderName}>{folder}</span>
-          <span className={styles.sidebarCount}>{pages.length}</span>
-        </button>
+        <RailItem
+          icon={<FolderGlyph open={isExpanded} />}
+          label={folder}
+          trailing={<RailCount>{pages.length}</RailCount>}
+          aria-expanded={isExpanded}
+          onClick={() => onToggle(folder)}
+        />
       )}
-      {isExpanded && (
-        <div className={folder ? styles.folderChildren : ""}>
-          {pages.map((page) => (
-            <button
-              key={page.path}
-              className={`${styles.fileRow} ${styles.sidebarRow} ${selected?.path === page.path ? `${styles.fileRowActive} ${styles.sidebarRowActive}` : ""}`}
-              onClick={() => onSelect(page)}
-            >
-              <DocIcon className={styles.fileIcon} />
-              <span className={styles.fileName}>{page.title || page.path.split("/").pop()}</span>
-              {page.type && <TypeBadge type={page.type} />}
-              <span className={styles.fileMeta}>{formatDate(page.mtime, locale)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+      {isExpanded && pages.map((page) => (
+        <RailItem
+          key={page.path}
+          depth={folder ? 1 : 0}
+          icon={<DocGlyph />}
+          label={page.title || page.path.split("/").pop()}
+          // Inside its own type's folder the badge would only repeat the folder name.
+          badge={page.type && page.type !== folder ? <RailBadge>{page.type}</RailBadge> : undefined}
+          trailing={<RailCount>{formatDate(page.mtime, locale)}</RailCount>}
+          active={selected?.path === page.path}
+          onClick={() => onSelect(page)}
+        />
+      ))}
+    </>
   );
 }
 
-export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, onDelete, onPreviewClick, tools, notices, detail, loading, onKeyDown, readOnly }: {
+export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, onDelete, onPreviewClick, tools, notices, detail, loading, onKeyDown, readOnly, origins }: {
   title: string;
   badge?: React.ReactNode;
+  /** Where the file and its paragraphs came from; marks the preview. */
+  origins?: TopicOrigins | null;
   meta: string[];
   state: EditorState;
   onChange: (c: string) => void;
@@ -106,17 +98,24 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
   const { frontmatter, body } = parseFrontmatter(state.content);
   const lines = state.content.split("\n").length;
   const words = state.content.trim() ? state.content.trim().split(/\s+/).length : 0;
-  const previewHtml = state.viewMode === "preview" ? renderMarkdown(body) : "";
+  const previewHtml = state.viewMode === "preview"
+    ? markOrigins(renderMarkdown(body), origins, text("Added by you", "你添加的"))
+    : "";
 
   return (
     <div className={styles.editor}>
       <div className={styles.editorHeader}>
         <div className={styles.editorHeaderLeft}>
           <DocIcon className={styles.fileIcon} />
-          <div className={styles.editorIdentity}>
-            <div className={styles.editorTitleRow}>
+          <div className="min-w-0 flex flex-col gap-[5px]">
+            <div className="min-w-0 flex items-center gap-[8px]">
               <span className={styles.editorTitle}>{title}</span>
               {badge}
+              {origins?.origin === "outside" && (
+                <Badge variant="secondary" data-origin="outside">
+                  {text("Written outside OpenProgram · read only to memory", "OpenProgram 之外写的 · 记忆只读不改")}
+                </Badge>
+              )}
             </div>
             {meta.length > 0 && (
               <div className={styles.editorHeaderMeta}>{meta.map((m, i) => <span key={i}>{m}</span>)}</div>
@@ -124,21 +123,21 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
           </div>
         </div>
         <div className={styles.editorActions}>
-          <div className={styles.modeSwitcher}>
-            <button className={`${styles.modeBtn} ${state.viewMode === "edit" ? styles.modeBtnActive : ""}`} onClick={() => onViewMode("edit")}>{text("Edit", "编辑")}</button>
-            <button className={`${styles.modeBtn} ${state.viewMode === "preview" ? styles.modeBtnActive : ""}`} onClick={() => onViewMode("preview")}>{text("Preview", "预览")}</button>
-          </div>
+          <ToggleGroup type="single" variant="elevated" spacing={1} className="max-[720px]:flex-[1_1_150px]"
+            value={state.viewMode === "history" ? "" : state.viewMode}
+            onValueChange={(value: string) => { if (value) onViewMode(value as EditorState["viewMode"]); }}>
+            <ToggleGroupItem value="edit" className="max-[720px]:flex-1">{text("Edit", "编辑")}</ToggleGroupItem>
+            <ToggleGroupItem value="preview" className="max-[720px]:flex-1">{text("Preview", "预览")}</ToggleGroupItem>
+          </ToggleGroup>
           {tools}
           {onDelete && (
-            <button
-              className={styles.dangerBtn}
-              onClick={onDelete}
-              title={text("Delete page", "删除页面")}
+            <Button variant="ghost" size="icon-xs" className="text-destructive" onClick={onDelete}
+              aria-label={text("Delete topic", "删除主题")}
               onMouseEnter={() => delIconRef.current?.startAnimation?.()}
               onMouseLeave={() => delIconRef.current?.stopAnimation?.()}
             >
-              <XIcon ref={delIconRef} size={13} />
-            </button>
+              <XIcon ref={delIconRef} size={14} />
+            </Button>
           )}
         </div>
       </div>
@@ -146,7 +145,7 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
       {loading ? <LoadingSkeleton /> : detail || (state.viewMode === "edit" ? (
         <textarea
           className={styles.textarea}
-          aria-label={text("Memory source", "Memory 源文本")}
+          aria-label={text("Memory source", "记忆源文本")}
           value={state.content}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
@@ -155,11 +154,11 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
           placeholder={text("Empty...", "空内容...")}
         />
       ) : (
-        <div className={styles.preview} onClick={onPreviewClick}>
+        <div className="flex-1 overflow-y-auto min-h-0" onClick={onPreviewClick}>
           {Object.keys(frontmatter).length > 0 && (
             <div className={styles.frontmatter}>
               {Object.entries(frontmatter).map(([k, v]) => (
-                <div key={k} className={styles.fmRow}>
+                <div key={k} className="contents">
                   <span className={styles.fmKey}>{k}</span>
                   <span className={styles.fmVal}>{v}</span>
                 </div>
@@ -188,7 +187,7 @@ function localeTextCount(count: number, singular: string, plural: string): strin
 
 export function LoadingSkeleton() {
   return (
-    <div className={styles.treeLoading}>
+    <div className="p-[12px_10px] flex flex-col gap-[8px]">
       {[100, 70, 85, 60].map((w, i) => (
         <div key={i} className={styles.skeleton} style={{ width: `${w}%` }} />
       ))}
@@ -196,41 +195,21 @@ export function LoadingSkeleton() {
   );
 }
 
+// Both empty treatments use the app-wide ManageEmptyState anatomy: compact
+// in a rail (EmptyState); inside the right pane's framed card, matching the
+// Topics emptyPanel, for Placeholder.
+function emptyIcon(icon: "doc" | "clock") {
+  return icon === "doc" ? <FileTextIcon size={20} /> : <ClockIcon size={20} />;
+}
+
 export function EmptyState({ icon, text, sub }: { icon: "doc" | "clock"; text: string; sub: string }) {
-  return (
-    <div className={styles.emptyState}>
-      {icon === "doc" ? (
-        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" width="40" height="40" opacity="0.3">
-          <rect x="8" y="6" width="32" height="36" rx="4"/>
-          <path d="M16 18h16M16 24h16M16 30h10"/>
-        </svg>
-      ) : (
-        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" width="40" height="40" opacity="0.3">
-          <circle cx="24" cy="24" r="18"/>
-          <path d="M24 14v10l6 4"/>
-        </svg>
-      )}
-      <p>{text}</p>
-      <span>{sub}</span>
-    </div>
-  );
+  return <ManageEmptyState compact icon={emptyIcon(icon)} title={text} description={sub} />;
 }
 
 export function Placeholder({ icon, text }: { icon: "doc" | "clock"; text: string }) {
   return (
     <div className={styles.placeholder}>
-      {icon === "doc" ? (
-        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.2" width="44" height="44" opacity="0.2">
-          <rect x="8" y="6" width="32" height="36" rx="4"/>
-          <path d="M16 18h16M16 24h16M16 30h10"/>
-        </svg>
-      ) : (
-        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.2" width="44" height="44" opacity="0.2">
-          <circle cx="24" cy="24" r="18"/>
-          <path d="M24 14v10l6 4"/>
-        </svg>
-      )}
-      <p>{text}</p>
+      <ManageEmptyState icon={emptyIcon(icon)} title={text} />
     </div>
   );
 }

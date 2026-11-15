@@ -1,0 +1,360 @@
+<title>Application runtime</title>
+<meta name="description" content="How OpenProgram opens, runs, stores and isolates applications, and how public agent frameworks compare.">
+<span id="decision"></span>
+<h1>Application runtime</h1>
+<p>An application has its own interface, business logic, data and dependencies, and opens from New tab without returning to the conversation that created it.</p>
+
+<figure id="architecture">
+<svg class="fig-wide" viewBox="0 0 680 262" role="img" aria-label="New tab or the Applications page opens an application tab, a sandboxed iframe with the application's own HTML, CSS and JavaScript. Over a MessagePort it reaches the host bridge, which checks instance, capability and operation. The bridge starts one runner process per operation. The runner calls Runtime for llm, agent and Programs, and saves instance state.">
+  <defs><marker id="ar-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Launch</text>
+  <text class="t-soft" x="0" y="64">New tab, Applications</text>
+  <line class="ln" x1="168" y1="33" x2="228" y2="33" marker-end="url(#ar-a)"/>
+  <text class="t-big" x="240" y="40">Application tab</text>
+  <text class="t-soft" x="240" y="64">sandboxed iframe</text>
+  <text class="t-soft" x="240" y="84">own HTML, CSS, JavaScript</text>
+  <line class="ln" x1="400" y1="33" x2="468" y2="33" marker-end="url(#ar-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="434" y="22">MessagePort</text>
+  <text class="t-big" x="480" y="40">Host bridge</text>
+  <text class="t-soft" x="480" y="64">checks instance,</text>
+  <text class="t-soft" x="480" y="84">capability, operation</text>
+  <line class="ln" x1="520" y1="96" x2="520" y2="146" marker-end="url(#ar-a)"/>
+  <text class="t-big" x="480" y="170">Runner</text>
+  <text class="t-soft" x="480" y="194">one process per operation</text>
+  <line class="ln" x1="470" y1="163" x2="410" y2="163" marker-end="url(#ar-a)"/>
+  <text class="t-big" x="240" y="170">Runtime</text>
+  <text class="t-soft" x="240" y="194">llm(), agent(), Programs</text>
+  <text class="t-soft" x="240" y="214">execution records</text>
+  <path class="ln" d="M560 204V246H60V212" marker-end="url(#ar-a)"/>
+  <text class="t-big" x="0" y="170">Instance state</text>
+  <text class="t-soft" x="0" y="194">business data, events,</text>
+  <text class="t-soft" x="0" y="214">results, questions</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Launch</strong><small>New tab, Applications</small></li>
+  <li><strong>Application tab</strong><small>sandboxed iframe, own HTML, CSS, JavaScript</small></li>
+  <li class="via"><code translate="no">MessagePort</code></li>
+  <li><strong>Host bridge</strong><small>checks instance, capability, operation</small></li>
+  <li><strong>Runner</strong><small>one process per operation</small></li>
+  <li><strong>Runtime</strong><small>llm(), agent(), Programs, execution records</small></li>
+  <li class="flow-end"><strong>Instance state</strong><small>business data, events, results, questions</small></li>
+</ol>
+</figure>
+
+<details id="experience">
+<summary>What this buys, and the limits</summary>
+<ul>
+<li>Interfaces are standard Web: HTML, CSS, JavaScript, compiled React or Vue, not assembled from fixed OpenProgram components. HTML is an interface technology, not a measure of completeness; backend, state, contracts and deployment dependencies decide what the software can do.</li>
+<li>Value: business operations shared by buttons and Agents, model calls in existing execution records, business data independent of chat windows. A combination of product contracts, not a claim of uniqueness.</li>
+<li>Applications run inside OpenProgram. A later minimal-runtime deployment stays possible; removing every OpenProgram dependency needs replacement model, storage and execution implementations, so standalone export is not promised.</li>
+<li>Browser-executable JavaScript, Canvas, WebGL and WASM are available. System GUI, GPU drivers, arbitrary binaries and other-language services are not; those need explicit runtime adapters and dependency contracts.</li>
+</ul>
+</details>
+
+<h2 id="management-scenarios">Words and surfaces</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Word</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Program</th><td>Callable capability; Tools and Workflows keep their definitions</td></tr>
+<tr><th scope="row">Package</th><td>Installation unit holding these capabilities, harnesses included. Not an execution type.</td></tr>
+<tr><th scope="row">Application</th><td>User-openable software with its own interface, version, data and lifecycle</td></tr>
+<tr><th scope="row">Host plugin</th><td>Installation unit extending host behaviour, such as tools or themes. Managed separately; existing loaders do not guarantee application isolation, and plugins are not adapted into Applications automatically.</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Goal</th><th scope="col">Entry</th><th scope="col">Result and failure</th></tr></thead>
+<tbody>
+<tr><th scope="row">See capabilities</th><td>Abilities → Programs</td><td>Plain folder per application directory, built in or installed; source, default entry, call structure. Names such as <code translate="no">gui_agent</code> unchanged.</td></tr>
+<tr><th scope="row">Install, upgrade, uninstall a package</th><td><code translate="no">openprogram programs install</code>, <code translate="no">install --upgrade</code>, <code translate="no">uninstall</code></td><td>Clones into <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code>. Development symlinks keep their targets. Unknown directories are never imported.</td></tr>
+<tr><th scope="row">Install software</th><td>Applications → Install…</td><td>Shows declarations, source, version, enabled state. Python backends need the explicit trust checkbox. Duplicate IDs, invalid entries and failed dependency preparation return errors without overwriting.</td></tr>
+<tr><th scope="row">Open</th><td>New tab button, or Open on Applications</td><td>Own tab, same instance. Project applications bind to the current project or a picker. Programs without UI gain no button.</td></tr>
+<tr><th scope="row">Manage</th><td>Applications: enable, show or hide, update, uninstall</td><td>Disabling stops new opens and operations and cancels active ones; hiding removes only the button. Errors stay beside the action. Refresh and reopen read the latest catalog.</td></tr>
+<tr><th scope="row">Call from CLI or Agent</th><td><code translate="no">openprogram programs</code> <code translate="no">list</code>, <code translate="no">run</code>, <code translate="no">status</code>, <code translate="no">cancel</code>, <code translate="no">check</code>, <code translate="no">install</code>, <code translate="no">uninstall</code>, <code translate="no">enable</code>, <code translate="no">disable</code></td><td>Same group as every Program; no separate application command.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Directories and older installations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">program-sources.json</code></th><td>Program sources</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/catalog.json</code></th><td>Application registrations: source directory, enabled, hidden, display title, reviewed manifest. Nothing is copied.</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/.runtime/</code></th><td><code translate="no">state.sqlite</code>, <code translate="no">data/&lt;instance&gt;/data.sqlite</code>, <code translate="no">runs/</code>, <code translate="no">environments/</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li><code translate="no">program_directory.migrate_user_directory</code> moves <code translate="no">workflows/</code> and <code translate="no">applications/</code> into <code translate="no">programs/</code>, by rename. Clones older installers made under <code translate="no" data-claim="example">openprogram/programs/packages/</code> or <code translate="no">applications/</code> move too. Repeatable.</li>
+<li>On first catalog read, <code translate="no">kind=application</code> rows move out of <code translate="no">program-sources.json</code>, including disabled, hidden, source and uninstall state. The catalog is written before old rows go; a conflict keeps the originals. Migration and catalog updates are serialized.</li>
+<li>Reclassifying directories grants no execution authority to unregistered ones. Desktop read-only dependency limits stay: application forms cannot use package APIs to change host dependencies.</li>
+</ul>
+</details>
+
+<h2 id="new-tab">New tab</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Order</th><td>Files, New chat, Browser and Terminal; built-in applications with a window; enabled, visible installed applications. Buttons show no model, port, runtime or path.</td></tr>
+<tr><th scope="row">Reopening</th><td>Same application and project reuses the open tab. Separate projects open independently with explicit data scopes.</td></tr>
+<tr><th scope="row">No active project</th><td>The saved binding is reused; an unbound project application asks once. An application never follows another chat tab's working directory.</td></tr>
+<tr><th scope="row">First opening</th><td>May show dependency preparation. Failure stays on the application page with the reason and Retry.</td></tr>
+<tr><th scope="row">Closing</th><td>Closes only the view. Service-process exit and task interruption are reported separately.</td></tr>
+<tr><th scope="row">Creation</th><td>Starts in chat: the Agent writes the package and dependency declarations, builds and verifies it, then registers within that task's authorization. Only success adds a button; failure keeps source and errors for repair.</td></tr>
+</tbody>
+</table>
+
+<h2 id="contract">Application contract</h2>
+<pre translate="no" tabindex="0"><code translate="no">{
+  "id": "local.paper-reader",
+  "title": "Paper reader",
+  "icon": "book-open",
+  "version": "1.0.0",
+  "ui": { "root": "web/dist", "entry": "index.html" },
+  "backend": { "kind": "python", "entry": "paper_reader.app:operations" },
+  "scope": "project",
+  "capabilities": ["model.invoke", "storage.app", "files.project.read"],
+  "dataSchema": 1,
+  "operations": {
+    "summarize": { "agent": true, "input": { "type": "object" }, "output": { "type": "string" } }
+  }
+}</code></pre>
+<p class="note">Static applications omit <code translate="no">backend</code>. <code translate="no">id</code> is stable package identity, never title, path or creation-chat ID. Field rules and public APIs: <a href="../../../../capabilities/applications.html">Applications</a>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Object</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">Definition</th><td>Manifest read from the source plus the content digest of the source tree, computed at load and on every reload</td></tr>
+<tr><th scope="row">Installation</th><td>Catalog row: source directory, settings, reviewed data identity and trust. Package limit 100 MiB, no symlinks or special files.</td></tr>
+<tr><th scope="row">Instance</th><td>App ID, owner, project scope; business-data location. A window is not a database.</td></tr>
+<tr><th scope="row">View</th><td>Tab, instance, UI route, displayed run. Disposable.</td></tr>
+<tr><th scope="row">Operation run</th><td>Run ID, instance, definition, input, request key, state, event sequence, result. Links existing execution records without copying the DAG.</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Operations have input and output schemas. Clients cannot choose import paths, source paths or owners; the server resolves them. Trusted identity comes from the authenticated connection, not a JSON field.</li>
+<li>Operation names exist only at the UI and process boundary. Python internals use ordinary imports, with no second string dispatcher.</li>
+<li>Events have increasing sequences; clients resume by cursor. Results and errors persist. State is at most 4 MiB as JSON, an event 1 MiB; large outputs use references.</li>
+<li>Project-path changes update bindings, not instance identity. Runtime databases hold execution facts; application state references run IDs. <code translate="no">localStorage</code> caches disposable view preferences only.</li>
+<li>User data never lives in the source directory.</li>
+<li>Python environments: one per application and pinned dependency set, created on first use, never installing into the main worker. Listing reads manifests only and starts no process. A static application starts no Python. Published UI uses build artifacts: no dev server, no latest dependencies, no regeneration per click.</li>
+</ul>
+
+<h2 id="models">Models and business operations</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shared path</th><td>A button and an Agent call share input validation, permissions and implementation. Only <code translate="no">agent: true</code> operations are exposed, as <code translate="no">&lt;id&gt;__&lt;operation&gt;</code>; internal database methods never become tools. Agent calls bind instances and cannot switch project data.</td></tr>
+<tr><th scope="row">Model calls</th><td>The runner creates Runtime from the manifest's model name or host defaults, bound to run records (<code translate="no">SessionNodeWriter</code> under <code translate="no">runs/</code>). Context is operation input and explicitly supplied app data, independent of the active chat. No chat is needed before a button.</td></tr>
+<tr><th scope="row">Credentials</th><td>The page gets progress and results, never provider keys</td></tr>
+<tr><th scope="row">Questions</th><td><code translate="no">context.ask()</code> emits a question event; an answer binds run and request ID and applies only to the pending question. No second <code translate="no">ExecutionStatus</code>.</td></tr>
+<tr><th scope="row">Commit</th><td>Ordinary code validates model output before a transactional commit. "Saved" in natural language is not evidence.</td></tr>
+<tr><th scope="row">Retries</th><td>A request key dedupes submissions; reuse with different input is rejected. Non-idempotent external effects inspect existing records or ask the user; a network timeout never repeats execution.</td></tr>
+</tbody>
+</table>
+
+<h2 id="lifecycle">Lifecycle</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">Sequence</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open</th><td>Read verified definitions → select → resolve instance and project → reuse or create tab → load resources at the digest → connect capability port → read state and active runs. No business code imported, no model request.</td></tr>
+<tr><th scope="row">Task</th><td>Persist input, request key and accepted event; the existing Attempt manages running; persist questions; finish completed, failed or cancelled. Stop terminates owned process trees and reports cancelled only after cleanup; late results cannot overwrite a terminal state. Process-tree ownership persists so children end after the parent exits. Concurrent writes need transactions or version checks, not disabled buttons.</td></tr>
+<tr><th scope="row">Restart</th><td>Reopening restores view and state. After a worker restart, incomplete runs follow owner-loss rules: interrupted, or requested cancellation completes. Inputs, progress and results stay. Python stacks do not resume; an application may read saved state and submit a new operation.</td></tr>
+<tr><th scope="row">Update</th><td><code translate="no">install --replace</code> or Update from source: validate manifest and tree, check the backend in a separate process, recheck the digest, check <code translate="no">dataSchema</code> and <code translate="no">scope</code>, then switch the catalog row atomically. A changed source reloads with a fresh digest. Submitting from a view at an old digest is refused with "reopen".</td></tr>
+<tr><th scope="row">Uninstall</th><td>Cancels operations, hides the application, keeps the source directory, data and schema and scope identity. A compatible reinstall restores the instance. No business-data deletion API.</td></tr>
+</tbody>
+</table>
+<p class="note">Incompatible <code translate="no">dataSchema</code> or <code translate="no">scope</code> is rejected; automatic migration, which would need backup, validation and explicit recovery, is not built.</p>
+
+<h2 id="boundary">Isolation and portability</h2>
+<ul>
+<li>Iframes use <code translate="no">sandbox="allow-scripts"</code> with a restrictive CSP and an opaque origin. Host and page talk through a validated MessageChannel handshake. Existing same-origin plugin pages prove no isolation; CORS is not authentication.</li>
+<li>Resources are addressed by digest and restricted to the published UI directory, with a credential that permits UI reads only. The bridge rejects page-supplied owners, URLs and other-instance runs. Pages cannot reach <code translate="no">/api/*</code>. Capabilities are rechecked per operation; disabling or uninstalling revokes.</li>
+<li>Separate Python processes isolate dependencies and crashes, not host files or network. Backends are explicitly trusted local code, and manifest capabilities are no malicious-code sandbox. Untrusted remote code would need platform restrictions or containers, covering children, install scripts and inherited environments.</li>
+<li>Ordinary applications render only in their tabs and get a small stable API, not React stores or session managers. Global toolbars, chat editors, themes and system services are trusted host extensions.</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">Runtime mode</th><th scope="col">Needs</th><th scope="col">Commitment</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pure static</th><td>Browser and own resources</td><td>Independently hostable; data migration is the application's job</td></tr>
+<tr><th scope="row">Inside OpenProgram</th><td>UI, backend, OpenProgram Runtime</td><td>Current implementation</td></tr>
+<tr><th scope="row">Independent, same runtime</th><td>Package, minimal runtime, configuration, storage</td><td>Boundary reserved; unavailable until adapters and acceptance exist</td></tr>
+<tr><th scope="row">Cross-host MCP Apps</th><td>MCP server, compatible host</td><td>Shared UI and tool contract; OpenProgram background APIs are not portable</td></tr>
+<tr><th scope="row">No OpenProgram dependency</th><td>Replacement models, tasks, storage</td><td>No guarantee; build and test separately</td></tr>
+</tbody>
+</table>
+
+<h2 id="choices">Adopted, adapted, deferred</h2>
+<table class="stack">
+<thead><tr><th scope="col">Choice</th><th scope="col">Basis</th><th scope="col">Handling</th></tr></thead>
+<tbody>
+<tr><th scope="row">Adopt: standard Web interfaces</th><td>MCP Apps, OpenAI Plugins</td><td>Free frontend builds, optional theme components, stable host APIs</td></tr>
+<tr><th scope="row">Adopt: explicit contributions and lifecycles</th><td><a href="https://hermes-agent.nousresearch.com/docs/developer-guide/desktop-plugin-sdk">Hermes Desktop Plugin SDK</a>, DeepSeek Harness</td><td>Applications contribute only within their pages; global slots stay trusted-plugin capabilities</td></tr>
+<tr><th scope="row">Adopt: state separate from pages</th><td>LangGraph, AgentOS</td><td>Persisted state and run records; neither <code translate="no">localStorage</code> nor chat history is the database</td></tr>
+<tr><th scope="row">Adapt: MCP Apps</th><td>MCP Apps</td><td>Standard-bridge adaptation reserved; local contracts first. Persistent tasks use explicit host extensions, never claimed as standard.</td></tr>
+<tr><th scope="row">Adapt: UI event streams</th><td>AG-UI</td><td>Existing event semantics; adapters when cross-framework integration is needed</td></tr>
+<tr><th scope="row">Optional: declarative UI</th><td>A2UI</td><td>Suits confirmations and common forms; not required</td></tr>
+<tr><th scope="row">Defer: arbitrary dynamic code in host</th><td>Host stability, isolation</td><td>Code becomes a reviewable build before registration; <code translate="no">eval</code> is not publication</td></tr>
+<tr><th scope="row">Defer: marketplace, other-language runners, native GUI embedding</th><td>Not needed for install, open, operate, recover</td><td>Not dependencies of the current version</td></tr>
+</tbody>
+</table>
+
+<h2 id="matrix">Survey of public frameworks</h2>
+<p>For each project: what is delivered, who loads and executes it, who renders UI, where business state lives, whether it can leave the host. Code generation, code execution, UI and application installation are judged separately.</p>
+<details>
+<summary>Host extension (9)</summary>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Mechanism</th><th scope="col">UI</th><th scope="col">Host dependency</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a><span class="arg">Local distribution code inspected</span></th><td>Cordis lifecycle and service injection; dynamic plugins have host/client parts.</td><td>Host React slots; dynamic frontends invoke registered backend handlers.</td><td>Plugins depend on DSH services/loaders and do not automatically become standalone software.</td></tr>
+<tr><th scope="row"><a href="https://github.com/Aisland-SJL/dsh-worktable">dsh-worktable</a><span class="arg">Plugin source inspected</span></th><td>Installation package supplies backend routes and frontend worktable.</td><td>Project entries and split view; generated artifacts load in iframes using widget-result.json.</td><td>Worktable depends on DSH; generated pages are standalone only if their own dependencies allow it.</td></tr>
+<tr><th scope="row"><a href="https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md">Pi</a><span class="arg">Official documentation</span></th><td>TypeScript extensions: tools, events, commands, context.</td><td>ctx.ui custom terminal components, message rendering, and overlays.</td><td>Extensions require Pi; terminal components are not HTML.</td></tr>
+<tr><th scope="row"><a href="https://opencode.ai/docs/plugins/">OpenCode</a><span class="arg">Official documentation</span></th><td>JS/TS plugin event hooks, custom tools, SDK client.</td><td>Reviewed docs list TUI notifications and related interfaces; this does not establish arbitrary business-page plugin support.</td><td>Plugins depend on OpenCode; generated application independence is separate.</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/plugins-reference">Claude Code</a><span class="arg">Official documentation</span></th><td>Plugins package skills, agents, hooks, MCP, LSP, and more.</td><td>Public contracts mainly extend Agents; arbitrary React-page registration is unconfirmed.</td><td>Plugins depend on Claude Code; plugin packages are not desktop applications.</td></tr>
+<tr><th scope="row"><a href="https://hermes-agent.nousresearch.com/docs/developer-guide/plugins/">Hermes</a><span class="arg">Official documentation</span></th><td>Python register(ctx) and multiple capability registrations.</td><td>Also Desktop SDK and Dashboard extensions, beyond terminal plugins.</td><td>Local host extensions; compatibility with other plugin formats covers only explicit subsets.</td></tr>
+<tr><th scope="row"><a href="https://docs.openclaw.ai/tools/plugin">OpenClaw</a><span class="arg">Official documentation</span></th><td>Gateway plugins provide tools, services, channels, and runtime capabilities.</td><td>Interactive Dashboard and macOS widget panel have different contracts.</td><td>Plugins require Gateway; HTML panel rendering does not imply complete runtime capability.</td></tr>
+<tr><th scope="row"><a href="https://geminicli.com/docs/extensions/">Gemini CLI</a><span class="arg">Official documentation</span></th><td>Extensions package prompts, MCP, commands, and other Agent configuration/capabilities.</td><td>CLI extension mechanism, not arbitrary application-page installation.</td><td>Extensions use Gemini CLI loading/runtime environments.</td></tr>
+<tr><th scope="row"><a href="https://block.github.io/goose/index.html">goose</a><span class="arg">Official documentation</span></th><td>MCP extensions, recipes, CLI/API.</td><td>Desktop explicitly supports MCP Apps interactive interfaces.</td><td>MCP services may deploy separately; UI requires compatible hosts.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Agent service (4)</summary>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Mechanism</th><th scope="col">UI</th><th scope="col">Host dependency</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://learn.chatgpt.com/docs/app-server">Codex App Server</a><span class="arg">Official documentation</span></th><td>Bidirectional JSON-RPC: threads, turns, events, approvals.</td><td>Clients implement their own UI; this interface is not an application installation manifest.</td><td>Independent clients are possible, but Agent capabilities still require Codex services.</td></tr>
+<tr><th scope="row"><a href="https://docs.openhands.dev/sdk">OpenHands</a><span class="arg">Official documentation</span></th><td>Python/REST SDK, tools, sessions, and remote Agent Server.</td><td>SDK supports custom developer experiences.</td><td>Embeddable in applications, not a generic application menu or arbitrary host-UI extension.</td></tr>
+<tr><th scope="row"><a href="https://github.com/bytedance/deer-flow">DeerFlow</a><span class="arg">Official repository description</span></th><td>Gateway, long-running Agents, skills, files, execution environments.</td><td>Complete Web client; read-only static demos differ explicitly from backend-backed runtime mode.</td><td>Full capability requires its backend; demo pages do not establish service independence.</td></tr>
+<tr><th scope="row"><a href="https://docs.agno.com/agent-os/introduction">Agno / AgentOS</a><span class="arg">Official documentation</span></th><td>FastAPI runs agents, teams, workflows, with database state and APIs.</td><td>Control Plane manages them; products may have independent frontends.</td><td>Applications can deploy services independently while requiring AgentOS/storage configuration.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Coding tool (6)</summary>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Mechanism</th><th scope="col">UI</th><th scope="col">Host dependency</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://aider.chat/docs/">Aider</a><span class="arg">Official documentation</span></th><td>Primarily code changes, tests, and Git workflows.</td><td>CLI product; generic application-UI plugin contract unverified here.</td><td>Generated source may deploy with its own dependencies, separate from Aider extensions.</td></tr>
+<tr><th scope="row"><a href="https://github.com/SWE-agent/mini-swe-agent">mini-SWE-agent</a><span class="arg">Official repository description</span></th><td>Simplified Agent loop, independent shell actions, linear history.</td><td>CLI and trajectory viewer.</td><td>Can generate programs; reviewed contracts do not install them as host applications.</td></tr>
+<tr><th scope="row"><a href="https://github.com/mistralai/mistral-vibe">Mistral Vibe</a><span class="arg">Official repository description</span></th><td>CLI coding Agent, programmatic mode, streaming output.</td><td>Terminal; business-page plugin contract unverified here.</td><td>Programmatically callable; output formats do not define UI rendering.</td></tr>
+<tr><th scope="row"><a href="https://docs.cline.bot/mcp/mcp-overview">Cline</a><span class="arg">Official documentation</span></th><td>MCP extends external tools/services.</td><td>Reviewed pages establish tool integration, not arbitrary UI extensions.</td><td>MCP servers may run independently; hosts invoke tools.</td></tr>
+<tr><th scope="row"><a href="https://roocodeinc.github.io/Roo-Code/features/mcp/using-mcp-in-roo/">Roo Code</a><span class="arg">Official documentation</span></th><td>Project/global MCP with stdio, HTTP, and other connections.</td><td>In-editor Agent interaction.</td><td>MCP services and editor extensions are distinct deployment objects.</td></tr>
+<tr><th scope="row"><a href="https://docs.continue.dev/customize/deep-dives/mcp">Continue</a><span class="arg">Official documentation</span></th><td>Configure MCP tools for Agents.</td><td>Editor/Agent integration; arbitrary business-page registration unverified here.</td><td>Tool services work across hosts; Continue configuration still depends on Continue.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Closed-source product (2)</summary>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Mechanism</th><th scope="col">UI</th><th scope="col">Host dependency</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://cursor.com/docs">Cursor</a><span class="arg">Official overview; internals unknown</span></th><td>Public docs provide Agent, Rules, MCP, and other entries.</td><td>Product UI is visible; internal plugin runtime unverified here.</td><td>Do not infer internal architecture or arbitrary application-hosting contracts from public feature lists.</td></tr>
+<tr><th scope="row"><a href="https://docs.devin.ai/desktop/cascade/mcp">Windsurf / Devin Desktop</a><span class="arg">Official docs; internals unknown</span></th><td>Public Cascade MCP integration.</td><td>In-editor interaction; internal mechanism unverified.</td><td>MCP capabilities do not imply portable business-application pages.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Embedded framework (10)</summary>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Mechanism</th><th scope="col">UI</th><th scope="col">Host dependency</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/agent-sdk/overview">Claude Agent SDK</a><span class="arg">Official documentation</span></th><td>Embed Claude Agent capabilities into Python/TypeScript programs.</td><td>Applications provide their own UI.</td><td>Independent of Claude Code’s interactive UI, with SDK/runtime dependencies retained.</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/overview">LangGraph</a><span class="arg">Official documentation</span></th><td>State graphs, persistence, recovery, human intervention.</td><td>Graphs/events do not prescribe final business UI.</td><td>Usable as a standalone-program library; persistence needs actual configuration.</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/deepagents/overview">Deep Agents</a><span class="arg">Official documentation</span></th><td>Combines tools, files, context, and sub-agents atop LangGraph.</td><td>Agent harness is separate from final application UI.</td><td>Embeddable, depending on its libraries/runtime configuration.</td></tr>
+<tr><th scope="row"><a href="https://adk.dev/">Google ADK</a><span class="arg">Official documentation</span></th><td>Agent development, orchestration, tools, deployment.</td><td>Evaluate development tools and business UI separately.</td><td>Builds/deploys Agents; not a desktop application-registration protocol.</td></tr>
+<tr><th scope="row"><a href="https://learn.microsoft.com/en-us/agent-framework/overview/">Microsoft Agent Framework</a><span class="arg">Official documentation</span></th><td>Agent/workflow development, continuing relevant AutoGen/Semantic Kernel capabilities.</td><td>Applications integrate their own UI and channels.</td><td>SDK/service dependencies, without requiring a particular desktop host page.</td></tr>
+<tr><th scope="row"><a href="https://docs.crewai.com/en/concepts/flows">CrewAI</a><span class="arg">Official documentation</span></th><td>Flows express business processes and state.</td><td>Flow execution does not prescribe business frontends.</td><td>Application libraries/deployment dependencies, not a page-plugin format.</td></tr>
+<tr><th scope="row"><a href="https://pydantic.dev/docs/ai/integrations/ui/overview/">PydanticAI</a><span class="arg">Official documentation</span></th><td>Typed Agents and UI-event-stream integration.</td><td>UI Event Streams adapts events for frontend consumption.</td><td>Frontend and Agent runtime may separate; not a complete application-installation protocol.</td></tr>
+<tr><th scope="row"><a href="https://mastra.ai/docs">Mastra</a><span class="arg">Official documentation</span></th><td>TypeScript agents, workflows, services, storage.</td><td>Next.js, React/Vite, and other integrations; Studio manages development.</td><td>Business applications deploy independently with Mastra service/library dependencies.</td></tr>
+<tr><th scope="row"><a href="https://github.com/NVIDIA/NeMo-Agent-Toolkit">NeMo Agent Toolkit</a><span class="arg">Official repository description</span></th><td>Functions, models, workflow configuration, multi-framework integration.</td><td>Reviewed entries primarily run/optimize Agent workflows.</td><td>Deployment toolchain; generic desktop application plugins unconfirmed.</td></tr>
+<tr><th scope="row"><a href="https://github.com/huggingface/smolagents">smolagents</a><span class="arg">Official repository description</span></th><td>CodeAgent executes code and tools; Agents can be shared.</td><td>Application UI is implemented/integrated separately.</td><td>Supports ordinary Python programs; not a host-page extension protocol.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Application platform (3)</summary>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Mechanism</th><th scope="col">UI</th><th scope="col">Host dependency</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/langgenius/dify-plugin-daemon">Dify</a><span class="arg">Official repository description</span></th><td>Plugin Daemon manages local/debug/serverless execution.</td><td>Plugin execution and Dify application display are separate; backend plugins are not arbitrary UI.</td><td>Local subprocesses or remote execution still depend on Dify plugin-call protocols.</td></tr>
+<tr><th scope="row"><a href="https://docs.openwebui.com/features/extensibility/plugin/">Open WebUI</a><span class="arg">Official documentation</span></th><td>Python Tools/Functions extend inference/platform behavior.</td><td>Actions can add chat buttons; event-driven interaction extensions also exist.</td><td>Platform extensions depend on Open WebUI, not automatically standalone software.</td></tr>
+<tr><th scope="row"><a href="https://docs.chainlit.io/api-reference/elements/custom">Chainlit</a><span class="arg">Official documentation</span></th><td>Python applications with custom elements and callbacks.</td><td>CustomElement uses React; custom frontends are also possible.</td><td>Elements depend on Chainlit context; complete applications may deploy as services.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Interface protocol (4)</summary>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Mechanism</th><th scope="col">UI</th><th scope="col">Host dependency</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://developers.openai.com/plugins/build/chatgpt-ui">OpenAI Plugins (formerly Apps SDK path)</a><span class="arg">Official documentation</span></th><td>MCP tools provide UI resources, a standard bridge, and host-specific extensions.</td><td>iframe Web UI; current official documentation builds on MCP Apps.</td><td>Portable across compatible hosts; window.openai-specific capabilities are not automatically portable.</td></tr>
+<tr><th scope="row"><a href="https://modelcontextprotocol.io/extensions/apps/overview">MCP Apps</a><span class="arg">Official documentation</span></th><td>Tools associate with ui:// resources; JSON-RPC / postMessage.</td><td>Sandboxed Web UI with frontend-framework choice.</td><td>Compatibility covers UI/tool interaction, not local installation, business databases, or background tasks.</td></tr>
+<tr><th scope="row"><a href="https://docs.ag-ui.com/introduction">AG-UI</a><span class="arg">Official documentation</span></th><td>Event communication between Agents and UI.</td><td>Does not prescribe HTML, native components, or page frameworks.</td><td>Solves streaming interaction, not application packages, permissions, or deployment.</td></tr>
+<tr><th scope="row"><a href="https://a2ui.org/">A2UI</a><span class="arg">Official documentation</span></th><td>Generates structured UI descriptions rendered by trusted component catalogs.</td><td>Limited to available components and renderer contracts.</td><td>Cross-platform rendering, not execution of arbitrary generated frontend code.</td></tr>
+</tbody>
+</table>
+</details>
+<details id="scope">
+<summary>Evidence limits</summary>
+<ul>
+<li>"Official repository description" means reading public descriptions, not auditing a repository. Compatibility without measurement does not count as accepted. Links support nearby claims, not whole implementations.</li>
+<li>Relevant DSH distribution, worktable and OpenProgram code was checked; other projects rest on current official documents, public examples or repository descriptions. Not every product was installed and tested.</li>
+<li>"Unverified" means insufficient evidence, not absence. Cursor and Windsurf internals are unknown. AutoGen and Semantic Kernel are treated within Microsoft Agent Framework's evolution.</li>
+<li>The list is not closed: commercial products, community forks and private harnesses are not exhausted. Relevant Qwen Code and Strands pages could not be obtained; Trae, Kimi CLI and cloud software-generation services are outside the matrix. These gaps limit uniqueness claims, not the requirements here.</li>
+<li>DSH details use installed distribution 0.1.5-rc.1, worktable source 0.3.3. Neither received full compatibility acceptance; one version's demo is not evidence for another's capabilities.</li>
+</ul>
+</details>
+
+<details id="mechanisms">
+<summary>Mechanisms that shaped the choices</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Project</th><th scope="col">Finding</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/Aisland-SJL/dsh-worktable">dsh-worktable</a></th><td>Host services, UI slots, React split layout; not standalone. Generated windows read HTML, URLs or files from artifact manifests. Pages using only their own resources can be hosted separately; pages on DSH routes, sessions or plugin services lose them outside DSH.</td></tr>
+<tr><th scope="row"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH dynamic Cordis plugins</a></th><td>Host parts register handlers; client parts run in the host and call the backend. Real logic, but bound to supported APIs, loading lifecycle and code formats. Node <code translate="no">vm</code> is not OS-level isolation.</td></tr>
+<tr><th scope="row"><a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/extending-the-dashboard">Hermes</a></th><td>Pane, page, sidebar, status-bar and palette contributions; local plugins load directly in the host, unlike isolated HTML previews; Dashboard has pages and slots. Taken: explicit contributions and lifecycles, without giving generated applications host internals.</td></tr>
+<tr><th scope="row">Pi</th><td>Custom UI uses terminal components: not all plugin interfaces are HTML.</td></tr>
+<tr><th scope="row"><a href="https://docs.openclaw.ai/platforms/mac/canvas">OpenClaw widget panel</a></th><td>Rendering only. Host actions and A2UI belong to Control UI and the session dashboard; sharing the name canvas transfers no capability.</td></tr>
+<tr><th scope="row">MCP Apps, AG-UI, A2UI</th><td>Portable Web resources and host communication; Agent-to-UI events; declarative rendering from component catalogs. None supplies installation, data migration or background lifecycles.</td></tr>
+<tr><th scope="row">LangGraph, AgentOS, OpenHands</th><td>Applications can deploy independently yet still need libraries and services: leaving the desktop client is not removing every dependency.</td></tr>
+<tr><th scope="row"><a href="https://docs.chainlit.io/deploy/react/overview">Chainlit custom React frontend</a></th><td>A complete application may deploy as a service with its own frontend.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack">
+<thead><tr><th scope="col">Phase</th><th scope="col">Delivers</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. Definition and source</th><td>One definition and source identity, validation, enabled state; discovery executes no code</td><td>Implemented</td></tr>
+<tr><th scope="row">2. Menu and pages</th><td>Static applications open, reuse tabs, bind instances, isolate resources</td><td>Implemented</td></tr>
+<tr><th scope="row">3. Business operations and Runtime</th><td>Python operations on model and Workflow contracts; cancellation, questions, results persist</td><td>Implemented</td></tr>
+<tr><th scope="row">4. Complete lifecycle</th><td>Dependencies, background tasks, restart interruption, digest checks, uninstall</td><td>Implemented</td></tr>
+<tr><th scope="row">5. Compatibility and independent deployment</th><td>MCP Apps adapter, minimal-runtime deployment; other-language runners later. Acceptance: the same UI and operations actually run on a second host</td><td>Not built</td></tr>
+</tbody>
+</table>
+<p class="note">Also not built: attachment APIs, automatic schema migration, conversation-context import, manual menu order, PDF import in the paper-reader sample, automatic plugin-to-Application adaptation.</p>
+<details id="baseline">
+<summary>Code map</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/web/components/center-tabs/pages/new-tab-page.tsx</code></th><td>Launch buttons; list refreshed on focus and every ten seconds</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/center-tabs/pages/application-tab-pane.tsx</code></th><td>Sandbox iframe and MessagePort instance API</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/loader.py</code></th><td>Mounts each application through one <code translate="no">ProgramContext</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/catalog.py</code>, <code translate="no">catalog_store.py</code></th><td>Registrations, digest, environments, trust</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/service.py</code></th><td>Operations on <code translate="no">ExecutionStore</code>, Attempts and Drivers; shared cancellation cleanup</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/runner.py</code></th><td>One trusted operation per process; Runtime and <code translate="no">context</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/state.py</code></th><td>Instances, operation metadata, events, instance data</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/catalog/applications.py</code></th><td><code translate="no">/api/applications</code>, instance, run and asset routes</td></tr>
+</tbody>
+</table>
+<p>Follows <a href="programs-architecture.html">Programs code structure</a>; broader comparison in <a href="../../framework-comparison.html">Framework comparison</a>.</p>
+</details>
+<details id="implementation">
+<summary>Acceptance</summary>
+<ul>
+<li>Sample applications: a non-model calculator, a paper reader saving annotations and generating summaries from pasted text, batch file analysis with progress and restart interruption.</li>
+<li>Checked through public entries (API, CLI, real browser): install, update, disable, reinstall after uninstall, failures, repeated clicks, reopen and restart. Default-App checks: harnesses under Applications, management and menu reuse of an instance, preserved notes and analysis results, menu hiding and restoration, tabs and results restored after restart.</li>
+<li>Integration tests cover model success and failure, cancellation, duplicate submission and interruption; offline tests do not guarantee live model availability.</li>
+<li>Performance targets: listing New tab starts no business process; repeated opening creates no second same-scope instance; opening triggers no code generation or model request. No unmeasured latency commitments.</li>
+</ul>
+</details>

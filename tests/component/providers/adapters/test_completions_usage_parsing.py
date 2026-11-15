@@ -6,7 +6,7 @@ cache_read=0 while the API served ~99% of the prompt from cache.
 """
 from types import SimpleNamespace
 
-from openprogram.providers.openai_completions.openai_completions import _usage_from_chunk
+from openprogram.models.providers.adapters.openai_completions.openai_completions import _usage_from_chunk
 
 
 def test_plain_usage_no_cache():
@@ -53,9 +53,10 @@ def test_cached_never_drives_input_negative():
     assert u.cache_read == 80
 
 
-def test_reasoning_tokens_split_out_of_output():
+def test_reasoning_tokens_remain_in_billable_output():
     u = _usage_from_chunk(SimpleNamespace(
         prompt_tokens=100, completion_tokens=50, total_tokens=150,
         completion_tokens_details=SimpleNamespace(reasoning_tokens=30),
     ))
-    assert u.output == 20
+    assert u.output == 50
+    assert u.total_tokens == 150

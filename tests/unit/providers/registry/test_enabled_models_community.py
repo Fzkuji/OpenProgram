@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import pytest
 
-import openprogram.providers.enabled_models as mg
-from openprogram.providers.types import Model
-from openprogram.webui._model_listing import listing
-from openprogram.providers import storage as st
-from openprogram.providers import metadata as cat
+import openprogram.models.providers.catalog.enabled_models as mg
+from openprogram.models.providers.types import Model
+from openprogram.models.listing import listing
+from openprogram.models.providers.settings import storage as st
+from openprogram.models.providers.catalog import metadata as cat
 
 
 def _model(mid, provider, api="anthropic-messages", ctx=200000):

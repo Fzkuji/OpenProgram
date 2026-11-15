@@ -9,7 +9,7 @@ structured dict the model reads.
 It is a thin bridge over the unified ``runtime.ask`` user-input base
 (``runtime.ask(questions=[...])``) — same ``question.asked`` event,
 same composer popup card as ``runtime.ask`` from inside an
-@agentic_function. The only difference is the entry point: here the
+Agent method. The only difference is the entry point: here the
 *model* drives it via tool-use; there *code* calls it directly.
 
 Legacy: this used to be the single-question ``clarify`` tool. The
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import ToolReturn, function
 
 
 NAME = "ask_user_question"
@@ -105,7 +105,7 @@ def _to_runtime_questions(questions: list[dict]) -> list[dict]:
         opts = q.get("options") or []
         labels = [str(o.get("label", "")) for o in opts if o.get("label")]
         # Fold option descriptions into the prompt as a hint line so the
-        # user sees what each choice means (the popup renders only labels).
+        # user sees what each choice means (older clients display the plain prompt).
         desc_lines = [
             f"  • {o.get('label')}: {o.get('description')}"
             for o in opts
@@ -116,6 +116,11 @@ def _to_runtime_questions(questions: list[dict]) -> list[dict]:
             prompt = prompt + "\n" + "\n".join(desc_lines)
         out.append({
             "prompt": prompt,
+            "question_title": str(q.get("question", "")),
+            "option_descriptions": {
+                str(o["label"]): str(o["description"])
+                for o in opts if o.get("label") and o.get("description")
+            },
             "options": labels,
             "multi": bool(q.get("multiSelect")),
             "allow_custom": True,
@@ -133,7 +138,7 @@ def interaction_manifest(args: dict) -> dict | None:
         "multi": False, "allow_custom": False, "detail": "",
         "schema": {}, "questions": _to_runtime_questions(questions),
         "policy_snapshot": {"version": 1, "kind": "ask_many", "on_answer": "continue",
-                            "on_decline": "fail", "on_timeout": "fail"},
+                            "on_decline": "continue", "on_timeout": "fail"},
         "timeout": 300.0,
     }
 
@@ -143,31 +148,37 @@ def interaction_manifest(args: dict) -> dict | None:
     description=DESCRIPTION,
     parameters=_PARAMETERS,
     toolset=["core"],
-    max_result_chars=10_000,
+    max_result_weight=2_500,
 )
-def ask_user_question(questions: list | None = None, **kw: Any) -> str:
+def ask_user_question(questions: list | None = None, **kw: Any) -> str | ToolReturn:
     if not questions or not isinstance(questions, list):
-        return "Error: `questions` must be a non-empty array."
+        return ToolReturn(text="Error: `questions` must be a non-empty array.", is_error=True)
 
     # Bridge to the unified runtime.ask base. Needs an interactive
     # runtime in the current execution context (webui / channel / TTY).
     try:
-        from openprogram.agentic_programming.function import _current_runtime
-        from openprogram.agent.questions import UserDeclined, AskTimeout
+        from openprogram.runtime.agent.call_state import _current_runtime
+        from openprogram.runtime.agent.questions import UserDeclined, AskTimeout
     except ImportError as e:  # pragma: no cover
-        return f"Error: user-input infrastructure not available: {e}"
+        return ToolReturn(text=f"Error: user-input infrastructure not available: {e}", is_error=True)
 
     rt = _current_runtime.get(None)
     if rt is None or not rt.can_ask():
-        return (
+        return ToolReturn(text=(
             "Error: no interactive frontend is available to ask the user "
             "(no WebUI / channel / TTY in this context)."
-        )
+        ), is_error=True)
 
     rt_questions = _to_runtime_questions(questions)
     try:
         answers = rt.ask(questions=rt_questions)
-    except UserDeclined:
+    except UserDeclined as declined:
+        if declined.reason:
+            return (
+                "The user did not pick an answer and wrote instead:\n"
+                f"{declined.reason}\n"
+                "Respond to this before asking again or going on."
+            )
         return "The user declined to answer."
     except AskTimeout:
         return "The user did not answer in time."

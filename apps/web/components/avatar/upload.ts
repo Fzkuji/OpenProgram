@@ -25,6 +25,13 @@ export const UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
 export const UPLOAD_ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/apng";
 
+/** "256 KB" below a megabyte, "4 MB" from there on. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  const mb = bytes / 1024 / 1024;
+  return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
+}
+
 export interface UploadResult {
   ok: true;
   dataUrl: string;
@@ -38,13 +45,14 @@ export interface UploadError {
  *  front. Returns a tagged result so callers don't have to think
  *  about whether ``FileReader.onerror`` fires synchronously or
  *  not. */
-export function fileToDataUrl(file: File): Promise<UploadResult | UploadError> {
-  if (file.size > UPLOAD_MAX_BYTES) {
+export function fileToDataUrl(
+  file: File,
+  maxBytes: number = UPLOAD_MAX_BYTES,
+): Promise<UploadResult | UploadError> {
+  if (file.size > maxBytes) {
     return Promise.resolve({
       ok: false,
-      error: `File is ${(file.size / 1024 / 1024).toFixed(1)} MB, max ${
-        UPLOAD_MAX_BYTES / 1024 / 1024
-      } MB`,
+      error: `File is ${formatBytes(file.size)}, max ${formatBytes(maxBytes)}`,
     });
   }
   return new Promise((resolve) => {

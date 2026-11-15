@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from openprogram.providers.types import Model
+from openprogram.models.providers.types import Model
 
 
 def _model(model_id: str) -> Model:
@@ -18,8 +18,8 @@ def _model(model_id: str) -> Model:
 
 
 def _patch_model_resolution(monkeypatch, seen: list[str | None]) -> None:
-    from openprogram.agent.internals import _model_tools
-    from openprogram.agent.management import manager
+    from openprogram.runtime.conversation import model_tools as _model_tools
+    from openprogram.runtime.agent_registry import manager
 
     monkeypatch.setattr(
         manager, "get_default", lambda: SimpleNamespace(id="main")
@@ -43,9 +43,9 @@ def _patch_model_resolution(monkeypatch, seen: list[str | None]) -> None:
 def test_writer_defaults_to_the_chat_agents_model(monkeypatch):
     seen: list[str | None] = []
     _patch_model_resolution(monkeypatch, seen)
-    monkeypatch.setattr("openprogram.setup._read_config", lambda: {})
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: {})
 
-    from openprogram.memory import writing
+    from openprogram.state.memory import writing
 
     writer = writing._agent()
     assert writer.model.id == "default-model"
@@ -56,11 +56,11 @@ def test_writer_setting_overrides_only_the_model(monkeypatch):
     seen: list[str | None] = []
     _patch_model_resolution(monkeypatch, seen)
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"memory": {"writer": {"model": "other/model"}}},
     )
 
-    from openprogram.memory import writing
+    from openprogram.state.memory import writing
 
     writer = writing._agent()
     assert writer.model.id == "override-model"
@@ -73,7 +73,7 @@ def test_openprogram_writer_preserves_structured_permanent_errors(
     seen: list[str | None] = []
     _patch_model_resolution(monkeypatch, seen)
 
-    from openprogram.providers.types import (
+    from openprogram.models.providers.types import (
         AssistantMessage,
         EventError,
     )
@@ -90,10 +90,8 @@ def test_openprogram_writer_preserves_structured_permanent_errors(
             ),
         )
 
-    from openprogram.memory.agent_runtime import (
-        AgentExecutionError,
-        OpenProgramAgent,
-    )
+    from openprogram.runtime.conversation.memory_agent import OpenProgramAgent
+    from openprogram.state.memory.agent_runtime import AgentExecutionError
 
     writer = OpenProgramAgent(stream_fn=denied)
     try:
@@ -118,9 +116,9 @@ def test_openprogram_writer_executes_the_existing_managed_tools(
         ScriptedText,
         ScriptedToolCall,
     )
-    from openprogram.memory.agent_runtime import OpenProgramAgent
-    from openprogram.memory.management.tools import management_tools
-    from openprogram.memory.management.workspace import MemoryWorkspace
+    from openprogram.runtime.conversation.memory_agent import OpenProgramAgent
+    from openprogram.state.memory.management.tools import management_tools
+    from openprogram.state.memory.management.workspace import MemoryWorkspace
 
     scripted = ScriptedProvider()
     scripted.add_response(ScriptedToolCall(
@@ -153,7 +151,7 @@ def test_openprogram_writer_rejects_an_unenforceable_budget(monkeypatch, tmp_pat
     seen: list[str | None] = []
     _patch_model_resolution(monkeypatch, seen)
 
-    from openprogram.memory.agent_runtime import OpenProgramAgent
+    from openprogram.runtime.conversation.memory_agent import OpenProgramAgent
 
     writer = OpenProgramAgent()
     try:
@@ -167,3 +165,15 @@ def test_openprogram_writer_rejects_an_unenforceable_budget(monkeypatch, tmp_pat
         )
     else:  # pragma: no cover
         raise AssertionError("an ignored cost limit was accepted")
+
+
+def test_the_runtime_registers_the_openprogram_writer(monkeypatch):
+    seen: list[str | None] = []
+    _patch_model_resolution(monkeypatch, seen)
+
+    import openprogram.runtime  # noqa: F401 - registers the writer
+    from openprogram.runtime.conversation.memory_agent import OpenProgramAgent
+    from openprogram.state.memory.writer_agent import writer_agent
+
+    assert isinstance(writer_agent("other/model"), OpenProgramAgent)
+    assert seen == ["other/model"]

@@ -1,0 +1,46 @@
+<title>框架信号路由</title>
+<meta name="description" content="为什么由一条事件总线路由全框架的信号、各子系统贡献什么，以及它不触碰哪些部分。">
+<h1>框架信号路由</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">子系统</th><th scope="col">没有总线时</th><th scope="col">接入总线后</th></tr></thead>
+<tbody>
+<tr><th scope="row">EventBus</th><td>未使用</td><td>唯一枢纽：进程单例，统一 Event 格式，按类型订阅</td></tr>
+<tr><th scope="row">WebUI 服务器</th><td>每个信号用各自的 JSON 接到 <code translate="no">_broadcast</code>，UI 组件成了路由点</td><td>普通订阅者，转发到前端 WebSocket</td></tr>
+<tr><th scope="row">Agent 循环</th><td>内部 AgentEvent 流；钩子返回值被丢弃</td><td>保留该流，并在关键点发送；<code translate="no">tool.before</code> 可以否决</td></tr>
+<tr><th scope="row">Dispatcher</th><td><code translate="no">on_event</code> 回调链通往 WebUI</td><td>保留回调链，并发送 <code translate="no">user.prompt_submitted</code> 等事件</td></tr>
+<tr><th scope="row">任务运行器</th><td>直接广播 <code translate="no">job_status</code></td><td>发送 <code translate="no">subagent.*</code>；广播经 <code translate="no">ws.frame</code></td></tr>
+<tr><th scope="row">Auth</th><td>事件设计正确，几乎没人订阅</td><td>不变；桥接翻译 AuthEvent</td></tr>
+<tr><th scope="row">Context</th><td><code translate="no">on_event</code> 回调</td><td>在回调中发送 <code translate="no">context.*</code></td></tr>
+<tr><th scope="row">Channels</th><td>直接广播 <code translate="no">channel_turn</code></td><td>发送 <code translate="no">channel.*</code>；到前端的直连保留</td></tr>
+<tr><th scope="row">Memory</th><td>轮询，没有信号</td><td>处理开始和结束时发送</td></tr>
+<tr><th scope="row">文件变更</th><td>没有信号</td><td>文件工具发送 <code translate="no">file.changed</code></td></tr>
+<tr><th scope="row">插件钩子</th><td>只能观察</td><td>基于总线订阅，仍是插件 API</td></tr>
+</tbody>
+</table>
+<p class="note">新消费者只需一次 <code translate="no">subscribe(types=…)</code>，不必对接五六种机制，其中有些时机原本根本没有信号。</p>
+
+<ul>
+<li><code translate="no">tool.before</code> 是工具拦截点，在审批包装之外，对子 Agent 同样生效。<code translate="no">turn.stop</code> 是另一个 gate。</li>
+<li>桥接是事件模型已经合理的子系统的接入方式：auth 内部完全不知道总线存在。</li>
+<li>接入事件源是增量的：总线收到副本，旧路径照常运行，每个源都能单独验证和回退。</li>
+<li>WebUI 切换使用透传信封：广播帧逐字节不变，因此不需要影子比对，前端也察觉不到。</li>
+</ul>
+
+<h2>不触碰的部分</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">组件</th><th scope="col">保持不变的</th></tr></thead>
+<tbody>
+<tr><th scope="row">Dispatcher</th><td>七阶段轮次编排；<code translate="no">process_user_turn</code> 的签名</td></tr>
+<tr><th scope="row">会话存储</th><td>git DAG 和 contextgit</td></tr>
+<tr><th scope="row">JobRunner</th><td>线程池模型</td></tr>
+<tr><th scope="row"><code translate="no">ApprovalRegistry</code></th><td>不改</td></tr>
+<tr><th scope="row">AuthStore</th><td>只桥接不修改</td></tr>
+<tr><th scope="row">前端</th><td>WebSocket 协议</td></tr>
+</tbody>
+</table>
+
+<h2>实现状态</h2>
+<p>总线、A 类和 B 类事件源、<code translate="no">file.changed</code>、<code translate="no">tool.before</code> gate 和 WebUI 订阅均已就位；runtime、工具和 channels 中的生产者发送 <code translate="no">ws.frame</code>，不再导入 WebUI。主动规则层消费总线，不新增事件源；其引擎尚未安装。</p>
+
+<p class="next"><a href="event-layer.zh.html">事件层</a></p>

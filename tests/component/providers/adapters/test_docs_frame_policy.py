@@ -7,7 +7,7 @@ from starlette.responses import HTMLResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
 
 
 def _app() -> OwnerAuthMiddleware:
@@ -16,8 +16,8 @@ def _app() -> OwnerAuthMiddleware:
 
     app = Starlette(
         routes=[
-            Route("/docs/reference/design/ui/gui-agent.html", html),
-            Route("/docs/reference/design/ui/gui-agent.raw.html", html),
+            Route("/docs/reference/design/ui/resources/resource-preview.html", html),
+            Route("/docs/reference/design/ui/resources/resource-preview.raw.html", html),
         ]
     )
     state = OwnerAuthState.from_raw_token(
@@ -34,7 +34,7 @@ def _app() -> OwnerAuthMiddleware:
 def test_raw_design_html_allows_only_same_origin_embedding(method: str) -> None:
     with TestClient(_app(), base_url="http://127.0.0.1:18100") as client:
         response = client.request(
-            method, "/docs/reference/design/ui/gui-agent.raw.html"
+            method, "/docs/reference/design/ui/resources/resource-preview.raw.html"
         )
 
     assert response.status_code == 200
@@ -44,7 +44,7 @@ def test_raw_design_html_allows_only_same_origin_embedding(method: str) -> None:
 
 def test_rendered_design_html_remains_non_embeddable() -> None:
     with TestClient(_app(), base_url="http://127.0.0.1:18100") as client:
-        response = client.get("/docs/reference/design/ui/gui-agent.html")
+        response = client.get("/docs/reference/design/ui/resources/resource-preview.html")
 
     assert response.status_code == 200
     assert response.headers["x-frame-options"] == "DENY"

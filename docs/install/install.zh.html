@@ -1,0 +1,205 @@
+<title>安装</title>
+<meta name="description" content="在 macOS、Linux 或 Windows 上安装 OpenProgram App 或终端命令，确认安装成功，并解决常见的阻碍。">
+<span id="desktop-installation"></span>
+<span id="cli-and-server-installation"></span>
+<h1>安装</h1>
+
+<table class="stack" id="choose">
+<thead><tr><th scope="col">你的电脑</th><th scope="col">App</th><th scope="col">终端和服务器</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS 13.5 或更高</th><td><a href="../latest.html?OpenProgram-mac-arm64.dmg">Apple 芯片 DMG</a> · <a href="../latest.html?OpenProgram-mac-x64.dmg">Intel DMG</a></td><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></td></tr>
+<tr><th scope="row">glibc 2.35 或更高的 Linux<span class="arg">Ubuntu 22.04、Debian 12 或更新</span></th><td><a href="#linux">deb 或 AppImage</a></td><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></td></tr>
+<tr><th scope="row">Windows 10 或 11，x64</th><td><a href="../latest.html?OpenProgram-win-x64.exe">安装程序</a></td><td><code translate="no">irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></td></tr>
+</tbody>
+</table>
+<p class="note">网站打不开时，直接从 GitHub 取同一份脚本：</p>
+<pre translate="no"><code>curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh
+irm https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.ps1 | iex</code></pre>
+
+<h2 id="confirm">装好了吗？</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">安装方式</th><th scope="col">你会看到</th></tr></thead>
+<tbody>
+<tr><th scope="row">App</th><td>打开后进入工作区；Windows 和 Linux 第一次启动要解包约一分钟。<strong>设置 → 通用 → 应用信息 → 版本</strong> 显示版本号。</td></tr>
+<tr><th scope="row">终端</th><td>在新终端里，<code translate="no">openprogram --version</code> 打印版本号。<code translate="no">openprogram</code> 开始配置，<code translate="no">openprogram web</code> 打开 <code translate="no">http://localhost:18100</code> 上的工作区。</td></tr>
+</tbody>
+</table>
+
+<h2 id="releases">每个版本为每种电脑提供什么</h2>
+<table class="stack fixed" id="release-support">
+<thead class="sr"><tr><th scope="col">电脑</th><th scope="col">每个版本都有</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td>Apple 芯片和 Intel 的 App，已签名并公证；以及终端安装。</td></tr>
+<tr><th scope="row">Linux</th><td>App（deb 和 AppImage）和终端安装，x86_64 和 arm64。</td></tr>
+<tr><th scope="row">Windows</th><td>App 安装程序和终端安装，x64。不支持 Windows on Arm。</td></tr>
+</tbody>
+</table>
+<p class="note">本页的链接总是下载最新版本。某个版本缺少的安装包，会在 <a href="https://github.com/FuzzyKuji/OpenProgram/releases">GitHub Releases</a> 该版本说明的 "Not in this release" 下列出。<a href="download.zh.html">全部文件</a>。</p>
+
+<h2 id="macos">macOS</h2>
+<ol>
+<li>打开 DMG，把 OpenProgram 拖到 Applications。</li>
+<li>从 Applications 打开。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">问题</th><th scope="col">答案</th></tr></thead>
+<tbody>
+<tr><th scope="row">Apple 芯片还是 Intel？</th><td>苹果菜单 → <strong>关于本机</strong>。"芯片：Apple M…" 是 Apple 芯片；"处理器：… Intel …" 是 Intel。终端安装会自动识别。</td></tr>
+<tr><th scope="row">没有管理员密码</th><td>把 App 拖到自己主目录下的 Applications：<code translate="no">mkdir -p ~/Applications</code>。之后更新也放在这里。终端安装不需要管理员。</td></tr>
+<tr><th scope="row">文件名以 <code translate="no">-unsigned</code> 结尾</th><td>先打开一次 App，再到<strong>系统设置 → 隐私与安全性 → 仍要打开</strong>。</td></tr>
+</tbody>
+</table>
+
+<h2 id="linux">Linux</h2>
+<p class="note"><code translate="no">uname -m</code> 告诉你该选哪个文件：<code translate="no">x86_64</code> 或 <code translate="no">aarch64</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">deb：Ubuntu、Debian</th><th scope="col">AppImage：其他 glibc 系统</th></tr></thead>
+<tbody>
+<tr><th scope="row">安装</th><td data-label="deb：Ubuntu、Debian"><code translate="no">sudo apt install ./OpenProgram-X.Y.Z-linux-amd64.deb</code><br>Arm 上把 <code translate="no">amd64</code> 换成 <code translate="no">arm64</code></td><td data-label="AppImage：其他 glibc 系统"><code translate="no">chmod +x OpenProgram-X.Y.Z-linux-x86_64.AppImage</code><br>Arm 上把 <code translate="no">x86_64</code> 换成 <code translate="no">arm64</code></td></tr>
+<tr><th scope="row">启动</th><td data-label="deb：Ubuntu、Debian">应用菜单，或 <code translate="no">openprogram-desktop</code></td><td data-label="AppImage：其他 glibc 系统"><code translate="no">./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></td></tr>
+<tr><th scope="row">依赖</th><td data-label="deb：Ubuntu、Debian"><code translate="no">apt</code> 全部装好</td><td data-label="AppImage：其他 glibc 系统"><code translate="no">fuse3</code> 和下面的库</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code># AppImage on Ubuntu 22.04, Debian 12
+sudo apt install fuse3 libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils \
+  libatspi2.0-0 libsecret-1-0 libgbm1 libasound2 libcurl4
+
+# AppImage on Ubuntu 24.04 or newer, Debian 13 or newer
+sudo apt install fuse3 libgtk-3-0t64 libnotify4 libnss3 libxss1 libxtst6 xdg-utils \
+  libatspi2.0-0t64 libsecret-1-0 libgbm1 libasound2t64 libcurl4t64
+
+# Without FUSE
+APPIMAGE_EXTRACT_AND_RUN=1 ./OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></pre>
+<p class="note">Ubuntu 24.04 及更新版本上，只有 deb 会配置 Chromium 需要的沙箱规则；AppImage 在这些系统上启动时没有 Chromium 沙箱，建议用 deb。两者都可选装 <code translate="no">bubblewrap</code>，用于沙箱内执行命令。不支持 Alpine 等 musl 系统。</p>
+<p class="note">服务器或容器缺少 Chromium 需要的库时，终端安装照样完成：用一行说明浏览器工具要等这些库，并打印补装它们的 <code translate="no">apt</code> 命令；装上之后浏览器工具即可使用。</p>
+
+<h2 id="windows">Windows</h2>
+<ol>
+<li>下载<a href="../latest.html?OpenProgram-win-x64.exe">安装程序</a> <code translate="no">OpenProgram-X.Y.Z-win-x64.exe</code>。</li>
+<li>运行它。只安装给当前账户，不需要管理员。</li>
+</ol>
+<table class="stack fixed">
+<thead><tr><th scope="col">Windows 提示</th><th scope="col">怎么做</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Windows 已保护你的电脑</strong>，文件名以 <code translate="no">-unsigned.exe</code> 结尾</th><td><strong>更多信息 → 仍要运行</strong></td></tr>
+<tr><th scope="row">被<strong>智能应用控制</strong>阻止</th><td>Windows 不提供单个应用的例外。改用终端安装；如果 Windows 也拦下它，只能到 <strong>Windows 安全中心 → 应用和浏览器控制</strong>关闭智能应用控制。</td></tr>
+</tbody>
+</table>
+<p class="note">在命令提示符里：<code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install.cmd -o install.cmd &amp;&amp; install.cmd</code></p>
+
+<h2 id="proxy">通过代理上网</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Shell</th><th scope="col">安装前设置</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS、Linux</th><td><code translate="no">export HTTPS_PROXY=http://proxy.example:8080</code></td></tr>
+<tr><th scope="row">PowerShell</th><td><code translate="no">$env:HTTPS_PROXY = 'http://proxy.example:8080'</code></td></tr>
+<tr><th scope="row">命令提示符</th><td><code translate="no">set HTTPS_PROXY=http://proxy.example:8080</code></td></tr>
+</tbody>
+</table>
+<p class="note">不走代理的主机写进 <code translate="no">NO_PROXY</code>。安装器和 <code translate="no">openprogram upgrade</code> 都读取这两个变量。App 的更新检查跟随系统代理设置。</p>
+
+<h2 id="advanced">高级</h2>
+
+<details id="exact-version">
+<summary>安装指定版本</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Shell</th><th scope="col">命令</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS、Linux</th><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | OPENPROGRAM_VERSION=X.Y.Z sh</code></td></tr>
+<tr><th scope="row">Windows</th><td><code translate="no">$env:OPENPROGRAM_VERSION = "X.Y.Z"; irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="checksums">
+<summary>手动校验下载</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">命令</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td><code translate="no">shasum -a 256 OpenProgram-X.Y.Z-mac-arm64.dmg</code></td></tr>
+<tr><th scope="row">Linux</th><td><code translate="no">sha256sum OpenProgram-X.Y.Z-linux-amd64.deb</code></td></tr>
+<tr><th scope="row">Windows</th><td><code translate="no">Get-FileHash .\OpenProgram-X.Y.Z-win-x64.exe -Algorithm SHA256</code></td></tr>
+</tbody>
+</table>
+<p class="note">和发布页上该文件旁边显示的 SHA-256 对比，或和该版本 <code translate="no">release-manifest.json</code> 里它的那一项对比（<a href="download.zh.html#checksum-files">各在哪</a>）。终端安装器和 App 更新器会自己校验。已签名的 Windows 构建还会在<strong>属性 → 数字签名</strong>里显示有效条目。</p>
+</details>
+
+<details id="installer-options">
+<summary>安装器设置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">变量</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_MODIFY_PATH=1</code></th><td>macOS、Linux：不改 shell 配置文件</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_BIN_DIR</code></th><td>启动器放在这里，不改 <code translate="no">PATH</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_STATE_DIR</code></th><td>用这个数据目录代替 <code translate="no">~/.openprogram</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>安装器做了什么</summary>
+<ul>
+<li>短脚本查到最新稳定 GitHub Release，确认它有这个系统的安装包，再运行该版本 tag 上的安装器。</li>
+<li>打印大小，先检查磁盘空间（不够时说明还差多少），显示进度，下载中断后下次运行接着下。</li>
+<li>macOS、Linux：安装到 <code translate="no">~/.openprogram/runtime/cli/releases/&lt;version&gt;</code>，创建 <code translate="no">~/.local/bin/openprogram</code>，并在 shell 配置文件里加一行带标记的内容，把该目录放进 <code translate="no">PATH</code>。</li>
+<li>Windows：安装到 <code translate="no">%USERPROFILE%\.openprogram\runtime\cli\releases</code>，创建 <code translate="no">%LOCALAPPDATA%\OpenProgram\bin\openprogram.cmd</code>，并把该目录加入用户 <code translate="no">PATH</code>。默认的脚本策略不变。</li>
+<li>由每用户锁串行化。不解析产品依赖，不克隆仓库，不构建 JavaScript。</li>
+<li>切换 <code translate="no">current</code> 前依次验证架构匹配的 manifest 和内置 Ink TUI，再验证 Web、provider、MCP、memory、channel、search、Ink 和 Chromium（机器缺少 Chromium 的库时，启动 Chromium 留给浏览器工具首次使用时做），然后冷启动 worker，在系统分配的回环端口上检查健康状态。<a href="upgrade.zh.html#cli-and-server-release">激活与失败</a>。</li>
+<li><code translate="no">openprogram doctor</code> 报告还缺什么，比如 provider 凭据。</li>
+</ul>
+</details>
+
+<h2 id="included-product-and-additional-extensions">一个版本包含什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">包含</th><td>托管 CPython、OpenProgram、预构建 Web UI、私有 Node.js、编译好的 Ink 应用、provider、channel、search、Playwright Chromium；Desktop 另加 Electron。每个版本都包含相同的 product runtime，只有启动外壳不同。</td></tr>
+<tr><th scope="row">不含</th><td>product runtime 明确不含 PyTorch、OpenCV 和 EasyOCR，不捆绑任何 Program。</td></tr>
+<tr><th scope="row">不需要</th><td>系统 Python、Node.js、npm</td></tr>
+<tr><th scope="row">Git</th><td>自带，用于会话和 Memory 历史。</td></tr>
+</tbody>
+</table>
+<p class="note">Program 用 <code translate="no">openprogram programs install</code> 添加（<a href="../capabilities/installing-programs.zh.html">安装程序</a>），存放在只读 runtime 之外。</p>
+<details>
+<summary>开发者附加项</summary>
+<p>可编辑的 Program 源码、诊断工具、本地前端构建，以及替换 OCR 或浏览器后端。只有用到 runtime 未包含的库的 GUI 感知路径才需要替换，且不改变 runtime manifest。</p>
+</details>
+
+<h2 id="development-checkout">开发 checkout</h2>
+<p>给贡献者用。不定义 <code translate="no">stable</code> 通道。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">平台</th><th scope="col">命令</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS、Linux</th><td><code translate="no">git clone https://github.com/FuzzyKuji/OpenProgram.git</code><br><code translate="no">cd OpenProgram</code><br><code translate="no">./scripts/install.sh</code></td></tr>
+<tr><th scope="row">Windows PowerShell</th><td><code translate="no">git clone https://github.com/FuzzyKuji/OpenProgram.git</code><br><code translate="no">Set-Location OpenProgram</code><br><code translate="no">powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Yes</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>Windows 开发安装器</summary>
+<ul>
+<li>创建隔离的 <code translate="no">.venv</code>，按 npm lockfile 安装前端 workspace，构建浏览器 UI 和完整 Ink 终端 UI，并安装可选的 Browser 和 Channel 依赖。</li>
+<li>缺少的 Python 和 Node.js 通过 <code translate="no">winget</code> 安装。</li>
+<li>在 <code translate="no">%LOCALAPPDATA%\OpenProgram\bin</code> 下创建 <code translate="no">openprogram.cmd</code>，并把该目录加入用户 <code translate="no">PATH</code>，新的 PowerShell 无需激活环境。</li>
+<li>需要 Node.js 22.12 或更高；验证过的主版本是 Node.js 22 LTS。<code translate="no">-Minimal</code> 只装 Python CLI 和服务器，不安装也不构建前端依赖。</li>
+<li>安装可编辑的 CLI、服务器源码和浏览器 UI。Windows Desktop 由 Desktop workspace 的 <code translate="no">dist:win</code> 命令单独打包。</li>
+<li>release 和开发安装都包含 Ink 终端 UI，并以 Python Rich 界面作为能力回退。</li>
+<li>Windows 沙箱可选：缺少 WSL2 和 bubblewrap 时，<code translate="no">auto</code> 让原生命令继续可用；显式 <code translate="no">workspace-write</code> 策略要求该后端。</li>
+</ul>
+</details>
+
+<h2 id="data-and-removal">移除</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">安装方式</th><th scope="col">删除</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS App</th><td><code translate="no">OpenProgram.app</code></td></tr>
+<tr><th scope="row">Windows App</th><td>在<strong>已安装的应用</strong>中卸载</td></tr>
+<tr><th scope="row">Linux deb</th><td><code translate="no">sudo apt remove openprogram-desktop</code></td></tr>
+<tr><th scope="row">Linux AppImage</th><td><code translate="no">.AppImage</code> 文件</td></tr>
+<tr><th scope="row">macOS、Linux 终端安装</th><td><code translate="no">~/.local/bin/openprogram</code> 和 <code translate="no">~/.openprogram/runtime/cli</code></td></tr>
+<tr><th scope="row">Windows 终端安装</th><td><code translate="no">%LOCALAPPDATA%\OpenProgram\bin</code> 和 <code translate="no">%USERPROFILE%\.openprogram\runtime\cli</code></td></tr>
+<tr><th scope="row">用户数据</th><td>备份后显式清除 <code translate="no">~/.openprogram</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">~/.openprogram</code> 存放配置、会话、日志、Program 和缓存。替换或移除应用不会删除它。</p>
+
+<p class="next"><a href="upgrade.zh.html">升级</a> · <a href="profiles.zh.html">多实例与 Profile</a>：隔离的状态目录</p>

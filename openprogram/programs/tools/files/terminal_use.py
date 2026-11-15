@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 
 DESCRIPTION = (
     "Use the built-in Desktop Terminal, including a terminal the user already opened. "
@@ -28,8 +28,8 @@ def _approval(**_):
 
 
 @function(name="terminal_use", description=DESCRIPTION, toolset=["core"],
-          unsafe_in=["wechat", "telegram", "plan"], requires_approval=_approval,
-          max_result_chars=32_000, path_params={}, url_params=[])
+          unsafe_in=["plan"], requires_approval=_approval,
+          path_params={}, url_params=[])
 def terminal_use(action: str, terminal_id: str = "", generation: str = "", binding_id: str = "",
                  data: str = "", cursor: int = 0, expected_input_revision: int | None = None,
                  workdir: str | None = None, shared: bool | None = None,
@@ -49,9 +49,9 @@ def terminal_use(action: str, terminal_id: str = "", generation: str = "", bindi
         rows: Terminal height for resize (5–200).
         workdir: Starting directory for open only; relative to the bound worktree.
     """
-    from openprogram.agent.types import AgentToolResult
-    from openprogram.providers.types import TextContent
-    from openprogram.terminal_resources import execute
+    from openprogram.models.providers.types import AgentToolResult
+    from openprogram.models.providers.types import TextContent
+    from openprogram.host.resources.terminal import execute
 
     try:
         result = execute(action, terminal_id, generation, binding_id, data, cursor, expected_input_revision, workdir, shared, cols, rows)

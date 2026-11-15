@@ -1,0 +1,41 @@
+<title>Voice input</title>
+<meta name="description" content="Dictate into the chat composer and choose the speech-to-text engine.">
+<h1>Voice input</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Microphone button, bottom-left of the composer</th><td>Click to start, click to stop</td></tr>
+<tr><th scope="row">Hold ⌥Space (Alt+Space) while typing</th><td>Talk; release to stop</td></tr>
+<tr><th scope="row">Esc</th><td>Discards the recording and the text it inserted</td></tr>
+</tbody>
+</table>
+<p>Each phrase is transcribed when you pause and inserted at the cursor. Nothing is sent. While recording, a strip before the send button shows a dot for quiet and a loudness bar for speech. After stopping, the button returns once the last phrase is done. The browser or App asks for microphone access the first time.</p>
+<h2>Engine</h2>
+<p><strong>Settings → Voice</strong> holds every option, or use <code translate="no">openprogram config set voice.engine local</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Setting</th><th scope="col">Values</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Engine <code translate="no">voice.engine</code></th><td><code translate="no">auto</code> <code translate="no">openai</code> <code translate="no">groq</code> <code translate="no">local</code></td><td>Which service transcribes</td></tr>
+<tr><th scope="row">Spoken language <code translate="no">voice.language</code></th><td><code translate="no">auto</code> <code translate="no">zh</code> <code translate="no">en</code> <code translate="no">ja</code> <code translate="no">ko</code> <code translate="no">fr</code> <code translate="no">de</code> <code translate="no">es</code></td><td><code translate="no">auto</code> detects. <code translate="no">zh</code> writes simplified characters.</td></tr>
+<tr><th scope="row">Model <code translate="no">voice.model</code></th><td>text</td><td>Empty uses the engine's default. Ignored for <code translate="no">auto</code>.</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Engine</th><th scope="col">Default model</th><th scope="col">Needs</th><th scope="col">Audio</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai</code></th><td><code translate="no">gpt-4o-mini-transcribe</code></td><td>OpenAI key in Settings → Providers</td><td>Each phrase sent to OpenAI</td></tr>
+<tr><th scope="row"><code translate="no">groq</code></th><td><code translate="no">whisper-large-v3-turbo</code></td><td>Groq key in Settings → Providers</td><td>Each phrase sent to Groq</td></tr>
+<tr><th scope="row"><code translate="no">local</code></th><td><code translate="no">large-v3-turbo-q5_0</code>, about 570 MB, downloaded to the state directory on first use</td><td><code translate="no">brew install whisper-cpp</code> (<a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a>)</td><td>Stays on this computer. One to two seconds per phrase on Apple silicon.</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">auto</code> order: local with its model already downloaded, OpenAI, Groq, then local with a first-use download. The page shows the engine in use and which ones work here. The same engine transcribes sound that <a href="../capabilities/computer-use.html#recording-sound"><code translate="no">computer_use_agent</code></a> records.</p>
+<h2>Limits</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Limit</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Format</th><td>16 kHz mono, one phrase at a time</td></tr>
+<tr><th scope="row">Phrase</th><td>Cut at 25 seconds without a pause</td></tr>
+<tr><th scope="row">Upload</th><td>20 MB</td></tr>
+<tr><th scope="row">No usable engine</th><td>The microphone shows a notice pointing to Settings → Voice instead of recording</td></tr>
+</tbody>
+</table>

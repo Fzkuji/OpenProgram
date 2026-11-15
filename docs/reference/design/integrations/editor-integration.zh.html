@@ -1,0 +1,61 @@
+<title>编辑器集成</title>
+<meta name="description" content="给 agent 用的 LSP 工具、给编辑器用的 ACP 服务，以及刻意不做的部分。">
+<h1>编辑器集成</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">LSP 工具</th><th scope="col">ACP 服务</th></tr></thead>
+<tbody>
+<tr><th scope="row">服务对象</th><td>agent：语言服务器作为后台分析进程</td><td>Zed 等编辑器驱动 OpenProgram 会话</td></tr>
+<tr><th scope="row">带来</th><td>针对未保存工作树的实时诊断，这是 CodeGraph 这类预建索引做不到的</td><td>经 ACP 驱动；每次请求带选区和打开文件的上下文；不自建扩展也有编辑器入口</td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">openprogram/host/lsp/</code>（stdio 上的 JSON-RPC），<code translate="no">openprogram/programs/tools/code/lsp/</code></td><td><code translate="no">openprogram/interfaces/acp/</code>：<code translate="no">jsonrpc.py</code>（ndjson 传输），<code translate="no">server.py</code>（协议映射）</td></tr>
+<tr><th scope="row">用户文档</th><td><a href="../../../capabilities/lsp.zh.html">语言服务器工具</a></td><td><a href="../../../interfaces/acp.zh.html">编辑器（ACP）</a>，<code translate="no">openprogram acp</code></td></tr>
+<tr><th scope="row">状态</th><td>已实现</td><td>已实现，协议版本 1</td></tr>
+</tbody>
+</table>
+
+<h2 id="lsp-tools">LSP 工具</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">lsp_diagnostics(file)</code></th><td>编辑一结束就有编译器级的错误和警告，不用跑测试</td></tr>
+<tr><th scope="row"><code translate="no">lsp_references(file, line, column)</code></th><td>每个真实调用点；grep 会漏掉动态调用、误中同名字符串</td></tr>
+<tr><th scope="row"><code translate="no">lsp_definition(file, line, column)</code></th><td>跨文件、跨包的真实位置</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Python（pyright）和 TypeScript（typescript-language-server），本仓库的两种语言。</li>
+<li>每语言每工作区一个服务，首次使用时启动并缓存，进程退出时关闭。</li>
+<li>缺二进制时返回“unavailable: install X”。工具保持注册，让模型知道有这个能力。</li>
+<li>服务进程走和其他子进程相同的沙箱包装入口，<code translate="no">sandbox.mode</code> 同样生效。</li>
+</ul>
+
+<h2 id="acp-server">ACP 服务</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方向</th><th scope="col">方法</th></tr></thead>
+<tbody>
+<tr><th scope="row">来自编辑器</th><td><code translate="no">initialize</code>、<code translate="no">session/new</code>、<code translate="no">session/load</code>、<code translate="no">session/prompt</code>、<code translate="no">session/cancel</code></td></tr>
+<tr><th scope="row">发给编辑器</th><td><code translate="no">session/update</code>、<code translate="no">session/request_permission</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>建在 <code translate="no">dispatcher.process_user_turn</code> 上，这是 webui 线程、子 agent 和任务运行器共用的非 HTTP 入口，工具门控、权限和持久化都共用。</li>
+<li>轮次带 <code translate="no">local_owner_authority()</code>：本机编辑器就是所有者在交互，因此 <code translate="no">approval.request</code> 可用。</li>
+<li>审批让执行停在一个等待上。服务端从本次 prompt 的 <code translate="no">question.asked</code> 帧、恢复后那一轮的事件总线和执行的未决等待里拿到它，再用标准的执行等待命令作答；审批门、规则和“始终允许”的持久化都不变。</li>
+<li><code translate="no">session/prompt</code> 一直开到执行结束，所以作答之后的各轮仍属于同一次 prompt。编辑器答不了的等待直接拒绝；编辑器推不动的状态让 prompt 以错误结束。</li>
+<li>第一次 prompt 才创建对话，并把会话的 <code translate="no">cwd</code> 绑定为它的项目，和 <code translate="no">--print</code> 用的是同一种绑定，所以工具在编辑器的文件夹里运行。</li>
+</ul>
+
+<h2 id="non-goals">不做</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">自建 IDE 扩展</th><td>ACP 取代</td></tr>
+<tr><th scope="row">行内补全</th><td>另一类产品</td></tr>
+<tr><th scope="row">行内对话、CodeLens、状态栏动作</th><td>依赖自建扩展</td></tr>
+<tr><th scope="row">终端快捷键自动配置</th><td>回报太小</td></tr>
+<tr><th scope="row"><code translate="no">session/set_mode</code>、<code translate="no">session/set_model</code></th><td>agent id 和权限模式是进程参数</td></tr>
+<tr><th scope="row">客户端 <code translate="no">fs/*</code>、<code translate="no">terminal/*</code></th><td>OpenProgram 自己的工具读写工作树</td></tr>
+<tr><th scope="row"><code translate="no">session/new</code> 传入的 MCP 服务</th><td>OpenProgram 用自己的 MCP 配置</td></tr>
+</tbody>
+</table>
+<p class="note">这些行在功能矩阵里按决定保持未完成。</p>

@@ -1,0 +1,153 @@
+<title>Transcript live updates</title>
+<meta name="description" content="How text frames, the observer and publisher, Stop, function-run trees, foreign writes, sends and sub-agents reach the browser.">
+<h1 id="title">Transcript live updates</h1>
+<p class="note">Part of the <a href="transcript-model.html">transcript model</a> record. Built so far: <a href="transcript-model.html#status">implementation status</a>.</p>
+<h2 id="live-text">Live text</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Order</th><td><code translate="no">stream_tap</code> updates its blocks, persists through the quiet path, then emits the same <code translate="no">stream_event</code> frame plus <code translate="no">row_id</code>, <code translate="no">item_id</code>, <code translate="no">item_index</code>, <code translate="no">offset</code>. A text frame that opens a passage after a tool call also carries <code translate="no">separator</code>, which the page puts before the delta in the row's <code translate="no">content</code>, never in a block.</td></tr>
+<tr><th scope="row">Retry frames</th><td><code translate="no">retry</code> and <code translate="no">structured_output_retry</code> stay on this frame and set the client-only <code translate="no">retryStatus</code>.</td></tr>
+<tr><th scope="row">Citations</th><td><code translate="no">text_end</code> stays, gains <code translate="no">row_id</code> and <code translate="no">item_id</code>, and sets citations on that block without touching its text.</td></tr>
+<tr><th scope="row">Quiet path</th><td>The quiet path (<code translate="no">update_stream_progress</code>, <code translate="no">stream_node(quiet=True)</code>) is <code translate="no">durable=False</code> and does not fire the observer. After the reply's first write, each write is a <code translate="no">node.stream</code> line with only what was added since. A process crash loses nothing already written; a power loss can lose the tail of the reply in progress.</td></tr>
+<tr><th scope="row">Durable writes</th><td>Tool, steering and citation writes stay durable and fire the observer.</td></tr>
+<tr><th scope="row">Latency</th><td>The callback is synchronous, so each delta already waits on the previous delta's persist; the reorder adds at most one persist of latency to the first frame of a burst.</td></tr>
+<tr><th scope="row">Persist failure</th><td>A persist failure does not block the emit. The offset rule repairs it.</td></tr>
+</tbody>
+</table>
+<h2 id="observer-publisher">Everything else: observer to publisher</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Observer</th><td><code translate="no">SessionLog._append</code> calls one observer at its end, gated by <code translate="no">is_main_writer()</code> so a forked child never fires it, for <code translate="no">node.put</code>, <code translate="no">node.patch</code>, <code translate="no">node.delete</code> and <code translate="no">meta.patch</code>. The observer only enqueues (session, record type, id, changed keys).</td></tr>
+<tr><th scope="row">Layering</th><td><code translate="no">state</code> exposes the registration hook; the Server registers on load. Runtime and state import nothing from interfaces.</td></tr>
+<tr><th scope="row">Draining</th><td>One publisher thread drains <strong>all</strong> queued records before resolving a tick, so a steer and its reparent are seen together.</td></tr>
+<tr><th scope="row">Ticks</th><td>It coalesces per view on a 50 ms leading-edge tick. A status change goes at once.</td></tr>
+<tr><th scope="row">Numbering</th><td>Numbering and enqueueing happen under the view lock. A view the publisher rebuilds while publishing, the main view or a sub-agent view, keeps its revision, so a steer's reparent skips no number and forces no repair read.</td></tr>
+<tr><th scope="row">New id</th><td>For a new id, the node is read and resolved in this order: caller in the owner map (call rows, under the spawn-root exclusion), then predecessor in the owner map (attach, placeholder, steer, restart prompt, continuation), then sub-agent tip rule.</td></tr>
+<tr><th scope="row">Head patch wait</th><td>Only a caller-less chain row that will receive a head patch waits: it has no owner, and the <code translate="no">meta.patch</code> that follows dirties the new head. This covers <code translate="no">write_history</code> running before <code translate="no">set_head</code>.</td></tr>
+<tr><th scope="row">Steers</th><td>A row with <code translate="no">metadata.steering</code> waits one tick for its reply's reparent. If the reparent never comes it is sent as it stands.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Dirty node</th><th scope="col">Change sent</th></tr></thead>
+<tbody>
+<tr><th scope="row">New opener</th><td><code translate="no">turn_upsert</code></td></tr>
+<tr><th scope="row">New top-level row in a held turn</th><td><code translate="no">row_upsert</code> with <code translate="no">afterRowId</code>, then derived-field recompute</td></tr>
+<tr><th scope="row">Attach, tool or code node</th><td><code translate="no">item_upsert</code> into <code translate="no">attachCards</code>, <code translate="no">callRoots</code> or <code translate="no">runtimeChildren</code></td></tr>
+<tr><th scope="row">Non-text block of an open reply, including steering</th><td><code translate="no">item_upsert</code> into <code translate="no">blocks</code> with <code translate="no">index</code>, when its crc changed</td></tr>
+<tr><th scope="row">Other fields of an open reply</th><td><code translate="no">row_patch</code> without content or text blocks</td></tr>
+<tr><th scope="row">Terminal reply</th><td>One <code translate="no">row_upsert</code> with every field a reload gives</td></tr>
+<tr><th scope="row">Any other change to a row that is not open (chapter pins, <code translate="no">reverted</code>, execution-effect rewrites, late tool rows)</th><td>One <code translate="no">row_upsert</code> from the projection, position preserved</td></tr>
+<tr><th scope="row">Summary with <code translate="no">covers_ids</code>, written or patched, <code translate="no">node.delete</code>, rewound or structural patch, reparent outside the last turn</th><td><code translate="no">window_stale { reason: structure }</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Derived fields</th><td>When a top-level row joins a held turn or a member's predecessor changes, the publisher recomputes that whole turn's order, <code translate="no">steeringReplyId</code>, <code translate="no">continuedBy</code> and <code translate="no">continues</code> against the stored table and sends <code translate="no">row_patch</code> for every row that changed. If member order changed beyond a single insertion it sends <code translate="no">turn_upsert</code>.</td></tr>
+<tr><th scope="row">Version arrows</th><td>A turn that ends on a branch the view does not show changes where a drawn fork row's arrow leads, or how many versions it counts. The publisher sends <code translate="no">row_patch</code> with the changed <code translate="no">siblingIndex</code>, <code translate="no">siblingTotal</code>, <code translate="no">prevSiblingId</code> and <code translate="no">nextSiblingId</code>. The change is counted from the oldest read no update has answered, so a later read that already shows the new arrow does not hide it from an earlier holder.</td></tr>
+<tr><th scope="row">Size</th><td>A single <code translate="no">transcript_update</code> over 512 KiB is replaced by <code translate="no">transcript_gap</code>, because reads fragment and updates do not.</td></tr>
+<tr><th scope="row">Goal annotation</th><td>Runs on reads, new turns and terminal rows only.</td></tr>
+</tbody>
+</table>
+<h2 id="run-end">Run-end status</h2>
+<p><code translate="no">event_effects</code> gains one rule: when an execution reaches a terminal status and its anchor row is still open, it writes that terminal status to the row. The write goes through the store, so the row settles live and cold. A terminal store write that failed in <code translate="no">finalize</code> is thereby repaired when the execution ends, with no display-side fallback.</p>
+<p><code translate="no">event_effects</code> also writes the pause and the way back, on a lifecycle event whose snapshot is still the execution's current version:</p>
+<ul>
+<li>Execution <code translate="no">paused</code>, row status <code translate="no">None</code>, <code translate="no">pending</code>, <code translate="no">running</code> or <code translate="no">streaming</code>: writes <code translate="no">status: paused</code> and <code translate="no">pause_reason</code>. <code translate="no">continuation_contract_mismatch</code> is excluded, because <code translate="no">_project_failed_assistant</code> already writes it as an error.</li>
+<li>Execution <code translate="no">running</code>, row status <code translate="no">paused</code>: writes <code translate="no">status: running</code> and clears <code translate="no">pause_reason</code>.</li>
+</ul>
+<p>The target is the anchor row, <code translate="no">assistant_message_id</code>, which for a function run is its pre-created node. Each write goes through the store, and the publisher sends it at once as a <code translate="no">row_patch</code>. <code translate="no">reconcile_session_projection</code> applies the same mapping at hydration, so live and cold agree. New text on a paused row is appended and leaves the status to this rule.</p>
+<h2 id="stop">Stop</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Publisher</th><td>Text frames stay gated by <code translate="no">_broadcast_chat_response</code>, which keeps post-stop silence. In the publisher, while <code translate="no">is_cancelled(session, execution_id=&lt;row's execution&gt;)</code> holds, non-terminal changes to rows of that execution are dropped, since the terminal row covers them. Terminal <code translate="no">row_upsert</code>s are never held. Background job rows in the same session keep updating.</td></tr>
+<tr><th scope="row">Overlay and proof</th><td>The browser sets the Stop overlay with <code translate="no">until_terminal</code>, plus <code translate="no">until_command_rejected</code> naming the cancel's command id. A rejection whose <code translate="no">latest_snapshot</code> proves the execution still runs passes the checks in <code translate="no">handleExecutionCommandUpdated</code> (same session, not replaced by a newer execution); it sends <code translate="no">overlay_command_rejected</code>, which clears the overlay, and restores the run slot unless the slot already holds the turn at a newer version.</td></tr>
+<tr><th scope="row">One send</th><td>A stop goes out once (<code translate="no">lib/execution/cancel-execution.ts</code>). The Worker takes it at the current version, so an old version is not a refusal. A stop of a turn that has ended answers <code translate="no">already_terminal</code>. "Stopped." follows the execution's cancelled frame.</td></tr>
+<tr><th scope="row">Before the ack</th><td>A Stop pressed before the ack sets the same overlay and sends the cancel as soon as the ack names the execution, with or without a version.</td></tr>
+<tr><th scope="row">Row status</th><td>The row then shows its server status, because the overlay never changed the row.</td></tr>
+<tr><th scope="row">Other cases</th><td>A rejection without that proof leaves the overlay until the terminal row. Text frames dropped under the overlay leave a gap, and the next frame's <code translate="no">offset &gt; length</code> repairs it with one read at the view's anchor.</td></tr>
+</tbody>
+</table>
+<h2 id="function-trees">Function-run trees</h2>
+<p><code translate="no">live_progress</code> keeps building trees and persisting <code translate="no">context_tree</code> on the row. Its <code translate="no">tree_update</code> is the input for live delivery, because in the Agent method subprocess the store write is foreign to the parent. At the Server's fan-out, a <code translate="no">tree_update</code> calls <code translate="no">publisher.notice_tree(session_id, msg_id, tree, function)</code>. The publisher finds the row from <code translate="no">msg_id</code>, then <code translate="no">&lt;msg_id&gt;_reply</code>, and the target from that row:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">msg_id</code> names</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><th scope="row">An assistant reply that is not <code translate="no">display=runtime</code> (a model-issued function)</th><td><code translate="no">item_upsert</code> into that reply's <code translate="no">callRoots</code>, without the default <code translate="no">expose: "full"</code>, as a read shapes it. Item identity is <code translate="no">tree.path</code>. A tree with no path replaces the running root of the same function name, otherwise it is added. A flat tree with no children sends nothing: the reply's tool step already shows that call, and a read draws no tree for it.</td></tr>
+<tr><th scope="row">A <code translate="no">function_run</code> row</th><td><code translate="no">row_patch { contextTree, function, status }</code></td></tr>
+<tr><th scope="row">A child in a reply's <code translate="no">runtimeChildren</code></th><td><code translate="no">item_upsert</code> of that child into <code translate="no">runtimeChildren</code> with <code translate="no">contextTree</code>, <code translate="no">function</code>, <code translate="no">status</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Status</th><td><code translate="no">status</code> comes from the tree root through <code translate="no">status.py</code>: <code translate="no">running</code>, <code translate="no">completed</code> as <code translate="no">done</code>, <code translate="no">error</code>. Any other root status sends none.</td></tr>
+<tr><th scope="row">Open rows and ticks</th><td>A <code translate="no">running</code> tree never changes a row the view no longer records as open. Ticks coalesce.</td></tr>
+<tr><th scope="row">Terminal tree</th><td>A terminal tree goes at once and carries the status, so the card settles even while the store write is foreign and not yet rebuilt. The terminal <code translate="no">row_upsert</code> follows with the next foreign rebuild.</td></tr>
+<tr><th scope="row">Cold and unowned</th><td>Cold reads get the same <code translate="no">_exec_tnode</code> shape from <code translate="no">context_tree</code> or <code translate="no">build_exec_dag_by_id</code>. A tree whose row has no owner yet marks the session foreign-dirty once.</td></tr>
+</tbody>
+</table>
+<h2 id="foreign-writes">Foreign writes</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Absorption</th><td>Absorbed at the two existing points, the stale rebuild in <code translate="no">_open</code> and <code translate="no">invalidate_cache</code>. These report a foreign change and mark that view's open rows dirty, and nodes with <code translate="no">seq</code> above the view's maximum are resolved like new ids.</td></tr>
+<tr><th scope="row">Rebuild rate</th><td>The publisher reads the cached index without a stale check and takes a foreign rebuild at most once per 2 s per session, so a running subprocess cannot cause an O(N) rebuild per tick. A mark inside that window defers the rebuild to the window's end and is never skipped, so a run's last foreign write always gets its rebuild.</td></tr>
+<tr><th scope="row">Consistency</th><td><code translate="no">memory_index.rebuild</code> fills fresh containers and swaps them under the lock, so a lock-free reader never sees a part-filled index. Cron children have no poller; their writes appear on the next read.</td></tr>
+</tbody>
+</table>
+<h2 id="head-moves">Head moves</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Descendant</th><td><code translate="no">head_id</code> in a <code translate="no">meta.patch</code> is compared with the old head. A descendant extends the index and sends nothing extra. Attach and notice writers use <code translate="no">advance_head=False</code> and no longer flip the head, so a spawn cannot reach this path.</td></tr>
+<tr><th scope="row">Branch and structure</th><td>A head that is not a descendant sends <code translate="no">window_stale { head_id, reason: branch }</code>, and every holder does one read at latest. <code translate="no">window_stale { reason: structure }</code> reads at the anchor, replaces in place and restores by message id. These reads run hydration, so session metadata refreshes too.</td></tr>
+</tbody>
+</table>
+<h2 id="dag-panel">DAG panel</h2>
+<p><code translate="no">branches_changed { session_id }</code> (replace class) goes out on attach writes, head moves and node deletes. The client runs its existing <code translate="no">list_branches</code> send. This is the only graph refresh trigger once reloads go.</p>
+<h2 id="send">Send</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Identity</th><td>A local row tagged <code translate="no">clientRequestId</code>. The chat action stores the same id as <code translate="no">metadata.client_request_id</code> on the user node, and function dispatch stores it on the pre-created function-run node, so a read or update names the send it belongs to.</td></tr>
+<tr><th scope="row">Replacement</th><td><code translate="no">chat_ack</code> re-ids the local row to the server id, or removes it when the server's row already arrived. A <code translate="no">turn_upsert</code> or read carrying that <code translate="no">clientRequestId</code> replaces it even if it beats the ack, and a reconnect after a lost ack replaces the row <code translate="no">settleSendsOnDisconnect</code> marked Not sent. Function runs work the same; the placeholder goes at ack or upsert.</td></tr>
+<tr><th scope="row">Pre-ack error</th><td>A pre-ack error marks only that local row, records the server's text on it as <code translate="no">errorDetail</code> and mints no <code translate="no">_reply</code>. The <code translate="no">NotSent</code> line under the failed bubble draws that text after "Not sent".</td></tr>
+<tr><th scope="row">No local row</th><td>A rejection with no local row keeps its toast, and <code translate="no">run_active</code> keeps its requeue path.</td></tr>
+<tr><th scope="row">Steer</th><td>The steer row carries the command id as <code translate="no">clientRequestId</code>. When a read or update delivers a row with that id, the reducer returns a <code translate="no">settleSteers</code> effect and the caller runs <code translate="no">settleDeliveredSteer</code>. This covers reads, which a frame cannot.</td></tr>
+</tbody>
+</table>
+<h2 id="optimistic-writes">Optimistic writes</h2>
+<p>Every write the browser makes ahead of the server, and what ends it. Nothing else writes a row: server rows come only from reads, numbered updates and text frames.</p>
+<table class="stack">
+<thead><tr><th scope="col">Call site</th><th scope="col">Class</th><th scope="col">Clear</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">use-chat-submit.ts</code> <code translate="no">stopSession</code>; <code translate="no">chat-handlers.ts</code> <code translate="no">wsHandleChatAck</code> (a Stop pressed before the ack)</th><td>overlay <code translate="no">status</code> (<code translate="no">stopOverlay</code>)</td><td><code translate="no">until_terminal</code>, <code translate="no">until_command_rejected</code> from <code translate="no">handleExecutionCommandUpdated</code></td></tr>
+<tr><th scope="row"><code translate="no">message-actions.tsx</code> (version switch)</th><td>overlay <code translate="no">siblingIndex</code>; <code translate="no">overlay_clear</code> on failure</td><td><code translate="no">until_read</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime-block.tsx</code> (retry, version switch)</th><td>overlay <code translate="no">status</code>, <code translate="no">contextTree</code>, <code translate="no">siblingIndex</code>, <code translate="no">siblingTotal</code>; <code translate="no">overlay_clear</code> on failure</td><td><code translate="no">until_row_gone</code></td></tr>
+<tr><th scope="row"><code translate="no">chapter-pin.ts</code> <code translate="no">setTurnChapter</code></th><td>overlay <code translate="no">chapterPinnedAt</code></td><td><code translate="no">until_field_matches</code>, and <code translate="no">overlay_clear</code> when the server replies, because the stored pin time never equals the browser's</td></tr>
+<tr><th scope="row"><code translate="no">turn-files-chips.tsx</code></th><td>overlay <code translate="no">turnFiles</code>, <code translate="no">reverted</code></td><td><code translate="no">until_field_matches</code>, <code translate="no">until_row_gone</code></td></tr>
+<tr><th scope="row"><code translate="no">goal-state.ts</code></th><td>overlay <code translate="no">goalVerification</code></td><td><code translate="no">until_field_matches</code></td></tr>
+<tr><th scope="row"><code translate="no">send-chat-message.ts</code> and <code translate="no">chat-stream.ts</code> (<code translate="no">appendLocalUserTurn</code>, the ack), <code translate="no">chat-handlers.ts</code> (pre-ack error, local command), <code translate="no">unacked-sends.ts</code>, <code translate="no">user-bubble.tsx</code></th><td>local user row</td><td>typed local change; a read or <code translate="no">turn_upsert</code> naming its <code translate="no">clientRequestId</code> replaces it</td></tr>
+<tr><th scope="row"><code translate="no">use-function-dispatch.ts</code></th><td>local <code translate="no">function_run</code> row</td><td>a read naming its request id replaces it; removed at the HTTP response when no read follows, or on failure</td></tr>
+<tr><th scope="row"><code translate="no">use-slash-menu.ts</code>, <code translate="no">chat-handlers.ts</code> <code translate="no">handleChatResponse</code> (<code translate="no">appendLocalNotice</code>)</th><td>local notice after the row then last</td><td>survives reads; the compaction notice goes when a compaction lands with a real result</td></tr>
+<tr><th scope="row"><code translate="no">chat-stream.ts</code> (<code translate="no">patchHeldRow</code>), <code translate="no">assistant-file-cards.tsx</code></th><td>frame-only fields <code translate="no">retryStatus</code>, <code translate="no">autoPreviewFiles</code></td><td>typed local change; kept across reads (<code translate="no">withFrameOnlyFields</code>)</td></tr>
+<tr><th scope="row"><code translate="no">session-history-loader.ts</code>, <code translate="no">conversations.ts</code>, <code translate="no">sub-agent-transcripts.ts</code>, <code translate="no">transcript-updates.ts</code> <code translate="no">applyFirstRead</code></th><td>read application</td><td><code translate="no">applyReadToView</code></td></tr>
+</tbody>
+</table>
+<h2 id="sub-agent">Sub-agent</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Placeholder</th><td>Every spawn writes a placeholder attach row from <code translate="no">on_accepted</code>, so it carries <code translate="no">job.id</code> and <code translate="no">tool_call_id</code> and <code translate="no">delivery=tool_result</code> from the first write. The job carries <code translate="no">attach_pointer_id</code>, so every path that ends a job patches the card.</td></tr>
+<tr><th scope="row">End write</th><td>The end of a sync spawn patches the row, because <code translate="no">append_message</code> is idempotent on id; failure paths and a result with no head patch to errored. If the placeholder write fails the end write appends the full row.</td></tr>
+<tr><th scope="row">Delivery and reads</th><td><code translate="no">notices.queue</code> is already a no-op for <code translate="no">wait=True</code> jobs. The card is an ordinary store write the observer delivers as <code translate="no">item_upsert</code>. <code translate="no">head_id</code> is null during the run; opening the row reads by <code translate="no">job_id</code> through <code translate="no">get_execution_input</code>.</td></tr>
+<tr><th scope="row">Startup</th><td>Startup reconcile closes attach rows whose job is not active. A collapsed row loads nothing.</td></tr>
+<tr><th scope="row">Expanded view</th><td>The expanded view reads through the same reader under its view key, in branch order, without moving HEAD.</td></tr>
+<tr><th scope="row">Tip rule and text</th><td>It has its own tip rule: a <code translate="no">node.put</code> whose predecessor is the view's tip, under the <code translate="no">_branch_tip</code> filter (<code translate="no">user</code> or <code translate="no">assistant</code>, not <code translate="no">display=runtime</code>, not <code translate="no">function=attach</code>), extends the view and emits <code translate="no">turn_upsert</code>. Text frames apply to whichever loaded views hold <code translate="no">row_id</code>, so job text cannot enter the parent.</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="transcript-model-wire.html">Wire protocol and modules</a></p>

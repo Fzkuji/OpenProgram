@@ -1,0 +1,190 @@
+<title>Entity memory on Git</title>
+<meta name="description" content="Deferred proposal for a per-conversation Git repository and project commits as the factual record under abstract memory.">
+<meta name="covers" content="openprogram/state/memory/">
+<h1>Entity memory on Git</h1>
+<p>Deferred proposal. Entity memory is an immutable record of what happened, traceable step by step: Session-Git stores what was said, Project-Git what was changed. The active Memory is the Source, Topic and Core workspace in <a href="overview.html">Overview</a>; current persistence is in <a href="../runtime/session/storage.html">Session storage</a>.</p>
+
+<table class="stack" id="proposed-and-built">
+<thead><tr><th scope="col"></th><th scope="col">Proposed</th><th scope="col">Built today</th></tr></thead>
+<tbody>
+<tr><th scope="row">Session record</th><td>One Git repository per conversation, one commit per turn</td><td>No repository. <code translate="no">&lt;state&gt;/projects/&lt;project-id&gt;/chats/&lt;session-id&gt;/main.jsonl</code>; <code translate="no">commit_turn</code> makes the session's fields durable.</td></tr>
+<tr><th scope="row">Valid session</th><td><code translate="no">meta.json</code> exists and parses</td><td><code translate="no">main.jsonl</code> or <code translate="no">agents/</code> exists</td></tr>
+<tr><th scope="row">Location index</th><td><code translate="no">locations.json</code></td><td><code translate="no">.chats-locations.json</code> at the store root, beside <code translate="no">.chats-index.json</code></td></tr>
+<tr><th scope="row">Agent file history</th><td>Commits in the user's repository</td><td>Shadow Git at <code translate="no">~/.openprogram/shadow-git/&lt;project-hash&gt;/</code>, leaving the user's <code translate="no">.git</code> alone. Project-Git auto-commit exists but is deprecated and off by default.</td></tr>
+<tr><th scope="row">Dirty tree</th><td>Skip when the tree was not clean before the agent</td><td>Baseline of dirty paths at turn start; refuse with a <code translate="no">project_commit_skipped</code> notice if those changes remain</td></tr>
+<tr><th scope="row">Project registry, panel, chat indicator</th><td>As below</td><td>Built: <code translate="no">projects.json</code>, WS <code translate="no">list_projects</code> and <code translate="no">create_project</code>, Projects in the sidebar</td></tr>
+<tr><th scope="row">Replay UI, session Git WS actions, backfill</th><td>As below</td><td>Not built</td></tr>
+</tbody>
+</table>
+
+<h2 id="storage-layout">Storage layout</h2>
+<pre translate="no" tabindex="0">~/.openprogram/                        get_state_dir()
+├── sessions/
+│   ├── &lt;session_id&gt;/                  one Session-Git repository
+│   │   ├── .git/
+│   │   ├── meta.json                  title, agent_id, project_id, created_at
+│   │   ├── history/                   DAG node files
+│   │   │   ├── 000001-u-&lt;id&gt;.json     user message
+│   │   │   ├── 000002-a-&lt;id&gt;.json     assistant message
+│   │   │   └── 000003-t-&lt;id&gt;.json     tool result, called_by = assistant
+│   │   ├── context/commits/&lt;commit_id&gt;.json   per-turn LLM context view
+│   │   └── workdir/                   temporary working directory
+│   └── locations.json                 in-project session to real path
+├── projects/projects.json             project registry
+└── memory/                            abstract memory
+
+&lt;user working directory&gt;/
+├── .git/                              Project-Git, reused or initialized
+└── .openprogram/sessions/&lt;id&gt;/        session repository bound to this project</pre>
+
+<h2 id="session-git-lifecycle">Session-Git lifecycle</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Proposal</th></tr></thead>
+<tbody>
+<tr><th scope="row">Create</th><td>Lazily on the first message (<code translate="no">SessionStore._open(id, create_if_missing=True)</code>): <code translate="no">git init</code>, write <code translate="no">meta.json</code>, create <code translate="no">history/</code>, <code translate="no">context/</code>, <code translate="no">workdir/</code>. A working directory binds the real project and places the repository inside it; otherwise <code translate="no">project_id="default"</code> at the home root.</td></tr>
+<tr><th scope="row">Validity</th><td>Directory exists and <code translate="no">meta.json</code> parses as JSON. Anything else (test leftovers, unrelated directories, corruption) is skipped silently.</td></tr>
+<tr><th scope="row">Discovery</th><td>Scan every <code translate="no">&lt;state&gt;/projects/&lt;project_id&gt;/chats/</code> plus the location index; merge, deduplicate, sort by <code translate="no">updated_at</code> descending. Sidebar and Chats page share the rule.</td></tr>
+<tr><th scope="row">Write</th><td><code translate="no">append_message</code> writes <code translate="no">history/NNNN-&lt;role&gt;-&lt;id&gt;.json</code> synchronously and updates the in-memory index; <code translate="no">commit_turn</code> commits once at turn end.</td></tr>
+<tr><th scope="row">Read</th><td><code translate="no">get_branch(session_id, head_id)</code> walks <code translate="no">parent_id</code> to a message list; <code translate="no">get_nodes</code> returns raw <code translate="no">Call</code> objects; <code translate="no">session_commits</code> returns the turn-level log.</td></tr>
+<tr><th scope="row">Branch, retry</th><td>DAG retry is git branch <code translate="no">retry-&lt;assistant_id&gt;</code>; switching DAG head is git checkout.</td></tr>
+<tr><th scope="row">Metadata, binding</th><td><code translate="no">update_session(session_id, title=..., project_id=...)</code> writes <code translate="no">meta.json</code> and the index. <code translate="no">project_id</code> holds the binding.</td></tr>
+<tr><th scope="row">Cache</th><td>In-memory LRU of <code translate="no">SessionLog</code> and <code translate="no">SessionMemoryIndex</code>, cap 256 (<code translate="no">OPENPROGRAM_SESSION_CACHE_CAP</code>), rebuilt from disk after eviction; per-session lock plus store lock.</td></tr>
+<tr><th scope="row">Delete</th><td><code translate="no">delete_session</code>: drop from cache, close the runtime, remove the directory including <code translate="no">.git/</code> and any location entry. Sidebar menu; Chats page right-click not yet. Provenance pointers dangle and are skipped on query, so the virtual layer needs no cleanup.</td></tr>
+<tr><th scope="row">Garbage collection</th><td>Without <code translate="no">meta.json</code>: skipped. Empty with a default title: listed. Long-inactive: never deleted automatically; any space policy belongs to user configuration, not the store.</td></tr>
+</tbody>
+</table>
+
+<h3 id="commit-timing">Turn commits</h3>
+<p>One commit when <code translate="no">dispatcher.process_user_turn()</code> returns a <code translate="no">TurnResult</code>: one user message, one assistant message, N tool results.</p>
+<pre translate="no" tabindex="0">turn &lt;N&gt;: &lt;first 60 chars of user msg&gt;
+
+assistant: &lt;first 80 chars of reply&gt;
+tools: read, grep × 3, list
+
+[meta: turn took 12.3s, 18 tools, 4521 tokens]</pre>
+
+<h3 id="replay-ui">Replay</h3>
+<pre translate="no" tabindex="0">[← prev turn]  Turn 7 / 12  [next turn →]    [view full history]</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row">prev</th><td><code translate="no">git checkout HEAD~1</code>, replay the UI</td></tr>
+<tr><th scope="row">next</th><td>Walk the reflog backward</td></tr>
+<tr><th scope="row">view full history</th><td>Timeline, one line per commit; click for message content</td></tr>
+<tr><th scope="row">WS</th><td><code translate="no">git_history(session_id)</code>, <code translate="no">git_checkout(session_id, commit_sha)</code>. The dispatcher continues the next message on that commit.</td></tr>
+</tbody>
+</table>
+
+<h3 id="dual-write-consistency">Dual write</h3>
+<p>The dispatcher writes the DAG. After a turn, its nodes are serialized to the repository on a background thread, because a commit takes about 100 to 500 ms. One repository per session and serial commits make conflicts rare; a file lock is the fallback. On startup, sessions without a repository are backfilled once, turn by turn in <code translate="no">seq</code> order.</p>
+
+<h2 id="project-git-lifecycle">Project-Git lifecycle</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Proposal</th></tr></thead>
+<tbody>
+<tr><th scope="row">Create</th><td><code translate="no">resolve_project(path, name)</code> when a directory is bound: reuse <code translate="no">.git/</code> or <code translate="no">git init</code>, register in <code translate="no">projects.json</code>.</td></tr>
+<tr><th scope="row">Auto-commit</th><td>At turn end for a bound session whose agent changed files, committed under an agent <code translate="no">user.name</code> so it differs from the user's commits. A clean start alone does not prove ownership when the user edits concurrently, so agent-owned changes must be identified.</td></tr>
+<tr><th scope="row">Read</th><td><code translate="no">ProjectGit.log(limit)</code>; <code translate="no">project_commits(project_id)</code> for the provenance layer.</td></tr>
+<tr><th scope="row">Unbind</th><td>Removes the registration only. The user's <code translate="no">.git/</code> stays; the session's <code translate="no">project_id</code> stays as a historical pointer; the session repository stays in the project.</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0">git commit -c user.name="agent (&lt;model&gt; via OpenProgram)"
+           -m "[agent &lt;session_id&gt;] turn &lt;N&gt;: &lt;user msg first 60 chars&gt;"</pre>
+<details>
+<summary>Built auto-commit, off by default</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Enable</th><td><code translate="no">project_auto_commit</code> in <code translate="no">config.json</code> or <code translate="no">OPENPROGRAM_PROJECT_AUTOCOMMIT=1</code></td></tr>
+<tr><th scope="row">Message</th><td><code translate="no">[agent &lt;first 8 of session id&gt;] &lt;first 60 chars of the user's first line&gt;</code></td></tr>
+<tr><th scope="row">Not a repository</th><td>At turn start: a baseline commit of the existing files, so agent commits are honest diffs. Refused with a notice if a dependency or build directory such as <code translate="no">node_modules</code> or <code translate="no">.venv</code> would bloat it.</td></tr>
+<tr><th scope="row">Active worktree</th><td>Yields; the worktree has its own merge and discard lifecycle.</td></tr>
+<tr><th scope="row">Home project</th><td>No-op; it has no bound directory.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="project-metadata-and-presentation">Project metadata and presentation</h2>
+<p>A session may have no project. With one, its agent's file commits land in the project repository, and the session's metadata carries <code translate="no">project_id</code>.</p>
+<pre translate="no" tabindex="0">Project: id, name, workdir, sessions, status (active | paused | done), created_at</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Content</th></tr></thead>
+<tbody>
+<tr><th scope="row">Projects section, left sidebar</th><td>Name, session count, status, New Project</td></tr>
+<tr><th scope="row">Project page</th><td>Name, workdir, sessions, commit history, abstract-memory entry</td></tr>
+<tr><th scope="row">New project</th><td>Pick a directory, name it, create or reuse a repository, optionally associate the current session</td></tr>
+<tr><th scope="row">Top of chat</th><td>Project name and abbreviated workdir, linking to the project page</td></tr>
+</tbody>
+</table>
+
+<h2 id="key-invariants">Key invariants</h2>
+<ul>
+<li>The DAG is the source of truth; Git is the mirror. A Git failure does not affect the DAG. A commit without a DAG write is dirty data.</li>
+<li>One Session-Git commit per turn, not per message.</li>
+<li>The agent never pollutes the user's working tree: with uncommitted user changes, it skips the commit.</li>
+<li>Replay is a read-only view; a new message after checkout forks the DAG from that commit.</li>
+<li>Abstract memory builds on entity memory, never the reverse.</li>
+</ul>
+<h3 id="project-registry">Project registry safety (built)</h3>
+<p>The worker, CLI and agent subprocesses all write <code translate="no">projects.json</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Handling</th></tr></thead>
+<tbody>
+<tr><th scope="row">Read-modify-write</th><td>Held under the cross-process lock <code translate="no">&lt;state&gt;/projects/.locks/.projects-registry.lock</code></td></tr>
+<tr><th scope="row">Publish</th><td>Unique temporary file, then rename; readers see the old or new file whole</td></tr>
+<tr><th scope="row">Read error</th><td>Raises, because an empty result would be written back and erase every binding</td></tr>
+<tr><th scope="row">Not a JSON object</th><td>Moved aside as <code translate="no">projects.json.unreadable-&lt;time&gt;-&lt;id&gt;</code>; the registry restarts empty</td></tr>
+</tbody>
+</table>
+
+<h2 id="risks">Risks</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Risk</th><th scope="col">Mitigation</th></tr></thead>
+<tbody>
+<tr><th scope="row">Async commit fails unseen</th><td>Background retry; on startup compare DAG <code translate="no">seq</code> with commit count and backfill on mismatch</td></tr>
+<tr><th scope="row">Workdir is not a repository</th><td><code translate="no">git init</code> on the agent's first commit; reuse an existing one</td></tr>
+<tr><th scope="row">Several sessions edit one project</th><td>File lock serializes project commits; at worst a queue</td></tr>
+<tr><th scope="row">Going back to turn 5 and sending a message</th><td>Fork, not overwrite: the DAG's retry, mapped to a Git branch</td></tr>
+</tbody>
+</table>
+
+<h2 id="relationships">Relationships</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">With</th><th scope="col">Relationship</th></tr></thead>
+<tbody>
+<tr><th scope="row">Commit chain</th><td>No conflict. DAG nodes mirror to Git commits, the history that happened. The ContextCommit chain, what the LLM saw, stays out of Git as derived and recomputable; a commit may be exported on request.</td></tr>
+<tr><th scope="row">Abstract memory</th><td>Entity memory is its single source. Distillation reads Session-Git nodes and Project-Git commits into the timeline and graph. Each memory carries a <code translate="no">Provenance</code> pointer back; see <a href="virtual-memory.html">Virtual memory</a>.</td></tr>
+<tr><th scope="row">External tools</th><td>This proposal exposes Git log and diff history. Any feature comparison with another tool must be verified before it informs implementation.</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0">@dataclass
+class Provenance:
+    project_id: str
+    session_id: str
+    node_ids: tuple[str, ...]
+    commit: str | None
+    event_time: float
+    ingestion_time: float</pre>
+
+<h2 id="session-titles">Session titles (built)</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Priority</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. Typed name</th><td><code translate="no">/rename</code> or the UI. Never overwritten. "Generate a name" clears the lock, so later retitles can still improve it.</td></tr>
+<tr><th scope="row">2. Model title</th><td>Background call for 3 to 7 words, sentence case, in the conversation's language, up to 80 characters, through structured output. Runs at turns 1, 6, 16 and 40, and at 2 and 3 after a small-talk opener. Input is an excerpt of the current branch, at most 1000 characters. Failures are logged only. A retitle replaces only the title it started from; the sidebar updates through <code translate="no">session_updated</code>.</td></tr>
+<tr><th scope="row">3. Excerpt</th><td>Set immediately at the first turn: first line of the first user message, 50 characters, so the sidebar is never empty while the model works.</td></tr>
+<tr><th scope="row">4. Preview</th><td>At listing time, a session with no usable title shows a preview of its first user message.</td></tr>
+</tbody>
+</table>
+<p class="note">All valid sessions are listed; there is no empty-placeholder filter.</p>
+
+<details>
+<summary>Proposed build order</summary>
+<ol>
+<li>Session-Git: <code translate="no" data-claim="example">openprogram/state/memory/session_git/</code> (init, commit, log, checkout), a background commit at the end of <code translate="no">dispatcher.process_user_turn</code>, a backfill script, WS <code translate="no">git_session_log</code> and <code translate="no">git_session_checkout</code>.</li>
+<li>Project schema and UI: registry, <code translate="no">project_id</code> in session metadata, WS <code translate="no">list_projects</code>, <code translate="no">create_project</code>, <code translate="no">add_session_to_project</code>, Projects in the sidebar.</li>
+<li>Project-Git auto-commit: post-turn hook for bound sessions, commit when clean, warn when dirty, a warning banner.</li>
+<li>Replay UI: prev and next at the top of chat, timeline view, WS action calling checkout.</li>
+<li>Data migration: backfill existing sessions; import existing Git projects as Projects.</li>
+</ol>
+</details>

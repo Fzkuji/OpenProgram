@@ -1,9 +1,12 @@
 """Test teardown releases the canonical SessionStore after package extraction."""
 import pytest
 
-from openprogram.store.session import session_store
+from openprogram.state.store.session import session_store
 from tests.component.self_update.control.test_controller_bundle import _release_native_workspace
-from tests.conftest import _drop_tmp_rooted_session_store
+from tests import conftest as _conftest
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+_drop_tmp_rooted_session_store = _conftest._drop_tmp_rooted_session_store
 
 
 @pytest.mark.parametrize("native", [False, True])

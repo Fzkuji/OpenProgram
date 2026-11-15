@@ -1,0 +1,81 @@
+/* Canvas drag previews must stay above the app and native-view placeholders. */
+html[data-canvas-dragging] .desktop-tab-row { z-index: var(--z-drag); }
+.center-canvas-content { box-sizing: border-box; container-type: inline-size; }
+
+/* 拖放预览：柔和的系统蓝圆角块，带一点弹性。由 lib/tabs/canvas/canvas-drag 挂到 body，
+   不属于任何组件，所以放在全局样式里。 */
+.canvas-drop-preview {
+  position: fixed;
+  z-index: calc(var(--z-drag) - 1);
+  box-sizing: border-box;
+  pointer-events: none;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--accent-blue) 14%, transparent);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in oklch, var(--accent-blue) 70%, transparent),
+    0 8px 24px color-mix(in oklch, var(--accent-blue) 18%, transparent);
+  /* No backdrop blur and no overshoot: the area under the cue stays
+     readable and moving between zones glides instead of flashing. */
+  transition:
+    left var(--motion-fast) var(--ease-standard),
+    top var(--motion-fast) var(--ease-standard),
+    width var(--motion-fast) var(--ease-standard),
+    height var(--motion-fast) var(--ease-standard);
+}
+.canvas-drop-preview[data-drop-target="tab-strip"] { z-index: calc(var(--z-drag) + 1); }
+.canvas-drop-preview[data-drop-target="resources"] {
+  background: color-mix(in oklch, var(--accent-blue) 8%, transparent);
+  outline: 1.5px solid color-mix(in oklch, var(--accent-blue) 70%, transparent);
+  outline-offset: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  transition: none;
+}
+.canvas-drop-preview[data-drop-target="resources"][data-compact="true"] {
+  border-radius: var(--ui-list-radius);
+}
+.canvas-drop-label {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in oklch, var(--accent-blue) 55%, transparent);
+  background: var(--bg-secondary);
+  color: var(--text-bright);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-popover);
+}
+.canvas-drop-preview[data-compact="true"] .canvas-drop-label {
+  top: calc(100% + 8px);
+  left: auto;
+  right: 0;
+  transform: none;
+}
+/* Canvas drops name where the tab will go, in the middle of the area. */
+.canvas-drop-preview[data-drop-target="canvas"]:not([data-compact="true"]) .canvas-drop-label {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-drop-preview { transition: none; }
+}
+@container (max-width: 280px) {
+  .center-canvas-content .chat-messages { padding-left: 6px; padding-right: 6px; }
+  .center-canvas-content textarea { max-height: 38px; }
+}
+html[data-canvas-dragging] iframe { pointer-events: none; }
+/* While anything is dragged, no part of the window is a native drag region:
+   macOS would swallow the release there and leave the drag hanging. */
+html[data-canvas-dragging],
+html[data-canvas-dragging] * { -webkit-app-region: no-drag !important; }
+
+
+/* A dragged tab's floating preview stays out of the pane pictures. */
+html[data-capturing-panes] [data-tab-drag-preview] {
+  visibility: hidden !important;
+}

@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from "react";
 import styles from "./plugins.module.css";
-import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManagePageHeader, ManageSubnav, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
 import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
-import { Download } from "lucide-react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { PlusIcon } from "@/components/animated-icons";
 import { InstalledList } from "./views/installed-list";
+import { SimpleSelect } from "@/components/ui/select";
 import { MarketplaceBrowser } from "./views/marketplace-browser";
 import { PluginErrors } from "./views/plugin-errors";
+import { Input } from "@/components/ui/input";
 
 export function PluginsPage({
   embedded,
@@ -48,7 +51,7 @@ export function PluginsPage({
   const body = (
     <>
       {tab === "installed" && (loading && plugins.length === 0
-        ? <div className={shared.empty}>{text("Loading plugins...", "正在加载插件...")}</div>
+        ? <ManageLoadingState>{text("Loading plugins…", "正在加载插件…")}</ManageLoadingState>
         : <InstalledList externalFilter={query} />)}
       {tab === "marketplace" && <MarketplaceBrowser externalFilter={query} />}
       {tab === "errors" && <PluginErrors filter={query} />}
@@ -62,13 +65,13 @@ export function PluginsPage({
         activeTab={tab}
         onTabChange={(id) => setTab(id as typeof tab)}
         summary={text(
-          `${enabledCount} available · ${errCount} issues`,
+          `${enabledCount} available · ${errCount} ${errCount === 1 ? "issue" : "issues"}`,
           `可用 ${enabledCount} 个 · ${errCount} 个问题`,
         )}
         action={{
           label: text("Add plugin", "添加插件"),
           onClick: () => setLocalInstallOpen(true),
-          icon: <Download />,
+          icon: PlusIcon,
           primary: true,
         }}
         ariaLabel={text("Plugin sections", "插件分区")}
@@ -127,27 +130,24 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // Escape / Tab-trap / focus restore for this hand-rolled panel.
-  const modal = useModalA11y(onClose, text("Manual plugin install", "手动安装插件"));
-
   return (
-    <div className={styles.dialogBackdrop} onClick={onClose}>
-      <div
-        {...modal}
-        className={styles.dialog}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.dialogTitle}>{text("Manual plugin install", "手动安装插件")}</div>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className={styles.dialog} aria-describedby={undefined}>
+        <DialogHeader><DialogTitle>{text("Manual plugin install", "手动安装插件")}</DialogTitle></DialogHeader>
         <div className={styles.dialogBody}>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <select className={styles.select} value={source} onChange={(e) => setSource(e.target.value)}>
-              <option value="pip">pip</option>
-              <option value="npm">npm</option>
-              <option value="git">git</option>
-              <option value="path">{text("path (local directory)", "path（本地目录）")}</option>
-            </select>
-            <input
-              className={styles.input}
+            <SimpleSelect
+              aria-label={text("Source", "来源")}
+              value={source}
+              onValueChange={setSource}
+              options={[
+                { value: "pip", label: "pip" },
+                { value: "npm", label: "npm" },
+                { value: "git", label: "git" },
+                { value: "path", label: text("path (local directory)", "path（本地目录）") },
+              ]}
+            />
+            <Input
               placeholder={
                 source === "path"
                   ? "/absolute/path/to/plugin"
@@ -160,8 +160,7 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           {source === "git" && (
-            <input
-              className={styles.input}
+            <Input
               placeholder={text("ref (optional, branch/tag/sha)", "ref（可选，branch/tag/sha）")}
               value={ref}
               onChange={(e) => setRef(e.target.value)}
@@ -173,20 +172,20 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
               padding: 10,
               background: "var(--bg-secondary)",
               border: "1px solid var(--border)",
-              borderRadius: 6,
-              fontSize: 12,
+              borderRadius: "var(--radius-sm)",
+              fontSize: "var(--fs-xs)",
               maxHeight: 240,
               overflow: "auto",
             }}>{log}</pre>
           )}
         </div>
-        <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onClose} disabled={busy}>{text("Close", "关闭")}</button>
-          <button className={styles.btnPrimary} onClick={submit} disabled={busy || !spec.trim()}>
+        <DialogFooter>
+          <Button variant="elevated" onClick={onClose} disabled={busy}>{text("Close", "关闭")}</Button>
+          <Button onClick={submit} disabled={busy || !spec.trim()}>
             {busy ? text("Installing...", "安装中...") : text("Install", "安装")}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

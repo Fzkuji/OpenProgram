@@ -7,18 +7,15 @@ folder name. Within a group, README.md is pinned first, the rest sort by name.
 
 from __future__ import annotations
 
+import html
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # Folders that are never part of the docs site.
 EXCLUDE_DIRS = {"_site", "_site.tmp", "_site.old", "_static_root",
-                "images", "slides"}
-
-# Internal execution plans stay versioned in Git but are not product
-# documentation. Keep this path-level list separate from EXCLUDE_DIRS so a
-# similarly named directory in another product area is not hidden by accident.
-EXCLUDE_PATH_PREFIXES = ("superpowers/",)
+                "images", "node_modules"}
 
 # Top-level tabs. Each top-level directory under docs/ is one tab in the top
 # navbar; the sidebar only shows the current tab's tree. Order here is the
@@ -38,16 +35,21 @@ TABS: dict[str, tuple[str, str]] = {  # dir -> (English label, 中文 label)
     "design":       ("Design", "设计"),
 }
 # Loose files directly under docs/ belong to a tab too.
-ROOT_PAGE_TAB = {"README.md": "start"}
+ROOT_PAGE_TAB = {"README.html": "start"}
 # A top-level dir not listed in TABS falls back to the reference tab, so a
 # stray folder degrades to "filed under Reference" instead of vanishing.
 FALLBACK_TAB = "reference"
 
 # Display-name overrides for pages whose H1 doesn't make a good sidebar label.
 ROOT_PAGE_GROUPS: dict[str, tuple[str, str]] = {
-    "README.md": ("Overview", "start"),
-    "capabilities/agentic-programming/philosophy.md": ("Philosophy", ""),
+    "README.html": ("Overview", "start"),
+    "capabilities/agentic-programming/philosophy.html": ("Philosophy", ""),
 }
+
+# Short bilingual display names; descriptive document headings remain in the sources.
+PAGE_TITLES: dict[str, dict[str, str]] = json.loads(
+    Path(__file__).with_name("page_titles.json").read_text(encoding="utf-8")
+)
 
 # Sidebar titles for directories that have no README.md of their own.
 DIR_TITLES: dict[str, tuple[str, str]] = {  # rel dir -> (English, 中文)
@@ -71,6 +73,7 @@ class Page:
     zh_src: Path | None = None   # Chinese-version source (xxx.zh.md), if any
     zh_out: Path | None = None   # Chinese-version output path, if any
     title_zh: str = ""  # Chinese sidebar label (from the .zh.md H1), if any
+    key: str = ""       # how navigation registries name this page (see _registry_key)
 
 
 _H1_RE = re.compile(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", re.MULTILINE)
@@ -91,11 +94,11 @@ def extract_title(path: Path) -> str:
         m = _HTML_TITLE_RE.search(text)
         if m:
             # strip a common " — OpenProgram" style suffix for nav brevity
-            return re.sub(r"\s*[—·|-]\s*OpenProgram.*$", "", m.group(1).strip())
+            return html.unescape(re.sub(r"\s*[—·|-]\s*OpenProgram.*$", "", m.group(1).strip()))
         # body-only fragment: fall back to its first <h1>
         h1 = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.IGNORECASE | re.DOTALL)
         if h1:
-            return re.sub(r"<[^>]+>", "", h1.group(1)).strip()
+            return html.unescape(re.sub(r"<[^>]+>", "", h1.group(1)).strip())
     return prettify(path.stem)
 
 
@@ -105,11 +108,28 @@ def prettify(name: str) -> str:
 
 
 def is_excluded(rel: Path) -> bool:
-    rel_str = rel.as_posix()
-    return (
-        any(part in EXCLUDE_DIRS for part in rel.parts)
-        or any(rel_str.startswith(prefix) for prefix in EXCLUDE_PATH_PREFIXES)
-    )
+    return any(part in EXCLUDE_DIRS for part in rel.parts)
+
+
+def _registered_paths() -> set[str]:
+    named = set(PAGE_ORDER) | set(PAGE_TITLES) | set(ROOT_PAGE_GROUPS) | set(ROOT_PAGE_TAB)
+    for sections in TAB_SECTIONS.values():
+        for _en, _zh, paths in sections:
+            named.update(paths)
+    return named
+
+
+def _registry_key(rel: str, registered: set[str], sources: set[str]) -> str:
+    """The name navigation registries use for a page.
+
+    A page moved from ``topic.md`` to ``topic.html`` keeps its registered title,
+    section and order. A ``.md`` file still present beside it owns that entry.
+    """
+    if rel.endswith(".html") and rel not in registered:
+        former = rel[:-len(".html")] + ".md"
+        if former in registered and former not in sources:
+            return former
+    return rel
 
 
 def discover(docs_root: Path) -> list[Page]:
@@ -135,6 +155,8 @@ def discover(docs_root: Path) -> list[Page]:
         base_rel = rel.with_name(rel.name[:-len(".zh.html")] + ".html")
         zh_sources.setdefault(base_rel, path)
 
+    sources = {path.relative_to(docs_root).as_posix() for path in docs_root.rglob("*.md")}
+    registered = _registered_paths()
     pages: list[Page] = []
     for path in sorted(docs_root.rglob("*")):
         if path.suffix not in (".md", ".html"):
@@ -145,12 +167,12 @@ def discover(docs_root: Path) -> list[Page]:
         if rel.name.endswith((".zh.md", ".zh.html")):
             continue  # chinese version is attached to its base, not a page
         out = rel.with_suffix(".html")
-        rel_str = str(rel).replace("\\", "/")
+        rel_str = _registry_key(rel.as_posix(), registered, sources)
         override = ROOT_PAGE_GROUPS.get(rel_str)
         title = override[0] if override else extract_title(path)
         zh_src = zh_sources.get(rel)
         zh_out = (rel.with_name(rel.stem + ".zh.html")) if zh_src else None
-        title_zh = extract_title(zh_src) if zh_src else ""
+        title_zh = ("概览" if rel_str in ("README.html", "README.md") else extract_title(zh_src)) if zh_src else ""
         pages.append(
             Page(
                 src=path,
@@ -162,9 +184,17 @@ def discover(docs_root: Path) -> list[Page]:
                 zh_src=zh_src,
                 zh_out=zh_out,
                 title_zh=title_zh,
+                key=rel_str,
             )
         )
-    return _dedupe_md_html(pages)
+    pages = _dedupe_md_html(pages)
+    for page in pages:
+        names = PAGE_TITLES.get(page.key)
+        if names:
+            page.title = names["en"]
+            if page.zh_src is not None:
+                page.title_zh = names["zh"]
+    return pages
 
 
 def _dedupe_md_html(pages: list[Page]) -> list[Page]:
@@ -184,6 +214,8 @@ def _dedupe_md_html(pages: list[Page]) -> list[Page]:
                     if p.zh_out is not None:
                         p.zh_out = p.zh_out.with_suffix(".viz.html")
                     p.title = f"{p.title} (viz)"
+                    if p.title_zh:
+                        p.title_zh = f"{p.title_zh}（图解）"
                 result.append(p)
         else:
             result.extend(group)
@@ -192,11 +224,11 @@ def _dedupe_md_html(pages: list[Page]) -> list[Page]:
 
 @dataclass
 class Section:
-    """One sidebar section: a plain (non-collapsible) header + a flat page list.
-    Every page belongs to exactly one section — OpenClaw-style."""
+    """An ordered page group, optionally nested under a design area."""
     title: str
     title_zh: str
     pages: list  # list[Page]
+    area: tuple[str, str] | None = None
 
 
 @dataclass
@@ -214,7 +246,7 @@ def tab_of(p: Page) -> str:
         return "design"
     parts = p.rel.parts
     if len(parts) == 1:
-        return ROOT_PAGE_TAB.get(parts[0], FALLBACK_TAB)
+        return ROOT_PAGE_TAB.get(p.key or parts[0], FALLBACK_TAB)
     return parts[0] if parts[0] in TABS else FALLBACK_TAB
 
 
@@ -225,308 +257,674 @@ def tab_of(p: Page) -> str:
 ARCHIVE_PREFIX = "reference/design/"
 TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
     "start": [
-        ("Overview", "概览", ["README.md", "start/features.md"]),
+        ("Overview", "概览", ["README.html", "start/features.html"]),
         ("First steps", "第一步", [
-            "start/GETTING_STARTED.md", "start/daily-use.md", "start/faq.md"]),
+            "start/GETTING_STARTED.html", "start/daily-use.html", "start/faq.html"]),
     ],
     "install": [
-        ("Install", "安装", ["install/install.md"]),
-        ("Maintenance", "维护", ["install/upgrade.md", "install/profiles.md"]),
+        ("Install", "安装", ["install/install.html", "install/download.html"]),
+        ("Maintenance", "维护", [
+            "install/upgrade.html", "install/conversational-self-update.html",
+            "install/self-update-verification.html", "install/self-update-rollback.html",
+            "install/development-checkout.html", "install/profiles.html"]),
     ],
     "capabilities": [
-        ("Overview", "概览", ["capabilities/README.md", "capabilities/applications.md", "capabilities/framework-control.md"]),
+        ("Overview", "概览", ["capabilities/README.html", "capabilities/applications.html", "capabilities/framework-control.html"]),
         ("Agentic Programming", "Agentic Programming", [
-            "capabilities/agentic-programming/README.md",
-            "capabilities/agentic-programming/philosophy.md",
-            "capabilities/agentic-programming/embedding-in-your-own-stack.md"]),
+            "capabilities/agentic-programming/README.html",
+            "capabilities/agentic-programming/philosophy.html",
+            "capabilities/agentic-programming/self-programming-ai-agents.html",
+            "capabilities/agentic-programming/embedding-in-your-own-stack.html"]),
         ("Writing functions", "编写函数", [
-            "capabilities/agentic-programming/writing-functions/pure-python.md",
-            "capabilities/agentic-programming/writing-functions/agentic-function.md",
-            "capabilities/agentic-programming/writing-functions/function-metadata.md"]),
+            "capabilities/agentic-programming/writing-functions/pure-python.html",
+            "capabilities/agentic-programming/writing-functions/agent.html",
+            "capabilities/agentic-programming/writing-functions/function-metadata.html"]),
         ("Choosing the next step", "选择下一步", [
-            "capabilities/agentic-programming/choosing-the-next-step/tool-calling.md",
-            "capabilities/agentic-programming/choosing-the-next-step/fixed-order-calls.md",
-            "capabilities/agentic-programming/choosing-the-next-step/next-step-decision.md"]),
+            "capabilities/agentic-programming/choosing-the-next-step/tool-calling.html",
+            "capabilities/agentic-programming/choosing-the-next-step/fixed-order-calls.html",
+            "capabilities/agentic-programming/choosing-the-next-step/next-step-decision.html"]),
         ("Agentic Workflows", "Agentic Workflows", [
-            "capabilities/workflows/README.md",
-            "capabilities/workflows/authoring.md",
-            "capabilities/workflows/reports.md",
-            "capabilities/workflows/gui-agent.md",
-            "capabilities/workflows/research-agent.md",
-            "capabilities/workflows/wiki-agent.md"]),
-        ("Memory", "记忆", ["capabilities/memory.md"]),
-        ("Session goals", "会话目标", ["capabilities/goal.md"]),
-        ("Agentic workflows", "Agentic 工作流", ["capabilities/agentic-workflow.md"]),
-        ("Asking about OpenProgram", "询问 OpenProgram 自身",
-         ["capabilities/docs-question.md"]),
-        ("Security review", "安全审查", ["capabilities/security-review.md"]),
+            "capabilities/workflows/README.html",
+            "capabilities/workflows/authoring.html",
+            "capabilities/workflows/recording.html",
+            "capabilities/workflows/reports.html"]),
+        ("Agents", "Agents", ["capabilities/agents.html",
+                              "capabilities/agents-md.html"]),
+        ("Automation", "自动化", ["capabilities/always-on-agents.html",
+                                  "capabilities/reminders.html",
+                                  "capabilities/event-triggers.html",
+                                  "capabilities/goal.html",
+                                  "capabilities/computer-use.html",
+                                  "capabilities/meetings.html"]),
+        ("Memory", "记忆", ["capabilities/memory.html",
+                            "capabilities/memory-settings.html"]),
+        ("Self-update", "自我更新", ["capabilities/self-update.html"]),
         ("Extending", "扩展", [
-            "capabilities/installing-harnesses.md", "capabilities/skills.md",
-            "capabilities/distill.md",
-            "capabilities/plugins.md", "capabilities/mcp.md",
-            "capabilities/tools.md", "capabilities/lsp.md"]),
+            "capabilities/environments.html",
+            "capabilities/installing-programs.html", "capabilities/skills.html",
+            "capabilities/commit-push-pr.html",
+            "capabilities/plugins.html", "capabilities/mcp.html",
+            "capabilities/tools.html", "capabilities/permissions.html", "capabilities/lsp.html"]),
     ],
     "interfaces": [
-        ("Overview", "概览", ["interfaces/README.md"]),
+        ("Overview", "概览", ["interfaces/README.html"]),
         ("Surfaces", "界面", [
-            "interfaces/desktop.md", "interfaces/web.md", "interfaces/tui.md",
-            "interfaces/cli.md", "interfaces/acp.md"]),
+            "interfaces/desktop.html", "interfaces/web.html", "interfaces/tui.html",
+            "interfaces/cli.html", "interfaces/acp.html",
+            "interfaces/openai-api.html"]),
+        ("Chat input", "聊天输入", ["interfaces/voice-input.html"]),
     ],
     "models": [
-        ("Overview", "概览", ["models/README.md", "models/providers.md"]),
+        ("Overview", "概览", ["models/README.html", "models/providers.html"]),
         ("Configuration", "配置", [
-            "models/auth.md", "models/fast-tier.md",
-            "models/thinking-effort.md", "models/token-tracking.md"]),
+            "models/auth.html", "models/local-models.html", "models/fast-tier.html",
+            "models/thinking-effort.html", "models/token-tracking.html"]),
     ],
     "integrations": [
-        ("Integrations", "集成", [
-            "integrations/claude-code.md", "integrations/openclaw.md",
-            "integrations/channels.md"]),
+        ("Services", "服务", [
+            "integrations/anthropic.html", "integrations/openclaw.html",
+            "integrations/channels.html"]),
     ],
     "server": [
-        ("Overview", "概览", ["server/README.md"]),
+        ("Overview", "概览", ["server/README.html"]),
         ("Operations", "运维", [
-            "server/configuration.md", "server/upgrading.md",
-            "server/backup.md", "server/troubleshooting.md"]),
+            "server/configuration.html", "server/upgrading.html",
+            "server/backup.html", "server/troubleshooting.html"]),
     ],
     "reference": [
-        ("Overview", "概览", ["reference/README.md"]),
+        ("Overview", "概览", ["reference/README.html"]),
         ("API", "API", [
-            "reference/API.md", "reference/api/runtime.md",
-            "reference/api/providers.md", "reference/api/agentic-function.md"]),
+            "reference/API.html", "reference/api/runtime.html",
+            "reference/api/providers.html", "reference/api/agent.html"]),
         ("CLI and configuration", "CLI 与配置", [
-            "reference/cli.md", "reference/config.md",
-            "reference/diagnostics.md",
-            "reference/session-export.md",
-            "reference/output-styles.md",
+            "reference/cli.html", "reference/config.html",
+            "reference/diagnostics.html",
+            "reference/session-export.html",
+            "reference/session-import.html",
+            "reference/output-styles.html",
             # generated from code at build time (generate_reference.py):
             "reference/config-keys.md", "reference/provider-registry.md"]),
-        ("Notes", "笔记", ["reference/claude-code-compaction.md"]),
         ("Comparisons", "对比", [
-            "comparisons/ai-agent-frameworks.md",
-            "comparisons/related-projects.md",
+            "reference/comparisons/ai-agent-frameworks.html",
+            "reference/comparisons/related-projects.html",
         ]),
     ],
     "design": [
-        ("Overview", "概览", ["reference/design/README.md"]),
-        ("Runtime · Operations", "运行时 · 操作", [
-            "reference/design/runtime/goal-framework-implementation-comparison.html",
+        ('Overview', '总览', [
+            "reference/design/README.html",
+            "reference/design/framework-overview.html",
+            "reference/design/repository-structure.html",
+            "reference/design/implementation-status.html",
+            "reference/design/framework-comparison.html",
+            "reference/design/framework-capability-differences.html",
+            "reference/design/feature-matrix.html",
+        ]),
+        ('Runtime · Execution', '运行时 · 执行与控制', [
+            'reference/design/runtime/execution/tool-name-resolution.html',
+            'reference/design/runtime/execution/unified-agent.html',
+            "reference/design/runtime/README.html",
+            "reference/design/runtime/codex-capability-adoption.html",
+            "reference/design/runtime/execution/agent-call-flow.html",
+            "reference/design/runtime/execution/control.html",
+            "reference/design/runtime/execution/branch-settings.html",
+            "reference/design/runtime/execution/agent-action-lifecycle.html",
+            "reference/design/runtime/execution/agent-worktree.html",
+            "reference/design/runtime/execution/command-sessions.html",
+            "reference/design/runtime/execution/agentic-self-recursion.html",
+            "reference/design/runtime/execution/async-job-lifecycle.html",
+            "reference/design/runtime/execution/agentic-llm-streaming.html",
+            "reference/design/runtime/execution/controllability-and-three-surface-sync.html",
+            "reference/design/runtime/execution/dispatcher-split.html",
+            "reference/design/runtime/execution/next-step-decision.html",
+        ]),
+        ('Runtime · Sessions', '运行时 · 会话与存储', [
+            'reference/design/runtime/session/environments.html',
+            "reference/design/runtime/session/README.html",
+            "reference/design/runtime/session/storage.html",
+            "reference/design/runtime/session/operations.html",
+            "reference/design/runtime/session/context.html",
+            "reference/design/runtime/session/unified-session-context.html",
+            "reference/design/runtime/session/additional-working-directories.html",
+            "reference/design/runtime/session/comparison.html",
+            "reference/design/runtime/session/external-import.html",
+            "reference/design/runtime/session/storage-consistency.html",
+            "reference/design/runtime/session/name.html",
+        ]),
+        ('Runtime · DAG and collaboration', '运行时 · DAG 与协作', [
+            "reference/design/runtime/dag/overview.html",
+            "reference/design/runtime/dag/nested-llm-node-content.html",
+            "reference/design/runtime/collaboration/agent-collaboration.html",
+            "reference/design/runtime/collaboration/agent-collab-architecture.html",
+            "reference/design/runtime/collaboration/agent-collab-comparison.html",
+            "reference/design/runtime/dag/branch-collaboration.html",
+            "reference/design/runtime/dag/layout.html",
+            "reference/design/runtime/dag/external-program-run-node.html",
+            "reference/design/runtime/dag/persistence-observability.html",
+            "reference/design/runtime/dag/rendering.html",
+            "reference/design/runtime/operations/branch-naming.html",
+            "reference/design/runtime/operations/edge-field-rename.html",
+            "reference/design/runtime/operations/unify-parent-called-by.html",
+        ]),
+        ('Runtime · Goals and recovery', '运行时 · 目标与恢复', [
+            "reference/design/runtime/reliability/goal-and-recovery.html",
+            "reference/design/runtime/always-on-agents.html",
+            "reference/design/runtime/security/outbound-hold.html",
+            "reference/design/runtime/reliability/agent-resource-governance.html",
+            "reference/design/runtime/reliability/structured-generation-recovery.html",
+            "reference/design/runtime/reliability/durable-tool-results.html",
+            "reference/design/runtime/reliability/agent-loop-guards.html",
+            "reference/design/runtime/operations/streaming-resume.html",
+            "reference/design/runtime/operations/chat-progress-recovery.html",
+            "reference/design/runtime/reliability/web-runtime-reliability.html",
+            "reference/design/runtime/reliability/web-frontend-spawn.html",
+        ]),
+        ('Runtime · Configuration and operations', '运行时 · 配置与操作', [
+            "reference/design/runtime/agent-configuration/agent-configuration-ui.html",
+            "reference/design/runtime/agent-configuration/agent-core-configuration-ui.html",
+            "reference/design/runtime/agent-configuration/agent-tool-configuration-ui.html",
+            "reference/design/runtime/agent-configuration/agent-capability-configuration-ui.html",
+            "reference/design/runtime/agent-configuration/agent-configuration-plan.html",
+            "reference/design/runtime/agent-configuration/chat-search-settings.html",
+            "reference/design/runtime/agent-configuration/tool-toggle-management.html",
+            "reference/design/runtime/agent-configuration/bot-template-references.html",
+            "reference/design/runtime/operations/user-input-requests.html",
             "reference/design/runtime/operations/file-management.html",
-            "reference/design/runtime/web-runtime-reliability.html",
         ]),
-        ("UI · Foundations", "界面 · 基础", [
-            "reference/design/ui/README.md",
-            "reference/design/ui/app-icon.html",
-            "reference/design/ui/invariants.md",
-            "reference/design/ui/surface-system.md",
-            "reference/design/ui/state-layer.md",
-            "reference/design/ui/theme-system.html",
-            "reference/design/ui/unification-work.md",
-            "reference/design/ui/window-state.md",
-            "reference/design/ui/session-tab-identity.html",
-            "reference/design/ui/window-lifecycle.md",
-            "reference/design/ui/web-styles.md",
-            "reference/design/ui/interaction-feedback.md",
-            "reference/design/ui/indicator-dots.md",
-            "reference/design/ui/session-status.html",
-            "reference/design/ui/layout-density-mock.html",
+        ('Programs and workflows', '程序与工作流', [
+            "reference/design/function/README.html",
+            "reference/design/function/program-model.html",
+            "reference/design/function/agentic-program.html",
+            "reference/design/function/calling-unification.html",
+            "reference/design/function/deferred-tools.html",
+            "reference/design/function/tool-guides.html",
+            "reference/design/function/calling/code-call.html",
+            "reference/design/runtime/programs/application-runtime.html",
+            "reference/design/runtime/programs/programs-architecture.html",
+            "reference/design/runtime/programs/meetings.html",
+            "reference/design/runtime/workflows/workflow.html",
+            "reference/design/runtime/workflows/workflow-recording.html",
+            "reference/design/runtime/workflows/self-programming-workflow-ui.html",
+            "reference/design/runtime/execution/llm-and-agent.html",
+            "reference/design/runtime/self-update.html",
         ]),
-        ("UI · Chat and composer", "界面 · 对话与编辑器", [
-            "reference/design/ui/attachment-handling.html",
-            "reference/design/ui/chat-attachments.html",
-            "reference/design/ui/chat-turn-visual-spec.html",
-            "reference/design/ui/chat-transcript-follow.html",
-            "reference/design/ui/composer-interaction-modes.md",
-            "reference/design/ui/composer-local-attachment-paths.html",
-            "reference/design/ui/composer-responsive-controls.html",
-            "reference/design/ui/composer-tool-profile-menu.html",
-            "reference/design/ui/composer-fast-control.html",
-            "reference/design/ui/fn-form-compact-mock.html",
-            "reference/design/ui/gui-agent.html",
-            "reference/design/ui/browser-control-surfaces.html",
-            "reference/design/ui/head-bugs.html",
-            "reference/design/ui/send-queue-reliability.html",
-            "reference/design/ui/slash-and-compact.html",
-            "reference/design/ui/turn-occupancy.md",
-            "reference/design/ui/websocket-command-lifecycle.html",
+        ('Workflows · Reports', '工作流 · 报告', [
+            "reference/design/runtime/workflows/report-suite.html",
+            "reference/design/runtime/workflows/weekly-report.html",
+            "reference/design/runtime/workflows/group-weekly-report.html",
+            "reference/design/runtime/workflows/report-delivery-intent.html",
         ]),
-        ("UI · Browser and tabs", "界面 · 浏览器与标签页", [
-            "reference/design/ui/browser-extensions.html",
-            "reference/design/ui/built-in-browser.html",
-            "reference/design/ui/session-resources.html",
-            "reference/design/ui/center-tabs-and-split-layout.html",
+        ('Context', '上下文', [
+            "reference/design/context/README.html",
+            "reference/design/context/overview.html",
+            "reference/design/context/composition.html",
+            "reference/design/context/cache-prefix.html",
+            "reference/design/context/compaction.html",
+            "reference/design/context/compaction-diagram.html",
+            "reference/design/context/occupancy-status.html",
+            "reference/design/context/statistics.html",
+            "reference/design/context/memory-introspection.html",
+            "reference/design/context/comparison.html",
+            "reference/design/context/claude-code-compaction.html",
+        ]),
+        ('Memory', '记忆', [
+            "reference/design/memory/README.html",
+            "reference/design/memory/overview.html",
+            "reference/design/memory/architecture.html",
+            "reference/design/memory/entity-memory-proposal.html",
+            "reference/design/memory/virtual-memory.html",
+            "reference/design/memory/authority-handoff.html",
+            "reference/design/memory/authority-landscape.html",
+            "reference/design/memory/adoption.html",
+            "reference/design/memory/comparison.html",
+            "reference/design/memory/editor.html",
+            "reference/design/memory/settings-ui.html",
+            "reference/design/memory/speaker-identity.html",
+            "reference/design/memory/written-marker.html",
+        ]),
+        ('Events and scheduling', '事件与调度', [
+            "reference/design/proactive/README.html",
+            "reference/design/proactive/event-layer.html",
+            "reference/design/proactive/events-and-state.html",
+            "reference/design/proactive/execution-model.html",
+            "reference/design/proactive/overview.html",
+            "reference/design/proactive/policies-mvp.html",
+            "reference/design/proactive/invariants.html",
+            "reference/design/proactive/event-reference.html",
+            "reference/design/proactive/framework-evolution.html",
+            "reference/design/proactive/event-triggers.html",
+            "reference/design/scheduler/memory-integration.html",
+        ]),
+        ('UI · Foundations', '界面 · 基础', [
+            'reference/design/ui/visual-system/icons.html',
+            "reference/design/ui/README.html",
+            "reference/design/ui/desktop/app-icon.html",
+            "reference/design/ui/invariants.html",
+            "reference/design/ui/visual-system/design-tokens.html",
+            "reference/design/ui/visual-system/surface-system.html",
+            "reference/design/ui/state-layer.html",
+            "reference/design/ui/visual-system/theme-system.html",
+            "reference/design/ui/desktop/window-state.html",
+            "reference/design/ui/workspace/center-canvas-layout.html",
+            "reference/design/ui/workspace/session-tab-identity.html",
+            "reference/design/ui/desktop/window-lifecycle.html",
+            "reference/design/ui/visual-system/web-styles.html",
+            "reference/design/ui/interaction-feedback.html",
+            "reference/design/ui/page-loading-performance.html",
+            "reference/design/ui/visual-system/indicator-dots.html",
+            "reference/design/ui/visual-system/agent-avatars.html",
+            "reference/design/ui/sidebar/session-status.html",
+        ]),
+        ('UI · Chat and composer', '界面 · 对话与编辑器', [
+            'reference/design/ui/chat/chat-compose.html',
+            'reference/design/ui/chat/chat-recovery-copy.html',
+            'reference/design/ui/turn-lifecycle/conversation-lifecycle.html',
+            "reference/design/ui/chat/attachment-handling.html",
+            "reference/design/ui/chat/chat-attachments.html",
+            "reference/design/ui/chat/chat-turn-visual-spec.html",
+            "reference/design/ui/chat/tool-group-summary.html",
+            "reference/design/ui/chat/sub-agent-row.html",
+            "reference/design/ui/chat/activity-panel.html",
+            "reference/design/ui/chat/chat-transcript-follow.html",
+            "reference/design/ui/composer/composer-interaction-modes.html",
+            "reference/design/ui/composer/composer-local-attachment-paths.html",
+            "reference/design/ui/composer/composer-responsive-controls.html",
+            "reference/design/ui/composer/composer-options-menu.html",
+            "reference/design/ui/composer/composer-fast-control.html",
+            "reference/design/ui/browser/agent-control-overlay.html",
+            "reference/design/ui/resources/resource-preview.html",
+            "reference/design/ui/browser/browser-control-surfaces.html",
+            "reference/design/ui/turn-lifecycle/send-queue-reliability.html",
+            "reference/design/ui/sidebar/session-auto-rename.html",
+            "reference/design/ui/composer/slash-and-compact.html",
+            "reference/design/ui/turn-lifecycle/turn-occupancy.html",
+            "reference/design/ui/turn-lifecycle/websocket-command-lifecycle.html",
+        ]),
+        ('UI · Transcript model', '界面 · 对话记录模型', [
+            "reference/design/ui/chat/transcript-model.html",
+            "reference/design/ui/chat/transcript-model-structure.html",
+            "reference/design/ui/chat/transcript-model-reads.html",
+            "reference/design/ui/chat/transcript-model-live.html",
+            "reference/design/ui/chat/transcript-model-wire.html",
+            "reference/design/ui/chat/transcript-model-delivery.html",
+            "reference/design/ui/chat/transcript-model-limits.html",
+        ]),
+        ('UI · Composer', '界面 · 输入框', [
+            'reference/design/ui/composer/effort-picker.html',
+            'reference/design/ui/composer/git-folder-pills.html',
+            'reference/design/ui/composer/hover-tips.html',
+        ]),
+        ('UI · Browser and tabs', '界面 · 浏览器与标签页', [
+            "reference/design/ui/browser/browser-extensions.html",
+            "reference/design/ui/browser/built-in-browser.html",
+            "reference/design/ui/resources/session-resources.html",
+            "reference/design/ui/workspace/center-tabs-and-split-layout.html",
+            "reference/design/ui/desktop/window-tab-transfer.html",
             "reference/design/ui/remote-web-access.html",
-            "reference/design/ui/remote-web-access.md",
-            "reference/design/ui/web-tab-home-button.html",
-            "reference/design/ui/web-tab-native-bounds.html",
+            "reference/design/ui/browser/web-tab-home-button.html",
+            "reference/design/ui/browser/web-tab-native-bounds.html",
         ]),
-        ("UI · Settings and catalog", "界面 · 设置与目录", [
-            "reference/design/ui/avatar-randomization.html",
-            "reference/design/ui/programs-explorer-template.html",
-            "reference/design/ui/programs-source-categories.html",
-            "reference/design/ui/settings-collapsible-columns.html",
+        ('UI · Settings and catalog', '界面 · 设置与目录', [
+            "reference/design/ui/settings/avatar-randomization.html",
+            "reference/design/ui/programs/programs-explorer-template.html",
+            "reference/design/ui/programs/programs-source-categories.html",
+            "reference/design/ui/settings/settings-collapsible-columns.html",
         ]),
-        ("UI · Workspace and sidebar", "界面 · 工作区与侧栏", [
-            "reference/design/ui/integrated-terminal.html",
-            "reference/design/ui/project-order.html",
-            "reference/design/ui/project-location.html",
-            "reference/design/ui/file-type-icons.html",
-            "reference/design/ui/project-workspace-prototype.html",
-            "reference/design/ui/project-workspace.md",
-            "reference/design/ui/right-sidebar-files.html",
-            "reference/design/ui/sidebar-hierarchy-mock.html",
-            "reference/design/ui/sidebars-resizing.html",
+        ('UI · Workspace and sidebar', '界面 · 工作区与侧栏', [
+            "reference/design/ui/workspace/integrated-terminal.html",
+            "reference/design/ui/workspace/pane-recording.html",
+            "reference/design/ui/sidebar/project-order.html",
+            "reference/design/ui/workspace/project-location.html",
+            "reference/design/ui/visual-system/file-type-icons.html",
+            "reference/design/ui/workspace/project-workspace.html",
+            "reference/design/ui/sidebar/right-sidebar-files.html",
+            "reference/design/ui/sidebar/right-sidebar-typography.html",
+            "reference/design/ui/sidebar/sidebars-resizing.html",
+            "reference/design/ui/sidebar/secondary-rail.html",
+        ]),
+        ('CLI and TUI', '命令行与终端界面', [
+            "reference/design/cli/README.html",
+            "reference/design/cli/config-write-safety.html",
+            "reference/design/cli/drop-run-command.html",
+            "reference/design/cli/headless-print.html",
+            "reference/design/cli/naming.html",
+            "reference/design/cli/ports.html",
+            "reference/design/cli/redesign.html",
+            "reference/design/cli/single-port.html",
+            "reference/design/cli/slash-commands-references.html",
+            "reference/design/cli/slash-commands.html",
+            "reference/design/cli/tui-upgrade.html",
+        ]),
+        ('Providers · Requests and models', '模型服务 · 请求与模型', [
+            'reference/design/providers/local-models.html',
+            "reference/design/providers/README.html",
+            "reference/design/providers/models/overview.html",
+            "reference/design/providers/request-build.html",
+            "reference/design/providers/request-redaction.html",
+            "reference/design/providers/web-search.html",
+            "reference/design/providers/routing-overview.html",
+            "reference/design/providers/custom-openai-compatible-provider.html",
+            "reference/design/providers/models/fast-tier.html",
+            "reference/design/providers/models/thinking-effort.html",
+            "reference/design/providers/json-schema-structured-output.html",
+            "reference/design/providers/network-proxy.html",
+            "reference/design/providers/metadata-load-diagnostics.html",
+            "reference/design/providers/bailian-model-catalog.html",
+            "reference/design/usage-metering.html",
+        ]),
+        ('Providers · Authentication', '模型服务 · 账号与认证', [
+            'reference/design/providers/anthropic-api-auth.html',
+            "reference/design/providers/auth/api-key-resolution-unification.html",
+            "reference/design/providers/auth/credential-connection-unification.html",
+            "reference/design/providers/auth/credential-file-hardening.html",
+            "reference/design/providers/auth/credential-status-redesign.html",
+            "reference/design/providers/auth/credential-validation-unification.html",
+            "reference/design/providers/auth/unified-account-management.html",
+            "reference/design/providers/auth/unified-auth-storage.html",
+        ]),
+        ('Providers · Reliability', '模型服务 · 可靠性', [
+            "reference/design/providers/reliability/error-and-timeout-mechanism.html",
+            "reference/design/providers/reliability/error-retry.html",
+            "reference/design/providers/reliability/error-taxonomy-propagation.html",
+            "reference/design/providers/reliability/llm-fault-tolerance.html",
+            "reference/design/providers/reliability/request-repair.html",
+            "reference/design/providers/codex-transport.html",
+            "reference/design/providers/provider-quota.html",
+            "reference/design/providers/provider-management.html",
+            "reference/design/providers/record-replay.html",
+            "reference/design/providers/responses-reasoning-replay.html",
+        ]),
+        ('Extensions and integrations', '扩展与集成', [
+            'reference/design/repository-integration.html',
+            "reference/design/integrations/README.html",
+            "reference/design/integrations/nooa.html",
+            "reference/design/integrations/editor-integration.html",
+            "reference/design/integrations/extension-management.html",
+            "reference/design/integrations/harness-standard.html",
+            "reference/design/integrations/mcp-integration.html",
+            "reference/design/integrations/mcp-server.html",
+            "reference/design/integrations/openai-compatible-endpoint.html",
+            "reference/design/integrations/skills-and-plugins.html",
+            "reference/design/integrations/plugin-runtime.html",
+            "reference/design/integrations/computer-and-browser-use.html",
+            "reference/design/integrations/computer-use-approval.html",
+            "reference/design/integrations/computer-use-app-target.html",
+            "reference/design/integrations/computer-use-macos.html",
+            "reference/design/integrations/computer-use-linux-windows.html",
+            "reference/design/integrations/working-behind-the-user.html",
+            "reference/design/integrations/computer-use-interface.html",
+            "reference/design/integrations/browser-application.html",
+            "reference/design/integrations/browser-tab-driver.html",
+            "reference/design/integrations/browser-tab-actions.html",
+            "reference/design/extension-gating/README.html",
+            "reference/design/extension-gating/future-work.html",
+            "reference/design/extension-gating/reference-comparison.html",
+        ]),
+        ('Channels', '消息渠道', [
+            "reference/design/channels/README.html",
+            "reference/design/channels/audit.html",
+            "reference/design/channels/design.html",
+            "reference/design/channels/chat-bots.html",
+        ]),
+        ('Security and permissions', '安全与权限', [
+            "reference/design/runtime/security/permission-decision.html",
+            "reference/design/runtime/security/sandbox-architecture.html",
+            "reference/design/runtime/security/system-access.html",
+            "reference/design/runtime/security/ssrf-protection.html",
+            "reference/design/security/dependency-security.html",
+        ]),
+        ('Distribution', '安装与分发', [
+            "reference/design/distribution/installation-packaging.html",
+            "reference/design/distribution/automatic-updates.html",
+            "reference/design/distribution/dev-instance.html",
+            "reference/design/distribution/github-publishing.html",
+            "reference/design/distribution/developer-id.html",
+            "reference/design/distribution/windows-support.html",
+            "reference/design/distribution/windows-command-shell.html",
+        ]),
+        ('Engineering · Testing and errors', '工程 · 测试与错误处理', [
+            "reference/design/testing/test-system.html",
+            "reference/design/testing/windows-ci.html",
+            "reference/design/testing/harbor-benchmark-adapter.html",
+            "reference/design/error-handling.html",
+        ]),
+        ('Engineering · Documentation and website', '工程 · 文档与网站', [
+            "reference/design/docs-site.html",
+            "reference/design/docs-site/authoring.html",
+            "reference/design/docs-site/governance.html",
+            "reference/design/site-discoverability-performance.html",
+            "reference/design/site-agent-readable-docs.html",
+            "reference/design/site-indexnow-discovery.html",
+            "reference/design/community-discoverability.html",
+        ]),
+        ('Supporting · Prototypes', '补充 · 交互原型', [
+            "reference/design/ui/visual-system/layout-density-prototype.html",
+            "reference/design/ui/composer/composer-interaction-prototype.html",
+            "reference/design/ui/workspace/project-workspace-prototype.html",
+            "reference/design/ui/sidebar/sidebar-hierarchy-prototype.html",
+            "reference/design/ui/sidebar/sidebar-luma-prototype.html",
+            "reference/design/runtime/dag/live-layout.html",
+        ]),
+        ('Supporting · Implementation records', '补充 · 实施记录', [
+            "reference/design/runtime/execution/p3-three-surface-sync.html",
+            "reference/design/repository-structure-implementation.html",
+            "reference/design/documentation-gaps.html",
+            "reference/design/engineering-backlog.html",
+            "reference/design/ui/visual-system/unification-work.html",
+            "reference/design/ui/resources/resource-panel-preview-plan.html",
+            "reference/design/distribution/implementation-plan.html",
+            "reference/design/extension-gating/implementation.html",
+            "reference/design/plans/credential-connection-unification.html",
+            "reference/design/plans/mcp-server-implementation.html",
+            "reference/design/plans/cache-control-passthrough.html",
+            "reference/design/plans/proactive-implementation.html",
+        ]),
+        ('Supporting · Research', '补充 · 研究材料', [
+            "reference/design/proactive/_research_archive/evaluation.html",
+            "reference/design/proactive/_research_archive/replay.html",
+            "reference/design/proactive/_research_archive/threat-model.html",
         ]),
     ],
 }
+
+
+# Top-level design areas. The section lists below are the only source of
+# hierarchy/order; flat page sequences remain available to breadcrumbs and
+# previous/next navigation. Overview is a direct group, not a redundant wrapper.
+DESIGN_AREAS = [
+    ("Architecture", "架构总览", ["Overview"]),
+    ("Agents and workflows", "Agent 与工作流", [
+        "Runtime · Execution", "Runtime · Sessions", "Runtime · DAG and collaboration",
+        "Runtime · Goals and recovery", "Runtime · Configuration and operations",
+        "Programs and workflows", "Workflows · Reports", "Events and scheduling",
+    ]),
+    ("Context and memory", "上下文与记忆", ["Context", "Memory"]),
+    ("Interfaces", "界面与交互", [
+        "UI · Foundations", "UI · Chat and composer", "UI · Transcript model", "UI · Composer", "UI · Browser and tabs",
+        "UI · Settings and catalog", "UI · Workspace and sidebar", "CLI and TUI",
+    ]),
+    ("Models and connections", "模型与外部接入", [
+        "Providers · Requests and models", "Providers · Authentication",
+        "Providers · Reliability", "Extensions and integrations", "Channels",
+    ]),
+    ("Security and engineering", "安全与工程", [
+        "Security and permissions", "Distribution", "Engineering · Testing and errors",
+        "Engineering · Documentation and website",
+    ]),
+    ("Supporting material", "补充材料", [
+        "Supporting · Prototypes", "Supporting · Implementation records", "Supporting · Research",
+    ]),
+]
 
 
 # Explicit sidebar order for product pages (rel path or rel dir -> rank).
 # Tutorial docs must read top-to-bottom; anything unlisted sorts after these,
 # alphabetically (which is fine for the design-notes archive).
 PAGE_ORDER: dict[str, int] = {
-    "README.md": 0,
-    "start/GETTING_STARTED.md": 1,
-    "start/daily-use.md": 2,
-    "start/features.md": 3,
-    "start/faq.md": 4,
-    "install/install.md": 0,
-    "install/upgrade.md": 1,
-    "install/profiles.md": 2,
-    "capabilities/README.md": 0,
-    "capabilities/applications.md": 1,
-    "capabilities/framework-control.md": 2,
+    "models/local-models.html": 3,
+    "reference/design/runtime/agent-configuration/agent-configuration-ui.html": 990,
+    "reference/design/runtime/agent-configuration/agent-core-configuration-ui.html": 991,
+    "reference/design/runtime/agent-configuration/agent-capability-configuration-ui.html": 992,
+    "reference/design/runtime/agent-configuration/agent-tool-configuration-ui.html": 993,
+    "reference/design/runtime/agent-configuration/agent-configuration-plan.html": 994,
+    "reference/design/runtime/workflows/report-delivery-intent.html": 1007,
+    "README.html": 0,
+    "start/GETTING_STARTED.html": 1,
+    "start/daily-use.html": 2,
+    "start/features.html": 3,
+    "start/faq.html": 4,
+    "install/install.html": 0,
+    "install/download.html": 1,
+    "install/upgrade.html": 2,
+    "install/conversational-self-update.html": 3,
+    "install/self-update-verification.html": 4,
+    "install/self-update-rollback.html": 5,
+    "install/development-checkout.html": 6,
+    "install/profiles.html": 7,
+    "capabilities/README.html": 0,
+    "capabilities/applications.html": 1,
+    "capabilities/framework-control.html": 2,
     "capabilities/agentic-programming": 1,
     "capabilities/workflows": 2,
-    "capabilities/installing-harnesses.md": 3,
-    "capabilities/skills.md": 4,
-    "capabilities/distill.md": 5,
-    "capabilities/commit-push-pr.md": 6,
-    "capabilities/plugins.md": 7,
-    "capabilities/mcp.md": 8,
-    "capabilities/tools.md": 9,
-    "capabilities/permissions.md": 10,
-    "capabilities/lsp.md": 11,
-    "capabilities/memory.md": 12,
-    "capabilities/goal.md": 12,
-    "capabilities/agentic-workflow.md": 13,
-    "capabilities/docs-question.md": 13,
-    "capabilities/security-review.md": 14,
-    "capabilities/agentic-programming/philosophy.md": 1,
-    "capabilities/agentic-programming/embedding-in-your-own-stack.md": 2,
+    "capabilities/installing-programs.html": 3,
+    "capabilities/skills.html": 4,
+    "capabilities/commit-push-pr.html": 6,
+    "capabilities/plugins.html": 7,
+    "capabilities/mcp.html": 8,
+    "capabilities/tools.html": 9,
+    "capabilities/permissions.html": 10,
+    "capabilities/environments.html": 10,
+    "capabilities/lsp.html": 11,
+    "capabilities/agents.html": 12,
+    "capabilities/agents-md.html": 12,
+    "capabilities/always-on-agents.html": 12,
+    "capabilities/reminders.html": 12,
+    "capabilities/event-triggers.html": 12,
+    "capabilities/memory.html": 12,
+    "capabilities/memory-settings.html": 12,
+    "capabilities/goal.html": 12,
+    "capabilities/meetings.html": 12,
+    "capabilities/agentic-programming/philosophy.html": 1,
+    "capabilities/agentic-programming/embedding-in-your-own-stack.html": 2,
     "capabilities/agentic-programming/writing-functions": 3,
     "capabilities/agentic-programming/choosing-the-next-step": 4,
-    "capabilities/workflows/reports.md": 0,
-    "capabilities/workflows/gui-agent.md": 1,
-    "capabilities/workflows/research-agent.md": 2,
-    "capabilities/workflows/wiki-agent.md": 3,
-    "interfaces/README.md": 0,
-    "interfaces/desktop.md": 1,
-    "interfaces/web.md": 2,
-    "interfaces/tui.md": 3,
-    "interfaces/cli.md": 4,
-    "interfaces/acp.md": 5,
-    "models/README.md": 0,
-    "models/providers.md": 1,
-    "models/auth.md": 2,
-    "models/fast-tier.md": 3,
-    "models/thinking-effort.md": 4,
-    "models/token-tracking.md": 5,
-    "integrations/claude-code.md": 0,
-    "integrations/openclaw.md": 1,
-    "integrations/channels.md": 2,
-    "server/README.md": 0,
-    "server/configuration.md": 1,
-    "server/upgrading.md": 2,
-    "server/backup.md": 3,
-    "server/troubleshooting.md": 4,
-    "reference/README.md": 0,
-    "reference/API.md": 1,
+    "capabilities/workflows/reports.html": 0,
+    "interfaces/README.html": 0,
+    "interfaces/desktop.html": 1,
+    "interfaces/web.html": 2,
+    "interfaces/tui.html": 3,
+    "interfaces/cli.html": 4,
+    "interfaces/acp.html": 5,
+    "interfaces/openai-api.html": 6,
+    "interfaces/voice-input.html": 7,
+    "models/README.html": 0,
+    "models/providers.html": 1,
+    "models/auth.html": 2,
+    "models/fast-tier.html": 3,
+    "models/thinking-effort.html": 4,
+    "models/token-tracking.html": 5,
+    "integrations/anthropic.html": 0,
+    "integrations/openclaw.html": 1,
+    "integrations/channels.html": 2,
+    "server/README.html": 0,
+    "server/configuration.html": 1,
+    "server/upgrading.html": 2,
+    "server/backup.html": 3,
+    "server/troubleshooting.html": 4,
+    "reference/README.html": 0,
+    "reference/API.html": 1,
     "reference/api": 2,
-    "reference/cli.md": 3,
-    "reference/config.md": 4,
-    "reference/diagnostics.md": 5,
-    "reference/session-export.md": 6,
-    "reference/output-styles.md": 7,
-    "reference/claude-code-compaction.md": 6,
-    "comparisons/ai-agent-frameworks.md": 8,
-    "comparisons/related-projects.md": 9,
+    "reference/cli.html": 3,
+    "reference/config.html": 4,
+    "reference/diagnostics.html": 5,
+    "reference/session-export.html": 6,
+    "reference/session-import.html": 7,
+    "reference/output-styles.html": 8,
+    "reference/comparisons": 9,
+    "reference/comparisons/ai-agent-frameworks.html": 0,
+    "reference/comparisons/related-projects.html": 1,
     "reference/design": 900,  # design-notes archive always last
     "reference/design/implementation-status.html": 1,
     "reference/design/repository-structure.html": 2,
     "reference/design/repository-structure-implementation.html": 3,
+    "reference/design/repository-integration.html": 4,
     "reference/design/docs-site.html": 4,
+    "reference/design/docs-site/authoring.html": 5,
+    "reference/design/docs-site/governance.html": 6,
     # The context notes read in order: the layer, then compaction, then how the
     # blocks are composed and compared, then the two rendered companions.
-    "reference/design/context/README.md": 0,
-    "reference/design/context/overview.md": 1,
-    "reference/design/context/compaction.md": 2,
-    "reference/design/context/composition.md": 3,
-    "reference/design/context/comparison.md": 4,
-    "reference/design/context/context-compaction.html": 5,
+    "reference/design/context/README.html": 0,
+    "reference/design/context/overview.html": 1,
+    "reference/design/context/compaction.html": 2,
+    "reference/design/context/composition.html": 3,
+    "reference/design/context/comparison.html": 4,
+    "reference/design/context/compaction-diagram.html": 5,
     "reference/design/context/memory-introspection.html": 6,
+    "reference/design/context/claude-code-compaction.html": 7,
     # The memory notes read in order: what it is, how it works, how others do it.
-    "reference/design/memory/README.md": 0,
-    "reference/design/memory/overview.md": 1,
-    "reference/design/memory/written-marker.md": 2,
-    "reference/design/memory/written-marker.html": 3,
-    "reference/design/memory/memory-architecture.html": 4,
-    "reference/design/memory/memory-comparison.html": 5,
-    "reference/design/memory/memory-adoption.html": 6,
+    "reference/design/memory/README.html": 0,
+    "reference/design/memory/overview.html": 1,
+    "reference/design/memory/written-marker.html": 2,
+    "reference/design/memory/architecture.html": 4,
+    "reference/design/memory/comparison.html": 5,
+    "reference/design/memory/adoption.html": 6,
     # Within the design archive everything defaults to 999 (alphabetical).
-    # >999 pins a page to the end of its section; the sandbox note and its
-    # rendered companion stay adjacent, doc first.
-    "reference/design/runtime/sandbox-architecture.html": 1000,
-    "reference/design/runtime/permission-model.md": 1001,
-    "reference/design/runtime/system-access.html": 1002,
-    "reference/design/runtime/sandbox.md": 1002,
+    # >999 pins canonical security designs to the end of their section.
+    "reference/design/runtime/security/sandbox-architecture.html": 1000,
+    "reference/design/runtime/security/system-access.html": 1002,
     # Same treatment for agent collaboration: the design note first, then its
     # two rendered companions (our tool surface, then the eight reference
     # implementations compared).
-    "reference/design/runtime/agent-collaboration.md": 1002,
-    "reference/design/runtime/agent-collab-architecture.html": 1003,
-    "reference/design/runtime/agent-collab-comparison.html": 1004,
+    "reference/design/runtime/collaboration/agent-collaboration.html": 1002,
+    "reference/design/runtime/execution/unified-agent.html": 1002,
+    "reference/design/runtime/collaboration/agent-collab-architecture.html": 1003,
+    "reference/design/runtime/collaboration/agent-collab-comparison.html": 1004,
     # Unified lifecycle and debugger control contract for all runtime owners.
-    "reference/design/runtime/execution/execution-control.html": 1005,
-    "reference/design/runtime/durable-tool-results.html": 1005,
-    "reference/design/runtime/goal-framework-implementation-comparison.html": 1006,
+    "reference/design/runtime/execution/control.html": 1005,
+    "reference/design/runtime/reliability/durable-tool-results.html": 1005,
+    "reference/design/runtime/reliability/goal-and-recovery.html": 1006,
+    "reference/design/runtime/always-on-agents.html": 1006,
     # Center tabs: authoritative tab/group/view state and split-layout design.
-    "reference/design/ui/center-tabs-and-split-layout.html": 1009,
-    "reference/design/ui/built-in-browser.html": 1010,
-    "reference/design/ui/session-resources.html": 1010,
-    "reference/design/ui/browser-extensions.html": 1011,
-    "reference/design/ui/integrated-terminal.html": 1012,
-    "reference/design/ui/composer-local-attachment-paths.html": 1013,
-    "reference/design/ui/composer-responsive-controls.html": 1014,
-    "reference/design/ui/composer-tool-profile-menu.html": 1015,
-    "reference/design/ui/composer-fast-control.html": 1020,
-    "reference/design/ui/programs-source-categories.html": 1016,
-    "reference/design/ui/theme-system.html": 1017,
-    "reference/design/ui/settings-collapsible-columns.html": 1018,
+    "reference/design/ui/workspace/center-tabs-and-split-layout.html": 1009,
+    "reference/design/ui/browser/built-in-browser.html": 1010,
+    "reference/design/ui/resources/session-resources.html": 1010,
+    "reference/design/ui/sidebar/session-auto-rename.html": 1011,
+    "reference/design/ui/browser/browser-extensions.html": 1011,
+    "reference/design/ui/workspace/integrated-terminal.html": 1012,
+    "reference/design/ui/composer/composer-local-attachment-paths.html": 1013,
+    "reference/design/ui/composer/composer-responsive-controls.html": 1014,
+    "reference/design/ui/composer/composer-options-menu.html": 1015,
+    "reference/design/ui/composer/composer-fast-control.html": 1020,
+    "reference/design/ui/programs/programs-source-categories.html": 1016,
+    "reference/design/ui/visual-system/theme-system.html": 1017,
+    "reference/design/ui/settings/settings-collapsible-columns.html": 1018,
     # Chat attachments: the delivery note first, its rendered companion
     # next, then the four-layer note on how attachments look and behave
     # inside the chat itself.
-    "reference/design/ui/attachment-handling.html": 1019,
-    "reference/design/ui/chat-attachments.html": 1021,
-    "reference/design/ui/file-type-icons.html": 1022,
-    "reference/design/ui/browser-control-surfaces.html": 1023,
+    "reference/design/ui/chat/attachment-handling.html": 1019,
+    "reference/design/ui/chat/chat-attachments.html": 1021,
+    "reference/design/ui/visual-system/file-type-icons.html": 1022,
+    "reference/design/ui/browser/browser-control-surfaces.html": 1023,
     # The three whole-framework pages sit together at the end of the design
     # root: first how one conversation runs inside us, then how we compare to
     # the reference frameworks by design axis, then by feature list.
-    "reference/design/framework-overview.md": 1020,
+    "reference/design/framework-overview.html": 1020,
     "reference/design/framework-comparison.html": 1021,
-    "reference/design/runtime/application-runtime.html": 1023,
+    "reference/design/framework-capability-differences.html": 1021.1,
+    "reference/design/runtime/programs/application-runtime.html": 1023,
     "reference/design/feature-matrix.html": 1022,
     # Distribution: authoritative conceptual design followed by its separate
     # implementation ledger.
     "reference/design/distribution/installation-packaging.html": 1035,
     "reference/design/distribution/automatic-updates.html": 1036,
-    "reference/design/distribution/implementation-plan.md": 1037,
-    "reference/design/distribution/windows-support.md": 1038,
-    # Integrations: keep the current Web Use and MCP server HTML designs
-    # together after the alphabetical integration notes.
-    "reference/design/integrations/web-use.html": 1039,
+    "reference/design/distribution/dev-instance.html": 1036.5,
+    "reference/design/distribution/github-publishing.html": 1036.7,
+    "reference/design/distribution/implementation-plan.html": 1037,
+    "reference/design/distribution/windows-support.html": 1038,
+    "reference/design/distribution/windows-command-shell.html": 1038.5,
+    # Integrations: the MCP server design follows the alphabetical integration notes.
     "reference/design/integrations/mcp-server.html": 1040,
+    "reference/design/integrations/openai-compatible-endpoint.html": 1040.5,
+    "reference/design/integrations/nooa.html": 1041,
 
     # Test architecture and execution contracts.
     "reference/design/testing/test-system.html": 1050,
@@ -537,19 +935,18 @@ PAGE_ORDER: dict[str, int] = {
 }
 
 
-def _order_key(rel: Path) -> int:
-    return PAGE_ORDER.get(str(rel).replace("\\", "/"), 999)
+def _order_key(page: Page) -> int:
+    return PAGE_ORDER.get(page.key or page.rel.as_posix(), 999)
 
 
 def build_tabs(docs_root: Path, pages: list[Page]) -> list[Tab]:
-    """Split pages by tab and lay each tab out as flat, always-visible
-    sections (OpenClaw-style: header + page list, nothing collapsible)."""
+    """Split pages into ordered editorial sections with a discoverable fallback."""
     tabs: list[Tab] = []
     for key, (en, zh) in TABS.items():
         tab_pages = [p for p in pages if tab_of(p) == key]
         if not tab_pages:
             continue
-        rel_str = lambda p: str(p.rel).replace("\\", "/")
+        rel_str = lambda p: p.key or p.rel.as_posix()
         by_rel = {rel_str(p): p for p in tab_pages}
         placed: set[str] = set()
 
@@ -561,11 +958,30 @@ def build_tabs(docs_root: Path, pages: list[Page]) -> list[Tab]:
                 sections.append(Section(title=sec_en, title_zh=sec_zh, pages=sec_pages))
 
         # Anything unlisted lands in an automatic section named after its
-        # directory, so new files never vanish from the sidebar. The design
-        # tab is fully automatic — one section per archive subsystem dir.
+        # directory, so new files never vanish from the sidebar. Design pages use editorial groups above; unclassified new pages
+        # remain visible rather than disappearing.
         leftovers = [p for p in tab_pages if rel_str(p) not in placed]
         auto_base = Path(ARCHIVE_PREFIX.rstrip("/")) if key == "design" else Path(key)
-        sections.extend(_auto_sections(docs_root, leftovers, base_dir=auto_base))
+        fallback_sections = _auto_sections(docs_root, leftovers, base_dir=auto_base)
+        if key == "design":
+            for section in fallback_sections:
+                section.title = "Uncategorized · " + section.title
+                section.title_zh = "待分类 · " + (section.title_zh or section.title)
+        sections.extend(fallback_sections)
+
+        if key == "design":
+            by_title = {section.title: section for section in sections}
+            ordered = []
+            for area_en, area_zh, names in DESIGN_AREAS:
+                for name in names:
+                    section = by_title.pop(name, None)
+                    if section is not None:
+                        section.area = (area_en, area_zh)
+                        ordered.append(section)
+            for section in by_title.values():
+                section.area = ("Uncategorized", "待分类")
+                ordered.append(section)
+            sections = ordered
 
         landing = sections[0].pages[0].out if sections and sections[0].pages else Path("index.html")
         tabs.append(Tab(key=key, title=en, title_zh=zh, sections=sections,
@@ -577,10 +993,14 @@ def _dir_title(docs_root: Path, rel_dir: Path) -> tuple[str, str]:
     override = DIR_TITLES.get(str(rel_dir).replace("\\", "/"))
     if override:
         return override
-    readme = docs_root / rel_dir / "README.md"
-    readme_zh = docs_root / rel_dir / "README.zh.md"
-    title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
-    title_zh = extract_title(readme_zh) if readme_zh.exists() else ""
+    def first(*names: str) -> Path | None:
+        return next((docs_root / rel_dir / name for name in names
+                     if (docs_root / rel_dir / name).exists()), None)
+
+    readme = first("README.html", "README.md")
+    readme_zh = first("README.zh.html", "README.zh.md")
+    title = extract_title(readme) if readme else prettify(rel_dir.name)
+    title_zh = extract_title(readme_zh) if readme_zh else ""
     return title, title_zh
 
 
@@ -595,7 +1015,7 @@ def _auto_sections(docs_root: Path, pages: list[Page], base_dir: Path) -> list[S
     for rel_dir in sorted(by_dir, key=lambda d: str(d)):
         sec_pages = sorted(
             by_dir[rel_dir],
-            key=lambda p: (_order_key(p.rel), not p.is_readme, p.title.lower()))
+            key=lambda p: (_order_key(p), not p.is_readme, p.title.lower()))
         # section title: the dir chain below base_dir, joined for nested dirs
         try:
             chain = rel_dir.relative_to(base_dir).parts

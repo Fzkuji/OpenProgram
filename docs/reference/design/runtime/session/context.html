@@ -1,0 +1,43 @@
+<title>Context</title>
+<meta name="description" content="The session_context manager: interface, session boundaries and which entry points use it.">
+<h1 id="session-context">Context</h1>
+<p><code translate="no">session_context</code> (<code translate="no">openprogram/runtime/conversation/session_context.py</code>) installs the per-turn ContextVars and resets them on exit, in reverse order.</p>
+<pre translate="no" tabindex="0"><code>@contextmanager
+def session_context(
+    session_id=None, *,
+    agent_id="main", turn_id=None, runtime=None,
+    create_runtime_if_none=True,
+    id_prefix="session", source="cli",
+) -&gt; Iterator[SessionHandle]  # db, session_id, runtime, turn_id, created</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Sets</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_store</code></th><td><code translate="no">SessionNodeWriter(db, sid)</code></td></tr>
+<tr><th scope="row"><code translate="no">_current_turn_id</code></th><td><code translate="no">turn_id</code>, or a new <code translate="no">turn_…</code></td></tr>
+<tr><th scope="row"><code translate="no">_current_runtime</code></th><td>The given runtime or a new one. Without a usable provider it stays unset and the store is still installed.</td></tr>
+</tbody>
+</table>
+<p class="note">A session that does not exist is created here: one of the <a href="operations.html#creating-a-session">three creation entry points</a>. <code translate="no">_call_id</code> belongs to the Agent method wrapper.</p>
+
+<h2 id="session-boundaries">Session boundaries</h2>
+<table class="stack">
+<thead><tr><th scope="col">Caller intent</th><th scope="col">Pass</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Run a new task</th><td>No <code translate="no">session_id</code></td><td>New <code translate="no">&lt;id_prefix&gt;_…</code> session; the id is on the handle</td></tr>
+<tr><th scope="row">Continue the same task</th><td>The id from last time</td><td>Reused, history continues</td></tr>
+<tr><th scope="row">Start something unrelated</th><td>Nothing, or a different id</td><td>A separate session</td></tr>
+</tbody>
+</table>
+<p class="note">The call count never decides. A session has no close: exit only resets the ContextVars, and the same id keeps writing later.</p>
+
+<h2 id="entry-points">Entry points</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Entry point</th><th scope="col">Sets its context with</th></tr></thead>
+<tbody>
+<tr><th scope="row">A harness</th><td><code translate="no">with session_context(session_id="research_" + uuid, runtime=rt)</code> around <code translate="no">paper_agent</code></td></tr>
+<tr><th scope="row">Dispatcher</th><td><code translate="no">TurnBindings.bind</code>, its own per-turn binding</td></tr>
+<tr><th scope="row"><code translate="no">process_runner</code></th><td>Its own set and reset</td></tr>
+<tr><th scope="row">Tests</th><td>The manager in <code translate="no">test_session_context.py</code> and others; some fixtures set the variables directly</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="unified-session-context.html">Why one manager</a></p>

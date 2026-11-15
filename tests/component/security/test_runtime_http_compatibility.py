@@ -9,15 +9,15 @@ from urllib.parse import urlsplit, urlunsplit
 import httpcore
 import pytest
 
-from openprogram.security import safe_http
-from openprogram.security.safe_http import (
+from openprogram.host.security import safe_http
+from openprogram.host.security.safe_http import (
     CONSUMER_REGISTRY,
     OutboundSecurityConfig,
     configured_safe_client,
     require_active_sdk_transport,
     safe_client,
 )
-from openprogram.security.url_policy import OwnerURLException, URLPolicyError
+from openprogram.host.security.url_policy import OwnerURLException, URLPolicyError
 
 
 COMPATIBILITY_FIXTURES = {
@@ -33,6 +33,38 @@ COMPATIBILITY_FIXTURES = {
         5,
         5_242_881,
         ("application/", "audio/", "image/", "text/", "video/"),
+        "none",
+        False,
+        None,
+    ),
+    "tool.web_fetch.owner": (
+        "owner_tool",
+        "GET",
+        "https://cdn.example.test",
+        443,
+        ("http", "https"),
+        ("DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"),
+        None,
+        "public",
+        5,
+        5_242_881,
+        ("application/", "audio/", "image/", "text/", "video/"),
+        "none",
+        False,
+        None,
+    ),
+    "tool.image_result.download.owner": (
+        "owner_tool",
+        "GET",
+        "https://cdn.example.test",
+        443,
+        ("http", "https"),
+        ("DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"),
+        None,
+        "public",
+        5,
+        33_554_432,
+        ("image/", "application/octet-stream"),
         "none",
         False,
         None,
@@ -70,6 +102,22 @@ COMPATIBILITY_FIXTURES = {
         None,
     ),
     "tool.image_api.fixed": (
+        "fixed_public_service",
+        "POST",
+        "https://api.openai.com",
+        443,
+        ("https",),
+        ("GET", "HEAD", "POST"),
+        (80, 443),
+        "same_origin",
+        5,
+        16_777_216,
+        ("application/", "text/"),
+        "same_origin",
+        False,
+        None,
+    ),
+    "tool.voice_api.fixed": (
         "fixed_public_service",
         "POST",
         "https://api.openai.com",
@@ -155,7 +203,7 @@ COMPATIBILITY_FIXTURES = {
         "https://discord.com",
         443,
         ("https",),
-        ("GET", "HEAD", "PATCH", "POST"),
+        ("GET", "HEAD", "PATCH", "POST", "PUT"),
         (80, 443),
         "same_origin",
         5,
@@ -256,6 +304,22 @@ COMPATIBILITY_FIXTURES = {
         "same_origin",
         5,
         20_971_520,
+        ("application/", "audio/", "image/", "text/", "video/"),
+        "none",
+        False,
+        None,
+    ),
+    "channel.wechat.cdn": (
+        "fixed_public_service",
+        "POST",
+        "https://novac2c.cdn.weixin.qq.com",
+        443,
+        ("https",),
+        ("GET", "HEAD", "POST"),
+        (80, 443),
+        "same_origin",
+        5,
+        33_554_432,
         ("application/", "audio/", "image/", "text/", "video/"),
         "none",
         False,
@@ -376,7 +440,7 @@ COMPATIBILITY_FIXTURES = {
     "plugins.autoupdate": (
         "fixed_public_service",
         "GET",
-        "https://pypi.org",
+        "https://registry.npmjs.org",
         443,
         ("https",),
         ("GET", "HEAD"),
@@ -416,6 +480,22 @@ COMPATIBILITY_FIXTURES = {
         "public",
         5,
         732_695_641,
+        ("application/", "audio/", "image/", "text/", "video/"),
+        "none",
+        False,
+        None,
+    ),
+    "self_update.electron": (
+        "fixed_public_service",
+        "GET",
+        "https://github.com",
+        443,
+        ("https",),
+        ("GET", "HEAD"),
+        (80, 443),
+        "public",
+        5,
+        536_870_912,
         ("application/", "audio/", "image/", "text/", "video/"),
         "none",
         False,
@@ -693,6 +773,22 @@ COMPATIBILITY_FIXTURES = {
         True,
         None,
     ),
+    "computer_use.vm": (
+        "configured_service",
+        "POST",
+        "http://configured.example.test:17654",
+        17654,
+        ("http", "https"),
+        ("GET", "HEAD", "POST"),
+        None,
+        "same_origin",
+        5,
+        16_777_216,
+        ("image/", "application/", "text/"),
+        "same_origin",
+        True,
+        None,
+    ),
 }
 
 
@@ -710,6 +806,7 @@ FIXED_ORIGIN_FIXTURES = {
         "https://chat-api.you.com",
         "https://export.arxiv.org",
         "https://google.serper.dev",
+        "https://html.duckduckgo.com",
         "https://kagi.com",
         "https://ollama.com",
         "https://s.jina.ai",
@@ -721,6 +818,7 @@ FIXED_ORIGIN_FIXTURES = {
         "https://generativelanguage.googleapis.com",
         "https://queue.fal.run",
     ),
+    "tool.voice_api.fixed": ("https://api.groq.com", "https://api.openai.com"),
     "channel.telegram.api": ("https://api.telegram.org",),
     "channel.discord.api": ("https://discord.com",),
     "channel.discord.gateway_sdk": ("https://discord.com",),
@@ -729,15 +827,17 @@ FIXED_ORIGIN_FIXTURES = {
     "channel.slack.attachment": ("https://files.slack.com", "https://slack.com"),
     "channel.slack.generated_asset.upload": ("https://files.slack.com",),
     "channel.telegram.attachment": ("https://api.telegram.org",),
+    "channel.wechat.cdn": ("https://novac2c.cdn.weixin.qq.com",),
     "channel.feishu.api": ("https://open.feishu.cn", "https://open.larksuite.com"),
     "skills.github.catalog": (
         "https://clawhub.ai",
         "https://codeload.github.com",
         "https://github.com",
     ),
-    "plugins.autoupdate": ("https://pypi.org", "https://registry.npmjs.org"),
+    "plugins.autoupdate": ("https://registry.npmjs.org",),
     "updater.github": ("https://api.github.com",),
     "office.assets": ("https://github.com", "https://release-assets.githubusercontent.com"),
+    "self_update.electron": ("https://github.com", "https://release-assets.githubusercontent.com"),
     "provider.fixed_api": (
         "https://ai-gateway.vercel.sh",
         "https://api.anthropic.com",
@@ -786,6 +886,10 @@ FIXED_ORIGIN_FIXTURES = {
         "https://models.dev",
     ),
 }
+
+
+# Owner-tool consumers have no method, port or address limit to exercise on a socket.
+_LIMITED_FIXTURES = {k: v for k, v in COMPATIBILITY_FIXTURES.items() if v[0] != "owner_tool"}
 
 
 def test_every_registry_consumer_has_a_literal_compatibility_fixture() -> None:
@@ -968,7 +1072,7 @@ def test_every_literal_allowed_scheme_and_port_reaches_policy_boundary(
     assert len(resolver_calls) == calls_before_rejections
 
 
-@pytest.mark.parametrize("consumer, expected", COMPATIBILITY_FIXTURES.items())
+@pytest.mark.parametrize("consumer, expected", _LIMITED_FIXTURES.items())
 def test_each_literal_row_rejects_unapproved_method_scheme_and_origin_port(
     consumer, expected
 ) -> None:
@@ -1033,6 +1137,7 @@ class _CompatibilityHandler(http.server.BaseHTTPRequestHandler):
     do_HEAD = _reply
     do_POST = _reply
     do_PATCH = _reply
+    do_PUT = _reply
 
     def log_message(self, *_args) -> None:
         return
@@ -1105,7 +1210,7 @@ def _literal_accepted_mime(prefixes: tuple[str, ...]) -> str:
     raise AssertionError(f"no accepted MIME fixture for {prefixes!r}")
 
 
-@pytest.mark.parametrize("consumer, expected", COMPATIBILITY_FIXTURES.items())
+@pytest.mark.parametrize("consumer, expected", _LIMITED_FIXTURES.items())
 def test_every_literal_row_enforces_its_socket_contract(
     monkeypatch, compatibility_server, consumer, expected
 ) -> None:

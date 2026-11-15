@@ -1,0 +1,182 @@
+<title>技能和插件</title>
+<meta name="description" content="技能和插件的格式、来源、信任、API 路由、前端，以及对参考实现的覆盖。">
+<h1>技能和插件</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类型</th><th scope="col">是什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">技能</th><td>含 <code translate="no">SKILL.md</code> 的目录，可选 <code translate="no">references/</code>、<code translate="no">templates/</code>。描述列入系统提示词，<code translate="no">skill</code> 工具加载正文</td></tr>
+<tr><th scope="row">插件</th><td>一份清单，贡献技能、命令、智能体、钩子、MCP 服务端和 provider 目录。不带代码，启用时不在 worker 里运行任何东西</td></tr>
+</tbody>
+</table>
+<p class="note">在 Abilities 页面和 <code translate="no">openprogram skills</code>、<code translate="no">openprogram plugins</code> 管理。挂载：<a href="plugin-runtime.zh.html">插件运行时</a>。</p>
+
+<h2 id="skill">技能</h2>
+<pre translate="no" tabindex="0"><code>---
+name: my-skill
+description: One-line trigger description
+category: devops              # hermes-style grouping
+optional: false               # replaces hermes optional-skills directory
+allowed-tools: [Read, Edit]   # claude-code: restrict usable tools
+triggers:                     # OpenProgram extension
+  keywords: ["deploy", "ci"]
+  file_patterns: ["*.yml"]
+  slash: "/deploy"
+version: 1.0.0
+author: ...
+---</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">优先级，从低到高</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">远程缓存</th><td><code translate="no">~/.openprogram/cache/skills/&lt;name&gt;/</code>，从远程索引拉取</td></tr>
+<tr><th scope="row">插件</th><td>已启用插件贡献</td></tr>
+<tr><th scope="row">用户</th><td><code translate="no">~/.openprogram/skills/&lt;name&gt;/</code></td></tr>
+<tr><th scope="row">项目</th><td><code translate="no">&lt;project&gt;/skills/&lt;name&gt;/</code></td></tr>
+</tbody>
+</table>
+<p class="note">冲突时后者覆盖前者。名字是相对来源根目录的路径（<code translate="no">anthropic-skills/docx</code>），重名即同一技能的两个来源。</p>
+
+<h2 id="plugin">插件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">清单形式</th><th scope="col">来自</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">.claude-plugin/plugin.json</code>、<code translate="no">.codex-plugin/plugin.json</code>、根目录 <code translate="no">plugin.json</code></th><td>Claude Code、Codex</td></tr>
+<tr><th scope="row"><code translate="no">pyproject.toml</code> 的 <code translate="no">[tool.openprogram.plugin]</code></th><td>OpenProgram</td></tr>
+<tr><th scope="row"><code translate="no">package.json</code> 的 <code translate="no">openprogram</code>、<code translate="no">opencode</code> 或 <code translate="no">hermes</code> 字段</th><td>npm 包</td></tr>
+<tr><th scope="row"><code translate="no">plugin.yaml</code>、<code translate="no">plugin.yml</code></th><td>Hermes</td></tr>
+<pre translate="no" tabindex="0"><code>{
+  "name": "...",
+  "version": "...",
+  "description": "...",
+  "deprecated": false,
+  "compatibility": "&gt;=0.1.0",
+  "trust": "community",           // community | verified
+  "entrypoints": {
+    "commands":   "...",
+    "skills":     "./skills",
+    "agents":     "...",
+    "hooks":      "./hooks/hooks.json",
+    "mcpServers": "...",
+    "providers":  "..."
+  },
+  "options": { /* JSON Schema */ }
+}</code></pre>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">npm</th><td><code translate="no">~/.openprogram/plugins/node_modules/&lt;name&gt;/</code></td></tr>
+<tr><th scope="row">本地路径、git 克隆</th><td><code translate="no">~/.openprogram/plugins/&lt;name&gt;/</code>；本地路径为链接</td></tr>
+<tr><th scope="row">项目固定</th><td><code translate="no">&lt;project&gt;/.openprogram/plugins.json</code>：启用、版本、来源</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口类型</th><th scope="col">注入到</th></tr></thead>
+<tbody>
+<tr><th scope="row">skills</th><td>技能注册表，和文件系统技能合并</td></tr>
+<tr><th scope="row">commands</th><td><code translate="no">availableFunctions</code>，标记 <code translate="no">source=plugin:&lt;name&gt;</code></td></tr>
+<tr><th scope="row">mcpServers</th><td><code translate="no">openprogram/extensions/mcp/</code> 注册表</td></tr>
+<tr><th scope="row">providers</th><td>provider 注册表；和内置适配器相同的 <code translate="no">provider.json</code> 契约</td></tr>
+<tr><th scope="row">agents</th><td>子智能体注册表</td></tr>
+<tr><th scope="row">hooks</th><td>事件总线，作为 shell 命令</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">信任</th><th scope="col">加载</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">verified</code>、<code translate="no">community</code></th><td>挂载内容。钩子和 MCP 服务端作为独立进程运行</td></tr>
+<tr><th scope="row"><code translate="no">untrusted</code> 和未列入的插件</th><td>不启用；界面要求确认信任。存于 <code translate="no">~/.openprogram/plugin-trust.json</code></td></tr>
+</tbody>
+</table>
+<p class="note">清单指向代码时被拒绝；添加工具或 UI 的代码是<a href="../function/program-model.zh.html#4-plugins">应用</a>。worker 里没有插件代码，所以没有进程内或 RPC 模式。</p>
+
+<h2 id="code">代码</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/extensions/skills/</code></th><td><code translate="no">loader.py</code> 四来源加载和提示词列表；<code translate="no">tool.py</code> <code translate="no">skill</code> 工具和轨迹；<code translate="no">discovery.py</code> 远程拉取；<code translate="no">watcher.py</code> watchdog 热重载和 WS 广播，无 watchdog 时 5 秒轮询</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/extensions/plugins/</code></th><td><code translate="no">manifest.py</code>、<code translate="no">loader.py</code>、<code translate="no">installer.py</code>、<code translate="no">hooks.py</code>、<code translate="no">marketplace.py</code>、<code translate="no">trust.py</code>、<code translate="no">autoupdate.py</code>、<code translate="no">inspect.py</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/catalog/</code></th><td><code translate="no">skills.py</code>、<code translate="no">plugins.py</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/frontmatter.py</code></th><td><code translate="no">SKILL.md</code> 解析，和输出样式、CLI 共用</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/skills/</code>、<code translate="no">apps/web/components/plugins/</code></th><td>页面、<code translate="no">views/</code>、<code translate="no">dialogs/</code>、<code translate="no">discovery/</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/abilities/</code></th><td><code translate="no">skills-store.ts</code>、<code translate="no">plugins-store.ts</code>，订阅 WS 事件</td></tr>
+</tbody>
+</table>
+
+<details id="api">
+<summary>技能 API</summary>
+<table class="stack">
+<thead><tr><th scope="col">方法</th><th scope="col">路径</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills</code></td><td>合并列表，含来源、启用、分类、optional</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills/_complete</code>、<code translate="no">_search</code>、<code translate="no">_resolve</code></td><td>给输入框和 <code translate="no">skill</code> 工具的补全、搜索、解析</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills/{name}</code></td><td>全文、frontmatter、资源树</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills/{name}/file</code></td><td>单个资源文件</td></tr>
+<tr><th scope="row">POST、PUT</th><td><code translate="no">/api/skills</code>、<code translate="no">/api/skills/{name}</code></td><td>在项目或用户下创建；编辑</td></tr>
+<tr><th scope="row">DELETE</th><td><code translate="no">/api/skills/{name}</code></td><td>只限项目、用户或远程缓存</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/skills/{name}/toggle</code></td><td>启用或禁用</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/skills/{name}/invoke-trace</code></td><td>最近一次调用的注入记录</td></tr>
+<tr><th scope="row">GET、POST</th><td><code translate="no">/api/skills/discovery/sources</code></td><td>列出或添加远程索引</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/skills/discovery/pull</code></td><td>把一个技能拉入缓存</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/skills/discovery/suggested</code>、<code translate="no">browse</code>、<code translate="no">diff</code></td><td>推荐索引、浏览、和来源比较</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/skills/discovery/install</code></td><td>从索引安装</td></tr>
+<tr><th scope="row">WS</th><td><code translate="no">skills:changed</code></td><td>来自 watcher 和修改类路由</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="plugins-api">
+<summary>插件 API</summary>
+<table class="stack">
+<thead><tr><th scope="col">方法</th><th scope="col">路径</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins</code></td><td>已安装列表、状态、错误</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/inspect</code></td><td>面向作者的实时自描述</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/updates</code></td><td>可用更新</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/commands</code>、<code translate="no">builtin</code></td><td>贡献的斜杠命令；内置条目</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/{name}</code></td><td>详情、清单、入口状态</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/install</code></td><td><code translate="no">{source: npm|git|path, spec, ref}</code>；拒绝代码</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/{name}/uninstall</code>、<code translate="no">toggle</code></td><td>卸载、启用或禁用</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/{name}/reload</code></td><td>同 claude-code <code translate="no">/reload-plugins</code></td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/{name}/validate</code></td><td>试运行：清单、入口、依赖、兼容性</td></tr>
+<tr><th scope="row">GET、POST</th><td><code translate="no">/api/plugins/{name}/options</code></td><td>读写选项</td></tr>
+<tr><th scope="row">POST</th><td><code translate="no">/api/plugins/{name}/trust</code></td><td>设置信任级别</td></tr>
+<tr><th scope="row">GET、POST</th><td><code translate="no">/api/plugins/marketplaces</code></td><td>列出或添加，兼容 claude-code schema</td></tr>
+<tr><th scope="row">DELETE</th><td><code translate="no">/api/plugins/marketplaces/{id}</code></td><td>移除</td></tr>
+<tr><th scope="row">GET</th><td><code translate="no">/api/plugins/marketplace/{id}/index</code></td><td>浏览，支持搜索、分类、分页</td></tr>
+<tr><th scope="row">WS</th><td><code translate="no">plugins:changed</code>、<code translate="no">plugins:update_available</code></td><td>变更后；更新轮询后</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="frontend">
+<summary>前端</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路由</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">导航</th><td>在 Abilities 下，和 Programs、MCP 服务端相邻；<code translate="no">/skills</code>、<code translate="no">/plugins</code>、<code translate="no">/mcp</code>、<code translate="no">/programs</code> 时高亮</td></tr>
+<tr><th scope="row"><code translate="no">/skills</code></th><td>按分类列表，optional 折叠；详情含调用轨迹；创建；远程索引</td></tr>
+<tr><th scope="row"><code translate="no">/plugins</code></th><td>Installed、Marketplace、Errors 三个标签页</td></tr>
+</tbody>
+</table>
+<p class="note">技能详情把 <code translate="no">SKILL.md</code> 当不受信 Markdown 渲染：原始 HTML 和类 HTML 公式显示为文本，技能链接不获得资源解析或文件系统访问。</p>
+</details>
+
+<details id="beyond">
+<summary>超出和覆盖参考实现的部分</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">能力</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">调用轨迹</th><td>每次调用记录 <code translate="no">{ skill, injected_md_hash, accessed_refs, ts }</code>，显示在详情页</td></tr>
+<tr><th scope="row">热重载</th><td>来源变化时重新解析并广播，无需 <code translate="no">/reload</code></td></tr>
+<tr><th scope="row">清单统一</th><td>上述所有形式，零迁移</td></tr>
+<tr><th scope="row">市场互通</th><td>Claude Code 市场 schema 适配层，官方和第三方市场</td></tr>
+<tr><th scope="row">显式触发</th><td>命中关键词、文件或命令时提示激活</td></tr>
+<tr><th scope="row">Provider 贡献</th><td>来自 opencode</td></tr>
+<tr><th scope="row">claude-code 覆盖</th><td>内置技能、frontmatter、技能工具、市场管理、插件管理、reload、五种入口</td></tr>
+<tr><th scope="row">opencode 覆盖</th><td>远程发现、npm 插件、Provider 插件、compatibility 和 deprecated 字段、用 httpx 和 tenacity 做并发重试</td></tr>
+<tr><th scope="row">hermes 覆盖</th><td>分类、optional、资源布局、<code translate="no">plugin.yaml</code>。Python <code translate="no">plugin_api.py</code> 或 <code translate="no">dashboard/dist/</code> 属于应用</td></tr>
+</tbody>
+</table>
+<p class="note">参考：<code translate="no">references/opencode/packages/opencode/src/{skill,plugin}</code>、<code translate="no">references/hermes-agent/{skills,plugins,optional-skills}</code>。</p>
+</details>

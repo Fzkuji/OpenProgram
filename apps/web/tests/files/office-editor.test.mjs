@@ -10,7 +10,7 @@ registerHooks({ resolve(specifier, context, next) {
   `), shortCircuit: true};
   return next(specifier, context);
 } });
-const {createBoundOfficeEditor} = await import('../../lib/documents/office-editor.ts');
+const {createBoundOfficeEditor, officeHostAvailability, OFFICE_EDITOR_DISABLED} = await import('../../lib/documents/office-editor.ts');
 function fixture(status = 'ready') {
   let resolveActivation, started;
   const mounted = new Promise(resolve => {started = resolve;});
@@ -89,3 +89,10 @@ for (const reason of ['abort', 'timeout']) {
     delete globalThis.officeFixture;
   });
 }
+
+test('a disabled ONLYOFFICE application is reported, not thrown as a startup failure', async () => {
+  const answer = (body) => async () => new Response(JSON.stringify(body), {status: 200});
+  const disabled = await officeHostAvailability('abc', answer({available:false, reason:OFFICE_EDITOR_DISABLED}));
+  assert.equal(disabled.reason, 'office_editor_disabled');
+  await assert.rejects(officeHostAvailability('abc', answer({available:false, reason:'invalid_session_id'})), /invalid_session_id/);
+});

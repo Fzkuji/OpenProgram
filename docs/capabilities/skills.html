@@ -1,0 +1,63 @@
+<title>Skills</title>
+<meta name="description" content="Teach the agent a class of tasks with a SKILL.md directory, and save finished work as a routine.">
+<h1>Skills</h1>
+<p>A skill is domain knowledge the model loads on demand: one directory containing a <code translate="no">SKILL.md</code>.</p>
+<pre translate="no" tabindex="0"><code>---
+name: my-skill
+description: One line saying when to use it — the model matches on this sentence.
+---
+
+The body is free-form markdown: procedures, rule checklists, examples...</code></pre>
+<p class="note">Front matter is a <code translate="no">key: value</code> YAML subset. A long value can continue on indented lines after <code translate="no">&gt;-</code> or <code translate="no">|</code>. A directory missing <code translate="no">name</code> or <code translate="no">description</code> is skipped. The model matches on <code translate="no">description</code>.</p>
+<h2 id="how-it-works">How it loads</h2>
+<ol>
+<li>At startup each skill directory is scanned for <code translate="no">&lt;slug&gt;/SKILL.md</code>.</li>
+<li>Every name and description goes into a skills block in the system prompt; the agentic runtime's <code translate="no">&lt;available_skills&gt;</code> also carries each file's absolute path.</li>
+<li>When a task matches, the model loads the full file with the <code translate="no">skill</code> tool. The text is never injected automatically.</li>
+</ol>
+<p class="note">A skill executes nothing itself. Scripts, references and data beside it run through <code translate="no">bash</code> or <code translate="no">execute_code</code>.</p>
+<h2 id="lookup-paths">Lookup paths</h2>
+<p>Later and more local wins on a name collision. The system prompt, CLI and slash commands use the same four.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">Path</th></tr></thead>
+<tbody>
+<tr><th scope="row">Remote cache</th><td><code translate="no">~/.openprogram/cache/skills/</code></td></tr>
+<tr><th scope="row">Plugin</th><td><a href="plugins.html">Plugins</a></td></tr>
+<tr><th scope="row">User</th><td><code translate="no">~/.openprogram/skills/</code></td></tr>
+<tr><th scope="row">Project</th><td><code translate="no">&lt;cwd&gt;/skills/</code></td></tr>
+</tbody></table>
+<p class="note">OpenProgram ships no default skills; product workflows are Programs.</p>
+<h2 id="use-a-skill-in-chat">Use in chat</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Typed</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/&lt;name&gt;</code></th><td>Inserts the skill's body</td></tr>
+<tr><th scope="row"><code translate="no">/skill &lt;name&gt; [request]</code></th><td>Runs one turn. The model reads the file before your request; the conversation shows what you typed. <code translate="no">allowed-tools</code> limits that turn. An unknown, ambiguous or blocked name gets a reply and no turn runs.</td></tr>
+</tbody></table>
+<h2 id="save-work-as-a-routine">Routines</h2>
+<p>Tell the agent "save this as a routine", "do this every Monday at 9", or "from now on do it like this". Its <code translate="no">save_routine</code> tool writes <code translate="no">~/.openprogram/skills/routines/&lt;name&gt;/SKILL.md</code>:</p>
+<ul>
+<li>a one-line description, so it recognizes the next request;</li>
+<li>the steps actually taken, repeatable without the original conversation;</li>
+<li>your corrections, as rules that win over the steps.</li>
+</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Schedule</th><td>If asked, a repeating <a href="reminders.html">reminder that wakes the agent</a> in the same conversation. Each run starts "Run the saved routine <code translate="no">routines/&lt;name&gt;</code>". The save reply gives the next run.</td></tr>
+<tr><th scope="row">Correct</th><td>"Leave out the bot accounts next time", during a run or after. Saving under the same name rewrites that skill with the correction and keeps the schedule; earlier corrections stay.</td></tr>
+<tr><th scope="row">Manage</th><td>An ordinary skill: <code translate="no">openprogram skills list</code>, <code translate="no">/skill &lt;name&gt;</code>, or edit or delete the file. Pause or cancel the schedule on <strong>Scheduler</strong>, or ask.</td></tr>
+<tr><th scope="row">Who</th><td>Only the owner, or an agent working for the owner, can schedule one.</td></tr>
+</tbody></table>
+<h2 id="management-commands">Commands</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram skills list</code></th><td>Discovered skills by source</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills doctor</code></th><td>Scan directories for problems</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills search &lt;q&gt;</code></th><td>Search discovery sources (ClawHub by default)</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills install &lt;spec&gt;</code></th><td>A slug (ClawHub), <code translate="no">clawhub:&lt;slug&gt;</code> or <code translate="no">github:owner/repo</code>. <code translate="no">--source</code>: <code translate="no">clawhub://</code>, a GitHub repo or a JSON index.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills update --all</code></th><td>Compare <code translate="no">SKILL.md</code> hashes with upstream and re-pull stale ones, or pass one name</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills remove &lt;slug&gt;</code></th><td>Project, user or remote-cache only</td></tr>
+</tbody></table>
+<p class="next"><a href="plugins.html">Plugins</a></p>

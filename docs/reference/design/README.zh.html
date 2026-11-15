@@ -1,0 +1,42 @@
+<title>设计文档</title>
+<meta name="description" content="按子系统组织的设计和实现边界，以及整个系统的阅读顺序。">
+<h1>设计文档</h1>
+<h2 id="reading-order">阅读顺序</h2>
+<ol>
+<li>了解系统：<a href="framework-overview.zh.html">框架总览</a> → <a href="repository-structure.zh.html">仓库结构</a>。</li>
+<li>跟踪一次执行：<a href="runtime/execution/agent-call-flow.zh.html">调用流程</a> → <a href="runtime/execution/control.zh.html">执行控制</a> → <a href="runtime/session/storage.zh.html">会话存储</a>。</li>
+<li>修改子系统：在下面选主题，读设计和实现状态附录，再核实源码归属和验收要求。</li>
+</ol>
+<h2 id="architecture">按领域</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">领域</th><th scope="col">按此顺序阅读</th></tr></thead>
+<tbody>
+<tr><th scope="row">架构</th><td><a href="framework-overview.zh.html">框架总览</a> · <a href="repository-structure.zh.html">仓库结构</a> · <a href="implementation-status.zh.html">实现导航</a></td></tr>
+<tr><th scope="row">执行与会话</th><td><a href="runtime/execution/control.zh.html">执行控制</a> · <a href="runtime/session/storage.zh.html">会话存储</a> · <a href="runtime/dag/overview.zh.html">Session DAG</a> · <a href="runtime/reliability/goal-and-recovery.zh.html">目标与重启恢复</a> · <a href="runtime/agent-configuration/agent-configuration-ui.zh.html">Agent 配置</a></td></tr>
+<tr><th scope="row">函数与工作流</th><td><a href="function/calling-unification.zh.html">函数调用</a> · <a href="runtime/workflows/workflow.zh.html">工作流</a> · <a href="function/agentic-program.zh.html">Program 模型</a> · <a href="runtime/programs/application-runtime.zh.html">应用运行时</a> · <a href="runtime/workflows/report-suite.zh.html">报告工作流</a></td></tr>
+<tr><th scope="row">事件与调度</th><td><a href="proactive/event-layer.zh.html">事件层</a> · <a href="proactive/execution-model.zh.html">规则执行</a> · <a href="scheduler/memory-integration.zh.html">调度与记忆</a></td></tr>
+<tr><th scope="row">上下文与记忆</th><td><a href="context/overview.zh.html">上下文总览</a> · <a href="context/composition.zh.html">上下文组成</a> · <a href="context/compaction.zh.html">压缩</a> · <a href="memory/overview.zh.html">记忆总览</a> · <a href="memory/entity-memory-proposal.zh.html">实体记忆</a></td></tr>
+<tr><th scope="row">界面</th><td><a href="ui/README.zh.html">UI 总览</a> · <a href="ui/state-layer.zh.html">状态层</a> · <a href="ui/composer/composer-interaction-modes.zh.html">聊天与输入框</a> · <a href="ui/browser/built-in-browser.zh.html">内置浏览器</a> · <a href="ui/workspace/project-workspace.zh.html">项目工作区</a> · <a href="cli/README.zh.html">CLI 与 TUI</a></td></tr>
+<tr><th scope="row">模型</th><td><a href="providers/models/overview.zh.html">模型目录</a> · <a href="providers/request-build.zh.html">请求构建</a> · <a href="providers/auth/unified-account-management.zh.html">账号管理</a> · <a href="providers/reliability/error-retry.zh.html">重试行为</a> · <a href="usage-metering.zh.html">用量计量</a></td></tr>
+<tr><th scope="row">连接</th><td><a href="integrations/harness-standard.zh.html">Harness 标准</a> · <a href="integrations/mcp-integration.zh.html">MCP 集成</a> · <a href="integrations/mcp-server.zh.html">MCP 服务器</a> · <a href="extension-gating/README.zh.html">扩展门控</a> · <a href="channels/design.zh.html">渠道</a></td></tr>
+<tr><th scope="row">安全与分发</th><td><a href="runtime/security/sandbox-architecture.zh.html">权限与沙箱</a> · <a href="runtime/security/system-access.zh.html">系统访问</a> · <a href="security/dependency-security.zh.html">依赖安全</a> · <a href="distribution/installation-packaging.zh.html">安装与打包</a> · <a href="distribution/automatic-updates.zh.html">自动更新</a></td></tr>
+<tr><th scope="row">工程</th><td><a href="testing/test-system.zh.html">测试系统</a> · <a href="error-handling.zh.html">错误处理</a> · <a href="docs-site.zh.html">文档结构与渲染</a> · <a href="site-discoverability-performance.zh.html">站点可发现性</a></td></tr>
+</tbody>
+</table>
+<p class="note">侧栏有七个领域：依次展开领域、模块、页面。导航展开当前路径，筛选同时匹配页面和分类名称。</p>
+<h2 id="supporting-material">辅助材料</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类型</th><th scope="col">性质</th></tr></thead>
+<tbody>
+<tr><th scope="row">原型</th><td>布局和交互实验，不证明行为已实现。有独立的侧栏分类。</td></tr>
+<tr><th scope="row">实施记录</th><td>迁移步骤、计划和待核实差异。先读当前设计；这些不代表实现状态。</td></tr>
+<tr><th scope="row">研究</th><td>探索性提案、威胁分析和评估笔记，不是产品承诺。</td></tr>
+</tbody>
+</table>
+<h2 id="maintenance-rules">维护规则</h2>
+<ul>
+<li>每页只属于一个侧栏分类。在 <code translate="no">scripts/docs_site/nav.py</code> 登记页面和阅读顺序；未分类页面显示在“待分类”下。分类调整不改变 URL。</li>
+<li>每个主题一份当前设计。图、对比和记录说明与它的关系，不复制正文。</li>
+<li>默认英文，中文同步。见<a href="docs-site.zh.html">文档约定</a>。</li>
+<li>文档声明、源码存在、测试通过、已发布和已安装 App 验收是不同状态。分类不代表完成度。</li>
+</ul>

@@ -1,0 +1,84 @@
+<title>Event triggers</title>
+<meta name="description" content="Watch and webhook triggers for Scheduler tasks: what starts a run, what the HTTP route answers, and how the outside text reaches the run.">
+<h1>Event triggers</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Watch</th><th scope="col">Webhook</th></tr></thead>
+<tbody>
+<tr><th scope="row">Applies to</th><td><code translate="no">recurring</code>, <code translate="no">monitor</code> tasks with <code translate="no">watch</code> (at most 4,000 characters)</td><td><code translate="no">webhook</code> tasks: no <code translate="no">cron</code> or <code translate="no">run_at</code>, so <code translate="no">_entry_due</code> never fires them</td></tr>
+<tr><th scope="row">Starts when</th><td>A command's output changed</td><td>An outside service POSTs to it</td></tr>
+<tr><th scope="row">Event source</th><td><code translate="no">watch</code></td><td><code translate="no">webhook</code></td></tr>
+<tr><th scope="row">Event text</th><td>Command and unified diff, at most 6,000 characters</td><td>Body (pretty-printed when JSON), prefixed with <code translate="no">X-GitHub-Event</code> when present, at most 8,000 characters</td></tr>
+<tr><th scope="row">Trust</th><td colspan="2">Both reuse the task's signed execution spec. Event text is untrusted data.</td></tr>
+</tbody>
+</table>
+
+<h2>Watch</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Check result</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">First check of a command</th><td>Baseline; nothing starts</td></tr>
+<tr><th scope="row">A different command</th><td>New baseline</td></tr>
+<tr><th scope="row">Unchanged digest</th><td>Nothing starts</td></tr>
+<tr><th scope="row">Changed digest</th><td><code translate="no">_spawn</code> with the event</td></tr>
+<tr><th scope="row">Failure or timeout</th><td>Logged; baseline untouched</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Watch check</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Frozen</th><td><code translate="no">watch</code> sits in the signed spec next to the body; editing the task file cannot change what runs</td></tr>
+<tr><th scope="row">Due tick</th><td><code translate="no">_tick</code> calls <code translate="no">_check_watch</code> instead of <code translate="no">_spawn</code>; each minute's claim is taken as for any task, so a tick checks a watch once</td></tr>
+<tr><th scope="row">Run</th><td>Spec verified, then a daemon thread runs the command through <code translate="no">_task_invocation</code> under the conversation's Sandbox switch; 120 s timeout</td></tr>
+<tr><th scope="row">State</th><td><code translate="no">&lt;schedule dir&gt;/watch-state.json</code>, under the store lock: per task, the SHA-256 of command and output, and the first 20,000 characters of output</td></tr>
+</tbody>
+</table>
+
+<h2>Webhook</h2>
+<p><code translate="no">POST /hooks/{task_id}</code> is the one HTTP path <code translate="no">OwnerAuthMiddleware</code> passes without login, only for <code translate="no">POST</code> of exactly that shape; Host and Origin checks still run. It reads at most 64 KB and calls <code translate="no">hooks.receive</code> on a worker thread.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">202</code></th><td>Run started</td></tr>
+<tr><th scope="row"><code translate="no">404</code></th><td>Unknown task, another type, or wrong key, indistinguishably</td></tr>
+<tr><th scope="row"><code translate="no">409</code></th><td>Paused</td></tr>
+<tr><th scope="row"><code translate="no">429</code></th><td>More than one call per task in 10 s, per process</td></tr>
+</tbody>
+</table>
+<p class="note">Creation stores a random 24-byte URL-safe <code translate="no">hook_key</code>; the tool result prints the URL (<code translate="no">hooks.url</code>, from the active Web access snapshot) and the key. It is accepted from <code translate="no">X-OpenProgram-Key</code> or as the HMAC-SHA256 secret of <code translate="no">X-Hub-Signature-256</code> (GitHub), compared in constant time.</p>
+
+<h2>Event reaches the run as data</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Body kind</th><th scope="col">Delivery</th></tr></thead>
+<tbody>
+<tr><th scope="row">prompt</th><td><code translate="no">event_note</code> appends the text inside <code translate="no">&lt;event source="…" trust="untrusted"&gt;</code>, with <code translate="no">&lt;/event&gt;</code> escaped, and a line saying it is data. Usual non-interactive scheduler turn (<code translate="no">source="scheduler"</code>, the conversation's permission mode): a call needing approval is denied.</td></tr>
+<tr><th scope="row">reminder</th><td><code translate="no">reminders.fire</code> adds <code translate="no">event</code> to <code translate="no">reminder.fired</code>. A waking reminder names the source and carries the same note; <code translate="no">_wake</code> calls <code translate="no">start_owner_turn</code>, and approvals wait in that conversation.</td></tr>
+<tr><th scope="row">command</th><td>Environment: <code translate="no">OPENPROGRAM_EVENT</code>, <code translate="no">OPENPROGRAM_EVENT_SOURCE</code></td></tr>
+</tbody>
+</table>
+<p class="note">The task log records it under <code translate="no"># started by &lt;source&gt;:</code>.</p>
+
+<details>
+<summary>Where each piece lives</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Piece</th><th scope="col">File</th></tr></thead>
+<tbody>
+<tr><th scope="row">Task types, <code translate="no">watch</code>, hook key</th><td><code translate="no">openprogram/runtime/scheduler/service.py</code></td></tr>
+<tr><th scope="row">Signed spec</th><td><code translate="no">openprogram/programs/tools/jobs/cron/cron.py</code></td></tr>
+<tr><th scope="row">Checks, delivery</th><td><code translate="no">openprogram/programs/tools/jobs/cron/worker.py</code></td></tr>
+<tr><th scope="row">Webhook verification, rate limit</th><td><code translate="no">openprogram/runtime/scheduler/hooks.py</code></td></tr>
+<tr><th scope="row">Route</th><td><code translate="no">openprogram/interfaces/server/routes/execution/scheduler.py</code></td></tr>
+<tr><th scope="row">Login exemption</th><td><code translate="no">openprogram/interfaces/server/owner_auth.py</code></td></tr>
+<tr><th scope="row">Wake turns</th><td><code translate="no">openprogram/runtime/conversation/owner_turn.py</code>, <code translate="no">openprogram/runtime/scheduler/reminders.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Everything above, and Scheduler page labels</td></tr>
+<tr><th scope="row">Not implemented</th><td>A page form for watch and webhook tasks (use the <code translate="no">scheduler</code> tool or <code translate="no">POST /api/scheduler/tasks</code> with <code translate="no">watch</code> or <code translate="no">"type": "webhook"</code>). Showing the URL and key again after creation (the key is in <code translate="no">GET /api/scheduler/tasks/{id}</code>).</td></tr>
+</tbody>
+</table>

@@ -1,0 +1,25 @@
+<title>History rendering and conversation links</title>
+<meta name="description" content="Which history rows render, what reaches the provider, and how Copy link writes to the clipboard.">
+<meta name="covers" content="apps/web/components/chat/">
+<h1>History rendering and conversation links</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">History item</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Graph ROOT node, blank user rows</th><td>Excluded before authority rendering</td></tr>
+<tr><th scope="row">Empty user strings and text blocks</th><td>Omitted by the Chat Completions adapter; image-only messages kept</td></tr>
+<tr><th scope="row">Stored history</th><td>Unchanged; no automatic replay or deletion</td></tr>
+</tbody>
+</table>
+
+<h2>Copy link</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Order</th><td>Trusted desktop IPC, then browser clipboard, then selection fallback, through one shared helper used by sidebar and pane menus</td></tr>
+<tr><th scope="row">Native IPC</th><td>Requires the UI origin and owning main frame, takes bounded strings, offers no clipboard read</td></tr>
+<tr><th scope="row">Result</th><td>Success only after a successful write; failures stay explicit</td></tr>
+<tr><th scope="row">Sidebar context menu</th><td>Uses the renderer popover, so actions do not depend on native popup dismissal order or an expired browser clipboard activation</td></tr>
+</tbody>
+</table>

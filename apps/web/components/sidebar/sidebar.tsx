@@ -30,28 +30,46 @@ import {
   PanelLeftOpenIcon,
   PlusIcon,
 } from "../animated-icons";
-import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { usePathname } from "next/navigation";
+import { motion } from "framer-motion";
 import { useTranslation } from "@/lib/i18n";
 import { activateOnKey } from "@/lib/utils";
 import { UserMenuFooter } from "../user-menu-footer";
-import { SessionsList } from "./sessions-list";
-import { FavoritesList } from "./favorites-list";
-import { SectionHeader } from "./section-header";
+import { SessionsList } from "./sessions/sessions-list";
+import { FavoritesList } from "./sessions/favorites-list";
+import { SectionHeader } from "./sessions/section-header";
 import {
   sidebarNavItemClass,
   sidebarNavLabelClass,
   sidebarToggleClass,
 } from "./nav-classes";
 import { SidebarPrimaryNav } from "./sidebar-primary-nav";
+import { Sidebar as SidebarShell } from "@/components/ui/sidebar";
 import { useWindowGlobals } from "./use-window-globals";
 import { runtimeState } from "@/lib/runtime-bridge/state";
-import { newSession } from "@/lib/runtime-bridge/conversations";
+import { openNewChat } from "@/lib/tabs/navigation/open-session";
 import { useResizableRail } from "../layout/use-resizable-rail";
+import { useStableScrollEnd } from "./use-stable-scroll-end";
+import { useNavLinksReturn } from "./use-nav-links-return";
+
+// At or below this width the expanded sidebar is a fixed overlay over the
+// page (styles/base/layout.css), so it starts collapsed and closes after navigation.
+const NARROW_QUERY = "(max-width: 900px)";
+
+function isNarrowViewport(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.(NARROW_QUERY).matches === true;
+}
 
 function readPersistedSidebarOpen(): boolean {
   if (typeof window === "undefined") return true;
+  // Narrow screens always start collapsed: expanded, the sidebar is an
+  // overlay that would cover the chat. The stored choice still applies
+  // once the window is wide again.
+  if (isNarrowViewport()) return false;
   try {
-    return localStorage.getItem("sidebarOpen") !== "0";
+    const stored = localStorage.getItem("sidebarOpen");
+    if (stored === null) return true;
+    return stored !== "0";
   } catch {
     return true;
   }
@@ -61,19 +79,32 @@ export const Sidebar = memo(function Sidebar() {
   const { t, text } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
-  const { style: railStyle, resizeHandleProps } = useResizableRail({
+  const {
+    style: railStyle,
+    shellProps: railShellProps,
+    resizeHandleProps,
+    closedSettled,
+  } = useResizableRail({
     open,
     minWidth: 180,
     maxWidth: 480,
     defaultWidth: 288,
     direction: 1,
+    storageKey: "openprogram.left-sidebar-width",
+    maxWindowShare: 0.3,
   });
   const [favCollapsed, setFavCollapsed] = useState(false);
   // 下面滚动区一旦向下滚动就为 true —— 驱动固定 New chat 行底部的
   // 分隔线（Claude 风格）。
   const [navScrolled, setNavScrolled] = useState(false);
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
+  const toggleOpenIconRef = useRef<AnimatedNavIconHandle>(null);
   const newChatIconRef = useRef<AnimatedNavIconHandle>(null);
+  const navScrollerRef = useRef<HTMLDivElement>(null);
+  const navSpacerRef = useRef<HTMLDivElement>(null);
+  const navLinksRef = useRef<HTMLDivElement>(null);
+  useStableScrollEnd(navScrollerRef, navSpacerRef);
+  useNavLinksReturn(open, closedSettled, navScrollerRef, navLinksRef);
 
   const { availableFunctions, programsMeta } = useWindowGlobals();
   const favSet = new Set(programsMeta.favorites || []);
@@ -104,6 +135,49 @@ export const Sidebar = memo(function Sidebar() {
     }
   }, [open]);
 
+  // On narrow screens the expanded sidebar overlays the page; dismiss it
+  // once the user navigates. Not persisted, so the stored choice stands.
+  const pathname = usePathname();
+  const lastPathname = useRef(pathname);
+  useEffect(() => {
+    if (lastPathname.current === pathname) return;
+    lastPathname.current = pathname;
+    if (isNarrowViewport()) {
+      setOpen(false);
+      runtimeState.sidebarOpen = false;
+    }
+  }, [pathname]);
+
+  // Crossing into the narrow breakpoint turns the expanded sidebar into an
+  // overlay over the chat; collapse it then, and dismiss it on any press
+  // outside. Neither is persisted, so widening again keeps the stored choice.
+  useEffect(() => {
+    const mq = window.matchMedia?.(NARROW_QUERY);
+    if (!mq) return;
+    const onChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) return;
+      setOpen(false);
+      runtimeState.sidebarOpen = false;
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!isNarrowViewport()) return;
+      const target = event.target as Node | null;
+      const el = document.getElementById("sidebar");
+      if (!el || !target || el.contains(target)) return;
+      // Menus and dialogs opened from the sidebar portal outside it.
+      if ((target as Element).closest?.("[data-radix-popper-content-wrapper], [role='menu'], [role='dialog']")) return;
+      setOpen(false);
+      runtimeState.sidebarOpen = false;
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [open]);
+
   function toggleSidebar() {
     setOpen((prev) => {
       const next = !prev;
@@ -117,84 +191,58 @@ export const Sidebar = memo(function Sidebar() {
     });
   }
 
-  const newChat = useCallback(() => {
-    // Focus-or-create（浏览器地址栏语义）：已经开着的"新会话"界面
-    // ——未发消息的草稿会话 tab 或 NTP tab——直接跳过去，而不是每点
-    // 一次就多冒一个 tab。真想多开几个空会话用 tab 条上的 ＋。
-    const s = useCenterTabs.getState();
-    const existingDraft = s.tabs.find(
-      (t) => t.kind === "session" && t.draft && t.sessionId,
-    );
-    const existingNtp = existingDraft
-      ? null
-      : s.tabs.find((t) => t.kind === "ntp");
-    let draftId: string;
-    if (existingDraft) {
-      if (s.activeId !== existingDraft.id) s.setActive(existingDraft.id);
-      draftId = existingDraft.sessionId!;
-    } else if (existingNtp) {
-      // NTP 是"新标签页"界面：占住它并转成草稿会话，语义同在 NTP 里
-      // 点 New session。
-      if (s.activeId !== existingNtp.id) s.setActive(existingNtp.id);
-      draftId = useCenterTabs.getState().claimDraftSessionTab();
-    } else {
-      draftId = s.openDraftSessionTab();
+  const newChat = useCallback((options?: { fresh?: boolean }) => {
+    const draftId = openNewChat(options);
+    // Same route (/chat), so the pathname effect below does not fire;
+    // dismiss the narrow-screen overlay here too.
+    if (isNarrowViewport()) {
+      setOpen(false);
+      runtimeState.sidebarOpen = false;
     }
-    newSession(draftId);
     return draftId;
   }, []);
 
   return (
-    <div
+    <SidebarShell
       id="sidebar"
+      side="left"
       /* Landmark so screen readers can jump straight to navigation
          instead of tabbing in from the top of the document. */
       role="navigation"
       aria-label={text("Sidebar", "侧边栏")}
+      // The shadcn floating shell (components/ui/sidebar.tsx) owns the
+      // card: 7px gutter, rounded-2xl, raised shadow. This adds the
+      // width transition and the stable hooks: `relative` anchors the
+      // resize handle; `.sidebar` + `.collapsed` are what legacy
+      // scrollbar.js, right-dock.css's `[data-view]` cascade and the
+      // `.sidebar.collapsed` collapsed-state rules in styles/base/sidebar.css select.
       className={
-        // Shell layout — bg / border / flex column / width transition.
-        // `relative` is the anchor for the (legacy) `#userMenuFooterMount`
-        // portal target; we keep it even though UserMenuFooter is now
-        // rendered directly here. `.sidebar` + `.collapsed` classes are
-        // retained as hooks for: legacy scrollbar.js (selects .sidebar),
-        // right-dock.css's `[data-view]` cascade, and the small
-        // `.sidebar.collapsed *` overflow/scrollbar-width override + the
-        // `.sidebar-nav-item/-label/-action/.user-menu-footer-info`
-        // collapsed-state rules in 02-sidebar.css.
-        "sidebar relative flex shrink-0 flex-col rail-shell " +
-        "bg-bg-secondary border-r border-[var(--border)] " +
-        (open ? "" : "collapsed")
+        "sidebar relative shrink-0 rail-shell " + (open ? "" : "collapsed")
       }
       style={railStyle}
+      {...railShellProps}
     >
-      {open && (
-        <div
-          {...resizeHandleProps}
-          title={text("Resize sidebar", "调整侧边栏宽度")}
-        />
-      )}
-      <div className="rail-content">
-      {/* 收起态（49px 窄轨）只剩收起按钮：改用 justify-center 并去掉左右
-          padding，让唯一按钮在窄轨里水平居中，否则 justify-between + p-[8px]
-          会把它推到右边（靠右 bug）。 */}
+      {/* The resize handle draws nothing and stays mounted in both
+          states; closed or closing, it takes no pointer
+          (use-resizable-rail.ts). */}
       <div
-        className={
-          "flex h-[48px] shrink-0 items-center box-border " +
-          (open ? "justify-between p-[8px]" : "justify-center px-0 py-[8px]")
-        }
-      >
+        {...resizeHandleProps}
+        aria-label={text("Resize sidebar", "调整侧边栏宽度")}
+      />
+      <div className="rail-content">
+      {/* The toggle rides the card's right edge, 8px in when open and
+          centred in the collapsed card (styles/base/layout.css
+          .rail-header); the wordmark stays at the left edge, clipped just
+          before the toggle, and fades. */}
+      <div className="rail-header">
         <div
-          className={
-            "flex h-[var(--ui-list-h)] min-w-0 flex-1 items-center overflow-hidden " +
-            "[transition:opacity_0.15s_ease,padding-left_0.3s_ease] " +
-            (open ? "opacity-100 pl-[8px]" : "hidden opacity-0 pl-0")
-          }
+          className="rail-open-only rail-wordmark"
         >
-          <span className="text-[20px] font-bold tracking-[-0.01em] whitespace-nowrap">
+          <span className="text-fs-lg font-bold tracking-[-0.01em] whitespace-nowrap">
             <span style={{ color: "var(--text-bright)" }}>Open</span>
             <span
               style={{
-                background: "linear-gradient(90deg, #3B9EFF 0%, #A855F7 100%)",
+                background: "linear-gradient(90deg, var(--wordmark-from) 0%, var(--wordmark-to) 100%)",
                 WebkitBackgroundClip: "text",
                 backgroundClip: "text",
                 WebkitTextFillColor: "transparent",
@@ -207,16 +255,17 @@ export const Sidebar = memo(function Sidebar() {
         <button
           className={sidebarToggleClass}
           onClick={toggleSidebar}
-          onMouseEnter={() => toggleIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => toggleIconRef.current?.stopAnimation?.()}
-          title={t("sidebar.toggle")}
+          onMouseEnter={() => (open ? toggleIconRef : toggleOpenIconRef).current?.startAnimation?.()}
+          onMouseLeave={() => (open ? toggleIconRef : toggleOpenIconRef).current?.stopAnimation?.()}
+          aria-label={open ? text("Hide sidebar", "隐藏侧边栏") : text("Show sidebar", "显示侧边栏")}
           type="button"
         >
-          {open ? (
-            <PanelLeftCloseIcon ref={toggleIconRef} size={20} />
-          ) : (
-            <PanelLeftOpenIcon ref={toggleIconRef} size={20} />
-          )}
+          {/* Both glyphs stay mounted and cross-fade with the rail's move
+              (.rail-toggle-glyphs, styles/base/layout.css). */}
+          <span className="rail-toggle-glyphs" aria-hidden="true">
+            <PanelLeftCloseIcon ref={toggleIconRef} size={20} className="rail-toggle-close" />
+            <PanelLeftOpenIcon ref={toggleOpenIconRef} size={20} className="rail-toggle-open" />
+          </span>
         </button>
       </div>
 
@@ -230,9 +279,9 @@ export const Sidebar = memo(function Sidebar() {
           布局、默认不存在。 */}
       <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
         <div
-          className={sidebarNavItemClass}
+          className={sidebarNavItemClass + " rail-row"}
           id="navNewChat"
-          onClick={newChat}
+          onClick={() => newChat()}
           onMouseEnter={() => newChatIconRef.current?.startAnimation?.()}
           onMouseLeave={() => newChatIconRef.current?.stopAnimation?.()}
           role="button"
@@ -241,9 +290,9 @@ export const Sidebar = memo(function Sidebar() {
         >
           <span
             className="flex size-[22.4px] shrink-0 -mx-[3.2px] items-center
-              justify-center rounded-full bg-[rgba(151,149,140,0.15)]
+              justify-center rounded-full bg-[color:var(--new-chat-chip)]
               text-nav-color transition-colors duration-150 ease-out
-              group-hover:bg-[rgba(151,149,140,0.25)]
+              group-hover:bg-[color:var(--new-chat-chip-hover)]
               group-hover:[transform:scale(1.1)]
               group-active:bg-text-primary
               group-active:[transform:scale(0.98)]
@@ -260,29 +309,40 @@ export const Sidebar = memo(function Sidebar() {
           包一层 relative 容器，用来锚定「滚动时才出现的浮层」。 */}
       <div className="relative flex flex-1 min-h-0 flex-col">
         {/* 滚动时才出现的浮层：绝对定位贴在滚动区顶部，画一小段空白 +
-          底部分隔线，盖在滚动内容之上。默认（未滚动）display:none —— 完全
-          不存在、不占布局、不与任何组件产生间距。滚回顶部即消失。 */}
-        {navScrolled && (
-          <div
-            className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[8px]
-            bg-[var(--bg-sidebar,var(--bg-secondary))]"
-            style={{ boxShadow: "inset 0 -1px 0 0 var(--border)" }}
-            aria-hidden="true"
-          />
-        )}
+          底部分隔线，盖在滚动内容之上。未滚动时不渲染。外层随侧栏一直
+          挂着，收起时与只在展开态出现的内容一起淡出。 */}
         <div
-          className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
+          className="rail-open-only pointer-events-none absolute inset-x-0 top-0 z-10 h-[8px]"
+          aria-hidden="true"
+        >
+          {navScrolled && (
+            <div
+              className="size-full bg-sidebar"
+              style={{ boxShadow: "inset 0 -1px 0 0 var(--border)" }}
+            />
+          )}
+        </div>
+        {/* layoutScroll: project groups animate layout inside this
+            scroller, so their positions are measured in its content, not
+            shifted by its scrollTop. */}
+        <motion.div
+          ref={navScrollerRef}
+          layoutScroll
+          className="rail-scroll flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
           [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           onScroll={(e) => {
             const s = e.currentTarget.scrollTop > 0;
             setNavScrolled((prev) => (prev === s ? prev : s));
           }}
         >
-          <SidebarPrimaryNav />
+          <div ref={navLinksRef} className="shrink-0">
+            <SidebarPrimaryNav />
+          </div>
 
-          {/* Favorite functions — only when at least one favourite exists
-          and the sidebar isn't collapsed. */}
-          {open && hasFavorites && (
+          {/* Favorite functions — only when at least one favourite exists.
+          Like the conversation list below it, it stays mounted while the
+          sidebar is collapsed, at the open width, faded out. */}
+          {hasFavorites && (
             <SidebarSection
               id="favSection"
               title={t("sidebar.favorite_functions")}
@@ -293,15 +353,10 @@ export const Sidebar = memo(function Sidebar() {
               // headers below — those sit inside #convList's px-[8px] AND
               // their own SectionHeader px-[8px] (8+8). Without it the fav
               // header was 8px too far left of "Today" / "Yesterday".
-              // No pt here: the SectionHeader's own pt-[15px] is the single
-              // group separator. An extra pt-[16px] used to STACK on it, so
-              // major groups (Favorites / Recents) sat ~16px lower than the
-              // date sub-buckets — visibly inconsistent + too much empty
-              // space above the section.
-              // pb-[5px]: a small extra gap BELOW Favorites so the function
-              // area reads as a distinct block from the conversation groups
-              // that follow (only present when there are favourites).
-              className="px-[8px] pb-[5px]"
+              // No vertical padding: the SectionHeader's own top padding is
+              // the one separator, so every label sits 16px below whatever
+              // precedes it.
+              className="rail-open-only rail-open-width px-[8px]"
             >
               <div id="favList" className="flex flex-col gap-px">
                 <FavoritesList />
@@ -309,30 +364,38 @@ export const Sidebar = memo(function Sidebar() {
             </SidebarSection>
           )}
 
-          {open && (
-            // The conversation list — classic Recents (date buckets by
-            // default; State / Flat via the filter's Group-by row), or the
-            // project folder tree when Group-by → Project. In project mode
-            // the group headers' ＋ buttons run the same newChat flow as
-            // the nav item above, then record the project for that draft key.
-            <div id="convSection" className="flex flex-col">
-              <div id="convList" className="flex flex-col gap-px px-[8px]">
-                <SessionsList onNewChat={newChat} />
-              </div>
+          {/* The conversation list — classic Recents (date buckets by
+              default; State / Flat via the filter's Group-by row), or the
+              project folder tree when Group-by → Project. In project mode
+              the group headers' ＋ buttons run the same newChat flow as
+              the nav item above, then record the project for that draft
+              key. Mounted in both states, at the open width: collapsed, it
+              is faded out, and inert once the close has settled
+              (use-resizable-rail.ts). */}
+          <div
+            id="convSection"
+            className="rail-open-only rail-open-width flex flex-col"
+          >
+            {/* No gap: each section header's own top padding spaces the
+                sections, so labels stay 16px below what precedes them. */}
+            <div id="convList" className="flex flex-col px-[8px]">
+              <SessionsList onNewChat={newChat} />
             </div>
-          )}
-        </div>
+          </div>
+          {/* Stands in for removed rows at the end; see useStableScrollEnd. */}
+          <div ref={navSpacerRef} className="shrink-0" aria-hidden="true" />
+        </motion.div>
       </div>
       {/* /relative 浮层容器 */}
 
-      {/* User menu footer — rendered directly here (no portal). The
-         AppShell's `#userMenuFooterMount` portal logic is now a no-op
-         for left-sidebar pages (no element with that id exists) but
-         is kept around for any code path that might still inject the
-         legacy `_sidebar.html` template. */}
-      <UserMenuFooter />
       </div>
-    </div>
+      {/* User menu footer — rendered directly here (no portal), beside
+         `.rail-content` rather than in it: it is laid out at the open width
+         in both states (styles/base/sidebar.css), the avatar glides between
+         its two resting places with the card, and the name and the chevron
+         fade. */}
+      <UserMenuFooter />
+    </SidebarShell>
   );
 });
 

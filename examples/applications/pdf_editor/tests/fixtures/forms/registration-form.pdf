@@ -1,0 +1,332 @@
+%PDF-1.3
+%‚„œ”
+1 0 obj
+<<
+/Producer (pypdf)
+/Title (Workshop registration)
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Count 1
+/Kids [ 4 0 R ]
+>>
+endobj
+3 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+/AcroForm <<
+/Fields [ 8 0 R 9 0 R 10 0 R 11 0 R 14 0 R 15 0 R ]
+/DA (\057Helv 11 Tf 0 g)
+/NeedAppearances true
+/DR <<
+/Font <<
+/Helv 5 0 R
+/ZaDb 6 0 R
+>>
+>>
+>>
+>>
+endobj
+4 0 obj
+<<
+/Type /Page
+/Resources <<
+/Font <<
+/Helv 5 0 R
+/ZaDb 6 0 R
+>>
+>>
+/MediaBox [ 0.0 0.0 612 792 ]
+/Parent 2 0 R
+/Contents 7 0 R
+/Annots [ 8 0 R 9 0 R 10 0 R 11 0 R 14 0 R 17 0 R 19 0 R ]
+>>
+endobj
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+>>
+endobj
+6 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /ZapfDingbats
+>>
+endobj
+7 0 obj
+<<
+/Length 717
+>>
+stream
+BT /Helv 22 Tf 0.12 0.12 0.14 rg 72 700 Td (Workshop registration) Tj ET
+BT /Helv 10.5 Tf 0.12 0.12 0.14 rg 72 676 Td (Long-context models reading group, spring session.) Tj ET
+BT /Helv 11 Tf 0.12 0.12 0.14 rg 72 630 Td (Full name) Tj ET
+BT /Helv 11 Tf 0.12 0.12 0.14 rg 72 580 Td (Email) Tj ET
+BT /Helv 11 Tf 0.12 0.12 0.14 rg 72 530 Td (Role) Tj ET
+BT /Helv 11 Tf 0.12 0.12 0.14 rg 72 480 Td (Session) Tj ET
+BT /Helv 11 Tf 0.12 0.12 0.14 rg 110 457 Td (Morning) Tj ET
+BT /Helv 11 Tf 0.12 0.12 0.14 rg 230 457 Td (Afternoon) Tj ET
+BT /Helv 11 Tf 0.12 0.12 0.14 rg 72 420 Td (Dietary notes) Tj ET
+BT /Helv 11 Tf 0.12 0.12 0.14 rg 98 333 Td (I will attend in person) Tj ET
+0.85 0.85 0.88 RG 0.8 w 72 662 m 540 662 l S
+
+endstream
+endobj
+8 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [ 72 600 400 622 ]
+/F 4
+/P 4 0 R
+/MK <<
+/BC [ 0.6 0.6 0.6 ]
+/BG [ 1 1 1 ]
+>>
+/FT /Tx
+/T (full\137name)
+/TU (Full name)
+/DA (\057Helv 11 Tf 0 g)
+/V ()
+>>
+endobj
+9 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [ 72 550 400 572 ]
+/F 4
+/P 4 0 R
+/MK <<
+/BC [ 0.6 0.6 0.6 ]
+/BG [ 1 1 1 ]
+>>
+/FT /Tx
+/T (email)
+/TU (Email)
+/DA (\057Helv 11 Tf 0 g)
+/V ()
+>>
+endobj
+10 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [ 72 500 260 522 ]
+/F 4
+/P 4 0 R
+/MK <<
+/BC [ 0.6 0.6 0.6 ]
+/BG [ 1 1 1 ]
+>>
+/FT /Ch
+/T (role)
+/TU (Role)
+/Ff 131072
+/DA (\057Helv 11 Tf 0 g)
+/V (Researcher)
+/Opt [ (Researcher) (Engineer) (Student) (Other) ]
+>>
+endobj
+11 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [ 72 345 540 412 ]
+/F 4
+/P 4 0 R
+/MK <<
+/BC [ 0.6 0.6 0.6 ]
+/BG [ 1 1 1 ]
+>>
+/FT /Tx
+/T (dietary\137notes)
+/TU (Dietary notes)
+/Ff 4096
+/DA (\057Helv 11 Tf 0 g)
+/V ()
+>>
+endobj
+12 0 obj
+<<
+/Type /XObject
+/Subtype /Form
+/BBox [ 0.0 0.0 14 14 ]
+/Resources <<
+/Font <<
+/Helv 5 0 R
+/ZaDb 6 0 R
+>>
+>>
+/Length 35
+>>
+stream
+0 g BT /ZaDb 11 Tf 2 3 Td (4) Tj ET
+endstream
+endobj
+13 0 obj
+<<
+/Type /XObject
+/Subtype /Form
+/BBox [ 0.0 0.0 14 14 ]
+/Resources <<
+/Font <<
+/Helv 5 0 R
+/ZaDb 6 0 R
+>>
+>>
+/Length 0
+>>
+stream
+
+endstream
+endobj
+14 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [ 76 330 90 344 ]
+/F 4
+/P 4 0 R
+/MK <<
+/BC [ 0.6 0.6 0.6 ]
+/BG [ 1 1 1 ]
+>>
+/FT /Btn
+/T (in\137person)
+/TU (I will attend in person)
+/V /Off
+/AS /Off
+/DA (\057ZaDb 11 Tf 0 g)
+/AP <<
+/N <<
+/Yes 12 0 R
+/Off 13 0 R
+>>
+>>
+>>
+endobj
+15 0 obj
+<<
+/FT /Btn
+/T (session)
+/TU (Session)
+/Ff 49152
+/V /Off
+/Kids [ 17 0 R 19 0 R ]
+>>
+endobj
+16 0 obj
+<<
+/Type /XObject
+/Subtype /Form
+/BBox [ 0.0 0.0 14 14 ]
+/Resources <<
+/Font <<
+/Helv 5 0 R
+/ZaDb 6 0 R
+>>
+>>
+/Length 124
+>>
+stream
+0 g 10.5 7 m 10.5 8.93 8.93 10.5 7 10.5 c 5.07 10.5 3.5 8.93 3.5 7 c 3.5 5.07 5.07 3.5 7 3.5 c 8.93 3.5 10.5 5.07 10.5 7 c f
+endstream
+endobj
+17 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [ 92 455 106 469 ]
+/F 4
+/P 4 0 R
+/MK <<
+/BC [ 0.6 0.6 0.6 ]
+/BG [ 1 1 1 ]
+>>
+/AS /Off
+/Parent 15 0 R
+/AP <<
+/N <<
+/Morning 16 0 R
+/Off 13 0 R
+>>
+>>
+>>
+endobj
+18 0 obj
+<<
+/Type /XObject
+/Subtype /Form
+/BBox [ 0.0 0.0 14 14 ]
+/Resources <<
+/Font <<
+/Helv 5 0 R
+/ZaDb 6 0 R
+>>
+>>
+/Length 124
+>>
+stream
+0 g 10.5 7 m 10.5 8.93 8.93 10.5 7 10.5 c 5.07 10.5 3.5 8.93 3.5 7 c 3.5 5.07 5.07 3.5 7 3.5 c 8.93 3.5 10.5 5.07 10.5 7 c f
+endstream
+endobj
+19 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [ 212 455 226 469 ]
+/F 4
+/P 4 0 R
+/MK <<
+/BC [ 0.6 0.6 0.6 ]
+/BG [ 1 1 1 ]
+>>
+/AS /Off
+/Parent 15 0 R
+/AP <<
+/N <<
+/Afternoon 18 0 R
+/Off 13 0 R
+>>
+>>
+>>
+endobj
+xref
+0 20
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000000144 00000 n 
+0000000354 00000 n 
+0000000559 00000 n 
+0000000656 00000 n 
+0000000729 00000 n 
+0000001497 00000 n 
+0000001704 00000 n 
+0000001900 00000 n 
+0000002167 00000 n 
+0000002392 00000 n 
+0000002585 00000 n 
+0000002742 00000 n 
+0000003018 00000 n 
+0000003118 00000 n 
+0000003401 00000 n 
+0000003607 00000 n 
+0000003890 00000 n 
+trailer
+<<
+/Size 20
+/Root 3 0 R
+/Info 1 0 R
+>>
+startxref
+4099
+%%EOF

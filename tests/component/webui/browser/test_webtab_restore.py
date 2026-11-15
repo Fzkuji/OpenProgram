@@ -1,23 +1,30 @@
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 
-from openprogram.webui.ws_actions import webtab
+import pytest
+
+from openprogram.interfaces.server.ws_actions import webtab
+
+
+@pytest.fixture(autouse=True)
+def isolated_page_inventory(monkeypatch):
+    for name in ("_bindings", "_connection_revisions", "_page_revisions", "_desktop_windows"):
+        monkeypatch.setattr(webtab, name, {})
 
 
 class _WS:
     def __init__(self, name="owner", *, trusted=False):
-        from openprogram.agent.authority import local_owner_authority
+        from openprogram.runtime.permissions.authority import local_owner_authority
         self.scope = {"state": {"authority": local_owner_authority()}} if trusted else {"state": {}}
         self.name = name
         self.window_id = name
 
 
 def test_register_binding_adopts_restoring_predecessor(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     webtab._bindings.clear()
     webtab._connection_revisions.clear()
     webtab._page_revisions.clear()
@@ -47,9 +54,9 @@ def test_register_binding_adopts_restoring_predecessor(tmp_path, monkeypatch):
 
 
 def test_closed_rebind_does_not_adopt(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     webtab._bindings.clear()
     webtab._connection_revisions.clear()
     webtab._page_revisions.clear()
@@ -87,61 +94,11 @@ def test_closed_rebind_does_not_adopt(tmp_path, monkeypatch):
     webtab.release_binding(rebound)
 
 
-def test_fresh_successor_accepts_first_human_input(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore, writes_fenced
-
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
-    webtab._bindings.clear()
-    webtab._connection_revisions.clear()
-    webtab._page_revisions.clear()
-    webtab._desktop_windows.clear()
-    owner = _WS(trusted=True)
-    webtab.ensure_connection_revision(owner)
-    webtab._desktop_windows[owner] = "win"
-    old = webtab.register_binding(owner, "win", "tab-a", "target-old")
-    old_key = webtab.binding_page_key(old)
-    store = BrowserResourceStore()
-    store.retain(
-        page_key=old_key, window_id="win", tab_id="tab-a", title="X",
-        target="https://example.test/", session_id="parent",
-        conversation_session_id="parent", live=True,
-    )
-    store.set_control_state(old_key, "idle", input_seq=50)
-    store.mark_restoring(old_key)
-    webtab.release_binding(old)
-    pauses = []
-    fenced_during_pause = []
-    rebound = webtab.register_binding(owner, "win", "tab-a", "target-new")
-    new_key = webtab.binding_page_key(rebound)
-    assert new_key != old_key
-    assert int((store.get_resource(new_key) or {}).get("last_input_seq") or 0) == 0
-
-    async def fake_pause(*args, **kwargs):
-        pauses.append(kwargs)
-        fenced_during_pause.append(writes_fenced(new_key))
-        return None
-
-    monkeypatch.setattr("openprogram.browser_resources.request_page_pause", fake_pause)
-    asyncio.run(webtab.handle_webtab_human_input(owner, {
-        "window_id": "win", "tab_id": "tab-a", "sequence": 1, "kind": "pointer",
-    }))
-    assert fenced_during_pause == []
-    assert pauses == []
-    assert int((store.get_resource(new_key) or {}).get("last_input_seq") or 0) == 0
-    stale = _WS(trusted=True)
-    webtab.ensure_connection_revision(stale)
-    webtab._desktop_windows[stale] = "other"
-    asyncio.run(webtab.handle_webtab_human_input(stale, {
-        "window_id": "win", "tab_id": "tab-a", "sequence": 1, "kind": "pointer",
-    }))
-    assert pauses == []
-    webtab.release_binding(rebound)
-
 
 def test_paused_same_target_register_keeps_control(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     webtab._bindings.clear()
     webtab._connection_revisions.clear()
     webtab._page_revisions.clear()
@@ -162,7 +119,7 @@ def test_paused_same_target_register_keeps_control(tmp_path, monkeypatch):
 
 
 def test_untrusted_register_does_not_mint_restore(tmp_path, monkeypatch):
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     called = []
     monkeypatch.setattr(webtab, "restore_window_pages", lambda *a, **k: called.append(True))
     owner = _WS()
@@ -171,9 +128,9 @@ def test_untrusted_register_does_not_mint_restore(tmp_path, monkeypatch):
 
 
 def test_trusted_restore_skips_without_native_target(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     webtab._bindings.clear()
     webtab._connection_revisions.clear()
     webtab._page_revisions.clear()
@@ -185,7 +142,7 @@ def test_trusted_restore_skips_without_native_target(tmp_path, monkeypatch):
         session_id="parent", conversation_session_id="parent", live=True,
     )
     store.mark_restoring("page:dead:1")
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
     owner = _WS()
     owner.scope = {"state": {"authority": local_owner_authority()}}
     webtab.ensure_connection_revision(owner)

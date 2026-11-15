@@ -1,0 +1,146 @@
+/* 中央窗格宿主：.center-pane-chat、分支条、转录⇄DAG 视角切换按钮。
+   对应组件：components/app-shell.tsx、components/chat/pane/view-controls.tsx */
+
+/* ═══ Center perspectives: transcript ⇄ session context DAG ═══════════
+   The chat pane hosts BOTH surfaces at once and swaps them with
+   `display`. Keeping the graph mounted matters: the DAG renderer paints
+   into `#historyPanel .history-body` on every WebSocket capture whether
+   or not it is on screen, so unmounting would blank it until the next
+   one. The pane is a real flex box (not the `display: contents` of
+   `.center-single-pane`) so the floating view controls have something to
+   position against. */
+.center-pane-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+/* Branch strip — one wrapping row of pills above the canvas. Replaces
+   the branch LIST the rail used to hold: the graph already draws the
+   branch structure, so the strip only has to answer "which one am I
+   on" and let you switch. Capped at three rows so a session with many
+   branches still leaves the canvas the bulk of the pane. */
+.branches-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  max-height: calc(28px * 3 + 12px + 16px);
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Obsidian-style pane controls: perspective toggle + `…` overflow,
+   floating at the pane's top-right over whichever surface is showing.
+   The same raised strip as the DAG canvas's rails (dag/panels/tools.css
+   .dag-tool-rail): the input box's fill and the composer's shadow,
+   deepening under the pointer as the composer's buttons do. */
+.chat-view-controls {
+  position: absolute;
+  /* 画布上的浮动控件到边缘、彼此之间一律 16px。 */
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  /* 竖排：视图切换在上，… 菜单在下。 */
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-input);
+  box-shadow: var(--shadow-raised);
+  transition: box-shadow var(--motion-medium) var(--ease-standard);
+}
+.chat-view-controls:hover,
+.chat-view-controls:has([aria-expanded="true"]) { box-shadow: var(--shadow-raised-hover); }
+.chat-view-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ui-button-h-sm);
+  height: var(--ui-button-h-sm);
+  padding: 0;
+  border: none;
+  /* 圆角方形，不是圆形。 */
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+.chat-view-control-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+/* No pressed colour: the toggle's icon already names the view (chat
+   bubble ⇄ graph), and a dark icon among the grey ones read as a
+   different set. */
+
+/* Full screen — focus mode in the conversation, full screen in the graph
+   (lib/tabs/canvas/canvas-fullscreen.ts): the session pane takes the
+   window. The center body lifts out of the layout over the sidebars and
+   the tab strip, which stay where they are underneath, 8px inside the
+   window on every side — the sidebar cards' gap to the window's edges.
+   The tab strip fades out under it (center-tabs/strip/tab-strip.module.css),
+   since nothing sits between the window's top and its tabs. The glide in
+   and out is canvas-fullscreen.ts's: the body's edges travel from the
+   session pane's box, so this is only where they end. */
+/* !important: app-shell.tsx sets the body's position inline. */
+html[data-canvas-fullscreen] .center-body {
+  position: fixed !important;
+  z-index: 30;
+  /* Named: the glide in ends on it (canvas-fullscreen.ts). */
+  --canvas-fullscreen-inset: 8px;
+  inset: var(--canvas-fullscreen-inset);
+  /* The centre card's material (base/layout.css .center-col), worn by the
+     body itself: a split layout dissolves the column's card. */
+  background: var(--bg-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--composer-shadow);
+  overflow: hidden;
+}
+/* Only the session pane and the floating previews over it stay: the
+   canvas's other panes and its pane controls step aside, and the session
+   pane fills the body (its split geometry is inline, hence !important). */
+html[data-canvas-fullscreen] .center-body > :not(.center-pane-chat):not([data-pip="true"]) {
+  display: none !important;
+}
+html[data-canvas-fullscreen] .center-body > .center-pane-chat {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: inherit !important;
+  box-shadow: none !important;
+}
+
+/* Every center tab closed (components/app-shell.tsx EmptyCenter). */
+.center-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.center-empty-btn {
+  height: var(--ui-button-h);
+  padding: 0 14px;
+  border-radius: var(--ui-button-radius);
+  border: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.center-empty-btn:hover { background: var(--bg-hover); }
+

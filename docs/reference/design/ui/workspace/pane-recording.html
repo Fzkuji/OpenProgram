@@ -1,0 +1,195 @@
+<title>Pane recording</title>
+<meta name="description" content="An Agent records one pane of the App to a video: the actions it calls, how it names the pane, what comes back, how frames are captured and what the file is.">
+<meta name="covers" content="openprogram/programs/applications/browser/video.py">
+<h1>Pane recording</h1>
+
+<p>An Agent records one pane to a video of exactly that pane's rectangle, with actions of <code translate="no">computer_use_agent</code>. There is no menu, button or shortcut for a person. The App captures its own pages, so macOS never asks for Screen Recording and no approval is added.</p>
+
+<h2 id="actions">What the Agent calls</h2>
+<p>Three actions on target <code translate="no">browser</code>, the target that already reaches the App and owns <code translate="no">screenshot</code>. Names and limits follow <code translate="no">start_audio_recording</code> and <code translate="no">stop_audio_recording</code> of target <code translate="no">app</code>.</p>
+<pre translate="no" tabindex="0">computer_use_agent(target="browser", action="start_video_recording", args={"pane": "conversation"})
+…
+computer_use_agent(target="browser", action="stop_video_recording")
+
+Recorded 12.4 seconds of tk3fa, 1600×1200 at up to 60 fps, saved to
+~/.openprogram/computer-use/video/20261110-101500-conversation.mp4.</pre>
+<table class="stack">
+<thead><tr><th scope="col">Action</th><th scope="col">Arguments</th><th scope="col">Returns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">start_video_recording</code></th><td><code translate="no">pane</code>: what to record, below. <code translate="no">max_duration</code>: seconds, 60 by default, at most 600.</td><td>At once: the pane, its size in pixels and the limit. Recording goes on while the Agent acts.</td></tr>
+<tr><th scope="row"><code translate="no">stop_video_recording</code></th><td><code translate="no">discard</code>: delete instead of saving</td><td><code translate="no">path</code>, <code translate="no">seconds</code>, <code translate="no">width</code>, <code translate="no">height</code>, <code translate="no">fps</code>, <code translate="no">bytes</code>, and <code translate="no">ended</code>: why it ended when not by this call</td></tr>
+<tr><th scope="row"><code translate="no">panes</code></th><td>None</td><td>The panes on screen in the answering window: id, kind, title, size</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">pane</code></th><th scope="col">Records</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">conversation</code></th><td>This conversation's own pane, when it is on screen</td></tr>
+<tr><th scope="row">An id from <code translate="no">panes</code></th><td>Any center tab or canvas pane on screen: conversation, file, application, built-in page such as Settings</td></tr>
+<tr><th scope="row"><code translate="no">window</code></th><td>The whole window. Web views show as empty areas.</td></tr>
+<tr><th scope="row">A web tab</th><td>Refused for now</td></tr>
+</tbody>
+</table>
+
+<h2 id="rules">Rules</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Approval</th><td>None added</td></tr>
+<tr><th scope="row">Which window</th><td>The one that shows this conversation; the main window when none does</td></tr>
+<tr><th scope="row">One at a time</th><td>One recording per window. A second start is refused and names the one running.</td></tr>
+<tr><th scope="row">Who may stop</th><td>The conversation that started it</td></tr>
+<tr><th scope="row">At the limit</th><td>Stops by itself and keeps the file; the next stop returns it with the reason</td></tr>
+<tr><th scope="row">Pane closed or hidden</th><td>The same: it stops and the file is kept</td></tr>
+<tr><th scope="row">Pane resized</th><td>The video keeps the size it started with; the picture scales to fit</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Failure</th><th scope="col">What the Agent reads</th></tr></thead>
+<tbody>
+<tr><th scope="row">No App window answers</th><td>Video recording needs the OpenProgram desktop App with a window open; open it and call again.</td></tr>
+<tr><th scope="row">Conversation not on screen</th><td>Says so and lists the panes that are</td></tr>
+<tr><th scope="row">Unknown or missing pane</th><td>The error lists the panes on screen, as <code translate="no">panes</code> would</td></tr>
+<tr><th scope="row">Already recording</th><td>Already recording tk3fa; call stop_video_recording first.</td></tr>
+<tr><th scope="row">Nothing to stop</th><td>Nothing is being recorded; call start_video_recording first.</td></tr>
+<tr><th scope="row"><code translate="no">max_duration</code> out of range</th><td>max_duration must be between 0 and 600 seconds</td></tr>
+<tr><th scope="row">App older than this feature</th><td>Says to update the desktop App</td></tr>
+<tr><th scope="row">Capture, encoder or file fails</th><td>What failed; the partial file is removed</td></tr>
+<tr><th scope="row">File not on the worker's computer</th><td>Names the path the App reported</td></tr>
+</tbody>
+</table>
+<p class="note">The worker sends <code translate="no">record_panes</code>, <code translate="no">record_start</code> and <code translate="no">record_stop</code> over the desktop link; the App records and writes the file. Code: <code translate="no">openprogram/programs/applications/browser/video.py</code>, <code translate="no">apps/web/lib/desktop/recording/pane-recorder.ts</code>, <code translate="no">apps/desktop/main/windows/pane-recording.js</code>.</p>
+
+<h2 id="recording">What the person sees</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="A window while one pane records: the pane has an accent outline drawn just outside its frame, and nothing else changes.">
+  <rect class="tile" x="0" y="0" width="680" height="150" rx="8"/>
+  <text class="t-soft" x="16" y="23">Chat</text>
+  <text class="t-soft" x="70" y="23">Providers</text>
+  <path class="ln-faint" d="M0 38H680M170 38V150M490 38V150"/>
+  <text class="t-soft mid" x="85" y="98">other pane</text>
+  <rect class="ln-acc" x="180" y="48" width="300" height="92" rx="6"/>
+  <text class="t-big mid" x="330" y="92">Recorded pane</text>
+  <text class="t-soft mid" x="330" y="114">outline sits outside the frame</text>
+  <text class="t-soft mid" x="585" y="98">right sidebar</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li class="flow-end"><strong>Recorded pane</strong><small>accent outline just outside the frame, so it is not in the video</small></li>
+</ol>
+</figure>
+<p>The outline is all a person gets: no pill, timer or button. It stays because recording starts without asking, so it must be visible. A whole-window recording has no outline.</p>
+
+<h2 id="surfaces">What a pane is</h2>
+<table class="stack">
+<thead><tr><th scope="col">Surface</th><th scope="col">Drawn by</th><th scope="col">Recorded as</th></tr></thead>
+<tbody>
+<tr><th scope="row">Center tab: chat, file, terminal, review, application, built-in pages such as Settings</th><td>The window's page</td><td>One stream cropped to the tab's content</td></tr>
+<tr><th scope="row">Canvas pane</th><td>The window's page</td><td>The same; the crop follows the pane</td></tr>
+<tr><th scope="row">Right sidebar: Files, Activity, Resources, detail panel</th><td>The window's page</td><td>The same</td></tr>
+<tr><th scope="row">Left sidebar, secondary rail, one Settings column</th><td>The window's page</td><td>The same</td></tr>
+<tr><th scope="row">Web tab</th><td>Toolbar by the window's page, the site by its own native view</td><td>Later: the site's own frame as one stream</td></tr>
+<tr><th scope="row">Floating preview</th><td>As a web tab</td><td>As a web tab</td></tr>
+<tr><th scope="row">Whole window</th><td>All of the above</td><td>The uncropped stream with visible web views laid in</td></tr>
+<tr><th scope="row">Menus that open above a web page; native context menus</th><td>Their own top-layer views; the system</td><td>Left out at first</td></tr>
+<tr><th scope="row">Agent glow and pointer over a page</th><td>A transparent window per page</td><td>Not captured</td></tr>
+</tbody>
+</table>
+<p class="note">Layout: <a href="center-canvas-layout.html">center canvas</a>, <a href="../browser/web-tab-native-bounds.html">web tab bounds</a>, <a href="../browser/agent-control-overlay.html">agent control overlay</a>.</p>
+
+<h2 id="capture">Capture route</h2>
+<table class="stack">
+<thead><tr><th scope="col">Route</th><th scope="col">Frame rate, measured</th><th scope="col">Pointer</th><th scope="col">macOS permission</th><th scope="col">Encoding</th></tr></thead>
+<tbody>
+<tr><th scope="row">Recommended. Own-frame stream: <code translate="no" data-claim="example">getDisplayMedia</code> answered with the window's frame, then <code translate="no" data-claim="example">cropTo</code> the pane</th><td>60 fps, full and cropped; 60 fps for a web tab's frame</td><td>Drawn in by Chromium (the track reports <code translate="no" data-claim="example">cursor: motion</code>)</td><td>None</td><td>Built in: H.264 MP4 at 60 fps, with real frame times</td></tr>
+<tr><th scope="row"><code translate="no">capturePage</code> in a loop</th><td>About 115 fps for a 640×400 pane; 59 fps for the full window with JPEG encoding</td><td>None</td><td>None</td><td>Own encoder; frame times are the loop's guesses</td></tr>
+<tr><th scope="row">CDP <code translate="no" data-claim="example">Page.startScreencast</code></th><td>About 93 fps, whole viewport only</td><td>None</td><td>None</td><td>Own encoder; needs the page's debugger, which agent control also uses</td></tr>
+<tr><th scope="row">Window capture: <code translate="no" data-claim="example">desktopCapturer</code>, cropped by rectangle</th><td>Not measured, since asking raises the system prompt</td><td>The real one</td><td>Screen Recording, granted to the App</td><td>Built in; also shows native menus and web views in one picture</td></tr>
+</tbody>
+</table>
+<p class="note">Measured in Electron 45.2.1 (Chromium 156) on a 2× display with a 1280×800 window and a small moving element; real pages will be slower on every route.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 104" role="img" aria-label="The pane element is captured from the App's own frame as a 60 frames per second stream, cropped to the pane, encoded as H.264 MP4 and written to the Movies folder.">
+  <defs><marker id="pr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="56" y="48">Pane</text>
+  <text class="t-soft mid" x="56" y="68">element</text>
+  <line class="ln" x1="112" y1="52" x2="140" y2="52" marker-end="url(#pr-a)"/>
+  <rect class="tile" x="142" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="198" y="48">App frame</text>
+  <text class="t-soft mid" x="198" y="68">60 fps stream</text>
+  <line class="ln" x1="254" y1="52" x2="282" y2="52" marker-end="url(#pr-a)"/>
+  <rect class="tile" x="284" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="340" y="48">Crop</text>
+  <text class="t-soft mid" x="340" y="68">to the pane</text>
+  <line class="ln" x1="396" y1="52" x2="424" y2="52" marker-end="url(#pr-a)"/>
+  <rect class="tile" x="426" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="482" y="48">Encode</text>
+  <text class="t-soft mid" x="482" y="68">H.264 MP4</text>
+  <line class="ln" x1="538" y1="52" x2="566" y2="52" marker-end="url(#pr-a)"/>
+  <rect class="tile" x="568" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="624" y="48">File</text>
+  <text class="t-soft mid" x="624" y="68">Movies folder</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Pane element</strong></li>
+  <li><strong>App frame</strong><small>60 fps stream</small></li>
+  <li><strong>Crop</strong><small>to the pane</small></li>
+  <li><strong>Encode</strong><small>H.264 MP4</small></li>
+  <li class="flow-end"><strong>File</strong><small>Movies folder</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Who may capture</th><td>Only a window's main page, only its own window's frames, only while a recording the worker asked for is running. Sites in web tabs stay refused as today.</td></tr>
+<tr><th scope="row">Size</th><td>The pane's CSS size times the display scale, rounded to even numbers. Left alone the stream comes out at screen size, so the size is set explicitly.</td></tr>
+<tr><th scope="row">Web tab</th><td>The site's own frame, answered to the window's page; no joining</td></tr>
+<tr><th scope="row">Why not window capture</th><td>It adds a system permission, and the App is not the identity that holds Screen Recording for workflow recording. It stays the later answer for native menus.</td></tr>
+<tr><th scope="row">Why not the other two</th><td>Fast enough, but no pointer, no frame times, and an encoder to write. <code translate="no">capturePage</code> stays what it is used for today: stills.</td></tr>
+</tbody>
+</table>
+
+<h2 id="output">The file</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Format</th><td>MP4, H.264, 8 Mbit/s, up to 60 fps, no audio. Frames come only when the pane changes, so a still pane has few.</td></tr>
+<tr><th scope="row">GIF, WebM</th><td>Not recorded. The Agent converts the MP4 with its own tools when asked.</td></tr>
+<tr><th scope="row">Saved to</th><td><code translate="no">computer-use/video/</code> under the state folder, beside the audio recordings; the newest 20 are kept</td></tr>
+<tr><th scope="row">Name</th><td>Date, time and the pane as it was named</td></tr>
+<tr><th scope="row">Handing it over</th><td>The Agent copies it into the working folder and calls <code translate="no">send_file</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="effects">Effects</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Effect</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pointer and click mark</th><td>The Agent's actions move no real pointer, and its usual pointer lives in a separate window. The same pointer is drawn inside the recorded frame from the action events.</td></tr>
+<tr><th scope="row">Automatic zoom to clicks</th><td>An export crops and eases toward each click, from a list of clicks kept beside the file</td></tr>
+<tr><th scope="row">Padding, background, rounded frame</th><td>The export places the video on a backdrop</td></tr>
+</tbody>
+</table>
+<p class="note">None of these is built. The export writes a second file; the plain recording is never altered.</p>
+
+<h2 id="browser">Without the desktop App</h2>
+<table class="stack">
+<thead><tr><th scope="col">Where</th><th scope="col">Result</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram open in a browser tab</th><td>Refused: needs the desktop App</td><td>A browser shares a tab only after a person clicks and answers its own prompt, in Chromium; Firefox, Safari and phones cannot crop to an element at all</td></tr>
+<tr><th scope="row">The user's own Chrome or Edge, through the extension</th><td>Not at first</td><td>Later by CDP screencast, which measured about 93 fps, with the worker encoding</td></tr>
+<tr><th scope="row">Server with no window</th><td>Refused: needs the desktop App</td><td>Nothing draws the panes</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>The three actions; center tabs, canvas panes and the whole window; the outline; the limit and the pane watch; refusal of every display capture the App did not ask for</td></tr>
+<tr><th scope="row">Not implemented</th><td>Web tabs; sidebars as panes; stopping when the run ends; first and last frame returned as images; a <code translate="no" data-claim="example">path</code> argument inside the working folder; the pointer drawn in the frame; the export step and its effects; the user's own Chrome or Edge</td></tr>
+<tr><th scope="row">Still to check</th><td>That QuickTime, X and WeChat accept the recorder's MP4 as written; frame rate on a long chat</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="../browser/built-in-browser.html">Built-in browser</a></p>

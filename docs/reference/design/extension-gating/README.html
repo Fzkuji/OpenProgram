@@ -1,0 +1,61 @@
+<title>Extension gating</title>
+<meta name="description" content="How an agent profile controls which tools, skills and MCP servers the model can use.">
+<meta name="covers" content="none">
+<h1>Extension gating</h1>
+
+<pre translate="no"><code>// agent.json
+{
+  "tools":  {"mode": "automatic", "disabled": ["bash", "*_dangerous"]},
+  "skills": {"disabled": ["devops/*"], "allowed": [], "categories": ["research", "writing"]},
+  "mcp":    {"disabled": ["slack"], "allowed": [], "required": ["drawio*"]}
+}</code></pre>
+
+<h2 id="the-unified-model">Fields</h2>
+<table class="stack">
+<thead><tr><th scope="col">Field</th><th scope="col"><code translate="no">tools</code></th><th scope="col"><code translate="no">skills</code></th><th scope="col"><code translate="no">mcp</code></th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">disabled</code></th><td>Yes</td><td>Yes</td><td>Yes</td><td>Matching names are rejected</td></tr>
+<tr><th scope="row"><code translate="no">allowed</code></th><td>Yes</td><td>Yes</td><td>Yes</td><td>When non-empty, only matches pass</td></tr>
+<tr><th scope="row"><code translate="no">categories</code></th><td>No</td><td>Yes</td><td>No</td><td>When non-empty, a skill that declares a category must match</td></tr>
+<tr><th scope="row"><code translate="no">required</code></th><td>No</td><td>No</td><td>Yes</td><td>Any pattern matching no remaining server stops the turn</td></tr>
+<tr><th scope="row"><code translate="no">mode</code></th><td>Yes</td><td>No</td><td>No</td><td><code translate="no">automatic</code> (default), <code translate="no">selected</code>, <code translate="no">none</code></td></tr>
+</tbody>
+</table>
+<p class="note">Patterns use <code translate="no">fnmatch.fnmatchcase</code>: <code translate="no">*</code>, <code translate="no">?</code>, <code translate="no">[abc]</code>; an exact name is the trivial case. <code translate="no">mcp</code> patterns match the server name, the part of <code translate="no">&lt;server&gt;__&lt;tool&gt;</code> before <code translate="no">__</code>. With <code translate="no">mode: selected</code>, <code translate="no">tools.allowed</code> holds exact names. Plugins are not gated: a plugin is a host-level contributor, and gating applies to the skills, tools and MCP it contributes.</p>
+
+<h3 id="resolution-order-per-gate-call">Resolution order</h3>
+<ol>
+<li><code translate="no">disabled</code>: a match rejects.</li>
+<li><code translate="no">allowed</code>, if non-empty: no match rejects.</li>
+<li><code translate="no">categories</code>: a non-empty list rejects a categorized skill outside it.</li>
+<li><code translate="no">required</code>, MCP only, checked after filtering: an unmatched pattern fails the whole turn.</li>
+</ol>
+
+<h2 id="why-this-shape">Why this shape</h2>
+<p>Claude Code's per-type fields with opencode's wildcard expressiveness. Each field says what it gates; one pattern replaces five names; a new extension type is a new block of the same shape. Comparison: <a href="reference-comparison.html">Reference comparison</a>.</p>
+
+<h2 id="worked-examples">Examples</h2>
+<table class="stack">
+<thead><tr><th scope="col">Agent</th><th scope="col">Profile</th><th scope="col">Model sees</th></tr></thead>
+<tbody>
+<tr><th scope="row">Customer service</th><td><pre translate="no"><code>tools:  {disabled: [write, edit, execute_*, apply_patch]}
+skills: {categories: [customer-service, writing]}
+mcp:    {disabled: ["*"]}</code></pre></td><td>No edit tools, only those skill categories, no MCP</td></tr>
+<tr><th scope="row">DevOps</th><td><pre translate="no"><code>skills: {disabled: [prod-deploy, drop-database]}
+mcp:    {required: ["github*", "k8s*"]}</code></pre></td><td>Everything but two skills. Without GitHub and k8s MCP the turn fails before the provider runs</td></tr>
+<tr><th scope="row">Research</th><td><pre translate="no"><code>tools:  {allowed: [read, grep, glob, web_fetch], web_search: true}
+skills: {categories: [research]}
+mcp:    {allowed: ["arxiv*", "scholar*"]}</code></pre></td><td>Those tools plus web search, research skills, those MCP servers</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">web_search</code> is outside the default tool list, so <code translate="no">allowed</code> alone does not add it.</p>
+
+<h2 id="when-not-to-use-gating">When not to use gating</h2>
+<p>Default: install skills globally, configure no gates, let the model choose from each skill's <code translate="no">description</code>. Add a gate after observing specific bad behaviour, when:</p>
+<ul>
+<li>a skill needs a hard wall (<code translate="no">prod-deploy</code> never in customer service);</li>
+<li>the permitted set is shorter to list than to tune descriptions for;</li>
+<li>an agent makes no sense without a given MCP server.</li>
+</ul>
+
+<p class="next"><a href="implementation.html">Implementation map</a> · <a href="future-work.html">Not built</a> · <a href="../function/calling-unification.html">Calling unification</a> (six-layer gating for function calling) · <a href="../integrations/skills-and-plugins.html">Skills and plugins</a> (catalogues, discovery, hot reload)</p>

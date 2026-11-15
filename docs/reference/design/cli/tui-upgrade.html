@@ -1,0 +1,162 @@
+<title>TUI transcript rendering</title>
+<meta name="description" content="How the Ink TUI renders each tool, folds output, queues messages while a turn runs, attaches images and PDFs, and lets keybindings be found and overridden.">
+<meta name="covers" content="apps/cli/src/">
+<h1>TUI transcript rendering</h1>
+
+<p>Each tool reads as a header and a quantified line, output folds with an accurate count, one key expands everything, edits show a numbered diff, messages typed during a turn wait visibly above the input, images and PDFs attach by path or paste, and every key comes from one table the person can override. Mid-run questions: <a href="../runtime/operations/user-input-requests.html">user input requests</a>.</p>
+
+<h2 id="transcript">Transcript</h2>
+<pre translate="no" tabindex="0">● read(/src/app.py)
+  ⎿ Read 52 lines
+● edit(/src/app.py)
+  ⎿ Added 2 lines, removed 1 line
+    12   keep
+    13 - old
+    13 + new
+    14 + added
+● bash(pytest -q)
+  ⎿ ....F
+    1 failed, 4 passed
+    … +38 lines (ctrl+o to expand)
+● agent(Survey the parser)
+  ⎿ Done (2m 10s)
+● todo_update(#2)
+  ⎿ ☒ Read code
+    ◼ Write tests
+    ☐ Ship</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">What it shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Every tool</th><td>Status glyph in the theme's tool colours (<code translate="no">◌</code> running, <code translate="no">●</code> done, <code translate="no">✗</code> error), bold name, the argument it acted on in parentheses, the body under a <code translate="no">⎿</code> gutter. Other providers' names (<code translate="no">Bash</code>, <code translate="no">MultiEdit</code>, <code translate="no">TodoWrite</code>, <code translate="no">Task</code>) map onto the same renderers</td></tr>
+<tr><th scope="row">bash</th><td>Output folded to 3 lines, then <code translate="no">… +N lines (ctrl+o to expand)</code>; N comes from the server's whole-output count when the frame is a preview. One hidden line is shown instead of a note about it</td></tr>
+<tr><th scope="row">read, grep, glob, list</th><td>One line: <code translate="no">Read 52 lines</code>, <code translate="no">Found 8 files</code>, <code translate="no">Found 3 matches</code>, <code translate="no">No matches</code>; the content only when expanded</td></tr>
+<tr><th scope="row">edit, apply_patch, write</th><td><code translate="no">Added X lines, removed Y lines</code> and a diff: green additions, red removals, three lines of context, folded runs as <code translate="no">⋮</code>, up to 12 rows before folding. Line numbers come from reading the edited file once when the result arrives; a file not on this machine shows no numbers rather than wrong ones</td></tr>
+<tr><th scope="row">agent</th><td><code translate="no">Running…</code>, then <code translate="no">Done (2m 10s)</code> and the head of its reply; a background agent reads <code translate="no">Started in the background</code></td></tr>
+<tr><th scope="row">todo_*</th><td>The saved board from the <code translate="no">todos_update</code> frame on the newest todo call: <code translate="no">☒</code> done and struck through, <code translate="no">◼</code> in progress and bold, <code translate="no">☐</code> pending</td></tr>
+<tr><th scope="row">Expand</th><td>Ctrl+O expands or folds tool output for the whole transcript; the fold note names the active key</td></tr>
+<tr><th scope="row">Matching</th><td>A result finds its call by <code translate="no">tool_call_id</code>, so two concurrent calls of one tool finish in the right row; frames without an id fall back to the newest running call of that name</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Per-tool summaries</th><td>Claude Code quantifies (<code translate="no">Read N lines</code>, <code translate="no">Found N files</code>, an edit's counts and diff); Codex prints raw output under <code translate="no">└</code>; opencode splits one-line tools (read, search) from block tools (bash, edit, task, todo). Summaries follow Claude Code, since a read's content is noise once the model has it; the split follows opencode, so a mixed run reads two lines per tool</td></tr>
+<tr><th scope="row">Fold at three, count the rest</th><td>Claude Code folds at 3 with <code translate="no">+N lines</code>; Codex keeps head and tail; Pi shows the tail of bash. A head with an accurate total says how much is hidden; the total comes from the server's preview metadata, because a preview counted on its own understates long output</td></tr>
+<tr><th scope="row">One global expand</th><td>Claude Code opens Ctrl+O as a separate frozen screen; Pi toggles <code translate="no">app.tools.expand</code> in place. The toggle keeps the transcript scrollable and needs no second screen or exit key, and the cell-grid renderer redraws the whole frame anyway</td></tr>
+<tr><th scope="row">Diff from the edit's own arguments</th><td>Claude Code builds its patch from <code translate="no">old_string</code> / <code translate="no">new_string</code>; Codex from the patch it applied. The TUI has both from the call, so no server change is needed; line numbers come from the file because the arguments lack them, and are left out when the file is elsewhere (an SSH conversation)</td></tr>
+<tr><th scope="row">Board from the saved todos</th><td>Claude Code draws TodoWrite's checklist from its arguments; ours change one item per call, so the board comes from the <code translate="no">todos_update</code> frame the tools already broadcast, and a TodoWrite-style call is drawn from its arguments</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="queue">Messages typed during a turn</h2>
+<pre translate="no" tabindex="0">  ↳ also update the changelog
+› and run the linter +2 lines
+╭──────────────────────────────────────────────╮
+│ &gt;  waiting for response    enter edit · x remove │
+╰──────────────────────────────────────────────╯</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Queue</th><td>While a turn runs the input keeps taking text; Enter adds the message, with its attachments, to the queue shown dim above the input, one <code translate="no">↳</code> row each</td></tr>
+<tr><th scope="row">Select</th><td>↑ on an empty input selects the newest row; ↑ / ↓ move, Esc returns to the input, any other key types again</td></tr>
+<tr><th scope="row">Edit, remove</th><td>Enter or <code translate="no">e</code> takes the row back into the input (attachments included); Enter queues it again at the end. <code translate="no">x</code>, Delete or Backspace removes it</td></tr>
+<tr><th scope="row">Send</th><td>When the branch is free again — finished, failed or stopped — the oldest row is sent as the next turn, then the next. Esc still stops the turn</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Visible rows over a hidden buffer</th><td>Codex shows queued messages as dim <code translate="no">↳</code> rows and pops the last one back with a key; Claude Code pulls all of them into the input with ↑; Pi restores them with Alt+↑; opencode shows a count. Grok Build's queue pane lets ↑ select any row to edit or remove it. The rows and the selection follow Grok Build because the web composer's queued bubbles are individually editable and removable too, so both surfaces work the same way</td></tr>
+<tr><th scope="row">Sent after a stop</th><td>Claude Code sends the queue after a stop; Codex and Pi put it back into the input because their queues cannot be edited. Ours can be edited before and after the stop, so it is sent, matching the web composer</td></tr>
+<tr><th scope="row">One message per turn</th><td>Claude Code merges queued prompts into one; each row here becomes its own turn, so a removed or edited row never changes another, and each branch keeps one foreground operation</td></tr>
+<tr><th scope="row">Queued on the client</th><td>A branch runs one foreground operation, so the server refuses a second send; holding the message in the TUI until the branch is free needs no server change</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="attachments">Images and PDFs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Way in</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Paste or drag a path</th><td>A paste whose every token is an existing image (png, jpg, gif, webp) or PDF — quoted, <code translate="no">\ </code>-escaped, <code translate="no">file://</code> or <code translate="no">~</code> forms included — inserts <code translate="no">[Image #1]</code> / <code translate="no">[PDF #2]</code> instead of the text; anything else stays text</td></tr>
+<tr><th scope="row">Clipboard image</th><td>Ctrl+V (Alt+V on Windows), or an empty paste, reads an image from the clipboard: osascript on macOS, wl-paste or xclip on Linux, PowerShell on Windows</td></tr>
+<tr><th scope="row"><code translate="no">@path</code></th><td>A sent <code translate="no">@path</code> to an image or PDF attaches it the same way</td></tr>
+<tr><th scope="row">Send</th><td>Each placeholder still in the text becomes the web composer's <code translate="no">[attachment: name (ext, N KB) @json "path"]</code> marker; a deleted placeholder drops its file. An image goes as bytes with its source path; a PDF goes as its path for the <code translate="no">pdf</code> tool. Images over 5 MB and files over 32 MB are refused with a line saying why</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Placeholders in the text</th><td>Claude Code and Codex both show <code translate="no">[Image #N]</code> where the image goes and drop an image whose placeholder is deleted; a terminal has no chip row, so the text is the only place to show and remove an attachment</td></tr>
+<tr><th scope="row">Path detection on paste</th><td>Terminals deliver a dragged file as its path. Claude Code and Codex turn such a paste into an attachment; requiring every token to be an existing attachable file keeps a pasted sentence that mentions a path as text</td></tr>
+<tr><th scope="row">The web composer's markers</th><td>The server already stores, rewrites and renders that marker for Electron uploads with a source path, so the TUI needs no new protocol and the message shows the same in the web chat</td></tr>
+<tr><th scope="row">No resizing</th><td>The web composer resizes large images in a canvas; the TUI has no image library, so it refuses past the model's 5 MB limit instead of sending a request that fails</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="keybindings">Keybindings</h2>
+<pre translate="no" tabindex="0">// ~/.openprogram/keybindings.json (the profile's state folder)
+{
+  "app.toolsExpand": "ctrl+t",
+  "app.commandPalette": "none",
+  "queue.remove": ["d", "delete"]
+}</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Action table</th><td>Every rebindable key is an action declared once with its context (<code translate="no">global</code>, <code translate="no">input</code>, <code translate="no">queue</code>), default keys and description; handlers ask whether an action matches instead of testing raw keys</td></tr>
+<tr><th scope="row">Overrides</th><td>A flat <code translate="no">action → key | [keys] | "none"</code> object in <code translate="no">keybindings.json</code> in the state folder. A key the person binds is taken from default actions in an overlapping context</td></tr>
+<tr><th scope="row">Problems</th><td>An unknown action, an unreadable key, a reserved action or key (Ctrl+C) and two of the person's own bindings on one key each become one line in the transcript at start; the rest of the file still applies and bad JSON leaves the defaults</td></tr>
+<tr><th scope="row"><code translate="no">?</code> help</th><td><code translate="no">?</code> on an empty input (and <code translate="no">/keybindings</code>) opens the shortcut list built from the same table with the keys now in force; the hints on the input and the fold note use the active keys too</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Flat action map</th><td>Pi's <code translate="no">keybindings.json</code> and opencode's <code translate="no">keybinds</code> map action to keys; Claude Code nests key-to-action blocks per context; Codex nests context and action in <code translate="no">config.toml</code>; Grok Build cannot remap. The flat map is the shortest file to write, and contexts stay in the table where the person does not have to name them</td></tr>
+<tr><th scope="row">Warnings, not errors</th><td>Codex refuses to start on a conflicting keymap; Claude Code and Pi warn and continue. A typo in a key file should not keep the person out of the TUI</td></tr>
+<tr><th scope="row">Reserved Ctrl+C</th><td>Claude Code reserves Ctrl+C and Ctrl+D because their stop and double-press exit are time-based; Ctrl+C here carries the same stop and exit, so it stays fixed</td></tr>
+<tr><th scope="row">Help from the table</th><td>A hand-written list drifted from the handlers; generating it from the table that the handlers read keeps them equal, which is what Claude Code's and Codex's shortcut overlays do</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="interaction">Commands and interaction</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Command registry</th><td>Each command declared once (name, title, category, keybind, slash-name, enabled); drives Ctrl+K, slash commands and footer hints, so registry and handlers cannot drift</td></tr>
+<tr><th scope="row">Prompts</th><td>Questions and approvals occupy the input slot instead of a modal; the transcript stays scrollable and esc keeps one meaning</td></tr>
+<tr><th scope="row">Danger</th><td>Destructive picker actions confirm in the row: press again, the row turns red. No nested confirm layer</td></tr>
+<tr><th scope="row">Pickers</th><td>Move from the <code translate="no">pickerKind</code> enum to the ModalProvider and Form kit, one at a time</td></tr>
+<tr><th scope="row">Spinner</th><td>One composite line, progressive width gating</td></tr>
+<tr><th scope="row">Markdown</th><td>marked-terminal, memoized by streaming state, text and width per text segment; the cell-grid renderer redraws every frame</td></tr>
+</tbody>
+</table>
+<p class="note">The vendored hermes-ink renderer stays: it has mouse tracking and ScrollBox, so OpenTUI buys nothing.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">Item</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Base</th><td>hermes-ink, four themes, BottomBar, Ctrl+K, autosuggest, <code translate="no">@file</code>, per-session drafts, account and channel flows, Markdown memoization, mid-run decisions in the input slot</td><td>Built</td></tr>
+<tr><th scope="row">Transcript</th><td>Per-tool rendering, 3-line fold with accurate count, Ctrl+O expand, diff for edit / apply_patch / write, sub-agent and todo views, results matched by <code translate="no">tool_call_id</code></td><td>Built</td></tr>
+<tr><th scope="row">Input</th><td>Queued messages (shown, selectable, editable, removable, sent after the turn), image and PDF attachments by path, paste, clipboard and <code translate="no">@path</code></td><td>Built</td></tr>
+<tr><th scope="row">Keys</th><td>Action table, <code translate="no">keybindings.json</code> overrides with warnings, <code translate="no">?</code> help from the table</td><td>Built</td></tr>
+<tr><th scope="row">Not built</th><td>Tool blocks in the <code translate="no">load_session</code> reply (a resumed conversation shows text only); <code translate="no">/diff</code> through the diff view; a sub-agent's call and token counts in its <code translate="no">Done</code> line (the stream does not carry them); image resizing; the composite spinner line, registry unification, in-row danger and the picker migration</td><td>Not built</td></tr>
+</tbody>
+</table>

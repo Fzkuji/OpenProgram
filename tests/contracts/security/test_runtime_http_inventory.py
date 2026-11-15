@@ -6,24 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.security import runtime_http_audit
+from openprogram.host.security import runtime_http_audit
 
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_runtime_http_inventory_has_no_unclassified_calls():
-    result = runtime_http_audit.scan_runtime_http(
-        ROOT / "openprogram",
-        additional_roots={
-            "apps/server/openprogram_server": (
-                ROOT / "apps/server/openprogram_server"
-            ),
-            "apps/cli/python/openprogram_cli": (
-                ROOT / "apps/cli/python/openprogram_cli"
-            ),
-        },
-    )
+    result = runtime_http_audit.scan_runtime_http(ROOT / "openprogram")
 
     assert result.unregistered == ()
     assert result.active_unmanaged_transports == ()
@@ -72,7 +62,7 @@ def test_runtime_http_inventory_combines_application_source_roots(tmp_path):
     (core / "empty.py").write_text("value = 1\n", encoding="utf-8")
     (server / "catalog.py").write_text(
         """
-from openprogram.security import safe_http
+from openprogram.host.security import safe_http
 
 safe_http.configured_safe_client(
     "server.catalog", "https://catalog.example"
@@ -83,7 +73,7 @@ safe_http.configured_safe_client(
 
     result = runtime_http_audit.scan_runtime_http(
         core,
-        additional_roots={"apps/server": server},
+        additional_roots={"server": server},
         exclusions=(),
         registry={"server.catalog": object()},
     )
@@ -282,14 +272,14 @@ pretend("tool.web_fetch")
 
 
 def test_unmanaged_sdk_is_not_hidden_by_same_file_consumer_evidence(tmp_path):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
     (package / "mixed.py").write_text(
         """
 import openai
-from openprogram.security.safe_http import safe_client
+from openprogram.host.security.safe_http import safe_client
 
 safe_client("provider.openai.sdk")
 openai.OpenAI()
@@ -313,7 +303,7 @@ openai.OpenAI()
 
 
 def test_sdk_injection_must_match_the_registered_consumer_disposition(tmp_path):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -356,7 +346,7 @@ session.client("bedrock-runtime")
     ],
 )
 def test_scanner_rejects_unguarded_bedrock_sdk_constructors(tmp_path, source, kind):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -389,7 +379,7 @@ require_active_sdk_transport(
 )
 """,
         """
-from openprogram.security.safe_http import require_active_sdk_transport
+from openprogram.host.security.safe_http import require_active_sdk_transport
 if enabled:
     require_active_sdk_transport(
         "provider.amazon_bedrock.sdk",
@@ -397,7 +387,7 @@ if enabled:
     )
 """,
         """
-from openprogram.security.safe_http import require_active_sdk_transport
+from openprogram.host.security.safe_http import require_active_sdk_transport
 boto3.client("bedrock-runtime")
 require_active_sdk_transport(
     "provider.amazon_bedrock.sdk",
@@ -409,7 +399,7 @@ require_active_sdk_transport(
 def test_bedrock_sdk_constructor_rejects_non_dominating_or_fake_guard(
     tmp_path, false_guard
 ):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -443,7 +433,7 @@ def test_bedrock_sdk_constructor_rejects_non_dominating_or_fake_guard(
 def test_scanner_accepts_exact_dominating_disabled_bedrock_guard(
     tmp_path, constructor
 ):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -451,7 +441,7 @@ def test_scanner_accepts_exact_dominating_disabled_bedrock_guard(
         f"""
 import boto3
 import boto3.session
-from openprogram.security.safe_http import require_active_sdk_transport
+from openprogram.host.security.safe_http import require_active_sdk_transport
 
 require_active_sdk_transport(
     "provider.amazon_bedrock.sdk",
@@ -487,12 +477,12 @@ openai.OpenAI(http_client=object())
 """,
         """
 import openai
-from openprogram.security.safe_http import safe_client
+from openprogram.host.security.safe_http import safe_client
 openai.OpenAI(http_client=safe_client("tool.web_fetch"))
 """,
         """
 import openai
-from openprogram.security.safe_http import safe_client
+from openprogram.host.security.safe_http import safe_client
 safe_client("provider.openai.sdk")
 openai.OpenAI(http_client=object())
 """,
@@ -505,14 +495,14 @@ openai.OpenAI(
 """,
         """
 import openai
-from openprogram.security.safe_http import safe_client
+from openprogram.host.security.safe_http import safe_client
 openai.OpenAI(
     http_client=(safe_client("provider.openai.sdk"), object())[1]
 )
 """,
         """
 import openai
-from openprogram.security.safe_http import safe_client
+from openprogram.host.security.safe_http import safe_client
 client = safe_client("provider.openai.sdk")
 client = object()
 openai.OpenAI(http_client=client)
@@ -523,7 +513,7 @@ def test_sdk_injection_requires_exact_managed_value_and_consumer(
     tmp_path,
     source,
 ):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -545,14 +535,14 @@ def test_sdk_injection_requires_exact_managed_value_and_consumer(
 
 
 def test_sdk_injection_accepts_exact_managed_assignment_container(tmp_path):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
     (package / "managed.py").write_text(
         """
 import openai
-from openprogram.providers.utils.http_client import get_shared_async_client
+from openprogram.models.providers.utils.http_client import get_shared_async_client
 
 kwargs = {
     "http_client": get_shared_async_client(
@@ -641,13 +631,13 @@ def test_sdk_injection_rejects_any_unmanaged_control_flow_exit(
     tmp_path,
     control_flow,
 ):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
     source = f"""
 import openai
-from openprogram.security.safe_http import safe_async_client
+from openprogram.host.security.safe_http import safe_async_client
 
 {control_flow}
 openai.AsyncOpenAI(http_client=client)
@@ -769,14 +759,14 @@ def test_sdk_injection_rejects_hidden_unmanaged_control_flow_state(
     tmp_path,
     source,
 ):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
     (package / "branches.py").write_text(
         """
 import openai
-from openprogram.security.safe_http import safe_async_client
+from openprogram.host.security.safe_http import safe_async_client
 """
         + source,
         encoding="utf-8",
@@ -832,13 +822,13 @@ def test_sdk_injection_accepts_same_consumer_on_every_control_flow_exit(
     tmp_path,
     control_flow,
 ):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
     source = f"""
 import openai
-from openprogram.security.safe_http import safe_async_client
+from openprogram.host.security.safe_http import safe_async_client
 
 {control_flow}
 openai.AsyncOpenAI(http_client=client)
@@ -930,14 +920,14 @@ def build(value):
     ],
 )
 def test_sdk_injection_accepts_managed_continuing_exits(tmp_path, source):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
     (package / "branches.py").write_text(
         """
 import openai
-from openprogram.security.safe_http import safe_async_client
+from openprogram.host.security.safe_http import safe_async_client
 """
         + source,
         encoding="utf-8",
@@ -959,14 +949,14 @@ from openprogram.security.safe_http import safe_async_client
 
 
 def test_sdk_injection_preserves_managed_refutable_match_miss(tmp_path):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
     (package / "match.py").write_text(
         """
 import openai
-from openprogram.security.safe_http import safe_async_client
+from openprogram.host.security.safe_http import safe_async_client
 
 client = safe_async_client("provider.openai.sdk")
 match value:
@@ -1034,7 +1024,7 @@ def test_scanner_skips_sdk_unreachable_after_terminating_finally(
     tmp_path,
     root_source,
 ):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -1097,7 +1087,7 @@ class Build:
     ],
 )
 def test_root_flow_keeps_reachable_sdk_after_nested_scopes(tmp_path, root_source):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -1122,7 +1112,7 @@ def test_root_flow_keeps_reachable_sdk_after_nested_scopes(tmp_path, root_source
 
 
 def test_class_root_flow_keeps_scanning_header_expressions(tmp_path):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -1161,7 +1151,7 @@ class Build(
 
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="requires PEP 695 syntax")
 def test_class_root_flow_keeps_scanning_type_parameter_bounds(tmp_path):
-    from openprogram.security.safe_http import SDKDisposition
+    from openprogram.host.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
@@ -1287,8 +1277,8 @@ def test_shared_denial_ring_is_bounded_and_origin_only():
 
 
 def test_safe_http_policy_denial_is_forwarded_to_shared_ring():
-    from openprogram.security.safe_http import OutboundSecurityConfig, safe_client
-    from openprogram.security.url_policy import URLPolicyError
+    from openprogram.host.security.safe_http import OutboundSecurityConfig, safe_client
+    from openprogram.host.security.url_policy import URLPolicyError
 
     runtime_http_audit.clear_runtime_http_audit()
     with safe_client(

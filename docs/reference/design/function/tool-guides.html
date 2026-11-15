@@ -1,0 +1,75 @@
+<title>Tool guides</title>
+<meta name="description" content="How a tool with many rules keeps a short schema and hands the model the rest when a call needs it.">
+<h1>Tool guides</h1>
+<p>Every schema ships in every request, and long schemas are read less carefully. A tool keeps a short schema; the agent loop delivers its other instructions into tool results. Single-entry tools use this: one tool, a few parameters, the instructions for each target or action on first use. Codex computer use and Claude Code skills are the same progressive disclosure.</p>
+
+<h2>Declaring</h2>
+<pre translate="no" tabindex="0"><code>guides.register("self_update", [
+    Guide("self_update", overview, mode="open", activates=("worktree_create",)),
+    Guide("self_update.prepare", prepare_text, summary="parameters, iteration policy and verification plan",
+          required_for=lambda args: args.get("action") == "prepare"),
+])</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">name</code></th><td>Dotted name passed to <code translate="no">help</code>; unique across tools</td></tr>
+<tr><th scope="row"><code translate="no">text</code></th><td>The guide, or a function returning it (platform variants, lists read from code)</td></tr>
+<tr><th scope="row"><code translate="no">when(args)</code></th><td>Calls an <code translate="no">included</code> or <code translate="no">on_error</code> guide applies to; for <code translate="no">lookup</code>, whether it is in the index</td></tr>
+<tr><th scope="row"><code translate="no">required_for(args)</code></th><td>Calls that may not run until the guide is known</td></tr>
+<tr><th scope="row"><code translate="no">activates</code></th><td>Deferred tools the guide teaches; delivery ends the guide with a line naming them and the <code translate="no">tool_search select:</code> call that loads them (<a href="deferred-tools.html#activation">Deferred tools</a>)</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">mode</code></th><th scope="col">Delivered</th><th scope="col">Use for</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">open</code></th><td>First result of the tool</td><td>What every use needs</td></tr>
+<tr><th scope="row"><code translate="no">included</code></th><td>First result of a call matching <code translate="no">when</code></td><td>One target or platform</td></tr>
+<tr><th scope="row"><code translate="no">lookup</code></th><td>Indexed by name and <code translate="no">summary</code>; read with <code translate="no">help</code></td><td>With <code translate="no">required_for</code>: costly mistakes, long arguments. Without: situational background</td></tr>
+<tr><th scope="row"><code translate="no">on_error</code></th><td>A failed result of a matching call</td><td>Recovery advice</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">open</code> and <code translate="no">included</code> guides end with the index of the tool's applicable lookup guides.</p>
+
+<h2>Delivery</h2>
+<ol>
+<li><code translate="no">_run_loop</code> opens a view (<code translate="no">guides.begin_loop</code>). Outside a loop guides do nothing: direct Python calls and tests see plain results.</li>
+<li>Before each model request, <code translate="no">_stream_assistant_response</code> records the text being sent (<code translate="no">guides.observe_request</code>).</li>
+<li>Before a call is decided, <code translate="no">prechecks.call_problem</code> returns <code translate="no">GUIDE_REQUIRED</code> if a <code translate="no">required_for</code> guide is unknown: an ordinary tool error, no approval card. The model reads the attached guide and calls again.</li>
+<li>When a call ends, <code translate="no">_rewrite_tool_result</code> (<code translate="no">guides.attach</code>) records due guides, each wrapped in <code translate="no">&lt;guide name="…"&gt;</code>, on the result's attachment (<code translate="no">details["attachment"]</code>), not in the tool's own text; they are sent after the group of results and counted as part of the request's text (<a href="../context/overview.html#cross-turn-tool-context">Tool output</a>).</li>
+</ol>
+<p>A guide is <strong>known</strong> while its marker is in the last request's text, or it was delivered since. No ledger: compaction, microcompaction, a worker restart or a fresh agent removes the marker, and the next call that needs the guide receives it. An agent whose prompt already holds a marked guide is not sent it again.</p>
+
+<h2><code translate="no">help</code></h2>
+<p><code translate="no">help(name)</code> is a resident tool that returns a guide, or a tool's opening guide for a tool name, marked like any delivered guide. No approval; <code translate="no">runtime.control</code> authority. An unknown name lists the guides. Inside <code translate="no">computer_use_agent</code> code, Python's <code translate="no">help</code> and <code translate="no">dir</code> work on the <code translate="no">cu</code> objects: each docstring is its action's line from the target guide.</p>
+
+<h2>Single entries</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">Guides</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">self_update</code></th><td><code translate="no">self_update</code>: open, activates <code translate="no">worktree_create</code>. <code translate="no">.prepare</code>, <code translate="no">.retry</code>, <code translate="no">.undo</code>: lookup, required for that action</td></tr>
+<tr><th scope="row"><code translate="no">computer_use_agent</code></th><td><code translate="no">.app</code>, <code translate="no">.browser</code>, <code translate="no">.vm</code>: included when a call operates that target. <code translate="no">.code</code>: included with the first call operating any target; no call waits for it</td></tr>
+</tbody>
+</table>
+<p>Two levels: the tool, then an <code translate="no">action</code> or <code translate="no">target</code>. Permission, authority and approval decide per action.</p>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">self_update</code> action</th><th scope="col">Authority</th><th scope="col">Approval</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">status</code>, <code translate="no">versions</code></th><td><code translate="no">fs.read</code></td><td>None</td></tr>
+<tr><th scope="row"><code translate="no">begin</code></th><td><code translate="no">process.exec</code></td><td>None</td></tr>
+<tr><th scope="row"><code translate="no">cancel</code></th><td><code translate="no">runtime.control</code></td><td>None</td></tr>
+<tr><th scope="row"><code translate="no">prepare</code>, <code translate="no">retry</code>, <code translate="no">undo</code></th><td><code translate="no">process.exec</code></td><td>Owner (<code translate="no">APPROVED_ACTIONS</code>)</td></tr>
+</tbody>
+</table>
+<p>Argument-only checks run before the approval card, after the guide check: a <code translate="no">prepare</code> with a malformed SHA, or an out-of-bounds iteration policy or verification plan, returns <code translate="no">INVALID_ARGUMENTS</code>.</p>
+
+<details><summary>Implementation files</summary>
+<ul>
+<li><code translate="no">openprogram/programs/_authoring/guides.py</code>, <code translate="no">prechecks.py</code></li>
+<li><code translate="no">openprogram/programs/tools/runtime/help.py</code></li>
+<li><code translate="no">openprogram/runtime/agent/loop/</code>: <code translate="no">_run_loop</code>, <code translate="no">_stream_assistant_response</code>, <code translate="no">_rewrite_tool_result</code></li>
+<li><code translate="no">openprogram/runtime/permissions/policy.py</code>: <code translate="no">permission_decision</code></li>
+<li><code translate="no">openprogram/programs/tools/system/self_update/__init__.py</code></li>
+<li><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/tool.py</code>, <code translate="no">code.py</code></li>
+<li><code translate="no">tests/unit/programs/test_guides.py</code>, <code translate="no">test_prechecks.py</code></li>
+</ul>
+</details>

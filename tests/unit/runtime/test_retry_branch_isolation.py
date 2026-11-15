@@ -3,7 +3,7 @@
 Simulates the exact webui flow: WS chat pre-persists the user node
 (server._append_msg shape), dispatcher runs with
 user_already_persisted=True, then POST /api/chat/retry forks a sibling
-user message (webui/_chat_routes._fork_user_turn_and_run +
+user message (interfaces/server/routes/chat_branches._fork_user_turn_and_run +
 persistence.save_messages) and re-runs. Assert:
 
   * the history handed to the agent loop contains ONLY the active
@@ -19,16 +19,17 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.store import SessionStore
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.state.store import SessionStore
 
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SessionStore]:
     store = SessionStore(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: store)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: store)
     try:
         yield store
     finally:
@@ -37,8 +38,8 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SessionStore
 
 def _persist_user(db: SessionStore, sid: str, uid: str, text: str) -> None:
     """Mirror of webui server._append_msg's SessionDB writes."""
-    from openprogram.context.nodes import Call, ROLE_USER
-    from openprogram.store import SessionNodeWriter
+    from openprogram.state.store.session.nodes import Call, ROLE_USER
+    from openprogram.state.store import SessionNodeWriter
 
     if db.get_session(sid) is None:
         db.create_session(sid, "main")
@@ -62,7 +63,7 @@ def _run_turn(sid: str, uid: str, text: str, reply: str) -> list[dict]:
 
     with patch.object(D, "_run_loop_blocking", side_effect=_stub):
         D.process_user_turn(
-            D.TurnRequest(session_id=sid, agent_id="claude",
+            agent_turn_request.TurnRequest(session_id=sid, agent_id="claude",
                           user_text=text, source="web",
                           user_msg_id=uid, user_already_persisted=True),
             on_event=lambda _e: None,
@@ -144,15 +145,15 @@ def test_dag_render_excludes_prompt_and_placeholder(db: SessionStore):
     the user prompt itself) — with the old guard the trailing user
     message was rendered AND re-added as the prompt, so the model saw
     it twice ("I see 2 user message(s)")."""
-    from openprogram.agent.internals._turn_lifecycle import insert_placeholder
-    from openprogram.context.engine import DefaultContextEngine
+    from openprogram.runtime.conversation.turn_lifecycle import insert_placeholder
+    from openprogram.runtime.context.engine import DefaultContextEngine
 
     sid = "s-render-1"
     # Turn 1 complete, turn 2 in flight (placeholder at tip).
     _persist_user(db, sid, "u1", "hello")
     insert_placeholder(db, sid, "u1_reply", "u1", "web")
     db.set_head(sid, "u1_reply")
-    from openprogram.store import SessionNodeWriter
+    from openprogram.state.store import SessionNodeWriter
     SessionNodeWriter(db, sid).update("u1_reply", output="reply 1",
                                    metadata={"status": "completed"})
     _persist_user(db, sid, "u2", "second question")

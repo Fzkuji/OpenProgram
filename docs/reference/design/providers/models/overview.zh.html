@@ -1,0 +1,106 @@
+<title>模型目录</title>
+<meta name="description" content="系统只记住用户启用的模型；浏览是实时的，启用时把规格复制进配置。">
+<h1>模型目录</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 130" role="img" aria-label="浏览在内存里合并官方列表和 models.dev。启用把一行和 provider.json 的字段复制进 config.json。ENABLED_MODELS 从它加载，get_model 和聊天选择器都读这个注册表。">
+<defs><marker id="mo-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+<text class="t-big" x="0" y="40">浏览</text>
+<text class="t-soft" x="0" y="66">官方列表 + models.dev</text>
+<text class="t-soft" x="0" y="86">只在内存</text>
+<line class="ln" x1="176" y1="33" x2="238" y2="33" marker-end="url(#mo-a)"/>
+<text class="t-soft mid" x="207" y="24">启用</text>
+<text class="t-big" x="250" y="40">config.json</text>
+<text class="t-soft" x="250" y="66">完整规格行</text>
+<text class="t-soft" x="250" y="86">含 provider.json 字段</text>
+<line class="ln" x1="424" y1="33" x2="476" y2="33" marker-end="url(#mo-a)"/>
+<text class="t-big" x="488" y="40">ENABLED_MODELS</text>
+<text class="t-soft" x="488" y="66">get_model、聊天选择器、</text>
+<text class="t-soft" x="488" y="86">代理、故障转移</text>
+</svg>
+<ol class="flow fig-narrow">
+<li>浏览：官方列表和 models.dev，只在内存</li>
+<li class="via">启用</li>
+<li>config.json：完整规格行，含 provider.json 字段</li>
+<li class="flow-end">ENABLED_MODELS：get_model、聊天选择器、代理、故障转移</li>
+</ol>
+</figure>
+<p class="note">聊天可选 = 已启用 = 后端能解析：只有一份列表。没有大文件，不会过期，包目录保持只读。</p>
+<h2>谁写什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">作者</th><th scope="col">位置</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">人，在 git 里</th><td><code translate="no">providers/adapters/&lt;p&gt;/provider.json</code>，专用协议另有 <code translate="no">&lt;p&gt;.py</code></td><td>端点、思考、缓存、覆盖项</td></tr>
+<tr><th scope="row">程序</th><td><code translate="no">config.json</code> → <code translate="no">providers.&lt;p&gt;.models</code></td><td>已启用规格、key、用户状态</td></tr>
+<tr><th scope="row">网络</th><td>models.dev、官方 <code translate="no">/v1/models</code></td><td>只用于浏览</td></tr>
+</tbody>
+</table>
+<p class="note">没有目录的供应商通过 models.dev 使用。<code translate="no">catalog/enabled_models.py</code> 是注册表，<code translate="no">settings/storage.py</code> 持久化配置，<code translate="no">settings/thinking_spec.py</code> 管思考，<code translate="no">models/listing/</code> 是各界面读取的层。其他东西不叫 catalog。</p>
+<h2><code translate="no">provider.json</code></h2>
+<p>每个字段都可选。机器能拿到的字段，人不写，所以没有模型列表。</p>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">作用</th><th scope="col">默认</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">endpoints</code></th><td>具名的 api 和 base_url 组</td><td>models.dev base_url，OpenAI 兼容</td></tr>
+<tr><th scope="row"><code translate="no">thinking</code></th><td>wire_format、强度映射、每模型档位：<a href="thinking-effort.zh.html">思考强度</a></td><td>low、medium、high</td></tr>
+<tr><th scope="row"><code translate="no">cache</code></th><td>提示缓存</td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">model_overrides</code></th><td>每模型 headers、compat、<code translate="no">endpoint</code>、<code translate="no">key_prefix</code>；启用时并入规格</td><td>无</td></tr>
+</tbody>
+</table>
+<p class="note">目录用下划线（<code translate="no">amazon_bedrock/</code>），<code translate="no">id</code> 保留连字符。同一服务两种协议是一个供应商的两个端点。</p>
+<h2>浏览</h2>
+<p>供应商列表：有 <code translate="no">provider.json</code> 的供应商加 models.dev 索引，只有名字和状态。模型列表：针对单个供应商，由 <code translate="no">_browse_models_with_error</code> 查询：有凭据时用官方来源，models.dev 补全或顶替，否则为空。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源形态</th><th scope="col">拉取器</th></tr></thead>
+<tbody>
+<tr><th scope="row">标准 <code translate="no">/v1/models</code></th><td><code translate="no">listing/fetchers/openai_compat.py</code></td></tr>
+<tr><th scope="row">Anthropic，带每模型能力</th><td><code translate="no">adapters/anthropic/list_models.py</code></td></tr>
+<tr><th scope="row">账号级私有</th><td><code translate="no">adapters/openai_codex/list_models.py</code>、<code translate="no">xai_subscription/list_models.py</code></td></tr>
+<tr><th scope="row">厂商专用</th><td><code translate="no">google</code>（query key）、<code translate="no">amazon_bedrock</code>（SigV4）、<code translate="no">github_copilot</code>（session bearer）、<code translate="no">deepseek</code>（只有 id，后补全）</td></tr>
+</tbody>
+</table>
+<p class="note">接口不标准的供应商在目录里放 <code translate="no">list_models.py</code>，暴露 <code translate="no">fetch(provider_id, timeout)</code>；<code translate="no">_load_fetcher</code> 按目录名导入，不用集中修改。成功：带 id 和 name 的 <code translate="no">list[dict]</code>。失败：<code translate="no">{"error": …}</code>。<code translate="no">fetch_and_normalize</code> 是唯一的规范化点。</p>
+<p>普通结果用短内存缓存。订阅目录另存原子的最后完好副本：请求失败时可显示过期行，但只有非空的官方目录才能退役模型。</p>
+<h2>启用、禁用、刷新</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">启用（<code translate="no">toggle_model</code>）</th><td>浏览行、覆盖项、端点的 api 和 base_url、推导的思考档位写入 <code translate="no">providers.&lt;p&gt;.models</code>；注册表重载</td></tr>
+<tr><th scope="row">禁用</th><td>删除该行；手动行保留并置 <code translate="no">enabled: false</code>。订阅供应商把 id 记入 <code translate="no">disabled_models</code>。</td></tr>
+<tr><th scope="row">刷新</th><td>重新浏览已启用模型并覆盖规格</td></tr>
+<tr><th scope="row">手动添加</th><td>同一列表，<code translate="no">source: "manual"</code></td></tr>
+<tr><th scope="row">订阅目录</th><td>登录后、worker 启动且已过期时、每 6 小时、手动刷新：新 id 启用，变化更新，移除的退役，已禁用的保持。发生变化时广播 <code translate="no">provider_models_changed</code>；网页和桌面端重读，重连的客户端也一样。</td></tr>
+</tbody>
+</table>
+<h2>使用</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">读取方</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">后端</th><td><code translate="no">ENABLED_MODELS</code>，键 <code translate="no">&lt;prefix&gt;/&lt;id&gt;</code>，经 <code translate="no">get_model</code>、<code translate="no">get_providers</code>、<code translate="no">get_models</code>；未命中时查别名</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/providers/list</code></th><td>供应商列表</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/providers/{name}/models</code></th><td>该供应商已缓存的浏览结果和启用标记；<code translate="no">POST …/fetch-models</code> 立即查询</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/models/enabled</code></th><td>聊天选择器：<code translate="no">ENABLED_MODELS</code> 原样</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/thinking_effort.py</code></th><td>来自已启用行的档位</td></tr>
+</tbody>
+</table>
+<p class="note">故障转移或代理引用未启用的模型是配置错误，提示指向设置页。旧会话保留历史，但不能继续用已删除的模型。</p>
+<p>未知 id 会被拒绝并给出最接近的（<code translate="no">catalog/suggestions.py</code>）："Unknown model 'openai-codex':'gpt6 sol'; did you mean openai-codex:gpt-6.1-sol, …?"。名称按词比较：显示名的词 4 分，id 的词 3 分；版本号和供应商 id 只有挨着这些词才计分。沿用 magpie（yetone/magpie，MIT）。</p>
+<h2 id="invariants">不变量</h2>
+<ol>
+<li>持久化的模型数据只有配置里的已启用规格，以及订阅目录的最后完好副本。</li>
+<li>普通浏览结果不写文件。</li>
+<li>人写的数据在 git，程序写的数据在用户配置。</li>
+<li><code translate="no">provider.json</code> 只放机器拿不到的内容。</li>
+<li><code translate="no">openprogram.models.providers</code> 不导入 <code translate="no">openprogram.interfaces.server</code>；listing 导入 providers，反之不行。</li>
+<li>保留 <code translate="no">&lt;prefix&gt;/&lt;id&gt;</code>、别名回退和 <code translate="no">key_prefix</code>；注册表始终是一个可变 dict。</li>
+<li>各只有一处：<code translate="no">fetch_and_normalize</code>（行形状）、<code translate="no">_upsert_spec_row</code> 和 <code translate="no">_normalize_spec_row</code>（进配置）、<code translate="no">_build_model_from_row</code>（成 <code translate="no">Model</code>）。</li>
+</ol>
+<details><summary>改动必须保持的</summary>
+<ul>
+<li>每个供应商的配置行经 <code translate="no">get_model</code> 解析出相同的 <code translate="no">Model</code>。</li>
+<li><code translate="no">google-gemini-cli/*</code> 和 <code translate="no">gemini-subscription/*</code> 是不同的键，行里各带自己的。</li>
+<li><code translate="no">cost</code>、多模态 <code translate="no">input</code>、<code translate="no">headers</code>（copilot 依赖）和 <code translate="no">compat</code> 都随规格保存。</li>
+<li>多线路供应商，每种 <code translate="no">(api, base_url, headers, compat)</code> 各验证一次。</li>
+<li><code translate="no">test_provider_wire_invariants.py</code> 和 <code translate="no">test_model_fetch_routing.py</code> 保持通过。</li>
+</ul>
+</details>
+<p class="next"><a href="fast-tier.zh.html">快速档</a></p>

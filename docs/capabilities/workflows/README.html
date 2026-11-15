@@ -1,0 +1,78 @@
+<title>Agentic workflows</title>
+<meta name="description" content="Install, write, trigger and manage Workflows built with Agentic Programming.">
+<h1>Agentic workflows</h1>
+<p>An agentic workflow, called a <strong>harness</strong> or <strong>agentic program</strong> in code, is a git repository of <code translate="no">Agent</code> methods built with <a href="../agentic-programming/README.html">Agentic Programming</a>. Releases bundle none. Installed ones appear in chat, on the Web UI Programs page, and in <code translate="no">openprogram programs run</code>.</p>
+<h2 id="management-commands">Commands</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram programs list</code></th><td>Every Program: tools, applications, your packages, harnesses. Each Workflow in <code translate="no">~/.openprogram/programs</code> is a <code translate="no">package</code> row with entries and state: <code translate="no">loaded</code>, <code translate="no">error</code>, or <code translate="no">pending</code> (not callable yet: no commit has passed the check).</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs install &lt;owner&gt;/&lt;repo&gt;</code></th><td>Any harness; a git URL or directory also works. Clones it, installs declared dependencies, records the approved source. Mutable environments only: a source checkout or CLI/server installation. The packaged desktop runtime refuses.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs install &lt;ref&gt; --upgrade</code></th><td>Reinstall or upgrade</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs uninstall &lt;name&gt;</code></th><td>Set a harness aside</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs run &lt;name&gt; -a key=value</code></th><td>Run directly. <code translate="no">--provider</code> (auto-detected by default) and <code translate="no">--model</code> override the model.</td></tr>
+</tbody></table>
+<span id="self-programming-workflows"></span>
+<h2 id="workflows-the-agent-writes-for-you">Workflows the agent writes</h2>
+<p>Worth it for a stable multi-stage structure, repeated use or reviewable history; not for a one-off. No special tools, just file tools and the command line:</p>
+<ol>
+<li>Create <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> as a Git repository with roles, functions, <code translate="no">PROGRAM_ENTRIES</code>, <code translate="no">README.md</code> and behavior tests.</li>
+<li><code translate="no">openprogram programs check ~/.openprogram/programs/&lt;name&gt;</code> imports the package, runs tests in the OS sandbox, then on success commits and records that commit as checked.</li>
+<li>On failure, read the report, fix, check again.</li>
+</ol>
+<p class="note">The worker loads the checked commit within seconds; entries appear as tools in every chat and on the Programs page without restart. Editing works the same way. Earlier versions stay in Git.</p>
+<h2 id="how-to-trigger-them">Trigger</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">From</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web form</th><td><strong>Use</strong> in Programs or a sidebar favorite. A new-tab page becomes a draft chat; an existing chat keeps its draft and running task. Fill in requirements and send; opening or closing runs nothing.</td></tr>
+<tr><th scope="row">Chat</th><td>Entries register as tools (<code translate="no">as_tool=True</code>). Describe the task and the model calls them, such as <code translate="no">paper_agent</code> from an installed <code translate="no">owner/paper-harness</code>. Operating apps, browser Pages and a VM is <a href="../computer-use.html"><code translate="no">computer_use_agent</code></a>, not a workflow.</td></tr>
+<tr><th scope="row">Command line</th><td><code translate="no">openprogram programs run paper_agent -a task="Survey recent work on agent memory"</code></td></tr>
+<tr><th scope="row">Python</th><td>Ordinary importable functions</td></tr>
+</tbody></table>
+<p class="note">Forms ask for task information, never execution settings. Text polishing infers style from the text. Browser backend and session handles stay internal. Page ranges and output destinations are optional requirements. Explicit Python callers keep supported overrides.</p>
+<h2 id="model-selection">Model selection</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Model</th></tr></thead>
+<tbody>
+<tr><th scope="row">From a chat</th><td>Internal calls inherit the turn: per-turn override, then session selection, then agent profile. Also applies to tool subprocesses.</td></tr>
+<tr><th scope="row">Direct tool run</th><td>Needs an explicit provider and model for internal calls; no global detection or provider default</td></tr>
+<tr><th scope="row">Body calls no model</th><td>Runs with none configured</td></tr>
+<tr><th scope="row">Unavailable model or credential</th><td>Fails when the body calls the Runtime, with that model's error. Model-free steps still run and no other provider is chosen.</td></tr>
+</tbody></table>
+<details>
+<summary>Browser workflows</summary>
+<p>Keep an explicit initial URL when a backend is selected. Official MCP backends support guarded waits and propagate snapshot failures. Page recovery stays in the current window scope and does not replay the failed action. A verified result keeps its actual evidence and observed target.</p>
+</details>
+<h2 id="writing-your-own">Write your own</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Form</th><th scope="col">Guide</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness: <code translate="no">&lt;package&gt;/agentics/__init__.py</code> exposing <code translate="no">PROGRAM_ENTRIES</code></th><td><a href="../installing-programs.html">Installing programs</a></td></tr>
+<tr><th scope="row">Single package in <code translate="no">~/.openprogram/programs</code></th><td><a href="authoring.html">Write and check a Workflow</a></td></tr>
+<tr><th scope="row">Show the agent instead</th><td><a href="recording.html">Record a workflow</a></td></tr>
+</tbody></table>
+<h2 id="weekly-reports">Weekly reports</h2>
+<p>If <code translate="no">weekly_report</code> is in your catalog, give it the report text or the change: submit this week's report, update only next week's plan, inspect the record, or draft locally at a named path.</p>
+<details>
+<summary>How it writes to Feishu</summary>
+<ul>
+<li>Reads the configured form and matches name and year/week before writing. A missing record is submitted once; an existing editable record is opened from history and saved. Partial updates keep untouched fields. Draft and read-only requests do not submit.</li>
+<li>Unknown inspection results, login failures and ambiguous records stop. A submission cap alone does not rule out editing.</li>
+<li>Success needs a fresh page confirmation and persisted values. Uncertain results are reported without retry. Ordinary browser authorization applies. Bounded browser steps, no <code translate="no">goal()</code> loop; never invents progress, metrics or paper titles.</li>
+</ul>
+</details>
+<details>
+<summary>group_weekly_report</summary>
+<p><code translate="no">group_weekly_report(task)</code> prepares an unsent draft. Review and send it yourself.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Evidence</th><td>Scope, material and authors from memory, local files and WeChat</td></tr>
+<tr><th scope="row">Gaps</th><td>No questions for missing fields; unknown authors and unavailable sources are listed. Missing material is not proof of non-submission</td></tr>
+<tr><th scope="row"><code translate="no">source: "supplied"</code></th><td>Restricts to supplied materials. Complete structured supplied-only inspection uses no model</td></tr>
+<tr><th scope="row">Summaries</th><td>Bounded per-member contexts, checked references, explicit uncertainty</td></tr>
+<tr><th scope="row">Files</th><td><code translate="no">reports/group-weekly/&lt;week&gt;/&lt;unique-run&gt;/</code> or <code translate="no">output_dir</code></td></tr>
+</tbody></table>
+</details>
+<p class="next"><a href="reports.html">Weekly reports</a></p>

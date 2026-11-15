@@ -1,0 +1,222 @@
+<title>从新标签页打开应用</title>
+<meta name="description" content="安装、打开、编写和操作 OpenProgram 应用：包结构、能力、API、生命周期和资源接口。">
+<h1>从新标签页打开应用</h1>
+<p>应用是带自己界面的 Program：标准 HTML、CSS 和 JavaScript，可选 Python 操作作后端。它出现在文件、新对话、浏览器和终端旁边；点击在标签页打开，再次打开选中同一实例，关闭标签页不取消它的操作。</p>
+<h2 id="where-they-appear">在哪里看到</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">侧栏的 <strong>Applications（应用）</strong></th><td>所有应用的图标、标题、版本、作用域和描述。筛选<strong>全部</strong>、<strong>内置</strong>、<strong>已安装</strong>。每行：有窗口时<strong>打开</strong>、启用开关、<strong>⋯</strong> 菜单（<strong>在能力中显示</strong>、<strong>从新标签页隐藏</strong>或<strong>在新标签页显示</strong>、<strong>从来源更新</strong>、<strong>卸载</strong>）。<strong>安装…</strong> 打开安装表单。</td></tr>
+<tr><th scope="row"><strong>能力 → Programs</strong></th><td>纯文件夹视图，每个应用目录一个文件夹，按名称排序（<code translate="no">browser</code>、<code translate="no">calculator</code>、<code translate="no">auto_research</code>），里面是真实子文件夹和源文件。<strong>Applications</strong> 下是应用和没有界面的已安装程序，<strong>Tools</strong> 下是内置工具。</td></tr>
+<tr><th scope="row">在那里选中应用</th><td>相同的图标、标题和描述，目录名、类型、版本；<strong>打开</strong>，单一 Agent 入口时有<strong>在对话中使用</strong>；启用开关；Agent 入口及说明；位置、窗口和权限。调用逻辑折叠在底部。工具显示参数；源文件直接显示调用逻辑。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>这些视图的细节</summary>
+<ul>
+<li><strong>卸载</strong>先询问，并保留应用数据。<strong>从来源更新</strong>显示来源目录并打开预填的安装表单，提交前请审查来源。</li>
+<li>安装表单要求对 Python 后端和 <code translate="no">files.project.write</code> 明确信任。</li>
+<li>已安装包内的应用是该包的子文件夹，如 <code translate="no">auto_research/app</code>。它的调用逻辑是其注册的 Agent 入口的并集。</li>
+<li>Agent 不能调用的应用用一行说明：纯界面应用只作为窗口打开；只导出 Python 函数给其他 Program 的包是 Python 库。</li>
+<li>新标签页在获得焦点时和每十秒刷新应用列表。</li>
+</ul>
+</details>
+<h2 id="install-and-open">安装与打开</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram programs install /absolute/path/to/application</code></th><td>记录目录，应用从原处加载，目录不要移动。需要 worker 在运行。</td></tr>
+<tr><th scope="row"><code translate="no">… --trust</code></th><td>授权 Python 后端和 <code translate="no">files.project.write</code>。先审查源码和依赖。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs install owner/repo --trust</code></th><td>git URL 或 GitHub <code translate="no">owner/repo</code> 克隆到 <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> 并记录</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs list</code></th><td>id、状态（<code translate="no">enabled</code>、<code translate="no">disabled</code>、<code translate="no">error</code>）、目录、Agent 入口及层级（应用入口为 <code translate="no">deferred</code>）。不需要 worker。<code translate="no">--json</code> 每行带 <code translate="no">tiers</code> 映射。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs check DIRECTORY</code></th><td>校验 manifest、包结构和声明的后端操作，不记录</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs disable ID</code></th><td>移除界面、资源、服务和 Agent 入口，取消活动操作。保存在 <code translate="no">catalog.json</code>，重启后保持。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs enable ID</code></th><td>重新加载</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs uninstall local.notes</code></th><td>移除入口并取消操作，保留数据和 schema/作用域身份。兼容的重新安装恢复数据；不兼容的在激活前拒绝。</td></tr>
+</tbody>
+</table>
+<p class="note">Python 后端以你的操作系统账号运行受信任的本地代码。<code translate="no">files.project.write</code> 允许它在绑定项目里创建和替换文件。直接放在 <code translate="no">~/.openprogram/programs/</code> 的目录不用 <code translate="no">install</code>：worker 下次扫描时记录；需要信任的显示为 <code translate="no">needs trust</code>，直到用 <code translate="no">--trust</code> 安装。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">存放位置</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> 或任何地方</th><td>应用目录</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/catalog.json</code></th><td>来源目录、启用、隐藏和显示标题；不复制内容</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/.runtime/</code></th><td>业务数据、运行记录、Python 环境</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">内置应用</th><th scope="col">作用</th><th scope="col">禁用后失去</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">browser</code></th><td><code translate="no">computer_use_agent</code> 操作的内置浏览器</td><td>浏览器目标；桌面目标照常工作</td></tr>
+<tr><th scope="row"><code translate="no">workflow_recording</code></th><td><a href="workflows/recording.zh.html">录制 Workflow</a>；其窗口不经输入框就能开始录制</td><td>输入框的<strong>录制 Workflow</strong> 和相关路由</td></tr>
+<tr><th scope="row"><code translate="no">office_editor</code>（<strong>ONLYOFFICE</strong>）</th><td>在文件窗口打开 Word、Excel 和 PowerPoint；其窗口在当前项目顶层新建空白文件并列出已有 Office 文档</td><td>这些文件只提供原文件下载</td></tr>
+<tr><th scope="row"><code translate="no">meeting</code></th><td><a href="meetings.zh.html">会议</a>：录制通话、转写，在新对话中总结</td><td>会议</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">browser</code>、<code translate="no">office_editor</code>、<code translate="no">workflow_recording</code> 和 <code translate="no">meeting</code> 也可 <code translate="no">enable</code>、<code translate="no">disable</code>，效果与启用开关相同。工具（<code translate="no">bash</code>、<code translate="no">read</code>、<code translate="no">goal</code> …）始终提供给 Agent，不能禁用。来自 Claude Code、Codex、OpenCode 或 Hermes、带工具或界面的包按应用安装：加一个 <code translate="no">application.json</code>，见<a href="plugins.zh.html">插件</a>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">作用域</th><th scope="col">实例</th></tr></thead>
+<tbody>
+<tr><th scope="row">全局</th><td>当前 owner 共用一个实例</td></tr>
+<tr><th scope="row">项目</th><td>每个项目一个，业务数据分开。打开时使用选中的项目；更改会话项目不会重新绑定。没有当前项目时，单个已保存绑定直接复用；首次使用或多个绑定时打开选择器，也可选新文件夹。</td></tr>
+</tbody>
+</table>
+<p class="next">示例：<a href="https://github.com/FuzzyKuji/OpenProgram/tree/main/examples/applications/calculator">计算器</a>、<a href="https://github.com/FuzzyKuji/OpenProgram/tree/main/examples/applications/pdf_editor">PDF 编辑器</a>（读取、批注和整理项目里的 PDF，只在你要求摘要时使用模型）</p>
+<h2 id="application-package">应用包</h2>
+<pre translate="no" tabindex="0"><code>{
+  "id": "local.notes",
+  "title": "Notes",
+  "description": "Keeps notes per project and summarises them on request.",
+  "icon": "notebook-pen",
+  "version": "1.0.0",
+  "scope": "global",
+  "dataSchema": 1,
+  "ui": {"root": "ui", "entry": "index.html"},
+  "capabilities": ["storage.app", "model.invoke"],
+  "backend": {"kind": "python", "entry": "backend:operations"},
+  "operations": {
+    "summarize": {
+      "agent": true,
+      "input": {"type": "object"},
+      "output": {"type": "string"}
+    }
+  }
+}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">application.json</code></th><td>放在包根目录</td></tr>
+<tr><th scope="row"><code translate="no">title</code>、<code translate="no">description</code></th><td>显示在新标签页、应用页和能力页。描述写成一句平实的话、一行、最多 300 字符。没有 <code translate="no">application.json</code> 的 Program 用 <code translate="no">README.md</code> 的第一个 <code translate="no"># 标题</code> 和下面第一句，或目录名。</td></tr>
+<tr><th scope="row"><code translate="no">icon</code></th><td>这些页面和标签页上的图标。其他名称或不填时，显示按 id 取色的通用方块。</td></tr>
+<tr><th scope="row"><code translate="no">ui.root</code>、<code translate="no">ui.entry</code></th><td>root 相对于包，entry 相对于 root。Python 和私密配置放在 <code translate="no">ui.root</code> 之外。</td></tr>
+<tr><th scope="row"><code translate="no">backend</code></th><td>导出可调用对象的字典，接收 <code translate="no">(input, context)</code>，同步或异步返回 JSON</td></tr>
+<tr><th scope="row"><code translate="no">backend.dependencies</code></th><td>精确版本，如 <code translate="no">["package-name==1.2.3"]</code>。每组依赖一个 Python 环境，首次使用时创建，也使用已安装的宿主框架。</td></tr>
+<tr><th scope="row"><code translate="no">operations</code></th><td>输入输出为 JSON Schema。只有 <code translate="no">agent: true</code> 能通过 Program 客户端调用。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>图标名称</summary>
+<p><code translate="no">calculator</code>、<code translate="no">book-open</code>、<code translate="no">file-search</code>、<code translate="no">file-text</code>、<code translate="no">file-pdf</code>、<code translate="no">telescope</code>、<code translate="no">notebook-pen</code>、<code translate="no">table</code>、<code translate="no">chart-column</code>、<code translate="no">database</code>、<code translate="no">image</code>、<code translate="no">music</code>、<code translate="no">video</code>、<code translate="no">map</code>、<code translate="no">calendar</code>、<code translate="no">globe</code>、<code translate="no">code</code>、<code translate="no">terminal</code>、<code translate="no">mail</code>、<code translate="no">message-square</code>、<code translate="no">list-checks</code>、<code translate="no">languages</code>、<code translate="no">pen-tool</code>、<code translate="no">palette</code>、<code translate="no">sigma</code>、<code translate="no">flask-conical</code>、<code translate="no">briefcase</code>、<code translate="no">bot</code>、<code translate="no">sparkles</code></p>
+</details>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">能力</th><th scope="col">授予后端</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">storage.app</code></th><td><code translate="no">context.load()</code> 和 <code translate="no">context.save()</code>：实例自己的已保存状态</td></tr>
+<tr><th scope="row"><code translate="no">model.invoke</code></th><td>供 <code translate="no">llm()</code> 和 <code translate="no">agent()</code> 使用的环境 Runtime</td></tr>
+<tr><th scope="row"><code translate="no">files.project.read</code></th><td>绑定项目内的 <code translate="no">context.read_file(relative_path)</code></td></tr>
+<tr><th scope="row"><code translate="no">files.project.write</code></th><td>绑定项目内的 <code translate="no">context.write_file(relative_path, content)</code>；需要 Python 后端和 <code translate="no">--trust</code></td></tr>
+</tbody>
+</table>
+<p class="note">能力限制的是宿主桥，不是受信任 Python 的操作系统权限。后端注册前在独立进程中检查；仅列出应用不会导入其代码。</p>
+<details>
+<summary>沙箱</summary>
+<ul>
+<li>Web 界面运行在 opaque origin 的沙箱 iframe 里，不必使用 OpenProgram 组件。</li>
+<li>前端依赖打包在本地，资源 URL 用相对路径，包括 JavaScript 模块导入。</li>
+<li>阻止：远程脚本、直接访问 owner API、嵌套 frame 和表单导航。</li>
+<li>资源 URL 只授权读取该应用打开时那个 digest 的界面目录，不是 owner 凭证。</li>
+</ul>
+</details>
+<h2 id="browser-and-python-apis">浏览器与 Python API</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">window.openprogramApp</code></th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">load()</code></th><td>返回 <code translate="no">{value, version}</code></td></tr>
+<tr><th scope="row"><code translate="no">save(value, version)</code></th><td>仅当版本仍是当前版本时保存；并发写入报错后重新加载</td></tr>
+<tr><th scope="row"><code translate="no">run(operation, input, requestKey)</code></th><td>返回持久运行记录。重试时复用 key；同一 key 配不同输入会被拒绝。</td></tr>
+<tr><th scope="row"><code translate="no">runs()</code></th><td>最近的运行</td></tr>
+<tr><th scope="row"><code translate="no">status(id, after)</code></th><td>状态、结果、错误、待回答问题、游标之后的事件</td></tr>
+<tr><th scope="row"><code translate="no">cancel(id)</code></th><td>取消执行</td></tr>
+<tr><th scope="row"><code translate="no">answer(id, requestId, answer)</code></th><td>回答当前问题</td></tr>
+</tbody>
+</table>
+<p class="note">其他实例的运行无法通过此桥访问。</p>
+<table class="stack">
+<thead><tr><th scope="col">Python <code translate="no">context</code></th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">load()</code>、<code translate="no">save(value, expected_version=...)</code></th><td>实例状态</td></tr>
+<tr><th scope="row"><code translate="no">progress(value)</code></th><td>报告进度</td></tr>
+<tr><th scope="row"><code translate="no">ask(question)</code></th><td>应用的提问。需要预声明持久等待的 Runtime workflow 交互仍按原要求。</td></tr>
+<tr><th scope="row"><code translate="no">read_file(relative_path)</code></th><td>需要声明能力和绑定项目</td></tr>
+<tr><th scope="row"><code translate="no">write_file(relative_path, content)</code></th><td>文本或字节。拒绝解析到项目之外的路径（含符号链接）和 <code translate="no">.git</code> 内路径。先写临时文件再重命名，读者不会看到部分内容。返回 <code translate="no">path</code> 和 <code translate="no">bytes</code>。</td></tr>
+</tbody>
+</table>
+<p class="note">启用模型的操作可调用 <code translate="no">llm()</code> 和 <code translate="no">agent()</code>，凭证留在后端。</p>
+<p>Program 使用同样的操作：</p>
+<pre translate="no" tabindex="0"><code>from openprogram.programs._authoring.application_client import run, status
+
+job = run("local.notes", "summarize", {"text": "..."}, request_key="summary-1")
+print(status(job["id"]))</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">CLI</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram programs run APP OPERATION --input JSON</code></th><td>启动操作；项目作用域加 <code translate="no">--project ID</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs status RUN_ID</code></th><td>状态和事件</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs cancel RUN_ID</code></th><td>取消</td></tr>
+</tbody>
+</table>
+<h2 id="persistence-and-lifecycle">持久化与生命周期</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事件</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">加载</th><td>计算目录的内容 digest，忽略 <code translate="no">.git</code>、<code translate="no">node_modules</code>、<code translate="no">__pycache__</code>、<code translate="no">.venv</code></td></tr>
+<tr><th scope="row">源码被编辑</th><td>以新 digest 重新加载；重新打开的页面和新操作使用新内容。编辑前的页面或资源 <code translate="no">open</code> 被拒绝，需重新打开。运行中的操作继续。</td></tr>
+<tr><th scope="row">编辑改了 <code translate="no">dataSchema</code> 或 <code translate="no">scope</code>，或在未信任时加入 Python 后端或 <code translate="no">files.project.write</code></th><td>停止加载，直到重新安装</td></tr>
+<tr><th scope="row">安装时 schema 或作用域变化</th><td>激活前拒绝。不支持自动数据迁移。</td></tr>
+<tr><th scope="row">worker 停止</th><td>未完成的 Python 函数在重启后报告为中断，不会恢复。保存增量进度，审查后再启动新操作。</td></tr>
+<tr><th scope="row">项目被移动</th><td>实例和数据不变</td></tr>
+<tr><th scope="row">项目缺失、被替换或未验证</th><td>阻止新操作；已保存数据可读。启动前和读取项目文件前都会解析绑定 ID。</td></tr>
+<tr><th scope="row">旧注册</th><td>从记录的来源加载；该目录不在时才使用 <code translate="no">.runtime/versions/</code> 里的副本</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">限制</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row">状态</th><td>每实例 SQLite，JSON 值 4 MiB</td></tr>
+<tr><th scope="row">事件</th><td>1 MiB</td></tr>
+<tr><th scope="row">执行状态</th><td>现有执行存储；模型调用记录由 session-node writer 写在应用运行存储下</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Owner API</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">PATCH /api/applications/{id}</code></th><td><code translate="no">enabled</code>、<code translate="no">hidden</code>、<code translate="no">display_title</code>。隐藏不取消任务，禁用会取消。</td></tr>
+</tbody>
+</table>
+<p class="note">未实现：独立部署、非 Python 后端适配器、MCP Apps 兼容、嵌入原生 GUI 窗口。</p>
+<h2 id="use-an-application-as-a-resource">将应用作为资源使用</h2>
+<p>已启用的应用以 <code translate="no">application.&lt;id&gt;</code> 出现在 <code translate="no">resource(action="describe")</code> 中，安装、禁用、更新、卸载无需重启即生效。资源视图和顶部标签页在同一沙箱 frame 中打开同一实例。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">动作</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">open</code></th><td>项目作用域接受 <code translate="no">project_id</code>。把实例关联到调用的会话。返回要使用的 <code translate="no">instance_id</code> 和 <code translate="no">digest</code>；更新后旧 digest 被拒绝。</td></tr>
+<tr><th scope="row"><code translate="no">observe</code></th><td>实例状态和最近运行</td></tr>
+<tr><th scope="row"><code translate="no">act</code></th><td>声明的 Agent 可见操作和稳定的 <code translate="no">request_key</code></td></tr>
+<tr><th scope="row"><code translate="no">status</code>、<code translate="no">cancel</code>、<code translate="no">answer</code></th><td>运行必须属于该实例</td></tr>
+<tr><th scope="row"><code translate="no">save</code></th><td>声明 <code translate="no">storage.app</code> 时使用期望的存储版本</td></tr>
+<tr><th scope="row"><code translate="no">release</code></th><td>移除会话关联，保留实例、数据和运行中的操作。隐藏视图同样不停止操作。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Agent 入口</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">名称</th><td><code translate="no">&lt;id&gt;__&lt;operation&gt;</code>，字母、数字、<code translate="no">_</code>、<code translate="no">-</code> 以外的字符替换为 <code translate="no">_</code>：<code translate="no">local_notes__summarize</code></td></tr>
+<tr><th scope="row">输入</th><td>操作输入放在 <code translate="no">input</code>，项目作用域加 <code translate="no">project_id</code>。等待运行并返回。等待提问的运行返回其 id，供 <code translate="no">status</code>、<code translate="no">answer</code> 或 <code translate="no">cancel</code> 使用。</td></tr>
+<tr><th scope="row">暴露</th><td>和 <code translate="no">resource</code> 一样需要审批。deferred：模型只看到名称，需要时用 <code translate="no">tool_search</code> 加载 schema。应用在会话中打开也不加载：目录注明它已打开，由模型按名字加载入口。</td></tr>
+<tr><th scope="row"><code translate="no">agent: false</code></th><td>没有入口</td></tr>
+</tbody>
+</table>
+<p class="note">窗口的 owner API：<code translate="no">POST /api/applications/{id}/open</code> 带 <code translate="no">session_id</code> 建立关联；<code translate="no">POST /api/applications/{id}/close</code> 带 <code translate="no">instance_id</code> 和 <code translate="no">session_id</code> 释放。</p>
+<details>
+<summary>生成起始包</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">生成</th><td><code translate="no">POST /api/applications/scaffold</code>，带 <code translate="no">path</code>、<code translate="no">app_id</code>、<code translate="no">title</code>，也可通过 <a href="framework-control.zh.html">framework 工具</a></td></tr>
+<tr><th scope="row">目标</th><td>父目录必须存在，目标目录不能存在</td></tr>
+<tr><th scope="row">包</th><td>分开 <code translate="no" data-claim="example">backend/operations.py</code>、<code translate="no">ui/index.html</code> 和 <code translate="no">application.json</code>；界面和 Agent 都调用声明的 read/save 操作</td></tr>
+<tr><th scope="row">安装</th><td>审查后通过 <code translate="no">/api/applications/install</code> 带来源路径和 <code translate="no">trust: true</code> 安装</td></tr>
+<tr><th scope="row">新操作</th><td>加在后端和 manifest 里，不要只写在界面事件中</td></tr>
+</tbody>
+</table>
+</details>

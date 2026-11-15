@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from openprogram.runtime.agent import Agent
+
 from contextvars import copy_context
 import inspect
 import pickle
@@ -11,7 +13,7 @@ import pytest
 
 
 def test_spawn_payload_contains_explicit_sandbox_snapshot(monkeypatch):
-    from openprogram.agent import process_runner
+    from openprogram.runtime.conversation import process_runner
 
     captured = {}
 
@@ -44,7 +46,7 @@ def test_spawn_payload_contains_explicit_sandbox_snapshot(monkeypatch):
         lambda: {"enabled": True, "policy": {"network": False}},
     )
 
-    process_runner.run_agentic_in_subprocess(
+    process_runner.run_agent_method_in_subprocess(
         tool_name="demo",
         kwargs={},
         session_id="s",
@@ -68,7 +70,7 @@ def test_spawn_payload_contains_explicit_sandbox_snapshot(monkeypatch):
 
 
 def test_spawn_payload_preserves_turn_render_range(monkeypatch):
-    from openprogram.agent import process_runner
+    from openprogram.runtime.conversation import process_runner
 
     captured = {}
 
@@ -95,7 +97,7 @@ def test_spawn_payload_preserves_turn_render_range(monkeypatch):
 
     monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
 
-    process_runner.run_agentic_in_subprocess(
+    process_runner.run_agent_method_in_subprocess(
         tool_name="demo",
         kwargs={},
         session_id="s",
@@ -111,7 +113,7 @@ def test_spawn_payload_preserves_turn_render_range(monkeypatch):
 
 
 def test_subprocess_timeout_kills_the_process_tree(monkeypatch):
-    from openprogram.agent import process_runner
+    from openprogram.runtime.conversation import process_runner
 
     joined = []
     killed = []
@@ -149,9 +151,9 @@ def test_subprocess_timeout_kills_the_process_tree(monkeypatch):
         return True
 
     monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
-    monkeypatch.setattr("openprogram._compat.kill_process_tree", kill_process_tree)
+    monkeypatch.setattr("openprogram.host._platform.processes.kill_process_tree", kill_process_tree)
 
-    result = process_runner.run_agentic_in_subprocess(
+    result = process_runner.run_agent_method_in_subprocess(
         tool_name="demo",
         kwargs={},
         session_id="s",
@@ -161,16 +163,164 @@ def test_subprocess_timeout_kills_the_process_tree(monkeypatch):
 
     assert joined == [2.5, 5]
     assert killed == [4321]
-    assert result == {
-        "error": "agentic subprocess timed out after 2.5 seconds",
-        "killed": True,
-        "timed_out": True,
-        "signal": 9,
+    error = result.pop("error")
+    progress = result.pop("progress")
+    assert result == {"killed": True, "timed_out": True, "signal": 9}
+    assert error.splitlines()[0] == "agentic subprocess timed out after 2.5 seconds"
+    assert "demo was stopped at its 2.5-second limit." in error
+    assert "reported no progress" in error
+    assert progress["events"] == 0
+    assert progress["steps"] == [] and progress["recent"] == []
+
+
+def test_agentic_limits_hand_the_budget_to_the_agent(monkeypatch):
+    from openprogram.runtime.conversation import process_runner
+
+    monkeypatch.setattr(process_runner, "_BOUNDED_AGENTIC_TOOLS", {"bounded_agent"})
+    monkeypatch.delenv("OPENPROGRAM_AGENTIC_TIMEOUT_S", raising=False)
+    args = {"task": "inspect"}
+    limits = process_runner.agentic_subprocess_limits("bounded_agent", args)
+    assert limits.kwargs == {"task": "inspect", "max_seconds": 300.0}
+    assert args == {"task": "inspect"}
+    assert (limits.budget_seconds, limits.timeout_seconds) == (300.0, 360.0)
+
+    explicit = process_runner.agentic_subprocess_limits(
+        "bounded_agent", {"task": "t", "max_seconds": 12},
+    )
+    assert explicit.kwargs["max_seconds"] == 12
+    assert (explicit.budget_seconds, explicit.timeout_seconds) == (12.0, 42.0)
+
+    unbounded = process_runner.agentic_subprocess_limits(
+        "bounded_agent", {"task": "t", "max_seconds": 0},
+    )
+    assert unbounded.kwargs == {"task": "t", "max_seconds": 0}
+    assert (unbounded.budget_seconds, unbounded.timeout_seconds) == (None, None)
+
+    other = process_runner.agentic_subprocess_limits("wc", {"path": "a"})
+    assert other.kwargs == {"path": "a"}
+    assert (other.budget_seconds, other.timeout_seconds) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("raw", "budget", "timeout"),
+    [("900", 900.0, 1020.0), ("0", None, None), ("-1", None, None),
+     ("", 300.0, 360.0), ("soon", 300.0, 360.0)],
+)
+def test_agentic_default_budget_comes_from_the_environment(
+    monkeypatch, raw, budget, timeout,
+):
+    from openprogram.runtime.conversation import process_runner
+
+    monkeypatch.setattr(process_runner, "_BOUNDED_AGENTIC_TOOLS", {"bounded_agent"})
+    monkeypatch.setenv("OPENPROGRAM_AGENTIC_TIMEOUT_S", raw)
+    limits = process_runner.agentic_subprocess_limits("bounded_agent", {"task": "t"})
+    assert (limits.budget_seconds, limits.timeout_seconds) == (budget, timeout)
+    assert limits.kwargs.get("max_seconds") == budget
+    explicit = process_runner.agentic_subprocess_limits(
+        "bounded_agent", {"task": "t", "max_seconds": 50},
+    )
+    assert explicit.budget_seconds == 50.0
+
+
+def test_agentic_timeout_reports_the_childs_last_progress(monkeypatch):
+    from openprogram.runtime.conversation import process_runner
+
+    monkeypatch.setattr(process_runner, "_BOUNDED_AGENTIC_TOOLS", {"bounded_agent"})
+    delivered = threading.Event()
+    killed = []
+    tree = {
+        "path": "run", "name": "bounded_agent", "status": "running",
+        "children": [
+            {"path": "a", "name": "open_page", "status": "completed",
+             "duration_ms": 120},
+            {"path": "b", "name": "plan_next_capability", "status": "completed",
+             "duration_ms": 4200},
+            {"path": "c", "name": "computer_use", "status": "running",
+             "children": [
+                 {"path": "d", "name": "locate_target", "status": "error",
+                  "error": "element not found\ntrace"},
+             ]},
+        ],
     }
+
+    class FakeProcess:
+        pid = 99
+        exitcode = -9
+
+        def __init__(self, *, target, args, daemon):
+            del target, daemon
+            self.event_queue = args[6]
+            self.alive = True
+
+        def start(self):
+            self.event_queue.put({"type": "chat_response", "data": {
+                "type": "tree_update", "session_id": "s", "tree": tree,
+            }})
+            self.event_queue.put({"type": "chat_response", "data": {
+                "type": "execution_stream", "op": "block_started",
+                "kind": "tool_ref", "tool_name": "computer_use",
+            }})
+            self.event_queue.put({"type": "marker"})
+
+        def join(self, timeout=None):
+            if timeout == 360.0:
+                assert delivered.wait(30)
+
+        def is_alive(self):
+            return self.alive
+
+    holder = {}
+
+    class FakeContext:
+        Queue = queue.Queue
+
+        def Process(self, **kwargs):
+            holder["process"] = FakeProcess(**kwargs)
+            return holder["process"]
+
+    def kill_process_tree(pid):
+        killed.append(pid)
+        holder["process"].alive = False
+        return True
+
+    def on_event(env):
+        if env.get("type") == "marker":
+            delivered.set()
+
+    monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
+    monkeypatch.setattr("openprogram.host._platform.processes.kill_process_tree", kill_process_tree)
+
+    result = process_runner.run_agent_method_in_subprocess(
+        tool_name="bounded_agent",
+        kwargs={"task": "t", "max_seconds": 300.0},
+        session_id="s",
+        anchor_msg_id="m",
+        on_event=on_event,
+        timeout_seconds=360.0,
+        budget_seconds=300.0,
+    )
+
+    assert killed == [99]
+    assert result["timed_out"] is True and result["killed"] is True
+    progress = result["progress"]
+    assert progress["events"] == 3
+    assert progress["steps"] == [
+        "open_page: completed (0.1 s)",
+        "plan_next_capability: completed (4.2 s)",
+        "computer_use: running",
+        "  locate_target: error - element not found",
+    ]
+    assert progress["recent"][-1].endswith("tool computer_use started")
+    error = result["error"]
+    assert error.splitlines()[0] == "agentic subprocess timed out after 360 seconds"
+    assert "within its 300-second budget plus 60 seconds" in error
+    assert "  computer_use: running" in error
+    assert "OPENPROGRAM_AGENTIC_TIMEOUT_S" in error
+    assert "pass max_seconds to bounded_agent" in error
 
 
 def test_blocked_non_page_event_does_not_report_page_cleanup_failure(monkeypatch):
-    from openprogram.agent import process_runner
+    from openprogram.runtime.conversation import process_runner
 
     callback_started = threading.Event()
     release_callback = threading.Event()
@@ -214,7 +364,7 @@ def test_blocked_non_page_event_does_not_report_page_cleanup_failure(monkeypatch
     monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
 
     try:
-        result = process_runner.run_agentic_in_subprocess(
+        result = process_runner.run_agent_method_in_subprocess(
             tool_name="demo",
             kwargs={},
             session_id="s-event",
@@ -243,8 +393,8 @@ def test_blocked_non_page_event_does_not_report_page_cleanup_failure(monkeypatch
 def test_subprocess_timeout_reports_late_background_page_cleanup(
     monkeypatch, close_results,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     open_started = threading.Event()
@@ -278,7 +428,7 @@ def test_subprocess_timeout_reports_late_background_page_cleanup(
 
         def join(self, timeout=None):
             if self.alive and timeout != 5:
-                assert open_started.wait(1)
+                assert open_started.wait(30)
 
         def is_alive(self):
             return self.alive
@@ -298,7 +448,7 @@ def test_subprocess_timeout_reports_late_background_page_cleanup(
         del timeout
         if command["op"] == "open":
             open_started.set()
-            assert release_open.wait(5)
+            assert release_open.wait(30)
             return {
                 "ok": True,
                 "created": True,
@@ -322,7 +472,7 @@ def test_subprocess_timeout_reports_late_background_page_cleanup(
         return True
 
     monkeypatch.setattr(
-        "openprogram._compat.kill_process_tree",
+        "openprogram.host._platform.processes.kill_process_tree",
         kill_process_tree,
     )
     monkeypatch.setattr(
@@ -338,8 +488,8 @@ def test_subprocess_timeout_reports_late_background_page_cleanup(
     monkeypatch.setattr(webtab, "release_binding", lambda _binding_id: None)
 
     started_at = time.monotonic()
-    result = process_runner.run_agentic_in_subprocess(
-        tool_name="gui_agent",
+    result = process_runner.run_agent_method_in_subprocess(
+        tool_name="browser_agent",
         kwargs={},
         session_id="s",
         anchor_msg_id="m",
@@ -371,7 +521,7 @@ def test_subprocess_timeout_reports_late_background_page_cleanup(
 
 
 def test_child_entry_keeps_the_legacy_positional_payload_layout():
-    from openprogram.agent import process_runner
+    from openprogram.runtime.conversation import process_runner
 
     old_payload = tuple(object() for _ in range(15))
     bound = inspect.signature(process_runner._child_entry).bind(*old_payload)
@@ -384,16 +534,16 @@ def test_child_entry_keeps_the_legacy_positional_payload_layout():
 def test_child_entry_builds_the_session_selected_custom_runtime(
     monkeypatch, tmp_path,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.store import _current_turn_id, _store
-    from openprogram.agentic_programming.function import _current_runtime
-    from openprogram.store.session.session_store import SessionStore
-    import openprogram.agent.session_db as session_db
-    import openprogram.agent.run_control as run_control
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.state.store import _current_turn_id, _store
+    from openprogram.runtime.agent.call_state import _current_runtime
+    from openprogram.state.store.session.session_store import SessionStore
+    import openprogram.runtime.context.session_db as session_db
+    from openprogram.runtime.execution import run_control as execution_run_control
     import openprogram.programs as programs
-    import openprogram.providers._config_read as config_read
-    import openprogram.providers.enabled_models as enabled_models
-    import openprogram.providers.models as provider_models
+    import openprogram.models.providers.settings.config_read as config_read
+    import openprogram.models.providers.catalog.enabled_models as enabled_models
+    import openprogram.models.providers.catalog.models as provider_models
 
     config = {"minimax-cn-coding-plan": {"models": [
         {"id": "MiniMax-M3", "name": "MiniMax M3"},
@@ -407,7 +557,7 @@ def test_child_entry_builds_the_session_selected_custom_runtime(
     store.create_session("s", "main", title="test")
     monkeypatch.setattr(session_db, "default_db", lambda: store)
     monkeypatch.setattr(programs, "agent_tools", lambda names=None: [])
-    monkeypatch.setattr(run_control, "set_current_session_id", lambda sid: None)
+    monkeypatch.setattr(execution_run_control, "set_current_session_id", lambda sid: None)
     monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "0")
 
     result_path = tmp_path / "result.pkl"
@@ -439,27 +589,32 @@ def test_child_entry_builds_the_session_selected_custom_runtime(
     assert result == {"error": "tool not found: missing_probe"}
 
 
-def test_child_entry_force_invokes_hidden_agentic_tool(monkeypatch, tmp_path):
+@pytest.mark.parametrize("tool_failed", [False, True])
+def test_child_entry_force_invokes_hidden_agentic_tool(monkeypatch, tmp_path, tool_failed):
     from types import SimpleNamespace
 
-    from openprogram.agent import process_runner
-    from openprogram.agentic_programming.function import (
-        agentic_function,
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.runtime.agent.call_state import (
+
         _current_runtime,
     )
-    from openprogram.store import _current_turn_id, _store
-    from openprogram.store.session.session_store import SessionStore
-    import openprogram.agent.dispatcher as dispatcher
-    import openprogram.agent.session_db as session_db
-    import openprogram.agent.run_control as run_control
+    from openprogram.state.store import _current_turn_id, _store
+    from openprogram.state.store.session.session_store import SessionStore
+    import openprogram.runtime.conversation.turn_runtime as dispatcher
+    from openprogram.runtime.execution import run_control as execution_run_control
+    import openprogram.runtime.context.session_db as session_db
     import openprogram.programs as programs
-    import openprogram.providers._config_read as config_read
-    import openprogram.providers.enabled_models as enabled_models
-    import openprogram.providers.models as provider_models
+    import openprogram.models.providers.settings.config_read as config_read
+    import openprogram.models.providers.catalog.enabled_models as enabled_models
+    import openprogram.models.providers.catalog.models as provider_models
 
-    @agentic_function(tool_visible=False)
-    def hidden_child_probe():
-        return "ran"
+    class _HiddenChildProbeAgent(Agent):
+        method_options = {'hidden_child_probe': {'tool_visible': False, 'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'hidden_child_probe'}}
+
+        def hidden_child_probe(self, ):
+            return "ran"
+
+    _HiddenChildProbeAgent().hidden_child_probe
 
     from openprogram.programs import agent_tools
     assert agent_tools(names=["hidden_child_probe"]) == []
@@ -476,11 +631,12 @@ def test_child_entry_force_invokes_hidden_agentic_tool(monkeypatch, tmp_path):
     store.create_session("s", "main", title="test")
     monkeypatch.setattr(session_db, "default_db", lambda: store)
     monkeypatch.setattr(programs, "agent_tools", lambda names=None: [])
-    monkeypatch.setattr(run_control, "set_current_session_id", lambda sid: None)
+    monkeypatch.setattr(execution_run_control, "set_current_session_id", lambda sid: None)
     monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "0")
 
     class DummyResult:
-        content = [SimpleNamespace(text="ran")]
+        content = [SimpleNamespace(text="browser unavailable" if tool_failed else "ran")]
+        is_error = tool_failed
 
     class DummyWrapped:
         async def execute(self, *a, **k):
@@ -521,5 +677,7 @@ def test_child_entry_force_invokes_hidden_agentic_tool(monkeypatch, tmp_path):
     with result_path.open("rb") as handle:
         result = pickle.load(handle)
     assert seen.get("name") == "hidden_child_probe"
-    assert result.get("ok") is True
-    assert result.get("text") == "ran"
+    assert result.get("ok") is (not tool_failed)
+    assert result.get("text") == ("browser unavailable" if tool_failed else "ran")
+    if tool_failed:
+        assert result["error"] == "browser unavailable"

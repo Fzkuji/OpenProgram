@@ -1,0 +1,320 @@
+<title>Agent 协作对比</title>
+<meta name="description" content="八种 Agent 实现如何委派工作、互发消息、追踪取消、防止循环和裁剪工具，并与 OpenProgram 对比。">
+<span id="layers"></span>
+<h1>Agent 协作对比</h1>
+
+<p>一个 agent 如何委派给另一个，之后还能否控制这项工作？本项目设计见 <a href="agent-collaboration.zh.html">Agent 协作</a>，工具面见<a href="agent-collab-architecture.zh.html">架构</a>。</p>
+
+<details>
+<summary>如何核实</summary>
+<p>七个仓库直接阅读，带文件路径和行号。Claude Code 的结论只来自 <a href="https://code.claude.com/docs/en/overview">公开文档</a>，文档没写的机制标“未公开”。其余系统的空白或“无”表示机制不存在，不是没查。</p>
+</details>
+
+<h2 id="matrix">总览</h2>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">派生</th><th scope="col">直接消息</th><th scope="col">追踪</th><th scope="col">级联取消</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td>进程内；深度可选</td><td>任意到任意</td><td><code translate="no">execution_id</code>，两个工具</td><td>是</td></tr>
+<tr><th scope="row">Claude Code</th><td>会话内，深度 3</td><td>是，可跨机器</td><td><code translate="no">agentId</code>、<code translate="no">ListAgents</code>、<code translate="no">TaskStop</code></td><td>未公开</td></tr>
+<tr><th scope="row">codex-cli</th><td>进程内；V1 深度 1，V2 不限</td><td>是，兄弟直连</td><td>ThreadId，四个工具</td><td>部分</td></tr>
+<tr><th scope="row">openclaw</th><td>进程内或外部，深度 1</td><td>是，需启用</td><td>runId，仅列表</td><td>是</td></tr>
+<tr><th scope="row">opencode</th><td>进程内，隐式深度 1</td><td>否</td><td>子会话 id</td><td>是</td></tr>
+<tr><th scope="row">hermes-agent</th><td>进程内线程池，深度 1</td><td>树内否；经看板间接</td><td>模型拿不到</td><td>是</td></tr>
+<tr><th scope="row">pi-mono</th><td>子进程，不限</td><td>否</td><td>无</td><td>仅一层</td></tr>
+<tr><th scope="row">pi-ai</th><td>无</td><td>无</td><td>无</td><td>不适用</td></tr>
+<tr><th scope="row">weclaw</th><td>无</td><td>否</td><td>无</td><td>不适用</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">防循环机制</th><th scope="col">工具限制</th><th scope="col">寻址</th><th scope="col">行数</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td>4 项开启，3 项可选</td><td>按剩余额度移除</td><td>分支名或 <code translate="no">SID:HEAD</code></td><td>9.3k</td></tr>
+<tr><th scope="row">Claude Code</th><td>7</td><td>到深度上限时移除，fork 调用时报错</td><td>名称或 agent ID</td><td>未公开</td></tr>
+<tr><th scope="row">codex-cli</th><td>2</td><td>移除；V1 同时拒绝</td><td>路径 <code translate="no">/root/x</code></td><td>7k</td></tr>
+<tr><th scope="row">openclaw</th><td>8</td><td>移除，派生时复查</td><td>会话 key</td><td>17k</td></tr>
+<tr><th scope="row">opencode</th><td>3</td><td>按规则形状移除或拒绝</td><td>Agent 类型名</td><td>0.4k</td></tr>
+<tr><th scope="row">hermes-agent</th><td>5</td><td>按工具集移除</td><td>匿名、一次性</td><td>2.9k</td></tr>
+<tr><th scope="row">pi-mono</th><td>2</td><td>按白名单移除</td><td>磁盘 <code translate="no">.md</code> 名称</td><td>1.3k</td></tr>
+<tr><th scope="row">pi-ai</th><td>无</td><td>不适用</td><td>无</td><td>0</td></tr>
+<tr><th scope="row">weclaw</th><td>1</td><td>不适用</td><td><code translate="no">@name</code></td><td>1.1k</td></tr>
+</tbody>
+</table>
+
+<h2 id="spawn">派生子 agent</h2>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">运行方式</th><th scope="col">深度限制及检查位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目：<code translate="no">agent</code></th><td>进程内线程池，默认 8 个 worker；每个对话同时运行 6 个，其余排队</td><td><code translate="no">agent.max_spawn_depth</code>，默认 1；超限时返回“自己做”。每轮 <code translate="no">agent.max_spawn_fanout</code>，默认关闭。</td></tr>
+<tr><th scope="row">Claude Code：<code translate="no">Agent</code>，原 <code translate="no">Task</code></th><td>会话内子 agent，可用 <code translate="no">isolation: worktree</code>；队友进程内或在 tmux、iTerm2 分屏</td><td>默认深度 3，由 <code translate="no">CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code> 配置；默认并发 20，由 <code translate="no">CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code> 配置。</td></tr>
+<tr><th scope="row">codex-cli：<code translate="no">spawn_agent</code></th><td>同一线程管理器上的 Tokio 任务</td><td>V1 深度 1。V2 计算子深度但从不检查；默认禁用；只有并发上限。</td></tr>
+<tr><th scope="row">openclaw：<code translate="no">sessions_spawn</code></th><td><code translate="no">subagent</code> 进程内；<code translate="no">acp</code> 外部宿主进程，沙箱中禁用</td><td>深度 1，最多 5，统计会话 key 中的 <code translate="no">:subagent:</code> 段</td></tr>
+<tr><th scope="row">opencode：<code translate="no">task</code></th><td>在子会话中重入 prompt 循环</td><td>无数字。注入 <code translate="no">task: * deny</code> 规则使子会话没有该工具，等于深度 1；声明 <code translate="no">permission.task=allow</code> 的 agent 不限。</td></tr>
+<tr><th scope="row">hermes-agent：<code translate="no">delegate_task</code></th><td>线程池；外部 ACP CLI；每张看板卡一个进程</td><td><code translate="no">MAX_DEPTH=1</code>，限制在 1–3</td></tr>
+<tr><th scope="row">pi-mono：示例扩展，核心不含</th><td>每个子 agent 启动新的 <code translate="no">pi --mode json -p --no-session</code></td><td>无。子进程重新加载扩展，<code translate="no">worker</code> 未声明白名单，递归无界。</td></tr>
+<tr><th scope="row">pi-ai</th><td>pi-mono LLM 传输层的只读快照，不编译也不导入</td><td>不适用</td></tr>
+<tr><th scope="row">weclaw</th><td>启动用户配置的 agent CLI，都是顶层 agent</td><td>无嵌套</td></tr>
+</tbody>
+</table>
+<p class="note">子进程路径提供隔离，不提供深度控制。</p>
+<details>
+<summary>代码位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/agent/agent/agent.py; defaults in state/settings.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/sub-agents">子 agent</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">core/src/config/mod.rs:284; V1 check handlers/multi_agents/spawn.rs:65-71; V2 calculation multi_agents_v2/spawn.rs:62</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">config/agent-limits.ts:8; check agents/subagent-spawn.ts:784-791</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">tool/task.ts:133-135; agent/subagent-permissions.ts:18,25</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/delegate_tool.py:133,136-137; check :1958-1972</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">README.md:476 "No sub-agents"; examples/extensions/subagent/index.ts:329-333; agents/worker.md:1-5</code></td></tr>
+<tr><th scope="row">pi-ai</th><td><code translate="no">README.md:1-19</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">agent/cli_agent.go:140,159; four-method interface agent/agent.go:79-95</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="talk">直接通信</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="三种拓扑。无通道：人连接 A 和 B，两者互不可达；weclaw、pi-ai。只经父级：父级与 A、B 通信，兄弟没有地址；opencode、pi-mono、hermes-agent。直连：兄弟互相寻址，也可到其他会话；本项目、Claude Code、codex-cli、openclaw。">
+  <defs><marker id="cmp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="20">无通道</text>
+  <rect class="tile" x="60" y="34" width="72" height="30" rx="6"/><text class="t-note mid" x="96" y="54">人</text>
+  <rect class="tile" x="10" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="32" y="124">A</text>
+  <rect class="tile" x="138" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="160" y="124">B</text>
+  <line class="ln" x1="84" y1="64" x2="42" y2="102" marker-end="url(#cmp-a)"/><line class="ln" x1="108" y1="64" x2="150" y2="102" marker-end="url(#cmp-a)"/>
+  <line class="ln-no" x1="58" y1="119" x2="134" y2="119"/>
+  <text class="t-soft" x="0" y="166">weclaw、pi-ai</text>
+  <text class="t-big" x="232" y="20">只经父级</text>
+  <rect class="tile" x="292" y="34" width="72" height="30" rx="6"/><text class="t-note mid" x="328" y="54">父级</text>
+  <rect class="tile" x="242" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="264" y="124">A</text>
+  <rect class="tile" x="370" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="392" y="124">B</text>
+  <line class="ln" x1="316" y1="66" x2="274" y2="102" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/><line class="ln" x1="340" y1="66" x2="382" y2="102" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/>
+  <line class="ln-no" x1="290" y1="119" x2="366" y2="119"/>
+  <text class="t-soft" x="232" y="166">opencode、pi-mono、</text>
+  <text class="t-soft" x="232" y="186">hermes-agent</text>
+  <text class="t-big" x="464" y="20">直连</text>
+  <rect class="tile" x="514" y="34" width="72" height="30" rx="6"/><text class="t-note mid" x="550" y="54">父级</text>
+  <rect class="tile" x="474" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="496" y="124">A</text>
+  <rect class="tile" x="582" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="604" y="124">B</text>
+  <line class="ln" x1="540" y1="66" x2="506" y2="102" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/><line class="ln" x1="560" y1="66" x2="594" y2="102" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/>
+  <line class="ln-acc" x1="522" y1="119" x2="578" y2="119" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/>
+  <text class="t-soft" x="464" y="166">本项目、Claude Code、</text>
+  <text class="t-soft" x="464" y="186">codex-cli、openclaw</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>无通道</dt><dd>weclaw、pi-ai</dd>
+<dt>只经父级</dt><dd>opencode、pi-mono、hermes-agent</dd>
+<dt>直连</dt><dd>本项目、Claude Code、codex-cli、openclaw</dd>
+</dl>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">连接与投递</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td><code translate="no">send_message(to=)</code>，任意 agent 到任意未归档分支，跨会话同路径，不查所有权。目标忙时进会话收件箱排队。</td></tr>
+<tr><th scope="row">Claude Code</th><td><code translate="no">SendMessage</code>。<code translate="no">to</code>：队友或子 agent 的名称、<code translate="no">main</code>、agent ID，或其他会话的名称；本机会话的收件地址以 <code translate="no">uds:</code> 开头。没有广播，每个收件人发一条。队友用文件邮箱 <code translate="no">~/.claude/teams/{team}/inboxes/{name}.json</code>。发给已结束的子 agent 会恢复它。</td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">send_message</code>、<code translate="no">followup_task</code> 直达目标线程。绝对路径让兄弟互相寻址。投递可只排队，或唤醒收件方运行一轮。</td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">sessions_send</code>，默认关闭：需配置开关和成对白名单。有界的来回循环。子 agent 不能使用，经父级公告队列返回。</td></tr>
+<tr><th scope="row">opencode</th><td>只有父到子，可向运行中子会话追加消息。注册表没有消息工具。</td></tr>
+<tr><th scope="row">hermes-agent</th><td>子 agent 只向父级汇报；<code translate="no">send_message</code> 在“子 agent 不可用”列表中。看板路径不同：每卡一个 worker 进程，通过共享数据库交换卡片评论，根卡有约定的共享区。</td></tr>
+<tr><th scope="row">pi-mono</th><td>派生时一个 prompt，退出时 stdout。顺序模式把上一输出替换进下一任务，是唯一的兄弟通道。</td></tr>
+<tr><th scope="row">pi-ai</th><td>没有 agent</td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">@a @b message</code> 把同一消息发给多个 agent，各自带前缀回复人。agent 彼此不可见。</td></tr>
+</tbody>
+</table>
+<p class="note">跨进程：Claude Code 到其他本地会话和机器，本项目到任意会话，openclaw 用会话 key。</p>
+<details>
+<summary>代码位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/send_message.py; addressing.py; runtime/conversation/inbox.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/agent-teams">Agent 团队</a>、<a href="https://code.claude.com/docs/en/cross-session-messaging">跨会话消息</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">handlers/multi_agents_v2/message_tool.rs:11-24,51-131; absolute paths protocol/src/agent_path.rs:59-71; delivery core/src/agent/control.rs:171</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">agents/tools/sessions-send-tool.ts:193,249-256; back-and-forth sessions-send-tool.a2a.ts:94; child restriction agents/pi-tools.policy.ts:49-50</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">tool/registry.ts:217-236 (whole built-in registry); parent-to-child tool/task.ts:242-257</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">denylist tools/delegate_tool.py:50; board toolsets.py:252-269; shared area hermes_cli/kanban_swarm.py:11-14,26,226-268</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">examples/extensions/subagent/index.ts:530,569; parallel isolation :618-639</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">messaging/handler.go:456-486; command registry (7 entries) :686-698</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="track">追踪与取消</h2>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">模型可得 id</th><th scope="col">状态</th><th scope="col">结果返回</th><th scope="col">模型取消</th><th scope="col">级联</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td><code translate="no">j_</code> 前缀</td><td><code translate="no">list_agents</code>、<code translate="no">read_conversation</code></td><td>派发方对话中的完成通知，结果形状统一</td><td><code translate="no">close_agent</code>；UI 或 API 的 <code translate="no">execution.cancel</code></td><td>是，沿 <code translate="no">parent_job_id</code> 广度优先，有 visited 集</td></tr>
+<tr><th scope="row">Claude Code</th><td><code translate="no">agentId</code></td><td><code translate="no">ListAgents</code>；<code translate="no">/tasks</code></td><td>完成时返回调用方；后台任务读其输出文件</td><td><code translate="no">TaskStop</code></td><td>未公开</td></tr>
+<tr><th scope="row">codex-cli</th><td>ThreadId 和路径</td><td><code translate="no">list_agents</code>、<code translate="no">get_status</code>、推送订阅</td><td>监视器合成父级消息；<code translate="no">wait_agent</code> 默认 30 秒，最长 1 小时</td><td><code translate="no">interrupt_agent</code>；V1 有 <code translate="no">close_agent</code></td><td><code translate="no">close_agent</code> 级联，<code translate="no">interrupt_agent</code> 只停一个；V2 只有后者</td></tr>
+<tr><th scope="row">openclaw</th><td>runId</td><td><code translate="no">subagents</code>，仅列表</td><td>推送：<code translate="no">sessions_yield</code> 结束本轮，结果作为下一条到达</td><td>否；<code translate="no">/subagents kill</code>、HTTP 端点</td><td>是，递归；每个子 agent 清队列并写中止标记</td></tr>
+<tr><th scope="row">opencode</th><td>子会话 id，可用于恢复</td><td>否；prompt 禁止轮询</td><td>工具结果，或父会话合成消息</td><td>否；宿主侧</td><td>是，中止信号加元数据遍历到不动点；删除也递归</td></tr>
+<tr><th scope="row">hermes-agent</th><td>否；序号、状态、摘要、用量</td><td>网关 RPC</td><td>阻塞，一起返回</td><td>网关 RPC</td><td>是，协作式，不强杀线程</td></tr>
+<tr><th scope="row">pi-mono</th><td>否；id 被丢弃</td><td>否；UI 回调</td><td>子进程 stdout，最终文本，每任务 50KB</td><td>只有环境中止信号</td><td>一层：SIGTERM，5 秒后 SIGKILL；子进程不在清理注册表，强杀父进程留下孤儿</td></tr>
+<tr><th scope="row">pi-ai</th><td>无</td><td>无</td><td>无</td><td>无</td><td>每个 HTTP 请求一个扁平中止信号</td></tr>
+<tr><th scope="row">weclaw</th><td>无</td><td>无</td><td>同步，按微信用户 id 关联</td><td>否</td><td>无层级；进程关闭时全局取消</td></tr>
+</tbody>
+</table>
+<p class="note">级联的实现都沿父链走并用 visited 集；差别是走内存对象还是持久记录。</p>
+<details>
+<summary>代码位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td><code translate="no">runtime/jobs/runner/cancellation.py; return runtime/jobs/notices.py; ownership programs/tools/agents/agent/_ownership.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>未公开</td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">cascade core/src/agent/control/legacy.rs:86-101, descendants control.rs:732-756; non-cascade control.rs:247-257</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">agents/subagent-control.ts:205,232,238,256; kill auto-reply/reply/commands-subagents/action-kill.ts:27</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">session/run-state.ts:116-148; tool/task.ts:296-306; tests test/tool/task.test.ts:870</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">result fields tools/delegate_tool.py:1684-1720; recursion run_agent.py:1690-1730</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">discarded id examples/extensions/subagent/index.ts:466; termination :393-403; compare src/utils/shell.ts:172</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">messaging/handler.go:541-556; command registry :686-698</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="loop">防止死循环</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">系统</th><th scope="col">机制</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td>开启：并发 4、收件箱 50（淘汰最旧）、60 秒重复窗口、拒绝投递给自己。可选，默认关闭：深度、每链消息、每轮扇出。聊天轮次没有工具轮数上限。</td></tr>
+<tr><th scope="row">Claude Code</th><td>默认深度 3、并发 20，总派生量不限；fork 不能再 fork；队友不能派生队友。跨会话消息：按发送方限速、丢弃短时间内的相同消息、最多排队 50 条。</td></tr>
+<tr><th scope="row">codex-cli</th><td>深度（V1 为 1，V2 无）；并发全局 6、V2 每会话 4。无去重、计数、限速或环检测，兄弟可寻址时没有东西能阻止两个 agent 无限互派。</td></tr>
+<tr><th scope="row">openclaw</th><td>深度 1（到 5）；每 agent 5 个子（到 20）；并发 8 和 4；对话 5 轮（到 20）；转向 2 秒限速；公告重试 3 次；子 key 去重；工具循环检测，默认关闭。</td></tr>
+<tr><th scope="row">opencode</th><td>通过注入权限限制深度。同一工具相同参数连续 3 次时询问权限。步数默认不限。</td></tr>
+<tr><th scope="row">hermes-agent</th><td>深度 1（到 3）；并发 3；每子 50 次迭代；600 秒超时加心跳；全局暂停派生开关；叶子移除委派工具集。无去重或计数。</td></tr>
+<tr><th scope="row">pi-mono</th><td>扇出 8、并发 4、每任务输出 50KB。无深度、去重、限速或轮数上限；递归无界。</td></tr>
+<tr><th scope="row">pi-ai</th><td>没有工具循环</td></tr>
+<tr><th scope="row">weclaw</th><td>去重：微信 id 5 分钟、广播内名称。没有返回通道，因此无环。</td></tr>
+</tbody>
+</table>
+<p class="note">深度限制几乎普遍；只有三个系统计数消息。</p>
+<details>
+<summary>代码位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/depth.py; programs/tools/agents/agent/agent/agent.py; runtime/conversation/inbox.py; self-delivery guard send_message.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/sub-agents">子 agent</a>、<a href="https://code.claude.com/docs/en/agent-teams">Agent 团队</a>、<a href="https://code.claude.com/docs/en/cross-session-messaging">跨会话消息</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">core/src/config/mod.rs:212-213,284; concurrency core/src/agent/control/execution.rs:68-76</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">config/agent-limits.ts:3-8; rounds agents/tools/sessions-send-helpers.ts:15-16; rate limit agents/subagent-control.ts:45,507-516; retries agents/subagent-registry-helpers.ts:35</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">DOOM_LOOP_THRESHOLD=3 session/processor.ts:35, check :519-546; steps session/prompt.ts:1281</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/delegate_tool.py:132-133,136-137,512-523; pause switch :149-172; toolset removal :672-680</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">examples/extensions/subagent/index.ts:27-30; main loop packages/agent/src/agent-loop.ts:170</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">messaging/handler.go:273,63-64; name deduplication :246-253</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="tools">裁剪子 agent 工具</h2>
+<dl class="pairs">
+<dt>A：从列表移除</dt><dd>模型看不到。各层定义不同，prompt 缓存被分割。</dd>
+<dt>B：保留，调用时拒绝</dt><dd>定义逐字节相同，缓存命中。尝试调用浪费一轮。</dd>
+</dl>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">方式</th><th scope="col">内容与条件</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td>按剩余额度 A，再加拒绝</td><td>只有 <code translate="no">agent</code>，只在消息预算用尽时（<code translate="no">delegation_budget_left</code>），因为每次派发都花一条消息。代数用尽不移除：仍可把工作交给已有 agent。其他工具都保留。有意二值：按层的工具集会打碎 prompt 缓存。</td></tr>
+<tr><th scope="row">Claude Code</th><td>A 和 B</td><td>到深度上限时不给 <code translate="no">Agent</code>；fork 仍保留该工具，调用时报错。</td></tr>
+<tr><th scope="row">codex-cli</th><td>V1 A+B，V2 A</td><td>到上限时工具列表省略协作工具；V1 处理器也拒绝。角色用叠加配置文件，不用白名单。</td></tr>
+<tr><th scope="row">openclaw</th><td>A+B</td><td>所有子 agent 失去网关、agent 列表、会话状态、定时任务和跨 agent 消息。叶子还失去子 agent 列表、会话列表、历史和派生。派生时复查深度。</td></tr>
+<tr><th scope="row">opencode</th><td>A 或 B</td><td>deny 规则为 <code translate="no">"*"</code> 时从 schema 移除；具体模式保留定义，调用时抛错并返回匹配规则。</td></tr>
+<tr><th scope="row">hermes-agent</th><td>A，按工具集</td><td>请求 ∩ 父级拥有，再减委派、提问、记忆和代码执行。缺口：“子 agent 不可用”列表只生成文档，继承消息工具集的子 agent 仍有 <code translate="no">send_message</code>。</td></tr>
+<tr><th scope="row">pi-mono</th><td>A</td><td>白名单转为子进程参数；子进程过滤注册表并重建 prompt。</td></tr>
+<tr><th scope="row">pi-ai</th><td>不适用</td><td>没有工具执行器</td></tr>
+<tr><th scope="row">weclaw</th><td>不适用</td><td>工具封装在 CLI 内部</td></tr>
+</tbody>
+</table>
+<details>
+<summary>代码位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/depth.py delegation_budget_left; can_use on programs/tools/agents/agent/agent/agent.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/sub-agents">子 agent</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">core/src/tools/spec_plan.rs:561-572,1099; V1 rejection handlers/multi_agents/spawn.rs:67-71; roles core/src/agent/role.rs:37,249</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">agents/pi-tools.policy.ts:42-51,57-62,170-175; recheck agents/subagent-spawn.ts:786</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">removal permission/index.ts:215-225, session/llm/request.ts:198-204; rejection permission/index.ts:86-90, message packages/core/src/v1/permission.ts:84-90</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/delegate_tool.py:945-961,672-680; list :45-53; gap compared with toolsets.py:190</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">core/agent-session.ts:2253-2342; allowlist core/sdk.ts:280-286; arguments examples/extensions/subagent/index.ts:290</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">the only tool mention, for display: agent/acp_agent.go:139</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="name">身份与寻址</h2>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">命名</th><th scope="col">查找已有 agent</th><th scope="col">地址</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td>有：约 24 字符占位名，第 1、6、16、40 轮由 LLM 改名</td><td><code translate="no">list_agents</code>：会话、全部、归档；每项含地址、轮数、大小、预览</td><td><code translate="no">SID:HEAD</code>、名称或唯一前缀；解析到末端，旧 head 仍有效</td></tr>
+<tr><th scope="row">Claude Code</th><td>子 agent 和队友用名称；<code translate="no">main</code> 指主会话</td><td><code translate="no">ListAgents</code>：子 agent、队友、本地会话；连接 Remote Control 时还有云端会话和其他机器的会话</td><td>名称、<code translate="no">main</code>、agent ID；本机重名时用列表给出的标识</td></tr>
+<tr><th scope="row">codex-cli</th><td>从 <code translate="no">/root</code> 起的路径；昵称来自 101 位科学家</td><td><code translate="no">list_agents</code> 按路径前缀；活跃子 agent 也注入环境上下文</td><td>路径或 ThreadId</td></tr>
+<tr><th scope="row">openclaw</th><td>有，在配置文件中</td><td><code translate="no">agents_list</code>，子 agent 无此工具</td><td><code translate="no">agent:&lt;id&gt;:…:subagent:…</code>，或 label 加 agentId</td></tr>
+<tr><th scope="row">opencode</th><td>类型名，非实例</td><td>名称写在 <code translate="no">task</code> 描述中；运行中的 agent 不可发现；id 只能重连自己的子会话</td><td>裸名称</td></tr>
+<tr><th scope="row">hermes-agent</th><td>匿名、一次性</td><td>无工具；内部 <code translate="no">sa-index-random</code> id 仅供运维</td><td>无；看板卡用 profile 名</td></tr>
+<tr><th scope="row">pi-mono</th><td>磁盘定义，非进程</td><td>重新扫描目录；子进程不留痕迹</td><td>线性匹配名称；模型从报错得知可用名</td></tr>
+<tr><th scope="row">pi-ai</th><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">weclaw</th><td>配置键和别名</td><td>无工具；<code translate="no">/info</code> 是人用命令</td><td><code translate="no">@name</code> 或 <code translate="no">/name</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>代码位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/list_agents/list_agents.py; programs/tools/agents/send_message/send_message/addressing.py; runtime/conversation/turn_runtime/titles.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/cross-session-messaging">跨会话消息</a>、<a href="https://code.claude.com/docs/en/tools-reference">工具参考</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">protocol/src/agent_path.rs:15-19,54-71,129-146; names core/src/agent/agent_names.txt; listing core/src/agent/control.rs:383-395,361-381</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">sessions/session-key-utils.ts:108-126; agents-list-tool.ts:37; child restriction pi-tools.policy.ts:45</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">tool/task.ts:46,116; names tool/registry.ts:252-265; definitions agent/agent.ts:35-55</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">parameters tools/delegate_tool.py:2675-2751; internal id :920-922; board hermes_cli/kanban_db.py:5674-5679</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">examples/extensions/subagent/agents.ts:52-56,97-116; arguments index.ts:288; parsing index.ts:272-286</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">config/config.go:16-33; parsing messaging/handler.go:206-265; aliases :169,187</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="size">代码量</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">系统与行数</th><th scope="col">统计范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw，17,240</th><td>73 个非测试 TypeScript 文件，含 UI 命令和注册表</td></tr>
+<tr><th scope="row">本项目，约 9,300</th><td>Agent 工具 2,526；jobs 包（不含资源治理）5,541；收件箱 511；<code translate="no">sub_agent_run</code> 750</td></tr>
+<tr><th scope="row">codex-cli，7,059</th><td>多 agent 核心；另有 3,676 行支撑和 13,114 行测试</td></tr>
+<tr><th scope="row">hermes-agent，2,900</th><td>委派；另有约 1,600 行看板路径</td></tr>
+<tr><th scope="row">pi-mono，1,310</th><td>整个示例扩展；机制约 190 行</td></tr>
+<tr><th scope="row">weclaw，1,050</th><td>全部 agent 代码；路由核心约 150 行</td></tr>
+<tr><th scope="row">opencode，415</th><td>委派；另复用约 365 行后台任务代码</td></tr>
+<tr><th scope="row">pi-ai，0</th><td>无实现</td></tr>
+</tbody>
+</table>
+<p class="note">统计边界不同，只比较数量级。不含测试。</p>
+
+<h2 id="plan">我们取了什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">领域</th><th scope="col">工具</th><th scope="col">承载</th></tr></thead>
+<tbody>
+<tr><th scope="row">计划</th><td><code translate="no">todo_create</code>、<code translate="no">todo_update</code>、<code translate="no">todo_list</code></td><td>清单；编辑不运行任何东西</td></tr>
+<tr><th scope="row">执行</th><td><code translate="no">read_conversation</code>、<code translate="no">close_agent</code></td><td>一个 id、一个状态、保证返回、级联取消</td></tr>
+<tr><th scope="row">实体</th><td><code translate="no">agent</code>、<code translate="no">list_agents</code>、<code translate="no">send_message</code></td><td>agent 是会话图中的一条分支</td></tr>
+<tr><th scope="row">通信</th><td><code translate="no">send_message</code>、<code translate="no">read_conversation</code></td><td>不建任务记录的消息；任意分支的记录</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">选择</th><th scope="col">对照</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具名 <code translate="no">agent</code>、<code translate="no">list_agents</code>、<code translate="no">send_message</code></th><td>Claude Code</td><td>模型已经认识</td></tr>
+<tr><th scope="row">计划用 <code translate="no">todo_*</code></th><td>与 Claude Code 不同</td><td>它的 <code translate="no">TaskList</code> 是计划板；我们把运行中的工作和计划分开</td></tr>
+<tr><th scope="row">寻址分支而非进程</th><td>类似 codex-cli 路径、openclaw key</td><td>(会话, head) 可唯一标识，无需 agent 表</td></tr>
+<tr><th scope="row">任意 agent 可给任意 agent 发消息</th><td>比 openclaw 宽松；类似 codex-cli V2、Claude Code</td><td>消息不建任务、不会级联，最坏结果是没回应</td></tr>
+<tr><th scope="row">一个消息工具：<code translate="no">send_message</code> 总是建 Job</th><td>Codex <code translate="no">send_input</code>、Claude Code <code translate="no">SendMessage</code></td><td>返回、取消和级联属于 Job；一个工具免去在三种寻址方式间选择</td></tr>
+<tr><th scope="row">每链消息预算；设置时取 8，含返回</th><td>只有 openclaw 也计数</td><td>仅靠深度挡不住已有 agent 互相委派。8 介于 openclaw 的 5 和 20 之间，因为我们还计入派生和派发。返回时重绑计数，一次往返花 1；代数恢复为派发方的值，协调者可派下一批。</td></tr>
+<tr><th scope="row">设置时深度取 1，不取 3</th><td>openclaw、codex-cli V1、hermes、opencode</td><td>深度 3 适合有人看着的嵌套。我们的无人值守路径是 <code translate="no">run_in_background=True</code>。</td></tr>
+<tr><th scope="row">每轮扇出；设置时取 8</th><td>只有 openclaw 有真正的扇出上限</td><td>派生不改父级计数，两个链计数器都看不到兄弟。openclaw 的 5 个活跃子 agent（1–20）是可借鉴的单位；hermes 的 3 和 pi-mono 的 8 是批量参数，而 <code translate="no">agent</code> 每次只建一个。8 是两倍线程池：填满、再排一批，第九个拒绝并指向已有八个。</td></tr>
+<tr><th scope="row">不做转向限速和子 agent 硬超时</th><td>openclaw 2 秒；hermes 600 秒</td><td>openclaw 的限速保护会中止子轮次的 steer；我们排队，不打断。hermes 的超时是调用侧等待后放弃线程。<code translate="no">job_output(timeout=)</code> 就是这种等待，<code translate="no">execution.cancel</code> 还会终止运行时，并在 30 秒后强制进入终态。</td></tr>
+<tr><th scope="row">按额度移除工具，二值</th><td>其他系统无条件或按深度分层移除</td><td>分层使 prompt 缓存失效</td></tr>
+<tr><th scope="row">额外工具 <code translate="no">close_agent</code>、<code translate="no">read_conversation</code></th><td>Codex <code translate="no">close_agent</code>；Claude Code <code translate="no">TaskStop</code></td><td>一次调用停止并收起助手，不读原始会话文件也能读历史</td></tr>
+</tbody>
+</table>
+<p class="note">每个数字的依据写在其常量旁。限额默认关闭，由 Job 池限制并发，深度由所有者决定。未完成项见<a href="agent-collaboration.zh.html#implementation-status">实现状态</a>。</p>

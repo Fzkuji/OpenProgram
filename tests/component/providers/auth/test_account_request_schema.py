@@ -13,10 +13,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import Credential, CredentialData, CredentialPool
-from openprogram.webui.routes.identity import accounts, provider_login, providers
-from openprogram.webui.routes.settings import config
+from openprogram.models.auth.store import AuthStore, set_store_for_testing
+from openprogram.models.auth.types import Credential, CredentialData, CredentialPool
+from openprogram.interfaces.server.routes.identity import accounts, provider_login, providers
+from openprogram.interfaces.server.routes.settings import config
 
 
 _SECRET = "sk-123456789abc4"
@@ -25,18 +25,18 @@ _SECRET = "sk-123456789abc4"
 @pytest.fixture
 def account_api(tmp_path, monkeypatch):
     """Route app over an isolated AuthStore, sidecar root and config file."""
-    from openprogram import setup
-    from openprogram.auth.account import account_priority
-    from openprogram.auth.account import account_selection
-    from openprogram.auth import rotation
-    from openprogram.providers import storage as provider_storage
-    from openprogram.webui._model_listing import credentials
+    from openprogram.state import config as user_config
+    from openprogram.models.auth.account import account_priority
+    from openprogram.models.auth.account import account_selection
+    from openprogram.models.auth import rotation
+    from openprogram.models.providers.settings import storage as provider_storage
+    from openprogram.models.listing import credentials
 
-    monkeypatch.setattr(setup, "get_config_path", lambda: tmp_path / "config.json")
+    monkeypatch.setattr(user_config, "get_config_path", lambda: tmp_path / "config.json")
 
     sidecar_root = tmp_path / "sidecars"
     for module in (account_priority, account_selection, rotation):
-        monkeypatch.setattr(module, "DEFAULT_ROOT", sidecar_root)
+        monkeypatch.setattr(module, "default_root", lambda: sidecar_root)
 
     monkeypatch.setattr(
         credentials,
@@ -122,7 +122,7 @@ def _account_state(store: AuthStore) -> list[tuple[str, str]]:
 
 
 def test_accounts_use_activates_a_real_account(account_api):
-    from openprogram.auth.account.account_selection import get_active_pin
+    from openprogram.models.auth.account.account_selection import get_active_pin
 
     _put_account(account_api.store)
 
@@ -136,8 +136,8 @@ def test_accounts_use_activates_a_real_account(account_api):
 
 
 def test_accounts_use_empty_id_clears_the_pin(account_api):
-    from openprogram.auth.account.account_selection import get_active_pin
-    from openprogram.auth.account.account_selection import set_active_account
+    from openprogram.models.auth.account.account_selection import get_active_pin
+    from openprogram.models.auth.account.account_selection import set_active_account
 
     _put_account(account_api.store)
     set_active_account("openai", "work")
@@ -166,8 +166,8 @@ def test_accounts_use_empty_id_clears_the_pin(account_api):
 def test_accounts_use_invalid_request_leaves_the_pin_untouched(
     account_api, body, status
 ):
-    from openprogram.auth.account.account_selection import get_active_pin
-    from openprogram.auth.account.account_selection import set_active_account
+    from openprogram.models.auth.account.account_selection import get_active_pin
+    from openprogram.models.auth.account.account_selection import set_active_account
 
     _put_account(account_api.store)
     set_active_account("openai", "work")
@@ -220,8 +220,8 @@ def test_second_oauth_account_automatically_uses_email_as_label(account_api):
 
 
 def test_login_allocates_stable_id_and_persists_optional_label(account_api, monkeypatch):
-    from openprogram.auth.login import login_driver
-    from openprogram.auth.account.account_labels import apply_account_label
+    from openprogram.models.auth.login import login_driver
+    from openprogram.models.auth.account.account_labels import apply_account_label
 
     _put_oauth_account(account_api.store, account_id="default", email="first@example.com")
     received = {}
@@ -319,7 +319,7 @@ def test_accounts_rename_invalid_request_does_not_mutate(account_api, body, stat
 
 
 def test_accounts_rotation_enables_a_known_strategy(account_api):
-    from openprogram.auth.rotation import get_rotation
+    from openprogram.models.auth.rotation import get_rotation
 
     response = account_api.client.post(
         "/api/providers/openai/accounts/rotation",
@@ -347,7 +347,7 @@ def test_accounts_rotation_enables_a_known_strategy(account_api):
     ],
 )
 def test_accounts_rotation_invalid_request_does_not_mutate(account_api, body):
-    from openprogram.auth.rotation import get_rotation, set_rotation
+    from openprogram.models.auth.rotation import get_rotation, set_rotation
 
     set_rotation("openai", enabled=False, strategy="fill_first")
     before = get_rotation("openai")
@@ -365,7 +365,7 @@ def test_accounts_rotation_rejects_claude_code(account_api):
         "/api/providers/claude-code/accounts/rotation", json={"enabled": True}
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +374,7 @@ def test_accounts_rotation_rejects_claude_code(account_api):
 
 
 def test_accounts_reorder_stores_the_order(account_api):
-    from openprogram.auth.account.account_priority import get_account_priority
+    from openprogram.models.auth.account.account_priority import get_account_priority
 
     response = account_api.client.post(
         "/api/providers/openai/accounts/reorder",
@@ -401,8 +401,8 @@ def test_accounts_reorder_stores_the_order(account_api):
     ],
 )
 def test_accounts_reorder_invalid_request_does_not_mutate(account_api, body):
-    from openprogram.auth.account.account_priority import get_account_priority
-    from openprogram.auth.account.account_priority import set_account_priority
+    from openprogram.models.auth.account.account_priority import get_account_priority
+    from openprogram.models.auth.account.account_priority import set_account_priority
 
     set_account_priority("openai", ["work", "other"])
 
@@ -420,7 +420,7 @@ def test_accounts_reorder_invalid_request_does_not_mutate(account_api, body):
 
 
 def test_accounts_enabled_disables_one_account(account_api):
-    from openprogram.auth.rotation import get_accounts_out_of_rotation
+    from openprogram.models.auth.rotation import get_accounts_out_of_rotation
 
     _put_account(account_api.store)
 
@@ -449,7 +449,7 @@ def test_accounts_enabled_disables_one_account(account_api):
     ],
 )
 def test_accounts_enabled_invalid_request_does_not_mutate(account_api, body, status):
-    from openprogram.auth.rotation import get_accounts_out_of_rotation
+    from openprogram.models.auth.rotation import get_accounts_out_of_rotation
 
     _put_account(account_api.store)
 
@@ -586,7 +586,7 @@ def test_account_retry_resolves_the_alias_pool(account_api, monkeypatch):
     ``retry`` used the raw path segment as the pool id, so an alias found no
     pool and the cooldown was never cleared.
     """
-    from openprogram.auth.account import aliases
+    from openprogram.models.auth.account import aliases
 
     _put_account(account_api.store)
     monkeypatch.setattr(
@@ -698,3 +698,32 @@ def test_settings_rejects_malformed_bodies(account_api, body):
     response = account_api.client.post("/api/settings", json=body)
 
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize('validate', [False, True])
+def test_anthropic_key_creation_rejects_subscription_token(account_api, validate):
+    response = account_api.client.post('/api/providers/anthropic/accounts/keys', json={'api_key': 'sk-ant-oat-SYNTHETIC', 'validate': validate})
+    assert response.status_code == 400
+    assert account_api.store.find_pool('anthropic', 'default') is None
+
+
+def test_unsupported_provider_login_is_rejected(account_api):
+    response = account_api.client.post('/api/providers/claude-code/login/start', json={'method': 'pkce_oauth'})
+    assert response.status_code == 404
+    assert not provider_login._SESSIONS
+
+
+def test_listing_marks_the_account_requests_actually_use(account_api):
+    from openprogram.models.auth.account.account_selection import set_active_account
+
+    _put_account(account_api.store, "default")
+    _put_account(account_api.store, "work", "sk-abcdef0123456")
+
+    def flags():
+        listing = account_api.client.get("/api/providers/openai/accounts").json()
+        return {a["id"]: (a["is_active"], a["is_fallback"]) for a in listing["accounts"]}
+
+    # Nothing pinned: requests run on the fallback account, and it says so.
+    assert flags() == {"default": (True, True), "work": (False, False)}
+    set_active_account("openai", "work")
+    assert flags() == {"default": (False, True), "work": (True, False)}

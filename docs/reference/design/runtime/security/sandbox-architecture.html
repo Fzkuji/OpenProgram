@@ -1,0 +1,227 @@
+<title>Execution authority and sandbox</title>
+<meta name="description" content="The three independent checks on every tool call: authenticated authority, the permission decision, and the sandbox around approved processes.">
+<h1>Execution authority and sandbox</h1>
+
+<table class="stack" id="overview">
+<thead><tr><th scope="col">Check</th><th scope="col">Answers</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Authority</th><td>Who is asking</td><td>Authenticated principal and a fixed capability ceiling on every request; nested Agents never widen it</td></tr>
+<tr><th scope="row">Permission</th><td>May this operation run</td><td>One shared decision under the execution branch's mode; the mode can change mid-turn and the next tool check uses it. See <a href="permission-decision.html">Permission decision and refusals</a>.</td></tr>
+<tr><th scope="row">Sandbox</th><td>What an approved process can touch</td><td>Seatbelt (macOS) or bubblewrap (Linux). Off unless the Sandbox switch of the conversation branch the turn runs on is on.</td></tr>
+</tbody>
+</table>
+<p class="note">The same contract covers Web, CLI, ACP, channels, nested Agents, scheduled tasks and continuation.</p>
+
+<h2 id="authority">Authenticated authority</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Authenticated local entry</th><td>Attaches complete owner authority to <code translate="no">TurnRequest</code> before durable admission. The audit actor and the execution request are separate values; an admission actor alone does not authorize tools.</td></tr>
+<tr><th scope="row">Paired channels</th><td>Keep the paired tier</td></tr>
+<tr><th scope="row">Nested requests</th><td>Inherit, cannot expand</td></tr>
+<tr><th scope="row">Missing or unknown authority</th><td>Fails closed with a stable reason code</td></tr>
+<tr><th scope="row">Recovery</th><td>Never rebuilds owner authority from a source label or model text. Legacy admitted requests without authority must be resubmitted through an authenticated entry.</td></tr>
+</tbody>
+</table>
+
+<h2 id="flow">One operation decision</h2>
+<p>The approval manifest and the execution wrapper use the same decision.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner-delegated Agent shell and managed processes</th><td>Use the admitted permission snapshot, not a blanket source prohibition</td></tr>
+<tr><th scope="row">MCP callers, non-owner spawned Agents</th><td>Keep that prohibition; worktree controls keep their own restriction</td></tr>
+<tr><th scope="row">Bypass permissions</th><td>Skips ordinary approval and Auto classification. Does not override explicit ask or deny rules or plugin tool gates. With Sandbox on, commands stay sandboxed.</td></tr>
+<tr><th scope="row">Invalid mode values</th><td>Rejected by configuration commands</td></tr>
+<tr><th scope="row">Denials</th><td>Name their reason and capability without exposing secrets</td></tr>
+<tr><th scope="row">Web answers</th><td>The question and selected answer stay until the canonical wait command is acknowledged as applied. Unknown delivery locks the selection and retries the same command identifier; a socket send alone is not completion. Covers approvals, questions, forms and discussion.</td></tr>
+</tbody>
+</table>
+
+<h3 id="delegated-audit">Delegated checks and audit privacy</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Write and edit targets</th><td>Spawned-Agent and MCP calls need a nonblank string target. An explicit empty patch target is denied before Bypass permissions and allow rules.</td></tr>
+<tr><th scope="row">Relative targets</th><td>Resolved against the bound worktree; realpath containment includes file and parent-directory symlinks. The shared file-safety helper keeps its current-directory semantics for standalone relative inputs.</td></tr>
+<tr><th scope="row"><code translate="no">security.risky_tool_delegated</code></th><td>Delegated risky-tool check admitted by Bypass permissions or an allow rule</td></tr>
+<tr><th scope="row"><code translate="no">security.path_violation</code></th><td>Denied write target</td></tr>
+<tr><th scope="row">Event meaning</th><td>Permission checks, not completed execution; may repeat during manifest construction or reconciliation</td></tr>
+<tr><th scope="row">Payload</th><td>Session, tool, source, authority and a fixed reason. No commands, code, target paths or other argument text. Origin <code translate="no">system</code>; existing event-log routing and rotation.</td></tr>
+<tr><th scope="row">Delivery</th><td>Best effort; never authorizes or blocks</td></tr>
+</tbody>
+</table>
+
+<h2 id="modes">Mode resolution</h2>
+<p>The setting of the conversation branch the turn runs on, then the project's default, then Bypass permissions (<code translate="no">DEFAULT_PERMISSION</code>). The resolved mode drives admission and UI acknowledgements. <a href="permission-decision.html#modes">The modes</a> are defined with the decision.</p>
+
+<h2 id="permission-lifecycle">Live permission changes</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">State</th><td><code translate="no">SessionStore</code> owns a versioned <code translate="no">permission_state</code> dictionary per branch, with mode and owner principal. Atomic compare-and-set stops stale clients overwriting a newer selection. No parallel approval database or generic policy engine.</td></tr>
+<tr><th scope="row">Settings command</th><td>WebSocket; authenticates the owner, validates session and branch scope, returns the authoritative mode, version and branch identity. Conflicts stay errors.</td></tr>
+<tr><th scope="row">Takes effect</th><td>At server confirmation, independent of an in-flight model request. Each later ordinary approval check uses it, including later calls in the same batch. One call keeps its decision through dispatch; authorized calls are not interrupted. No restart or next message needed.</td></tr>
+<tr><th scope="row">Web and App</th><td>Send immediately with the confirmed version, reading first only when none is known. A requested selection is shown apart from an acknowledged mode; older acknowledgements and hydration snapshots cannot replace newer state; transport errors stay visible.</td></tr>
+<tr><th scope="row">Unsent draft</th><td>Stores its selection locally without creating a session; first submission supplies it</td></tr>
+<tr><th scope="row">Open approvals on a mode change</th><td>Re-evaluated with the shared decision. Now allowed: resolved through the canonical wait-answer command and resumed from its checkpoint. Ask rules, outbound holds, Sandbox escalation and user questions keep waiting.</td></tr>
+<tr><th scope="row">Races and restart</th><td>A wait published during a settings change rechecks after the old runtime releases its cancellation token. Startup recovery re-evaluates persisted changes. Expired, cancelled or completed work is never resurrected.</td></tr>
+<tr><th scope="row">Spawned Agents</th><td>At trusted spawn admission a running owner parent passes its effective mode and rules into the child's immutable input, bound to the same principal and exact runtime parent. An interactive parent resolves its latest confirmed mode first; a nested non-interactive parent passes its frozen snapshot. Existing inputs are not rewritten. Children stay non-interactive: an ask with no approver denies; inherited Bypass permissions skips only ordinary approval.</td></tr>
+<tr><th scope="row">Excluded from live overrides</th><td>Standalone scheduled tasks, paired channels, unrelated sessions</td></tr>
+<tr><th scope="row">Plan</th><td>Enforced at the tool boundary, so switching in blocks writes already proposed. A stable tool catalog allows switching out mid-turn without invalidating continuation. Entered only from the selector; <code translate="no">exit_plan_mode</code> restores the previous mode.</td></tr>
+<tr><th scope="row">Stored mode</th><td>An existing <code translate="no">permission_mode</code> is readable when no versioned state exists</td></tr>
+<tr><th scope="row">One-shot approvals</th><td>Self-update and operations with no representable exact rule offer only a single allow; canonical validation enforces the same scope list. Answers count once the server acknowledges them; execution versions must match after a reload; the service owns the allowed scopes.</td></tr>
+</tbody>
+</table>
+
+<h2 id="boundaries">Tool and host boundaries</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">File tools</th><td>In-process guards</td></tr>
+<tr><th scope="row">Local subprocesses</th><td>Seatbelt or bubblewrap</td></tr>
+<tr><th scope="row">Browser, Web Use</th><td>Exact surface grant</td></tr>
+<tr><th scope="row">Docker, SSH</th><td>Their own execution boundary</td></tr>
+<tr><th scope="row">Configured MCP processes</th><td>Owner-configured trust, not local sandbox isolation</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">workspace-write</code></th><td>Writes to working roots, masks protected reads, filters credential environment variables, network off unless <code translate="no">sandbox.network</code></td></tr>
+<tr><th scope="row"><code translate="no">danger-full-access</code></th><td>Host user permissions</td></tr>
+<tr><th scope="row">Missing backend</th><td>Refuses by default; explicit <code translate="no">warn</code> is an acknowledged fallback</td></tr>
+<tr><th scope="row">Sandbox switch</th><td>A branch override resolved into an immutable turn snapshot. A change affects later turns, not current processes, other sessions, scheduled tasks or inherited child policy. Ordinary approval never disables it.</td></tr>
+<tr><th scope="row">Scheduled commands and prompts</th><td>Use their conversation's setting when they fire</td></tr>
+</tbody>
+</table>
+
+<h3 id="protected-writes">Protected writes</h3>
+<p>A sandboxed command escapes by writing a file that something outside the sandbox runs later. The worker starts in home, so a conversation with no project folder has home as its writable root. <code translate="no">host/sandbox/protected_writes.py</code> keeps these read-only on top of every policy; no configuration removes them.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Scope</th><th scope="col">Paths</th></tr></thead>
+<tbody>
+<tr><th scope="row">By name, anywhere</th><td><code translate="no">.bashrc</code> <code translate="no">.bash_profile</code> <code translate="no">.bash_login</code> <code translate="no">.profile</code> <code translate="no">.zshrc</code> <code translate="no">.zprofile</code> <code translate="no">.zshenv</code> <code translate="no">.zlogin</code> <code translate="no">.gitconfig</code> <code translate="no">.gitmodules</code> <code translate="no">.ripgreprc</code> <code translate="no">.mcp.json</code> <code translate="no">.vscode/</code> <code translate="no">.idea/</code> <code translate="no">.claude/settings.json</code> <code translate="no">.claude/settings.local.json</code> <code translate="no">.claude/commands/</code> <code translate="no">.claude/agents/</code> <code translate="no">.claude/hooks/</code></td></tr>
+<tr><th scope="row">Home folders</th><td><code translate="no">~/.ssh</code> <code translate="no">~/Library/LaunchAgents</code> <code translate="no">~/.config/autostart</code> <code translate="no">~/.config/systemd</code> <code translate="no">~/.config/git</code> <code translate="no">~/.claude</code>, and every OpenProgram state folder, whose config could turn the sandbox off next turn. A writable root inside one (a session worktree) stays writable; the name rules still apply inside it.</td></tr>
+<tr><th scope="row">Starting repository</th><td>Its <code translate="no">.git/hooks</code> and <code translate="no">.git/config</code>. Only that existing repository, so <code translate="no">git init</code> and <code translate="no">git clone</code> keep working.</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>macOS</dt><dd>Rules are patterns in the Seatbelt profile</dd>
+<dt>Linux</dt><dd>bubblewrap mounts only existing paths read-only: the home folders, named files at the top of each writable root and of home, the repository's git paths. A protected name created later deeper in the workspace is not covered.</dd>
+<dt>In-process write tools</dt><dd>Same rules through <code translate="no">validate_write_path</code></dd>
+<dt>Lifted by</dt><dd>An approved escalation (writable root <code translate="no">/</code>), for that command</dd>
+</dl>
+<details>
+<summary>Why not Anthropic's sandbox-runtime</summary>
+<p>The list follows its mandatory deny paths. Measured as a macOS replacement and not adopted; its process boundary matches ours, so only the list was taken.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Cost</th><th scope="col">Measured</th></tr></thead>
+<tbody>
+<tr><th scope="row">Startup</th><td>A Node program, so every command starts Node: about 120 ms against about 10 ms for direct Seatbelt</td></tr>
+<tr><th scope="row">Packaging</th><td>The packaged runtime would ship Node and ripgrep</td></tr>
+<tr><th scope="row">Git</th><td>Denies <code translate="no">.git/config</code> in every repository, which breaks <code translate="no">git init</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="escalation">Sandbox escalation</h2>
+<p>Requested before the command runs, as in Codex: <code translate="no">bash</code> with <code translate="no">sandbox_permissions="require_escalated"</code> and a justification.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Card</th><td>Manifest for <code translate="no">bash:sandbox-escalation</code> at the Agent safe point, ahead of any effect; it covers what an ordinary ask would have asked</td></tr>
+<tr><th scope="row">Who approves</th><td>Only an interactive local owner with <code translate="no">approval.request</code>. Outside Bypass permissions, paired channels, MCP clients, cron and subagents cannot escalate.</td></tr>
+<tr><th scope="row">Lifts</th><td>Configurable restrictions; credential filtering stays</td></tr>
+<tr><th scope="row">Binding</th><td>Session, execution, tool and tool call; a normal tool approval cannot authorize it</td></tr>
+<tr><th scope="row">Conversation scope</th><td>The exact command in worker memory, never a permission rule, so a restart asks again</td></tr>
+<tr><th scope="row">No sandbox in force</th><td>The request is ignored</td></tr>
+<tr><th scope="row">Bypass permissions</th><td>Leaves the sandbox without a card</td></tr>
+<tr><th scope="row">Denial seen after the run</th><td>Access markers, or name-resolution and unreachable-network errors with <code translate="no">sandbox.network</code> off, never become a late approval. The result names the request to make.</td></tr>
+</tbody>
+</table>
+
+<h2 id="approved-file-writes">Approved file writes</h2>
+<p>Approved edit, write and apply_patch share <code translate="no">file_state.write_checked</code>. The dispatcher and this module import on Windows without Unix-only modules.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sequence</th><td>Check approved content and identity; open without truncation; take the exclusive lock; hash the opened descriptor; recheck pathname identity and resolved destination; write</td></tr>
+<tr><th scope="row">Locks</th><td>Existing compatibility adapter (<code translate="no">fcntl</code> on Unix, <code translate="no">msvcrt</code> byte locks on Windows), binary mode; POSIX keeps <code translate="no">O_NOFOLLOW</code>. Removing link checks or skipping locks does not meet the contract.</td></tr>
+<tr><th scope="row">Revalidation</th><td>Uses metadata, not a second read handle: Windows byte locks can deny reads through another handle in the same process</td></tr>
+<tr><th scope="row">Links</th><td>Symlinks and reparse entries rejected</td></tr>
+<tr><th scope="row">Missing targets</th><td>Exclusive creation</td></tr>
+<tr><th scope="row">Path fallback</th><td>Detects replacements before writing; does not claim descriptor-relative protection against every concurrent ancestor replacement</td></tr>
+</tbody>
+</table>
+
+<h2 id="failures">Failures and known limits</h2>
+<ul>
+<li>Missing authority, stale versions, invalid modes, denied capability, explicit rules, classifier failure and sandbox refusal stay distinguishable. No failure silently becomes owner or Bypass permissions.</li>
+<li>Host process visibility may block <code translate="no">ps</code>, <code translate="no">top</code> or <code translate="no">lsof</code>. Docker sockets are not exposed automatically. Linux wildcard masking has limits. Browser and remote networking have separate controls.</li>
+</ul>
+
+<details id="files">
+<summary>Files</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Module</th><th scope="col">Responsibility</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">permissions/authority.py</code></th><td>Identity and capability ceilings</td></tr>
+<tr><th scope="row"><code translate="no">permissions/state.py</code></th><td>Versioned branch state, owner validation, atomic updates</td></tr>
+<tr><th scope="row"><code translate="no">permissions/policy.py</code></th><td>Shared decisions and explicit rules</td></tr>
+<tr><th scope="row"><code translate="no">permissions/classifier.py</code></th><td>Auto risk classification; only JSON boolean <code translate="no">true</code> permits execution</td></tr>
+<tr><th scope="row"><code translate="no">permissions/approval.py</code></th><td>Approval manifests, exact wait consumption, tool execution</td></tr>
+<tr><th scope="row"><code translate="no">permissions/lifecycle.py</code></th><td>Live call snapshots, canonical wait reconciliation</td></tr>
+<tr><th scope="row"><code translate="no">conversation/session_config.py</code></th><td>Legacy and current settings resolution</td></tr>
+<tr><th scope="row"><code translate="no">conversation/production_driver/</code></th><td>Durable admission, immutable recovery, wait publication</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/permissions.py</code></th><td>Authenticated settings, canonical wait re-evaluation</td></tr>
+<tr><th scope="row">Web permission state and composer</th><td>Confirmed mode, pending and error feedback, ordered hydration</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Live changes: chat admission and a safe tool; inherited Bypass permissions; running ask-to-Bypass permissions and back; waiting approval continuation; explicit ask and deny; Plan transitions; owner and session isolation; stale versions; reload and reconnect; unchanged Sandbox denial.</li>
+<li>File writes: dispatcher import without <code translate="no">fcntl</code>; changed or deleted targets; existing and new files; exact UTF-8 bytes; replacement and link races; repeated writes. The Windows installation smoke imports the dispatcher; platform CI runs the approval regressions before the unit suite.</li>
+</ul>
+</details>
+
+<details id="comparison">
+<summary>How other frameworks compare</summary>
+<table class="stack">
+<thead><tr><th scope="col">Framework</th><th scope="col">Adopted or adapted</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>Permission modes, independent Sandbox, Auto classification</td><td>Authority and explicit rules stay ahead of Bypass permissions. Its <a href="https://code.claude.com/docs/en/permissions">permissions</a> have deny-before-ask-before-allow, live rule changes and per-approval comments; approval comments that execute first and deliver feedback afterward are not implemented here.</td></tr>
+<tr><th scope="row">Codex CLI</th><td>Structured violations, exact approved retry. <a href="https://openai.com/index/running-codex-safely/">Sandbox enforcement separate from approval policy</a>.</td><td>No per-tool sandbox override. Its remembered approval is session-level; ours is project-scoped. Domain policy, managed enterprise enforcement and remote audit export have no equivalent here.</td></tr>
+<tr><th scope="row">OpenClaw</th><td>Credential filtering, backend refusal, nested tool classification</td><td>No automatic Docker selection</td></tr>
+<tr><th scope="row">Hermes Agent</th><td>Hard rules before bypass, command normalization, non-interactive refusal</td><td>Normalizes NFKC, ANSI, NUL and environment wrappers</td></tr>
+<tr><th scope="row">OpenCode</th><td>Per-tool and per-resource rules</td><td>Permission is not OS isolation. <a href="https://opencode.ai/v2/docs/permissions">V2</a> uses last-match order, project-scoped patterns, same-session rejection fan-out and per-subagent policy; ours is deny-first, exact-operation grants, one canonical wait target, child admission bounded by the parent. Deliberate differences.</td></tr>
+<tr><th scope="row">pi-mono</th><td>Extension interception, fail-closed non-interactive behavior</td><td>Rejects silent project overrides of global security constraints</td></tr>
+<tr><th scope="row">Aider</th><td>Git recovery as a separate facility</td><td>Recovery does not replace credential, network or process boundaries</td></tr>
+<tr><th scope="row">Goose, WeClaw adapters</th><td>Explicit backend distinctions</td><td>Rejects external automatic owner approvals and optional isolation presented as default</td></tr>
+</tbody>
+</table>
+<p class="note">Each framework as it was studied, not its latest upstream version.</p>
+</details>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">In place</th></tr></thead>
+<tbody>
+<tr><th scope="row">Decision</th><td>Authority on every entry, the shared decision, five modes with versioned live changes, delegated checks and audit events</td></tr>
+<tr><th scope="row">Isolation</th><td>Seatbelt and bubblewrap isolation, exact escalation, approved file writes</td></tr>
+<tr><th scope="row">Approvals</th><td>Survive an App reload with the same options; a single-use approval completes its operation; a decline ends the execution without starting a managed process</td></tr>
+<tr><th scope="row">Input</th><td>All composer presentations submit through one acknowledged hook; the question tool declares its durable wait before execution</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Area</th><th scope="col">Open</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows</th><td>Approved file writes pass local regressions; native x64 and arm64 execution not verified; no process sandbox</td></tr>
+<tr><th scope="row">Question waits</th><td>End-to-end acceptance of the durable declaration</td></tr>
+<tr><th scope="row">Rule persistence</th><td>The permanent rule-save failure path is not exercised by filesystem failure injection</td></tr>
+<tr><th scope="row">Not implemented</th><td>Domain and port network allowlists (need a managed proxy and redirect checks), resource quotas, per-tool sandbox overrides, a complete background Auto-classifier interface</td></tr>
+</tbody>
+</table>

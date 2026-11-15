@@ -1,0 +1,23 @@
+<title>三端同步</title>
+<meta name="description" content="Web、TUI 和 CLI 如何共享运行状态、有人值守模式和转向。">
+<h1>三端同步</h1>
+
+<p>Web、TUI 和 CLI 连同一个 worker，在一端发起的轮次会流到其他端。</p>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">后端</th><th scope="col">Web</th><th scope="col">TUI 和 CLI</th></tr></thead>
+<tbody>
+<tr><th scope="row">事实来源</th><td>一个 worker（<code translate="no">operations/worker/lock.py</code>）和一个会话存储（<code translate="no">runtime/context/session_db.py</code>）</td><td>同左</td><td>同左</td></tr>
+<tr><th scope="row">事件</th><td><code translate="no">EventBus</code> 和 <code translate="no">_broadcast</code>：一次发送到达所有 WebSocket 客户端</td><td>接收</td><td>接收</td></tr>
+<tr><th scope="row">运行状态</th><td><code translate="no">_running_tasks</code>；广播 <code translate="no">running_task</code> 和 <code translate="no">running_task_clear</code></td><td>侧栏指示、输入框状态</td><td>状态显示</td></tr>
+<tr><th scope="row">重连</th><td>加载会话时重发历史并调用 <code translate="no">_send_running_task_state</code>；<code translate="no">subscribe_execution_stream</code> 提供 <code translate="no">execution_stream.v1</code> 快照</td><td>恢复</td><td>恢复</td></tr>
+<tr><th scope="row">有人值守模式</th><td>WebSocket <code translate="no">set_attended</code>，广播 <code translate="no">attended_changed</code>。按会话设置，进程默认无人值守（<code translate="no">runtime/permissions/attended.py</code>）。</td><td>开关（<code translate="no">use-unattended-mode.ts</code>）</td><td><code translate="no">/attended [on|off]</code>、<code translate="no">/unattended</code></td></tr>
+<tr><th scope="row">转向</th><td><code translate="no">execution.steer</code>，在下一个安全点生效。消息最长 4096 字符。</td><td>运行时输入（<code translate="no">lib/chat/send/steer-message.ts</code>）</td><td><code translate="no">/steer &lt;指令&gt;</code>；<code translate="no">openprogram execution steer --message</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+
+<p>以上全部已实现。</p>
+
+<p class="next"><a href="controllability-and-three-surface-sync.zh.html">可控性与三端同步</a></p>

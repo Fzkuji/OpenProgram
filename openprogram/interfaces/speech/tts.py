@@ -1,0 +1,284 @@
+"""Text-to-speech playback for CLI chat replies.
+
+Minimal first pass: only the ``openai`` provider is actually wired.
+Other providers the setup lists (elevenlabs, edge-tts, playht)
+fall through to a ``[tts] not yet implemented`` notice so the user
+sees exactly what's missing instead of a silent fail.
+
+Usage:
+
+    from openprogram.interfaces.speech.tts import speak
+    speak("Hello world")          # no-op if tts.provider != 'openai'
+
+Playback: writes the generated audio to a temp .mp3 and invokes a
+platform-appropriate player (``afplay`` on macOS, ``mpg123`` / ``ffplay``
+elsewhere, and a headless WPF ``MediaPlayer`` via PowerShell on Windows
+when no CLI player is on PATH). Runs in a background thread so the REPL
+doesn't block while audio plays.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+from typing import Any
+
+_log = logging.getLogger(__name__)
+
+
+_WARNED_PROVIDERS: set[str] = set()
+
+
+def _read_tts_cfg() -> dict[str, Any]:
+    try:
+        from openprogram.state.config import read_config
+        cfg = read_config()
+    except Exception:
+        return {}
+    return cfg.get("tts", {}) or {}
+
+
+def _api_key(env_name: str) -> str | None:
+    """Env var first, config.json api_keys fallback."""
+    v = os.environ.get(env_name)
+    if v:
+        return v
+    try:
+        from openprogram.state.config import read_config
+        return (read_config().get("api_keys", {}) or {}).get(env_name)
+    except Exception:
+        return None
+
+
+def _player_argv(path: str) -> list[str] | None:
+    """Full argv for a non-blocking mp3 player given the file, or None.
+
+    CLI players are tried first on every OS — they're present via
+    brew / apt (afplay, mpg123, ffplay, mpv) or choco / scoop on
+    Windows. When none are on PATH, Windows falls back to a headless
+    WPF ``MediaPlayer`` driven by PowerShell (no extra install, plays
+    mp3 with no visible window), so Windows isn't silently muted.
+    """
+    for cmd in ("afplay", "mpg123", "ffplay", "mpv"):
+        p = shutil.which(cmd)
+        if not p:
+            continue
+        if cmd == "ffplay":
+            return [p, "-nodisp", "-autoexit", "-loglevel", "quiet", path]
+        if cmd == "mpg123":
+            return [p, "-q", path]
+        if cmd == "mpv":
+            return [p, "--no-terminal", path]
+        return [p, path]  # afplay
+    if sys.platform == "win32":
+        ps = shutil.which("powershell") or shutil.which("pwsh")
+        if ps:
+            # WPF MediaPlayer plays mp3 headless. Double single-quotes so
+            # an apostrophe in the temp path can't break out of the
+            # PowerShell string literal. We block in this background
+            # thread for the clip's natural duration so the process
+            # isn't reaped mid-playback.
+            uri = path.replace("'", "''")
+            script = (
+                "Add-Type -AssemblyName presentationCore;"
+                "$mp=New-Object System.Windows.Media.MediaPlayer;"
+                f"$mp.Open([uri]::new('{uri}'));$mp.Play();"
+                "while(-not $mp.NaturalDuration.HasTimeSpan)"
+                "{Start-Sleep -Milliseconds 50};"
+                "Start-Sleep -Seconds $mp.NaturalDuration.TimeSpan.TotalSeconds"
+            )
+            return [ps, "-NoProfile", "-ExecutionPolicy", "Bypass",
+                    "-Command", script]
+    return None
+
+
+def _play_file(path: str) -> None:
+    argv = _player_argv(path)
+    if argv is None:
+        hint = ("install ffplay/mpv (or run in Windows PowerShell)"
+                if sys.platform == "win32"
+                else "install afplay/mpg123/ffplay")
+        _log.warning("no mp3 player found (%s); audio written to %s", hint, path)
+        return
+    try:
+        subprocess.Popen(argv,
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+    except Exception as e:
+        _log.warning("player failed: %s", e)
+
+
+def _openai_tts(text: str, cfg: dict[str, Any]) -> str | None:
+    """Hit openai/v1/audio/speech; return .mp3 path or None on failure.
+
+    Uses `requests` which is already a transitive dep; avoids pulling
+    in the full `openai` client just for this.
+    """
+    key = _api_key(cfg.get("api_key_env") or "OPENAI_API_KEY")
+    if not key:
+        _log.warning("OPENAI_API_KEY missing — run `openprogram setup tts`.")
+        return None
+    voice = cfg.get("voice") or "alloy"
+    model = cfg.get("model") or "tts-1"
+    url = cfg.get("base_url") or "https://api.openai.com/v1/audio/speech"
+    try:
+        from openprogram.host.security.safe_http import configured_safe_client, safe_client
+        from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
+
+        origin = normalize_origin(url)
+        if origin == "https://api.openai.com":
+            context = safe_client("tts.fixed_api")
+        else:
+            context = configured_safe_client(
+                "tts.configured_api",
+                url,
+                owner_exception=OwnerURLException(
+                    consumer="tts.configured_api", origin=origin
+                ),
+            )
+        with context as client:
+            r = client.post(
+                url,
+                headers={"Authorization": f"Bearer {key}"},
+                json={"model": model, "voice": voice, "input": text,
+                      "response_format": "mp3"},
+            )
+    except Exception as e:
+        _log.warning("request failed: %s", type(e).__name__)
+        return None
+    if r.status_code != 200:
+        _log.warning("OpenAI returned %s", r.status_code)
+        return None
+    fd, path = tempfile.mkstemp(prefix="op-tts-", suffix=".mp3")
+    with os.fdopen(fd, "wb") as f:
+        f.write(r.content)
+    return path
+
+
+def _elevenlabs_tts(text: str, cfg: dict[str, Any]) -> str | None:
+    """ElevenLabs TTS via their v1 text-to-speech endpoint.
+
+    Config slots honoured:
+        voice       ElevenLabs voice id (default: 'Rachel' common id)
+        model_id    ElevenLabs model id (default: 'eleven_turbo_v2')
+    """
+    key = _api_key(cfg.get("api_key_env") or "ELEVENLABS_API_KEY")
+    if not key:
+        _log.warning("ELEVENLABS_API_KEY missing — run `openprogram setup tts`.")
+        return None
+    # "Rachel" is ElevenLabs' classic default voice; users override via
+    # config if they want a different one.
+    voice_id = cfg.get("voice") or "21m00Tcm4TlvDq8ikWAM"
+    model_id = cfg.get("model_id") or "eleven_turbo_v2"
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    try:
+        from openprogram.host.security.safe_http import safe_client
+
+        with safe_client("tts.fixed_api") as client:
+            r = client.post(
+                url,
+                headers={"xi-api-key": key, "Accept": "audio/mpeg"},
+                json={
+                    "text": text,
+                    "model_id": model_id,
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75,
+                    },
+                },
+            )
+    except Exception as e:
+        _log.warning("request failed: %s", type(e).__name__)
+        return None
+    if r.status_code != 200:
+        _log.warning("ElevenLabs returned %s", r.status_code)
+        return None
+    fd, path = tempfile.mkstemp(prefix="op-tts-", suffix=".mp3")
+    with os.fdopen(fd, "wb") as f:
+        f.write(r.content)
+    return path
+
+
+def _edge_tts(text: str, cfg: dict[str, Any]) -> str | None:
+    """Microsoft Edge online TTS via the ``edge-tts`` package.
+
+    Free, no API key, uses MS's public voice WebSocket. Voices like
+    ``en-US-AriaNeural`` / ``zh-CN-XiaoxiaoNeural``.
+    """
+    from openprogram.host.security.safe_http import require_active_sdk_transport
+
+    require_active_sdk_transport("tts.edge_sdk", "https://speech.platform.bing.com")
+    try:
+        import edge_tts  # type: ignore
+    except ImportError:
+        _log.warning("the optional Edge TTS backend is unavailable in this runtime")
+        return None
+    import asyncio
+
+    voice = cfg.get("voice") or "en-US-AriaNeural"
+    fd, path = tempfile.mkstemp(prefix="op-tts-", suffix=".mp3")
+    os.close(fd)
+
+    async def _gen() -> None:
+        comm = edge_tts.Communicate(text, voice)
+        await comm.save(path)
+
+    try:
+        try:
+            asyncio.run(_gen())
+        except RuntimeError:
+            # Event loop already exists in this thread (rare — we're in
+            # the daemon thread, but be defensive). Use a fresh loop.
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(_gen())
+            finally:
+                loop.close()
+    except Exception as e:
+        _log.warning("edge-tts failed: %s: %s", type(e).__name__, e)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return None
+    return path
+
+
+def speak(text: str) -> None:
+    """Speak ``text`` if a TTS provider is configured; no-op otherwise.
+
+    Non-blocking — audio generation + playback run in a background
+    thread so the REPL stays responsive. Errors print a short
+    ``[tts] ...`` line and move on.
+    """
+    if not text or not text.strip():
+        return
+    cfg = _read_tts_cfg()
+    provider = (cfg.get("provider") or "none").lower()
+    if provider in ("", "none"):
+        return
+
+    def _worker() -> None:
+        if provider == "openai":
+            path = _openai_tts(text, cfg)
+        elif provider == "elevenlabs":
+            path = _elevenlabs_tts(text, cfg)
+        elif provider == "edge-tts":
+            path = _edge_tts(text, cfg)
+        else:
+            if provider in _WARNED_PROVIDERS:
+                return
+            _WARNED_PROVIDERS.add(provider)
+            _log.warning("provider %r is not yet implemented (config is stored). Pick "
+                         "openai / elevenlabs / edge-tts / none with `openprogram setup tts`.",
+                         provider)
+            return
+        if path:
+            _play_file(path)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()

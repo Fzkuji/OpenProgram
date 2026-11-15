@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import test, { after } from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import test from "node:test";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { parseHTML } from "linkedom";
 
+import { scratchDir } from "../scratch-dir.mjs";
+
 const webPath = dirname(fileURLToPath(new URL("../../package.json", import.meta.url)));
-const dir = await mkdtemp(join(webPath, ".control-overlay-test-"));
-after(() => rm(dir, { recursive: true, force: true }));
+const dir = scratchDir(webPath, "control-overlay-test");
 const bundle = join(dir, "overlay.mjs");
 await build({
   absWorkingDir: webPath,

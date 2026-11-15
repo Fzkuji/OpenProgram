@@ -1,0 +1,165 @@
+<title>Function calling</title>
+<meta name="description" content="How functions reach the model: explicit registration, one registry, six gating layers, tool profiles and deferred loading.">
+<h1>Function calling</h1>
+<p>Default on, user curated: a registered tool works with no configuration, and every layer's default is not to restrict. Tool-call results live only in run history and never enter later prompt context, so broad exposure costs no context. Loop mechanics: <a href="../../../capabilities/agentic-programming/choosing-the-next-step/tool-calling.html">tool calling</a>.</p>
+
+<h2>One registry</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Authoring</th><th scope="col">API wire</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">@function</code></th><td><code translate="no">Tool</code>, <code translate="no">ToolCall</code>, <code translate="no">ToolResultMessage</code></td></tr>
+<tr><th scope="row">Agent method with <code translate="no">method_options[name]["tool"] = True</code></th><td><code translate="no">tools=[...]</code></td></tr>
+<tr><th scope="row"><code translate="no">agent_tools()</code>, <code translate="no">get_agent_tool()</code></th><td><code translate="no">tool_calls=[...]</code></td></tr>
+</tbody>
+</table>
+<p class="note">The act is "function calling"; the API object stays <code translate="no">tool</code>. Our <code translate="no">AgentTool</code> and <code translate="no">AgentToolResult</code> add what the wire lacks: sidecar gating, sync to async, char cap. Providers serialize each one; returned <code translate="no">tool_calls</code> match by name and <code translate="no">AgentTool.execute(...)</code> runs. Managed Program packages list public entries in <code translate="no">PROGRAM_ENTRIES</code>. Automatic scope capture exposes nothing. Class authoring and lifetime: <a href="../integrations/nooa.html#contract">Agent and Context contract</a>.</p>
+
+<h2>Six gating layers</h2>
+<table class="stack">
+<thead><tr><th scope="col">Layer</th><th scope="col">Configured by</th><th scope="col">Default</th><th scope="col">When rejected</th></tr></thead>
+<tbody>
+<tr><th scope="row">1 Import</th><td><code translate="no">available_if</code></td><td>Registers</td><td>Never enters <code translate="no">_registry</code></td></tr>
+<tr><th scope="row">2 Exposure</th><td><code translate="no">expose=False</code>, internal helpers only</td><td>Exposed, plugins and MCP included. Bare <code translate="no">runtime.exec</code> gets the full set</td><td>Python-callable, never in a tools array</td></tr>
+<tr><th scope="row">2b Preset</th><td><code translate="no">toolset=[...]</code>, <code translate="no">TOOLSETS</code>, <code translate="no">DEFAULT_TOOLS</code>, a named profile; <code translate="no">toolset="none"</code> for no tools</td><td>None forced</td><td>A named subset, not a visibility gate</td></tr>
+<tr><th scope="row">3 Session and channel</th><td><code translate="no">agent_profile.toolset</code>, <code translate="no">unsafe_in</code></td><td>No restriction. <code translate="no">source=None</code> filters nothing</td><td>Narrower set; a channel (telegram, wechat, plan) hides the tool</td></tr>
+<tr><th scope="row">4 List build</th><td><code translate="no">check_fn</code>, <code translate="no">requires_env</code>, <code translate="no">can_use</code>; <code translate="no">agent_tools(only_available=True)</code></td><td>Assumed runnable; checked only on the dispatcher path</td><td>Dropped, so the LLM never sees a tool that would error</td></tr>
+<tr><th scope="row">5 User and policy</th><td><code translate="no">agent_tools(deny=, allow=)</code>, <code translate="no">agent_profile.disabled</code>, <code translate="no">tools.disabled</code>, attended mode</td><td>Vetoes nothing</td><td>Subtracted by name; attended mode withholds <code translate="no">ask_user_question</code></td></tr>
+<tr><th scope="row">6 Prompt</th><td><code translate="no">defer=True</code>, MCP wiring</td><td>Schema ships</td><td>Name and one line in a catalog; <code translate="no">tool_search</code> loads the schema</td></tr>
+</tbody>
+</table>
+<p class="note">Layers 2, 2b and 6 select; 3, 4 and 5 only veto. Layers 1 to 5 mean the LLM cannot use the tool. Layer 6 lets the LLM choose what to load.</p>
+<details><summary>Why 2b and 5 stay separate</summary>
+<p>2b chooses a set to use; 5 removes what must not be used. A veto must hold whatever is selected: attended mode withholds <code translate="no">ask_user_question</code> in every folder. So the Programs page leads with 2b (pick folders) and offers 5 as a per-tool off switch. System vetoes (attended, subagent and role caps through allow and deny) are code-only and invisible.</p>
+</details>
+
+<h2>Plugins and MCP servers</h2>
+<p>Registering is enough; there is no central allowlist. Plugin tools use <code translate="no">_build_and_register_tool</code> like built-ins. MCP tools register as <code translate="no">AgentTool</code> on connect, <code translate="no">defer=True</code> by default.</p>
+
+<h2>Tool settings</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Controls</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">name</code>, <code translate="no">description</code>, <code translate="no">parameters</code>, <code translate="no">label</code></th><td>What the LLM sees. <code translate="no">@function</code> derives them from signature and docstring; Agent methods reuse <code translate="no">_build_agentic_tool_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">max_result_weight</code>, <code translate="no">stream_capacity_chars</code></th><td>A smaller result bound than the model's, recorded as <code translate="no">details["cap"]</code> and applied once by the agent loop, which keeps the whole text in the conversation's <code translate="no">tool_results/&lt;sha256&gt;.txt</code> (<a href="../context/overview.html#cross-turn-tool-context">Tool output</a>); bounded tail for streamed <code translate="no">on_update</code></td></tr>
+<tr><th scope="row"><code translate="no">timeout</code>, <code translate="no">timeout_min</code>, <code translate="no">timeout_max</code></th><td>Static or LLM-controlled timeout</td></tr>
+<tr><th scope="row"><code translate="no">cache</code>, <code translate="no">cache_ttl</code></th><td>Memoize on name and arguments</td></tr>
+<tr><th scope="row"><code translate="no">describe</code></th><td>Current description and parameters, applied at each list resolve (<code translate="no">current_tool</code>), so a tool names only what is available</td></tr>
+<tr><th scope="row"><code translate="no">requires_approval</code></th><td>Dispatcher consults before invoking</td></tr>
+<tr><th scope="row"><code translate="no">register_globally=False</code></th><td>Builds the tool and sidecars, skips the global register (test isolation)</td></tr>
+</tbody>
+</table>
+<details><summary>Four knobs the references lack</summary>
+<p>Claude Code, Hermes and OpenClaw ship none of these.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Knob</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Result share of a small window</th><td>The agent loop stores a result bounded to the model's <code translate="no">tool_output_weight</code> (default 10,000), at most <code translate="no">0.3 × context window</code>, in weight: a CJK character 1, anything else 0.25. A local model added by hand without a window (4,096 tokens) gets 1,228, a 32,768-token model 9,830. <code translate="no">spill.result_cap</code>, set around each tool dispatch from the model, including the weekly report's source reads</td></tr>
+<tr><th scope="row">A read page in that share</th><td><code translate="no">read</code> pages within the same cap, its header and continue note counted, a line cut to what one page holds. The AGENTS.md a read reaches goes beside the result, bounded on its own, so it takes nothing from the page</td></tr>
+<tr><th scope="row">LLM-controllable timeout</th><td>If the function declares <code translate="no">timeout</code> and the decorator sets the range, the value is clamped and used as both <code translate="no">wait_for</code> budget and parameter</td></tr>
+<tr><th scope="row">Bounded streaming tail</th><td><code translate="no">_TailAccumulator</code>; capacity defaults to 40,000 characters, head evicted on overflow</td></tr>
+<tr><th scope="row"><code translate="no">can_use()</code></th><td>Session-level "is this user or role allowed", beside <code translate="no">check_fn</code> (process) and <code translate="no">unsafe_in</code> (channel)</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Agent method registration</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class ResearchAgent(Agent):
+    method_options = {
+        "research": {"tool": True, "name": "research", "toolset": ["research"], "expose": "io"},
+    }
+
+    def research(self, topic: str) -> str:
+        """Research a topic."""
+        return self(topic)
+
+researcher = ResearchAgent()
+PROGRAM_ENTRIES = [researcher.research]</code></pre>
+<ul>
+<li>Method handling runs cancellation hooks, runtime injection, Context derivation, DAG entry and terminal updates, and error restoration. Options retain schema, caching, timeout, availability, approval and explicit-step recovery.</li>
+<li>Construction registers only methods asking for tool exposure, in the same registry and sidecars. <code translate="no">available_if</code> gates registration, not the method scope.</li>
+<li>The managed loader records package ownership. It adds no public decorator and no authority.</li>
+</ul>
+
+<h2>Tool profiles</h2>
+<dl class="pairs">
+<dt>Catalog</dt><dd>All registered, exposed tools, read-only on <code translate="no">/programs</code></dd>
+<dt>Profile</dt><dd>A named tool set. A new one starts as a copy of all tools; remove what a scenario does not need</dd>
+<dt><code translate="no">FULL</code>, <code translate="no">BUILT-IN</code></dt><dd>Always exist, cannot be changed or deleted. <code translate="no">FULL</code> is the active default</dd>
+<dt>Use</dt><dd>Agents → Capabilities → Programs picks all tools, a selected scope, a named profile (Access preset) or none. The composer has no tool picker. A profile name resolves wherever <code translate="no">toolset=</code> is accepted, and in <code translate="no">tools.toolset</code> of <code translate="no">agent.json</code></dd>
+<dt>Global disable</dt><dd><code translate="no">tools.disabled</code> applies after the profile, removing the tool everywhere</dd>
+</dl>
+<pre translate="no" tabindex="0"><code>// functions_meta.json, beside programs_meta.json
+{
+  "profiles": {
+    "FULL": ["bash", "read", "write", ...],
+    "BUILT-IN": [...],
+    "research": ["web_search", "web_fetch", "read", "write", "bash"]
+  },
+  "active": "FULL"
+}</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">Entry point</th><th scope="col">Controls</th><th scope="col">Layer</th><th scope="col">Stored in</th></tr></thead>
+<tbody>
+<tr><th scope="row">Programs page, <code translate="no">/api/tool-profiles</code></th><td>Create, edit, delete profiles</td><td>2b</td><td><code translate="no">functions_meta.json</code></td></tr>
+<tr><th scope="row">Composer "+" menu</th><td>Web Search on or off, on top of the Agent's set</td><td>2b, 5</td><td>Branch configuration in session metadata</td></tr>
+<tr><th scope="row">Agent profile <code translate="no">tools</code></th><td>All, selected, Access preset, none; disabled names</td><td>2b, 5</td><td><code translate="no">~/.openprogram/agents/&lt;id&gt;.json</code></td></tr>
+<tr><th scope="row">Attended switch (CLI, TUI, Web)</th><td>Withholds <code translate="no">ask_user_question</code> with no human watching</td><td>5</td><td>Session state</td></tr>
+<tr><th scope="row">Global tool disable</th><td>One tool everywhere; overrides any profile; rare</td><td>5</td><td><code translate="no">config.json</code>: <code translate="no">tools.disabled</code></td></tr>
+<tr><th scope="row">Decorator kwargs</th><td><code translate="no">expose</code>, <code translate="no">available_if</code>, <code translate="no">defer</code>, <code translate="no">toolset</code>, <code translate="no">unsafe_in</code>, <code translate="no">check_fn</code></td><td>1, 2, 3, 6</td><td>Code</td></tr>
+</tbody>
+</table>
+
+<h2>Resolution path</h2>
+<ol>
+<li><code translate="no">resolve_tools</code> calls <code translate="no">agent_tools(toolset=…, source=req.source, only_available=True)</code>, walking layers 2 to 5, not 6.</li>
+<li>The deferred catalog goes beside the user message as the <code translate="no">turn_context</code> section <code translate="no">deferred_catalog</code>: every deferred tool in scope, loaded or not, in full the first time and then only what was added or removed, so neither loading a tool nor a server connecting changes the prompt (<a href="deferred-tools.html#catalog">Deferred tools</a>). <code translate="no">agent_loop</code> still receives the full list.</li>
+<li>Before each provider call, <code translate="no">split_tools_for_dispatch</code> keeps non-deferred tools and the ones the request's own messages loaded (<code translate="no">loaded_tools(messages)</code>: load records on tool results, names a compaction summary carries) for <code translate="no">tools=[]</code>.</li>
+<li>On a <code translate="no">ToolCall</code>, <code translate="no">agent_loop</code> finds the tool in <code translate="no">context.tools</code> or <code translate="no">_registry</code>, validates arguments, and awaits <code translate="no">execute(call_id, args, cancel, on_update)</code>.</li>
+<li><code translate="no">tool_search(select="cron")</code> loads <code translate="no">cron</code>: the next request carries its schema, because the search's result records each loaded tool's definition (<code translate="no">details.loads</code>, <code translate="no">record_loads</code>), so the history keeps what the model was first sent. A Responses provider that sends the loader natively carries it in the search's result rather than in <code translate="no">tools=[]</code> (<a href="../providers/codex-transport.html#deferred-tools">Codex transport</a>).</li>
+</ol>
+
+<details><summary>Where each piece lives</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/runtime.py</code></th><td><code translate="no">_registry</code> (layer 2 source), <code translate="no">_toolset_membership</code>, <code translate="no">_unsafe_in_channel</code>, <code translate="no">filter_for</code>, <code translate="no">_build_and_register_tool</code>, <code translate="no">function</code>, <code translate="no">_parse_docstring</code>, <code translate="no">_build_parameters_schema</code>, <code translate="no">_evaluate_approval</code>, <code translate="no">tool_requires_approval</code>, <code translate="no">_TailAccumulator</code>, <code translate="no">loaded_tools</code>, <code translate="no">record_loads</code>, <code translate="no">split_tools_for_dispatch</code>, <code translate="no">deferred_catalog_text</code>, <code translate="no">tool_search</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/execution.py</code></th><td><code translate="no">_normalize_result</code> (never cuts), <code translate="no">with_cap</code>, <code translate="no">_persist_full_result</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_authoring/helpers.py</code></th><td><code translate="no">is_available_agent_tool</code>: layer 4</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/__init__.py</code></th><td><code translate="no">DEFAULT_TOOLS</code>, <code translate="no">TOOLSETS</code>, <code translate="no">agent_tools</code>, <code translate="no">apply_tool_policy</code>, <code translate="no">get_agent_tool</code>, <code translate="no">list_registered_agent_tools</code>, <code translate="no">list_available</code>; imports every subpackage so tools register</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/&lt;group&gt;/&lt;name&gt;/</code></th><td>One <code translate="no">@function</code> per leaf tool</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/applications/*/__init__.py</code></th><td>Agent method modules</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/agent_class.py</code></th><td><code translate="no">Agent</code>, method scopes, <code translate="no">method_options</code>, registration</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/agent_method.py</code></th><td><code translate="no">MethodOptions</code>, execution, schema, registration</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/call_state.py</code></th><td>Task-local call identity, runtime injection, cancellation hooks</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/call_scope.py</code></th><td>Scope entry and exit, Context and DAG state</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/conversation/turn_runtime/</code></th><td><code translate="no">turn_context.py</code> installs deferred state; <code translate="no">loop_runner.py</code> resolves tools; layers 2 to 5, catalog block</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/loop/streaming.py</code></th><td>Per-provider-call <code translate="no">split_tools_for_dispatch</code>: layer 6 enforcement</td></tr>
+</tbody>
+</table>
+</details>
+
+<details><summary>Test invariants</summary>
+<p><code translate="no">tests/unit/programs/runtime/test_tools_runtime.py</code>, <code translate="no">tests/component/agent/turns/test_dispatcher_tools.py</code>:</p>
+<ul>
+<li>Docstring and signature to parameter schema; sync and async dispatch; exception to <code translate="no">AgentToolResult(is_error=True)</code></li>
+<li>The declared cap recorded, and the loop bounding once with the whole text kept; <code translate="no">on_update</code> delivery and tail accumulator; cancel propagation; <code translate="no">asyncio.wait_for</code> timeout; <code translate="no">requires_approval</code></li>
+<li>Registry filter by toolset, source, names; all shipped tools register on import; <code translate="no">@function</code> overrides</li>
+<li>Layer 1 skips registration on False or exception</li>
+<li>Layer 6 sidecar, <code translate="no">tool_search</code> promotion, unknown names, catalog text</li>
+<li>Agent method registers only with explicit <code translate="no">tool=True</code> or <code translate="no">as_tool=True</code>; <code translate="no">tool=False</code> skips the registry; <code translate="no">register_globally=False</code> skips it but attaches <code translate="no">_agent_tool</code>; <code translate="no">available_if</code> False skips registration, keeps scope handling</li>
+</ul>
+</details>
+
+<h2>Stable boundary</h2>
+<table class="stack">
+<thead><tr><th scope="col">Leaves the boundary alone</th><th scope="col">Would touch it; defer unless necessary</th></tr></thead>
+<tbody>
+<tr><td>New <code translate="no">@function</code> tools; Agent methods with <code translate="no">tool=True</code>; <code translate="no">expose=False</code>; a named subset in <code translate="no">TOOLSETS</code> or a Functions-page folder; <code translate="no">defer</code> and <code translate="no">available_if</code>; wiring MCP servers and plugins</td><td>A new gating layer; a changed <code translate="no">AgentTool.execute</code> signature; splitting or merging the registry; replacing deferred loading</td></tr>
+</tbody>
+</table>
+
+<h2>Implementation status</h2>
+<p>Built: registry, six layers, <code translate="no">@function</code> and Agent method registration, four knobs, Agent profile choice (Access preset), profile storage and the <code translate="no">/api/tool-profiles</code> endpoints. Not built: the Programs-page profile manager UI.</p>
+<p class="next"><a href="tool-guides.html">Tool guides</a></p>

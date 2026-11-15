@@ -1,5 +1,5 @@
 """Task 3: runtime ENABLED_MODELS loads from config spec rows, not the
-git-tracked providers/<p>/models.json catalog.
+git-tracked providers/adapters/<p>/models.json catalog.
 
 The registry now contains ONLY user-enabled models (config
 ``providers.<p>.models`` spec rows) plus anything registered dynamically
@@ -16,9 +16,9 @@ at runtime (claude-code seed, custom-model side-effect). These tests pin:
 """
 from __future__ import annotations
 
-import openprogram.providers._config_read as cr
-import openprogram.providers.enabled_models as mg
-from openprogram.providers.types import Model
+import openprogram.models.providers.settings.config_read as cr
+import openprogram.models.providers.catalog.enabled_models as mg
+from openprogram.models.providers.types import Model
 
 
 def _reload(monkeypatch, providers_cfg: dict) -> dict[str, Model]:
@@ -148,7 +148,7 @@ def test_claude_code_rows_come_from_config_not_import_seed(monkeypatch):
     reg = _reload(monkeypatch, {"claude-code": {"models": [
         {"id": "claude-opus-4-8", "name": "Claude Opus 4.8",
          "api": "anthropic-messages", "source": "subscription-login"}]}})
-    assert "claude-code/claude-opus-4-8" in reg
+    assert "claude-code/claude-opus-4-8" not in reg
 
 
 def test_reload_has_no_seed_resurrection(monkeypatch):
@@ -168,8 +168,7 @@ def test_reload_has_no_seed_resurrection(monkeypatch):
 def test_get_model_alias_fallback_still_works(monkeypatch):
     # get_model resolves an alias to a real registry key. Put the real
     # model in via config, then look it up by an alias.
-    from openprogram.providers import models as pm
-    from openprogram.auth.account import aliases as al
+    from openprogram.models.providers.catalog import models as pm
     cfg = {"anthropic": {"models": [
         {"id": "claude-opus-4-8", "name": "Opus", "api": "anthropic-messages"},
     ]}}
@@ -186,7 +185,7 @@ def test_coding_plan_provider_fills_from_region_sibling_offline(monkeypatch):
     # from its region sibling's REAL provider.json (minimax-cn) — OFFLINE,
     # with NO models.dev call (the catalogue is empty at cold import, so a
     # network-only path yields a hostless base_url in a fresh process).
-    import openprogram.providers.metadata as pm
+    import openprogram.models.providers.catalog.metadata as pm
     # models.dev must NOT be consulted for this to resolve.
     def boom(pid):
         raise AssertionError("models.dev consulted; offline sibling should win")
@@ -205,7 +204,7 @@ def test_community_provider_base_url_filled_from_models_dev(monkeypatch):
     # F1 fallback: a community provider with an empty dir AND no region
     # sibling still fills from models.dev, deriving anthropic-messages from
     # an /anthropic base.
-    import openprogram.providers.metadata as pm
+    import openprogram.models.providers.catalog.metadata as pm
     monkeypatch.setattr(pm, "_endpoints", lambda pid: {})   # no sibling either
     monkeypatch.setattr(
         pm, "default_base_url_for",
@@ -227,7 +226,7 @@ def test_alias_provider_endpoints_resolve_from_canonical(monkeypatch):
     # must fill both from openai-codex's provider.json (api=openai-codex,
     # base_url=chatgpt.com backend) so the row routes to the codex transport,
     # not to a hostless openai-completions request.
-    import openprogram.providers.metadata as pm
+    import openprogram.models.providers.catalog.metadata as pm
     real = pm._endpoints
 
     def fake(pid):
@@ -269,7 +268,7 @@ def test_alias_key_folds_into_canonical_when_both_present(monkeypatch):
 def test_get_model_still_resolves_alias_after_fold(monkeypatch):
     # After the fold, an old session referencing chatgpt-subscription/gpt-5.5
     # must still resolve via get_model's alias fallback to the canonical row.
-    from openprogram.providers import models as pm
+    from openprogram.models.providers.catalog import models as pm
     cfg = {
         "openai-codex": {"models": [
             {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
@@ -296,7 +295,7 @@ def test_real_config_untouched(monkeypatch, tmp_path):
 
 
 def test_custom_gateway_hydrates_known_exact_model_limits(monkeypatch):
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     monkeypatch.setattr(
         models_dev,
@@ -326,7 +325,7 @@ def test_custom_gateway_hydrates_known_exact_model_limits(monkeypatch):
 
 
 def test_custom_gateway_unknown_model_keeps_fail_closed_limits(monkeypatch):
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     monkeypatch.setattr(models_dev, "conservative_limits", lambda _model_id: None)
     cfg = {

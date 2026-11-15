@@ -1,0 +1,187 @@
+<title>Runtime</title>
+<meta name="description" content="The Runtime class: constructor, exec parameters, content blocks, errors and retry behaviour.">
+<h1>Runtime</h1>
+<p>Wraps an LLM provider, computes context from the session DAG, calls the model and writes the reply back. <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/agent/runtime/runtime.py">Source</a>.</p>
+<pre translate="no"><code>from openprogram import Agent, Runtime
+
+def my_llm(content, model="host-model", response_format=None):
+    texts = [block["text"] for block in content if block["type"] == "text"]
+    return call_my_api("\n".join(texts), model=model)
+
+runtime = Runtime(call=my_llm, model="host-model")
+
+class Observer(Agent):
+    tools = []
+
+    def observe(self, task: str):
+        """Identify the requested screen element."""
+        return self([
+            {"type": "text", "text": f"Find: {task}"},
+            {"type": "image", "path": "screenshot.png"},
+        ])
+
+observer = Observer(runtime=runtime)
+try:
+    answer = observer.observe("login button")
+finally:
+    runtime.close()</code></pre>
+<p class="note">Ordinary methods inherit the Runtime; no decorator or manual Context. See <a href="agent.html">Agent and Context</a>.</p>
+<h2 id="class-runtime">Constructor</h2>
+<pre translate="no"><code>Runtime(call=None, model="default", max_retries=None, api_key=None, skills=None)</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Parameter</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">call</code></th><td><code translate="no">fn(content: list[dict], model: str, response_format: dict) -&gt; str</code>, wrapped into the standard provider path via <code translate="no">CallableModel</code>, so DAG recording and history rendering are the same. With neither <code translate="no">call</code> nor a <code translate="no">provider:model_id</code> model, subclass and override <code translate="no">_call()</code>.</td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>Default <code translate="no">"default"</code>. <code translate="no">"provider:model_id"</code> resolves through <code translate="no">openprogram.models.providers</code>; unknown values raise <code translate="no">ValueError</code>. Any other string only works with <code translate="no">call=</code> or a subclass.</td></tr>
+<tr><th scope="row"><code translate="no">max_retries</code></th><td>Attempts including the first, at least 1. <code translate="no">None</code> reads <code translate="no">OPENPROGRAM_MAX_RETRIES</code>, default 6.</td></tr>
+<tr><th scope="row"><code translate="no">api_key</code></th><td><code translate="no">None</code> resolves from the credential store</td></tr>
+<tr><th scope="row"><code translate="no">skills</code></th><td><code translate="no">None</code>/<code translate="no">False</code> off; <code translate="no">True</code> probes default user and repo directories; <code translate="no">list[str]</code> is explicit. Appends <code translate="no">&lt;available_skills&gt;</code> to the system prompt on every <code translate="no">exec()</code>.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Attribute</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">model</code></th><td>Default model name</td></tr>
+<tr><th scope="row"><code translate="no">max_retries</code></th><td>Resolved retry budget</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td>Assignable system prompt; <code translate="no">method_options[...]["system"]</code> sets it for one call</td></tr>
+<tr><th scope="row"><code translate="no">thinking_level</code></th><td><code translate="no">"off"</code> (default), <code translate="no">"low"</code>, <code translate="no">"medium"</code>, <code translate="no">"high"</code>, <code translate="no">"xhigh"</code>; passed to the provider</td></tr>
+<tr><th scope="row"><code translate="no">session_id</code></th><td>This Runtime's own <code translate="no">"op-&lt;hex&gt;"</code>. Not sent as the prompt-cache key: calls with the same model, system prompt and tools share an id derived from them, across Runtimes. Assign it to name the key yourself</td></tr>
+<tr><th scope="row"><code translate="no">on_stream</code></th><td><code translate="no">fn(event_dict)</code> for text, thinking, tool_use, tool_result events</td></tr>
+<tr><th scope="row"><code translate="no">last_usage</code></th><td><code translate="no">{input_tokens, output_tokens, total_tokens, cache_read, cache_create, ...}</code> of the last call</td></tr>
+</tbody>
+</table>
+<h2 id="exec">exec()</h2>
+<pre translate="no"><code>Runtime.exec(content, context=None, response_format=None, model=None,
+             tools=None, toolset=None, tools_source=None, tools_allow=None,
+             tools_deny=None, tool_choice=None, parallel_tool_calls=None,
+             max_iterations=None, stop_after_tool_round=False, choices=None,
+             timeout_s=None, on_retry=None, web_search=None, stream_fn=None,
+             effort=None, execution_kind="agent") -&gt; Any</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Called</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">In an Agent method or managed function</th><td><code translate="no">render_context</code> uses <code translate="no">expose</code> and <code translate="no">render_range</code> to choose history nodes, <code translate="no">render_dag_messages</code> renders them, <code translate="no">_call()</code> sends, and the reply goes into the <code translate="no">llm</code> node opened at the start. Each <code translate="no">exec()</code> is a new <code translate="no">llm</code> node.</td></tr>
+<tr><th scope="row">No DAG store installed</th><td><code translate="no">content</code> becomes one user message in a single-turn call; nothing recorded</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Parameter</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">content</code></th><td><code translate="no">list[dict]</code> or a string (one text block)</td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td>Legacy, ignored</td></tr>
+<tr><th scope="row"><code translate="no">response_format</code></th><td>Bare JSON Schema or <code translate="no">JsonSchemaOutput</code>. See <a href="#structured-output">structured output</a>.</td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>Overrides the default model</td></tr>
+<tr><th scope="row"><code translate="no">tools</code></th><td>Registered Agent methods, <code translate="no">{"spec":..., "execute":...}</code> dicts, or objects with <code translate="no">.spec</code>/<code translate="no">.execute</code>; the loop runs until plain text. <strong><code translate="no">None</code> is not "no tools"</strong>: it gets the full registered toolset. Use <code translate="no">toolset="none"</code> or <code translate="no">tools=[]</code>.</td></tr>
+<tr><th scope="row"><code translate="no">toolset</code></th><td>Preset; <code translate="no">"full"</code> is the implicit default, <code translate="no">"none"</code> opts out</td></tr>
+<tr><th scope="row"><code translate="no">tools_source</code></th><td>Filter per channel source</td></tr>
+<tr><th scope="row"><code translate="no">tools_allow</code>, <code translate="no">tools_deny</code></th><td>Name allow and deny lists</td></tr>
+<tr><th scope="row"><code translate="no">tool_choice</code></th><td>Unset means <code translate="no">"auto"</code>. <code translate="no">"required"</code>, <code translate="no">"none"</code>, or <code translate="no">{"type":"function","name":"X"}</code>; mapped per provider.</td></tr>
+<tr><th scope="row"><code translate="no">parallel_tool_calls</code></th><td>Unset leaves the provider default; <code translate="no">True</code>/<code translate="no">False</code> allows or forbids several calls in one turn</td></tr>
+<tr><th scope="row"><code translate="no">max_iterations</code></th><td>Unset means 20. One iteration is a model call plus its tools. Effective value <code translate="no">max(1, n)</code>. Chat turns pass no cap.</td></tr>
+<tr><th scope="row"><code translate="no">stop_after_tool_round</code></th><td>Stops after one tool round, for caller-owned workflows that consume receipts first. Cannot be combined with <code translate="no">response_format</code>.</td></tr>
+<tr><th scope="row"><code translate="no">choices</code></th><td>Constrains the <strong>end</strong> of the turn; see <a href="../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.html">next-step decision</a></td></tr>
+<tr><th scope="row"><code translate="no">timeout_s</code></th><td>Wall-clock budget for the whole call including retry sleeps; raises <code translate="no">LLMError</code> (<code translate="no">reason=TIMEOUT</code>, <code translate="no">retryable=False</code>). <code translate="no">None</code> falls back to <code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code> (unset or <code translate="no">0</code>: unbounded).</td></tr>
+<tr><th scope="row"><code translate="no">on_retry</code></th><td>Gets a <code translate="no">RetryInfo</code> before each backoff sleep; not fired for the terminal failure; its exceptions are swallowed</td></tr>
+<tr><th scope="row"><code translate="no">web_search</code></th><td>Provider's native web search, where supported</td></tr>
+<tr><th scope="row"><code translate="no">stream_fn</code></th><td>Per-call stream override, for the dispatcher and tests</td></tr>
+<tr><th scope="row"><code translate="no">effort</code></th><td>Reasoning effort for this call only; <code translate="no">thinking_level</code> is unchanged</td></tr>
+<tr><th scope="row"><code translate="no">execution_kind</code></th><td>DAG label; <code translate="no">llm</code> for the one-request primitive, otherwise <code translate="no">agent</code></td></tr>
+</tbody>
+</table>
+<h3 id="content-block-format">Content blocks</h3>
+<pre translate="no"><code>{"type": "text",  "text": "Find the login button."}
+{"type": "image", "path": "screenshot.png"}
+{"type": "image", "data": "&lt;base64&gt;", "mime_type": "image/png"}
+{"type": "video", "path": "clip.mp4"}
+{"type": "audio", "path": "recording.wav"}</code></pre>
+<p class="note">Media takes <code translate="no">path</code> (read and encoded, type guessed from the extension) or <code translate="no">data</code> + <code translate="no">mime_type</code>. A text block may carry <code translate="no">"role": "system"</code>. Text and image blocks accept <code translate="no">cache_control</code>. Unknown block types are skipped.</p>
+<h3 id="return-value">Return value</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Call</th><th scope="col">Returns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">response_format=None</code></th><td>Reply <code translate="no">str</code></td></tr>
+<tr><th scope="row">structured <code translate="no">response_format</code></th><td>Locally validated Python JSON value</td></tr>
+<tr><th scope="row"><code translate="no">choices</code></th><td>Return value of the selected function, or the selected value</td></tr>
+</tbody>
+</table>
+<h3 id="exceptions">Errors</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Exception</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">RuntimeError</code></th><td>The runtime is closed</td></tr>
+<tr><th scope="row"><code translate="no">TypeError</code>, <code translate="no">NotImplementedError</code></th><td>Programming errors, never retried</td></tr>
+<tr><th scope="row"><code translate="no">LLMError</code></th><td>Retries exhausted or non-retryable. Fields include <code translate="no">reason</code>, <code translate="no">retryable</code>, <code translate="no">http_status</code>, <code translate="no">retry_after_s</code>, <code translate="no">attempts</code>, <code translate="no">elapsed_s</code>, <code translate="no">provider</code>, <code translate="no">model</code>.</td></tr>
+<tr><th scope="row"><code translate="no">StructuredOutputSchemaError</code></th><td><code translate="no">invalid_schema</code></td></tr>
+<tr><th scope="row"><code translate="no">StructuredOutputUnsupportedError</code></th><td><code translate="no">unsupported</code>: no verified lossless provider or fallback</td></tr>
+<tr><th scope="row"><code translate="no">StructuredOutputValidationError</code></th><td><code translate="no">invalid_json</code>, <code translate="no">validation_failed</code>, <code translate="no">missing_submission</code>, <code translate="no">mixed_submission</code></td></tr>
+<tr><th scope="row"><code translate="no">StructuredOutputGenerationError</code></th><td><code translate="no">refusal</code>, <code translate="no">incomplete</code></td></tr>
+</tbody>
+</table>
+<p class="note">Structured-output errors expose <code translate="no">.code</code> and bounded <code translate="no">.issues</code>. Provider candidate text is not part of the diagnostics.</p>
+<details id="structured-output">
+<summary>Structured output</summary>
+<ul>
+<li>Verified provider and model combinations use their native mapping. Otherwise <code translate="no">fallback="auto"</code> may use the verified hidden strict-tool path; prompt fallback needs explicit <code translate="no">fallback="prompt"</code>. Unsupported or lossy combinations fail closed.</li>
+<li>The final value is parsed and validated locally against the original schema.</li>
+<li><code translate="no">max_validation_retries</code> is <code translate="no">0</code>, <code translate="no">1</code> or <code translate="no">2</code> (default <code translate="no">2</code>); validation repair and truncated generation share it. Also forwarded to <code translate="no">_call()</code>.</li>
+</ul>
+</details>
+<h2 id="methods">Other methods</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Method</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">await async_exec(content, ...)</code></th><td>Same parameters except <code translate="no">choices</code>; same return and error contract. Calls <code translate="no">_async_call()</code>; a <code translate="no">call=</code> function may be sync or async; retries use <code translate="no">asyncio.sleep</code>, so cancellation works.</td></tr>
+<tr><th scope="row"><code translate="no">_call(content, model="default", response_format=None)</code></th><td>One call, no retry. Routes through <code translate="no">AgentSession</code> when a provider model or <code translate="no">call=</code> is configured, else <code translate="no">NotImplementedError</code>. <strong>Override when subclassing.</strong> History is rendered from the DAG by the provider path. Returns raw text, or the validated JSON value.</td></tr>
+<tr><th scope="row"><code translate="no">await _async_call(...)</code></th><td>Async <code translate="no">_call()</code>; override for an async provider</td></tr>
+<tr><th scope="row"><code translate="no">close()</code></th><td>Ends the session; later <code translate="no">exec()</code> raises <code translate="no">RuntimeError</code>. <code translate="no">with Runtime(...) as rt:</code> closes on exit. Subclasses clean up here.</td></tr>
+</tbody>
+</table>
+<span id="async_exec"></span>
+<span id="_call"></span>
+<span id="_async_call"></span>
+<span id="close"></span>
+<h3 id="asking-the-user">Asking the user</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Method</th><th scope="col">Asks</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ask(prompt, options=, multi=, allow_custom=, questions=[...], timeout=300.0, default=None)</code></th><td>One question or several in one card</td></tr>
+<tr><th scope="row"><code translate="no">confirm(prompt, detail=, timeout=300.0, default=False)</code></th><td>Yes or no</td></tr>
+<tr><th scope="row"><code translate="no">form(prompt, fields, detail=, timeout=300.0, default=None)</code></th><td>Multi-field form</td></tr>
+<tr><th scope="row"><code translate="no">can_ask()</code></th><td>Is anyone there? False on headless runs</td></tr>
+</tbody>
+</table>
+<p class="note">Needs a connected front-end session. A declined question raises <code translate="no">UserDeclined</code>. A timeout returns <code translate="no">default</code> when given, else raises <code translate="no">AskTimeout</code>.</p>
+<h2 id="retry-mechanism">Retries</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Situation</th><th scope="col">Handling</th></tr></thead>
+<tbody>
+<tr><th scope="row">Transient exception</th><td>Records the attempt, backs off 1.5 s × 2^attempt ±25% jitter, retries up to <code translate="no">max_retries</code>. <code translate="no">Retry-After</code> is a lower bound. Base: <code translate="no">OPENPROGRAM_RETRY_BACKOFF_BASE</code>.</td></tr>
+<tr><th scope="row">Permanent error: bad image data, expired auth, invalid key, or <code translate="no">retryable=False</code></th><td><code translate="no">LLMError</code> at once, <code translate="no">retryable=False</code></td></tr>
+<tr><th scope="row">Provider already spent its transport retries (<code translate="no">transport_exhausted</code>)</th><td><code translate="no">LLMError</code>, not retried again</td></tr>
+<tr><th scope="row"><code translate="no">TypeError</code>, <code translate="no">NotImplementedError</code></th><td>Raised at once</td></tr>
+<tr><th scope="row">All retries fail</th><td>Structured <code translate="no">LLMError</code> with an attempt report</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>LLMError: exec() failed after 3 attempt(s):
+Attempt 1: ConnectionError: timeout
+Attempt 2: RateLimitError: 429 Too Many Requests
+Attempt 3: ConnectionError: timeout</code></pre>
+<pre translate="no"><code>rt = Runtime(call=my_llm)                # OPENPROGRAM_MAX_RETRIES, else 6
+rt = Runtime(call=my_llm, max_retries=1) # raise on the first failure</code></pre>
+<details>
+<summary>The boundaries of retrying</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Allowance</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Failure recovery</th><td>Shared by structured-output repairs and repetitive tool-enabled responses. A repetitive response is discarded and regenerated in the same Agent context, keeping completed tool results and receipts. No aggregate token or duration limit.</td></tr>
+<tr><th scope="row">Transport</th><td><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code> minus one, separate, so a dropped connection spends no repair. A request that recovers returns them: bounded per request, not per Agent loop.</td></tr>
+<tr><th scope="row">Network wait</th><td>Endpoint unreachable, retries spent, no output committed: waits up to <code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code> (default 30 minutes), checking every 5 to 30 s, then continues. A recovery limit of 0, a single-attempt request, cancellation or the deadline ends it.</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Explicit caller limits, cancellation, permission failures and exhausted recovery remain authoritative.</li>
+<li>Repeating a response is not permission to repeat an external write; an uncertain write needs inspection first.</li>
+<li>Function logic errors still need a code fix.</li>
+</ul>
+</details>
+<p class="next"><a href="providers.html">Providers</a></p>

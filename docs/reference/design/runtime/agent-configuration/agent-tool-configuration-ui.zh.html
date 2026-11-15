@@ -1,0 +1,53 @@
+<title>程序访问选择器</title>
+<meta name="description" content="Agent 如何选择可调用的程序，而不复制一份程序目录。">
+<h1>程序访问选择器</h1>
+<p>Agents 配置访问范围，Programs 管理可调用实体。</p>
+
+<h2 id="layout">界面</h2>
+<table class="stack">
+<thead><tr><th scope="col">位置</th><th scope="col">显示</th><th scope="col">交互</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent 面板</th><td>策略，Functions、Workflows、Applications 计数，可折叠的生效条目</td><td>展开只读结构，不改变任何东西。折叠列表开销很小。</td></tr>
+<tr><th scope="row">选择器左栏</th><td>类型和分类导航</td><td>搜索、仅已选、仅问题</td></tr>
+<tr><th scope="row">选择器中栏</th><td>名称、描述、选中和可用状态</td><td>复选框编辑 Agent 草稿，不改全局启用。打开<strong>浏览程序</strong>时才加载详细目录。</td></tr>
+<tr><th scope="row">检查器</th><td>入口签名、输入输出、直接依赖、验证证据</td><td>到 Programs 看源码和完整图。最多展开两层。</td></tr>
+<tr><th scope="row">Workflow 树</th><td>稳定的圆形展开控件、连续的层级线</td><td>可用键盘展开，遵守减少动态偏好。预览和编辑访问是两个动作。</td></tr>
+<tr><th scope="row">MCP 条目</th><td>不在程序选项里重复</td><td>在 MCP 区管理。运行时工具仍走共享调用。</td></tr>
+</tbody>
+</table>
+
+<h2 id="semantics">选择和失败</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">模式</th><td>全部、指定、无，遵循共享能力约定</td></tr>
+<tr><th scope="row">预设</th><td>是引用。预览显示展开后的名称和版本。切到显式选择只复制名称，不复制程序定义。</td></tr>
+<tr><th scope="row"><code translate="no">Selected=[]</code></th><td>效果等同于无</td></tr>
+<tr><th scope="row">条目缺失</th><td>按存储名列在问题里，可删除，不可调用</td></tr>
+<tr><th scope="row">目录失败</th><td>与搜索结果为空分开显示</td></tr>
+<tr><th scope="row">完成、取消</th><td>完成保留本地草稿改动。取消恢复到打开选择器时的草稿。两者都不保存。</td></tr>
+<tr><th scope="row">保存</th><td>全局保存用同一个 <code translate="no">expected_revision</code> 提交所有分区</td></tr>
+<tr><th scope="row">已验证标记</th><td>绝不依据标题、源状态或过期的测试计数。证据与能力就绪分开显示。目录 API 提供所需元数据后，检查器才算完整。</td></tr>
+<tr><th scope="row">首轮上下文</th><td>常驻 schema 和限定范围的搜索指引，不含完整延迟清单</td></tr>
+<tr><th scope="row">嵌套 Workflow</th><td>遵守现有程序和信任边界。选择 Workflow 不授权隐藏的工具调用。</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>Agents 页、带修订号的已存配置、记忆策略、模式摘要、带搜索和复选框的懒加载目录对话框</td></tr>
+<tr><th scope="row">目标</th><td>两层 Workflow 结构检查器、更丰富的元数据</td></tr>
+</tbody>
+</table>
+<details>
+<summary>验收</summary>
+<ul>
+<li>真实的展开、搜索、选择、关闭、重开操作；滚动和草稿保留。</li>
+<li>通过公开执行器拒绝被禁止的调用。</li>
+<li>窄屏和键盘行为。</li>
+<li>不引入额外的 Workflow 执行引擎。</li>
+</ul>
+</details>
+<p class="next"><a href="agent-configuration-ui.zh.html">配置约定</a> · <a href="agent-core-configuration-ui.zh.html">编辑器和核心字段</a> · <a href="agent-capability-configuration-ui.zh.html">能力</a> · <a href="agent-configuration-plan.zh.html">实施计划</a></p>

@@ -1,6 +1,7 @@
 """Actual FileViewer media dispatch and immutable source playback."""
 import base64
 import io
+import re
 import struct
 import subprocess
 import wave
@@ -35,9 +36,9 @@ def media_page(media_bundle):
             requests.append(request.request.url)
             path = urlsplit(request.request.url).path
             if path == "/":
-                request.fulfill(content_type="text/html", body='<div id="root"></div><script src="/bundle.js"></script>')
+                request.fulfill(content_type="text/html; charset=utf-8", body='<div id="root"></div><script src="/bundle.js"></script>')
             elif path == "/bundle.js":
-                request.fulfill(content_type="text/javascript", body=media_bundle)
+                request.fulfill(content_type="text/javascript; charset=utf-8", body=media_bundle)
             else:
                 request.fulfill(status=404)
 
@@ -60,12 +61,18 @@ def wav_bytes():
 
 
 def test_retained_audio_plays_without_reading_current_file(media_page):
+    from playwright.sync_api import expect
+
     page, requests, errors = media_page
     page.evaluate("body => showFile('recording.wav', body)", base64.b64encode(wav_bytes()).decode())
     page.wait_for_function("document.querySelector('audio')?.readyState >= 2")
     page.locator("audio").evaluate("async element => { window.oldMedia = element; await element.play(); }")
     page.wait_for_function("document.querySelector('audio').currentTime > 0.05")
-    assert page.locator("audio").evaluate("element => element.controls && element.duration === 1")
+    # The themed player draws the controls; the element itself carries none.
+    assert page.locator("audio").evaluate("element => element.duration === 1")
+    expect(page.get_by_role("button", name=re.compile("^(Play|Pause)$"))).to_have_count(1)
+    # The seek bar follows playback.
+    page.wait_for_function("Number(document.querySelector('[role=slider]')?.getAttribute('aria-valuenow')) > 0")
     page.evaluate("hideFile()")
     page.wait_for_function("oldMedia.paused && !oldMedia.getAttribute('src')")
     assert not any("/api/" in url for url in requests)

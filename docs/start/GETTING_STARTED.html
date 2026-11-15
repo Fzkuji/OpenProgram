@@ -1,0 +1,48 @@
+<title>Getting started</title>
+<meta name="description" content="Install OpenProgram, connect a provider, open the interfaces, send a first message and add a program.">
+<h1>Getting started</h1>
+
+<h2 id="install">1. Install</h2>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh        # macOS, Linux
+irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex          # Windows x64, PowerShell</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Fact</th></tr></thead>
+<tbody>
+<tr><th scope="row">Included</th><td>Python, Node.js, Git and the Web UI; nothing else to install</td></tr>
+<tr><th scope="row">Apps</th><td>macOS is a DMG, Linux a deb or AppImage, Windows an installer: <a href="../install/install.html#choose">Install</a></td></tr>
+<tr><th scope="row">Windows sandbox</th><td>Execution is separate</td></tr>
+</tbody>
+</table>
+<p class="note">Platforms, Apps and development checkouts: <a href="../install/install.html">Install</a>.</p>
+
+<h2 id="connect-a-provider">2. Connect a provider</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">App or Web: <strong>Settings → LLM Providers → Add provider</strong></th><td>Three steps: pick a provider, sign in or paste its key (a key already in your environment is offered), then pick its default model and <strong>Start chatting</strong></td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>First run opens a setup wizard: import a Claude Code, Codex or Gemini CLI login, or paste an API key. Ends in the terminal chat</td></tr>
+<tr><th scope="row"><code translate="no">openprogram setup</code></th><td>Re-runs the wizard</td></tr>
+</tbody>
+</table>
+<details id="env-key">
+<summary>Key already in your environment</summary>
+<pre translate="no"><code>export OPENAI_API_KEY=sk-...
+openprogram providers discover
+openprogram providers adopt env:OPENAI_API_KEY</code></pre>
+<p>Use the matching <code translate="no">env:&lt;VARIABLE&gt;</code> for other providers, or pipe a key to <code translate="no">openprogram providers login &lt;provider&gt; --api-key-stdin</code>. <code translate="no">openprogram providers</code> lists what is stored.</p>
+</details>
+
+<h2 id="open-the-web-ui">3. Open the Web UI</h2>
+<p><code translate="no">openprogram web</code> starts the worker and opens <code translate="no">http://localhost:18100</code> signed in. Always open it this way: the bare address typed by hand is not signed in and shows empty lists. Change the port with <code translate="no">openprogram ports --port &lt;p&gt;</code>.</p>
+
+<h2 id="send-a-message">4. Send a message</h2>
+<p>Type in the terminal chat or the Web input, or from the shell:</p>
+<pre translate="no"><code>openprogram --print "Introduce yourself in one sentence"
+openprogram --resume &lt;session_id&gt;                         # ids: openprogram sessions list, or the Web sidebar</code></pre>
+
+<h2 id="add-programs">5. Add programs</h2>
+<p>A release bundles no agent programs.</p>
+<pre translate="no"><code>openprogram programs install &lt;directory, git URL or owner/repo&gt;
+openprogram programs list</code></pre>
+<p class="next"><a href="daily-use.html">Daily use</a> · <a href="../models/README.html">Models and providers</a> · <a href="../capabilities/agentic-programming/README.html">Agentic Programming</a> · <a href="../interfaces/README.html">Interfaces</a> · <a href="../capabilities/installing-programs.html">Installing programs</a></p>
+

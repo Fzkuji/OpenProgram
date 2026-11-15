@@ -1,4 +1,4 @@
-"""Unit tests for openprogram.agent.internals._revert.revert_turn.
+"""Unit tests for openprogram.runtime.conversation.revert.revert_turn.
 
 Drives the CheckpointStore directly (no real dispatcher needed) — the
 unit under test is the wiring between SessionStore + CheckpointStore +
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.internals._revert import reapply_turn, revert_turn
-from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.runtime.conversation.revert import reapply_turn, revert_turn
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def store_with_session(tmp_path: Path, monkeypatch):
     default_store singleton so revert_turn picks it up."""
     store = SessionStore(root_path=tmp_path / "sessions")
     monkeypatch.setattr(
-        'openprogram.store.session.session_store.shared._default_store', store,
+        'openprogram.state.store.session.session_store.shared._default_store', store,
         raising=False,
     )
     return store
@@ -232,7 +232,7 @@ def test_missing_rollback_blob_is_unavailable_before_any_write(
         store_with_session, session_id, turn_id, second, "second after\n",
     )
     first_mutation = journal.list_mutations(turn_id)[0]
-    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+    from openprogram.state.store.snapshot.checkpoint.paths import turn_backup_dir
     missing = turn_backup_dir(
         store_with_session._session_dir(session_id), turn_id,
     ) / first_mutation["after"]["blob_ref"]
@@ -247,7 +247,7 @@ def test_missing_rollback_blob_is_unavailable_before_any_write(
 
 
 def test_history_lock_is_stable_for_overlapping_action_sets(tmp_path, monkeypatch):
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     first_store = CheckpointStore(tmp_path / "sessions" / "one")
     second_store = CheckpointStore(tmp_path / "sessions" / "two")
     path = str(tmp_path / "workspace" / "a" / "x.py")

@@ -1,0 +1,135 @@
+<title>Integrated Terminal</title>
+<meta name="description" content="Real PTY terminals in desktop center tabs, shared with the agent through terminal_use.">
+<h1>Integrated terminal and Claude Code launch</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="xterm.js sends write and resize through the preload allowlist to Electron main and node-pty, which runs the login shell or Claude Code; data and exit come back. terminal_use goes through a worker ticket and the desktop host to the same PTY.">
+  <defs><marker id="tm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40" translate="no">xterm.js</text>
+  <line class="ln" x1="80" y1="34" x2="216" y2="34" marker-end="url(#tm-a)"/><text class="t-soft mid" x="148" y="22">preload allowlist</text>
+  <text class="t-big" x="226" y="40" translate="no">Electron main</text>
+  <line class="ln" x1="350" y1="34" x2="426" y2="34" marker-end="url(#tm-a)"/>
+  <rect class="tile" x="436" y="10" width="244" height="110" rx="8"/>
+  <text class="t-big" x="452" y="42" translate="no">node-pty</text>
+  <text class="t-soft" x="452" y="70">login shell or claude</text>
+  <text class="t-soft" x="452" y="94">runs as the App user</text>
+  <text class="t-big" x="0" y="106" translate="no">terminal_use</text>
+  <line class="ln" x1="110" y1="100" x2="426" y2="100" marker-end="url(#tm-a)"/><text class="t-soft mid" x="268" y="88">worker ticket, desktop host</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong translate="no">xterm.js</strong><small>or <code translate="no">terminal_use</code>, by worker ticket</small></li>
+<li class="via">preload allowlist, or desktop host</li>
+<li><strong translate="no">Electron main</strong></li>
+<li class="flow-end"><strong translate="no">node-pty</strong><small>login shell or claude</small></li>
+</ol>
+</figure>
+<p class="note">Desktop only. The Web UI exposes no host command execution.</p>
+
+<h2>What was chosen</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Piece</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/microsoft/node-pty">node-pty</a></th><td>Real PTY in Electron main only (ConPTY on Windows)</td></tr>
+<tr><th scope="row"><a href="https://xtermjs.org/docs/">xterm.js</a> + FitAddon</th><td>Terminal sequences, raw input, cols/rows per pane; no custom protocol</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/overview">Claude Code CLI</a></th><td>The locally installed <code translate="no">claude</code>, PATH resolved through a login shell</td></tr>
+<tr><th scope="row">spawn + pipe (not used)</th><td><code translate="no">TERM=dumb</code>, no terminal device: interactive programs lose cursor, redraw, colors, shortcuts, resize</td></tr>
+</tbody>
+</table>
+
+<h2>Behaviour</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Terminal tab</th><td>Login shell (zsh or bash on macOS, PowerShell on Windows) in the project directory. Switching tabs unmounts only the view; closing the tab, destroying the renderer or Stop releases the PTY.</td></tr>
+<tr><th scope="row">Claude Code tab</th><td>Runs <code translate="no">claude</code> directly in the same directory.</td></tr>
+<tr><th scope="row">Project not resolved</th><td>After a brief wait the shell starts in home instead of a blank page. A late answer does not restart it.</td></tr>
+<tr><th scope="row">Unavailable</th><td>Bridge, PTY module or CLI missing: the tab shows an explicit error. Web mode has no interactive controls.</td></tr>
+<tr><th scope="row">Theme</th><td>Background, foreground, cursor, selection and ANSI 16 come from semantic tokens. Theme or Custom CSS changes update xterm only, keeping PTY and buffer.</td></tr>
+<tr><th scope="row">Toolbar</th><td>Preset, process state, actual cwd; copy, paste, clear, restart, stop. Compact, borderless.</td></tr>
+<tr><th scope="row">Keys</th><td><code translate="no">Cmd+C</code> or <code translate="no">Ctrl+Shift+C</code> copies when a selection exists. <code translate="no">Cmd+V</code> or <code translate="no">Ctrl+Shift+V</code> pastes into the PTY. <code translate="no">Ctrl+C</code> interrupts. <code translate="no">Cmd+K</code> clears the current viewport only.</td></tr>
+</tbody>
+</table>
+
+<h2>Shared with the agent</h2>
+<p><code translate="no">terminal_use</code> actions: <code translate="no">list</code>, <code translate="no">open</code>, <code translate="no">observe</code>, <code translate="no">input</code>, <code translate="no">interrupt</code>, <code translate="no">resize</code>, <code translate="no">share</code>, <code translate="no">release</code>, <code translate="no">close</code>. Each runs on a single-use ticket issued by <code translate="no">openprogram/host/resources/terminal.py</code> and redeemed by the desktop host.</p>
+<ul>
+<li>Needs approval; unsafe in plan mode; cannot bypass a task sandbox. No Desktop: an explicit unavailable result.</li>
+<li>Input is raw keystrokes, not a command API. "Delivered" means reached the shell. Output is untrusted data.</li>
+<li>Human typing does not pause the agent, but a changed input revision forces a new <code translate="no">observe</code>. Uncertain input is never retried.</li>
+<li><code translate="no">release</code> leaves the terminal open; <code translate="no">close</code> terminates the shell.</li>
+</ul>
+
+<h2>Trust boundaries</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Boundary</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Executable</th><td>The renderer picks only preset <code translate="no">shell</code> or <code translate="no">claude</code>; no arbitrary argv.</td></tr>
+<tr><th scope="row"><code translate="no">cwd</code></th><td>Realpath, must be a directory. The PTY is bound to the renderer sender and terminal id.</td></tr>
+<tr><th scope="row">Limits</th><td>Agent input 16 KiB; human 64 KiB; cols 20–500, rows 5–200 from the tool. Replaced processes cannot emit into the new one.</td></tr>
+<tr><th scope="row">Privileges</th><td>The local App user's. No remote sandbox.</td></tr>
+</tbody>
+</table>
+
+<h2 id="shell-observation">Shell directory and foreground command</h2>
+<p class="note">Advisory, for macOS zsh and compatible bash 3.2 login shells. Exit zero proves no effect or task success; background jobs may continue. Reports never change ownership, leases, approval, input revisions or cancellation.</p>
+<pre translate="no" tabindex="0">shell_integration?: {
+  status: "starting" | "ready" | "unavailable" | "ended",
+  mode: "zsh-hooks" | "bash-debug" | null,
+  reason: string | null, event_sequence: number,
+  cwd: { value: string, event_sequence: number } | null,
+  cycle: { id: number, phase: "running" | "finished" | "unknown",
+           exit_code: number | null } | null
+}</pre>
+<details>
+<summary>Metadata semantics</summary>
+<ul>
+<li>Optional on existing reads and events; older hosts omit it. <code translate="no">start_cwd</code> is immutable. Top-level <code translate="no">exit_code</code> is the PTY process, nested the matched cycle.</li>
+<li>Initial prompt: ready and cwd, <code translate="no">cycle=null</code>. Process exit: unfinished cycle becomes unknown, integration ends. Last values are history, not guarantees. Input still returns <code translate="no">phase=delivered</code> or unconfirmed with <code translate="no">command_complete=null</code>.</li>
+<li>The Web type accepts the metadata with no renderer, prompt parser, command API or store.</li>
+</ul>
+</details>
+<details>
+<summary>Startup and compatibility</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Shell</th><th scope="col">Integration</th></tr></thead>
+<tbody>
+<tr><th scope="row">zsh</th><td>Native <code translate="no">-l</code>. Private <code translate="no">.zshenv</code>, <code translate="no">.zprofile</code>, <code translate="no">.zshrc</code>, <code translate="no">.zlogin</code> forwarders restore <code translate="no">ZDOTDIR</code> before sourcing each user file, then append preexec/precmd hooks. <code translate="no">RCS</code> stays authoritative. Existing hooks remain; readonly arrays decline. Global scripts and plugins are not claimed equivalent.</td></tr>
+<tr><th scope="row">bash</th><td>Native <code translate="no">-l</code>, one-time <code translate="no">PROMPT_COMMAND</code> only if none was set. Bootstrap captures DEBUG before sourcing and installs a minimal DEBUG/prompt pair. Custom DEBUG, readonly <code translate="no">PROMPT_COMMAND</code>, extdebug, functrace, replaced prompts and bash-preexec get none. Root-parent PID checks stop nested adoption; callbacks reject subshell reports.</td></tr>
+<tr><th scope="row">Others</th><td>Usable, reports unavailable. No user config, shell option or history policy is rewritten. No Windows integration.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Protocol and lifetime</summary>
+<pre translate="no" tabindex="0">ESC ] 777 ; OpenProgram ; 1 ; nonce ; rootPid ; eventSequence ; kind ; cycleId ; exitStatus ; cwdHex BEL</pre>
+<ul>
+<li>Kinds: ready, cwd, start, end. 128-bit nonce per launch. The parser checks the PTY PID, increasing event sequence and cycle, matching completion.</li>
+<li>cwd: UTF-8 absolute, hex by printf/od/tr, 16 KiB limit, no NUL or malformed UTF-8. Frames 36 KB.</li>
+<li>Incremental across chunks; incomplete candidates released after one second. Only accepted frames are removed before delivery and replay; other output is unchanged and cursors count the same filtered stream.</li>
+<li>A later complete prefix before the candidate's BEL keeps the earlier bytes as output and restarts at the new prefix, so malformed output cannot swallow a genuine completion.</li>
+<li>The shell can read or forge its nonce, so metadata grants no authority. No command text or environment dump. Three seconds without ready: unavailable; a later valid handshake recovers. Root exit makes a running cycle unknown, never finished.</li>
+<li>Scripts are extracted through Electron fs to a per-launch 0700 directory with 0600 files; spawn failure or root exit removes them, reattach or lease release does not. Old-generation data cannot update replacements. Asset failure keeps the raw terminal.</li>
+</ul>
+<p class="note"><code translate="no">apps/desktop/main/terminal/</code>: <code translate="no">terminal-shell-protocol.js</code>, <code translate="no">terminal-shell-integration.js</code>, <code translate="no">shell-integration/</code>, <code translate="no">terminal-resource-manager.js</code>, <code translate="no">terminal-resource-ipc.js</code>. <code translate="no">apps/web/lib/desktop/terminal-resources.ts</code> adds the type. <code translate="no">package.json</code> packs <code translate="no">main/**</code>, dotfiles included. Checks: <code translate="no">check-shell-metadata.cjs</code> (manager and parser), <code translate="no">check-shell-pty.cjs</code> (real macOS PTY through production IPC).</p>
+</details>
+
+<h2>Scope</h2>
+<p>Outside it: remote cloud sessions, a general terminal-session manager, shell-profile editors, persistent command history, a Web host terminal. Other tabs are unaffected.</p>
+
+<details id="implementation-status">
+<summary>Implementation status and acceptance</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">PTY terminals, launcher, theme, toolbar, keys</th><td>Implemented on macOS and Windows.</td></tr>
+<tr><th scope="row"><code translate="no">terminal_use</code></th><td>Implemented; redeemed in <code translate="no">terminal-resource-ipc.js</code>.</td></tr>
+<tr><th scope="row">Shell observation</th><td>Implemented in source; installed-App acceptance pending. Arbitrary global profiles and dynamically replaced hooks unverified.</td></tr>
+</tbody>
+</table>
+<ol>
+<li>Terminal runs <code translate="no">pwd</code>; cwd is the current project, or home after the brief wait.</li>
+<li>Claude Code shows the local CLI; input and Ctrl+C reach it; closing it does not affect Terminal.</li>
+<li>Pane width changes sync xterm and PTY cols/rows.</li>
+<li>PTY pid stays across tab switches and theme changes; ANSI 16 follows dark, light, warm and custom themes.</li>
+<li>Copy, paste, clear, restart, stop work; toolbar shows running, exited, error.</li>
+</ol>
+</details>

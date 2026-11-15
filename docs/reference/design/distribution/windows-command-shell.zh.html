@@ -1,0 +1,132 @@
+<title>Windows 命令 shell</title>
+<meta name="description" content="Windows 上命令和钩子在哪个 shell 里运行，模型被告知什么，权限规则怎么读 PowerShell。">
+<h1>Windows 命令 shell</h1>
+<p><code translate="no">host/_platform/command_shell.resolve_shell</code> 按执行环境和当前生效的沙箱，决定命令在哪个 shell 里运行。命令工具、钩子、环境块、权限规则、<code translate="no">doctor</code> 和 <code translate="no">/api/system/features</code> 都读它给出的 profile，别处不再探测 shell。</p>
+<p>命令是否进沙箱完全按 profile 说的来，调用方自带沙箱策略时也一样。本机部分按指定的 bash 路径缓存，改了设置下一条命令就生效；沙箱每次调用都重新读。</p>
+
+<h2 id="profiles">各种 shell</h2>
+<table class="stack fixed" id="command-shell-profiles">
+<thead><tr><th scope="col">Shell</th><th scope="col">何时</th><th scope="col">守不住的承诺</th></tr></thead>
+<tbody>
+<tr><th scope="row">bash、sh</th><td>macOS 和 Linux；没有 bash 时才用 <code translate="no">/bin/sh</code></td><td>无</td></tr>
+<tr><th scope="row">Git Bash</th><td>Windows 上<a href="#finding-bash">找到 bash</a> 时</td><td>无</td></tr>
+<tr><th scope="row">PowerShell 7</th><td>Windows 没有 bash，PATH 中绝对路径文件夹里有 <code translate="no">pwsh.exe</code></td><td>可恢复删除；规则解析只做到部分</td></tr>
+<tr><th scope="row">Windows PowerShell 5.1</th><td>Windows 两者都没有</td><td>可恢复删除；文件输出 UTF-8 只做到部分（<code translate="no">&gt;</code> 写出带 BOM 的 UTF-8）；规则解析只做到部分</td></tr>
+<tr><th scope="row">WSL 里的 bash</th><td>Windows 上沙箱生效且能运行</td><td>可恢复删除；停止只能结束部分进程树</td></tr>
+<tr><th scope="row">远程</th><td>SSH 主机或 Docker 容器</td><td>可恢复删除；停止只能结束部分进程树</td></tr>
+</tbody>
+</table>
+<p>承诺有五项：可恢复删除、文件输出 UTF-8、命令自己的退出码、停止整棵进程树、权限规则能读懂命令。每个 profile 把五项都写成支持、部分或不支持。</p>
+<p><code translate="no">doctor</code> 打印 profile，并经命令后端（含沙箱）执行 <code translate="no">echo 你好; exit 3</code>。这一行只是建议：两者都回来显示 OK，否则显示 INFO 和原因；它不拦 <code translate="no">openprogram upgrade</code>，也不拦自我更新。它还会写明沙箱已打开却运行不了，以及指定的 bash 不是文件。</p>
+
+<h2 id="finding-bash">找 bash 的顺序</h2>
+<ol>
+<li>用户指定的路径：<code translate="no">OPENPROGRAM_GIT_BASH_PATH</code>，然后是设置 <code translate="no">shell.windows_bash_path</code>。路径不是文件时跳过，不报错。</li>
+<li>Program Files 或用户程序目录里的 Git for Windows。</li>
+<li>运行时自带的 Git 里的 bash，基座的 <code translate="no">base.json</code> 用 <code translate="no">gitBash</code> 写明时。</li>
+<li>PATH 上每个 <code translate="no">git.exe</code> 旁边的 <code translate="no">bin\bash.exe</code>，再是 <code translate="no">usr\bin\bash.exe</code>：scoop、便携版和自定义目录。</li>
+<li>PATH 中绝对路径文件夹里的 <code translate="no">bash</code>，但不是 WSL 启动器。</li>
+<li>否则用 PowerShell：先 <code translate="no">pwsh</code> 7，再 Windows PowerShell 5.1。</li>
+</ol>
+<p>从不搜索当前目录和 PATH 里的相对路径，所以仓库自己的 <code translate="no">bash.exe</code> 不会成为 shell，结果也不取决于进程从哪里启动。</p>
+<p>Windows 基座构建时，检查解压出的 dugite Git 里有没有 <code translate="no">bin\bash.exe</code> 和 <code translate="no">usr\bin\bash.exe</code>，把找到的那个（相对 <code translate="no">&lt;base&gt;\git</code>）或 <code translate="no">null</code> 写进去。不另外下载 Git 或 coreutils。</p>
+<details>
+<summary>为什么这样设计</summary>
+<p>同行分两派。Codex、OpenCode、Grok Build 优先 PowerShell。Claude Code 2.1.321、Kimi Code、Pi、ZCode 优先 bash。Oh My Pi 内嵌了 Rust 写的 bash 引擎，Python 运行时没法直接用。</p>
+<ul>
+<li>bash 优先、PowerShell 兜底，照 Claude Code：五项承诺只有 bash 系的 shell 全部守得住。Codex 选 PowerShell，是因为它的规则和沙箱按 PowerShell 写，我们的不是。</li>
+<li>自带 Git 的压缩包里有 bash，用上它不花一个字节。为此另外下载 coreutils 要付出体积，也没有同行这样做。</li>
+<li>从 <code translate="no">git.exe</code> 推出 bash 照 Kimi Code 的顺序和它的 <code translate="no">usr\bin</code> 候选；Claude Code 和 OpenCode 也这样推。变量名照 Claude Code 的 <code translate="no">CLAUDE_CODE_GIT_BASH_PATH</code>。</li>
+<li>PATH 查找保留：它只查绝对目录、跳过 WSL 启动器，删掉它只会让 MSYS2 用户多配一个设置。</li>
+<li>指定的路径无效时继续往下找，不像 Pi 那样报错，因为找不到 shell 时只降级，不停机。</li>
+</ul>
+</details>
+
+<h2 id="powershell">在 PowerShell 里运行时</h2>
+<p>PowerShell 源码把自己的 UTF-8 设置放在 <code translate="no">try</code> 里，最后用 <code translate="no">exit</code> 退出，所以在 ConstrainedLanguage 下设置静默失败，退出码照样传回。对 5.1，设置里还有 <code translate="no">$PSDefaultParameterValues['Out-File:Encoding']='utf8'</code>：<code translate="no">&gt;</code> 写出带 BOM 的 UTF-8，read 和 grep 能解码。</p>
+<table class="stack fixed" id="shell-rules">
+<caption>环境块告诉模型的规则（<code translate="no">ShellProfile.syntax</code>）</caption>
+<thead><tr><th scope="col">Shell</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows PowerShell 5.1</th><td>没有 <code translate="no">&amp;&amp;</code>、<code translate="no">||</code>、<code translate="no">?:</code>、<code translate="no">??</code>：用 <code translate="no">;</code> 串联，用 <code translate="no">if ($?)</code> 判断。原生程序不加 <code translate="no">2&gt;&amp;1</code>。写文件用编辑工具或 <code translate="no">Set-Content -Encoding utf8</code></td></tr>
+<tr><th scope="row">PowerShell 7</th><td>写 PowerShell 7 语法</td></tr>
+<tr><th scope="row">两者</th><td>Codex <code translate="no">windows_shell_guidance</code> 的三条安全规则：带空格的路径加引号，含方括号或星号的路径用 <code translate="no">-LiteralPath</code>，没被要求时不删工作目录之外的东西</td></tr>
+<tr><th scope="row">Git Bash</th><td>bash 语法；Windows 路径加引号或用正斜杠</td></tr>
+</tbody>
+</table>
+<p>命令工具的描述在所有平台上一样。换了 shell 只改环境块里这一行，在下一条消息旁说一次（<a href="../context/composition.zh.html#l2">组合</a>）。</p>
+<details>
+<summary>为什么这样设计</summary>
+<ul>
+<li>一个命令工具、规则放进环境块，照 Codex：它按平台给出说明。Claude Code 把 Bash 和 PowerShell 拆成两个工具；在这里，换 shell 时工具列表就会变，提示的缓存前缀随之失效。</li>
+<li>5.1 的规则写的是 5.1 一定报 ParserError 的写法，不需要测量。</li>
+<li>Out-File 的默认值照 Claude Code 的前置脚本。UTF-16 让 read 和 grep 读到 NUL 字节；BOM 是唯一不需要模型配合的办法。Codex 只设控制台编码，它的 <code translate="no">&gt;</code> 仍写 UTF-16。<code translate="no">Set-Content</code> 保持默认，同一个文件就不会混进两种编码。</li>
+</ul>
+</details>
+
+<h2 id="msys">MSYS 下的删除垫片</h2>
+<p>MSYS 把 <code translate="no">/usr/bin</code> 加到 PATH 前面之后，bash 再把删除垫片放回最前。垫片目录由 <code translate="no">cygpath</code> 按它所在的 bash 来写（Git Bash 和 MSYS2 写成 <code translate="no">/c/x</code>，Cygwin 写成 <code translate="no">/cygdrive/c/x</code>）；没有它的 bash 用 Python 拼好的 MSYS 写法。</p>
+
+<h2 id="hook-shell">钩子用哪种 shell</h2>
+<table class="stack fixed" id="hook-shells">
+<thead><tr><th scope="col">钩子条目</th><th scope="col">Windows</th><th scope="col">macOS 和 Linux</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">"shell": "bash"</code>（默认）</th><td>主机的 bash；没有 bash 时用 PowerShell，并在对话里说一次（<code translate="no">hook_shell_fallback</code>）</td><td><code translate="no">/bin/sh</code></td></tr>
+<tr><th scope="row"><code translate="no">"shell": "powershell"</code></th><td>PowerShell，旁边有 Git Bash 也一样</td><td><code translate="no">pwsh</code></td></tr>
+<tr><th scope="row"><code translate="no">"args": [...]</code></th><td colspan="2">直接执行 <code translate="no">[command, *args]</code>，不经过 shell，没有引号问题</td></tr>
+</tbody>
+</table>
+<p>提示写明怎么改：装 Git for Windows、给钩子声明 shell，或改用 <code translate="no">command</code> 加 <code translate="no">args</code>。钩子运行不了或超时，动作照样放行。</p>
+<details>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">对比</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code 2.1.321，照它做</th><td><code translate="no">shell</code> 字段和 <code translate="no">command</code> 加 <code translate="no">args</code> 的直接执行写法，默认 bash，找不到时改用 PowerShell，每个会话警告一次</td></tr>
+<tr><th scope="row">Codex</th><td>用 <code translate="no">COMSPEC /C</code> 运行、可用 <code translate="no">commandWindows</code> 覆盖，作者要把每个钩子写两份</td></tr>
+<tr><th scope="row">Grok Build</th><td>在 PowerShell 下改写 <code translate="no">$VAR</code></td></tr>
+</tbody>
+</table>
+<p>声明了语言，<code translate="no">test -f .env &amp;&amp; exit 2</code> 就不会在 5.1 上解析报错、然后被悄悄放行。提示是对话里的一行，不是关卡。</p>
+</details>
+
+<h2 id="powershell-rules">PowerShell 命令的拒绝和询问规则</h2>
+<p>命令在 PowerShell 里运行时，拒绝和询问规则还会读一遍转换成 POSIX 写法的命令（<code translate="no">runtime/permissions/powershell_words.py</code>）。管道里每一段成为一个 argv。允许规则从不读转换后的写法：只匹配原文，“始终允许”保存的也是原文。</p>
+<table class="stack fixed" id="powershell-aliases">
+<thead><tr><th scope="col">读作</th><th scope="col">PowerShell</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">rm</code></th><td><code translate="no">Remove-Item, ri, rm, del, erase, rd, rmdir</code></td></tr>
+<tr><th scope="row"><code translate="no">mv</code></th><td><code translate="no">Move-Item, mi, mv, move</code></td></tr>
+<tr><th scope="row"><code translate="no">cp</code></th><td><code translate="no">Copy-Item, cp, cpi, copy</code></td></tr>
+<tr><th scope="row"><code translate="no">-r</code>、<code translate="no">-f</code></th><td><code translate="no">-Recurse</code>、<code translate="no">-Force</code>，以及 PowerShell 接受的任何前缀</td></tr>
+<tr><th scope="row">操作数</th><td>位置参数，以及 <code translate="no">-Path</code>、<code translate="no">-LiteralPath</code>、<code translate="no">-Destination</code> 的值</td></tr>
+</tbody>
+</table>
+<p>所以 <code translate="no">bash(rm -rf *)</code> 能拦住 <code translate="no">Remove-Item -Recurse -Force .</code>。读不准的命令（变量、子表达式、脚本块、数组、重定向、<code translate="no">&amp;</code>、点号引入、注释、反引号、Unicode 引号和破折号），如果提到这些 cmdlet 或运行计算出来的命令，只在有拒绝规则指向 <code translate="no">rm</code>、<code translate="no">mv</code> 或 <code translate="no">cp</code> 时转为询问，而不是拒绝。</p>
+<details>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">要点</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex，照它做</th><td>它在进程内用 tree-sitter 转换，普通单词和字面字符串之外一律视为读不懂，删除类别名表也相同</td></tr>
+<tr><th scope="row">Claude Code</th><td>解析 PowerShell AST，Bash 规则和 PowerShell 规则互不覆盖，并建议有 Bash 拒绝规则时关掉 PowerShell 工具；我们只有一个命令工具，那等于关掉所有命令</td></tr>
+<tr><th scope="row">ZCode</th><td>按方言分别匹配</td></tr>
+<tr><th scope="row">一条规则管两种 shell</th><td>用户写 <code translate="no">bash(rm -rf *)</code>，本意是“不许递归删除”</td></tr>
+<tr><th scope="row">不用语法库</th><td>Codex 接受的那部分语法不用语法库也能读准；<code translate="no">tree-sitter-language-pack</code> 1.x 第一次使用时下载语法，权限检查不能这样做</td></tr>
+<tr><th scope="row">询问而不是拒绝</th><td>审批保持少见：只有自己写了这类拒绝规则的用户，才会多这一次确认</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">已测试</th><td>shell 的判定、用替身 <code translate="no">cygpath</code> 的垫片目录写法、5.1 前置脚本、规则转换和钩子的 shell，都用注入的机器和环境测试。都没有在 Windows 上运行过，Cygwin 也一样；ConstrainedLanguage 下的退出码测试只在那里运行</td></tr>
+<tr><th scope="row">等构建</th><td>dugite 压缩包里有没有 bash，由下一次 Windows 基座构建给出答案</td></tr>
+<tr><th scope="row">还没做</th><td>网页不显示 <code translate="no">hook_shell_fallback</code>：它写进日志，并作为还没有客户端处理的 WebSocket 帧发出</td></tr>
+<tr><th scope="row">未测量</th><td>模型在 5.1 里写出 bash 语法或 UTF-16 文件的频率；这个基线需要 Windows 机器和真实的模型调用。<code translate="no">echo 你好 &gt; a.txt</code> 的 BOM 只按前置脚本的文本检查</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="windows-support.zh.html">Windows 支持</a></p>

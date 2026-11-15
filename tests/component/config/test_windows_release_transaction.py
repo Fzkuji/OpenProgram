@@ -56,8 +56,7 @@ def install_fixture(tmp_path: Path):
     state = tmp_path / "state"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for suffix in ("ps1", "cmd"):
-        (bin_dir / f"openprogram.{suffix}").write_text("previous launcher", encoding="ascii")
+    (bin_dir / "openprogram.cmd").write_text("previous launcher", encoding="ascii")
     release = state / "runtime" / "cli" / "releases" / "9.9.7"
     events = tmp_path / "events.txt"
     archive = tmp_path / "runtime.zip"
@@ -70,7 +69,7 @@ def install_fixture(tmp_path: Path):
         # runs. Extraction, verifier ordering, publication and locking are real.
         payload.writestr("runtime/bin/python.cmd", "\r\n".join([
             "@echo off",
-            'if /i "%~nx2"=="verify-product-runtime.py" (',
+            'if /i "%~nx4"=="verify-product-runtime.py" (',
             '  echo verify>>"%OP_TEST_EVENTS%"',
             '  if exist "%OP_TEST_RELEASE%" if not "%OP_TEST_REUSE%"=="1" exit /b 40',
             '  if "%OP_TEST_FAILURE%"=="verify" exit /b 41',
@@ -92,22 +91,12 @@ function Test-WorkerHealth {
     if ($env:OP_TEST_FAILURE -eq 'publish') {
         [IO.File]::WriteAllText($env:OP_TEST_RELEASE, 'publication collision')
     }
-    if ($env:OP_TEST_FAILURE -in @('activate', 'rollback')) {
+    if ($env:OP_TEST_FAILURE -eq 'activate') {
         $script:TestCmdLock = [IO.File]::Open(
             (Join-Path $env:OPENPROGRAM_BIN_DIR 'openprogram.cmd'), 'Open', 'Read', 'Read')
     }
 }
 """
-    # Make rollback failure real: open the newly published PS1 without delete
-    # sharing after its atomic replacement, while CMD is already locked.
-    source = source.replace(
-        "[IO.File]::Replace($Source, $Destination, $Backup, $true)",
-        """[IO.File]::Replace($Source, $Destination, $Backup, $true)
-            if ($env:OP_TEST_FAILURE -eq 'rollback' -and $Destination.EndsWith('openprogram.ps1')) {
-                $script:TestPs1Lock = [IO.File]::Open($Destination, 'Open', 'Read', 'Read')
-            }""",
-        1,
-    )
     script = tmp_path / "install.ps1"
     script.write_text(source.replace("$Version = if", probe + "\n$Version = if", 1), encoding="utf-8-sig")
     env = {
@@ -141,18 +130,16 @@ def test_failed_candidate_is_not_published_and_can_be_retried(install_fixture, f
     assert failed.returncode != 0
     assert not release.exists()
     assert not list(release.parent.parent.glob(".staging-*"))
-    for suffix in ("ps1", "cmd"):
-        assert (bin_dir / f"openprogram.{suffix}").read_text() == "previous launcher"
+    assert (bin_dir / "openprogram.cmd").read_text() == "previous launcher"
     assert "verify" in events.read_text()
 
     retried = run()
     assert retried.returncode == 0, (retried.stdout, retried.stderr)
     assert (release / "runtime-manifest.json").is_file()
-    for suffix in ("ps1", "cmd"):
-        launcher = (bin_dir / f"openprogram.{suffix}").read_text(encoding="utf-8-sig")
-        assert str(release) in launcher
-        assert ".staging-" not in launcher
-        assert (bin_dir / f"openprogram.previous.{suffix}").read_text() == "previous launcher"
+    launcher = (bin_dir / "openprogram.cmd").read_text(encoding="utf-8-sig")
+    assert str(release) in launcher
+    assert ".staging-" not in launcher
+    assert (bin_dir / "openprogram.previous.cmd").read_text() == "previous launcher"
     assert not list(release.parent.parent.glob(".staging-*"))
 
 
@@ -160,11 +147,11 @@ def test_verified_cached_release_is_revalidated_before_activation(install_fixtur
     run, release, bin_dir, _events, _script = install_fixture
     first = run()
     assert first.returncode == 0, (first.stdout, first.stderr)
-    before = (bin_dir / "openprogram.ps1").read_bytes()
+    before = (bin_dir / "openprogram.cmd").read_bytes()
     failed = run(failure="verify", reuse=True)
     assert failed.returncode != 0
     assert release.is_dir()
-    assert (bin_dir / "openprogram.ps1").read_bytes() == before
+    assert (bin_dir / "openprogram.cmd").read_bytes() == before
     assert run(reuse=True).returncode == 0
 
 
@@ -175,41 +162,28 @@ def test_failed_publication_keeps_launchers_and_preserves_collision(install_fixt
     assert "health" in events.read_text()
     assert release.read_text() == "publication collision"
     assert not list(release.parent.parent.glob(".staging-*"))
-    for suffix in ("ps1", "cmd"):
-        assert (bin_dir / f"openprogram.{suffix}").read_text() == "previous launcher"
+    assert (bin_dir / "openprogram.cmd").read_text() == "previous launcher"
 
 
-@pytest.mark.parametrize("existing_ps1", [True, False])
-def test_partial_activation_restores_both_original_entry_points(install_fixture, existing_ps1):
+def test_failed_activation_keeps_the_previous_launcher(install_fixture):
     run, release, bin_dir, _events, _script = install_fixture
-    ps1 = bin_dir / "openprogram.ps1"
-    if not existing_ps1:
-        ps1.unlink()
     failed = run(failure="activate")
     assert failed.returncode != 0
     assert release.is_dir(), "the verified runtime remains reusable"
-    assert b"manual recovery required" not in failed.stderr, failed.stderr
-    if existing_ps1:
-        assert ps1.read_text() == "previous launcher"
-    else:
-        assert not ps1.exists(), "rollback removes only its newly created launcher"
     assert (bin_dir / "openprogram.cmd").read_text() == "previous launcher"
     assert not list(bin_dir.glob(".openprogram-*"))
     assert run(reuse=True).returncode == 0
 
 
-def test_activation_rollback_failure_retains_original_and_reports_recovery(install_fixture):
-    run, release, bin_dir, _events, _script = install_fixture
-    failed = run(failure="rollback")
-    assert failed.returncode != 0
-    assert b"manual recovery required" in failed.stderr
-    originals = list(bin_dir.glob(".openprogram-*.rollback.ps1"))
-    assert len(originals) == 1
-    assert originals[0].read_text() == "previous launcher"
-    assert (bin_dir / "openprogram.cmd").read_text() == "previous launcher"
-    assert str(release) in (bin_dir / "openprogram.ps1").read_text(encoding="utf-8-sig")
-    assert run(reuse=True).returncode == 0, "all native lock handles must be released"
-    assert originals[0].read_text() == "previous launcher", "a retry must not delete recovery material"
+def test_successful_install_deletes_an_old_powershell_launcher(install_fixture):
+    run, _release, bin_dir, _events, _script = install_fixture
+    (bin_dir / "openprogram.ps1").write_text("previous launcher", encoding="ascii")
+    (bin_dir / "openprogram.previous.ps1").write_text("older launcher", encoding="ascii")
+    result = run()
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not (bin_dir / "openprogram.ps1").exists()
+    assert not (bin_dir / "openprogram.previous.ps1").exists()
+    assert b"Next, run:" in result.stdout
 
 
 def test_concurrent_install_is_rejected_before_extracting_or_activating(install_fixture, tmp_path):
@@ -230,5 +204,5 @@ def test_concurrent_install_is_rejected_before_extracting_or_activating(install_
     assert locked.returncode != 0
     assert not events.exists()
     assert not release.exists()
-    assert (bin_dir / "openprogram.ps1").read_text() == "previous launcher"
+    assert (bin_dir / "openprogram.cmd").read_text() == "previous launcher"
     assert run().returncode == 0

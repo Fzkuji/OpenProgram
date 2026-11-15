@@ -1,0 +1,116 @@
+<title>Compaction tiers</title>
+<meta name="description" content="What OpenProgram does to keep requests inside the context window, in the order it happens, with status.">
+<h1>Compaction tiers</h1>
+
+<table class="stack" id="s1">
+<thead><tr><th scope="col">When</th><th scope="col">Step</th><th scope="col">Action</th><th scope="col">LLM</th><th scope="col">Breaks cache</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">When a result is made</th><td>Budget Reduction</td><td>Bounds one tool result over its weight cap, once</td><td>No</td><td>No</td><td>Built</td></tr>
+<tr><th scope="row">Before a turn, at the auto-compact share; or <code translate="no">/compact</code></th><td>Auto-Compact</td><td>One rolling summary per chain</td><td>Once</td><td>Yes</td><td>Built</td></tr>
+<tr><th scope="row">Between a turn's steps, at the auto-compact share</th><td>Mid-turn</td><td>Auto-Compact of the history before the turn; once per turn</td><td>Once</td><td>Yes</td><td>Built</td></tr>
+<tr><th scope="row">Provider reports overflow</th><td>Reactive</td><td>Auto-Compact, then the same request again; once per request, twice per turn</td><td>Yes</td><td>Yes</td><td>Built</td></tr>
+<tr><th scope="row">Each provider request, over budget</th><td>Request checkpoint</td><td>One checkpoint of the older prefix, in that request only</td><td>Bounded</td><td>Yes</td><td>Built</td></tr>
+<tr><th scope="row">Still over, about 90%</th><td>Context Collapse</td><td>Segment summaries, originals kept</td><td>Per segment</td><td>Yes</td><td>Not built</td></tr>
+</tbody>
+</table>
+<p class="note">Summary semantics: <a href="compaction.html">Compaction</a>. Claude Code's version of this ladder: <a href="claude-code-compaction.html">Claude Code compaction</a>. <code translate="no">/context</code> shows the token distribution.</p>
+
+<details id="s3">
+<summary>Budget Reduction</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope</th><td>Tool results only, not user or assistant messages</td></tr>
+<tr><th scope="row">Threshold</th><td><code translate="no">spill.result_cap()</code>: a weight of 10,000 (or the model's <code translate="no">tool_output_weight</code>), at most 30% of the window; applied once, when the result is made. Old results are never aged: they stay whole until Auto-Compact</td></tr>
+<tr><th scope="row">Method</th><td>Keeps head and tail about 60/40 on line breaks, keeps the whole text in a file and names the lines to read</td></tr>
+<tr><th scope="row">Code</th><td><code translate="no">agent/loop/tool_dispatch.py</code> <code translate="no">_as_stored</code>, <code translate="no">state/store/session/spill.py</code> <code translate="no">bound_text</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="s4-4">
+<summary>Auto-Compact and Reactive</summary>
+<p>Auto-Compact is the pipeline in <a href="compaction.html">Compaction</a>. <code translate="no">/compact [tokens]</code> takes how many recent tokens to keep. Mid-turn and Reactive run in the agent loop (<a href="compaction.html#overflow-recovery">Overflow recovery</a>) on the branch the turn runs on; a Stop ends the summary request.</p>
+</details>
+
+<details id="s4-3">
+<summary>Context Collapse (design)</summary>
+<ul>
+<li>Trigger: still over, about 90%; blocking at 95%.</li>
+<li>5–10 turns per segment, each summarized in about 100–300 tokens; LLM calls equal segments (30 turns in 3 segments: 3 calls).</li>
+<li>Originals stay in a collapse store through read-time projection.</li>
+</ul>
+</details>
+
+<h2 id="s2">Function-call nodes</h2>
+<p>A DAG addition with no Claude Code counterpart.</p>
+<table class="stack">
+<thead><tr><th scope="col">Node state</th><th scope="col">Context</th><th scope="col">Compaction</th></tr></thead>
+<tbody>
+<tr id="s2-1"><th scope="row">Running</th><td>Inside: subtree fully expanded. Callers: <code translate="no">expose=io</code> by default, input and output only. Controlled by <code translate="no">render_context</code> callers, subcalls and expose</td><td>Inner tool outputs get Budget Reduction.</td></tr>
+<tr id="s2-2"><th scope="row">Completed or error</th><td><code translate="no">expose=io</code> hides the subtree with no extra step; children stay inspectable in the DAG and readable through tools</td><td>Input and output are treated like a conversation node</td></tr>
+</tbody>
+</table>
+
+<h2 id="rolling-summary-contract">Rolling summary</h2>
+<p class="note">Beyond <a href="compaction.html">Compaction</a>:</p>
+<ul>
+<li>Always retain the latest complete user turn, and by default the latest two; the token budget may allow fewer than twenty top-level messages.</li>
+<li>A posted report is a boundary too, so a run of reports can be folded even with no user message between them; only the tail that fits stays.</li>
+<li>A large completed tool-heavy turn must not make compaction ineffective, so the cut moves to the next complete user boundary. An active user turn is never split, and its tool evidence is not discarded without entering the summary.</li>
+<li>Summary input and <code translate="no">covers_ids</code> describe the same range.</li>
+<li>Estimates include summary markers and tool results. The completion event reports both token counts and whether a summary was applied.</li>
+<li>Historical incorrect summaries are not rewritten; nothing is migrated or deleted.</li>
+<li>Session-graph compaction scope uses the same message snapshot, so a repeat during loading stays consistent.</li>
+</ul>
+<details>
+<summary>Acceptance</summary>
+<ul id="rolling-summary-status">
+<li>With large tool results among sixteen top-level messages, coverage includes complete older turns and context shrinks.</li>
+<li>The summary receives every replaced user request and visible tool result; recent turns are unchanged.</li>
+<li>Equal or longer summaries, cancellation, provider errors and edits during the call write nothing.</li>
+<li>Repeated compaction, branch switching, occupancy statistics and final requests render consistently.</li>
+</ul>
+</details>
+
+<h2 id="intra-turn-request">Request checkpoint scope</h2>
+<p class="note">Rules: <a href="compaction.html#inside-one-message">Request checkpoint</a>. Beyond those:</p>
+<ul>
+<li>Measured after message conversion, memory injection and actual-tool resolution; rechecked on every send and for fallback models.</li>
+<li>Cache belongs to the current AgentContext and never spans function views.</li>
+<li>It serves calls that cannot compact durably. It does not replace DAG summaries or promise lossless semantics or exact agreement with provider counts.</li>
+</ul>
+
+<h2 id="request-checkpoints">Request checkpoints</h2>
+<table class="stack">
+<thead><tr><th scope="col">Stage</th><th scope="col">Behaviour</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">Budget</th><td>Counts system prompt, tools, response schema, output reserve, history</td><td>Recalculated for fallback models</td></tr>
+<tr><th scope="row">Checkpoint</th><td>Older complete text-only prefix becomes a task summary</td><td>Never splits tool groups or discards multimodal or unresolved content</td></tr>
+<tr><th scope="row">Summary request</th><td>All source text in budgeted chunks with rolling summaries</td><td>Cancellation, errors and exhausted budgets keep the original</td></tr>
+<tr><th scope="row">Continue</th><td>Sends only a verified smaller request</td><td>Raw messages and DAG nodes unchanged</td></tr>
+</tbody>
+</table>
+<p>Adapted from <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs">Codex local compaction</a>, which keeps user messages and replaces execution history. OpenProgram copies no Rust source, truncates no user instructions, adopts no remote encrypted compaction and keeps the DAG. The checkpoint text is assistant data, never system instructions.</p>
+<details>
+<summary>Acceptance</summary>
+<ul id="request-checkpoint-status">
+<li>AgentLoop continues after long assistant text and tool arguments exceed a model window.</li>
+<li>Every retained tool call has its result; the latest execution and user messages are exact.</li>
+<li>Summary calls fit the window, cover the full source and recover from provider overflow without dropping input.</li>
+<li>Cancellation, changed prefixes, model switches and non-text evidence do not reuse incompatible summaries.</li>
+<li>Open: installed-App acceptance.</li>
+</ul>
+</details>
+
+<details id="s6">
+<summary>A long session, 200K context</summary>
+<ol>
+<li>0–30%: Budget Reduction only.</li>
+<li><code translate="no">paper_agent</code> runs: its tool calls expand inside, oversized outputs are truncated; on completion <code translate="no">expose=io</code> hides them.</li>
+<li>The share is reached: Auto-Compact replaces older turns with one summary.</li>
+<li>A long tool run inside one message: Mid-turn compacts the history before it.</li>
+<li>The provider overflows: Reactive, then the same request again.</li>
+<li>A call that cannot compact durably: request checkpoint.</li>
+</ol>
+</details>

@@ -1,0 +1,88 @@
+<title>自更新验收计划</title>
+<meta name="description" content="更新重启后运行的检查：字段、entry 和各自的限制。">
+<h1>自更新验收计划</h1>
+
+<p><code translate="no">self_update(action="prepare")</code> 接受可选的 <code translate="no">verification_plan</code>，包含在 owner 审批中并与不可变请求一起保存。省略时保留 HTTP-only 验收，不增加权限。</p>
+<pre translate="no"><code>{"schema":1,"checks":[{"id":"diagnostics","assertion_id":"acceptance-1","entry":"/api/diagnostics","timeout_seconds":10,"max_output_bytes":65536}]}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">schema</code></th><td>整数 <code translate="no">1</code></td></tr>
+<tr><th scope="row"><code translate="no">checks</code></th><td>1–32 条，每条 assertion（<code translate="no">acceptance-1</code>、<code translate="no">acceptance-2</code> 等）恰好一条</td></tr>
+<tr><th scope="row"><code translate="no">id</code></th><td>唯一，字母、数字、下划线、连字符，以字母或数字开头，最多 64 字符</td></tr>
+<tr><th scope="row"><code translate="no">timeout_seconds</code></th><td>整数 1–60</td></tr>
+<tr><th scope="row"><code translate="no">max_output_bytes</code></th><td>整数 1–262144；<code translate="no">ui:main</code> 为 1–1572864</td></tr>
+<tr><th scope="row"><code translate="no">entry</code></th><td><code translate="no">/api/commands</code>、<code translate="no">/api/diagnostics</code>、<code translate="no">/api/doctor</code>、<code translate="no">/healthz</code>、<code translate="no">/chat</code>、已安装文档站页面（如 <code translate="no">/docs/install/upgrade.html</code>）、<code translate="no">cli:version</code>、<code translate="no">cli:help</code>、<code translate="no">test:python</code>、<code translate="no">ui:main</code></td></tr>
+</tbody>
+</table>
+<p class="note">所有字段必填。任意 URL、查询参数和未知字段在创建更新前被拒绝。</p>
+
+<h2>检查如何运行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">verifier 调用</th><td><code translate="no">self_update_observe(check_id="diagnostics")</code>，不传 entry 或执行参数。执行层应用批准的限制和原总期限。签名证据必须匹配 check 和 assertion。</td></tr>
+<tr><th scope="row">模型</th><td>任何对话模型。没有原生结构化输出时，答案仍按该阶段 schema 校验；不通过则结论 inconclusive，更新回退。请求无结果结束时，该阶段立即停止。</td></tr>
+<tr><th scope="row">Job</th><td>验收、诊断和修正收到相同的计划、迭代策略和本次超时。修复后的 child 保留目标、assertion、check ID、限制、模型和权限，不能刷新期限。诊断和修正只有读取工具。</td></tr>
+</tbody>
+</table>
+
+<h2><code translate="no">cli:version</code>、<code translate="no">cli:help</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行</th><td>已安装 App 的 Python，<code translate="no">-I -B -m openprogram</code> 加 <code translate="no">--version</code> 或 <code translate="no">--help</code>，不接受模型提供的命令，也不查 PATH。</td></tr>
+<tr><th scope="row">需要</th><td>原生沙箱、兼容的 runtime manifest 和匹配的包与 App 构建 revision 标记。</td></tr>
+<tr><th scope="row">访问</th><td>私有临时目录；无网络，不写 App 或源码，不读必需 runtime 和临时路径之外的 owner HOME。</td></tr>
+<tr><th scope="row">进程</th><td>单进程：沙箱禁止创建进程，包括分离子进程、<code translate="no">fork</code> 和 <code translate="no">posix_spawn</code>。也适用于 <code translate="no">test:python</code>；不适用于源码修正测试或构建。</td></tr>
+<tr><th scope="row">证据</th><td>绑定 runtime 身份、调用和退出状态。非零退出、超时、取消、身份变化、输出超限或清理失败都不能通过。只证明启动和帮助。</td></tr>
+</tbody>
+</table>
+
+<h2><code translate="no">test:python</code></h2>
+<pre translate="no"><code data-claim="example">{"id":"source-test","assertion_id":"acceptance-1","entry":"test:python","argv":["tests/verify_feature.py","expected"],"timeout_seconds":30,"max_output_bytes":65536}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">argv</code></th><td>1–32 个字符串，每项最多 4096 字符，无 NUL。只有此 entry 需要</td></tr>
+<tr><th scope="row">第一项</th><td>相对候选根目录、已提交的普通 <code translate="no">.py</code> 文件；不能是符号链接、绝对路径、父目录跳转或解释器选项。以 ASCII 字母、数字或下划线开头，其余为字母、数字、下划线、斜杠、点、连字符，最多 511 字符</td></tr>
+<tr><th scope="row">其余项</th><td>预先批准的原样参数</td></tr>
+<tr><th scope="row">运行方式</th><td>已安装候选 Python，<code translate="no">-I -B SCRIPT ARGS</code>，在登记的 worktree 根目录执行。隔离模式不把根目录加入导入路径，测试需要导入候选代码时须自行处理</td></tr>
+<tr><th scope="row">访问</th><td>登记的候选路径即使在 HOME 下也可读且只读，其他 HOME 数据不可读。临时数据写入私有 <code translate="no">TMPDIR</code> 或 <code translate="no">HOME</code>。不安装依赖。上述 CLI 限制同样适用</td></tr>
+<tr><th scope="row">证据</th><td>源码缺失、变脏、未登记或脚本变化会阻止验收。记录源码 revision、脚本摘要和调用。<code translate="no">candidate_test</code> 结果只证明源码测试执行，不证明已安装 App 行为</td></tr>
+</tbody>
+</table>
+
+<h2><code translate="no">ui:main</code></h2>
+<pre translate="no"><code>{"id":"main-capture","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576}
+{"id":"scroll-history","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576,"interaction":{"kind":"scroll","delta_y":-400}}
+{"id":"context-view","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576,"interaction":{"kind":"view","target":"dag"}}</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">UI protocol</th><th scope="col">能力</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>截图</td><td>原会话主窗口的只读 PNG 和 accessibility tree</td></tr>
+<tr><th scope="row">2</th><td>滚动后截图</td><td><code translate="no">delta_y</code>：非零整数，−1200 到 1200 CSS 像素；目标始终是原对话；无 selector 或脚本</td></tr>
+<tr><th scope="row">3</th><td>视图</td><td><code translate="no">target</code>：只能是 <code translate="no">session</code> 或 <code translate="no">dag</code></td></tr>
+<tr><th scope="row">4</th><td>仅为回退保留可读</td><td><code translate="no">test_object</code> 计划和请求被拒绝；新包只声明上面三项</td></tr>
+</tbody>
+</table>
+<p class="note">安装前，候选包和回退包都须具备该协议及匹配的截图、后端和前端绑定。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">需要</th><td>打包的 UI 验收描述、runtime 身份和恰好一个已连接的 Desktop 主窗口。旧包不能使用此计划。</td></tr>
+<tr><th scope="row">输出</th><td>verifier 收到图片和树，不是路径。上限覆盖包含 base64 数据的整个截图 JSON。PNG 为非交错 8-bit RGB 或 RGBA，每边最多 16384，总像素最多 3200 万。</td></tr>
+<tr><th scope="row">模型</th><td>必须声明图片输入。准备阶段拒绝纯文本模型；重启恢复和已排队 Job 运行前再查；能力丢失时记录错误，不改用纯文本。</td></tr>
+<tr><th scope="row">绑定</th><td>活动 Job、候选 revision、worker、会话路由和主窗口连接。</td></tr>
+<tr><th scope="row">失败条件</th><td>过期、取消、重放或不匹配的请求，用户输入、导航、窗口变化、截图资源冲突、输出超限或清理不完整。</td></tr>
+<tr><th scope="row">不允许</th><td>任意 URL、JavaScript、目标窗口、点击、导航、数据修改或其他副作用。</td></tr>
+<tr><th scope="row">截图期间</th><td>该窗口的新网络请求、原生 IPC 和外部导航被拒绝。带标记的 HTTP 请求被后端拒绝，包括认证 bootstrap 和过期标记。其 WebSocket 只接受观察回执和取消确切的 verifier Job。</td></tr>
+<tr><th scope="row">释放</th><td>证据上传前释放，失败时也释放。不影响其他窗口和已在执行的请求。</td></tr>
+<tr><th scope="row">滚动</th><td>截图显示滚动后状态；证据记录前、后和恢复后的位置。成功前恢复位置，不持久化。失败时在目标和期限有效时恢复自己的滚动；用户中断时取消且不恢复。目标变化或恢复失败不能通过。在边界位置不变，仅此不证明任何事。</td></tr>
+<tr><th scope="row">视图</th><td>从可见的原对话开始，使用真实控件，截图，成功前恢复对话和滚动。开始时已选中 DAG、控件缺失或被替换、中断或恢复失败不能通过。<code translate="no">session</code> 不切换，不能证明切换。</td></tr>
+<tr><th scope="row">视图状态</th><td>不持久化，后台标签更新也不保存。中断时保留用户的选择。恢复失败时可能停留在请求的视图，并报告失败。</td></tr>
+<tr><th scope="row">证明范围</th><td>只支持对所捕获状态的断言；未观察到的交互仍为 inconclusive。HTTP 响应（包括 <code translate="no">/chat</code> HTML）不证明实际渲染。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="conversational-self-update.zh.html">在对话里更新</a> · <a href="self-update-rollback.zh.html">自更新回退之后</a></p>

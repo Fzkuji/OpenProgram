@@ -1,0 +1,55 @@
+<title>DAG 边字段</title>
+<meta name="description" content="DAG 节点的 caller 与 predecessor 两条边，以及各名字的使用位置。">
+<h1>DAG 边字段</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">caller</code></th><th scope="col"><code translate="no">predecessor</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">回答</th><td>谁调用了我</td><td>聊天顺序上我跟在谁后面</td></tr>
+<tr><th scope="row">边</th><td>子调用</td><td>对话链</td></tr>
+<tr><th scope="row">字段</th><td><code translate="no">Call.caller</code></td><td><code translate="no">Call.predecessor</code></td></tr>
+<tr><th scope="row">例子</th><td>调用工具的那个 LLM</td><td>第二轮 user 跟在第一轮回复后</td></tr>
+<tr><th scope="row">决定</th><td>子调用缩进、内部节点</td><td>分叉：一个 predecessor 有多个子节点</td></tr>
+</tbody>
+</table>
+
+<p class="note">两者常常不同。顶层 user 节点挂在 ROOT 下，却跟在上一轮回复后；spawn 根有 caller，没有 predecessor。两者同名时曾让辅助函数读错边。</p>
+
+<h2 id="no-on-disk-compatibility-layer">没有兼容层</h2>
+
+<p>只认这两个键名：没有别名，<code translate="no">from_dict</code> 和消息适配器不回填，<code translate="no">GNode</code> 没有闲置的父字段。后端图字典和前端是同一协议，键名改动必须两边同时落地。</p>
+
+<details>
+<summary>各名字的使用位置</summary>
+<h3>后端（openprogram/state/store/session/）</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">符号</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">nodes.py</code> <code translate="no">Call</code></th><td>两个 dataclass 字段</td></tr>
+<tr><th scope="row"><code translate="no">_msg_adapter.py</code> <code translate="no">_msg_to_node</code></th><td>消息键转字段；<code translate="no">predecessor</code> 从 metadata 弹出，不留镜像</td></tr>
+<tr><th scope="row"><code translate="no">_msg_adapter.py</code> <code translate="no">_node_to_msg</code></th><td>字段转两个显式键</td></tr>
+<tr><th scope="row"><code translate="no">session_store/shared.py</code></th><td><code translate="no">_node_conv_predecessor</code>、<code translate="no">_node_caller</code></td></tr>
+<tr><th scope="row"><code translate="no">memory_index.py</code> <code translate="no">append</code></th><td>索引 <code translate="no">children_by_predecessor</code>、<code translate="no">children_by_caller</code></td></tr>
+<tr><th scope="row"><code translate="no">graph/builder.py</code> <code translate="no">build_session_graph</code></th><td>图字典带两个键</td></tr>
+<tr><th scope="row"><code translate="no">graph/layout/_common.py</code></th><td><code translate="no">predecessor_of</code>、<code translate="no">caller_of</code></td></tr>
+<tr><th scope="row"><code translate="no">graph/layout/tier.py</code></th><td>caller，用于子调用缩进</td></tr>
+<tr><th scope="row"><code translate="no">graph/layout/lane.py</code></th><td>predecessor</td></tr>
+<tr><th scope="row"><code translate="no">graph/layout/depth.py</code>、<code translate="no">topology.py</code></th><td>两者都读；depth 先 predecessor 后 caller</td></tr>
+</tbody>
+</table>
+<h3>前端（apps/web/lib/runtime-bridge/）</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">符号</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">dag/types.ts</code> <code translate="no">GNode</code></th><td>带两个字段</td></tr>
+<tr><th scope="row"><code translate="no">dag/types.ts</code> <code translate="no">semanticParent</code>、<code translate="no">layoutParent</code></th><td><code translate="no">predecessor</code>，否则 <code translate="no">caller</code>；布局优先 <code translate="no">_overview_parent</code>。caller 回退让内部 code、LLM 行和 spawn 根连上。</td></tr>
+<tr><th scope="row"><code translate="no">dag/pipeline.ts</code> <code translate="no">render</code></th><td><code translate="no">caller</code> 标记内部节点；<code translate="no">predecessor</code> 驱动对话链</td></tr>
+<tr><th scope="row"><code translate="no">dag/render/</code> 的 <code translate="no">edges</code>、<code translate="no">nodes</code>、<code translate="no">agents</code>、<code translate="no">labels/badges</code></th><td>读 <code translate="no">predecessor</code> 画边、判分支</td></tr>
+<tr><th scope="row"><code translate="no">session/conversations.ts</code> <code translate="no">LegacyMessage</code>、<code translate="no">BranchRow</code></th><td>透传两个键</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+
+<p>前后端均已实现。<a href="../dag/overview.zh.html">会话数据模型</a>把两条边都视为权威。</p>

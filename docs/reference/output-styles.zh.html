@@ -1,0 +1,60 @@
+<title>输出风格</title>
+<meta name="description" content="切换或编写决定 OpenProgram 回复写法的文本。">
+<h1>输出风格</h1>
+<p>追加到系统提示词的一段文本。它改变语气、长度和结构，不改变工具、能力或模型。同一时间只有一种风格生效，作用于所有经过提示词组装器的调用：对话轮次、agentic function 函数体、后台 agent。</p>
+
+<h2>切换</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">方法</th></tr></thead>
+<tbody>
+<tr><th scope="row">TUI</th><td><code translate="no">/style</code> 列出并标记当前风格；<code translate="no">/style concise</code> 切换；<code translate="no">/style default</code> 清除</td></tr>
+<tr><th scope="row">Shell</th><td><code translate="no">openprogram config get agent.output_style</code><br><code translate="no">openprogram config set agent.output_style concise</code></td></tr>
+<tr><th scope="row">Web</th><td>设置，Agent 分组</td></tr>
+</tbody>
+</table>
+<p class="note">全局设置，保存在 <code translate="no">~/.openprogram/config.json</code> 的 <code translate="no">agent.output_style</code>。从下一轮生效。</p>
+
+<h2>内置风格</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">名称</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">default</code></th><td>什么都不追加</td></tr>
+<tr><th scope="row"><code translate="no">concise</code></th><td>用问题允许的最少字数；结果在前，无开场和结尾总结</td></tr>
+<tr><th scope="row"><code translate="no">explanatory</code></th><td>先答案，再讲理由、权衡，以及改动如何融入周围代码</td></tr>
+<tr><th scope="row"><code translate="no">direct</code></th><td>直接下结论；去掉不影响决策的保留说明；直接纠正错误前提</td></tr>
+<tr><th scope="row"><code translate="no">detailed</code></th><td>覆盖边界情况、失败模式和假设；较长回答用标题或列表</td></tr>
+</tbody>
+</table>
+
+<h2>自定义</h2>
+<p>一个 Markdown 文件。文件名是风格名，正文是追加的文本。</p>
+<pre translate="no"><code>mkdir -p ~/.openprogram/output-styles
+cat &gt; ~/.openprogram/output-styles/lab-notes.md &lt;&lt;'END'
+## Output style: lab notes
+
+Report work as a lab notebook entry. State what was tried, what was observed,
+and what it implies. Record negative results as plainly as positive ones.
+END
+
+openprogram config set agent.output_style lab-notes</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">优先级</th><th scope="col">来源</th><th scope="col">路径</th></tr></thead>
+<tbody>
+<tr><th scope="row">1，最低</th><td>内置</td><td>上表</td></tr>
+<tr><th scope="row">2</th><td>用户</td><td><code translate="no">~/.openprogram/output-styles/&lt;name&gt;.md</code></td></tr>
+<tr><th scope="row">3，优先</th><td>项目</td><td><code translate="no">&lt;cwd&gt;/output-styles/&lt;name&gt;.md</code></td></tr>
+</tbody>
+</table>
+<p class="note">YAML frontmatter 会被去掉，所以 <code translate="no">description:</code> 不会到达模型。正文为空的文件被忽略。</p>
+
+<details>
+<summary>文本落在哪里</summary>
+<ul>
+<li>注册的上下文组件（<code translate="no">output_style</code>，L0 层），经 <code translate="no">openprogram/runtime/context/components.py</code> 的组装器进入，而不是贴在用户消息上。</li>
+<li>位于身份和工具使用指引之后、agent 内联系统提示词之前，所以冲突时 agent 的指令优先。</li>
+<li><code translate="no">default</code> 为空，空组件被丢弃：提示词与没有该组件时逐字节相同。</li>
+</ul>
+</details>
+
+<p class="next"><a href="config.zh.html">配置</a> · <a href="design/context/composition.zh.html">上下文组合</a></p>
+

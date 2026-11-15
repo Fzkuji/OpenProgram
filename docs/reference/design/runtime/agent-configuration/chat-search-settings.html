@@ -1,0 +1,46 @@
+<title>Chat settings and web search</title>
+<meta name="description" content="Who owns branch-local chat controls, the search intent on a message, and bounded search aggregation.">
+<meta name="covers" content="openprogram/programs/tools/web/web_search/">
+<h1>Chat settings and web search</h1>
+<p>Agent authority, approval rules and network policy stay unchanged.</p>
+
+<h2 id="contract">State and request ownership</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">Composer scope</th><td>Selected branch settings and callbacks</td></tr>
+<tr><th scope="row">Persisted draft</th><td>Search intent</td></tr>
+<tr><th scope="row">Accepted message</th><td><code translate="no">SessionRunConfig</code> and permissions</td></tr>
+<tr><th scope="row">Execution</th><td>Available tools and provider results</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Boundary</th><th scope="col">Behaviour</th><th scope="col">Acceptance</th></tr></thead>
+<tbody>
+<tr><th scope="row">Branch controls</th><td>Search and thinking changes persist on the selected branch before the next send. A new branch inherits once.</td><td>Switch A, B, A, including within one conversation; reload restores each branch independently</td></tr>
+<tr><th scope="row">Sandbox</th><td>Reads and writes correlate by request ID. Superseded replies are ignored, listeners abort on scope change, failed writes report without optimistic drift.</td><td>Two opposite writes, stale reads, disconnect and provisional session reads cannot overwrite the selection</td></tr>
+<tr><th scope="row">Search intent</th><td>Off removes <code translate="no">web_search</code>. On adds it within Agent policy; mode <code translate="no">none</code> wins. A message that omits it, as the CLI and TUI do, keeps the branch's stored intent; with none stored it follows the Agent.</td><td>Resolve tools for on, off, omitted, and Agent <code translate="no">none</code>; an omitted field on a later turn keeps a stored on</td></tr>
+<tr><th scope="row">Provider configuration</th><td>A default shows only after a confirmed save. Jina needs a key. An unavailable saved default falls to another available provider. Registration uses stable names and availability is checked per call, so a newly configured provider needs no restart.</td><td>HTTP failure keeps the old default; no-key and hot-key tests</td></tr>
+<tr><th scope="row">Aggregation</th><td>Race returns the first non-empty success. RRF keeps timely partial results. All failures, or deadlines with no success, are errors. Running sync requests finish under their transport deadlines; queued work is cancelled.</td><td>Event-controlled providers verify early return, partial timeout, empty success, total failure, cleanup</td></tr>
+<tr><th scope="row">Connection test</th><td>Synchronous provider work runs off the server event loop</td><td>An async response progresses while the probe is blocked</td></tr>
+<tr><th scope="row">Provider schema</th><td>Explicit search ships its schema in the provider request, including search-only chats. Promotion copies the selected tool and keeps the shared deferred registry and Agent exclusions.</td><td>Cold-session and frozen-turn regression checks</td></tr>
+</tbody>
+</table>
+<p class="note">The composer has no Tools switch or per-chat tool profile: <a href="tool-toggle-management.html">Tool toggles</a>.</p>
+
+<details id="evidence">
+<summary>Why these mechanisms</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Reference</th><th scope="col">Consequence</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://react.dev/reference/react/useCallback">React callback dependencies</a></th><td>Reactive setters are dependencies. Reuse the session stores; never remount the composer to hide stale callbacks.</td></tr>
+<tr><th scope="row"><a href="https://docs.python.org/3/library/concurrent.futures.html">Python executor lifecycle</a></th><td>Context-manager shutdown waits. Non-waiting shutdown allows early return but cannot cancel running sync requests, so transport deadlines stay and no async provider API is added.</td></tr>
+<tr><th scope="row"><a href="https://jina.ai/reader/">Jina search</a></th><td>Needs authenticated access, so availability follows credentials</td></tr>
+</tbody>
+</table>
+<p class="note">Regression checks use the production hooks, socket request helper, tool executor and resolver.</p>
+</details>
+
+<h2 id="status"><span id="implementation-status"></span>Implementation status</h2>
+<p>Search execution and branch-scoped settings persistence are implemented. Regression tests cover switching, restoration and stale writes.</p>
+<p class="next"><a href="tool-toggle-management.html">Tool toggles and toolset management</a></p>

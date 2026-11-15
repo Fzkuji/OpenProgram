@@ -1,0 +1,51 @@
+<title>App icon specification</title>
+<meta name="description" content="The OpenProgram mark: geometry, colours, asset rules, output targets and checks.">
+<h1>App icon specification</h1>
+
+<figure>
+<img src="../../../../images/openprogram-app-icon.svg" alt="OpenProgram App icon: an indigo tile holding a lavender wave-outlined cell with three overlapping flat discs" width="160" height="160">
+</figure>
+<p>One mark for the macOS App, Windows installer, WebUI tab, PWA and docs site. macOS ships a flat <code translate="no">icon.icns</code>; <code translate="no">AppIcon.icon</code> holds the same artwork as Icon Composer layers.</p>
+
+<h2>Geometry and colour</h2>
+<table class="stack">
+<thead><tr><th scope="col">Element</th><th scope="col">Position (dx, dy)</th><th scope="col">Radius</th><th scope="col">Colour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Indigo disc, back</th><td>−0.084, −0.070</td><td>0.159</td><td><code translate="no">#4F46E5</code></td></tr>
+<tr><th scope="row">Violet disc</th><td>+0.094, +0.057</td><td>0.124</td><td><code translate="no">#8B5CF6</code>, soft shadow</td></tr>
+<tr><th scope="row">Sky disc, front</th><td>−0.038, +0.132</td><td>0.081</td><td><code translate="no">#38BDF8</code>, soft shadow</td></tr>
+<tr><th scope="row">Cell</th><td>centred</td><td>0.364 ± wave</td><td>radial <code translate="no">#F4F2FF</code> → <code translate="no">#E6E2FA</code></td></tr>
+<tr><th scope="row">Tile</th><td>full</td><td>full</td><td>linear <code translate="no">#4B4FD6</code> → <code translate="no">#3A3AA8</code> → <code translate="no">#23214F</code></td></tr>
+</tbody>
+</table>
+<p class="note">Fractions of the tile side from its centre. Cell outline: <code translate="no">r(θ) = R · (1 + Σ aₖ cos(kθ + φₖ))</code> rotated −15°, <code translate="no">R = 0.364</code>. Harmonics (k, a, φ): (9, 0.12, 1.3), (7, 0.05, 0.2), (12, 0.035, 2.4), (2, 0.02, 1.8). The 9th gives about nine uneven rounded rays; no cusps. Reaches at most 0.446.</p>
+
+<h2>Asset rules</h2>
+<dl class="commands">
+<dt>Keep</dt><dd>Three flat discs; the smooth wave outline; the indigo tile gradient; the shadow separating front discs</dd>
+<dt>Avoid</dt><dd class="struck">Sphere lighting, glass translucency, a ring around the cell, sharp points, text or rasters in the mark</dd>
+</dl>
+<dl class="pairs">
+<dt>Icon Composer layers</dt><dd>Transparent 1024 × 1024, one element per layer, no squircle, frame, filter or shadow in the SVG. Shadows come from group settings.</dd>
+<dt>Flat renders</dt><dd>ICNS, favicon and PWA come from the flat SVG sources, never screenshots of a packaged App</dd>
+</dl>
+
+<h2>Targets</h2>
+<table class="stack">
+<thead><tr><th scope="col">Target</th><th scope="col">Source</th><th scope="col">Output</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS App</th><td><code translate="no">docs/images/openprogram-app-icon.svg</code>: Big Sur grid, 824px tile at offset 100 on 1024, continuous corner (radius 185.4px, 60% smoothing), soft tile shadow</td><td><code translate="no">apps/desktop/build/icon.icns</code> (16–1024px), packaging input in <code translate="no">apps/desktop/package.json</code></td></tr>
+<tr><th scope="row">Liquid Glass</th><td><code translate="no">apps/desktop/build/AppIcon.icon</code></td><td>Groups front to back: sky, violet, indigo, cell. Specular, translucency and glass off; neutral shadows (0.5 on front discs, 0.3 on the rest). <code translate="no">ictool</code> exports Default, Dark, ClearLight, TintedDark.</td></tr>
+<tr><th scope="row">WebUI tab, docs site</th><td><code translate="no">docs/images/openprogram-tab-icon.source.svg</code>, 64px tile filling the canvas</td><td>Copied to <code translate="no">apps/web/app/icon.svg</code>, <code translate="no">scripts/docs_site/assets/mark.svg</code></td></tr>
+<tr><th scope="row">Favicon, Windows installer</th><td>The 64px tab icon</td><td><code translate="no">apps/web/app/favicon.ico</code>: 16, 32, 48, 64, 128, 256px</td></tr>
+<tr><th scope="row">PWA</th><td>The 64px tab icon; a full-bleed variant for maskable</td><td><code translate="no">apps/web/public/icons/icon-192.png</code>, <code translate="no">icon-512.png</code>, <code translate="no">icon-512-maskable.png</code> (cell inside the 80% safe circle)</td></tr>
+<tr><th scope="row">README, website, social card</th><td>The mark at 126px beside the outlined Instrument Sans wordmark and Geist Mono tagline</td><td><code translate="no">docs/images/logo-lockup-dark.svg</code>, <code translate="no">logo-lockup-light.svg</code>, PNG renders, GIFs with discs popping in back to front, <code translate="no">logo.svg</code>, <code translate="no">openprogram-social-card.svg</code>/<code translate="no">.png</code>. <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/images/README.md">Image sources guide</a>.</td></tr>
+</tbody>
+</table>
+
+<h2>Checks</h2>
+<dl class="commands">
+<dt><code translate="no">npm run icon:check</code></dt><dd><code translate="no">apps/desktop/scripts/check-icon.sh</code>: four layers, three flat discs in the approved colours, cell fill, gradient tile, group order, Specular, translucency and glass off. Rejects squircles, frames, filters, shadows, text and rasters in the layers.</dd>
+<dt><code translate="no">_complete_icon_probe</code></dt><dd><code translate="no">openprogram/operations/self_update/control/supervisor.py</code>: renders each layer with <code translate="no">sips</code>, requires a 1024 × 1024 transparent canvas</dd>
+</dl>
+<p class="note">Follows Apple's <a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">App icons HIG</a>, <a href="https://developer.apple.com/icon-composer/">Icon Composer</a> and <a href="https://www.electron.build/docs/features/icons-and-images/">Electron Builder icons</a>.</p>

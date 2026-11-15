@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 import pytest
-from openprogram.worker import lifecycle
+from openprogram.operations.worker import lifecycle
 
 
 def test_worker_uses_declared_named_runtime(tmp_path, monkeypatch):

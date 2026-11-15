@@ -1,0 +1,82 @@
+<title>斜杠命令与上下文压缩</title>
+<meta name="description" content="输入框如何派发斜杠命令，以及 /compact 和自动压缩如何工作。">
+<h1>斜杠命令与上下文压缩</h1>
+
+<h2>斜杠命令</h2>
+<p>输入以 <code translate="no">/</code> 开头且没有空格时，菜单向上展开；出现空格后 380ms 收起。Enter 执行已注册的首词，否则发送聊天。正在关闭的菜单不拦截 Enter。技能、插件和用户命令来自 <code translate="no">/api/commands</code>；内置命令派发优先。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">命令</th><th scope="col">选择或 Enter</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/compact [keep_recent_tokens]</code></th><td>立即压缩</td></tr>
+<tr><th scope="row"><code translate="no">/rewind</code></th><td>Web：打开选择器选一条较早的消息，不带参数。默认 TUI 没有这个命令。仅 Rich 回退界面：列出回退点；<code translate="no">/rewind N</code> 预览；<code translate="no">/rewind N confirm &lt;plan_hash&gt; &lt;idempotency_key&gt;</code>（预览时打印）回退</td></tr>
+<tr><th scope="row"><code translate="no">/branch [name]</code></th><td>立即执行</td></tr>
+<tr><th scope="row"><code translate="no">/context</code></th><td>打开圆环面板</td></tr>
+<tr><th scope="row"><code translate="no">/clear</code>、<code translate="no">/new</code></th><td>新对话</td></tr>
+<tr><th scope="row"><code translate="no">/task</code>、<code translate="no">/skill</code>、<code translate="no">/merge</code></th><td>填入前缀，等待必填参数</td></tr>
+<tr><th scope="row"><code translate="no">/help</code></th><td>把输入设为 <code translate="no">/</code>，重新显示菜单；没有单独页面</td></tr>
+<tr><th scope="row"><code translate="no">/sandbox</code></th><td>开关系统沙箱</td></tr>
+<tr><th scope="row"><code translate="no">/memory</code></th><td>打开记忆页</td></tr>
+<tr><th scope="row"><code translate="no">/doctor</code></th><td>运行健康检查，在本地显示报告，不发给模型</td></tr>
+</tbody>
+</table>
+<p class="note">可选参数（只有 <code translate="no">[…]</code>）立即执行。没有会话时，会话命令保留输入并提示“先开始一段对话再执行此命令”。</p>
+<p>由服务端执行的命令（<code translate="no">/api/commands</code> 里 <code translate="no">type: "local"</code> 的：<code translate="no">/goal</code>、<code translate="no">/rename</code> …）作为输入框自己的消息发出，走 <code translate="no">sendChatMessage</code>：</p>
+<ul>
+<li>从“新对话”草稿发出时带上草稿的 <code translate="no">local_*</code> id、权限模式、Agent、项目和目录：在草稿里执行，标签页就成为这段对话。</li>
+<li>它自己不画气泡。接着开始一轮的命令（<code translate="no">/goal &lt;目标&gt;</code>）在 <code translate="no">chat_ack</code> 时得到它的消息，回复开始之前就出现；只回答的命令（<code translate="no">/goal status</code>、<code translate="no">/goal pause</code>）只留下回复行。</li>
+<li>运行中或有请求等待时立即发出，跟当前这轮并行，不出气泡。</li>
+</ul>
+<details>
+<summary>已知小问题</summary>
+<ul>
+<li>注册表里也叫 compact 的项目会在菜单里重复；派发仍选内置。</li>
+<li>“跳到最新”可能与菜单位置重叠。</li>
+</ul>
+</details>
+
+<h2>压缩后发送什么</h2>
+<p>只有一份滚动摘要。再次压缩把旧摘要和更多轮次合成新摘要。</p>
+<pre translate="no" tabindex="0">[System prompt] [Current summary] [Recent uncompacted turns] [New user message]</pre>
+
+<h2>触发</h2>
+<table class="stack">
+<thead><tr><th scope="col">触发</th><th scope="col">条件</th><th scope="col">路径</th></tr></thead>
+<tbody>
+<tr><th scope="row">手动 <code translate="no">/compact</code></th><td>从输入框执行，可选保留最近 N token。是选中分支的前台操作（<code translate="no">op_kind: compact</code>）：每个客户端都在运行指示处显示“正在压缩上下文…”和停止按钮，刷新后也一样；停止发带 <code translate="no">op_id</code> 的 <code translate="no">operation.cancel</code>。该分支忙时被拒绝，并写明正在运行的是什么；其他分支照常运行。结束帧在槽释放后才发出，释放时发 <code translate="no">running_task_clear</code>。终端界面显示进度和结果。</td><td><code translate="no">action: compact</code>、<code translate="no">handle_compact</code></td></tr>
+<tr><th scope="row">自动，轮次开始前</th><td>预算达到 <code translate="no">context.auto_compact_percent</code>（默认 80）。压缩这一轮所在的链，任何分支都一样；head 不动。后台轮次跳过。</td><td><code translate="no">loop_runner.py</code></td></tr>
+<tr><th scope="row">自动，轮次之中</th><td>一轮工具结果越过同一阈值：每轮一次（<code translate="no">mid_turn</code>），然后继续这一轮。分支换到窗口更小的模型时，下一轮开始前由窗口更大的模型压缩（<code translate="no">model_downshift</code>）</td><td><code translate="no">loop_runner.py</code></td></tr>
+<tr><th scope="row">溢出恢复</th><td>模型返回 413 或 <code translate="no">prompt_too_long</code>：在 agent 循环里压缩，再发同一个请求；每个请求一次、每轮两次，这一轮不会从头重跑</td><td><code translate="no">reactive.py</code></td></tr>
+</tbody>
+</table>
+<p class="note">它们都用 <code translate="no">compaction_started</code>、<code translate="no">compaction_finished</code>、<code translate="no">compaction_failed</code>。开始显示在运行指示处。<code translate="no">/compact</code> 结束时加一条系统消息，被停止的显示“已停止压缩，上下文保持不变”。回合自己的压缩失败时不显示：历史没有变，之后的请求会再试。</p>
+
+<h2>步骤</h2>
+<ol>
+<li><strong>读取</strong> SessionDB 渲染后的历史：摘要和剩余轮次。已被覆盖的原文不重读。</li>
+<li><strong>阈值。</strong>少于四条消息：停止，手动路径会说明。已经是摘要加尾部且没有有效切点：无可压缩，不调用模型。</li>
+<li><strong>摘要</strong>，单独一次模型调用。默认尾部：窗口的 10%，限制在 8k–40k token，至少四条非空消息。<code translate="no">/compact 2000</code> 可覆盖。</li>
+<li><strong>持久化</strong> <code translate="no">summary_*</code> 节点（<code translate="no">role=llm</code>、<code translate="no">name=context/summary</code>，以注明自己是摘要的用户消息发送）；<code translate="no">covers_ids</code> 标记范围。旧轮次保留，HEAD 不动。</li>
+<li><strong>图。</strong>DAG 显示胶囊。一条链只有一个生效的摘要，即覆盖最远的那个；更早的被取代，不再参与渲染（<a href="../../context/compaction.zh.html">压缩</a>）。</li>
+</ol>
+
+<h2>圆环</h2>
+<p>右下角：占用除以窗口大小，基于压缩后的视图。低于 50% 绿色，50–80% 黄色，80% 及以上红色。测量、运行状态、无可压缩和“立即压缩”见<a href="../../context/occupancy-status.zh.html">占用与压缩</a>。</p>
+
+<details>
+<summary>关键文件</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">职责</th><th scope="col">路径</th></tr></thead>
+<tbody>
+<tr><th scope="row">注册表、菜单</th><td><code translate="no">apps/web/components/chat/composer/slash/slash-commands.ts</code>、<code translate="no">use-slash-menu.ts</code></td></tr>
+<tr><th scope="row">选择</th><td><code translate="no">apps/web/components/chat/composer/index.tsx</code>（<code translate="no">selectSlashCommand</code>）</td></tr>
+<tr><th scope="row">键盘</th><td><code translate="no">composer/input/use-composer-keydown.ts</code></td></tr>
+<tr><th scope="row">Enter</th><td><code translate="no">composer/submit/use-chat-submit.ts</code></td></tr>
+<tr><th scope="row">WS 手动压缩</th><td><code translate="no">openprogram/interfaces/server/ws_actions/chat/commands.py</code></td></tr>
+<tr><th scope="row">管线</th><td><code translate="no">openprogram/runtime/context/engine.py</code>、<code translate="no">compaction/summarize.py</code></td></tr>
+<tr><th scope="row">自动</th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/loop_runner.py</code></td></tr>
+<tr><th scope="row">溢出</th><td><code translate="no">openprogram/runtime/context/compaction/reactive.py</code></td></tr>
+<tr><th scope="row">前端事件</th><td><code translate="no">apps/web/lib/runtime-bridge/session/chat-handlers.ts</code></td></tr>
+<tr><th scope="row">圆环、面板</th><td><code translate="no">apps/web/components/chat/badges/context-badge.tsx</code>、<code translate="no">context-breakdown-panel.tsx</code></td></tr>
+</tbody>
+</table>
+</details>

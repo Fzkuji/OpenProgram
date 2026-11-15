@@ -15,27 +15,6 @@ build/
 # Local scratch / agent artifacts
 tmp/
 
-# Runtime/generated artifacts — generated functions live in third_party/
-# (the framework-provided buildin/meta functions are always tracked)
-openprogram/programs/tools/third_party/*.py
-!openprogram/programs/tools/third_party/__init__.py
-!openprogram/programs/tools/third_party/llm_call_example.py
-!openprogram/programs/tools/third_party/sentiment.py
-!openprogram/programs/tools/third_party/sentiment_v2.py
-!openprogram/programs/tools/third_party/word_count.py
-!openprogram/programs/tools/third_party/test.py
-!openprogram/programs/tools/third_party/test_framework.py
-!openprogram/programs/tools/third_party/test_resume.py
-
-# Scratch skill
-skills/init-research/
-
-# Runtime test logs (historical — current default is ~/.agentic/logs/,
-# outside the workspace; keep entries here in case someone sets
-# AGENTIC_LOGS_DIR back to these paths)
-openprogram/agentic_programming/logs/
-openprogram/logs/
-
 # Full upstream clones kept locally for reference while designing new
 # tools/providers. Not committed — too large and rot against upstream.
 references/openclaw/
@@ -46,15 +25,6 @@ references/claude-code-leaked/
 references/claude-code/
 references/pi-mono/
 references/opencode/
-
-# Installed single-purpose functions and complete applications. Ignore
-# untracked package directories while preserving flat bundled modules;
-# tracked bundled directories remain tracked. New bundled directories
-# need one explicit `git add -f`.
-openprogram/programs/packages/*
-!openprogram/programs/packages/__init__.py
-openprogram/programs/applications/*
-!openprogram/programs/applications/__init__.py
 
 # Local OpenProgram runtime state
 .openprogram/
@@ -77,25 +47,23 @@ apps/web/.turn-files-test-*/
 apps/web/scripts/run-secret-replacement-*.mjs
 apps/cli/.auth_probe_*.mjs
 # Release staging copies web/out here before building the wheel.
-apps/server/openprogram_server/_webui/_frontend/
+openprogram/interfaces/server/_frontend/
 # Keep ignoring staging produced by releases before the Server migration.
 openprogram/webui/_frontend/
 
 # macOS Finder duplicates ("foo 2.py", "foo 3.json") — never source
 * [0-9].*
-apps/cli/vendor/ink/package-lock.json
 
 # Per-user webui runtime state (favourites, folders, icons) — not code
 openprogram/webui/functions_meta.json
 openprogram/webui/programs_meta.json
+
 .agent_cron_test/
 .agent_tmp/
 .cron-test.log
 .cron-test/
-.claude/worktrees/
-
-# fetched per-provider model lists (runtime, user-specific — not source)
-openprogram/providers/_catalog/fetched/
+.claude/*
+!.claude/settings.json
 
 # local agent working notes
 .codegraph/
@@ -108,7 +76,9 @@ merge-x/
 # Generated reference pages (rebuilt by scripts/docs_site/generate_reference.py)
 docs/reference/cli/
 docs/reference/config-keys.md
+docs/reference/config-keys.zh.md
 docs/reference/provider-registry.md
+docs/reference/provider-registry.zh.md
 
 # Electron desktop shell
 apps/desktop/dist/
@@ -118,14 +88,15 @@ apps/desktop/build/.runtime-prepare.lock
 apps/desktop/build/.runtime-stage-*/
 
 references/codex-cli/
-openprogram/programs/workflow/llm_knowledge_research/
-openprogram/programs/workflow/group_weekly_report/
 
 # Pinned document decoder assets generated from package-lock before Web builds.
 apps/web/public/document-assets/
 
-# Independent report Workflow repositories
-openprogram/programs/workflow/weekly_report/*/
-
 # Local verification evidence; authoritative design lives under docs/reference/design.
 /reports/durable-tool-results.md
+/reports/content-security/
+apps/desktop/build/seed/
+apps/desktop/build/thin-shell.json
+
+# Written at build time by the evaluation launcher (scripts/benchmarks/frontier_eval.py)
+openprogram/_build_info.py

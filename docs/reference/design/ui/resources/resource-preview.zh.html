@@ -1,0 +1,218 @@
+<title>资源与操作预览</title>
+<meta name="description" content="右侧栏资源列表、聊天预览以及人使用 Agent 操作中页面的行为。">
+<h1>资源与操作预览</h1>
+
+<p>资源按类型列出会话用到的全部目标。一个聊天预览跟随当前查看分支最近操作的目标。Agent 打开的页面留在后台，不增加顶部标签。</p>
+<p class="note">相关：<a href="session-resources.zh.html">会话资源</a>、<a href="resource-panel-preview-plan.zh.html">资源面板与预览交互</a>、<a href="../browser/browser-control-surfaces.zh.html">浏览器控制面</a>、<a href="../browser/agent-control-overlay.zh.html">Agent 控制覆盖层</a>。</p>
+
+<h2 id="experience">资源上的操作</h2>
+<table class="stack">
+<thead><tr><th scope="col">操作</th><th scope="col">预览</th><th scope="col">页面与标签</th></tr></thead>
+<tbody>
+<tr><th scope="row">点击行</th><td>在聊天中显示目标，自动或固定预览不变。</td><td>当前标签不变</td></tr>
+<tr><th scope="row">在会话中预览（图标）</th><td>与点击行相同；恢复已隐藏的预览。中央是网页时，激活所属会话，不改变查看分支。</td><td>同一页面，不加顶部标签</td></tr>
+<tr><th scope="row">打开页面</th><td>隐藏预览及其预留空间。回到会话后恢复，除非用户隐藏过。</td><td>同一页面成为普通顶部标签；重复打开沿用</td></tr>
+<tr><th scope="row">放大、拖动、缩放</th><td>同一目标，只换呈现</td><td>不复制、不重载，不把原生应用提到前台</td></tr>
+<tr><th scope="row">关闭预览（隐藏）</th><td>保持隐藏，之后的事件不会重新打开。没有“显示预览”控件。</td><td>页面、后台工作和资源行都保留；停止捕获</td></tr>
+<tr><th scope="row">关闭网页</th><td>显示不可用状态</td><td>关闭真实页面；先列出受影响的引用</td></tr>
+</tbody>
+</table>
+<p class="note">资源没有置顶控件和搜索框。明确置顶或用户打开的顶部页面仍是普通视图，迁移不会关闭它们。</p>
+
+<h2>跟随</h2>
+<dl class="pairs">
+<dt>范围</dt><dd>每个 App 窗口最多一个预览。偏好属于当前查看的会话和分支，选择资源不会改变分支。</dd>
+<dt>触发</dt><dd>只有该分支中主机接纳的操作事件，包括 observe。打开资源、状态轮询或收到截图都不会切换。</dd>
+<dt>自动预览</dt><dd>“更多”里的复选框<em>自动显示 Agent 正在操作的网页</em>开启它，并回到最新接纳的操作。点选的目标保留到下一个被操作的页面替换它。</dd>
+<dt>固定预览</dt><dd>取消勾选后当前页面保留。Agent 继续工作，不能替换它。重载后不保留。</dd>
+<dt>子 Agent</dt><dd>父分支按主机派发顺序跟随自己和子执行，并标明活动 Agent。子窗口只跟随自己的分支。</dd>
+<dt>切换分支</dt><dd>恢复该分支的偏好；新偏好跟随其最新目标、目标的不可用状态或空状态。其他分支可继续运行，但不能替换预览。</dd>
+<dt>目标已关闭</dt><dd>清除“操作中”，显示不可用或最后一帧，直到出现更新的接纳操作或新选择。绝不退回旧资源。</dd>
+<dt>其他分支的资源</dt><dd>查看既不检出该分支，也不授予写权限。</dd>
+</dl>
+<details>
+<summary>原生窗口和终端</summary>
+<ul>
+<li>函数结果给出 <code translate="no">target</code>（<code translate="no">window_id</code>、<code translate="no">pid</code>、<code translate="no">app_name</code>）时，预览移到该应用。</li>
+<li>Worker 按会话只在内存中保留最新窗口和截图，广播 <code translate="no">native.window</code>，由 <code translate="no">/api/session/{id}/native-window/frame</code> 提供画面。</li>
+<li>agentic 子进程中的 GUI 步骤把窗口转交 Worker，Worker 归属到拥有该子进程的会话。</li>
+<li>预览显示 Agent 最后看到的内容，不是实时画面。</li>
+<li>终端开始运行或收到输入时移动预览，预览只读镜像其屏幕。</li>
+<li>置顶只保留页面。</li>
+</ul>
+</details>
+
+<h2>目标类型</h2>
+<table class="stack">
+<thead><tr><th scope="col">目标</th><th scope="col">后台与预览</th><th scope="col">人的入口</th><th scope="col">限制</th></tr></thead>
+<tbody>
+<tr><th scope="row">浏览器页面</th><td>确切的 Page/CDP 目标，保留文档、登录和导航状态；预览不激活它</td><td>实时标签：可读、可滚动、可交互</td><td>页面关闭、失去归属和过期帧都会停止写入。重新打开 URL 是新资源。</td></tr>
+<tr><th scope="row">原生应用窗口</th><td>确切的进程和窗口；可用时支持捕获和已验证的后台输入。显示后台控制、仅预览或需要前台。</td><td>原应用，即使不支持后台自动化</td><td>不承诺能后台控制所有应用。最小化、锁屏、缺权限和身份不明各有说明。提到前台需明确选择。</td></tr>
+<tr><th scope="row">主机桌面</th><td>一块显示器及其坐标；没有独立于用户的输入环境</td><td>真实键盘和鼠标</td><td>全局输入会影响用户工作。绝不标为后台控制。布局变化使坐标失效。</td></tr>
+<tr><th scope="row">虚拟机显示</th><td>无需前台主机控制台的客机显示和输入；虚拟机、客机会话和显示服务必须运行</td><td>OpenProgram 客机控制台或已授权的 VNC/RDP 控制台</td><td>缺会话、客机锁定或显示断开都有明确状态。重连绝不重放不确定的输入。Docker 是可选项。</td></tr>
+<tr><th scope="row">外部浏览器、只读流</th><td>需要已验证的标签绑定；URL 相同不代表同一标签</td><td>在原浏览器打开、仅查看、需要重连或已关闭</td><td>截图绝不是输入面。重建目标是单独的操作。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>页面的弹窗</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent 页面的弹窗</th><td>在后台加载，登记到打开者的会话、分支和执行（<code translate="no">webtab_popup</code>）</td></tr>
+<tr><th scope="row">告知 Agent</th><td>列在打开它的那次动作的结果里；Agent 按标签页 id 操作它</td></tr>
+<tr><th scope="row">跟随</th><td>只有操作指向弹窗时才切换</td></tr>
+<tr><th scope="row">用户页面的弹窗</th><td>在前台打开，不被接管</td></tr>
+<tr><th scope="row">桌面端</th><td>在 Chromium 创建的 WebContents 上构建弹窗页面，因此 <code translate="no">window.opener</code> 继续可用</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="human-takeover">实时页面与人的使用</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">互斥呈现</th><td>页面显示为实时标签或聊天预览，二者不并存：一个原生 <code translate="no">WebContentsView</code> 无法占据两个矩形。不在页面旁或页面上放截图，不变暗，不加阻挡层。</td></tr>
+<tr><th scope="row">预览图</th><td>只读：绝不转发点击、按键或滚动。不为放大而裁剪或缩放。</td></tr>
+<tr><th scope="row">人的使用</th><td>在真实页面里点击、输入、滚动和导航直接作用于页面，不暂停 Agent。只有任务的暂停和停止会。</td></tr>
+<tr><th scope="row">旧观察</th><td>人改动过的页面（包括悬停引起的变化）使 Agent 之前的观察失效；它在操作前重新观察。</td></tr>
+<tr><th scope="row">不作承诺</th><td>零重叠：已派发的操作可能无法撤回，迟到结果会被记录并重新观察。不撤销人的改动。</td></tr>
+</tbody>
+</table>
+
+<table class="grid">
+<thead><tr><th scope="col">内部状态</th><th scope="col">工具栏和预览文字</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">active</code>、<code translate="no">yielding</code>、<code translate="no">stop_unconfirmed</code></th><td class="run">会话运行时为“活动中”，否则“可直接操作”</td></tr>
+<tr><th scope="row"><code translate="no">paused</code>、<code translate="no">idle</code>、<code translate="no">closed</code></th><td class="run">可直接操作</td></tr>
+<tr><th scope="row"><code translate="no">waiting</code></th><td class="ask">需要你确认，并提供“查看请求”</td></tr>
+<tr><th scope="row"><code translate="no">unknown</code></th><td class="review">无法确认状态；断连时为“连接已断开”</td></tr>
+</tbody>
+</table>
+<p class="note">停止请求 5 秒未确认即变为 <code translate="no">stop_unconfirmed</code>，新的 Agent 派发保持关闭。这个超时不能证明已停止。</p>
+
+<details>
+<summary>预览外框</summary>
+<ul>
+<li>一行且绝不换行，覆盖 240px 最小宽度、300×198.75 默认尺寸（300×168.75 图像加标题行）和 720px 放大宽度：省略的标题、状态、打开页面、更多、关闭预览。</li>
+<li>显示操作和操作历史在“更多”里。</li>
+<li>失败文字通过状态指示、标题提示和 <code translate="no">aria-live</code> 获取。</li>
+<li>可从四边和四角缩放。</li>
+<li>窄屏产品布局用资源抽屉选择目标，聊天和预览仍可访问。</li>
+</ul>
+</details>
+<details>
+<summary>捕获与几何</summary>
+<ul>
+<li>从未显示过的页面以 1920×1080 CSS 像素视口和常规缩放创建。预览边界和布局缩放跟随预览尺寸。回到后台的页面保留最后的原生边界。</li>
+<li>桌面预览就是原生页面，拖动时也实时渲染。普通浏览器预览用单独的沙箱 iframe，受浏览器嵌入限制。</li>
+<li>只有可见预览订阅画面。每帧带资源 ID、连接代数、序号和捕获时间；旧绑定的帧被拒绝。</li>
+<li>延迟或失败的捕获标为“最后一帧”并显示时长；没有图像时显示“无画面”。</li>
+<li>拖动在按下时缓存容器边界，按动画帧用 transform 移动，不读布局也不写状态。抬起、取消或失去捕获时写入一次夹取后的位置。卸载、失去实时或切换资源时放弃拖动。</li>
+<li>拖动期间暂停捕获。暂停前开始的捕获被丢弃，同一时间只有一个捕获在进行。</li>
+<li>快速的目标变化合并约 200ms，只渲染最新帧。</li>
+</ul>
+</details>
+
+<h2>操作提示</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">提示</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置</th><td>只在 OpenProgram 自己的表面：托管网页框架和工具栏、客机控制台、预览层。绝不装饰外部应用、主机桌面和外部 VNC/RDP 客户端。</td></tr>
+<tr><th scope="row">边缘</th><td>在可见表面上：细微的 1px 外发光，活动中为蓝色，其他状态无发光。不变暗，不改布局和点击区域，不闪烁。</td></tr>
+<tr><th scope="row">标记</th><td>圆环表示点击，路径表示拖动，箭头表示滚动；输入只标字段不露秘密；快捷键用文字。绝不移动用户光标。减少动态时用短暂静态标记。</td></tr>
+<tr><th scope="row">显示操作</th><td>默认开启，只显示最近一次操作。隐藏标记，不影响边缘、执行和历史。</td></tr>
+<tr><th scope="row">操作历史</th><td>点击、输入、滚动、拖动、导航和验证，按顺序，来自可信的主机回执：已尝试、已派发、已确认、失败、未知。</td></tr>
+<tr><th scope="row">坐标</th><td>绑定资源 ID、代数、帧和视口映射，考虑内容边界、DPR、缩放、滚动和 iframe 偏移。几何过期时移除实时标记，历史保留旧帧标签。没有精确点时用元素边界或文字。</td></tr>
+<tr><th scope="row">图层</th><td>主机所有，<code translate="no">pointer-events:none</code>；不向外部页面注入任何内容。让出时清除标记，迟到回执只进历史。</td></tr>
+</tbody>
+</table>
+
+<h2 id="invocation">归属与并发</h2>
+<dl class="pairs">
+<dt>描述符</dt><dd>资源 ID、类型、脱敏目标、实际所有者、生命周期、连接代数、预览能力。句柄和租约留在主机，无法恢复。</dd>
+<dt>关联</dt><dd>来源调用、分支、子 Agent、共享方式，以稳定的分支身份或可验证的分叉谱系为键。分叉不复制外部页面状态。</dd>
+<dt>身份</dt><dd>URL 相同的不同页面保持不同；同一实际页面的行合并。标题和秘密查询值绝不用于确定归属，秘密查询参数不保存。</dd>
+<dt>子 Agent</dt><dd>列在来源父分支下，并标明实际所有者。之后的工作不能改写来源，共享分组不授予访问权。</dd>
+<dt>分支写入</dt><dd>祖先资源显示“引用自”。浏览器写入默认用独立页面，但不声称站点或登录隔离。原生窗口和虚拟机需要明确转交或换目标。</dd>
+<dt>写租约</dt><dd>按输入范围排除冲突。第二个写入者收到 <code translate="no">busy</code>，不排队不抢占。子 Agent 的租约随其结束，父级不继承。</dd>
+<dt>事件</dt><dd>携带会话、分支、资源、代数和单调序号。分支变化、重连或撤销后丢弃过期事件。</dd>
+<dt>旧记录</dt><dd>无法证明分支归属的放在“未分配”，不做猜测迁移。</dd>
+</dl>
+
+<h2>生命周期与关闭</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事件</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">任务完成</th><td>释放 Python、输入租约和临时观察。页面和虚拟机保持空闲；声明为临时的资源按其策略处理。</td></tr>
+<tr><th scope="row">断开窗口</th><td>绝不退出应用，无论由用户还是 Agent 打开。退出应用是单独操作。</td></tr>
+<tr><th scope="row">断开虚拟机</th><td>只释放传输；客机和显示继续运行。停止虚拟机是单独操作，隐藏预览绝不触发。</td></tr>
+<tr><th scope="row">移除引用</th><td>只解除空闲关联</td></tr>
+<tr><th scope="row">关闭使用中的目标</th><td>显示受影响的执行，请求停止，等待租约释放。确认前保持“停止中”。已关闭记录收进不可用分组，不计入默认数量。</td></tr>
+<tr><th scope="row">断连、撤销</th><td>最后一帧标为过期，关闭远程输入。身份不明时停止写入并清除“操作中”。重连只读，且只连可验证的同一实例。</td></tr>
+<tr><th scope="row">App 重启</th><td>恢复分组和预览偏好，绝不恢复远程输入连接或写租约。页面崩溃和虚拟机重启需验证身份。</td></tr>
+<tr><th scope="row">原生聚焦或结果检查失败</th><td>输入失败：撤销写入，保留证据，不在后台重试</td></tr>
+<tr><th scope="row">旧适配器</th><td>执行中，操作状态未验证；不显示操作圆点</td></tr>
+<tr><th scope="row">内存压力</th><td>提供明确释放；绝不悄悄丢弃表单或停止虚拟机</td></tr>
+</tbody>
+</table>
+<p class="note">“操作中”从适配器验证后派发开始，到回执、确认取消或失败结束。空闲目标保持连接但不高频捕获，也不扫描主机应用。</p>
+
+<details>
+<summary>列表和行的外观</summary>
+<ul>
+<li>文件、活动、资源仍是右侧栏顶部的纵向导航。每个资源不加边框卡片。</li>
+<li>分组标题复用左侧栏 SectionHeader：14px 次要文字，标题后 16px 箭头，数量在尾部；Enter 或 Space 只折叠该组。</li>
+<li>行高约 44–48px：标题，其后按需显示类型、状态和子 Agent 名称。长标题截断；详情显示完整标题、脱敏来源和身份。</li>
+<li>操作中和选中相互区分，除颜色外还有文字。</li>
+<li>网页行有三个 Lucide 图标按钮：在会话中预览、在标签中打开、关闭网页（24px 点击区、14px 图标，同 PiP 工具栏）。</li>
+</ul>
+</details>
+
+<details>
+<summary>后续回看与学习</summary>
+<ul>
+<li>现有回执包含任务、分支、资源、前后观察、目标、参数、顺序、结果和人的修正。可见提示使用同一来源。</li>
+<li>经用户同意，后续任务可读取选定的脱敏片段，分析定位错误或提出可复用规则。</li>
+<li>“录制我的下一次演示”是单独的选择，有明确的开始、停止、范围、预览和删除。绝不保留秘密字段、密码、安全输入和带凭据的 URL。</li>
+<li>图像只有通过权限和脱敏检查才保存，否则只留无内容的元数据。</li>
+<li>任务内回看、保存步骤和模型训练是不同阶段。不自动训练或上传；提出的规则在独立测试目标上验证。</li>
+</ul>
+</details>
+
+<h2 id="desktop-tool-trace">会话中的工具活动</h2>
+<p><code translate="no">computer_use_agent</code> 调用按目标和步骤显示在时间线上：应用和动作、页面动作和 URL、虚拟机动作、在应用中运行的代码，或交给新 Agent 的任务及其说明首行。早期 GUI 工具（<code translate="no">gui_agent</code>、<code translate="no">computer_use</code>、<code translate="no">browser_use</code>、<code translate="no">vm_use</code>）的调用在详情面板中打开，原始参数和输出上方有 GUI 活动卡片。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">结果</th><td>运行中、动作已应用、成功、失败、需要接管、已取消、已中断、已暂停或结果不可用，卡片和时间线共用。取代传输层状态徽标。没有明确状态时为“结果不可用”。</td></tr>
+<tr><th scope="row">接管</th><td>突出记录的阻碍和用户操作；重复它们的摘要不显示。任务文本只在原始参数中。</td></tr>
+<tr><th scope="row">步骤</th><td>能力、目标、状态，按记录顺序；失败和停止的步骤附两行原因。来自结果历史，运行中来自可见的能力子节点，不计嵌套规划调用。直接的能力调用没有步骤列表。</td></tr>
+<tr><th scope="row">归属</th><td>详情携带会话 id，绝不替换另一会话中相同调用路径的详情。输出获取失败只显示错误，不把调用标为失败。</td></tr>
+<tr><th scope="row">截图</th><td>不提供：捕获路径是临时目录，不在可读附件根内。</td></tr>
+</tbody>
+</table>
+
+<h2>实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>类型分组、点击预览、在会话中预览、自动和固定预览、关闭语义、互斥呈现、原生窗口画面、边缘提示、显示操作、回执历史</td></tr>
+<tr><th scope="row">计划：同时显示</th><td>网页标签与小聊天预览同时显示，在同一页面上同步</td></tr>
+<tr><th scope="row">计划：适配器</th><td>原生应用和虚拟机控制，各自经真实目标验收后才宣称；零重叠自动接管</td></tr>
+<tr><th scope="row">计划：学习</th><td>演示录制、轨迹回看</td></tr>
+</tbody>
+</table>
+<details>
+<summary>验收用例</summary>
+<ul>
+<li>一个分支打开五个页面：不多出顶部标签，全部列出，操作选中预览。对从未打开的页面“在会话中预览”不加标签，并进入固定预览。</li>
+<li>两个分支及其子 Agent 并发：保留来源，不重新绑定。</li>
+<li>查看 A 时 Agent 操作 B：A 保留，B 显示操作中，开启自动显示后回到 B，标签焦点不动。</li>
+<li>关闭预览、缩放和折叠分组都不重载页面、不停虚拟机、不授予控制、不销毁目标。</li>
+<li>关闭活动目标、撤销、迟到帧、重启和断连都有明确状态；未确认的停止不算已暂停。</li>
+<li>打开标签后填满内容区；不变暗的内容保持可交互，单纯聚焦不暂停。</li>
+<li>标记绝不拦截输入，也不按过期几何绘制。</li>
+<li>同进程窗口、并发用户输入和两台虚拟机分别验证冲突范围。捕获成功不代表支持后台输入。</li>
+</ul>
+</details>
+<p class="note">来源：<code translate="no">session-resources-panel.tsx</code>、<code translate="no">session-resources.ts</code>、<code translate="no">use-session-resources.ts</code>、<code translate="no">web-tab-pip-store.ts</code>、<code translate="no">web-tab-pane.tsx</code>、<code translate="no">web-tab-pip.tsx</code>、<code translate="no">desktop-bridge.ts</code>、<code translate="no">openprogram/host/resources/session.py</code>、<code translate="no">apps/desktop/main.js</code>。</p>

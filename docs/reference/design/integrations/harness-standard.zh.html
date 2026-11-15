@@ -1,0 +1,81 @@
+<title>Harness 标准</title>
+<meta name="description" content="自包含 agentic 程序要被 OpenProgram 发现且不改宿主代码所需满足的契约。">
+<h1>Harness 标准</h1>
+
+<p>harness 是自带仓库的自包含 agentic 程序。凡在 <code translate="no">~/.openprogram/programs/</code> 中通过 <code translate="no">&lt;pkg&gt;/agentics/__init__.py</code> 暴露函数的都是。不改宿主文件；OpenProgram 不捆绑任何 harness，宿主也不点名任何 harness。</p>
+<pre translate="no" tabindex="0"><code>&lt;Harness-Repo&gt;/          openprogram programs install 放进 programs/ 的目录
+└── &lt;pkg&gt;/               可导入的包；文件夹名 == 导入名
+    ├── __init__.py      标记为包
+    └── agentics/
+        └── __init__.py  入口，暴露 PROGRAM_ENTRIES</code></pre>
+<p class="note">不符合的文件夹被静默忽略。可从目录、Git URL 或 GitHub <code translate="no">owner/repo</code> 安装：<a href="../../../capabilities/installing-programs.zh.html">安装程序</a>。加载器：<code translate="no">openprogram/programs/_host/registry.py</code>。来源记录：<code translate="no">openprogram/programs/_host/sources.py</code>。</p>
+
+<h2 id="the-entry-point">入口</h2>
+<pre translate="no" tabindex="0"><code>"""Entry point for the Foo harness."""
+try:
+    from .foo_agent import foo_agent, foo_helper
+    PROGRAM_ENTRIES = [foo_agent, foo_helper]
+except Exception:          # missing optional dep, unsupported platform
+    PROGRAM_ENTRIES = []</code></pre>
+<p class="note">导入时触发 <code translate="no">Agent</code> 方法装饰器，注册到共享工具注册表；这个列表也是声明的公开接口。加载失败的原因：<code translate="no">OPENPROGRAM_DEBUG_REGISTRY=1</code>。</p>
+
+<h2 id="conformance-checklist">符合性</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">包</th><td>内层 <code translate="no">&lt;pkg&gt;/</code> 文件夹名等于导入名；harness 根目录进入 <code translate="no">sys.path</code>。仓库文件夹带连字符没问题。</td></tr>
+<tr><th scope="row"><code translate="no">PROGRAM_ENTRIES</code></th><td>必须定义，可以是 <code translate="no">[]</code></td></tr>
+<tr><th scope="row"><code translate="no">try</code>/<code translate="no">except</code></th><td>必需：导入失败得到 <code translate="no">[]</code>，绝不抛错。这样依赖装好前也能克隆。</td></tr>
+<tr><th scope="row">导入成本</th><td>导入时不下载模型、不联网、不抓 GUI</td></tr>
+<tr><th scope="row">运行时</th><td>来自宿主：方法运行在调用它的 Runtime 上，用 <code translate="no">llm()</code> / <code translate="no">agent()</code>，不声明 <code translate="no">runtime</code> 参数。第二个模型是在运行起点配置的另一个 Agent 实例。宿主内路径不得自建 provider 或读 <code translate="no">ANTHROPIC_API_KEY</code>。独立 CLI 可以调用 <code translate="no">create_runtime(...)</code>。</td></tr>
+<tr><th scope="row">配置</th><td>零配置可用；不要求文件、向导或首次运行提示</td></tr>
+<tr><th scope="row">状态</th><td><code translate="no">openprogram.state.paths</code> 的 <code translate="no">get_state_dir() / "harnesses" / "&lt;pkg&gt;"</code>。绝不用已废弃的 <code translate="no">~/.agentic</code> 或其他写死的家目录路径。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>不作 Git 依赖：<code translate="no">pip install &lt;harness&gt;</code> 会重新拉取甚至降级宿主。只写成前提说明。</td></tr>
+<tr><th scope="row">自身依赖</th><td>写在 <code translate="no">pyproject.toml</code> 或 <code translate="no">requirements.txt</code>；由 harness 的安装步骤安装，宿主绝不自动安装。重型或原生依赖放进 extra。</td></tr>
+<tr><th scope="row">平台</th><td>不支持就是 <code translate="no">PROGRAM_ENTRIES = []</code>，经 <code translate="no">except</code> 或 <code translate="no">platform.system()</code> 判断，绝不在导入时抛 <code translate="no">NotImplementedError</code>。运行时探测后端（<code translate="no">shutil.which</code>、<code translate="no">importlib.util.find_spec</code>）；各系统的设置写进 README。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>配置约定</summary>
+<p>标准的是机制，不是参数。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类别</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">每次调用不同</th><td>带默认值的函数参数</td></tr>
+<tr><th scope="row">机器级</th><td>带 harness 前缀的环境变量，写进 README，例如 <code translate="no">WAH_VAULT</code></td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class HarnessAgent(Agent):
+    method_options = {"foo_agent": {"tool": True, "name": "foo_agent"}}
+
+    def foo_agent(self, task: str, max_steps: int = 15) -&gt; dict:
+        ...</code></pre>
+<pre translate="no" tabindex="0"><code>[project.optional-dependencies]
+ocr = ["easyocr"]</code></pre>
+</details>
+
+<details>
+<summary>内嵌的包</summary>
+<p>harness 可以内嵌 <code translate="no">third_party/</code> 这类同级包。宿主只把带 <code translate="no">agentics/</code> 子包的那个包当入口，其余随 <code translate="no">sys.path</code> 带上。</p>
+</details>
+
+<h2 id="discovery-and-hot-reload">发现</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时机</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">启动</th><td>导入每个匹配的文件夹</td></tr>
+<tr><th scope="row">运行中</th><td>Web worker 每 2 秒轮询 Programs 目录和已记录来源，执行同样的发现；<code translate="no">POST /api/programs/refresh</code> 走同一路径。新工具广播 <code translate="no">programs:changed</code>，界面无需重启即可列出。</td></tr>
+<tr><th scope="row">移除或替换</th><td>需要重启 worker：重新扫描只增加 harness 工具</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Harness</th><th scope="col">缺口</th></tr></thead>
+<tbody>
+<tr><th scope="row">Wiki</th><td>入口、<code translate="no">PROGRAM_ENTRIES</code> 和 <code translate="no">try</code>/<code translate="no">except</code> 都有。默认 vault 路径仍用已废弃的 <code translate="no">~/.agentic/memory/wiki</code>。仍声明 <code translate="no">openprogram @ git+…</code>。</td></tr>
+</tbody>
+</table>

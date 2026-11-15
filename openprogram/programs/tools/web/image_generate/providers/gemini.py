@@ -10,7 +10,6 @@ Docs: https://ai.google.dev/gemini-api/docs/image-generation
 from __future__ import annotations
 
 import base64
-import os
 from dataclasses import dataclass, field
 
 from openprogram.programs.tools.web.web_search._http import post_json
@@ -38,7 +37,7 @@ class GeminiImagenProvider:
 
     @staticmethod
     def _resolve_key() -> str:
-        from openprogram.providers.env_api_keys import resolve_provider_key
+        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
         return resolve_provider_key("google") or ""
 
     def generate(

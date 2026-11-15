@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from openprogram.agent.resource_governance import plan_request_reservation
-from openprogram.providers.types import Model, ModelCost
-from openprogram.usage import recorder
+import pytest
+
+from openprogram.models.usage.reservation import plan_request_reservation
+from openprogram.models.providers.types import Model, ModelCost
+from openprogram.models.usage import recorder
 
 
 class _Usage:
@@ -36,6 +38,19 @@ def test_zero_catalog_price_is_known_and_unknown_price_is_not(monkeypatch) -> No
     assert known_cost["cost_total"] == 0.0
     assert unknown_source == "unknown"
     assert unknown_cost["cost_total"] == 0.0
+
+
+@pytest.mark.parametrize("dictionary", [False, True])
+def test_cost_normalizes_streamed_usage_without_changing_counters(dictionary):
+    from openprogram.models.providers.catalog.models import calculate_cost
+    from openprogram.models.providers.types import Usage
+    pricing = _model(ModelCost(input=2, output=4, cache_read=1, cache_write=3, source="configured"))
+    counters = {"input": 10, "output": 5, "cache_read": 2, "cache_write": 3, "total_tokens": 20}
+    usage = dict(counters) if dictionary else Usage(**counters)
+    assert calculate_cost(pricing, usage) == pytest.approx(0.000051)
+    actual = usage if dictionary else usage.model_dump()
+    assert all(actual[key] == value for key, value in counters.items())
+    assert actual["cost"]["total"] == pytest.approx(0.000051)
 
 
 def test_request_reservation_uses_safe_input_bound_and_clamps_output() -> None:

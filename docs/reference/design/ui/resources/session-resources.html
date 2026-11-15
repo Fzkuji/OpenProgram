@@ -1,0 +1,172 @@
+<title>Session resources</title>
+<meta name="description" content="The right-sidebar panel of software and environments a session uses, their ownership, and the shared resource interface.">
+<h1>Session resources</h1>
+
+<p>The right-dock panel of complete software and environment objects a session uses. Code executions, commands and output belong to Activity; files to file views. Preview behaviour is in <a href="resource-preview.html">Resources and operation preview</a>; web behaviour in <a href="../browser/built-in-browser.html">built-in browser</a>.</p>
+
+<h2>Panel</h2>
+<dl class="pairs">
+<dt>Entry</dt><dd>A Session resources row in the vertical right-sidebar navigation beside Files and Activity, with their row, icon and label classes. The dock toggle collapses to the icon rail.</dd>
+<dt>Groups</dt><dd>The eight in <a href="../../../../interfaces/desktop.html">Desktop</a>. Webpage, Application and Terminal always show, folded and uncounted until loaded; other empty groups are omitted, as are closed or exited resources.</dd>
+<dt>One row per Page</dt><dd>A Page used on several branches is listed once: the viewed branch's row if it used it, otherwise the newest. Unknown connection state stays in its type.</dd>
+<dt>Filter</dt><dd>Only resources whose recorded owner matches the selected session, children under their type with actual owner shown. Drafts and unassigned views show none. Missing branch names create no group.</dd>
+<dt>Switching session</dt><dd>Clears details and the selected view, and aborts previous requests.</dd>
+<dt>Persistence</dt><dd>Type collapse per session; selected dock view across reloads. Collapsing the dock or choosing another view stops polling.</dd>
+<dt>Selecting</dt><dd>A web row previews read-only, without activating or recreating the Page. A non-web row shows details, hiding the web preview without closing its Page. A Terminal row attaches a view to its existing PTY and never creates a shell.</dd>
+</dl>
+
+<h2>Sources and ownership</h2>
+<table class="stack">
+<thead><tr><th scope="col">Resource</th><th scope="col">Authority</th><th scope="col">Lifetime</th></tr></thead>
+<tbody>
+<tr><th scope="row">Webpages</th><td><code translate="no">CenterTab</code> records and recorded session provenance; a tab the Agent opens carries the trusted runtime session ID through the desktop command</td><td>Until the webpage closes. Agent pages stay in Resources; user-opened and pinned pages stay in the strip.</td></tr>
+<tr><th scope="row">GUI desktop, VM</th><td>Trusted usage registry and configured application or VM endpoint</td><td>Integration attachment</td></tr>
+<tr><th scope="row">Other integrations</th><td><code translate="no">resource_use(kind, title, target)</code> with the same trusted context</td><td>The reported period of use</td></tr>
+<tr><th scope="row">Background terminal</th><td>A command a bash call left running (<code translate="no">background</code> set), the one <code translate="no">ProcessStore</code> projection; see <a href="../../runtime/execution/command-sessions.html">command sessions</a></td><td>Until exit; read-only row with Stop</td></tr>
+</tbody>
+</table>
+<p class="note">Integrations must name the actual container, VM, application or remote environment. Per-command Docker invocations and SSH subprocesses do not register, and the registry neither scans the host nor infers objects from shell text.</p>
+
+<details>
+<summary>Authorization and display limits</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Authorization</th><td>The server checks session and execution authorization before returning resources. Rows from authorized descendant scopes are still filtered by actual owner.</td></tr>
+<tr><th scope="row">Browser rows</th><td>Browser rows stay renderer-owned; backend requests cover only the selected session.</td></tr>
+<tr><th scope="row">Registry payloads</th><td>Registry payloads hold bounded display fields; URLs omit credentials, query parameters and fragments.</td></tr>
+<tr><th scope="row">Native bounds</th><td>Native browser bounds resize with the remaining center area.</td></tr>
+<tr><th scope="row">Reuse</th><td>Reuses the right dock, center-tab store, authorized resource route and native bounds reporting. No second browser manager or generic destructive-action protocol.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Preview and Page access</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Preview scope</th><td>Stored by conversation ID, independent of the chat tab. Navigating a tab shows only the selected conversation's preview.</td></tr>
+<tr><th scope="row">Private Page</th><td>A retained agent Page not opened as a top tab belongs to its conversation. Inventory, turn context, screenshot, resolve, activation and close enforce this by trusted execution attribution.</td></tr>
+<tr><th scope="row">Open page</th><td>Makes it a regular tab: others may discover it and acquire it when the exclusive Page lease permits. Provenance and preview ownership do not change.</td></tr>
+<tr><th scope="row">Pending results</th><td>Must still match the current access scope before delivery</td></tr>
+</tbody>
+</table>
+
+<h2>Closing a tab</h2>
+<table class="stack">
+<thead><tr><th scope="col">Action</th><th scope="col">Page</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Close tab or split pane</th><td>Session-associated</td><td>Hidden; native view, navigation and associations stay; reopen from Resources</td></tr>
+<tr><th scope="row">Close tab or split pane</th><td>Standalone</td><td>Removed; native view destroyed</td></tr>
+<tr><th scope="row">Close webpage, authorized Agent close</th><td>Any open Page, tab or not</td><td>Destroyed</td></tr>
+<tr><th scope="row">Close a conversation</th><td>Its retained Pages</td><td>Stay open</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Close webpage</th><td>Hides the row at once and closes its tab</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/session/{id}/resources/{resource_id}/close</code></th><td>Closes the Page record and retires its bindings, independent of the renderer's destroy receipt</td></tr>
+<tr><th scope="row">Failed request</th><td>The row is restored</td></tr>
+<tr><th scope="row">Socket down</th><td>Native closes confirmed meanwhile are reported after the next window register</td></tr>
+<tr><th scope="row">Animation end</th><td>Ownership resolves; hidden Pages leave split groups and cannot be the active fallback</td></tr>
+</tbody>
+</table>
+
+<h2>Resource interface</h2>
+<table class="stack">
+<thead><tr><th scope="col">Operation</th><th scope="col">Terminal</th><th scope="col">Application</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">describe</code></th><td>Native host inventory and generation</td><td>Installed, enabled manifest and declared operations</td></tr>
+<tr><th scope="row"><code translate="no">open</code></th><td>Create a private shell explicitly</td><td>Open the installed instance</td></tr>
+<tr><th scope="row"><code translate="no">observe</code></th><td>Independent output cursor, input revision</td><td>Instance state, operation status</td></tr>
+<tr><th scope="row"><code translate="no">act</code></th><td>Input or interrupt with observed revision</td><td>Declared Agent-visible operations only</td></tr>
+<tr><th scope="row"><code translate="no">release</code></th><td>Release Agent binding, keep process</td><td>Detach association</td></tr>
+<tr><th scope="row"><code translate="no">close</code></th><td>Request termination, wait for exit</td><td>Only when declared</td></tr>
+</tbody>
+</table>
+<p class="note">Unsupported actions return a capability error; nothing is invented. Web pages are not a provider here: <code translate="no">computer_use_agent(target="browser")</code> lists, opens, operates and closes them. <code translate="no">terminal_use</code> remains a public entry. A resource identifier is not an access grant. Hiding a view, releasing Agent access and terminating an environment are separate.</p>
+
+<details>
+<summary>Trust and failures</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Context</th><td>The worker derives session, execution and originating window from trusted context.</td></tr>
+<tr><th scope="row">Providers</th><td>Providers keep tool approval, sandbox checks, private-resource checks, exclusive bindings, generation checks and input revisions.</td></tr>
+<tr><th scope="row">Manifests</th><td>Manifests cannot supply host code through a renderer request. Third-party resources come from installed, explicitly trusted packages.</td></tr>
+<tr><th scope="row">Desktop availability</th><td>Desktop availability is reported without substituting another host. Uncertain writes are never replayed.</td></tr>
+<tr><th scope="row">Terminal</th><td>Terminal output is untrusted; an input acknowledgement does not mean the command finished.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>What is reused</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Component</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row">Page registry</th><td>Native target ownership and observation freshness</td></tr>
+<tr><th scope="row">Terminal manager</th><td>Generation, binding, output cursors, native receipt correlation</td></tr>
+<tr><th scope="row">Applications runtime</th><td>Manifests, instances and declared operations</td></tr>
+<tr><th scope="row"><code translate="no">resource_use</code></th><td>Display-only lifetime; gives no control</td></tr>
+<tr><th scope="row">Rejected</th><td>A second browser registry, a universal shell fallback, an unrestricted renderer plugin loader: each duplicates authority or bypasses provider limits</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Backend operations and installed applications</h2>
+<dl class="pairs">
+<dt>Parity</dt><dd>Every product operation has an authenticated backend entry: HTTP from the registered schema, WebSocket commands through a request/response adapter on the same handlers. The Agent invokes operations by name without touching the interface.</dd>
+<dt>Authority</dt><dd>Requires owner authority and tool approval, refuses an active sandbox or nonlocal backend, never returns owner credentials. Authentication, native receipt and connection-registration endpoints are not callable.</dd>
+<dt>Window commands</dt><dd>Renderer preferences, navigation and native window functions address one connected window, with replies correlated to it. Disconnects and uncertain mutations do not retry. Window presentation needs a connected view; business and application operations do not.</dd>
+<dt>Applications</dt><dd>An enabled installed application provides <code translate="no">application.&lt;id&gt;</code> with no restart or registry edit. <code translate="no">open</code> binds its durable instance, <code translate="no">observe</code> reads state and runs, <code translate="no">act</code> submits a declared operation, <code translate="no">release</code> removes only the association.</dd>
+<dt>Lifecycle</dt><dd>Cancellation and answers target the exact instance and run. Disabled, removed or updated applications revoke stale descriptors. A scaffold command creates a runnable package.</dd>
+</dl>
+<details>
+<summary>Where the code lives</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/host/resources</code></th><td>Contracts and dispatch; adapters in <code translate="no">providers</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/framework</code></th><td>Discovery, authority, client calls</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes</code></th><td>Server routes, by control responsibility</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/framework</code></th><td>Interface command handlers</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/session-resources</code></th><td>Resource views</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Split canvases</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shared scope</th><td>Files, Activity, Resources, the snapshot request and drop targets share one conversation scope; the sidebar owns the single window-level projection.</td></tr>
+<tr><th scope="row">Selection</th><td>Clicking a conversation selects it. Focusing a webpage or file pane keeps the last selected visible conversation. Hidden or unrelated conversations are never fallbacks.</td></tr>
+<tr><th scope="row">Drop on Resources</th><td>Dropping a webpage on Resources attaches it to that panel's conversation. A split with several webpages needs the page's pane handle.</td></tr>
+<tr><th scope="row">Drag feedback</th><td>Tab and pane drags use the canvas docking's blue region with a release-to-add label; hovering the Resources row highlights it and its panel.</td></tr>
+<tr><th scope="row">Release</th><td>Release waits for native transfer cancellation and the confirmed association, then opens Resources with a success notice. Failure shows a retry message and keeps the page. Association does not change provenance.</td></tr>
+</tbody>
+</table>
+
+<h2>Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">In place</th><td>Usage registry, session projection, panel, common resource tool, Web, Terminal and application providers, backend operations, window commands, scaffold, split-canvas scope, tab closing</td></tr>
+<tr><th scope="row">Controlled tests only</th><td>Real Docker engines and VM endpoints</td></tr>
+<tr><th scope="row">Planned</th><td>Native application and VM controller adapters; operating-system desktop input control is separate from application operations</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Right-sidebar placement, per-session isolation, type grouping, session switching, collapse, pointer and keyboard use, native-browser coexistence.</li>
+<li>Row-click preview, Open page of the same Page, preview hidden while that tab is active, no Pin control, no code, process or file entries beyond Background terminal.</li>
+<li>Cross-session authorization; normal, exceptional and stale-owner release; reload.</li>
+<li>Private-page discovery and exact-ID rejection, public opening, busy-Page rejection, acquisition after release, access changes during native operations.</li>
+<li>Capability rejection before effects; user and Agent on one Terminal cwd and output; release without termination; changed-generation rejection; no write replay; actual exit before restart.</li>
+<li>Backend discovery and invocation with no rendered frontend; invalid, unauthorized and unsafe calls rejected before effects; install, disable, update and remove discovery.</li>
+<li>Chat and web splits, two chats plus a webpage, hidden conversations, drag hover, cancel and release, correct session IDs.</li>
+<li>Reveal, navigate, close and reopen for Agent and manually associated Pages; split and bulk closure; standalone and explicit destruction.</li>
+</ul>
+</details>

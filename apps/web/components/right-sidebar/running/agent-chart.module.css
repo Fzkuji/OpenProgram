@@ -1,0 +1,65 @@
+/* An Agent's time chart: a column per level, newest on top. Blocks are placed
+   by agent-chart.tsx at the level of the deepest column in view. The box
+   scrolls up and down; sideways, the track (.inner) moves by its transform,
+   and every column in view is whole: --chart-col is the box's width over
+   the number of columns it holds. */
+.cols { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; padding-bottom: 12px; }
+.cols::-webkit-scrollbar { display: none; }
+.inner { display: flex; width: max-content; position: relative; }
+.col { width: var(--chart-col, 256px); flex: none; position: relative; }
+.ch { position: sticky; top: 0; z-index: 3; display: flex; gap: 6px; min-width: 0; height: 30px; box-sizing: border-box; padding: 8px 8px 4px; font-size: 13px; line-height: 18.2px; color: var(--text-muted); background: var(--color-sidebar); }
+.ch > span { flex: none; }
+.ch .crumb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+
+.block { position: absolute; left: 0; right: 0; box-sizing: border-box; display: grid; grid-template-columns: 44px 12px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 6px; padding: 0 8px; overflow: clip; font-size: 14px; line-height: 20px; color: var(--text-secondary); }
+.block[data-small="1"] { grid-template-columns: 58px 12px minmax(0, 1fr); }
+.block[role="button"] { cursor: pointer; }
+.block:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+/* The block's text sits in the same card as a row on the panel's first page:
+   its radius, padding and hover lift. The card runs as far as the bar, and a
+   hovered block lets the lift's shadow past its own edge. */
+.block[role="button"]:hover { overflow: visible; z-index: 2; }
+.card { min-width: 0; margin: 3px 0 3px -4px; border-radius: var(--ui-list-radius); transition: box-shadow var(--motion-medium), background-color var(--motion-medium); }
+.block[role="button"]:hover .card, .block[data-open="1"] .card { background: var(--row-raised-bg); box-shadow: var(--composer-shadow-focus); }
+/* An opened block stays a card: its shadow needs room past the block's edge. */
+.block[data-open="1"] { overflow-clip-margin: 8px; z-index: 1; }
+/* Its line stays above its details instead of following the scroll over them. */
+.block[data-open="1"] .label { position: static; }
+.insides { display: grid; gap: 8px; padding: 2px 8px 8px; cursor: auto; user-select: text; }
+/* A detail's label is quieter than what it labels. */
+.insides > div > div:first-child:not(:only-child) { font-size: 12px; line-height: 16px; color: var(--text-muted); }
+
+.time { font-size: 13px; line-height: 18.2px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-muted); padding-top: 12px; position: sticky; top: 30px; align-self: start; }
+.block[data-small="1"] .time { padding-top: 8px; }
+.rail { display: flex; flex-direction: column; align-items: center; }
+.bar { display: block; flex: none; width: 5px; margin-top: 3px; border-radius: 3px; }
+.block[data-small="1"] .bar { width: 3px; }
+.bar[data-next="1"] { box-sizing: border-box; background: transparent; border: 1px dashed var(--text-muted); }
+.label { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 1px; min-width: 0; padding: 7px 8px; position: sticky; top: 33px; }
+.block[data-small="1"] .label { padding-block: 5px; }
+.title { color: var(--text-bright); line-height: 19.6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line { font-size: 13px; line-height: 18.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line[data-strong="1"] { color: var(--text-bright); }
+.detail { font-size: 13px; line-height: 18.2px; color: var(--text-secondary); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 0 12px; padding-top: 4px; }
+.action { height: auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: inherit; font-size: 13px; line-height: 18.2px; color: var(--text-bright); cursor: pointer; }
+.action:hover { background: none; text-decoration: underline; }
+.action:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
+.steer { height: 22px; min-height: 0; padding: 0 6px; font-size: 13px; line-height: 18.2px; }
+
+.gap { align-items: center; cursor: default; }
+.dash { align-self: stretch; justify-self: center; border-left: 1px dashed color-mix(in srgb, var(--text-primary) 30%, transparent); }
+.day { font-size: 13px; line-height: 18.2px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-bright); }
+.gap > .line { padding-left: 4px; }
+.more { height: 36px; display: flex; align-items: center; padding-left: 4px; }
+
+.cell { position: absolute; left: 0; right: 0; overflow: clip; }
+.cell[data-scrolls="1"] { overflow-x: hidden; overflow-y: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+.cell[data-scrolls="1"]::-webkit-scrollbar { display: none; }
+.cell .time { top: 0; }
+.cell .label { top: 3px; }
+
+.empty { padding: 8px 16px; font-size: 13px; line-height: 18.2px; color: var(--text-secondary); }
+.named { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; opacity: 1; color: var(--text-bright); }
+.named > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

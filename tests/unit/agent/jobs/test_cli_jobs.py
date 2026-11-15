@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from openprogram.cli import build_parser
+from openprogram.interfaces.cli.application import build_parser
 
 
 def _runner():
@@ -38,9 +38,9 @@ def test_jobs_parser_has_list_and_get_routes() -> None:
 
 
 def test_jobs_commands_print_canonical_resource_dto(monkeypatch, capsys) -> None:
-    from openprogram.cli.commands import jobs
+    from openprogram.interfaces.cli.commands import jobs
 
-    monkeypatch.setattr("openprogram.agent.job.get_runner", _runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", _runner)
     assert jobs._cmd_jobs_list("s1", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["jobs"][0]["job_id"] == "t1"
 

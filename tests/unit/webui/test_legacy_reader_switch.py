@@ -7,8 +7,8 @@ migration-era fallback for not-yet-migrated configs.
 """
 from __future__ import annotations
 
-from openprogram.webui._model_listing.listing import _enabled_ids
-import openprogram.webui._runtime_management as rm
+from openprogram.models.listing.listing import _enabled_ids
+import openprogram.interfaces.server.runtime_management as rm
 
 
 def test_enabled_ids_prefers_spec_rows():
@@ -28,10 +28,10 @@ def test_enabled_ids_prefers_spec_rows():
 def test_preferred_default_model_from_spec_rows(monkeypatch, tmp_path):
     """_preferred_default_model falls back to the first spec row id."""
     cfg = {"acme": {"enabled": True, "models": [{"id": "spec-first"}]}}
-    import openprogram.providers.storage as provider_storage
+    import openprogram.models.providers.settings.storage as provider_storage
     monkeypatch.setattr(provider_storage, "_read_providers_cfg", lambda: cfg)
     # No top-level default_provider/default_model file → point at empty tmp.
-    monkeypatch.setattr("openprogram.paths.get_config_path",
+    monkeypatch.setattr("openprogram.state.paths.get_config_path",
                         lambda: str(tmp_path / "nope.json"))
     assert rm._preferred_default_model("acme") == "spec-first"
 
@@ -39,8 +39,22 @@ def test_preferred_default_model_from_spec_rows(monkeypatch, tmp_path):
 def test_preferred_default_model_legacy_fallback(monkeypatch, tmp_path):
     """No spec rows → the legacy enabled_models list still resolves."""
     cfg = {"acme": {"enabled": True, "enabled_models": ["old-1"]}}
-    import openprogram.providers.storage as provider_storage
+    import openprogram.models.providers.settings.storage as provider_storage
     monkeypatch.setattr(provider_storage, "_read_providers_cfg", lambda: cfg)
-    monkeypatch.setattr("openprogram.paths.get_config_path",
+    monkeypatch.setattr("openprogram.state.paths.get_config_path",
                         lambda: str(tmp_path / "nope.json"))
     assert rm._preferred_default_model("acme") == "old-1"
+
+
+def test_explicit_empty_models_does_not_restore_legacy_selection():
+    assert _enabled_ids({"models": [], "enabled_models": ["old"]}) == set()
+
+
+def test_preferred_model_respects_empty_and_disabled_rows(monkeypatch, tmp_path):
+    import openprogram.models.providers.settings.storage as storage
+    cfg = {'acme': {'models': [], 'enabled_models': ['old']}}
+    monkeypatch.setattr(storage, '_read_providers_cfg', lambda: cfg)
+    monkeypatch.setattr('openprogram.state.paths.get_config_path', lambda: str(tmp_path / 'missing'))
+    assert rm._preferred_default_model('acme') is None
+    cfg['acme']['models'] = [{'id': 'disabled', 'enabled': False}]
+    assert rm._preferred_default_model('acme') is None

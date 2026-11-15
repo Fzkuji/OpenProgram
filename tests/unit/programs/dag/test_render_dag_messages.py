@@ -6,16 +6,9 @@ resulting message list role/content shape.
 
 from __future__ import annotations
 
-import pytest
 
-from openprogram.context.nodes import (
-    Call,
-    Graph,
-    ROLE_USER,
-    ROLE_LLM,
-    ROLE_CODE,
-)
-from openprogram.context.render import render_dag_messages
+from openprogram.state.store.session.nodes import Call, Graph, ROLE_USER, ROLE_LLM, ROLE_CODE
+from openprogram.runtime.context.render import render_dag_messages
 
 
 def _texts(messages) -> list[str]:
@@ -93,40 +86,28 @@ def test_code_call_renders_as_user_assistant_pair():
     assert "hits" in assistant_text          # result shows up
 
 
-def test_old_code_nodes_age_to_stub_beyond_tail_window():
-    """Code nodes older than the last TAIL_TURNS (3) llm nodes render as
-    an [aged] stub; recent ones keep full output. Mirrors tool_aging."""
+def test_old_code_nodes_keep_their_whole_output():
+    """An old tool result renders as its turn sent it, however many llm
+    turns follow it: there is no aging step, only compaction replaces it."""
     g = Graph()
-    # An old tool call, then 3+ llm turns after it (pushing it out of the
-    # tail window), then a recent tool call.
-    old_tc = g.add(Call(role=ROLE_CODE, name="search",
+    g.add(Call(role=ROLE_CODE, name="search",
                         input={"q": "old"}, output="OLD_FULL_RESULT_TEXT"))
-    g.add(Call(role=ROLE_LLM, output="t1"))
-    g.add(Call(role=ROLE_LLM, output="t2"))
-    g.add(Call(role=ROLE_LLM, output="t3"))
-    recent_llm = g.add(Call(role=ROLE_LLM, output="t4"))
-    recent_tc = g.add(Call(role=ROLE_CODE, name="search",
+    for i in range(4):
+        g.add(Call(role=ROLE_LLM, output=f"t{i}"))
+    g.add(Call(role=ROLE_CODE, name="search",
                           input={"q": "new"}, output="NEW_FULL_RESULT_TEXT"))
     all_ids = [n.id for n in sorted(g, key=lambda x: x.seq)]
-    msgs = render_dag_messages(g, all_ids)
-    texts = _texts(msgs)
-    blob = "\n".join(texts)
-    # old tool result rendered as a one-line [aged] stub (the stub keeps a
-    # short blurb of the result, so we check the stub PREFIX is present and
-    # the old result occupies a single aged line, not its own full message)
-    assert "[aged]" in blob
-    aged_lines = [t for t in texts if t.startswith("[aged]")]
-    assert len(aged_lines) == 1
-    assert "search" in aged_lines[0]
-    # recent tool result kept at full fidelity (no stub)
+    blob = "\n".join(_texts(render_dag_messages(g, all_ids)))
+    assert "[aged]" not in blob
+    assert "OLD_FULL_RESULT_TEXT" in blob
     assert "NEW_FULL_RESULT_TEXT" in blob
-    assert not any("NEW_FULL_RESULT_TEXT" in t and t.startswith("[aged]") for t in texts)
 
 
 def test_model_tool_use_code_node_renders_as_toolcall_toolresult():
     """A code node WITH a tool_call_id (model-emitted tool_use) round-trips
-    as a real ToolCall (inside the preceding assistant turn) + a
-    ToolResultMessage — not the user/assistant text pair."""
+    as a real ToolCall in an assistant message of its own + a
+    ToolResultMessage — not the user/assistant text pair — and the reply's
+    text follows its calls, as the turn sent them."""
     g = Graph()
     llm = g.add(Call(role=ROLE_LLM, output="let me search"))
     tc = g.add(Call(
@@ -138,11 +119,9 @@ def test_model_tool_use_code_node_renders_as_toolcall_toolresult():
         metadata={"tool_call_id": "call_abc"},
     ))
     msgs = render_dag_messages(g, [llm.id, tc.id])
-    # assistant turn, then a tool-result message
-    assert _roles(msgs) == ["assistant", "toolResult"]
-    # the ToolCall is appended INSIDE the assistant message content
-    asst = msgs[0]
-    tool_calls = [c for c in asst.content if getattr(c, "type", None) == "toolCall"]
+    assert _roles(msgs) == ["assistant", "toolResult", "assistant"]
+    call_message = msgs[0]
+    tool_calls = [c for c in call_message.content if getattr(c, "type", None) == "toolCall"]
     assert len(tool_calls) == 1
     assert tool_calls[0].id == "call_abc"
     assert tool_calls[0].name == "search"
@@ -151,6 +130,7 @@ def test_model_tool_use_code_node_renders_as_toolcall_toolresult():
     tr = msgs[1]
     assert tr.tool_call_id == "call_abc"
     assert "hits" in tr.content[0].text
+    assert msgs[2].content[0].text == "let me search"
 
 
 def test_toolcall_synthesizes_assistant_when_none_precedes():
@@ -278,3 +258,71 @@ def test_full_turn_user_assistant_tool_assistant():
         "user", "assistant",                # code Call's synthesized pair
         "assistant",                        # final llm
     ]
+
+
+# Sub-agent reports (attach nodes)
+
+
+def _attach(g, output, **attach):
+    return g.add(Call(role=ROLE_LLM, output=output,
+                      metadata={"function": "attach", "display": "runtime", "attach": attach}))
+
+
+def test_background_report_names_its_sender_and_transcript_address():
+    g = Graph()
+    u = g.add(Call(role=ROLE_USER, output="check the logs"))
+    a = _attach(g, "the log is clean", session_id="s1", head_id="h9", label="scout",
+                prompt="read the worker log", status="completed")
+    msgs = render_dag_messages(g, [u.id, a.id])
+    assert _roles(msgs) == ["user", "user"]
+    report = _texts(msgs)[1]
+    assert report.startswith('[Report from sub-agent "scout"]')
+    assert "Task: read the worker log" in report
+    assert "Final reply (completed):\nthe log is clean" in report
+    assert 'read_conversation(session_id="s1", head_id="h9")' in report
+
+
+def test_running_report_says_so_and_sync_report_is_left_to_the_tool_result():
+    g = Graph()
+    running = _attach(g, "", session_id="s1", label="scout", status="running")
+    sync = _attach(g, "done", session_id="s1", head_id="h1", delivery="tool_result", status="completed")
+    msgs = render_dag_messages(g, [running.id, sync.id])
+    assert len(msgs) == 1
+    assert "Still running" in _texts(msgs)[0] and "read_conversation" not in _texts(msgs)[0]
+
+
+def test_a_running_helpers_card_renders_the_same_bytes_when_it_ends():
+    """C3: the caller's prompt only grows by appending. The card's live state
+    (status, reply, usage, head) stays on the node; the result is the notice."""
+    import hashlib
+    import json
+
+    def prefix(**attach):
+        g = Graph()
+        u = g.add(Call(role=ROLE_USER, output="check the logs"))
+        card = _attach(g, attach.pop("output", "(running)"), **attach)
+        msgs = render_dag_messages(g, [u.id, card.id])
+        return hashlib.sha256(json.dumps(_texts(msgs)).encode()).hexdigest(), _texts(msgs)
+
+    started = dict(session_id="s1", label="scout", prompt="read the worker log", job_id="job_1",
+                   result_in="notice")
+    before, texts = prefix(status="running", head_id=None, **started)
+    after, _ = prefix(status="completed", output="the log is clean", head_id="h9",
+                      usage={"tokens": 1200, "cost_usd": "0.01"}, execution_id="job_1",
+                      status_version=4, **started)
+    assert before == after
+    assert texts[1].startswith('[Sub-agent "scout" started]')
+    assert 'read_conversation(session_id="job_1")' in texts[1]
+    assert "the log is clean" not in texts[1]
+
+
+def test_a_card_from_before_results_moved_into_the_notice_keeps_its_report():
+    """Older conversations: their notice said the report is "attached above",
+    so a card without ``result_in`` still renders its final reply."""
+    g = Graph()
+    u = g.add(Call(role=ROLE_USER, output="check the logs"))
+    card = _attach(g, "the log is clean", session_id="s1", head_id="h9", label="scout",
+                   prompt="read the worker log", status="completed", job_id="job_1")
+    report = _texts(render_dag_messages(g, [u.id, card.id]))[1]
+    assert report.startswith('[Report from sub-agent "scout"]')
+    assert "Final reply (completed):\nthe log is clean" in report

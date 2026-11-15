@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
 
 def test_publish_document_writes_and_replays_immutable_receipt(tmp_path: Path) -> None:

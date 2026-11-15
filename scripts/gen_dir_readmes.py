@@ -1,4 +1,7 @@
-"""Generate ``openprogram/<dir>/README.md`` from each ``__init__.py`` docstring.
+"""Generate each package's ``README.md`` from its ``__init__.py`` docstring.
+
+Packages are the first-level directories of ``openprogram/`` and the
+directories inside a group package (``openprogram/<group>/<dir>/``).
 
 Per-folder READMEs make the repo navigable in any file browser / GitHub
 without opening Python files. The ``__init__.py`` module docstrings
@@ -19,7 +22,7 @@ What it does per directory:
 
 * Skips if a README.md already exists (idempotent — won't trample a
   hand-written one). Two such hand-written READMEs currently live
-  under ``openprogram/context/`` and ``openprogram/memory/``.
+  under ``openprogram/runtime/context/`` and ``openprogram/state/memory/``.
 * Extracts the module docstring from ``__init__.py``.
 * Lists direct-child ``.py`` files with one-line summaries pulled
   from their own module docstrings.
@@ -36,6 +39,30 @@ from pathlib import Path
 
 
 ROOT = Path("openprogram")
+
+# Group packages hold related first-level packages and carry no README of
+# their own; the packages inside them get one each.
+GROUPS = ("surfaces", "host", "models", "state", "extensions", "operations", "runtime")
+
+
+def _package_dirs(root: Path = ROOT) -> list[Path]:
+    """Package directories that get a README: first-level ones and those inside a group."""
+    out = []
+    for d in sorted(root.iterdir()):
+        if not d.is_dir() or d.name == "__pycache__":
+            continue
+        if d.name in GROUPS:
+            out.extend(p for p in sorted(d.iterdir()) if p.is_dir() and p.name != "__pycache__")
+        else:
+            out.append(d)
+    return out
+
+
+def _display_path(dir_path: Path) -> str:
+    """``openprogram/<group>/<name>`` or ``openprogram/<name>`` for a package directory."""
+    parts = dir_path.parts
+    start = len(parts) - 1 - parts[::-1].index("openprogram")
+    return "/".join(parts[start:])
 
 
 def _module_docstring(init_path: Path) -> str | None:
@@ -83,13 +110,12 @@ def _one_line_summary(py_path: Path) -> str:
 
 def _readme_for(dir_path: Path) -> str:
     """Build the README body."""
-    name = dir_path.name
     doc = _module_docstring(dir_path / "__init__.py") or ""
 
     lines = [l.rstrip() for l in doc.splitlines()]
     while lines and not lines[0].strip():
         lines.pop(0)
-    title_line = lines[0] if lines else f"openprogram/{name}"
+    title_line = lines[0] if lines else _display_path(dir_path)
     body_lines = lines[1:]
     while body_lines and not body_lines[0].strip():
         body_lines.pop(0)
@@ -98,7 +124,7 @@ def _readme_for(dir_path: Path) -> str:
     subdirs = _list_subdirs(dir_path)
 
     out: list[str] = []
-    out.append(f"# `openprogram/{name}/`")
+    out.append(f"# `{_display_path(dir_path)}/`")
     out.append("")
     out.append(f"> {title_line}")
     out.append("")
@@ -145,9 +171,7 @@ def main() -> int:
     skipped_nodoc = 0
     AUTOGEN_MARKER = "Auto-generated from `__init__.py`"
 
-    for d in sorted(ROOT.iterdir()):
-        if not d.is_dir() or d.name == "__pycache__":
-            continue
+    for d in _package_dirs():
         readme = d / "README.md"
         if readme.exists():
             existing = readme.read_text(encoding="utf-8", errors="replace")

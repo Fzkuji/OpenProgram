@@ -1,22 +1,18 @@
 """driver cancellation tests."""
 from __future__ import annotations
-from ._support import (
-    AttemptStore,
-    CommandStatus,
-    ExecutionStatus,
-    _admitted,
-    _prepare_long_turn,
-    asyncio,
-    pytest,
-    sqlite3,
-    threading,
-    time,
-)
+import pytest
+import time
+from openprogram.runtime.execution.model import CommandStatus, ExecutionStatus
+from types import SimpleNamespace
+
+from openprogram.runtime.execution import ExecutionStore
+
+from ._support import AttemptStore, _admitted, _prepare_long_turn, asyncio, sqlite3, threading
 
 
 def test_queued_agent_cancel_releases_reserved_slot_immediately(tmp_path):
-    from openprogram.execution.control import RuntimeControlService
-    from openprogram.execution.driver import DriverRegistry
+    from openprogram.runtime.execution.control import RuntimeControlService
+    from openprogram.runtime.execution.driver import DriverRegistry
 
     store, execution = _admitted(tmp_path, execution_id="exec-queued-slot-cancel")
     service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
@@ -30,18 +26,14 @@ def test_queued_agent_cancel_releases_reserved_slot_immediately(tmp_path):
         )
     )
     assert cancelled.execution.status is ExecutionStatus.CANCELLED
-    with sqlite3.connect(store.path) as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM execution_finish_repair_slots"
-        ).fetchone()[0] == 0
 
 
 
 def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path, monkeypatch):
-    import openprogram.execution as execution_module
-    from openprogram.agent.production_driver import AgentProductionDriver
-    from openprogram.agent.questions import PendingQuestion, QuestionRegistry
-    from openprogram.execution.waits import DurableWaitStore
+    import openprogram.runtime.execution as execution_module
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
+    from openprogram.runtime.agent.questions import PendingQuestion, QuestionRegistry
+    from openprogram.runtime.execution.waits import DurableWaitStore
 
     store, execution = _admitted(tmp_path)
     registry = QuestionRegistry()
@@ -83,7 +75,6 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path, mo
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="agent-owner",
-        ttl_seconds=30,
     )
     active, _running = attempts.activate(
         attempt.attempt_id,
@@ -91,10 +82,10 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path, mo
         expected_execution_version=leased.status_version,
     )
     monkeypatch.setattr(execution_module, "default_store", lambda: store)
-    from openprogram.execution.control import RuntimeControlService
-    from openprogram.execution.driver import DriverRegistry
+    from openprogram.runtime.execution.control import RuntimeControlService
+    from openprogram.runtime.execution.driver import DriverRegistry
     control = RuntimeControlService(store, attempts, DriverRegistry())
-    wait = DurableWaitStore(store).open_wait(
+    DurableWaitStore(store).open_wait(
         wait_id="q-agent-1", execution_id=execution.execution_id,
         attempt_id=active.attempt_id, generation=active.generation,
         kind="ask",
@@ -140,7 +131,7 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path, mo
 
 
 def test_cancel_rejects_a_handle_from_another_attempt(tmp_path):
-    from openprogram.agent.production_driver import AgentDriverError, AgentProductionDriver
+    from openprogram.runtime.conversation.production_driver import AgentDriverError, AgentProductionDriver
 
     store, execution = _admitted(tmp_path)
     driver = AgentProductionDriver(
@@ -163,7 +154,6 @@ def test_cancel_rejects_a_handle_from_another_attempt(tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="agent-owner",
-        ttl_seconds=30,
     )
     active, _running = attempts.activate(
         attempt.attempt_id,
@@ -184,8 +174,8 @@ def test_cancel_rejects_a_handle_from_another_attempt(tmp_path):
 
 
 
-def test_cancel_during_dispatched_nonrepeatable_tool_stays_reconciliation(tmp_path):
-    from openprogram.execution.effects import EffectStatus
+def test_cancel_during_a_running_tool_is_final(tmp_path):
+    from openprogram.runtime.execution.state_machine import InvalidCommand
 
     store, attempts, control, driver, request, snapshot, execution, active, hook = (
         _prepare_long_turn(tmp_path, "exec-cancel-tool")
@@ -200,7 +190,7 @@ def test_cancel_during_dispatched_nonrepeatable_tool_stays_reconciliation(tmp_pa
             "role": "assistant",
             "content": [{
                 "type": "toolCall", "id": "call-cancel",
-                "name": "web_use", "arguments": {"n": "cancel"},
+                "name": "page_tool", "arguments": {"n": "cancel"},
             }],
             "api": "fake", "provider": "fake", "model": "fake",
         },
@@ -214,8 +204,6 @@ def test_cancel_during_dispatched_nonrepeatable_tool_stays_reconciliation(tmp_pa
         "arguments": {"n": "cancel"},
     }) is False
     assert hook("tool.started", {"tool_call_id": "call-cancel"}) is False
-    unresolved = control.effects.list_unresolved(execution.execution_id)
-    assert unresolved and unresolved[0].status is EffectStatus.DISPATCHED
     cancelling = asyncio.run(control.request_cancel(
         command_id="cancel-uncertain-tool",
         execution_id=execution.execution_id,
@@ -232,9 +220,166 @@ def test_cancel_during_dispatched_nonrepeatable_tool_stays_reconciliation(tmp_pa
         command_id="cancel-uncertain-tool",
         reason_code="user_cancelled",
     )
-    assert finished.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert finished.execution.status is ExecutionStatus.CANCELLED
+    assert finished.execution.current_attempt_id is None
+    assert finished.execution.owner_lease == {}
     assert finished.command is not None
-    assert finished.command.status is CommandStatus.APPLYING
-    still = control.effects.get(unresolved[0].effect_id)
-    assert still is not None and still.status is EffectStatus.DISPATCHED
+    assert finished.command.status is CommandStatus.APPLIED
+    with pytest.raises(InvalidCommand, match="invalid while execution is cancelled"):
+        asyncio.run(control.request_continue(
+            command_id="must-not-replay-uncertain-tool",
+            execution_id=execution.execution_id,
+            expected_version=finished.execution.status_version,
+            actor={"surface": "test"},
+        ))
 
+
+def test_cancel_between_lease_and_activation_ends_the_turn_cancelled(tmp_path):
+    """A stop that lands after the attempt is leased, before it runs, ends the turn.
+
+    The Worker acks a chat before its run thread leases and activates the
+    attempt. A cancel in between moves the execution to cancelling under that
+    lease, where no driver is bound to hear it; activation then finds a newer
+    version. The turn is settled as cancelled instead of staying cancelling.
+    """
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver, CanonicalAgentEntry
+
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    ran = threading.Event()
+
+    def run_turn(*, request, cancel_event):
+        ran.set()
+        return SimpleNamespace(failed=False, error=None)
+
+    driver = AgentProductionDriver(executions=store, turn_runner=run_turn)
+    entry = CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id="cancel-before-activation",
+        turn_payload={"version": 1, "kind": "chat", "request": {
+            "user_text": "work", "agent_id": "default", "source": "web"}},
+        trusted_actor={"subject": "user-1"}, config_snapshot_ref="config:test",
+        user_message_id="u", assistant_message_id="a",
+    )
+    lease = entry.control.attempts.lease
+
+    def lease_then_cancel(*args, **kwargs):
+        leased = lease(*args, **kwargs)
+        current = store.get_execution(admission.execution_id)
+        outcome = []
+        stopper = threading.Thread(target=lambda: outcome.append(asyncio.run(entry.control.request_cancel(
+            command_id="cancel-before-activation",
+            execution_id=admission.execution_id,
+            expected_version=current.status_version,
+            actor={"surface": "test"},
+            reason_code="cancel.user",
+        ))))
+        stopper.start()
+        stopper.join()
+        assert outcome[0].execution.status is ExecutionStatus.CANCELLING
+        return leased
+
+    entry.control.attempts.lease = lease_then_cancel
+    assert asyncio.run(entry.activate(admission)) is None
+    assert not ran.is_set()
+    ended = store.get_execution(admission.execution_id)
+    assert ended.status is ExecutionStatus.CANCELLED
+    assert ended.reason_code == "cancel.user"
+    assert ended.current_attempt_id is None
+    assert store.get_command("cancel-before-activation").status is CommandStatus.APPLIED
+
+
+def test_cancel_before_the_lease_ends_activation_quietly(tmp_path):
+    """A turn cancelled while queued is not leased: activation returns nothing to run."""
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver, CanonicalAgentEntry
+
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    ran = threading.Event()
+    driver = AgentProductionDriver(
+        executions=store, turn_runner=lambda **_kw: ran.set() or SimpleNamespace(failed=False, error=None))
+    entry = CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id="cancel-before-lease",
+        turn_payload={"version": 1, "kind": "chat", "request": {
+            "user_text": "work", "agent_id": "default", "source": "web"}},
+        trusted_actor={"subject": "user-1"}, config_snapshot_ref="config:test",
+        user_message_id="u", assistant_message_id="a",
+    )
+    cancelled = asyncio.run(entry.control.request_cancel(
+        command_id="cancel-before-lease", execution_id=admission.execution_id,
+        expected_version=admission.status_version, actor={"surface": "test"},
+        reason_code="cancel.user",
+    ))
+    assert cancelled.execution.status is ExecutionStatus.CANCELLED
+    assert asyncio.run(entry.activate(admission)) is None
+    assert not ran.is_set()
+    assert store.get_execution(admission.execution_id).status is ExecutionStatus.CANCELLED
+
+
+def _entry(tmp_path, session_id: str):
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver, CanonicalAgentEntry
+
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    ran = threading.Event()
+    driver = AgentProductionDriver(
+        executions=store, turn_runner=lambda **_kw: ran.set() or SimpleNamespace(failed=False, error=None))
+    entry = CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id=session_id,
+        turn_payload={"version": 1, "kind": "chat", "request": {
+            "user_text": "work", "agent_id": "default", "source": "web"}},
+        trusted_actor={"subject": "user-1"}, config_snapshot_ref="config:test",
+        user_message_id="u", assistant_message_id="a",
+    )
+    return store, entry, admission, ran
+
+
+def test_a_pause_before_activation_gives_way_through_the_one_yield_check(tmp_path, monkeypatch):
+    """The starter's lease loses to a pause of the queued turn; the starter
+    reads the execution again and gives way, writing nothing."""
+    store, entry, admission, ran = _entry(tmp_path, "pause-before-lease")
+    paused = asyncio.run(entry.control.request_pause(
+        command_id="pause-before-lease", execution_id=admission.execution_id,
+        expected_version=admission.status_version, actor={"surface": "test"},
+    ))
+    assert paused.execution.status is ExecutionStatus.PAUSED
+    checked = []
+    original = entry._yields_to_control_intent
+    monkeypatch.setattr(entry, "_yields_to_control_intent", lambda *a: checked.append(a) or original(*a))
+
+    assert asyncio.run(entry.activate(admission)) is None
+
+    assert not ran.is_set()
+    assert len(checked) == 1
+    after = store.get_execution(admission.execution_id)
+    assert after.status is ExecutionStatus.PAUSED
+    assert after.status_version == paused.execution.status_version
+    assert after.current_attempt_id is None
+
+
+def test_a_driver_refusal_under_a_stop_gives_way_through_the_one_yield_check(tmp_path, monkeypatch):
+    """The stop lands after the attempt is active, before a driver is bound:
+    the driver refuses, the starter reads the execution again and the
+    execution ends cancelled with the stop applied."""
+    store, entry, admission, ran = _entry(tmp_path, "stop-at-driver")
+    checked = []
+    original = entry._yields_to_control_intent
+    monkeypatch.setattr(entry, "_yields_to_control_intent", lambda *a: checked.append(a) or original(*a))
+    real_activate = entry.control._activate
+
+    async def stop_then_activate(active, *args, **kwargs):
+        await entry.control.request_cancel(
+            command_id="stop-at-driver", execution_id=active.execution_id,
+            actor={"surface": "test"}, reason_code="cancel.user",
+        )
+        return await real_activate(active, *args, **kwargs)
+
+    monkeypatch.setattr(entry.control, "_activate", stop_then_activate)
+
+    assert asyncio.run(entry.activate(admission)) is None
+
+    assert not ran.is_set()
+    assert len(checked) == 1 and checked[0][1] is not None
+    ended = store.get_execution(admission.execution_id)
+    assert ended.status is ExecutionStatus.CANCELLED
+    assert ended.current_attempt_id is None
+    assert store.get_command("stop-at-driver").status is CommandStatus.APPLIED

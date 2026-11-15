@@ -13,8 +13,8 @@
  * (`{}` for an empty 2xx body).
  */
 
-import { waitForOwnerAuthBootstrap } from "./owner-auth-bootstrap.ts";
-import { recoverOwnerAuth } from "./owner-auth-recovery.ts";
+import { waitForOwnerAuthBootstrap } from "./auth/owner-auth-bootstrap.ts";
+import { recoverOwnerAuth } from "./auth/owner-auth-recovery.ts";
 
 export class HttpError extends Error {
   status: number;

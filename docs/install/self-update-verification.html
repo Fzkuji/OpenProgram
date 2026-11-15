@@ -1,0 +1,88 @@
+<title>Self-update verification plans</title>
+<meta name="description" content="The checks an update runs after it restarts: fields, entries and the limits of each.">
+<h1>Self-update verification plans</h1>
+
+<p><code translate="no">self_update(action="prepare")</code> takes an optional <code translate="no">verification_plan</code>, included in the owner approval and stored with the immutable request. Omitting it keeps the HTTP-only verifier and grants nothing new.</p>
+<pre translate="no"><code>{"schema":1,"checks":[{"id":"diagnostics","assertion_id":"acceptance-1","entry":"/api/diagnostics","timeout_seconds":10,"max_output_bytes":65536}]}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">schema</code></th><td>Integer <code translate="no">1</code></td></tr>
+<tr><th scope="row"><code translate="no">checks</code></th><td>1–32, exactly one per assertion (<code translate="no">acceptance-1</code>, <code translate="no">acceptance-2</code>, …)</td></tr>
+<tr><th scope="row"><code translate="no">id</code></th><td>Unique, letters, digits, underscore, hyphen; starts alphanumeric; at most 64 characters</td></tr>
+<tr><th scope="row"><code translate="no">timeout_seconds</code></th><td>Integer 1–60</td></tr>
+<tr><th scope="row"><code translate="no">max_output_bytes</code></th><td>Integer 1–262144; 1–1572864 for <code translate="no">ui:main</code></td></tr>
+<tr><th scope="row"><code translate="no">entry</code></th><td><code translate="no">/api/commands</code>, <code translate="no">/api/diagnostics</code>, <code translate="no">/api/doctor</code>, <code translate="no">/healthz</code>, <code translate="no">/chat</code>, an installed docs page such as <code translate="no">/docs/install/upgrade.html</code>, <code translate="no">cli:version</code>, <code translate="no">cli:help</code>, <code translate="no">test:python</code>, <code translate="no">ui:main</code></td></tr>
+</tbody>
+</table>
+<p class="note">Every field is required. Arbitrary URLs, query strings and unknown fields are rejected before the update is created.</p>
+
+<h2>How checks run</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Verifier call</th><td><code translate="no">self_update_observe(check_id="diagnostics")</code>, with no entry or execution arguments. The execution layer applies the approved limits and the original overall deadline. Signed evidence must match the check and assertion.</td></tr>
+<tr><th scope="row">Models</th><td>Any conversational model. Without native structured output the answer is still checked against the stage's schema; a failed check makes the verdict inconclusive and the update rolls back. A request ending with no outcome stops the stage at once.</td></tr>
+<tr><th scope="row">Jobs</th><td>Verification, diagnosis and repair get the same plan, iteration policy and attempt timeout. A repaired child keeps goal, assertions, check IDs, limits, model and authority, and cannot refresh the deadline. Diagnosis and repair keep only their read tools.</td></tr>
+</tbody>
+</table>
+
+<h2><code translate="no">cli:version</code>, <code translate="no">cli:help</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Runs</th><td>The installed App's Python with <code translate="no">-I -B -m openprogram</code> and <code translate="no">--version</code> or <code translate="no">--help</code>; never a model-supplied command or PATH lookup.</td></tr>
+<tr><th scope="row">Needs</th><td>The native sandbox, a compatible runtime manifest and matching package and App build-revision markers.</td></tr>
+<tr><th scope="row">Access</th><td>Private temporary directories; no network, no App or source writes, no owner-home reads outside required runtime and scratch paths.</td></tr>
+<tr><th scope="row">Processes</th><td>Single process: the sandbox denies process creation, including detached subprocesses, <code translate="no">fork</code> and <code translate="no">posix_spawn</code>. Also for <code translate="no">test:python</code>; not for source-repair tests or builds.</td></tr>
+<tr><th scope="row">Evidence</th><td>Binds runtime identity, invocation and exit status. Nonzero exit, timeout, cancellation, changed identity, excess output or failed cleanup cannot pass. Proves startup and help only.</td></tr>
+</tbody>
+</table>
+
+<h2><code translate="no">test:python</code></h2>
+<pre translate="no"><code data-claim="example">{"id":"source-test","assertion_id":"acceptance-1","entry":"test:python","argv":["tests/verify_feature.py","expected"],"timeout_seconds":30,"max_output_bytes":65536}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">argv</code></th><td>1–32 strings, at most 4096 characters, no NUL. Required only for this entry</td></tr>
+<tr><th scope="row">First item</th><td>Committed regular <code translate="no">.py</code> file relative to the candidate root; no symlink, absolute path, parent traversal or interpreter option. Starts with an ASCII letter, digit or underscore, then letters, digits, underscore, slash, dot or hyphen, at most 511 characters</td></tr>
+<tr><th scope="row">Other items</th><td>Literal arguments approved up front</td></tr>
+<tr><th scope="row">Runs as</th><td>Installed candidate Python, <code translate="no">-I -B SCRIPT ARGS</code>, from the registered worktree root. Isolated mode does not add that root to the import path; a test importing candidate code must do so itself</td></tr>
+<tr><th scope="row">Access</th><td>Registered candidate path readable even under HOME, read-only; other owner-home data not. Temporary data in the private <code translate="no">TMPDIR</code> or <code translate="no">HOME</code>. No dependencies installed. The CLI limits above apply</td></tr>
+<tr><th scope="row">Evidence</th><td>Missing, dirty or unregistered source or a changed script blocks verification. Records source revision, script digest and invocation. A <code translate="no">candidate_test</code> result proves source-test execution, not installed-App behavior</td></tr>
+</tbody>
+</table>
+
+<h2><code translate="no">ui:main</code></h2>
+<pre translate="no"><code>{"id":"main-capture","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576}
+{"id":"scroll-history","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576,"interaction":{"kind":"scroll","delta_y":-400}}
+{"id":"context-view","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576,"interaction":{"kind":"view","target":"dag"}}</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">UI protocol</th><th scope="col">Capability</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>Capture</td><td>Read-only PNG and accessibility tree of the original session's main window</td></tr>
+<tr><th scope="row">2</th><td>Capture after scroll</td><td><code translate="no">delta_y</code>: nonzero integer, −1200 to 1200 CSS pixels; always the original conversation; no selector or script</td></tr>
+<tr><th scope="row">3</th><td>Perspective</td><td><code translate="no">target</code>: exactly <code translate="no">session</code> or <code translate="no">dag</code></td></tr>
+<tr><th scope="row">4</th><td>Readable for rollback only</td><td><code translate="no">test_object</code> plans and requests are rejected; new packages advertise only the three above</td></tr>
+</tbody>
+</table>
+<p class="note">Both candidate and rollback packages need the protocol, with matching capture, backend and frontend bindings, before installation.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Needs</th><td>A packaged UI-verification descriptor, runtime identity and exactly one connected main Desktop window. Older packages cannot use this plan.</td></tr>
+<tr><th scope="row">Output</th><td>The verifier gets the image and tree, not a path. The limit covers the whole capture JSON with base64 data. PNGs are non-interlaced 8-bit RGB or RGBA, at most 16384 per side and 32 million pixels.</td></tr>
+<tr><th scope="row">Model</th><td>Must declare image input. Preparation rejects text-only models; restart recovery and queued Jobs check again; lost support records an error rather than running text-only.</td></tr>
+<tr><th scope="row">Bound to</th><td>The active Job, candidate revision, worker, session route and main-window connection.</td></tr>
+<tr><th scope="row">Fails on</th><td>Expired, cancelled, replayed or mismatched requests, user input, navigation, window changes, conflicting capture resources, excess output or incomplete cleanup.</td></tr>
+<tr><th scope="row">Not allowed</th><td>Arbitrary URL, JavaScript, target window, click, navigation, data change or other side effects.</td></tr>
+<tr><th scope="row">During capture</th><td>That window's new network requests, native IPC and external navigation are rejected. Marked HTTP requests are refused by the backend, including authentication bootstrap and stale markers. Its WebSocket accepts only observation replies and cancelling the exact verifier Job.</td></tr>
+<tr><th scope="row">Released</th><td>Before evidence upload, even on failure. Other windows and running requests are unaffected.</td></tr>
+<tr><th scope="row">Scroll</th><td>The capture shows the after-scroll state; evidence records before, after and restored metrics. Position is restored before success and never persisted. Failed attempts restore their own scroll while target and deadline hold; user interruption cancels without restoring. Target change or failed restoration cannot pass. Unmoved at a boundary proves nothing alone.</td></tr>
+<tr><th scope="row">Perspective</th><td>Starts on the visible original conversation, uses the real control, captures, restores conversation and scroll before success. Already selected DAG, missing or replaced control, interruption or failed restoration cannot pass. <code translate="no">session</code> does not switch and cannot prove a switch.</td></tr>
+<tr><th scope="row">Perspective state</th><td>Nothing is persisted, including through background tab updates. On interruption the user's selection is kept. Failed restoration may leave the requested view showing and reports failure.</td></tr>
+<tr><th scope="row">Proves</th><td>Only claims about the captured state; unobserved interactions stay inconclusive. HTTP responses, including <code translate="no">/chat</code> HTML, do not prove rendered behavior.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="conversational-self-update.html">Update from chat</a> · <a href="self-update-rollback.html">Self-update rollback</a></p>

@@ -1,0 +1,466 @@
+<title>聊天回合视觉规范</title>
+<meta name="description" content="消息表面、执行时间线、手动函数运行、子代理导航、文件修改卡片、消息导航和转录行为。">
+<h1>聊天回合视觉规范</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row">组件</th><td><code translate="no">apps/web/components/chat/messages/</code></td></tr>
+<tr><th scope="row">样式</th><td><code translate="no">apps/web/app/styles/chat/</code>；步骤颜色在 <code translate="no">apps/web/app/styles/tool-tones.css</code></td></tr>
+<tr><th scope="row">摘要句</th><td><a href="tool-group-summary.zh.html">工具组摘要</a></td></tr>
+<tr><th scope="row">文件归属、撤回、恢复</th><td><a href="../../runtime/operations/file-management.zh.html">文件修改、Review 与恢复</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="message-surfaces">消息表面</h2>
+<p>没有头像，也没有发言人行。文本列与输入框左右边缘对齐。</p>
+<table class="stack">
+<thead><tr><th scope="col">表面</th><th scope="col">外观</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">用户气泡</th><td>靠右，随内容宽度，最多 75%（窄布局和分栏 88%）。16px 圆角，内边距 10px 16px，无边框。填充 <code translate="no">--user-msg-bg</code>（= <code translate="no">--bg-input</code>），<code translate="no">--composer-shadow</code>。</td><td>悬停加深为 <code translate="no">--composer-shadow-focus</code>。内部代码块和折叠粘贴用 <code translate="no">--bg-primary</code> 内嵌。设定 Goal 的那条消息（<code translate="no">startsGoal</code>）在文字第一行开头放靶心图标（16）和“目标”，<code translate="no">--accent-blue</code>，字重 500。</td></tr>
+<tr><th scope="row">助手回复</th><td>平铺在页面上。各块之间统一 22px 的 <code translate="no">--reply-gap</code>；标题上方多半个间距，下方少三分之一。</td><td>没有 token 或服务等级页脚。</td></tr>
+<tr><th scope="row">排队行</th><td>气泡表面，10px 圆角，位于输入框上方</td><td>尚未发送的用户消息</td></tr>
+<tr><th scope="row">发送中</th><td>气泡 60% 不透明度</td><td>未送达服务器的发送在气泡下一行说明。</td></tr>
+<tr><th scope="row">编辑框</th><td>占满整列，<code translate="no">--bg-input</code>，23px 圆角，输入框阴影，悬停和聚焦时加深</td><td>保留的附件（可逐个移除）、新附件条、带 @ 文件提及的输入行。底行：回形针（ghost 圆形 <code translate="no">icon-sm</code>，“添加图片或文件”），然后取消（elevated sm）和保存并重发（primary sm）。Esc 取消，⌘/Ctrl+Enter 保存，可拖入文件。动作行隐藏。</td></tr>
+</tbody>
+</table>
+<p class="note">有两个标记不是头像：多代理会话里非 main 的具名代理回复上方 18px 的身份行，以及手动函数运行的 ƒ 标记。</p>
+
+<h3 id="action-row">动作行</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置</th><td>每条消息下方：用户气泡下靠右，回复下靠左，间距 <code translate="no">--reply-gap</code> − 3px。高度固定 24px。</td></tr>
+<tr><th scope="row">顺序</th><td>时间戳、复制、重新生成和钉为章节（助手）、编辑（用户）、回退到这里（用户，之后的回复改过文件时）、同级版本的 ‹ N / M ›</td></tr>
+<tr><th scope="row">按钮</th><td>Ghost 圆形 <code translate="no">icon-xs</code>（24px），16px 动画线性图标，静止时弱色，悬停时主色加圆形弱填充。悬停和键盘聚焦驱动图标动画。</td></tr>
+<tr><th scope="row">标签</th><td>1.5 秒后显示 <code translate="no">HoverTip</code> + <code translate="no">TipBody</code>，绝不用原生 title；文字同 <code translate="no">aria-label</code></td></tr>
+<tr><th scope="row">可见性</th><td>消息悬停或含焦点前透明。触屏和已钉章节始终可见。</td></tr>
+<tr><th scope="row">忙碌、已复制</th><td>禁用时 40% 不透明度。复制后显示绿色对勾 1.2 秒。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>时间约定</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">记录</th></tr></thead>
+<tbody>
+<tr><th scope="row">用户消息</th><td>发送成功时的本地时间</td></tr>
+<tr><th scope="row">Agent 回复、独立函数或运行消息</th><td>开始时间，即首个可见状态创建时</td></tr>
+<tr><th scope="row">Agent 内的思考和工具步骤</th><td>该 Agent 消息的开始时间。独立运行和子代理消息保留各自的时间。</td></tr>
+<tr><th scope="row">后续更新</th><td>流式、终态更新和层级移动都保留时间；重载后以持久化时间为准。</td></tr>
+<tr><th scope="row">首个回复内容之前</th><td>一行临时状态，开始时间紧跟状态文字，没有普通页脚</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="execution-timeline">执行时间线</h2>
+
+<h3 id="collapsed-row">摘要行</h3>
+<ul>
+<li>一行纯文字加 ›，无外框、无按钮底色，与正文列对齐。高 28px；悬停只提亮文字。</li>
+<li>依次是句子、实时重试状态、红色“· N 个失败”、已停止或已中断标签、+N −M 徽章。句子截断为一行。</li>
+<li>回复正文始终可见。</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">转录视图</th><th scope="col">工具组</th><th scope="col">步骤</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">normal</code>（默认）</th><td>收起</td><td>收起</td></tr>
+<tr><th scope="row"><code translate="no">thinking</code></th><td>展开</td><td>思考步骤展开</td></tr>
+<tr><th scope="row"><code translate="no">verbose</code></th><td>展开</td><td>全部展开</td></tr>
+</tbody>
+</table>
+<p class="note">每个浏览器的偏好：一个默认值，加每个对话一个选择。手动点击优先于视图，也优先于后续流式和终态更新。</p>
+
+<h3 id="step-rows">步骤行</h3>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">主行</th><th scope="col">嵌套行</th></tr></thead>
+<tbody>
+<tr><th scope="row">最小高度</th><td>30px</td><td>26px</td></tr>
+<tr><th scope="row">左内边距</th><td>34px</td><td>30px，缩进 6px</td></tr>
+<tr><th scope="row">图标框</th><td>24px</td><td>20px</td></tr>
+<tr><th scope="row">竖线 1px</th><td>位于 11.5px，首尾 12px 渐隐</td><td>位于 9.5px</td></tr>
+</tbody>
+</table>
+<ul>
+<li>文字：动词标题（运行、修改、网页搜索……）字重 500，识别参数作为小标签，结果首行用弱色。不出现原始 JSON；完整参数和输出在侧栏。</li>
+<li>图标只是步骤色调的 Solar Bold Duotone 字形，底为页面色，竖线到它背后中断。</li>
+<li>嵌套递归，无深度限制。</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">色调</th><th scope="col">步骤</th></tr></thead>
+<tbody>
+<tr><th scope="row">绿</th><td>命令、子代理</td></tr>
+<tr><th scope="row">琥珀</th><td>文件编辑</td></tr>
+<tr><th scope="row">蓝</th><td>读取</td></tr>
+<tr><th scope="row">青</th><td>搜索、LLM</td></tr>
+<tr><th scope="row">靛蓝</th><td>网页和浏览器</td></tr>
+<tr><th scope="row">紫、品红</th><td>思考；记忆</td></tr>
+<tr><th scope="row">石板、玫红、岩灰</th><td>规划；媒体；系统</td></tr>
+<tr><th scope="row">橙</th><td>其他函数</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态或目标</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中</th><td>普通字形，外圈锥形扫光（1.1 秒）；思考备注显示最新一行</td></tr>
+<tr><th scope="row">失败</th><td>红色警告三角，红色标题</td></tr>
+<tr><th scope="row">带下划线的标题</th><td>在右栏打开详情</td></tr>
+<tr><th scope="row">图标、摘要、行空白</th><td>只展开或收起；可展开行有 V 形箭头。叶子行不响应。</td></tr>
+<tr><th scope="row">行内内容</th><td>思考全文和子代理自己的转录在行内展开，与标题对齐，一层浅底</td></tr>
+<tr><th scope="row">动作</th><td>每行都有复制，子代理另有打开对话和取消运行。只在悬停的行（<code translate="no">:hover</code> 挂在行头，子行不会带出祖先）或 <code translate="no">:focus-visible</code> 时出现；触屏始终显示。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>动效</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">过渡</th></tr></thead>
+<tbody>
+<tr><th scope="row">整条时间线</th><td>Grid 0fr↔1fr，160ms，只向下展开。收起 220ms 后卸载子树。</td></tr>
+<tr><th scope="row">步骤内容和子时间线</th><td>高度和 −3px→0 用 240ms，透明度 160ms</td></tr>
+<tr><th scope="row">新步骤</th><td>0.22 秒淡入滑入</td></tr>
+<tr><th scope="row">箭头</th><td>160ms 旋转 90°</td></tr>
+<tr><th scope="row">运行中的摘要</th><td>文字扫光，1.8 秒</td></tr>
+<tr><th scope="row">视口</th><td>不得跳动：聊天关闭滚动锚定，点击后底部跟随暂停 600ms</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="lifecycle">生命周期与归属</h3>
+<ul>
+<li>流式、完成和恢复的消息使用同一套 <code translate="no">ExecutionStrip</code>、<code translate="no">ThinkingStep</code>、<code translate="no">FunctionStep</code>；完成后不切换为带框表格。</li>
+<li>没有有序块时，按存储顺序显示已存的思考和工具记录。不重建缺失的穿插，也不虚构工具记录。结果、错误、标识和完整输出引用保留。</li>
+<li>Agent 回复发起的函数只属于该回复的时间线。只有用户发起的函数才是独立运行消息。</li>
+</ul>
+
+<h2 id="manual-function-runs">手动函数运行</h2>
+<p>表单和精确函数表达式是同一个 <code translate="no">FunctionInvocation { name, kwargs }</code> 的两种编辑器，共用一个转换器和一个 HTTP 提交器。两者都不创建用户气泡或 Agent 文字回合。</p>
+<table class="stack">
+<thead><tr><th scope="col">输入</th><th scope="col">判定</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">gui_agent(task="…", surface="browser")</code></th><td>完整匹配、已注册函数、命名字面量</td><td><code translate="no">POST /api/function/gui_agent</code>，一个 ProgramRun</td></tr>
+<tr><th scope="row">函数表单</th><td>Schema 生成相同的类型化 kwargs</td><td>相同</td></tr>
+<tr><th scope="row"><code translate="no">Please explain gui_agent(...)</code>、<code translate="no">`gui_agent(...)`</code></th><td>不是完整表达式</td><td>普通用户消息，交给 Agent</td></tr>
+<tr><th scope="row">缺少必填参数或类型错误</th><td>已识别，但无效</td><td>保留草稿，打开表单并显示错误；不退回聊天</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">识别器</th><td>不执行 JavaScript 或 Python。只接受字符串、数字、布尔、null 和扁平命名参数；不支持位置参数、属性、变量或表达式。</td></tr>
+<tr><th scope="row">提交</th><td>识别成功不调用 <code translate="no">sendChatMessage</code>，不写待发用户文本。附件、排队和系统决定绝不变成参数。占位、Project、频道、导航和回滚都在共用提交器里。</td></tr>
+<tr><th scope="row">布局</th><td>28px ƒ 标记，无框时间线。收起标题、结论和页脚共用一条左缘。页脚在下方 14px，靠左，按钮同聊天，版本导航用 <code translate="no">.message-nav</code>（◀ N/M ▶）。</td></tr>
+<tr><th scope="row">展开</th><td>只显示根的直接子节点；更深层逐级展开</td></tr>
+<tr><th scope="row">复制</th><td>根调用的结果（error ?? output），不是参数 JSON</td></tr>
+<tr><th scope="row">重试</th><td>参数不变的同级分支</td></tr>
+<tr><th scope="row">编辑</th><td>预填表单；参数修改后的同级分支（<code translate="no">fork_of_node</code> 锚定原调用的前驱）</td></tr>
+<tr><th scope="row">分支</th><td>就地替换显示的运行；绝不追加到对话末尾</td></tr>
+<tr><th scope="row">运行中、嵌套</th><td>一行呼吸点。嵌套运行没有页脚。</td></tr>
+</tbody>
+</table>
+
+<h2 id="sub-agents">子代理</h2>
+<h3 id="sub-agent-live">实时显示</h3>
+<table class="stack">
+<thead><tr><th scope="col">时刻</th><th scope="col">时间线</th></tr></thead>
+<tbody>
+<tr><th scope="row">父级运行中</th><td>执行区跟随转录视图；流式状态不决定它</td></tr>
+<tr><th scope="row">子代理开始</th><td>新增一条运行中记录；已展开的时间线显示新行</td></tr>
+<tr><th scope="row">子代理结束</th><td>同一 <code translate="no">card_id</code> 的行就地更新，不重复也不删除</td></tr>
+<tr><th scope="row">父级终态</th><td>手动选择不变；只变活动指示和步骤状态</td></tr>
+<tr><th scope="row">之后展开</th><td>仍是同一时间线行，悬停或聚焦时有打开对话</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">调用路径</th><th scope="col">实时数据</th><th scope="col">行</th></tr></thead>
+<tbody>
+<tr><th scope="row">聊天里的 <code translate="no">agent()</code></th><td><code translate="no">sub_agent</code> 事件按 <code translate="no">card_id</code> 写入 <code translate="no">attachCards</code></td><td><code translate="no">SubAgentStep</code></td></tr>
+<tr><th scope="row"><code translate="no">report_workflow</code> 内部角色调用</th><td><code translate="no">tree_update</code> 写入 <code translate="no">contextTree</code></td><td><code translate="no">TreeStep</code> 子节点</td></tr>
+</tbody>
+</table>
+
+<h3 id="sub-agent-navigation">父子导航</h3>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="父分支子代理行上的打开对话进入子代理分支。在该分支上，“创建自”卡片的切换按钮回到父分支的原调用点 callerId，顶部横幅的返回主对话回到父分支最新位置 backTarget。">
+  <defs><marker id="ct-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="60">调用点</text>
+  <text class="t-soft" x="0" y="86">父分支</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="108">callerId</text>
+  <rect class="tile" x="252" y="30" width="176" height="96" rx="8"/>
+  <text class="t-big" x="268" y="60">子代理</text>
+  <text class="t-soft" x="268" y="86">子分支</text>
+  <text class="t-cmd notranslate" translate="no" x="268" y="108">attach.head_id</text>
+  <text class="t-big" x="536" y="60">最新位置</text>
+  <text class="t-soft" x="536" y="86">父分支</text>
+  <text class="t-cmd notranslate" translate="no" x="536" y="108">backTarget</text>
+  <line class="ln" x1="112" y1="52" x2="244" y2="52" marker-end="url(#ct-a)"/>
+  <text class="mid" x="178" y="42">打开对话</text>
+  <line class="ln" x1="244" y1="96" x2="112" y2="96" marker-end="url(#ct-a)"/>
+  <text class="mid" x="178" y="118">切换</text>
+  <line class="ln" x1="436" y1="76" x2="528" y2="76" marker-end="url(#ct-a)"/>
+  <text class="mid" x="482" y="148">返回主对话</text>
+  <line class="ln-faint" x1="482" y1="82" x2="482" y2="130"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>调用点</strong><small>父分支，<code translate="no">callerId</code></small></li>
+  <li class="via">打开对话</li>
+  <li><strong>子代理</strong><small>子分支，<code translate="no">attach.head_id</code></small><small>切换回到调用点</small></li>
+  <li class="via">返回主对话</li>
+  <li class="flow-end"><strong>最新位置</strong><small>父分支，<code translate="no">backTarget</code></small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">到达</th></tr></thead>
+<tbody>
+<tr><th scope="row">行上的打开对话</th><td>子代理最新的回复。对话运行时 head 不能移动，改为在行内打开。</td></tr>
+<tr><th scope="row">顶部横幅的返回主对话</th><td>父分支最新位置；重载后定位发起回合，展开执行区并高亮该行</td></tr>
+<tr><th scope="row">首条消息前“创建自”卡片的切换</th><td><code translate="no">callerId</code>；之后的父分支消息被隐藏</td></tr>
+</tbody>
+</table>
+<p class="note">三者都在同一会话内切换活动 HEAD 并重载转录，不开新标签。后端禁止执行期间移动 HEAD。旧的跨会话 AttachCard 只打开目标会话。没有 attach 指针的 <code translate="no">report_workflow</code> <code translate="no">TreeStep</code> 只打开右栏详情。</p>
+
+<h2 id="message-navigation">消息导航</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">刻度</th><td>每条用户消息一条，静息 9px，间距 10px，可视的那条更亮。过长时 rail 内部滚动。</td></tr>
+<tr><th scope="row">位置</th><td>聊天区左缘、侧栏分隔线旁，用行内尺寸容器的 <code translate="no">100cqw</code> 定位</td></tr>
+<tr><th scope="row">指针</th><td>Y 映射到最近的刻度，该刻度最长到 36px，旁边打开预览卡（截断文本、附件标签）。绝不渲染全量列表。</td></tr>
+<tr><th scope="row">点击、Enter</th><td>平滑滚动到该消息并短暂高亮</td></tr>
+<tr><th scope="row">预览内容</th><td>用户文本和助手摘要按不可信 Markdown 处理：原始 HTML 和类 HTML 公式保持字面，链接遵循文档 URL 策略，附件提取和密钥遮罩先执行</td></tr>
+</tbody>
+</table>
+
+<h3 id="chapters">章节</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">控件</th><td>回复上的钉为章节或取消章节。钉住时书签在按下底色上填充紫色，该动作行保持显示。</td></tr>
+<tr><th scope="row">存储</th><td>回合用户节点上的 <code translate="no">metadata.chapter = {"pinned_at": &lt;epoch seconds&gt;}</code>；<code translate="no">None</code> 或缺失表示未钉。随节点进入每条分支，经 <code translate="no">load_session</code> 以 <code translate="no">chapter</code> 返回。</td></tr>
+<tr><th scope="row">协议</th><td><code translate="no">set_message_chapter {session_id, message_id, pinned}</code> 只接受该会话的用户消息，并广播 <code translate="no">message_chapter_updated {session_id, message_id, chapter}</code>。服务器修补内存镜像；读取时从存储的行取得置顶。</td></tr>
+<tr><th scope="row">刻度</th><td><code translate="no">--accent-purple</code>，厚 4px（普通 2.5px），静息 18px（<code translate="no">CHAPTER_W</code>），悬停不变短，rail 变暗时仍全紫</td></tr>
+<tr><th scope="row">选择器</th><td><code translate="no">packRailRow</code> 多一个标量，行仍按扁平字符串比较</td></tr>
+</tbody>
+</table>
+
+<h2 id="file-changes">文件修改卡片</h2>
+<p class="note">只报告本轮的精确修改。归属和恢复规则：<a href="../../runtime/operations/file-management.zh.html">文件修改、Review 与恢复</a>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">表面</th><td><code translate="no">--bg-input</code>，2xl 圆角，6px 内边距，<code translate="no">--composer-shadow</code>，悬停加深。全部用产品无衬线字体。</td></tr>
+<tr><th scope="row">头部</th><td>最小 30px，20px 笔形图标，字重 600 的“N 个文件已修改”，着色 +N −M 徽章（未知时为 —），动作靠右。卡片宽度 ≤420px 时：“N 个文件”，间距 6px 和 5px。</td></tr>
+<tr><th scope="row">动作</th><td>Elevated xs 按钮。撤回、还原本轮、重做、重新应用中当前可执行的一个，然后审阅。重做反转撤回，重新应用反转还原。</td></tr>
+<tr><th scope="row">不可用</th><td>动作保持可聚焦，<code translate="no">aria-disabled</code>，50% 不透明度；悬停提示说明原因（之后被改动、无法恢复、不在当前分支、代理或运行未结束、已在进行中）</td></tr>
+<tr><th scope="row">文件列表</th><td>内嵌区：<code translate="no">--bg-primary</code>，lg 圆角，3px 内边距</td></tr>
+<tr><th scope="row">行</th><td>30px，左右 10px。<code translate="no">FileTypeIcon</code>（16px 盒，亮暗两套配色），弱色目录，亮色文件名，纯绿红计数，或“重命名”/“已删除”。悬停加 <code translate="no">--bg-hover</code>；整行打开审阅并定位该文件。</td></tr>
+<tr><th scope="row">溢出</th><td>三行，然后“再显示 N 个文件”（最多加载 20 个），然后收起。已计数但未列出的文件以一行“还有 N 个文件 — 在审阅中查看”结束。头部计数是 <code translate="no">file_count</code>。计数多于列出数的摘要通过 <code translate="no">review_scope</code> 加载完整列表。</td></tr>
+<tr><th scope="row">已撤回</th><td>列表 55% 不透明度，文件名删除线，“显示原始历史差异；这些修改当前已不生效。”</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">回合</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">有持久化文件记录，或有直接写文件工具</th><td>挂载卡片</td></tr>
+<tr><th scope="row">无记录</th><td>无卡片，无审阅</td></tr>
+<tr><th scope="row">旧回合，进入视口时加载</th><td>不可见探针；空结果保持隐藏</td></tr>
+<tr><th scope="row">加载失败</th><td>“无法加载文件修改。”和重试</td></tr>
+<tr><th scope="row">写入全部失败</th><td>“本轮文件操作未成功执行。”</td></tr>
+</tbody>
+</table>
+
+<h3 id="review-tab">审阅标签页</h3>
+<table class="stack">
+<thead><tr><th scope="col">范围</th><th scope="col">来源</th><th scope="col">包含</th><th scope="col">撤回</th></tr></thead>
+<tbody>
+<tr><th scope="row">本轮</th><td>本轮修改日志</td><td>主修改集；关联的子修改集按实际产生者分组</td><td>每条记录可恢复且之后未被改动时</td></tr>
+<tr><th scope="row">当前分支</th><td>活动谱系的修改投影</td><td>已完成回合和显式的还原、恢复、重新应用；不含同级分支、普通 Bash 和外部写入</td><td>只能从具体回合或检查点开始</td></tr>
+<tr><th scope="row">工作区</th><td>Git 已跟踪差异和 <code translate="no">ls-files --others --exclude-standard</code></td><td>未提交文件，遵守 <code translate="no">.gitignore</code>；非 Git 显示不可用</td><td>无</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">动作或状态</th><th scope="col">结果</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">审阅、文件行</th><td>打开唯一确定的 <code translate="no">r:&lt;sessionId&gt;:&lt;assistantMsgId&gt;</code> 中央标签页；文件行同时选中路径</td><td>聊天内不加载差异；重复点击只聚焦或更新选择</td></tr>
+<tr><th scope="row">放置</th><td>未分栏时放在现有组内聊天右侧；完整分栏时作为普通活动标签页</td><td>不替换已有同伴，不加第三栏，不建第二个标签存储</td></tr>
+<tr><th scope="row">头部</th><td>标题、来源和总数；然后范围切换和类型菜单（全部类型、代码、测试、文档、大文件）</td><td>页面色，细线分隔</td></tr>
+<tr><th scope="row">栏宽 900px 以下</th><td>文件列表收进选中文件的头部：完整文件名、目录、执行者、产生回合、行数、<em>n / N</em> 菜单</td><td>900px 起：260px 列表，文件名在目录上方</td></tr>
+<tr><th scope="row">差异</th><td>无文件头；hunk 以行范围标注；长行换行；新增或删除的文件只有一列行号；分页在下方</td><td>一次只挂载一个有界差异</td></tr>
+<tr><th scope="row">预览</th><td>渲染当前的 Markdown、图片或 PDF</td><td>读取文件现在的样子；已删除文件没有预览</td></tr>
+<tr><th scope="row">行评论</th><td>点击行；多条评论带结构化位置进入下一条提示</td><td>不直接改文件，不声称已审查</td></tr>
+<tr><th scope="row">大文件、二进制</th><td>统计、原因、打开文件</td><td>不完整渲染</td></tr>
+<tr><th scope="row">撤回冲突</th><td>审阅定位冲突文件</td><td>没有强制捷径</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>同类系统的做法</summary>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">回合或检查点</th><th scope="col">审阅</th><th scope="col">撤回或回退</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex</a></th><td><code translate="no">TurnDiffTracker</code> 只用已提交的 <code translate="no">apply_patch</code> 增量；不精确的增量清空本轮差异</td><td><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/get_git_diff.rs"><code translate="no">/diff</code></a> 用 Git：<code translate="no">git diff</code> 和 <code translate="no">git ls-files --others --exclude-standard</code></td><td><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs"><code translate="no">thread/revert</code></a> 只恢复对话历史；App 文件撤回不在开源仓库中</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/checkpointing">Claude Code</a></th><td>每条提示一个检查点，只跟踪直接编辑工具，保留最近 100 个</td><td><a href="https://code.claude.com/docs/en/desktop">桌面端</a>和 <a href="https://code.claude.com/docs/en/web-quickstart">Web</a>：会话总数、文件导航、单文件差异、行评论</td><td>代码和对话可分别恢复。Bash、后台子代理、外部修改和链接不保证。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">精确归属</th><td>同 Codex：回合统计只来自已提交的修改</td></tr>
+<tr><th scope="row">独立审阅面</th><td>同两者：聊天放摘要，审阅放导航、内容和评论</td></tr>
+<tr><th scope="row">会话和仓库差异</th><td>一个标签页内三个范围</td></tr>
+<tr><th scope="row">检查点恢复</th><td>回合级撤回，先完整预检，记录为新的日志事务</td></tr>
+<tr><th scope="row">不做</th><td>不围绕 Bash 扫描目录归属，不做近似回合差异，不静默部分恢复</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>实现位置</summary>
+<table class="stack">
+<thead><tr><th scope="col">范围</th><th scope="col">位置</th><th scope="col">排除</th></tr></thead>
+<tbody>
+<tr><th scope="row">修改与恢复</th><td><code translate="no">programs/tools/files/</code>、<code translate="no">state/store/snapshot/checkpoint/</code>、回合收尾、<code translate="no">runtime/conversation/revert.py</code></td><td>Bash 目录监视、修改用户 Git、从磁盘推断回合</td></tr>
+<tr><th scope="row">审阅协议</th><td><code translate="no">interfaces/server/ws_actions/turn_files/</code>、消息元数据、Git 辅助函数</td><td>无界字符串、近似回退</td></tr>
+<tr><th scope="row">审阅标签页</th><td><code translate="no">center-tab-ids.ts</code>、<code translate="no">center-tabs-store.ts</code>、<code translate="no">center-tab-groups.ts</code>、<code translate="no">components/center-tabs/review/</code></td><td>新窗口、弹窗、第三栏</td></tr>
+<tr><th scope="row">聊天卡片</th><td><code translate="no">turn-files-chips.tsx</code>、<code translate="no">turn-files-card.css</code></td><td>内联差异、文件行箭头、悬停动作组</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="chat-math">聊天公式</h2>
+<ul>
+<li>完整的 <code translate="no">$$</code>、<code translate="no">$</code>、<code translate="no">\[</code>、<code translate="no">\(</code> 块在 <code translate="no">marked</code> 之前暂存，净化后还原为转义文本。<code translate="no">MarkdownText</code> 在绘制后排版；聊天区钉底路径对观察到的消息列调用 <code translate="no">typesetMath</code>。</li>
+<li>未闭合的流式公式等到下一次带闭合符的绘制。没有公式的文字和不完整的开头不排版。无效公式不抛错。</li>
+</ul>
+
+<h2 id="generation-motion">等待回复</h2>
+<p>空回复显示一行静态“思考中…”，带摘要行的扫光，没有 ›（代码雨风格下是绿色下落文字）。旋转的活动标记在侧栏对应行上。审批和终态不显示它；时间线、页脚和窗格标题不加标记。</p>
+
+<h2 id="chat-retries">自动重试</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置</th><td>回复最后一个工具组的句子之后，连接方式同“· N 个失败”。以文字结尾或尚无工具组时，单独一行收起行，前面没有点。</td></tr>
+<tr><th scope="row">文字</th><td>“服务器繁忙，3 秒后重试 2/5”、“网络断了，20 秒后再试”、“回复不完整，正在重试 2/3”</td></tr>
+<tr><th scope="row">原因</th><td>429：被限流。5xx 或过载：服务器繁忙。超时：请求超时。其他：连接中断。</td></tr>
+<tr><th scope="row">颜色</th><td>应对失败时橙色。“输出到上限，继续生成”保持行本身的颜色。等待时停止扫光。</td></tr>
+<tr><th scope="row">秒数</th><td>从收到通知起倒计时，等宽数字</td></tr>
+<tr><th scope="row">展开后</th><td>时间线以重试行结束（插头字形、系统色调、运行中），标题同一句话，失败用一行表示，如 <code translate="no">ReadTimeout: …</code></td></tr>
+<tr><th scope="row">事件</th><td><code translate="no">attempt</code>、<code translate="no">max_attempts</code>、<code translate="no">reason</code>、<code translate="no">delay_ms</code>、<code translate="no">error</code>（<code translate="no">retry_error_text</code>，最多 300 字符）。由 OpenAI 兼容和 Codex 适配器发送，<code translate="no">retry-status.tsx</code> 显示。</td></tr>
+<tr><th scope="row">存续</th><td>只存在于实时状态。下一段流式内容清除它，恢复后的回复与从未失败的一样。</td></tr>
+</tbody>
+</table>
+
+<h2 id="chat-failures">失败的回复</h2>
+<ul>
+<li>保留部分回答和有序轨迹。其后、消息动作之前有一条终态通知：本地化标题，技术细节按需以纯文本展开。不增加自动重试。</li>
+<li>部分块和失败详情是分开的字段。节点输出为模型上下文和非 Web 使用方保留错误文本；Web 映射器从有序文本块恢复回答。</li>
+<li>节点在最终失败事件前持久化详情、原因、可重试性和重试延迟，历史恢复同一通知。旧的错误输出可识别，不改写历史，也不在通知里重复回答。</li>
+<li>取消、审批、嵌套详情、重试和分支语义、Goal 报告不变。Provider 错误分类仍为权威；没有第二个错误存储。</li>
+</ul>
+<details>
+<summary>验收</summary>
+<ul>
+<li>公开回合输出文字和工具后失败：实时和冷历史都显示回答、轨迹和一条通知。</li>
+<li>空的和旧的失败回复保持可见。成功和取消的回复没有通知。详情在窄布局和暗色下可用。</li>
+<li>回归还覆盖浏览器权限继承和高层委派。绑定页面测试提供显式绑定，并期望同一观察失败三次后停止，带具体原因。</li>
+</ul>
+</details>
+
+<h2 id="transcript-consistency">转录更新归属</h2>
+<ul>
+<li>每一行都归服务端所有。读取画出一个窗口，编号的 <code translate="no">transcript_update</code> 变化让它保持最新，文字帧按偏移把文字加到块上。三者都由一个 reducer <code translate="no">apply-transcript-update.ts</code> 应用，所以实时画出的行就是重新加载画出的行。</li>
+<li>浏览器只添加服务端还没给出的东西。待处理的发送、函数占位或提示是有类型的本地行，读取或更新带上它的 <code translate="no">clientRequestId</code> 时离开。</li>
+<li>先于服务端显示的字段（停止、版本切换、章节固定、文件撤销、目标结果）是覆盖层，在约定事件发生时结束，从不改动下面的行。</li>
+<li>执行树补充所属回复：模型发起的函数的树是回复 <code translate="no">callRoots</code> 里的一项，函数运行的树是它那一行的字段。视图里没有的行，对应的树或帧不生成任何东西。</li>
+<li>漏掉一次更新或丢了一帧文字，视图在锚点读一次。流式过程中的读取不会循环，也不会缩短回复，因为服务端会暂存该视图的帧，直到读取的回复发出。分支移动或结构变化会重新读取。</li>
+<li>每个执行根保留持久化路径。重复调用保持独立；一个根在被文字隔开的各组中只消费一次。已完成函数留在摘要内；直接运行保持独立。</li>
+</ul>
+<p class="note">验收用生产 reducer 和组件回放录制的聊天，要求每个检查点实时与冷读取一致：流式、部分历史、完成、迟到的树、插话、错误、取消、重连和重载。</p>
+
+<h2 id="queue-steer">排队和当前回合输入</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">发送准备</th><td>按草稿所有者跨输入框预留。相同待处理签名的重复提交被忽略；改动过的草稿保持可编辑并提示未发送；其他对话独立准备。</td></tr>
+<tr><th scope="row">签名</th><td>草稿文本，附件 id、顺序和 <code translate="no">sourcePath</code>，以及 <code translate="no">thinking</code>、<code translate="no">toolsEnabled</code>、<code translate="no">toolsProfile</code>、<code translate="no">webSearchEnabled</code>、<code translate="no">fastEnabled</code>、<code translate="no">fastSupported</code>。不含附件 base64 和聚焦/绑定呈现。权限、模型、项目和频道仍在 <code translate="no">sendChatMessage</code> 中后绑定。</td></tr>
+<tr><th scope="row">文件提及</th><td>一个 15 秒批次期限，包括响应体；未解析的提及保留原文</td></tr>
+<tr><th scope="row">释放</th><td>传输交接或失败后。完成时只清除未变的捕获草稿。</td></tr>
+<tr><th scope="row">排队</th><td>当前回合后按序分发。会话队列和编辑顺序相互独立；附件走普通队列投递。</td></tr>
+<tr><th scope="row">已消费的引导输入</th><td>显示在前后回复内容之间。其用户节点独立；回复保存有序边界，流式、取消和历史共用。旧记录用前驱边，绝不猜测文本偏移。</td></tr>
+<tr><th scope="row">投递</th><td>回执轮询确认同一命令，不改变等待标签，有界，且在 provider 静默时也工作。待定或不确定的项不能重发、编辑或移除。明确拒绝保留排队草稿；传输失败保持不确定，绝不重发。</td></tr>
+<tr><th scope="row">流式引导</th><td>接受的文本中断进行中的文字或推理，保留已输出内容，关闭请求，在下一次模型请求前应用持久化命令。工具调用参数、运行中的工具和结构化输出等到安全点；不重放或取消工具。</td></tr>
+<tr><th scope="row">待引导时停止</th><td>保留部分回复及其历史位置。被取消拒绝的命令保持为带发送按钮的未发送草稿，绝不自动变成新回合。投影只能用比较并设置，把确切的顶层回合从其用户节点推进到其助手节点。</td></tr>
+</tbody>
+</table>
+
+<h2 id="secret-display-state">预览中的敏感文本</h2>
+<ul>
+<li>已知 token 格式和完整私钥块在被动显示中遮罩；粘贴预览先遮罩再截断。</li>
+<li>显示状态限于来源消息、对话和渲染文本，不转移到其他值。显式编辑、复制和模型负载保留原文。</li>
+<li>只是显示遮罩，不是密码识别或数据删除。</li>
+</ul>
+<p class="note">验收用真实 <code translate="no">UserBubble</code> 和合成密钥：长私钥预览、显示后展开粘贴、内容和会话变化、显示和隐藏、源内容不变。</p>
+
+<h2 id="automatic-history">有界转录历史</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层</th><th scope="col">上限</th></tr></thead>
+<tbody>
+<tr><th scope="row">服务器</th><td>每个会话一个分支视图，所有连接共用，进程内最多 16 个，存储表明分支移动后重建。视图只保存按轮次分组的行 ID，不保存正文。一页只从存储投影选中的完整轮次，所以打开后变化的行读到的是最新内容：一条提示和它拥有的全部内容，工具后代和压缩行留在原位。不在分支上的游标回复 <code translate="no">cursor_not_on_branch</code>，客户端重新读取对话。读取版本 2 保留各连接的快照用于回退。</td></tr>
+<tr><th scope="row">浏览器缓存</th><td>四个对话；显示中的窗格和进行中的请求可短暂超出</td></tr>
+<tr><th scope="row">单个转录</th><td>六个普通页、8 MiB，单个大回合允许一个不可分割的页</td></tr>
+<tr><th scope="row">淘汰</th><td>从阅读位置的另一侧开始，不删持久记录；活动更新保留；回滚时重新获取</td></tr>
+<tr><th scope="row">行</th><td>视口外已测量的行卸载并保留高度；被淘汰的行移除高度</td></tr>
+<tr><th scope="row">请求</th><td>同时一个；预取距离随滚动方向和速度变化，有上限；指数退避；隐藏窗格停止；过期响应不能覆盖更新的代次</td></tr>
+<tr><th scope="row">锚点</th><td>插入和淘汰在绘制前按消息 ID 恢复可见消息和偏移。跳到最新直接获取最新窗口。</td></tr>
+<tr><th scope="row">Markdown 缓存</th><td>256 项 LRU，按 UTF-16 源和净化输出估算 8 MiB；超限条目渲染但不保留。绝不绕过净化。</td></tr>
+<tr><th scope="row">图</th><td>版本 3 的读取不发送图：覆盖关系和 spawn 来源都在行上。普通分支元数据不含图体。打开 DAG 才请求布局。</td></tr>
+<tr><th scope="row">冷加载</th><td>构建视图时读取并补全分支一次，随存储节点线性；页读取只取所选轮次的行</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>交互约定</summary>
+<ul>
+<li>中间窗口的底部不是最新位置。主窗格和分栏共用跟随、自适应渲染和跳转。</li>
+<li>存在更新历史时和请求失败后仍可跳转；重复点击共用一个待处理意图。</li>
+<li>滚轮、指针和键盘在窗口变化前取消待处理的跳转或恢复。普通分页仍补偿插入的行。</li>
+<li>窗格拆除时保存最终锚点。重连后恢复加载，不沿用旧的重试延迟。</li>
+</ul>
+</details>
+
+<details>
+<summary>模块</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">模块</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">message-list.tsx</code></th><td>组合和已测量的行</td></tr>
+<tr><th scope="row"><code translate="no">use-chat-area-stick</code>、<code translate="no">use-message-viewport</code>、<code translate="no">use-history-window</code></th><td>跟随、视口测量、历史生命周期</td></tr>
+<tr><th scope="row"><code translate="no">history-window</code>、<code translate="no">history-viewport</code></th><td>有界页和锚点</td></tr>
+<tr><th scope="row"><code translate="no">session-history-loader</code></th><td>请求、代次检查、状态</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/transcript/</code></th><td>投影、轮次索引、有界读取和查找</td></tr>
+<tr><th scope="row"><code translate="no">transcript/reader.py</code></th><td>页面上限和按轮次的读取</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>30 万个单行轮次的合成来源：反复双向分页时页、行和测量保持有界；延迟下快速反向仍有可见消息；过期响应、重连、分支变化和实时更新不破坏窗口。</li>
+<li>视图建成后，后端页读取不扫描或解析整条分支。</li>
+<li>浏览器测试覆盖中间窗口底部、失败和重复跳转、被打断的恢复、独立分栏、卸载和重新挂载，以及跨排队动画帧的保存锚点。</li>
+<li>回归断言跳过的工作、语义等价、缓存淘汰和有界保留，不断言耗时。耗时和堆数据是合成测量，不代表真实大附件或工具输出的延迟。</li>
+</ul>
+</details>
+
+<h2 id="send-preparation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">领域</th><th scope="col">未完成</th></tr></thead>
+<tbody>
+<tr><th scope="row">转录更新归属</th><td>待验证</td></tr>
+<tr><th scope="row">预览中的敏感文本</th><td>安装版 App 验收待完成</td></tr>
+<tr><th scope="row">发送准备</th><td>安装版 App 验收待完成</td></tr>
+</tbody>
+</table>
+<p class="note">本页其余内容均已实现。</p>

@@ -1,0 +1,13 @@
+<title>百炼供应商</title>
+<meta name="description" content="百炼 Token Plan 供应商的规范 id、别名和端点。">
+<h1>百炼供应商</h1>
+<dl class="pairs">
+<dt>Id</dt><dd><code translate="no">alibaba-token-plan-cn</code>，models.dev 的名字</dd>
+<dt>目录</dt><dd><code translate="no">models/providers/adapters/alibaba_token_plan_cn/</code></dd>
+<dt>别名</dt><dd><code translate="no">bailian</code>，在 <code translate="no">auth/account/aliases.py</code>；旧凭据、目录和已启用模型引用都解析到这个 id</dd>
+<dt>线路</dt><dd><code translate="no">openai-completions</code></dd>
+<dt>Base URL</dt><dd><code translate="no">https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1</code></dd>
+<dt>模型</dt><dd>从 models.dev 实时浏览；包里没有列表</dd>
+</dl>
+<p class="note"><code translate="no">provider.json</code> 只存端点。设置页和 <code translate="no">get_model</code> 共用一份模型列表。</p>
+<p class="next"><a href="models/overview.zh.html">模型目录</a></p>

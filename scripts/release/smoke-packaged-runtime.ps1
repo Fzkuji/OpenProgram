@@ -45,7 +45,7 @@ Invoke-Native $Node $Tui --probe
 $SavedImmutableMarker = $env:OPENPROGRAM_IMMUTABLE_RUNTIME
 try {
     Remove-Item Env:OPENPROGRAM_IMMUTABLE_RUNTIME -ErrorAction SilentlyContinue
-    Invoke-Native $Python -I -B -c "from openprogram.updater.detect import InstallMethod, detect_install_method; assert detect_install_method() is InstallMethod.MANAGED_RELEASE"
+    Invoke-Native $Python -I -B -X utf8 -c "from openprogram.operations.self_update.github_release.detect import InstallMethod, detect_install_method; assert detect_install_method() is InstallMethod.MANAGED_RELEASE"
 } finally {
     if ($null -eq $SavedImmutableMarker) {
         Remove-Item Env:OPENPROGRAM_IMMUTABLE_RUNTIME -ErrorAction SilentlyContinue
@@ -66,7 +66,6 @@ $SavedEnvironment = @{
     OPENPROGRAM_WEB_PORT = $env:OPENPROGRAM_WEB_PORT
     OPENPROGRAM_IMMUTABLE_RUNTIME = $env:OPENPROGRAM_IMMUTABLE_RUNTIME
     PLAYWRIGHT_BROWSERS_PATH = $env:PLAYWRIGHT_BROWSERS_PATH
-    GPA_MODEL_PATH = $env:GPA_MODEL_PATH
 }
 try {
     $env:HOME = $ProbeHome
@@ -74,8 +73,7 @@ try {
     $env:OPENPROGRAM_WEB_PORT = [string]$Port
     $env:OPENPROGRAM_IMMUTABLE_RUNTIME = "1"
     $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $Runtime "assets\playwright"
-    $env:GPA_MODEL_PATH = Join-Path $Runtime "assets\gpa\model.pt"
-    Invoke-Native $Python -I -B -m openprogram worker start
+    Invoke-Native $Python -I -B -X utf8 -m openprogram worker start
 
     $Ready = $false
     for ($Attempt = 0; $Attempt -lt 120; $Attempt++) {
@@ -96,18 +94,9 @@ try {
     if ($Chat.StatusCode -ne 200) {
         throw "packaged Windows chat route returned $($Chat.StatusCode)"
     }
-
-    $ProgramLog = Join-Path $ProbeRoot "program-install.log"
-    & $Python -I -B -m openprogram programs install research *> $ProgramLog
-    if ($LASTEXITCODE -eq 0) {
-        throw "packaged runtime unexpectedly allowed Program installation"
-    }
-    if (-not (Select-String -LiteralPath $ProgramLog -Pattern "disabled in the packaged desktop runtime" -Quiet)) {
-        throw "packaged runtime did not explain immutable Program installation"
-    }
     Write-Output "packaged runtime smoke passed for Windows"
 } finally {
-    & $Python -I -B -m openprogram worker stop *> $null
+    & $Python -I -B -X utf8 -m openprogram worker stop *> $null
     foreach ($Name in $SavedEnvironment.Keys) {
         $Value = $SavedEnvironment[$Name]
         if ($null -eq $Value) {

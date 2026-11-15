@@ -34,7 +34,9 @@ globalThis.WebSocket = { OPEN: 1 };
 
 const {
   READ_CACHE_MAX_ENTRIES,
+  READ_CACHE_MAX_BYTES,
   LATEST_MTIME_MAX_ENTRIES,
+  DRAFT_MAX_ENTRIES,
   cacheFileRead,
   fileReadCacheKey,
   getCachedFileRead,
@@ -59,7 +61,9 @@ const {
   collectDirtyFileTabs,
   runServerRenameWithDrafts,
 } = await import("../../lib/files/files-shared.ts");
-const { MemoryDraftStore } = await import("../../lib/files/file-draft-store.ts");
+const { MemoryDraftStore } = await import("../../lib/files/drafts/file-draft-store.ts");
+const { flushFileDocumentsBeforeClose } = await import("../../lib/files/drafts/file-drafts.ts");
+const { documentControllers, documentIdentityKey } = await import("../../lib/files/document/document-controller.ts");
 
 test("read cache is project-scoped, mtime-scoped, and LRU bounded", () => {
   readCache.clear();
@@ -385,4 +389,119 @@ test("rename uses the failed live overlay instead of the stale persisted record"
   );
   assert.equal(moved.ok, true);
   assert.equal((await loadFileDraft("p", "new.txt")).draft, "B");
+});
+
+test("read cache evicts the oldest reads to stay within its UTF-8 byte budget", () => {
+  readCache.clear();
+  latestFileMtime.clear();
+  assert.equal(READ_CACHE_MAX_ENTRIES, 64);
+  assert.equal(READ_CACHE_MAX_BYTES, 16 * 1024 * 1024);
+  const sixMiB = "x".repeat(6 * 1024 * 1024);
+  const read = (path, content) => ({ project_id: "bytes", path, mtime: 1, size: content.length, content });
+  cacheFileRead(read("a.txt", sixMiB));
+  cacheFileRead(read("b.txt", sixMiB));
+  cacheFileRead(read("c.txt", sixMiB));
+  assert.equal(getCachedFileRead("bytes", "a.txt", 1), undefined, "the oldest read made room");
+  assert.equal(getCachedFileRead("bytes", "b.txt", 1)?.content.length, sixMiB.length);
+  assert.equal(getCachedFileRead("bytes", "c.txt", 1)?.content.length, sixMiB.length);
+
+  // Multi-byte text counts by its encoded size, and one read larger than the
+  // whole budget is never cached (nor does it evict anything).
+  cacheFileRead(read("huge.txt", "中".repeat(6 * 1024 * 1024)));
+  assert.equal(getCachedFileRead("bytes", "huge.txt", 1), undefined);
+  assert.equal(getCachedFileRead("bytes", "c.txt", 1)?.content.length, sixMiB.length);
+
+  // Errors and truncated reads are not cached.
+  cacheFileRead({ ...read("partial.txt", "x"), truncated: true });
+  cacheFileRead({ ...read("failed.txt", "x"), error: "denied" });
+  assert.equal(getCachedFileRead("bytes", "partial.txt", 1), undefined);
+  assert.equal(getCachedFileRead("bytes", "failed.txt", 1), undefined);
+  readCache.clear();
+});
+
+test("the 33rd dirty draft is refused as over quota and the first 32 stay", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  assert.equal(DRAFT_MAX_ENTRIES, 32);
+  const draft = { draft: "dirty", baselineContent: "base", baselineMtime: 1 };
+  for (let i = 0; i < DRAFT_MAX_ENTRIES; i += 1)
+    assert.equal((await persistFileDraft("cap", `f-${i}.txt`, draft)).ok, true);
+  assert.equal(canPersistFileDraft("cap:f-extra.txt", draft), false);
+  const refused = await persistFileDraft("cap", "f-extra.txt", draft);
+  assert.equal(refused.code, "DRAFT_QUOTA_EXCEEDED");
+  assert.equal(store.drafts.size, DRAFT_MAX_ENTRIES);
+  assert.equal(store.drafts.has("cap:f-extra.txt"), false);
+  assert.equal((await loadFileDraft("cap", "f-extra.txt")).save_status, "error", "the refused buffer stays live");
+});
+
+test("a browser QuotaExceededError reads as quota; any other storage failure does not", async () => {
+  const failing = (error) => {
+    const store = new MemoryDraftStore();
+    let armed = false;
+    return {
+      arm() { armed = true; },
+      load: () => store.load(),
+      repair: () => store.repair(),
+      mutate(operation) {
+        if (armed) { armed = false; return Promise.reject(error); }
+        return store.mutate(operation);
+      },
+    };
+  };
+  const draft = { draft: "dirty", baselineContent: "base", baselineMtime: 1 };
+
+  const quota = failing(Object.assign(new Error("full"), { name: "QuotaExceededError" }));
+  setDraftStoreAdapterForTests(quota);
+  await loadFileDraft("q", "a.txt");
+  quota.arm();
+  const full = await persistFileDraft("q", "a.txt", draft);
+  assert.equal(full.code, "DRAFT_QUOTA_EXCEEDED");
+  assert.match(full.message, /storage is full/);
+
+  const broken = failing(new Error("disk I/O"));
+  setDraftStoreAdapterForTests(broken);
+  await loadFileDraft("q", "a.txt");
+  broken.arm();
+  const failed = await persistFileDraft("q", "a.txt", draft);
+  assert.equal(failed.code, "DRAFT_PERSISTENCE_FAILED");
+  assert.match(getDraftPersistenceError("q:a.txt"), /Unable to persist/);
+});
+
+test("closing file tabs loads and flushes the document of every dirty tab, mounted or not", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  await persistFileDraft("p", "dirty.txt", { draft: "dirty", baselineContent: "base", baselineMtime: 1 });
+  const calls = [];
+  const identity = (path) => ({ kind: "project", projectId: "p", path });
+  const fake = (path, { draft = null, flush } = {}) => ({
+    identity: identity(path),
+    getState: () => ({ status: draft ? "dirty" : "idle" }),
+    currentDraft: () => draft,
+    async load() { calls.push(`load:${path}`); },
+    flush: flush ?? (async () => { calls.push(`flush:${path}`); }),
+  });
+  const key = (path) => documentIdentityKey(identity(path));
+  // dirty.txt has only a durable draft; editing.txt only an open editor's buffer.
+  documentControllers.set(key("dirty.txt"), fake("dirty.txt"));
+  documentControllers.set(key("editing.txt"), fake("editing.txt", { draft: "typed" }));
+  documentControllers.set(key("clean.txt"), fake("clean.txt"));
+  try {
+    const ok = await flushFileDocumentsBeforeClose([
+      { projectId: "p", path: "dirty.txt" },
+      { projectId: "p", path: "editing.txt" },
+      { projectId: "p", path: "clean.txt" },
+      { projectId: "p" },
+    ]);
+    assert.equal(ok, true);
+    assert.deepEqual(calls, ["load:dirty.txt", "flush:dirty.txt", "load:editing.txt", "flush:editing.txt"]);
+
+    documentControllers.set(key("dirty.txt"), fake("dirty.txt", {
+      flush: async () => { throw new Error("save rejected"); },
+    }));
+    assert.equal(await flushFileDocumentsBeforeClose([{ projectId: "p", path: "dirty.txt" }]), false,
+      "a failed save keeps the tab open");
+    assert.equal(getDraftPersistenceError("__close__"), "save rejected");
+  } finally {
+    documentControllers.clear();
+  }
 });

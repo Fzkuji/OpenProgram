@@ -1,0 +1,122 @@
+<title>Sub-agent row</title>
+<meta name="description" content="How a spawned agent appears once in a turn, how its frames stay out of the conversation, and how its transcript loads.">
+<h1>Sub-agent row</h1>
+
+<p>A spawned agent appears once in the turn: its step row in the <a href="chat-turn-visual-spec.html">execution timeline</a>. Opening the row shows that agent's conversation. No separate card repeats it, as in Claude's "Ran an agent" row and Codex's sub-agent activity list.</p>
+
+<h2>Frame routing</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="A sub-agent runs as a Job on a branch of the same session, so its frames carry the conversation's session id. The driver adds job_id to chat_response frames of Job turns. A frame with job_id goes to the sub-agent store; a frame without it goes to the conversation.">
+  <defs><marker id="sa-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="70">Job turn</text>
+  <text class="t-soft" x="0" y="96">branch of the same</text>
+  <text class="t-soft" x="0" y="116">session, same session_id</text>
+  <line class="ln" x1="176" y1="63" x2="226" y2="63" marker-end="url(#sa-a)"/>
+  <text class="t-big" x="238" y="70">Driver sink</text>
+  <text class="t-soft" x="238" y="96">adds <tspan class="t-cmd" translate="no">data.job_id</tspan></text>
+  <text class="t-soft" x="238" y="116">to chat_response only</text>
+  <path class="ln" d="M396 63H430V40H470" marker-end="url(#sa-a)"/>
+  <path class="ln-faint" d="M396 63H430V138H470" marker-end="url(#sa-a)"/>
+  <text class="t-big" x="482" y="36">Sub-agent store</text>
+  <text class="t-soft" x="482" y="60">frame has job_id</text>
+  <text class="t-big" x="482" y="134">Conversation</text>
+  <text class="t-soft" x="482" y="158">frame has no job_id</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Job turn</strong><small>branch of the same session, same session_id</small></li>
+  <li><strong>Driver sink</strong><small>adds data.job_id to chat_response only</small></li>
+  <li class="flow-end"><strong>Sub-agent store</strong><small>frame has job_id; without it the frame goes to the conversation</small></li>
+</ol>
+</figure>
+<p class="note">The runtime bridge (<code translate="no">wsHandleChatResponse</code>) ignores frames with <code translate="no">job_id</code> too.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Admission ids</th><td><code translate="no">&lt;job&gt;_user</code>, <code translate="no">&lt;job&gt;_user_reply</code></td></tr>
+<tr><th scope="row">Follow-up Job</th><td><code translate="no">job_status.parent_msg_id</code> is the previous <code translate="no">&lt;job&gt;_user_reply</code>, which maps it to the agent's first Job</td></tr>
+<tr><th scope="row">Store key</th><td><code translate="no">&lt;session_id&gt;#sub-agent:&lt;first job id&gt;</code>. Older spawns without a Job id: their branch head.</td></tr>
+<tr><th scope="row">Prompt row</th><td>Added before the reply streams, from the spawn card's prompt or <code translate="no">job_status.prompt_summary</code></td></tr>
+<tr><th scope="row">Rows</th><td>The key is the view's own: a row id it shares with the conversation, as on a checked-out agent branch, is a separate row. A conversation checked out on the branch applies the Job's frames to its own copy while that reply is open.</td></tr>
+<tr><th scope="row">Opening the row</th><td><code translate="no">load_sub_agent_transcript</code> answers with the agent's whole branch as turns and a window, through the transcript reader under this key: tools, thinking, function trees, terminal states and later turns. It reads the branch to its tip and never moves HEAD.</td></tr>
+</tbody>
+</table>
+
+<h2>The row</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Folded group</th><td>"Ran sub-agent scout · done", "· failed", "· cancelled"; "Running sub-agent scout…" while it works, even after the turn ended; "Ran 3 sub-agents · 2 done, 1 running"</td></tr>
+<tr><th scope="row">Step row</th><td>Ghost glyph, "Sub-agent: <em>name</em>", status. Cancel while running (<code translate="no">execution.cancel</code>). The title opens the call's detail in the right panel.</td></tr>
+<tr><th scope="row">Opened body</th><td>The agent's conversation, at most <code translate="no">min(520px, 60vh)</code>. Collapsed rows load nothing. Running agents open at the newest output and follow it until the reader scrolls up; finished agents open at the task.</td></tr>
+<tr><th scope="row">Prompt</th><td>Raised mini card, <em>Task</em> or <em>Message</em>. Drops the <code translate="no">[task from …]</code> / <code translate="no">[message from …]</code> receipt line. Clamped to 3 lines until clicked.</td></tr>
+<tr><th scope="row">Reply</th><td><code translate="no">AssistantBubble</code> in <code translate="no">embedded</code> mode: no header, no action footer</td></tr>
+<tr><th scope="row">Open ↗</th><td>Checks out the agent's newest reply in the main view: the tip of the loaded transcript (loaded on click if needed), else the spawn card's <code translate="no">head_id</code>. While the conversation runs the server answers <code translate="no">run_active</code>, so it opens the row instead.</td></tr>
+</tbody>
+</table>
+
+<h2>Transcript load</h2>
+<p><code translate="no">load_sub_agent_transcript {session_id, job_id | head_id}</code> replies <code translate="no">sub_agent_transcript {view, head_id, turns, window}</code> and leaves the session head alone.</p>
+<ol>
+<li>With only <code translate="no">job_id</code>: resolve the head from the Job's execution input.</li>
+<li>Follow the newest user or assistant child to the branch tip, which reaches later messages to the agent.</li>
+<li>Return user and assistant rows in branch order, not storage order: a reply placeholder can be written before its prompt.</li>
+</ol>
+<p>The client replaces the agent's rows, keeps live rows the load did not include, and reloads when a Job of the agent reaches a terminal status.</p>
+<details>
+<summary>Where the reply id comes from</summary>
+<p>A finished Job records its reply as <code translate="no">head_id</code> on the Job and its spawn card. The canonical driver reads it from <code translate="no">TurnResult.assistant_msg_id</code>. A turn that raised has no result and uses the reply id the Job was admitted with.</p>
+</details>
+
+<h2>The attach row</h2>
+<table>
+<thead><tr><th scope="col">Moment</th><th scope="col">What is written</th></tr></thead>
+<tbody>
+<tr><th scope="row">Job accepted</th><td>From <code translate="no">on_accepted</code>: <code translate="no">status=running</code>, <code translate="no">job_id</code>, <code translate="no">tool_call_id</code> and, for the <code translate="no">agent</code> tool, <code translate="no">delivery=tool_result</code>. <code translate="no">head_id</code> is null until the end. The Job holds the row's id as <code translate="no">attach_pointer_id</code>. Each write reaches the caller's open chat as a <code translate="no">transcript_update</code> of that card; no stream event announces it.</td></tr>
+<tr><th scope="row">Spawn returns</th><td>A patch of the same row. A failure or a result with no head patches it to <code translate="no">errored</code>.</td></tr>
+<tr><th scope="row">Placeholder write failed</th><td>The end write appends the full row.</td></tr>
+<tr><th scope="row">Worker startup</th><td>A running row whose Job is missing or finished is closed.</td></tr>
+</tbody>
+</table>
+
+<h2 id="the-reference-card">The reference card</h2>
+<p>An agent that runs in another conversation, and a branch attached by hand, are not steps of this turn. They keep a card (<code translate="no">rowKind: external_reference</code>), one row until it is opened.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Row</th><td>The agent's character and name, a state badge, the first line of its task, then time and cost: counted from the card's time while it runs with the Job's subtree cost, and <code translate="no">attach.usage</code> once it ended. A cost with an unknown price is left out. The row is a button; Enter or Space opens it.</td></tr>
+<tr><th scope="row">State</th><td>Needs approval or Needs input while a question of its execution is open (it comes before Running), Waiting while it is queued, Running, Cancelling, Failed, Stopped, Done; Attached for a reference nobody ran. The states the Activity roster also names wear its badge and its words, and cost is written the same way. Approval and failure show on the closed row.</td></tr>
+<tr><th scope="row">Hover tip</th><td>What kind of reference it is (Spawned, Attached, Imported from) and where from, why a limit or the person ended it, tokens and tool calls</td></tr>
+<tr><th scope="row">Opened</th><td>The final reply, the files it changed with their branch (<code translate="no">attach.files</code>, only for an agent with its own worktree), the automatic follow-up, then the actions: <strong>Switch</strong> (checks out the agent's branch; <strong>Open</strong> for another conversation, <em>current</em> when already there), <strong>Cancel execution</strong> while it runs, and the time.</td></tr>
+<tr><th scope="row">Live</th><td>The card is patched in place: an open card stays open when its agent ends</td></tr>
+<tr><th scope="row">Find</th><td>A match inside a closed card opens it (<code translate="no">onFindReveal</code>)</td></tr>
+</tbody>
+</table>
+
+<h2>The way back</h2>
+<p>On an agent's branch the sub-agent branch banner shows the agent's name and <strong>Back to main conversation</strong>, leading to the newest turn below the spawning reply. The reply itself would hide later turns. The Spawned-from card stays out while that branch is on screen.</p>
+<details>
+<summary><code translate="no">session_loaded.spawned_branch</code></summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shape</th><td><code translate="no">{root_id, caller_id, back_target, first_reply, label}</code>, or <code translate="no">null</code> off a spawn branch. A bounded load ships no graph.</td></tr>
+<tr><th scope="row">Branch root</th><td>User row with <code translate="no">source=agent_spawn</code> and no predecessor; its <code translate="no">caller</code> is the spawning reply</td></tr>
+<tr><th scope="row">Label</th><td>Spawn card with the matching <code translate="no">job_id</code>. A run older than the placeholder, stopped mid-call, has no card: the <code translate="no">description</code> of the spawning reply's <code translate="no">agent</code> call whose prompt opened the branch.</td></tr>
+<tr><th scope="row"><code translate="no">spawned_from</code></th><td>Found the same way; needs no pointer head</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Code</summary>
+<ul>
+<li><code translate="no">apps/web/components/chat/messages/execution/execution-strip.tsx</code> (<code translate="no">SubAgentStep</code>), <code translate="no">tool-group-summary.ts</code></li>
+<li><code translate="no">apps/web/components/chat/messages/cards/sub-agent-transcript.tsx</code></li>
+<li><code translate="no">apps/web/components/chat/messages/cards/attach-card.tsx</code>, <code translate="no">agent-event-row.tsx</code>, <code translate="no">apps/web/lib/chat/transcript/agent-card.ts</code></li>
+<li><code translate="no">apps/web/lib/chat/transcript/sub-agent-transcripts.ts</code></li>
+<li><code translate="no">apps/web/lib/runtime-bridge/session/transcript-updates.ts</code> (<code translate="no">applyTranscriptUpdate</code>)</li>
+<li><code translate="no">openprogram/runtime/conversation/production_driver/execution.py</code> (<code translate="no">_turn_event_sink</code>)</li>
+<li><code translate="no">openprogram/interfaces/server/ws_actions/sub_agent.py</code></li>
+</ul>
+</details>

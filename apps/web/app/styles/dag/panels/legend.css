@@ -1,0 +1,93 @@
+/* DAG 画布图例：视图控件竖列里的图例按钮弹出的说明卡。
+   对应来源：components/chat/dag/dag-view.tsx */
+
+/* ============ Canvas legend ============ */
+/* A collapsible card naming the shapes and the two greys, opened from
+   the zoom column's legend button (dag-view.tsx). It floats over the
+   canvas rather than taking a strip of it, and starts collapsed — the
+   shapes are learnable, so the legend is for the first few sessions,
+   not every one. */
+.dag-legend {
+  /* The body is portalled into the side column (dag-view.tsx DagLegend):
+     the wrapper holds only the button and positions nothing. */
+  flex-shrink: 0;
+}
+/* The panel's frame and spot are the controls sheet's
+   (dag/panels/tools.css .dag-side-panel, .dag-side-column): the panel is
+   portalled into the side column beside it. This block is only its rows. */
+.dag-legend-body {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.dag-legend-body { gap: 2px; }
+.dag-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* MENU_PANEL's 6px panel inset + 10px row padding = the menu rows'
+     16px text inset, so legend rows sit like menu rows. */
+  padding: 3px 10px;
+  line-height: 1.4;
+}
+.dag-legend-row svg { flex: 0 0 auto; }
+
+/* Legend swatches: the canvas tile in HTML (components/chat/dag/dag-view.tsx),
+   tone from the same `dag-tile t-<tone>` classes as app/styles/dag/graph/nodes.css. */
+.dag-legend-tile {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 18%, var(--bg-primary));
+}
+.dag-legend-tile svg { width: 13px; height: 13px; }
+.dag-legend-tile[data-state="outline"] { background: color-mix(in srgb, var(--tone) 10%, var(--bg-primary)); }
+.dag-legend-tile[data-state="outline"] svg { opacity: 0.6; }
+/* Failed keeps its tone; the Activity panel's red badge with a ``!``
+   sits on its corner (nodes.css ``dag-status-badge``). */
+.dag-legend-tile[data-state="error"] { position: relative; }
+.dag-legend-tile[data-state="error"]::after {
+  content: "!";
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent-red);
+  box-shadow: 0 0 0 2px var(--bg-primary);
+  color: var(--destructive-foreground);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+}
+/* A running belt: the track with the goods riding it (dag/graph/edges.css). */
+.dag-legend-belt {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 6px;
+  border-radius: var(--radius-2xs);
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--accent-blue) 70%, transparent) 1.8px, transparent 2.2px) 0 50% / 6px 6px repeat-x,
+    color-mix(in srgb, var(--text-muted) 22%, var(--bg-primary));
+}
+/* An agent: its status dot on the corner of the tile it stands on
+   (render/agents.ts). */
+.dag-legend-agent { position: relative; display: inline-flex; flex: 0 0 auto; }
+.dag-legend-agent::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  box-shadow: 0 0 0 2px var(--bg-primary);
+  z-index: 1;
+}

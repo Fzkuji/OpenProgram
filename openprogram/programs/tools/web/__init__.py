@@ -1,8 +1,7 @@
-"""Browser, web retrieval, image, and PDF functions."""
+"""Web retrieval, image, and PDF functions."""
 
-from . import agent_browser, browser, image_analyze, image_generate, pdf, web_fetch, web_search
+from . import image_analyze, image_generate, pdf, web_fetch, web_search
 
 __all__ = [
-    "agent_browser", "browser", "image_analyze", "image_generate", "pdf",
-    "web_fetch", "web_search",
+    "image_analyze", "image_generate", "pdf", "web_fetch", "web_search",
 ]

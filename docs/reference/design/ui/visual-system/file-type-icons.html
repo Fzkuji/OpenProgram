@@ -1,0 +1,50 @@
+<title>Shared file type icons</title>
+<meta name="description" content="One filename gives one icon across the file tree, tabs, split picker, review list and file suggestions.">
+<h1>Shared file type icons</h1>
+
+<p><code translate="no">FileTypeIcon</code> (<code translate="no">apps/web/components/files/file-type-icon.tsx</code>) draws the complete coloured set of <a href="https://github.com/pierrecomputer/pierre/tree/main/packages/trees">Pierre Trees</a> (<code translate="no">@pierre/trees</code>, Apache 2.0 with NOTICE), upstream SVG paths and filename mapping unchanged. The icon is decorative next to a visible filename and hidden from accessibility APIs.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Surfaces</th><td>Sidebar and central Files page (shared <code translate="no">FileTree</code>, Pierre's React renderer), file tabs, split picker, review list, composer file suggestions</td></tr>
+<tr><th scope="row">Size</th><td>16px in file rows, 14px in tabs; row height, indentation and folder controls unchanged</td></tr>
+<tr><th scope="row">Matching</th><td>Basename after normalising separators and case. Exact filename before extension; dotted parent directories do not count.</td></tr>
+<tr><th scope="row">Special names</th><td><code translate="no">AGENTS.md</code> Markdown, <code translate="no">CLAUDE.md</code> Claude, Git metadata Git</td></tr>
+<tr><th scope="row">Unknown file</th><td>Neutral document icon</td></tr>
+<tr><th scope="row">Names like <code translate="no">constructor</code></th><td>Names and extensions matching inherited object properties take the default icon before the resolver sees them</td></tr>
+<tr><th scope="row">Colour</th><td>Recognisable in light and dark themes</td></tr>
+<tr><th scope="row">Folders, controls</th><td>Lucide, unchanged</td></tr>
+</tbody>
+</table>
+
+<p class="note">Filename or path, then basename, then <code translate="no">FileTypeIcon</code>, then SVG. No file reads, network, state, persistence, permissions or mutation. Attachment upload states, file cache, drafts, review state, and folder expansion, guides, search and opening are unaffected; existing labels and focus stay authoritative.</p>
+
+<details>
+<summary>Sources compared</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">Finding</th></tr></thead>
+<tbody>
+<tr><th scope="row">Installed Codex</th><td>Its file-tree assets for default files, Markdown and Python match Pierre's SVGs. OpenProgram takes the public upstream set and extracts nothing from the Codex distribution.</td></tr>
+<tr><th scope="row"><a href="https://github.com/pheralb/react-symbols">React Symbols</a></th><td>MIT React SVG library with file and extension resolution; not used</td></tr>
+<tr><th scope="row"><a href="https://github.com/material-extensions/vscode-material-icon-theme">Material Icon Theme</a></th><td>File and folder SVGs with a manifest; needs asset integration rather than React rendering</td></tr>
+<tr><th scope="row">Lucide alone</th><td>Generic outlines do not tell languages apart</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="acceptance">Acceptance</h2>
+<ul>
+<li>Python, TypeScript, shell, JSON, Markdown and Git examples resolve to distinct SVGs.</li>
+<li><code translate="no">CLAUDE.md</code>, <code translate="no">AGENTS.md</code>, uppercase extensions, Windows paths and unknown types render correctly.</li>
+<li>Every listed surface uses the shared renderer; expanding a folder and opening a file behave as before.</li>
+</ul>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Every surface above. In the default dark App: filled generic files, green Markdown, orange JSON, purple database, unchanged Lucide folders.</td></tr>
+<tr><th scope="row">Not yet</th><td>Manual light-theme and other-theme acceptance in the App; light colours are checked against the upstream palette only</td></tr>
+</tbody>
+</table>

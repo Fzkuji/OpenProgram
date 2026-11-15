@@ -10,10 +10,10 @@ import subprocess
 
 import pytest
 
-from openprogram import sandbox
-from openprogram.backend.base import RunResult
-from openprogram.programs.tools.files.bash.workdir import prepare_command
-from openprogram.worktree.context import current_worktree_path, reset_worktree, set_worktree
+from openprogram.host import sandbox
+from openprogram.host.backend.base import RunResult
+from openprogram.host.backend.workdir import prepare_command
+from openprogram.state.worktree.context import current_worktree_path, reset_worktree, set_worktree
 
 
 @pytest.fixture
@@ -26,8 +26,8 @@ def scope(tmp_path, monkeypatch):
     # Policy-routing tests use a recording backend; do not probe the host OS.
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
     if os.name == "nt":
-        from openprogram import _compat
-        monkeypatch.setattr(_compat, "windows_path_to_wsl", lambda path: "/mapped/workdir")
+        from openprogram.host._platform import environment
+        monkeypatch.setattr(environment, "windows_path_to_wsl", lambda path: "/mapped/workdir")
     try:
         yield root, child
     finally:
@@ -70,11 +70,12 @@ def test_workdir_is_optional_and_model_description_matches():
     assert "workdir" not in schema.get("required", [])
     assert "do not persist between calls" in module.bash.description
     assert "does not change file-tool paths" in module.bash.description
-    assert "120000" in schema["properties"]["timeout"]["description"]
+    assert "30000" in schema["properties"]["yield_time_ms"]["description"]
+    assert "timeout" not in schema["properties"]
 
 
 def test_override_does_not_leak_to_next_call_or_file_tools(scope, recorder):
-    from openprogram.worktree.path_resolve import resolve_path
+    from openprogram.state.worktree.path_resolve import resolve_path
 
     root, child = scope
     before = Path.cwd()
@@ -214,7 +215,7 @@ def test_remote_paths_are_not_resolved_on_the_host(scope, monkeypatch, backend_i
 @pytest.mark.parametrize("backend_id", ["ssh", "docker"])
 def test_remote_override_with_host_sandbox_fails_closed(scope, monkeypatch, backend_id):
     monkeypatch.setattr(sandbox, "resolve_policy", lambda: sandbox.SandboxPolicy())
-    with pytest.raises(PermissionError, match="backend-native"):
+    with pytest.raises(PermissionError, match="cannot be checked against the sandbox"):
         prepare_command("echo ok", "/remote", backend_id=backend_id, worktree=None)
 
 
@@ -247,7 +248,7 @@ def test_remote_guard_quotes_paths_and_stops_all_commands_on_cd_failure(scope, t
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX host-shell syntax")
 def test_real_local_shell_cd_and_export_remain_one_shot(scope, monkeypatch):
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host.backend.local import LocalBackend
 
     root, child = scope
     (root / "marker.txt").write_text("root", encoding="utf-8")

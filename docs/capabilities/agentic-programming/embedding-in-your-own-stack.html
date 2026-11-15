@@ -1,0 +1,62 @@
+<title>Embedding in your own stack</title>
+<meta name="description" content="Use Agent and Runtime as a Python library inside an existing application.">
+<h1>Embedding in your own stack</h1>
+<p>A library call starts neither the Web UI nor the terminal UI, and does not replace the installed product.</p>
+<h2>Host Runtime</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, Runtime
+
+
+def model_call(content, model="host-model", response_format=None):
+    # Replace this offline response with the host's model client.
+    return "Host model response"
+
+runtime = Runtime(call=model_call, model="host-model")
+
+class ReviewAgent(Agent):
+    tools = []
+
+    def classify(self, review: str) -&gt; str:
+        """Classify review sentiment."""
+        return self(f"Classify review sentiment:\n{review}")
+
+    def summarize(self, review: str) -&gt; str:
+        """Summarize a review."""
+        sentiment = self.classify(review)
+        return self(f"Summarize this {sentiment} review:\n{review}")
+
+reviewer = ReviewAgent(runtime=runtime)
+try:
+    summary = reviewer.summarize("The service was fast.")
+finally:
+    runtime.close()</code></pre>
+<p class="note">The callback gets content blocks, a model name and an optional response format; this one returns a fixed response and needs no network. Constructing a Runtime makes no model request. The host closes the Runtime it supplies. Agent methods inherit it; Context and function scopes are automatic.</p>
+<h2>Explicit session</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, Context
+from openprogram.state.store import SessionStore, SessionNodeWriter
+
+store = SessionStore(root_path="/var/lib/myapp/sessions")
+store.create_session("research", agent_id="main")
+writer = SessionNodeWriter(store, "research")
+researcher = Agent(context=Context(store=writer), tools=[])
+try:
+    first = researcher("List the project requirements.")
+    second = researcher("Review the requirements from the previous call.")
+finally:
+    store.close()</code></pre>
+<p class="note">Default Agent calls are independent; <code translate="no">Context(store=writer)</code> continues this session. <code translate="no">head_id</code> can select an existing branch tip. The host owns its store and Runtime.</p>
+<h2>Inspect calls</h2>
+<pre translate="no" tabindex="0"><code>from openprogram.state.store import SessionNodeWriter
+
+for node in SessionNodeWriter(store, "review-42").load():
+    print(node.name, node.caller, node.output)</code></pre>
+<p class="note">To expose a method as a model tool, set <code translate="no">tool=True</code> in <code translate="no">method_options</code>, which supplies <code translate="no">.spec</code> and <code translate="no">.execute</code>. Recording alone grants no tool access.</p>
+<h2>Host hooks</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Hook</th><th scope="col">In</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">set_cancellation_check</code>, <code translate="no">CancelledError</code>, <code translate="no">check_cancelled</code></th><td><code translate="no">openprogram.host.cancellation</code></td></tr>
+<tr><th scope="row"><code translate="no">set_session_id_provider</code> (question routing)</th><td><code translate="no">openprogram.runtime.agent.call_state</code></td></tr>
+</tbody>
+</table>
+<p class="note">Import checks: <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/tests/component/runtime/test_standalone_embed.py"><code translate="no">test_standalone_embed.py</code></a>.</p>
+<p class="next"><a href="../../reference/api/runtime.html">Runtime</a> · <a href="../../reference/api/agent.html">Agent and Context API</a> · <a href="writing-functions/agent.html">Agent calls and methods</a></p>

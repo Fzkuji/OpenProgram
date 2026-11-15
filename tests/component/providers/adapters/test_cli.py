@@ -1,20 +1,14 @@
 """Tests for CLI-based providers (Codex, Claude Code, Gemini CLI)."""
 
-import base64
-import json
-import subprocess
-import pytest
-from unittest.mock import MagicMock, patch, mock_open
 
-from openprogram import agentic_function
-from openprogram.agentic_programming.runtime import Runtime
+
 
 # Note: subprocess-based OpenAICodexRuntime tests were removed when the
 # runtime switched to HTTP direct (chatgpt.com/backend-api or api.openai.com).
 # Re-add targeted httpx-mocked tests when the HTTP shape stabilizes.
 def test_visualizer_codex_runtime_enables_search(monkeypatch):
     """Visualizer Codex keeps default auto-session and enables native web search."""
-    from openprogram.webui import server
+    from openprogram.interfaces.server import server
 
     captured = {}
 
@@ -24,14 +18,15 @@ def test_visualizer_codex_runtime_enables_search(monkeypatch):
         captured["kwargs"] = kwargs
         return object()
 
-    monkeypatch.setattr("openprogram.providers.registry.create_runtime", fake_create_runtime)
+    monkeypatch.setattr(
+        "openprogram.runtime.agent.runtime.factory.create_runtime", fake_create_runtime
+    )
 
     server._create_runtime_for_visualizer("openai-codex")
 
     assert captured["provider"] == "openai-codex"
     assert "session_id" not in captured["kwargs"]
     assert captured["kwargs"]["search"] is True
-
 
 
 # Note: ClaudeCodeRuntime and the shared CliRunner (CLAUDE_CODE_PLUGIN

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from openprogram.agent.retry import is_retryable_error
+from openprogram.runtime.agent.loop.retry import is_retryable_error
 
 
 def _msg(

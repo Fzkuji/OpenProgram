@@ -1,0 +1,165 @@
+<title>Update from chat</title>
+<meta name="description" content="Install a committed change from a conversation with self_update, recover it, undo it, and see what it restarts.">
+<h1>Update from chat</h1>
+
+<p><code translate="no">self_update</code> installs a committed change from chat. Status and cancellation work on every installation; published versions keep the release updaters above.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Installation</th><th scope="col"><code translate="no">self_update(action="prepare")</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Source repository with a <code translate="no">stable</code> branch</th><td>Lands the commit on <code translate="no">dev</code>, deploys and checks it on the development instance, promotes it to the stable App. <a href="development-checkout.html">Development checkout</a></td></tr>
+<tr><th scope="row">Packaged App on macOS</th><td>Builds and installs into the App, below</td></tr>
+<tr><th scope="row">Packaged App or release install on Windows or Linux</th><td>Says this host has no source-update controller, before creating a request</td></tr>
+<tr><th scope="row">Plain developer checkout</th><td>Says it activates nothing; restart the worker from the checkout</td></tr>
+</tbody>
+</table>
+<p class="note">Status: every activation level is verified end to end in the default App. Open: real-App acceptance of other tasks across a restart, and of session and tab restoration.</p>
+
+<h2 id="recovering-a-conversational-self-update">Recover</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Run</th></tr></thead>
+<tbody>
+<tr><th scope="row">The default App is stuck in maintenance</th><td><code translate="no">openprogram self-update status --json</code><br><code translate="no">openprogram self-update status UPDATE_ID --json</code><br><code translate="no">openprogram self-update repair UPDATE_ID</code></td></tr>
+<tr><th scope="row">The App or normal CLI cannot start</th><td><code translate="no">"$HOME/.openprogram/self-updates/UPDATE_ID/recover.sh" status</code><br><code translate="no">"$HOME/.openprogram/self-updates/UPDATE_ID/recover.sh" repair</code></td></tr>
+<tr><th scope="row">The supervisor stopped partway</th><td><code translate="no" data-claim="example">recover.sh resume</code>, within the original authority and deadlines</td></tr>
+<tr><th scope="row">Stop an update, including diagnosis, repair and tests</th><td><code translate="no">self_update(action="cancel", update_id=…)</code> in chat</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>What repair does and refuses</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Runs</th><td>Local terminal, no Agent. Needs an interactive terminal and the exact confirmation shown with the action, revision and plan digest. No <code translate="no">--yes</code> or force-clear</td></tr>
+<tr><th scope="row">Authority</th><td>An approved attempt resumes only within its original ten minutes; a failed or expired one needs fresh confirmation</td></tr>
+<tr><th scope="row">Controller</th><td>Saved before the update. Restores the previous App when rollback is possible, or finishes an already started irreversible commit only with the original accepted evidence</td></tr>
+<tr><th scope="row">Refuses</th><td>An aborted, unactivated transaction keeps the old App. Missing or changed evidence leaves maintenance on</td></tr>
+<tr><th scope="row">Finishes</th><td>Restarts the default worker, checks App identity and the live service, clears maintenance. No verifier Job; the verdict stands. A separate result records the recovered version, which does not prove the failed feature works</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">recover.sh</code></th><td>Saved runtime outside the App; <code translate="no">status</code> is the default. <code translate="no">repair</code> still needs interactive confirmation and cannot bypass failed evidence or expired authorization. <code translate="no">resume</code> approves nothing new and recreates no verifier Job</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Recovery at login</summary>
+<ul>
+<li>Before activation the update publishes <code translate="no">~/Library/LaunchAgents/ai.openprogram.self-update.recovery.UPDATE_ID.plist</code>. It runs once per later login, independently of the App. There is no resident process or periodic retry, and writing it starts nothing.</li>
+<li>It does not run before login or disk unlock. If App and controller both stop in the current login session, run the saved script.</li>
+<li>New jobs use launchd's <code translate="no">Standard</code> process class. Saved <code translate="no">Background</code> entries keep their bindings and policy.</li>
+<li>Progress goes to <code translate="no">bootstrap.log</code> before runtime validation and controller resumption.</li>
+<li>A completed update validates the saved runtime and removes only its unchanged login file, within the same state lock and without rehashing the whole runtime. The saved runtime, script and evidence stay.</li>
+<li>Missing or damaged trusted recovery files need manual intervention; nothing is rebuilt from an unverified App.</li>
+</ul>
+</details>
+
+<h2 id="undoing-a-change">Undo a change</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Target of <code translate="no">self_update(action="undo", target=…)</code></th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Version id</th><td>Returns to exactly that version; everything after it stops running. Commits left behind stay under <code translate="no">refs/openprogram/undone/</code>. A version no longer on disk is rebuilt from its commit.</td></tr>
+<tr><th scope="row">Commit</th><td>Reverts that one commit and keeps later ones. If later commits changed the same lines, it stops and names the files.</td></tr>
+<tr><th scope="row">On a machine with <code translate="no">stable</code></th><td>The target is a commit: the revert lands on <code translate="no">dev</code> and is promoted, because <code translate="no">stable</code> only moves forward.</td></tr>
+</tbody>
+</table>
+<p>From a terminal, even when the running version is broken:</p>
+<pre translate="no"><code>openprogram versions list
+openprogram versions use VERSION_ID</code></pre>
+<ul>
+<li><code translate="no">use</code> stops the worker, giving it up to 60 seconds to pause running work, and switches with no checks.</li>
+<li>A version that keeps failing to start returns to the last good one by itself, and your most recent conversation says so.</li>
+<li>Either way, at the next healthy start that version is the code new changes are made from. Conversations, settings and files do not change.</li>
+</ul>
+
+<h2 id="files-edited-inside-a-running-version">Files edited inside a running version</h2>
+<p>Allowed, but without effect. At the next start they are saved under <code translate="no">~/.openprogram/runtime/unapplied/&lt;time&gt;/</code> with a <code translate="no">changes.patch</code>, the version is restored, and your most recent conversation says so once. <code translate="no">openprogram versions list</code> shows them. To use them, <code translate="no">git apply</code> the patch in a <code translate="no">self_update</code> worktree and run a normal update.</p>
+
+<h2 id="what-an-update-restarts">What an update restarts</h2>
+<table class="stack">
+<thead><tr><th scope="col">Changed paths</th><th scope="col">Rebuilt</th><th scope="col">Restart</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/web/**</code></th><td>Web export</td><td>None. Open pages reload once nothing typed would be lost.</td></tr>
+<tr><th scope="row"><code translate="no">docs/**</code>, <code translate="no">scripts/docs_site/**</code></th><td>Docs site</td><td>None</td></tr>
+<tr><th scope="row"><code translate="no">apps/cli/**</code></th><td>Terminal UI bundle</td><td>None. New terminal sessions use it.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/**</code>, <code translate="no">setup.py</code></th><td>Wheel and docs</td><td>Worker. The App window stays open and shows that it is updating.</td></tr>
+<tr><th scope="row"><code translate="no">apps/desktop/**</code></th><td>Desktop archive</td><td>App quits and reopens</td></tr>
+<tr><th scope="row">Dependency locks, <code translate="no">package.json</code> files, <code translate="no">scripts/release/**</code>, <code translate="no">apps/desktop/scripts/**</code>, <code translate="no">apps/desktop/build/**</code>, any other path</th><td>Complete App</td><td>App quits and reopens</td></tr>
+<tr><th scope="row"><code translate="no">tests/**</code>, <code translate="no">README.md</code>, <code translate="no">.github/**</code> and similar</th><td>Nothing ships</td><td>None</td></tr>
+</tbody>
+</table>
+<p class="note">Diffed against the commit in <code translate="no">Contents/Resources/openprogram-source-revision</code>. An App from a <code translate="no">-dirty</code> checkout or an outside commit always gets the complete build. <code translate="no">prepare</code> reports the expected <code translate="no">restart</code> and <code translate="no">rebuild</code>; the controller decides again at build time and records it in <code translate="no">activation.json</code>.</p>
+
+<h2 id="how-a-self-update-runs">How it runs</h2>
+
+<details>
+<summary>The chat tool</summary>
+<ul>
+<li><code translate="no">action</code> is <code translate="no">status</code> (default), <code translate="no">prepare</code>, <code translate="no">retry</code>, <code translate="no">cancel</code> or <code translate="no">undo</code>.</li>
+<li>The first result explains the workflow and lists the guides. The first <code translate="no">prepare</code>, <code translate="no">retry</code> or <code translate="no">undo</code> in a conversation is refused once, with that action's instructions (<code translate="no">help("self_update.prepare")</code>, <code translate="no">help("self_update.retry")</code>, <code translate="no">help("self_update.undo")</code>). <code translate="no">help("self_update")</code> shows the workflow again.</li>
+<li><code translate="no">prepare</code>, <code translate="no">retry</code> and <code translate="no">undo</code> follow the conversation's permission mode; <code translate="no">status</code> needs no approval.</li>
+<li>Conversations show ordinary messages and tool results only: no update history, controls, evidence viewer or recovery notice, and no polling of update-history APIs.</li>
+</ul>
+</details>
+
+<details>
+<summary>Installation, Jobs and continuation</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Install</th><td>New bundle beside the installed one, swapped by rename, verified, then committed or rolled back. Rollback restores the previous bundle at the same restart level.</td></tr>
+<tr><th scope="row">No restart needed</th><td>Skips maintenance; conversations and Jobs continue.</td></tr>
+<tr><th scope="row">Queued Jobs</th><td>Keep their identities and wait through maintenance.</td></tr>
+<tr><th scope="row">Running work</th><td>Executions with durable pause stop at their next checkpoint. The App is replaced only after active attempts and resource claims end. A task without a safe pause must finish before the update deadline, or activation is aborted.</td></tr>
+<tr><th scope="row">After commit or rollback</th><td>Only executions this update paused resume. Tasks paused by the user or waiting for input stay paused.</td></tr>
+<tr><th scope="row">Changed tool contract</th><td>Checkpoint validation still rejects it. An update-owned continuation then keeps the old checkpoint and gets one planning Job from the original task and history, with its tool selection and permission rules. Unresolved side effects or a user cancellation prevent replanning.</td></tr>
+<tr><th scope="row">Original task</th><td>New updates save an original-session follow-up with a stable Job identity. After maintenance and any repair sequence it keeps checking the requested behavior as a new background turn, with no approval for another installation. Older records get none. Installation success and task continuation are separate outcomes.</td></tr>
+<tr><th scope="row">Finite results</th><td>Persisted in the original session even if the window is closed or no verification Job was created. Reconciliation reuses the same update, attempt and result-type identity, starts no model turn and does not move HEAD. Interrupted writes retry.</td></tr>
+<tr><th scope="row">Session or node gone</th><td>Delivery stays pending and goes nowhere else. A persisted result neither reopens the App nor proves installation.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Offline packaging and pre-activation checks</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Dependency base</th><td>Exactly the candidate's <code translate="no">uv.lock</code> and <code translate="no">scripts/release/product-runtime.json</code>. Otherwise, or with caches missing, the update stops before activation; neither authorizes downloads or mismatched dependencies.</td></tr>
+<tr><th scope="row">Build tools</th><td>The saved runtime's pinned tools and private copies of existing npm, uv, Electron-builder and node-gyp caches.</td></tr>
+<tr><th scope="row">Electron archive</th><td>Matches the controller's pinned version, architecture and release SHA-256; the candidate gets it as read-only <code translate="no">electronDist</code>.</td></tr>
+<tr><th scope="row">Packaged</th><td>Complete build: the candidate's Web, docs, wheel and Desktop archive. Partial build: starts from a copy of the installed App.</td></tr>
+<tr><th scope="row">Worker smoke test</th><td>One private controller-selected loopback port, never 18100.</td></tr>
+<tr><th scope="row">Browser and icon checks</th><td>Run by the revalidated saved controller runtime, outside every candidate-writable path, against assets whose tree hash matches it. The writable build-runtime copy is never executed by the controller. All finish before activation.</td></tr>
+<tr><th scope="row">Recovery protocol</th><td>Candidate and installed App both hold matching declarations, generated by packaging and the refresh script from the actual Desktop archive, installer, runtime manifest, backend and compiled Web files. Rechecked after waiting and after resuming.</td></tr>
+<tr><th scope="row">Stops activation</th><td>Missing, incompatible or changed declarations, a mismatched transaction ID or invalid frozen owner configuration, before the old App is replaced. An older App without a declaration needs an explicit complete update first.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Status and history APIs</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Endpoint</th><th scope="col">Returns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/self-updates?session_id=…</code></th><td>History with completed attempts; bounded <code translate="no">limit</code> and <code translate="no">cursor</code></td></tr>
+<tr><th scope="row"><code translate="no">GET /api/self-updates/{update_id}?session_id=…</code></th><td>Detail</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/self-updates/{update_id}/evidence?session_id=…&amp;evidence_id=…</code></th><td>Observations cited by the validated signed result; use the verifier's <code translate="no">evidence_id</code> or an assertion's <code translate="no">evidence_refs</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>All need owner authentication; evidence also needs the original session. The chat tool shares the same read-only projection. <code translate="no">self_update()</code> and <code translate="no">self-update status --json</code> expose <code translate="no">source_repair_result</code>.</li>
+<li><code translate="no">candidate_revision</code> and <code translate="no">target_app</code> describe the requested installation. <code translate="no">last_verified_runtime</code> holds the last matching verification's SHA, PID, timestamp and source, or null; it does not prove the worker is online. <code translate="no">state_revision</code> is a counter, not a Git revision.</li>
+<li>Queries do not initialize or repair state. Invalid state returns an error, not an empty history; changed or invalid evidence too. Running reports <code translate="no">self_update_error</code> if its snapshot is unavailable.</li>
+<li>The projection excludes credentials, raw logs and configuration; repair summaries hold status and any new candidate SHA. It does not replace the CLI recovery output. Stored HTTP or HTML text is not proof of a rendered window.</li>
+</ul>
+</details>
+
+<details>
+<summary>Reopening the conversation</summary>
+<ul>
+<li>The controller persists the recovery intent before activation and binds the opaque update ID to the installer transaction. If the App was open, activation and rollback reopen it with that ID; a closed App stays closed. Ordinary launches do not consume these requests.</li>
+<li>Desktop resolves only the original session through owner authentication and acknowledges once the transcript loads in the main window. An expired request, deleted session or authentication failure leaves normal startup, with no notice. Changing pages stops relocation. Neither step starts a verification Job or proves success.</li>
+</ul>
+</details>
+
+<p class="next"><a href="self-update-verification.html">Self-update verification plans</a> · <a href="self-update-rollback.html">Self-update rollback</a></p>

@@ -1,0 +1,139 @@
+<title>Permission decision and refusals</title>
+<meta name="description" content="The single function that decides whether a tool call runs, and the single source of the text the model receives when it does not.">
+<h1>Permission decision and refusals</h1>
+
+<dl class="pairs">
+<dt>Owner</dt><dd><code translate="no">authority_tier == "owner"</code> and <code translate="no">principal_id == owner_principal_id()</code>. Whether someone is watching is not part of it.</dd>
+<dt>Can approve</dt><dd><code translate="no">can_approve(req)</code>: owner, <code translate="no">speaker_kind == "owner"</code>, <code translate="no">interaction == "interactive"</code>, capability <code translate="no">approval.request</code>; or a foreground helper whose request carries <code translate="no">asks_through</code>, asked on its caller's card (<a href="../collaboration/agent-collaboration.html#permissions">agent collaboration</a>)</dd>
+<dt>Bypass permissions</dt><dd>The mode stored and sent as <code translate="no">bypass</code>; the default</dd>
+</dl>
+
+<h2 id="the-decision-path">The decision path</h2>
+<p><code translate="no">permission_decision(tool, req, args)</code> in <code translate="no">openprogram/runtime/permissions/policy.py</code> is the only function that decides whether a well-formed call runs. The first match ends it.</p>
+<table class="stack">
+<thead><tr><th scope="col">Check, in order</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. Identity (<code translate="no">identity.py</code>, <code translate="no">decide</code>). Never fires for the owner's own turns: capability (<code translate="no">decide_tool_authority</code>), scope, page script in work a non-owner started; dangerous read paths in an always-on check-in; page scripts and destructive deletes in a handoff chain or an automatic Goal's turns, and in the sub-agents, nested programs and notice turns they start</th><td>deny: <code translate="no">AUTHORITY_*</code>, <code translate="no">IDENTITY_SCOPE</code>, <code translate="no">IDENTITY_PAGE_SCRIPT</code>, <code translate="no">IDENTITY_CHECK_IN_READ</code>, <code translate="no">IDENTITY_OUTSIDE_TEXT</code></td></tr>
+<tr><th scope="row">2. Owner deny rule</th><td>deny: <code translate="no">RULE_DENY</code></td></tr>
+<tr><th scope="row">3. Plan selected, tool marked <code translate="no">unsafe_in</code> plan</th><td>deny: <code translate="no">PLAN_MODE_DENY</code>, so a saved <code translate="no">bash(git:*)</code> cannot break Plan's read-only promise</td></tr>
+<tr><th scope="row">4. Owner ask rule</th><td>ask: <code translate="no">RULE_ASK</code></td></tr>
+<tr><th scope="row">5. Agent with <code translate="no">hold_outbound</code>, sending tool</th><td>ask: <code translate="no">RULE_OUTBOUND_HOLD</code>, an implicit ask rule; see <a href="outbound-hold.html">Outbound hold</a></td></tr>
+<tr><th scope="row">6. Owner allow rule</th><td>allow: <code translate="no">RULE_ALLOW</code></td></tr>
+<tr><th scope="row">7. Bypass permissions</th><td>allow: <code translate="no">MODE_UNRESTRICTED</code></td></tr>
+<tr><th scope="row">8. Plan, tool is <code translate="no">exit_plan_mode</code></th><td>ask: <code translate="no">PLAN_EXIT</code></td></tr>
+<tr><th scope="row">9. Call needs no decision</th><td>allow: <code translate="no">SURFACE_GRANT</code>, <code translate="no">SESSION_POLL</code>, <code translate="no">APP_GRANT_FREE</code>, <code translate="no">SCHEDULED_MEMORY</code>, <code translate="no">SAFE_TOOL</code> (reads, plans, and replies to the turn's own conversation; <code translate="no">send_file</code> is one, because attaching a file there is replying, so Auto never sends it to review; see <a href="../../ui/chat/chat-attachments.html#approval">Chat attachments</a>)</td></tr>
+<tr><th scope="row">10. Accept edits, safe edit inside the working directories</th><td>allow: <code translate="no">SAFE_EDIT</code></td></tr>
+<tr><th scope="row">11. Auto</th><td>allow: <code translate="no">AUTO_APP_GRANT</code>, when an earlier review held the same screen; otherwise model review: <code translate="no">AUTO_CLASSIFY</code></td></tr>
+<tr><th scope="row">12. Everything else</th><td>ask: <code translate="no">MODE_APPROVAL</code></td></tr>
+</tbody>
+</table>
+<p class="note">Rules are empty by default and merge global, project and the execution branch (<code translate="no">permissions/rule.py</code>); <code translate="no">deny</code> beats <code translate="no">ask</code> beats <code translate="no">allow</code>, and source order matters only inside one behaviour.</p>
+<p>Conversation branches share current files. Switching branches introduces no workspace-alignment permission gate; only an explicit Rewind requests file recovery.</p>
+<p>Every ask goes through <code translate="no">_ask_or_nobody</code>: if <code translate="no">can_approve(req)</code> is false the outcome is <code translate="no">deny</code> with <code translate="no">NO_ONE_TO_APPROVE</code>, or <code translate="no">HELPER_CANNOT_ASK</code> for a helper Agent started by another. No card is published for a turn that would be refused at execution; <code translate="no">APPROVAL_LOCAL_OWNER_REQUIRED</code> remains a defensive assertion at resume.</p>
+
+<details>
+<summary>The Decision value</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">outcome</code></th><td><code translate="no">allow</code>, <code translate="no">ask</code>, <code translate="no">auto</code> or <code translate="no">deny</code></td></tr>
+<tr><th scope="row"><code translate="no">code</code></th><td>The stable reason code</td></tr>
+<tr><th scope="row"><code translate="no">layer</code></th><td><code translate="no">identity</code>, <code translate="no">rule</code>, <code translate="no">mode</code>, or <code translate="no">setting</code> for a gate driven by a setting</td></tr>
+<tr><th scope="row"><code translate="no">refusal</code></th><td>A <code translate="no">Refusal</code>, set when the outcome is <code translate="no">deny</code></td></tr>
+<tr><th scope="row"><code translate="no">rule</code></th><td>The rule text that decided, if any</td></tr>
+<tr><th scope="row"><code translate="no">authority</code></th><td>Structured evidence for an identity denial</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Calls that are not well-formed, and Pages</summary>
+<p>A malformed call never reaches the decision. <code translate="no">call_problem(name, args)</code> in <code translate="no">openprogram/programs/_authoring/prechecks.py</code> combines <code translate="no">guides.missing_required</code> (<code translate="no">GUIDE_REQUIRED</code>) and <code translate="no">prechecks.problem</code> (<code translate="no">INVALID_ARGUMENTS</code>); <code translate="no">permissions/approval.py</code> calls it first:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Caller</th><th scope="col">On a problem</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_permission_preflight</code>, <code translate="no">_interaction_manifest</code></th><td>Return <code translate="no">None</code>: no review, no card</td></tr>
+<tr><th scope="row"><code translate="no">_gated_execute</code></th><td>Ordinary tool error: <code translate="no">is_error=True</code>, no <code translate="no">denied</code> flag, no <code translate="no">mark_refused</code></td></tr>
+</tbody>
+</table>
+<p>Being in the wrapper, not the agent loop, it also covers Python-program inner tools and the MCP server.</p>
+<p>Whether a turn may use Pages is <code translate="no">surface_grant_applies(name, req, args)</code>, a separate question. <code translate="no">runtime_attach.py</code> captures the Page snapshot when the decision for the browser target's <code translate="no">tabs</code> action is <code translate="no">allow</code> and <code translate="no">surface_grant_applies</code> holds, so a Program started under Bypass permissions still receives its Pages.</p>
+</details>
+
+<h2 id="modes">Modes</h2>
+<table class="stack">
+<thead><tr><th scope="col">Stored value</th><th scope="col">Label</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">bypass</code></th><td>Bypass permissions</td><td>Everything well-formed runs</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td>Auto</td><td>Free calls run; the rest go to model review. Review errors fail closed; 3 consecutive or 20 total blocks fall back to a card if someone can approve.</td></tr>
+<tr><th scope="row"><code translate="no">ask</code></th><td>Manual</td><td>Free calls run; the rest ask. App access asks on first touch and can be allowed for the conversation.</td></tr>
+<tr><th scope="row"><code translate="no">plan</code></th><td>Plan</td><td>As Manual, and tools marked <code translate="no">unsafe_in</code> plan are refused and hidden</td></tr>
+<tr><th scope="row"><code translate="no">acceptEdits</code></th><td>Accept edits</td><td>Unused option, still valid so stored conversations keep working</td></tr>
+</tbody>
+</table>
+
+<h2 id="where-each-kind-of-limit-lives">Where each kind of limit lives</h2>
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">Examples</th><th scope="col">Place</th></tr></thead>
+<tbody>
+<tr><th scope="row">Identity</th><td>Capabilities, non-owner scope, page scripts, framework operations, cited memory</td><td><code translate="no">permissions/identity.py</code>, <code translate="no">tool_authority.py</code>, <code translate="no">Refused</code> from the tool</td></tr>
+<tr><th scope="row">Rules</th><td>Deny, ask and allow rules, hold outbound, hooks</td><td><code translate="no">permissions/rule.py</code>, <code translate="no">runtime/events/tool_gate.py</code></td></tr>
+<tr><th scope="row">Mode</th><td>The table above</td><td><code translate="no">_mode_decision</code></td></tr>
+<tr><th scope="row">Sandbox</th><td>Paths and network outside the sandbox, only when Sandbox is on</td><td><code translate="no">host/sandbox/</code>, <code translate="no">programs/_host/execution.py</code></td></tr>
+<tr><th scope="row">Correctness</th><td>Argument checks, read before write, a file changed under an approval, a stale review</td><td>Tool code, returned to the model as an error or a retry</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">auto</code> machinery, <code translate="no">attended.py</code> (removes <code translate="no">ask_user_question</code> from unattended turns) and <code translate="no">state.py</code> are not on the decision path.</p>
+
+<h2 id="refusal-contract">Refusal contract</h2>
+<p><code translate="no">permissions/refusal.py</code> is the single producer. The model receives one line:</p>
+<pre translate="no" tabindex="0">[blocked by &lt;layer&gt;] &lt;what&gt; did not run: &lt;why&gt;. To change this: &lt;change&gt;.</pre>
+<dl class="pairs">
+<dt><code translate="no">Refusal</code></dt><dd><code translate="no">layer</code>, <code translate="no">code</code>, <code translate="no">what</code> (the call, in plain words), <code translate="no">why</code> (the reason, quoting the rule or naming the mode), <code translate="no">change</code> (where the owner changes this)</dd>
+<dt><code translate="no">Refused</code></dt><dd>What tool code raises; wraps a <code translate="no">Refusal</code> and is built only through this module's constructors. <code translate="no">_execute_bound</code> in <code translate="no">programs/_host/runtime.py</code>, <code translate="no">_gated_execute</code> and the agent loop turn it into the standard result, so an <code translate="no">AgentTool</code> call never raises it. A plain Python call of a tool's implementation does.</dd>
+<dt>Result <code translate="no">details</code></dt><dd><code translate="no">denied: true</code>, <code translate="no">reason_code</code>, <code translate="no">layer</code>, <code translate="no">rule</code>, <code translate="no">mode</code>, <code translate="no">outcome: "not_started"</code>, <code translate="no">execution_started: false</code>. The existing tool row displays the text.</dd>
+</dl>
+
+<table class="stack">
+<thead><tr><th scope="col">Code</th><th scope="col">Layer</th><th scope="col"><code translate="no">why</code></th><th scope="col"><code translate="no">change</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">AUTHORITY_*</code></th><td>identity</td><td><code translate="no">&lt;speaker&gt; is not the owner and may not &lt;capability&gt;</code></td><td>Channels account access, or MCP server exposed tools; in a group room, <code translate="no">channels accounts group-users add</code> with <code translate="no">--access full</code>, or <code translate="no">sender_access</code> <code translate="no">owner</code> for the account</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_SCOPE</code></th><td>identity</td><td><code translate="no">work started by &lt;source&gt; may not &lt;action&gt;</code></td><td>The owner must start this work</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_CHECK_IN_READ</code></th><td>identity</td><td><code translate="no">an always-on check-in may not read this: &lt;reason&gt;</code></td><td>Report what you need and let the owner look in a normal turn</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_PAGE_SCRIPT</code></th><td>identity</td><td><code translate="no">page scripts run only in work the owner started</code></td><td>Use the page actions, or have the owner start this</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_OUTSIDE_TEXT</code></th><td>identity</td><td><code translate="no">this work came from text the owner did not write</code></td><td>Say what was wanted in the report or final message, so the owner can do it</td></tr>
+<tr><th scope="row"><code translate="no">IDENTITY_FRAMEWORK</code></th><td>identity</td><td><code translate="no">framework operations are the owner's</code></td><td>The owner must start this work</td></tr>
+<tr><th scope="row"><code translate="no">RULE_DENY</code></th><td>rule</td><td><code translate="no">your deny rule "&lt;rule&gt;" matches</code></td><td>Permission rules in global, project or conversation</td></tr>
+<tr><th scope="row"><code translate="no">HELPER_CANNOT_ASK</code></th><td>rule, mode or sandbox</td><td><code translate="no">this needs approval (&lt;rule or mode&gt;), and a sub-agent running in the background has no one to ask</code></td><td>The helper continues without that step and names in its final reply what it needed; the caller does it or asks</td></tr>
+<tr><th scope="row"><code translate="no">NO_ONE_TO_APPROVE</code></th><td>rule, mode or sandbox</td><td><code translate="no">this needs approval (&lt;rule or mode&gt;) and this &lt;source&gt; turn has no one to approve it</code></td><td>Depends on what wanted the approval. Hold outbound: put the full draft in the final message or report; the owner can untick the hold on the Agent's Always-on tab. Ask rule: the owner edits or removes the named rule. Leaving the sandbox: set the mode at the bottom to Bypass permissions, or turn the Sandbox switch off. Otherwise: set the mode at the bottom to Bypass permissions, or add the named allow rule</td></tr>
+<tr><th scope="row"><code translate="no">PLAN_MODE_DENY</code></th><td>mode</td><td><code translate="no">the conversation is in Plan mode, which only reads</code></td><td>The mode selector at the bottom of the message box</td></tr>
+<tr><th scope="row"><code translate="no">TOOL_UNAVAILABLE</code></th><td>setting</td><td><code translate="no">&lt;why this turn cannot use it&gt;</code>. Not an approval: a tool the conversation's tools array keeps for the epoch that this turn cannot use (no channel, nobody to answer, memory off, no Page). The section beside the message lists them; see the cache-prefix design</td><td>Carry on without it</td></tr>
+<tr><th scope="row"><code translate="no">APPROVAL_DENIED</code></th><td>mode or rule</td><td><code translate="no">you declined it</code>, plus the note if any</td><td>Ask again, or change the mode</td></tr>
+<tr><th scope="row"><code translate="no">AUTO_CLASSIFIER_*</code>, <code translate="no">AUTO_HISTORY_UNAVAILABLE</code></th><td>mode</td><td><code translate="no">Auto review &lt;blocked / could not run&gt;: &lt;reason&gt;</code></td><td>The mode selector, or an allow rule</td></tr>
+<tr><th scope="row"><code translate="no">SANDBOX_*</code> and sandbox policy</th><td>sandbox</td><td><code translate="no">Sandbox is on and &lt;path or network&gt; is outside it</code></td><td>The Sandbox switch for this conversation, or sandbox settings</td></tr>
+<tr><th scope="row"><code translate="no">HOOK_DENIED</code></th><td>hook</td><td><code translate="no">a hook blocked it: &lt;message&gt;</code></td><td>Hooks in Settings</td></tr>
+<tr><th scope="row"><code translate="no">AGENT_BUDGET</code></th><td>setting</td><td><code translate="no">this chain has reached &lt;limit&gt; &lt;generations, messages or agents&gt;</code></td><td><code translate="no">Settings &gt; Agent &gt; &lt;label&gt;</code> (<code translate="no">agent.&lt;key&gt;</code>)</td></tr>
+<tr><th scope="row"><code translate="no">COMPUTER_USE_REFUSED_APP</code></th><td>setting</td><td><code translate="no">&lt;app&gt; is on the refused list</code></td><td><code translate="no">Settings &gt; computer_use.refused_apps</code></td></tr>
+<tr><th scope="row"><code translate="no">COMPUTER_USE_OWN_WINDOW</code></th><td>mode</td><td><code translate="no">in &lt;mode&gt; the Agent may not operate OpenProgram's own window, where approval cards appear</code></td><td>The mode selector at the bottom of the message box</td></tr>
+<tr><th scope="row"><code translate="no">COMPUTER_USE_PASSWORD_FIELD</code></th><td>setting</td><td><code translate="no">typing into password fields is turned off</code></td><td><code translate="no">Settings &gt; computer_use.refuse_password_fields</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Stale state, MCP text, and the enforcing test</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stale state</th><td><code translate="no">PERMISSION_REVIEW_STALE</code>, <code translate="no">APPROVAL_FILE_CHANGED</code> and wait resume mismatches come back as a retry instruction through <code translate="no">refusal.stale(...)</code>, not as a block</td></tr>
+<tr><th scope="row">MCP server</th><td>Its model-facing text, keyed by decision code, comes from <code translate="no">refusal.py</code> (<code translate="no">MCP_GATE_REFUSALS</code>), so <code translate="no">_trusted_approval_denial</code> recognises the same strings the gate produces</td></tr>
+<tr><th scope="row">Single source test</th><td><code translate="no">tests/unit/security/test_refusal_single_source.py</code> walks <code translate="no">openprogram/programs/</code>, <code translate="no">openprogram/runtime/permissions/</code>, <code translate="no">openprogram/runtime/agent/loop/</code> and <code translate="no">openprogram/extensions/mcp/server/</code>. It fails on a bracketed denial literal, <code translate="no">"denied": True</code> in a dict or <code translate="no">details=</code>, a <code translate="no">"sandbox policy:"</code> literal, or <code translate="no">raise PermissionError(</code> outside <code translate="no">refusal.py</code>. Each exception is on an explicit allowlist with its reason.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>The decision path, <code translate="no">call_problem</code>, <code translate="no">identity.py</code>, <code translate="no">refusal.py</code>, <code translate="no">Refused</code>, the MCP table, the default mode and the selector are in place. Open:</p>
+<ul>
+<li><code translate="no">_DELEGATED_SOURCES</code> still marks delegated risky calls for audit.</li>
+<li>A hook denial carries the hook's message but not its name.</li>
+</ul>

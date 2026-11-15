@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.auth.resolver import ResolvedConnection
+from openprogram.models.auth.resolver import ResolvedConnection
 
 
 def test_wire_uses_credential_base_url_over_catalog():
@@ -21,8 +21,8 @@ def test_wire_uses_credential_base_url_over_catalog():
 
 @pytest.fixture
 def store(tmp_path):
-    from openprogram.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
-    from openprogram.auth.store import AuthStore, set_store_for_testing
+    from openprogram.models.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
 
     s = AuthStore(root=tmp_path / "store")
     set_store_for_testing(s)
@@ -36,8 +36,8 @@ def test_acquire_pooled_returns_resolved_connection_with_base_url(store):
     """An api_key credential carrying its own base_url (e.g. a Bailian key)
     must come back through acquire_pooled as a ResolvedConnection whose
     .base_url is that stored value — not lost as a bare token string."""
-    from openprogram.auth import usage as u
-    from openprogram.auth.types import Credential, CredentialData
+    from openprogram.models.auth import usage as u
+    from openprogram.models.auth.types import Credential, CredentialData
 
     store.add_credential(Credential(
         provider_id="openai-compat", account_id="default", kind="api_key",
@@ -61,8 +61,8 @@ def test_acquire_pooled_returns_resolved_connection_with_base_url(store):
 def test_acquire_pooled_conn_base_url_none_when_unset(store):
     """No base_url on the credential → conn.base_url is None (not ""), so
     wire code's `conn.base_url or model.base_url` fallback triggers."""
-    from openprogram.auth import usage as u
-    from openprogram.auth.types import Credential, CredentialData
+    from openprogram.models.auth import usage as u
+    from openprogram.models.auth.types import Credential, CredentialData
 
     store.add_credential(Credential(
         provider_id="plain", account_id="default", kind="api_key",
@@ -75,5 +75,5 @@ def test_acquire_pooled_conn_base_url_none_when_unset(store):
 
 
 def test_acquire_pooled_none_when_no_pool(store):
-    from openprogram.auth import usage as u
+    from openprogram.models.auth import usage as u
     assert u.acquire_pooled("no-such-provider") is None

@@ -1,0 +1,165 @@
+<title>在对话里更新</title>
+<meta name="description" content="用 self_update 在对话里安装已提交的改动，恢复、撤销，并查看它重启什么。">
+<h1>在对话里更新</h1>
+
+<p><code translate="no">self_update</code> 在聊天里安装已提交的改动。状态查询和取消在所有安装上可用；已发布版本仍用上面的 release 更新方式。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">安装方式</th><th scope="col"><code translate="no">self_update(action="prepare")</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">有 <code translate="no">stable</code> 分支的源码仓库</th><td>把提交落到 <code translate="no">dev</code>，部署到开发版并检查，再晋升到稳定版 App。<a href="development-checkout.zh.html">开发 checkout</a></td></tr>
+<tr><th scope="row">macOS 上的打包 App</th><td>构建并安装进 App，见下文</td></tr>
+<tr><th scope="row">Windows 或 Linux 上的打包 App 或 release 安装</th><td>创建请求前说明这台机器没有源码更新控制器</td></tr>
+<tr><th scope="row">普通开发者 checkout</th><td>说明不激活任何东西；从 checkout 重启 worker</td></tr>
+</tbody>
+</table>
+<p class="note">状态：每个激活级别都已在默认 App 中端到端验证。未完成：跨重启的其他任务，以及会话和标签恢复的真实 App 验收。</p>
+
+<h2 id="recovering-a-conversational-self-update"><span id="恢复对话内自更新"></span>恢复</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">运行</th></tr></thead>
+<tbody>
+<tr><th scope="row">默认 App 卡在维护状态</th><td><code translate="no">openprogram self-update status --json</code><br><code translate="no">openprogram self-update status UPDATE_ID --json</code><br><code translate="no">openprogram self-update repair UPDATE_ID</code></td></tr>
+<tr><th scope="row">App 或普通 CLI 无法启动</th><td><code translate="no">"$HOME/.openprogram/self-updates/UPDATE_ID/recover.sh" status</code><br><code translate="no">"$HOME/.openprogram/self-updates/UPDATE_ID/recover.sh" repair</code></td></tr>
+<tr><th scope="row">supervisor 中途停止</th><td><code translate="no" data-claim="example">recover.sh resume</code>，在原授权和期限内</td></tr>
+<tr><th scope="row">停止更新，包括诊断、修正和测试</th><td>在聊天里 <code translate="no">self_update(action="cancel", update_id=…)</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>repair 做什么、拒绝什么</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行</th><td>本地终端，不启动 Agent。需要交互式终端，并准确输入与操作、版本和计划摘要一起显示的确认内容。没有 <code translate="no">--yes</code> 或强制解除</td></tr>
+<tr><th scope="row">授权</th><td>已授权的操作只能在原来的十分钟内继续；失败或过期后需要重新确认</td></tr>
+<tr><th scope="row">控制程序</th><td>更新前保存。能回退时恢复旧 App；已开始不可逆提交时，只有原始验收证据完整才完成提交</td></tr>
+<tr><th scope="row">拒绝</th><td>已中止且未激活的事务保持旧 App。证据缺失或变化时继续维护状态</td></tr>
+<tr><th scope="row">收尾</th><td>重启默认 worker，检查 App 身份和实际服务，解除维护。不新建验收 Job，结论不变。独立结果记录恢复了哪个版本，服务恢复不代表失败的功能已经正常</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">recover.sh</code></th><td>使用 App 外保存的 runtime，默认 <code translate="no">status</code>。<code translate="no">repair</code> 仍要交互确认，不绕过失败证据或过期授权。<code translate="no">resume</code> 不批准新更新，也不重建验收 Job</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>登录时恢复</summary>
+<ul>
+<li>激活前发布 <code translate="no">~/Library/LaunchAgents/ai.openprogram.self-update.recovery.UPDATE_ID.plist</code>。之后每次登录运行一次，不依赖 App；没有常驻进程或周期重试，写入文件也不启动任何东西。</li>
+<li>不在登录或磁盘解锁前运行。当前登录会话中 App 和控制进程都停止时，运行保存的脚本。</li>
+<li>新任务使用 launchd 的 <code translate="no">Standard</code> 进程类型。已保存的 <code translate="no">Background</code> 项保留绑定和调度策略。</li>
+<li>运行环境验证和恢复 controller 前，进度写入 <code translate="no">bootstrap.log</code>。</li>
+<li>已结束的更新在同一状态锁内验证保存的 runtime，只移除内容未变的登录文件，不重新哈希整个 runtime。保存的 runtime、脚本和证据保留。</li>
+<li>可信恢复文件缺失或损坏时需人工处理，不从未验证的 App 重建。</li>
+</ul>
+</details>
+
+<h2 id="undoing-a-change">撤销修改</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">self_update(action="undo", target=…)</code> 的目标</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">版本号</th><td>回到正好那个版本，之后的内容不再运行。被丢下的提交留在 <code translate="no">refs/openprogram/undone/</code>。不在磁盘上的版本从其提交重新构建。</td></tr>
+<tr><th scope="row">提交</th><td>revert 这一个提交，后面的保留。后面的提交改过同样的行时，停下并列出文件。</td></tr>
+<tr><th scope="row">有 <code translate="no">stable</code> 的机器</th><td>目标是提交：revert 落到 <code translate="no">dev</code> 并晋升，因为 <code translate="no">stable</code> 只向前移动。</td></tr>
+</tbody>
+</table>
+<p>在终端里，当前版本坏了也能用：</p>
+<pre translate="no"><code>openprogram versions list
+openprogram versions use VERSION_ID</code></pre>
+<ul>
+<li><code translate="no">use</code> 停止 worker，最多给 60 秒暂停运行中的任务，然后不做检查直接切换。</li>
+<li>版本反复起不来时自动回到上一个可用版本，并在你最近的对话里说明。</li>
+<li>两种情况下，下一次正常启动后，该版本都成为之后修改的起点。对话、设置和文件不变。</li>
+</ul>
+
+<h2 id="files-edited-inside-a-running-version">运行中版本里被改动的文件</h2>
+<p>可以改，但不生效。下一次启动时存到 <code translate="no">~/.openprogram/runtime/unapplied/&lt;时间&gt;/</code> 并附 <code translate="no">changes.patch</code>，版本恢复原样，并在你最近的对话里说明一次。<code translate="no">openprogram versions list</code> 列出它们。要使用时，在 <code translate="no">self_update</code> 的 worktree 里 <code translate="no">git apply</code>，再走一次正常更新。</p>
+
+<h2 id="what-an-update-restarts">一次更新重启什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">改动路径</th><th scope="col">重新构建</th><th scope="col">重启</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/web/**</code></th><td>Web 导出</td><td>不重启。已打开页面在没有未保存输入时刷新。</td></tr>
+<tr><th scope="row"><code translate="no">docs/**</code>、<code translate="no">scripts/docs_site/**</code></th><td>文档站</td><td>不重启</td></tr>
+<tr><th scope="row"><code translate="no">apps/cli/**</code></th><td>终端 UI 包</td><td>不重启。新的终端会话使用它。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/**</code>、<code translate="no">setup.py</code></th><td>wheel 和文档</td><td>worker。App 窗口保持打开并显示正在更新。</td></tr>
+<tr><th scope="row"><code translate="no">apps/desktop/**</code></th><td>Desktop archive</td><td>App 退出后重新打开</td></tr>
+<tr><th scope="row">依赖锁文件、各 <code translate="no">package.json</code>、<code translate="no">scripts/release/**</code>、<code translate="no">apps/desktop/scripts/**</code>、<code translate="no">apps/desktop/build/**</code> 及其他路径</th><td>完整 App</td><td>App 退出后重新打开</td></tr>
+<tr><th scope="row"><code translate="no">tests/**</code>、<code translate="no">README.md</code>、<code translate="no">.github/**</code> 等</th><td>不影响发布内容</td><td>不重启</td></tr>
+</tbody>
+</table>
+<p class="note">与 <code translate="no">Contents/Resources/openprogram-source-revision</code> 中的提交比较。来自 <code translate="no">-dirty</code> checkout 或仓库外提交的 App 总是完整构建。<code translate="no">prepare</code> 报告预计的 <code translate="no">restart</code> 和 <code translate="no">rebuild</code>；控制器在构建时重新判定，并写入 <code translate="no">activation.json</code>。</p>
+
+<h2 id="how-a-self-update-runs">如何运行</h2>
+
+<details>
+<summary>聊天工具</summary>
+<ul>
+<li><code translate="no">action</code> 取 <code translate="no">status</code>（默认）、<code translate="no">prepare</code>、<code translate="no">retry</code>、<code translate="no">cancel</code> 或 <code translate="no">undo</code>。</li>
+<li>第一次结果说明流程并列出指南。对话中第一次 <code translate="no">prepare</code>、<code translate="no">retry</code> 或 <code translate="no">undo</code> 会被拒绝一次，并附上该动作的说明（<code translate="no">help("self_update.prepare")</code>、<code translate="no">help("self_update.retry")</code>、<code translate="no">help("self_update.undo")</code>）。<code translate="no">help("self_update")</code> 可再看流程。</li>
+<li><code translate="no">prepare</code>、<code translate="no">retry</code> 和 <code translate="no">undo</code> 按会话的权限模式处理；<code translate="no">status</code> 不需要审批。</li>
+<li>会话只显示普通消息和工具结果：没有更新历史、操作按钮、证据查看器或恢复提示，也不轮询更新历史接口。</li>
+</ul>
+</details>
+
+<details>
+<summary>安装、Job 和后续任务</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">安装</th><td>新 bundle 暂存在已安装 App 旁，重命名换入，验证后提交或回退。回退以同一重启级别恢复上一版 bundle。</td></tr>
+<tr><th scope="row">无需重启</th><td>跳过维护，对话和 Job 照常继续。</td></tr>
+<tr><th scope="row">排队 Job</th><td>维护期间保持身份并等待。</td></tr>
+<tr><th scope="row">运行中的任务</th><td>支持持久暂停的执行在下一个检查点停止。活动 attempt 和资源占用结束后才替换 App。无法安全暂停的任务必须在更新期限内结束，否则中止激活。</td></tr>
+<tr><th scope="row">提交或回退后</th><td>只恢复由本次更新暂停的执行。用户暂停或等待输入的任务保持暂停。</td></tr>
+<tr><th scope="row">工具合同变化</th><td>检查点继续拒绝。更新触发的恢复被拒绝时，保留旧检查点，依据原任务和历史创建一个规划 Job，保留工具选择和权限规则。存在未解决的副作用或用户已取消时，不重新规划。</td></tr>
+<tr><th scope="row">原任务</th><td>新更新保存带固定 Job 身份的原会话后续任务。维护和修正序列结束后，它以新的后台轮次继续检查目标行为，不授予再次安装的权限。旧记录没有这项。安装成功与任务继续分别记录。</td></tr>
+<tr><th scope="row">有限结果</th><td>持久化到原会话，即使窗口已关或未创建验证 Job。重复检查使用相同的 update、attempt 和结果类型标识，不启动模型轮次，不移动 HEAD。写入中断会重试。</td></tr>
+<tr><th scope="row">原会话或节点不存在</th><td>保持待投递，不改投别处。持久化不会重新打开 App，也不证明安装成功。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>离线打包和激活前检查</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">依赖基线</th><td>必须与候选的 <code translate="no">uv.lock</code> 和 <code translate="no">scripts/release/product-runtime.json</code> 完全一致。不一致或缓存缺失时，在激活前停止更新，绝不因此允许下载或沿用不匹配的依赖。</td></tr>
+<tr><th scope="row">构建工具</th><td>保存 runtime 中固定版本的工具，以及既有 npm、uv、Electron-builder、node-gyp 缓存的私有副本。</td></tr>
+<tr><th scope="row">Electron 归档</th><td>匹配控制器固定的版本、架构和发布 SHA-256，候选只读获得 <code translate="no">electronDist</code>。</td></tr>
+<tr><th scope="row">打包内容</th><td>完整构建：候选的 Web、文档、wheel 和 Desktop archive。部分构建：从已安装 App 的副本出发。</td></tr>
+<tr><th scope="row">worker 冒烟测试</th><td>只用控制器选择的私有 loopback 端口，从不用 18100。</td></tr>
+<tr><th scope="row">浏览器和图标检查</th><td>由重新校验过的保存 controller runtime 执行，位于所有候选可写路径之外，资源树 hash 必须匹配。控制器从不执行可写的构建 runtime 副本。全部完成才激活。</td></tr>
+<tr><th scope="row">恢复协议</th><td>候选和已安装 App 都带匹配的声明，由打包和刷新脚本根据实际 Desktop archive、安装器、runtime manifest、后端和编译后的 Web 文件生成。等待后和恢复时重新检查。</td></tr>
+<tr><th scope="row">停止激活</th><td>声明缺失、不兼容或变化，事务 ID 不匹配，或冻结的 owner 配置无效，都在替换旧 App 前停止。没有声明的旧 App 需要先做一次显式完整更新。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>状态和历史接口</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">接口</th><th scope="col">返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/self-updates?session_id=…</code></th><td>历史，含已结束的 attempt；有上限的 <code translate="no">limit</code> 和 <code translate="no">cursor</code></td></tr>
+<tr><th scope="row"><code translate="no">GET /api/self-updates/{update_id}?session_id=…</code></th><td>详情</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/self-updates/{update_id}/evidence?session_id=…&amp;evidence_id=…</code></th><td>已校验签名结果引用的观察记录；用 verifier 的 <code translate="no">evidence_id</code> 或 assertion 的 <code translate="no">evidence_refs</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>都需要 owner 认证；证据还需要原会话。聊天工具使用同一只读投影。<code translate="no">self_update()</code> 和 <code translate="no">self-update status --json</code> 提供 <code translate="no">source_repair_result</code>。</li>
+<li><code translate="no">candidate_revision</code> 和 <code translate="no">target_app</code> 描述请求的安装。<code translate="no">last_verified_runtime</code> 包含最近一次匹配验证的 SHA、PID、时间和来源，或为 null；不证明 worker 在线。<code translate="no">state_revision</code> 是计数器，不是 Git revision。</li>
+<li>查询不初始化或修复状态。无效状态返回错误，不显示空历史；证据被改或无效也返回错误。Running 读不到快照时报告 <code translate="no">self_update_error</code>。</li>
+<li>投影不含凭据、原始日志和配置；修正摘要含状态和新 candidate SHA。不替代 CLI 恢复输出。保存的 HTTP 或 HTML 文本不证明窗口已渲染。</li>
+</ul>
+</details>
+
+<details>
+<summary>重新打开会话</summary>
+<ul>
+<li>控制器在激活前持久化恢复意图，并把不透明更新 ID 绑定到安装事务。App 原本打开时，激活和回退都用该 ID 重新打开；原本关闭则保持关闭。普通启动不消费这些请求。</li>
+<li>Desktop 通过 owner 认证只解析原会话，在主窗口加载会话记录后确认。请求过期、会话删除或认证失败时正常启动，无提示。切换页面后停止定位。这些步骤不启动验证 Job，也不证明成功。</li>
+</ul>
+</details>
+
+<p class="next"><a href="self-update-verification.zh.html">自更新验收计划</a> · <a href="self-update-rollback.zh.html">自更新回退之后</a></p>

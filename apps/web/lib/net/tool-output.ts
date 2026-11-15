@@ -1,4 +1,4 @@
-import { wsRequest } from "@/lib/net/ws-request";
+import { wsRequest } from "@/lib/net/ws/ws-request";
 
 export interface FullToolOutputResponse {
   session_id?: string;

@@ -5,56 +5,45 @@ This tool is always wrapped by the dispatcher's approval gate
 ``plan`` argument so the UI shows the proposed plan to the user. If
 the user approves, the tool body runs (clears the plan-mode flag and
 returns a success message). If the user rejects, the gate returns a
-"[denied]" result and the flag stays on — the LLM is expected to read
+refusal and the flag stays on — the LLM is expected to read
 the rejection, revise, and either re-submit or change direction.
 
-Prompt design follows Anthropic's ExitPlanMode tool
-(``references/claude-code-leaked/src/tools/ExitPlanModeTool/prompt.ts``)
-— same purpose, same "when to use" rules. Local edit: claude-code-leaked
-v2 reads the plan from a file written via FileEdit; we pass the plan
-as the ``plan`` argument directly, because OpenProgram doesn't have the
+The plan is passed as the ``plan`` argument; OpenProgram has no
 plan-file workflow.
 """
 from __future__ import annotations
 
-from openprogram.programs._runtime import function
-from openprogram.agent import plan_mode as _pm
+from openprogram.programs._host.runtime import function
+from openprogram.runtime.conversation import plan_mode as _pm
 
 
-_DESCRIPTION = """Use this tool when you are in plan mode and have finished drafting your plan and are ready for user approval.
+_DESCRIPTION = """Send your finished plan to the user for a decision. This call is the approval request, so do not also ask for approval in your reply.
 
-## How This Tool Works
-- Pass the full plan content as the `plan` argument (markdown is recommended)
-- The user reviews the plan and chooses Approve or Reject
-- Approve: this tool returns a confirmation, plan mode is cleared, and you can implement
-- Reject: this tool returns a "[denied]" result, plan mode stays on, and you should revise the plan based on any feedback before re-submitting
+Put the whole plan in the `plan` argument, in markdown, written for the person reviewing it: which files change and how, new functions and where they live, the order of the work, edge cases, and anything they must weigh before agreeing.
 
-## When to Use This Tool
-IMPORTANT: Only use this tool when the task requires planning the implementation steps of a task that requires writing code. For research tasks where you're gathering information, searching files, reading files or in general trying to understand the codebase — do NOT use this tool.
+If approved, plan mode ends and you carry out the plan. If rejected, plan mode stays on: change the plan to answer the reason given and send it again.
 
-## Before Using This Tool
-Ensure your plan is complete and unambiguous:
-- If you have unresolved questions about requirements or approach, ask the user a clarifying question first (in earlier turns)
-- Once your plan is finalized, use THIS tool to request approval
-
-**Important:** Do NOT ask the user "Is this plan okay?" or "Should I proceed?" in free-form text — that's exactly what THIS tool does. exit_plan_mode inherently requests user approval of your plan.
-
-## Plan Quality
-Write the plan for a human reviewer, not for yourself. Concrete sections beat vague summaries:
-- Files to change and what changes
-- New code structure (function/class names, signatures, where they live)
-- Ordering of work
-- Edge cases and how you'll handle them
-- Anything the user needs to evaluate before agreeing
-
-Avoid vague summaries like "add tests and refactor".
-
-## Examples
-
-1. Initial task: "Search for and understand the implementation of vim mode in the codebase" — Do not use exit_plan_mode because you are not planning the implementation steps of a task.
-2. Initial task: "Help me implement yank mode for vim" — Use exit_plan_mode after you have finished planning the implementation steps of the task.
-3. Initial task: "Add a new feature to handle user authentication" — If unsure about auth method (OAuth, JWT, etc.), ask a clarifying question first, then use exit_plan_mode after clarifying the approach.
+Settle open questions with the user before calling this. It is for proposed code changes; a task that only gathers information has nothing to submit.
 """
+
+
+def _restore_mode(session_id: str) -> None:
+    """Put the selector back on what it said before Plan; the live refresh applies it in this turn."""
+    from openprogram.runtime.agent.turn_request import get_turn_request
+    from openprogram.runtime.events import emit_ws_frame
+    from openprogram.runtime.permissions.state import permission_state, update_permission
+    from openprogram.runtime.permissions.modes import DEFAULT_PERMISSION
+    from openprogram.state.authority import normalize_authority
+
+    state = permission_state(session_id)
+    if state["mode"] != "plan":
+        return
+    updated = update_permission(session_id, state.get("before_plan") or DEFAULT_PERMISSION, state["version"],
+                                normalize_authority(get_turn_request()))
+    # Every open window's selector follows, as when the owner clicks it.
+    emit_ws_frame({"type": "permission_changed", "data": {
+        "session_id": session_id, "action": "set_permission", "mode": updated["mode"], "version": updated["version"],
+    }})
 
 
 @function(
@@ -71,13 +60,13 @@ def exit_plan_mode(plan: str) -> str:
             the user verbatim — write it for a human reviewer, not
             for the LLM.
     """
-    session_id = _pm.current_session_id.get()
+    session_id = _pm.turn_session_id()
     if not session_id:
         return "[plan-mode] no active session — flag not cleared"
     _pm.exit(session_id)
+    _restore_mode(session_id)
     return (
-        "Plan approved. You have exited plan mode. You can now make "
-        "edits, run tools, and take actions. Implement the plan as "
-        "approved; do not deviate from it without checking back with "
-        "the user first."
+        "Plan approved and plan mode is off. Write tools are available "
+        "again. Carry out the plan as approved, and check with the "
+        "user before departing from it."
     )

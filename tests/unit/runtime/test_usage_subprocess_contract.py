@@ -11,14 +11,14 @@ import inspect
 
 import pytest
 
-from openprogram.usage.context import (
+from openprogram.models.usage.context import (
     UsageContext,
     apply_snapshot,
     current_usage_context,
     snapshot,
     usage_scope,
 )
-from openprogram.usage import context as _ctx_mod
+from openprogram.models.usage import context as _ctx_mod
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ def reset_usage_context():
 
 
 def test_child_entry_accepts_usage_snapshot_param():
-    from openprogram.agent.process_runner import _child_entry
+    from openprogram.runtime.conversation.process_runner import _child_entry
     params = list(inspect.signature(_child_entry).parameters)
     # Provider/model additions append after the original payload; usage keeps
     # its positional slot so older callers still bind correctly.
@@ -54,7 +54,7 @@ def test_snapshot_carries_call_kind_and_session_across_boundary():
         snap = snapshot()
 
     # back at default (fresh spawn interpreter has the default context)
-    assert current_usage_context().call_kind == "unknown"
+    assert current_usage_context().call_kind is None
 
     apply_snapshot(snap)
     c = current_usage_context()

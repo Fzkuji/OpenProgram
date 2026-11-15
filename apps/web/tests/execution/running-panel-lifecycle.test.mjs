@@ -12,6 +12,17 @@ registerHooks({
     if (specifier.endsWith(".module.css")) {
       return { url: "data:text/javascript,export default {}", shortCircuit: true };
     }
+    if (specifier === "@/lib/agents/pending-inbox") {
+      // The cross-conversation inbox reads through React Query; nothing waits here.
+      return { url: "data:text/javascript,export const usePendingInbox = () => ({ items: [], loaded: true }); export const pendingInOrder = (items) => items; export const openPendingItem = () => {};", shortCircuit: true };
+    }
+    if (specifier === "@/components/agents/agent-avatar") {
+      return { url: "data:text/javascript,export const AgentAvatarById = () => null; export const useConversationAgentShape = () => 'cloud'", shortCircuit: true };
+    }
+    // Pages this file never opens.
+    const page = { "./program-page": "ProgramPage", "./command-page": "CommandPage", "./scheduled-task-page": "ScheduledTaskPage", "./open-work-page": "OpenWorkPage" }[specifier];
+    if (page) return { url: `data:text/javascript,export const ${page} = () => null`, shortCircuit: true };
+    if (specifier === "./always-on-row") return { url: "data:text/javascript,export const AlwaysOnRow = () => null; export const ReportInside = () => null; export const reportForRun = () => false; export const reportNameForRun = () => null", shortCircuit: true };
     const base = specifier.startsWith("@/")
       ? new URL(specifier.slice(2), webRoot).href
       : specifier.startsWith(".") && !/\.[a-z]+$/i.test(specifier)
@@ -54,8 +65,9 @@ let respond;
 globalThis.fetch = (...args) => respond(...args);
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { RunningPanel } = await import("../../components/right-sidebar/running-panel.tsx");
-const { MessageList } = await import("../../components/chat/messages/message-list.tsx");
+const { RunningPanel } = await import("../../components/right-sidebar/running/running-panel.tsx");
+const { MessageList } = await import("../../components/chat/messages/list/message-list.tsx");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const { useSessionStore } = await import("../../lib/session-store/index.ts");
 
 function response(payload, status = 200) {
@@ -90,17 +102,26 @@ test("activity never overlaps polls for the same resource and aborts on unmount"
       window.dispatchEvent(new Event("op:execution-update"));
       assert.equal(host.querySelector('button[aria-label="Refresh activity"]'), null);
     });
-    assert.equal(requests.length, 2);
+    // Executions, programs, the conversation's own work (always-on, open
+    // work, scheduled tasks) and the agents' roster: one read each.
+    assert.equal(requests.length, 4);
+    assert.ok(requests.some(request => request.url.endsWith("/api/session/session-one/activity/roster")));
+    assert.ok(requests.some(request => request.url.endsWith("/api/sessions/session-one/work")));
     assert.equal(new Set(requests.map(request => request.url)).size, requests.length);
   });
   assert.ok(requests.every(request => request.signal.aborted));
 });
 
-test("initial failures add no phantom update history and preserve activity errors", async () => {
+test("transient activity failures stay quiet before retry status appears", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   respond = async () => response({ error: "denied" }, 403);
   await mount(RunningPanel, { sessionId: "session-one", active: true }, async (host) => {
-    assert.match(host.textContent, /Could not load activity/);
-    assert.doesNotMatch(host.textContent, /Nothing is running|Loading/);
+    assert.doesNotMatch(host.textContent, /Could not load|unavailable|Retrying/);
+    await act(async () => { t.mock.timers.tick(5000); });
+    // Nothing read yet: the default sections stay folded, with no loading text.
+    assert.doesNotMatch(host.textContent, /Loading|Retrying/);
+    await act(async () => { t.mock.timers.tick(25000); });
+    assert.match(host.textContent, /Activity is still unavailable/);
   });
 });
 
@@ -110,7 +131,10 @@ test("conversation parent ignores historical update fixtures", async () => {
   const previousSessionId = useSessionStore.getState().currentSessionId;
   useSessionStore.setState({ currentSessionId: "session-one" });
   try {
-    await mount(MessageList, {}, async (host) => {
+    // The transcript asks the Agents list whether this conversation is always-on.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const WithQueries = () => createElement(QueryClientProvider, { client }, createElement(MessageList));
+    await mount(WithQueries, {}, async (host) => {
       window.dispatchEvent(new CustomEvent("op:self-update-test-object", {
         detail: { phase: "pending", session_id: "session-one", update_id: "update-one" },
       }));
@@ -126,4 +150,23 @@ test("conversation parent ignores historical update fixtures", async () => {
   } finally {
     useSessionStore.setState({ currentSessionId: previousSessionId });
   }
+});
+
+
+test("activity list does not load unselected execution events or debugger bodies", async () => {
+  const urls = [];
+  respond = async (url) => {
+    urls.push(String(url));
+    if (String(url).endsWith("/executions")) return response({ items: [{ snapshot: {
+      execution_id: "exec-one", session_id: "session-one", status: "completed", updated_at: 1,
+      event_sequence: 100, status_version: 1,
+    } }] });
+    if (String(url).includes("/processes")) return response({ items: [] });
+    throw new Error("Unselected detail should not be requested");
+  };
+  await mount(RunningPanel, { sessionId: "session-one", active: true }, async () => {
+    assert.ok(urls.some(url => url.endsWith("/executions")));
+    assert.equal(urls.filter(url => /\/(events|debugger)[?]/.test(url)).length, 0);
+    assert.equal(urls.filter(url => url.includes("/activity/runs")).length, 0);
+  });
 });

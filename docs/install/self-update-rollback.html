@@ -1,0 +1,53 @@
+<title>Self-update rollback</title>
+<meta name="description" content="Read-only diagnosis, source repair and retry limits after a verified rollback.">
+<meta name="covers" content="openprogram/operations/self_update/repair/ openprogram/programs/tools/system/self_update/">
+<h1>Self-update rollback</h1>
+
+<h2>Post-rollback diagnosis</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Job</th><td>One read-only Job in the original session, created by the restored worker, with the approved model and profile. Reports a cause and corrections.</td></tr>
+<tr><th scope="row">Cannot</th><td>Edit source, run shell commands, install or authorize. Original verdicts stand.</td></tr>
+<tr><th scope="row">Time</th><td>At most five minutes after rollback, shortened by an earlier approved deadline. Restart neither resets it nor repeats a terminal Job.</td></tr>
+<tr><th scope="row">Stop</th><td>The Job cancel action or <code translate="no">self_update(action="cancel")</code>. A new update supersedes it.</td></tr>
+<tr><th scope="row">Cannot run</th><td>Unavailable models or invalid evidence stop diagnosis without restricting the service.</td></tr>
+<tr><th scope="row">Result</th><td><code translate="no">diagnosis_result</code> in <code translate="no">self-update status --json</code>, when one exists.</td></tr>
+</tbody>
+</table>
+<h2>Post-rollback source repair</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Approval</th><td>Initial approval covers isolated repair and the listed <code translate="no">required_tests</code>. Default mode needs separate approval before another installation; explicitly approved <code translate="no">bounded_auto</code> permits later installations within its limits.</td></tr>
+<tr><th scope="row">Trigger</th><td>An implementation or test diagnosis can start one read-only model Job proposing text edits.</td></tr>
+<tr><th scope="row">Applying</th><td>The controller validates each edit, creates a new linked worktree and commit, and runs the frozen tests in a native sandbox with no network or App write access. Your worktree is unchanged.</td></tr>
+<tr><th scope="row">Scope</th><td>The original changed files, or <code translate="no">bounded_auto</code>'s approved patterns. Files your candidate changed and the repair leaves alone stay as approved.</td></tr>
+<tr><th scope="row">Never edited automatically</th><td>Protected runtime, approval, installer, dependency and Git files. Invalid paths or non-unique old text stop repair.</td></tr>
+<tr><th scope="row">Time</th><td>Repair and tests share at most ten minutes after rollback, shortened by an earlier deadline. A new update, cancellation or expiry stops them. Restart replays nothing.</td></tr>
+<tr><th scope="row">Cancel</th><td>The Job cancel action during the model; <code translate="no">self_update(action="cancel", update_id=…)</code> in the original conversation for tests. Failed worktrees and evidence stay for inspection.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Repair state</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">candidate_ready</code></th><td>New commit and all configured tests passed</td></tr>
+<tr><th scope="row"><code translate="no">awaiting_tests</code></th><td>No required tests were configured; cannot be retried, start a new owner request with explicit tests</td></tr>
+<tr><th scope="row"><code translate="no">failed</code></th><td>Missing or failed tests, or source drift</td></tr>
+<tr><th scope="row"><code translate="no">cancelled</code>, <code translate="no">expired</code></th><td>Cancellation or expiry</td></tr>
+</tbody>
+</table>
+<p class="note">None of these means installed. Requests from before these stages keep their old behavior and do not gain them.</p>
+<h2>Retry and iteration</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">retry</code></th><td><code translate="no">self_update(action="retry", update_id, candidate_sha)</code> from any of the owner's conversations. In a mode that asks, approval shows SHA, changed paths, tests and remaining budget. Git contents and test logs are rechecked afterward; a change invalidates submission.</td></tr>
+<tr><th scope="row"><code translate="no">bounded_auto</code></th><td>Needs a future total <code translate="no">deadline</code>, allowed path patterns and non-empty <code translate="no">required_tests</code>. Only requests with the frozen iteration authorization submit automatically; the mode field alone grants nothing.</td></tr>
+<tr><th scope="row">Attempts</th><td>At most three counting the first. Reserving a child consumes one, even if submission fails. Each child keeps goal, assertions, source baseline, model, profile and policy. Restart reuses the same child and deadline.</td></tr>
+<tr><th scope="row">Cancel</th><td>Stops the sequence, including pending approval, diagnosis, repair and tests. A child already activating or verifying finishes its transaction or safe rollback, and no further attempt follows. Unrelated Jobs are untouched.</td></tr>
+<tr><th scope="row">Status</th><td>The <code translate="no">iteration</code> section shows root, parent, attempt limits, deadline and submission status. <code translate="no">submitted</code> means handed to the external supervisor; the child still goes through packaging, system checks, a new verification Job, and commit or rollback.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="conversational-self-update.html">Update from chat</a></p>

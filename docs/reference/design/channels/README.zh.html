@@ -1,0 +1,22 @@
+<title>渠道</title>
+<meta name="description" content="消息如何在聊天平台和 agent 之间流转，以及各渠道设计文档的位置。">
+<h1>渠道</h1>
+<p>在 Telegram、Discord、Slack 或个人微信上发给机器人的消息会为绑定的 agent 开始一个回合，回复回到同一会话。渠道运行在后台 worker 中。不需要公网 webhook：所有适配器都向外连接（Telegram 长轮询、Discord Gateway、Slack Socket Mode、微信 iLink 长轮询）。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">解析</th><td><code translate="no">openprogram/interfaces/channels/implementations/</code> 中的适配器把原生事件解析成一个 <code translate="no">ChannelMessage</code>：文本、附件元数据、引用文本。</td></tr>
+<tr><th scope="row">门禁</th><td><code translate="no">base.Channel.handle_inbound</code> 运行配对门禁（未知发送者获得一小时有效的配对码，只有所有者能从 CLI 或回环 Web UI 批准）、下载附件、加引用块。</td></tr>
+<tr><th scope="row">分发</th><td><code translate="no">dispatch_inbound</code> 根据绑定选 agent，计算会话 key，在按会话的锁内运行回合，并广播给 Web UI 和 TUI。</td></tr>
+<tr><th scope="row">发送</th><td>一个传输模块负责分块、按平台格式化（Telegram HTML、Slack mrkdwn、微信纯文本）、限流重试和文件上传。平台允许编辑时，进度流入一条占位消息。</td></tr>
+</tbody>
+</table>
+<p class="note">脚本、定时任务和 agent 方法无需 worker，可用 <code translate="no">outbound.send(...)</code> 一次性发送。账号、配对和路由：<code translate="no">openprogram channels setup</code>、<code translate="no">accounts</code>、<code translate="no">access</code>、<code translate="no">bindings</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文档</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="design.zh.html">Design</a></th><td>结构和消息流：两条发送路径、<code translate="no">dispatch_inbound</code>、传输层、平台、用户入口</td></tr>
+<tr><th scope="row"><a href="audit.zh.html">Requirements and invariants</a></th><td>这一层必须遵守的约束，并与 OpenClaw 和 Hermes 对比</td></tr>
+<tr><th scope="row"><a href="chat-bots.zh.html">Chat-bot behaviour</a></th><td>agent 在群里何时回答、如何展示进度、群聊的要求</td></tr>
+</tbody>
+</table>

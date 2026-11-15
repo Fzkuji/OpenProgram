@@ -1,0 +1,108 @@
+<title>聊天 Goal</title>
+<meta name="description" content="Goal 让目标跨聊天轮次保持有效，直到独立验收通过。">
+<h1>聊天 Goal</h1>
+<p>Goal 让目标在当前 agent 的普通轮次间保持有效，使用会话的工具、模型、权限和历史。没有嵌套的工作 agent。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="Goal 活动期间，一次成功的工作轮次之后会有下一轮自动轮次。agent 用 update_goal status complete 提交完成候选，或待办全部完成时，运行一轮独立只读验收。证据通过 runtime 复核后 Goal 结束为已达成。证据不足时回到工作轮次。">
+  <defs><marker id="gl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="56">工作轮次</text>
+  <text class="t-soft" x="0" y="82">活动期间反复进行</text>
+  <line class="ln" x1="128" y1="49" x2="222" y2="49" marker-end="url(#gl-a)"/>
+  <text class="t-soft mid" x="175" y="38">完成候选</text>
+  <text class="t-big" x="234" y="56">验收中</text>
+  <text class="t-soft" x="234" y="82">独立的只读轮次</text>
+  <line class="ln" x1="400" y1="49" x2="494" y2="49" marker-end="url(#gl-a)"/>
+  <text class="t-soft mid" x="447" y="38">复核</text>
+  <text class="t-big" x="506" y="56">已达成</text>
+  <text class="t-soft" x="506" y="82">转录中留一张卡片</text>
+  <path class="ln" d="M280 96V136H60V96" marker-end="url(#gl-a)"/>
+  <text class="t-soft" x="104" y="160">证据不足，回到工作</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>工作轮次</strong><small>活动期间反复进行</small></li>
+  <li><strong>验收中</strong><small>针对完成候选的独立只读轮次</small><small>证据不足，回到工作</small></li>
+  <li class="flow-end"><strong>已达成</strong><small>复核后，转录中留一张卡片</small></li>
+</ol>
+</figure>
+<h2 id="start-and-plan">开始与规划</h2>
+<p>输入 <code translate="no">/goal &lt;目标&gt;</code>，或使用<strong>能力 → Programs → Tools → planning → goal → Use</strong>，或直接要求 agent。目标显示为你的消息，带“目标”标签。Rich REPL 中 <code translate="no">/goal</code> 启动 canonical chat 并显示 execution ID。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">环节</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">计划</th><td>多步工作用 <code translate="no">todo_create</code>、<code translate="no">todo_update</code>、<code translate="no">todo_list</code>；简单目标不需要。新条目关联到 Goal 及其版本。每次待办变化和轮次结束时刷新进度；进度通知失败不会撤销待办。</td></tr>
+<tr><th scope="row">候选</th><td>agent 对照每项要求检查证据，再调用 <code translate="no">update_goal(status="complete")</code>。这只是提交。未完成的关联待办会阻止提交。待办全部完成也会触发验收，每个变更后的计划一次。</td></tr>
+<tr><th scope="row">验收中</th><td>评估原始目标和每项待办要求，只用受信任的内置检查工具，遵循常规权限。不能用 shell、写入或改 Goal；需要测试时作为证据不足退回工作 agent。</td></tr>
+<tr><th scope="row">已达成</th><td>需要逐项评估和证据引用。runtime 复核要求、用户控制、待办、未完成执行、未知影响和证据。暂停、编辑、取消、新指令或证据变化都会阻止过期的成功。失败的执行仍可恢复。</td></tr>
+</tbody>
+</table>
+<p class="note">语义验收是独立的模型判断，不保证结果完美。完成只描述验收时的状态，不会启动持续监控。待办全部勾选不等于目标达成。</p>
+<p class="note">目标属于设定它的那个分支：自动回合接着那个分支做，其他分支上的回合不碰它。</p>
+<h2 id="control-execution">命令</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/goal</code> 或 <code translate="no">/goal status</code></th><td>读取当前状态</td></tr>
+<tr><th scope="row"><code translate="no">/goal pause</code></th><td>保存暂停并请求取消当前执行</td></tr>
+<tr><th scope="row"><code translate="no">/goal resume</code></th><td>用累计用量继续</td></tr>
+<tr><th scope="row"><code translate="no">/goal verify</code></th><td>独立验收最近完成的工作，不直接标记达成</td></tr>
+<tr><th scope="row"><code translate="no">/goal edit &lt;目标&gt;</code></th><td>保存新版本并暂停</td></tr>
+<tr><th scope="row"><code translate="no">/goal clear</code></th><td>取消 Goal</td></tr>
+<tr><th scope="row"><code translate="no">/goal budget max_tokens=10000 max_elapsed_s=3600 max_cost_usd=2</code></th><td>token、活动秒数和费用上限；0 移除上限</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">create_goal</code>、<code translate="no">get_goal</code>、<code translate="no">update_goal</code></th><td>短状态操作，不执行任务</td></tr>
+<tr><th scope="row"><code translate="no">blocked</code> 状态</th><td>同一个已验证阻碍在至少连续三个 Goal 轮次中重现，且没有其他独立工作时才能标记。runtime 强制轮次数，agent 负责确认是同一阻碍。</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">停止或暂停</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">预算耗尽</th><td>用 <code translate="no">/goal budget</code> 提高或移除后恢复。等待时间不算活动时间。</td></tr>
+<tr><th scope="row">执行失败</th><td>遇到临时失败（模型服务出错、连接断开、短时间限流）时，Goal 先等几秒、之后等得更久，然后自己继续，最多连续失败三次。马上会重复的失败（密钥被拒、余额不足、额度或预算用完）保持暂停并显示原因，等你点击继续。</td></tr>
+<tr><th scope="row">执行取消</th><td>自动继续停止；你停止的那一轮不会重启。<a href="always-on-agents.zh.html">常驻</a>唤醒可能在一轮失败后重启 Agent 自己启动的 Goal。</td></tr>
+<tr><th scope="row">连续两个空闲自动轮次（没有工具调用）</th><td><strong>Stalled</strong>。第一次会警告。任何工具调用或用户轮次清零，Resume 重新计数。</td></tr>
+<tr><th scope="row">已暂停</th><td>显示原因：轮次失败、Plan 模式、验收前提未满足、重启次数上限</td></tr>
+</tbody>
+</table>
+<p class="note">Goal 没有轮次上限。徽章显示待办完成度，没有待办时省略，状态仍可见。上限可选，按累计用量计算。自动继续不扩大工具权限。</p>
+<details>
+<summary>转录与详情</summary>
+<ul>
+<li>验收轮次不渲染为回复。启动、运行、暂停和验收不增加转录卡片。Goal 结束时留一张紧凑卡片，点击打开其保存的结果、进度和用量，只读，新 Goal 开始后仍归属原 Goal。</li>
+<li>详情在刷新后保留目标、状态、用量和进度，并在用量旁显示上限，但不能编辑预算。</li>
+<li>在普通输入框补充指令，遵循其队列或转向模式。排队的消息先于下一次自动轮次，自动轮次最多等 15 秒。</li>
+<li>详情使用后端当前的操作资格。禁用的 Resume 或 Verify 说明未满足的前提。Refresh status 重试失败的读取，不丢草稿。End 总能停止 Goal 意图。未解决的操作显示标识、工具名、时间戳和状态。Inspect execution 打开那次执行，含待审批和待回答的问题。</li>
+</ul>
+</details>
+<details>
+<summary>重启与恢复</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">worker 重启</th><td>本身不暂停聊天 Goal：兼容的 checkpoint 按自动重启策略恢复，关闭期间完成的成功轮次保留持久的继续通知</td></tr>
+<tr><th scope="row">阻止自动工作</th><td>用户暂停、取消、预算耗尽和明确的重启上限。旧式可恢复暂停和缺少继续来源的 Goal 需要显式 Resume。通用外部事件唤醒仍是恢复限制。等待或未解决的执行不是完成证据。</td></tr>
+<tr><th scope="row">Verify 需要</th><td>已完成的工作、关联待办完成、预算可用、没有相关未解决工作。Goal 拥有的后台进程仍在运行或结果未知时阻止验收，无关资源不影响。暂停、取消、版本变化和重复请求无法绕过。</td></tr>
+<tr><th scope="row">没有 owner 和活动后代的普通聊天的 Resume</th><td>可关闭中断的帧并启动受限检查轮次，不重放旧工具调用。未知影响仍是未知，不声称外部操作已取消。</td></tr>
+<tr><th scope="row">新准入</th><td>有持久身份，准入和保存 Goal 之间崩溃不会产生重复轮次。不兼容的 checkpoint 用新聊天轮次；临时激活或凭证错误不授权这种回退。仅 provider 的中断后台 Job 保留不可变输入和资源准入。有未解决影响的子执行需要检查，不自动重放。</td></tr>
+<tr><th scope="row">provider 请求中不完整的工具调用历史</th><td>修复时不改写保存的记录：缺失的输出得到未知结果占位符，真实输出优先，重复输出合并，中断的文本保持标注，未配对的结果不发送但仍保存。这不证明失败，也不授权重试。</td></tr>
+<tr><th scope="row">无 owner 的中断执行，结果未知</th><td>下一个非检查工具结果前加一条通知，每次执行一次。不扣留、不重放。真正的内置 <code translate="no">read</code>、<code translate="no">grep</code>、<code translate="no">glob</code>、<code translate="no">list</code> 没有通知，同名自定义工具有。重启的聊天轮次同样适用。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>计量</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">活动时间</th><td>跨重启保留已观察的工作，排除离线时间。worker 突然丢失后，最后的持久心跳是下界，最后一段显示为未知。迟到的回执不重启已暂停的计时器。明确的活动时间上限在未知段妨碍检查时阻止工作；移除上限可继续。没有默认时间或轮次上限。</td></tr>
+<tr><th scope="row">聊天请求</th><td>在发送前记录 Goal 身份、版本和价格。回执在暂停或编辑后仍更新原 Goal；替换 Goal 不转移费用。重复回执不重复计。已发起但无回执的请求是未知而非免费；详情同时显示已知小计和未知请求数。重启后可从账本重建，不重发请求。</td></tr>
+<tr><th scope="row">旧总计与失败</th><td>旧的游标总计在下一次归属请求时保留为遗留小计。计量失败显示未知。流式部分计数是累计下界；最终回执替换它。</td></tr>
+<tr><th scope="row">后台 Job</th><td>活动 Goal 准入的 Job 继承其身份，含后代和跨会话调用；目标会话中无关的 Goal 不计费。没有归属的 Job 保持未分配。Goal 和 Job 的预留在同一账务事务中开始和结算。缺少 token 或价格信息时保留相应预留敞口。</td></tr>
+<tr><th scope="row">token 或费用上限</th><td>在获取凭证和调用 provider 前预留保守敞口，统计并行请求，发送时再查。token 上限可降低输出上限。不支持的边界、未知价格或未定价层级不能绕过硬上限：Goal 暂停或报告耗尽。过期且未开始的预留不能发送；已发起的请求不会随时间变成免费。这些边界需要经过审计的 provider 适配器。</td></tr>
+</tbody>
+</table>
+</details>
+<p class="next"><a href="../reference/design/runtime/reliability/goal-and-recovery.zh.html">工程设计</a></p>

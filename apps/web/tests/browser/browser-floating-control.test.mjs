@@ -1,31 +1,31 @@
 import assert from "node:assert/strict";
-import test, { after } from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import test from "node:test";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { parseHTML } from "linkedom";
 
+import { scratchDir } from "../scratch-dir.mjs";
+
 const webPath = dirname(fileURLToPath(new URL("../../package.json", import.meta.url)));
-const dir = await mkdtemp(join(webPath, ".floating-control-test-"));
-after(() => rm(dir, { recursive: true, force: true }));
+const dir = scratchDir(webPath, "floating-control-test");
 const bundle = join(dir, "floating.mjs");
 await build({
   absWorkingDir: webPath,
   stdin: { contents: `
-    export { WebTabPane } from "./components/center-tabs/web-tab-pane";
-    export { BrowserControlBar } from "./components/center-tabs/browser-control-bar";
+    export { WebTabPane } from "./components/center-tabs/browser/web-tab-pane";
+    export { BrowserControlBar } from "./components/center-tabs/browser/toolbar/browser-control-bar";
     export { useCenterTabs } from "./lib/tabs/center-tabs-store";
     export {
       resetBrowserControl,
       recordOperationCue,
-    } from "./lib/browser/browser-control";
+    } from "./lib/browser/control/browser-control";
     export {
       ingestBrowserResource,
       resetBrowserResources,
       setBrowserConnection,
-    } from "./lib/chat/session-resources";
-    export { cueTravelDurationMs } from "./lib/browser/browser-action-cue";
+    } from "./lib/chat/resources/session-resources";
+    export { cueTravelDurationMs } from "./lib/browser/control/browser-action-cue";
   `, resolveDir: webPath },
   bundle: true, format: "esm", jsx: "automatic", outfile: bundle,
   packages: "external", platform: "node", tsconfig: join(webPath, "tsconfig.json"),
@@ -33,7 +33,7 @@ await build({
   plugins: [{ name: "floating-services", setup(b) {
     b.onResolve({ filter: /net\/fetch-client/ }, () => ({ path: "fetch-client", namespace: "test-services" }));
     b.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: "next-nav", namespace: "test-services" }));
-    b.onResolve({ filter: /(?:^|\/|\.)browser-controls$/ }, () => ({ path: "browser-controls", namespace: "test-services" }));
+    b.onResolve({ filter: /(?:^|\/|\.)(?:browser-controls|bookmark-bar)$/ }, () => ({ path: "browser-controls", namespace: "test-services" }));
     b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents:
       a.path === "next-nav"
         ? "export const useRouter = () => ({ push() {}, replace() {} }); export const usePathname = () => '/chat';"
@@ -139,6 +139,19 @@ test("agent controls leave the address toolbar and float over the page while act
         id: "assoc-a", resource_id: "page-a", session_id: "a", conversation_session_id: "a",
         tab_id: "w:https://a.test/", kind: "web", title: "A", target: "https://a.test/",
         status: "open", source: "browser", control_state: "idle", generation: 1, sequence: 2,
+        execution_id: "exec-a",
+      }, "a");
+    });
+    // The Agent let the page go: the button stays, collapsed, so the history
+    // and the action-cue switch are still at hand for the next turn.
+    const idleFloat = host.querySelector("[data-browser-control='float']");
+    assert.ok(idleFloat);
+    assert.equal(idleFloat.getAttribute("data-collapsed"), "true");
+    await act(async () => {
+      ingestBrowserResource({
+        id: "assoc-a", resource_id: "page-a", session_id: "a", conversation_session_id: "a",
+        tab_id: "w:https://a.test/", kind: "web", title: "A", target: "https://a.test/",
+        status: "closed", source: "browser", control_state: "closed", generation: 1, sequence: 3,
         execution_id: "exec-a",
       }, "a");
     });

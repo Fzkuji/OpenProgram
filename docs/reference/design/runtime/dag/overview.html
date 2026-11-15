@@ -1,0 +1,347 @@
+<title>Session DAG design</title>
+<meta name="description" content="The agent execution record: nodes, edges, invariants, branches, spawn, context rendering, assembly, compaction and storage.">
+<h1 id="session-dag-design">Session DAG design</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 262" role="img" aria-label="A conversation chain ROOT, user 1, reply 1, user 2, reply 2 linked by predecessor edges. A retry of user 2 shares predecessor reply 1. A tool called by reply 2 hangs on it by a caller edge, and a model call inside that tool hangs on the tool by caller.">
+  <defs>
+    <marker id="sd-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <rect class="tile" x="0" y="24" width="84" height="36" rx="8"/><text class="mid" x="42" y="47">ROOT</text>
+  <rect class="tile" x="148" y="24" width="84" height="36" rx="8"/><text class="mid" x="190" y="47">user 1</text>
+  <rect class="tile" x="296" y="24" width="84" height="36" rx="8"/><text class="mid" x="338" y="47">reply 1</text>
+  <rect class="tile" x="444" y="24" width="84" height="36" rx="8"/><text class="mid" x="486" y="47">user 2</text>
+  <rect class="tile" x="592" y="24" width="84" height="36" rx="8"/><text class="mid" x="634" y="47">reply 2</text>
+  <line class="ln-acc" x1="146" y1="42" x2="86" y2="42" marker-end="url(#sd-a)"/>
+  <line class="ln-acc" x1="294" y1="42" x2="234" y2="42" marker-end="url(#sd-a)"/>
+  <line class="ln-acc" x1="442" y1="42" x2="382" y2="42" marker-end="url(#sd-a)"/>
+  <line class="ln-acc" x1="590" y1="42" x2="530" y2="42" marker-end="url(#sd-a)"/>
+  <text class="t-soft mid" x="116" y="16">predecessor</text>
+  <rect class="tile" x="444" y="108" width="84" height="36" rx="8"/><text class="mid" x="486" y="131">user 2′</text>
+  <path class="ln-acc" d="M442 126H338V62" marker-end="url(#sd-a)"/>
+  <text class="t-soft" x="300" y="160">retry: same predecessor, a fork</text>
+  <rect class="tile" x="592" y="130" width="84" height="36" rx="8"/><text class="mid" x="634" y="153">tool</text>
+  <rect class="tile" x="592" y="220" width="84" height="36" rx="8"/><text class="mid" x="634" y="243">model call</text>
+  <line class="ln" x1="634" y1="128" x2="634" y2="62" marker-end="url(#sd-a)"/>
+  <line class="ln" x1="634" y1="218" x2="634" y2="168" marker-end="url(#sd-a)"/>
+  <text class="t-soft" x="560" y="100">caller</text>
+  <text class="t-soft" x="560" y="198">caller</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>ROOT</strong></li>
+  <li class="via"><code translate="no">predecessor</code></li>
+  <li><strong>user 1 → reply 1 → user 2 → reply 2</strong><small>A retry of user 2 shares predecessor reply 1: a fork.</small></li>
+  <li class="via"><code translate="no">caller</code></li>
+  <li class="flow-end"><strong>tool → model call</strong><small>Nesting under reply 2</small></li>
+</ol>
+</figure>
+<p class="note">Arrows point at the edge's target. One node per user message, model call, function or tool call. Transcript and call tree are two views of this per-session, append-only record; any past call re-renders as the model saw it.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Graph owner</th><td>Each Agent execution (<a href="persistence-observability.html">ownership</a>)</td></tr>
+<tr><th scope="row">Ordinary helpers</th><td>No durable nodes; semantic operations are still recorded completely</td></tr>
+<tr><th scope="row">Permission, cancellation, file checkpoints</th><td>Originating execution, whoever owns the graph</td></tr>
+<tr><th scope="row">Inherited Context</th><td>Does not turn computation into history</td></tr>
+</tbody>
+</table>
+
+<h2 id="model-selection">Model selection</h2>
+<table class="stack">
+<thead><tr><th scope="col">Model</th><th scope="col">Useful for</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">Flat logs</th><td>Append-only, simple collection</td><td>Nesting, ancestry and reads need extra relationships</td></tr>
+<tr><th scope="row">Span tree</th><td>Identity, parent-child calls, timing, status, attributes</td><td>Parentage describes calls, not the conversation predecessor; cannot name alternative continuations</td></tr>
+<tr><th scope="row">Timed nested intervals</th><td>Performance views (Chrome Trace, Perfetto)</td><td>Timing cannot say which branch a reply follows</td></tr>
+<tr><th scope="row"><strong>Session DAG (selected)</strong></th><td>Calls, branches and reads in one record</td><td>Needs edge validation, indexes, explicit rendering rules</td></tr>
+</tbody>
+</table>
+<p class="note">One record must hold nested calls, branches and the exact nodes each LLM call read.</p>
+<details>
+<summary>Adopted and rejected choices</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Uniform operation record</th><td>Adopted: all nodes share <code translate="no">Call</code>; role and metadata differ</td></tr>
+<tr><th scope="row">Parent-child call relationship</th><td>Adopted as <code translate="no">caller</code></td></tr>
+<tr><th scope="row">Time order instead of the conversation edge</th><td>Rejected: <code translate="no">seq</code> cannot identify branch ancestry</td></tr>
+<tr><th scope="row">Context reads only as tracing events</th><td>Rejected: <code translate="no">reads</code> lists node IDs; telemetry export is a separate mapping</td></tr>
+<tr><th scope="row"><code translate="no">caused_by</code></th><td>Not part of the schema</td></tr>
+<tr><th scope="row">OTel SDK for persistence</th><td>Rejected: storage and context reconstruction stay in OpenProgram</td></tr>
+<tr><th scope="row">GenAI attribute conventions</th><td>Reference for model and usage metadata (<a href="https://github.com/open-telemetry/semantic-conventions-genai">conventions</a>); no exporter is implied</td></tr>
+<tr><th scope="row">Span structure</th><td><a href="https://opentelemetry.io/docs/concepts/signals/traces/">OpenTelemetry trace model</a></td></tr>
+<tr><th scope="row">Studied, storage not copied</th><td>Datadog, New Relic, Honeycomb, Lightstep, Pixie, Cilium, Langfuse, Arize Phoenix/OpenInference, LangSmith, OpenLLMetry, W&amp;B Weave, Braintrust</td></tr>
+<tr><th scope="row">Optional diagnostics</th><td>Kept separate</td></tr>
+<tr><th scope="row">Validation</th><td>Call tree and conversation chain independently</td></tr>
+<tr><th scope="row">Token, cost, evaluation metadata</th><td>Need explicit definitions; never inferred from timing</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="s2">Data model</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code></th><td>Unique identifier</td></tr>
+<tr><th scope="row"><code translate="no">seq</code></th><td>Monotonic; the only sort key</td></tr>
+<tr><th scope="row"><code translate="no">created_at</code></th><td>Wall clock, for humans</td></tr>
+<tr><th scope="row"><code translate="no">role</code></th><td><code translate="no">user</code>, <code translate="no">llm</code> or <code translate="no">code</code>; decides rendering, not essence</td></tr>
+<tr><th scope="row"><code translate="no">name</code></th><td>Model id, function name or user name</td></tr>
+<tr><th scope="row"><code translate="no">input</code></th><td>Prompt, function args or <code translate="no">None</code></td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td>Reply, return value or user text</td></tr>
+<tr><th scope="row"><code translate="no">caller</code></th><td>Sub-call parent</td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>Conversation parent</td></tr>
+<tr><th scope="row"><code translate="no">reads</code></th><td>Nodes this LLM call read; not structure</td></tr>
+<tr><th scope="row"><code translate="no">metadata</code></th><td>Token usage, model, source, expose, <code translate="no">tool_call_id</code>…; LLM leaf fields align with <code translate="no">gen_ai.*</code></td></tr>
+<tr><th scope="row"><code translate="no">metadata.status</code></th><td><code translate="no">running</code>, <code translate="no">completed</code>, <code translate="no">error</code>, <code translate="no">cancelled</code> on every path. Error nodes carry structured type and trace; a user cancel writes <code translate="no">cancelled</code></td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Scenario</th><th scope="col">role</th><th scope="col">caller</th><th scope="col">predecessor</th></tr></thead>
+<tbody>
+<tr><th scope="row">ROOT (<code translate="no">display=root</code>)</th><td>user</td><td>empty</td><td>empty</td></tr>
+<tr><th scope="row">User message</th><td>user</td><td>ROOT</td><td>previous reply; <code translate="no">"ROOT"</code> on the session's first node</td></tr>
+<tr><th scope="row">LLM reply</th><td>llm</td><td>this turn's user, or the enclosing code node</td><td>this turn's user</td></tr>
+<tr><th scope="row">LLM calls a tool</th><td>code</td><td>that llm node</td><td>—</td></tr>
+<tr><th scope="row">User calls a function</th><td>code</td><td>empty</td><td>branch head, or <code translate="no">"ROOT"</code></td></tr>
+<tr><th scope="row">Agent requests a model or direct tool</th><td>llm / code</td><td>owning operation in this graph</td><td>—</td></tr>
+</tbody>
+</table>
+<p class="note">Loops are not nodes: their model and tool operations are.</p>
+
+<h2 id="s3">Edges and invariants</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Both edges</th><td>Directed, acyclic, orthogonal</td></tr>
+<tr><th scope="row"><code translate="no">caller</code></th><td>Connects top-level nodes to ROOT</td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>Chat order and forks, which <code translate="no">caller</code> plus <code translate="no">seq</code> cannot give. Only this top-level field; no metadata mirror or legacy read</td></tr>
+<tr><th scope="row">Write (<code translate="no">session_store/shared.py</code>)</th><td>A mislinked branch is unrepairable, so a ROOT-level user or llm node with no real caller needs a <code translate="no">predecessor</code>, else <code translate="no">PredecessorMissingError</code></td></tr>
+<tr><th scope="row">Legal exceptions</th><td>First node and explicit root forks (sentinel <code translate="no">"ROOT"</code>) · ROOT itself · spawn roots (<code translate="no">predecessor=None</code>, <code translate="no">caller</code> = spawner) · <code translate="no">ask_user</code> answers (user node with non-None <code translate="no">input</code>) · summary nodes covering from the session start (<a href="#s8">§8</a>)</td></tr>
+<tr><th scope="row">Read</th><td><code translate="no">get_branch</code> and <code translate="no">list_branches</code> walk edges only. A missing <code translate="no">predecessor</code> must be a spawn root, ROOT, the first node, a code node opening a run branch or such a summary, else <code translate="no">BrokenPredecessorChainError</code> with the node id</td></tr>
+</tbody>
+</table>
+
+<h2 id="s4">Branches and spawn</h2>
+<table class="stack">
+<thead><tr><th scope="col">Fork</th><th scope="col">Replaced</th><th scope="col">New</th><th scope="col">Shared edge</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resend a message</th><td>user2 (P=llm1)</td><td>user2′ (P=llm1)</td><td>predecessor</td></tr>
+<tr><th scope="row">LLM retry</th><td>llm1 (P=user1)</td><td>llm1′ (P=user1)</td><td>predecessor</td></tr>
+<tr><th scope="row">Tool retry</th><td>code (C=llm1)</td><td>code′ (C=llm1)</td><td>caller</td></tr>
+</tbody>
+</table>
+
+<h3>Failure</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Error</th><td>Terminal: <code translate="no">status=error</code>, turn committed, head stops</td></tr>
+<tr><th scope="row">Cancel</th><td>Likewise, <code translate="no">cancelled</code></td></tr>
+<tr><th scope="row">Retry</th><td>An ordinary fork. The failed line stays reachable, off the active branch, so out of the retry's context; nothing filters by status</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Finalization on error</th><th scope="col">Runs</th></tr></thead>
+<tbody>
+<tr><th scope="row">Git, project and shadow-git commits, snapshot eviction</th><td>Yes: no timeline hole, a retry has a committed predecessor</td></tr>
+<tr><th scope="row">Context-commit backfill, usage feedback, auto-titling</th><td>No: they presuppose a reply</td></tr>
+</tbody>
+</table>
+
+<h3>Spawn</h3>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="Conversation chain user, spawn turn, notice 1, answer 1, notice 2, answer 2 linked by predecessor edges. A spawn root hangs on the spawn turn by a caller edge, with no predecessor, so context stops there in both directions. An inherited spawn's first user node has the requested node as predecessor.">
+  <defs><marker id="sp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="24" width="84" height="36" rx="8"/><text class="mid" x="42" y="47">user</text>
+  <rect class="tile" x="116" y="24" width="84" height="36" rx="8"/><text class="mid" x="158" y="47">spawn turn</text>
+  <rect class="tile" x="232" y="24" width="84" height="36" rx="8"/><text class="mid" x="274" y="47">notice₁</text>
+  <rect class="tile" x="348" y="24" width="84" height="36" rx="8"/><text class="mid" x="390" y="47">answer₁</text>
+  <rect class="tile" x="464" y="24" width="84" height="36" rx="8"/><text class="mid" x="506" y="47">notice₂</text>
+  <rect class="tile" x="580" y="24" width="84" height="36" rx="8"/><text class="mid" x="622" y="47">answer₂</text>
+  <line class="ln-acc" x1="114" y1="42" x2="86" y2="42" marker-end="url(#sp-a)"/>
+  <line class="ln-acc" x1="230" y1="42" x2="202" y2="42" marker-end="url(#sp-a)"/>
+  <line class="ln-acc" x1="346" y1="42" x2="318" y2="42" marker-end="url(#sp-a)"/>
+  <line class="ln-acc" x1="462" y1="42" x2="434" y2="42" marker-end="url(#sp-a)"/>
+  <line class="ln-acc" x1="578" y1="42" x2="550" y2="42" marker-end="url(#sp-a)"/>
+  <text class="t-soft mid" x="100" y="16">predecessor</text>
+  <rect class="tile" x="116" y="110" width="84" height="36" rx="8"/><text class="mid" x="158" y="133">spawn root</text>
+  <line class="ln" x1="158" y1="108" x2="158" y2="62" marker-end="url(#sp-a)"/>
+  <text class="t-soft" x="166" y="90">caller</text>
+  <text class="t-soft" x="212" y="133">clean: predecessor=None, context stops here both ways</text>
+  <rect class="tile" x="0" y="190" width="84" height="36" rx="8"/><text class="mid" x="42" y="213">first user</text>
+  <line class="ln-acc" x1="42" y1="188" x2="42" y2="62" marker-end="url(#sp-a)"/>
+  <text class="t-soft" x="96" y="213">inherited: an exact fork from the requested node</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>spawn turn → notice₁ → answer₁ → notice₂ → answer₂</strong><small>Completions chain on HEAD.</small></li>
+  <li class="via"><code translate="no">caller</code></li>
+  <li><strong>spawn root</strong><small>Clean: predecessor=None. Context stops here both ways.</small></li>
+  <li class="flow-end"><strong>Inherited</strong><small>First user node's predecessor is the requested node: an exact fork.</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SessionStore.spawn_branch(session_id, caller_node_id, *, source, name=…, register_head=True)</code></th><td>The only way to open a clean spawn root. Called by <code translate="no">TurnWriter</code> for <code translate="no">branch_from=None</code> with <code translate="no">spawn_caller</code>, which Job runner, collaboration messages and background agents set</td></tr>
+<tr><th scope="row">Root node</th><td>User node with <code translate="no">caller</code>, <code translate="no">metadata.source</code>, <code translate="no">metadata.spawn_branch_root=True</code></td></tr>
+<tr><th scope="row">Head</th><td>Registered, unless <code translate="no">register_head=False</code> (same-session sub-agents)</td></tr>
+<tr><th scope="row">Context</th><td><code translate="no">get_branch</code> stops at the root; rendering from the parent does not descend through <code translate="no">caller</code> (<a href="#s6">Context rendering</a>)</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Cross-session exact fork</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source session S</th><td>Keeps the attach card beside initiating node A. A is <code translate="no">spawn_out</code>; the card points at <code translate="no">attach.session_id=T</code> and the target head</td></tr>
+<tr><th scope="row">Target T</th><td>New user node: <code translate="no">predecessor=M</code>, <code translate="no">caller=A</code>, <code translate="no">metadata.spawned_from_session=S</code>. The graph cannot draw into another session, so T's projection places the caller at ROOT and marks the node <code translate="no">spawn_remote</code></td></tr>
+<tr><th scope="row">HEADs</th><td>Neither moves. The result is registered as a branch tip; a later reply-back advances the source HEAD as an ordinary turn</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3>Completion notification</h3>
+<table class="stack">
+<thead><tr><th scope="col">Written back</th><th scope="col">Anchored at</th><th scope="col">Because</th></tr></thead>
+<tbody>
+<tr><th scope="row">Attach pointer</th><td>The caller turn</td><td>A record of a call</td></tr>
+<tr><th scope="row">Notification turn (<code translate="no">source="job_followup"</code>)</th><td>Current HEAD, advancing it</td><td>A new turn: N sub-agents form one chain, not N answers to one message</td></tr>
+</tbody>
+</table>
+<p class="note">The runner leaves <code translate="no">TurnRequest.branch_from</code> at <code translate="no">INHERIT_PARENT</code> and never rewinds head. <code translate="no">JobRunner._followup_lock</code>, one per delivery session, serialises simultaneous finishes.</p>
+
+<h2 id="s5">Head and branches</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">head_id</code></th><td>Active branch tip. Conversation writes advance it to a real node, never a placeholder or summary; a dangling head renders empty. Caller-tagged nodes leave it</td></tr>
+<tr><th scope="row"><code translate="no">get_branch(session_id, head_id)</code></th><td>Predecessor chain from head to terminus</td></tr>
+<tr><th scope="row"><code translate="no">list_branches(session_id)</code></th><td>Visible conversation tips plus retained branch references. Rewind hides withdrawn suffixes while preserving sibling references, including references at a shared ancestor or ROOT. Branch identity distinguishes references at the same head. Internal execution rows do not create conversation tips</td></tr>
+<tr><th scope="row">Branch names</th><td>Session metadata: branch-reference labels own each branch name; <code translate="no">branches</code> keeps the selected-head compatibility projection</td></tr>
+</tbody>
+</table>
+
+<h2 id="s6">Context rendering</h2>
+<p><strong>A node renders if and only if its nearest ROOT-level ancestor (up <code translate="no">caller</code>) lies on the predecessor chain of <code translate="no">head_id</code>, and the frame and expose rules admit it.</strong></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">seq</code></th><td>Only orders</td></tr>
+<tr><th scope="row">Engine</th><td>Resolves head, calls <code translate="no">render_context</code>, hands the result to <code translate="no">render_dag_messages</code>; filters nothing itself</td></tr>
+<tr><th scope="row">Read path</th><td>Writes nothing</td></tr>
+<tr><th scope="row">ROOT</th><td>Never expanded: its caller-subtree would re-admit every sibling branch</td></tr>
+<tr><th scope="row">Spawn root (<code translate="no">metadata.spawn_branch_root</code>)</th><td>Not entered via <code translate="no">caller</code>: a Goal working agent cannot read its judge. Seen through the spine from inside the branch</td></tr>
+<tr><th scope="row">Top-level chat (frame −1)</th><td>Every spine turn is fully visible</td></tr>
+<tr><th scope="row">Inside a function (frame = its seq)</th><td>Pre-frame history, own progress; others' internals per <code translate="no">expose</code> (default <code translate="no">io</code>)</td></tr>
+<tr><th scope="row">Code node with <code translate="no">metadata.tool_call_id</code></th><td>A real ToolCall/ToolResult pair inside its llm node's assistant message</td></tr>
+<tr><th scope="row">Code node without one</th><td>Text pair</td></tr>
+<tr><th scope="row">Chat stream</th><td>Top-level user and llm by seq, nesting folded</td></tr>
+<tr><th scope="row">Call tree</th><td>Expanded along <code translate="no">caller</code>, loop siblings folded ×N</td></tr>
+</tbody>
+</table>
+
+<h2 id="s7">Context assembly</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">One assembler</th><td><code translate="no">build_system_prompt(agent, *, channel, tools, additional_working_dirs, plan_mode)</code>, for every model call: identity, project memory, unified tool list, skills</td></tr>
+<tr><th scope="row">Budget</th><td>Counts the string that ships</td></tr>
+<tr><th scope="row">Variation</th><td>Constant by default, for KV-cache hits and one background across chat and functions. A slim prompt is an explicit call-site choice that accepts the miss</td></tr>
+<tr><th scope="row">Wrong tool use in a function</th><td>User-turn guidance plus a depth cap, never another tool list (<a href="../execution/agentic-self-recursion.html">self-recursion</a>)</td></tr>
+<tr><th scope="row">Recording</th><td>On a hash change (start, toolset change, plan-mode toggle): a <code translate="no">role=code</code> node <code translate="no">name="context/system_prompt"</code>, <code translate="no">caller=ROOT</code>, output = full text. Rendering pins the latest on the spine</td></tr>
+<tr><th scope="row"><code translate="no">context/*</code> names</th><td>Reserved and hidden from chat, except <code translate="no">context/summary</code>, which is real conversation content</td></tr>
+<tr><th scope="row">Memory prefetch</th><td>Prefix block in the user node's wire message, stored as the <code translate="no">memory_prefetch</code> entry of its <code translate="no">turn_context</code> metadata (<a href="../../context/composition.html#l2">Composition</a>). System and tools stay byte-stable</td></tr>
+<tr><th scope="row">Images and files</th><td>By reference; bodies in the attachments directory, loaded by render</td></tr>
+</tbody>
+</table>
+
+<h2 id="s8">Compaction</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="Chain P, a, b, c, d, e linked by predecessor edges. Summary S has P as predecessor and covers a, b and c by id. No edge is rewritten and HEAD stays at e. A chain containing all of a to c renders S, d, e; any other renders raw.">
+  <defs><marker id="cp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="24" width="84" height="36" rx="8"/><text class="mid" x="42" y="47">P</text>
+  <rect class="tile" x="116" y="24" width="84" height="36" rx="8"/><text class="mid" x="158" y="47">a</text>
+  <rect class="tile" x="232" y="24" width="84" height="36" rx="8"/><text class="mid" x="274" y="47">b</text>
+  <rect class="tile" x="348" y="24" width="84" height="36" rx="8"/><text class="mid" x="390" y="47">c</text>
+  <rect class="tile" x="464" y="24" width="84" height="36" rx="8"/><text class="mid" x="506" y="47">d</text>
+  <rect class="tile" x="580" y="24" width="84" height="36" rx="8"/><text class="mid" x="622" y="47">e · HEAD</text>
+  <line class="ln-acc" x1="114" y1="42" x2="86" y2="42" marker-end="url(#cp-a)"/>
+  <line class="ln-acc" x1="230" y1="42" x2="202" y2="42" marker-end="url(#cp-a)"/>
+  <line class="ln-acc" x1="346" y1="42" x2="318" y2="42" marker-end="url(#cp-a)"/>
+  <line class="ln-acc" x1="462" y1="42" x2="434" y2="42" marker-end="url(#cp-a)"/>
+  <line class="ln-acc" x1="578" y1="42" x2="550" y2="42" marker-end="url(#cp-a)"/>
+  <path class="ln-faint" d="M116 68V78H432V68"/>
+  <text class="t-soft mid" x="274" y="98">covers_ids = exact chain nodes</text>
+  <rect class="tile" x="232" y="110" width="84" height="36" rx="8"/><text class="mid" x="274" y="133">S</text>
+  <path class="ln-acc" d="M230 128H42V62" marker-end="url(#cp-a)"/>
+  <text class="t-soft" x="330" y="123">role=llm, name="context/summary"</text>
+  <text class="t-soft" x="330" y="143">no edge rewritten, HEAD stays</text>
+  <text x="0" y="184">A chain holding all of a–c renders [S, d, e]. Any other renders raw.</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>P → a → b → c → d → e</strong><small>e is HEAD and stays.</small></li>
+  <li><strong>S</strong><small>predecessor = P, covers_ids = a, b, c. No edge rewritten.</small></li>
+  <li class="flow-end"><strong>Rendered</strong><small>A chain holding all of a–c: [S, d, e]. Any other: raw.</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">metadata.covers_ids</code></th><td>Ids, because sibling branches interleave seqs. The WebUI payload adds covered turns' caller subtrees (<a href="rendering.html#s9">rendering §9</a>)</td></tr>
+<tr><th scope="row">Next summary</th><td>Absorbs the one in effect, which <code translate="no">nodes.active_summary_for_chain</code> picks for the chain; the graph builder folds each branch with the same pick</td></tr>
+<tr><th scope="row">Full spec</th><td><a href="../../context/compaction.html">Compaction</a></td></tr>
+<tr><th scope="row">Old tool results</th><td>Never aged: each renders as its turn sent it until compaction covers its turn, so the cache prefix only grows between compactions</td></tr>
+<tr><th scope="row">Replay</th><td>Rendering reads only stored nodes, so a graph renders the same bytes on any day; a <code translate="no">render_manifest</code> written by an earlier version is ignored</td></tr>
+<tr><th scope="row">Spill</th><td>When recorded, once and deterministically, never when rendered</td></tr>
+<tr><th scope="row">One pipeline</th><td>The DAG render is the only context path; if it raises, the turn fails visibly</td></tr>
+</tbody>
+</table>
+
+<h2 id="s9">Storage</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SessionLog</code></th><td>One append-only log per session under <code translate="no">&lt;state&gt;/projects/&lt;project_id&gt;/chats/&lt;id&gt;/</code></td></tr>
+<tr><th scope="row"><code translate="no">SessionMemoryIndex</code></th><td>Per session, lazy; node-by-id and children-by-predecessor</td></tr>
+<tr><th scope="row"><code translate="no">head_id</code>, branch names</th><td>Session fields</td></tr>
+<tr><th scope="row">Store scope</th><td>Raw nodes and meta; context commits belong to the commit subsystem</td></tr>
+<tr><th scope="row"><code translate="no">Agent</code> method body</th><td>Runs in a spawned subprocess (a fork would crash on the first BLAS call once PyTorch/libomp is loaded), so stop can SIGKILL the process group</td></tr>
+<tr><th scope="row">Its code subtree</th><td>Written by the subprocess's own SessionStore; the parent then invalidates its cache. The one truth for a function call: WebSocket frame and refresh load give the same card</td></tr>
+</tbody>
+</table>
+
+<h2>Implementation status</h2>
+<p><a href="#s2">Data model</a> through <a href="#s8">Compaction</a> and graph ownership are in code with regression coverage.</p>
+<details>
+<summary>Ablation switches</summary>
+<table class="stack">
+<thead><tr><th scope="col">Variable</th><th scope="col">Moves</th><th scope="col">Read</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NODE_RENDER_CAP</code></th><td>Spill size for a new node that is neither a tool result nor a message (a summary, a program's return value); an existing node keeps the limit it was recorded under</td><td>At import</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NODE_SPILL</code></th><td>Large-node spill</td><td>At import</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_EXPOSE_DEFAULT</code></th><td>What an unspecified <code translate="no">expose=</code> means; an explicit one wins</td><td>At call</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Code map</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/nodes.py</code></th><td><code translate="no">Call</code>, <code translate="no">Graph</code>, role constants</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/</code></th><td>Append invariant, <code translate="no">get_branch</code>, <code translate="no">spawn_branch</code>, <code translate="no">list_branches</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/spill.py</code></th><td>Write-path spill</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/nodes.py</code></th><td><code translate="no">render_context</code>, segment substitution</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/render.py</code></th><td><code translate="no">render_dag_messages</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/components.py</code></th><td>The system-prompt assembler</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/system_prompt_node.py</code></th><td><code translate="no">context/system_prompt</code> recording, <code translate="no">context/*</code> hiding</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/persistence.py</code></th><td>Summary nodes</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/conversation/turn_runtime/__init__.py</code></th><td>Chat entry</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/</code></th><td>Function-body model calls</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="rendering.html">Rendering specification</a> · <a href="layout.html">Layout scenes</a></p>

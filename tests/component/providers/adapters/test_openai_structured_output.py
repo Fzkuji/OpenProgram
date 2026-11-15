@@ -3,21 +3,21 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.providers.openai_completions import openai_completions
-from openprogram.providers.anthropic import anthropic
-from openprogram.providers.openai_responses.openai_responses import _build_params
-from openprogram.providers.azure_openai_responses.azure_openai_responses import (
+from openprogram.models.providers.adapters.openai_completions import openai_completions
+from openprogram.models.providers.adapters.anthropic import anthropic
+from openprogram.models.providers.adapters.openai_responses.openai_responses import _build_params
+from openprogram.models.providers.adapters.azure_openai_responses.azure_openai_responses import (
     _build_params as _build_azure_params,
 )
-from openprogram.providers.structured_output import (
+from openprogram.models.providers.structured_output import (
     StructuredOutputUnsupportedError,
     negotiate_structured_output,
     normalize_response_format,
 )
-from openprogram.providers.api_registry import get_structured_output_capabilities
-from openprogram.providers._shared.openai_responses import process_responses_stream
-from openprogram.providers.amazon_bedrock.amazon_bedrock import _map_stop_reason_bedrock
-from openprogram.providers.types import (
+from openprogram.models.providers.catalog.api_registry import get_structured_output_capabilities
+from openprogram.models.providers.shared.openai_responses import process_responses_stream
+from openprogram.models.providers.adapters.amazon_bedrock.amazon_bedrock import _map_stop_reason_bedrock
+from openprogram.models.providers.types import (
     AssistantMessage,
     Context,
     Model,
@@ -26,8 +26,8 @@ from openprogram.providers.types import (
     Usage,
     UserMessage,
 )
-from openprogram.agent.agent_loop import agent_loop
-from openprogram.agent.types import AgentContext, AgentLoopConfig
+from openprogram.runtime.agent.loop import agent_loop
+from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
 
 
 SCHEMA = {

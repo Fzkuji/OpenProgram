@@ -7,17 +7,17 @@ import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
-from openprogram.agent import authority
-from openprogram.self_update import SelfUpdateStore, UpdatePhase
-from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
-from openprogram.webui.routes.execution import running
-from openprogram.webui.routes import self_updates
+from openprogram.runtime.permissions import authority
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+from openprogram.interfaces.server.routes.execution import running
+from openprogram.interfaces.server.routes import self_updates
 from tests.unit.self_update.test_store import _request
 
 
 @pytest.fixture
 def api(tmp_path, monkeypatch):
-    from openprogram import paths
+    from openprogram.state import paths
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
     authority._reset_owner_cache_for_tests()
     auth = OwnerAuthState.from_raw_token(bytes(range(32)), owner_principal_id=authority.owner_principal_id(),
@@ -123,15 +123,15 @@ def test_running_pending_target_must_exist_without_repair(api, monkeypatch, poin
 
 @pytest.mark.parametrize("mode", [0o600, 0o400, 0o640, 0o604, 0o644, 0o660])
 def test_rollback_projection_requires_private_proof_without_chmod(api, mode):
-    from openprogram.self_update.control.recovery import SYSTEM_CHECKS
-    from openprogram.self_update.control.rollback_intent import begin_rollback
+    from openprogram.operations.self_update.control.recovery import SYSTEM_CHECKS
+    from openprogram.operations.self_update.control.rollback_intent import begin_rollback
 
     client, headers, store = api
     request = _request()
     store.create(request)
     previous = dict(schema=1, candidate_sha="1" * 40, attempt=1, worker_pid=123,
                     verified_at=time.time(), checks={name: True for name in SYSTEM_CHECKS})
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(request.update_id, phase, detail={"previous_system_gate": previous})
     begin_rollback(store, request.update_id, "system probe failed: health")
     restored = dict(previous, verified_at=time.time())

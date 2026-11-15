@@ -7,8 +7,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.usage.event import UsageEvent
-from openprogram.usage.ledger import UsageLedger
+from openprogram.models.usage.event import UsageEvent
+from openprogram.models.usage.ledger import UsageLedger
 
 
 DAY = 86400
@@ -21,7 +21,7 @@ def client(tmp_path, monkeypatch):
     lg = UsageLedger(db_path=tmp_path / "usage.db")
     # The routes import default_ledger lazily inside _ledger(); patch the name
     # in the ledger module so default_ledger resolves to our temp instance.
-    import openprogram.usage.ledger as _lmod
+    import openprogram.models.usage.ledger as _lmod
     monkeypatch.setattr(_lmod, "default_ledger", lg)
 
     base = 1_000_000.0  # fixed epoch so day buckets are deterministic
@@ -41,7 +41,7 @@ def client(tmp_path, monkeypatch):
         ))
 
     app = FastAPI()
-    from openprogram.webui.routes.settings import usage as routes_usage
+    from openprogram.interfaces.server.routes.settings import usage as routes_usage
     routes_usage.register(app)
     c = TestClient(app)
     c._seed_base = base  # type: ignore[attr-defined]
@@ -55,7 +55,8 @@ def test_summary_totals(client):
     t = d["totals"]
     assert t["input_tokens"] == 100 + 400 + 200 + 80 + 90
     assert t["output_tokens"] == 20 + 90 + 50 + 20 + 28
-    assert t["total_tokens"] == t["input_tokens"] + t["output_tokens"]
+    # The first event's 50 cached tokens count, though its stored total left them out.
+    assert t["total_tokens"] == t["input_tokens"] + t["output_tokens"] + 50
     assert t["cache_read_tokens"] == 50
     assert t["events"] == 5
     assert abs(t["cost"] - (0.10 + 0.40 + 0.05 + 0.01 + 0.03)) < 1e-9
@@ -69,7 +70,7 @@ def test_summary_by_model_sorted_desc(client):
     # opus: in 100+400+90=590 out 138 -> 728 ; gpt: in 280 out 70 -> 350
     assert rows[0]["model"] == "claude-opus-4-8"
     assert rows[0]["provider"] == "anthropic"
-    assert rows[0]["total_tokens"] == 728
+    assert rows[0]["total_tokens"] == 778
     assert rows[0]["events"] == 3
     assert rows[1]["model"] == "gpt-5.5"
     assert rows[1]["total_tokens"] == 350
@@ -80,7 +81,7 @@ def test_summary_by_kind(client):
     by = {r["kind"]: r for r in rows}
     assert set(by) == {"chat", "exec", "tool"}
     # chat: (100+20)+(200+50)+(90+28) = 488
-    assert by["chat"]["total_tokens"] == 488
+    assert by["chat"]["total_tokens"] == 538
     assert by["chat"]["events"] == 3
     assert by["exec"]["total_tokens"] == 490
     assert by["tool"]["total_tokens"] == 100
@@ -100,7 +101,7 @@ def test_trend_day_buckets_contiguous_with_zero_fill(client):
     trend = d["trend"]
     assert len(trend) == 3  # contiguous window
     assert trend[0]["ts"] < trend[1]["ts"] < trend[2]["ts"]
-    assert trend[0]["total_tokens"] == 610   # day 0: chat(120)+exec(490)
+    assert trend[0]["total_tokens"] == 660   # day 0: chat(120 + 50 cached)+exec(490)
     assert trend[1]["total_tokens"] == 350   # day 1: chat(250)+tool(100)
     assert trend[2]["total_tokens"] == 118   # day 2: chat(118)
 
@@ -116,7 +117,7 @@ def test_trend_zero_fills_gap_days(client):
     ).json()
     trend = d["trend"]
     assert len(trend) == 5
-    assert [p["total_tokens"] for p in trend] == [0, 0, 610, 350, 118]
+    assert [p["total_tokens"] for p in trend] == [0, 0, 660, 350, 118]
 
 
 def test_trend_default_window_is_30_days(client):
@@ -164,4 +165,4 @@ def test_until_filter(client):
     # until is exclusive — only day 0 (< base + 1 day)
     d = client.get(f"/api/usage/summary?until={base + 1 * DAY}").json()
     assert d["totals"]["events"] == 2  # chat + exec on day 0
-    assert d["totals"]["total_tokens"] == 610
+    assert d["totals"]["total_tokens"] == 660

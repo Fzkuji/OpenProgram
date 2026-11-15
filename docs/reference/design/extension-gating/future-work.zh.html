@@ -1,0 +1,22 @@
+<title>门控：未构建项</title>
+<meta name="description" content="考虑过但有意不构建的门控扩展，以及重新考虑每一项的条件。">
+<h1>门控：未构建项</h1>
+<p>默认与 Claude Code、opencode、hermes 对齐；只有出现具体的用户痛点才增加机制。下面每项都未通过这一检验。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">想法</th><th scope="col">为何被提出</th><th scope="col">为何不做</th><th scope="col">何时重新考虑</th></tr></thead>
+<tbody>
+<tr id="1-per-session-gating-toggle"><th scope="row">按会话的门控开关：为一次对话覆盖配置</th><td>角色对一次性任务太严，改配置显得繁重</td><td>Claude Code 的 <code translate="no">permissionMode</code> 和 opencode 的规则集都按 Agent；hermes 没有这种出口。编辑 <code translate="no">agent.json</code> 下一轮即生效。覆盖带来状态问题：存在哪里、刷新后是否保留、WebSocket 重连时是否泄漏</td><td>用户为一个任务反复来回改 <code translate="no">agent.json</code></td></tr>
+<tr id="2-plugin-subprocess-sandbox"><th scope="row">插件子进程沙箱：限制文件系统和网络</th><td>插件带任意 Python；恶意插件可窃取 API 密钥或删除工作区</td><td>参考实现都在进程内加载插件。信任等级已门控危险能力：<code translate="no">plugin.json</code> 声明 <code translate="no">trust</code>，<code translate="no">~/.openprogram/plugin-trust.json</code> 存 <code translate="no">verified</code>、<code translate="no">community</code> 或 <code translate="no">untrusted</code>（默认）。系统沙箱分平台：Linux 的 seccomp、macOS 的 App Sandbox。安装是用户明确操作，并有清单审查</td><td>出现自动安装插件，例如模型在对话中安装</td></tr>
+<tr id="3-skill-requires-chain"><th scope="row">Frontmatter 中的技能 <code translate="no">requires</code> 链</th><td>技能依赖其他技能的上下文；用户手动串联 <code translate="no">/skill A /skill B</code></td><td>参考实现和 SKILL.md 规范都没有。正确做法是合并技能或在描述中说明。依赖会带来本项目其他地方没有的顺序、冲突和版本问题</td><td>作者反复写“与 X 一起使用”</td></tr>
+<tr id="4-hook-level-gating"><th scope="row">Hook 级门控：钩子限定到某个 Agent 配置</th><td><code translate="no">openprogram/extensions/plugins/hooks.py</code> 的插件钩子订阅进程级总线，无法按 Agent 选择</td><td>很少有插件注册钩子。Claude Code 的按 Agent 钩子多数通过插件使用。门控回答模型能用什么；钩子回答调用如何通过</td><td>某插件必须按 Agent 表现不同</td></tr>
+<tr id="5-single-ruleset-migration-opencode-style"><th scope="row">单一规则集：一个 <code translate="no">permission: [{pattern, action}]</code> 列表</th><td>单一事实来源，新增类型更容易</td><td>纯重构，没有新能力。<code translate="no">~/.openprogram/agents/</code> 下每个配置都要迁移。首个匹配生效使顺序变得重要；分块则不会</td><td>第五、第六个门控类型让 schema 臃肿</td></tr>
+</tbody>
+</table>
+
+<h2 id="how-to-revisit-any-of-these">重新考虑</h2>
+<ol>
+<li>找到症状：投诉、事故或具体用例。</li>
+<li>对照这里的理由。</li>
+<li>理由不再成立，就实现并更新本页；仍然成立，本页就是答案。</li>
+</ol>

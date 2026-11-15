@@ -1,0 +1,121 @@
+<title>Unified system access</title>
+<meta name="description" content="The host capability registry: report, explicit requests, operation waits, identity and recovery.">
+<h1>Unified system access</h1>
+<p>A host capability boundary, separate from model tool approval, workspace permission rules, account credentials and provider authorization. A status read never opens a native prompt. A model or remote client cannot grant an operating-system capability.</p>
+
+<h2 id="capability-registry">Capability registry</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">id</code></th><th scope="col"><code translate="no">subject</code></th><th scope="col"><code translate="no">request_mode</code></th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">screen_recording</code></th><td><code translate="no">runtime</code></td><td><code translate="no">native</code></td><td>Screen &amp; System Audio Recording; <code translate="no">computer_use:desktop</code></td></tr>
+<tr><th scope="row"><code translate="no">accessibility</code></th><td><code translate="no">runtime</code></td><td><code translate="no">native</code></td><td><code translate="no">computer_use:desktop</code></td></tr>
+<tr><th scope="row"><code translate="no">apple_events</code></th><td><code translate="no">target_app</code></td><td><code translate="no">targeted</code></td><td>Per target application</td></tr>
+<tr><th scope="row"><code translate="no">calendar</code></th><td><code translate="no">runtime</code></td><td><code translate="no">native</code></td><td>EventKit category consent</td></tr>
+<tr><th scope="row"><code translate="no">reminders</code></th><td><code translate="no">runtime</code></td><td><code translate="no">native</code></td><td>EventKit category consent</td></tr>
+<tr><th scope="row"><code translate="no">file_read</code></th><td><code translate="no">user_selected_path</code></td><td><code translate="no">operation</code></td><td>Selected path or security-scoped bookmark</td></tr>
+<tr><th scope="row"><code translate="no">file_write</code></th><td><code translate="no">user_selected_path</code></td><td><code translate="no">operation</code></td><td>Selected path or security-scoped bookmark</td></tr>
+<tr><th scope="row"><code translate="no">microphone</code></th><td><code translate="no">runtime</code></td><td><code translate="no">native</code></td><td>Only operations that use it</td></tr>
+<tr><th scope="row"><code translate="no">camera</code></th><td><code translate="no">runtime</code></td><td><code translate="no">native</code></td><td>Only operations that use it</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">openprogram.host.system_access</code> owns the immutable registry. Report, CLI and TUI doctor, HTTP setup, Web settings, wait manifests, package usage descriptions, entitlements, GUI preflight and tests all consume it. Validated at import; package declarations are checked against the ids in build tests.</p>
+
+<details>
+<summary>Entry fields</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">subject</code></th><td>Identity the platform checks: <code translate="no">runtime</code>, <code translate="no">containing_app</code>, <code translate="no">target_app</code>, <code translate="no">user_selected_path</code>, <code translate="no">provider_session</code></td></tr>
+<tr><th scope="row"><code translate="no">check</code></th><td>Non-prompting probe returning a status below</td></tr>
+<tr><th scope="row"><code translate="no">request_mode</code></th><td><code translate="no">native</code>: OS request. <code translate="no">settings</code>: settings only. <code translate="no">targeted</code>: a target application is required. <code translate="no">operation</code>: only the real operation verifies it. <code translate="no">none</code>: no request API</td></tr>
+<tr><th scope="row"><code translate="no">settings</code></th><td>Fixed capability-specific System Settings URL or instruction; opened only after the owner clicks</td></tr>
+<tr><th scope="row"><code translate="no">identity</code></th><td>Bundle id and designated requirement, or provider or path identity</td></tr>
+<tr><th scope="row"><code translate="no">operations</code></th><td>Tools needing the capability. GUI desktop needs screen recording and accessibility; browser, VM and ordinary CLI do not</td></tr>
+</tbody>
+</table>
+<p class="note">Import validation: unique ids; every native entry has a non-prompting check and explicit request style; scoped entries specify status semantics; every settings action has a fixed destination; every operation points to a declared capability.</p>
+</details>
+
+<h2 id="state-and-api">Status and API</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">granted</code></th><td>The named executor passed a fresh check</td></tr>
+<tr><th scope="row"><code translate="no">not_granted</code></th><td>The check completed and macOS says absent</td></tr>
+<tr><th scope="row"><code translate="no">unknown</code></th><td>Check failed, timed out or could not prove identity. Not a denial</td></tr>
+<tr><th scope="row"><code translate="no">unavailable</code></th><td>Dependency or native API is missing</td></tr>
+<tr><th scope="row"><code translate="no">unsupported</code></th><td>No implementation on this platform or backend</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Endpoint</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/system/access</code></th><td>Report (schema 2): platform, host, executing identity, timestamp, rows with id, category, status, detail, instruction, request mode, settings availability, operations, recovery metadata</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/system/access/waits</code></th><td>Open waits, with the same ids and schema</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/system/access/setup</code></th><td>Owner and loopback only. Requests every registered native runtime capability, one consolidated report</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/system/access/{id}</code></th><td>Per-row: recheck, optional native request, fresh row. <code translate="no">open_settings=true</code> only opens the destination and never claims a grant</td></tr>
+</tbody>
+</table>
+<p class="note">Responses are no-store and hold no secrets. The first two rows keep the old <code translate="no">screen_recording</code> and <code translate="no">accessibility</code> wire shape; old receipts are read with the legacy shape. An unknown id is a client error and opens nothing. Permission rules, Auto mode, profiles, Workers and ports are unaffected.</p>
+
+<h2 id="flow">First run and operations</h2>
+<ol>
+<li>Web settings shows the registry by product area, why each is needed, and one read-only check per page load.</li>
+<li>The user chooses “Set up all OpenProgram access” or a row's “Request authorization” / “Open System Settings”. Page mount, reconnect, polling, history replay and model output never send a request.</li>
+<li>The backend serializes one native request per executor, using the named runtime, then checks afresh. macOS may still show separate dialogs; the UI reports each result.</li>
+<li>Before an operation, the Worker runs one fresh report and creates a durable <code translate="no">system_access</code> wait only for missing required capabilities. Browser and VM operations bypass this.</li>
+<li>Returning to the app triggers a read-only refresh. A grant resolves the wait through Worker reconciliation and continues the same execution from its checkpoint: no fake answer, retry or new execution.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">During a turn</th><th scope="col">Report</th></tr></thead>
+<tbody>
+<tr><th scope="row">Capabilities found granted</th><td>Not reported again for later steps; a report starts a process, about 0.4 s</td></tr>
+<tr><th scope="row">A capability is missing</th><td>Every step reports, so a grant is seen at once</td></tr>
+<tr><th scope="row">A grant withdrawn mid-turn</th><td>The desktop backend fails the step and names the setting; the next turn reports again</td></tr>
+</tbody>
+</table>
+
+<h2 id="identity-and-recovery">Identity and recovery</h2>
+<ul>
+<li>macOS checks and requests run through the signed runtime bundle <code translate="no">ai.openprogram.runtime</code>. A source checkout may fall back to its development interpreter. An installed App never registers a bare <code translate="no">python3</code>; anonymous <code translate="no">python3</code>, <code translate="no">node</code> and stale cache paths are not identities.</li>
+<li>Status reads, startup reconciliation, retries and duplicate events never run <code translate="no">tccutil</code> and never reset another application.</li>
+<li>A verified stale receipt can authorize one explicit migration for the fixed OpenProgram bundle identity; a marker written before the OS call prevents loops. Everything else (unverified code, unknown checks, unchanged requirements, Accessibility migration, other applications) goes through System Settings.</li>
+<li>The product cannot pre-authorize an application it never targeted, a path never selected, or a revoked permission. Full Disk Access is never inferred or requested as a workaround.</li>
+<li>Linux portals and Windows integrity rules stay platform-specific. Browser and VM surfaces use their provider or session boundary.</li>
+</ul>
+
+<h2 id="trust">Trust and concurrency</h2>
+<ul>
+<li>Only the local owner on the execution host can request or open settings. Loopback and Origin checks are mandatory; forwarded requests and remote clients are rejected. The model can describe a missing capability, not invoke setup.</li>
+<li>Probes run in a fresh bounded process, share one report per reconciliation pass and do not enumerate screen contents.</li>
+<li>Wait resolution is guarded by execution id, generation, checkpoint version and cancellation. A failed probe keeps the wait open; a terminal or cancelled execution cannot resume.</li>
+</ul>
+
+<details>
+<summary>External references</summary>
+<table class="stack">
+<thead><tr><th scope="col">Reference</th><th scope="col">Rule</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://support.apple.com/en-me/guide/mac-help/mchld6aa7d23/mac">Screen &amp; System Audio Recording</a></th><td>macOS owns the grant; the user controls it</td><td>The product opens the pane and verifies the executor, never enables silently</td></tr>
+<tr><th scope="row"><a href="https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions?preferredLanguage=occ">AXIsProcessTrustedWithOptions</a></th><td>Queried separately; requested only from an explicit local-owner action</td><td>Trust is for the named executor</td></tr>
+<tr><th scope="row"><a href="https://support.apple.com/en-kw/guide/mac-help/-mchl211c911f/mac">Apple privacy controls</a></th><td>Each category has its own consent and revocation</td><td>Plist and entitlement are prerequisites, not grants</td></tr>
+<tr><th scope="row"><a href="https://support.apple.com/en-ca/guide/security/secddd1d86a6/web">macOS file access</a></th><td>Reported per operation</td><td>One successful read does not imply Full Disk Access</td></tr>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/system-preferences">Electron systemPreferences</a></th><td>Query and request are separate</td><td>Does not remove macOS consent or Apple Events targeting</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>One registry is the source for report, request, settings, waits, labels and package declarations; a consistency test fails on drift.</li>
+<li>Repeated reports, reconnects, replay and model output cause zero prompts. Granted rows cause zero requests.</li>
+<li>A GUI task missing a desktop capability pauses before planning, resumes the same execution exactly once after both are granted, and never uses the question or approval API.</li>
+<li>Unknown, unavailable and unsupported display distinctly from denied. Optional failures do not make installation or chat unhealthy.</li>
+<li>Installed <code translate="no">/Applications/OpenProgram.app</code> confirms executor identity, current grants, settings actions and no Python or Node identity migration.</li>
+<li>Automated: registry, probe and request routes, wait recovery, Web rendering, no auto-request.</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented: registry, native EventKit and AVFoundation checks and requests, versioned report, identity metadata, package checks, explicit setup UI, no-auto-request recovery, operation preflight, terminal handling for unavailable or unsupported desktop access. Open: verifying the installed default App on port <code translate="no">18100</code> against its current macOS grants.</p>

@@ -1,0 +1,154 @@
+<title>Chat-bot behaviour on channels</title>
+<meta name="description" content="What a chat room asks of an agent, how reference systems answer it, and OpenProgram&#x27;s room, delivery and access design.">
+<h1>Chat-bot behaviour on channels</h1>
+<p>A chat bot is the same <code translate="no">Agent</code> with the same runtime, tools and memory, behind a room layer (which messages become turns) and a delivery layer (how replies leave), both in <code translate="no">channels/</code>. OpenClaw and Hermes are built the same way.</p>
+<h2 id="what-a-room-needs">What a room needs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Need</th><th scope="col">Why a chat differs</th></tr></thead>
+<tbody>
+<tr><th scope="row">Know who spoke</th><td>A group or a <code translate="no">session_scope: main</code> agent puts several people in one conversation</td></tr>
+<tr><th scope="row">Stay quiet by default</th><td>Most group messages are people talking to each other</td></tr>
+<tr><th scope="row">Still hear the room</th><td>A question after "@bot" depends on the messages before it</td></tr>
+<tr><th scope="row">Decide to speak</th><td>Useful assistants join when they have something to add</td></tr>
+<tr><th scope="row">Reply like a person</th><td>Short paragraphs as they are ready, typing indicator, no tool transcript</td></tr>
+<tr><th scope="row">Limit strangers</th><td>Tools that touch the owner's machine stay with the owner</td></tr>
+<tr><th scope="row">Not talk to bots forever</th><td>Two bots answer each other until something stops them</td></tr>
+<tr><th scope="row">One person across apps</th><td>The same person on WeChat and Telegram is one subject for memory</td></tr>
+<tr><th scope="row">Speak first</th><td>Reminders, follow-ups, check-ins</td></tr>
+</tbody>
+</table>
+<h2 id="reference-systems">Reference systems</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Emphasis</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://docs.openclaw.ai/channels">OpenClaw</a></th><td>The most complete room layer: <a href="https://docs.openclaw.ai/channels/groups">groups</a>, <a href="https://docs.openclaw.ai/channels/ambient-room-events">ambient rooms</a>, <a href="https://docs.openclaw.ai/concepts/session">sessions</a>, <a href="https://docs.openclaw.ai/concepts/streaming">streaming</a>, <a href="https://docs.openclaw.ai/concepts/typing-indicators">typing</a>, <a href="https://docs.openclaw.ai/channels/bot-loop-protection">bot loop protection</a></td></tr>
+<tr><th scope="row"><a href="https://hermes-agent.nousresearch.com/docs/">Hermes Agent</a> (<a href="https://github.com/NousResearch/hermes-agent">repo</a>)</th><td>What the bot learns: self-curated <code translate="no">MEMORY.md</code> and <code translate="no">USER.md</code>, nudges to save, new skills from solved tasks, full-text recall. One gateway, about twenty platforms, one identity across them; scheduled jobs deliver anywhere.</td></tr>
+<tr><th scope="row"><a href="https://poke.com">Poke</a></th><td>Lives in iMessage and SMS, fixed voice, texts first when mail or calendar needs attention, treats those accounts as memory. Speaking first and personality make it feel present.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>OpenClaw's pieces</summary>
+<ul>
+<li>Access: DM pairing, allowlists; <code translate="no">groupPolicy</code> allowlist, open or disabled per group.</li>
+<li>Mention gating: <code translate="no">requireMention</code>, <code translate="no">mentionPatterns</code>, reply-to-bot counts; <code translate="no">/activation mention|always</code>.</li>
+<li>Pending history: unmentioned messages kept (<code translate="no">historyLimit</code>, default 50) for the next triggered turn.</li>
+<li>Ambient rooms: <code translate="no">unmentionedInbound: "room_event"</code> with <code translate="no">visibleReplies: "message_tool"</code>: every message reaches the agent, final text stays private, the room hears only the <code translate="no">message</code> tool; typing suppressed.</li>
+<li>Per-group and per-sender tool policy (<code translate="no">tools</code>, <code translate="no">toolsBySender</code>); sandbox for non-main sessions.</li>
+<li>Sessions: <code translate="no">dmScope</code>, <code translate="no">identityLinks</code>, daily or idle reset, <code translate="no">/new</code>, <code translate="no">/reset</code>.</li>
+<li>Delivery: block streaming (<code translate="no">minChars</code>, <code translate="no">maxChars</code>, coalescing, newline mode), preview edits, typing keepalive, ack reactions.</li>
+<li>Bot loop protection, one-time group introduction, heartbeats that skip groups, voice-note transcription, media both ways.</li>
+<li><a href="https://docs.openclaw.ai/channels/wechat">WeChat</a>: plugin by Tencent's Weixin team; direct chats and media, no groups, iLink QR login.</li>
+</ul>
+</details>
+<table class="stack">
+<thead><tr><th scope="col">Capability</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Platforms</th><td>34, WeChat by plugin</td><td>Telegram, Discord, Slack, WeChat (iLink)</td></tr>
+<tr><th scope="row">DM pairing, allowlist</th><td>Yes</td><td>Yes</td></tr>
+<tr><th scope="row">Sender identity to the model</th><td>Text label plus metadata block</td><td>Structured <code translate="no">speaker_*</code> fields</td></tr>
+<tr><th scope="row">Sender in the web transcript</th><td>—</td><td>Platform and sender above the bubble</td></tr>
+<tr><th scope="row">Mention gating</th><td>All groups, patterns, reply-to-bot</td><td>Telegram, Discord, Slack; reply-to-bot; no custom patterns</td></tr>
+<tr><th scope="row"><code translate="no">/activation</code>, <code translate="no">/new</code>, <code translate="no">/reset</code></th><td>Yes</td><td>Yes</td></tr>
+<tr><th scope="row">Pending group history</th><td>Yes</td><td>Yes</td></tr>
+<tr><th scope="row">Ambient rooms</th><td>Yes</td><td><code translate="no">/activation ambient</code>, <code translate="no">chat_send</code></td></tr>
+<tr><th scope="row">Tool policy per group or sender</th><td>Yes</td><td>Per-account <code translate="no">sender_access</code>; per-user group lists (full or chat), per account or group; <code translate="no">/memory</code>; asker-only answers</td></tr>
+<tr><th scope="row">Session scope, reset</th><td>Yes</td><td><code translate="no">session_scope</code>, daily or idle</td></tr>
+<tr><th scope="row">Cross-channel identity links</th><td>Yes</td><td>No</td></tr>
+<tr><th scope="row">Live progress</th><td>Preview edits</td><td>Placeholder edited with tool steps</td></tr>
+<tr><th scope="row">Paragraph chunking while running</th><td>Yes</td><td>WeChat; edit-capable platforms keep the placeholder</td></tr>
+<tr><th scope="row">Typing indicator</th><td>Yes</td><td>Telegram, Discord, WeChat</td></tr>
+<tr><th scope="row">Ack reaction</th><td>Yes</td><td>Telegram, Discord, Slack (<code translate="no">ack_reaction</code>)</td></tr>
+<tr><th scope="row">Bot loop protection</th><td>Yes</td><td>Bot messages dropped, per-room turn limit</td></tr>
+<tr><th scope="row">Group introduction</th><td>Yes</td><td>No</td></tr>
+<tr><th scope="row">Media in and out</th><td>Yes</td><td>Yes</td></tr>
+<tr><th scope="row">Voice transcription</th><td>Yes</td><td>WeChat's own transcript; untranscribed voice kept as SILK</td></tr>
+<tr><th scope="row">Questions back to the user</th><td>—</td><td><code translate="no">/answer</code>, <code translate="no">/decline</code></td></tr>
+<tr><th scope="row">Proactive delivery</th><td>Heartbeats, cron</td><td>Always-on agents deliver to a channel</td></tr>
+<tr><th scope="row">Self-curated memory, skills</th><td>Hermes</td><td>Shared memory workspace, per-person topics</td></tr>
+</tbody>
+</table>
+<h2 id="room-modes">Room modes</h2>
+<table class="stack">
+<thead><tr><th scope="col">Mode</th><th scope="col">Starts a turn</th><th scope="col">Other messages</th><th scope="col">Reply reaches the room</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>mention</strong> (default)</th><td>Mention, or reply to the bot</td><td>Pending history</td><td>Yes</td></tr>
+<tr><th scope="row"><strong>always</strong></th><td>Every message</td><td>—</td><td>Yes</td></tr>
+<tr><th scope="row"><strong>ambient</strong></th><td>Every message</td><td>—</td><td>Addressed: yes. Otherwise only through <code translate="no">chat_send</code>.</td></tr>
+</tbody>
+</table>
+<ul>
+<li>A non-addressing ambient message opens with <code translate="no">[room event]</code>, runs no ack or typing, and its final text stays in the transcript, labelled "overheard" on the web. Room events count against the flood limit.</li>
+<li>The account's <code translate="no">require_mention</code> gives the default; <code translate="no">/activation</code> stores a per-group override in <code translate="no">rooms.json</code>. Adapters only set <code translate="no">ChannelMessage.mentioned</code> and strip the mention; <code translate="no">channels/_room.py</code> decides, the same on every platform. Direct messages are never gated.</li>
+<li><code translate="no">chat_send(text)</code> posts into the turn's chat, looked up by session key in <code translate="no">channels/_active_turns.py</code> (a <code translate="no">session_scope: main</code> session holds several chats). Needs only <code translate="no">reply</code>, is on the safe auto-allow list, is hidden from non-channel sources, at most five per turn. In an addressed turn it serves a short note before long work; the final reply is still posted.</li>
+</ul>
+<h2 id="pending-history">Pending history</h2>
+<pre translate="no"><code>[earlier messages in this chat]
+&gt; {"speaker": "...", "content": "..."}
+&gt; {"speaker": "...", "content": "..."}</code></pre>
+<ul>
+<li>Kept in memory per room with speaker fields. The next turn takes the newest 50 ahead of its message. JSON escapes newlines, so a pending message cannot forge another speaker's line.</li>
+<li>Consumed entries are cleared; <code translate="no">/new</code> clears; a worker restart drops them. It never wakes the agent. The web folds the block at the top of the bubble.</li>
+</ul>
+<h2 id="delivery">Delivery</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Typing</th><td>Runs the whole turn. Telegram <code translate="no">sendChatAction</code> every 4 s, Discord every 8 s, WeChat every 5 s. WeChat needs a ticket from iLink <code translate="no">getconfig</code> with the user's latest <code translate="no">context_token</code>; the turn's end sends iLink's cancel.</td></tr>
+<tr><th scope="row">No-edit platforms (WeChat)</th><td>A chunk leaves at a blank line once it has 200 characters; the buffer leaves when a tool call starts; open code fences are never split; no chunk exceeds the cap. The final reply, with <code translate="no">send_file</code> markers, supplies the rest.</td></tr>
+<tr><th scope="row">Edit platforms</th><td>Keep the live placeholder</td></tr>
+<tr><th scope="row">Ack reaction</th><td>Optional, marks a message picked up</td></tr>
+<tr><th scope="row">Tool steps</th><td>Never in ambient mode, never on WeChat</td></tr>
+</tbody>
+</table>
+<h2 id="who-may-do-what">Who may do what</h2>
+<table class="stack">
+<thead><tr><th scope="col">Sender</th><th scope="col">Group result</th><th scope="col">Turn runs as</th><th scope="col">Room commands</th></tr></thead>
+<tbody>
+<tr><th scope="row">On the allowlist, or <code translate="no">group_full_access</code></th><td><code translate="no">full</code></td><td><code translate="no">sender_access</code> tier</td><td>Allowed</td></tr>
+<tr><th scope="row">On <code translate="no">group_chat_only</code></th><td><code translate="no">chat</code></td><td><code translate="no">paired</code> tier</td><td><code translate="no">/new</code>, <code translate="no">/reset</code>, <code translate="no">/activation</code>, <code translate="no">/memory</code> refused</td></tr>
+<tr><th scope="row">Anyone else, or no user id</th><td>dropped</td><td>No reply, code, pending entry or session; worker log records the id</td><td>—</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">_access.group_sender_access</code> decides from the stable user id and never writes. In a direct message, allowlisted senders take the <code translate="no">sender_access</code> tier.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">sender_access</code></th><th scope="col">Whole-account ceiling</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">owner</code> (default)</th><td>The owner's principal and tier with interactive approvals; session permission mode and rules apply. Approvals reach the chat as questions, answered with <code translate="no">/answer</code>. Speaker fields still name the sender.</td></tr>
+<tr><th scope="row"><code translate="no">paired</code></th><td>Replying, <code translate="no">chat_send</code> and memory, in groups too; files, shell and network tools refused</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">/memory</code></th><th scope="col"><code translate="no">TurnRequest.memory_policy_override</code>, narrowing only</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">on</code></th><td>The agent's own setting</td></tr>
+<tr><th scope="row"><code translate="no">read</code></th><td>Hides the writing tools</td></tr>
+<tr><th scope="row"><code translate="no">off</code></th><td>Stops recall, hides memory tools</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Lists live in the account's <code translate="no">access.json</code>. A group may hold its own pair beside its activation in <code translate="no">rooms.json</code>; once present they replace the account's, only <code translate="no">reset</code> removes them, and emptying them leaves the group closed.</li>
+<li>A Discord thread has its own chat id and falls back to its parent channel's lists.</li>
+<li>The allowlist applies to every group, so listing a bound contact as <code translate="no">chat</code> is refused, and binding someone removes them from the chat lists.</li>
+<li>Lists change only from the local CLI and settings page. CLI and worker both write <code translate="no">rooms.json</code>, under the same cross-process file lock as <code translate="no">access.json</code>.</li>
+<li>A question from <code translate="no">runtime.ask</code> belongs to the person who started the turn; in a group <code translate="no">/answer</code> and <code translate="no">/decline</code> from anyone else are refused while it runs.</li>
+</ul>
+<h2 id="loops-and-floods">Loops and floods</h2>
+<p>Bot messages are dropped. A room starts at most 10 turns in a sliding minute; past that, messages fall into pending history. One message delivered twice (Slack <code translate="no">message</code> and <code translate="no">app_mention</code>) starts one turn.</p>
+<h2 id="wechat">WeChat</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Direction</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Inbound media</th><td>iLink image, voice, file and video items point at AES-128-ECB objects on Tencent's C2C CDN and carry the key. They become attachments with the key; the shared path decrypts while downloading. The CDN says <code translate="no">application/octet-stream</code>, so image type comes from the decrypted header.</td></tr>
+<tr><th scope="row">Voice</th><td>WeChat's transcript becomes the text, with no download. Without one it is SILK, saved as <code translate="no">voice.silk</code>.</td></tr>
+<tr><th scope="row">Sending a file</th><td><code translate="no">getuploadurl</code>, encrypt with a fresh key, post to the CDN, send an image, video or file item naming the download parameter and key. A caption follows as its own text. Uses the <code translate="no">channel.wechat.cdn</code> HTTP consumer, fixed to the CDN origin.</td></tr>
+<tr><th scope="row">Limits</th><td>No groups or edits: always paragraph chunking, never the placeholder</td></tr>
+</tbody>
+</table>
+<h2 id="appendix-implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Pairing, allowlist; structured speaker identity; session scope and reset; room modes; pending history; ambient and <code translate="no">chat_send</code>; typing; WeChat chunking; ack reactions; <code translate="no">sender_access</code>; group lists; room memory; asker-only answers; bot dropping; turn limit; duplicate suppression; live placeholder; per-platform markdown and cap splitting; attachments on all four platforms; <code translate="no">/answer</code>, <code translate="no">/decline</code>; always-on delivery</td></tr>
+<tr><th scope="row">Designed, not implemented</th><td>Custom mention patterns. Identity links: <code translate="no">channel:speaker_id</code> pairs map to one person id, memory files them under one topic, and a binding may give a linked person one direct session. Channel persona in the agent profile (voice, length, emoji), for channel turns only. Memory-scheduled follow-ups delivered to the person's last active channel, with heartbeats skipping groups. Group introductions. Transcribing voice with no platform transcript (WeChat SILK, Telegram and Discord notes).</td></tr>
+</tbody>
+</table>

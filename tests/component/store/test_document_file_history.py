@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from openprogram import sandbox
-from openprogram.agent.dispatcher.finalize import persist_turn_file_summary
+from openprogram.host import sandbox
+from openprogram.runtime.conversation.turn_runtime.finalize import persist_turn_file_summary
 from openprogram.programs.tools.files.read import read
 from openprogram.programs.tools.files.write import write
-from openprogram.store import SessionNodeWriter, SessionStore, _current_turn_id, _store
-from openprogram.store.snapshot.checkpoint import CheckpointStore
-from openprogram.webui.ws_actions import turn_files as turn_files_ws
+from openprogram.state.store import SessionNodeWriter, SessionStore, _current_turn_id, _store
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
+from openprogram.interfaces.server.ws_actions import turn_files as turn_files_ws
 
 
 def _text(result) -> str:
@@ -51,8 +51,8 @@ def test_registered_binary_history_survives_reopen_and_public_revert_reapply(
         "id": turn_id, "role": "assistant", "content": "done",
         "predecessor": "u1", "timestamp": 2.0,
     })
-    monkeypatch.setattr("openprogram.store.default_store", lambda: session_store, raising=False)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: session_store, raising=False)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: session_store, raising=False)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: session_store, raising=False)
     shim = SessionNodeWriter(session_store, session_id)
     store_token = _store.set(shim)
     turn_token = _current_turn_id.set(turn_id)
@@ -76,8 +76,8 @@ def test_registered_binary_history_survives_reopen_and_public_revert_reapply(
         assert summary["files"][0]["binary"] is True
         session_store.close()
         reopened = SessionStore(root_path=root)
-        monkeypatch.setattr("openprogram.store.default_store", lambda: reopened, raising=False)
-        monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: reopened, raising=False)
+        monkeypatch.setattr("openprogram.state.store.default_store", lambda: reopened, raising=False)
+        monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: reopened, raising=False)
         assert reopened._open(session_id, create_if_missing=True) is not None
         ws = _WS()
         asyncio.run(turn_files_ws.handle_review_scope(ws, {
@@ -101,14 +101,14 @@ def test_registered_binary_history_survives_reopen_and_public_revert_reapply(
         if reopened is not None:
             reopened.close()
         session_store.close()
-        from openprogram.store.snapshot.read_tracking import forget_session
+        from openprogram.state.store.snapshot.read_tracking import forget_session
         forget_session(session_id)
         _current_turn_id.reset(turn_token)
         _store.reset(store_token)
 
 
 def test_registered_write_publishes_staged_binary_and_read_reports_metadata(tmp_path: Path, monkeypatch) -> None:
-    from openprogram import sandbox
+    from openprogram.host import sandbox
     sandbox.install_policy_snapshot({"enabled": False, "policy": None})
     target = tmp_path / "proposal.docx"
     source = tmp_path / "proposal.staged.docx"
@@ -127,7 +127,7 @@ def test_registered_write_publishes_staged_binary_and_read_reports_metadata(tmp_
 
 
 def test_registered_write_rejects_invalid_source_without_touching_target(tmp_path: Path, monkeypatch) -> None:
-    from openprogram import sandbox
+    from openprogram.host import sandbox
     sandbox.install_policy_snapshot({"enabled": False, "policy": None})
     target = tmp_path / "proposal.pptx"
     target.write_bytes(b"original")
@@ -153,8 +153,8 @@ def test_registered_write_rejects_ambiguous_content_and_source(tmp_path: Path, m
 
 
 def test_registered_binary_publish_rejects_change_when_acquiring_writer_lock(tmp_path, monkeypatch):
-    from openprogram.agent.permissions import file_state
-    from openprogram.store.snapshot.read_tracking import forget_session
+    from openprogram.runtime.permissions import file_state
+    from openprogram.state.store.snapshot.read_tracking import forget_session
 
     sandbox.install_policy_snapshot({"enabled": False, "policy": None})
     session_id, turn_id = "binary-lock", "assistant-lock"

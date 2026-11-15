@@ -1,0 +1,112 @@
+<title>Programs 源码分类</title>
+<meta name="description" content="Programs 浏览器如何从已安装的源码树和注册表得到两个根和各行。">
+<h1>Programs 源码分类</h1>
+
+<p>浏览器有 <code translate="no">tools</code> 和 <code translate="no">applications</code> 两个根，每个根下沿用已安装的源码层级。浏览器端不虚构分类路径。</p>
+
+<h2 id="classification-contract">行</h2>
+<table class="stack">
+<thead><tr><th scope="col">行</th><th scope="col">依据</th><th scope="col">显示</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools</code></th><td>已安装包下的目录</td><td>下方 11 个用途目录</td><td>只读目录</td></tr>
+<tr><th scope="row"><code translate="no">tools/&lt;purpose&gt;/&lt;source&gt;</code></th><td>Python 源码和注册元数据</td><td>一个可调用项：一行。多个：一个可展开的组。</td><td>收藏和使用作用于可调用项</td></tr>
+<tr><th scope="row"><code translate="no">tools/&lt;purpose&gt;/&lt;package&gt;</code>（含入口）</th><td><code translate="no">registry.TOOL_PROGRAMS</code> 中的包（<code translate="no">tools/planning/goal</code>）</td><td>可展开：已注册入口和支持源码文件</td><td>收藏和使用作用于入口</td></tr>
+<tr><th scope="row"><code translate="no">applications</code></th><td><code translate="no">registry.builtin_application_names()</code>、<code translate="no">program_directory.program_dirs()</code>、<code translate="no">catalog.records()</code>、<code translate="no">sources.owner_controlled_program_sources()</code></td><td>每个应用一行，按名称排序；<code translate="no">origin</code> 为 <code translate="no">builtin</code> 或 <code translate="no">installed</code>；被跟踪时带 <code translate="no">enabled</code>；用户包带 <code translate="no">load_state</code></td><td>收藏和使用作用于入口；设置在 Applications 页或 <code translate="no">openprogram programs enable|disable</code></td></tr>
+<tr><th scope="row"><code translate="no">applications/&lt;name&gt;/…</code></th><td>目录路径下的注册入口，然后是顶层 Python 文件</td><td>入口类型为 <code translate="no">application</code>；支持文件为源码行。harness clone 无子项，调用逻辑来自仓库分析。</td><td>现有调用树和图</td></tr>
+</tbody>
+</table>
+<p class="note">源码是用户包目录的已编目应用就是该包的行；位于其他应用目录内的，是带 <code translate="no">part_of</code> 的独立行。</p>
+
+<h2 id="physical-source">工具目录</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">openprogram/programs/tools/</code></th><th scope="col">模块</th><th scope="col">包</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agents</code></th><td>mixture_of_agents</td><td>agent, send_message</td></tr>
+<tr><th scope="row"><code translate="no">code</code></th><td>execute_code</td><td>lsp, semble</td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code></th><td></td><td>computer_use_agent</td></tr>
+<tr><th scope="row"><code translate="no">files</code></th><td>apply_patch, edit, glob, grep, list, read, terminal_use, write, write_stdin</td><td>bash, worktree</td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td>always_on_preference, always_on_report, always_on_schedule, ask_user, canvas, chat_send, clarify, handoff, send_file</td><td></td></tr>
+<tr><th scope="row"><code translate="no">jobs</code></th><td>routine</td><td>cron</td></tr>
+<tr><th scope="row"><code translate="no">knowledge</code></th><td>read_conversation</td><td>memory</td></tr>
+<tr><th scope="row"><code translate="no">planning</code></th><td></td><td>goal, open_work, plan_mode, todo</td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td>framework, help, plugin, program, resource, skill</td><td>mcp_meta</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td></td><td>self_update</td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td>pdf, web_fetch</td><td>image_analyze, image_generate, web_search</td></tr>
+</tbody>
+</table>
+<p class="note">单个实现文件是模块。有 provider、prompt、action、worker、共享状态或多个协作入口就是包，一个包可注册多个可调用项。公开名称不受位置影响。</p>
+
+<h2 id="behavior">行为</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">展开</th><td>惰性，每次 <code translate="no">GET /api/programs/explorer</code> 一层，<code translate="no">tools/…</code> 和 <code translate="no">applications/&lt;name&gt;/…</code> 为可调用项优先的行</td></tr>
+<tr><th scope="row">初始选中</th><td>根响应的 <code translate="no">default_selection</code>：第一个应用，否则第一个工具</td></tr>
+<tr><th scope="row">单一可调用项</th><td><code translate="no">computer_use/computer_use_agent/</code> 多文件但只有一个可调用项，因此只有一行，没有多余外壳</td></tr>
+<tr><th scope="row">刷新</th><td>重新扫描 Programs 并重载同一接口</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/tools</code></th><td>运行时可调用项，含 MCP 工具和显示分组；不定义 Programs 文件夹</td></tr>
+<tr><th scope="row">MCP</th><td>来源为 <code translate="no">mcp</code> 的行从不出现；MCP Servers 是其唯一页面</td></tr>
+<tr><th scope="row">Agentic Function</th><td>按公开名称列出；源码路径只用于静态调用分析</td></tr>
+<tr><th scope="row"><code translate="no">program_kind</code></th><td><code translate="no">tool</code>、<code translate="no">application</code>、<code translate="no">runtime_primitive</code>（调用图的 <code translate="no">agent</code> 和 <code translate="no">llm</code> 节点），支持文件为 null。使用按钮把它作为启动器的 <code translate="no">cat</code> 传入。</td></tr>
+<tr><th scope="row">两个根</th><td>收藏、聊天启动、调用树和图行为相同</td></tr>
+</tbody>
+</table>
+
+<h2 id="application-function-calls">应用函数调用</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源</th><td>每次请求读当前包源码；从装饰过的公开函数开始，跟随本地调用和包内 import</td></tr>
+<tr><th scope="row">排除</th><td>测试、benchmark、无关文件、外部库和对象方法</td></tr>
+<tr><th scope="row">条件调用</th><td>标为条件，不是固定顺序；树和图共用相同节点</td></tr>
+<tr><th scope="row">未解析调用、分析限制</th><td>会报告。分析从不执行包代码。</td></tr>
+<tr><th scope="row">刷新</th><td>页面可见时</td></tr>
+<tr><th scope="row">调用树</th><td>初始展开前三层；分支行用点击、Enter 或空格切换；所选 Program 的展开选择在刷新后保留；叶子和重复引用没有切换</td></tr>
+</tbody>
+</table>
+
+<h2 id="application-discovery">应用发现与导入</h2>
+<ul>
+<li>内置或用户目录只有带 <code translate="no">__init__.py</code> 或 <code translate="no">application.json</code> 才是应用。解析到根外的符号链接被跳过。已注册的嵌套入口通过其分类路径保持可见。</li>
+<li><code translate="no">~/.openprogram/programs/</code> 中的用户包从 <code translate="no">openprogram.programs.tools.*</code> 和 <code translate="no">openprogram.programs.applications.*</code> 导入内置 Program，从 <code translate="no">openprogram.programs._authoring</code> 导入辅助函数。<code translate="no" data-claim="example">openprogram.programs.Agents</code> 和 <code translate="no" data-claim="example">openprogram.programs.workflow</code> 不存在。</li>
+<li>App 刷新在不同构建检出间保留有效的显式所有者 Programs 目录。配置的目录缺失时需要修复，绝不换成空的构建目录。显式迁移仍可用；首次安装可建立初始目录。</li>
+</ul>
+
+<h2 id="direct-function-replies-and-input">函数的直接回复和输入</h2>
+<p>手动运行的函数保留执行树，持久化的最终答案作为 Markdown 正文显示在树下，树折叠时也可见。这不增加模型调用或对话节点。摘要和接管说明保持可读，其他值显示为文本或 JSON，嵌套调用不变。选中的执行详情跟随状态更新，无需打开侧栏。</p>
+<p>空函数表单按可见字段定高：折叠的 Advanced 部分只算摘要行。</p>
+
+<details>
+<summary>备选方案与参考</summary>
+<table class="stack">
+<thead><tr><th scope="col">参考</th><th scope="col">模型</th><th scope="col">本项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram 注册表</th><td>普通和 agentic 函数在同一可调用面，带源码元数据</td><td>保持一个运行时目录；只在管理界面加只读源码筛选</td></tr>
+<tr><th scope="row">Hermes toolsets</th><td>命名工具集表示选择，不表示归属</td><td>工具配置与源码分类分开</td></tr>
+<tr><th scope="row"><a href="https://github.com/anthropics/claude-code">Claude Code</a></th><td>内部工具树未公开</td><td>不照搬无法核实的一工具一文件夹假设</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/tree/main/codex-rs/core/src/tools">OpenAI Codex</a></th><td>同时有 handler 文件和子模块</td><td>同样按复杂度区分，不用 Rust 专有名称</td></tr>
+</tbody>
+</table>
+<p>不采用：每个可调用项一个目录、每份源码一个文件、仅前端分类、第二个分类注册表、旧导入路径的兼容副本、原始源码文件浏览、在 Programs 中重复 MCP 工具。</p>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>每份发布的工具源码恰在一个用途目录下，无旧顶层源码。</li>
+<li><code translate="no">computer_use_agent</code> 直接可见，逻辑路径为 <code translate="no">tools/computer_use/computer_use_agent</code>。</li>
+<li>内置浏览器是应用。每个应用都列在 <code translate="no">applications/</code> 下。</li>
+<li>所有已注册可调用名称仍可用。</li>
+<li>打包后的 <code translate="no">gui_agent</code> 入口能开始桌面运行，无导入错误；应用包不导入已移除的命名空间。</li>
+<li>由 explorer 和注册表测试、导入冒烟、Programs UI 检查、TypeScript 编译和构建覆盖。</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>用途目录、模块与包混合发现、单一可调用项行、源码跟踪、条件边、可见页刷新。回归测试覆盖源码编辑、入口选择和未解析别名。</td></tr>
+<tr><th scope="row">未核实</th><td>已安装 App 中调用视图的视觉检查</td></tr>
+</tbody>
+</table>

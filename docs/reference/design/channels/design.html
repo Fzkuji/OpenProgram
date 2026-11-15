@@ -1,0 +1,201 @@
+<title>Channel subsystem design</title>
+<meta name="description" content="Structure, message flow, platforms and entry points of the channel subsystem.">
+<h1>Channel subsystem design</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 430" role="img" aria-label="Inbound: a platform user&#x27;s message reaches a platform adapter, then handle_inbound, then dispatch_inbound. Outbound one-shot: a script calls outbound.py. Both paths send through _transport.py, the only place that sends bytes to the platform APIs.">
+  <defs><marker id="ch-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="24">Platform user</text>
+  <line class="ln" x1="30" y1="36" x2="30" y2="62" marker-end="url(#ch-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="0" y="84">implementations/*.py</text>
+  <text class="t-soft" x="0" y="106">long poll or event loop;</text>
+  <text class="t-soft" x="0" y="126">parse into ChannelMessage</text>
+  <line class="ln" x1="30" y1="136" x2="30" y2="162" marker-end="url(#ch-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="0" y="184">handle_inbound</text>
+  <text class="t-soft" x="0" y="206">per-message thread, access gate,</text>
+  <text class="t-soft" x="0" y="226">attachments, quoted block</text>
+  <line class="ln" x1="30" y1="236" x2="30" y2="262" marker-end="url(#ch-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="0" y="284">dispatch_inbound</text>
+  <text class="t-soft" x="0" y="306">route, session key, per-session lock,</text>
+  <text class="t-soft" x="0" y="326">run turn, progress, broadcast</text>
+  <line class="ln" x1="30" y1="336" x2="30" y2="350" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="420" y="24">Script, job, notebook</text>
+  <line class="ln" x1="450" y1="36" x2="450" y2="62" marker-end="url(#ch-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="420" y="84">outbound.py</text>
+  <text class="t-soft" x="420" y="106">one-shot, no worker needed</text>
+  <line class="ln" x1="450" y1="118" x2="450" y2="350" marker-end="url(#ch-a)"/>
+  <rect class="tile" x="0" y="352" width="680" height="50" rx="8"/>
+  <text class="t-cmd notranslate" translate="no" x="14" y="373">_transport.py</text>
+  <text class="t-soft" x="14" y="393">the only place that sends bytes: chunk, render, hard-cap split, rate-limit retry</text>
+  <text class="t-soft" x="0" y="424">Telegram, Discord, Slack, WeChat iLink</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Platform user</strong></li>
+  <li><code translate="no">implementations/*.py</code><small>long poll or event loop; parse into ChannelMessage</small></li>
+  <li><code translate="no">handle_inbound</code><small>per-message thread, access gate, attachments, quoted block</small></li>
+  <li><code translate="no">dispatch_inbound</code><small>route, session key, per-session lock, run turn, progress, broadcast</small></li>
+  <li class="via">Script, job, notebook: <code translate="no">outbound.py</code></li>
+  <li><code translate="no">_transport.py</code><small>the only place that sends bytes: chunk, render, hard-cap split, rate-limit retry</small></li>
+  <li class="flow-end"><strong>Telegram, Discord, Slack, WeChat iLink</strong></li>
+</ol>
+</figure>
+<p class="note">Requirements, invariants and the comparison with OpenClaw and Hermes: <a href="audit.html">Requirements and invariants</a>. Protocol details: the docstring at the top of each adapter.</p>
+<h2 id="end-to-end">One message, end to end</h2>
+<p>You send the Telegram bot "what Python files are here?"</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Stage</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">telegram.py</code></th><td><code translate="no">_handle_update</code> receives the update and builds <code translate="no">ChannelMessage{text, chat_id="123", user_id="456", chat_type="direct", attachments=()}</code>. An @mention or reply to the bot sets <code translate="no">mentioned=True</code>; the mention is stripped.</td></tr>
+<tr><th scope="row"><code translate="no">handle_inbound</code></th><td>A per-message daemon thread, so a turn paused on <code translate="no">runtime.ask</code> does not block polling. <code translate="no">decide_inbound_sender</code>, <code translate="no">download_inbound</code>, quoted block, then <code translate="no">dispatch_inbound(channel="telegram", account_id="default", peer_kind="direct", peer_id="123", progress_stream=True, ...)</code>. Messages from one peer take a place in line on arrival and start turns in that order; commands skip the line.</td></tr>
+<tr><th scope="row"><code translate="no">dispatch_inbound</code></th><td>Bindings pick the agent. <code translate="no">session_key = "default_direct_123"</code>. Takes the per-session lock: same-session turns queue, different sessions run in parallel; <code translate="no">/answer</code> and <code translate="no">/decline</code> are handled before the lock; <code translate="no">/stop</code> and <code translate="no">/help</code> never reach it. Loads the session. Posts <code translate="no">⏳ working...</code>, keeping <code translate="no">MessageHandle{message_id="9001"}</code>. Runs <code translate="no">process_user_turn</code>.</td></tr>
+<tr><th scope="row">Tool runs</th><td><code translate="no">tool_use</code> edits the placeholder to <code translate="no">⚙ bash</code> once more than 1 s has passed since the last edit; <code translate="no">tool_result</code> swaps it to <code translate="no">✓ bash</code>.</td></tr>
+<tr><th scope="row">Reply</th><td>A forced edit bypasses the throttle and turns message 9001 into the reply. Persists, broadcasts, returns <code translate="no">None</code>, so <code translate="no">handle_inbound</code> sends nothing.</td></tr>
+<tr><th scope="row">Degraded path</th><td>Placeholder failed, the platform cannot edit, or WeChat: <code translate="no">dispatch_inbound</code> returns the reply and <code translate="no">handle_inbound</code> sends it via <code translate="no">Channel.send_text</code>, chunked at <code translate="no">MAX_CHARS</code>.</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">peer_id</code> is <code translate="no">Channel.peer_id_for</code>: <code translate="no">chat_id</code> on Telegram and WeChat, or <code translate="no">{chat_id}_{user_id}</code> in Telegram groups with <code translate="no">group_sessions=per-user</code>; <code translate="no">{chat_id}_{user_id}</code> on Discord and Slack.</p>
+<h3 id="proactive-send">Sending from code</h3>
+<pre translate="no"><code>from openprogram.interfaces.channels.outbound import send
+
+send("telegram", "default", "1234", "Good morning")</code></pre>
+<p class="note">Credentials, HTTPS POST, <code translate="no">SendResult</code> to <code translate="no">True</code>/<code translate="no">False</code>. No adapter, worker, session, agent call or broadcast.</p>
+<h2 id="principles">Principles</h2>
+<h3 id="two-entry-points">Two entry points, one implementation</h3>
+<table class="stack">
+<thead><tr><th scope="col">Entry</th><th scope="col">Purpose</th><th scope="col">State</th><th scope="col">Caller</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">outbound.send</code></th><td>One-shot, no long-running process</td><td>stateless</td><td>Jobs, notebooks, Agent methods, Web UI reply</td></tr>
+<tr><th scope="row"><code translate="no">Channel.send_text</code> + <code translate="no">edit_text</code></th><td>Holds <code translate="no">message_id</code> for edits</td><td>stateful</td><td><code translate="no">dispatch_inbound</code> progress</td></tr>
+</tbody>
+</table>
+<p class="note">Both use <code translate="no">_transport.post_message</code> / <code translate="no">patch_message</code>: one copy of HTTP, credentials and chunking.</p>
+<h3 id="traffic-hub">Traffic hub</h3>
+<p><code translate="no">_conversation.py</code> holds only the flow: route, session key and reset policy, then under the per-session lock load the session, post a placeholder when streaming, run the agent, persist and broadcast. Routing, storage and broadcast live in their own modules.</p>
+<h3 id="platform-differences">Platform differences sealed low</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Owns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_transport.py</code></th><td>Every outward HTTP call: <code translate="no">editMessageText</code>, <code translate="no">PATCH /messages/{id}</code>, <code translate="no">chat.update</code>, iLink, <code translate="no">post_file</code> per platform (sendPhoto/sendDocument, multipart, external-upload, iLink CDN). <code translate="no">MAX_CHARS</code>, chunking, <code translate="no">HARD_CAPS</code> re-split, rate-limit retry.</td></tr>
+<tr><th scope="row"><code translate="no">_format.py</code></th><td>Markdown to Telegram HTML (everything escaped; the poster falls back to tag-stripped text if entities are rejected), Slack mrkdwn, Discord passthrough, WeChat plain text. Code is placeholder-protected.</td></tr>
+<tr><th scope="row">Adapters</th><td>Only the event loop and parsing into <code translate="no">ChannelMessage</code>. <strong>They do not send</strong>; everything after the parse lives in <code translate="no">handle_inbound</code>.</td></tr>
+<tr><th scope="row"><code translate="no">run_forever(stop)</code></th><td>A raising <code translate="no">run()</code> reconnects: 5 s doubling, cap 300 s, reset after surviving 60 s. A clean return means permanently stopped, e.g. invalid WeChat token.</td></tr>
+</tbody>
+</table>
+<h3 id="structured-errors">Structured errors</h3>
+<pre translate="no"><code>@dataclass(frozen=True)
+class SendResult:
+    ok: bool
+    message_id: str = ""
+    error_kind: str = ""     # auth, rate_limit, bad_target, network,
+                             # not_supported, format, unknown
+    error_detail: str = ""   # one human-readable line
+    retryable: bool = False
+    retry_after: float = 0.0 # platform-stated wait; 0 = unstated
+    connect_failed: bool = False   # connection never opened; safe to resend</code></pre>
+<p class="note"><code translate="no">rate_limit</code> retries inside <code translate="no">_transport</code>: <code translate="no">Retry-After</code> first, else 1 s then 3 s, sleep capped at 30 s, 3 attempts.</p>
+<p class="note">A connection that never opened (<code translate="no">connect_failed</code>) retries after 1, 2 and 4 s, 4 attempts; a failure after the request went out does not retry, since a resend could arrive twice.</p>
+<p class="note"><code translate="no">outbound.send</code>, <code translate="no">send_text</code> and <code translate="no">edit_text</code> return bool or a handle; <code translate="no">_full</code> variants return <code translate="no">SendResult</code>, as do both <code translate="no">send_file</code>s.</p>
+<h3 id="inbound-access">Inbound access</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">File</th><td>One <code translate="no">access.json</code> per (channel, account): <code translate="no">allowlist</code> by stable platform user id, at most three <code translate="no">pending</code>. Admission is always pairing; a legacy <code translate="no">policy: "open"</code> is ignored.</td></tr>
+<tr><th scope="row">Code</th><td>8 uppercase characters without <code translate="no">0O1I</code>, valid 1 hour. Same sender not re-prompted in that hour; excess requests silently ignored.</td></tr>
+<tr><th scope="row">Gate</th><td>Runs before routing; an unpaired sender never reaches <code translate="no">dispatch_inbound</code>.</td></tr>
+<tr><th scope="row">Mutation</th><td><code translate="no">approve</code>, <code translate="no">approve_user</code>, <code translate="no">revoke</code> only from the local CLI and loopback Web UI. The inbound path only reads and mints codes, so no channel message can approve anyone.</td></tr>
+</tbody>
+</table>
+<h3 id="plugin-extension-point">Adding a platform</h3>
+<pre translate="no"><code data-claim="example"># pyproject.toml, scanned at startup
+[project.entry-points."openprogram.channels"]
+whatsapp = "my_pkg.whatsapp:WhatsAppChannel"
+
+# or, for notebooks and plugin hooks
+from openprogram.interfaces.channels import register_channel
+register_channel("whatsapp", WhatsAppChannel)</code></pre>
+<p class="note">Built-ins take priority; a same-named plugin is ignored.</p>
+<h2 id="module-inventory">Modules</h2>
+<p>Under <code translate="no">openprogram/interfaces/channels/</code>. Each module deals only with its declared callers; no circular dependencies.</p>
+<table class="stack">
+<thead><tr><th scope="col">Module</th><th scope="col">Responsibility</th><th scope="col">Called by</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">base.py</code></th><td><code translate="no">Channel</code> ABC, <code translate="no">MessageHandle</code>, <code translate="no">handle_inbound</code>, <code translate="no">run_forever</code>, <code translate="no">send_text</code>/<code translate="no">edit_text</code>(<code translate="no">_full</code>), <code translate="no">send_file</code></td><td>Adapters, worker, <code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_transport.py</code></th><td><code translate="no">SendResult</code>, chunk → render → cap split → retry, 4 platforms' text, edit and file HTTP</td><td><code translate="no">outbound</code>, <code translate="no">base.send_text</code>/<code translate="no">send_file</code></td></tr>
+<tr><th scope="row"><code translate="no">_format.py</code></th><td>Markdown to platform wire format</td><td><code translate="no">_transport</code></td></tr>
+<tr><th scope="row"><code translate="no">_access.py</code></th><td>Allowlist and pairing gate, <code translate="no">access.json</code></td><td><code translate="no">handle_inbound</code> (check); CLI, loopback Web UI (mutate)</td></tr>
+<tr><th scope="row"><code translate="no">_room.py</code></th><td>Activation and memory modes (<code translate="no">rooms.json</code>), pending history, flood limit, duplicate delivery</td><td><code translate="no">handle_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_active_turns.py</code></th><td>Each session's running turn: chat, speaker, ambient flag</td><td><code translate="no">_conversation</code>, <code translate="no">chat_send</code>, <code translate="no">/answer</code> gate</td></tr>
+<tr><th scope="row"><code translate="no">_attachments.py</code></th><td>Inbound download; image blocks and <code translate="no">[attachment: path]</code> notes</td><td><code translate="no">handle_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_message.py</code></th><td><code translate="no">ChannelMessage</code>, <code translate="no">Attachment</code></td><td>Adapters</td></tr>
+<tr><th scope="row"><code translate="no">_wechat_media.py</code></th><td>iLink media items, CDN keys, AES-128-ECB, outbound items</td><td>WeChat adapter, <code translate="no">_attachments</code>, <code translate="no">_transport</code></td></tr>
+<tr><th scope="row"><code translate="no">outbound.py</code></th><td><code translate="no">send</code>, <code translate="no">send_full</code>, <code translate="no">send_file</code></td><td>Jobs, notebooks, Agent methods</td></tr>
+<tr><th scope="row"><code translate="no">_conversation.py</code></th><td><code translate="no">dispatch_inbound</code>, per-session lock, progress streaming</td><td><code translate="no">handle_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_session_store.py</code></th><td>Session path, create, load, save</td><td><code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_session_routing.py</code></th><td><code translate="no">session_key</code>, reset policy</td><td><code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_broadcast.py</code></th><td>WS frames on the event bus (<code translate="no">emit_ws_frame</code> → <code translate="no">ws.frame</code>); channels never import webui</td><td><code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_question_bridge.py</code></th><td>Pushes a pending <code translate="no">runtime.ask</code> into the chat</td><td>Question path</td></tr>
+<tr><th scope="row"><code translate="no">_question_commands.py</code></th><td><code translate="no">/answer</code>, <code translate="no">/decline</code></td><td><code translate="no">_conversation</code></td></tr>
+<tr><th scope="row"><code translate="no">_heartbeats.py</code></th><td>Adapter heartbeats</td><td>Status API</td></tr>
+<tr><th scope="row"><code translate="no">bound_reply.py</code></th><td>Sends a bound chat's assistant reply to its channel for turns that did not come from the channel</td><td><code translate="no">openprogram.runtime.conversation.bound_reply</code></td></tr>
+<tr><th scope="row"><code translate="no">link_registration.py</code></th><td>Implements <code translate="no">openprogram.runtime.channel_link</code>, so core code reaches channels without importing this interface</td><td>Core, on import</td></tr>
+<tr><th scope="row"><code translate="no">__init__.py</code></th><td><code translate="no">CHANNEL_CLASSES</code>, <code translate="no">register_channel</code>, entry points</td><td>Web UI status, worker</td></tr>
+<tr><th scope="row"><code translate="no">accounts.py</code></th><td>Credentials and <code translate="no">ACCOUNT_SETTINGS</code></td><td><code translate="no">_transport</code>, adapters</td></tr>
+<tr><th scope="row"><code translate="no">bindings.py</code></th><td>(channel, account, peer) → agent</td><td><code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">implementations/*.py</code></th><td>Inbound loop and parse; Telegram group settings and mention detection; WeChat QR login</td><td>Worker via <code translate="no">run_forever</code></td></tr>
+</tbody>
+</table>
+<p class="note">The <code translate="no">openprogram channels setup</code> wizard lives in <code translate="no">openprogram/interfaces/cli/setup_sections/channels.py</code>.</p>
+<h2 id="supported-platforms">Platforms</h2>
+<table class="stack">
+<thead><tr><th scope="col">Platform</th><th scope="col">Inbound</th><th scope="col">Outbound</th><th scope="col">Progress</th><th scope="col">Attachments in</th><th scope="col">Notes</th></tr></thead>
+<tbody>
+<tr><th scope="row">Telegram</th><td><code translate="no">getUpdates</code> long-poll, no webhook</td><td><code translate="no">sendMessage</code> (HTML), <code translate="no">editMessageText</code>, <code translate="no">sendPhoto</code>, <code translate="no">sendDocument</code></td><td>yes</td><td>photo, document, voice (transcribed), audio, video, animation (file_id → getFile)</td><td>Bot token, public Bot API; <code translate="no">group_sessions</code>, <code translate="no">require_mention</code></td></tr>
+<tr><th scope="row">Discord</th><td>discord.py Gateway</td><td><code translate="no">POST /messages</code>, <code translate="no">PATCH /messages/{id}</code>, multipart</td><td>yes</td><td>CDN URLs</td><td>Bot token, <code translate="no">intents.message_content</code></td></tr>
+<tr><th scope="row">Slack</th><td>Socket Mode (slack_sdk)</td><td><code translate="no">chat.postMessage</code> (mrkdwn), <code translate="no">chat.update</code>, external-upload</td><td>yes</td><td><code translate="no">url_private</code> with bearer</td><td><code translate="no">bot_token</code> (xoxb-), <code translate="no">app_token</code> (xapp-)</td></tr>
+<tr><th scope="row">WeChat</th><td>iLink <code translate="no">getupdates</code> long-poll</td><td>iLink <code translate="no">sendmessage</code> (plain text); <code translate="no">getuploadurl</code> with encrypted CDN upload</td><td>no: iLink cannot edit</td><td>image, voice, file, video, decrypted from the CDN</td><td>Personal WeChat QR login, no enterprise verification</td></tr>
+</tbody>
+</table>
+<p class="note">All four send files.</p>
+<h2 id="user-entry-points">User entry points</h2>
+<h3 id="cli">CLI</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">openprogram channels</code></th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>Status per platform and account</td></tr>
+<tr><th scope="row"><code translate="no">setup</code></th><td>Interactive wizard</td></tr>
+<tr><th scope="row"><code translate="no">accounts list</code></th><td>All accounts</td></tr>
+<tr><th scope="row"><code translate="no">accounts add &lt;channel&gt; --id &lt;name&gt;</code></th><td>New account slot</td></tr>
+<tr><th scope="row"><code translate="no">accounts login &lt;channel&gt; --id &lt;name&gt;</code></th><td>Telegram, Discord, Slack: paste token. WeChat: iLink QR.</td></tr>
+<tr><th scope="row"><code translate="no">accounts set &lt;channel&gt; &lt;key&gt; &lt;value&gt; --id &lt;name&gt;</code></th><td>Telegram, Discord, Slack: <code translate="no">require_mention=on|off</code>, <code translate="no">ack_reaction=on|off</code>. Telegram: <code translate="no">group_sessions=shared|per-user</code>. All: <code translate="no">sender_access=owner|paired</code>.</td></tr>
+<tr><th scope="row"><code translate="no">accounts group-users list|add|remove|reset &lt;channel&gt;</code></th><td>Who the Agent answers in groups</td></tr>
+<tr><th scope="row"><code translate="no">accounts rm &lt;channel&gt; &lt;account_id&gt;</code></th><td>Deletes account and its bindings</td></tr>
+<tr><th scope="row"><code translate="no">access list [&lt;channel&gt;]</code></th><td>Allowlist and pending codes</td></tr>
+<tr><th scope="row"><code translate="no">access approve &lt;channel&gt; &lt;code&gt; --id &lt;name&gt;</code></th><td>By pairing code</td></tr>
+<tr><th scope="row"><code translate="no">access allow &lt;channel&gt; &lt;user_id&gt; --id &lt;name&gt;</code></th><td>A user id directly</td></tr>
+<tr><th scope="row"><code translate="no">access revoke &lt;channel&gt; &lt;user_id&gt; --id &lt;name&gt;</code></th><td>Removes a sender</td></tr>
+<tr><th scope="row"><code translate="no">bindings list</code></th><td>All routing rules</td></tr>
+<tr><th scope="row"><code translate="no">bindings add &lt;agent_id&gt; --channel &lt;ch&gt; [--account &lt;acct&gt;] [--peer &lt;peer&gt; --peer-kind &lt;kind&gt;]</code></th><td>Routes to an agent</td></tr>
+<tr><th scope="row"><code translate="no">bindings rm &lt;binding_id&gt;</code></th><td>Deletes one route</td></tr>
+</tbody>
+</table>
+<h3 id="tui-web">TUI and Web UI</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Entry</th><th scope="col">Implementation</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/channel</code>: pick a channel, an account, then <code translate="no">/attach</code> to bind the conversation to a peer</th><td><code translate="no">apps/cli/src/commands/handler.ts</code>, <code translate="no">apps/cli/src/screens/repl/pickers/channel.tsx</code></td></tr>
+<tr><th scope="row">TUI activity feed</th><td><code translate="no">apps/cli/src/components/ChannelActivityFeed.tsx</code></td></tr>
+<tr><th scope="row">TUI channel turn</th><td><code translate="no">apps/cli/src/screens/repl/wsHandlers/handleChannelTurn.ts</code></td></tr>
+<tr><th scope="row">Composer channel chip, always shown</th><td><code translate="no">apps/web/components/chat/composer/environment-row/chips/channel-chip.tsx</code>, <code translate="no">apps/web/components/chat/top-bar/menus/channel-choices.ts</code></td></tr>
+<tr><th scope="row">Health badge</th><td><code translate="no">/api/channels/{platform}/{account_id}/status</code>: alive, stale, unknown</td></tr>
+<tr><th scope="row">Local access management</th><td><code translate="no">apps/web/components/settings/channels/access-list.tsx</code>, loopback-only <code translate="no">/api/channels/access</code></td></tr>
+</tbody>
+</table>
+<h2 id="extension-points">Extension points</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Extension</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">New platform</th><td><code translate="no">Channel</code> subclass and entry point; parse into <code translate="no">ChannelMessage</code> and the base pipeline applies</td></tr>
+<tr><th scope="row">Thread-scoped sessions</th><td><code translate="no">thread_id</code> is parsed and carries replies back; the work is folding it into the session key</td></tr>
+<tr><th scope="row">Reaction approval</th><td>Adapter-side listener and a bridge to the approval path</td></tr>
+<tr><th scope="row">Token-level text streaming</th><td>Edits happen at tool boundaries; reply-delta edits must weigh rate limits</td></tr>
+</tbody>
+</table>

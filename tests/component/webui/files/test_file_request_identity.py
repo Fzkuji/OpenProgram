@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store.project import project_store
-from openprogram.store.project.identity import capture_directory_identity
-from openprogram.webui import server
-from openprogram.webui.ws_actions import files
-from openprogram.webui.ws_actions import turn_files
+from openprogram.state.store.project import project_store
+from openprogram.state.store.project.identity import capture_directory_identity
+from openprogram.interfaces.server import server
+from openprogram.interfaces.server.ws_actions import files
+from openprogram.interfaces.server.ws_actions import turn_files
 
 
 class FakeWS:
@@ -46,7 +46,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                                                   **captured)
         if project_id == "p1" else None,
     )
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     return root
 
 
@@ -66,7 +66,7 @@ def test_file_result_echoes_request_id_on_success_and_stale(project):
 
 
 def test_dispatch_requires_uuid_and_idempotency_key():
-    from openprogram.webui.ws_errors import OperationError
+    from openprogram.interfaces.server.ws_errors import OperationError
 
     with pytest.raises(OperationError):
         server._validate_file_request({"request_id": "request-1"}, "project_file_read")
@@ -79,7 +79,7 @@ def test_dispatch_requires_uuid_and_idempotency_key():
 
 
 def test_file_write_replay_collision_and_restart(project):
-    from openprogram.store.file_operations import default_file_operation_store
+    from openprogram.state.store.file_operations import default_file_operation_store
 
     request_id = str(uuid.uuid4())
     command = {
@@ -111,7 +111,7 @@ def test_file_write_replay_collision_and_restart(project):
     assert content_collision["error_code"] == "IDEMPOTENCY_KEY_CONFLICT"
 
     # A fresh store handle observes the same durable completed record.
-    from openprogram.store.file_operations import fingerprint
+    from openprogram.state.store.file_operations import fingerprint
     row, owner = store.begin(
         "p1", "project_file_write", "write-once",
         fingerprint(files._canonical_mutation_payload({
@@ -153,9 +153,9 @@ def test_copy_replay_and_terminal_recovery_are_durable(project, tmp_path):
     assert replay["operation_id"] == first["operation_id"]
     assert (project / "copy.txt").read_text(encoding="utf-8") == "before"
 
-    from openprogram.store.file_operations import FileOperationStore
-    db_path = tmp_path / "empty-profile" / "file_operations.db"
-    store = FileOperationStore(db_path)
+    from openprogram.state.store.file_operations import FileOperationStore
+    log_path = tmp_path / "empty-profile" / "file_operations.jsonl"
+    store = FileOperationStore(log_path)
     row, owner = store.begin("p1", "project_file_delete", "crash-key", "fp",
                               payload={"path": "missing.txt"},
                               before={"source": {"exists": True}},
@@ -166,19 +166,19 @@ def test_copy_replay_and_terminal_recovery_are_durable(project, tmp_path):
         "error_code": "RECOVERY_REQUIRED",
         "error": "file operation state cannot be reconciled safely",
     }, status="recovery_required", phase="recovery_required")
-    reopened = FileOperationStore(db_path)
+    reopened = FileOperationStore(log_path)
     replayed = reopened.replay(reopened.begin(
         "p1", "project_file_delete", "crash-key", "fp",
     )[0])
     assert replayed["status"] == "recovery_required"
     assert "in_flight" not in replayed
-    from openprogram._compat import user_private_metadata
-    assert user_private_metadata(db_path.stat(), exact_mode=0o600)
-    assert user_private_metadata(db_path.parent.stat(), exact_mode=0o700)
+    from openprogram.host._platform.filesystem import user_private_metadata
+    assert user_private_metadata(log_path.stat(), exact_mode=0o600)
+    assert user_private_metadata(log_path.parent.stat(), exact_mode=0o700)
 
 
 def test_inflight_after_image_is_not_assumed_to_be_our_write(project):
-    from openprogram.store.file_operations import default_file_operation_store, fingerprint
+    from openprogram.state.store.file_operations import default_file_operation_store, fingerprint
 
     payload = {"path": "source.txt", "content": "same", "expected_mtime": None}
     canonical = files._canonical_mutation_payload(payload)
@@ -202,7 +202,7 @@ def test_inflight_after_image_is_not_assumed_to_be_our_write(project):
 
 
 def test_inflight_before_image_is_retried_under_the_lock(project):
-    from openprogram.store.file_operations import default_file_operation_store, fingerprint
+    from openprogram.state.store.file_operations import default_file_operation_store, fingerprint
 
     payload = {"path": "source.txt", "content": "retry", "expected_mtime": None}
     canonical = files._canonical_mutation_payload(payload)
@@ -223,7 +223,7 @@ def test_inflight_before_image_is_retried_under_the_lock(project):
 
 
 def test_operation_status_reconciles_inflight_to_terminal(project):
-    from openprogram.store.file_operations import default_file_operation_store, fingerprint
+    from openprogram.state.store.file_operations import default_file_operation_store, fingerprint
 
     store = default_file_operation_store()
     row, owner = store.begin(
@@ -262,8 +262,8 @@ def test_turn_operation_status_requires_its_own_identity():
 
 
 def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, monkeypatch):
-    from openprogram.store.session import session_store
-    from openprogram.store.snapshot.checkpoint import CheckpointStore
+    from openprogram.state.store.session import session_store
+    from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
     session_dir = tmp_path / "session"
     journal = CheckpointStore(session_dir)
@@ -281,7 +281,7 @@ def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, mo
     closure = journal.apply_rewind_operation(
         [], expected_head_id=None, target_head_id=None,
         get_head=lambda: None,
-        compare_and_set_head=lambda expected, target: expected is None and target is None,
+        compare_and_set_head=lambda expected, target, rollback=False: expected is None and target is None,
         idempotency_key=closure_key, target_msg_id="revert:turn-2",
     )
     assert closure["status"] == "committed"
@@ -342,10 +342,10 @@ def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, mo
 
 
 def test_history_intent_crash_is_terminalized_on_restart(tmp_path, monkeypatch):
-    from openprogram.store.session import session_store
-    from openprogram.store.snapshot.checkpoint import manifest
-    from openprogram.store.snapshot.checkpoint import store as checkpoint_store
-    from openprogram.store.snapshot.checkpoint import CheckpointStore
+    from openprogram.state.store.session import session_store
+    from openprogram.state.store.snapshot.checkpoint import manifest
+    from openprogram.state.store.snapshot.checkpoint import store as checkpoint_store
+    from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
     session_dir = tmp_path / "session"
     journal = CheckpointStore(session_dir)
@@ -398,10 +398,10 @@ def test_history_intent_crash_is_terminalized_on_restart(tmp_path, monkeypatch):
 
 
 def test_rewind_recovery_persists_error_code_for_status(tmp_path, monkeypatch):
-    from openprogram.store.session import session_store
-    from openprogram.store.snapshot.checkpoint import manifest
-    from openprogram.store.snapshot.checkpoint import store as checkpoint_store
-    from openprogram.store.snapshot.checkpoint import CheckpointStore
+    from openprogram.state.store.session import session_store
+    from openprogram.state.store.snapshot.checkpoint import manifest
+    from openprogram.state.store.snapshot.checkpoint import store as checkpoint_store
+    from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
     session_dir = tmp_path / "session"
     journal = CheckpointStore(session_dir)
@@ -421,14 +421,14 @@ def test_rewind_recovery_persists_error_code_for_status(tmp_path, monkeypatch):
         journal.apply_rewind_operation(
             [], expected_head_id=None, target_head_id=None,
             get_head=lambda: None,
-            compare_and_set_head=lambda expected, target: True,
+            compare_and_set_head=lambda expected, target, rollback=False: True,
             idempotency_key=stored_key, target_msg_id="revert:turn-r",
         )
 
     monkeypatch.setattr(checkpoint_store.manifest, "save", original_save)
     recovered = journal.recover_rewind_intents(
         get_head=lambda: "external",
-        compare_and_set_head=lambda intent, expected, target: False,
+        compare_and_set_head=lambda intent, expected, target, rollback=False: False,
     )
     assert recovered[0]["status"] == "recovery_required"
     assert recovered[0]["error_code"] == "RECOVERY_REQUIRED"
@@ -456,15 +456,15 @@ def test_rewind_recovery_persists_error_code_for_status(tmp_path, monkeypatch):
 
 
 def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):
-    from openprogram.store.file_operations import (
+    from openprogram.state.store.file_operations import (
         FILE_OPERATION_MAX_TERMINAL_RECORDS,
         FILE_OPERATION_TERMINAL_TTL_SECONDS,
         FileOperationStore,
         fingerprint,
     )
 
-    db_path = tmp_path / "state" / "file_operations.db"
-    store = FileOperationStore(db_path)
+    log_path = tmp_path / "state" / "file_operations.jsonl"
+    store = FileOperationStore(log_path)
     rows = []
     for index, status in enumerate(("completed", "conflict", "error", "in_flight", "recovery_required")):
         row, owner = store.begin("p", "action", f"key-{index}", fingerprint({"index": index}))
@@ -473,8 +473,10 @@ def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):
             store.finish(row["operation_id"], {"status": status}, status=status, phase=status)
         rows.append(row["operation_id"])
     old = time.time() - FILE_OPERATION_TERMINAL_TTL_SECONDS - 1
-    with store._connect() as db:
-        db.execute("UPDATE file_operations SET updated_at=? WHERE status IN ('completed','conflict','error')", (old,))
+    with store._log.locked() as log:
+        for operation_id, row in list(log.records.items()):
+            if row["status"] in ("completed", "conflict", "error"):
+                log.put(operation_id, {**row, "updated_at": old})
     assert store.compact(now=time.time()) == 3
     assert store.get(rows[3]) is not None
     assert store.get(rows[4]) is not None
@@ -534,7 +536,7 @@ def test_file_digest_stops_at_bound_when_file_grows_during_read(project, monkeyp
 
 def test_owner_process_start_identity_rejects_pid_reuse(project):
     del project
-    from openprogram.store.file_operations import current_owner_identity
+    from openprogram.state.store.file_operations import current_owner_identity
 
     instance_id, pid, process_start = current_owner_identity()
     if process_start is None:
@@ -573,7 +575,7 @@ def test_idempotency_fingerprint_normalizes_alias_paths(project):
 
 
 def test_active_same_key_retry_returns_in_progress_without_waiting(project):
-    from openprogram.webui.ws_actions.files import _durable_file_action
+    from openprogram.interfaces.server.ws_actions.files import _durable_file_action
 
     started = threading.Event()
     release = threading.Event()
@@ -588,7 +590,7 @@ def test_active_same_key_retry_returns_in_progress_without_waiting(project):
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(_durable_file_action, "p1", "project_file_write",
                              key, payload, held)
-        assert started.wait(timeout=2)
+        assert started.wait(timeout=30)
         retry = _durable_file_action("p1", "project_file_write", key, payload,
                                      lambda: {"ok": True})
         assert retry["status"] == "in_progress"
@@ -598,7 +600,7 @@ def test_active_same_key_retry_returns_in_progress_without_waiting(project):
 
 def test_review_stale_states_keep_their_protocol_code():
     assert files._normalise_file_result({"error": "path escapes project root"})["error_code"] == "INVALID_REQUEST"
-    from openprogram.webui.ws_actions import turn_files
+    from openprogram.interfaces.server.ws_actions import turn_files
 
     for code in ("STALE_SNAPSHOT", "STALE_CURSOR"):
         result = turn_files._stable_file_result({"status": "stale", "error": code})

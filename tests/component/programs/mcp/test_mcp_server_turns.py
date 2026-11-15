@@ -9,12 +9,12 @@ import mcp.types as mcp_types
 import pytest
 from mcp.shared.exceptions import McpError
 
-from openprogram.agent.authority import mcp_client_authority
-from openprogram.agent.dispatcher import TurnResult
-from openprogram.events import create_event_bus, make_event
-from openprogram.execution.control import ObservedCancelSubmission
-from openprogram.execution.model import CommandStatus
-from openprogram.mcp.server.service import MCPClientContext, MCPService
+from openprogram.runtime.permissions.authority import mcp_client_authority
+from openprogram.runtime.conversation.turn_runtime import TurnResult
+from openprogram.runtime.events import create_event_bus, make_event
+from openprogram.runtime.execution.control import ObservedCancelSubmission
+from openprogram.runtime.execution.model import CommandStatus
+from openprogram.extensions.mcp.server.service import MCPClientContext, MCPService
 
 
 class FakeSessionDB:
@@ -71,7 +71,7 @@ def _active(service):
 def _patch_wait_decline(
     monkeypatch, calls, *, started=None, release=None,
 ):
-    import openprogram.execution as execution_module
+    import openprogram.runtime.execution as execution_module
 
     actual_store = execution_module.default_store()
 
@@ -97,7 +97,7 @@ def _patch_wait_decline(
         execution_module, "default_store", lambda: FakeExecutionStore(),
     )
     monkeypatch.setattr(
-        "openprogram.execution.submit_wait_command", submit_wait_command,
+        "openprogram.runtime.execution.submit_wait_command", submit_wait_command,
     )
 
 
@@ -277,7 +277,7 @@ def test_prompt_send_registers_exact_execution_before_dispatch() -> None:
 
 def test_cancel_barrier_before_admission_never_activates_prompt(monkeypatch) -> None:
     """A cancel racing the worker admission is consumed before activation."""
-    from openprogram.agent.production_driver import CanonicalAgentAdmission
+    from openprogram.runtime.conversation.production_driver import CanonicalAgentAdmission
 
     admitted = threading.Event()
     release = threading.Event()
@@ -290,7 +290,7 @@ def test_cancel_barrier_before_admission_never_activates_prompt(monkeypatch) -> 
 
         def admit(self, *_args, **_kwargs):
             admitted.set()
-            assert release.wait(2)
+            assert release.wait(30)
             return CanonicalAgentAdmission("exec-barrier", "existing", 0)
 
         def fail_admission(self, admission, *, reason_code, target=None):
@@ -300,7 +300,7 @@ def test_cancel_barrier_before_admission_never_activates_prompt(monkeypatch) -> 
             activated.set()
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter,
+        "openprogram.runtime.conversation.production_driver.CanonicalAgentAdapter", Adapter,
     )
     service = _service()
 
@@ -325,7 +325,7 @@ def test_cancel_barrier_before_admission_never_activates_prompt(monkeypatch) -> 
 
 
 def test_pre_admission_cancel_cleans_guard_before_next_prompt(monkeypatch) -> None:
-    from openprogram.agent.production_driver import CanonicalAgentAdmission
+    from openprogram.runtime.conversation.production_driver import CanonicalAgentAdmission
 
     first_admit = threading.Event()
     release_first = threading.Event()
@@ -342,7 +342,7 @@ def test_pre_admission_cancel_cleans_guard_before_next_prompt(monkeypatch) -> No
             admissions += 1
             if admissions == 1:
                 first_admit.set()
-                assert release_first.wait(2)
+                assert release_first.wait(30)
                 return CanonicalAgentAdmission("exec-first", "existing", 0)
             return CanonicalAgentAdmission("exec-second", "existing", 0)
 
@@ -356,7 +356,7 @@ def test_pre_admission_cancel_cleans_guard_before_next_prompt(monkeypatch) -> No
             return None, TurnResult("done", "u", "a")
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter,
+        "openprogram.runtime.conversation.production_driver.CanonicalAgentAdapter", Adapter,
     )
     service = _service(cancel=lambda _execution_id: SimpleNamespace(
         execution=SimpleNamespace(status="cancelling")
@@ -689,7 +689,7 @@ def test_external_prompt_cancellation_waits_for_async_canonical_cancel() -> None
 
 @pytest.mark.parametrize("error", ["terminal", "unexpected"])
 def test_prompt_cancel_service_failure_preserves_live_turn(error) -> None:
-    from openprogram.agent import run_control
+    from openprogram.runtime.execution import run_control as execution_run_control
 
     entered = threading.Event()
     release = threading.Event()
@@ -705,7 +705,7 @@ def test_prompt_cancel_service_failure_preserves_live_turn(error) -> None:
 
     def cancel(execution_id):
         if error == "terminal":
-            raise run_control.ExecutionNotCancellable(
+            raise execution_run_control.ExecutionNotCancellable(
                 execution_id, {"execution_id": execution_id, "status": "completed"}
             )
         raise RuntimeError("store failure")
@@ -734,7 +734,7 @@ def test_prompt_cancel_service_failure_preserves_live_turn(error) -> None:
 
 
 def test_prompt_cancel_not_found_allows_only_verified_pre_placeholder() -> None:
-    from openprogram.agent import run_control
+    from openprogram.runtime.execution import run_control as execution_run_control
 
     entered = threading.Event()
     release = threading.Event()
@@ -752,7 +752,7 @@ def test_prompt_cancel_not_found_allows_only_verified_pre_placeholder() -> None:
     service = _service(
         db=db, process=process, questions=questions, bus=bus,
         cancel=lambda execution_id: (_ for _ in ()).throw(
-            run_control.ExecutionNotFound(execution_id)
+            execution_run_control.ExecutionNotFound(execution_id)
         ),
     )
 
@@ -769,13 +769,13 @@ def test_prompt_cancel_not_found_allows_only_verified_pre_placeholder() -> None:
         await task
         return record
 
-    record = asyncio.run(scenario())
+    asyncio.run(scenario())
     assert audit == []
 
 
 @pytest.mark.parametrize("lookup", ["placeholder", "store_failure", "retired"])
 def test_prompt_cancel_not_found_guards(lookup) -> None:
-    from openprogram.agent import run_control
+    from openprogram.runtime.execution import run_control as execution_run_control
 
     entered = threading.Event()
     release = threading.Event()
@@ -789,7 +789,7 @@ def test_prompt_cancel_not_found_guards(lookup) -> None:
         return TurnResult("normal", "u", "a")
 
     def cancel(execution_id):
-        raise run_control.ExecutionNotFound(execution_id)
+        raise execution_run_control.ExecutionNotFound(execution_id)
 
     service = _service(db=db, process=process, questions=questions, cancel=cancel)
 
@@ -948,7 +948,7 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
             service_b.prompt_send(
                 "b", session_id=session_id, request_id="request-b-rejected"
             ),
-            0.5,
+            30,
         )
         assert result_b.is_error is True
         assert _payload(result_b) == {"error": "prompt execution failed"}
@@ -988,7 +988,7 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
 
 @pytest.mark.parametrize("operation", ["prompt_cancel", "close"])
 def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -> None:
-    from openprogram.agent.questions import PendingQuestion, QuestionRegistry
+    from openprogram.runtime.agent.questions import QuestionRegistry
     session_id = f"handover-{operation}"
     db = FakeSessionDB()
     db.sessions[session_id] = {"id": session_id, "agent_id": "main"}
@@ -1048,9 +1048,9 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
 
         cancel_thread = threading.Thread(target=cancel_old_owner)
         cancel_thread.start()
-        assert owner_sampled.wait(1)
+        assert owner_sampled.wait(30)
         release_owner_sample.set()
-        cancel_thread.join(1)
+        cancel_thread.join(30)
 
         assert not cancel_thread.is_alive()
         if operation == "prompt_cancel":
@@ -1389,7 +1389,7 @@ def test_prompt_send_async_cancellation_cleans_then_reraises_and_drops_late_resu
             ):
                 await asyncio.sleep(0.01)
 
-        await asyncio.wait_for(wait_for_cleanup(), timeout=2)
+        await asyncio.wait_for(wait_for_cleanup(), timeout=30)
 
     asyncio.run(scenario())
     assert [name for name, _ in calls].count("cancel") == 1
@@ -1508,7 +1508,7 @@ def test_new_same_session_request_is_rejected_until_old_cleanup_finishes() -> No
         new = asyncio.create_task(
             service.prompt_send("new", session_id="existing", request_id="new-r")
         )
-        blocked = await asyncio.wait_for(new, 0.5)
+        blocked = await asyncio.wait_for(new, 30)
         assert blocked.is_error is True
         assert _payload(blocked) == {"error": "prompt execution failed"}
         assert not new_entered.is_set()

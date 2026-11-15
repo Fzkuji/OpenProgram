@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def _create_update(root: str, update_id: str, start, results) -> None:
-    from openprogram.self_update import (
+    from openprogram.operations.self_update import (
         ActiveUpdateError,
         SelfUpdateStore,
         UpdateRequest,

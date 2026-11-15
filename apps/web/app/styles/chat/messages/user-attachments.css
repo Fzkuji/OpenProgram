@@ -1,0 +1,131 @@
+/* 用户消息附件 chips。
+   对应组件：components/chat/messages/attachments/user-attachments.tsx */
+
+/* User-message attachment chips (Claude-Code-style file pills) — the
+   composer encodes dropped files into the message text; UserBubble
+   pulls them out and renders them here instead of as raw
+   "[attached: …]" prose. */
+.user-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.user-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 4px 9px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  font-size: var(--fs-xs);
+  line-height: 1.3;
+}
+.user-attach-glyph {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.user-attach-name {
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-attach-meta {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* A chip whose file is actually on disk opens it. Rendered as a
+   <button>, so it needs the surrounding text metrics reset. */
+button.user-attach-chip {
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.user-attach-open:hover {
+  border-color: var(--border-strong, var(--text-muted));
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+.user-attach-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+.user-attach-image {
+  padding-left: 4px;
+}
+
+/* Attachment preview overlay (components/chat/messages/attachments/attachment-preview.tsx) */
+.attach-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-fullscreen) + 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim-attachment-preview);
+  backdrop-filter: blur(2px);
+  animation: overlayIn 140ms ease-out;
+}
+.attach-preview-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 92vw);
+  height: min(760px, 86vh);
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+}
+.attach-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.attach-preview-name {
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.attach-preview-download {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+}
+.attach-preview-download:hover {
+  color: var(--text-primary);
+}
+.attach-preview-close {
+  width: var(--ui-button-h-xs);
+  height: var(--ui-button-h-xs);
+  border: none;
+  border-radius: var(--radius-xl);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-title);
+  line-height: 1;
+  cursor: pointer;
+}
+.attach-preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.attach-preview-body > iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}

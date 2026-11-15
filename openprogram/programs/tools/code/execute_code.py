@@ -30,8 +30,11 @@ import tempfile
 import time
 from typing import Any
 
-from openprogram.programs._helpers import read_int_param, read_string_param
-from openprogram.programs._runtime import ToolReturn, function
+from openprogram.programs._authoring.helpers import read_int_param, read_string_param
+from openprogram.programs._host.runtime import ToolReturn, function
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 NAME = "execute_code"
@@ -87,7 +90,7 @@ def execute(
     cwd: str | None = None,
     python: str | None = None,
     **kw: Any,
-) -> str:
+) -> str | ToolReturn:
     code = code or read_string_param(kw, "code", "source", "script")
     timeout = float(
         read_int_param(kw, "timeout") or (timeout if timeout is not None else DEFAULT_TIMEOUT)
@@ -108,7 +111,7 @@ def execute(
     # / ``<stdin>`` frames read as <string>); remote backends fall
     # back to ``python -`` + stdin since the tempfile lives on the
     # host filesystem and isn't reachable from docker/ssh.
-    from openprogram.backend import get_active_backend, LocalBackend
+    from openprogram.host.backend import get_active_backend, LocalBackend
 
     backend = get_active_backend()
     started = time.time()
@@ -135,12 +138,12 @@ def execute(
             )
             if completed.timed_out:
                 elapsed = time.time() - started
-                return (
+                return ToolReturn(text=(
                     f"Error: timed out after {timeout:.1f}s "
                     f"(elapsed {elapsed:.1f}s)\n\n"
                     f"## stdout (partial)\n{completed.stdout[:4000]}\n\n"
                     f"## stderr (partial)\n{completed.stderr[:4000]}"
-                )
+                ), is_error=True)
             return_code = completed.exit_code
             sandbox_error = completed.sandbox_error
             stdout_b = completed.stdout.encode("utf-8")
@@ -165,15 +168,16 @@ def execute(
             try:
                 proc.kill()
             except Exception:
-                pass
+                # The process may have exited at the deadline; partial output is still returned.
+                _log.debug("timed-out code process not killed", exc_info=True)
             partial = (e.stdout or "") if isinstance(e.stdout, str) \
                       else (e.stdout or b"").decode("utf-8", errors="replace")
             elapsed = time.time() - started
-            return (
+            return ToolReturn(text=(
                 f"Error: timed out after {timeout:.1f}s "
                 f"(elapsed {elapsed:.1f}s) via {backend.backend_id}\n\n"
                 f"## stdout (partial)\n{partial[:4000]}"
-            )
+            ), is_error=True)
         return_code = proc.returncode
         stdout_b = stdout_text.encode("utf-8") if isinstance(stdout_text, str) \
                    else (stdout_text or b"")
@@ -208,6 +212,8 @@ def execute(
                 }
             },
         )
+    if return_code != 0:
+        return ToolReturn(text=text, is_error=True)
     return text
 
 
@@ -220,7 +226,7 @@ function(
     description=DESCRIPTION,
     parameters=SPEC["parameters"],
     toolset=['core'],
-    unsafe_in=['wechat', 'telegram', 'plan'],
+    unsafe_in=["plan"],
 )(execute)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION"]

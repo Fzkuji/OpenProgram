@@ -1,0 +1,37 @@
+<title>会话自动重命名</title>
+<meta name="description" content="自动重命名如何向标题模型请求会话名，以及失败、竞争和后续后台命名时的行为。">
+<h1>会话自动重命名</h1>
+<p>会话菜单里“自动重命名”紧跟在“重命名”之后，让标题模型根据对话内容生成简短标题。侧栏原生菜单、侧栏网页菜单和对话菜单共用一个客户端动作 <code translate="no">autoRenameSession</code>。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">生成中</th><td>显示进度；旧标题和内容保持可见；同一会话的重复点击合并</td></tr>
+<tr><th scope="row">成功</th><td>先保存再广播 <code translate="no">session_updated</code>；已加载的对话和所有客户端看到同一标题</td></tr>
+<tr><th scope="row">失败</th><td>保留旧标题；提示可重试</td></tr>
+<tr><th scope="row">传输超时</th><td>报告结果未确认，请用户刷新页面查看标题；不重放操作</td></tr>
+<tr><th scope="row">期间会话被改名或删除</th><td>生成后重新检查；丢弃过期结果</td></tr>
+<tr><th scope="row">发起请求的连接断开</th><td>已保存的标题不受影响</td></tr>
+<tr><th scope="row">手动重命名</th><td>不变；手动输入的标题不会被后台命名覆盖</td></tr>
+<tr><th scope="row">生成的名字</th><td>不锁定：清除 <code translate="no">_user_titled</code>，后台命名之后仍可改进</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>服务端路径</summary>
+<ul>
+<li>不带标题的 <code translate="no">rename_session</code>（<code translate="no">handle_rename_session</code>）在工作线程里运行无工具的标题生成器，上下文与后台命名相同（<code translate="no">build_title_context</code>）。</li>
+<li>由一个被保留的后台任务持有调用，WebSocket 接收循环立即释放；任务完成后移除。</li>
+<li>没有验证过原生 JSON Schema 支持的模型走提示词回退，本地 schema 校验相同，同样不带工具。</li>
+<li>聊天历史提供文本；只有函数的对话提供调用标题和结果。</li>
+</ul>
+</details>
+
+<details>
+<summary>范围和验证</summary>
+<p>不改变操作系统权限、审批模式、首轮自动命名或其他应用。</p>
+<p>验证公开的重命名命令在聊天和纯函数历史上的表现、失败、手动改名竞争、删除和持久化；菜单动作和断线反馈；再在 App 里确认侧栏动作能生成标题、更新侧栏和标签，并在完整刷新后保留。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现：菜单、共用客户端动作、后台重命名处理。</p>

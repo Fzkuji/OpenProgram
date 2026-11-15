@@ -1,0 +1,114 @@
+"""Sleep scheduling — installs a daily background task in the worker.
+
+The worker calls ``start_nightly_reorganizer(...)`` at boot. We spawn a
+daemon thread that sleeps until the next 03:00 local time, reorganizes,
+and loops. Lightweight; doesn't depend on a cron daemon.
+
+Reorganizing rewrites topic files: splitting one that has grown to cover
+several subjects, merging paragraphs that say the same thing, repairing
+links. Writing only ever makes files longer, so without this a workspace
+ends up as one enormous file per subject with its timeline cut to pieces
+— the shape that makes ordering and counting questions unanswerable.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import threading
+import time
+from datetime import datetime, timedelta
+
+
+logger = logging.getLogger(__name__)
+
+
+def get_backend():
+    from . import get_backend as _resolve
+
+    return _resolve()
+
+
+def _seconds_until_next_3am() -> float:
+    now = datetime.now()
+    target = now.replace(hour=3, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def start_nightly_reorganizer(
+    *,
+    model: str | None = None,             # defaults to the chat agent
+    daily_at: int = 3,                    # hour-of-day local
+    initial_delay: float | None = None,   # override for tests
+) -> threading.Thread | None:
+    """Spawn the sleep scheduler thread. Returns the thread or None if disabled.
+
+    ``model`` overrides the reorganizing pass. Left unset, the writer uses
+    the default chat agent's provider, model, and existing credential.
+    """
+    from . import is_enabled
+
+    if not is_enabled():
+        logger.info("memory sleep scheduler disabled by memory.backend=none")
+        return None
+    if os.environ.get("OPENPROGRAM_NO_SLEEP", "").strip() in ("1", "true", "yes"):
+        logger.info("memory sleep scheduler disabled by OPENPROGRAM_NO_SLEEP")
+        return None
+
+    def _loop() -> None:
+        if initial_delay is not None:
+            time.sleep(initial_delay)
+        else:
+            wait = _seconds_until_next_3am() if daily_at == 3 else _seconds_until(daily_at)
+            time.sleep(wait)
+        while True:
+            try:
+                report = reorganize_spaces(model=model)
+                logger.info("memory nightly reorganize done: %s", report)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("memory nightly reorganize failed: %s", e)
+            time.sleep(_seconds_until(daily_at))
+
+    t = threading.Thread(target=_loop, name="memory-sleep", daemon=True)
+    t.start()
+    return t
+
+
+def _seconds_until(hour: int) -> float:
+    now = datetime.now()
+    target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def reorganize_spaces(*, model=None):
+    """Maintain the legacy workspace, writable Agent spaces and project Memory."""
+    report = get_backend().reorganize(model=model)
+    from openprogram.state.execution_facts import agent_registry
+    from .policy import resolve, scope, space_path
+    for spec in agent_registry().list_all():
+        policy = resolve(spec.id, spec)
+        if policy.mode != 'read_write' or policy.write_space != 'self':
+            continue
+        if not space_path(policy, 'self').is_dir():
+            continue
+        with scope(policy, space='self'):
+            get_backend().reorganize(model=model)
+    projects = reorganize_projects(model=model)
+    return {**report, "projects": projects} if projects else report
+
+
+def reorganize_projects(*, model=None) -> dict:
+    """Reorganize each project's own memory; reports keyed by its folder."""
+    from . import project_layer
+    reports = {}
+    for root in project_layer.project_roots():
+        try:
+            with project_layer.use(root, write=True):
+                reports[str(root)] = get_backend().reorganize(model=model)
+        except Exception as exc:  # noqa: BLE001 - one project must not stop the rest
+            logger.warning("memory reorganize of a project failed: %s", exc)
+            reports[str(root)] = {"status": "failed", "error": str(exc)}
+    return reports

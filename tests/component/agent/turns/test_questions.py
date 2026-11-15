@@ -5,9 +5,9 @@ import asyncio
 
 import pytest
 
-import openprogram.execution as execution_module
-from openprogram.execution.attempts import AttemptStore
-from openprogram.agent.questions import (
+import openprogram.runtime.execution as execution_module
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.agent.questions import (
     DurableWaitSafePointRequired, PendingQuestion, QuestionRegistry,
     get_question_registry,
 )
@@ -15,13 +15,14 @@ from openprogram.agent.questions import (
 
 @pytest.fixture(autouse=True)
 def _execution(monkeypatch, tmp_path):
-    import openprogram.agent.questions as questions
-    from openprogram.agent.run_control import (
-        reset_current_execution_id, set_current_execution_id,
+    import openprogram.runtime.agent.questions as questions
+    from openprogram.runtime.execution.run_control import (
+        reset_current_execution_id,
+        set_current_execution_id,
     )
-    from openprogram.execution.attempts import AttemptStore
-    from openprogram.execution.model import CapabilitySet
-    from openprogram.execution.store import ExecutionStore
+    from openprogram.runtime.execution.attempts import AttemptStore
+    from openprogram.runtime.execution.model import CapabilitySet
+    from openprogram.runtime.execution.store import ExecutionStore
 
     store = ExecutionStore(tmp_path / "questions.db")
     revision = store.create_revision(manifest={"entrypoint": "test"})
@@ -32,7 +33,7 @@ def _execution(monkeypatch, tmp_path):
     )
     leased, reserved = AttemptStore(store).lease(
         execution.execution_id, expected_version=execution.status_version,
-        owner_id="test", ttl_seconds=30,
+        owner_id="test",
     )
     AttemptStore(store).activate(
         leased.attempt_id, generation=leased.generation,
@@ -46,7 +47,7 @@ def _execution(monkeypatch, tmp_path):
 
 
 class _FakeRuntime:
-    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.runtime.agent.runtime import Runtime
     ask = Runtime.ask
     confirm = Runtime.confirm
     form = Runtime.form
@@ -56,9 +57,9 @@ class _FakeRuntime:
 
 def _resolved_wait(store, execution_id, attempt, *, kind, request, answer):
     """Install the result a prior safe-point handoff would make available."""
-    from openprogram.agent.run_control import set_preapproved_wait_id
-    from openprogram.execution.model import CommandKind
-    from openprogram.execution.waits import DurableWaitStore
+    from openprogram.runtime.conversation.run_control import set_preapproved_wait_id
+    from openprogram.runtime.execution.model import CommandKind
+    from openprogram.runtime.execution.waits import DurableWaitStore
 
     wait_id = f"wait_{kind}_{len(DurableWaitStore(store).list_open())}"
     wait = DurableWaitStore(store).open_wait(
@@ -95,7 +96,7 @@ def test_runtime_interaction_consumes_exact_pre_wait(
     _execution, kind, wait_request, answer, invoke, expected,
 ):
     store, execution_id, attempt = _execution
-    from openprogram.agent.run_control import reset_preapproved_wait_id
+    from openprogram.runtime.conversation.run_control import reset_preapproved_wait_id
 
     token = _resolved_wait(
         store, execution_id, attempt, kind=kind, request=wait_request, answer=answer,
@@ -108,7 +109,7 @@ def test_runtime_interaction_consumes_exact_pre_wait(
 
 def test_runtime_rejects_pre_wait_with_different_request(_execution):
     store, execution_id, attempt = _execution
-    from openprogram.agent.run_control import reset_preapproved_wait_id
+    from openprogram.runtime.conversation.run_control import reset_preapproved_wait_id
 
     token = _resolved_wait(
         store, execution_id, attempt, kind="ask",
@@ -124,7 +125,7 @@ def test_runtime_rejects_pre_wait_with_different_request(_execution):
 
 def test_registry_is_only_a_wake_notifier(_execution):
     store, execution_id, attempt = _execution
-    from openprogram.execution.waits import DurableWaitStore
+    from openprogram.runtime.execution.waits import DurableWaitStore
 
     reg = get_question_registry()
     with pytest.raises(DurableWaitSafePointRequired):
@@ -146,8 +147,8 @@ def test_registry_is_only_a_wake_notifier(_execution):
 
 def test_registry_removes_terminal_event_after_consume(_execution):
     store, execution_id, attempt = _execution
-    from openprogram.execution.model import CommandKind
-    from openprogram.execution.waits import DurableWaitStore
+    from openprogram.runtime.execution.model import CommandKind
+    from openprogram.runtime.execution.waits import DurableWaitStore
 
     waits = DurableWaitStore(store)
     wait = waits.open_wait(
@@ -175,9 +176,9 @@ def test_registry_removes_terminal_event_after_consume(_execution):
 
 def test_wait_command_requires_authorized_actor(_execution):
     store, execution_id, attempt = _execution
-    from openprogram.execution import DriverRegistry, RuntimeControlService, submit_wait_command
-    from openprogram.execution.authorization import ExecutionAuthorizationError
-    from openprogram.execution.waits import DurableWaitStore
+    from openprogram.runtime.execution import DriverRegistry, RuntimeControlService, submit_wait_command
+    from openprogram.runtime.execution.authorization import ExecutionAuthorizationError
+    from openprogram.runtime.execution.waits import DurableWaitStore
 
     wait = DurableWaitStore(store).open_wait(
         wait_id="wait_auth", execution_id=execution_id,
@@ -201,10 +202,10 @@ def test_wait_command_requires_authorized_actor(_execution):
 def test_agent_loop_stops_before_a_declared_interaction_effect():
     import asyncio
     import time
-    from openprogram.agent.agent_loop import _execute_tool_calls
-    from openprogram.agent.types import AgentTool, AgentToolResult
-    from openprogram.providers.types import AssistantMessage, TextContent, ToolCall
-    from openprogram.providers.utils.event_stream import EventStream
+    from openprogram.runtime.agent.loop import _execute_tool_calls
+    from openprogram.models.providers.types import AgentTool, AgentToolResult
+    from openprogram.models.providers.types import AssistantMessage, TextContent, ToolCall
+    from openprogram.models.providers.utils.event_stream import EventStream
 
     ran = False
     seen = []
@@ -246,3 +247,24 @@ def test_agent_loop_stops_before_a_declared_interaction_effect():
         "policy_snapshot": {"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
         "timeout": 30.0,
     })]
+
+
+def test_runtime_preserves_option_presentation_through_declared_wait(_execution):
+    from openprogram.runtime.conversation.run_control import reset_preapproved_wait_id
+    from openprogram.programs.tools.interaction.clarify import interaction_manifest
+
+    manifest = interaction_manifest({"questions": [{
+        "question": "Which output?", "options": [
+            {"label": "Chart", "description": "Show the values"}, {"label": "Table"},
+        ],
+    }]})
+    request = {key: manifest[key] for key in (
+        "prompt", "options", "multi", "allow_custom", "detail", "schema", "questions",
+    )}
+    store, execution_id, attempt = _execution
+    token = _resolved_wait(store, execution_id, attempt, kind="ask_many",
+                           request=request, answer=["Chart"])
+    try:
+        assert _FakeRuntime().ask(questions=manifest["questions"]) == ["Chart"]
+    finally:
+        reset_preapproved_wait_id(token)

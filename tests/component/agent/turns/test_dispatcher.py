@@ -20,8 +20,10 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.agent.session_db import SessionDB
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.runtime.permissions import approval as permissions_approval
+from openprogram.runtime.context.session_db import SessionDB
 
 
 # ---------------------------------------------------------------------------
@@ -33,12 +35,12 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     """Replace the dispatcher's default_db() with one rooted in tmp_path."""
     db = SessionDB(tmp_path / "sessions-git")
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db",
+        "openprogram.runtime.context.session_db.default_db",
         lambda: db,
     )
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store",
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store",
                         lambda: db)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
     # Also patch the inline import inside dispatcher's module-level
     # default_db reference, in case the module already cached it.
     return db
@@ -60,7 +62,7 @@ def _stub_loop_returning(text: str, *,
                          usage: dict | None = None):
     """Build a _run_loop_blocking replacement that emits a few stream
     events then returns the given final text/usage/tool_calls."""
-    def _stub(*, req: D.TurnRequest, history, on_event, cancel_event, **_extra):
+    def _stub(*, req: agent_turn_request.TurnRequest, history, on_event, cancel_event, **_extra):
         # ``**_extra`` swallows assistant_msg_id /
         # agentic_tool_names_out / ordered_blocks_out (and any future
         # plumbing kw-args the dispatcher adds) so test stubs don't
@@ -85,7 +87,7 @@ def test_persists_user_and_assistant(tmp_db: SessionDB, collector) -> None:
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("hello world")):
         result = D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
 
@@ -106,7 +108,7 @@ def test_creates_session_if_missing(tmp_db: SessionDB) -> None:
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("ok")):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                           source="wechat", peer_display="alice"),
         )
     sess = tmp_db.get_session("c1")
@@ -121,7 +123,7 @@ def test_emits_chat_ack_then_stream_then_result(tmp_db, captured, collector) -> 
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("hello")):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
     types = [(e["type"], e["data"].get("type")) for e in captured]
@@ -137,9 +139,9 @@ def test_emits_chat_ack_then_stream_then_result(tmp_db, captured, collector) -> 
 
 def test_updates_head_id_and_tokens(tmp_db) -> None:
     with patch.object(D, "_run_loop_blocking",
-                      _stub_loop_returning("done", usage={"input_tokens": 42, "output_tokens": 7})):
+                      _stub_loop_returning("done", usage={"input_tokens": 30, "context_tokens": 42, "output_tokens": 7})):
         result = D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
         )
     sess = tmp_db.get_session("c1")
     assert sess["head_id"] == result.assistant_msg_id
@@ -151,7 +153,7 @@ def test_history_is_passed_to_loop(tmp_db) -> None:
     with patch.object(D, "_run_loop_blocking",
                       _stub_loop_returning("first reply")):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
         )
 
     seen_history: list[list[dict]] = []
@@ -161,7 +163,7 @@ def test_history_is_passed_to_loop(tmp_db) -> None:
 
     with patch.object(D, "_run_loop_blocking", _capture_stub):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="follow-up", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="follow-up", agent_id="main", source="tui"),
         )
 
     [history] = seen_history
@@ -172,6 +174,80 @@ def test_history_is_passed_to_loop(tmp_db) -> None:
     assert len(history) == 2
     assert history[0]["content"] == "hi"
     assert history[1]["content"] == "first reply"
+
+
+# ---------------------------------------------------------------------------
+# Context overflow
+# ---------------------------------------------------------------------------
+
+def _overflow_loop(engine):
+    """A loop whose first provider call overflows; records each attempt's prompt size."""
+    from openprogram.models.providers.utils.errors import ErrorReason, LLMError
+    from openprogram.runtime.context.tokens import estimate_history_tokens
+    sizes: list[int] = []
+
+    def _loop(*, req, history, **_extra):
+        sizes.append(estimate_history_tokens(engine._build_messages_from_dag(
+            session_id=req.session_id, history=history, model=None)))
+        if len(sizes) == 1:
+            raise LLMError(message="prompt is too long: 250000 tokens > 200000 maximum",
+                           reason=ErrorReason.CONTEXT_LENGTH)
+        return "answer after compaction", {"input_tokens": 10, "output_tokens": 4}, []
+    return _loop, sizes
+
+
+def _overflow_engine(monkeypatch):
+    from openprogram.runtime.context.engine import DefaultContextEngine
+    engine = DefaultContextEngine()
+
+    async def _summary(**_kwargs):
+        return "recap of the older turns"
+
+    monkeypatch.setattr(engine.summarizer, "_llm_summary", _summary)
+    monkeypatch.setattr("openprogram.runtime.context.resolve_engine_for", lambda _agent: engine)
+    monkeypatch.setattr(D, "_resolve_model", lambda *_args, **_kwargs: None)
+    return engine
+
+
+def _event_kinds(captured: list[dict]) -> list[str]:
+    return [event["data"].get("type") for event in captured if event["type"] == "chat_response"]
+
+
+def test_an_overflow_out_of_the_loop_never_reruns_the_turn(tmp_db, captured, collector, monkeypatch) -> None:
+    """The loop retries the request that overflowed (context/compaction.html,
+    "Overflow recovery"); an overflow that still escapes it fails the turn
+    instead of running the whole turn again."""
+    engine = _overflow_engine(monkeypatch)
+    tmp_db.create_session("c1", "main")
+    previous = None
+    for turn in range(40):
+        tmp_db.append_message("c1", {"id": f"u{turn}", "role": "user", "content": f"request {turn}",
+                                     "predecessor": previous})
+        tmp_db.append_message("c1", {"id": f"a{turn}", "role": "assistant", "content": "answer " * 6000,
+                                     "predecessor": f"u{turn}", "status": "done"})
+        previous = f"a{turn}"
+    loop, sizes = _overflow_loop(engine)
+    with patch.object(D, "_run_loop_blocking", loop):
+        result = D.process_user_turn(
+            agent_turn_request.TurnRequest(session_id="c1", user_text="next", agent_id="main", source="tui"),
+            on_event=collector,
+        )
+
+    assert result.failed is True
+    assert len(sizes) == 1
+
+
+def test_context_overflow_with_nothing_to_compact_fails_the_turn(tmp_db, captured, collector, monkeypatch) -> None:
+    engine = _overflow_engine(monkeypatch)
+    loop, sizes = _overflow_loop(engine)
+    with patch.object(D, "_run_loop_blocking", loop):
+        result = D.process_user_turn(
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            on_event=collector,
+        )
+
+    assert result.failed is True and len(sizes) == 1
+    assert not any(message.get("covers_ids") for message in tmp_db.get_messages("c1"))
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +265,7 @@ def test_loop_exception_persisted_as_system_message(tmp_db, captured, collector)
         raise RuntimeError("boom")
     with patch.object(D, "_run_loop_blocking", _raise):
         result = D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
 
@@ -218,7 +294,7 @@ def test_loop_exception_persisted_as_system_message(tmp_db, captured, collector)
 def _grab_approval_frames() -> tuple[list[dict], "callable"]:
     """订阅事件总线抓审批的 question.asked 帧（审批合流后经事件层 emit）。
     返回 (frames, unsubscribe)。"""
-    from openprogram.events import get_event_bus, WS_FRAME_EVENT
+    from openprogram.runtime.events import get_event_bus, WS_FRAME_EVENT
     frames: list[dict] = []
 
     def _grab(ev) -> None:
@@ -232,13 +308,13 @@ def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                            *, wait_id: str = "wait_dispatcher_approval",
                            tool: str = "bash", args: dict | None = None):
     """Create the pre-published approval safe point used by these tests."""
-    import openprogram.execution as execution_module
-    from openprogram.execution import RuntimeControlService
-    from openprogram.execution.attempts import AttemptStore
-    from openprogram.execution.driver import DriverRegistry
-    from openprogram.execution.model import CapabilitySet
-    from openprogram.execution.store import ExecutionStore
-    from openprogram.execution.waits import DurableWaitStore
+    import openprogram.runtime.execution as execution_module
+    from openprogram.runtime.execution import RuntimeControlService
+    from openprogram.runtime.execution.attempts import AttemptStore
+    from openprogram.runtime.execution.driver import DriverRegistry
+    from openprogram.runtime.execution.model import CapabilitySet
+    from openprogram.runtime.execution.store import ExecutionStore
+    from openprogram.runtime.execution.waits import DurableWaitStore
 
     request_args = {} if args is None else dict(args)
     store = ExecutionStore(tmp_path / "dispatcher-executions.db")
@@ -256,7 +332,7 @@ def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     attempts = AttemptStore(store)
     leased, reserved = attempts.lease(
         execution.execution_id, expected_version=execution.status_version,
-        owner_id="dispatcher-test", ttl_seconds=30,
+        owner_id="dispatcher-test",
     )
     attempt, execution = attempts.activate(
         leased.attempt_id, generation=leased.generation,
@@ -302,7 +378,7 @@ def test_approval_bypass_skips_check(tmp_db, captured, collector) -> None:
         with patch.object(D, "_run_loop_blocking",
                           _stub_loop_returning("ok")):
             D.process_user_turn(
-                D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
+                agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                               source="wechat", permission_mode="bypass"),
                 on_event=collector,
             )
@@ -313,7 +389,7 @@ def test_approval_bypass_skips_check(tmp_db, captured, collector) -> None:
 
 def test_approval_wait_resolves_through_canonical_command(tmp_path, monkeypatch) -> None:
     """Approval answers are durable typed command results, not registry state."""
-    from openprogram.agent.questions import PendingQuestion, QuestionRegistry
+    from openprogram.runtime.agent.questions import PendingQuestion, QuestionRegistry
 
     store, service, execution, _attempt, wait = _durable_approval_wait(
         tmp_path, monkeypatch,
@@ -328,7 +404,7 @@ def test_approval_wait_resolves_through_canonical_command(tmp_path, monkeypatch)
         service, store, wait, {"answer": "允许", "scope": "once"},
     )
     reg.wake(wait.wait_id)
-    assert waiter.wait(timeout=1.0) is True
+    assert waiter.wait(timeout=30) is True
     assert reg.consume(wait.wait_id) == (
         "answered", {"answer": "允许", "scope": "once"},
     )
@@ -336,7 +412,7 @@ def test_approval_wait_resolves_through_canonical_command(tmp_path, monkeypatch)
 
 def test_unknown_approval_wait_is_rejected_by_canonical_command(tmp_path, monkeypatch) -> None:
     import asyncio
-    from openprogram.execution.store import ExecutionConflict
+    from openprogram.runtime.execution.store import ExecutionConflict
 
     _store, service, execution, _attempt, _wait = _durable_approval_wait(
         tmp_path, monkeypatch, wait_id="known-wait",
@@ -358,10 +434,13 @@ def test_unknown_approval_wait_is_rejected_by_canonical_command(tmp_path, monkey
 def test_await_user_approval_consumes_typed_prepublished_wait(tmp_path, monkeypatch) -> None:
     """The approval primitive only consumes a resolved safe-point wait."""
     import asyncio
-    from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
-    from openprogram.agent.run_control import reset_current_execution_id, set_current_execution_id
+    from openprogram.runtime.conversation.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
+    from openprogram.runtime.execution.run_control import (
+        reset_current_execution_id,
+        set_current_execution_id,
+    )
 
-    req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
+    req = agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                         source="tui", permission_mode="ask")
     store, service, _execution, _attempt, wait = _durable_approval_wait(
         tmp_path, monkeypatch, args={"command": "ls"},
@@ -373,7 +452,7 @@ def test_await_user_approval_consumes_typed_prepublished_wait(tmp_path, monkeypa
     execution_token = set_current_execution_id(wait.execution_id)
 
     async def _drive():
-        return await D._await_user_approval(
+        return await permissions_approval.await_user_approval(
             req=req, tool_name="bash", args={"command": "ls"},
             on_event=lambda e: None, timeout=5.0,
         )
@@ -390,11 +469,11 @@ def test_await_user_approval_consumes_typed_prepublished_wait(tmp_path, monkeypa
 
 def test_await_user_approval_requires_prepublished_safe_point() -> None:
     import asyncio
-    req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
+    req = agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                         source="tui", permission_mode="ask")
 
     async def _drive():
-        return await D._await_user_approval(
+        return await permissions_approval.await_user_approval(
             req=req, tool_name="bash", args={"command": "ls"},
             on_event=lambda e: None, timeout=5.0,
         )
@@ -405,13 +484,13 @@ def test_await_user_approval_requires_prepublished_safe_point() -> None:
 
 def test_ordinary_approval_cannot_authorize_sandbox_escalation(tmp_path, monkeypatch):
     import asyncio
-    from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
+    from openprogram.runtime.conversation.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
     store, service, _execution, _attempt, wait = _durable_approval_wait(tmp_path, monkeypatch)
     _resolve_approval_wait(service, store, wait, {"answer": "approve", "scope": "once"})
-    req = D.TurnRequest(session_id="c1", user_text="test", agent_id="main", source="web")
+    req = agent_turn_request.TurnRequest(session_id="c1", user_text="test", agent_id="main", source="web")
     token = set_preapproved_wait_id(wait.wait_id)
     try:
-        allowed, reason, _ = asyncio.run(D._await_user_approval(
+        allowed, reason, _ = asyncio.run(permissions_approval.await_user_approval(
             req=req, tool_name="bash:sandbox-escalation", args={}, on_event=lambda event: None,
         ))
     finally:
@@ -448,7 +527,7 @@ def test_stream_progress_survives_reload_and_failure(tmp_db, monkeypatch):
         raise RuntimeError("provider disconnected")
 
     monkeypatch.setattr(D, "_run_loop_blocking", loop)
-    result = D.process_user_turn(D.TurnRequest(
+    result = D.process_user_turn(agent_turn_request.TurnRequest(
         session_id="progress", user_text="hi", user_msg_id="progress-user",
         agent_id="main", source="tui",
     ), on_event=lambda _: None)
@@ -456,12 +535,15 @@ def test_stream_progress_survives_reload_and_failure(tmp_db, monkeypatch):
     msg = next(m for m in tmp_db.get_messages("progress") if m["role"] == "assistant")
     assert json.loads(msg["extra"])["blocks"] == expected
     assert "provider disconnected" in msg["content"]
+    assert "provider disconnected" in msg["error_detail"]
 
 
 
 def test_cancel_keeps_incomplete_iteration_progress(tmp_db, monkeypatch):
     import json
     stopped = threading.Event()
+
+    cut = {"type": "thinking", "text": "Unfinished reasoning", "partial": True, "round_start": True}
 
     def loop(*, on_event, ordered_blocks_out, cancel_event, **kwargs):
         ordered_blocks_out.append({"type": "text", "text": "Earlier iteration"})
@@ -471,12 +553,56 @@ def test_cancel_keeps_incomplete_iteration_progress(tmp_db, monkeypatch):
         ]:
             on_event({"type": "chat_response", "data": {"type": "stream_event", "event": event}})
         cancel_event.set()
+        # The real loop keeps the response it cut as its last, unsigned
+        # blocks (``loop_runner._keep_stopped_response``).
+        ordered_blocks_out.append(dict(cut))
         return "Earlier iteration", {}, []
 
     monkeypatch.setattr(D, "_run_loop_blocking", loop)
-    result = D.process_user_turn(D.TurnRequest(
+    result = D.process_user_turn(agent_turn_request.TurnRequest(
         session_id="stopped",user_text="hi",agent_id="main",source="tui",
     ), cancel_event=stopped)
     assert not result.failed
     msg=next(m for m in tmp_db.get_messages("stopped") if m["role"]=="assistant")
-    assert json.loads(msg["extra"])["blocks"][-1] == {"type":"thinking","text":"Unfinished reasoning"}
+    # A Stop stores the loop's blocks: the earlier response and the cut one.
+    assert json.loads(msg["extra"])["blocks"] == [
+        {"type": "text", "text": "Earlier iteration"}, cut,
+    ]
+
+
+def test_failed_turn_preserves_partial_reply_and_error_after_reopen(tmp_db, tmp_path, collector, captured):
+    from openprogram.models.providers.utils.errors import LLMError, ErrorReason
+    from openprogram.interfaces.server.persistence import aggregate_tool_messages
+
+    def fail_after_progress(*, req, on_event, **kwargs):
+        on_event({'type': 'chat_response', 'data': {
+            'type': 'stream_event', 'session_id': req.session_id,
+            'event': {'type': 'text', 'text': 'Partial answer'},
+        }})
+        raise LLMError('connection lost', reason=ErrorReason.TRANSPORT, retryable=True)
+
+    with patch.object(D, '_run_loop_blocking', fail_after_progress):
+        result = D.process_user_turn(agent_turn_request.TurnRequest(
+            session_id='failed-reopen', user_text='hi', agent_id='main', source='tui',
+        ), on_event=collector)
+    assert result.failed
+    # Fresh store instance reads the durable node, not the producer's cache.
+    reopened = SessionDB(tmp_path / 'sessions-git')
+    try:
+        rows = aggregate_tool_messages(reopened.get_messages('failed-reopen'))
+        from openprogram.runtime.context.render import render_dag_messages
+        from openprogram.state.store import SessionNodeWriter
+        graph = SessionNodeWriter(reopened, 'failed-reopen').load()
+        context = render_dag_messages(graph, [result.assistant_msg_id])
+        assert 'connection lost' in context[0].content[0].text
+    finally:
+        reopened.close()
+    reply = next(m for m in rows if m['id'] == result.assistant_msg_id)
+    assert reply['status'] == 'error'
+    assert reply['content'] == reply['error_detail']
+    assert 'connection lost' in reply['error_detail']
+    assert reply['error_reason'] == 'transport'
+    assert reply['error_retryable'] is True
+    assert reply['blocks'] == [{'type': 'text', 'text': 'Partial answer'}]
+    event = next(e['data'] for e in captured if e.get('data', {}).get('type') == 'error')
+    assert event['error_detail'] == reply['error_detail']

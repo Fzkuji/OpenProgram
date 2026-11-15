@@ -1,0 +1,132 @@
+<title>Programs 代码结构</title>
+<meta name="description" content="Program 在源码树中的位置、注册方式、允许的依赖，以及工具参数映射如何校验。">
+<span id="portable-workflow-integration"></span>
+<h1>Programs 代码结构</h1>
+<p>Agent 能调用的一切都是 Program。</p>
+
+<h2 id="directory-layout">目录结构</h2>
+<pre translate="no" tabindex="0">openprogram/
+├── runtime/agent/
+│   ├── llm.py                  # llm()：一次模型调用
+│   ├── agent_function.py       # agent()：模型工具调用循环
+│   └── agent_class.py          # Agent：带方法的具名角色
+└── programs/
+    ├── __init__.py             # TOOLSETS、DEFAULT_TOOLS、agent_tools、apply_tool_policy
+    ├── tools/                  # 始终提供给 Agent
+    │   ├── files/  code/  web/  interaction/  knowledge/  jobs/
+    │   ├── agents/  computer_use/  runtime/  system/
+    │   └── planning/           # todo/  plan_mode/  open_work/  goal/
+    ├── applications/           # 整体启用或停用
+    │   ├── browser/            # 标签页与 Page
+    │   ├── meeting/            # 录制、转写并总结通话
+    │   ├── workflow_recording/ # 演示录制器
+    │   └── office_editor/      # ONLYOFFICE 文档编辑器
+    ├── _authoring/             # Program 代码导入：application_client、
+    │                           # json_parsing、reports/、helpers ...
+    └── _host/                  # 加载和运行 Program；Program 代码不导入
+        ├── runtime.py          # @function 与共享工具注册表
+        ├── context.py          # ProgramContext，每个所有者一个
+        ├── registry.py         # 内置、用户与 harness Program 的加载器
+        └── packages.py  sources.py  execution.py  services.py  ui/ ...
+
+~/.openprogram/programs/&lt;name&gt;/   # Python 包、应用、harness 克隆</pre>
+<p class="note">每项能力只有一个实现和一个公开 import 路径。<code translate="no">programs/</code> 下没有 <code translate="no">functions/</code>、<code translate="no">workflows/</code> 或 <code translate="no">packages/</code>，旧路径也没有别名。</p>
+
+<h2 id="program-sources">Program 的来源</h2>
+<table class="stack">
+<thead><tr><th scope="col">来源</th><th scope="col">内容</th><th scope="col">加载</th></tr></thead>
+<tbody>
+<tr><th scope="row">内置工具<span class="arg"><code translate="no">programs/tools/</code></span></th><td>文件、shell、搜索、规划、询问用户、记忆、任务、网页、计算机操作</td><td>始终加载，不能逐个停用。多数在导入时用 <code translate="no">@function</code> 注册；带 <code translate="no">PROGRAM_ENTRIES</code> 的包通过所有者为 <code translate="no">tool:&lt;name&gt;</code> 的 <code translate="no">ProgramContext</code></td></tr>
+<tr><th scope="row">内置应用<span class="arg"><code translate="no">programs/applications/</code></span></th><td><code translate="no">browser</code>、<code translate="no">meeting</code>、<code translate="no">workflow_recording</code>、<code translate="no">office_editor</code>，各自提供核心访问它所用的具名服务</td><td>只在启用时加载（<code translate="no">openprogram programs enable|disable &lt;name&gt;</code> 或 Applications 页面）。context 所有者 <code translate="no">application:&lt;name&gt;</code></td></tr>
+<tr><th scope="row">用户 Program<span class="arg"><code translate="no">~/.openprogram/programs/</code></span></th><td>列出 <code translate="no">PROGRAM_ENTRIES</code> 的包、带 <code translate="no">application.json</code> 的目录、<code translate="no">openprogram programs install</code> 记录的 harness 克隆</td><td>走同样的 context。包规范：<a href="../workflows/workflow.zh.html">Workflow</a></td></tr>
+</tbody>
+</table>
+<details id="portable-workflow-sources">
+<summary id="portable-application-sources">可迁移包来源</summary>
+<p>项目内 Program 使用带 <code translate="no">programs</code> 范围的相对路径记录位置，绝不相对于聊天工作目录。一个外部安装绑定连接已安装 runtime 与源码 checkout。只有已授权的确切包名参与 Python 解析，不包括整个外部目录。拒绝和发布规则：<a href="../workflows/workflow.zh.html">Workflow 包合同</a>。</p>
+</details>
+
+<h2 id="primitives">基础原语与 Workflow</h2>
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">含义</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">llm()</code></th><td>一次模型调用，结构化输出，不带工具循环</td><td><code translate="no">runtime/agent/llm.py</code></td></tr>
+<tr><th scope="row"><code translate="no">agent()</code></th><td>多轮模型工具调用循环</td><td><code translate="no">runtime/agent/agent_function.py</code></td></tr>
+<tr><th scope="row"><code translate="no">Agent</code></th><td>具名角色，其方法执行模型调用，可以作为工具提供</td><td><code translate="no">runtime/agent/agent_class.py</code></td></tr>
+<tr><th scope="row"><code translate="no">goal()</code></th><td>启动聊天 Goal。属于会话状态，不是原语</td><td><code translate="no">programs/tools/planning/goal/</code></td></tr>
+</tbody>
+</table>
+<p>Workflow 是普通 Python，调用这些原语和其他 Program 来定义流程、状态与验收。凡是进行模型调用、调用其他 Workflow，或保存多阶段状态与完成检查的能力都是 Workflow，包装在角色里的单次模型调用也是。</p>
+
+<h2 id="goal">Goal 以普通聊天轮次运行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">单一机制</th><td><code translate="no">planning/goal/</code> 中的会话状态。每个成功的聊天轮次结束后，<code translate="no">chat.py</code> 决定是否为活动 Goal 再启动一轮。没有独立的 Goal 循环、裁判 Workflow 或嵌套工作 Agent。</td></tr>
+<tr><th scope="row">Programs 表单</th><td><code translate="no">goal(prompt)</code> 只接收目标，在当前对话保存聊天 Goal；路由通过与 <code translate="no">/goal</code> 相同的控制启动第一轮。</td></tr>
+<tr><th scope="row">聊天与 Agent</th><td><code translate="no">/goal &lt;目标&gt;</code> 和 <code translate="no">create_goal</code> 工具创建同一种 Goal。<code translate="no">goal</code> Program 从不作为工具提供给 Agent。</td></tr>
+<tr><th scope="row">完成</th><td><code translate="no">update_goal(status="complete")</code> 或完成的 todo 计划只提交候选。<code translate="no">verification.py</code> 运行一次独立只读验证轮次后，Goal 才算达成。</td></tr>
+<tr><th scope="row">限制</th><td>没有轮数限制。连续两个自动轮次没有工具调用时以停滞状态停止。可选的 token、活动时间和费用限制是仅有的预算。</td></tr>
+<tr><th scope="row">重启</th><td>租约属于上一个 worker 的 Goal 以暂停状态恢复，并提供继续操作（<code translate="no">restart.py</code>）。</td></tr>
+</tbody>
+</table>
+
+<h2 id="files-and-directories">文件还是目录</h2>
+<table class="stack">
+<thead><tr><th scope="col">形式</th><th scope="col">适用</th><th scope="col">示例</th></tr></thead>
+<tbody>
+<tr><th scope="row">单个 <code translate="no">.py</code></th><td>一个公开入口和少量本地辅助函数，可以独立阅读</td><td><code translate="no">tools/files/edit.py</code></td></tr>
+<tr><th scope="row">同名包</th><td>多个职责不同的模块、资源文件或会话适配器</td><td><code translate="no">tools/planning/goal/</code>、<code translate="no">applications/browser/</code></td></tr>
+<tr><th scope="row">内部目录，<code translate="no">_</code> 开头</th><td>只服务相邻代码的共享实现，不成为 Programs UI 节点</td><td><code translate="no">programs/_authoring/</code>、<code translate="no">programs/_host/</code></td></tr>
+</tbody>
+</table>
+<p class="note">是否拆分由文件数量和职责边界决定，不为统一形式。</p>
+
+<h2 id="dependency-directions">允许的依赖</h2>
+<table class="stack">
+<thead><tr><th scope="col">调用方</th><th scope="col">允许</th><th scope="col">禁止</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool</th><td>标准库、批准的依赖、确定性辅助函数</td><td><code translate="no">llm()</code>、<code translate="no">agent()</code>、Workflow、Application</td></tr>
+<tr><th scope="row">Workflow</th><td>Tool、自己的角色、无循环依赖的其他 Workflow</td><td>依赖 Application、复制其他 Workflow、按字符串名称调度</td></tr>
+<tr><th scope="row">Application</th><td>公开的 Tool 和 Workflow，自己的 UI 和服务</td><td>修改被调用的 Program，或保留第二份实现</td></tr>
+<tr><th scope="row">Program 代码</th><td><code translate="no">programs/_authoring/</code> 和公开 runtime API</td><td><code translate="no">programs/_host/</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="registration">注册与 Programs UI</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">注册</th><td><code translate="no">_host/registry.py</code> 加载内置工具、已启用的内置应用、用户 Program 和已记录的 harness。每个包通过自己的 <code translate="no">ProgramContext</code> 注册，按所有者保存（<code translate="no">tool:&lt;name&gt;</code>、<code translate="no">application:&lt;name&gt;</code>、包名、<code translate="no">external:&lt;package&gt;</code>）。卸载或重新加载时销毁它和它添加的一切。</td></tr>
+<tr><th scope="row">Programs 树</th><td>只映射源码目录。已注册入口可运行并显示 Use。展开同名包时从实际目录列出模块（<code translate="no">goal/command.py</code>），可以阅读，但不是额外的 Program。<code translate="no">__init__.py</code> 和 <code translate="no">_</code> 目录不成为节点。</td></tr>
+<tr><th scope="row">稳定契约</th><td>移动源码不改变公开名称、参数 schema、权限、DAG 语义或会话状态格式。旧路径直接失败：没有别名，没有双重扫描。</td></tr>
+</tbody>
+</table>
+
+<h2 id="excluded-designs">不采用</h2>
+<ul>
+<li id="portable-no-new-decorator">没有 <code translate="no">@workflow</code> 装饰器；分类由目录和元数据表达。</li>
+<li id="portable-no-string-dispatch">没有 <code translate="no">call_workflow(name)</code>；Workflow 使用普通 Python import 和调用。</li>
+<li id="portable-single-structure">没有带版本的新旧目录，也没有运行时二选一。</li>
+</ul>
+
+<h2 id="dynamic-tool-mappings">动态工具参数映射</h2>
+<p>规范 schema 区分键在调用时才确定的映射，和声明了字段的对象。</p>
+<table class="stack">
+<thead><tr><th scope="col">规范对象</th><th scope="col">本地校验</th><th scope="col">Provider 工具模式</th></tr></thead>
+<tbody>
+<tr><th scope="row">匿名映射、Python <code translate="no">dict</code> 或 <code translate="no">Mapping</code></th><td>接受动态键；校验对象和声明的值类型</td><td>保留映射 schema，非 strict</td></tr>
+<tr><th scope="row">声明了字段（包括空集合）或显式 <code translate="no">additionalProperties: false</code></th><td>必填字段、类型、拒绝多余字段。从不放开。</td><td>支持时用 strict</td></tr>
+<tr><th scope="row">同时包含两类工具的请求</th><td>每个调用按自己的 schema 校验</td><td>按工具选模式；绝不在整个请求上关闭 strict</td></tr>
+</tbody>
+</table>
+<ul>
+<li><code translate="no">program.args</code> 接受已注册 Program 的合法关键字参数，包括 <code translate="no">task</code>。可空映射保持 null 行为。</li>
+<li><code translate="no">models/providers/schema/strict.py</code> 拒绝把带动态键的 schema 变成 strict，开放映射因此不会变成空的封闭对象。</li>
+<li>OpenAI strict 模式要求封闭对象：动态映射工具在 Responses、Codex 和 Chat Completions 上发送 <code translate="no">strict: false</code>，固定字段工具保持 strict。</li>
+<li>Anthropic 同样按工具：映射工具保留普通 input schema，不带 strict 标记。</li>
+<li>固定的 <code translate="no">execute_code</code> schema 保持 strict。</li>
+</ul>
+
+<p class="note" id="implementation-status">实现状态：本页内容均已实现。</p>
+<p class="next"><a href="application-runtime.zh.html">应用运行时</a></p>

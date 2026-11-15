@@ -1,0 +1,22 @@
+<title>Indicator dots</title>
+<meta name="description" content="The one CSS class behind status and activity dots, its sizes, colours and animations.">
+<h1>Indicator dots</h1>
+
+<p>Every status and activity dot is <code translate="no">.indicator-dot</code> (<code translate="no">apps/web/app/styles/chat/execution/indicator-dot.css</code>). The outer box always has the width of a <code translate="no">●</code> at 14px font, so dots line up with header glyphs and across rows with no per-site nudges. <code translate="no">::before</code> paints the disc and carries the animation, so the layout slot never moves.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Modifier</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">none (md)</th><td>10px disc in a 12.8px box (inset 1.4px)</td></tr>
+<tr><th scope="row"><code translate="no">.sm</code></th><td>6px disc in a 10px box (inset 2px)</td></tr>
+<tr><th scope="row">no colour modifier</th><td><code translate="no">currentColor</code>, default <code translate="no">--accent-blue</code>; a parent can set the hue through <code translate="no">color</code></td></tr>
+<tr><th scope="row"><code translate="no">.--ok</code> <code translate="no">.--warn</code> <code translate="no">.--err</code> <code translate="no">.--neutral</code></th><td><code translate="no">--dot-color</code> from <code translate="no">--accent-green</code>, <code translate="no">--accent-yellow</code>, <code translate="no">--accent-red</code>, <code translate="no">--accent-blue</code></td></tr>
+<tr><th scope="row"><code translate="no">.pulse-opacity</code></th><td>Opacity 1 to 0.4, 1.5s, infinite</td></tr>
+<tr><th scope="row"><code translate="no">.pulse-scale</code></th><td>Scale 0.85 to 1.15, 1.4s, infinite</td></tr>
+</tbody>
+</table>
+
+<p class="note">Used by <code translate="no">cards/attach-card.tsx</code>, the composer environment row, the right sidebar's running panel, <code translate="no">lib/runtime-bridge/ui.ts</code> and the DAG renderer (<code translate="no">dag/render/agents.ts</code>, <code translate="no">dag/graph/nodes.css</code>).</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented. No separate dot class remains.</p>

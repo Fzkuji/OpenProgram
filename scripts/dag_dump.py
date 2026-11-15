@@ -34,8 +34,8 @@ def main() -> int:
         print("no session found", file=sys.stderr)
         return 1
 
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.webui.graph_builder import build_session_graph
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.state.store.session.graph.builder import build_session_graph
 
     store = SessionStore()
     pair = store._open(sid)

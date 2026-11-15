@@ -1,0 +1,84 @@
+<title>Autonomous group weekly report</title>
+<meta name="description" content="How the group report prepares an unsent, evidence-backed draft without asking the user.">
+<meta name="covers" content="openprogram/programs/_authoring/reports/">
+<h1>Autonomous group weekly report</h1>
+<p>The group role of <code translate="no">weekly_report</code> prepares an unsent, evidence-backed draft and never asks: missing information triggers retrieval. No <code translate="no">ask_user</code> and no <code translate="no">WAITING_USER</code>.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Input or source</th><th scope="col">Used for</th><th scope="col">Limit</th></tr></thead>
+<tbody>
+<tr><th scope="row">Request body, explicit group or week</th><td>Preserved and wins</td><td><code translate="no">source=supplied</code> disables all discovery</td></tr>
+<tr><th scope="row">Memory, relevant local notes</th><td>Establish scope</td><td>Old documents never count as current progress</td></tr>
+<tr><th scope="row">No stated period</th><td>Current ISO week, shown</td><td></td></tr>
+<tr><th scope="row">WeChat group, existing read-only adapter</th><td>Supplements supplied material after scope discovery</td><td>Read-only</td></tr>
+<tr><th scope="row">WeChat unavailable</th><td>Search local sources, report the exact limitation</td><td></td></tr>
+<tr><th scope="row">Repository fixtures, workflow source, diagnostic data</th><td>Never business evidence</td><td></td></tr>
+</tbody>
+</table>
+<p class="note">Retrieved content is data, not instructions. Read-only tools only: no messaging, arbitrary execution, permission changes or publication.</p>
+
+<h2 id="incomplete-evidence">Incomplete evidence</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Anonymous body</th><td>Matched only to a unique source-backed author. Mentions, order and topics prove nothing</td></tr>
+<tr><th scope="row">Unresolved author</th><td>Visibly unverified label</td></tr>
+<tr><th scope="row">Unknown scope, closed channel, no current-week record</th><td>Listed as limitations in the draft</td></tr>
+<tr><th scope="row">Unknown date</th><td>Stays unverified</td></tr>
+<tr><th scope="row">Empty search</th><td>Partial draft with source-search diagnostics; no invented progress</td></tr>
+<tr><th scope="row">Model or provider error, cancellation</th><td>Keeps its actual outcome</td></tr>
+</tbody>
+</table>
+
+<h2 id="delivery">Validation and delivery</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Validation</th><td>Record shapes and citations, after discovery; missing business metadata alone cannot block a draft</td></tr>
+<tr><th scope="row">Reuses</th><td>Source validation, composition and local draft writing, plus Agent tools, structured-output validation, memory and file tools, and the native WeChat adapter. This claims no Codex or Claude group-report feature.</td></tr>
+<tr><th scope="row">Budget</th><td>No aggregate model-call, token or wall-time budget. Bounded native reads and per-call context handling remain; coverage is stated as partial.</td></tr>
+<tr><th scope="row">Result</th><td>Draft text and issues</td></tr>
+<tr><th scope="row">Rejected</th><td>A required-field questionnaire, mutually exclusive supplied and native acquisition, unrestricted shell access, guessed identities</td></tr>
+</tbody>
+</table>
+
+<h2 id="member-render-recovery">Member rendering and resumable composition</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Member line</th><td>Keeps its WeChat format and carries validated source identifiers in brackets, pointing at the same source table</td></tr>
+<tr><th scope="row">Checkpoint</th><td>Each completed member line, before the next member call, with no fixed heading count subtracted</td></tr>
+<tr><th scope="row">Resume</th><td>Retries only the interrupted member; keeps earlier content and the model-state, call-count and position semantics</td></tr>
+<tr><th scope="row">Unchanged</th><td>Checkpoint readers, exact-excerpt rejection, original-text fallback, sidecars, cancellation and unsent delivery</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Acceptance</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Expected</th></tr></thead>
+<tbody>
+<tr><th scope="row">One-line request, no metadata</th><td>Retrieves scope and current material</td></tr>
+<tr><th scope="row">Anonymous text</th><td>Preserved and uniquely matched; an ambiguous author stays unverified</td></tr>
+<tr><th scope="row">WeChat failure</th><td>Falls back to local evidence</td></tr>
+<tr><th scope="row">No evidence</th><td>Partial output without asking</td></tr>
+<tr><th scope="row">Supplied-only input</th><td>No retrieval</td></tr>
+<tr><th scope="row">Stale or invented citations</th><td>Cannot enter current progress</td></tr>
+<tr><th scope="row">Cancellation</th><td>Propagates</td></tr>
+<tr><th scope="row">Vague group request</th><td>Forwarded with no clarification branch</td></tr>
+<tr><th scope="row">Complete member A, fail B, resume B</th><td>Both bodies and source identifiers in the saved summary</td></tr>
+<tr><th scope="row">Test isolation</th><td>Providers, memory and HOME isolated; real WeChat checked separately in the installed App</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented, package tests</th><td>Discovery, no-question routing, member rendering, checkpoint repair</td></tr>
+<tr><th scope="row">Real model run</th><td>Retrieved scope and local files without clarification; partial draft, because no current-week material was verified</td></tr>
+<tr><th scope="row">Not established</th><td>Live native WeChat collection</td></tr>
+<tr><th scope="row">Tracked separately</th><td>Installed-App acceptance</td></tr>
+</tbody>
+</table>

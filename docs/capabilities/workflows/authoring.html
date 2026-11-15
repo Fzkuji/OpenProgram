@@ -1,0 +1,185 @@
+<title>Write and check a Workflow</title>
+<meta name="description" content="The package form of a Workflow: roles, Context, tests, the check that makes it callable.">
+<h1>Write and check a Workflow</h1>
+<p>A Workflow is a small Python package: <code translate="no">Agent</code> instances are the roles, <code translate="no">Context</code> objects set what each model call sees, plain functions set the order. Once <code translate="no">openprogram programs check</code> passes, its entries are callable tools. To show instead of write: <a href="recording.html">record a demonstration</a>.</p>
+<h2 id="define-the-contract">Contract in <code translate="no">README.md</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Required</th></tr></thead>
+<tbody>
+<tr><th scope="row">Purpose</th><td>The concrete task and the evidence needed to complete it</td></tr>
+<tr><th scope="row">Input</th><td>Entry parameters, required context, invalid-input behavior</td></tr>
+<tr><th scope="row">Output</th><td>Return type, files produced, how success is verified</td></tr>
+<tr><th scope="row">Effects</th><td>Model, tool, file, network and external-submission behavior</td></tr>
+<tr><th scope="row">Failure and cancellation</th><td>What remains after a failure or interruption; whether retry is safe</td></tr>
+<tr><th scope="row">Dependencies</th><td>Imported Workflows, required tools and services</td></tr>
+<tr><th scope="row">Tests</th><td>Behavior checks, scripted model replies, separate live checks</td></tr>
+<tr><th scope="row">Usage</th><td>One reproducible invocation and its expected result</td></tr>
+</tbody></table>
+<p class="note">Keep functions small. Handle expected invalid input explicitly; let runtime cancellation propagate.</p>
+<h2 id="package-layout">Layout</h2>
+<pre data-claim="example" translate="no" tabindex="0"><code>~/.openprogram/programs/project_report/
+├── .git/
+├── README.md
+├── __init__.py
+├── workflow.py
+├── steps/
+│   └── prepare.py
+└── tests/
+    └── test_workflow.py</code></pre>
+<p class="note">The directory name is the package name: a lowercase Python identifier, not a standard-library module or another importable package. Each Workflow is its own Git repository. It imports under its own name (<code translate="no">project_report.steps.prepare</code>); relative imports and imports of other Workflows both work.</p>
+<h2 id="roles-context-and-functions">Roles, Context, functions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Object</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Role</th><td><code translate="no">Agent</code> at module top level. Configuration only: <code translate="no">model</code>, <code translate="no">instructions</code>, <code translate="no">tools</code>, <code translate="no">effort</code>. Without a model it uses the caller's.</td></tr>
+<tr><th scope="row">Context</th><td>Built inside functions, passed to role calls explicitly</td></tr>
+<tr><th scope="row">Function</th><td>Plain Python: calls roles, transforms, branches, loops</td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>"""Prepare a project report from verified notes."""
+
+from openprogram import Agent, Context
+
+writer = Agent(instructions="You write project reports.")
+reviewer = Agent(instructions="You check facts.", tools=[])
+
+
+def project_report(notes: str) -&gt; str:
+    """Turn this week's project notes into a report."""
+    ctx = Context({"notes": notes})
+    draft = write_draft(ctx)
+    return check(draft, ctx)
+
+
+def write_draft(ctx: Context) -&gt; str:
+    """Write three sections: progress, problems, plans. At most three items each."""
+    return writer("Write this week's report", context=ctx)
+
+
+def check(draft: str, ctx: Context) -&gt; str:
+    """Only check that the draft matches the notes. Do not change the style."""
+    return reviewer("Fix any mismatch and return the final text",
+                    context=ctx.derive({"draft": draft}))
+
+
+PROGRAM_ENTRIES = [project_report]</code></pre>
+<ul>
+<li><code translate="no">role(prompt, context=ctx)</code> runs one model turn with the role's tools; <code translate="no">role.choose(prompt, {id: label}, context=ctx)</code> returns an option ID. Workflow code never calls the free <code translate="no">llm()</code> or <code translate="no">agent()</code>.</li>
+<li><code translate="no">PROGRAM_ENTRIES</code> lists the tools. Each needs a docstring (tool description) and a type annotation on every parameter (tool schema).</li>
+<li>No decorators, base classes or dispatch tables. Use another Workflow through a normal import.</li>
+</ul>
+<h2 id="what-one-model-call-sees">What one model call sees</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part, in order</th><th scope="col">Defined by</th></tr></thead>
+<tbody>
+<tr><th scope="row">The role's <code translate="no">instructions</code>, as the system prompt</th><td><code translate="no">Agent(...)</code></td></tr>
+<tr><th scope="row">History, empty by default</th><td><code translate="no">history</code> of <code translate="no">ctx</code></td></tr>
+<tr><th scope="row">Docstring of the Workflow function that called</th><td>That function</td></tr>
+<tr><th scope="row">Named blocks of <code translate="no">ctx</code>, each <code translate="no">name:</code> then value</th><td>The code that builds or derives <code translate="no">ctx</code></td></tr>
+<tr><th scope="row"><code translate="no">prompt</code></th><td>The call</td></tr>
+</tbody></table>
+<p class="note">Nothing else enters: no chat history, recalled memory or other roles' outputs. Context never changes tools or permissions. The docstring comes from the nearest Workflow-package function on the stack and applies to that one request; helpers without one add nothing.</p>
+<h3 id="context">Context</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Form</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Context({"notes": notes})</code>, <code translate="no">ctx["notes"] = notes</code></th><td>Blocks</td></tr>
+<tr><th scope="row"><code translate="no">Context(providers={"today": lambda c: ...})</code></th><td>Synchronous callable evaluated at each call</td></tr>
+<tr><th scope="row"><code translate="no">ctx.derive({...})</code></th><td>Independent copy; the caller's <code translate="no">ctx</code> is unchanged</td></tr>
+<tr><th scope="row"><code translate="no">history=None</code></th><td>No history, the default for a role call</td></tr>
+<tr><th scope="row"><code translate="no">history="thread"</code></th><td>Earlier calls with this same <code translate="no">ctx</code> object</td></tr>
+<tr><th scope="row"><code translate="no">history="chat"</code></th><td>The conversation that invoked the Workflow</td></tr>
+<tr><th scope="row"><code translate="no">history=callable</code></th><td><code translate="no">(node, context) -&gt; bool</code> selects conversation nodes</td></tr>
+</tbody></table>
+<p class="note">History goes in <code translate="no">Context(..., history=...)</code> or <code translate="no">ctx.derive(history=...)</code>.</p>
+<p>Built-in providers show a model where its call sits:</p>
+<pre translate="no" tabindex="0"><code>from openprogram.runtime.context import call_path, workflow_source
+
+ctx = Context(providers={"call path": call_path, "program": workflow_source})</code></pre>
+<p class="note"><code translate="no">call_path</code> lists Workflow functions on the stack (<code translate="no">project_report → check</code>); <code translate="no">call_path(docs=True)</code> adds docstrings. <code translate="no">workflow_source</code> returns the entry's source. A plain block such as <code translate="no">{"flow": "Draft first, then review."}</code> also works.</p>
+<h3 id="entry-options">Entry options</h3>
+<pre translate="no" tabindex="0"><code>ENTRY_OPTIONS = {
+    "project_report": {
+        "input": {"notes": {"description": "This week's notes", "multiline": True}},
+    },
+}</code></pre>
+<p class="note"><code translate="no">ENTRY_OPTIONS</code> maps an entry to tool options. <code translate="no">"run_in_worker": True</code> runs in the worker instead of a forked subprocess, for worker-owned state such as browser sessions.</p>
+<h3 id="resume-after-a-restart">Resume after a restart</h3>
+<pre translate="no" tabindex="0"><code>from openprogram.runtime.agent.durable_steps import step
+
+
+def project_report(notes: str) -&gt; str:
+    """Turn this week's project notes into a report."""
+    draft = step("draft", write_draft, notes)
+    return step("check", check, notes, draft)
+
+
+ENTRY_OPTIONS = {"project_report": {"resumable": True}}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Steps</th><td>Runs once, result saved. On continuing the entry reruns from the top; completed steps return saved results, so role calls do not repeat.</td></tr>
+<tr><th scope="row">Outside steps</th><td>Runs again: keep it deterministic and side-effect free, with stable step names and order</td></tr>
+<tr><th scope="row">Values</th><td>Arguments and results are JSON. A <code translate="no">Context</code> does not survive; build it inside the step.</td></tr>
+<tr><th scope="row">Continuing</th><td>Restart: automatic within <code translate="no">execution.auto_resume_window_seconds</code>. Paused: from the chat.</td></tr>
+<tr><th scope="row">Changed code</th><td>A run is tied to the commit. <code translate="no">execution.code_change_policy</code>: <code translate="no">keep_original</code> (default) stops with "Workflow code changed"; <code translate="no">use_latest</code> continues, and a removed or reordered completed step stops it.</td></tr>
+<tr><th scope="row">Limits</th><td>Synchronous; no <code translate="no">run_in_worker</code></td></tr>
+</tbody></table>
+<h2 id="the-workflow-owns-execution-parameters">Execution parameters</h2>
+<p>Users give task, evidence and deliverable, never model IDs, effort, iterations, timeouts, token budgets or retries.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Fixed values</th><td>On the role or in code</td></tr>
+<tr><th scope="row">Values that depend on the task</th><td>One role call makes the complete plan; code validates keys, types, ranges and limit relationships, and falls back to a validated default</td></tr>
+<tr><th scope="row">Precedence</th><td>User constraints and application limits beat model output</td></tr>
+<tr><th scope="row">Resume</th><td>A resumable Workflow checkpoints the plan</td></tr>
+</tbody></table>
+<h2 id="write-behavior-tests">Behavior tests</h2>
+<pre translate="no" tabindex="0"><code>from openprogram.programs._authoring.testing import script_roles
+
+from project_report import workflow as wf
+
+
+def test_reviewer_sees_the_draft_but_not_the_writer_prompt():
+    with script_roles({wf.writer: ["Draft"], wf.reviewer: ["Final"]}) as calls:
+        assert wf.project_report("Shipped the parser.") == "Final"
+
+    request = calls[wf.reviewer][0]
+    assert "Do not change the style" in request.text      # check() docstring
+    assert "Draft" in request.text                        # the draft block
+    assert "Write this week's report" not in request.text
+    assert request.history_text == ""</code></pre>
+<ul>
+<li>A reply is a string or JSON-serializable value (for <code translate="no">response_format</code>); for <code translate="no">role.choose</code>, the option ID.</li>
+<li>An exception in the script is raised by the call and stays queued, so it answers the model loop's retries too.</li>
+<li><code translate="no">request.text</code>: instructions, docstring, blocks, prompt. <code translate="no">request.history_text</code>: history.</li>
+<li>Patch tools, files and services with <code translate="no">monkeypatch</code>. Live provider checks cannot run during a check: keep them out of <code translate="no">tests/</code>.</li>
+</ul>
+<h2 id="check-commit-and-list">Check and list</h2>
+<pre translate="no" tabindex="0"><code>openprogram programs check ~/.openprogram/programs/project_report
+openprogram programs check ~/.openprogram/programs/project_report -m "Tighten the review step"
+openprogram programs list</code></pre>
+<ol>
+<li>Imports the package in a separate process and validates <code translate="no">PROGRAM_ENTRIES</code> and signatures.</li>
+<li>Runs <code translate="no">tests/</code> with pytest, in the OS sandbox when available: no network, package read-only, <code translate="no">HOME</code> an empty temporary directory.</li>
+<li>Commits to the Workflow's repository when all pass and records that commit in <code translate="no">refs/openprogram/checked</code>. <code translate="no">-m</code> sets the message; <code translate="no">--json</code> prints the report.</li>
+</ol>
+<p class="note">Only the checked commit loads: a plain <code translate="no">git commit</code> does not, and uncommitted edits keep the checked version serving, across restarts too. The worker watches <code translate="no">~/.openprogram/programs</code> and reloads within seconds. <code translate="no">programs list</code> and the Programs page show <code translate="no">loaded</code>, <code translate="no">error</code> (with the error) or <code translate="no">pending</code> (with the reason, such as no checked commit yet). History and rollback use Git.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where it runs</th><td>A copy of the checked commit in <code translate="no">~/.openprogram/programs-cache/&lt;name&gt;/&lt;commit&gt;/</code>. Files read next to the code must be committed; anything written belongs outside the package.</td></tr>
+<tr><th scope="row">New version fails to import</th><td>The previous one keeps running. State <code translate="no">error</code>, note "Kept version <code translate="no">&lt;old&gt;</code>; version <code translate="no">&lt;new&gt;</code> failed." The Programs page heads a red line under the title with it, then the reason and a <strong>See full error</strong> link.</td></tr>
+<tr><th scope="row">Calls still running</th><td>The new version waits for them up to 30 seconds, then tries again on the next pass.</td></tr>
+</tbody>
+</table>
+<h2 id="running-a-workflow">Run</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">From</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chat</th><td>Each entry is a tool</td></tr>
+<tr><th scope="row">Programs page</th><td><strong>Abilities → Programs</strong>, select under <strong>Applications</strong>, <strong>Use</strong> opens the form in chat; nothing runs until sent</td></tr>
+<tr><th scope="row">Command line</th><td><code translate="no">openprogram programs run &lt;entry&gt; -a key=value</code></td></tr>
+<tr><th scope="row">Python</th><td>Importable functions</td></tr>
+</tbody></table>
+<p class="note">Each entry call is recorded in the session graph with a child node per role call, holding the exact request. Plain functions are not recorded.</p>

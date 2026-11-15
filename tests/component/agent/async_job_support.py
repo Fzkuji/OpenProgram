@@ -5,10 +5,9 @@ import threading
 
 import pytest
 
-from tests.support.waiting import wait_until
 
 
-# Starting a job includes a durable jobs.json write and a session Git commit.
+# Starting a job includes a durable jobs.json write.
 # Same-session commits are intentionally serialized; Windows filesystem and
 # Defender latency can make a healthy pickup exceed the old one-second waits.
 WORKER_START_TIMEOUT = 5.0
@@ -29,18 +28,18 @@ class _FakeMonotonic:
 @pytest.fixture
 def store_fixture(tmp_path, monkeypatch):
     """Isolated SessionStore + session row for job tests."""
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.agent import session_db as sdb_mod
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.runtime.context import session_db as sdb_mod
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
     monkeypatch.setattr(
-        "openprogram.store.session.session_store.default_store", lambda: s,
+        "openprogram.state.store.session.session_store.default_store", lambda: s,
     )
     monkeypatch.setattr(
-        "openprogram.store.default_store", lambda: s,
+        "openprogram.state.store.default_store", lambda: s,
     )
     monkeypatch.setattr(
-        "openprogram.worker.lock.is_held_by", lambda _pid: True,
+        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True,
         raising=False,
     )
     s.create_session("p1", "main", title="parent")
@@ -65,7 +64,7 @@ def fake_worker(monkeypatch):
     entered = threading.Event()  # set once the worker is INSIDE fake_run
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
         calls.append({
             "session_id": request.session_id, "prompt": request.user_text,
             "agent_id": request.agent_id, "branch_from": request.branch_from,
@@ -87,9 +86,9 @@ def fake_worker(monkeypatch):
         return AgentTurnResult(head_id="head_ok", final_text="hello",
                                failed=False, error=None)
 
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_run),
     )
     yield calls, barrier, cancel_seen, entered

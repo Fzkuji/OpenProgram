@@ -1,0 +1,53 @@
+<title>自更新回退之后</title>
+<meta name="description" content="确认回退后的只读诊断、源码修正和重试上限。">
+<meta name="covers" content="openprogram/operations/self_update/repair/ openprogram/programs/tools/system/self_update/">
+<h1>自更新回退之后</h1>
+
+<h2>回退后诊断</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Job</th><td>恢复的 worker 在原会话创建一个只读 Job，使用批准的模型和 profile，报告原因和修正建议。</td></tr>
+<tr><th scope="row">不能</th><td>改源码、运行 shell、安装或授权。原结论保留。</td></tr>
+<tr><th scope="row">时间</th><td>最多回退后五分钟，原期限更早时取更早。重启不重新计时，也不重跑已结束的 Job。</td></tr>
+<tr><th scope="row">停止</th><td>Job 取消或 <code translate="no">self_update(action="cancel")</code>。新更新会取代它。</td></tr>
+<tr><th scope="row">无法运行</th><td>模型不可用或证据无效只停止诊断，不限制服务。</td></tr>
+<tr><th scope="row">结果</th><td>有结果时在 <code translate="no">self-update status --json</code> 的 <code translate="no">diagnosis_result</code>。</td></tr>
+</tbody>
+</table>
+<h2>回退后源码修正</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">批准</th><td>首次批准包含隔离修正和所列 <code translate="no">required_tests</code>。默认模式再次安装前需另行批准；显式批准的 <code translate="no">bounded_auto</code> 允许在限制内再次安装。</td></tr>
+<tr><th scope="row">触发</th><td>implementation 或 test 诊断可触发一个只读模型 Job 提出文本编辑。</td></tr>
+<tr><th scope="row">应用</th><td>控制器逐项校验，新建 linked worktree 和 commit，在无网络、无 App 写权限的原生沙箱里运行冻结测试。你的 worktree 不变。</td></tr>
+<tr><th scope="row">范围</th><td>原改动文件，或 <code translate="no">bounded_auto</code> 批准的路径模式。你的候选已改而修正未动的文件保持批准时的状态。</td></tr>
+<tr><th scope="row">不自动修改</th><td>受保护的 runtime、审批、安装器、依赖和 Git 文件。无效路径或 old_text 不唯一会停止修正。</td></tr>
+<tr><th scope="row">时间</th><td>修正和测试共用回退后最多十分钟，原期限更早时取更早。新更新、取消或过期会停止它们。重启不重放。</td></tr>
+<tr><th scope="row">取消</th><td>模型运行时用 Job 取消，测试时在原会话用 <code translate="no">self_update(action="cancel", update_id=…)</code>。失败的 worktree 和证据保留供检查。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">修正状态</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">candidate_ready</code></th><td>新 commit 和全部已配置测试通过</td></tr>
+<tr><th scope="row"><code translate="no">awaiting_tests</code></th><td>未配置必需测试；不能 retry，需 owner 发起带明确测试的新请求</td></tr>
+<tr><th scope="row"><code translate="no">failed</code></th><td>测试缺失或失败，或源码漂移</td></tr>
+<tr><th scope="row"><code translate="no">cancelled</code>、<code translate="no">expired</code></th><td>取消或过期</td></tr>
+</tbody>
+</table>
+<p class="note">这些都不代表已安装。这些阶段之前的请求保持旧行为，不获得它们。</p>
+<h2>重试和迭代</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">retry</code></th><td><code translate="no">self_update(action="retry", update_id, candidate_sha)</code>，可在 owner 的任一会话调用。询问模式下，审批显示 SHA、改动路径、测试和剩余预算。之后重新检查 Git 内容和测试日志，有变化则提交无效。</td></tr>
+<tr><th scope="row"><code translate="no">bounded_auto</code></th><td>需要未来的总 <code translate="no">deadline</code>、允许路径模式和非空 <code translate="no">required_tests</code>。只有带冻结迭代授权的请求才自动提交；仅有 mode 字段不授予权限。</td></tr>
+<tr><th scope="row">次数</th><td>最多三次，含首次。预留 child 就消耗一次，提交失败也算。每个 child 保留目标、assertion、源码基线、模型、profile 和策略。重启复用同一 child 和期限。</td></tr>
+<tr><th scope="row">取消</th><td>停止序列，包括待批准操作、诊断、修正和测试。已在激活或验收的 child 完成事务或安全回退，不再有后续 attempt。无关 Job 不受影响。</td></tr>
+<tr><th scope="row">状态</th><td><code translate="no">iteration</code> 部分显示 root、parent、attempt 限制、期限和提交状态。<code translate="no">submitted</code> 表示已交给外部 supervisor；child 仍要经过打包、系统检查、新验证 Job，以及 commit 或 rollback。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="conversational-self-update.zh.html">在对话里更新</a></p>

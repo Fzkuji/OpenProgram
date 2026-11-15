@@ -6,11 +6,11 @@ to" = "which branches exist". By default only the current session's
 branches are shown (that is where spawned agents live); scope="all"
 widens to every session, most recently active first.
 
-Design: docs/reference/design/runtime/agent-collaboration.md (C2).
+Design: docs/reference/design/runtime/collaboration/agent-collaboration.html (C2).
 """
 from __future__ import annotations
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.agents.send_message.shared import (
     _current_session,
     _db,
@@ -22,13 +22,15 @@ _DESCRIPTION = (
     "List the agents you can talk to. An agent's conversation is stored "
     "as a branch in the session DAG; each line gives a ready-to-use "
     "`to=\"SID:HEAD\"` address for send_message, the branch name (if "
-    "any — a «name» works directly as `to` too), busy/idle status, and "
+    "any — a «name» works directly as `to` too), the scheduled task the "
+    "branch works on (if any), busy/idle status, and "
     "turn count / approximate size so you can pick a sensible "
     "`max_chars` before read_conversation. Default scope=\"session\" "
     "shows only the current session's branches — the agents spawned "
     "here. Pass scope=\"all\" to find agents in OTHER sessions: every "
     "session is listed, most recently active first, without previews "
-    "(limit defaults to 20). Archived agents (archive_agent / "
+    "(limit defaults to 20). The session view also lists running and queued "
+    "work with its execution_id. Archived agents (close_agent / "
     "agent(archive_when_done=true)) are hidden from both; "
     "scope=\"archived\" lists exactly them — still readable with "
     "read_conversation, no longer addressable. To CREATE a new agent, "
@@ -52,10 +54,59 @@ def _branch_stats(db, sid: str, head: str) -> str:
 def _turn_running(session_id: str) -> bool | None:
     """Busy probe; None = unknown (status omitted from the line)."""
     try:
-        from openprogram.agent.run_control import is_turn_running
+        from openprogram.runtime.conversation.run_control import is_turn_running
         return bool(is_turn_running(session_id))
     except Exception:
         return None
+
+
+def _branch_task(db, sid: str, head: str) -> str:
+    """The scheduled task this branch is bound to, in words; empty if none."""
+    try:
+        task_id = (db.get_branch_meta(sid, head) or {}).get("scheduled_task_id")
+        if not task_id:
+            return ""
+        from openprogram.programs.tools.jobs.cron.remind import next_cron
+        from openprogram.runtime.scheduler import service
+        import datetime as dt
+
+        task = service.get_task(str(task_id))
+        if task is None:
+            return "deleted"
+        parts = [str(task.get("title") or task_id), str(task.get("cron") or task.get("run_at") or task.get("type") or "")]
+        if not task.get("enabled", True):
+            parts.append("paused")
+        elif task.get("cron"):
+            upcoming = next_cron(str(task["cron"]), dt.datetime.now())
+            if upcoming:
+                parts.append(f"next {upcoming:%Y-%m-%d %H:%M}")
+        return ", ".join(part for part in parts if part)
+    except Exception:
+        return ""
+
+
+_WORK_ROWS = 20
+
+
+def _work_lines(session_id: str) -> list[str]:
+    """The agent work this session started that has not ended (what
+    list_jobs showed before the five-tool set), newest first."""
+    try:
+        from openprogram.runtime.jobs.store import list_jobs
+        from openprogram.runtime.jobs.types import is_terminal
+        jobs = [j for j in list_jobs(session_id, limit=200, lock_timeout=2.0)
+                if not is_terminal(j.status)][:_WORK_ROWS]
+    except Exception:
+        return []
+    if not jobs:
+        return []
+    out = ["", "Running or queued work (close_agent stops one; read_conversation reads it):"]
+    for job in jobs:
+        # An agent's name is shown as it is addressed, spaces as written
+        # (agent_name keeps it on one line); a prompt is folded to one.
+        subject = (job.label or " ".join((job.subject or job.prompt or "").split()))[:70]
+        out.append(f"  - execution_id={job.id} [{job.status.value}] {subject}")
+    return out
 
 
 def _session_lines(
@@ -81,10 +132,29 @@ def _session_lines(
                         if not b.get("archived")]
     except Exception:
         branches = []
+    # Spawned agents go by the name they were spawned with, even once
+    # their branch is renamed or, finished, retired from the tip list.
+    agents: dict[str, str] = {}
+    if not archived:
+        from openprogram.programs.tools.agents.send_message.send_message.addressing import (
+            agent_tips,
+        )
+        for agent_label, tip in agent_tips(sid):
+            agents.setdefault(tip, agent_label)
+        listed = {b.get("head_msg_id") for b in branches}
+        branches = branches + [
+            {"head_msg_id": tip, "name": (db.get_branch_meta(sid, tip) or {}).get("name")}
+            for tip in agents if tip not in listed
+        ]
     for b in branches:
         head = b.get("head_msg_id", "?")
         name = b.get("name")
         label = f" «{name}»" if name else ""
+        if head in agents and agents[head] != name:
+            label += f" (agent «{agents[head]}»)"
+        task = _branch_task(db, sid, head)
+        if task:
+            label += f" [scheduled task: {task}]"
         stats = _branch_stats(db, sid, head)
         line = f"  - to={sid}:{head}{label}{stats}"
         if preview:
@@ -103,7 +173,7 @@ def _list_agents_impl(
     agent_id: str = "",
     source: str = "",
 ) -> str:
-    from openprogram.events import emit_safe
+    from openprogram.runtime.events import emit_safe
     if scope not in ("session", "all", "archived"):
         return (
             f'[list_agents error] unknown scope {scope!r} — use "session" '
@@ -146,6 +216,7 @@ def _list_agents_impl(
                 "below to send_message (a «name» works directly as `to` too); "
                 'scope="all" lists other sessions:'
             )
+            lines += _work_lines(cur)
         return "\n".join([header, *lines])
 
     # scope="all" — list_sessions returns most recently active first.

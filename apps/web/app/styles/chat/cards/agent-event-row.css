@@ -1,0 +1,43 @@
+/* What agents pass to each other, as one-line rows: a background agent's
+   notice, a branch's reply, a message delivered to a branch.
+   对应组件：components/chat/messages/cards/agent-event-row.tsx */
+
+.message.agent-event {
+  padding: 4px 0;
+  background: transparent;
+  animation: none;
+  opacity: 1;
+}
+.agent-event-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 19px;
+  color: var(--text-secondary);
+  text-align: left;
+}
+button.agent-event-head { cursor: pointer; }
+button.agent-event-head:hover,
+button.agent-event-head[aria-expanded="true"] { color: var(--text-primary); }
+.agent-event[data-failed="1"] .agent-event-head > span:first-child { color: var(--accent-red, currentColor); }
+.agent-event-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-event-detail {
+  margin: 4px 0 6px 20px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-light);
+  font-size: var(--fs-xs);
+  line-height: 19px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}

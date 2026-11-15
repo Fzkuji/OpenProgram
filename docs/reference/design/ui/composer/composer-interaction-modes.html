@@ -1,0 +1,61 @@
+<title>Composer and user decision output</title>
+<meta name="description" content="How the composer stays independent of pending questions, confirmations, forms and approvals.">
+<meta name="covers" content="apps/web/components/chat/composer/">
+<h1>Composer and user decision output</h1>
+
+<p>The composer edits ordinary messages and user-opened function forms. Pending decisions are separate session panels above it, and receipts appear in the conversation. A pending decision never replaces the composer, clears its draft, closes its function form, changes its send action or takes its focus.</p>
+
+<h2>Composer input</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Modes</th><td><code translate="no">idle</code>, <code translate="no">fn-form</code></td></tr>
+<tr><th scope="row">Function form</th><td>Selecting a registered function opens <code translate="no">FunctionForm</code>. Fields, validation, transition, close and outgoing animation stay there.</td></tr>
+<tr><th scope="row"><code translate="no">name(parameter=literal, ...)</code></th><td>A complete registered expression uses the form's dispatcher and schema validation. Explanatory text, partial expressions and fenced code stay chat text.</td></tr>
+<tr><th scope="row">While running</th><td>Enter and Send add a message to the current turn (steer). Cmd/Ctrl+Enter queues for the next turn. Empty input keeps Stop.</td></tr>
+</tbody>
+</table>
+
+<h2>Owners</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Name</th><th scope="col">Owns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">question.asked</code>, reconnect snapshots</th><td>Canonical targets</td></tr>
+<tr><th scope="row"><code translate="no">useWaitAnswer</code></th><td>Execution commands and acknowledgement state</td></tr>
+<tr><th scope="row"><code translate="no">QuestionMode</code></th><td>Answer fields, navigation, request-scoped in-memory drafts. One keyed card each for <code translate="no">ask</code>, <code translate="no">confirm</code>, <code translate="no">ask_many</code>, <code translate="no">form</code>, <code translate="no">approval</code>.</td></tr>
+<tr><th scope="row"><code translate="no">PendingDecisionPanels</code></th><td>Pending placement above each composer, split panes included</td></tr>
+<tr><th scope="row"><code translate="no">DecisionOutputs</code></th><td>Terminal receipts in the message stream</td></tr>
+</tbody>
+</table>
+<p class="note">New questions do not autofocus. Several questions stay independently addressable in stable order. Layout: <a href="composer-interaction-prototype.html">composer interaction layout</a>.</p>
+
+<h2>Delivery</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Card shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Submitting</th><td>The actual answer and a sending state, at once</td></tr>
+<tr><th scope="row">Matching applied command</th><td>Delivered. The only confirmation; event arrival alone is not a receipt.</td></tr>
+<tr><th scope="row">Unknown outcome</th><td>Original command id and payload kept for retry, available error code, no implied success</td></tr>
+<tr><th scope="row">Explicit rejection</th><td>Reconciles the current request before another answer</td></tr>
+<tr><th scope="row">Closed request</th><td>Never shown as an accepted answer</td></tr>
+<tr><th scope="row">Confirmed answer or decline</th><td>Stays as a session UI receipt</td></tr>
+</tbody>
+</table>
+<p>Submitted receipts keep the question-and-answer layout, use field titles and show readable values, not JSON. Forms submit field objects. Approval cards keep their scopes, operation details and explicit allow or deny; asking a question does not authorize an operation.</p>
+<p>A sub-agent's approval names it in a badge in the title row; the conversation's own agent's has none. The Worker's one wording for a tool approval is shown in the reader's language: "Run this command?" for a shell command, "Run <em>tool</em>?" otherwise.</p>
+<p>Receipts are in-memory presentation state, not Workflow checkpoints: a refresh reloads canonical pending questions. Requests stay bound to their session, execution, generation and version across tabs. Backend Workflow questions continue in the original process, and predeclared Agent waits keep their continuation contract.</p>
+
+<h2>Discussion and events</h2>
+<p>A discussion action keeps its own feedback input and sends the text as the reason on the exact canonical decline command. The model receives it in the same turn and no chat message is queued. Only a matching applied receipt confirms delivery; an unconfirmed decline never authorizes execution. An ordinary composer message neither declines a question nor answers it.</p>
+<dl class="pairs">
+<dt>UI-only settings</dt><dd>Direct store updates. Execution settings such as search and thinking also persist immediately to the selected branch through a correlated request.</dd>
+<dt>One-shot user action</dt><dd>Correlated request and response</dd>
+<dt>Runtime questions</dt><dd>Broadcast events projected into the pending-decision store</dd>
+</dl>
+
+<details>
+<summary>Acceptance</summary>
+<p>A pending question beside a populated composer: outside the composer, draft and focus kept, Send still submits a message. Card submit: immediate feedback, matching acknowledgement, retained receipt, unchanged draft, session isolation, retry identity, native App behaviour.</p>
+</details>
+
+<p class="next"><a href="../../runtime/operations/user-input-requests.html">User input requests</a> · <a href="../../runtime/execution/control.html#decision-output">Execution control</a></p>

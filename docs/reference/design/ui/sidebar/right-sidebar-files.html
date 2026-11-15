@@ -1,0 +1,223 @@
+<title>File tree and file management</title>
+<meta name="description" content="The file tree shared by the sidebar and the Files page: columns, sizes, paths, search, moves, uploads, refresh and errors.">
+<h1>File tree and file management</h1>
+
+<p>The sidebar and the central Files page share one tree on <a href="https://github.com/pierrecomputer/pierre/tree/main/packages/trees"><code translate="no">@pierre/trees</code></a> 1.0.0-beta.6. Pierre owns rows, hierarchy, selection, focus, virtual scrolling, sticky ancestors and keyboard navigation; OpenProgram owns filesystem state. Row height 30 pixels, density 1.</p>
+
+<svg class="fig-wide" viewBox="0 0 680 300" role="img" aria-label="The panel from top to bottom. Path row: breadcrumb and a copy button at the right end. Tool row: search, new file, new folder, refresh, sort, info. Search row, opened on demand. Column header above the rows: Name takes the remaining width with middle truncation, Size 100 pixels, Date Modified 200 pixels, Kind 140 pixels. Below 720 pixels only Name and Size appear.">
+  <rect class="tile" x="110" y="1" width="569" height="210" rx="8"/>
+  <text class="t-soft" x="0" y="31">Path</text>
+  <text x="126" y="31">OpenProgram › … › scripts › install.sh</text>
+  <text class="t-soft" x="622" y="31">Copy</text>
+  <text class="t-soft" x="0" y="67">Tools</text>
+  <text x="126" y="67">Search  ·  New file  ·  New folder  ·  Refresh  ·  Sort  ·  Info</text>
+  <text class="t-soft" x="0" y="103">Search</text>
+  <text class="t-soft" x="126" y="103">Input, opened on demand</text>
+  <line class="ln-faint" x1="110" y1="120" x2="679" y2="120"/>
+  <text class="t-soft" x="0" y="145">Header</text>
+  <text x="126" y="145">Name</text>
+  <text x="358" y="145">Size</text>
+  <text x="438" y="145">Date Modified</text>
+  <text x="578" y="145">Kind</text>
+  <line class="ln-faint" x1="110" y1="158" x2="679" y2="158"/>
+  <line class="ln-faint" x1="346" y1="120" x2="346" y2="211"/>
+  <line class="ln-faint" x1="426" y1="120" x2="426" y2="211"/>
+  <line class="ln-faint" x1="566" y1="120" x2="566" y2="211"/>
+  <text class="t-soft" x="0" y="181">Rows</text>
+  <text class="t-soft" x="126" y="181">Remaining width</text>
+  <text class="t-soft" x="126" y="200">Middle truncation</text>
+  <text class="t-soft" x="358" y="181">100 px</text>
+  <text class="t-soft" x="438" y="181">200 px</text>
+  <text class="t-soft" x="578" y="181">140 px</text>
+  <text class="t-soft" x="0" y="264">Below</text>
+  <text class="t-soft" x="0" y="283">720 px</text>
+  <rect class="tile" x="110" y="240" width="316" height="52" rx="8"/>
+  <line class="ln-faint" x1="346" y1="240" x2="346" y2="292"/>
+  <text x="126" y="272">Name</text>
+  <text x="358" y="272">Size</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Path</strong><small>Breadcrumb; copy button at the right end</small></li>
+  <li><strong>Tools</strong><small>Search, new file, new folder, refresh, sort, info</small></li>
+  <li><strong>Search</strong><small>Input, opened on demand</small></li>
+  <li><strong>Header</strong><small>Name, Size, Date Modified, Kind</small></li>
+  <li class="flow-end"><strong>Rows</strong><small>Name: remaining width, middle truncation</small><small>Size 100 px, Date Modified 200 px, Kind 140 px</small><small>Below 720 px: Name and Size only</small></li>
+</ol>
+
+<h2 id="file-columns">Columns</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Width</th><td>A <code translate="no">ResizeObserver</code> measures the viewport and sets the Name width and visible columns; it disconnects on unmount. Rows never outgrow the panel and nothing scrolls sideways, as in Codex's tree, so Pierre's selection, focus ring and name editor draw whole without overrides.</td></tr>
+<tr><th scope="row">Header</th><td>Stays visible during vertical scrolling and shares its column boundaries with the rows.</td></tr>
+<tr><th scope="row">Cells</th><td>Pierre has no sortable columns. Three text parts through <code translate="no">renderRowDecoration</code>, styled with <code translate="no">unsafeCSS</code>; parts that do not fit are clipped. No table framework, no per-file metadata request.</td></tr>
+<tr><th scope="row">Date Modified</th><td><code translate="no">mtime</code> in epoch seconds from the directory and search responses, shown in the current language and local timezone. Blank for missing timestamps and synthetic search ancestors.</td></tr>
+<tr><th scope="row">Kind</th><td>Folder; uppercase extension plus file; File when there is no extension.</td></tr>
+<tr><th scope="row">Sorting</th><td>Directory headers toggle the per-project server sort preference, keeping folders-first and the hidden and ignored filters. Search keeps relevance order and its headers do nothing.</td></tr>
+<tr><th scope="row">Deep folders</th><td>Indentation is capped inside Name, leaving room for the icon and filename and keeping columns aligned.</td></tr>
+<tr><th scope="row">Rename</th><td>Inline rename keeps Pierre's decoration suppression.</td></tr>
+<tr><th scope="row">Out of scope</th><td>Column reordering, manual resizing, extra metadata fields, filesystem watchers.</td></tr>
+</tbody>
+</table>
+
+<h2 id="display">Appearance</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Folders</th><td>The arrow is remapped through <code translate="no">icons.remap</code> to a sprite with the sidebar's Solar folder; expanded state picks closed or open. Folders never rotate.</td></tr>
+<tr><th scope="row">Rows</th><td>6 pixels in from both panel edges, 6 pixels of padding inside. No extra vertical padding. Pierre's indent guides are always shown; no fixed indentation or custom connectors.</td></tr>
+<tr><th scope="row">Scrollbar</th><td>The app's overlay thumb takes no width, so rows reach the panel's right edge.</td></tr>
+<tr><th scope="row">Selection</th><td>Selected rows have no border. Keyboard focus stays visible on unselected rows.</td></tr>
+<tr><th scope="row">Toolbar</th><td>8-pixel side margins, shared with the path row. No divider between toolbar and list. Existing buttons and rounded menus.</td></tr>
+</tbody>
+</table>
+
+<h2 id="paths">Path row</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Component</th><td>shadcn Breadcrumb, radix-nova style, the panel's 14-pixel text, one line. Nova's chevrons sit in the list's 6-pixel gap.</td></tr>
+<tr><th scope="row">Colour</th><td>Ancestors muted, foreground on hover; current item foreground.</td></tr>
+<tr><th scope="row">Overflow</th><td>Ancestors that do not fit fold into Nova's ellipsis, which opens a menu of them. Spare room shows part of one more ancestor. No tooltips repeating the name.</td></tr>
+<tr><th scope="row">Click</th><td>Locates the path among loaded entries and expands its ancestors, with no re-listing or size recount. Queries only if the target is missing.</td></tr>
+<tr><th scope="row">Copy button</th><td>Copies the absolute path; a checkmark shows for 1.5 seconds on success.</td></tr>
+<tr><th scope="row">Context menu</th><td>Relative path, absolute path or name of the clicked location.</td></tr>
+</tbody>
+</table>
+
+<h2 id="queries">Listing and search</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Listing</th><td><code translate="no">project_file_tree</code>: lazy per directory, paginated, sorted on the server. Sort by name, type, modification time or size, with folders-first. Framework comparators keep backend order and never revert to alphabetical.</td></tr>
+<tr><th scope="row">Pagination</th><td>The next page loads near the end of a directory's loaded entries, with no pagination button.</td></tr>
+<tr><th scope="row">Search</th><td>Backend permission scope and pagination. Results use Pierre's hierarchy; highlight mode keeps directories.</td></tr>
+<tr><th scope="row">Matches</th><td>The backend decides fuzzy matches, shown by match markers and the native current-item selection. Literal queries use framework text highlighting.</td></tr>
+<tr><th scope="row">Reveal</th><td>Controllers expand and scroll; nothing depends on handwritten row DOM.</td></tr>
+</tbody>
+</table>
+
+<h2 id="sizes">File and folder sizes</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Shown</th></tr></thead>
+<tbody>
+<tr><th scope="row">File</th><td>Byte count.</td></tr>
+<tr><th scope="row">Visible folder</th><td>One <code translate="no">project_folder_size</code> request per folder (<code translate="no">measure</code>): the saved sample, or else one walk of at most a second that the server saves, finished or not. Asked again only after Refresh or a Files change, never chunk by chunk. A shared queue runs two at once. States: cached, scanning, complete, partial, canceled, error. Search-excluded folders such as <code translate="no">.cache</code> and <code translate="no">node_modules</code> still have metadata and sizes.</td></tr>
+<tr><th scope="row">In the list</th><td>The number alone, without <code translate="no">≈</code> or <code translate="no">≥</code>.</td></tr>
+<tr><th scope="row">Still counting</th><td>The existing number keeps updating and slowly varies in grey brightness; normal again when counting stops. No added text or icons.</td></tr>
+<tr><th scope="row">No value yet</th><td>Blank, no dash.</td></tr>
+<tr><th scope="row">Details</th><td>Estimates, lower bounds, timestamp and completeness. Recalculate and Continue are the only chunked counts.</td></tr>
+</tbody>
+</table>
+
+<h3 id="size-samples">Saved samples</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reuse</th><td>Finished samples survive view remounts and worker restarts and display without recursive I/O. At most 256, in the default profile state. Size sorting keeps the recent-complete-sample rule.</td></tr>
+<tr><th scope="row">New scan</th><td>Only the first view of a folder without a sample, Refresh, a Files change and Recalculate.</td></tr>
+<tr><th scope="row">Invalidation</th><td>A successful Files change removes affected ancestor and subtree samples from memory and disk and cancels affected active scans, including overlapping project roots.</td></tr>
+<tr><th scope="row">Key</th><td>Validated absolute path. Device and inode must also match, so a rebound project or replaced directory cannot reuse another directory's bytes.</td></tr>
+<tr><th scope="row">Incomplete scans</th><td>Stay incomplete and keep their skipped-entry record. A walk cut off by the time limit is saved as a lower bound, so the next view shows it without walking. Active scan tokens are never saved.</td></tr>
+<tr><th scope="row">Stale samples</th><td>Nested edits can outdate a sample; Details shows its time and completeness. No watcher, recursive freshness check, content read or new profile.</td></tr>
+<tr><th scope="row">Storage</th><td>The existing atomic JSON writer: private temporary file, atomic replace. A corrupt or unavailable cache falls back to scanning.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why not another store</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Option</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://docs.python.org/3/library/sqlite3.html">Python sqlite3</a></th><td>Durable transactions and concurrent connections, not needed for a bounded cache owned by one worker. No schema or dependency added.</td></tr>
+<tr><th scope="row">Pierre tree, React queue</th><td>Kept for virtualization and the two visible-folder jobs. Neither supplies durable server-side samples.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="editing">Creating, renaming and menus</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">New entry</th><td>Named in the tree: its folder gains a placeholder row with an empty name editor and the default name as a dim hint.</td></tr>
+<tr><th scope="row">Commit</th><td>Enter or leaving the editor creates it under the typed name. Escape, or leaving with nothing typed, drops the row. Existing forms validate before submitting.</td></tr>
+<tr><th scope="row">Context menu</th><td>Details, reveal in system, new file, new folder, copy path, cut, copy, paste, Move to, rename, delete with confirmation.</td></tr>
+<tr><th scope="row">Several rows</th><td>Cut, copy, move and delete act on all of them and the menu names the count; rename needs one row.</td></tr>
+<tr><th scope="row">Selection</th><td>Cmd/Ctrl-click toggles a row, Shift-click selects a range. Opening a tab or revealing a file elsewhere replaces the selection with that row.</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Key</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Cmd/Ctrl+C</code>, <code translate="no">Cmd/Ctrl+X</code></th><td>Copy, cut</td></tr>
+<tr><th scope="row"><code translate="no">Cmd/Ctrl+V</code></th><td>Paste into the selected folder, or the selected file's folder</td></tr>
+<tr><th scope="row"><code translate="no">Cmd+Backspace</code>, <code translate="no">Delete</code></th><td>Delete, after confirmation</td></tr>
+<tr><th scope="row"><code translate="no">F2</code></th><td>Rename</td></tr>
+<tr><th scope="row"><code translate="no">Cmd/Ctrl+Shift+M</code></th><td>Move to</td></tr>
+</tbody>
+</table>
+
+<h2 id="moving">Moving</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Drag</th><td>Pierre's drag and drop onto a folder or the root; a hovered folder opens after 600 ms.</td></tr>
+<tr><th scope="row">Carried out by</th><td>The tree shows the move at once; the same server rename as Cut and Paste does it, with draft protection and open-tab retargeting. A refused move re-lists the tree.</td></tr>
+<tr><th scope="row">Undo</th><td>Every move shows a toast with Undo, which moves the entries back.</td></tr>
+<tr><th scope="row">Skipped</th><td>A move onto the same parent or into the moved folder itself.</td></tr>
+</tbody>
+</table>
+
+<h3 id="move-to">Move to</h3>
+<p>A shadcn Command dialog that reads its input as a path. Goes through the same server rename and Undo toast; the chosen folder opens in the tree.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Input</th><th scope="col">Listed</th></tr></thead>
+<tbody>
+<tr><th scope="row">Nothing</th><td>Project root, the five folders moved to most recently in this project, top-level folders.</td></tr>
+<tr><th scope="row"><code translate="no">folder/name</code></th><td>Subfolders of the part before the last slash, from <code translate="no">project_file_tree</code>, filtered by the rest, names starting with it first. Folders list first, so reading stops at the first file. One listing per level, so any project size works. Tab steps into the highlighted folder.</td></tr>
+<tr><th scope="row"><code translate="no">name</code></th><td>Also <code translate="no">project_file_search</code> with <code translate="no">type: "dir"</code> for hits elsewhere; none past the search's snapshot limit.</td></tr>
+<tr><th scope="row">A path naming no folder</th><td>Offers to create it, missing parents included, and move into it.</td></tr>
+</tbody>
+</table>
+<p class="note">The current folder and the moved folders are disabled.</p>
+
+<h2 id="desktop-files">Files from the desktop</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Destination</th><td>The folder under the pointer, the folder of the file under it, or the project root. The tree outlines itself and a chip names the destination.</td></tr>
+<tr><th scope="row">Transfer</th><td>The browser reads the dropped files and streams each to <code translate="no">POST /api/files/upload</code> with a project-relative path. No local path is sent; nothing outside the project is opened.</td></tr>
+<tr><th scope="row">Folders</th><td>Arrive as their files, with missing parents created.</td></tr>
+<tr><th scope="row">Existing name</th><td>Never replaced: the upload refuses it and a toast counts what was left unchanged.</td></tr>
+<tr><th scope="row">Limit</th><td>1 GiB per file.</td></tr>
+<tr><th scope="row">Composer</th><td>The drop stays in the tree and does not reach the attachment drop.</td></tr>
+</tbody>
+</table>
+
+<h2 id="refresh-and-errors">Refresh and errors</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Window regains focus</th><td>Re-lists open folders, at most every three seconds, without recounting sizes.</td></tr>
+<tr><th scope="row">Any refresh</th><td>Keeps the selected path, expanded directories and loaded pages; old rows stay while it is pending.</td></tr>
+<tr><th scope="row">Collapsed parent</th><td>Stays closed even if descendants were expanded; reopening restores them.</td></tr>
+<tr><th scope="row">Directory or page fails</th><td>Automatic retries stop. The path and an explicit Retry show, never fictitious entries.</td></tr>
+<tr><th scope="row">Project folder unavailable</th><td>The reason and the repair replace the listing: confirm the folder at the recorded place, or Locate. See <a href="../workspace/project-location.html">project location</a>.</td></tr>
+<tr><th scope="row">Contracts kept</th><td>Workspace scope, cancellation, stale-response isolation, draft protection, server-side idempotent changes, metadata and size-cache permissions. The framework never touches file contents or decides permissions.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary id="implementation-status">Implementation status</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Checked</th></tr></thead>
+<tbody>
+<tr><th scope="row" id="columns-evidence">Columns</th><td>Real <code translate="no">FileTree</code> and <code translate="no">PierreFileTree</code> in Chromium: default Name and Size, four-column alignment, wide view, sticky ancestors, ten-level indentation at narrow widths, date and kind values, sort requests, preference preservation, search relevance, vertical viewport restoration.</td></tr>
+<tr><th scope="row" id="size-cache-evidence">Saved sizes</th><td>Through <code translate="no">project_folder_size</code>: a finished sample survives a fresh load with no recursive walk; corrupt storage leaves metadata queries usable; incomplete samples stay incomplete; replaced directories do not reuse samples. Through Files: reopening both views and Details starts no scan for a cached sample; Refresh and Recalculate still update bytes through the shared queue; changes invalidate saved ancestors and root scans.</td></tr>
+<tr><th scope="row">App, dark theme</th><td>Expand and collapse, virtual scrolling, sizes, file tabs, native context menus, sort menus, path preservation after refresh, nested-parent collapse, automatic pagination. Component regression tests cover refresh after a parent collapse.</td></tr>
+<tr><th scope="row">Not checked</th><td>Separate manual pass in light mode.</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="note">File-type icons: <a href="../visual-system/file-type-icons.html">icon design</a>. File contents, drafts and recovery: <a href="../../runtime/operations/file-management.html">file operations</a>. Pierre's Apache 2.0 and icon MIT licenses ship with the product.</p>

@@ -1,0 +1,90 @@
+<title>单端口架构</title>
+<meta name="description" content="一个进程一个端口，Python worker 是 Web UI、API 和 WebSocket 的唯一来源。">
+<h1>单端口架构</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">路径（按匹配顺序）</th><th scope="col">worker 的提供方式</th><th scope="col">缓存</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/ws</code></th><td>原生 WebSocket</td><td></td></tr>
+<tr><th scope="row"><code translate="no">/api/*</code></th><td>原生路由</td><td></td></tr>
+<tr><th scope="row"><code translate="no">/v1/*</code></th><td>OpenAI 兼容路由：<a href="../integrations/openai-compatible-endpoint.zh.html">OpenAI 兼容端点</a></td><td></td></tr>
+<tr><th scope="row"><code translate="no">/files/raw</code>、<code translate="no">/docs/*</code></th><td>静态挂载</td><td></td></tr>
+<tr><th scope="row"><code translate="no">/_next/static</code></th><td><code translate="no">apps/web/out/</code></td><td>Immutable</td></tr>
+<tr><th scope="row"><code translate="no">/*</code></th><td><code translate="no">out/</code> 里的文件；其余 GET 返回外壳 <code translate="no">out/chat.html</code></td><td>HTML no-cache</td></tr>
+</tbody>
+</table>
+<p class="note">Electron 外壳加载同一来源。端口和冲突：<a href="ports.zh.html">Web UI 端口</a>。稳定版：<code translate="no">18100</code>，或账户第一次启动时选的下一个空闲端口；开发版 <code translate="no">18200</code>。</p>
+
+<h2 id="invariants">不变量</h2>
+<ul>
+<li><strong>后端是唯一来源。</strong>没有代理、第二个服务器或构建时固定的端口。<code translate="no">/ws</code> 天然正确：就是页面加载的来源。</li>
+<li><strong>API 路由优先于静态。</strong>前端挂载最后注册。</li>
+<li><strong>Node 只在构建时需要。</strong>运行时只要 Python 和 worker。</li>
+</ul>
+
+<h2 id="why">为什么不用 Next 服务器</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">worker 旁边跑 Next 服务器的代价</th><th scope="col">这里</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/ws</code> 代理目标在构建时固定；profile 环境不对的构建让所有客户端断开</th><td>相对路径 <code translate="no">/ws</code>、<code translate="no">/api/...</code>；没有 <code translate="no">rewrites()</code></td></tr>
+<tr><th scope="row">worker 里要有回收端口、清孤儿、监视构建、监视父进程的代码</th><td>worker 不启动 Node 进程</td></tr>
+<tr><th scope="row">全客户端的 UI 运行时也要 Node</th><td>静态导出</td></tr>
+</tbody>
+</table>
+<p>合并的代价很小：外壳通过 <code translate="no">next/dynamic</code> 以 <code translate="no">ssr: false</code> 加载，所有真实页面都是 <code translate="no">"use client"</code>，没有 <code translate="no">middleware.ts</code>、server action 或 <code translate="no">next/image</code>。FastAPI 设了 <code translate="no">docs_url=None</code>，不与文档挂载冲突。</p>
+
+<h2 id="frontend">前端导出</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/web/next.config.mjs</code></th><td><code translate="no">output: "export"</code>：<code translate="no">next build</code> 把 HTML、JS、CSS 写入 <code translate="no">apps/web/out/</code></td></tr>
+<tr><th scope="row">动态段</th><td>会话、skill、provider 设置路径没有页面文件；没有 <code translate="no">generateStaticParams</code> 时静态导出会拒绝它们。SPA 回退返回外壳，客户端按 <code translate="no">pathname</code> 路由。真正干活的段保留一个占位的 <code translate="no">generateStaticParams</code>。</td></tr>
+<tr><th scope="row">API route handler</th><td>没有；这些路径由 worker 提供</td></tr>
+<tr><th scope="row">提供</th><td><code translate="no">openprogram/interfaces/server/frontend.py</code>，在 <code translate="no">create_app()</code> 中最后挂载</td></tr>
+<tr><th scope="row">构建门</th><td><code translate="no">ensure_frontend_built</code>：<code translate="no">out/index.html</code> 缺失或早于最新源码时，启动时跑一次 <code translate="no">npm run build</code>。打包版本自带 <code translate="no">out/</code>，从不调用 Node。</td></tr>
+</tbody>
+</table>
+
+<h2 id="process">进程和端口</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">入口</th><td><code translate="no">operations/worker/runner.py</code> 调用 <code translate="no">interfaces.server.start_web</code> 和 <code translate="no">ensure_frontend_built</code></td></tr>
+<tr><th scope="row">发现</th><td><code translate="no">worker.port</code> 文件是唯一事实来源</td></tr>
+<tr><th scope="row">端口配置</th><td><code translate="no">OPENPROGRAM_WEB_PORT</code> 和 <code translate="no">ui.web_port</code> 设置这唯一的端口</td></tr>
+<tr><th scope="row">Electron</th><td><code translate="no">apps/desktop/main.js</code>：<code translate="no">WEB_PORT</code> 取 <code translate="no">OPENPROGRAM_WEB_PORT</code>，否则取实例端口。启动地址、来源检查、导航守卫都用它</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">operations/worker/web.py</code> 是不在调用路径上的双端口遗留代码，留待单独清理。它还提到一个已不存在的监视脚本。</p>
+
+<h2 id="trade-offs">取舍</h2>
+<ul>
+<li>对合并后的来源没有 <code translate="no">next dev</code> 热更新。</li>
+<li>真正渲染内容的动态段，页面文件删除后会失去深链接。SPA 回退覆盖这种情况。</li>
+<li>拉取后 <code translate="no">out/</code> 可能过期。启动门覆盖；<code translate="no">git pull</code> 后运行 <code translate="no">openprogram restart</code>。</li>
+</ul>
+
+<details>
+<summary>验收标准</summary>
+<ol>
+<li><code translate="no">openprogram</code>（dev profile）只起一个监听端口；<code translate="no">lsof</code> 看不到 <code translate="no">next-server</code>。</li>
+<li>首次加载 <code translate="no">/chat</code>、<code translate="no">/s/&lt;id&gt;</code>、<code translate="no">/settings/providers/&lt;id&gt;</code>、<code translate="no">/skills/&lt;name&gt;</code> 都能渲染；<code translate="no">/ws</code> 连上；<code translate="no">/api/pick-folder</code> 可用。</li>
+<li>杀掉 worker，已加载页面显示断开；重启后重连。无孤儿进程。</li>
+<li>没有 profile 环境的构建也能产出可用实例。</li>
+<li>测试通过；桌面 App 重新打包并验证。</li>
+</ol>
+</details>
+
+<h2 id="distribution-boundary">分发</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">安装方式</th><th scope="col">Python</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS 桌面</th><td>CPython 和核心依赖内嵌在签名包内；首次启动不下载</td></tr>
+<tr><th scope="row">CLI、服务器</th><td>uv 管理的环境</td></tr>
+<tr><th scope="row">源码 checkout</th><td>开发构建流程</td></tr>
+</tbody>
+</table>
+<p class="note">权威文档：<a href="../distribution/installation-packaging.zh.html">安装、打包、发布与升级</a>。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已在当前 runner 和前端挂载中实现。桌面监管和分发状态见上面链接的页面。</p>

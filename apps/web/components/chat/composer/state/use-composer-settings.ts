@@ -13,6 +13,8 @@
  * These two hooks stay as named helpers because the control hooks read like
  * prose with them, not because they hide any branching.
  */
+import { useCallback } from "react";
+import { draftTouchedPatch, persistBranchSettings } from "@/lib/agents/branch-settings";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import type { ComposerSettings } from "@/lib/session-store";
 
@@ -21,7 +23,15 @@ export function useBoundComposerSettings(): ComposerSettings {
   return useSessionScope((s) => s.settings);
 }
 
-/** Patch this subtree's composer settings. */
+/** Patch this subtree's composer settings. A conversation the server has
+ *  stores the change on its branch at once; a draft remembers which
+ *  controls the person changed, so its first message carries only those. */
 export function useBoundSetComposerSettings() {
-  return useSessionScope((s) => s.patchSettings);
+  const sid = useSessionScope((s) => s.sid);
+  const patchSettings = useSessionScope((s) => s.patchSettings);
+  const touched = useSessionScope((s) => s.settings.draftTouched);
+  return useCallback((patch: Partial<ComposerSettings>) => {
+    patchSettings({ ...patch, ...draftTouchedPatch(sid, touched, patch) });
+    persistBranchSettings(sid, patch);
+  }, [sid, patchSettings, touched]);
 }

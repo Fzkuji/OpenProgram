@@ -1,7 +1,7 @@
 """Unit tests for WS attachment handling — caps, filename safety, kind
 classification, and the model-facing head preview.
 
-These helpers in ``openprogram/webui/ws_actions/chat.py`` are reachable directly
+These helpers in ``openprogram/interfaces/server/ws_actions/chat/attachments.py`` are reachable directly
 from user input (uploads / @-mentions) and commit blobs to a git workdir, so a
 cap bypass or misclassification is a storage/DoS vector. They are pure (no IO),
 so they're tested directly.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.webui.ws_actions import chat
+from openprogram.interfaces.server.ws_actions import chat
 
 
 # caps are what we think they are

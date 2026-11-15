@@ -1,0 +1,373 @@
+/* Overview pane of LLM Providers (routing-overview.tsx). Sessions sit in
+   the left column, models in the right; the SVG layer behind both draws
+   the edges between measured row anchors. Layout lives in the JSX; this
+   module keeps colour, type, state and the pieces Tailwind cannot say. */
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.headerIcon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--accent-blue);
+}
+.title {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.subtitle {
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+}
+
+.stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--text-secondary);
+}
+.statValue {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.statLabel {
+  font-size: var(--fs-xs);
+}
+/* A window switch is loading: the previous window's content stays put but
+   recedes, so the click reads as taken. */
+.pending .stats > :not(.statsWindow),
+.pending .map,
+.pending .switches,
+.pending .empty {
+  opacity: 0.45;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.statAccent .statValue { color: var(--accent-blue); }
+.statWarn .statValue { color: var(--accent-orange); }
+.statsWindow {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+}
+
+/* ── Map ─────────────────────────────────────────────────────────── */
+.edges {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.sessions,
+.models {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.session,
+.group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-input);
+  padding: 4px;
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+.sessionLive {
+  border-color: color-mix(in srgb, var(--accent-blue) 45%, var(--border));
+}
+.sessionHead,
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px 5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sessionHead:hover,
+.groupHead:hover {
+  background: var(--bg-hover);
+}
+.sessionHeadStatic {
+  cursor: default;
+}
+.sessionHeadStatic:hover {
+  background: transparent;
+}
+.sessionTitle,
+.groupName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.entry,
+.chip {
+  flex: none;
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.chipWarn {
+  background: color-mix(in srgb, var(--accent-orange) 15%, transparent);
+  color: var(--accent-orange);
+}
+.chipError {
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+  color: var(--accent-red);
+}
+
+.lane,
+.model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  transition: background-color var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+}
+.lane:hover,
+.model:hover {
+  background: var(--bg-hover);
+}
+.laneLive,
+.modelLive {
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+}
+.modelWarn {
+  background: color-mix(in srgb, var(--accent-orange) 9%, transparent);
+}
+.dim {
+  opacity: 0.35;
+}
+.laneIcon {
+  flex: none;
+  color: var(--text-muted);
+}
+.laneLive .laneIcon { color: var(--accent-blue); }
+.laneName,
+.modelName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modelName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.laneState,
+.modelState {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.laneLive .laneState,
+.modelLive .modelState { color: var(--accent-blue); }
+.modelWarn .modelState { color: var(--accent-orange); }
+
+.pulse {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+}
+.pulse::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-blue);
+  animation: pulse 1.6s var(--ease-standard) infinite;
+}
+@keyframes pulse {
+  from { transform: scale(0.6); opacity: 0.9; }
+  to { transform: scale(1.8); opacity: 0; }
+}
+
+.more,
+.idle {
+  padding: 4px 8px 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ── Edges ───────────────────────────────────────────────────────── */
+.edge {
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.edgeLine {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+}
+.edgeLive .edgeLine {
+  stroke: var(--accent-blue);
+  stroke-width: 1.75;
+}
+.edgeHalo {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.edgeFailed .edgeLine {
+  stroke: var(--accent-orange);
+  stroke-dasharray: 4 4;
+}
+/* Rides the edge with a CSS motion path, so it never shows at the SVG
+   origin before an animation clock starts. */
+.edgeDot {
+  fill: var(--accent-blue);
+  offset-rotate: 0deg;
+  animation: travel 1.6s linear infinite;
+}
+@keyframes travel {
+  from { offset-distance: 0%; }
+  to { offset-distance: 100%; }
+}
+.edgeDim {
+  opacity: 0.12;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse::after { animation: none; }
+}
+
+/* ── Recent switches ─────────────────────────────────────────────── */
+.switches {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.switchesTitle {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.switchRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.switchRow:last-child { border-bottom: 0; }
+.reason {
+  flex: none;
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--accent-orange) 15%, transparent);
+  color: var(--accent-orange);
+}
+.switchText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.switchText b {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.arrow {
+  margin: 0 6px;
+  color: var(--text-muted);
+}
+.switchTime {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* Shown only when the pane is too narrow for the map (see below). */
+.narrow {
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-input);
+}
+.narrowIcon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent-blue);
+}
+.narrowTitle {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.narrowBody {
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Too narrow for two columns and the edges between them: a stacked map
+   loses what the view is for, so ask for room instead (the JSX shows
+   .narrow and tightens the padding at the same width). */
+@container (max-width: 560px) {
+  .stats,
+  .empty,
+  .map,
+  .switches {
+    display: none;
+  }
+}

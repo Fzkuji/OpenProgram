@@ -41,13 +41,18 @@ docker run --rm --pull always \
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install --no-install-recommends --yes \
-      ca-certificates git \
+      ca-certificates \
       libasound2 libatk-bridge2.0-0 libatk1.0-0 libcairo2 libcups2 \
       libdbus-1-3 libdrm2 libexpat1 libfontconfig1 libgbm1 libglib2.0-0 \
       libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 \
       libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
 
     test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
+    # The runtime carries its own Git, so the machine must not lend it one.
+    if command -v git >/dev/null 2>&1; then
+      printf "this check needs a machine with no Git of its own\n" >&2
+      exit 1
+    fi
     case "$(uname -m)" in
       x86_64|amd64) actual_arch=x86_64 ;;
       arm64|aarch64) actual_arch=arm64 ;;
@@ -66,7 +71,6 @@ docker run --rm --pull always \
     export HOME=/tmp/openprogram-home
     export OPENPROGRAM_IMMUTABLE_RUNTIME=1
     export PLAYWRIGHT_BROWSERS_PATH="$runtime/assets/playwright"
-    export GPA_MODEL_PATH="$runtime/assets/gpa/model.pt"
     "$python" -I -B "$runtime/bin/verify-product-runtime.py" "$runtime"
     "$runtime/bin/python" -I -B -m openprogram --version
   '

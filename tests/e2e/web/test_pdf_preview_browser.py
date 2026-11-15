@@ -58,7 +58,7 @@ DESKTOP_MISSING_APIS = "delete Uint8Array.prototype.toHex; delete Math.sumPrecis
 @pytest.fixture(params=["native", "desktop-missing-apis"])
 def pdf_page(pdf_bundle, request):
     from playwright.sync_api import sync_playwright
-    from openprogram.webui.owner_auth import _shell_content_security_policy
+    from openprogram.interfaces.server.owner_auth import _shell_content_security_policy
 
     asset_root = Path("apps/web/public/document-assets/pdfjs")
     if not (asset_root / "pdf.mjs").is_file():
@@ -76,15 +76,15 @@ def pdf_page(pdf_bundle, request):
         def route(request):
             path = urlsplit(request.request.url).path
             if path == "/":
-                request.fulfill(content_type="text/html", headers={"Content-Security-Policy": _shell_content_security_policy().decode()}, body='<div id="root" style="height:720px"></div><script src="/bundle.js"></script>')
+                request.fulfill(content_type="text/html; charset=utf-8", headers={"Content-Security-Policy": _shell_content_security_policy().decode()}, body='<div id="root" style="height:720px"></div><script src="/bundle.js"></script>')
             elif path == "/bundle.js":
-                request.fulfill(content_type="text/javascript", body=pdf_bundle)
+                request.fulfill(content_type="text/javascript; charset=utf-8", body=pdf_bundle)
             elif path.startswith("/document-assets/pdfjs/"):
                 relative = path.removeprefix("/document-assets/pdfjs/")
                 candidate = asset_root / relative
                 if candidate.is_file():
                     if compatibility and relative == "pdf.worker.mjs":
-                        request.fulfill(content_type="text/javascript",
+                        request.fulfill(content_type="text/javascript; charset=utf-8",
                                         body=DESKTOP_MISSING_APIS + "\n" + candidate.read_text())
                     else:
                         request.fulfill(path=str(candidate))
@@ -102,6 +102,61 @@ def pdf_page(pdf_bundle, request):
             yield page, errors
         finally:
             browser.close()
+
+
+@pytest.fixture(scope="module")
+def tailwind_css(tmp_path_factory):
+    """The app's global stylesheet with its Tailwind utilities generated, as the Next build does."""
+    target = tmp_path_factory.mktemp("pdf-tailwind") / "global.css"
+    subprocess.run(["node", "-e", '''
+const fs=require("node:fs"),path=require("node:path");
+const globals=path.join(process.argv[1],"app/globals.css");
+require("postcss")([require("@tailwindcss/postcss")({base:process.argv[1]})]).process(fs.readFileSync(globals,"utf8"),{from:globals})
+  .then(result=>fs.writeFileSync(process.argv[2],result.css))
+  .catch(error=>{console.error(error);process.exit(1)});
+''', str(Path("apps/web").resolve()), str(target)], check=True, capture_output=True)
+    return target
+
+
+def test_pdf_toolbar_has_one_visible_focus_border(pdf_page, tailwind_css):
+    from playwright.sync_api import expect
+
+    page, errors = pdf_page
+    # The existing component harness preserves local class names. Load the
+    # actual global and component styles to exercise their cascade together.
+    page.add_style_tag(path=str(tailwind_css))
+    for path in ['components/files/preview/pdf-preview.module.css',
+                 'components/files/preview/preview.module.css']:
+        page.add_style_tag(path=str(Path('apps/web') / path))
+    page.locator('html').evaluate("el => el.dataset.theme = 'dark'")
+    page.evaluate("body => showFile('fixture.pdf', body)", PDF_FIXTURE)
+    expect(page.get_by_text('1 / 2', exact=True)).to_be_visible()
+    # Zoom is the shared Select; its focus ring belongs to that component.
+    field = page.get_by_role('combobox', name='Zoom', exact=True)
+    expect(field).to_have_attribute('data-slot', 'select-trigger')
+    before = field.bounding_box()
+    field.focus()
+    expect(field).to_be_focused()
+    expect(field).to_have_css('outline-style', 'none')
+    assert field.bounding_box() == before
+    # The checkbox is the shared shadcn Checkbox, a button: the preview's
+    # toolbar-button chrome must not repaint it, and buttons draw no outer
+    # focus halo, so keyboard focus recolours its one border to the ring colour.
+    checkbox = page.get_by_role('checkbox', name='Remove line breaks when copying')
+    colour_of = "token => { const probe = document.createElement('span'); probe.style.color = `var(${token})`; document.body.append(probe); const colour = getComputedStyle(probe).color; probe.remove(); return colour }"
+    primary = page.evaluate(colour_of, '--primary')
+    ring = page.evaluate(colour_of, '--ring')
+    expect(checkbox).to_have_attribute('data-state', 'checked')
+    expect(checkbox).to_have_css('background-color', primary)
+    expect(checkbox).to_have_css('border-color', primary)
+    checkbox.focus()
+    expect(checkbox).to_be_focused()
+    expect(checkbox).to_have_css('outline-style', 'none')
+    expect(checkbox).to_have_css('box-shadow', 'none')
+    expect(checkbox).to_have_css('border-color', ring)
+    expect(checkbox).to_have_css('border-width', '1px')
+    assert ring != primary
+    assert errors == []
 
 
 def test_pdf_pages_pixels_zoom_and_text_search(pdf_page):
@@ -280,10 +335,10 @@ def test_pdf_text_annotation_persists_and_reopens(pdf_page, fail_first):
     page.route('**/api/documents/history?*', lambda route: route.fulfill(json={'entries': [{'version_id': 'v1', 'actor': 'user'}]}))
     held = []
     page.route('**/api/documents/history/content?*', lambda route: held.append(route))
-    page.on('dialog', lambda dialog: dialog.accept())
     page.get_by_role('button', name='History', exact=True).click()
+    page.get_by_role('button', name='Restore', exact=True).click()
     with page.expect_request('**/api/documents/history/content?*'):
-        page.get_by_role('button', name='Restore', exact=True).click()
+        page.get_by_role('alertdialog').get_by_role('button', name='Restore', exact=True).click()
     reader = page.locator('[data-pdf-reader]')
     expect(reader).to_have_attribute('inert', '')
     # Real pointer input must not reach the annotation toolbar during restore.

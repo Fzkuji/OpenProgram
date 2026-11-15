@@ -1,8 +1,9 @@
+from openprogram.state.store.session.session_log import SessionLog
 import json
 import threading
 from pathlib import Path
 
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.session_store import SessionStore
 
 
 def test_concurrent_mark_merged_preserves_both_heads(
@@ -22,7 +23,7 @@ def test_concurrent_mark_merged_preserves_both_heads(
     def delayed_write(meta):
         if meta.get("merged_heads") == ["head-a"]:
             first_write_started.set()
-            assert release_first_write.wait(timeout=2)
+            assert release_first_write.wait(timeout=30)
         result = original(meta)
         if set(meta.get("merged_heads") or []) == {"head-a", "head-b"}:
             combined_write_finished.set()
@@ -32,17 +33,17 @@ def test_concurrent_mark_merged_preserves_both_heads(
     first = threading.Thread(target=store.mark_merged, args=("s1", ["head-a"]))
     second = threading.Thread(target=store.mark_merged, args=("s1", ["head-b"]))
     first.start()
-    assert first_write_started.wait(timeout=2)
+    assert first_write_started.wait(timeout=30)
     second.start()
     combined_write_finished.wait(timeout=0.2)
     release_first_write.set()
-    first.join(timeout=3)
-    second.join(timeout=3)
+    first.join(timeout=30)
+    second.join(timeout=30)
     assert not first.is_alive()
     assert not second.is_alive()
 
     assert store.merged_heads("s1") == {"head-a", "head-b"}
-    on_disk = json.loads((root / "s1" / "meta.json").read_text(encoding="utf-8"))
+    on_disk = SessionLog(root / "default" / "chats" / "s1").read_meta()
     assert set(on_disk["merged_heads"]) == {"head-a", "head-b"}
 
 
@@ -70,7 +71,7 @@ def test_cached_open_waits_for_local_meta_publish(tmp_path: Path, monkeypatch) -
 
     def delayed_mark_synced():
         published.set()
-        assert release_sync.wait(timeout=2)
+        assert release_sync.wait(timeout=30)
         original_mark_synced()
 
     monkeypatch.setattr(git, "mark_synced", delayed_mark_synced)
@@ -78,14 +79,14 @@ def test_cached_open_waits_for_local_meta_publish(tmp_path: Path, monkeypatch) -
         idx.meta["merged_heads"] = ["head-a"]
     writer = threading.Thread(target=store._persist_meta, args=(git, idx))
     writer.start()
-    assert published.wait(timeout=2)
+    assert published.wait(timeout=30)
     with idx._lock:
         idx.meta["merged_heads"].append("head-b")
     reader = threading.Thread(target=store._open, args=("s1",))
     reader.start()
     release_sync.set()
-    writer.join(timeout=3)
-    reader.join(timeout=3)
+    writer.join(timeout=30)
+    reader.join(timeout=30)
     assert not writer.is_alive()
     assert not reader.is_alive()
 

@@ -1,0 +1,81 @@
+<title>Writing a docs page</title>
+<meta name="description" content="The page shape, components and rules for HTML documentation sources.">
+<h1>Writing a docs page</h1>
+
+<h2>File shape</h2>
+<pre translate="no" tabindex="0">&lt;title&gt;Writing a docs page&lt;/title&gt;
+&lt;meta name="description" content="…"&gt;
+&lt;h1&gt;…&lt;/h1&gt;
+&lt;figure&gt; … &lt;/figure&gt;
+&lt;details&gt;&lt;summary&gt;…&lt;/summary&gt; … &lt;/details&gt;
+&lt;p class="next"&gt;&lt;a href=&quot;other.html&quot;&gt;…&lt;/a&gt;&lt;/p&gt;</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Files</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">topic.html</code></th><td>English, default</td></tr>
+<tr><th scope="row"><code translate="no">topic.zh.html</code></th><td>Chinese, same structure</td></tr>
+</tbody>
+</table>
+<p class="note">Styled by the site.</p>
+
+<h2>Components</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Written as</th><th scope="col">Use for</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">&lt;table class="stack fixed"&gt;</code></th><td>Lookup table. One block per row when narrow. <code translate="no">fixed</code>: two columns, narrow first.</td></tr>
+<tr><th scope="row"><code translate="no">&lt;table class="stack even"&gt;</code></th><td>Lookup table with equal columns, for several parallel systems</td></tr>
+<tr><th scope="row"><code translate="no">&lt;thead class="sr"&gt;</code></th><td>Column names read only by screen readers</td></tr>
+<tr><th scope="row"><code translate="no">&lt;span class="arg"&gt;</code></th><td>Argument line under a command, inside a row heading</td></tr>
+<tr><th scope="row"><code translate="no">&lt;table class="grid"&gt;</code></th><td>Outcome grid. Cells: <code translate="no">run</code>, <code translate="no">review</code>, <code translate="no">ask</code>, <code translate="no">deny</code>.</td></tr>
+<tr><th scope="row"><code translate="no">&lt;dl class="commands"&gt;</code></th><td>Do and do-not commands. <code translate="no">dd.struck</code> strikes one out.</td></tr>
+<tr><th scope="row"><code translate="no">&lt;dl class="pairs"&gt;</code></th><td>Label and value</td></tr>
+<tr><th scope="row"><code translate="no">&lt;svg class="fig-wide" viewBox="0 0 680 …" aria-label="…"&gt;</code></th><td>Figure drawn 1:1 on a 680-wide canvas</td></tr>
+<tr><th scope="row"><code translate="no">&lt;ol class="flow fig-narrow"&gt;</code></th><td>Its twin for narrow columns. Steps: <code translate="no">li</code>, <code translate="no">li.via</code>, <code translate="no">li.flow-end</code>, <code translate="no">p.refused</code>.</td></tr>
+<tr><th scope="row"><code translate="no">&lt;details&gt;&lt;summary&gt;</code></th><td>Rarely needed detail</td></tr>
+<tr><th scope="row"><code translate="no">&lt;p class="note"&gt;</code></th><td>Small explanation under a figure or table</td></tr>
+<tr><th scope="row"><code translate="no">&lt;p class="next"&gt;</code></th><td>Next step, last on the page</td></tr>
+<tr><th scope="row"><code translate="no">class="sr"</code></th><td>Screen-reader text</td></tr>
+<tr><th scope="row"><code translate="no">class="nb"</code></th><td>No line break</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Figure classes</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Written as</th><th scope="col">Use for</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">t-big t-soft t-cmd t-no mid</code></th><td>Text</td></tr>
+<tr><th scope="row"><code translate="no">ln ln-faint ln-acc ln-no</code></th><td>Lines</td></tr>
+<tr><th scope="row"><code translate="no">head head-no</code></th><td>Arrow heads</td></tr>
+<tr><th scope="row"><code translate="no">tile gate</code></th><td>Shapes</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Check</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">python -m scripts.docs_site.check PATH ...</code></th><td>Before finishing. Fix each error at its file and line.</td></tr>
+<tr><th scope="row"><code translate="no">… check PATH ... --ack PAGE ... --reason TEXT</code></th><td>An affected page was read and needs no change</td></tr>
+<tr><th scope="row"><code translate="no">… check --all</code></th><td>Every page and the site-wide rules</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">&lt;meta name="covers" content="openprogram/x/"&gt;</code></th><td>Names the code a page describes when its text cannot show it</td></tr>
+<tr><th scope="row"><code translate="no">&lt;code data-claim="example"&gt;</code></th><td>An illustration, or a name that is deliberately absent (old location, rejected option); not checked</td></tr>
+</tbody>
+</table>
+<p class="note"><a href="governance.html">Docs governance</a> lists every rule and where it runs.</p>
+
+<h2>Rules</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">What the check cannot judge</th></tr></thead>
+<tbody>
+<tr><th scope="row">Facts</th><td>Taken from code and command output. No real content, no block.</td></tr>
+<tr><th scope="row">Words</th><td>Headings name the thing. Errors say what happened and what to do. One word per concept across the site.</td></tr>
+<tr><th scope="row">Shape</th><td>Numbers only for real steps. No eyebrows, coloured side bars, nested cards or all-caps labels.</td></tr>
+<tr><th scope="row">Code</th><td>Monospace only for code and arguments, with <code translate="no">translate="no"</code>.</td></tr>
+<tr><th scope="row">Colour</th><td>Through tokens. Accent for links, current state and focus; red only for refusal. Every cell has words.</td></tr>
+<tr><th scope="row">Figures</th><td>Still, with an <code translate="no">aria-label</code>; they change layout rather than shrink.</td></tr>
+<tr><th scope="row">Motion</th><td>No entrance or scroll animation. Hover changes colour only. No sideways page scroll at phone width.</td></tr>
+</tbody>
+</table>
+<p class="note">Each page also publishes <code translate="no">topic.html.md</code>, generated for Agents: figures once, folds open.</p>

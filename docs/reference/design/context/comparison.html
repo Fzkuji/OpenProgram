@@ -1,0 +1,73 @@
+<title>Context design comparison</title>
+<meta name="description" content="The context components reference projects feed to the LLM, compared with OpenProgram's L0, L1 and L2 layers.">
+<h1 id="context-composition-comparison-reference-projects-vs-us-organized-by-the-three-layers">Context design comparison</h1>
+
+<p>Design: <a href="composition.html">Composition</a>. Rows are in wire order within a layer: more stable first, because cache-prefix matching makes order matter. Scattered means present but not assigned to a layer.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Hermes layer, by stability</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">stable</code>: identity, tool guidance, skills, model, platform and environment hints</th><td>L0</td></tr>
+<tr><th scope="row"><code translate="no">context</code>: caller system_message, context files</th><td>L1 project layer</td></tr>
+<tr><th scope="row"><code translate="no">volatile</code>: memory snapshot, USER.md, external memory</th><td>L1 project memory, L2</td></tr>
+</tbody>
+</table>
+<p class="note">opencode, claude-code, openclaw and pi-mono each carry fewer components than Hermes.</p>
+
+<h2 id="l0">L0 system: configured once</h2>
+<table class="stack">
+<thead><tr><th scope="col">Component</th><th scope="col">hermes</th><th scope="col">claude-code</th><th scope="col">Others</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Overall identity</th><td>yes</td><td>yes</td><td>pi</td><td>L0 (identity)</td></tr>
+<tr><th scope="row">Inline agent prompt</th><td>yes</td><td>yes</td><td>no</td><td>L0 (inline_prompt)</td></tr>
+<tr><th scope="row">Tool enforcement (act, don't ask)</th><td>yes</td><td>no</td><td>no</td><td>L0, base prompt <code translate="no">guides/base.md</code></td></tr>
+<tr><th scope="row">Model-specific guidance</th><td>yes</td><td>no</td><td>no</td><td>None: a model that needs it gets its own base prompt</td></tr>
+<tr><th scope="row">Platform rendering format</th><td>yes</td><td>no</td><td>no</td><td>L1, a line of the environment block per channel</td></tr>
+<tr><th scope="row">Computer-use guidance</th><td>yes</td><td>no</td><td>no</td><td>None; applies only when enabled</td></tr>
+<tr><th scope="row">Skills index</th><td>yes</td><td>no</td><td>pi</td><td>L1 (capabilities)</td></tr>
+<tr><th scope="row">Tools and MCP schema</th><td>yes</td><td>yes</td><td>opencode, openclaw</td><td>L0</td></tr>
+<tr><th scope="row">Global or user memory</th><td>yes</td><td>no</td><td>no</td><td>L1 (memory)</td></tr>
+<tr><th scope="row">Environment (OS, shell, remote backend)</th><td>yes</td><td>no</td><td>no</td><td>L0 (OS, shell); cwd handled by tool-runtime</td></tr>
+<tr><th scope="row">Current date, day granularity</th><td>yes</td><td>no</td><td>pi</td><td>L0 (current_date)</td></tr>
+</tbody>
+</table>
+<p class="note">Environment changes with the machine or the day, so it goes last.</p>
+
+<h2 id="l1">L1 session and project</h2>
+<table class="stack">
+<thead><tr><th scope="col">Component</th><th scope="col">hermes</th><th scope="col">claude-code</th><th scope="col">Others</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Project identity (AGENTS.md, .cursorrules)</th><td>yes</td><td>yes</td><td>openclaw</td><td>L1</td></tr>
+<tr><th scope="row">Prompt-injection detection, before loading</th><td>yes</td><td>no</td><td>no</td><td>Trust rule in the base prompt, <code translate="no">detect_injection_patterns</code> per file</td></tr>
+<tr><th scope="row">Context-file truncation</th><td>yes</td><td>no</td><td>no</td><td>L1, one 32 KiB budget across the AGENTS.md chain (<code translate="no">agents_md.MAX_BYTES</code>)</td></tr>
+<tr><th scope="row">Project memory</th><td>yes</td><td>no</td><td>no</td><td>L1</td></tr>
+<tr><th scope="row">User profile USER.md</th><td>yes</td><td>no</td><td>no</td><td>L1 (Memory Core)</td></tr>
+<tr><th scope="row">Working directory</th><td>yes</td><td>no</td><td>pi</td><td>L1</td></tr>
+<tr><th scope="row">Inside a git repo</th><td>yes</td><td>no</td><td>no</td><td>L1, environment block</td></tr>
+<tr><th scope="row">session_id, model, thinking, tier</th><td>yes</td><td>no</td><td>no</td><td>L1</td></tr>
+<tr><th scope="row">Deferred tools catalog</th><td>no</td><td>no</td><td>no</td><td>L1</td></tr>
+<tr><th scope="row">History and tool-call records</th><td>yes</td><td>no</td><td>no</td><td>L1, appended per turn, last</td></tr>
+</tbody>
+</table>
+<p class="note">Fixed project information changes only with the project. Detection and truncation sit beside the files they guard.</p>
+
+<h2 id="l2">L2 task: this turn</h2>
+<table class="stack">
+<thead><tr><th scope="col">Component</th><th scope="col">hermes</th><th scope="col">claude-code</th><th scope="col">Others</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Situation (function, call stack, step)</th><td><code translate="no">_situational</code></td><td>no</td><td>no</td><td>L2 (situation, call_path, step 6a and 6b)</td></tr>
+<tr><th scope="row">Git branch and status</th><td>scattered (git root)</td><td>no</td><td>no</td><td>L2 (git_status, order 20)</td></tr>
+<tr><th scope="row">Todo, plan, progress</th><td>no</td><td>todo tool</td><td>no</td><td>L2 (todo_progress, reads <code translate="no">_TODOS</code>)</td></tr>
+<tr><th scope="row">Token budget hint</th><td>no</td><td>no</td><td>no</td><td>None</td></tr>
+<tr><th scope="row">Per-turn memory prefetch</th><td>yes</td><td>no</td><td>no</td><td>L2</td></tr>
+<tr><th scope="row">User input, attachments</th><td>yes</td><td>yes</td><td>yes</td><td>L2</td></tr>
+<tr><th scope="row">Output format or schema</th><td>no</td><td>yes</td><td>no</td><td>L2</td></tr>
+<tr><th scope="row">Output contract</th><td>no</td><td>no</td><td>no</td><td>L2, in <code translate="no">_situational_prefix</code></td></tr>
+<tr><th scope="row">Timestamp</th><td>yes</td><td>no</td><td>pi</td><td>L2, last</td></tr>
+<tr><th scope="row">Kanban multi-agent coordination</th><td>yes</td><td>no</td><td>no</td><td>None; specific to Hermes</td></tr>
+</tbody>
+</table>
+<p class="note">Situation, environment and todo are settled for the turn; the timestamp changes every time.</p>
+
+<h2 id="not-carried">Not carried</h2>
+<p>Computer-use guidance, Nous subscription guidance, Kanban coordination, the Hermes profile mechanism and the external memory provider have no feature here. Building one means registering a <code translate="no">ContextComponent</code>, with no framework change.</p>

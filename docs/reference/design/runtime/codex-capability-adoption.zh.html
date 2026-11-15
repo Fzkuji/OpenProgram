@@ -1,0 +1,165 @@
+<title>Codex 能力审计</title>
+<meta name="description" content="OpenProgram 采纳了哪些 Codex 能力，哪些与现有能力重叠，以及每个开关、CLI 子命令和工具处理器的归类。">
+<h1>Codex 能力审计</h1>
+<p>规则：只增加独立缺失的能力。开关、工具名或实现不同，不等于缺失；重叠部分保持不变。</p>
+<dl class="pairs">
+<dt>147</dt><dd>个功能开关</dd><dt>30</dt><dd>个 CLI 子命令</dd><dt>38</dt><dd>个工具处理模块</dd>
+</dl>
+<p class="note">全部归类，含实验、已移除和内部条目，因此不是独立能力的数量。归为重叠不代表行为相同。</p>
+
+<h2 id="adopted">已采纳</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子系统</th><th scope="col">决定和原因</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram permissions check</code>、<code translate="no">test</code></th><td>用原匹配器只读解释和自测权限规则，不改变执行判定。</td></tr>
+<tr><th scope="row">命令网络域名</th><td>可选，仅 macOS：带认证的本地代理加 Seatbelt。默认联网不变，拒绝私有地址，Linux 和 WSL 在域名模式下拒绝执行。</td></tr>
+<tr><th scope="row"><code translate="no">execution.prevent_idle_sleep</code></th><td>默认关闭。每个活动执行持有一个句柄，完成、出错或取消时释放：macOS 是 IOKit 断言，Windows 是 system-required 电源请求，Linux 是 <code translate="no">systemd-inhibit</code> 对空闲和睡眠的锁。不影响显示器休眠；Linux 上用户主动发起的睡眠也会等待。下次执行时读取。获取失败记警告，任务继续。只在调度执行外包一层资源生命周期。</td></tr>
+<tr><th scope="row"><code translate="no">bash</code> 会话</th><td>见下表 <code translate="no">execution</code>。</td></tr>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">bash</code> 按 unified_exec 的 exec_command 工作：等待 <code translate="no">yield_time_ms</code> 后返回，还在运行的命令作为会话继续，由 <code translate="no">write_stdin</code> 轮询、中断或输入（tty），并沿用 Codex 的 64 个会话上限和最久未用淘汰。会话跑在现有的受管进程 supervisor 上，worker 重启后仍在。不采用 zsh fork 和 Shell 快照。见<a href="execution/command-sessions.zh.html">命令会话</a>。</td></tr>
+<tr><th scope="row"><code translate="no">network</code></th><td>原有 Shell 沙箱只有网络总开关；safe_http 保护受管 HTTP 客户端，不能约束任意命令的套接字。保留可选的 macOS 命令域名限制，默认行为不变。</td></tr>
+<tr><th scope="row"><code translate="no">power</code></th><td>原有 runtime、桌面端和脚本中未发现电源断言或防休眠实现。采用独立可选的运行时电源断言，不唤醒显示器或修改永久电源设置。</td></tr>
+</tbody>
+</table>
+<p class="note">未增加：上下文、补丁、环境过滤、项目指令层级、剩余上下文工具。现有实现不变。</p>
+
+<h2 id="overlaps">重叠，保持不变</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子系统</th><th scope="col">决定和原因</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">context</code></th><td>已有上下文投影、摘要、预算和占用统计。算法或供应商端点不同属于重叠实现，保持原样。</td></tr>
+<tr><th scope="row"><code translate="no">patch</code></th><td>已有补丁编辑、文件变更记录和工作树。移动语法、模糊匹配、行尾保留和流式补丁进度属于现有功能扩展，不纳入本批。</td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td>已有持久执行、程序化工具调用和取消。JavaScript/V8 或另一种传输方式属于重叠实现。</td></tr>
+<tr><th scope="row"><code translate="no">history</code></th><td>已有持久化、分支、可恢复执行和会话 UI。Codex 存储迁移与压缩针对不同格式，不重写我们的存储。</td></tr>
+<tr><th scope="row"><code translate="no">memory</code></th><td>已有持久记忆、源资料归档与整理。外部记忆导入和被动屏幕记忆属于该系统扩展，本批不改。</td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td>已有规则执行、审批和模型审查，保持不变。仅保留独立的只读规则解释与自检 CLI。</td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td>已有 Seatbelt 与 bubblewrap/WSL 隔离。原生 Windows 和 Landlock 属于替代实现，不纳入。</td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>已有模型发现、凭据、代理 HTTP、故障切换与传输。OpenAI 专用压缩和无界重试属于重叠或供应商特有行为，不替换。</td></tr>
+<tr><th scope="row"><code translate="no">multiagent</code></th><td>已有子 Agent、消息、持久任务和目标。不会增加第二套协作或目标系统。</td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td>已有 MCP 工具、资源、认证和资源接口。协议版本、MCP Apps 和端点覆盖属于集成扩展，不自动迁移。</td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td>已有工具发现、市场安装、插件 hooks 和技能。推荐、分享和依赖安装属于系统扩展，保持不变。</td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td>已有提问、用户回复、后续消息和消息渠道。异步变体和提及 UI 属于重叠交互。</td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td>已有网页搜索、图像查看、浏览器工具和 GUI 控制。供应商特有的外部浏览器或完整 CDP 变体不作为独立缺口。</td></tr>
+<tr><th scope="row"><code translate="no">media</code></th><td>已有图像、附件、语音输出、听写和画布。全双工语音和图像预算算法与现有媒体系统重叠，不替换，也不声称能力一致。</td></tr>
+<tr><th scope="row"><code translate="no">desktop</code></th><td>已有 worker 管理、聊天、调度和更新。传输与守护进程变体保持不变。</td></tr>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td>已有用量记录、执行观察和健康诊断。套餐用量历史与内部 Responses 元数据属于供应商特有或重叠功能。</td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>已有 hooks 与 gate 系统，保持不变；本批不增加压缩 gate。</td></tr>
+<tr><th scope="row"><code translate="no">guidance</code></th><td>已有 Agent 工作区指令、时间环境上下文、渲染指导和文档依赖。项目规则层级与上下文余量工具与现有能力重叠，已撤回候选改动。</td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td>已有等待、轮询与调度，不增加重复的 sleep 工具。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>源码路径</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子系统</th><th scope="col">路径</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">openprogram/programs/tools/files/bash/session.py</code><br><code translate="no">openprogram/programs/tools/files/write_stdin.py</code><br><code translate="no">openprogram/host/processes/</code><br><code translate="no">openprogram/host/resources/terminal.py</code></td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td><code translate="no">openprogram/runtime/context/compaction/request.py</code><br><code translate="no">openprogram/runtime/context/engine.py</code><br><code translate="no">openprogram/runtime/context/session_stats.py</code><br><code translate="no">openprogram/runtime/context/compaction/bounded_summary.py</code></td></tr>
+<tr><th scope="row"><code translate="no">patch</code></th><td><code translate="no">openprogram/programs/tools/files/apply_patch.py</code><br><code translate="no">openprogram/state/store/snapshot/checkpoint</code><br><code translate="no">openprogram/state/worktree</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td><code translate="no">openprogram/runtime/agent/runtime</code><br><code translate="no">openprogram/programs/tools/code/execute_code.py</code><br><code translate="no">openprogram/runtime/execution</code></td></tr>
+<tr><th scope="row"><code translate="no">history</code></th><td><code translate="no">openprogram/state/store/session</code><br><code translate="no">openprogram/runtime/execution</code><br><code translate="no">apps/web/components/chat</code></td></tr>
+<tr><th scope="row"><code translate="no">memory</code></th><td><code translate="no">openprogram/state/memory/store.py</code><br><code translate="no">openprogram/state/memory/scheduler.py</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">openprogram/runtime/permissions/policy.py</code><br><code translate="no">openprogram/runtime/permissions/approval.py</code><br><code translate="no">openprogram/runtime/permissions/auto_review.py</code></td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td><code translate="no">openprogram/host/sandbox/__init__.py</code><br><code translate="no">openprogram/host/_platform/environment.py</code></td></tr>
+<tr><th scope="row"><code translate="no">network</code></th><td><code translate="no">openprogram/host/sandbox/__init__.py</code><br><code translate="no">openprogram/host/security/safe_http.py</code><br><code translate="no">openprogram/host/security/url_policy.py</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td><code translate="no">openprogram/models/providers</code><br><code translate="no">openprogram/models/auth</code><br><code translate="no">openprogram/host/security/safe_http.py</code></td></tr>
+<tr><th scope="row"><code translate="no">multiagent</code></th><td><code translate="no">openprogram/programs/tools/agents</code><br><code translate="no">openprogram/runtime/jobs</code><br><code translate="no">openprogram/programs/tools/planning/goal</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td><code translate="no">openprogram/extensions/mcp/client.py</code><br><code translate="no">openprogram/extensions/mcp/oauth_flow.py</code><br><code translate="no">openprogram/host/resources</code></td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td><code translate="no">openprogram/programs/__init__.py</code><br><code translate="no">openprogram/extensions/plugins/marketplace.py</code><br><code translate="no">openprogram/extensions/plugins/installer.py</code><br><code translate="no">openprogram/extensions/plugins/hooks.py</code><br><code translate="no">openprogram/extensions/skills/discovery.py</code><br><code translate="no">openprogram/extensions/skills/loader.py</code></td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td><code translate="no">openprogram/programs/tools/interaction/clarify.py</code><br><code translate="no">openprogram/programs/tools/interaction/ask_user.py</code><br><code translate="no">openprogram/runtime/agent/loop/</code><br><code translate="no">openprogram/interfaces/channels</code></td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td><code translate="no">openprogram/programs/tools/web</code><br><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/sandbox/isolation.py</code><br><code translate="no">openprogram/programs/applications/browser</code><br><code translate="no">apps/desktop</code></td></tr>
+<tr><th scope="row"><code translate="no">media</code></th><td><code translate="no">openprogram/programs/tools/web/image_generate</code><br><code translate="no">openprogram/programs/tools/web/image_analyze</code><br><code translate="no">openprogram/interfaces/speech/tts.py</code><br><code translate="no">openprogram/state/attachments.py</code><br><code translate="no">openprogram/programs/tools/interaction/canvas.py</code><br><code translate="no">apps/web</code></td></tr>
+<tr><th scope="row"><code translate="no">desktop</code></th><td><code translate="no">openprogram/operations/worker</code><br><code translate="no">openprogram/runtime/scheduler</code><br><code translate="no">openprogram/runtime/proactive</code><br><code translate="no">openprogram/operations/self_update</code><br><code translate="no">apps/desktop</code><br><code translate="no">apps/cli</code></td></tr>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td><code translate="no">openprogram/models/usage</code><br><code translate="no">openprogram/runtime/events</code><br><code translate="no">openprogram/runtime/execution</code><br><code translate="no">openprogram/interfaces/cli/commands/doctor.py</code></td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td><code translate="no">openprogram/runtime/events/bus.py</code><br><code translate="no">openprogram/runtime/events/shell_hooks.py</code><br><code translate="no">openprogram/extensions/plugins/hooks.py</code></td></tr>
+<tr><th scope="row"><code translate="no">guidance</code></th><td><code translate="no">openprogram/runtime/context/components.py</code><br><code translate="no">openprogram/runtime/agent_registry/workspace.py</code><br><code translate="no">openprogram/programs/applications/office_editor/assets.py</code></td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td><code translate="no">openprogram/runtime/agent/runtime</code><br><code translate="no">openprogram/runtime/scheduler</code><br><code translate="no">openprogram/host/processes</code></td></tr>
+<tr><th scope="row"><code translate="no">power</code></th><td><code translate="no">openprogram/host/_platform</code><br><code translate="no">openprogram/runtime/conversation/turn_runtime/loop_runner.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>功能开关（147）</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子系统</th><th scope="col">状态：开关</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td>实验：<code translate="no">analytics_plan_history</code><br>稳定：<code translate="no">content_item_kinds</code><br>开发中：<code translate="no">executed_tool_call_metadata</code>、<code translate="no">runtime_metrics</code>、<code translate="no">concurrent_reasoning_summaries</code><br>已移除：<code translate="no">workspace_owner_usage_nudge</code></td></tr>
+<tr><th scope="row"><code translate="no">desktop</code></th><td>实验：<code translate="no">daemon_auto_start</code><br>稳定：<code translate="no">in_app_chat</code>、<code translate="no">in_app_local_automation</code>、<code translate="no">in_app_updates</code><br>已移除：<code translate="no">remote_control</code>、<code translate="no">tui_app_server</code></td></tr>
+<tr><th scope="row"><code translate="no">history</code></th><td>开发中：<code translate="no">transcript_v2</code>、<code translate="no">local_thread_store_compression</code>、<code translate="no">background_paginated_rollout_migration</code><br>已移除：<code translate="no">sqlite</code>、<code translate="no">local_thread_store_shared_compression</code>、<code translate="no">item_ids</code></td></tr>
+<tr><th scope="row"><code translate="no">patch</code></th><td>已移除：<code translate="no">undo</code>、<code translate="no">codex_git_commit</code>、<code translate="no">apply_patch_freeform</code><br>开发中：<code translate="no">cwd_relative_turn_diffs</code>、<code translate="no">apply_patch_streaming_events</code>、<code translate="no">apply_patch_preserve_line_endings</code><br>稳定：<code translate="no">worktrees</code></td></tr>
+<tr><th scope="row"><code translate="no">execution</code></th><td>稳定：<code translate="no">shell_tool</code>、<code translate="no">unified_exec</code>、<code translate="no">unified_exec_tty</code>、<code translate="no">shell_snapshot</code><br>开发中：<code translate="no">shell_zsh_fork</code>、<code translate="no">powershell_shell_version</code>、<code translate="no">shell_snapshot_v2</code>、<code translate="no">deferred_executor</code>、<code translate="no">executor_capability_discovery</code><br>已移除：<code translate="no">unified_exec_zsh_fork</code></td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td>稳定：<code translate="no">view_image</code>、<code translate="no">in_app_browser</code>、<code translate="no">browser_use</code>、<code translate="no">browser_use_full_cdp_access</code>、<code translate="no">browser_use_external</code>、<code translate="no">computer_use</code><br>已弃用：<code translate="no">web_search_request</code>、<code translate="no">web_search_cached</code><br>开发中：<code translate="no">standalone_web_search</code><br>已移除：<code translate="no">search_tool</code></td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td>稳定：<code translate="no">sleep_tool</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>稳定：<code translate="no">secret_auth_storage</code>、<code translate="no">enable_request_compression</code>、<code translate="no">unbounded_connection_retries</code>、<code translate="no">fast_mode</code><br>已移除：<code translate="no">remote_models</code>、<code translate="no">responses_websockets</code>、<code translate="no">responses_websockets_v2</code><br>开发中：<code translate="no">api_key_model_discovery</code>、<code translate="no">respect_system_proxy</code>、<code translate="no">use_xaa</code>、<code translate="no">reasoning_effort_override</code>、<code translate="no">bedrock_setup_wizard</code>、<code translate="no">step_model_switching</code>、<code translate="no">use_agent_identity</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td>已移除：<code translate="no">js_repl</code>、<code translate="no">code_mode_buffered_exec</code>、<code translate="no">js_repl_tools_only</code><br>开发中：<code translate="no">code_mode</code>、<code translate="no">code_mode_prewarm</code>、<code translate="no">code_mode_interrupt</code>、<code translate="no">code_mode_only</code><br>稳定：<code translate="no">code_mode_host</code></td></tr>
+<tr><th scope="row"><code translate="no">guidance</code></th><td>已移除：<code translate="no">terminal_resize_reflow</code>、<code translate="no">personality</code><br>开发中：<code translate="no">terminal_visualization_instructions</code>、<code translate="no">current_time_reminder</code>、<code translate="no">nonfatal_clock_read_errors</code><br>稳定：<code translate="no">workspace_dependencies</code></td></tr>
+<tr><th scope="row"><code translate="no">memory</code></th><td>稳定：<code translate="no">memories</code><br>开发中：<code translate="no">external_agent_memory_import</code>、<code translate="no">chronicle</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td>开发中：<code translate="no">exec_permission_approvals</code>、<code translate="no">write_stdin_approval</code>、<code translate="no">request_permissions_tool</code>、<code translate="no">guardianv2.thread_context</code>、<code translate="no">guardian_reuse_parent_compaction</code>、<code translate="no">guardian_enhanced_node_repl_transcripts</code>、<code translate="no">guardian_node_repl_transcript_images</code>、<code translate="no">guardianv2</code><br>已移除：<code translate="no">request_rule</code>、<code translate="no">guardian_ext</code><br>稳定：<code translate="no">guardian_approval</code></td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>稳定：<code translate="no">hooks</code></td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td>已移除：<code translate="no">use_linux_sandbox_bwrap</code>、<code translate="no">experimental_windows_sandbox</code>、<code translate="no">elevated_windows_sandbox</code><br>已弃用：<code translate="no">use_legacy_landlock</code><br>开发中：<code translate="no">windows_sandbox_service</code></td></tr>
+<tr><th scope="row"><code translate="no">network</code></th><td>实验：<code translate="no">network_proxy</code></td></tr>
+<tr><th scope="row"><code translate="no">multiagent</code></th><td>稳定：<code translate="no">multi_agent</code>、<code translate="no">multi_agent_v2</code>、<code translate="no">goals</code><br>已移除：<code translate="no">multi_agent_mode</code>、<code translate="no">enable_fanout</code>、<code translate="no">send_async_message</code>、<code translate="no">collaboration_modes</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td>稳定：<code translate="no">apps</code>、<code translate="no">tool_call_mcp_elicitation</code>、<code translate="no">auth_elicitation</code><br>开发中：<code translate="no">psp</code>、<code translate="no">enable_mcp_apps</code>、<code translate="no">mcp_2026_07_28</code>、<code translate="no">codex_apps_mcp_2026_07_28</code>、<code translate="no">mcp_oauth_refresh_coordination</code>、<code translate="no">non_prefixed_mcp_tool_names</code><br>已移除：<code translate="no">apps_mcp_path_override</code></td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td>已移除：<code translate="no">tool_search</code>、<code translate="no">tool_search_always_defer_mcp_tools</code>、<code translate="no">unavailable_dummy_tools</code>、<code translate="no">plugin_hooks</code>、<code translate="no">external_migration</code>、<code translate="no">skill_env_var_dependency_prompt</code><br>开发中：<code translate="no">deferred_tool_world_state</code>、<code translate="no">skip_host_skill_discovery</code><br>稳定：<code translate="no">tool_suggest</code>、<code translate="no">recommended_plugins</code>、<code translate="no">plugins</code>、<code translate="no">remote_plugin</code>、<code translate="no">plugin_sharing</code>、<code translate="no">skill_mcp_dependency_install</code>、<code translate="no">skill_search</code></td></tr>
+<tr><th scope="row"><code translate="no">media</code></th><td>稳定：<code translate="no">in_app_dictation</code>、<code translate="no">image_generation</code>、<code translate="no">realtime_conversation</code><br>开发中：<code translate="no">omit_app_server_notification_media</code>、<code translate="no">image_resize_notice</code>、<code translate="no">unified_image_budget</code>、<code translate="no">artifact</code><br>已移除：<code translate="no">resize_all_images</code>、<code translate="no">image_detail_original</code></td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td>稳定：<code translate="no">mentions_v2</code><br>已移除：<code translate="no">steer</code><br>开发中：<code translate="no">default_mode_request_user_input</code>、<code translate="no">send_message_to_user_async</code></td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td>开发中：<code translate="no">token_budget</code>、<code translate="no">context_management</code>、<code translate="no">rollout_budget</code>、<code translate="no">retain_client_developer_messages</code><br>已移除：<code translate="no">remote_compaction_v2</code><br>稳定：<code translate="no">compaction_image_budget</code></td></tr>
+<tr><th scope="row"><code translate="no">power</code></th><td>实验：<code translate="no">prevent_idle_sleep</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>CLI 子命令（30）</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类别</th><th scope="col">条目</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">history</code></th><td><code translate="no">Agents</code>、<code translate="no">Resume</code>、<code translate="no">Queue</code>、<code translate="no">Archive</code>、<code translate="no">Delete</code>、<code translate="no">MigrateRollouts</code>、<code translate="no">Unarchive</code>、<code translate="no">Fork</code></td></tr>
+<tr><th scope="row"><code translate="no">internal</code></th><td><code translate="no">TcpTunnel</code>、<code translate="no">ResponsesApiProxy</code>、<code translate="no">StdioToUds</code></td></tr>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">Exec</code>、<code translate="no">Review</code>、<code translate="no">ExecServer</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td><code translate="no">Login</code>、<code translate="no">Logout</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td><code translate="no">Mcp</code></td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td><code translate="no">Plugin</code></td></tr>
+<tr><th scope="row"><code translate="no">desktop</code></th><td><code translate="no">AppServer</code>、<code translate="no">RemoteControl</code>、<code translate="no">App</code>、<code translate="no">Completion</code>、<code translate="no">Update</code></td></tr>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td><code translate="no">Doctor</code>、<code translate="no">Debug</code>、<code translate="no">Features</code></td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td><code translate="no">Sandbox</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">Execpolicy</code></td></tr>
+<tr><th scope="row"><code translate="no">patch</code></th><td><code translate="no">Apply</code></td></tr>
+<tr><th scope="row"><code translate="no">external</code></th><td><code translate="no">Cloud</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>工具处理器（38）</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类别</th><th scope="col">条目</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">patch</code></th><td><code translate="no">apply_patch</code>、<code translate="no">apply_patch_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">guidance</code></th><td><code translate="no">current_time</code>、<code translate="no">get_context_remaining</code>、<code translate="no">get_context_remaining_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td><code translate="no">dynamic</code>、<code translate="no">extension_tools</code>、<code translate="no">list_available_plugins_to_install</code>、<code translate="no">list_available_plugins_to_install_spec</code>、<code translate="no">request_plugin_install</code>、<code translate="no">request_plugin_install_spec</code>、<code translate="no">tool_search</code>、<code translate="no">tool_search_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td><code translate="no">mcp</code>、<code translate="no">mcp_resource</code>、<code translate="no">mcp_resource_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">multiagent</code></th><td><code translate="no">multi_agents</code>、<code translate="no">multi_agents_common</code>、<code translate="no">multi_agents_spec</code>、<code translate="no">multi_agents_v2</code>、<code translate="no">plan</code>、<code translate="no">plan_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td><code translate="no">new_context_window</code>、<code translate="no">new_context_window_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">request_permissions</code></td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td><code translate="no">request_user_input</code>、<code translate="no">request_user_input_async</code>、<code translate="no">request_user_input_spec</code>、<code translate="no">send_message_to_user_async</code></td></tr>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">shell_spec</code>、<code translate="no">unified_exec</code></td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td><code translate="no">sleep</code>、<code translate="no">wait_for_environment</code></td></tr>
+<tr><th scope="row"><code translate="no">internal</code></th><td><code translate="no">test_sync</code>、<code translate="no">test_sync_spec</code>、<code translate="no">permission_preapproval_tests</code></td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td><code translate="no">view_image</code>、<code translate="no">view_image_spec</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">external</code>：依赖 OpenAI 托管服务。<code translate="no">internal</code>：传输或测试基础设施，不是可移植的产品缺口。</p>
+</details>
+
+<details>
+<summary>验收</summary>
+<p>走公开入口：CLI 规则解释和断言、沙箱命令限制、配置和真实调度生命周期。覆盖默认关闭、失败清理、并发断言相互独立和不支持的平台。</p>
+</details>
+
+<h2 id="sources">来源和范围</h2>
+<p><a href="https://github.com/openai/codex">Codex 官方源码</a>：<code translate="no">codex-rs/features/src/lib.rs</code>、<code translate="no">codex-rs/cli/src/main.rs</code>、<code translate="no">codex-rs/core/src/tools/handlers/mod.rs</code>、<code translate="no">codex-rs/utils/sleep-inhibitor</code>。范围是固定快照的公开能力入口，不是每个 Rust crate 或闭源服务，也不声称与当前 Codex 产品对等。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>权限 CLI、macOS 域名限制和防空闲休眠已实现。原生断言的获取和释放已验证。</p>

@@ -1,0 +1,23 @@
+<title>Three-surface sync</title>
+<meta name="description" content="How Web, TUI and CLI share running state, the attended mode and steering.">
+<h1>Three-surface sync</h1>
+
+<p>Web, TUI and CLI connect to one worker, so a turn started on one surface streams to the others.</p>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Backend</th><th scope="col">Web</th><th scope="col">TUI and CLI</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source of truth</th><td>One worker (<code translate="no">operations/worker/lock.py</code>) and one session store (<code translate="no">runtime/context/session_db.py</code>)</td><td>Same</td><td>Same</td></tr>
+<tr><th scope="row">Events</th><td><code translate="no">EventBus</code> and <code translate="no">_broadcast</code>: one emission reaches every WebSocket client</td><td>Receives</td><td>Receives</td></tr>
+<tr><th scope="row">Running state</th><td><code translate="no">_running_tasks</code>; <code translate="no">running_task</code> and <code translate="no">running_task_clear</code> broadcasts</td><td>Sidebar indicator, composer state</td><td>Status</td></tr>
+<tr><th scope="row">Reconnect</th><td>Session load resends history and calls <code translate="no">_send_running_task_state</code>; <code translate="no">subscribe_execution_stream</code> serves a snapshot of <code translate="no">execution_stream.v1</code></td><td>Restores</td><td>Restores</td></tr>
+<tr><th scope="row">Attended mode</th><td>WebSocket <code translate="no">set_attended</code>, broadcast <code translate="no">attended_changed</code>. Per session over a process default of unattended (<code translate="no">runtime/permissions/attended.py</code>).</td><td>Toggle (<code translate="no">use-unattended-mode.ts</code>)</td><td><code translate="no">/attended [on|off]</code>, <code translate="no">/unattended</code></td></tr>
+<tr><th scope="row">Steering</th><td><code translate="no">execution.steer</code>, applied at the next safe point. Message up to 4096 characters.</td><td>Input while running (<code translate="no">lib/chat/send/steer-message.ts</code>)</td><td><code translate="no">/steer &lt;instruction&gt;</code>; <code translate="no">openprogram execution steer --message</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<p>All rows are implemented.</p>
+
+<p class="next"><a href="controllability-and-three-surface-sync.html">Controllability and three-surface sync</a></p>

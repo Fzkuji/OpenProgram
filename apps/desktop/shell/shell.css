@@ -1,0 +1,136 @@
+/* The shell's two pages. Values come from apps/web/app/styles/themes/light.css
+   and dark.css; they run with no backend, so they use the system font like the
+   existing "Waiting for backend" page. */
+:root {
+  color-scheme: light;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f7;
+  --bg-input: #ffffff;
+  --border: rgba(10, 10, 15, 0.09);
+  --text-primary: #3a3a40;
+  --text-bright: #131317;
+  --text-muted: #8c8c94;
+  --accent-blue: #2563eb;
+  --accent-red: #c24e42;
+  --primary-foreground: #ffffff;
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --meter-fill: #3b82f6;
+  --meter-track: #ebebef;
+  --foreground: var(--text-primary);
+  --card: var(--bg-secondary);
+  --font-shell: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-mono: Menlo, Monaco, Consolas, ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg-primary: #1e1e20;
+    --bg-secondary: #171719;
+    --bg-input: #2a2a2e;
+    --border: rgba(255, 255, 255, 0.07);
+    --text-primary: #b6b6bb;
+    --text-bright: #ededf0;
+    --text-muted: #74747c;
+    --accent-blue: #6ea8fe;
+    --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.25), 0 1px 2px -1px rgb(0 0 0 / 0.25);
+    --meter-fill: #5b9cf8;
+    --meter-track: rgba(255, 255, 255, 0.08);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-primary: #1e1e20;
+  --bg-secondary: #171719;
+  --bg-input: #2a2a2e;
+  --border: rgba(255, 255, 255, 0.07);
+  --text-primary: #b6b6bb;
+  --text-bright: #ededf0;
+  --text-muted: #74747c;
+  --accent-blue: #6ea8fe;
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.25), 0 1px 2px -1px rgb(0 0 0 / 0.25);
+  --meter-fill: #5b9cf8;
+  --meter-track: rgba(255, 255, 255, 0.08);
+}
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-shell);
+  font-size: 14px;
+  line-height: 20px;
+}
+body.centered { display: flex; align-items: center; justify-content: center; }
+h2, h3, p { margin: 0; }
+button { font-family: inherit; }
+.shell { display: flex; justify-content: center; padding: 48px 28px; width: 100%; }
+.shell-inner { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 16px; }
+.shell-center { text-align: center; max-width: 448px; }
+.shell h2 { font-size: 24px; line-height: 30px; font-weight: 700; color: var(--text-bright); }
+.shell-copy { font-size: 16px; line-height: 22px; }
+.notice { color: var(--accent-red); font-size: 13px; }
+.section { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.heading { display: flex; flex-direction: column; gap: 4px; }
+.heading h3 { font-size: 16px; font-weight: 500; line-height: 22px; color: var(--text-primary); }
+.heading p { color: var(--text-muted); }
+.card {
+  background: var(--card);
+  color: var(--text-primary);
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 10%, transparent);
+  padding: 0 16px;
+}
+.row { display: flex; align-items: center; gap: 8px; padding: 16px 0; border-top: 1px solid var(--border); }
+.row:first-child { border-top: 0; }
+.field-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.375; }
+.field-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
+.field-desc { font-size: 14px; line-height: 1.5; color: var(--text-muted); text-wrap: balance; overflow-wrap: anywhere; }
+.controls { display: flex; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 8px; }
+.controls .btn { min-width: 128px; }
+.mono { display: block; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; }
+.btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn-elevated { background: var(--bg-input); color: var(--foreground); box-shadow: var(--composer-shadow); }
+.btn-default { background: var(--accent-blue); color: var(--primary-foreground); box-shadow: var(--composer-shadow); }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.badge-default { background: var(--accent-blue); color: var(--primary-foreground); }
+.badge-destructive { background: color-mix(in srgb, var(--accent-red) 10%, transparent); color: var(--accent-red); }
+.progress { height: 4px; border-radius: 2px; background: var(--meter-track); overflow: hidden; }
+.progress span { display: block; height: 100%; width: 0; background: var(--meter-fill); border-radius: 2px; transition: width 200ms linear; }
+.progress-text { font-size: 13px; color: var(--text-muted); }
+.retry { display: flex; justify-content: center; }
+[hidden] { display: none !important; }
+@media (max-width: 640px) {
+  .shell { padding: 32px 16px; }
+  .row { flex-wrap: wrap; }
+  .field-content { flex-basis: 100%; }
+  .controls { flex-wrap: wrap; width: 100%; }
+  .controls .btn { flex: 1 1 128px; }
+}

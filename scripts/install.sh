@@ -4,26 +4,23 @@
 # -----------------------------------------------------------------------------
 # This script creates an editable checkout and builds local assets. It is for
 # contributors and source development, not stable release installation. See
-# docs/install/install.md for the macOS DMG and managed CLI installation.
+# docs/install/install.html for the macOS DMG and managed CLI installation.
 # It can still be run straight off the web for a development checkout:
-#   curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/scripts/install.sh | bash
 # It clones OpenProgram to ~/OpenProgram (override with --target DIR), then
 # hands off to the cloned copy. Already inside a checkout? It skips the clone
 # and installs in place.
 #
 # The default install brings up EVERYTHING `openprogram` ships with:
-#   1. System toolchain: Python 3.11+, Node 20+, git (installed if missing)
+#   1. System toolchain: Python 3.11+, Node 22.12+, git (installed if missing)
 #   2. Python env (uses an active venv/conda, else creates ./.venv)
 #   3. OpenProgram (editable) + its deps
 #   4. Web UI:   apps/web/ -> npm install && npm run build  (served on :18100)
 #   5. TUI:      apps/cli/ -> npm install && npm run build  (Ink TUI; POSIX)
 #   6. Product extras [all,search] + Playwright Chromium
-#   7. GUI / Research / Wiki first-party Programs, default OCR/model data,
-#      and the Research PDF dependency
 #
-# The GUI harness's torch build is whatever pip resolves. If you need an
-# explicit CUDA/CPU variant, run the harness's own installer afterwards:
-#   openprogram/programs/packages/gui_harness/scripts/install.sh --cuda cu124
+# Programs are not bundled: install any program package afterwards with
+#   openprogram programs install <directory | git URL | owner/repo>
 #
 # Re-runnable: every step is idempotent.
 #
@@ -31,8 +28,6 @@
 #   curl -fsSL .../scripts/install.sh | bash    # full development install
 #   ./scripts/install.sh                   # full install (everything above)
 #   ./scripts/install.sh --python /p/bin/python   # pick the interpreter
-#   ./scripts/install.sh --stealth         # + stealth browsers (patchright/camoufox)
-#   ./scripts/install.sh --agent-browser   # + agent-browser (global npm)
 #   ./scripts/install.sh --target DIR      # where to clone when run off the web (default ~/OpenProgram)
 #   ./scripts/install.sh --yes             # skip every prompt, use defaults (-y)
 #
@@ -51,7 +46,7 @@ warn() { printf "${c_yellow}  !!${c_reset} %s\n" "$*" >&2; }
 die()  { printf "${c_red}ERROR${c_reset} %s\n" "$*" >&2; exit 1; }
 
 OS="$(uname -s)"
-REPO_URL="https://github.com/Fzkuji/OpenProgram.git"
+REPO_URL="https://github.com/FuzzyKuji/OpenProgram.git"
 
 # Every /dev/tty prompt reads with this timeout so an agent driving the default
 # command inside a pty (and never answering) can't hang forever — on expiry we
@@ -93,16 +88,14 @@ else
 fi
 
 # ---- args -------------------------------------------------------------------
-PYTHON_BIN=""; WITH_STEALTH=0; WITH_AGENT_BROWSER=0
+PYTHON_BIN=""
 CLONE_TARGET=""; ASSUME_YES=0; BOOTSTRAPPED=0; BOOTSTRAP_ONLY=0
 FORWARD_ARGS=()   # rebuilt to forward across the bootstrap exec
 while [ $# -gt 0 ]; do
   case "$1" in
     --minimal) die "--minimal was removed: development installs include the complete product" ;;
     --python) PYTHON_BIN="${2:?--python needs a path}"; FORWARD_ARGS+=("$1" "$2"); shift 2 ;;
-    --stealth) WITH_STEALTH=1; FORWARD_ARGS+=("$1"); shift ;;
-    --agent-browser) WITH_AGENT_BROWSER=1; FORWARD_ARGS+=("$1"); shift ;;
-    --programs) [ $# -ge 2 ] || die "--programs needs a value"; warn "--programs is no longer needed; all first-party Programs are installed"; shift 2 ;;
+    --programs) [ $# -ge 2 ] || die "--programs needs a value"; warn "--programs was removed; install Programs with: openprogram programs install <source>"; shift 2 ;;
     --target) CLONE_TARGET="${2:?--target needs a directory}"; shift 2 ;;   # consumed by bootstrap, not forwarded
     -y|--yes) ASSUME_YES=1; FORWARD_ARGS+=("$1"); shift ;;
     --bootstrapped) BOOTSTRAPPED=1; shift ;;   # internal: child skips re-bootstrapping
@@ -160,19 +153,25 @@ pm_install() {  # best-effort cross-distro package install
 }
 sudo_run() { if [ "$(id -u)" = "0" ]; then "$@"; elif command -v sudo >/dev/null 2>&1; then sudo "$@"; else warn "no sudo — run as root: $*"; return 1; fi; }
 
-step "checking system toolchain (python3.11+, node20+, git)"
+step "checking system toolchain (python3.11+, node22.12+, git)"
 command -v git >/dev/null 2>&1 || { step "installing git"; pm_install git; }
 command -v git >/dev/null 2>&1 && ok "git: $(git --version)" || warn "git missing"
 if ! command -v node >/dev/null 2>&1; then
   step "installing Node.js"
   if [ "$OS" = "Darwin" ]; then pm_install node
-  else pm_install nodejs npm || warn "install Node 20+ from https://nodejs.org"; fi
+  else pm_install nodejs npm || warn "install Node 22.12+ from https://nodejs.org"; fi
 fi
 if command -v node >/dev/null 2>&1; then
+  NODE_VERSION="$(node -p 'process.versions.node' 2>/dev/null || echo 0.0.0)"
   NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-  [ "$NODE_MAJOR" -ge 20 ] && ok "node: $(node --version)" || warn "node $(node --version) < 20 — web/TUI may fail; upgrade to Node 20+"
+  NODE_MINOR="$(node -p 'process.versions.node.split(".")[1]' 2>/dev/null || echo 0)"
+  if [ "$NODE_MAJOR" -gt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -ge 12 ]; }; then
+    ok "node: v$NODE_VERSION"
+  else
+    die "node v$NODE_VERSION < 22.12 — upgrade to Node 22.12+ (https://nodejs.org)"
+  fi
 else
-  warn "node not found — the web UI and TUI need Node 20+ (https://nodejs.org)"
+  die "node not found — the web UI and TUI need Node 22.12+ (https://nodejs.org)"
 fi
 
 # ---- 2. Python env ----------------------------------------------------------
@@ -227,55 +226,15 @@ install_default_extras() {
   "$PY" -m playwright install chromium
 }
 
-# ---- 8. heavier opt-in extras: stealth browsers / agent-browser ---------------
-install_extras() {
-  if [ "$WITH_STEALTH" = "1" ]; then
-    step "installing stealth browser (patchright + camoufox)"; PIP install -e "$HOST_ROOT[browser-stealth]"
-    "$PY" -m patchright install chromium || warn "patchright install chromium failed"
-    "$PY" -m camoufox fetch || warn "camoufox fetch failed"
-  fi
-  if [ "$WITH_AGENT_BROWSER" = "1" ]; then
-    step "installing agent-browser (global npm)"
-    if command -v npm >/dev/null 2>&1; then npm install -g agent-browser && agent-browser install || warn "agent-browser setup failed"
-    else warn "npm missing — cannot install agent-browser"; fi
-  fi
-}
-
-# ---- 9. complete first-party Programs ---------------------------------------
-install_first_party_programs() {
-  step "installing GUI, Research, and Wiki Programs"
-  "$PY" -m openprogram programs install all
-  local gui_source research_source
-  gui_source="$("$PY" -c 'from openprogram.programs._programs import get_program; print(get_program("gui").clone_dir())')"
-  research_source="$("$PY" -c 'from openprogram.programs._programs import get_program; print(get_program("research").clone_dir())')"
-  local gui_installer="$gui_source/scripts/install.sh"
-  [ -f "$gui_installer" ] || die "GUI Program source is missing after install"
-  bash "$gui_installer" --no-host --python "$PY"
-  PIP install -e "$research_source[pdf]"
-
-  local gpa_model="${GPA_MODEL_PATH:-$HOME/GPA-GUI-Detector/model.pt}"
-  [ -s "$gpa_model" ] || die "GPA detector model is missing: $gpa_model"
+# ---- 9. verify the product extras import --------------------------------------
+verify_product_extras() {
   "$PY" - <<'PY'
-from pathlib import Path
-
 import discord
-import easyocr
-import easyocr.config
-import pymupdf
 import qrcode
 import semble
 import slack_sdk
-from openprogram.programs._programs import import_installed_programs
-
-if not any(Path(easyocr.config.MODULE_PATH).rglob("*.pth")):
-    raise SystemExit("default EasyOCR model data is missing")
-required = {"gui_agent", "research_agent", "wiki_agent"}
-registered = set(import_installed_programs())
-missing = required - registered
-if missing:
-    raise SystemExit(f"first-party Programs failed to register: {sorted(missing)}")
 PY
-  ok "complete first-party Programs ready"
+  ok "product extras ready"
 }
 
 # ---- run --------------------------------------------------------------------
@@ -283,11 +242,10 @@ step "OpenProgram development setup  (os=$OS)"
 install_web
 install_tui
 install_default_extras
-install_extras
-install_first_party_programs
+verify_product_extras
 
 # ---- done --------------------------------------------------------------------
 printf "\n${c_green}OpenProgram ready.${c_reset}\n"
 printf "  Start:     openprogram           # first run walks you through provider setup, then opens the chat\n"
-printf "  Web UI:    openprogram web        # -> http://localhost:18100\n"
-printf "  Programs:  GUI, Research, and Wiki are installed; developer backend flags are additive\n"
+printf "  Web UI:    openprogram web        # opens the browser signed in (port 18100)\n"
+printf "  Programs:  openprogram programs install <directory | git URL | owner/repo>\n"

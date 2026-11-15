@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.files.worktree.shared import _current_session_id
-from openprogram.worktree.manager import get_manager
-from openprogram.worktree.types import WorktreeStatus
+from openprogram.state.worktree.manager import get_manager
+from openprogram.state.worktree.types import WorktreeStatus
 
 
 @function(

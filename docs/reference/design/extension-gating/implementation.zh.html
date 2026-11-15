@@ -1,0 +1,60 @@
+<title>门控实现</title>
+<meta name="description" content="扩展门控模型在代码中的位置。">
+<h1>门控实现</h1>
+
+<h2 id="file-map">门控点</h2>
+<p>每个门控都在模型即将看到扩展的位置运行。</p>
+<table class="stack">
+<thead><tr><th scope="col">扩展</th><th scope="col">何时看到</th><th scope="col">门控</th><th scope="col">拒绝时</th></tr></thead>
+<tbody>
+<tr id="gate-site-1-skills-skill-command"><th scope="row">技能</th><td><code translate="no">/skill X</code> 注入 SKILL.md</td><td><code translate="no">interfaces/server/ws_actions/chat/turn_skill.py</code> 的 <code translate="no">_skill_gate_error</code>，调用 <code translate="no">gate()</code></td><td><code translate="no">skill_blocked</code>，“Skill blocked: 原因”；不展开正文</td></tr>
+<tr id="gate-site-2-tools"><th scope="row">工具</th><td><code translate="no">resolve_tools()</code> 构建本轮工具</td><td><code translate="no">runtime/conversation/model_tools.py</code></td><td>被过滤</td></tr>
+<tr id="gate-site-3-mcp"><th scope="row">MCP</th><td>同一流程，名称为 <code translate="no">&lt;server&gt;__&lt;tool&gt;</code></td><td><code translate="no">resolve_tools</code> 内部的 <code translate="no">_apply_profile_gates</code>，作用于每条返回路径</td><td>按服务过滤。缺少 <code translate="no">required</code> 时抛 <code translate="no">RequiredMcpUnavailable</code></td></tr>
+</tbody>
+</table>
+<p class="note">没有更早的统一入口：技能是带分类的对象，工具是裸名称，MCP 工具是带命名空间的名称。不同的只是输入形状。</p>
+
+<h2 id="shared-helper-module">共享函数</h2>
+<p><code translate="no">openprogram/extensions/gating.py</code>：纯函数，任何层都可导入。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">函数</th><th scope="col">返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">match_any(name, patterns)</code></th><td>是否有 <code translate="no">fnmatchcase</code> 模式匹配；空模式为假</td></tr>
+<tr><th scope="row"><code translate="no">gate(*, name, category="", disabled=(), allowed=(), categories=())</code></th><td>通过时 <code translate="no">None</code>，否则为原因字符串</td></tr>
+<tr><th scope="row"><code translate="no">check_required(installed, required)</code></th><td>没有任何匹配的 required 模式</td></tr>
+</tbody>
+</table>
+
+<h2 id="canonical-schema">Schema</h2>
+<p><code translate="no">runtime/agent_registry/manager.py</code> 的 <code translate="no">AgentSpec</code>。每个块都是普通 <code translate="no">dict</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">块</th><th scope="col">默认</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">skills</code></th><td><code translate="no">{"disabled": [], "allowed": [], "categories": []}</code></td></tr>
+<tr><th scope="row"><code translate="no">tools</code></th><td><code translate="no">{"mode": "automatic"}</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td><code translate="no">{"disabled": [], "allowed": [], "required": []}</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="resolve-tools"><code translate="no">resolve_tools</code></h2>
+<p>每轮 <code translate="no">override</code> 优先于 <code translate="no">profile.tools</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">输入</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">None</code></th><td><code translate="no">agent_tools(source=…, only_available=True)</code></td></tr>
+<tr><th scope="row"><code translate="no">[]</code>、<code translate="no">mode: none</code></th><td>无工具</td></tr>
+<tr><th scope="row"><code translate="no">mode: automatic</code>，或没有 <code translate="no">enabled</code>、<code translate="no">toolset</code>、<code translate="no">preset</code>、<code translate="no">allowed</code> 的字典</th><td>全量工具减去 <code translate="no">disabled</code></td></tr>
+<tr><th scope="row"><code translate="no">mode: selected</code> 或 <code translate="no">preset</code></th><td>这些名称减去 <code translate="no">disabled</code>；有延迟工具时加入 <code translate="no">tool_search</code></td></tr>
+<tr><th scope="row"><code translate="no">enabled</code> 列表</th><td>恰好这些名称；优先于 <code translate="no">allowed</code></td></tr>
+<tr><th scope="row"><code translate="no">toolset</code></th><td>该集合，按两个模式列表过滤</td></tr>
+<tr><th scope="row">其他字典</th><td><code translate="no">DEFAULT_TOOLS</code>，按两个模式列表过滤</td></tr>
+<tr><th scope="row">名称列表</th><td>恰好这些，除非含 <code translate="no">tool_search</code>，否则都常驻</td></tr>
+</tbody>
+</table>
+<p class="note">配置的 MCP 门控作用于每条路径，包括每轮名称列表。<code translate="no">web_search</code> 由自己的布尔值单独叠加。<code translate="no">required</code> 在过滤之后、调用供应商之前检查。</p>
+
+<h2 id="backward-compatibility">兼容性</h2>
+<p><code translate="no">skills</code>、<code translate="no">tools</code>、<code translate="no">mcp</code> 必须是对象。<code translate="no">AgentSpec.from_dict</code> 用 <code translate="no">dict()</code> 处理它们，因此 <code translate="no">skills: ["pdf", "drawio"]</code> 这类旧列表在加载时抛 <code translate="no">ValueError</code>，不会迁移。只含空列表的 tools 字典视为 <code translate="no">automatic</code>。</p>
+
+<h2 id="testing">测试</h2>
+<p>没有专门的单元测试：<code translate="no">match_any</code> 只是 <code translate="no">fnmatchcase</code> 加遍历。<code translate="no">openprogram doctor</code> 检查技能能否加载和 MCP 配置能否读取，不检查门控。语义偏离 <code translate="no">fnmatchcase</code>（如支持 <code translate="no">**</code>）时再加测试。</p>

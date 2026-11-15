@@ -1,0 +1,232 @@
+<title>Surface system</title>
+<meta name="description" content="The app's two surface contexts and the shared recipes for rows, buttons, menus, inputs, dialogs and cards.">
+<h1>Surface system</h1>
+
+<p>Navigation and content each have their own interaction language, in light and dark themes alike.</p>
+
+<svg class="fig-wide" viewBox="0 0 680 226" role="img" aria-label="The window is a deep page in bg-secondary holding three floating cards: a left rail and right rail in bg-input, and a centre column in bg-primary. Each is rounded-lg with the composer shadow and no border.">
+  <rect class="tile" x="1" y="1" width="678" height="176" rx="10"/>
+  <rect class="tile" x="16" y="16" width="128" height="146" rx="8"/>
+  <rect class="tile" x="158" y="16" width="364" height="146" rx="8"/>
+  <rect class="tile" x="536" y="16" width="128" height="146" rx="8"/>
+  <text class="t-big mid" x="80" y="84">Left rail</text>
+  <text class="t-soft t-cmd mid" translate="no" x="80" y="108">--bg-input</text>
+  <text class="t-big mid" x="340" y="84">Centre column</text>
+  <text class="t-soft t-cmd mid" translate="no" x="340" y="108">--bg-primary</text>
+  <text class="t-big mid" x="600" y="84">Right rail</text>
+  <text class="t-soft t-cmd mid" translate="no" x="600" y="108">--bg-input</text>
+  <text class="t-soft mid" x="340" y="200">Deep page behind the cards: --bg-secondary</text>
+  <text class="t-soft mid" x="340" y="220">Rails keep a 7px gutter; the centre card sits 7px off top and bottom</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>Deep page</dt><dd><code translate="no">--bg-secondary</code></dd>
+<dt>Left and right rails</dt><dd><code translate="no">--bg-input</code>, 7px gutter</dd>
+<dt>Centre column</dt><dd><code translate="no">--bg-primary</code>, 7px off top and bottom</dd>
+</dl>
+
+<h2 id="the-two-surfaces">The two surfaces</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Deep: rails</th><th scope="col">Panel: content, dialogs</th></tr></thead>
+<tbody>
+<tr><th scope="row">Components</th><td>List rows: conversations, branches, favourites</td><td>Buttons, pills, cards</td></tr>
+<tr><th scope="row">Idle</th><td>No border, outline or fill</td><td>Variant face (<a href="#button-variants">below</a>)</td></tr>
+<tr><th scope="row">Hover, selected</th><td>Visible grey, <code translate="no">--bg-hover</code> or <code translate="no">--bg-selected</code>; text stays <code translate="no">--text-primary</code> or <code translate="no">--text-secondary</code></td><td>The variant's hover</td></tr>
+<tr><th scope="row">Brand colour</th><td>Only tiny <code translate="no">.indicator-dot</code> indicators: a dense, scanned list must stay calm</td><td>Primary action</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Shell geometry</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Rails</th><td>shadcn Sidebar <code translate="no">floating</code> shell (<code translate="no">components/ui/sidebar.tsx</code>); centre takes its <code translate="no">inset</code> idea</td></tr>
+<tr><th scope="row">Card</th><td><code translate="no">rounded-lg</code> (12px), per-theme <code translate="no">--composer-shadow</code>, no border or ring. Split panes and the canvas overview share <code translate="no">--radius-lg</code>.</td></tr>
+<tr><th scope="row">Why white rails</th><td>The rails share a material with the input box and user bubble; those stand out on the centre card</td></tr>
+<tr><th scope="row">Split layout</th><td><code translate="no">.center-col[data-split]</code>: the centre card dissolves, each pane is a card of the same material, 7px to rails and edges, 8px apart. Empty panes draw the card themselves.</td></tr>
+<tr><th scope="row">Collapsed rail</th><td><code translate="no">--rail-collapsed-w</code> 62px; <code translate="no">components/layout/use-resizable-rail.ts</code> carries the same number</td></tr>
+<tr><th scope="row">Focus</th><td>No mouse focus ring on buttons; keyboard focus is a small brightness change. Top-strip <code translate="no">role="tab"</code> uses each theme's <code translate="no">--focus-ring</code>.</td></tr>
+<tr><th scope="row">Tab pills</th><td>The selected pill on a manage page (Abilities, Programs, Plugins, Skills) uses <code translate="no">--bg-input</code>, like the search box; only there</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="one-list-row-recipe">One list-row recipe</h2>
+<p>Sidebar nav and content-pane rows (MCP <code translate="no">drawio</code>, <code translate="no">+ Add server</code>) are one box. <code translate="no">+ Add server</code> is the same row as <code translate="no">+ New chat</code>, slightly muted.</p>
+<dl class="pairs">
+<dt>Height</dt><dd><code translate="no">--ui-list-h</code>, 30px</dd>
+<dt>Padding, gap</dt><dd>6px 8px, 12px</dd>
+<dt>Radius</dt><dd><code translate="no">--ui-list-radius</code></dd>
+<dt>Idle</dt><dd>Transparent</dd>
+<dt>Hover, selected</dt><dd><code translate="no">--bg-hover</code>, never <code translate="no">--bg-input</code> (white on a white rail disappears)</dd>
+</dl>
+<p class="note">Source: <code translate="no">.ui-list-item</code> in <code translate="no">apps/web/app/styles/base/list-row.css</code>. Page list columns use <code translate="no">RailItem</code> (<a href="../sidebar/secondary-rail.html">secondary rail</a>); MCP <code translate="no">.serverItem</code> matches its metrics.</p>
+
+<h2 id="buttons">Buttons</h2>
+<p><code translate="no">apps/web/components/ui/button.tsx</code> is the shadcn radix-nova Button from the official registry. Local changes: imports, a <code translate="no">forwardRef</code> for React 18, px-pinned sizes and one look: <code translate="no">rounded-md</code> (8px) at every size, no border, raised by the composer shadow pair (<code translate="no">shadow-raised</code>, <code translate="no">shadow-raised-hover</code>). Colour alone marks the role. Tier tables: <a href="design-tokens.html">Design tokens</a>.</p>
+
+<table class="stack" id="button-variants">
+<thead><tr><th scope="col">Variant</th><th scope="col">Face, hover</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">default</code></th><td><code translate="no">bg-primary</code>; <code translate="no">primary/90</code></td><td>One main action per area: Run, Save, Test, Apply, Send, New</td></tr>
+<tr><th scope="row"><code translate="no">elevated</code></th><td><code translate="no">--bg-input</code>; deeper shadow. Pressed, checked or on: 1.5px <code translate="no">primary</code> ring.</td><td>Every other action, filter or choice; composer triggers, environment chips</td></tr>
+<tr><th scope="row"><code translate="no">destructive</code></th><td><code translate="no">bg-destructive/10</code>; <code translate="no">/20</code></td><td>Delete, Remove, Stop, Clear history</td></tr>
+<tr><th scope="row"><code translate="no">ghost</code></th><td>Transparent, no shadow; <code translate="no">bg-muted</code> (<code translate="no">/50</code> dark)</td><td>Icon tools hidden until hover: close, more, rename</td></tr>
+<tr><th scope="row"><code translate="no">link</code></th><td>Primary text; underline</td><td>Inline</td></tr>
+</tbody>
+</table>
+<p class="note">All press 1px while active, show a 3px <code translate="no">ring/50</code> on keyboard focus, and go to 50% when disabled. Sidebar rows are not Buttons: use <code translate="no">.ui-list-item</code> or <code translate="no">nav-classes.ts</code>. <code translate="no">outline</code> and <code translate="no">secondary</code> are not offered. <code translate="no">Toggle</code> and <code translate="no">ToggleGroup</code> offer the same face as <code translate="no">elevated</code>.</p>
+<ul>
+<li>What cannot be a <code translate="no">&lt;Button&gt;</code> (a span hosting its own ✕, a Radix trigger span) uses <code translate="no">cn(buttonVariants({ variant, size }))</code>; the <code translate="no">cn()</code> merge resolves <code translate="no">border-transparent</code> against the variant's border.</li>
+<li>A 1 to 2px height mismatch inside a header row (search, pills, icon buttons) is a bug.</li>
+</ul>
+
+<h2 id="selects-and-menus">Selects and menus</h2>
+<p>Every fixed-list choice is the radix-nova <code translate="no">Select</code> (<code translate="no">components/ui/select.tsx</code>). No native <code translate="no">&lt;select&gt;</code>, no hand-rolled listbox. <code translate="no">SimpleSelect</code> is the one-line form (<code translate="no">value</code>, <code translate="no">onValueChange</code>, <code translate="no">options</code>, <code translate="no">label</code>, <code translate="no">placeholder</code>, <code translate="no">size</code>; groups as <code translate="no">{label, options}</code>).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Trigger</th><td>Nova field: <code translate="no">rounded-lg</code>, <code translate="no">border-input</code>, <code translate="no">bg-transparent</code>, <code translate="no">dark:bg-input/30</code>, <code translate="no">h-8</code> or <code translate="no">h-7</code>. Default <code translate="no">w-full max-w-48</code>; call sites add only width or an error border.</td></tr>
+<tr><th scope="row">Popup</th><td>Solid <code translate="no">bg-popover</code> in the menu frame, <code translate="no">item-aligned</code>, <code translate="no">z-[130]</code> above dialogs. Muted heading names the choice (<code translate="no">label</code>, else <code translate="no">aria-label</code>), one per group. Plain check on the chosen row.</td></tr>
+<tr><th scope="row">Empty value</th><td>Radix reserves <code translate="no">""</code>: an option with that value uses a sentinel inside <code translate="no">SimpleSelect</code>; otherwise <code translate="no">""</code> shows the placeholder</td></tr>
+<tr><th scope="row">Other menus</th><td>DropdownMenu, popover pickers, sidebar footer, tab and function context menus use <code translate="no">MENU_PANEL</code>, <code translate="no">itemCls</code>, <code translate="no">GROUP_LABEL</code>, <code translate="no">MENU_SEPARATOR</code> from <code translate="no">components/ui/menu/menu-styles.ts</code>. A CSS module keeps only placement.</td></tr>
+</tbody>
+</table>
+
+<p>Action menus from a small button or right-click build rows with <code translate="no">MenuRow</code> (<code translate="no">components/ui/menu/menu-parts.tsx</code>), in the page and the desktop overlay (<code translate="no">DesktopContextMenuItem</code> carries <code translate="no">glyph</code> and <code translate="no">keys</code>). <code translate="no">apps/web/scripts/ui/check-menu-rows.mjs</code> holds every menu file to it. Left to right:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Slot</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Icon</th><td>Solar Bold Duotone (<code translate="no">MenuIcon</code>, 16px, muted). Folder rows in <code translate="no">--folder-color</code>, destructive rows red.</td></tr>
+<tr><th scope="row">Label</th><td>Fills the row</td></tr>
+<tr><th scope="row">Key</th><td>Price tag (<code translate="no">MenuKey</code>): 10px tip, the rounded end of Solar's <code translate="no">tag-horizontal</code> mirrored left, joined to a shadcn <code translate="no">Kbd</code> plate, 18px tall, square at the tip, 5px round at the right, 1px 6px padding around at least 8px of text. Paint <code translate="no">--menu-key-bg</code>, ink at 12% over the popover. Text from <code translate="no">formatMenuKeys</code>: <code translate="no">⌘T</code>, <code translate="no">⇧⌘C</code>, or <code translate="no">Ctrl+T</code>, <code translate="no">Ctrl+Shift+C</code>. Shows only keys that work; no global shortcut exists just to fill a tag.</td></tr>
+<tr><th scope="row">Check</th><td><code translate="no">MenuCheck</code>; unchecked rows in a group keep the column (<code translate="no">CHECK_SLOT_PAD</code>)</td></tr>
+<tr><th scope="row">Submenu</th><td>Trailing chevron, any depth</td></tr>
+<tr><th scope="row">Lit row</th><td>Hover, keyboard, open submenu or active row: muted icon, key and chevron turn bright, icon pops 1.12, key plate ink at 22%. A tinted icon keeps colour and only pops.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Menu frame and geometry</summary>
+<p>Tokens in <code translate="no">app/globals.css</code>, shared by menus, Select popup, <code translate="no">Popover</code>, command palette and page preview. Light themes: <code translate="no">--popover-ring</code> transparent, <code translate="no">--popover-shadow</code> is <code translate="no">--composer-shadow</code>, <code translate="no">--popover-shadow-hover</code> is <code translate="no">--composer-shadow-focus</code>. Dark themes lift the popup a step, keep a light hairline and soft deep shadow, with no hover change.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Nova, at the docs' scale</th></tr></thead>
+<tbody>
+<tr><th scope="row">Panel</th><td><code translate="no">rounded-lg</code> <code translate="no">p-1</code> <code translate="no">min-w-32</code>, solid <code translate="no">bg-popover</code></td></tr>
+<tr><th scope="row">Row</th><td><code translate="no">min-h-7</code> (28px), <code translate="no">rounded-md</code>, <code translate="no">px-1.5 py-1</code>, <code translate="no">text-fs-base</code>, <code translate="no">gap-1.5</code>, <code translate="no">size-4</code> icons not shifted</td></tr>
+<tr><th scope="row">Hover</th><td><code translate="no">bg-accent</code> (ink at 9%), <code translate="no">text-bright</code></td></tr>
+<tr><th scope="row">Label</th><td><code translate="no">px-1.5 py-1</code> <code translate="no">text-fs-xs</code> <code translate="no">font-medium</code>, muted</td></tr>
+<tr><th scope="row">Separator</th><td><code translate="no">-mx-1 my-1</code>, 1px, <code translate="no">--border</code></td></tr>
+<tr><th scope="row">Shortcut</th><td><code translate="no">MenuKey</code>, <code translate="no">text-[11px]</code>, muted</td></tr>
+<tr><th scope="row">Chosen</th><td>Accent <code translate="no">MenuCheck</code> at the end, never a fill</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">--popover</code> is <code translate="no">--bg-input</code>: white in light themes, one step above the page in dark. Menus, Select popup and dialogs are one surface; only the accent check is the app's own.</p>
+</details>
+
+<h2 id="inputs-and-borders">Inputs and borders</h2>
+<p>One single-layer 1px edge (<code translate="no">border: 1px solid var(--border)</code>, fill <code translate="no">--bg-input</code>) in Settings, dialogs, plugins and MCP editors. Hover keeps the border; no 2px halo on focus.</p>
+
+<h2 id="dialogs">Dialogs</h2>
+<p>Every modal is radix-nova <code translate="no">Dialog</code> or <code translate="no">AlertDialog</code> (<code translate="no">components/ui/</code>). No hand-rolled backdrops, no browser <code translate="no">confirm()</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Nova, at the docs' scale</th></tr></thead>
+<tbody>
+<tr><th scope="row">Overlay</th><td><code translate="no">bg-black/10</code> <code translate="no">backdrop-blur-xs</code> <code translate="no">z-[110]</code>, <code translate="no">data-native-view-occluder</code></td></tr>
+<tr><th scope="row">Content</th><td><code translate="no">rounded-xl</code> <code translate="no">bg-popover</code> <code translate="no">ring-1 ring-foreground/10</code> <code translate="no">p-4</code> <code translate="no">gap-4</code> <code translate="no">max-w-sm</code> <code translate="no">z-[120]</code></td></tr>
+<tr><th scope="row">Title, description</th><td><code translate="no">text-fs-md font-medium</code>; <code translate="no">text-fs-base</code> muted</td></tr>
+<tr><th scope="row">Footer</th><td><code translate="no">-mx-4 -mb-4</code> <code translate="no">border-t</code> <code translate="no">bg-muted/50</code> <code translate="no">p-4</code>, right-aligned, Cancel first, Buttons only: <code translate="no">elevated</code> Cancel or Close, <code translate="no">default</code> main</td></tr>
+<tr><th scope="row">Close</th><td><code translate="no">ghost</code> <code translate="no">icon-sm</code>, <code translate="no">top-2 right-2</code> (Dialog only)</td></tr>
+<tr><th scope="row">Motion</th><td>100ms fade and <code translate="no">zoom-in-95</code>, no slide</td></tr>
+<tr><th scope="row">Confirmation</th><td><code translate="no">ConfirmDialog</code> or <code translate="no">await confirmAction({...})</code> through <code translate="no">&lt;ConfirmDialogHost /&gt;</code> in <code translate="no">app/providers.tsx</code>. <code translate="no">destructive</code> when it deletes or lowers a safeguard. Escape, outside click and Cancel all cancel.</td></tr>
+<tr><th scope="row">Module class</th><td>Sizes only: width, <code translate="no">max-width: none</code>, max-height, overflow</td></tr>
+<tr><th scope="row">Edge-to-edge</th><td>Source viewer, function runner, provider setup: <code translate="no">p-0 gap-0</code>, own padding, <code translate="no">DialogFooter</code> <code translate="no">m-0</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="settings-rows">Settings rows</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Block</th><th scope="col">Shape</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SettingsPage</code></th><td>Title (with optional actions at the end of its row), description, scrolling body</td></tr>
+<tr><th scope="row"><code translate="no">SettingsSection</code></th><td>Titled group on one <code translate="no">Card</code>, hairline dividers</td></tr>
+<tr><th scope="row"><code translate="no">SettingsRow</code></th><td>Horizontal <code translate="no">Field</code>: name and description left, control right (a lone Select is 12rem). <code translate="no">stacked</code> puts a wide control under the name.</td></tr>
+</tbody>
+</table>
+<p class="note">In <code translate="no">components/settings/settings-ui.tsx</code>. Controls: <code translate="no">Switch</code>, <code translate="no">Input</code>, <code translate="no">Textarea</code>, <code translate="no">Slider</code>, <code translate="no">RadioGroup</code>, <code translate="no">ToggleGroup</code>, <code translate="no">Checkbox</code>, <code translate="no">Button</code>, <code translate="no">SimpleSelect</code>. A tab has no row, label or card CSS of its own.</p>
+<details>
+<summary>History project tabs</summary>
+<p>Settings and Info use the same blocks. Chats, Memory, Settings and Info share one layout: fixed head and tab bar, each panel scrolls edge to edge (Settings and Info with a 24px edge). Chats groups by recency, one titled <code translate="no">Card</code> per group.</p>
+<p>Today, Last 7 days and the newest group start open, older ones folded; the choice per group is remembered in this browser. An open group lists 8, then "Show all N" (10 or fewer: all). A toolbar button expands or folds all; a search opens all. <code translate="no">apps/web/scripts/projects/check-project-tabs.mjs</code> (in <code translate="no">npm run check</code>) guards this.</p>
+</details>
+
+<h2 id="composer-controls">Composer controls</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Environment chips</th><td>Channel, web surface, project, folders, DAG HUD: <code translate="no">elevated</code> <code translate="no">sm</code>; add-folder <code translate="no">icon-sm</code></td></tr>
+<tr><th scope="row">Bottom row</th><td>Permission, model, Agent, effort, plus, tools, context ring: <code translate="no">elevated</code>, <code translate="no">sm</code> or <code translate="no">icon-sm</code>; old rules handed back with <code translate="no">revert-layer</code>. Height follows its chips, 10px under the box, as the environment chips sit above it.</td></tr>
+<tr><th scope="row">Glyphs in both rows</th><td>16px, 5px gap, centred, 13px labels, set unlayered in the rows' module CSS because Button sizes would shrink an unsized svg to 12.25px. The effort card keeps its sizes.</td></tr>
+<tr><th scope="row">Send, mic</th><td>Colours from variants (send <code translate="no">default</code>, <code translate="no">ghost</code> when empty, <code translate="no">destructive</code> to stop; mic <code translate="no">ghost</code>). Size from <code translate="no">app/styles/design/composer.css</code>: <code translate="no">--composer-action-size</code> (28px), centred in <code translate="no">--composer-line-h</code> (46px), <code translate="no">--composer-action-inset</code>. Mic hover is <code translate="no">--composer-action-hover</code> because <code translate="no">--muted</code> is the box's colour.</td></tr>
+<tr><th scope="row">Input box</th><td><code translate="no">--composer-*</code> tokens: <code translate="no">--bg-input</code>, no border, <code translate="no">shadow-sm</code>, <code translate="no">shadow-md</code> on hover or focus (alpha 0.1 light, 0.25 dark), no ring, <code translate="no">--radius-lg</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="web-page-preview">Web page preview and browser toolbar</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Preview frame</th><td><code translate="no">components/center-tabs/pip/web-tab-pip.tsx</code>: <code translate="no">bg-popover</code> in the menu frame, 10px corners, stage clipped alike. Pinned to the native view's corner radius in <code translate="no">apps/desktop/main/web-views/web-views.js</code>, which the DOM cannot clip; the two change together.</td></tr>
+<tr><th scope="row">32px header</th><td>Title <code translate="no">text-fs-base font-medium text-text-primary</code>, status <code translate="no">text-fs-xs text-text-muted</code>, <code translate="no">ghost</code> <code translate="no">icon-sm</code> buttons, 14px icons, <code translate="no">HoverTip</code> + <code translate="no">TipBody</code> (<a href="../composer/hover-tips.html">hover tips</a>). A resume error is one line of <code translate="no">text-fs-xs text-destructive</code>.</td></tr>
+<tr><th scope="row">CSS module</th><td>Geometry only: unlayered module rules would beat the utilities</td></tr>
+<tr><th scope="row">Browser toolbar</th><td><code translate="no">webToolbarButton()</code> (<code translate="no">components/center-tabs/browser/toolbar/toolbar-button.ts</code>): <code translate="no">ghost</code> <code translate="no">icon-sm</code>, held at 26px by <code translate="no">.webToolbarBtn</code> in the 40px row</td></tr>
+</tbody>
+</table>
+
+<h2 id="agent-cards">Agent cards</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Card</th><td><code translate="no">--bg-input</code>, <code translate="no">--composer-shadow</code> (deeper on hover), no border, <code translate="no">xl</code> corner, 14px inside</td></tr>
+<tr><th scope="row">Grid</th><td>Raised cards in columns of at least 260px</td></tr>
+<tr><th scope="row">Contents</th><td>Avatar (40px), name, <strong>Default</strong> on the default Agent, up to three lines of description</td></tr>
+<tr><th scope="row">Settings</th><td>Stay in the quick panel, whose open card wears the 1.5px <code translate="no">--accent-blue</code> ring</td></tr>
+<tr><th scope="row">Groups</th><td>Two by the always-on switch, each with an <code translate="no">md</code> title and one muted line</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Always-on surf</summary>
+<p>Foam lines drift diagonally toward the lower right, each a soft crest with a broader wash on its seaward side, every line ragged in its own way.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Layers</th><td>Two, the card fill with text ink mixed in at 14% and 9%, each masked by a seamless SVG tile; 56s and 72s a tile, so lines pass and cross</td></tr>
+<tr><th scope="row">One field</th><td><code translate="no">SheenField</code> offsets each card's layers by grid position, again on resize; all drifts share a start, so lines continue across cards and gaps and scroll with them</td></tr>
+<tr><th scope="row">Motion</th><td>One whole tile per cycle as a compositor animation: no jump, no repaint. Still under reduced motion.</td></tr>
+<tr><th scope="row">Limits</th><td>No colour of its own, nothing over the text</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="donts">Don'ts</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Don't</th><th scope="col">Why, or instead</th></tr></thead>
+<tbody>
+<tr><th scope="row">A new hover, selected, border or pill treatment</th><td>Add a line here first. Budget: deep grey hover, panel, brand fill, the header-tab <code translate="no">--bg-input</code>.</td></tr>
+<tr><th scope="row">Brand fills on the deep surface</th><td>A brand pill reads as an alert</td></tr>
+<tr><th scope="row">Different metrics for MCP or any other content-pane list</th><td>One set of metrics for every content-pane list</td></tr>
+<tr><th scope="row">Hover motion (<code translate="no">translate-y</code>, <code translate="no">scale-105</code>)</th><td>Applies to either surface</td></tr>
+<tr><th scope="row">Editing <code translate="no">button.tsx</code> classes at a call site, or restating a Button in CSS</th><td>Pick a variant and size; remove an overriding legacy rule or use <code translate="no">revert-layer</code></td></tr>
+<tr><th scope="row">A settings description overflowing into the control column, or label above control</th><td>Label above control only in <code translate="no">stacked</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Every part in <code translate="no">components/ui</code> is radix-nova, every former <code translate="no">&lt;select&gt;</code> and dropdown included: <code translate="no">Command</code>, <code translate="no">Popover</code>, <code translate="no">Tooltip</code> (<code translate="no">--surface-tooltip</code>, <code translate="no">--text-on-tooltip</code> alias <code translate="no">--foreground</code>, <code translate="no">--background</code>), <code translate="no">Tabs</code> (<code translate="no">line</code> in the Agent editor), <code translate="no">Kbd</code>, <code translate="no">ScrollArea</code>, <code translate="no">Sidebar</code>. Every modal and confirmation. Menu panels and rows, Settings General, desktop attention, composer parts, preview, browser toolbar.</td></tr>
+<tr><th scope="row">Exception</th><td>The attachment lightbox keeps its own full-screen viewer</td></tr>
+<tr><th scope="row">Not yet</th><td>Other Settings pages (<code translate="no">settings-page.module.css</code> rows); form inputs outside Settings keep the 1px rule until they move to the shadcn input</td></tr>
+</tbody>
+</table>

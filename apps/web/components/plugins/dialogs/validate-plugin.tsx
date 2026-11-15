@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface Check {
   name: string;
@@ -29,19 +30,12 @@ export function ValidatePluginDialog({ name, onClose }: Props) {
       .catch((e) => setErr(String(e)));
   }, [name, validate]);
 
-  // Escape / Tab-trap / focus restore for this hand-rolled panel.
-  const modal = useModalA11y(onClose, text(`Validate ${name}`, `校验 ${name}`));
-
   return (
-    <div className={styles.dialogBackdrop} onClick={onClose}>
-      <div
-        {...modal}
-        className={styles.dialog}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.dialogTitle}>{text(`Validate ${name}`, `校验 ${name}`)}</div>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className={styles.dialog} aria-describedby={undefined}>
+        <DialogHeader><DialogTitle>{text(`Validate ${name}`, `校验 ${name}`)}</DialogTitle></DialogHeader>
         <div className={styles.dialogBody}>
-          {err && <div style={{ color: "#ef4444" }}>{err}</div>}
+          {err && <div style={{ color: "var(--error-form)" }}>{err}</div>}
           {!checks && !err && <div className={styles.empty}>{text("Validating...", "正在校验...")}</div>}
           {checks?.map((c) => (
             <div key={c.name} className={styles.checkRow}>
@@ -49,14 +43,14 @@ export function ValidatePluginDialog({ name, onClose }: Props) {
                 {c.ok ? "✓" : "✗"}
               </span>
               <span style={{ fontWeight: 600 }}>{c.name}</span>
-              <span style={{ color: "var(--text-dim)" }}>{c.detail}</span>
+              <span style={{ color: "var(--text-secondary)" }}>{c.detail}</span>
             </div>
           ))}
         </div>
-        <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onClose}>{text("Close", "关闭")}</button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter>
+          <Button variant="elevated" onClick={onClose}>{text("Close", "关闭")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

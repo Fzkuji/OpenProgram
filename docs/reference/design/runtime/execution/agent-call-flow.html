@@ -1,0 +1,96 @@
+<title>Agent call flow</title>
+<meta name="description" content="The two entry points of an LLM call, the shared agent loop, and how each call is recorded.">
+<h1>Agent call flow</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 216" role="img" aria-label="A user message goes to the dispatcher and directly to agent_loop. Inside an Agent method body, runtime.exec goes through AgentSession and LoopDriver to the same agent_loop. A tool run by agent_loop can call runtime.exec again, which nests.">
+  <defs><marker id="cf-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="42">User message</text>
+  <line class="ln" x1="124" y1="36" x2="176" y2="36" marker-end="url(#cf-a)"/>
+  <text class="t-big" x="188" y="42">dispatcher</text>
+  <text class="t-soft" x="188" y="62">session, user node, model, tools</text>
+  <line class="ln" x1="290" y1="36" x2="496" y2="74" marker-end="url(#cf-a)"/>
+  <text class="t-big" x="0" y="130">Agent method body</text>
+  <line class="ln" x1="154" y1="124" x2="186" y2="124" marker-end="url(#cf-a)"/>
+  <text class="t-big" x="198" y="130">runtime.exec</text>
+  <text class="t-soft" x="198" y="150">llm node, context, AgentSession</text>
+  <line class="ln" x1="316" y1="124" x2="496" y2="92" marker-end="url(#cf-a)"/>
+  <rect class="tile" x="508" y="58" width="172" height="52" rx="8"/>
+  <text class="t-big mid" x="594" y="82">agent_loop</text>
+  <text class="t-soft mid" x="594" y="100">model, tools, repeat</text>
+  <path class="ln-acc" d="M594 112V190H70V142" marker-end="url(#cf-a)"/>
+  <text class="t-soft" x="240" y="208">a tool body calls runtime.exec again: nesting</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>User message → dispatcher</strong><small>Directly to the loop</small></li>
+  <li><strong>Agent method body → runtime.exec</strong><small>Through AgentSession and LoopDriver</small></li>
+  <li class="flow-end"><strong>agent_loop</strong><small>A tool body can call runtime.exec again: nesting</small></li>
+</ol>
+</figure>
+
+<h2>Entry points</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">A · dispatcher</th><th scope="col">B · runtime.exec</th><th scope="col">agent_loop</th></tr></thead>
+<tbody>
+<tr><th scope="row">Job</th><td>Turn lifecycle</td><td>One LLM call</td><td>Call model, run tools, feed back, until plain text</td></tr>
+<tr><th scope="row">Order</th><td>Create or load session · write user node · attach Runtime · resolve model (profile + override) · parse tools (channel, plan, approval) · loop · persist, title, auto-compact</td><td>Open llm node (timeout and retry outside) · select nodes with <code translate="no">render_context</code> · render messages and current turn · resolve toolset · assemble system and skills · create AgentSession · loop · close llm node</td><td>Before each round: <code translate="no">convert_to_llm</code>, memory prefetch, deferred-tool re-split</td></tr>
+<tr><th scope="row">Recording</th><td><code translate="no">insert_placeholder</code>, then <code translate="no">persist_assistant_message</code>: one <code translate="no">ROLE_LLM</code> node</td><td><code translate="no">_open_model_call_node</code>, <code translate="no">_close_model_call_node</code>: one <code translate="no">ROLE_LLM</code> node</td><td>Tool code nodes' <code translate="no">caller</code> = the current llm node</td></tr>
+<tr><th scope="row">Code</th><td><code translate="no">runtime/conversation/turn_runtime/</code></td><td><code translate="no">runtime/agent/runtime/</code></td><td><code translate="no">runtime/agent/loop/</code></td></tr>
+</tbody>
+</table>
+
+<p>One <code translate="no">exec</code> is one llm node: running on entry, reply and <code translate="no">completed</code> on exit. Tool rounds inside it are not extra nodes, so every two nested code nodes have an llm node between them. <code translate="no">exec</code> sits below the loop, which is what lets a function body call a model; that is also the source of <a href="agentic-self-recursion.html">self-recursion</a>.</p>
+<p class="note"><code translate="no">_call_id</code> switches to the llm node once the prompt is built (<code translate="no">test_tool_loop_subcall_attributes_to_llm_node</code>). Sync and async paths match. <code translate="no">agent_loop</code> knows nothing about the DAG. <code translate="no">tool.before</code> fires only in <code translate="no">_execute_tool_calls</code>, so no path loses or doubles events.</p>
+
+<h2>Why two entries</h2>
+<p>Their surroundings do not overlap: session management, WebSocket broadcast, title and compaction against the llm node and AgentSession retry. Sending the dispatcher through <code translate="no">exec</code> fails for four reasons:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Conflict</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Model</th><td>The dispatcher's <code translate="no">_resolve_model(agent_profile, req.model_override)</code> differs from the attached runtime's auto-detected <code translate="no">api_model</code></td></tr>
+<tr><th scope="row">Context</th><td>The context engine's <code translate="no">prep.agent_messages</code> clashes with <code translate="no">exec</code> rendering from the DAG</td></tr>
+<tr><th scope="row">Streaming</th><td><code translate="no">exec</code>'s flat <code translate="no">on_stream</code> dict against the dispatcher's WebUI envelope</td></tr>
+<tr><th scope="row">Duplicate node</th><td>The dispatcher's reply already is the record; another llm node gives <code translate="no">[user, assistant, assistant]</code> (<code translate="no">test_dispatcher_integration.py::test_real_loop_text_only</code>)</td></tr>
+</tbody>
+</table>
+
+<p>The loop driver <code translate="no">LoopDriver</code> sits below <code translate="no">exec</code> (<code translate="no">exec → AgentSession → LoopDriver → agent_loop</code>) and is built in one place; it is not a parallel path.</p>
+
+<h2>Callable path</h2>
+<p><code translate="no">Runtime(call=fn)</code> wraps <code translate="no">fn</code> into a stand-in provider model (<code translate="no">callable_model.py</code>) and goes through <code translate="no">_call_via_providers</code> like any model: no legacy branch. The adapter converts messages back to content, calls <code translate="no">fn</code> with <code translate="no">response_format</code>, returns one assistant message, and has no tools or tool loop. <code translate="no">stream_fn</code> threads from <code translate="no">exec</code> by context variable to AgentSession (<code translate="no">test_exec_stream_fn_injection</code>).</p>
+
+<details>
+<summary>Compared with other frameworks</summary>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">Hermes</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">One LLM call</th><td><code translate="no">Step</code>, tool loop inside</td><td><code translate="no">runId</code> pairing</td><td>No hierarchy</td><td>One llm node, tool loop inside</td></tr>
+<tr><th scope="row">Recording</th><td><code translate="no">Step.Started</code> → <code translate="no">Step.Ended</code></td><td><code translate="no">llm_input</code> → <code translate="no">llm_output</code> hooks</td><td>Append-only</td><td>Write running, fill on close</td></tr>
+<tr><th scope="row">Tool attribution</th><td>ToolPart in the Step</td><td>Nested under the runId</td><td>Peer message</td><td>Code node <code translate="no">caller</code> = llm node</td></tr>
+<tr><th scope="row">Chat vs programmatic</th><td>One path</td><td>One hook system</td><td>One <code translate="no">run_conversation</code></td><td>Two entries, one loop</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Implementation status</h2>
+<p>Done: paired llm-node write, callable path, <code translate="no">stream_fn</code>, <code translate="no">usage</code>, <code translate="no">blocks</code> and <code translate="no">status</code> on close. The record is written by two pairs of the same shape; one primitive is designed, not adopted by the dispatcher.</p>
+<table class="stack">
+<thead><tr><th scope="col">Must survive</th><th scope="col">Needed by</th><th scope="col">Risk</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">extra.blocks</code> (order of thinking, text, tool cards)</th><td>Reply bubble, <code translate="no">transcript/rows.py</code></td><td>Highest</td></tr>
+<tr><th scope="row">Token columns, <code translate="no">token_model</code></th><td>Metering UI</td><td>High</td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code> = user message</th><td>Branch, fork, rewind</td><td>High</td></tr>
+<tr><th scope="row"><code translate="no">cancelled</code> / <code translate="no">completed</code></th><td>Partial output on stop</td><td>Medium</td></tr>
+</tbody>
+</table>
+
+<ol>
+<li>Give <code translate="no">_open_model_call_node</code> an optional role and predecessor; <code translate="no">exec</code> unchanged.</li>
+<li>Change <code translate="no">insert_placeholder</code> to call it.</li>
+<li>Change <code translate="no">persist_assistant_message</code> to close through it, keeping only field assembly.</li>
+<li>Delete the duplicate writes in <code translate="no">turn_lifecycle.py</code> (<code translate="no">fold_error_into_placeholder</code>).</li>
+<li>Verify chat end to end: bubbles, cards, tokens, stop, fork.</li>
+</ol>
+<p class="note">The front end is unaffected: <code translate="no">_node_to_msg</code> (<code translate="no">state/store/session/_msg_adapter.py</code>) still returns <code translate="no">assistant</code>; storage has only <code translate="no">user</code>, <code translate="no">llm</code>, <code translate="no">code</code>. Keep the prompt-cache prefix stable, and <code translate="no">_run_loop_blocking</code> as the test seam.</p>
+
+<p class="next"><a href="../dag/overview.html">Session DAG design</a></p>

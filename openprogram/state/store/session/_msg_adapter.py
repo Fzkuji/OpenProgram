@@ -1,0 +1,239 @@
+"""Message-dict ⇄ Call-node translation helpers.
+
+The message dict is the boundary shape the dispatcher, channels and
+webui speak; ``Call`` is the on-disk DAG node. These pure functions
+are the one place that converts between them:
+
+  * ``openprogram/state/store/session/session_store.py`` — SessionStore's
+    public surface takes and returns message dicts, and translates
+    here on the way in and out.
+  * ``openprogram/runtime/conversation/turn_runtime/`` — the placeholder-update path
+    converts a small message-shape patch back into Call fields.
+
+No I/O — just shape conversion. Keep stateless.
+"""
+from __future__ import annotations
+
+import json
+import time
+import uuid
+from typing import Any
+
+from openprogram.state.store.session.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
+
+
+_USER_NATIVE = {"id", "role", "content", "timestamp"}
+_ASSISTANT_NATIVE = {"id", "role", "content", "timestamp", "token_model"}
+_TOOL_NATIVE = {"id", "role", "content", "timestamp", "function", "extra"}
+
+
+def _decode_extra(raw) -> dict:
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def _msg_to_node(msg: dict) -> Call:
+    role = msg.get("role", "user")
+    base_id = msg.get("id") or uuid.uuid4().hex[:12]
+    # Conversation-chain predecessor (聊天顺序上的前驱).
+    predecessor = msg.get("predecessor")
+    created_at = msg.get("timestamp") or time.time()
+
+    if role == "user":
+        meta = {k: v for k, v in msg.items() if k not in _USER_NATIVE}
+        if "extra" in meta:
+            decoded = _decode_extra(meta.pop("extra"))
+            for k, v in decoded.items():
+                meta.setdefault(k, v)
+        # The conv edge lives ONLY on the top-level field.
+        meta.pop("predecessor", None)
+        return Call(
+            id=base_id,
+            created_at=created_at,
+            role=ROLE_USER,
+            output=msg.get("content") or "",
+            predecessor=predecessor or None,
+            metadata=meta,
+        )
+    if role == "tool":
+        extra = _decode_extra(msg.get("extra"))
+        tool_use = extra.get("tool_use") or {}
+        meta = {k: v for k, v in msg.items() if k not in _TOOL_NATIVE}
+        leftover_extra = {k: v for k, v in extra.items() if k != "tool_use"}
+        if leftover_extra:
+            meta["extra"] = leftover_extra
+        # Code/tool node: caller = the LLM (or ROOT) that invoked it.
+        caller = tool_use.get("caller") or msg.get("caller") or predecessor or ""
+        meta.pop("caller", None)
+        meta.pop("predecessor", None)
+        # Discriminator: a model-emitted tool_use code node carries a
+        # tool_call_id (so the renderer can round-trip it as a real
+        # ToolCall/ToolResult pair). Direct Agent method code nodes
+        # have none and render as a user/assistant text pair. The id IS
+        # the tool_call_id (base_id == "{assistant}_t_{tid}" or the tid),
+        # surfaced explicitly here so render.py needn't parse the id.
+        meta["tool_call_id"] = tool_use.get("tool_call_id") or base_id
+        return Call(
+            id=base_id,
+            created_at=created_at,
+            role=ROLE_CODE,
+            name=tool_use.get("name") or msg.get("function") or "",
+            input=tool_use.get("arguments") or {},
+            output=msg.get("content"),
+            caller=caller,
+            metadata=meta,
+        )
+    meta = {k: v for k, v in msg.items() if k not in _ASSISTANT_NATIVE}
+    if "extra" in meta:
+        decoded = _decode_extra(meta.pop("extra"))
+        for k, v in decoded.items():
+            meta.setdefault(k, v)
+    if role == "system":
+        meta["role"] = "system"
+    # Conv predecessor lives ONLY on the top-level Call field.
+    # Call.caller is reserved for sub-call semantics — only
+    # attach-pointer rows (side-children of a user turn) set it, so
+    # list_branches' "has caller → skip" filter correctly hides them
+    # without hiding normal assistant nodes.
+    _meta_pred = meta.pop("predecessor", None)
+    conv_pred = predecessor or _meta_pred or ""
+    is_attach = meta.get("function") == "attach"
+    # Attach-pointer rows are side-children: their caller points at the
+    # user turn that spawned them, so list_branches' "has caller → skip"
+    # filter hides them. Normal assistant replies have no caller.
+    return Call(
+        id=base_id,
+        created_at=created_at,
+        role=ROLE_LLM,
+        name=msg.get("token_model") or "",
+        output=msg.get("content") or "",
+        caller=(msg.get("caller") or conv_pred) if is_attach else (msg.get("caller") or ""),
+        predecessor=conv_pred or None,
+        metadata=meta,
+    )
+
+
+def _node_to_msg(node: Call, session_id: str) -> dict:
+    meta = dict(node.metadata or {})
+
+    # streaming-resume schema (docs/design/runtime/streaming-resume.md)
+    # Every msg dict carries a ``status`` so the chat can tell at a
+    # glance whether the producer is still running. Legacy nodes
+    # without an explicit status default to ``done`` (they were
+    # written by the pre-streaming-resume code path which only
+    # persisted finished messages).
+    meta.setdefault("status", "done")
+
+    # Conv-chain predecessor: the top-level Call field is the only
+    # source. Popped from meta so base.update(meta) can't override
+    # the wire value with a stray copy.
+    meta.pop("predecessor", None)
+    conv_pred = node.predecessor or ""
+
+    if node.is_user():
+        base = {
+            "id": node.id,
+            "session_id": session_id,
+            "role": "user",
+            "content": node.output or "",
+            # predecessor comes from metadata (set below via base.update);
+            # caller is the sub-call edge (empty for plain user turns).
+            "predecessor": conv_pred,
+            "caller": node.caller or "",
+            "timestamp": node.created_at,
+        }
+        base.update(meta)
+        return base
+
+    if node.is_code():
+        # tool_call_id lives inside the tool_use blob (symmetric with
+        # _msg_to_node, which reads it from there). pop from meta so it
+        # doesn't leak as a stray top-level field via base.update(meta).
+        _tcid = meta.pop("tool_call_id", None)
+        _tu = {
+            "name": node.name,
+            "arguments": node.input or {},
+            "caller": node.caller or "",
+        }
+        if _tcid:
+            _tu["tool_call_id"] = _tcid
+        extra_blob = {"tool_use": _tu}
+        if isinstance(meta.get("extra"), dict):
+            extra_blob.update(meta.pop("extra"))
+        result = node.output
+        # ``ensure_ascii=False`` so Chinese / non-ASCII characters in
+        # tool output render naturally in chat instead of as ``\uXXXX``
+        # escape sequences. Same for ``extra`` (which carries the
+        # call's input args, often containing user-typed text).
+        content = (
+            json.dumps(result, ensure_ascii=False, default=str)
+            if not isinstance(result, str) else result
+        )
+        base = {
+            "id": node.id,
+            "session_id": session_id,
+            "role": "tool",
+            "content": content,
+            "predecessor": conv_pred,
+            "caller": node.caller or "",
+            "timestamp": node.created_at,
+            "function": node.name,
+            "extra": json.dumps(extra_blob, ensure_ascii=False, default=str),
+        }
+        base.update(meta)
+        return base
+
+    if node.is_llm():
+        legacy_role = meta.pop("role", None) or "assistant"
+        base = {
+            "id": node.id,
+            "session_id": session_id,
+            "role": legacy_role,
+            "content": node.output or "",
+            "predecessor": conv_pred,
+            "caller": node.caller or "",
+            "timestamp": node.created_at,
+            "token_model": node.name,
+        }
+        base.update(meta)
+        # Restore caller AFTER meta merge so attach-pointer rows keep
+        # their pointer tag for the ws_actions/session/load.py splicer.
+        if node.caller:
+            base["caller"] = node.caller
+        return base
+
+    return {
+        "id": node.id,
+        "session_id": session_id,
+        "role": node.role or "unknown",
+        "content": str(node.output or ""),
+        "predecessor": conv_pred,
+        "caller": node.caller or "",
+        "timestamp": node.created_at,
+    }
+
+
+def _row_to_session(row: dict) -> dict[str, Any]:
+    extra = _decode_extra(row.get("extra_json"))
+    out: dict[str, Any] = {
+        "id": row["id"],
+        "agent_id": row.get("agent_id") or "",
+        "title": row.get("title") or "",
+        "created_at": row.get("created_at") or 0,
+        "updated_at": row.get("updated_at") or 0,
+        "source": row.get("source") or None,
+        "head_id": row.get("last_node_id"),
+        "model": row.get("model") or None,
+        "context_tree": None,
+        "extra_meta": extra or None,
+        "last_prompt_tokens": extra.get("last_prompt_tokens", 0),
+    }
+    for k, v in extra.items():
+        out.setdefault(k, v)
+    return out

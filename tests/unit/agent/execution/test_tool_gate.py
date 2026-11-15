@@ -11,14 +11,14 @@ import time
 
 import pytest
 
-from openprogram.agent import AgentSession
-from openprogram.events import make_event
-from openprogram.events import (
+from openprogram.runtime.agent.loop.session import AgentSession
+from openprogram.runtime.events import make_event
+from openprogram.runtime.events import (
     decide_tool_gate,
     register_tool_gate,
 )
-from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.providers.types import (
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.models.providers.types import (
     AssistantMessage,
     Model,
     EventDone,
@@ -32,7 +32,7 @@ from openprogram.providers.types import (
 @pytest.fixture(autouse=True)
 def _clean_gates():
     """每个测试自己注册的 gate 自己拆，互不污染。"""
-    from openprogram.events import get_event_bus
+    from openprogram.runtime.events import get_event_bus
 
     bus = get_event_bus()
     with bus._lock:
@@ -156,6 +156,6 @@ def test_gate_blocks_tool_end_to_end():
     text = "".join(
         c.text for c in tool_results[0].content if hasattr(c, "text")
     )
-    assert "Tool call blocked" in text and "测试拦截" in text
+    assert text.startswith("[blocked by hook]") and "测试拦截" in text
     assert tool_results[0].is_error
     assert "is_error" not in (tool_results[0].details or {})

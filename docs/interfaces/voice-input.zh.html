@@ -1,0 +1,41 @@
+<title>语音输入</title>
+<meta name="description" content="在聊天输入框里语音输入，并选择语音识别服务。">
+<h1>语音输入</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入框左下角的麦克风按钮</th><td>点一下开始，再点一下停止</td></tr>
+<tr><th scope="row">打字时按住 ⌥空格（Alt+空格）</th><td>说话；松开即停止</td></tr>
+<tr><th scope="row">Esc</th><td>放弃录音并删除它插入的文字</td></tr>
+</tbody>
+</table>
+<p>每次停顿时，这一句被转写并插入到光标处。不会自动发送。录音时，发送按钮前的指示条在安静时显示一个点，说话时显示音量竖条。停止后，最后一句转写完成按钮才恢复。浏览器或 App 第一次使用时请求麦克风权限。</p>
+<h2>识别服务</h2>
+<p>所有选项都在 <strong>设置 → 语音</strong>，也可用 <code translate="no">openprogram config set voice.engine local</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">设置</th><th scope="col">取值</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">服务 <code translate="no">voice.engine</code></th><td><code translate="no">auto</code> <code translate="no">openai</code> <code translate="no">groq</code> <code translate="no">local</code></td><td>由谁转写</td></tr>
+<tr><th scope="row">说话语言 <code translate="no">voice.language</code></th><td><code translate="no">auto</code> <code translate="no">zh</code> <code translate="no">en</code> <code translate="no">ja</code> <code translate="no">ko</code> <code translate="no">fr</code> <code translate="no">de</code> <code translate="no">es</code></td><td><code translate="no">auto</code> 自动检测。<code translate="no">zh</code> 输出简体字。</td></tr>
+<tr><th scope="row">模型 <code translate="no">voice.model</code></th><td>文本</td><td>留空用该服务的默认模型。<code translate="no">auto</code> 时忽略。</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">服务</th><th scope="col">默认模型</th><th scope="col">需要</th><th scope="col">音频</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai</code></th><td><code translate="no">gpt-4o-mini-transcribe</code></td><td>设置 → Provider 里的 OpenAI 密钥</td><td>每句发送给 OpenAI</td></tr>
+<tr><th scope="row"><code translate="no">groq</code></th><td><code translate="no">whisper-large-v3-turbo</code></td><td>设置 → Provider 里的 Groq 密钥</td><td>每句发送给 Groq</td></tr>
+<tr><th scope="row"><code translate="no">local</code></th><td><code translate="no">large-v3-turbo-q5_0</code>，约 570 MB，首次使用时下载到状态目录</td><td><code translate="no">brew install whisper-cpp</code>（<a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a>）</td><td>留在本机。Apple 芯片上每句一到两秒。</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">auto</code> 的顺序：已下载模型的本地服务、OpenAI、Groq、需首次下载的本地服务。页面显示正在使用的服务和本机可用的服务。<a href="../capabilities/computer-use.html#recording-sound"><code translate="no">computer_use_agent</code></a> 录下的声音也由同一服务转写。</p>
+<h2>限制</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">限制</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row">格式</th><td>16 kHz 单声道，一次一句</td></tr>
+<tr><th scope="row">单句</th><td>连续 25 秒不停顿时在此切断</td></tr>
+<tr><th scope="row">上传</th><td>20 MB</td></tr>
+<tr><th scope="row">没有可用服务</th><td>点麦克风显示提示，指向设置 → 语音，不录音</td></tr>
+</tbody>
+</table>

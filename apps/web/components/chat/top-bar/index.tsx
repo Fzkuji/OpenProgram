@@ -3,10 +3,12 @@
  * in the 48px `.topbar` row above the chat. That row is gone (chat
  * chrome is just the 40px tab strip now); the chips live on elsewhere:
  *
- *   - ProjectBadge / AgentBadge ×2 / PermissionBadge → composer bottom
- *     row (see composer/index.tsx, `.sessionChips`)
- *   - connection status → composer status chip (composer/index.tsx,
- *     which hosts the ChannelMenu popover)
+ *   - ProjectBadge / AgentBadge (model) / AgentConfigBadge (Agent) /
+ *     PermissionBadge → composer bottom row (see composer/index.tsx,
+ *     `.sessionChips`)
+ *   - connection status → the composer's environment chip; channel
+ *     binding → the composer's channel chip (ChannelMenu popover) and
+ *     the "+" menu's Channel submenu (environment-row/chips/)
  *
  * `LegacyTopbarBridge` (rendered unconditionally by AppShell) seeds the
  * zustand store from the current runtime state on mount; from then on
@@ -18,32 +20,35 @@
  */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
 import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
-import {
-  type AnimatedNavIconHandle,
-  MessageCircleIcon,
-  TerminalIcon,
-} from "@/components/animated-icons";
 
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { HoverTip } from "@/components/ui/tooltip";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { HoverTip, TipBody } from "@/components/ui/tooltip";
 
-import { AgentSelector } from "./agent-selector";
+import { AgentSelector } from "./menus/agent-selector";
+import { TriggerMark } from "./menus/provider-quota";
+import { PICKER_QUERY_KEY, triggerMark } from "@/lib/models/provider-state";
+import { ModelMark } from "./chips/model-mark";
+import { MENU_PANEL } from "@/components/ui/menu/menu-styles";
+import { useBoundChat } from "./bound-chat";
 import { pushAgentSettings, pushBranchInfo, pushStatusBadge } from "@/lib/tabs/top-bar-sync";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export { ProjectBadge } from "./project-menu";
-export { WorkingDirChips } from "./working-dir-chips";
-export { PermissionBadge } from "./permission-menu";
+export { ProjectBadge } from "./menus/project-menu";
+export { WorkingDirChips } from "./chips/working-dir-chips";
+export { PermissionBadge } from "./menus/permission-menu";
+export { AgentConfigBadge } from "./menus/agent-config-menu";
 
 /**
  * Headless bridge — seeds the store from the current runtime state on
@@ -88,21 +93,28 @@ function fmtAgentLabel(
   return nameById.get(`${provider ?? ""}:${bare}`) ?? nameById.get(bare) ?? bare;
 }
 
+/** The conversation's chat model chip. Which Agent it runs with is the
+ *  neighbouring AgentConfigBadge. */
 export function AgentBadge({
   id,
-  kind,
   locked,
   provider,
   model,
 }: {
   id: string;
-  kind: "chat" | "exec";
   locked: boolean;
   provider?: string;
   model?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { t } = useTranslation();
+  const { text } = useTranslation();
+  const { chatKey } = useBoundChat();
+  const invocation = useSessionStore((state) => chatKey
+    ? state.composerSettingsBySession[chatKey]?.agentInvocation : undefined);
+  if (invocation?.resolvedModel) {
+    provider = invocation.resolvedModel.provider;
+    model = invocation.resolvedModel.id;
+  }
 
   // A `topbar-close-menus` event (fired by another top-bar dropdown)
   // closes this menu, so only one is ever open.
@@ -122,13 +134,18 @@ export function AgentBadge({
   }
 
   // Enabled-models list (shared cache with the AgentSelector dropdown —
-  // same queryKey, so this adds no extra fetch) → id-to-display-name map
+  // same PICKER_QUERY_KEY, so the menu adds no extra fetch) → id-to-display-name map
   // so the chip shows "GPT-5.5" instead of "openai-codex:gpt-5.5". Keyed
   // both by "provider:id" and bare "id" for whichever form the chip has.
-  const { data: enabledModels } = useQuery({
-    queryKey: ["models-enabled"],
-    queryFn: api.listEnabledModels,
+  // The same read carries each provider's picker state for the mark.
+  const { data: picker } = useQuery({
+    queryKey: PICKER_QUERY_KEY,
+    queryFn: api.listPickerModels,
   });
+  const enabledModels = picker?.models;
+  // A small mark on the chip only when this model's provider needs action
+  // or its quota warns; the tooltip says which.
+  const mark = triggerMark(provider ? picker?.providers[provider] : undefined, text);
   const nameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const mdl of enabledModels ?? []) {
@@ -140,49 +157,54 @@ export function AgentBadge({
   }, [enabledModels]);
 
   // Tooltip carries the "what is this chip" intro, so the chip itself
-  // shows only a glyph — plus the model name when one is set.
-  const iconRef = useRef<AnimatedNavIconHandle>(null);
-  const tooltip = kind === "chat" ? t("agent.chat_agent") : t("agent.execution_agent");
-  // Distinct glyph per role: message bubble = chat model, terminal =
-  // execution / tool-running model. Both animated (pqoqubbw set).
-  const Icon = kind === "chat" ? MessageCircleIcon : TerminalIcon;
+  // shows only the provider's logo — plus the model name when one is set.
   const label = fmtAgentLabel(provider, model, nameById);
+  const tipBody = (
+    <TipBody
+      title={text(`Model: ${label || "none"}`, `模型：${label || "未选择"}`)}
+      detail={mark
+        ? `${(provider && enabledModels?.find((m) => m.provider === provider)?.providerLabel) || provider} · ${mark.detail}`
+        : text("Talks with you and plans the work. Click to change model.", "和你对话并规划工作。点击更换模型。")}
+    />
+  );
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <HoverTip label={tooltip}>
-        <PopoverTrigger asChild>
-          <span
+    <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
+      <HoverTip label={tipBody}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
             id={id}
-            className={"runtime-badge agent-badge" + (locked ? " locked" : "")}
-            onMouseEnter={() => iconRef.current?.startAnimation?.()}
-            onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+            className={cn(buttonVariants({ variant: "elevated", size: "sm" })) + " runtime-badge agent-badge" + (locked ? " locked" : "")}
           >
-            <Icon
-              ref={iconRef}
-              size={14}
-              className={label ? "shrink-0 mr-[4px]" : "shrink-0"}
-              aria-hidden="true"
-            />
+            {mark ? (
+              <span className="relative inline-flex">
+                <ModelMark provider={provider} />
+                <TriggerMark tone={mark.tone} />
+                {/* The dot is drawn only; its meaning is read out here. */}
+                <span className="sr-only">{mark.detail}</span>
+              </span>
+            ) : (
+              <ModelMark provider={provider} />
+            )}
             {label ? <span className="badge-details">{label}</span> : null}
-          </span>
-        </PopoverTrigger>
+          </button>
+        </DropdownMenuTrigger>
       </HoverTip>
-      <PopoverContent
+      <DropdownMenuContent
         side="top"
         align="end"
         /* 9 = 10px band gap − 1px 输入框外扩 ring：底部一排弹层底缘
            与输入框可见边缘完全贴合。 */
         sideOffset={9}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        className="w-auto border-0 bg-transparent p-0 shadow-none"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        className={cn(MENU_PANEL, "text-text-primary")}
       >
         <AgentSelector
-          kind={kind}
           currentProvider={provider}
           currentModel={model}
           onClose={() => setOpen(false)}
         />
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

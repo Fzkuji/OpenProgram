@@ -1,0 +1,149 @@
+<title>函数元数据</title>
+<meta name="description" content="函数携带哪些元数据、放在哪里、由哪些组件读取。">
+<h1>函数元数据</h1>
+<p>每项信息只有一个归属。签名能表达的不在 <code translate="no">input</code> 里重复；<code translate="no">input</code> 能表达的不在 docstring 里重复。下文 <code translate="no">input.x</code> 指 <code translate="no">method_options[method]["input"]["x"]</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">位置</th><th scope="col">读取</th></tr></thead>
+<tbody>
+<tr><th scope="row">函数名</th><td><code translate="no">def name(...)</code></td><td><code translate="no">fn.__name__</code></td></tr>
+<tr><th scope="row">参数名、类型、默认值</th><td>签名</td><td><code translate="no">inspect.signature(fn).parameters</code></td></tr>
+<tr><th scope="row">一句话摘要：做什么、何时选</th><td>docstring 第一段</td><td><code translate="no">inspect.getdoc(fn)</code></td></tr>
+<tr><th scope="row">单次调用的指令</th><td>传给那次 <code translate="no">llm()</code> 的提示词</td><td>调用时传入</td></tr>
+<tr><th scope="row">参数描述</th><td><code translate="no">input.x.description</code></td><td><code translate="no">fn.input_meta["x"]["description"]</code></td></tr>
+<tr><th scope="row">枚举</th><td><code translate="no">input.x.options</code></td><td><code translate="no">fn.input_meta["x"]["options"]</code></td></tr>
+<tr><th scope="row">对 LLM 隐藏</th><td><code translate="no">input.x.hidden</code></td><td><code translate="no">fn.input_meta["x"]["hidden"]</code></td></tr>
+<tr><th scope="row">WebUI 占位符、多行</th><td><code translate="no">input.x.placeholder</code>, <code translate="no">input.x.multiline</code></td><td><code translate="no">fn.input_meta["x"]</code></td></tr>
+<tr><th scope="row">动态选项</th><td><code translate="no">input.x.options_from: "functions"</code></td><td><code translate="no">fn.input_meta["x"]["options_from"]</code></td></tr>
+<tr><th scope="row">覆盖环境系统提示词</th><td><code translate="no">system</code></td><td><code translate="no">fn.system</code></td></tr>
+<tr><th scope="row">调用者在 DAG 渲染中看到什么：<code translate="no">"io"</code>、<code translate="no">"llm"</code>、<code translate="no">"full"</code>、<code translate="no">"hidden"</code></th><td><code translate="no">expose</code></td><td><code translate="no">fn.expose</code></td></tr>
+<tr><th scope="row">此函数的 <code translate="no">llm()</code> 读取多少历史</th><td><code translate="no">render_range</code></td><td><code translate="no">fn.render_range</code></td></tr>
+<tr><th scope="row">Skill 触发词、Agent 发现</th><td>同级 <code translate="no">SKILL.md</code> frontmatter</td><td>Skill 加载器</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class ExampleAgent(Agent):
+    method_options = {
+        'review_essay': {'tool': True, 'input': {
+            'essay': {'description': 'Essay to review.', 'placeholder': 'Paste the essay text here...', 'multiline': True},
+            'rubric_id': {'description': 'Which rubric to apply.', 'options': ['ielts_writing', 'toefl_writing', 'gre_argument']},
+            'max_score': {'description': 'Upper bound for the numeric score.'},
+            'show_rubric_internals': {'description': 'Include rubric breakdown in the output.'},
+            'session_id': {'hidden': True},   # filled by Python via context, not the LLM
+        }},
+    }
+
+    def review_essay(self, essay: str, rubric_id: str, max_score: int,
+                     show_rubric_internals: bool, session_id: str) -&gt; dict:
+        """Score an essay against a named rubric and return a structured report."""
+        ...
+
+_example_agent = ExampleAgent()
+review_essay = _example_agent.review_essay</code></pre>
+<p class="note">docstring 只保留摘要，不写 <code translate="no">Args:</code> 或 <code translate="no">Returns:</code>。下游需要的字段含义用 <code translate="no">TypedDict</code> 或 dataclass 返回类型表达。</p>
+
+<h2>默认值</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">默认</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">expose</code></th><td>普通方法 <code translate="no">"full"</code>；显式工具 <code translate="no">"io"</code>（名称、输入、输出，内部 <code translate="no">llm()</code> 调用隐藏）</td></tr>
+<tr><th scope="row"><code translate="no">render_range.callers</code></th><td><code translate="no">None</code>：本帧之前的节点不限。<code translate="no">0</code> 隔绝全部先前上下文。<code translate="no">N</code>：最近 N 个。</td></tr>
+<tr><th scope="row"><code translate="no">render_range.subcalls</code></th><td><code translate="no">-1</code>：本帧看到自己的全部进展。子调用内部由子调用的 <code translate="no">expose</code> 隐藏。<code translate="no">N</code> 用于限制长循环的提示词大小；<code translate="no">0</code> 隔绝本帧节点。</td></tr>
+<tr><th scope="row">顶层聊天回合</th><td><code translate="no">frame_entry_seq=-1</code>：所有节点都在帧内，与其他帧同一路径</td></tr>
+<tr><th scope="row">工具</th><td>裸 <code translate="no">runtime.exec</code>：完整注册表。<code translate="no">tools=[...]</code>：指定菜单。<code translate="no">toolset="none"</code> 或 <code translate="no">tools=[]</code>：无工具。嵌套 <code translate="no">exec</code> 继承（<code translate="no">_current_tools</code>）。</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td><code translate="no">None</code>：使用运行时现有系统提示词</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">render_range</code> 按 <code translate="no">seq</code> 统计节点。</p>
+
+<h2>docstring 与提示词</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">docstring</th><th scope="col"><code translate="no">llm(prompt)</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>整个函数</td><td>一次模型调用；一个函数可有多次</td></tr>
+<tr><th scope="row">读者</th><td>人、决策菜单、工具 spec、元工具。作为 <code translate="no">metadata.doc</code> 携带，并渲染为描述性上下文。</td><td>模型，作为权威指令</td></tr>
+<tr><th scope="row">必须包含</th><td>直接说明的一句话摘要，可写更多细节。不写“You are a helpful assistant”之类的套话，不角色扮演，不用比喻。</td><td>指令、数据和确切的输出格式，即使 docstring 已写过</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>llm([{"type": "text", "text": (
+    f"Classify the sentiment of the following text. Reply with exactly one "
+    f"word: positive, negative, or neutral.\n\nText:\n{text}"
+)}])</code></pre>
+<p class="note">每项是字典，如 <code translate="no">{"type": "text", "text": ...}</code> 或 <code translate="no">{"type": "image", "path": ...}</code>。默认系统提示词来自环境运行时和 skills 块，不来自 docstring。</p>
+
+<h2>谁读取什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">使用方</th><th scope="col">需要</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime.exec(tools=[fn])</code></th><td>名称、描述、参数 JSON schema</td></tr>
+<tr><th scope="row"><code translate="no">render_options(options)</code></th><td>名称、何时选、参数名、类型、描述、枚举、是否系统填充</td></tr>
+<tr><th scope="row"><code translate="no">parse_args(reply, options, ...)</code></th><td>参数名、类型、枚举、隐藏标记、自动注入列表</td></tr>
+<tr><th scope="row">WebUI 表单</th><td><code translate="no">description</code>, <code translate="no">placeholder</code>, <code translate="no">multiline</code>, <code translate="no">options</code>, <code translate="no">hidden</code></td></tr>
+<tr><th scope="row"><code translate="no">render_context</code></th><td><code translate="no">expose</code>、<code translate="no">render_range</code></td></tr>
+<tr><th scope="row">追踪与持久化</th><td>身份、参数、返回值、时间</td></tr>
+</tbody>
+</table>
+<p class="note">工具 spec 的描述回退顺序：<code translate="no">description</code>，然后 <code translate="no">placeholder</code>（写成“e.g. …”），最后只有名称和类型。<code translate="no">render_options</code> 只读 <code translate="no">description</code> 和 <code translate="no">options</code>。两者都不读 docstring 的 <code translate="no">Args:</code>，旧式 <code translate="no">Args:</code> 能运行，但在这里不起作用。</p>
+
+<h2>普通可调用对象</h2>
+<p><code translate="no">render_options</code>、<code translate="no">decision.make</code> 和 <code translate="no">choices=</code> 接受。<code translate="no">runtime.exec(tools=[...])</code> 只接受 <code translate="no">Agent</code> 方法、<code translate="no">{"spec", "execute"}</code> 字典或带 <code translate="no">.spec</code> 和 <code translate="no">.execute</code> 的对象，否则抛 <code translate="no">TypeError</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">Agent</code> 方法</th><th scope="col">普通可调用对象</th></tr></thead>
+<tbody>
+<tr><th scope="row">参数描述</th><td><code translate="no">input</code></td><td>空</td></tr>
+<tr><th scope="row">枚举</th><td><code translate="no">input.x.options</code></td><td>无</td></tr>
+<tr><th scope="row">隐藏</th><td><code translate="no">input.x.hidden</code></td><td>仅自动注入的名称</td></tr>
+<tr><th scope="row">会话 DAG</th><td>启动执行时记录</td><td>不记录</td></tr>
+</tbody>
+</table>
+<p class="note">适合参数少、没有 WebUI 界面的简单分支。</p>
+
+<h2>自动注入的参数</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">名称</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime</code></th><td>当前 Runtime</td></tr>
+<tr><th scope="row"><code translate="no">exec_runtime</code></th><td>多 Runtime 场景的执行 Runtime</td></tr>
+<tr><th scope="row"><code translate="no">review_runtime</code></th><td>多 Runtime 场景的评审 Runtime</td></tr>
+</tbody>
+</table>
+<p class="note">对 LLM 隐藏。新方法不声明它们：方法运行在其 Agent 或调用者的 Runtime 上；注入保留给现有函数。新增名称要同时改 <code translate="no">openprogram/runtime/agent/call_state.py</code> 的 <code translate="no">_RUNTIME_PARAMS</code> 和 <code translate="no">decision.py</code> 的 <code translate="no">_AUTO_PARAMS</code>，不要逐处用 <code translate="no">hidden</code>。</p>
+
+<h2>WebUI 表单控件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参数</th><th scope="col">控件</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">bool</code></th><td>是、否按钮</td></tr>
+<tr><th scope="row"><code translate="no">str</code>，未设 <code translate="no">multiline</code></th><td>多行文本框</td></tr>
+<tr><th scope="row"><code translate="no">str</code>, <code translate="no">multiline: False</code></th><td>单行输入</td></tr>
+<tr><th scope="row">其他类型，未设 <code translate="no">multiline</code></th><td>单行输入</td></tr>
+<tr><th scope="row"><code translate="no">options</code></th><td>可点选项加自由输入</td></tr>
+<tr><th scope="row"><code translate="no">options_from: "functions"</code></th><td>已注册的非内置、非元函数下拉框</td></tr>
+<tr><th scope="row"><code translate="no">hidden: True</code></th><td>不显示</td></tr>
+<tr><th scope="row">有 Python 默认值、无 <code translate="no">placeholder</code></th><td>默认值作为占位文字；在空字段按 Tab 填入。<code translate="no">None</code> 和以 <code translate="no">_</code> 开头的值不显示。</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">description</code> 是名称旁的小标签，同一行显示类型，非必填带“optional”标记。已注册函数使用实时 <code translate="no">input_meta</code>；否则 <code translate="no">function_catalog.py</code> 解析源码，只有字面量 <code translate="no">input</code> 字典才显示。</p>
+
+<details>
+<summary>工具注册和门控选项</summary>
+<p><code translate="no">name</code>、<code translate="no">description</code>、<code translate="no">toolset</code>、<code translate="no">unsafe_in</code>、<code translate="no">requires_approval</code>、<code translate="no">check_fn</code>、<code translate="no">available_if</code>、<code translate="no">defer</code>：见<a href="../../../reference/design/function/calling-unification.zh.html">函数调用设计</a>。<code translate="no">cache</code> 和 <code translate="no">cache_ttl</code> 按名称和参数缓存。<code translate="no">timeout</code> 在 N 秒后停止函数体并返回错误结果。</p>
+</details>
+<details>
+<summary>尚不存在的字段</summary>
+<p><code translate="no">effects</code>、<code translate="no">permissions</code>、<code translate="no">idempotent</code>、<code translate="no">latency_hint</code> 和 <code translate="no">cost_hint</code> 未实现：还没有使用方。门控已有上面的选项。</p>
+</details>
+
+<h2>新方法检查清单</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">函数名</th><td>清晰：LLM 把它当作动作名</td></tr>
+<tr><th scope="row">docstring</th><td>以一句话摘要开头，不写 <code translate="no">Args:</code> 或 <code translate="no">Returns:</code></td></tr>
+<tr><th scope="row">LLM 可见参数</th><td>每个都有 <code translate="no">description</code></td></tr>
+<tr><th scope="row">枚举</th><td>用 <code translate="no">options</code>，不写在描述里</td></tr>
+<tr><th scope="row">系统填充的参数</th><td><code translate="no">hidden: True</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime</code> 参数</th><td>没有</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="agent.zh.html">Agent 调用与方法</a> · <a href="../choosing-the-next-step/tool-calling.zh.html">工具调用</a> · <a href="../choosing-the-next-step/next-step-decision.zh.html">下一步决策</a></p>

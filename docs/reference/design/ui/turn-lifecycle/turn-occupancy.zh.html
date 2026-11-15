@@ -1,0 +1,91 @@
+<title>轮次占用</title>
+<meta name="description" content="每个分支一个进行中的轮次：停止、队列和会话槽如何释放和排序。">
+<h1>轮次占用</h1>
+<p>对话的一个分支只允许一个进行中的轮次。输入框占用的是当前选中分支的槽，所以运行时输入进入队列；另一个分支上的轮次占用那个分支自己的槽（<a href="../../runtime/execution/control.zh.html#branch-run-slots">两个分支同时运行</a>）。</p>
+<p>切换分支从不等待：之后输入框占用进入分支的槽，离开的那一轮在自己的槽里继续运行（<a href="../../runtime/execution/control.zh.html#branch-switch">切换分支</a>）。</p>
+<p>停止是打断：占用在取消意图发出时释放，不等旧轮次线程结束。</p>
+
+<h2 id="stop">停止</h2>
+<ol>
+<li>为规范执行发送 <code translate="no">execution.cancel</code>（<code translate="no">use-chat-submit.ts</code> 的 <code translate="no">stopSession</code>）。确认消息给出这一轮的 id 之前，停止改为按 <code translate="no">session_id</code> 和 <code translate="no">client_request_id</code> 指明这次发送；<code translate="no">/compact</code> 或回退用 <code translate="no">operation.cancel</code> 停止（<a href="../../runtime/execution/control.zh.html#branch-operations">每个分支一个前台操作</a>）。</li>
+<li>用 Stop 覆盖层（<code translate="no">stopOverlay</code>）把进行中的回复画成 <code translate="no">cancelled</code>，保留已流出的文字。覆盖层盖在行上，从不改写行：服务端的行到达已结束状态，或服务端拒绝这次取消的命令 id 时，它就结束。</li>
+<li><code translate="no">setRunningTaskFor(sessionId, null, "always")</code>：队列在 0ms 排空，发送可用。不因旧轮次收尾禁用发送。</li>
+</ol>
+<p class="note">如果运行任务上留着 <code translate="no">cancelling: true</code> 或用 <code translate="no">drain: "never"</code>，输入框会锁到 <code translate="no">running_task_clear</code>。Claude Code：运行时回车排队，Esc 打断后发送队列。Vercel AI SDK：stop 立即中止。</p>
+
+<h2 id="invariants">不变量</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">每侧一个占用来源</th><td>客户端：<code translate="no">runningTasks</code>，映射到输入框。服务端：<code translate="no">_running_tasks</code> 加规范驱动。行的 <code translate="no">status</code> 只渲染气泡，不控制输入框，反之亦然。行的状态只由服务端的 <code translate="no">transcript_update</code> 写；占用帧不写行</td></tr>
+<tr><th scope="row">终态不可逆</th><td>一旦 <code translate="no">cancelled</code>、<code translate="no">completed</code>、<code translate="no">failed</code>、<code translate="no">error</code>、<code translate="no">interrupted</code> 或 <code translate="no">done</code>，后续帧不能恢复运行样子。<code translate="no">cancelling</code> 是服务端内部状态，客户端当作已取消</td></tr>
+<tr><th scope="row">占位不覆盖身份</th><td>空的 <code translate="no">{ msg_id: "" }</code> 预留只能写入空槽；<code translate="no">msg_id</code> 和 <code translate="no">execution_id</code> 才让停止能取消</td></tr>
+<tr><th scope="row">只有本轮的终止帧释放占用</th><td>嵌套的 <code translate="no">display:"runtime"</code> 结果只结束它的卡片。已取消轮次的迟到 <code translate="no">running_task</code> 不能复活槽位</td></tr>
+<tr><th scope="row">停止不静默失败</th><td>解析不到执行时服务端发错误帧，相当于 HTTP 路由的 404</td></tr>
+</tbody>
+</table>
+<p class="note">与 Codex CLI（取消权在核心会话的运行轮次，UI 状态来自 <code translate="no">TurnStarted</code>、<code translate="no">TurnCompleted</code>、<code translate="no">TurnAborted</code>，协议没有 cancelling）和 Claude Code（<code translate="no">QueryGuard</code> 同帧转空闲，部分文字作为普通消息提交）一致。</p>
+
+<h2 id="occupancy-is-released-on-cancel-intent">在取消意图时释放</h2>
+<p>槽位是 <code translate="no">_running_tasks</code>；规范驱动持有当前尝试、协作取消事件和尝试代数。传输预留不占 <code translate="no">run_control</code> token，也不从 <code translate="no">{msg_id}_reply</code> 推导 id。<code translate="no">cancel_execution</code> 成功时：</p>
+<ol>
+<li>把已接纳的 <code translate="no">execution_id</code> 对应到 <code translate="no">session_id</code> 和 <code translate="no">msg_id</code>。</li>
+<li><code translate="no">_finish_owned_run(session_id, msg_id)</code> 移除传输槽。<code translate="no">msg_id</code> 不匹配时不做事，所以新预留安全，被取消轮次的 <code translate="no">finally</code> 也无害。</li>
+<li>广播槽位状态。执行还在收尾时，这一帧是状态为 <code translate="no">cancelling</code> 的 <code translate="no">running_task</code>；轮次结束时广播 <code translate="no">running_task_clear</code>，指明结束的轮次。槽位已被别的占用者拿走时，这一帧仍是这条清除，不会为新占用者发 <code translate="no">running_task</code>。</li>
+</ol>
+<p class="note">下一次 <code translate="no">_try_reserve_run</code> 不等旧驱动线程。只有与槽位执行匹配的 clear 才生效；停止并发送后的无范围 clear 已过期。</p>
+
+<h2 id="finishing">轮次刚结束时发出的消息</h2>
+<p>一轮的终止帧（<code translate="no">result</code> 或 <code translate="no">error</code>）发出时，槽位还没空：这一轮还要写完执行记录和上下文数字，大约十分之一秒后才发 <code translate="no">running_task_clear</code>。看到“完成”就发出的消息，以前会在这段间隙被拒绝 <code translate="no">run_active</code>，而只有网页会重发被拒绝的消息。</p>
+<table class="stack">
+<caption>请求到达时占着该分支槽位的是什么</caption>
+<thead><tr><th scope="col">占用者</th><th scope="col">请求</th></tr></thead>
+<tbody>
+<tr><th scope="row">已发出终止帧的轮次</th><td>不持锁等待槽位交还，然后占用；最多 5 秒（<code translate="no">FINISHING_WAIT_SECONDS</code>），超过后照旧拒绝</td></tr>
+<tr><th scope="row">仍在运行的轮次、其他操作</th><td>立即拒绝，<code translate="no">run_active</code></td></tr>
+<tr><th scope="row">同一个请求（同一个键）</th><td>按重复请求处理（<a href="../../runtime/execution/control.zh.html#branch-operations">每个分支一个前台操作</a>），从不等待</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>标记</strong>：轮次运行时在发出这一帧之前调用 <code translate="no">run_slot.finishing</code>，所以没人能在槽位不知情时看到“完成”。标记的是这一轮的消息 id 占着的槽位，切换分支把它移到哪里就标哪里（<code translate="no">mark_run_finishing</code>）。</li>
+<li><strong>所有入口</strong>：发送、发往未选中分支的发送、<code translate="no">reserve_operation</code>（重试、编辑、函数运行）以及运行时自己发起的轮次（所有者轮次、渠道、经 Worker 的 <code translate="no">--print --resume</code>）都同样等待。</li>
+<li><strong>为什么不先释放槽位</strong>：收尾要写这个分支的执行记录和数字，这时准入的轮次会和它同时写。Codex 的做法与此相同：发 <code translate="no">TurnComplete</code> 之前把活动轮次标为 <code translate="no">finishing</code>，期间到达的输入等它结束（<code translate="no">codex-rs/core/src/tasks/mod.rs</code> 的 <code translate="no">on_task_finished</code>，<code translate="no">session/inject.rs</code>）。</li>
+<li><strong>为什么不放在客户端</strong>：终端客户端、<code translate="no">--print</code>、渠道和脚本都得各写一套重试。</li>
+<li><strong>测试</strong>：<code translate="no">tests/component/webui/chat/test_send_after_result.py</code> 在第一轮的 <code translate="no">result</code> 广播的那一刻经真实的聊天处理器发送。</li>
+</ul>
+
+<h2 id="run-state-frames-are-ordered-by-run_seq">运行状态帧按 <code translate="no">run_seq</code> 排序</h2>
+<p><code translate="no">running_task</code>、<code translate="no">running_task_clear</code>、<code translate="no">run_state</code> 和 <code translate="no">session_loaded</code>（<code translate="no">run_active</code>、<code translate="no">run_task</code>）都带它：服务端递增数（<code translate="no">server._next_run_seq()</code>，微秒墙钟时间，跨 worker 重启仍递增，在 JSON 里精确），在读取该帧运行状态之前取得。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">帧</th><th scope="col">客户端</th></tr></thead>
+<tbody>
+<tr><th scope="row">乱序</th><td>加载读到“运行中”，却在 clear 之后才发出，所以只应用比该会话上次更新的 <code translate="no">run_seq</code>（<code translate="no">lib/chat/decisions/run-seq.ts</code> 的 <code translate="no">acceptRunFrame</code>）</td></tr>
+<tr><th scope="row">过期的加载</th><td>仍确认恢复的 steer 回执，但不动槽位和队列</td></tr>
+<tr><th scope="row">没有 <code translate="no">run_seq</code>（本地占位、聊天确认）</th><td>照旧应用，由 clear 的身份匹配把关</td></tr>
+</tbody>
+</table>
+
+<h2 id="zero-ms-ui">迟到帧</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">帧</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">已取消 <code translate="no">execution_id</code> 的 <code translate="no">running_task</code></th><td>不能复活任务：由 <code translate="no">run_seq</code> 和待处理的取消把关</td></tr>
+<tr><th scope="row">Stop 之后的文字和行变化</th><td>不发送。<code translate="no">_broadcast_chat_response</code> 在停止后不再发文字帧，发布器丢弃已取消执行的行的非终态变化。终态 <code translate="no">row_upsert</code> 照常发出，并结束覆盖层</td></tr>
+<tr><th scope="row">被拒绝的取消</th><td>拒绝附带的 <code translate="no">latest_snapshot</code> 证明运行仍在继续时，覆盖层清除，运行占用恢复，之后的文字照常出现</td></tr>
+<tr><th scope="row">已完成轮次 <code translate="no">result</code> 之后的 <code translate="no">running_task</code></th><td>只清掉输入框的运行任务。回复行的状态来自服务端的 <code translate="no">transcript_update</code>，客户端在这里不写行</td></tr>
+</tbody>
+</table>
+<p class="note">0ms 规则：<a href="../interaction-feedback.html">交互反馈</a>。队列机制：<a href="send-queue-reliability.html">队列与插话</a>。</p>
+
+<h2 id="http-abort">HTTP 中止</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">机制</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">iter_until_cancelled</code></th><td>位于 <code translate="no">providers/utils/cancelable_stream.py</code>：在一个 <code translate="no">__anext__</code> 未完成时最多每 250ms 轮询取消信号，取消后退出，让 <code translate="no">async with</code> 关闭流。Anthropic 和 OpenAI Completions 适配器使用它。</td></tr>
+<tr><th scope="row">不用 <code translate="no">wait_for</code></th><td>不要对下一块 <code translate="no">wait_for</code>：超时会取消那次读取，杀死 httpx 和 OpenAI 的 SSE 迭代器。Grok 思考时常超过 250ms 没有分块，会结束成空回复。</td></tr>
+<tr><th scope="row"><code translate="no">finish_reason</code></th><td>结束轮次。Grok 和 xAI 常在最后一个 token 后不关闭 SSE，所以用量只收 <code translate="no">USAGE_DRAIN_S</code>（1.5 秒），随后 <code translate="no">EventDone</code>。</td></tr>
+</tbody>
+</table>
+
+<h2 id="grace">四秒宽限</h2>
+<p><code translate="no">CANCEL_GRACE_S = 4.0</code>（<code translate="no">run_control/owners.py</code>）只在持有者有子进程或会杀子进程的 terminate 钩子时适用。只有 token 的聊天持有者在取消意图后不等待。服务：<code translate="no">runtime/execution/control/</code> 的 <code translate="no">RuntimeControlService.request_cancel</code>。</p>

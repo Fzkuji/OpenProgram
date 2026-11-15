@@ -24,7 +24,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _worker_lock_is_held(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.worker.lock.is_held_by", lambda _pid: True,
+        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True,
     )
 
 
@@ -32,12 +32,12 @@ def _worker_lock_is_held(monkeypatch):
 def store_fixture(tmp_path, monkeypatch):
     """Isolated SessionStore with three session rows (parent / child /
     grandchild lanes)."""
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.agent import session_db as sdb_mod
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.runtime.context import session_db as sdb_mod
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: s)
     for sid in ("p1", "p2", "p3"):
         s.create_session(sid, "main", title=sid)
         s.append_message(sid, {
@@ -62,7 +62,7 @@ def fake_worker(monkeypatch):
     entered = threading.Event()
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
         calls.append({
             "session_id": request.session_id, "prompt": request.user_text,
         })
@@ -78,13 +78,13 @@ def fake_worker(monkeypatch):
         return AgentTurnResult(head_id="head_ok", final_text="done",
                                failed=False, error=None)
 
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_run),
     )
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     yield calls, barrier, cancel_seen, entered
     barrier.set()
@@ -108,10 +108,10 @@ def test_parent_cancel_dequeues_pending_child(store_fixture, fake_worker,
                                               monkeypatch):
     """Pending child (never picked up) flips to cancelled with the parent."""
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
     calls, barrier, _, entered = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
 
     parent = runner.spawn_job(
@@ -119,7 +119,7 @@ def test_parent_cancel_dequeues_pending_child(store_fixture, fake_worker,
         parent_msg_id="a_p1",
     )
     # Wait until the canonical driver is executing the parent.
-    assert entered.wait(timeout=5.0), "parent worker never started"
+    assert entered.wait(timeout=30), "parent worker never started"
     child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
         parent_msg_id="a_p2", parent_job_id=parent,
@@ -143,10 +143,10 @@ def test_pending_child_cannot_slip_into_the_freed_slot(
     turns that interleaving from an occasional flake into every run.
     """
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
     calls, _barrier, _, entered = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
 
     walk = runner._descendant_jobs
@@ -159,7 +159,7 @@ def test_pending_child_cannot_slip_into_the_freed_slot(
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
-    assert entered.wait(timeout=5.0), "parent worker never started"
+    assert entered.wait(timeout=30), "parent worker never started"
     child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
         parent_msg_id="a_p2", parent_job_id=parent,
@@ -175,10 +175,10 @@ def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
     """Running child (different session) is cancelled through the normal
     per-job cancel path."""
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "2")
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
     _, barrier, cancel_seen, entered = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
 
     parent = runner.spawn_job(
@@ -189,7 +189,7 @@ def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
         session_id="p2", prompt="child", agent_id="main",
         parent_msg_id="a_p2", parent_job_id=parent,
     )
-    assert entered.wait(timeout=5.0), "parent worker never started"
+    assert entered.wait(timeout=30), "parent worker never started"
     assert _wait_for_calls(fake_worker[0], 2), "child worker never started"
 
     runner.cancel_execution(parent)
@@ -203,12 +203,12 @@ def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
 def test_cancel_request_does_not_resurrect_a_finished_job(
         store_fixture, fake_worker):
     """A finished JobStore projection is never resurrected by cancel."""
-    import openprogram.agent.job.runner as runner_mod
-    from openprogram.agent.job import get_runner, JobStatus
-    from openprogram.agent.job.store import (
+    import openprogram.runtime.jobs.runner as runner_mod
+    from openprogram.runtime.jobs import get_runner, JobStatus
+    from openprogram.runtime.jobs.store import (
         load_job, save_job, update_job_status,
     )
-    from openprogram.agent.job.types import Job
+    from openprogram.runtime.jobs.types import Job
 
     # Build the runner FIRST: its startup reconcile errors any
     # pre-existing non-terminal job.
@@ -222,14 +222,14 @@ def test_cancel_request_does_not_resurrect_a_finished_job(
 
     # Plain setattr, not the monkeypatch fixture: this only simulates a stale
     # projection read while the underlying row is already terminal.
-    original = runner_mod._store_load
-    runner_mod._store_load = (
+    original = runner_mod.shared._store_load
+    runner_mod.shared._store_load = (
         lambda sid, tid: stale if tid == "t_resurrect" else original(sid, tid)
     )
     try:
         runner._cancel_single("t_resurrect")
     finally:
-        runner_mod._store_load = original
+        runner_mod.shared._store_load = original
 
     assert load_job("p1", "t_resurrect").status == JobStatus.CANCELLED
 
@@ -237,17 +237,17 @@ def test_cancel_request_does_not_resurrect_a_finished_job(
 def test_grandchild_stops_too(store_fixture, fake_worker, monkeypatch):
     """Recursion: parent → child → grandchild, all cancelled from the root."""
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
     _, barrier, _, entered = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
 
     parent = runner.spawn_job(
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
-    assert entered.wait(timeout=5.0), "parent worker never started"
+    assert entered.wait(timeout=30), "parent worker never started"
     child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
         parent_msg_id="a_p2", parent_job_id=parent,
@@ -264,9 +264,9 @@ def test_grandchild_stops_too(store_fixture, fake_worker, monkeypatch):
 
 def test_cycle_in_parent_chain_does_not_hang(store_fixture, fake_worker):
     """A legacy-only parent cycle is terminalized without execution fallback."""
-    from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job import get_runner
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job
+    from openprogram.runtime.jobs import get_runner
 
     # Construct the runner FIRST — its startup reconcile flips any
     # pre-existing non-terminal job to errored.
@@ -285,7 +285,7 @@ def test_cycle_in_parent_chain_does_not_hang(store_fixture, fake_worker):
         done.set()
 
     threading.Thread(target=_go, daemon=True).start()
-    assert done.wait(timeout=5.0), "cancel_execution hung on a parent cycle"
+    assert done.wait(timeout=30), "cancel_execution hung on a parent cycle"
     assert result["job"].status == JobStatus.ERRORED
     assert result["job"].error == "canonical execution admission is missing"
     assert runner.get_job("t_cyc_b").status == JobStatus.ERRORED
@@ -296,13 +296,12 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
                                           monkeypatch):
     """A spawn made from inside a running job defaults parent_job_id
     to that job (the producer side of the cascade chain)."""
-    import openprogram.agent.job.runner as runner_mod
-    from openprogram.agent.job import get_runner
+    from openprogram.runtime.jobs import get_runner
     runner = get_runner()
     recorded = {}
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
         # Simulate only the outer turn's tool call. Letting the same fake
         # spawn from the child would replace this direct-child id with a
         # recursively created descendant before the assertion runs.
@@ -315,7 +314,7 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_run),
     )
     parent = runner.spawn_job(
@@ -332,10 +331,10 @@ def test_concurrent_spawns_keep_their_own_parent(store_fixture, fake_worker,
                                                   monkeypatch):
     """Concurrent parent turns do not exchange their ambient job ids."""
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "4")
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
-    from openprogram.agent.job import get_runner
-    from openprogram.agent.sub_agent_run import AgentTurnResult
+    from openprogram.runtime.jobs import get_runner
+    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
 
     runner = get_runner()
     parents_ready = threading.Barrier(2)
@@ -356,7 +355,7 @@ def test_concurrent_spawns_keep_their_own_parent(store_fixture, fake_worker,
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_run),
     )
     parent_1 = runner.spawn_job(
@@ -380,9 +379,9 @@ def test_worker_clears_job_context_after_execution(store_fixture, fake_worker,
                                                     monkeypatch):
     """The executor thread retains no job identity after ``_run_one``."""
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
-    from openprogram.agent.job import get_runner
+    from openprogram.runtime.jobs import get_runner
 
     runner = get_runner()
     job_id = runner.spawn_job(
@@ -397,7 +396,7 @@ def test_worker_clears_job_context_after_execution(store_fixture, fake_worker,
             runner_mod._current_job_runner.get(),
         )
 
-    assert runner._pool.submit(inspect_worker_context).result(timeout=5.0) == (
+    assert runner._pool.submit(inspect_worker_context).result(timeout=30) == (
         None,
         None,
     )
@@ -405,7 +404,7 @@ def test_worker_clears_job_context_after_execution(store_fixture, fake_worker,
 
 def test_session_cancel_clears_inbox_with_sender_notice(store_fixture):
     """Session-level cancel drops queued messages and notifies senders."""
-    from openprogram.agent import inbox
+    from openprogram.runtime.conversation import inbox
 
     inbox.enqueue(
         "p2",

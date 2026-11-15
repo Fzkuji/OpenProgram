@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import multiprocessing
 import time
 
-from openprogram.webui.user_errors import UserErrorRecord, UserErrorStore
+from openprogram.interfaces.server.user_errors import UserErrorRecord, UserErrorStore
 
 
 def _record(index: int, occurred_at_epoch: float) -> UserErrorRecord:
@@ -51,7 +51,7 @@ def _write_from_process(
 
 
 def test_user_error_store_serializes_concurrent_writers(tmp_path) -> None:
-    path = tmp_path / "user_errors.db"
+    path = tmp_path / "user_errors.jsonl"
     now = time.time()
 
     def write(index: int) -> None:
@@ -71,7 +71,7 @@ def test_user_error_store_serializes_concurrent_writers(tmp_path) -> None:
 
 
 def test_user_error_store_initializes_safely_across_processes(tmp_path) -> None:
-    path = tmp_path / "user_errors.db"
+    path = tmp_path / "user_errors.jsonl"
     now = time.time()
     context = multiprocessing.get_context("spawn")
     start = context.Event()

@@ -5,10 +5,10 @@ import importlib
 
 import pytest
 
-from openprogram.agent.types import AgentContext, AgentLoopConfig
-from openprogram.providers.api_registry import ApiProviderSnapshot
-from openprogram.providers.structured_output import StructuredOutputCapabilities
-from openprogram.providers.types import (
+from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
+from openprogram.models.providers.catalog.api_registry import ApiProviderSnapshot
+from openprogram.models.providers.structured_output import StructuredOutputCapabilities
+from openprogram.models.providers.types import (
     AssistantMessage,
     EventDone,
     EventStart,
@@ -29,10 +29,10 @@ from openprogram.providers.types import (
 def test_provider_options_follow_dispatch_candidate_capabilities(
     monkeypatch, primary_support, fallback_support, failover
 ):
-    agent_loop = importlib.import_module("openprogram.agent.agent_loop")
-    provider_stream = importlib.import_module("openprogram.providers.stream")
-    failover_utils = importlib.import_module("openprogram.providers.utils.failover")
-    api_registry = importlib.import_module("openprogram.providers.api_registry")
+    agent_loop = importlib.import_module("openprogram.runtime.agent.loop")
+    provider_stream = importlib.import_module("openprogram.models.providers.streaming.stream")
+    failover_utils = importlib.import_module("openprogram.models.providers.utils.failover")
+    api_registry = importlib.import_module("openprogram.models.providers.catalog.api_registry")
 
     primary = Model(
         id="primary-model", name="Primary", api="primary-api",

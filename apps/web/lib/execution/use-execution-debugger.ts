@@ -1,5 +1,7 @@
 "use client";
 
+import { showToast } from "@/lib/format-utils/toast";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildExecutionCommand,
@@ -21,12 +23,12 @@ import {
   getExecutionEvents,
   getExecutionSnapshot,
   getSessionExecutions,
-  parseRevisionState,
+  inspectionFromDebuggerState,
   postExecutionCommand,
   postExecutionWait,
   postRevisionDraftCommand,
-} from "@/lib/net/execution-client";
-import "@/lib/net/ws-events";
+} from "@/lib/net/execution/execution-client";
+import "@/lib/net/ws/ws-events";
 import { useSessionStore } from "@/lib/session-store";
 
 export type ExecutionDebuggerController = {
@@ -36,7 +38,7 @@ export type ExecutionDebuggerController = {
   unresolvedEffects: UnresolvedEffect[];
   fetchedAt: number | null;
   selectedExecutionId: string | null;
-  checkpoints: import("@/components/right-sidebar/debugger-panel").CheckpointInspector[];
+  checkpoints: import("@/components/right-sidebar/debugger/debugger-panel").CheckpointInspector[];
   waits: import("@/lib/execution/execution-debugger").DurableWait[];
   drafts: RevisionDraft[];
   connection: DebuggerConnection;
@@ -76,14 +78,14 @@ function errorMessage(error: unknown): string {
     : "Execution request failed.";
 }
 
-export function useExecutionDebugger(active: boolean, sessionId: string | null, requestedExecutionId?: string | null): ExecutionDebuggerController {
+export function useExecutionDebugger(active: boolean, sessionId: string | null, requestedExecutionId?: string | null, inspect = true): ExecutionDebuggerController {
   const [branches, setBranches] = useState<import("./execution-debugger").ConversationActivityBranch[]>([]);
   const [snapshots, setSnapshots] = useState<Record<string, ExecutionSnapshot>>({});
   const [cursors, setCursors] = useState<Record<string, EventCursor>>({});
   const [events, setEvents] = useState<PersistedExecutionEvent[]>([]);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const [debuggerData, setDebuggerData] = useState<Record<string, {
-    checkpoints: import("@/components/right-sidebar/debugger-panel").CheckpointInspector[];
+    checkpoints: import("@/components/right-sidebar/debugger/debugger-panel").CheckpointInspector[];
     waits: import("@/lib/execution/execution-debugger").DurableWait[];
     drafts: RevisionDraft[];
     unresolvedEffects?: UnresolvedEffect[];
@@ -96,24 +98,20 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
   const refreshPromise = useRef<Promise<boolean> | null>(null);
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; refreshToken.current++; refreshController.current?.abort(); };
+    const refreshes = refreshToken;
+    return () => { mounted.current = false; refreshes.current++; refreshController.current?.abort(); };
   }, []);
+
+  useEffect(() => {
+    setSnapshots({}); setBranches([]); setCursors({}); setEvents([]);
+    setDebuggerData({}); setFetchedAt(null); setSelectedExecutionId(null);
+    setConnection({ state: "reconnecting" });
+  }, [sessionId]);
 
   const loadDebuggerData = useCallback(async (executionId: string, signal?: AbortSignal) => {
     const state = await getExecutionDebuggerState(executionId, signal, sessionId);
     if (!mounted.current || signal?.aborted) return state;
-    setDebuggerData((current) => ({ ...current, [executionId]: {
-      checkpoints: (state.checkpoints || []).map((checkpoint) => ({
-        ...checkpoint,
-        status_version: checkpoint.status_version ?? checkpoint.source_execution_version ?? 0,
-        safe_point: checkpoint.safe_point || null,
-        frontier: checkpoint.frontier || [],
-        effect_receipts: checkpoint.effect_receipts || [],
-      })),
-      unresolvedEffects: state.unresolved_effects || [],
-      waits: state.waits || [],
-      drafts: (state.drafts || []).map(parseRevisionState),
-    } }));
+    setDebuggerData((current) => ({ ...current, [executionId]: inspectionFromDebuggerState(state) }));
     return state;
   }, [sessionId]);
 
@@ -134,8 +132,8 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
           next[item.snapshot.execution_id] = { ...item.snapshot, started_at: item.started_at, task_label: item.task_label, view_parent_execution_id: item.parent_execution_id };
           if (item.event_cursor) nextCursors[item.snapshot.execution_id] = item.event_cursor;
         }
-        const inspectionId = [selectedExecutionId, requestedExecutionId].find((id) => id && next[id])
-          || Object.values(next).sort((a, b) => b.updated_at - a.updated_at)[0]?.execution_id;
+        const inspectionId = inspect ? ([selectedExecutionId, requestedExecutionId].find((id) => id && next[id])
+          || Object.values(next).sort((a, b) => b.updated_at - a.updated_at)[0]?.execution_id) : undefined;
         let history: PersistedExecutionEvent[] = [];
         if (inspectionId) {
           const [replay] = await Promise.all([
@@ -166,7 +164,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     refreshPromise.current = request;
     void request.then(() => { if (refreshPromise.current === request) refreshPromise.current = null; });
     return request;
-  }, [active, sessionId, selectedExecutionId, requestedExecutionId, loadDebuggerData]);
+  }, [active, sessionId, selectedExecutionId, requestedExecutionId, loadDebuggerData, inspect]);
 
   useEffect(() => {
     if (!active || !sessionId) return;
@@ -203,10 +201,11 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     window.addEventListener("focus", onUpdate);
     document.addEventListener("visibilitychange", onUpdate);
     void update();
+    const refreshes = refreshToken;
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      refreshToken.current++;
+      refreshes.current++;
       refreshController.current?.abort();
       refreshController.current = null;
       refreshPromise.current = null;
@@ -229,6 +228,8 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
   }, [snapshots, cursors]);
 
   const command = useCallback(async (commandValue: ExecutionCommand): Promise<CommandResult> => {
+    if (commandValue.action === "execution.pause") showToast("Pause requested. Waiting for the current operation to finish; use Stop to interrupt it.");
+    if (commandValue.action === "execution.cancel") showToast("Stop requested. Cancelling the current operation…");
     try {
       const result = await postExecutionCommand(commandValue);
       const resultExecution = result.execution;
@@ -351,7 +352,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     unresolvedEffects: selectedKey ? debuggerData[selectedKey]?.unresolvedEffects || [] : [],
     fetchedAt,
     selectedExecutionId: selectedKey,
-    checkpoints: (selectedData?.checkpoints || []) as import("@/components/right-sidebar/debugger-panel").CheckpointInspector[],
+    checkpoints: (selectedData?.checkpoints || []) as import("@/components/right-sidebar/debugger/debugger-panel").CheckpointInspector[],
     waits: selectedData?.waits || [],
     drafts: selectedData?.drafts || [],
     connection,

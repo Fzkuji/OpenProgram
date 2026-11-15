@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   displayedControlState,
+  presentedControlState,
+  setRunningConversations,
   isHumanYieldEvent,
   markScopeYielding,
   recordOperationCue,
@@ -18,8 +20,8 @@ import {
   pendingCloseRequest,
   settlePendingClose,
   useBrowserControlStore,
-} from "../../lib/browser/browser-control.ts";
-import { ingestBrowserResource, listedBrowserResources, resetBrowserResources, setBrowserConnection } from "../../lib/chat/session-resources.ts";
+} from "../../lib/browser/control/browser-control.ts";
+import { ingestBrowserResource, listedBrowserResources, resetBrowserResources, setBrowserConnection } from "../../lib/chat/resources/session-resources.ts";
 
 function ingestPage(overrides = {}) {
   const raw = {
@@ -67,6 +69,19 @@ test("native input marks yielding without posting and shares a generation pendin
   });
   assert.equal(posted.length, 1);
   assert.equal(again, "yielding");
+});
+
+test("a page shows the Agent operating it only while its conversation runs", () => {
+  resetBrowserControl();
+  setBrowserConnection(true);
+  setRunningConversations(["a"]);
+  assert.equal(presentedControlState(resource()), "active");
+  assert.equal(presentedControlState(resource({ controlState: "yielding" })), "active");
+  setRunningConversations([]);
+  for (const controlState of ["active", "yielding", "stop_unconfirmed"]) {
+    assert.equal(presentedControlState(resource({ controlState })), "idle", controlState);
+  }
+  assert.equal(presentedControlState(resource({ controlState: "waiting" })), "waiting");
 });
 
 test("yielding still becomes stop_unconfirmed after five seconds", () => {

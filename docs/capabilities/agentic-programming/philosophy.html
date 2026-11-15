@@ -1,0 +1,79 @@
+<title>Design philosophy</title>
+<meta name="description" content="What Agentic Programming solves, why it inverts control, and its three primitives.">
+<h1>Design philosophy</h1>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Traditional agent</th><th scope="col">Agentic Programming</th></tr></thead>
+<tbody>
+<tr><th scope="row">Flow</th><td>LLM plans; a loop runs until it says done</td><td>Python code</td></tr>
+<tr><th scope="row">Decisions</th><td>LLM judges every step, tool and argument</td><td>Python decides whether to call the LLM</td></tr>
+<tr><th scope="row">State</th><td>Crammed into the context</td><td>Function variables, return values</td></tr>
+<tr><th scope="row">Testing</th><td>Prompt regression</td><td>Unit tests</td></tr>
+</tbody>
+</table>
+<p>Handing control to a probabilistic black box, for work deterministic code could do, makes trajectories vary and histories balloon. Completion is not guaranteed, and a failure could come from the prompt, the tool or a hallucination.</p>
+<p>So decompose the task into a function call graph and decide per node: plain Python, or an <code translate="no">Agent</code> method that calls <code translate="no">llm(...)</code> for understanding, generation or judgment. The LLM becomes something you call, constrain and compose.</p>
+<h2>Three primitives</h2>
+<h3><code translate="no">Agent</code> method</h3>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+from openprogram.runtime.agent import llm
+
+class ExampleAgent(Agent):
+    method_options = {'summarize': {'tool': True}}
+
+    def summarize(self, text: str) -&gt; str:
+        """Summarize a text in one sentence, preserving the core point."""
+        return llm([{"type": "text", "text": (
+            f"Summarize in one sentence, preserving the core point:\n\n{text}"
+        )}])
+
+_example_agent = ExampleAgent()
+summarize = _example_agent.summarize</code></pre>
+<p class="note">The docstring travels with the call as descriptive context; <code translate="no">llm(...)</code> makes one model call on the ambient Runtime. To callers, <code translate="no">summarize(article)</code> is any Python function.</p>
+<h3><code translate="no">Runtime</code></h3>
+<p>Packages the conversation history, calls the provider (Anthropic, OpenAI, Claude Code and others), writes the result into the context. Orchestration uses <code translate="no">llm()</code>; <code translate="no">Runtime.exec()</code> is the lower-level embedding API under it.</p>
+<h3><code translate="no">Context</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">DAG</th><td>Each Agent execution owns one. Chat records user messages, model requests and directly dispatched tools; ordinary helpers create no durable nodes.</td></tr>
+<tr><th scope="row">Another Agent</th><td>An independent DAG; the parent stores the result and a <code translate="no">child_session_id</code> reference</td></tr>
+<tr><th scope="row">Ownership</th><td>Permission, cancellation and file checkpoints stay with the originating execution</td></tr>
+<tr><th scope="row"><code translate="no">llm()</code> history</th><td>Rendered from the DAG, so context is a property you declare on the function</td></tr>
+<tr><th scope="row"><code translate="no">expose</code></th><td>What a completed call reveals to its parent. <code translate="no">"io"</code> (name, input, output; default for tools), <code translate="no">"full"</code> default for ordinary methods.</td></tr>
+<tr><th scope="row"><code translate="no">render_range</code></th><td>How much history the function's own calls pull in. <code translate="no">{"callers": 0}</code> gives an isolated scratch context.</td></tr>
+</tbody>
+</table>
+<p class="note">The same DAG is the debugging view: visualization, token accounting, replaying failure paths.</p>
+<h2>Derived ideas</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Idea</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">The LLM writes code</th><td>The agent writes functions with ordinary file edits; no dedicated <code translate="no">create()</code> or <code translate="no">fix()</code> is needed. After <code translate="no">openprogram programs check</code>, the worker loads them from <code translate="no">~/.openprogram/programs/</code> without a restart. Code is data, the LLM the compiler, functions the product.</td></tr>
+<tr><th scope="row">Dual mode</th><td>A library you import and hand-write, and a product you ask in the CLI or WebUI. What you get is readable Python, so it can be understood incrementally.</td></tr>
+</tbody>
+</table>
+<h2>Against traditional frameworks</h2>
+<table class="stack">
+<thead><tr><th scope="col">Scenario</th><th scope="col">LangChain, AutoGPT</th><th scope="col">Agentic Programming</th></tr></thead>
+<tbody>
+<tr><th scope="row">Fetch 10 pages, summarize each</th><td>Agent decides order and parallelism</td><td><code translate="no">for url in urls: summarize(fetch(url))</code></td></tr>
+<tr><th scope="row">Context across 3 conversations</th><td>Memory store, queried each time</td><td>A local Python variable</td></tr>
+<tr><th scope="row">LLM decides which tool</th><td>Function calling and agent loop</td><td><code translate="no">agent(prompt, tools=[...])</code> or <code translate="no">decision.make(prompt, options)</code></td></tr>
+<tr><th scope="row">Retry on error</th><td>Agent decides</td><td><code translate="no">try/except</code> and code gates: validation catches an invalid pick, the model re-decides</td></tr>
+</tbody>
+</table>
+<p class="note">Agent frameworks suit fully open-ended tasks with fuzzy goals.</p>
+<details>
+<summary>Where the paradigm lives in the code</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/</code></th><td>Engine</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/</code></th><td>Flat-DAG context</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/models/</code></th><td>LLM providers</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/</code></th><td>Tools and applications written this way</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/</code></th><td>Web UI for running things without code</td></tr>
+</tbody>
+</table>
+</details>
+<p class="next"><a href="https://arxiv.org/abs/2606.15874">Paper</a>, KDD 2026 AgenticSE workshop · <a href="../../start/GETTING_STARTED.html">Getting started</a> · <a href="../../reference/API.html">API reference</a> · <a href="../../reference/design/README.html">Design</a></p>

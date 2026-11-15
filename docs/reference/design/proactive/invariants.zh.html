@@ -1,0 +1,30 @@
+<title>不变式</title>
+<meta name="description" content="无论规则怎么写，主动框架都强制的两条：不自我触发成环，护栏不被自动静音。">
+<h1>不变式</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">不变式</th><th scope="col">规则</th><th scope="col">否则</th></tr></thead>
+<tbody>
+<tr><th scope="row">不自我触发成环</th><td>框架自己引起的事件不能再启动动作</td><td><code translate="no">Prepare</code> 引出 <code translate="no">Prepare</code>：无休止地花钱和打扰</td></tr>
+<tr><th scope="row">护栏不被自动静音</th><td>今后的自动静音只适用于 observer 提醒</td><td>反复拒绝就能在真正危险的命令到来前关掉护栏</td></tr>
+</tbody>
+</table>
+<p class="note">由框架核心强制。规则不能关闭或绕过。对抗性安全见<a href="_research_archive/threat-model.zh.html">威胁模型</a>。</p>
+
+<h2>唯一允许的链</h2>
+<ol>
+<li>普通事件（用户、Agent 或工具）到达 observer。</li>
+<li>observer 启动一次 <code translate="no">Prepare</code>。</li>
+<li><code translate="no">Prepare</code> 完成，产生就绪事件。</li>
+<li>这个事件只能决定是否 <code translate="no">Notify</code> 一次。不再 <code translate="no">Prepare</code>，也不注入。</li>
+</ol>
+
+<pre translate="no"><code>def allow_action(event, action):
+    if event.started_by_framework:
+        return action is Notify and chain_within_one_hop
+    return True</code></pre>
+
+<h2>实现状态</h2>
+<p>引擎在规则看到之前丢弃所有 <code translate="no">origin="proactive"</code> 或 <code translate="no">metadata["root_origin"]="proactive"</code> 的事件，所以环无法形成。单跳 <code translate="no">Notify</code> 尚未实现，因为 <code translate="no">Prepare</code> 还没有执行者。唯一的打扰控制是 <code translate="no">cooldown_s</code>，<code translate="no">DangerousCommandGuard</code> 为 0。</p>
+
+<p class="next"><a href="policies-mvp.zh.html">三条模板规则</a></p>

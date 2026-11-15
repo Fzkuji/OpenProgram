@@ -2,11 +2,27 @@
   "schema": 1,
   "python": "3.12.10",
   "uv": "0.11.16",
+  "macosMinimum": "13.5",
+  "glibcMinimum": "2.35",
+  "sourceBuilds": {
+    "macos-x86_64": ["cryptography"],
+    "windows-arm64": ["claude-agent-sdk", "cryptography", "httptools", "tiktoken"]
+  },
+  "git": "v2.56.0-2",
+  "gitAsset": "dugite-native-v2.56.0-a44aeca",
+  "gitSha256": {
+    "macOS-arm64": "1110de343de11cc6f469b782b60f36217b9199b5e06875dd65baa26dd60563c7",
+    "macOS-x64": "52cc663281e1ec2f1d76ba781193ca4847e62dbbf767f6c99ec9ec5b978a7659",
+    "ubuntu-x64": "1efd8ce0516b670b6b6d0f49ecaf395ceb8cf7fff3f5857259763d97a1238df9",
+    "ubuntu-arm64": "d5ce120515bf3013a014e6a918aa87ec0f7a6f5f9687c48d50127e637cb9b6c2",
+    "windows-x64": "f1e17876337d7be143e5d51976da36643d65528125cfbc14d57f171de0fd5f14",
+    "windows-arm64": "1834e7817589f25f97ae0f309ef4733578a6b8dbd438ed29f898d075e6ead4c2"
+  },
   "office": {
     "packageVersion": "0.3.34",
     "source": "d15d12b6945be4d8b0f3aa1806120e740d2950ee",
     "adoptionPatchSha256": "dc31dd9d3ee4cf777d3e2d19c5a00d76eec2115e239720cd09298be919741b9a",
-    "reviewedNpmLockSha256": "7b71a099e703545a80d06454ae2af6f52e52f0c3f1fbe5ead31dfdf11faf2590",
+    "reviewedNpmLockSha256": "aa72a0c6b7259945cbda7aa7fa8ba75d5fa709080cc62b2b08fe300ee3de6293",
     "optional": true
   },
   "capabilities": [
@@ -17,37 +33,6 @@
     "channels",
     "search",
     "tui.ink",
-    "browser.playwright",
-    "model.gpa_detector",
-    "program.gui",
-    "program.research",
-    "program.wiki"
-  ],
-  "programs": {
-    "gui": {
-      "distribution": "gui-agent-harness",
-      "import": "gui_harness",
-      "repository": "https://github.com/Fzkuji/GUI-Agent-Harness.git",
-      "commit": "d088ceac211ea7d78de18850b049f95111020cb1"
-    },
-    "research": {
-      "distribution": "research-agent-harness",
-      "import": "research_harness",
-      "repository": "https://github.com/Fzkuji/Research-Agent-Harness.git",
-      "commit": "d324eb4b3b2c2ccc0954e7432e112ba13b818bb7"
-    },
-    "wiki": {
-      "distribution": "wiki-agent-harness",
-      "import": "wiki_agent_harness",
-      "repository": "https://github.com/Fzkuji/Wiki-Agent-Harness.git",
-      "commit": "18c459256888431e9d925a98c02559d4bd2be7ca"
-    }
-  },
-  "assets": {
-    "gpa_detector": {
-      "repository": "Salesforce/GPA-GUI-Detector",
-      "revision": "d04be6b715acb517068ca15d4b79159d26292713",
-      "filename": "model.pt"
-    }
-  }
+    "browser.playwright"
+  ]
 }

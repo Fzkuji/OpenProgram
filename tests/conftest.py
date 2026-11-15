@@ -11,7 +11,113 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Tests that write memory cite chats from an in-memory session store.
+pytest_plugins = ["tests.support.memory_chats"]
+
 _HOST_HOME = Path.home()
+
+# A run started from a git hook, or a shell that exported them, carries
+# GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE for the real checkout; every ``git``
+# a test runs in its own temporary repository would then act on the checkout
+# instead (``git init`` there rewrites its config). Cleared before anything
+# runs; tests/support/host_guard.py explains the rest of the guard.
+from tests.support import host_guard as _host_guard  # noqa: E402
+
+for _var in _host_guard.GIT_LOCATION_VARIABLES:
+    os.environ.pop(_var, None)
+
+
+@pytest.fixture(autouse=True)
+def _real_repository_and_state_untouched(request):
+    """Fail the test that changed the checkout or the person's real state.
+
+    First autouse fixture, so its teardown runs after every other fixture's
+    and also catches what they do. The audit hook already refused the
+    operation; this names the test even when the code under test swallowed
+    the refusal."""
+    guard = _HOST_GUARD
+    if guard is None:
+        yield
+        return
+    leftover = guard.take()
+    guard.current_test = request.node.nodeid
+    yield
+    found = leftover + guard.take()
+    guard.current_test = "<between tests>"
+    if found:
+        pytest.fail("test isolation broken — reached the real repository or state:\n  "
+                    + "\n  ".join(found), pytrace=False)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_repository_unchanged_by_this_run():
+    """Backstop for child processes the audit hook cannot see: the checkout's
+    config, and worktrees registered into it from this run's test home."""
+    if _HOST_GUARD is None:
+        yield
+        return
+    before = _host_guard.snapshot(_GIT_COMMON_DIR, Path(_TEST_HOME))
+    yield
+    problems = _host_guard.compare(before, _host_guard.snapshot(_GIT_COMMON_DIR, Path(_TEST_HOME)))
+    problems += _HOST_GUARD.take()
+    if problems:
+        pytest.fail("test isolation broken during this run:\n  " + "\n  ".join(problems), pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_system_notifications(monkeypatch):
+    """No test pops a real notification or leaves a report's waiting thread;
+    yields the real functions for the tests of them."""
+    from types import SimpleNamespace
+
+    from openprogram.runtime.conversation.always_on import runtime
+    from openprogram.runtime.scheduler import reminders
+
+    real = SimpleNamespace(system_notify=reminders.system_notify,
+                           report_fallback=runtime._system_notification_fallback)
+    monkeypatch.setattr(reminders, "system_notify", lambda *_args: True)
+    monkeypatch.setattr(runtime, "_system_notification_fallback", lambda *_args: None)
+    yield real
+
+
+@pytest.fixture(autouse=True)
+def _tests_leave_the_front_application_alone(monkeypatch):
+    """No test reads or changes which application is in front of the person running it."""
+    from openprogram.host._platform import front
+
+    monkeypatch.setattr(front, "desktop", lambda: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_browser_of_its_own(monkeypatch):
+    """A test's turn has the browser only when the test gives it an App window, on a
+    machine with a browser installed as on one without; yields the real check."""
+    from openprogram.host.resources import background_browser
+
+    real = background_browser.available
+    monkeypatch.setattr(background_browser, "available", lambda: False)
+    yield real
+
+
+@pytest.fixture(autouse=True)
+def _env_keys_stay_with_their_print_run(monkeypatch):
+    """A ``--print`` run lets its own process read provider keys from the
+    environment (``read_env_keys_in_this_process``); one run in-process by a
+    test does not carry that over to the tests after it in the worker."""
+    from openprogram.models.providers.settings import env_api_keys
+
+    monkeypatch.setattr(env_api_keys, "_env_keys_in_process", False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _this_process_writes_main_session_logs():
+    """Tests stand where the worker stands: appends land in ``main.jsonl``."""
+    from openprogram.state.store.session import session_log
+
+    session_log.claim_main_writer()
+    yield
 
 # ---------------------------------------------------------------------------
 # Network isolation: the suite must not depend on the host's proxy setup.
@@ -28,11 +134,22 @@ _HOST_HOME = Path.home()
 # ---------------------------------------------------------------------------
 if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
     for _var in (
-        "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy",
-        "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+        "NO_PROXY",
+        "no_proxy",
         "OPENPROGRAM_PROXY_URL",
     ):
         os.environ.pop(_var, None)
+
+    # The Codex adapter speaks the ChatGPT backend's WebSocket before HTTP;
+    # the tests' fakes of the backend speak HTTP, and a test never reaches
+    # the network. The socket's own tests turn it back on.
+    os.environ["OPENPROGRAM_CODEX_WEBSOCKET"] = "0"
 
     # Pin urllib's OS-settings fallback (macOS System Preferences / Windows
     # registry) to env-only, both for httpx's already-imported copy and for
@@ -40,6 +157,11 @@ if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
     import urllib.request  # noqa: E402
 
     urllib.request.getproxies = urllib.request.getproxies_environment
+    # The managed proxy resolver also reads system routes when the process
+    # has only NO_PROXY; keep those platform readers isolated too.
+    for _reader in ("getproxies_macosx_sysconf", "getproxies_registry"):
+        if hasattr(urllib.request, _reader):
+            setattr(urllib.request, _reader, dict)
     try:
         import httpx._utils as _httpx_utils  # noqa: E402
 
@@ -55,8 +177,9 @@ if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
 # ``get_state_dir()`` resolves off ``Path.home()``, so a test that builds a
 # SessionStore, writes config, or starts a worker lands in the live data
 # directory. That is not merely untidy: ``SessionStore._startup_cleanup``
-# runs on every index load and ``shutil.rmtree``s any session it judges an
-# empty shell, so an unisolated run can DELETE real conversations.
+# runs on every index load, rewrites ``index.json`` and moves directories it
+# judges shells into ``.quarantine``, so an unisolated run alters real
+# conversations.
 #
 # Redirecting HOME here — at import time, before any test module resolves a
 # path — puts every default-profile lookup under a per-run temp dir.
@@ -69,9 +192,7 @@ if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
 if os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1":
     import tempfile  # noqa: E402
 
-    _TEST_HOME_MANAGER = tempfile.TemporaryDirectory(
-        prefix="openprogram-test-home-"
-    )
+    _TEST_HOME_MANAGER = tempfile.TemporaryDirectory(prefix="openprogram-test-home-")
     _TEST_HOME = _TEST_HOME_MANAGER.name
     os.environ["HOME"] = _TEST_HOME
     os.environ["USERPROFILE"] = _TEST_HOME
@@ -85,12 +206,25 @@ if os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1":
             cache_root = _HOST_HOME / ".cache/ms-playwright"
         if cache_root is not None and cache_root.is_dir():
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(cache_root)
+else:
+    _TEST_HOME = str(_HOST_HOME)
+
+# Every process of the run (each xdist worker imports this file) refuses
+# changes to the checkout and, unless the run opted into the real home, to
+# ~/.openprogram*. See tests/support/host_guard.py.
+_REPO_TOPS, _GIT_COMMON_DIR = _host_guard.repository_of(ROOT)
+_HOST_GUARD = _host_guard.Guard(
+    _REPO_TOPS, _GIT_COMMON_DIR, _HOST_HOME, Path(_TEST_HOME),
+    guard_state=os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1",
+)
+_host_guard.install(_HOST_GUARD)
 
 
 # ---------------------------------------------------------------------------
 # Environment probes for conditional skips (keep CI green without masking
 # real failures — see docs/design or the providers/integration tests).
 # ---------------------------------------------------------------------------
+
 
 def _has_default_provider() -> bool:
     """True if a real model call can actually be made here.
@@ -106,8 +240,9 @@ def _has_default_provider() -> bool:
     in unless the developer's config was copied there.
     """
     try:
-        from openprogram.agent.dispatcher import _load_agent_profile
-        from openprogram.agent.internals._model_tools import resolve_model
+        from openprogram.runtime.conversation.turn_runtime import _load_agent_profile
+        from openprogram.runtime.conversation.model_tools import resolve_model
+
         return resolve_model(_load_agent_profile("main") or {}) is not None
     except Exception:
         return False
@@ -133,13 +268,15 @@ def _has_default_provider() -> bool:
 # a belt-and-suspenders guard: individual tests should still clean up after
 # themselves, but no single leak can cascade into unrelated failures.
 
+
 # Capture the pristine shipped registry at conftest import time — i.e. before
 # any test (and any test's registry-clearing fixture) has run — so the snapshot
 # is guaranteed complete. A lazily-built session fixture could otherwise be
 # instantiated inside a test that had already cleared the registry.
 def _capture_shipped_registry():
     import openprogram.programs  # noqa: F401  (import side-effect: registers tools)
-    from openprogram.programs._runtime import snapshot_registry
+    from openprogram.programs._host.runtime import snapshot_registry
+
     return snapshot_registry()
 
 
@@ -183,7 +320,7 @@ def pytest_runtest_call(item):
 
 @pytest.fixture(autouse=True)
 def _restore_shipped_tools():
-    from openprogram.programs import _runtime as _R
+    from openprogram.programs._host import runtime as _R
 
     snap = _SHIPPED_REGISTRY
     # Re-insert any shipped tool that's gone missing, and re-establish its
@@ -213,21 +350,103 @@ def _restore_shipped_tools():
 
 
 @pytest.fixture(autouse=True)
+def _keep_builtin_provider_flag_honest():
+    """Let ``register_builtins`` run again when its registration was lost.
+
+    ``register_builtins`` records that it ran in a module flag. A test that
+    swaps ``api_registry._registry`` for an empty dict and then (directly or
+    through a lazy import) triggers the built-in registration fills the
+    swapped dict and sets the flag; once monkeypatch restores the real
+    registry, the flag still says "registered" and every later caller in
+    that worker process sees no built-in providers. Runs after monkeypatch
+    teardown, so it sees the real registry.
+    """
+    yield
+    from openprogram.models.providers.catalog import api_registry, register
+
+    if register._registered and "openai-codex" not in api_registry._registry:
+        register._registered = False
+
+
+@pytest.fixture(autouse=True)
 def _reset_process_sandbox_policy():
     """Un-pin a process-wide sandbox policy a test left installed.
 
     ``install_policy_snapshot`` writes a module global on purpose: a cron
-    worker and an ``@agentic_function`` subprocess each run one job and
+    worker and an ``Agent method`` subprocess each run one job and
     must not be widened afterwards. Under pytest every test shares that
     one process, so a test that runs the real ``_run_prompt_job`` pins a
     workspace-write policy for the whole rest of the session. Later tests
     then run their commands under a real bwrap/Seatbelt sandbox they never
     asked for — which is how CI failed on Linux while macOS stayed green.
     """
-    from openprogram import sandbox
+    from openprogram.host import sandbox
 
     yield
     sandbox._process_policy_override = sandbox._NO_PROCESS_POLICY
+
+
+@pytest.fixture(autouse=True)
+def _reset_browser_operation_forwarding():
+    """Stop handing browser operations to a parent a test's in-process child body installed.
+
+    An agentic subprocess routes its Page operations to the worker; under
+    pytest that child body runs in the shared process, and later tests would
+    see their reports vanish into the dead sink.
+    """
+    yield
+    from openprogram.programs.applications.browser import pages
+
+    pages.forward_operations_to_parent(None)
+
+
+@pytest.fixture(autouse=True)
+def _forget_learned_provider_limits():
+    """Clear what the process learned about providers and conversations.
+
+    A provider's byte cap (body_cap), a model's prefill refusal (prefill),
+    a conversation's compaction failures
+    (compaction.hold) and a conversation's credential (pool affinity) are
+    kept for the process's life on purpose. Under pytest every test shares
+    that process, so one test's refusals would hold another's compaction
+    or fit its requests.
+    """
+    yield
+    from openprogram.models.auth.pool import forget_affinity
+    from openprogram.models.providers.utils import body_cap, prefill
+    from openprogram.runtime.context.compaction.hold import default_hold
+
+    body_cap.forget()
+    prefill.forget()
+    default_hold.clear()
+    forget_affinity()
+
+
+@pytest.fixture(autouse=True)
+def _quota_reads_stay_in_their_test(monkeypatch):
+    """No test reads a provider's quota endpoint on a background thread, and
+    the quota one test observed is not held for the next."""
+    from openprogram.models.usage import quota, quota_fetchers
+
+    monkeypatch.setattr(quota_fetchers, "_spawn", lambda work: None)
+    yield
+    quota.default_store.reset()
+    quota.default_store.set_listener(None)
+    quota.forget_accounts()
+    quota_fetchers.reset_policy()
+
+
+@pytest.fixture(autouse=True)
+def _screen_reads_as_unlocked(monkeypatch):
+    """Keep the machine's lock state out of tests of the macOS desktop backend.
+
+    The backend stops application reads and steps while the Mac's screen is
+    locked. A run started before a break, or over SSH on a locked Mac,
+    would otherwise fail every test that steps through the real backend.
+    """
+    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import macos
+
+    monkeypatch.setattr(macos, "_screen_locked", lambda: False)
 
 
 @pytest.fixture(autouse=True)
@@ -240,9 +459,23 @@ def _reset_spawn_fanout():
     the previous eight filled.
     """
     from openprogram.programs.tools.agents.agent.agent.agent import _fanout_used
+
     _fanout_used.clear()
     yield
     _fanout_used.clear()
+
+
+@pytest.fixture(autouse=True)
+def _subprocess_entry_stays_in_its_test():
+    """Tests call a function subprocess's entry point in this process."""
+    yield
+    from openprogram.runtime.agent import questions
+    from openprogram.runtime.execution import worker_calls
+    from openprogram.runtime.execution.store import run_tables
+
+    worker_calls._calls = None
+    run_tables._process_only_reads = False
+    questions._send_live_question_to_parent = None
 
 
 @pytest.fixture(autouse=True)
@@ -257,10 +490,54 @@ def _drop_tmp_rooted_session_store():
     whatever the next test's state dir is.
     """
     yield
-    from openprogram.store.session import session_store
+    from openprogram.state.store.session import session_store
 
     cached = session_store.shared._default_store
     if cached is None:
         return
     if "openprogram-test-home" not in str(getattr(cached, "root_path", "")):
         session_store.shared._default_store = None
+
+
+@pytest.fixture(autouse=True)
+def _forget_worktree_binding():
+    """A tool that switches the turn to a worktree leaves the binding set on
+    purpose, for the rest of that turn. A test calling such a tool directly
+    has no turn to end it, so it would reach whatever test runs next here."""
+    yield
+    from openprogram.state.worktree.context import clear_worktree
+
+    clear_worktree()
+
+
+# The home every test in this worker shares unless it points its state
+# elsewhere (resolved after the redirect above).
+_SHARED_HOME = Path.home().resolve()
+
+
+@pytest.fixture(autouse=True)
+def _own_execution_store(tmp_path_factory, monkeypatch):
+    """Each test records executions in its own database.
+
+    The execution store otherwise lives in the worker's shared test home, so
+    an execution one test leaves unfinished for session "p1" makes a later
+    test on the same worker see "p1" as busy: its spawn is not admitted and
+    its idle notice never goes out. Which tests share a worker depends on
+    xdist's scheduling, so such a failure shows up on one platform only.
+
+    A test that already points the state directory at its own folder keeps
+    its database there; only the shared home is replaced. The replacement
+    sits outside ``tmp_path`` so tests that list their own temporary
+    directory do not see it.
+    """
+    from openprogram.state import paths
+
+    folder = tmp_path_factory.mktemp("executions")
+
+    def execution_db_path() -> Path:
+        state = paths.get_state_dir()
+        if Path(state).resolve().is_relative_to(_SHARED_HOME):
+            return folder / "executions.db"
+        return Path(state) / "executions.db"
+
+    monkeypatch.setattr(paths, "get_run_state_path", execution_db_path)

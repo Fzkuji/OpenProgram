@@ -32,12 +32,15 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from openprogram.programs._runtime import function
-from openprogram.store.snapshot.checkpoint.helpers import (
+from openprogram.programs._host.runtime import function
+from openprogram.state.store.snapshot.checkpoint.helpers import (
     checkpoint_abort_edit,
     checkpoint_after_edit,
     checkpoint_before_edit,
 )
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 NAME = "apply_patch"
@@ -111,11 +114,9 @@ def _parse_sections(patch: str) -> list[tuple[str, str, list[str]]]:
 
 def _emit_file_changed(path: str, op: str) -> None:
     # 事件层 tap：改动成功才调。懒 import 防循环依赖。
-    try:
-        from openprogram.events import emit_safe
-        emit_safe("file.changed", "tool", {"path": path, "op": op})
-    except Exception:
-        pass
+    # emit_safe swallows its own failures.
+    from openprogram.runtime.events import emit_safe
+    emit_safe("file.changed", "tool", {"path": path, "op": op})
 
 
 def _apply_add(path: str, body: list[str]) -> str:
@@ -125,7 +126,7 @@ def _apply_add(path: str, body: list[str]) -> str:
     content = _add_content(body)
     prepared = checkpoint_before_edit(path)
     try:
-        from openprogram.agent.permissions.file_state import write_checked
+        from openprogram.runtime.permissions.file_state import write_checked
         write_checked(path, content)
     except Exception as exc:
         if prepared:
@@ -135,10 +136,11 @@ def _apply_add(path: str, body: list[str]) -> str:
     # Baseline the new file so a later Update in the same session doesn't
     # trip the "never read" gate (the agent just created it).
     try:
-        from openprogram.store.snapshot import read_tracking as _rt
+        from openprogram.state.store.snapshot import read_tracking as _rt
         _rt.mark_seen(path)
     except Exception:
-        pass
+        # The read baseline is bookkeeping; without it a later edit asks for a re-read.
+        _log.debug("read baseline not recorded for %s", path, exc_info=True)
     _emit_file_changed(path, "add")
     return f"Added {path} ({len(body)} lines)"
 
@@ -148,7 +150,7 @@ def _apply_delete(path: str) -> str:
         return f"Error: Delete File target not found: {path}"
     prepared = checkpoint_before_edit(path)
     try:
-        from openprogram.agent.permissions.file_state import check_current
+        from openprogram.runtime.permissions.file_state import check_current
         check_current(path)
         os.remove(path)
     except Exception as exc:
@@ -242,12 +244,13 @@ def _apply_update(path: str, body: list[str]) -> str:
     # read, or one changed on disk since, is refused (Claude-Code-style)
     # so a concurrent user change isn't clobbered. No-op outside a turn.
     try:
-        from openprogram.store.snapshot import read_tracking as _rt
+        from openprogram.state.store.snapshot import read_tracking as _rt
         _fresh = _rt.check_fresh(path)
         if _fresh in (_rt.NEVER_READ, _rt.STALE):
             return _rt.stale_message(path, _fresh)
     except Exception:
-        pass
+        # Fail open: a tracking failure must not block the edit.
+        _log.debug("freshness check unavailable for %s", path, exc_info=True)
 
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
@@ -258,7 +261,7 @@ def _apply_update(path: str, body: list[str]) -> str:
 
     prepared = checkpoint_before_edit(path)
     try:
-        from openprogram.agent.permissions.file_state import write_checked
+        from openprogram.runtime.permissions.file_state import write_checked
         write_checked(path, text)
     except Exception as exc:
         if prepared:
@@ -266,10 +269,11 @@ def _apply_update(path: str, body: list[str]) -> str:
         raise
     checkpoint_after_edit(path, "update")
     try:
-        from openprogram.store.snapshot import read_tracking as _rt
+        from openprogram.state.store.snapshot import read_tracking as _rt
         _rt.mark_seen(path)
     except Exception:
-        pass
+        # The read baseline is bookkeeping; without it a later edit asks for a re-read.
+        _log.debug("read baseline not recorded for %s", path, exc_info=True)
     _emit_file_changed(path, "update")
     return f"Updated {path} ({applied} hunk{'s' if applied != 1 else ''})"
 
@@ -287,14 +291,34 @@ def execute(patch: str, **_: Any) -> str:
     if not sections:
         return "Error: patch contains no file operations"
 
+    # An SSH conversation patches the remote disk.
+    from ._remote import remote_target
+    _remote_fs = remote_target()
+    if _remote_fs is not None:
+        from . import _remote
+        return _remote.apply_patch(_remote_fs, sections)
+
+    # Relative paths resolve against the bound worktree, as for write and
+    # edit; with none bound they stay relative and are refused below.
+    from openprogram.state.worktree.path_resolve import resolve_path
+    outside: list[str] = []
+    resolved_sections = []
+    for _op, _path, _body in sections:
+        _abs, _warn = resolve_path(_path) if _path else (_path, None)
+        if _warn:
+            outside.append(_warn)
+        resolved_sections.append((_op, _abs, _body))
+    sections = resolved_sections
+
     # Validate the complete patch before changing its first file; a later
     # denied path must not leave an earlier section partially applied.
-    from openprogram.sandbox import validate_write_path
+    from openprogram.host.sandbox import validate_write_path
     for _op, path, _body in sections:
         if os.path.isabs(path):
             violation = validate_write_path(path)
             if violation:
-                return f"Error: sandbox policy: {violation}"
+                from openprogram.runtime.permissions import refusal
+                raise refusal.sandbox("apply_patch", violation)
 
     # Apply every section in memory first so a later failure does not
     # leave an earlier file already written.
@@ -329,13 +353,14 @@ def execute(patch: str, **_: Any) -> str:
                     continue
                 if path not in fresh_ok:
                     try:
-                        from openprogram.store.snapshot import read_tracking as _rt
+                        from openprogram.state.store.snapshot import read_tracking as _rt
                         _fresh = _rt.check_fresh(path)
                         if _fresh in (_rt.NEVER_READ, _rt.STALE):
                             errors.append(_rt.stale_message(path, _fresh))
                             continue
                     except Exception:
-                        pass
+                        # Fail open: a tracking failure must not block the edit.
+                        _log.debug("freshness check unavailable for %s", path, exc_info=True)
                 new_text, err, _applied = _apply_hunks_to_text(text, body, path)
                 if err:
                     errors.append(err)
@@ -374,7 +399,7 @@ def execute(patch: str, **_: Any) -> str:
             results.append(_apply_update(path, body))
         else:
             results.append(_apply_delete(path))
-    return "\n".join(results)
+    return "\n".join(outside + results)
 
 
 # Register as an AgentTool. ``execute`` stays a plain callable so any
@@ -385,7 +410,7 @@ function(
     description=DESCRIPTION,
     parameters=SPEC["parameters"],
     toolset=['core'],
-    unsafe_in=['wechat', 'telegram', 'plan'],
+    unsafe_in=["plan"],
     # Exempt: paths are parsed out of the patch text, not a path/file_path
     # argument. execute() already validate_write_path's each target.
     path_params={},

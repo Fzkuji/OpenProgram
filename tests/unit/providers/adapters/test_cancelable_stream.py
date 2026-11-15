@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from openprogram.providers.utils.cancelable_stream import iter_until_cancelled
+from openprogram.models.providers.utils.cancelable_stream import iter_until_cancelled
 
 
 class _BlockingStream:

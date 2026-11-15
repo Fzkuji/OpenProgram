@@ -1,0 +1,36 @@
+<title>Agent and Context contract</title>
+<meta name="description" content="Responsibilities of Agent, Context, ChatAgent and the shared turn runtime.">
+<meta name="covers" content="openprogram/runtime/agent/">
+<h1>Agent and Context contract</h1>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Owner</th><th scope="col">Responsible for</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Agent</code></th><td>Configured calls and persistent turns (<code translate="no">run_turn</code>, <code translate="no">resume_turn</code>, <code translate="no">arun_turn</code>, <code translate="no">aresume_turn</code>), cancellation, events, profile resolution (<code translate="no">from_spec</code>)</td></tr>
+<tr><th scope="row"><code translate="no">Context</code></th><td>Session writer and branch, named content, providers, history selection (<code translate="no">None</code>, <code translate="no">"thread"</code>, <code translate="no">"chat"</code> or a callable)</td></tr>
+<tr><th scope="row"><code translate="no">ChatAgent</code></th><td>Conversation defaults; the production chat entry, through <code translate="no">Agent</code></td></tr>
+<tr><th scope="row">Shared turn runtime</th><td>Admission, model and tool execution, compression, streaming, persistence, finalization. <code translate="no">dispatcher</code> is an import alias for it.</td></tr>
+<tr><th scope="row">Execution control</th><td>Durable attempt ownership, pause, steering, checkpoint resume. No parallel job registry.</td></tr>
+</tbody>
+</table>
+
+<h2 id="boundaries">Boundaries</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Conversation</th><td>Keeps its session graph across turns</td></tr>
+<tr><th scope="row">Plain helper</th><td>Adds no DAG nodes</td></tr>
+<tr><th scope="row">Nested Agent</th><td>Keeps an independent graph</td></tr>
+<tr><th scope="row">Context content</th><td>Stays user content: never grants authority; permission, memory and sandbox limits still apply</td></tr>
+<tr><th scope="row">Tool timeout</th><td>A tool error; the parent turn continues</td></tr>
+<tr><th scope="row">User cancellation</th><td>Reaches all active work</td></tr>
+<tr><th scope="row">Resume</th><td>Reuses persisted model context, repeats no user admission</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<p>Code and public regression tests are present.</p>
+
+<p class="next"><a href="llm-and-agent.html">Agent execution core</a></p>

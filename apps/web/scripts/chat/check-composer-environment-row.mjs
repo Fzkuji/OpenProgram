@@ -1,62 +1,30 @@
+// Rule: the environment row's squeeze levels are pure CSS on the data-* states
+// useCompactEnvironmentRow sets (tested in tests/chat/composer/compact-environment-row.test.mjs):
+// labels animate out (max-width/opacity, never display:none), and the
+// measuring pass lays chips out at natural width with transitions off.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const root = new URL("../../", import.meta.url);
-const source = (path) => readFileSync(new URL(path, root), "utf8");
-
-const composer = source("components/chat/composer/index.tsx");
-const composerCss = source("components/chat/composer/composer.module.css");
-const environmentRow = source(
-  "components/chat/composer/environment-row/environment-row.tsx",
-);
-const compactHook = source(
-  "components/chat/composer/environment-row/use-compact-environment-row.ts",
-);
-const environmentCss = source(
-  "components/chat/composer/environment-row/environment-row.module.css",
+const css = readFileSync(
+  new URL("../../components/chat/composer/environment-row/environment-row.module.css", import.meta.url),
+  "utf8",
 );
 
-assert.match(composer, /<EnvironmentRow/);
-assert.doesNotMatch(composer, /function useCompactEnvironmentRow/);
-assert.doesNotMatch(composer, /envChipsRef/);
-assert.doesNotMatch(composer, /<StatusChip|<SurfaceChip|<ProjectBadge|<WorkingDirChips|<GoalChip/);
-assert.doesNotMatch(composerCss, /\.envChips|\.surfaceChip|\.trailingControls/);
+// Measuring: the right-aligned chip's auto margin is zeroed so the last
+// chip's edge is the real need, and nothing animates while measuring.
+assert.match(css, /\.envChips\[data-measuring\] > \.surfaceChip[^{]*\{\s*margin-left:\s*0 !important/);
+assert.match(css, /\.envChips\[data-measuring\][\s\S]*transition:\s*none !important/);
 
-assert.match(environmentRow, /function EnvironmentRow/);
-assert.match(environmentRow, /useCompactEnvironmentRow/);
-assert.match(environmentRow, /<ConnectionStatusChip/);
-assert.match(environmentRow, /<WebSurfaceChip/);
-assert.match(environmentRow, /<WebPreviewChip/);
-assert.match(environmentRow, /<ProjectBadge/);
-assert.match(environmentRow, /<WorkingDirChips/);
-assert.match(environmentRow, /<GoalChip/);
-assert.match(environmentRow, /trailingControls/);
-assert.doesNotMatch(environmentRow, /dagHudSlot|DAG/i);
-assert.match(environmentRow, /data-environment-row/);
+// Squeeze levels cap, then hide, the git branch label; compact keeps the diff dot.
+assert.match(css, /\.envChips\[data-squeeze\][^{]*\.git-seg-label\)[^{]*\{\s*max-width:\s*12ch/);
+assert.match(css, /\.envChips\[data-squeeze="2"\] :global\(\.git-seg-label\)/);
+assert.match(css, /\.envChips\[data-compact="true"\] :global\(\.git-seg-dot\)\s*\{[^}]*width:\s*8px[^}]*opacity:\s*1/);
 
-assert.match(compactHook, /new ResizeObserver\(measure\)/);
-assert.match(compactHook, /new MutationObserver/);
-assert.match(compactHook, /row\.scrollWidth/);
-assert.match(compactHook, /row\.clientWidth/);
-assert.match(compactHook, /row\.dataset\.compact = "true"/);
-assert.match(compactHook, /delete row\.dataset\.compact/);
+// Labels collapse by animating max-width and opacity to 0.
+assert.match(css, /transition:[\s\S]*max-width 170ms ease[\s\S]*opacity 130ms ease/);
+assert.match(css, /\.envChips\[data-compact="true"\][\s\S]*max-width:\s*0/);
+assert.match(css, /\.envChips\[data-compact="true"\][\s\S]*opacity:\s*0/);
+assert.doesNotMatch(css.slice(css.indexOf('.envChips[data-compact="true"]')), /display:\s*none/,
+  "compact labels must animate out, not disappear with display:none");
 
-assert.doesNotMatch(environmentCss, /@container/);
-assert.doesNotMatch(environmentCss, /flex-shrink:\s*1/);
-assert.match(environmentCss, /\.status-badge \.badge-short/);
-assert.match(environmentCss, /\.surfaceChipLabel/);
-assert.match(environmentCss, /\.project-badge \.badge-short/);
-assert.match(environmentCss, /\.workdir-badge \.badge-short/);
-assert.match(environmentCss, /\.dag-hud-chip > span/);
-assert.match(environmentCss, /\.dag-hud-zoom/);
-assert.match(environmentCss, /transition:[\s\S]*max-width 170ms ease[\s\S]*opacity 130ms ease/);
-assert.match(environmentCss, /\.envChips\[data-compact="true"\][\s\S]*max-width:\s*0/);
-assert.match(environmentCss, /\.envChips\[data-compact="true"\][\s\S]*opacity:\s*0/);
-assert.match(environmentCss, /button\.dag-hud-chip[\s\S]*min-width:\s*24px/);
-const compactCss = environmentCss.slice(
-  environmentCss.indexOf('.envChips[data-compact="true"]'),
-  environmentCss.indexOf(".trailingControls"),
-);
-assert.doesNotMatch(compactCss, /display:\s*none/);
-
-console.log("composer environment-row checks passed");
+console.log("composer environment-row CSS check passed");

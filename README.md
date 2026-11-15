@@ -6,254 +6,130 @@
   </picture>
 </p>
 
-<p align="center">
-  <b>Self-Programming AI Assistant. Capture, automate, and refine all your workflows.</b>
-</p>
+<!-- Compatibility anchors for existing incoming links. -->
+<a id="1-agentic-function-the-primitive-everything-else-is-built-on"></a>
+<a id="2-dag-context-for-native-multi-agent-systems"></a>
+<a id="3-agentic-workflow-for-trustworthy-self-evolving-agents"></a>
+<a id="4-event-infrastructure-for-proactive-agents"></a>
+<a id="integrated-projects"></a>
+<a id="why-openprogram"></a>
+<a id="1-agentic-function--the-primitive-everything-else-is-built-on"></a>
+<a id="2-dag-context--for-native-multi-agent-systems"></a>
+<a id="3-agentic-workflow--for-trustworthy--self-evolving-agents"></a>
+<a id="4-event-infrastructure--for-proactive-agents"></a>
+<a id="also-in-the-product"></a>
+
+<p align="center"><b>An open-source agent harness where agents are Python programs that improve themselves.</b></p>
 
 <p align="center">
-  <a href="https://arxiv.org/abs/2606.15874"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2606.15874-b31b1b?style=flat-square"></a>
-  <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
-  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
+  <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CHANGELOG.md"><img alt="Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FFuzzyKuji%2FOpenProgram%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue&style=flat-square"></a>
+  <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
-  <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
 </p>
 
 <p align="center">
-  <a href="docs/start/GETTING_STARTED.md">Getting Started</a> &middot;
-  <a href="docs/install/install.md">Install</a> &middot;
-  <a href="docs/README.md">Docs</a> &middot;
-  <a href="docs/reference/API.md">API Reference</a> &middot;
-  <a href="docs/capabilities/agentic-programming/philosophy.md">Philosophy</a> &middot;
-  <a href="docs/README.zh.md">中文</a>
+  <a href="https://fuzzykuji.github.io/openprogram-site/">Website</a> · <a href="#install">Install</a> · <a href="https://fuzzykuji.github.io/openprogram-site/docs/">Documentation</a>
 </p>
 
----
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-Hant.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.ru.md">Русский</a>
+</p>
 
-> *"The more constraints one imposes, the more one frees oneself."*
-> — **Igor Stravinsky**, *Poetics of Music*
+- **Agents are Python classes.** Control flow, checks and retries are ordinary code; `self(...)` is a model call.
+- **Self-programming.** Agents write new methods into their own class, and they become tools on the next turn.
+- **Graph context.** Every call is a node in one DAG; sub-agents run on their own branch and return only their result.
+- **One workspace.** Chat, files, terminal and a built-in browser the agent can drive, side by side.
+- **Any model.** Anthropic, OpenAI, Gemini and local servers, with several accounts per provider.
 
-**We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/capabilities/agentic-programming/philosophy.md))
-
-**Contents**
-
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Integrated Projects](#integrated-projects)
-- [News](#news)
-- [Why OpenProgram?](#why-openprogram)
-  - [1. Agentic Function — the primitive everything else is built on](#1-agentic-function--the-primitive-everything-else-is-built-on)
-  - [2. DAG Context — for native multi-agent systems](#2-dag-context--for-native-multi-agent-systems)
-  - [3. Agentic Workflow — for trustworthy & self-evolving agents](#3-agentic-workflow--for-trustworthy--self-evolving-agents)
-  - [4. Event Infrastructure — for proactive agents](#4-event-infrastructure--for-proactive-agents)
-- [Also in the product](#also-in-the-product)
-- [Citation](#citation)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
+<a id="install"></a>
 
 ## Install
 
 ```bash
-curl -fsSL https://openprogram.io/install | sh
+curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
 ```
 
-Windows x86_64 or arm64 CLI/server (requires a release with Windows runtime assets):
-
-```powershell
-irm https://openprogram.io/install.ps1 | iex
-```
-
-If the selected release has no Windows runtime ZIP and checksum, use the [Windows source-development installation](docs/install/install.md#development-checkout).
-
-Desktop: macOS releases use the signed and notarized DMG; Windows uses a signed `win-x64.exe` or `win-arm64.exe` when that artifact is attached to the [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases). Linux and Windows without that EXE use the complete CLI/server runtime and Web UI.
-
-Platform matrix, PATH, `openprogram doctor`, and source-checkout install: **[Installation](docs/install/install.md)**.
+On Windows (from v1.2.0): `irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex`. The macOS desktop App is a DMG on the [releases page](https://github.com/FuzzyKuji/OpenProgram/releases); the Linux App is a deb or AppImage on the same page, and the Windows App arrives in v1.1.1. If the website does not answer: `curl -fsSL https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/main/docs/_static_root/install.sh | sh`. More options in [installation](https://fuzzykuji.github.io/openprogram-site/docs/install/install.html).
 
 ## Quick start
 
-The first `openprogram` run opens a provider setup wizard, then the terminal chat. Re-run the wizard with `openprogram setup`.
-
 ```bash
-openprogram
+openprogram        # setup wizard, then terminal chat
+openprogram web    # workspace at http://localhost:18100
 ```
 
-Open the Web UI at http://localhost:18100:
+Next: [getting started](docs/start/GETTING_STARTED.html) · [models](docs/models/README.html) · [all docs](docs/README.html)
 
-```bash
-openprogram web
+## A quick look
+
+```python
+from openprogram import Agent
+
+class SupportAgent(Agent):
+    def triage(self, ticket: str) -> str:
+        """Classify the ticket, then draft a reply."""
+        kind = self(ticket, choices=["bug", "question"])
+        if kind == "bug":
+            logs = search_logs(ticket)  # your own helper
+            return self(f"Reply using:\n{logs}")
+        return self("Draft a short reply.")
 ```
 
-Confirm with one printed reply:
+The model decides; Python makes sure the required steps run. See [writing agents](docs/capabilities/agentic-programming/writing-functions/agent.html).
 
-```bash
-openprogram --print "Introduce yourself in one sentence"
-```
+## Features
 
-Details: [Getting Started](docs/start/GETTING_STARTED.md).
+Each entry links to its design document.
 
-## Integrated Projects
+### Framework
 
-Our open-source projects cover desktop automation, research workflows, and agent memory. Visit their repositories for source code, documentation, and contributions.
-
-| Project | What it does |
+| | |
 |---|---|
-| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | **GUI&nbsp;Automation**<br>Operates&nbsp;desktop&nbsp;apps&nbsp;with&nbsp;screenshots&nbsp;and&nbsp;actions. |
-| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | **Research&nbsp;Automation**<br>Automates&nbsp;literature&nbsp;reviews,&nbsp;experiments,&nbsp;and&nbsp;paper&nbsp;drafts. |
-| [Scriptorium](https://github.com/Fzkuji/Scriptorium) | **Agent&nbsp;Memory**<br>Stores&nbsp;and&nbsp;retrieves&nbsp;source-cited&nbsp;Markdown&nbsp;memories&nbsp;via&nbsp;MCP. |
+| **[Agent classes](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/function/agentic-program.html)** | An agent is a Python class; branches, retries and checks are code, `self(...)` is a model call. |
+| **[Execution DAG](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/dag/overview.html)** | Every user turn, model call and function call is a node you can inspect, branch and replay. |
+| **[Context](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/context/overview.html)** | Each call reads a selection of nodes instead of a growing transcript, with automatic compaction. |
+| **[Self-programming](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/workflows/workflow.html)** | Agents write new methods into their own class; they become tools on the next turn. |
+| **[Checked decisions](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/execution/next-step-decision.html)** | The model picks from a fixed menu and code validates the pick before anything runs. |
+| **[Sub-agents](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/collaboration/agent-collaboration.html)** | Sub-agents run on their own branch, optionally in a Git worktree, and return only their result. |
+| **[Events](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/proactive/event-layer.html)** | A typed event bus; plugins observe events or gate tool calls. |
+| **[Always-on agents](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/always-on-agents.html)** | Agents that keep running in the background and react to events. |
+| **[Goals and recovery](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/reliability/goal-and-recovery.html)** | Long-running goals survive restarts and resume where they stopped. |
+| **[Fault tolerance](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/reliability/llm-fault-tolerance.html)** | Retries, timeouts and error classification for every model call. |
 
-Install more: `openprogram programs install <owner>/<repo>` ([guide](docs/capabilities/installing-harnesses.md)).
+### Workspace
 
-## News
-
-- **2026-08-17** — Built-in browser: multiple panes, bookmarks, History, and Agent control of visible pages.
-- **2026-07-21** — Multi-agent: `spawn` sub-agents, message across sessions, file-touching branches in git worktrees.
-- **2026-06-22** — 📄 **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).
-- **2026-06-07** — Installable harnesses and multi-account providers with automatic key rotation.
-- **2026-05-28** — The Web UI design system.
-- **2026-04-04** — Built-in Anthropic / OpenAI / Gemini providers.
-- **2026-04-03** — 🌱 First release: `@agentic_function` and the execution DAG.
-
-## Why OpenProgram?
-
-OpenProgram supports macOS and Linux installations, native Windows x86_64/arm64 CLI/server, multiple providers, and a Web interface (Desktop App or `openprogram web` → http://localhost:18100). The Windows Desktop distribution path produces a signed per-user installer and embeds the same complete runtime; Windows sandbox execution remains a separate level. The harness itself provides **four mechanisms — one primitive and the three capabilities it enables.**
-
-### 1. Agentic Function — the primitive everything else is built on
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/highlights/00-agentic-function.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/highlights/00-agentic-function-light.png">
-    <img src="docs/images/highlights/00-agentic-function.png" alt="Agentic Function — expose is shown to later functions, render_range is history context from callers, docstring is the system prompt, llm() is the model message" width="900">
-  </picture>
-</p>
-
-**An agent is a Python function.** You write it like any other function. The docstring is the system prompt: it tells the model what this agent does. Each argument is input for this run. A `str` argument is the task. In this example the task is the ticket to classify. You do not store the prompt or the JSON as separate variables. They are written as code. `choices=[...]` asks again until the answer is one of those words.
-
-Here is an example, compared with the common way:
-
-<table>
-<tr><th>OpenProgram</th><th>The common way</th></tr>
-<tr><td>
-
-```python
-@agentic_function
-def triage(ticket: str, runtime=None) -> str:
-    """Classify the ticket as bug / feature /
-    question, then draft a reply."""
-    kind = llm(                             # 🤖 LLM decides
-        ticket, choices=["bug", "feature", "question"])
-    if kind == "bug":                       # 🐍 you decide
-        logs = search_logs(ticket)          # 🐍 plain Python
-        return llm(                         # 🤖 LLM writes
-            f"Reply using:\n{logs}")
-    return llm("Draft a short reply.")
-```
-
-🤖 `llm()` is the model call<br>
-🐍 everything else is ordinary Python, and it runs every time
-
-</td><td>
-
-```python
-TRIAGE_PROMPT = """You are a triage
-agent. Classify the ticket as bug,
-feature, or question. Reply as JSON."""
-
-TOOLS = [{"type": "function", "function": {
-  "name": "triage",
-  "parameters": {"type": "object",
-    "properties": {"ticket": {"type": "string"}},
-    "required": ["ticket"]}}}]
-
-resp = client.chat(TRIAGE_PROMPT, tools=TOOLS)
-kind = json.loads(resp)["kind"]     # hope it parses
-if kind not in ("bug", "feature"):
-    ...                             # and re-prompt by hand
-```
-
-</td></tr>
-</table>
-
-### 2. DAG Context — for native multi-agent systems
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/highlights/01-dag-context.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/highlights/01-dag-context-light.png">
-    <img src="docs/images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
-  </picture>
-</p>
-
-Context is an **addressable node, not a per-agent buffer** — so every multi-agent move is just "point at a different node set":
-
-| Want to… | It's one call |
+| | |
 |---|---|
-| Run a sub-agent on a clean context | `spawn_branch(...)` |
-| Send a message to another branch, get the reply | `message_branch(message, target=...)` |
-| Try an alternative without losing the original | fork the node |
-| Let a branch touch files safely | it runs in its own `git worktree` |
+| **[Desktop and web UI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/README.html)** | The App on macOS and Linux, and from v1.2.0 on Windows; the web UI on any of them or a server. |
+| **[Split panes](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/center-tabs-and-split-layout.html)** | Chats, files, terminals and web pages side by side. |
+| **[Built-in browser](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/browser/built-in-browser.html)** | A browser the agent reads and operates while you watch. |
+| **[Integrated terminal](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/workspace/integrated-terminal.html)** | Terminals in the workspace, shared with the agent. |
+| **[Computer use](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/computer-and-browser-use.html)** | Operate desktop apps, browser pages or a remote VM. |
+| **[CLI and TUI](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/cli/README.html)** | The same agent from the terminal. |
+| **[Remote access](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/ui/remote-web-access.html)** | Reach your own instance from another device, owner-only. |
 
-### 3. Agentic Workflow — for trustworthy & self-evolving agents
+### Agents and safety
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/highlights/02-agentic-workflow.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/highlights/02-agentic-workflow-light.png">
-    <img src="docs/images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
-  </picture>
-</p>
+| | |
+|---|---|
+| **[Configurable Agents](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/agent-configuration/agent-configuration-ui.html)** | Save model, instructions, tools and memory access as a reusable Agent. |
+| **[Memory](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/memory/overview.html)** | Source-backed memory with retrieval and background writing. |
+| **[Permissions and sandbox](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/security/sandbox-architecture.html)** | Approve or deny tool calls with a note; commands run under a sandbox. |
+| **[Programs](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/runtime/programs/programs-architecture.html)** | Tools and applications as installable Programs. |
 
-**A code gate can't be talked past.** When the model's answer fails validation, it is sent back to re-decide — this is the real transcript:
+### Models and integrations
 
-```
-llm  → "probably a feature request"
-gate ✗ no parseable pick from ["bug", "feature", "question"]
-llm  → {"call": "feature"}
-gate ✓ → branch taken in Python
-```
-
-**And it grows itself:** the agent edits its own `@agentic_function` files with ordinary file tools → a watcher hot-loads them → the new tool is live on the next turn. No `create()` / `fix()` machinery.
-
-### 4. Event Infrastructure — for proactive agents
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/highlights/03-event-infrastructure.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/highlights/03-event-infrastructure-light.png">
-    <img src="docs/images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
-  </picture>
-</p>
-
-**One bus, every subsystem.** The agent loop, auth, context, channels, and memory all emit the same `Event(type, payload, ts)` envelope, so anything can watch anything:
-
-```python
-from openprogram.events import get_event_bus
-
-get_event_bus().subscribe(                       # returns an unsubscribe fn
-    lambda e: alert(e.payload),
-    types={"context.compacted", "file.changed"},
-)
-```
-
-A **foundation, honestly labelled**: the plumbing is in place and the proactive policy layer is its first intended consumer — that part is yours to build.
-
-## Also in the product
-
-The four mechanisms above are the thesis. Below are other designs that are not the usual shape — shipped items are checked.
-
-- [x] 🧠 **Scriptorium.** Markdown under `~/.openprogram/memory/`, every paragraph cited, written in background batches — there is no "save this" tool. [Details](https://github.com/Fzkuji/Scriptorium)
-- [x] ♾️ **Infinite Context.** Occupancy drives `/compact` and automatic compact; tool results inside a single turn can compact without another command; original records stay in the session. [Details](docs/interfaces/tui.md)
-- [x] 🌿 **Conversation stored as git.** History is a repo, not a list: branch, attach, and merge from the sidebar. [Details](docs/start/features.md#conversation-as-a-git-dag)
-- [x] 🎯 **Goals in ordinary chat.** Persistent goals with bound todo plans live in the same conversation, not a separate Goal mode.
-- [ ] 👁️ **Proactive policies.** The event bus is live; a layer that watches it and acts on its own is the next piece of that design.
-- [ ] 🖥️ **Agent terminal.** A host-owned PTY for the agent is underway — not yet a chat tool.
-- [ ] 🔄 **Self-update.** The agent patching and replacing its own runtime in conversation — with owner approval, verification, and recovery — is still a goal. [Details](docs/install/upgrade.md#recovering-a-conversational-self-update)
+| | |
+|---|---|
+| **[Providers](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/README.html)** | Anthropic, OpenAI, Gemini and more, several accounts per provider. |
+| **[Local models](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/providers/local-models.html)** | Local inference servers, with optional authentication. |
+| **[MCP](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/mcp-integration.html)** | Use MCP servers, or expose OpenProgram as one. |
+| **[Skills and plugins](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/integrations/skills-and-plugins.html)** | Extend what the agent knows and can call. |
+| **[Channels](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/channels/README.html)** | Talk to your agents from Telegram, Discord, Slack and WeChat. |
+| **[Automatic updates](https://fuzzykuji.github.io/openprogram-site/docs/reference/design/distribution/automatic-updates.html)** | Signed releases that update in place. |
 
 ## Citation
-
-Using OpenProgram in your work, or building on the code? Please cite our paper — and under the AGPL, any derivative you **distribute or run as a network service** must itself be open-sourced under the AGPL, with attribution preserved (see [License](#license)).
-
-> _LLM-as-Code: Agentic Programming for Agent Harness_ — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**. [arXiv:2606.15874](https://arxiv.org/abs/2606.15874)
 
 ```bibtex
 @inproceedings{qi2026llmascode,
@@ -261,24 +137,21 @@ Using OpenProgram in your work, or building on the code? Please cite our paper �
   author    = {Qi, Junjia and Fu, Zichuan and Gao, Jingtong and Zhang, Wenlin and Yan, Hanyu and Wu, Xian and Zhao, Xiangyu},
   booktitle = {KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)},
   year      = {2026},
-  eprint    = {2606.15874},
-  archivePrefix = {arXiv},
   url       = {https://arxiv.org/abs/2606.15874},
 }
 ```
 
 ## License
 
-[AGPL-3.0](LICENSE) © 2026 Fzkuji. Free to use, study, modify, and share — but any derivative you distribute **or run as a network service** must also be released under the AGPL, with attribution preserved.
+[AGPL-3.0](LICENSE) © 2026 FuzzyKuji. See the license for use, modification, distribution and network-service obligations.
 
 ## Acknowledgements
 
-Thank you to everyone who helps improve OpenProgram through code, bug reports,
-reproductions, tests, documentation, reviews, and suggestions.
+Thanks to contributors who provide code, reports, reproductions, tests, documentation and reviews.
 
 <!-- contributors-avatars -->
 <p>
-<a href="https://github.com/Fzkuji"><img src="https://github.com/Fzkuji.png?size=48" width="24" height="24" alt="Fzkuji" /></a>
+<a href="https://github.com/FuzzyKuji"><img src="https://avatars.githubusercontent.com/u/9404270?v=4&amp;s=48" width="24" height="24" alt="Maintainer" /></a>
 <a href="https://github.com/Qi202"><img src="https://github.com/Qi202.png?size=48" width="24" height="24" alt="Qi202" /></a>
 <a href="https://github.com/GithungDang"><img src="https://github.com/GithungDang.png?size=48" width="24" height="24" alt="GithungDang" /></a>
 <a href="https://github.com/basil-k-aji-dev"><img src="https://github.com/basil-k-aji-dev.png?size=48" width="24" height="24" alt="basil-k-aji-dev" /></a>
@@ -286,6 +159,4 @@ reproductions, tests, documentation, reviews, and suggestions.
 </p>
 <!-- /contributors-avatars -->
 
-Thank you also to everyone who helps through
-[issues](https://github.com/Fzkuji/OpenProgram/issues?q=is%3Aissue) and
-[pull requests](https://github.com/Fzkuji/OpenProgram/pulls?q=is%3Apr).
+[Issues](https://github.com/FuzzyKuji/OpenProgram/issues) · [Pull requests](https://github.com/FuzzyKuji/OpenProgram/pulls)

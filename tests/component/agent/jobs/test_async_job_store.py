@@ -6,75 +6,14 @@ import threading
 
 import pytest
 
-from tests.component.agent.async_job_support import (
-    store_fixture,
-)
+from tests.component.agent import async_job_support as _async_job_support
 
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
 
-def test_store_migrates_legacy_tasks_file_and_deletes_it(store_fixture):
-    from openprogram.agent.job.store import load_job
-
-    session_dir = store_fixture._session_dir("p1")
-    legacy_path = session_dir / "tasks.json"
-    legacy_path.write_text(json.dumps({
-        "version": 1,
-        "tasks": {
-            "t_child": {
-                "id": "t_child",
-                "parent_session_id": "p1",
-                "prompt": "legacy",
-                "agent_id": "main",
-                "parent_task_id": "t_parent",
-                "status": "pending",
-            },
-        },
-    }), encoding="utf-8")
-
-    job = load_job("p1", "t_child")
-
-    assert job is not None
-    assert job.parent_job_id == "t_parent"
-    assert not legacy_path.exists()
-    migrated = json.loads((session_dir / "jobs.json").read_text(encoding="utf-8"))
-    assert "tasks" not in migrated
-    assert migrated["jobs"]["t_child"]["parent_job_id"] == "t_parent"
-    assert "parent_task_id" not in migrated["jobs"]["t_child"]
-
-def test_store_removes_legacy_file_after_prior_migration(store_fixture):
-    from openprogram.agent.job.store import load_job
-
-    session_dir = store_fixture._session_dir("p1")
-    (session_dir / "jobs.json").write_text(json.dumps({
-        "version": 1,
-        "jobs": {
-            "j_child": {
-                "id": "j_child",
-                "parent_session_id": "p1",
-                "prompt": "migrated",
-                "agent_id": "main",
-                "status": "pending",
-            },
-        },
-    }), encoding="utf-8")
-    legacy_path = session_dir / "tasks.json"
-    legacy_path.write_text('{"version": 1, "tasks": {}}', encoding="utf-8")
-
-    assert load_job("p1", "j_child") is not None
-    assert not legacy_path.exists()
-
-def test_store_keeps_legacy_file_when_canonical_file_is_invalid(store_fixture):
-    from openprogram.agent.job.store import load_job
-
-    session_dir = store_fixture._session_dir("p1")
-    (session_dir / "jobs.json").write_text("not json", encoding="utf-8")
-    legacy_path = session_dir / "tasks.json"
-    legacy_path.write_text('{"version": 1, "tasks": {}}', encoding="utf-8")
-
-    assert load_job("p1", "missing") is None
-    assert legacy_path.exists()
 
 def test_state_machine_legal_edges():
-    from openprogram.agent.job.types import JobStatus, can_transition
+    from openprogram.runtime.jobs.types import JobStatus, can_transition
     assert can_transition(JobStatus.PENDING, JobStatus.QUEUED)
     assert can_transition(JobStatus.QUEUED, JobStatus.RUNNING)
     assert can_transition(JobStatus.RUNNING, JobStatus.COMPLETED)
@@ -83,7 +22,7 @@ def test_state_machine_legal_edges():
     assert can_transition(JobStatus.PENDING, JobStatus.CANCELLED)
 
 def test_state_machine_illegal_edges():
-    from openprogram.agent.job.types import JobStatus, can_transition
+    from openprogram.runtime.jobs.types import JobStatus, can_transition
     # Terminal states are absorbing.
     assert not can_transition(JobStatus.COMPLETED, JobStatus.RUNNING)
     assert not can_transition(JobStatus.CANCELLED, JobStatus.RUNNING)
@@ -93,7 +32,7 @@ def test_state_machine_illegal_edges():
     assert not can_transition(JobStatus.QUEUED, JobStatus.PENDING)
 
 def test_job_to_dict_roundtrip():
-    from openprogram.agent.job.types import Job, JobStatus
+    from openprogram.runtime.jobs.types import Job, JobStatus
     t = Job(
         id="t_abc", parent_session_id="s1", prompt="hi", agent_id="main",
         label="alpha", subject="alpha",
@@ -106,8 +45,8 @@ def test_job_to_dict_roundtrip():
     assert t2.label == "alpha"
 
 def test_store_save_load(store_fixture):
-    from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.agent.job.store import save_job, load_job, list_jobs
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job, load_job, list_jobs
 
     t = Job(
         id="t_one", parent_session_id="p1", prompt="x", agent_id="main",
@@ -124,8 +63,8 @@ def test_store_save_load(store_fixture):
     assert rows[0].id == "t_one"
 
 def test_store_update_status_legal_transition(store_fixture):
-    from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.agent.job.store import save_job, update_job_status
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job, update_job_status
     t = Job(id="t_a", parent_session_id="p1", prompt="x", agent_id="main")
     save_job("p1", t)
     updated = update_job_status("p1", "t_a", JobStatus.QUEUED)
@@ -134,8 +73,8 @@ def test_store_update_status_legal_transition(store_fixture):
 
 
 def test_store_terminal_retry_preserves_first_outcome(store_fixture):
-    from openprogram.agent.job.store import save_job, update_job_status
-    from openprogram.agent.job.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job, update_job_status
+    from openprogram.runtime.jobs.types import Job, JobStatus
 
     save_job(
         "p1",
@@ -158,9 +97,9 @@ def test_store_terminal_retry_preserves_first_outcome(store_fixture):
 def test_reciprocal_linked_idempotent_updates_do_not_deadlock(
     store_fixture, monkeypatch,
 ):
-    from openprogram.agent.job import store as job_store
-    from openprogram.agent.job.store import save_job, update_job_status
-    from openprogram.agent.job.types import Job, JobStatus
+    from openprogram.runtime.jobs import store as job_store
+    from openprogram.runtime.jobs.store import save_job, update_job_status
+    from openprogram.runtime.jobs.types import Job, JobStatus
 
     store_fixture.create_session("p2", "main", title="peer")
     save_job("p1", Job(
@@ -205,8 +144,8 @@ def test_reciprocal_linked_idempotent_updates_do_not_deadlock(
     assert not any(thread.is_alive() for thread in threads)
 
 def test_store_update_status_illegal_transition_raises(store_fixture):
-    from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.agent.job.store import save_job, update_job_status
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job, update_job_status
     t = Job(
         id="t_b", parent_session_id="p1", prompt="x", agent_id="main",
         status=JobStatus.COMPLETED,
@@ -216,8 +155,8 @@ def test_store_update_status_illegal_transition_raises(store_fixture):
         update_job_status("p1", "t_b", JobStatus.RUNNING)
 
 def test_store_reconcile_orphans_flips_running_to_errored(store_fixture):
-    from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.agent.job.store import save_job, load_job, reconcile_orphans
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job, load_job, reconcile_orphans
     t = Job(
         id="t_orphan", parent_session_id="p1", prompt="x", agent_id="main",
         status=JobStatus.RUNNING,
@@ -230,8 +169,8 @@ def test_store_reconcile_orphans_flips_running_to_errored(store_fixture):
     assert "died" in (cur.error or "")
 
 def test_store_reconcile_orphans_preserves_terminal(store_fixture):
-    from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.agent.job.store import save_job, load_job, reconcile_orphans
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job, load_job, reconcile_orphans
     t = Job(
         id="t_done", parent_session_id="p1", prompt="x", agent_id="main",
         status=JobStatus.COMPLETED,
@@ -242,8 +181,8 @@ def test_store_reconcile_orphans_preserves_terminal(store_fixture):
     assert cur.status == JobStatus.COMPLETED
 
 def test_store_reconcile_orphans_legacy_only_preserves_governed_jobs(store_fixture):
-    from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.agent.job.store import save_job, load_job, reconcile_orphans
+    from openprogram.runtime.jobs.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job, load_job, reconcile_orphans
     save_job(
         "p1",
         Job(

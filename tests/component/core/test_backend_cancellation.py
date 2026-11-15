@@ -5,18 +5,18 @@ import sys
 import time
 from pathlib import Path
 
-from openprogram.backend.local import LocalBackend
+from openprogram.host.backend.local import LocalBackend
 
 
 def _python(code, tmp_path):
-    from openprogram.backend import local
+    from openprogram.host._platform import command_shell
 
     # Exercise cancellation of real code, not nested `python -c` source
     # escaping through MSYS/native command-line parsing on Windows.
     script = tmp_path / "child.py"
     script.write_text(code, encoding="utf-8")
     arguments = [Path(sys.executable).as_posix(), script.as_posix()]
-    if sys.platform == "win32" and local._windows_bash() is None:
+    if command_shell.host_shell().is_powershell:
         return "& " + " ".join("'" + arg.replace("'", "''") + "'" for arg in arguments)
     return shlex.join(arguments)
 
@@ -41,9 +41,8 @@ def test_timeout_retains_output_and_stops_child(tmp_path):
 
 
 def test_pre_cancelled_execution_never_starts_shell_or_cancels_next_turn(tmp_path):
-    from openprogram.agent.run_control import (
-        begin_turn,
-        end_turn,
+    from openprogram.runtime.conversation.run_control import begin_turn, end_turn
+    from openprogram.runtime.execution.run_control import (
         set_current_session_id,
         reset_current_session_id,
     )
@@ -54,7 +53,9 @@ def test_pre_cancelled_execution_never_starts_shell_or_cancels_next_turn(tmp_pat
     token = begin_turn(sid)
     try:
         token.cancel()
-        command = _python(f"from pathlib import Path; Path({str(marker)!r}).touch()", tmp_path)
+        command = _python(
+            f"from pathlib import Path; Path({str(marker)!r}).touch()", tmp_path
+        )
         result = LocalBackend().run(command, timeout=2, cwd=str(tmp_path))
         assert result.exit_code != 0
         assert "cancelled" in result.stderr
@@ -71,16 +72,19 @@ def test_pre_cancelled_execution_never_starts_shell_or_cancels_next_turn(tmp_pat
 def test_uncertain_cancellation_cleanup_does_not_return_a_completion(monkeypatch):
     import subprocess
     import pytest
-    from openprogram.agentic_programming.function import CancelledError
-    from openprogram.backend import local
-    from openprogram.agent.run_control import (
-        begin_turn, end_turn, set_current_session_id, reset_current_session_id,
+    from openprogram.host.cancellation import CancelledError
+    from openprogram.host.backend import local
+    from openprogram.runtime.conversation.run_control import begin_turn, end_turn
+    from openprogram.runtime.execution.run_control import (
+        set_current_session_id,
+        reset_current_session_id,
     )
 
     for terminated, drained in [(False, True), (True, False)]:
-        sid = 'backend-uncertain-cancellation'
+        sid = "backend-uncertain-cancellation"
         binding = set_current_session_id(sid)
         token = begin_turn(sid)
+
         class Process:
             returncode = -9
             calls = 0
@@ -89,8 +93,8 @@ def test_uncertain_cancellation_cleanup_does_not_return_a_completion(monkeypatch
                 self.calls += 1
                 token.cancel()
                 if self.calls == 1 or not drained:
-                    raise subprocess.TimeoutExpired('child', timeout, b'partial')
-                return 'partial', ''
+                    raise subprocess.TimeoutExpired("child", timeout, b"partial")
+                return "partial", ""
 
             def kill(self):
                 pass
@@ -106,13 +110,15 @@ def test_uncertain_cancellation_cleanup_does_not_return_a_completion(monkeypatch
                 return terminated
 
             def release(self):
-                raise AssertionError('cancelled ownership must not be released')
+                raise AssertionError("cancelled ownership must not be released")
 
-        monkeypatch.setattr(local, 'ProcessTreeOwner', Owner)
-        monkeypatch.setattr(local, '_invocation', lambda *_a, **_kw: ('unused', True, None, False))
+        monkeypatch.setattr(local, "ProcessTreeOwner", Owner)
+        monkeypatch.setattr(
+            local, "_invocation", lambda *_a, **_kw: ("unused", True, None, False)
+        )
         try:
             with pytest.raises(CancelledError):
-                LocalBackend().run('unused', timeout=2)
+                LocalBackend().run("unused", timeout=2)
         finally:
             end_turn(sid, token)
             reset_current_session_id(binding)

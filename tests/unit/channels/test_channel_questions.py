@@ -3,21 +3,24 @@ import time
 
 import pytest
 
-import openprogram.agent.questions as Q
-import openprogram.execution as execution_module
-from openprogram.agent.questions import (
+import openprogram.runtime.agent.questions as Q
+import openprogram.runtime.execution as execution_module
+from openprogram.runtime.agent.questions import (
     PendingQuestion, QuestionRegistry, get_question_registry,
 )
-from openprogram.agent.run_control import reset_current_execution_id, set_current_execution_id
-from openprogram.agent.authority import owner_authority
-from openprogram.channels._question_commands import (
+from openprogram.runtime.execution.run_control import (
+    reset_current_execution_id,
+    set_current_execution_id,
+)
+from openprogram.runtime.permissions.authority import owner_authority
+from openprogram.interfaces.channels._question_commands import (
     try_handle_question_command, _map_choice,
 )
-from openprogram.channels._question_bridge import _render_question
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.model import CapabilitySet
-from openprogram.execution.store import ExecutionStore
-from openprogram.execution.waits import DurableWaitStore
+from openprogram.interfaces.channels._question_bridge import _render_question
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.model import CapabilitySet
+from openprogram.runtime.execution.store import ExecutionStore
+from openprogram.runtime.execution.waits import DurableWaitStore
 
 
 _STORE = None
@@ -43,7 +46,7 @@ def _durable_registry(monkeypatch, tmp_path):
     attempts = AttemptStore(store)
     leased, reserved = attempts.lease(
         execution.execution_id, expected_version=execution.status_version,
-        owner_id="channel", ttl_seconds=30,
+        owner_id="channel",
     )
     _attempt, _running = attempts.activate(
         leased.attempt_id, generation=leased.generation,
@@ -152,6 +155,13 @@ def test_render_options_includes_answer_command():
     assert "/answer q9" in txt
     assert "1) x" in txt and "2) y" in txt
     assert "/decline q9" in txt
+
+
+def test_render_names_the_sub_agent_that_asks():
+    txt = _render_question({"id": "qA", "kind": "approval", "prompt": "允许执行 bash？", "asked_by": "scout"})
+    assert txt.splitlines()[0].endswith("· scout")
+    own = _render_question({"id": "qB", "kind": "approval", "prompt": "允许执行 bash？"})
+    assert "·" not in own.splitlines()[0]
 
 
 def test_render_form_lists_fields():

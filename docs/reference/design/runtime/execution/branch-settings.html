@@ -1,0 +1,82 @@
+<title>Branch settings</title>
+<meta name="description" content="How a branch resolves its settings and which state belongs to it.">
+<h1>Branch settings</h1>
+
+<p>Each branch of a conversation runs with its own settings and its own state, so two branches can run side by side.</p>
+
+<h2 id="branch-settings">Where a setting comes from</h2>
+
+<p>Every branch keeps its settings on its own record in <code translate="no">branch_refs</code>; the conversation's top-level fields are the selected branch's projection. <code translate="no">resolve_branch_settings(session, branch)</code> returns each setting's <code translate="no">values</code>, <code translate="no">sources</code> and <code translate="no">inherited</code> (what it follows when unset). Every entry reads through it: web, channels, scheduled runs, always-on, Goals and <code translate="no">--print</code>.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Setting left unset</th><th scope="col">Falls back to</th></tr></thead>
+<tbody>
+<tr><th scope="row">Model, Web search, Fast</th><td>The branch's Agent as it is now, then the product default</td></tr>
+<tr><th scope="row">Effort</th><td>The Agent, then the project, then the product default</td></tr>
+<tr><th scope="row">Permission mode, Sandbox</th><td>The project, then the product default</td></tr>
+<tr><th scope="row">Agent</th><td>The default Agent</td></tr>
+</tbody>
+</table>
+
+<h2 id="follow-agent">Following the Agent</h2>
+
+<ul>
+<li>A new conversation and an Agent switch write no model, so an edit of the Agent's model reaches the next turn.</li>
+<li>Admission records the model in <code translate="no">turn_settings</code>. When the Agent changed it since the last turn on that line, the user message carries <code translate="no">model_change</code>, the page shows a one-line note and the cache-break report names <code translate="no">model_switch</code>.</li>
+<li>A move to a model with a smaller window compacts first, with the old model.</li>
+<li><code translate="no">scripts/migrate_branch_follow_agent.py</code> clears models and web-search switches that only copied the Agent's. It is a dry run by default and writes a backup before it changes anything.</li>
+</ul>
+
+<h2 id="writes">Writing a setting</h2>
+
+<ul>
+<li><code translate="no">POST /api/sessions/{id}/branch_settings</code> stores only what differs from <code translate="no">inherited</code>; an equal value is written as unset. <code translate="no">reset_fields</code> also puts a setting back to inherit.</li>
+<li><code translate="no">GET</code> on the same path and the reply to a write return the resolved values.</li>
+<li>A message to an existing conversation sends no settings; a new conversation sends only the controls the person changed.</li>
+</ul>
+
+<details>
+<summary>Why this design</summary>
+<table class="stack">
+<thead><tr><th scope="col">Decision</th><th scope="col">Follows</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Follow the Agent</th><td>Claude Code and Hermes: unset means follow the layer above. Codex: the warning on a model change and the downshift compaction</td><td>The Agent is the identity a person maintains; an edit of its model should reach the conversations that use it</td></tr>
+<tr><th scope="row">Order per field</th><td>Claude Code: model and effort come with the Agent, permission from the environment</td><td>Permission is what this folder may do, a project boundary; model and effort are how the assistant works. Codex's single layer order would let a project override an Agent's model, which projects here do not set</td></tr>
+<tr><th scope="row">Background entries read their own branch</th><td>Claude Code delivers a scheduled task to its owner; OpenCode resolves the session's Agent when the check fires</td><td>A scheduled command on another branch ran with the selected branch's permission, so loosening the main line loosened it too</td></tr>
+<tr><th scope="row">Retry and edit copy the current settings</th><td>Codex, Pi and OpenCode</td><td>A snapshot of the old turn would loosen a permission the person tightened since; the current values are on the controls</td></tr>
+<tr><th scope="row">Only differences are written</th><td>Claude Code's picker writes nothing for the default</td><td>"Set on this branch" then means the person set it</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branch-tool-state">Where tool state belongs</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">State</th><th scope="col">Kept per</th><th scope="col">Turn on another branch</th></tr></thead>
+<tbody>
+<tr><th scope="row">Todos</th><td>Branch (<code translate="no">todos.json</code> keeps one board per branch); a new branch starts from a copy of its parent's</td><td>Its own board</td></tr>
+<tr><th scope="row">Goal</th><td>Conversation, bound to the branch it was started on (an older Goal belongs to the branch selected when it is read)</td><td>Runs without the Goal; the Goal's own branch runs with it, selected or not</td></tr>
+<tr><th scope="row">Compaction summary</th><td>Chain (the summary's <code translate="no">covers_ids</code>)</td><td>Allowed</td></tr>
+<tr><th scope="row">Occupancy (<code translate="no">last_prompt_tokens</code>)</th><td>Branch record; the conversation keeps the selected branch's</td><td>Allowed</td></tr>
+<tr><th scope="row">Read-before-edit baselines</th><td>Branch history: each read is recorded against its turn in <code translate="no">read_baselines.jsonl</code> (local and SSH under their own key)</td><td>Only reads on its own line count, and none from before the latest compaction on it</td></tr>
+<tr><th scope="row">Plan mode, background shells, permission rules, spilled tool output, memory writes</th><td colspan="2">Not yet established</td></tr>
+</tbody>
+</table>
+
+<p>A load and <code translate="no">get_run_state</code> return <code translate="no">running_branches</code>. <code translate="no">branch_running_task</code> carries the branch's name and <code translate="no">wait_state</code> (<code translate="no">approval</code> or <code translate="no">input</code>), so a pane can list runs on other branches.</p>
+
+<details>
+<summary>Why this design</summary>
+<table class="stack">
+<thead><tr><th scope="col">Decision</th><th scope="col">Follows</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Read baselines from history</th><td>Claude Code's <code translate="no">extractReadFilesFromMessages</code></td><td>The same in every process (Worker, CLI, scheduled run); a fork, a rewind and a compaction need no extra bookkeeping</td></tr>
+<tr><th scope="row">Todos per branch</th><td>Claude Code: one list per execution context</td><td>A side branch writing the conversation's board overwrote the main line's</td></tr>
+<tr><th scope="row">Goal bound to its branch</th><td>Codex: a goal per thread</td><td>Same reason; only commands that act on the whole conversation stay on the selected branch</td></tr>
+<tr><th scope="row">Operations hold only their branches</th><td>Codex: a constraint lands on the thread acted on</td><td>Each branch has one foreground operation; a node shared by several branches needs all of them idle</td></tr>
+<tr><th scope="row">Runs on other branches</th><td>Claude Code's footer badge per task; the states from Codex <code translate="no">/side</code></td><td>A run waiting for approval blocks work, so it belongs beside the input. Only the data is sent so far</td></tr>
+</tbody>
+</table>
+</details>
+
+<p>What is not yet done: <a href="control.html#status">Activity and control, Implementation status</a>.</p>

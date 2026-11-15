@@ -13,16 +13,10 @@ from openprogram.programs import TOOLSETS, _all_agent_tools, agent_tools
 
 def test_every_preset_names_a_registered_tool():
     registered = {tool.name for tool in _all_agent_tools()}
-    # External harness programs (gui_agent, research_agent, …) register their
-    # tool only when the harness repo is installed. A preset naming them on a
-    # machine without the harness — CI, fresh clone — is the intended wish
-    # list, not staleness.
-    from openprogram.programs._programs import KNOWN_PROGRAMS
-    external = {p.function for p in KNOWN_PROGRAMS if not p.is_installed()}
     stale = {
         preset: sorted(
             name for name in (entry.get("tools") or [])
-            if name not in registered and name not in external
+            if name not in registered
         )
         for preset, entry in TOOLSETS.items()
     }

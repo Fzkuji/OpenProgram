@@ -1,0 +1,34 @@
+<title>Troubleshooting</title>
+<meta name="description" content="Fixes for missing providers, a missing command, port conflicts, a worker that will not start and import errors.">
+<h1>Troubleshooting</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">What happened</th><th scope="col">What to do</th></tr></thead>
+<tbody>
+<tr><th scope="row">"No provider available"</th><td><code translate="no">openprogram providers</code> lists stored credentials. <code translate="no">openprogram providers discover</code> finds Claude Code, Codex and Gemini CLI logins and <code translate="no">env:</code> keys to adopt.<br>Not logged in: <code translate="no">openprogram providers login &lt;provider&gt;</code>, or log in to the external CLI.<br>Key set in another shell: adopt it, see <a href="../start/faq.html#no-provider">FAQ</a>.<br>Expired token: log in again; <code translate="no">openprogram providers doctor</code> checks expiry, refresh and conflicts.</td></tr>
+<tr><th scope="row">"command not found: openprogram"</th><td>Run the installer again, then put <code translate="no">~/.local/bin</code> on <code translate="no">PATH</code> (below)</td></tr>
+<tr><th scope="row">Web UI port in use</th><td><code translate="no">export OPENPROGRAM_WEB_PORT=8101</code> before starting, or persist with <code translate="no">openprogram ports --port 8101</code></td></tr>
+<tr><th scope="row">Worker does not start, or starts on the wrong port</th><td><code translate="no">openprogram doctor</code>, then <code translate="no">openprogram rescue</code>, which prints the fix commands. An App or terminal install checks the Node.js, terminal UI and Web UI it ships and, if one is missing, says to reinstall; npm build commands appear only in a source checkout. Read their output before opening an issue</td></tr>
+<tr><th scope="row"><code translate="no">import openprogram</code> raises <code translate="no">ModuleNotFoundError</code></th><td>Product installs use a private Python on purpose. In a source checkout, <code translate="no">uv sync --locked</code>, then <code translate="no">uv run --project /path/to/OpenProgram python ...</code>, or activate its <code translate="no">.venv</code></td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.zshrc</code></pre>
+
+<details>
+<summary>What <code translate="no">openprogram doctor</code> checks</summary>
+<p>Python, Node and git; skill and plugin loading; provider credentials; MCP servers; disk cache; whether the worker is listening on 18100.</p>
+<p>The command shell, whether it is sandboxed, and one test command that must return UTF-8 text and its exit code (a failure is advice and blocks nothing).</p>
+<p>On Windows, also long-path configuration and a read-only Defender performance advisory. It never changes the registry, Defender exclusions or file ACLs.</p>
+</details>
+
+<details>
+<summary>Developing from source</summary>
+<ul>
+<li>Set up with <code translate="no">uv sync --locked --extra dev</code>. External harness development: <a href="../capabilities/installing-programs.html">Installing programs</a>.</li>
+<li>Some tests skip on bare CI because they need a configured provider in <code translate="no">$HOME</code>, so a Mac with credentials runs more. Search for <code translate="no">pytest.mark.skipif</code>.</li>
+</ul>
+</details>
+
+<p class="next"><a href="../start/GETTING_STARTED.html">Getting started</a></p>
+

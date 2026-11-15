@@ -9,14 +9,19 @@
  *   ↑ / ↓ recall   → fish-shell history, only when the slash menu isn't
  *                    holding the arrows
  *   slash menu     → arrows move the highlight, Enter picks, Esc closes
- *   Enter          → submit
+ *   Esc            → stops the running turn, whatever the draft holds
+ *                    (Claude Code / Codex); the draft is kept
+ *   Enter          → submit; during a run Enter adds the message to the
+ *                    current turn (steer) and ⌘/Ctrl+Enter queues it for
+ *                    the next turn
  */
 import React from "react";
 
 import type { SlashCommand } from "../slash/slash-commands";
-import type { useFileMention } from "../attach/use-file-mention";
+import type { useFileMention } from "../attach/mention/use-file-mention";
 import type { useHistoryRecall } from "./use-history-recall";
 import type { useSlashMenu } from "../slash/use-slash-menu";
+import type { RunningSendMode } from "../submit/use-chat-submit";
 
 export interface ComposerKeyDownOptions {
   input: string;
@@ -25,7 +30,10 @@ export interface ComposerKeyDownOptions {
   historyRecall: ReturnType<typeof useHistoryRecall>;
   slash: ReturnType<typeof useSlashMenu>;
   selectSlashCommand(cmd: SlashCommand): void;
-  submit(): void | Promise<void>;
+  submit(mode?: RunningSendMode): void | Promise<void>;
+  /** A turn is running and can be stopped from here. */
+  canStop?: boolean;
+  stop?(): void;
 }
 
 export function useComposerKeyDown({
@@ -36,11 +44,15 @@ export function useComposerKeyDown({
   slash,
   selectSlashCommand,
   submit,
+  canStop = false,
+  stop,
 }: ComposerKeyDownOptions) {
   const {
     atToken,
     fileMatches,
     fileMenuIndex,
+    fileMenuLoading,
+    fileMenuPos,
     setFileMenuIndex,
     pickFile,
     closeMenu: closeFileMenu,
@@ -62,6 +74,18 @@ export function useComposerKeyDown({
     // @file mention menu takes precedence — its arrows / enter / esc /
     // tab steer the menu, never fall through to history-recall or
     // the slash menu.
+    if (atToken && e.key === "Escape"
+        && (fileMenuLoading || fileMatches.length > 0 || fileMenuPos)) {
+      e.preventDefault();
+      closeFileMenu();
+      return;
+    }
+    if (atToken && fileMenuLoading) {
+      if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+        e.preventDefault();
+        return;
+      }
+    }
     if (atToken && fileMatches.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -79,11 +103,6 @@ export function useComposerKeyDown({
         if (picked) pickFile(picked);
         return;
       }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeFileMenu();
-        return;
-      }
     }
     // Fish-shell-style history recall. Mirrors the TUI's PromptInput
     // logic (cli/src/components/PromptInput/PromptInput.tsx). Only fires
@@ -91,11 +110,12 @@ export function useComposerKeyDown({
     // the first / last visual line of the textarea, so multi-line
     // editing still works naturally.
     if (e.key === "ArrowUp" && !slash.visible && !e.shiftKey
-        && !e.metaKey && !e.altKey) {
+        && !e.metaKey && !e.altKey && !e.ctrlKey) {
       if (recallPrevious(e, input, setInput)) return;
     }
     if (e.key === "ArrowDown" && !slash.visible && historyIndex >= 0
-        && !e.shiftKey && !e.metaKey && !e.altKey) {
+        && !e.shiftKey && !e.metaKey && !e.altKey && !e.ctrlKey
+        && e.currentTarget.selectionStart === e.currentTarget.selectionEnd) {
       e.preventDefault();
       recallNext(setInput);
       return;
@@ -128,18 +148,27 @@ export function useComposerKeyDown({
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        // activeIndex starts at -1 (no kbd nav yet); fall back to the
-        // first match so ``/sp<Enter>`` runs ``/spawn`` without the
-        // user having to press ArrowDown first.
-        const idx = slash.activeIndex >= 0 ? slash.activeIndex : 0;
-        const cmd = slash.matches[idx];
+        // activeIndex starts at -1 (no kbd nav yet); a fully typed name
+        // runs that command, otherwise the first match, so ``/sp<Enter>``
+        // runs ``/spawn`` without the user having to press ArrowDown first.
+        const typed = input.trim().toLowerCase();
+        const cmd = slash.activeIndex >= 0
+          ? slash.matches[slash.activeIndex]
+          : slash.matches.find((c) => c.name.toLowerCase() === typed) ?? slash.matches[0];
         if (cmd) selectSlashCommand(cmd);
         return;
       }
     }
+    if (e.key === "Escape" && canStop && stop
+        && !e.shiftKey && !e.metaKey && !e.altKey && !e.ctrlKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      stop();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void submit();
+      void submit(e.metaKey || e.ctrlKey ? "queue" : "steer");
     }
   };
 }

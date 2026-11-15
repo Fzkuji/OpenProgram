@@ -1,0 +1,95 @@
+<title>功能详解</title>
+<meta name="description" content="自动上下文、自写函数、对话分支、记忆、DAG 视图和多账户在使用中的样子。">
+<h1>功能详解</h1>
+<p class="note">为什么这样设计：<a href="../capabilities/agentic-programming/philosophy.zh.html">Agentic Programming 理念</a>。</p>
+
+<h2 id="automatic-context">自动上下文</h2>
+<p>每次 <code translate="no">Agent</code> 方法调用都是会话对话 DAG 的一个节点，与用户消息和 LLM 调用并列。嵌套调用自动串起来：<code translate="no">verify</code> 调用 LLM 时，已经能看到 <code translate="no">observe</code> 和 <code translate="no">click</code> 的返回。</p>
+<pre translate="no"><code>login_flow ✓ 8.8s
+├── observe ✓ 3.1s → "found login form at (200, 300)"
+├── click ✓ 2.5s → "clicked login button"
+└── verify ✓ 3.2s → "dashboard confirmed"</code></pre>
+<pre translate="no"><code>from openprogram import Agent
+
+class ExampleAgent(Agent):
+    method_options = {
+        'navigate': {'tool': True, 'expose': 'full', 'render_range': {'callers': 1}},
+    }
+
+    def navigate(self, target): ...</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">选项</th><th scope="col">控制</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">expose</code></th><td>之后的调用能看到它的什么：<code translate="no">io</code> 输入输出（工具默认）、<code translate="no">llm</code> 它的 LLM 交互、<code translate="no">full</code> 全部（其他情况默认）、<code translate="no">hidden</code> 没有节点</td></tr>
+<tr><th scope="row"><code translate="no">render_range={"callers": N}</code></th><td>函数自己能看到多少先前历史；<code translate="no">0</code> 完全隔离</td></tr>
+<tr><th scope="row"><code translate="no">render_range={"subcalls": N}</code></th><td>长循环中它自身帧内的历史</td></tr>
+</tbody>
+</table>
+
+<h2 id="functions-that-author-functions">编写函数的函数</h2>
+<p>编写和修复 <code translate="no">Agent</code> 方法是普通的 agent 工作，用文件编辑工具，遵循 <a href="../reference/api/agent.zh.html">agentic function API</a>。没有 <code translate="no">create()</code> 或 <code translate="no">fix()</code> 框架调用。skill 就是规范：文件位置、装饰器元数据、docstring 与 <code translate="no">content</code> 的区分、校验清单和冒烟测试。Program 在写、跑、败、修中变好。</p>
+
+<h2 id="conversation-as-a-git-dag">对话即 git DAG</h2>
+<p>每次交流是一个提交。分支是一等公民。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>分支</strong></th><td>从任意历史交流探索，保留原线索</td></tr>
+<tr><th scope="row"><strong>附加</strong></th><td>把另一会话的上下文作为带标签的用户消息带入</td></tr>
+<tr><th scope="row"><strong>合并</strong></th><td>把两个或更多分支合成一个汇总回复</td></tr>
+</tbody>
+</table>
+<p class="note">涉及文件的分支在隔离的 git worktree 中运行：分叉的是底层仓库，而不是消息的副本。</p>
+
+<h2 id="memory">自己写自己的记忆</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="完成的轮次累积到足够多，或对话安静 30 分钟。随后一次写入按主题把事实写进 topics 文件，timeline 由其重建。03:00 的整理拆分变大的文件、合并重复并修复链接。无效写入被拒绝，工作区不变。">
+  <defs><marker id="mm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">完成的轮次</text>
+  <text class="t-soft" x="0" y="60">累积到足够多，</text>
+  <text class="t-soft" x="0" y="80">或安静 30 分钟</text>
+  <line class="ln" x1="160" y1="28" x2="222" y2="28" marker-end="url(#mm-a)"/>
+  <text class="t-big" x="234" y="34">一次写入</text>
+  <text class="t-soft" x="234" y="60">按主题归类事实</text>
+  <line class="ln" x1="400" y1="28" x2="462" y2="28" marker-end="url(#mm-a)"/>
+  <text class="t-big" x="474" y="34">topics/</text>
+  <text class="t-soft" x="474" y="60">timeline/ 由其重建</text>
+  <text class="t-big" x="474" y="124">03:00 整理</text>
+  <text class="t-soft" x="474" y="150">拆分、合并、修复</text>
+  <path class="ln-faint" d="M520 70V104"/>
+  <text class="t-no" x="234" y="124">无效写入：被拒绝，</text>
+  <text class="t-no" x="234" y="146">工作区逐字节不变</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>完成的轮次</strong><small>累积到足够多，或安静 30 分钟</small></li>
+  <li><strong>一次写入</strong><small>按主题归类事实</small><p class="refused">无效写入：被拒绝，工作区逐字节不变</p></li>
+  <li><strong>topics/</strong><small>timeline/ 由其重建</small></li>
+  <li class="flow-end"><strong>03:00 整理</strong><small>拆分、合并、修复</small></li>
+</ol>
+</figure>
+<p>路径、命令、工具和写入保证：<a href="../capabilities/memory.zh.html">记忆</a>。</p>
+
+<h2 id="mini-dag">DAG 视图</h2>
+<p>右栏画出每个节点（用户消息、LLM 调用、代码 Call、附加）和边。随聊天滚动，高亮当前可见范围，点节点滚动到对应消息。<a href="../reference/design/runtime/dag/rendering.zh.html">渲染规则</a>。</p>
+
+<h2 id="multi-account">多账户与密钥轮换</h2>
+<p>账户就是 profile：provider 的一组独立凭据。API key 类 provider 同样持有一个密钥列表。</p>
+<pre translate="no"><code>openprogram providers login openai --account work
+openprogram providers use openai work
+openprogram providers use openai                     # 回到默认账户
+openprogram providers list</code></pre>
+<p class="note">Web（设置 → 大模型 Provider）和 TUI（<code translate="no">/login &lt;provider&gt;</code>，在终端完成 OAuth、设备码、CLI 导入或粘贴密钥）有相同的面板。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">密钥管理</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">添加</th><td>粘贴，先校验再加入列表。可为每个命名</td></tr>
+<tr><th scope="row">使用</th><td>被调用的是当前密钥。通过环境变量或配置设置的密钥会迁入</td></tr>
+<tr><th scope="row">轮换，可选，默认关</th><td>失败的密钥冷却，下一个接替</td></tr>
+<tr><th scope="row">冷却</th><td><code translate="no">429</code> 约 1 到 5 分钟，<code translate="no">402</code> 账单 24 小时，<code translate="no">5xx</code> 30 秒</td></tr>
+<tr><th scope="row">策略</th><td><code translate="no">in order</code>、<code translate="no">spread evenly</code>、<code translate="no">random</code>、<code translate="no">least used</code>，可用 ↑ ↓ 调优先级</td></tr>
+</tbody>
+</table>
+<p class="note"><a href="../reference/design/providers/auth/unified-account-management.zh.html">设计与状态</a>。</p>
+
+<h2 id="multi-agent">多 agent 与多 channel</h2>
+<p>会话已支持多个 <code translate="no">agent_id</code>：每行记录产生者，侧栏可按作者着色，channel（Telegram、Discord、Slack、微信）映射到按账户的身份。下一步：跨 channel 路由和声明式工具可用性。</p>

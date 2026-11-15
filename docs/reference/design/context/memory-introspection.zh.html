@@ -1,0 +1,152 @@
+<title>记忆的自我认知</title>
+<meta name="description" content="每一轮模型能知道自己记忆的哪些情况，八个其他智能体如何回答同样的问题，以及还计划做的改动。">
+<h1>记忆的自我认知</h1>
+<p>被问到记忆如何工作时，上下文里没有答案的智能体会搜索磁盘，描述它碰到的别的框架。本页讲每一轮告诉模型什么。记忆子系统本身见<a href="../memory/overview.html">记忆概览</a>。</p>
+
+<h2 id="signals">每一轮告诉模型什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">问题</th><th scope="col">当前答案</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">我有长期记忆吗？</th><td>暗示</td><td>延迟目录里的 <code translate="no">memory_search</code>、<code translate="no">memory_get</code>、<code translate="no">memory_update</code>；没有句子明说</td></tr>
+<tr><th scope="row">它在磁盘哪里？</th><td>未知</td><td><code translate="no">&lt;environment&gt;</code> 只写系统、shell、工作目录和仓库</td></tr>
+<tr><th scope="row">这块是记忆吗？</th><td>部分</td><td><code translate="no">fence_memory</code> 说是召回内容，没有归属和来源</td></tr>
+<tr><th scope="row">完整还是摘要？</th><td>未知</td><td>按令牌预算渲染，但没有说明</td></tr>
+<tr><th scope="row">怎么看其余内容？</th><td>知道</td><td><code translate="no">tool_search</code> 加载这三个工具</td></tr>
+<tr><th scope="row">是空还是坏了？</th><td>未知</td><td>见下文</td></tr>
+<tr><th scope="row">框架还是项目？</th><td>部分</td><td>主提示词提到 OpenProgram，但没说其状态位置</td></tr>
+</tbody>
+</table>
+
+<h2 id="block">记忆块</h2>
+<p><code translate="no">fence_memory</code> 用 <code translate="no">&lt;memory-context&gt;</code> 和一句说明包裹两条路径，这句话的目的是不让召回的事实被当成新请求。</p>
+<table class="stack">
+<thead><tr><th scope="col">路径</th><th scope="col">内容</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">常驻</th><td>各层 <code translate="no">MEMORY.md</code>：先导航后核心，由通用到具体（<code translate="no">LocalMemoryBackend.system_prompt</code>）</td><td>系统提示，L1 order 30</td></tr>
+<tr><th scope="row">每轮召回</th><td>本轮搜索结果（<code translate="no">search</code>）</td><td>当前用户消息内的前缀</td></tr>
+</tbody>
+</table>
+<p class="note">包裹不是幂等的：<code translate="no">sanitize_context</code> 会连内容删掉整个 <code translate="no">&lt;memory-context&gt;</code> 块，包两次得到空块。身份说明只能替换开场句，不能再加一层。</p>
+
+<h2 id="silence">静默失败</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层</th><th scope="col">失败时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_core_block</code>、<code translate="no">system_prompt</code></th><td><code translate="no">OSError</code>：空字符串，与文件没内容相同</td></tr>
+<tr><th scope="row"><code translate="no">ScopedBackend._read</code></th><td>任何异常：空字符串</td></tr>
+<tr><th scope="row"><code translate="no">_build_memory</code></th><td>任何异常：空字符串</td></tr>
+<tr><th scope="row"><code translate="no">assemble_sections</code></th><td>跳过失败的成分，丢弃空字符串</td></tr>
+<tr><th scope="row"><code translate="no">build_system_prompt</code></th><td>退回智能体的内联提示</td></tr>
+</tbody>
+</table>
+<p class="note">在 required 策略下这些情况抛 <code translate="no">MemoryPolicyError</code> 并结束本轮。否则 <code translate="no">require_or_empty</code> 记录 <code translate="no">MEMORY_UNAVAILABLE</code> 并发出 <code translate="no">memory.degraded</code>，模型看不到。</p>
+<table class="stack">
+<thead><tr><th scope="col">状态</th><th scope="col">模型看到</th><th scope="col">应得出</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">memory.backend = none</code></th><td>什么都没有</td><td>无需提及，用户的决定</td></tr>
+<tr><th scope="row">工作区为空</th><td>什么都没有</td><td>还没有记录，正常</td></tr>
+<tr><th scope="row">读取失败</th><td>什么都没有</td><td>暂不可用，绝不是“用户没告诉过我”</td></tr>
+</tbody>
+</table>
+
+<h2 id="matrix">八家实现</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">说明有记忆</th><th scope="col">默认工具</th><th scope="col">空或失败</th><th scope="col">宿主与项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram</th><td>只有名字</td><td>3 个，延迟</td><td>静默</td><td>只有名字</td></tr>
+<tr><th scope="row">hermes-agent</th><td>有，最明确</td><td>1 个（增、替换、删）</td><td>空时静默；工具调用会报告</td><td>有：记忆描述用户</td></tr>
+<tr><th scope="row">openclaw</th><td>有</td><td>2 个</td><td>三种状态都可见</td><td>有</td></tr>
+<tr><th scope="row">opencode</th><td>依模型而定</td><td>0；read、write、grep</td><td>静默</td><td>仅路径</td></tr>
+<tr><th scope="row">pi-mono</th><td>无</td><td>0</td><td>静默</td><td>仅路径</td></tr>
+<tr><th scope="row">claude-code</th><td>有，带路径</td><td>0；文件走通用工具</td><td>仅子智能体有占位</td><td>有：五种来源标注</td></tr>
+<tr><th scope="row">codex-cli</th><td>启用时有</td><td>4 个，两个开关默认关</td><td>缺记忆静默；失效指令会通告</td><td>有</td></tr>
+<tr><th scope="row">weclaw</th><td>无此概念</td><td>0</td><td>不适用</td><td>无</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">pi-ai</code> 是 pi-mono 传输层的只读快照：没有智能体循环和提示组装，所有问题都不适用。</p>
+
+<details id="marker">
+<summary>各家如何注入和标识记忆</summary>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">注入</th><th scope="col">标识</th></tr></thead>
+<tbody>
+<tr><th scope="row">hermes-agent</th><td>三段式提示的易变段，会话开始时快照（<code translate="no">agent/system_prompt.py</code>）</td><td>横幅、标题和实时字符计数（<code translate="no">tools/memory_tool.py</code>）</td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no"># Project Context</code> 段，<code translate="no">MEMORY.md</code> 排最后（<code translate="no">agents/system-prompt.ts</code>）</td><td>标题、每文件介绍、<code translate="no">## MEMORY.md</code>；<code translate="no">## Memory Recall</code> 指明要调用的工具</td></tr>
+<tr><th scope="row">opencode</th><td>一个提示项；嵌套 <code translate="no">AGENTS.md</code> 作为 read 工具后缀（<code translate="no">session/instruction.ts</code>、<code translate="no">tool/read.ts</code>）</td><td>一行路径；嵌套内容在 <code translate="no">&lt;system-reminder&gt;</code> 中</td></tr>
+<tr><th scope="row">pi-mono</th><td>身份和技能之间的 <code translate="no">&lt;project_context&gt;</code>（<code translate="no">core/system-prompt.ts</code>）</td><td>标签和每文件 <code translate="no">path</code> 属性；从不提记忆</td></tr>
+<tr><th scope="row">claude-code</th><td>用法说明在系统提示；内容在开头的合成用户消息</td><td>外层 <code translate="no">&lt;system-reminder&gt;</code>；每个文件标注路径、归属和范围</td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">AGENTS.md</code> 在 user 角色片段，记忆摘要在 developer 角色片段</td><td><code translate="no"># AGENTS.md instructions</code>、<code translate="no">&lt;INSTRUCTIONS&gt;</code>；摘要前后有分隔行</td></tr>
+<tr><th scope="row">weclaw</th><td>配置的静态字符串（<code translate="no">agent/cli_agent.go</code>）</td><td>无</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">标识应回答</th><th scope="col">谁回答了</th></tr></thead>
+<tbody>
+<tr><th scope="row">这块是什么？</th><td>claude-code、openclaw、hermes；OpenProgram 只说是召回内容</td></tr>
+<tr><th scope="row">谁写的？</th><td>claude-code 最精确</td></tr>
+<tr><th scope="row">怎么看更多？</th><td>openclaw、claude-code、hermes</td></tr>
+<tr><th scope="row">现在有多少？</th><td>只有 hermes</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="introspect">
+<summary>工具和失败处理细节</summary>
+<ul>
+<li>openclaw 的记忆插件占默认插槽；工具描述要求必须先召回，并要求把 <code translate="no">disabled=true</code> 告诉用户。检索失败返回 <code translate="no">disabled</code>、<code translate="no">unavailable</code>、警告和建议操作。启动模板声明空工作区是正常的。</li>
+<li>hermes 没有 list 动作，每次写入都返回完整列表。</li>
+<li>codex-cli 有 List、Read、Search、AddAdHocNote，受 <code translate="no">Feature::MemoryTool</code>（关）和 <code translate="no">memories.dedicated_tools</code> 控制。</li>
+<li>OpenProgram 的记忆写入器用 <code translate="no">setting_sources=[]</code> 运行 Claude Code SDK，宿主的 <code translate="no">CLAUDE.md</code> 进不去（<code translate="no">state/memory/agent_runtime/claude_code.py</code>）。读记忆的智能体没有对应的说明。</li>
+</ul>
+</details>
+
+<h2 id="plan">改动</h2>
+<table class="stack">
+<thead><tr><th scope="col">改动</th><th scope="col">内容</th><th scope="col">位置</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">A. 目录列出记忆</th><td>三个 <code translate="no">memory_*</code> 工具进默认集并延迟</td><td><code translate="no">programs/__init__.py</code></td><td>已实现</td></tr>
+<tr><th scope="row">B. 常驻块身份</th><td>在 <code translate="no">fence_memory</code> 旁加 <code translate="no">fence_core</code>，共用 <code translate="no">sanitize_context</code>，以 <code translate="no">&lt;memory&gt;</code> 开场。召回路径不变</td><td><code translate="no">state/memory/backend.py</code>、<code translate="no">local_backend.py</code></td><td>未实现</td></tr>
+<tr><th scope="row">C. 三种状态</th><td>关闭：无。为空：一行，一切正常。失败：一行，缺失不说明任何事</td><td><code translate="no">_build_memory</code></td><td>未实现</td></tr>
+<tr><th scope="row">D. 宿主</th><td><code translate="no">&lt;environment&gt;</code> 写明框架和它的状态目录</td><td><code translate="no">environment_block</code></td><td>未实现</td></tr>
+</tbody>
+</table>
+<details>
+<summary>B 和 D 之后模型看到什么</summary>
+<pre translate="no" tabindex="0"><code>&lt;memory&gt;
+[System note: this is your long-term memory, the always-on summary the
+ memory subsystem keeps at ~/.openprogram/memory. It is written in the
+ background, not by the user, and it is a summary under a token budget.
+ Browse the rest with memory_get / memory_search.]
+…rendered MEMORY.md…
+&lt;/memory&gt;
+
+&lt;environment&gt;
+OS: Darwin · Shell: bash (/bin/bash)
+Harness: OpenProgram · its own state lives at ~/.openprogram (not the project you are working on)
+…
+&lt;/environment&gt;</code></pre>
+</details>
+
+<h3 id="cost">每轮代价</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方案</th><th scope="col">令牌</th></tr></thead>
+<tbody>
+<tr><th scope="row">目录里三个名字（已选）</th><td>8</td></tr>
+<tr><th scope="row">三份 schema 常驻（已否）</th><td>约 1045：<code translate="no">memory_search</code> 208、<code translate="no">memory_get</code> 216、<code translate="no">memory_update</code> 621；很少调用</td></tr>
+<tr><th scope="row">文字身份（B 和 D）</th><td>约 65，在缓存前缀内</td></tr>
+<tr><th scope="row">C 之后的空或失败轮</th><td>一行状态替换常驻块，净节省</td></tr>
+</tbody>
+</table>
+<p class="note">两者都要。模型信任工具列表，而且便宜；文字回答名字答不了的：位置、完整性、作者。</p>
+
+<h2 id="ideal">更远的目标</h2>
+<table class="stack">
+<thead><tr><th scope="col">目标</th><th scope="col">需要</th><th scope="col">暂不做的原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">记忆自述：名称、根路径、主题数、最后写入、预算占用</th><td><code translate="no">MemoryBackend.describe()</code></td><td>接口保持小；C 已覆盖失败</td></tr>
+<tr><th scope="row">每个成分声明来源，形如 <code translate="no">Contents of {path} ({owner})</code></th><td><code translate="no">origin</code> 字段；改全部构建函数；所有缓存前缀失效</td><td>只有一块出问题；没有标签的成分（<code translate="no">base</code>、<code translate="no">inline_prompt</code>、<code translate="no">current_date</code>）可以等</td></tr>
+<tr><th scope="row"><code translate="no">context_status</code> 工具：本轮看到什么、哪块是记忆、缺了什么</th><td>把 <code translate="no">context/breakdown.py</code> 开放给模型</td><td>A 和 C 已给出所需信息</td></tr>
+<tr><th scope="row">状态行带可核对的数量</th><td>同样需要 <code translate="no">describe()</code></td><td>和第一项一起做，接口只改一次</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="composition.html">组成：每次调用里还有什么</a></p>

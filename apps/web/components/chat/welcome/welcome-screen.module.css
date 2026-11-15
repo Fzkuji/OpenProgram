@@ -1,0 +1,35 @@
+/* Fills the whole chat area (.chat-area is the positioned ancestor and
+   stops scrolling while the welcome is up), not just the message column.
+   The mask fades the scene out toward the edges and the composer. */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  -webkit-mask-image: radial-gradient(ellipse 70% 62% at 50% 40%, #000 35%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 62% at 50% 40%, #000 35%, transparent 100%);
+  animation: backdropIn 0.8s ease-out both;
+}
+
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The chat got its first message: the rain stops and fades (STOP_MS in
+   welcome-screen.tsx). An animation, since backdropIn's fill holds opacity. */
+.backdropOut {
+  animation: backdropOut 1.2s ease-in both;
+}
+
+@keyframes backdropOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop { animation: none; }
+  .backdropOut { display: none; }
+}

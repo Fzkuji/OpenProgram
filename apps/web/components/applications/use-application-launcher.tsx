@@ -2,10 +2,12 @@
 import { useState } from "react";
 import { applicationRequest, type ApplicationDefinition } from "@/lib/net/applications";
 import { useFolderPicker } from "@/components/ui/folder-picker";
-import { wsRequest } from "@/lib/net/ws-request";
+import { wsRequest } from "@/lib/net/ws/ws-request";
 import { useCurrentProject } from "@/lib/files/files-shared";
 import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { useSessionStore } from "@/lib/session-store";
+import { SimpleSelect } from "@/components/ui/select";
 
 export function useApplicationLauncher(onOpened?: () => void) {
   const { text } = useTranslation();
@@ -27,11 +29,17 @@ export function useApplicationLauncher(onOpened?: () => void) {
           return;
         }
       }
+      // The window belongs to the current chat, or to the one that was
+      // current before the New tab page: while it is open, the
+      // application's entries are resident for that chat (program-model §5).
+      const sessions = useSessionStore.getState();
+      const sessionId = sessions.currentSessionId || sessions.lastSessionId || "";
       const opened = await applicationRequest<{ instance_id: string }>(`/api/applications/${encodeURIComponent(application.id)}/open`, "POST", {
         project_id: application.scope === "project" ? binding : "",
+        session_id: sessionId,
       });
       setChoice(null);
-      useCenterTabs.getState().openApplicationTab(application.id, opened.instance_id, application.display_title || application.title);
+      useCenterTabs.getState().openApplicationTab(application.id, opened.instance_id, application.display_title || application.title, sessionId);
       onOpened?.();
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }
@@ -51,10 +59,7 @@ export function useApplicationLauncher(onOpened?: () => void) {
   return { launch, error, dialog: <>
         {choice && <section aria-label={text("Choose application project", "选择应用项目")} className="grid gap-2">
           <label htmlFor="application-project">{text("Project for", "应用项目：")} {choice.application.display_title || choice.application.title}</label>
-          <select id="application-project" value={projectId} onChange={event => setProjectId(event.target.value)} className="rounded border border-border bg-surface p-2">
-            <option value="">{text("Choose a project…", "选择项目…")}</option>
-            {choice.projects.map(item => <option key={item.id} value={item.id}>{item.name} — {item.path}</option>)}
-          </select>
+          <SimpleSelect label={text("Project", "项目")} id="application-project" value={projectId} onValueChange={setProjectId} className="w-full" placeholder={text("Choose a project…", "选择项目…")} options={choice.projects.map(item => ({ value: item.id, label: `${item.name} — ${item.path}` }))} />
           <button type="button" disabled={!projectId} onClick={() => void launch(choice.application, projectId)}>{text("Open application", "打开应用")}</button>
           <button type="button" onClick={() => void chooseFolder()}>{text("Choose folder…", "选择文件夹…")}</button>
           <button type="button" onClick={() => setChoice(null)}>{text("Cancel", "取消")}</button>

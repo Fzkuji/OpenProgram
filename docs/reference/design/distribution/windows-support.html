@@ -1,0 +1,278 @@
+<title>Windows support</title>
+<meta name="description" content="Windows support levels, what each one guarantees, and where it is implemented.">
+<h1>Windows support</h1>
+<table class="stack" id="levels">
+<caption>Independently useful levels</caption>
+<thead><tr><th scope="col">Level</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">W0</th><td>Community fixes accepted, known gaps documented, unsupported entries fail with a message. No promise</td></tr>
+<tr><th scope="row">W1</th><td>Native CLI and server, Ink and browser UI, MCP tokens, Windows CI contracts. Rich fallback without raw input. Sandbox execution and Desktop are outside W1</td></tr>
+<tr><th scope="row">W2</th><td>Release archives, PowerShell and Command Prompt installers, Windows <code translate="no">doctor</code> checks. Works without a certificate and where Smart App Control refuses the App installer</td></tr>
+<tr><th scope="row">W3</th><td>Electron Desktop with updates. Signed when a certificate exists. Otherwise an <code translate="no">-unsigned.exe</code> installer whose limits the user is told up front: SmartScreen needs <strong>More info → Run anyway</strong>, and Smart App Control has no per-app exception</td></tr>
+<tr><th scope="row">W4</th><td>Optional WSL2 and bubblewrap isolation. The native CLI never depends on WSL</td></tr>
+<tr><th scope="row">Thin shell</th><td>Shell, seed, <code translate="no">openprogram-launcher.exe</code>, Shift check, the seed branch of <code translate="no">install-release.ps1</code></td></tr>
+<tr><th scope="row">Local refresh</th><td>Native publication with compensating rollback</td></tr>
+</tbody>
+</table>
+
+<h2>Engineering rules</h2>
+<ul>
+<li>Platform behaviour lives in <code translate="no">openprogram/host/_platform/</code> (filesystem, locking, processes, process ownership, command shell, terminal, environment) or an adapter it selects.</li>
+<li>Prefer capability detection. Unsupported features fail at their entry point, not with a late <code translate="no">NotImplementedError</code>.</li>
+<li>A weaker replacement for a POSIX safety property is an explicit, documented decision.</li>
+<li>A fix is incomplete until a Windows CI contract covers it.</li>
+<li>POSIX <code translate="no">0600</code>, <code translate="no">0700</code> are not Windows requirements: the profile's inherited ACL stays, and no step removes inheritance or rewrites entries. Atomic replace and process-safe locks are still required.</li>
+</ul>
+
+<h2 id="w1">W1: native CLI and server</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source installer</th><td>Checkout <code translate="no">.venv</code>, npm lockfile, Web and Ink builds, selected extras, <code translate="no">openprogram.cmd</code> on user PATH. <code translate="no">-Minimal</code>: Python CLI and server only</td></tr>
+<tr><th scope="row">Launchers</th><td>One <code translate="no">openprogram.cmd</code>: PowerShell prefers a <code translate="no">.ps1</code> of the same name and the default Restricted policy refuses it, so installers delete old ones. PowerShell scripts: UTF-8 with BOM. Batch: BOM-free UTF-8 with an ASCII code-page preamble, delayed expansion off, percent signs escaped, caller code page restored, exit status kept. Installers run as <code translate="no">powershell.exe -ExecutionPolicy Bypass -File</code> for that process only; no machine execution-policy or locale changes</td></tr>
+<tr><th scope="row">One batch writer</th><td>The release installer writes every <code translate="no">.cmd</code> through <code translate="no">Write-CmdLauncher</code>; the store's <code translate="no">bin-openprogram.cmd</code> and the source installer carry the same preamble, and a test keeps the three equal. The launcher on PATH in front of a version store switches the console before it reads the store's path, then starts the store's launcher without <code translate="no">call</code>, which would double carets in quoted arguments, and passes the caller's code page on in <code translate="no">_OPENPROGRAM_CALLER_CODEPAGE</code> for that launcher to restore</td></tr>
+<tr><th scope="row">Ink</th><td>Capability-based on every OS. Windows Terminal and ConPTY run full-screen; MinTTY and others fall back to Rich with stdio restored. Tokenizer splits control bytes from printable spans; bracketed paste stays one event</td></tr>
+<tr><th scope="row">MCP tokens</th><td>Unique temp file plus atomic hard link. Reads revalidate the file and its ancestors</td></tr>
+<tr><th scope="row">Processes</th><td>PowerShell CIM, not WMIC. Liveness and creation time from read-only native queries; signal zero is never used. No signal reaches another process, so <code translate="no">worker stop</code> names the worker in <code translate="no">worker.stop</code>, which the worker polls to shut down in order; five seconds unanswered ends its tree. <code translate="no">--print</code> treats Ctrl-Break as it does Ctrl-C. A blocking wait wakes for no signal there, so the run waits in polls of at most half a second, the Worker socket included</td></tr>
+<tr><th scope="row">Worker identity</th><td>A command or the App recognises the worker from outside it. msvcrt refuses reads of a byte another handle has locked, so the file lock sits on a byte far past the data and <code translate="no">worker.lock</code> stays readable, naming its holder as on POSIX. The lock is the only proof: a live process named in <code translate="no">worker.pid</code> is not taken for the worker. <code translate="no">web auth-url</code>, <code translate="no">worker status</code> and <code translate="no">worker stop</code> rely on it</td></tr>
+<tr><th scope="row">Worker at logon</th><td>A least-privilege per-user scheduled task, one per profile, retried after a failed run. Its launcher sets the profile and state folder, since the task does not inherit the installing shell's environment. Once installed it owns the worker: start and restart rewrite its launcher for the current runtime and start the task; stop asks the worker, then ends the task run so the retry does not bring it back</td></tr>
+<tr><th scope="row">File journals</th><td>Shared cross-process lock. Apply and rollback keep separate guard files</td></tr>
+<tr><th scope="row">Text and bytes</th><td>Text opens name UTF-8, except six the repository contract counts; each text-mode subprocess under <code translate="no">openprogram/state</code> does too. The <code translate="no">.pth</code> file of an application environment is written in the locale encoding, the one Python's <code translate="no">site</code> module reads on every supported version. Descriptors written with <code translate="no">os.write</code> are binary, so a line ends in LF and byte offsets hold</td></tr>
+<tr><th scope="row">UTF-8 mode</th><td>Every launcher and installer starts Python with <code translate="no">-X utf8</code>: <code translate="no">openprogram-launcher.exe</code>, each <code translate="no">openprogram.cmd</code>, the seed installer, the command-line installer's verifier, and a worker restarted from such a Python. Release workflows leave <code translate="no">PYTHONUTF8</code> unset. <code translate="no">-I</code> drops <code translate="no">PYTHONUTF8</code>, so the mode travels as an argument. The <code translate="no">.pth</code> file keeps the locale encoding in this mode. <code translate="no">netstat</code>, <code translate="no">schtasks</code> and the task-service PowerShell answer in the OEM code page, so their output is read as bytes and decoded with it</td></tr>
+<tr><th scope="row">State file replace</th><td><code translate="no">filesystem.replace_file</code> publishes every file written as a temporary file and renamed: config, credentials, schedules, the Agent registry, projects, checkpoints, update records. It retries for one second while another handle, an indexer or an antivirus scan holds the destination. An unlocked config read retries the same way. Seven renames stay direct; the repository contract names each with its reason</td></tr>
+<tr><th scope="row">Conversation folder rename</th><td>Windows refuses to rename a folder while a file inside it is open. <code translate="no">move_session_folder</code> retries for one second, then raises <code translate="no">SessionFolderBusy</code> with the folder where it was. Nothing is copied instead. See <a href="../runtime/session/operations.html#held-folder">a held conversation folder</a></td></tr>
+<tr><th scope="row">Shadow repository</th><td>Every Git command pins its own settings: no line-ending conversion, file names unquoted, long paths on, no commit signing. The user's Git configuration does not reach it. A restored file is the committed bytes</td></tr>
+<tr><th scope="row">Checkpoints, backup, restore</th><td>Path-based fallback without descriptor-relative operations: rejects symlinks and junctions, revalidates parents, binary atomic writes</td></tr>
+<tr><th scope="row">Workspace review</th><td>Reads Git metadata and objects in bounded batches; Git invocations do not grow with changed files</td></tr>
+<tr><th scope="row">Shell tools</th><td>Git Bash when installed, otherwise PowerShell 7, then Windows PowerShell; never <code translate="no">cmd.exe</code>. One function picks it: <a href="#command-shell">the command shell</a>. The system prompt names the one in use and its syntax, not <code translate="no">COMSPEC</code>; with the sandbox on it names WSL bash with Linux paths, and the host shell for escalated commands. Each command is a Job Object, so stop ends its whole tree. No-window processes. Git Bash source goes through a temporary environment variable; Python children default to UTF-8</td></tr>
+<tr><th scope="row">PowerShell commands</th><td>UTF-16 source in one base64 argument, so no quoting layer touches it. No profile, non-interactive, text output, and execution policy <code translate="no">Bypass</code> for that process: <code translate="no">npm</code> and <code translate="no">pnpm</code> resolve to <code translate="no">.ps1</code> shims the default policy refuses; Group Policy still wins. Input, output and pipes are UTF-8; progress records are off. The last program's exit code is passed on, where PowerShell alone reports 0 or 1</td></tr>
+<tr><th scope="row">Hooks</th><td>A <code translate="no">config.json</code> hook runs in the same shell as the command tool, not <code translate="no">cmd.exe</code>, with the event as UTF-8 on standard input and no console window. A program that exits 2 still denies</td></tr>
+<tr><th scope="row">Paths in permission rules</th><td>A rule and a call meet as one resolved name: either slash, <code translate="no">\\?\</code> and <code translate="no">\\.\</code> prefixes removed, short names expanded, trailing dots, spaces and <code translate="no">::$DATA</code> dropped. Deny and ask ignore case, cover a file's named streams and resolve a relative path against the conversation's working directory; allow compares the full path in the case the volume stores. A share is <code translate="no">\\server\share</code> with backslashes throughout or <code translate="no">//server/share</code>; deny and ask also cover the mixed spelling</td></tr>
+<tr><th scope="row">Commands in allow rules</th><td>A rule reads a command as POSIX shell. Where a command may run in PowerShell, a prefix or pattern allow rule never matches one with <code translate="no">{</code>, <code translate="no">}</code> or <code translate="no">,</code>, whose PowerShell meaning that reading misses. "Always allow" on such a command saves its exact text, which matches that text only. Deny and ask rules still match it</td></tr>
+<tr><th scope="row">SSH environments</th><td>Windows' OpenSSH client has no connection sharing, so every call opens its own connection. Remote text is read as UTF-8; the client opens no console window</td></tr>
+<tr><th scope="row">Links copied into a worktree</th><td>A link named by <code translate="no">.worktreeinclude</code> is recreated as a directory link when it points at a directory. Without the right to create links the file is reported as not copied</td></tr>
+<tr><th scope="row">Program discovery</th><td>Direct metadata lookups, not a full import-to-distribution map per connection</td></tr>
+<tr><th scope="row">Session store shutdown</th><td>Cancels timers, waits for in-flight writes outside locks, flushes the latest snapshot. Failed writes stay dirty. No threads: save synchronously</td></tr>
+<tr><th scope="row">LF edits</th><td>Match CRLF files and keep the ending; duplicates rejected; mixed endings need exact text</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Self-update and CI</summary>
+<p>Journal reads are portable, but the in-conversation controller exists only on macOS. Chat prepare and retry check the capability in <code translate="no">host/_platform/environment.py</code> before creating state, and point to the CLI and Desktop updaters. Status and cancellation are not gated. Native candidate tests and activation remain unimplemented.</p>
+<p>Push and pull-request checks supersede older runs on the same branch. Installation acceptance and scheduled smoke runs use unique groups. Both architectures run in every matrix. The core job covers compatibility seams, checkpoints, backup, upgrade, installer contract and Task Scheduler; the smoke job does a full PowerShell install, starts the worker, runs <code translate="no">doctor</code> and stops it.</p>
+</details>
+
+<h2 id="w2">W2: release installer</h2>
+<p>A native runner builds <code translate="no">OpenProgram-&lt;version&gt;-runtime-windows-x86_64.zip</code> with its SHA-256 file; arm64 is built when <code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code> is on. One <code translate="no">runtime/</code> root. <code translate="no">tui.ink</code> is recorded only after an Ink startup probe succeeds.</p>
+<ol>
+<li><code translate="no">install.ps1</code> (or <code translate="no">install.cmd</code>, which fetches it) resolves a stable release, stops and names the platform when the release manifest has no package for it, and hands off to the installer from that immutable tag. On Windows 11 on Arm a release without an Arm package installs the x64 one, which runs under emulation, and says so.</li>
+<li>For that fallback, check that the tagged installer can pick the x64 package; refuse the release by name otherwise, before any download.</li>
+<li>Check free space, download with resume, validate the checksum and every ZIP entry; reject links and reparse points.</li>
+<li>Verify capabilities and cold-start a worker in isolated staging state, under an exclusive per-runtime lock.</li>
+<li>Move the verified candidate into its version directory.</li>
+<li>Atomically replace the <code translate="no">.cmd</code> launcher, keeping <code translate="no">openprogram.previous.cmd</code>.</li>
+</ol>
+<p>Managed upgrades select the Windows ZIP and tagged PowerShell installer through the compatibility seam. A failure while piped into <code translate="no">iex</code> sets the exit code and throws, so the window stays open.</p>
+<details>
+<summary>Activation and extraction details</summary>
+<ul>
+<li>Versions stay in directories and the previous launcher is retained. Cached versions are revalidated.</li>
+<li>The launcher is prepared and snapshotted first. A failed replacement restores it; a failed restore keeps the original at a reported path.</li>
+<li>ZIP names are validated before writing; files stream through extended-length paths, checking expanded bytes and lengths. Inspection and cleanup use the same APIs. The long-path registry value is untouched.</li>
+<li>PowerShell passes <code translate="no">NullString</code> for the .NET replace, because PowerShell 5 otherwise binds <code translate="no">$null</code> as an invalid empty path.</li>
+<li>Build helpers restore workspace, toolchain, download and browser-cache environment, including on failure.</li>
+<li><code translate="no">doctor</code> reports long-path and Defender state as read-only advice.</li>
+</ul>
+</details>
+
+<h2 id="w3">W3: Desktop</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Build</th><td>x64 per-user NSIS, assisted, from the thin shell and a seed unpacked in the App (arm64 follows the W2 switch). The Release job requires the seed to be inside the App</td></tr>
+<tr><th scope="row">Release gate</th><td>The Windows leg runs the Windows contracts (<code translate="no">scripts/release/windows-contracts.txt</code>), then installs the App it built, starts it to a healthy worker, sends one turn through it and uninstalls. The turn goes to a loopback stand-in model whose one reply calls the command tool with <code translate="no">echo 你好; exit 3</code>; the text and the exit code must come back. A failure leaves only that App out, as for macOS and Linux. The Windows ZIP install runs the same turn before <code translate="no">cli-verified</code></td></tr>
+<tr><th scope="row">Signing</th><td>With <code translate="no">WINDOWS_CSC_LINK</code> and <code translate="no">WINDOWS_CSC_KEY_PASSWORD</code>: <code translate="no">OpenProgram.exe</code> and the installer Authenticode Valid, or the job fails. Without them: both must be NotSigned and the installer is renamed <code translate="no">-unsigned.exe</code></td></tr>
+<tr><th scope="row">Certificate</th><td><code translate="no">WINDOWS_CSC_LINK</code> is a PFX, base64 or an HTTPS link; <code translate="no">WINDOWS_CSC_KEY_PASSWORD</code> opens it. Both present make the leg signed. Public certificate authorities keep code-signing keys on hardware or in a cloud service, so an exportable PFX is rare; a cloud signing service needs a signing step of its own</td></tr>
+<tr><th scope="row">What an unsigned installer shows</th><td>The browser may say the file is not commonly downloaded. Starting it shows <strong>Windows protected your PC</strong> with an unknown publisher; <strong>More info → Run anyway</strong> continues, with no administrator prompt. Smart App Control blocks it with no override. Files signed with a new certificate can meet the same warning until they gain reputation</td></tr>
+<tr><th scope="row">Runtime</th><td>Sealed versions under <code translate="no">%USERPROFILE%\.openprogram\runtime</code>, unpacked from the seed on first start behind a progress page. A link in the seed becomes a junction for a folder and a second name for a file, since a symbolic link needs a privilege. Terminal: Windows PowerShell, else <code translate="no">COMSPEC</code>, via <code translate="no">node-pty</code> ConPTY. Browser import from normal paths</td></tr>
+<tr><th scope="row">Worker process</th><td>The App starts the worker detached through <code translate="no">openprogram-launcher.exe</code>. A launcher with no console starts Python with no console window and hands it its own output handles, so the worker writes to <code translate="no">worker.log</code>; from a terminal it shares the terminal. Arguments are read from the wide command line as UTF-8</td></tr>
+<tr><th scope="row">Inherited handles</th><td>Node starts the launcher with handle inheritance on, so it first closes every inherited handle except its standard ones. The App's DevTools listening socket would otherwise stay open for the worker's whole life, and the reopened App could not take its port</td></tr>
+<tr><th scope="row">Seed install from a terminal</th><td>Windows' <code translate="no">tar.exe</code> reads its arguments in the ANSI code page, so the installer runs it inside the destination with an ASCII path relative to the archive; a profile folder outside the code page (a Chinese user name on English Windows) unpacks as any other, and the <code translate="no">openprogram</code> command it leaves on PATH runs from such a folder in any console code page. <code translate="no">tar.exe</code> is called by its <code translate="no">System32</code> path</td></tr>
+<tr><th scope="row">Installer hooks</th><td>A fresh install runs no PowerShell before it installs. An upgrade over an install with <code translate="no">OpenProgram.exe</code> and <code translate="no">resources\app.asar</code> first stops the processes under it, and stops the install only when they keep running. Each hook's text goes to <code translate="no">powershell.exe -Command</code>, with its paths in environment variables: an execution policy covers script files only, and <code translate="no">-ExecutionPolicy Bypass</code> cannot beat one set by Group Policy. The release gate installs under a Group Policy that allows only signed scripts</td></tr>
+<tr><th scope="row">Uninstall</th><td>Removing the App stops the worker, asking it first, and removes its logon task; an upgrade or reinstall does neither. The state folder stays as it is: conversations, settings and the version store. A worker that will not stop does not block the uninstall, and an uninstaller run in place is never among the processes ended</td></tr>
+<tr><th scope="row">Application identity</th><td>The shell sets the application id <code translate="no">ai.openprogram.desktop</code>, the one the installer writes on the Start menu shortcut, before any window opens. Toasts, the taskbar button and its pin belong to that id</td></tr>
+<tr><th scope="row">Updater</th><td>Takes a sealed version through <code translate="no">openprogram upgrade --json</code>. The file <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>, or <code translate="no">-unsigned.exe</code>, is offered only when the release needs a newer shell. The running App's own signature fixes the update line: NotSigned is accepted only on an unsigned-built App, after size and SHA-256 passed; a signed App requires Valid and the same publisher. Failure deletes the candidate. Visible user handoff: <a href="automatic-updates.html">Automatic updates</a></td></tr>
+<tr><th scope="row">CI</th><td>x64 and arm64 install dependencies and native PTY, run Desktop contracts and Web tests</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Runtime preparation and version preflight</summary>
+<p>Local <code translate="no">dist:win</code> packaging with a full runtime:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Build</th><td>Unique staging directory under an exclusive lock</td></tr>
+<tr><th scope="row">Old payload</th><td>Stays until the replacement is ready and matches the Desktop version</td></tr>
+<tr><th scope="row">On failure</th><td>Old payload restored, or its backup kept at a reported path</td></tr>
+<tr><th scope="row">Deep or read-only files</th><td>Extended paths</td></tr>
+<tr><th scope="row">Directory links</th><td>Removed without following</td></tr>
+<tr><th scope="row">Installed App</th><td>Not replaced</td></tr>
+</tbody>
+</table>
+<p><code translate="no">verify-release-version.py --installed-app</code> takes the install directory or EXE, reads PE version metadata without launching, and requires agreement with the runtime manifest and embedded Python package metadata. A zero fourth component is normalized; nonzero is not dropped.</p>
+</details>
+
+<h2 id="local-refresh">Local refresh publication</h2>
+<p><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/release/windows-refresh-transaction.ps1"><code translate="no">windows-refresh-transaction.ps1</code></a> publishes ordered, already-verified sibling source and destination pairs for the App, CLI runtime and launchers. Loading it has no side effects.</p>
+<details>
+<summary>Transaction contract</summary>
+<ul>
+<li>Paths must not overlap; drive-relative paths and redirected ancestors are rejected. Extended paths, no ACL or machine changes.</li>
+<li>One exclusive OS lock in the first destination's parent. Payload inspection happens under it.</li>
+<li>Four callbacks: quiesce old, verify published, quiesce failed, restore old service. Each must return exactly Boolean true.</li>
+<li>A flushed JSON journal records every source, destination and backup. Publish in order, compensate in reverse.</li>
+<li>Success keeps originals and a receipt; no runtime tree is deleted. A failed shutdown or rollback keeps the journal and refuses later attempts.</li>
+<li>Compensating, not crash-atomic: recovery must inspect recorded paths, not trust the last flags.</li>
+<li>Still to build: freeze the checkout, one wheel for App and CLI, verify before stopping the worker, validate on the default profile and port, coordinate with CLI and Desktop install locks.</li>
+</ul>
+</details>
+
+<h2 id="w4">W4: command sandbox</h2>
+<p>The seam finds a real WSL2 distribution, verifies Bash and bubblewrap, probes a namespace, and translates paths with <code translate="no">wslpath</code>. Bubblewrap gives the Linux boundaries: read-only root, writable workspace roots, deny paths, PID/IPC/UTS namespaces, private temp, and a network namespace unless policy allows network.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">sandbox.mode</code></th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">off</code> (default)</th><td>Sandboxed only in a conversation with Sandbox on</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td>Every conversation, once the probe succeeds; otherwise native and unsandboxed</td></tr>
+<tr><th scope="row"><code translate="no">workspace-write</code></th><td>Reports the missing WSL2 or bubblewrap at the entry point; refuses the command only with <code translate="no">sandbox.unavailable_policy=refuse</code>, otherwise runs it in the host shell</td></tr>
+</tbody>
+</table>
+<p class="note">No probe changes ACLs, ownership, modes, Defender or WSL settings. AppContainer needs per-application capability and ACL work. Job Objects give CPU and process limits but no filesystem or network boundary.</p>
+<p>Without WSL2 the Sandbox switch is disabled and its hint says <strong>Sandbox unavailable: needs WSL2</strong>, what is missing and <code translate="no">wsl --install</code>; <code translate="no">doctor</code> says the same. <code translate="no">sandbox.unavailable_policy</code> defaults to <code translate="no">warn</code> on Windows and <code translate="no">refuse</code> elsewhere, so commands run in the host shell instead of all failing.</p>
+<details>
+<summary>Why this design</summary>
+<p>Claude Code (srt-win with a WFP sublayer) and Codex (<code translate="no">windows-sandbox-rs</code>, RestrictedToken and Elevated) sandbox natively; MiniMax Code vendors srt-win. A native sandbox is a Rust or C subsystem of ACLs, tokens and filters, so WSL2 stays for now and a native one follows Codex's RestrictedToken level later.</p>
+<p>Most Windows machines have no WSL2, and a <code translate="no">refuse</code> default made the switch mean "every command fails". The reason sits on the switch, the one control it concerns.</p>
+</details>
+
+<h2 id="command-shell">The command shell</h2>
+<p>Which shell a command and a hook run in, what the model is told about it, and how permission rules read PowerShell: <a href="windows-command-shell.html">Windows command shell</a>.</p>
+
+<h2 id="shortcut-keys">Shortcut keys in a browser on Windows and Linux</h2>
+<p>Hints and handlers ask <code translate="no">lib/shortcut-keys.ts</code>: ⌘ on macOS, Ctrl elsewhere. In the Desktop App the menu owns the keys below. In a browser tab the browser or the system acts on them first.</p>
+<table class="stack fixed" id="shortcut-collisions">
+<thead><tr><th scope="col">Key</th><th scope="col">In the page</th><th scope="col">The browser or system does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ctrl+N</th><td>New chat</td><td>Opens a browser window</td></tr>
+<tr><th scope="row">Ctrl+W</th><td>Close the focused pane</td><td>Closes the browser tab</td></tr>
+<tr><th scope="row">Ctrl+Shift+T</th><td>Reopen the last closed tab</td><td>Reopens the browser's last closed tab</td></tr>
+<tr><th scope="row">Alt+Space</th><td>Hold to dictate</td><td>Windows opens the window menu; some Linux desktops open a launcher</td></tr>
+<tr><th scope="row">Ctrl+Alt+arrows</th><td>Not bound: tiling keys are macOS only, and the menu shows no key elsewhere</td><td>Some Linux desktops switch workspaces</td></tr>
+<tr><th scope="row">Ctrl+K in a terminal</th><td>Not bound: the shell keeps it, so clearing the view has no key</td><td>None</td></tr>
+</tbody>
+</table>
+
+<h2 id="host-features">Features that depend on the operating system</h2>
+<p>Each feature either works or refuses with a sentence naming what this computer lacks. <code translate="no">GET /api/system/features</code> returns one row per feature for the worker's computer: <code translate="no">available</code>, a <code translate="no">reason</code>, and the <code translate="no">setting</code> key its control writes. Permission grants are a separate report: <a href="../runtime/security/system-access.html">System access</a>.</p>
+<table class="stack fixed" id="host-feature-table">
+<thead><tr><th scope="col">Feature</th><th scope="col">macOS</th><th scope="col">Windows</th><th scope="col">Linux</th></tr></thead>
+<tbody>
+<tr><th scope="row">Command sandbox</th><td>Seatbelt</td><td>bubblewrap inside the default WSL2 distribution; see <a href="#w4">W4</a> for what each mode does without it</td><td>bubblewrap; refuses with the reason when user namespaces are blocked</td></tr>
+<tr><th scope="row">Sandbox network rules by domain</th><td>Works</td><td>Refuses: needs macOS</td><td>Refuses: needs macOS</td></tr>
+<tr><th scope="row">Computer use, application windows</th><td>Accessibility and ScreenCaptureKit</td><td>UI Automation and <code translate="no">PrintWindow</code>; needs <code translate="no">comtypes</code></td><td>AT-SPI and <code translate="no">xdotool</code> on X11. Wayland and headless sessions refuse</td></tr>
+<tr><th scope="row">Computer use, <code translate="no">code</code></th><td>Works</td><td>Not offered</td><td>Not offered</td></tr>
+<tr><th scope="row">Recording an application's sound</th><td>ScreenCaptureKit</td><td>WASAPI process loopback</td><td><code translate="no">parec</code> and <code translate="no">pactl</code>; refuses without them</td></tr>
+<tr><th scope="row">Text read off a screenshot</th><td>Vision</td><td>tesseract when installed, else none</td><td>tesseract when installed, else none</td></tr>
+<tr><th scope="row">Workflow recording</th><td>Works</td><td>Refuses: macOS only</td><td>Refuses: macOS only</td></tr>
+<tr><th scope="row">Meetings</th><td>Microphone and the computer's sound; speakers told apart</td><td>Microphone only; the meeting reports the computer's sound as unsupported</td><td>Microphone only; same report</td></tr>
+<tr><th scope="row">Notification with no App window open</th><td>The runtime bundle, else <code translate="no">osascript</code></td><td>A toast posted through Windows PowerShell, under its name</td><td><code translate="no">notify-send</code>; none without it</td></tr>
+<tr><th scope="row">Credentials</th><td>JSON files in the profile, mode <code translate="no">0600</code>; no Keychain</td><td>The same files under the profile's inherited ACL; no Credential Manager</td><td>The same files, mode <code translate="no">0600</code>; no libsecret</td></tr>
+<tr><th scope="row">Background browser</th><td>Playwright's Chromium, else Chrome or Edge in <code translate="no">/Applications</code></td><td>Playwright's Chromium, else Chrome or Edge under Program Files or <code translate="no">LOCALAPPDATA</code></td><td>Playwright's Chromium, else <code translate="no">google-chrome</code> or <code translate="no">microsoft-edge</code> on PATH</td></tr>
+<tr><th scope="row">Your Chrome or Edge</th><td>Extension found in <code translate="no">~/Library/Application Support</code></td><td>Extension found under <code translate="no">LOCALAPPDATA</code></td><td>Extension found in <code translate="no">~/.config</code></td></tr>
+<tr><th scope="row">Click at a screenshot point after acting</th><td>Pixels compared through Core Graphics</td><td>Pixels compared by a PNG reader in the driver</td><td>Same reader</td></tr>
+<tr><th scope="row">Prevent idle sleep</th><td>IOKit assertion</td><td>A system-required power request</td><td><code translate="no">systemd-inhibit</code> lock on idle and sleep; one warning without it</td></tr>
+<tr><th scope="row">Show in file manager</th><td><code translate="no">open -R</code></td><td><code translate="no">explorer.exe /select</code></td><td><code translate="no">xdg-open</code> on the folder; refuses without a desktop session</td></tr>
+<tr><th scope="row"><code translate="no">/copy</code> in the Rich REPL</th><td><code translate="no">pbcopy</code></td><td><code translate="no">clip.exe</code>, UTF-16</td><td><code translate="no">wl-copy</code>, <code translate="no">xclip</code> or <code translate="no">xsel</code>; prints the text otherwise</td></tr>
+<tr><th scope="row">Speech playback</th><td><code translate="no">afplay</code></td><td>A player on PATH, else PowerShell's media player</td><td><code translate="no">mpg123</code>, <code translate="no">ffplay</code> or <code translate="no">mpv</code>; else the file is kept and a warning logged</td></tr>
+<tr><th scope="row">Update from a conversation</th><td>Works</td><td>Works from the version store, whose controller runs as a Scheduled Task; an install outside it refuses and names the CLI and Desktop updaters</td><td>Same as Windows</td></tr>
+<tr><th scope="row">Local time</th><td colspan="3">The system's local zone through Python; no time zone database or locale lookup is needed</td></tr>
+</tbody>
+</table>
+<p class="note">Computer use is left out of the tool list on a computer that cannot run it, and <code translate="no">code</code> is left out of its parameters. Sandbox mode and its reason reach the composer through the conversation's sandbox state.</p>
+
+<h2 id="background-tray">The background worker in the tray</h2>
+<p>The Assistant and the Butler keep the worker running after every window closes, so the App shows it in the menu bar (macOS) or the notification area (Windows, Linux), with the system's own menu:</p>
+<ul>
+<li>A status line from the health probe, refreshed every 10 seconds.</li>
+<li><strong>Open OpenProgram</strong>.</li>
+<li><strong>Stop background</strong>: stops the worker as switching versions does, then quits, since the App's windows would start it again.</li>
+</ul>
+<p>Closing a window and Quit do what they did and ask nothing. The icon is a single-colour App icon, <code translate="no" data-claim="example">apps/desktop/main/worker/tray/trayTemplate.png</code>; without that file no tray is created.</p>
+<details>
+<summary>Why this design</summary>
+<p>Claude Code and Codex have no resident process, and OpenCode's server follows its CLI. Alma, a resident desktop assistant, stays in the menu bar or tray, as OpenProgram's always-on agents need to. Asking at every quit would add a prompt to an everyday action. A native menu is not a new panel; its one hint sits on the Stop item.</p>
+</details>
+
+<h2 id="uninstall-store">Uninstalling and the version store</h2>
+<p><code translate="no">&lt;state&gt;\runtime\users.json</code> lists the installs using the version store (<code translate="no">versions/users.py</code>): <code translate="no">{install_id, kind: app|cli, path}</code>. Every worker start adds its install, so an older install registers on its first start.</p>
+<p>The App's installer adds itself only to a store that already holds a version: a first launch unpacks the seed into an empty <code translate="no">&lt;state&gt;\runtime</code> and refuses a folder with anything else in it. Writers take a lock and publish with <code translate="no">replace_file</code>.</p>
+<p>An uninstall takes its entry off the list; when none is left, it asks whether to delete the downloaded runtime versions too, naming their size; the default answer is No and a silent uninstall keeps them. Conversations, settings and credentials are never deleted.</p>
+<details>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Compared</th><th scope="col">On uninstall</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>Keeps versions apart from user data and leaves the data</td></tr>
+<tr><th scope="row">Codex</th><td>Its script removes only its binary</td></tr>
+<tr><th scope="row">OpenCode</th><td>Left to the package manager</td></tr>
+</tbody>
+</table>
+<p>Offering deletion only to the last user is ours: the CLI, the App and a <code translate="no">dev</code> profile can share one store. Its gigabytes can be downloaded again, so deletion may be offered; it is destructive, so it defaults to No.</p>
+</details>
+
+<h2 id="release-decisions">Release decisions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">A failed Windows package</th><td>Only that package is missing from the release, and <strong>Check every planned package</strong> names it, as for macOS and Linux. Codex releases all or nothing on "built and signed"; one platform's failure here does not hold back another's fix</td></tr>
+<tr><th scope="row">Release smoke</th><td>Each Windows leg installs its package, pipes a prompt to <code translate="no">openprogram --print</code>, then runs one tool call through a stand-in model (<code translate="no">scripts/release/smoke-tool-call.py</code>); the Windows contracts include the PowerShell rule tests and the Ctrl-Break stop of <code translate="no">--print</code></td></tr>
+<tr><th scope="row">Signing</th><td>Azure Trusted Signing, as Codex signs: no hardware certificate to keep, a monthly fee, and SmartScreen stops blocking the first install</td></tr>
+<tr><th scope="row">Windows on Arm</th><td>The x64 package, run under emulation, until the five locked packages have arm64 wheels; then a native package, as Codex's installer picks one. Under emulation <code translate="no">platform.machine()</code> tells x64 Python ARM64, so whatever picks wheels, a bundled Git, a release asset or an on-demand package folder asks the interpreter's own build (<code translate="no">openprogram/host/_platform/architecture.py</code>), never the machine</td></tr>
+<tr><th scope="row">Update from a conversation</th><td>The version store's controller: build the new version, move the pointer, keep the previous one for rollback, on Windows as everywhere. A version being retired whose files a process holds stays where it is and is moved to <code translate="no">trash</code> on a later pass</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this design</summary>
+<p>Claude Code renames a running executable to <code translate="no">.old.&lt;timestamp&gt;</code> and removes it on the next start, because it replaces its binary in place.</p>
+<p>The version store never does: each version has its own folder and only the pointer moves. A folder holding an open file can be neither moved nor renamed on Windows, so retention leaves it and tries again on the next pass, which is the effect the rename gives Claude Code.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Level</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">W1</th><td>Present; Windows jobs are the merge gate. The worker stop request, the scheduled task's start, stop and restart, and Ctrl-Break handling are tested with an injected platform name; the stop request also runs against a real child in the Windows unit job. No job installs the scheduled task, so its launcher, including the profile it sets, is checked only as generated text</td></tr>
+<tr><th scope="row">W2</th><td>Implemented. The Release job builds the x64 ZIP on a Windows runner and installs it there with <code translate="no">install-release.ps1</code> under Windows PowerShell 5.1; v1.1.0 publishes it. The public <code translate="no">install.ps1</code> bootstrap and a worker started from the published ZIP are checked only by the Windows install smoke workflow, which has not run</td></tr>
+<tr><th scope="row">W3</th><td>Implemented. The Release job builds the unsigned x64 installer on a Windows runner; v1.1.0 left it out because its Windows update files failed, and v1.2.0 is the first release built to carry it. The App has never launched on Windows. The install, launch and tool-call gate has not run; a rehearsal on <code translate="no">main</code> is its first proof. It compares versions without the zero fourth part electron-builder adds (1.2.0.0)</td></tr>
+<tr><th scope="row">W4</th><td>Implemented; native AppContainer and quotas are future work</td></tr>
+<tr><th scope="row">Signing</th><td>Never exercised: the repository has no Windows certificate, so every installer so far is unsigned. Azure Trusted Signing is decided and waits for the account; the step to add is <code translate="no">azure/trusted-signing-action</code> in the Windows legs of <code translate="no">release.yml</code>, with its credentials in secrets</td></tr>
+<tr><th scope="row">Windows on Arm</th><td>Off by default and never built in a Release run. Five locked packages have no arm64 Windows wheel (<code translate="no">claude-agent-sdk</code>, <code translate="no">cryptography</code>, <code translate="no">httptools</code>, <code translate="no">tiktoken</code>, <code translate="no">torch</code>), so that build depends on compiling them. The runner label <code translate="no">windows-11-vs2026-arm</code> exists. The command-line installer falls back to the x64 package on Windows 11 on Arm, from the first release whose installer carries the fallback; whether that package and the x64 App installer work there under emulation is untested</td></tr>
+<tr><th scope="row">x64 on Arm</th><td>The Windows install smoke workflow installs the x64 files on an Arm runner as well; it has not run</td></tr>
+<tr><th scope="row">Thin shell</th><td>Implemented. The launcher cross-compiles for x64 and arm64; its console, Unicode and UTF-8 mode tests run only in the Windows core job. The Release leg and the install smoke workflow install the App under a Chinese-named user folder, start it, check the worker's console, log, UTF-8 mode, shortcut id and path lengths, make one tool call, then uninstall</td></tr>
+<tr><th scope="row">App window in the smoke</th><td>A healthy worker is not enough: the smoke waits until <code translate="no">web auth-url</code> gives a signed-in address and the App's window, read over its DevTools port, shows <code translate="no">/chat</code>. It then closes the App, keeps the worker, reopens the App and checks the DevTools port belongs to the new App</td></tr>
+<tr><th scope="row">App smoke, first run</th><td>The 1.2.0 rehearsal, x64: install, first launch to a healthy worker, the version store (no links, longest path 239 characters) and the tool call passed. Three checks of the smoke itself were wrong and are fixed: the worker's quoted command line, the Start menu folder (now asked of the shell, other places named), and output in cp1252. Whether the shortcut exists, the uninstall, the checksum and upload steps and the Arm run are unproven</td></tr>
+<tr><th scope="row">Uninstall</th><td>The users list, the installer's entry and the last uninstaller's question are built; the question is a Yes/No box with No as default rather than a checkbox on a custom page. The command-line install adds itself only when its worker starts, and has no uninstaller to remove itself, so a computer that had both keeps the store until the CLI's entry is gone. Neither answer has run on Windows. Named profiles' workers and tasks are not stopped</td></tr>
+<tr><th scope="row">Long paths</th><td>The shell and the launcher open long paths themselves; Python needs the system switch. The deepest file sits about 218 characters below the user's folder, inside the 260 limit for folder names up to 32 characters. The smoke workflow measures it</td></tr>
+<tr><th scope="row">Text and files</th><td>The encoding, replace and binary-descriptor rules are held by a repository contract and by tests that inject the platform name; none has run on Windows. Outside <code translate="no">openprogram/state</code>, 94 text-mode subprocess calls decode as UTF-8 in the shipped mode, which a tool printing in the OEM code page breaks. Helper processes started with <code translate="no">-I</code> and the App's short commands still run in the system code page. <code translate="no">OPENPROGRAM_STATE_DIR</code> moves the installed runtime only: config, sessions and credentials stay under the home directory</td></tr>
+<tr><th scope="row">File replace</th><td>Publishes and conversation folder renames wait out a sharing violation; tests inject the refusal, and none has run on Windows. The wait is one second, so a folder held by a command still running in it is refused. Deleting a conversation removes files in place and leaves what Windows holds. Provider recordings write through text-mode descriptors</td></tr>
+<tr><th scope="row">Host features</th><td>The Windows power request, toast, clipboard and Explorer commands, the Linux sleep lock and the PNG reader are tested with stand-ins at the platform boundary; none has run on Windows or Linux. No client reads <code translate="no">/api/system/features</code> yet, so the recording button, the meeting page and the idle-sleep toggle still learn of a missing feature on use. Outside macOS, meetings record no computer sound and workflow recording has no backend</td></tr>
+<tr><th scope="row">Local refresh</th><td>Primitive only: orchestration, crash recovery, installed-App acceptance open</td></tr>
+<tr><th scope="row">Command shell</th><td>See <a href="windows-command-shell.html#implementation-status">Windows command shell</a></td></tr>
+<tr><th scope="row">Tray</th><td>Built without its icon, which waits for the owner to approve a before-and-after comparison; no tray appears until it is added. The status line says running or not; the number of running tasks needs an authenticated read and is not shown</td></tr>
+<tr><th scope="row">Sandbox without WSL2</th><td>The <code translate="no">warn</code> default and the WSL2 reason are tested with an injected platform; none has run on Windows. A native sandbox, following Codex's RestrictedToken level, is future work</td></tr>
+<tr><th scope="row">Shortcut keys in a browser</th><td>The keys the browser keeps have no second binding on Windows and Linux, and dictation has no key that Windows leaves free. Undecided</td></tr>
+<tr><th scope="row">Paths in permission rules</th><td>Tested through Windows path rules with a stand-in volume, not on Windows. Allow rules on macOS compare case as typed, so a rule in another case asks again</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="installation-packaging.html">Installation and packaging</a></p>

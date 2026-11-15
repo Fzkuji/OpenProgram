@@ -1,0 +1,59 @@
+<title>UI 统一工作</title>
+<meta name="description" content="OpenProgram 各界面的视觉差异，以及待对齐的事项。">
+<h1>UI 统一工作</h1>
+
+<p>Web App（<code translate="no">apps/web/</code>）、CLI 和 TUI（<code translate="no">apps/cli/</code>）、文档站（<code translate="no">scripts/docs_site/</code>）、营销页（<code translate="no">website/index.html</code>）和桌面窗口外观（<code translate="no">apps/desktop/main.js</code>）各自演进。</p>
+
+<h2 id="open-work">待办</h2>
+<table class="stack">
+<thead><tr><th scope="col">事项、优先级</th><th scope="col">现状</th><th scope="col">下一步</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web 令牌兜底<br>高</th><td><code translate="no">themes/fallback.css</code> 的 <code translate="no">:root</code> 兜底是 beige-dark 表面；<code translate="no">design/color.css</code> 给 <code translate="no">--accent-orange: #6ea8fe</code>，是 neutral 蓝</td><td>选定 beige 或 neutral 并统一</td></tr>
+<tr><th scope="row">CLI 和 TUI<br>中</th><td>TUI 主色固定 <code translate="no">#d97757</code>，不看 Web 主题（<code translate="no">apps/cli/src/theme/themes.ts</code>）。Rich 横幅用 <code translate="no">bright_blue</code>（<code translate="no">openprogram/interfaces/cli/repl/banner.py</code>）。</td><td>读取 Web 偏好，或写明是独立品牌</td></tr>
+<tr><th scope="row">营销页<br>低</th><td>自有配色：深色 <code translate="no">--bg: #0e0f17</code>、<code translate="no">--accent: #8b93ff</code>；浅色 <code translate="no">#f8f9fc</code>、<code translate="no">#4f46e5</code></td><td>对齐或保持独立</td></tr>
+<tr><th scope="row">按钮<br>低</th><td><code translate="no">button.tsx</code> 是官方 radix-nova Button；管理页标签仍用 <code translate="no">--ui-button-h</code> 和 <code translate="no">--ui-button-radius</code> 自定尺寸</td><td>手写尺寸的标签改用 Button 尺寸</td></tr>
+<tr><th scope="row">命名<br>低</th><td><code translate="no">--accent-orange</code> 也承载蓝色和青色；shadcn <code translate="no">--accent</code> 是 9% 墨色，不是主色</td><td>改名，例如 <code translate="no">--accent-primary</code></td></tr>
+<tr><th scope="row">组件库和硬编码颜色<br>低</th><td><code translate="no">@base-ui-components/react</code> 仍是依赖，但源码没有引用。<code translate="no">lib/effort/effort-color.ts</code> 自算 HSL。<code translate="no">--browser-glyph-secondary</code> 是 <code translate="no">#8b5cf6</code>。</td><td>移除依赖；这些颜色改用主题令牌。Tailwind 只用 v4，主题在 <code translate="no">@theme</code>。</td></tr>
+</tbody>
+</table>
+<p class="note">顺序：Web 兜底、CLI 和 TUI、营销页、按钮和命名、组件库。文档站独立：白底蓝字（<code translate="no">--acc: #2f5fd0</code>，深色 <code translate="no">#86a8f5</code>），独立键 <code translate="no">op-docs-theme</code>，只有明暗。</p>
+
+<h2 id="appearance">设置里的外观</h2>
+<p>设置打开时在通用页。所有与外观有关的设置都在外观页（<code translate="no">appearance-section.tsx</code>）：配色和主题、文字、对话视图和宽度、标签拖动效果、浏览器书签栏、自定义 CSS。主题包、强调色和覆盖层合同见<a href="theme-system.zh.html">主题系统</a>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">模式</th><td>自动跟随系统；它是模式，不是主题</td></tr>
+<tr><th scope="row">Vivid 标签栏颜色</th><td>Vivid 的表面、文字层级和默认强调色都是 <code translate="no">oklch(from var(--tabrow-seed) …)</code> 色调，与 Chrome 的配色主题相同</td></tr>
+<tr><th scope="row">强调色</th><td>颜色输入、来自各主题包默认 <code translate="no">--accent-orange</code> 的预设、恢复主题默认</td></tr>
+<tr><th scope="row">覆盖层</th><td>启用自定义 CSS；插入模板写入针对 <code translate="no">html</code> 和当前 <code translate="no">data-theme</code> 的起始片段；清除则清空</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary id="migration">合并键 <code translate="no">agentic_theme</code> 的迁移</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">已存值</th><th scope="col">迁移为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">auto</code></th><td>beige + auto</td></tr>
+<tr><th scope="row"><code translate="no">beige-dark</code> <code translate="no">beige-light</code></th><td>beige + 深色或浅色</td></tr>
+<tr><th scope="row"><code translate="no">dark</code> <code translate="no">light</code>（schema 2）</th><td>neutral + 深色或浅色</td></tr>
+<tr><th scope="row"><code translate="no">aurora</code> <code translate="no">aurora-light</code></th><td>aurora + 深色或浅色</td></tr>
+<tr><th scope="row"><code translate="no">vivid</code> <code translate="no">vivid-light</code></th><td>vivid + 深色或浅色</td></tr>
+<tr><th scope="row"><code translate="no">custom</code> <code translate="no">custom-light</code></th><td>beige + 已存模式；存有自定义 CSS 时打开覆盖层</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="desktop-chrome">桌面窗口外观</h2>
+<p>Electron 窗口的第一个像素就与解析后的 Web 主题一致：<code translate="no">BrowserWindow</code> 用该主题的 <code translate="no">--bg-primary</code> 创建。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">解析</th><td>Schema 3 键加旧 <code translate="no">agentic_theme</code>。来源优先级见<a href="theme-system.zh.html#diagnostics">排查</a>。<code translate="no">auto</code> 跟随 <code translate="no">nativeTheme.shouldUseDarkColors</code>。</td></tr>
+<tr><th scope="row">颜色表</th><td><code translate="no">apps/desktop/main/windows/theme-chrome.js</code> 复制主题 CSS 的取值。<code translate="no">custom</code> id 解析为 beige 一对。</td></tr>
+<tr><th scope="row">错误页和列表页</th><td>使用同一组外观令牌</td></tr>
+<tr><th scope="row">切换主题</th><td>渲染进程调用 <code translate="no">theme.setChrome</code>，更新每个 <code translate="no">BrowserWindow</code> 的背景，下次显示或刷新不闪旧色</td></tr>
+<tr><th scope="row">窗口状态</th><td>不受影响，见<a href="../desktop/window-state.zh.html">窗口状态</a></td></tr>
+</tbody>
+</table>

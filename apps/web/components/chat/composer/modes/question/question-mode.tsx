@@ -1,36 +1,36 @@
 "use client";
 
-import { approvalDisplayText, readSandboxEscalation, type SandboxEscalation } from "./approval-display-text";
+import { approvalDisplayText, COMMAND_TOOLS, readSandboxEscalation, type SandboxEscalation } from "./approvals/approval-display-text";
 
-/**
- * QuestionMode —— 一切「问用户」的唯一组件（不再分 single / multi / form /
- * approval 几套）。所有 runtime.ask / confirm / approval / form / ask_many
- * 都归一成「一组步骤 steps」：单题就是 1 步，ask_many 是 N 步，form 是 1 步
- * （那一步渲染字段表单）。一套外壳：
- *
- *   header：标题「需要你的输入」+ 进度点 ● ○ ○ + 几分之几（哪怕只有 1 步也
- *           显示 ● 1/1，统一）。
- *   body  ：当前步的内容（选项 / 表单字段 / 批准摘要 + 选项）。
- *   底部  ：经 onAction 报给 composer 的「‹ 上一题 / 下一题 ›」一组，最后一步
- *           「下一题」变「发送」。单步时只有一颗「发送」。
- *
- * 选项一律「只选中」（可再点取消、可切换），点底部按钮才推进 / 提交。
- * 底部右侧「Chat about this」位于发送左侧，打开反馈输入框，发送后才结束等待并继续讨论。
- *
- * 设计：docs/design/ui/composer-interaction-modes.md。
+/** Questions use a current-question panel above the composer.
+ * All answers are submitted together through the existing acknowledged wait
+ * command. Tool approvals retain their explicit scope and operation controls.
  */
 
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
-import { OperationCode } from "./operation-code";
+import { SolarIcon } from "@/components/solar-icons";
+import { OperationCode } from "./approvals/operation-code";
+import { ComputerUseApproval } from "./approvals/computer-use-approval";
+import { TerminalApproval } from "./approvals/terminal-approval";
+import { appStepArgs } from "@/lib/computer-use/computer-use-agent-call";
+import { Badge } from "@/components/ui/badge";
+import { BotGlyph } from "@/components/avatar/bot/bot-glyph";
+import { subAgentShape } from "@/lib/runtime-bridge/dag/render/agent-look";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import { Textarea } from "@/components/ui/textarea";
+import { HoverTip } from "@/components/ui/tooltip";
+import { SimpleSelect } from "@/components/ui/select";
 
 import type { PendingDecision, AskOne, FormFieldSchema } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 
 import styles from "./question-mode.module.css";
 import { useWaitAnswer } from "./use-wait-answer";
-import multi from "./multi-ask-mode.module.css";
+import { AnswerSummary } from "./answer-summary";
+import { useDecisionDrafts, type DecisionDraft, type DecisionAnswer } from "@/lib/chat/decisions/decision-drafts";
 import approvalStyles from "../approval/approval-mode.module.css";
 import formStyles from "./form-mode.module.css";
 
@@ -39,26 +39,17 @@ import formStyles from "./form-mode.module.css";
  *  Not user-visible — the button labels are translated separately. */
 const APPROVE_ANSWER = "approve";
 
-/** 提示语收尾：已是问号/冒号/句号等终止符就原样；否则补一个中文冒号「：」，
- *  让「请填写名字」这类祈使句读起来像在等你输入。 */
-function withColon(s: string): string {
-  const t = s.trimEnd();
-  if (!t) return t;
-  return /[?？:：。.!！]$/.test(t) ? t : t + "：";
-}
-
 interface QuestionModeProps {
   decision: PendingDecision;
   onResolve: (id: string) => void;
-  onChatAbout: (feedback: string) => void | Promise<void>;
 }
 
-/** Wire pick for an approval card. ``always_path`` is sandbox-escalation only. */
-type ApprovalPick = "once" | "always" | "always_path" | "deny";
+/** Wire pick for an approval card. ``session`` lasts this conversation; ``always_path`` saves a blocked read path. */
+type ApprovalPick = "once" | "session" | "always" | "always_path" | "deny";
 
 /** 一步（一道题）的统一形状。kind 决定 body 怎么渲染、答案怎么收集。 */
 type Step =
-  | { kind: "choice"; prompt: string; options: string[]; multi: boolean; allowCustom: boolean }
+  | { kind: "choice"; prompt: string; options: string[]; multi: boolean; allowCustom: boolean; optionDescriptions?: Record<string, string> }
   | {
       kind: "approval";
       prompt: string;
@@ -73,10 +64,7 @@ type Step =
 
 /** 一步的工作答案。choice → 选中集 + 自由文本；approval → 允许一次/总是允许/拒绝；
  *  form → 字段值对象。 */
-type Answer =
-  | { picked: Set<string>; custom: string }
-  | { pick: ApprovalPick | null }
-  | { fields: Record<string, string | number | boolean> };
+type Answer = DecisionAnswer;
 
 /** 把一个 decision 拍平成统一的 steps 数组。单题 → 1 步；ask_many → N 步。 */
 function toSteps(q: PendingDecision): Step[] {
@@ -99,10 +87,11 @@ function toSteps(q: PendingDecision): Step[] {
     const qs: AskOne[] = q.questions ?? [];
     return qs.map((one) => ({
       kind: "choice",
-      prompt: one.prompt,
+      prompt: one.question_title ?? one.prompt,
       options: one.options,
       multi: one.multi,
       allowCustom: one.allow_custom,
+      optionDescriptions: one.option_descriptions,
     }));
   }
   // ask / confirm —— 单题选择。
@@ -139,32 +128,49 @@ function stepAnswered(step: Step, a: Answer): boolean {
   return true; // form 字段都有默认/可空，恒算已答
 }
 
-export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionModeProps) {
+export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
   const { text } = useTranslation();
   const [discussionPending, setDiscussionPending] = useState(false);
-  const { sendAnswer, answerPending, answerLocked } = useWaitAnswer(q, onResolve);
+  const { sendAnswer, submission, answerPending, answerLocked } = useWaitAnswer(q, onResolve);
 
-  const [discussionOpen, setDiscussionOpen] = useState(false);
-  const [feedback, setFeedback] = useState("");
-  const [feedbackLocked, setFeedbackLocked] = useState(false);
+  const steps = toSteps(q);
+  const draftKey = JSON.stringify([q.sessionId, q.id]);
+  const [initialDraft] = useState<DecisionDraft>(() => ({
+    answers: steps.map(seedAnswer), stepIndex: 0, collapsed: false,
+    discussionOpen: false, feedback: "", feedbackLocked: false,
+  }));
+  const draft = useDecisionDrafts(state => state.drafts[draftKey]) ?? initialDraft;
+  const { answers, stepIndex, collapsed, discussionOpen, feedback, feedbackLocked } = draft;
+  function updateDraft(patch: Partial<DecisionDraft>) {
+    const store = useDecisionDrafts.getState();
+    store.setDraft(draftKey, { ...(store.drafts[draftKey] ?? initialDraft), ...patch });
+  }
+  const setDiscussionOpen = (value: boolean) => updateDraft({ discussionOpen: value });
+  const setFeedback = (value: string) => updateDraft({ feedback: value });
+  const setFeedbackLocked = (value: boolean) => updateDraft({ feedbackLocked: value });
+  // What the user writes goes to the model as the reason for declining, so
+  // the model answers it in the same turn instead of a declined notice first
+  // and the discussion as a separate message after it.
   async function sendDiscussion() {
     if (discussionPending || !feedback.trim()) return;
     setFeedbackLocked(true);
     setDiscussionPending(true);
-    try { await onChatAbout(feedback); } finally { setDiscussionPending(false); }
+    try { await sendAnswer("execution.wait.decline", feedback.trim()); } finally { setDiscussionPending(false); }
   }
-  const steps = toSteps(q);
-  const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState<Answer[]>(() => steps.map(seedAnswer));
+  const cur = steps[stepIndex];
+  const curAns = answers[stepIndex];
+  const allAnswered = steps.every((step, index) => stepAnswered(step, answers[index]));
+  const currentAnswered = cur && stepAnswered(cur, curAns);
+  const lastStep = stepIndex === steps.length - 1;
+  const patch = (index: number, next: Answer) =>
+    updateDraft({ answers: answers.map((answer, key) => key === index ? next : answer) });
 
-  const cur = steps[idx];
-  const curAns = answers[idx];
-  const atFirst = idx === 0;
-  const atLast = idx === steps.length - 1;
-  const allAnswered = steps.every((s, i) => stepAnswered(s, answers[i]));
-
-  const patch = (i: number, next: Answer) =>
-    setAnswers((cur) => cur.map((a, k) => (k === i ? next : a)));
+  function advance() {
+    if (discussionPending || answerPending) return;
+    if (answerLocked || lastStep) {
+      if (allAnswered || answerLocked) submit();
+    } else if (currentAnswered) updateDraft({ stepIndex: stepIndex + 1 });
+  }
 
   function submit() {
     if (discussionOpen || discussionPending || answerPending) return;
@@ -192,6 +198,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
       // it verbatim; a localized string would fail the comparison in every
       // language it doesn't happen to list.
       if (pick === "once") void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "once" });
+      else if (pick === "session") void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "session" });
       else if (pick === "always") void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "always" });
       else if (pick === "always_path") void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "always_path" });
       else if (pick === "deny") void sendAnswer("execution.wait.decline");
@@ -217,152 +224,154 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
     void sendAnswer("execution.wait.answer", answer);
   }
 
-  // 底部按钮组：单步 → [发送]；多步 → [‹上一题, 下一题›/发送]。就是 body
-  // 的最后一行、右对齐——普通表单排法，不再上报 composer 做绝对定位。
-  const navButtons = (() => {
-    const prev = {
-      label: text("‹ Previous", "‹ 上一题"),
-      onClick: () => setIdx((i) => Math.max(0, i - 1)),
-      disabled: atFirst || answerLocked,
-      primary: false,
-    };
-    const nextOrSend = atLast
-      ? { label: answerPending ? text("Sending…", "发送中…") : answerLocked ? text("Retry", "重试") : text("Send", "发送"), onClick: submit, disabled: !allAnswered, primary: true }
-      : {
-          label: text("Next ›", "下一题 ›"),
-          onClick: () => setIdx((i) => Math.min(steps.length - 1, i + 1)),
-          disabled: false,
-          primary: true,
-        };
-    return steps.length > 1 ? [prev, nextOrSend] : [nextOrSend];
-  })();
+  const submitLabel = answerPending ? text("Submitting…", "提交中…")
+    : answerLocked ? text("Retry answer", "重试回答") : lastStep ? text("Submit", "提交") : text("Next", "下一题");
 
-  // Enter submits (last step) or advances (earlier steps), so the
-  // autofocused free-text input has a keyboard path at all — previously
-  // Enter did nothing and the mouse was the only way to send.
-  // Ctrl/Cmd+Enter submits outright, matching fn-form.
+  // Shortcuts are scoped to this request. Text and IME input stay editable.
   function onKey(e: React.KeyboardEvent) {
-    if (e.key !== "Enter") return;
-    // Enter commits an IME candidate (CN/JP/KR) — never treat that as send.
+    if (collapsed) return;
     const native = e.nativeEvent as KeyboardEvent;
     if (native.isComposing || native.keyCode === 229) return;
+    const target = e.target as HTMLElement;
+    if (!discussionOpen && !answerLocked && !e.ctrlKey && !e.metaKey && !e.altKey
+        && /^[1-9]$/.test(e.key) && !target.closest("input, textarea, select, [contenteditable]")) {
+      const option = e.currentTarget.querySelector<HTMLElement>(`[data-choice-number="${e.key}"]`);
+      if (option) { e.preventDefault(); option.focus(); if (option.tagName === "BUTTON") option.click(); }
+      return;
+    }
+    if (e.key !== "Enter" || e.shiftKey) return;
     if (discussionOpen) {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        void sendDiscussion();
-      }
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); void sendDiscussion(); }
       return;
     }
-    if (e.shiftKey) return;
-    const t = e.target as HTMLElement;
-    if (t.tagName === "TEXTAREA") return;
-    if (t.closest("button") && !e.ctrlKey && !e.metaKey) return;
+    if (target.tagName === "TEXTAREA") return;
+    if (target.closest("button") && !e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      if (allAnswered) submit();
-      return;
-    }
-    if (atLast) {
-      if (allAnswered) submit();
-    } else {
-      setIdx((i) => Math.min(steps.length - 1, i + 1));
-    }
+    advance();
   }
 
   if (!cur) return null;
 
   return (
-    <>
-      <div className={styles.header} data-fn-form-header data-decision onKeyDown={onKey}>
-        <div className={styles.badge}>{discussionOpen ? text("Discuss this operation", "讨论这项操作") : text("Your input is needed", "需要你的输入")}</div>
-        {/* 进度点 + 几分之几 —— 哪怕只有 1 步也显示（统一）。 */}
-        {!discussionOpen && <div className={multi.progress}>
-          {steps.map((_, i) => (
-            <button
-              type="button"
-              disabled={answerLocked}
-              aria-current={i === idx ? "step" : undefined}
-              key={i}
-              className={
-                multi.dot +
-                (i === idx ? " " + multi.dotActive : "") +
-                (stepAnswered(steps[i], answers[i]) ? " " + multi.dotDone : "")
-              }
-              onClick={() => { if (!discussionOpen && !answerLocked) setIdx(i); }}
-              title={text(`Question ${i + 1}`, `第 ${i + 1} 题`)}
-            />
-          ))}
-          <span className={multi.count}>
-            {idx + 1}/{steps.length}
-          </span>
-        </div>}
+    <div className={styles.panel} data-question-card onKeyDown={onKey}>
+      <div className={styles.header} data-fn-form-header data-decision>
+        {!discussionOpen && <Badge variant="secondary"
+          aria-label={text(`Question ${stepIndex + 1} of ${steps.length}`, `第 ${stepIndex + 1} 题，共 ${steps.length} 题`)}>
+          {stepIndex + 1}/{steps.length}
+        </Badge>}
+        {q.askedBy && <Badge variant="outline" className="max-w-[45%] min-w-0 shrink" data-asked-by aria-label={text(`Asked by ${q.askedBy}`, `由 ${q.askedBy} 请求`)}>
+          <BotGlyph shape={subAgentShape(q.askedBy)} size={12} className="text-[var(--folder-color)]" /><span className="truncate">{q.askedBy}</span>
+        </Badge>}
+        <div className={styles.badge}>{discussionOpen ? (cur.kind === "approval"
+          ? text("Deny with a note", "拒绝并说明") : text("Discuss this request", "讨论这个请求"))
+          : cur.kind === "approval" ? text("Approval required", "需要批准") : cur.prompt}</div>
+        <div className={styles.headerActions}>
+          <Button type="button" variant="ghost" size="icon-xs" aria-expanded={!collapsed}
+            aria-label={collapsed ? text("Expand request", "展开请求") : text("Collapse request", "折叠请求")}
+            onClick={() => updateDraft({ collapsed: !collapsed })}>
+            {collapsed ? <SolarIcon name="alt-arrow-right" size={16} /> : <SolarIcon name="alt-arrow-down" size={16} />}
+          </Button>
+          {!collapsed && <Button type="button" variant="ghost" size="icon-xs"
+            aria-label={text("Hide request", "收起请求")} onClick={() => updateDraft({ collapsed: true })}><SolarIcon name="close-circle" size={16} /></Button>}
+        </div>
       </div>
-      <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
+      {!collapsed && <>
+      {submission && <div className={styles.submissionStatus} role="status" aria-live="polite" data-answer-status={submission.status}>
+        {answerPending ? text("Submitting answer…", "正在提交回答…") : submission.error}
+      </div>}
+      <div className={styles.body} data-fn-form-body>
         {cur.kind === "approval" ? (
-          <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
+          <StepBody step={cur} answer={curAns} onChange={(a) => patch(0, a)} />
         ) : discussionOpen ? (
-          <div className={styles.prompt}>{cur.prompt}</div>
+          <AnswerSummary decision={q} answer={undefined} />
+        ) : answerLocked && submission?.command.payload.answer !== undefined ? (
+          <AnswerSummary decision={q} answer={submission.command.payload.answer} />
         ) : (
-          <fieldset disabled={discussionPending || answerLocked} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
-            <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
-          </fieldset>
+          <div className={styles.questionList}>
+            {q.kind === "ask_many" && q.prompt && <div className={styles.groupPrompt}>{q.prompt}</div>}
+            <fieldset key={stepIndex} disabled={discussionPending || answerLocked} className={styles.questionItem}>
+              <StepBody step={cur} answer={curAns} onChange={(answer) => patch(stepIndex, answer)} />
+            </fieldset>
+          </div>
         )}
         {discussionOpen && (
           <label className={formStyles.field}>
             <span className="sr-only">{text("Discussion", "讨论内容")}</span>
             <Textarea className={styles.discussionInput} autoFocus rows={4} value={feedback} readOnly={feedbackLocked}
               onChange={(event) => setFeedback(event.target.value)}
-              placeholder={text("Add your question, concern, or a different approach…", "写下你的问题、顾虑，或希望调整的地方…")} />
-            {feedbackLocked && !discussionPending && <span className={formStyles.hint}>
-              {text("Not confirmed yet. Retry to confirm the same feedback.", "尚未确认，请重试发送同一条反馈。")}
-            </span>}
+              placeholder={cur.kind === "approval"
+                ? text("Tell the agent what to do instead, e.g. keep build/ and just run npm run build", "告诉 agent 应该怎么做，例如：别删 build，直接 npm run build")
+                : text("Add your question, concern, or a different approach…", "写下你的问题、顾虑，或希望调整的地方…")} />
+            <span className={formStyles.hint}>
+              {feedbackLocked && !discussionPending
+                ? text("Not confirmed yet. Retry to confirm the same feedback.", "尚未确认，请重试发送同一条反馈。")
+                : cur.kind === "approval"
+                  ? text("This note goes to the agent with the denial; it continues as you say.", "这条说明会随拒绝一起交给 agent，它会按你的说明继续。")
+                  : text("This goes straight to the agent; it answers you before going on.", "这段话会直接交给 agent，它会先回应你再继续。")}
+            </span>
           </label>
         )}
       </div>
-        <div className={`${styles.actions} ${styles.footer}`} onKeyDown={onKey} role="group" aria-label={text("Decision actions", "答复操作")}>
+        <div className={`${styles.actions} ${styles.footer}`} role="group" aria-label={text("Decision actions", "答复操作")}>
           {cur.kind === "approval" && !discussionOpen && (
             <div className={styles.actionButtons}>
-              <button type="button" className={styles.navBtn}
-                disabled={answerPending || (answerLocked && (curAns as { pick: string }).pick !== "deny")}
-                onClick={() => { patch(idx, { pick: "deny" }); void sendAnswer("execution.wait.decline"); }}>
+              <Button type="button" variant="elevated" size="icon" disabled={answerLocked}
+                onClick={() => setDiscussionOpen(true)} aria-label={text("Deny with a note", "拒绝并说明")}>
+                <SolarIcon name="chat-round-dots" size={15} aria-hidden="true" />
+              </Button>
+              <Button type="button" variant="elevated"
+                disabled={answerPending || (answerLocked && submission?.command.action !== "execution.wait.decline")}
+                onClick={() => { patch(0, { pick: "deny" }); void sendAnswer("execution.wait.decline"); }}>
                 {text("Deny", "拒绝")}
-              </button>
-              <button type="button" className={`${styles.navBtn} ${styles.navBtnPrimary}`}
-                disabled={answerPending || (answerLocked && (curAns as { pick: string }).pick !== "once")}
+              </Button>
+              {(["session", "always", "always_path"] as const).filter(scope => cur.allowedScopes?.includes(scope)).map(scope => (
+                <Button key={scope} type="button" variant="elevated"
+                  disabled={answerLocked}
+                  onClick={() => { patch(0, { pick: scope }); void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope }); }}>
+                  {scope === "session" ? text("Allow this conversation", "允许此对话")
+                    : scope === "always" ? text("Always allow", "始终允许") : text("Always allow this path", "始终允许此路径")}
+                </Button>
+              ))}
+              <Button type="button"
+                disabled={answerPending || (answerLocked && submission?.command.action !== "execution.wait.answer")}
                 aria-busy={answerPending}
-                onClick={() => { patch(idx, { pick: "once" }); void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "once" }); }}>
+                onClick={() => { patch(0, { pick: "once" }); void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "once" }); }}>
                 {answerPending ? text("Sending…", "提交中…") : text("Allow once", "同意")}
-              </button>
+              </Button>
             </div>
           )}
-          {cur.kind !== "approval" && <div className={styles.actionButtons}>
-            {discussionOpen ? <>
-              <button type="button" className={styles.navBtn} disabled={feedbackLocked}
-                onClick={() => setDiscussionOpen(false)}>{text("Cancel", "取消")}</button>
-              <button type="button" className={`${styles.navBtn} ${styles.navBtnPrimary}`}
-                disabled={discussionPending || !feedback.trim()} aria-busy={discussionPending}
-                onClick={() => void sendDiscussion()}>
-                {discussionPending ? text("Sending…", "发送中…") : feedbackLocked
-                  ? text("Retry discussion", "重试讨论") : text("Send discussion", "发送讨论")}
-              </button>
-            </> : <button type="button" className={styles.navBtn} disabled={answerLocked}
-              onClick={() => setDiscussionOpen(true)} title={text("Discuss before proceeding", "先讨论再继续")}>
-              {text("Chat about this", "Chat about this")}
-            </button>}
-          {!discussionOpen && navButtons.map((b, i) => (
-            <button
-              key={i}
-              type="button"
-              className={`${styles.navBtn} ${b.primary ? styles.navBtnPrimary : ""}`}
-              onClick={b.onClick}
-              disabled={discussionPending || answerPending || b.disabled}
-            >
-              {b.label}
-            </button>
-          ))}
+          {discussionOpen && <div className={styles.actionButtons}>
+            <Button type="button" variant="elevated" disabled={feedbackLocked}
+              onClick={() => setDiscussionOpen(false)}>{text("Cancel", "取消")}</Button>
+            <Button type="button"
+              disabled={discussionPending || !feedback.trim()} aria-busy={discussionPending}
+              onClick={() => void sendDiscussion()}>
+              {discussionPending ? text("Sending…", "发送中…") : feedbackLocked
+                ? text("Retry", "重试") : cur.kind === "approval"
+                  ? text("Deny and send", "拒绝并发送") : text("Send discussion", "发送讨论")}
+              <Kbd aria-hidden="true">Ctrl ↵</Kbd>
+            </Button>
+          </div>}
+          {cur.kind !== "approval" && !discussionOpen && stepIndex > 0 && <Button type="button" variant="elevated" disabled={answerLocked || discussionPending}
+            onClick={() => updateDraft({ stepIndex: stepIndex - 1 })}>{text("Back", "上一题")}</Button>}
+          {cur.kind !== "approval" && !discussionOpen && <div className={styles.actionButtons}>
+            <Button type="button" variant="elevated" size="icon" disabled={answerLocked}
+              onClick={() => setDiscussionOpen(true)} aria-label={text("Discuss", "先讨论")}>
+              <SolarIcon name="chat-round-dots" size={15} aria-hidden="true" />
+            </Button>
+            <HoverTip label={text("Skip this request without submitting answers", "跳过整组请求，不提交回答")}>
+              <Button type="button" variant="elevated" disabled={answerLocked || discussionPending}
+                onClick={() => void sendAnswer("execution.wait.decline")}>{text("Skip", "跳过")}</Button>
+            </HoverTip>
+            <Button type="button"
+              onClick={advance} aria-label={submitLabel} aria-busy={answerPending}
+              disabled={discussionPending || answerPending || (!answerLocked && (!currentAnswered || (lastStep && !allAnswered)))}>
+              {submitLabel}<Kbd aria-hidden="true">Ctrl ↵</Kbd>
+            </Button>
           </div>}
         </div>
-    </>
+      </>}
+    </div>
   );
 }
 
@@ -383,7 +392,7 @@ function StepBody({
       onChange({ fields: { ...fields, [name]: v } });
     return (
       <>
-        <div className={styles.prompt}>{withColon(step.prompt)}</div>
+        <div className={styles.prompt}>{step.prompt}</div>
         {step.detail ? <div className={styles.detail}>{step.detail}</div> : null}
         <div className={formStyles.fields}>
           {Object.keys(step.schema).map((name) => {
@@ -398,11 +407,9 @@ function StepBody({
                     {label}
                     {f.description ? <span className={formStyles.hint}> · {f.description}</span> : null}
                   </span>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={Boolean(fields[name])}
-                    onChange={(e) => setField(name, e.target.checked)}
-                    className={formStyles.checkbox}
+                    onCheckedChange={(checked) => setField(name, checked === true)}
                   />
                 </label>
               );
@@ -414,18 +421,14 @@ function StepBody({
                   {f.description ? <span className={formStyles.hint}> · {f.description}</span> : null}
                 </span>
                 {f.enum && f.enum.length ? (
-                  <select
-                    className={styles.input}
-                    value={String(fields[name])}
-                    onChange={(e) => setField(name, e.target.value)}
-                  >
-                    {f.enum.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
+                  <SimpleSelect label={label}
+                    className="w-full"
+                    value={String(fields[name] ?? "")}
+                    onValueChange={(v) => setField(name, v)}
+                    options={f.enum.map((opt) => ({ value: String(opt), label: String(opt) }))}
+                  />
                 ) : (
-                  <input
-                    className={styles.input}
+                  <Input
                     type={f.type === "integer" || f.type === "number" ? "number" : "text"}
                     value={String(fields[name])}
                     min={f.minimum}
@@ -441,20 +444,31 @@ function StepBody({
     );
   }
 
+  if (step.kind === "approval" && step.tool === "computer_use_agent" && !step.escalation && step.args) {
+    const appStep = appStepArgs(step.args);
+    if (appStep && typeof appStep.app === "string") {
+      return <ComputerUseApproval args={appStep} allowedScopes={step.allowedScopes} />;
+    }
+  }
+  if (step.kind === "approval" && step.tool === "terminal_use" && !step.escalation && step.args) {
+    return <TerminalApproval args={step.args} />;
+  }
   if (step.kind === "approval") {
     const esc = step.escalation;
-    const { prompt, summary } = approvalDisplayText(step.prompt, step.detail, esc, text);
-    const command = !esc && ["bash", "process", "shell", "exec_command"].includes(step.tool ?? "")
-      && typeof step.args?.command === "string" ? step.args.command : null;
+    const tool = (step.tool ?? "").replace(/:sandbox-escalation$/, "");
+    const { prompt, summary } = approvalDisplayText(step.prompt, step.detail, esc, text, tool);
+    const command = COMMAND_TOOLS.includes(tool) && typeof step.args?.command === "string"
+      ? step.args.command
+      : step.tool === "write_stdin" && typeof step.args?.chars === "string" ? step.args.chars : null;
     return (
       <>
-        <div className={styles.prompt}>{esc ? prompt : withColon(prompt)}</div>
+        <div className={styles.prompt}>{prompt}</div>
         {command ? <OperationCode value={command} language="bash" /> : null}
         {esc && summary ? <pre className={approvalStyles.summary}>{summary}</pre> : null}
         {step.args && Object.keys(step.args).length > 0 ? (
           command ? (
             <details className={approvalStyles.executionDetails}>
-              <summary><ChevronRight size={16} aria-hidden="true" />{text("Execution details", "查看执行详情")}</summary>
+              <summary><SolarIcon name="alt-arrow-right" size={16} aria-hidden="true" />{text("Execution details", "查看执行详情")}</summary>
               <OperationCode value={JSON.stringify(step.args, null, 2)} language="json" />
             </details>
           ) : <OperationCode value={JSON.stringify(step.args, null, 2)} language="json" />
@@ -468,7 +482,7 @@ function StepBody({
   const toggle = (opt: string) => {
     if (step.multi) {
       const next = new Set(aa.picked);
-      next.has(opt) ? next.delete(opt) : next.add(opt);
+      if (next.has(opt)) next.delete(opt); else next.add(opt);
       onChange({ picked: next, custom: aa.custom });
     } else {
       // 单选：点已选的 → 取消；点别的 → 切换。
@@ -477,27 +491,39 @@ function StepBody({
   };
   return (
     <>
-      <div className={styles.prompt}>{withColon(step.prompt)}</div>
+      {step.multi && <div className={styles.choiceHint}>{text("Select one or more", "可选择一项或多项")}</div>}
       {step.options.length > 0 ? (
         <div className={styles.options}>
-          {step.options.map((opt) => (
-            <button
+          {step.options.map((opt, index) => (
+            <Button
               key={opt}
               type="button"
-              className={styles.opt + (aa.picked.has(opt) ? " " + styles.optPicked : "")}
+              variant="elevated"
+              className="h-auto min-h-10 w-full justify-between gap-4 py-2.5 text-left font-normal whitespace-pre-wrap"
+              aria-pressed={aa.picked.has(opt)} aria-label={opt} data-choice-number={index + 1}
               onClick={() => toggle(opt)}
             >
-              {aa.picked.has(opt) ? "✓ " : ""}{opt}
-            </button>
+              <span className={styles.optionContent}>
+                <span className={styles.optionTitle}>{opt}</span>
+                {step.optionDescriptions && Object.hasOwn(step.optionDescriptions, opt)
+                  && typeof step.optionDescriptions[opt] === "string"
+                  && <span className={styles.optionDescription}>{step.optionDescriptions[opt]}</span>}
+              </span>
+              <Kbd aria-hidden="true">{index + 1}</Kbd>
+            </Button>
           ))}
         </div>
       ) : null}
       {step.allowCustom ? (
-        <input
-          className={styles.input}
+        <label className={styles.customOption}>
+          {step.options.length > 0 && <span className={styles.customTitle}>
+            {text("Other", "其他")}<Kbd aria-hidden="true">{step.options.length + 1}</Kbd>
+          </span>}
+        <Input
           value={aa.custom}
+          aria-label={step.prompt} data-choice-number={step.options.length + 1}
           placeholder={step.options.length
-            ? text("Or type your own…", "或自己输入…")
+            ? text("Type your own answer here", "输入自定义回答")
             : text("Type your answer…", "输入你的回答…")}
           onChange={(e) => {
             const custom = e.target.value;
@@ -505,8 +531,8 @@ function StepBody({
             const picked = !step.multi && aa.picked.size ? new Set<string>() : aa.picked;
             onChange({ picked, custom });
           }}
-          autoFocus
         />
+        </label>
       ) : null}
     </>
   );

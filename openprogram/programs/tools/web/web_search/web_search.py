@@ -28,11 +28,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from openprogram.programs._helpers import is_available as _tool_is_available
-from openprogram.programs._helpers import read_int_param, read_string_param
-from openprogram.programs._runtime import ToolReturn, function
+from openprogram.programs._authoring.helpers import read_int_param, read_string_param
+from openprogram.programs._host.runtime import ToolReturn, function
 from . import providers as _  # registers builtins on import  # noqa: F401
-from .registry import SearchResult, registry
+from .registry import SearchResult, WebSearchProvider, registry
 
 
 NAME = "web_search"
@@ -176,29 +175,70 @@ def execute(
         return _format(query, label, merged)
 
     # --- Single-provider path (legacy default) -------------------------
-    # Caller didn't pin a backend → use the user's saved default if any,
-    # otherwise fall through to priority-based auto-select.
-    if not provider:
+    # A pinned backend is used as is: its failure is the answer. Without a
+    # pin, the user's saved default goes first, then every other available
+    # backend by priority, so one backend's outage (a bot challenge, a 4xx
+    # from its API) does not fail the search.
+    if provider:
         try:
-            from openprogram.setup import read_search_default_provider
-            stored = read_search_default_provider()
-            if stored and stored in {p.name for p in registry.available()}:
-                provider = stored
-        except Exception:
-            pass
+            backend = registry.select(prefer=provider)
+        except LookupError as e:
+            return f"Error: {e}"
+        try:
+            results = backend.search(query, num_results=num_results)
+        except Exception as e:
+            return f"Error: {backend.name} search failed: {type(e).__name__}: {e}"
+        return _format(query, backend.name, results)
 
+    candidates = _fallback_order()
+    if not candidates:
+        try:
+            registry.select()
+        except LookupError as e:
+            return f"Error: {e}"
+    failures: list[str] = []
+    for backend in candidates:
+        try:
+            results = backend.search(query, num_results=num_results)
+        except Exception as e:
+            failures.append(f"{backend.name}: {type(e).__name__}: {e}")
+            continue
+        text = _format(query, backend.name, results)
+        if failures:
+            text += "\n\n(skipped: " + "; ".join(failures) + ")"
+        return text
+    text = "Error: every web search backend failed: " + "; ".join(failures)
+    if not any(getattr(backend, "requires_env", ()) for backend in candidates):
+        text += ". " + NO_KEY_HINT
+    return text
+
+
+# Appended when every unpinned backend failed and none of them needs a key:
+# the only fix is a key-based backend or a browser, not a retry.
+NO_KEY_HINT = (
+    "No search key is configured: add one in Settings > Search (Brave and "
+    "Tavily have free tiers), or open a search page with your browser tools "
+    "if you have them."
+)
+
+
+def _fallback_order() -> list[WebSearchProvider]:
+    """Available backends in the order a search without a pin tries them:
+    the saved default first, then the rest by priority. Specialized indexes
+    (``specialized = True``, e.g. arxiv) are skipped unless they are the saved
+    default; a pinned ``provider=`` still reaches them."""
     try:
-        backend = registry.select(prefer=provider)
-    except LookupError as e:
-        return f"Error: {e}"
-
-    try:
-        results = backend.search(query, num_results=num_results)
-    except Exception as e:
-        return f"Error: {backend.name} search failed: {type(e).__name__}: {e}"
-
-    return _format(query, backend.name, results)
-
+        from openprogram.state.preferences import read_search_default_provider
+        stored = read_search_default_provider()
+    except Exception:
+        stored = None
+    available = [
+        p for p in registry.available()
+        if not getattr(p, "specialized", False) or (stored and p.name == stored)
+    ]
+    if stored:
+        available.sort(key=lambda p: p.name != stored)
+    return available
 
 
 def _execute_agent_tool(**kwargs) -> ToolReturn:

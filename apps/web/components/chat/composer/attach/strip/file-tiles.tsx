@@ -1,0 +1,480 @@
+"use client";
+
+/**
+ * Generic file-attachment tiles for the composer — non-image drops.
+ *
+ * Visual model copies claude.ai's composer: each attached file shows
+ * up as a rounded card with the filename + an upper-case extension
+ * badge. A prominent × in the top-left corner removes the tile;
+ * clicking anywhere ELSE on the tile opens a preview modal showing
+ * the file content (or a "binary" placeholder for non-text drops).
+ *
+ * Images use the dedicated ``ImageAttachStrip`` (with thumbnail
+ * previews); text + binary drops use this tile.
+ */
+
+import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useTranslation } from "@/lib/i18n";
+import { Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { formatAttachmentSize, imagePreviewDataUrl, type PendingImage } from "../image/image-attach";
+import { ImageAnnotator } from "../image/image-annotator";
+
+export interface PendingDoc {
+  id: string;
+  filename: string;
+  /** Original native path when Electron supplied this File. */
+  sourcePath?: string;
+  /** Bounded first-level listing, only for folders. */
+  directoryListing?: string;
+  /** Lower-cased extension without the dot — used for the badge.
+   *  Empty when the file has no recognizable extension. */
+  ext: string;
+  /** Decoded text content — used ONLY for the local preview modal,
+   *  never sent to the model (every file is delivered by path, not
+   *  inlined). ``null`` for binaries / oversize / read errors. */
+  content: string | null;
+  /** Raw base64 of the file (no data-URL prefix). Set for any file
+   *  under the size cap; sent as a ``type:"document"`` attachment so
+   *  the backend persists it under the session workdir and the message
+   *  references it by path. */
+  dataB64?: string | null;
+  /** MIME type of the file, forwarded as the document media_type. */
+  mediaType?: string;
+  /** Raw size in bytes — surfaced in the tile's hover title. */
+  sizeBytes: number;
+  /** True while the file is still being read. Shows a subtle
+   *  shimmer in place of the badge until reading finishes. */
+  loading?: boolean;
+  /** Monotonic insertion rank shared with images in the same chat. */
+  order?: number;
+  /** Set on an attachment a rewind put back. */
+  refillId?: number;
+  /** Read failure shown on this item; blocks send. */
+  error?: string;
+}
+
+interface FileTilesProps {
+  docs: PendingDoc[];
+  onRemove: (id: string) => void;
+}
+
+// Keyframes injected once via a style tag — gives us the pop-in
+// animation without a CSS-module file. Cheap; React dedupes the
+// element if the component mounts twice.
+const TILE_KEYFRAMES = `
+@keyframes tileIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.composer-file-tile {
+  /* OUTSET box-shadow (no inset) as the 1px ring — same trick as the
+     composer wrapper. Shadow rasteriser keeps the hairline uniform
+     around the 16px corner; border / outline both showed visibly
+     thinner pixels on the curve. */
+  box-shadow: 0 0 0 1px var(--border);
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+.composer-file-tile:hover {
+  background: var(--bg-tertiary);
+  /* Just a brighter 1px ring — no outer glow / halo. */
+  box-shadow: 0 0 0 1px rgba(226,225,218,0.40);
+}
+.composer-file-tile-close {
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.composer-file-tile:hover .composer-file-tile-close,
+.composer-file-tile:focus-within .composer-file-tile-close {
+  opacity: 1;
+}
+.composer-file-tile-close:hover {
+  background: rgba(255,255,255,0.18) !important;
+}
+.composer-file-tile-skeleton {
+  /* Skeleton row that sits where the DOCX badge will land. The
+     shimmer alone read as too passive on a dark page, so a small
+     spinning ring sits to the left to advertise activity. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-2xs);
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.composer-file-tile-skeleton::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.18);
+  border-top-color: rgba(255,255,255,0.7);
+  animation: tileSpinnerSpin 0.8s linear infinite;
+}
+@keyframes tileSpinnerSpin {
+  to { transform: rotate(360deg); }
+}
+`;
+
+export function FileTiles({ docs, onRemove }: FileTilesProps) {
+  if (docs.length === 0) return null;
+  // Wrapper padding sits the row inside the rounded composer border —
+  // ~14px clear from the top edge + 12px sides matches claude.ai's
+  // breathing room. The bottom gap (10px) plus the textarea's own
+  // padding keeps the gap from the typing line equal to the gap from
+  // the composer top.
+  return (
+    <>
+      <style>{TILE_KEYFRAMES}</style>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          // 16px inset on all sides matches the bottom-row buttons'
+          // ``--composer-button-offset`` so the docx-tile row and
+          // the image-attach row both sit at the same distance from
+          // the wrapper edge as the send / plus / thinking pill.
+          padding: "16px 16px 8px",
+        }}
+      >
+        {docs.map((d) => (
+          <FileTile key={d.id} doc={d} onRemove={() => onRemove(d.id)} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) {
+  const { text } = useTranslation();
+  const sizeLabel = doc.sizeBytes >= 1024 * 1024
+    ? `${(doc.sizeBytes / 1024 / 1024).toFixed(1)} MB`
+    : `${(doc.sizeBytes / 1024).toFixed(0)} KB`;
+  const [previewOpen, setPreviewOpen] = useState(false);
+  return (
+    <>
+      <div
+        className="composer-file-tile"
+        role="button"
+        tabIndex={0}
+        onClick={() => setPreviewOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setPreviewOpen(true);
+          }
+        }}
+        aria-label={`${doc.filename} · ${sizeLabel} · ${text("click to preview", "点击预览")}`}
+        style={{
+          position: "relative",
+          // Roomier pill-ish card to match claude.ai. Wider so CJK
+          // filenames fit on two lines; taller so the badge has
+          // breathing room.
+          // Sized for 4 tiles per row at the wrapper's 800px max-
+          // width: inner row = 800 − 32 (16/16 padding) = 768; with
+          // 8px gaps × 3 = 24px between four tiles, each tile gets
+          // (768 − 24) / 4 = 186px. Trimmed to 184 so the layout
+          // doesn't accidentally squeeze on devices with rounded
+          // sub-pixel widths.
+          width: 184,
+          height: 72,
+          padding: "10px 14px",
+          paddingRight: 16,
+          // Radius 16 — same as the send / stop / plus buttons and
+          // the image chip. With the 16px inset above, all inner
+          // arcs share the wrapper's corner center (32, 32) so the
+          // tile, chip, and corner buttons all read as one
+          // consistent arc family.
+          borderRadius: "var(--radius-2xl)",
+          background: "var(--bg-secondary)",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          // Vertical gap between filename and DOCX / PDF badge — 4px
+          // looked cramped, bumping to 8px gives the badge clear
+          // separation from the name line.
+          gap: 8,
+          overflow: "hidden",
+          cursor: "pointer",
+          animation: "tileIn 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+          outline: "none",
+        }}
+      >
+        <div
+          style={{
+            fontSize: "var(--fs-xs)",
+            lineHeight: 1.3,
+            color: "var(--text-primary)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            wordBreak: "break-all",
+            paddingRight: 18,  // keep clear of the × hot zone
+          }}
+        >
+          {doc.filename}
+        </div>
+        {doc.loading ? (
+          // Spinner + "Loading" label sits where the DOCX badge will
+          // land once readDroppedTextFile resolves. Keeps the tile's
+          // vertical rhythm so it doesn't jump once the badge appears.
+          <div
+            className="composer-file-tile-skeleton"
+            aria-label={text("Loading...", "加载中...")}
+          >
+            {text("Loading", "加载中")}
+          </div>
+        ) : doc.ext && (
+          <div
+            style={{
+              alignSelf: "flex-start",
+              fontSize: "var(--fs-2xs)",
+              fontWeight: 600,
+              letterSpacing: 0.5,
+              textTransform: "uppercase",
+              padding: "1px 5px",
+              borderRadius: "var(--radius-2xs)",
+              background: "var(--bg-tertiary)",
+              color: "var(--text-muted)",
+              lineHeight: 1.4,
+            }}
+          >
+            {doc.ext}
+          </div>
+        )}
+        <button
+          type="button"
+          className="composer-file-tile-close"
+          // stopPropagation so the click only removes — doesn't also
+          // open the preview modal.
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          aria-label={`${text("Remove", "移除")} ${doc.filename}`}
+          style={{
+            position: "absolute",
+            // Sits fully inside the tile in the top-right corner — no
+            // negative offsets, no rogue-sticker look. Hidden until
+            // the tile is hovered / focused (.composer-file-tile-close
+            // opacity rule).
+            top: 6,
+            right: 6,
+            width: 22,
+            height: 22,
+            padding: 0,
+            border: "none",
+            borderRadius: "var(--radius-lg)",
+            background: "rgba(255,255,255,0.08)",
+            color: "var(--text-primary, #e5e5e5)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* Crisper than the unicode ×; same stroke width as the
+              composer's other icons. */}
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+            <path
+              d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+      {previewOpen && (
+        <FilePreviewModal doc={doc} onClose={() => setPreviewOpen(false)} />
+      )}
+    </>
+  );
+}
+
+export function FilePreviewModal(props: { doc?: PendingDoc; image?: PendingImage; sessionId?: string | null; onClose: () => void; onReplaceImage?: (file: File) => Promise<void> | void }) {
+  // A selected native file can be outside the session file-access scope.
+  // Preview its captured content without requesting backend path access.
+  return <LocalFilePreviewModal {...props} />;
+}
+
+function LocalFilePreviewModal({
+  doc, image, onClose, onReplaceImage,
+}: {
+  doc?: PendingDoc;
+  image?: PendingImage;
+  onClose: () => void;
+  onReplaceImage?: (file: File) => Promise<void> | void;
+}) {
+  const { text } = useTranslation();
+  const [annotating, setAnnotating] = useState(false);
+  const imageSrc = image ? imagePreviewDataUrl(image.attachment) || image.previewUrl || "" : "";
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!doc?.dataB64 || (doc.ext !== "pdf" && doc.mediaType !== "application/pdf")) return;
+    const bytes = Uint8Array.from(atob(doc.dataB64), char => char.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+    setPdfUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [doc?.dataB64, doc?.ext, doc?.mediaType]);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (annotating) return;
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+      // Keep keyboard focus on the preview's own buttons.
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const buttons = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+        const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        buttons[(at + (e.shiftKey ? buttons.length - 1 : 1)) % buttons.length]?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [onClose, annotating]);
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      data-native-view-occluder="true"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10_001,
+        background: "rgba(0,0,0,0.55)",
+        backdropFilter: "blur(2px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        animation: "overlayIn 140ms ease-out",
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={image?.attachment.filename || doc?.filename || text("Attachment preview", "附件预览")}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(720px, 90vw)",
+          maxHeight: "80vh",
+          background: "var(--bg-secondary)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-xl)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span style={{
+            fontSize: "var(--fs-sm)",
+            color: "var(--text-primary)",
+            flex: 1,
+            overflowWrap: "anywhere",
+            whiteSpace: "normal",
+          }}>
+            {image?.attachment.filename || doc?.filename || ""}
+          </span>
+          {onReplaceImage && imageSrc ? (
+            <Button variant="ghost" size="icon-xs" onClick={() => setAnnotating(true)} aria-label={text("Annotate", "标注")}>
+              <Pencil />
+            </Button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={text("Close preview", "关闭预览")}
+            style={{
+              width: 26, height: 26,
+              border: "none",
+              borderRadius: 13,
+              background: "transparent",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: "var(--fs-title)",
+              lineHeight: 1,
+            }}
+          >×</button>
+        </div>
+        <div style={{ padding: "10px 16px 0", fontSize: "var(--fs-xs)", color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+          <div>{formatAttachmentSize(image?.sizeBytes ?? doc?.sizeBytes, { folder: doc?.ext === "folder" })}</div>
+          <div>{image ? text("An original copy is saved with the message when sent.", "发送后，原图副本保存在聊天中。")
+            : doc?.sourcePath ? text("Reference to the original file", "引用原文件")
+            : text("A copy is saved with the message when sent.", "发送后，文件副本保存在聊天中。")}</div>
+          {doc?.sourcePath && <div>{doc.sourcePath}</div>}
+          {(image?.error || doc?.error) && <div role="alert">{image?.error || doc?.error}</div>}
+        </div>
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: 16,
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--fs-xs)",
+            lineHeight: 1.5,
+            color: "var(--text-primary)",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {image && (imagePreviewDataUrl(image.attachment) || image.previewUrl) ? (
+            <img
+              src={imagePreviewDataUrl(image.attachment) || image.previewUrl || ""}
+              alt={image.attachment.filename || text("image", "图片")}
+              style={{
+                display: "block",
+                maxWidth: "100%",
+                maxHeight: "60vh",
+                margin: "0 auto",
+                objectFit: "contain",
+              }}
+            />
+          ) : pdfUrl ? (
+            <iframe title={doc?.filename || "PDF"} src={pdfUrl} style={{width:"100%",height:"55vh",border:0}} />
+          ) : doc?.content === null || doc == null ? (
+            <span style={{ color: "var(--text-muted)" }}>
+              {text(
+                "No text preview. The assistant can read this file when the task requires it.",
+                "此文件没有文字预览。助手会根据任务需要读取。",
+              )}
+            </span>
+          ) : doc.content || (
+            <span style={{ color: "var(--text-muted)" }}>{text("(empty)", "（空）")}</span>
+          )}
+        </div>
+      </div>
+      {annotating && image && onReplaceImage ? (
+        <ImageAnnotator
+          src={imageSrc}
+          filename={image.attachment.filename || "image.png"}
+          onCancel={() => setAnnotating(false)}
+          onSave={(file) => { setAnnotating(false); void Promise.resolve(onReplaceImage(file)).then(onClose); }}
+        />
+      ) : null}
+    </div>,
+    document.body,
+  );
+}

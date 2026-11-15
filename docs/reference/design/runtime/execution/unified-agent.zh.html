@@ -1,0 +1,35 @@
+<title>Agent 与 Context 契约</title>
+<meta name="description" content="Agent、Context、ChatAgent 和共享轮次运行时的职责。">
+<h1>Agent 与 Context 契约</h1>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">负责方</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Agent</code></th><td>配置化调用和持久轮次（<code translate="no">run_turn</code>、<code translate="no">resume_turn</code>、<code translate="no">arun_turn</code>、<code translate="no">aresume_turn</code>）、取消、事件、配置解析（<code translate="no">from_spec</code>）</td></tr>
+<tr><th scope="row"><code translate="no">Context</code></th><td>会话写入器和分支、命名内容、provider、历史选择（<code translate="no">None</code>、<code translate="no">"thread"</code>、<code translate="no">"chat"</code> 或可调用对象）</td></tr>
+<tr><th scope="row"><code translate="no">ChatAgent</code></th><td>对话默认值；生产聊天入口，经由 <code translate="no">Agent</code></td></tr>
+<tr><th scope="row">共享轮次运行时</th><td>准入、模型和工具执行、压缩、流式、持久化、收尾。<code translate="no">dispatcher</code> 是它的导入别名。</td></tr>
+<tr><th scope="row">执行控制</th><td>持久的尝试归属、暂停、转向、检查点恢复。没有并行的作业注册表。</td></tr>
+</tbody>
+</table>
+
+<h2 id="boundaries">边界</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">对话</th><td>跨轮次保留会话图</td></tr>
+<tr><th scope="row">普通辅助函数</th><td>不加 DAG 节点</td></tr>
+<tr><th scope="row">嵌套 Agent</th><td>保留独立的图</td></tr>
+<tr><th scope="row">Context 内容</th><td>仍是用户内容，不授予权限；权限、记忆和沙箱限制照常</td></tr>
+<tr><th scope="row">工具超时</th><td>算工具错误，父轮次继续</td></tr>
+<tr><th scope="row">用户取消</th><td>传到所有活动工作</td></tr>
+<tr><th scope="row">恢复</th><td>复用持久化的模型上下文，不重复用户准入</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+
+<p>代码和公开回归测试都已具备。</p>
+
+<p class="next"><a href="llm-and-agent.zh.html">Agent 执行核心</a></p>

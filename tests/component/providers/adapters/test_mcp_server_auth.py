@@ -15,7 +15,7 @@ import pytest
 
 
 def _auth():
-    return importlib.import_module("openprogram.mcp.server.auth")
+    return importlib.import_module("openprogram.extensions.mcp.server.auth")
 
 
 def _write_private(path, value: str) -> None:
@@ -44,7 +44,7 @@ def _foreign_writable_temp() -> Path:
 
 
 def test_token_path_uses_independent_state_file(tmp_path, monkeypatch):
-    paths = importlib.import_module("openprogram.paths")
+    paths = importlib.import_module("openprogram.state.paths")
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
 
     assert _auth().token_path() == tmp_path / "mcp_server_token"
@@ -140,7 +140,7 @@ def test_create_token_rejects_real_symlink_ancestor(
     linked = tmp_path / "linked"
     _symlink_to_or_skip(linked, actual, directory=True)
     if use_default_path:
-        paths = importlib.import_module("openprogram.paths")
+        paths = importlib.import_module("openprogram.state.paths")
         monkeypatch.setattr(paths, "get_state_dir", lambda: linked)
         selected_path = None
     else:
@@ -313,7 +313,7 @@ def test_authentication_rejects_real_symlink_ancestor(
     linked = tmp_path / "linked"
     _symlink_to_or_skip(linked, actual, directory=True)
     if use_default_path:
-        paths = importlib.import_module("openprogram.paths")
+        paths = importlib.import_module("openprogram.state.paths")
         monkeypatch.setattr(paths, "get_state_dir", lambda: linked)
         selected_path = None
     else:

@@ -13,18 +13,18 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.auth.credential_provider import CredentialProvider
-from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import (
+from openprogram.models.auth.credential_provider import CredentialProvider
+from openprogram.models.auth.store import AuthStore, set_store_for_testing
+from openprogram.models.auth.types import (
     AuthConfigError,
     Credential,
     CredentialData,
     CredentialPool,
 )
-from openprogram.providers.google_gemini_cli import auth_adapter
-from openprogram.providers.google_gemini_cli.runtime import (
-    _access_token_for,
-    _ensure_credential,
+from openprogram.models.providers.adapters.google_gemini_cli import auth_adapter
+from openprogram.models.providers.adapters.google_gemini_cli.credentials import (
+    access_token_for,
+    ensure_credential,
 )
 
 
@@ -57,13 +57,13 @@ def test_ensure_credential_imports_from_gemini_cli_file_when_pool_absent(isolate
     _write_creds(creds_path, access="ya29.fromfile")
     mgr = CredentialProvider(store=store)
 
-    cred = _ensure_credential(mgr, "default")
+    cred = ensure_credential(mgr, "default")
     assert cred.kind == "cli_delegated"
-    assert _access_token_for(cred) == "ya29.fromfile"
+    assert access_token_for(cred) == "ya29.fromfile"
     # Pool created — a second acquire returns the same credential without
     # re-importing the file.
     assert store.find_pool(auth_adapter.PROVIDER_ID, "default") is not None
-    cred2 = _ensure_credential(mgr, "default")
+    cred2 = ensure_credential(mgr, "default")
     assert cred2.credential_id == cred.credential_id
 
 
@@ -71,7 +71,7 @@ def test_ensure_credential_raises_when_no_pool_and_no_file(isolated):
     store, *_ = isolated
     mgr = CredentialProvider(store=store)
     with pytest.raises(AuthConfigError, match="gemini auth login"):
-        _ensure_credential(mgr, "default")
+        ensure_credential(mgr, "default")
 
 
 def test_access_token_reads_live_file_for_cli_delegated(isolated):
@@ -93,11 +93,11 @@ def test_access_token_reads_live_file_for_cli_delegated(isolated):
             },
         ),
     )
-    assert _access_token_for(cred) == "ya29.original"
+    assert access_token_for(cred) == "ya29.original"
 
     # Simulate the gemini CLI rotating the token on disk.
     _write_creds(creds_path, access="ya29.rotated")
-    assert _access_token_for(cred) == "ya29.rotated"
+    assert access_token_for(cred) == "ya29.rotated"
 
 
 def test_access_token_reads_oauth_payload_directly():
@@ -114,7 +114,7 @@ def test_access_token_reads_oauth_payload_directly():
             },
         ),
     )
-    assert _access_token_for(cred) == "ya29.oauth_direct"
+    assert access_token_for(cred) == "ya29.oauth_direct"
 
 
 def test_profile_isolation(isolated):
@@ -142,5 +142,5 @@ def test_profile_isolation(isolated):
     seed("personal", "ya29.personal")
     seed("work", "ya29.work")
     mgr = CredentialProvider(store=store)
-    assert _access_token_for(_ensure_credential(mgr, "personal")) == "ya29.personal"
-    assert _access_token_for(_ensure_credential(mgr, "work")) == "ya29.work"
+    assert access_token_for(ensure_credential(mgr, "personal")) == "ya29.personal"
+    assert access_token_for(ensure_credential(mgr, "work")) == "ya29.work"

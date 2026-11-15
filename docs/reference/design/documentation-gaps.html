@@ -1,0 +1,24 @@
+<title>Documentation gaps</title>
+<meta name="description" content="Open divergences between design records and code.">
+<span id="open-items-where-design-docs-are-out-of-sync-with-code"></span>
+<h1>Documentation gaps</h1>
+<p>Unresolved divergences only.</p>
+
+<h2 id="missing-content">Missing content</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Subject</th><th scope="col">Gap</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime/conversation/process_runner.py</code></th><td>Subprocess execution: spawn, stop, user-input bridge. No design record of its own.</td></tr>
+</tbody>
+</table>
+
+<h2 id="open-problems-in-the-tool-calling-system">Open problems in tool calling</h2>
+<table class="stack">
+<thead><tr><th scope="col">Problem</th><th scope="col">Current state</th><th scope="col">To do</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness self-recursion</th><td>A bare <code translate="no">runtime.exec(content=[task])</code> gets <code translate="no">DEFAULT_TOOLSET="full"</code>, which includes the entry point itself; the model can call it again, and retry on failure. Guards: a situational prompt, and a per-function depth limit of 5 in <code translate="no">runtime/agent/call_state.py</code>.</td><td>Scope each harness's toolset. Cycles A→B→A stop only at the depth limit.</td></tr>
+<tr><th scope="row">Harness-internal toolsets</th><td>Full set by default. One harness can call another (research calls gui) and go off track. Claude Code subagents use an allowlist to prevent this.</td><td>Decide: (a) each harness restricts its own exec; (b) the framework denies all harness entry points while one runs; (c) keep the status quo.</td></tr>
+<tr><th scope="row">Checkpoint resume</th><td>When <code translate="no">runtime.exec</code> exhausts its retries with the provider unreachable, it raises and the function ends. The frame node is <code translate="no">status="error"</code> with children preserved; <code translate="no">_render_history_messages</code> loads history from the DAG.</td><td><code translate="no">resume_function(session_id, node_id)</code>: set the frame to <code translate="no">running</code>, re-call exec with the same <code translate="no">frame_node_id</code>, restore contextvars such as <code translate="no">_call_id</code>, rebuild the runtime context, add a Web retry button. In <code translate="no">runtime/agent/call_state.py</code> and <code translate="no">runtime/agent/runtime/</code>.</td></tr>
+<tr><th scope="row">Bash file-change tracking</th><td>Recorded limit: scans only the top level of the cwd. No such scan exists under <code translate="no">programs/tools/files/bash/</code>; the system sandbox separately limits what bash can touch.</td><td>Find the current owner, then scan recursively or close this entry.</td></tr>
+</tbody>
+</table>

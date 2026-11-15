@@ -1,0 +1,135 @@
+<title>LLM-call fault tolerance</title>
+<meta name="description" content="The one retry, timeout and failover policy every model call goes through, compared with peer frameworks.">
+<h1>LLM-call fault tolerance</h1>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Situation</th><th scope="col">Policy</th></tr></thead>
+<tbody>
+<tr><th scope="row">Rate limit, overload, server, timeout, network</th><td>Retried: 5 attempts, jittered exponential backoff, 2 s base, 30 s cap</td></tr>
+<tr><th scope="row"><code translate="no">Retry-After</code> (ms, seconds, HTTP date)</th><td>Honoured as a lower bound up to 300 s. Longer: fails at once, flagged exhausted, hint kept, so a fallback, credential switch or the user can act.</td></tr>
+<tr><th scope="row">Auth, invalid request, context overflow, policy</th><td>Not retried</td></tr>
+<tr><th scope="row">Refused for its shape</th><td><a href="request-repair.html">Mended and resent</a></td></tr>
+<tr><th scope="row">Long silence on a stream</th><td>Fails after 10 min with no bytes or 15 min with no real data; no total limit</td></tr>
+<tr><th scope="row">Dead connection</th><td>30 s connect, TCP keepalive notices in about 60 s</td></tr>
+<tr><th scope="row">Break after content</th><td>Codex keeps the partial reply as <code translate="no">stop_reason="length"</code>. Other providers re-send the whole request on a transport failure and void the partial, see <a href="error-and-timeout-mechanism.html#resend">Re-sending a failed reply</a>.</td></tr>
+<tr><th scope="row">Network unreachable</th><td><a href="error-and-timeout-mechanism.html#network-wait">Waits for it</a></td></tr>
+<tr><th scope="row">Another model</th><td>Off by default; before the first token only</td></tr>
+<tr><th scope="row">Still failing</th><td><a href="error-taxonomy-propagation.html">Structured error in the UI</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="timeout-policy">Why read timeouts are generous</h2>
+<p>A reasoning stream must not carry a tight read timeout: a single <code translate="no">timeout=120</code> caps the body read and fires over a buffering proxy, killing a healthy stream. Codex uses <code translate="no">Timeout(connect=30, read=660, write=30, pool=30)</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Budget</th><th scope="col">Reset by</th><th scope="col">Catches</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SSE_IDLE_TIMEOUT_S</code> 600</th><td>Any line, pings included</td><td>A dead connection. Codex's own client allows 5 min; 10 leaves room for a buffering proxy.</td></tr>
+<tr><th scope="row">Stream idle bound 300</th><td>Parsed events only</td><td>A reply that stops while the connection stays open, pings included; retried. Every provider, see <a href="error-and-timeout-mechanism.html#idle-bound">Idle bound</a></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_SSE_TOTAL_TIMEOUT_S</code> 0</th><td>Nothing</td><td>Positive values opt into a deadline</td></tr>
+</tbody>
+</table>
+
+<h2 id="transport-recovery">Transport and recovery</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">utils/timeouts.py</code></th><td>The one timeout source, with context-scaling helpers</td></tr>
+<tr><th scope="row"><code translate="no">utils/http_client.py</code></th><td>Keepalive, per OS. Force-IPv4 binds an IPv4 source, since httpx has no Happy Eyeballs. <code translate="no">get_shared_async_client</code> is loop-keyed, so Codex reuses TLS across turns. Proxy through httpx <code translate="no">proxy=</code>.</td></tr>
+<tr><th scope="row"><code translate="no">utils/rate_limit.py</code></th><td>Parses <code translate="no">x-ratelimit-*</code>, <code translate="no">anthropic-ratelimit-*</code>; Codex warns when a bucket is low</td></tr>
+<tr><th scope="row"><code translate="no">retry_after_beyond_cap</code></th><td>One rule for the stream retry and <code translate="no">Runtime.exec</code></td></tr>
+<tr><th scope="row">Partial recovery, <code translate="no">openai_codex.py</code></th><td>A transient break after content finalizes the turn; permanent failures still fail</td></tr>
+<tr><th scope="row">openai-completions retry</th><td>After <code translate="no">EventStart</code>, before content: a retryable <code translate="no">APIError</code>, including xAI's status-less <code translate="no">Internal error during token generation</code>, reopens on the same model. Otherwise the outer handler records cooldown and re-raises.</td></tr>
+<tr><th scope="row">gemini_cli</th><td>Same client and timeouts</td></tr>
+</tbody>
+</table>
+
+<h2 id="failover">Failover</h2>
+<p><code translate="no">utils/failover.py</code> and <code translate="no">stream_with_failover</code> try each fallback on a failover-worthy failure before content, forwarding events and suppressing the duplicate <code translate="no">start</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">model_fallback.mode</code></th><th scope="col">Tries</th><th scope="col">Crosses providers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">off</code> (default)</th><td>None; a 429 shows that error</td><td>–</td></tr>
+<tr><th scope="row"><code translate="no">same-provider</code></th><td>Up to two other enabled models of the provider, in config-row order, reusing the credential</td><td>no</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td><code translate="no">model_fallback.models</code>, <code translate="no">provider/model</code> ids in order</td><td>yes</td></tr>
+</tbody>
+</table>
+<p class="note">Settings → System → Models, or <code translate="no">openprogram config</code>. <code translate="no">OPENPROGRAM_FALLBACK_MODELS</code> overrides it. A fallback reply records what was skipped in <code translate="no">AssistantMessage.failover</code>. Each switch also goes to the <code translate="no">route_events</code> table the <a href="../routing-overview.html">routing overview</a> reads.</p>
+
+<h2 id="tunables">Environment variables</h2>
+<table class="stack">
+<thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_SSE_IDLE_TIMEOUT_S</code></th><td>600</td><td>No bytes</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_STREAM_IDLE_TIMEOUT_S</code></th><td>300</td><td>No event; 0 turns the bound off</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S</code></th><td>the idle bound</td><td>No real data, Codex only</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_SSE_TOTAL_TIMEOUT_S</code></th><td>0</td><td>One-stream deadline; 0 is none</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_HTTPX_CONNECT_TIMEOUT_S</code></th><td>30</td><td>Connect</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_HTTPX_WRITE_TIMEOUT_S</code>, <code translate="no">_POOL_TIMEOUT_S</code></th><td>30</td><td>Write, pool</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_HTTPX_READ_TIMEOUT_S</code></th><td>idle + 60</td><td>Read backstop</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></th><td>5</td><td>Attempts per stream</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_BACKOFF_S</code></th><td>2.0</td><td>Backoff base</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S</code></th><td>30.0</td><td>Exponential cap</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code></th><td>300</td><td>Longest wait sat through; 0 lifts it</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>1800</td><td>Waiting for the network; 0 disables</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_MAX_RETRIES</code></th><td>3</td><td><code translate="no">Runtime.exec</code> attempts</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></th><td>0</td><td><code translate="no">exec</code> deadline; 0 is none</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_ANTHROPIC_MAX_RETRIES</code></th><td>3</td><td>Anthropic SDK retries</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_TCP_KEEPALIVE</code></th><td>1</td><td>Dead-peer detection</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_TCP_KEEPIDLE_S</code>, <code translate="no">_KEEPINTVL_S</code>, <code translate="no">_KEEPCNT</code></th><td>30, 10, 3</td><td>Probe timing</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td>0</td><td>IPv4 source, for broken-IPv6 VPNs</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PARTIAL_RECOVERY</code></th><td>1</td><td>Keep partial output</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FALLBACK_MODELS</code></th><td>empty, the setting</td><td><code translate="no">same-provider</code>, a list, or <code translate="no">off</code>/<code translate="no">none</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Comparison with peer frameworks</summary>
+<table class="stack">
+<thead><tr><th scope="col">Dimension</th><th scope="col">openclaw</th><th scope="col">opencode</th><th scope="col">hermes-agent</th><th scope="col">pi-ai (codex)</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Attempts</th><td>3 (+2 inner)</td><td>2</td><td>3</td><td>3</td><td>5</td></tr>
+<tr><th scope="row">Backoff base</th><td>300 ms</td><td>500 ms</td><td>5 s</td><td>1 s</td><td>2 s</td></tr>
+<tr><th scope="row">Backoff cap</th><td>30 s</td><td>10 s</td><td>120 s</td><td>none</td><td>30 s</td></tr>
+<tr><th scope="row">Jitter</th><td>symmetric, positive</td><td>±20%</td><td>decorrelated</td><td>none</td><td>symmetric, positive</td></tr>
+<tr><th scope="row">Retryable status</th><td>408, 409, 429, 5xx</td><td>429, 503, 504, 529</td><td>429, 5xx, 524</td><td>429, 5xx</td><td>429, 5xx, body patterns</td></tr>
+<tr><th scope="row">Retry-After</th><td>ms, s, date</td><td>ms, s, date (cap 10 s)</td><td>none</td><td>none</td><td>ms, s, date (cap 300 s)</td></tr>
+<tr><th scope="row">Idle timeout</th><td>30 min any byte</td><td>none; WS 5 min</td><td>180 s stale, scaled</td><td>none</td><td>10 min any byte, 15 min data</td></tr>
+<tr><th scope="row">Connect timeout</th><td>undici default</td><td>none; WS 15 s</td><td>SDK default</td><td>none</td><td>30 s</td></tr>
+<tr><th scope="row">First-byte guard</th><td>30 s (Azure)</td><td>n/a</td><td>120 s (codex)</td><td>none</td><td>idle and read</td></tr>
+<tr><th scope="row">HTTP version</th><td>forced 1.1</td><td>default</td><td>auto (h2)</td><td>n/a</td><td>httpx default (1.1)</td></tr>
+<tr><th scope="row">IPv6</th><td>autoSelectFamily</td><td>no</td><td>no</td><td>n/a</td><td>force-IPv4 switch</td></tr>
+<tr><th scope="row">TCP keepalive</th><td>undici default</td><td>no</td><td>30/10/3</td><td>n/a</td><td>30/10/3</td></tr>
+<tr><th scope="row">Connection reuse</th><td>keep-alive</td><td>WS pool, 55 min recycle</td><td>shared, rebuilt when stale</td><td>n/a</td><td>shared, loop-keyed</td></tr>
+<tr><th scope="row">Key rotation</th><td>yes</td><td>no</td><td>pool, cooldowns</td><td>n/a</td><td>pool, cooldowns</td></tr>
+<tr><th scope="row">Model failover</th><td>yes</td><td>WS to HTTP only</td><td>chain</td><td>n/a</td><td>chain, off by default</td></tr>
+<tr><th scope="row">Break after first token</th><td>error</td><td>error</td><td>partial, continue</td><td>error</td><td>partial, continue (Codex); re-send (others)</td></tr>
+<tr><th scope="row">OAuth refresh</th><td>n/a</td><td>n/a</td><td>per-request provider</td><td>per call</td><td>per call</td></tr>
+<tr><th scope="row">Rate-limit headers</th><td>n/a</td><td>yes</td><td>Nous</td><td>n/a</td><td>yes</td></tr>
+<tr><th scope="row">Classification</th><td>yes</td><td>tagged union</td><td>yes</td><td>basic</td><td><code translate="no">ErrorReason</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>What each project contributes</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Project</th><th scope="col">Patterns</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw (<code translate="no">references/openclaw</code>, TS)</th><td>30 min stream timeout on the undici dispatcher, reset by any byte. Forced HTTP/1.1 and Happy Eyeballs avoid h2 resets and broken IPv6. Two-tier retry. Key rotation with per-key transient retry. Failover categories as regex groups. Positive-only jitter with Retry-After; <code translate="no">x-should-retry</code>.</td></tr>
+<tr><th scope="row">hermes-agent (Python, closest)</th><td>Keepalive socket injection and forced TCP close against CLOSE_WAIT. Decorrelated backoff seeded from <code translate="no">time_ns</code>. Stale timeout scaled by context, off for local providers. Separate first-byte and inter-event timeouts. Credential pool with cooldowns (401 5 min, 429/402 1 h, dead 24 h). Per-request OAuth hook. Partial reply with <code translate="no">finish_reason=length</code>.</td></tr>
+<tr><th scope="row">opencode (TS)</th><td>No HTTP body timeout. WS: 15 s connect, 5 min idle, 55 min recycle, HTTP after 5 failures. Rate-limit headers into a structured object. Tagged-union errors.</td></tr>
+<tr><th scope="row">pi-ai (TS, source of our Codex provider)</th><td>3 retries, 1 s base, 429/5xx and body patterns, no read timeout</td></tr>
+<tr><th scope="row">claude-code (partial bundle)</th><td>HTTP behaviour is the Anthropic SDK's</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Classifier, retry and backoff, timeouts, shared client, keepalive, IPv4 switch, rate-limit parsing, opt-in failover, pre-content retry for Codex, OpenAI Responses and completions. Anthropic uses its SDK's retry with 3. Partial recovery: Codex only.</td></tr>
+<tr><th scope="row">Off by design</th><td>Per-call cooldown on a single-account pool: cooling the only credential would lock the user out. Rotation (<code translate="no">auth/pool.py</code>) starts by itself with more than one credential.</td></tr>
+<tr><th scope="row">Not built</th><td>Per-request OAuth hook: Codex already resolves and refreshes the bearer per call.</td></tr>
+</tbody>
+</table>

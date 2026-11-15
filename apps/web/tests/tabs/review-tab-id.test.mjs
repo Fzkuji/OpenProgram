@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { reviewTabId } from "../../lib/tabs/center-tab-ids.ts";
-import { openReviewTabLayout } from "../../lib/tabs/review-tab-layout.ts";
+import { openReviewTabLayout } from "../../lib/tabs/panes/review-tab-layout.ts";
 
 test("Review tabs are deterministic per session and source turn", () => {
   assert.equal(reviewTabId("s1", "a1"), "r:s1:a1");

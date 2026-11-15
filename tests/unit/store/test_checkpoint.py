@@ -1,4 +1,4 @@
-"""Unit tests for openprogram.store.snapshot.checkpoint.
+"""Unit tests for openprogram.state.store.snapshot.checkpoint.
 
 Covers the lifecycle: back up a file pre-edit, mutate the file,
 restore the turn, file is back to pre-edit content. Also exercises
@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store.snapshot.checkpoint import CheckpointStore
-from openprogram.store.snapshot.checkpoint import store as checkpoint_store
-from openprogram.store.snapshot.checkpoint.manifest import entries, load
-from openprogram.store.snapshot.checkpoint.paths import turn_manifest_path
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
+from openprogram.state.store.snapshot.checkpoint import store as checkpoint_store
+from openprogram.state.store.snapshot.checkpoint.manifest import load
+from openprogram.state.store.snapshot.checkpoint.paths import turn_manifest_path
 
 
 @pytest.fixture
@@ -161,7 +161,7 @@ def test_restore_missing_backup_is_skipped(session_dir, workdir):
     store.backup_before_edit("turn1", str(a))
 
     # User nukes the backup dir contents but leaves manifest.
-    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+    from openprogram.state.store.snapshot.checkpoint.paths import turn_backup_dir
     bd = turn_backup_dir(session_dir, "turn1")
     for p in bd.iterdir():
         if p.name != "manifest.json":
@@ -178,7 +178,7 @@ def test_mutation_sequence_allocates_durable_increasing_values():
     process) continues the sequence instead of restarting it.
 
     Regression guard for the allocation path itself: it must work on
-    every platform — the file lock goes through ``openprogram._compat``
+    every platform — the file lock goes through ``openprogram.host._platform.locking``
     and the post-replace directory fsync is best-effort (Windows has no
     directory descriptor to sync; a hard failure there used to be
     possible).
@@ -196,7 +196,7 @@ def test_history_apply_without_dir_fd_reverts_and_reapplies(
 ):
     monkeypatch.setattr(checkpoint_store, "_DIR_FD_APPLY_SUPPORTED", False)
     monkeypatch.setattr(
-        "openprogram.paths.get_state_dir", lambda: workdir / "state",
+        "openprogram.state.paths.get_state_dir", lambda: workdir / "state",
     )
     target = workdir / "fallback.py"
     target.write_text("before", encoding="utf-8")

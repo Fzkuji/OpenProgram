@@ -1,8 +1,7 @@
 """Unit tests for validate_and_retry control flow primitive."""
 
-import pytest
 from unittest.mock import Mock, patch
-from openprogram.agentic_programming.control_flow import validate_and_retry
+from openprogram.runtime.agent.control_flow import validate_and_retry
 
 
 def test_validate_success_first_try():
@@ -10,7 +9,7 @@ def test_validate_success_first_try():
     action = Mock(return_value="file1.py\nfile2.py\nfile3.py")
     retry = Mock(return_value="more files")
 
-    with patch("openprogram.agentic_programming.control_flow.validate.llm") as mock_llm:
+    with patch("openprogram.runtime.agent.control_flow.validate.llm") as mock_llm:
         mock_llm.return_value = "YES, there are 3 files"
 
         result = validate_and_retry(
@@ -31,7 +30,7 @@ def test_validate_retry_once():
     action = Mock(return_value="file1.py")
     retry = Mock(return_value="file1.py\nfile2.py\nfile3.py")
 
-    with patch("openprogram.agentic_programming.control_flow.validate.llm") as mock_llm:
+    with patch("openprogram.runtime.agent.control_flow.validate.llm") as mock_llm:
         mock_llm.side_effect = [
             "NO, only 1 file",
             "YES, now 3 files"
@@ -55,7 +54,7 @@ def test_validate_max_retries_exhausted():
     action = Mock(return_value="file1.py")
     retry = Mock(return_value="file1.py\nfile2.py")
 
-    with patch("openprogram.agentic_programming.control_flow.validate.llm") as mock_llm:
+    with patch("openprogram.runtime.agent.control_flow.validate.llm") as mock_llm:
         mock_llm.return_value = "NO, still not enough"
 
         result = validate_and_retry(
@@ -76,7 +75,7 @@ def test_validate_case_insensitive():
     action = Mock(return_value="result")
     retry = Mock()
 
-    with patch("openprogram.agentic_programming.control_flow.validate.llm") as mock_llm:
+    with patch("openprogram.runtime.agent.control_flow.validate.llm") as mock_llm:
         mock_llm.return_value = "yes, it's good"
 
         result = validate_and_retry(

@@ -9,18 +9,16 @@ token (Telegram), etc.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch
 
 import pytest
 
-from openprogram.channels import setup as ch_setup
+from openprogram.interfaces.cli.commands import channels_setup as ch_setup
 
 
 @pytest.fixture
 def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect ``get_state_dir`` so accounts/bindings persist under tmp."""
-    monkeypatch.setattr("openprogram.paths.get_state_dir",
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir",
                         lambda: tmp_path)
     return tmp_path
 
@@ -33,7 +31,7 @@ def stub_agents(monkeypatch: pytest.MonkeyPatch):
             self.id = _id
 
     monkeypatch.setattr(
-        "openprogram.agent.management.manager.list_all",
+        "openprogram.runtime.agent_registry.manager.list_all",
         lambda: [_Spec("main"), _Spec("research")],
         raising=False,
     )
@@ -115,7 +113,7 @@ def test_setup_wechat_full_flow(state_dir, stub_agents,
 
     # Stub the wechat login to skip the actual QR network call
     def _fake_login(account_id):
-        from openprogram.channels import accounts as a
+        from openprogram.interfaces.channels import accounts as a
         a.save_credentials("wechat", account_id, {
             "bot_token": "fake-token",
             "ilink_bot_id": "bot-1234",
@@ -123,18 +121,18 @@ def test_setup_wechat_full_flow(state_dir, stub_agents,
             "ilink_user_id": "user-1234",
         })
         return {"bot_token": "fake-token", "ilink_bot_id": "bot-1234"}
-    monkeypatch.setattr("openprogram.channels.implementations.wechat.login_account",
+    monkeypatch.setattr("openprogram.interfaces.channels.implementations.wechat.login_account",
                         _fake_login)
 
     rc = ch_setup.run()
     assert rc == 0
 
     # Account file landed
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
     assert accounts.is_configured("wechat", "default")
 
     # Catch-all binding added
-    from openprogram.channels import bindings
+    from openprogram.interfaces.channels import bindings
     rules = bindings.list_all()
     assert len(rules) == 1
     assert rules[0]["agent_id"] == "main"
@@ -150,7 +148,7 @@ def test_setup_skips_login_when_already_configured(
     """Re-running setup on an account that already has credentials
     should NOT prompt for QR again — just walk the user through
     routing + worker steps."""
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
     accounts.create("wechat", "default")
     accounts.save_credentials("wechat", "default", {
         "bot_token": "preexisting", "ilink_bot_id": "bot-9",
@@ -161,7 +159,7 @@ def test_setup_skips_login_when_already_configured(
 
     login_calls = []
     monkeypatch.setattr(
-        "openprogram.channels.implementations.wechat.login_account",
+        "openprogram.interfaces.channels.implementations.wechat.login_account",
         lambda account_id: login_calls.append(account_id) or {"bot_token": "x"},
     )
 
@@ -183,7 +181,7 @@ def test_setup_telegram_token_path(state_dir, stub_agents,
     rc = ch_setup.run()
     assert rc == 0
 
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
     creds = accounts.load_credentials("telegram", "default")
     assert creds["bot_token"] == "1234:abcde-token"
 
@@ -202,7 +200,7 @@ def test_setup_slack_stores_both_tokens(state_dir, stub_agents,
     rc = ch_setup.run()
     assert rc == 0
 
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
     creds = accounts.load_credentials("slack", "default")
     assert creds["bot_token"] == "xoxb-bot-token"
     assert creds["app_token"] == "xapp-app-token"
@@ -222,7 +220,7 @@ def test_setup_slack_aborts_without_app_token(
     rc = ch_setup.run()
     assert rc == 1
 
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
     assert not accounts.is_configured("slack", "default")
 
 
@@ -231,13 +229,13 @@ def test_setup_aborts_when_no_agents(state_dir,
     """If the user has no agents configured, the wizard should print
     a helpful message and exit non-zero rather than attempt to bind
     to a phantom agent."""
-    monkeypatch.setattr("openprogram.agent.management.manager.list_all",
+    monkeypatch.setattr("openprogram.runtime.agent_registry.manager.list_all",
                         lambda: [], raising=False)
     _stub_prompts(monkeypatch, channel="wechat", account="default",
                    agent=None)
 
     monkeypatch.setattr(
-        "openprogram.channels.implementations.wechat.login_account",
+        "openprogram.interfaces.channels.implementations.wechat.login_account",
         lambda account_id: {"bot_token": "fake", "ilink_bot_id": "bot"},
     )
 
@@ -256,14 +254,14 @@ def test_setup_skip_binding_keeps_clean_state(
                    start_worker=False)
 
     monkeypatch.setattr(
-        "openprogram.channels.implementations.wechat.login_account",
+        "openprogram.interfaces.channels.implementations.wechat.login_account",
         lambda account_id: {"bot_token": "fake", "ilink_bot_id": "bot"},
     )
 
     rc = ch_setup.run()
     assert rc == 0
 
-    from openprogram.channels import bindings
+    from openprogram.interfaces.channels import bindings
     assert bindings.list_all() == []
 
 

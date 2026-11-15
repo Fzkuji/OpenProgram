@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { executionMessageIds, pendingExecutionReplayRequests } from '../../lib/net/execution-message-recovery.ts';
+import { executionMessageIds, pendingExecutionReplayRequests } from '../../lib/net/execution/execution-message-recovery.ts';
 test('canonical replay display restores message ownership without input', () => {
   assert.deepEqual(executionMessageIds({display:{user_message_id:'u',assistant_message_id:'a'}}), ['u','a']);
   assert.deepEqual(executionMessageIds({display:{assistant_message_id:'a'}},{user_message_id:'wrong'}), ['a']);

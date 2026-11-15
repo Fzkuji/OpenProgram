@@ -1,0 +1,59 @@
+<title>记忆设计</title>
+<meta name="description" content="记忆子系统工程记录的地图：当前的 Source 和 Topic 工作区，以及提议中的实体层。">
+<span id="memory-memory-system-design"></span>
+<h1>记忆设计</h1>
+<table class="stack">
+<thead><tr><th scope="col">层</th><th scope="col">内容</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td>只追加的证据，带 Runtime 持有的权限出处</td><td>已实现</td></tr>
+<tr><th scope="row">Topic</th><td>模型写的块，链接到 Source 帧</td><td>已实现</td></tr>
+<tr><th scope="row">派生视图</th><td>Core、Timeline、Recent、Relations，由 Runtime 构建</td><td>已实现</td></tr>
+<tr><th scope="row">实体记忆（提议）</th><td>Session-Git，每会话一个仓库、每轮一次提交；Project-Git，智能体编辑时自动提交。原始、不可变、完整</td><td>暂缓</td></tr>
+<tr><th scope="row">抽象记忆（提议）</th><td>Timeline、Graph、不超过 2 KB 的 <code translate="no">Core.md</code>，由实体经五阶段带出处蒸馏。召回只注入这一层，模型用工具回溯</td><td>Graph 视图和实体召回暂缓</td></tr>
+</tbody>
+</table>
+<p class="note">记忆是 Markdown 工作区。提议的层不是事实来源，写入器也不依赖它们。</p>
+
+<h2 id="principles">原则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">原则</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">带出处</th><td>Topic 链接到 Source 帧。实体层还会增加 <code translate="no">(project, session, commit, timestamp)</code></td></tr>
+<tr><th scope="row">双时间</th><td>每条记忆记录 <code translate="no">event_time</code> 和 <code translate="no">ingestion_time</code>，支持时间回溯查询和矛盾检测</td></tr>
+<tr><th scope="row">限定范围的召回</th><td>Runtime 注入活动 Core，并提供 Source 和 Topic 上的记忆工具。Git 导航只是提议</td></tr>
+<tr><th scope="row">Git 原生</th><td>只限提议的实体层</td></tr>
+</tbody>
+</table>
+
+<h2 id="documents">文档</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文档</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="overview.zh.html">概览</a></th><td>当前架构、写入器、权限边界、事务、失败行为</td></tr>
+<tr><th scope="row"><a href="written-marker.zh.html">已写标记</a></th><td>记忆如何知道哪些轮次已写：被替换的游标、八个框架、节点上的标记、暂缓的事件驱动设计</td></tr>
+<tr><th scope="row"><a href="architecture.zh.html">架构</a></th><td>写入入口和步骤、分阶段事务、写游标、常驻块、provider 钩子、失败契约</td></tr>
+<tr><th scope="row"><a href="comparison.zh.html">对比</a></th><td>八个参考框架的八个维度</td></tr>
+<tr><th scope="row"><a href="adoption.zh.html">采纳</a></th><td>四项借鉴：三项采纳，一项因每轮延迟被否</td></tr>
+<tr><th scope="row"><a href="speaker-identity.zh.html">发言人身份</a></th><td>多人共用会话，以及补上两个缺口的字段</td></tr>
+<tr><th scope="row"><a href="authority-landscape.zh.html">权限全景</a></th><td>owner 和 paired 权限、框架证据、决定、执行顺序</td></tr>
+<tr><th scope="row"><a href="authority-handoff.zh.html">权限交接</a></th><td>已定的权限和写入规则、暂缓的边界</td></tr>
+<tr><th scope="row"><a href="entity-memory-proposal.zh.html">基于 Git 的实体记忆</a></th><td>提议的生命周期、重放、一致性、项目集成</td></tr>
+<tr><th scope="row"><a href="virtual-memory.zh.html">虚拟记忆</a></th><td>Timeline、Graph、Core，按类型和生命周期组织</td></tr>
+<tr><th scope="row"><a href="editor.zh.html">阅读、编辑和历史</a></th><td>记忆编辑器</td></tr>
+<tr><th scope="row"><a href="settings-ui.zh.html">设置界面提议</a></th><td>记忆设置</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">领域</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">权限出处</th><td>SessionDB 写入器和 <code translate="no">memory_update</code> 都从持久化的轮次权限构建，绝不取自载荷。没有出处的 Source 按失败关闭</td></tr>
+<tr><th scope="row">自动写入器</th><td>读取 SessionDB 分支，在来源节点记录处理结果，默认用聊天 provider 和模型（可由 <code translate="no">memory.writer.model</code> 覆盖），经分阶段事务安装</td></tr>
+<tr><th scope="row">接口</th><td>记忆工具、CLI、Web UI、写入器状态、一次性可信 Source 回填、<code translate="no">memory.backend=none</code> 保护、从 SessionDB 到 watcher 状态的组合测试</td></tr>
+<tr><th scope="row">引用</th><td>新的 Topic 引用必须解析到本事务证据中的 <code translate="no">trusted</code> Source 帧，因此任何工具路径都不能引用 <code translate="no">pending</code> Source</td></tr>
+<tr><th scope="row">失败</th><td>状态文件、CLI、工具、API、Web UI 共用一个封闭的 <code translate="no">MemoryWriteFailureCode</code> 分类。空闲 watcher 在跨进程锁下持久化每个结果。未配对群归档有速率和存储上限</td></tr>
+<tr><th scope="row">读取过滤</th><td><code translate="no">memory.read</code> 是独立能力，读路径接收调用方层级，依赖 pending 证据的块不进入召回和 Core</td></tr>
+<tr><th scope="row">仅设计</th><td>按层级隐去块内容、hold-and-approve 请求、分支语义出处、跨会话 spawn 关系、实体 Git 层、Graph 视图、事件驱动的写入器通知</td></tr>
+</tbody>
+</table>

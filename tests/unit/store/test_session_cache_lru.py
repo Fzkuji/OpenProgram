@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store import SessionStore
+from openprogram.state.store import SessionStore
 
 
 def _append(db, sess, mid, *, role="user", content="x", parent=None):
@@ -125,3 +125,41 @@ def test_read_boundary_preserves_current_and_history_only_session(tmp_path: Path
     assert [row["content"] for row in fresh.get_branch("history-only")] == [
         "legacy"
     ]
+
+
+@pytest.mark.parametrize("cached", [False, True], ids=["cold", "warm"])
+@pytest.mark.parametrize("field", ["history", "metadata"])
+def test_read_snapshot_cannot_hide_a_later_atomic_write(tmp_path, monkeypatch, cached, field):
+    from openprogram.state.store.session.memory_index import SessionMemoryIndex
+
+    root = tmp_path / "sessions"
+    writer = SessionStore(root)
+    writer.create_session("s", "main", title="initial")
+    _append(writer, "s", "n0")
+    reader = SessionStore(root)
+    if cached:
+        assert reader.get_nodes("s")
+    writer.update_node("s", "n0", metadata={"status": "cancelling"})
+    writer.update_session("s", title="before")
+    writer_index = writer._sessions["s"][1]
+    original = SessionMemoryIndex.rebuild
+    published = False
+
+    def rebuild_then_publish(index, *args, **kwargs):
+        nonlocal published
+        result = original(index, *args, **kwargs)
+        if index is not writer_index and not published:
+            published = True
+            if field == "history":
+                writer.update_node("s", "n0", metadata={"status": "cancelled"})
+            else:
+                writer.update_session("s", title="after")
+        return result
+
+    monkeypatch.setattr(SessionMemoryIndex, "rebuild", rebuild_then_publish)
+    reader.get_nodes("s")
+    assert published
+    if field == "history":
+        assert reader.get_nodes("s")[0].metadata["status"] == "cancelled"
+    else:
+        assert reader.get_session("s")["title"] == "after"

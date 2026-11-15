@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agentic_programming.function import agentic_function
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.store import SessionNodeWriter, SessionStore, _store as _store_var
+from openprogram.runtime.agent import Agent
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.state.store import SessionNodeWriter, SessionStore, _store as _store_var
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def store(tmp_path: Path):
 
 
 def _fake_stream_factory():
-    from openprogram.providers.types import (
+    from openprogram.models.providers.types import (
         AssistantMessage, TextContent,
         EventStart, EventTextStart, EventTextEnd, EventDone,
     )
@@ -52,7 +52,7 @@ def _fake_stream_factory():
 
 
 def _runtime():
-    from openprogram.providers.types import Model
+    from openprogram.models.providers.types import Model
     rt = Runtime(model="default")
     rt.api_model = Model(
         id="fake", name="fake", api="completion", provider="callable", base_url="",
@@ -65,10 +65,14 @@ def test_pending_breakdown_computed_on_provider_path(store):
     rt = _runtime()
     fake = _fake_stream_factory()
 
-    @agentic_function
-    def ask(q, runtime=None):
-        # toolset="none" → 无工具，breakdown 仍应算出（tools_schema==0）
-        return runtime.exec(f"q: {q}", stream_fn=fake, toolset="none")
+    class _AskAgent(Agent):
+        method_options = {'ask': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'ask'}}
+
+        def ask(self, q, runtime=None):
+            # toolset="none" → 无工具，breakdown 仍应算出（tools_schema==0）
+            return runtime.exec(f"q: {q}", stream_fn=fake, toolset="none")
+
+    ask = _AskAgent().ask
 
     ask("hello", runtime=rt)
 
@@ -84,9 +88,13 @@ def test_tools_available_persisted_to_node(store):
     rt = _runtime()
     fake = _fake_stream_factory()
 
-    @agentic_function
-    def ask(q, runtime=None):
-        return runtime.exec(f"q: {q}", stream_fn=fake)  # 默认 toolset → 有工具
+    class _AskAgent(Agent):
+        method_options = {'ask': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'ask'}}
+
+        def ask(self, q, runtime=None):
+            return runtime.exec(f"q: {q}", stream_fn=fake)  # 默认 toolset → 有工具
+
+    ask = _AskAgent().ask
 
     ask("hello", runtime=rt)
 

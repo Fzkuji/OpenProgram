@@ -1,0 +1,44 @@
+<title>编辑器（ACP）</title>
+<meta name="description" content="在 Zed 或其他 ACP 编辑器里把 OpenProgram 作为聊天 Agent 运行。">
+<h1>编辑器（ACP）</h1>
+<p><code translate="no">openprogram acp</code> 是 <a href="https://agentclientprotocol.com">ACP</a>（Agent Client Protocol）的 Agent 端。Zed 原生支持，无需扩展。由编辑器启动该命令；它在 stdin 和 stdout 上使用 JSON-RPC，编辑器断开时退出。</p>
+<h2 id="configuring-zed">Zed</h2>
+<p>在 <code translate="no">settings.json</code>（<code translate="no">cmd-shift-p</code> → <code translate="no">zed: open settings file</code>）的 <code translate="no">agent_servers</code> 下加入这段，然后在 Agent Panel 的新建线程菜单选 <strong>OpenProgram</strong>。如果 Zed 的 <code translate="no">PATH</code> 里没有 <code translate="no">openprogram</code>，把 <code translate="no">which openprogram</code> 的结果写进 <code translate="no">command</code>。</p>
+<pre translate="no" tabindex="0"><code>{
+  "agent_servers": {
+    "OpenProgram": {
+      "type": "custom",
+      "command": "openprogram",
+      "args": ["acp"],
+      "env": {}
+    }
+  }
+}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参数</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--agent &lt;id&gt;</code></th><td>用这个 agent 而不是 <code translate="no">main</code> 运行会话，有自己的系统提示和工具</td></tr>
+<tr><th scope="row"><code translate="no">--permission &lt;mode&gt;</code></th><td><code translate="no">bypass</code>（Bypass permissions，默认）、<code translate="no">auto</code>、<code translate="no">ask</code>、<code translate="no">plan</code> 或 <code translate="no">acceptEdits</code>：<a href="../capabilities/permissions.zh.html">权限</a></td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>"args": ["acp", "--agent", "coding", "--permission", "acceptEdits"]</code></pre>
+<h2 id="what-works-in-the-editor">支持什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">功能</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">工作目录</th><td>工具从编辑器打开线程时所在的文件夹开始，这个文件夹成为会话的项目，和 <code translate="no">openprogram --print</code> 一样。无法作为项目打开的文件夹在主目录运行，并在 stderr 给出警告。</td></tr>
+<tr><th scope="row">项目标记</th><td>第一次发提示时，这个文件夹登记为项目（之前在 App 里隐藏过的会重新显示），并在文件夹里写入标记 <code translate="no">.openprogram/project.json</code>；不想让它进仓库，就把 <code translate="no">.openprogram/</code> 加进 <code translate="no">.gitignore</code>。打开线程但没发提示，不会留下任何东西。</td></tr>
+<tr><th scope="row">流式输出</th><td>逐 token；模型产生推理时作为单独的思考流</td></tr>
+<tr><th scope="row">工具调用</th><td>开始和结束时报告参数和结果；文件工具报告路径，Zed 可以跟随</td></tr>
+<tr><th scope="row">编辑器上下文</th><td>附加的选区或文件按路径写入提示，模型可继续读取</td></tr>
+<tr><th scope="row">权限提示</th><td><strong>Allow</strong>、<strong>Always allow</strong>、<strong>Reject</strong>。Always allow 把该工具的持久规则写入项目设置，和 Web UI 一样。回答后轮次在同一个提示里继续。编辑器对请求返回错误，或 10 分钟内没有回答，按拒绝处理。agent 向你提的问题在 ACP 里没有对应形式，会被拒绝。</td></tr>
+<tr><th scope="row">系统权限</th><td>需要系统权限（例如辅助功能）的步骤无法在编辑器里授予：轮次停止，提示以错误结束并写明需要的权限。</td></tr>
+<tr><th scope="row">取消</th><td>停止线程会中止进行中的模型请求、不再发起新请求，并撤回未答的提示</td></tr>
+<tr><th scope="row">错误</th><td>失败的轮次（例如服务商出错）以带原因的 JSON-RPC 错误回答提示，在权限回答之后才失败的也一样。轮次停在编辑器推不动的状态（在 App 里被暂停，或需要核对）时，提示同样以错误结束；到 OpenProgram 里继续。</td></tr>
+<tr><th scope="row">恢复</th><td>重新打开的线程从会话存储回放。会话是普通会话，在 <a href="web.zh.html">Web</a> 和 <a href="tui.zh.html">TUI</a> 可见，可从任一处继续。</td></tr>
+</tbody></table>
+<h2 id="scope">范围</h2>
+<ul>
+<li>会话以本机所有者权限运行，这正是能弹出审批的前提。不要通过网络传输暴露这个命令。</li>
+<li><code translate="no">session/new</code> 传入的 MCP 服务器被忽略；OpenProgram 用自己的 <a href="../capabilities/mcp.zh.html">MCP 配置</a>。不支持音频提示。</li>
+<li>协议版本 1：编辑器发 <code translate="no">initialize</code>、<code translate="no">session/new</code>、<code translate="no">session/load</code>、<code translate="no">session/prompt</code>、<code translate="no">session/cancel</code>；返回 <code translate="no">session/update</code>、<code translate="no">session/request_permission</code>。</li>
+</ul>

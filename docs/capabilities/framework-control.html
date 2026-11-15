@@ -1,0 +1,52 @@
+<title>Operate OpenProgram through backend tools</title>
+<meta name="description" content="The framework and resource tools: call OpenProgram&#x27;s authenticated backend without clicking its interface.">
+<h1>Operate OpenProgram through backend tools</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">Operates</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">framework</code></th><td>Sessions, projects, configuration, files, applications and executions, through the authenticated backend, with no interface clicking</td></tr>
+<tr><th scope="row"><code translate="no">resource</code></th><td>Persistent environments: Web pages, Terminals and installed applications</td></tr>
+</tbody>
+</table>
+<h2 id="discover-a-business-operation">HTTP operations</h2>
+<pre translate="no" tabindex="0"><code>framework(action="describe", operation="settings")
+framework(action="invoke", operation="GET /api/settings")</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Argument</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">path</code></th><td>Named path parameters</td></tr>
+<tr><th scope="row"><code translate="no">query</code></th><td>Query parameters</td></tr>
+<tr><th scope="row"><code translate="no">body</code></th><td>JSON</td></tr>
+<tr><th scope="row"><code translate="no">content_base64</code>, <code translate="no">content_type</code></th><td>Binary endpoints</td></tr>
+<tr><th scope="row"><code translate="no">arguments={"offset": 50}</code></th><td>Discovery paging; the result gives <code translate="no">next_offset</code></td></tr>
+</tbody>
+</table>
+<p class="note">Use the exact operation ID from discovery. Results include HTTP status; a failure does not mean a mutation is safe to retry.</p>
+<h2 id="websocket-commands">WebSocket commands</h2>
+<pre translate="no" tabindex="0"><code>framework(action="commands")
+framework(action="command", operation="rename_session",
+          arguments={"session_id": "EXACT_SESSION_ID", "title": "Research"})</code></pre>
+<p class="note">Results hold response frames, after the command's own validation. Long-running work stays with the worker; read its execution or session state. File operations keep their request IDs, idempotency keys and revision checks.</p>
+<h2 id="operate-a-window-without-screen-automation">A window, without screen automation</h2>
+<pre translate="no" tabindex="0"><code>framework(action="interface")
+framework(action="interface", operation="tabs.list",
+          arguments={"window_id": "EXACT_WINDOW_ID", "arguments": []})</code></pre>
+<p>The catalogue declares tab, group, split, sidebar, resource view, appearance, bookmark and native Desktop commands with schemas.</p>
+<ul>
+<li>Commands target one authenticated connected window. Missing or ambiguous windows fail explicitly, and a lost reply is not retried.</li>
+<li>Native history, downloads, browser import and update controls use the existing Desktop functions. A browser window reports native-only capabilities as unavailable.</li>
+<li>Window presentation needs a connected view; backend and installed application operations do not need a rendered frontend.</li>
+<li>Unsaved file tabs must be saved or discarded before an automated close.</li>
+<li>Web pages are opened and closed with <code translate="no">computer_use_agent(target="browser")</code>, or with <code translate="no">tabs.openWebTab</code>. A native Page presentation command names its tab with <code translate="no">arguments.tab</code>, the id that target's <code translate="no">tabs</code> lists; it needs what <code translate="no">computer_use_agent</code> needs.</li>
+</ul>
+<h2 id="authority">Authority</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Boundary</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Approval</th><td>Normal tool approval and owner authority apply.</td></tr>
+<tr><th scope="row">Sandbox</th><td>No unrestricted host fallback outside an active sandbox.</td></tr>
+<tr><th scope="row">Not in the catalogue</th><td>Not in the catalogue: authentication bootstrap, transport receipts, Agent approval answers. An Agent cannot approve its own pending operation or change approval modes or rules.</td></tr>
+<tr><th scope="row">Python applications</th><td>Installed Python applications still need explicit trust, and only manifest operations with <code translate="no">agent: true</code> appear in resource action schemas.</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="applications.html">Application packages</a> · <a href="../interfaces/desktop.html">Desktop resources</a></p>

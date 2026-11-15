@@ -1,53 +1,63 @@
 # `openprogram/programs/`
 
-> Function calling — registry, presets, policy.
+Everything the Agent can call is a Program. Importing `openprogram.programs`
+registers every Program and exposes the resolution API other code uses:
+presets (`TOOLSETS`, `DEFAULT_TOOLS`), the resident/deferred split, and the
+policy chain (`agent_tools`, `apply_tool_policy`). The package root holds only
+`__init__.py` (that API), this README and the four directories below.
 
-## Overview
+`_host/lower_layers.py` fills the ports models and state own for what only a
+Program has (web-search backends and Agent tool names for settings, the Goal
+tool for usage metering and the session graph); `__init__.py` calls it at import, so
+those layers never import Programs.
 
-Every function the LLM can call is decorated with ``@function`` (see
-``_runtime.py``). The decorator builds an ``AgentTool`` and registers
-it into a single in-process registry; this module imports each
-subpackage so the side-effect registrations fire at import time, then
-exposes the resolution API (presets, allow/deny/source policy chain).
+## `tools/`
 
-Design synthesizes three external frameworks under ``references/``:
+The built-in tools: what the Agent cannot work without (files, shell, search,
+planning, asking the user, memory, jobs, web, computer use). They ship with
+the core, are always given to the Agent and cannot be disabled one by one.
+Most register with `@function` on import; a tool package with
+`PROGRAM_ENTRIES` registers through its own `ProgramContext`.
 
-  - Claude Code: the ``AgentTool`` shape, the
-    ``execute(call_id, args, cancel, on_update) -> AgentToolResult``
-    contract, and the search/read collapse semantics.
-  - Hermes: ``TOOLSETS`` with ``{tools, includes}`` composition,
-    ``_expand_preset`` recursive walk + first-occurrence dedupe.
-  - OpenClaw: per-channel ``unsafe_in`` filtering, allow/deny chain
-    layered on top of the toolset (``apply_tool_policy``).
+## `applications/`
 
-Beyond the references we add a dynamic per-call result ceiling, an
-LLM-controllable timeout, a bounded streaming on_update accumulator,
-and ``can_use()`` pre-flight gates — all wired through ``@function``
-kwargs. See ``_runtime.py`` for the decorator and the helpers it
-relies on.
+The built-in applications are `browser` (the web browser the Agent operates
+through `computer_use_agent`),
+`workflow_recording` (the demonstration recorder behind the composer's
+**Record a workflow**), `office_editor` (the ONLYOFFICE editor behind Word,
+Excel and PowerPoint documents in the document window) and `meeting` (call
+audio recorded on this computer, transcribed and summarized). Each loads through a
+`ProgramContext` owned by `application:<name>`, provides the service the core
+reaches it through (`browser`, `workflow_recording`, `office_editor`,
+`meeting`) and can
+be enabled and disabled from the Applications page. Only built-in applications live
+here; applications and harnesses the user installs live in
+`~/.openprogram/programs/<name>/` and load from that source directory.
 
-## Files in this directory
+## `_authoring/`
 
-- **`_execution_common.py`** — Shared tool-execution wrappers used by ``@function`` and ``@agentic_function``
-- **`_helpers.py`** — Small helpers shared by tool `execute` implementations
-- **`_programs.py`** — First-party *programs*
-- **`_providers.py`** — Shared provider-registry scaffolding for tools with pluggable backends
-- **`_registry.py`** — Explicit + auto-discovered registry of @agentic_function modules
-- **`_runtime.py`** — @function decorator + runtime layer
-- **`application_client.py`** — Use installed application operations from Programs and local CLI clients
-- **`gui_browser_agent.py`** — Browser GUI tasks through the standard Agent and isolated Python tool
-- **`gui_harness_bridge.py`** — Optional adapter from the installed GUI Agent Harness to web_use
-- **`meta_storage.py`** — Profile-scoped persistence for tool profiles and Functions UI metadata
-- **`permission_rule.py`** — 权限规则字符串的解析、序列化、匹配。
-- **`watcher.py`** — Background watcher
+What Program code itself imports, shared by built-in and user Programs:
+`errors`, `json_parsing`, `reports/` (evidence gates, local output, WeChat
+sources), `helpers` (argument coercion for tool `execute` implementations),
+`providers` (registries for tools with pluggable backends), `guides`
+(instructions a tool hands the model), `prechecks` (argument checks before
+approval), `application_client` (calling installed application
+operations) and `testing` (scripted role replies for Program behaviour tests). User Programs depend on these import paths.
 
-## Sub-packages
+## `_host/`
 
-- **`_applications/`** — Installed application packages, isolated views and business operations
-- **`agentic_functions/`** — Compatibility exports for harnesses from before the workflow move
-- **`applications/`** — Complete programs installed and loaded through their package entry points
-- **`packages/`** — Owner-installed Program packages; unregistered directories are not imported
-- **`tools/`** — Deterministic LLM-callable functions, grouped by source purpose
-- **`workflow/`** — All model-aware Programs and complete Workflows
+How the host loads and runs Programs; Program code does not import it.
+`runtime` is the `@function` decorator and the shared tool registry,
+`execution` the wrappers every call runs through, `context` the
+`ProgramContext` every Program registers through, `services` the named
+services Programs share, `registry` the loader for built-in, user and
+harness Programs, `packages` the Python Program packages and their load
+state, `source_loader` the definition-time call scopes, `sources` the harness
+catalogue and the owner-recorded program sources, `check` the
+`openprogram programs check` command, `watcher` the background rescan,
+`meta_storage` the Functions page metadata and `identity` the title,
+description and icon every surface shows for an application. `ui/` runs applications with a
+UI: catalog, loader, served pages, the operation runner and service.
 
-_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
+See [Program Model](https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/reference/design/function/program-model.html)
+for the design.

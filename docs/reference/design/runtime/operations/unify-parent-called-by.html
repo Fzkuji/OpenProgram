@@ -1,0 +1,52 @@
+<title>Conversation and call edges</title>
+<meta name="description" content="The two parent edges on a session node, who reads each one, and how nodes become chat messages.">
+<h1>Conversation and call edges</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Edge</th><th scope="col">Answers</th><th scope="col">Values</th><th scope="col">Read by</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>Who I follow in chat order</td><td>One inbound per node. <code translate="no">"ROOT"</code> on the session's first node and explicit root forks; <code translate="no">None</code> on spawn branch roots.</td><td><code translate="no">linear_history</code>, <code translate="no">get_branch</code>, <code translate="no">_annotate_spawn_origin</code>, <code translate="no">turn_groups</code>, rewind</td></tr>
+<tr><th scope="row"><code translate="no">caller</code></th><td>Who invoked me to execute</td><td><code translate="no">"ROOT"</code> or empty on chain-level turns. A node inside an Agent method's execution subtree names another call.</td><td><code translate="no">_rebuild_runtime_cards</code>, <code translate="no">aggregate_tool_messages</code>, <code translate="no">turn_groups</code></td></tr>
+</tbody>
+</table>
+<p class="note">Schema: <code translate="no">openprogram/state/store/session/nodes.py</code>. Time order is <code translate="no">seq</code>, never an edge. <code translate="no">reads</code> is a third edge: the nodes whose content shaped an LLM prompt.</p>
+
+<h2 id="branch-walk">Branch walk</h2>
+<p><code translate="no">get_branch</code> follows <code translate="no">predecessor</code> only, with no <code translate="no">caller</code> or <code translate="no">seq</code> guesses. A node with no predecessor must be a legal end, or the data is broken and the walk raises.</p>
+<dl class="pairs">
+<dt>Legal ends</dt><dd>Spawn branch root, the ROOT node, a code node opening a run branch, the session's first node, a compaction summary covering the session start</dd>
+<dt>Chat display</dt><dd><code translate="no">active_branch_chain</code> filters the tool-aggregated rows to the ids <code translate="no">get_branch</code> returned; a stale or empty head falls back to a predecessor walk or all rows</dd>
+<dt>Attach pointers</dt><dd>Hang off a message by <code translate="no">predecessor</code> without joining the chain and are written with <code translate="no">advance_head=False</code>, so they never move the head; <code translate="no">splice_attach_pointers</code> inserts them inline</dd>
+</dl>
+
+<h2 id="two-data-structures">Node and chat message</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">DAG node</th><th scope="col">Chat message</th></tr></thead>
+<tbody>
+<tr><th scope="row">Serves</th><td>Runtime: <code translate="no">render_context</code></td><td>Display: message list, tool-call cards</td></tr>
+<tr><th scope="row">Tool calls</th><td>One node per tool</td><td>Folded into the assistant's <code translate="no">tool_calls[]</code></td></tr>
+<tr><th scope="row">Thinking</th><td>In the <code translate="no">extra</code> field</td><td>Extracted into <code translate="no">blocks[]</code></td></tr>
+<tr><th scope="row">Shape</th><td><code translate="no">{role, name, input, output, predecessor, caller, seq}</code></td><td><code translate="no">{role, content, tool_calls, blocks, predecessor, caller}</code></td></tr>
+<tr><th scope="row">Built</th><td>At write</td><td>At load, by <code translate="no">aggregate_tool_messages</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">_msg_adapter.py</code> takes <code translate="no">predecessor</code> from the top-level <code translate="no">Call</code> field only, so a stray metadata copy cannot override it.</p>
+
+<details>
+<summary>Code</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/_msg_adapter.py</code></th><td>Node to message</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/branches.py</code></th><td><code translate="no">get_branch</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/git/dag.py</code></th><td><code translate="no">linear_history</code>, <code translate="no">active_branch_chain</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/persistence.py</code></th><td><code translate="no">aggregate_tool_messages</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/transcript/turn_index.py</code></th><td><code translate="no">turn_groups</code>, <code translate="no">splice_attach_pointers</code>, the branch view</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/session/load.py</code></th><td><code translate="no">handle_load_session</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/session/transcript.py</code></th><td><code translate="no">_rebuild_runtime_cards</code>, <code translate="no">_annotate_spawn_origin</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented. Session nodes carry no <code translate="no">parent_id</code> or <code translate="no">called_by</code>; a <code translate="no">parent_id</code> elsewhere in the code belongs to other records, such as run control and channels.</p>

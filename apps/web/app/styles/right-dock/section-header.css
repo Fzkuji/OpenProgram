@@ -1,0 +1,28 @@
+/* 右侧栏分区标题（.sidebar-section-header / -title / -hint）。
+   对应组件：components/right-sidebar/context-commit-timeline/index.tsx */
+
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 16px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.sidebar-section-title {
+  font-size: var(--right-panel-text-size, var(--fs-xs));
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.sidebar-section-hint {
+  margin-left: auto;
+  font-size: var(--right-panel-meta-size, var(--fs-xs));
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--motion-medium) var(--ease-standard);
+}
+.sidebar-section-header:hover .sidebar-section-hint { opacity: 0.75; }
+.sidebar-section-header.is-collapsed .sidebar-section-hint,
+.is-collapsed > .sidebar-section-header .sidebar-section-hint {
+  opacity: 0.75;
+}

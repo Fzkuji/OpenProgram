@@ -7,13 +7,11 @@ import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import { jsonFetch } from "@/lib/net/fetch-client";
 import { Button } from "@/components/ui/button";
 import { ManageCatalogCard, managePageStyles as shared } from "@/components/ui/manage-page";
 
-import styles from "./mcp-page.module.css";
 
 export interface CatalogServer {
   name: string;
@@ -140,12 +138,12 @@ export function CatalogPanel({
   }
 
   return (
-    <div className="flex w-full flex-col gap-5">
+    <div className="flex w-full flex-col gap-4">
       <div>
-        <h2 className="text-base font-semibold text-[var(--text-bright)]">
+        <h2 className="text-fs-base font-semibold text-text-bright">
           {text("Discover MCP servers", "发现 MCP 服务器")}
         </h2>
-        <p className="mt-1 text-xs text-[var(--text-secondary)]">
+        <p className="mt-1 text-fs-2xs text-text-secondary">
           {text("Install a curated server or load a compatible catalog URL.", "安装精选服务器，或载入兼容的目录 URL。")}
         </p>
       </div>
@@ -155,15 +153,11 @@ export function CatalogPanel({
               <Label>{text("Suggested catalogs", "推荐目录")}</Label>
               <div className="flex flex-wrap gap-1.5">
                 {suggested.map((s) => (
-                  <button
-                    key={s.url}
-                    title={s.description || s.url}
-                    onClick={() => { void fetchCatalog(s.url); }}
-                    className={styles.actionBtn}
+                  <Button key={s.url} variant="elevated" onClick={() => { void fetchCatalog(s.url); }}
                     disabled={catalogLoading || installing !== null}
                   >
                     {s.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -184,8 +178,8 @@ export function CatalogPanel({
                       status={installed ? <span className={`${shared.badge} ${shared.badgeGreen}`}>{text("installed", "已安装")}</span> : undefined}
                       meta={(s.tags || []).slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}
                       actions={<Button
-                        size="sm"
-                        variant={installed ? "outline" : "default"}
+                        variant={installed ? "elevated" : "default"}
+                        size="xs"
                         onClick={() => void install(s)}
                         disabled={installed || catalogLoading || installing !== null}
                       >
@@ -208,15 +202,14 @@ export function CatalogPanel({
                 placeholder="https://example.com/mcp-catalog.json"
                 className="min-w-0 flex-1 font-mono"
               />
-              <button
-                className={cn(styles.actionBtn, styles.actionBtnPrimary)}
+              <Button
                 onClick={() => void fetchCatalog()}
                 disabled={catalogLoading || installing !== null}
               >
                 {catalogLoading ? text("Fetching...", "获取中...") : text("Load", "加载")}
-              </button>
+              </Button>
             </div>
-            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+            <div className="text-fs-2xs text-text-muted">
               {text("Catalog is a JSON object with a ", "目录是一个包含 ")}
               <code>servers</code>
               {text(" array; each entry matches the local mcp_servers.json schema.", " 数组的 JSON 对象；每一项都匹配本地 mcp_servers.json schema。")}
@@ -224,7 +217,7 @@ export function CatalogPanel({
           </div>
 
           {err && (
-            <div className="rounded-md border p-2 font-mono text-xs"
+            <div className="rounded-md border p-2 text-fs-2xs"
                  style={{ borderColor: "var(--accent-red)", color: "var(--accent-red)" }}>
               {err}
             </div>
@@ -232,7 +225,7 @@ export function CatalogPanel({
 
           {catalog && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+              <div className="text-fs-2xs text-text-muted">
                 {text(
                   `${catalog.name} - ${catalog.servers.length} installable`,
                   `${catalog.name} - ${catalog.servers.length} 个可安装`,
@@ -252,10 +245,10 @@ export function CatalogPanel({
                       subtitle={`${s.type}${s.auth?.kind && s.auth.kind !== "none" ? ` · ${s.auth.kind}` : ""}`}
                       description={s.description}
                       status={installed ? <span className={`${shared.badge} ${shared.badgeGreen}`}>{text("installed", "已安装")}</span> : undefined}
-                      meta={<span className="truncate font-mono">{s.type === "local" ? (s.command || []).join(" ") : s.url}</span>}
+                      meta={<span className="truncate">{s.type === "local" ? (s.command || []).join(" ") : s.url}</span>}
                       actions={<Button
-                        size="sm"
-                        variant={installed ? "outline" : "default"}
+                        variant={installed ? "elevated" : "default"}
+                        size="xs"
                         onClick={() => void install(s, catalog.sourceUrl)}
                         disabled={installed || catalogLoading || installing !== null}
                       >
@@ -269,7 +262,7 @@ export function CatalogPanel({
                   );
                 })}
                 {shownCatalogServers.length === 0 && (
-                  <div className="py-8 text-center text-xs text-[var(--text-tertiary)]">
+                  <div className="py-7 text-center text-fs-2xs text-text-secondary">
                     {text("No matching servers.", "没有匹配的服务器。")}
                   </div>
                 )}

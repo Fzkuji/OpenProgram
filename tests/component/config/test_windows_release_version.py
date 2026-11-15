@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from openprogram import _compat
+from openprogram.host._platform import terminal
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -31,7 +31,7 @@ def installed(tmp_path, monkeypatch):
     metadata = python_root / "Lib" / "site-packages" / "openprogram-0.8.1.dist-info" / "METADATA"
     metadata.parent.mkdir(parents=True)
     metadata.write_text("Metadata-Version: 2.1\nName: openprogram\nVersion: 0.8.1\n")
-    monkeypatch.setattr(_compat, "_windows_powershell", lambda *a, **kw: "0.8.1.0\n")
+    monkeypatch.setattr(terminal, "_windows_powershell", lambda *a, **kw: "0.8.1.0\n")
     verify = runpy.run_path(str(ROOT / "scripts/release/verify-release-version.py"))["_installed_app_version"]
     return app, manifest, metadata, verify
 
@@ -55,7 +55,7 @@ def test_installed_windows_version_rejects_disagreement(installed, monkeypatch, 
     elif change == "escape":
         payload["python"] = "../../outside.exe"
     else:
-        monkeypatch.setattr(_compat, "_windows_powershell", lambda *a, **kw: "0.8.1.1" if change == "revision" else "")
+        monkeypatch.setattr(terminal, "_windows_powershell", lambda *a, **kw: "0.8.1.1" if change == "revision" else "")
     manifest.write_text(json.dumps(payload))
     with pytest.raises(SystemExit):
         verify(app)
@@ -68,6 +68,6 @@ def test_windows_bundle_reads_real_pe_metadata_without_launching(tmp_path):
     # cmd has native PE version resources. Copying it to an Electron-shaped
     # fixture tests path quoting and the actual read-only Windows API.
     shutil.copy2(shutil.which("cmd.exe"), app / "OpenProgram.exe")
-    resources, version = _compat.desktop_bundle_metadata(app)
+    resources, version = terminal.desktop_bundle_metadata(app)
     assert resources == app / "resources"
     assert version and all(part.isdecimal() for part in version.split("."))

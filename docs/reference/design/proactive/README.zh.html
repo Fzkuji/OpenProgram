@@ -1,0 +1,44 @@
+<title>主动层</title>
+<meta name="description" content="事件基础层和建在其上的主动规则，以及设计文档的阅读顺序。">
+<h1>主动层</h1>
+
+<p>agent 工作时框架自己看着，该出手就出手：拦危险命令、提醒补测试、发现模型卡住。发生的每件事都成为事件，规则订阅事件并判断。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">是什么</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">事件基础层</th><td>一条统一的、谁都能订阅的事件流。主动层是第一个消费者</td><td>运行中：总线开启，两类来源都在发事件，<code translate="no">tool.before</code> 带同步问询点，Web UI 是普通订阅者</td></tr>
+<tr><th scope="row">主动规则</th><td>规则订阅并出手。与基础层解耦</td><td>代码在 <code translate="no">openprogram/runtime/proactive/</code>，worker 启动时未安装</td></tr>
+</tbody>
+</table>
+
+<h2 id="event-foundation">事件基础层</h2>
+<ol>
+<li><a href="event-reference.zh.html">事件参考</a>：每种事件的载荷、时机和来源；API 与三种用法（观察、拦截、问询）。查事件先看这里。</li>
+<li><a href="event-layer.zh.html">事件层</a>：Event 模型、两类来源、总线的位置。<a href="event-layer.zh.html">图示</a>。</li>
+<li><a href="framework-evolution.zh.html">框架演进</a>：为什么经 Web UI 路由有缺口，总线给各角色什么，什么不动。<a href="framework-evolution.zh.html">图示</a>。</li>
+</ol>
+
+<h2 id="proactive-rules">主动规则</h2>
+<ol>
+<li><a href="overview.zh.html">概览</a>：完整走一遍拦下 <code translate="no">rm -rf</code>，规则、出手方式、状态就地解释。</li>
+<li><a href="events-and-state.zh.html">事件与状态</a>：状态由事件折叠而来，规则因此能记住过去。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="execution-model.zh.html">执行模型</a></th><td>怎么写 Policy；挡路和旁观两类</td></tr>
+<tr><th scope="row"><a href="policies-mvp.zh.html">MVP 规则</a></th><td>三条可照抄的规则</td></tr>
+<tr><th scope="row"><a href="invariants.zh.html">不变式</a></th><td>框架必须守住的底线，主要是不能自我触发死循环</td></tr>
+</tbody>
+</table>
+
+<h2 id="questions">简短回答</h2>
+<dl class="pairs">
+<dt>新框架还是补丁？</dt><dd>独立的一层，复用事件总线、工具审批和后台任务。</dd>
+<dt>规则用什么写？</dt><dd>普通 Python 类。没有配置文件或 DSL。</dd>
+<dt>有多重？</dt><dd>事件、状态、规则、出手。防篡改、离线回放校验、对抗安全在 <code translate="no">_research_archive/</code>。</dd>
+<dt>日志在哪？</dt><dd>常开。<code translate="no">~/.openprogram/projects/&lt;project-id&gt;/chats/&lt;sid&gt;/events.jsonl</code>，会话之外是 <code translate="no">~/.openprogram/logs/events.jsonl</code>。</dd>
+</dl>
+
+<p class="next"><a href="event-reference.zh.html">事件参考</a></p>

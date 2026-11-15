@@ -1,0 +1,360 @@
+<title>应用运行时</title>
+<meta name="description" content="OpenProgram 如何打开、运行、存储和隔离应用，以及公开的 Agent 框架如何比较。">
+<span id="decision"></span>
+<h1>应用运行时</h1>
+<p>应用有自己的界面、业务逻辑、数据和依赖，从新标签页打开，不必回到创建它的对话。</p>
+
+<figure id="architecture">
+<svg class="fig-wide" viewBox="0 0 680 262" role="img" aria-label="新标签页或应用页面打开应用标签页，它是一个沙箱 iframe，运行应用自己的 HTML、CSS 和 JavaScript。通过 MessagePort 连接宿主桥，宿主桥检查实例、能力和操作，并为每个操作启动一个 runner 进程。runner 调用 Runtime 的 llm、agent 和 Program，并保存实例状态。">
+  <defs><marker id="ar-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">启动</text>
+  <text class="t-soft" x="0" y="64">新标签页、应用页面</text>
+  <line class="ln" x1="168" y1="33" x2="228" y2="33" marker-end="url(#ar-a)"/>
+  <text class="t-big" x="240" y="40">应用标签页</text>
+  <text class="t-soft" x="240" y="64">沙箱 iframe</text>
+  <text class="t-soft" x="240" y="84">自己的 HTML、CSS、JavaScript</text>
+  <line class="ln" x1="424" y1="33" x2="468" y2="33" marker-end="url(#ar-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="434" y="22">MessagePort</text>
+  <text class="t-big" x="480" y="40">宿主桥</text>
+  <text class="t-soft" x="480" y="64">检查实例、</text>
+  <text class="t-soft" x="480" y="84">能力、操作</text>
+  <line class="ln" x1="520" y1="96" x2="520" y2="146" marker-end="url(#ar-a)"/>
+  <text class="t-big" x="480" y="170">Runner</text>
+  <text class="t-soft" x="480" y="194">每个操作一个进程</text>
+  <line class="ln" x1="470" y1="163" x2="410" y2="163" marker-end="url(#ar-a)"/>
+  <text class="t-big" x="240" y="170">Runtime</text>
+  <text class="t-soft" x="240" y="194">llm()、agent()、Program</text>
+  <text class="t-soft" x="240" y="214">执行记录</text>
+  <path class="ln" d="M560 204V246H60V212" marker-end="url(#ar-a)"/>
+  <text class="t-big" x="0" y="170">实例状态</text>
+  <text class="t-soft" x="0" y="194">业务数据、事件、</text>
+  <text class="t-soft" x="0" y="214">结果、问题</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>启动</strong><small>新标签页、应用页面</small></li>
+  <li><strong>应用标签页</strong><small>沙箱 iframe，自己的 HTML、CSS、JavaScript</small></li>
+  <li class="via"><code translate="no">MessagePort</code></li>
+  <li><strong>宿主桥</strong><small>检查实例、能力、操作</small></li>
+  <li><strong>Runner</strong><small>每个操作一个进程</small></li>
+  <li><strong>Runtime</strong><small>llm()、agent()、Program、执行记录</small></li>
+  <li class="flow-end"><strong>实例状态</strong><small>业务数据、事件、结果、问题</small></li>
+</ol>
+</figure>
+
+<details id="experience">
+<summary>价值与限度</summary>
+<ul>
+<li>界面用标准 Web：HTML、CSS、JavaScript、编译后的 React 或 Vue，不是拼装固定的 OpenProgram 组件。HTML 是界面技术，不代表完整度；软件能做什么取决于后端、状态、契约和部署依赖。</li>
+<li>价值：按钮和 Agent 共用业务操作，模型调用进入现有执行记录，业务数据独立于聊天窗口。这是产品契约的组合，不声称独有。</li>
+<li>应用在 OpenProgram 内运行。将来仍可用最小运行时部署；去掉全部 OpenProgram 依赖需要替换模型、存储和执行实现，因此不承诺自动独立导出。</li>
+<li>浏览器可执行的 JavaScript、Canvas、WebGL 和 WASM 可用。系统 GUI、GPU 驱动、任意二进制和其他语言服务不可用，需要显式的运行时适配器和依赖契约。</li>
+</ul>
+</details>
+
+<h2 id="management-scenarios">术语与入口</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">术语</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">Program</th><td>可调用能力；Tool 和 Workflow 保持原定义</td></tr>
+<tr><th scope="row">Package</th><td>容纳这些能力的安装单元，包括 harness。不是执行类型。</td></tr>
+<tr><th scope="row">Application</th><td>用户可打开的软件，有自己的界面、版本、数据和生命周期</td></tr>
+<tr><th scope="row">宿主插件</th><td>扩展宿主行为的安装单元，如工具或主题。单独管理；现有加载器不保证应用隔离，插件也不会自动适配成 Application。</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">目标</th><th scope="col">入口</th><th scope="col">结果与失败</th></tr></thead>
+<tbody>
+<tr><th scope="row">查看能力</th><td>Abilities → Programs</td><td>每个应用目录一个普通文件夹，内置或已安装；来源、默认入口、调用结构。<code translate="no">gui_agent</code> 等名称不变。</td></tr>
+<tr><th scope="row">安装、升级、卸载包</th><td><code translate="no">openprogram programs install</code>、<code translate="no">install --upgrade</code>、<code translate="no">uninstall</code></td><td>克隆到 <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code>。开发符号链接保持目标不变。未知目录绝不导入。</td></tr>
+<tr><th scope="row">安装软件</th><td>Applications → Install…</td><td>显示声明、来源、版本、启用状态。Python 后端需要勾选明确信任。重复 ID、无效入口、依赖准备失败都返回错误，不覆盖现有内容。</td></tr>
+<tr><th scope="row">打开</th><td>新标签页按钮，或 Applications 上的 Open</td><td>独立标签页，同一实例。项目应用绑定当前项目或选择器。没有 UI 的 Program 不增加按钮。</td></tr>
+<tr><th scope="row">管理</th><td>Applications：启用、显示或隐藏、更新、卸载</td><td>停用阻止新的打开和操作，并取消进行中的操作；隐藏只移除按钮。错误显示在对应操作旁。刷新和重新打开读取最新目录。</td></tr>
+<tr><th scope="row">从 CLI 或 Agent 调用</th><td><code translate="no">openprogram programs</code> <code translate="no">list</code>、<code translate="no">run</code>、<code translate="no">status</code>、<code translate="no">cancel</code>、<code translate="no">check</code>、<code translate="no">install</code>、<code translate="no">uninstall</code>、<code translate="no">enable</code>、<code translate="no">disable</code></td><td>与所有 Program 同一命令组，没有单独的应用命令。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>目录与旧安装</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">program-sources.json</code></th><td>Program 来源</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/catalog.json</code></th><td>应用注册：来源目录、启用、隐藏、显示名、审核过的 manifest。不复制任何内容。</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/.runtime/</code></th><td><code translate="no">state.sqlite</code>、<code translate="no">data/&lt;instance&gt;/data.sqlite</code>、<code translate="no">runs/</code>、<code translate="no">environments/</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li><code translate="no">program_directory.migrate_user_directory</code> 用重命名把 <code translate="no">workflows/</code> 和 <code translate="no">applications/</code> 移进 <code translate="no">programs/</code>。旧安装器在 <code translate="no" data-claim="example">openprogram/programs/packages/</code> 或 <code translate="no">applications/</code> 下的克隆也会移动。可重复执行。</li>
+<li>首次读取目录时，<code translate="no">kind=application</code> 的行移出 <code translate="no">program-sources.json</code>，包括停用、隐藏、来源和卸载状态。先写目录再删旧行；冲突时保留原文件。迁移和目录更新串行执行。</li>
+<li>重新分类目录不给未注册目录任何执行权限。桌面版只读依赖限制不变：应用表单不能用包 API 修改宿主依赖。</li>
+</ul>
+</details>
+
+<h2 id="new-tab">新标签页</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">顺序</th><td>文件、新建对话、浏览器、终端；带窗口的内置应用；已启用且可见的已安装应用。按钮不显示模型、端口、运行时或路径。</td></tr>
+<tr><th scope="row">再次打开</th><td>同一应用和项目复用已打开的标签页。不同项目用显式数据范围独立打开。</td></tr>
+<tr><th scope="row">没有活动项目</th><td>复用已保存的绑定；未绑定的项目应用询问一次。应用绝不跟随其他聊天标签页的工作目录。</td></tr>
+<tr><th scope="row">首次打开</th><td>可能显示依赖准备。失败留在应用页面，给出原因和 Retry。</td></tr>
+<tr><th scope="row">关闭</th><td>只关闭视图。服务进程退出和任务中断分别报告。</td></tr>
+<tr><th scope="row">创建</th><td>从聊天开始：Agent 编写包和依赖声明，构建并验证，然后在该任务的授权内注册。只有成功才增加按钮；失败保留源码和错误以便修复。</td></tr>
+</tbody>
+</table>
+
+<h2 id="contract">应用契约</h2>
+<pre translate="no" tabindex="0"><code translate="no">{
+  "id": "local.paper-reader",
+  "title": "Paper reader",
+  "icon": "book-open",
+  "version": "1.0.0",
+  "ui": { "root": "web/dist", "entry": "index.html" },
+  "backend": { "kind": "python", "entry": "paper_reader.app:operations" },
+  "scope": "project",
+  "capabilities": ["model.invoke", "storage.app", "files.project.read"],
+  "dataSchema": 1,
+  "operations": {
+    "summarize": { "agent": true, "input": { "type": "object" }, "output": { "type": "string" } }
+  }
+}</code></pre>
+<p class="note">静态应用省略 <code translate="no">backend</code>。<code translate="no">id</code> 是稳定的包身份，绝不是标题、路径或创建对话的 ID。字段规则和公开 API：<a href="../../../../capabilities/applications.zh.html">应用</a>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">定义</th><td>从来源读取的 manifest 加源码树的内容摘要，在加载和每次重新加载时计算</td></tr>
+<tr><th scope="row">安装</th><td>目录行：来源目录、设置、审核过的数据身份和信任。包上限 100 MiB，不允许符号链接或特殊文件。</td></tr>
+<tr><th scope="row">实例</th><td>应用 ID、owner、项目范围、业务数据位置。窗口不是数据库。</td></tr>
+<tr><th scope="row">视图</th><td>标签页、实例、UI 路由、显示的运行。可丢弃。</td></tr>
+<tr><th scope="row">操作运行</th><td>运行 ID、实例、定义、输入、请求键、状态、事件序列、结果。链接现有执行记录，不复制 DAG。</td></tr>
+</tbody>
+</table>
+<ul>
+<li>操作有输入输出 schema。客户端不能选择导入路径、来源路径或 owner，由服务器解析。可信身份来自已认证的连接，不来自 JSON 字段。</li>
+<li>操作名只存在于 UI 和进程边界。Python 内部用普通 import，没有第二个字符串调度器。</li>
+<li>事件序列递增，客户端按游标恢复。结果和错误持久化。状态 JSON 最多 4 MiB，单个事件 1 MiB；大输出用引用。</li>
+<li>项目路径变化只更新绑定，不改变实例身份。Runtime 数据库保存执行事实，应用状态引用运行 ID。<code translate="no">localStorage</code> 只缓存可丢弃的视图偏好。</li>
+<li>用户数据绝不放在来源目录。</li>
+<li>Python 环境：每个应用和固定依赖集合一个，首次使用时创建，绝不安装进主 worker。列表只读 manifest，不启动进程。静态应用不启动 Python。发布的 UI 用构建产物：不起开发服务器，不装最新依赖，不在点击时重新生成。</li>
+</ul>
+
+<h2 id="models">模型与业务操作</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">共用路径</th><td>按钮和 Agent 调用共用输入校验、权限和实现。只有 <code translate="no">agent: true</code> 的操作暴露，名为 <code translate="no">&lt;id&gt;__&lt;operation&gt;</code>；内部数据库方法绝不成为工具。Agent 调用绑定实例，不能切换项目数据。</td></tr>
+<tr><th scope="row">模型调用</th><td>runner 按 manifest 的模型名或宿主默认值创建 Runtime，绑定运行记录（<code translate="no">runs/</code> 下的 <code translate="no">SessionNodeWriter</code>）。上下文是操作输入和显式提供的应用数据，与活动聊天无关。点按钮前不需要聊天。</td></tr>
+<tr><th scope="row">凭据</th><td>页面只拿到进度和结果，绝不拿到 provider 密钥</td></tr>
+<tr><th scope="row">问题</th><td><code translate="no">context.ask()</code> 发出问题事件；回答绑定运行和请求 ID，只对当前待答问题生效。没有第二个 <code translate="no">ExecutionStatus</code>。</td></tr>
+<tr><th scope="row">提交</th><td>普通代码在事务提交前校验模型输出。自然语言的“已保存”不是证据。</td></tr>
+<tr><th scope="row">重试</th><td>请求键对提交去重；相同键配不同输入被拒绝。非幂等的外部效果要检查现有记录或询问用户；网络超时绝不重复执行。</td></tr>
+</tbody>
+</table>
+
+<h2 id="lifecycle">生命周期</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">顺序</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开</th><td>读取已验证定义 → 选择 → 解析实例和项目 → 复用或创建标签页 → 按摘要加载资源 → 连接能力端口 → 读取状态和活动运行。不导入业务代码，不发模型请求。</td></tr>
+<tr><th scope="row">任务</th><td>持久化输入、请求键和 accepted 事件；现有 Attempt 管理运行；持久化问题；以 completed、failed 或 cancelled 结束。Stop 终止拥有的进程树，清理后才报告 cancelled；迟到的结果不能覆盖终态。进程树所有权持久化，父进程退出后子进程也会结束。并发写需要事务或版本检查，不是禁用按钮。</td></tr>
+<tr><th scope="row">重启</th><td>重新打开恢复视图和状态。worker 重启后，未完成的运行按 owner 丢失规则变为 interrupted，或完成已请求的取消。输入、进度和结果保留。Python 栈不恢复；应用可读取保存的状态并提交新操作。</td></tr>
+<tr><th scope="row">更新</th><td><code translate="no">install --replace</code> 或 Update from source：校验 manifest 和目录树，在单独进程检查后端，复查摘要，检查 <code translate="no">dataSchema</code> 和 <code translate="no">scope</code>，然后原子切换目录行。来源变化时以新摘要重新加载。从旧摘要的视图提交会被拒绝并提示重新打开。</td></tr>
+<tr><th scope="row">卸载</th><td>取消操作，隐藏应用，保留来源目录、数据以及 schema 和 scope 身份。兼容的重新安装恢复实例。没有业务数据删除 API。</td></tr>
+</tbody>
+</table>
+<p class="note">不兼容的 <code translate="no">dataSchema</code> 或 <code translate="no">scope</code> 被拒绝；需要备份、校验和明确恢复的自动迁移尚未实现。</p>
+
+<h2 id="boundary">隔离与可移植性</h2>
+<ul>
+<li>iframe 使用 <code translate="no">sandbox="allow-scripts"</code>、严格 CSP 和不透明源。宿主和页面通过校验过的 MessageChannel 握手通信。现有同源插件页面不能证明隔离；CORS 不是认证。</li>
+<li>资源按摘要寻址，限于发布的 UI 目录，凭据只允许读取 UI。桥拒绝页面提供的 owner、URL 和其他实例的运行。页面访问不到 <code translate="no">/api/*</code>。能力按操作重新检查；停用或卸载即撤销。</li>
+<li>独立的 Python 进程隔离依赖和崩溃，不隔离宿主文件和网络。后端是明确信任的本地代码，manifest 能力不是恶意代码沙箱。不受信的远程代码需要平台限制或容器，覆盖子进程、安装脚本和继承的环境。</li>
+<li>普通应用只在自己的标签页渲染，拿到一个小而稳定的 API，而不是 React store 或会话管理器。全局工具栏、聊天编辑器、主题和系统服务属于受信任的宿主扩展。</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">运行模式</th><th scope="col">依赖</th><th scope="col">承诺</th></tr></thead>
+<tbody>
+<tr><th scope="row">纯静态</th><td>浏览器和自身资源</td><td>可独立托管；数据迁移由应用负责</td></tr>
+<tr><th scope="row">在 OpenProgram 内</th><td>UI、后端、OpenProgram Runtime</td><td>当前实现</td></tr>
+<tr><th scope="row">独立部署，同一运行时</th><td>包、最小运行时、配置、存储</td><td>边界已预留；适配器和验收完成前不可用</td></tr>
+<tr><th scope="row">跨宿主 MCP Apps</th><td>MCP 服务器、兼容宿主</td><td>共享 UI 和工具契约；OpenProgram 后台 API 不可移植</td></tr>
+<tr><th scope="row">完全不依赖 OpenProgram</th><td>替换模型、任务、存储</td><td>不保证；单独构建和测试</td></tr>
+</tbody>
+</table>
+
+<h2 id="choices">采用、调整、推迟</h2>
+<table class="stack">
+<thead><tr><th scope="col">选择</th><th scope="col">依据</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">采用：标准 Web 界面</th><td>MCP Apps、OpenAI Plugins</td><td>前端自由构建，主题组件可选，宿主 API 稳定</td></tr>
+<tr><th scope="row">采用：显式贡献与生命周期</th><td><a href="https://hermes-agent.nousresearch.com/docs/developer-guide/desktop-plugin-sdk">Hermes Desktop Plugin SDK</a>、DeepSeek Harness</td><td>应用只在自己的页面内贡献；全局插槽仍是受信任插件的能力</td></tr>
+<tr><th scope="row">采用：状态与页面分离</th><td>LangGraph、AgentOS</td><td>持久化状态和运行记录；<code translate="no">localStorage</code> 和聊天历史都不是数据库</td></tr>
+<tr><th scope="row">调整：MCP Apps</th><td>MCP Apps</td><td>预留标准桥适配，先做本地契约。持久任务用显式宿主扩展，不声称是标准。</td></tr>
+<tr><th scope="row">调整：UI 事件流</th><td>AG-UI</td><td>沿用现有事件语义；需要跨框架集成时加适配器</td></tr>
+<tr><th scope="row">可选：声明式 UI</th><td>A2UI</td><td>适合确认和常见表单，不强制</td></tr>
+<tr><th scope="row">推迟：宿主内任意动态代码</th><td>宿主稳定性、隔离</td><td>代码注册前先成为可审查的构建；<code translate="no">eval</code> 不是发布方式</td></tr>
+<tr><th scope="row">推迟：市场、其他语言 runner、原生 GUI 嵌入</th><td>安装、打开、操作、恢复都不需要</td><td>不是当前版本的依赖</td></tr>
+</tbody>
+</table>
+
+<h2 id="matrix">公开框架调研</h2>
+<p>对每个项目问：交付什么、谁加载和执行、谁渲染 UI、业务状态在哪、能否离开宿主。代码生成、代码执行、UI 和应用安装分开判断。</p>
+<details>
+<summary>宿主扩展 (9)</summary>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">机制</th><th scope="col">UI</th><th scope="col">宿主依赖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a><span class="arg">已读本地发行包代码</span></th><td>Cordis 生命周期、服务注入；动态插件包含 host/client 两部分。</td><td>宿主 React 插槽；动态前端调用已注册的后端处理函数。</td><td>插件依赖 DSH 服务与加载器；不自动成为独立软件。</td></tr>
+<tr><th scope="row"><a href="https://github.com/Aisland-SJL/dsh-worktable">dsh-worktable</a><span class="arg">已读插件源码</span></th><td>安装包同时提供后端路由与前端工作台。</td><td>项目入口、分屏；生成产物按 widget-result.json 装入 iframe。</td><td>工作台依赖 DSH；生成页面是否独立取决于页面自己的依赖。</td></tr>
+<tr><th scope="row"><a href="https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md">Pi</a><span class="arg">官方文档</span></th><td>TypeScript 扩展：工具、事件、命令与上下文。</td><td>ctx.ui 自定义终端组件、消息渲染和覆盖面板。</td><td>扩展运行依赖 Pi；终端组件并非 HTML。</td></tr>
+<tr><th scope="row"><a href="https://opencode.ai/docs/plugins/">OpenCode</a><span class="arg">官方文档</span></th><td>JS/TS 插件事件钩子、自定义工具、SDK client。</td><td>已查文档列出 TUI 通知等接口；不能据此认定支持任意业务页面插件。</td><td>插件依赖 OpenCode；应用程序产物的独立性另论。</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/plugins-reference">Claude Code</a><span class="arg">官方文档</span></th><td>插件打包 skills、agents、hooks、MCP、LSP 等。</td><td>公开插件合同主要扩展 Agent；未据此确认任意 React 页面注册。</td><td>插件依赖 Claude Code；不能把插件包视为桌面应用。</td></tr>
+<tr><th scope="row"><a href="https://hermes-agent.nousresearch.com/docs/developer-guide/plugins/">Hermes</a><span class="arg">官方文档</span></th><td>Python register(ctx) 与多种能力注册。</td><td>另有 Desktop SDK、Dashboard 扩展，不只有终端插件。</td><td>本地宿主扩展；兼容其他插件格式只代表明确支持的子集。</td></tr>
+<tr><th scope="row"><a href="https://docs.openclaw.ai/tools/plugin">OpenClaw</a><span class="arg">官方文档</span></th><td>Gateway 插件提供工具、服务、通道与运行能力。</td><td>交互 Dashboard 与 macOS widget panel 的合同不同。</td><td>插件依赖 Gateway；面板显示 HTML 不等于全部运行能力。</td></tr>
+<tr><th scope="row"><a href="https://geminicli.com/docs/extensions/">Gemini CLI</a><span class="arg">官方文档</span></th><td>扩展打包 prompts、MCP、命令等 Agent 配置与能力。</td><td>CLI 扩展机制；不是任意应用页面的安装合同。</td><td>扩展使用 Gemini CLI 的加载与运行环境。</td></tr>
+<tr><th scope="row"><a href="https://block.github.io/goose/index.html">goose</a><span class="arg">官方文档</span></th><td>MCP 扩展、recipes、CLI/API。</td><td>Desktop 明确支持 MCP Apps 交互界面。</td><td>MCP 服务可分离部署；UI 需要兼容宿主。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Agent 服务 (4)</summary>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">机制</th><th scope="col">UI</th><th scope="col">宿主依赖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://learn.chatgpt.com/docs/app-server">Codex App Server</a><span class="arg">官方文档</span></th><td>双向 JSON-RPC，线程、轮次、事件与审批。</td><td>客户端自己实现界面；该接口不是应用安装清单。</td><td>可构建独立客户端，但 Agent 能力仍依赖 Codex 服务。</td></tr>
+<tr><th scope="row"><a href="https://docs.openhands.dev/sdk">OpenHands</a><span class="arg">官方文档</span></th><td>Python/REST SDK、工具、会话与远程 Agent Server。</td><td>可用 SDK 构建自己的开发者体验。</td><td>可嵌入应用；不等于通用应用菜单或任意宿主 UI 扩展。</td></tr>
+<tr><th scope="row"><a href="https://github.com/bytedance/deer-flow">DeerFlow</a><span class="arg">官方仓库说明</span></th><td>Gateway、长任务 Agent、skills、文件和执行环境。</td><td>完整 Web 客户端；只读静态演示与带后端运行模式明确不同。</td><td>完整功能需要其运行后端；演示页面不能证明服务独立性。</td></tr>
+<tr><th scope="row"><a href="https://docs.agno.com/agent-os/introduction">Agno / AgentOS</a><span class="arg">官方文档</span></th><td>FastAPI 运行 agents、teams、workflows；数据库状态与接口。</td><td>Control Plane 用于管理；可有自己的产品前端。</td><td>应用可独立部署服务；仍需 AgentOS 与存储配置。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>编码工具 (6)</summary>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">机制</th><th scope="col">UI</th><th scope="col">宿主依赖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://aider.chat/docs/">Aider</a><span class="arg">官方文档</span></th><td>以代码修改、测试和 Git 工作流为主。</td><td>命令行产品；本次未核实通用应用 UI 插件合同。</td><td>写出的源码可按自身依赖部署；与 Aider 扩展是两回事。</td></tr>
+<tr><th scope="row"><a href="https://github.com/SWE-agent/mini-swe-agent">mini-SWE-agent</a><span class="arg">官方仓库说明</span></th><td>简化 Agent 循环、独立 shell action、线性历史。</td><td>CLI 与轨迹查看器。</td><td>能生成程序；所查合同不负责安装程序为宿主应用。</td></tr>
+<tr><th scope="row"><a href="https://github.com/mistralai/mistral-vibe">Mistral Vibe</a><span class="arg">官方仓库说明</span></th><td>CLI 编码 Agent，程序模式及流式输出。</td><td>终端；本次未核实业务页面插件合同。</td><td>可被程序调用；输出格式不承担 UI 渲染合同。</td></tr>
+<tr><th scope="row"><a href="https://docs.cline.bot/mcp/mcp-overview">Cline</a><span class="arg">官方文档</span></th><td>MCP 扩展外部工具与服务。</td><td>所查页面证明工具集成，不证明任意 UI 扩展。</td><td>MCP 服务器可以独立运行；宿主负责工具调用。</td></tr>
+<tr><th scope="row"><a href="https://roocodeinc.github.io/Roo-Code/features/mcp/using-mcp-in-roo/">Roo Code</a><span class="arg">官方文档</span></th><td>项目/全局 MCP，stdio、HTTP 等连接。</td><td>编辑器内的 Agent 交互。</td><td>MCP 服务与编辑器扩展是不同部署对象。</td></tr>
+<tr><th scope="row"><a href="https://docs.continue.dev/customize/deep-dives/mcp">Continue</a><span class="arg">官方文档</span></th><td>配置 MCP 工具到 Agent。</td><td>编辑器/Agent 集成；本次未核实任意业务页面注册。</td><td>工具服务可跨宿主；Continue 配置仍依赖 Continue。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>闭源产品 (2)</summary>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">机制</th><th scope="col">UI</th><th scope="col">宿主依赖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://cursor.com/docs">Cursor</a><span class="arg">官方概览；内部未知</span></th><td>公开文档提供 Agent、Rules、MCP 等入口。</td><td>产品界面可见；内部插件运行机制本次未核实。</td><td>不依据公开功能列表推断内部架构或任意应用宿主合同。</td></tr>
+<tr><th scope="row"><a href="https://docs.devin.ai/desktop/cascade/mcp">Windsurf / Devin Desktop</a><span class="arg">官方文档；内部未知</span></th><td>公开 Cascade MCP 集成。</td><td>编辑器内交互；内部机制未核实。</td><td>MCP 能力不等于业务应用页面的可移植性。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>嵌入式框架 (10)</summary>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">机制</th><th scope="col">UI</th><th scope="col">宿主依赖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/agent-sdk/overview">Claude Agent SDK</a><span class="arg">官方文档</span></th><td>把 Claude Agent 能力嵌入 Python/TypeScript 程序。</td><td>应用自行提供 UI。</td><td>可脱离 Claude Code 的交互界面；仍有 SDK/runtime 依赖。</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/overview">LangGraph</a><span class="arg">官方文档</span></th><td>状态图、持久化、恢复与人工介入。</td><td>图/事件不规定最终业务 UI。</td><td>可作为独立程序的库；持久化要实际配置。</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/deepagents/overview">Deep Agents</a><span class="arg">官方文档</span></th><td>在 LangGraph 上组合工具、文件、上下文与子 Agent。</td><td>Agent harness 与最终应用界面分离。</td><td>可嵌入应用，依赖其库和运行配置。</td></tr>
+<tr><th scope="row"><a href="https://adk.dev/">Google ADK</a><span class="arg">官方文档</span></th><td>Agent 开发、编排、工具与部署体系。</td><td>开发工具与业务应用 UI 应分别评估。</td><td>用于构建/部署 Agent；不是桌面应用注册协议。</td></tr>
+<tr><th scope="row"><a href="https://learn.microsoft.com/en-us/agent-framework/overview/">Microsoft Agent Framework</a><span class="arg">官方文档</span></th><td>Agent 与 workflow 开发；延续 AutoGen、Semantic Kernel 的相关能力。</td><td>应用自行集成界面与渠道。</td><td>SDK/服务依赖，不要求使用某个桌面宿主页面。</td></tr>
+<tr><th scope="row"><a href="https://docs.crewai.com/en/concepts/flows">CrewAI</a><span class="arg">官方文档</span></th><td>Flows 表达业务流程与状态。</td><td>流程运行不限定业务前端。</td><td>应用依赖库及其部署环境；不是页面插件格式。</td></tr>
+<tr><th scope="row"><a href="https://pydantic.dev/docs/ai/integrations/ui/overview/">PydanticAI</a><span class="arg">官方文档</span></th><td>类型化 Agent 与 UI 事件流集成。</td><td>UI Event Streams 为前端消费事件提供适配。</td><td>前端与 Agent 运行可分离；不是完整应用安装协议。</td></tr>
+<tr><th scope="row"><a href="https://mastra.ai/docs">Mastra</a><span class="arg">官方文档</span></th><td>TypeScript agents、workflows、服务与存储。</td><td>支持 Next.js、React/Vite 等应用集成；Studio 用于开发管理。</td><td>业务应用可自己部署，依赖 Mastra 服务/库。</td></tr>
+<tr><th scope="row"><a href="https://github.com/NVIDIA/NeMo-Agent-Toolkit">NeMo Agent Toolkit</a><span class="arg">官方仓库说明</span></th><td>函数、模型、workflow 配置与多框架集成。</td><td>所查入口以运行/优化 Agent 工作流为主。</td><td>部署工具链；不据此认定通用桌面应用插件支持。</td></tr>
+<tr><th scope="row"><a href="https://github.com/huggingface/smolagents">smolagents</a><span class="arg">官方仓库说明</span></th><td>CodeAgent 执行代码并调用工具，可分享 Agent。</td><td>应用 UI 另行实现或集成。</td><td>可写普通 Python 程序；不是宿主页面扩展协议。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>应用平台 (3)</summary>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">机制</th><th scope="col">UI</th><th scope="col">宿主依赖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/langgenius/dify-plugin-daemon">Dify</a><span class="arg">官方仓库说明</span></th><td>Plugin Daemon 管理 local/debug/serverless 插件运行。</td><td>插件运行与 Dify 应用展示分开；不能把后端插件当任意 UI。</td><td>本地子进程或远程运行仍依赖 Dify 插件调用协议。</td></tr>
+<tr><th scope="row"><a href="https://docs.openwebui.com/features/extensibility/plugin/">Open WebUI</a><span class="arg">官方文档</span></th><td>Python Tools/Functions 扩展推理与平台行为。</td><td>Action 可增加聊天按钮；还有事件驱动的交互扩展。</td><td>平台扩展依赖 Open WebUI，不是自动独立发布的软件。</td></tr>
+<tr><th scope="row"><a href="https://docs.chainlit.io/api-reference/elements/custom">Chainlit</a><span class="arg">官方文档</span></th><td>Python 应用配合自定义元素及回调。</td><td>CustomElement 使用 React；也可开发自有前端。</td><td>元素依赖 Chainlit 上下文；完整应用可以作为服务部署。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>界面协议 (4)</summary>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">机制</th><th scope="col">UI</th><th scope="col">宿主依赖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://developers.openai.com/plugins/build/chatgpt-ui">OpenAI Plugins（原 Apps SDK 路径）</a><span class="arg">官方文档</span></th><td>MCP 工具提供 UI 资源，标准 bridge 加宿主特定扩展。</td><td>iframe Web UI；当前官方文档以 MCP Apps 为基础。</td><td>可跨兼容宿主；window.openai 特定能力不能自动跨宿主。</td></tr>
+<tr><th scope="row"><a href="https://modelcontextprotocol.io/extensions/apps/overview">MCP Apps</a><span class="arg">官方文档</span></th><td>工具与 ui:// 资源关联；JSON-RPC / postMessage。</td><td>沙箱 Web UI，可选择前端框架。</td><td>兼容的是 UI/工具交互；不负责本地安装、业务数据库与后台任务。</td></tr>
+<tr><th scope="row"><a href="https://docs.ag-ui.com/introduction">AG-UI</a><span class="arg">官方文档</span></th><td>Agent 与 UI 的事件通信。</td><td>不规定 HTML、原生组件或页面框架。</td><td>解决流式交互，不是应用包、权限系统或部署器。</td></tr>
+<tr><th scope="row"><a href="https://a2ui.org/">A2UI</a><span class="arg">官方文档</span></th><td>生成结构化 UI 描述，由受信组件目录渲染。</td><td>限制在可用组件与 renderer 合同内。</td><td>可跨平台渲染；不等于运行任意生成前端代码。</td></tr>
+</tbody>
+</table>
+</details>
+<details id="scope">
+<summary>证据限度</summary>
+<ul>
+<li>“官方仓库描述”指阅读公开描述，不是审计仓库。没有实测的兼容不算验收。链接只支持相邻的说法，不背书整个实现。</li>
+<li>相关的 DSH 发行版、worktable 和 OpenProgram 代码已检查；其他项目依据当前官方文档、公开示例或仓库描述。并非每个产品都安装测试过。</li>
+<li>“未验证”表示证据不足，不表示不支持。Cursor 和 Windsurf 内部未知。AutoGen 和 Semantic Kernel 放在 Microsoft Agent Framework 的演进中讨论。</li>
+<li>列表并不封闭：商业产品、社区分支和私有 harness 未穷尽。相关的 Qwen Code 和 Strands 页面无法获取；Trae、Kimi CLI 和云端软件生成服务不在矩阵内。这些缺口限制的是独有性声明，不是这里的需求。</li>
+<li>DSH 细节依据已安装发行版 0.1.5-rc.1，worktable 源码 0.3.3。两者都没有完整兼容验收；一个版本的演示不能作为另一个版本能力的证据。</li>
+</ul>
+</details>
+
+<details id="mechanisms">
+<summary>影响选择的机制</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">发现</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/Aisland-SJL/dsh-worktable">dsh-worktable</a></th><td>宿主服务、UI 插槽、React 分栏；不是独立软件。生成的窗口从 artifact 清单读取 HTML、URL 或文件。只用自身资源的页面可单独托管；依赖 DSH 路由、会话或插件服务的页面离开 DSH 就失去它们。</td></tr>
+<tr><th scope="row"><a href="https://github.com/deepseek-ai/deepseek-harness">DSH 动态 Cordis 插件</a></th><td>宿主部分注册处理器；客户端部分在宿主内运行并调用后端。有真实逻辑，但受支持的 API、加载生命周期和代码格式约束。Node <code translate="no">vm</code> 不是操作系统级隔离。</td></tr>
+<tr><th scope="row"><a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/extending-the-dashboard">Hermes</a></th><td>窗格、页面、侧栏、状态栏和命令面板贡献；本地插件直接在宿主内加载，不同于隔离的 HTML 预览；Dashboard 有页面和插槽。采纳：显式贡献和生命周期，但不把宿主内部对象交给生成的应用。</td></tr>
+<tr><th scope="row">Pi</th><td>自定义 UI 用终端组件：并非所有插件界面都是 HTML。</td></tr>
+<tr><th scope="row"><a href="https://docs.openclaw.ai/platforms/mac/canvas">OpenClaw 小组件面板</a></th><td>只做渲染。宿主操作和 A2UI 属于 Control UI 和会话 dashboard；同叫 canvas 不等于能力相通。</td></tr>
+<tr><th scope="row">MCP Apps、AG-UI、A2UI</th><td>可移植 Web 资源和宿主通信；Agent 到 UI 的事件；从组件目录声明式渲染。都不提供安装、数据迁移或后台生命周期。</td></tr>
+<tr><th scope="row">LangGraph、AgentOS、OpenHands</th><td>应用可独立部署但仍需库和服务：离开桌面客户端不等于去掉所有依赖。</td></tr>
+<tr><th scope="row"><a href="https://docs.chainlit.io/deploy/react/overview">Chainlit 自定义 React 前端</a></th><td>完整应用可以带自己的前端作为服务部署。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="status">实现状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">交付</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. 定义与来源</th><td>单一定义和来源身份、校验、启用状态；发现时不执行代码</td><td>已实现</td></tr>
+<tr><th scope="row">2. 菜单与页面</th><td>静态应用打开、复用标签页、绑定实例、隔离资源</td><td>已实现</td></tr>
+<tr><th scope="row">3. 业务操作与 Runtime</th><td>Python 操作使用模型和 Workflow 契约；取消、问题、结果持久化</td><td>已实现</td></tr>
+<tr><th scope="row">4. 完整生命周期</th><td>依赖、后台任务、重启中断、摘要检查、卸载</td><td>已实现</td></tr>
+<tr><th scope="row">5. 兼容与独立部署</th><td>MCP Apps 适配器、最小运行时部署；其他语言 runner 以后再做。验收：同一 UI 和操作真正在第二个宿主上运行</td><td>未实现</td></tr>
+</tbody>
+</table>
+<p class="note">同样未实现：附件 API、自动 schema 迁移、对话上下文导入、手动菜单排序、论文阅读示例的 PDF 导入、插件自动适配 Application。</p>
+<details id="baseline">
+<summary>代码地图</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/web/components/center-tabs/pages/new-tab-page.tsx</code></th><td>启动按钮；获得焦点时和每十秒刷新列表</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/center-tabs/pages/application-tab-pane.tsx</code></th><td>沙箱 iframe 和 MessagePort 实例 API</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/loader.py</code></th><td>每个应用通过一个 <code translate="no">ProgramContext</code> 挂载</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/catalog.py</code>、<code translate="no">catalog_store.py</code></th><td>注册、摘要、环境、信任</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/service.py</code></th><td>基于 <code translate="no">ExecutionStore</code>、Attempt 和 Driver 的操作；共享取消清理</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/runner.py</code></th><td>每个进程一个受信任操作；Runtime 和 <code translate="no">context</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/_host/ui/state.py</code></th><td>实例、操作元数据、事件、实例数据</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes/catalog/applications.py</code></th><td><code translate="no">/api/applications</code>、实例、运行和资源路由</td></tr>
+</tbody>
+</table>
+<p>遵循 <a href="programs-architecture.zh.html">Programs 代码结构</a>；更广的比较见<a href="../../framework-comparison.zh.html">框架对比</a>。</p>
+</details>
+<details id="implementation">
+<summary>验收</summary>
+<ul>
+<li>示例应用：不用模型的计算器、保存批注并从粘贴文本生成摘要的论文阅读器、显示进度和重启中断的批量文件分析。</li>
+<li>通过公开入口（API、CLI、真实浏览器）检查：安装、更新、停用、卸载后重装、失败、重复点击、重新打开和重启。默认 App 检查：harness 在 Applications 下、管理页和菜单复用同一实例、笔记和分析结果保留、菜单隐藏和恢复、重启后恢复标签页和结果。</li>
+<li>集成测试覆盖模型成功和失败、取消、重复提交和中断；离线测试不保证真实模型可用。</li>
+<li>性能目标：列出新标签页不启动业务进程；重复打开不产生第二个同范围实例；打开不触发代码生成或模型请求。不做未测量的延迟承诺。</li>
+</ul>
+</details>

@@ -9,18 +9,14 @@ prefixed id.
 
 Fixes under test:
   1. ``ensure_codex_model_registered`` refuses ``:`` ids (no ghost row).
-  2. ``ensure_anthropic_model_registered`` refuses ``:`` ids too.
   3. ``_create_runtime_for_visualizer`` strips a leading ``<provider>:``
      so the prefixed id resolves to the same bare-id runtime.
 """
 from __future__ import annotations
 
-from openprogram.providers.enabled_models import ENABLED_MODELS
-from openprogram.providers.openai_codex.runtime import (
+from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
+from openprogram.models.providers.adapters.openai_codex.catalog import (
     ensure_codex_model_registered,
-)
-from openprogram.providers.anthropic._claude_code_direct_runtime import (
-    ensure_anthropic_model_registered,
 )
 
 
@@ -52,21 +48,12 @@ def test_codex_registrar_still_registers_bare_id():
     assert ":" not in ENABLED_MODELS[key].id
 
 
-def test_anthropic_registrar_refuses_prefixed_id():
-    before = {k for k in ENABLED_MODELS if k.startswith("anthropic/")}
-    out = ensure_anthropic_model_registered("anthropic:claude-fake-9")
-    after = {k for k in ENABLED_MODELS if k.startswith("anthropic/")}
-    assert after == before
-    assert "anthropic/anthropic:claude-fake-9" not in ENABLED_MODELS
-    # Returns the id unchanged so the caller's downstream resolve raises
-    # a clean "Unknown model" instead of using a ghost.
-    assert out == "anthropic:claude-fake-9"
 
 
 def test_visualizer_strips_provider_prefix(monkeypatch):
     """A prefixed model on the restore path must resolve to the SAME bare id
     the codex runtime would build — no new registration."""
-    import openprogram.webui._runtime_management as rm
+    import openprogram.interfaces.server.runtime_management as rm
 
     captured = {}
 
@@ -75,7 +62,7 @@ def test_visualizer_strips_provider_prefix(monkeypatch):
         return object()
 
     monkeypatch.setattr(
-        "openprogram.providers.registry.create_runtime", fake_create_runtime
+        "openprogram.runtime.agent.runtime.factory.create_runtime", fake_create_runtime
     )
     # openai-codex is in PROVIDERS → routes through create_runtime(model=...).
     rm._create_runtime_for_visualizer("openai-codex", "openai-codex:gpt-5.5")

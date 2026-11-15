@@ -1,5 +1,6 @@
 """Real browser acceptance for the application pane and its scoped bridge."""
 from pathlib import Path
+import re
 import socket
 import subprocess
 from threading import Thread
@@ -9,6 +10,7 @@ from fastapi.responses import Response
 import pytest
 import uvicorn
 
+from tests.support.radix_select import choose
 from tests.support.waiting import wait_until
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -17,9 +19,9 @@ pytestmark = pytest.mark.browser
 
 def test_application_ui_isolated_and_state_survives_reopening(tmp_path, monkeypatch):
     from playwright.sync_api import sync_playwright, expect
-    from openprogram.programs._applications import catalog, state
-    from openprogram.webui.routes.catalog import applications
-    from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.programs._host.ui import catalog, state
+    from openprogram.interfaces.server.routes.catalog import applications
+    from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
     monkeypatch.setenv("HOME", str(tmp_path))
     # Pure Web application: saving its state never creates a Python process.
     source = tmp_path / 'source'
@@ -39,7 +41,7 @@ document.getElementById('save').onclick=async()=>{const s=await openprogramApp.s
     (source / 'index.html').write_text(html.split('<script>', 1)[0] + '<script type="module" src="ui.js"></script>')
     definition = catalog.install(str(source))
     instance = state.instance(definition)
-    from openprogram.store.project import resolve_project
+    from openprogram.state.store.project import resolve_project
     project_one = tmp_path / 'project-one'
     project_two = tmp_path / 'project-two'
     project_one.mkdir()
@@ -54,7 +56,7 @@ document.getElementById('save').onclick=async()=>{const s=await openprogramApp.s
     bundle = tmp_path / 'pane.js'
     subprocess.run(['node', '-e', '''
 const esbuild=require('esbuild');
-esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoot} from "react-dom/client"; import {ApplicationTabPane} from "./components/center-tabs/application-tab-pane"; import {NewTabPage} from "./components/center-tabs/new-tab-page"; import {useCenterTabs} from "./lib/tabs/center-tabs-store"; function App(){const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));return window.launch?React.createElement(React.Fragment,null,React.createElement(NewTabPage),tab?.applicationInstanceId?React.createElement(ApplicationTabPane,{instanceId:tab.applicationInstanceId}):null):React.createElement(ApplicationTabPane,{instanceId:window.instanceId});} createRoot(document.getElementById("root")).render(React.createElement(App));',resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});
+esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoot} from "react-dom/client"; import {ApplicationTabPane} from "./components/center-tabs/pages/application-tab-pane"; import {NewTabPage} from "./components/center-tabs/pages/new-tab-page"; import {useCenterTabs} from "./lib/tabs/center-tabs-store"; function App(){const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));return window.launch?React.createElement(React.Fragment,null,React.createElement(NewTabPage),tab?.applicationInstanceId?React.createElement(ApplicationTabPane,{instanceId:tab.applicationInstanceId}):null):React.createElement(ApplicationTabPane,{instanceId:window.instanceId});} createRoot(document.getElementById("root")).render(React.createElement(App));',resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});
 ''', str(ROOT / 'apps/web'), str(bundle)], cwd=ROOT, check=True, capture_output=True)
     app = FastAPI()
     applications.register(app)
@@ -94,7 +96,7 @@ esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoo
                 expect(page.frame_locator('iframe').get_by_label('Note')).to_have_value('persistent annotation')
                 page.goto(f'http://127.0.0.1:{port}/launch')
                 page.get_by_role('button', name='Project notes', exact=True).click()
-                page.locator('#application-project').select_option(projects[0].id)
+                choose(page.locator('#application-project'), f'{projects[0].name} — {projects[0].path}')
                 page.get_by_role('button', name='Open application', exact=True).click()
                 project_frame = page.frame_locator('iframe')
                 project_frame.get_by_label('Note').fill('first project')
@@ -111,7 +113,7 @@ esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoo
                 page.evaluate("async id => {await fetch('/api/applications/test.project-browser/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:id})});}", projects[1].id)
                 page.reload()
                 page.get_by_role('button', name='Project notes', exact=True).click()
-                page.locator('#application-project').select_option(projects[1].id)
+                choose(page.locator('#application-project'), f'{projects[1].name} — {projects[1].path}')
                 page.get_by_role('button', name='Open application', exact=True).click()
                 expect(page.frame_locator('iframe').get_by_label('Note')).to_have_value('')
                 assert page.locator('iframe').get_attribute('src') != first_url
@@ -126,82 +128,87 @@ esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoo
         assert not thread.is_alive()
 
 
-def test_file_analysis_sample_displays_interruption_and_progress():
-    from playwright.sync_api import sync_playwright, expect
-    html = (ROOT / 'examples/applications/file-analysis/index.html').read_text()
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        try:
-            for status in ('interrupted', 'running'):
-                page = browser.new_page()
-                page.evaluate('''status => {
-                  window.openprogramApp={
-                    load:async()=>({version:1,value:{results:[{path:'first.txt',lines:3}]}}),
-                    runs:async()=>[{id:'run',status}],
-                    status:async()=>({status,result:null,error:status==='interrupted'?'The worker stopped':null,
-                      events:[{sequence:1,type:'progress',value:{completed:1,total:4}}]}),
-                  };
-                }''', status)
-                page.set_content(html)
-                expect(page.locator('#status')).to_contain_text(status)
-                expect(page.locator('#result')).to_contain_text('first.txt')
-                if status == 'interrupted':
-                    expect(page.locator('#status')).to_contain_text('The worker stopped')
-                else:
-                    expect(page.locator('#status')).to_contain_text('"completed":1')
-                    expect(page.locator('#status')).to_contain_text('"total":4')
-                page.close()
-        finally:
-            browser.close()
+def _serve(directory):
+    """Serve an example's UI directory: module scripts need an http origin."""
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    class Quiet(SimpleHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=str(directory)))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, f'http://127.0.0.1:{server.server_address[1]}/index.html'
 
 
 def test_calculator_sample_works_in_application_sandbox():
-    from html import escape
     from playwright.sync_api import sync_playwright, expect
-    source = (ROOT / 'examples/applications/calculator/index.html').read_text()
+    server, url = _serve(ROOT / 'examples/applications/calculator/ui')
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
             page = browser.new_page()
-            page.set_content('<iframe sandbox="allow-scripts" srcdoc="' + escape(source, quote=True) + '"></iframe>')
-            frame = page.frame_locator('iframe')
-            frame.get_by_role('button', name='Calculate', exact=True).click()
-            expect(frame.locator('output')).to_have_text('15')
-            frame.get_by_label('Operation', exact=True).select_option('÷')
-            frame.get_by_label('Second number').fill('0')
-            frame.get_by_role('button', name='Calculate', exact=True).click()
-            expect(frame.locator('output')).to_have_text('Cannot divide by zero')
-        finally:
-            browser.close()
-
-
-def test_reader_waits_for_saved_state_before_editing():
-    from playwright.sync_api import sync_playwright, expect
-    source = (ROOT / 'examples/applications/reader/index.html').read_text()
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        try:
-            page = browser.new_page()
-            page.evaluate("""() => {
+            # The host bridge: history round-trips through storage.app.
+            page.add_init_script("""
+                window.saved={version:1,value:{}};
                 window.openprogramApp={
-                    load:()=>new Promise(resolve=>window.finishLoad=resolve),
-                    runs:async()=>[],
-                    save:async(value,version)=>{
-                        window.saved={value,version};return {value,version:version+1};
-                    }
+                    load:async()=>window.saved,
+                    save:async(value,version)=>{window.saved={value,version:version+1};return window.saved;},
                 };
-            }""")
-            page.set_content(source)
-            field = page.get_by_label('Paper text and annotations')
-            expect(field).to_be_disabled()
-            expect(page.get_by_role('button', name='Save notes')).to_be_disabled()
-            expect(page.get_by_role('button', name='Summarize')).to_be_disabled()
-            page.evaluate("finishLoad({version:4,value:{text:'existing annotation'}})")
-            expect(field).to_be_enabled()
-            expect(field).to_have_value('existing annotation')
-            field.fill('new annotation')
-            page.get_by_role('button', name='Save notes').click()
-            expect(page.locator('#status')).to_have_text('Saved')
-            assert page.evaluate('window.saved') == {'value': {'text': 'new annotation'}, 'version': 4}
+            """)
+            page.goto(url)
+            field = page.get_by_label('Expression')
+            field.fill('7+8')
+            field.press('Enter')
+            expect(page.locator('#result')).to_have_text('15')
+            wait_until(lambda: page.evaluate('window.saved.version') == 2)
+            assert page.evaluate('window.saved.value.history[0].result') == 15
+            field.fill('1÷0')
+            field.press('Enter')
+            expect(page.locator('#result')).to_have_text('Cannot divide by zero')
+            expect(page.locator('#result')).to_have_class(re.compile(r'\berror\b'))
         finally:
             browser.close()
+            server.shutdown()
+
+
+def test_reader_lists_project_pdfs_through_the_bridge():
+    from playwright.sync_api import sync_playwright, expect
+    server, url = _serve(ROOT / 'examples/applications/pdf_editor/ui')
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            # The library is built from the backend's list_files run, which
+            # finishes only after a status poll; nothing renders before that.
+            page.add_init_script("""
+                window.polls=0;
+                window.openprogramApp={
+                    load:async()=>({version:1,value:{}}),
+                    save:async(value,version)=>({value,version:version+1}),
+                    run:async(operation,input,key)=>({id:'run-'+operation,status:'running',events:[]}),
+                    status:async(id,cursor)=>{
+                        window.polls++;
+                        return {id,status:'completed',events:[],result:{project:'demo',files:[
+                            {path:'papers/attention.pdf',size:2048,modified:1700000000000},
+                            {path:'notes.pdf',size:512,modified:1700000000000},
+                        ]}};
+                    },
+                };
+            """)
+            page.goto(url)
+            rows = page.get_by_role('option')
+            expect(rows).to_have_count(2)
+            expect(page.locator('#project-name')).to_have_text('PDF files in demo')
+            expect(rows.first).to_contain_text('attention.pdf')
+            assert page.evaluate('window.polls') >= 1
+            page.get_by_label('Filter PDFs').fill('notes')
+            expect(rows).to_have_count(1)
+            expect(rows.first).to_contain_text('notes.pdf')
+            page.get_by_label('Filter PDFs').fill('nothing')
+            expect(page.locator('#file-list')).to_contain_text('No PDF matches this filter.')
+        finally:
+            browser.close()
+            server.shutdown()

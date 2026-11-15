@@ -1,0 +1,36 @@
+# `openprogram/models/usage/`
+
+> Usage metering — records every LLM call's tokens / model / cost.
+
+## Overview
+
+Public API:
+
+  usage_scope(call_kind=...)      label the source of LLM calls in a block
+  record_message(model, message)  record one finished call (called at the
+                                  stream.py chokepoint; rarely called directly)
+  default_ledger.query(...)       aggregate recorded usage for panels/CLI
+  register_usage_hook(fn)         subscribe to events (budget/alerting)
+  prefix_fingerprint.expect_break announce a prompt-cache break made on purpose
+
+See docs/design/usage-metering.md.
+
+## Files in this directory
+
+- **`context.py`** — Call-source context for usage metering
+- **`event.py`** — UsageEvent
+- **`goal_port.py`** — What usage metering needs from the Goal tool
+- **`ledger.py`** — UsageLedger
+- **`prefix_fingerprint.py`** — Where a request's cached prefix broke, and why
+- **`provider_status.py`** — One status per connected provider: health, quota, 30-day spend, keys
+- **`provider_views.py`** — Provider state where the chat and the detail page need it
+- **`quota.py`** — Provider quota: how much of a provider's limits is left, per key
+- **`recorder.py`** — UsageRecorder
+- **`request.py`** — Durable Goal request identity and replayable terminal usage receipts
+- **`reservation.py`** — Safe bounds for one provider request before it is sent
+
+## Sub-packages
+
+- **`quota_fetchers/`** — Read-only quota endpoints, behind one interface, and when they are read
+
+_Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

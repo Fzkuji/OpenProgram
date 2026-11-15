@@ -1,11 +1,9 @@
 /**
- * user-profile — the local "You" identity (display name + avatar),
- * the counterpart to ``agent-style``'s default-agent profile.
+ * user-profile — the local user's display name + avatar.
  *
- * Same localStorage + ``useSyncExternalStore`` shape as
- * ``lib/agent-style.ts``: a cached snapshot (stable identity so React
- * doesn't loop), a change event, and a hook. Edited in
- * /settings/general → You; consumed by the user message bubble.
+ * localStorage + ``useSyncExternalStore``: a cached snapshot (stable
+ * identity so React doesn't loop), a change event, and a hook. Edited in
+ * /settings/general → User; shown at the bottom of the sidebar.
  *
  * Stored per-browser (localStorage) — there's one local user per
  * install today, so this isn't server data.

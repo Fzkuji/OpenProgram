@@ -1,19 +1,52 @@
+import { findCenterTabGroup, normalizeCenterTabLayout } from "@/lib/tabs/center-tab-groups";
+import { nextNtpId } from "@/lib/tabs/center-tab-ids";
 import { replaceGroupTabId } from "@/lib/tabs/center-tabs-persistence";
 import type { StoreApi } from "zustand";
-import { pushPath } from "../../shallow-nav";
-import { isSettingsRoute, pageHistory, recordTabPage, restoreTabPage, tabPage } from "../navigation/page-history";
+import { navigateTabRoute } from "../navigation/route";
+import { pageHistory, recordTabPage, restoreTabPage, tabPage } from "../navigation/page-history";
 import { navigationTarget } from "../navigation/selectors";
-import { commitCenterTabsState, independentTab } from "./core";
+import { commitCenterTabsState, focusAfterClose, independentTab } from "./core";
 import type { CenterTab, CenterTabsState } from "./types";
+import { forgetClosedSession } from "./closed-tabs";
+
+// Routes that share one sidebar entry are one page: Ability is programs,
+// skills, MCP and plugins; History is chats, projects and memory.
+const PAGE_FAMILIES: Record<string, string> = {
+  programs: "ability", skills: "ability", mcp: "ability", plugins: "ability",
+  chats: "history", projects: "history", memory: "history", history: "history",
+};
+
+/** The page a management route belongs to, so a second visit finds its tab. */
+export function routePageKey(route: string): string {
+  const root = route.split(/[?#]/, 1)[0].split("/").filter(Boolean)[0] ?? "";
+  return PAGE_FAMILIES[root] ?? root;
+}
 
 export function navigationActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>): Pick<CenterTabsState, "recordRouteNavigation" | "canNavigateHistory" | "navigateHistory" | "navigateSessionHistory" | "navigateFileHistory" | "canNavigateFile" | "updateFileNavigationView" | "recordFileNavigation" | "removeSessionFromHistory"> {
   return {
     recordRouteNavigation: pathname => set(s => {
-      if (isSettingsRoute(pathname)) return {};
       const active = s.tabs.find(tab => tab.id === s.activeId);
       if (!active) return {};
       const navigationRoute = pathname === "/chat" || pathname.startsWith("/s/") ? undefined : pathname;
       if (active.navigationRoute === navigationRoute) return {};
+      // A page that already has a tab is focused there instead of turning the
+      // current tab into a second copy of it.
+      const key = navigationRoute && routePageKey(navigationRoute);
+      const existing = key ? s.tabs.find(tab => tab.id !== active.id && tab.navigationRoute && routePageKey(tab.navigationRoute) === key) : undefined;
+      if (existing && navigationRoute) {
+        const next = existing.navigationRoute === navigationRoute ? existing : recordTabPage(existing, { ...existing, navigationRoute });
+        return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === existing.id ? next : tab), activeId: existing.id });
+      }
+      // A split pane only holds chat-area content: a management page opened
+      // from a grouped tab gets its own top-level tab beside the group, so the
+      // split stays intact and the strip never shows a page as a split member.
+      const group = navigationRoute ? findCenterTabGroup(s.groups, active.id) : undefined;
+      if (group) {
+        const tab: CenterTab = { id: nextNtpId(), kind: "ntp", title: "", navigationRoute };
+        const lastMember = Math.max(...group.memberIds.map(id => s.tabs.findIndex(item => item.id === id)));
+        const tabs = [...s.tabs.slice(0, lastMember + 1), tab, ...s.tabs.slice(lastMember + 1)];
+        return commitCenterTabsState(s, { tabs, activeId: tab.id });
+      }
       const next = recordTabPage(active, { ...active, navigationRoute });
       return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) });
     }),
@@ -47,7 +80,7 @@ export function navigationActions(set: StoreApi<CenterTabsState>["setState"], ge
           ? `/s/${encodeURIComponent(page.sessionId)}`
           : page.kind === "ntp" || page.kind === "session" || (pathname !== "/chat" && !pathname.startsWith("/s/"))
             ? "/chat" : pathname);
-        pushPath(path);
+        navigateTabRoute(path);
       }
     },
 
@@ -91,12 +124,16 @@ export function navigationActions(set: StoreApi<CenterTabsState>["setState"], ge
       set(s => {
         let activeId = s.activeId;
         let groups = s.groups;
+        let closedActive = false;
         const tabs = s.tabs.flatMap(tab => {
           const history = pageHistory(tab);
           const keep = (page: CenterTab) => page.kind !== "session" || page.sessionId !== sessionId;
           if (history.entries.every(keep)) return [tab];
           const entries = history.entries.filter(keep);
-          if (!entries.length) return [];
+          if (!entries.length) {
+            if (tab.id === s.activeId) closedActive = true;
+            return [];
+          }
           const index = Math.max(0, history.entries.slice(0, history.index + 1).filter(keep).length - 1);
           const next = independentTab(restoreTabPage({ entries, index }, index), s.tabs, tab.id);
           next.pageHistory!.entries[index] = tabPage(next);
@@ -104,7 +141,16 @@ export function navigationActions(set: StoreApi<CenterTabsState>["setState"], ge
           groups = replaceGroupTabId(groups, tab.id, next.id);
           return [next];
         });
-        return commitCenterTabsState(s, { tabs, activeId, groups });
+        // A tab left with nothing to show closes like the strip's ×: focus
+        // moves to its neighbour, not to whichever tab comes first.
+        if (closedActive && s.activeId) {
+          const layout = normalizeCenterTabLayout({ tabIds: tabs.map(tab => tab.id), groups });
+          activeId = focusAfterClose(s, s.activeId, tabs, layout.groups);
+        }
+        return {
+          ...commitCenterTabsState(s, { tabs, activeId, groups }),
+          closedTabs: forgetClosedSession(s.closedTabs, sessionId),
+        };
       });
     }
   };

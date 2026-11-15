@@ -1,0 +1,26 @@
+<title>能力</title>
+<meta name="description" content="OpenProgram 能做什么，以及每项能力对应的页面。">
+<h1>能力</h1>
+<table class="stack">
+<thead><tr><th scope="col">层次</th><th scope="col">是什么</th><th scope="col">页面</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agentic Programming</th><td>编程范式：Python 控制流程，LLM 负责推理。把任务拆成函数调用图；不需要推理的节点是普通 Python，需要理解、生成或判断的节点是调用 <code translate="no">llm(...)</code> 的 <code translate="no">Agent</code> 方法。顺序、状态和重试都是可单元测试的普通代码。</td><td><a href="agentic-programming/README.zh.html">指南</a>、<a href="agentic-programming/philosophy.zh.html">设计理念</a></td></tr>
+<tr><th scope="row">Agentic 工作流</th><td>基于该范式的完整工作流（代码里称 harness 或 agentic program），每个都是一个 git 仓库。其函数可在聊天里作为工具触发，也可直接运行。</td><td><a href="workflows/README.zh.html">概览</a>、<a href="installing-programs.zh.html">安装程序</a></td></tr>
+<tr><th scope="row">扩展机制</th><td>不写 harness 也能增加能力。</td><td>见下</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>openprogram programs install &lt;source&gt;
+openprogram programs list
+openprogram programs run &lt;name&gt;</code></pre>
+<h2>扩展机制</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面</th><th scope="col">增加</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="skills.zh.html">Skills</a></th><td><code translate="no">SKILL.md</code> 注册表：按需加载的领域知识和操作手册</td></tr>
+<tr><th scope="row"><a href="commit-push-pr.zh.html">提交、推送、PR</a></th><td>没有内置命令；该用哪些工具</td></tr>
+<tr><th scope="row"><a href="plugins.zh.html">插件</a></th><td>来自 pip、npm、git 或本地路径的命令、技能、MCP 服务器等</td></tr>
+<tr><th scope="row"><a href="mcp.zh.html">MCP</a></th><td>任意 MCP 服务器，其工具直接出现在聊天里</td></tr>
+<tr><th scope="row"><a href="tools.zh.html">内置工具</a></th><td>Shell、文件、网页搜索、图片、PDF 等，以及各自需要的密钥</td></tr>
+<tr><th scope="row"><a href="agents.zh.html">配置 Agent</a></th><td>模型、指令、能力、记忆、试运行对话</td></tr>
+</tbody>
+</table>

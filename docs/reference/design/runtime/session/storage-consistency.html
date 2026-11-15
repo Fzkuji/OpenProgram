@@ -1,0 +1,242 @@
+<title>Storage consistency</title>
+<meta name="description" content="Timestamp, snapshot, branch-record, merged-head, lock-scope and removal contracts of SessionStore.">
+<h1 id="session-storage-consistency">Storage consistency</h1>
+<p>Data model: <a href="storage.html">Session storage</a>.</p>
+
+<h2 id="registry">Registry timestamps and snapshots</h2>
+<p><code translate="no">updated_at</code> is the last content append, not the last metadata write.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Operation</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_persist_meta</code></th><td>Rename, pin, read markers, branch markers and HEAD keep the timestamp. Append advances it. Branch records come from disk (<a href="#branch-records">Branch records</a>).</td></tr>
+<tr><th scope="row"><code translate="no">_index</code>, <code translate="no">list_sessions()</code></th><td>Readers get a point-in-time copy of each row. Concurrent creation, mutation and deletion cannot tear fields or break iteration.</td></tr>
+<tr><th scope="row">Deferred flush</th><td>An older snapshot cannot overwrite a newer one. Mutations during publication stay dirty for the next flush.</td></tr>
+</tbody>
+</table>
+
+<h3 id="registry-flow">State flow</h3>
+<ol>
+<li>Appending generates one timestamp for session metadata and its registry entry.</li>
+<li>Registry mutations hold the state lock. Listing copies rows under it, then filters and sorts outside.</li>
+<li>A writer takes the write lock, captures JSON and clears only the covered dirty state under the state lock, then releases that lock.</li>
+<li>Atomic publication runs outside the state lock.</li>
+<li>A concurrent mutation marks the registry dirty again; a timer or exit flush publishes it.</li>
+</ol>
+
+<h3 id="failure-compatibility">Failure and compatibility</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Disk failure</th><td>Warns; memory keeps serving; the next mutation or flush retries.</td></tr>
+<tr><th scope="row">Returned rows</th><td>Copies. Caller changes do not reach the registry.</td></tr>
+<tr><th scope="row">Creation</th><td>An explicit historical timestamp is kept. Rebuilds do not migrate the schema.</td></tr>
+<tr><th scope="row">Sorting</th><td>Descending <code translate="no">updated_at</code>; absent counts as zero. Wire shape unchanged.</td></tr>
+</tbody>
+</table>
+
+<details id="mechanisms">
+<summary>Mechanisms and rejected alternatives</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Boundary</th><td>As in <code translate="no">SessionMemoryIndex</code>: update state under lock, file I/O after release.</td></tr>
+<tr><th scope="row">Locks</th><td>Standard <code translate="no">threading</code>: one state lock for dictionaries, dirty state and timers; one write lock for publication order.</td></tr>
+<tr><th scope="row">Replacement</th><td><code translate="no">atomic_write_text</code></td></tr>
+<tr><th scope="row">Rejected</th><td>Global lock around every store call; synchronous registry write per append; a new timestamp field; a database; cross-process registry locks; new background services.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="registry-acceptance">
+<summary>Registry acceptance</summary>
+<table class="stack">
+<thead><tr><th scope="col">Public entry</th><th scope="col">Scenario</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">update_session</code></th><td>Rename, pin or mark read</td><td>Timestamps and list order unchanged</td></tr>
+<tr><th scope="row"><code translate="no">append_message</code></th><td>Append content</td><td>Metadata and index advance together; list uses the new time</td></tr>
+<tr><th scope="row"><code translate="no">list_sessions</code></th><td>Mutate a returned row</td><td>Next list unaffected</td></tr>
+<tr><th scope="row">Deferred flush</th><td>Mutate while an earlier snapshot writes</td><td>Next flush keeps the new fields in <code translate="no">index.json</code></td></tr>
+<tr><th scope="row">Update, list and flush together</th><td>Readers and writers run concurrently</td><td>No iteration errors; JSON parseable; memory and disk agree at the end</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branch-records">Branch records</h2>
+<p>A branch record (<code translate="no">meta["branches"][tip]</code>: name, auto-name state, turn count, archive flag) has several writers that can land at once: <code translate="no">close_agent</code> archiving a running agent, the turn it cut off finishing (<code translate="no">carry_branch_entry</code>, <code translate="no">bump_branch_turns</code>), the background auto-namer (<code translate="no">set_branch_name</code>), a rename from the Web, a delete. Each one changes only the fields it owns, on the record as it is on disk.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">One merge point</th><td><code translate="no">_update_meta</code> reads <code translate="no">meta.json</code> inside the session write lock, applies the writer's change, writes, then copies only the written keys into the cache. No writer replaces a record with a copy it read earlier.</td></tr>
+<tr><th scope="row">Whole-cache writes</th><td><code translate="no">_persist_meta</code>, <code translate="no">commit_turn</code>, append and node deletion write the cached meta with <code translate="no">branches</code>, <code translate="no">branch_refs</code> and <code translate="no">active_branch_id</code> taken from disk (<code translate="no">_meta_for_write</code>), so a cache that missed another writer cannot put an old record back. Append moves the branch records on the disk copy it read inside the lock.</td></tr>
+<tr><th scope="row">Switch and rewind</th><td>A branch switch and a rewind name their change instead of carrying copies of the maps: <code translate="no">compare_and_set_head</code> applies <code translate="no">branch_checkout</code> (<code translate="no">apply_checkout</code>) and <code translate="no">branch_record_moves</code> to the record it read inside the lock. Whole <code translate="no">branches</code>, <code translate="no">branch_refs</code> or <code translate="no">active_branch_id</code> values in its update are dropped, including ones in an intent journaled before this rule.</td></tr>
+<tr><th scope="row">One name source</th><td>Every reader, the branch list for selected and unselected branches alike, takes a branch's name from its record at its tip (<code translate="no">branch_record</code>). A tip record always wins over a parked copy, and a background run carries its unselected branch's record along.</td></tr>
+<tr><th scope="row">Record follows the tip</th><td>Every message a branch adds moves its record in the same write: <code translate="no">follow_line</code> for the selected branch (inside <code translate="no">advance_branch</code>), <code translate="no">carry_branch</code> and <code translate="no">point_branch</code> for another. A record already at the new tip is merged into it, its own fields winning.</td></tr>
+<tr><th scope="row">Late tip</th><td>A write addressed to a tip the branch has moved past (the message its latest turn extended, or that turn's user message) goes to the branch's record now (<code translate="no">_record_tip</code>). Settings and the worktree binding are keyed by branch id and never move.</td></tr>
+<tr><th scope="row">Shared tips</th><td>Branches rewound to one message cannot share a tip record: the selected one owns it; each other parks its own on its ref as <code translate="no">label</code> (written inside the lock when left, put back when selected).</td></tr>
+<tr><th scope="row">Archive is final</th><td>A record that is archived keeps <code translate="no">archived</code>, <code translate="no">archived_at</code> and <code translate="no">archived_reason</code> whatever a later write sets.</td></tr>
+<tr><th scope="row">No resurrection</th><td>A turn count or automatic name for a message that is no longer in the conversation writes nothing. A branch write never creates a conversation. An archive or a plain name may open a record for a reply admitted but not yet written.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why the archive was lost</summary>
+<p>The old writers merged the record in the cache, then wrote the whole cache. In between, a writer that reads <code translate="no">meta.json</code> under the lock (the finished turn's <code translate="no">update_branch_fields</code>) replaced the cache with the disk copy, which did not hold the archive yet. The archive's own write then saved a cache without it, and the auto-namer later opened a fresh record.</p>
+<p>Branch settings (<code translate="no">update_branch_config</code>), the worktree binding (<code translate="no">update_session</code>) and the Goal (<code translate="no">update_session_dict</code> with a version check) were already read-modify-write on disk under the lock.</p>
+<p>Names were lost the same way on a branch switch. The switch read the whole <code translate="no">branches</code> and <code translate="no">branch_refs</code> maps before the lock, overwrote the target's record with the copy parked when it was left, and wrote both maps back with the HEAD move.</p>
+<p>So a rename of an unselected branch, which the list did not show because it read only the parked copy, lost its name and lock on the switch; automatic names too.</p>
+<p>A rename while a turn ran lost the branch's turn count. The selected branch's record stayed at the old tip until the turn ended, the rename opened a second record at the tip on screen, and the turn's end carried that one.</p>
+<p>A Worker that hung between moving a branch's ref and its record left two rows: one at the old position named by a raw id, one at the reply with a name and no branch id.</p>
+<p>Loading does not repair the pair. A ref behind a continuation is also what a rewind leaves, and the reader cannot tell the two apart without guessing. Ref and record now move under one lock.</p>
+<p>Acceptance: archiving 60 tips while two threads write the session and count turns loses none; two stores on one folder (two processes) archiving and naming the same tips keep both fields; a late un-archive, a late name and a late turn count after a delete change nothing.</p>
+</details>
+
+<h2 id="merged-heads">Atomic merged-head updates</h2>
+<p><code translate="no">mark_merged(session_id, head_ids)</code> is a set union. Child-agent completion, task runners and Web branch actions can call it at once; every update survives.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Property</th><th scope="col">Requirement</th></tr></thead>
+<tbody>
+<tr><th scope="row">Atomicity</th><td>Read from disk, deduplicate, append and write in one <code translate="no">_update_meta</code> section under the session write lock.</td></tr>
+<tr><th scope="row">Order</th><td>Existing order kept; new, nonempty, stripped IDs follow in input order.</td></tr>
+<tr><th scope="row">Idempotency</th><td>Repeats add nothing. No new value, no disk write.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Scope and acceptance</summary>
+<ul>
+<li>Two concurrent callers with different heads: both present in memory and after reload.</li>
+<li>Whitespace and duplicates keep normalization and idempotency.</li>
+</ul>
+</details>
+
+<h2 id="lock-scope">Store lock scope</h2>
+<p>Slow I/O for one session must not block others.</p>
+<table class="stack">
+<thead><tr><th scope="col">Resource</th><th scope="col">Lock</th><th scope="col">Requirement</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_locations</code>, <code translate="no">_sessions</code>, LRU order</th><td><code translate="no">_lock</code></td><td>Memory only: no directory scan, atomic write, fsync or recursive delete.</td></tr>
+<tr><th scope="row">Load, rebuild, delete and invalidate one session</th><td>The conversation's process lock (<code translate="no">conversation_lock</code>)</td><td>Same session serialized; different sessions concurrent. One lock per conversation per process, shared by every store; it is the first half of the write lock. No transaction layer.</td></tr>
+<tr><th scope="row"><code translate="no">locations.json</code> publication</th><td><code translate="no">_locations_write_lock</code></td><td>Capture under the state lock, write after release. An old snapshot cannot overwrite a newer one.</td></tr>
+<tr><th scope="row"><code translate="no">SessionMemoryIndex</code> persistence</th><td><code translate="no">_persist_lock</code>, then <code translate="no">idx._lock</code></td><td>Lock order and stale-rebuild semantics kept. No I/O under <code translate="no">idx._lock</code>.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Scope and acceptance</summary>
+<p>File formats, LRU capacity, deletion semantics, cross-process stale detection and Windows behaviour do not change.</p>
+<ul>
+<li>While A blocks in <code translate="no">read_meta</code> or <code translate="no">list_history</code>, B's cached read finishes in bounded time.</li>
+<li>While A's recursive delete blocks, B's read does not wait.</li>
+<li>Concurrent first loads publish one cached object; loading cannot republish a deleted one.</li>
+<li>After concurrent location updates for two sessions, reloaded <code translate="no">locations.json</code> holds both.</li>
+</ul>
+</details>
+
+<h2 id="lock-order">Conversation lock order</h2>
+<p>Every path takes a conversation's locks in one order, and no path holds one while waiting on a model, the network or another conversation's lock.</p>
+<ol>
+<li>The process lock: a reentrant lock per conversation, shared by the store, the server and the job, event and checkpoint helpers of this process.</li>
+<li>The flock on <code translate="no">projects/.locks/&lt;id&gt;.lock</code>, through <code translate="no">session_interprocess_lock</code>, which takes step 1 first. The holder keeps one descriptor; nested acquisitions in its thread count on it instead of opening a second descriptor, which would wait on the first.</li>
+<li>Inner locks: the index's <code translate="no">_persist_lock</code> and <code translate="no">_lock</code>, the store's maps, registry files, the rewind intent lock and the workspace lock.</li>
+</ol>
+<p>A rewind, and a revert or reapply of a turn's files, holds steps 1 and 2 from looking up its idempotency key, through its plan and intent, to its outcome, and recovery replays the journal under them, so recovery never replays a rewind still being applied.</p>
+<p>A second request with the same key waits for the first and returns its recorded outcome, committed or failed: it never plans against the state the first one left, never reads an unfinished intent as one needing recovery, and never applies a second time.</p>
+<p>A rewind or a revert also applies inside its recovery scope: when its conversation leaves the store cache while it holds the workspace lock, the reopen its head check makes does not replay its own intent, which would take the workspace lock a second time and wait on itself.</p>
+<p>Both waits are bounded (60 s by default, shorter where a caller passes a timeout): past it, <code translate="no">SessionLockTimeout</code> names the conversation and the holder, a thread of this process or another process, and the request fails instead of blocking a Worker thread.</p>
+<details>
+<summary>Why, and acceptance</summary>
+<p>The branch-record merge put more writes under the flock, and two paths took the halves in opposite orders: a branch switch held the store's lock and waited for the flock, while the page load held the flock and waited for the store's lock to read the conversation. A run's admission did the same.</p>
+<p>Every later request on that conversation queued behind the pair and the Worker stopped answering.</p>
+<ul>
+<li>Sixteen threads on one conversation with five branches, turns on two branches, renames, a model change, a branch deleted, concurrent switches, a rewind plan, page loads, run admissions and cache misses all finish, 200 runs in a row; a watchdog fails the test with the stuck stacks instead of hanging it.</li>
+<li>A conversation held by a stuck thread gives the next writer an error naming it within its wait; other conversations are not held up.</li>
+<li>An error between acquire and release (a refused switch, a stale plan) releases the lock.</li>
+<li>Two processes and two threads append to one conversation and every message lands; a process killed while it holds the flock frees it for a writer already waiting; a revert whose conversation leaves the cache mid-apply commits.</li>
+<li>Two rewinds, or two reverts, with one key: while the first is paused before or after writing its intent, the second waits and then returns the first's committed outcome; after the first committed or failed, the second returns that outcome; files and head change once.</li>
+</ul>
+</details>
+
+<h2 id="off-the-event-loop">Not on the event loop</h2>
+<p>The Worker's event loop serves every connection, so no request is to wait for a conversation's lock on it: the work that reads or writes a conversation runs in a worker thread, so a conversation held by a turn, a cold first load or another process delays the request that needs it and nothing else.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">WebSocket actions</th><td>The handler stays a coroutine for its frames; the store work between them runs in the conversation's lane (<code translate="no">run_for_conversation</code>), built into one plain function when a frame needs many reads (<code translate="no">_session_loaded_data</code>, <code translate="no">run_state_data</code>, <code translate="no">_checkout_branch</code>, <code translate="no">_attach_branch</code>).</td></tr>
+<tr><th scope="row">HTTP routes</th><td>A route with nothing to await is a plain function, which FastAPI runs in its thread pool; one that awaits runs its store calls in the conversation's lane.</td></tr>
+<tr><th scope="row">Execution controls</th><td><code translate="no">submit_execution_control</code> (Stop, pause, continue, step, steer, answers) reads and writes the execution's records in a worker thread, step by step in the order the command always had, under the same command id; only the owner's signal, an activation and a steer's attachments are awaited on the loop. A Stop reaches a running owner as soon as its command is written, and only once. The Agent driver's activation reads and starts its owner thread in a worker thread too.</td></tr>
+<tr><th scope="row">Many waiters</th><td>A lane is at most <code translate="no">LANE_WIDTH</code> (2) threads of a pool the lanes share (<code translate="no">POOL_SIZE</code>, 64), not the loop's default pool. Requests beyond it wait on the loop, holding no thread, in arrival order, so one held conversation never takes the threads of the others, and work waiting in <code translate="no">asyncio.to_thread</code> elsewhere never holds up a lane. A thread that already holds a conversation's lock runs the work in place.</td></tr>
+<tr><th scope="row">Function runs</th><td><code translate="no">POST /api/function/{name}</code>, the Retry of a function run and a typed local command call <code translate="no">run_agent_method_call</code> (session, run slot, execution record, code node) in a worker thread.</td></tr>
+<tr><th scope="row">A site that is missed</th><td>The server hands its loop down to the lock (<code translate="no">watch_event_loop</code>; the store never imports the server). A lock taken on that loop logs a warning, once per call site with its stack (<code translate="no">_note_event_loop_acquisition</code>), so the site is found and moved.</td></tr>
+</tbody>
+</table>
+<p>Taking a run slot waits for the lock with the store's own budget (<code translate="no">admission_lock_wait</code>, 60 s), not a quarter of a second: a holder does file work only, and the first load of a large conversation can take longer than that.</p>
+<p>A lock still not had then is answered <code translate="no">conversation_locked</code> (retryable, nothing started, the text kept for the next send); only a slot that is held is <code translate="no">run_active</code>, which a client answers by queueing the message behind a turn.</p>
+<p>A turn nobody typed takes the slot through <code translate="no">run_slot.reserve</code>, whose <code translate="no">lock_wait</code> bounds the wait (<code translate="no">0</code>: none at all). Each caller answers a lock not had in its own way:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Caller</th><th scope="col">A lock not had</th></tr></thead>
+<tbody>
+<tr><th scope="row">Room event (ambient)</th><td>Waits for nothing: neither the conversation's lock, nor a finishing turn, nor a channel turn running in the conversation. It is skipped, as when the slot is held.</td></tr>
+<tr><th scope="row">Channel message</th><td>Waits for the lock within the slot's 30 s; past it the sender is told the message was not delivered and can be sent again.</td></tr>
+<tr><th scope="row">Reminder wake, handed-over message</th><td>Counts as busy: <code translate="no">start_owner_turn_when_free</code> tries again until its wait ends.</td></tr>
+<tr><th scope="row">OpenAI-compatible API</th><td>503 <code translate="no">conversation_locked</code>; a running turn stays 409 <code translate="no">conversation_busy</code>.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why, and acceptance</summary>
+<p>Page loads, run-state probes, branch switches, renames and settings read a conversation inside <code translate="no">async def</code> handlers. A turn holding the conversation, or another process writing it, froze every connection for up to the lock's 60 s wait.</p>
+<p>Slot admission waited only 0.25 s and read a timeout as a running turn, so a send to a cold, large conversation was refused <code translate="no">run_active</code> and re-queued behind a turn that did not exist.</p>
+<p>Codex keeps one writer lock file per thread (<code translate="no">~/.codex/thread-writer-locks</code>) and serves its clients from an async runtime; a request waiting for a thread's writer waits in its own task. The same rule here: the loop never waits for a conversation.</p>
+<ul>
+<li>With the conversation's lock held on another thread, each of load, run state, branch switch, rename, full tool output, Sandbox and mark read waits for it while a 10 ms heartbeat on the loop never stalls past a quarter of a second; the same read made on the loop stalls it for the whole hold.</li>
+<li>So do the routes a page calls on opening a conversation: context coverage, context breakdown, branch tokens and session tokens.</li>
+<li>So do attach branch, the stream resubscribe, project binding and move, extra folders, flags, context commits, node deletion, channel binding, compact, the in-place fork, export and rewind points; noting a queued message (<code translate="no">goal_queue</code>) never waits at all.</li>
+<li>A Stop of a turn that never started writes its cancelled reply while the conversation is held, with the loop's heartbeat under a quarter of a second; five copies of one Stop to a running owner give one command, delivered once, in under a second, also when the owner takes 50 ms to answer.</li>
+<li>Forty requests waiting on one held conversation leave another conversation's run state answered in under half a second; with the loop's default pool it times out.</li>
+<li>A room event takes no wait on a locked conversation or a busy channel turn; a channel message whose conversation stays locked is answered as not delivered.</li>
+<li>A slot request made while the lock is held for 0.6 s is admitted once it is free.</li>
+<li>Past the wait, a send, a branch send, an operation and a multi-branch operation each answer <code translate="no">conversation_locked</code> and take nothing; a held slot is still <code translate="no">run_active</code>.</li>
+</ul>
+</details>
+
+<h2 id="cache-snapshot">Cache snapshot freshness</h2>
+<ol>
+<li>Warm rebuilds and first loads capture the disk fingerprint before reading history and metadata.</li>
+<li>The rebuilt index records that captured fingerprint, never a newer one.</li>
+<li>A concurrent atomic replacement changes the fingerprint, so the next public read rebuilds.</li>
+</ol>
+<details>
+<summary>Acceptance</summary>
+<p>Two real <code translate="no">SessionStore</code> instances. A write lands after a reader loads the prior snapshot and before it marks synchronization; the next <code translate="no">get_nodes</code> or <code translate="no">get_session</code> sees the new value, on cached and first-load paths. Cancellation retry keeps its deadline and observes the actual cancelled file.</p>
+</details>
+
+<h2 id="windows-removal">Windows session directory removal</h2>
+<p>Explicit deletion, expired-session cleanup and capacity cleanup share one platform adapter (<code translate="no">openprogram/host/_platform/filesystem.py</code>).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Failure</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row">Regular Git object, read-only attribute</th><td>Clear the attribute; retry that removal once.</td></tr>
+<tr><th scope="row">Other permission failure</th><td>Caller's best-effort behaviour. ACLs untouched; links not followed.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Acceptance</summary>
+<p>Public reopen and <code translate="no">delete_session</code> with a read-only Git object; the directory is really gone, not only absent from the index. Native Windows CI is required. Follows the <a href="https://docs.python.org/3/library/shutil.html#rmtree-example">shutil read-only removal recipe</a> with Python 3.11-compatible callbacks.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">Responsibility</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/</code></th><td>Timestamps, registry locks, snapshots, deferred flush, merged heads and store locks</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_node_writer.py</code></th><td>One activity timestamp per append, shared by metadata and index</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_session_index_consistency.py</code></th><td>Public regressions for ordering, snapshots and concurrent writes</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_lock.py</code></th><td>The conversation lock: process lock, flock holder record, bounded waits</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_stress.py</code></th><td>Many threads on one conversation; a stuck conversation errors</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_session_lock_processes.py</code></th><td>Two processes on one conversation; a killed holder; a revert that misses the cache</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/</code>, <code translate="no">openprogram/interfaces/server/routes/</code></th><td>Store work of the handlers in worker threads</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/server_runtime/session_lifecycle.py</code></th><td>Slot admission waits for the lock; <code translate="no">conversation_locked</code> apart from <code translate="no">run_active</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/conversation_work.py</code></th><td>A conversation's lane in the lanes' own pool</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/execution/control/</code></th><td>Control commands' store work in the execution's lane (<code translate="no">off_loop</code>)</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/channels/_conversation.py</code>, <code translate="no">openprogram/runtime/conversation/owner_turn.py</code></th><td>A lock not had: a room event skips, a channel message is not delivered, a wake tries again</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/webui/chat/test_conversation_lock_off_loop.py</code></th><td>A held conversation and the loop's heartbeat for every handler; a Stop; forty waiters; a slow lock admitted; a lock not had reported as locked</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/store/test_conversation_work.py</code></th><td>Lane width and order, cancellation, context, a held lock, a fork, a full default pool</td></tr>
+</tbody>
+</table>
+<p>Not yet in a lane: store work of handlers outside one conversation (settings, catalog, recordings) still runs through <code translate="no">asyncio.to_thread</code> on the loop's default pool, off the loop but unbounded; a Job's wait-resume scheduler is called on the caller's loop.</p>

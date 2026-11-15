@@ -5,7 +5,7 @@ import gzip
 
 import pytest
 
-from openprogram.webui import frontend
+from openprogram.interfaces.server import frontend
 
 
 @pytest.fixture()
@@ -262,8 +262,7 @@ def test_installed_package_prefers_bundled_frontend(tmp_path, monkeypatch):
     bundled = (
         tmp_path
         / "site-packages"
-        / "openprogram_server"
-        / "_webui"
+        / "openprogram" / "interfaces" / "server"
         / "_frontend"
     )
     bundled.mkdir(parents=True)
@@ -283,3 +282,51 @@ def test_unknown_api_path_is_404_not_spa(client):
     r = client.get("/api/definitely-not-a-route")
     assert r.status_code == 404
     assert "text/html" not in r.headers.get("content-type", "")
+
+
+def test_head_on_pages_matches_get_without_body(client):
+    # Next.js <Link> prefetch issues HEAD for every page route; a GET-only
+    # catch-all answered 405 and filled the console on each load.
+    for path in ("/chat", "/skills/pdf", "/s/abc123"):
+        get = client.get(path)
+        head = client.head(path)
+        assert head.status_code == 200, path
+        assert head.content == b"", path
+        assert head.headers["content-type"] == get.headers["content-type"], path
+        assert head.headers["cache-control"] == get.headers["cache-control"], path
+
+
+def test_head_on_unknown_api_path_is_404(client):
+    r = client.head("/api/definitely-not-a-route")
+    assert r.status_code == 404
+
+
+def test_watch_frontend_reports_a_replaced_export_once(tmp_path, monkeypatch):
+    import asyncio
+    import shutil
+    from openprogram.interfaces.server import frontend
+
+    out = tmp_path / "_frontend"
+    out.mkdir()
+    (out / "chat.html").write_text("old")
+    monkeypatch.setattr(frontend, "out_dir", lambda: out)
+    changes = []
+
+    async def scenario():
+        stop = asyncio.Event()
+        task = asyncio.create_task(frontend.watch_frontend(stop, changes.append, interval=0.02))
+        await asyncio.sleep(0.08)
+        assert changes == []
+        # A hot swap replaces the whole export directory.
+        staged = tmp_path / "staged"
+        staged.mkdir()
+        (staged / "chat.html").write_text("new export")
+        shutil.rmtree(out)
+        await asyncio.sleep(0.08)  # Mid-swap gap: nothing to report yet.
+        staged.rename(out)
+        await asyncio.sleep(0.1)
+        stop.set()
+        await task
+
+    asyncio.run(scenario())
+    assert changes == [frontend.export_id()] and changes[0]

@@ -4,21 +4,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.mcp.config import MCPServerConfig
+from openprogram.extensions.mcp.config import MCPServerConfig
 
 
 def test_forced_local_mcp_uses_shared_sandbox_invocation(tmp_path, monkeypatch):
-    from openprogram import sandbox
-    from openprogram.backend import local
-    from openprogram.mcp.client import MCPClient
+    from openprogram.host import sandbox
+    from openprogram.host.backend import local
+    from openprogram.extensions.mcp.client import MCPClient
 
     captured = {}
     policy = sandbox.SandboxPolicy(pass_env=("MCP_MODE",))
     monkeypatch.setattr(sandbox, "resolve_policy", lambda required=False: policy)
 
-    def fake_invocation(command, cwd=None, *, policy=None, force_sandbox=False):
-        captured.update(command=command, cwd=cwd, policy=policy,
-                        force_sandbox=force_sandbox)
+    def fake_invocation(command, cwd=None, *, policy=None):
+        captured.update(command=command, cwd=cwd, policy=policy)
         return ["sandbox-wrapper", "--", command], False, {"PATH": "/bin"}, True
 
     monkeypatch.setattr(local, "_invocation", fake_invocation)
@@ -31,7 +30,7 @@ def test_forced_local_mcp_uses_shared_sandbox_invocation(tmp_path, monkeypatch):
 
     params = client._local_parameters()
 
-    assert captured["force_sandbox"] is True
+    assert captured["policy"] is policy
     assert captured["cwd"] == str(tmp_path)
     assert captured["command"] == "python -m 'server with space'"
     assert params.command == "sandbox-wrapper"
@@ -41,7 +40,7 @@ def test_forced_local_mcp_uses_shared_sandbox_invocation(tmp_path, monkeypatch):
 
 
 def test_regular_owner_configured_mcp_keeps_fixed_argv_and_env(monkeypatch):
-    from openprogram.mcp.client import MCPClient
+    from openprogram.extensions.mcp.client import MCPClient
 
     cfg = MCPServerConfig(
         name="owner-server",
@@ -65,7 +64,7 @@ def test_one_shot_mcp_rejects_nonlocal_or_cross_origin_context(
     client, host, origin, site,
 ):
     from fastapi import HTTPException
-    from openprogram.webui.routes.catalog.mcp import _require_local_request
+    from openprogram.interfaces.server.routes.catalog.mcp import _require_local_request
 
     request = SimpleNamespace(
         client=SimpleNamespace(host=client),
@@ -81,7 +80,7 @@ def test_one_shot_mcp_rejects_nonlocal_or_cross_origin_context(
     ("", ""),
 ])
 def test_one_shot_mcp_accepts_loopback_clients(origin, site):
-    from openprogram.webui.routes.catalog.mcp import _require_local_request
+    from openprogram.interfaces.server.routes.catalog.mcp import _require_local_request
 
     request = SimpleNamespace(
         client=SimpleNamespace(host="127.0.0.1"),
@@ -95,7 +94,7 @@ def test_one_shot_mcp_accepts_loopback_clients(origin, site):
 
 
 def test_one_shot_client_always_forces_sandbox(tmp_path):
-    from openprogram.webui.routes.catalog.mcp import _one_shot_client
+    from openprogram.interfaces.server.routes.catalog.mcp import _one_shot_client
 
     cfg = MCPServerConfig(name="probe", command=["python", "server.py"])
     client = _one_shot_client(cfg, str(tmp_path))

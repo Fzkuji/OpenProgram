@@ -1,0 +1,49 @@
+<title>录制工作流</title>
+<meta name="description" content="在 Mac 上做一遍任务，OpenProgram 录下来，Agent 把它变成 Workflow。">
+<h1>录制工作流</h1>
+<p>在任意一个或多个应用里做一遍任务，聊天 Agent 把录制变成 Workflow。</p>
+<h2 id="before-you-start">需要</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">条件</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS 桌面 App</th><td>浏览器或其他系统的 <strong>+</strong> 菜单没有这一项</td></tr>
+<tr><th scope="row"><strong>Workflow Recording</strong> 应用</th><td>默认开启。在<strong>应用</strong>页或用 <code translate="no">openprogram programs disable workflow_recording</code> 关闭后没有菜单项。<a href="../applications.zh.html">应用</a></td></tr>
+<tr><th scope="row">辅助功能、屏幕与系统录音</th><td>系统设置 → 隐私与安全性。缺哪项时开始对话框会说明并打开对应面板。</td></tr>
+<tr><th scope="row">解说（可选）</th><td><strong>Settings → Voice</strong> 选的语音引擎和麦克风。没有引擎时没有解说。</td></tr>
+</tbody></table>
+<h2 id="record">录制</h2>
+<ol>
+<li>输入框 <strong>+</strong> 菜单 → <strong>Record a workflow</strong>。</li>
+<li>设置 <strong>Narrate with the microphone</strong> 和麦克风，点 <strong>Start recording</strong>。</li>
+<li>所有窗口上方有一条栏：录制点、时长、步数、麦克风开关、<strong>Discard</strong>（垃圾桶）和红色 <strong>Stop</strong>。照常做任务。说出下次会变的东西（“日期总是上周一”）。</li>
+<li><strong>Stop</strong>。窗口回来，录制在输入框里：“Recorded demonstration · 12 steps · 48.3 s · 9 images”。</li>
+<li>可加一句，比如何时运行，然后发送。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">不从聊天开始</th><td>新标签页的 <strong>Workflow Recording</strong>，或<strong>应用</strong>页的 <strong>Open</strong>。开始时打开新聊天，录制在其输入框等待。</td></tr>
+<tr><th scope="row">发送后</th><td>Agent 读取步骤和截图，询问决定输入的内容，写包，运行 <code translate="no">openprogram programs check</code>，总结步骤、输入和假设供你更正。卡片显示每步和截图。</td></tr>
+<tr><th scope="row">十分钟</th><td>自动停止，等同点击；提前 30 秒在栏上提醒</td></tr>
+<tr><th scope="row"><strong>Discard</strong></th><td>停止并删除</td></tr>
+<tr><th scope="row">从输入框移除</th><td>仍在磁盘上</td></tr>
+</tbody></table>
+<h2 id="what-is-recorded">录制内容</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">录制</th><th scope="col">不录制</th></tr></thead>
+<tbody>
+<tr><th scope="row">点击，含应用、窗口和控件</th><td>密码框的文字（步骤只说明输入了密码）</td></tr>
+<tr><th scope="row">输入的文字；Return、Tab、Escape、快捷键；滚动；切换应用和窗口</th><td>OpenProgram 内的操作、密码管理器、钥匙串访问、系统凭证弹窗</td></tr>
+<tr><th scope="row">点击、Return 和切换窗口时的屏幕截图</th><td>OpenProgram 自己的窗口</td></tr>
+<tr><th scope="row">解说文字</th><td>音频：声音丢弃</td></tr>
+</tbody></table>
+<p class="note">存于 <code translate="no">~/.openprogram/recordings/&lt;id&gt;/</code>：<code translate="no">session.json</code>、<code translate="no">events.jsonl</code>（每步一行）、<code translate="no">images/</code>。发送时步骤列表和最多 12 张截图交给模型，和其他消息内容一样。随时可删文件夹，卡片会显示录制已不在。</p>
+<h2 id="recording-as-context">作为上下文的录制</h2>
+<p>用途是 <code translate="no">context</code> 而不是 <code translate="no">workflow</code> 时，Agent 只把它作为这条消息的上下文，除非你要求否则不写 Workflow。开始对话框按 Workflow 录制；<code translate="no">context</code> 来自 <code translate="no">POST /api/recordings</code>，内容 <code translate="no">{"purpose": "context"}</code>。</p>
+<h2 id="tips">提示</h2>
+<ul>
+<li>一次录一个任务，从平时的起点开始。</li>
+<li>用一次典型运行的真实输入；Agent 把会变的值变成参数，不确定时询问。</li>
+<li>对话里信息够时不必录制：直接要 Workflow，缺口先从之前的对话和记忆补，再问你。</li>
+</ul>
+<p class="next"><a href="authoring.zh.html">编写和检查 Workflow</a></p>

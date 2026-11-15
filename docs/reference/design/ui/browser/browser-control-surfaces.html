@@ -1,0 +1,99 @@
+<title>Browser task control</title>
+<meta name="description" content="What the browser toolbar and floating preview control, and how the preview renders and maps input.">
+<meta name="covers" content="apps/web/lib/browser/ apps/desktop/main/web-views/">
+<h1>Browser actions and task controls</h1>
+<p>The pinned Playwright response renderer is guarded against an empty tab-header list after snapshot capture. Detach or close during that asynchronous read must not dereference a missing header. When a response has no attached page, only snapshot reads are retried, at most three times; navigation, form input and submission are never replayed. Reconnection to a different URL is not accepted as recovery. The Agent receives an observation-required result and the remaining batch stops.</p>
+<p>When an extension action loses its reference, or its connection closes, read a fresh snapshot of the same URL before returning control to the Agent. A recovered observation stops the remaining batch. Completed steps are retained; no input or submission is replayed. Missing references mean no dispatch; a closed connection leaves the action outcome unknown and requires inspection. A failed snapshot or a different page remains an error.</p>
+<p>Opening a URL in the user's Chrome or Edge creates a normal working tab. Opening a new working tab is the product's policy; the extension connection page itself can also navigate and is not inherently unusable.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Thing</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Toolbar</th><td>Address, navigation, reload, action markers, operation history, preview. No page pause or resume; those belong to the conversation controls next to the composer.</td></tr>
+<tr><th scope="row">Input</th><td>Users and Agents may operate pages, including OpenProgram. Pointer, wheel, keyboard, edit and navigation change no task state and create no write prohibition. Legacy page-input notifications are ignored.</td></tr>
+<tr><th scope="row">Closing a page</th><td>Immediate, without waiting for task pause</td></tr>
+<tr><th scope="row">Lost binding</th><td>Reacquire the original window and tab. An existing page is observed as it is; only an absent page reopens at its last URL. Returns a fresh observation; never replays a click or submission or picks another page. A lost connection is not proof of closing.</td></tr>
+<tr><th scope="row">Task pause</th><td>Stops later generation and tool dispatch. Ownership, access and frame validation still apply. Continuation observes current state with no second page permission.</td></tr>
+<tr><th scope="row">Reporting</th><td>History, markers and lifecycle describe activity without controlling it. Lost authentication and unsaved data are reported honestly.</td></tr>
+</tbody>
+</table>
+
+<h2 id="floating-preview">Floating preview</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open page</th><td>Opens it in a tab</td></tr>
+<tr><th scope="row">Close preview (X)</th><td>Hides; page and session resource stay, Resources can reopen</td></tr>
+<tr><th scope="row">More → Automatically show the page the Agent is using</th><td>Checked follows the Agent's page, unchecked keeps the current one. Not always-on-top; no effect on execution. Native and Web menus agree.</td></tr>
+<tr><th scope="row">Absent</th><td>Pin, expand or shrink buttons. Dragging and eight-direction resizing stay; legacy expanded geometry stays compatible.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Layout</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Frame</th><td>No outer frame, shadow, or side and bottom padding; page fills below a 30 CSS-pixel header</td></tr>
+<tr><th scope="row">Corners</th><td>One card, 10 CSS-pixel corners. Header rounds its top; stage clips fallback, iframe and gesture surfaces at the bottom; gesture image rounds its top too. Stage shares the header background so top cutouts blend.</td></tr>
+<tr><th scope="row">Native radius</th><td><code translate="no">View.setBorderRadius</code>: round(10 × UI zoom), minimum 1; cached, reset to zero in a normal tab only when needed</td></tr>
+<tr><th scope="row">Resize targets</th><td>Eight, transparent, outward; corners 24×24, half outside the page. Native surfaces take page input, so the outer area resizes.</td></tr>
+<tr><th scope="row">Corner hint</th><td>Only the hovered corner: 2px stroke, 14×14 box, 12px outer arc, 2px outside the corner</td></tr>
+<tr><th scope="row">Placement</th><td>22 CSS pixels per side: 12 corner handle, 8 sidebar resize rail, 2 separation</td></tr>
+</tbody>
+</table>
+
+<h2 id="preview-viewport">Preview viewport</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Desktop</th><td>Electron <a href="https://www.electronjs.org/docs/latest/api/web-contents#contentsenabledeviceemulationparameters"><code translate="no">enableDeviceEmulation</code></a>: 1920 CSS pixels wide, height following the preview's shape (1080 at 16:9), scale = preview width ÷ 1920. Fills the preview edge to edge. Page zoom stays 1.</td></tr>
+<tr><th scope="row">Browser iframe</th><td>Fixed 1920 × 1080 with a CSS transform fitted inside the stage; cross-origin limits and separate iframe state unchanged</td></tr>
+<tr><th scope="row">Independent of size</th><td>Page identity, width-driven layout, scroll position, Agent CSS coordinates</td></tr>
+<tr><th scope="row">Normal tab</th><td>Override off, the user's page zoom restored. Navigation reapplies preview geometry.</td></tr>
+<tr><th scope="row">Excluded</th><td>A screenshot-only surface, which loses native interaction; resolution selector; desktop-wide emulation</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Input and capture mapping</summary>
+<ul>
+<li>Renderer bounds convert to native DIP before scaling. Native input uses Chromium's emulated-view mapping.</li>
+<li>Observations and screenshots stay in CSS coordinates. The exact native Page reports <code translate="no">input_scale</code> through the owner-checked binding reply; coordinate clicks and pointer moves multiply by it before CDP. Wheel deltas and <code translate="no">window.scrollBy</code> stay in CSS units.</li>
+<li>MCP reference namespaces stay upstream: scaled reference clicks evaluate the existing click script there; hover uses a temporary exact-element marker, frame-aware Playwright bounds and a native pointer move.</li>
+<li>Action markers share the viewport and scale. Owner checks and deferred transfer restoration stay.</li>
+<li>Agent screenshots use a fixed CSS-resolution CDP capture with temporary device metrics and DPR compensation. Concurrent captures share one result. Cleanup removes the override and restores native geometry, as does final debugger detach. A resize, navigation, ownership change or preview exit invalidates an in-flight result.</li>
+<li>A capture keeps its owned native view and navigation generation. Start or commit in any frame, same-document and same-URL reload included, invalidates pending captures; a failed navigation never restores an earlier generation. Position-only moves keep native captures; dynamic DOM updates do not count as generations.</li>
+</ul>
+</details>
+<details>
+<summary>Movement cost and gestures</summary>
+<ul>
+<li>Position-only moves update bounds without touching emulation or zoom. Identical geometry issues nothing. Scale changes only with native dimensions; navigation and debugger detach restore emulation. Renderer reports share one rounded geometry, UI zoom included.</li>
+<li>Root scrollbar tracks are hidden by a reversible author-origin stylesheet; wheel, keyboard and nested scrolling work. Leaving preview removes it, including when insertion overlaps navigation or exit.</li>
+<li>While a drag or resize is held, one decoded bitmap moves and scales in the renderer; native bounds and emulation stay fixed, and page animations look frozen. On release the hidden page gets the final bounds once, a capture waits for its painted surface, and live interaction resumes.</li>
+<li>Presentation captures use <code translate="no">capturePage</code>, never CDP or a loop. An invalidated or timed-out capture cannot hide or restore a replaced preview.</li>
+</ul>
+</details>
+
+<h2 id="exact-editable-values">Exact editable values</h2>
+<p>How the native <code translate="no">type</code> action writes text:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">input</code>, <code translate="no">textarea</code></th><td>Filled normally</td></tr>
+<tr><th scope="row">contenteditable</th><td>After the native editable check and clear, replaces the selection with a plain text node and emits <code translate="no">input</code>, avoiding Chromium paragraph nodes that add a rendered newline for blank lines</td></tr>
+<tr><th scope="row">Read-back</th><td>Rendered <code translate="no">innerText</code> after handlers</td></tr>
+<tr><th scope="row">Editor rewrites text or collapses significant whitespace</th><td>Failed action needing a fresh observation, never a replay</td></tr>
+<tr><th scope="row">Evidence of success</th><td>A fresh public observation</td></tr>
+</tbody>
+</table>
+
+<h2 id="dispatch-cancellation">Dispatch cancellation</h2>
+<p>A browser action checks the task's cancellation while it waits for its tab and while it waits for the page to settle; a list of actions checks again before each one. A cancelled pending action sends nothing. A dispatched action is neither undone nor repeated.</p>
+
+<h2>Acceptance</h2>
+<ul>
+<li>Hiding keeps the page; Resources reopens it; the More item sends no execution-control requests.</li>
+<li><code translate="no">innerWidth</code> stays 1920 across resizes below and above 480 pixels. Native clicks, Agent clicks, markers, scrolling and fresh screenshots agree at two sizes; UI zoom, navigation, tab restoration and transfer cleanup hold.</li>
+<li>Sixty moves and repeated identical bounds cause zero emulation resets; one reset per changed scale; forced restoration and stylesheet lifecycle hold; dragging and scrolling stay continuous.</li>
+</ul>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented and reviewed: controls, viewport, gestures, frameless layout, exact values, dispatch cancellation, capture generations. Installed-App acceptance of dispatch cancellation and capture generations is open.</p>

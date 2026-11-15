@@ -1,0 +1,18 @@
+<title>会话标签身份</title>
+<meta name="description" content="一个窗口内每个会话只有一个标签；打开、历史和转移如何保证这一点。">
+<h1>会话标签身份</h1>
+
+<p>一个窗口内，每个会话 ID 只有一个当前会话标签。身份不由标题决定；同名会话互不相同。其他内容类型和其他窗口相互独立。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开已显示的会话</th><td>先选中它的标签，再考虑替换会话或启动页</td></tr>
+<tr><th scope="row">后退和前进</th><td>目标已打开时选中该标签，来源历史不变；否则正常恢复</td></tr>
+<tr><th scope="row">规范化</th><td>保留活动的重复项，没有活动项时保留第一个，连同其历史和分组；其他重复槽位直接移除，不走 close/ACK 生命周期</td></tr>
+<tr><th scope="row">历史访问</th><td>不占用会话</td></tr>
+<tr><th scope="row">转移到窗口</th><td>插入前拒绝会话 ID 冲突，两边槽位都保留</td></tr>
+</tbody>
+</table>
+
+<p class="note">以上情况都保留 DAG 和草稿状态。</p>

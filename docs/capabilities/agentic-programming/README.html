@@ -1,0 +1,28 @@
+<title>Agentic Programming guide</title>
+<meta name="description" content="OpenProgram&#x27;s programming model: the reading order and the three ways to choose the next step.">
+<meta name="covers" content="openprogram/programs/_authoring/ openprogram/runtime/agent/">
+<h1>Agentic Programming guide</h1>
+<ol>
+<li><a href="philosophy.html">Philosophy</a>: why this model.</li>
+<li><a href="writing-functions/agent.html">Agent calls and methods</a>: direct <code translate="no">agent()</code> calls, configured <code translate="no">Agent</code> methods, method metadata.</li>
+<li><a href="writing-functions/function-metadata.html">Function metadata</a>: parameter descriptions, placeholders, hidden arguments, <code translate="no">render_range</code>.</li>
+<li><a href="writing-functions/pure-python.html">Pure Python</a>: deterministic helpers.</li>
+<li><a href="embedding-in-your-own-stack.html">Embedding</a>: the model as a library in your own app, with your LLM call and state directory.</li>
+</ol>
+<h2>Choosing the next step</h2>
+<p>Picking the right one per task is the core skill.</p>
+<table class="stack">
+<thead><tr><th scope="col">Mechanism</th><th scope="col">Who picks</th><th scope="col">Use when</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="choosing-the-next-step/fixed-order-calls.html">Fixed-order calls</a></th><td>Python calls sub-functions in a set order</td><td>Order known ahead of time: draft, review, revise</td></tr>
+<tr><th scope="row"><a href="choosing-the-next-step/tool-calling.html">Tool calling</a></th><td>The model, each turn, by provider-native tool use, until it answers in text</td><td>Open-ended work: the model decides which calls and how many</td></tr>
+<tr><th scope="row"><a href="choosing-the-next-step/next-step-decision.html">Next-step decision</a></th><td>The model, from a text menu: <code translate="no">decision.make(prompt, options)</code> or <code translate="no">agent(prompt, choices=...)</code>. The pick resolves into the next result.</td><td>Routing and finite branches; options may be plain values; no provider tool use needed</td></tr>
+</tbody>
+</table>
+<h2>Reference</h2>
+<ul>
+<li><a href="../../reference/api/agent.html">Agent, Context and function API</a>: authoring and validation conventions</li>
+<li><a href="../../reference/api/runtime.html"><code translate="no">Runtime.exec()</code></a>: parameters and behaviour</li>
+<li><a href="../../reference/design/function/calling-unification.html">Function-calling design</a>: internals, not needed for authoring</li>
+<li><a href="https://arxiv.org/abs/2606.15874">LLM-as-Code: Agentic Programming for Agent Harness</a>: the paper, accepted at the KDD 2026 AgenticSE workshop</li>
+</ul>

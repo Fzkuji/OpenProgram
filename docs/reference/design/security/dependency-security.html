@@ -1,0 +1,70 @@
+<title>Dependency security design</title>
+<meta name="description" content="How npm and Python dependencies are kept outside advisory ranges, and what proves it.">
+<meta name="covers" content="package-lock.json uv.lock pyproject.toml">
+<h1>Dependency security</h1>
+<p>Every advisory is fixed in the resolved graph or named with its parent chain. Nothing is dismissed.</p>
+
+<h2>Current versions and why</h2>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">Now</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">Next.js</th><td>16.4.4, <code translate="no">eslint</code> 9, direct lint script</td><td>Static export stays: <code translate="no">output: "export"</code>, <code translate="no">dynamic = "force-static"</code> on the manifest route, <code translate="no">next build --webpack</code>. No Next server in the packaged path.</td></tr>
+<tr><th scope="row">Electron</th><td>45.2.1, macOS 13 minimum</td><td>Packaging must replace the installed Electron bundle before local App acceptance</td></tr>
+<tr><th scope="row">Raster annotations</th><td>Fabric 7.4.0 directly, as a transparent layer over the native canvas</td><td>Replaces <code translate="no">tui-image-editor</code> and its vulnerable Fabric 4 chain. Crop and rotate flatten annotations; select, move, resize and text edit stay available before export.</td></tr>
+<tr><th scope="row">React</th><td>18 for root and Web, 19 for CLI</td><td>Unchanged by security upgrades</td></tr>
+<tr><th scope="row">Node</th><td><code translate="no">&gt;=22.12.0</code>, npm <code translate="no">&gt;=10</code></td><td>Root engines, CI bootstrap and developer setup share the minimum</td></tr>
+<tr><th scope="row">Transitive npm</th><td>One root lockfile for <code translate="no">apps/web</code>, <code translate="no">apps/desktop</code>, <code translate="no">apps/cli</code></td><td>Refresh compatible paths; remove unmaintained chains with no fixed release (<code translate="no">tar</code>, <code translate="no">form-data</code>, <code translate="no">postcss</code>, <code translate="no">extract-zip</code>, legacy HTTP packages)</td></tr>
+<tr><th scope="row">Python</th><td><code translate="no">uv.lock</code>, a separate workstream</td><td>Same inventory, evidence and gate. Intel macOS supports BM25, the optional embedding wheel is unavailable on Intel, macOS arm64 embedding wheels need Python 3.14 or newer.</td></tr>
+</tbody>
+</table>
+
+<h2>Rules</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Fixed version</th><td>The advisory's first patched version or a later compatible stable release, from GitHub advisories and <code translate="no">npm view</code></td></tr>
+<tr><th scope="row">Verification</th><td>Both <code translate="no">npm audit --json</code> and the advisory-range inventory. Comma-separated GitHub ranges are semver conjunctions; parse errors fail. Package-absent records are checked too.</td></tr>
+<tr><th scope="row">Never</th><td><code translate="no">npm audit fix --force</code>, which can pick unrelated majors. Dismissing an alert because a page is static or a dependency is development-only.</td></tr>
+<tr><th scope="row">No fixed release</th><td>Trace every parent, remove the chain where possible, otherwise record parent chain, reason and tested alternative</td></tr>
+<tr><th scope="row">Failure</th><td>A clean install, audit, typecheck, build or affected test failure blocks completion and is recorded with its command. The old manifest stays in Git until the minimum source change is proven.</td></tr>
+<tr><th scope="row">Evidence</th><td>Ignored reports under <code translate="no">reports/content-security/</code>, with exact advisories, ranges, versions and commands</td></tr>
+</tbody>
+</table>
+
+<h2>Boundaries</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Boundary</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resolution</th><td>All through the root lockfile. Nested entries only when a parent requires them.</td></tr>
+<tr><th scope="row">Build</th><td><code translate="no">npm ci --ignore-scripts</code>, then workspace checks</td></tr>
+<tr><th scope="row">Runtime</th><td>Exported Web assets, Electron main and preload, the Python worker serving them. Untrusted input reaches package CLIs and archive extractors only through product validation.</td></tr>
+<tr><th scope="row">Installed App</th><td>Package resolution does not update <code translate="no">/Applications/OpenProgram.app</code>. Acceptance inspects its actual <code translate="no">process.versions.electron</code>; source checks do not establish it.</td></tr>
+</tbody>
+</table>
+
+<h2>Gate</h2>
+<pre translate="no"><code>npm ci --ignore-scripts
+npm audit --json                       # zero vulnerabilities, plus range reconciliation
+npm run build --workspace apps/web
+npm run typecheck --workspace apps/cli
+npm test --workspace apps/cli
+npm test --workspace apps/web
+npm run check:web
+npm run check:desktop
+npm run check:cli
+git diff --check</code></pre>
+<p class="note">From a clean install. Also manifest and lockfile consistency, a clean worktree, and a report separating existing source failures from dependency-induced ones. The diff holds only manifests, lockfile, necessary compatibility source, this design and the ignored evidence rule.</p>
+
+<details>
+<summary>References</summary>
+<ul>
+<li><a href="https://nextjs.org/docs/app/guides/upgrading/version-16">Next.js 16 upgrade guide</a></li>
+<li><a href="https://github.com/vercel/next.js/releases/tag/v16.3.5">Next.js 16.3.5 release</a></li>
+<li><a href="https://www.electronjs.org/blog/electron-44-0">Electron 44 release</a></li>
+<li><a href="https://github.com/fabricjs/fabric.js/security/advisories/GHSA-hfvx-25r5-qc3w">Fabric advisory GHSA-hfvx-25r5-qc3w</a></li>
+<li><a href="https://github.com/fabricjs/fabric.js/security/advisories/GHSA-w22m-hvvm-xmwx">Fabric advisory GHSA-w22m-hvvm-xmwx</a></li>
+</ul>
+</details>
+
+<h2>Implementation status</h2>
+<p>Versions above are in the manifests and lockfile. Source checks cover static export, direct lint, the desktop surface, and the raster editor's crop, rotate, draw, annotate, save, undo, redo and destroy. Python stays a coordination boundary around <code translate="no">uv.lock</code>.</p>

@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM
-from openprogram.store import SessionNodeWriter, SessionStore, _store as _store_var
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.state.store.session.nodes import Call, ROLE_USER, ROLE_LLM
+from openprogram.state.store import SessionNodeWriter, SessionStore, _store as _store_var
 
 
 @pytest.fixture
@@ -100,12 +100,12 @@ def test_multiple_text_blocks_keep_separate_parts(rt, store):
     assert parts[1].text == "line 2"
 
 
-# Inside an @agentic_function frame
+# Inside an Agent method frame
 
 
 def test_dag_prompt_inside_io_function_frame(rt, store):
     """Simulate the state ``_call_via_providers`` would see when
-    ``runtime.exec`` is invoked from inside an @agentic_function
+    ``runtime.exec`` is invoked from inside an Agent method
     body with expose='io':
 
       n0  user        "find weather"
@@ -114,8 +114,8 @@ def test_dag_prompt_inside_io_function_frame(rt, store):
 
     Then the body calls runtime.exec. _call_id is set to n2.id.
     """
-    from openprogram.agentic_programming.function import _call_id
-    from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
+    from openprogram.runtime.context.scope import _call_id
+    from openprogram.state.store.session.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
 
     _u = Call(role=ROLE_USER, output="find weather")
     store.append(_u)
@@ -150,20 +150,17 @@ def test_dag_prompt_inside_io_function_frame(rt, store):
     # because output=None) + current turn
     assert "user" in roles
     assert "assistant" in roles
-    # Current turn is the last message. It carries a <situation> block naming
-    # the current function `plan` and warning against self-recursion (so the
-    # inner model knows which function it is running inside), followed by the
-    # exec content "step 1".
+    # Current turn is the last message: just the exec content "step 1",
+    # with no <situation> prefix.
     last_texts = [c.text for c in msgs[-1].content]
-    assert any("step 1" == t for t in last_texts)
-    assert any(("<situation>" in t and "`plan`" in t) for t in last_texts)
+    assert last_texts == ["step 1"]
 
 
 def test_render_range_callers_zero_hides_history(rt, store):
     """When inside a frame with render_range={'callers':0}, prior chat
     history is walled off — only in-frame nodes + current turn appear."""
-    from openprogram.agentic_programming.function import _call_id
-    from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
+    from openprogram.runtime.context.scope import _call_id
+    from openprogram.state.store.session.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
 
     _u = Call(role=ROLE_USER, output="prior chat user")
     store.append(_u)
@@ -184,8 +181,7 @@ def test_render_range_callers_zero_hides_history(rt, store):
         _call_id.reset(token)
 
     assert msgs is not None
-    # Flatten every text block of every message (the current turn now
-    # carries an "[Execution context]" situational prefix block before the content).
+    # Flatten every text block of every message.
     all_texts = [
         c.text for m in msgs for c in (m.content or [])
         if hasattr(c, "text")
@@ -197,50 +193,11 @@ def test_render_range_callers_zero_hides_history(rt, store):
     assert any("isolated turn" == t for t in last_texts)
 
 
-# Call path appears in <situation>
-
-
-def test_call_path_appears_in_situation(rt, store):
-    """When a frame node has a caller chain (parent → child), the
-    <situation> block must include 'Call path: research_agent → idea'."""
-    from openprogram.agentic_programming.function import _call_id
-    from openprogram.context.nodes import Call, ROLE_CODE
-
-    parent = Call(
-        role=ROLE_CODE, name="research_agent", input={}, output=None,
-        metadata={"expose": "io", "status": "running"},
-    )
-    store.append(parent)
-    child = Call(
-        role=ROLE_CODE, name="idea", input={"topic": "test"},
-        output=None, caller=parent.id,
-        metadata={"expose": "io", "status": "running"},
-    )
-    store.append(child)
-
-    token = _call_id.set(child.id)
-    try:
-        msgs = rt._render_history_messages(
-            content=[{"type": "text", "text": "generate ideas"}],
-        )
-    finally:
-        _call_id.reset(token)
-
-    assert msgs is not None
-    last_texts = [c.text for c in msgs[-1].content if hasattr(c, "text")]
-    situation_texts = [t for t in last_texts if "<situation>" in t]
-    assert situation_texts, "expected a <situation> block in the last message"
-    sit = situation_texts[0]
-    assert "Call path:" in sit
-    assert "research_agent" in sit
-    assert "idea" in sit
-
-
 def test_sync_provider_bridge_enforces_silent_stream_deadline(
     rt: Runtime, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A provider that emits no events must still respect exec's deadline."""
-    from openprogram.providers.utils import deadline
+    from openprogram.models.providers.utils import deadline
 
     async def stalled(_content, _response_format=None):
         await asyncio.Event().wait()

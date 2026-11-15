@@ -7,19 +7,21 @@ from typing import Optional
 def check_job_ownership(job_id: str, tool: str) -> Optional[str]:
     """Return an error when the current agent may not manage ``job_id``."""
     try:
-        from openprogram.agent.run_control import _current_session_id
+        from openprogram.runtime.execution.run_control.binding import (
+            _current_session_id,
+        )
         sid = _current_session_id.get(None)
     except Exception:
         sid = None
     if not sid:
         return None
-    from openprogram.agent.job import get_runner
+    from openprogram.runtime.jobs import get_runner
     runner = get_runner()
     job = runner.get_job(job_id)
     if job is None:
         return None
     try:
-        from openprogram.agent.job.runner import _current_job_id
+        from openprogram.runtime.jobs.runner import _current_job_id
         cur_tid = _current_job_id.get()
     except Exception:
         cur_tid = None

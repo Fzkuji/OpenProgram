@@ -20,23 +20,32 @@ import { Turn, TurnBlock } from '../../../components/Turn.js';
 import { stripProviderPrefix } from '../helpers.js';
 import { backendBase, backendFetch } from '../../../utils/backend.js';
 import {
+  streamText,
   upsertStreamingText,
   appendStreamingTool,
   finalizeStreamingTools,
+  completeToolBlocks,
 } from './streamingHelpers.js';
 import type { WsEventsCtx } from '../useWsEvents.js';
 
 interface ChatResponseData {
   type?: string;
   session_id?: string;
+  /** The branch the turn runs on. */
+  branch_id?: string;
   content?: string;
   event?: {
     type?: string;
     text?: string;
+    /** text: the blank line the reply's flat text takes before this delta,
+     *  on the frame that opens a passage after a tool call. */
+    separator?: string;
     tool?: string;
     input?: string;
     result?: string;
     is_error?: boolean;
+    tool_call_id?: string | null;
+    full_output?: { total_lines?: number | null } | null;
     attempt?: number;
     next_attempt?: number;
     mode?: 'native' | 'tool' | 'prompt';
@@ -52,6 +61,59 @@ interface ChatResponseData {
   chat?: { input_tokens?: number; output_tokens?: number };
   context_window?: number | null;
   model?: string;
+  error?: string | null;
+  kind?: string;
+  no_op?: boolean;
+  user_initiated?: boolean;
+  cancelled?: boolean;
+  tokens_before?: number | null;
+  tokens_after?: number | null;
+  summarised_count?: number | null;
+  /** The foreground operation a /compact runs as (`operation.cancel`). */
+  op_id?: string;
+}
+
+/** The branch each conversation shows, from `session_loaded` and
+ *  `branch_checked_out`. Every branch can run at once and a switch never
+ *  waits for a turn; only the selected branch's turn is drawn. */
+const selectedBranchByConv = new Map<string, string>();
+
+export function selectBranch(conversationId: string, branchId: unknown): void {
+  if (typeof branchId === 'string' && branchId) selectedBranchByConv.set(conversationId, branchId);
+}
+
+/** A frame of a turn on another branch than the one shown. */
+export function offSelectedBranch(d: { session_id?: string; branch_id?: unknown }, conversationId?: string): boolean {
+  const sid = d.session_id ?? conversationId;
+  const selected = sid ? selectedBranchByConv.get(sid) : undefined;
+  return typeof d.branch_id === 'string' && !!d.branch_id && !!selected && d.branch_id !== selected;
+}
+
+/** The /compact running on each conversation, by its operation id, so the
+ *  stop key can name it while no turn streams. */
+const compactionOpByConv = new Map<string, string>();
+
+export function compactionOperation(conversationId: string | undefined): string | undefined {
+  return conversationId ? compactionOpByConv.get(conversationId) : undefined;
+}
+
+const tokens = (n: number | null | undefined): string | null =>
+  typeof n === 'number' ? (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)) : null;
+
+/** The line a compaction's end leaves in the transcript. */
+export function compactionResultText(d: ChatResponseData): string {
+  if (d.type === 'compaction_failed') {
+    if (d.code === 'run_active') return d.error || 'Compaction refused: the branch is busy.';
+    if (d.cancelled) return 'Compaction stopped; context unchanged.';
+    return `Compaction failed${d.error ? `: ${d.error}` : '.'}`;
+  }
+  if (d.no_op) return 'Nothing to compact.';
+  const before = tokens(d.tokens_before);
+  const after = tokens(d.tokens_after);
+  const covered = typeof d.summarised_count === 'number' ? `, ${d.summarised_count} messages summarized` : '';
+  return before && after
+    ? `Context compacted: ${before} → ${after} tokens${covered}.`
+    : `Context compacted${covered}.`;
 }
 
 export function handleChatResponse(
@@ -74,6 +136,8 @@ export function handleChatResponse(
     routeForeignConv(d, dConvId, c);
     return;
   }
+  // The branch the person switched away from keeps running out of view.
+  if (offSelectedBranch(d, c.conversationId)) return;
 
   if (d.type === 'stream_event') {
     handleStreamEvent(d, c);
@@ -111,6 +175,30 @@ export function handleChatResponse(
   }
   if (d.type === 'context_stats') {
     handleContextStats(d, c);
+    return;
+  }
+  if (d.type === 'compaction_started') {
+    // /compact or a turn's own compaction: the spinner names the step.
+    const sid = d.session_id ?? c.conversationId;
+    if (d.user_initiated && d.op_id && sid) compactionOpByConv.set(sid, d.op_id);
+    c.setActivity((a) => (
+      a ? { ...a, verb: 'Compacting context' } : { verb: 'Compacting context', startedAt: Date.now() }
+    ));
+    return;
+  }
+  if (d.type === 'compaction_finished' || d.type === 'compaction_failed') {
+    const sid = d.session_id ?? c.conversationId;
+    if (d.user_initiated && sid) compactionOpByConv.delete(sid);
+    // A turn's own compaction that did not go through is tried again on a
+    // later request and leaves the history as it was: nothing to report.
+    if (d.user_initiated || d.type === 'compaction_finished') c.pushSystem(compactionResultText(d));
+    if (d.user_initiated) {
+      // /compact is the branch's whole operation; a turn's own compaction
+      // is a step, and the turn keeps its spinner.
+      c.setActivity(null);
+    } else {
+      c.setActivity((a) => (a ? { ...a, verb: 'Thinking' } : a));
+    }
   }
 }
 
@@ -133,7 +221,7 @@ function routeForeignConv(
       return;
     }
     if (inner?.type === 'text' && typeof inner.text === 'string') {
-      const delta = inner.text;
+      const delta = streamText(inner);
       c.setChannelActivityByConv((m) => {
         const prev = m[dConvId] ?? {
           convId: dConvId,
@@ -205,37 +293,15 @@ function handleStreamEvent(d: ChatResponseData, c: WsEventsCtx): void {
     return;
   }
   if (inner.type === 'tool_result' && inner.tool) {
-    // Attach the result preview to the most recent matching call —
-    // search blocks bottom-up for the last 'running' tool block with
-    // this tool name and update it in place.
-    c.setStreaming((s) => {
-      if (!s) return s;
-      const blocks = (s.blocks ?? []).slice();
-      for (let i = blocks.length - 1; i >= 0; i--) {
-        const b = blocks[i];
-        if (
-          b?.kind === 'tool'
-          && b.call.tool === inner.tool
-          && b.call.status === 'running'
-        ) {
-          blocks[i] = {
-            kind: 'tool',
-            call: {
-              ...b.call,
-              status: inner.is_error ? 'error' : 'done',
-              result: inner.result,
-            },
-          };
-          break;
-        }
-      }
-      return { ...s, blocks };
-    });
+    // Finish the call this result belongs to (by call id, else the
+    // newest running call of that tool).
+    const ev = { ...inner, tool: inner.tool };
+    c.setStreaming((s) => (s ? { ...s, blocks: completeToolBlocks(s.blocks ?? [], ev) } : s));
     return;
   }
   if (inner.type === 'text' && typeof inner.text === 'string') {
     const delta = inner.text;
-    upsertStreamingText(c.setStreaming, delta);
+    upsertStreamingText(c.setStreaming, delta, inner.separator ?? '');
     c.setActivity((a) => {
       if (!a) return a;
       return {
@@ -246,7 +312,7 @@ function handleStreamEvent(d: ChatResponseData, c: WsEventsCtx): void {
       };
     });
   } else if (inner.type === 'tool_use' && inner.tool) {
-    appendStreamingTool(c.setStreaming, inner.tool, inner.input);
+    appendStreamingTool(c.setStreaming, inner.tool, inner.input, inner.tool_call_id ?? undefined);
     c.setActivity((a) =>
       a
         ? {
@@ -302,12 +368,19 @@ function handleContextStats(d: ChatResponseData, c: WsEventsCtx): void {
       [cid]: { input: d.chat!.input_tokens, output: d.chat!.output_tokens },
     }));
   }
-  if (
-    cid
-    && typeof d.context_window === 'number'
-    && d.context_window > 0
-  ) {
-    c.setWindowByConv((m) => ({ ...m, [cid]: d.context_window as number }));
+  if (cid && 'context_window' in d) {
+    // A frame that names the window field and leaves it empty says the
+    // model's window is unknown: the old one is dropped, so the bar shows
+    // the count alone instead of a limit that belonged to another model.
+    const window = typeof d.context_window === 'number' && d.context_window > 0
+      ? d.context_window
+      : null;
+    c.setWindowByConv((m) => {
+      if (window !== null) return m[cid] === window ? m : { ...m, [cid]: window };
+      if (!(cid in m)) return m;
+      const { [cid]: _unknown, ...rest } = m;
+      return rest;
+    });
   }
   // Live model from the actual runtime. Trumps agent-default values
   // seeded by stats/agents_list — those describe what the agent is

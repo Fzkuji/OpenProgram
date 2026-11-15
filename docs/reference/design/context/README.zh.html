@@ -1,0 +1,16 @@
+<title>上下文引擎</title>
+<meta name="description" content="工作上下文如何组装、提交、合并和压缩的设计记录导读。">
+<h1 id="context">上下文引擎</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="overview.zh.html">概览</a></th><td>流水线、DAG 存储、ContextCommit、压缩与渲染、attach 与 merge、跨轮工具上下文</td></tr>
+<tr><th scope="row"><a href="compaction.zh.html">压缩</a></th><td>滚动摘要节点、段替换、HEAD 完整性、DAG 契约</td></tr>
+<tr><th scope="row"><a href="compaction-diagram.zh.html">压缩层级</a></th><td>什么时候运行什么，以及状态</td></tr>
+<tr><th scope="row"><a href="composition.zh.html">组成</a></th><td>每次调用的分层（L0、L1、L2）和情境上下文</td></tr>
+<tr><th scope="row"><a href="cache-prefix.zh.html">提示缓存前缀</a></th><td>请求采集、缓存前缀在哪里断开及原因、请求字节契约</td></tr>
+<tr><th scope="row"><a href="comparison.zh.html">设计对比</a></th><td>与其他框架的上下文组件对比</td></tr>
+<tr><th scope="row"><a href="claude-code-compaction.zh.html">Claude Code 压缩</a></th><td>研究笔记：官方 API 文档和第三方逆向</td></tr>
+<tr><th scope="row"><a href="memory-introspection.zh.html">记忆自省</a></th><td>Agent 如何知道自己记得什么：记忆块标记、提供的工具、记忆为空或损坏时</td></tr>
+</tbody>
+</table>

@@ -1,0 +1,184 @@
+<title>Web 状态层</title>
+<meta name="description" content="Web 前端各类状态的去处：每个会话一个 store 实例，共享数据放一个全局 store。">
+<h1>Web 状态层</h1>
+<p>组件读“我的草稿”，外层 <code translate="no">SessionScopeProvider</code> 决定是谁的，所以同一组件对两个会话渲染两次也不会冲突。</p>
+
+<h2 id="the-design">分层</h2>
+<table class="stack">
+<thead><tr><th scope="col">层</th><th scope="col">内容</th><th scope="col">访问方式</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>全局 store</strong></th><td><code translate="no">wsStatus</code>、<code translate="no">agentSettings</code>、<code translate="no">conversations</code>（列表）、<code translate="no">rowsByView</code>、<code translate="no">rightDock</code>，以及需要持久化的按会话分键表（<code translate="no">composerDrafts</code>、<code translate="no">composerSettingsBySession</code>、<code translate="no">runningTasks</code>）</td><td><code translate="no">useSessionStore</code></td></tr>
+<tr><th scope="row"><strong>会话 store 实例</strong></th><td>本会话的 <code translate="no">draft</code>、<code translate="no">settings</code>、<code translate="no">running</code>、<code translate="no">contextPanelOpen</code></td><td><code translate="no">useSessionScope</code>，须在 <code translate="no">SessionScopeProvider</code> 内</td></tr>
+<tr><th scope="row"><strong>视图态</strong></th><td>标签条、窗格布局、分屏比例、哪个窗格聚焦</td><td><code translate="no">center-tabs-store</code>；属于窗口，不属于会话</td></tr>
+</tbody>
+</table>
+<p class="note">按归属划分，不按存储形状。</p>
+
+<h3 id="the-pieces">作用域</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">lib/session-store/session-scope-registry.ts</code></th><td>store 工厂和模块级 <code translate="no">Map&lt;sid, store&gt;</code>。实例在面板卸载后保留；只有会话被删除时 <code translate="no">dropSessionStore</code> 才移除（<code translate="no">removeConversation</code>、<code translate="no">dropChatDraft</code>）。</td></tr>
+<tr><th scope="row"><code translate="no">lib/session-store/session-scope.tsx</code></th><td><code translate="no">SessionScopeProvider sid=…</code>、<code translate="no">useSessionScope(selector)</code>。没有 provider 时抛错：静默回退到聚焦会话正是要消除的 bug。</td></tr>
+<tr><th scope="row">Provider</th><td><code translate="no">components/app-shell.tsx</code> 的 <code translate="no">FocusedComposer</code>（单会话输入框，聚焦的 chat key）和 <code translate="no">PeerSessionPane</code>（每个分栏面板）</td></tr>
+</tbody>
+</table>
+
+<h3 id="durable-state">作用域与全局保持同步</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方向</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">作用域到全局</th><td>setter 先更新自己的实例，面板同一拍重绘，再写穿到全局按 key 的 setter。钩子在全局 store 初始化时由 <code translate="no">installScopeWriteThrough</code> 安装，保持导入单向。</td></tr>
+<tr><th scope="row">全局到作用域</th><td><code translate="no">setComposerInputFor</code>、<code translate="no">setComposerSettings</code>、<code translate="no">setRunningTaskFor</code> 调用 <code translate="no">pushToSessionStore</code>，WS 帧、旧桥接或标签转移都能到达活实例。</td></tr>
+<tr><th scope="row">初始值</th><td>实例首次渲染时从全局 map 取初值，刷新后重新挂载能显示已持久化的草稿。</td></tr>
+</tbody>
+</table>
+<p class="note">没有镜像：全局 store 没有 <code translate="no">composerInput</code>、<code translate="no">composerSettings</code>、<code translate="no">runningTask</code> 或 <code translate="no">contextPanelFor</code>。聚焦会话的草稿就是 <code translate="no">composerDrafts[activeChatKey]</code>，用到时计算。需要比标签活得久的数据（localStorage、标签转移的传输格式、跨会话的侧栏视图）留在全局按 key 的 map。</p>
+
+<details>
+<summary>为什么用实例而不是全局按 key 分片</summary>
+<table class="stack">
+<thead><tr><th scope="col">做法</th><th scope="col">例子</th><th scope="col">取舍</th></tr></thead>
+<tbody>
+<tr><th scope="row">每实例一个 store（采用）</th><td>VS Code 编辑器组；Zustand 支持</td><td>隔离最强。共享数据需要另一层。</td></tr>
+<tr><th scope="row">一个全局 store，按 key，加作用域标记</th><td>Redux 规范化、TanStack Query、Slack 式多频道界面</td><td>调试和跨会话功能容易，但靠约定维持：读一次全局指针就退化。</td></tr>
+<tr><th scope="row">物理隔离</th><td>Chrome 渲染进程</td><td>因运行不可信代码才值得；应用自己的分栏不值得付进程内存和 IPC 成本。</td></tr>
+</tbody>
+</table>
+<p>按 key 分片时每次读写都要给 key，给错或省略（等于聚焦会话）类型上都合法。实例由 provider 一次给定 key。一次按键也只通知该会话的订阅者。并行的 <code translate="no">Record&lt;sid, T&gt;</code> map 保留，转录行按视图存放，实例靠它们持久化。</p>
+</details>
+
+<details id="failure-mode">
+<summary>全局单值造成的故障</summary>
+<p>组件渲染两次，读取的状态只有一份。两份显示同一个值，或者后写的赢。类型系统允许这样做，只在分栏且特定操作后才出现。</p>
+<p><code translate="no">/context</code> 徽标：全局布尔值会同时打开两个弹层。<code translate="no">contextPanelFor: sid</code> 指针能修复，但每个使用方仍要比较正确的 id。在作用域里它只是普通的 <code translate="no">contextPanelOpen</code>。</p>
+<p>镜像，即聚焦会话按 key 条目的全局副本，更糟：每次写两份，每次切换要换，组件要判断是否绑定会话，窗口间转移还要重建它。</p>
+</details>
+
+<h2 id="main-store">主 store 字段</h2>
+<p><code translate="no">apps/web/lib/session-store/index.ts</code>，形状在 <code translate="no">ConvState</code>。</p>
+
+<h3 id="group-a">按会话</h3>
+<p class="note"><code translate="no">Record&lt;sessionId, T&gt;</code> map。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">字段</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">conversations</code></th><td>侧栏每会话摘要（虽然按键存，但它是一份*列表*，见 C 类）</td></tr>
+<tr><th scope="row"><code translate="no">rowsByView</code></th><td>每个视图（一个会话，或一个子代理的转录）的转录行，按视图和行 id 存；同一 id 在两个视图里是两行。通过 <code translate="no">selectRow(viewKey, id)</code> 读取，读出的行带上覆盖层。只经 <code translate="no">apply-transcript-update.ts</code> 写入：读取用 <code translate="no">applyRead</code>，服务端的实时行用编号的 <code translate="no">transcript_update</code> 变化和文字帧，只有本浏览器持有的行和覆盖层用 <code translate="no">applyLocalChange</code>。</td></tr>
+<tr><th scope="row"><code translate="no">messageOrder</code></th><td>每视图的行 id 有序列表</td></tr>
+<tr><th scope="row"><code translate="no">overlaysByView</code>、<code translate="no">heldFramesByView</code></th><td>本浏览器先于服务端显示在行上的字段，各自带着结束它的事件；以及等待所属行的文字帧</td></tr>
+<tr><th scope="row"><code translate="no">pendingProjectsByChat</code></th><td>未发送会话选定的项目，按临时 chat key 存</td></tr>
+<tr><th scope="row"><code translate="no">runningTasks</code></th><td>每会话运行任务；驱动各自 composer 的发送/停止按钮</td></tr>
+<tr><th scope="row"><code translate="no">trees</code></th><td>每会话最新的实时 context 树</td></tr>
+<tr><th scope="row"><code translate="no">tokens</code></th><td>每会话 token 用量</td></tr>
+<tr><th scope="row"><code translate="no">contextWindow</code></th><td>每会话上下文窗口大小</td></tr>
+<tr><th scope="row"><code translate="no">heads</code></th><td>每会话当前 DAG head（选中的分支尖端）</td></tr>
+<tr><th scope="row"><code translate="no">additionalWorkingDirsBySession</code></th><td>每会话附加工作目录</td></tr>
+<tr><th scope="row"><code translate="no">composerDrafts</code></th><td>每会话未发送草稿文本，持久化到 localStorage</td></tr>
+<tr><th scope="row"><code translate="no">composerSettingsBySession</code></th><td>当前分支的工具开关、思考强度和分支身份；按会话分键只是显示投影，持久设置属于分支引用</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">pendingDecisions</code> 是扁平 FIFO，每项带 <code translate="no">sessionId</code>（<code translate="no">session-store/types.ts</code>）；每个使用方都要过滤，作用域错了会吞掉或重复显示别的会话的问题。</p>
+
+<h3 id="group-b">描述单个会话的全局值</h3>
+<p class="note">都要移到 <code translate="no">SessionScopeState</code>，去向见<a href="#where-fields-go">下表</a>。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">字段</th><th scope="col">为什么应该按会话隔离</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">currentSessionId</code></th><td>"那个"活动会话。两个窗格时有两个，其中一个只是*聚焦*的那个</td></tr>
+<tr><th scope="row"><code translate="no">activeChatKey</code></th><td>同上，用于未发送草稿的临时 <code translate="no">local_*</code> id</td></tr>
+<tr><th scope="row"><code translate="no">composerFocusTick</code></th><td>自增计数器，用来让"那个"composer 聚焦输入框；两个 composer 时无法确定谁该响应</td></tr>
+<tr><th scope="row"><code translate="no">fnFormFunction</code></th><td>哪个函数的参数表单替换了输入框。属于某一个 composer，不属于整个应用</td></tr>
+<tr><th scope="row"><code translate="no">fnFormPrefill</code></th><td>该表单的预填参数</td></tr>
+<tr><th scope="row"><code translate="no">fnFormForkOf</code></th><td>重跑时的 fork 锚点节点</td></tr>
+<tr><th scope="row"><code translate="no">fnFormClosing</code></th><td>该表单的关闭动画标志</td></tr>
+<tr><th scope="row"><code translate="no">welcomeVisible</code></th><td>聊天区是否显示欢迎屏——这是每窗格的条件</td></tr>
+<tr><th scope="row"><code translate="no">transcriptLoadingId</code></th><td>只存*一个*在途会话 id；两个窗格可以同时在加载</td></tr>
+<tr><th scope="row"><code translate="no">branchInfo</code></th><td>"当前会话"的分支 chip</td></tr>
+<tr><th scope="row"><code translate="no">statusBadge</code></th><td>顶栏状态标签；由某一个会话的运行状态推导</td></tr>
+<tr><th scope="row"><code translate="no">paused</code></th><td>暂停标志，原理上应按运行中的会话分</td></tr>
+<tr><th scope="row"><code translate="no">providerInfo</code></th><td>顶栏显示的当前会话 provider/模型</td></tr>
+<tr><th scope="row"><code translate="no">detailNode</code></th><td>右栏显示的选中 DAG 节点</td></tr>
+<tr><th scope="row"><code translate="no">nodeSelected</code></th><td>"有 DAG 节点被选中"的闸门</td></tr>
+</tbody>
+</table>
+
+<h3 id="group-c">真正全局</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">字段</th><th scope="col">是什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">wsStatus</code></th><td>WebSocket 连接状态</td></tr>
+<tr><th scope="row"><code translate="no">agentSettings</code></th><td>Chat 模型徽标，镜像自 <code translate="no">runtimeState._agentSettings</code></td></tr>
+<tr><th scope="row"><code translate="no">conversations</code></th><td>侧栏的会话*列表*（所有会话的目录，不是某个会话的视图状态）</td></tr>
+<tr><th scope="row"><code translate="no">rightDock</code></th><td>右侧栏展开/收起及当前视图，持久化到 localStorage</td></tr>
+</tbody>
+</table>
+
+<h3 id="where-fields-go">单会话字段的去向</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">去向</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">fnFormFunction</code>、<code translate="no">fnFormPrefill</code>、<code translate="no">fnFormForkOf</code>、<code translate="no">fnFormClosing</code></th><td>合成一个 <code translate="no">fnForm</code> 属性。侧栏和收藏要指明目标会话。使用方：<code translate="no">resolve-mode.ts</code>、<code translate="no">use-fn-form-state.ts</code>、<code translate="no">use-fn-form-wrapper.ts</code>、<code translate="no">use-pending-run-function.ts</code>、<code translate="no">favorites-list.tsx</code>、<code translate="no">sidebar.tsx</code>、<code translate="no">runtime-block.tsx</code>、<code translate="no">functions-panel.ts</code></td></tr>
+<tr><th scope="row"><code translate="no">welcomeVisible</code>、<code translate="no">transcriptLoadingId</code></th><td>按会话的布尔值，由 <code translate="no">welcome-screen.tsx</code> 和 <code translate="no">message-list.tsx</code> 读取</td></tr>
+<tr><th scope="row"><code translate="no">composerFocusTick</code></th><td>按会话的计数器，聚焦一个面板不会抢走另一个</td></tr>
+<tr><th scope="row"><code translate="no">branchInfo</code>、<code translate="no">statusBadge</code>、<code translate="no">paused</code>、<code translate="no">providerInfo</code></th><td>按会话；顶栏读取聚焦的作用域</td></tr>
+<tr><th scope="row"><code translate="no">currentSessionId</code>、<code translate="no">activeChatKey</code></th><td>作为焦点指针留在全局，含义是“聚焦面板的会话”；<code translate="no">center-tabs-store</code> 通过 <code translate="no">activeId</code> 跟踪</td></tr>
+</tbody>
+</table>
+
+<h2 id="other-stores">其他 store</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">lib/tabs/center-tabs-store.ts</code>、<code translate="no">lib/tabs/store/</code></th><td>标签栏和面板布局：<code translate="no">tabs</code>、<code translate="no">activeId</code>、<code translate="no">groups</code>、<code translate="no">splitWebTabId</code>、<code translate="no">splitRatio</code>。全局视图状态；作用域树的会话 id 来自这里。</td></tr>
+<tr><th scope="row"><code translate="no">lib/tabs/center-tab-groups.ts</code></th><td>布局上的纯函数，无状态</td></tr>
+<tr><th scope="row"><code translate="no">lib/chat/history/chat-scroll.ts</code></th><td>按 chat key 的滚动位置，经存储接口持久化</td></tr>
+<tr><th scope="row"><code translate="no">lib/abilities/functions-store.ts</code>、<code translate="no">skills-store.ts</code>、<code translate="no">plugins-store.ts</code></th><td>页面目录及其筛选、排序、搜索状态；全局</td></tr>
+<tr><th scope="row"><code translate="no">lib/files/files-shared.ts</code></th><td>项目列表、文件读取、按路径的草稿；按文件</td></tr>
+</tbody>
+</table>
+
+<h2 id="legacy-layer">旧运行时状态</h2>
+<p><code translate="no">runtimeState</code>（<code translate="no">lib/runtime-bridge/state.ts</code>）是早于 React store 的模块级单例。WebSocket 帧进入运行时桥接，桥接更新它并写穿到 store；<code translate="no">conv-store-mirror.ts</code> 保持 <code translate="no">store.conversations</code> 权威。它是过渡层。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">currentSessionId</code></th><td>旧的当前会话。<code translate="no">chat-handlers.ts</code> 和 <code translate="no">conversations.ts</code> 里以 <code translate="no">session_id === runtimeState.currentSessionId</code> 把关的帧，对非聚焦会话会被丢弃或错误路由。</td></tr>
+<tr><th scope="row"><code translate="no">conversations</code></th><td>包含完整消息的按会话大 map，与 store 的摘要不同</td></tr>
+<tr><th scope="row"><code translate="no">isRunning</code></th><td>一个全局标志</td></tr>
+</tbody>
+</table>
+<p>非分栏的消息渲染、会话切换、分支徽标刷新和大部分帧路由仍默认走它。分栏面板绕过它：<code translate="no">#chatView</code> 是单例，约十个桥接模块用硬编码 id 访问，所以分栏时 AppShell 把它隐藏，每个面板从 store 渲染 React 并自己发 <code translate="no">load_session</code>。</p>
+
+<details>
+<summary>移除它需要什么</summary>
+<ol>
+<li><code translate="no">chat-handlers.ts</code> 和 <code translate="no">conversations.ts</code> 里每个 <code translate="no">currentSessionId</code> 判断都变成按 <code translate="no">data.session_id</code> 的 store 写入，后台帧才能落地。先要有焦点指针。</li>
+<li><code translate="no">runtimeState.conversations</code> 没有按 key map 覆盖不了的读者，<code translate="no">conv-store-mirror.ts</code> 不再必要。</li>
+<li><code translate="no">isRunning</code> 没有读者；<code translate="no">runningTasks</code> 已覆盖。</li>
+<li><code translate="no">#chatView</code> 外壳移除，换成 <code translate="no">PeerSessionPane</code> 已证明可行的 React 路径。这是最重的一条。</li>
+</ol>
+<p>错误移除判断会静默丢帧，所以每次移除都要配一次“帧仍到达其会话”的检查。</p>
+</details>
+
+<h2 id="non-goals">不做</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">保留</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">detailNode</code>、<code translate="no">nodeSelected</code>、<code translate="no">rightDock</code></th><td>右侧栏和 DAG 是跟随聚焦会话的一个停靠区，不会渲染两次</td></tr>
+<tr><th scope="row">顶栏徽标显示、设置页 store</th><td>本来就是聚焦或全局</td></tr>
+<tr><th scope="row">并行的 <code translate="no">Record&lt;sid, T&gt;</code> map</th><td>实例从它们取初值并经它们持久化</td></tr>
+<tr><th scope="row">两个以上的面板</th><td>机制允许，但没有设计和验证</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>作用域注册表和 provider；镜像已移除；传输格式（<code translate="no">SessionTransferSnapshot</code>、<code translate="no">ChatTransferState</code>）不再携带聚焦 key 条目的副本</td></tr>
+<tr><th scope="row">未完成</th><td>单会话字段仍在全局 store：每个都是移到 <code translate="no">SessionScopeState</code>，fn-form 最大，有八个使用方。退役旧运行时状态涉及整个 <code translate="no">lib/runtime-bridge/</code>，排在最后，按模块一次做完，做一半比两端都糟。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="workspace/center-tabs-and-split-layout.html">中间标签与分栏布局</a> · <a href="composer/composer-interaction-modes.html">输入框模式</a> · <a href="invariants.html">UI 不变量</a> · <a href="interaction-feedback.html">交互反馈</a></p>

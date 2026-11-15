@@ -18,11 +18,11 @@ import copy
 
 import pytest
 
-from openprogram.webui._model_listing import listing
-from openprogram.webui._model_listing import fetchers as F
-from openprogram.providers import storage as st
-from openprogram.webui._model_listing import provider_models as pm
-from openprogram.providers import metadata as cat
+from openprogram.models.listing import listing
+from openprogram.models.listing import fetchers as F
+from openprogram.models.providers.settings import storage as st
+from openprogram.models.listing import provider_models as pm
+from openprogram.models.providers.catalog import metadata as cat
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +46,7 @@ def mem_cfg(monkeypatch):
     monkeypatch.setattr(st, "_read_providers_cfg", _read)
     monkeypatch.setattr(st, "_write_providers_cfg", _write)
     monkeypatch.setattr(st, "_update_providers_cfg", _update)
-    from openprogram import setup
+    from openprogram.state import config as user_config
 
     def _update_root(mutator, **_kwargs):
         root = {"providers": copy.deepcopy(store)}
@@ -54,12 +54,12 @@ def mem_cfg(monkeypatch):
         _write(root.get("providers", {}))
         return root
 
-    monkeypatch.setattr(setup, "update_config", _update_root)
+    monkeypatch.setattr(user_config, "update_config", _update_root)
     # ``toggle`` binds these two names at import time (``from .storage import
     # ...``), so patching the storage module alone doesn't reach them — patch
     # the toggle module's copies too so toggle_model writes to the store, not
     # the real config.
-    from openprogram.webui._model_listing import toggle as tg
+    from openprogram.models.listing import toggle as tg
     monkeypatch.setattr(tg, "_update_providers_cfg", _update)
     st._reset_spec_migration()
     return store
@@ -82,8 +82,8 @@ def test_create_rejects_empty_base_url(mem_cfg):
 
 def test_create_rejects_alias_collision(mem_cfg, monkeypatch):
     # "codex" resolves to openai-codex — a reserved alias.
-    monkeypatch.setattr("openprogram.providers.get_providers", lambda: [])
-    from openprogram.providers import sources as S
+    monkeypatch.setattr("openprogram.models.providers.get_providers", lambda: [])
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     res = st.create_custom_provider("codex", "Codex", "https://x.test/v1")
     assert res["ok"] is False and "alias" in res["error"].lower()
@@ -91,16 +91,16 @@ def test_create_rejects_alias_collision(mem_cfg, monkeypatch):
 
 
 def test_create_rejects_existing_provider_id(mem_cfg, monkeypatch):
-    monkeypatch.setattr("openprogram.providers.get_providers", lambda: ["openai"])
-    from openprogram.providers import sources as S
+    monkeypatch.setattr("openprogram.models.providers.get_providers", lambda: ["openai"])
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     res = st.create_custom_provider("openai", "OpenAI", "https://x.test/v1")
     assert res["ok"] is False and "exists" in res["error"].lower()
 
 
 def test_create_writes_marker_config(mem_cfg, monkeypatch):
-    monkeypatch.setattr("openprogram.providers.get_providers", lambda: [])
-    from openprogram.providers import sources as S
+    monkeypatch.setattr("openprogram.models.providers.get_providers", lambda: [])
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     res = st.create_custom_provider(
         "frontier-intelligence", "Frontier", "https://api.frontier.tech/v1"
@@ -139,8 +139,8 @@ def test_custom_explicit_api_path_is_preserved(mem_cfg, configured):
 
 
 def test_create_label_falls_back_to_title_case(mem_cfg, monkeypatch):
-    monkeypatch.setattr("openprogram.providers.get_providers", lambda: [])
-    from openprogram.providers import sources as S
+    monkeypatch.setattr("openprogram.models.providers.get_providers", lambda: [])
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     res = st.create_custom_provider("frontier-intelligence", "", "https://x.test/v1")
     assert res["ok"] is True
@@ -154,8 +154,8 @@ def test_create_label_falls_back_to_title_case(mem_cfg, monkeypatch):
 @pytest.fixture
 def _no_known_providers(monkeypatch):
     """No tier-1/tier-2 providers so derived-id collisions come only from cfg."""
-    monkeypatch.setattr("openprogram.providers.get_providers", lambda: [])
-    from openprogram.providers import sources as S
+    monkeypatch.setattr("openprogram.models.providers.get_providers", lambda: [])
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
 
 
@@ -220,8 +220,8 @@ def test_label_normalization_preserves_mixed_case(mem_cfg, _no_known_providers):
 # ---------------------------------------------------------------------------
 
 def test_list_providers_surfaces_custom_tier3(mem_cfg, monkeypatch):
-    import openprogram.providers as P
-    from openprogram.providers import sources as S
+    import openprogram.models.providers as P
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(P, "get_providers", lambda: [])
     monkeypatch.setattr(P, "get_models", lambda pid: [])
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
@@ -247,9 +247,9 @@ def test_list_providers_surfaces_custom_tier3(mem_cfg, monkeypatch):
 
 
 def test_custom_row_sorts_last(mem_cfg, monkeypatch):
-    import openprogram.providers as P
-    from openprogram.providers.types import Model
-    from openprogram.providers import sources as S
+    import openprogram.models.providers as P
+    from openprogram.models.providers.types import Model
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(P, "get_providers", lambda: ["zzz-provider"])
     monkeypatch.setattr(P, "get_models", lambda pid: [Model.model_validate({
         "id": "z", "name": "Z", "provider": pid, "api": "openai-completions",
@@ -308,8 +308,8 @@ def test_manual_model_add_yields_enabled_registry_entry(mem_cfg, monkeypatch):
     assert row["base_url"] == "https://api.frontier.tech/v1"
 
     # After a real reload the model resolves in the runtime registry.
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(cr, "read_providers_config", lambda: st._read_providers_cfg())
     mg.reload()
     key = "frontier-intelligence/test-model"
@@ -331,8 +331,8 @@ def test_existing_custom_model_uses_resolved_runtime_base(mem_cfg, monkeypatch):
             "base_url": "https://nan.meta-api.vip",
         }],
     }
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(cr, "read_providers_config", lambda: st._read_providers_cfg())
 
     mg.reload()
@@ -352,8 +352,8 @@ def test_manual_add_unknown_provider_rejected(mem_cfg, monkeypatch):
     # An unknown provider (not tier-1/tier-2, no custom config key) would write
     # an ENABLED_MODELS row with an empty base_url that can't dispatch — reject
     # it and write nothing.
-    monkeypatch.setattr("openprogram.providers.get_providers", lambda: [])
-    from openprogram.providers import sources as S
+    monkeypatch.setattr("openprogram.models.providers.get_providers", lambda: [])
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     res = st.add_manual_model("totally-not-a-provider", "ghost-model")
     assert res["ok"] is False and "unknown provider" in res["error"].lower()
@@ -376,7 +376,7 @@ def test_toggle_dirless_provider_builds_full_spec(mem_cfg, monkeypatch):
     monkeypatch.setattr(F, "fetch_and_normalize", lambda pid, timeout=15.0: {
         "models": [{"id": "browsed-1", "name": "Browsed One"}],
     })
-    from openprogram.webui._model_listing import toggle as tg
+    from openprogram.models.listing import toggle as tg
     res = tg.toggle_model("frontier-intelligence", "browsed-1", True)
     assert res["enabled"] is True
     rows = {r["id"]: r for r in mem_cfg["frontier-intelligence"]["models"]}
@@ -386,8 +386,8 @@ def test_toggle_dirless_provider_builds_full_spec(mem_cfg, monkeypatch):
     assert spec["api"] == "openai-completions"
 
     # And it resolves in the runtime registry after reload.
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(cr, "read_providers_config", lambda: st._read_providers_cfg())
     mg.reload()
     assert "frontier-intelligence/browsed-1" in mg.ENABLED_MODELS

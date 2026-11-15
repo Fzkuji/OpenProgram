@@ -18,13 +18,13 @@
   --nav-color: #5c5c64;
   --nav-color-hover: #131317;
   --bg-selected: rgba(10, 10, 15, 0.08);
-  --user-msg-bg: #f5f5f7;
+  --user-msg-bg: var(--bg-input); /* sent bubble = the composer surface */
   --assistant-msg-bg: #ffffff;
   --shadow-sm: 0 1px 2px rgba(10, 10, 15, 0.05);
   --shadow: 0 2px 8px rgba(10, 10, 15, 0.06);
   --surface-popover: #ffffff;
   --border-popover: rgba(10, 10, 15, 0.12);
-  --shadow-popover: 0 8px 24px rgba(10, 10, 15, 0.16);
+  --shadow-popover: var(--glass-shadow);
   --shadow-dialog: 0 10px 30px rgba(10, 10, 15, 0.12);
   --shadow-sidebar-left: 4px 0 16px rgba(10, 10, 15, 0.07);
   --shadow-sidebar-right: -4px 0 16px rgba(10, 10, 15, 0.07);
@@ -33,7 +33,8 @@
   --accent-orange: #2563eb;
   --accent-fill: #2563eb;
   --accent-orange-hover: #1d4ed8;
-  --accent-green: #6e9b76;
+  --tabrow-tint: 0%; /* plain tab strip; vivid themes tint it with the accent */
+  --accent-green: #3f7a4e; /* 4.86:1 as text on the light page; #6e9b76 was 3.0:1 */
   --accent-red: #c24e42;
   --accent-yellow: #96701f;
   --accent-purple: #a371f7;
@@ -49,14 +50,16 @@
   --focus-ring: color-mix(in srgb, var(--text-bright) 45%, transparent);
   --scrim: rgba(0, 0, 0, 0.45);
   --scrim-strong: rgba(0, 0, 0, 0.65);
-  --surface-tooltip: #131317;
-  --text-on-tooltip: #ffffff;
+  --surface-tooltip: var(--foreground);
+  --text-on-tooltip: var(--background);
   --composer-ring: rgba(10, 10, 15, 0.1);
   --composer-ring-focus: rgba(10, 10, 15, 0.2);
-  --composer-surface: color-mix(in srgb, var(--bg-input) 80%, transparent);
-  --composer-backdrop-filter: blur(12px);
-  --composer-shadow: 0 0 0 1px var(--composer-ring), var(--shadow-sm);
-  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
+  /* Input box = shadcn Luma Card surface with no border: shadow-sm
+     at rest, shadow-md on hover / focus. */
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --composer-shadow-focus: 0 4px 6px -1px rgb(0 0 0 / 0.16), 0 2px 4px -2px rgb(0 0 0 / 0.16);
   --chip-bg: #ffffff;
   --chip-ring: rgba(10, 10, 15, 0.1);
   --meter-fill: #3b82f6;

@@ -1,7 +1,7 @@
 "use client";
 
-import type { DocumentController, } from "@/lib/files/document-controller";
-import type { RichDocumentEditor } from "@/lib/files/document-types";
+import type { DocumentController, } from "@/lib/files/document/document-controller";
+import type { RichDocumentEditor } from "@/lib/files/document/document-types";
 
 export interface OfficeEditorInstance extends RichDocumentEditor {
   save(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<File>;
@@ -11,10 +11,14 @@ interface OfficeMount { activate(): Promise<OfficeEditorInstance>; destroy(): Pr
 interface OfficeApi { mountOfficeEditor(container: HTMLElement, options: Record<string, unknown>): OfficeMount; }
 interface HostAvailability { available: boolean; installable?: boolean; downloadBytes?: number; moduleUrl?: string; hostUrl?: string; packageVersion?: string; hostBuildId?: string; assetManifestDigest?: string; reason?: string; }
 
+/** The server's answer while the built-in `office_editor` application is disabled. */
+export const OFFICE_EDITOR_DISABLED = "office_editor_disabled";
+
 export async function officeHostAvailability(sessionId: string, fetcher: typeof fetch = fetch, signal?: AbortSignal): Promise<HostAvailability> {
   const response = await fetcher(`/api/documents/office-host?session_id=${encodeURIComponent(sessionId)}`, { signal });
   if (!response.ok) throw new Error(`Office resources are unavailable (${response.status}).`);
   const value = await response.json() as HostAvailability;
+  if (value.reason === OFFICE_EDITOR_DISABLED) return value;
   if ((!value.available || !value.hostUrl) && !value.installable) throw new Error(value.reason ?? "Office editing is unavailable.");
   return value;
 }

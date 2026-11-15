@@ -52,12 +52,45 @@ The large runtime does not enter the Python wheel or initial chat bundle.
 
 The bundled upstream archive and adoption patch are the corresponding editor
 source. Run the copied preparation scripts from the matching OpenProgram
-checkout: they import its standard-library-only `openprogram.office_assets`
-validator and installer. The source archive does not constitute a standalone
+checkout: they load its standard-library-only
+`openprogram/programs/applications/office_editor/assets.py` validator and
+installer by file path. The source archive does not constitute a standalone
 OpenProgram checkout. Font inputs and their original licenses are explicit
 build inputs, and their relative names and hashes are recorded in
 `source/font-provenance.json`.
 
-The optional installer downloads `OfficeAssets-d15d12b-dc31dd9d.zip` from
-`v0.9.0`. The fixed URL, archive size and SHA-256 are declared in
-`openprogram/office_install.py`. Default release jobs do not fetch that asset.
+The optional installer downloads the archive named by `OFFICE_ARCHIVE_NAME`
+from the release of the installed version, then from the newest release. The
+file name, archive size and SHA-256 are declared in
+`openprogram/programs/applications/office_editor/install.py`, and the
+`office.assets` download limit in `openprogram/host/security/safe_http.py` is
+the same size; every release from 1.3.0 uploads that file once. The Release
+workflow's `office` job carries the newest published release's copy forward
+and stops every build when there is none.
+
+A new pack needs a new file name: installed versions pin the bytes behind each
+name. To build one:
+
+1. Set `OFFICE_LOCK_SHA256` in
+   `openprogram/programs/applications/office_editor/assets.py` to the SHA-256
+   of this directory's `package-lock.json`, the lock `prepare.py` builds with;
+   the pack's last validation refuses any other lock.
+2. Run `prepare.py` as above.
+3. Zip it and pin it:
+
+   ```sh
+   python scripts/release/office-archive.py pack /path/to/prepared-office /path/to/out
+   ```
+
+   The archive is named `OfficeAssets-<editor>-<patch>-<pack>.zip`, the last
+   part from the pack's manifest digest, and the command writes its name,
+   size and SHA-256 into `install.py` and the limit into `safe_http.py`.
+4. Commit, promote, then tag with the file; before anything moves, the
+   publish script puts it on the tag's draft release when GitHub has no copy:
+
+   ```sh
+   scripts/publish-github.sh -m "summary" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip
+   ```
+
+   `python scripts/release/office-archive.py seed vX.Y.Z FILE` does the
+   upload step alone.

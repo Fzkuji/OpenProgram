@@ -1,0 +1,53 @@
+<title>Web style organization</title>
+<meta name="description" content="How the web app's global CSS mirrors the component tree, and how type and fonts stay consistent.">
+<h1>Web style organization</h1>
+
+<p>The global CSS mirrors the component tree: styling a component means opening one file, named after it.</p>
+
+<pre translate="no" tabindex="0">apps/web/app/
+  globals.css       entry: tailwindcss → design → themes → styles
+  styles/
+    index.css       imports the global layer in cascade order
+    design/         design tokens and Tailwind's names for them
+    themes/         colour values, one file per theme (+ fallback.css)
+    base/           document, focus, list row, shell layout, scrollbar,
+                    sidebar, desktop chrome, motion, canvas drag
+    chat/           pane/ messages/ cards/ execution/ composer/ welcome/
+    dag/            graph/ panels/
+    right-dock/     right-sidebar panels</pre>
+<p class="note"><code translate="no">index.css</code> cascade: base, chat, right-dock, dag. Tokens and tiers: <a href="design-tokens.html">Design tokens</a>.</p>
+
+<h2 id="rules">Rules</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">One component, one file</th><td>Opens with a comment naming the component and its source path. New components get new files.</td></tr>
+<tr><th scope="row">Placement follows the tree</th><td><code translate="no">dag/graph/nodes.css</code> for the drawer in <code translate="no">lib/runtime-bridge/dag/render/nodes.ts</code>; <code translate="no">chat/messages/bubbles.css</code> for a chat bubble</td></tr>
+<tr><th scope="row">Global stays global</th><td>Tokens in <code translate="no">design/</code>, theme values in <code translate="no">themes/</code>, the shell in <code translate="no">base/</code>. <code translate="no">chat/pane/layout.css</code> (<code translate="no">.main</code>, <code translate="no">#chatView</code>) is the one deliberately cross-component file.</td></tr>
+<tr><th scope="row">Module CSS stays</th><td>Components on <code translate="no">*.module.css</code> (the composer) keep it; this tree is the global layer only</td></tr>
+<tr><th scope="row">Style tests</th><td>Read the per-component file through postcss, as <code translate="no">apps/web/tests/tabs/canvas-css-geometry.test.mjs</code> does for the center-tabs modules</td></tr>
+</tbody>
+</table>
+
+<h2 id="scrollbars">No native scrollbars</h2>
+<p><code translate="no">base/scrollbar.css</code> hides them at zero specificity, because macOS Chromium flashes one whenever the pointer enters a scrollable box. <code translate="no">lib/runtime-bridge/dom/scrollbar.ts</code> installs a thin floating thumb the first time a box scrolls.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shows</th><td>Only while the box scrolls or the thumb is held; fades 900ms later. Vertical, and horizontal when the box overflows sideways.</td></tr>
+<tr><th scope="row">Never shows for</th><td>Hovering, resizing, content changes. A faded thumb takes no pointer events.</td></tr>
+<tr><th scope="row">Layout</th><td>Takes no width</td></tr>
+<tr><th scope="row">Layer</th><td>Above everything, including dialogs. <code translate="no">data-scrollbar-layer="content"</code> keeps it above the box's rows and under a control on its edge (Agent list, Agent grid).</td></tr>
+<tr><th scope="row">Shadow root</th><td>Hides its own bar and calls <code translate="no">attachOverlayScrollbar</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="type">Type</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sizes</th><td>Nine tiers in <code translate="no">design/type.css</code>, <code translate="no">--fs-2xs</code> (11px) to <code translate="no">--fs-display</code> (30px); assignment under <a href="design-tokens.html#type">Type</a>. <code translate="no">apps/web/scripts/ui/check-design-tokens.mjs</code> (in <code translate="no">npm run check</code>) refuses any other size.</td></tr>
+<tr><th scope="row">Faces</th><td>Inter and JetBrains Mono Latin files through <code translate="no">next/font</code> (<code translate="no">app/fonts.ts</code>): preloaded, <code translate="no">display: block</code>, so no fallback paint and reflow. Other scripts use <code translate="no">@fontsource</code>.</td></tr>
+<tr><th scope="row">Language</th><td>Exported HTML is English. For another locale the head script marks <code translate="no">&lt;html data-locale-pending&gt;</code>, hiding the body; <code translate="no">useTranslation</code> switches in a layout effect before paint and removes the mark. Without the script, the page shows after 1.5s.</td></tr>
+</tbody>
+</table>

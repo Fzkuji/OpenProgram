@@ -14,14 +14,14 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from openprogram.security.safe_http import (
+from openprogram.host.security.safe_http import (
     OutboundSecurityConfig,
     SafeAsyncClient,
     SafeClient,
     safe_async_client,
     safe_client,
 )
-from openprogram.security.url_policy import OwnerURLException
+from openprogram.host.security.url_policy import OwnerURLException
 
 
 class _TLSServer:

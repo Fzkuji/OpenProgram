@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.skills import loader as L
+from openprogram.extensions.skills import loader as L
 
 
 def _write_skill(root: Path, rel: str, description: str, body: str = "body\n") -> Path:
@@ -134,6 +134,21 @@ def test_empty_input_renders_nothing():
     assert L.format_skills_for_prompt([]) == ""
 
 
+def test_a_description_written_as_a_block_scalar_is_read_whole(sources):
+    """Skills published elsewhere fold a long description over several
+    lines (``description: >-``); the listing shows its text, not ``>-``."""
+    d = sources["user"] / "figures"
+    d.mkdir()
+    (d / "SKILL.md").write_text(
+        "---\nname: figures\ndescription: >-\n  Covers publication figures: bars\n  and trends.\n"
+        "notes: |\n  first\n  second\nversion: 2\n---\n\nbody\n", encoding="utf-8")
+    (skill,) = L.list_skills()
+    assert skill.description == "Covers publication figures: bars and trends."
+    assert skill.version == "2"
+    fm, body = L._h.parse_frontmatter((d / "SKILL.md").read_text(encoding="utf-8"))
+    assert fm["notes"] == "first\nsecond" and body.strip() == "body"
+
+
 def test_explicit_dirs_use_the_same_parser_and_rule(tmp_path):
     low, high = tmp_path / "low", tmp_path / "high"
     _write_skill(low, "deploy", "from low")
@@ -146,9 +161,9 @@ def test_explicit_dirs_use_the_same_parser_and_rule(tmp_path):
 def test_chat_and_exec_render_the_same_block(sources, monkeypatch):
     """context.components (chat turns) and Runtime._skills_block (inside an
     agentic function) go through the one loader and the one renderer."""
-    _write_skill(sources["remote_cache"], "distill", "turn a session into a skill")
-    from openprogram.agentic_programming.runtime import Runtime
-    from openprogram.context import components
+    _write_skill(sources["remote_cache"], "summarize", "summarize a document")
+    from openprogram.runtime.agent.runtime import Runtime
+    from openprogram.runtime.context import components
 
     rt = Runtime.__new__(Runtime)
     rt._skills_config = True
@@ -156,17 +171,17 @@ def test_chat_and_exec_render_the_same_block(sources, monkeypatch):
     rt._skills_prompt_block = ""
 
     assert components._build_skills(None) == rt._skills_block().strip("\n")
-    assert "<name>distill</name>" in rt._skills_block()
+    assert "<name>summarize</name>" in rt._skills_block()
 
 
 def test_disabled_skills_drop_out_of_the_chat_listing(sources):
-    _write_skill(sources["remote_cache"], "distill", "turn a session into a skill")
+    _write_skill(sources["remote_cache"], "summarize", "summarize a document")
     _write_skill(sources["project"], "deploy", "ship it")
-    from openprogram.context import components
+    from openprogram.runtime.context import components
 
-    block = components._build_skills({"skills": {"disabled": ["distill"]}})
+    block = components._build_skills({"skills": {"disabled": ["summarize"]}})
     assert "<name>deploy</name>" in block
-    assert "distill" not in block
+    assert "summarize" not in block
 
 
 def test_skill_tool_is_registered_and_deferred():
@@ -206,3 +221,17 @@ def test_skill_tool_reports_a_bad_name(sources):
     _write_skill(sources["project"], "deploy", "ship it")
     assert "no skill named" in _run_skill_tool(name="nope")
     assert "pass a skill name" in _run_skill_tool(name="")
+
+
+def test_skill_paths_follow_the_active_profile(tmp_path, monkeypatch):
+    # The dev instance (profile "dev") must read its own skills, not the
+    # stable instance's ~/.openprogram/skills.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("OPENPROGRAM_PROFILE", "dev")
+    from openprogram.extensions.skills import loader, tool
+    from openprogram.interfaces.server.routes.catalog import skills as skills_route
+    root = tmp_path / ".openprogram-dev"
+    assert loader.user_dir() == root / "skills"
+    assert loader.remote_cache_dir() == root / "cache" / "skills"
+    assert tool._log_path() == root / "skills" / "invoke_log.jsonl"
+    assert skills_route._state_root() == root

@@ -1,0 +1,154 @@
+<title>Claude Code 压缩</title>
+<meta name="description" content="关于 Claude Code 压缩层级的研究笔记，来自官方 API 文档和第三方逆向。">
+<h1>Claude Code 压缩</h1>
+<p>研究笔记，不是 OpenProgram 的设计。Anthropic API 文档只描述单一压缩机制（超过 token 阈值，LLM 摘要）。下面的级联是客户端实现细节，来自第三方逆向，以 Inside Claude Code 为准；各来源对顺序略有分歧，数字随版本变化。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">层级</th><th scope="col">动作</th><th scope="col">触发</th><th scope="col">LLM</th><th scope="col">破坏缓存</th><th scope="col">损失</th></tr></thead>
+<tbody>
+<tr><th scope="row">Budget Reduction（例行，不在级联内）</th><td>截断单个超大输出</td><td><code translate="no">tool_result</code> 超过 4000 字符</td><td>否</td><td>否</td><td>中段</td></tr>
+<tr><th scope="row">1 Microcompact</th><td>清理旧工具输出</td><td>50 次工具调用，之后每 25 次；或空闲 90 分钟</td><td>否</td><td>cache-aware：否</td><td>旧输出</td></tr>
+<tr><th scope="row">2 Snip</th><td>删除最老轮次</td><td>第 1 层后仍超</td><td>否</td><td>是</td><td>整轮</td></tr>
+<tr><th scope="row">3 Context Collapse</th><td>分段摘要</td><td>第 2 层后仍超，约 90%</td><td>是</td><td>是</td><td>细节</td></tr>
+<tr><th scope="row">4 Auto-Compact</th><td>全量摘要</td><td>第 3 层后仍超，或 <code translate="no">/compact</code></td><td>是</td><td>是</td><td>大部分，留摘要</td></tr>
+<tr><th scope="row">5 Reactive</th><td>紧急压缩</td><td>API 返回 413 <code translate="no">prompt_too_long</code></td><td>是</td><td>是</td><td>同第 4 层</td></tr>
+</tbody>
+</table>
+<p class="note">每次 LLM 调用前：Budget Reduction，再从第 1 层检查；每层后复查，仍超则前进。遇 413 走第 5 层并重试，失败则终止。第 3、4 层被描述为有重叠的策略：有些配置跳过第 3 层，<code translate="no">/compact</code> 跳过 1–3 层。</p>
+
+<h2 id="principles">原则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">原则</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">懒惰降级</th><td>便宜的先做</td></tr>
+<tr><th scope="row">旧工具输出先清</th><td>旧的 grep、read、bash 输出最大也最不重要</td></tr>
+<tr><th scope="row">日常靠 Microcompact</th><td>Snip 和 Compact 很少触发</td></tr>
+<tr><th scope="row">缓存保护</th><td>cache-aware 在服务端清理；截断后内容固定</td></tr>
+<tr><th scope="row">只动整轮</th><td>用户和助手消息不单独截断：整轮删除或摘要</td></tr>
+<tr><th scope="row"><code translate="no">CLAUDE.md</code></th><td>从磁盘重新加载，不参与压缩</td></tr>
+<tr><th scope="row">用户主导</th><td><code translate="no">/compact</code> 和 <code translate="no">/context</code>；自动只是兜底</td></tr>
+</tbody>
+</table>
+
+<h2 id="tiers">层级细节</h2>
+<details>
+<summary>Budget Reduction</summary>
+<p>只处理工具输出。超过 4000 字符（约 1000 token）：保留前 2400 和后 1600。</p>
+<pre translate="no" tabindex="0">截断前（50000 字符）："src/a.py:12: TODO fix this\nsrc/b.py:34: ..."
+截断后（4000 字符）："src/a.py:12: TODO fix this\n...[46000 chars removed]...\nsrc/z.py:99: TODO cleanup"</pre>
+</details>
+
+<details>
+<summary>第 1 层 Microcompact</summary>
+<p>处理 FileRead、Shell、Grep、Glob、WebSearch、WebFetch、FileEdit、FileWrite。</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Cache-aware（主路径）</th><th scope="col">Time-based（兜底）</th></tr></thead>
+<tbody>
+<tr><th scope="row">动作</th><td>服务端通过 Context Editing API 清理旧 <code translate="no">tool_result</code></td><td>客户端替换为哨兵</td></tr>
+<tr><th scope="row">破坏缓存</th><td>否</td><td>是</td></tr>
+<tr><th scope="row">触发</th><td>50 次调用，每 25 次</td><td>空闲约 90 分钟</td></tr>
+<tr><th scope="row">可恢复</th><td>否</td><td>否</td></tr>
+<tr><th scope="row">依赖</th><td>Anthropic Context Editing；其他 provider 没有等价能力</td><td>无</td></tr>
+<tr><th scope="row">每个输出变成</th><td>0 token</td><td>约 20 token：<code translate="no">[content no longer available]</code></td></tr>
+</tbody>
+</table>
+<p>已在缓存的内容由服务端清理，不在缓存的由客户端替换。哨兵用字节稳定的规范形式，重复执行不改变已缓存内容。例：清理 10 个平均 500 token 的结果，释放约 4800。</p>
+<h3>Context Editing API</h3>
+<p>公开 beta（<code translate="no">context-management-2025-06-27</code>），不是 Claude Code 专有；并入普通调用。客户端发送未修改的历史和 <code translate="no">cache_edits</code>；服务端替换缓存内的旧块，前缀保持有效，客户端不必知道清了哪些。第 2–5 层直接改客户端消息列表。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">策略</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">clear_tool_uses</code></th><td>清理旧 <code translate="no">tool_result</code>，保留最近 N 个（N 未确认）</td></tr>
+<tr><th scope="row"><code translate="no">clear_thinking</code></th><td>清理旧 thinking 块</td></tr>
+<tr><th scope="row"><code translate="no">clear_at_least</code></th><td>至少清理的 token 数</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>第 2 层 Snip</summary>
+<ul>
+<li>触发：第 1 层后仍超（据报告有约 13K token 缓冲，随版本变化）。</li>
+<li>从最老开始删除整轮（用户、助手和全部工具调用），每删一轮重算，直到低于阈值。</li>
+<li>无摘要、无落盘、无标记；模型不知道之前讨论过什么。</li>
+<li>信息全失且缓存前缀失效，但免费且快。</li>
+</ul>
+</details>
+
+<details>
+<summary>第 3 层 Context Collapse</summary>
+<ul>
+<li>触发：第 2 层后仍超，约 90% 非阻塞，95% 强制阻塞。</li>
+<li>每段 5–10 轮（未确认），各自独立摘要约 100–300 token（估计）。LLM 调用数等于段数。最近 N 轮完整保留（N 未确认）。</li>
+<li>原文留在 collapse store：读时投影，类似数据库视图，理论上可回滚。</li>
+<li>保留段边界和时间线；第 4 层不保留。</li>
+</ul>
+<pre translate="no" tabindex="0">压缩前（35 轮）：
+[turns 6-10] 读代码、找 bug、修复、测试
+[turns 11-15] 重构 config 模块
+[turns 16-35] 修改 API 模块...
+
+压缩后：
+[summary] "Turns 6-10: 修复 utils.py 的 bug，加了回滚脚本"
+[summary] "Turns 11-15: 重构 config 模块，提取 Settings 类"
+[turns 16-35] ...（完整保留）</pre>
+</details>
+
+<details>
+<summary>第 4 层 Auto-Compact</summary>
+<ul>
+<li>一次 LLM 调用把全部历史摘要成约 2000–5000 token 的块，替换旧消息，不可回滚。最近 1–2 轮完整保留。上下文从 70–90% 降到约 15–25%。</li>
+<li>阈值覆盖：<code translate="no">CLAUDE_AUTOCOMPACT_PCT_OVERRIDE</code>。</li>
+<li><code translate="no">/compact</code> 或 <code translate="no">/compact 保留关于数据库迁移的讨论</code>：给提示词摘要更好。官方建议在 60% 时使用。</li>
+<li>丢失：早期指令、设计讨论、推理过程、50 轮以前的代码、风格偏好。保留：当前任务、最近修改的文件名、最近的错误和解决办法、<code translate="no">CLAUDE.md</code>。</li>
+<li>链式：每次在上次摘要上压缩，信息逐层衰减。长会话可能压缩 3–5 次。</li>
+</ul>
+<ol>
+<li>运行 PreCompact hook。</li>
+<li>用 <code translate="no">getCompactPrompt()</code> 构造提示词。</li>
+<li>把全部历史发给 LLM。</li>
+<li>用 <code translate="no">buildPostCompactMessages()</code> 构造消息。</li>
+<li>从 <code translate="no">CLAUDE.md</code> 重新加载系统提示。</li>
+</ol>
+<pre translate="no" tabindex="0" data-claim="example">压缩前（35 轮，150K token）：[system prompt] [35 轮]
+压缩后（约 30K token）：
+[system prompt]（从 CLAUDE.md 重新加载）
+[compaction block]
+"会话摘要：用户在重构一个 Python 项目。
+已完成：修复 utils.py 的 bug，重构 config 模块，新增 3 个测试。
+当前状态：测试全部通过。用户正在处理 API 模块。
+关键决定：用 FastAPI 替换 Flask，数据库用 PostgreSQL。
+修改的文件：src/utils.py, src/config.py, tests/test_utils.py"
+[最近 1-2 轮]</pre>
+</details>
+
+<details>
+<summary>第 5 层 Reactive</summary>
+<p>先尝试 context-collapse 溢出恢复，再紧急压缩，每轮最多一次。都失败则结束会话。</p>
+</details>
+
+<details>
+<summary>一次长会话，200K 上下文</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">上下文</th><th scope="col">运行</th></tr></thead>
+<tbody>
+<tr><th scope="row">0–30%</th><td>只有 Budget Reduction</td></tr>
+<tr><th scope="row">30–50%</th><td>超过 50 次工具调用，Microcompact 清理前 30 个输出，约 15K token，之后每 25 次</td></tr>
+<tr><th scope="row">超过阈值</th><td>Microcompact 不够，Snip 删除最老 5 轮，约 25K token</td></tr>
+<tr><th scope="row">再次超过</th><td>Microcompact 和 Snip 重复</td></tr>
+<tr><th scope="row">极端且罕见</th><td>旧轮次所剩无几，走 Context Collapse，再 Auto-Compact</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>来源，可靠度从高到低</summary>
+<ul>
+<li><a href="https://platform.claude.com/docs/en/build-with-claude/compaction">Compaction, Claude Platform Docs</a>（官方，仅 API 层）</li>
+<li><a href="https://platform.claude.com/docs/en/build-with-claude/context-editing">Context editing, Claude API Docs</a>（官方）</li>
+<li><a href="https://y-agent.github.io/inside-claude-code/04-compaction-diagram.html">Inside Claude Code: Context Compaction</a>（逆向，最详细）</li>
+<li><a href="https://arxiv.org/html/2604.14228v1">Dive into Claude Code</a>（arXiv 2604.14228，VILA-Lab）</li>
+<li><a href="https://deepwiki.com/anthropics/claude-code/3.3-context-window-and-compaction">DeepWiki: Context Window and Compaction</a>（社区）</li>
+<li><a href="https://0xtresser.github.io/Claude-Code-VS-OpenCode/en/Chapter_05_Session_and_Context/5.3_Context_Compaction.html">Claude Code VS OpenCode §5.3</a>（对比）</li>
+</ul>
+</details>

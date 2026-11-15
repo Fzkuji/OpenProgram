@@ -2,10 +2,10 @@ import { hostnameOf, nextBrowserHomeId, nextPopupWebTabId, webTabId } from "@/li
 import { replaceGroupTabId } from "@/lib/tabs/center-tabs-persistence";
 import type { StoreApi } from "zustand";
 import { recordTabPage } from "../navigation/page-history";
-import { commitCenterTabsState, focusOrCreate } from "./core";
+import { commitCenterTabsState, focusOrCreate, insertNextTo } from "./core";
 import type { CenterTab, CenterTabsState } from "./types";
 
-export function browserActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"]): Pick<CenterTabsState, "openWebTab" | "openPopupWebTab" | "markAgentWebTab" | "setWebTabPinned" | "ensureWebTab" | "ensureExclusiveWebTab" | "updateWebTab" | "replaceWebTabWithNewTabPage"> {
+export function browserActions(set: StoreApi<CenterTabsState>["setState"]): Pick<CenterTabsState, "openWebTab" | "openPopupWebTab" | "markAgentWebTab" | "setWebTabPinned" | "ensureWebTab" | "ensureExclusiveWebTab" | "updateWebTab" | "replaceWebTabWithNewTabPage"> {
   return {
     openWebTab: (url, agentRequest = false) =>
       set((s) => {
@@ -14,26 +14,23 @@ export function browserActions(set: StoreApi<CenterTabsState>["setState"], get: 
           () => ({ id, kind: "web", title: hostnameOf(url), url }), [],
           tab => ({
             ...tab, url, title: tab.url !== url ? hostnameOf(url) : tab.title,
-            webPinned: !agentRequest && tab.agentOpened ? true : tab.webPinned
+            webPinned: !agentRequest ? true : tab.webPinned
           }));
       }),
 
-    openPopupWebTab: (url, openerTabId) => {
-      const id = nextPopupWebTabId(url);
+    openPopupWebTab: (url, openerTabId, nativeId, behind) => {
+      const id = nativeId || nextPopupWebTabId(url);
       set((s) => {
         const opener = s.tabs.find((tab) => tab.id === openerTabId);
         return commitCenterTabsState(s, {
-          tabs: [
-            ...s.tabs,
-            {
-              id, kind: "web", title: hostnameOf(url), url, openerTabId,
-              agentOpened: opener?.agentOpened,
-              agentSessionId: opener?.agentSessionId,
-              agentBranchId: opener?.agentBranchId,
-              agentExecutionId: opener?.agentExecutionId,
-            },
-          ],
-          activeId: opener?.agentOpened ? s.activeId : id,
+          tabs: insertNextTo(s.tabs, openerTabId, {
+            id, kind: "web", title: hostnameOf(url), url, openerTabId,
+            agentOpened: opener?.agentOpened,
+            agentSessionId: opener?.agentSessionId,
+            agentBranchId: opener?.agentBranchId,
+            agentExecutionId: opener?.agentExecutionId,
+          }),
+          activeId: opener?.agentOpened || behind ? s.activeId : id,
         });
       });
       return id;

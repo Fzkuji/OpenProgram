@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import os
 
-from openprogram.programs._runtime import function
-from openprogram.store.snapshot.checkpoint.helpers import (
+from openprogram.programs._host.runtime import function
+from openprogram.state.store.snapshot.checkpoint.helpers import (
     checkpoint_abort_edit,
     checkpoint_after_edit,
     checkpoint_before_edit,
 )
-from openprogram.worktree.path_resolve import resolve_path
+from openprogram.state.worktree.path_resolve import resolve_path
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 _DESCRIPTION = (
@@ -29,7 +32,7 @@ _DESCRIPTION = (
     accept_edits_safe=True,   # acceptEdits 档下自动放行（改文件——acceptEdits 自动批）
     description=_DESCRIPTION,
     toolset=["core"],
-    unsafe_in=["wechat", "telegram", "plan"],
+    unsafe_in=["plan"],
     path_params={"file_path": "write"},
 )
 def edit(file_path: str,
@@ -44,6 +47,13 @@ def edit(file_path: str,
         new_string: Replacement text (must differ from old_string).
         replace_all: Replace every occurrence of old_string. Default false.
     """
+    # An SSH conversation edits the remote disk.
+    from ._remote import remote_target
+    _remote_fs = remote_target()
+    if _remote_fs is not None:
+        from . import _remote
+        return _remote.edit(_remote_fs, file_path, old_string, new_string, replace_all)
+
     # Worktree-aware resolution: if an agent worktree is bound to the
     # current context, treat a relative path as relative to the
     # worktree root; if the LLM passed an absolute path outside the
@@ -53,10 +63,11 @@ def edit(file_path: str,
     file_path = resolved_path
     if not os.path.isabs(file_path):
         return f"Error: file_path must be absolute, got {file_path!r}"
-    from openprogram.sandbox import validate_write_path
+    from openprogram.host.sandbox import validate_write_path
     violation = validate_write_path(file_path)
     if violation:
-        return f"Error: sandbox policy: {violation}"
+        from openprogram.runtime.permissions import refusal
+        raise refusal.sandbox("edit", violation)
     if not os.path.exists(file_path):
         return f"Error: file not found: {file_path}"
     if old_string == new_string:
@@ -67,12 +78,13 @@ def edit(file_path: str,
     # last saw it — so a concurrent user edit is never silently
     # overwritten. No-op outside a dispatcher turn.
     try:
-        from openprogram.store.snapshot import read_tracking as _rt
+        from openprogram.state.store.snapshot import read_tracking as _rt
         _fresh = _rt.check_fresh(file_path)
         if _fresh in (_rt.NEVER_READ, _rt.STALE):
             return _rt.stale_message(file_path, _fresh)
     except Exception:
-        pass
+        # Fail open: a tracking failure must not block the edit.
+        _log.debug("freshness check unavailable for %s", file_path, exc_info=True)
 
     try:
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
@@ -97,7 +109,7 @@ def edit(file_path: str,
     except Exception as e:
         return f"Error: mutation journal preparation failed for {file_path}: {e}"
     try:
-        from openprogram.agent.permissions.file_state import write_checked
+        from openprogram.runtime.permissions.file_state import write_checked
         write_checked(file_path, new_text)
     except Exception as e:
         if prepared:
@@ -111,17 +123,15 @@ def edit(file_path: str,
     # Refresh the baseline to what we just wrote, so the agent can edit
     # this file again without re-reading.
     try:
-        from openprogram.store.snapshot import read_tracking as _rt
+        from openprogram.state.store.snapshot import read_tracking as _rt
         _rt.mark_seen(file_path)
     except Exception:
-        pass
+        # The read baseline is bookkeeping; without it a later edit asks for a re-read.
+        _log.debug("read baseline not recorded for %s", file_path, exc_info=True)
 
     # 事件层 tap：写成功才发。
-    try:
-        from openprogram.events import emit_safe
-        emit_safe("file.changed", "tool", {"path": file_path, "op": "edit"})
-    except Exception:
-        pass
+    from openprogram.runtime.events import emit_safe
+    emit_safe("file.changed", "tool", {"path": file_path, "op": "edit"})
 
     replaced = count if replace_all else 1
     msg = f"Edited {file_path} ({replaced} replacement{'s' if replaced != 1 else ''})"

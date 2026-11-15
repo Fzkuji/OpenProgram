@@ -1,0 +1,102 @@
+<title>Self-update</title>
+<meta name="description" content="An Agent changes OpenProgram itself; a failed version goes back to the one that was running.">
+<h1>Self-update</h1>
+<p>An Agent can change OpenProgram itself: its tools, its interface, even the code that does the updating. Writing is never restricted; only going live is checked.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="Committed work is built and tried on a copy of the data; a failure there leaves everything live unchanged. The old version then switches from outside the worker. The new version is verified with a real turn and watched for 120 seconds; a failure there goes back to the version that was running.">
+  <defs>
+    <marker id="sf-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="sf-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <text class="t-big" x="0" y="46">Build and trial</text>
+  <text class="t-soft" x="0" y="72">copy of your data</text>
+  <line class="ln" x1="150" y1="39" x2="222" y2="39" marker-end="url(#sf-a)"/>
+  <text class="t-big" x="234" y="46">Switch</text>
+  <text class="t-soft" x="234" y="72">run by the old version</text>
+  <line class="ln" x1="410" y1="39" x2="494" y2="39" marker-end="url(#sf-a)"/>
+  <text class="t-big" x="506" y="46">Verify</text>
+  <text class="t-soft" x="506" y="72">real turn, then 120 s</text>
+  <line class="ln-no" x1="50" y1="88" x2="50" y2="146" marker-end="url(#sf-n)"/>
+  <text class="t-no" x="62" y="122">fails</text>
+  <text class="t-soft" x="0" y="172">nothing live changed</text>
+  <line class="ln-no" x1="556" y1="88" x2="556" y2="146" marker-end="url(#sf-n)"/>
+  <text class="t-no" x="568" y="122">fails</text>
+  <text class="t-soft" x="506" y="172">goes back</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Build and trial</strong><small>copy of your data</small><small>on failure, nothing live changed</small></li>
+  <li><strong>Switch</strong><small>run by the old version</small></li>
+  <li class="flow-end"><strong>Verify</strong><small>real turn, then 120 s</small><small>on failure, goes back</small></li>
+</ol>
+</figure>
+<p>This page covers an installation that runs from sealed versions, under <code translate="no">&lt;state&gt;/runtime</code>. For a source checkout see <a href="#developer-mode">Developer mode</a> and <a href="../install/upgrade.html">Upgrade</a>.</p>
+<p class="note">Windows is implemented but has not run on a Windows machine. A Windows trial has no OS sandbox: a temporary data directory, a separate port and a sanitized copy are its only isolation, and every Windows result says so.</p>
+<h2 id="actions">How the Agent changes itself</h2>
+<p>Ask for the change in a conversation. The Agent uses one tool, <code translate="no">self_update</code>, not available in plan mode.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">begin(task)</code></th><td>Opens a private copy of the code at <code translate="no">work/&lt;task&gt;</code> as the turn's working directory</td></tr>
+<tr><th scope="row"><code translate="no">prepare(task, goal, assertions)</code></th><td>Hands committed work over for building, checking and switching</td></tr>
+<tr><th scope="row"><code translate="no">status</code></th><td>Progress and the queue. Default.</td></tr>
+<tr><th scope="row"><code translate="no">retry(update_id)</code></th><td>Next attempt after a failure, at most three in one chain</td></tr>
+<tr><th scope="row"><code translate="no">cancel(update_id)</code></th><td>Stops an update before the switch, or removes a queued one</td></tr>
+<tr><th scope="row"><code translate="no">versions</code></th><td>Lists the versions kept</td></tr>
+<tr><th scope="row"><code translate="no">undo(target)</code></th><td><a href="#undo">Goes back</a></td></tr>
+</tbody>
+</table>
+<p><code translate="no">prepare</code> needs a clean tree with commits beyond the running code; otherwise it says what is missing. A change based on an older commit is rebased.</p>
+<h2 id="after-prepare">After <code translate="no">prepare</code></h2>
+<table class="stack">
+<thead><tr><th scope="col">Phase</th><th scope="col">What happens</th><th scope="col">On failure</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">building</code></th><td>Builds a sealed version from the commit</td><td>Stops; the worktree stays</td></tr>
+<tr><th scope="row"><code translate="no">trial</code></th><td>Runs on a copy of your data, on its own port, with no credentials and a fake model. An independent verifier checks the assertions.</td><td>Stops; nothing live touched</td></tr>
+<tr><th scope="row"><code translate="no">ready</code></th><td>If the running code moved, rebases and tries again, at most three times</td><td>Stops and names the conflicting files</td></tr>
+<tr><th scope="row"><code translate="no">quiescing</code></th><td>Waits up to 10 minutes for a quiet moment, then checkpoints what is running. Gives up at 30 minutes.</td><td>Stops; nothing closed</td></tr>
+<tr><th scope="row"><code translate="no">activating</code></th><td>Stops the worker, moves the <code translate="no">current</code> pointer, starts the new version</td><td>Goes back</td></tr>
+<tr><th scope="row"><code translate="no">verifying</code></th><td>Probes, runs one real Agent turn, watches for 120 seconds</td><td>Goes back</td></tr>
+</tbody>
+</table>
+<details><summary>During and after the switch</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Who switches</th><td>The old version, from outside the worker. A new updater takes effect from the next switch.</td></tr>
+<tr><th scope="row">Several requests</th><td>One update runs at a time; others queue.</td></tr>
+<tr><th scope="row">Messages during the switch</th><td>Messages, scheduled turns and always-on wakes are saved, shown as "Switching versions; this runs as soon as that finishes.", and run right after, on whichever version came up.</td></tr>
+<tr><th scope="row">New version fails</th><td>The conversation says why, and a read-only diagnosis starts.</td></tr>
+<tr><th scope="row">Old version does not return</th><td>Ends in <code translate="no">needs_manual_recovery</code>; the reason is in <code translate="no">&lt;state&gt;/runtime/recovery.log</code>.</td></tr>
+</tbody>
+</table>
+</details>
+<h2 id="undo">Undo</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Target</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">A version id still kept</th><td>Tries that version and switches to it. Later commits are saved.</td></tr>
+<tr><th scope="row">One commit</th><td>Reverted alone, through the normal path. A conflict stops the undo and names the files.</td></tr>
+<tr><th scope="row">Terminal</th><td>No trial; works even when the running version is broken:</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>openprogram versions list
+openprogram versions use &lt;id&gt;</code></pre>
+<h2 id="versions">Versions</h2>
+<p>Each version is a sealed directory under <code translate="no">versions/</code>, and the file <code translate="no">current</code> says which runs. OpenProgram keeps the current version, the last good one, the one before it and recent ones. A version that ends abnormally twice on probation, or three times in ten minutes later, is replaced by the last good one, and the next start says so.</p>
+<h2 id="data">Your data</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Change</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Going back</th><td>Code only; conversations, settings and files stay.</td></tr>
+<tr><th scope="row">Schema and config</th><td>Additive only, so older versions can read your data. The trial enforces this.</td></tr>
+<tr><th scope="row">Destructive migration</th><td>Declared in its commit. Databases, conversations, memory and <code translate="no">config.json</code> are backed up at the switch, and the result names the backup:</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>openprogram versions restore-data &lt;backup&gt;</code></pre>
+<details><summary>Editing a running version directly</summary>
+<p>Not refused. At the next start the launcher saves the changed files and a patch under <code translate="no">unapplied/</code>, restores the version, and says once how many files were set aside. The Agent can take that patch through the normal path.</p>
+</details>
+<details id="developer-mode"><summary>Developer mode</summary>
+<p><code translate="no">&lt;state&gt;/runtime/developer.json</code>, holding <code translate="no">{&quot;checkout&quot;, &quot;python&quot;}</code>, runs from a source checkout: no pointer, trial or automatic return, and <code translate="no">self_update</code> activates nothing. Commit in the checkout and restart the worker.</p>
+</details>
+<p class="next"><a href="../install/upgrade.html">Upgrade</a></p>

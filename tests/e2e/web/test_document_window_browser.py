@@ -1,6 +1,5 @@
 """Real components and IndexedDB on a private routed origin, without a worker."""
 import hashlib
-import json
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -39,12 +38,12 @@ def browser_page(bundles):
             state["requests"].append(path)
             if path in ("/", "/controller"):
                 script = "controller" if path == "/controller" else "window"
-                request.fulfill(content_type="text/html", body=f'<div id="root"></div><script src="/{script}.js"></script>')
+                request.fulfill(content_type="text/html; charset=utf-8", body=f'<meta charset="utf-8"><div id="root"></div><script src="/{script}.js"></script>')
             elif path in ("/window.js", "/controller.js"):
-                request.fulfill(content_type="text/javascript", body=bundles[path[1:-3]])
+                request.fulfill(content_type="text/javascript; charset=utf-8", body=bundles[path[1:-3]])
             elif path == "/api/documents/content":
                 if request.request.method == "GET":
-                    request.fulfill(body=state["body"], headers={"x-document-revision": state["revision"]})
+                    request.fulfill(body=state["body"], headers={"x-document-revision": state["revision"], "x-document-version": state["revision"]})
                 else:
                     if state.get("put_status"):
                         request.fulfill(status=state["put_status"], json={"error":"injected publication failure"})
@@ -58,6 +57,8 @@ def browser_page(bundles):
                     state["body"] = raw
                     state["revision"] = hashlib.sha256(raw).hexdigest()
                     request.fulfill(json={"ok": True, "status": "committed", "revision": state["revision"]})
+            elif path == "/api/documents/stat":
+                request.fulfill(json={"version": state["revision"]})
             elif path == "/api/documents/history":
                 request.fulfill(json={"entries": state.get("history_entries", [{"version_id": "version1", "actor": "user"}]), "next_cursor": None, "model_index": state.get("model_index", {"state":"complete"})})
             elif path == "/api/documents/history/content":
@@ -284,7 +285,7 @@ def test_raster_history_keeps_native_undo_after_autosave_and_visibility(browser_
     page.get_by_role("button", name="Edit", exact=True).click()
     host = page.locator('[data-raster-editor]')
     expect(host).to_be_visible(timeout=15000)
-    canvas = host.locator("canvas").first.element_handle()
+    base_canvas = host.locator('canvas[role="img"]').first.element_handle()
     with page.expect_response(lambda response: response.request.method == "PUT"):
         page.get_by_role("button", name="Rotate", exact=True).click()
     page.get_by_role("button", name="Other tab", exact=True).click()
@@ -293,11 +294,14 @@ def test_raster_history_keeps_native_undo_after_autosave_and_visibility(browser_
     page.get_by_role("button", name="Back to file route", exact=True).click()
     page.get_by_role("button", name="History", exact=True).click()
     page.get_by_role("button", name="After", exact=True).click()
-    expect(host.locator("canvas")).to_have_count(2)
+    expect(host.locator('canvas[role="img"]')).to_have_count(1)
+    expect(host.locator('[data-fabric="wrapper"]')).to_have_count(1)
+    expect(host.locator('canvas[data-fabric="main"]')).to_have_count(1)
+    expect(host.locator('canvas[data-fabric="top"]')).to_have_count(1)
     page.get_by_role("button", name="Back to current file", exact=True).click()
     page.get_by_role("button", name="Edit", exact=True).click()
     expect(host).to_be_visible()
-    assert host.locator("canvas").first.evaluate("(current,previous)=>current===previous",canvas)
+    assert host.locator('canvas[role="img"]').first.evaluate("(current,previous)=>current===previous",base_canvas)
     with page.expect_response(lambda response: response.request.method == "PUT"):
         page.get_by_role("button", name="Undo", exact=True).click()
     result = page.evaluate("""async bytes=>{const b=await createImageBitmap(new Blob([new Uint8Array(bytes)]));const c=document.createElement('canvas');c.width=b.width;c.height=b.height;const x=c.getContext('2d');x.drawImage(b,0,0);const p=Array.from(x.getImageData(0,0,1,1).data);b.close();return {w:c.width,h:c.height,p};}""",list(state["writes"][-1]))
@@ -386,6 +390,132 @@ def test_raster_crop_annotations_and_close_persist_real_pixels(browser_page):
     assert colors(state["writes"][-1])["magenta"] > before_draw
     page.get_by_role("button", name="Close file", exact=True).click()
     expect(page.get_by_text("File closed",exact=True)).to_be_visible()
+    assert errors == []
+
+
+def test_raster_cancelled_partial_draw_closes_without_pixels_or_undo(browser_page):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    original = (Path(__file__).parent / "fixtures/raster/quadrants.png").read_bytes()
+    state["body"] = original
+    page.goto("https://document.test/?file=quadrants.png")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    host = page.locator('[data-raster-editor]')
+    expect(host).to_be_visible(timeout=15000)
+    baseline = page.evaluate("""async bytes => {
+        const image = await createImageBitmap(new Blob([new Uint8Array(bytes)]));
+        const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+        const context = canvas.getContext('2d'); context.drawImage(image, 0, 0); image.close();
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let hash = 2166136261;
+        for (const value of pixels) { hash ^= value; hash = Math.imul(hash, 16777619); }
+        return { width: canvas.width, height: canvas.height, hash: hash >>> 0 };
+    }""", list(original))
+    page.get_by_role("button", name="Draw", exact=True).click()
+    overlay = host.locator('canvas[aria-hidden="true"]').last
+    box = overlay.bounding_box()
+    page.mouse.move(box["x"] + 10, box["y"] + 10)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 110, box["y"] + 10, steps=6)
+    overlay.dispatch_event("pointercancel", {"pointerId": 1, "bubbles": True})
+    page.get_by_role("button", name="Close file", exact=True).click()
+    expect(page.get_by_text("File closed", exact=True)).to_be_visible()
+    assert state["writes"]
+    assert page.evaluate("""async bytes => {
+        const image = await createImageBitmap(new Blob([new Uint8Array(bytes)]));
+        const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+        const context = canvas.getContext('2d'); context.drawImage(image, 0, 0); image.close();
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let hash = 2166136261;
+        for (const value of pixels) { hash ^= value; hash = Math.imul(hash, 16777619); }
+        return { width: canvas.width, height: canvas.height, hash: hash >>> 0 };
+    }""", list(state["writes"][-1])) == baseline
+    page.reload()
+    page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-raster-editor]')).to_be_visible(timeout=15000)
+    page.get_by_role("button", name="Undo", exact=True).click()
+    expect(page.get_by_role("alert")).to_contain_text("Nothing to undo")
+    assert errors == []
+
+
+def test_raster_cancelled_partial_crop_does_not_apply_selection(browser_page):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    original = (Path(__file__).parent / "fixtures/raster/quadrants.png").read_bytes()
+    state["body"] = original
+    page.goto("https://document.test/?file=quadrants.png")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    host = page.locator('[data-raster-editor]')
+    expect(host).to_be_visible(timeout=15000)
+    page.get_by_role("button", name="Crop", exact=True).click()
+    overlay = host.locator('canvas[aria-hidden="true"]').last
+    box = overlay.bounding_box()
+    page.mouse.move(box["x"] + 20, box["y"] + 20)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 140, box["y"] + 100, steps=5)
+    overlay.dispatch_event("pointercancel", {"pointerId": 1, "bubbles": True})
+    page.get_by_role("button", name="Apply crop", exact=True).click()
+    expect(page.get_by_role("alert")).to_contain_text("Select a crop area")
+    assert state["writes"] == [] and state["body"] == original
+    assert errors == []
+
+
+def test_raster_history_restore_serializes_input_during_delayed_decode(browser_page):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    state["body"] = (Path(__file__).parent / "fixtures/raster/quadrants.png").read_bytes()
+    page.goto("https://document.test/?file=quadrants.png")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    host = page.locator('[data-raster-editor]')
+    expect(host).to_be_visible(timeout=15000)
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Shape", exact=True).click()
+    page.evaluate("""() => {
+        const original = window.createImageBitmap.bind(window);
+        window.__rasterDelayNextDecode = true;
+        window.__rasterDecodeStarted = false;
+        window.__releaseRasterDecode = null;
+        window.createImageBitmap = async (...args) => {
+            if (!window.__rasterDelayNextDecode) return original(...args);
+            window.__rasterDelayNextDecode = false;
+            window.__rasterDecodeStarted = true;
+            await new Promise(resolve => { window.__releaseRasterDecode = resolve; });
+            return original(...args);
+        };
+    }""")
+    page.get_by_role("button", name="Undo", exact=True).click()
+    page.wait_for_function("() => window.__rasterDecodeStarted === true")
+    overlay = host.locator('canvas[aria-hidden="true"]').last
+    assert overlay.evaluate("element => getComputedStyle(element).pointerEvents") == "none"
+    page.get_by_role("button", name="Draw", exact=True).click()
+    # A pointer sequence delivered while restore is decoding must not be
+    # applied after the restored snapshot replaces the canvas.
+    overlay.dispatch_event("pointerdown", {"pointerId": 7, "clientX": 20, "clientY": 20, "bubbles": True})
+    overlay.dispatch_event("pointermove", {"pointerId": 7, "clientX": 120, "clientY": 20, "bubbles": True})
+    overlay.dispatch_event("pointerup", {"pointerId": 7, "clientX": 120, "clientY": 20, "bubbles": True})
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.evaluate("() => window.__releaseRasterDecode()")
+    page.wait_for_function("""() => {
+        const canvas = document.querySelector('[data-raster-editor] canvas[aria-hidden="true"]');
+        return canvas && getComputedStyle(canvas).pointerEvents === 'auto';
+    }""")
+    box = overlay.bounding_box()
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.mouse.move(box["x"] + 10, box["y"] + 10)
+        page.mouse.down()
+        page.mouse.move(box["x"] + 110, box["y"] + 10, steps=6)
+        page.mouse.up()
+    magenta = page.evaluate("""async bytes => {
+        const image = await createImageBitmap(new Blob([new Uint8Array(bytes)]));
+        const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+        const context = canvas.getContext('2d'); context.drawImage(image, 0, 0); image.close();
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let count = 0;
+        for (let index = 0; index < pixels.length; index += 4)
+            if (pixels[index] > 200 && pixels[index + 1] < 60 && pixels[index + 2] > 200) count++;
+        return count;
+    }""", list(state["writes"][-1]))
+    assert magenta > 0
     assert errors == []
 
 
@@ -481,3 +611,39 @@ def test_incomplete_model_history_cannot_restore_unconfirmed_after_version(brows
     expect(page.get_by_role("button",name="Restore",exact=True)).to_be_disabled()
     expect(page.get_by_role("button",name="Before",exact=True)).to_be_enabled()
     assert state["writes"]==[] and errors==[]
+
+
+def test_document_refresh_reads_current_disk_without_implicit_replacement(browser_page):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    page.goto("https://document.test/")
+    expect(page.get_by_text("old", exact=True)).to_be_visible()
+    state["body"] = b"changed on disk"
+    state["revision"] = "b" * 64
+    expect(page.get_by_role("button", name="Refresh", exact=True)).to_be_visible()
+    expect(page.get_by_text("old", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Refresh", exact=True).click()
+    expect(page.get_by_text("changed on disk", exact=True)).to_be_visible()
+    assert state["writes"] == []
+    assert errors == []
+
+
+def test_changed_file_banner_and_refresh_keep_unsaved_edits(browser_page):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    page.goto("https://document.test/")
+    expect(page.get_by_text("old", exact=True)).to_be_visible()
+    state["body"] = b"external"
+    state["revision"] = hashlib.sha256(state["body"]).hexdigest()
+    expect(page.get_by_text("File changed. Refresh to load the latest version.", exact=True)).to_be_visible(timeout=10000)
+    page.get_by_role("button", name="Refresh", exact=True).click()
+    expect(page.get_by_text("external", exact=True)).to_be_visible()
+    expect(page.get_by_text("File changed. Refresh to load the latest version.", exact=True)).to_have_count(0)
+    state["put_status"] = 503
+    page.get_by_role("button", name="Edit", exact=True).click()
+    editor = page.locator("textarea:visible")
+    editor.fill("unsaved")
+    page.get_by_role("button", name="Refresh", exact=True).click()
+    expect(editor).to_have_value("unsaved")
+    expect(page.get_by_text("Save or discard your local changes before refreshing. Your draft was retained.", exact=True)).to_be_visible()
+    assert errors == []

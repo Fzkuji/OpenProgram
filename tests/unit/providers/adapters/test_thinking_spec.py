@@ -10,9 +10,9 @@ import warnings
 
 import pytest
 
-from openprogram.providers import thinking_spec
-from openprogram.providers import cache_spec
-from openprogram.providers.thinking_spec import (
+from openprogram.models.providers.settings import thinking_spec
+from openprogram.models.providers.settings import cache_spec
+from openprogram.models.providers.settings.thinking_spec import (
     derive_thinking_levels,
     get_default_effort,
     get_model_variant,
@@ -96,13 +96,18 @@ def test_xai_subscription_uses_its_own_model_specific_efforts():
     assert translate_reasoning("xai-subscription", "grok-4.5", "xhigh") == "high"
 
 
-def test_saved_effort_is_normalized_to_model_default():
+def test_an_effort_the_model_lacks_becomes_the_nearest_it_has():
     model = type("M", (), {
         "thinking_levels": ["low", "medium", "high"],
-        "default_thinking_level": "high",
+        "default_thinking_level": "medium",
     })()
-    assert normalize_reasoning_level(model, "minimal") == "high"
+    assert normalize_reasoning_level(model, "minimal") == "low"
     assert normalize_reasoning_level(model, "low") == "low"
+    assert normalize_reasoning_level(model, "max") == "high"
+    gap = type("M", (), {"thinking_levels": ["low", "high"],
+                         "default_thinking_level": "low"})()
+    assert normalize_reasoning_level(gap, "medium") == "high"
+    assert normalize_reasoning_level(model, "turbo") == "medium"
 
 
 def test_translate_no_thinking_provider():

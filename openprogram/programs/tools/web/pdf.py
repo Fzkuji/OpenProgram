@@ -4,12 +4,6 @@ Text extraction wraps ``pypdf`` (previously ``PyPDF2``), imported
 lazily. Pagination via the same ``offset`` / ``limit`` convention as
 the read tool so agents can page through long documents.
 
-Figures and tables are NOT handled here. They need layout judgement
-that pure geometry gets wrong on the next template, so they live as
-LLM-driven agentic functions in
-``openprogram.programs.workflow.pdf`` — see
-``extract_pdf_figures`` and ``extract_pdf_tables`` there.
-
 Why pypdf over pdfplumber / pdfminer:
 * pure Python, no system deps (pdfminer pulls in a chunky native stack)
 * handles 95% of text-heavy PDFs; agents that need layout-preserving
@@ -21,8 +15,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from openprogram.programs._helpers import read_int_param, read_string_param
-from openprogram.programs._runtime import function
+from openprogram.programs._authoring.helpers import read_int_param, read_string_param
+from openprogram.programs._host.runtime import function
 
 
 NAME = "pdf"
@@ -90,10 +84,11 @@ def execute(
         return "Error: `file_path` is required."
     if not os.path.isabs(file_path):
         return f"Error: file_path must be absolute, got {file_path!r}"
-    from openprogram.sandbox import validate_read_path
+    from openprogram.host.sandbox import validate_read_path
     violation = validate_read_path(file_path)
     if violation:
-        return f"Error: sandbox policy: {violation}"
+        from openprogram.runtime.permissions import refusal
+        raise refusal.sandbox(NAME, violation)
     if not os.path.exists(file_path):
         return f"Error: file not found: {file_path}"
     if not file_path.lower().endswith(".pdf"):
@@ -152,8 +147,6 @@ function(
     description=DESCRIPTION,
     parameters=SPEC["parameters"],
     toolset=['research'],
-    max_result_chars=50_000,
-    persist_full=True,
     check_fn=_tool_check_fn,
     path_params={"file_path": "read"},
 )(execute)

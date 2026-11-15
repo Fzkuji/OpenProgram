@@ -1,0 +1,120 @@
+/* Neutral tokens matching the OpenProgram light and dark themes.
+   The host gives the frame its color-scheme, so prefers-color-scheme
+   follows the App's theme. */
+:root {
+  --bg: #ffffff;
+  --surface: #f5f5f7;
+  --surface-2: #ebebef;
+  --raised: #ffffff;
+  --hover: rgba(10, 10, 15, 0.05);
+  --selected: rgba(10, 10, 15, 0.08);
+  --border: rgba(10, 10, 15, 0.09);
+  --border-strong: #dcdce2;
+  --text: #3a3a40;
+  --text-2: #5c5c64;
+  --text-bright: #131317;
+  --muted: #8c8c94;
+  --accent: #2563eb;
+  --accent-fill: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --accent-fg: #ffffff;
+  --danger: #c24e42;
+  --success: #3f7a4e;
+  --warning: #96701f;
+  --mark: rgba(250, 204, 21, 0.45);
+  --mark-current: rgba(249, 115, 22, 0.55);
+  --shadow-sm: 0 1px 2px rgba(10, 10, 15, 0.05);
+  --shadow: 0 1px 3px rgba(10, 10, 15, 0.08), 0 1px 2px -1px rgba(10, 10, 15, 0.08);
+  --shadow-popover: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 16px rgba(0, 0, 0, 0.06), 0 20px 44px rgba(0, 0, 0, 0.1);
+  --focus-ring: color-mix(in srgb, var(--accent) 45%, transparent);
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, ui-monospace, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e20;
+    --surface: #171719;
+    --surface-2: #252529;
+    --raised: #2a2a2e;
+    --hover: rgba(255, 255, 255, 0.06);
+    --selected: rgba(255, 255, 255, 0.1);
+    --border: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.12);
+    --text: #b6b6bb;
+    --text-2: #92929a;
+    --text-bright: #ededf0;
+    --muted: #74747c;
+    --accent: #6ea8fe;
+    --accent-fill: #3b82f6;
+    --accent-hover: #2563eb;
+    --accent-soft: rgba(110, 168, 254, 0.14);
+    --danger: #d06a5f;
+    --success: #82a98a;
+    --warning: #d4a346;
+    --mark: rgba(250, 204, 21, 0.32);
+    --mark-current: rgba(249, 115, 22, 0.5);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-popover: 0 1px 2px rgba(0, 0, 0, 0.22), 0 6px 16px rgba(0, 0, 0, 0.26), 0 20px 44px rgba(0, 0, 0, 0.32);
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 28px; padding: 0 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong); background: var(--raised);
+  color: var(--text-bright); cursor: default; white-space: nowrap;
+  box-shadow: var(--shadow-sm); font-size: 12.5px; font-weight: 500;
+}
+.btn:hover:not(:disabled) { background: var(--hover); }
+.btn:disabled { opacity: 0.5; }
+.btn.primary { background: var(--accent-fill); border-color: transparent; color: var(--accent-fg); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn.ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--text-2); }
+.btn.ghost:hover:not(:disabled) { background: var(--hover); color: var(--text-bright); }
+.btn.icon { width: 28px; padding: 0; }
+.btn.danger { color: var(--danger); }
+.btn svg, .icon-svg { width: 15px; height: 15px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.field {
+  height: 28px; padding: 0 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong); background: var(--raised); color: var(--text-bright);
+  outline: none;
+}
+.field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.kbd {
+  display: inline-block; min-width: 18px; padding: 0 4px; height: 18px; line-height: 17px;
+  border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px;
+  font: 10.5px/17px var(--mono); color: var(--text-2); text-align: center; background: var(--raised);
+}
+
+.scroll { overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(8px);
+  background: var(--text-bright); color: var(--bg); padding: 7px 12px; border-radius: var(--radius);
+  font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 50;
+  box-shadow: var(--shadow-popover);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

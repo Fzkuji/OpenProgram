@@ -1,0 +1,127 @@
+<title>抽象记忆</title>
+<meta name="description" content="规划中的实体记忆索引，带出处：时间轴、知识图谱和最小注入快照。">
+<h1>抽象记忆</h1>
+
+<p>从实体层（会话 DAG 和项目 git）提炼出的紧凑索引，不替代实体层。每条记忆都指回出处，记录 <code translate="no">event_time</code> 和 <code translate="no">ingestion_time</code>，且从不删除：冲突时给旧记录标 <code translate="no">superseded_by</code>。已设计，未建成，见<a href="#implementation-status">实现状态</a>。</p>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">时间轴</th><th scope="col">知识图谱</th><th scope="col">Core.md</th></tr></thead>
+<tbody>
+<tr><th scope="row">回答</th><td>何时发生了什么</td><td>事物之间的关系</td><td>每次模型调用必读的最小内容（不超过 2 KB）</td></tr>
+<tr><th scope="row">存放在 <code translate="no">memory/</code></th><td><code translate="no">timeline/YYYY-MM.jsonl</code></td><td><code translate="no">graph/entities.jsonl</code>、<code translate="no">graph/edges.jsonl</code>、<code translate="no">graph/views/entity/&lt;slug&gt;.md</code></td><td><code translate="no">core.md</code></td></tr>
+<tr><th scope="row">创建</th><td>会话空闲 30 分钟以上由 watcher 触发，每天 03:00 批量整理；提取时挂 <code translate="no">Provenance</code> 指针，追加到当月文件</td><td>触发同左；提取实体和关系，消解别名，标记矛盾，追加</td><td>每天 03:00 重新生成，来源是前 N 条事件（新近度 × 重要度）和高频高置信的图谱事实；每行带 <code translate="no">↪ session:&lt;id&gt;</code></td></tr>
+<tr><th scope="row">读取</th><td><code translate="no">memory_timeline(since, until)</code>、<code translate="no">memory_timeline(entity=…)</code>；最近的高信号事件进入 Core.md</td><td><code translate="no">memory_graph_neighbors(entity, hops=2)</code>、<code translate="no">memory_search(query)</code>，过滤到 <code translate="no">global</code> 加 <code translate="no">project:&lt;current&gt;</code></td><td>注入每次系统提示</td></tr>
+<tr><th scope="row">更新</th><td>重新提炼的事实标记旧记录</td><td>别名合并为一个节点；冲突的边标记旧边；重新投影视图</td><td>整个文件替换</td></tr>
+<tr><th scope="row">删除</th><td>从不：事件是历史事实</td><td>从不：保留完整历史</td><td>覆盖</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>记录格式</summary>
+<p>时间轴事件。<code translate="no">kind</code>：<code translate="no">work</code>、<code translate="no">decision</code>、<code translate="no">learning</code>、<code translate="no">event</code>。</p>
+<pre translate="no" tabindex="0">{
+  "id": "ev_abc",
+  "summary": "在 OpenProgram 修了 Windows cp1252 编码 bug，涉及 38 个文件",
+  "kind": "work",
+  "provenance": {
+    "project_id": "proj_openprogram",
+    "session_id": "local_13d5",
+    "commit": "&lt;sha&gt;",
+    "event_time": 1779900000,
+    "ingestion_time": 1779986400
+  },
+  "entities": ["project.openprogram", "issue.cp1252"]
+}</pre>
+<p>实体。</p>
+<pre translate="no" tabindex="0">{
+  "id": "project.openprogram",
+  "type": "project",
+  "name": "OpenProgram",
+  "attrs": {"path": "~/OpenProgram", "lang": "python"},
+  "scope": "global"
+}</pre>
+<p>边。</p>
+<pre translate="no" tabindex="0">{
+  "from": "issue.cp1252",
+  "to": "commit.&lt;sha&gt;",
+  "relation": "fixed-by",
+  "event_time": 1779900000,
+  "ingestion_time": 1779986400,
+  "provenance": {"project_id": "proj_openprogram", "session_id": "local_13d5"},
+  "confidence": 0.95,
+  "superseded_by": null
+}</pre>
+<table class="stack fixed">
+<thead><tr><th scope="col">实体或边的 scope</th><th scope="col">可见范围</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">global</code></th><td>跨项目，例如语言偏好</td></tr>
+<tr><th scope="row"><code translate="no">project:openprogram</code></th><td>此项目</td></tr>
+<tr><th scope="row"><code translate="no">agent:research</code></th><td>此 Agent</td></tr>
+</tbody>
+</table>
+<p class="note">文件位于 <code translate="no">~/.openprogram/projects/default/memory/</code>。</p>
+</details>
+
+<h2 id="core">模型看到什么</h2>
+<pre translate="no" tabindex="0">OpenProgram 记忆 — 项目: OpenProgram, 最后整理 &lt;date&gt;
+[时间轴 · 最近]
+· &lt;date&gt; 重构 Programs 页面为三 tab 布局            ↪ session:local_fc03
+· &lt;date&gt; 修复 CLI attended mode 问题                ↪ session:local_d125
+
+[图谱 · 当前项目相关]
+· OpenProgram 在 ~/OpenProgram (python, next.js)
+· worker ──listens-on──► :18100
+
+需要细节: memory_open_session(&lt;id&gt;) / memory_git_log(&lt;project&gt;)</pre>
+<p class="note">Core.md；时间轴或图谱结果按查询可选。不注入任何原始聊天。</p>
+
+<h2 id="navigation">导航工具</h2>
+<table class="stack">
+<thead><tr><th scope="col">工具</th><th scope="col">返回</th><th scope="col">来自</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">memory_open_session(session_id, turn)</code></th><td>原始消息</td><td>会话 git 历史</td></tr>
+<tr><th scope="row"><code translate="no">memory_git_log(project_id, since)</code></th><td>提交历史</td><td>项目 git</td></tr>
+<tr><th scope="row"><code translate="no">memory_git_show(project_id, commit)</code></th><td>某次提交改了什么</td><td>项目 git</td></tr>
+<tr><th scope="row"><code translate="no">memory_timeline(entity|since|until)</code></th><td>时间轴切片</td><td>时间轴</td></tr>
+<tr><th scope="row"><code translate="no">memory_graph_neighbors(entity, hops)</code></th><td>邻居</td><td>图谱</td></tr>
+<tr><th scope="row"><code translate="no">memory_search(query)</code></th><td>混合搜索</td><td>全文和可选向量</td></tr>
+</tbody>
+</table>
+
+<h2 id="pipeline">提炼</h2>
+<table class="stack">
+<thead><tr><th scope="col">触发</th><th scope="col">时机</th><th scope="col">做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话结束</th><td>空闲 30 分钟以上</td><td>提炼新轮次</td></tr>
+<tr><th scope="row">每日</th><td>03:00</td><td>批量整理、消歧、矛盾检测、重建 Core.md</td></tr>
+<tr><th scope="row">压缩前</th><td>上下文接近上限</td><td>把关键信息写回实体层</td></tr>
+</tbody>
+</table>
+<ol>
+<li><strong>Collect</strong>：从会话 git 和项目 git 拉取上次之后的提交；读全部 DAG 节点（user、llm、code，以及 <code translate="no">reads</code> 边）。</li>
+<li><strong>Extract</strong>：模型一遍提取事件、实体和关系，每条带出处。最贵的阶段，可以先用规则版。</li>
+<li><strong>Link</strong>：与图谱做别名消解（worker、后端、daemon 合成一个节点）。</li>
+<li><strong>Reconcile</strong>：检测矛盾，标记旧边。</li>
+<li><strong>Project</strong>：<code translate="no">core.md</code>、实体视图、时间轴分片。</li>
+</ol>
+
+<h2 id="today">和现有记忆的对比</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">现已建成</th><th scope="col">本设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取</th><td>会话分支上的用户和助手文本</td><td><code translate="no">Call</code> DAG、<code translate="no">code</code> 节点和 <code translate="no">reads</code> 边、项目提交</td></tr>
+<tr><th scope="row">保存</th><td><code translate="no">topics/</code>，03:00 重写；派生的 <code translate="no">timeline/</code>、<code translate="no">recent_events.jsonl</code>、<code translate="no">relations.json</code></td><td>只追加、带两个时间戳的时间轴和图谱</td></tr>
+<tr><th scope="row">常驻内容</th><td><code translate="no">MEMORY.md</code> 的 core 段，来自 <code translate="no">topics/core.md</code></td><td>从时间轴和图谱投影的 <code translate="no">core.md</code></td></tr>
+<tr><th scope="row">工具调用、决策依据、项目历史</th><td>没有</td><td>都有</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>读取层 <code translate="no">openprogram/state/store/session/provenance.py</code>：<code translate="no">iter_nodes_since()</code>、<code translate="no">node_provenance()</code>、<code translate="no">project_commits()</code>、<code translate="no">session_project_id()</code>。工具 <code translate="no">memory_search</code>。</td></tr>
+<tr><th scope="row">尚未实现</th><td>时间轴和图谱存储、这里的 <code translate="no">core.md</code>、提炼各阶段、其余导航工具、按会话读取提交</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="overview.zh.html">记忆总览</a></p>

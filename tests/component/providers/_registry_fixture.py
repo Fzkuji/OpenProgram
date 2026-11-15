@@ -8,9 +8,9 @@ runtime construction all see the same dict.
 """
 from __future__ import annotations
 
-import openprogram.providers._config_read as cr
-import openprogram.providers.models as pm
-import openprogram.providers.enabled_models as mg
+import openprogram.models.providers.settings.config_read as cr
+import openprogram.models.providers.catalog.models as pm
+import openprogram.models.providers.catalog.enabled_models as mg
 
 
 def install_registry(monkeypatch, providers_cfg: dict) -> dict:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from openprogram.context.budget import (
+from openprogram.runtime.context.budget import (
     BudgetAllocator,
     estimate_tools_breakdown,
 )
-from openprogram.context.types import UsageState
+from openprogram.runtime.context.types import UsageState
 
 
 class _FakeTool:
@@ -48,24 +48,20 @@ def test_breakdown_empty():
 
 def test_default_engine_budgets_only_provider_resident_tools(monkeypatch):
     from types import SimpleNamespace
-    import openprogram.context.engine as engine_module
-    from openprogram.context.engine import DefaultContextEngine
+    import openprogram.runtime.context.engine as engine_module
+    from openprogram.runtime.context.engine import DefaultContextEngine
     from openprogram.programs import (
-        install_loaded_deferred, release_turn_tools, split_tools_for_dispatch,
+        note_request_loaded, split_tools_for_dispatch,
     )
 
     tools = [_tool("resident"), _tool("deferred", defer=True)]
-    release_turn_tools()
-    install_loaded_deferred()
+    note_request_loaded(())
     provider_tools, catalog = split_tools_for_dispatch(tools)
     assert [tool.name for tool in provider_tools] == ["resident"]
     assert [name for name, _description in catalog] == ["deferred"]
 
     context_engine = DefaultContextEngine(
         usage_tracker=SimpleNamespace(get=lambda _session_id: UsageState()),
-        references=SimpleNamespace(build=lambda _history: SimpleNamespace(
-            cited_tool_use_ids=set(),
-        )),
     )
     monkeypatch.setattr(context_engine, "_build_messages_from_dag", lambda **_kwargs: [])
     monkeypatch.setattr(engine_module, "real_context_window", lambda _model: 100_000)
@@ -131,8 +127,8 @@ _TOLERANCE = 0.15
 def _wire_resident_tokens(tools) -> int:
     """Exactly what the Anthropic provider puts on the wire per tool."""
     import json
-    from openprogram.context.tokens import _text_tokens
-    from openprogram.providers._schema import normalize_for
+    from openprogram.runtime.context.tokens import _text_tokens
+    from openprogram.models.providers.schema import normalize_for
 
     return sum(
         _text_tokens(json.dumps(
@@ -146,11 +142,9 @@ def _wire_resident_tokens(tools) -> int:
 
 def test_resident_estimate_tracks_the_real_tools_array():
     from openprogram.programs import (
-        agent_tools, install_loaded_deferred, release_turn_tools,
-        split_tools_for_dispatch,
+        agent_tools, note_request_loaded, split_tools_for_dispatch,
     )
-    release_turn_tools()
-    install_loaded_deferred()
+    note_request_loaded(())
     resident, _ = split_tools_for_dispatch(list(agent_tools(toolset="full")))
     assert resident, "expected a non-empty resident toolset"
 
@@ -164,14 +158,13 @@ def test_resident_estimate_tracks_the_real_tools_array():
 
 def test_deferred_catalog_estimate_tracks_the_rendered_block():
     """The catalog only sends bare names — price the block, not the docs."""
-    from openprogram.context.breakdown import _catalog_tokens
-    from openprogram.context.tokens import _text_tokens
+    from openprogram.runtime.context.breakdown import _catalog_tokens
+    from openprogram.runtime.context.tokens import _text_tokens
     from openprogram.programs import (
-        agent_tools, deferred_catalog_text, install_loaded_deferred,
-        release_turn_tools, split_tools_for_dispatch,
+        agent_tools, deferred_catalog_text, note_request_loaded,
+        split_tools_for_dispatch,
     )
-    release_turn_tools()
-    install_loaded_deferred()
+    note_request_loaded(())
     _, catalog = split_tools_for_dispatch(list(agent_tools(toolset="full")))
     assert catalog, "expected deferred tools"
 
@@ -226,3 +219,9 @@ def test_deferred_tool_price_ignores_its_description():
             == estimate_tools_breakdown([_Thin()])[0]["tokens"]), (
         "the catalog sends names only — description must not be priced"
     )
+
+
+def test_usage_hit_rate_counts_what_was_written_to_the_cache():
+    """The prompt is input + cache_read + cache_write: input leaves out both."""
+    state = UsageState(last_prompt_tokens=200, last_cache_read_tokens=800, last_cache_write_tokens=1000)
+    assert state.cache_hit_rate() == 800 / 2000

@@ -1,0 +1,34 @@
+<title>Built-in browser Home button</title>
+<meta name="description" content="What the Home button in the built-in browser toolbar does.">
+<h1>Built-in browser Home button</h1>
+
+<p>A House button in both toolbars (desktop native <code translate="no">WebContentsView</code> and browser iframe) replaces the current <code translate="no">web</code> tab in place with the existing <code translate="no">ntp</code> page. There is no configurable home URL.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Label</th><td>Title and accessible name follow the interface language</td></tr>
+<tr><th scope="row">Tabs</th><td>No tab added, no external navigation. Order, active state and compound-tab position are kept.</td></tr>
+<tr><th scope="row">Cleanup</th><td>The old web tab id goes, with any legacy split state that references it</td></tr>
+<tr><th scope="row">Unchanged</th><td>Back, forward, address input, reload, bookmarks, split view, external opening</td></tr>
+<tr><th scope="row">Not added</th><td>Custom home or search-engine settings, dependencies, background processes, a new page</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Code and verification</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Button</th><td><code translate="no">apps/web/components/center-tabs/browser/pane/pane-controls.tsx</code>, <code translate="no">desktop-web-tab-pane.tsx</code>, <code translate="no">iframe-web-tab-pane.tsx</code></td></tr>
+<tr><th scope="row">Action</th><td><code translate="no">replaceWebTabWithNewTabPage</code> in <code translate="no">apps/web/lib/tabs/store/browser.ts</code></td></tr>
+<tr><th scope="row">Tests</th><td><code translate="no">apps/web/tests/tabs/web-split/</code>: in-place replacement, group updates, native web-view id cleanup, a button in both toolbars</td></tr>
+<tr><th scope="row">Installed App</th><td>One Home button with correct title and accessible name. Clicking it shows the new-tab page, keeps the tab count and removes the old tab's CDP target.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented.</p>
+
+<p class="next"><a href="built-in-browser.html">Built-in browser</a></p>

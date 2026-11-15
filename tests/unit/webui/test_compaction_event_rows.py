@@ -1,5 +1,5 @@
 """UI-only compaction card + event rows spliced into session_loaded.shown."""
-from openprogram.webui.ws_actions.session import splice_compaction_event_rows
+from openprogram.interfaces.server.ws_actions.session import splice_compaction_event_rows
 
 
 def test_active_summary_emits_card_at_boundary_and_event_at_exec():
@@ -103,3 +103,33 @@ def test_old_node_without_compacted_at_uses_append_order():
     out = splice_compaction_event_rows(shown, graph, all_msgs)
     ids = [m["id"] for m in out]
     assert ids == ["u0", "a0", "sum1_card", "u1", "a1", "sum1_ui"]
+
+
+def test_a_branch_the_summary_does_not_cover_gets_no_rows():
+    """A branch forked inside the covered range was never compacted: neither
+    the card nor the "Context compacted here" row of that summary is shown
+    on it, while the compacted branch keeps both."""
+    rows = [
+        {"id": "u0", "predecessor": None},
+        {"id": "a0", "predecessor": "u0"},
+        {"id": "u1", "predecessor": "a0"},
+        {"id": "a1", "predecessor": "u1"},
+        {"id": "u2", "predecessor": "a1"},
+        {"id": "a1b", "predecessor": "u1"},
+        {"id": "sum1", "predecessor": "ROOT", "covers_ids": ["u0", "a0", "u1", "a1"],
+         "content": "recap", "compacted_at": 9, "summarised_count": 4},
+        {"id": "sum0", "predecessor": "ROOT", "covers_ids": ["u0", "a0", "u1", "a1"],
+         "compacted_at": 8, "summarised_count": 4},
+    ]
+    graph = [
+        {"id": "sum1", "covers_ids": ["u0", "a0", "u1", "a1"], "compacted_at": 9},
+        {"id": "sum0", "superseded_summary": True, "compacted_at": 8},
+    ]
+    by = {r["id"]: r for r in rows}
+    fork = [dict(by[i], timestamp=t) for t, i in enumerate(["u0", "a0", "u1", "a1b"], 1)]
+    main = [dict(by[i], timestamp=t) for t, i in enumerate(["u0", "a0", "u1", "a1", "u2"], 1)]
+
+    assert [m["id"] for m in splice_compaction_event_rows(fork, graph, rows)] == [
+        "u0", "a0", "u1", "a1b"]
+    assert {m["id"] for m in splice_compaction_event_rows(main, graph, rows)} >= {
+        "sum1_card", "sum1_ui", "sum0_ui"}

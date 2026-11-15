@@ -14,15 +14,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
-from openprogram.auth.sources import (
+from openprogram.models.auth.sources import (
     CodexCliSource,
     EnvApiKeySource,
     GhCliSource,
     QwenCliSource,
 )
-from openprogram.auth.sources.gh_cli import _parse_hosts_yml
+from openprogram.models.auth.sources.gh_cli import _parse_hosts_yml
 
 
 # ---- EnvApiKeySource ------------------------------------------------------
@@ -83,7 +82,7 @@ def test_codex_source_imports_from_file(tmp_path: Path, monkeypatch):
     # Without this the CI box hits the fallback adoption path that
     # tags the credential as ``oauth`` instead.
     monkeypatch.setattr(
-        "openprogram.auth.sources.codex_cli._codex_binary_present",
+        "openprogram.models.auth.sources.codex_cli._codex_binary_present",
         lambda: True,
     )
     path = tmp_path / "codex" / "auth.json"
@@ -213,6 +212,22 @@ def test_gh_source_removal_has_both_instructional_and_executable(tmp_path: Path)
     assert kinds == {"external_cli", "file"}
     assert any(s.executable for s in steps)
     assert any(not s.executable for s in steps)
+
+
+def test_gh_source_removal_names_the_file_the_token_came_from(tmp_path: Path, monkeypatch):
+    # gh keeps hosts.yml under %AppData%\GitHub CLI on Windows, so the step
+    # cannot say ~/.config/gh there.
+    monkeypatch.delenv("GH_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("AppData", str(tmp_path / "Roaming"))
+    monkeypatch.setattr("openprogram.models.auth.sources.gh_cli.sys.platform", "win32")
+    path = tmp_path / "Roaming" / "GitHub CLI" / "hosts.yml"
+    path.parent.mkdir(parents=True)
+    path.write_text(GH_HOSTS_YML, encoding="utf-8")
+    src = GhCliSource()
+    cred = src.try_import(tmp_path)[0]
+    text = src.removal_steps(cred)[0].description
+    assert str(path) in text and ".config" not in text
 
 
 def test_parse_hosts_yml_quoted_value():

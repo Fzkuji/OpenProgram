@@ -1,0 +1,54 @@
+<svg viewBox="0 0 920 660" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+<style>
+.mono{font-family:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace}
+.box{fill:#101d31;stroke:rgba(154,178,204,.45);stroke-width:1.2}
+.bt{fill:#d9e5f1;font-size:15px;font-weight:600}
+.bs{fill:#8aa0b8;font-size:12.5px}
+.faint{fill:#5f7a90}
+.cy{fill:#56d9e9}.am{fill:#f2b544}
+.no{fill:#0d1828;font-size:14px;font-weight:700}
+.ncirc{fill:#56d9e9}
+.rail{stroke:rgba(86,217,233,.4);stroke-width:1.6;stroke-dasharray:5 7;animation:f 1.4s linear infinite}
+@keyframes f{to{stroke-dashoffset:-12}}
+</style>
+<rect x="0" y="0" width="920" height="660" rx="16" fill="#0d1828"/>
+<g stroke="rgba(154,178,204,.05)"><path d="M0 66H920M0 132H920M0 198H920M0 264H920M0 330H920M0 396H920M0 462H920M0 528H920M0 594H920"/><path d="M66 0V660M132 0V660M198 0V660M264 0V660M330 0V660M396 0V660M462 0V660M528 0V660M594 0V660M660 0V660M726 0V660M792 0V660M858 0V660"/></g>
+
+<text class="bs mono" x="48" y="44" style="letter-spacing:.18em; fill:#5f7a90">场景 · 拦下 rm -rf build</text>
+
+<!-- 时间轴 -->
+<line class="rail" x1="76" y1="96" x2="76" y2="588"/>
+
+<!-- ① -->
+<circle class="ncirc" cx="76" cy="96" r="15"/><text class="no" x="76" y="101" text-anchor="middle">1</text>
+<rect class="box" x="118" y="68" width="700" height="56" rx="9"/>
+<text class="bt" x="140" y="92">模型说：「我要调 bash 工具，命令是 rm -rf build」</text>
+<text class="bs faint" x="140" y="112">agent 正常干活，决定执行一条 shell 命令</text>
+
+<!-- ② -->
+<circle class="ncirc" cx="76" cy="208" r="15"/><text class="no" x="76" y="213" text-anchor="middle">2</text>
+<rect class="box" x="118" y="156" width="700" height="104" rx="9" stroke="rgba(86,217,233,.55)"/>
+<text class="bt" x="140" y="182">框架在工具真正执行<tspan class="cy">之前</tspan>，发出一条「事件」</text>
+<rect x="140" y="196" width="380" height="48" rx="6" fill="rgba(86,217,233,.06)" stroke="rgba(86,217,233,.35)"/>
+<text class="bs mono cy" x="156" y="216">type: tool.before</text>
+<text class="bs mono" x="156" y="234">payload: { 工具: bash, 命令: "rm -rf build" }</text>
+
+<!-- ③ -->
+<circle class="ncirc" cx="76" cy="320" r="15"/><text class="no" x="76" y="325" text-anchor="middle">3</text>
+<rect class="box" x="118" y="292" width="700" height="56" rx="9"/>
+<text class="bt" x="140" y="316">事件被送到所有「订阅了它」的规则面前</text>
+<text class="bs faint" x="140" y="336">框架查订阅索引，只叫醒关心 tool.before 的规则</text>
+
+<!-- ④ -->
+<circle class="ncirc" cx="76" cy="432" r="15"/><text class="no" x="76" y="437" text-anchor="middle">4</text>
+<rect class="box" x="118" y="396" width="700" height="72" rx="9"/>
+<text class="bt" x="140" y="422">规则 <tspan class="mono cy">DangerousCommandGuard</tspan> 醒来，看了一眼命令</text>
+<text class="bs" x="140" y="446">「rm -rf … 这是危险删除」 → 决定：<tspan class="am">拦下来，问用户</tspan></text>
+
+<!-- ⑤ -->
+<circle cx="76" cy="560" r="15" fill="#f2b544"/><text class="no" x="76" y="565" text-anchor="middle">5</text>
+<rect class="box" x="118" y="516" width="700" height="88" rx="9" stroke="rgba(242,181,68,.6)"/>
+<text class="bt" x="140" y="544">框架照做：命令<tspan class="am">不执行</tspan></text>
+<rect x="140" y="558" width="300" height="32" rx="16" fill="rgba(242,181,68,.08)" stroke="rgba(242,181,68,.45)"/>
+<text class="bs am" x="290" y="579" text-anchor="middle">「确认要删 build 吗？」 [确认] [取消]</text>
+</svg>

@@ -9,7 +9,7 @@ import type { ProjectSort } from "../projects/project-groups";
  * archived / group — are server data in meta.json.)
  *
  * Same localStorage + ``useSyncExternalStore`` shape as
- * ``lib/agent-style.ts``: a cached snapshot (stable object identity so
+ * ``lib/prefs/user-profile.ts``: a cached snapshot (stable object identity so
  * React doesn't loop), a change event, and a hook.
  */
 

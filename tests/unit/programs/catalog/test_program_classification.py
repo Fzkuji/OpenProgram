@@ -5,36 +5,30 @@ from __future__ import annotations
 from pathlib import Path
 
 import openprogram
-from openprogram.programs._registry import AGENTIC_MODULES, BUILTIN_WORKFLOW_MODULES
-from openprogram.webui.routes.catalog.programs import _called_agentic_primitives
+from openprogram.programs._host.registry import TOOL_PROGRAMS, builtin_program_modules
+from openprogram.interfaces.server.routes.catalog.programs import _called_agentic_primitives
 
 
 PROGRAMS = Path(openprogram.__file__).resolve().parent / "programs"
-WORKFLOW = PROGRAMS / "workflow"
+APPLICATIONS = PROGRAMS / "applications"
 TOOLS = PROGRAMS / "tools"
 
-WORKFLOW_PLACEMENTS = {
-    "browser": WORKFLOW / "browser",
-    "docs_question": WORKFLOW / "docs_question",
-    "security_review": WORKFLOW / "security_review",
-    "goal": WORKFLOW / "goal",
-    "research": WORKFLOW / "research",
+PROGRAM_PLACEMENTS = {
+    "browser": APPLICATIONS / "browser",
+    "workflow_recording": APPLICATIONS / "workflow_recording",
+    "goal": TOOLS / "planning" / "goal",
 }
 
-WORKFLOW_ENTRY_FILES = {
-    "search_workflows": WORKFLOW / "search_workflows.py",
-    "create_workflow": WORKFLOW / "create_workflow.py",
-    "revise_workflow": WORKFLOW / "revise_workflow.py",
-    "resume_workflow": WORKFLOW / "resume_workflow.py",
-}
+# The former authoring tools are gone: workflows are written as files and
+# checked with `openprogram programs check`.
+REMOVED_WORKFLOW_ENTRIES = (
+    "search_workflows", "create_workflow", "revise_workflow",
+    "resume_workflow", "auto_workflow",
+)
 
 FORBIDDEN_PRODUCT_DIRS = (
     "browser_agent",
-    "docs_question",
-    "security_review",
-    "goal",
     "deep_work",
-    "research",
     "interaction_demo",
     "llm_call_example",
     "word_count",
@@ -43,42 +37,33 @@ FORBIDDEN_PRODUCT_DIRS = (
     "agentic_workflow",
 )
 
-INFRASTRUCTURE = {"ask_user", "json_parsing"}
 
-
-def _module_path(mod_name: str) -> Path:
-    parts = mod_name.split(".")
-    pkg = WORKFLOW.joinpath(*parts, "__init__.py")
-    simple = WORKFLOW.joinpath(*parts[:-1], f"{parts[-1]}.py") if len(parts) > 1 else WORKFLOW / f"{mod_name}.py"
-    if pkg.is_file():
-        return pkg
-    return simple
-
-
-def test_complex_capabilities_live_under_workflow_not_agentic_root():
-    for name, path in WORKFLOW_PLACEMENTS.items():
-        assert path.is_dir(), f"{name} must live under workflow/"
-    for name, path in WORKFLOW_ENTRY_FILES.items():
-        assert path.is_file(), f"{name} must be a top-level workflow callable"
-    assert not (WORKFLOW / "authoring").exists()
+def test_programs_live_under_tools_and_applications():
+    assert not (PROGRAMS / "workflow").exists(), "the workflow layer is gone"
+    for name, path in PROGRAM_PLACEMENTS.items():
+        assert path.is_dir(), f"{name} must live at {path.relative_to(PROGRAMS)}"
+    assert (TOOLS / "interaction" / "ask_user.py").is_file()
+    modules = builtin_program_modules()
+    for name in REMOVED_WORKFLOW_ENTRIES:
+        assert name not in modules, name
     for name in FORBIDDEN_PRODUCT_DIRS:
-        leftover = WORKFLOW / name
-        if name not in WORKFLOW_PLACEMENTS:
-            assert not leftover.exists(), f"{name} must not remain as a duplicate"
+        assert not (APPLICATIONS / name).exists(), name
+        assert name not in modules, name
 
 
-def test_auto_workflow_is_a_builtin_workflow_not_an_agentic_helper():
-    assert (PROGRAMS / "workflow" / "auto_workflow.py").is_file()
-    assert "auto_workflow" in AGENTIC_MODULES
-    assert BUILTIN_WORKFLOW_MODULES == []
+def test_builtin_programs_declare_program_entries_or_a_setup():
+    """A tool package registers entries; an application's entries are optional
+    when its ``setup`` provides what it offers (``workflow_recording``)."""
+    import importlib
 
-
-def test_agentic_modules_do_not_register_demos():
-    assert "interaction_demo" not in AGENTIC_MODULES
-    assert "llm_call_example" not in AGENTIC_MODULES
-    assert "word_count" not in AGENTIC_MODULES
-    assert "test_framework" not in AGENTIC_MODULES
-    assert "test_resume" not in AGENTIC_MODULES
+    # A tool always has an entry; an application may have none (it then
+    # registers what it offers in ``setup``, like ``office_editor``'s service).
+    for name, module_path in builtin_program_modules().items():
+        module = importlib.import_module(module_path)
+        if name in TOOL_PROGRAMS:
+            assert getattr(module, "PROGRAM_ENTRIES", None), name
+        else:
+            assert getattr(module, "PROGRAM_ENTRIES", None) or callable(getattr(module, "setup", None)), name
 
 
 def test_vanilla_callables_do_not_reach_model_primitives():
@@ -89,10 +74,13 @@ def test_vanilla_callables_do_not_reach_model_primitives():
         assert not called, f"{source.relative_to(TOOLS)} reached {sorted(called)}"
 
 
-def test_registered_workflow_modules_have_source_files():
-    for name in AGENTIC_MODULES:
-        source = _module_path(name)
-        assert source.is_file(), name
+def test_tool_programs_are_tool_packages():
+    import importlib
+
+    for name, module_path in TOOL_PROGRAMS.items():
+        assert module_path.startswith("openprogram.programs.tools."), name
+        source = Path(importlib.import_module(module_path).__file__)
+        assert TOOLS in source.parents, name
 
 
 def test_first_party_shipped_skills_inventory_is_empty():
@@ -114,5 +102,4 @@ def test_no_workflow_decorator_or_second_runtime():
         if "@workflow" in text or "def call_workflow(" in text:
             hits.append(str(path.relative_to(root)))
     assert hits == []
-    assert not (WORKFLOW / "runtime.py").exists()
-    assert not (WORKFLOW / "legacy.py").exists()
+    assert not (PROGRAMS / "workflow").exists()

@@ -1,7 +1,7 @@
 """todo_list — show the session's planning board, grouped by status."""
 from __future__ import annotations
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from .. import shared
 
 _GROUP_ORDER = ("in_progress", "pending", "completed")

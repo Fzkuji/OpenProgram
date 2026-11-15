@@ -1,7 +1,7 @@
 """Acceptance tests for the bailian → alibaba-token-plan-cn provider rename.
 
 The provider directory moved from ``providers/bailian/`` into the existing
-``providers/alibaba_token_plan_cn/`` and its ``provider.json`` id became
+``providers/adapters/alibaba_token_plan_cn/`` and its ``provider.json`` id became
 ``alibaba-token-plan-cn`` (matching models.dev). An alias
 ``bailian → alibaba-token-plan-cn`` keeps old config key/enabled refs live.
 
@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.auth.account.aliases import resolve
-from openprogram.providers.models import get_model
+from openprogram.models.auth.account.aliases import resolve
+from openprogram.models.providers.catalog.models import get_model
 
 from .._registry_fixture import install_registry
 
@@ -61,9 +61,9 @@ def test_provider_json_uses_cn_beijing_base_url():
     import json
     from pathlib import Path
 
-    import openprogram.providers as _p
+    import openprogram.models.providers as _p
 
-    pj = Path(_p.__file__).parent / "alibaba_token_plan_cn" / "provider.json"
+    pj = Path(_p.__file__).parent / "adapters" / "alibaba_token_plan_cn" / "provider.json"
     ep = json.loads(pj.read_text(encoding="utf-8"))["endpoints"]["default"]
     assert ep["base_url"] == (
         "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
@@ -72,17 +72,21 @@ def test_provider_json_uses_cn_beijing_base_url():
     assert "coding" not in ep["base_url"]  # not the coding plan
 
 
-def test_lobe_icon_map_carries_token_plan_logo():
-    """The settings sidebar resolves logos by provider id via web/.../lobe-icons.ts.
-    Both Alibaba token-plan ids must map to the alibaba slug, else the row
-    renders logo-less (the 'china' entry the user reported)."""
+def test_provider_icon_map_carries_token_plan_logo():
+    """The settings sidebar resolves logos by provider id via
+    web/.../provider-icons.json. Both Alibaba token-plan ids must use the
+    Alibaba logo, else the row renders logo-less (the 'china' entry the user
+    reported)."""
+    import json
     from pathlib import Path
 
     import openprogram
 
     root = Path(openprogram.__file__).parent.parent
-    icons = (root / "apps/web/components/settings/lobe-icons.ts").read_text(
-        encoding="utf-8"
+    icons = json.loads(
+        (root / "apps/web/components/settings/providers/icons/provider-icons.json").read_text(
+            encoding="utf-8"
+        )
     )
-    assert '"alibaba-token-plan-cn": { slug: "alibaba"' in icons
-    assert '"alibaba-token-plan": { slug: "alibaba"' in icons
+    assert icons["alibaba-token-plan-cn"]["file"] == icons["alibaba"]["file"]
+    assert icons["alibaba-token-plan"]["file"] == icons["alibaba"]["file"]

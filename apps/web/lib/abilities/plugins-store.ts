@@ -16,6 +16,8 @@ export interface PluginRow {
   sidebar?: Array<Record<string, unknown>>;
   options_schema?: Record<string, unknown>;
   entrypoints?: Record<string, unknown>;
+  /** What the running plugin registered, by kind (tools, context, …). */
+  contributions?: Record<string, string[]>;
   manifest_form?: string;
   root?: string;
 }

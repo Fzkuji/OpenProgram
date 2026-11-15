@@ -8,7 +8,20 @@ const webRoot = fileURLToPath(new URL("../../", import.meta.url));
 const outRoot = join(webRoot, "out");
 const entry = join(outRoot, "chat.html");
 const TRANSFER_BUDGET = 2 * 1024 * 1024;
+const INITIAL_SCRIPT_BUDGET = 650 * 1024;
 const CHUNK_BUDGET = 350 * 1024;
+// Third-party libraries that load only on demand and cannot be split
+// further. Each gets its own cap, so it may not grow unnoticed either,
+// while every other chunk keeps CHUNK_BUDGET.
+const ON_DEMAND_CHUNKS = [
+  {
+    // elkjs, mermaid's ELK layout engine: one prebuilt GWT bundle,
+    // fetched only when a diagram asks for `layout: elk`.
+    name: "elkjs",
+    signature: /sporeCompaction/,
+    budget: 460 * 1024,
+  },
+];
 const GZIP_MINIMUM_SIZE = 500;
 
 assert.ok(existsSync(entry), "apps/web/out/chat.html is missing; run the production build first");
@@ -63,10 +76,18 @@ for (const path of [...initial]) {
 }
 
 const transferBytes = [...initial].reduce((total, path) => total + encodedBytes(path), 0);
+const scriptBytes = [...initial].filter(path => extname(path) === ".js").reduce((total, path) => total + encodedBytes(path), 0);
+assert.ok(scriptBytes <= INITIAL_SCRIPT_BUDGET, `initial JavaScript ${scriptBytes} exceeds ${INITIAL_SCRIPT_BUDGET}`);
 const chunks = [...files(join(outRoot, "_next", "static", "chunks"))]
   .filter((path) => path.endsWith(".js"));
-const largest = chunks
-  .map((path) => ({ path, bytes: encodedBytes(path) }))
+const sized = chunks.map((path) => ({ path, bytes: encodedBytes(path) }));
+const onDemand = (path) => ON_DEMAND_CHUNKS.find(({ signature }) => signature.test(readFileSync(path, "utf8")));
+for (const { path, bytes } of sized) {
+  const library = bytes > CHUNK_BUDGET ? onDemand(path) : undefined;
+  if (library) assert.ok(bytes <= library.budget, `${library.name} chunk ${bytes} exceeds ${library.budget}: ${path}`);
+}
+const largest = sized
+  .filter(({ path, bytes }) => bytes <= CHUNK_BUDGET || !onDemand(path))
   .sort((a, b) => b.bytes - a.bytes)[0];
 
 assert.ok(transferBytes <= TRANSFER_BUDGET, `initial encoded transfer ${transferBytes} exceeds ${TRANSFER_BUDGET}`);
@@ -77,6 +98,7 @@ console.log(JSON.stringify({
   entry: "chat.html",
   initial_resource_count: initial.size,
   initial_encoded_bytes: transferBytes,
+  initial_script_encoded_bytes: scriptBytes,
   largest_chunk: largest.path.slice(outRoot.length + 1),
   largest_chunk_encoded_bytes: largest.bytes,
 }));

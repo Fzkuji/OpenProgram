@@ -7,7 +7,8 @@ import sys
 
 import pytest
 
-from openprogram.backend import local
+from openprogram.host.backend import local
+from openprogram.host._platform import command_shell
 
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="native MSYS command-line parsing")
@@ -15,7 +16,7 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="native MSYS com
 
 @pytest.fixture
 def native_bash(monkeypatch):
-    if not local._windows_bash():
+    if command_shell.host_shell().kind != "git-bash":
         pytest.skip("Git Bash not installed")
     monkeypatch.setattr(local._sandbox, "resolve_policy", lambda **kw: None)
 
@@ -48,10 +49,34 @@ def test_multiline_shell_and_exit_status_are_preserved(native_bash):
 
 def test_native_powershell_fallback_preserves_unicode_and_paths(monkeypatch):
     monkeypatch.setattr(local._sandbox, "resolve_policy", lambda **kw: None)
-    monkeypatch.setattr(local, "_windows_bash", lambda: None)
     shell = shutil.which("powershell.exe")
     assert shell
-    monkeypatch.setattr(local, "_windows_powershell", lambda: shell)
+    monkeypatch.setattr(command_shell, "host_shell",
+                        lambda platform=None: command_shell.ShellProfile("powershell51", shell, "path"))
     result = local.LocalBackend().run("Write-Output '中文 C:\\Users\\project'; exit 7", timeout=10)
     assert result.exit_code == 7
     assert result.stdout.strip() == r"中文 C:\Users\project"
+
+
+@pytest.mark.parametrize("command", ["exit 3", "cmd /c exit 3"])
+def test_powershell_passes_the_exit_code_in_constrained_language_mode(command):
+    # Under AppLocker or WDAC, PowerShell runs a command in ConstrainedLanguage,
+    # where the UTF-8 setup before it cannot touch .NET types. That setup is
+    # contained, and `exit` (not $host.SetShouldExit) works in either mode.
+    import base64
+    import subprocess
+
+    from openprogram.host._platform import terminal
+
+    shell = shutil.which("powershell.exe")
+    assert shell
+    args, _env = terminal.powershell_invocation(shell, command, {})
+    source = base64.b64decode(args[-1]).decode("utf-16-le")
+    done = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-Command",
+         "$ExecutionContext.SessionState.LanguageMode = 'ConstrainedLanguage'; "
+         "Invoke-Expression $env:OPENPROGRAM_TEST_SOURCE"],
+        env={**os.environ, "OPENPROGRAM_TEST_SOURCE": source},
+        capture_output=True, text=True, timeout=60,
+    )
+    assert done.returncode == 3, (done.stdout, done.stderr)

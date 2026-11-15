@@ -1,0 +1,65 @@
+<title>Providers</title>
+<meta name="description" content="How OpenProgram talks to model vendors, and the design records for translation, credentials, reliability and the model catalog.">
+<h1>Providers</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Current design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Vendors</th><td>One adapter directory per vendor under <code translate="no">openprogram/models/providers/adapters/</code>, with a <code translate="no">provider.json</code> declaring models, wire API and login methods. Anthropic, OpenAI, Google Gemini, Amazon Bedrock, Azure OpenAI, xAI, DeepSeek, Mistral, Groq, OpenRouter, GitHub Copilot and others, plus local Ollama, LM Studio, vLLM and llama.cpp.</td></tr>
+<tr><th scope="row">Request</th><td>The runtime hands over a ready <code translate="no">Context</code> (system, messages, tools). The adapter translates it to the wire request and applies that vendor's prompt caching. Nothing above knows vendor formats.</td></tr>
+<tr><th scope="row">Accounts</th><td>Credentials per <code translate="no">(provider, account)</code> pool, from API keys or subscription OAuth. One account is active; rotation and failover can be switched on.</td></tr>
+<tr><th scope="row">Failures</th><td>Every error maps to one taxonomy, is retried or failed over by class, bounded by timeouts, and reaches the UI as a structured error.</td></tr>
+<tr><th scope="row">Catalog</th><td>From <code translate="no">provider.json</code>, subscription catalogs and models.dev. Thinking effort and the Fast tier are declared per provider.</td></tr>
+<tr><th scope="row">Manage</th><td><code translate="no">openprogram providers</code> (<code translate="no">login</code>, <code translate="no">list</code>, <code translate="no">use</code>, <code translate="no">status</code>, <code translate="no">doctor</code>, <code translate="no">accounts</code>), or Settings → Providers</td></tr>
+</tbody>
+</table>
+
+<h2 id="translation-and-caching">Translation and caching</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Record</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="request-build.html">Request build</a></th><td>Unified Context, per-provider translation, caching modes</td></tr>
+<tr><th scope="row"><a href="../plans/cache-control-passthrough.html">Cache control passthrough</a></th><td>Per-block Anthropic <code translate="no">cache_control</code></td></tr>
+<tr><th scope="row"><a href="routing-overview.html">Routing overview</a></th><td>Which session and branch uses which model; failover switches</td></tr>
+<tr><th scope="row"><a href="request-redaction.html">Request redaction</a></th><td>Placeholders for secrets and email before sending, restored in the reply</td></tr>
+<tr><th scope="row"><a href="web-search.html">Web search</a></th><td>Provider search or local <code translate="no">web_search</code>; citations in the transcript</td></tr>
+<tr><th scope="row"><a href="record-replay.html">Record and replay</a></th><td>Redacted JSONL recordings replayed offline for deterministic tests</td></tr>
+<tr><th scope="row"><a href="codex-transport.html">Codex transport</a></th><td>Kept WebSocket sending only new input; zstd-compressed HTTP otherwise</td></tr>
+<tr><th scope="row"><a href="provider-quota.html">Provider quota</a></th><td>Plan windows, balances and rate limits per provider; 30-day spend; failure causes</td></tr>
+<tr><th scope="row"><a href="../context/composition.html">Context composition</a></th><td>Upstream: how content is layered and assembled (L0, L1, L2)</td></tr>
+</tbody>
+</table>
+
+<h2 id="auth">Credentials and accounts</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Record</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="auth/credential-validation-unification.html">Credential validation</a></th><td>The validation entry point</td></tr>
+<tr><th scope="row"><a href="auth/credential-status-redesign.html">Credential status</a></th><td>Usable or stopped</td></tr>
+<tr><th scope="row"><a href="auth/api-key-resolution-unification.html">API key resolution</a></th><td>Where a key comes from</td></tr>
+<tr><th scope="row"><a href="auth/unified-auth-storage.html">Auth storage</a></th><td>Self-contained storage</td></tr>
+<tr><th scope="row"><a href="auth/unified-account-management.html">Account management</a></th><td>Accounts, pool rotation and fallback</td></tr>
+</tbody>
+</table>
+
+<h2 id="reliability">Reliability</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Record</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="reliability/llm-fault-tolerance.html">Fault tolerance</a></th><td>Overall design and timeouts</td></tr>
+<tr><th scope="row"><a href="reliability/request-repair.html">Request repair</a></th><td>Shape refusals (byte cap, refused prefill) mended and resent, the lesson kept</td></tr>
+<tr><th scope="row"><a href="reliability/error-retry.html">Error retry</a></th><td>Handling and retry decisions</td></tr>
+<tr><th scope="row"><a href="reliability/error-taxonomy-propagation.html">Error taxonomy</a></th><td>Structured errors all the way to the UI</td></tr>
+<tr><th scope="row"><a href="reliability/error-and-timeout-mechanism.html">Error and timeout mechanism</a></th><td>Visual walk-through</td></tr>
+</tbody>
+</table>
+
+<h2 id="models">Model catalog</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Record</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="models/overview.html">Models</a></th><td>Data layout, fetch, merge, provider configuration</td></tr>
+<tr><th scope="row"><a href="models/thinking-effort.html">Thinking effort</a></th><td>Declarative per-provider mapping</td></tr>
+<tr><th scope="row"><a href="models/fast-tier.html">Fast tier</a></th><td>Two-tier detection, storage, wires</td></tr>
+</tbody>
+</table>

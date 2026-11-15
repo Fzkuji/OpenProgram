@@ -20,18 +20,18 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.context.persistence import SUMMARY_NODE_NAME
-from openprogram.context.nodes import Call, ROLE_CODE
-from openprogram.store import SessionNodeWriter
-from openprogram.agentic_programming.function import create_pending_call_node
-from openprogram.store.session.session_store import SessionStore
-from openprogram.webui.graph_builder import build_session_graph
+from openprogram.runtime.context.persistence import SUMMARY_NODE_NAME
+from openprogram.state.store.session.nodes import Call, ROLE_CODE
+from openprogram.state.store import SessionNodeWriter
+from openprogram.runtime.agent.call_state import create_pending_call_node
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.state.store.session.graph.builder import build_session_graph
 
 
 @pytest.fixture
 def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
     st = SessionStore(tmp_path / "sessions")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: st)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: st)
     return st
 
 
@@ -267,16 +267,47 @@ def test_transcript_graph_preserves_semantics_without_computing_geometry(store, 
         'predecessor': ids[1], 'extra': {'attach': {'head_id': 'spawn-tail'}},
     })
     full = build_session_graph('s1', ids[-1])
-    from openprogram.webui import graph_layout
+    from openprogram.state.store.session.graph import layout as graph_layout
     def forbidden(*args, **kwargs):
         raise AssertionError('transcript-only graph must not compute drawing geometry')
     monkeypatch.setattr(graph_layout, 'compute_depth', forbidden)
     semantic = build_session_graph('s1', ids[-1], include_layout=False)
     assert semantic == [{k:v for k,v in row.items() if k not in ('_depth','_lane','_tier')} for row in full]
-    from openprogram.webui.ws_actions.session import _annotate_spawn_origin, splice_compaction_event_rows
+    from openprogram.interfaces.server.ws_actions.session import _annotate_spawn_origin, splice_compaction_event_rows
     _annotate_spawn_origin(full)
     _annotate_spawn_origin(semantic)
     assert _row(semantic, 'spawn-root')['spawned_from']['caller_id'] == ids[1]
     assert {m['id']:m.get('spawned_from') for m in semantic} == {m['id']:m.get('spawned_from') for m in full}
     messages=store.get_messages('s1')
     assert splice_compaction_event_rows(messages, semantic, messages) == splice_compaction_event_rows(messages, full, messages)
+
+
+def test_delivered_message_preview_drops_the_receipt_and_names_the_sender(store):
+    store.create_session("s1", "main", title="t")
+    store.append_message("s1", {
+        "id": "m1",
+        "role": "user",
+        "content": "[message from s1:a0 (PDF agent)] Your final reply in this "
+                   "turn is returned to the sender automatically.\n\nDone: 3 files.",
+    })
+
+    row = _row(build_session_graph("s1", "m1"), "m1")
+
+    assert row["preview"] == "Done: 3 files."
+    assert row["message_from"] == "PDF agent"
+
+
+
+def test_internal_check_in_branch_is_hidden_but_reports_and_user_words_remain(store):
+    _seed(store, "s1", 1)
+    store.append_message("s1", {"id":"check", "role":"user", "content":"Always-on check-in.",
+        "predecessor":"a0", "speaker_kind":"runtime", "speaker_id":"runtime/always_on"})
+    store.append_message("s1", {"id":"check_reply", "role":"assistant", "content":"nothing new", "predecessor":"check"})
+    store.append_message("s1", {"id":"check_tool", "role":"tool", "content":"internal", "caller":"check_reply"})
+    store.append_message("s1", {"id":"report", "role":"assistant", "content":"useful report", "predecessor":"a0",
+        "speaker_kind":"runtime", "speaker_id":"runtime/always_on", "always_on_report":True})
+    store.append_message("s1", {"id":"person", "role":"user", "content":"Always-on check-in.", "predecessor":"a0"})
+    ids = {row["id"] for row in build_session_graph("s1", "a0")}
+    assert not ids & {"check", "check_reply", "check_tool"}
+    assert {"u0", "a0", "report", "person"} <= ids
+    assert {"check", "check_reply", "check_tool"} <= {row["id"] for row in store.get_messages("s1")}

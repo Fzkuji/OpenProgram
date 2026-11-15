@@ -1,6 +1,6 @@
 """ws action ``set_working_dirs`` + ``session_loaded`` 回带。
 
-设计：docs/reference/design/runtime/additional-working-directories.md §3.2/§3.3。
+设计：docs/reference/design/runtime/session/additional-working-directories.html §3.2/§3.3。
 锁三件事：
   1. 合法目录列表 → expanduser 后落库（save_session_run_config）+ 广播
      ``working_dirs`` 帧；
@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.session_db import SessionDB
-from openprogram.webui.ws_actions import session as ws_session
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.interfaces.server.ws_actions import session as ws_session
 
 
 class FakeWS:
@@ -30,6 +30,16 @@ class FakeWS:
 
     async def send_text(self, text: str) -> None:
         self.sent.append(json.loads(text))
+
+
+class WebWS(FakeWS):
+    """A socket that reads turns, as the web client does."""
+
+    _history_protocol = 3
+
+
+def _rows(frame: dict) -> list[dict]:
+    return [row for turn in frame["data"]["turns"] for row in turn["rows"]]
 
 
 @pytest.fixture
@@ -46,13 +56,13 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
        ``broadcasts == []`` / ``== [...]`` 的断言打挂。
     """
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    monkeypatch.setattr("openprogram.webui.server._default_agent_id", lambda: "main")
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.interfaces.server.server._default_agent_id", lambda: "main")
 
-    async def _direct_to_thread(func, /, *args, **kwargs):
+    async def _direct_to_thread(_session_id, func, /, *args, **kwargs):
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(ws_session.asyncio, "to_thread", _direct_to_thread)
+    monkeypatch.setattr(ws_session.load, "run_for_conversation", _direct_to_thread)
     broadcasts: list[dict] = []
 
     def _collect(text: str) -> None:
@@ -60,7 +70,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         if frame.get("type") == "working_dirs":
             broadcasts.append(frame)
 
-    monkeypatch.setattr("openprogram.webui.server._broadcast", _collect)
+    monkeypatch.setattr("openprogram.interfaces.server.server._broadcast", _collect)
     return db, broadcasts, f"wd-{uuid.uuid4().hex[:12]}"
 
 
@@ -76,7 +86,7 @@ def test_set_working_dirs_saves_and_broadcasts(env, tmp_path: Path):
     }))
 
     # 落库：load 回读到 expanduser 后的绝对路径。
-    from openprogram.agent.session_config import load_session_run_config
+    from openprogram.runtime.conversation.session_config import load_session_run_config
     assert load_session_run_config(sid).additional_working_dirs == [str(extra)]
     # 无 error 帧 + 广播 working_dirs 帧内容正确。
     assert not any(f.get("type") == "error" for f in ws.sent)
@@ -102,7 +112,7 @@ def test_set_working_dirs_rejects_non_directory(env, tmp_path: Path):
     assert ws.sent and ws.sent[0]["type"] == "error"
     assert str(bad) in ws.sent[0]["data"]["message"]
     assert broadcasts == []
-    from openprogram.agent.session_config import load_session_run_config
+    from openprogram.runtime.conversation.session_config import load_session_run_config
     assert load_session_run_config(sid).additional_working_dirs == []
 
 
@@ -116,7 +126,7 @@ def test_session_loaded_returns_additional_working_dirs(
     db.update_session(sid, additional_working_dirs=[str(extra)])
 
     # handle_load_session 走 server 的会话缓存 + 运行态探针，最小化打桩。
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
     with _s._sessions_lock:
         _s._sessions[sid] = {"id": sid}
     monkeypatch.setattr(_s, "_get_provider_info", lambda sid=None: {})
@@ -141,7 +151,7 @@ def test_session_loaded_precedes_async_context_stats(
     db, _, sid = env
     db.create_session(sid, "main")
 
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
 
     with _s._sessions_lock:
         _s._sessions[sid] = {"id": sid}
@@ -156,14 +166,14 @@ def test_session_loaded_precedes_async_context_stats(
 
     ws = FakeWS()
 
-    async def _after_session_loaded(func, /, *args, **kwargs):
+    async def _after_session_loaded(_session_id, func, /, *args, **kwargs):
         # Graph construction also runs off the event loop before hydration.
         # Only the context-stat refresh must follow the session_loaded frame.
         if func is _s.refresh_context_stats:
             assert any(frame.get("type") == "session_loaded" for frame in ws.sent)
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(ws_session.asyncio, "to_thread", _after_session_loaded)
+    monkeypatch.setattr(ws_session.load, "run_for_conversation", _after_session_loaded)
     try:
         asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
     finally:
@@ -178,8 +188,8 @@ def test_session_loaded_precedes_async_context_stats(
 def test_session_loaded_replays_running_execution_id(env, monkeypatch):
     db, _, sid = env
     db.create_session(sid, "main")
-    from openprogram.context.nodes import Call, ROLE_CODE
-    from openprogram.store import SessionNodeWriter
+    from openprogram.state.store.session.nodes import Call, ROLE_CODE
+    from openprogram.state.store import SessionNodeWriter
     writer = SessionNodeWriter(db, sid)
     writer.append(Call(
         id="hidden-control",
@@ -199,7 +209,7 @@ def test_session_loaded_replays_running_execution_id(env, monkeypatch):
         caller="hidden-control",
         metadata={"status": "running"},
     ))
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
     execution_id = "exec-hidden-direct"
     with _s._sessions_lock:
         _s._sessions[sid] = {"id": sid}
@@ -214,6 +224,7 @@ def test_session_loaded_replays_running_execution_id(env, monkeypatch):
         }
     monkeypatch.setattr(_s, "_get_provider_info", lambda sid=None: {})
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: True)
+    monkeypatch.setattr(_s, "_is_selected_run_active", lambda sid: True)
 
     ws = FakeWS()
     try:
@@ -245,8 +256,8 @@ def test_session_loaded_keeps_workflow_llm_output_inside_runtime_card(
         "id": "a1", "role": "assistant", "content": "starting",
         "predecessor": "u1",
     })
-    from openprogram.context.nodes import Call, ROLE_CODE, ROLE_LLM
-    from openprogram.store import SessionNodeWriter
+    from openprogram.state.store.session.nodes import Call, ROLE_CODE, ROLE_LLM
+    from openprogram.state.store import SessionNodeWriter
     writer = SessionNodeWriter(db, sid)
     writer.append(Call(
         id="run1", role=ROLE_CODE, name="agentic_workflow",
@@ -259,13 +270,13 @@ def test_session_loaded_keeps_workflow_llm_output_inside_runtime_card(
         metadata={"status": "completed"},
     ))
 
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
     with _s._sessions_lock:
         _s._sessions[sid] = {"id": sid}
     monkeypatch.setattr(_s, "_get_provider_info", lambda sid=None: {})
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
 
-    ws = FakeWS()
+    ws = WebWS()
     try:
         asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
     finally:
@@ -273,12 +284,12 @@ def test_session_loaded_keeps_workflow_llm_output_inside_runtime_card(
             _s._sessions.pop(sid, None)
 
     loaded = next(f for f in ws.sent if f.get("type") == "session_loaded")
-    messages = loaded["data"]["messages"]
+    messages = _rows(loaded)
     assert [m["id"] for m in messages] == ["u1", "a1", "run1"]
     runtime = messages[-1]
-    assert runtime["display"] == "runtime"
+    assert runtime["rowKind"] == "function_run"
     assert runtime["function"] == "agentic_workflow"
-    assert runtime["context_tree"]
+    assert [child["path"] for child in runtime["contextTree"]["children"]] == ["inner-llm"]
     assert "inner-llm" not in {m["id"] for m in messages}
 
 
@@ -295,8 +306,8 @@ def test_session_loaded_emits_function_run_sibling_navigation(
         "id": "a1", "role": "assistant", "content": "starting",
         "predecessor": "u1", "timestamp": 2,
     })
-    from openprogram.context.nodes import Call, ROLE_CODE
-    from openprogram.store import SessionNodeWriter
+    from openprogram.state.store.session.nodes import Call, ROLE_CODE
+    from openprogram.state.store import SessionNodeWriter
     writer = SessionNodeWriter(db, sid)
     for node_id in ("run-early", "run-late"):
         writer.append(Call(
@@ -309,8 +320,8 @@ def test_session_loaded_emits_function_run_sibling_navigation(
         ))
     db.set_head(sid, "run-late")
 
-    from openprogram.webui import persistence
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import persistence
+    from openprogram.interfaces.server import server as _s
     original_aggregate = persistence.aggregate_tool_messages
 
     def aggregate_with_created_at(messages):
@@ -330,26 +341,24 @@ def test_session_loaded_emits_function_run_sibling_navigation(
     with _s._sessions_lock:
         _s._sessions[sid] = {"id": sid}
 
-    ws = FakeWS()
+    ws = WebWS()
     try:
         asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
         loaded = next(frame for frame in ws.sent if frame["type"] == "session_loaded")
-        late = next(message for message in loaded["data"]["messages"]
-                    if message.get("id") == "run-late")
-        assert late["sibling_index"] == 2
-        assert late["sibling_total"] == 2
-        assert late["prev_sibling_id"] == "run-early"
-        assert late["next_sibling_id"] is None
+        late = next(message for message in _rows(loaded) if message.get("id") == "run-late")
+        assert late["siblingIndex"] == 2
+        assert late["siblingTotal"] == 2
+        assert late["prevSiblingId"] == "run-early"
+        assert late.get("nextSiblingId") is None
 
         db.set_head(sid, "run-early")
         asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
         loaded = [frame for frame in ws.sent if frame["type"] == "session_loaded"][-1]
-        early = next(message for message in loaded["data"]["messages"]
-                     if message.get("id") == "run-early")
-        assert early["sibling_index"] == 1
-        assert early["sibling_total"] == 2
-        assert early["prev_sibling_id"] is None
-        assert early["next_sibling_id"] == "run-late"
+        early = next(message for message in _rows(loaded) if message.get("id") == "run-early")
+        assert early["siblingIndex"] == 1
+        assert early["siblingTotal"] == 2
+        assert early.get("prevSiblingId") is None
+        assert early["nextSiblingId"] == "run-late"
     finally:
         with _s._sessions_lock:
             _s._sessions.pop(sid, None)
@@ -386,9 +395,9 @@ def test_session_loaded_chat_navigation_is_request_indexed(
         })
     db.set_head(sid, "a-middle-leaf")
 
-    from openprogram.context.git import dag as dag_module
-    from openprogram.webui import persistence
-    from openprogram.webui import server as _s
+    from openprogram.runtime.context.git import dag as dag_module
+    from openprogram.interfaces.server import persistence
+    from openprogram.interfaces.server import server as _s
 
     original_aggregate = persistence.aggregate_tool_messages
 
@@ -425,7 +434,7 @@ def test_session_loaded_chat_navigation_is_request_indexed(
     with _s._sessions_lock:
         _s._sessions[sid] = {"id": sid}
 
-    ws = FakeWS()
+    ws = WebWS()
     try:
         asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
     finally:
@@ -433,21 +442,15 @@ def test_session_loaded_chat_navigation_is_request_indexed(
             _s._sessions.pop(sid, None)
 
     loaded = next(frame for frame in ws.sent if frame["type"] == "session_loaded")
-    middle = next(
-        message for message in loaded["data"]["messages"]
-        if message.get("id") == "a-middle"
-    )
+    middle = next(message for message in _rows(loaded) if message.get("id") == "a-middle")
     assert {
         key: middle[key]
-        for key in (
-            "sibling_index", "sibling_total",
-            "prev_sibling_id", "next_sibling_id",
-        )
+        for key in ("siblingIndex", "siblingTotal", "prevSiblingId", "nextSiblingId")
     } == {
-        "sibling_index": 2,
-        "sibling_total": 3,
-        "prev_sibling_id": "a-first-leaf",
-        "next_sibling_id": "a-last-leaf",
+        "siblingIndex": 2,
+        "siblingTotal": 3,
+        "prevSiblingId": "a-first-leaf",
+        "nextSiblingId": "a-last-leaf",
     }
     assert sibling_key_calls <= len(nodes) * 2, (
         "session load must group chat siblings once per request: "

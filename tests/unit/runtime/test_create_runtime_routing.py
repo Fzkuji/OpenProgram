@@ -1,9 +1,9 @@
-"""create_runtime() supports api-routed providers, not just the 6 named ones.
+"""create_runtime() supports api-routed providers, not just the named backends.
 
 The recurring agent confusion: someone greps for "where are providers
-registered", lands on registry.PROVIDERS (6 entries), sees no minimax /
+registered", lands on registry.PROVIDERS, sees no minimax /
 deepseek / etc., and concludes they're unsupported. PROVIDERS is only the
-six first-class backends (three subscription/CLI Runtime classes + three
+five first-class backends (two subscription/CLI Runtime classes + three
 API-key providers with table-level key resolution). Everything else is
 supported via its model's wire `api` + the api_registry — the same path
 chat uses. create_runtime falls through to that, so it matches chat
@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.providers.registry import PROVIDERS, create_runtime
+from openprogram.models.providers.catalog.registry import PROVIDERS
 
-import openprogram.providers._config_read as cr
-import openprogram.providers.models as pm
-import openprogram.providers.enabled_models as mg
+from openprogram.runtime.agent.runtime.factory import create_runtime
+
+import openprogram.models.providers.settings.config_read as cr
+import openprogram.models.providers.catalog.models as pm
+import openprogram.models.providers.catalog.enabled_models as mg
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +44,7 @@ def test_providers_table_is_only_the_first_class_backends():
     # If this set grows, that's fine — but it is NOT the list of supported
     # providers, which is enabled_models + the api_registry.
     assert set(PROVIDERS) == {
-        "claude-code", "openai-codex", "gemini-cli",
+        "openai-codex", "gemini-cli",
         "anthropic", "openai", "gemini",
     }
 
@@ -64,7 +66,7 @@ def test_api_routed_provider_defaults_to_a_known_model():
 
 
 def test_auto_detected_api_routed_provider_builds_runtime(monkeypatch):
-    import openprogram.providers.registry as registry
+    import openprogram.models.providers.catalog.registry as registry
 
     monkeypatch.setattr(
         registry,

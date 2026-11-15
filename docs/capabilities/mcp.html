@@ -1,0 +1,73 @@
+<title>MCP</title>
+<meta name="description" content="Connect MCP servers, where their configuration lives, transports, OAuth, and serving OpenProgram over MCP.">
+<h1>MCP</h1>
+<p>Each connected server's tools appear in chat as <code translate="no">&lt;name&gt;__&lt;tool&gt;</code>. Its resources and prompts reach the model through the <code translate="no">mcp_meta</code> tools in <a href="tools.html">Built-in tools</a>.</p>
+<pre translate="no" tabindex="0"><code>openprogram mcp add drawio -- npx -y @drawio/mcp
+openprogram mcp list
+openprogram mcp show drawio</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram mcp add NAME COMMAND…</code></th><td>Adds a stdio server, effective at once. <code translate="no">--env KEY=VALUE</code> (repeatable), <code translate="no">--timeout</code> (startup and per-call seconds), <code translate="no">--disabled</code> (write config, do not start).</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp list</code></th><td>Status of every server</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp show NAME</code></th><td>Its tools and full schemas</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp rm NAME</code></th><td>Stops it and deletes its config</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp restart NAME</code></th><td>Stops and starts it</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp enable</code>, <code translate="no">disable NAME</code></th><td>Toggles; disable keeps the config</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp test</code></th><td>Starts an ad-hoc server, confirms a tool list, writes nothing</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp edit</code></th><td>Compatibility only: reports that raw editing was removed because it exposed stored secrets. Use <code translate="no">add</code>, <code translate="no">rm</code> or the MCP settings page.</td></tr>
+</tbody>
+</table>
+<p class="note">Management commands talk to the background worker: <code translate="no">openprogram worker start</code>, <code translate="no">openprogram status</code>. Servers connect in the background when the worker starts; the App and core API stay available meanwhile. Until ready its tools are unavailable; <code translate="no">mcp list</code> and the settings page show the status.</p>
+<h2 id="where-the-config-lives">Configuration</h2>
+<p><code translate="no">~/.openprogram/mcp_servers.json</code> (with <code translate="no">--profile &lt;name&gt;</code>, <code translate="no">~/.openprogram-&lt;name&gt;/mcp_servers.json</code>):</p>
+<pre translate="no" tabindex="0"><code>{
+  "servers": {
+    "drawio": {
+      "type": "local",
+      "command": ["npx", "-y", "@drawio/mcp"],
+      "env": {},
+      "enabled": true,
+      "timeout_seconds": 30
+    },
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "auth": {"kind": "oauth", "client_name": "OpenProgram"},
+      "enabled": true
+    }
+  }
+}</code></pre>
+<h2 id="transports-and-auth">Transports and auth</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">type</code></th><th scope="col">Transport</th><th scope="col">Fields</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">local</code></th><td>stdio subprocess</td><td><code translate="no">command</code>, <code translate="no">env</code></td></tr>
+<tr><th scope="row"><code translate="no">http</code></th><td>Streamable HTTP</td><td><code translate="no">url</code>, <code translate="no">headers</code>, <code translate="no">auth</code></td></tr>
+<tr><th scope="row"><code translate="no">sse</code></th><td>Legacy SSE</td><td><code translate="no">url</code>, <code translate="no">headers</code>, <code translate="no">auth</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">auth.kind</code></th><th scope="col">Needs</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">none</code></th><td>Nothing</td></tr>
+<tr><th scope="row"><code translate="no">bearer</code></th><td><code translate="no">token</code></td></tr>
+<tr><th scope="row"><code translate="no">oauth</code></th><td>OAuth 2.1 PKCE. Servers with dynamic client registration need nothing; others need <code translate="no">client_id</code> and <code translate="no">client_secret</code>.</td></tr>
+</tbody>
+</table>
+<h3 id="oauth-sign-in-happens-once">OAuth sign-in happens once</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">When</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">First connection</th><td>Opens the consent page and captures the redirect on localhost</td></tr>
+<tr><th scope="row">Saved</th><td>Tokens, the client registration and discovered endpoints, in <code translate="no">~/.openprogram/mcp_tokens/&lt;server&gt;.json</code> (mode <code translate="no">0600</code>)</td></tr>
+<tr><th scope="row">Later connections</th><td>Reuse them; an expired token renews silently</td></tr>
+<tr><th scope="row">Refresh token rejected</th><td>The browser returns, and the management UI shows the server as needing re-authentication</td></tr>
+<tr><th scope="row">Switch accounts</th><td><code translate="no">POST /api/mcp/servers/{name}/auth/clear</code> wipes the state and restarts the server</td></tr>
+</tbody>
+</table>
+<h2 id="serve-openprogram-over-mcp">Serve OpenProgram over MCP</h2>
+<pre translate="no" tabindex="0"><code>openprogram mcp token create
+export OPENPROGRAM_MCP_TOKEN="&lt;paste the token printed above&gt;"
+openprogram mcp serve</code></pre>
+<p class="note"><code translate="no">token create</code> prints the token as one raw line and does not set the environment. If one exists, reuse it. <code translate="no">serve</code> rejects a missing or mismatched token.</p>

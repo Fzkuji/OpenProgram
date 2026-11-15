@@ -1,0 +1,50 @@
+<title>Rules and how they run</title>
+<meta name="description" content="What a proactive rule declares, how gate and observer lanes differ, and what the engine does with each action.">
+<h1>Rules and how they run</h1>
+
+<pre translate="no"><code>class Policy:
+    on: set[str]          # event types watched
+    lane: "gate" | "observer"
+    cooldown_s: float     # silence after acting
+    name: str             # defaults to the class name
+
+    def evaluate(self, event, state) -&gt; Action | None: ...
+    def dedup_key(self, event, state) -&gt; str: ...   # what counts as "the same situation"</code></pre>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">gate</th><th scope="col">observer</th></tr></thead>
+<tbody>
+<tr><th scope="row">Moment</th><td>Before: <code translate="no">tool.before</code> only</td><td>After: any event</td></tr>
+<tr><th scope="row">Path</th><td>Synchronous, through the <code translate="no">tool.before</code> gate</td><td>Bus subscriber; state is folded first, then rules in <code translate="no">on</code> wake</td></tr>
+<tr><th scope="row">Speed</th><td>Fast: no LLM, no network, no state needing inference</td><td>May be slow, must never slow the Agent</td></tr>
+<tr><th scope="row">Returns</th><td><code translate="no">Gate.allow()</code>, <code translate="no">Gate.deny(reason)</code>, <code translate="no">Gate.ask(reason)</code></td><td><code translate="no">Notify</code>, <code translate="no">Inject</code>, <code translate="no">Prepare</code></td></tr>
+<tr><th scope="row">Several rules hit</th><td>Strictest: deny, then ask, then allow</td><td>Each acts</td></tr>
+<tr><th scope="row">Subagents</th><td>Covered; the gate is outside the approval wrapper, so <code translate="no">bypass</code> cannot skip it</td><td>Covered by the same stream</td></tr>
+</tbody>
+</table>
+<p class="note">Both lanes: <code translate="no">cooldown_s</code> is checked against the event clock per <code translate="no">dedup_key</code>. A raising <code translate="no">evaluate</code> is logged and treated as no action.</p>
+
+<h2>Actions</h2>
+<table class="stack">
+<thead><tr><th scope="col">Action</th><th scope="col">Design</th><th scope="col">Today</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Gate.deny</code></th><td>Blocks; the reason goes to the model</td><td>As designed</td></tr>
+<tr><th scope="row"><code translate="no">Gate.ask</code></th><td>Asks the user through the approval flow</td><td>Blocked like deny, with wording asking to allow by hand and retry</td></tr>
+<tr><th scope="row"><code translate="no">Notify</code></th><td>Reminder that does not interrupt</td><td><code translate="no">proactive.notify</code> WebSocket frame</td></tr>
+<tr><th scope="row"><code translate="no">Inject</code></th><td>Hint before the model's next round; the user is not disturbed</td><td>Records a <code translate="no">proactive.inject</code> event only; steering is not connected</td></tr>
+<tr><th scope="row"><code translate="no">Prepare</code></th><td>Read-only background task checks first, then may Notify</td><td>Records <code translate="no">proactive.prepare_requested</code> only; nothing runs it</td></tr>
+</tbody>
+</table>
+
+<h2>Add a rule</h2>
+<ol>
+<li>Write a class in <code translate="no">openprogram/runtime/proactive/policies/</code> with <code translate="no">on</code>, <code translate="no">lane</code> and <code translate="no">cooldown_s</code>.</li>
+<li>Write <code translate="no">evaluate</code>.</li>
+<li><code translate="no">register_policy</code> it (same name twice is ignored).</li>
+</ol>
+<p class="note">The engine, event stream and fold stay untouched. Interruption budgets and automatic breakers are out of scope; <code translate="no">cooldown_s</code> is the one knob. Mechanics of the gate: <a href="event-layer.html">Event layer</a>.</p>
+
+<h2>Implementation status</h2>
+<p>The engine, registry and three rules exist and are tested. <code translate="no">install_proactive()</code> and <code translate="no">install_mvp_policies()</code> are not called at worker start, so no rule runs in production.</p>
+
+<p class="next"><a href="policies-mvp.html">Three template rules</a></p>

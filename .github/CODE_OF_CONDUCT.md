@@ -48,7 +48,7 @@ is officially representing the community in public spaces.
 ## Enforcement
 
 Report abusive, harassing, or otherwise unacceptable behavior privately to
-[zichuanfu2-c@my.cityu.edu.hk](mailto:zichuanfu2-c@my.cityu.edu.hk). Reports
+[the maintainers through GitHub](https://github.com/FuzzyKuji/OpenProgram/security/advisories/new). Reports
 will be reviewed promptly and fairly. Community leaders will respect the privacy
 and security of every reporter.
 

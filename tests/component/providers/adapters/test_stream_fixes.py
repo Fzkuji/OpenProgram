@@ -22,8 +22,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.providers._shared.openai_responses import process_responses_stream
-from openprogram.providers.types import (
+from openprogram.models.providers.shared.openai_responses import process_responses_stream
+from openprogram.models.providers.types import (
     AssistantMessage,
     Context,
     Model,
@@ -31,7 +31,7 @@ from openprogram.providers.types import (
     Usage,
     UserMessage,
 )
-from openprogram.providers.utils.errors import StreamAborted
+from openprogram.models.providers.utils.errors import StreamAborted
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +277,7 @@ def _codex_ctx():
 
 def test_codex_retry_does_not_duplicate_blocks(monkeypatch):
     mod = importlib.import_module(
-        "openprogram.providers.openai_codex.openai_codex")
+        "openprogram.models.providers.adapters.openai_codex.openai_codex")
 
     attempt1 = _FakeSSEResponse([
         _sse({"type": "response.output_item.added", "output_index": 0,
@@ -332,7 +332,7 @@ def test_codex_retry_does_not_duplicate_blocks(monkeypatch):
 
 def test_codex_retries_done_after_empty_reasoning_placeholder(monkeypatch):
     mod = importlib.import_module(
-        "openprogram.providers.openai_codex.openai_codex")
+        "openprogram.models.providers.adapters.openai_codex.openai_codex")
 
     premature = _FakeSSEResponse([
         _sse({"type": "response.output_item.added", "output_index": 0,
@@ -414,7 +414,7 @@ def test_codex_retries_done_after_empty_reasoning_placeholder(monkeypatch):
 
 def test_codex_preserves_partial_text_when_terminal_event_is_missing(monkeypatch):
     mod = importlib.import_module(
-        "openprogram.providers.openai_codex.openai_codex")
+        "openprogram.models.providers.adapters.openai_codex.openai_codex")
 
     partial = _FakeSSEResponse([
         _sse({"type": "response.output_item.added", "output_index": 0,
@@ -457,7 +457,7 @@ def test_codex_preserves_partial_text_when_terminal_event_is_missing(monkeypatch
 
 def test_parse_sse_stream_raises_stream_aborted_when_signal_set():
     mod = importlib.import_module(
-        "openprogram.providers.openai_codex.openai_codex")
+        "openprogram.models.providers.adapters.openai_codex.openai_codex")
 
     async def run():
         sig = asyncio.Event()
@@ -472,7 +472,7 @@ def test_parse_sse_stream_raises_stream_aborted_when_signal_set():
 
 def test_parse_sse_stream_cancel_poll_does_not_cancel_network_read():
     mod = importlib.import_module(
-        "openprogram.providers.openai_codex.openai_codex")
+        "openprogram.models.providers.adapters.openai_codex.openai_codex")
 
     class DelayedResponse:
         async def aiter_lines(self):
@@ -495,7 +495,7 @@ def test_parse_sse_stream_cancel_poll_does_not_cancel_network_read():
 
 def test_parse_sse_stream_cancels_pending_read_when_signal_arrives():
     mod = importlib.import_module(
-        "openprogram.providers.openai_codex.openai_codex")
+        "openprogram.models.providers.adapters.openai_codex.openai_codex")
 
     class SlowResponse:
         async def aiter_lines(self):
@@ -539,7 +539,7 @@ def test_process_responses_stream_raises_stream_aborted_mid_stream():
 
 def test_codex_signal_finalizes_stream_as_aborted(monkeypatch):
     mod = importlib.import_module(
-        "openprogram.providers.openai_codex.openai_codex")
+        "openprogram.models.providers.adapters.openai_codex.openai_codex")
     sig = asyncio.Event()
 
     resp = _FakeSSEResponse([
@@ -576,7 +576,7 @@ def test_codex_signal_finalizes_stream_as_aborted(monkeypatch):
 
 def test_gemini_cli_signal_finalizes_stream_as_aborted(monkeypatch):
     gmod = importlib.import_module(
-        "openprogram.providers.google_gemini_cli.google_gemini_cli")
+        "openprogram.models.providers.adapters.google_gemini_cli.google_gemini_cli")
     sig = asyncio.Event()
 
     resp = _FakeSSEResponse([
@@ -635,7 +635,7 @@ class _Fake404Response(_Fake400Response):
 
 def test_gemini_cli_error_fails_stream_instead_of_clean_end(monkeypatch):
     gmod = importlib.import_module(
-        "openprogram.providers.google_gemini_cli.google_gemini_cli")
+        "openprogram.models.providers.adapters.google_gemini_cli.google_gemini_cli")
     monkeypatch.setattr(
         gmod, "build_async_client",
         lambda **_kwargs: _FakeGeminiClient(_Fake400Response()))
@@ -656,12 +656,12 @@ def test_gemini_cli_error_fails_stream_instead_of_clean_end(monkeypatch):
 @pytest.mark.parametrize(("governed", "expected"), [(False, 4), (True, 1)])
 def test_bedrock_config_uses_total_attempt_semantics(monkeypatch, governed, expected):
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_resource_context",
+        "openprogram.runtime.jobs.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     monkeypatch.delenv("OPENPROGRAM_BEDROCK_MAX_RETRIES", raising=False)
     mod = importlib.import_module(
-        "openprogram.providers.amazon_bedrock.amazon_bedrock",
+        "openprogram.models.providers.adapters.amazon_bedrock.amazon_bedrock",
     )
 
     config = mod._build_boto_retry_config()
@@ -675,10 +675,10 @@ def test_gemini_cli_endpoint_fallback_obeys_attempt_boundary(
     monkeypatch, governed, expected_calls,
 ):
     mod = importlib.import_module(
-        "openprogram.providers.google_gemini_cli.google_gemini_cli",
+        "openprogram.models.providers.adapters.google_gemini_cli.google_gemini_cli",
     )
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_resource_context",
+        "openprogram.runtime.jobs.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     monkeypatch.setattr(
@@ -751,8 +751,8 @@ def _anthropic_model():
 
 
 def test_anthropic_reraises_stream_exception(monkeypatch):
-    amod = importlib.import_module("openprogram.providers.anthropic.anthropic")
-    from openprogram.auth import usage as auth_usage
+    amod = importlib.import_module("openprogram.models.providers.adapters.anthropic.anthropic")
+    from openprogram.models.auth import usage as auth_usage
     monkeypatch.setattr(auth_usage, "acquire_pooled", lambda p: None)
     monkeypatch.setattr(
         amod, "_build_client",
@@ -774,8 +774,8 @@ def test_anthropic_reraises_stream_exception(monkeypatch):
 
 
 def test_anthropic_signal_yields_aborted_event(monkeypatch):
-    amod = importlib.import_module("openprogram.providers.anthropic.anthropic")
-    from openprogram.auth import usage as auth_usage
+    amod = importlib.import_module("openprogram.models.providers.adapters.anthropic.anthropic")
+    from openprogram.models.auth import usage as auth_usage
     monkeypatch.setattr(auth_usage, "acquire_pooled", lambda p: None)
     monkeypatch.setattr(
         amod, "_build_client",
@@ -820,8 +820,8 @@ class _FakeCompletionsStream:
 
 def test_openai_completions_reraises_stream_exception(monkeypatch):
     cmod = importlib.import_module(
-        "openprogram.providers.openai_completions.openai_completions")
-    from openprogram.auth import usage as auth_usage
+        "openprogram.models.providers.adapters.openai_completions.openai_completions")
+    from openprogram.models.auth import usage as auth_usage
     monkeypatch.setattr(auth_usage, "acquire_pooled", lambda p: None)
 
     class _FakeAsyncOpenAI:
@@ -853,11 +853,11 @@ def test_openai_sdk_retry_boundary_tracks_governed_request(
     monkeypatch, governed, expected,
 ):
     cmod = importlib.import_module(
-        "openprogram.providers.openai_completions.openai_completions")
-    from openprogram.auth import usage as auth_usage
+        "openprogram.models.providers.adapters.openai_completions.openai_completions")
+    from openprogram.models.auth import usage as auth_usage
     monkeypatch.setattr(auth_usage, "acquire_pooled", lambda _p: None)
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_resource_context",
+        "openprogram.runtime.jobs.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     captured = {}
@@ -888,10 +888,10 @@ def test_azure_sdk_retry_boundary_tracks_governed_request(
     monkeypatch, governed, expected,
 ):
     mod = importlib.import_module(
-        "openprogram.providers.azure_openai_responses.azure_openai_responses")
+        "openprogram.models.providers.adapters.azure_openai_responses.azure_openai_responses")
     monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://azure.example")
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_resource_context",
+        "openprogram.runtime.jobs.runner.current_job_resource_context",
         lambda: ("task", object()) if governed else None,
     )
     captured = {}
@@ -909,58 +909,48 @@ def test_azure_sdk_retry_boundary_tracks_governed_request(
     assert captured["max_retries"] == expected
 
 
-@pytest.mark.parametrize(("governed", "expected"), [(False, 4), (True, 1)])
-def test_bedrock_config_uses_total_attempt_semantics(
-    monkeypatch, governed, expected,
-):
-    monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_resource_context",
-        lambda: ("task", object()) if governed else None,
-    )
-    monkeypatch.delenv("OPENPROGRAM_BEDROCK_MAX_RETRIES", raising=False)
+class _ClosingSSEResponse:
+    """A response whose line generator records whether it was closed."""
+    status_code = 200
+    headers: dict = {}
+
+    def __init__(self, lines):
+        self._lines = list(lines)
+        self.closed = False
+
+    async def aiter_lines(self):
+        try:
+            for line in self._lines:
+                yield line
+        finally:
+            self.closed = True
+
+
+def test_parse_sse_stream_closes_the_line_generator_when_it_ends_or_is_closed():
     mod = importlib.import_module(
-        "openprogram.providers.amazon_bedrock.amazon_bedrock")
-
-    config = mod._build_boto_retry_config()
-
-    assert config.retries["total_max_attempts"] == expected
-    assert "max_attempts" not in config.retries
-
-
-@pytest.mark.parametrize(("governed", "expected_calls"), [(False, 2), (True, 1)])
-def test_gemini_cli_endpoint_fallback_obeys_attempt_boundary(
-    monkeypatch, governed, expected_calls,
-):
-    mod = importlib.import_module(
-        "openprogram.providers.google_gemini_cli.google_gemini_cli")
-    monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_resource_context",
-        lambda: ("task", object()) if governed else None,
-    )
-    monkeypatch.setattr(
-        mod, "_resolve_endpoints", lambda _model: ["https://one", "https://two"],
-    )
-    calls = []
-
-    class Client(_FakeGeminiClient):
-        def stream(self, method, url, headers=None, content=None):
-            calls.append(url)
-            return super().stream(method, url, headers=headers, content=content)
-
-    monkeypatch.setattr(
-        mod, "build_async_client", lambda **_kwargs: Client(_Fake404Response()),
-    )
+        "openprogram.models.providers.adapters.openai_codex.openai_codex")
 
     async def run():
-        stream = mod.stream_google_gemini_cli(
-            _model(api="google-gemini-cli", provider="google-gemini-cli"),
-            Context(messages=[UserMessage(content="hi", timestamp=0)]),
-            {"api_key": "k", "project_id": "p"},
-        )
-        with pytest.raises(RuntimeError, match="HTTP 404"):
-            async for _ in stream:
-                pass
+        # Read through to [DONE]: the parser returns and closes the lines under it.
+        done = _ClosingSSEResponse([
+            _sse({"type": "response.completed", "response": {}}), "data: [DONE]",
+        ])
+        events = [event async for event in mod._parse_sse_stream(done)]
+        assert [event["type"] for event in events] == ["response.completed"]
+        assert done.closed, "the response's line generator is closed with the parser"
+
+        # Closed by the consumer part-way (what the adapter does after a
+        # mid-stream failure): the lines close in order, before the loop ends.
+        partial = _ClosingSSEResponse([
+            _sse({"type": "response.created", "response": {}}),
+            _sse({"type": "never read"}),
+        ])
+        stream = mod._parse_sse_stream(partial)
+        assert (await stream.__anext__())["type"] == "response.created"
+        await mod._aclose_quietly(stream)
+        assert partial.closed
+        # Closing again, or closing something that has no aclose, is quiet.
+        await mod._aclose_quietly(stream)
+        await mod._aclose_quietly(object())
 
     asyncio.run(run())
-
-    assert len(calls) == expected_calls

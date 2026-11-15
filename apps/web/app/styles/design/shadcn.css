@@ -1,0 +1,51 @@
+/* shadcn token bridge so shadcn/ui components keep working */
+:root {
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
+  --card: var(--bg-secondary);
+  --card-foreground: var(--text-primary);
+  /* Menus, Selects and dialogs float on the input surface: white in the
+     light themes, one step above the page in the dark ones. */
+  --popover: var(--bg-input);
+  --popover-foreground: var(--text-primary);
+  /* Frame of every menu, Select and command palette, as tokens so dark
+     themes can lift it. In the light themes it is the files card's frame:
+     no hairline, the card's shadow at rest and its deeper one under the
+     pointer. */
+  --popover-ring: transparent;
+  --popover-shadow: var(--composer-shadow);
+  --popover-shadow-hover: var(--composer-shadow-focus);
+  --primary: var(--accent-blue);
+  /* Defined per theme in app/styles/themes/. Dark mode
+     wants near-black text on the brand-fill button so the warm
+     orange reads as a "press me" tile rather than a glowing
+     neon pill — pure white on orange has too much chroma. Light
+     mode keeps the classic white-on-coloured pattern. */
+  --secondary: var(--bg-tertiary);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-tertiary);
+  --muted-foreground: var(--text-muted);
+  /* The highlighted row of every menu and Select (shadcn focus:bg-accent):
+     the ink at 9%, so it shows on the solid popover in every theme
+     (--bg-hover is too faint there). */
+  --accent: color-mix(in oklab, var(--foreground) 9%, transparent);
+  --accent-foreground: var(--text-bright);
+  --destructive: var(--accent-red);
+  --destructive-foreground: #ffffff;
+  /* shadcn's --input is the hairline grey of form controls (and the
+     tint behind bg-input/30 · /50), not a fill: derive it from each
+     theme's ink so it reads on both dark and white surfaces. */
+  --input: color-mix(in srgb, var(--text-bright) 14%, transparent);
+  --ring: var(--focus-ring);
+}
+
+/* In the dark themes a popup sat on the same colour as the cards and the
+   composer under it (both --bg-input) and Nova's light shadow vanished.
+   Lift it a step, give it a light hairline and a soft deep shadow, like
+   Claude's menus. */
+:root[data-theme-mode="dark"] {
+  --popover: color-mix(in oklab, var(--bg-input), #fff 4%);
+  --popover-ring: color-mix(in oklab, var(--text-bright) 14%, transparent);
+  --popover-shadow: 0 10px 28px -6px rgb(0 0 0 / 0.6);
+  --popover-shadow-hover: var(--popover-shadow);
+}

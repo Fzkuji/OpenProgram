@@ -1,7 +1,7 @@
 """Agent-facing worktree tool family.
 
 Five ``@function`` LLM-callable tools wrap
-:class:`openprogram.worktree.manager.WorktreeManager`, one per
+:class:`openprogram.state.worktree.manager.WorktreeManager`, one per
 subdirectory:
 
   * ``worktree_create`` — ``git worktree add`` on a source repo

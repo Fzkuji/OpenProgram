@@ -1,0 +1,228 @@
+<title>Center Tabs and Split Panes</title>
+<meta name="description" content="Tab strip, split groups, page previews, per-tab history and tab drag rules of the center area.">
+<h1>Center tabs, split panes and web-tab presentation</h1>
+<p class="note">Renderer presentation and binding in apps/web. Cross-window transfer and main-process View geometry: see their own records.</p>
+
+<h2 id="model">Model</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Concept</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tab</th><td>Chat, file or folder, terminal, web page or application page. Each keeps its own Back/Forward history.</td></tr>
+<tr><th scope="row">Group</th><td>Tabs shown side by side as one strip entry, laid out by a canvas. <code translate="no">MAX_CENTER_TAB_GROUP_MEMBERS</code> is unlimited. Created by <code translate="no">groupTab</code>; a preview expanded to split uses <code translate="no">setSplitWebTab</code>.</td></tr>
+<tr><th scope="row">Leaf</th><td>A <code translate="no">kind:"web"</code> entry in the center-tabs store. Id <code translate="no">w:&lt;url&gt;</code>; a fork from <code translate="no">nextPopupWebTabId</code> is <code translate="no">w:&lt;url&gt;:popup:…</code>. Floating does not remove it.</td></tr>
+<tr><th scope="row">Pairing</th><td>The one first-class session-page relationship (<code translate="no">pairedOwnerByTabId</code>). A session may pair with many pages; closing either side clears it. Set when an Agent opens the page in the session, the user drags it into the session's split, or the user collapses it. Standalone pages have none, and no collapse action.</td></tr>
+<tr><th scope="row">Binding</th><td>At most one active <code translate="no">(tabId, ownerTabId)</code> in the <code translate="no">useWebTabPip</code> singleton, plus <code translate="no">previews</code> per session. Not persisted. Rebinding keeps the old pairing.</td></tr>
+<tr><th scope="row">Host</th><td>Where the page renders now: pane, chat preview or none. Derived by <code translate="no">pipCoversCenter</code>; components store no visibility.</td></tr>
+</tbody>
+</table>
+<p class="note">A leaf has one native <code translate="no">WebContentsView</code> at a time. The preview is that real page, never a mask or screenshot; page tab and preview never show together.</p>
+
+<h2 id="fsm">Where one leaf is shown</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 270" role="img" aria-label="A leaf moves between tab, preview, split and background. Tab to preview by collapse; preview to tab by opening it full. Preview to split by expand; split to preview by collapse after ungrouping. Preview to background by close; background to preview through the chip.">
+  <defs><marker id="ct-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="50" width="110" height="64" rx="8"/><text class="t-big mid" x="55" y="88">Tab</text>
+  <rect class="tile" x="285" y="50" width="110" height="64" rx="8"/><text class="t-big mid" x="340" y="88">Preview</text>
+  <rect class="tile" x="570" y="50" width="110" height="64" rx="8"/><text class="t-big mid" x="625" y="88">Split</text>
+  <rect class="tile" x="285" y="200" width="110" height="64" rx="8"/><text class="t-big mid" x="340" y="238">Background</text>
+  <line class="ln" x1="116" y1="70" x2="279" y2="70" marker-end="url(#ct-a)"/><text class="t-cmd mid" translate="no" x="197" y="58">collapseWebTabToPip</text>
+  <line class="ln" x1="279" y1="96" x2="116" y2="96" marker-end="url(#ct-a)"/><text class="t-soft mid" x="197" y="122">end + setActive</text>
+  <line class="ln" x1="401" y1="70" x2="564" y2="70" marker-end="url(#ct-a)"/><text class="t-cmd mid" translate="no" x="482" y="58">end + setSplitWebTab</text>
+  <line class="ln" x1="564" y1="96" x2="401" y2="96" marker-end="url(#ct-a)"/><text class="t-soft mid" x="482" y="122">collapse, ungroup first</text>
+  <line class="ln" x1="325" y1="120" x2="325" y2="194" marker-end="url(#ct-a)"/><text class="t-cmd" translate="no" x="256" y="162">hide()</text>
+  <line class="ln" x1="355" y1="194" x2="355" y2="120" marker-end="url(#ct-a)"/><text class="t-soft" x="366" y="162">composer chip: show</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>Tab</strong><small>to preview: <code translate="no">collapseWebTabToPip</code></small></li>
+<li><strong>Preview</strong><small>to tab: <code translate="no">end</code> + <code translate="no">setActive</code></small><small>to split: <code translate="no">end</code> + <code translate="no">setSplitWebTab</code></small><small>to background: <code translate="no">hide()</code></small></li>
+<li><strong>Split</strong><small>to preview: ungroup, then collapse</small></li>
+<li class="flow-end"><strong>Background</strong><small>to preview: composer chip calls <code translate="no">show</code></small></li>
+</ol>
+</figure>
+<p class="note"><code translate="no">end()</code> clears only the binding; the leaf stays until <code translate="no">closeTab</code>. Owner or leaf closing calls it. Switching session is not a transition.</p>
+
+<details>
+<summary>Preview store fields</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tabId</code> <code translate="no">ownerTabId</code></th><td>Active binding; both set or both null.</td></tr>
+<tr><th scope="row"><code translate="no">backgroundTabId</code> <code translate="no">backgroundOwnerTabId</code></th><td>Restore record left by <code translate="no">hide()</code>.</td></tr>
+<tr><th scope="row"><code translate="no">rect</code></th><td>Memory only, not cleared by <code translate="no">hide</code>/<code translate="no">end</code>. <code translate="no">clampPipRect</code> keeps it inside the pane, minimum 240×160. Default: upper right, under the session controls; a drag takes over.</td></tr>
+<tr><th scope="row"><code translate="no">show(tabId, ownerTabId)</code></th><td>Registers the pairing, sets the binding, clears background. Replaces the old binding.</td></tr>
+<tr><th scope="row"><code translate="no">hide()</code></th><td>Clears binding, writes background: one-action restore.</td></tr>
+<tr><th scope="row"><code translate="no">end()</code></th><td>Clears binding and memory: no longer a preview.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="scenes">When the preview renders</h2>
+<p>Binding <code translate="no">ex.dev</code> owned by session A, for each active center tab:</p>
+<table class="grid">
+<thead><tr><th scope="col">Situation</th><th scope="col">Leaf is web</th><th scope="col">Page not active</th><th scope="col">Owner on canvas</th><th scope="col">Session matches</th><th scope="col">Host</th></tr></thead>
+<tbody>
+<tr><th scope="row">Session A active</th><td class="run">yes</td><td class="run">yes</td><td class="run">yes</td><td class="run">yes</td><td class="run">preview</td></tr>
+<tr><th scope="row">Session B active</th><td class="run">yes</td><td class="run">yes</td><td class="deny">no</td><td class="ask">not reached</td><td class="ask">none</td></tr>
+<tr><th scope="row">Page tab active</th><td class="run">yes</td><td class="deny">no</td><td class="ask">not reached</td><td class="ask">not reached</td><td class="review">page fills the area</td></tr>
+<tr><th scope="row">File or terminal active, A not beside it</th><td class="run">yes</td><td class="run">yes</td><td class="deny">no</td><td class="ask">not reached</td><td class="ask">none</td></tr>
+<tr><th scope="row">Another pane focused, A visible in the split</th><td class="run">yes</td><td class="run">yes</td><td class="run">yes</td><td class="run">yes</td><td class="run">preview</td></tr>
+<tr><th scope="row">A navigated to another conversation</th><td class="run">yes</td><td class="run">yes</td><td class="run">yes</td><td class="deny">no</td><td class="ask">none</td></tr>
+</tbody>
+</table>
+<p class="note">The binding stays in every row; <code translate="no">pipCoversCenter</code> just returns something else. The window overview also hides the preview. After ✕, the chip runs the same function on the background pair. In a graph view the preview docks in the side column under the minimap until pulled out.</p>
+
+<h2 id="rules">Preview behaviour</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Coming back to a conversation</th><td><code translate="no">applyFollowPreview</code> shows that conversation's own preview. With none, a preview of a pane still on the canvas stays, or one from a pane beside it comes up; otherwise it hides.</td></tr>
+<tr><th scope="row">After ✕</th><td>Not reopened on return; the chip brings it back. The chip names the page <code translate="no">surfaceRefForChat</code> reports and offers Close or Show only when that page is this chat's preview page. In a split it is a plain label. The preview folds into the on-screen chip naming its own page (<code translate="no">data-web-surface-chip</code>), its own pane first; with none it fades, and reopens from Preview in conversation.</td></tr>
+<tr><th scope="row">Opening the bound page</th><td>Binding and follow preference stay. <code translate="no">.webFrame</code> measures the native bounds and fills the content area, with no reserved space.</td></tr>
+<tr><th scope="row">Collapse target</th><td>Original owner if still there, else the session in the group, else the pairing table. None: no button or menu item. Then: leave split or group, <code translate="no">setActive(owner)</code>, <code translate="no">show</code>, with no reload.</td></tr>
+</tbody>
+</table>
+
+<details id="interactive-floating-page">
+<summary>Interactive floating page</summary>
+<ul>
+<li>Reuses the Electron <code translate="no">WebContentsView</code> for clicks, scrolling and typing; no second Page or forwarded coordinates. Each animation frame updates host transform and native bounds; release persists geometry.</li>
+<li>Plain browser: sandboxed iframe for HTTP(S), a separate document whose login and frame-ancestor limits follow browser policy. Restricted URLs show an unavailable message and keep Open page.</li>
+<li>Older bridges without visible views keep a labeled image fallback (<code translate="no">usePipSnapshots</code>). A current Desktop bridge does no capture.</li>
+<li>Hidden, switched or unmounted previews release bounds and observers without closing the Page. Menus and dialogs occlude native content.</li>
+</ul>
+</details>
+
+<h2 id="agent">Agent interaction</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">op=open</code></th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Has <code translate="no">session_id</code> or <code translate="no">background</code></th><td>Background: <code translate="no">ensureExclusiveWebTab</code>, marked agent-owned, listed in Resources. No focus change, no preview.</td></tr>
+<tr><th scope="row">Otherwise, session active, desktop wide enough, a web page in its group, no owner conflict</th><td>Split: <code translate="no">openWebTabInSplit</code>, then <code translate="no">registerPipPair</code>.</td></tr>
+<tr><th scope="row">Otherwise, session active</th><td>Preview: <code translate="no">show</code>. A fork via <code translate="no">ensureExclusiveWebTab</code> on owner conflict or <code translate="no">pipOpenMustFork</code>; otherwise reuse the canonical leaf.</td></tr>
+<tr><th scope="row">Otherwise</th><td>Foreground tab.</td></tr>
+</tbody>
+</table>
+<p class="note">Foreground paths wait for <code translate="no">waitForWebTabReady</code> (2 s), then activate and answer <code translate="no">webtab_result</code>. On failure outside split, <code translate="no">restorePriorActiveTabAfterFailedWebOpen</code> restores focus. Split needs width 360+480+6 (<code translate="no">split-layout.ts</code>); <code translate="no">app-shell.tsx</code> publishes it.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">op=close</code></th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Leaf missing or not web</th><td><code translate="no">tab_not_found</code></td></tr>
+<tr><th scope="row">In any group's <code translate="no">memberIds</code></th><td><code translate="no">tab_in_user_layout</code></td></tr>
+<tr><th scope="row">Otherwise</th><td><code translate="no">{ok:true}</code>, then <code translate="no">closeTab</code>; the store subscription ends a bound preview.</td></tr>
+</tbody>
+</table>
+<ul>
+<li>A page private to another conversation answers <code translate="no">page_not_accessible</code> (<code translate="no">agentCanAccessWebTab</code>).</li>
+<li><code translate="no">surfaceRefForChat</code> picks: visible web pane in the session's group, then <code translate="no">splitWebTabId</code> when the session is active, then the preview leaf when the session owns it. None or no bounds: no surface.</li>
+<li><code translate="no">op=preview/activate</code> act on <code translate="no">visibleWebTabById</code>, and answer "not visible" for hidden pages; a background <code translate="no">preview</code> reads a selected mirror without revealing the Page.</li>
+</ul>
+
+<h2 id="issues">Known differences from product intent</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Difference</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Fork ignores hidden previews</th><td><code translate="no">pipOpenMustFork</code> checks only the active binding; B's <code translate="no">show</code> clears A's restore chip.</td></tr>
+<tr><th scope="row">Fork knows only canonical leaves</th><td>The check is <code translate="no">webTabId(url) === boundTabId</code>. Each fork can leave an orphan leaf, removed by <code translate="no">op=close</code> or the user.</td></tr>
+<tr><th scope="row">Close does not track the opener</th><td>Only group membership is checked: an Agent-opened page dragged into a group cannot be closed, and an accessible standalone user page can.</td></tr>
+<tr><th scope="row">Split path skips <code translate="no">pipOpenMustFork</code></th><td>It only checks agent ownership, and changes the group's web pane URL.</td></tr>
+<tr><th scope="row"><code translate="no">show</code> does not ungroup</th><td>A leaf in another group stays a member while bound as a preview.</td></tr>
+<tr><th scope="row">Regions differ</th><td><code translate="no">surfaceRefForChat</code> marks ungrouped pages <code translate="no">right</code>; <code translate="no">browserPageInventory</code> marks them <code translate="no">center</code>.</td></tr>
+<tr><th scope="row">Binding is not persisted</th><td>Reload loses binding, background and position; leaves return as tabs, and Resources previews reapply.</td></tr>
+</tbody>
+</table>
+
+<h2 id="session-navigation">Navigation in a tab</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open a session</th><td>In place in the current session tab or new-tab page; from other page types, select an existing session tab or create one. Reopening the current session adds no history.</td></tr>
+<tr><th scope="row">Back / Forward</th><td>Only the current tab's history, at the far left of the strip; choosing after going back drops forward entries. If the destination conversation is already open in another tab, that tab is selected and the source history stays.</td></tr>
+<tr><th scope="row">Default entry page</th><td>A replaced New tab page stays first in history. Back returns to it without adding a tab.</td></tr>
+<tr><th scope="row">Application pages</th><td>Every route (Settings, Agents, Abilities, Applications, History, Scheduler) is a visit in the selected tab, and the label follows it. Unknown routes show their path.</td></tr>
+<tr><th scope="row">A page has one tab</th><td>Visiting a page another tab shows focuses that tab, moved to the route (<code translate="no">recordRouteNavigation</code>). Programs, Skills, MCP and Plugins are Abilities; Chats, Projects and Memory are History; every Settings section is Settings.</td></tr>
+<tr><th scope="row">From inside a split</th><td>A page opens in a new top-level tab after the split. A restored member holding a page route leaves its split.</td></tr>
+<tr><th scope="row">Drafts and titles</th><td>History keeps draft ids, input stays keyed by session id. Background ACK and title updates change matching records without activating or appending.</td></tr>
+<tr><th scope="row">Reload and delete</th><td>History persists with version-2 tabs; legacy tabs become single-entry. Sessions confirmed removed leave every history; unloaded records do not count.</td></tr>
+</tbody>
+</table>
+<p class="note">One conversation has one tab per window: see <a href="session-tab-identity.html">conversation tab identity</a>.</p>
+
+<details id="window-navigation">
+<summary>How history is stored</summary>
+<ul>
+<li><code translate="no">pageHistory</code> is the only store: page identity, session metadata, content route and file view, no nested histories, no input or messages. Session legacy history converts on first navigation.</li>
+<li>Tab id is the instance, <code translate="no">sessionId</code> its current session. Collisions get a unique suffix; a slot whose target already belongs to another tab gets a unique identity.</li>
+<li>Route sync reacts to pathname only; <code translate="no">markSessionReady</code> handles session ACK; navigation reacts to current-tab <code translate="no">sessionId</code> and draft changes.</li>
+<li>Native browser URL history stays in browser controls. Web pages keep their own controls. Session history is app state, separate from browser History.</li>
+<li>Window transfer checks prepared session history before and after the async ACK; a navigation change cancels a stale transfer, and rollback does not overwrite newer navigation.</li>
+<li>Restoring a detail route first loads its exported host route, then replaces the URL before recording the visit. Duplicate activations share one navigation; a late host commit restores the latest target and is not a visit. Detail routes never reload the document on tab switch.</li>
+<li>Provider selection derives from the route parameter. A late list response may pick a fallback only on the unqualified page; changing the detail does not reload the catalog.</li>
+<li><code translate="no">center-tabs-store.ts</code> composes <code translate="no">store/</code> (state, commit helpers, actions) and <code translate="no">navigation/</code> (pure helpers, selectors). No action module owns a second history.</li>
+</ul>
+</details>
+<span id="page-navigation"></span><span id="global-settings"></span>
+
+<h2 id="new-tab-placement">The strip</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">New tab position</th><td>Opened from a tab (link, popup, conversation, file or page preview): right of it, in opening order (<code translate="no">insertNextTo</code>). Plus button, New chat, background Agent pages: at the end.</td></tr>
+<tr id="tab-controls"><th scope="row">Controls</th><td>Back, Forward, New tab: 28px wide, 8px gap. An empty tab list takes no space. New tab has no left divider.</td></tr>
+<tr id="last-tab"><th scope="row">Closing the last tab</th><td>Allowed. Window and strip stay, content blank, across routes and reloads, with no automatic draft. Session-owned hidden pages stay in Resources and are never the fallback. Close selects visible neighbors after normalizing split groups.</td></tr>
+<tr id="tab-release-resources"><th scope="row">Press and release</th><td>Press uses the drag background and blur, changes no page. Release without drag activates by normal click; drag, Escape, cancel or lost focus consumes the click. Focus ring stays.</td></tr>
+<tr><th scope="row">Drag appearance</th><td>Tab and pane-label previews share background, backdrop-filter and shadow variables. Settings → General: transparency 0–100%, blur 0–40px, shadow 0–100%, live preview, Restore defaults. Defaults: 20%, 16px, saturation 1.2, 25% of the original shadow alpha. Text and icons stay opaque.</td></tr>
+<tr><th scope="row">New window cue</th><td>Stays in the strip, above native page bounds: renderer content cannot stack over an Electron child view.</td></tr>
+<tr><th scope="row">Drag a page onto Resources</th><td>A single web tab attaches that exact Page to the visible conversation on release. Targets: the Resources navigation row, plus its body when open; never one combined rectangle. One border matching the target's outer bounds, no blur. Groups, drafts and other kinds are not sources or destinations.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Page attachment and drag settings detail</summary>
+<ul>
+<li>The server checks owner authorization, the session and the live window/tab/native-target identity from the registered desktop connection, then reuses <code translate="no">BrowserResourceStore</code>; no URL copy.</li>
+<li>Failure reports an error and does not navigate, detach or fabricate a binding. Connection changes reject stale results. Cancelling sends nothing. Success opens Resources and keeps conversation, page identity, top tab and associations. It does not interrupt another execution's operation.</li>
+<li>Preferences live in local storage, normalized; the pre-paint theme script applies them before hydration; storage events sync same-origin windows. Theme changes keep them. Invalid fields use defaults, numbers are clamped, zero disables that effect. Ordinary buttons and Resources outlines are unaffected. Dragging in the strip reorders; outside it transfers windows as before.</li>
+</ul>
+</details>
+
+<h2 id="conversation-file-preview">Conversation file previews</h2>
+<p>Chat left, document right, reusing tab groups and <code translate="no">DocumentWindow</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Output rows</th><td>Completed live replies show local Markdown links and <code translate="no">send_file</code> attachments as compact rows.</td></tr>
+<tr><th scope="row">Auto-open</th><td>First supported output, beside its focused conversation. Never for history, failed or cancelled replies, background conversations. A manual split or dirty preview stays. Same authorized file reuses its tab.</td></tr>
+<tr><th scope="row">Owner</th><td>Project files: project document owner. Other absolute paths: session-checked read-only attachment owner. Content is never executed or embedded as raw HTML, nor authorized by a model-written path.</td></tr>
+<tr><th scope="row">Refresh</th><td>A visible document checks authorized metadata and shows File changed with Refresh. Refresh is always available, reads disk without cache, applies only on success, and never discards local edits, pending publications or rich-editor changes. Hidden panes stop polling; failures keep the old display and offer retry.</td></tr>
+<tr><th scope="row">One editor per document</th><td>File tabs for the same project document share one persistent editor, moved into the active layout with its draft. Closed only when no tab references it. Duplicates visible together offer Show here.</td></tr>
+</tbody>
+</table>
+
+<h2 id="native-window-controls">Native window controls</h2>
+<dl class="pairs">
+<dt>Row</dt><dd>40 CSS px, shared vertical center with arrows and tab controls</dd>
+<dt>macOS top inset</dt><dd><code translate="no">round((40 × zoom − 16) / 2)</code>, clamped to zero; 16 DIP button frame</dd>
+<dt>Horizontal inset</dt><dd>Top inset + 1 DIP: the red circle sits one DIP lower in its frame</dd>
+<dt>Refreshed on</dt><dd>Window creation, document load, renderer resize, leaving fullscreen. Not polled or persisted.</dd>
+<dt>Trust</dt><dd>Preload sends a payload-free resize; main accepts only the owning window's main document</dd>
+<dt>Other platforms</dt><dd>Windows keeps Window Controls Overlay, Linux native decorations</dd>
+</dl>
+<p class="note">Uses <a href="https://www.electronjs.org/docs/latest/api/base-window#winsetwindowbuttonpositionposition-macos">setWindowButtonPosition</a> and <a href="https://www.electronjs.org/docs/latest/api/web-contents#contentsgetzoomfactor">getZoomFactor</a>. <code translate="no">zoom-changed</code> covers only wheel zoom, so renderer resize carries menu and keyboard zoom.</p>
+
+<h2 id="impl">Where it lives</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Concern</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pairing, binding, coverage, fork, collapse</th><td><code translate="no">apps/web/lib/browser/web-tab/web-tab-pip-store.ts</code></td></tr>
+<tr><th scope="row">Preview follow, restore</th><td><code translate="no">apps/web/lib/browser/browser-resource-projection.ts</code></td></tr>
+<tr><th scope="row">Preview component</th><td><code translate="no">apps/web/components/center-tabs/pip/web-tab-pip.tsx</code>, mounted in <code translate="no">app-shell.tsx</code></td></tr>
+<tr><th scope="row">Agent ops, surfaces, inventory</th><td><code translate="no">apps/web/lib/desktop/bridge/bridge-menu.ts</code>, <code translate="no">bridge-surfaces.ts</code>, <code translate="no">bridge-state.ts</code></td></tr>
+<tr><th scope="row">Tabs and groups</th><td><code translate="no">apps/web/lib/tabs/center-tabs-store.ts</code>, <code translate="no">store/</code>, <code translate="no">center-tab-groups.ts</code>, <code translate="no">center-tab-ids.ts</code>, <code translate="no">center-tabs-persistence.ts</code></td></tr>
+<tr><th scope="row">Restore chip</th><td><code translate="no">apps/web/components/chat/composer/environment-row/chips/web-surface-chip.tsx</code></td></tr>
+<tr><th scope="row">Behaviour tests</th><td><code translate="no">apps/web/tests/tabs/web-split/</code></td></tr>
+</tbody>
+</table>
+
+<details id="implementation-status">
+<summary>Implementation status</summary>
+<p>Everything above is implemented. Native acceptance still to run on an installed App: interactive floating page (changing counter, click, type, scroll, drag), tab attach to Resources, native control alignment within one DIP at normal zoom, conversation file previews.</p>
+</details>

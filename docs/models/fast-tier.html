@@ -1,0 +1,27 @@
+<title>Fast mode</title>
+<meta name="description" content="Request a faster service tier per session and model, and which connections support it.">
+<meta name="covers" content="openprogram/interfaces/server/ws_actions/chat/turn_request.py apps/web/lib/format-utils/format.ts">
+<h1>Fast mode</h1>
+<p>The gauge at the top right of the thinking-effort picker, beside the model. Its needle sits advanced when on, and animates on hover. It does not change the effort slider.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Saved</th><td>Per conversation branch; support is checked for the selected provider/model</td></tr>
+<tr><th scope="row">New model</th><td>Starts at Standard</td></tr>
+<tr><th scope="row">Standard</th><td>Explicitly overrides an agent's priority default</td></tr>
+<tr><th scope="row">Applies</th><td>Next submitted turn, not one already running</td></tr>
+</tbody>
+</table>
+<h2>Connections</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Connection</th><th scope="col">Support</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>Account model catalogue</td></tr>
+<tr><th scope="row">Claude</th><td>Its supported Fast models and native speed parameter</td></tr>
+<tr><th scope="row">xAI API</th><td>Grok 4.6 Priority Processing: <code translate="no">service_tier: "priority"</code>, Standard sends <code translate="no">"default"</code></td></tr>
+<tr><th scope="row">Grok subscription</th><td>Grok 4.6 on the CLI chat proxy, same values</td></tr>
+<tr><th scope="row">Other Grok subscription models, unknown gateways</th><td>Unverified unless the route declares support. The gauge stays visible with an explanation.</td></tr>
+</tbody>
+</table>
+<p class="note">Model config can set <code translate="no">fast: false</code> to disable or <code translate="no">fast: true</code> to declare route support. Support is never inferred from a model's name; calls are validated against their own route.</p>
+<p>Fast can increase usage or cost; xAI priority has a 2× token-price premium (<a href="https://docs.x.ai/developers/pricing">xAI pricing</a>). The gauge is the requested mode, not a speed guarantee. Completions and Responses keep the actual returned tier in usage; absent metadata stays unconfirmed. xAI's reported request cost is kept separately when available.</p>

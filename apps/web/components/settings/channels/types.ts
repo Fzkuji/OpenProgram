@@ -1,3 +1,5 @@
+import { CHANNEL_BRANDS } from "@/lib/channels/channel-brands";
+
 export interface ChannelAccount {
   channel: string;
   account_id: string;
@@ -30,16 +32,17 @@ export const PLATFORMS = [
 ] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
-export const PLATFORM_LABEL: Record<string, string> = {
-  telegram: "Telegram",
-  discord: "Discord",
-  slack: "Slack",
-  wechat: "WeChat",
-};
+/** Platforms that have group chats (WeChat bots only get direct messages). */
+export const GROUP_PLATFORMS: string[] = ["telegram", "discord", "slack"];
+
+/** Platform display names, from the one channel brand map. */
+export const PLATFORM_LABEL: Record<string, string> = Object.fromEntries(
+  Object.entries(CHANNEL_BRANDS).map(([id, brand]) => [id, brand.name]),
+);
 
 export interface ChannelHealthStatus {
   alive: boolean;
-  state: "alive" | "stale" | "unknown";
+  state: "alive" | "stale" | "unknown" | "off" | "no_token" | "signed_out" | "failed" | "reconnecting";
   last_seen_at: number | null;
   age_seconds: number | null;
 }
@@ -59,4 +62,6 @@ export interface ChannelAccessAccount {
   account_id: string;
   paired: ChannelAccessSender[];
   pending: Array<ChannelAccessSender & { code: string }>;
+  group_full_access: ChannelAccessSender[];
+  group_chat_only: ChannelAccessSender[];
 }

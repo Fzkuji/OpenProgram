@@ -1,0 +1,22 @@
+<title>状态圆点</title>
+<meta name="description" content="状态和活动圆点共用的 CSS 类，及其尺寸、颜色和动画。">
+<h1>状态圆点</h1>
+
+<p>所有状态和活动圆点都是 <code translate="no">.indicator-dot</code>（<code translate="no">apps/web/app/styles/chat/execution/indicator-dot.css</code>）。外框宽度始终等于 14px 字号下 <code translate="no">●</code> 的宽度，圆点与标题字形、各行之间都能对齐，无需逐处微调。<code translate="no">::before</code> 画圆盘并承载动画，布局占位不动。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">修饰类</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">无（md）</th><td>12.8px 外框内 10px 圆盘（inset 1.4px）</td></tr>
+<tr><th scope="row"><code translate="no">.sm</code></th><td>10px 外框内 6px 圆盘（inset 2px）</td></tr>
+<tr><th scope="row">无颜色修饰</th><td><code translate="no">currentColor</code>，默认 <code translate="no">--accent-blue</code>；父元素可用 <code translate="no">color</code> 指定色相</td></tr>
+<tr><th scope="row"><code translate="no">.--ok</code> <code translate="no">.--warn</code> <code translate="no">.--err</code> <code translate="no">.--neutral</code></th><td><code translate="no">--dot-color</code> 分别取 <code translate="no">--accent-green</code>、<code translate="no">--accent-yellow</code>、<code translate="no">--accent-red</code>、<code translate="no">--accent-blue</code></td></tr>
+<tr><th scope="row"><code translate="no">.pulse-opacity</code></th><td>透明度 1 到 0.4，1.5s，循环</td></tr>
+<tr><th scope="row"><code translate="no">.pulse-scale</code></th><td>缩放 0.85 到 1.15，1.4s，循环</td></tr>
+</tbody>
+</table>
+
+<p class="note">使用方：<code translate="no">cards/attach-card.tsx</code>、输入框环境行、右侧栏运行面板、<code translate="no">lib/runtime-bridge/ui.ts</code> 和 DAG 渲染器（<code translate="no">dag/render/agents.ts</code>、<code translate="no">dag/graph/nodes.css</code>）。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。不再有其他圆点类。</p>

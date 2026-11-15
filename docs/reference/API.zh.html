@@ -1,0 +1,28 @@
+<title>API 参考</title>
+<meta name="description" content="核心 Python 组件、导入方式和简短示例。">
+<h1>API 参考</h1>
+<table class="stack">
+<thead><tr><th scope="col">组件</th><th scope="col">源码</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="api/agent.html"><code translate="no">Agent</code> <code translate="no">Context</code> <code translate="no">agent</code> <code translate="no">agent_async</code></a></th><td><code translate="no">runtime/agent/</code>、<code translate="no">runtime/context/model.py</code></td><td>直接调用、配置好的 Agent 方法、自动执行上下文</td></tr>
+<tr><th scope="row"><a href="api/runtime.html"><code translate="no">Runtime</code></a></th><td><code translate="no">runtime/agent/runtime/</code></td><td>从 DAG 计算上下文，调用 LLM，把响应写回</td></tr>
+<tr><th scope="row"><a href="api/providers.html"><code translate="no">create_runtime</code> 和 Provider</a></th><td><code translate="no">runtime/agent/runtime/factory.py</code>、<code translate="no">models/providers/</code></td><td>自动检测或显式创建 Runtime</td></tr>
+</tbody>
+</table>
+<p class="note">路径都在 <a href="https://github.com/FuzzyKuji/OpenProgram/tree/main/openprogram/"><code translate="no">openprogram/</code></a> 下。会话上下文是由用户消息、LLM 调用和函数调用组成的扁平 DAG：<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/context/README.md">架构</a>。</p>
+<h2>导入</h2>
+<pre translate="no"><code>from openprogram import Agent, Context, agent, agent_async, Runtime, Session, decision
+from openprogram import ChatAgent, TurnRequest, TurnResult
+from openprogram.runtime.agent.runtime.factory import create_runtime</code></pre>
+<h2>示例</h2>
+<pre translate="no"><code>from openprogram import Agent
+
+class Observer(Agent):
+    tools = []
+
+    def observe(self, task: str) -&gt; str:
+        """找到请求的界面元素。"""
+        return self(f"Find the UI element for: {task}. Reply with its label only.")
+
+print(Observer().observe("login button"))</code></pre>
+<p class="note">没有 <code translate="no">create()</code>、<code translate="no">fix()</code> 这样的元函数。用普通的文件编辑工具编写、修改和验证 Agent 方法与 Program 函数。</p>

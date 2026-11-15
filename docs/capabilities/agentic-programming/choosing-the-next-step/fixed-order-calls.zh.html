@@ -1,0 +1,68 @@
+<title>固定顺序调用</title>
+<meta name="description" content="按 Python 写死的顺序调用子函数，可以调用也可以不调用 LLM。">
+<h1>固定顺序调用</h1><pre translate="no" tabindex="0"><code>from openprogram import Agent
+from openprogram.runtime.agent import llm
+
+class ExampleAgent(Agent):
+    method_options = {
+        'survey_pipeline': {'tool': True, 'input': {'task': {'description': 'Research topic.'}}},
+    }
+
+    def survey_pipeline(self, task: str) -&gt; dict:
+        """Run the full research pipeline: survey, find gaps, generate ideas."""
+        survey = survey_topic(topic=task)
+        gaps = identify_gaps(survey=survey)
+        ideas = generate_ideas(gaps=gaps)
+
+        return {"survey": survey, "gaps": gaps, "ideas": ideas}
+
+        # Or summarise with one model call instead:
+        # return llm([{"type": "text", "text": f"Survey:\n{survey}\n\nGaps:\n{gaps}\n\nIdeas:\n{ideas}"}])
+
+_example_agent = ExampleAgent()
+survey_pipeline = _example_agent.survey_pipeline</code></pre>
+<p class="note">调研、找缺口、出想法。也适用于：起草、评审、修改；采集、清洗、分析。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">要点</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">llm()</code></th><td>可选，一个函数里可调用多次，并可混用任意多个 <code translate="no">Agent</code> 方法调用</td></tr>
+<tr><th scope="row">数据</th><td>普通 Python 变量：一步的返回值就是下一步的参数</td></tr>
+<tr><th scope="row">Runtime</th><td>子方法运行在调用者的 Runtime 上，步骤之间不传 <code translate="no">runtime</code></td></tr>
+</tbody>
+</table>
+<h2>步骤之间插入 Python</h2><pre translate="no" tabindex="0"><code>survey = survey_topic(topic=task)
+
+# plain Python processing in between
+key_points = extract_key_points(survey)
+filtered = [p for p in key_points if p["relevance"] &gt; 0.5]
+
+gaps = identify_gaps(survey="\n".join(filtered))</code></pre>
+<h2>会话 DAG</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用</th><th scope="col">记录方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">启动这次执行的方法</th><td>一个节点</td></tr>
+<tr><th scope="row">每次 <code translate="no">llm()</code> 或模型请求</th><td>一个子节点，<code translate="no">caller</code> 指向该方法</td></tr>
+<tr><th scope="row">同一 Agent 上的帮助函数或方法</th><td>没有自己的节点，共用当前调用</td></tr>
+<tr><th scope="row">另一个 Agent</th><td>自己的 DAG；父级保存结果和 <code translate="no">child_session_id</code> 引用</td></tr>
+</tbody>
+</table>
+<h2>错误处理</h2><pre translate="no" tabindex="0"><code>try:
+    survey = survey_topic(topic=task)
+except Exception as e:
+    return {"error": f"Survey failed: {e}"}</code></pre>
+<p class="note">抛出的异常会到达编排函数；被记录的调用，其节点以 <code translate="no">status='error'</code> 结束。</p>
+<details>
+<summary>子函数返回错误字符串时</summary><pre translate="no" tabindex="0"><code>survey = survey_topic(topic=task)
+if not survey or "error" in survey.lower():
+    return {"error": "Survey failed", "survey": survey}</code></pre>
+</details>
+<h2>与由 LLM 选择的调用对比</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">固定顺序</th><th scope="col"><a href="tool-calling.zh.html">工具调用</a>或<a href="next-step-decision.zh.html">决策</a></th></tr></thead>
+<tbody>
+<tr><th scope="row">顺序由谁决定</th><td>Python</td><td>LLM</td></tr>
+<tr><th scope="row">运行多少子函数</th><td>全部</td><td>工具循环：多轮、多个。决策菜单：一个。</td></tr>
+<tr><th scope="row">灵活性</th><td>固定流水线</td><td>随任务变化</td></tr>
+</tbody>
+</table>

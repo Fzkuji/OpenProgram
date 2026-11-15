@@ -1,0 +1,90 @@
+<title>常见问题</title>
+<meta name="description" content="OpenProgram 关于端口、provider、登录、数据、更新、日志、扩展和会话的常见问题。">
+<h1>常见问题</h1>
+
+<h2 id="running">运行</h2>
+<details>
+<summary>端口 18100 被占用</summary>
+<p>只要你没有自己设端口，OpenProgram 会自己换到下一个空闲端口，所以 18100 被别的程序或同一台电脑上的另一个账户占着时，你什么都不用做。你设的端口不会被换掉：App 和 <code translate="no">openprogram web</code> 会写明是哪个程序占着它。</p>
+<pre translate="no"><code>openprogram worker status         # 本账户的端口，或谁占着它
+openprogram ports --port 18110    # 持久化，下次启动生效
+lsof -ti:18100 | xargs kill       # 释放残留进程占用的端口，然后重启</code></pre>
+<p>仅本次运行：<code translate="no">OPENPROGRAM_WEB_PORT</code>。</p>
+</details>
+<details id="empty-lists">
+<summary>页面打开了，但 Provider、模型和 Agent 全是空的</summary>
+<p>页面没有登录：手动输入地址打开时，所有列表为空，<strong>Local</strong> 标记变红，顶部有提示。安装没有缺东西。运行 <code translate="no">openprogram web</code>。要在其他浏览器打开，用 <code translate="no">openprogram web auth-url</code> 打印登录链接。服务每次启动都会生成新的登录，停止或重启后要重新通过 <code translate="no">openprogram web</code> 打开。</p>
+</details>
+<details>
+<summary><code translate="no">openprogram web</code> 打开的页面加载不出来</summary>
+<p>打开 <code translate="no">http://localhost:18100</code>。release wheel 自带 Web 导出；缺失时重新安装对应版本。源码 checkout 中运行开发安装脚本重建。</p>
+</details>
+<details>
+<summary>服务没起来或行为异常</summary>
+<pre translate="no"><code>openprogram status
+openprogram restart
+openprogram doctor
+openprogram rescue     # 诊断并打印修复命令</code></pre>
+</details>
+<details>
+<summary>查看日志</summary>
+<pre translate="no"><code>openprogram logs list
+openprogram logs tail            # worker 日志最后 50 行
+openprogram logs tail -f
+openprogram logs tail runtime    # worker、runtime 或 ink</code></pre>
+</details>
+<details>
+<summary>一台机器运行两个 OpenProgram</summary>
+<p>可以：<a href="../install/profiles.zh.html">profile</a> 隔离状态和端口。</p>
+</details>
+
+<h2 id="providers">Provider</h2>
+<details id="no-provider">
+<summary>Provider 没被检测到，或 "No provider available"</summary>
+<pre translate="no"><code>openprogram providers            # 已存凭据
+openprogram providers discover   # Claude Code、Codex、Gemini CLI 等
+openprogram providers doctor     # 过期、刷新、冷却、冲突
+openprogram setup                # 重新运行向导</code></pre>
+<p>环境中的 key 必须导入：<a href="GETTING_STARTED.zh.html#env-key">环境中已有 key</a>。重启服务不会导入。</p>
+</details>
+<details>
+<summary>同一 provider 有多个账户或密钥</summary>
+<p><a href="features.zh.html#multi-account">多账户与 key 轮换</a>。<code translate="no">openprogram providers list</code> 标出当前账户。</p>
+</details>
+
+<h2 id="data-and-updates">数据与更新</h2>
+<details>
+<summary>数据在哪里</summary>
+<p><code translate="no">~/.openprogram/</code>，用 <code translate="no">--profile</code> 时是 <code translate="no">~/.openprogram-&lt;name&gt;/</code>：<code translate="no">config.json</code>、<code translate="no">projects/</code>（对话和记忆）、<code translate="no">logs/</code>、<code translate="no">usage.db</code>（token 用量）。<a href="../server/configuration.zh.html#state-directory">完整列表</a>。</p>
+</details>
+<details>
+<summary>找回之前的对话</summary>
+<p><code translate="no">openprogram sessions list</code>，再 <code translate="no">openprogram --resume &lt;session_id&gt;</code>，或用 Web 侧栏。</p>
+</details>
+<details>
+<summary>更新</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">安装类型</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">桌面版</th><td>之后的版本在设置中出现</td></tr>
+<tr><th scope="row">CLI、服务器、源码 checkout</th><td><code translate="no">openprogram upgrade</code>，按安装类型选择路径</td></tr>
+</tbody>
+</table>
+<p>stable 安装只移动到已发布版本。0.7.0 是从 v0.6.6 的一次性迁移。<a href="../install/upgrade.zh.html">升级</a>。</p>
+</details>
+<details>
+<summary>为什么 release 下载较大</summary>
+<p>包含托管 Python 和 Playwright Chromium，不包含 PyTorch 或 EasyOCR。正常安装不再单独下载产品组件。</p>
+</details>
+
+<h2 id="extending">扩展</h2>
+<details>
+<summary>已安装的 agent Program 没出现</summary>
+<p><code translate="no">openprogram programs list</code>，然后重启 OpenProgram 或在 Programs 页点刷新。没有条目时，<code translate="no">OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list</code> 显示原因。<a href="../capabilities/installing-programs.zh.html">目录约定</a>。</p>
+</details>
+<details id="browser-extensions">
+<summary>Chrome 或 Edge 浏览器扩展</summary>
+<p>不支持。商店页面作为普通网页打开：没有安装按钮、CRX 下载、导入或扩展管理器。Electron/Chromium 只支持部分 Chrome Extensions API，OpenProgram 不为此维护分支或第二套浏览器运行时。随附的 Playwright Chromium 是自动化后端：不承载桌面 Browser Pane，也不承载扩展。</p>
+<p>要扩展 OpenProgram 本身：<a href="../capabilities/plugins.zh.html">插件</a>、Skill、MCP 服务器、Program 或 agent 工具。</p>
+</details>
+

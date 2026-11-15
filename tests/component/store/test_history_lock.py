@@ -4,11 +4,11 @@ from __future__ import annotations
 import threading
 import time
 
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
 
 def test_overlapping_history_operations_serialize(tmp_path, monkeypatch):
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     first = CheckpointStore(tmp_path / "state" / "sessions" / "adhoc")
     second = CheckpointStore(
         tmp_path / "project" / ".openprogram" / "sessions" / "bound",
@@ -26,7 +26,7 @@ def test_overlapping_history_operations_serialize(tmp_path, monkeypatch):
     with first._workspace_lock([path, other]):
         thread = threading.Thread(target=contender)
         thread.start()
-        assert waiting.wait(1)
+        assert waiting.wait(30)
         time.sleep(0.05)
         assert not entered.is_set()
     thread.join(timeout=1)

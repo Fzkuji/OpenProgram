@@ -3,7 +3,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { setQueryClient } from "@/lib/query-client";
-import { waitForOwnerAuthBootstrap } from "@/lib/net/owner-auth-bootstrap";
+import { waitForOwnerAuthBootstrap } from "@/lib/net/auth/owner-auth-bootstrap";
+import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 
 function OwnerAuthBoundary({ children }: { children: ReactNode }) {
   const [failed, setFailed] = useState(false);
@@ -45,7 +46,10 @@ export function Providers({ children }: { children: ReactNode }) {
   });
   return (
     <OwnerAuthBoundary>
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      <QueryClientProvider client={client}>
+        {children}
+        <ConfirmDialogHost />
+      </QueryClientProvider>
     </OwnerAuthBoundary>
   );
 }

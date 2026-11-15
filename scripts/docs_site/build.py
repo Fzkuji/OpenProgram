@@ -1,6 +1,6 @@
 """Build the OpenProgram documentation site.
 
-Scans docs/ for markdown + hand-written html, renders each into one unified
+Scans docs/ for html documents and generated markdown, renders each into one unified
 shell (left nav tree, right on-page toc, dark/light theme, search), and writes
 the static site to docs/_site/.
 
@@ -10,13 +10,16 @@ Run:  python -m scripts.docs_site.build
 from __future__ import annotations
 
 import html as _html
+import json
 import os
 import re
 import shutil
 import sys
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from markdown_it import MarkdownIt
 from mdit_py_plugins.anchors import anchors_plugin
@@ -27,10 +30,13 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 
-from openprogram import _compat
+from openprogram.host._platform import locking
+from openprogram.operations import project_site
 
+from . import html_source
 from . import nav as navmod
 from . import search as searchmod
+from .governance import format_checks
 from .template import render_page
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -38,16 +44,26 @@ DOCS_ROOT = REPO_ROOT / "docs"
 OUT_ROOT = DOCS_ROOT / "_site"
 ASSETS_SRC = Path(__file__).parent / "assets"
 
-# Absolute URL prefix the site is mounted under. The worker serves it at /docs,
+# Path prefix the built site is mounted under. The worker serves it at /docs,
 # so all asset/nav/internal links are absolute (/docs/...) — this makes them
 # resolve correctly whether the page URL has a trailing slash or not.
-# Override with OPENPROGRAM_DOCS_BASE (must start and end with "/").
+# Override with OPENPROGRAM_DOCS_BASE (must start and end with "/"); the
+# publishing workflow sets it to project_site.DOCS_PATH.
 DEPLOY_BASE = os.environ.get("OPENPROGRAM_DOCS_BASE", "/docs/")
 
-# Scheme + host the site is published under. Only sitemap.xml needs it, since
-# sitemap entries must be absolute URLs.
-SITE_ORIGIN = os.environ.get(
-    "OPENPROGRAM_DOCS_ORIGIN", "https://openprogram.io")
+# The public address of the site (openprogram.operations.project_site). Every
+# absolute URL the build writes — canonical and language links, the sitemap,
+# Markdown copies, llms.txt and the files in docs/_static_root — derives from
+# it, whatever path the build is mounted under locally.
+SITE_URL = project_site.SITE_URL
+
+
+def _public_url(path: str = "") -> str:
+    return SITE_URL.rstrip("/") + "/" + path.lstrip("/")
+
+
+def _public_docs_url(path: str = "") -> str:
+    return _public_url("docs/" + path.lstrip("/"))
 
 _SLUG_DEDUP: dict[str, int] = {}
 
@@ -73,8 +89,8 @@ def _site_build_lock(timeout: float = 180.0):
         deadline = time.monotonic() + timeout
         while True:
             try:
-                _compat.flock(
-                    handle.fileno(), _compat.LOCK_EX | _compat.LOCK_NB,
+                locking.flock(
+                    handle.fileno(), locking.LOCK_EX | locking.LOCK_NB,
                 )
                 break
             except BlockingIOError:
@@ -86,17 +102,12 @@ def _site_build_lock(timeout: float = 180.0):
         try:
             yield
         finally:
-            _compat.flock(handle.fileno(), _compat.LOCK_UN)
+            locking.flock(handle.fileno(), locking.LOCK_UN)
 
 
 # ── markdown rendering ──────────────────────────────────────────────────────
 
-def _slugify(text: str) -> str:
-    s = re.sub(r"<[^>]+>", "", text)
-    s = s.strip().lower()
-    s = re.sub(r"[^\w一-鿿\- ]+", "", s)
-    s = re.sub(r"[\s]+", "-", s).strip("-")
-    return s or "section"
+_slugify = html_source.slugify
 
 
 def _meta_description(body_html: str, title: str) -> str:
@@ -137,6 +148,9 @@ def make_md() -> MarkdownIt:
     # Real links are written explicitly with [](), so auto-linking is all downside.
     md = MarkdownIt("gfm-like", {"html": True, "linkify": False, "highlight": _highlight_code})
     md.use(anchors_plugin, max_level=3, slug_func=_make_unique_slug,
+           permalink=True, permalinkSymbol="#", permalinkSpace=False)
+    # Assign deeper anchors after existing levels to preserve their public URLs.
+    md.use(anchors_plugin, min_level=4, max_level=6, slug_func=_make_unique_slug,
            permalink=True, permalinkSymbol="#", permalinkSpace=False)
     md.use(deflist_plugin)
     md.use(tasklists_plugin, enabled=True)
@@ -194,7 +208,7 @@ def apply_callouts(html: str) -> str:
 
 # ── toc extraction (from rendered html headings) ────────────────────────────
 
-_HEADING_RE = re.compile(r'<h([23])[^>]*\bid="([^"]+)"[^>]*>(.*?)</h[23]>', re.DOTALL)
+_HEADING_RE = re.compile(r'<h([2-6])[^>]*\bid="([^"]+)"[^>]*>(.*?)</h\1>', re.DOTALL)
 
 
 def extract_toc(body_html: str) -> str:
@@ -206,17 +220,37 @@ def extract_toc(body_html: str) -> str:
         text = _html.unescape(text)  # decode &quot; etc.; re-escaped on output
         if not text:
             continue
-        items.append((level, hid, text))
+        items.append((int(level), _html.unescape(hid), text))
     if not items:
         return ""
-    rows = ['<div class="toc-title" data-i18n="on_this_page">On this page</div>',
-            '<div class="toc-list">']
+    tree = []
+    stack = []
     for level, hid, text in items:
-        cls = "lvl-3" if level == "3" else ""
-        # quote=False: this is element text, not an attribute — keep real quotes
-        rows.append(f'<a class="{cls}" href="#{_html.escape(hid)}">{_html.escape(text, quote=False)}</a>')
-    rows.append("</div>")
-    return "\n".join(rows)
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        node = (level, hid, text, [])
+        (stack[-1][3] if stack else tree).append(node)
+        stack.append(node)
+
+    def render_group(nodes):
+        rows = ['<ul class="toc-list">']
+        for level, hid, text, children in nodes:
+            rows.append('<li>')
+            if children:
+                rows.append('<details class="toc-disclosure" open=""><summary>')
+            rows.append(
+                f'<a class="lvl-{level}" href="#{_html.escape(hid)}">'
+                f'{_html.escape(text, quote=False)}</a>'
+            )
+            if children:
+                rows.append('</summary>')
+                rows.append(render_group(children))
+                rows.append('</details>')
+            rows.append("</li>")
+        rows.append("</ul>")
+        return "\n".join(rows)
+
+    return '<div class="toc-title" data-i18n="on_this_page">On this page</div>\n' + render_group(tree)
 
 
 def relink_internal(body_html: str, cur_dir: Path) -> str:
@@ -235,7 +269,9 @@ def relink_internal(body_html: str, cur_dir: Path) -> str:
         if "#" in url:
             url, anchor = url.split("#", 1)
             anchor = "#" + anchor
-        if url.endswith(".md"):
+        if url.endswith(".html.md"):
+            pass  # a page's published Markdown copy, not a Markdown source
+        elif url.endswith(".md"):
             url = url[:-3] + ".html"
         elif url.endswith(".html"):
             source = DOCS_ROOT / cur_dir / url
@@ -250,23 +286,36 @@ def relink_internal(body_html: str, cur_dir: Path) -> str:
         # resolve relative to the current page's directory, then make absolute
         resolved = os.path.normpath(str(cur_dir / url)).replace("\\", "/")
         return f'{attr}"{DEPLOY_BASE}{resolved}{anchor}"'
-    return re.sub(r'(href=)"([^"]+)"', repl, body_html)
+    # Only attributes of real tags: a page may show `href="x"` inside <code>.
+    return re.sub(r'(<[a-zA-Z][^<>]*?[\s:]href=)"([^"]+)"', repl, body_html)
+
+
+# ── html document sources ───────────────────────────────────────────────────
+
+@dataclass
+class _HtmlDocument:
+    body: str
+    toc: str
+    description: str
+    search_text: str
+    markdown: str
+
+
+def render_html_document(source: str, cur_dir: Path) -> _HtmlDocument:
+    """Render a foundation-styled HTML source for the site chrome."""
+    body = html_source.add_heading_ids(html_source.article_markup(source), _make_unique_slug)
+    body = relink_internal(body, cur_dir)
+    return _HtmlDocument(
+        body=body,
+        toc=extract_toc(body),
+        description=html_source.page_description(source, body),
+        search_text=html_source.page_text(body),
+        markdown=html_source.to_markdown(
+            body, link_base=DEPLOY_BASE, public_base=_public_docs_url()),
+    )
 
 
 # ── hand-written html ───────────────────────────────────────────────────────
-
-_FULL_PAGE_RE = re.compile(r"<\s*(html|body)\b", re.IGNORECASE)
-_H1_TAG_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
-
-
-def is_full_page(html_text: str) -> bool:
-    """True if the file is a standalone page (has <html> or <body>).
-
-    Standalone pages are embedded via an isolated iframe (their own layout/
-    styles stay intact). Body-only fragments are wrapped in the site shell.
-    """
-    return bool(_FULL_PAGE_RE.search(html_text))
-
 
 # Appended to the shipped .raw.html copy: once the reader clicks inside the
 # iframe, focus is in that document and its ESC never reaches the shell's key
@@ -280,7 +329,9 @@ _ESC_FORWARD = (
 
 def add_raw_readability(html_text: str) -> str:
     """Load shared reading support without replacing standalone page styles."""
+    llms_url = _html.escape(_public_url("llms.txt"), quote=True)
     resources = (
+        f'<link rel="describedby" href="{llms_url}">\n'
         f'<link rel="stylesheet" href="{DEPLOY_BASE}assets/raw-readability.css">\n'
         f'<script defer src="{DEPLOY_BASE}assets/raw-readability.js"></script>\n'
     )
@@ -303,66 +354,6 @@ def embed_html(raw_url: str) -> str:
     )
 
 
-def render_html_fragment(html_text: str, scope_id: str) -> str:
-    """Wrap a body-only hand-written fragment for inclusion in the site shell.
-
-    The author writes just the content (headings, prose, <canvas>, <script>,
-    <style> …) and gets the full chrome (nav, theme, search) for free. Any
-    <style> blocks are scoped to this page's container so they can't restyle
-    the shell; <script> blocks run as-is so animations/interactions work.
-    """
-    container = f"viz-frag-{scope_id}"
-
-    def scope_style(m):
-        css = m.group(1)
-        return f"<style>{_scope_css(css, '#' + container)}</style>"
-
-    scoped = re.sub(r"<style[^>]*>(.*?)</style>", scope_style, html_text,
-                    flags=re.IGNORECASE | re.DOTALL)
-    return f'<div class="viz-fragment" id="{container}">{scoped}</div>'
-
-
-def _scope_css(css: str, prefix: str) -> str:
-    """Prefix every selector in a CSS block with `prefix` so the styles only
-    apply inside the page container. Skips @-rules' first line and keyframes."""
-    out, i, n = [], 0, len(css)
-    while i < n:
-        at = css.find("@", i)
-        brace = css.find("{", i)
-        if brace == -1:
-            out.append(css[i:])
-            break
-        # pass @media/@keyframes wrapper through untouched (recurse on inner)
-        if at != -1 and at < brace:
-            # find matching close of the at-block by brace counting
-            depth, j = 0, brace
-            while j < n:
-                if css[j] == "{":
-                    depth += 1
-                elif css[j] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        break
-                j += 1
-            header = css[i:brace]
-            inner = css[brace + 1:j]
-            out.append(header + "{" + _scope_css(inner, prefix) + "}")
-            i = j + 1
-            continue
-        selector = css[i:brace].strip()
-        block_end = css.find("}", brace)
-        if block_end == -1:
-            block_end = n
-        body = css[brace:block_end + 1]
-        scoped_sel = ", ".join(
-            prefix if s.strip() in (":root", "html", "body", "*") else f"{prefix} {s.strip()}"
-            for s in selector.split(",") if s.strip()
-        )
-        out.append(f"{scoped_sel} {body}")
-        i = block_end + 1
-    return "".join(out)
-
-
 # ── ordered flatten + breadcrumbs + git mtime ───────────────────────────────
 
 def flatten_pages(sections):
@@ -370,8 +361,13 @@ def flatten_pages(sections):
     prev/next and breadcrumbs). Returns list of (page, [(en, zh)])."""
     out = []
     for sec in sections:
+        chain = [(sec.title, sec.title_zh or sec.title)]
+        if sec.area:
+            chain = [sec.area]
+            if sum(other.area == sec.area for other in sections) > 1:
+                chain.append((sec.title.split(" · ")[-1], (sec.title_zh or sec.title).split(" · ")[-1]))
         for p in sec.pages:
-            out.append((p, [(sec.title, sec.title_zh or sec.title)]))
+            out.append((p, chain))
     return out
 
 
@@ -387,7 +383,10 @@ def render_breadcrumb(chain, title, title_zh=""):
     if not chain:
         return ""
     sep = " <span class='bc-sep'>›</span> "
-    segs = [_bc_span(en, zh) for (en, zh) in chain]
+    # A level that repeats the next one (or the page itself) tells the reader nothing.
+    names = [en for en, _zh in chain] + [title]
+    kept = [item for i, item in enumerate(chain) if item[0].casefold() != names[i + 1].casefold()]
+    segs = [_bc_span(en, zh) for (en, zh) in kept]
     segs.append(_bc_span(title, title_zh or title, cls="bc-current"))
     return f'<nav class="breadcrumb">{sep.join(segs)}</nav>'
 
@@ -395,17 +394,18 @@ def render_breadcrumb(chain, title, title_zh=""):
 def render_prevnext(prev_p, next_p):
     if not prev_p and not next_p:
         return ""
-    left = right = ""
-    if prev_p:
-        href = DEPLOY_BASE + str(prev_p.out).replace("\\", "/")
-        left = (f'<a class="pn-link pn-prev" href="{href}">'
-                f'<span class="pn-dir" data-i18n="prev">Previous</span>'
-                f'<span class="pn-title">{_html.escape(prev_p.title)}</span></a>')
-    if next_p:
-        href = DEPLOY_BASE + str(next_p.out).replace("\\", "/")
-        right = (f'<a class="pn-link pn-next" href="{href}">'
-                 f'<span class="pn-dir" data-i18n="next">Next</span>'
-                 f'<span class="pn-title">{_html.escape(next_p.title)}</span></a>')
+    def link(page, direction, label):
+        if page is None:
+            return ""
+        href = DEPLOY_BASE + page.out.as_posix()
+        paths = (f' data-href-en="{href}" data-href-zh="{DEPLOY_BASE}{page.zh_out.as_posix()}"'
+                 if page.zh_out else "")
+        title = (f' data-title-zh="{_html.escape(page.title_zh, quote=True)}"'
+                 if page.title_zh else "")
+        return (f'<a class="pn-link pn-{direction}" href="{href}"{paths}>'
+                f'<span class="pn-dir" data-i18n="{direction}">{label}</span>'
+                f'<span class="pn-title"{title}>{_html.escape(page.title)}</span></a>')
+    left, right = link(prev_p, "prev", "Previous"), link(next_p, "next", "Next")
     return f'<div class="prevnext">{left}{right}</div>'
 
 
@@ -438,14 +438,16 @@ def render_tabbar(tabs, active_key: str, base: str) -> str:
         cls = " active" if t.key == active_key else ""
         zh = (f' data-title-zh="{_html.escape(t.title_zh, quote=True)}"'
               if t.title_zh and t.title_zh != t.title else "")
+        landing = next((p for sec in t.sections for p in sec.pages if p.out == t.landing), None)
+        if landing and landing.zh_out:
+            zh += f' data-href-en="{href}" data-href-zh="{base}{landing.zh_out.as_posix()}"'
         links.append(f'<a class="tablink{cls}" href="{href}"{zh}>{_html.escape(t.title)}</a>')
     return "".join(links)
 
 
 
-def render_nav(sections, current_out: Path, base: str) -> str:
-    """Flat OpenClaw-style sidebar: every page sits under a plain section
-    header; nothing collapses."""
+def render_nav(sections, current_out: Path, base: str, *, collapsible: bool = False) -> str:
+    """Render product groups or native disclosures for the design catalog."""
     def navlink(p) -> str:
         href = base + str(p.out).replace("\\", "/")
         active = " active" if p.out == current_out else ""
@@ -458,15 +460,70 @@ def render_nav(sections, current_out: Path, base: str) -> str:
                      f' data-href-en="{href}" data-href-zh="{zh_href}"')
         return f'<a class="navlink{active}" href="{href}"{extra}>{_html.escape(p.title)}</a>'
 
-    out = []
+    def title_attrs(title, title_zh):
+        return (f' data-title-zh="{_html.escape(title_zh, quote=True)}"'
+                if title_zh and title_zh != title else "")
+
+    def disclosure(title, title_zh, count, active, css):
+        opened = " open" if active else ""
+        return (f'<details class="{css} nav-disclosure"{opened}>'
+                f'<summary><span class="nav-sec-title"{title_attrs(title, title_zh)}>'
+                f'{_html.escape(title)}</span><span class="nav-count">{count}</span></summary>')
+
+    def section_html(sec, title=None, title_zh=None):
+        en, zh = title or sec.title, title_zh or sec.title_zh
+        if collapsible:
+            start = disclosure(en, zh, len(sec.pages), any(p.out == current_out for p in sec.pages), "nav-sec")
+        else:
+            start = f'<div class="nav-sec"><div class="nav-sec-title"{title_attrs(en, zh)}>{_html.escape(en)}</div>'
+        return start + "\n".join(navlink(p) for p in sec.pages) + ("</details>" if collapsible else "</div>")
+
+    if not collapsible:
+        return "\n".join(section_html(sec) for sec in sections)
+
+    areas = {}
     for sec in sections:
-        zh = (f' data-title-zh="{_html.escape(sec.title_zh, quote=True)}"'
-              if sec.title_zh and sec.title_zh != sec.title else "")
-        out.append('<div class="nav-sec">')
-        out.append(f'<div class="nav-sec-title"{zh}>{_html.escape(sec.title)}</div>')
-        out.extend(navlink(p) for p in sec.pages)
-        out.append("</div>")
+        areas.setdefault(sec.area or (sec.title, sec.title_zh), []).append(sec)
+    out = []
+    for (en, zh), children in areas.items():
+        if len(children) == 1:
+            out.append(section_html(children[0], en, zh))
+            continue
+        pages = [p for sec in children for p in sec.pages]
+        out.append(disclosure(en, zh, len(pages), any(p.out == current_out for p in pages), "nav-branch"))
+        for sec in children:
+            # The parent already provides the domain, so child labels can be short.
+            out.append(section_html(sec, sec.title.split(" · ")[-1], sec.title_zh.split(" · ")[-1]))
+        out.append("</details>")
     return "\n".join(out)
+
+
+# ── format gate ─────────────────────────────────────────────────────────────
+
+def format_gate() -> dict[str, list]:
+    """Stop on any page that breaks the format; there is no fallback rendering.
+
+    Deploys set OPENPROGRAM_DOCS_FORMAT=quarantine: the build then succeeds and
+    a page whose markup is unsafe to show publishes, in that language only, as a
+    visible error page. Other faults are logged and the page keeps rendering.
+    Returns the quarantined pages.
+    """
+    errors = format_checks.check_docs_root(DOCS_ROOT)
+    if not errors:
+        return {}
+    if os.environ.get("OPENPROGRAM_DOCS_FORMAT") != "quarantine":
+        raise format_checks.DocsFormatError(errors)
+    print(format_checks.DocsFormatError(errors), file=sys.stderr)
+    quarantined: dict[str, list] = {}
+    for finding in errors:
+        if finding.rule in format_checks.UNSAFE_TO_RENDER:
+            quarantined.setdefault(finding.path, []).append(finding)
+    return quarantined
+
+
+def render_quarantine_page(findings: list) -> str:
+    items = "".join(f"<li><code>{_html.escape(f.render())}</code></li>" for f in findings)
+    return f"<h1>This page failed the docs format check</h1><ul>{items}</ul>"
 
 
 # ── main build ──────────────────────────────────────────────────────────────
@@ -519,6 +576,7 @@ def _build_into_out_root() -> int:
         print(f"docs root not found: {DOCS_ROOT}", file=sys.stderr)
         return 1
 
+    quarantined = format_gate()
     pages = navmod.discover(DOCS_ROOT)
     tabs = navmod.build_tabs(DOCS_ROOT, pages)
 
@@ -569,7 +627,12 @@ def _build_into_out_root() -> int:
         _SLUG_DEDUP = {}
         base = DEPLOY_BASE
 
-        if p.kind == "md":
+        document = None
+        failed = quarantined.get(f"docs/{p.rel.as_posix()}")
+        if failed:
+            html_text = render_quarantine_page(failed)
+            body, toc = html_text, ""
+        elif p.kind == "md":
             text = p.src.read_text(encoding="utf-8", errors="replace")
             body = md.render(text)
             body = apply_callouts(body)
@@ -577,23 +640,20 @@ def _build_into_out_root() -> int:
             toc = extract_toc(body)
         else:
             html_text = p.src.read_text(encoding="utf-8", errors="replace")
-            if is_full_page(html_text):
-                # Standalone page → preserve layout in an iframe and resolve site links.
+            if html_source.is_html_document(html_text):
+                document = render_html_document(html_text, p.out.parent)
+                body, toc = document.body, document.toc
+            else:
+                # The gate has already let only a declared prototype reach here.
                 raw_rel = p.out.with_suffix("").with_suffix(".raw.html")
                 raw_path = OUT_ROOT / raw_rel
                 raw_path.parent.mkdir(parents=True, exist_ok=True)
                 raw_path.write_text(add_raw_readability(relink_internal(html_text, p.out.parent)) + _ESC_FORWARD, encoding="utf-8")
                 body = embed_html(DEPLOY_BASE + str(raw_rel).replace("\\", "/"))
                 toc = ""
-            else:
-                # Body-only fragment → wrap in the site shell (chrome for free).
-                scope = re.sub(r"[^\w]+", "-", str(p.out.with_suffix("")))
-                body = render_html_fragment(html_text, scope)
-                body = relink_internal(body, p.out.parent)
-                toc = extract_toc(body)
 
         tab = tab_by_key[tab_key_of[p.out]]
-        nav_html = render_nav(tab.sections, p.out, base)
+        nav_html = render_nav(tab.sections, p.out, base, collapsible=tab.key == "design")
         tabbar_html = render_tabbar(tabs, tab.key, base)
 
         # breadcrumb + prev/next + last-updated
@@ -610,15 +670,18 @@ def _build_into_out_root() -> int:
         # bilingual: if a Chinese version exists, its URL lets the language
         # toggle jump straight to it (and vice-versa from the zh page).
         alt_url = (DEPLOY_BASE + str(p.zh_out).replace("\\", "/")) if p.zh_out else ""
-        page_description = _meta_description(body, p.title)
-        page_url = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE + str(p.out).replace("\\", "/")
+        page_description = document.description if document else _meta_description(body, p.title)
+        page_url = _public_docs_url(p.out.as_posix())
         if p.out.as_posix() == "README.html":
-            page_url = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
-        zh_page_url = (
-            SITE_ORIGIN.rstrip("/") + DEPLOY_BASE + str(p.zh_out).replace("\\", "/")
-            if p.zh_out
-            else ""
-        )
+            page_url = _public_docs_url()
+        markdown_url = ""
+        if p.kind == "md" or document:
+            markdown_url = (
+                page_url + "index.html.md" if page_url.endswith("/")
+                else page_url + ".md"
+            )
+        llms_url = _public_url("llms.txt")
+        zh_page_url = _public_docs_url(p.zh_out.as_posix()) if p.zh_out else ""
 
         full = render_page(
             title=p.title, body_html=body, nav_html=nav_html,
@@ -627,36 +690,43 @@ def _build_into_out_root() -> int:
             tabbar_html=tabbar_html,
             canonical_url=page_url, description=page_description,
             alt_lang_canonical_url=zh_page_url,
-            docs_root_url=SITE_ORIGIN.rstrip("/") + DEPLOY_BASE,
+            docs_root_url=_public_docs_url(),
+            markdown_url=markdown_url, llms_url=llms_url,
+            article_class="doc" if document else "",
         )
         out_path = OUT_ROOT / p.out
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(full, encoding="utf-8")
+        if p.kind == "md":
+            shutil.copy2(p.src, out_path.with_suffix(out_path.suffix + ".md"))
+        elif document:
+            out_path.with_suffix(out_path.suffix + ".md").write_text(document.markdown, encoding="utf-8")
         rendered += 1
 
         # Chinese version (same shell, Chinese body), if present.
         if p.zh_src is not None and p.zh_out is not None:
             _SLUG_DEDUP = {}
             zh_text = p.zh_src.read_text(encoding="utf-8", errors="replace")
-            if p.zh_src.suffix == ".md":
+            zh_document = None
+            zh_failed = quarantined.get(f"docs/{p.zh_src.relative_to(DOCS_ROOT).as_posix()}")
+            if zh_failed:
+                zh_text = render_quarantine_page(zh_failed)
+                zh_body, zh_toc = zh_text, ""
+            elif p.zh_src.suffix == ".html" and html_source.is_html_document(zh_text):
+                zh_document = render_html_document(zh_text, p.zh_out.parent)
+                zh_body, zh_toc = zh_document.body, zh_document.toc
+            elif p.zh_src.suffix == ".md":
                 zh_body = relink_internal(
                     apply_callouts(md.render(zh_text)), p.zh_out.parent
                 )
                 zh_toc = extract_toc(zh_body)
-            elif is_full_page(zh_text):
+            else:
                 zh_raw_rel = p.zh_out.with_suffix(".raw.html")
                 zh_raw_path = OUT_ROOT / zh_raw_rel
                 zh_raw_path.parent.mkdir(parents=True, exist_ok=True)
                 zh_raw_path.write_text(add_raw_readability(relink_internal(zh_text, p.zh_out.parent)) + _ESC_FORWARD, encoding="utf-8")
-                zh_body = embed_html(
-                    DEPLOY_BASE + str(zh_raw_rel).replace("\\", "/")
-                )
+                zh_body = embed_html(DEPLOY_BASE + str(zh_raw_rel).replace("\\", "/"))
                 zh_toc = ""
-            else:
-                scope = re.sub(r"[^\w]+", "-", str(p.zh_out.with_suffix("")))
-                zh_body = render_html_fragment(zh_text, scope)
-                zh_body = relink_internal(zh_body, p.zh_out.parent)
-                zh_toc = extract_toc(zh_body)
             zh_back = DEPLOY_BASE + str(p.out).replace("\\", "/")
             zh_full = render_page(
                 title=p.title_zh or p.title, body_html=zh_body, nav_html=nav_html,
@@ -665,28 +735,84 @@ def _build_into_out_root() -> int:
                 tabbar_html=tabbar_html,
                 canonical_url=zh_page_url,
                 alt_lang_canonical_url=page_url,
-                description=_meta_description(zh_body, p.title_zh or p.title),
-                docs_root_url=SITE_ORIGIN.rstrip("/") + DEPLOY_BASE,
+                description=(zh_document.description if zh_document
+                             else _meta_description(zh_body, p.title_zh or p.title)),
+                docs_root_url=_public_docs_url(),
+                markdown_url=zh_page_url + ".md" if p.zh_src.suffix == ".md" or zh_document else "",
+                llms_url=llms_url,
+                article_class="doc" if zh_document else "",
             )
             zh_path = OUT_ROOT / p.zh_out
             zh_path.parent.mkdir(parents=True, exist_ok=True)
             zh_path.write_text(zh_full, encoding="utf-8")
+            if p.zh_src.suffix == ".md":
+                shutil.copy2(p.zh_src, zh_path.with_suffix(zh_path.suffix + ".md"))
+            elif zh_document:
+                zh_path.with_suffix(zh_path.suffix + ".md").write_text(zh_document.markdown, encoding="utf-8")
             rendered += 1
 
         search_records.append({
             "title": p.title,
             "url": str(p.out).replace("\\", "/"),
             "group": " › ".join(zh for (zh, _en) in chain) if chain else "",
-            "text": searchmod.plain_text(body),
+            "text": document.search_text if document else searchmod.plain_text(html_text if p.kind == "html" else body),
+            "lang": "en",
+            "has_translation": p.zh_src is not None,
         })
+        if p.zh_src is not None and p.zh_out is not None:
+            search_records.append({
+                "title": p.title_zh or p.title,
+                "url": p.zh_out.as_posix(),
+                "group": " › ".join(zh or en for en, zh in chain),
+                "text": zh_document.search_text if zh_document else searchmod.plain_text(zh_text if p.zh_src.suffix == ".html" else zh_body),
+                "lang": "zh",
+                "has_translation": True,
+            })
 
     searchmod.write_index(search_records, OUT_ROOT)
     _write_home(tabs)
     _copy_static_root()
     _write_sitemap()
+    _write_redirects()
 
-    print(f"built {rendered} pages → {OUT_ROOT}")
+    print(f"built {rendered} pages -> {OUT_ROOT}")
     return 0
+
+
+def _write_redirects() -> None:
+    """Publish retired URLs without adding duplicate documents to the catalog."""
+    source = DOCS_ROOT / "redirects.json"
+    if not source.exists():
+        return
+    aliases = json.loads(source.read_text(encoding="utf-8"))
+    for old, target in aliases.items():
+        destination = target.split("#", 1)[0]
+        # A standalone page moved onto the foundation no longer has a raw copy.
+        if destination.endswith(".raw.html") and not (OUT_ROOT / destination).is_file():
+            target = target.replace(".raw.html", ".html", 1)
+            destination = destination[:-len(".raw.html")] + ".html"
+        for path in (old, destination):
+            if (Path(path).is_absolute() or ".." in Path(path).parts
+                    or ":" in path or "?" in path or "\\" in path
+                    or not path.endswith(".html")):
+                raise ValueError(f"Invalid documentation redirect path: {path}")
+        output = OUT_ROOT / old
+        if output.exists() or destination in aliases:
+            raise ValueError(f"Documentation redirect collision or chain: {old}")
+        if not (OUT_ROOT / destination).is_file():
+            raise ValueError(f"Missing documentation redirect target: {target}")
+        url = DEPLOY_BASE + target
+        escaped = _html.escape(url, quote=True)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            '<!doctype html><html lang="en"><meta charset="utf-8">'
+            '<meta name="robots" content="noindex">'
+            f'<link rel="canonical" href="{escaped}">'
+            '<title>Document moved</title>'
+            f'<script src="{_html.escape(DEPLOY_BASE, quote=True)}assets/redirect.js"></script>'
+            f'<p>This document has moved to <a href="{escaped}">its canonical page</a>.</p>'
+            '</html>', encoding="utf-8",
+        )
 
 
 def _copy_static_root() -> None:
@@ -705,17 +831,32 @@ def _copy_static_root() -> None:
             continue
         dst = OUT_ROOT / path.relative_to(src)
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, dst)
+        if path.suffix in SITE_URL_FILES:
+            # Absolute links in these files carry the site address as a
+            # placeholder, so it is written in one place only.
+            text = path.read_text(encoding="utf-8")
+            dst.write_text(text.replace(SITE_URL_PLACEHOLDER, _public_url()), encoding="utf-8")
+        else:
+            shutil.copy2(path, dst)
     shutil.copy2(REPO_ROOT / "apps" / "web" / "app" / "favicon.ico", OUT_ROOT / "favicon.ico")
+    # GitHub Pages attaches a custom domain from a CNAME file at the site
+    # root; the account's github.io address must not carry one.
+    host = urlparse(SITE_URL).hostname or ""
+    if not host.endswith(".github.io"):
+        (OUT_ROOT / "CNAME").write_text(host + "\n", encoding="utf-8")
+
+
+SITE_URL_PLACEHOLDER = "{{SITE_URL}}"
+SITE_URL_FILES = {".txt", ".md"}
 
 
 def _write_sitemap() -> None:
     """List every built page so crawlers index the whole site from one fetch.
 
-    Entries are absolute URLs under SITE_ORIGIN + DEPLOY_BASE; the .raw.html
+    Entries are absolute public URLs (SITE_URL + docs/...); the .raw.html
     iframe payloads are left out because their shell page already covers them.
     """
-    base = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
+    base = _public_docs_url()
     static_root = {
         p.name for p in (DOCS_ROOT / "_static_root").glob("*") if p.is_file()
     }
@@ -735,10 +876,9 @@ def _write_sitemap() -> None:
         else:
             urls.append(base + rel)
 
-    # When the docs are mounted below the domain root, the landing page at the
-    # root is a separate document that no built page covers.
-    if DEPLOY_BASE != "/":
-        urls.insert(0, SITE_ORIGIN.rstrip("/") + "/")
+    # The landing page at the site root is a separate document that no built
+    # page covers.
+    urls.insert(0, _public_url())
 
     body = "\n".join(
         f"  <url><loc>{_html.escape(u)}</loc></url>" for u in urls)
@@ -756,6 +896,9 @@ def _write_home(tabs) -> None:
     readme = OUT_ROOT / "README.html"
     if readme.exists():
         shutil.copy2(readme, OUT_ROOT / "index.html")
+    readme_markdown = OUT_ROOT / "README.html.md"
+    if readme_markdown.exists():
+        shutil.copy2(readme_markdown, OUT_ROOT / "index.html.md")
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ def main() -> int:
     # Force dispatcher to pick the Claude Max provider regardless of
     # the agent profile's stored ``model`` field by passing
     # ``model_override`` on TurnRequest. ``AGENTIC_PROVIDER`` env only
-    # influences create_runtime() (used by @agentic_function); dispatcher
+    # influences create_runtime() (used by Agent method); dispatcher
     # itself reads from the agent profile, so env-var pinning alone
     # silently still talks to the user's default provider.
     MODEL_OVERRIDE = "claude-code/claude-sonnet-4"
@@ -57,17 +57,20 @@ def main() -> int:
     print(f"== sandbox DB: {db_path}")
     print(f"== proxy: {proxy_url}")
 
-    from openprogram.context.session_db import DagSessionDB
-    import openprogram.agent.session_db as sdb_mod
+    from openprogram.runtime.context.session_db import DagSessionDB
+    import openprogram.runtime.context.session_db as sdb_mod
     sdb_mod._default = DagSessionDB(db_path)
     print(f"== default_db patched")
 
     # Resolve the model the dispatcher will actually use under the
     # override, so we can confirm the right provider is wired in
     # *before* the network call.
-    from openprogram.agent.dispatcher import (
-        process_user_turn, TurnRequest, _resolve_model, _load_agent_profile,
+    from openprogram.runtime.conversation.turn_runtime import (
+        process_user_turn,
+        _resolve_model,
+        _load_agent_profile,
     )
+    from openprogram.runtime.agent.turn_request import TurnRequest
     _probe_model = _resolve_model(
         _load_agent_profile("main"), MODEL_OVERRIDE,
     )

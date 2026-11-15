@@ -8,7 +8,7 @@
  */
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 /**
  * 支持的语言，**顺序即 text() 的实参顺序**：text(en, zh)。
@@ -67,8 +67,14 @@ const DICT = {
   // /settings/general page
   "general.title": { en: "General", zh: "通用" },
   "general.meta": {
-    en: "App-wide preferences. Theme, font and language are per-browser; version info is read-only.",
-    zh: "应用级偏好。主题、字体和语言按浏览器保存；版本信息只读。",
+    en: "App-wide preferences. Language is per-browser; version info is read-only. How the interface looks is in Appearance.",
+    zh: "应用级偏好。语言按浏览器保存；版本信息只读。界面外观在「外观」里。",
+  },
+  // /settings/appearance page
+  "appearance.title": { en: "Appearance", zh: "外观" },
+  "appearance.meta": {
+    en: "How the interface looks: colours, theme, text, conversation layout, effects and custom CSS. Saved in this browser.",
+    zh: "界面的样子：颜色、主题、文字、对话布局、效果和自定义 CSS。保存在本浏览器。",
   },
   "general.section.preferences": { en: "Preferences", zh: "偏好设置" },
   "general.appearance": { en: "Appearance", zh: "外观" },
@@ -80,30 +86,34 @@ const DICT = {
   "general.section.application": { en: "Application", zh: "应用信息" },
   "general.version": { en: "Version", zh: "版本" },
   "general.framework": { en: "Framework", zh: "框架" },
-  "general.section.agent": { en: "Agent", zh: "Agent" },
   "general.section.you": { en: "User", zh: "用户" },
   "general.you.name.placeholder": { en: "User", zh: "用户" },
-  "general.agent.name": { en: "Display name", zh: "显示名称" },
-  "general.agent.name.placeholder": { en: "Agent", zh: "Agent" },
-  "general.agent.initial": { en: "Avatar initial", zh: "头像字符" },
-  "general.agent.initial.hint": {
+  "general.profile.name": { en: "Display name", zh: "显示名称" },
+  "general.avatar.initial": { en: "Avatar initial", zh: "头像字符" },
+  "general.avatar.initial.hint": {
     en: "One character shown in the round avatar.",
     zh: "圆形头像里显示的一个字符。",
   },
-  "general.agent.color": { en: "Avatar color", zh: "头像颜色" },
-  "general.agent.preview": { en: "Preview", zh: "预览" },
+  "general.avatar.color": { en: "Avatar color", zh: "头像颜色" },
+  "general.profile.preview": { en: "Preview", zh: "预览" },
   "general.avatar": { en: "Avatar", zh: "头像" },
 
   // Settings shell + tab labels
   "settings.title": { en: "Settings", zh: "设置" },
   "settings.tab.providers": { en: "LLM Providers", zh: "大模型 Provider" },
   "settings.tab.usage": { en: "Token Usage", zh: "Token 用量" },
+  "settings.tab.import": { en: "Import", zh: "导入对话" },
   "settings.tab.search": { en: "Web Search", zh: "网页搜索" },
+  "settings.tab.environments": { en: "Environments", zh: "运行环境" },
+  "settings.tab.voice": { en: "Voice", zh: "语音" },
   "settings.tab.channels": { en: "Channels", zh: "消息渠道" },
   "settings.tab.memory": { en: "Memory", zh: "记忆" },
   "settings.tab.permissions": { en: "Permissions", zh: "权限" },
   "settings.tab.general": { en: "General", zh: "通用" },
+  "settings.tab.appearance": { en: "Appearance", zh: "外观" },
   "settings.tab.system": { en: "System", zh: "系统" },
+  "settings.tab.versions": { en: "Versions", zh: "版本" },
+  "settings.tab.browser": { en: "Browser", zh: "浏览器" },
 
   // Token usage page
   "usage.desc": {
@@ -155,7 +165,6 @@ const DICT = {
   "nav.history": { en: "History", zh: "历史" },
 
   // Sidebar secondary labels and actions
-  "sidebar.toggle": { en: "Toggle sidebar", zh: "切换侧边栏" },
   "sidebar.refresh": { en: "Refresh", zh: "刷新" },
   "sidebar.favorite_functions": { en: "Favorite Programs", zh: "收藏程序" },
   "sidebar.show": { en: "Show", zh: "显示" },
@@ -173,14 +182,17 @@ const DICT = {
     zh: "此操作无法撤销。",
   },
   // Conversation context menu + Recents filter
+  "sidebar.auto_rename": { en: "Auto rename", zh: "自动命名" },
   "sidebar.rename": { en: "Rename", zh: "重命名" },
   "sidebar.pin": { en: "Pin", zh: "置顶" },
   "sidebar.unpin": { en: "Unpin", zh: "取消置顶" },
   "sidebar.move_to_group": { en: "Move to group", zh: "移动到分组" },
+  "sidebar.move_to_project": { en: "Move to project", zh: "移动到项目" },
   "sidebar.new_group": { en: "New group…", zh: "新建分组…" },
   "sidebar.new_group_prompt": { en: "Group name", zh: "分组名称" },
   "sidebar.ungrouped": { en: "Ungrouped", zh: "未分组" },
   "sidebar.remove_from_group": { en: "Remove from group", zh: "移出分组" },
+  "sidebar.link_copy_failed": { en: "Could not copy link:", zh: "未能复制链接：" },
   "sidebar.copy_link": { en: "Copy link", zh: "复制链接" },
   "sidebar.link_copied": { en: "Link copied", zh: "已复制链接" },
   "sidebar.export": { en: "Export", zh: "导出" },
@@ -192,6 +204,7 @@ const DICT = {
   "sidebar.recents": { en: "Recents", zh: "最近" },
   "sidebar.needs_input": { en: "Needs input", zh: "等待输入" },
   "sidebar.unread": { en: "New result", zh: "有新结果" },
+  "sidebar.failed": { en: "Failed", zh: "运行失败" },
   "sidebar.today": { en: "Today", zh: "今天" },
   "sidebar.yesterday": { en: "Yesterday", zh: "昨天" },
   "sidebar.older": { en: "Older", zh: "更早" },
@@ -231,15 +244,12 @@ const DICT = {
   // Chat topbar agent selector
   "agent.chat": { en: "Chat", zh: "对话" },
   "agent.exec": { en: "Exec", zh: "执行" },
-  "agent.chat_agent": { en: "Chat Agent", zh: "对话 Agent" },
-  "agent.execution_agent": { en: "Execution Agent", zh: "执行 Agent" },
   "agent.no_enabled_models": { en: "No enabled models", zh: "没有启用的模型" },
   "agent.enable_models": { en: "enable some in Settings", zh: "去设置中启用模型" },
   "agent.switch_failed": { en: "Agent switch failed: ", zh: "Agent 切换失败：" },
 
   // Right sidebar panels
   "right.resize_panel": { en: "Drag to resize panel", zh: "拖动调整面板宽度" },
-  "right.toggle_panel": { en: "Toggle panel", zh: "切换面板" },
   "right.executions": { en: "Executions", zh: "执行" },
   "right.context_tooltip": {
     en: "Compacted context the next LLM turn will see",
@@ -307,9 +317,19 @@ const DICT = {
 
 type Key = keyof typeof DICT;
 
+// The exported HTML is English. The head script in app/layout.tsx hides a
+// Chinese page (data-locale-pending) until hydration; switching here in a
+// layout effect re-renders before the first paint, so the English text is
+// never shown, and the attribute comes off in the same task.
+const useHydrateLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+export function revealLocalizedPage() {
+  if (typeof document !== "undefined") document.documentElement.removeAttribute("data-locale-pending");
+}
+
 export function useTranslation() {
   const [loc, setLoc] = useState<Locale>(current);
-  useEffect(() => {
+  useHydrateLayoutEffect(() => {
     // Hydrate from localStorage once the client mounts (SSR-safe).
     const stored = readStored();
     if (stored !== current) {
@@ -319,6 +339,7 @@ export function useTranslation() {
       }
     }
     setLoc(current);
+    revealLocalizedPage();
     const sub = (v: Locale) => setLoc(v);
     subscribers.add(sub);
     return () => { subscribers.delete(sub); };

@@ -3,12 +3,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import sqlite3
-from contextlib import closing
 
 import pytest
 
-from openprogram.execution import (
+from openprogram.runtime.execution import (
     AttemptStore,
     CapabilitySet,
     CheckpointFragment,
@@ -17,11 +15,10 @@ from openprogram.execution import (
     RuntimeControlService,
     RevisionControlService,
 )
-from openprogram.execution.effects import EffectClassification, EffectStatus
-from openprogram.execution.model import CommandStatus
-from openprogram.execution._schema import initialize_schema
-from openprogram.execution._schema import SCHEMA_VERSION
-from openprogram.execution.store import ExecutionConflict, ExecutionStore
+from openprogram.runtime.execution.effects import EffectClassification, EffectStatus
+from openprogram.runtime.execution.model import CommandStatus
+from openprogram.runtime.execution._schema import SCHEMA_VERSION
+from openprogram.runtime.execution.store import ExecutionConflict, ExecutionStore
 
 
 def _hash(value: str) -> str:
@@ -90,7 +87,7 @@ def _source(
         capabilities=CapabilitySet(fork=True, retry=True, pause=True, safe_point_kinds=("after",)),
     )
     attempts = AttemptStore(store)
-    leased, reserved = attempts.lease(source.execution_id, expected_version=1, owner_id="owner", ttl_seconds=30)
+    leased, reserved = attempts.lease(source.execution_id, expected_version=1, owner_id="owner")
     active, running = attempts.activate(leased.attempt_id, generation=1, expected_execution_version=reserved.status_version)
     service = RuntimeControlService(store, attempts, DriverRegistry())
     completed = (_frontier(),) if frontier else None
@@ -187,11 +184,7 @@ def test_retry_allows_legacy_frontier_and_uses_same_revision(tmp_path):
 
 @pytest.mark.parametrize("branch_kind", ["fork", "retry"])
 def test_branch_children_inherit_immutable_input_for_ui_projection(tmp_path, branch_kind):
-    from openprogram.execution.outbox import ProjectionDispatcher
-    from openprogram.execution.projections import (
-        ExecutionProjectionReadModel,
-        projection_handlers,
-    )
+    from openprogram.runtime.execution.event_effects import ExecutionEventEffects
 
     status = ExecutionStatus.PAUSED if branch_kind == "fork" else ExecutionStatus.FAILED
     store, _attempts, service, source, checkpoint = _source(
@@ -216,13 +209,9 @@ def test_branch_children_inherit_immutable_input_for_ui_projection(tmp_path, bra
     assert child_input.user_message_id == "msg-user"
     assert child_input.assistant_message_id == "msg-assistant"
 
-    dispatcher = ProjectionDispatcher(store, projection_handlers(store))
-    dispatcher.drain(owner_id="projection-worker")
-    projection = ExecutionProjectionReadModel(store).get_current(
-        "ui", result.child.execution_id
-    )
-    assert projection is not None
-    assert projection.payload["input"] == {
+    child = store.get_execution(result.child.execution_id)
+    payload = ExecutionEventEffects(store)._payload(store.latest_lifecycle_event(child.execution_id), child)
+    assert payload["input"] == {
         "entrypoint": "workflow",
         "user_message_id": "msg-user",
         "assistant_message_id": "msg-assistant",
@@ -268,7 +257,7 @@ def test_first_child_activation_uses_source_checkpoint_and_starts_a_new_chain(tm
     branch = _fork(service, store, source, checkpoint, _frontier())
     leased, reserved = attempts.lease(
         branch.child.execution_id, expected_version=branch.child.status_version,
-        owner_id="child-owner", ttl_seconds=30,
+        owner_id="child-owner",
     )
     active, running = attempts.activate(
         leased.attempt_id, generation=1,
@@ -291,164 +280,6 @@ def test_first_child_activation_uses_source_checkpoint_and_starts_a_new_chain(tm
     assert child_checkpoint.parent_checkpoint_id is None
     assert child_running.source_checkpoint_id == checkpoint.checkpoint_id
     assert child_running.checkpoint_head_id == child_checkpoint.checkpoint_id
-
-
-def test_v2_to_v4_migration_preserves_legacy_rows_and_revision_identity(tmp_path):
-    path = tmp_path / "legacy.db"
-    connection = sqlite3.connect(path)
-    initialize_schema(connection)
-    connection.execute("PRAGMA foreign_keys = OFF")
-    connection.execute("DROP INDEX executions_session_status")
-    connection.execute("DROP INDEX executions_run_parent")
-    connection.execute(
-        """
-        CREATE TABLE executions_v2 (
-            execution_id TEXT PRIMARY KEY,
-            run_id TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            parent_execution_id TEXT,
-            revision_id TEXT NOT NULL,
-            status TEXT NOT NULL,
-            status_version INTEGER NOT NULL,
-            reason_code TEXT,
-            current_attempt_id TEXT,
-            owner_lease_json TEXT NOT NULL,
-            checkpoint_head_id TEXT,
-            safe_point_json TEXT NOT NULL,
-            capabilities_json TEXT NOT NULL,
-            effect_summary_json TEXT NOT NULL,
-            created_at REAL NOT NULL,
-            updated_at REAL NOT NULL,
-            terminal_at REAL
-        )
-        """
-    )
-    connection.execute(
-        "INSERT INTO executions_v2 SELECT execution_id, run_id, session_id, "
-        "parent_execution_id, revision_id, status, status_version, reason_code, "
-        "current_attempt_id, owner_lease_json, checkpoint_head_id, "
-        "safe_point_json, capabilities_json, effect_summary_json, created_at, "
-        "updated_at, terminal_at FROM executions"
-    )
-    connection.execute("DROP TABLE executions")
-    connection.execute("ALTER TABLE executions_v2 RENAME TO executions")
-    connection.execute("ALTER TABLE commands DROP COLUMN result_json")
-    connection.execute("ALTER TABLE checkpoints DROP COLUMN completed_frontier_json")
-    manifest = {"entrypoint": "legacy"}
-    legacy_hash = hashlib.sha256(
-        json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    connection.execute(
-        "INSERT INTO revisions VALUES (?, ?, ?, ?, ?)",
-        ("legacy-revision", None, legacy_hash, json.dumps(manifest), 1.0),
-    )
-    connection.execute("PRAGMA user_version = 2")
-    connection.commit()
-    connection.close()
-
-    store = ExecutionStore(path)
-    legacy = store.get_revision("legacy-revision")
-    assert legacy is not None and legacy.content_hash == legacy_hash
-    with sqlite3.connect(path) as migrated:
-        assert migrated.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        table_sql = migrated.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' "
-            "AND name = 'executions'"
-        ).fetchone()[0]
-        assert "CHECK(parent_execution_id IS NOT NULL OR source_checkpoint_id IS NULL)" in table_sql
-        assert "REFERENCES checkpoints(checkpoint_id)" in table_sql
-        with pytest.raises(sqlite3.IntegrityError):
-            migrated.execute(
-                "INSERT INTO executions ("
-                "execution_id, run_id, session_id, parent_execution_id, "
-                "source_checkpoint_id, revision_id, status, status_version, "
-                "owner_lease_json, safe_point_json, capabilities_json, "
-                "effect_summary_json, created_at, updated_at) VALUES ("
-                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    "invalid-root",
-                    "run-invalid",
-                    "session-invalid",
-                    None,
-                    "checkpoint-invalid",
-                    "revision-invalid",
-                    "queued",
-                    1,
-                    "{}",
-                    "{}",
-                    "{}",
-                    "{}",
-                    1.0,
-                    1.0,
-                ),
-            )
-        names = {row[1] for row in migrated.execute("PRAGMA table_info(executions)")}
-        assert "source_checkpoint_id" in names
-        assert any(
-            row[2] == "checkpoints" and row[4] == "checkpoint_id"
-            for row in migrated.execute("PRAGMA foreign_key_list(executions)")
-        )
-        assert "result_json" in {row[1] for row in migrated.execute("PRAGMA table_info(commands)")}
-        assert "completed_frontier_json" in {row[1] for row in migrated.execute("PRAGMA table_info(checkpoints)")}
-    reused = store.create_revision(manifest=manifest, parent_revision_id=None)
-    assert reused.revision_id == "legacy-revision"
-    assert reused.content_hash == legacy_hash
-
-
-def test_v3_migration_rebuilds_source_checkpoint_foreign_key(tmp_path):
-    path = tmp_path / "v3.db"
-    connection = sqlite3.connect(path)
-    initialize_schema(connection)
-    connection.execute("PRAGMA foreign_keys = OFF")
-    connection.execute("DROP INDEX executions_session_status")
-    connection.execute("DROP INDEX executions_run_parent")
-    connection.execute(
-        """
-        CREATE TABLE executions_v3 (
-            execution_id TEXT PRIMARY KEY,
-            run_id TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            parent_execution_id TEXT,
-            source_checkpoint_id TEXT,
-            revision_id TEXT NOT NULL,
-            status TEXT NOT NULL,
-            status_version INTEGER NOT NULL,
-            reason_code TEXT,
-            current_attempt_id TEXT,
-            owner_lease_json TEXT NOT NULL,
-            checkpoint_head_id TEXT,
-            safe_point_json TEXT NOT NULL,
-            capabilities_json TEXT NOT NULL,
-            effect_summary_json TEXT NOT NULL,
-            created_at REAL NOT NULL,
-            updated_at REAL NOT NULL,
-            terminal_at REAL
-        )
-        """
-    )
-    connection.execute(
-        "INSERT INTO executions_v3 SELECT * FROM executions"
-    )
-    connection.execute("DROP TABLE executions")
-    connection.execute("ALTER TABLE executions_v3 RENAME TO executions")
-    connection.execute("PRAGMA user_version = 3")
-    connection.commit()
-    connection.close()
-
-    ExecutionStore(path)
-
-    with sqlite3.connect(path) as migrated:
-        assert migrated.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        foreign_keys = migrated.execute(
-            "PRAGMA foreign_key_list(executions)"
-        ).fetchall()
-        assert any(
-            row[2] == "checkpoints"
-            and row[3] == "source_checkpoint_id"
-            and row[4] == "checkpoint_id"
-            for row in foreign_keys
-        )
-        assert migrated.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_branch_command_is_idempotent_but_distinct_commands_create_distinct_children(tmp_path):
@@ -479,8 +310,7 @@ def test_fork_transaction_rolls_back_command_and_child(tmp_path, monkeypatch):
         )
     assert store.get_command("fork") is None
     assert store.get_execution(source.execution_id) == source
-    with sqlite3.connect(store.path) as connection:
-        assert connection.execute("SELECT COUNT(*) FROM executions").fetchone()[0] == 1
+    assert store._connect().count("executions") == 1
 
 
 def test_fork_rolls_back_when_child_insert_fails(tmp_path, monkeypatch):
@@ -499,8 +329,7 @@ def test_fork_rolls_back_when_child_insert_fails(tmp_path, monkeypatch):
             manifest_id=manifest.manifest_id, proof_hash=manifest.proof_hash,
         )
     assert store.get_command("fork") is None
-    with sqlite3.connect(store.path) as connection:
-        assert connection.execute("SELECT COUNT(*) FROM executions").fetchone()[0] == 1
+    assert store._connect().count("executions") == 1
 
 
 def test_fork_rolls_back_when_final_command_transition_fails(tmp_path, monkeypatch):
@@ -519,5 +348,4 @@ def test_fork_rolls_back_when_final_command_transition_fails(tmp_path, monkeypat
             manifest_id=manifest.manifest_id, proof_hash=manifest.proof_hash,
         )
     assert store.get_command("fork") is None
-    with sqlite3.connect(store.path) as connection:
-        assert connection.execute("SELECT COUNT(*) FROM executions").fetchone()[0] == 1
+    assert store._connect().count("executions") == 1

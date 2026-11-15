@@ -1,7 +1,7 @@
 import type {
   DesktopTransferPayload,
   TabDropPlacement,
-} from "@/lib/tabs/tab-transfer-journal";
+} from "@/lib/tabs/transfer/tab-transfer-journal";
 
 export interface DesktopTransferReceipt {
   token: string;

@@ -1,0 +1,184 @@
+<title>Harbor 评测适配器</title>
+<meta name="description" content="OpenProgram 怎样作为 Harbor agent，按写成文件的评测目标、和固定版本的对照 harness 一起运行，以及回报什么。">
+<meta name="covers" content="scripts/benchmarks/harbor_agent/ scripts/benchmarks/frontier_eval.py scripts/benchmarks/targets/">
+<h1>Harbor 评测适配器</h1>
+
+<p>FrontierHarness Eval 这类 Harbor 数据集在每个任务的容器里给编码 agent 打分。<code translate="no">scripts/benchmarks/harbor_agent/agent.py</code> 让 OpenProgram 成为这样的 agent：在容器里装好 CLI，用 <code translate="no">openprogram --print</code> 执行任务指令，再把这次运行的 token 和费用交给 Harbor。<code translate="no">openprogram</code> 包从不导入它，Harbor 也不是 OpenProgram 的依赖。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="主机上 harbor run 加载 OpenProgramAgent 并取得服务商密钥。任务容器里先以 root 安装 uv、Python 3.12 和 openprogram，然后以 agent 用户在任务工作目录运行 openprogram --print，密钥只在这一个进程的环境里。/logs/agent 里的用量文件回到试验目录，Harbor 据此填写 agent 结果。">
+  <defs><marker id="hb-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="18">主机</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="48">harbor run</text>
+  <text class="t-soft" x="0" y="70">-m provider/id</text>
+  <text class="t-soft" x="0" y="90">密钥来自 shell</text>
+  <line class="ln" x1="140" y1="44" x2="196" y2="44" marker-end="url(#hb-a)"/>
+  <text class="t-soft" x="206" y="18">任务容器</text>
+  <text class="t-big" x="206" y="48">安装</text>
+  <text class="t-soft" x="206" y="68">uv, Python 3.12, openprogram</text>
+  <text class="t-big" x="206" y="100">密钥</text>
+  <text class="t-soft" x="206" y="120">只在运行的环境里</text>
+  <text class="t-big" x="206" y="152">运行</text>
+  <text class="t-cmd notranslate" translate="no" x="206" y="172">openprogram --print</text>
+  <line class="ln-faint" x1="200" y1="58" x2="200" y2="176"/>
+  <line class="ln" x1="370" y1="166" x2="476" y2="166" marker-end="url(#hb-a)"/>
+  <text class="t-soft" x="486" y="18">试验目录</text>
+  <text class="t-big" x="486" y="48">Agent 结果</text>
+  <text class="t-soft" x="486" y="68">token、费用、分模型</text>
+  <text class="t-big" x="486" y="152">用量摘要</text>
+  <text class="t-cmd notranslate" translate="no" x="486" y="172">openprogram-usage.json</text>
+  <line class="ln" x1="540" y1="134" x2="540" y2="84" marker-end="url(#hb-a)"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>主机</strong><small><code translate="no">harbor run -m provider/id</code>；密钥来自 shell</small></li>
+  <li><strong>安装</strong><small>uv、Python 3.12 和 <code translate="no">openprogram</code> 装到 <code translate="no">/installed-agent/openprogram</code></small></li>
+  <li><strong>密钥</strong><small>只在运行的环境里，从不存下</small></li>
+  <li><strong>运行</strong><small>在任务工作目录执行 <code translate="no">openprogram --print</code></small></li>
+  <li class="flow-end"><strong>Agent 结果</strong><small>取自试验目录的 <code translate="no">agent/openprogram-usage.json</code></small></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">被测代码</th><td>从一个提交构建并上传的 wheel，或一个已发布的 Git ref；二者必须且只能给一个。Git ref 必须以字符串到达：Harbor 把 <code translate="no">--ak</code> 的值当 JSON 读，读成数字的提交号会被拒绝，而不是被改写</td></tr>
+<tr><th scope="row">安装</th><td>以 root 用固定版本的 uv 安装，跑在 uv 管理的 Python 3.12 上，与任务自带的 Python 分开；任何 agent 用户都可读。必填的约束文件把每个依赖固定在该提交 <code translate="no">uv.lock</code> 的版本上，每次试验跑的都是同一份代码；装上的版本写进试验日志。镜像缺 curl 时才装 curl。同一份安装按提交打一次包，<code translate="no">x86_64</code> glibc 镜像改为直接解包：几秒钟，不联网</td></tr>
+<tr><th scope="row">密钥</th><td>Harbor 按 <code translate="no">-m</code>（或 <code translate="no">--api-key-name</code>）从主机取得；只交给运行命令，用服务商自己的变量名（<code translate="no">OPENAI_API_KEY</code>；<code translate="no">--ak key_env=</code> 指定别的名字）。不登录，也不存。没有密钥时任务在任何试验开始前就停下。运行结束时状态里发现的凭据会删掉</td></tr>
+<tr><th scope="row">模型</th><td><code translate="no">-m</code> 就是 OpenProgram 的 <code translate="no">provider/id</code>；Harbor 和 OpenProgram 的服务商名不同时用 <code translate="no">--ak provider=</code> 改名</td></tr>
+<tr><th scope="row">运行</th><td>以任务的 agent 用户、在镜像的工作目录运行。指令经 stdin 交给 <code translate="no">--print=-</code>，不会被当成参数；stdout（事件）和 stderr 写进不同的文件。工具轮数不设上限；需要批准的操作直接拒绝；关闭 core 文件，进程中止时不会在评分目录里留下东西</td></tr>
+<tr><th scope="row">运行说明</th><td>每次请求在指令旁告诉模型没有人在看、要把任务做到底；这段话只出现一次，每轮字节相同，服务商的缓存因此一直命中。在 Linux 上 shell 命令读 <code translate="no">/proc</code>，镜像里没有 <code translate="no">ps</code> 也能运行</td></tr>
+<tr><th scope="row">请求</th><td>和产品里一样：系统提示词带工作目录和 shell，工具列表见下一行。第一条用户消息在指令前带上日期和运行说明；容器里的新主目录没有记忆，所以不发记忆地图。不同日子的运行之间只有日期不同</td></tr>
+<tr><th scope="row">工具</th><td>产品默认的 27 个已加载：文件和 shell（<code translate="no">bash</code>、<code translate="no">read</code>、<code translate="no">write</code>、<code translate="no">edit</code>、<code translate="no">apply_patch</code>、<code translate="no">glob</code>、<code translate="no">grep</code>），后台任务，子 agent 和 goal，todo 和提醒，四个 MCP 工具，<code translate="no">tool_search</code>，在 macOS 主机上还有 <code translate="no">computer_use_agent</code>。另外 31 个（包括 <code translate="no">web_fetch</code>、<code translate="no">web_search</code>）放在 <code translate="no">tool_search</code> 后面。子 agent、goal 和提醒都计入成绩和花费。<code translate="no">--no-web</code> 去掉所有网页工具和服务商端搜索。这是在 macOS 主机上抓到的，Linux 容器里的列表还没核实</td></tr>
+<tr><th scope="row">工作区</th><td><code translate="no">--no-project-binding</code>：评分的工作目录里什么都不写，也就没有要清理的标记</td></tr>
+<tr><th scope="row">失败</th><td>退出码非零、没有用量摘要，或摘要不是 <code translate="no">completed</code> 且至少一次模型请求，试验都算失败。错误类型只看用量摘要，从不看运行的输出，因为输出里是模型的文字。被服务商终止的运行，不论在本轮开始前，还是本轮中 OpenProgram 自己的重试用完之后，都按原因上报（鉴权、限流、服务端、网络、未知模型），因流空闲上限结束的回合报为响应停滞，不论服务商的读取方用什么字眼说。先查 <code translate="no">--print</code> 在捕获异常处记下的分类（<code translate="no">error_kind</code>、<code translate="no">error_reason</code>）；没记的构建，或原因分不出是断连还是停滞的，才读错误的字眼。其余失败都是普通的非零退出，算 agent 的</td></tr>
+<tr><th scope="row">超时</th><td>Harbor 的 agent 超时结束运行时，OpenProgram 收到 SIGTERM：取消本轮，最多等 30 秒让它停下（再来一次信号就从取消起只等 2 秒），写出用量摘要和记录，以 143 退出，不论后来的信号何时到</td></tr>
+<tr><th scope="row">收尾</th><td>每次运行之后，不论怎样结束（成功、失败、Harbor 超时停止之后）：把 agent 主目录里 OpenProgram 的状态拷到试验的 <code translate="no">agent/openprogram-state/</code>，不含 <code translate="no">auth/</code> 和 <code translate="no">cache/</code>，然后删除凭据；命名 profile 的状态同样拷到 <code translate="no">openprogram-state-&lt;profile&gt;/</code>。只要还留有凭据，这一步就失败。以 agent 用户执行，因为状态在它的主目录；失败只记日志，不会顶替运行本身的结果</td></tr>
+<tr><th scope="row">重建</th><td>接着，运行没留下转录时（被直接杀掉或内存耗尽），<code translate="no">openprogram transcript</code> 用 <code translate="no">--transcript-file</code> 的同一段代码从运行留下的状态生成它。已有的转录保留不动。顺序固定：停止，拷出状态并删掉凭据，重建</td></tr>
+<tr><th scope="row">退出</th><td>除这一轮外不发模型请求（标题、分支名、话题归类），也不交给记忆，因为超过阈值后那就是一次模型运行；对话由下一个 worker 的空闲扫描写入记忆。</td></tr>
+<tr><th scope="row">停止后离开</th><td>命令等的是回合结束时设置的事件，而不是它的线程：在 Python 3.12 上，信号打断 <code translate="no">Thread.join</code> 会把仍在运行的线程标成已结束。等待结束时仍未停下的回合，它在等的命令先被停掉，因为每个命令都在比进程活得久的监管进程下运行；然后进程不走解释器的退出流程直接离开</td></tr>
+<tr><th scope="row">后续信号</th><td>只有第一个信号会被抛出，它的处理函数把之后的接住。停止期间记下的信号在文件写好后让进程离开，解释器等线程时来的立即离开，从退出回调起一律忽略，所以退出码保持第一个信号的值（SIGTERM 为 143）</td></tr>
+<tr><th scope="row">证据</th><td><code translate="no">--transcript-file</code> 按存储的样子写出这一轮，每条记录一行 JSON：每次模型请求的时间和 token，推理、回复文字、带完整参数的工具调用，以及每个工具结果和时间；不脱敏。它在主机上转成 Harbor 的 <code translate="no">trajectory.json</code>（ATIF），每次请求一步，供 <code translate="no">harbor view</code> 查看</td></tr>
+<tr><th scope="row">被直接杀掉</th><td>进程被直接杀掉时两个文件都不会写出；它的转录从状态重建（见“重建”），状态副本里有带本轮日志记录的会话日志，和记着每次请求 token 的用量账本</td></tr>
+<tr><th scope="row">工具结果</th><td>每个结果取自会话日志里本轮的日志记录；日志记录里没有的才退回存储里 4,000 字符的预览，<code translate="no">complete</code> 为 false</td></tr>
+<tr><th scope="row">结果大小</th><td>输出就是模型读到的结果：最多为模型的工具输出权重（默认 10,000，CJK 字符算 1，其他字符算 0.25）或其窗口的 30%，全文存进文件，模型用 <code translate="no">read</code> 翻页读取；shell 工具对很长的输出只留结尾，并说明丢掉了多少字节</td></tr>
+<tr><th scope="row">网络</th><td>上报 Harbor 登记的服务商公共 API 主机，白名单任务据此放行</td></tr>
+</tbody>
+</table>
+
+<h2 id="usage">用量</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Harbor 字段</th><th scope="col">取自用量摘要</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">n_input_tokens</code></th><td>未缓存输入 + 缓存读取 + 缓存写入</td></tr>
+<tr><th scope="row"><code translate="no">n_cache_tokens</code></th><td>缓存读取</td></tr>
+<tr><th scope="row"><code translate="no">n_output_tokens</code></th><td>输出</td></tr>
+<tr><th scope="row"><code translate="no">cost_usd</code></th><td>OpenProgram 计出的总价；有任何一次请求没有价格时留空，由 Harbor 自己按 token 计价</td></tr>
+<tr><th scope="row"><code translate="no">model_usage</code></th><td>同上，按模型分，含子 agent</td></tr>
+<tr><th scope="row"><code translate="no">metadata.openprogram</code></th><td>运行怎样结束、模型请求数、轮数、工具调用数、缓存写入，以及按用途分的请求（<code translate="no">by_call_kind</code>：压缩的花费和本轮各轮分开）</td></tr>
+<tr><th scope="row"><code translate="no">trajectory.json</code></th><td>总数和费用；每个步骤的输入、缓存和输出 token 取自记录</td></tr>
+</tbody>
+</table>
+<h2 id="full-run">全量运行</h2>
+<p><code translate="no">scripts/benchmarks/frontier_eval.py</code> 运行一个评测目标：<code translate="no">scripts/benchmarks/targets/</code> 里的一个文件，写着一次评测的全部方法，每一项都注明出处。可比性来自同一个任务里的对照 harness，而不是别的条件下发表的数字。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">目标</th><th scope="col">任务 × 尝试</th><th scope="col">模型、强度</th><th scope="col">对照</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">fh-v1-tb21</code>（默认）</th><td>FrontierHarness v1 的 21 个 Terminal-Bench 任务（<code translate="no">terminal-bench@2.0</code>）× 3；重试 2 次；公布的是每个任务第一次有效尝试的通过率</td><td>gpt-5.6-terra，medium</td><td>Codex 0.148.0</td></tr>
+<tr><th scope="row"><code translate="no">fh-v1.1</code></th><td>FrontierHarness v1.1 固定的 62 个任务 × 4；重试 2 次</td><td>gpt-5.6-sol，medium</td><td>Codex 0.148.0</td></tr>
+<tr><th scope="row"><code translate="no">tb2</code></th><td>Terminal-Bench 2.0 的 89 个任务 × 5；不重试；不接受任何超时或资源覆盖</td><td>gpt-5.6-terra，medium</td><td>Codex 0.148.0</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>任务</strong>：OpenProgram 和对照 harness（Harbor 自带的适配器，固定版本，给定目标的推理强度）用同样的任务、模型和网络。Harbor 0.25.0、目标的重试策略（由启动器执行）、它公布哪个通过率、它认为可比的环境（Runta）和价目表都写在文件里。</li>
+<li><strong>时间上限</strong>：沿用每个任务自己的 agent 超时，这 21 个任务是 600 到 1,800 秒，和 FrontierHarness 一样。它的脚本还把一个任务的整次 <code translate="no">harbor run -r 2</code>（含重试）限制在 5,400 秒。Harbor 没有这种上限，所以汇总数出保留下来的试验里超过它的；被删掉的重试，其时间不在其中。</li>
+<li><strong>偏离</strong>：换模型、减少尝试、只跑部分任务、设超时上限、设 agent 环境变量、不带对照、不可比的环境或别的 Harbor 版本，每一项都写进运行记录，并标 <code translate="no">methodology_comparable: false</code>。</li>
+<li><strong>强度</strong>：两个 agent 都按目标的推理强度运行，OpenProgram 经 <code translate="no">--print --effort</code> 拿到；启动器的 <code translate="no">--effort</code> 给两边换一个强度，算偏离。<code translate="no">--print</code> 不接受 <code translate="no">--effort</code> 的构建按 Agent 的默认值运行，也算偏离。</li>
+<li><strong>网页</strong>：目标的 <code translate="no">disable_web_search</code>（所有目标都是 false，和已发表的运行一样）为 true 时同样交给两个 agent，并写进运行记录。</li>
+<li><strong>试点</strong>：<code translate="no">run --pilot</code> 只跑目标的 8 个试点任务，记为偏离。名单按 FrontierHarness v1 每题的通过比例分三层固定：难（0.2 及以下）<code translate="no">kv-store-grpc</code>、<code translate="no">dna-insert</code>、<code translate="no">extract-elf</code>；中（0.3 到 0.5）<code translate="no">chess-best-move</code>、<code translate="no">gcode-to-text</code>；易（0.8 及以上）<code translate="no">regex-log</code>、<code translate="no">sanitize-git-repo</code>、<code translate="no">build-cython-ext</code>。</li>
+<li><strong>检查</strong>：Docker、实际找到的 Harbor 版本、密钥、剩余磁盘。</li>
+<li><strong>构建</strong>：用 <code translate="no">git archive</code> 从一个提交构建 wheel 和约束文件，所以未发布的提交也能用；为本地 Docker 打好安装包。<code translate="no">uv build</code> 之前把提交和构建时间写进源码的 <code translate="no">openprogram/_build_info.py</code>，装好的 <code translate="no">--version</code> 和每个运行头因此自己就能说出提交，不靠旁边启动器的记录。</li>
+<li><strong>重试</strong>：Harbor 不重试（<code translate="no">max_retries: 0</code>）。它退出后，启动器最多跑目标 <code translate="no">max_retries</code> 轮。每轮把 Harbor 的 <code translate="no">RetryConfig</code> 会重试的试验和验证器准备失败的试验，连同账本行移到 <code translate="no">jobs/&lt;job&gt;.retried/&lt;trial&gt;/&lt;n&gt;/</code>，再运行 <code translate="no">harbor job resume</code>。</li>
+<li><strong>重试目录</strong>：放在任务目录旁边，因为续跑会删掉任务目录里没有 <code translate="no">result.json</code> 的文件夹。预算用尽或任务被停下后不再开新一轮。</li>
+<li><strong>预算</strong>：所有尝试的花费到达预算就停下。OpenProgram 的每次尝试都把花费追加到任务旁边的账本里；两边被移开的每次尝试，账本里也都有一行，写着原因。</li>
+<li><strong>丢弃的尝试</strong>：<code translate="no">--rerun-infra</code> 把每一次连同原因写进账本，按试验名和开始时间区分，所以对照试验以同一个名字重跑后，两次的费用都在。</li>
+<li><strong>续跑</strong>：wheel、安装包或目标变了就拒绝。<code translate="no">--rerun-infra</code> 把算作基础设施或取消的试验移开，再跑一遍；重试轮次从停下的地方接着跑。</li>
+<li><strong>汇总</strong>：每次试验分为通过、agent 失败、基础设施或取消。
+<ul>
+<li>按 agent：按通过和 agent 失败计算的通过率；FrontierHarness 的口径，每个任务取第一次有效尝试；目标公布的是其中哪一个。</li>
+<li>首次尝试通过率：之前有一次尝试因 agent 自己的原因结束的试验不算通过；因服务商、网络或容器而重试的不算在内。启动器重试过的任务两边都有；旧任务里由 Harbor 重试并删掉了对照的尝试，只有 OpenProgram 有。</li>
+<li>同样按 agent：重试次数和类别；上报的每次尝试的费用，及其中重试尝试的部分；按目标价目表重算的费用；每次通过的费用，按保留下来的试验和同样的价目计算，两边用同一批尝试；容器时长；超过墙钟上限的试验。</li>
+<li>和对照配对：同一任务上两边第 n 次计分的尝试配成一对；对只有一边通过的对做 McNemar 精确检验；给出这么多对在 5% 显著性、80% 检验力下能看出的最小差距。同一任务的几次尝试并不独立，任务少时两者都偏乐观。</li>
+</ul></li>
+<li><strong>算基础设施</strong>要有证据：基础设施类错误、用量摘要里服务商或网络的原因（注明在本轮开始前还是本轮中）、验证器自己的准备在任何测试运行前就失败，或验证器根本没启动。测试跑过之后验证器超时，算 agent 的。</li>
+</ul>
+<h2 id="not-done">不做的事</h2>
+<ul>
+<li><strong>agent 内不设费用上限</strong>（<code translate="no">--max-budget-usd</code>）：一道题因为钱花完而失败，是这个上限造成的结果，不是 harness 的。Codex 没有，FrontierHarness 只限墙钟时间；Harbor 对 Claude Code 和 mini-SWE-agent 的上限默认也不设。花费在 agent 外面由启动器的账本和 SIGINT 控制。</li>
+<li><strong>不另写一份实时转录</strong>：日志记录和账本本来就逐条写入；转录从它们派生，只生成一次，在退出时或事后。</li>
+</ul>
+<p class="note">oracle 冒烟、单任务和全量在本地 Docker 与 Runta 上的命令：<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/benchmarks/harbor_agent/README.md"><code translate="no">scripts/benchmarks/harbor_agent/README.md</code></a>.</p>
+
+<h2 id="before-a-full-run">全量运行之前</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">需要</th><th scope="col">要准备的</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harbor</th><td>0.25.0，在 <code translate="no">PATH</code> 里或由 <code translate="no">$HARBOR</code> 指定：<code translate="no">uv tool install "harbor[runta]==0.25.0"</code>。</td></tr>
+<tr><th scope="row">可比的运行环境</th><td>Runta 账号（<code translate="no">runta login</code>，<code translate="no">--env runta</code>）。Apple 芯片上的本地 Docker 只能检查流程：镜像靠模拟运行，Docker 只有 4 个 CPU 和 7.7 GB，<code translate="no">batched-eval-parity</code> 还需要 <code translate="no">docker buildx</code>。</td></tr>
+<tr><th scope="row">API 密钥</th><td>模型所属服务商的密钥（<code translate="no">openai/...</code> 用 <code translate="no">OPENAI_API_KEY</code>，或用 <code translate="no">--key-profile</code>），留出下面预算的余量，限流要够同时跑 4 到 16 个试验。<code translate="no">openai-codex</code> 这类订阅登录没有可以传进任务容器的密钥。</td></tr>
+<tr><th scope="row">模型</th><td>由目标指定，推理强度也是（<code translate="no">gpt-5.6-terra</code>、<code translate="no">medium</code>）；两个 agent 都用这个强度。换别的要清楚后果：运行就和目标不可比了。<code translate="no">check</code> 不会去问服务商是否列出该模型。</td></tr>
+<tr><th scope="row">带 <code translate="no">--effort</code> 的构建</th><td><code translate="no">--ref</code> 指向的提交，其 <code translate="no">--print</code> 要接受 <code translate="no">--effort</code>；<code translate="no">run</code> 会读 wheel，不接受时会说明。</td></tr>
+<tr><th scope="row">花钱前的检查</th><td>先用最便宜的模型跑一个 OpenProgram 试验：转录的 <code translate="no">run</code> 记录写着 Linux 容器里加载了哪些工具、首个请求发了什么（模型、强度、<code translate="no">include</code>、<code translate="no">store</code>），用量摘要里有强度。然后在 Runta 上用 oracle 跑一遍 21 题，再跑 8 题试点（<code translate="no">run --pilot</code>）。</td></tr>
+<tr><th scope="row">构建</th><td>默认 <code translate="no">--ref stable</code>；wheel 和 209 MB 的安装包每个提交构建一次。</td></tr>
+<tr><th scope="row">费用</th><td><code translate="no">fh-v1-tb21</code>：21 个任务 × 3 次 × 2 个 agent = 126 次试验。按每次 $2 到 $4（FrontierHarness v1 发表的 Codex 约 $2.3 一次），模型费 $250 到 $500，另加沙箱的容器时长，汇总会统计。8 个任务 × 1 次 × 2 个 agent 的试点 $30 到 $65。<code translate="no">fh-v1.1</code>：62 × 4 × 2 = 496 次试验。</td></tr>
+<tr><th scope="row">时间</th><td>每次试验约 10 分钟墙钟时间，长尾到一小时；一个验证器镜像可能要拉 16 分钟。<code translate="no">fh-v1-tb21</code> 并发 8 要 3 到 5 小时。</td></tr>
+<tr><th scope="row">结果能说明什么</th><td>21 个任务 × 3 次配对，能看出约 15 到 20 个百分点的差距；更小的只能报“无明显差别”。要看更小的差距得跑 <code translate="no">tb2</code>（89 个任务 × 5 次）。</td></tr>
+<tr><th scope="row">提交成绩</th><td>全量运行前先问维护者；新结果不排名（<code translate="no">methodology_comparable: false</code>）。</td></tr>
+</tbody>
+</table>
+
+<h2 id="why">为什么这样设计</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">主题</th><th scope="col">跟随</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">始终要回加密推理</th><td>Codex（OpenCode 效果相同）</td><td><code translate="no">store: false</code> 时服务端不保留推理：请求不要回来，推理模型照样推理、照样计费，下一轮工具调用却接不上。Codex 每次都要；Pi 只在有强度时要。<code translate="no">include</code> 是顶层参数，此前的前缀字节和缓存都不变</td></tr>
+<tr><th scope="row">关闭即 <code translate="no">effort: "none"</code></th><td>Pi（字节和 Codex 相同）</td><td>不发推理字段，服务端就按默认强度推理，和“关掉思考”的意思不符。Pi 发它映射表里的关闭值，模型把关闭映射成空时就不发；这里比 <code translate="no">none</code> 早的模型（o 系列、gpt-5 到 gpt-5-pro）就是这样</td></tr>
+<tr><th scope="row">密钥只在运行的环境里</th><td>Harbor 的 Codex 和 Claude Code 适配器</td><td>两者都把密钥作为一个进程的服务商变量传入；登录一步会写下凭据，之后还得找出来删掉</td></tr>
+<tr><th scope="row">启动器负责重试</th><td>FrontierHarness</td><td>它在重试前归档尝试，从不替换有效的尝试。Harbor 自己重试前会删掉试验目录，对照组之前的尝试丢了，首次尝试通过率也就算不出来。用 Harbor 的试验钩子则要换掉 <code translate="no">harbor run</code>，自己写 Python 入口</td></tr>
+<tr><th scope="row">转录从状态派生</th><td>Codex 和 Claude Code 适配器</td><td>两者都逐条写会话，事后派生轨迹。只有一条路径，被杀的运行和正常结束的运行得到的转录就一样；另写一份实时的可能和它对不上</td></tr>
+<tr><th scope="row">提交写进构建</th><td>Claude Code</td><td>它在构建时注入版本和构建时间。单独拿出来看的试验目录旁边没有启动器的记录；源码检出不受影响</td></tr>
+<tr><th scope="row"><code translate="no">--no-web</code></th><td>Harbor（它的 Codex 和 Claude Code 适配器）</td><td>两者都声明原生网页工具，并在 <code translate="no">disable_web_search</code> 时关掉。两边用同一个开关，才能做关掉网页的对照；默认仍开着，和已发表的一样</td></tr>
+<tr><th scope="row">试点选题</th><td>FrontierHarness 自己的每题数据</td><td>原来 8 题里有 5 题在 v1 全部通过，看不出成本长尾和差距；难题最能暴露超时和长尾，所以三层都要有。它的冒烟题 <code translate="no">regex-log</code> 也在其中</td></tr>
+<tr><th scope="row">agent 内不设费用上限</th><td>Codex、FrontierHarness</td><td>见<a href="#not-done">不做的事</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事项</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行</th><td>已在本地 Docker 上对一个任务跑了七次试验。gpt-5-mini 的五次都是 0 分：经它的求值器运行的程序都停在解释器的括号检查上（回放过的那次，每一版括号都不配对）。gpt-5.6-sol 两次都写出了正确的求值器：一次在评分前被外部停掉，它的文件离线跑 63 个程序全部通过；另一次通过 61 个，在模拟环境下太慢，超出验证器的 60 秒限制（离线 66 秒；前一份 14 秒）。输入缓存命中率 74% 到 97%</td></tr>
+<tr><th scope="row">五个任务的样本</th><td>本地 Docker 上每个任务一次，gpt-5.6-sol：fix-git 通过；bun-sourcemap-leak 0 分，是模型的问题（36 个测试过 25 个）；sqlite-with-gcov 0 分，因为验证器下载不到 uv，算作基础设施；两个回合因流停滞 300 秒而结束。把上限放到 1800 秒重跑，请求之间的间隔没有超过 39 秒。用安装包装好要 8 到 10 秒，之前每次试验 3 到 16 分钟。每次跑完的试验 $0.16 到 $1.03，agent 用时 2 到 9 分钟</td></tr>
+<tr><th scope="row">流停滞</th><td>流停滞的请求整个重发，最多 5 次，每次都算一次模型请求；重发用完仍因停滞结束的回合，原样报出服务商自己的说法。已用脚本化的提供商经 <code translate="no">--print</code> 检查，还没在真实试验里遇到</td></tr>
+<tr><th scope="row">无界面冒烟</th><td>在主机上用新的主目录跑试验的运行命令，模型 <code translate="no">openai-codex/gpt-5.6-luna</code>：三个小任务都完成，各 3 到 9 次请求，从第二次请求起输入缓存命中 92% 到 98%，只有一条新的 20,000 字符 shell 输出之后的那次是 40%。续跑的 Harbor 一侧是按 Harbor 0.25.0 源码写的替身检查的，没有跑真实任务</td></tr>
+<tr><th scope="row">离线验证器</th><td><code translate="no">allow_internet=false</code> 的验证器（batched-eval-parity）在本地 Docker 上跑不了：<code translate="no">no-network</code> 被拒绝，出口控制边车需要 <code translate="no">docker buildx</code></td></tr>
+<tr><th scope="row">任务镜像</th><td>镜像里没有 <code translate="no">ps</code> 也能运行 shell 命令，已在 <code translate="no">python:3.12-slim</code> 和一次试验里验证</td></tr>
+<tr><th scope="row">提前停下</th><td>gpt-5-mini 有一次在用掉任务四分之一的时间后结束、问要不要继续；gpt-5.6-sol 有一次在 40 分钟里只用了 6 分钟就结束，自认已完成，而它中断了自己最慢的那项检查</td></tr>
+<tr><th scope="row">证据</th><td>真实试验已写出 transcript 和 trajectory，并逐个调用核对过：没有工具截断或损坏文件。这几次试验的 transcript 写于保留完整输出之前，超过 4,000 字符的结果在里面只是预览。进程被直接杀掉时两个文件都不会留下；SIGKILL 之后的状态副本用替身 CLI 在 bash 下检查过，没在试验里跑过</td></tr>
+<tr><th scope="row">错误类型</th><td>对着 Harbor 0.25.0 自己的匹配检查过：输出里引用了“invalid api key”和“rate limit”的运行，以前被判为鉴权错误，现在除非用量摘要写明原因，都是普通失败。一次用占位 OpenAI 密钥的本地试验，摘要里记下了服务商的 401；用这段原文写的测试判为鉴权错误</td></tr>
+<tr><th scope="row">凭据和状态副本</th><td>一次本地 Docker 试验（fix-git，占位密钥）：<code translate="no">agent/openprogram-state/</code> 里有会话日志和用量账本（360 KB），没有 <code translate="no">auth/</code>，试验的文件里哪儿都没有这个密钥。一次尝试的步骤顺序和哪些命令交给 Harbor 的匹配器，是不需要 Harbor 就能测试的普通函数；适配器对它们的使用只在装了 Harbor 的地方检查。没在试验里检查过：超时路径、命名 profile</td></tr>
+<tr><th scope="row">目标和对照</th><td>Harbor 0.25.0 的 <code translate="no">harbor run --dry-run</code> 接受了缩到一个任务的 <code translate="no">fh-v1-tb21</code>：两次试验，OpenProgram 和给定 <code translate="no">reasoning_effort=medium</code> 的 Codex 0.148.0。21 个任务名在 <code translate="no">terminal-bench@2.0</code>（89 个任务）里都能找到。还没带对照跑过付费试验</td></tr>
+<tr><th scope="row">推理强度</th><td><code translate="no">--print --effort</code> 设定一轮的强度，不保存；适配器向 Harbor 声明 <code translate="no">reasoning_effort</code> 和 <code translate="no">atif</code>，并把强度传下去。用脚本化的服务商测过，还没在试验里跑。在 OpenAI 的 Responses API 上，每个推理模型不论强度都要回加密的推理，关闭时在接受它的模型上发 <code translate="no">effort: "none"</code>；两者都是请求构造测试，还没对真实 API 核对</td></tr>
+<tr><th scope="row">运行头</th><td>转录的 <code translate="no">run</code> 记录写版本、要求的强度、权限模式、运行说明和系统文字的哈希，以及首个请求实际发出的模型、强度、<code translate="no">include</code>、<code translate="no">store</code>、全部工具和网页工具、<code translate="no">no_web</code>、工具输出权重，以及构建的提交。每条 <code translate="no">request</code> 记录加上它的强度、<code translate="no">include</code>、<code translate="no">store</code> 和工具列表哈希，取自 adapter 组请求体的地方。还没在 Linux 容器里看过</td></tr>
+<tr><th scope="row">错误类别</th><td>适配器先按 <code translate="no">--print</code> 记下的类别判断（<code translate="no">stream_idle</code> 即停滞），再按服务商的原因；两者都定不了才读字眼。等一次 Harbor 试验里两种判法结果一致，字眼匹配就删掉</td></tr>
+<tr><th scope="row">请求录制</th><td>服务商录制（<code translate="no">openprogram recordings record</code>，试验里不开）每次请求只读上次之后新加的行，每次请求的内存不再随文件增长。原先的整文件重读很可能就是 378 MB 录制文件被 OOM 杀掉的原因；还没在那道题上重跑</td></tr>
+<tr><th scope="row">重建的转录</th><td>用脚本化的服务商，从状态重建的转录和运行自己写出的逐条相同，只有 <code translate="no">run</code> 头不同；shell 这一步用替身 CLI 在 bash 下检查过；还没在试验里跑。记录本身还不带时间：工具结果的时间仍由下一次请求推断</td></tr>
+<tr><th scope="row">启动器重试</th><td>轮次、任务目录旁的归档、两边的首次尝试通过率，都对着 <code translate="no">harbor job resume</code> 的替身检查过，没跑真实任务</td></tr>
+<tr><th scope="row">关闭网页工具</th><td><code translate="no">--no-web</code> 经 <code translate="no">--print</code> 用脚本化的服务商测过。Harbor 是否接受这个适配器的 <code translate="no">native_web_tools</code> 和 <code translate="no">disable_web_search</code>，读的是 Harbor 0.25.0 的源码，还没做 dry run</td></tr>
+<tr><th scope="row">超时的试验</th><td>在 <code translate="no">python:3.12-slim</code> 里用脚本化的提供商检查过：请求中、工具运行中和两轮之间收到 SIGTERM，Ctrl-C，第二次 SIGTERM，以及不理会停止的回合。都没有 core 文件，也没有回合之外的请求；两个文件都写出，以 130 退出（那时 SIGTERM 还不是 143，未重测）。还没在真实试验或 Runta 里跑过</td></tr>
+<tr><th scope="row">安装包</th><td><code translate="no">stable</code> 的安装包 4 分钟建好（209 MB，glibc 2.31），在不联网的 terminal-bench 镜像里 6 秒装好，在那里连不上服务商的运行报为网络失败</td></tr>
+<tr><th scope="row">主机上的停止</th><td>无界面冒烟里，shell 命令运行中收到 SIGTERM，1.1 秒停下：以 130 退出（SIGTERM 现在是 143），两个文件都写出，命令和标记都没了</td></tr>
+<tr><th scope="row">第二个信号</th><td>在 macOS 上，工具命令运行时第一个 SIGTERM 之后 0 到 0.4 秒再来一个：0.6 秒内以 130 退出（现在是 143），命令也没了。不理会停止的回合在 30 秒后结束命令，收到第二个信号则在取消后 2 秒结束</td></tr>
+<tr><th scope="row">试点和全量</th><td>没跑：需要 Runta 账号、带预算的 API 密钥，以及所有者同意花这笔钱</td></tr>
+<tr><th scope="row">排行榜</th><td>没有公开的提交流程；在同一网络策略下跑过对照 harness 之前，新结果不排名</td></tr>
+</tbody>
+</table>

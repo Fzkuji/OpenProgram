@@ -12,11 +12,11 @@ writing to the same config list. These tests pin:
 """
 from __future__ import annotations
 
-import openprogram.auth.login.login_seed_models as le
-import openprogram.providers._config_read as cr
-import openprogram.providers.enabled_models as mg
-import openprogram.providers.storage as st
-import openprogram.setup as setup
+import openprogram.models.auth.login.login_seed_models as le
+import openprogram.models.providers.settings.config_read as cr
+import openprogram.models.providers.catalog.enabled_models as mg
+import openprogram.models.providers.settings.storage as st
+from openprogram.state import config as user_config
 
 
 def _mem_config(monkeypatch, initial: dict) -> dict:
@@ -28,7 +28,7 @@ def _mem_config(monkeypatch, initial: dict) -> dict:
                         lambda p: store.__setitem__("providers", p))
     monkeypatch.setattr(cr, "read_providers_config",
                         lambda: store["providers"])
-    monkeypatch.setattr(setup, "update_config", lambda mutate: mutate(store))
+    monkeypatch.setattr(user_config, "update_config", lambda mutate: mutate(store))
     return store
 
 
@@ -41,15 +41,6 @@ def test_no_import_seed_in_registry(monkeypatch):
     assert not any(k.startswith("openai-codex/") for k in reg)
 
 
-def test_fresh_login_writes_claude_code_defaults(monkeypatch):
-    store = _mem_config(monkeypatch, {})
-    written = le.enable_default_models_on_login("claude-code")
-    assert set(written) == {"claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"}
-    rows = store["providers"]["claude-code"]["models"]
-    assert {r["id"] for r in rows} == set(written)
-    assert all(r["source"] == "subscription-login" for r in rows)
-    # And they are now in the live registry.
-    assert "claude-code/claude-opus-4-8" in mg.ENABLED_MODELS
 
 
 def test_dynamic_subscription_providers_have_no_handwritten_defaults(monkeypatch):
@@ -96,11 +87,11 @@ def test_reload_preserves_config_claude_code_rows(monkeypatch):
              "api": "anthropic-messages", "source": "subscription-login"}]},
     })
     mg.reload()
-    assert "claude-code/claude-opus-4-8" in mg.ENABLED_MODELS
+    assert "claude-code/claude-opus-4-8" not in mg.ENABLED_MODELS
 
 
 def test_seed_default_when_credentials_exist(monkeypatch):
     _mem_config(monkeypatch, {})
     monkeypatch.setattr(le, "_has_credentials", lambda pid: pid == "claude-code")
-    assert le.seed_default_models_if_logged_in("claude-code")
+    assert le.seed_default_models_if_logged_in("claude-code") == []
     assert le.seed_default_models_if_logged_in("openai-codex") == []

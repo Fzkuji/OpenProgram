@@ -11,10 +11,11 @@
  *     ``AnimatedNavIconHandle`` / ``AnimatedNavIconProps`` — every icon
  *     exposes the same start/stop imperative API, so a caller holds a
  *     single ref type.
- * Icons missing upstream (Monitor, Pin) use official Lucide glyphs with
- * the same controlled-ref pattern; Pin reuses the folder-open variants.
+ * Monitor, missing upstream, uses the official Lucide glyph with the same
+ * controlled-ref pattern.
+ * Quote uses the user-supplied MessageSquareMore glyph and blinking dots.
  * Other path data, variants, and transitions remain upstream's.
- * Per project rule we never hand-author SVGs.
+ * Custom glyphs require explicitly supplied artwork.
  *
  * Driven from the *container's* hover: the caller attaches a ref and
  * calls start/stopAnimation from the row's / button's onMouseEnter/Leave,
@@ -23,15 +24,14 @@
  * its own hover and listens only to the container.
  */
 
-import type { Transition, Variants } from "framer-motion";
 
 export type { AnimatedNavIconHandle, AnimatedNavIconProps } from "./_shared";
-export * from "./icons-1";
-export * from "./icons-2";
-export * from "./icons-3";
-export * from "./icons-4";
-export * from "./icons-5";
-export * from "./icons-6";
+export * from "./set/icons-1";
+export * from "./set/icons-2";
+export * from "./set/icons-3";
+export * from "./set/icons-4";
+export * from "./set/icons-5";
+export * from "./set/icons-6";
 export { CursorClickIcon } from "./cursor-click-icon";
 
 export { GaugeIcon } from "./gauge-icon";

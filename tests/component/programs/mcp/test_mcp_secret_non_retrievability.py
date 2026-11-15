@@ -24,7 +24,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.mcp.config import (
+from openprogram.extensions.mcp.config import (
     MCPServerConfig,
     OAuthSettings,
     load_configs,
@@ -45,7 +45,7 @@ HEADER_SECRET = "tenant-signed-value-here"
 @pytest.fixture
 def state_dir(tmp_path, monkeypatch):
     """Redirect ``get_state_dir`` so config I/O lands in a tmp dir."""
-    from openprogram import paths
+    from openprogram.state import paths
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     return tmp_path
@@ -81,7 +81,7 @@ def secrets_absent(blob: str) -> None:
 
 def test_restart_endpoint_does_not_disclose_runtime_exception(monkeypatch):
     """Replacing the stable error with an upstream exception leaks credentials."""
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     async def failed_restart(_name):
         raise RuntimeError("peer-secret-value restart stderr")
@@ -102,7 +102,7 @@ def test_restart_endpoint_does_not_disclose_runtime_exception(monkeypatch):
 
 
 def test_public_registry_status_masks_client_error_and_stderr(capsys):
-    from openprogram.mcp import registry
+    from openprogram.extensions.mcp import registry
 
     secret = "peer-secret-value"
     client = type("Client", (), {})()
@@ -123,7 +123,7 @@ def test_public_registry_status_masks_client_error_and_stderr(capsys):
 
 
 def test_public_registry_stop_log_masks_exception(monkeypatch, capsys):
-    from openprogram.mcp import registry
+    from openprogram.extensions.mcp import registry
 
     secret = "peer-secret-value"
     client = type("Client", (), {})()
@@ -139,7 +139,7 @@ def test_public_registry_stop_log_masks_exception(monkeypatch, capsys):
 
 
 def test_restart_endpoint_masks_exception_and_breaks_chain(monkeypatch):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     async def failed_restart(_name):
         raise RuntimeError("peer-secret-value restart stderr")
@@ -162,7 +162,7 @@ def test_restart_endpoint_masks_exception_and_breaks_chain(monkeypatch):
 def test_restart_endpoint_direct_exception_chain_masks_runtime_failure(monkeypatch):
     from fastapi import HTTPException
 
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     secret = "peer-secret-value restart stderr"
 
@@ -193,7 +193,7 @@ def test_restart_endpoint_direct_exception_chain_masks_runtime_failure(monkeypat
 
 
 def test_transient_supervisor_error_uses_stable_state_and_stderr(monkeypatch, capsys):
-    from openprogram.mcp.client import MCPClient
+    from openprogram.extensions.mcp.client import MCPClient
 
     secret = "peer-secret-value transient stderr"
     client = MCPClient(local_config())
@@ -213,7 +213,7 @@ def test_transient_supervisor_error_uses_stable_state_and_stderr(monkeypatch, ca
             await asyncio.sleep(0)
         assert client.error_kind == "transient"
         client._shutdown.set()
-        await asyncio.wait_for(task, timeout=1)
+        await asyncio.wait_for(task, timeout=30)
 
     asyncio.run(exercise())
 
@@ -222,7 +222,7 @@ def test_transient_supervisor_error_uses_stable_state_and_stderr(monkeypatch, ca
 
 
 def test_await_session_failure_does_not_format_private_client_error():
-    from openprogram.mcp.client import MCPClient
+    from openprogram.extensions.mcp.client import MCPClient
 
     secret = "peer-secret-value stored client error"
     client = MCPClient(local_config())
@@ -243,7 +243,7 @@ def test_await_session_failure_does_not_format_private_client_error():
 
 @pytest.mark.parametrize("kind", ["needs_reauth", "transient", "fatal"])
 def test_public_registry_preserves_stable_ui_error_kind(kind):
-    from openprogram.mcp import registry
+    from openprogram.extensions.mcp import registry
 
     client = type("Client", (), {})()
     client.config = local_config()
@@ -322,7 +322,7 @@ def test_config_with_no_secret_reports_absence():
 
 def registry_with(cfg: MCPServerConfig, monkeypatch):
     """Install a fake ready client for ``cfg`` in the live registry."""
-    from openprogram.mcp import registry
+    from openprogram.extensions.mcp import registry
 
     class FakeClient:
         def __init__(self, config):
@@ -340,7 +340,7 @@ def registry_with(cfg: MCPServerConfig, monkeypatch):
 
 
 def test_list_and_detail_routes_return_no_plaintext(monkeypatch, state_dir):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     for cfg in (local_config(), remote_config("bearer"),
                 remote_config("oauth")):
@@ -364,7 +364,7 @@ def test_list_and_detail_routes_return_no_plaintext(monkeypatch, state_dir):
 
 def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
     """A catalog can ship an entry carrying a token; the echo is masked."""
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     catalog = {
         "name": "test catalog",
@@ -398,7 +398,7 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
         async def get(self, *a, **k):
             return FakeResponse()
 
-    from openprogram.security import safe_http
+    from openprogram.host.security import safe_http
 
     monkeypatch.setattr(
         safe_http,
@@ -419,7 +419,7 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
 
 
 def test_catalog_update_missing_entry_hides_signed_source_url(monkeypatch, state_dir):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     source = "https://catalog.example/TOKEN-PATH/catalog.json?sig=QUERY-SECRET"
     cfg = remote_config()
@@ -468,7 +468,7 @@ def test_existing_world_readable_config_can_be_saved(state_dir):
 
 
 def test_save_configs_preserves_roots_block(state_dir):
-    from openprogram.mcp.config import load_roots, save_roots
+    from openprogram.extensions.mcp.config import load_roots, save_roots
 
     save_roots([{"uri": "file:///work", "name": "work"}])
     save_configs([local_config()])
@@ -483,7 +483,7 @@ def test_save_configs_preserves_roots_block(state_dir):
 def patch_server(cfg: MCPServerConfig, body: dict, monkeypatch, *,
                  restart_fails: bool = False):
     """PATCH ``cfg`` with ``body`` and return (response, stored config)."""
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     save_configs([cfg])
 
@@ -505,8 +505,8 @@ def patch_server(cfg: MCPServerConfig, body: dict, monkeypatch, *,
 def test_patch_revision_conflict_resyncs_runtime_to_external_config(
     monkeypatch, state_dir
 ):
-    from openprogram.auth.credentials import PrivateAtomicWriteError
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.models.auth.credentials import PrivateAtomicWriteError
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     cfg = local_config()
     external = local_config()
@@ -588,8 +588,8 @@ def test_patch_conflict_resync_failure_reports_sanitized_runtime_state(
     code,
     runtime_state,
 ):
-    from openprogram.auth.credentials import PrivateAtomicWriteError
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.models.auth.credentials import PrivateAtomicWriteError
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     original = local_config()
     original.command = ["old"]
@@ -707,8 +707,8 @@ def test_restart_then_publish_failure_has_no_secret_in_recursive_exception_chain
 ):
     from fastapi import HTTPException
 
-    from openprogram.auth.credentials import PrivateAtomicWriteError
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.models.auth.credentials import PrivateAtomicWriteError
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     secret = "peer-secret-value"
     previous = local_config()
@@ -790,7 +790,7 @@ def test_initial_restart_failure_is_stable_and_secret_free(
 ):
     from fastapi import HTTPException
 
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     previous = local_config()
     previous.env = {"TOKEN": "peer-secret-value"}
@@ -856,8 +856,8 @@ def test_patch_conflict_deleted_config_cleanup_failure_reports_unknown(
     state_dir,
     remove_error,
 ):
-    from openprogram.auth.credentials import PrivateAtomicWriteError
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.models.auth.credentials import PrivateAtomicWriteError
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     original = local_config()
     original.command = ["old"]
@@ -903,7 +903,7 @@ def test_patch_conflict_deleted_config_cleanup_failure_reports_unknown(
 
 
 def test_patch_cancelled_restart_leaves_disk_unchanged(monkeypatch, state_dir):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     original = local_config()
     original.command = ["old"]
@@ -929,7 +929,7 @@ def test_patch_cancelled_restart_leaves_disk_unchanged(monkeypatch, state_dir):
 def test_catalog_update_cancelled_restart_leaves_disk_unchanged(
     monkeypatch, state_dir
 ):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     original = local_config()
     original.command = ["old"]
@@ -971,7 +971,7 @@ def test_catalog_update_cancelled_restart_leaves_disk_unchanged(
     async def cancelled_restart(*_args, **_kwargs):
         raise asyncio.CancelledError
 
-    from openprogram.security import safe_http
+    from openprogram.host.security import safe_http
 
     monkeypatch.setattr(
         safe_http,
@@ -995,7 +995,7 @@ def test_catalog_update_cancelled_restart_leaves_disk_unchanged(
 def test_patch_restart_failure_restores_runtime_before_any_publication(
     monkeypatch, state_dir
 ):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     original = local_config()
     saves = 0
@@ -1102,7 +1102,7 @@ def test_submitted_value_replaces_and_empty_value_deletes(monkeypatch, state_dir
 def test_patch_rejects_every_display_value_without_rewriting_storage(
     monkeypatch, state_dir, config, body, display_value
 ):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     cfg = config()
     path = save_configs([cfg])

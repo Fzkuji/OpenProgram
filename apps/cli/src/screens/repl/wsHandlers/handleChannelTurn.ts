@@ -40,8 +40,8 @@ export function handleChannelTurn(
             ...prev,
             source: d.user?.source ?? prev.source,
             peerDisplay: d.user?.peer_display ?? prev.peerDisplay,
-            userText: d.user?.text ?? prev.userText,
-            finalText: d.assistant?.text ?? prev.finalText,
+            userText: typeof d.user?.text === 'string' ? d.user.text : prev.userText,
+            finalText: typeof d.assistant?.text === 'string' ? d.assistant.text : prev.finalText,
             streaming: false,
             lastUpdate: Date.now(),
           },
@@ -53,7 +53,7 @@ export function handleChannelTurn(
   }
 
   const newTurns: Turn[] = [];
-  if (d.user?.text) {
+  if (typeof d.user?.text === 'string' && d.user.text) {
     const tag = d.user.peer_display
       ? `[${d.user.source ?? 'channel'}:${d.user.peer_display}] `
       : '';
@@ -63,7 +63,7 @@ export function handleChannelTurn(
       text: tag + d.user.text,
     });
   }
-  if (d.assistant?.text) {
+  if (typeof d.assistant?.text === 'string' && d.assistant.text) {
     newTurns.push({
       id: d.assistant.id ?? `ca-${Date.now()}`,
       role: 'assistant',

@@ -1,171 +1,153 @@
-<style>
-.doc-intro { border-left: 3px solid var(--acc); padding: 4px 0 4px 18px; margin: 18px 0 28px; }
-.doc-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
-.doc-flow > div { padding: 16px; background: var(--bg-code); border-radius: 8px; min-width: 0; }
-.doc-flow strong { display: block; color: var(--tx); }
-.doc-flow p { margin: 8px 0 0; font-size: 14px; }
-.doc-scroll { max-width: 100%; overflow-x: auto; }
-.doc-scroll:focus-visible, summary:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; }
-code { overflow-wrap: anywhere; }
-details { padding: 12px 0; border-bottom: 1px solid var(--bd); }
-summary { cursor: pointer; font-weight: 600; }
-@media (max-width: 680px) { .doc-flow { grid-template-columns: 1fr; } }
-</style>
-<h1 id="repository-structure-implementation">Repository structure implementation</h1>
-<div class="doc-intro"><p>For contributors changing directory ownership, public imports or packaging. The scope is repository structure; this page does not certify a release.</p></div>
-<div class="doc-flow" aria-label="Implementation ownership">
-<div><strong>Public entry</strong><p>CLI commands, HTTP/WebSocket routes, Web and Desktop.</p></div>
-<div><strong>Canonical implementation</strong><p>Applications under <code>apps/</code>; shared Agent core under <code>openprogram/</code>.</p></div>
-<div><strong>Compatibility and verification</strong><p>Preserve public imports, validate layout and exercise packaging outside the checkout.</p></div>
-</div>
-<p>The <a href="repository-structure.html">repository structure design</a> defines ownership
-and dependency boundaries. This page maps those boundaries to source locations,
-compatibility requirements, and verification. Migration chronology and previous
-review output are available in Git history; they are not current acceptance results.</p>
-<h2 id="implementation-map">Implementation map<a class="header-anchor" href="#implementation-map">#</a></h2>
-<div class="doc-scroll" role="region" tabindex="0" aria-label="Implementation table"><table>
-<thead>
-<tr>
-<th>Responsibility</th>
-<th>Source location</th>
-<th>Boundary</th>
-</tr>
-</thead>
+<title>Repository structure implementation</title>
+<meta name="description" content="Where each responsibility lives, how the core reaches interfaces through ports, and how layout changes are verified.">
+<h1>Repository structure implementation</h1>
+
+<h2 id="implementation-map">Implementation map</h2>
+<table class="stack">
+<thead><tr><th scope="col">Responsibility</th><th scope="col">Location</th><th scope="col">Boundary</th></tr></thead>
 <tbody>
-<tr>
-<td>Agent core and SDK</td>
-<td><code>openprogram/</code></td>
-<td>Shared runtime code; application assembly belongs under <code>apps/</code>.</td>
-</tr>
-<tr>
-<td>HTTP and WebSocket server</td>
-<td><code>apps/server/openprogram_server/</code></td>
-<td><code>server.py</code> assembles the application; <code>_webui/</code> owns transport handlers and helpers.</td>
-</tr>
-<tr>
-<td>Web application</td>
-<td><code>apps/web/</code></td>
-<td>Frontend source; generated assets are staged for serving and packaging.</td>
-</tr>
-<tr>
-<td>Desktop application</td>
-<td><code>apps/desktop/</code></td>
-<td>Electron lifecycle, native integration, embedded browser and packaging.</td>
-</tr>
-<tr>
-<td>Python CLI application</td>
-<td><code>apps/cli/python/openprogram_cli/</code></td>
-<td><code>_impl/</code> owns parser, commands, interactive execution and setup.</td>
-</tr>
-<tr>
-<td>Ink terminal UI</td>
-<td><code>apps/cli/</code></td>
-<td>Node workspace and terminal UI build.</td>
-</tr>
-<tr>
-<td>Release assembly</td>
-<td><code>scripts/release/</code></td>
-<td>Runtime construction, asset staging and release verification.</td>
-</tr>
-<tr>
-<td>Repository maintenance</td>
-<td><code>scripts/</code></td>
-<td>Documentation builder, DAG inspection and maintenance commands.</td>
-</tr>
+<tr><th scope="row">Agent core and SDK</th><td><code translate="no">openprogram/</code></td><td>Shared runtime code</td></tr>
+<tr><th scope="row">HTTP and WebSocket server</th><td><code translate="no">openprogram/interfaces/server/</code></td><td><code translate="no">server.py</code> assembles; the modules beside it own transport handlers and helpers; routes, Agent profiles included, are grouped by product domain under <code translate="no">routes/</code></td></tr>
+<tr><th scope="row">Web application</th><td><code translate="no">apps/web/</code></td><td>Source; generated assets are staged for serving and packaging</td></tr>
+<tr><th scope="row">Desktop application</th><td><code translate="no">apps/desktop/</code></td><td>Electron lifecycle, native integration, embedded browser, packaging</td></tr>
+<tr><th scope="row">Python CLI</th><td><code translate="no">openprogram/interfaces/cli/</code></td><td>Parser, commands, interactive execution, setup</td></tr>
+<tr><th scope="row">Ink terminal UI</th><td><code translate="no">apps/cli/</code></td><td>Node workspace and terminal UI build</td></tr>
+<tr><th scope="row">Release assembly</th><td><code translate="no">scripts/release/</code></td><td>Runtime construction, asset staging, release verification</td></tr>
+<tr><th scope="row">Repository maintenance</th><td><code translate="no">scripts/</code></td><td>Documentation builder, DAG inspection, maintenance commands</td></tr>
 </tbody>
-</table></div>
-<p>Source: <a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps">application workspaces</a>,
-<a href="https://github.com/Fzkuji/OpenProgram/tree/main/openprogram">core</a>, and
-<a href="https://github.com/Fzkuji/OpenProgram/tree/main/scripts">maintenance scripts</a>.</p>
-<h2 id="compatibility-and-remaining-ownership">Compatibility and remaining ownership<a class="header-anchor" href="#compatibility-and-remaining-ownership">#</a></h2>
-<p><code>openprogram/cli/__init__.py</code> resolves the canonical CLI application in a checkout
-or installed package and rejects an already-loaded foreign canonical package.
-<code>openprogram.cli</code>, <code>python -m openprogram</code>, and CLI module entry points remain
-compatibility surfaces; moving internal files must preserve their behavior.</p>
-<p><code>openprogram/webui/</code> remains a Server compatibility surface. Route implementations, including Agent profiles, belong to
-<code>apps/server/openprogram_server/_webui/routes/</code> and are grouped by product domain.
-The compatibility package resolves the application modules without duplicating their implementation.</p>
-<p><code>scripts/install-release.sh</code> remains the public installer entry, while its
-implementation resides under <code>scripts/release/</code>. The root npm workspace and lock
-file coordinate Web, Desktop and CLI dependencies. Consumers must not assume a
-separate lock file or dependency installation below each application.</p>
-<p>The default local runtime uses port <code>18100</code> and <code>~/.openprogram</code>. Installed-App
-acceptance uses <code>/Applications/OpenProgram.app</code>; repository layout changes must
-preserve packaging and installed imports as well as source-checkout execution.</p>
-<h2 id="verification">Verification<a class="header-anchor" href="#verification">#</a></h2>
-<p>The <a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/contracts/repository/test_repository_layout.py">repository contracts</a>
-check directory ownership, application locations and compatibility requirements.
-Run the existing contract from the repository root:</p>
-<pre><code class="language-sh">uv<span class="w"> </span>run<span class="w"> </span>--locked<span class="w"> </span>--extra<span class="w"> </span>dev<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>-q<span class="w"> </span>tests/contracts/repository/test_repository_layout.py
-</code></pre>
-<p>A layout contract alone does not verify runtime behavior. For an implementation
-change, also exercise the affected public CLI or HTTP/WebSocket entry, build a
-wheel and check imports outside the checkout, and verify affected application
-packaging. Use the <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">contributor checks</a>
-and <a href="testing/test-system.html">test-system design</a> to select the required gates.</p>
-<p>For documentation changes, rebuild before checking links; the checker reads
-<code>docs/_site/</code>, not source Markdown:</p>
-<pre><code class="language-sh">python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.build
-python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.checklinks
-</code></pre>
+</table>
+
+<h2 id="compatibility-and-remaining-ownership">Entries and compatibility</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Entry</th><th scope="col">Runs</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram</code>, <code translate="no">python -m openprogram</code>, <code translate="no">python -m openprogram.interfaces.cli</code></th><td><code translate="no">openprogram.interfaces.cli.application.main</code></td></tr>
+<tr><th scope="row"><code translate="no">python -m openprogram.interfaces.server</code></th><td>A foreground Server</td></tr>
+</tbody>
+</table>
+<p class="note">Every importer, tests and scripts included, names the real module. Editable installs and wheels both need no <code translate="no">PYTHONPATH</code>.</p>
+
+<h3 id="ports">Core-to-interface ports</h3>
+<p>The core never imports an interface. It calls a port the interface registers when it loads.</p>
+<table class="stack">
+<thead><tr><th scope="col">Port</th><th scope="col">Carries</th><th scope="col">Registered by; if nothing is</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/host/resources/desktop_link.py</code></th><td>Desktop windows and Pages: binding, resolving, capturing, closing, sending a command to one exact connection</td><td><code translate="no">ws_actions/webtab.py</code>. An agentic subprocess installs its parent bridge on the same port and forwards Page requests without loading the Server. Unregistered: as if no client were connected.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/interface_link.py</code></th><td>Client notices (goal, todo, open work, title, branch list, native window and execution-stream frames, context ring), the Server's in-memory session, HEAD moves that update it, the busy check for session migration, shipped documentation pages</td><td><code translate="no">server_runtime/interface_link.py</code>, registered by <code translate="no">server.py</code>. Unregistered: as if no client were connected.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/channel_link.py</code></th><td>Sending to a channel conversation (reminders, always-on reports), accounts and peer bindings for always-on delivery, the running channel turn <code translate="no">chat_send</code> posts into</td><td><code translate="no">interfaces/channels/link_registration.py</code>, on import of <code translate="no">openprogram.interfaces.channels</code>. Unregistered: raises <code translate="no">ChannelsUnavailable</code>, recorded as a failed send.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/speech_link.py</code></th><td>Speech to text for computer-use recordings</td><td><code translate="no">interfaces/speech/link_registration.py</code>, on import of <code translate="no">openprogram.interfaces.speech</code>. Unregistered: raises <code translate="no">SpeechUnavailable</code>, a <code translate="no">TranscriptionError</code> the tool reports as not transcribed.</td></tr>
+</tbody>
+</table>
+<p class="note">The worker runner imports channels and speech before its job dispatcher starts, the Server when it loads, a CLI turn before running tools in process.</p>
+<p>Only composition roots import an interface: <code translate="no">openprogram/__main__.py</code> runs the CLI; <code translate="no">openprogram/operations/worker/runner.py</code> starts the Server, its runtime and frontend. The <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/tests/contracts/repository/test_core_interface_imports.py">core interface import contract</a> scans every module, function-local and string imports included.</p>
+
+<details>
+<summary>Logic that lives in the core and the Server imports</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Logic</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Session graph</th><td><code translate="no">openprogram/state/store/session/graph/</code></td></tr>
+<tr><th scope="row">Execution DAG projection, live progress</th><td><code translate="no">openprogram/runtime/execution/dag.py</code></td></tr>
+<tr><th scope="row"><code translate="no">/spawn</code>, <code translate="no">/merge</code></th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/slash_actions.py</code></td></tr>
+<tr><th scope="row">Runtime-control submission</th><td><code translate="no">openprogram/runtime/execution/control/submission.py</code></td></tr>
+<tr><th scope="row">Model listing</th><td><code translate="no">openprogram/models/listing/</code></td></tr>
+<tr><th scope="row">Credential masking</th><td><code translate="no">openprogram/host/security/credential_mask.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Installer, dependencies and the installed App</summary>
+<ul>
+<li><code translate="no">scripts/install-release.sh</code> stays the public installer entry; its implementation is under <code translate="no">scripts/release/</code>.</li>
+<li>The root npm workspace and lock coordinate Web, Desktop and CLI. Do not assume a separate lock or install below an application.</li>
+<li>A dependency patch keeps the application manifest, root lock and installed version aligned. Integrating duplicate dependency branches keeps both ancestries without duplicating the version change.</li>
+<li>The lock keeps transitive entries installed consumers need, optional graphs included. A clean installer exit does not prove consumers load, so public consumer import checks accompany cold installation, and the combined source runs the shared verification manifest before publication.</li>
+<li>The default runtime uses port <code translate="no">18100</code> and <code translate="no">~/.openprogram</code>. Layout changes preserve packaging and installed imports as well as source-checkout execution.</li>
+</ul>
+</details>
+
+<h2 id="verification">Verification</h2>
+<pre translate="no" tabindex="0">uv run --locked --extra dev python -m pytest -q tests/contracts/repository/test_repository_layout.py</pre>
+<p>The <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/tests/contracts/repository/test_repository_layout.py">contract</a> checks directory ownership, application locations and compatibility, not runtime behaviour. An implementation change also exercises the affected public CLI or HTTP/WebSocket entry, builds a wheel and checks imports outside the checkout, and verifies affected packaging. <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">Contributor checks</a> and the <a href="testing/test-system.html">test-system design</a> select the gates.</p>
+<p>Documentation changes rebuild first, because the checker reads <code translate="no">docs/_site/</code>:</p>
+<pre translate="no" tabindex="0">python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks</pre>
+
 <h2 id="module-organization">Module organization and file-operation safety</h2>
-<p>Feature modules own their types, state and private helpers together. Directory size is a review signal, not a reason to create arbitrary layers. Web browser, tab, desktop, execution and file responsibilities have explicit modules. Server file actions and turn-file history use separate packages. Authentication groups account and login orchestration; self-update groups verification, repair and delivery. Tests retain their execution layer and add feature directories; discovery includes nested tests.</p>
-<p>Large source files are decomposed at independently testable responsibility boundaries. Public entry points remain stable. No wildcard forwarding, duplicated implementations or dynamic source execution is introduced to satisfy line-count limits. Native terminal rendering and cohesive route collections are reviewed separately from mixed-purpose utility directories.</p>
-<h3>File-operation contract</h3>
-<ul><li>Clipboard entries identify their source project. Cross-project paste is unavailable until an explicit cross-project transfer operation exists.</li><li>Mutations operate on the selected directory entry. Symbolic-link targets are never implicitly renamed or deleted; unsafe paths fail without changing either entry.</li><li>Deletion offers recoverable handling where supported. Exporting an unsaved draft does not authorize erasing the only confirmed retained copy; an unconfirmed browser download retains the local draft.</li><li>Refreshing files repeats the active search with its unchanged query and preserves request-generation isolation.</li></ul>
-<h3>Acceptance</h3>
-<p>Public WebSocket regression tests cover symbolic links. Mounted Web tests cover project clipboard ownership, active-search refresh and draft preservation. Module relocation preserves collected test identities and installed imports. Source and test inventories record directory counts and large-file responsibilities. All contributor Python layers, Web tests/typecheck/check/build, affected CLI and Desktop checks, documentation links and wheel import acceptance run before release. Specification and quality review are independent.</p>
-<h3>Module responsibilities</h3>
-<p>Execution control separates activation, cancellation, waits, branch operations, recovery and safe points on one service instance. Execution storage separates records, commands, events, state blobs, projections and finish repair while retaining one store and its transaction boundaries. Job execution, resource governance, Agent production execution, workflow runtime and session storage use the same approach: operation modules share the owning instance and canonical module state.</p>
-<p>Desktop main composes window and IPC registration with modules for transfers, native views, layout, menus, downloads and overlays. Its package manifest explicitly includes nested modules, and the refresh script preserves their relative paths. The Web Desktop bridge groups state, restoration, transfers, menus, events and surfaces; file-tree actions and query helpers retain the existing request lifecycle. Server runtime operations share the canonical Server state. Self-update verification binds the packaged WebSocket dispatch module that enforces its command restrictions and accepts previous package layouts for rollback.</p>
-<p>Feature directories replace flat Web libraries, scripts and tests, Python authentication and update modules, Server routes and mixed test directories. Large test and check files retain all scenarios, common fixture ownership and deterministic discovery. Subprocess acceptance belongs to the integration test layer.</p>
-<p>File length remains a review signal. Generated Yoga bindings and the vendored Ink renderer retain their upstream organization. Independent provider adapters remain peer files. Desktop main retains application composition; cohesive checkpoint transactions, security HTTP policy and other single-domain modules are not split solely to meet an arbitrary line limit. The inventory records remaining large files without declaring them all resolved.</p>
-<p>The module organization and file-operation changes pass independent specification and quality review. Acceptance includes three consecutive complete Python runs with four workers, Web and CLI tests and type checks, Desktop checks, application builds, documentation links, browser interaction tests and installed-wheel imports outside the checkout. Test cleanup accesses the canonical SessionStore cache; native recovery acceptance waits for actual startup and shutdown completion within explicit deadlines. Optional external Office-pack acceptance remains conditional on supplying that pack.</p>
-<div class="doc-scroll" role="region" tabindex="0" aria-label="Direct code file counts"><table>
-<thead><tr><th>Directory</th><th>Before</th><th>Current direct code files</th></tr></thead>
-<tbody><tr><td>apps/web/lib</td><td>45</td><td>7</td></tr>
-<tr><td>apps/web/tests</td><td>105</td><td>4</td></tr>
-<tr><td>openprogram/self_update</td><td>32</td><td>3</td></tr>
-<tr><td>Server routes</td><td>36</td><td>5</td></tr>
-<tr><td>tests/component/webui</td><td>57</td><td>1</td></tr>
-<tr><td>tests/unit/providers</td><td>54</td><td>1</td></tr></tbody></table></div>
-<p>These counts cover direct Python, JavaScript and TypeScript source files. Feature subdirectories retain their implementations and tests; moving a file does not reduce behavioral coverage. The original collected test identities are retained with four additional regression cases.</p>
-<h2 id="implementation-status">Implementation status<a class="header-anchor" href="#implementation-status">#</a></h2>
-<div class="doc-scroll" role="region" tabindex="0" aria-label="Implementation table"><table>
-<thead>
-<tr>
-<th>Area</th>
-<th>State</th>
-<th>Remaining acceptance or work</th>
-</tr>
-</thead>
+<p>Feature modules own their types, state and private helpers. Directory size is a review signal, not a reason for layers. Large files split at independently testable responsibilities; public entries stay stable; no wildcard forwarding, duplicate implementations or dynamic source execution to meet a line count.</p>
+
+<h3 id="file-operation-contract">File-operation contract</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Operation</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr>
-<td>Application roots, CLI ownership and maintenance scripts</td>
-<td>Verified</td>
-<td>Workspace checks and installed-wheel acceptance cover application ownership and public imports.</td>
-</tr>
-<tr>
-<td>Server ownership</td>
-<td>Verified</td>
-<td>Grouped routes, compatibility imports, packaged assets and Server operations pass the shared regression manifest.</td>
-</tr>
-<tr>
-<td>Desktop and Web decomposition</td>
-<td>Verified</td>
-<td>Native-view ownership, bridge state, transfer coordination, file operations and nested packaging retain executable coverage.</td>
-</tr>
-<tr>
-<td>Documentation structure</td>
-<td>Design pages remain under <code>reference/design/</code></td>
-<td>Keep one current topic owner; use Git history for prior migration and review records.</td>
-</tr>
-<tr>
-<td>Release and installed App</td>
-<td>Target-specific acceptance</td>
-<td>The default App is refreshed through the repository refresh script after local integration. Installed-App checks and remote publication are separate from source regression results.</td>
-</tr>
+<tr><th scope="row">Clipboard</th><td>Entries identify their source project; cross-project paste is unavailable until an explicit transfer operation exists</td></tr>
+<tr><th scope="row">Mutation</th><td>Acts on the selected entry. Symbolic-link targets are never implicitly renamed or deleted; unsafe paths fail without changing either entry</td></tr>
+<tr><th scope="row">Deletion</th><td>Recoverable where supported. Exporting an unsaved draft does not authorize erasing the only confirmed copy; an unconfirmed browser download keeps the local draft</td></tr>
+<tr><th scope="row">Refresh</th><td>Repeats the active search with its unchanged query, with request-generation isolation</td></tr>
 </tbody>
-</table></div>
-<p>Long files are not automatically pending refactors. A further split requires a
-separate responsibility and relevant behavioral coverage.</p>
+</table>
+<p class="note">Public WebSocket regression tests cover symbolic links; mounted Web tests cover clipboard ownership, active-search refresh and draft preservation.</p>
+
+<details>
+<summary>Module responsibilities</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Split</th></tr></thead>
+<tbody>
+<tr><th scope="row">Execution control</th><td>Activation, cancellation, waits, branch operations, recovery, safe points, on one service instance</td></tr>
+<tr><th scope="row">Execution storage</th><td>Records, commands, events, state blobs, projections, finish repair, with one store and its transactions</td></tr>
+<tr><th scope="row">Jobs, resource governance, Agent production execution, workflow runtime, session storage</th><td>Operation modules share the owning instance and canonical module state</td></tr>
+<tr><th scope="row">Desktop main</th><td>Composes window and IPC registration with modules for transfers, native views, layout, menus, downloads, overlays. The manifest includes nested modules; the refresh script keeps their relative paths</td></tr>
+<tr><th scope="row">Web Desktop bridge</th><td>State, restoration, transfers, menus, events, surfaces; file-tree actions and query helpers keep the request lifecycle</td></tr>
+<tr><th scope="row">Server runtime</th><td>Operations share the canonical Server state</td></tr>
+<tr><th scope="row">Self-update verification</th><td>Binds the packaged WebSocket dispatch module that enforces its command restrictions; accepts previous package layouts for rollback</td></tr>
+<tr><th scope="row">Server files</th><td>File actions and turn-file history are separate packages</td></tr>
+<tr><th scope="row">Authentication, self-update</th><td>Authentication groups account and login orchestration; self-update groups verification, repair and delivery</td></tr>
+<tr><th scope="row">Tests</th><td>Keep their execution layer, add feature directories; discovery includes nested tests. Large check files keep all scenarios, common fixtures and deterministic discovery. Subprocess acceptance is integration layer. Relocation preserves collected test identities and installed imports</td></tr>
+<tr><th scope="row">Left whole</th><td>Generated Yoga bindings, vendored Ink renderer, peer provider adapters, Desktop main's composition, native terminal rendering, cohesive route collections, checkpoint transactions, security HTTP policy</td></tr>
+</tbody>
+</table>
+<p>Direct code files (Python, JavaScript, TypeScript) per directory; feature subdirectories hold the rest.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Directory</th><th scope="col">Direct code files</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/web/lib</code></th><td>7</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/tests</code></th><td>0</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/operations/self_update</code></th><td>3</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/routes</code></th><td>7</td></tr>
+<tr><th scope="row"><code translate="no">tests/component/webui</code></th><td>4</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/providers</code></th><td>5</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Release acceptance for structure changes</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Requirement</th></tr></thead>
+<tbody>
+<tr><th scope="row">Review</th><td>Independent specification and quality review</td></tr>
+<tr><th scope="row">Python</th><td>Three consecutive complete runs with four workers</td></tr>
+<tr><th scope="row">Web and CLI</th><td>Tests and type checks</td></tr>
+<tr><th scope="row">Desktop and applications</th><td>Desktop checks; application builds</td></tr>
+<tr><th scope="row">Docs and browser</th><td>Documentation links; browser interaction tests</td></tr>
+<tr><th scope="row">Packaging</th><td>Installed-wheel imports outside the checkout</td></tr>
+<tr><th scope="row">Test cleanup</th><td>Uses the canonical SessionStore cache</td></tr>
+<tr><th scope="row">Native recovery</th><td>Waits for actual startup and shutdown within explicit deadlines</td></tr>
+<tr><th scope="row">External Office pack</th><td>Only when that pack is supplied</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">State</th><th scope="col">Covered by, or remaining</th></tr></thead>
+<tbody>
+<tr><th scope="row">Application roots, CLI ownership, maintenance scripts</th><td>Verified</td><td>Workspace checks and installed-wheel acceptance</td></tr>
+<tr><th scope="row">Server ownership</th><td>Verified</td><td>Grouped routes, packaged assets and Server operations in the shared regression manifest</td></tr>
+<tr><th scope="row">Desktop and Web decomposition</th><td>Verified</td><td>Native-view ownership, bridge state, transfer coordination, file operations and nested packaging keep executable coverage</td></tr>
+<tr><th scope="row">Documentation structure</th><td>Under <code translate="no">reference/design/</code></td><td>One current topic owner</td></tr>
+<tr><th scope="row">Release and installed App</th><td>Per target</td><td>Installed-App checks and remote publication are separate from source regression results</td></tr>
+</tbody>
+</table>
+<p class="note">Long files are not automatically pending work. A further split needs a separate responsibility and behavioural coverage.</p>

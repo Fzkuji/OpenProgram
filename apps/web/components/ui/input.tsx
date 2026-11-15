@@ -1,3 +1,6 @@
+// shadcn/ui Input, radix-nova style, copied verbatim from the official
+// registry (/r/styles/radix-nova/input.json). The only adaptation is a
+// forwardRef wrapper (React 18: refs are not props until 19).
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
@@ -6,29 +9,13 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {
     return (
       <input
+        ref={ref}
         type={type}
+        data-slot="input"
         className={cn(
-          // Height + radius come from the button set so Input + Button
-          // align horizontally when they sit next to each other in a
-          // form row (e.g. settings api-key, mcp edit dialog). The old
-          // shadcn defaults (h-10 + rounded-md = 6px) were taller than
-          // the Button after the size-token unification, which left a
-          // ~2px stair-step on every "input + submit" row.
-          //
-          // Focus: a quiet 1px border that lightens to the warm accent
-          // (`--accent-blue`, #d19a66) with a soft color transition — the
-          // ONE unified focus shared by every text input in the app
-          // (search boxes, fn-form fields, settings, etc.). No ring:
-          // shadcn's default `ring-2 + ring-offset-2` rendered as a thick
-          // orange halo (our `--ring` is this same accent), far too heavy.
-          // `ui-text-input` is the stable hook that suppresses the global
-          // :focus-visible outline in base.css (same idea as SearchInput's
-          // `search-input-field`). Tailwind `focus:outline-none` lives in
-          // @layer utilities and cannot beat that unlayered rule.
-          "ui-text-input flex h-[var(--ui-button-h)] w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[color:var(--accent-blue)] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+          "h-(--ui-button-h) w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-fs-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-fs-base file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
           className
         )}
-        ref={ref}
         {...props}
       />
     )

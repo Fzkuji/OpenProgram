@@ -1,18 +1,22 @@
 """governance finalization tests."""
 from __future__ import annotations
+import json
+import os
+import sqlite3
+from openprogram.runtime.jobs.types import JobStatus
+from types import SimpleNamespace
 from ._support import (
     Job,
-    JobStatus,
     ResourceGovernor,
     ResourceLimits,
-    SimpleNamespace,
     UsageLedger,
-    json,
-    os,
     pytest,
     resolve_resource_limits,
-    sqlite3,
 )
+
+
+def _columns(row, *names):
+    return tuple(row[name] for name in names)
 
 
 def test_pending_terminal_projection_blocks_dispatch_claim(tmp_path) -> None:
@@ -33,11 +37,8 @@ def test_pending_terminal_projection_blocks_dispatch_claim(tmp_path) -> None:
     )
 
     assert governor.claim_next(owner_instance_id="worker") is None
-    row = ledger.connection().execute(
-        "SELECT state, dispatch_ready FROM job_admissions WHERE job_id = ?",
-        (job.id,),
-    ).fetchone()
-    assert tuple(row) == ("queued", 0)
+    row = ledger.run_tables().handle.first("job_admissions", job_id=job.id)
+    assert (row["state"], row["dispatch_ready"]) == ("queued", 0)
 
 
 
@@ -57,11 +58,12 @@ def test_reconcile_finalizes_or_rolls_back_preparing_and_releases_missing_queue(
         ))
     jobs.pop("preparing_missing")
     jobs.pop("queued_missing")
-    ledger.connection().execute(
-        "UPDATE job_admissions SET state = 'preparing' "
-        "WHERE job_id IN ('preparing_present', 'preparing_missing')"
-    )
-    ledger.connection().commit()
+    with ledger.run_tables().transaction() as tables:
+        tables.update(
+            "job_admissions",
+            {"state": "preparing"},
+            job_id=("preparing_present", "preparing_missing"),
+        )
 
     result = governor.reconcile(
         job_lookup=lambda _sid, job_id: jobs.get(job_id),
@@ -71,9 +73,7 @@ def test_reconcile_finalizes_or_rolls_back_preparing_and_releases_missing_queue(
 
     rows = {
         row["job_id"]: (row["state"], row["reason_code"])
-        for row in ledger.connection().execute(
-            "SELECT job_id, state, reason_code FROM job_admissions"
-        )
+        for row in ledger.run_tables().handle.rows("job_admissions")
     }
     assert result.finalized_preparing == 1
     assert result.rolled_back_preparing == 1
@@ -96,10 +96,6 @@ def test_worker_lost_revokes_generation_before_terminal_store_mutation(
     governor.admit_job(job, persist=lambda _job: None)
     stale_owner = f"worker_{os.getpid()}_stale"
     claim = governor.claim_next(owner_instance_id=stale_owner)
-    ledger.connection().execute(
-        "UPDATE job_admissions SET lease_expires_at = 20 WHERE job_id = 'live'"
-    )
-    ledger.connection().commit()
     mutations: list[str] = []
 
     result = governor.reconcile(
@@ -119,14 +115,11 @@ def test_worker_lost_revokes_generation_before_terminal_store_mutation(
         mutate=lambda _fields: mutations.append("completed"),
     )
 
-    row = ledger.connection().execute(
-        "SELECT state, owner_instance_id, lease_generation "
-        "FROM job_admissions WHERE job_id = 'live'"
-    ).fetchone()
+    row = ledger.run_tables().handle.first("job_admissions", job_id="live")
     assert result.released_worker_lost == 1
     assert stale_finalized is False
     assert mutations == ["worker_lost"]
-    assert tuple(row) == ("released", None, claim.lease_generation + 1)
+    assert (row["state"], row["owner_instance_id"], row["lease_generation"]) == ("released", None, claim.lease_generation + 1)
 
 
 
@@ -188,13 +181,11 @@ def test_release_job_keeps_admission_while_finalization_is_pending(tmp_path) -> 
         owner_instance_id="worker",
         lease_generation=claim.lease_generation,
     ) is False
-    assert tuple(ledger.connection().execute(
-        "SELECT state, owner_instance_id FROM job_admissions WHERE job_id = ?",
-        (job.id,),
-    ).fetchone()) == ("live", "worker")
-    assert ledger.connection().execute(
-        "SELECT state FROM job_finalizations WHERE job_id = ?", (job.id,),
-    ).fetchone()[0] == "pending"
+    assert _columns(
+        ledger.run_tables().handle.first("job_admissions", job_id=job.id),
+        "state", "owner_instance_id",
+    ) == ("live", "worker")
+    assert ledger.run_tables().handle.first("job_finalizations", job_id=job.id)["state"] == "pending"
 
     job.status = JobStatus.RUNNING
     failures = []
@@ -210,12 +201,8 @@ def test_release_job_keeps_admission_while_finalization_is_pending(tmp_path) -> 
             now=1,
         )
         assert result.finalization_conflicts == 0
-        assert ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (job.id,),
-        ).fetchone()[0] == "live"
-        assert ledger.connection().execute(
-            "SELECT state FROM job_finalizations WHERE job_id = ?", (job.id,),
-        ).fetchone()[0] == "pending"
+        assert ledger.run_tables().handle.first("job_admissions", job_id=job.id)["state"] == "live"
+        assert ledger.run_tables().handle.first("job_finalizations", job_id=job.id)["state"] == "pending"
 
     def apply_terminal(_session_id: str, _job_id: str, staged: dict) -> None:
         job.status = JobStatus(staged["status"])
@@ -233,12 +220,8 @@ def test_release_job_keeps_admission_while_finalization_is_pending(tmp_path) -> 
         now=2,
     )
     assert len(failures) == 2
-    assert ledger.connection().execute(
-        "SELECT state FROM job_admissions WHERE job_id = ?", (job.id,),
-    ).fetchone()[0] == "released"
-    assert ledger.connection().execute(
-        "SELECT state FROM job_finalizations WHERE job_id = ?", (job.id,),
-    ).fetchone()[0] == "completed"
+    assert ledger.run_tables().handle.first("job_admissions", job_id=job.id)["state"] == "released"
+    assert ledger.run_tables().handle.first("job_finalizations", job_id=job.id)["state"] == "completed"
 
 
 
@@ -276,11 +259,10 @@ def test_requeue_keeps_pending_finalization_under_its_original_fence(
         owner_instance_id="worker",
         lease_generation=claim.lease_generation,
     ) is False
-    assert tuple(ledger.connection().execute(
-        "SELECT state, owner_instance_id, lease_generation "
-        "FROM job_admissions WHERE job_id = ?",
-        (job.id,),
-    ).fetchone()) == ("live", "worker", claim.lease_generation)
+    assert _columns(
+        ledger.run_tables().handle.first("job_admissions", job_id=job.id),
+        "state", "owner_instance_id", "lease_generation",
+    ) == ("live", "worker", claim.lease_generation)
 
     job.status = JobStatus.RUNNING
 
@@ -300,12 +282,8 @@ def test_requeue_keeps_pending_finalization_under_its_original_fence(
         now=1,
     )
     assert job.status == JobStatus.COMPLETED
-    assert ledger.connection().execute(
-        "SELECT state FROM job_admissions WHERE job_id = ?", (job.id,),
-    ).fetchone()[0] == "released"
-    assert ledger.connection().execute(
-        "SELECT state FROM job_finalizations WHERE job_id = ?", (job.id,),
-    ).fetchone()[0] == "completed"
+    assert ledger.run_tables().handle.first("job_admissions", job_id=job.id)["state"] == "released"
+    assert ledger.run_tables().handle.first("job_finalizations", job_id=job.id)["state"] == "completed"
 
 
 
@@ -340,10 +318,10 @@ def test_terminal_barrier_fences_borrowed_activation_until_reconcile(tmp_path):
         expected_state="queued",
         expected_owner_instance_id=None,
     )
-    assert tuple(ledger.connection().execute(
-        "SELECT dispatch_ready, terminal_blocked FROM job_admissions "
-        "WHERE job_id = ?", (child.id,),
-    ).fetchone()) == (0, 0)
+    assert _columns(
+        ledger.run_tables().handle.first("job_admissions", job_id=child.id),
+        "dispatch_ready", "terminal_blocked",
+    ) == (0, 0)
     assert governor.start_borrowed_job(
         child.id,
         parent_job_id=parent.id,
@@ -371,10 +349,10 @@ def test_terminal_barrier_reconciles_queued_admission_to_exact_owner(tmp_path):
         owner_instance_id="canonical-owner",
         lease_generation=4,
     )
-    assert tuple(ledger.connection().execute(
-        "SELECT state, owner_instance_id, lease_generation, terminal_blocked "
-        "FROM job_admissions WHERE job_id = ?", (job.id,),
-    ).fetchone()) == ("live", "canonical-owner", 4, 0)
+    assert _columns(
+        ledger.run_tables().handle.first("job_admissions", job_id=job.id),
+        "state", "owner_instance_id", "lease_generation", "terminal_blocked",
+    ) == ("live", "canonical-owner", 4, 0)
 
 
 
@@ -415,7 +393,7 @@ def test_terminal_barrier_identity_and_expiry_gate_claim_recovery(tmp_path):
 
 
 def test_terminal_barrier_expiry_is_clock_driven(tmp_path, monkeypatch):
-    import openprogram.agent.resource_governance.finalization as governance_module
+    import openprogram.runtime.jobs.resource_governance.finalization as governance_module
 
     clock = [100.0]
     monkeypatch.setattr(
@@ -453,21 +431,19 @@ def test_terminal_barrier_preserves_deferred_dispatch_ready_and_cleans_on_releas
     assert governor.unblock_terminal_dispatch(
         job.id, expected_lease_generation=0,
     )
-    assert tuple(ledger.connection().execute(
-        "SELECT dispatch_ready, terminal_blocked FROM job_admissions "
-        "WHERE job_id = ?", (job.id,),
-    ).fetchone()) == (0, 0)
+    assert _columns(
+        ledger.run_tables().handle.first("job_admissions", job_id=job.id),
+        "dispatch_ready", "terminal_blocked",
+    ) == (0, 0)
     assert governor.claim_next(owner_instance_id="worker") is None
     assert governor.block_dispatch(
         job.id, command_id="cancel-deferred", phase="recovery",
     )
     assert governor.release_job(job.id)
-    assert tuple(ledger.connection().execute(
-        "SELECT state, terminal_blocked, terminal_block_command_id, "
-        "terminal_block_phase, terminal_block_expires_at, "
-        "terminal_block_prior_dispatch_ready FROM job_admissions "
-        "WHERE job_id = ?", (job.id,),
-    ).fetchone()) == ("released", 0, None, None, None, None)
+    assert _columns(
+        ledger.run_tables().handle.first("job_admissions", job_id=job.id),
+        "state", "terminal_blocked", "terminal_block_command_id", "terminal_block_phase", "terminal_block_expires_at", "terminal_block_prior_dispatch_ready",
+    ) == ("released", 0, None, None, None, None)
 
 
 
@@ -488,18 +464,22 @@ def test_legacy_admission_schema_migrates_terminal_barrier_columns(tmp_path):
             last_activity_at REAL, released_at REAL, reason_code TEXT
         )"""
     )
+    conn.execute(
+        """INSERT INTO job_admissions (
+            admission_id, job_id, session_id, creates_agent,
+            request_fingerprint, budget_scope_id, state, admitted_seq, created_at
+        ) VALUES ('a', 'old', 's1', 0, 'f', 'scope', 'queued', 1, 1)"""
+    )
     conn.commit()
     conn.close()
     ledger = UsageLedger(path)
-    columns = {
-        row[1]: row[4]
-        for row in ledger.connection().execute("PRAGMA table_info(job_admissions)")
-    }
-    assert columns["terminal_blocked"] == "0"
-    assert "terminal_block_command_id" in columns
-    assert "terminal_block_phase" in columns
-    assert "terminal_block_expires_at" in columns
-    assert "terminal_block_prior_dispatch_ready" in columns
+    assert ResourceGovernor(ledger).admission_state("old") is not None
+    row = ledger.run_tables().handle.first("job_admissions", job_id="old")
+    assert row["terminal_blocked"] == 0
+    assert row["terminal_block_command_id"] is None
+    assert row["terminal_block_phase"] is None
+    assert row["terminal_block_expires_at"] is None
+    assert row["terminal_block_prior_dispatch_ready"] is None
 
 
 
@@ -558,13 +538,11 @@ def test_borrowed_pending_finalization_blocks_direct_and_orphan_release(
         lease_generation=claim.lease_generation,
     ) is True
     assert governor.release_orphaned_borrowed_jobs() == []
-    assert tuple(ledger.connection().execute(
-        "SELECT state, owner_instance_id FROM job_admissions WHERE job_id = ?",
-        (child.id,),
-    ).fetchone()) == ("queued", "worker")
-    assert ledger.connection().execute(
-        "SELECT state FROM job_finalizations WHERE job_id = ?", (child.id,),
-    ).fetchone()[0] == "pending"
+    assert _columns(
+        ledger.run_tables().handle.first("job_admissions", job_id=child.id),
+        "state", "owner_instance_id",
+    ) == ("queued", "worker")
+    assert ledger.run_tables().handle.first("job_finalizations", job_id=child.id)["state"] == "pending"
 
 
 
@@ -611,11 +589,6 @@ def test_reconcile_finishes_pending_terminal_intent_without_worker_lost(
             mutate=crash,
         )
     writes_before_reconcile = len(writes)
-    ledger.connection().execute(
-        "UPDATE job_admissions SET lease_expires_at = 0 WHERE job_id = ?",
-        (job.id,),
-    )
-    ledger.connection().commit()
     worker_lost: list[str] = []
 
     result = governor.reconcile(
@@ -632,12 +605,8 @@ def test_reconcile_finishes_pending_terminal_intent_without_worker_lost(
     assert writes == ["write"]
     assert worker_lost == []
     assert result.released_worker_lost == 0
-    assert ledger.connection().execute(
-        "SELECT state FROM job_admissions WHERE job_id = ?", (job.id,),
-    ).fetchone()[0] == "released"
-    assert ledger.connection().execute(
-        "SELECT state FROM job_finalizations WHERE job_id = ?", (job.id,),
-    ).fetchone()[0] == "completed"
+    assert ledger.run_tables().handle.first("job_admissions", job_id=job.id)["state"] == "released"
+    assert ledger.run_tables().handle.first("job_finalizations", job_id=job.id)["state"] == "completed"
 
 
 
@@ -687,12 +656,8 @@ def test_reconcile_reports_conflict_for_different_existing_terminal_payload(
         assert result.finalization_conflicts == 1
         assert job.status == JobStatus.ERRORED
         assert job.error == "provider failed"
-        assert ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (job.id,),
-        ).fetchone()[0] == "live"
-        assert ledger.connection().execute(
-            "SELECT state FROM job_finalizations WHERE job_id = ?", (job.id,),
-        ).fetchone()[0] == "pending"
+        assert ledger.run_tables().handle.first("job_admissions", job_id=job.id)["state"] == "live"
+        assert ledger.run_tables().handle.first("job_finalizations", job_id=job.id)["state"] == "pending"
 
 
 
@@ -723,9 +688,7 @@ def test_finalization_intent_rejects_stale_fence_competitor_and_payload_change(
         terminal_fields=original,
         mutate=lambda _fields: mutations.append("stale"),
     ) is False
-    assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM job_finalizations"
-    ).fetchone()[0] == 0
+    assert ledger.run_tables().handle.count("job_finalizations") == 0
 
     with pytest.raises(RuntimeError, match="crash after stage"):
         governor.finalize_job(
@@ -746,12 +709,12 @@ def test_finalization_intent_rejects_stale_fence_competitor_and_payload_change(
         terminal_fields=competing,
         mutate=lambda _fields: mutations.append("different payload"),
     ) is False
-    ledger.connection().execute(
-        "UPDATE job_admissions SET owner_instance_id = 'competitor', "
-        "lease_generation = lease_generation + 1 WHERE job_id = ?",
-        (job.id,),
-    )
-    ledger.connection().commit()
+    with ledger.run_tables().transaction() as tables:
+        tables.update(
+            "job_admissions",
+            {"owner_instance_id": "competitor", "lease_generation": lambda row: row["lease_generation"] + 1},
+            job_id=job.id,
+        )
     assert governor.finalize_job(
         job.id,
         "completed",
@@ -761,12 +724,8 @@ def test_finalization_intent_rejects_stale_fence_competitor_and_payload_change(
         mutate=lambda _fields: mutations.append("competing fence"),
     ) is False
 
-    row = ledger.connection().execute(
-        "SELECT owner_instance_id, lease_generation, fields_json, state "
-        "FROM job_finalizations WHERE job_id = ?",
-        (job.id,),
-    ).fetchone()
-    assert tuple(row[:2]) == ("worker", claim.lease_generation)
+    row = ledger.run_tables().handle.first("job_finalizations", job_id=job.id)
+    assert (row["owner_instance_id"], row["lease_generation"]) == ("worker", claim.lease_generation)
     assert json.loads(row["fields_json"]) == {"version": 1, "fields": original}
     assert row["state"] == "pending"
     assert mutations == []
@@ -798,11 +757,8 @@ def test_stopping_finalize_keeps_claim_when_store_mutation_fails(tmp_path) -> No
             mutate=fail_mutation,
         )
 
-    row = ledger.connection().execute(
-        "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-        (job.id,),
-    ).fetchone()
-    assert tuple(row) == ("stopping", "cancel.user")
+    row = ledger.run_tables().handle.first("job_admissions", job_id=job.id)
+    assert (row["state"], row["reason_code"]) == ("stopping", "cancel.user")
 
 
 
@@ -828,11 +784,8 @@ def test_stopping_finalize_mutates_then_releases_current_claim(tmp_path) -> None
         mutate=lambda fields: mutations.append(fields["reason_code"]),
     )
 
-    row = ledger.connection().execute(
-        "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-        (job.id,),
-    ).fetchone()
+    row = ledger.run_tables().handle.first("job_admissions", job_id=job.id)
     assert finalized is True
     assert mutations == ["cancel.user"]
-    assert tuple(row) == ("released", "cancel.user")
+    assert (row["state"], row["reason_code"]) == ("released", "cancel.user")
 

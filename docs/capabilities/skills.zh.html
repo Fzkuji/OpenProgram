@@ -1,0 +1,63 @@
+<title>技能</title>
+<meta name="description" content="用一个 SKILL.md 目录教 Agent 做一类任务，并把做完的工作存成 routine。">
+<h1>技能</h1>
+<p>技能是模型按需加载的领域知识：一个包含 <code translate="no">SKILL.md</code> 的目录。</p>
+<pre translate="no" tabindex="0"><code>---
+name: my-skill
+description: 一行说明什么时候该用它——模型靠这句话做匹配。
+---
+
+正文是自由 markdown：操作步骤、规则清单、示例……</code></pre>
+<p class="note">front matter 是 <code translate="no">key: value</code> 的 YAML 子集。较长的值可以在 <code translate="no">&gt;-</code> 或 <code translate="no">|</code> 之后用缩进的行续写。缺少 <code translate="no">name</code> 或 <code translate="no">description</code> 的目录被跳过。模型按 <code translate="no">description</code> 匹配。</p>
+<h2 id="how-it-works">如何加载</h2>
+<ol>
+<li>启动时扫描每个技能目录下的 <code translate="no">&lt;slug&gt;/SKILL.md</code>。</li>
+<li>所有名字和描述写进系统提示的技能块；agentic runtime 的 <code translate="no">&lt;available_skills&gt;</code> 还带每个文件的绝对路径。</li>
+<li>任务匹配时，模型用 <code translate="no">skill</code> 工具加载全文。全文绝不自动注入。</li>
+</ol>
+<p class="note">技能本身不执行任何东西。旁边的脚本、参考资料和数据通过 <code translate="no">bash</code> 或 <code translate="no">execute_code</code> 使用。</p>
+<h2 id="lookup-paths">查找路径</h2>
+<p>同名时后面的、更本地的优先。系统提示、CLI 和斜杠命令用同样四个来源。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">路径</th></tr></thead>
+<tbody>
+<tr><th scope="row">远程缓存</th><td><code translate="no">~/.openprogram/cache/skills/</code></td></tr>
+<tr><th scope="row">插件</th><td><a href="plugins.zh.html">插件</a></td></tr>
+<tr><th scope="row">用户</th><td><code translate="no">~/.openprogram/skills/</code></td></tr>
+<tr><th scope="row">项目</th><td><code translate="no">&lt;cwd&gt;/skills/</code></td></tr>
+</tbody></table>
+<p class="note">OpenProgram 不自带默认技能；产品工作流是 Program。</p>
+<h2 id="use-a-skill-in-chat">在聊天中使用</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">输入</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/&lt;name&gt;</code></th><td>插入技能正文</td></tr>
+<tr><th scope="row"><code translate="no">/skill &lt;name&gt; [request]</code></th><td>运行一轮。模型先读文件再看你的请求，对话显示你输入的内容。<code translate="no">allowed-tools</code> 限制该轮工具。未知、歧义或被屏蔽的名字会收到回复，不运行。</td></tr>
+</tbody></table>
+<h2 id="把做过的事存成-routine">Routine</h2>
+<p>对 Agent 说“把这个存成 routine”“每周一 9 点做这个”或“以后就这样做”。<code translate="no">save_routine</code> 工具写入 <code translate="no">~/.openprogram/skills/routines/&lt;name&gt;/SKILL.md</code>：</p>
+<ul>
+<li>一行描述，下次能认出请求；</li>
+<li>实际做过的步骤，不看原对话也能重复；</li>
+<li>你的修正，作为优先于步骤的规则。</li>
+</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">定时</th><td>要求时，在同一对话建一个重复的<a href="reminders.zh.html">唤醒 Agent 的提醒</a>。每次以“Run the saved routine <code translate="no">routines/&lt;name&gt;</code>”开始。保存时的回复给出下次运行时间。</td></tr>
+<tr><th scope="row">修正</th><td>“下次去掉机器人账号”，运行中或事后都行。以同名保存会重写该技能、加入修正、保留定时；之前的修正保留。</td></tr>
+<tr><th scope="row">管理</th><td>普通技能：<code translate="no">openprogram skills list</code>、<code translate="no">/skill &lt;name&gt;</code>，也可手动编辑或删除文件。在 <strong>Scheduler</strong> 暂停或取消定时，或让 Agent 做。</td></tr>
+<tr><th scope="row">谁可以</th><td>只有所有者或替所有者工作的 Agent 能安排。</td></tr>
+</tbody></table>
+<h2 id="management-commands">命令</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram skills list</code></th><td>按来源列出技能</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills doctor</code></th><td>扫描目录问题</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills search &lt;q&gt;</code></th><td>搜索发现源（默认 ClawHub）</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills install &lt;spec&gt;</code></th><td>slug（ClawHub）、<code translate="no">clawhub:&lt;slug&gt;</code> 或 <code translate="no">github:owner/repo</code>。<code translate="no">--source</code>：<code translate="no">clawhub://</code>、GitHub 仓库或 JSON 索引。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills update --all</code></th><td>比较 <code translate="no">SKILL.md</code> 哈希并重新拉取过期的，或指定一个名字</td></tr>
+<tr><th scope="row"><code translate="no">openprogram skills remove &lt;slug&gt;</code></th><td>只限项目、用户或远程缓存</td></tr>
+</tbody></table>
+<p class="next"><a href="plugins.zh.html">插件</a></p>

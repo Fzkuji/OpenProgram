@@ -25,7 +25,7 @@ def _resolve_path(path: Optional[str]) -> str:
     if path:
         return os.path.abspath(path)
     try:
-        from openprogram.paths import get_default_workdir
+        from openprogram.state.paths import get_default_workdir
         return get_default_workdir()
     except Exception:
         return os.getcwd()

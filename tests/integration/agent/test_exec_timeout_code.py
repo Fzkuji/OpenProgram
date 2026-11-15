@@ -13,7 +13,7 @@ import sys
 
 
 def test_timeout_reports_nonzero_and_notes_duration(tmp_path):
-    from openprogram.agent.exec import ExecOptions, exec_command
+    from openprogram.host.processes.command import ExecOptions, exec_command
     res = asyncio.run(exec_command(
         sys.executable, ["-c", "import time; time.sleep(30)"],
         str(tmp_path), ExecOptions(timeout=200),
@@ -24,7 +24,7 @@ def test_timeout_reports_nonzero_and_notes_duration(tmp_path):
 
 
 def test_cancel_reports_nonzero(tmp_path):
-    from openprogram.agent.exec import ExecOptions, exec_command
+    from openprogram.host.processes.command import ExecOptions, exec_command
 
     async def _run():
         sig = asyncio.Event()
@@ -48,7 +48,7 @@ def test_cancel_reports_nonzero(tmp_path):
 
 
 def test_clean_run_still_reports_zero(tmp_path):
-    from openprogram.agent.exec import exec_command
+    from openprogram.host.processes.command import exec_command
     res = asyncio.run(exec_command(
         sys.executable, ["-c", "print('ok')"], str(tmp_path),
     ))
@@ -59,7 +59,7 @@ def test_clean_run_still_reports_zero(tmp_path):
 
 
 def test_failing_command_keeps_its_own_exit_code(tmp_path):
-    from openprogram.agent.exec import exec_command
+    from openprogram.host.processes.command import exec_command
     res = asyncio.run(exec_command(
         sys.executable, ["-c", "import sys; sys.exit(3)"], str(tmp_path),
     ))

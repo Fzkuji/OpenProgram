@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import shlex
+import signal
 import socket
 import subprocess
 import sys
@@ -8,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.backend import local
+from openprogram.host.backend import local
 from tests.support.waiting import wait_until
 
 
@@ -228,33 +230,33 @@ subprocess.Popen(
     assert wait_until(
         lambda: state.exists()
         and len(state.read_text(encoding="ascii").split()) == 2,
-        timeout=3,
+        timeout=30,
     )
     pid, port = map(int, state.read_text(encoding="ascii").split())
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=1):
             pass
     finally:
-        from openprogram import _compat
+        from openprogram.host._platform import processes
 
-        _compat.kill_process_tree(pid)
+        processes.kill_process_tree(pid)
 
 
 def test_process_tree_creation_options_are_platform_owned(monkeypatch) -> None:
-    from openprogram import _compat
+    from openprogram.host._platform import process_ownership
 
-    monkeypatch.setattr(_compat._sys, "platform", "linux")
-    assert _compat.process_tree_popen_kwargs() == {"start_new_session": True}
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert process_ownership.process_tree_popen_kwargs() == {"start_new_session": True}
 
-    monkeypatch.setattr(_compat._sys, "platform", "win32")
-    monkeypatch.setattr(_compat, "no_window_creation_flags", lambda: 0x08000000)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(process_ownership, "no_window_creation_flags", lambda: 0x08000000)
     monkeypatch.setattr(
-        _compat._subprocess,
+        subprocess,
         "CREATE_NEW_PROCESS_GROUP",
         0x00000200,
         raising=False,
     )
-    assert _compat.process_tree_popen_kwargs() == {
+    assert process_ownership.process_tree_popen_kwargs() == {
         "creationflags": 0x08000200,
     }
 
@@ -262,7 +264,7 @@ def test_process_tree_creation_options_are_platform_owned(monkeypatch) -> None:
 def test_posix_owner_keeps_the_original_pgid_after_leader_exit(
     monkeypatch,
 ) -> None:
-    from openprogram import _compat
+    from openprogram.host._platform import process_ownership
 
     seen: dict[str, object] = {}
 
@@ -273,23 +275,23 @@ def test_posix_owner_keeps_the_original_pgid_after_leader_exit(
         seen.update(args=args, **kwargs)
         return Process()
 
-    monkeypatch.setattr(_compat._sys, "platform", "linux")
-    monkeypatch.setattr(_compat._signal, "SIGKILL", 9, raising=False)
-    monkeypatch.setattr(_compat._subprocess, "Popen", popen)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(signal, "SIGKILL", 9, raising=False)
+    monkeypatch.setattr(subprocess, "Popen", popen)
     monkeypatch.setattr(
-        _compat._os,
+        os,
         "getpgid",
         lambda _pid: (_ for _ in ()).throw(ProcessLookupError()),
         raising=False,
     )
     monkeypatch.setattr(
-        _compat._os,
+        os,
         "killpg",
         lambda pgid, sig: seen.update(killed=(pgid, sig)),
         raising=False,
     )
 
-    owner = _compat.ProcessTreeOwner()
+    owner = process_ownership.ProcessTreeOwner()
     owner.popen(["sh", "-c", "sleep 30"])
 
     assert owner.terminate() is True

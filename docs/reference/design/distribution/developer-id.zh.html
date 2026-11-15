@@ -1,0 +1,66 @@
+<title>Developer ID 分发</title>
+<meta name="description" content="macOS 公开发行版如何签名、公证和装订票据。">
+<h1>Developer ID 分发</h1>
+
+<h2>从检出到发布</h2>
+<ol>
+<li>经过审查的检出构建未签名的暂存 App：<code translate="no">electron-builder --mac --dir</code>，<code translate="no">identity: null</code>。</li>
+<li><code translate="no">sign-macos-release.py</code> 用同一个 Developer ID 由内向外签 Mach-O 文件和嵌套 bundle，开启 hardened runtime 和安全时间戳。打包在 <code translate="no">.tar.gz</code>、<code translate="no">.zip</code> 资源里的 Mach-O 也会签。</li>
+<li><code translate="no">codesign --verify --deep --strict</code> 校验完整签名。</li>
+<li><code translate="no">notarytool</code> 公证 App，<code translate="no">stapler</code> 装订票据，<code translate="no">spctl --assess</code> 接受。</li>
+<li>生成 ZIP 和 DMG；DMG 再签名、公证、装订。</li>
+<li>打包运行时冒烟、校验和、上传。</li>
+</ol>
+<p class="note">任何一条命令失败都中止发布。签名脚本不关闭 Gatekeeper，不改证书信任，也拒绝签 <code translate="no">/Applications/OpenProgram.app</code>。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">产物</th><td><code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code> 和 <code translate="no">.zip</code>，架构 <code translate="no">arm64</code> 或 <code translate="no">x64</code></td></tr>
+<tr><th scope="row">更新器</th><td>优先选带签名的文件名；旧发行版仍选 <code translate="no">-unsigned.dmg</code></td></tr>
+<tr><th scope="row">公证等待</th><td>45 分钟。超时不会取消提交：脚本读取状态，只有 <code translate="no">Accepted</code> 才继续</td></tr>
+<tr><th scope="row">本地签名</th><td>专用钥匙串和已校验的 <code translate="no">notarytool</code> 配置</td></tr>
+<tr><th scope="row">CI 签名</th><td>退出时删除的临时钥匙串。Secrets：<code translate="no">MAC_CSC_LINK</code>、<code translate="no">MAC_CSC_KEY_PASSWORD</code>、<code translate="no">APPLE_ID</code>、<code translate="no">APPLE_APP_SPECIFIC_PASSWORD</code>、<code translate="no">APPLE_TEAM_ID</code>；变量 <code translate="no">MAC_SIGNING_IDENTITY</code></td></tr>
+<tr><th scope="row">缺凭据</th><td>不产生正式产物</td></tr>
+<tr><th scope="row">构建输出中</th><td>只有公开的证书身份。密钥和凭据不进仓库</td></tr>
+<tr><th scope="row">本地源码构建</th><td>单独的开发身份。源码更新不得悄悄用它替换已安装的正式身份</td></tr>
+<tr><th scope="row">薄 App 的 helper</th><td>第二个签名 bundle，<code translate="no">Contents/Resources/seed/helper/OpenProgram.app</code>，标识符 <code translate="no">ai.openprogram.runtime</code>。它关闭库验证，因为 libpython 在 bundle 之外（<code translate="no">entitlements.mac.helper.plist</code>）；用 <code translate="no">entitlements.mac.inherit.plist</code> 签名的二进制也关闭，因为在用户机器上编译的包只有 ad-hoc 签名。隐私授权绑定它唯一的路径和签名，切换版本不影响授权。base 里的二进制在打包 seed 之前签名一次</td></tr>
+<tr><th scope="row">完整 App 的 Worker</th><td>内置运行时的 Python 和它的命名 helper（<code translate="no">runtime-manifest.json</code> 里的 <code translate="no">python</code> 和 <code translate="no">worker_python</code>）用 <code translate="no">entitlements.mac.helper.plist</code> 签名：关闭库验证，App 的其他授权保留。Program 的编译依赖和语义记忆的 torch 在签名之后安装，不带 Developer ID，开着库验证的 Worker 会拒绝加载它们</td></tr>
+<tr><th scope="row">代价</th><td>Electron 应用和其他所有可执行文件仍开着库验证，强化运行时也照样忽略 <code translate="no">DYLD_*</code> 变量，所以代价是：能写用户 OpenProgram 文件夹的代码，可以带着 Worker 的隐私授权在 Worker 里运行。薄 App 的 helper 也是同样的取舍。公证之后，打包运行时冒烟测试用签名后的 Python 导入一个 ad-hoc 签名的模块</td></tr>
+<tr><th scope="row">Windows</th><td>Authenticode，另行处理：<a href="windows-support.zh.html">Windows 支持</a></td></tr>
+</tbody>
+</table>
+
+<h2>验收</h2>
+<ul>
+<li>更新器选中已签名 DMG，并校验清单摘要。</li>
+<li>两种架构的构建都通过打包运行时冒烟。</li>
+<li>发布文件的大小和 SHA-256 与发布清单一致。</li>
+</ul>
+
+<details>
+<summary>为什么用这些工具</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参考</th><th scope="col">用法</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://developer.apple.com/help/account/certificates/create-developer-id-certificates">Apple Developer ID</a> 与<a href="https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution">公证</a></th><td>正式验收标准</td></tr>
+<tr><th scope="row">Codex</th><td>同样的形态：Developer ID 签名加装订票据</td></tr>
+<tr><th scope="row">Electron Builder</th><td>只管包结构</td></tr>
+<tr><th scope="row"><code translate="no">codesign</code>、<code translate="no">notarytool</code></th><td>分发签名。不引入第二个身份服务</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">签名脚本、CI 凭据、签名产物选择</th><td>已实现</td></tr>
+<tr><th scope="row">Apple 认证、证书签发、公证</th><td>外部关卡。源码测试通过不能证明它们</td></tr>
+<tr><th scope="row">公开发行版上的双架构公证</th><td>仓库无法单独证明，以发布工作流的实际运行为准</td></tr>
+<tr><th scope="row">helper 隐私授权关卡</th><td>未执行：在独立的 macOS 用户账户里做两次版本切换</td></tr>
+<tr><th scope="row">已安装的本地开发 App</th><td>保留自己的身份；本地迭代不换成正式构建</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="automatic-updates.zh.html">自动更新</a></p>

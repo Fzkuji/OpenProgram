@@ -1,0 +1,360 @@
+<title>DAG 渲染规范</title>
+<meta name="description" content="会话图如何绘制：画布、布局、边、节点圆片、分支标签、覆盖、压缩、调用线和选择。">
+<h1 id="dag-rendering-spec-layout-edges-legend-default-visibility">DAG 渲染规范</h1>
+<p>绘制的实现标准。数据语义见<a href="overview.zh.html">会话 DAG 设计</a>。<a href="layout.zh.html">布局</a>中的图展示各场景（<a href="#s6">§6</a>），与此处文字冲突时以图为准。</p>
+<p class="note">下文路径：<code translate="no">dag/</code> 指 <code translate="no">apps/web/lib/runtime-bridge/dag/</code>；<code translate="no">styles/</code> 指 <code translate="no">apps/web/app/styles/</code>；<code translate="no">chat/</code> 指 <code translate="no">apps/web/components/chat/</code>。</p>
+
+<h2 id="where">图在哪里</h2>
+<p>聊天窗格的一个视角，按标签页独立，占满整列，分支多的会话需要这个宽度。视角不持久化，重载后回到聊天记录。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">视角状态</th><td><code translate="no">CenterTab.dagView</code>，<code translate="no">apps/web/lib/tabs/center-tabs-store.ts</code></td></tr>
+<tr><th scope="row">控件（右上切换和 <code translate="no">…</code> 菜单）</th><td><code translate="no">chat/pane/view-controls.tsx</code></td></tr>
+<tr><th scope="row">宿主（<code translate="no">#historyPanel</code>、<code translate="no">.history-body</code>）</th><td><code translate="no">chat/dag/dag-view.tsx</code>；由 <code translate="no">dag/pipeline.ts</code>、<code translate="no">dag/render/visibility.ts</code> 选取</td></tr>
+<tr><th scope="row">切换</th><td><code translate="no">styles/dag/view-host.css</code> 中的 <code translate="no">.center-pane-chat[data-center-view]</code></td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>两个界面都保持挂载，用 <code translate="no">display</code> 切换：渲染器每次捕获都绘制，卸载会让图变空。</li>
+<li>切换只隐藏 <code translate="no">#chatArea</code>，绝不隐藏 <code translate="no">#chatView</code>。唯一的输入框挂在其中的 <code translate="no">#composer-mount</code>，两个视角共用草稿和发送路径；从图上发送的节点在下次捕获时出现。</li>
+<li>图覆盖窗格而不占它的位置，位于输入框 <code translate="no">z-index: 5</code> 之下，所以输入框留在底边。画布延伸到输入框下方，<code translate="no">fitCanvas</code> 在其上方的区域内居中。</li>
+<li>点击节点会填充右侧栏的 Details 和 Context 视图。重命名、删除、合并、attach 留在其分支列表。分支切换在图内（<a href="#s5">§5</a>），画布上方没有分支条。</li>
+</ul>
+
+<h3 id="canvas">无限画布</h3>
+<p>没有滚动框：SVG 铺满窗格，一个 <code translate="no">&lt;g&gt;</code> 承载平移和缩放，大小和中心不由内容决定。宿主不随尺寸变化重排。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">手势或按键</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">鼠标滚轮、捏合、⌘ + 滚轮</th><td>以光标为中心缩放，25%–300%；捏合速率更快</td></tr>
+<tr><th scope="row">触控板双指</th><td>平移</td></tr>
+<tr><th scope="row">右键或中键拖动</th><td>从任意位置平移，macOS 桌面 App 上鼠标拖出窗口也继续跟随，直到松开按键；未移动的右键在松开时打开菜单；按键一旦不再按着拖动就结束，即使松开事件在窗口外丢失</td></tr>
+<tr><th scope="row">空白处左键拖动</th><td>选择框，碰到即选（<a href="#s13">§13</a>）</td></tr>
+<tr><th scope="row">节点上按左键</th><td>节点的单击或双击</td></tr>
+<tr><th scope="row">Shift+1 / Shift+0 / Shift+2</th><td>适配全图（最低 25%）/ 100% / 适配选区</td></tr>
+<tr><th scope="row">+ / −</th><td>按一个滚轮刻度（<code translate="no">ZOOM_STEP</code>）</td></tr>
+<tr><th scope="row">F</th><td>滑到工作中的 Agent，再按切到下一个，没有则到 HEAD（<code translate="no">focusAgent</code>）</td></tr>
+<tr><th scope="row">M / ?</th><td>小地图 / 操作说明</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">滚轮类型（<code translate="no">interaction/view/wheel.ts</code>）</th><td><code translate="no">ctrlKey</code> 为捏合；横向增量为双指；Chromium 的 <code translate="no">wheelDeltaY == -3 × deltaY</code> 为触控板，刻度是 120 的倍数。按首个事件判断，保持到 180 ms 停顿，惯性不会变成缩放。行、页增量先换算为像素。上报触控板比例的像素平滑鼠标会平移</td></tr>
+<tr><th scope="row">点阵</th><td>间距 <code translate="no">COL_W</code>，同样平移缩放，每个锚点下有点；偏离肉眼可见，所以适配时取整像素。半径随缩放，1–3px</td></tr>
+<tr><th scope="row">视图状态</th><td>平移缩放按会话存于 <code translate="no">dag/store/globals.ts</code>。只有换会话才重新适配，窗格变化不会</td></tr>
+<tr><th scope="row">打开时的视图</th><td>适配结果，下限 80%（<code translate="no">OPEN_MIN_SCALE</code>）；溢出的轴跟随 HEAD，靠近区域底部</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>缩放列、面板和全屏</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">缩放列（<code translate="no">DagZoomColumn</code>）</th><td>右上，视角条之下。第一条：+ · 读数 · −、细线、查找工作中的 Agent。第二条：小地图、细线、图例、操作说明。各自按一下开关。开启时保持悬停灰</td></tr>
+<tr><th scope="row">读数和按钮</th><td>点读数回到 100%；按钮以窗格中心为锚，滑动 0.22 s，对数空间匀速；滑动中再按从目标继续；滚轮或平移接管（<code translate="no">glideZoom</code>）。读数命令式写入，否则每个滚轮事件都重绘 React 树</td></tr>
+<tr><th scope="row">侧列</th><td>缩放列左侧，地图宽度（280px）：地图、停靠的网页预览、图例、操作说明，间隔 16px，全高，止于输入框上方 16px，整体滚动；关闭的面板让出位置</td></tr>
+<tr><th scope="row">网页预览</th><td>初始停靠（<code translate="no">web-tab-pip-dock.ts</code>、<code translate="no">PipDockSlot</code>）。部分滚出时用静帧代替。拖动 36px 后脱离；距列顶 56px 内吸入，需拖开 88px 才离开。每次移动一个弹簧（framer-motion）。展开时总是浮动。对话视角有同样的停靠位</td></tr>
+<tr><th scope="row">面板动效</th><td>淡入、95% 缩放、8px 滑动，100ms，退出反向（<code translate="no">chat/dag/dag-key-sheet.tsx</code> 的 <code translate="no">PANEL_MOTION</code>、<code translate="no">styles/dag/panels/tools.css</code> 的 <code translate="no">.is-hidden</code>）。进入时 <code translate="no">stowMinimap</code> 无动效收起地图。各条自上而下滑入，每条 150ms，间隔 40ms；离开立即</td></tr>
+<tr><th scope="row">材质</th><td>一种凸起条材质，<code translate="no">styles/dag/panels/tools.css</code>；图例和说明的内边距来自 <code translate="no">MENU_PANEL</code>，边框与小地图相同，无外环。图标为 Solar Bold Duotone（<a href="../../ui/visual-system/icons.html">图标</a>）</td></tr>
+<tr><th scope="row">全屏</th><td>属于会话窗格，按钮在视角条。主体扩展盖住两侧栏和标签条，到 <code translate="no">--canvas-fullscreen-inset</code>（8px）；窗口大小不变，原生网页视图隐藏。再按、无选择时按 Esc、切到其他类型标签页或重载时结束（<code translate="no">canvas-fullscreen.ts</code>；<code translate="no">chat/pane/center-pane.css</code> 的 <code translate="no">html[data-canvas-fullscreen]</code>）</td></tr>
+<tr><th scope="row">全屏动效</th><td>Web Animations 移动四条真实边，进入 400ms ease-in-out，退出 320ms；内容每帧按盒子大小排版，绝不先按终点大小排，否则聊天滚动会被截断。运动中 <code translate="no">canvas-motion.ts</code> 只重排可见行。中途切换就地反向；减少动态时跳过</td></tr>
+<tr><th scope="row">代码</th><td>平移、缩放、适配：<code translate="no">interaction/view/canvas.ts</code>。<code translate="no">_viewTx</code>、<code translate="no">_viewTy</code>、<code translate="no">_viewScale</code>、<code translate="no">_viewSession</code>：<code translate="no">store/globals.ts</code>。点阵：<code translate="no">styles/dag/graph/canvas.css</code> 的 <code translate="no">.history-body</code>。图例行：<code translate="no">styles/dag/panels/legend.css</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="s0">0. 画什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">层</th><th scope="col">节点</th><th scope="col">回答</th><th scope="col">数量</th></tr></thead>
+<tbody>
+<tr><th scope="row">对话层</th><td>ROOT、user、llm 回复、派生根、merge、手动调用的顶层函数</td><td>会话的形状</td><td>个位数到几十</td></tr>
+<tr><th scope="row">执行层</th><td>工具调用及子调用</td><td>这一轮做了什么</td><td>单轮可达几十</td></tr>
+</tbody>
+</table>
+
+<p>视口只布局对话层。一轮的调用和 Agent 是它的调用线（<a href="#s12">§12</a>）。一个圆片代表一条回复及模型直到下一条用户消息前所做的一切：</p>
+<ul>
+<li>运行时通知回复（<code translate="no">job_followup</code>、<code translate="no">process_exit</code>）并入其锚点，沿 <code translate="no">predecessor</code> 越过所有 followup 找到。合成的 <code translate="no">display=runtime</code> 用户消息不绘制；<code translate="no">filter.py</code>（<code translate="no">bridge_hidden</code>）把回复重挂到通知的前驱，避免孤立节点。</li>
+<li>重启产生的“继续被中断的任务”回复标记 <code translate="no">resumed</code>，并入它所接续回复的锚点。</li>
+</ul>
+<p class="note">聊天流和调用树不受影响：同一数据，三种投影。</p>
+
+<h2 id="s1">1. 位置 = （列，行）</h2>
+<p>列 = 泳道起始 + tier。两轴同一单位（<code translate="no">COL_W == ROW_H == 40</code>），偏移 <code translate="no">PAD_X</code>、<code translate="no">PAD_Y</code>。</p>
+<h3>泳道：属于哪条分支</h3>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">新分支根</th><th scope="col">连接</th></tr></thead>
+<tbody>
+<tr><th scope="row">重试或改写</th><td>分叉出的 user 或 llm 节点</td><td>与被替换节点共用 predecessor</td></tr>
+<tr><th scope="row">派生</th><td><code translate="no">source=agent_spawn</code> 的 user 节点</td><td>caller 为发起者，predecessor 为空</td></tr>
+<tr><th scope="row">合并</th><td>merge 节点</td><td>基线分支泳道，不开新泳道</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>按出现顺序编号 0、1、2…，无空缺，不分“主干”。分支占据从起始列到最深可见链节点；下一条紧接其右。</li>
+<li>分叉泳道多留一个间隔列，每条泳道的 tier 归零。</li>
+<li>分叉泳道与主干同构：第一列是空主干线，虚线桥落在上面，每轮右移一列并从主干线引出。胶囊和遗留节点的桥直接到圆片。</li>
+<li>调用线项不占泳道宽度：取锚点右侧、插入行上没有线穿过的最近一列，不同行的调用线可共用一列，两条打开的调用线不共用格子。</li>
+</ul>
+<h3>Tier 与深度</h3>
+<table class="stack">
+<thead><tr><th scope="col">节点</th><th scope="col">层</th><th scope="col">列</th></tr></thead>
+<tbody>
+<tr><th scope="row">ROOT</th><td>对话</td><td>tier 0</td></tr>
+<tr><th scope="row">user</th><td>对话</td><td>tier 1</td></tr>
+<tr><th scope="row">llm 回复、merge</th><td>对话</td><td>tier 2</td></tr>
+<tr><th scope="row">调用线项（调用、派生头）</th><td>执行</td><td>锚点列 +1；嵌套打开的调用线再 +1</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>链上的行：对结构父树前序遍历，每个可见节点独占一行。</li>
+<li>分叉根与其兄弟同行，同一分叉点的所有分支共用此行。每条分支桥接到紧邻左侧的分支，虚线水平且长两格。</li>
+<li>调用线的行：从锚点下一行起，每事件一行；打开的派生从其行继续。后面的行下移：展开是插入，绝不覆盖。</li>
+<li>跨会话派生作为目标会话自己的链，位于泳道 0。</li>
+</ul>
+
+<h2 id="s2">2. 布局规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">方格</th><td>子节点在父节点右下方 45°，点阵让这一点可以目测</td></tr>
+<tr><th scope="row">对齐与压紧</th><td>节点落在格点；每次可见性变化都收掉空行空列。占位框违反此规则：运行态画在圆片上</td></tr>
+<tr><th scope="row">圆片即格子</th><td>同样的 28px 圆片，占一格，间隙 12px，没有随文字变化的形状。注释灰说明文字在调用或用户消息右侧（<code translate="no">render/labels/captions.ts</code>），只占用到下一个圆片、标签或交叉线前的空位，越过分叉线，放不下就省略，从不改变布局。Agent 所在圆片显示气泡；缩得很远时说明文字隐藏</td></tr>
+</tbody>
+</table>
+
+<h2 id="s3">3. 边：颜色 = 分支，线型 = 类型</h2>
+<table class="stack">
+<thead><tr><th scope="col">边</th><th scope="col">线型</th><th scope="col">颜色</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">同分支父到子</th><td>实线加传送带</td><td>分支</td><td>总是</td></tr>
+<tr><th scope="row">重试分叉桥</th><td>虚线 <code translate="no">6 4</code>，水平；只在行错开时折线</td><td>分支</td><td>总是</td></tr>
+<tr><th scope="row">调用线</th><td>实线加传送带：锚点列竖线，每项一条横线</td><td>锚点分支</td><td>打开时</td></tr>
+<tr><th scope="row">合并汇聚</th><td>实线 2.4px</td><td>对方分支</td><td>总是</td></tr>
+<tr><th scope="row">Attach 回归</th><td>虚线 <code translate="no">4 4</code></td><td>源分支</td><td>两端都可见时</td></tr>
+<tr><th scope="row">幽灵（被覆盖区间）</th><td>虚线 <code translate="no">3 3</code>，无传送带</td><td>分支</td><td>展开时</td></tr>
+<tr><th scope="row">send_message</th><td>点线 <code translate="no">1 5</code></td><td>目标分支</td><td>仅悬停</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>泳道色：<code translate="no">LANE_COLORS</code>，<code translate="no">styles/design/color.css</code> 中的 <code translate="no">--lane-*</code>。任何类型的边都没有固定颜色。</li>
+<li>通往 HEAD 的路使用 HEAD 的颜色（<code translate="no">layout/assign-lanes.ts</code> 的 <code translate="no">_stampPathLanes</code>、<code translate="no">_pathLane</code>），<code translate="no">render/edges.ts</code> 最后绘制它。</li>
+<li>传送带：8px 不透明中性轨道（<code translate="no">.dag-belt</code>）上一条 2px 分支线。珠子在线下朝工作方向移动：链传送带通往运行中节点，调用线传送带在其项下任何内容运行时移动，主干只到该项。<code translate="no">paintBelts</code> 读 <code translate="no">data-to</code>，就地状态更新也会重绘。</li>
+<li>所有线中心到中心，圆片底色盖住线端。</li>
+</ul>
+
+<h2 id="s4">4. 节点圆片</h2>
+<p>每个节点是同样的圆片（<code translate="no">render/tiles.ts</code>）：把节点色调混入画布的底色，不透明，盖住传送带，上面是图标。状态改变圆片本身，周围不画任何东西。</p>
+<table class="stack">
+<thead><tr><th scope="col">状态</th><th scope="col">圆片</th></tr></thead>
+<tbody>
+<tr><th scope="row">普通</th><td>18% 底色，图标全彩</td></tr>
+<tr><th scope="row">悬停</th><td>30% 底色</td></tr>
+<tr><th scope="row">选中</th><td>实心填充，图标为画布色，放大 8%</td></tr>
+<tr><th scope="row">HEAD</th><td>24% 底色，呼吸光（2.4 s <code translate="no">drop-shadow</code>，<code translate="no">data-head</code>）；减少动态时常亮。不带覆盖标记</td></tr>
+<tr><th scope="row">不在下次请求中（<a href="#s8">§8</a>）</th><td>10% 底色，图标 60%</td></tr>
+<tr><th scope="row">运行中</th><td><code translate="no">is-running</code>：图标呼吸，出现 Agent 圆点和气泡</td></tr>
+<tr><th scope="row">错误</th><td><code translate="no">is-error</code>：右上红色 <code translate="no">!</code>，色调不变</td></tr>
+<tr><th scope="row">已取消</th><td><code translate="no">is-faded</code>：幽灵灰</td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">节点</th><th scope="col">图标</th><th scope="col">色调</th></tr></thead>
+<tbody>
+<tr><th scope="row">ROOT</th><td>房子</td><td>次要墨色</td></tr>
+<tr><th scope="row">用户</th><td>人</td><td>分支色</td></tr>
+<tr><th scope="row">Agent 回复</th><td>Agent 的形象</td><td>分支色</td></tr>
+<tr><th scope="row">调用</th><td>按工具（<code translate="no">presentTool</code>，与聊天记录相同）</td><td>按工具（<code translate="no">styles/tool-tones.css</code>）</td></tr>
+<tr><th scope="row">子 Agent 派生</th><td>子 Agent 的形象</td><td>分支色</td></tr>
+<tr><th scope="row">压缩摘要</th><td>归档</td><td>记忆</td></tr>
+<tr><th scope="row">合并 / attach</th><td>拉取请求 / 链接</td><td>计划</td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">角标</th><th scope="col">位置</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">+N</code></th><td>右上肩，注释灰，无形状</td><td>折叠的调用线数量；打开后消失</td></tr>
+<tr><th scope="row"><code translate="no">↗</code></th><td>右上，跨会话派生的两端</td><td><code translate="no">spawn_remote</code> 和 <code translate="no">spawn_out</code>。无图内 <code translate="no">attach_returns</code> 边，不可点击。同会话派生没有</td></tr>
+<tr><th scope="row"><code translate="no">▤</code></th><td>左上</td><td>已溢出（<a href="#s8">§8</a>）</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>画布上的 Agent 与语义缩放</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">形象</th><td>头像形状（<a href="../../ui/visual-system/agent-avatars.html">头像</a>）扁平绘制，眼睛镂空（<code translate="no">components/avatar/bot/glyph.ts</code>），用分支色。主 Agent 使用会话 Agent 的形象，由 <code translate="no">chat/dag/dag-view.tsx</code> 告知 <code translate="no">render/agent-look.ts</code>。子 Agent 的形象由名字决定。图例和 Activity 面板绘制相同图形</td></tr>
+<tr><th scope="row">工作中的 Agent（<code translate="no">render/agents.ts</code>）</th><td>圆片左上一个分支色呼吸圆点；气泡写“名字 · 正在做的事”。节点属于其链追溯到的子 Agent，否则属于主 Agent；每个 Agent 显示最新运行节点。被折叠时圆点在最近的已绘制圆片上。共用圆片时堆叠。空闲时主 Agent 圆点静止在 HEAD</td></tr>
+<tr><th scope="row">标记</th><td>保持屏幕尺寸（<code translate="no">--dag-marker-scale</code>），以世界坐标固定在圆片上</td></tr>
+<tr><th scope="row">低于 55%（<code translate="no">FAR_SCALE</code>、<code translate="no">is-far</code>）</th><td>圆片变为 7px 实心点，线 1.5px，点击范围约 10px；角上圆点、调用说明、计数隐藏。有选择时其余淡至 25%（<code translate="no">has-selection</code>）；小地图用强调色放大显示选中节点</td></tr>
+<tr><th scope="row">标签</th><td>100% 以下一条曲线（<code translate="no">--dag-label-scale</code>），12px 到约 8.5px。<code translate="no">interaction/view/far-labels.ts</code> 隐藏距已显示标签 8px 内的标签：分支名优先，当前分支优先，然后是最靠近 HEAD 的消息，最后是调用</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="s5">5. 分支标签</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">锚点</th><td>分支自身最深可见节点所在行，圆片右侧；跟随打开的调用线，折叠后返回。Agent 气泡会遮住它</td></tr>
+<tr><th scope="row">按钮</th><td>活动分支：泳道色平块。点击其他分支检出</td></tr>
+<tr><th scope="row">派生 Agent</th><td>无分支标签：Agent 就是它的圆片。所属调用线打开时，派生头右侧有名字标签，点击检出 Agent 的分支尖</td></tr>
+<tr><th scope="row">线</th><td>沿行的线在字母处断开（画布色光晕）</td></tr>
+<tr><th scope="row">碰撞</th><td>按实测像素框；所有可见图形都参与，靠后的标签下移一行</td></tr>
+<tr><th scope="row">来源</th><td>仅 <code translate="no">list_branches</code>。合并后名字消失（磁盘保留），移到 merge 节点的 tooltip</td></tr>
+</tbody>
+</table>
+
+<h2 id="s6">6. 场景</h2>
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">主题</th><th scope="col">要点</th></tr></thead>
+<tbody>
+<tr><th scope="row">1–7</th><td>基础：单轮、多轮、重试、工具缩进、手动函数、组合、折叠</td><td>工具调用在打开前显示为肩部计数</td></tr>
+<tr><th scope="row">8</th><td>合并</td><td>在基线泳道，对方线 2.4px；attach 指针只画线</td></tr>
+<tr><th scope="row">9</th><td>send_message</td><td><code translate="no">from_branch</code> user 节点落在目标分支末尾</td></tr>
+<tr><th scope="row">10</th><td>派生与返回</td><td>派生头按顺序位于调用者的调用线上。followup 回复并入同一锚点，所以没有返回线</td></tr>
+<tr><th scope="row">11</th><td>调用线聚合</td><td>打开状态按节点独立，可递归</td></tr>
+<tr><th scope="row">12</th><td>状态与角标</td><td><a href="#s4">§4</a></td></tr>
+<tr><th scope="row">13</th><td>标签位置</td><td><a href="#s5">§5</a></td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">说明</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">回传节点</th><td><code translate="no">predecessor</code> 为发起节点；若用户同时发了消息则形成分叉，并进入 <code translate="no">&lt; N/M &gt;</code> 切换器（<a href="../../ui/invariants.html">不变量</a>第 7 条）。无论 <code translate="no">caller</code> 为何，它都是接收链的一轮：user tier，回复右移一列。标签是发送者名字和内容，<code translate="no">message_from</code> 携带发送者</td></tr>
+<tr><th scope="row">子 Agent 再次派生</th><td><code translate="no">agent.max_spawn_depth</code>，默认 1。超限的派生被拒绝。渲染器支持任意深度</td></tr>
+</tbody>
+</table>
+
+<h2 id="s7">7. 渲染管线</h2>
+<ol>
+<li><code translate="no">passes/</code>：<code translate="no">merge-runs</code>；<code translate="no">collapse-runtime-pairs</code>（旧包装对）；<code translate="no">demote-decoration-cards</code>（卡片子节点不算分叉）；<code translate="no">fold-summaries</code>；<code translate="no">thread</code>。</li>
+<li><code translate="no">layout/geometry.ts</code>：由后端的 lane、tier、depth 算出格点位置，前端只消费（<code translate="no">openprogram/state/store/session/graph/layout/</code>，tier 在 <code translate="no">tier.py</code>）。</li>
+<li><code translate="no">render/edges.ts</code>、<code translate="no">render/nodes.ts</code>、<code translate="no">render/labels/badges.ts</code>，然后是画布（<code translate="no">interaction/view/canvas.ts</code>、<code translate="no">gestures.ts</code>）。<code translate="no">render/seat.ts</code> 读回已绘制组的位置。</li>
+</ol>
+<p class="note">编排：<code translate="no">pipeline.ts</code>。载荷：<code translate="no">openprogram/state/store/session/graph/builder.py</code>。调试：<code translate="no">python scripts/dag_dump.py &lt;session_id&gt;</code> 打印 lane、tier、depth 和 ASCII 网格。每次捕获缓存图标、工具展示和文字宽度；需要窗格尺寸的工作推迟一帧；<code translate="no">applyView</code> 每帧绘制一次；平移只改写位移。150 个节点重绘约 5ms。</p>
+
+<h2 id="s8">8. 填充表示上下文覆盖</h2>
+<p>被覆盖的圆片（<code translate="no">is-covered</code>，<code translate="no">render/visibility.ts</code>）属于下一次 LLM 调用。图从不自行推导上下文语义：由 <code translate="no">GET /api/sessions/{id}/context-range</code> 返回，内部使用真实渲染的函数。<code translate="no">enterExclusiveCoverageMode</code>（<code translate="no">dag/index.ts</code>）负责获取。</p>
+<p>集合是活动分支从 head 回到最新摘要，加上每个被覆盖轮次的 code 节点，列在所属轮次之后（<code translate="no">openprogram/interfaces/server/routes/files/tree.py</code> 的 <code translate="no">_with_code_nodes</code>、<code translate="no">_coverage_nodes</code>）。没有绘制节点的上下文 id 被忽略。</p>
+<pre translate="no" tabindex="0">{"session_id": "…", "node_ids": ["…"], "count": 12,
+ "nodes": [{"node_id": "…", "in_context": true, "aged": false, "spilled": true}]}</pre>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">含义</th><th scope="col">来源</th><th scope="col">绘制</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">in_context</code></th><td>在覆盖集合中</td><td><code translate="no">get_branch</code></td><td>完整圆片</td></tr>
+<tr><th scope="row"><code translate="no">aged</code></th><td>总是 false：旧结果从不老化。保留它是为了让数据形状不变</td><td><code translate="no">routes/files/tree.py</code></td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">spilled</code></th><td>已写入 <code translate="no">large_nodes/</code>，渲染只引用</td><td><code translate="no">metadata.spilled</code>、<code translate="no">spill.py::spill_if_large</code></td><td><code translate="no">▤</code> 用 <code translate="no">&lt;text&gt;</code> 绘制，首形状扫描会跳过</td></tr>
+</tbody>
+</table>
+
+<p class="note">收到 <code translate="no">context_stats</code> 和 <code translate="no">compaction_finished</code> 时重新获取（<code translate="no">chat-handlers.ts</code>）。<code translate="no">spilled</code> 不在渲染签名内，所以新覆盖会清空签名（<code translate="no">setLastSignature(null)</code>）。摘要是普通链成员，分支 id 就是绘制 id，无需转换；只过滤合成桥（<code translate="no">filter.py</code>）。</p>
+
+<h2 id="s9">9. 压缩显示为一个胶囊</h2>
+<p>摘要代表一个区间，所以画成一个带归档图标的圆片，肩部 <code translate="no">+N</code> 为覆盖数量。<code translate="no">metadata.covers_ids</code>（<code translate="no">context/persistence.py</code>）经 <code translate="no">builder.py</code> 加入被覆盖轮次的 caller 子树并去掉不存在的 id，驱动形状、折叠、计数、幽灵和检查器。前端不做 seq 运算，否则会把死分叉算进来。</p>
+<table class="stack">
+<thead><tr><th scope="col">查看</th><th scope="col">被覆盖轮次</th><th scope="col">胶囊</th></tr></thead>
+<tbody>
+<tr><th scope="row">承载分支，折叠</th><td>省略；胶囊在主干最前</td><td>有色，<code translate="no">+N</code></td></tr>
+<tr><th scope="row">承载分支，打开</th><td>幽灵：分支色、虚线边、无覆盖填充</td><td>在幽灵之后，无计数</td></tr>
+<tr><th scope="row">其他分支</th><td>实时原文</td><td>在这些轮次之后，无效：无折叠、计数或填充</td></tr>
+<tr><th scope="row">已被取代（<code translate="no">superseded_summary</code>）</th><td>—</td><td>保留行，幽灵灰，不折叠</td></tr>
+</tbody>
+</table>
+
+<p class="note">承载分支的链包含整段（<a href="../../context/compaction.zh.html">压缩 §3</a>）。折叠状态只属于视图（<code translate="no">_summaryExpanded</code>），初始折叠，切换分支后保持。位置不变。摆放由 <code translate="no">fold-summaries.ts</code> 克隆改写，存储的行保留真实 <code translate="no">predecessor</code>。灰色只留给任何分支都不再承载的历史。</p>
+
+<h2 id="s10">10. 失败的轮次</h2>
+<p><code translate="no">status=error</code> 且不在 HEAD 链上（<code translate="no">_isArchivedFailure</code>）：与被覆盖轮次同样的灰，保留 <code translate="no">!</code>，检查器显示 <code translate="no">Failed turn · Recorded</code>。两个条件都要：只看 status 会把眼前的错误变灰，只看离开 HEAD 会把所有兄弟变灰。<code translate="no">status</code> 由存储写入（<a href="../execution/control.zh.html">执行控制</a>）；取消保持 <code translate="no">cancelled</code>。</p>
+
+<h2 id="s11">11. 悬停、单击、右键、双击</h2>
+<table class="stack">
+<thead><tr><th scope="col">操作</th><th scope="col">结果</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row">悬停</th><td>简卡：role（派生头为 <code translate="no">Subagent · &lt;name&gt;</code>）、模型和 token、预览、折叠数，未完成时显示状态。Token 用 <code translate="no">llm.output_tokens</code>，否则 <code translate="no">chars/4</code> 并标为估算，无文本时不显示</td><td><code translate="no">interaction/node/tooltip.ts</code></td></tr>
+<tr><th scope="row">单击</th><td>折叠或打开调用线，别无其他。Details 静默填充</td><td><code translate="no">interaction/node/nodes.ts</code></td></tr>
+<tr><th scope="row">右键</th><td>同一张卡片就地展开，显示全部字段、覆盖、完整 id 和操作；点击别处才收起。原始 JSON 在检查器外壳中打开</td><td><code translate="no">expandTooltip</code>、<code translate="no">renderNodeInfo</code>、<code translate="no">inspector.ts</code></td></tr>
+<tr><th scope="row">双击用户轮次</th><td>分叉并编辑</td><td><code translate="no">forkAndEditNode</code></td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">操作</th><th scope="col">路由</th><th scope="col">为什么够用</th></tr></thead>
+<tbody>
+<tr><th scope="row">检出</th><td><code translate="no">POST /api/chat/checkout</code></td><td>纯粹移动 HEAD</td></tr>
+<tr><th scope="row">从节点分叉</th><td>同上</td><td>从已有子节点的 HEAD 发送就成为兄弟</td></tr>
+<tr><th scope="row">分叉并编辑（用户轮次）</th><td>同上，移到节点的前驱，再把文本放入输入框</td><td>普通发送；与 <code translate="no">POST /api/chat/edit</code> 形状相同</td></tr>
+<tr><th scope="row">复制 id、原始 JSON</th><td>仅客户端</td><td>—</td></tr>
+</tbody>
+</table>
+
+<p class="note">图例：<code translate="no">DagLegend</code>，初始关闭，点击画布不关闭。</p>
+
+<h2 id="s12">12. 调用线</h2>
+<p>一轮所做的一切是一条按时间排序的序列。<code translate="no">passes/thread.ts</code> 构建它；<code translate="no">_threadOpen</code> 按锚点保存视图状态，不持久化，切换会话时重置。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">绘制</th></tr></thead>
+<tbody>
+<tr><th scope="row">折叠</th><td>只有肩部 <code translate="no">+N</code>。没有外框：带形状的都会被当成节点</td></tr>
+<tr><th scope="row">打开</th><td>锚点列一条分支色实线，每事件一条横线和一个真实圆片。后面的行下移，折叠后收回</td></tr>
+<tr><th scope="row">派生</th><td>派生头是调用线上带子 Agent 形象的圆片。派发调用（<code translate="no">agent</code>、<code translate="no">send_message</code>）并入它，没开出派生时除外。内部轮次并入，其调用线在右一列。可递归</td></tr>
+<tr><th scope="row">返回</th><td>无线：followup 并入同一锚点，派发、工作、返回从上到下读完</td></tr>
+<tr><th scope="row">名字</th><td>Tooltip、检查器和名字标签；来自 <code translate="no">spawned_from.label</code>，由 runner 写入（<code translate="no">attach["label"]</code>，<code translate="no">runtime/jobs/runner/progress.py</code>；<code translate="no">ws_actions/session/transcript.py</code>），否则用分支名</td></tr>
+<tr><th scope="row">可见性</th><td>只有上方所有调用线都打开时才显示</td></tr>
+</tbody>
+</table>
+
+<h2 id="s13">13. 选择、删除、小地图</h2>
+<p>一个鼠标，没有工具模式；手势见<a href="#canvas">上表</a>。Shift 或 ⌘ 加单击或拖动可增减；单击空白处清除。代码：<code translate="no">interaction/selection/</code>、<code translate="no">interaction/view/gestures.ts</code>、<code translate="no">chat/dag/dag-tools.tsx</code>。</p>
+<ul>
+<li>选择让圆片就地点亮。选择框为强调色描边加 8% 强调色填充。每次重绘重新应用，只保留已绘制节点，换会话时丢弃。它从输入框取走焦点。Esc 先清选择，再退出全屏。</li>
+<li>操作条在左上：<code translate="no">N selected | ⌖ · Copy ID · Delete · ✕</code>；之后几秒显示 <code translate="no">Deleted N nodes | Undo</code>。</li>
+<li>小地图（<code translate="no">interaction/view/minimap.ts</code>）：淡线上的点，强调色框表示视图，HEAD 更大且带环。按下或拖动移动镜头，滚轮以中心缩放。初始隐藏，选择保存在浏览器。</li>
+</ul>
+<h3>删除</h3>
+<p>Delete 或 ⌫ 立即执行，⌘Z 撤销。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">删除范围</th><td>选中节点及其通过 <code translate="no">caller</code> 拥有的内容。对话后继保留，重新指向最近的存活前驱</td></tr>
+<tr><th scope="row">图形代表其所有行</th><td>并入的 followup 随锚点删除；派生头带走派发调用和 Agent 分支</td></tr>
+<tr><th scope="row">拒绝</th><td>根、单独的派生根、摘要、attach 和 merge 机制</td></tr>
+<tr><th scope="row">HEAD、分支名</th><td>移到最近的存活前驱</td></tr>
+<tr><th scope="row">存储</th><td>文件移到 <code translate="no">&lt;sessions root&gt;/.deleted-nodes/&lt;session&gt;/&lt;op_id&gt;/</code> 并带日志；超过 24 小时在下次删除时清除</td></tr>
+<tr><th scope="row">撤销</th><td>反向重放日志；之后被移动的内容保留新值。按会话的栈，随页面存在</td></tr>
+<tr><th scope="row">轮次运行中</th><td>两者都拒绝</td></tr>
+<tr><th scope="row">线路</th><td><code translate="no">delete_nodes {session_id, node_ids}</code> → <code translate="no">nodes_deleted {ok, op_id, deleted, error}</code>；<code translate="no">restore_deleted_nodes {session_id, op_id}</code> → <code translate="no">nodes_restored</code>；成功后打开的对话收到 <code translate="no">window_stale</code> 并重新读取。任何 attach、合并或删除还会发送 <code translate="no">branches_changed</code>，客户端再次请求 <code translate="no">list_branches</code>，图随之刷新。存储：<code translate="no">session_store/node_deletion.py</code>；套接字：<code translate="no">ws_actions/dag_nodes.py</code></td></tr>
+</tbody>
+</table>
+
+<h2>实现状态</h2>
+<p>全部已实现，跨会话 <code translate="no">↗</code> 的跳转除外。</p>
+<details>
+<summary>测试</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">范围</th><th scope="col">测试</th></tr></thead>
+<tbody>
+<tr><th scope="row">几何、调用线</th><td><code translate="no">apps/web/tests/dag/dag-subagent-thread.test.mjs</code></td></tr>
+<tr><th scope="row">压缩折叠</th><td><code translate="no">apps/web/tests/dag/fold-summaries.test.mjs</code></td></tr>
+<tr><th scope="row">选择</th><td><code translate="no">apps/web/tests/dag/dag-selection.test.mjs</code></td></tr>
+<tr><th scope="row">共用输入框</th><td><code translate="no">apps/web/tests/tabs/center-perspective.test.mjs</code></td></tr>
+<tr><th scope="row">覆盖查询</th><td><code translate="no">tests/unit/context/test_context_range_coverage.py</code></td></tr>
+<tr><th scope="row"><code translate="no">covers_ids</code></th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
+<tr><th scope="row">删除</th><td><code translate="no">tests/component/store/test_node_deletion.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="layout.zh.html">布局场景</a></p>

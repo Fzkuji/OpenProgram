@@ -1,81 +1,59 @@
-<style>
-.runtime-doc { max-width: 100%; }
-.runtime-doc .lead, .runtime-doc .toc { background: var(--bg-code); border: 1px solid var(--bd); border-radius: 8px; padding: 14px 18px; margin: 18px 0; }
-.runtime-doc .doc-intro { border-left: 3px solid var(--acc); padding: 4px 0 4px 18px; margin: 18px 0 28px; }
-.runtime-doc .doc-scroll { max-width: 100%; overflow-x: auto; margin: 16px 0; }
-.runtime-doc .doc-scroll:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; }
-.runtime-doc table { min-width: 720px; }
-.runtime-doc code { overflow-wrap: anywhere; word-break: break-word; }
-.runtime-doc h2 { scroll-margin-top: 16px; }
-.runtime-doc blockquote { border-left: 3px solid var(--bd); padding: 8px 16px; margin: 16px 0; }
-@media (max-width: 680px) {
-  .runtime-doc table { min-width: 640px; font-size: 13px; }
-  .runtime-doc h1 { font-size: 26px; }
-}
-</style>
-<div class="runtime-doc">
+<title>Agentic self-recursion guard</title>
+<meta name="description" content="How a nesting cap stops an Agent method from re-entering itself without end.">
 <h1>Agentic self-recursion guard</h1>
-<div class="lead">
-<strong>Current behavior:</strong> agentic functions receive situational guidance in the user turn, while a per-function recursion-depth ceiling remains as a deterministic backstop.
-<br>Source of truth: <code>openprogram/agentic_programming/function.py</code> and <code>openprogram/agentic_programming/runtime.py</code>.
-<br>Tests: <code>tests/unit/programs/runtime/test_self_recursion_guard.py</code>.
-</div>
 
-<div class="toc">
-<a href="#s1">1 · Problem</a>
-<a href="#s2">2 · Guidance</a>
-<a href="#s3">3 · Depth ceiling</a>
-<a href="#s4">4 · Source symbols</a>
-<a href="#s5">5 · Behavior contract</a>
-<a href="#s6">6 · Boundaries</a>
-</div>
+<p>A bare <code translate="no">runtime.exec(content=...)</code> gets <code translate="no">DEFAULT_TOOLSET = "full"</code>, which includes Agent methods exposed as tools, so the inner model can call the method it is running in. The guard is a depth cap: past 5 nested entries of the same method, the call raises <code translate="no">RecursionError</code>.</p>
 
-<h2 id="s1">1. Problem</h2>
-<p>An agentic function runs an inner agent loop. Its tool list may contain the same function, and a matching docstring can cause the inner model to call the function again. Repeated direct calls can otherwise create unbounded same-name recursion.</p>
+<pre translate="no" tabindex="0">Agent method {name} exceeded max nesting depth 5</pre>
 
-<h2 id="s2">2. Situational guidance</h2>
-<p><code>openprogram/agentic_programming/runtime.py::_situational_prefix</code> creates an English user-turn prefix that states the current function name, explains that calling it would re-enter the current execution, and directs the model to lower-level tools.</p>
+<h2 id="depth">How it counts</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Limit</th><td><code translate="no">_MAX_AGENTIC_RECURSION_DEPTH = 5</code>, <code translate="no">openprogram/runtime/agent/call_state.py</code></td></tr>
+<tr><th scope="row">Counter</th><td><code translate="no">_recursion_depth</code>, a <code translate="no">ContextVar</code> holding a map from the wrapped function to its depth</td></tr>
+<tr><th scope="row">Key</th><td>The callable, not its display name</td></tr>
+<tr><th scope="row">Check</th><td>In <code translate="no">openprogram/runtime/agent/agent_method.py</code>, on entry: depth at the limit raises, otherwise depth + 1</td></tr>
+<tr><th scope="row">Restore</th><td>The token resets on return and on exception</td></tr>
+<tr><th scope="row">Scope</th><td>One process. A function started in a subprocess begins at zero.</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Chain</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">A → A → A …</th><td>Stops at the sixth entry</td></tr>
+<tr><th scope="row">A → B</th><td>Counted separately; deep B does not use A's quota</td></tr>
+<tr><th scope="row">A → B → A → B …</th><td>Bounded: the map carries down the chain, so the first method to reach 5 stops the cycle</td></tr>
+</tbody>
+</table>
+
+<h2 id="no-self-deny">The tool stays visible</h2>
+
+<p>The wrapper does not add the method's own name to <code translate="no">_current_tool_policy["deny"]</code>. Other uses of that policy are unchanged: <code translate="no">source</code>, <code translate="no">allow</code>, <code translate="no">toolset</code> and the unattended deny.</p>
+
+<details>
+<summary>Behaviour under test</summary>
+<p><code translate="no">tests/unit/programs/runtime/test_self_recursion_guard.py</code></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">test_self_name_NOT_denied_during_call</code></th><td>Own name is not denied</td></tr>
+<tr><th scope="row"><code translate="no">test_depth_increments_during_call</code></th><td>Depth is 1 inside a one-level call</td></tr>
+<tr><th scope="row"><code translate="no">test_depth_backstop_raises_past_limit</code></th><td>Raises with the name and the limit; the body ran exactly 5 times</td></tr>
+<tr><th scope="row"><code translate="no">test_distinct_subcalls_not_collateral_damage</code></th><td>A → B do not share a count</td></tr>
+<tr><th scope="row"><code translate="no">test_depth_restored_after_return</code></th><td>Depth returns to its previous value</td></tr>
+<tr><th scope="row"><code translate="no">test_depth_restored_after_exception</code></th><td>The same after a raise</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="limits">Limits</h2>
+
 <ul>
-<li>The prefix is injected at the beginning of the user content block on the regular execution path.</li>
-<li>The standalone fallback derives the deepest function name from the recursion context and applies the same prefix.</li>
-<li>The system prompt remains separate. The current function is not hidden through a self-deny entry; the guidance has a visible subject and the model decides not to call it.</li>
+<li>The model can still spend up to 5 nested calls before the cap fires.</li>
+<li>The guard does not change tool authorization, session graph semantics or the shared system prefix.</li>
 </ul>
 
-<h2 id="s3">3. Depth ceiling</h2>
-<ul>
-<li><code>openprogram/agentic_programming/function.py::_MAX_AGENTIC_RECURSION_DEPTH</code> is 5.</li>
-<li><code>_recursion_depth</code> is a context-local map keyed by function name.</li>
-<li>The synchronous and asynchronous wrappers increment the current function's depth, raise <code>RecursionError</code> when the limit would be exceeded, and reset the context value in <code>finally</code>.</li>
-<li>The ceiling counts each function name independently. It protects direct A → A recursion; cross-function cycles such as A → B → A are a documented remaining limitation.</li>
-</ul>
-
-<h2 id="s4">4. Source symbols</h2>
-<div class="doc-scroll" role="region" tabindex="0" aria-label="Self-recursion evidence tables"><table>
-<tr><th>Mechanism</th><th>Current source symbol</th></tr>
-<tr><td>Depth ceiling</td><td><code>openprogram/agentic_programming/function.py::_MAX_AGENTIC_RECURSION_DEPTH</code></td></tr>
-<tr><td>Depth context</td><td><code>openprogram/agentic_programming/function.py::_recursion_depth</code></td></tr>
-<tr><td>Sync and async wrappers</td><td><code>openprogram/agentic_programming/function.py</code></td></tr>
-<tr><td>Situational prefix</td><td><code>openprogram/agentic_programming/runtime.py::_situational_prefix</code></td></tr>
-<tr><td>Regular injection</td><td><code>openprogram/agentic_programming/runtime.py</code> frame-prefix construction and user-content assembly</td></tr>
-<tr><td>Standalone fallback</td><td><code>openprogram/agentic_programming/runtime.py</code> recursion-context fallback</td></tr>
-<tr><td>Tool policy</td><td><code>openprogram/agentic_programming/runtime.py</code> retains source/allow/toolset and unrelated deny handling</td></tr>
-</table></div>
-
-<h2 id="s5">5. Behavior contract</h2>
-<div class="doc-scroll" role="region" tabindex="0" aria-label="Self-recursion evidence tables"><table>
-<tr><th>Contract</th><th>Evidence</th></tr>
-<tr><td>Guidance names the current function, says not to call it, and explains recursion.</td><td><code>test_situational_prefix_warns_against_self_call</code></td></tr>
-<tr><td>Empty docstrings do not add an irrelevant function-job suffix.</td><td><code>test_situational_prefix_handles_empty_doc</code></td></tr>
-<tr><td>The current function name is not added to self-deny during the call.</td><td><code>test_self_name_NOT_denied_during_call</code></td></tr>
-<tr><td>Depth increments during a call and resets after return or exception.</td><td><code>test_depth_increments_during_call</code>, <code>test_depth_restored_after_return</code>, <code>test_depth_restored_after_exception</code></td></tr>
-<tr><td>Direct same-name recursion raises at the configured ceiling; distinct subcalls do not cause collateral rejection.</td><td><code>test_depth_backstop_raises_past_limit</code>, <code>test_distinct_subcalls_not_collateral_damage</code></td></tr>
-</table></div>
-
-<h2 id="s6">6. Boundaries and remaining work</h2>
-<ul>
-<li>The guidance is not a guarantee that a weak model will always stop before the ceiling.</li>
-<li>Cross-function cycle detection is not implemented by this mechanism.</li>
-<li>The guard does not change tool authorization, session DAG semantics, or the unified system-prefix contract.</li>
-<li>This page intentionally uses symbols and repository paths instead of fixed line numbers or historical commit identifiers; source movement should not silently make the evidence stale.</li>
-</ul>
-</div>
+<p class="next"><a href="../dag/overview.html">Conversation graph</a></p>

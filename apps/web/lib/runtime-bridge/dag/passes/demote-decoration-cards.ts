@@ -1,7 +1,7 @@
 /**
  * Pass: demote LLM-triggered runtime cards so they don't fork the trunk.
  *
- * When an LLM main-reply triggers an ``@agentic_function``, the
+ * When an LLM main-reply triggers an ``Agent method``, the
  * runtime placeholder card is persisted as a conv-child of the reply
  * (predecessor = reply_id). If the user then sends a follow-up turn,
  * the reply ends up with TWO conv-children: the card and the next

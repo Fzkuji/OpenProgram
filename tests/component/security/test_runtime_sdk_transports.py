@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.security.safe_http import (
+from openprogram.host.security.safe_http import (
     AsyncManagedHTTPTransport,
     CONSUMER_REGISTRY,
     ManagedHTTPTransport,
@@ -23,7 +23,7 @@ from openprogram.security.safe_http import (
     SafeClient,
     SafeAsyncClient,
 )
-from openprogram.security.url_policy import (
+from openprogram.host.security.url_policy import (
     OwnerURLException,
     URLPolicyError,
     normalize_origin,
@@ -125,7 +125,7 @@ def test_every_task6_sdk_entry_has_an_explicit_disposition(consumer, disposition
 
 
 def test_provider_client_factory_requires_policy_scope_and_returns_managed_client():
-    from openprogram.providers.utils.http_client import build_async_client
+    from openprogram.models.providers.utils.http_client import build_async_client
 
     signature = inspect.signature(build_async_client)
     assert signature.parameters["consumer"].default is inspect.Parameter.empty
@@ -149,8 +149,8 @@ def test_provider_client_factory_preserves_stream_timeout_and_socket_hardening(
 ):
     import asyncio
     import socket
-    from openprogram.providers.utils import timeouts
-    from openprogram.providers.utils.http_client import build_async_client
+    from openprogram.models.providers.utils import timeouts
+    from openprogram.models.providers.utils.http_client import build_async_client
 
     monkeypatch.setenv("OPENPROGRAM_FORCE_IPV4", "1")
     client = build_async_client(
@@ -168,7 +168,7 @@ def test_provider_client_factory_preserves_stream_timeout_and_socket_hardening(
 
 
 def test_provider_client_factory_rejects_unmanaged_client_kwargs():
-    from openprogram.providers.utils.http_client import build_async_client
+    from openprogram.models.providers.utils.http_client import build_async_client
 
     with pytest.raises(TypeError):
         build_async_client(
@@ -179,8 +179,8 @@ def test_provider_client_factory_rejects_unmanaged_client_kwargs():
 
 
 def test_real_openai_provider_constructor_receives_managed_httpx_client():
-    from openprogram.providers.openai_responses.openai_responses import _create_client
-    from openprogram.providers.types import Context, Model
+    from openprogram.models.providers.adapters.openai_responses.openai_responses import _create_client
+    from openprogram.models.providers.types import Context, Model
 
     model = Model(
         id="test",
@@ -201,8 +201,8 @@ def test_real_openai_provider_constructor_receives_managed_httpx_client():
 
 
 def test_real_anthropic_provider_constructor_receives_managed_httpx_client():
-    from openprogram.providers.anthropic.anthropic import _build_client
-    from openprogram.providers.types import Model
+    from openprogram.models.providers.adapters.anthropic.anthropic import _build_client
+    from openprogram.models.providers.types import Model
 
     model = Model(
         id="claude-test",
@@ -224,7 +224,7 @@ def test_real_anthropic_provider_constructor_receives_managed_httpx_client():
 
 def test_real_google_sdk_constructor_receives_both_managed_httpx_clients():
     from google import genai
-    from openprogram.providers.utils.http_client import build_google_http_options
+    from openprogram.models.providers.utils.http_client import build_google_http_options
 
     options = build_google_http_options("https://generativelanguage.googleapis.com")
     client = genai.Client(api_key="secret", http_options=options)
@@ -240,8 +240,8 @@ def test_real_google_sdk_constructor_receives_both_managed_httpx_clients():
 
 def test_real_openai_sdk_method_reaches_managed_socket(sdk_server):
     import asyncio
-    from openprogram.providers.openai_responses.openai_responses import _create_client
-    from openprogram.providers.types import Context, Model
+    from openprogram.models.providers.adapters.openai_responses.openai_responses import _create_client
+    from openprogram.models.providers.types import Context, Model
 
     base = f"http://127.0.0.1:{sdk_server.port}/v1"
     model = Model(
@@ -260,8 +260,8 @@ def test_real_openai_sdk_method_reaches_managed_socket(sdk_server):
 
 def test_real_anthropic_sdk_method_reaches_managed_socket(sdk_server):
     import asyncio
-    from openprogram.providers.anthropic.anthropic import _build_client
-    from openprogram.providers.types import Model
+    from openprogram.models.providers.adapters.anthropic.anthropic import _build_client
+    from openprogram.models.providers.types import Model
 
     base = f"http://127.0.0.1:{sdk_server.port}"
     model = Model(
@@ -284,7 +284,7 @@ def test_real_anthropic_sdk_method_reaches_managed_socket(sdk_server):
 
 def test_real_google_sdk_method_reaches_managed_socket(sdk_server):
     from google import genai
-    from openprogram.providers.utils.http_client import build_google_http_options
+    from openprogram.models.providers.utils.http_client import build_google_http_options
 
     base = f"http://127.0.0.1:{sdk_server.port}"
     client = genai.Client(
@@ -305,9 +305,9 @@ def test_real_google_sdk_method_reaches_managed_socket(sdk_server):
 
 
 def test_anthropic_rejects_when_managed_client_factory_rejects(monkeypatch):
-    from openprogram.providers.anthropic.anthropic import _build_client
-    from openprogram.providers.types import Model
-    from openprogram.providers.utils import http_client
+    from openprogram.models.providers.adapters.anthropic.anthropic import _build_client
+    from openprogram.models.providers.types import Model
+    from openprogram.models.providers.utils import http_client
 
     rejection = URLPolicyError("PRIVATE_ADDRESS", "https://private.invalid")
 
@@ -330,8 +330,8 @@ def test_anthropic_rejects_when_managed_client_factory_rejects(monkeypatch):
 
 def test_real_openai_sdk_refuses_cross_origin_credential_redirect(sdk_server):
     import asyncio
-    from openprogram.providers.openai_responses.openai_responses import _create_client
-    from openprogram.providers.types import Context, Model
+    from openprogram.models.providers.adapters.openai_responses.openai_responses import _create_client
+    from openprogram.models.providers.types import Context, Model
 
     redirect_target = _SDKServer()
     sdk_server.redirect_to = (
@@ -390,8 +390,8 @@ def test_real_mcp_v1_sdk_transport_reaches_managed_local_server(
     monkeypatch, transport, path
 ):
     import asyncio
-    from openprogram.mcp.client import MCPClient
-    from openprogram.mcp.config import MCPServerConfig
+    from openprogram.extensions.mcp.client import MCPClient
+    from openprogram.extensions.mcp.config import MCPServerConfig
 
     port = _free_port()
     process = multiprocessing.Process(
@@ -460,9 +460,9 @@ def test_mcp_older_v1_streamable_http_fallback_keeps_managed_factory(
     monkeypatch,
 ):
     import asyncio
-    import openprogram.mcp.client as client_module
+    import openprogram.extensions.mcp.client as client_module
     import mcp.client.streamable_http as streamable_module
-    from openprogram.mcp.client import MCPClient
+    from openprogram.extensions.mcp.client import MCPClient
 
     instance = MCPClient.__new__(MCPClient)
     instance.config = SimpleNamespace(url="https://mcp.example/rpc", timeout_seconds=7)
@@ -498,8 +498,8 @@ def test_mcp_older_v1_streamable_http_fallback_keeps_managed_factory(
 def test_mcp_supervisor_sanitizes_remote_oauth_error():
     import asyncio
     from mcp.client.auth import OAuthTokenError
-    from openprogram.mcp.client import MCPClient
-    from openprogram.mcp.config import MCPServerConfig
+    from openprogram.extensions.mcp.client import MCPClient
+    from openprogram.extensions.mcp.config import MCPServerConfig
 
     peer_secret = "PEER-BODY TOKEN-PATH QUERY-SECRET"
 
@@ -529,10 +529,10 @@ def test_mcp_supervisor_sanitizes_remote_oauth_error():
     asyncio.run(exercise())
 
 
-def test_mcp_supervisor_sanitizes_remote_transient_stderr(capsys):
+def test_mcp_supervisor_sanitizes_remote_transient_stderr(caplog):
     import asyncio
-    from openprogram.mcp.client import MCPClient
-    from openprogram.mcp.config import MCPServerConfig
+    from openprogram.extensions.mcp.client import MCPClient
+    from openprogram.extensions.mcp.config import MCPServerConfig
 
     peer_secret = "PEER-BODY TOKEN-PATH QUERY-SECRET"
 
@@ -558,8 +558,9 @@ def test_mcp_supervisor_sanitizes_remote_transient_stderr(capsys):
         assert client.error == "mcp_connection_transient"
         assert client.error_kind == "transient"
 
-    asyncio.run(exercise())
-    rendered = capsys.readouterr().err
+    with caplog.at_level("INFO", logger="openprogram.extensions.mcp.client"):
+        asyncio.run(exercise())
+    rendered = caplog.text
     assert "transient connection failure" in rendered
     for secret in ("PEER-BODY", "TOKEN-PATH", "QUERY-SECRET"):
         assert secret not in rendered
@@ -583,14 +584,14 @@ def test_registered_remote_mcp_tool_sanitizes_peer_failures_and_exception_graph(
 ):
     import asyncio
     from mcp.types import Tool
-    from openprogram.programs._runtime import (
+    from openprogram.programs._host.runtime import (
         get,
         restore_registry,
         snapshot_registry,
     )
-    from openprogram.mcp.adapter import register_remote_tool
-    from openprogram.mcp.client import MCPClient
-    from openprogram.mcp.config import MCPServerConfig
+    from openprogram.extensions.mcp.adapter import register_remote_tool
+    from openprogram.extensions.mcp.client import MCPClient
+    from openprogram.extensions.mcp.config import MCPServerConfig
 
     snapshot = snapshot_registry()
 
@@ -666,14 +667,14 @@ def test_registered_remote_mcp_tool_sanitizes_peer_failures_and_exception_graph(
     ("module_name", "class_name", "platform", "credentials", "sdk_prefix"),
     [
         (
-            "openprogram.channels.implementations.slack",
+            "openprogram.interfaces.channels.implementations.slack",
             "SlackChannel",
             "slack",
             {"bot_token": "xoxb-test", "app_token": "xapp-test"},
             "slack_sdk",
         ),
         (
-            "openprogram.channels.implementations.discord",
+            "openprogram.interfaces.channels.implementations.discord",
             "DiscordChannel",
             "discord",
             {"bot_token": "discord-test"},
@@ -690,7 +691,7 @@ def test_uninjectable_gateway_sdk_is_disabled_before_sdk_import(
     sdk_prefix,
 ):
     import builtins
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
 
     module = __import__(module_name, fromlist=[class_name])
     channel_class = getattr(module, class_name)
@@ -725,8 +726,8 @@ def test_registered_bedrock_stream_is_disabled_before_aws_sdk_import(monkeypatch
     import asyncio
     import builtins
 
-    from openprogram.providers.api_registry import get_api_provider
-    from openprogram.providers.types import Context, Model
+    from openprogram.models.providers.catalog.api_registry import get_api_provider
+    from openprogram.models.providers.types import Context, Model
 
     sdk_imports = []
     real_import = builtins.__import__
@@ -761,7 +762,7 @@ def test_registered_bedrock_stream_is_disabled_before_aws_sdk_import(monkeypatch
 def test_bedrock_model_list_is_disabled_before_aws_sdk_import(monkeypatch):
     import builtins
 
-    from openprogram.providers.amazon_bedrock import list_models
+    from openprogram.models.providers.adapters.amazon_bedrock import list_models
 
     sdk_imports = []
     real_import = builtins.__import__

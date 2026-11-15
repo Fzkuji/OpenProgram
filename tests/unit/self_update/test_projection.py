@@ -4,13 +4,13 @@ import time
 
 import pytest
 
-from openprogram.self_update import SelfUpdateStore, UpdatePhase
-from openprogram.self_update.control.projection import ProjectionAccessError
-from openprogram.self_update.control.projection import list_status
-from openprogram.self_update.control.projection import read_status
-from openprogram.self_update.control.projection import running_status
-from openprogram.self_update.control.recovery import SYSTEM_CHECKS
-from openprogram.self_update.types import CorruptUpdateStateError, UpdateNotFoundError
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+from openprogram.operations.self_update.control.projection import ProjectionAccessError
+from openprogram.operations.self_update.control.projection import list_status
+from openprogram.operations.self_update.control.projection import read_status
+from openprogram.operations.self_update.control.projection import running_status
+from openprogram.operations.self_update.control.recovery import SYSTEM_CHECKS
+from openprogram.operations.self_update.types import CorruptUpdateStateError, UpdateNotFoundError
 from tests.unit.self_update.test_store import _request
 
 
@@ -38,13 +38,13 @@ def test_empty_history_and_named_status_do_not_create_files(tmp_path):
 def test_read_only_journal_and_active_pointer_are_not_repaired(tmp_path):
     store = SelfUpdateStore(tmp_path / "updates")
     store.create(_request())
-    store.transition("su_test", UpdatePhase.STAGING)
+    store.transition("su_test", UpdatePhase.BUILDING)
     journal = store.root / "su_test" / "events.jsonl"
     journal.write_bytes(journal.read_bytes().splitlines(keepends=True)[0])
     (store.root / "active.json").unlink()
     before = _snapshot(store.root)
-    assert read_status(store, session_id="session-1")["phase"] == "staging"
-    assert list_status(store, session_id="session-1")["items"][0]["phase"] == "staging"
+    assert read_status(store, session_id="session-1")["phase"] == "building"
+    assert list_status(store, session_id="session-1")["items"][0]["phase"] == "building"
     assert _snapshot(store.root) == before
 
 
@@ -85,7 +85,7 @@ def test_unmatched_gate_is_unknown_not_a_fallback(tmp_path, mutation):
     store = SelfUpdateStore(tmp_path / "updates")
     request = _request()
     store.create(request)
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(request.update_id, phase)
     good = _gate(request)
     bad = dict(good)
@@ -106,7 +106,7 @@ def test_phase_selects_committed_gate_and_intermediate_phase_is_unknown(tmp_path
     store = SelfUpdateStore(tmp_path / "updates")
     req = _request()
     store.create(req)
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY):
         store.transition(req.update_id, phase)
     gate = _gate(req)
     store.transition(req.update_id, UpdatePhase.ACTIVATING, detail={"previous_system_gate": gate})

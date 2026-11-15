@@ -1,7 +1,8 @@
 """Rewrite README contributor avatars from the GitHub contributors API.
 
 The README embeds GitHub's own profile PNGs so the image host is the
-same site that renders the file. Bots and AI coding accounts are omitted.
+same site that renders the file. Bots, AI coding accounts and the project's
+retired accounts (see ``retired_accounts.py``) are omitted.
 """
 
 from __future__ import annotations
@@ -16,9 +17,14 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-REPO = os.environ.get("OPENPROGRAM_GITHUB_REPO", "Fzkuji/OpenProgram")
+try:
+    from scripts.retired_accounts import is_retired_login
+except ModuleNotFoundError:  # run as a file, as the contributors workflow does
+    from retired_accounts import is_retired_login
+
+REPO = os.environ.get("OPENPROGRAM_GITHUB_REPO", "FuzzyKuji/OpenProgram")
 CONTRIBUTORS_URL = f"https://api.github.com/repos/{REPO}/contributors?per_page=100"
-README_PATH = Path(__file__).resolve().parents[1] / "README.md"
+REPO_ROOT = Path(__file__).resolve().parents[1]
 START = "<!-- contributors-avatars -->"
 END = "<!-- /contributors-avatars -->"
 TIMEOUT_S = 20
@@ -45,6 +51,8 @@ def is_listed_contributor(entry: dict[str, Any]) -> bool:
         return False
     lower = login.lower()
     if lower.endswith("[bot]") or lower.endswith("-bot") or lower.endswith("_bot"):
+        return False
+    if is_retired_login(lower):
         return False
     return lower not in AI_LOGINS
 
@@ -99,10 +107,11 @@ def main() -> int:
         print("contributor list was empty; leaving README unchanged", file=sys.stderr)
         return 0
     logins = [str(row["login"]) for row in people]
-    text = README_PATH.read_text(encoding="utf-8")
-    README_PATH.write_text(
-        replace_block(text, render_block(logins)), encoding="utf-8"
-    )
+    # Every translated README carries the same avatar block.
+    block = render_block(logins)
+    for readme in sorted(REPO_ROOT.glob("README*.md")):
+        text = readme.read_text(encoding="utf-8")
+        readme.write_text(replace_block(text, block), encoding="utf-8")
     print(f"wrote {len(logins)} contributor avatars")
     return 0
 

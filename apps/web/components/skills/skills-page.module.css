@@ -1,12 +1,7 @@
-/* Layout for the /skills/<name> DETAIL page. The list page's chrome
-   (topbar / tabs / body) now comes from components/ui/manage-page;
-   what's left here is what skill-detail-page.tsx still needs. */
-
-.view {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: visible;
+/* Standalone /skills/<name> frame: reserve the collapsed main-sidebar
+   rail at narrow widths, like the shared management frame. */
+@media (max-width: 900px) {
+  .view { padding-left: var(--rail-collapsed-w); }
 }
 
 .topbar {
@@ -21,40 +16,10 @@
 }
 
 .title {
-  font-size: 18px;
+  font-size: var(--fs-title);
   font-weight: 600;
   color: var(--text-bright);
   flex-shrink: 0;
-}
-
-.tabBtn {
-  display: inline-flex;
-  align-items: center;
-  height: var(--ui-button-h);
-  padding: 0 12px;
-  font-size: 13px;
-  color: var(--text-dim);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--ui-button-radius);
-  cursor: pointer;
-  transition: background 150ms ease-out, color 150ms ease-out;
-}
-.tabBtn:hover {
-  color: var(--text-bright);
-}
-.tabBtn.active {
-  color: var(--text-bright);
-  border-color: var(--border);
-  background: var(--bg-secondary);
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-  padding-bottom: 2px;
 }
 
 .body {
@@ -65,10 +30,7 @@
   min-height: 0;
   overflow: hidden;
 }
-
-.content {
-  min-width: 0;
-  overflow-y: auto;
-  padding: 16px 24px 24px;
+/* The detail page: content column plus a fixed metadata aside. */
+.bodyDetail {
+  grid-template-columns: 1fr 320px;
 }
-

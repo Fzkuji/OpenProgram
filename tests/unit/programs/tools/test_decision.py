@@ -1,4 +1,4 @@
-"""agentic_programming.decision.make — the LLM picks the next step from a
+"""agent.decision.make — the LLM picks the next step from a
 set of options and ``decision.make`` resolves the pick.
 
 Covered: a function option is picked (and run), a value option is
@@ -7,8 +7,10 @@ picked (its value is returned), and the dict ``(value, "desc")`` form.
 
 from __future__ import annotations
 
-from openprogram.agentic_programming import decision
-from openprogram.agentic_programming.runtime import Runtime
+from openprogram.runtime.agent import Agent
+
+from openprogram.runtime.agent import decision
+from openprogram.runtime.agent.runtime import Runtime
 
 
 class _CannedRuntime(Runtime):
@@ -132,7 +134,7 @@ def test_decide_raises_decisionerror_when_retries_exhausted():
     """An unresolvable reply raises DecisionError (a ValueError subclass),
     so a caller can catch it precisely."""
     import pytest
-    from openprogram.agentic_programming.decision import DecisionError
+    from openprogram.runtime.agent.decision import DecisionError
 
     rt = _CannedRuntime("not json at all, no pick here")
     with pytest.raises(DecisionError):
@@ -142,15 +144,30 @@ def test_decide_raises_decisionerror_when_retries_exhausted():
         decision.make("Pick one.", [_greet, _farewell], runtime=rt, max_retries=0)
 
 
-def test_decide_picks_up_ambient_runtime_inside_agentic_function():
-    """Inside an @agentic_function, decision.make() needs no runtime= — it reads
+def test_decide_picks_up_ambient_runtime_inside_agent_method():
+    """Inside an Agent method, decision.make() needs no runtime= — it reads
     the ambient runtime the decorator installs."""
-    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.runtime.agent import Agent
 
     rt = _CannedRuntime('{"call": "_farewell"}')
 
-    @agentic_function
-    def router(runtime=None):
-        return decision.make("Pick one.", [_greet, _farewell])
+    class _RouterAgent(Agent):
+        method_options = {'router': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'router'}}
 
-    assert router(runtime=rt) == "bye"
+        def router(self):
+            return decision.make("Pick one.", [_greet, _farewell])
+
+    assert _RouterAgent(runtime=rt).router() == "bye"
+
+
+def test_parse_args_repicks_on_the_runtime_of_the_enclosing_agent_call():
+    """Without runtime=, parse_args() re-picks on the enclosing Agent's Runtime."""
+    rt = _CannedRuntime('{"call": "_greet", "args": {"name": "ada"}}')
+
+    class _RouterAgent(Agent):
+        def route(self, reply):
+            return decision.parse_args(reply, [_greet])
+
+    chosen, args = _RouterAgent(runtime=rt).route("no pick in this reply")
+    assert chosen is _greet
+    assert args == {"name": "ada"}

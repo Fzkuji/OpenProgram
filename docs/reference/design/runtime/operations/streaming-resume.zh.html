@@ -1,0 +1,69 @@
+<title>运行中状态恢复</title>
+<meta name="description" content="运行中的工作如何在刷新、重连或 worker 重启后仍然可见。">
+<h1>运行中状态恢复</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">发生的事</th><th scope="col">聊天里显示</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">刷新页面，worker 存活</th><td>运行中的行及其最新已保存状态，随后接收编号更新和按偏移放置的文字帧</td><td>已存的行、<code translate="no">running_task</code> 帧、<code translate="no">transcript_update</code></td></tr>
+<tr><th scope="row">加载期间运行结束</th><td>运行槽关闭</td><td><code translate="no">running_task_clear</code></td></tr>
+<tr><th scope="row">Worker 重启</th><td>行标为 <code translate="no">interrupted</code>，琥珀色，并显示 “Worker restarted before this turn finished”</td><td><code translate="no">reconcile_interrupted_runs</code></td></tr>
+<tr><th scope="row">有待答问题或待批准项</th><td>重新绘制卡片</td><td><code translate="no">_replay_open_waits</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="placeholders">占位</h2>
+<p>会运行一段时间的工作在开始前先写节点。状态放在 <code translate="no">metadata</code>；<code translate="no">Call</code> dataclass 不变。</p>
+<table class="stack">
+<thead><tr><th scope="col">产生者</th><th scope="col">写入位置</th><th scope="col">运行中保存</th></tr></thead>
+<tbody>
+<tr><th scope="row">Assistant 回复</th><td><code translate="no">turn_lifecycle.py</code>：空的 <code translate="no">role="llm"</code> 行，带 <code translate="no">status="running"</code>、<code translate="no">worker_id</code>、<code translate="no">started_at</code></td><td>文本和思考块边流边存：每帧发出前经 <code translate="no">stream_tap</code> 的静默路径写入（<code translate="no">update_stream_progress</code>，不 fsync）；轮次结束时写完整行，取消时写入已有部分</td></tr>
+<tr><th scope="row">Agent 方法运行</th><td>占位 <code translate="no">&lt;msg_id&gt;_reply</code></td><td><code translate="no">execution/dag.py</code> 的轮询写入 <code translate="no">context_tree</code>、<code translate="no">status</code>、<code translate="no">last_update_at</code></td></tr>
+<tr><th scope="row">模型调用的 Agent 方法</th><td><code translate="no">runtime_attach.py</code>：<code translate="no">display=runtime</code> 行</td><td>同一棵树</td></tr>
+<tr><th scope="row"><code translate="no">/task --async</code>、merge</th><td><code translate="no">slash_actions.py</code>：attach 指针</td><td>卡片上的任务状态</td></tr>
+<tr><th scope="row">子 Agent</th><td><code translate="no">sub_agent_run.py</code></td><td>卡片上的任务状态</td></tr>
+</tbody>
+</table>
+<p class="note">轮询从每 0.15 秒开始，退避到 1.2 秒。结束时再写一次，所以运行结束后刷新会显示已完成。</p>
+
+<details>
+<summary>状态值</summary>
+<dl class="pairs">
+<dt>等待</dt><dd><code translate="no">pending</code>、<code translate="no">paused</code></dd>
+<dt>产出中</dt><dd><code translate="no">running</code>、<code translate="no">streaming</code>、<code translate="no">cancelling</code></dd>
+<dt>结束</dt><dd><code translate="no">completed</code>、<code translate="no">done</code>、<code translate="no">error</code>、<code translate="no">cancelled</code>、<code translate="no">interrupted</code></dd>
+<dt>无状态</dt><dd><code translate="no">_node_to_msg</code> 把旧节点读作 <code translate="no">done</code></dd>
+</dl>
+</details>
+
+<h2 id="reconnect">重连</h2>
+<p>加载会话先返回已保存的行，再为正在运行的任务发送 <code translate="no">running_task</code>：</p>
+<pre translate="no" tabindex="0">{ "type": "running_task",
+  "data": { "session_id", "msg_id", "func_name", "execution_id", "status_version",
+            "started_at", "display_params", "partial_tree": null,
+            "stream_events", "status", "reason_code", "run_seq" } }</pre>
+<p class="note">帧按会话下发；<code translate="no">run_seq</code> 决定先后，迟到的帧不能让已关闭的运行槽复活。</p>
+<p class="note">行和实时树以编号的 <code translate="no">transcript_update</code> 变化到达：函数运行的树是 <code translate="no">row_patch</code>，模型调用的树在其回复的 <code translate="no">callRoots</code> 里。重新加载的标签页先读取，再跟随更新；漏掉一次更新，或文字帧超过行里已有的文字，就再读一次。</p>
+
+<h2 id="worker-restart">Worker 重启</h2>
+<p>新 worker 没有在运行的工作，所以启动时在后台线程核对所有会话，包括已归档的。没有时间阈值。</p>
+<table class="grid">
+<thead><tr><th scope="col">节点</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">running</code></th><td class="deny">变为 <code translate="no">interrupted</code></td></tr>
+<tr><th scope="row"><code translate="no">cancelling</code>，所有者已退出</th><td class="deny">变为 <code translate="no">cancelled</code></td></tr>
+<tr><th scope="row"><code translate="no">cancelling</code>，所有者存活</th><td class="run">继续取消</td></tr>
+<tr><th scope="row">有未结束的持久等待</th><td class="run">保持可恢复</td></tr>
+<tr><th scope="row">execution 仍在活动</th><td class="run">交给 execution</td></tr>
+</tbody>
+</table>
+<p class="note">重启后继续某个 execution 由 <code translate="no">openprogram/runtime/execution/restart.py</code> 负责，受 <code translate="no">execution.auto_resume_window_seconds</code> 限制。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>占位、树持久化、回复流式过程中保存部分文本、状态渲染、重连帧、重启核对</td></tr>
+<tr><th scope="row">未实现</th><td>订阅单条消息；跨会话的活跃工作面板</td></tr>
+</tbody>
+</table>

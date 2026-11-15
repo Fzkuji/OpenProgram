@@ -4,11 +4,14 @@ import pytest
 
 
 def test_resource_use_keeps_exact_owner_and_releases_on_error(tmp_path, monkeypatch):
-    from openprogram.session_resources import ResourceUseStore, resource_use
-    from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
+    from openprogram.host.resources.session import ResourceUseStore, resource_use
+    from openprogram.runtime.execution.run_control import (
+        set_current_session_id,
+        reset_current_session_id,
+    )
 
     store = ResourceUseStore(tmp_path / "resources.db")
-    monkeypatch.setattr("openprogram.session_resources.process_identity", lambda pid: "birth-1")
+    monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth-1")
     token = set_current_session_id("session-a")
     try:
         with pytest.raises(ValueError), resource_use("vm", "Test VM", "https://user:secret@vm.test/api?token=secret", store=store):
@@ -23,24 +26,27 @@ def test_resource_use_keeps_exact_owner_and_releases_on_error(tmp_path, monkeypa
 
 
 def test_dead_or_reused_owner_is_not_an_active_resource(tmp_path, monkeypatch):
-    from openprogram.session_resources import ResourceUseStore
+    from openprogram.host.resources.session import ResourceUseStore
 
     store = ResourceUseStore(tmp_path / "resources.db")
-    monkeypatch.setattr("openprogram.session_resources.process_identity", lambda pid: "birth-1")
+    monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth-1")
     store.add("session-a", None, "docker", "Docker", "ubuntu:24.04")
-    monkeypatch.setattr("openprogram.session_resources.process_identity", lambda pid: "birth-2")
+    monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth-2")
     assert store.list("session-a") == []
 
 
 @pytest.mark.parametrize("backend_kind", ["docker", "ssh"])
 def test_code_backends_do_not_register_software_resources(tmp_path, monkeypatch, backend_kind):
-    from openprogram.session_resources import ResourceUseStore
-    from openprogram.backend.docker import DockerBackend
-    from openprogram.backend.ssh import SshBackend
-    from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
+    from openprogram.host.resources.session import ResourceUseStore
+    from openprogram.host.backend.docker import DockerBackend
+    from openprogram.host.backend.ssh import SshBackend
+    from openprogram.runtime.execution.run_control import (
+        set_current_session_id,
+        reset_current_session_id,
+    )
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
-    monkeypatch.setattr("openprogram.session_resources.process_identity", lambda pid: "birth")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth")
     store = ResourceUseStore()
     def run(*args, **kwargs):
         rows = store.list("session-a")
@@ -49,7 +55,7 @@ def test_code_backends_do_not_register_software_resources(tmp_path, monkeypatch,
         return CompletedProcess(args, 0, "ok", "")
     token = set_current_session_id("session-a")
     try:
-        with patch(f"openprogram.backend.{backend_kind}.subprocess.run", run):
+        with patch(f"openprogram.host.backend.{backend_kind}.subprocess.run", run):
             backend = DockerBackend() if backend_kind == "docker" else SshBackend("example.test")
             assert backend.run("true", 1).exit_code == 0
         assert store.list("session-a") == []
@@ -57,24 +63,28 @@ def test_code_backends_do_not_register_software_resources(tmp_path, monkeypatch,
         reset_current_session_id(token)
 
 
-def test_vm_adapter_reports_attachment_during_harness_call(tmp_path, monkeypatch):
-    from openprogram.session_resources import ResourceUseStore
-    from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
-    from openprogram.programs.gui_harness_bridge import install_gui_harness_web_use
+def test_vm_target_reports_attachment_during_the_call(tmp_path, monkeypatch):
+    from openprogram.host.resources.session import ResourceUseStore
+    from openprogram.runtime.execution.run_control import (
+        set_current_session_id,
+        reset_current_session_id,
+    )
+    from openprogram.programs._host.execution import ToolReturn
+    from openprogram.programs.tools.computer_use.computer_use_agent import tool
+    from openprogram.programs.tools.computer_use.computer_use_agent.targets import vm
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
-    monkeypatch.setattr("openprogram.session_resources.process_identity", lambda pid: "birth")
-    def harness(**kwargs):
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth")
+    monkeypatch.setattr(vm, "url", lambda: "http://vm.test:5000?secret=token")
+
+    def run(steps, args, session):
         rows = ResourceUseStore().list("session-vm")
-        assert len(rows) == 1
-        assert rows[0]["kind"] == "vm"
-        assert rows[0]["target"] == "http://vm.test:5000"
-        return {"success": True}
-    wrapped = install_gui_harness_web_use(harness)
+        assert [(row["kind"], row["target"]) for row in rows] == [("vm", "http://vm.test:5000")]
+        return ToolReturn(text="ok")
+    monkeypatch.setattr(vm, "run", run)
     token = set_current_session_id("session-vm")
     try:
-        result = wrapped.__wrapped__("inspect", surface="vm", vm_url="http://vm.test:5000?secret=token")
-        assert result["status"] == "succeeded"
+        assert tool.computer_use_agent(target="vm", action="click", args={"x": 1, "y": 2}).text == "ok"
         assert ResourceUseStore().list("session-vm") == []
     finally:
         reset_current_session_id(token)
@@ -83,10 +93,10 @@ def test_vm_adapter_reports_attachment_during_harness_call(tmp_path, monkeypatch
 def test_resource_route_denies_other_session_before_reading(tmp_path, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes.execution import processes
+    from openprogram.interfaces.server.routes.execution import processes
 
     monkeypatch.setattr(processes, "_actor_and_session", lambda request: ({}, "allowed"))
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     app = FastAPI()
     processes.register(app)
     with TestClient(app) as client:
@@ -98,14 +108,14 @@ def test_resource_route_denies_other_session_before_reading(tmp_path, monkeypatc
 def test_resource_route_keeps_processes_in_activity_only(tmp_path, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes.execution import processes
-    from openprogram.session_resources import ResourceUseStore
-    from openprogram.processes import ProcessStore
+    from openprogram.interfaces.server.routes.execution import processes
+    from openprogram.host.resources.session import ResourceUseStore
+    from openprogram.host.processes import ProcessStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
-    monkeypatch.setattr("openprogram.session_resources.process_identity", lambda pid: "birth")
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: None)
-    monkeypatch.setattr("openprogram.execution.conversation_scope.conversation_executions", lambda *args: [])
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth")
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
+    monkeypatch.setattr("openprogram.runtime.execution.conversation_scope.conversation_executions", lambda *args: [])
     checked = []
     monkeypatch.setattr(processes, "_authorize", lambda request, sid, record=None: checked.append((sid, record)))
     ResourceUseStore().add("allowed", None, "vm", "VM", "http://vm.test/")
@@ -130,17 +140,17 @@ def test_resource_route_reuses_scope_and_rejects_forged_owner(tmp_path, monkeypa
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from types import SimpleNamespace
-    from openprogram.webui.routes.execution import processes
-    from openprogram.session_resources import ResourceUseStore
+    from openprogram.interfaces.server.routes.execution import processes
+    from openprogram.host.resources.session import ResourceUseStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
-    monkeypatch.setattr("openprogram.session_resources.process_identity", lambda pid: "birth")
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: None)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.host.resources.session.process_identity", lambda pid: "birth")
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
     calls = []
     def scope(*args):
         calls.append(1)
         return [SimpleNamespace(execution_id="exec-child", session_id="child")]
-    monkeypatch.setattr("openprogram.execution.conversation_scope.conversation_executions", scope)
+    monkeypatch.setattr("openprogram.runtime.execution.conversation_scope.conversation_executions", scope)
     monkeypatch.setattr(processes, "_authorize", lambda *args: None)
     store = ResourceUseStore()
     for _ in range(20):

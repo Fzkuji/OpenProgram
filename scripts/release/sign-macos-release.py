@@ -70,7 +70,57 @@ def clear_extended_attributes(app: Path) -> None:
 
 
 def uses_app_entitlements(item: Path, app: Path) -> bool:
-    return item == app or item.suffix == '.app'
+    # Bundles and every standalone executable (bundled node, Playwright's
+    # driver, headless Chromium, the Claude agent binary) run JavaScript
+    # engines that need allow-jit under the hardened runtime; without it they
+    # crash on start. Libraries and frameworks take no entitlements.
+    return item == app or item.suffix == '.app' or macho_executable(item)
+
+
+def loads_unsigned_code(item: Path, app: Path) -> bool:
+    """A Worker interpreter, which must load modules no Developer ID vouches for.
+
+    Programs install their compiled dependencies, and semantic memory installs
+    torch, after the App is signed; those files are ad hoc signed or not at
+    all. The thin layout's seed helper is one such interpreter (its libpython
+    also lives outside its bundle); in the full layout they are the embedded
+    runtime's Python and its named helper, both read from the runtime
+    manifest. Each gets library validation off; the Electron app and every
+    other executable keep it on.
+    """
+    helper = app / 'Contents/Resources/seed/helper/OpenProgram.app'
+    if item in (helper, helper / 'Contents/MacOS/OpenProgram'):
+        return True
+    runtime = app / 'Contents/Resources/runtime'
+    manifest = runtime / 'runtime-manifest.json'
+    if not manifest.is_file():
+        return False
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    workers = {(runtime / data['python']).resolve()}
+    if data.get('worker_python'):
+        executable = (runtime / data['worker_python']).resolve()
+        workers |= {executable, executable.parents[2]}
+    return item.resolve() in workers
+
+
+def macho_executable(path: Path) -> bool:
+    """A Mach-O main executable (MH_EXECUTE), thin or the first slice of a fat file."""
+    if not path.is_file() or path.is_symlink():
+        return False
+    with path.open('rb') as stream:
+        header = stream.read(32)
+        if len(header) < 16:
+            return False
+        if header[:4] in (b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe'):
+            return int.from_bytes(header[12:16], 'little') == 2
+        if header[:4] == b'\xca\xfe\xba\xbe' and len(header) >= 20:
+            count = int.from_bytes(header[4:8], 'big')
+            if not 0 < count <= 30:
+                return False
+            stream.seek(int.from_bytes(header[16:20], 'big'))
+            slice_header = stream.read(16)
+            return len(slice_header) == 16 and int.from_bytes(slice_header[12:16], 'little') == 2
+    return False
 
 
 def macho_file(path: Path) -> bool:
@@ -242,7 +292,9 @@ def sign(app: Path, identity: str, entitlements: Path) -> None:
     for item in nested + [app]:
         print(f'Signing {item.relative_to(app) if item != app else app.name}', flush=True)
         args = ['--force', '--sign', identity, '--timestamp', '--options', 'runtime']
-        if uses_app_entitlements(item, app):
+        if loads_unsigned_code(item, app):
+            args.extend(['--entitlements', str(entitlements.with_name('entitlements.mac.helper.plist'))])
+        elif uses_app_entitlements(item, app):
             args.extend(['--entitlements', str(entitlements)])
         codesign(*args, str(item))
     codesign('--verify', '--deep', '--strict', str(app))

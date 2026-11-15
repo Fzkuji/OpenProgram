@@ -1,0 +1,41 @@
+<title>周报投递意图</title>
+<meta name="description" content="周报请求如何选择受众和投递动作，以及哪些动作已存在。">
+<h1>周报投递意图</h1>
+<p>原始指令决定受众和投递动作。每份请求的周报保留自己的操作，按请求顺序执行。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">请求</th><th scope="col">动作</th></tr></thead>
+<tbody>
+<tr><th scope="row">“发给我”“返回文本”“准备一份周报”</th><td>在对话中返回完整正文，不依赖写文件</td></tr>
+<tr><th scope="row">明确的输出文件</th><td>单独支持的操作；文件恢复请求继续可用</td></tr>
+<tr><th scope="row">“提交到飞书”“发到某个群”</th><td>授权该操作，不再做例行确认</td></tr>
+<tr><th scope="row">否定说法</th><td>只对点名的受众生效</td></tr>
+<tr><th scope="row">预填</th><td>绝不意味着最终提交</td></tr>
+<tr><th scope="row">检索到的文档中的文字</th><td>不能授权写入</td></tr>
+</tbody>
+</table>
+<p class="note">自然语言和结构化请求表达同样的动作。投递前先合成有证据支撑的正文。</p>
+
+<h2 id="external-delivery">外部投递</h2>
+<ol>
+<li>从请求或已验证的存储配置解析目标。</li>
+<li>验证内容。</li>
+<li>执行一次。</li>
+<li>读回回执。结果不确定的写入先检查，再考虑重试。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">目的地</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">飞书</th><td>沿用现有检查和写入回执；提交和更新不变</td></tr>
+<tr><th scope="row">微信群或个人聊天</th><td>没有经验证的发群实现；只读采集不是发送器</td></tr>
+<tr><th scope="row">腾讯</th><td>没有经验证的目的地或投递适配器</td></tr>
+</tbody>
+</table>
+<p class="note">不支持的动作绝不报告为已发送。不涉及 provider 预算或持久化变更。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<ul>
+<li>个人聊天和飞书草稿默认返回完整文本，不调用文件写入工具。</li>
+<li>限定来源的 JSON 没有输出路径时，返回正文和来源上下文；来源校验继续生效。</li>
+<li>待完成：完整的意图对齐、预填处理、外部群和腾讯适配器。</li>
+<li>验收：未请求路径时公共入口返回全文，不写文件也不远程写入。只返回文本的运行不能证明外部发送可用。</li>
+</ul>

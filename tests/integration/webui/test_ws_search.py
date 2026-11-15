@@ -13,14 +13,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.agent.session_db import SessionDB
-from openprogram.webui.server import create_app
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.interfaces.server.server import create_app
 
 
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db",
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db",
                         lambda: db)
     app = create_app()
     with TestClient(

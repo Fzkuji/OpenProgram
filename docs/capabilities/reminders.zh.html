@@ -1,0 +1,60 @@
+<title>提醒</title>
+<meta name="description" content="让 Agent 在某个时间通知你，或者过一会儿回来做一件事。">
+<h1>提醒</h1>
+<p>在任何对话里用平常的话说。回复写明确切的触发时间，例如“fires Fri 2026-10-23 17:00 CST (in 2.5 h)”。</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">你说</th><th scope="col">到时间</th></tr></thead>
+<tbody>
+<tr><th scope="row">通知</th><td>“20 分钟后提醒我把面包拿出来。”</td><td>收到消息</td></tr>
+<tr><th scope="row">唤醒 Agent</th><td>“明天 9 点看看 CI 过了没有，告诉我哪里失败了。”</td><td>收到消息，然后在同一对话开始一轮</td></tr>
+</tbody></table>
+<p class="note">要“提醒”就是通知，要 Agent“做”事就是唤醒。在意的话说明要哪种。要重复已经做过的工作并保留你的修正，存成 <a href="skills.zh.html#把做过的事存成-routine">routine</a>。</p>
+<h2 id="setting-one">时间</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">你说</th><th scope="col">触发</th></tr></thead>
+<tbody>
+<tr><th scope="row">“20 分钟后”</th><td>从现在起 20 分钟</td></tr>
+<tr><th scope="row">“17:00”</th><td>下一个 17:00：今天还没到就是今天，否则明天</td></tr>
+<tr><th scope="row">“12 月 1 日 10:00”</th><td>那个日期和时间</td></tr>
+<tr><th scope="row">“每个工作日 9:00”</th><td>重复；Agent 写 cron 表达式，如 <code translate="no">0 9 * * 1-5</code></td></tr>
+</tbody></table>
+<p class="note">除非你指定，否则用电脑本地时区。在时间到后一分钟内触发。Agent 用的是 <code translate="no">remind</code> 工具。</p>
+<h2 id="when-it-fires">触发时</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">发生什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开的窗口</th><td>各显示一条消息</td></tr>
+<tr><th scope="row">系统通知</th><td>正在用 App 时也发。App 发出，点击打开对话；没有窗口时 worker 以同样的名字和图标发出。pip 安装的 worker 在 macOS 上通过脚本编辑器发，Linux 需要 <code translate="no">notify-send</code>。Windows 上 worker 通过 Windows PowerShell 发 toast，显示它的名字。</td></tr>
+<tr><th scope="row"><a href="../integrations/channels.zh.html">聊天渠道</a>对话</th><td>作为消息发送</td></tr>
+<tr><th scope="row">唤醒：新一轮</th><td>消息以 ⏰ 和提醒内容开头，使用该对话的权限模式和规则。聊天渠道里回答也发到渠道。</td></tr>
+<tr><th scope="row">唤醒：对话正忙</th><td>最多等 10 分钟。仍忙则不开始新轮，聊天渠道对话收到提醒内容。</td></tr>
+<tr><th scope="row">唤醒：对话已删除</th><td>只有通知，没有新轮</td></tr>
+</tbody></table>
+<h2 id="see-pause-or-cancel-reminders">管理</h2>
+<p>侧栏的 <strong>Scheduler</strong> 把它们列为 <strong>Reminder</strong> 或 <strong>Reminder · wakes agent</strong>。在那里暂停、恢复、删除，或让 Agent 做，它用 <code translate="no">scheduler</code> 工具。</p>
+<h3 id="calendar-view">日历</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>List</strong> 或 <strong>Calendar</strong></th><td>页面顶部，记住选择。月、周、日视图；窗口窄时改为议程视图。<strong>Today</strong> 跳回今天。</td></tr>
+<tr><th scope="row">日历上</th><td>一次性任务在运行时间；重复任务和监控在屏幕日期内每个 cron 时刻，用本机时区。触发极频繁的任务只显示最初几次，上方有说明。</td></tr>
+<tr><th scope="row">不在日历上</th><td>暂停的任务（恢复前）；webhook 任务</td></tr>
+<tr><th scope="row">类型标签、搜索</th><td><strong>All tasks</strong>、<strong>One-time</strong>、<strong>Recurring</strong>、<strong>Monitors</strong> 同样过滤日历</td></tr>
+<tr><th scope="row">点击任务或行</th><td>查看计划和运行内容；暂停、恢复、删除、编辑</td></tr>
+<tr><th scope="row"><strong>Edit</strong></th><td>标题、时间或 cron、提示词、记忆引用，用新建任务的表单。类型不变。</td></tr>
+<tr><th scope="row">点击空白日期或时间</th><td>在那时新建一次性任务</td></tr>
+</tbody></table>
+<h2 id="limits">限制</h2>
+<ul>
+<li>提醒运行在本机 worker 里。它没运行时，一次性提醒在重启后立即触发。用 <code translate="no">openprogram worker install</code> 保持运行。</li>
+<li>重复任务错过的时间在 12 小时内，worker 重启后补跑一次；更早的显示为一次错过的运行。那个时间之后才开启或改过的任务不会补跑。</li>
+<li>会话已归档，或上一次运行还没结束（worker 重启后也算）时，任务的 Agent 运行会跳过，Activity 里能看到。已归档会话里的唤醒提醒只发通知。</li>
+<li>已触发过的一次性任务改了时间，会在新时间再触发一次。</li>
+<li>专注模式和勿扰把系统通知留在通知中心。App 的 <strong>Notifications</strong> 设置也会关掉它自己的通知。</li>
+<li>只有所有者或替所有者工作的 Agent 能设置提醒，定时或后台轮次和聊天一样。</li>
+<li>定时运行的 Agent 或命令超过 2 小时会被停止，重启前的时间也算在内，并显示为一次失败的运行。</li>
+</ul>
+<h2 id="run-your-own-command">运行你自己的命令</h2>
+<p>每次触发是一个 <code translate="no">reminder.fired</code> 事件。<code translate="no">config.json</code> 的 <code translate="no">hooks</code> 条目通过标准输入收到 JSON；hooks 在 worker 启动时读取。</p>
+<pre translate="no" tabindex="0"><code>{"hooks": {"reminder.fired": [{"command": "python ~/bin/on_reminder.py", "timeout": 30}]}}</code></pre>
+<p class="note"><code translate="no">payload</code> 带 <code translate="no">message</code>、<code translate="no">title</code>、<code translate="no">session_id</code>、<code translate="no">wake</code>、<code translate="no">fired_at</code>。<a href="../reference/design/proactive/event-layer.zh.html">事件层设计</a></p>

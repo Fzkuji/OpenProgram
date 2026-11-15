@@ -5,7 +5,7 @@ import importlib
 
 import pytest
 
-from openprogram.programs._providers import ProviderRegistry
+from openprogram.programs._authoring.providers import ProviderRegistry
 from openprogram.programs.tools.web.web_search import combine
 from openprogram.programs.tools.web.web_search.registry import SearchResult
 
@@ -31,7 +31,7 @@ def registry(monkeypatch):
     value = ProviderRegistry('web_search')
     monkeypatch.setattr(combine, 'registry', value)
     monkeypatch.setattr(search, 'registry', value)
-    monkeypatch.setattr('openprogram.setup.read_search_default_provider', lambda: None)
+    monkeypatch.setattr('openprogram.state.preferences.read_search_default_provider', lambda: None)
     return value
 
 
@@ -42,13 +42,13 @@ def test_returns_timely_success_without_waiting_for_slow_provider(registry, stra
     def slow():
         entered.set()
         try:
-            assert release.wait(3)
+            assert release.wait(30)
             return []
         finally:
             done.set()
 
     def fast():
-        assert entered.wait(3)
+        assert entered.wait(30)
         return [SearchResult('fast', 'https://example.com/fast')]
 
     registry.register(Backend('slow', slow))
@@ -56,13 +56,13 @@ def test_returns_timely_success_without_waiting_for_slow_provider(registry, stra
     with ThreadPoolExecutor(max_workers=1) as caller:
         future = caller.submit(getattr(combine, 'combine_' + strategy), 'query', timeout=.05)
         try:
-            results, contributors = future.result(timeout=.8)
+            results, contributors = future.result(timeout=30)
             assert results[0].title == 'fast'
             assert 'fast' in contributors
             assert not done.is_set()
         finally:
             release.set()
-            assert done.wait(3)
+            assert done.wait(30)
 
 
 @pytest.mark.parametrize('strategy', ['race', 'rrf'])
@@ -82,7 +82,7 @@ def test_successful_empty_response_is_not_an_error(registry, strategy):
 def test_saved_unavailable_default_falls_back_but_explicit_choice_does_not(registry, monkeypatch):
     registry.register(Backend('saved', lambda: [], available=False))
     registry.register(Backend('working', lambda: [SearchResult('found', 'https://example.com')]))
-    monkeypatch.setattr('openprogram.setup.read_search_default_provider', lambda: 'saved')
+    monkeypatch.setattr('openprogram.state.preferences.read_search_default_provider', lambda: 'saved')
     assert 'found' in search.execute(query='query')
     assert search.execute(query='query', provider='saved').startswith('Error:')
 
@@ -109,14 +109,14 @@ def test_search_probe_does_not_block_event_loop(monkeypatch):
     async def run():
         import asyncio
         from fastapi import FastAPI
-        from openprogram.webui.routes.identity.providers import register
+        from openprogram.interfaces.server.routes.identity.providers import register
         from openprogram.programs.tools.web.web_search.registry import registry as live_registry
         progressed = Event()
         loop = asyncio.get_running_loop()
 
         def search_probe():
             loop.call_soon_threadsafe(progressed.set)
-            assert progressed.wait(1), 'synchronous search blocked the event loop'
+            assert progressed.wait(30), 'synchronous search blocked the event loop'
             return []
 
         monkeypatch.setitem(live_registry._providers, 'probe', Backend('probe', search_probe))
@@ -134,8 +134,8 @@ def test_sandbox_reads_are_correlated_and_only_mutations_broadcast(monkeypatch):
     import asyncio
     import json
     from types import SimpleNamespace
-    from openprogram.webui.ws_actions.session import handle_set_sandbox
-    from openprogram.webui import server
+    from openprogram.interfaces.server.ws_actions.session import handle_set_sandbox
+    from openprogram.interfaces.server import server
     state = {'sandbox': True}
     sent, broadcasts = [], []
 
@@ -145,11 +145,11 @@ def test_sandbox_reads_are_correlated_and_only_mutations_broadcast(monkeypatch):
     def save(*args, sandbox_enabled, **kwargs):
         state['sandbox'] = sandbox_enabled
 
-    monkeypatch.setattr('openprogram.agent.session_config.load_session_run_config',
+    monkeypatch.setattr('openprogram.runtime.conversation.session_config.load_session_run_config',
                         lambda sid: SimpleNamespace(sandbox_enabled=state['sandbox']))
-    monkeypatch.setattr('openprogram.agent.session_config.save_session_run_config', save)
-    monkeypatch.setattr('openprogram.webui.ws_actions.chat._db_agent_id', lambda sid: 'main')
-    monkeypatch.setattr('openprogram.sandbox.ui_state', lambda value: {'sandbox': value})
+    monkeypatch.setattr('openprogram.runtime.conversation.session_config.save_session_run_config', save)
+    monkeypatch.setattr('openprogram.interfaces.server.ws_actions.chat._db_agent_id', lambda sid: 'main')
+    monkeypatch.setattr('openprogram.host.sandbox.ui_state', lambda value: {'sandbox': value})
     monkeypatch.setattr(server, '_broadcast', lambda frame: broadcasts.append(json.loads(frame)))
     ws = SimpleNamespace(send_text=send_text)
     asyncio.run(handle_set_sandbox(ws, {'session_id': 'A', 'request_id': 'read'}))

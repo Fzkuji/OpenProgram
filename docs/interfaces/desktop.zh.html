@@ -1,0 +1,286 @@
+<title>桌面 App 与内置浏览器</title>
+<meta name="description" content="桌面 App 的窗口、窗格和标签页，内置浏览器，会话资源，重启行为和通知。">
+<h1>桌面 App 与内置浏览器</h1>
+<p>每个窗格可放 Files、聊天、Browser 或 Terminal。窗格可分屏，可在窗口间移动，不改变会话或浏览器标签页。</p>
+<table class="stack">
+<thead><tr><th scope="col">平台</th><th scope="col">安装</th><th scope="col">Terminal 窗格</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td>架构匹配的 DMG，把 <code translate="no">OpenProgram.app</code> 拷到 <code translate="no">/Applications</code>。Developer ID 签名并公证。</td><td>登录 shell</td></tr>
+<tr><th scope="row">Windows</th><td>v1.2.0 起：<a href="https://github.com/FuzzyKuji/OpenProgram/releases">GitHub Release</a> 上的每用户 <code translate="no">win-x64.exe</code>（<a href="../install/install.zh.html#windows">步骤</a>）。在此之前用源码 checkout 和浏览器 UI。</td><td>经 ConPTY 的 PowerShell</td></tr>
+<tr><th scope="row">Linux</th><td><a href="../install/install.zh.html#linux">deb 或 AppImage</a>，v1.1.0 起。</td><td>绝对路径的 <code translate="no">SHELL</code>，然后 <code translate="no">/bin/bash</code>、<code translate="no">/bin/sh</code>。没有 shell 时在启动前报告。</td></tr>
+</tbody>
+</table>
+<p class="note"><a href="../install/install.html">完整安装步骤</a>。打包的 App 从内嵌 Python 启动 Worker，不依赖系统 Python 或 Node.js。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">启动提示</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Waiting for backend to start...</strong></th><td>App 正在启动 Worker，每秒检查一次</td></tr>
+<tr><th scope="row"><strong>Updating OpenProgram...</strong></th><td>安装程序正在替换 App 和运行时；不启动 Worker，完成后自动重连</td></tr>
+<tr><th scope="row"><strong>端口 18100 已被占用</strong></th><td>你设的端口（<code translate="no">ui.web_port</code>）被页面上写明的程序占着。退出它，App 会自动连上；或者换一个端口。OpenProgram 自己选的端口不会停在这里：App 会在下一个空闲端口上重新打开，共用电脑上的每个账户也因此各有自己的 Worker。<a href="../reference/design/cli/ports.zh.html#one-port-per-account">端口怎样选</a></td></tr>
+</tbody>
+</table>
+<h2>标签页</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">页面</th><td>全部页面（含设置和管理页）都在所选标签页打开。标签名跟随页面，访问页面不会重命名对话。</td></tr>
+<tr><th scope="row">前进和后退</th><td>按标签页记录，包含初始的新标签页，随标签页保存。切换标签页不增加历史。后退后选新目标只替换该标签页的前进步骤。网页 URL 用 Browser 自己的控件。</td></tr>
+<tr><th scope="row">从另一启动器打开同一目标</th><td>彼此独立的标签页</td></tr>
+<tr><th scope="row">从会话标签页打开对话</th><td>复用该标签页，即使另一标签页也显示它。从其他类型页面可选已有会话标签页或新开。</td></tr>
+<tr><th scope="row">草稿、后台标题更新</th><td>导航和重新加载后保留。已删除的会话从所有历史中移除。</td></tr>
+<tr><th scope="row">关闭最后一个标签页</th><td>标签栏和中央保持空白；用加号按钮</td></tr>
+<tr><th scope="row">退出后重新打开</th><td>拖出的窗口带着标签页回到上次位置。已关闭的窗口保持关闭。位置不在任何显示器上时用默认位置。</td></tr>
+</tbody>
+</table>
+<h2>移动和平铺窗格</h2>
+<p>把标签页向下拖出标签栏，或拖动窗格的 ••• 手柄，中央区域变成窗口总览。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="总览中窗口卡片的放置区域。左四分之一放到该窗口左侧，右四分之一放到右侧，中间上半放到上方，中间下半放到下方。空位或空白处单独打开，App 外打开新窗口，Escape 取消。">
+<rect class="tile" x="0" y="10" width="360" height="170" rx="8"/>
+<line class="ln-faint" x1="90" y1="10" x2="90" y2="180"/>
+<line class="ln-faint" x1="270" y1="10" x2="270" y2="180"/>
+<line class="ln-faint" x1="90" y1="95" x2="270" y2="95"/>
+<text class="mid" x="45" y="92">左</text><text class="t-soft mid" x="45" y="112">并排</text>
+<text class="mid" x="315" y="92">右</text><text class="t-soft mid" x="315" y="112">并排</text>
+<text class="mid" x="180" y="58">上方</text>
+<text class="mid" x="180" y="142">下方</text>
+<text class="t-soft" x="396" y="40">空位或空白处</text><text x="396" y="62">标签页单独打开</text>
+<text class="t-soft" x="396" y="104">App 窗口外</text><text x="396" y="126">新窗口</text>
+<text class="t-soft" x="396" y="164">Escape</text><text x="540" y="164">取消</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>卡片左或右四分之一</dt><dd>放到该窗口旁边</dd>
+<dt>中间的上半或下半</dt><dd>放到上方或下方</dd>
+<dt>空位或空白处</dt><dd>标签页单独打开</dd>
+<dt>App 窗口外</dt><dd>新窗口</dd>
+<dt>Escape</dt><dd>取消</dd>
+</dl>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">总览</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">不拖动打开</th><td>标签栏右端的网格按钮，或双指捏合。网页处于正常大小时捏合打开总览；张开放大网页。</td></tr>
+<tr><th scope="row">关闭</th><td>Escape 或双指张开；点卡片切换过去</td></tr>
+<tr><th scope="row">拖动卡片</th><td>放到另一卡片一侧合并；放到空白处移动；从分屏卡片拖出一个窗格给它独立窗口</td></tr>
+<tr><th scope="row">合并</th><td>目标从卡片放大，保持在标签栏的位置，名称变为放入的标签页</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">••• 手柄</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">红</th><td>关闭标签页</td></tr>
+<tr><th scope="row">黄</th><td>把窗格放回标签栏</td></tr>
+<tr><th scope="row">绿</th><td>单独打开标签页。停留展开 <strong>移动与调整大小</strong>（半屏，按 Option 四分之一）、<strong>填满与排列</strong>、<strong>还原上次布局</strong>、<strong>均分大小</strong>、<strong>更多布局</strong>（上下、单窗、9、16、已保存）。</td></tr>
+<tr><th scope="row">macOS 按键</th><td>Control+Option+方向键：半屏。加 Shift：两窗格并排或堆叠。Control+Option+F：填满。Control+Option+R：上次布局。</td></tr>
+</tbody>
+</table>
+<p class="note">分隔线吸附在三分之一、二分之一和三分之二处，窗格太小前停止。动效同 macOS；开启减少动态时布局立即改变。</p>
+<h2>Browser</h2>
+<p>新建窗格选 <strong>Browser</strong>，或从标签栏打开浏览器标签页。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">包含</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具栏</th><td>后退、前进、刷新或停止、主页、带书签星标的地址栏、书签、外部打开、Browser 菜单。地址栏只高亮域名；锁表示 HTTPS。</td></tr>
+<tr><th scope="row">书签栏</th><td>默认显示。从 Browser 菜单或 <strong>设置 → 外观 → 显示书签栏</strong> 隐藏。</td></tr>
+<tr><th scope="row">窄窗格</th><td>不常用操作收进菜单；地址栏、后退、刷新或停止、星标和菜单保留</td></tr>
+<tr><th scope="row">Browser 菜单</th><td>新浏览器标签页、书签、历史、书签栏显示、资料导入、清除浏览数据、Browser 设置。窗口和窗格操作仍在 OpenProgram 菜单。</td></tr>
+<tr><th scope="row">加载中</th><td>刷新变成 <strong>Stop loading（停止加载）</strong>；工具栏下有一条线，减少动态时静止</td></tr>
+<tr><th scope="row">离开页面提示</th><td>默认 <strong>Stay on page（留在页面）</strong>；<strong>Leave page（离开页面）</strong> 继续，未保存内容可能丢失</td></tr>
+<tr><th scope="row">网站图标</th><td>普通和分屏标签页都显示；加载中或不可用时显示浏览器图标。保留的页面重新打开时不重新加载。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">按键（Windows 用 Ctrl）</th><th scope="col">在聚焦的 Browser 标签页中</th></tr></thead>
+<tbody>
+<tr><th scope="row">⌘R、⇧⌘R</th><td>刷新，加 Shift 绕过缓存。其他窗格里 ⌘R 刷新 App 窗口及其网页。</td></tr>
+<tr><th scope="row">⌘L</th><td>地址栏</td></tr>
+<tr><th scope="row">⌘[ ⌘]</th><td>后退、前进</td></tr>
+<tr><th scope="row">⌘F</th><td>页内查找</td></tr>
+<tr><th scope="row">⌘+ ⌘− ⌘0</th><td>缩放</td></tr>
+<tr><th scope="row">⌘P</th><td>打印</td></tr>
+<tr><th scope="row">⌘K</th><td>App 的<a href="web.html#command-palette">命令面板</a>，网页聚焦时也可用</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面的 ⋮ 菜单</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>评论页面元素…</strong></th><td>点元素，写评论，<strong>加入消息</strong>。输入框得到页面标题、地址、CSS 选择器、可见文本和评论。不会发送，可累积多条。Esc 或 X 取消。</td></tr>
+<tr><th scope="row"><strong>区域截图…</strong></th><td>拖选区域；拖动时显示尺寸，单击重新开始。添加以站点和尺寸命名的 PNG。</td></tr>
+</tbody>
+</table>
+<p class="note">两者都进入聚焦的对话，否则是打开该页面的 Agent 所在对话，否则是你上次所在的对话。选取和选区运行在网页看不到的脚本上下文里，选区不会出现在图片中。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面操作</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">链接、表单、同页导航</th><td>留在当前标签页</td></tr>
+<tr><th scope="row"><code translate="no">target="_blank"</code>、<code translate="no">window.open()</code></th><td>新 Browser 标签页并激活</td></tr>
+<tr><th scope="row">右键链接</th><td>在新 Browser 标签页打开、复制地址</td></tr>
+<tr><th scope="row">右键页面</th><td>后退、前进、刷新</td></tr>
+<tr><th scope="row">右键输入框</th><td>撤销、重做、剪切、复制、粘贴、全选，按网页报告；只作用于该标签页</td></tr>
+</tbody>
+</table>
+<h3>书签与历史</h3>
+<ul>
+<li>书签栏显示 Bookmarks bar 的直接内容；放不下的进双箭头菜单。<strong>All bookmarks</strong> 打开管理器，含 Other 和 Mobile 书签。名称、顺序、内容不变。嵌套菜单逐层打开，在窗口内滚动。</li>
+<li>管理器有文件夹树、当前文件夹列表、搜索、图标和条目菜单。历史按本地日期分组。</li>
+<li>图标：已保存的图标，然后站点的 <code translate="no">/favicon.ico</code>，然后浏览器图标。不发 referrer，不用第三方服务。主页快捷方式显示 <code translate="no">/favicon.ico</code> 或站点首字母。</li>
+<li>主页快捷方式：<strong>Add</strong>，地址，可选名称。取消、关闭、Escape、点外部或再点 Add 都清除。</li>
+<li>历史和持久的 <code translate="no">webtabs</code> 分区在 Electron 的用户数据目录；聊天、项目、Program 和 Worker 配置在 <code translate="no">~/.openprogram/</code>。清除浏览数据不影响后者。</li>
+</ul>
+<details>
+<summary>图标缓存</summary>
+<p>解码后的图标在每个渲染进程的书签栏、菜单和标签页间共享。缓存有上限，失败来源五分钟后重试，复用来源三十分钟后刷新。重新打开书签菜单复用其文档。关闭窗口时释放；重启后可经浏览器缓存重新加载。</p>
+</details>
+<h3>导入浏览器资料</h3>
+<p>macOS 和 Windows；Chrome、Brave、Edge、Chromium。始终由你选择浏览器、资料和数据类型。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">数据</th><th scope="col">导入</th></tr></thead>
+<tbody>
+<tr><th scope="row">历史</th><td>HTTP 和 HTTPS 访问，不超过支持的上限，合并</td></tr>
+<tr><th scope="row">书签</th><td>书签栏、其他、移动设备和嵌套文件夹；过滤无效 URL 和重复项</td></tr>
+<tr><th scope="row">Cookie</th><td>由临时的源浏览器进程解密，校验后通过 Electron API 写入。部分网站仍需重新登录。</td></tr>
+</tbody>
+</table>
+<p class="note">绝不导入：密码、支付或地址自动填充、下载、缓存、localStorage、Service Worker、扩展及其存储。不修改源资料。</p>
+<h3>扩展</h3>
+<p>不支持；见 <a href="../start/faq.zh.html#browser-extensions">常见问题</a>。</p>
+<p class="next">设计：<a href="../reference/design/ui/browser/built-in-browser.html">内置浏览器</a>、<a href="../reference/design/integrations/browser-application.html">浏览器应用</a></p>
+<h2>Agent 与 Browser 窗格</h2>
+<p>同一窗口里可见的内置 Browser 窗格，会在第一次模型响应前把该标签页的有界描述附到本轮：标题、来源、可见文本、ARIA 地标和浏览器控制工具。在左侧、右侧或画中画都可用，不需要系统焦点。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">定位</th><td>操作绑定到发起的窗口和标签页。默认用 DOM、ARIA、文本和元素引用；只有视觉任务或结构定位失败时才用一张视口截图。没有 OCR、目标检测、迭代裁剪、组件或视觉记忆、流程回放。</td></tr>
+<tr><th scope="row">你的操作</th><td>点击、滚动、输入、导航或关闭都不暂停 Agent。Agent 也可操作 OpenProgram 自身界面。用输入框旁的任务控件暂停。</td></tr>
+<tr><th scope="row">页面丢失</th><td>Agent 重新获取或打开上次地址，并重读状态。点击和提交绝不重放。无法恢复的登录或内容会报告。</td></tr>
+<tr><th scope="row">已选页面</th><td>复用，不重新加载也不换页。每步操作后重新观察和验证。</td></tr>
+<tr><th scope="row">安全上限</th><td>停止任务，不重试已完成的操作；清理保留对话身份。</td></tr>
+</tbody>
+</table>
+<h3>角落预览</h3>
+<p>你留在聊天而 Agent 打开页面时出现。默认 300×198.75（16:9 图像加标题栏）。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>关闭小窗（X）</strong></th><td>隐藏；页面留在<strong>会话资源</strong></td></tr>
+<tr><th scope="row"><strong>打开页面</strong></th><td>把同一页面显示为普通标签页，独占控制释放后其他对话可获取。原预览保留。</td></tr>
+<tr><th scope="row">拖标题栏；边和角</th><td>移动；调整大小。没有可见手柄。底层页面不改变大小。</td></tr>
+<tr><th scope="row"><strong>更多 → 自动显示 Agent 正在操作的网页</strong></th><td>自动预览跟随 Agent 的页面；关闭则固定。不改变 Agent 目标，不启动 Agent，不改变页面生命周期。</td></tr>
+</tbody>
+</table>
+<p class="note">每个预览属于自己的对话，并随之切换。保留的页面对其他 Agent 不可见。预览留在所属窗格内，分屏时悬于聊天上方，控件不被相邻网页遮挡。Web UI 没有原生视图，回退到 iframe 或新标签页打开控件。</p>
+<details>
+<summary>上传与验证</summary>
+<ul>
+<li><code translate="no">upload</code> 配合新的文件输入 <code translate="no">ref</code> 和 <code translate="no">path</code>（最大 50 MiB）选择用户批准的文件。始终走普通权限关卡，文件读取限制仍适用。</li>
+<li>观察只暴露文件名，不暴露内容或路径。<code translate="no">file_selected</code> 只验证已选择；是否被接受要另设断言。不确定的上传不重复。</li>
+<li>验证用 <code translate="no">assertion</code> 和非空 <code translate="no">value</code>；<code translate="no">text</code> 用于输入或报告阻塞。</li>
+<li>同一观察上连续三次操作失败或断言不满足时，停止并给出原因。被拒绝时停止，不重复。报告阻塞绝不算完成。操作计数统计 Page 变更。</li>
+</ul>
+</details>
+<h2>会话资源</h2>
+<p>右侧栏的 <strong>资源</strong> 列出所选会话拥有的内容。分屏中点聊天，Files、Activity 和资源都切到它；点网页则保留上次的聊天。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">分组</th><td>Webpage、VM、Desktop、Terminal、Application、Container、Remote environment、Other resources。空组隐藏。折叠按会话和类型保存，只隐藏行。分组标题整行可点。</td></tr>
+<tr><th scope="row">列出</th><td>完整的软件或环境对象。命令、脚本和输出属于 Activity，留在后台运行的命令例外，显示为 Background terminal。<code translate="no">computer_use_agent</code> 运行时显示其应用或虚拟机。文件另列。没有搜索框；没有归属记录的视图和新草稿不显示内容。</td></tr>
+<tr><th scope="row">附加网页</th><td>保持对话可见，把标签页或窗格手柄拖到 <strong>资源</strong>。含多个网页的分屏要拖该网页的手柄。蓝色预览显示 <strong>Release to add to Resources</strong>；失败时显示重试，页面不变。</td></tr>
+<tr><th scope="row">Agent 创建的页面</th><td>不进顶部标签栏，除非固定或分屏。没有归属的页面留在标签栏。</td></tr>
+<tr><th scope="row">关闭</th><td>关闭会话网页的标签页只隐藏视图；<strong>Open in tab</strong> 重新打开。<strong>Close webpage</strong> 才真正关闭，未确认时行恢复。独立网页直接关闭。</td></tr>
+<tr><th scope="row">折叠</th><td>资源继续运行</td></tr>
+</tbody>
+</table>
+<h3>共享 Terminal</h3>
+<p>选 Terminal 资源附加其视图。Agent 和用户共享 shell、目录、环境和输出；隐藏视图不终止 shell。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Terminate terminal</strong></th><td>确认后请求终止；收到确认不代表已退出</td></tr>
+<tr><th scope="row"><strong>Share terminal</strong></th><td>本机其他会话可发现；改回私有会撤销 Agent 绑定</td></tr>
+<tr><th scope="row"><strong>Reconnect view</strong></th><td>重读输出，不重放输入</td></tr>
+<tr><th scope="row"><strong>Background terminal</strong> 行</th><td>留在后台的 <code translate="no">bash</code> 命令：只读输出和 <strong>Stop</strong>。Agent 用 <code translate="no">write_stdin</code>。</td></tr>
+<tr><th scope="row">终端右键</th><td><strong>复制</strong>、允许输入时<strong>粘贴</strong>、<strong>把选中内容加入对话</strong>（向聚焦的草稿添加代码块）</td></tr>
+</tbody>
+</table>
+<p class="note">向终端标签页输入、中断或关闭都遵循权限模式；审批卡片写明标签页、目录、是否有命令在运行和确切文本。输入送达不等于命令成功。结果不确定时不重发。未完成的人工输入片段或版本变化会阻止 Agent 输入，直到它重新观察。</p>
+<details>
+<summary>Shell 元数据与 resource 工具</summary>
+<p>在 macOS zsh 和兼容的 Bash 3.2 登录 shell 上，<code translate="no">terminal_use(action="observe", ...)</code> 和 <code translate="no">resource(provider="terminal", action="observe", ...)</code> 返回 <code translate="no">shell_integration</code>：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">status</code></th><td><code translate="no">starting</code> <code translate="no">ready</code> <code translate="no">unavailable</code> <code translate="no">ended</code></td></tr>
+<tr><th scope="row"><code translate="no">mode</code> <code translate="no">reason</code></th><td><code translate="no">zsh-hooks</code> 或 <code translate="no">bash-debug</code>；不可用的原因</td></tr>
+<tr><th scope="row"><code translate="no">event_sequence</code></th><td>最新接受的 shell 报告序号</td></tr>
+<tr><th scope="row"><code translate="no">cwd</code></th><td><code translate="no">value</code> 中的目录及其序号；报告前为 <code translate="no">null</code></td></tr>
+<tr><th scope="row"><code translate="no">cycle</code></th><td>前台 <code translate="no">id</code>、<code translate="no">phase</code>（<code translate="no">running</code> <code translate="no">finished</code> <code translate="no">unknown</code>）、<code translate="no">exit_code</code>；第一条命令前为 <code translate="no">null</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li><code translate="no">start_cwd</code> 是起始目录；顶层 <code translate="no">exit_code</code> 属于终端进程。周期的退出码只在前台完成后出现。<code translate="no">command_complete</code> 保持 <code translate="no">null</code>。</li>
+<li>bash-preexec、自定义 DEBUG trap、提示命令、只读提示配置和不兼容的跟踪设置回退到 <code translate="no">unavailable</code>，不动你的钩子。缺失或 <code translate="no">unavailable</code> 表示未知；报告不授予权限，可能过时。</li>
+<li><code translate="no">resource(action="describe")</code> 返回 Provider 和 Schema。<code translate="no">web</code> 和 <code translate="no">terminal</code> 保留原生身份和检查；<code translate="no">observe</code> 返回 generation、binding、输入版本和输出游标。</li>
+<li>Web <code translate="no">release</code> 结束控制并保留 Page；<code translate="no">close</code> 关闭观察到的标签页，报告 <code translate="no">page_closed</code>，未确认时报错。Terminal <code translate="no">release</code> 保留进程；<code translate="no">close</code> 请求终止。本地 Terminal 操作需要发起窗口中的活动执行，不能绕过沙箱。</li>
+<li>受信 Python：<code translate="no">openprogram.host.resources.registry.register(...)</code> 注册 <code translate="no">ResourceProvider</code>，每个操作有 JSON Schema 和适配器，由适配器负责授权和生命周期。重名被拒绝，参数先校验。<code translate="no">openprogram.host.resources.session.resource_use(kind, title, target)</code> 在受信运行时会话内报告使用，退出时释放。URL 身份去掉凭据、查询和片段。命令文本绝不解析成资源。已安装并启用的应用注册 <code translate="no">application.&lt;id&gt;</code>。</li>
+</ul>
+</details>
+<h2>重启之后</h2>
+<table class="stack">
+<thead><tr><th scope="col">内容</th><th scope="col">恢复方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中的对话</th><td>在原处自动继续，用已记录的输入和结果。不增加消息；一条回复里带 <strong>Worker 已重启，已继续</strong> 步骤。</td></tr>
+<tr><th scope="row">手动暂停、取消、完成的任务；已发送更新消息后被中断的任务；未回答的审批</th><td>保持停止。第二种可从 Activity 继续。</td></tr>
+<tr><th scope="row">未关闭的页面</th><td>在后台恢复，同一保留标签页、会话和分支归属，上次确认的地址和标题，运行在新的活动页面上。站点存储保留；未保存的表单不保留。不开第二份；已关闭页面和隐藏的预览保持原状。</td></tr>
+<tr><th scope="row">关闭标签页或 App 窗口</th><td>Worker 任务继续运行</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">行状态</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>正在恢复网页…</strong></th><td>恢复中，留在原分组</td></tr>
+<tr><th scope="row"><strong>网页恢复失败</strong></th><td>失败，或旧记录没有保留标签页描述</td></tr>
+<tr><th scope="row"><strong>需要重新连接</strong></th><td>活动页面需要新连接</td></tr>
+</tbody>
+</table>
+<details>
+<summary>续跑规则</summary>
+<ul>
+<li><code translate="no">execution.auto_resume_window_seconds</code>：<code translate="no">-1</code> 无限制（默认），<code translate="no">0</code> 关闭，正数为秒。截止时间会持久化，重启不延长，升级时保留；到期后任务暂停，可手动继续。</li>
+<li>任务在完成的 Provider 和工具边界保存检查点。续跑保留任务身份、权限和资源准入，需要兼容的运行时约定。恢复的是持久检查点，不是进程内存。已确认的工具结果复用；外部结果未知时需要对账。</li>
+<li>自更新续跑、约定变化后的重新规划和后续跟进使用同一设置，从更新最后的活动算起。运行中的更新不受其限制。</li>
+<li>对话里有所请求更新的结果，但没有更新历史、控件或恢复提示，打开对话也不启动更新轮询。</li>
+<li>恢复页面不启动 Agent；新任务照常观察并检查权限。</li>
+</ul>
+</details>
+<details>
+<summary>重启后的浏览器工具</summary>
+<ul>
+<li>App 正在重启时，列出页面最多等 20 秒，然后报告 <code translate="no">desktop_unavailable</code> 并要求重试。窗口已不在时列出其他窗口的页面。App 关闭时不等待：Agent 打开的页面开在没有窗口的后台浏览器里，没有 App 的登录状态。</li>
+<li>之前的会话或页面 token 回到同一标签页并给出新观察。不重复操作，不重新打开已关闭的页面。</li>
+<li>未知标签页返回当前页面及新 token。</li>
+<li>操作后立即截图会先观察，不会因过期失败。</li>
+</ul>
+</details>
+<h2>通知与防休眠</h2>
+<p>在 <strong>设置 → 通用 → 通知</strong> 按电脑设置。浏览器界面两者都没有。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">行为</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">系统通知</th><td>在后台时，轮次完成、出错、提问或审批、等待系统访问时发送。每个事件一次；有窗口在前台或你自己停止时不发。点击打开该会话。</td></tr>
+<tr><th scope="row">防休眠</th><td>有会话运行时阻止空闲休眠；显示器仍可关闭</td></tr>
+<tr><th scope="row"><strong>通知声音</strong></th><td>系统默认、无，或 macOS 系统声音</td></tr>
+</tbody>
+</table>
+<h2>Programs</h2>
+<p>Abilities → Programs 有两个根。<strong>Tools</strong>：<code translate="no">openprogram/programs/tools/</code>，按类别。<strong>Applications</strong>：内置的来自 <code translate="no">openprogram/programs/applications/</code>，已安装的在 <code translate="no">~/.openprogram/programs/</code>。每项展开为入口和源文件；详情显示是否禁用，你的包还显示加载失败或暂不可调用。放在其他应用目录里的目录应用单独列出并注明目录。打开时选中第一个应用，没有则第一个工具。</p>
+<p class="note">离开时保留目录树、选中项和调用图。可见时每五秒及重新聚焦时检查；未变文件复用分析。检查失败保留上次内容。</p>
+<details>
+<summary>长对话</summary>
+<ul>
+<li>历史先加载最新一页，滚动时获取附近消息，保持位置和流式输出。失败自动重试。较远的页离开内存。重新打开时若消息仍在所选分支上，恢复到可见消息。</li>
+<li>主对话和分屏窗格在有未加载的新消息时显示<strong>跳到最新</strong>。失败后可重试。滚动、点击或按键取消等待中的跳转或恢复。关闭窗格保存位置。重连不再等旧的重试延迟。</li>
+<li>DAG 打开时才加载。Markdown 使用有界缓存。存储的历史和模型上下文不变。</li>
+</ul>
+</details>
+<p class="note">本地 App 刷新保留已解包原生依赖的权限，并恢复 node-pty 辅助程序的执行权限。</p>

@@ -17,12 +17,18 @@
  * expected to check ``missingPasteIds()`` before submit so dropped
  * pastes surface as a warning instead of silent data loss.
  *
- * Modeled on claude-code's pasteStore + inputPaste truncation logic
- * (``references/claude-code-leaked/src/components/PromptInput/inputPaste.ts``).
+ * Each window keeps its own entry, like its drafts
+ * (``sessionDraftStorageKey``): one shared map was rewritten whole by every
+ * window, so one window's write dropped another's pastes. Ids are unique
+ * across windows (time-based), so a draft moved to another window still
+ * finds its paste: a miss looks in the other windows' entries once and
+ * adopts what it finds.
  */
 
+import { pastedSpanLabel } from "../../../../lib/chat/send/paste-elements.ts";
+
 export interface PastedEntry {
-  /** Monotonic per-tab id. Matches the ``#N`` in the token. */
+  /** Increasing, unique across windows. Matches the ``#N`` in the token. */
   id: number;
   /** Verbatim pasted content. */
   content: string;
@@ -44,8 +50,30 @@ const PERSIST_PASTE_MAX = 1_000_000;
  *  everything else this app stores. */
 const PERSIST_TOTAL_MAX = 2_000_000;
 
-const STORAGE_KEY = "composerPasteStore";
+/** Before pastes were kept per window (small ids, shared by every window). */
+const LEGACY_STORAGE_KEY = "composerPasteStore";
+const STORAGE_PREFIX = "composerPasteStore:";
 const STORAGE_VERSION = 1;
+
+function storageKey(): string {
+  const bridge = typeof window === "undefined" ? undefined : window.openprogramDesktop;
+  const windowId = bridge?.isDesktop
+    ? (typeof bridge.windowId === "string" && bridge.windowId ? bridge.windowId : "main")
+    : "main";
+  return STORAGE_PREFIX + windowId;
+}
+
+function readEntries(raw: string | null): PastedEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PersistShape;
+    if (!parsed || parsed.v !== STORAGE_VERSION || !Array.isArray(parsed.entries)) return [];
+    return parsed.entries.filter((e) => typeof e?.id === "number" && typeof e?.content === "string"
+      && typeof e?.numLines === "number");
+  } catch {
+    return [];
+  }
+}
 
 interface PersistShape {
   v: number;
@@ -62,6 +90,8 @@ function tokenRegex(): RegExp {
 class PasteStore {
   private nextId = 1;
   private map = new Map<number, PastedEntry>();
+  /** Ids looked for in the other windows' entries and not found. */
+  private searched = new Set<number>();
   // Subscriber list so the chip row re-renders on add/remove. The
   // composer registers exactly one subscriber inside a useEffect.
   private subs = new Set<() => void>();
@@ -69,7 +99,10 @@ class PasteStore {
 
   add(content: string): PastedEntry {
     this.ensureHydrated();
-    const id = this.nextId++;
+    // Milliseconds × 1000 plus a random part: increasing in this window and
+    // not taken by another window pasting at the same moment.
+    const id = Math.max(this.nextId, Date.now() * 1000 + Math.floor(Math.random() * 1000));
+    this.nextId = id + 1;
     const numLines = content.split("\n").length;
     const entry: PastedEntry = { id, content, numLines };
     this.map.set(id, entry);
@@ -88,7 +121,29 @@ class PasteStore {
 
   get(id: number): PastedEntry | undefined {
     this.ensureHydrated();
-    return this.map.get(id);
+    return this.map.get(id) ?? this.adoptFromOtherWindow(id);
+  }
+
+  /** A draft moved here from another window references that window's
+   *  paste. Take it over once; a real loss is looked for only once. */
+  private adoptFromOtherWindow(id: number): PastedEntry | undefined {
+    if (this.searched.has(id) || typeof window === "undefined") return undefined;
+    this.searched.add(id);
+    try {
+      const own = storageKey();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || key === own || !key.startsWith(STORAGE_PREFIX)) continue;
+        const entry = readEntries(localStorage.getItem(key)).find((e) => e.id === id);
+        if (!entry) continue;
+        this.map.set(id, entry);
+        this.persist();
+        return entry;
+      }
+    } catch {
+      /* storage unavailable — the paste stays lost */
+    }
+    return undefined;
   }
 
   /** Ordered by id so the chip row is stable. */
@@ -131,24 +186,16 @@ class PasteStore {
     this.hydrated = true;
     if (typeof window === "undefined") return;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as PersistShape;
-      if (!parsed || parsed.v !== STORAGE_VERSION
-          || !Array.isArray(parsed.entries)) {
-        return;
+      // A window with no entry of its own yet starts from the shared map
+      // the drafts it restores were written against.
+      const own = localStorage.getItem(storageKey());
+      for (const e of readEntries(own ?? localStorage.getItem(LEGACY_STORAGE_KEY))) {
+        this.map.set(e.id, e);
       }
-      for (const e of parsed.entries) {
-        if (typeof e?.id === "number" && typeof e?.content === "string"
-            && typeof e?.numLines === "number") {
-          this.map.set(e.id, e);
-        }
-      }
-      const persistedNext = typeof parsed.nextId === "number" ? parsed.nextId : 0;
       const maxLoaded = this.map.size > 0
         ? Math.max(...Array.from(this.map.keys()))
         : 0;
-      this.nextId = Math.max(persistedNext, maxLoaded + 1, 1);
+      this.nextId = Math.max(maxLoaded + 1, 1);
     } catch {
       /* ignore — start empty */
     }
@@ -175,7 +222,7 @@ class PasteStore {
         nextId: this.nextId,
         entries: eligible.slice(start),
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(storageKey(), JSON.stringify(payload));
     } catch {
       /* localStorage may be unavailable (private mode) or full — fail
          silently; in-memory state still works for this session. */
@@ -207,6 +254,43 @@ export function expandPasteTokens(text: string): string {
     const entry = pasteStore.get(id);
     return entry ? entry.content : match;
   });
+}
+
+/** ``expandPasteTokens`` with each pasted span wrapped in private-use
+ *  delimiters, so later rewrites (``@path`` expansion) can run before
+ *  ``takePastedSpans`` measures where the spans finally landed. */
+export const PASTE_OPEN = "\uE000";
+export const PASTE_CLOSE = "\uE001";
+
+export function expandPasteTokensDelimited(text: string): string {
+  return text.replace(tokenRegex(), (match, idStr) => {
+    const entry = pasteStore.get(Number(idStr));
+    return entry ? PASTE_OPEN + entry.content + PASTE_CLOSE : match;
+  });
+}
+
+/** Strip the delimiters and report each span (Codex-style
+ *  ``text_elements``; see lib/chat/send/paste-elements.ts). */
+export function takePastedSpans(text: string): {
+  text: string;
+  spans: { start: number; end: number; label: string }[];
+} {
+  const spans: { start: number; end: number; label: string }[] = [];
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf(PASTE_OPEN, i);
+    if (open < 0) break;
+    const close = text.indexOf(PASTE_CLOSE, open + 1);
+    if (close < 0) break;
+    out += text.slice(i, open);
+    const content = text.slice(open + 1, close);
+    spans.push({ start: out.length, end: out.length + content.length, label: pastedSpanLabel(content.split("\n").length) });
+    out += content;
+    i = close + 1;
+  }
+  out += text.slice(i);
+  return { text: out.split(PASTE_OPEN).join("").split(PASTE_CLOSE).join(""), spans };
 }
 
 /** Return the list of paste ids currently referenced by ``text``. */

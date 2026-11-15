@@ -1,28 +1,35 @@
 "use client";
 
 /**
- * /projects — 项目管理。左右分栏（照 Programs 页）：左栏项目列表，
- * 右栏选中项目的内容（Settings 权限规则+项目默认设置 / Chats 会话列表 /
- * Info 元数据）。同页切换，不跳路由。
+ * History, organised by project. Left rail: the projects, the System
+ * project first (chats that belong to no project, and the personal memory
+ * every project reads). Right: the selected project's Chats, Memory,
+ * Settings (defaults + permission rules) and Info. Same-page switching,
+ * no route change.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, FolderSearch } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { FolderSearch } from "lucide-react";
 
-import fx from "@/components/functions/functions-page.module.css";
+import shell from "./projects-shell.module.css";
 import { SearchInput } from "@/components/ui/search-input";
 import { useFolderPicker } from "@/components/ui/folder-picker";
 import styles from "./projects-page.module.css";
-import { managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManageEmptyState, managePageStyles as shared, ManageLoadingState } from "@/components/ui/manage-page";
+import { RailBadge, RailItem, RailSeparator, RailSplit, SecondaryRail } from "@/components/ui/secondary-rail";
 import { useTranslation } from "@/lib/i18n";
-import { FoldersIcon, FolderPlusIcon } from "@/components/animated-icons";
-import { wsRequest } from "@/lib/net/ws-request";
-import { formatRelativeTime } from "@/lib/format-utils/format";
-import { ProjectEditor, type EditableProject } from "@/components/sidebar/project-editor";
+import { SolarIcon } from "@/components/solar-icons";
+import { wsRequest } from "@/lib/net/ws/ws-request";
+import { canConfirmInPlace, confirmProjectFolder, locationMessage, locationProblem, notifyProjectLocationChanged, relocateProject, type RelocateReply } from "@/lib/projects/project-location";
+import { ProjectEditor, type EditableProject } from "@/components/sidebar/projects/project-editor";
 import { Button } from "@/components/ui/button";
+import { ChatsPage } from "@/components/chats/chats-page";
+import { MemoryPage } from "@/components/memory";
+import { useSessionStore, type ConvSummary } from "@/lib/session-store";
 import { PermissionsSection } from "./permissions-section";
+import { ComputerUseAppsSection } from "./computer-use-apps-section";
 import { ProjectConfigSection } from "./project-config-section";
-import { pushPath } from "@/lib/shallow-nav";
+import { SettingsRow, SettingsSection } from "@/components/settings/settings-ui";
 
 interface Project extends EditableProject {
   id: string;
@@ -37,38 +44,53 @@ interface Project extends EditableProject {
   migration_error?: string;
   session_count: number;
   unarchived_session_count?: number;
+  session_ids?: string[];
+  custom_name?: boolean;
   status: string;
 }
 
-interface SessionSummary {
-  id: string;
-  title: string;
-  created_at?: number;
-  preview?: string | null;
-}
+/** The History page's project rail; its header shows the toggle. */
+export const PROJECTS_RAIL = "projects";
 
-type Tab = "settings" | "sessions" | "info";
+export type ProjectTab = "chats" | "memory" | "settings" | "info";
+const PROJECT_TABS: ProjectTab[] = ["chats", "memory", "settings", "info"];
+/** Settings and Info scroll inside the panel, under fixed head and tabs, on
+    the Settings page's blocks and the Chats tab's 24px edge. */
+const TAB_SCROLL = "flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto px-6 pt-5 pb-8 max-[760px]:px-4";
+
+function tabParam(value: string | null | undefined): ProjectTab | null {
+  return PROJECT_TABS.find((tab) => tab === value) ?? null;
+}
 
 function cls(...xs: (string | false | undefined)[]) {
   return xs.filter(Boolean).join(" ");
 }
 
+/** The home project leads; the rest keep the registry's order. */
+function systemFirst(projects: Project[]): Project[] {
+  return [...projects].sort((a, b) => Number(b.is_default) - Number(a.is_default));
+}
+
 export function ProjectsPage({
   embedded,
   query: queryProp,
+  initialTab = "chats",
 }: {
   embedded?: boolean;
   query?: string;
+  initialTab?: ProjectTab;
 } = {}) {
-  const { text, locale } = useTranslation();
-  const router = useRouter();
-  const requestedProject = useSearchParams()?.get("project");
+  const { text } = useTranslation();
+  const params = useSearchParams();
+  const requestedProject = params?.get("project");
+  const requestedTab = tabParam(params?.get("tab"));
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("settings");
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [tab, setTab] = useState<ProjectTab>(requestedTab ?? initialTab);
+  const conversations = useSessionStore((state) => state.conversations);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [localQuery, setLocalQuery] = useState("");
   const { pickFolder, folderPickerDialog } = useFolderPicker();
   const query = queryProp !== undefined ? queryProp : localQuery;
@@ -76,18 +98,22 @@ export function ProjectsPage({
 
   const refresh = useCallback(async () => {
     for (let i = 0; i < 10; i++) {
-      const data = await wsRequest<{ projects: Project[] }>(
+      const data = await wsRequest<{ projects: Project[] | null }>(
         "list_projects", {}, "projects_list",
       );
-      if (data) {
-        const list = data.projects || [];
+      // `projects: null` means the registry could not be read, not that
+      // there are no projects; retry instead of showing the empty state.
+      if (data && Array.isArray(data.projects)) {
+        const list = systemFirst(data.projects);
         setProjects(list);
         setSelectedId((cur) => cur ?? (list[0]?.id ?? null));
+        setLoaded(true);
         return;
       }
       await new Promise((r) => setTimeout(r, 300));
     }
-  }, []);
+    setError(text("Could not load projects", "无法加载项目"));
+  }, [text]);
 
   useEffect(() => {
     function onChanged() { refresh(); }
@@ -97,55 +123,65 @@ export function ProjectsPage({
   }, [refresh]);
 
   useEffect(() => { if (requestedProject) setSelectedId(requestedProject); }, [requestedProject]);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
 
   const selected = useMemo(
     () => projects.find((p) => p.id === selectedId) || null,
     [projects, selectedId],
   );
+  const selectedProblem = locationProblem(selected);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q),
-    );
-  }, [projects, query]);
+  // A chat belongs to the first bound project that lists it; a chat no
+  // project claims is the home project's, as on the server.
+  const owner = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const project of projects) {
+      if (project.is_default) continue;
+      for (const sessionId of project.session_ids || []) {
+        if (!map.has(sessionId)) map.set(sessionId, project.id);
+      }
+    }
+    return map;
+  }, [projects]);
+  const systemId = useMemo(() => projects.find((p) => p.is_default)?.id ?? null, [projects]);
+  const projectOf = useCallback(
+    (conv: ConvSummary) => owner.get(conv.id) ?? systemId, [owner, systemId],
+  );
+  const includeSelected = useCallback(
+    (conv: ConvSummary) => projectOf(conv) === selectedId, [projectOf, selectedId],
+  );
+  const chatCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const conv of Object.values(conversations) as ConvSummary[]) {
+      if (conv.archived) continue;
+      const projectId = projectOf(conv);
+      if (projectId) counts.set(projectId, (counts.get(projectId) ?? 0) + 1);
+    }
+    return counts;
+  }, [conversations, projectOf]);
 
-  const loadSessions = useCallback(async (pid: string) => {
-    const d = await wsRequest<{ sessions: SessionSummary[] }>(
-      "list_project_sessions", { project_id: pid }, "project_sessions",
-    );
-    setSessions(d?.sessions || []);
-  }, []);
-
-  useEffect(() => {
-    if (tab === "sessions" && selectedId) loadSessions(selectedId);
-  }, [tab, selectedId, loadSessions]);
+  const label = useCallback((project: Project) => project.name, []);
 
   // 定位缺失项目的新目录：改项目 path、保留 id（relocate_project）。
-  const locateProject = useCallback(async (projectId: string, startPath = "") => {
+  const repairProject = useCallback(async (run: () => Promise<RelocateReply>) => {
     setError(null);
     try {
-      const path = await pickFolder(startPath);
-      if (!path) return;
-      const current = projects.find((project) => project.id === projectId);
-      const d = await wsRequest<{ ok: boolean; error?: string | null }>(
-        "relocate_project",
-        {
-          project_id: projectId,
-          path,
-          expected_path: current?.path || startPath,
-          expected_revision: current?.location_revision,
-          replace_identity: true,
-        },
-        "project_relocated",
-      );
-      if (d && !d.ok) setError(d.error || text("Relocation failed.", "移动失败。"));
+      const reply = await run();
+      if (!reply.ok) setError(reply.error || text("Could not relocate the project.", "重新定位项目失败。"));
+      else notifyProjectLocationChanged();
       refresh();
     } catch (e) {
       setError(String(e));
     }
-  }, [pickFolder, refresh, text]);
+  }, [refresh, text]);
+  const locateProject = useCallback(async (project: Project) => {
+    try {
+      const path = await pickFolder(project.path);
+      if (path) await repairProject(() => relocateProject(project, path));
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [pickFolder, repairProject]);
 
   const addProject = useCallback(async () => {
     setError(null);
@@ -163,18 +199,31 @@ export function ProjectsPage({
     }
   }, [pickFolder, refresh]);
 
+  // Arrow/Home/End keyboard model shared with ManageSubnav.
+  function moveProjectTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = index;
+    if (event.key === "ArrowRight") next = (index + 1) % PROJECT_TABS.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + PROJECT_TABS.length) % PROJECT_TABS.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = PROJECT_TABS.length - 1;
+    else return;
+    event.preventDefault();
+    setTab(PROJECT_TABS[next]);
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button[role=tab]")[next]?.focus();
+  }
+
   const view = (
-      <div className={fx.view} style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
+      <div className="h-full flex flex-col overflow-visible" style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
         {folderPickerDialog}
         {editing && selected && <ProjectEditor key={selected.id} project={selected} onClose={()=>setEditing(false)} onSaved={updated=>setProjects(items=>items.map(item=>item.id===updated.id?{...item,...updated}:item))}/>}
         {(!embedded || queryProp === undefined) && (
-          <div className={fx.topbar}>
-            {!embedded && <span className={fx.title}>{text("Projects", "项目")}</span>}
+          <div className={shell.topbar}>
+            {!embedded && <span className={shell.title}>{text("Projects", "项目")}</span>}
             {queryProp === undefined && (
-              <div className={fx.toolbar}>
+              <div className="flex items-center gap-[10px] ml-[auto] pb-[2px]">
                 <SearchInput
                   className="flex-1 max-w-[320px]"
-                  placeholder={text("Search projects...", "搜索项目...")}
+                  placeholder={text("Search this project...", "搜索这个项目...")}
                   value={query}
                   onChange={setQuery}
                 />
@@ -185,187 +234,168 @@ export function ProjectsPage({
 
         {error && <div className={shared.errorBar} role="alert">{error}</div>}
 
-        <div className={fx.body}>
-          {/* 左栏：项目列表（复用 Functions 的 profilesNav） */}
-          <div className={fx.profilesNav}>
-            {filtered.map((p) => (
-              <div
-                key={p.id}
-                className={cls(fx.profileItem, p.id === selectedId && fx.active)}
-                onClick={() => setSelectedId(p.id)}
-              >
-                <span className={fx.profileIcon}>{p.icon || <FoldersIcon size={16} />}</span>
-                <span className={fx.profileName}>{p.name}</span>
-                {p.hidden && <span className={styles.badge}>{text("Hidden", "已隐藏")}</span>}
-                {p.is_default && <span className={styles.badge}>{text("Default", "默认")}</span>}
-                {(p.path_missing || p.path_replaced ||
-                  ["missing", "replaced", "migrating", "pending", "error"].includes(p.location_state ?? "")) ? (
-                  <AlertTriangle
-                    size={14}
-                    strokeWidth={2}
-                    className={styles.statusSlot}
-                    aria-label={text("Folder missing", "目录缺失")}
-                  />
-                ) : (
-                  <span className={styles.statusSlotPad} aria-hidden="true" />
-                )}
-              </div>
-            ))}
-            <div className={fx.profileSep} />
-            <div
-              className={cls(fx.profileItem, fx.profileNew)}
+        <RailSplit railKey={PROJECTS_RAIL}>
+          <SecondaryRail railKey={PROJECTS_RAIL} id="projects-rail" label={text("Projects", "项目")}>
+            {projects.map((p) => {
+              const unavailable = locationProblem(p) !== null;
+              return (
+                <RailItem
+                  key={p.id}
+                  icon={p.icon || <ProjectGlyph size={16} open={p.id === selectedId} />}
+                  label={label(p)}
+                  badge={p.hidden ? <RailBadge>{text("Hidden", "已隐藏")}</RailBadge> : undefined}
+                  trailing={unavailable ? (
+                    <SolarIcon
+                      name="danger-triangle"
+                      size={14}
+                      motionPreset="none"
+                      className={styles.statusSlot}
+                      role="img"
+                      aria-label={text("Folder missing", "目录缺失")}
+                    />
+                  ) : undefined}
+                  active={p.id === selectedId}
+                  onClick={() => setSelectedId(p.id)}
+                />
+              );
+            })}
+            <RailSeparator />
+            <RailItem
+              quiet
+              icon={<SolarIcon name="add-folder" size={16} motionPreset="none" aria-hidden="true" />}
+              label={text("Add project folder…", "添加项目文件夹…")}
               onClick={addProject}
-            >
-              <span className={fx.profileIcon}><FolderPlusIcon size={16} /></span>
-              <span className={fx.profileName}>{text("Open folder…", "打开文件夹…")}</span>
-            </div>
-          </div>
+            />
+          </SecondaryRail>
 
           {/* 右栏：选中项目的内容 */}
-          <div className={fx.content}>
-            {!selected ? (
-              <div className={fx.empty}>{text("Select a project.", "选择一个项目。")}</div>
+          <div className={cls(shell.content, styles.content, selected ? styles.contentFill : undefined)}>
+            {!selected && !loaded ? (
+              <ManageLoadingState>{text("Loading…", "加载中…")}</ManageLoadingState>
+            ) : !selected ? (
+              <ManageEmptyState
+                compact
+                icon={<ProjectGlyph size={20} />}
+                title={projects.length ? text("Select a project", "选择一个项目") : text("No projects yet", "还没有项目")}
+                description={text("A project is a folder on disk. Its chats, default settings and permission rules travel with it.", "项目对应磁盘上的一个文件夹，其会话、默认设置和权限规则随项目保存。")}
+                action={projects.length ? undefined : <Button onClick={addProject}><SolarIcon name="add-folder" size={16} motionPreset="none" aria-hidden="true" />{text("Add project folder…", "添加项目文件夹…")}</Button>}
+              />
             ) : (
               <>
-                <div className={styles.detailHead}>
-                  <span className={styles.detailTitle}>{selected.name}</span>
-                  <span className={styles.detailPath}>{selected.path}</span>
-                  {selected.hidden&&<Button variant="outline" onClick={async()=>{try{const result=await wsRequest<{ok:boolean;error?:string}>("restore_project",{project_id:selected.id},"restore_project_result");if(!result?.ok)throw new Error(result?.error||"Could not restore project");await refresh();window.dispatchEvent(new Event("project-changed"));}catch(err){setError(String(err));}}}>{text("Restore to sidebar", "恢复到侧边栏")}</Button>}
-                  <Button variant="outline" onClick={()=>setEditing(true)}>{text("Edit project", "编辑项目")}</Button>
+                <div className="flex items-center gap-[12px] m-[2px_0_8px]">
+                  <span className={styles.detailIcon} aria-hidden="true">{selected.icon || <ProjectGlyph size={20} />}</span>
+                  <div className="flex-1 min-w-0">
+                    <h2 className={styles.detailTitle}>{label(selected)}</h2>
+                    {selected.is_default ? (
+                      <span className={styles.detailNote}>
+                        {text("Chats outside any project, and the personal memory every project reads.", "不属于任何项目的会话，以及每个项目都会读的个人记忆。")}
+                      </span>
+                    ) : (
+                      <span className={styles.detailPath}>{selected.path}</span>
+                    )}
+                  </div>
+                  {selected.hidden&&<Button variant="elevated" onClick={async()=>{try{const result=await wsRequest<{ok:boolean;error?:string}>("restore_project",{project_id:selected.id},"restore_project_result");if(!result?.ok)throw new Error(result?.error||text("Could not restore project", "无法恢复项目"));await refresh();window.dispatchEvent(new Event("project-changed"));}catch(err){setError(err instanceof Error?err.message:String(err));}}}>{text("Restore to sidebar", "恢复到侧边栏")}</Button>}
+                  {!selected.is_default && <Button variant="elevated" onClick={()=>setEditing(true)}>{text("Edit project", "编辑项目")}</Button>}
                 </div>
-                {(selected.path_missing || selected.path_replaced || (selected.location_state && selected.location_state !== "available")) && (
-                  <div
-                    role="alert"
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      margin: "8px 0", fontSize: 12,
-                      color: "var(--accent-orange)",
-                    }}
-                  >
-                    <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />
-                    <span>
-                      {selected.path_replaced || selected.location_state === "replaced"
-                        ? text(
-                            "The folder at this location has changed.",
-                            "该位置上的文件夹已更换。",
-                          )
-                        : selected.location_state === "migrating"
-                          ? text(
-                              "Migrating conversations. Tasks start after completion.",
-                              "正在迁移对话。完成前不能启动任务。",
-                            )
-                            : selected.location_state === "pending" &&
-                                selected.migration_error !== "directory identity unavailable"
-                              ? text(
-                                  "This legacy conversation has not migrated. Reconnect the original drive to finish.",
-                                  "这条旧对话尚未迁移。请接回原来的磁盘后再完成。",
-                                )
-                              : selected.location_state === "pending"
-                                ? text(
-                                    "This folder needs confirmation. Locate the original folder to continue.",
-                                    "该目录需要确认。请定位原来的目录后继续。",
-                                  )
-                            : selected.location_state === "error"
-                              ? text(
-                                  selected.migration_error || "Conversation migration failed.",
-                                  selected.migration_error || "对话迁移失败。",
-                                )
-                              : text(
-                                  "This folder no longer exists on disk.",
-                                  "该目录已不在磁盘上。",
-                                )}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => locateProject(selected.id, selected.path)}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 4,
-                        cursor: "pointer", background: "none",
-                        border: "1px solid var(--accent-orange)",
-                        borderRadius: 6, padding: "2px 8px",
-                        color: "var(--accent-orange)", fontSize: 12,
-                      }}
-                    >
-                      <FolderSearch size={13} strokeWidth={2} aria-hidden="true" />
+                {selectedProblem && (
+                  <div role="alert" className="my-2 flex flex-wrap items-center gap-2 text-fs-xs text-accent-orange">
+                    <SolarIcon name="danger-triangle" size={14} motionPreset="none" aria-hidden="true" />
+                    <span>{locationMessage(selectedProblem, selected, text)}</span>
+                    {canConfirmInPlace(selectedProblem) && (
+                      <Button variant="elevated" onClick={() => repairProject(() => confirmProjectFolder(selected))}>
+                        {text("Use the folder at this location", "就是这个位置的文件夹")}
+                      </Button>
+                    )}
+                    <Button variant="elevated" onClick={() => locateProject(selected)}>
+                      <FolderSearch aria-hidden="true" />
                       {text("Locate folder…", "定位文件夹…")}
-                    </button>
+                    </Button>
                   </div>
                 )}
 
-                <div className={styles.tabs}>
-                  {(["settings", "sessions", "info"] as Tab[]).map((tk) => (
+                <div className={styles.tabs} role="tablist" aria-label={text("Project sections", "项目分区")}>
+                  {PROJECT_TABS.map((tk, index) => (
                     <button
                       key={tk}
                       type="button"
+                      role="tab"
+                      id={`project-tab-${tk}`}
+                      aria-selected={tab === tk}
+                      aria-controls="project-tabpanel"
+                      tabIndex={tab === tk ? 0 : -1}
                       onClick={() => setTab(tk)}
+                      onKeyDown={(event) => moveProjectTab(event, index)}
                       className={cls(styles.tab, tab === tk && styles.tabActive)}
                     >
-                      {tk === "settings"
-                        ? text("Settings", "设置")
-                        : tk === "sessions"
-                          ? `${text("Chats", "会话")} (${selected.session_count})`
-                          : text("Info", "信息")}
+                      {tk === "chats"
+                        ? <>{text("Chats", "会话")} <span className={shared.tabCount}>{chatCounts.get(selected.id) ?? 0}</span></>
+                        : tk === "memory"
+                          ? text("Memory", "记忆")
+                          : tk === "settings"
+                            ? text("Settings", "设置")
+                            : text("Info", "信息")}
                     </button>
                   ))}
                 </div>
 
+                <div
+                  id="project-tabpanel"
+                  role="tabpanel"
+                  aria-labelledby={`project-tab-${tab}`}
+                  className={styles.panelFill}
+                >
+                {tab === "chats" && (
+                  <ChatsPage
+                    key={selected.id}
+                    embedded
+                    rail={false}
+                    query={query}
+                    include={includeSelected}
+                  />
+                )}
+
+                {tab === "memory" && (
+                  <MemoryPage
+                    key={selected.id}
+                    embedded
+                    query={query}
+                    projectId={selected.is_default ? null : selected.id}
+                  />
+                )}
+
                 {tab === "settings" && (
-                  <div className={styles.tabBody}>
-                    <div className={styles.sectionTitle}>{text("Default Settings", "默认设置")}</div>
+                  <div className={TAB_SCROLL}>
                     <ProjectConfigSection projectId={selected.id} />
-                    <div className={styles.sectionTitle} style={{ marginTop: 28 }}>
-                      {text("Permission Rules", "权限规则")}
-                    </div>
+                    <ComputerUseAppsSection projectId={selected.id} />
                     <PermissionsSection projectId={selected.id} />
                   </div>
                 )}
 
-                {tab === "sessions" && (
-                  <div className={styles.tabBody}>
-                    {sessions.length === 0 ? (
-                      <div className={fx.empty}>{text("No chats in this project.", "该项目还没有会话。")}</div>
-                    ) : (
-                      <ul className={styles.sessionList}>
-                        {sessions.map((s) => {
-                          const title = s.title || s.id;
-                          const initial = title.replace(/^\s+/, "").slice(0, 1).toUpperCase() || "?";
-                          return (
-                            <li
-                              key={s.id}
-                              className={styles.sessionRow}
-                              onClick={() => pushPath("/s/" + s.id)}
-                            >
-                              <span className={styles.sessionAvatar}>{initial}</span>
-                              <div className={styles.sessionBody}>
-                                <div className={styles.sessionTitle}>{title}</div>
-                                <div className={styles.sessionMeta}>{s.id.slice(0, 12)}</div>
-                              </div>
-                              <span className={styles.sessionTime}>
-                                {formatRelativeTime(s.created_at ?? 0, locale)}
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                )}
-
                 {tab === "info" && (
-                  <div className={styles.tabBody}>
-                    <Field label={text("Path", "路径")}><code>{selected.path}</code></Field>
-                    <Field label={text("Type", "类型")}>
-                      {selected.is_default ? text("Default (home)", "默认（家目录）") : text("Custom", "自定义")}
-                    </Field>
-                    <Field label={text("Status", "状态")}>{selected.status}</Field>
-                    <Field label={text("Chats", "会话数")}>{selected.session_count}</Field>
-                    <Field label="ID"><code>{selected.id}</code></Field>
+                  <div className={TAB_SCROLL}>
+                    <SettingsSection>
+                      <SettingsRow label={text("Type", "类型")}>
+                        <span className="text-fs-base text-text-muted">
+                          {selected.is_default ? text("System (global)", "系统（全局）") : text("Project folder", "项目文件夹")}
+                        </span>
+                      </SettingsRow>
+                      <SettingsRow label={selected.is_default ? text("Working folder", "工作目录") : text("Path", "路径")}><InfoCode>{selected.path}</InfoCode></SettingsRow>
+                      <SettingsRow label={text("Stored in", "存放位置")}><InfoCode>{`~/.openprogram/projects/${selected.id}/`}</InfoCode></SettingsRow>
+                      <SettingsRow label={text("Status", "状态")}>
+                        <span className="text-fs-base text-text-muted">
+                          {({ active: text("Active", "进行中"), paused: text("Paused", "已暂停"), done: text("Done", "已完成") } as Record<string, string>)[selected.status] ?? selected.status}
+                        </span>
+                      </SettingsRow>
+                      <SettingsRow label={text("Chats", "会话数")}><span className="text-fs-base text-text-muted">{chatCounts.get(selected.id) ?? 0}</span></SettingsRow>
+                      <SettingsRow label="ID"><InfoCode>{selected.id}</InfoCode></SettingsRow>
+                    </SettingsSection>
                   </div>
                 )}
+                </div>
               </>
             )}
           </div>
-        </div>
+        </RailSplit>
       </div>
   );
 
@@ -373,14 +403,14 @@ export function ProjectsPage({
   return <div className="main">{view}</div>;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{
-        fontSize: 11, fontWeight: 600, textTransform: "uppercase",
-        letterSpacing: "0.04em", color: "var(--text-muted)", marginBottom: 4,
-      }}>{label}</div>
-      <div style={{ fontSize: 14, color: "var(--text-primary)" }}>{children}</div>
-    </div>
-  );
+/** A project without its own icon shows the main sidebar's Solar folder,
+    so the sidebar, this rail and the Memory tree draw one folder; the
+    selected project's folder is open, like an expanded sidebar group. */
+function ProjectGlyph({ size, open = false }: { size: number; open?: boolean }) {
+  return <SolarIcon name={open ? "folder-open" : "folder"} size={size} motionPreset="none" className="text-[var(--folder-color)]" aria-hidden="true" />;
+}
+
+/** A read-only path or id on the Info tab. */
+function InfoCode({ children }: { children: React.ReactNode }) {
+  return <code className="min-w-0 truncate font-mono text-fs-xs text-text-muted">{children}</code>;
 }

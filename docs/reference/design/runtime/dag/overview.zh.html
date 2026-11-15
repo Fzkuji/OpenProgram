@@ -1,0 +1,348 @@
+<title>会话 DAG 设计</title>
+<meta name="description" content="Agent 执行记录：节点、边、不变量、分支、派生、上下文渲染、组装、压缩与存储。">
+<h1 id="session-dag-design">会话 DAG 设计</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 262" role="img" aria-label="对话链 ROOT、用户 1、回复 1、用户 2、回复 2 由 predecessor 边相连。重试用户 2 时与其共用 predecessor 回复 1。回复 2 调用的工具通过 caller 边挂在它下面，工具内部的模型调用通过 caller 挂在工具下面。">
+  <defs>
+    <marker id="sd-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <rect class="tile" x="0" y="24" width="84" height="36" rx="8"/><text class="mid" x="42" y="47">ROOT</text>
+  <rect class="tile" x="148" y="24" width="84" height="36" rx="8"/><text class="mid" x="190" y="47">用户 1</text>
+  <rect class="tile" x="296" y="24" width="84" height="36" rx="8"/><text class="mid" x="338" y="47">回复 1</text>
+  <rect class="tile" x="444" y="24" width="84" height="36" rx="8"/><text class="mid" x="486" y="47">用户 2</text>
+  <rect class="tile" x="592" y="24" width="84" height="36" rx="8"/><text class="mid" x="634" y="47">回复 2</text>
+  <line class="ln-acc" x1="146" y1="42" x2="86" y2="42" marker-end="url(#sd-a)"/>
+  <line class="ln-acc" x1="294" y1="42" x2="234" y2="42" marker-end="url(#sd-a)"/>
+  <line class="ln-acc" x1="442" y1="42" x2="382" y2="42" marker-end="url(#sd-a)"/>
+  <line class="ln-acc" x1="590" y1="42" x2="530" y2="42" marker-end="url(#sd-a)"/>
+  <text class="t-soft mid" x="116" y="16">predecessor</text>
+  <rect class="tile" x="444" y="108" width="84" height="36" rx="8"/><text class="mid" x="486" y="131">用户 2′</text>
+  <path class="ln-acc" d="M442 126H338V62" marker-end="url(#sd-a)"/>
+  <text class="t-soft" x="300" y="160">重试：同一 predecessor，形成分叉</text>
+  <rect class="tile" x="592" y="130" width="84" height="36" rx="8"/><text class="mid" x="634" y="153">工具</text>
+  <rect class="tile" x="592" y="220" width="84" height="36" rx="8"/><text class="mid" x="634" y="243">模型调用</text>
+  <line class="ln" x1="634" y1="128" x2="634" y2="62" marker-end="url(#sd-a)"/>
+  <line class="ln" x1="634" y1="218" x2="634" y2="168" marker-end="url(#sd-a)"/>
+  <text class="t-soft" x="560" y="100">caller</text>
+  <text class="t-soft" x="560" y="198">caller</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>ROOT</strong></li>
+  <li class="via"><code translate="no">predecessor</code></li>
+  <li><strong>用户 1 → 回复 1 → 用户 2 → 回复 2</strong><small>重试用户 2 时共用 predecessor 回复 1：形成分叉。</small></li>
+  <li class="via"><code translate="no">caller</code></li>
+  <li class="flow-end"><strong>工具 → 模型调用</strong><small>嵌套在回复 2 之下</small></li>
+</ol>
+</figure>
+<p class="note">箭头指向边的目标。每条用户消息、模型调用、函数或工具调用一个节点。聊天记录和调用树是这份按会话只追加记录的两个视图，任何历史调用都能按模型当时所见重新渲染。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">图的所有者</th><td>每次 Agent 执行（<a href="persistence-observability.zh.html">所有权</a>）</td></tr>
+<tr><th scope="row">普通辅助函数</th><td>不产生持久节点；语义操作仍完整记录</td></tr>
+<tr><th scope="row">权限、取消、文件检查点</th><td>留在发起执行，与图归属无关</td></tr>
+<tr><th scope="row">继承的 Context</th><td>不会把计算变成历史</td></tr>
+</tbody>
+</table>
+
+<h2 id="模型选型">模型选型</h2>
+<span id="model-selection"></span>
+<table class="stack">
+<thead><tr><th scope="col">模型</th><th scope="col">适合</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">扁平日志</th><td>只追加，收集简单</td><td>嵌套、祖先和读取需要额外关系</td></tr>
+<tr><th scope="row">Span 树</th><td>标识、父子调用、时序、状态、属性</td><td>父子描述调用，不是对话前驱；无法表示备选后续</td></tr>
+<tr><th scope="row">带时序的嵌套区间</th><td>性能视图（Chrome Trace、Perfetto）</td><td>时序无法说明回复属于哪条分支</td></tr>
+<tr><th scope="row"><strong>会话 DAG（选用）</strong></th><td>调用、分支、读取同在一份记录</td><td>需要边校验、索引和明确的渲染规则</td></tr>
+</tbody>
+</table>
+<p class="note">一份记录要同时表达：嵌套调用、对话分支、每次 LLM 调用读取的确切节点。</p>
+<details>
+<summary>采用与不采用的设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">统一操作记录</th><td>采用：所有节点共用 <code translate="no">Call</code>，差异在 role 和 metadata</td></tr>
+<tr><th scope="row">父子调用关系</th><td>采用，即 <code translate="no">caller</code></td></tr>
+<tr><th scope="row">用时间顺序代替对话边</th><td>不采用：<code translate="no">seq</code> 无法识别分支祖先</td></tr>
+<tr><th scope="row">只把上下文读取当作追踪事件</th><td>不采用：<code translate="no">reads</code> 是明确的节点 ID 列表，遥测导出是另一层映射</td></tr>
+<tr><th scope="row"><code translate="no">caused_by</code></th><td>不在 schema 中</td></tr>
+<tr><th scope="row">用 OTel SDK 做持久化</th><td>不采用：存储和上下文重建留在 OpenProgram</td></tr>
+<tr><th scope="row">GenAI 属性约定</th><td>作为模型和用量元数据的参考（<a href="https://github.com/open-telemetry/semantic-conventions-genai">约定</a>），不代表已有导出器</td></tr>
+<tr><th scope="row">Span 结构</th><td>参考 <a href="https://opentelemetry.io/docs/concepts/signals/traces/">OpenTelemetry trace 模型</a></td></tr>
+<tr><th scope="row">参考过，不照搬存储</th><td>Datadog、New Relic、Honeycomb、Lightstep、Pixie、Cilium、Langfuse、Arize Phoenix/OpenInference、LangSmith、OpenLLMetry、W&amp;B Weave、Braintrust</td></tr>
+<tr><th scope="row">可选诊断</th><td>另放</td></tr>
+<tr><th scope="row">校验</th><td>调用树和对话链分别校验</td></tr>
+<tr><th scope="row">Token、成本、评估元数据</th><td>需要明确定义，不从时序推断</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="s2">数据模型</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code></th><td>唯一标识</td></tr>
+<tr><th scope="row"><code translate="no">seq</code></th><td>单调整数，唯一排序键</td></tr>
+<tr><th scope="row"><code translate="no">created_at</code></th><td>墙上时钟，给人看</td></tr>
+<tr><th scope="row"><code translate="no">role</code></th><td><code translate="no">user</code>、<code translate="no">llm</code> 或 <code translate="no">code</code>，决定渲染而非本质</td></tr>
+<tr><th scope="row"><code translate="no">name</code></th><td>模型 id、函数名或用户名</td></tr>
+<tr><th scope="row"><code translate="no">input</code></th><td>提示词、函数参数或 <code translate="no">None</code></td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td>回复、返回值或用户文本</td></tr>
+<tr><th scope="row"><code translate="no">caller</code></th><td>子调用父节点 id</td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>对话父节点 id</td></tr>
+<tr><th scope="row"><code translate="no">reads</code></th><td>此次 LLM 调用读取的节点，是引用，不是结构</td></tr>
+<tr><th scope="row"><code translate="no">metadata</code></th><td>Token 用量、模型、source、expose、<code translate="no">tool_call_id</code> 等；LLM 叶子字段对齐 <code translate="no">gen_ai.*</code></td></tr>
+<tr><th scope="row"><code translate="no">metadata.status</code></th><td>所有路径都用 <code translate="no">running</code>、<code translate="no">completed</code>、<code translate="no">error</code>、<code translate="no">cancelled</code>。错误节点带结构化类型和堆栈，用户取消写 <code translate="no">cancelled</code></td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">role</th><th scope="col">caller</th><th scope="col">predecessor</th></tr></thead>
+<tbody>
+<tr><th scope="row">ROOT（<code translate="no">display=root</code>）</th><td>user</td><td>空</td><td>空</td></tr>
+<tr><th scope="row">用户消息</th><td>user</td><td>ROOT</td><td>上一条回复；会话首节点为 <code translate="no">"ROOT"</code></td></tr>
+<tr><th scope="row">LLM 回复</th><td>llm</td><td>本轮用户，或外层 code 节点</td><td>本轮用户</td></tr>
+<tr><th scope="row">LLM 调用工具</th><td>code</td><td>该 llm 节点</td><td>—</td></tr>
+<tr><th scope="row">用户调用函数</th><td>code</td><td>空</td><td>分支头，或 <code translate="no">"ROOT"</code></td></tr>
+<tr><th scope="row">Agent 请求模型或直接工具</th><td>llm / code</td><td>本图中的所属操作</td><td>—</td></tr>
+</tbody>
+</table>
+<p class="note">循环本身不是节点，其中的模型和工具操作才是。</p>
+
+<h2 id="s3">边与不变量</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">两种边</th><td>有向、无环、相互正交</td></tr>
+<tr><th scope="row"><code translate="no">caller</code></th><td>把顶层节点连到 ROOT</td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>对话顺序和分叉，这是 <code translate="no">caller</code> 加 <code translate="no">seq</code> 给不出的。只存在这个顶层字段：没有 metadata 副本，没有旧读路径</td></tr>
+<tr><th scope="row">写入（<code translate="no">session_store/shared.py</code>）</th><td>错接的分支事后无法修复。没有真实 caller 的 ROOT 层 user 或 llm 节点必须有 <code translate="no">predecessor</code>，否则抛 <code translate="no">PredecessorMissingError</code></td></tr>
+<tr><th scope="row">合法例外</th><td>首节点和显式根分叉（哨兵 <code translate="no">"ROOT"</code>）· ROOT 本身 · 派生根（<code translate="no">predecessor=None</code>，<code translate="no">caller</code> 为派生者）· <code translate="no">ask_user</code> 回答（<code translate="no">input</code> 非 None 的 user 节点）· 从会话开头覆盖的摘要节点（<a href="#s8">§8</a>）</td></tr>
+<tr><th scope="row">读取</th><td><code translate="no">get_branch</code> 和 <code translate="no">list_branches</code> 只走边，不回退 caller，不按 seq 拼接。缺 <code translate="no">predecessor</code> 的只能是派生根、ROOT、首节点、打开运行分支的 code 节点或上述摘要，否则抛 <code translate="no">BrokenPredecessorChainError</code> 并带节点 id</td></tr>
+</tbody>
+</table>
+
+<h2 id="s4">分支与派生</h2>
+<table class="stack">
+<thead><tr><th scope="col">分叉</th><th scope="col">被替换</th><th scope="col">新节点</th><th scope="col">共用的边</th></tr></thead>
+<tbody>
+<tr><th scope="row">重发消息</th><td>user2（P=llm1）</td><td>user2′（P=llm1）</td><td>predecessor</td></tr>
+<tr><th scope="row">LLM 重试</th><td>llm1（P=user1）</td><td>llm1′（P=user1）</td><td>predecessor</td></tr>
+<tr><th scope="row">工具重试</th><td>code（C=llm1）</td><td>code′（C=llm1）</td><td>caller</td></tr>
+</tbody>
+</table>
+
+<h3>失败</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">错误</th><td>终态：节点写入 <code translate="no">status=error</code>，本轮提交，head 停在此处</td></tr>
+<tr><th scope="row">取消</th><td>同理，写 <code translate="no">cancelled</code></td></tr>
+<tr><th scope="row">重试</th><td>普通分叉。失败线始终可达，又不在活动分支上，所以不进入重试的上下文，无需按 status 过滤</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">错误路径上的收尾</th><th scope="col">是否运行</th></tr></thead>
+<tbody>
+<tr><th scope="row">Git、项目和 shadow-git 提交，快照淘汰</th><td>运行：时间线无空洞，重试有已提交的前驱</td></tr>
+<tr><th scope="row">上下文提交回填、用量反馈、自动标题</th><td>不运行：它们以有回复为前提</td></tr>
+</tbody>
+</table>
+
+<h3>派生</h3>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="对话链用户、派生轮、通知 1、回答 1、通知 2、回答 2 由 predecessor 边相连。派生根通过 caller 边挂在派生轮上，没有 predecessor，上下文在此双向截断。继承式派生的首个用户节点以请求的节点为 predecessor。">
+  <defs><marker id="sp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="24" width="84" height="36" rx="8"/><text class="mid" x="42" y="47">用户</text>
+  <rect class="tile" x="116" y="24" width="84" height="36" rx="8"/><text class="mid" x="158" y="47">派生轮</text>
+  <rect class="tile" x="232" y="24" width="84" height="36" rx="8"/><text class="mid" x="274" y="47">notice₁</text>
+  <rect class="tile" x="348" y="24" width="84" height="36" rx="8"/><text class="mid" x="390" y="47">answer₁</text>
+  <rect class="tile" x="464" y="24" width="84" height="36" rx="8"/><text class="mid" x="506" y="47">notice₂</text>
+  <rect class="tile" x="580" y="24" width="84" height="36" rx="8"/><text class="mid" x="622" y="47">answer₂</text>
+  <line class="ln-acc" x1="114" y1="42" x2="86" y2="42" marker-end="url(#sp-a)"/>
+  <line class="ln-acc" x1="230" y1="42" x2="202" y2="42" marker-end="url(#sp-a)"/>
+  <line class="ln-acc" x1="346" y1="42" x2="318" y2="42" marker-end="url(#sp-a)"/>
+  <line class="ln-acc" x1="462" y1="42" x2="434" y2="42" marker-end="url(#sp-a)"/>
+  <line class="ln-acc" x1="578" y1="42" x2="550" y2="42" marker-end="url(#sp-a)"/>
+  <text class="t-soft mid" x="100" y="16">predecessor</text>
+  <rect class="tile" x="116" y="110" width="84" height="36" rx="8"/><text class="mid" x="158" y="133">派生根</text>
+  <line class="ln" x1="158" y1="108" x2="158" y2="62" marker-end="url(#sp-a)"/>
+  <text class="t-soft" x="166" y="90">caller</text>
+  <text class="t-soft" x="212" y="133">干净：predecessor=None，上下文在此双向截断</text>
+  <rect class="tile" x="0" y="190" width="84" height="36" rx="8"/><text class="mid" x="42" y="213">首个用户</text>
+  <line class="ln-acc" x1="42" y1="188" x2="42" y2="62" marker-end="url(#sp-a)"/>
+  <text class="t-soft" x="96" y="213">继承：从请求的节点精确分叉</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>派生轮 → notice₁ → answer₁ → notice₂ → answer₂</strong><small>完成通知沿 HEAD 成链。</small></li>
+  <li class="via"><code translate="no">caller</code></li>
+  <li><strong>派生根</strong><small>干净：predecessor=None，上下文在此双向截断。</small></li>
+  <li class="flow-end"><strong>继承</strong><small>首个用户节点的 predecessor 是请求的节点：精确分叉。</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SessionStore.spawn_branch(session_id, caller_node_id, *, source, name=…, register_head=True)</code></th><td>打开干净派生根的唯一方式。由 <code translate="no">TurnWriter</code> 在 <code translate="no">branch_from=None</code> 且有 <code translate="no">spawn_caller</code> 时调用，Job runner、协作消息和后台 Agent 都设置它</td></tr>
+<tr><th scope="row">根节点</th><td>user 节点，带 <code translate="no">caller</code>、<code translate="no">metadata.source</code>、<code translate="no">metadata.spawn_branch_root=True</code></td></tr>
+<tr><th scope="row">Head</th><td>注册为 head，除非 <code translate="no">register_head=False</code>（同会话子 Agent）</td></tr>
+<tr><th scope="row">上下文</th><td><code translate="no">get_branch</code> 停在根，从父分支渲染也不经 <code translate="no">caller</code> 下钻（<a href="#s6">上下文渲染</a>）</td></tr>
+</tbody>
+</table>
+<details>
+<summary>跨会话精确分叉</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">源会话 S</th><td>在发起节点 A 旁保留 attach 卡片。A 标 <code translate="no">spawn_out</code>，卡片指向 <code translate="no">attach.session_id=T</code> 和目标分支头</td></tr>
+<tr><th scope="row">目标 T</th><td>新 user 节点：<code translate="no">predecessor=M</code>、<code translate="no">caller=A</code>、<code translate="no">metadata.spawned_from_session=S</code>。图不能画到别的会话，所以 T 的投影把 caller 放在 ROOT 并标 <code translate="no">spawn_remote</code></td></tr>
+<tr><th scope="row">HEAD</th><td>两边都不动。结果注册为分支尖，之后回传作为普通轮次推进源 HEAD</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3>完成通知</h3>
+<table class="stack">
+<thead><tr><th scope="col">写回</th><th scope="col">锚定在</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">Attach 指针</th><td>调用轮次</td><td>它是调用的记录</td></tr>
+<tr><th scope="row">通知轮次（<code translate="no">source="job_followup"</code>）</th><td>当前 HEAD，并推进它</td><td>新轮次：N 个子 Agent 形成一条链，而不是一条消息被回答 N 次</td></tr>
+</tbody>
+</table>
+<p class="note">Runner 让 <code translate="no">TurnRequest.branch_from</code> 保持 <code translate="no">INHERIT_PARENT</code>，从不回退 head。<code translate="no">JobRunner._followup_lock</code> 每个投递会话一把，串行化同时完成的子 Agent。</p>
+
+<h2 id="s5">Head 与分支</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">head_id</code></th><td>活动分支尖。对话写入把它推进到真实节点，绝不指向占位符或摘要；悬空 head 渲染为空。带 caller 的节点不推进它</td></tr>
+<tr><th scope="row"><code translate="no">get_branch(session_id, head_id)</code></th><td>从 head 沿 predecessor 走到终点</td></tr>
+<tr><th scope="row"><code translate="no">list_branches(session_id)</code></th><td>可见的对话末端及保留的分支引用。Rewind 隐藏撤回的后缀，同时保留兄弟引用，包括停在共同祖先或 ROOT 上的引用。同一位置的引用由分支身份区分。内部执行行不创建对话末端</td></tr>
+<tr><th scope="row">分支名</th><td>会话元数据：分支引用的标签保存各自名称；<code translate="no">branches</code> 保留当前消息位置的兼容投影</td></tr>
+</tbody>
+</table>
+
+<h2 id="s6">上下文渲染</h2>
+<p><strong>节点被渲染，当且仅当它最近的 ROOT 层祖先（沿 <code translate="no">caller</code> 向上）在 <code translate="no">head_id</code> 的 predecessor 链上，并且 frame 和 expose 规则允许。</strong></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">seq</code></th><td>只用于排序</td></tr>
+<tr><th scope="row">引擎</th><td>解析 head、调用 <code translate="no">render_context</code>、把结果交给 <code translate="no">render_dag_messages</code>，自身不做过滤</td></tr>
+<tr><th scope="row">读路径</th><td>不写盘</td></tr>
+<tr><th scope="row">ROOT</th><td>从不展开：其 caller 子树会把所有兄弟分支带回来</td></tr>
+<tr><th scope="row">派生根（<code translate="no">metadata.spawn_branch_root</code>）</th><td>不经 <code translate="no">caller</code> 进入，所以 Goal 工作 Agent 读不到裁判。从派生分支内部渲染时仍可经主干看到</td></tr>
+<tr><th scope="row">顶层聊天（frame −1）</th><td>主干上每一轮完全可见</td></tr>
+<tr><th scope="row">函数内部（frame = 其 seq）</th><td>frame 前的历史加自身进度；其他函数内部按其 <code translate="no">expose</code>（默认 <code translate="no">io</code>）</td></tr>
+<tr><th scope="row">带 <code translate="no">metadata.tool_call_id</code> 的 code 节点</th><td>真实的 ToolCall/ToolResult 对，放入所属 llm 节点的 assistant 消息</td></tr>
+<tr><th scope="row">不带的 code 节点</th><td>文本对</td></tr>
+<tr><th scope="row">聊天流</th><td>顶层 user 和 llm 按 seq，嵌套折叠</td></tr>
+<tr><th scope="row">调用树</th><td>沿 <code translate="no">caller</code> 展开，循环兄弟折叠为 ×N</td></tr>
+</tbody>
+</table>
+
+<h2 id="s7">上下文组装</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">一个组装器</th><td><code translate="no">build_system_prompt(agent, *, channel, tools, additional_working_dirs, plan_mode)</code>，供所有模型调用：身份、项目记忆、统一工具列表、技能</td></tr>
+<tr><th scope="row">预算</th><td>计的就是发送的字符串</td></tr>
+<tr><th scope="row">变化</th><td>默认不变，以获得 KV 缓存命中，并让聊天和函数背景一致。精简提示词是调用处的显式选择，接受未命中</td></tr>
+<tr><th scope="row">函数内误用工具</th><td>在用户轮开头给情境指引并限制递归深度，不改工具列表（<a href="../execution/agentic-self-recursion.zh.html">自递归</a>）</td></tr>
+<tr><th scope="row">记录</th><td>哈希变化时（开始、工具集变化、计划模式切换）：追加 <code translate="no">role=code</code>、<code translate="no">name="context/system_prompt"</code>、<code translate="no">caller=ROOT</code>、output 为全文的节点。渲染固定使用主干上最新的一个</td></tr>
+<tr><th scope="row"><code translate="no">context/*</code> 名称</th><td>保留并对聊天隐藏，<code translate="no">context/summary</code> 例外，它是真实对话内容</td></tr>
+<tr><th scope="row">记忆预取</th><td>当前 user 节点线上消息的前缀块，存为其 <code translate="no">turn_context</code> 元数据里的 <code translate="no">memory_prefetch</code> 一项（<a href="../../context/composition.zh.html#l2">组合</a>）。系统和工具段字节稳定</td></tr>
+<tr><th scope="row">图片和文件</th><td>节点内容，按引用保存；正文在附件目录，渲染时加载</td></tr>
+</tbody>
+</table>
+
+<h2 id="s8">压缩</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="链 P、a、b、c、d、e 由 predecessor 边相连。摘要 S 以 P 为 predecessor，按 id 覆盖 a、b、c。不改任何边，HEAD 留在 e。包含 a 到 c 全部节点的链渲染 S、d、e，其他链渲染原文。">
+  <defs><marker id="cp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="24" width="84" height="36" rx="8"/><text class="mid" x="42" y="47">P</text>
+  <rect class="tile" x="116" y="24" width="84" height="36" rx="8"/><text class="mid" x="158" y="47">a</text>
+  <rect class="tile" x="232" y="24" width="84" height="36" rx="8"/><text class="mid" x="274" y="47">b</text>
+  <rect class="tile" x="348" y="24" width="84" height="36" rx="8"/><text class="mid" x="390" y="47">c</text>
+  <rect class="tile" x="464" y="24" width="84" height="36" rx="8"/><text class="mid" x="506" y="47">d</text>
+  <rect class="tile" x="580" y="24" width="84" height="36" rx="8"/><text class="mid" x="622" y="47">e · HEAD</text>
+  <line class="ln-acc" x1="114" y1="42" x2="86" y2="42" marker-end="url(#cp-a)"/>
+  <line class="ln-acc" x1="230" y1="42" x2="202" y2="42" marker-end="url(#cp-a)"/>
+  <line class="ln-acc" x1="346" y1="42" x2="318" y2="42" marker-end="url(#cp-a)"/>
+  <line class="ln-acc" x1="462" y1="42" x2="434" y2="42" marker-end="url(#cp-a)"/>
+  <line class="ln-acc" x1="578" y1="42" x2="550" y2="42" marker-end="url(#cp-a)"/>
+  <path class="ln-faint" d="M116 68V78H432V68"/>
+  <text class="t-soft mid" x="274" y="98">covers_ids = 确切的链节点</text>
+  <rect class="tile" x="232" y="110" width="84" height="36" rx="8"/><text class="mid" x="274" y="133">S</text>
+  <path class="ln-acc" d="M230 128H42V62" marker-end="url(#cp-a)"/>
+  <text class="t-soft" x="330" y="123">role=llm，name="context/summary"</text>
+  <text class="t-soft" x="330" y="143">不改任何边，HEAD 不动</text>
+  <text x="0" y="184">包含 a–c 全部节点的链渲染 [S, d, e]，其他链渲染原文。</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>P → a → b → c → d → e</strong><small>e 是 HEAD，不动。</small></li>
+  <li><strong>S</strong><small>predecessor = P，covers_ids = a、b、c。不改任何边。</small></li>
+  <li class="flow-end"><strong>渲染</strong><small>包含 a–c 全部节点的链：[S, d, e]。其他链：原文。</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">metadata.covers_ids</code></th><td>用 id，因为兄弟分支的 seq 交错。WebUI 载荷把被覆盖轮次的 caller 子树也加入（<a href="rendering.zh.html#s9">渲染 §9</a>）</td></tr>
+<tr><th scope="row">下一个摘要</th><td>吸收生效的那个，由 <code translate="no">nodes.active_summary_for_chain</code> 按链选出；图构建器按同样的选择折叠每个分支</td></tr>
+<tr><th scope="row">完整规范</th><td><a href="../../context/compaction.zh.html">压缩</a></td></tr>
+<tr><th scope="row">旧工具结果</th><td>从不老化：在压缩覆盖它那一轮之前，都按那一轮发出的样子渲染，所以两次压缩之间缓存前缀只增长</td></tr>
+<tr><th scope="row">重放</th><td>渲染只读存下的节点，同一张图任何时候渲染出相同字节；旧版本写下的 <code translate="no">render_manifest</code> 不再读取</td></tr>
+<tr><th scope="row">溢出</th><td>大节点在记录时溢出，一次且确定，绝不在渲染时</td></tr>
+<tr><th scope="row">单一管线</th><td>DAG 渲染是唯一上下文路径；出错时本轮明确失败</td></tr>
+</tbody>
+</table>
+
+<h2 id="s9">存储</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SessionLog</code></th><td>每会话一份只追加日志，位于 <code translate="no">&lt;state&gt;/projects/&lt;project_id&gt;/chats/&lt;id&gt;/</code></td></tr>
+<tr><th scope="row"><code translate="no">SessionMemoryIndex</code></th><td>每会话一份，懒加载；按 id 和按 predecessor 的子节点索引</td></tr>
+<tr><th scope="row"><code translate="no">head_id</code>、分支名</th><td>会话字段</td></tr>
+<tr><th scope="row">存储范围</th><td>原始节点和 meta；上下文提交归提交子系统</td></tr>
+<tr><th scope="row"><code translate="no">Agent</code> 方法体</th><td>在 spawn 出的子进程中运行（PyTorch/libomp 加载后 fork 会在首次 BLAS 调用时崩溃），因此停止时可以 SIGKILL 进程组</td></tr>
+<tr><th scope="row">它的 code 子树</th><td>子进程用自己的 SessionStore 写入，父进程随后使缓存失效。函数调用的唯一事实：WebSocket 帧和刷新加载给出同一张卡片</td></tr>
+</tbody>
+</table>
+
+<h2>实现状态</h2>
+<p><a href="#s2">数据模型</a>到<a href="#s8">压缩</a>及图所有权已在代码中，并有回归覆盖。</p>
+<details>
+<summary>消融开关</summary>
+<table class="stack">
+<thead><tr><th scope="col">变量</th><th scope="col">调整</th><th scope="col">读取时机</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NODE_RENDER_CAP</code></th><td>既不是工具结果也不是消息的新节点（摘要、程序的返回值）的转存大小；已有节点保留记录时的上限</td><td>导入时</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NODE_SPILL</code></th><td>大节点溢出</td><td>导入时</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_EXPOSE_DEFAULT</code></th><td>未指定 <code translate="no">expose=</code> 时的含义；显式指定优先</td><td>调用时</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>代码位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/nodes.py</code></th><td><code translate="no">Call</code>、<code translate="no">Graph</code>、role 常量</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/session_store/</code></th><td>追加不变量、<code translate="no">get_branch</code>、<code translate="no">spawn_branch</code>、<code translate="no">list_branches</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/state/store/session/spill.py</code></th><td>写路径溢出</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/nodes.py</code></th><td><code translate="no">render_context</code>、分段替换</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/render.py</code></th><td><code translate="no">render_dag_messages</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/components.py</code></th><td>系统提示词组装器</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/system_prompt_node.py</code></th><td><code translate="no">context/system_prompt</code> 记录、<code translate="no">context/*</code> 隐藏</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/persistence.py</code></th><td>摘要节点</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/conversation/turn_runtime/__init__.py</code></th><td>聊天入口</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/</code></th><td>函数体内的模型调用</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="rendering.zh.html">渲染规范</a> · <a href="layout.zh.html">布局场景</a></p>

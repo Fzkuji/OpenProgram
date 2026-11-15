@@ -1,0 +1,181 @@
+"""OpenAI Codex model list — the account's own models endpoint.
+
+Convention module: the model-listing dispatcher
+(``openprogram/models/listing/fetchers``) loads ``fetch(provider_id, timeout)`` from
+each provider's ``list_models.py`` by directory name, the same way it loads
+``probe_thinking.probe()``. A provider that ships this file describes its own
+model source; one that doesn't falls back to the generic OpenAI-compatible
+``/v1/models`` fetcher.
+
+The Codex/ChatGPT-subscription backend has a private account-level list-models
+endpoint — the same one the official ``codex`` CLI hits on startup:
+
+    GET https://chatgpt.com/backend-api/codex/models?client_version=<ver>
+
+authorized with the subscription OAuth bearer + ``chatgpt-account-id``. It
+returns exactly the models this account may dispatch, each with its real
+subscription-side ``context_window``, ``service_tiers`` (the fast/priority
+knob), and ``supported_reasoning_levels`` (the thinking picker). We read all of
+that here and hand it back in one normalised shape so enable-time storage and
+the runtime never have to guess.
+
+Why not models.dev: it tracks the *public API platform* catalogue, not the
+subscription front-door — leaking un-runnable ids (``gpt-5.6-luna`` slipped
+through the "no 'nano'" heuristic then 404'd), wrong context windows (1050k vs
+the subscription's 372k), and a fast flag guessed from an id-prefix table that
+misfired on tiers like ``gpt-5.4-mini``. The official endpoint is authoritative.
+
+Contract: success → ``list[dict]`` (each row has at least id/name), failure →
+``{"error": ...}``. An available official CLI cache is returned under
+``models`` alongside the error, marking it as display-only stale data rather
+than an authoritative refresh.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+# The framework's Codex thinking picker only knows these effort levels
+# (openai_codex/provider.json). The live endpoint occasionally lists a higher
+# ``ultra`` tier on the frontier models; the wire doesn't accept it here, so we
+# drop anything outside this set instead of writing a level the UI can't render.
+_CODEX_THINKING_LEVELS = ("minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def _codex_list_url(client_version: str) -> str:
+    return (
+        "https://chatgpt.com/backend-api/codex/models"
+        f"?client_version={client_version}"
+    )
+
+
+def _normalise_codex_model(m: dict[str, Any]) -> dict[str, Any] | None:
+    """One live endpoint row → our config-row shape. ``None`` for rows we skip
+    (hidden helper models like ``codex-auto-review``)."""
+    mid = m.get("slug")
+    if not mid or m.get("visibility") == "hide":
+        return None
+
+    row: dict[str, Any] = {
+        "id": mid,
+        "name": m.get("display_name") or mid,
+        "reasoning": bool(m.get("supported_reasoning_levels")),
+    }
+    ctx = m.get("context_window") or m.get("max_context_window")
+    if ctx:
+        row["context_window"] = int(ctx)
+    if "image" in (m.get("input_modalities") or []):
+        row["vision"] = True
+
+    # Fast/priority tier: the endpoint spells it out per model, so no more
+    # guessing from an id family table. ``service_tiers`` carries a
+    # ``{"id": "priority", ...}`` entry exactly when this model has a fast tier.
+    row["fast"] = any(
+        t.get("id") == "priority" for t in (m.get("service_tiers") or [])
+    )
+
+    # Thinking picker: the effort ids the endpoint advertises, filtered to what
+    # the framework's wire can send (drops ``ultra``).
+    levels = [
+        lv.get("effort")
+        for lv in (m.get("supported_reasoning_levels") or [])
+        if lv.get("effort") in _CODEX_THINKING_LEVELS
+    ]
+    if levels:
+        row["thinking_levels"] = levels
+        default = m.get("default_reasoning_level")
+        row["default_thinking_level"] = default if default in levels else levels[0]
+    return row
+
+
+def _cached_codex_models() -> list[dict[str, Any]]:
+    """Read the official Codex CLI cache as an offline Fetch fallback."""
+    root = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    try:
+        payload = json.loads((root / "models_cache.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    raw_models = payload.get("models") if isinstance(payload, dict) else payload
+    if not isinstance(raw_models, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for raw in raw_models:
+        if not isinstance(raw, dict):
+            continue
+        row = _normalise_codex_model(raw)
+        if row:
+            row["source"] = "codex-cli-cache"
+            rows.append(row)
+    return rows
+
+
+def fetch(provider_id: str, timeout: float) -> Any:
+    """Live Codex fetch via the account's models endpoint.
+
+    Returns ``{"error": ...}`` when unreachable / unauthorized so the
+    dispatcher leaves the saved model list untouched."""
+    from .oauth import _get_account_id_from_jwt
+    from .openai_codex import _resolve_codex_bearer_token
+    from .catalog import codex_client_version
+
+    from openprogram.models.auth.types import AuthNeedsReauthError
+    try:
+        token = _resolve_codex_bearer_token(None)
+    except AuthNeedsReauthError:
+        token = ""  # the login needs signing in again: the same answer as none
+    if not token:
+        cached = _cached_codex_models()
+        if cached:
+            return {"models": cached, "error": "Codex is not signed in; showing the Codex CLI cache."}
+        return {"error": (
+            "not signed in to ChatGPT/Codex — run `codex login` or the "
+            "OpenProgram OAuth wizard, then Fetch again."
+        )}
+    account_id = _get_account_id_from_jwt(token) or ""
+
+    try:
+        from openprogram.host.security.safe_http import safe_client
+
+        client_version = codex_client_version()
+        with safe_client("provider.fixed_api") as client:
+            resp = client.get(
+                _codex_list_url(client_version),
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "chatgpt-account-id": account_id,
+                    "originator": "codex_cli_rs",
+                    "version": client_version,
+                    "Content-Type": "application/json",
+                },
+                timeout=timeout,
+            )
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        cached = _cached_codex_models()
+        if cached:
+            return {
+                "models": cached,
+                "error": f"could not reach the Codex models endpoint ({type(exc).__name__}); showing the Codex CLI cache.",
+            }
+        return {"error": (
+            f"could not reach the Codex models endpoint ({type(exc).__name__}) — your existing "
+            "Codex model list was kept. Try Fetch again when online."
+        )}
+
+    out: list[dict[str, Any]] = []
+    for m in payload.get("models") or []:
+        if not isinstance(m, dict):
+            continue
+        row = _normalise_codex_model(m)
+        if row:
+            out.append(row)
+
+    if not out:
+        cached = _cached_codex_models()
+        if cached:
+            return {"models": cached, "error": "Codex returned no usable models; showing the Codex CLI cache."}
+        return {"error": "Codex models endpoint returned no usable models"}
+    return out

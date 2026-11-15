@@ -1,3 +1,5 @@
+import { agentSettingsMoved, requestAgentSettings } from "@/lib/agents/agent-settings-request";
+import { adoptBranchIdentity, adoptStoredControls } from "@/lib/agents/branch-settings";
 /**
  * Provider / agent-settings / token-badge data layer.
  *
@@ -12,8 +14,8 @@
  * Imported for side effects by `useWS`.
  */
 
-import { useSessionStore } from "@/lib/session-store";
-import { refreshBranchTokens } from "./conversations";
+import { useSessionStore, type AgentBadgeInfo } from "@/lib/session-store";
+import { refreshBranchTokens } from "./session/conversations";
 import { escAttr, escHtml } from "./helpers";
 import { runtimeState, type ThinkingConfig } from "./state";
 
@@ -75,20 +77,92 @@ export function updateProviderBadge(info: ProviderInfo | null | undefined): void
 
 /** Guards the one-shot retry below; was `(window as any)._chatRetried`. */
 let chatRetried = false;
+/** Each conversation's newest settings request; callers that share it
+ *  (``requestAgentSettings``) are equally current. */
+const settingsReads = new Map<string, Promise<unknown>>();
 
-export async function loadAgentSettings(): Promise<void> {
+/** ``written``: this page just wrote the settings, so a request that left
+ *  before the write must not answer this read. */
+export interface SettingsReadOptions {
+  written?: boolean;
+}
+
+/** The branch a settings reply describes: the named one it answered for,
+ *  else (an older server) the selected one. */
+function settingsBranch(data: { branch_id?: unknown; active_branch_id?: unknown }): unknown {
+  return typeof data.branch_id === "string" ? data.branch_id : data.active_branch_id;
+}
+function beginSettingsRead(sid: string) {
+  const branchId = useSessionStore.getState().composerSettingsBySession[sid]?.active_branch_id ?? null;
+  // The read names the pane's branch, so a pane on a branch that is not
+  // selected reads its own model back (after a broadcast wiped it, too).
+  const query = "?session_id=" + encodeURIComponent(sid) + (branchId ? "&branch_id=" + encodeURIComponent(branchId) : "");
+  const request = requestAgentSettings(query);
+  settingsReads.set(sid, request);
+  const accept = (data: { branch_id?: unknown; active_branch_id?: unknown }) => settingsReads.get(sid) === request
+    && (useSessionStore.getState().composerSettingsBySession[sid]?.active_branch_id ?? null) === branchId
+    && (settingsBranch(data) === undefined || branchId === null || settingsBranch(data) === branchId);
+  return { request, accept };
+}
+
+type AgentSettingsPayload = { chat?: AgentBadgeInfo; exec?: AgentBadgeInfo };
+
+/** Keep one conversation's own model settings, for the composer of the pane
+ *  that shows it; a slot without a provider and model hides its chip. */
+function rememberSessionAgentSettings(key: string, settings: AgentSettingsPayload): void {
+  const valid = (slot?: AgentBadgeInfo) => (slot?.provider && slot.model ? { ...slot } : undefined);
+  useSessionStore.getState().setSessionAgentSettings(key, {
+    chat: valid(settings.chat),
+    exec: valid(settings.exec),
+  });
+}
+
+/** Model settings of one conversation that is not (necessarily) focused —
+ *  a split pane's. Only that conversation's entry changes. */
+export async function loadSessionAgentSettings(sessionId: string, options: SettingsReadOptions = {}): Promise<void> {
   try {
-    let url = "/api/agent_settings";
+    if (options.written) agentSettingsMoved();
+    const { request, accept } = beginSettingsRead(sessionId);
+    const data = await request;
+    if (accept(data)) {
+      adoptBranchIdentity(sessionId, useSessionStore.getState().composerSettingsBySession[sessionId]?.active_branch_id ?? null, settingsBranch(data));
+      adoptStoredControls(sessionId, data.settings);
+      rememberSessionAgentSettings(sessionId, data);
+    }
+  } catch {
+    /* the pane keeps what it had */
+  }
+}
+
+/** ``agent_settings_changed``: a model pick on some conversation's selected
+ *  branch, or models enabled or disabled in Settings. The frame does not say
+ *  which conversation it is about, so no chip takes its model: every chip
+ *  keeps what it shows until its own read lands — the focused conversation's
+ *  here, each other shown pane's when the epoch moves. */
+export function agentSettingsChanged(): Promise<void> {
+  useSessionStore.getState().markSessionAgentSettingsStale();
+  return loadAgentSettings({ written: true });
+}
+
+export async function loadAgentSettings(options: SettingsReadOptions = {}): Promise<void> {
+  try {
+    if (options.written) agentSettingsMoved();
     const st = useSessionStore.getState();
-    const sid =
+    // Unsent Agent tabs must not create a default-Agent session through
+    // the legacy settings endpoint before their explicit first message.
+    const pendingAgent = st.activeChatKey && st.composerSettingsBySession[st.activeChatKey]?.agentInvocation;
+    const sid = pendingAgent ? null : (
       st.currentSessionId
       ?? runtimeState.currentSessionId
-      ?? (st.activeChatKey && st.activeChatKey !== "__new__" ? st.activeChatKey : null);
-    if (sid) {
-      url += "?session_id=" + encodeURIComponent(sid);
-    }
-    const resp = await fetch(url);
-    const newSettings = await resp.json();
+      ?? (st.activeChatKey && st.activeChatKey !== "__new__" ? st.activeChatKey : null));
+    const read = sid ? beginSettingsRead(sid) : null;
+    const newSettings = await (read ? read.request : requestAgentSettings());
+    if (read && !read.accept(newSettings)) return;
+    if (sid) adoptBranchIdentity(sid, useSessionStore.getState().composerSettingsBySession[sid]?.active_branch_id ?? null, settingsBranch(newSettings));
+    if (sid) adoptStoredControls(sid, newSettings.settings);
+    if (sid) rememberSessionAgentSettings(sid, newSettings);
+    const focused = useSessionStore.getState().currentSessionId ?? runtimeState.currentSessionId;
+    if (sid && focused && sid !== focused) return;
     if (newSettings.chat) runtimeState._agentSettings.chat = newSettings.chat;
     if (newSettings.exec) runtimeState._agentSettings.exec = newSettings.exec;
   } catch {
@@ -217,8 +291,8 @@ export function renderTokenBadge(data: TokenData, sessionId: string): void {
   const pct = win ? Math.round((cur / win) * 100) : null;
   let color = "var(--text-muted)";
   if (pct !== null) {
-    if (pct > 85) color = "var(--accent-red, #e5534b)";
-    else if (pct > 65) color = "var(--accent-yellow, #d2a106)";
+    if (pct > 85) color = "var(--accent-red)";
+    else if (pct > 65) color = "var(--accent-yellow)";
   }
   const lastRate = Math.round((data.last_turn_hit_rate || 0) * 100);
   const lastCR = data.last_assistant_cache_read || 0;
@@ -226,7 +300,7 @@ export function renderTokenBadge(data: TokenData, sessionId: string): void {
   let cacheHtml = "";
   if (lastCR > 0 || (data.cache_read_total || 0) > 0 || cacheWriteTs[sessionId]) {
     const alive = cacheAlive(sessionId);
-    const dotColor = alive ? "var(--accent-blue, #4f8ef7)" : "var(--text-muted)";
+    const dotColor = alive ? "var(--accent-blue)" : "var(--text-muted)";
     const cacheStatus = alive ? "Cache active" : "Cache expired";
     cacheHtml =
       ' · <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' +

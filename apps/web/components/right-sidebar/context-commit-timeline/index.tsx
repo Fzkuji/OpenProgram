@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { getSocket } from "@/lib/runtime-bridge/state";
 
-import { CommitGroupRow } from "./commit-group-row";
+import { CommitGroupRow } from "./rows/commit-group-row";
 import type { CommitDetail, CommitMeta } from "./types";
 import { groupCommits, wsSend } from "./utils";
 import { activateOnKey } from "@/lib/utils";
@@ -172,7 +172,7 @@ export function ContextCommitTimeline() {
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        fontSize: 13,
+        fontSize: "var(--right-panel-text-size, var(--fs-sm))",
         color: "var(--text-bright)",
       }}
     >
@@ -188,7 +188,7 @@ export function ContextCommitTimeline() {
           style={{
             cursor: sessionId ? "pointer" : "not-allowed",
             opacity: phase !== "idle" ? 0.85 : undefined,
-            color: phase === "done" ? "#56d364" : undefined,
+            color: phase === "done" ? "var(--commit-refresh-done)" : undefined,
           }}
           onClick={onRefreshClick}
           role="button"
@@ -199,7 +199,7 @@ export function ContextCommitTimeline() {
         </span>
       </div>
       {error && (
-        <div style={{ padding: 10, color: "var(--red, #f85149)" }}>
+        <div style={{ padding: 10, color: "var(--commit-error)" }}>
           {error}
         </div>
       )}

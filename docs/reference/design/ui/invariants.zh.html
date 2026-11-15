@@ -1,0 +1,122 @@
+<title>UI 跨模块不变量</title>
+<meta name="description" content="UI 模块必须共同保证的事：模型可用性、广播、事件路由、spawn 语义、显示顺序和 SSR。">
+<h1>UI 跨模块不变量</h1>
+
+<p>打破某条时，先改清单再改代码。每条都应在 <code translate="no">tests/unit/</code> 下有固定测试。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 206" role="img" aria-label="模型或 Provider 启停、删除自定义 Provider 时运行 _clear_stale_defaults，再经事件总线发 agent_settings_changed。WebSocket 处理器重新拉取 agent settings 更新 chip，并失效 models-enabled 查询更新下拉。">
+  <defs><marker id="iv-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="28">变更</text>
+  <text class="t-soft" x="0" y="54">模型或 Provider 启停</text>
+  <text class="t-soft" x="0" y="74">删除自定义 Provider</text>
+  <text class="t-big" x="200" y="28">遗忘</text>
+  <text class="t-cmd notranslate" translate="no" x="200" y="54">_clear_stale_defaults</text>
+  <text class="t-soft" x="200" y="74">上次使用、chat、exec、</text>
+  <text class="t-soft" x="200" y="94">默认 agent</text>
+  <text class="t-big" x="200" y="150">广播</text>
+  <text class="t-cmd notranslate" translate="no" x="200" y="176">agent_settings_changed</text>
+  <text class="t-soft" x="200" y="196">经事件总线</text>
+  <text class="t-big" x="460" y="150">重新拉取</text>
+  <text class="t-soft" x="460" y="176">agent settings：chip</text>
+  <text class="t-soft" x="460" y="196">models-enabled：下拉</text>
+  <line class="ln" x1="90" y1="21" x2="190" y2="21" marker-end="url(#iv-a)"/>
+  <line class="ln" x1="210" y1="104" x2="210" y2="126" marker-end="url(#iv-a)"/>
+  <line class="ln" x1="350" y1="143" x2="450" y2="143" marker-end="url(#iv-a)"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>变更</strong><small>模型或 Provider 启停</small><small>删除自定义 Provider</small></li>
+  <li><strong>遗忘</strong><small><code translate="no">_clear_stale_defaults</code></small><small>上次使用、chat、exec、</small><small>默认 agent</small></li>
+  <li><strong>广播</strong><small><code translate="no">agent_settings_changed</code></small><small>经事件总线</small></li>
+  <li class="flow-end"><strong>重新拉取</strong><small>agent settings：chip</small><small>models-enabled：下拉</small></li>
+</ol>
+</figure>
+<p class="note">第 1 至 3 条。改变集合的新入口（导入配置、批量操作、CLI 写配置）都挂同一个广播；设置页可能在另一个标签页。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">规则</th><th scope="col">靠什么成立</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. 启用集合是唯一的模型门控</th><td><code translate="no">list_enabled_models()</code>：providers 配置里的 spec 行。被禁用即无选择器、无默认、无 chip</td></tr>
+<tr><th scope="row">2. 启用集合变化必须广播</th><td>所有消费者响应，如图</td></tr>
+<tr><th scope="row">3. 禁用上次使用的模型就是忘掉它</th><td>新会话使用 <code translate="no">config.json</code> 的 <code translate="no">last_used_model</code>，没有默认模型。只隐藏的话，它会继续服务后台任务，重新启用时又回来</td></tr>
+<tr><th scope="row">4. 前端 store 能表达“已清除”</th><td><code translate="no">setAgentSettings</code> 字段：对象替换，<code translate="no">null</code> 清除，<code translate="no">undefined</code> 保留。单靠 <code translate="no">??</code> 覆盖不掉旧值；后端可能报告“已没有”的字段都要这样</td></tr>
+<tr><th scope="row">5. 后端到前端的帧走事件总线</th><td><code translate="no">emit_ws_frame({"type": ..., "data": ...})</code>；服务端唯一的订阅者转发给 socket（<a href="../proactive/event-layer.zh.html">事件层</a>）。<code translate="no">_s._broadcast</code> 对总线消费者（proactive、日志）和审计不可见。带会话路由、不在此列：<code translate="no">_broadcast_envelope</code>、<code translate="no">_broadcast_chat_response</code></td></tr>
+<tr><th scope="row">6. spawn 的三个入口语义一致</th><td>clean 模式：<code translate="no">spawn_caller</code> 使分支根的 <code translate="no">caller</code> 指向开启它的那轮，不是 ROOT。一起改，一起测</td></tr>
+<tr><th scope="row">7. 聊天兄弟切换器只在真实分叉上出现</th><td><code translate="no">&lt; N/M &gt;</code> 按分叉点分组（<code translate="no">predecessor</code>，否则 <code translate="no">caller</code>；ROOT 视为无），只含对话轮次</td></tr>
+<tr><th scope="row">8. 交互即时反馈</th><td><a href="interaction-feedback.zh.html">交互反馈</a>。函数运行有约 1s 子进程冷启动，绝不能像点了没反应</td></tr>
+<tr><th scope="row">9. 显示顺序可以调，数据顺序不可以</th><td>attach 指针留在链尾供 head 移动，而 Spawned 卡片显示在它喂给的回复之前。在服务端投影（<code translate="no">transcript/children.py</code>）调序，不改落盘顺序和 head 语义</td></tr>
+<tr><th scope="row">10. SSR 边界：模块作用域不碰 window</th><td><code translate="no">apps/web/lib/runtime-bridge/*</code> 可能在模块作用域读 <code translate="no">window</code>（<code translate="no">session/chat-handlers.ts</code>），被预渲染页面静态 import 即失败。新模块遵守这条，或把 window 访问推迟到函数体内</td></tr>
+<tr><th scope="row">11. 会话记录的行只画服务端发来的内容</th><td>主对话、分屏窗格和展开的子代理都经 <code translate="no">TranscriptRows</code> 绘制。每一行按自己的 <code translate="no">rowKind</code> 分发，没有默认分支，并从所在行列表取得所属对话，从不取聚焦的对话</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>第 1 条：涉及界面</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">界面</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">顶栏 chat 和 exec chip</th><td>门控后的 <code translate="no">GET /api/agent_settings</code></td></tr>
+<tr><th scope="row">对这个接口的读取</th><td>每个对话和分支同时只有一个请求在途（<code translate="no">lib/agents/agent-settings-request.ts</code>）：连接建立、对话加载和输入框挂载共用它的回答，回答之后不保留。收到 <code translate="no">agent_settings_changed</code> 或本页自己写入后，之后的调用方重新请求</td></tr>
+<tr><th scope="row">模型选择下拉</th><td><code translate="no">/api/models/enabled</code></td></tr>
+<tr><th scope="row">发送时的默认解析</th><td><code translate="no">_resolve_session_provider_model</code>，包括 <code translate="no">agent.json</code> 的模型路径</td></tr>
+<tr><th scope="row">函数执行</th><td>exec runtime</td></tr>
+</tbody>
+</table>
+<p class="note">选择器为空、顶栏无模型、发送报 enable-a-model 三者同时成立。</p>
+</details>
+<details>
+<summary>第 3 条：清除什么</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">记录</th><th scope="col">何时清除</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">last_used_model</code>（<code translate="no">openprogram/models/providers/catalog/last_used.py</code>）</th><td>它掉出启用集合时</td></tr>
+<tr><th scope="row"><code translate="no">runtime_management</code> 的 chat 全局、默认 agent 在 <code translate="no">agent.json</code> 的 <code translate="no">model</code></th><td>chat 全局的模型掉出集合时</td></tr>
+<tr><th scope="row"><code translate="no">runtime_management</code> 的 exec 全局</th><td>exec 全局的模型掉出集合时</td></tr>
+</tbody>
+</table>
+<p class="note">都在 <code translate="no">_clear_stale_defaults</code> 里。</p>
+</details>
+<details>
+<summary>第 6 条：入口与预算</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">入口</th><th scope="col">路径</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent()</code> 同步路径</th><td><code translate="no">openprogram/programs/tools/agents/agent/agent/agent.py</code></td></tr>
+<tr><th scope="row">异步 runner</th><td><code translate="no">openprogram/runtime/jobs/runner/</code></td></tr>
+<tr><th scope="row"><code translate="no">send_message</code></th><td><code translate="no">openprogram/programs/tools/agents/send_message/</code></td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">设置</th><th scope="col">默认</th><th scope="col">计数</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent.max_spawn_depth</code></th><td>1</td><td>新建 agent 的代数，只有创建才计数。设为 1 时，被派生 agent 的 <code translate="no">agent()</code> 派生被拒绝，由它自己完成工作</td></tr>
+<tr><th scope="row"><code translate="no">agent.max_messages</code></th><td>0，无限制</td><td>整条链传递的消息数，不分工具，回复也算</td></tr>
+</tbody>
+</table>
+<p class="note">工具只有出现或不出现：消息或代数用完时 <code translate="no">agent</code> 从清单消失；分叉例外，它保留调用方的工具清单以共用提示缓存，在运行时被拒绝。<code translate="no">read_conversation</code> 保留。读 worker 结果的 agent 保持自己的代数，还能派下一波。见 <a href="../runtime/collaboration/agent-collaboration.zh.html#limits">agent 协作</a>。</p>
+</details>
+<details>
+<summary>第 7 条：不参与</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">行</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">tool 和 code 子调用行、ROOT</th><td>没有 predecessor，会污染根集合</td></tr>
+<tr><th scope="row"><code translate="no">source=agent_spawn</code> 的分支根</th><td>和用户轮次分开分组：agent 开的分支不是可翻页的替代版本</td></tr>
+<tr><th scope="row"><code translate="no">display=runtime</code> 卡片</th><td>函数运行卡有自己的导航</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>第 10 条：页面如何加载</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">导入方</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">App Router 页面和 shell</th><td><code translate="no">next/dynamic</code>，<code translate="no">ssr: false</code></td></tr>
+<tr><th scope="row">设置组件</th><td>动态 <code translate="no">import()</code>，如 <code translate="no">refreshAgentChip</code></td></tr>
+<tr><th scope="row">shell 内部组件</th><td>可以静态 import：不会被预渲染</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>未完成：第 5 条目前只对外部源和部分服务端成立。其他路由和 WebSocket 动作（<code translate="no">routes/chat.py</code>、<code translate="no">routes/catalog/</code>、<code translate="no">ws_actions/</code>）仍直接调用 <code translate="no">_broadcast</code>。</p>

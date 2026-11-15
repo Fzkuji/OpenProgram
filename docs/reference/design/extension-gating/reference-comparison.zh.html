@@ -1,0 +1,43 @@
+<title>门控对比</title>
+<meta name="description" content="Claude Code、opencode 和 hermes 如何控制 Agent 可用的扩展，以及与 OpenProgram 的比较。">
+<h1>门控对比</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">方面</th><th scope="col">Claude Code</th><th scope="col">opencode</th><th scope="col">hermes</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">按 Agent 门控</th><td>有</td><td>有</td><td>部分，渠道级</td><td>有</td></tr>
+<tr><th scope="row">机制</th><td>按类型的显式列表</td><td>单一 <code translate="no">permission</code> 规则集</td><td>YAML 适配器配置</td><td>按类型列表加 fnmatch</td></tr>
+<tr><th scope="row">通配符</th><td>无，精确名称</td><td>Glob</td><td>无</td><td>fnmatch</td></tr>
+<tr><th scope="row">门控类型</th><td>工具、技能、MCP 服务、钩子</td><td>统一模式空间（<code translate="no">tools:*</code>、<code translate="no">mcp:*</code> 等）</td><td>平台适配器</td><td>工具、技能、MCP</td></tr>
+<tr><th scope="row">必需依赖</th><td>无公开文档</td><td>通过默认拒绝</td><td>无</td><td><code translate="no">mcp.required</code></td></tr>
+<tr><th scope="row">插件门控</th><td>信任等级</td><td>信任加规则集</td><td>清单权限</td><td>信任等级，宿主级</td></tr>
+</tbody>
+</table>
+
+<h2 id="claude-code">Claude Code</h2>
+<p>每种类型有自己的列表字段，写精确名称：易读，覆盖面大时啰嗦。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Agent 字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools</code></th><td>白名单</td></tr>
+<tr><th scope="row"><code translate="no">disallowedTools</code></th><td>黑名单</td></tr>
+<tr><th scope="row"><code translate="no">skills</code></th><td>预加载</td></tr>
+<tr><th scope="row"><code translate="no">mcpServers</code></th><td>引用或内联定义，Agent 能自带 MCP 配置</td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>按 Agent、限于会话。OpenProgram 在 <code translate="no">openprogram/extensions/plugins/hooks.py</code> 的插件钩子没有按 Agent 的作用域</td></tr>
+<tr><th scope="row"><code translate="no">permissionMode</code></th><td>该 Agent 的权限模式</td></tr>
+</tbody>
+</table>
+
+<h2 id="opencode">opencode</h2>
+<p>每个 Agent 一个 <code translate="no">permission</code> 规则集：<code translate="no">{pattern, action: allow | deny}</code> 规则用 glob 匹配 <code translate="no">tools:bash</code>、<code translate="no">mcp:slack/*</code> 这类键。首个匹配生效。</p>
+<ul>
+<li>新类型只需一个命名空间前缀，不改 schema。</li>
+<li>一条规则可抵多条（<code translate="no">{pattern: "mcp:*", action: "deny"}</code>）。</li>
+<li>代价：用户要学习模式语法。</li>
+</ul>
+
+<h2 id="hermes">hermes</h2>
+<p>专注平台适配器（Discord、Slack、ntfy 等）。每个适配器的 <code translate="no">plugin.yaml</code> 规定它在网络上能做什么，属于渠道级，没有对应的 Agent 配置门控。本层没有采用其内容。</p>
+
+<h2 id="design-rationale">设计理由</h2>
+<p>Claude Code 的骨架加 opencode 的通配符。按类型的字段名即含义，<code translate="no">allowed</code>、<code translate="no">categories</code>、<code translate="no">required</code> 可机械地加到既有结构上。fnmatch 用一个辅助函数消除纯列表的啰嗦，精确名称照常可用。单一规则集只是纯重构（<a href="future-work.zh.html#5-single-ruleset-migration-opencode-style">未构建</a>）。未来框架出现实质不同的模型时再重新考虑。</p>

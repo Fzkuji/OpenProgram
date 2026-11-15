@@ -1,0 +1,118 @@
+<title>Server configuration</title>
+<meta name="description" content="The OpenProgram state directory, openprogram config, who can reach the server, network proxies and profiles.">
+<span id="configuration"></span>
+<h1>Server configuration</h1>
+
+<h2 id="state-directory">State directory: <code translate="no">~/.openprogram/</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">Contents</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">config.json</code></th><td>Ports, last model, providers, disabled tools. <a href="../reference/config.html">Configuration reference</a></td></tr>
+<tr><th scope="row"><code translate="no">projects/&lt;id&gt;/chats/</code>, <code translate="no">projects/&lt;id&gt;/memory/</code></th><td>Conversations and memory. <code translate="no">projects/default/</code> is the home project</td></tr>
+<tr><th scope="row"><code translate="no">agents/</code>, <code translate="no">agents.json</code></th><td>Agent definitions (persona, model, skills)</td></tr>
+<tr><th scope="row"><code translate="no">auth/</code></th><td>Provider credential store</td></tr>
+<tr><th scope="row"><code translate="no">skills/</code>, <code translate="no">plugins/</code>, <code translate="no">mcp_servers.json</code></th><td>Installed skills and plugins, MCP servers</td></tr>
+<tr><th scope="row"><code translate="no">channels/</code></th><td>Chat channel state (Telegram, Discord, WeChat and others)</td></tr>
+<tr><th scope="row"><code translate="no">browser-states/</code>, <code translate="no">chrome-profile/</code></th><td>Left by earlier versions; nothing reads them now and they can be deleted</td></tr>
+<tr><th scope="row"><code translate="no">worktrees/</code>, <code translate="no">shadow-git/</code></th><td>Git worktree state</td></tr>
+<tr><th scope="row"><code translate="no">logs/</code>, <code translate="no">worker.log</code>, <code translate="no">worker.pid</code>, <code translate="no">worker.port</code>, <code translate="no">worker.lock</code></th><td>Logs and worker runtime files</td></tr>
+<tr><th scope="row"><code translate="no">models/</code>, <code translate="no">cache/</code>, <code translate="no">tool_results/</code>, <code translate="no">usage.db</code></th><td>Model catalog cache, general cache, tool results, usage database</td></tr>
+</tbody>
+</table>
+
+<h2 id="openprogram-config"><code translate="no">openprogram config</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram config list</code></th><td>Every setting: value, group, when it applies</td></tr>
+<tr><th scope="row"><code translate="no">openprogram config get &lt;key&gt;</code></th><td>One setting</td></tr>
+<tr><th scope="row"><code translate="no">openprogram config set &lt;key&gt; &lt;value&gt;</code></th><td>Change one</td></tr>
+<tr><th scope="row"><code translate="no">openprogram ports</code>, <code translate="no">openprogram ports --port 8101</code></th><td>View or persist the port</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Key</th><th scope="col">Meaning</th><th scope="col">Default</th><th scope="col">Applies</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ui.web_port</code></th><td>The single worker port</td><td>Unset: 18100, or the next free port, chosen at the first start</td><td>next start</td></tr>
+<tr><th scope="row"><code translate="no">ui.open_browser</code></th><td><code translate="no">openprogram web</code> opens a browser</td><td>true</td><td>next start</td></tr>
+<tr><th scope="row"><code translate="no">search.default_provider</code></th><td>Web search provider; <code translate="no">auto</code> picks the highest-priority configured</td><td>auto</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">memory.backend</code></th><td><code translate="no">local</code>, or <code translate="no">none</code>: no prompt memory, recall, automatic writes, organizer or memory threads</td><td>local</td><td>next start</td></tr>
+<tr><th scope="row"><code translate="no">memory.writer.model</code></th><td><code translate="no">provider/model</code> for background writing; empty follows the default chat agent</td><td>empty</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">tools.disabled.&lt;name&gt;</code></th><td>Per-tool switch</td><td>all enabled</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">execution.prevent_idle_sleep</code></th><td>Keep the system awake during agent execution; Linux needs <code translate="no">systemd-inhibit</code></td><td>false</td><td>live</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">config list</code> also shows read-only <code translate="no">providers.&lt;name&gt;</code> rows; use <code translate="no">openprogram providers login</code> or the Providers page.</p>
+
+<details>
+<summary>How idle-sleep prevention behaves</summary>
+<ul>
+<li>Each execution reads the setting when its agent loop starts and holds a native power assertion until the loop finishes, fails or is cancelled, approval waits included. Running executions ignore a change.</li>
+<li>Display sleep and explicit sleep still work; no permanent power setting changes.</li>
+<li>Unsupported platforms or assertion failures log a warning and continue.</li>
+<li>Independent background services and commands after the loop are not covered.</li>
+</ul>
+</details>
+
+<h2 id="who-can-reach-the-server">Who can reach the server</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Bind address <code translate="no">web.host</code></th><td>Default <code translate="no">127.0.0.1</code>, this machine only. <code translate="no">0.0.0.0</code> exposes the authenticated UI to other interfaces and needs at least one <code translate="no">web.allowed_origins</code> entry. On an untrusted network prefer HTTPS through a same-host reverse proxy</td></tr>
+<tr><th scope="row">Sign-in</th><td>Every API and WebSocket request needs the owner cookie, set by a sign-in link, or a bearer token. Otherwise 401. Public: <code translate="no">/healthz</code>, page shells, <code translate="no">/docs</code>, and Scheduler webhooks under <code translate="no">/hooks/</code>, guarded by the task's own key</td></tr>
+<tr><th scope="row">Host</th><td>Must name an effective origin: loopback when bound to loopback, plus <code translate="no">web.allowed_origins</code>. Otherwise 403</td></tr>
+<tr><th scope="row"><code translate="no">Sec-Fetch-Site</code></th><td><code translate="no">cross-site</code> gets 403</td></tr>
+<tr><th scope="row"><code translate="no">Origin</code>, when present</th><td>Must match the request's own origin. Otherwise 403</td></tr>
+</tbody>
+</table>
+<p class="note">The last three stop a page you visit from opening a WebSocket to <code translate="no">127.0.0.1</code> and driving the agent, or re-resolving its own name to loopback. Stored API keys cannot be read back: the old reveal route answers 410.</p>
+<pre translate="no"><code>openprogram config set web.allowed_origins '["https://agent.example.com"]'   # your own reverse proxy; next start</code></pre>
+
+<h2 id="network-proxy">Network proxy</h2>
+<table class="stack">
+<thead><tr><th scope="col">Destination</th><th scope="col">Route</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">web_fetch</code>, image and attachment downloads, built-in search (DuckDuckGo included), update checks and other fixed public services, providers in the audited inventory</th><td>Ordinary proxy</td></tr>
+<tr><th scope="row">Custom origins: configured provider base URL, SearXNG, skills or plugin catalogs</th><td>Direct with address checks, or an explicit enforcing policy proxy</td></tr>
+<tr><th scope="row">CLI providers</th><td>The external CLI's own routing; it inherits the worker environment</td></tr>
+<tr><th scope="row">Loopback hosts</th><td>Never proxied</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Precedence</th><th scope="col">Ordinary proxy source</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td><code translate="no">security.outbound_url.policy_proxy</code>, requires an owner assertion that it enforces target policy</td></tr>
+<tr><th scope="row">2</th><td><code translate="no">OPENPROGRAM_PROXY_URL</code>: <code translate="no">http://</code>, <code translate="no">https://</code>, <code translate="no">socks5://</code></td></tr>
+<tr><th scope="row">3</th><td><code translate="no">http_proxy</code>, <code translate="no">https_proxy</code>, <code translate="no">all_proxy</code> and uppercase forms, by HTTPX's rules; macOS and Windows system proxy where applicable</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">NO_PROXY</code> bypasses still apply, with the full address check. <code translate="no">openprogram rescue</code> reports the resolved proxy and a missing SOCKS package.</p>
+
+<details>
+<summary>What the proxy path checks</summary>
+<ul>
+<li>The client validates the target first and checks the proxy socket address. TLS still verifies the service hostname. Proxy authentication stays on the proxy connection. A failed proxy request does not fall back to direct.</li>
+<li>Through a proxy, the proxy resolves the hostname. That is what makes fake-IP proxies such as Clash work: their local answers come from <code translate="no">198.18.0.0/15</code>, which a direct connection refuses as <code translate="no">NON_GLOBAL_ADDRESS</code>.</li>
+<li>Still refused: private, loopback and metadata IPs; local names (<code translate="no">localhost</code>, single-label hosts, <code translate="no">.local</code>, <code translate="no">.lan</code>, <code translate="no">.internal</code> and similar); hostnames whose local DNS answer is a real private address.</li>
+<li>For a guarantee that the final resolution is checked too, configure an enforcing policy proxy.</li>
+</ul>
+</details>
+
+<h2 id="what-the-agents-tools-can-reach">What the agent's tools can reach</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">security.outbound_url.model_tools</code></th><td><code translate="no">open</code> (default): in your own turns <code translate="no">web_fetch</code> and image downloads reach any address, port and HTTP method. <code translate="no">strict</code>: applies the address checks. Other people's turns and the server's own calls are always strict</td></tr>
+<tr><th scope="row"><code translate="no">computer_use.refused_apps</code></th><td>JSON list of app names or bundle ids <code translate="no">computer_use_agent</code> will not touch. Empty by default</td></tr>
+<tr><th scope="row"><code translate="no">computer_use.refuse_password_fields</code></th><td>Stops it typing into password fields. Off by default</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.mode</code></th><td>Used by a scheduled task with no conversation; otherwise its conversation's Sandbox setting when it fires</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.deny_write</code></th><td>With the startup, Git and state paths in <a href="../capabilities/permissions.html">permissions</a>, the only paths the sandbox restricts</td></tr>
+</tbody>
+</table>
+
+<h2 id="multiple-instances">Multiple instances</h2>
+<p><code translate="no">--profile &lt;name&gt;</code> or <code translate="no">OPENPROGRAM_PROFILE</code> moves config, sessions and logs to <code translate="no">~/.openprogram-&lt;name&gt;/</code>. Add a different <code translate="no">OPENPROGRAM_WEB_PORT</code> to run several at once.</p>
+<pre translate="no"><code>openprogram --profile dev
+OPENPROGRAM_PROFILE=dev openprogram status</code></pre>
+<p class="next"><a href="../install/profiles.html">Profiles</a></p>
+

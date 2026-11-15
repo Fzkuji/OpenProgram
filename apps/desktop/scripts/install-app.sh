@@ -8,13 +8,30 @@ source_app=""
 transaction_dir=""
 verify_phase=""
 reopen_update_id=""
+# What activation restarts: hot swaps the bundle under the running App and
+# worker, worker restarts only the worker, app also quits and reopens the App.
+restart_mode="app"
 if [[ "${1:-}" == --reopen-update=* ]]; then
   reopen_update_id="${1#--reopen-update=}"
-  [[ "$reopen_update_id" =~ ^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ && "${2:-}" == "--prepare" && $# == 3 ]] || {
+  [[ "$reopen_update_id" =~ ^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] || {
     printf 'reopen update ID requires --prepare and a valid opaque ID\n' >&2
     exit 2
   }
   shift
+fi
+if [[ "${1:-}" == --restart=* ]]; then
+  restart_mode="${1#--restart=}"
+  [[ "$restart_mode" =~ ^(hot|worker|app)$ ]] || {
+    printf 'restart mode must be hot, worker or app\n' >&2
+    exit 2
+  }
+  shift
+fi
+if [[ -n "$reopen_update_id" || "$restart_mode" != "app" ]]; then
+  [[ "${1:-}" == "--prepare" && $# == 2 ]] || {
+    printf 'reopen update ID and restart mode require --prepare\n' >&2
+    exit 2
+  }
 fi
 case "${1:-}" in
   --verify-terminal:prepared|--verify-terminal:committed|--verify-terminal:rolled_back)
@@ -371,6 +388,7 @@ if (!directory.isDirectory() || directory.uid !== process.getuid() || (directory
 const phases = ["prepared", "activating", "activated", "rolling_back", "rolled_back", "committing", "committed"];
 const hex = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const updateId = value => typeof value === "string" && /^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value);
+const restarts = ["hot", "worker", "app"];
 function syncPath(file) {
   const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
@@ -392,6 +410,10 @@ if (command === "init") {
     if (!updateId(args[2])) process.exit(1);
     data.reopen_update_id = args[2];
   }
+  if (args[3] && args[3] !== "app") {
+    if (!restarts.includes(args[3])) process.exit(1);
+    data.restart = args[3];
+  }
 } else {
   const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   try {
@@ -400,15 +422,18 @@ if (command === "init") {
     data = JSON.parse(fs.readFileSync(fd, "utf8"));
   } finally { fs.closeSync(fd); }
   const hasReopen = Object.hasOwn(data, "reopen_update_id");
-  if (Object.keys(data).sort().join() !== (hasReopen
-        ? "active_sha256,app,launchd,phase,previous_sha256,reopen_update_id,schema,worker"
-        : "active_sha256,app,launchd,phase,previous_sha256,schema,worker") ||
+  const hasRestart = Object.hasOwn(data, "restart");
+  const keys = ["active_sha256", "app", "launchd", "phase", "previous_sha256", "schema", "worker"];
+  if (hasReopen) keys.push("reopen_update_id");
+  if (hasRestart) keys.push("restart");
+  if (Object.keys(data).sort().join() !== keys.sort().join() ||
       (hasReopen && !updateId(data.reopen_update_id)) ||
+      (hasRestart && !restarts.includes(data.restart)) ||
       data.schema !== 1 || !phases.includes(data.phase) || !hex(data.previous_sha256) || !hex(data.active_sha256) ||
       ![data.app, data.worker, data.launchd].every(x => typeof x === "boolean")) process.exit(1);
   if (command === "read") {
     process.stdout.write([data.phase, data.previous_sha256, data.active_sha256, +data.app, +data.worker, +data.launchd,
-      hasReopen ? data.reopen_update_id : "-"].join(" "));
+      hasReopen ? data.reopen_update_id : "-", hasRestart ? data.restart : "app"].join(" "));
     process.exit(0);
   }
   if (command === "sync") {
@@ -439,7 +464,7 @@ load_prepared_transaction() {
   validate_transaction_location "$transaction_dir" || return 1
   local snapshot
   snapshot="$(transaction_journal read)" || return 1
-  read -r transaction_phase previous_identity active_identity app_was_running worker_was_running launchd_was_installed reopen_update_id <<< "$snapshot"
+  read -r transaction_phase previous_identity active_identity app_was_running worker_was_running launchd_was_installed reopen_update_id restart_mode <<< "$snapshot"
   [[ "$reopen_update_id" != "-" ]] || reopen_update_id=""
 }
 
@@ -458,7 +483,9 @@ active_app_matches_transaction() {
 
 stop_active_runtime() {
   local control_python worker_pid worker_state_file
-  if pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1; then
+  # A hot swap left both processes running on unchanged code.
+  [[ "${restart_mode:-app}" != "hot" ]] || return 0
+  if [[ "${restart_mode:-app}" == "app" ]] && pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1; then
     osascript -e 'tell application id "ai.openprogram.desktop" to quit' >/dev/null 2>&1 || :
     for _ in {1..40}; do
       pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1 || break
@@ -491,6 +518,7 @@ open_saved_app() {
 resume_previous_runtime() {
   local restored_python
   [[ -d "$target_app" ]] || return 0
+  [[ "${restart_mode:-app}" != "hot" ]] || return 0
   restored_python="$(app_runtime_python "$target_app")" || return 1
   if [[ "${launchd_was_installed:-0}" == 1 || -f "$transaction_dir/launchd-was-installed" ]]; then
     "$restored_python" -I -B -m openprogram worker install >/dev/null 2>&1 || return 1
@@ -498,7 +526,7 @@ resume_previous_runtime() {
   elif [[ "${worker_was_running:-0}" == 1 || -f "$transaction_dir/worker-was-running" ]]; then
     "$restored_python" -I -B -m openprogram worker start >/dev/null 2>&1 || return 1
   fi
-  if [[ "${app_was_running:-0}" == 1 || -f "$transaction_dir/app-was-running" ]]; then
+  if [[ "${restart_mode:-app}" == "app" ]] && [[ "${app_was_running:-0}" == 1 || -f "$transaction_dir/app-was-running" ]]; then
     open_saved_app
   fi
 }
@@ -718,7 +746,7 @@ validate_app_metadata "$staged_app" || {
 reject_downgrade "$staged_app"
 
 if [[ "$prepare_only" == 1 ]]; then
-  transaction_journal init "$(app_identity "$target_app")" "$(app_identity "$staged_app")" "$reopen_update_id"
+  transaction_journal init "$(app_identity "$target_app")" "$(app_identity "$staged_app")" "$reopen_update_id" "$restart_mode"
   preserve_transaction=1
   printf 'OPENPROGRAM_TRANSACTION_DIR=%s\n' "$transaction_dir"
   exit 0
@@ -738,7 +766,7 @@ if [[ "$action" == "activate" ]]; then
   transaction_journal phase activating
 fi
 
-if [[ -z "$install_root" ]] && pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1; then
+if [[ -z "$install_root" && "$restart_mode" == "app" ]] && pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1; then
   app_was_running=1
   resume_after_failure=1
   osascript -e 'tell application id "ai.openprogram.desktop" to quit' >/dev/null 2>&1 || :
@@ -752,7 +780,7 @@ if [[ -z "$install_root" ]] && pgrep -f "$target_app/Contents/MacOS/OpenProgram"
   fi
 fi
 
-if [[ -z "$install_root" ]]; then
+if [[ -z "$install_root" && "$restart_mode" != "hot" ]]; then
   control_app="$staged_app"
   [[ -d "$target_app" ]] && control_app="$target_app"
   control_python="$(app_runtime_python "$control_app")"
@@ -811,19 +839,21 @@ if [[ -z "$install_root" ]]; then
     exit 1
   fi
   installed_python="$(app_runtime_python "$target_app")"
-  if [[ "$launchd_was_installed" == 1 ]]; then
+  if [[ "$restart_mode" == "hot" ]]; then
+    :  # The running App and worker keep serving; only the files changed.
+  elif [[ "$launchd_was_installed" == 1 ]]; then
     "$installed_python" -I -B -m openprogram worker install >/dev/null
     wait_for_worker_health || {
       printf 'OpenProgram was installed but its launchd worker did not start\n' >&2
       exit 1
     }
   fi
-  if [[ "$app_was_running" == 1 ]]; then
+  if [[ "$restart_mode" == "app" && "$app_was_running" == 1 ]]; then
     open_saved_app || {
       printf 'OpenProgram was installed but could not be reopened\n' >&2
       exit 1
     }
-  elif [[ "$worker_was_running" == 1 && "$launchd_was_installed" == 0 ]]; then
+  elif [[ "$restart_mode" != "hot" && "$worker_was_running" == 1 && "$launchd_was_installed" == 0 ]]; then
     "$installed_python" -I -B -m openprogram worker start >/dev/null
   fi
 fi

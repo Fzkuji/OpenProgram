@@ -1,19 +1,38 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><title>Windows CI completion</title><body><main>
+<title>Windows CI completion</title>
+<meta name="description" content="Rules that keep native Windows test runs finishing and reporting failures.">
+<meta name="covers" content=".github/workflows/windows-install-smoke.yml .github/workflows/ci.yml">
 <h1>Windows CI completion</h1>
-<p>The native x64 and ARM64 jobs execute platform contracts and the complete unit suite with four workers. A completed test count does not prove that error reporting and process shutdown finish.</p>
-<h2>Portable test parameters</h2>
-<p>Large parametrized payloads use explicit short test IDs. Pytest writes the complete node ID into PYTEST_CURRENT_TEST; Windows environment values must remain below 32767 characters. Generating an ID from an 8 MiB image string prevents setup and teardown and repeats the payload throughout the error report. Payload bytes remain unchanged. POSIX mode assertions apply only on POSIX systems; the catalogue round-trip still runs on Windows.</p>
-<h2>Failure diagnostics</h2>
-<p>Windows Python output is unbuffered and unit results include test names. Complete output and a separate traceback file are uploaded after success or failure. The process-wide traceback deadline replaces the pytest faulthandler plugin so exception reporting cannot cancel that deadline; it covers reporting and shutdown as well as test execution. The test step and job also have finite execution limits. Failed tests retain their nonzero exit status; no tests are removed or accepted as passing.</p>
-<h2>Document reads and test resource ownership</h2>
-<p>Document publication binds file identity by device and inode at open and compares metadata stability independently within descriptor and pathname stat APIs. Windows may represent their timestamps differently; stable representation differences must not produce a conflict. Changes within either API still reject publication and preserve the original bytes, as do content revision mismatches.</p>
-<p>History ownership test fixtures register SessionStore.close immediately after construction. Closing cancels and joins deferred index writers before the production-thread teardown guard runs, including when setup or assertions fail. The guard remains unchanged.</p>
-<p>Tracked-dispatch test fixtures retain their JobRunner and register cleanup immediately after acquiring it. They request the existing non-waiting singleton shutdown, then join its dispatcher, reconciler, and budget threads before closing the SessionStore. A bounded production shutdown is not evidence that test-owned resources have finished.</p>
-<p>Subprocess event-cleanup tests assert that the result returns while an ordinary callback remains blocked, then release and join the callback thread. Setup and host scheduling time are not treated as callback-cleanup latency. Synchronization deadlines are watchdogs, not performance assertions.</p>
-<h2>Acceptance</h2>
-<p>Both native architectures must complete the full unit suite and platform contracts. An intentionally blocked diagnostic process must emit its Python stack and exit unsuccessfully. Ordinary failed tests must emit their details and exit unsuccessfully.</p>
-<h2>Implementation status</h2>
-<p>Document route fixtures isolate HOME and USERPROFILE and resolve state with the original path function. Lazy imports therefore retain a function that follows the current environment, rather than a temporary fixture function bound to an earlier test directory.</p>
-<p>Native x64 diagnostics confirm oversized parameter IDs and a POSIX-only permission assertion. Both are corrected; final native x64 and ARM64 regression checks are pending.</p>
-<p>Document-read portability and fixture cleanup pass public file-write regression coverage, affected tests, and independent specification and quality review. Three consecutive complete local test runs with four workers also pass. Native Windows confirmation remains pending.</p>
-</main></body></html>
+
+<p>Native x64 and ARM64 jobs run platform contracts and the complete unit suite with four workers. A blocked diagnostic process and ordinary failed tests must each emit their details and exit unsuccessfully.</p>
+
+<p>Those two legs set <code translate="no">PYTHONUTF8=1</code>, the mode the released launchers start Python in. A third x64 leg sets <code translate="no">PYTHONUTF8=0</code> for the processes the product still starts in the system code page.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Concern</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Long test IDs</th><td>Large parametrized payloads use explicit short IDs: pytest writes the node ID into <code translate="no">PYTEST_CURRENT_TEST</code>, and Windows caps environment values below 32767 characters. Payload bytes are unchanged.</td></tr>
+<tr><th scope="row">POSIX assertions</th><td>Mode checks apply only on POSIX; the catalogue round-trip still runs on Windows</td></tr>
+<tr><th scope="row">Output</th><td>Unbuffered Python; unit results name each test; full output and a traceback file are uploaded on success and failure</td></tr>
+<tr><th scope="row">Hangs</th><td>A process-wide traceback deadline replaces the pytest faulthandler plugin and also covers reporting and shutdown; the step and job have finite limits</td></tr>
+<tr><th scope="row">Failed tests</th><td>Keep their nonzero exit status; none are removed or accepted as passing</td></tr>
+<tr><th scope="row">Deadlines</th><td>Synchronization deadlines are watchdogs, not performance assertions</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Fixture ownership and document reads</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Document publication</th><td>Binds file identity by device and inode at open and compares metadata stability separately within descriptor and pathname stat APIs, since Windows may represent their timestamps differently. A change within either API, or a content revision mismatch, rejects publication and keeps the original bytes.</td></tr>
+<tr><th scope="row">Document route fixtures</th><td>Isolate <code translate="no">HOME</code> and <code translate="no">USERPROFILE</code> and resolve state with the original path function, so lazy imports follow the current environment</td></tr>
+<tr><th scope="row">History ownership fixtures</th><td>Register <code translate="no">SessionStore.close</code> right after construction; closing cancels and joins deferred index writers before the production-thread teardown guard runs</td></tr>
+<tr><th scope="row">Tracked-dispatch fixtures</th><td>Keep their <code translate="no">JobRunner</code> and register cleanup on acquiring it; request the non-waiting singleton shutdown, then join dispatcher, reconciler and budget threads before closing the <code translate="no">SessionStore</code></td></tr>
+<tr><th scope="row">Subprocess event cleanup</th><td>Assert the result returns while a callback is blocked, then release and join it; setup and host scheduling time do not count as latency</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="status">Implementation status</h2>
+
+<p>Native confirmation of the final x64 and ARM64 regression runs is outstanding. The <code translate="no">PYTHONUTF8=0</code> leg and, in the install smoke workflow, the App steps (<code translate="no">scripts/release/smoke-windows-desktop.ps1</code>), the x64 files on the Arm runner and the tool call through the worker (<code translate="no">scripts/release/smoke-tool-call.py</code>) have not run.</p>

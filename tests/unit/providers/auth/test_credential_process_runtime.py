@@ -10,12 +10,12 @@ import textwrap
 
 import pytest
 
-from openprogram.auth.methods.credential_process import (
+from openprogram.models.auth.methods.credential_process import (
     clear_token_cache,
     token_for_payload,
 )
-from openprogram.auth.resolver import resolve_connection
-from openprogram.auth.types import (
+from openprogram.models.auth.resolver import resolve_connection
+from openprogram.models.auth.types import (
     AuthCredentialProcessError,
     Credential,
     CredentialData,
@@ -124,7 +124,7 @@ def test_cache_expires(tmp_path, monkeypatch):
 
     clock = {"t": 1000.0}
     monkeypatch.setattr(
-        "openprogram.auth.methods.credential_process.time.monotonic",
+        "openprogram.models.auth.methods.credential_process.time.monotonic",
         lambda: clock["t"],
     )
     resolve_connection(_cred(data))
@@ -221,7 +221,7 @@ def test_failure_is_not_cached(tmp_path):
 
 def test_resolve_api_key_sync_does_not_swallow_helper_failure(tmp_path, monkeypatch):
     """The whole point of the fix: the funnel must not fall back silently."""
-    from openprogram.auth import resolver as resolver_mod
+    from openprogram.models.auth import resolver as resolver_mod
 
     helper = _script(tmp_path, "bad.sh", "exit 9")
     cred = _cred({"command": [helper], "parses": "text"})

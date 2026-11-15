@@ -14,14 +14,14 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.auth.methods import (
+from openprogram.models.auth.methods import (
     ApiKeyPasteMethod,
     CliImportMethod,
     PkceConfig, PkceLoginMethod,
     SsoStubMethod,
 )
-from openprogram.auth.methods.cli_import import CliImportConfig, _walk, _normalize_expires
-from openprogram.auth.methods.pkce_oauth import _generate_pkce, _ask_manual_paste
+from openprogram.models.auth.methods.cli_import import CliImportConfig, _walk, _normalize_expires
+from openprogram.models.auth.methods.pkce_oauth import _generate_pkce, _ask_manual_paste
 
 
 # ---- LoginUi fake ---------------------------------------------------------
@@ -53,8 +53,8 @@ class FakeUi:
 
 
 def test_login_driver_keeps_stable_id_and_applies_user_label(monkeypatch):
-    from openprogram.auth.login.login_driver import run_login
-    from openprogram.auth.types import Credential, CredentialData
+    from openprogram.models.auth.login.login_driver import run_login
+    from openprogram.models.auth.types import Credential, CredentialData
 
     async def fake_run(self, ui):
         return Credential(
@@ -85,9 +85,9 @@ def test_login_driver_keeps_stable_id_and_applies_user_label(monkeypatch):
 def test_existing_oauth_account_derives_label_from_id_token():
     import base64
 
-    from openprogram.auth.account.account_labels import account_identity
-    from openprogram.auth.account.account_labels import effective_account_label
-    from openprogram.auth.types import Credential, CredentialData
+    from openprogram.models.auth.account.account_labels import account_identity
+    from openprogram.models.auth.account.account_labels import effective_account_label
+    from openprogram.models.auth.types import Credential, CredentialData
 
     claims = base64.urlsafe_b64encode(
         json.dumps({"email": "legacy@example.com", "name": "Legacy User"}).encode()
@@ -316,3 +316,10 @@ def test_sso_stub_raises_not_implemented():
     # provider plugins can still advertise "we support SSO".
     assert m.method_id == "sso"
     assert m.provider_id == "enterprise"
+
+
+def test_manual_callback_rejects_another_attempt_without_echoing_secrets():
+    ui = FakeUi(prompt_replies=["http://localhost:1455/auth/callback?code=secret-code&state=old"])
+    with pytest.raises(ValueError) as exc:
+        asyncio.run(_ask_manual_paste(ui, expected_state="current"))
+    assert "secret-code" not in str(exc.value)

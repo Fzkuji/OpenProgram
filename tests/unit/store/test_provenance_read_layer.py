@@ -13,13 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store import (
-    Provenance,
+from openprogram.state.store import (
     SessionStore,
     iter_nodes_since,
     node_provenance,
     project_commits,
-    session_commits,
     session_project_id,
 )
 
@@ -105,21 +103,6 @@ def test_session_project_id_empty_when_unset(db):
 
 
 # commit history accessors
-
-
-def test_session_commits_surfaces_turn_boundaries(db):
-    _append(db, "s", "n0")
-    db.commit_turn("s", "turn: hello")
-    commits = session_commits(db, "s")
-    # newest first: our turn commit, then the "session init" empty commit
-    assert len(commits) >= 1
-    assert commits[0].message == "turn: hello"
-    # CommitInfo carries the time axis memory needs
-    assert commits[0].sha and commits[0].timestamp >= 0
-
-
-def test_session_commits_unknown_session_is_empty(db):
-    assert session_commits(db, "nope") == []
 
 
 def test_project_commits_unknown_project_is_empty():

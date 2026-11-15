@@ -1,0 +1,29 @@
+/* The design system: every size, shape and ink the app draws with is a
+   tier defined in this folder, and components name tiers instead of
+   writing values. One file per kind of value:
+
+     layout.css    page geometry: rail widths, chat column, drag surface
+     controls.css  control height tiers, list row, button shape
+     composer.css  the input box's own geometry (built on the tiers)
+     type.css      type tiers and font stacks
+     shape.css     spacing unit and radius tiers (Tailwind's names)
+     color.css     the accent family, the four text inks, fixed colours
+     icons.css     icon size tiers
+     motion.css    transition durations and the easing
+     layers.css    stacking layers (z-index)
+
+   Colours per theme live in ../themes/; the shadcn colour bridge and
+   Tailwind's utility names in shadcn.css and tailwind.css here.
+   Which component sits on which tier, and the rules that keep it so:
+   docs/reference/design/ui/visual-system/design-tokens.html. `npm run check` (scripts/ui/check-design-tokens.mjs)
+   fails the build on a value written outside the tiers. */
+@import "./layout.css";
+@import "./controls.css";
+@import "./composer.css";
+@import "./type.css";
+@import "./shape.css";
+@import "./color.css";
+@import "./icons.css";
+@import "./motion.css";
+@import "./layers.css";
+@import "./shadcn.css";

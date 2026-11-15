@@ -1,0 +1,9 @@
+<title>Anthropic API</title>
+<meta name="description" content="使用官方 Anthropic API、API key 和 API 账户计费。">
+<h1>Anthropic API</h1>
+<p>官方 API、API key、API 账户计费。所有调用必须遵守 Anthropic 的服务条款和使用政策。</p>
+<pre translate="no" tabindex="0"><code>openprogram providers login anthropic</code></pre>
+<pre translate="no" tabindex="0"><code>from openprogram.runtime.agent.runtime.factory import create_runtime
+
+runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")</code></pre>
+<p class="next"><a href="../models/auth.zh.html">认证</a> · <a href="../models/providers.zh.html">服务商配置</a></p>

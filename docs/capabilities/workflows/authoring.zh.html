@@ -1,0 +1,185 @@
+<title>编写和检查 Workflow</title>
+<meta name="description" content="Workflow 的包形式：角色、Context、测试，以及让它可调用的检查。">
+<h1>编写和检查 Workflow</h1>
+<p>Workflow 是一个小 Python 包：<code translate="no">Agent</code> 实例是角色，<code translate="no">Context</code> 对象决定每次模型调用看到什么，普通函数决定调用顺序。<code translate="no">openprogram programs check</code> 通过后，入口就是可调用的工具。想演示而不是编写：<a href="recording.zh.html">录制演示</a>。</p>
+<h2 id="define-the-contract"><code translate="no">README.md</code> 里的约定</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">必须写明</th></tr></thead>
+<tbody>
+<tr><th scope="row">目的</th><td>具体任务和完成所需的证据</td></tr>
+<tr><th scope="row">输入</th><td>入口参数、所需上下文、无效输入的行为</td></tr>
+<tr><th scope="row">输出</th><td>返回类型、产出文件、如何验证成功</td></tr>
+<tr><th scope="row">影响</th><td>模型、工具、文件、网络和外部提交行为</td></tr>
+<tr><th scope="row">失败和取消</th><td>失败或中断后留下什么；重试是否安全</td></tr>
+<tr><th scope="row">依赖</th><td>导入的 Workflow、需要的工具和服务</td></tr>
+<tr><th scope="row">测试</th><td>行为检查、脚本化模型回复、单独的实机检查</td></tr>
+<tr><th scope="row">用法</th><td>一次可复现的调用和预期结果</td></tr>
+</tbody></table>
+<p class="note">函数保持小。显式处理预期的无效输入，让运行时取消向上传递。</p>
+<h2 id="package-layout">目录</h2>
+<pre data-claim="example" translate="no" tabindex="0"><code>~/.openprogram/programs/project_report/
+├── .git/
+├── README.md
+├── __init__.py
+├── workflow.py
+├── steps/
+│   └── prepare.py
+└── tests/
+    └── test_workflow.py</code></pre>
+<p class="note">目录名就是包名：小写 Python 标识符，不能是标准库模块或其他可导入的包。每个 Workflow 是自己的 Git 仓库。用自己的名字导入（<code translate="no">project_report.steps.prepare</code>）；相对导入和导入其他 Workflow 都可以。</p>
+<h2 id="roles-context-and-functions">角色、Context、函数</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">角色</th><td>模块顶层的 <code translate="no">Agent</code>。只含配置：<code translate="no">model</code>、<code translate="no">instructions</code>、<code translate="no">tools</code>、<code translate="no">effort</code>。没有模型时用调用者的。</td></tr>
+<tr><th scope="row">Context</th><td>在函数内构建，显式传给角色调用</td></tr>
+<tr><th scope="row">函数</th><td>普通 Python：调用角色、转换、分支、循环</td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>"""Prepare a project report from verified notes."""
+
+from openprogram import Agent, Context
+
+writer = Agent(instructions="You write project reports.")
+reviewer = Agent(instructions="You check facts.", tools=[])
+
+
+def project_report(notes: str) -&gt; str:
+    """Turn this week's project notes into a report."""
+    ctx = Context({"notes": notes})
+    draft = write_draft(ctx)
+    return check(draft, ctx)
+
+
+def write_draft(ctx: Context) -&gt; str:
+    """Write three sections: progress, problems, plans. At most three items each."""
+    return writer("Write this week's report", context=ctx)
+
+
+def check(draft: str, ctx: Context) -&gt; str:
+    """Only check that the draft matches the notes. Do not change the style."""
+    return reviewer("Fix any mismatch and return the final text",
+                    context=ctx.derive({"draft": draft}))
+
+
+PROGRAM_ENTRIES = [project_report]</code></pre>
+<ul>
+<li><code translate="no">role(prompt, context=ctx)</code> 用角色的工具运行一轮模型；<code translate="no">role.choose(prompt, {id: label}, context=ctx)</code> 返回选项 ID。Workflow 代码不调用自由函数 <code translate="no">llm()</code> 或 <code translate="no">agent()</code>。</li>
+<li><code translate="no">PROGRAM_ENTRIES</code> 列出工具。每个需要文档字符串（工具描述）和每个参数的类型注解（工具 schema）。</li>
+<li>没有装饰器、基类或分发表。用普通导入使用其他 Workflow。</li>
+</ul>
+<h2 id="what-one-model-call-sees">一次模型调用看到什么</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分，按顺序</th><th scope="col">由谁定义</th></tr></thead>
+<tbody>
+<tr><th scope="row">角色的 <code translate="no">instructions</code>，作为系统提示</th><td><code translate="no">Agent(...)</code></td></tr>
+<tr><th scope="row">历史，默认空</th><td><code translate="no">ctx</code> 的 <code translate="no">history</code></td></tr>
+<tr><th scope="row">发起调用的 Workflow 函数的文档字符串</th><td>该函数</td></tr>
+<tr><th scope="row"><code translate="no">ctx</code> 的命名块，每个是 <code translate="no">name:</code> 加值</th><td>构建或派生 <code translate="no">ctx</code> 的代码</td></tr>
+<tr><th scope="row"><code translate="no">prompt</code></th><td>这次调用</td></tr>
+</tbody></table>
+<p class="note">其他都不进入：没有聊天历史、召回的记忆或其他角色的输出。Context 不改变工具或权限。文档字符串取调用栈上最近的 Workflow 包内函数，只作用于这一次请求；没有文档字符串的辅助函数不添加内容。</p>
+<h3 id="context">Context</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">写法</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Context({"notes": notes})</code>、<code translate="no">ctx["notes"] = notes</code></th><td>块</td></tr>
+<tr><th scope="row"><code translate="no">Context(providers={"today": lambda c: ...})</code></th><td>每次调用时求值的同步函数</td></tr>
+<tr><th scope="row"><code translate="no">ctx.derive({...})</code></th><td>独立副本，调用者的 <code translate="no">ctx</code> 不变</td></tr>
+<tr><th scope="row"><code translate="no">history=None</code></th><td>无历史，角色调用的默认值</td></tr>
+<tr><th scope="row"><code translate="no">history="thread"</code></th><td>用同一个 <code translate="no">ctx</code> 对象的之前调用</td></tr>
+<tr><th scope="row"><code translate="no">history="chat"</code></th><td>调用此 Workflow 的对话</td></tr>
+<tr><th scope="row"><code translate="no">history=可调用对象</code></th><td><code translate="no">(node, context) -&gt; bool</code> 选择对话节点</td></tr>
+</tbody></table>
+<p class="note">历史写在 <code translate="no">Context(..., history=...)</code> 或 <code translate="no">ctx.derive(history=...)</code>。</p>
+<p>内置 provider 告诉模型它的调用在程序的什么位置：</p>
+<pre translate="no" tabindex="0"><code>from openprogram.runtime.context import call_path, workflow_source
+
+ctx = Context(providers={"call path": call_path, "program": workflow_source})</code></pre>
+<p class="note"><code translate="no">call_path</code> 列出栈上的 Workflow 函数（<code translate="no">project_report → check</code>）；<code translate="no">call_path(docs=True)</code> 加上文档字符串。<code translate="no">workflow_source</code> 返回入口的源码。普通块如 <code translate="no">{"flow": "Draft first, then review."}</code> 也可以。</p>
+<h3 id="entry-options">入口选项</h3>
+<pre translate="no" tabindex="0"><code>ENTRY_OPTIONS = {
+    "project_report": {
+        "input": {"notes": {"description": "This week's notes", "multiline": True}},
+    },
+}</code></pre>
+<p class="note"><code translate="no">ENTRY_OPTIONS</code> 把入口映射到工具选项。<code translate="no">"run_in_worker": True</code> 在 worker 而不是 fork 的子进程里运行，用于浏览器会话这类 worker 持有的状态。</p>
+<h3 id="resume-after-a-restart">重启后恢复</h3>
+<pre translate="no" tabindex="0"><code>from openprogram.runtime.agent.durable_steps import step
+
+
+def project_report(notes: str) -&gt; str:
+    """Turn this week's project notes into a report."""
+    draft = step("draft", write_draft, notes)
+    return step("check", check, notes, draft)
+
+
+ENTRY_OPTIONS = {"project_report": {"resumable": True}}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">步骤</th><td>运行一次并保存结果。继续时入口从头运行，完成的步骤返回保存的结果，角色调用不重复。</td></tr>
+<tr><th scope="row">步骤之外</th><td>会再次运行：保持确定性和无副作用，步骤名和顺序稳定</td></tr>
+<tr><th scope="row">值</th><td>参数和结果是 JSON。<code translate="no">Context</code> 不能保留，在步骤内构建。</td></tr>
+<tr><th scope="row">继续</th><td>重启：在 <code translate="no">execution.auto_resume_window_seconds</code> 内自动。暂停：从聊天继续。</td></tr>
+<tr><th scope="row">代码变化</th><td>运行绑定提交。<code translate="no">execution.code_change_policy</code>：<code translate="no">keep_original</code>（默认）以 "Workflow code changed" 停止；<code translate="no">use_latest</code> 继续，已完成的步骤被移除或重排时停止。</td></tr>
+<tr><th scope="row">限制</th><td>必须同步；不能用 <code translate="no">run_in_worker</code></td></tr>
+</tbody></table>
+<h2 id="the-workflow-owns-execution-parameters">执行参数</h2>
+<p>用户给任务、证据和交付物，不配置模型 ID、推理强度、迭代次数、超时、token 预算或重试次数。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">固定值</th><td>放在角色或代码里</td></tr>
+<tr><th scope="row">取决于任务的值</th><td>一次角色调用生成完整计划；代码校验键、类型、范围和限制关系，失败时回退到校验过的默认值</td></tr>
+<tr><th scope="row">优先级</th><td>用户约束和应用限制优先于模型输出</td></tr>
+<tr><th scope="row">恢复</th><td>可恢复的 Workflow 把计划存入检查点</td></tr>
+</tbody></table>
+<h2 id="write-behavior-tests">行为测试</h2>
+<pre translate="no" tabindex="0"><code>from openprogram.programs._authoring.testing import script_roles
+
+from project_report import workflow as wf
+
+
+def test_reviewer_sees_the_draft_but_not_the_writer_prompt():
+    with script_roles({wf.writer: ["Draft"], wf.reviewer: ["Final"]}) as calls:
+        assert wf.project_report("Shipped the parser.") == "Final"
+
+    request = calls[wf.reviewer][0]
+    assert "Do not change the style" in request.text      # check() docstring
+    assert "Draft" in request.text                        # the draft block
+    assert "Write this week's report" not in request.text
+    assert request.history_text == ""</code></pre>
+<ul>
+<li>回复是字符串或可 JSON 序列化的值（用于 <code translate="no">response_format</code>）；<code translate="no">role.choose</code> 的回复是选项 ID。</li>
+<li>脚本里的异常由调用抛出并留在队列，也会回答模型循环的重试。</li>
+<li><code translate="no">request.text</code>：指令、文档字符串、块、提示。<code translate="no">request.history_text</code>：历史。</li>
+<li>用 <code translate="no">monkeypatch</code> 替换工具、文件和服务。实机服务商检查不能在 check 时运行，不要放进 <code translate="no">tests/</code>。</li>
+</ul>
+<h2 id="check-commit-and-list">检查和列出</h2>
+<pre translate="no" tabindex="0"><code>openprogram programs check ~/.openprogram/programs/project_report
+openprogram programs check ~/.openprogram/programs/project_report -m "Tighten the review step"
+openprogram programs list</code></pre>
+<ol>
+<li>在单独进程导入包，校验 <code translate="no">PROGRAM_ENTRIES</code> 和签名。</li>
+<li>用 pytest 运行 <code translate="no">tests/</code>，有系统沙箱时在沙箱里：无网络、包只读、<code translate="no">HOME</code> 是空临时目录。</li>
+<li>全部通过后提交到 Workflow 的仓库，并把该提交记录到 <code translate="no">refs/openprogram/checked</code>。<code translate="no">-m</code> 设提交信息；<code translate="no">--json</code> 打印报告。</li>
+</ol>
+<p class="note">只有通过检查的提交会加载：普通的 <code translate="no">git commit</code> 不会，有未提交修改时继续服务通过检查的版本，重启后也一样。worker 监视 <code translate="no">~/.openprogram/programs</code>，几秒内重载。<code translate="no">programs list</code> 和 Programs 页显示 <code translate="no">loaded</code>、<code translate="no">error</code>（带错误）或 <code translate="no">pending</code>（带原因，例如还没有通过检查的提交）。历史和回滚用 Git。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行位置</th><td><code translate="no">~/.openprogram/programs-cache/&lt;name&gt;/&lt;commit&gt;/</code> 中通过检查的提交副本。代码旁读取的文件必须已提交；写入的内容放在包之外。</td></tr>
+<tr><th scope="row">新版本导入失败</th><td>之前的版本继续运行。状态 <code translate="no">error</code>，备注 "Kept version <code translate="no">&lt;old&gt;</code>; version <code translate="no">&lt;new&gt;</code> failed."。Programs 页在标题下方的红色提示条里显示它，后面是原因和<strong>查看完整错误</strong>链接。</td></tr>
+<tr><th scope="row">仍有调用在运行</th><td>新版本最多等待 30 秒，超时后下一轮再试。</td></tr>
+</tbody>
+</table>
+<h2 id="running-a-workflow">运行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">从</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">聊天</th><td>每个入口是一个工具</td></tr>
+<tr><th scope="row">Programs 页</th><td><strong>Abilities → Programs</strong>，在 <strong>Applications</strong> 下选择，<strong>Use</strong> 在聊天里打开表单；发送前不运行</td></tr>
+<tr><th scope="row">命令行</th><td><code translate="no">openprogram programs run &lt;entry&gt; -a key=value</code></td></tr>
+<tr><th scope="row">Python</th><td>可导入函数</td></tr>
+</tbody></table>
+<p class="note">每次入口调用记录在会话图里，每次角色调用是一个子节点，保存确切的请求。普通函数不记录。</p>

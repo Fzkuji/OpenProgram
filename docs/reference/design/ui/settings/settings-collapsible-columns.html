@@ -1,0 +1,48 @@
+<title>Settings navigation</title>
+<meta name="description" content="The Settings page header and collapsible category rail.">
+<meta name="covers" content="apps/web/components/settings/">
+<h1>Settings navigation</h1>
+
+<p>Settings uses the page header and <a href="../sidebar/secondary-rail.html">secondary rail</a> shared by every page with a list column. Column widths extend the existing sidebar; there is no drag resizing.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Column</th><th scope="col">Expanded</th><th scope="col">Collapsed</th><th scope="col">Saved in</th><th scope="col">Header</th></tr></thead>
+<tbody>
+<tr><th scope="row">Categories</th><td><code translate="no">--sidebar-width</code> − 1px</td><td>49px</td><td><code translate="no">settingsNavOpen</code></td><td><code translate="no">ManagePageHeader</code>: rail toggle, then Settings</td></tr>
+<tr><th scope="row">Content</th><td>Remaining width; controls wrap</td><td>Same</td><td>Nothing</td><td>One page title; Memory adds no duplicate</td></tr>
+</tbody>
+</table>
+
+<h2>Categories</h2>
+<p>General, Appearance, LLM Providers, Memory, Web Search, Browser, Voice, Environments, Channels, Import, Token Usage, System. Links, icons, active state and keyboard order follow this one array.</p>
+<dl class="pairs">
+<dt>Toggle</dt><dd>Native button with <code translate="no">aria-expanded</code>, <code translate="no">aria-controls</code> and an explicit name, its icon on the axis of the category icons</dd>
+<dt>Narrow window</dt><dd>Below 760px the rail starts collapsed with no saved choice, and shrinking collapses it without saving. Widening never expands it: the stored choice stands.</dd>
+<dt>Rows</dt><dd>Same y positions, 32px height and 1px gap as the main sidebar's rows</dd>
+<dt>Titles</dt><dd>Settings and the content title use <code translate="no">--fs-title</code> (18px), line height 1.2 so descenders are not clipped</dd>
+</dl>
+
+<p>LLM Providers is one column with no list column of its own: its list, Add provider and each provider's page are described in <a href="../../providers/provider-management.html">Provider management</a>.</p>
+
+<details>
+<summary>References and exclusions</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/">WAI-ARIA APG Disclosure</a></th><td>Button semantics and Enter or Space. Says nothing on column widths or titles.</td></tr>
+<tr><th scope="row"><a href="https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-expanded">MDN aria-expanded</a></th><td>State matches the visible column; <code translate="no">aria-pressed</code> is not used.</td></tr>
+<tr><th scope="row">Excluded</th><td>Draggable column resizing, breakpoints overriding the user's choice, changes to Memory, Provider or model data, changes to the main sidebar</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>No separate global Settings topbar.</li>
+<li>Category rows line up with the main sidebar's first rows; the first icon keeps its y when collapsed.</li>
+<li>Category order, URLs, icons, active state and keyboard order agree.</li>
+<li>Memory has no duplicate title.</li>
+<li>Icon actions carry <code translate="no">aria-label</code>.</li>
+</ul>
+</details>

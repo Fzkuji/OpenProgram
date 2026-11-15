@@ -45,7 +45,7 @@ globalThis.localStorage = {
 };
 globalThis.WebSocket = { OPEN: 1 };
 
-const { useCenterTabs } = await import("../../lib/tabs/center-tabs-store.ts");
+const { useCenterTabs, snapshotCenterTabsPayload } = await import("../../lib/tabs/center-tabs-store.ts");
 const { setSocket } = await import("../../lib/runtime-bridge/state.ts");
 const {
   installDesktopMenuHandlers,
@@ -339,10 +339,23 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
     url: visibleUrl,
     tab_id: visibleId,
     target_id: "target-visible",
+    input_scale: 1,
     geometry_revision: 0,
     created: false,
     reused: true,
   }]);
+
+  window.openprogramDesktop.webTab.inspect = async () => ({ target_id: "target-visible", input_scale: 0.125 });
+  sent.length = 0;
+  listeners.get("op:ws-message")({ detail: { type: "webtab.command", data: {
+    op: "resolve", req_id: "pip-scale", window_id: "main", tab_id: visibleId,
+  } } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].ok, true);
+  assert.equal(sent[0].target_id, "target-visible");
+  assert.equal(sent[0].input_scale, 0.125, "bound pointer input uses native PiP scale");
+  delete window.openprogramDesktop.webTab.inspect;
 
   // Two existing split sessions: a same-URL agent request must not select A's page.
   resetTabs();
@@ -367,6 +380,9 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
       return id;
     },
   });
+  // Migrate the legacy fixture groups to canvases once, so the comparison
+  // below sees stable pane ids.
+  useCenterTabs.setState({ groups: snapshotCenterTabsPayload().groups });
   const groupsBefore = useCenterTabs.getState().groups;
   setDesktopSplitLayoutAvailable(true);
   setWebTabReady(otherId, true);
@@ -821,4 +837,37 @@ test("visible route failure rolls back only an agent-created Page", async () => 
   useCenterTabs.setState({ closeTab });
   closeTab(persistentId);
   window.location.pathname = priorPathname;
+});
+
+
+test("visible geometry suppresses duplicate IPC while preserving move and hide updates", async () => {
+  const calls = [];
+  const bridge = { windowId: "geometry-test", webTab: { syncVisible: items => calls.push(items) } };
+  const id = "geometry-dedup-page";
+  const bounds = { x: 10, y: 20, width: 480, height: 270 };
+  registerVisibleWebTabBounds(bridge, id, bounds);
+  await Promise.resolve();
+  assert.equal(calls.length, 1);
+  for (let i = 0; i < 60; i++) {
+    registerVisibleWebTabBounds(bridge, id, { ...bounds });
+    await Promise.resolve();
+  }
+  assert.equal(calls.length, 1);
+  registerVisibleWebTabBounds(bridge, id, { ...bounds, x: 50 });
+  registerVisibleWebTabBounds(bridge, id, { ...bounds, x: 60 });
+  await Promise.resolve();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].find(item => item.id === id).bounds.x, 60);
+  removeVisibleWebTabBounds(bridge, id);
+  await Promise.resolve();
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].some(item => item.id === id), false);
+  removeVisibleWebTabBounds(bridge, id);
+  await Promise.resolve();
+  assert.equal(calls.length, 3);
+  registerVisibleWebTabBounds(bridge, id, bounds);
+  await Promise.resolve();
+  assert.equal(calls.length, 4, "showing again must publish even with the original bounds");
+  removeVisibleWebTabBounds(bridge, id);
+  await Promise.resolve();
 });

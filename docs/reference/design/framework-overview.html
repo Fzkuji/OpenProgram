@@ -1,0 +1,190 @@
+<title>Framework overview</title>
+<meta name="description" content="One conversation from input to output: turn steps, event bus, tool gate, context engine, agent run and collaboration.">
+<h1>Framework overview</h1>
+<p>Subsystems are decoupled by one process-wide event bus: the dispatcher, agent loop, tool execution, storage and collaboration never call each other's UI or broadcast logic. They <code translate="no">emit</code>; whoever cares subscribes.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Lane</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Asynchronous observation</th><td><code translate="no">EventBus</code>: nobody can stop what is happening</td></tr>
+<tr><th scope="row">Synchronous consultation</th><td><code translate="no">tool_gate</code>: the one place that can stop a tool</td></tr>
+</tbody>
+</table>
+
+<h2 id="lifecycle">One turn</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 350" role="img" aria-label="One turn runs seven steps: session, history, user message, turn binding, context and loop, assistant message, finalize.">
+  <defs><marker id="ov-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">1. Session</text>
+  <text class="t-soft" x="240" y="34">get or create</text>
+  <text class="t-cmd" x="430" y="34">prepare_turn</text>
+  <line class="ln" x1="8" y1="42" x2="8" y2="64" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="0" y="80">2. History</text>
+  <text class="t-soft" x="240" y="80">branch_from</text>
+  <text class="t-cmd" x="430" y="80">get_branch</text>
+  <line class="ln" x1="8" y1="88" x2="8" y2="110" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="0" y="126">3. User message</text>
+  <text class="t-soft" x="240" y="126">written before the run</text>
+  <text class="t-cmd" x="430" y="126">user.prompt_submitted</text>
+  <line class="ln" x1="8" y1="134" x2="8" y2="156" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="0" y="172">4. Bind turn</text>
+  <text class="t-soft" x="240" y="172">ContextVars</text>
+  <text class="t-cmd" x="430" y="172">_current_turn_id, _store</text>
+  <line class="ln" x1="8" y1="180" x2="8" y2="202" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="0" y="218">5. Context and loop</text>
+  <text class="t-soft" x="240" y="218">prepare, compact, agent_loop</text>
+  <text class="t-cmd" x="430" y="218">run_loop_blocking</text>
+  <line class="ln" x1="8" y1="226" x2="8" y2="248" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="0" y="264">6. Assistant message</text>
+  <text class="t-soft" x="240" y="264">persist</text>
+  <text class="t-cmd" x="430" y="264">persist_assistant_message</text>
+  <line class="ln" x1="8" y1="272" x2="8" y2="294" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="0" y="310">7. Finalize</text>
+  <text class="t-soft" x="240" y="310">usage, Git commits</text>
+  <text class="t-cmd" x="430" y="310">finalize_turn</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Session</strong><small>get or create</small><small translate="no">prepare_turn</small></li>
+  <li><strong>History</strong><small>branch_from</small><small translate="no">get_branch</small></li>
+  <li><strong>User message</strong><small>written before the run</small><small translate="no">user.prompt_submitted</small></li>
+  <li><strong>Bind turn</strong><small>ContextVars</small><small translate="no">_current_turn_id, _store</small></li>
+  <li><strong>Context and loop</strong><small>prepare, compact, agent_loop</small><small translate="no">run_loop_blocking</small></li>
+  <li><strong>Assistant message</strong><small>persist</small><small translate="no">persist_assistant_message</small></li>
+  <li class="flow-end"><strong>Finalize</strong><small>usage, Git commits</small><small translate="no">finalize_turn</small></li>
+</ol>
+</figure>
+<dl class="pairs">
+<dt>Entry</dt><dd><code translate="no">ChatAgent().run_turn</code> (production), which reaches <code translate="no">_process_turn_once</code> in <code translate="no">runtime/conversation/turn_runtime/__init__.py</code>. <code translate="no">process_user_turn</code> is a compatibility entry. Synchronous so channel worker threads can call it; starts its own asyncio loop and returns <code translate="no">TurnResult</code></dd>
+<dt>User message</dt><dd>A DAG Call node with <code translate="no">caller=ROOT</code>, written before the run so a crash leaves a record. Emits <code translate="no">chat_ack</code> and <code translate="no">user_message</code> for the UI</dd>
+<dt>Turn binding</dt><dd><code translate="no">TurnBindings</code> sets <code translate="no">_current_turn_id</code>, read by every coroutine in the turn (tools, Agent methods, <code translate="no">send_message</code>) and routing file backups and sub-branch anchors; and <code translate="no">_store</code>, a <code translate="no">SessionNodeWriter</code> for the same DAG. Assistant id is <code translate="no">user_msg_id + "_reply"</code>. Reset on success, exception and early return</dd>
+<dt>Finish</dt><dd>Emits <code translate="no">chat_response</code>, returns <code translate="no">TurnResult</code></dd>
+</dl>
+
+<h3 id="history">History and branches</h3>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">branch_from</code></th><th scope="col">History</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">INHERIT_PARENT</code></th><td><code translate="no">db.get_branch(sid)</code></td><td>Multi-turn: the whole current branch</td></tr>
+<tr><th scope="row"><code translate="no">None</code></th><td><code translate="no">[]</code></td><td>Root fork: starts empty</td></tr>
+<tr><th scope="row"><code translate="no">"&lt;node_id&gt;"</code></th><td><code translate="no">db.get_branch(sid, node_id)</code></td><td>Sibling fork: up to the fork point</td></tr>
+</tbody>
+</table>
+<p class="note">Single-turn and multi-turn differ only in chain length. Writing a fork means pointing a user node's caller away from the active tail (<code translate="no">set_head</code> moves the UI pointer), or a new root through the <code translate="no">agent</code> tool.</p>
+
+<h3 id="context-before-model">Before the model call</h3>
+<ol>
+<li><code translate="no">run_loop_blocking</code> calls <code translate="no">ContextEngine.prepare(...)</code>: DAG history rendered into LLM messages (<code translate="no">TurnPrep</code>).</li>
+<li>If <code translate="no">should_auto_compact(prep)</code>: <code translate="no">compact</code> (LLM summarization into a durable node); then prepare again.</li>
+<li>The prompt is added once per loop, so the prompt-cache prefix stays intact.</li>
+<li><code translate="no">agent_loop([prompt], context, config, ...)</code>.</li>
+</ol>
+
+<h3 id="core-loop">Core loop</h3>
+<ol>
+<li>Push <code translate="no">AgentEventTurnStart</code>.</li>
+<li><code translate="no">_stream_assistant_response</code> calls the model.</li>
+<li>Extract <code translate="no">ToolCall</code>s; <code translate="no">_execute_tool_calls</code> runs them; results are appended to the context.</li>
+<li>Push <code translate="no">AgentEventTurnEnd</code>. Stop when there are no tools, steering or follow-up.</li>
+</ol>
+<p class="note">Chat turns have no iteration cap. <code translate="no">runtime.exec</code> passes <code translate="no">max_iterations=20</code>.</p>
+
+<h3 id="tool-execution">Each tool call</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Start</th><td>Push <code translate="no">AgentEventToolStart</code></td></tr>
+<tr><th scope="row">Announce</th><td><code translate="no">make_event("tool.before", ...)</code> and <code translate="no">emit</code>: one event for observers and the gate</td></tr>
+<tr><th scope="row">Gate</th><td><code translate="no">decide_tool_gate</code>. Any deny blocks, reasons merged; a raising gate allows</td></tr>
+<tr><th scope="row">Denied</th><td><code translate="no">ToolGateDenied</code> sends the reason to the model as an error result</td></tr>
+<tr><th scope="row">Subagents</th><td>Covered: the gate sits outside the <code translate="no">permission_mode</code> wrapper, so <code translate="no">bypass</code> cannot turn it off</td></tr>
+<tr><th scope="row">Execute</th><td><code translate="no">tool.execute(...)</code> with cwd snapshot and file checkpoint</td></tr>
+<tr><th scope="row">End</th><td>Push <code translate="no">AgentEventToolEnd</code>, emit <code translate="no">tool.after</code></td></tr>
+<tr><th scope="row">Feed back</th><td>A <code translate="no">ToolResultMessage</code>. Steering is checked after each tool; a hit skips the remaining tools</td></tr>
+</tbody>
+</table>
+
+<h3 id="finalize">Finish</h3>
+<dl class="pairs">
+<dt>Failure</dt><dd>The error folds into the placeholder row or a standalone error node; <code translate="no">head_id</code> moves to the failed turn</dd>
+<dt>Success</dt><dd><code translate="no">persist_assistant_message</code>, then <code translate="no">finalize_turn</code>: head and token update; ContextCommit output backfill; <code translate="no">after_turn</code> feeds provider usage back; shadow Git turn commit and project auto-commit (<code translate="no">commit_turn_changes</code>); auto-title, usage, snapshot eviction; session status</dd>
+<dt>DAG</dt><dd>User node, assistant placeholder, tool results and Agent method nodes all reach one <code translate="no">SessionNodeWriter</code>. <code translate="no">commit_turn</code> makes session fields durable: append-only, no mutable mirror file, so concurrent agents never collide</dd>
+</dl>
+
+<h2 id="events">Events</h2>
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">Emitted by</th><th scope="col">Consumed by</th><th scope="col">Notes</th></tr></thead><tbody>
+<tr><th scope="row"><code translate="no">user.prompt_submitted</code></th><td><code translate="no">turn_runtime/prep.py</code></td><td>proactive state observer</td><td>User message committed</td></tr>
+<tr><th scope="row"><code translate="no">tool.before</code></th><td><code translate="no">agent/loop/tool_dispatch.py</code></td><td>tool_gate (sync), observers</td><td>The only interception point</td></tr>
+<tr><th scope="row"><code translate="no">tool.after</code></th><td><code translate="no">agent/loop/tool_dispatch.py</code></td><td>observers</td><td>Carries is_error</td></tr>
+<tr><th scope="row"><code translate="no">model.response_started</code></th><td><code translate="no">agent/loop/provider_lifecycle.py</code></td><td>observers</td><td>Stream begins</td></tr>
+<tr><th scope="row"><code translate="no">model.response_completed</code></th><td><code translate="no">agent/loop/provider_lifecycle.py</code></td><td>proactive wrap-up policies</td><td>Wrap-up check</td></tr>
+<tr><th scope="row"><code translate="no">subagent.started / .ended</code></th><td><code translate="no">jobs/runner/shared.py</code></td><td>observers</td><td>origin system; session passed explicitly</td></tr>
+<tr><th scope="row"><code translate="no">branch.message_sent</code></th><td><code translate="no">send_message.py</code></td><td>observers, ws.frame</td><td>from, to</td></tr>
+<tr><th scope="row"><code translate="no">question.asked</code></th><td><code translate="no">agent/questions.py</code></td><td>channels _question_bridge.py</td><td>Bus and ws frame</td></tr>
+<tr><th scope="row"><code translate="no">question.replied</code></th><td><code translate="no">permissions/lifecycle.py</code></td><td>front end</td><td>ws frame only</td></tr>
+<tr><th scope="row"><code translate="no">question.rejected</code></th><td><code translate="no">agent/questions.py</code></td><td>front end, as withdrawn</td><td>ws frame only</td></tr>
+<tr><th scope="row"><code translate="no">context.compacted</code></th><td><code translate="no">context/engine.py</code></td><td>UI, observers</td><td>Compaction happened</td></tr>
+<tr><th scope="row"><code translate="no">file.changed</code></th><td>functions watcher and others</td><td>observers</td><td>File change</td></tr>
+<tr><th scope="row"><code translate="no">channel.message_inbound</code></th><td>channels</td><td>observers</td><td>Inbound message</td></tr>
+<tr><th scope="row"><code translate="no">reminder.fired</code></th><td>scheduler worker</td><td>scheduler/reminders.py</td><td>Shows it and wakes the agent</td></tr>
+<tr><th scope="row"><code translate="no">memory.ingest_started / .ended</code></th><td>memory</td><td>observers</td><td>Memory ingestion</td></tr>
+<tr><th scope="row"><code translate="no">skills.changed, plugins.update_available, sessions.listed, branches.listed</code></th><td>various</td><td>UI, observers</td><td>Lists and updates</td></tr>
+<tr><th scope="row"><code translate="no">ws.frame</code></th><td><code translate="no">emit_ws_frame</code></td><td>interfaces/server/server.py</td><td>Passthrough; sources never touch _broadcast</td></tr>
+</tbody></table>
+<p class="note">Paths under <code translate="no">openprogram/runtime/</code> unless otherwise clear. Subscribers: proactive engine takes all events and filters by <code translate="no">on</code>; the Web server only <code translate="no">ws.frame</code>; the channels bridge only <code translate="no">question.asked</code>. <code translate="no">emit</code> is fire-and-forget: a raising handler prints to stderr and never reaches the emitter; an async handler with no loop is skipped; <code translate="no">emit_safe</code> swallows everything.</p>
+
+<h2 id="layers">Layers</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Files</th></tr></thead>
+<tbody>
+<tr><th scope="row">Storage</th><td><code translate="no">state/store/session/session_store/</code>, <code translate="no">memory_index.py</code>, <code translate="no">session_log.py</code></td></tr>
+<tr><th scope="row">Event layer</th><td><code translate="no">runtime/events/</code> (<code translate="no">bus.py</code>, <code translate="no">tool_gate.py</code>), <code translate="no">runtime/agent/questions.py</code></td></tr>
+<tr><th scope="row">Context engine</th><td><code translate="no">runtime/context/</code>: <code translate="no">engine.py</code>, <code translate="no">render.py</code>, <code translate="no">compaction/</code>; finalize in <code translate="no">conversation/turn_runtime/finalize.py</code></td></tr>
+<tr><th scope="row">Agent run</th><td><code translate="no">runtime/agent/loop/</code>, <code translate="no">conversation/sub_agent_run.py</code>, <code translate="no">models/providers/utils/event_stream.py</code>, <code translate="no">extensions/gating.py</code></td></tr>
+<tr><th scope="row">Collaboration</th><td><code translate="no">programs/tools/agents/send_message/</code>, <code translate="no">programs/tools/agents/agent/</code></td></tr>
+</tbody>
+</table>
+<h3 id="storage">Storage</h3>
+<dl class="pairs">
+<dt>Log</dt><dd>One append-only log per session; <code translate="no">_open(sid)</code> returns <code translate="no">(SessionLog, SessionMemoryIndex)</code>, LRU cached, index rebuildable from the log</dd>
+<dt>Branch</dt><dd>Stable branch identity plus its current head. <code translate="no">get_branch(sid[, head])</code> walks the predecessor chain; separate branch references may share a head after Rewind. Each reference keeps independent configuration; project files remain shared</dd>
+<dt>Commit</dt><dd><code translate="no">commit_turn(sid, msg)</code> at turn boundary. Events: <code translate="no">sessions.listed</code>, <code translate="no">branches.listed</code></dd>
+</dl>
+<h3 id="event-layer">Event layer</h3>
+<dl class="pairs">
+<dt>Bus</dt><dd><code translate="no">EventBus.subscribe(handler, types=...)</code>, legacy <code translate="no">on</code>, process singleton <code translate="no">get_event_bus()</code></dd>
+<dt>Gate</dt><dd><code translate="no">register_tool_gate</code>, <code translate="no">decide_tool_gate</code>: strictest wins, fails open, must be fast (no LLM or slow IO)</dd>
+<dt>Questions</dt><dd><code translate="no">QuestionRegistry</code>: process-wide pending table, claim-once, thread-safe</dd>
+</dl>
+<h3 id="context-engine">Context engine</h3>
+<dl class="pairs">
+<dt>Tool output</dt><dd>A tool result is bounded once by weight when it is made and sent whole as stored on every later request; only compaction replaces old turns</dd>
+<dt>Context commits</dt><dd><code translate="no">state/store/session/context_commit/</code>: stored per-turn records, written when branches merge and shown in the context timeline (<code translate="no">context/commit/views.py</code>). Finalize backfills the final assistant output</dd>
+<dt>Event</dt><dd><code translate="no">context.compacted</code></dd>
+</dl>
+<h3 id="agent-run">Agent run</h3>
+<dl class="pairs">
+<dt><code translate="no">EventStream</code></dt><dd>Async-iterable plus a terminal value; provider dict events become typed</dd>
+<dt><code translate="no">LoopDriver</code></dt><dd><code translate="no">prompt</code>, <code translate="no">follow_up</code> (append at wrap-up)</dd>
+<dt>Static admission</dt><dd><code translate="no">gate(name, disabled, allowed, categories)</code>: fnmatch, in that order. <code translate="no">agent.json</code> declares who may use what; separate from <code translate="no">tool_gate</code></dd>
+<dt>Subagents</dt><dd><code translate="no">run_agent_turn(sid, prompt, agent_id, ...)</code> durably admits one turn with <code translate="no">source="agent_spawn"</code>, inherits the parent's permission mode and rules, and waits for its Job. Returns <code translate="no">AgentTurnResult</code> (<code translate="no">head_id</code> is the new tip); <code translate="no">label</code> names the branch</dd>
+</dl>
+<h3 id="collaboration">Collaboration</h3>
+<dl class="pairs">
+<dt><code translate="no">to</code></dt><dd><code translate="no">SID:HEAD</code> (one more turn from that head) or a branch name. Creating branches is the <code translate="no">agent</code> tool's job; <code translate="no">to="new"</code> is rejected with a redirect</dd>
+<dt>Parent anchor</dt><dd><code translate="no">_resolve_parent</code> reads session and turn ContextVars and falls back to the session head when the turn id is missing: worker-thread ContextVars are unreliable, which is also why <code translate="no">subagent.started</code> and <code translate="no">.ended</code> pass the session explicitly</dd>
+<dt>Delivery</dt><dd>Always asynchronous through the Job runner (<code translate="no">run_agent_turn_async</code>). On completion it writes an attach pointer and dispatches a follow-up to the initiator. The caller's model reads it as a user-role report (<code translate="no">_attach_report</code>): name, task, final reply and <code translate="no">read_conversation(session_id, head_id)</code>. A synchronous spawn adds nothing: the <code translate="no">agent</code> result already has reply and <code translate="no">SID:HEAD</code></dd>
+<dt>Guards</dt><dd><code translate="no">agent.max_messages</code> (0, off by default; children inherit count + 1; A↔B round trips count); a turn cannot message itself; target session must exist; <code translate="no">tool.before</code> applies</dd>
+<dt>In chat</dt><dd>Sender shows the tool's own row ("Sent to …"); the receiving branch draws one row named after the sender, from <code translate="no">[message from SID:HEAD (sender)]</code></dd>
+</dl>
+
+<h2 id="known-boundaries">Known boundaries</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">Plugin hook</th><td><code translate="no">tool.before</code> observes and denies; it cannot mutate or veto by plugin.</td></tr>
+<tr><th scope="row">Approval</th><td><code translate="no">Gate.ask</code> is not wired to the approval registry. The critical fail-closed tier awaits a rules layer.</td></tr>
+<tr><th scope="row">Tests</th><td>Several <code translate="no">process_user_turn</code> and <code translate="no">agent_loop</code> paths have no covering tests.</td></tr>
+<tr><th scope="row">Context engine</th><td><code translate="no">ContextEngine.after_turn</code> has a stub on the abstract base and the working version on the concrete engine.</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="framework-comparison.html">Framework comparison</a></p>

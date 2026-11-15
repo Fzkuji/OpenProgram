@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import builtins
 import json
 import sys
-import threading
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
 from types import ModuleType
@@ -13,13 +11,14 @@ import mcp.types as mcp_types
 import pytest
 from mcp.shared.exceptions import McpError
 
-from openprogram.agent.authority import AuthorityError
-from openprogram.agent.session_config import PermissionRules
-from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.programs._runtime import function
-from openprogram.mcp.server.service import MCPClientContext, MCPService
-from openprogram.mcp.server.tools import json_result, to_mcp_content
-from openprogram.providers.types import ImageContent, TextContent
+from openprogram.runtime.permissions.authority import AuthorityError
+from openprogram.runtime.permissions.modes import PermissionRules
+from openprogram.runtime.permissions.refusal import MCP_GATE_REFUSALS
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.programs._host.runtime import function
+from openprogram.extensions.mcp.server.service import MCPClientContext, MCPService
+from openprogram.extensions.mcp.server.tools import json_result, to_mcp_content
+from openprogram.models.providers.types import ImageContent, TextContent
 
 
 def _tool(
@@ -138,8 +137,8 @@ class FakeSessionDB:
 
 @pytest.fixture
 def client_context(tmp_path, monkeypatch) -> MCPClientContext:
-    from openprogram import paths
-    from openprogram.agent import authority
+    from openprogram.state import paths
+    from openprogram.runtime.permissions import authority
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority._reset_owner_cache_for_tests()
@@ -154,9 +153,6 @@ def _service(
     config=None,
     registry=None,
     exposed=None,
-    web_use_dispatch=None,
-    web_use_release_owner=None,
-    web_use_release_pages=None,
 ) -> MCPService:
     registry = {} if registry is None else registry
     exposed = set(registry) if exposed is None else exposed
@@ -166,222 +162,7 @@ def _service(
         config_getter=lambda: {} if config is None else config,
         registry_get=registry.get,
         registry_exposed_names=lambda: set(exposed),
-        web_use_dispatch=web_use_dispatch,
-        web_use_release_owner=(
-            web_use_release_owner or (lambda _owner_id: None)
-        ),
-        web_use_release_pages=(
-            web_use_release_pages or (lambda _owner_id, _tokens: None)
-        ),
     )
-
-
-def test_first_class_web_use_has_narrow_connection_owned_authority(
-    client_context,
-) -> None:
-    calls = []
-
-    def dispatch(arguments, *, owner_id):
-        calls.append((deepcopy(arguments), owner_id))
-        return {"ok": True, "owner_bound": True}
-
-    service = _service(
-        client_context,
-        web_use_dispatch=dispatch,
-    )
-    result = asyncio.run(service.web_use_call(
-        {"command": "list_pages"},
-        call_id="web-call",
-        cancel_event=asyncio.Event(),
-    ))
-
-    assert result.is_error is False
-    assert _payload(result) == {"ok": True, "owner_bound": True}
-    assert calls[0][0] == {"command": "list_pages"}
-    assert calls[0][1].startswith(f"mcp:{client_context.client_id}:")
-    from openprogram.agent.authority import decide_tool_authority
-    assert decide_tool_authority(client_context.authority, "web_use").allowed is False
-
-
-def test_mcp_connection_close_releases_worker_owned_web_use_sessions(
-    client_context,
-) -> None:
-    released = []
-    service = _service(
-        client_context,
-        web_use_release_owner=released.append,
-    )
-    owner_id = service._web_use_owner_id
-
-    service.close()
-
-    assert released == [owner_id]
-
-
-def test_cancelled_web_use_observe_closes_late_session(client_context) -> None:
-    started = threading.Event()
-    finish = threading.Event()
-    closed = threading.Event()
-    sessions = set()
-    calls = []
-
-    def dispatch(arguments, *, owner_id):
-        command = arguments["command"]
-        calls.append((command, owner_id))
-        if command == "observe":
-            started.set()
-            assert finish.wait(timeout=2)
-            sessions.add("ws-late")
-            return {"ok": True, "web_session_id": "ws-late", "frame_id": "f1"}
-        if command == "close":
-            sessions.discard(arguments["web_session_id"])
-            closed.set()
-            return {"ok": True, "closed": True}
-        raise AssertionError(command)
-
-    service = _service(client_context, web_use_dispatch=dispatch)
-
-    async def scenario():
-        task = asyncio.create_task(service.web_use_call(
-            {"command": "observe", "page_context_token": "page-1"},
-            call_id="web-cancel",
-            cancel_event=asyncio.Event(),
-        ))
-        assert await asyncio.to_thread(started.wait, 2)
-        task.cancel()
-        finish.set()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        assert await asyncio.to_thread(closed.wait, 2)
-
-    asyncio.run(scenario())
-
-    assert sessions == set()
-    assert [command for command, _ in calls] == ["observe", "close"]
-
-
-def test_connection_close_sweeps_web_use_session_created_by_late_dispatch(
-    client_context,
-) -> None:
-    started = threading.Event()
-    finish = threading.Event()
-    sessions = set()
-    released = []
-
-    def dispatch(arguments, *, owner_id):
-        if arguments["command"] == "observe":
-            started.set()
-            assert finish.wait(timeout=2)
-            sessions.add("ws-after-close")
-            return {
-                "ok": True,
-                "web_session_id": "ws-after-close",
-                "frame_id": "f1",
-            }
-        sessions.discard(arguments["web_session_id"])
-        return {"ok": True, "closed": True}
-
-    def release(owner_id):
-        released.append(owner_id)
-        sessions.clear()
-
-    service = _service(
-        client_context,
-        web_use_dispatch=dispatch,
-        web_use_release_owner=release,
-    )
-
-    async def scenario():
-        task = asyncio.create_task(service.web_use_call(
-            {"command": "observe", "page_context_token": "page-1"},
-            call_id="web-close-race",
-            cancel_event=asyncio.Event(),
-        ))
-        assert await asyncio.to_thread(started.wait, 2)
-        await service.aclose()
-        finish.set()
-        result = await task
-        assert result.is_error is True
-
-    asyncio.run(scenario())
-
-    assert sessions == set()
-    assert released == [service._web_use_owner_id, service._web_use_owner_id]
-
-
-def test_cancelled_web_use_list_pages_revokes_only_late_capabilities(
-    client_context,
-) -> None:
-    started = threading.Event()
-    finish = threading.Event()
-    capabilities = {"pct-existing"}
-    released = []
-
-    def dispatch(arguments, *, owner_id):
-        assert arguments == {"command": "list_pages"}
-        started.set()
-        assert finish.wait(timeout=2)
-        capabilities.add("pct-late")
-        return {
-            "ok": True,
-            "pages": [{"page_context_token": "pct-late"}],
-        }
-
-    def release_pages(owner_id, tokens):
-        released.append((owner_id, list(tokens)))
-        capabilities.difference_update(tokens)
-
-    service = _service(
-        client_context,
-        web_use_dispatch=dispatch,
-        web_use_release_pages=release_pages,
-    )
-
-    async def scenario():
-        task = asyncio.create_task(service.web_use_call(
-            {"command": "list_pages"},
-            call_id="web-list-cancel",
-            cancel_event=asyncio.Event(),
-        ))
-        assert await asyncio.to_thread(started.wait, 2)
-        task.cancel()
-        finish.set()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        for _ in range(20):
-            if released:
-                break
-            await asyncio.sleep(0)
-
-    asyncio.run(scenario())
-
-    assert capabilities == {"pct-existing"}
-    assert released == [(service._web_use_owner_id, ["pct-late"])]
-
-
-def test_web_use_does_not_reimport_tool_registry_for_normalized_result(
-    client_context, monkeypatch,
-) -> None:
-    expected = json_result({"ok": True})
-    service = _service(
-        client_context,
-        web_use_dispatch=lambda _arguments, *, owner_id: expected,
-    )
-    original_import = builtins.__import__
-
-    def guarded_import(name, *args, **kwargs):
-        if name == "openprogram.programs._runtime":
-            raise AssertionError("normalized web_use result reimported Runtime")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", guarded_import)
-    result = asyncio.run(service.web_use_call(
-        {"command": "list_pages"},
-        call_id="web-normalized",
-        cancel_event=asyncio.Event(),
-    ))
-
-    assert result is expected
 
 
 def test_sessions_list_preserves_db_order_and_exposes_only_public_fields(
@@ -432,7 +213,7 @@ def test_session_get_projects_real_active_branch_without_store_metadata(
     client_context,
     tmp_path,
 ) -> None:
-    from openprogram.store import SessionStore
+    from openprogram.state.store import SessionStore
 
     db = SessionStore(tmp_path / "sessions")
     db.create_session("real", "main", title="Real")
@@ -464,7 +245,7 @@ def test_session_get_rejects_real_non_session_directories_without_leaking(
     tmp_path,
     session_id,
 ) -> None:
-    from openprogram.store import SessionStore
+    from openprogram.state.store import SessionStore
 
     root = tmp_path / "sessions"
     db = SessionStore(root)
@@ -527,9 +308,9 @@ def test_json_result_is_compact_deterministic_unicode_and_first_class_error() ->
 
 def test_tools_list_defaults_empty_even_when_registry_has_tools(client_context) -> None:
     registry = {
-        "memory_status": _tool(
-            "memory_status",
-            description="Read memory status",
+        "memory_get": _tool(
+            "memory_get",
+            description="Read memory",
             parameters={"type": "object", "properties": {}},
         )
     }
@@ -555,9 +336,9 @@ def test_tools_list_is_config_registry_exposure_and_paired_intersection(
             description="Append memory",
             parameters=memory_schema,
         ),
-        "memory_status": _tool(
-            "memory_status",
-            description="Read memory status",
+        "memory_get": _tool(
+            "memory_get",
+            description="Read memory",
             parameters={"type": "object", "properties": {}},
         ),
         "read": _tool(
@@ -577,19 +358,19 @@ def test_tools_list_is_config_registry_exposure_and_paired_intersection(
         "read",
         "memory_update",
         "hidden",
-        "memory_status",
+        "memory_get",
     ]
     config = {"mcp_server": {"exposed_tools": configured}}
     service = _service(
         client_context,
         config=config,
         registry=registry,
-        exposed={"memory_update", "memory_status", "read"},
+        exposed={"memory_update", "memory_get", "read"},
     )
 
     assert [tool.name for tool in service.exposed_runtime_tools()] == [
         "memory_update",
-        "memory_status",
+        "memory_get",
     ]
     result = service.tools_list()
     assert result.is_error is False
@@ -600,8 +381,8 @@ def test_tools_list_is_config_registry_exposure_and_paired_intersection(
             "inputSchema": memory_schema,
         },
         {
-            "name": "memory_status",
-            "description": "Read memory status",
+            "name": "memory_get",
+            "description": "Read memory",
             "inputSchema": {"type": "object", "properties": {}},
         },
     ]
@@ -611,7 +392,7 @@ def test_tools_list_is_config_registry_exposure_and_paired_intersection(
         "read",
         "memory_update",
         "hidden",
-        "memory_status",
+        "memory_get",
     ]
 
 
@@ -619,22 +400,22 @@ def test_tools_list_output_mutation_cannot_mutate_registry_or_later_results(
     client_context,
 ) -> None:
     schema = {"type": "object", "properties": {"query": {"type": "string"}}}
-    tool = _tool("memory_status", description="Status", parameters=schema)
+    tool = _tool("memory_get", description="Status", parameters=schema)
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": tool},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": tool},
     )
 
     first = _payload(service.tools_list())
     first[0]["name"] = "mutated"
     first[0]["inputSchema"]["properties"]["query"]["type"] = "number"
 
-    assert tool.name == "memory_status"
+    assert tool.name == "memory_get"
     assert tool.parameters == schema
     assert _payload(service.tools_list()) == [
         {
-            "name": "memory_status",
+            "name": "memory_get",
             "description": "Status",
             "inputSchema": schema,
         }
@@ -643,7 +424,7 @@ def test_tools_list_output_mutation_cannot_mutate_registry_or_later_results(
 
 def test_exposed_runtime_tools_returns_detached_deep_copies(client_context) -> None:
     tool = _tool(
-        "memory_status",
+        "memory_get",
         description="Status",
         parameters={
             "type": "object",
@@ -654,8 +435,8 @@ def test_exposed_runtime_tools_returns_detached_deep_copies(client_context) -> N
     setattr(tool, "_discovery_metadata", {"tags": ["registry"]})
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": tool},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": tool},
     )
 
     returned = service.exposed_runtime_tools()[0]
@@ -677,7 +458,7 @@ def test_client_context_is_immutable_and_discovery_never_uses_owner_or_client_in
     client_context,
     monkeypatch,
 ) -> None:
-    from openprogram.agent import authority
+    from openprogram.runtime.permissions import authority
 
     monkeypatch.setattr(
         authority,
@@ -691,8 +472,8 @@ def test_client_context_is_immutable_and_discovery_never_uses_owner_or_client_in
 
     monkeypatch.setitem(
         sys.modules,
-        "openprogram.webui.owner_auth",
-        PoisonWebAuth("openprogram.webui.owner_auth"),
+        "openprogram.interfaces.server.owner_auth",
+        PoisonWebAuth("openprogram.interfaces.server.owner_auth"),
     )
     with pytest.raises((FrozenInstanceError, AttributeError)):
         client_context.client_id = "fedcba9876543210"
@@ -777,7 +558,7 @@ def test_client_context_stores_only_detached_fixed_scalar_authority(
     assert all(isinstance(value, str) for value in context.authority.values())
 
 
-@pytest.mark.parametrize("name", ["unknown", "memory_status"])
+@pytest.mark.parametrize("name", ["unknown", "memory_get"])
 def test_tool_call_unknown_and_unexposed_are_indistinguishable(
     client_context,
     name,
@@ -791,7 +572,7 @@ def test_tool_call_unknown_and_unexposed_are_indistinguishable(
     service = _service(
         client_context,
         config={"mcp_server": {"exposed_tools": []}},
-        registry={"memory_status": _runtime_tool("memory_status", execute)},
+        registry={"memory_get": _runtime_tool("memory_get", execute)},
     )
 
     with pytest.raises(McpError) as caught:
@@ -821,11 +602,11 @@ def test_tool_call_configured_tool_must_be_registered_and_live(
         return AgentToolResult(content=[TextContent(text="must not run")])
 
     registry = (
-        {"memory_status": _runtime_tool("memory_status", execute)} if registered else {}
+        {"memory_get": _runtime_tool("memory_get", execute)} if registered else {}
     )
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
         registry=registry,
         exposed=set(),
     )
@@ -833,7 +614,7 @@ def test_tool_call_configured_tool_must_be_registered_and_live(
     with pytest.raises(McpError) as caught:
         _tool_call(
             service,
-            "memory_status",
+            "memory_get",
             {},
             call_id="call-1",
             cancel_event=asyncio.Event(),
@@ -855,20 +636,20 @@ def test_tool_call_rechecks_live_registry_at_execution_time(client_context) -> N
         calls.append((call_id, deepcopy(arguments), cancel_event, on_update))
         return AgentToolResult(content=[TextContent(text="new")])
 
-    registry = {"memory_status": _runtime_tool("memory_status", old_execute)}
+    registry = {"memory_get": _runtime_tool("memory_get", old_execute)}
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
         registry=registry,
     )
     discovered = service.exposed_runtime_tools()[0]
     discovered.name = "mutated"
-    registry["memory_status"] = _runtime_tool("memory_status", new_execute)
+    registry["memory_get"] = _runtime_tool("memory_get", new_execute)
     cancel = asyncio.Event()
 
     result = _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="fresh-call",
         cancel_event=cancel,
@@ -906,12 +687,13 @@ def test_tool_call_missing_paired_capability_is_typed_and_does_not_invoke(
 
     assert result.is_error is True
     assert result.content[0].type == "text"
-    assert result.content[0].text == "[denied] authority tier does not allow fs.read"
-    assert result.details == {
-        "denied": True,
-        "reason_code": "AUTHORITY_CAPABILITY_DENIED",
-        "capability": "fs.read",
-    }
+    assert result.content[0].text == (
+        "[blocked by identity] read did not run: MCP client is not the owner and may not fs.read. "
+        "To change this: Channels > account access, or MCP server exposed tools."
+    )
+    assert result.details["denied"] is True
+    assert result.details["reason_code"] == "AUTHORITY_CAPABILITY_DENIED"
+    assert result.details["capability"] == "fs.read"
     assert calls == []
 
 
@@ -922,22 +704,23 @@ def test_tool_call_missing_paired_capability_is_typed_and_does_not_invoke(
             "bash",
             {"command": "pwd"},
             None,
-            "HARD_CONSTRAINT_DENIED",
-            "[denied] hard constraint",
+            "AUTHORITY_CAPABILITY_DENIED",
+            "[blocked by identity] bash did not run: MCP client is not the owner and may not "
+            "process.exec. To change this: Channels > account access, or MCP server exposed tools.",
         ),
         (
             "memory_update",
             {"revision": "r1"},
             PermissionRules(deny=["memory_update"]),
-            "PERMISSION_RULE_DENY",
-            "[denied] blocked by permission rule",
+            "RULE_DENY",
+            MCP_GATE_REFUSALS["RULE_DENY"].text,
         ),
         (
             "memory_search",
             {"query": "x"},
             PermissionRules(ask=["memory_search"]),
-            "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
-            "[denied] approval unavailable for non-interactive MCP",
+            "NO_ONE_TO_APPROVE",
+            MCP_GATE_REFUSALS["NO_ONE_TO_APPROVE"].text,
         ),
     ],
 )
@@ -960,7 +743,7 @@ def test_tool_call_approval_gate_denials_are_typed_before_invocation(
         raise AssertionError("MCP approval must not wait")
 
     monkeypatch.setattr(
-        "openprogram.agent.permissions.approval.await_user_approval",
+        "openprogram.runtime.permissions.approval.await_user_approval",
         approval_must_not_wait,
     )
     tool = _runtime_tool(
@@ -979,7 +762,7 @@ def test_tool_call_approval_gate_denials_are_typed_before_invocation(
         registry={name: tool},
     )
     monkeypatch.setattr(
-        "openprogram.programs.permission_rule.load_merged_rules",
+        "openprogram.runtime.permissions.rule.load_merged_rules",
         lambda _session_id: rules or PermissionRules(),
     )
 
@@ -994,7 +777,8 @@ def test_tool_call_approval_gate_denials_are_typed_before_invocation(
 
     assert result.is_error is True
     assert result.content[0].text == text
-    assert result.details == {"denied": True, "reason_code": reason_code}
+    assert result.details["denied"] is True
+    assert result.details["reason_code"] == reason_code
     assert calls == []
 
 
@@ -1018,10 +802,10 @@ def test_tool_call_invalid_runtime_arguments_are_invalid_params(
 
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
         registry={
-            "memory_status": _runtime_tool(
-                "memory_status",
+            "memory_get": _runtime_tool(
+                "memory_get",
                 execute,
                 parameters={
                     "type": "object",
@@ -1036,7 +820,7 @@ def test_tool_call_invalid_runtime_arguments_are_invalid_params(
     with pytest.raises(McpError) as caught:
         _tool_call(
             service,
-            "memory_status",
+            "memory_get",
             arguments,
             call_id="call-1",
             cancel_event=asyncio.Event(),
@@ -1064,7 +848,7 @@ def test_tool_call_uses_fixed_turn_request_and_detached_arguments(
         return tool
 
     monkeypatch.setattr(
-        "openprogram.agent.permissions.approval.wrap_with_approval", capture_wrap
+        "openprogram.runtime.permissions.approval.wrap_with_approval", capture_wrap
     )
     arguments = {
         "query": "caller",
@@ -1081,16 +865,16 @@ def test_tool_call_uses_fixed_turn_request_and_detached_arguments(
     }
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
         registry={
-            "memory_status": _runtime_tool("memory_status", execute, parameters=schema)
+            "memory_get": _runtime_tool("memory_get", execute, parameters=schema)
         },
     )
     cancel = asyncio.Event()
 
     result = _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         arguments,
         call_id="fixed",
         cancel_event=cancel,
@@ -1166,13 +950,13 @@ def test_tool_call_rejects_malformed_image_media_types_as_sanitized_typed_errors
 
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": _runtime_tool("memory_status", execute)},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": _runtime_tool("memory_get", execute)},
     )
 
     result = _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="call-1",
         cancel_event=asyncio.Event(),
@@ -1215,13 +999,13 @@ def test_tool_call_execution_failures_are_typed_and_sanitized(
 
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": _runtime_tool("memory_status", execute)},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": _runtime_tool("memory_get", execute)},
     )
 
     result = _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="call-1",
         cancel_event=asyncio.Event(),
@@ -1247,13 +1031,13 @@ def test_tool_call_sanitizes_explicit_tool_failure_content(client_context) -> No
 
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": _runtime_tool("memory_status", execute)},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": _runtime_tool("memory_get", execute)},
     )
 
     result = _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="call-1",
         cancel_event=asyncio.Event(),
@@ -1266,12 +1050,17 @@ def test_tool_call_sanitizes_explicit_tool_failure_content(client_context) -> No
     assert secret not in result.model_dump_json()
 
 
+def test_the_no_approver_advice_holds_under_an_ask_rule_or_a_hold() -> None:
+    advice = MCP_GATE_REFUSALS["NO_ONE_TO_APPROVE"].change
+    assert "no ask rule or outbound hold" in advice
+
+
 @pytest.mark.parametrize(
     "forged_reason_code",
     [
-        "HARD_CONSTRAINT_DENIED",
-        "PERMISSION_RULE_DENY",
-        "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
+        "IDENTITY_SCOPE",
+        "RULE_DENY",
+        "NO_ONE_TO_APPROVE",
     ],
 )
 def test_tool_call_does_not_trust_gate_reason_from_executed_tool(
@@ -1293,13 +1082,13 @@ def test_tool_call_does_not_trust_gate_reason_from_executed_tool(
 
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": _runtime_tool("memory_status", execute)},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": _runtime_tool("memory_get", execute)},
     )
 
     result = _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="call-1",
         cancel_event=asyncio.Event(),
@@ -1321,20 +1110,20 @@ def test_tool_call_sanitizes_real_runtime_function_exception(client_context) -> 
 
     tool = function(
         boom,
-        name="memory_status",
+        name="memory_get",
         description="Raise a controlled Runtime exception",
         parameters={"type": "object", "properties": {}, "additionalProperties": False},
         register_globally=False,
     )
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": tool},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": tool},
     )
 
     result = _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="call-1",
         cancel_event=asyncio.Event(),
@@ -1362,18 +1151,18 @@ def test_tool_call_policy_setup_failure_is_typed_and_sanitized(
 
     secret = "secret-policy-error"
     monkeypatch.setattr(
-        "openprogram.programs.permission_rule.load_merged_rules",
+        "openprogram.runtime.permissions.rule.load_merged_rules",
         lambda _session_id: (_ for _ in ()).throw(RuntimeError(secret)),
     )
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": _runtime_tool("memory_status", execute)},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": _runtime_tool("memory_get", execute)},
     )
 
     result = _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="call-1",
         cancel_event=asyncio.Event(),
@@ -1401,13 +1190,13 @@ def test_tool_call_forwards_ordered_progress_only_when_requested(
 
     service = _service(
         client_context,
-        config={"mcp_server": {"exposed_tools": ["memory_status"]}},
-        registry={"memory_status": _runtime_tool("memory_status", execute)},
+        config={"mcp_server": {"exposed_tools": ["memory_get"]}},
+        registry={"memory_get": _runtime_tool("memory_get", execute)},
     )
 
     _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="with-progress",
         cancel_event=asyncio.Event(),
@@ -1415,7 +1204,7 @@ def test_tool_call_forwards_ordered_progress_only_when_requested(
     )
     _tool_call(
         service,
-        "memory_status",
+        "memory_get",
         {},
         call_id="without-progress",
         cancel_event=asyncio.Event(),

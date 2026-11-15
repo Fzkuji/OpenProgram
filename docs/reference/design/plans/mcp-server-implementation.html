@@ -1,0 +1,135 @@
+<title>MCP server implementation</title>
+<meta name="description" content="Modules, interfaces and acceptance matrix of the authenticated stdio MCP server.">
+<h1>MCP server implementation</h1>
+
+<p>How <code translate="no">openprogram mcp serve</code> is built. Behaviour, gates and peer comparison: <a href="../integrations/mcp-server.html">MCP server</a>.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Module</th><th scope="col">Owns</th><th scope="col">Tests</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">extensions/mcp/server/contracts.py</code></th><td>Wrapper schemas, <code translate="no">validate_tool_call</code>, <code translate="no">get_mcp_tools</code></td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_contracts.py</code></td></tr>
+<tr><th scope="row"><code translate="no">auth.py</code></th><td>Token file, <code translate="no">authenticate_from_environment</code></td><td><code translate="no">tests/component/providers/adapters/test_mcp_server_auth.py</code>, <code translate="no">test_mcp_server_cli.py</code></td></tr>
+<tr><th scope="row"><code translate="no">service.py</code>, <code translate="no">tools.py</code></th><td>Sessions, Runtime tool exposure, <code translate="no">tool_call</code>, prompt lifecycle, content conversion</td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_tools.py</code>, <code translate="no">tests/component/programs/mcp/test_mcp_server_turns.py</code></td></tr>
+<tr><th scope="row"><code translate="no">server.py</code></th><td><code translate="no">build_server</code>, <code translate="no">serve_stdio</code>, <code translate="no">serve</code></td><td><code translate="no">tests/integration/programs/test_mcp_server.py</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/permissions/authority.py</code>, <code translate="no">state/settings.py</code></th><td><code translate="no">mcp_client_authority</code>, <code translate="no">mcp_server.exposed_tools</code></td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_security.py</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/cli/commands/mcp.py</code>, <code translate="no">parser.py</code>, <code translate="no">application.py</code></th><td><code translate="no">mcp serve</code>, <code translate="no">mcp token create</code>, local dispatch</td><td><code translate="no">test_mcp_server_cli.py</code></td></tr>
+</tbody>
+</table>
+<p class="note">A sibling of the MCP client package and separate from the Web owner control plane. Dependency: <code translate="no">mcp&gt;=1.0.0,&lt;2.0.0</code>, locked at 1.30.0; protocol baseline 2025-11-25.</p>
+
+<h2 id="fixed-limits">Fixed limits</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Limit</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Transport</th><td>stdio only. No HTTP, SSE, Streamable HTTP, OAuth, Web routes, sockets or listeners</td></tr>
+<tr><th scope="row">Identity</th><td>Credential-derived. <code translate="no">initialize.clientInfo</code> is diagnostics only</td></tr>
+<tr><th scope="row">Every request</th><td><code translate="no">source="mcp"</code>, <code translate="no">permission_mode="ask"</code>, <code translate="no">authority_tier="paired"</code>, <code translate="no">interaction="non-interactive"</code>; none is caller-configurable</td></tr>
+<tr><th scope="row">Authority</th><td><code translate="no">speaker_kind="client"</code>, <code translate="no">speaker_id=f"mcp/{client_id}"</code>, <code translate="no">speaker_display="MCP client"</code>, <code translate="no">principal_id=owner_principal_id()</code>. A malformed client id is rejected</td></tr>
+<tr><th scope="row">Credential</th><td>Never <code translate="no">interfaces.server.owner_auth</code>, <code translate="no">backend_endpoint</code>, Web owner tokens, cookies or owner bearer headers</td></tr>
+<tr><th scope="row">Runtime tool exposure</th><td><code translate="no">mcp_server.exposed_tools</code> (default <code translate="no">[]</code>) ∩ live registry ∩ paired capability, for discovery and execution alike</td></tr>
+<tr><th scope="row">Questions</th><td>Never wait. Approval gates deny at once; other <code translate="no">question.asked</code> for an active MCP session resolve <code translate="no">declined</code>. <code translate="no">source="mcp"</code> counts as unattended; hard constraints come before rules and every bypass</td></tr>
+<tr><th scope="row">ACP server</th><td>Unchanged</td></tr>
+</tbody>
+</table>
+
+<h2 id="wrapper-tools">Wrapper tools</h2>
+<p>MCP <code translate="no">tools/list</code> returns these wrappers. The wrapper named <code translate="no">tools_list</code> returns the filtered Runtime tools. Separate contracts, separate assertions.</p>
+<table class="stack">
+<thead><tr><th scope="col">Tool</th><th scope="col">Input</th><th scope="col">Success payload</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">sessions_list</code></th><td>none</td><td>Up to 100 recent <code translate="no">{id,title,updated_at}</code>, in session-store order</td></tr>
+<tr><th scope="row"><code translate="no">session_get</code></th><td><code translate="no">session_id</code></td><td>Active-branch <code translate="no">{id,role,content,timestamp}</code></td></tr>
+<tr><th scope="row"><code translate="no">prompt_send</code></th><td><code translate="no">prompt</code>, optional <code translate="no">session_id</code></td><td><code translate="no">{session_id,text,assistant_msg_id,failed}</code>. No id creates <code translate="no">mcp_&lt;uuid&gt;</code> with agent <code translate="no">main</code>; an unknown id is invalid</td></tr>
+<tr><th scope="row"><code translate="no">prompt_cancel</code></th><td><code translate="no">session_id</code></td><td><code translate="no">{session_id,cancelled}</code>; true only for a same-connection active MCP turn</td></tr>
+<tr><th scope="row"><code translate="no">tools_list</code></th><td>none</td><td><code translate="no">{name,description,inputSchema}</code>, configured order, de-duplicated</td></tr>
+<tr><th scope="row"><code translate="no">tool_call</code></th><td><code translate="no">name</code>, optional object <code translate="no">arguments</code> (default <code translate="no">{}</code>)</td><td>Converted <code translate="no">AgentToolResult</code> content and error state</td></tr>
+</tbody>
+</table>
+<p class="note">Strings are non-blank. Schemas set <code translate="no">additionalProperties: false</code> and validate with <code translate="no">Draft202012Validator</code>; input is copied, never mutated. Structured payloads are one UTF-8 JSON <code translate="no">TextContent</code>. Text and image map to MCP text and image; other content fails closed as an execution error.</p>
+
+<h2 id="errors">Errors</h2>
+<table class="stack">
+<thead><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Wrapper name outside the list</th><td><code translate="no">McpError</code> <code translate="no">METHOD_NOT_FOUND</code></td></tr>
+<tr><th scope="row">Schema failure, invalid underlying arguments, unknown supplied <code translate="no">session_id</code></th><td><code translate="no">McpError</code> <code translate="no">INVALID_PARAMS</code></td></tr>
+<tr><th scope="row">Unknown or unexposed underlying tool</th><td>Identical method-level error, so membership does not leak</td></tr>
+<tr><th scope="row">Configured tool lacking paired scope; hard-constraint or approval refusal; executed tool failure</th><td><code translate="no">CallToolResult(isError=True)</code></td></tr>
+<tr><th scope="row">Cancelled <code translate="no">prompt_send</code></th><td>The SDK's standard JSON-RPC cancellation error, never a tool result</td></tr>
+</tbody>
+</table>
+<p class="note">Failure comes from <code translate="no">AgentToolResult.is_error</code>, set by normalization, the MCP client adapter, approval <code translate="no">_denied</code>, timeouts and exceptions, never inferred from text. <code translate="no">details</code> keeps diagnostics such as <code translate="no">denied</code>, <code translate="no">timeout</code>, <code translate="no">reason_code</code>.</p>
+
+<h2 id="token">Token</h2>
+<ul>
+<li>File <code translate="no">&lt;state&gt;/mcp_server_token</code>, POSIX <code translate="no">0600</code>; <code translate="no">serve</code> never generates one. <code translate="no">OPENPROGRAM_MCP_TOKEN</code> is compared with <code translate="no">hmac.compare_digest</code> before the stdio context opens.</li>
+<li>Client id: <code translate="no">sha256(stored_token)</code>, first 16 hex characters. It never contains token text.</li>
+<li><code translate="no">create_token</code>: <code translate="no">secrets.token_urlsafe(32)</code>, refuses an existing target, exclusive <code translate="no">0600</code> temporary file, <code translate="no">fsync</code>, then a no-clobber install (<code translate="no">os.link</code> on POSIX, so a concurrent writer is never overwritten).</li>
+<li>Authentication failure: nonzero exit, empty stdout, sanitized stderr, stdin unread.</li>
+</ul>
+
+<h2 id="turns">Prompt lifecycle</h2>
+<dl class="pairs">
+<dt>Runs</dt><dd>Synchronous turn on a worker thread with <code translate="no">abandon_on_cancel</code>; the exact cancel event is unregistered in <code translate="no">finally</code>. An abandoned worker cannot publish a later result.</dd>
+<dt><code translate="no">prompt_cancel</code></dt><dd>An ordinary tool: only a same-client, same-connection active turn; foreign or finished turns fail closed.</dd>
+<dt>Cancellation</dt><dd>Sets the thread and tool cancel events, marks the session cancelled, kills its subprocess and runtime, cancels session questions, unregisters the event, removes the active record, audits <code translate="no">mcp.request.cancelled</code> with request, session and client fingerprint but no prompt or token. Idempotent. Re-raised so the SDK produces the error.</dd>
+<dt>Progress</dt><dd>The service reports ordered messages; the wire layer turns them into monotonic MCP progress only when <code translate="no">progressToken</code> is present.</dd>
+<dt>Wire</dt><dd>An explicit <code translate="no">CallToolRequest</code> handler keeps wrapper and parameter faults as MCP errors. Stdout carries JSON-RPC only.</dd>
+</dl>
+
+<details>
+<summary>Interfaces</summary>
+<pre translate="no" tabindex="0"><code># contracts.py
+def get_mcp_tools() -&gt; tuple[mcp.types.Tool, ...]
+def validate_tool_call(name, arguments) -&gt; dict[str, Any]
+
+# auth.py
+MCP_TOKEN_ENV = "OPENPROGRAM_MCP_TOKEN"
+def token_path() -&gt; Path
+def create_token(path=None) -&gt; str
+def authenticate_from_environment(environ=os.environ, path=None) -&gt; str
+
+# service.py
+@dataclass(frozen=True)
+class MCPClientContext: client_id; authority
+
+class MCPService:
+    def sessions_list() -&gt; AgentToolResult
+    def session_get(session_id) -&gt; AgentToolResult
+    def tools_list() -&gt; AgentToolResult
+    def exposed_runtime_tools() -&gt; tuple[AgentTool, ...]
+    async def tool_call(name, arguments, *, call_id, cancel_event, on_progress)
+    async def prompt_send(prompt, *, session_id, request_id)
+    async def prompt_cancel(session_id)
+    async def cancel_request(request_id, *, reason) -&gt; bool
+    async def aclose(); def close()
+
+# tools.py
+def json_result(payload, *, is_error=False) -&gt; AgentToolResult
+def to_mcp_content(result) -&gt; list[mcp.types.ContentBlock]
+
+# server.py
+def build_server(context) -&gt; Server
+async def serve_stdio(context) -&gt; None
+def serve() -&gt; int</code></pre>
+</details>
+
+<details>
+<summary>End-to-end acceptance, with the SDK client</summary>
+<ol>
+<li>Missing token file, wrong mode, missing or mismatched environment exit before initialize.</li>
+<li>A valid token initializes at 2025-11-25; changing <code translate="no">clientInfo</code> changes no identity, list or result.</li>
+<li><code translate="no">tools/list</code> returns the wrappers in order; <code translate="no">tools_list</code> returns only the intersection.</li>
+<li>Every wrapper returns its fixed shape; unknown wrappers and invalid parameters are MCP errors.</li>
+<li>Unknown and unexposed underlying names are indistinguishable; scope, hard-constraint and approval failures are <code translate="no">isError</code>; no denied tool executes.</li>
+<li>No approval or question blocks an MCP call.</li>
+<li>Progress arrives in monotonic order if and only if the request supplies <code translate="no">progressToken</code>.</li>
+<li>Cancelling <code translate="no">prompt_send</code> yields the SDK's error; later side effects stop, state clears, the audit exists.</li>
+<li><code translate="no">prompt_cancel</code> cannot cancel a foreign or finished turn.</li>
+<li>Stdout holds JSON-RPC only.</li>
+</ol>
+<p class="note">Review together: schemas first; identity and token for owner-credential reuse and empty-list fallback; denial and cancellation for fail-closed order. Run the SDK client, not hand-written frames. Shared regressions when Runtime types change: authority, permission rules, spawn hard constraints, questions, ACP server, tools runtime.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Present in the current source. Completion evidence belongs to <a href="../integrations/mcp-server.html">MCP server</a>.</p>

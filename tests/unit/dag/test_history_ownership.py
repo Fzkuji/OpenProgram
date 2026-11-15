@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.history_ownership import owned_change_set_closure
-from openprogram.agent.internals._revert import reapply_turn, revert_turn
-from openprogram.agent.job.store import save_job, update_job_status
-from openprogram.agent.job.runner import _mirror_linked_job_to_caller
-from openprogram.agent.job.types import Job, JobStatus
-from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.runtime.conversation.history_ownership import owned_change_set_closure
+from openprogram.runtime.conversation.revert import reapply_turn, revert_turn
+from openprogram.runtime.jobs.store import save_job, update_job_status
+from openprogram.runtime.jobs.runner import _mirror_linked_job_to_caller
+from openprogram.runtime.jobs.types import Job, JobStatus
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
 
 @pytest.fixture
@@ -19,11 +19,11 @@ def store(tmp_path: Path, monkeypatch, request):
     value = SessionStore(tmp_path / "sessions")
     request.addfinalizer(value.close)
     monkeypatch.setattr(
-        'openprogram.store.session.session_store.shared._default_store', value,
+        'openprogram.state.store.session.session_store.shared._default_store', value,
         raising=False,
     )
-    monkeypatch.setattr("openprogram.store.default_store", lambda: value)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: value)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     value.create_session("s", "main", title="ownership")
     value.append_message("s", {"id": "u1", "role": "user", "content": "edit"})
     value.append_message("s", {
@@ -182,7 +182,7 @@ def test_parent_revert_restores_owned_child_only(store, tmp_path):
         id="j_worktree", relation="worktree", worktree_id="wt-1", head_id="wt-a",
     ))
 
-    from openprogram.webui.ws_actions.turn_files import _turn_scope
+    from openprogram.interfaces.server.ws_actions.turn_files import _turn_scope
 
     scope = _turn_scope("s", "a1")
     assert {row["path"] for row in scope["files"]} == {
@@ -204,7 +204,7 @@ def test_parent_revert_restores_owned_child_only(store, tmp_path):
     assert linked_file.read_text(encoding="utf-8") == "after\n"
     assert worktree_file.read_text(encoding="utf-8") == "after\n"
 
-    from openprogram.webui.ws_actions.turn_files import _branch_scope
+    from openprogram.interfaces.server.ws_actions.turn_files import _branch_scope
 
     reverted_scope = _branch_scope("s")
     assert str(parent_file) not in {row["path"] for row in reverted_scope["files"]}
@@ -293,7 +293,7 @@ def test_owned_sibling_completion_order_does_not_override_mutation_order(
     save_job("s", _job(id="j-c1", head_id="c1-a"))
     save_job("s", _job(id="j-c2", head_id="c2-a"))
 
-    from openprogram.webui.ws_actions.turn_files import (
+    from openprogram.interfaces.server.ws_actions.turn_files import (
         _branch_file_diff,
         _branch_scope,
         _review_turn_file_diff,

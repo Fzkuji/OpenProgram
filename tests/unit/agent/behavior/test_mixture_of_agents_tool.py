@@ -7,10 +7,9 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-import pytest
 
-import openprogram.providers as providers
-import openprogram.providers.metadata as provider_metadata
+import openprogram.models.providers as providers
+import openprogram.models.providers.catalog.metadata as provider_metadata
 from openprogram.programs.tools.agents import mixture_of_agents as moa
 
 
@@ -128,7 +127,7 @@ def test_execute_uses_registry_defaults(monkeypatch):
 
     async def fake_aggregate(spec, prompt, answers):
         agg_calls.append((spec, answers))
-        return "SYNTH"
+        return "SYNTH", True
 
     monkeypatch.setattr(moa, "_aggregate", fake_aggregate)
 
@@ -148,7 +147,7 @@ def test_execute_explicit_references_pass_through(monkeypatch):
         }, seen))
 
     async def fake_aggregate(spec, prompt, answers):
-        return f"AGG:{spec}"
+        return f"AGG:{spec}", True
 
     monkeypatch.setattr(moa, "_aggregate", fake_aggregate)
 

@@ -1,0 +1,170 @@
+<title>Agent 配置实现计划</title>
+<meta name="description" content="实现 Agent 配置的阶段、迁移、失败场景和证据。">
+<h1>Agent 配置实现计划</h1>
+
+<h2 id="stages">阶段</h2>
+<table class="stack">
+<thead><tr><th scope="col">阶段、依赖</th><th scope="col">改动</th><th scope="col">退出证据</th></tr></thead>
+<tbody>
+<tr><th scope="row">P0</th><td>类型化 AgentConfig 投影；schema 2 迁移；整配置 revision/CAS；可恢复的多文件生命周期写入</td><td>A01 A02 A11：同修订的客户端不能都成功；重启后看到旧配置或完整新配置；迁移语义差异为空</td></tr>
+<tr><th scope="row">P1，依赖 P0</th><td>一个纯解析器、只读预览、规范能力语义、错误和来源</td><td>A03 A07：等价输入解析相同，selected 为空保持为空，显式拒绝的调用失败</td></tr>
+<tr><th scope="row">P2，依赖 P1</th><td>每次执行的记忆策略、命名空间绑定、资格沿袭、策略 epoch 复验</td><td>A05：读取、写入、延迟抽取、压缩和排队提交都遵守策略；可选故障可见地降级</td></tr>
+<tr><th scope="row">P3，依赖 P1 P2</th><td><code translate="no">agent()</code>/<code translate="no">llm()</code>、聊天、CLI、派发和调度器适配；不可变执行快照、历史过滤</td><td>A03 A04 A06 A08 A12：入口一致；并发、失败或取消的调用不泄漏配置；恢复保留意图</td></tr>
+<tr><th scope="row">P4，依赖 P0 P1，在 P2 P3 后完成</th><td>八分区 UI、整体草稿、注册表模型选择器、能力选择器、生效预览</td><td>A01 A02 A07 A10：真实页面操作、冲突恢复、不可用引用、响应式和键盘</td></tr>
+<tr><th scope="row">P5，依赖 P0–P4</th><td>可移植导入导出、复制/删除预览、兼容预检、产品文档、发布门禁</td><td>A09 A11 A12：只处理自有资源；旧的可调用行为保留；最终候选已验证</td></tr>
+<tr><th scope="row">P6，P5 后可选</th><td>对合格候选的可选 Agent/模型选择策略</td><td>选择测试通过；没有策略时手动路径不变</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Schema 和兼容先于使用方落地。</li>
+<li>P1 之后 UI 布局可用夹具；mock 不算满足 P4。</li>
+<li>每条 P2 入口和出口都覆盖后才发布记忆控制。</li>
+<li>一个有界阶段完成并评审后，依赖它的工作才算完成。</li>
+</ul>
+
+<h2 id="scope">固定选择</h2>
+<ul>
+<li>首个生产版本覆盖保存和内联配置、原子持久化、共享解析、可选记忆和编辑器。手动按调用选模型不依赖自动选择。</li>
+<li>AgentSpec 是唯一保存的注册表；AgentConfig 是类型化值。复用 <code translate="no">Runtime.exec</code>、MemoryBackend、Context Engine、能力目录和资源治理。</li>
+<li>新的保存和匿名配置默认记忆关闭。旧配置通过显式迁移保持生效行为；不静默移动历史或记忆存储。</li>
+<li>模型选择发生在调用准入时。响应中途换模型或用备用模型重放副作用不在范围内。</li>
+<li>单基础解析；没有命名 Agent 继承树、强制角色、自动创建保存的 Agent、新 Worker 或编排引擎。</li>
+</ul>
+
+<h2 id="files">源码归属</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">领域和现有边界</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row">持久化：<code translate="no">runtime/agent_registry/manager.py</code>、<code translate="no">workspace.py</code></th><td>保持 AgentSpec 和存储归属；提议同目录的 <code translate="no">configuration.py</code> / <code translate="no">resolution.py</code> 放类型化值和纯逻辑</td></tr>
+<tr><th scope="row">API：<code translate="no">interfaces/server/routes/catalog/agents.py</code></th><td>一个原子 manager 操作；类型化的预览、修订和就绪响应；没有路由内合并或第二次写 tools</td></tr>
+<tr><th scope="row">函数调用：<code translate="no">runtime/agent/agent_function.py</code>、<code translate="no">llm.py</code>、<code translate="no">runtime/execution.py</code></th><td>新旧参数只规范化一次；不可变作用域配置；保持返回和校验，无 Program/MCP 工具循环，原生搜索需显式授权</td></tr>
+<tr><th scope="row">持久派发：<code translate="no">programs/tools/agents/agent/agent/agent.py</code>、<code translate="no">runtime/conversation/sub_agent_run.py</code></th><td>复用派发和任务生命周期；通过实际运行和 DAG 存储持久化快照和沿袭</td></tr>
+<tr><th scope="row">记忆：<code translate="no">state/memory/backend.py</code>、<code translate="no">state/memory/management/config.py</code></th><td>策略强制在后端之上；命名空间和提交契约在后端内；签收前追踪每个调用方</td></tr>
+<tr><th scope="row">UI：<code translate="no">apps/web/components/agents/agents-page.tsx</code></th><td>复用组件；类型化草稿、原子保存；在实际导入路径扩展 API 和类型层</td></tr>
+<tr><th scope="row">文档</th><td><a href="agent-configuration-ui.zh.html">配置契约</a>、<a href="agent-core-configuration-ui.zh.html">编辑器</a>、<a href="agent-capability-configuration-ui.zh.html">能力</a>、<a href="agent-tool-configuration-ui.zh.html">Programs</a>，两种语言；产品页只随真实实现改动</td></tr>
+</tbody>
+</table>
+<p class="note">Python 路径都在 <code translate="no">openprogram/</code> 下。每个任务书开始前，从调用图找出实际的聊天、调度器和 CLI 使用方及持久化 schema，并记录路径。不做无关的前端、Provider 或记忆引擎重构。</p>
+
+<h2 id="migration">迁移、旧客户端与回滚</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">预检</th><td>在写锁下读取所有保存记录、默认指针和生效的旧全局设置。试运行报告 ID、schema 版本、未解析引用和语义差异，不含密钥或记忆内容。未知 schema 和损坏记录阻止该 profile 迁移；绝不替换成 main。</td></tr>
+<tr><th scope="row">规范化</th><td>没有版本视为 schema 1，变为 schema 2、修订 1。未知扩展数据进迁移备份；不支持的可执行字段在弄清前拒绝。旧记忆绑定和行为不变，不切换到空的 self 空间。旧全局继承保持为命名的兼容来源，直到用户选择模式。</td></tr>
+<tr><th scope="row">写入</th><td>先用严格权限备份确切的自有文件和索引。多文件工作用日志和重启安全的对账。校验通过才提交 profile；中断的迁移幂等恢复。不改外部工作区、凭据、会话、DAG 或已学习的记忆。</td></tr>
+<tr><th scope="row">前置条件</th><td>新写入需要 <code translate="no">expected_revision</code>。临时适配器在同一把锁下比较客户端的 <code translate="no">updated_at</code>，推导修订后写一次。两者都没有：428；UI 保留草稿并要求重新加载。不允许后写覆盖。</td></tr>
+<tr><th scope="row">Python 调用</th><td>不带选择器的调用保持模型、历史、记忆和输出类型。新参数仅限关键字。显式 <code translate="no">agent_id</code>/<code translate="no">config</code> 默认干净历史；显式继承遵守可见性规则。冲突的别名是校验错误。持久的 <code translate="no">start_from</code> 和 <code translate="no">to</code> 含义不变。</td></tr>
+<tr><th scope="row">回滚</th><td>只能用理解 schema 2 的读取器，或在写入方停止时做显式验证的降级。不支持的新字段使无损降级不可行。只在迁移后无编辑或已对账时恢复备份。旧二进制不得静默重写 schema 2。</td></tr>
+<tr><th scope="row">上线顺序</th><td>后端双读、更新客户端、启用迁移、退役旧适配器。退役需要一方客户端已更新并有公布的弃用期。</td></tr>
+</tbody>
+</table>
+
+<h2 id="scenarios">失败场景</h2>
+<table class="stack">
+<thead><tr><th scope="col">ID</th><th scope="col">操作</th><th scope="col">必须成立</th></tr></thead>
+<tbody>
+<tr><th scope="row">A01 A03</th><td>创建只有名称的配置；用保存字段和等价内联字段调用 agent 与 llm</td><td>不需要角色；匿名不持久化；除身份和来源外生效字段相同；llm 无 Program/MCP 循环；<code translate="no">web_search=False</code> 不发原生搜索，显式授权的 True 保留</td></tr>
+<tr><th scope="row">A02</th><td>两个进程从同一修订 PATCH 模型和工具；在替换前注入失败</td><td>恰好一个 200、一个 409；文件为完整旧版或新版；没有混合字段；草稿保留</td></tr>
+<tr><th scope="row">A04</th><td>两个嵌套并行调用用不同模型和记忆；一个在 await 时取消</td><td>请求用各自字段；finally 恢复调用方；取消传播</td></tr>
+<tr><th scope="row">A05</th><td>在记忆和 off/只读输出中放不同哨兵；强制召回、压缩和会话结束写入</td><td>禁止的哨兵不进入请求或存储；派生摘要保留写限制</td></tr>
+<tr><th scope="row">A05 A08</th><td>暂停排队的召回或写入，撤销访问，放行，重启 Worker</td><td>迟到的召回被丢弃；写入在提交时被拒；重试不能扩大授权</td></tr>
+<tr><th scope="row">A06</th><td>用 clean、inherit、selected 历史切换保存的 Agent；请求不可访问节点</td><td>只有授权且选中的上下文；无隐式传递；推理前失败</td></tr>
+<tr><th scope="row">A07</th><td><code translate="no">selected=[]</code>；被拒绝的显式工具；缺失必需 MCP；有无 Agent 选择的 llm 原生搜索</td><td>发现和调用一致；预检成功前无副作用</td></tr>
+<tr><th scope="row">A08 A12</th><td>排队运行、编辑 Agent、恢复；触发下一次计划</td><td>恢复用固定配置加当前撤销；新触发解析最新修订</td></tr>
+<tr><th scope="row">A09</th><td>带 self 和共享记忆、活动运行、外部 cwd 时复制、导出、导入、删除</td><td>不复制记忆、历史、凭据或计划；共享和外部资源保留；活动中删除被拒</td></tr>
+<tr><th scope="row">A10</th><td>桌面和移动端、键盘操作所有分区；两个客户端保存冲突</td><td>无草稿丢失、虚假成功、溢出或不可达标签；冲突提供重新加载或显式重新应用</td></tr>
+<tr><th scope="row">A11</th><td>迁移夹具：全局记忆继承、空允许、名称加类别、未分类条目、默认 Agent</td><td>生效模型、能力、记忆和默认一致；重跑无操作</td></tr>
+</tbody>
+</table>
+<p class="note">P3 还负责<a href="../collaboration/agent-collaboration.zh.html">协作设计</a>中的 C1–C10：实际的 <code translate="no">execution_id</code>/<code translate="no">job_id</code> 接口、完成后续和异步归档、消息耗尽后的授权输出读取、统一的历史可见性、结果限制、精确附着导航。只有 helper 或直接调用它的测试不算公开入口证据。</p>
+
+<h2 id="brief">首个任务书：P0</h2>
+<dl class="pairs">
+<dt>触及</dt><dd>Agent 管理类型和存储、Agent 路由、其测试、相关双语文档；如能让 manager 更清晰，加最小的值/schema 模块。不碰函数执行、记忆行为或 UI 布局。</dd>
+<dt>RED</dt><dd>并发同前置条件 PATCH 模型和工具后读取：必须展示可复现的丢失更新或混合写入，而不是检查方法名。加到 <code translate="no">tests/component/webui/abilities/test_agent_tools_routes.py</code>；迁移夹具放在 agent 管理测试旁，在改序列化前证明旧语义。</dd>
+<dt>GREEN</dt><dd>一个经校验的 manager 事务在跨进程写锁下比较修订并原子替换完整规范文件；路由不能单独保存 tools。读兼容、类型化错误和时间戳适配保留。</dd>
+<dt>完成</dt><dd>记录公开入口命令、失败和通过证据、改动文件；独立规格评审，再做全新质量评审。</dd>
+</dl>
+<pre translate="no" tabindex="0">uv run --locked --extra dev python -m pytest -q tests/component/webui/abilities/test_agent_tools_routes.py</pre>
+
+<h2 id="gates">验证</h2>
+<p>每个任务书选择聚焦的 RED/GREEN 测试，扩展现有归属。以下是起点，不代表场景已存在：</p>
+<pre translate="no" tabindex="0">tests/component/webui/abilities/test_agent_tools_routes.py
+tests/unit/agent/workflows/test_agentic_programming_agent.py
+tests/component/webui/settings/test_memory_settings_routes.py
+tests/unit/memory/test_memory_runtime_config.py
+tests/unit/config/test_docs_information_architecture.py
+tests/e2e/web/test_agents_configuration.py</pre>
+<details>
+<summary>命令</summary>
+<pre translate="no" tabindex="0"># Documentation
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
+python -m scripts.docs_site.checklang
+python -m scripts.docs_site.check_landing
+uv run --locked --extra dev python -m pytest -q tests/unit/config/test_docs_information_architecture.py
+
+# Final candidate
+uv run --locked --extra dev python -m scripts.testing.affected_tests --base dev --run
+npm --prefix apps/web run check
+npm --prefix apps/web run build
+uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web</pre>
+</details>
+<ul>
+<li>实现时与 <code translate="no">tests/README.md</code> 和 <code translate="no">.github/CONTRIBUTING.md</code> 对照。</li>
+<li>浏览器产物针对构建后的生产页面。</li>
+<li>App 验收：部署到开发版，然后晋升；见<a href="../../distribution/dev-instance.zh.html">稳定版与开发版实例</a>。</li>
+<li>源码、测试、本地提交、已安装 App 和线上部署是分开的证据。文档构建既不满足运行时验收，也不满足 App 验收。</li>
+</ul>
+
+<h2 id="routing">P6：可选选择策略</h2>
+<p>可选启用，在解析器之前运行。调用方提供策略引用，而不是 <code translate="no">agent_id</code>/<code translate="no">config</code>（互斥）。候选是保存的 Agent ID 或带 Provider 的模型引用，绝不是生成的可执行配置。策略声明自己的类型：模型选择保留调用方的非模型字段；Agent 选择改变基础并遵守正常历史规则。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">决策</th><th scope="col">契约</th></tr></thead>
+<tbody>
+<tr><th scope="row">资格</th><td>排序前过滤不可用的 Provider、账号或模型、所需模态、结构化输出或工具支持、上下文限制、权限和剩余资源额度</td></tr>
+<tr><th scope="row">排序</th><td>带版本、有序、确定性的规则，基于任务标签、所需能力和调用方偏好；模型辅助排序是之后单独启用的模式</td></tr>
+<tr><th scope="row">无匹配</th><td>类型化的无合格候选错误，或推理前显式配置的合格回退；绝不扩大权限</td></tr>
+<tr><th scope="row">追踪</th><td>策略版本、合格 ID、排除项、选中 ID、规则标识；不含原始用户内容或无依据的成本和延迟说法</td></tr>
+<tr><th scope="row">稳定性</th><td>重试和恢复时固定；新调用可重新选择；活动的工具循环绝不切换</td></tr>
+<tr><th scope="row">评估</th><td>覆盖正确性、无匹配、被拒候选、未知价格元数据和确定性重放的夹具；在批准的语料上测得质量、成本和延迟后才能声称</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Agent 类型策略示例</summary>
+<ul>
+<li>标签 <code translate="no">classify</code> 且需要结构化输出：第一个合格的、配置了选定小模型的保存 Agent。</li>
+<li>标签 <code translate="no">code-edit</code> 且需要工具：选定的保存编码 Agent。</li>
+<li>否则：指定的保存默认 Agent。</li>
+</ul>
+<p>模型类型策略只返回模型引用。候选 ID 和阈值由用户配置，不是硬编码排名。缺失价格或延迟表示未知，不是免费或快速。</p>
+</details>
+
+<h2 id="risks">已知风险</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">风险</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">记忆内容出现在派生历史中</th><td>通过上下文依赖和摘要传播写限制；测试跨 Agent 传递</td></tr>
+<tr><th scope="row">插件无法强制命名空间隔离</th><td>暴露不支持的就绪状态；阻止作用域绑定；不声称靠提示隔离</td></tr>
+<tr><th scope="row">并发文件和默认索引生命周期</th><td>带恢复和幂等的日志；变更权限集中在一个 manager</td></tr>
+<tr><th scope="row">旧客户端覆盖新类型字段</th><td>双读、条件写、显式错误；不静默降级</td></tr>
+<tr><th scope="row">快照含个人指令</th><td>现有执行存储 ACL 和保留策略；诊断显示哈希和引用，不显示提示文本</td></tr>
+<tr><th scope="row">UI 超前于运行时</th><td>功能就绪跟随已验证的后端支持；原型状态保持明确</td></tr>
+</tbody>
+</table>
+<p class="note">没有阻塞 P0 的产品决策。确切的使用方路径和后端撤销支持在实现中确定，按上述失败关闭行为处理；做不到的后端保持不支持。</p>
+
+<h2 id="status">实现状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">已实现</th><th scope="col">计划中</th></tr></thead>
+<tbody>
+<tr><th scope="row">P0</th><td>Revision/CAS、兼容读取</td><td>Schema 2 迁移、事务化生命周期</td></tr>
+<tr><th scope="row">P1</th><td>复用现有运行时解析和能力策略</td><td>统一解析器、生效预览</td></tr>
+<tr><th scope="row">P2</th><td><code translate="no">self</code> 和 <code translate="no">legacy_global</code> 的执行、后台抽取、派生资格和恢复策略</td><td></td></tr>
+<tr><th scope="row">P3</th><td>保存的 Web 配置和试用快照</td><td>完整的 Python、CLI 和调度器入口一致</td></tr>
+<tr><th scope="row">P4</th><td>八个分区、共享草稿、模型选择、冲突比较</td><td>内嵌试用、生效预览</td></tr>
+<tr><th scope="row">P5</th><td>复制、删除、产品文档</td><td>可移植导入导出</td></tr>
+<tr><th scope="row">P6</th><td></td><td>全部</td></tr>
+</tbody>
+</table>

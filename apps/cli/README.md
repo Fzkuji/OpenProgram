@@ -1,9 +1,11 @@
-# OpenProgram CLI applications
+# OpenProgram terminal client
 
-This workspace contains both CLI application layers. `src/` is the React/Ink
-terminal client. `python/openprogram_cli/` owns the Python command parser,
-dispatch, Rich fallback and setup flows. Both use the Agent Core and the single
-OpenProgram worker; neither owns a second backend or product-state store.
+The React/Ink terminal client. The Python CLI application that parses
+commands, dispatches them and launches this client is the package
+`openprogram.interfaces.cli` in
+[`openprogram/interfaces/cli/`](../../openprogram/interfaces/cli/). Both use the
+Agent Core and the single OpenProgram worker; neither owns a second backend or
+product-state store.
 
 ## Source and build output
 
@@ -12,9 +14,10 @@ OpenProgram worker; neither owns a second backend or product-state store.
 - `dist/index.js` is the generated Node.js bundle and is not edited by hand.
 - `dist/index-standalone.cjs` is the self-contained release bundle; product
   runtimes pair it with their platform Node.js executable.
-- `python/openprogram_cli/_impl/` contains the Python application
-  implementation. `openprogram/cli/` is the bounded compatibility import.
-- `python/openprogram_cli/_impl/ink.py` resolves the source bundle or the
+- `npm run build:release` writes the self-contained bundle
+  `openprogram/interfaces/cli/dist/index.mjs`, which ships in wheels as package
+  data of `openprogram.interfaces.cli`.
+- `openprogram/interfaces/cli/ink.py` resolves the source bundle or the
   immutable runtime's standalone bundle. If the active terminal cannot enter
   raw input mode, `openprogram` restores stdio and uses the Rich interface.
 

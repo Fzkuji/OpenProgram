@@ -1,569 +1,579 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>文件修改、Review 与历史恢复 — OpenProgram 设计</title>
-<style>
-:root{
-  color-scheme:light dark;
-  --page:#141413;--surface:#1f1f1e;--surface-2:#191918;--surface-3:#272725;--hover:#30302d;
-  --line:rgba(226,225,218,.18);--line-strong:rgba(226,225,218,.28);
-  --text:#c8c7bd;--muted:#96948b;--faint:#6f6d66;--bright:#f5f4ee;
-  --cyan:#45c7d8;--green:#44c87a;--red:#ef625d;--amber:#d5a45d;--violet:#a78bfa;
-  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;
-  --mono:"SFMono-Regular","SF Mono",Menlo,Consolas,monospace;
-}
-@media(prefers-color-scheme:light){:root{
-  --page:#f6f6f3;--surface:#fff;--surface-2:#f0f0ed;--surface-3:#e8e8e3;--hover:#dfdfd9;
-  --line:rgba(30,30,27,.17);--line-strong:rgba(30,30,27,.27);
-  --text:#42423d;--muted:#686861;--faint:#8a8981;--bright:#171715;
-  --cyan:#006574;--green:#087141;--red:#b8332f;--amber:#855711;--violet:#6642b5;
-}}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--page);color:var(--text);font:14px/1.62 var(--sans);-webkit-font-smoothing:antialiased}
-a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}code{font:12px/1.5 var(--mono);color:var(--bright)}
-button,input{font:inherit}button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
-.page{max-width:1180px;margin:auto;padding:34px 30px 100px}.top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:28px;align-items:end;padding-bottom:22px;border-bottom:1px solid var(--line)}
-.eyebrow{color:var(--cyan);font:10px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase}.top h1{max-width:820px;margin:7px 0 7px;color:var(--bright);font-size:27px;line-height:1.2;letter-spacing:-.02em}.lead{max-width:780px;margin:0;color:var(--muted);font-size:13px}
-.meta{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:330px}.pill{padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font:10px/1.35 var(--mono)}.pill.pending{color:var(--amber)}
-.nav{position:sticky;top:0;z-index:10;display:flex;gap:3px;margin:0 -8px 22px;padding:9px 8px;background:color-mix(in srgb,var(--page) 92%,transparent);backdrop-filter:blur(10px);overflow:auto}.nav a{flex:none;padding:5px 8px;border-radius:5px;color:var(--muted);font-size:11px}.nav a:hover{background:var(--surface-3);color:var(--bright);text-decoration:none}
-h2{margin:48px 0 7px;color:var(--bright);font-size:18px;line-height:1.3}h3{margin:25px 0 7px;color:var(--bright);font-size:14px}.intro{max-width:830px;margin:0 0 14px;color:var(--muted);font-size:12.5px}
-.decision-line{max-width:980px;padding:12px 14px;border-left:2px solid var(--cyan);background:color-mix(in srgb,var(--cyan) 5%,transparent);color:var(--text);font-size:12px}.decision-line.danger{border-left-color:var(--red);background:color-mix(in srgb,var(--red) 5%,transparent)}
-table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--bright);font-weight:600}td{color:var(--muted)}td:first-child{color:var(--text)}
-.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}.table-wrap table{min-width:760px}.table-wrap th,.table-wrap td{padding:10px 12px}.table-wrap tr:last-child td{border-bottom:0}
-.tag{display:inline-flex;padding:2px 6px;border-radius:999px;font:9px/1.4 var(--mono)}.yes{color:var(--green);background:color-mix(in srgb,var(--green) 12%,transparent)}.modify{color:var(--cyan);background:color-mix(in srgb,var(--cyan) 12%,transparent)}.no{color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}.unknown{color:var(--amber);background:color-mix(in srgb,var(--amber) 11%,transparent)}
-.operation-lab{display:grid;grid-template-columns:245px minmax(0,1fr);min-height:420px;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--surface)}
-.op-list{padding:8px;border-right:1px solid var(--line);background:var(--surface-2)}.op-list-label{padding:5px 7px 8px;color:var(--faint);font:9px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase}.op{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;min-height:48px;padding:8px;border:0;border-radius:6px;background:transparent;color:var(--muted);text-align:left;cursor:pointer}.op:hover{background:var(--hover)}.op[aria-selected=true]{background:var(--surface-3);color:var(--bright)}.op b{display:block;font-size:12px;font-weight:600}.op small{display:block;color:var(--muted);font-size:10px}.op-key{color:var(--muted);font:9px/1.4 var(--mono)}
-.op-detail{min-width:0;padding:19px 21px}.op-detail-head{display:flex;align-items:flex-start;gap:12px;padding-bottom:15px;border-bottom:1px solid var(--line)}.op-detail-head h3{margin:0 0 4px;font-size:16px}.op-detail-head p{margin:0;color:var(--muted);font-size:11.5px}.op-status{margin-left:auto;padding:3px 7px;border-radius:999px;background:var(--surface-3);color:var(--cyan);font:9px/1.4 var(--mono)}
-.effect-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin-top:16px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--line)}.effect{padding:12px;background:var(--surface-2)}.effect span{display:block;margin-bottom:4px;color:var(--faint);font:9px/1.3 var(--mono);letter-spacing:.07em;text-transform:uppercase}.effect b{color:var(--bright);font-size:12px}.effect p{margin:4px 0 0;color:var(--muted);font-size:11px}
-.impact{margin-top:15px}.impact-row{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:11.5px}.impact-row:last-child{border-bottom:0}.impact-row>span{color:var(--faint);font:10px/1.55 var(--mono)}.impact-row>b{color:var(--text);font-weight:500}
-.arch{max-width:1060px;padding:18px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.arch svg{display:block;width:100%;height:auto}.arch text{font-family:var(--mono);fill:var(--text);font-size:11px}.arch .sub{fill:var(--faint);font-size:9px}.arch .node{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.2}.arch .exact{stroke:var(--green)}.arch .review{stroke:var(--cyan)}.arch .danger{stroke:var(--red)}.arch .edge{stroke:var(--muted);stroke-width:1.3;fill:none;marker-end:url(#arrow)}.arch .edge-dash{stroke:var(--faint);stroke-width:1.2;stroke-dasharray:4 4;fill:none;marker-end:url(#arrow)}
-.schema{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:1060px}.schema pre{margin:0;padding:14px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--text);font:11px/1.62 var(--mono);white-space:pre-wrap}.schema-note{padding:13px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.schema-note h3{margin:0 0 8px}.schema-note ul{margin:0;padding-left:18px;color:var(--muted);font-size:11.5px}.schema-note li{margin:5px 0}
-.state-flow{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;max-width:1060px}.state{position:relative;min-height:94px;padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}.state:not(:last-child)::after{content:"›";position:absolute;right:-8px;top:34px;z-index:2;color:var(--faint);font-size:18px}.state b{display:block;color:var(--bright);font:10px/1.4 var(--mono)}.state p{margin:6px 0 0;color:var(--muted);font-size:10.5px}.state.blocked{border-color:color-mix(in srgb,var(--red) 55%,var(--line))}.state.done{border-color:color-mix(in srgb,var(--green) 55%,var(--line))}
-.scenario-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.scenario{padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}.scenario b{display:block;margin-bottom:5px;color:var(--bright);font-size:12px}.scenario p{margin:0;color:var(--muted);font-size:11px}.scenario .result{margin-top:8px;color:var(--cyan);font:9px/1.4 var(--mono)}
-.source-list{display:flex;flex-wrap:wrap;gap:7px}.source-list a{padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:10.5px}.source-list a:hover{background:var(--surface-3);text-decoration:none}
-.status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.status-card{padding:13px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}.status-card b{display:block;margin-bottom:5px;color:var(--bright);font-size:12px}.status-card p{margin:0;color:var(--muted);font-size:11px}
-@media(max-width:850px){.top{grid-template-columns:1fr}.meta{justify-content:flex-start}.operation-lab{grid-template-columns:1fr}.op-list{display:flex;overflow:auto;border-right:0;border-bottom:1px solid var(--line)}.op-list-label{display:none}.op{flex:0 0 190px}.schema{grid-template-columns:1fr}.state-flow{grid-template-columns:1fr 1fr}.state:not(:last-child)::after{display:none}.scenario-grid,.status-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:560px){.page{padding:24px 14px 70px}.effect-grid,.scenario-grid,.status-grid{grid-template-columns:1fr}.op-detail{padding:15px 12px}.state-flow{grid-template-columns:1fr}.nav{margin:0 -4px 18px}.top h1{font-size:23px}}
-@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+<title>File changes, Review and recovery</title>
+<meta name="description" content="File attribution, version history, Undo, Revert, Rewind, Review scopes, conflicts and recovery storage across App, Web, TUI and runtime.">
+<h1>File changes, Review and recovery</h1>
+<p>A historical rewind marker is shown only beside its anchor message in the loaded history window. An offscreen anchor must not move its marker to the latest message. Pending rewind controls remain at the current end.</p>
 
-.document-demo{display:grid;grid-template-columns:170px minmax(0,1fr);border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:18px 0;background:var(--surface)}
-.document-choices{padding:10px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:4px}.document-demo button{font:inherit;color:inherit;background:transparent;border:0;border-radius:6px;padding:8px 10px;cursor:pointer;text-align:left}.document-demo button:hover,.document-demo button[aria-pressed=true]{background:var(--surface-3)}.document-demo button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}.document-demo button:disabled{opacity:.45;cursor:default}
-.document-toolbar{display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 12px;flex-wrap:wrap}.document-toolbar>div{display:flex;gap:3px}.document-workspace{display:flex;min-height:350px}.document-canvas{flex:1;min-width:0;padding:24px;background:var(--surface-2);overflow:auto}.document-paper{background:#fff;color:#222;min-height:280px;max-width:580px;margin:auto;padding:24px;font-size:13px;box-shadow:0 2px 8px #0001}.document-paper h3{color:#222;font-size:22px}.document-paper p{color:#444;line-height:1.9}.document-slide{aspect-ratio:16/9;min-height:0;background:#203344;color:white}.document-slide h3,.document-slide p{color:white}.document-slide .bars{display:flex;align-items:end;gap:18px;height:100px;margin-top:20px}.document-slide .bars i{width:45px;background:#95c9d2}.document-sheet{border-collapse:collapse;width:100%;font-size:12px}.document-sheet td,.document-sheet th{padding:10px;border:1px solid #ddd;text-align:left}.document-art{aspect-ratio:4/3;background:linear-gradient(145deg,#a7c5b5 0 45%,#52737b 45% 65%,#d8c3a7 65%);display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff}.document-hint{padding:8px 14px;color:var(--muted);font-size:11px;margin:0}.document-workspace aside{width:190px;padding:15px;border-left:1px solid var(--line);font-size:12px}.document-workspace aside p{padding:10px 0;border-bottom:1px solid var(--line)}.document-workspace aside small{color:var(--muted)}.background-detail{margin:10px 0}.background-detail>summary{cursor:pointer;padding:12px;border-bottom:1px solid var(--line)}
-@media(max-width:700px){.document-demo{grid-template-columns:1fr}.document-choices{flex-direction:row;overflow:auto;border-right:0;border-bottom:1px solid var(--line)}.document-choices button{flex-shrink:0}.document-canvas{padding:10px}.document-paper{padding:16px}.document-slide{aspect-ratio:auto;min-height:260px}.document-slide h3{font-size:18px;margin:0 0 12px}.document-slide .bars{height:90px;margin-top:12px}.document-workspace{flex-direction:column}.document-workspace aside{width:auto;border-left:0;border-top:1px solid var(--line)}.document-demo{font-size:12px}}
-</style>
-</head>
-<body>
-<main class="page">
-  <header class="top">
-    <div><div class="eyebrow">OpenProgram / Runtime operations / Canonical design</div><h1>文件修改、Review 与历史恢复</h1><p class="lead">本页统一定义文件归因、单轮 Undo、历史 Revert、多轮 Rewind、对话 Branch、Review scope、冲突处理和恢复存储。聊天视觉规范只负责外观；任何实现、测试和宣传口径均以本页语义为准。</p></div>
-    <div class="meta"><span class="pill">当前实现 · 统一文件窗口与历史</span><span class="pill">本地资源 · 预览与编辑</span><span class="pill">范围 · App / Web / TUI / runtime</span></div>
-  </header>
+<h2 id="model">Undo, Revert, Rewind</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Undo latest turn</th><th scope="col">Revert this turn</th><th scope="col">Rewind to here</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope</th><td>Latest turn on the current branch</td><td>One historical turn</td><td>Suffix of the source branch after the chosen checkpoint</td></tr>
+<tr><th scope="row">Files</th><td>Restored after every file passes preflight</td><td>Restored only with no later same-path dependency and a matching digest</td><td>Target state projected from the journal, applied under a durable intent</td></tr>
+<tr><th scope="row">Conversation</th><td>HEAD and all messages stay</td><td>Unchanged</td><td>The current branch moves back; its withdrawn suffix is recovery history, not another branch</td></tr>
+<tr><th scope="row">Branch</th><td>None created or moved</td><td>HEAD stays</td><td>The same branch identity and name stay; later messages extend its rewound head</td></tr>
+<tr><th scope="row">Conflict</th><td>Any path mismatch blocks the whole operation</td><td>No automatic reverse merge</td><td>Any unrecoverable item blocks it</td></tr>
+<tr><th scope="row">After</th><td>Revert transaction appended; card shows Reverted; Redo when preflight allows</td><td>Current branch Review folds the revert; Reapply when preflight allows</td><td>Original prompt prefilled; no workspace-alignment choice</td></tr>
+</tbody>
+</table>
+<p class="note">Turn cards show the applicable Undo or Revert; user checkpoints open a Restore sheet. Redo and Reapply are new transactions, with no linear redo stack. The transcript offers no branching; Copy conversation is in the conversation's ⋯ menu.</p>
 
-  <nav class="nav" aria-label="文档目录"><a href="#file-window">文件窗口</a><a href="#durable-history">版本生命周期</a><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#file-query">文件查询</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a><a href="#implementation-status">实现状态</a></nav>
+<h2 id="shared-workspace-contract">Shared workspace and same-branch rewind</h2>
+<p>A conversation branch records a route through messages, not a private filesystem. Fork and retry retain their existing explicit conversation versions; switching them never restores files, pauses tools or asks which files to use. The model receives a current-workspace note and must reread files before editing. </p>
+<p>Rewind is a different operation: withdraw the selected prompt and its suffix on the current branch, and restore its recorded file changes when code recovery is selected.</p>
+<p>Existing sibling branches and their shared messages remain intact. Withdrawn messages remain in durable recovery storage for Undo and crash recovery, but disappear from branch lists, version navigation, the conversation graph and normal context. </p>
+<p>A later message extends the same named branch. Undo and Redo change the withdrawal view on that same branch; their existing message-only semantics are stated explicitly and do not restore files.</p>
+<p>Recovery must not overwrite later writes by another branch, another session or a human. A code recovery with an unsafe, missing or conflicting file is blocked before any file or conversation change; conversation-only recovery remains an explicit alternative. </p>
+<p>Previews bind the head, target, file states and mode. Duplicate requests replay their recorded outcome; failures roll back and interrupted operations recover before exposure. Existing legacy intents retain their original recovery semantics. Old workspace-alignment flags have no authority to stop a message or tool.</p>
+<table class="stack"><thead><tr><th scope="col">Acceptance path</th><th scope="col">Required outcome</th></tr></thead><tbody>
+<tr><th scope="row">Switch after edits, failed retry, old mismatch flag</th><td>Files unchanged; message and ordinarily permitted tools work; stale read baselines cleared on switch.</td></tr>
+<tr><th scope="row">Rewind then send, including first prompt</th><td>Same branch identity and name; no withdrawn version offered; current file contents match the confirmed recovery.</td></tr>
+<tr><th scope="row">Sibling shares part of withdrawn history</th><td>The sibling and its necessary ancestors survive; only the selected branch is withdrawn.</td></tr>
+<tr><th scope="row">Conflict, stale preview, running writer, archive</th><td>No partial conversation or file change; a specific refusal explains recovery eligibility.</td></tr>
+<tr><th scope="row">Undo, Redo, duplicate request, restart during apply</th><td>Consistent branch visibility, identity and files; recorded transactions determine the outcome.</td></tr>
+</tbody></table>
 
-<section id="file-navigation">
-<h2>返回刚才浏览的位置</h2>
-<p>文件夹 A → 子文件夹 B → 文件 1 → 文件 2。后退逐步返回此前的位置，前进恢复后续的位置；后退后打开其他位置会替换原来的前进记录。文件夹恢复路径、展开状态与滚动位置，文件保持既有自动保存行为。</p>
-<p>列表加载下一页、后台刷新与文件大小更新保留当前视口。只有用户主动定位、搜索跳转或导航恢复可以改变浏览位置。</p>
-<details><summary>实现状态与边界</summary><p>导航与滚动稳定性及打开文件时保持会话路由已通过功能复核、质量复核与完整验证。当前项目保留最近 100 个浏览位置，导航记录仅保留在当前窗口内。复用现有标签和导航入口；不修改磁盘文件，不新增轮询，不将导航历史混入文件版本 History。</p></details>
-</section>
-<section id="file-window">
-<h2>在同一个窗口查看、编辑和找回文件版本</h2>
-<p class="intro">打开文件先预览，进入编辑后自动写入。History 显示人工与模型修改，恢复前检查当前版本。下方是交互设计演示，格式引擎与保存流程仍在实现验收中。</p>
-<div class="document-demo">
-  <div class="document-choices" aria-label="文件示例">
-    <button type="button" data-document="word" aria-pressed="true">Proposal.docx</button>
-    <button type="button" data-document="slides" aria-pressed="false">组会报告.pptx</button>
-    <button type="button" data-document="sheet" aria-pressed="false">实验结果.xlsx</button>
-    <button type="button" data-document="image" aria-pressed="false">实验图片.png</button>
-    <button type="button" data-document="psd" aria-pressed="false">海报设计.psd</button>
-    <button type="button" data-document="pdf" aria-pressed="false">研究论文.pdf</button>
-    <button type="button" data-document="text" aria-pressed="false">notes.md</button>
-  </div>
-  <div class="document-window">
-    <div class="document-toolbar"><strong id="document-name">Proposal.docx</strong><div><button id="document-preview" type="button" aria-pressed="true">预览</button><button id="document-edit" type="button" aria-pressed="false">编辑</button><button id="document-history-toggle" type="button" aria-expanded="false">History</button></div></div>
-    <div class="document-workspace"><div id="document-canvas" class="document-canvas" aria-live="polite"></div><aside id="document-versions" hidden><b>文件历史</b><p>当前版本</p><p>你 · 修改正文<br><small>编辑过程自动保存，版本按编辑时段归档</small></p><p>模型 · 调整标题<br><small>来自关联会话，可查看原始操作</small></p><p>原始文件<br><small>选择版本先预览，再恢复</small></p></aside></div>
-    <p id="document-hint" class="document-hint"></p>
-  </div>
-</div>
-<div class="scenario-grid">
- <div class="scenario"><b>修改后切换标签</b><p>最近修改先保存在本地草稿，后台写入文件。回到标签时继续编辑；不需要 Save，也不常驻显示 Saved。</p></div>
- <div class="scenario"><b>另一个程序也修改了文件</b><p>显示“文件已被其他操作修改”。保留当前草稿，可查看磁盘版本或另存副本；不自动覆盖。</p></div>
- <div class="scenario"><b>打开旧版本</b><p>使用与当前文件相同的预览器。恢复是一次新的有记录操作，保留恢复前内容，支持重新应用。</p></div>
-</div>
-<details><summary>常见格式的实际目标与复用方案</summary>
-<p>文本、代码、Markdown：预览、源码编辑和自动保存。DOCX、PPTX、XLSX：本地完整引擎预览与编辑，必须通过真实文件的打开、修改、导出和重新打开验证；不能以提取文字替代页面或幻灯片预览。旧 DOC/PPT/XLS 与 ODT/ODS/ODP 纳入兼容测试，若引擎只能转换则明确另存新格式，不覆盖原格式。CSV/TSV 至少可表格预览和文本编辑。PDF：分页、缩放和搜索，批注或编辑按组件实际能力开放。PNG/JPEG/WebP/BMP/GIF/SVG/TIFF：预览；静态位图提供裁剪、旋转与标注，动画或矢量不得在普通保存时静默栅格化。PSD：合成图和图层信息预览，保留原始 PSD；只有通过无损回写验证的操作才能启用原格式编辑。音频与视频复用本地 HTML 播放器。无法解析、加密、超限或尚不支持的文件有明确状态与下载入口。</p>
-<p>候选 Office 方案包括 <a href="https://github.com/ONLYOFFICE/DocumentServer">ONLYOFFICE Docs</a>、<a href="https://github.com/agentbridges-ai/onlyoffice-browser">OnlyOffice browser/WASM</a> 与 <a href="https://github.com/LibreOffice/core/blob/master/static/README.wasm.md">LibreOffice WASM</a>。默认方案必须本地可部署，不要求用户上传文档到第三方网站。完整服务器方案保留为可配置适配器候选，不能作为默认安装缺失时唯一能力。</p>
-<p><a href="https://github.com/mozilla/pdf.js">PDF.js</a> 是 PDF 浏览候选；<a href="https://github.com/nhn/tui.image-editor">TOAST UI Image Editor</a> 是位图编辑候选，关闭 usageStatistics 并自带资源；<a href="https://github.com/Agamnentzar/ag-psd">ag-psd</a> 是 PSD 预览候选，其色彩模式、文字图层与效果限制要求保留原文件。<a href="https://www.photopea.com/api/">Photopea</a> 支持嵌入但属于第三方托管页面，不默认加载或传入本地文件。最终选型以固定版本源码与本地样例验证为准。</p>
+<p>Branch identity is independent of its head message. When two rewinds converge at one checkpoint or ROOT, each ref retains its name and remains selectable by branch id. Undo marks belong to that identity. Selecting by head alone remains compatible for unambiguous legacy clients.</p>
+
+<h2 id="architecture">Sources of truth</h2>
+<svg class="fig-wide" viewBox="0 0 680 244" role="img" aria-label="Trusted file mutators (write, edit, apply_patch, validated adapters) produce mutation receipts into the mutation journal, which feeds This turn and Current branch Review. Git feeds Workspace Review. Generic Bash and external processes produce no receipt. The history planner reads the journal, the conversation DAG and Git, then writes a durable intent, applies a workspace transaction, and moves HEAD only for conversation modes.">
+  <defs><marker id="fm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="28">Trusted mutators</text>
+  <text class="t-soft" x="0" y="50">write, edit, apply_patch,</text>
+  <text class="t-soft" x="0" y="68">validated adapters</text>
+  <line class="ln" x1="170" y1="23" x2="248" y2="23" marker-end="url(#fm-a)"/>
+  <text class="t-soft" x="178" y="14">receipt</text>
+  <text class="t-big" x="260" y="28">Mutation journal</text>
+  <text class="t-soft" x="260" y="50">before/after digests, blobs</text>
+  <line class="ln" x1="432" y1="23" x2="500" y2="23" marker-end="url(#fm-a)"/>
+  <text class="t-big" x="512" y="28">Review</text>
+  <text class="t-soft" x="512" y="50">This turn, Current branch</text>
+  <text class="t-no" x="0" y="112">Generic Bash, external writes</text>
+  <text class="t-soft" x="0" y="132">no receipt, no turn Undo</text>
+  <text class="t-big" x="260" y="112">Git workspace</text>
+  <text class="t-soft" x="260" y="132">HEAD, index, worktree</text>
+  <line class="ln" x1="432" y1="107" x2="500" y2="107" marker-end="url(#fm-a)"/>
+  <text class="t-big" x="512" y="112">Review</text>
+  <text class="t-soft" x="512" y="132">Workspace</text>
+  <text class="t-big" x="0" y="196">Conversation DAG</text>
+  <text class="t-soft" x="0" y="216">nodes, HEAD, branches</text>
+  <text class="t-big" x="260" y="196">History planner</text>
+  <text class="t-soft" x="260" y="216">reads all three; only the</text>
+  <text class="t-soft" x="260" y="234">journal authorizes recovery</text>
+  <line class="ln" x1="170" y1="191" x2="248" y2="191" marker-end="url(#fm-a)"/>
+  <line class="ln" x1="432" y1="191" x2="500" y2="191" marker-end="url(#fm-a)"/>
+  <text class="t-big" x="512" y="196">Durable intent</text>
+  <text class="t-soft" x="512" y="216">lock, apply, verify</text>
+  <text class="t-soft" x="512" y="234">then HEAD, if needed</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Trusted mutators</strong><small>write, edit, apply_patch, validated adapters</small><p class="refused">Generic Bash, external writes: no receipt, no turn Undo</p></li>
+  <li><strong>Mutation journal</strong><small>feeds This turn and Current branch Review</small></li>
+  <li><strong>Git workspace</strong><small>feeds Workspace Review</small></li>
+  <li><strong>History planner</strong><small>reads all three, with the conversation DAG; only the journal authorizes recovery</small></li>
+  <li class="flow-end"><strong>Durable intent</strong><small>lock, apply, verify, then HEAD if needed</small></li>
+</ol>
+<p class="note">Bash may run in sandboxes or worktrees. Git shows current changes without proving their turn or granting Undo.</p>
+
+<h2 id="file-window">File window</h2>
+<p>Files open in preview. Edit autosaves. History lists human and model changes.</p>
+<table class="stack">
+<thead><tr><th scope="col">Format</th><th scope="col">Preview</th><th scope="col">Edit</th></tr></thead>
+<tbody>
+<tr><th scope="row">Text, code, Markdown</th><td>Rendered</td><td>Source, autosave</td></tr>
+<tr><th scope="row">DOCX, PPTX, XLSX</th><td>Local engine, full page or slide; text extraction is no substitute</td><td>Full edit in the local engine, formulas and structure kept</td></tr>
+<tr><th scope="row">DOC, PPT, XLS</th><td>Yes</td><td>Saved explicitly as OOXML, never over the original</td></tr>
+<tr><th scope="row">ODT, ODS, ODP</th><td>Yes</td><td>Original-format export</td></tr>
+<tr><th scope="row">CSV, TSV</th><td>Table</td><td>Text</td></tr>
+<tr><th scope="row">PDF</th><td>Continuous pages, zoom, search, outline, thumbnails</td><td>Highlights and free-text notes; 64 MiB limit</td></tr>
+<tr><th scope="row">PNG, JPEG, WebP</th><td>Zoom</td><td>Crop, rotate, drawing, shapes, text. Conversions create a separate PNG. 64 MiB, 16 million pixels, 16384 px per side.</td></tr>
+<tr><th scope="row">Animated or 16-bit PNG, BMP, GIF, SVG, TIFF</th><td>Yes</td><td>Read-only; a save never rasterizes silently</td></tr>
+<tr><th scope="row">PSD</th><td>Composite and layer list</td><td>Read-only until a lossless round trip is verified</td></tr>
+<tr><th scope="row">Audio, video</th><td>Local HTML players</td><td>Read-only</td></tr>
+<tr><th scope="row">Corrupt, encrypted, oversized, unsupported</th><td>Explicit status and download</td><td>None</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Switch tabs after editing</th><td>Edits persist as local drafts, then write in the background. No Save action or persistent Saved label.</td></tr>
+<tr><th scope="row">Another program changed the file</th><td>“File changed by another operation.” The draft stays; inspect the disk version or Save a copy. Never overwrites.</td></tr>
+<tr><th scope="row">Open an old version</th><td>The current file's previewer, read-only. Recovery is a new recorded operation that keeps pre-recovery content and can be reapplied.</td></tr>
+</tbody>
+</table>
+
+<details id="unified-protocol">
+<summary>Opening, adapters and engines</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">File reference</th><td>Stable project or session ownership plus relative path. Display paths are not credentials.</td></tr>
+<tr><th scope="row">Adapter choice</th><td>Extension, type and contents verified first</td></tr>
+<tr><th scope="row">Adapter surface</th><td>Receives document content and version only, no disk access. Exposes byte or Blob export, change and error events, destroy.</td></tr>
+<tr><th scope="row">Loading</th><td>Large Office and image resources load only for relevant files. KaTeX keeps complete WOFF2 without legacy fallbacks. Budgets: 2 MiB compressed initial transfer, 350 KiB compressed per chunk.</td></tr>
+<tr><th scope="row">Large binaries</th><td>Bounded byte uploads or local staging, not chat messages. Size enforced while reading; temporary files cleaned on cancel.</td></tr>
+<tr><th scope="row">Active content</th><td>Engine messages validate origin, instance and request ID. Document scripts, macros, active HTML and SVG get no main-window authority.</td></tr>
+<tr><th scope="row">Third-party services</th><td>Only by explicit user configuration, with notice that files go there</td></tr>
+<tr><th scope="row">No safe original-format write</th><td>Export a labelled copy; never PNG or OOXML bytes under another extension</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Engine</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/mozilla/pdf.js">PDF.js</a></th><td>PDF viewer, pinned</td></tr>
+<tr><th scope="row"><a href="https://github.com/ONLYOFFICE/DocumentServer">ONLYOFFICE</a></th><td>Office editing, local, optional install. Complete servers remain configurable adapters. Candidates compared: <a href="https://github.com/agentbridges-ai/onlyoffice-browser">OnlyOffice browser/WASM</a>, <a href="https://github.com/LibreOffice/core/blob/master/static/README.wasm.md">LibreOffice WASM</a>.</td></tr>
+<tr><th scope="row"><code translate="no">fabric</code></th><td>Bitmap editing</td></tr>
+<tr><th scope="row"><a href="https://github.com/Agamnentzar/ag-psd">ag-psd</a>, <code translate="no">utif</code></th><td>PSD and TIFF decoding. ag-psd's colour-mode, text-layer and effect limits mean originals are kept.</td></tr>
+<tr><th scope="row"><a href="https://www.photopea.com/api/">Photopea</a></th><td>Third-party hosted: never loaded and never sent local files by default</td></tr>
+</tbody>
+</table>
 </details>
-<details><summary>统一打开、编辑和版本协议</summary>
-<p>文件引用包含稳定的项目或会话归属及相对路径，显示路径不是权限凭证。能力识别先核实扩展名、类型和文件内容，再选择预览或编辑适配器。适配器只获得该文档的内容与版本，不获得任意磁盘权限；统一导出 bytes/Blob、修改事件、错误事件和销毁方法。Office 与图片大资源只在打开相关文件时加载，不能拖慢聊天首屏。</p>
-<p>人工编辑与模型写入共享版本校验、完整文件发布和 immutable before/after 存储原则。既有 project_file_write 的幂等记录只有操作结果与指纹，不等于可恢复的文件版本；本次补齐实际版本保存。人工修改记录 actor=user，模型修改关联 session/turn，不伪造聊天轮次，也不把人工历史变成侧栏会话。History 按文件汇集来源，模型本轮 Review 继续保留其归属语义。</p>
-<p>版本数据按归属保留：项目中的人工编辑历史归项目，模型记录仍关联实际会话与轮次；汇总索引只引用已有版本，不另复制来源文档。归档会话仍可打开原记录；彻底删除会话后，其入口与归属版本按现有删除规则清理，汇总页不得用缓存重新显示原文。Memory 中残留来源仅标记“原会话已删除”或移除链接，不为此建立来源副本。项目文件及其独立人工历史不因删除一段聊天而一并删除。</p>
-<p>自动保存和版本归档分开：编辑器正常撤回处理即时修改；草稿先持久保存，文件在有修改事件后的短暂合并窗口自动发布；History 默认按连续编辑时段归档，间隔约五分钟形成版本，切换文档、结束编辑或恢复操作也完成归档。文件内容不等待五分钟才保存。每次发布校验读取时的 revision，重复请求幂等，乱序响应不能覆盖新草稿；保存失败保留草稿并显示可重试错误。重启后读取持久记录，不根据当前文件补造过去版本。</p>
-<p>富文档编辑器的生命周期独立于标签视图。切换标签时先隐藏视图，仍在导出的引擎继续保留；最新内容进入持久草稿后才能释放引擎。Office iframe 在同一文档会话中不因 React 重新挂载或 DOM 移动而重建。关闭、重命名和版本恢复均先等待最终导出，失败保留编辑器和草稿。预览与编辑复用同一实例；只读历史实例不能回写当前文件。</p>
-<h3 id="pdf-reading-annotations">Paper reading and annotations</h3>
-<p>The upstream viewer stylesheet is scoped to the PDF reader, including its root variables. Generic names such as <code>.sidebar</code> cannot change the surrounding application shell.</p>
-<p>The PDF workspace follows the compact reading layout in the supplied PDF Expert reference: the existing OpenProgram document tab stays above a flat toolbar, a collapsible left sidebar contains thumbnails and the document outline, and the remaining space shows continuous PDF pages. Reading controls provide page navigation, fit-width/fit-page and numeric zoom, text selection, in-document links and highlighted search results. Only implemented Reading and Annotate tools appear; original-text editing, OCR, page surgery and format conversion are outside this iteration.</p>
-<p>The visual system inherits OpenProgram's typography and light/dark tokens: neutral toolbar surfaces, white paper, dark reading background, subdued dividers and one blue selection accent. Reference palette: ink #202124, toolbar #27272a, canvas #151517, paper #ffffff, divider #414145 and focus #4a90e2. Toolbar labels use the application font at 13px; controls are 32px high. Desktop uses a single reading toolbar with a contextual annotation row; narrow panels wrap controls without covering document text. The sidebar is 180px wide and removable. The implementation uses actual rendered pages, with no placeholder content or decorative dashboard elements.</p>
-<p>Use the already pinned PDF.js 6.3.289 legacy viewer library, text layer, link service, find controller and annotation editor. Retain its local module/worker compatibility and production CSP. The upstream <a href="https://github.com/mozilla/pdf.js/tree/v6.3.289/web">viewer source</a> defines the lifecycle and editor APIs. PDF Expert's <a href="https://pdfexpert.com/features">Mac feature reference</a> establishes the reading and annotation comparison. The alternative <a href="https://www.embedpdf.com/docs/react/viewer/getting-started">EmbedPDF viewer</a> is not adopted for this iteration: replacing the decoder and introducing a second rendering engine is unnecessary for the requested reading, highlight and text-note capabilities.</p>
-<p>Copying a selection in the PDF text layer joins layout line breaks automatically. Preserve paragraph breaks and literal punctuation, join CJK text without inserted spaces, preserve ordinary hyphens and remove discretionary soft hyphens. This is a local clipboard transform; it never edits the PDF or applies to search fields, annotation text editors or other application content. A visible checkbox allows the reader to keep original line breaks.</p>
-<p>Project PDFs support highlight and free-text note annotations through PDF.js. Save standard PDF annotations back through the existing DocumentController rich-editor lease, durable draft store and optimistic revision checks. Debounced export, explicit save, close, history restore and rename use the same controller ownership as Office/raster documents. Draft-byte updates must not recreate a live viewer or lose its undo stack. History snapshots and attachments remain read-only. No PDF-supplied scripting or external document upload is enabled; original bytes, input and canvas limits, errors and download remain available.</p>
-<p>Acceptance uses actual FileViewer/DocumentWindow entries under production CSP and desktop-compatible APIs. Verify continuous nonblank pages and selectable text, clipboard payload including prose/CJK/paragraph cases, page/sidebar/outline/zoom/search behavior, readonly history/attachments, highlight and note creation, save and close/reopen using real PDF bytes, persisted annotations through a separate decoder, failure retention and no obsolete editor publication. Existing file/history/controller, complete Web, repository contracts, browser and documentation checks remain required, followed by both independent reviews and installed-App inspection.</p>
-<h3 id="pdf-runtime-compatibility">PDF runtime compatibility</h3>
-<p>The local PDF decoder is pinned to PDF.js 6.3.289. Its main module and worker use the matching <code>legacy/build</code> distribution, served at the existing same-origin <code>/document-assets/pdfjs/</code> URLs. The upstream <a href="https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions#faq-support">browser support guidance</a> and package README prescribe this distribution for environments missing recent JavaScript APIs. The modern build requires <code>Uint8Array.prototype.toHex</code>, which the desktop's Electron 37 / Chromium 138 runtime lacks. The legacy pair supplies upstream compatibility code in both execution contexts; a main-page-only polyfill cannot repair the worker.</p>
-<p>Keep the reviewed decoder version, local CMaps, fonts, WASM, license inventory, lazy loading, 64 MiB input bound, canvas bounds, disabled scripting and original-file download. Do not upgrade Electron or add application-owned global polyfills for this repair. The generated manifest identifies both the version and build distribution. Read-only PDF capabilities do not change.</p>
-<p>The application shell permits <code>connect-src 'self' blob:</code> so decoders can read retained local file versions through their object URLs. This only extends local byte reads; external HTTP/WebSocket destinations remain blocked, and blob scripts, eval, objects and third-party frames are not enabled. PDF acceptance applies the actual shell policy to the test page, including a rejected external-fetch probe. A permissive standalone browser harness does not establish installed-App behavior.</p>
-<p>Acceptance uses the public FileViewer entry to render nonblank pages, navigate, zoom, search text, recover from invalid input, and close/reopen without runtime errors. Run the same checks without native <code>toHex</code> and <code>Math.sumPrecise</code> in the main page and worker, plus an installed-desktop check with the reported PDF. The asset manifest must identify the exact staged module and worker bytes. These checks supplement the full Web, repository-contract, browser and documentation gates.</p>
-<h3>Optional Office installation</h3>
-<p>Office document support is an optional local component shared by presentations, word-processing documents and spreadsheets. Default App, runtime and Python builds omit its assets and do not download them. Opening an unsupported Office document checks local availability only. If missing, the document surface explains the supported formats, approximately 699 MiB download, local processing and ONLYOFFICE license, and offers Install and Cancel. Cancel dismisses the installation choice without downloading; the user may choose again. PDF viewing remains independent.</p>
-<p>Only an owner-authenticated, local-origin POST initiates installation from a fixed release URL and pinned archive SHA-256. The installer bounds downloads and extraction, rejects unsafe archive paths and links, verifies the full existing Office manifest, and atomically publishes the pack to the profile cache. Concurrent requests share one installation. Failures retain the previous selected pack and remove temporary downloads. Once installed the current worker serves the parent module and isolated host without a restart, and the document opens automatically. Closing the document stops its UI requests; an explicitly requested installation may finish for other documents.</p>
-<p>Previously installed profile resources remain usable. App-bundled resources from older releases are no longer selected. Development staging remains an explicit standalone command for editor tests; ordinary builds ignore stale staged packs. This change does not introduce a generic extension registry, automatic updates, uninstall controls or third-party document upload.</p>
-<h3>Office loading</h3>
-<p>Office startup keeps a full-size rendering surface beneath a centered, theme-aware loading overlay. The status follows the application language and distinguishes loading resources from opening the document. It uses no simulated percentage. Startup errors replace the status and expose an explicit retry.</p>
-<p>The adapter uses the pinned upstream mount/activate API so closing a loading document immediately destroys its pending host. An AbortSignal cancels the availability request and pending activation; a bounded startup deadline begins before activation. Failed or cancelled instances never attach to the document controller. Preview/edit transitions preserve the existing editor and native undo. Independent Office origins, asset identity checks and persistence callbacks remain unchanged. This reduces unnecessary concurrent startup work; cold native conversion time is measured separately from the loading presentation.</p>
-<p>Office 在独立来源加载本地固定版本资源，只开放该资源树的 GET/HEAD，不开放主应用 API、认证和 WebSocket。父子页面同时校验来源、实例和消息请求，宏默认禁用。大型资源由用户确认后单独安装到本地缓存；打开文件仅检查安装状态，不自动下载；远程部署没有配置独立资源来源时明确显示不可编辑，不转交第三方网站。PDF、图片与媒体按需加载，保持聊天首屏资源预算。文件窗口只在打开文件时加载；KaTeX 保留完整 WOFF2 字体，不再重复引用面向旧浏览器的 WOFF/TTF 回退。资源检查保留 2 MiB 首屏压缩传输与 350 KiB 单块压缩脚本上限。</p>
-<p>大型二进制通过受限字节上传或本地暂存传输，不编码到普通聊天消息。边读边检查体积，取消时清理临时文件；引擎消息校验来源、实例和请求 ID。文档脚本、宏、HTML/SVG 活动内容不获得主窗口权限；第三方服务仅在用户主动配置并知悉文件将送往该服务时使用。原格式不支持安全写回时，提供明确的导出副本，而不是把 PNG 或 OOXML 内容写进其他扩展名。</p>
+
+<h3 id="markdown-document-safety">Markdown rendering</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Raw HTML</th><td>Escaped</td></tr>
+<tr><th scope="row">Links</th><td>Local references, bare fragments, HTTP(S), mailto. Protocol-relative destinations use HTTPS.</td></tr>
+<tr><th scope="row">Images</th><td>Scoped local-file URLs and HTTP(S). Data and executable schemes rejected.</td></tr>
+<tr><th scope="row">Local queries</th><td>Never supply authorization parameters; SVG fragments stay separate from disk paths</td></tr>
+<tr><th scope="row">Math</th><td>Tokens outside literal code, escaped before typesetting, never restored through raw placeholder replacement</td></tr>
+<tr><th scope="row">Outside this subset</th><td>Wiki links, embeds, outline, Agent section attachments</td></tr>
+</tbody>
+</table>
+
+<h3 id="markdown-heading-navigation">Markdown heading navigation</h3>
+<dl class="pairs">
+<dt>Key</dt><dd>From visible inline heading text: Unicode letters and numbers kept, lowercased, punctuation other than <code translate="no">_</code> and <code translate="no">-</code> removed, whitespace runs become <code translate="no">-</code>. Empty uses <code translate="no">section</code>.</dd>
+<dt>Repeats</dt><dd>First unused numeric suffix, unique per parse, including collisions with explicitly numbered names. State resets per render.</dd>
+<dt>Bare fragment</dt><dd>Percent-decoded once; searches only the originating article by heading-key attribute, never through a CSS selector. Invalid or missing: no scroll.</dd>
+<dt>Cross-file link</dt><dd>Keeps the fragment through the existing destination parser and authorized opening path</dd>
+<dt>Section request</dt><dd>Ephemeral view state outside <code translate="no">CenterTab</code>, tab history, snapshots and window-transfer payloads. Holds a unique sequence, physical tab id, expected document identity and fragment.</dd>
+</dl>
+<details>
+<summary>Section requests in detail</summary>
+<ul>
+<li>Project-file opens use the resolved destination id, including history-reused tabs. Attachment previews use the resolved file-preview id, not <code translate="no">activeId</code>, which may remain the chat.</li>
+<li>A rejected auto-open creates no request; an accepted no-section open clears an older one. Close or retarget invalidates it. Consumption compares the sequence, so an older render cannot remove a newer request.</li>
+<li><code translate="no">PersistentFilePanes</code> keeps one physical <code translate="no">DocumentWindow</code> per document identity. A section request picks the active alias as preferred host and never creates a second <code translate="no">DocumentController</code>.</li>
+<li>The request travels through <code translate="no">FileTabPane</code>, <code translate="no">DocumentWindow</code>, <code translate="no">FileViewer</code>, <code translate="no">TextViewer</code> as view context, keeping authorization. It switches source mode to preview without discarding dirty bytes and waits for that exact draft or version to render.</li>
+<li>Links in a selected historical version use that version's headings. Attachment paths keep their read-only flag and original session.</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">Case</th><th scope="col">Required result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Unicode, inline text, repeated headings, code fences</th><td>Stable unique keys; only headings participate</td></tr>
+<tr><th scope="row">Two mounted documents share a heading</th><td>Bare fragment scrolls only its originating article</td></tr>
+<tr><th scope="row">Cross-file load or repeated same-section request</th><td>Survives loading; each sequence scrolls once after rendering</td></tr>
+<tr><th scope="row">History-reused id or chat-active preview</th><td>Reaches the actual file pane</td></tr>
+<tr><th scope="row">Two aliases, dirty draft, source mode, selected version</th><td>One controller and buffer; correct alias and rendered version navigated</td></tr>
+<tr><th scope="row">Rejected auto-open, no-section reopen, close, retarget, reload</th><td>No stale request applies</td></tr>
+</tbody>
+</table>
 </details>
-<details><summary>完整交付与验收，不以部分格式通过替代整体完成</summary>
-<p>工作顺序：验证复用引擎；完成统一文件版本与二进制发布接口；接入格式预览和编辑；统一预览优先、自动保存和 History；验证历史恢复、窗口切换、重启与错误状态；执行独立规范与质量审查及组合版本全量检查；最后更新默认 App。每个适配器都需要真实有效文件，不用伪造二进制证明格式支持。</p>
-<p>验收逐项覆盖 Word、PPT、表格、图片、PSD、PDF、文本与媒体。可编辑格式须实际修改内容、写回、重新打开并验证版本恢复；只读格式须实际渲染并明确能力。包含并发外部修改、写入中断、损坏文件、超大文件、取消、断网、项目路径变化和旧历史兼容。所有可见支持状态、源代码、测试与安装版本一致后才标记完成。</p>
+
+<h3 id="pdf-reading-annotations">PDF reading and annotations</h3>
+<dl class="pairs">
+<dt>Layout</dt><dd>Document tab above a flat toolbar; removable 180 px left sidebar with thumbnails and outline; continuous pages. Annotation row is contextual; narrow panels wrap controls without covering text.</dd>
+<dt>Controls</dt><dd>Page navigation, fit width, fit page, numeric zoom, selection, in-document links, highlighted search. 32 px high, application font at 13 px. Only implemented tools appear.</dd>
+<dt>Colour</dt><dd>Application theme tokens. Reference: ink #202124, toolbar #27272a, canvas #151517, paper #ffffff, divider #414145, focus #4a90e2.</dd>
+<dt>Stylesheet</dt><dd>Upstream viewer CSS is scoped to <code translate="no">[data-pdf-reader]</code>, root variables included, so generic names cannot change the shell</dd>
+<dt>Copy</dt><dd>Layout line breaks joined; paragraph breaks and punctuation kept; CJK joined without spaces; ordinary hyphens kept; soft hyphens removed. Clipboard only, text layer only. A visible checkbox keeps original breaks.</dd>
+<dt>Annotations</dt><dd>Standard PDF highlights and free-text notes, saved through the <code translate="no">DocumentController</code> rich-editor lease, durable drafts and revision checks. Draft-byte updates do not recreate the viewer or lose undo. History and attachments are read-only.</dd>
+<dt>Disabled</dt><dd>PDF scripting and external upload. Out of scope: original-text editing, OCR, page surgery, format conversion.</dd>
+</dl>
+
+<h3 id="pdf-runtime-compatibility">PDF runtime</h3>
+<dl class="pairs">
+<dt>Decoder</dt><dd>PDF.js 6.3.289, module and worker from <code translate="no">legacy/build</code>, served from same-origin <code translate="no">/document-assets/pdfjs/</code>. The manifest records version and distribution. Local CMaps, fonts, WASM and licence inventory are kept.</dd>
+<dt>Why legacy</dt><dd>The compatibility code must load in the page and the worker; a page-only polyfill cannot repair the worker. The modern build needs <code translate="no">Uint8Array.prototype.toHex</code>. Upstream: <a href="https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions#faq-support">browser support</a>.</dd>
+<dt>Shell policy</dt><dd><code translate="no">connect-src 'self' blob:</code> lets decoders read retained versions through object URLs. External HTTP and WebSocket stay blocked; blob scripts, eval, objects and third-party frames stay off.</dd>
+<dt>Viewer reference</dt><dd><a href="https://github.com/mozilla/pdf.js/tree/v6.3.289/web">viewer source</a>, <a href="https://pdfexpert.com/features">PDF Expert features</a>. <a href="https://www.embedpdf.com/docs/react/viewer/getting-started">EmbedPDF</a> is not used: a second rendering engine adds nothing for reading, highlights and notes.</dd>
+</dl>
+
+<h3 id="optional-office-installation">Office install and loading</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Default builds</th><td>App, runtime and Python builds omit Office assets and do not download them. PDF is independent.</td></tr>
+<tr><th scope="row">Choice</th><td>Opening an Office document checks local availability only. If missing: formats, about 699 MiB, local processing, ONLYOFFICE licence, Install and Cancel. Cancel downloads nothing.</td></tr>
+<tr><th scope="row">Install</th><td>Owner-authenticated local-origin POST; fixed release URL, pinned archive SHA-256. Bounded download and extraction, unsafe paths and links rejected, full manifest verified, atomically published to the profile cache. Concurrent requests share one install.</td></tr>
+<tr><th scope="row">Failure</th><td>Previous pack stays selected; temporary downloads removed</td></tr>
+<tr><th scope="row">After install</th><td>The current worker serves it without restart and the document opens. Closing the document stops its requests; a requested install may finish.</td></tr>
+<tr><th scope="row">Older packs</th><td>Profile resources stay usable; App-bundled resources are no longer selected. Development staging is a standalone command that ordinary builds ignore.</td></tr>
+<tr><th scope="row">Isolation</th><td>Separate origin, resource-tree GET and HEAD only; no main API, authentication or WebSocket. Both pages validate origin, instance, request. Macros off. Remote deployments without a separate origin disable editing.</td></tr>
+<tr><th scope="row">Loading</th><td>Full-size surface under a centered, theme-aware overlay separating “loading resources” from “opening the document”. No simulated percentage. Errors replace the status with Retry.</td></tr>
+<tr><th scope="row">Teardown</th><td>Pinned mount and activate API, so closing destroys a pending host. An AbortSignal cancels availability and activation under a bounded deadline. Failed instances never attach to the controller.</td></tr>
+<tr><th scope="row">Not provided</th><td>Generic extension registry, automatic updates, uninstall controls, third-party upload</td></tr>
+</tbody>
+</table>
+
+<h3 id="file-navigation">Back and Forward</h3>
+<p>Each tab keeps its own page history: Folder A, subfolder B, file 1, file 2. Opening somewhere new after Back replaces forward history. Folders restore path, expansion and scroll; files keep autosave.</p>
+<p class="note">Only explicit positioning, search navigation or restoration moves the viewport; list paging, background refresh and size updates do not. Navigation history never mixes with file-version History, writes to disk or polls.</p>
+
+<h2 id="durable-history">Version lifecycle</h2>
+<table class="stack">
+<thead><tr><th scope="col">Situation</th><th scope="col">Stored</th><th scope="col">Shown</th></tr></thead>
+<tbody>
+<tr><th scope="row">Repeated edits, one turn</th><td>Original before; after updated. Records replaced only after the new version commits.</td><td>One net change</td></tr>
+<tr><th scope="row">Interrupted save</th><td>Pending-confirmation marker. Success not inferred; after not invented from disk.</td><td>Incomplete, no exact recovery; never “no changes”</td></tr>
+<tr><th scope="row">Cancelled attempt, confirmed uncommitted</th><td>Marked aborted</td><td>No change</td></tr>
+<tr><th scope="row">Corrupt or unsupported manifest</th><td>Kept; no empty history created, nothing overwritten</td><td>Explicit error. Only a truly absent manifest means no records.</td></tr>
+<tr><th scope="row">Reopen session</th><td>Same durable records; never script output or memory</td><td>Same files, Undo or Reapply</td></tr>
+<tr><th scope="row">File changed later</th><td>Unchanged</td><td>Recovery blocked, later edits kept</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Save order and publication</summary>
+<ol>
+<li>Write each before and after as an independently complete file; verify it; fsync the version directory.</li>
+<li>Publish the manifest. A failed update leaves referenced content intact; a failed attempt never overwrites published versions.</li>
+<li>Retry rereads the current file as before only after explicit cancel of an unsuccessful attempt. A success keeps the turn's first before.</li>
+</ol>
+<ul>
+<li>Regular-file snapshots compare descriptor metadata before and after reading, and path metadata before opening and after reading.</li>
+<li>Device and inode must agree; metadata from different OS APIs is never compared as if alike. Any change aborts publication.</li>
+<li>The path observation supplies the stored mode.</li>
+<li>Legacy migration on Windows opens staged files writable before flushing and keeps the source until publication succeeds.</li>
+</ul>
+<p>Old manifests and <code translate="no">blob_ref</code> stay readable without bulk rewrites. Lost history is not reconstructed. OS crashes and programs ignoring locks may need manual recovery: evidence is kept, uncertain overwrites refused.</p>
 </details>
-</section>
 
-  <section id="model">
-    <h2>一个模型，四种操作</h2>
-    <p class="intro">四个词不能互换。操作名称直接表达修改代码还是对话、作用于一轮还是一段历史。点击左侧操作查看完整影响。</p>
-    <div class="operation-lab">
-      <div class="op-list" role="tablist" aria-label="历史操作">
-        <div class="op-list-label">Operation</div>
-        <button class="op" role="tab" aria-selected="true" data-op="undo"><span><b>Undo latest turn</b><small>撤回当前分支最后一轮文件修改</small></span><span class="op-key">latest</span></button>
-        <button class="op" role="tab" aria-selected="false" data-op="revert"><span><b>Revert this turn</b><small>只反向应用一轮，HEAD 不移动</small></span><span class="op-key">one turn</span></button>
-        <button class="op" role="tab" aria-selected="false" data-op="rewind"><span><b>Rewind to here</b><small>恢复所选 prompt 前的分支状态</small></span><span class="op-key">suffix</span></button>
-        <button class="op" role="tab" aria-selected="false" data-op="branch"><span><b>Branch from here</b><small>只创建对话分支，文件保持当前状态</small></span><span class="op-key">conversation</span></button>
-      </div>
-      <div class="op-detail" id="op-detail" aria-live="polite"></div>
-    </div>
-    <div class="decision-line"><b>四种语义不是四个同级按钮。</b>Turn card 只显示当前适用的 Undo 或 Revert；user checkpoint 进入 Restore sheet；assistant message footer 才提供 Branch。成功 Undo 后，严格预检可用时在 UI 显示 Redo；历史 Revert 的反向操作显示 Reapply。两者都执行新的 reapply transaction，不维护独立线性 redo 栈。</div>
-  </section>
+<details id="document-history">
+<summary>Publishing documents: <code translate="no">write(file_path, source_path=...)</code></summary>
+<ul>
+<li>Exactly one of <code translate="no">content</code> or <code translate="no">source_path</code>. The source is a local regular file under read permission, up to 64 MiB. Identical paths, directories, links and oversized or unreadable sources fail before any change.</li>
+<li>Targets keep write authorization, read baseline and approval fingerprint. Source and target fingerprints join approval waits and are rechecked before publication.</li>
+<li>Bytes go to a complete temporary file in the target directory, then replace. Failure cleans up and keeps the target. Raw bytes, never text-converted.</li>
+<li>Advisory locks serialize cooperating writers only. Windows closes handles lacking delete sharing before replacement and revalidates; no OS conditional replace.</li>
+<li>Read first: models read originals, then generate staged versions. Binary reads return type and byte count. New files need no prior read.</li>
+<li>Generators call this path; text tools keep write, edit and apply_patch and share prepare, commit and abort. <code translate="no">CheckpointStore</code> owns state; Review and summaries are projections.</li>
+<li>Not provided: Word tracked changes, PPT visual diffs, Office semantic diffs, remote stores (these need conditional writes and verifiable version IDs before claiming recovery), full-disk scans, polling, plugin registry.</li>
+</ul>
+</details>
 
+<details id="human-edits">
+<summary>Human edits, autosave and editor lifetime</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shared path</th><td>Human and model writes share version validation, complete-file publication and immutable before and after. <code translate="no">project_file_write</code> idempotency records hold results and fingerprints, not versions.</td></tr>
+<tr><th scope="row">Attribution</th><td>Human records use <code translate="no">actor=user</code>; model records link the real session and turn. No fabricated chat turns; human history never becomes a sidebar session. History aggregates by file; turn Review keeps attribution.</td></tr>
+<tr><th scope="row">Retention</th><td>Human project edits belong to projects, model records to sessions. Aggregate indexes reference versions without copies. Archived sessions stay readable. Permanent deletion removes owned versions and caches must not redisplay them; Memory sources show “Original session deleted” or lose links. Project files and human history survive chat deletion. Moved projects recover by current location; offline access is read-only. Legacy history backfills in bounded batches; unverifiable ownership is unavailable.</td></tr>
+<tr><th scope="row">Autosave</th><td>Editor undo handles immediate changes. Drafts persist first; files publish after a short coalescing window, never waiting for a history period. Each publication validates the read revision; retries are idempotent; late responses cannot overwrite newer drafts. Failures keep drafts with a retryable error and do not close tabs.</td></tr>
+<tr><th scope="row">History period</th><td>Continuous editing about five minutes apart. Switching documents, ending editing or recovery also closes a period. Restart reads records, never current files.</td></tr>
+<tr><th scope="row">Rich editors</th><td>Independent of tabs: views hide while exporting engines live, and engines release only after the newest content reaches durable drafts. Office iframes survive React remounts and DOM moves. Close, rename and recovery await final export; failure keeps editor and draft. Preview and edit share one instance; history instances cannot write. Rename disables editing and reopens the new path after success.</td></tr>
+</tbody>
+</table>
+</details>
 
-  <section id="durable-history">
-    <h2>文件版本的完整生命周期</h2>
-    <p class="intro">同一个历史入口处理文本、Word、PPT 和后续文档工具。完整文件负责恢复；文本或格式预览只是显示方式，不改变原始版本。以下展示使用状态，内部实现展开后查看。</p>
-    <div class="scenario-grid">
-      <div class="scenario"><b>连续修改同一份文件</b><p>Proposal.docx<br>第一轮：原文 → 修改后<br>同轮继续修改：更新最终版本</p><p class="result">历史仍保留原文；新版本提交成功才替换记录</p></div>
-      <div class="scenario"><b>保存途中中断</b><p>Proposal.docx<br>文件写入结果尚未确认</p><p class="result">重新打开可看到未完成状态，不显示为“没有修改”或允许不确定恢复</p></div>
-      <div class="scenario"><b>历史文件损坏</b><p>无法读取文件修改记录</p><p class="result">保留原记录并报告错误，不重建空历史，不继续覆盖目标文件</p></div>
-    </div>
-    <details><summary>正常保存、失败重试与旧版本保护</summary>
-      <p>每份 before/after 使用独立且完整写入的版本文件。持久化顺序是版本内容、校验、版本目录，再发布 manifest。更新 manifest 失败时，前一份成功记录引用的内容仍完整。失败尝试不覆盖已发布版本。只有尚未成功的尝试被明确取消后，重试才以重新读取的当前文件建立 before；已成功修改始终保留本轮最初 before。</p>
-      <p>准备记录与提交记录分开。未完成的写入保留待确认标记，历史投影显示不可精确恢复，不能推断脚本成功，也不能用当前磁盘内容补造 after。取消且确认没有成功提交的尝试不展示为已修改。损坏或不支持的 manifest 返回明确错误；仅真正缺失的 manifest 表示没有记录。旧版本 manifest 和旧 blob_ref 继续可读，无批量重写迁移。</p>
-    </details>
-    <details><summary>DeepSeek 与 Codex 的源码依据</summary><p>DeepSeek 的 <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/session/session-persistence-jsonl/src/index.ts">JSONL persistence</a> 使用同步临时文件、独占发布与目录同步，并明确区分损坏记录和缺失记录；<a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/core/session/src/repair.ts">session repair</a> 把中断工具标为结果未知，而不自动补造成功。采用这两项原则保护版本内容与中断状态。其 <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/fs/fs-local/src/index.ts">fs-local</a> 提供目标锁、版本条件检查和文本写入结果，但未提供完整文件 undo/reapply 或 Office 版本管理；因此保留 OpenProgram 现有恢复事务，不把会话日志恢复等同于文件恢复。Codex 的 exact delta 归因继续保留，不把任意 Bash 操作视为精确修改。</p></details>
-    <details><summary>新工具如何接入，哪些能力不属于本次实现</summary>
-      <p>本地生成器统一调用 <code>write(file_path, source_path=...)</code> 发布完整文件。文本工具保留 write/edit/apply_patch 入口，共享 checkpoint 的 prepare/commit/abort 合同。不能只提交模型声称的“修改成功”，也不能执行任意 Bash 后扫描目录并归因。状态存储由 CheckpointStore 管理，Review 和会话摘要只作投影，不另建版本副本。未来 Office 语义差异只读取不可变版本，不承担撤销；远端存储需要条件写入和可验证版本标识，在具备这一能力前不宣称支持精确恢复。</p>
-      <p>本次保留现有单轮聚合、会话分支和恢复事务；不新增全盘扫描、定时轮询、通用插件注册框架、Office 修订视图或远端存储实现。已丢失的历史不能补回。系统崩溃与不遵守文件锁的外部程序仍可能造成待人工处理状态；系统保留证据并拒绝不确定覆盖，不承诺所有外部修改都能自动恢复。</p>
-    </details>
-    <details><summary>实现与验收计划</summary><p>先复现连续写入提交失败、失败后重试和损坏记录覆盖；再修复共享历史存储及未完成记录投影。通过注册工具、重新打开会话、Review 与恢复入口验证，最后进行独立规范审查、质量审查和全量检查。该节对应共享历史存储、会话摘要与 Review 投影已实现；独立规范和质量审查、故障回归及全量测试均通过。</p></details>
-  </section>
+<h2 id="journal">Mutation journal</h2>
+<p>One manifest per turn, under <code translate="no">CheckpointStore</code> (<code translate="no">openprogram/state/store/snapshot/checkpoint/</code>). Each file entry:</p>
+<dl class="pairs">
+<dt><code translate="no">path</code>, <code translate="no">operation</code></dt><dd><code translate="no">create</code>, <code translate="no">modify</code>, <code translate="no">delete</code>, <code translate="no">rename</code></dd>
+<dt><code translate="no">before</code>, <code translate="no">after</code></dt><dd><code translate="no">{kind: "regular", digest, blob_ref, mode, size}</code> or <code translate="no">{kind: "absent"}</code></dd>
+<dt><code translate="no">status</code></dt><dd>Prepared, committed or aborted, with <code translate="no">prepared_at</code>, <code translate="no">committed_at</code></dd>
+<dt><code translate="no">stats</code>, <code translate="no">diff_state</code></dt><dd>Lines added and removed, binary; available, large, binary or timeout</dd>
+<dt><code translate="no">recoverability</code></dt><dd>Exact or unavailable, with <code translate="no">unavailable_reason</code></dd>
+<dt><code translate="no">mutation_sequence</code></dt><dd>Durable and monotonic; multi-turn folding uses this, not DAG order</dd>
+</dl>
+<details>
+<summary>Invariants</summary>
+<ul>
+<li>Prepared persists before the write; committed only after confirming the after state. If preparing fails, the mutator stops before touching disk.</li>
+<li><code translate="no">absent</code> means absence was confirmed. A baseline read failure is <code translate="no">recoverability=unavailable</code>, never absent.</li>
+<li><code translate="no">unavailable</code> applies only to journaled mutations whose size or type policy omits blobs, never to hide journal failures.</li>
+<li>Same-file edits in a turn fold to net first-before to last-after; rename keeps lineage. Regular before and after both keep blob refs.</li>
+<li>Paths are recanonicalized at capture, plan and apply; parent chain, leaf lstat, device, inode and link count are checked with validated handles or no-follow primitives.</li>
+<li>Revert, Restore and Reapply are also transactions; originals are immutable. Current branch folds the active lineage only.</li>
+<li>Each prompt defines <code translate="no">before_turn</code>, assistant completion <code translate="no">after_turn</code>; the UI names the restored boundary.</li>
+</ul>
+</details>
 
-  <section id="document-history">
-    <h2>文档修改与版本恢复</h2>
-    <p class="intro">Word、PPT、PDF 与图片使用完整文件版本。打开这一轮的文件记录可确认修改的文档；撤销恢复修改前的文件，重新应用恢复修改后的文件。重启后仍读取同一份持久记录。</p>
-    <div class="scenario-grid">
-      <div class="scenario"><b>修改完成</b><p>Proposal.docx · 文件内容已更新</p><p class="result">查看文件记录 · 撤销本轮修改</p></div>
-      <div class="scenario"><b>重新打开会话</b><p>同一轮仍显示 Proposal.docx，历史版本不依赖脚本输出或内存缓存。</p><p class="result">查看记录 · 重新应用</p></div>
-      <div class="scenario"><b>文件后来又被修改</b><p>撤销前检查当前文件。内容与已保存版本不一致时阻止恢复，保留后续修改。</p><p class="result">文件已变化，未执行恢复</p></div>
-    </div>
-    <details><summary>实现方式与范围</summary>
-      <p>脚本将结果写到独立临时文件，再通过现有 <code>write(file_path, source_path=...)</code> 发布。content 与 source_path 必须且只能指定一个。source_path 是本地普通文件，受读取权限限制；目标继续执行写权限、读取基线与审批文件指纹检查。来源和目标均纳入审批等待时的文件指纹；发布前复核。工具在目标目录生成临时文件，完整写入后替换目标，失败清理临时文件，并保留原目标。工具按原始字节写入，记录 before/after，不将文档转成文本保存。源与目标相同、目录、链接、超限或不可读取的来源在修改目标前失败。来源读取有 64 MiB 上限。已有目标在 advisory lock 下复核打开的文件句柄、内容和路径；这只能串行化遵守该锁的写入，不能阻止外部程序在最终校验与替换之间写入。Windows 在替换前关闭不共享删除权限的句柄并再次校验，因此不承诺操作系统级条件替换。</p>
-      <p>参考 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex TurnDiffTracker</a> 的 exact delta 检查与 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/shell_snapshot.rs">shell snapshot</a> 的暂存、验证、替换流程；后者保存 shell 环境，不是文档版本。沿用 Codex 的明确修改操作归因：通用 Bash、后台进程与外部编辑器不自动成为本轮精确修改。脚本不能直接覆盖最终目标后再补写历史。保留既有文本 write 参数、失败语义、回退事务、分支归属及持久会话布局。文档格式、图片和排版均由完整字节版本恢复；当前不提供 Word 修订标记或 PPT 视觉差异。</p>
-      <p>读取基线必须先建立：模型先用 read 读取原文件，再生成暂存版本。二进制读取返回文件类型与字节数，不向模型输出乱码。新文件不要求先读。脚本工具说明明确这一流程，无额外保存按钮，无全盘扫描与轮询。</p>
-      <p>验收经注册 write 工具、会话重新打开及公开历史操作完成：创建和覆盖 DOCX/PPTX 后保存版本；撤销及重新应用逐字节一致；外部更改导致冲突；失败不替换目标；旧文本写入仍有效。</p>
-    </details>
-  </section>
+<h3 id="review-scopes">Three Review scopes</h3>
+<table class="stack">
+<thead><tr><th scope="col">Scope</th><th scope="col">Source</th><th scope="col">Contains</th><th scope="col">Recovery</th></tr></thead>
+<tbody>
+<tr><th scope="row">This turn</th><td>Committed change sets of an origin turn</td><td>Parent's change set plus owned children, each with its own producer turn, deduplicated, actors shown</td><td>Undo or Revert: exact receipts across the closure, terminal actors, matching digests</td></tr>
+<tr><th scope="row">Current branch</th><td>Active-lineage journal projection</td><td>All turns and explicit revert, rewind, reapply; no siblings or external writes</td><td>From a specific turn or checkpoint; no one-click branch Undo</td></tr>
+<tr><th scope="row">Workspace</th><td>Git diff plus <code translate="no">git ls-files --others --exclude-standard</code></td><td>Uncommitted changes, honouring <code translate="no">.gitignore</code>; Unstaged, Staged, Branch, Commit</td><td>No turn Undo. Git Discard is a separate entry. Non-Git: unavailable.</td></tr>
+</tbody>
+</table>
 
-  <section id="current"><details class="background-detail"><summary>当前实现与必须修复的缺口</summary>
-    <p class="intro">以下均由当前源码确认。它们解释了十几万行误统计、响应慢和多轮恢复可能产生部分成功的原因。</p>
-    <div class="table-wrap"><table><thead><tr><th>当前路径</th><th>现状</th><th>风险</th><th>目标</th></tr></thead><tbody>
-      <tr><td><code>agent_loop._snapshot_cwd</code></td><td>Bash 前后 cwd 扫描、候选预复制和执行器调用已删除。</td><td>普通 Bash、后台日志和外部写入不再进入 turn mutation。</td><td><span class="tag yes">完成</span> 仅 trusted file mutator 生成 receipt。</td></tr>
-      <tr><td><code>_checkpoint_changed_files</code></td><td>该路径已删除；prepared receipt 明确区分 regular before image 与 absent。</td><td>超过统计预算的既有文件保持 <code>modify</code>，stats 为 unknown，不再按新文件整量新增。</td><td><span class="tag yes">完成</span> baseline 缺失不编码成 absent。</td></tr>
-      <tr><td><code>CheckpointStore.restore_turn</code></td><td>单轮入口使用全量 plan、profile-stable lock、durable intent、条件式 leaf mutation、verify 与 rollback；legacy 方法只保留给迁移测试，生产 <code>revert_turn</code> 不再调用。</td><td>冲突、缺 blob、stale plan 均零写入；外部 pathname/open-fd race 保留外部内容并进入 recovery_required。</td><td><span class="tag yes">完成</span> 单轮与多轮均使用事务式 apply。</td></tr>
-      <tr><td><code>rewind_to</code></td><td>使用 active suffix 一次规划、同路径折叠、dirfd/no-follow 条件写、durable intent、文件验证后 HEAD CAS；不逐轮 revert 或改写旧节点。</td><td>文件、plan、父目录、HEAD 或 branch version 变化均阻止提交；mixed crash state 在启动时安全回滚或进入 recovery_required。</td><td><span class="tag yes">完成</span> WS 默认只返回 plan，apply 必须携带 plan hash 与幂等键。</td></tr>
-      <tr><td><code>rewind_to</code> + caller subtree</td><td>同 session、非 worktree、带显式 origin 的 owned child 递归纳入 causal closure；每个 receipt 带持久单调 <code>mutation_sequence</code>，同路径按实际 workspace 顺序折叠。</td><td>running owned 或同 workspace linked actor 阻止恢复；completed/cancelled/errored 且有 durable head 的 owned change set 进入同一事务，legacy ambiguous job 不获得恢复权限。</td><td><span class="tag yes">完成</span> linked peer/cross-session 与 worktree 只报告影响，不并入父 change set。</td></tr>
-      <tr><td><code>/api/chat/checkout</code></td><td>以一次 HEAD CAS 同步写入 workspace mismatch；连续 checkout 保留真正物化文件所属的 source head。</td><td>下一次 mutating turn 在明确选择 Keep current files 或 Restore branch code 前被阻止；两个决定均绑定 source/target，stale 请求不能采用新 checkout。</td><td><span class="tag yes">完成</span> Restore 复用事务式 preflight、幂等键、rollback 与 crash recovery，且不移动 conversation HEAD。</td></tr>
-      <tr><td><code>ProjectGit.revert_agent_commit</code></td><td>已从单轮 Undo/Revert 生产路径移除 ProjectGit 调用。</td><td>单轮历史恢复不再 reset/revert 用户 Git，不读取或修改 index/commit。</td><td><span class="tag yes">完成</span> Workspace Git 操作保留独立入口。</td></tr>
-      <tr><td><code>ShadowGitStore</code></td><td>Turn/Branch Review 与 diff 只读 exact mutation journal；Workspace Review 只读 Git status/numstat。Shadow Git 不再是 Review 事实源。</td><td>legacy shadow commit 路径仍存在，但不再影响文件卡、Review 或恢复资格。</td><td><span class="tag yes">Review 降级完成</span> 后续可独立清理 legacy cache。</td></tr>
-      <tr><td>Checkpoint GC / unknown turn</td><td>plan 必须证明目标 turn、全部 actions 与 recovery blob 可用；unknown、expired、corrupt 或不精确 receipt 不显示可执行历史 action。</td><td>Review metadata 仍可读，但 code restore 返回 unavailable；不会写 Reverted metadata或移动 HEAD。</td><td><span class="tag yes">完成</span> Expired 只允许只读 Review。</td></tr>
-      <tr><td>Branch metadata</td><td>统一 restore transaction、HEAD/version CAS、branch refs、writer epoch 与 checkout workspace alignment；source leaf 保留，旧 conversation 节点不因 Rewind 被全局隐藏。</td><td>checkout、Keep、Restore 都绑定 expected source/target；并发 HEAD 或文件变化返回 blocked、rolled_back 或 recovery_required。</td><td><span class="tag yes">完成</span> branch projection 与 Review 使用同一 mutation sequence。</td></tr>
-      <tr><td><code>TurnFilesChips</code></td><td>聚合值与前三个文件随 assistant metadata 持久化；legacy 仅在进入视口后查询。卡片最多挂载 20 行，不再挂载 diff。</td><td>Review 文件列表每页 100，diff 每页最多 200 行 / 256 KiB，并用 request id + snapshot 防止旧响应和跨 scope 读取。</td><td><span class="tag yes">完成</span> 点击文件或 Review 打开确定性的 center Review tab。</td></tr>
-      <tr><td>Web / TUI / Python CLI</td><td>Web WS 与 Python CLI 统一使用只读 plan、显式 confirm/apply、plan hash、幂等键和结果状态；Web center Review 已接入三个 scope。</td><td>Web diff/payload 有界且 actor/producer/linked impact 可见；TUI/CLI 保持同一恢复协议，不复制 Web center pane。</td><td><span class="tag yes">协议与 Web Review 完成</span></td></tr>
-      <tr><td>Project file explorer</td><td>目录按展开时加载；搜索只在已加载目录的节点中进行。</td><td>未展开目录中的文件不会被搜索到；目录结果没有可复用的稳定 snapshot/cursor 合同。</td><td><span class="tag unknown">待实现</span> project-scoped 后端搜索、目录分页与稳定 cursor。</td></tr>
-      <tr><td>File WebSocket lifecycle</td><td>部分 Review 请求已回显 <code>request_id</code>；项目文件请求仍依赖按响应 type 的全局串行队列，<code>list_turn_files</code> 没有 request id。</td><td>并发时不能由每个调用独立认领响应；全局串行会把无关的文件加载相互阻塞。</td><td><span class="tag unknown">待实现</span> 所有文件相关 WS action 强制 request_id 并按该 id 关联响应。</td></tr>
-      <tr><td>Read cache and drafts</td><td>读取缓存和未保存草稿均无容量上限；草稿只在页面内存中保存。</td><td>长期使用会累积内存；刷新页面可能丢失 dirty draft。</td><td><span class="tag unknown">待实现</span> 有界 LRU read cache 与独立、持久化的 dirty draft store。</td></tr>
-      <tr><td>Review filters and paging</td><td>Review 先取一页文件，再在客户端按 Code/Tests/Docs/Large 分类。</td><td>分类结果只代表当前页；不同页和 workspace 变化之间不能形成稳定的筛选视图。</td><td><span class="tag unknown">待实现</span> server 先筛选与排序，再对固定 snapshot 分页。</td></tr>
-    </tbody></table></div>
-  </details></section>
+<h2 id="rewind">Rewind</h2>
+<p>One plan, one transaction. WebSocket <code translate="no">phase</code> defaults to <code translate="no">plan</code>; <code translate="no">apply</code> needs <code translate="no">plan_hash</code> and <code translate="no">idempotency_key</code>. Plan statuses: <code translate="no">ready</code>, <code translate="no">unavailable</code>, <code translate="no">blocked</code>, <code translate="no">stale_plan</code>, <code translate="no">error</code>. Intent ends <code translate="no">committed</code>, <code translate="no">rolled_back</code>, <code translate="no">recovery_required</code> or <code translate="no">aborted</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Phase</th><th scope="col">Rule</th><th scope="col">On failure</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resolve lineage</th><td>Predecessors from HEAD to the target non-root user turn; subtrees only through explicit ownership</td><td>Off the active branch: rejected</td></tr>
+<tr><th scope="row">Target state</th><td>Each prompt that starts a turn has a checkpoint, <code translate="no">.file-recovery/&lt;session&gt;/checkpoints/&lt;user_msg_id&gt;.json</code>: every tracked path to a state, content in shared <code translate="no">blobs/&lt;sha256&gt;</code>. A path it does not list takes the state recorded just before its first later edit. A prompt with no checkpoint (older sessions, steered messages) folds the journal on read, with no data rewrite.</td><td>A failed capture never blocks the tool; the path is <code translate="no">unavailable</code>. A prompt with no usable backup (<code translate="no">evicted</code>, <code translate="no">journal_gap</code>, <code translate="no">no_checkpoint</code>) reports <code translate="no">unavailable</code> for code modes; Conversation only stays.</td></tr>
+<tr><th scope="row">Plan rows</th><td>Each target against the file on disk: <code translate="no">restore</code>, <code translate="no">delete</code> or <code translate="no">skip</code> with a reason and +A &minus;D (1 MiB per file, 3 s budget). Only paths written by the withdrawn turns are eligible. Later changes outside that range are protected, including shell, manual, hunk Revert and Undo changes. Planning writes nothing and runs no crash recovery while a run owns the session.</td><td>Any skipped row blocks the entire code recovery before mutation: <code translate="no">other_session</code> (another session started or finished a trusted write after the target state was read; per-path index of each session's newest write under <code translate="no">mutation-locks/last-writers/</code>), <code translate="no">changed_since_edit</code> (the file no longer matches the recorded writes, or those writes have an intervening change), <code translate="no">unsafe_path</code>, <code translate="no">parent_missing</code>, <code translate="no">no_backup</code>, <code translate="no">changed_while_reading</code>. A running owned job blocks with <code translate="no">job_running</code>.</td></tr>
+<tr><th scope="row">Other branches</th><td>A checkpoint names its turns (<code translate="no">turn_ids</code>); a file's state before a turn's first edit is recorded in that turn's checkpoint. The target is the listing read earliest in the range. For a path another prompt's turn also wrote, it is the earliest listing read after that write and before the range's own first write (<code translate="no">first_sequence</code> in the turn's journal record). A write a committed rewind took back (<code translate="no">restores_through</code> on its intent) is not counted.</td><td>That write is later than the range's own first write, or no listing was read between the two: <code translate="no">changed_since_edit</code>. See <a href="../execution/control.html#branch-rewind">two branches</a>.</td></tr>
+<tr><th scope="row">Prepare intent</th><td>Holding the run slot, save the current content of each planned path as a blob, so a change no journal saw can still roll back; persist plan id, expected head, before and target images, mode, skipped rows; idempotent</td><td>Plan rebuilt under the workspace lock; a different hash returns <code translate="no">stale_plan</code>, zero writes</td></tr>
+<tr><th scope="row">Apply</th><td>Workspace lock; per-action state persisted; atomic replace; delete only on matching digest</td><td>Rollback only if the digest still equals what this transaction applied; otherwise <code translate="no">recovery_required</code>, external content kept</td></tr>
+<tr><th scope="row">Branch</th><td>Move the current branch with expected-head compare-and-set. The branch identity, withdrawal visibility and recovery metadata commit together. A pre-first-turn target uses the persistent ROOT.</td><td>Files restored per intent; source and active branch stay</td></tr>
+<tr><th scope="row">Finalize</th><td>Append transaction and navigation events; old nodes not marked; writer epoch advances so old tasks cannot write back</td><td>Startup finishes or rolls back open intents, never guesses</td></tr>
+</tbody>
+</table>
+<p class="note">Multi-file recovery is not one filesystem atomic operation. The guarantee comes from durable intents, rollback staging, per-file atomic replacement and restart recovery. A preflight over thousands of files pages its conflicts; once applying, it finishes or rolls back.</p>
 
-  <section id="references"><details class="background-detail"><summary>官方参考、采用与边界</summary>
-    <div class="table-wrap"><table><thead><tr><th>系统</th><th>确认行为</th><th>采用</th><th>不采用或未知</th></tr></thead><tbody>
-      <tr><td>Claude Code checkpoint</td><td>每个 user prompt 建 checkpoint；只跟踪 Write/Edit/NotebookEdit，明确不跟踪 Bash。可分别恢复代码、对话或两者；无 tracked edit 时不显示代码恢复。除前台 <code>context: fork</code> skill 外，其他 subagent 修改不恢复；symlink/hardlink/non-regular path 会跳过并警告，因此可能部分恢复。每 session 最近 100 个文件 checkpoint；checkpoint 随 session 保存并受默认 30 天、可配置 <code>cleanupPeriodDays</code> 清理。</td><td><span class="tag yes">采用</span> prompt checkpoint、分离恢复选项、明确 unavailable。</td><td><span class="tag modify">调整</span> OpenProgram 对任一路径失败执行整体阻止或事务回滚，不接受 skipped 后整体成功。超过 100 后旧 prompt 是否仍支持 conversation-only rewind 未获官方保证。</td></tr>
-      <tr><td>Claude Code fork</td><td><code>/branch</code> 与 SDK fork 把 conversation 复制到新 session，原 session 保留；明确不复制或回退 filesystem。VS Code 另行提供 Fork conversation and rewind code。</td><td><span class="tag modify">调整</span> OpenProgram 保留同-task Branch，并新增 source-preserving new-task Fork；with-files 在 Git 项目用隔离 worktree。</td><td><span class="tag no">不采用</span> fork 后默认复用当前 files 却不说明。</td></tr>
-      <tr><td>Claude Desktop</td><td>session diff 入口；左文件列表、右单文件 diff；支持行级评论和 Review code。</td><td><span class="tag yes">采用</span> 独立 Review、单文件按需 diff、结构化行级反馈。</td><td><span class="tag no">不复制</span> 品牌、图标、尺寸、工具栏顺序和 PR 控件。</td></tr>
-      <tr><td>Claude Web</td><td>确认 session diff、左右布局、行评论和 Create PR；官方页面没有确认 Review code。</td><td><span class="tag yes">采用</span> Review 与聊天分离。</td><td><span class="tag unknown">未知</span> 不把 Desktop 的 Review code 能力推定到 Web。</td></tr>
-      <tr><td>Codex exact turn diff</td><td><code>TurnDiffTracker</code> 只在当前 turn 内消费 exact <code>AppliedPatchDelta</code>，不重读 workspace；不精确时使 turn diff 失效。它是内存聚合器，不是持久恢复日志。</td><td><span class="tag modify">调整</span> 采用 exact delta 作为归因输入；OpenProgram 自行增加持久 receipt、digest、before/after blob 和 transaction 状态。</td><td><span class="tag no">不声称</span> Codex 提供 durable Undo journal。</td></tr>
-      <tr><td>Codex history</td><td><code>thread/fork</code> 创建新 thread ID、只复制 history；TUI 编辑旧 prompt 使用 source-preserving fork。旧 <code>thread/rollback</code> 已废弃，实验性 <code>thread/revert</code> 只处理 conversation；两者都不恢复文件。</td><td><span class="tag yes">采用</span> source-preserving fork 和不可变历史。</td><td><span class="tag unknown">未知</span> Codex App 是否另有未开源的 per-turn checkpoint/turn-card file Undo。</td></tr>
-      <tr><td>Codex Git Review</td><td>Repository Review 区分 Last turn 与 Git 状态，并提供 Unstaged、Staged、Commit、Branch、多 repo、行评论和 Git whole/file/hunk stage/revert；TUI <code>/diff</code> 对 untracked 使用 <code>--exclude-standard</code>。</td><td><span class="tag yes">采用</span> Workspace Git 子范围和 ignored 排除。</td><td><span class="tag no">分开命名</span> Git Discard 不是 checkpoint Restore；具体 desktop Git revert 实现不当成 turn Undo。</td></tr>
-    </tbody></table></div>
-    <div class="decision-line" style="margin-top:10px"><b>参考系统没有公开保证的部分：</b>Claude 对外部并发修改的覆盖/拒绝/合并规则、多文件原子性、digest preflight 和崩溃一致性均未说明；Codex exact turn delta 的长期持久化与 Desktop per-turn file Undo 未确认。本页的全量预检、workspace lock、durable intent、rollback staging 和 crash recovery 是 OpenProgram 新增合同。</div>
-    <div class="source-list" style="margin-top:10px"><a href="https://code.claude.com/docs/en/checkpointing">Claude checkpointing</a><a href="https://code.claude.com/docs/en/agent-sdk/file-checkpointing">Claude SDK file checkpointing</a><a href="https://code.claude.com/docs/en/sessions">Claude sessions / branch</a><a href="https://code.claude.com/docs/en/vs-code">Claude VS Code</a><a href="https://code.claude.com/docs/en/desktop">Claude Desktop diff</a><a href="https://code.claude.com/docs/en/web-quickstart">Claude Web review</a><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex turn diff</a><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/app_backtrack.rs">Codex backtrack</a><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/get_git_diff.rs">Codex Git diff</a><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs">Codex fork/revert protocol</a><a href="https://learn.chatgpt.com/docs/code-review">Codex Code review</a></div>
-  </details></section>
+<table class="stack" id="recovery-modes">
+<thead><tr><th scope="col">Mode</th><th scope="col">Files</th><th scope="col">Conversation</th><th scope="col">Next turn</th></tr></thead>
+<tbody>
+<tr><th scope="row">Code and conversation</th><td>Restored</td><td>Current branch rewound after commit; prompt prefilled; withdrawn messages remain only as recovery history</td><td>Normal</td></tr>
+<tr><th scope="row">Conversation only (<code translate="no">conversation</code>)</th><td>Kept</td><td>Current branch HEAD compare-and-set to the message before the target; later messages are withdrawn, not exposed as a branch</td><td>Told files were not reverted; send not blocked</td></tr>
+<tr><th scope="row">Code only (<code translate="no">code</code>)</th><td>Restored</td><td>Kept; the transaction compares and sets HEAD to itself</td><td>Told files went back without the conversation</td></tr>
+</tbody>
+</table>
 
-  <section id="architecture"><details class="background-detail"><summary>目标架构与信任边界</summary>
-    <p class="intro">对话 DAG、精确 mutation journal 和 Git workspace view 是三个独立事实源。历史操作 planner 可以读取三者，但只有 journal 中的可恢复 receipt 能授权文件恢复。</p>
-    <div class="arch"><svg viewBox="0 0 1040 455" role="img" aria-labelledby="arch-title arch-desc"><title id="arch-title">文件修改与历史恢复架构</title><desc id="arch-desc">直接编辑工具产生精确 mutation receipt，普通 Bash 不进入本轮归因；journal 派生 turn 和 session review，Git 派生 workspace review；历史操作 planner 经过预检和持久化 intent 后才更新文件和对话 HEAD。</desc><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
-      <rect class="node exact" x="20" y="25" width="205" height="72" rx="8"/><text x="38" y="50">Trusted file mutators</text><text class="sub" x="38" y="68">write · edit · apply_patch</text><text class="sub" x="38" y="83">validated mutation-capable adapter</text>
-      <rect class="node danger" x="20" y="130" width="205" height="67" rx="8"/><text x="38" y="156">Generic Bash / external process</text><text class="sub" x="38" y="174">no turn receipt · no turn Undo</text>
-      <rect class="node exact" x="295" y="25" width="205" height="72" rx="8"/><text x="313" y="50">Mutation receipt</text><text class="sub" x="313" y="68">before/after digest · op · actor</text><text class="sub" x="313" y="83">recovery blob ref · stats</text>
-      <rect class="node" x="570" y="25" width="205" height="72" rx="8"/><text x="588" y="50">Mutation journal</text><text class="sub" x="588" y="68">append-only transactions</text><text class="sub" x="588" y="83">turn · current branch · revert</text>
-      <rect class="node" x="815" y="25" width="205" height="72" rx="8"/><text x="833" y="50">Conversation DAG</text><text class="sub" x="833" y="68">user · llm · code nodes</text><text class="sub" x="833" y="83">HEAD and sibling branches</text>
-      <path class="edge" d="M225 61H295"/><path class="edge" d="M500 61H570"/><path class="edge-dash" d="M225 163C400 163 410 117 570 80"/>
-      <rect class="node review" x="295" y="245" width="205" height="79" rx="8"/><text x="313" y="270">Derived Review scopes</text><text class="sub" x="313" y="289">This turn · Current branch</text><text class="sub" x="313" y="304">Workspace comes from Git only</text>
-      <rect class="node review" x="570" y="245" width="205" height="79" rx="8"/><text x="588" y="270">History operation planner</text><text class="sub" x="588" y="289">impact · target projection</text><text class="sub" x="588" y="304">conflict and recoverability</text>
-      <rect class="node" x="815" y="245" width="205" height="79" rx="8"/><text x="833" y="270">Durable operation intent</text><text class="sub" x="833" y="289">prepared · applying</text><text class="sub" x="833" y="304">committed · rolled_back</text>
-      <path class="edge" d="M672 97V245"/><path class="edge" d="M917 97V245"/><path class="edge" d="M500 284H570"/><path class="edge" d="M775 284H815"/>
-      <rect class="node exact" x="570" y="375" width="205" height="58" rx="8"/><text x="588" y="399">Workspace transaction</text><text class="sub" x="588" y="417">lock · stage · apply · verify</text>
-      <rect class="node exact" x="815" y="375" width="205" height="58" rx="8"/><text x="833" y="399">HEAD transaction</text><text class="sub" x="833" y="417">only for conversation modes</text>
-      <path class="edge" d="M917 324V375"/><path class="edge" d="M815 404H775"/>
-    </svg></div>
-    <div class="decision-line danger" style="margin-top:12px"><b>普通 Bash 与 Workspace Review 的边界：</b>Bash 可以在沙箱或 worktree 中运行，但本地共享工作区里的通用 shell 结果不自动归因给某个 turn。Git 能显示当前 workspace 变化，却不能证明它属于哪一轮，也不能赋予 turn Undo 权限。</div>
-  </details></section>
+<h3>After a rewind</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Rewind edge</th><td>Session meta <code translate="no">rewind_edges</code>, written with the HEAD move. Marks computed for the current chain: <code translate="no">pending</code> until the next send, then <code translate="no">back</code>; <code translate="no">forward</code> after Undo.</td></tr>
+<tr><th scope="row">Undo, Redo</th><td>Compare-and-set HEAD along the edge while holding the run slot. Messages only.</td></tr>
+<tr><th scope="row">Note to the model</th><td>Session meta <code translate="no">pending_rewind_note</code>, read once when the next turn builds its system prompt: <code translate="no">conversation_only</code>, <code translate="no">restored</code>, <code translate="no">branch_kept_files</code>, <code translate="no">partial</code> (an earlier conversation-only rewind still warns about files), <code translate="no">code_only</code>, <code translate="no">undo_kept_files</code>.</td></tr>
+<tr><th scope="row">Read tracking</th><td>Rewind, Undo and Redo drop the session's read baselines; the next edit reads the file first.</td></tr>
+<tr><th scope="row">Copying a session</th><td><code translate="no">branch_session</code> carries checkpoints, blobs and write provenance for the copied messages and records source and mutation sequence in <code translate="no">origin.json</code>, so the source's earlier writes do not count as another session.</td></tr>
+<tr><th scope="row">Retention</th><td>100 turn directories and 100 checkpoints per session, counted separately. <code translate="no">intents</code>, <code translate="no">intent-locks</code>, <code translate="no">checkpoints</code>, <code translate="no">blobs</code> are never turn directories. Removed turn ids go to <code translate="no">evicted-turns.json</code>; a blob goes when no kept checkpoint or open intent refers to it.</td></tr>
+</tbody>
+</table>
 
-  <section id="file-query"><details class="background-detail"><summary>文件浏览、搜索与 Review 查询合同</summary>
-    <p class="intro">Project file explorer 与 Review 都使用 project/session 绑定的服务端快照。目录、搜索和 Review 过滤先确定完整的有序候选集，再返回一页；客户端不得以当前页数据推断项目或 scope 的完整结果。</p>
-    <div class="table-wrap"><table><thead><tr><th>查询</th><th>事实源与范围</th><th>排序、筛选与分页</th><th>无效化</th></tr></thead><tbody>
-      <tr><td>Directory listing</td><td>由 <code>project_id</code> 解析的项目根目录；path 必须是规范化的根内相对目录。排除路径穿越、符号链接逃逸和服务端禁止浏览的目录。</td><td>先按类型（目录、文件）和根内规范化路径稳定排序，再建立 snapshot。每页最多 100 项；cursor 是不透明 token，不是数组下标。</td><td>目录版本、ignore 规则或请求中的 project/path/sort 不匹配时返回 <code>STALE_SNAPSHOT</code>，客户端从第一页重取。</td></tr>
-      <tr><td>Project search</td><td>服务端遍历同一项目根，并应用与目录浏览相同的访问与忽略规则；不依赖树已展开的节点。结果只包含名称或根内相对路径匹配的项目文件与目录。</td><td>先以 query、匹配模式和类型过滤，再按稳定 rank、根内路径排序并建立 snapshot；分页只作用于已过滤结果。搜索 query 或模式变化必须丢弃 cursor。</td><td>项目切换、搜索 snapshot 到期或根目录版本变化后显示可刷新状态；不得把其他项目的旧结果保留在新项目中。</td></tr>
-      <tr><td>Review scope</td><td>This turn / Current branch 读取 mutation journal；Workspace 读取 Git 的 HEAD、index 和 worktree。每一项继续携带 source、actor 和 change-set 归因。</td><td>服务端先按 category、path query、operation、diff state 与排序过滤，随后对该过滤结果建立 snapshot 并分页。计数和 totals 针对完整过滤结果，不是当前页。</td><td>scope、assistant message、filter、sort 或 snapshot 任一不匹配时拒绝 cursor；Workspace 还比较固定 candidate list 与每个候选的 index/worktree identity。选择的文件若不在新 snapshot 中，清空 selection 和 diff。</td></tr>
-      <tr><td>Review file diff</td><td>只接受已由同一 Review snapshot 返回的 path；turn/branch 读取 journal blob，workspace 读取 snapshot 中记录的 HEAD/index/worktree blob pair。</td><td>diff cursor 同样是不透明且绑定 file identity、blob pair、scope snapshot 与行预算的 token。每次最多 200 行或 256 KiB。</td><td>snapshot、候选列表、index/worktree identity 或 blob pair 改变时返回 stale，不返回来自另一版本的后续 diff 页。</td></tr>
-    </tbody></table></div>
-    <h3>稳定 cursor</h3>
-    <div class="schema"><pre>{
-  "snapshot_id": "snap_...",
-  "query_kind": "directory | project_search | review_scope | review_diff",
-  "owner": {"project_id": "...", "session_id": "..."},
-  "basis": "directory/version or journal/Git revision",
-  "filter": {"query": "...", "category": "...", "sort": "..."},
-  "cursor": "opaque token",
-  "next_cursor": "opaque token | null",
-  "page_size": 100
-}</pre><div class="schema-note"><h3>cursor 不变量</h3><ul><li>cursor 只在创建它的 snapshot、owner、query kind、过滤条件和排序完全一致时有效；服务端不接受客户端提供的 offset、路径锚点或跨项目 token。</li><li>snapshot 保存候选集的稳定顺序或足以重建该顺序的不可变 revision；后续页绝不重新扫描后混入新增、删除或重排的项。</li><li>snapshot 可受容量和 TTL 限制。逐出或内容版本改变时明确返回 stale，由客户端刷新首屏；不得悄悄改用最新列表继续旧 cursor。</li><li>目录和搜索各自使用 cursor；Review 文件列表与单文件 diff 使用不同 cursor namespace，不能互换。</li></ul></div></div>
-    <h3>Workspace Review snapshot</h3>
-    <div class="schema"><pre>{
-  "snapshot_id": "workspace_...",
-  "project_id": "...",
-  "head_identity": "commit/tree identity",
-  "index_identity": "index tree identity",
-  "candidates": [{
-    "path": "canonical relative path",
-    "status": "XY or ??",
-    "base": {"kind": "blob | absent", "digest": "...", "mode": "..."},
-    "index": {"kind": "blob | absent", "digest": "...", "mode": "..."},
-    "worktree": {"kind": "regular | absent", "digest": "...", "mode": "...", "identity": "lstat fingerprint"}
-  }]
-}</pre><div class="schema-note"><h3>Workspace 不变量</h3><ul><li>创建 snapshot 时一次性确定未提交 candidate list，按规范化相对 path 排序；它包含 staged、unstaged、untracked、rename/delete 的所有相关 path，且保留旧路径和新路径的对应关系。</li><li>每个 candidate 固定 HEAD base、index blob 和 worktree content identity/blob pair。文本 diff 只能从该 pair 渲染，不能在后续请求中重新执行最新 <code>git diff</code> 代替。</li><li>请求下一页或单文件 diff 前，服务端重新读取 status candidate vector、index tree identity 和目标 path 的 no-follow worktree identity；任一新增、删除、状态、mode、index blob、worktree digest 或路径映射变化均返回 <code>STALE_SNAPSHOT</code>。</li><li>snapshot 保存的 content blob 受同一 review storage quota 管理；blob 缺失、超限或过期也返回 stale/unavailable，绝不从当前 worktree 近似补齐旧 diff。</li></ul></div></div>
-    <h3>所有文件 WebSocket 请求</h3>
-    <div class="table-wrap"><table><thead><tr><th>规则</th><th>合同</th><th>禁止</th></tr></thead><tbody>
-      <tr><td>必填关联键</td><td>所有文件浏览、读取、写入、创建、重命名、复制、删除、reveal、turn summary、turn diff、Review scope 与 Review diff 请求都带客户端生成的 UUID <code>request_id</code>；成功、stale、validation error 和 transport error 都原样回显。</td><td>不接受缺失或非 UUID 的文件请求；不再以 response type、path 或到达顺序认领响应。</td></tr>
-      <tr><td>响应验证</td><td>客户端以 <code>request_id</code> 作为唯一 pending key，并额外验证 action、project/session、snapshot 与目标 path；组件卸载、项目切换或新查询会取消并遗忘旧 pending key。</td><td>不得用全局请求队列消除竞态；一个慢目录请求不能阻塞另一个文件 read 或 Review diff。</td></tr>
-      <tr><td>写入幂等与冲突</td><td>有副作用的文件 action 还携带独立 <code>idempotency_key</code> 与现有的 optimistic-lock 条件。服务端以 action、owner、canonical payload 和 precondition fingerprint 建立 durable record。<code>request_id</code> 仅关联本次传输，不替代写入幂等键。</td><td>不把重连后的新 request id 当作新写入；不以缓存 mtime 覆盖服务端冲突结果。</td></tr>
-      <tr><td>错误形状</td><td>每个结果提供 <code>request_id</code>、action、owner、status 和稳定 error code；<code>STALE_SNAPSHOT</code>、<code>NOT_FOUND</code>、<code>CONFLICT</code> 与 <code>INVALID_REQUEST</code> 可被 UI 明确处理。</td><td>不吞掉缺少 request id、错误 owner 或未知 response 的帧，也不将其更新到当前文件状态。</td></tr>
-    </tbody></table></div>
-    <h3>写操作 idempotency_key</h3>
-    <div class="schema"><pre>{
-  "record_key": {"owner": "profile + project", "action": "project_file_write", "idempotency_key": "uuid"},
-  "fingerprint": "sha256(action + owner + canonical payload + precondition)",
-  "state": "prepared | in_flight | completed",
-  "operation_id": "fileop_...",
-  "result": "canonical terminal result or null"
-}</pre><div class="schema-note"><h3>幂等不变量</h3><ul><li>owner 是经授权的 profile 与 project；canonical payload 使用规范化根内 path、标准化 operation 参数和内容 digest，排除 <code>request_id</code> 与 <code>idempotency_key</code>。precondition fingerprint 包含 expected mtime/digest、源与目标路径、overwrite 条件及影响目录的版本条件。</li><li>服务端在与文件 mutation 同一 durable scope 中原子领取 <code>(owner, action, idempotency_key)</code>。同一 record key 的 fingerprint 不同，返回 <code>IDEMPOTENCY_KEY_CONFLICT</code>，零文件写入。</li><li>同 fingerprint 的 in-flight 重试绑定既有 <code>operation_id</code>，等待既有操作到本次请求的响应期限；未完成时返回 <code>IN_PROGRESS</code> 和该 operation id，客户端只能重试同一个 key，不能另发写入。</li><li>完成后 durable record 保存 canonical terminal result。相同 fingerprint 的任何重试只重放该结果，即使 request_id 不同，也不再次执行文件 mutation。进程重启先恢复或判定 in-flight record，再允许其结果被重放。</li><li>record retention 至少覆盖客户端重试窗口与 worker restart recovery；过期清理不得删除仍为 in-flight 的 record，且不会将已过期 key 解释为一个不同 fingerprint 的成功重放。</li></ul></div></div>
-    <h3>缓存与未保存草稿</h3>
-    <div class="table-wrap"><table><thead><tr><th>存储</th><th>键与容量</th><th>淘汰与一致性</th><th>数据保护</th></tr></thead><tbody>
-      <tr><td>Read cache</td><td>键为 <code>project_id + canonical relative path + content revision</code>；最多 64 项且最多 16 MiB，使用访问顺序 LRU。</td><td>只缓存成功且完整的只读结果。写入、rename、delete、tree revision 变化和容量超限会失效或淘汰最旧的干净 read；缓存未命中只触发新的 request_id 请求。</td><td>缓存不是编辑状态，也不保存 dirty text。</td></tr>
-      <tr><td>Dirty draft store</td><td>浏览器原生 IndexedDB 的 <code>openprogram-file-drafts</code> 数据库，键为 <code>project_id + canonical relative path</code>；持久化 UTF-8 draft、baseline content revision、baseline mtime、保存状态与更新时间。容量上限为 32 个 draft 或 8 MiB。</td><td>干净 draft 可删除；dirty draft 不参与 LRU 淘汰。所有 entry 与 aggregate byte/count index 在一个 readwrite transaction 中更新。</td><td>页面刷新、tab unmount、切换项目和 read-cache 淘汰都不能删除 dirty draft。服务端文件变化后保留草稿并标记冲突，保存必须继续提交其原始 baseline 条件。</td></tr>
-      <tr><td>路径变更与清理</td><td>成功 rename 在 IndexedDB transaction 中移动同项目 draft key；copy 不共享 source draft。删除文件先列出 dirty draft，要求明确的保存、保留/导出或丢弃选择。项目 draft 清理只由未来显式 project unlink/delete command 触发；当前产品没有该 action。</td><td>任何文件操作失败时不变更 draft key。确认 discard 后，文件 draft 与 project aggregate index 在单个 IndexedDB transaction 中清理；清理失败保留原记录并报告失败。不得把 <code>list_projects</code> 中项目消失解释为用户授权。</td><td>跨项目的同名 path 永不共享 cache、draft、selection 或 search snapshot；不因 tree 刷新、Review 切换、临时 registry unavailable 或后台响应重置编辑器 buffer。</td></tr>
-    </tbody></table></div>
-    <h3>IndexedDB dirty draft 合同</h3>
-      <div class="schema"><pre>{
-  "database": "openprogram-file-drafts",
-  "stores": ["drafts", "project_index"],
-  "draft": {
-    "key": "project_id + canonical relative path",
-    "draft_utf8_bytes": 0,
-    "baseline_utf8_bytes": 0,
-    "baseline_revision": "...",
-    "baseline_mtime": 0,
-    "updated_at": "local monotonic ordering"
-  }
-    }</pre><div class="schema-note"><h3>持久化与恢复不变量</h3><ul><li>使用浏览器原生 IndexedDB，不增加依赖。配额计算使用 <code>TextEncoder</code> 的 UTF-8 byte length，计入 draft、baseline 与所存元数据；<code>project_index</code> 保存每项目的键集合、count 和总 bytes。启动时以 project_index 恢复该项目的 dirty drafts；索引缺失或不一致时扫描 drafts 重建索引，不删除记录。</li><li>新建、更新、rename、discard 与未来显式 project cleanup 都在一个 IndexedDB readwrite transaction 内先计算新旧 bytes，再同时写 draft 与 aggregate index。超出 32 项或 8 MiB 时 transaction 不写入，现有 draft 保持不变。</li><li>编辑器在接受会把持久化 draft 超出配额的输入前先检查预算；满额时阻止创建新 dirty draft，并显示可见的保存、还原、导出或显式丢弃提示。已有 dirty draft 不自动淘汰；更新已有 draft 遇到浏览器 <code>QuotaExceededError</code> 时保留最近成功持久化版本、显示持久化失败状态并暂停进一步会扩大该记录的编辑，直到用户处理空间或显式导出/丢弃。</li><li>删除项目文件时，若对应 dirty draft 存在，服务端删除完成前 UI 必须要求保存、导出保留或明确 discard；成功 discard 才清理该 key。当前没有 project unlink/delete action，因此项目 draft 不因 registry snapshot 缺少该项目而清理；未来显式 command 必须先展示该项目 draft 数量和 bytes，确认后清理所有该项目 keys 与 index；取消或失败不清理。</li><li>draft 内容仅保存在当前浏览器 origin 的 IndexedDB；不进入日志、遥测、模型上下文、WebSocket payload 或跨设备同步。显式 discard、未来确认的 project cleanup、浏览器站点数据清除和应用卸载会删除本地内容；恢复时不得自动上传或重新写回项目文件。</li></ul></div></div>
-    <div class="decision-line" style="margin-top:12px"><b>Review 的顺序固定：</b>解析 scope 和 owner → 取得或创建事实源 snapshot → 服务端过滤与排序 → 对过滤结果分页 → 客户端渲染单页。分类按钮和搜索框不是前端对已加载一页的二次筛选。</div>
-  </details></section>
+<details>
+<summary>Recovery objects</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Object</th><th scope="col">Purpose</th></tr></thead>
+<tbody>
+<tr><th scope="row">Branch</th><td>Stable id, HEAD, <code translate="no">head_version</code>, writer epoch; sessions store <code translate="no">active_branch_id</code>. Explicit Rewind moves the current branch HEAD backward; normal branch navigation never restores files.</td></tr>
+<tr><th scope="row">Checkpoint</th><td>The recovery destination, without duplicating file lists</td></tr>
+<tr><th scope="row">Change set</th><td>Producer and origin turn, actor. Cards group by origin and keep producers.</td></tr>
+<tr><th scope="row">Plan</th><td>Read-only preview; plan hash prevents preview-to-confirm races</td></tr>
+<tr><th scope="row">Intent</th><td>Confirmed durable record: <code translate="no">idempotency_key</code>, <code translate="no">plan_hash</code>, <code translate="no">expected_head_id</code>, <code translate="no">target_head_id</code>, source and target branch, actions. Restart never infers progress from directories.</td></tr>
+</tbody>
+</table>
+</details>
 
-  <section id="journal"><details class="background-detail"><summary>Mutation journal 数据合同</summary>
-    <div class="schema"><pre>{
-  "transaction_id": "mtx_...",
-  "session_id": "...",
-  "workspace_id": "workspace_...",
-  "workspace_sequence": 184,
-  "branch_ref": "branch_...",
-  "lineage_head_id": "...",
-  "producer_turn_id": "actual assistant message id",
-  "origin_turn_id": "user-visible parent turn id",
-  "actor_id": "main | child_...",
-  "job_id": null,
-  "worktree_id": null,
-  "kind": "edit | revert | rewind",
-  "status": "prepared | applied | committed | aborted | rolled_back | recovery_required",
-  "files": [{
-    "file_lineage_id": "file_...",
-    "path": "canonical absolute path",
-    "operation": "create | modify | delete | rename",
-    "old_path": null,
-    "before": {"kind":"regular","digest":"sha256:...","blob_ref":"blob_...","mode":"0644"},
-    "after":  {"kind":"absent"},
-    "stats": {"added":16,"removed":4,"binary":false},
-    "diff_state": "available | large | binary | timeout",
-    "recoverability": "exact | unavailable",
-    "unavailable_reason": null
-  }]
-}</pre><div class="schema-note"><h3>不变量</h3><ul><li>原始写入先持久化 prepared receipt，再写文件，确认 after state 后转 committed；prepared 持久化失败时 trusted mutator 必须在写盘前失败。</li><li><code>{kind:"absent"}</code> 只表示已精确确认路径不存在；baseline 获取失败只能由 <code>recoverability=unavailable</code> 和 reason 表达，永远不能编码成 absent。</li><li><code>recoverability=unavailable</code> 只用于 journal 已成功持久化、但因明确大小或文件类型策略不保存 recovery blob 的 mutation，不用于吞掉 journal 故障。</li><li>每个 user prompt 定义 <code>before_turn</code>；assistant 完成后定义 <code>after_turn</code>。UI 必须写清恢复哪一个边界。</li><li>同一 turn 多次修改同一 file lineage，摘要折叠为 first-before 到 last-after 的净变化；rename 后仍保持 lineage。</li><li>所有共享 checkout 的 transaction 在 workspace lock 下领取全局单调 <code>workspace_sequence</code>；多轮投影按 sequence 和 lineage，不按 DAG seq/DFS。</li><li>before/after regular state 都保存 blob ref，才能稳定显示历史 diff、恢复和条件式 Reapply。</li><li>路径在 capture/plan/apply 时都重新规范化；保存并复检父目录链 identity、leaf lstat、device/inode 和 hardlink count，使用已验证 directory handle 或等价 no-follow 原语。</li><li>Current branch 只折叠 active lineage 的 transaction，不混入 sibling branch。</li><li>Revert/Restore/Reapply 本身也写 mutation transaction，原记录保持不可变。</li></ul></div></div>
-    <h3>Checkpoint 与 WorkspaceRevision</h3>
-    <div class="table-wrap"><table><thead><tr><th>对象</th><th>必需字段</th><th>用途</th></tr></thead><tbody>
-      <tr><td>Branch</td><td>稳定 <code>branch_id</code>、parent branch、fork checkpoint、HEAD、<code>head_version</code>、writer epoch；session 另存 <code>active_branch_id</code>。</td><td>source branch HEAD 永不后移。Restore/Branch 确认时立即创建新 branch ref；纯历史浏览只改变 navigation cursor。</td></tr>
-      <tr><td>Checkpoint</td><td><code>checkpoint_id</code>、<code>boundary=before_turn|after_turn</code>、user/assistant node、branch id、journal sequence、workspace revision。</td><td>定义恢复到哪里；不重复保存一套文件列表。</td></tr>
-      <tr><td>ChangeSet</td><td>producer turn、origin turn、branch、actor/job/worktree、transaction sequence、净 file lineage 变化。</td><td>Turn card 通过 origin 分组，但按 change set id 去重并保留真实生产者。</td></tr>
-      <tr><td>WorkspaceRevision</td><td>revision id、受管路径投影 digest、对应 branch/checkpoint、alignment 状态。</td><td>检查 branch checkout、conversation-only restore 和实际 workspace 是否一致。</td></tr>
-      <tr><td>RestorePlan</td><td>plan hash、idempotency key、expected HEAD/revision、目标 checkpoint、文件 actions、冲突。</td><td>预览与确认之间防止 TOCTOU；重复请求不得执行两次。</td></tr>
-    </tbody></table></div>
-    <h3>RestoreIntent / RestoreAction</h3>
-    <div class="schema"><pre>{
-  "restore_intent_id": "restore_...",
-  "idempotency_key": "...",
-  "plan_hash": "sha256:...",
-  "source_branch_id": "branch_source",
-  "target_branch_id": "branch_target",
-  "expected_head_version": 42,
-  "expected_workspace_revision": 184,
-  "target_checkpoint_id": "cp_...",
-  "mode": "code_and_conversation",
-  "status": "prepared | applying | committed | aborted | rolled_back | recovery_required",
-  "actions": [{
-    "action_id": "ra_...",
-    "file_lineage_id": "file_...",
-    "path": "/canonical/path",
-    "expected_current_digest": "sha256:...",
-    "target_digest": "sha256:...",
-    "target_blob_ref": "blob_...",
-    "rollback_digest": "sha256:...",
-    "rollback_blob_ref": "blob_...",
-    "applied_digest": null,
-    "state": "pending | applied | verified | rolled_back",
-    "error": null
-  }]
-}</pre><div class="schema-note"><h3>恢复记录不变量</h3><ul><li>Plan 是只读预览；Intent 是确认后的持久执行记录，两者由 plan hash 绑定。</li><li>每个 action 在文件替换前后分别持久化状态；重启不通过目录内容猜测执行位置。</li><li>Rollback 只在 current digest 仍等于该 action 的 applied digest 时写回 rollback blob。</li><li>任何 action 无法安全 rollback 时，intent 保留每个路径的真实状态并进入 recovery_required。</li><li>target branch 只在所有代码 action verified 后激活；source branch ref/head 始终不变。</li></ul></div></div>
-    <h3>三个 Review scope</h3>
-    <div class="table-wrap"><table><thead><tr><th>Scope</th><th>事实源</th><th>包含</th><th>恢复能力</th></tr></thead><tbody>
-      <tr><td>This turn</td><td>指定 origin turn 的 committed change sets</td><td>父 turn 直接 change set + owned child change sets；child 始终保留独立 <code>producer_turn_id</code>，按 transaction id 去重并显示 actor。</td><td>所选 causal closure 全部 receipt exact、所有 actor terminal 且 current digest 匹配时可 Undo/Revert。</td></tr>
-      <tr><td>Current branch</td><td>当前 active lineage 的增量 mutation projection</td><td>所有 turn、显式 revert/rewind/reapply；不包含 sibling branch 和外部写入。</td><td>从具体 turn/checkpoint 发起，不提供无范围的一键 branch Undo。</td></tr>
-      <tr><td>Workspace</td><td>Git tracked diff + <code>git ls-files --others --exclude-standard</code></td><td>当前未提交变化；遵循 <code>.gitignore</code>。内部再切换 Unstaged、Staged、Branch 或 Commit。</td><td>无 turn Undo。Git Discard 与 checkpoint Restore 使用不同入口和确认文案；非 Git明确 unavailable。</td></tr>
-    </tbody></table></div>
-  </details></section>
+<h2 id="branches">Branches and actors</h2>
+<table class="stack">
+<thead><tr><th scope="col">Scenario</th><th scope="col">Meaning</th><th scope="col">Files</th></tr></thead>
+<tbody>
+<tr><th scope="row">Branch from a result</th><td>Target branch created and activated; source HEAD unchanged</td><td>Unchanged, “Files stay as they are”</td></tr>
+<tr><th scope="row">Fork into a new task</th><td>Source task and HEAD kept; conversation history copied</td><td>Files stay shared unless the user explicitly requests filesystem isolation.</td></tr>
+<tr><th scope="row">Checkout sibling</th><td>Selects another conversation lineage, without changing files or demanding file alignment</td><td>All ordinary branches share the current workspace. Clear read baselines and tell the model that files were not restored. Reads and writes follow normal permissions and current-file checks.</td></tr>
+<tr><th scope="row">Owned child</th><td>By relation, <code translate="no">creates_agent</code>, origin turn; own producer and change sets</td><td>Running blocks parent restore. Finished joins the closure.</td></tr>
+<tr><th scope="row">Independent actor</th><td>Background terminals, job runners, channels, schedulers</td><td>Running blocks same-workspace restore; writer epoch stops old write-backs</td></tr>
+<tr><th scope="row">Existing peer, cross-session</th><td>Linked, not owned</td><td>Not modified; listed in impact; overlap blocks code recovery</td></tr>
+<tr><th scope="row">Worktree child</th><td>Independent state</td><td>Parent Undo or Rewind never touches it; a merge is its own transaction</td></tr>
+<tr><th scope="row">Sibling branch</th><td>Outside Rewind</td><td>Journals unchanged; current files shared on return</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Resume, Archive, Purge</summary>
+<table class="stack">
+<thead><tr><th scope="col">Operation</th><th scope="col">Contract</th><th scope="col">Never</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resume</th><td>Unknown session: not found. Open transactions recover before real node ids, branch and revision load.</td><td>Treat an unknown id as new or fabricate ids</td></tr>
+<tr><th scope="row">Empty branch</th><td>HEAD is the persistent ROOT. Web, TUI and CLI share one branch result.</td><td>Pick another tip automatically</td></tr>
+<tr><th scope="row">Archive</th><td>Refs only; nodes, journals and checkpoints stay</td><td>Delete shared ancestors</td></tr>
+<tr><th scope="row">Purge</th><td>Reference-counted, explicit, exclusive objects only</td><td>Delete leaves one by one or bypass references</td></tr>
+</tbody>
+</table>
+</details>
 
-  <section id="rewind"><details class="background-detail"><summary>多轮 Rewind：一次规划，一次事务</summary>
-    <p class="intro">每轮同时有 before_turn 与 after_turn checkpoint。User message 的 Restore 入口默认选择“恢复到本次请求之前”；assistant turn card 可选择“恢复到本次回复之后”。目标 suffix 只沿 source branch predecessor chain 计算，不碰 sibling branch。Source branch ref 和 HEAD 始终保留；conversation 模式立即创建新的 target branch ref，并在协调事务提交后切换 active branch。</p>
-    <div class="state-flow" aria-label="历史操作状态机"><div class="state"><b>IDLE</b><p>选择 checkpoint 和恢复模式。</p></div><div class="state"><b>PLANNING</b><p>冻结 expected HEAD、workspace version 与 suffix。</p></div><div class="state"><b>READY</b><p>展示 turn/file 影响、不可恢复项和 branch 结果。</p></div><div class="state blocked"><b>BLOCKED</b><p>冲突、缺 blob、运行中任务或不安全路径；零写入。</p></div><div class="state"><b>APPLYING</b><p>写 durable intent，锁 workspace，stage、apply、verify。</p></div><div class="state done"><b>COMMITTED</b><p>追加 transaction；需要时移动 HEAD；刷新 UI。</p></div></div>
-    <div class="decision-line" style="margin-top:12px"><b>多文件恢复不是单个文件系统原子操作。</b>目标保证来自 durable intent、rollback staging、逐文件原子替换和重启恢复；若 apply 与 rollback 都失败，状态必须是 Recovery required，不能显示 Reverted 或移动 conversation HEAD。</div>
-    <h3>规划算法</h3>
-    <div class="table-wrap"><table><thead><tr><th>阶段</th><th>规则</th><th>失败结果</th></tr></thead><tbody>
-      <tr><td>Resolve lineage</td><td>从当前 HEAD 沿 conversation predecessor 回到目标 user checkpoint；caller subtree 只按明确 ownership 纳入。</td><td>目标不在 active lineage：拒绝，提示先切换分支。</td></tr>
-      <tr><td>Fold target state</td><td>按 journal 投影 checkpoint 时每个路径的目标状态；同文件跨多轮只生成一个最终 restore action，不逐轮覆盖。</td><td>journal 不连续或历史 receipt 不精确：代码模式 unavailable，对话模式仍可选。</td></tr>
-      <tr><td>Preflight</td><td>从全局 <code>current_workspace_revision</code> 规划到 target checkpoint，只比较实际 plan actions 涉及的 file lineage；检查 blob、父目录/leaf identity、file type、root、空间和权限。</td><td>任一失败进入 BLOCKED，列出每个路径，零文件改变。conversation/workspace mismatch 本身不是 source digest。</td></tr>
-      <tr><td>Prepare intent</td><td>保存 plan id、expected branch/head version、workspace revision、before images、目标 images、writer epoch 和恢复模式；请求幂等。</td><td>确认前状态变化返回 stale-plan，重新预览。</td></tr>
-      <tr><td>Apply files</td><td>获取 workspace mutation lock；每个 action 持久化 pending/applied/verified/rolled_back 和本 transaction applied digest；逐文件原子替换，删除仅在 current digest 匹配时执行。</td><td>回滚前再次确认 current digest 仍等于本 transaction applied digest；外部 actor 已改写时不覆盖，进入 RECOVERY_REQUIRED。</td></tr>
-      <tr><td>Create conversation branch</td><td>conversation-only 或 code+conversation 先准备新的稳定 target branch id/ref，source branch HEAD 不变；首轮前目标统一为持久 synthetic ROOT，禁止 <code>head_id=None</code> fallback。</td><td>创建/激活使用 expected source <code>head_version</code> CAS；失败则按 intent 恢复文件并保留 source/active branch。</td></tr>
-      <tr><td>Finalize</td><td>追加 rewind transaction 和 navigation event；不把旧节点全局写成 rewound。提升 branch writer epoch，使旧异步任务无法回写当前 branch。</td><td>重启时扫描未终态 intent，完成或回滚，不猜测成功。</td></tr>
-    </tbody></table></div>
-    <h3>恢复模式</h3>
-    <div class="table-wrap"><table><thead><tr><th>模式</th><th>文件</th><th>对话 HEAD</th><th>后续行为</th></tr></thead><tbody>
-      <tr><td>Code + conversation <span class="tag yes">默认</span></td><td>恢复到 checkpoint</td><td>立即创建 target branch，HEAD 指向目标 user prompt 之前；提交后激活</td><td>原 prompt 回填；source branch ref/head 保留。</td></tr>
-      <tr><td>Conversation only</td><td>保持当前</td><td>立即创建并激活 target branch</td><td>显示 workspace mismatch。用户确认 Keep current files 后追加 <code>adopt_workspace_revision</code> event 和新的 branch checkpoint；之后从该明确基线继续。</td></tr>
-      <tr><td>Code only</td><td>恢复到 checkpoint</td><td>保持当前</td><td>追加 rewind transaction；显示“代码已回退、对话仍在最新位置”。</td></tr>
-    </tbody></table></div>
-  </details></section>
+<h2 id="failures">Conflicts and unavailability</h2>
+<table class="grid">
+<thead><tr><th scope="col">Situation</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Later edit to the same file: Revert</th><td class="deny">No reverse merge</td></tr>
+<tr><th scope="row">Later edit to the same file: Rewind</th><td class="review">Later changes outside the withdrawn range block the complete code recovery; conversation-only remains available</td></tr>
+<tr><th scope="row">Plan changed after confirmation</th><td class="deny"><code translate="no">stale_plan</code>, zero writes</td></tr>
+<tr><th scope="row">Running turn or background task</th><td class="deny">No confirmable plan</td></tr>
+<tr><th scope="row">Symlink, hardlink, special file</th><td class="deny">Not followed or overwritten; path and reason shown</td></tr>
+<tr><th scope="row">Blobs garbage-collected</th><td class="review">Review readable, code restore off</td></tr>
+<tr><th scope="row">Large file, no blob</th><td class="review">Path and size exact; line counts unknown; no Undo</td></tr>
+<tr><th scope="row">Non-Git workspace</th><td class="review">Journal scopes work; Workspace unavailable</td></tr>
+<tr><th scope="row">Reapply</th><td class="review">Needs post-revert digest, no later same-lineage mutation, after blobs</td></tr>
+<tr><th scope="row">Crash during apply</th><td class="review">Rolled back, or <code translate="no">recovery_required</code> if rollback would destroy external writes</td></tr>
+<tr><th scope="row">Exact edit to ignored or authorized outside path</th><td class="run">Journaled, Undo works, not in Workspace</td></tr>
+<tr><th scope="row">Ignored background log growth</th><td class="run">Excluded by design</td></tr>
+<tr><th scope="row">Databases, APIs, deploys, installs, Git index, processes, network, unrecorded Bash</th><td class="ask">Outside Restore; confirmation lists possible repeated effects</td></tr>
+</tbody>
+</table>
 
-  <section id="branches"><details class="background-detail"><summary>分支、Checkout 与 sub-agent</summary>
-    <div class="table-wrap"><table><thead><tr><th>场景</th><th>目标语义</th><th>文件规则</th></tr></thead><tbody>
-      <tr><td>Branch from assistant result</td><td>立即创建稳定 target branch id/ref，HEAD 指向该 assistant，并切换 <code>active_branch_id</code>；source branch HEAD 保持原位置。</td><td>默认不修改文件，按钮副标题明确“Files stay as they are”。纯浏览历史只移动 navigation cursor，不创建/移动 branch。</td></tr>
-      <tr><td>Fork into new task</td><td>创建 source-preserving 新 task/thread，原 task 和 HEAD 不变；可选择复制 conversation only 或携带 checkpoint 文件状态。</td><td>Git 项目中“with files”优先创建隔离 worktree 后物化 checkpoint；非 Git 不提供无提示目录复制，改用同 task 的显式 Code + conversation Restore。</td></tr>
-      <tr><td>Checkout sibling branch</td><td>切换当前可见与模型使用的 conversation lineage。</td><td>计算 branch/workspace alignment。浏览允许；开始文件修改前必须选择保持当前 workspace 或恢复该 branch 的代码投影。</td></tr>
-      <tr><td>Owned child（前台或后台）</td><td>判据是 <code>relation + creates_agent + origin_turn_id</code>，不是前台/后台。child 始终有独立 producer turn/change set，父 turn 只按 origin 分组。</td><td>运行中时阻止父 restore；完成后进入父级 owned causal closure，plan 逐个列出并按 transaction id 去重，不能靠 caller DFS 猜测。</td></tr>
-      <tr><td>Independent actor</td><td>无 owned relation 的 background terminal、job runner、channel 和 scheduler 注册独立 workspace writer identity。</td><td>运行中时阻止同 workspace restore；完成回写必须校验 branch writer epoch，旧任务不能在 restore 后重新写入当前 branch。</td></tr>
-      <tr><td>Existing peer / cross-session dispatch</td><td><code>agent(to=existing)</code>、send message 和既有 peer 是 linked collaboration，不是父 turn 独占后代。</td><td>父 restore 默认不修改 peer 的对话或 change set；impact sheet 单独列出 linked actor，重叠 workspace/path 时阻止 code restore。</td></tr>
-      <tr><td>Worktree child</td><td>文件状态属于独立 worktree。</td><td>父 workspace 的 Undo/Rewind 不触碰；merge/discard 使用 worktree 自己的事务和冲突语义。</td></tr>
-      <tr><td>Worktree merge</td><td>merge 产生独立 mutation transaction，归属于执行 merge 的 producer turn。</td><td>父 workspace 只从 merge transaction 恢复；不依赖可能已删除的 child worktree checkpoint。</td></tr>
-      <tr><td>Sibling branch</td><td>Rewind 只作用于 active lineage suffix。</td><td>不改变 sibling journal；切回 sibling 时重新计算 alignment。</td></tr>
-    </tbody></table></div>
-    <div class="decision-line" style="margin-top:12px"><b>Branch、Fork 与 Restore 不共用含糊按钮。</b>同 task 的 Branch 是对话导航，默认不碰文件；Fork 创建 source-preserving 新 task；Restore 是显式历史恢复。需要在当前 task 从历史代码继续时使用 Code + conversation Restore；需要两套同时可运行的代码状态时使用 Git worktree-backed Fork。</div>
-    <h3>Resume、Archive 与 Purge 不变量</h3>
-    <div class="table-wrap"><table><thead><tr><th>操作</th><th>合同</th><th>禁止</th></tr></thead><tbody>
-      <tr><td>Resume session</td><td>未知 session 返回 not-found；先恢复所有 prepared/applied/recovery-required transaction，再加载真实 node ids、<code>active_branch_id</code>、branch HEAD/version 和 workspace revision。</td><td>不能把未知 ID 当新 session；不能生成 <code>loaded-&lt;index&gt;</code> 伪 ID。</td></tr>
-      <tr><td>Resume empty branch</td><td>首轮前 HEAD 指向持久 synthetic ROOT；Web/TUI/Rich CLI 使用同一 branch result schema。</td><td>不能用 <code>persisted_head or tip</code> 或 <code>head_id=None</code> 自动选择其他 tip。</td></tr>
-      <tr><td>Archive branch</td><td>默认删除操作只 archive branch ref，保留 nodes、journal、checkpoint refs 和重新激活能力。</td><td>不能删除共享祖先或把 predecessor 留成意外新 tip。</td></tr>
-      <tr><td>Purge branch</td><td>显式高级操作；仅释放没有其他 branch、checkpoint、operation、audit 或 active intent 引用的独有对象，使用引用计数 GC。</td><td>不能按 leaf 向后删一个节点，也不能让 blob GC 绕过引用。</td></tr>
-    </tbody></table></div>
-  </details></section>
+<h2 id="ui">Interface</h2>
+<table class="stack">
+<thead><tr><th scope="col">Place</th><th scope="col">Shows</th><th scope="col">Does</th><th scope="col">Never</th></tr></thead>
+<tbody>
+<tr><th scope="row">Assistant turn card</th><td>File count, net additions and deletions including zero, first three files, about 40 px header, 19 px <code translate="no">FeatherIcon</code>, 2.5 px two-colour proportion bar. Basenames emphasized. At 420 px or less: “N files”.</td><td>Latest: Undo, then Redo. Historical: Revert, then Reapply. Every turn: Review. Header shows executable actions; unavailable and blocked explanations in the footer.</td><td>Header chips, disabled badges, product branding</td></tr>
+<tr><th scope="row">User message</th><td>Restore checkpoint</td><td>Impact sheet, named boundary, default code and conversation</td><td>Restore on click</td></tr>
+<tr><th scope="row">Conversation ⋯ menu</th><td>Copy conversation</td><td>History only; files stay</td><td>Implicit restore</td></tr>
+<tr><th scope="row">Changes tab</th><td>Three scopes; file list and single-file diff; source labels; counts over the full filtered result</td><td>Unified or side-by-side, line comments, Open file, Reveal. A scope or filter change clears cursor, selection and diff.</td><td>Turn Undo in Workspace; client-only filtering</td></tr>
+<tr><th scope="row">Impact sheet</th><td>Prompt, turn and file counts, branch result, mode, conflicts</td><td>Confirm; cancel has no effect</td><td>Force while blocked</td></tr>
+<tr><th scope="row">Branch switch</th><td>Conversation changes; files stay</td><td>Continue talking and working on current files</td><td>File-alignment prompts or tool restrictions caused by branch history</td></tr>
+</tbody>
+</table>
 
-  <section id="failures"><details class="background-detail"><summary>冲突、不可恢复与并发状态</summary>
-    <div class="scenario-grid">
-      <div class="scenario"><b>后来修改了同一文件</b><p>Revert historical turn 不尝试自动反向合并；Rewind 预检 current digest。任何不匹配都阻止整次文件操作。</p><div class="result">BLOCKED_CONFLICT · 0 writes</div></div>
-      <div class="scenario"><b>Checkpoint blob 已 GC</b><p>summary 和 diff metadata 仍可 Review；Code restore 选项 disabled，Conversation only 保持可用。</p><div class="result">UNAVAILABLE_BLOB_EXPIRED</div></div>
-      <div class="scenario"><b>大文件无 recovery blob</b><p>operation、path、size 和 recoverability 必须精确；只有工具 delta 或预算内 before/after 可得时行数才精确，否则 added/removed 显示 unknown。不可 Undo，也不能把整文件算成新增。</p><div class="result">UNAVAILABLE_SIZE_POLICY</div></div>
-      <div class="scenario"><b>symlink / hardlink / 特殊文件</b><p>不跟随、不覆盖；显示路径和原因，要求用户通过原工具或版本控制处理。</p><div class="result">UNSAFE_FILE_TYPE</div></div>
-      <div class="scenario"><b>运行中的 turn / background task</b><p>同 workspace mutation lock 未释放时不生成可确认 plan；用户先停止或等待任务。</p><div class="result">WORKSPACE_BUSY</div></div>
-      <div class="scenario"><b>确认后状态又变化</b><p>apply 校验 expected HEAD、workspace version 和 plan token；返回 stale-plan 并刷新影响，不执行旧 plan。</p><div class="result">STALE_PLAN · 0 writes</div></div>
-      <div class="scenario"><b>应用中进程崩溃</b><p>启动时读取 durable intent 和每个路径状态；能安全回滚则 ROLLED_BACK，外部改写导致回滚会覆盖新内容时保留现场并进入人工恢复。</p><div class="result">COMMITTED | ROLLED_BACK | RECOVERY_REQUIRED</div></div>
-      <div class="scenario"><b>非 Git workspace</b><p>This turn 与 Current branch 精确 journal 可用；Workspace scope 显示 unavailable，不进行目录扫描。</p><div class="result">WORKSPACE_REVIEW_UNAVAILABLE</div></div>
-      <div class="scenario"><b>ignored 后台日志增长</b><p>既没有 mutation receipt，也被 Git exclude-standard 排除，不出现在 turn card 或默认 Workspace Review。</p><div class="result">EXCLUDED_BY_DESIGN</div></div>
-      <div class="scenario"><b>精确编辑 gitignored / repo 外允许路径</b><p>Trusted mutator 的 receipt 仍进入 journal，可 Undo/Restore；它只是不出现在 Git Workspace scope。普通 Bash 或无 receipt 的 ignored 变化仍排除。</p><div class="result">JOURNALED_NOT_GIT_VISIBLE</div></div>
-      <div class="scenario"><b>Reapply 已撤回 change set</b><p>仅当 current digest 等于 revert 后状态、没有后续同 file lineage mutation、after blobs 仍存在时可用；执行后追加新的 transaction。</p><div class="result">READY | BLOCKED_DEPENDENCY</div></div>
-      <div class="scenario"><b>外部副作用</b><p>数据库、API、部署、包安装、Git index/commit、运行进程、网络请求和未记录 Bash 不在文件 Restore 范围内；确认页逐项提示可能重复。</p><div class="result">UNSUPPORTED_SIDE_EFFECTS_VISIBLE</div></div>
-    </div>
-  </details></section>
+<h2 id="file-query">File queries</h2>
+<p>Project explorer and Review read server snapshots. The order is fixed: resolve owner, snapshot, filter and sort on the server, paginate, render one page.</p>
+<table class="stack">
+<thead><tr><th scope="col">Query</th><th scope="col">Source</th><th scope="col">Page</th><th scope="col">Goes stale on</th></tr></thead>
+<tbody>
+<tr><th scope="row">Directory</th><td>Project root by <code translate="no">project_id</code>; normalized, root-relative, no traversal or symlink escape</td><td>Directories then files, by path; 100 per page</td><td>Directory version, ignore rules, project, path, sort</td></tr>
+<tr><th scope="row">Project search</th><td>Same root and rules, independent of expanded nodes; names or relative paths</td><td>Filtered, ranked, then paged</td><td>Project switch, expired snapshot, root version</td></tr>
+<tr><th scope="row">Review scope</th><td>Journal, or Git HEAD, index, worktree</td><td>Server filters by category, path, operation, diff state; 100 per page; totals cover the full result</td><td>Scope, message, filter, sort, snapshot, candidate or identity change</td></tr>
+<tr><th scope="row">Review file diff</th><td>Paths from the same snapshot; recorded blob pairs</td><td>200 lines or 256 KiB per request</td><td>Snapshot, candidate, identity or blob pair change</td></tr>
+</tbody>
+</table>
+<p class="note">Stale answers are <code translate="no">STALE_SNAPSHOT</code> or <code translate="no">STALE_CURSOR</code>; clients restart from page one.</p>
 
-  <section id="ui">
-    <h2>UI 信息架构与操作入口</h2>
-    <div class="table-wrap"><table><thead><tr><th>位置</th><th>显示</th><th>操作</th><th>禁止</th></tr></thead><tbody>
-      <tr><td>Assistant turn card</td><td>精确文件数、净增删、前三个文件；完整外框和约 40px header。左侧使用用户指定的 19px FeatherIcon 表示本轮包含直接文件编辑，不使用网站 logo。总增删数字始终显示 additions 与 deletions 两项，包括零值；其下以 2.5px 双色比例条编码两者的真实占比。操作组、按钮和 Undo 图标不参与 flex 收缩，方向图标使用 1em 与按钮文字等高，标题区域承担截断；≤420px 时标题缩写为 “N files”，FeatherIcon、统计和操作保持可见，header 固定 40px。header 与文件列表之间保留一条分界线；目录弱、basename 强，统计固定列宽，分类只在 Review 中出现。</td><td>最新可恢复 turn：Undo；成功 Undo 后且重新预检可用：Redo；历史 turn：Revert；历史 Revert 后且重新预检可用：Reapply；所有 turn：Review。Undo / Revert / Redo / Reapply 使用文字加方向图标，Review 使用中性色描边按钮。header 只显示当前可执行动作，unavailable、blocked 与 Reverted 状态只在 footer 说明。</td><td>Redo 与 Reapply 都写新的 reapply transaction，不维护独立线性栈；不显示 header chips、禁用状态标签或参考产品品牌元素。</td></tr>
-      <tr><td>User message footer</td><td>现有消息动作中的 Restore checkpoint 入口。</td><td>打开 checkpoint impact sheet，明确 before_turn/after_turn，默认 Code + conversation。</td><td>不在点击后立即恢复；必须先显示影响、可恢复性和外部副作用。</td></tr>
-      <tr><td>Assistant message footer</td><td>Branch 动作。</td><td>Branch from here，副标题 Files stay as they are。</td><td>不暗中恢复 checkpoint。</td></tr>
-      <tr><td>Changes center tab</td><td>This turn / Current branch / Workspace；Workspace 内含 Unstaged / Staged / Branch / Commit；左文件 rail、右单文件 diff；来源标签始终可见。搜索与分类显示完整过滤结果的总数，页码只表示该结果集。</td><td>Unified / Side-by-side、行级评论、Open file、Reveal。改变 scope、搜索、分类或排序时清空 cursor、selection 和 diff；File 使用现有虚拟化 editor tab，不在 Review 内复制整文件。</td><td>Workspace scope 不显示 turn Undo；一次只挂载一个有界 diff；不能在客户端只过滤已加载的一页。</td></tr>
-      <tr><td>History impact sheet</td><td>目标 prompt、撤回 turn 数、文件数、branch 结果、恢复模式、冲突和 unavailable 原因。</td><td>确认 Rewind、Conversation only、Code only；取消无副作用。</td><td>blocked 时无 Force 按钮；高级手动恢复从 Review 处理。</td></tr>
-      <tr><td>Alignment banner</td><td>Conversation branch 与 workspace projection 不一致的原因。</td><td>Keep current files 或 Restore branch code。</td><td>不能只显示警告后让 mutating turn 静默开始。</td></tr>
-    </tbody></table></div>
-  </section>
+<details id="cursors">
+<summary>Cursors and Workspace snapshots</summary>
+<ul>
+<li>Cursors are opaque and valid only for the same snapshot, owner, query kind, filter and sort. Offsets, path anchors and cross-project tokens are rejected. Directory, search, Review list and diff cursors are not interchangeable.</li>
+<li>Snapshots keep a stable candidate order. Later pages never rescan. Capacity and TTL eviction report stale.</li>
+<li>A Workspace snapshot fixes staged, unstaged, untracked and rename or delete paths by relative path, pinning HEAD base, index blob and worktree identity, and old and new paths. Diffs render from that pair, never a later <code translate="no">git diff</code>.</li>
+<li>Before later pages or diffs: status vector, index tree and no-follow worktree identity are reread. Any change is stale.</li>
+<li>The worktree side compares as Git does: when <code translate="no">text</code>, <code translate="no">eol</code> or <code translate="no">core.autocrlf</code> clean line endings, CRLF becomes LF first (for <code translate="no">auto</code>, only when the indexed blob has no CR), so a CRLF checkout of an LF blob shows only edited lines.</li>
+<li>Hunk revert edits the file in its own line endings.</li>
+<li>Snapshot blobs share Review quotas; missing or expired blobs report stale, never approximate from the worktree.</li>
+</ul>
+</details>
 
-  <section id="performance"><details class="background-detail"><summary>性能、保留、安全与兼容</summary>
-    <div class="status-grid">
-      <div class="status-card"><b>Turn finalize</b><p>复杂度只与 committed changed paths 有关；不遍历 workspace。摘要在 finalize 持久化并随 transcript 返回。</p></div>
-      <div class="status-card"><b>Review loading</b><p>服务端先筛选和稳定排序，文件列表每页 100；客户端只保留当前页和相邻页。选中文件后每批最多 200 行或 256 KiB，并支持继续加载。</p></div>
-      <div class="status-card"><b>Diff budget</b><p>计算超预算返回 timeout metadata；不阻塞 Agent 完成，也不回退到 before 与当前磁盘的跨轮近似 diff。</p></div>
-      <div class="status-card"><b>Snapshot pagination</b><p>目录、项目搜索和 Review 的分类、搜索、排序与 opaque cursor 都绑定同一 snapshot；workspace 或项目变化后旧页返回 stale 并整体刷新，不能混页。</p></div>
-      <div class="status-card"><b>Request identity</b><p>每个文件 WS 请求有 UUID request_id；切文件或切项目取消旧请求。迟到响应还必须匹配 owner、scope、snapshot revision、change set 与 blob pair。</p></div>
-      <div class="status-card"><b>Large restore plan</b><p>上千文件预检作为可观察后台任务，冲突结果分页；进入 APPLYING 后不可取消，只能完成或事务回滚。</p></div>
-      <div class="status-card"><b>Recovery blobs</b><p>使用独立内容寻址存储，按 digest 去重，权限限于本地用户；不进入 session Git。默认保留最近 100 个 checkpoint 和每个 file lineage 的首个 baseline。</p></div>
-      <div class="status-card"><b>GC visibility</b><p>Pinned、活动 task、未解决冲突、prepared/applying intent 和仍被 branch ref 引用的 checkpoint 不回收。其余 blob 到期后显示 Review available / Code restore unavailable。</p></div>
-      <div class="status-card"><b>Secrets</b><p>blob 不进入日志、遥测或模型上下文；session 删除一并清理无引用 blob。外部路径必须有当时和恢复时的明确授权。</p></div>
-      <div class="status-card"><b>Read cache and drafts</b><p>Read cache 受 64 项 / 16 MiB LRU 限制；dirty draft 独立持久化，受 32 项 / 8 MiB 配额保护且绝不自动淘汰。</p></div>
-      <div class="status-card"><b>Legacy sessions</b><p>旧 checkpoint 只用于只读 Review 或明确标记 unavailable；没有 digest/recovery contract 时不提供新 Undo/Rewind code 模式，也不保留无 request_id 的兼容入口。</p></div>
-      <div class="status-card"><b>TUI parity</b><p><code>/rewind</code> 先展示同一 server plan，再选择模式并确认；不能继续直接调用旧 <code>rewind_to</code>。</p></div>
-      <div class="status-card"><b>App/Web parity</b><p>同一 plan/apply 协议和幂等 request id；UI 只渲染 server 返回的 canonical impact，不在客户端重算。</p></div>
-      <div class="status-card"><b>Line comments</b><p>绑定 change_set id、before/after blob pair、side 与 hunk/line；scope、branch 或 restore 变化后标 stale，不能发送到另一版本。</p></div>
-    </div>
-    <h3>稳定模块职责与兼容移除</h3>
-    <div class="table-wrap"><table><thead><tr><th>模块</th><th>最终职责</th><th>不承担的职责</th></tr></thead><tbody>
-      <tr><td><code>apps/server/.../ws_actions/files.py</code></td><td>项目根授权、目录 listing、project search、read 与写入类文件操作；统一校验 project/path、request_id、idempotency key 和目录/search snapshot。</td><td>不计算 turn/branch Review，不保存浏览器缓存或草稿。</td></tr>
-      <tr><td><code>apps/server/.../ws_actions/turn_files.py</code></td><td>从 mutation journal 与 Git 生成 Review scope、过滤后的分页结果和绑定 snapshot 的单文件 diff；统一回显 request_id。</td><td>不提供项目文件树搜索，不让 turn diff 绕过 Review snapshot。</td></tr>
-      <tr><td><code>apps/web/lib/net/ws-request.ts</code></td><td>创建 request_id、维护按 id 的 pending registry、超时/取消和严格响应验证。</td><td>不以 response type 匹配第一个响应，不维护文件请求的全局串行队列。</td></tr>
-      <tr><td><code>apps/web/lib/files/files-shared.ts</code></td><td>以 project-scoped key 管理有界 read cache、持久 dirty draft store 与显式失效事件。</td><td>不作为组件间的无界内容仓库，不保存 Review page 或 socket listener。</td></tr>
-      <tr><td><code>FileTree</code> / <code>FilesPage</code></td><td>渲染目录、搜索和文件操作意图；仅消费服务端分页与 project search 结果。</td><td>不扫描本地已加载节点来代表项目搜索，不自行重排跨页结果。</td></tr>
-      <tr><td><code>ReviewTabPane</code></td><td>保存当前 scope/filter/snapshot/cursor/selection，渲染服务器确认的单页与单文件 diff。</td><td>不对当前页二次过滤来实现 category/search，不复用另一 scope 的 diff。</td></tr>
-      <tr><td><code>FileTabPane</code></td><td>编辑器 buffer、保存冲突提示和 dirty-draft 生命周期；从项目文件读取 canonical 内容。</td><td>不直接调用旧 turn diff 入口；历史文件比较统一由 Review tab 打开。</td></tr>
-    </tbody></table></div>
-    <div class="decision-line danger" style="margin-top:12px"><b>最终移除临时兼容入口：</b>删除按 response type 配对的 <code>filesWsRequest</code> 全局队列、缺少 <code>request_id</code> 的文件 action、<code>FileTabPane</code> 直接调用的 <code>turn_file_diff</code> 入口，以及把 <code>list_turn_files</code> 当作新消息摘要回填的路径。旧 session 没有可用的 journal/review snapshot 时返回只读 unavailable；不为旧入口保留会绕过新合同的 fallback。</div>
-  </details></section>
+<h3 id="file-requests">File WebSocket requests</h3>
+<table class="stack">
+<thead><tr><th scope="col">Rule</th><th scope="col">Contract</th><th scope="col">Never</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">request_id</code></th><td>Client UUID on every browse, read, write, rename, copy, delete, reveal and Review request; echoed on every result</td><td>Match by type, path or arrival</td></tr>
+<tr><th scope="row">Response check</th><td>Sole pending key, plus action, project, session, snapshot, target. Unmount or new query forgets old keys.</td><td>A global queue</td></tr>
+<tr><th scope="row"><code translate="no">idempotency_key</code></th><td>Separate key on side effects, with optimistic-lock conditions</td><td>Treat a new <code translate="no">request_id</code> as a new write</td></tr>
+<tr><th scope="row">Errors</th><td><code translate="no">error_code</code>: <code translate="no">STALE_SNAPSHOT</code>, <code translate="no">NOT_FOUND</code>, <code translate="no">CONFLICT</code>, <code translate="no">INVALID_REQUEST</code>, <code translate="no">IDEMPOTENCY_KEY_CONFLICT</code>, <code translate="no">OUTSIDE_PROJECT</code>, <code translate="no">TOO_LARGE</code>, <code translate="no">RECOVERY_REQUIRED</code></td><td>Apply unidentified frames</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Write idempotency</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Record key</th><td>Owner (profile and project), action, key</td></tr>
+<tr><th scope="row">Fingerprint</th><td>Action, owner, canonical payload (normalized paths, parameters, digests), preconditions (mtime or digest, paths, overwrite conditions, directory versions). <code translate="no">request_id</code> is excluded.</td></tr>
+<tr><th scope="row">Record</th><td>Moves from <code translate="no">in_flight</code> to <code translate="no">completed</code>, <code translate="no">conflict</code> or <code translate="no">error</code>, with <code translate="no">operation_id</code> and the terminal result, claimed in the same durable scope as the mutation</td></tr>
+<tr><th scope="row">Same key, different fingerprint</th><td><code translate="no">IDEMPOTENCY_KEY_CONFLICT</code>, zero writes</td></tr>
+<tr><th scope="row">Same fingerprint, in flight</th><td>Binds the operation until the deadline, then reports in flight; clients retry that key only</td></tr>
+<tr><th scope="row">Same fingerprint, completed</th><td>Replays without re-executing</td></tr>
+<tr><th scope="row">Restart</th><td>Recovers or classifies in-flight records before replay. Expiry never deletes them or replays a different fingerprint.</td></tr>
+</tbody>
+</table>
+</details>
 
-  <section id="acceptance"><details class="background-detail"><summary>实施 brief 与验收矩阵</summary>
-    <p class="intro">A–J 已完成并通过独立 specification review 与 quality review。每个新增任务实现后也必须通过相同审查，才能更新本页状态。</p>
-    <div class="table-wrap"><table><thead><tr><th>任务</th><th>生产边界</th><th>必须先失败的 public-entry 场景</th><th>排除</th><th>状态与证据</th></tr></thead><tbody>
-      <tr><td>A · Exact mutation journal</td><td><code>programs/tools/files/</code>、turn context/finalize、checkpoint manifest/store。</td><td>已有 &gt;5 MiB 文件首轮修改不算全新增；Bash ignored log 不进入 turn；失败 edit 无 receipt。</td><td>不实现 Review UI，不改用户 Git。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试与静态检查均已验证。</td></tr>
-      <tr><td>B · Safe single-turn Undo/Revert</td><td><code>agent/internals/_revert.py</code>、workspace lock、durable intent。</td><td>后续同文件修改时零写入；创建文件 digest 不符时不删除；中途 I/O 失败不部分标记。</td><td>不实现 multi-turn HEAD move。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试与静态检查均已验证。</td></tr>
-      <tr><td>C · Multi-turn planner/apply</td><td><code>agent/_rewind.py</code>、session head API、intent recovery、WS/CLI protocol。</td><td>同文件跨三轮恢复到目标；file failure 不移动 HEAD；sibling branch 不受影响；stale plan 零写入。</td><td>不重写 compaction 或 DAG schema。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试与静态检查均已验证。</td></tr>
-      <tr><td>D · Review scopes and UI</td><td><code>ws_actions/turn_files.py</code>、message metadata、center tab/store、chat card。</td><td>历史 transcript 不逐条请求；Workspace ignored 排除；一次只挂载一个有界 diff；三 scope 来源一致。</td><td>不加第三 pane、新窗口或参考产品品牌。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试、TypeScript 与 UI gate 均已验证。</td></tr>
-      <tr><td>E · Branch alignment and multi-agent ownership</td><td>checkout/branch UI、active-lineage fold、owned/linked/worktree ownership。</td><td>conversation-only checkout 后 mutating turn 不静默开始；owned background child 运行时阻止父 restore、完成后按 origin 进入 causal closure；linked peer/cross-session 不被父 restore；worktree child 不改父 workspace。</td><td>不实现通用 workspace cloning。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试、TypeScript、ruff 与 WS action gate 均已验证。</td></tr>
-      <tr><td>F · Project query snapshots</td><td><code>ws_actions/files.py</code> 的目录分页、project search、路径授权与 snapshot registry；<code>FileTree</code> 的结果状态。</td><td>未展开目录中的命名文件能被搜索；第一页后修改目录不会让同一 cursor 混入新项；cross-project cursor 被拒绝。</td><td>不更改视觉布局、不引入全文内容索引或第三方搜索服务。</td><td><span class="tag yes">review-passed</span> 目录与搜索使用 stable cursor、同一 snapshot 的增量分页和有界结果。</td></tr>
-      <tr><td>G · File request identity</td><td>文件类 WS dispatch、<code>ws-request.ts</code>、durable idempotency record 与所有文件/Review 调用者。</td><td>两个同 action 请求可乱序返回且分别更新正确调用者；缺失 request_id 被拒绝；相同 <code>idempotency_key</code> 的 in-flight retry 绑定原 operation，完成后重放结果；相同 key 而 fingerprint 不同则冲突且零写入。</td><td>不改变非文件 WS action 的协议，不把 request_id 当作写入幂等键。</td><td><span class="tag yes">review-passed</span> request identity、durable mutation、断线重试、worker lease 与有界 pending registry 已验证。</td></tr>
-      <tr><td>H · Bounded cache and durable drafts</td><td><code>files-shared.ts</code>、原生 IndexedDB draft store、<code>FileViewer</code>、<code>FileTabPane</code>、tab close/rename/delete 生命周期；project unlink/delete cleanup hook 保留到产品提供该显式操作时接入。</td><td>超过 read-cache 限额后只淘汰干净 LRU read；刷新、tab 切换和项目切换后 IndexedDB dirty draft 仍存在；quota/浏览器 <code>QuotaExceededError</code> 时旧 draft 与 aggregate index 原子保留，满额阻止新 dirty 并显示提示。当前没有 project unlink/delete action，不从 <code>list_projects</code> 消失推断用户授权。</td><td>不引入协作编辑、远端草稿同步或无限离线文件副本；不新增 project remove UI/action。</td><td><span class="tag yes">review-passed</span> 64 项 / 16 MiB read cache、32 项 / 8 MiB durable draft store、生命周期补偿与恢复合同已验证。</td></tr>
-      <tr><td>I · Filtered Review pagination</td><td><code>turn_files.py</code> 的 filter/sort/snapshot/page，以及 <code>ReviewTabPane</code> 的 query state。</td><td>分类结果跨页完整；改变 category/query/sort 后旧 cursor 与 selected diff 失效；Workspace snapshot 固定 staged/unstaged/untracked candidate list 及每文件 blob pair，随后 index/worktree 任一变化返回 stale。</td><td>不增加第三 Review pane，不改变 mutation journal 或 Git 的事实源。</td><td><span class="tag yes">review-passed</span> 服务端先筛选后分页，Review cursor 绑定冻结 snapshot 并检测 stale。</td></tr>
-      <tr><td>J · Canonical entry-point cutover</td><td>文件模块调用图、旧 adapter 删除、legacy-session unavailable 呈现。</td><td>没有 <code>filesWsRequest</code> 全局队列、无 request_id 文件 action 或直接 <code>turn_file_diff</code> 的 UI 调用；旧 session 不会走 bypass fallback。</td><td>不为旧入口保持隐藏兼容开关，不删除可验证的只读历史元数据。</td><td><span class="tag yes">review-passed</span> canonical request path、旧 action/fallback、临时 registry 已移除；服务端与前端按稳定职责完成无环拆分。</td></tr>
-      <tr><td>K · Turn card empty and failure states</td><td><code>assistant-bubble.tsx</code>、<code>message-rail.tsx</code>、<code>turn-files-chips.tsx</code> 与卡片 CSS。</td><td>普通文字回复不挂载卡片或 Review；旧文件写入轮次按需查询，空结果隐藏；查询失败只显示可重试的紧凑状态。</td><td>不改变 mutation journal、Review scope、diff 或恢复协议。</td><td><span class="tag yes">review-passed</span> empty/error/retry、stale response、rail round-trip、TypeScript、Web 单测、静态检查、生产构建与文档 gate 均已验证。</td></tr>
-    </tbody></table></div>
-    <h3>完整可见验收</h3>
-    <div class="scenario-grid">
-      <div class="scenario"><b>Directory and search pages</b><p>搜索命中一个未展开深层目录中的文件；并发 create/rename 后继续旧 cursor 必须返回 stale，刷新后结果按项目内稳定顺序重新开始。</p><div class="result">REQUIRED: complete project scope</div></div>
-      <div class="scenario"><b>All file request IDs</b><p>目录 read、file read、write、rename、turn summary、Review list 和 Review diff 同时发出并乱序返回。每个 response 只能被匹配的 pending request 接受；同 idempotency key 的 write retry 只关联同一 operation 并重放完成结果。</p><div class="result">REQUIRED: no type-based matching or duplicate write</div></div>
-      <div class="scenario"><b>Dirty draft under pressure</b><p>填满 read cache 与 IndexedDB draft quota 后刷新页面、切换 tab 和项目。已有 dirty draft 可恢复并保留原 baseline；新 draft 或扩大 draft 在无空间时不提交 transaction，并显示可见处理提示。</p><div class="result">REQUIRED: no silent draft loss</div></div>
-      <div class="scenario"><b>Conversation only</b><p>立即创建并激活稳定 target branch，source branch ref/head 不变；文件保持当前，alignment banner 出现，下一次文件修改前要求决策。</p><div class="result">PASS: mismatch visible</div></div>
-      <div class="scenario"><b>Code only</b><p>HEAD 不动，追加 rewind transaction，Current branch Review 反映新状态。</p><div class="result">PASS: history preserved</div></div>
-      <div class="scenario"><b>Branch from here</b><p>确认时 target branch ref 立即存在并激活，source branch HEAD 不变；文件保持当前。下一条消息只是延长已创建的 target branch。</p><div class="result">PASS: source preserved</div></div>
-      <div class="scenario"><b>Retry/Edit sibling</b><p>新分支绑定明确 before/after checkpoint；保持当前文件或恢复目标文件由用户选择，不从旧运行结果静默继续。</p><div class="result">PASS: checkpoint explicit</div></div>
-      <div class="scenario"><b>Revert and Reapply</b><p>历史 Revert 仅在无后续同 lineage 依赖时成功；Reapply 再次预检并写新 transaction。</p><div class="result">PASS: no redo shortcut</div></div>
-      <div class="scenario"><b>Filtered Review pages</b><p>超过一页的 Code、Tests、Docs 和 Large 结果分别先在服务端过滤；切换分类、query 或排序后旧页和已选 diff 均不再显示。Workspace 创建 snapshot 后修改 index、worktree 内容或候选列表，后续页和 diff 均返回 stale。</p><div class="result">REQUIRED: filter before page and exact workspace pair</div></div>
-      <div class="scenario"><b>Concurrent writer</b><p>OpenProgram background task、其他 session 或外部进程改变文件时计划失效或 apply 后校验回滚。</p><div class="result">PASS: zero overwrite</div></div>
-      <div class="scenario"><b>Crash recovery</b><p>在每个 intent phase 强制终止并重启，最终必须是 COMMITTED、ROLLED_BACK 或持久化到具体路径的 RECOVERY_REQUIRED；永不假报 committed，也不覆盖外部新写入。</p><div class="result">PASS: every path explainable</div></div>
-      <div class="scenario"><b>Canonical cutover</b><p>从用户可见文件入口检查调用图：没有临时 queue、缺 request_id action 或 direct turn diff fallback；无法按新合同解释的旧 session 显示只读 unavailable。</p><div class="result">REQUIRED: no compatibility bypass</div></div>
-    </div>
-  </details></section>
-  <section id="implementation-status"><p>Optional Office installation is implemented and independently reviewed for specification and quality. The final affected configuration, adapter, security and repository-contract selection passes 1,812 tests (82 optional-dependency skips and one expected failure). All 22 native Office/browser tests and 710 Web tests pass. Web build, TypeScript, static checks, Desktop checks and documentation links pass. The explicit-consent browser case verifies cancellation without installation, failure retry and automatic document opening; component tests verify immutable publication, origin denial and concurrent request deduplication. Actual fixed-source access through the managed HTTP client succeeds without downloading the archive body.</p><details class="background-detail"><summary>实现状态</summary>
-    <p id="pdf-reading-status" data-status="implemented">The continuous PDF reader, selectable text, clipboard normalization, outline and thumbnail navigation, highlights and free-text annotations are implemented. Public browser tests verify rendering, copying, annotation serialization, undo/redo and retained drafts after save failures in both native and desktop compatibility environments. Independent specification and quality reviews pass. Public regressions also verify restore input barriers, bounded extreme-aspect thumbnails and clearing search highlights. The complete source validation manifest passes, including real browser tests, Web tests, contracts, file component tests, build, type, static-resource and documentation checks. Installed-App acceptance is recorded separately from source verification.</p>
-    <p id="pdf-runtime-status" data-status="verified">PDF runtime compatibility uses the matching upstream legacy modules and permits local blob byte reads under the real shell policy. Public FileViewer tests verify rendering, navigation, zoom, search, close/reopen, invalid input and external-request rejection in native and missing-API environments. Independent specification and quality reviews, full Web and browser suites, repository contracts, affected authentication/frontend components, typecheck, production build, resource budget and documentation links pass. The reported research PDF renders and searches under the production policy with missing desktop APIs; its full document also decodes in the installed Electron runtime.</p>
-    <p>项目人工编辑的二进制发布与历史接口已完成独立规范审查、质量审查和完整后台测试。现有文本写入也使用共享恢复事务；每次写入立即发布，历史按编辑时段分组，恢复新增版本。项目移位后按当前位置恢复，离线时仍能读取已保存版本；失败与损坏记录明确显示未确认状态。</p>
-    <p>统一预览窗口、文本编辑和后台自动保存控制器已完成源码实现、独立规范与质量审查，以及完整后台、Web、浏览器与文档检查。草稿覆盖未打开的文件，失败不会关闭文件标签；重命名期间禁用相关编辑，成功后按新路径重新打开。人工和模型历史已汇总到同一文件 History，可以预览与恢复。Office 的 DOCX/PPTX/XLSX 已完成真实内容修改、导出与重新打开验证；旧 DOC/PPT/XLS 需要另存 OOXML，ODF 格式已验证原格式导出。保存失败后立即重试，以及关闭前等待保存期间新增内容完成导出，也已在本地引擎中验证。安装后通过默认 App 验证资源与界面，运行状态保存在本地发布记录。</p>
-    <p>PDF 分页、缩放与搜索，PSD 合成图与图层列表、TIFF 和普通图片预览，以及本地音视频播放已完成源码实现、独立审查和完整验证。预览使用本地固定版本资源，损坏或超限文件显示错误和下载入口；PDF、PSD、TIFF、音频和视频保持只读。</p>
-    <p>本地 Office 资源的清单校验、独立静态来源和受认证的可用性接口已完成独立审查与完整验证。仅接受固定来源与版本的本地资源，远端来源不可用；编辑器资源不能访问主应用 API。实际 Word、PPT、表格的编辑、导出、预览切换、原生撤销与重开已在研究引擎中验证，保存失败重试及最终导出也已验证。Office 资源独立安装到共享本地缓存；默认 App 不携带资源，安装完成后当前 worker 直接使用已验证版本。字体仅采用附有许可证的输入，资源包保留源码、补丁和来源记录。统一窗口的 Office 预览与编辑接入已完成独立规范、质量审查和完整检查（实现 <code>ef64e6ab</code>）：后台 8746 项、Web 单元 672 项、真实 Office 浏览器 16 项和其他预览浏览器 20 项通过，文档 542 页构建通过且无死链。编辑模式等待原生状态确认，原生撤销随标签和历史切换保留，关闭提交尚未完成的输入；旧格式明确转换到新文件。人工/模型历史已完成汇总，</p>
-    <p>静态 PNG/JPEG/WebP 编辑已完成独立规范、质量审查和完整验证（实现 <code>8dc8bf81</code>）。裁剪、旋转、绘图、形状、文字与原生撤销/重做通过实际导出像素验证；编辑器跨预览、历史、标签和页面切换保留，错误后可重试，转换 PNG 创建独立文件且拒绝覆盖。后台 8746 项、Web 单元 678 项、文件浏览器 30 项和真实 Office 浏览器 16 项通过，文档 542 页构建通过且无死链。首次后台全量运行出现一项并发额度测试超时，未改代码的完整重跑通过。动画与 16 位 PNG 保持只读；限制 64 MiB、1600 万像素和单边 16384 像素。导出不承诺保留嵌入元数据，PSD 仍为合成图和图层预览。</p>
-    <p>人工和模型文件历史汇总已完成独立规范、质量审查及完整验证（实现 <code>fcf799bd</code>）：后台 8767 项、Web 单元 678 项、文件浏览器 32 项、真实 Office 浏览器 16 项通过，文档 542 页构建通过且无死链。首次后台运行的一项取消重试测试超时，候选与任务基线单独复现均通过，未改代码的完整重跑通过。模型版本复用所属会话保留的不可变字节；归档保持可读，彻底删除后不再可读。旧历史有界分批补录，无法核实的归属明确显示不可用。恢复仅修改所选文件并创建新记录；项目移动保持稳定归属，离线只读。主分支整合已通过独立审查和完整组合验证。</p>
-    <p>最终整合实现 <code>f0e67531</code> 包含当前主分支修复，独立规格与质量复核通过。完整组合验证通过后台 8862 项、Web 单元 678 项、文件窗口浏览器 32 项、真实 Office 浏览器 16 项及 CLI 190 项；Desktop、类型、构建、静态资源体积与 546 页文档检查通过，无死链。前一轮发生自更新测试执行进程退出及替补进程状态复用，聚焦与基线检查通过；保留失败记录，最终完整运行未复现。默认 App 安装与重启验收使用同一整合源码和已验证 Office 资源包，记录与源码检查分开保存。</p>
-    <p>文件历史持久性已验证：不可变版本、失败重试、损坏记录拒绝、未完成写入投影与旧版本兼容。新增本地生成器继续复用 source_path 发布入口；Office 语义差异和远端条件存储不属于当前实现。</p>
-    <p>文档 source_path 发布与二进制读取已实现并通过独立审查和测试：完整文件版本随会话持久保存，支持撤回、重新应用及冲突检测；不提供 Office 内容差异视图。</p>
-    <div class="decision-line"><b>当前实现状态：</b>目录/搜索 snapshot、文件 request identity、durable mutation、有界 read cache、持久 dirty draft、Review 服务端分页、canonical entry-point cutover 与稳定模块边界均已完成独立审查。</div>
-    <p class="intro" style="margin-top:12px">实现证据写入对应测试；本设计页只维护当前合同与总体状态。</p>
-  </details></section>
-<section><h2>Portable snapshot consistency</h2><p>Regular-file snapshots compare descriptor metadata before and after reading, and path metadata before opening and after reading. Descriptor and path identity must agree on device and inode. Metadata from different operating-system APIs is not compared as if it had identical timestamp or mode representation. Either observation changing aborts publication; the path observation supplies the stored permission mode. Legacy migration opens staged files with writable handles on Windows before flushing data, while preserving the source until publication succeeds.</p></section>
-</main>
-<script>
-const OP={
- undo:{title:"Undo latest turn",desc:"当前分支最后一个拥有精确 mutation 的 turn 的快捷恢复。",status:"code only",code:"恢复最后一轮；全部文件先预检",conversation:"保留当前 HEAD 和所有消息",scope:"仅 latest turn",branch:"不创建或移动分支",conflict:"任一路径不匹配则整次阻止",next:"追加 revert transaction；卡片显示 Reverted"},
- revert:{title:"Revert this turn",desc:"只反向应用选中的历史 turn，不把后续对话一起撤回。",status:"one turn",code:"仅当后续没有同路径依赖且 current digest 匹配",conversation:"完全不变",scope:"指定 historical turn",branch:"不移动 HEAD",conflict:"后续 turn 修改同一路径时不做自动反向合并",next:"成功后 Current branch Review 折叠显式 revert"},
- rewind:{title:"Rewind to here",desc:"恢复到所选 user prompt 之前；确认页明确选择代码、对话或两者。",status:"branch suffix",code:"Code 模式按 journal 投影目标状态，由 durable intent 协调",conversation:"Conversation 模式立即创建并激活稳定 target branch",scope:"source branch 的目标 suffix",branch:"source ref/head 不变；后续消息延长已创建 target branch",conflict:"任何不可恢复项都阻止 Code 模式；Conversation only 仍可选",next:"原 prompt 回填；显示 alignment 状态"},
- branch:{title:"Branch from here",desc:"对话导航操作。它不承诺也不暗示文件恢复。",status:"conversation only",code:"Files stay as they are",conversation:"立即创建稳定 target branch，HEAD 指向所选 assistant result",scope:"一个对话节点",branch:"source ref/head 不变；target 立即激活",conflict:"若 workspace 与目标 branch 不一致，显示 banner",next:"开始文件修改前选择采用当前 workspace 或恢复 branch code"}
-};
-const detail=document.getElementById("op-detail");
-function renderOp(key){const x=OP[key];detail.innerHTML=`<div class="op-detail-head"><div><h3>${x.title}</h3><p>${x.desc}</p></div><span class="op-status">${x.status}</span></div><div class="effect-grid"><div class="effect"><span>Code</span><b>${x.code}</b><p>文件操作始终由 server plan 和 workspace transaction 决定。</p></div><div class="effect"><span>Conversation</span><b>${x.conversation}</b><p>对话 DAG 与文件 journal 分开提交，组合模式使用 durable intent 协调。</p></div></div><div class="impact"><div class="impact-row"><span>Scope</span><b>${x.scope}</b></div><div class="impact-row"><span>Branch</span><b>${x.branch}</b></div><div class="impact-row"><span>Conflict</span><b>${x.conflict}</b></div><div class="impact-row"><span>After</span><b>${x.next}</b></div></div>`;document.querySelectorAll(".op").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.op===key)))}
-document.querySelector(".op-list").addEventListener("click",e=>{const b=e.target.closest("[data-op]");if(b)renderOp(b.dataset.op)});
-document.querySelector(".op-list").addEventListener("keydown",e=>{const a=[...document.querySelectorAll(".op")],i=a.indexOf(document.activeElement);if(i<0)return;let n=null;if(e.key==="ArrowDown"||e.key==="ArrowRight")n=a[(i+1)%a.length];if(e.key==="ArrowUp"||e.key==="ArrowLeft")n=a[(i-1+a.length)%a.length];if(e.key==="Home")n=a[0];if(e.key==="End")n=a[a.length-1];if(!n)return;e.preventDefault();n.focus();n.click()});
-renderOp("undo");
+<h3 id="caches">Cache and drafts</h3>
+<table class="stack">
+<thead><tr><th scope="col">Store</th><th scope="col">Limit</th><th scope="col">Rules</th></tr></thead>
+<tbody>
+<tr><th scope="row">Read cache</th><td>64 entries, 16 MiB, LRU; keyed project, path, revision</td><td>Successful complete reads only; no dirty text</td></tr>
+<tr><th scope="row">Text drafts</th><td>32 entries, 8 MiB</td><td>IndexedDB <code translate="no">openprogram-file-drafts</code>, stores <code translate="no">drafts</code>, <code translate="no">project_index</code>; never evicted by LRU</td></tr>
+<tr><th scope="row">Binary document drafts</th><td>32 entries, 64 MiB each, 256 MiB total</td><td>Stores <code translate="no">document_drafts</code>, <code translate="no">document_draft_metadata</code>; per-file Blobs</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Draft rules</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Key</th><td>Project plus canonical path; never shared across projects</td></tr>
+<tr><th scope="row">Contents</th><td>UTF-8 text, baseline bytes, revision, mtime, update order. Quotas count <code translate="no">TextEncoder</code> bytes of draft, baseline and metadata.</td></tr>
+<tr><th scope="row">Kept</th><td>Reload, unmount, project switch and cache eviction keep dirty drafts. Server changes keep them in conflict state, saving against the original baseline.</td></tr>
+<tr><th scope="row">Never resets buffers</th><td>Tree refresh, Review changes, registry gaps, background responses</td></tr>
+<tr><th scope="row">Create, update, rename, discard</th><td>Draft and index in one transaction</td></tr>
+<tr><th scope="row">Quota</th><td>Over quota: no writes. Budget is checked before accepting input; full storage offers save, revert, export or discard. On <code translate="no">QuotaExceededError</code> the last durable version stays and growth pauses.</td></tr>
+<tr><th scope="row">Rename, copy, delete</th><td>Rename moves keys atomically; copy shares none; failed operations change nothing. Deleting a file with a draft requires save, export or discard.</td></tr>
+<tr><th scope="row">Project cleanup</th><td>Waits for an explicit command, which does not exist yet; absence from <code translate="no">list_projects</code> is not authorization. Startup rebuilds a missing index by scanning, without deletion.</td></tr>
+<tr><th scope="row">Privacy</th><td>This origin's IndexedDB only, outside logs, telemetry, model context, WebSocket and sync. Recovery never uploads automatically.</td></tr>
+</tbody>
+</table>
+</details>
 
-const documentSamples={
- word:{name:'Proposal.docx',html:'<div class="document-paper"><h3>研究计划</h3><p>可信多模态模型研究</p><p>本节说明研究目标、技术方法与实验安排。进入编辑后，可以直接修改正文和排版。</p><p>研究目标 · 方法设计 · 预期成果</p></div>',hint:'Word：保留文档结构的预览与编辑，自动保存到原文件。'},
- slides:{name:'组会报告.pptx',html:'<div class="document-paper document-slide"><h3>实验结果与下一步</h3><p>幻灯片 3 / 12</p><div class="bars"><i style="height:45%"></i><i style="height:70%"></i><i style="height:90%"></i></div></div>',hint:'PPT：查看幻灯片、修改文字与对象；保存后仍是 PPTX。'},
- sheet:{name:'实验结果.xlsx',html:'<div class="document-paper"><table class="document-sheet"><tr><th></th><th>A</th><th>B</th><th>C</th></tr><tr><th>1</th><td>方法</td><td>准确率</td><td>耗时</td></tr><tr><th>2</th><td>Baseline</td><td>72%</td><td>28s</td></tr><tr><th>3</th><td>实验方法</td><td>84%</td><td>19s</td></tr></table></div>',hint:'表格：查看工作表和单元格，编辑时保留公式与表格结构。'},
- image:{name:'实验图片.png',html:'<div class="document-paper"><div class="document-art">实验图片</div></div>',hint:'图片：缩放预览，编辑时提供裁剪、旋转与标注。'},
- psd:{name:'海报设计.psd',html:'<div class="document-paper"><div class="document-art">海报设计</div><p>图层：标题 / 主题图形 / 背景</p></div>',hint:'PSD：先提供合成预览与图层信息。未验证安全写回前不允许覆盖原 PSD。',readonly:true},
- pdf:{name:'研究论文.pdf',html:'<div class="document-paper"><h3>Research paper</h3><p>Abstract</p><p>Document preview with page navigation, search, and zoom.</p><p>Page 1 / 8</p></div>',hint:'PDF：分页、缩放、搜索；批注能力按实际引擎验收开放。',readonly:true},
- text:{name:'notes.md',html:'<div class="document-paper"><h3>实验记录</h3><p>这轮修改了实验参数与对比结果。</p><p>支持预览、源码编辑和历史恢复。</p></div>',hint:'文本与 Markdown：默认预览，进入编辑后自动保存。'}
-};
-let documentKind='word';
-function showDocument(kind){documentKind=kind;const sample=documentSamples[kind];document.getElementById('document-name').textContent=sample.name;document.getElementById('document-canvas').innerHTML=sample.html;document.getElementById('document-hint').textContent=sample.hint;document.getElementById('document-edit').disabled=!!sample.readonly;document.getElementById('document-edit').setAttribute('aria-pressed','false');document.getElementById('document-preview').setAttribute('aria-pressed','true');document.querySelectorAll('[data-document]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.document===kind)));}
-document.querySelectorAll('[data-document]').forEach(b=>b.addEventListener('click',()=>showDocument(b.dataset.document)));
-document.getElementById('document-preview').onclick=()=>showDocument(documentKind);
-document.getElementById('document-edit').onclick=()=>{document.getElementById('document-edit').setAttribute('aria-pressed','true');document.getElementById('document-preview').setAttribute('aria-pressed','false');document.getElementById('document-hint').textContent='设计演示：编辑工具在文档内显示。实际编辑内容将自动保存，History 保留版本。';};
-document.getElementById('document-history-toggle').onclick=()=>{const panel=document.getElementById('document-versions');panel.hidden=!panel.hidden;document.getElementById('document-history-toggle').setAttribute('aria-expanded',String(!panel.hidden));};
-showDocument('word');
+<h2 id="performance">Limits, security, parity</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Turn finalize</th><td>Cost depends only on changed paths. Summaries persist and return with transcripts; cards mount at most 20 rows and no diffs.</td></tr>
+<tr><th scope="row">Diff budget</th><td>Over budget returns timeout metadata, never blocking the Agent or approximating</td></tr>
+<tr><th scope="row">Recovery blobs</th><td>Content-addressed, deduplicated, local-user only, outside session Git.</td></tr>
+<tr><th scope="row">GC</th><td>Never collects pinned checkpoints, active tasks, unresolved conflicts, open intents or branch-referenced checkpoints</td></tr>
+<tr><th scope="row">Secrets</th><td>Blobs outside logs, telemetry and model context. Session deletion cleans unreferenced blobs. External paths need authorization at capture and recovery.</td></tr>
+<tr><th scope="row">Older sessions</th><td>Read as they are. Journal gone or discontinuous: code cannot be restored, Conversation only offered</td></tr>
+<tr><th scope="row">TUI, CLI, App, Web</th><td>Same server plan before mode selection and confirmation, same idempotency; UI renders server impact without recomputing</td></tr>
+<tr><th scope="row">Line comments</th><td>Bound to change set, blobs, side, hunk and line. Scope or recovery changes mark them stale.</td></tr>
+</tbody>
+</table>
 
-function expandDesignAnchor(){const node=document.getElementById(location.hash.slice(1));if(!node)return;let ancestor=node.parentElement;while(ancestor){if(ancestor.tagName==='DETAILS')ancestor.open=true;ancestor=ancestor.parentElement;}const direct=node.querySelector(':scope > details');if(direct)direct.open=true;}
-window.addEventListener('hashchange',expandDesignAnchor);expandDesignAnchor();
-</script>
-</body>
-</html>
+<details id="modules">
+<summary>Modules</summary>
+<table class="stack">
+<thead><tr><th scope="col">Module</th><th scope="col">Does</th><th scope="col">Does not</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/files/</code></th><td>Root authorization, listings, search, reads, mutations; validates ids and snapshots</td><td>Review computation, browser cache</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/turn_files/</code></th><td>Review scopes, filtered pages, snapshot-bound diffs</td><td>Project search</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/conversation/revert.py</code>, <code translate="no">rewind.py</code></th><td>Single-turn and multi-turn transactions</td><td>Git reset or revert; those keep separate entries</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/net/ws/ws-request.ts</code></th><td>Request ids, pending registry, timeouts, response checks</td><td>Match by type</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/files/files-shared.ts</code></th><td>Bounded read cache, drafts, invalidation</td><td>Review pages, socket listeners</td></tr>
+<tr><th scope="row"><code translate="no">FileTree</code>, <code translate="no">FilesPage</code></th><td>Server pages and search results</td><td>Scan loaded nodes as search</td></tr>
+<tr><th scope="row"><code translate="no">ReviewTabPane</code></th><td>Scope, filter, snapshot, cursor, selection</td><td>Current-page filtering</td></tr>
+<tr><th scope="row"><code translate="no">FileTabPane</code></th><td>Buffers, conflicts, draft lifecycle</td><td>Direct turn diffs; comparisons open in Review</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="references">
+<summary>Compared with Claude Code and Codex</summary>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Confirmed</th><th scope="col">Taken</th><th scope="col">Not taken or unknown</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code <a href="https://code.claude.com/docs/en/checkpointing">checkpoints</a> (<a href="https://code.claude.com/docs/en/agent-sdk/file-checkpointing">SDK</a>)</th><td>Per prompt, tracks Write, Edit, NotebookEdit, not Bash. Restore code, conversation or both. Other subagent changes not restored except foreground <code translate="no">context: fork</code>. Non-regular paths skipped with warnings. 100 per session; cleaned by <code translate="no">cleanupPeriodDays</code>, default 30.</td><td>Prompt checkpoints, separate options, explicit unavailable</td><td>We block or roll back on any path failure; skipped paths cannot succeed</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/sessions">Fork</a>, <a href="https://code.claude.com/docs/en/vs-code">VS Code</a></th><td><code translate="no">/branch</code> copies conversation only</td><td>Explicit conversation Branch and source-preserving Fork share current files; worktree isolation is a separate explicit action</td><td>Undisclosed reuse of current files after fork</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/desktop">Desktop</a>, <a href="https://code.claude.com/docs/en/web-quickstart">Web</a></th><td>File list and single-file diff, line comments; Web also Create PR</td><td>Separate Review, on-demand diffs, line feedback</td><td>Branding, dimensions, PR controls. Review code on Web unconfirmed.</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex turn diff</a></th><td>In-memory aggregator of exact deltas for the current turn; inexact data invalidates it</td><td>Exact deltas as attribution; we add durable receipts and blobs</td><td>A durable Undo journal is not claimed for Codex</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs">Codex history</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/app_backtrack.rs">backtrack</a></th><td><code translate="no">thread/fork</code> copies history; <code translate="no">thread/rollback</code> deprecated; <code translate="no">thread/revert</code> conversation only</td><td>Source-preserving forks, immutable history</td><td>Unpublished per-turn file Undo unknown</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/get_git_diff.rs">Codex Git</a>, <a href="https://learn.chatgpt.com/docs/code-review">review</a></th><td>Last turn versus Git; Unstaged, Staged, Commit, Branch; multi-repo; <code translate="no">--exclude-standard</code></td><td>Workspace sub-scopes, ignored-file exclusion</td><td>Git Discard is not Restore</td></tr>
+<tr><th scope="row"><a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/session/session-persistence-jsonl/src/index.ts">DeepSeek JSONL</a>, <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/core/session/src/repair.ts">repair</a>, <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/fs/fs-local/src/index.ts">fs-local</a></th><td>Synced temp files, exclusive publish, directory sync, corrupt versus missing; interrupted tools marked unknown; locking and version conditions without full-file undo</td><td>Integrity and interruption principles</td><td>Session-log recovery is not file recovery</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/shell_snapshot.rs">Codex shell snapshot</a></th><td>Staging, verification, replacement of shell environments</td><td>The staging pattern</td><td>It is not document versioning</td></tr>
+</tbody>
+</table>
+<p class="note">Neither public reference guarantees external-concurrency rules, multi-file atomicity, digest preflight or crash consistency. Complete preflight, workspace locks, durable intents, rollback staging and crash recovery are OpenProgram's.</p>
+</details>
+
+<h2 id="acceptance">Acceptance</h2>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">Boundary</th><th scope="col">Must hold through public entries</th><th scope="col">Excludes</th></tr></thead>
+<tbody>
+<tr><th scope="row">Journal</th><td><code translate="no">programs/tools/files/</code>, turn finalize, checkpoint store</td><td>An existing file over 5 MiB is not new on first edit; ignored Bash logs stay out; failed edits leave no receipt</td><td>Review UI, user Git</td></tr>
+<tr><th scope="row">Undo, Revert</th><td><code translate="no">conversation/revert.py</code>, workspace lock, intent</td><td>Later same-file edits: zero writes. Mismatched digests prevent deletion. Mid-operation I/O never partly succeeds.</td><td>Multi-turn HEAD moves</td></tr>
+<tr><th scope="row">Rewind</th><td><code translate="no">conversation/rewind.py</code>, head API, intent recovery</td><td>One file across three turns; file failure keeps HEAD; siblings unaffected; stale plans write nothing</td><td>Compaction, DAG schema</td></tr>
+<tr><th scope="row">Review</th><td><code translate="no">turn_files/</code>, metadata, center tab, card</td><td>History does not query per message; Workspace excludes ignored files; one bounded diff mounted; consistent provenance. Plain replies mount no card; empty hides; failures retry.</td><td>Third pane, new window</td></tr>
+<tr><th scope="row">Shared workspace, ownership</th><td>Checkout, active-lineage fold, ownership</td><td>Switching permits normal work on current files, with rereads before edits. Running owned children block parent restore; finished ones join. Peers and worktrees untouched.</td><td>Workspace cloning</td></tr>
+<tr><th scope="row">Query snapshots</th><td><code translate="no">files/</code> query, <code translate="no">FileTree</code></td><td>Search finds unexpanded files. Directory changes after page one cannot enter old cursors; cross-project cursors rejected. Concurrent create or rename restarts in stable order.</td><td>Full-text search, layout</td></tr>
+<tr><th scope="row">Request identity</th><td>File dispatch, <code translate="no">ws-request.ts</code>, idempotency</td><td>Out-of-order responses reach the right caller. Missing <code translate="no">request_id</code> rejected. Retries replay; different fingerprints conflict.</td><td>Non-file protocols</td></tr>
+<tr><th scope="row">Cache, drafts</th><td><code translate="no">files-shared.ts</code>, IndexedDB, tab lifecycle</td><td>Only clean LRU entries evicted. Dirty drafts survive reload, tab and project changes. Quota failure keeps old drafts atomically and shows a notice.</td><td>Collaboration, remote sync</td></tr>
+<tr><th scope="row">Filtered Review</th><td><code translate="no">turn_files/</code>, <code translate="no">ReviewTabPane</code></td><td>Categories cover all pages. Changes invalidate cursors and diffs. Later index or worktree changes report stale.</td><td>New fact sources</td></tr>
+<tr><th scope="row">Single entry path</th><td>File module call graph</td><td>No global queues, id-less actions, direct <code translate="no">turn_file_diff</code> UI calls or legacy fallbacks</td><td>Hidden compatibility switches</td></tr>
+<tr><th scope="row">Documents</th><td><code translate="no">write</code>, sessions, history</td><td>DOCX and PPTX versioned; byte-identical undo and reapply; external changes conflict; failed writes keep targets; text writes still valid</td><td>Office diffs</td></tr>
+<tr><th scope="row">Each format</th><td><code translate="no">FileViewer</code>, <code translate="no">DocumentWindow</code></td><td>Real files, not fabricated binaries: edit, write back, reopen, recover. Concurrent edits, interrupted writes, corruption, oversized files, cancel, offline, project moves, legacy history.</td><td>Partial-format success</td></tr>
+<tr><th scope="row">PDF</th><td>Under the real shell policy</td><td>Nonblank selectable pages, clipboard cases, sidebar, zoom, search, read-only history, annotations persisted and read by a separate decoder, failure retention, external fetch refused, same checks without native <code translate="no">toHex</code> and <code translate="no">Math.sumPrecise</code> in page and worker</td><td>A permissive harness is not installed-App evidence</td></tr>
+<tr><th scope="row">Crash</th><td>Every intent phase</td><td>Ends committed, rolled back or per-path <code translate="no">recovery_required</code>; never false commit or external overwrite</td><td></td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Built</th><td>Journal, Undo, Revert, code-and-conversation Rewind, three Review scopes, query snapshots, request identity, durable mutations, bounded cache, drafts, unified file window, History, format adapters, optional Office install, document publication</td></tr>
+<tr><th scope="row" id="pdf-reading-status">PDF</th><td>Reader, annotations and runtime compatibility built</td></tr>
+<tr><th scope="row" id="markdown-reading-status">Markdown</th><td>Rendering and heading navigation built; installed-App acceptance pending</td></tr>
+<tr><th scope="row">Not built</th><td>Project unlink and its draft cleanup; Office semantic diffs; remote conditional storage</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../../ui/chat/chat-turn-visual-spec.html">Chat turn visual specification</a></p>
+
+<p class="note" id="shared-workspace-status">Shared workspace and same-branch rewind are implemented. Independent specification and quality reviews and the affected verification suite pass.</p>

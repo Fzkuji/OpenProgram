@@ -1,7 +1,7 @@
 """lsp_references — every real use of the symbol at a position."""
 from __future__ import annotations
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.code.lsp.shared import (
     MAX_LOCATIONS,
     format_location,

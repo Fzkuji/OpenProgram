@@ -1,0 +1,41 @@
+<title>会话导出</title>
+<meta name="description" content="把对话导出为 Markdown 或独立 HTML 文件，并清除其中的密钥。">
+<h1>会话导出</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram sessions export &lt;session-id&gt;</code><span class="arg"><code translate="no">--format md|html</code>，默认 <code translate="no">md</code></span><span class="arg"><code translate="no">--output PATH</code>，默认 <code translate="no">./&lt;session-id&gt;.&lt;format&gt;</code></span></td></tr>
+<tr><th scope="row">Web UI</th><td>在侧栏右键对话，或点它的 <code translate="no">⋯</code>，再选<strong>导出</strong>和格式</td></tr>
+<tr><th scope="row">HTTP</th><td><code translate="no">GET /api/sessions/{session_id}/export?format=md|html</code>，需要 owner 认证，以 <code translate="no">Content-Disposition: attachment</code> 返回</td></tr>
+</tbody>
+</table>
+<p class="note">会话 id：<code translate="no">openprogram sessions list</code> 或 Web 侧栏。</p>
+
+<h2>文件里有什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>只有当前分支，从分支头向前走，与 Web 对话视图相同</td></tr>
+<tr><th scope="row">每一轮</th><td>角色、本地时间、文本，文本不截断</td></tr>
+<tr><th scope="row">工具调用，在所属轮次之下</th><td>名称、成功或失败、参数、结果</td></tr>
+<tr><th scope="row">参数</th><td>截断到 1,000 字符，标记 <code translate="no">… [+N chars truncated]</code></td></tr>
+<tr><th scope="row">工具结果</th><td>截断到 4,000 字符，标记相同</td></tr>
+<tr><th scope="row">HTML</th><td>单个文件：内联样式，无脚本和外部请求，通过 <code translate="no">prefers-color-scheme</code> 跟随亮暗</td></tr>
+</tbody>
+</table>
+
+<h2>脱敏</h2>
+<p>标题、会话 id、角色标签、工具名、轮次文本、参数和结果都先经过 <code translate="no">remove_secret_values</code>（<code translate="no">openprogram/models/providers/recording/recording.py</code>），再截断。存储的对话不变。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">匹配</th><th scope="col">替换为</th></tr></thead>
+<tbody>
+<tr><th scope="row">密钥命名的字段：<code translate="no">api_key</code>、<code translate="no">authorization</code>、<code translate="no">token</code>、<code translate="no">password</code> 等</th><td><code translate="no">[secret removed]</code></td></tr>
+<tr><th scope="row">自由文本中的 bearer token、<code translate="no">sk-</code> 密钥、URL 查询参数或 userinfo 里的凭据</th><td><code translate="no">[secret removed]</code></td></tr>
+<tr><th scope="row">嵌套过深无法安全脱敏的参数</th><td><code translate="no">[arguments omitted: nesting too deep]</code></td></tr>
+</tbody>
+</table>
+<p class="note">只覆盖已知的凭据形状。发到公开场合前先读一遍。</p>
+
+<p class="next"><a href="cli.zh.html">CLI 命令</a> · <a href="API.zh.html">API</a></p>
+

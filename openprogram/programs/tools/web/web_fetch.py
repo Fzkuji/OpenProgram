@@ -31,10 +31,14 @@ from typing import Any
 
 import httpx
 
-from openprogram.security.safe_http import safe_client
-from openprogram.security.url_policy import URLPolicyError, normalize_origin
-from openprogram.programs._helpers import read_bool_param, read_int_param, read_string_param
-from openprogram.programs._runtime import ToolReturn, function
+from openprogram.host.security.safe_http import safe_client
+from openprogram.host.security.url_policy import URLPolicyError, normalize_origin
+from openprogram.programs.tools.web._owner_fetch import owner_open
+from openprogram.programs._authoring.helpers import read_bool_param, read_int_param, read_string_param
+from openprogram.programs._host.runtime import ToolReturn, function
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 NAME = "web_fetch"
@@ -60,6 +64,16 @@ CHROME_UA = (
     "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
 )
 HONEST_UA = "openprogram-web-fetch/1.0"
+
+# Appended to policy refusals so the model can tell the user what to change.
+# What the address checks of ``security.outbound_url.model_tools`` refuse. Any
+# other URLPolicyError is a malformed URL and goes back as an ordinary error.
+_ADDRESS_BLOCKS = {
+    "NON_GLOBAL_ADDRESS": "the host is local or resolves to a private, loopback or reserved address",
+    "METADATA_ADDRESS": "the host is a cloud metadata endpoint",
+    "PORT_FORBIDDEN": "the port is not one model tools may use",
+    "METHOD_FORBIDDEN": "the HTTP method is not one model tools may use",
+}
 
 
 DESCRIPTION = (
@@ -213,7 +227,8 @@ def _fetch_with_cf_fallback(
     — being transparent is the right move when the spoof doesn't buy us
     anything anyway.
     """
-    with safe_client("tool.web_fetch") as client:
+    client_context = safe_client("tool.web_fetch.owner") if owner_open() else safe_client("tool.web_fetch")
+    with client_context as client:
         for ua in (CHROME_UA, HONEST_UA):
             body = bytearray()
             final_url = url
@@ -308,6 +323,9 @@ def execute(
             f"Error: network error {type(e).__name__} for {normalize_origin(url)}"
         )
     except URLPolicyError as e:
+        if e.reason in _ADDRESS_BLOCKS:
+            from openprogram.runtime.permissions import refusal
+            raise refusal.outbound_url(f"web_fetch {e.safe_url}", _ADDRESS_BLOCKS[e.reason]) from e
         return f"Error: failed to fetch {e.safe_url}: {type(e).__name__}: {e}"
     except Exception as e:
         try:
@@ -344,7 +362,8 @@ def execute(
                     parser.feed(text)
                     parser.close()
                 except Exception:
-                    pass
+                    # The fallback stripper keeps what it parsed before the error.
+                    _log.debug("HTML strip stopped early", exc_info=True)
                 out = parser.result()
                 out = html.unescape(out)
     elif "json" in content_type:
@@ -379,8 +398,7 @@ function(
     description=DESCRIPTION,
     parameters=SPEC["parameters"],
     toolset=['core', 'research'],
-    max_result_chars=30_000,
-    persist_full=True,
+    max_result_weight=7_500,
     url_params=["url"],
 )(_execute_agent_tool)
 

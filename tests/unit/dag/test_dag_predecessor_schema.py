@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.context.nodes import Call, Graph, ROLE_USER, ROLE_LLM
-from openprogram.store import SessionStore, SessionNodeWriter
-from openprogram.store.session.session_store import (
+from openprogram.state.store.session.nodes import Call, Graph, ROLE_USER, ROLE_LLM
+from openprogram.state.store import SessionStore, SessionNodeWriter
+from openprogram.state.store.session.session_store import (
     BrokenPredecessorChainError,
     PredecessorMissingError,
 )

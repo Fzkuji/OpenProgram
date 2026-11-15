@@ -1,0 +1,155 @@
+<title>Agent 执行核心</title>
+<meta name="description" content="程序和会话如何进入同一个 Agent 循环，以及各执行原语的用途。">
+<h1>Agent 执行核心</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 300" role="img" aria-label="程序通过 agent() 和 Agent 在当前 Runtime 上进入。聊天、CLI、子 Agent 和作业通过内部的 run_agent_turn() 进入，它管理会话和持久作业。两者运行同一个 Agent 循环。">
+  <defs><marker id="la-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="24">程序</text>
+  <text class="t-soft" x="0" y="48">Workflow 角色、Agent 方法</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="82">agent(), Agent</text>
+  <text class="t-soft" x="0" y="106">当前 Runtime</text>
+  <text class="t-big" x="360" y="24">会话</text>
+  <text class="t-soft" x="360" y="48">聊天、CLI、子 Agent、作业</text>
+  <text class="t-cmd notranslate" translate="no" x="360" y="82">run_agent_turn()</text>
+  <text class="t-soft" x="360" y="106">会话、分支、作业、恢复、head、归档</text>
+  <line class="ln" x1="150" y1="122" x2="150" y2="186" marker-end="url(#la-a)"/>
+  <line class="ln" x1="500" y1="122" x2="500" y2="186" marker-end="url(#la-a)"/>
+  <rect class="tile" x="0" y="196" width="680" height="96" rx="8"/>
+  <text class="t-big" x="24" y="230">同一个 Agent 循环</text>
+  <text class="t-cmd notranslate" translate="no" x="24" y="256">runtime/agent/loop → provider stream</text>
+  <text class="t-soft" x="24" y="278">相同的重试、取消、超时、用量和 Call 事件</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>程序</strong><small>Workflow 角色、Agent 方法</small><small><code translate="no">agent()</code>, <code translate="no">Agent</code>: 当前 Runtime</small></li>
+  <li><strong>会话</strong><small>聊天、CLI、子 Agent、作业</small><small><code translate="no">run_agent_turn()</code>: 会话、分支、作业、恢复、head、归档</small></li>
+  <li class="flow-end"><strong>同一个 Agent 循环</strong><small><code translate="no">runtime/agent/loop</code></small><small>相同的重试、取消、超时、用量和 Call 事件</small></li>
+</ol>
+</figure>
+
+<p class="note">差别只在循环前后的生命周期。不需要逐函数装饰器：<code translate="no">Agent</code> 自己给普通方法建作用域。<code translate="no">agent()</code>、<code translate="no">agent_async()</code> 和 <code translate="no">Agent.arun</code> 共用核心。</p>
+
+<h2 id="primitives">执行原语</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">原语</th><th scope="col">含义</th><th scope="col">持久会话</th><th scope="col">DAG</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">llm()</code></th><td>一次逻辑模型请求，支持结构化输出及其修复预算</td><td>否，当前 Runtime</td><td>一个 LLM Call</td></tr>
+<tr><th scope="row"><code translate="no">agent()</code></th><td>一个任务内的模型与工具循环；返回最终文本或校验过的结构化值</td><td>否，当前 Runtime</td><td>Agent Call，内含 LLM 和 Function Call</td></tr>
+<tr><th scope="row">Workflow 角色</th><td><code translate="no">role(prompt, context=)</code> 跑工具循环；<code translate="no">role.choose</code> 选一项</td><td>否，当前 Runtime</td><td>入口节点的子节点，保存确切请求</td></tr>
+<tr><th scope="row"><code translate="no">goal</code> Program、<code translate="no">create_goal</code></th><td>让目标在对话的多轮中保持生效，直到验证通过。需要对话。</td><td>是，保存在所属会话</td><td>多轮，再加一轮验证</td></tr>
+<tr><th scope="row"><code translate="no">run_agent_turn()</code></th><td>内部会话生命周期，不是 Program 原语</td><td>是</td><td>会话分支上的独立 Agent Call</td></tr>
+</tbody>
+</table>
+
+<p class="note">Workflow 代码只通过角色调用模型。契约见 <a href="../workflows/workflow.zh.html">Workflow</a>；Agent 和 Context 的职责见 <a href="unified-agent.zh.html">Agent 与 Context 契约</a>。</p>
+
+<details>
+<summary>agent() 的签名</summary>
+<pre translate="no" tabindex="0">def agent(
+    prompt: str | list[dict],
+    *,
+    model=None, effort=None, tools=None, tools_deny=None,
+    response_format=None, choices=None,
+    max_iterations=None, stop_after_tool_round=False, timeout_s=None,
+    tool_choice=None, parallel_tool_calls=None, execution_kind="agent",
+    runtime=None, return_raw=False, toolset=None, tools_allow=None,
+    instructions=None, context=None, tools_source=None,
+    on_retry=None, web_search=None, stream_fn=None,
+) -&gt; Any: ...</pre>
+<p class="note">没有 <code translate="no">session_id</code>、<code translate="no">branch_from</code>、<code translate="no">advance_head</code>、<code translate="no">archive_when_done</code> 或 <code translate="no">run_in_background</code>：持久化属于执行环境。已保存的 Agent 配置走 <code translate="no">Agent.from_spec</code>，显式覆盖优先。</p>
+</details>
+
+<h2 id="decision">边界</h2>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">不引入</th><th scope="col">改用</th></tr></thead>
+<tbody>
+<tr><th scope="row">第三种 Agent 抽象，或包在作业外的公开函数</th><td><code translate="no">agent()</code> 和 <code translate="no">Agent</code></td></tr>
+<tr><th scope="row">Workflow DSL 或图引擎</th><td>Python 包；静态图来自 import 和入口身份</td></tr>
+<tr><th scope="row">第二套配置系统或额外数据库</th><td>现有 Agents 配置和存储</td></tr>
+<tr><th scope="row">在界面显示隐藏思维链</th><td>模型输出摘要</td></tr>
+</tbody>
+</table>
+
+<p class="note">Program 不导入 <code translate="no">runtime.conversation.sub_agent_run</code>，子 Agent 工具（<code translate="no">programs/tools/agents/agent</code>、<code translate="no">send_message</code>）除外，它们是产品入口。</p>
+
+<h2 id="workflow">Workflow 生命周期</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">谁</th><th scope="col">结果</th><th scope="col">在哪看</th></tr></thead>
+<tbody>
+<tr><th scope="row">编写</th><td>聊天 Agent 和文件工具</td><td><code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> 下的包</td><td>聊天里的工具调用</td></tr>
+<tr><th scope="row">检查</th><td><code translate="no">openprogram programs check</code></td><td>导入探测、沙箱测试，成功后 Git 提交</td><td>报告（<code translate="no">--json</code>）</td></tr>
+<tr><th scope="row">加载</th><td>Worker 监听器</td><td>干净提交版本的入口变成工具</td><td>Programs 页、<code translate="no">openprogram programs list</code></td></tr>
+<tr><th scope="row">运行</th><td>Workflow 自己的代码</td><td>入口结果</td><td>入口节点，每次角色调用一个子节点</td></tr>
+</tbody>
+</table>
+
+<h2 id="observability">界面显示</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">层级</th><th scope="col">折叠时</th><th scope="col">展开后</th></tr></thead>
+<tbody>
+<tr><th scope="row">Workflow</th><td>名称、状态、时长、步数、完整结论</td><td>按序的角色调用，含确切请求和回复</td></tr>
+<tr><th scope="row">Agent</th><td>标签、状态、迭代次数</td><td>模型输出摘要、实际 Program 调用</td></tr>
+<tr><th scope="row">Program Call</th><td>名称、参数摘要、状态</td><td>输入、输出、错误、侧栏详情</td></tr>
+<tr><th scope="row">子 Agent 会话</th><td>可跳转的行</td><td>切到子会话；返回时仍是同一行</td></tr>
+</tbody>
+</table>
+
+<p class="note">普通函数不记录。子节点逐层展开，不一次全开。</p>
+
+<h2 id="errors">失败处理</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">失败</th><th scope="col">处理</th><th scope="col">用户看到</th></tr></thead>
+<tbody>
+<tr><th scope="row">没有原生结构化输出</th><td>按能力回退到文本 JSON 加本地 schema 校验</td><td>错误留在对应 LLM 或 Agent Call；Workflow 失败</td></tr>
+<tr><th scope="row"><code translate="no">programs check</code> 失败</th><td>不提交；聊天 Agent 读报告后修改</td><td>聊天里的检查报告</td></tr>
+<tr><th scope="row">Worker 重启</th><td>会话和作业路径恢复。<code translate="no">resumable</code> 入口经 <code translate="no">step()</code> 恢复。其他 Program 内 Agent 随父调用结束。</td><td>不残留运行中状态</td></tr>
+<tr><th scope="row">用户取消</th><td>同一令牌传到 Runtime、provider 和工具；子调用先于父调用结束</td><td>已取消或已中断，绝不显示完成</td></tr>
+<tr><th scope="row">工具或子 Workflow 失败</th><td>保留错误内容、caller 和部分产物</td><td>失败节点与结论一致</td></tr>
+</tbody>
+</table>
+
+<h2 id="tests">不变量</h2>
+
+<ul>
+<li>只有 <code translate="no">PROGRAM_ENTRIES</code> 注册为工具，分类目录不注册。</li>
+<li>每次角色调用都是入口节点的子节点，Workflow 调用的每个 Program 都出现在 DAG 里。</li>
+<li>直接运行的 Workflow 不通过 <code translate="no">predecessor</code> 挂到上一条 assistant。</li>
+<li>同一 profile 的 App、Web 和 TUI 共用一个 worker。</li>
+</ul>
+
+<details>
+<summary>聚焦测试</summary>
+<pre translate="no" tabindex="0">pytest -q tests/unit/programs/dag/test_runtime_exec_dag.py
+pytest -q tests/component/agent/jobs/test_async_job_recovery.py
+pytest -q tests/unit/agent/jobs/test_spawn_caller_invariant.py
+pytest -q tests/component/webui/abilities/test_programs_explorer.py</pre>
+</details>
+
+<details>
+<summary>与其他框架对比</summary>
+<table class="stack">
+<thead><tr><th scope="col">参考</th><th scope="col">采用</th><th scope="col">不采用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://openai.github.io/openai-agents-python/running_agents/">OpenAI Agents SDK：运行 Agent</a></th><td>Runner 负责一个逻辑轮次的循环；限制、会话和钩子分开</td><td>第二个运行时</td></tr>
+<tr><th scope="row"><a href="https://openai.github.io/openai-agents-python/tools/">OpenAI Agents SDK：工具</a></th><td>函数工具和 agent-as-tool 是显式调用，父级能观察子级</td><td>把 Workflow 变成 handoff</td></tr>
+<tr><th scope="row"><a href="https://openai.github.io/openai-agents-python/multi_agent/">OpenAI Agents SDK：编排</a></th><td>调用子 Agent 不同于移交控制权</td><td><code translate="no">agent()</code> 隐式创建会话分支</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/workflows-agents">LangGraph：工作流与 Agent</a></th><td>Workflow 是预定义路径，Agent 局部选工具</td><td>图 DSL</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/persistence">LangGraph：持久化</a></th><td>持久化和中断恢复是显式的生命周期能力</td><td>给每个 Program 内 Agent 持久线程</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="status">实现状态</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>当前 Runtime 上的 <code translate="no">llm()</code>、<code translate="no">agent()</code>；结构化输出；走公开核心的 Workflow 角色；<code translate="no">programs check</code> 和加载；会话适配器</td></tr>
+<tr><th scope="row">尚未验证</th><td>安装版 App 重新加载后的 DAG 与结论显示</td></tr>
+</tbody>
+</table>

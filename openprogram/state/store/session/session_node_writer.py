@@ -1,0 +1,145 @@
+"""Node-level write handle onto one session's DAG.
+
+The dispatcher binds a ``SessionNodeWriter`` into the ``_store``
+ContextVar for the duration of a turn, so deep code
+(``agent/runtime.py``, ``agent/call_state.py``,
+``agent/internals/_turn_lifecycle.py``) writes DAG nodes without
+threading ``(store, session_id)`` through every layer:
+
+  * ``append(node)``               persist a fresh Call
+  * ``update(node_id, **fields)``  fill in a placeholder in place
+  * ``merge(node_id, change)``     the same, computed from the node as it
+                                   is inside the write lock
+  * ``load()``                     the session's DAG as a graph
+
+``SessionStore`` itself deals in whole sessions and message dicts; this
+is the by-node seam onto the same repo. It also carries the HEAD
+single-writer rule (context/compaction.md §5): ``advance_head=False``
+lets a spawned same-session turn write its nodes without stealing the
+session head.
+
+Node writes go through here and nowhere else — anything not listed
+above raises, so a new write path is noticed immediately.
+"""
+from __future__ import annotations
+
+from typing import Any, TYPE_CHECKING
+
+from openprogram.state.store.session.nodes import Call
+
+if TYPE_CHECKING:
+    from .session_store import SessionStore
+
+
+class SessionNodeWriter:
+    """Per-node write handle onto one session, backed by ``SessionStore``."""
+
+    def __init__(self, store: "SessionStore", session_id: str,
+                 *, advance_head: bool = True):
+        self.store = store
+        self.session_id = session_id
+        # HEAD single-writer (context/compaction.md §5): a spawned
+        # sub-agent turn writes through a shim with advance_head=False
+        # so its conversation nodes never steal the session head.
+        self.advance_head = advance_head
+
+    def append(self, node: Call, *, create_if_missing: bool = True) -> None:
+        """Persist a Call directly into the per-session index + history.
+
+        Writes the Call as-is (no lossy chat-msg round trip), assigns
+        a seq, and bumps head for conversation nodes. Idempotent on id.
+        With create_if_missing=False, a removed session is never initialized.
+        Replaying an existing ID completes any interrupted history write.
+        """
+        import time as _time
+        pair = self.store._open(self.session_id, create_if_missing=create_if_missing)
+        if pair is None:
+            return
+        session_log, idx = pair
+        if node.id in idx.nodes_by_id:
+            # A previous append may have updated the index before its history
+            # write failed. Replaying the same ID must complete persistence.
+            existing = idx.nodes_by_id[node.id]
+            session_log.write_history(existing.seq, existing.role, existing.id, existing.to_dict())
+            return
+        meta = node.metadata or {}
+        # The conv edge lives ONLY on the top-level field.
+        predecessor = node.predecessor or ""
+        caller = node.caller or meta.get("caller") or ""
+        from .session_store import _check_append_invariant
+        _check_append_invariant(self.session_id, idx, node, predecessor, caller)
+        seq = idx.append(node, predecessor=predecessor, caller=caller)
+        self.store.spill_large_node(self.session_id, node)
+        session_log.write_history(seq, node.role, node.id, node.to_dict())
+        activity_at = _time.time()
+        # A background append must not write its stale page selection back
+        # over a concurrent checkout. Merge only this append's metadata while
+        # holding the same durable lock used by branch/settings changes.
+        with self.store._head_file_lock(session_log):
+            durable = session_log.read_meta()
+            if not caller and self.advance_head and not meta.get("structural"):
+                from .branch_config import advance_branch
+                advance_branch(durable, self.session_id, node.id, idx.nodes_by_id)
+            elif not caller and not meta.get("structural"):
+                from .branch_config import carry_branch
+                carry_branch(durable, predecessor, node.id)
+            durable["updated_at"] = activity_at
+            with idx._persist_lock:
+                with idx._lock:
+                    idx.meta = durable
+                    idx.head_id = durable.get("head_id")
+                session_log.write_meta(durable)
+        # Registry too — same as SessionStore.append_message: updated_at
+        # is the sidebar's recency-sort key. The webui dispatcher appends
+        # through THIS shim, so skipping the registry here left every web
+        # chat row without a timestamp and the sidebar order collapsed to
+        # insertion order after a refresh (new sessions sank to the bottom).
+        fields: dict = {"updated_at": activity_at}
+        if node.role == "user" and node.output:
+            text = str(node.output or "").strip().replace("\n", " ")
+            fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
+        self.store._update_index_entry(self.session_id, **fields)
+        self.store._schedule_index_flush()
+
+    def load(self):
+        """Return a ``Graph`` populated with all nodes for this session.
+
+        Legacy ``GraphStore.load()`` semantics: ``Graph.nodes`` is a
+        dict ``id → Call`` and ``Graph._next_seq`` is one past the
+        highest seq present. Test code reads ``g.nodes`` to assert
+        node fields.
+        """
+        import copy
+        from openprogram.state.store.session.nodes import Graph
+        g = Graph()
+        pair = self.store._open(self.session_id)
+        if not pair:
+            return g
+        _session_log, idx = pair
+        # Deep-copy so callers see a point-in-time copy; the live
+        # index keeps mutating as Agent method fills placeholders.
+        for node in idx.nodes_by_seq:
+            frozen = copy.deepcopy(node)
+            g.nodes[frozen.id] = frozen
+            if frozen.seq >= g._next_seq:
+                g._next_seq = frozen.seq + 1
+        g.retracted = frozenset(idx.meta.get("rewind_hidden_nodes") or ())
+        return g
+
+    def update(self, node_id: str, **fields: Any) -> None:
+        """In-place update of an existing node.
+
+        Used by ``Agent method`` exit (fill in output + metadata
+        after the function returns) and by error recovery in
+        ``_turn_lifecycle.fold_error_into_placeholder``. Updates land
+        on both the in-memory index and the on-disk history file
+        (rewritten in place — the file is named by seq+role+id, which
+        stays the same).
+        """
+        self.store.update_node(self.session_id, node_id, **fields)
+
+    def merge(self, node_id: str, change) -> bool:
+        """Update a node from itself as it is now, under the conversation's
+        write lock: ``change(node)`` returns the fields to write, or None.
+        For a node two writers each fill part of (``SessionStore.merge_node``)."""
+        return self.store.merge_node(self.session_id, node_id, change)

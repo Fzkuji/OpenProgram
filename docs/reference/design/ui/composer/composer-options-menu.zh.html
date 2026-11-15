@@ -1,0 +1,55 @@
+<title>输入框选项菜单</title>
+<meta name="description" content="输入框选项菜单：菜单行、共用菜单样式和验收。">
+<h1>输入框选项菜单</h1>
+
+<p><code translate="no">ControlsCluster</code> 里的 <code translate="no">+</code> 菜单。和其他菜单一样，是基于 <code translate="no">apps/web/components/ui/menu/menu-styles.ts</code> token 的 Radix <code translate="no">DropdownMenu</code>。没有模块 CSS。</p>
+
+<h2>菜单行</h2>
+<table class="stack">
+<thead><tr><th scope="col">行</th><th scope="col">类型</th><th scope="col">选择后</th></tr></thead>
+<tbody>
+<tr><th scope="row">添加文件或照片</th><td>动作</td><td>关闭</td></tr>
+<tr><th scope="row">录制 Workflow</th><td>动作；仅 macOS 桌面 App</td><td>关闭</td></tr>
+<tr><th scope="row">网页搜索</th><td>开关，在分隔线后</td><td>保持打开</td></tr>
+<tr><th scope="row">沙箱</th><td>开关。不可用时禁用，原生 <code translate="no">title</code> 说明原因</td><td>保持打开</td></tr>
+<tr><th scope="row">无人值守</th><td>开关，在分隔线后</td><td>保持打开</td></tr>
+</tbody>
+</table>
+<p class="note">每行都是 <code translate="no">PlusMenuRow</code>（<code translate="no">controls/menu-pieces.tsx</code>）：<code translate="no">itemCls(false)</code> 加 <code translate="no">MENU_ITEM_STATES</code>。16px Solar 图标列、标签、可选元数据、勾选列。选中行显示 14px <code translate="no">check-circle</code>，只弹入一次；其他行用 <code translate="no">CHECK_SLOT_PAD</code> 占位。</p>
+
+<dl class="pairs">
+<dt>面板</dt><dd><code translate="no">MENU_PANEL</code>：<code translate="no">rounded-lg</code>、<code translate="no">p-1</code></dd>
+<dt>行</dt><dd><code translate="no">itemCls</code>：最小 28px、<code translate="no">rounded-md</code>、基础字号，悬停是唯一着色</dd>
+<dt>分隔线</dt><dd><code translate="no">MENU_SEPARATOR</code>，通栏</dd>
+<dt>位置</dt><dd>挂在 body 的 Radix portal，<code translate="no">z-[200]</code>，<code translate="no">side="top" align="start" sideOffset={9}</code>；Radix 处理锚定、翻转和碰撞</dd>
+</dl>
+
+<h2 id="no-tool-switch">没有工具开关</h2>
+<p>没有 Tools 开关，也没有 Access 预设。聊天能调用哪些工具由 Agent 配置决定（Agents → 能力 → Programs：全部、某范围或预设、无）。输入框只叠加网页搜索。见<a href="../../runtime/agent-configuration/tool-toggle-management.zh.html">工具开关管理</a>。</p>
+
+<details>
+<summary>方案对比</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方案</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">共用 token 的 Radix</th><td>采用：打开状态、portal、翻转、roving focus、typeahead、Escape、点外部关闭；全站一套菜单语法</td></tr>
+<tr><th scope="row">Base UI <code translate="no">Menu</code> 加 CSS 模块</th><td>移除：第二个库，样式副本会漂移</td></tr>
+<tr><th scope="row">手动固定定位</th><td>否决：没有 portal 顺序、翻转和完整键盘行为</td></tr>
+<tr><th scope="row">原生 Popover API</th><td>未采用：没有 roving focus 和定位约定</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>面板、行、分隔线和勾选来自 <code translate="no">menu-styles.ts</code>；<code translate="no">composer.module.css</code> 没有 <code translate="no">.plusMenu*</code> 规则。</li>
+<li>没有 Tools 行、Access 预设子菜单或 Tools chip。</li>
+<li>没有 <code translate="no">menuPosition</code> 或手算的固定坐标。</li>
+</ul>
+<dl class="commands">
+<dt><code translate="no">node apps/web/scripts/chat/check-composer-options-menu.mjs</code></dt><dd>菜单语法</dd>
+<dt><code translate="no">npx tsc --noEmit -p .</code></dt><dd>类型，在 <code translate="no">apps/web</code></dd>
+<dt><code translate="no">npm run check</code>、<code translate="no">npm run test:unit</code></dt><dd>前端检查，在 <code translate="no">apps/web</code></dd>
+</dl>
+</details>

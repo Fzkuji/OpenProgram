@@ -1,0 +1,78 @@
+<title>附加工作目录</title>
+<meta name="description" content="session 如何用额外的文件夹放宽写入围栏，而不改变 cwd 和存储位置。">
+<h1>附加工作目录</h1>
+<p>语义与 Claude Code 的 <code translate="no">additionalWorkingDirectories</code> 相同。</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">主目录</th><th scope="col">附加目录</th></tr></thead>
+<tbody>
+<tr><th scope="row">模型 cwd（system prompt、<code translate="no">--cd</code>、工具 ContextVar）</th><td>项目路径</td><td>不变</td></tr>
+<tr><th scope="row">对话存储</th><td><code translate="no">projects/&lt;id&gt;/chats/</code></td><td>不变</td></tr>
+<tr><th scope="row">acceptEdits 围栏白名单</th><td>在内</td><td>加入</td></tr>
+<tr><th scope="row">告知模型</th><td>工作目录</td><td>“Also writable: /a, /b”</td></tr>
+<tr><th scope="row">存放</th><td>项目绑定</td><td><code translate="no">SessionRunConfig</code>，session 元数据</td></tr>
+<tr><th scope="row">会话中修改</th><td>首轮冻结；<a href="operations.zh.html#main-project-binding">只能移动或修复</a></td><td>随时，下一轮生效</td></tr>
+</tbody>
+</table>
+<p class="note">主目录经 <code translate="no">project_workdir_for</code> 关联；围栏部分见<a href="../security/sandbox-architecture.zh.html">沙箱架构</a> §3.5。没有已存列表的 session 从项目的源文件夹开始。</p>
+
+<details>
+<summary>不做的事和扩展点</summary>
+<ul>
+<li>不从附加目录加载 CLAUDE.md 和项目设置，权限规则只跟主项目。</li>
+<li>不分只读和读写：进入列表就是可写安全区。</li>
+<li>没有全局附加目录，跨 session 的需求用项目解决。</li>
+<li>条目要带属性时，只改 <code translate="no">_as_str_list</code> 和 <code translate="no">check_path_safety</code>；无 schema 存储不需要迁移。</li>
+<li>接入 MCP roots 或多根 IDE 工作区时，用同一字段作唯一来源。</li>
+</ul>
+</details>
+
+<h2 id="data-path">数据路径</h2>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">代码</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">选择</th><td><code translate="no">WorkingDirChips</code>、<code translate="no">POST /api/pick-folder</code></td><td>最近项目，或原生选择器里的“Choose folder…”</td></tr>
+<tr><th scope="row">发送</th><td><code translate="no">set_working_dirs {session_id, dirs}</code></td><td>完整列表。草稿还没有 id，列表随首个 <code translate="no">chat</code> 帧发送</td></tr>
+<tr><th scope="row">校验并保存</th><td><code translate="no">ws_actions/session/run_config.py</code> 的 <code translate="no">handle_set_working_dirs</code></td><td>每项 <code translate="no">expanduser()</code> 后必须是目录；一项非法则整帧拒绝并说明原因。存展开后的路径，不存 realpath。广播 <code translate="no">working_dirs</code></td></tr>
+<tr><th scope="row">持久化</th><td><code translate="no">save_session_run_config</code></td><td><code translate="no">None</code> 表示不变，chat 帧不会清空列表</td></tr>
+<tr><th scope="row">重新加载</th><td><code translate="no">session_loaded.data.settings</code></td><td>刷新或换客户端后恢复列表</td></tr>
+<tr><th scope="row">每轮</th><td><code translate="no">load_session_run_config</code> → <code translate="no">TurnRequest.additional_working_dirs</code></td><td></td></tr>
+<tr><th scope="row">围栏</th><td><code translate="no">runtime/permissions/identity.py</code> 的 <code translate="no">_path_is_safe</code> → <code translate="no">check_path_safety</code></td><td><code translate="no">[current_worktree_path() or getcwd(), *dirs]</code></td></tr>
+<tr><th scope="row">Prompt</th><td><code translate="no">runtime/context/components.py</code></td><td>列表非空才有这一行</td></tr>
+</tbody>
+</table>
+<p class="note">Dispatcher 每轮把真实 cwd 绑进 <code translate="no">current_worktree_path</code>，<code translate="no">getcwd</code> 只是兜底。</p>
+
+<h2 id="composer">输入框</h2>
+<pre translate="no" tabindex="0"><code>[my-project]  [foo ✕]  [bar ✕]  [＋]</code></pre>
+<ul>
+<li>项目胶囊之后，每个附加目录一个胶囊，末尾是仅图标的添加按钮（<code translate="no">apps/web/components/chat/top-bar/chips/working-dir-chips.tsx</code>）。</li>
+<li>添加和 ✕ 先乐观更新本地状态，以 <code translate="no">working_dirs</code> 广播为准。</li>
+<li>状态是 session store 的 <code translate="no">additionalWorkingDirsBySession</code>，来自 <code translate="no">session_loaded</code>、广播和乐观更新。不进 <code translate="no">ComposerSettings</code> 或 localStorage：这是服务端数据。</li>
+<li><code translate="no">list_projects</code> 对该 session 的项目报告 <code translate="no">path_missing</code> 时，项目胶囊变为橙色警告样式并显示 Solar <code translate="no">danger-triangle</code>，菜单提供“Locate folder…”。</li>
+</ul>
+
+<h2 id="invariants">不变式</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">只影响围栏和 prompt</th><td>接到 cwd 或存储会破坏上表</td></tr>
+<tr><th scope="row">围栏和 prompt 的 cwd 都来自 <code translate="no">current_worktree_path()</code></th><td>否则模型以为能写，围栏却拦，审批循环出现</td></tr>
+<tr><th scope="row">整表替换</th><td>幂等，没有“已添加”的边界情况，也没有部分写入</td></tr>
+<tr><th scope="row">无 schema 的 session 元数据</th><td>旧 session 读出空列表，无需迁移</td></tr>
+<tr><th scope="row">整个 session 生命周期可编辑</th><td>这是会话中放宽围栏的唯一方式</td></tr>
+<tr><th scope="row">主项目缺失时解析为 <code translate="no">None</code></th><td>换成别的目录会给模型一个用户从没选过、看似合理的 cwd</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>测试</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">覆盖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tests/unit/store/test_session_config.py</code></th><td>往返、“None 表示不变”、<code translate="no">_as_str_list</code> 清洗</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/security/test_permission_rules.py</code></th><td><code translate="no">_path_is_safe</code>：目录内、目录外、ContextVar cwd 内</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/webui/test_ws_working_dirs.py</code></th><td>合法写入和广播、整帧拒绝、<code translate="no">session_loaded</code> 往返</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/test_session_main_workdir.py</code></th><td>冻结、缺失目录解析、relocate 节点，以及冻结后编辑附加目录</td></tr>
+</tbody>
+</table>
+</details>

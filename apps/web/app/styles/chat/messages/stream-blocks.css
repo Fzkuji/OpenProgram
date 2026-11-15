@@ -1,0 +1,20 @@
+/* Shared assistant content column; execution rows use execution-strip.css.
+   Its parts sit one --reply-gap apart, like the blocks inside the text. */
+.chat-stream-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--reply-gap, 12px);
+}
+/* Text blocks in the stream body take the body's column as is. */
+.chat-stream-body .chat-text { margin-left: 0; padding-left: 0; padding-right: 0; }
+
+/* A consumed input interrupts this reply's content column. The independent
+   user node keeps its usual right alignment and action controls, lined up
+   with every other user bubble. */
+.steering-input { margin: 12px 0; }
+.steering-input .message.user > .message-actions-footer {
+  padding-left: 0;
+  justify-content: flex-end;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}

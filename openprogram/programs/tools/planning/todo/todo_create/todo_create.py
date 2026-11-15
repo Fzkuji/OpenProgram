@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from .. import shared
 
 
@@ -47,19 +47,24 @@ def _todo_create_impl(subject: str, description: str = "", blocked_by: str = "")
             return f"[todo_create error] blocked_by refers to unknown todo id(s): {', '.join(unknown)}"
         now = time.time()
         todo_id = shared.next_id(todos)
-        from openprogram.programs.workflow.goal import chat
+        from openprogram.programs.tools.planning.goal import chat
         goal_identity = chat.current_identity() or {}
+        scope = shared.current_scope()
         todos.append({
             "id": todo_id,
             "subject": subject,
             "description": description or "",
             "status": "pending",
-            "owner": "",
             "blocked_by": deps,
             "created_at": now,
             "updated_at": now,
+            **({"scope": scope} if scope else {}),
             **({"goal_id": goal_identity["goal_id"],
                 "goal_revision": goal_identity["revision"]} if goal_identity else {}),
         })
-        shared.save(sid, todos)
+        plans = shared.place_plan(sid, todos, todo_id)
+        shared.save(sid, todos, plans)
+        # Inside the lock, so frames reach the UI in save order.
+        shared.publish(sid, todos, plans)
+    shared.notify_goal(sid)
     return f"Todo #{todo_id} created: {subject}"

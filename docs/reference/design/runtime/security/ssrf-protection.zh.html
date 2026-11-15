@@ -1,0 +1,162 @@
+<title>Runtime 出站 URL 防护</title>
+<meta name="description" content="Runtime 自身的 HTTP 请求如何选择策略、校验每个地址、只连接已批准的对端，并把凭据限制在其来源上。">
+<h1>Runtime 出站 URL 防护</h1>
+
+<figure id="implementation">
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="调用方选择一个不可变的注册键，共 48 个消费者、五个信任等级，已配置服务还提供确切来源。纯策略判定规范化 URL 和来源，检查完整的 DNS 答案集和精确例外，返回原因代码。托管传输只连接已批准的 IP，保留原始 Host、SNI 和证书名，手动处理重定向并限制响应。策略或传输的拒绝带脱敏原因代码，不会用裸连接重试。">
+  <defs><marker id="ss-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">注册键</text>
+  <text class="t-soft" x="0" y="62">48 个不可变消费者</text>
+  <text class="t-soft" x="0" y="82">五个信任等级</text>
+  <text class="t-soft" x="0" y="102">确切的已配置来源</text>
+  <line class="ln" x1="170" y1="28" x2="222" y2="28" marker-end="url(#ss-a)"/>
+  <text class="t-big" x="234" y="34">策略判定</text>
+  <text class="t-soft" x="234" y="62">规范化的 URL 和来源</text>
+  <text class="t-soft" x="234" y="82">每个 A 和 AAAA 答案</text>
+  <text class="t-soft" x="234" y="102">精确例外、原因代码</text>
+  <line class="ln" x1="430" y1="28" x2="482" y2="28" marker-end="url(#ss-a)"/>
+  <text class="t-big" x="494" y="34">托管传输</text>
+  <text class="t-soft" x="494" y="62">连接已批准的 IP</text>
+  <text class="t-soft" x="494" y="82">原始 Host、SNI、证书名</text>
+  <text class="t-soft" x="494" y="102">手动重定向、限制响应体</text>
+  <path class="ln-no" d="M330 116V142H580V116"/>
+  <text class="t-no" x="330" y="170">拒绝：脱敏原因代码，不用裸连接重试</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>注册键</strong><small>48 个不可变消费者、五个信任等级、确切的已配置来源</small></li>
+  <li><strong>策略判定</strong><small>规范化的 URL 和来源、每个 A 和 AAAA 答案、精确例外、原因代码</small><p class="refused">拒绝：脱敏原因代码，不用裸连接重试</p></li>
+  <li class="flow-end"><strong>托管传输</strong><small>连接已批准的 IP，原始 Host、SNI 和证书名，手动重定向，限制响应体</small></li>
+</ol>
+</figure>
+
+<h2 id="boundary">组件</h2>
+<table class="stack">
+<thead><tr><th scope="col">组件</th><th scope="col">负责</th><th scope="col">不负责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/host/security/url_policy.py</code></th><td>URL 和来源规范化；scheme、userinfo、host、port 校验；完整 A/AAAA 分类；精确 Owner 例外；稳定的脱敏原因代码</td><td>发送请求，或推断调用方的信任等级</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/host/security/safe_http.py</code></th><td>不可变消费者注册表；同步和异步的对端约束传输；保留 Host 和 SNI；手动重定向；强制凭据、头、MIME、解码后响应体、编码、超时、代理和原子下载限制</td><td>接受调用方创建的策略对象，或暴露 <code translate="no">verify=False</code></td></tr>
+<tr><th scope="row">消费者适配器</th><td>选择一个注册键；已配置服务或回调提供确切的 Owner 配置来源</td><td>实现第二套私网地址分类，或用裸客户端重试</td></tr>
+<tr><th scope="row"><code translate="no">runtime_http_audit.py</code>、<code translate="no">doctor</code>、<code translate="no">scripts/check_runtime_http.py</code></th><td>有界的脱敏拒绝状态、Owner 例外和代理报告、AST 清单、SDK 处置、过期排除项检测</td><td>显示 userinfo、query、fragment、凭据、对端响应体或含令牌的路径</td></tr>
+</tbody>
+</table>
+
+<h2 id="trust-classes">信任等级</h2>
+<table class="stack">
+<thead><tr><th scope="col">等级（<code translate="no">URLTrustClass</code>）</th><th scope="col">目标</th><th scope="col">消费者数</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">untrusted_public</code></th><td>任意公网 URL；每个解析地址都必须是全局地址</td><td>4</td></tr>
+<tr><th scope="row"><code translate="no">fixed_public_service</code></th><td>随产品固定的服务来源</td><td>23</td></tr>
+<tr><th scope="row"><code translate="no">configured_service</code></th><td>Owner 配置的确切来源，可为私网或本地</td><td>18</td></tr>
+<tr><th scope="row"><code translate="no">loopback_callback</code></th><td>本地回调</td><td>1</td></tr>
+<tr><th scope="row"><code translate="no">owner_tool</code></th><td><code translate="no">tool.web_fetch.owner</code>、<code translate="no">tool.image_result.download.owner</code>：无地址、端口或方法限制。仅在 Owner 的轮次且 <code translate="no">security.outbound_url.model_tools</code> 为默认的 <code translate="no">open</code> 时选用。</td><td>2</td></tr>
+</tbody>
+</table>
+
+<h2 id="surfaces">覆盖范围</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">面</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">任意和派生 URL</th><td><code translate="no">web_fetch</code>、附件、生成资产、图像结果下载、目录、市场、更新元数据：托管客户端，公网或精确服务策略</td></tr>
+<tr><th scope="row">固定和已配置 API</th><td>网页搜索、图像 API、频道 REST、TTS、提供商列表、探测和 OAuth、Web 模型列表、MCP HTTP 和 SSE、本地探测：固定或 Owner 配置的确切来源</td></tr>
+<tr><th scope="row">第三方 SDK</th><td>见 <a href="#sdk">SDK 处置</a></td></tr>
+<tr><th scope="row">Owner 控制面存活探测</th><td>仅限回环的窄排除项，已列入清单；不算 Runtime URL 请求</td></tr>
+<tr><th scope="row">不在本设计内</th><td>浏览器导航、弹窗、Service Worker 和页面子资源（浏览器控制设计及 Owner 出口隔离）。沙箱代码、插件、外部提供商 CLI、包管理器（沙箱、插件信任、子进程和安装边界）。</td></tr>
+</tbody>
+</table>
+<p class="note">因此功能矩阵把这项记为部分完成。</p>
+
+<h2 id="transport">传输与策略规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">公网请求</th><td>只允许注册表声明的方法、scheme 和端口。所有解析地址必须是全局地址。拒绝：元数据、回环、私网、链路本地、CGNAT、组播、保留、未指定、文档和测试、映射、歧义、畸形地址。DNS 失败按拒绝处理。</td></tr>
+<tr><th scope="row">连接</th><td>同步和异步 <code translate="no">httpcore</code> 后端只连接已批准的 IP 元组，校验实际 socket 对端，并保留规范化主机名用于 Host、SNI 和证书校验</td></tr>
+<tr><th scope="row">连接池</th><td>标识包含消费者、信任等级、规范化来源、已批准 IP、代理身份</td></tr>
+<tr><th scope="row">重定向</th><td>手动处理，每一跳重新判定。已配置服务的跨源重定向失败；公网凭据被剥离。</td></tr>
+<tr><th scope="row">隐私</th><td>拒绝 URL userinfo。日志和公开错误不保留 query、fragment、令牌路径、cookie 或对端响应体；错误只含来源。</td></tr>
+<tr><th scope="row">限制</th><td>头、MIME、内容编码、解码后字节数，connect、read、write、pool 和总超时，临时文件</td></tr>
+<tr><th scope="row">下载</th><td>完整校验、flush、<code translate="no">fsync</code> 和可安全清理的收尾之后才替换目标</td></tr>
+</tbody>
+</table>
+
+<h3 id="sdk">SDK 处置</h3>
+<table class="stack">
+<thead><tr><th scope="col">处置</th><th scope="col">消费者</th><th scope="col">强制方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">注入传输</th><td><code translate="no">provider.openai.sdk</code>、<code translate="no">provider.anthropic.sdk</code>、<code translate="no">provider.google.sdk</code>、<code translate="no">mcp.configured.http</code>、<code translate="no">mcp.configured.sse</code></td><td>SDK 接收限定范围的托管客户端或工厂</td></tr>
+<tr><th scope="row">精确来源</th><td>Telegram、微信、飞书、Matrix、Slack、Discord、固定和已配置 TTS、其他 REST 消费者</td><td>附加凭据前冻结来源；重定向不能带走凭据</td></tr>
+<tr><th scope="row">派生 URL 提取</th><td>附件、生成资产和图像结果消费者</td><td>SDK 或响应给出 URL，Runtime 通过专用托管消费者传输</td></tr>
+<tr><th scope="row">禁用</th><td><code translate="no">provider.amazon_bedrock.sdk</code>、<code translate="no">channel.slack.gateway_sdk</code>、<code translate="no">channel.discord.gateway_sdk</code>、<code translate="no">tts.edge_sdk</code></td><td>在导入或使用 SDK 前以 <code translate="no">UNMANAGED_TRANSPORT</code> 失败。Bedrock 覆盖流式和模型列表入口，先于任何 boto3 凭据或客户端活动。</td></tr>
+</tbody>
+</table>
+
+<h3 id="owner-config">Owner 例外和策略代理</h3>
+<dl class="pairs">
+<dt>Owner 例外</dt><dd>已注册消费者加恰好一个规范化来源，或规范的私网或本地 CIDR。拒绝通配符、后缀、凭据、未知字段、公网和默认路由网段、元数据、链路本地，以及该消费者不允许的形式。只能通过 Owner 认证的设置修改。</dd>
+<dt>策略代理</dt><dd>只有 Owner 配置 <code translate="no">enforces_target_policy: true</code> 时可用。Runtime 先评估目标，单独约束代理对端，通过 doctor 和审计报告委托，绝不直连重试。</dd>
+</dl>
+
+<details>
+<summary>静态检查和清单排除项</summary>
+<p><code translate="no">scripts/check_runtime_http.py</code> 在出现未注册的裸调用、活跃的非托管 SDK 传输、无已分类消费者的注册项或过期排除项时失败。<code translate="no">doctor</code> 标签：<code translate="no">runtime-http-registry</code>、<code translate="no">runtime-http-owner-exceptions</code>、<code translate="no">runtime-http-policy-proxy</code>、<code translate="no">runtime-http-recent-denials</code>、<code translate="no">runtime-http-unmanaged-transport</code>。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">排除项</th><th scope="col">归属与窄理由</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">security/safe_http.py</code></th><td>托管传输；唯一直接构造 <code translate="no">httpcore</code> 连接池和代理的地方</td></tr>
+<tr><th scope="row"><code translate="no">programs/applications/browser/app_endpoint.py</code></th><td>浏览器控制；对 App 的 CDP 端点的回环探测</td></tr>
+<tr><th scope="row"><code translate="no">cli/commands/mcp.py</code></th><td>Owner 控制面；仅认证后端 opener</td></tr>
+<tr><th scope="row"><code translate="no">cli/ink.py</code>、<code translate="no">cli/commands/doctor.py</code>、<code translate="no">cli/commands/rescue.py</code></th><td>Owner 控制面；仅确切的回环 Worker 存活 socket</td></tr>
+</tbody>
+</table>
+<p class="note">发布要求：策略和地址测试、真实同步异步 socket 和 TLS 对端测试、DNS 重绑定防护、重定向和凭据来源测试、响应解压和超时清理、所有消费者已迁移、活跃非托管传输为零、仅限 Owner 的精确例外、doctor、审计和静态强制，以及消费者兼容性契约。</p>
+</details>
+
+<h2 id="decision">设计选择</h2>
+<table class="stack">
+<thead><tr><th scope="col">选择</th><th scope="col">机制</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">采用</th><td>单一纯 URL 和 IP 策略；所有 DNS 答案都须通过；每次重定向重新评估；错误只含来源；限制解码后响应体</td><td>一致覆盖目标、重定向、凭据和资源边界</td></tr>
+<tr><th scope="row">采用</th><td>区分信任等级</td><td>Owner 配置的本地服务可用，公网消费者拿不到私网访问</td></tr>
+<tr><th scope="row">采用</th><td>权限与网络分层（Claude Code、CodeBuddy）、结构化拒绝原因（Codex）、固定频道媒体白名单（CodeBuddy）</td><td>权限回答谁能请求；传输策略回答哪个对端拿到连接和凭据</td></tr>
+<tr><th scope="row">修改</th><td>Hermes 进程级 <code translate="no">allow_private_urls</code> 改为精确的消费者加来源或 CIDR</td><td>元数据和链路本地目标不可例外</td></tr>
+<tr><th scope="row">修改</th><td>OpenClaw 浏览器拦截和 Codex 全进程代理</td><td>浏览器控制是独立的门；策略代理可选、由 Owner 声明、约束对端、在 doctor 可见、无直连回退</td></tr>
+<tr><th scope="row">拒绝</th><td>只查 URL 字符串、单次 DNS 预检、隐式重定向、继承环境代理、关闭 TLS 校验、裸回退</td><td>每一项都留下目标、重绑定、凭据或绕过路径</td></tr>
+<tr><th scope="row">拒绝</th><td>用户确认或主机名 allow、deny 作为目标强制</td><td>都不校验每个解析地址，也不约束对端</td></tr>
+<tr><th scope="row">拒绝</th><td>所有客户端一律仅限公网</td><td>破坏已配置的本地模型端点、MCP 服务器和内网服务</td></tr>
+<tr><th scope="row">拒绝</th><td>把 Origin 和 Host 检查、CORS、Owner 认证、浏览器检查或沙箱网络算作本防护</td><td>它们防护的是其他方向或执行边界</td></tr>
+</tbody>
+</table>
+
+<details id="references">
+<summary>与其他项目的对比</summary>
+<p class="note">来自固定的审计快照；快照未确认的内容记为未确认，而非不存在。</p>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">URL 获取依据</th><th scope="col">网络或权限边界</th><th scope="col">取用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/NousResearch/hermes-agent/blob/main/tools/url_safety.py">Hermes</a></th><td>共享 <code translate="no">url_safety</code>，覆盖网页、浏览器、视觉、网关媒体。DNS 失败关闭；拒绝回环、RFC1918、链路本地、CGNAT、元数据、保留、组播、未指定；逐跳检查重定向；URL 脱敏；流式限制。</td><td><a href="https://hermes-agent.nousresearch.com/docs/user-guide/security/"><code translate="no">allow_private_urls</code></a> 同时放宽多个入口；应用层检查不能替代 OS 隔离。</td><td>共享的失败关闭校验、完整地址集、重定向检查、脱敏、限制。全局开关改为精确例外。</td></tr>
+<tr><th scope="row"><a href="https://docs.openclaw.ai/gateway/security">OpenClaw</a></th><td>默认拒绝私网、内部和特殊用途目标，精确或通配例外，在导航、交互触发的加载和最终 URL 前检查。文档指出预测导航和子资源风险。</td><td>请求拦截不是网络防火墙：重定向、弹窗、Service Worker 和后台资源仍可能需要出口隔离或策略代理。</td><td>严格默认和显式例外。浏览器拦截是独立边界。</td></tr>
+<tr><th scope="row">Claude Code</th><td><code translate="no">WebFetch(domain:...)</code> allow 和 deny。主机名先发给 <a href="https://code.claude.com/docs/en/data-usage">Anthropic 安全黑名单</a>，缓存五分钟，Owner 可关闭。</td><td><a href="https://code.claude.com/docs/en/sandboxing">Bash 沙箱</a>使用子进程继承的 Seatbelt 或 bubblewrap HTTP 和 SOCKS 代理。信任客户端主机名，不检查 TLS，宽域名和域前置仍有风险。</td><td>分层工具授权、子进程出口策略。拒绝把主机名权限当作连接时依据。</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/network-proxy/README.md">Codex</a></th><td>不用单个 WebFetch 字符串检查代替网络边界。</td><td><code translate="no">codex-network-proxy</code>：HTTP 和 SOCKS5、精确或受限通配域名、拒绝私网解析、有限只读方法、MITM 头钩子、Unix socket 控制、结构化审计；OS 沙箱限制回环绕过。</td><td>结构化拒绝原因、审计、托管策略概念。保留区分消费者的安全客户端。</td></tr>
+<tr><th scope="row">CodeBuddy 2.109.3</th><td><code translate="no">WebFetch</code> 应用 Security Center 域名策略，拒绝 IP 字面量、<code translate="no">localhost</code> 和部分私网段。企业微信媒体：官方 CDN 白名单，禁止重定向。</td><td>沙箱 <code translate="no">allowedDomains</code> 与 WebFetch 权限取交集。完整 A/AAAA 校验、对端绑定和逐跳重定向未确认。</td><td>固定频道白名单、权限与网络策略取交集。拒绝只查 IP 字面量。</td></tr>
+<tr><th scope="row">Gemini CLI</th><td><a href="https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/tools.md">文档</a>说明 <code translate="no">web_fetch</code> 可访问 localhost 和私网；Plan Mode 可要求确认。core 0.35.3 有 IP 和 DNS 工具，但不构成通用边界。</td><td>确认是权限判定，不约束对端。</td><td>明确写出风险。拒绝用确认代替强制。</td></tr>
+<tr><th scope="row">OpenCode</th><td><code translate="no">webfetch</code> 权限作用于完整 URL：allow、ask、deny。<a href="https://opencode.ai/v2/docs/permissions">文档</a>未说明私网 IP 分类、完整 DNS 结果、逐跳重定向或对端绑定。</td><td><code translate="no">shell</code> 使用主机用户的网络；字符串规则只是尽力而为。</td><td>统一的资源权限。获准的 URL 仍要过传输策略。</td></tr>
+<tr><th scope="row">pi-mono</th><td>未确认内置任意 URL 获取；网络来自 shell、安装器、扩展。</td><td>未确认 OS 出口策略。第三方 <code translate="no">pi-sandbox</code> 不计入。</td><td>不作 SSRF 参考。支持把第三方代码留在本防护之外。</td></tr>
+<tr><th scope="row">pi-ai</th><td>协议参考源码，没有 Runtime URL 消费者。</td><td>不适用。</td><td>排除。</td></tr>
+<tr><th scope="row">weclaw</th><td>连接外部 Agent 的消息桥；未确认独立的 URL 获取。</td><td>继承所启动 CLI 的工具和网络。</td><td>相关边界是频道媒体和进程启动；不作安全 HTTP 参考。</td></tr>
+<tr><th scope="row">cc-internal、cx-internal、gm-internal</th><td>包装上游启动器或复用 Gemini CLI；未确认独立加固。</td><td>继承上游行为；增加认证或端点不构成 SSRF 边界。</td><td>只审计额外端点、凭据转发和配置差异；不算独立设计。</td></tr>
+<tr><th scope="row"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">OWASP</a></th><td>区分已知服务白名单和任意公网校验，限制协议，校验每个 A/AAAA 结果。</td><td>单次 DNS 预检仍有 pinning 和检查时间差风险；也建议网络控制。</td><td>区分信任等级、连接时约束对端。拒绝单次预检。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="future">实现状态</h2>
+<p>Runtime 自身的 HTTP 已实现。其余独立边界：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">边界</th><th scope="col">宣称完成前需要</th></tr></thead>
+<tbody>
+<tr><th scope="row">浏览器导航和页面流量</th><td>在每个后端上定义并测试导航、弹窗、Service Worker、后台资源、重定向、下载、CDP 和配置文件策略；拦截不够时加强制的出口边界</td></tr>
+<tr><th scope="row">插件和任意代码的网络</th><td>信任和沙箱保持独立；需要限制网络时加 OS 或策略代理出口边界</td></tr>
+<tr><th scope="row">被禁用的 SDK 网络功能</th><td>SDK 支持托管传输注入，或强制策略代理有等效测试后才启用</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="sandbox-architecture.zh.html">执行身份与沙箱</a> · <a href="../../providers/network-proxy.zh.html">网络代理</a> · <a href="../../feature-matrix.zh.html">功能矩阵</a></p>

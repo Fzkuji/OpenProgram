@@ -1,0 +1,28 @@
+{
+  "name": "fh-v1.1",
+  "description": "FrontierHarness Eval v1.1: 62 pinned tasks (45 from Terminal-Bench 2.1, 17 from tb4), 4 scored attempts per task, OpenProgram beside a pinned Codex CLI.",
+  "sources": [
+    "frontierharness.org summary.json: every harness runs the same 62 pinned tasks with each model, 4 scored attempts per task; infrastructure failures excluded from scores",
+    "Harbor package frontier-harness-eval/frontier-harness-eval@v1.1.0 (62 tasks)",
+    "FrontierHarness metadata/harness-versions.json: codex 0.148.0"
+  ],
+  "dataset": {"name": "frontier-harness-eval/frontier-harness-eval", "ref": "v1.1.0",
+              "task_prefix": "terminal-bench/"},
+  "tasks": null,
+  "attempts": 4,
+  "selection": "all_attempts",
+  "retry": {"max_retries": 2},
+  "trial_wall_clock_cap_min": null,
+  "overrides_allowed": true,
+  "model": "openai/gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "control": {"agent": "codex", "version": "0.148.0"},
+  "harbor_version": "0.25.0",
+  "comparable_environments": ["runta"],
+  "harbor": {"agent_setup_timeout_multiplier": 3.0, "environment_build_timeout_multiplier": 3.0},
+  "prices": {
+    "source": "models.dev, read 2026-11-12; base tier, prompts up to 272,000 tokens",
+    "unit_tokens": 1000000,
+    "models": {"openai/gpt-5.6-sol": {"input": 4.0, "cached_input": 0.4, "output": 20.0}}
+  }
+}

@@ -1,0 +1,393 @@
+"""Model-list dispatcher.
+
+A provider that lists models in a way the generic OpenAI-compatible
+``/v1/models`` fetcher can't handle ships a ``list_models.py`` in its own
+directory (``openprogram/models/providers/adapters/<name>/list_models.py``) exposing:
+
+    def fetch(provider_id: str, timeout: float) -> list[dict] | {"error": ...}
+
+The dispatcher loads that by directory name — the same convention
+``probe_thinking.probe()`` uses — so adding a provider needs no edit here; it
+just drops a file in its own directory. Providers whose ``/v1/models`` is
+standard don't ship the file and use the generic ``_fetch_openai_compat``
+(kept here because it belongs to no single provider). See
+``docs/design/providers/models/overview.md`` §4.1.
+
+Each ``fetch`` returns either a list of model dicts (success) or a dict with an
+``"error"`` key (failure, human-readable). ``fetch_and_normalize`` then:
+
+1. Picks the source (per-provider ``list_models.fetch`` → anthropic-wire route
+   → generic ``_fetch_openai_compat`` → custom-provider → error).
+2. Normalises every response into one entry shape — pulling
+   ``context_window`` / ``max_tokens`` from the several spellings upstreams
+   use, lifting cost hints, carrying a fetcher's fast/thinking through, and
+   deriving thinking via ``thinking_spec.derive_thinking_fields``.
+3. (Refresh path) rotates the enabled spec rows via storage.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+# Generic OpenAI-compatible /v1/models fetcher — the fallback for every
+# provider that DOESN'T ship its own list_models.py. It belongs to no single
+# provider, so it stays here rather than in a provider directory.
+from ..probe_log import KIND_MODEL_LIST, probe
+from .openai_compat import _fetch_openai_compat
+import logging
+
+_log = logging.getLogger(__name__)
+
+
+def _load_fetcher(provider_id: str) -> Any:
+    """Load ``providers.adapters.<dir>.list_models.fetch`` for a provider, or ``None``
+    when it ships no such module (→ dispatcher falls back to the generic
+    fetcher). Mirrors ``_load_probe``: directory name from the provider id,
+    convention module ``list_models``, convention function ``fetch``."""
+    dir_name = provider_id.replace("-", "_")
+    try:
+        mod = __import__(
+            f"openprogram.models.providers.adapters.{dir_name}.list_models",
+            fromlist=["fetch"],
+        )
+        return mod.fetch
+    except (ImportError, AttributeError):
+        return None
+
+
+# Cache probed reasoning results per Fetch (avoid calling probe() per model)
+_probe_cache: dict[str, dict] = {}
+
+
+def _load_probe(provider_id: str) -> Any:
+    """Load and cache the probe_thinking.probe() for a provider."""
+    if provider_id in _probe_cache:
+        return lambda: _probe_cache[provider_id]
+    try:
+        dir_name = provider_id.replace("-", "_")
+        mod = __import__(
+            f"openprogram.models.providers.adapters.{dir_name}.probe_thinking",
+            fromlist=["probe"],
+        )
+        results = mod.probe()
+        _probe_cache[provider_id] = results
+        return lambda: results
+    except (ImportError, AttributeError):
+        _probe_cache[provider_id] = {}
+        return None
+
+
+@probe(KIND_MODEL_LIST)
+def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
+    """Dispatch to a provider-specific fetcher and normalise the result
+    into the catalog row shape — WITHOUT any persistence.
+
+    This is the pure "hit the official API and enrich" half of the old
+    Fetch flow, reused by the live-browse path (``listing.list_models_for_provider``)
+    so opening the settings page queries the provider live instead of
+    reading a persisted snapshot.
+
+    Returns ``{"models": [...]}`` on success or ``{"error": "..."}`` on
+    failure. Never persists.
+    """
+    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS, API_KEY_REQUIRED
+    if provider_id in UNSUPPORTED_PROVIDERS:
+        return {"error": API_KEY_REQUIRED}
+    from openprogram.models.providers.settings.thinking_spec import derive_thinking_fields
+
+    from openprogram.models.providers.catalog.metadata import FETCH_MODELS_PROVIDERS, default_api_for, label_for
+    from openprogram.models.providers.catalog.sources import enrich as _enrich_from_community
+
+    fetcher = _load_fetcher(provider_id)
+    # Providers that speak the Anthropic Messages wire format (minimax,
+    # minimax-cn, …) expose Anthropic's GET /v1/models with x-api-key —
+    # the OpenAI-compatible GET /models 404s on their /anthropic host.
+    # Route them to the (now base_url-aware) Anthropic fetcher before the
+    # OpenAI-compat fallback. anthropic's list_models.fetch is base_url-aware.
+    if fetcher is None and default_api_for(provider_id) == "anthropic-messages":
+        fetcher = _load_fetcher("anthropic")
+    if fetcher is None and provider_id in FETCH_MODELS_PROVIDERS:
+        fetcher = _fetch_openai_compat
+    # Anything else with a resolvable base URL — custom (user-added)
+    # providers AND models.dev community providers with no dir of their own —
+    # gets the generic OpenAI-compatible fetcher, which resolves base_url +
+    # key from config/AuthStore/catalogue. Without this fallthrough a
+    # credentialed community provider never saw its real /v1/models (only the
+    # models.dev snapshot), despite the listing advertising supports_fetch.
+    # On failure the generic fetcher returns {"error": ...}, which
+    # _browse_models degrades to the models.dev rows (never caches a failure
+    # as success).
+    if fetcher is None:
+        from openprogram.models.providers.settings.storage import _resolve_base_url
+        if _resolve_base_url(provider_id):
+            fetcher = _fetch_openai_compat
+    if fetcher is None:
+        return {"error": (
+            f"{label_for(provider_id)} has no list-models API available. "
+            "Models are curated manually for this provider."
+        )}
+
+    raw = fetcher(provider_id, timeout)
+    upstream_error: str | None = None
+    stale = False
+    if isinstance(raw, dict) and "error" in raw:
+        upstream_error = str(raw["error"])
+        supplied = raw.get("models")
+        if isinstance(supplied, list) and supplied:
+            raw = supplied
+            stale = True
+        else:
+            from openprogram.models.providers.catalog.subscription_catalog import load_catalog
+
+            cached, _ = load_catalog(provider_id)
+            if cached:
+                return {"models": cached, "stale": True, "error": upstream_error}
+            return {"error": upstream_error}
+    items = raw if isinstance(raw, list) else []
+    if not items:
+        from openprogram.models.providers.catalog.local import is_local_provider
+        if is_local_provider(provider_id) and isinstance(raw, list):
+            return {"models": []}
+        return {"error": "No models returned"}
+
+    models: list[dict[str, Any]] = []
+    for it in items:
+        if isinstance(it, str):
+            models.append({"id": it, "name": it})
+            continue
+        if not isinstance(it, dict):
+            continue
+        mid = it.get("id") or it.get("name")
+        if not mid:
+            continue
+        # OpenRouter and friends include extras; keep id+name and
+        # basics. Anything missing here gets filled in below from the
+        # ``sources.enrich`` community catalogue.
+        entry: dict[str, Any] = {
+            "id": mid,
+            "name": it.get("name") or mid,
+        }
+        ctx = it.get("context_length") or it.get("context_window") or it.get("contextWindow")
+        if ctx:
+            try:
+                entry["context_window"] = int(ctx)
+            except (TypeError, ValueError, OverflowError):
+                # Optional field; an unparseable value leaves the column empty.
+                _log.debug("context window %r unparseable for %s", ctx, mid)
+        # Some fetchers (DeepSeek, custom enrichers) supply a max-tokens
+        # cap they know about — surface it instead of zeroing out the
+        # column. OpenRouter / OpenAI ``/v1/models`` don't include this
+        # natively so the conditional makes it a no-op there.
+        mtok = it.get("max_tokens") or it.get("maxTokens") or it.get("output_token_limit")
+        if mtok:
+            try:
+                entry["max_tokens"] = int(mtok)
+            except (TypeError, ValueError, OverflowError):
+                # Optional field; an unparseable value leaves the column empty.
+                _log.debug("max tokens %r unparseable for %s", mtok, mid)
+        if it.get("vision") or "vision" in str(it.get("architecture", {})).lower():
+            entry["vision"] = True
+        reasoning_hint = bool(it.get("reasoning"))
+        if reasoning_hint:
+            entry["reasoning"] = True
+        # Pass through cost hints when the fetcher computed them
+        # (DeepSeek enricher does; vanilla OpenAI-compatible fetchers
+        # don't). The catalog UI renders these inline.
+        for cost_key in ("input_cost", "output_cost", "cache_read_cost"):
+            if cost_key in it:
+                entry[cost_key] = it[cost_key]
+        # Capability fields a fetcher resolved from the provider's own
+        # account/models API are authoritative — carry them through so the
+        # models.dev enrichment below can't overwrite them. Codex's endpoint
+        # gives the real fast/thinking picker per model; models.dev only has
+        # the public-API-platform guess. ``setdefault`` in enrich already
+        # respects anything present here.
+        for cap_key in (
+            "fast", "thinking_levels", "default_thinking_level",
+            "api_backend", "supports_backend_search", "description",
+            "auto_compact_threshold_percent",
+        ):
+            if cap_key in it:
+                entry[cap_key] = it[cap_key]
+        # Community enrichment: ask models.dev (and any other source
+        # in ``sources._SOURCES``) for context window, output cap,
+        # pricing, modalities, reasoning flag. Provider APIs like
+        # DeepSeek's only return ``{id, owned_by}`` so without this
+        # step their rows would land in the UI with all the numeric
+        # columns at 0 — exactly the "什么都没有吗?" report we got
+        # from the original DeepSeek launch.
+        #
+        # ``setdefault`` semantics: per-fetcher hints (e.g. a richer
+        # ``/v1/models`` response from OpenRouter) win when both
+        # sources have an opinion. We only fill in what the fetcher
+        # didn't already populate.
+        from openprogram.models.providers.catalog.local import is_local_provider
+        community = {} if is_local_provider(provider_id) else _enrich_from_community(provider_id, mid)
+        if is_local_provider(provider_id):
+            entry.setdefault("context_window", 4096)
+            entry.setdefault("max_tokens", 1024)
+            entry["tools"] = it.get("tools")
+        for k, v in community.items():
+            entry.setdefault(k, v)
+        # Auto-detect reasoning capability from provider's probe module
+        # if not already set by the fetcher or enrichment.
+        if "reasoning" not in entry:
+            try:
+                _probe = _load_probe(provider_id)
+                if _probe:
+                    _probe_results = _probe()
+                    _probe_info = _probe_results.get(mid, {})
+                    if _probe_info.get("reasoning"):
+                        entry["reasoning"] = True
+            except Exception:
+                # The probe is a provider plugin hint; without it reasoning
+                # falls back to the name heuristic below.
+                _log.debug("reasoning probe failed for %s", provider_id, exc_info=True)
+        reasoning_hint = bool(entry.get("reasoning") or reasoning_hint)
+        # Thinking capability: if the fetcher already extracted levels
+        # from the API (e.g. Anthropic capabilities), keep them as
+        # authoritative. Otherwise derive from thinking.json / catalog.
+        if not entry.get("thinking_levels"):
+            levels, default_lv, variant = derive_thinking_fields(
+                provider_id, mid, reasoning_hint
+            )
+            if levels:
+                entry["thinking_levels"] = levels
+                if default_lv:
+                    entry["default_thinking_level"] = default_lv
+                if variant:
+                    entry["thinking_variant"] = variant
+        models.append(entry)
+
+    if models and not stale:
+        from openprogram.models.providers.catalog.subscription_catalog import save_catalog
+
+        save_catalog(provider_id, models)
+    result: dict[str, Any] = {"models": models}
+    if upstream_error:
+        result.update(error=upstream_error, stale=True)
+    return result
+
+
+def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
+    """Refresh entry point (the "Fetch Models" button).
+
+    Semantics (per the enabled-models redesign): NO file persistence.
+    Instead:
+
+      1. force-refresh the live-browse cache for this provider so the
+         settings page shows the freshest official-API list, and
+      2. for every currently-ENABLED model of this provider that appears
+         in that fresh browse result, overwrite its stored spec row in
+         config (via the Task-2 spec-row machinery) so a stale enabled
+         spec heals. Enabled models absent from the fresh result keep
+         their stored spec (an upstream blip must not drop the user's
+         selection).
+
+    Returns ``{"fetched": N, "refreshed": [...]}``; when the credentialed
+    official-API fetch errored, the same dict additionally carries
+    ``"error"`` (rows may still be the models.dev fallback) so the UI can
+    show the failure instead of a false "Fetched N".
+    """
+    from ..listing import _browse_models_with_error
+    from openprogram.models.providers.settings.storage import (
+        _cache_lock,
+        _update_providers_cfg,
+        _upsert_spec_row,
+    )
+
+    # ONE force-refresh browse (bypasses the short-TTL cache and re-primes it
+    # for the settings page). This live result is also the upstream match
+    # source — config-layered rows (offline custom providers) must NOT be
+    # matched against, or a spec would "refresh" from its own stored copy and
+    # defeat the absent-upstream guard.
+    live, error = _browse_models_with_error(provider_id, force_refresh=True)
+    by_id = {r.get("id"): r for r in live if r.get("id")}
+
+    refreshed: list[str] = []
+    added: list[str] = []
+    catalogue_changed = False
+    with _cache_lock:
+        changed = False
+
+        def refresh(cfg: dict) -> None:
+            nonlocal changed, catalogue_changed
+            pcfg = cfg.setdefault(provider_id, {})
+            before_models = list(pcfg.get("models") or [])
+            from openprogram.models.providers.catalog.subscription_catalog import SUBSCRIPTION_PROVIDERS
+
+            auto_catalog = provider_id in SUBSCRIPTION_PROVIDERS and bool(by_id) and not error
+            disabled = set(pcfg.get("disabled_models") or [])
+            existing_rows = {
+                row.get("id"): row
+                for row in (pcfg.get("models") or [])
+                if isinstance(row, dict) and row.get("id")
+            }
+            if auto_catalog:
+                # The subscription endpoint is authoritative. New ids become
+                # usable automatically; explicit user disables remain tombstoned.
+                for mid, fresh in by_id.items():
+                    if mid in disabled:
+                        continue
+                    spec = {
+                        key: value for key, value in fresh.items()
+                        if key != "enabled"
+                    }
+                    spec["source"] = "subscription-catalog"
+                    _upsert_spec_row(pcfg, spec)
+                    (refreshed if mid in existing_rows else added).append(mid)
+                    changed = True
+                # Retire models removed from a successful official catalogue,
+                # while preserving manual/custom rows.
+                pcfg["models"] = [
+                    row for row in (pcfg.get("models") or [])
+                    if row.get("id") in by_id
+                    or row.get("source") == "manual"
+                    or pcfg.get("source") == "custom"
+                ]
+                catalogue_changed = before_models != pcfg.get("models", [])
+                return
+            enabled_ids = [
+                row.get("id")
+                for row in (pcfg.get("models") or [])
+                if row.get("id")
+            ] or list(pcfg.get("enabled_models") or [])
+            for mid in enabled_ids:
+                fresh = by_id.get(mid)
+                if not fresh:
+                    continue
+                spec = {key: value for key, value in fresh.items() if key != "enabled"}
+                _upsert_spec_row(pcfg, spec)
+                refreshed.append(mid)
+                changed = True
+
+            catalogue_changed = before_models != pcfg.get("models", [])
+
+        _update_providers_cfg(refresh)
+
+    if catalogue_changed:
+        # The worker may refresh while a browser or desktop window is already
+        # open.  Push only an invalidation hint; each client then re-reads the
+        # canonical HTTP endpoints instead of trusting event payload data.
+        try:
+            from openprogram.state.event_sink import emit_ws_frame
+
+            emit_ws_frame({
+                "type": "provider_models_changed",
+                "data": {"provider": provider_id},
+            })
+        except Exception:
+            # Only a refresh hint; clients re-read the catalogue on next load.
+            _log.debug("provider_models_changed not emitted for %s", provider_id, exc_info=True)
+
+    out = {
+        "provider": provider_id,
+        "fetched": len(live),
+        "refreshed": refreshed,
+        "added": len(added),
+    }
+    if error:
+        out["error"] = error
+    return out
+
+
+__all__ = ["fetch_models_remote", "fetch_and_normalize", "_load_fetcher"]

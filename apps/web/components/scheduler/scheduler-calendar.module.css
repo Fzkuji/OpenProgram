@@ -1,0 +1,66 @@
+/* Schedule-X follows the App theme: every --sx-* role it reads is pointed
+   at one of our tokens, so light, dark and every custom theme carry over
+   without a colour of its own. The roles are set on the calendar wrapper
+   itself (and its .is-dark variant) so they win over the defaults that
+   @schedule-x/theme-default puts on :root and .is-dark. */
+.calendar,
+.calendar :global(.sx__calendar-wrapper),
+.calendar :global(.sx__calendar-wrapper.is-dark),
+.calendar :global(.is-dark) {
+  --sx-color-primary: var(--theme-accent);
+  --sx-color-on-primary: var(--primary-foreground);
+  --sx-color-primary-container: color-mix(in srgb, var(--theme-accent) 14%, var(--bg-primary));
+  --sx-color-on-primary-container: var(--text-bright);
+  --sx-color-secondary: var(--text-secondary);
+  --sx-color-on-secondary: var(--bg-primary);
+  --sx-color-secondary-container: var(--bg-tertiary);
+  --sx-color-on-secondary-container: var(--text-primary);
+  --sx-color-tertiary: var(--text-secondary);
+  --sx-color-on-tertiary: var(--bg-primary);
+  --sx-color-tertiary-container: var(--bg-tertiary);
+  --sx-color-on-tertiary-container: var(--text-primary);
+  --sx-color-surface: var(--bg-primary);
+  --sx-color-surface-dim: var(--bg-secondary);
+  --sx-color-surface-bright: var(--bg-primary);
+  --sx-color-on-surface: var(--text-primary);
+  --sx-color-surface-container: var(--bg-secondary);
+  --sx-color-surface-container-low: var(--bg-secondary);
+  --sx-color-surface-container-high: var(--bg-tertiary);
+  --sx-color-background: var(--bg-primary);
+  --sx-color-on-background: var(--text-primary);
+  --sx-color-outline: var(--text-muted);
+  --sx-color-outline-variant: var(--border-light);
+  --sx-color-shadow: var(--scrim);
+  --sx-color-surface-tint: var(--theme-accent);
+  --sx-color-neutral: var(--text-muted);
+  --sx-color-neutral-variant: var(--border-light);
+  --sx-internal-color-gray-ripple-background: var(--bg-hover);
+  --sx-internal-color-light-gray: var(--bg-secondary);
+  --sx-internal-color-text: var(--text-primary);
+  --sx-border: 1px solid var(--border);
+  --sx-box-shadow-level3: var(--shadow-popover);
+  --sx-rounding-extra-small: var(--radius-xs);
+  --sx-rounding-small: var(--radius-lg);
+  --sx-rounding-extra-large: var(--radius-xl);
+  --sx-font-extra-small: var(--fs-xs);
+  --sx-font-small: var(--fs-sm);
+  --sx-font-large: var(--fs-md);
+  --sx-font-extra-large: var(--fs-title);
+  --sx-calendar-header-input-font-size: var(--fs-sm);
+}
+
+/* The React wrapper has no size of its own; fill the page body. */
+.calendar :global(.sx-react-calendar-wrapper) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Keep the page's typeface rather than the library's. */
+.calendar :global(.sx__calendar-wrapper) {
+  font-family: inherit;
+}
+
+.calendar :global(.op-scheduler-run) {
+  cursor: pointer;
+}

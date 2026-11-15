@@ -1,0 +1,44 @@
+<title>Run a task when something happens</title>
+<meta name="description" content="Run a task when a command&#x27;s output changes or another service calls a webhook.">
+<meta name="covers" content="openprogram/runtime/scheduler/hooks.py openprogram/programs/tools/jobs/">
+<h1>Run a task when something happens</h1>
+<p>Ask in plain words; the agent sets it up with its <code translate="no">scheduler</code> tool. For runs at a time, see <a href="reminders.html">reminders</a>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Trigger</th><th scope="col">Example</th><th scope="col">Fires when</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">watch</code> on a recurring or monitor task</th><td>"Every 10 minutes, check <code translate="no">gh pr list --repo me/app</code> and tell me about new pull requests."</td><td>The command's output differs from the previous check. Cron sets how often it is checked.</td></tr>
+<tr><th scope="row"><code translate="no">webhook</code> task</th><td>"Give me a webhook that triages new issues from our tracker."</td><td>Another service calls it. No schedule.</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Runs</th><th scope="col">Receives the event as</th><th scope="col">Approval</th></tr></thead>
+<tbody>
+<tr><th scope="row">An agent prompt</th><td>Fenced text marked as data; told to do only your task and ignore requests inside</td><td>Background, nobody to ask: calls needing approval are refused</td></tr>
+<tr><th scope="row">A reminder waking the agent in this conversation</th><td>Text marked as outside content</td><td>The conversation's own permission mode</td></tr>
+<tr><th scope="row">A shell command</th><td><code translate="no">OPENPROGRAM_EVENT</code>, with <code translate="no">OPENPROGRAM_EVENT_SOURCE</code> set to <code translate="no">webhook</code> or <code translate="no">watch</code></td><td>—</td></tr>
+</tbody>
+</table>
+<h2 id="when-something-changes">When something changes</h2>
+<ul>
+<li>The first check records the baseline and runs nothing; changing the command starts a new baseline.</li>
+<li>The run receives a diff of the output.</li>
+<li>The command runs in the task's sandbox and must finish within 2 minutes. A check that fails or times out runs nothing, keeps the baseline and shows as a failed run.</li>
+<li>A change found while the previous run is still going is not lost: the next check sees it again.</li>
+</ul>
+<h2 id="when-a-service-calls">When a service calls</h2>
+<pre translate="no" tabindex="0"><code>POST http://127.0.0.1:18100/hooks/&lt;task id&gt;
+X-OpenProgram-Key: &lt;key&gt;</code></pre>
+<p class="note">The key can also be a GitHub webhook's secret. GitHub signs with it (<code translate="no">X-Hub-Signature-256</code>) and the run is told the event name.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Response</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">202</code></th><td>Started</td></tr>
+<tr><th scope="row"><code translate="no">404</code></th><td>Wrong key or unknown task</td></tr>
+<tr><th scope="row"><code translate="no">409</code></th><td>Task is paused, or <code translate="no">previous_run_active</code>: its last run has not finished, so call again later</td></tr>
+<tr><th scope="row"><code translate="no">413</code></th><td>Body over 64 KB</td></tr>
+<tr><th scope="row"><code translate="no">429</code></th><td>Within 10 seconds of the last start</td></tr>
+</tbody>
+</table>
+<p class="note">The run receives the first 8,000 characters of the body. The URL is on this computer; a service on the internet needs a tunnel or a <a href="../server/configuration.html#who-can-reach-the-server">public Web address</a>.</p>
+<h2 id="see-pause-or-delete">See, pause or delete</h2>
+<p>In <strong>Scheduler</strong>, or ask the agent. A webhook task shows <strong>When called</strong> as its schedule. Each run's log, with its event, is in the scheduler's <code translate="no">logs</code> folder.</p>

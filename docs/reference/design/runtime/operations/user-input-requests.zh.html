@@ -1,0 +1,86 @@
+<title>用户输入请求</title>
+<meta name="description" content="运行中的 Workflow 如何提问并在原进程等待，以及它与 Agent 问题的区别。">
+<h1>用户输入请求</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">运行中 Workflow 问题</th><th scope="col">预声明的 Agent 问题</th></tr></thead>
+<tbody>
+<tr><th scope="row">调用方</th><td><code translate="no">ask_user(question)</code>、<code translate="no">runtime.ask(...)</code></td><td>带预声明等待的 Agent 工具交互</td></tr>
+<tr><th scope="row">等待时</th><td>原进程，原调用栈</td><td>暂停执行，结束当前 attempt</td></tr>
+<tr><th scope="row">保存内容</th><td>问题、处理策略、回答。没有检查点。</td><td>检查点</td></tr>
+<tr><th scope="row">回答之后</th><td>函数从调用处返回。不创建新 attempt，不重放模型或已完成的工具。</td><td>从检查点继续</td></tr>
+<tr><th scope="row">刷新浏览器</th><td>执行者有效时重新显示问题</td><td>重新显示问题</td></tr>
+<tr><th scope="row">重启 worker</th><td>执行中断，不恢复调用栈，不重放</td><td>仍然可用</td></tr>
+<tr><th scope="row">工具权限</th><td>不能用于批准</td><td>权限批准机制不变</td></tr>
+</tbody>
+</table>
+<p class="note">preapproved wait 优先于运行中绑定，且必须与提问内容完全一致。</p>
+
+<h2 id="api">API 与结果</h2>
+<pre translate="no" tabindex="0">from openprogram.programs.tools.interaction.ask_user import ask_user
+answer = ask_user("这份材料的作者是谁？")
+
+runtime.ask(prompt=None, *, options=None, multi=False, allow_custom=True,
+            questions=None, timeout=300.0, default=None)</pre>
+<table class="stack">
+<thead><tr><th scope="col">结果</th><th scope="col"><code translate="no">runtime.ask</code></th><th scope="col"><code translate="no">ask_user</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">已回答</th><td>回答内容</td><td>回答内容</td></tr>
+<tr><th scope="row">拒绝</th><td><code translate="no">UserDeclined</code></td><td><code translate="no">None</code></td></tr>
+<tr><th scope="row">超时</th><td>有 <code translate="no">default</code> 时返回它，否则 <code translate="no">AskTimeout</code></td><td><code translate="no">None</code></td></tr>
+<tr><th scope="row">执行被取消</th><td>执行取消异常</td><td>继续传播</td></tr>
+<tr><th scope="row">runtime、存储或传输错误</th><td>继续传播</td><td>继续传播</td></tr>
+<tr><th scope="row">没有 handler 或可用 runtime</th><td></td><td><code translate="no">None</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">runtime.confirm</code> 和 <code translate="no">runtime.form</code> 使用同一提问通道。</p>
+
+<details>
+<summary><code translate="no">ask_user</code> 如何取得回答</summary>
+<ol>
+<li><code translate="no">run_with_follow_up</code> 设置的 handler（作用域为执行上下文，后台线程继承），或全局 CLI handler。作用域 handler 不替换前端 handler，也不会截获其他并发 Workflow 的问题。</li>
+<li><code translate="no">runtime.ask</code>，当 runtime 有提问通道或已连接会话时。</li>
+<li>终端输入，当运行在 TTY 上时。</li>
+<li><code translate="no">None</code>。</li>
+</ol>
+<p>每个 <code translate="no">FollowUp</code> 只接受一次回答，重复回答立即失败。</p>
+</details>
+
+<h2 id="live-workflow-ownership">运行中 Workflow 的归属</h2>
+<p>子进程执行器在调用期间绑定 execution ID、attempt ID、generation 和进程实例身份。没有该绑定的 runtime 不能创建运行中问题。</p>
+<p>创建与回答都在同一事务里检查：execution 正在运行，attempt 仍是当前有效执行者，租约有效。</p>
+<dl class="pairs">
+<dt>发布</dt><dd>子进程通过 <code translate="no">QueueTransport</code> 发送 <code translate="no">question.asked</code>；父进程从已保存的请求生成前端事件，并转发正式回答通知</dd>
+<dt>回答依据</dt><dd>正式等待存储。registry 只负责唤醒本地等待。</dd>
+<dt>拒绝</dt><dd>重复回答和其他 execution 的回答，由命令协议拒绝</dd>
+</dl>
+
+<h2 id="browser-and-process-lifecycle">浏览器与进程生命周期</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事件</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">加载会话</th><td>未解决的问题以问题卡片已能处理的同一帧重发</td></tr>
+<tr><th scope="row">回答</th><td>问题接口和 execution 回答命令使用同一记录和同一鉴权</td></tr>
+<tr><th scope="row">停止执行</th><td>取消其待答问题</td></tr>
+<tr><th scope="row">子进程退出</th><td>只关闭该进程的运行中问题</td></tr>
+<tr><th scope="row">执行者失效</th><td>取消遗留问题；迟到回答不能继续已结束的调用</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>参考设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">系统</th><th scope="col">借鉴内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">opencode</th><td>工具调用 <code translate="no">ctx.ask(...)</code>：服务端 Deferred 和 pending 表，<code translate="no">permission.asked</code> 下发，REST 回复上行，并有列表接口供重连客户端恢复待答问题。拒绝可携带文字，模型看到的是工具错误。</td></tr>
+<tr><th scope="row">Claude Code</th><td>AskUserQuestion 走权限管线；选项加始终存在的 “Other”；待答请求快照存入会话 metadata 供远程界面重绘，绝不保存执行栈；没有人在线时禁用需要交互的工具。</td></tr>
+<tr><th scope="row">openclaw</th><td>30 分钟超时并有明确回退；频道按钮的值是纯文本命令（<code translate="no">/approve &lt;id&gt; …</code>），纯文本频道也能用；频道发起的运行由工具先返回 “pending”，结果稍后注入。</td></tr>
+<tr><th scope="row">MCP elicitation</th><td>三种结果（accept、decline、cancel）和表单式提问的扁平对象 schema 限制。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>验证</summary>
+<p>测试使用公开 <code translate="no">ask_user</code>、真实 Runtime 和正式等待命令：原调用继续、取消、归属或会话无效、传输失败、进程清理。本机验收要求安装版 App 中出现问题、刷新浏览器、回答后 Workflow 完成。返回 <code translate="no">WAITING_USER</code> 对象不能说明界面可用。</p>
+</details>

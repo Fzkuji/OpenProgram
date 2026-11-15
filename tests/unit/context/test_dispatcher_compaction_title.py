@@ -25,11 +25,12 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.agent.dispatcher import titles as title_module
-from openprogram.agent.session_db import SessionDB
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.providers.types import (
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.runtime.conversation.turn_runtime import titles as title_module
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.models.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
     EventDone,
@@ -41,7 +42,7 @@ from openprogram.providers.types import (
     TextContent,
     Usage,
 )
-from openprogram.providers.structured_output import (
+from openprogram.models.providers.structured_output import (
     JsonSchemaOutput,
     StructuredOutputValidationError,
 )
@@ -95,7 +96,7 @@ def make_text_stream(text: str, *, input_tokens: int = 1):
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     return db
 
 
@@ -144,15 +145,15 @@ def _install_title_runtime(
     runtime: _TitleRuntimeSpy,
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.providers.default_llm._read_default_model",
+        "openprogram.models.providers.streaming.background_llm.background_model",
         lambda: ("openai", "stub"),
     )
     monkeypatch.setattr(
-        "openprogram.providers.registry.create_runtime",
+        "openprogram.runtime.agent.runtime.factory.create_runtime",
         lambda **_kwargs: runtime,
     )
     monkeypatch.setattr(
-        "openprogram.providers.default_llm.build_default_llm",
+        "openprogram.models.providers.streaming.background_llm.build_background_llm",
         lambda: None,
     )
 
@@ -219,7 +220,7 @@ def test_llm_title_allows_one_structured_repair(
 
     runtime = Runtime(call=call, model="test")
     monkeypatch.setattr(
-        "openprogram.providers.default_llm._read_default_model",
+        "openprogram.models.providers.streaming.background_llm.background_model",
         lambda: ("openai", "configured-model"),
     )
 
@@ -228,7 +229,7 @@ def test_llm_title_allows_one_structured_repair(
         return runtime
 
     monkeypatch.setattr(
-        "openprogram.providers.registry.create_runtime",
+        "openprogram.runtime.agent.runtime.factory.create_runtime",
         create_runtime,
     )
 
@@ -253,7 +254,7 @@ def test_llm_title_does_not_log_provider_exception_bodies(
         close_error=RuntimeError(sentinel) if stage == "close" else None,
     )
     monkeypatch.setattr(
-        "openprogram.providers.default_llm._read_default_model",
+        "openprogram.models.providers.streaming.background_llm.background_model",
         lambda: ("openai", "stub"),
     )
 
@@ -263,7 +264,7 @@ def test_llm_title_does_not_log_provider_exception_bodies(
         return runtime
 
     monkeypatch.setattr(
-        "openprogram.providers.registry.create_runtime",
+        "openprogram.runtime.agent.runtime.factory.create_runtime",
         create_runtime,
     )
 
@@ -285,7 +286,7 @@ def test_auto_title_stamps_from_first_user_message(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="What is the weather?",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="What is the weather?",
                           agent_id="main", source="tui"),
         )
 
@@ -306,7 +307,7 @@ def test_auto_title_truncates_long_input(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text=long_msg,
+            agent_turn_request.TurnRequest(session_id="c1", user_text=long_msg,
                           agent_id="main", source="tui"),
         )
 
@@ -328,7 +329,7 @@ def test_auto_title_is_idempotent_across_turns(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="first",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="first",
                           agent_id="main", source="tui"),
         )
 
@@ -337,7 +338,7 @@ def test_auto_title_is_idempotent_across_turns(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="completely different topic",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="completely different topic",
                           agent_id="main", source="tui"),
         )
 
@@ -360,7 +361,7 @@ def test_auto_title_skips_empty_input(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="   \n  ",  # whitespace only
+            agent_turn_request.TurnRequest(session_id="c1", user_text="   \n  ",  # whitespace only
                           agent_id="main", source="tui"),
         )
 
@@ -402,7 +403,7 @@ def test_after_turn_does_not_emit_compaction_recommended(
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="more",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="more",
                           agent_id="main", source="tui"),
             on_event=captured.append,
         )
@@ -425,7 +426,7 @@ def test_compaction_signal_silent_under_threshold(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi",
                           agent_id="main", source="tui"),
             on_event=captured.append,
         )
@@ -468,7 +469,7 @@ def test_trigger_compaction_inserts_summary_and_moves_head(
     async def _fake_gen(*args, **kwargs):
         return "compressed summary of earlier discussion"
     monkeypatch.setattr(
-        "openprogram.context.summarize.Summarizer._llm_summary",
+        "openprogram.runtime.context.compaction.summarize.Summarizer._llm_summary",
         _fake_gen,
     )
 
@@ -512,8 +513,8 @@ def test_trigger_compaction_inserts_summary_and_moves_head(
 
 
 def test_web_compact_rejects_an_unknown_session(monkeypatch):
-    from openprogram.webui import server
-    from openprogram.webui.ws_actions.chat import handle_compact
+    from openprogram.interfaces.server import server
+    from openprogram.interfaces.server.ws_actions.chat import handle_compact
 
     class EmptyDB:
         def get_session(self, session_id):
@@ -526,7 +527,7 @@ def test_web_compact_rejects_an_unknown_session(monkeypatch):
         async def send_text(self, payload):
             self.messages.append(json.loads(payload))
 
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: EmptyDB())
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: EmptyDB())
     monkeypatch.setattr(
         server,
         "_get_or_create_session",
@@ -536,11 +537,64 @@ def test_web_compact_rejects_an_unknown_session(monkeypatch):
 
     asyncio.run(handle_compact(ws, {"session_id": "stale-session"}))
 
-    assert ws.messages == [{
-        "type": "chat_response",
-        "data": {
-            "type": "error",
-            "session_id": "stale-session",
-            "content": "compact: unknown session stale-session",
-        },
-    }]
+    assert len(ws.messages) == 1 and ws.messages[0]["type"] == "chat_response"
+    data = ws.messages[0]["data"]
+    assert (data["type"], data["session_id"], data["code"], data["content"]) == (
+        "error", "stale-session", "unknown_session",
+        "compact: unknown session stale-session",
+    )
+    assert data["msg_id"]
+
+
+def test_title_supports_provider_without_verified_native_schema(monkeypatch):
+    from openprogram.models.providers.structured_output import (
+        StructuredOutputCapabilities, negotiate_structured_output,
+        parse_and_validate_json,
+    )
+    model = Model(id='deepseek-flash', name='DeepSeek', provider='deepseek',
+                  api='openai-completions', base_url='https://api.deepseek.com')
+    class PromptRuntime(_TitleRuntimeSpy):
+        def exec(self, **kwargs):
+            self.calls.append(kwargs)
+            output = kwargs['response_format']
+            plan = negotiate_structured_output(model, StructuredOutputCapabilities(), output)
+            assert plan.mode == 'prompt'
+            assert kwargs['toolset'] == 'none'
+            return parse_and_validate_json('{"title":"会话自动命名"}', output)
+    runtime = PromptRuntime()
+    _install_title_runtime(monkeypatch, runtime)
+    assert title_module._generate_llm_title('自动命名功能验收', '已记录') == '会话自动命名'
+    assert runtime.closed
+
+
+def test_trigger_compaction_runs_on_the_model_the_turns_run_on(
+    tmp_db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A branch with no model of its own follows its Agent or the model the
+    person ran last, for /compact exactly as for a reply."""
+    tmp_db.create_session("c2", "main")
+    last = None
+    for i in range(6):
+        tmp_db.append_message("c2", {
+            "id": f"n{i}", "role": "user" if i % 2 == 0 else "assistant",
+            "content": f"turn {i}", "timestamp": float(i), "predecessor": last,
+        })
+        last = f"n{i}"
+    tmp_db.set_head("c2", last)
+    monkeypatch.setattr(
+        "openprogram.runtime.conversation.session_model.new_session_chat_model",
+        lambda agent_id=None: ("fallback-provider", "fallback-model"),
+    )
+    seen: list = []
+
+    class _Stop(Exception):
+        pass
+
+    def _resolve(profile, override):
+        seen.append(override)
+        raise _Stop
+
+    monkeypatch.setattr(title_module, "_resolve_model", _resolve)
+    with pytest.raises(_Stop):
+        D.trigger_compaction("c2", agent_id="main", on_event=lambda event: None)
+    assert seen == ["fallback-provider/fallback-model"]

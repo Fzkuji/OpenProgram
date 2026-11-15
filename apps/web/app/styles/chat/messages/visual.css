@@ -1,0 +1,37 @@
+/* ```visual views in replies (lib/chat/markdown/visual.ts, visual-frames.ts):
+   the model's HTML/SVG in a sandboxed iframe, the reply's width, as tall as
+   its content. No frame of its own: the view draws its own cards. */
+.op-visual {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.op-visual-frame {
+  display: block;
+  width: 100%;
+  /* Until the view reports its height. */
+  height: 120px;
+  border: 0;
+  background: transparent;
+  color-scheme: normal;
+}
+.op-visual-drawing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid light-dark(var(--border), var(--border-light));
+  border-radius: var(--radius-xl);
+}
+.op-visual-skeleton {
+  display: block;
+  height: 10px;
+  border-radius: var(--radius-xs);
+  background: light-dark(var(--border), var(--border-light));
+  animation: op-visual-pulse 1.4s ease-in-out infinite;
+}
+.op-visual-skeleton:nth-child(1) { width: 40%; height: 12px; }
+.op-visual-skeleton:nth-child(2) { width: 85%; }
+.op-visual-skeleton:nth-child(3) { width: 65%; }
+@keyframes op-visual-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .op-visual-skeleton { animation: none; } }

@@ -1,0 +1,37 @@
+<title>站点可发现性与性能设计</title>
+<meta name="description" content="落地页和双语文档为搜索、语言发现和页面速度输出什么。">
+<h1>站点可发现性与性能</h1>
+<p>落地页（<code translate="no">website/index.html</code>）和生成的文档都是 GitHub Pages 上的静态 HTML。不改定位、托管或内容。</p>
+
+<h2>已有</h2>
+<p>落地页：canonical、description、Open Graph 和 Twitter 卡片、<code translate="no">SoftwareSourceCode</code> JSON-LD、<code translate="no">robots.txt</code>、<code translate="no">sitemap.xml</code>、<code translate="no">llms.txt</code>。文档：绝对 canonical 和成对的中英文文件。</p>
+
+<h2>行为</h2>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">输出</th><th scope="col">依据</th></tr></thead>
+<tbody>
+<tr><th scope="row">首屏图</th><td>初始 HTML 中专用的 AVIF，带固有尺寸，是唯一 <code translate="no">fetchpriority="high"</code> 的图片。原 PNG 留给文档和既有链接。</td><td><a href="https://web.dev/articles/optimize-lcp">优化 LCP</a>、<a href="https://web.dev/learn/design/responsive-images">响应式图片</a></td></tr>
+<tr><th scope="row">落地页图片和文字</th><td>明确宽高。次要文字达到 WCAG AA。复制按钮用可见内容命名。渐变标题里的 <code translate="no">program</code> 用高对比品牌色。</td><td>Lighthouse</td></tr>
+<tr><th scope="row">语言配对</th><td>相同且互指的 <code translate="no">en</code>、<code translate="no">zh-Hans</code>、<code translate="no">x-default</code> 链接，英文作回退，与 canonical 同源同基路径。未配对页不输出。</td><td><a href="https://developers.google.com/search/docs/specialty/international/localized-versions">本地化版本</a></td></tr>
+<tr><th scope="row">Canonical</th><td>指向自身；语言切换不变</td><td></td></tr>
+<tr><th scope="row">面包屑</th><td>每个内容页一个 <code translate="no">BreadcrumbList</code>：<code translate="no">OpenProgram Docs → 当前页</code>。文档根没有。由标准库序列化并转义 <code translate="no">&lt;</code>。</td><td><a href="https://developers.google.com/search/docs/appearance/structured-data/breadcrumb">面包屑数据</a></td></tr>
+<tr><th scope="row">发布订阅</th><td>一个 <code translate="no">application/atom+xml</code> alternate，指向 <code translate="no">https://github.com/FuzzyKuji/OpenProgram/releases.atom</code></td><td>不新增发布服务</td></tr>
+</tbody>
+</table>
+<p class="note">拒绝：为富结果改成 <code translate="no">SoftwareApplication</code>，因为没有评分或报价数据；统计、跟踪、Cookie 横幅、新运行时依赖、CDN 或托管变更。GitHub Pages 缓存头不受仓库控制。</p>
+
+<h2>验收</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">检查</th><th scope="col">要求</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">python -m scripts.docs_site.check_landing</code></th><td>拒绝旧标记、旧双语构建、重复或无关的 Atom 订阅；校验主 AVIF、其 <code translate="no">&lt;picture&gt;</code>、回退尺寸和语义化 <code translate="no">hreflang</code></td></tr>
+<tr><th scope="row"><code translate="no">python -m scripts.docs_site.build</code>、<code translate="no">checklinks</code></th><td>通过</td></tr>
+<tr><th scope="row">首屏图</th><td>明显小于 PNG，带声明的固有尺寸</td></tr>
+<tr><th scope="row">移动端 Lighthouse</th><td>未设尺寸图片、对比度、标签与名称不符、图片交付、LCP 发现均无失败；SEO 和最佳实践保持 100</td></tr>
+<tr><th scope="row">构建的文档</th><td>根页没有 <code translate="no">BreadcrumbList</code>；每个 canonical 内容页有一条以 <code translate="no">https://fuzzykuji.github.io/openprogram-site/docs/</code> 为根的有效两项路径</td></tr>
+<tr><th scope="row">部署</th><td>CI 在评审过的提交上通过，线上页面能复现这些标记</td></tr>
+</tbody>
+</table>
+
+<h2>实现状态</h2>
+<p>已实现。部署站点最近一次移动端 Lighthouse：性能、无障碍、最佳实践和 SEO 均为 100，LCP 1.0 秒。</p>

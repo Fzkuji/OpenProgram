@@ -1,0 +1,89 @@
+<title>Transcript rows and ownership</title>
+<meta name="description" content="The transcript model's data: views, TranscriptView, Turn, Row, Block, browser-only rows and overlays, and which code owns each fact.">
+<meta name="covers" content="apps/web/lib/session-store/index.ts openprogram/interfaces/server/persistence.py">
+<h1 id="title">Transcript rows and ownership</h1>
+<p class="note">Part of the <a href="transcript-model.html">transcript model</a> record. Built so far: <a href="transcript-model.html#status">implementation status</a>.</p>
+<h2 id="model">The model</h2>
+<p>Defined once in <code translate="no">.../transcript/schema.py</code>. TypeScript is generated from it.</p>
+<h3>View</h3>
+<p>Key: <code translate="no">session_id</code>, or <code translate="no">&lt;session_id&gt;#sub-agent:&lt;first job id&gt;</code>. Two panes on one conversation share one view.</p>
+<ul>
+<li><code translate="no">turns</code>: loaded Turns in order. The server decides order, the client holds the span.</li>
+<li><code translate="no">window</code>: <code translate="no">{ head_id, revision, before, after, start, end, total }</code>. Same names the history hooks read, minus <code translate="no">snapshot</code>, plus <code translate="no">revision</code>. Counted in turns. <code translate="no">start</code> and <code translate="no">end</code> are absolute positions in the turn index, stable while the head only advances.</li>
+<li>A view has a window only after a server read or a chat ack that carries one. A pane can never mistake leftover rows for a loaded chat.</li>
+</ul>
+<h3>TranscriptView (server)</h3>
+<p>Per view, ids only, no bodies: ordered turns, owner map (node id to turn, row and slot), open rows with a block crc, child maps, the derived-field table, compaction slots, goal-verification anchors, and either <code translate="no">head_id</code> (main view) or <code translate="no">tip</code> (sub-agent view).</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Input set</th><td>Exactly the rows the transcript shows: <code translate="no">get_messages</code>' filter (no <code translate="no">display=root</code>, <code translate="no">rewound</code>, <code translate="no">structural</code> or hidden <code translate="no">context/*</code>), minus <code translate="no">execution_control</code> rows and the closure of their caller descendants. Role=tool rows with an assistant caller are folded into their parent as <code translate="no">aggregate_tool_messages</code> does.</td></tr>
+<tr><th scope="row">Chain and failures</th><td>The chain is the head's branch in branch order. A head folded away by aggregation resolves through the <code translate="no">_resolve_head</code> walk; a broken predecessor chain falls back to the predecessor walk over the same input set. Both are named cases in <code translate="no">legacy.py</code>. Any other read failure returns a retryable error.</td></tr>
+</tbody>
+</table>
+<p><strong>Turn membership</strong> (<code translate="no">turn_index.py</code>). Rows are classified in this order and the first match decides:</p>
+<ol>
+<li>Side rows join the row they hang from and never open a turn: <code translate="no">function=attach</code> (predecessor-only or both edges), runtime placeholders (<code translate="no">type=status</code>, <code translate="no">display=runtime</code>, with a predecessor; a rebuilt function run has none and opens its own turn), tool rows, caller descendants, summaries with <code translate="no">covers_ids</code>.</li>
+<li>Compaction <code translate="no">{id}_ui</code> and <code translate="no">{id}_card</code> rows stay at their exact position inside the surrounding turn.</li>
+<li>Steers (<code translate="no">steering</code>) and restart prompts (<code translate="no">trigger=restart</code>) join the turn they sit in, as do cut replies and continuations.</li>
+<li>These open a turn: a visible user row, including <code translate="no">job_followup</code> and <code translate="no">display=runtime</code> prompts; a top-level function run; an assistant row whose predecessor is not a user row of the current turn (proactive always-on replies); a system row with no prompt.</li>
+</ol>
+<p><code translate="no">spawn_branch_root</code> rows are never adopted into a parent turn by a caller edge. Caller descendants match only the tool and leaf rule of <code translate="no">_collect_exec_rows</code>.</p>
+<p>The index is extended as the head advances and rebuilt on a structure change. Views no socket holds sit in an LRU of 16. A view a socket holds is never evicted.</p>
+<p>The store's transcript state moves on what the index keeps instead of reading fresh: a reparent, and a metadata patch to a summary, whose compaction rows are drawn from its metadata. Compaction stamps <code translate="no">tokens_before</code>, <code translate="no">tokens_after</code> and <code translate="no">compacted_at</code> after the insert. Other patches change row bodies, which every read takes fresh.</p>
+<p>Everything non-local is computed from index metadata, so a turn can be projected alone: compaction slots and <code translate="no">superseded_summary</code> from summary nodes, <code translate="no">spawned_from</code> from attach nodes, sibling navigation from child maps, goal marks from one scan of the session's executions held as <code translate="no">{assistant id: execution id}</code> and extended as new turns appear.</p>
+<h3>Turn</h3>
+<p><code translate="no">{ id, rows }</code>. <code translate="no">id</code> is the opener row's id. A compaction row placed before the first opener joins that turn but never becomes its id, so the id is stable.</p>
+<h3>Row</h3>
+<p>The existing <code translate="no">ChatMsg</code>, same camelCase fields, built on the server. Additions:</p>
+<ul>
+<li><code translate="no">rowKind</code>: <code translate="no">user | assistant | function_run | system_text | system_event | compaction_card | agent_notice | received_message | spawned_root | sub_agent_step | external_reference | silent</code>. One value per branch of <code translate="no">dispatch()</code>, which has no default. <code translate="no">silent</code> covers <code translate="no">display=runtime</code> prompts and internal goal turns.</li>
+<li><code translate="no">kind</code> and <code translate="no">slot</code> keep their existing meaning and are not additions: <code translate="no">kind</code> is <code translate="no">compaction | snip | event</code>, <code translate="no">slot</code> is <code translate="no">card | event</code>. A <code translate="no">system_event</code> row carries its sub-kind there. A <code translate="no">compaction_card</code> row is always <code translate="no">kind: compaction</code>, <code translate="no">slot: card</code>. Only <code translate="no">SystemEventRow</code> reads them; covering reads <code translate="no">coveredBy</code>.</li>
+<li><code translate="no">status</code>: <code translate="no">pending | running | streaming | paused | cancelling | done | error | cancelled | interrupted</code>, from one mapping in <code translate="no">status.py</code>.</li>
+<li><code translate="no">steeringReplyId</code>, <code translate="no">continuedBy</code>: stamped by the server, because the bot view still draws those rows.</li>
+<li><code translate="no">continues</code>: ids of the cut replies a continuation joins, oldest first.</li>
+<li><code translate="no">attachCards</code>, <code translate="no">runtimeChildren</code>, <code translate="no">callRoots</code>: names unchanged. Each child gains <code translate="no">blockId</code>, the resolved owning block, or null when unpaired. An unpaired child is drawn, never lost.</li>
+<li><code translate="no">coveredBy</code>: compaction id.</li>
+<li><code translate="no">origin</code> on user rows: <code translate="no">person | agent_delivery</code>.</li>
+<li><code translate="no">clientRequestId</code>: <code translate="no">metadata.client_request_id</code>, or <code translate="no">metadata.command_id</code> on a steer row.</li>
+</ul>
+<h3>Block</h3>
+<p>As stored, plus <code translate="no">id</code> and <code translate="no">index</code>.</p>
+<ul>
+<li>Tool block: <code translate="no">id = tool_call_id</code>; a legacy tool block with no id uses <code translate="no">tool:N</code>.</li>
+<li>Text and thinking: <code translate="no">id = &lt;type&gt;:&lt;n&gt;</code>, where <code translate="no">n</code> counts runs of that type, a run being consecutive stored blocks of one type. The first block of a run keeps <code translate="no">&lt;type&gt;:&lt;n&gt;</code>. A later block in the same run is <code translate="no">&lt;type&gt;:&lt;n&gt;.&lt;k&gt;</code>. The stream tap merges consecutive deltas into one block, so its block and the first block of the final segmentation share an id, and an open step keeps its place when the final write re-segments.</li>
+<li><code translate="no">index</code> is the stored position in <code translate="no">blocks</code>. Blocks are always held sorted by <code translate="no">index</code>, so block order never depends on arrival order.</li>
+<li><code translate="no">fullOutput</code> names the real row: <code translate="no">&lt;reply&gt;_t_&lt;tid&gt;</code>.</li>
+</ul>
+<h3>Local rows and overlays (browser only)</h3>
+<p><strong>Local rows</strong> are rows with no server copy: pending send, failed send, optimistic function placeholder, <code translate="no">local_command</code> and no-op notices, compaction notices. They belong to no Turn and carry an anchor:</p>
+<ul>
+<li><code translate="no">tail</code> (sends and placeholders): drawn after every turn, in creation order. A <code translate="no">turn_upsert</code> from elsewhere inserts before them. Removed by acknowledgement or by a server row with the same <code translate="no">clientRequestId</code>.</li>
+<li><code translate="no">afterRowId</code> (notices): drawn directly after the row that was last when the notice appeared. Not drawn when that row is outside the window.</li>
+</ul>
+<p>Every local row carries a <code translate="no">rowKind</code>. A pending or failed send is <code translate="no">user</code>, an optimistic function placeholder <code translate="no">function_run</code>, a <code translate="no">local_command</code> or no-op notice <code translate="no">system_text</code>, a compaction notice <code translate="no">system_event</code> with <code translate="no">kind: compaction</code>. The typed local append requires the field, so dispatch never meets a row without one.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Overlays</th><td><strong>Overlays</strong> are the one way the client changes what a server row shows before the server says so. Per view: row id, a closed field set (<code translate="no">status</code>, <code translate="no">siblingIndex</code>, <code translate="no">siblingTotal</code>, <code translate="no">contextTree</code>, <code translate="no">chapterPinnedAt</code>, <code translate="no">reverted</code>, <code translate="no">turnFiles</code>, <code translate="no">goalVerification</code>), a clear condition (<code translate="no">until_terminal</code>, <code translate="no">until_field_matches</code>, <code translate="no">until_read</code>, <code translate="no">until_row_gone</code>, <code translate="no">until_command_rejected</code>) and an optional rollback snapshot.</td></tr>
+<tr><th scope="row">Merge</th><td><code translate="no">selectRow</code> merges row and overlay. Reads and upserts leave an overlay in place until its condition holds.</td></tr>
+<tr><th scope="row">Stop overlay</th><td>A Stop overlay is <code translate="no">status: cancelled</code> over an open row. It clears on any terminal server status, so a later <code translate="no">cancelling</code> cannot pull a stopped bubble back to thinking, and on rejection of its cancel command (<a href="transcript-model-live.html#stop">Stop</a>).</td></tr>
+</tbody>
+</table>
+<p>Frame-only fields a server row never clears: <code translate="no">retryStatus</code>, <code translate="no">autoPreviewFiles</code>. Expansion state lives per view, keyed by (row id, block id).</p>
+<h2 id="ownership">Ownership of each fact</h2>
+<table class="stack">
+<thead><tr><th scope="col">Fact</th><th scope="col">Owner</th><th scope="col">Readers</th></tr></thead>
+<tbody>
+<tr><th scope="row">Text, tools, status, cards, order</th><td>Store nodes, read through the projection</td><td>Everything. Deltas are disposable.</td></tr>
+<tr><th scope="row">Turn membership, owner of each node</th><td><code translate="no">TranscriptView</code></td><td>Reader, publisher</td></tr>
+<tr><th scope="row"><code translate="no">rowKind</code>, block ids, <code translate="no">blockId</code> pairing</th><td><code translate="no">transcript/</code> projection</td><td>Components</td></tr>
+<tr><th scope="row">Revision</th><td>One process-wide monotonic counter; <code translate="no">TranscriptView</code> holds the view's last value</td><td>Client cursor</td></tr>
+<tr><th scope="row">Terminal status and pause of a run's reply</th><td>Store row, written or repaired from the canonical execution by <code translate="no">event_effects</code></td><td>Projection</td></tr>
+<tr><th scope="row"><code translate="no">run_active</code>, <code translate="no">run_task</code>, <code translate="no">run_seq</code>, open waits, goal, todos, context stats</th><td>Unchanged, outside the transcript model. The run slot writes no row.</td><td>Run-level UI</td></tr>
+<tr><th scope="row">Local rows, overlays, <code translate="no">retryStatus</code>, <code translate="no">autoPreviewFiles</code>, expansion</th><td>Browser</td><td>Components</td></tr>
+<tr><th scope="row">Follow position</th><td><code translate="no">useChatAreaStick</code> only</td><td>The transcript viewport</td></tr>
+<tr><th scope="row">Anchors</th><td><code translate="no">history-viewport</code> only</td><td>The transcript viewport</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="transcript-model-reads.html">Reads and client rules</a></p>

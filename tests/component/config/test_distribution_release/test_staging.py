@@ -29,17 +29,16 @@ def test_release_staging_builds_self_contained_tui() -> None:
 
 
 
-def test_release_frontend_staging_removes_legacy_package_assets() -> None:
+def test_release_frontend_staging_replaces_the_previous_assets() -> None:
     staging = (ROOT / "scripts" / "release" / "stage-release-assets.sh").read_text(
         encoding="utf-8"
     )
-    assert 'legacy_target_dir="$repo_root/openprogram/webui/_frontend"' in staging
-    assert 'rm -rf "$target_dir" "$legacy_target_dir"' in staging
+    assert 'rm -rf "$target_dir"' in staging
 
 
 
 def test_release_frontend_staging_directory_is_ignored() -> None:
-    generated = "apps/server/openprogram_server/_webui/_frontend/index.html"
+    generated = "openprogram/interfaces/server/_frontend/index.html"
     result = subprocess.run(
         ["git", "check-ignore", "-q", generated],
         cwd=ROOT,

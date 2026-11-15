@@ -1,7 +1,7 @@
 """Agent-facing language-server tool family.
 
 Three ``@function`` LLM-callable tools over
-:mod:`openprogram.lsp`, one per subdirectory:
+:mod:`openprogram.host.lsp`, one per subdirectory:
 
   * ``lsp_diagnostics`` — type-checker errors and warnings for a file
   * ``lsp_references``  — every real use of a symbol

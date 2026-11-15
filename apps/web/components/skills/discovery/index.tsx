@@ -28,6 +28,9 @@ import {
 import { hostname, slugFromUrl } from "./helpers";
 import type { CatalogState, Source } from "./types";
 import { activateOnKey } from "@/lib/utils";
+import { ChevronRight } from "lucide-react";
+import { managePageStyles as shared } from "@/components/ui/manage-page";
+import { confirmAction } from "@/components/ui/confirm-dialog";
 
 export function DiscoverySources({ query }: { query?: string } = {}) {
   const { text } = useTranslation();
@@ -251,18 +254,19 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
 
   // -- Bulk install ----------------------------------------------------
   // Confirm + sequentially install every catalog entry not already in
-  // the user's skills list. We hand the count to ``window.confirm``
+  // the user's skills list. We put the count in the confirmation
   // explicitly because some catalogs are huge (Reza's Mega Pack ships
   // ~300 skills) and an accidental click would otherwise queue a
   // 30-minute background download with no undo affordance.
   async function handleBulkInstall(source: Source, toInstall: string[]) {
     if (toInstall.length === 0) return;
-    const ok = window.confirm(
-      `Install all ${toInstall.length} skill${toInstall.length === 1 ? "" : "s"} ` +
-        `from ${source.label} into the “${source.slug}/” namespace?\n\n` +
-        `Each entry is downloaded sequentially — large catalogs can take a while. ` +
+    const ok = await confirmAction({
+      title: `Install all ${toInstall.length} skill${toInstall.length === 1 ? "" : "s"} ` +
+        `from ${source.label} into the “${source.slug}/” namespace?`,
+      description: `Each entry is downloaded sequentially — large catalogs can take a while. ` +
         `You can cancel by closing the tab; partial installs are kept.`,
-    );
+      confirmLabel: "Install",
+    });
     if (!ok) return;
     setBulkUrl(source.url);
     setStatus(`Installing 0/${toInstall.length} from ${source.label}…`);
@@ -303,12 +307,14 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
       .filter((sk) => sk.name.startsWith(prefix))
       .map((sk) => sk.name);
     if (toRemove.length === 0) return;
-    const ok = window.confirm(
-      `Uninstall all ${toRemove.length} skill${toRemove.length === 1 ? "" : "s"} ` +
-        `currently installed under “${source.slug}/”?\n\n` +
-        `This deletes them from disk. You can reinstall any of them from ` +
+    const ok = await confirmAction({
+      title: `Uninstall all ${toRemove.length} skill${toRemove.length === 1 ? "" : "s"} ` +
+        `currently installed under “${source.slug}/”?`,
+      description: `This deletes them from disk. You can reinstall any of them from ` +
         `this catalog later.`,
-    );
+      confirmLabel: "Uninstall",
+      destructive: true,
+    });
     if (!ok) return;
     setBulkUrl(source.url);
     setStatus(`Uninstalling 0/${toRemove.length} from ${source.label}…`);
@@ -337,12 +343,12 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <section>
-        <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-1">{text("Skill catalogs", "技能目录")}</h3>
-        <p className="text-xs text-[var(--text-tertiary)] mb-3">
+        <h3 className="text-fs-xs font-semibold text-text-bright mb-1">{text("Skill catalogs", "技能目录")}</h3>
+        <p className="text-fs-2xs text-text-secondary mb-3">
           {text("Discovery only finds and downloads skills. Installed skills appear in the ", "发现页只负责查找和下载技能。已安装技能会显示在")}
-          <strong>{text("Browse", "浏览")}</strong>
+          <strong>{text("Installed", "已安装")}</strong>
           {text(" tab. Enable, disable or delete them there.", "标签页，可以在那里启用、禁用或删除。")}
         </p>
         <ul className="space-y-2">
@@ -367,7 +373,7 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
             const uninstalledCount = uninstalledNames.length;
             const isBulkBusy = bulkUrl === s.url;
             return (
-              <li key={s.url} className="rounded-md border border-[var(--border)] overflow-hidden">
+              <li key={s.url} className="rounded-md border border-border overflow-hidden">
                 <div
                   role="button"
                   tabIndex={0}
@@ -376,19 +382,18 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
                   onClick={() => toggleExpand(s.url)}
                   className="flex items-start gap-3 p-3 cursor-pointer hover:bg-bg-hover hover:text-nav-color-hover select-none"
                 >
-                  <span
-                    className="mt-[2px] text-[var(--text-tertiary)] shrink-0 w-3 text-center"
+                  <ChevronRight
+                    size={14}
                     aria-hidden
-                  >
-                    {open ? "▾" : "▸"}
-                  </span>
+                    className={"mt-[3px] shrink-0 text-text-secondary transition-transform " + (open ? "rotate-90" : "")}
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-[var(--text-bright)]">{s.label}</span>
+                      <span className="text-fs-xs font-medium text-text-bright">{s.label}</span>
                       {installed > 0 && (
                         <span
-                          className="rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400"
-                          title={text(`Installed under ${s.slug}/`, `安装在 ${s.slug}/ 下`)}
+                          className={`${shared.badge} ${shared.badgeGreen}`}
+                          data-tip={text(`Installed under ${s.slug}/`, `安装在 ${s.slug}/ 下`)}
                         >
                           {catalogTotal !== undefined
                             ? text(`${installed}/${catalogTotal} installed`, `已安装 ${installed}/${catalogTotal}`)
@@ -397,20 +402,20 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
                       )}
                       {outdatedCount > 0 && (
                         <span
-                          className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-[1px] text-[10px] uppercase tracking-wide text-amber-400"
-                          title={text("Local SKILL.md content differs from upstream", "本地 SKILL.md 与上游不同")}
+                          className={`${shared.badge} ${shared.badgeYellow}`}
+                          data-tip={text("Local SKILL.md content differs from upstream", "本地 SKILL.md 与上游不同")}
                         >
                           {text(`${outdatedCount} outdated`, `${outdatedCount} 个过期`)}
                         </span>
                       )}
                       {s.origin === "custom" && (
-                        <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">{text("custom", "自定义")}</span>
+                        <span className="rounded-xs border border-border bg-bg-tertiary px-2 py-[1px] text-fs-2xs uppercase tracking-wide text-text-secondary">{text("custom", "自定义")}</span>
                       )}
                     </div>
                     {s.description && (
-                      <p className="mt-1 text-xs text-[var(--text-secondary)] line-clamp-2">{s.description}</p>
+                      <p className="mt-1 text-fs-2xs text-text-secondary line-clamp-2">{s.description}</p>
                     )}
-                    <p className="mt-1 text-[11px] font-mono text-[var(--text-tertiary)] truncate">{s.url}</p>
+                    <p className="mt-1 text-fs-2xs text-text-secondary truncate">{s.url}</p>
                   </div>
                   {(installed > 0 || uninstalledCount > 0 || s.origin === "custom") && (
                     <div
@@ -499,12 +504,12 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
                   )}
                 </div>
                 {open && (
-                  <div className="border-t border-[var(--border)] p-3 bg-[var(--bg-secondary)]/40">
+                  <div className="border-t border-border p-3 bg-bg-secondary/40">
                     {cat?.loading && (
-                      <div className="text-xs text-[var(--text-tertiary)]">{text("Loading catalog...", "正在加载目录...")}</div>
+                      <div className="text-fs-2xs text-text-secondary">{text("Loading catalog...", "正在加载目录...")}</div>
                     )}
                     {cat?.error && (
-                      <div className="text-xs text-[var(--accent-red,#ef4444)]">{cat.error}</div>
+                      <div className="text-fs-2xs text-accent-red">{cat.error}</div>
                     )}
                     {cat?.entries && (
                       <CatalogList
@@ -527,8 +532,8 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
       </section>
 
       <section>
-        <h3 className="text-sm font-semibold text-[var(--text-bright)] mb-2">{text("Add a source", "添加来源")}</h3>
-        <p className="text-xs text-[var(--text-tertiary)] mb-2">
+        <h3 className="text-fs-xs font-semibold text-text-bright mb-2">{text("Add a source", "添加来源")}</h3>
+        <p className="text-fs-2xs text-text-secondary mb-2">
           {text("Paste a GitHub repo URL (e.g. ", "粘贴 GitHub 仓库 URL（例如 ")}
           <code>https://github.com/owner/repo</code>
           {text(") or a JSON index URL.", "）或 JSON 索引 URL。")}
@@ -543,7 +548,7 @@ export function DiscoverySources({ query }: { query?: string } = {}) {
         </div>
       </section>
 
-      {status && <div className="text-xs text-[var(--text-secondary)]">{status}</div>}
+      {status && <div className="text-fs-2xs text-text-secondary">{status}</div>}
     </div>
   );
 }

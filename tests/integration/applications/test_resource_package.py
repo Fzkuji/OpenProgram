@@ -6,8 +6,8 @@ from tests.support.waiting import wait_until
 
 def test_scaffold_install_and_resource_operation(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram.webui.routes.catalog import applications
-    from openprogram.webui.routes.control import resources
+    from openprogram.interfaces.server.routes.catalog import applications
+    from openprogram.interfaces.server.routes.control import resources
     app = FastAPI()
     applications.register(app)
     resources.register(app)

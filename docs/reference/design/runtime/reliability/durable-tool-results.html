@@ -1,0 +1,95 @@
+<title>Durable tool results</title>
+<meta name="description" content="How OpenProgram keeps full screenshots and long tool output, reports tool failures, and compares with Codex, Claude Code and OpenCode.">
+<meta name="covers" content="openprogram/runtime/agent/durable_steps.py">
+<h1>Durable tool results</h1>
+<p>Normal screenshots and long text are kept in full; display and model input are managed separately. Payload size alone never turns a successful tool action into a failure. Available resources still apply.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Scenario</th><th scope="col">Codex</th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Large screenshots</th><td>Outside the text truncation budget</td><td>Subject to MCP output token limits</td><td>Not verified</td><td>Full images kept. Model adaptation and region inspection are separate work.</td></tr>
+<tr><th scope="row">Long logs</th><td>Model-visible text truncated to budget</td><td>Oversized non-image output saved, path returned; default 25,000 tokens, configurable</td><td>Default 2,000 lines or 50 KiB, configurable; full text saved, preview and path returned</td><td>Full results kept. Unified previews, search and partial reads are directions.</td></tr>
+<tr><th scope="row">Large display and event results</th><td>MCP event copies above 1 MiB become text previews and stay successful; no full-retention guarantee</td><td>Oversized non-image results become session tool-results references</td><td>Preview includes the full-output path</td><td>Display paged, large text by reference, tool success unchanged</td></tr>
+<tr><th scope="row">Interruption and recovery</th><td>Not verified</td><td>Not verified</td><td>Not verified</td><td>Result and completion record published atomically; the completed-tool frontier is restored, so a persistence failure causes no re-execution</td></tr>
+</tbody>
+</table>
+<p class="note">Codex and OpenCode from public source, Claude Code from official documentation, which does not establish its private persistence. Not verified does not mean unsupported. Thresholds describe the cited paths only. Sources: <a href="https://github.com/openai/codex/blob/main/codex-rs/utils/output-truncation/src/lib.rs">Codex output</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs">Codex events</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/utils/pty/src/lib.rs">Codex event threshold</a>, <a href="https://code.claude.com/docs/en/mcp#mcp-output-limits-and-warnings">Claude Code MCP</a>, <a href="https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/tool/truncate.ts">OpenCode output</a>.</p>
+
+<h2>Storage</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Assistant responses, tool results</th><td>Content-addressed blobs, free of the 64 KiB execution-stream frame limit</td></tr>
+<tr><th scope="row">1 MiB</th><td>Display-page or producer-chunk target. Blob storage does not reject at it.</td></tr>
+<tr><th scope="row">Kept</th><td>Checkpoint metadata, reference counts, control-message budgets, content hashes, execution ownership checks</td></tr>
+<tr><th scope="row">Model input policy</th><td>Unchanged</td></tr>
+</tbody>
+</table>
+
+<h2 id="effective-preview-cap">Preview cap</h2>
+<ul>
+<li>The cap is the larger of the configured limit (default 30,000 characters) and the 2,000-character minimum, applied before deciding on truncation or a file.</li>
+<li>A result within the cap is returned once, with no marker and no file.</li>
+<li>Longer text keeps a non-overlapping head (70% by default) and tail, with a positive elided count. A zero-length tail adds no text.</li>
+<li>The shared normalizer does this for registered functions and Agent methods.</li>
+</ul>
+
+<h2 id="full-result-artifact-identity">Full-result files</h2>
+<ul>
+<li>A whole text is kept in the running conversation's directory, at <code translate="no">tool_results/&lt;sha256&gt;.txt</code>, named by its content. It is deleted and backed up with the conversation. Outside a conversation (a one-off CLI call) it goes to the profile state directory's <code translate="no">tool_results/</code>.</li>
+<li>The same text is kept once; two different texts never share a name, whichever call or layer saved them. A raw provider call ID can repeat and plays no part in the name.</li>
+<li>An existing file is reused, since its name says it holds that text. A new one is written to a temporary file and moved into place, so the path is returned only after the complete file is written.</li>
+<li>Files written earlier under other names stay readable, without migration.</li>
+</ul>
+
+<h2>Failure signals</h2>
+<p>Each tool sets <code translate="no">is_error</code> on the existing <code translate="no">ToolReturn</code> from its own execution branch. The common normalizer never infers failure from text, so a success beginning <code translate="no">Error:</code> stays a success.</p>
+<table class="stack">
+<thead><tr><th scope="col">Tool</th><th scope="col">Error when</th><th scope="col">Stays as it was</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execute_code</code></th><td>Nonzero Python exit or timeout, keeping stdout, stderr and the exit code or timeout</td><td>Success; structured sandbox denials; no retry, no repeated subprocess, same backend choice. Timeout adapters keep partial output.</td></tr>
+<tr><th scope="row"><code translate="no">image_analyze</code>, <code translate="no">image_generate</code>, <code translate="no">mixture_of_agents</code></th><td>Provider or model unavailable, invalid explicit model reference, failed provider call, failed save, all references failed, failed aggregation</td><td>Partial reference failure keeps its synthesis or single-reference answer. Plain <code translate="no">execute</code> keeps its signature and string result; the registered tool is <code translate="no">_execute_result</code>.</td></tr>
+<tr><th scope="row">Canvas</th><td>Validation, path policy, permission, missing block</td><td>Successful block bodies. Plain <code translate="no">execute</code> as above. Aliases, path admission, cancellation.</td></tr>
+<tr><th scope="row"><code translate="no">ask_user_question</code></th><td>Invalid question, unavailable infrastructure, noninteractive frontend, each with its original text</td><td>Valid answers stay strings; decline and timeout; same decorated <code translate="no">AgentTool</code>, name, schema, metadata and interaction manifest. Answers nothing automatically and changes no approval policy.</td></tr>
+</tbody>
+</table>
+<p class="note">Schemas, registered names, backend selection, paths, retry budgets, usage labels and cancellation are unchanged throughout.</p>
+
+<h2>Pause before dispatch</h2>
+<ul>
+<li>A pause accepted between completed actions is consumed before the next provider or tool dispatch.</li>
+<li>A planned operation that never started is recorded <code translate="no">not_started</code> and stays pending in the Agent resume cursor.</li>
+<li>A live owner paused before its first effect resumes the original durable admission, with no synthetic model response.</li>
+<li>A control command changing the execution version during result persistence retries only checkpoint publication under the same attempt fence. The external operation is not repeated.</li>
+</ul>
+
+<h2>Reading results at the delegation limit</h2>
+<ul>
+<li><code translate="no">read_conversation</code> stays discoverable and reads an execution id at <code translate="no">agent.max_messages</code>. Reading creates no execution, branch or delivery and spends no allowance.</li>
+<li>Session and ancestor ownership checks still apply, before any wait.</li>
+<li>Exhausted chains still hide <code translate="no">agent</code>; <code translate="no">send_message</code> keeps its delivery-time guard. There is no separate cancellation tool.</li>
+</ul>
+
+<details>
+<summary>Acceptance</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Subject</th><th scope="col">How it is exercised</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execute_code</code></th><td>Registered tool through <code translate="no">AgentTool.execute</code> with real successful, failing and timed-out snippets</td></tr>
+<tr><th scope="row"><code translate="no">read_conversation</code></th><td>Public tool catalog resolved at the limit, an owned completed Job read, a foreign Job refused before waiting</td></tr>
+<tr><th scope="row">Auxiliary providers</th><td>Registered wrappers with controlled official-provider transport and owned PNG files; unknown references, unavailable backends, sandbox denial before backend access, cancellation</td></tr>
+<tr><th scope="row">Canvas</th><td>Registered tool on owned files; explicit flags, unchanged text, successful <code translate="no">Error:</code> data, plain-call compatibility</td></tr>
+<tr><th scope="row"><code translate="no">ask_user_question</code></th><td>Unavailable input and a controlled frontend answer through <code translate="no">AgentTool.execute</code>, with no real prompt</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Full image and text persistence, fresh-store restoration, completion-record reference reuse, corruption detection, everything above</td></tr>
+<tr><th scope="row">Not implemented</th><td>Unified model-facing previews and on-demand reads, image-region inspection; existing capabilities need an audit first. Existing <code translate="no">reconciliation_required</code> executions are not repaired automatically.</td></tr>
+<tr><th scope="row">Awaiting acceptance</th><td>Real credentials and remote model or image capabilities; installed-App display of <code translate="no">execute_code</code>, Canvas and full-result files; the preview-cap host and native checks</td></tr>
+</tbody>
+</table>

@@ -1,0 +1,155 @@
+<title>Claude Code compaction</title>
+<meta name="description" content="Research note on Claude Code's compaction tiers, from official API docs and third-party reverse engineering.">
+<meta name="covers" content="none">
+<h1>Claude Code compaction</h1>
+<p>Research note, not an OpenProgram design. Only a single compact mechanism (over a token threshold, LLM summary) is in Anthropic's API docs. The cascade below is a client implementation detail from third-party reverse engineering, following Inside Claude Code; sources differ slightly on order, and numbers vary by version.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Tier</th><th scope="col">Action</th><th scope="col">Trigger</th><th scope="col">LLM</th><th scope="col">Breaks cache</th><th scope="col">Loses</th></tr></thead>
+<tbody>
+<tr><th scope="row">Budget Reduction (routine, outside the cascade)</th><td>Truncate one oversized output</td><td>A <code translate="no">tool_result</code> over 4000 characters</td><td>No</td><td>No</td><td>Middle</td></tr>
+<tr><th scope="row">1 Microcompact</th><td>Clear old tool outputs</td><td>50 tool calls, then every 25; or 90 minutes idle</td><td>No</td><td>Cache-aware: no</td><td>Old outputs</td></tr>
+<tr><th scope="row">2 Snip</th><td>Delete oldest turns</td><td>Still over after 1</td><td>No</td><td>Yes</td><td>Whole turns</td></tr>
+<tr><th scope="row">3 Context Collapse</th><td>Segmented summaries</td><td>Still over after 2, about 90%</td><td>Yes</td><td>Yes</td><td>Detail</td></tr>
+<tr><th scope="row">4 Auto-Compact</th><td>Full summary</td><td>Still over after 3, or <code translate="no">/compact</code></td><td>Yes</td><td>Yes</td><td>Most; a digest stays</td></tr>
+<tr><th scope="row">5 Reactive</th><td>Emergency compaction</td><td>API returns 413 <code translate="no">prompt_too_long</code></td><td>Yes</td><td>Yes</td><td>As tier 4</td></tr>
+</tbody>
+</table>
+<p class="note">Before every LLM call: Budget Reduction, then check from tier 1; after each tier recheck and advance if still over. On a 413, tier 5 and retry; terminate on failure. Tiers 3 and 4 are described as overlapping strategies: some configurations skip 3, and <code translate="no">/compact</code> skips 1–3.</p>
+
+<h2 id="principles">Principles</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Principle</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Lazy degradation</th><td>Cheapest first</td></tr>
+<tr><th scope="row">Old tool outputs first</th><td>Old grep, read and bash outputs are the largest and least important</td></tr>
+<tr><th scope="row">Microcompact carries daily use</th><td>Snip and Compact rarely run</td></tr>
+<tr><th scope="row">Cache protection</th><td>Cache-aware clears on the server; content is fixed after truncation</td></tr>
+<tr><th scope="row">Whole turns only</th><td>User and assistant messages are never truncated individually: a whole turn is deleted or summarized</td></tr>
+<tr><th scope="row"><code translate="no">CLAUDE.md</code></th><td>Reloaded from disk, never compacted</td></tr>
+<tr><th scope="row">User leads</th><td><code translate="no">/compact</code> and <code translate="no">/context</code>; automatic is the fallback</td></tr>
+</tbody>
+</table>
+
+<h2 id="tiers">Tier detail</h2>
+<details>
+<summary>Budget Reduction</summary>
+<p>Tool outputs only. Over 4000 characters (about 1000 tokens): keep the first 2400 and last 1600.</p>
+<pre translate="no" tabindex="0">Before (50000 chars): "src/a.py:12: TODO fix this\nsrc/b.py:34: ..."
+After  (4000 chars):  "src/a.py:12: TODO fix this\n...[46000 chars removed]...\nsrc/z.py:99: TODO cleanup"</pre>
+</details>
+
+<details>
+<summary>Tier 1 Microcompact</summary>
+<p>Processes FileRead, Shell, Grep, Glob, WebSearch, WebFetch, FileEdit, FileWrite.</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Cache-aware (primary)</th><th scope="col">Time-based (fallback)</th></tr></thead>
+<tbody>
+<tr><th scope="row">Action</th><td>Server clears old <code translate="no">tool_result</code> through the Context Editing API</td><td>Client replaces it with a sentinel</td></tr>
+<tr><th scope="row">Breaks cache</th><td>No</td><td>Yes</td></tr>
+<tr><th scope="row">Trigger</th><td>50 calls, every 25</td><td>Idle about 90 minutes</td></tr>
+<tr><th scope="row">Recoverable</th><td>No</td><td>No</td></tr>
+<tr><th scope="row">Needs</th><td>Anthropic Context Editing; other providers have no equivalent</td><td>Nothing</td></tr>
+<tr><th scope="row">Each output becomes</th><td>0 tokens</td><td>About 20 tokens: <code translate="no">[content no longer available]</code></td></tr>
+</tbody>
+</table>
+<p>Content already in cache is cleared by the server; content not in cache is replaced by the client. Sentinels use a byte-stable canonical form, so repeats do not change cached content. Example: clearing 10 results averaging 500 tokens frees about 4800.</p>
+<h3>Context Editing API</h3>
+<p>Public beta (<code translate="no">context-management-2025-06-27</code>), not exclusive to Claude Code; merged into a normal call. The client sends unmodified history plus <code translate="no">cache_edits</code>; the server replaces old blocks inside the cache, the prefix stays valid, and the client need not know which were cleared. Tiers 2–5 edit the client's message list instead.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Strategy</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">clear_tool_uses</code></th><td>Clears old <code translate="no">tool_result</code>, keeps the most recent N (N unconfirmed)</td></tr>
+<tr><th scope="row"><code translate="no">clear_thinking</code></th><td>Clears old thinking blocks</td></tr>
+<tr><th scope="row"><code translate="no">clear_at_least</code></th><td>Minimum tokens to clear</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Tier 2 Snip</summary>
+<ul>
+<li>Trigger: still over after tier 1 (a buffer of about 13K tokens is reported; varies by version).</li>
+<li>Deletes whole turns (user, assistant and all tool calls), oldest first, recounting after each, until under the threshold.</li>
+<li>No summary, no disk copy, no marker; the model does not know what was discussed.</li>
+<li>Total loss and a broken cache prefix, but free and fast.</li>
+</ul>
+</details>
+
+<details>
+<summary>Tier 3 Context Collapse</summary>
+<ul>
+<li>Trigger: still over after tier 2, about 90% non-blocking, forced and blocking at 95%.</li>
+<li>Segments of 5–10 turns (unconfirmed), each summarized independently in about 100–300 tokens (estimated). LLM calls equal segments. The most recent N turns stay whole (N unconfirmed).</li>
+<li>Originals stay in the collapse store: a read-time projection, like a database view, so rollback is possible in theory.</li>
+<li>Keeps segment boundaries and timeline; tier 4 does not.</li>
+</ul>
+<pre translate="no" tabindex="0">Before (35 turns):
+[turns 6-10] read code, find bug, fix, test
+[turns 11-15] refactor config module
+[turns 16-35] modify API module...
+
+After:
+[summary] "Turns 6-10: fixed a bug in utils.py, added a rollback script"
+[summary] "Turns 11-15: refactored the config module, extracted the Settings class"
+[turns 16-35] ... (kept in full)</pre>
+</details>
+
+<details>
+<summary>Tier 4 Auto-Compact</summary>
+<ul>
+<li>One LLM call summarizes the whole history into a block of about 2000–5000 tokens, replacing old messages with no rollback. The latest 1–2 turns stay whole. Context falls from 70–90% to about 15–25%.</li>
+<li>Threshold override: <code translate="no">CLAUDE_AUTOCOMPACT_PCT_OVERRIDE</code>.</li>
+<li><code translate="no">/compact</code> or <code translate="no">/compact keep the discussion about database migration</code>: a prompt improves the summary. Officially recommended at 60%.</li>
+<li>Lost: early instructions, design discussions, reasoning, code from 50+ turns ago, style preferences. Kept: current task, recently modified filenames, recent errors and fixes, <code translate="no">CLAUDE.md</code>.</li>
+<li>Chained: each pass compacts the previous summary, so information decays. A long session may compact 3–5 times.</li>
+</ul>
+<ol>
+<li>Run PreCompact hooks.</li>
+<li>Build the prompt with <code translate="no">getCompactPrompt()</code>.</li>
+<li>Send the whole history to the LLM.</li>
+<li>Build messages with <code translate="no">buildPostCompactMessages()</code>.</li>
+<li>Reload the system prompt from <code translate="no">CLAUDE.md</code>.</li>
+</ol>
+<pre translate="no" tabindex="0" data-claim="example">Before (35 turns, 150K tokens): [system prompt] [35 turns]
+After (~30K tokens):
+[system prompt] (reloaded from CLAUDE.md)
+[compaction block]
+"Session summary: The user is refactoring a Python project.
+Completed: fixed a bug in utils.py, refactored the config module, added 3 tests.
+Current state: all tests pass. The user is working on the API module.
+Key decisions: replace Flask with FastAPI, use PostgreSQL for the database.
+Modified files: src/utils.py, src/config.py, tests/test_utils.py"
+[most recent 1-2 turns]</pre>
+</details>
+
+<details>
+<summary>Tier 5 Reactive</summary>
+<p>Tries context-collapse overflow recovery, then an emergency compact, at most once per turn. If both fail, the session ends.</p>
+</details>
+
+<details>
+<summary>A long session, 200K context</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Context</th><th scope="col">What runs</th></tr></thead>
+<tbody>
+<tr><th scope="row">0–30%</th><td>Budget Reduction only</td></tr>
+<tr><th scope="row">30–50%</th><td>Past 50 tool calls, Microcompact clears the first 30 outputs, about 15K tokens, then every 25</td></tr>
+<tr><th scope="row">Over threshold</th><td>Microcompact is not enough; Snip deletes the oldest 5 turns, about 25K tokens</td></tr>
+<tr><th scope="row">Over again</th><td>Microcompact and Snip repeat</td></tr>
+<tr><th scope="row">Extreme and rare</th><td>Few old turns remain, so Context Collapse, then Auto-Compact</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Sources, most reliable first</summary>
+<ul>
+<li><a href="https://platform.claude.com/docs/en/build-with-claude/compaction">Compaction, Claude Platform Docs</a> (official, API level only)</li>
+<li><a href="https://platform.claude.com/docs/en/build-with-claude/context-editing">Context editing, Claude API Docs</a> (official)</li>
+<li><a href="https://y-agent.github.io/inside-claude-code/04-compaction-diagram.html">Inside Claude Code: Context Compaction</a> (reverse engineering, most detailed)</li>
+<li><a href="https://arxiv.org/html/2604.14228v1">Dive into Claude Code</a> (arXiv 2604.14228, VILA-Lab)</li>
+<li><a href="https://deepwiki.com/anthropics/claude-code/3.3-context-window-and-compaction">DeepWiki: Context Window and Compaction</a> (community)</li>
+<li><a href="https://0xtresser.github.io/Claude-Code-VS-OpenCode/en/Chapter_05_Session_and_Context/5.3_Context_Compaction.html">Claude Code VS OpenCode §5.3</a> (comparison)</li>
+</ul>
+</details>

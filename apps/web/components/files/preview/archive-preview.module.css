@@ -1,0 +1,14 @@
+/* Tree on the left, the chosen member on the right; stacked when narrow. */
+.tree { min-height:0; overflow:auto; padding:8px 6px 12px; border-right:1px solid var(--border); }
+.summary { padding:4px 8px 8px; color:var(--text-muted); font-size:var(--fs-xs); }
+.row { composes: ui-list-item from global; gap:6px; width:100%; min-width:0; background:none; color:var(--text-secondary); font:inherit; font-size:var(--fs-sm); text-align:left; }
+.row:hover { color:var(--text-primary); }
+.row[aria-current] { background:var(--bg-hover); color:var(--text-primary); }
+.row:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+.chevron { flex-shrink:0; color:var(--text-muted); transition:transform var(--motion-fast); }
+.chevron[data-open] { transform:rotate(90deg); }
+.folder { flex-shrink:0; color:var(--text-secondary); }
+.name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meta { flex-shrink:0; color:var(--text-muted); font-size:var(--fs-xs); }
+.hint { display:flex; align-items:center; justify-content:center; flex:1; min-height:120px; padding:16px; color:var(--text-muted); font-size:var(--fs-sm); text-align:center; }
+@container (max-width: 560px) { .tree { border-right:0; border-bottom:1px solid var(--border); } }

@@ -6,7 +6,6 @@ branches, no worktrees — just session ids.
 """
 from __future__ import annotations
 
-import json
 import time
 
 import pytest
@@ -14,14 +13,14 @@ import pytest
 
 @pytest.fixture
 def store(tmp_path, monkeypatch, request):
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.agent import session_db as sdb_mod
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.runtime.context import session_db as sdb_mod
 
     s = SessionStore(tmp_path / "sessions-git")
     request.addfinalizer(s.close)
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
     monkeypatch.setattr(
-        "openprogram.store.session.session_store.default_store", lambda: s,
+        "openprogram.state.store.session.session_store.default_store", lambda: s,
     )
 
     # Target session the merge writes onto.
@@ -56,7 +55,7 @@ def store(tmp_path, monkeypatch, request):
 
 @pytest.fixture
 def fake_dispatcher(monkeypatch):
-    from openprogram.agent import dispatcher as disp
+    from openprogram.runtime.conversation import turn_runtime as disp
 
     captured: dict = {}
 
@@ -75,7 +74,7 @@ def fake_dispatcher(monkeypatch):
         captured["prompt"] = req.user_text
         captured["session_id"] = req.session_id
         captured["history_override"] = req.history_override
-        from openprogram.agent.session_db import default_db
+        from openprogram.runtime.context.session_db import default_db
         # Snapshot attach pointers on the target as the dispatcher
         # sees them — useful because process_merge_turn drops them
         # again after the turn completes for DAG hygiene.
@@ -95,7 +94,7 @@ def fake_dispatcher(monkeypatch):
 
 
 def test_merges_two_peer_sessions(store, fake_dispatcher):
-    from openprogram.agent.internals._merge import process_merge_turn
+    from openprogram.runtime.conversation.merge import process_merge_turn
 
     out = process_merge_turn(
         target_session_id="p1",
@@ -138,14 +137,14 @@ def test_merges_two_peer_sessions(store, fake_dispatcher):
 
     # ContextCommit is written with commit_parents covering each peer's
     # latest commit id (plus any prior target commit).
-    from openprogram.context.commit.store import load_commit
+    from openprogram.state.store.session.context_commit.store import load_commit
     commit = load_commit(store, out.commit_id, session_id="p1")
     assert commit is not None
     assert commit.commit_parents == out.commit_parents
 
 
 def test_unknown_peers_drop_to_error(store, fake_dispatcher):
-    from openprogram.agent.internals._merge import process_merge_turn
+    from openprogram.runtime.conversation.merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
         peers=[{"session_id": "never_existed"}],
@@ -157,7 +156,7 @@ def test_unknown_peers_drop_to_error(store, fake_dispatcher):
 
 
 def test_unknown_target_errors(store, fake_dispatcher):
-    from openprogram.agent.internals._merge import process_merge_turn
+    from openprogram.runtime.conversation.merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="nope",
         peers=[{"session_id": "peer_a"}],
@@ -170,7 +169,7 @@ def test_unknown_target_errors(store, fake_dispatcher):
 def test_same_session_two_branches_merge(store, fake_dispatcher):
     """Pass two peers with the same session_id but different head_ids
     — should merge them as if they were independent branches."""
-    from openprogram.agent.internals._merge import process_merge_turn
+    from openprogram.runtime.conversation.merge import process_merge_turn
 
     # peer_a has assistant id 'a_peer_a' (fixture). Add a sibling
     # head on peer_a to play "the other branch".
@@ -212,7 +211,7 @@ def test_same_session_two_branches_merge(store, fake_dispatcher):
 def test_legacy_sub_sessions_field_still_works(store, fake_dispatcher):
     """Backward-compat: callers passing ``sub_sessions=[sid, ...]``
     should still get the merge done."""
-    from openprogram.agent.internals._merge import process_merge_turn
+    from openprogram.runtime.conversation.merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
         sub_sessions=["peer_a", "peer_b"],
@@ -229,7 +228,7 @@ def test_base_peer_marks_one_branch_as_base(store, fake_dispatcher):
     attribute on that branch's tag + a different lead-in line, and
     the peer_b attach pointer carries is_base=True so the generator
     locks its expanded items."""
-    from openprogram.agent.internals._merge import process_merge_turn
+    from openprogram.runtime.conversation.merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
         peers=[
@@ -262,7 +261,7 @@ def test_base_peer_marks_one_branch_as_base(store, fake_dispatcher):
 def test_base_peer_out_of_range_treated_as_none(store, fake_dispatcher):
     """An out-of-range index (e.g. caller passed 5 but only 2 peers
     resolved) silently degrades to symmetric merge."""
-    from openprogram.agent.internals._merge import process_merge_turn
+    from openprogram.runtime.conversation.merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
         peers=[
@@ -275,3 +274,25 @@ def test_base_peer_out_of_range_treated_as_none(store, fake_dispatcher):
     )
     assert out.base_peer is None  # silently dropped
     assert 'role="base"' not in fake_dispatcher["prompt"]
+
+
+def test_a_merge_stopped_before_it_starts_reports_the_stop(store, fake_dispatcher, monkeypatch):
+    """A stop before the merge turn runs ends it as stopped and closes its attach cards."""
+    from openprogram.runtime.conversation.merge import process_merge_turn
+    from openprogram.runtime.conversation.production_driver.shared import STOPPED_BEFORE_START
+    from tests.support.stop_before_start import stop_every_turn_before_it_starts
+
+    stopped = stop_every_turn_before_it_starts(monkeypatch)
+    out = process_merge_turn(
+        target_session_id="p1",
+        peers=[{"session_id": "peer_a"}, {"session_id": "peer_b"}],
+        message="reconcile",
+        agent_id="main",
+    )
+
+    assert len(stopped) == 1
+    assert "prompt" not in fake_dispatcher
+    assert (out.failed, out.error, out.commit_id) == (True, STOPPED_BEFORE_START, None)
+    attaches = [m for m in store.get_messages("p1") if m.get("function") == "attach"]
+    assert attaches
+    assert {(m.get("status"), m.get("reason_code")) for m in attaches} == {("failed", "stopped_before_start")}

@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.providers import storage as st
-from openprogram.webui._model_listing import toggle as tg
+from openprogram.models.providers.settings import storage as st
+from openprogram.models.listing import toggle as tg
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def stub_listing(monkeypatch):
     def _list(provider_id):
         return [dict(row)] if provider_id == "acme" else []
 
-    import openprogram.webui._model_listing.listing as listing
+    import openprogram.models.listing.listing as listing
     monkeypatch.setattr(listing, "list_models_for_provider", _list)
     return row
 
@@ -121,7 +121,7 @@ def test_migration_backfills_spec_from_models_dev(monkeypatch):
     written = {}
     monkeypatch.setattr(st, "_write_providers_cfg",
                         lambda cfg: written.update(cfg))
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
     monkeypatch.setattr(models_dev, "lookup", lambda pid, mid: {
         "name": "Acme One", "context_window": 200000, "max_tokens": 8192,
         "input_modalities": ["text", "image"],
@@ -151,7 +151,7 @@ def test_migration_builds_minimal_row_when_unresolvable(monkeypatch):
     spec row built from local metadata, so it resolves without network. "acme"
     has no provider dir → api defaults to openai-completions, tagged
     migration-minimal so a later online Refresh overwrites it."""
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
     monkeypatch.setattr(models_dev, "lookup", lambda pid, mid: None)
     store = {"acme": {"enabled": True, "base_url": "https://acme.example/v1",
                       "enabled_models": ["acme-1", "ghost"]}}
@@ -170,7 +170,7 @@ def test_migration_merges_only_enabled_custom_models_as_manual(monkeypatch):
     spec row. A non-enabled custom row is an availability cache, not user
     enablement — it stays in custom_models and never enters the registry.
     """
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
     monkeypatch.setattr(models_dev, "lookup", lambda pid, mid: None)
     store = {"acme": {
         "enabled": True,
@@ -221,13 +221,13 @@ def _repair_provider():
 def test_repair_prunes_non_enabled_manual_rows_only():
     providers = {"p": _repair_provider()}
     # exercise via a stubbed version marker (< target) so the pass runs
-    import openprogram.setup as setup
-    _orig = setup._read_config
-    setup._read_config = lambda: {"spec_migration_version": 0}
+    from openprogram.state import config as user_config
+    _orig = user_config.read_config
+    user_config.read_config = lambda: {"spec_migration_version": 0}
     try:
         repaired = st._repair_over_merged_specs(providers)
     finally:
-        setup._read_config = _orig
+        user_config.read_config = _orig
     assert repaired is True
     ids = [r["id"] for r in providers["p"]["models"]]
     assert "flood-1" not in ids and "flood-2" not in ids
@@ -238,14 +238,14 @@ def test_repair_prunes_non_enabled_manual_rows_only():
 
 def test_repair_is_one_shot_via_version_marker():
     providers = {"p": _repair_provider()}
-    import openprogram.setup as setup
-    _orig = setup._read_config
+    from openprogram.state import config as user_config
+    _orig = user_config.read_config
     # marker already at the target version → repair is a no-op
-    setup._read_config = lambda: {"spec_migration_version": st._SPEC_MIGRATION_VERSION}
+    user_config.read_config = lambda: {"spec_migration_version": st._SPEC_MIGRATION_VERSION}
     try:
         repaired = st._repair_over_merged_specs(providers)
     finally:
-        setup._read_config = _orig
+        user_config.read_config = _orig
     assert repaired is False
     # nothing pruned
     assert len(providers["p"]["models"]) == 5
@@ -260,8 +260,8 @@ def live_cfg(monkeypatch):
     (so its reload() side-effect fires) and the REAL enabled_models registry
     (so we prove the chat picker sees the toggle without a restart)."""
     import copy
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.enabled_models as mg
 
     store: dict = {}
     _read = lambda: copy.deepcopy(store)
@@ -270,16 +270,16 @@ def live_cfg(monkeypatch):
         store.clear()
         store.update(copy.deepcopy(cfg.get("providers", cfg)))
 
-    # storage._write_providers_cfg goes through setup._read_config/_write_config,
+    # storage._write_providers_cfg goes through state.config.read_config/write_config,
     # then calls enabled_models.reload(); reload() reads via cr.read_providers_config.
-    import openprogram.setup as setup
+    from openprogram.state import config as user_config
     def _update_root(mutator, **_kwargs):
         root = {"providers": copy.deepcopy(store)}
         mutator(root)
         _save(root)
         return root
 
-    monkeypatch.setattr(setup, "update_config", _update_root)
+    monkeypatch.setattr(user_config, "update_config", _update_root)
     monkeypatch.setattr(cr, "read_providers_config", lambda: copy.deepcopy(store))
     monkeypatch.setattr(st, "_read_providers_cfg", _read)
     st._reset_spec_migration()
@@ -289,9 +289,9 @@ def live_cfg(monkeypatch):
 
 
 def test_toggle_enable_refreshes_registry_without_restart(live_cfg, stub_listing):
-    import openprogram.providers.enabled_models as mg
-    from openprogram.providers.models import get_model
-    from openprogram.webui._model_listing.listing import list_enabled_models
+    import openprogram.models.providers.catalog.enabled_models as mg
+    from openprogram.models.providers.catalog.models import get_model
+    from openprogram.models.listing.listing import list_enabled_models
 
     live_cfg["acme"] = {"enabled": True}
     st._reset_spec_migration()
@@ -321,15 +321,15 @@ def test_stale_caller_view_does_not_mis_stamp_the_repair_marker(monkeypatch):
     fresh = {"p": {"enabled": True, "enabled_models": ["keep-a"],
                    "models": [{"id": "keep-a", "name": "Keep A"}]}}
     config = {"spec_migration_version": 0, "providers": fresh}
-    import openprogram.setup as setup
-    monkeypatch.setattr(setup, "_read_config", lambda: config)
+    from openprogram.state import config as user_config
+    monkeypatch.setattr(user_config, "read_config", lambda: config)
 
     def update(mutator, **_kwargs):
         mutator(config)
         return config
 
-    monkeypatch.setattr(setup, "update_config", update)
-    import openprogram.providers.enabled_models as mg
+    monkeypatch.setattr(user_config, "update_config", update)
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(mg, "reload", lambda: None)
     st._reset_spec_migration()
     st._run_spec_migration_once(stale)
@@ -345,15 +345,15 @@ def test_repair_pass_runs_through_run_once(monkeypatch):
     """End-to-end: _run_spec_migration_once fires the repair, bumps the marker,
     and persists the pruned providers."""
     config = {"spec_migration_version": 0, "providers": {"p": _repair_provider()}}
-    import openprogram.setup as setup
-    monkeypatch.setattr(setup, "_read_config", lambda: config)
+    from openprogram.state import config as user_config
+    monkeypatch.setattr(user_config, "read_config", lambda: config)
 
     def update(mutator, **_kwargs):
         mutator(config)
         return config
 
-    monkeypatch.setattr(setup, "update_config", update)
-    import openprogram.providers.enabled_models as mg
+    monkeypatch.setattr(user_config, "update_config", update)
+    import openprogram.models.providers.catalog.enabled_models as mg
 
     monkeypatch.setattr(mg, "reload", lambda: None)
     st._reset_spec_migration()
@@ -388,7 +388,7 @@ def stub_listing_modev(monkeypatch):
     def _list(provider_id):
         return [dict(row)] if provider_id == "modev" else []
 
-    import openprogram.webui._model_listing.listing as listing
+    import openprogram.models.listing.listing as listing
     monkeypatch.setattr(listing, "list_models_for_provider", _list)
     return row
 
@@ -396,7 +396,7 @@ def stub_listing_modev(monkeypatch):
 def test_enable_normalizes_modalities_and_cost_to_schema(mem_cfg, stub_listing_modev):
     """Enabling a models.dev-style row writes a spec with schema `input`
     (pdf filtered out) and nested `cost` the runtime reads."""
-    from openprogram.providers.enabled_models import _build_model_from_row
+    from openprogram.models.providers.catalog.enabled_models import _build_model_from_row
 
     tg.toggle_model("modev", "mm-1", True)
     spec = mem_cfg["modev"]["models"][0]
@@ -422,13 +422,13 @@ def test_v3_repair_converts_legacy_modality_cost_row():
             }],
         }
     }
-    import openprogram.setup as setup
-    _orig = setup._read_config
-    setup._read_config = lambda: {"spec_migration_version": 0}
+    from openprogram.state import config as user_config
+    _orig = user_config.read_config
+    user_config.read_config = lambda: {"spec_migration_version": 0}
     try:
         repaired = st._repair_modality_cost_specs(providers)
     finally:
-        setup._read_config = _orig
+        user_config.read_config = _orig
     assert repaired is True
     row = providers["p"]["models"][0]
     assert row["input"] == ["text", "image"]
@@ -444,7 +444,7 @@ def test_v3_repair_converts_legacy_modality_cost_row():
 def test_reader_tolerates_legacy_row_without_migration():
     """Pure-CLI config that never hit the webui migration: _build_model_from_row
     still maps input_modalities → input (image resolvable)."""
-    from openprogram.providers.enabled_models import _build_model_from_row
+    from openprogram.models.providers.catalog.enabled_models import _build_model_from_row
 
     row = {
         "id": "cli-1", "name": "CLI", "api": "openai-completions",

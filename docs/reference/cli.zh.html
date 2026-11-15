@@ -1,0 +1,230 @@
+<title>CLI 命令参考</title>
+<meta name="description" content="按任务分组的 openprogram 全部子命令速查。">
+<span id="cli"></span>
+<h1>CLI 命令参考</h1>
+<p class="note">完整参数：<code translate="no">openprogram &lt;command&gt; -h</code>、<code translate="no">openprogram logs tail -h</code>，或<a href="cli/README.zh.md">每个命令的生成页</a>。</p>
+<h2 id="global-usage">全局</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>打开对话。直接运行时先询问终端界面或网页界面，没有 worker 时自动启动。</td></tr>
+<tr><th scope="row"><code translate="no">--print PROMPT</code></th><td>一次性提示：打印回复后退出。在当前目录工作，一直运行到模型给出回答；失败时错误写到 stderr，以非零码退出。在自己的进程里运行时，除这一轮外不发任何模型请求，记忆留给下一个 worker：会话标题就用从提示截出的那一个</td></tr>
+<tr><th scope="row"><code translate="no">--print</code>，被停止</th><td>Ctrl-C 或 SIGTERM 会停止本次运行，最多等 30 秒让它停下（再来一次信号就只等 2 秒），写好用量和记录文件后以 128 加第一个信号的编号退出（Ctrl-C 为 130，SIGTERM 为 143，SIGHUP 为 129），之后再来信号也不变；到时仍未停下的回合，它的命令会被停掉</td></tr>
+<tr><th scope="row"><code translate="no">-p</code>、<code translate="no">--print -</code></th><td><code translate="no">-p</code> 即 <code translate="no">--print</code>。不给提示或给 <code translate="no">-</code> 时从 stdin 读提示；给了提示又有管道输入时，输入作为 <code translate="no">&lt;stdin&gt;</code> 块附上。提示为空时以 2 退出</td></tr>
+<tr><th scope="row"><code translate="no">--output-format FORMAT</code></th><td><code translate="no">--print</code> 写到 stdout 的内容：<code translate="no">text</code>（回复）、<code translate="no">json</code>（一条运行结束记录）或 <code translate="no">stream-json</code>（每行一个事件，init 在前、result 在后）；<code translate="no">--include-partial-messages</code> 在流里加上文字和推理的增量</td></tr>
+<tr><th scope="row"><code translate="no">--permission-mode MODE</code></th><td>只用于这一次 <code translate="no">--print</code> 的权限模式：<code translate="no">ask</code>、<code translate="no">acceptEdits</code>、<code translate="no">plan</code>、<code translate="no">auto</code>、<code translate="no">bypass</code>。需要询问的调用直接被拒绝，因为没人能回答；拒绝写到 stderr，运行仍以 0 退出</td></tr>
+<tr><th scope="row"><code translate="no">--continue</code>、<code translate="no">--session-id ID</code>、<code translate="no">--at REF</code></th><td><code translate="no">--continue</code>（<code translate="no">-c</code>）在这个文件夹最近的会话上运行；<code translate="no">--session-id</code> 用这个 id 开新会话，已存在则失败；<code translate="no">--at</code> 配合 <code translate="no">--resume</code> 或 <code translate="no">--continue</code>，选定分支或在某条消息之后运行</td></tr>
+<tr><th scope="row"><code translate="no">--standalone</code>、<code translate="no">--no-project-binding</code>、<code translate="no">--no-web</code></th><td>在本进程运行而不是交给 App 的 Worker；新会话保存在 profile 里，不往文件夹写任何东西；这一轮不用网页工具，也不用 Provider 自带的搜索</td></tr>
+<tr><th scope="row"><code translate="no">--json-schema PATH</code></th><td>要求 <code translate="no">--print</code> 按 JSON Schema 输出；<code translate="no">-</code> 从 stdin 读</td></tr>
+<tr><th scope="row"><code translate="no">--model PROVIDER/MODEL</code></th><td><code translate="no">--print</code> 在新会话里用的模型；提供商需要先用 <code translate="no">providers login &lt;provider&gt; --api-key-stdin</code> 存好密钥</td></tr>
+<tr><th scope="row"><code translate="no">--effort LEVEL</code></th><td>只用于这一次 <code translate="no">--print</code> 的推理强度：<code translate="no">off</code>（或 <code translate="no">none</code>）、<code translate="no">minimal</code>、<code translate="no">low</code>、<code translate="no">medium</code>、<code translate="no">high</code>、<code translate="no">xhigh</code>、<code translate="no">max</code>。不保存；不给时用 Agent 自己的强度</td></tr>
+<tr><th scope="row"><code translate="no">--usage-file PATH</code></th><td><code translate="no">--print</code> 结束后，把 token、费用、模型、轮数和结束方式以 JSON 写到 <code translate="no">PATH</code></td></tr>
+<tr><th scope="row"><code translate="no">--transcript-file PATH</code></th><td><code translate="no">--print</code> 结束后，把这一轮按 JSON lines 写到 <code translate="no">PATH</code>：每次模型请求及其 token、回复文字、每个工具调用的参数和结果，按先后顺序，带时间</td></tr>
+<tr><th scope="row"><code translate="no">--resume SESSION_ID</code></th><td>恢复会话；id 见 <code translate="no">openprogram sessions list</code> 或 Web UI 侧栏。配合 <code translate="no">--print</code> 时，id 不存在就以 1 退出</td></tr>
+<tr><th scope="row"><code translate="no">--profile PROFILE</code></th><td>状态目录 <code translate="no">~/.openprogram-&lt;name&gt;/</code>，等同 <code translate="no">OPENPROGRAM_PROFILE</code></td></tr>
+<tr><th scope="row"><code translate="no">--no-alt-screen</code></th><td>内联 TUI，保留终端回滚</td></tr>
+<tr><th scope="row"><code translate="no">--screen-reader</code></th><td>内联辅助技术模式，无鼠标跟踪</td></tr>
+<tr><th scope="row"><code translate="no">--version</code></th><td>打印版本</td></tr>
+</tbody>
+</table>
+<h2 id="chat-and-running">对话与运行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tui</code> (alias <code translate="no">chat</code>)</th><td>在 Windows、macOS 或 Linux 上直接启动 Ink 终端界面；不支持 raw input 的终端回退到 Rich。接受 <code translate="no">--print</code>、<code translate="no">--json-schema</code>、<code translate="no">--model</code>、<code translate="no">--effort</code>、<code translate="no">--usage-file</code>、<code translate="no">--transcript-file</code>、<code translate="no">--resume</code>、<code translate="no">--no-alt-screen</code>、<code translate="no">--screen-reader</code>。</td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td>启动服务并打开 <code translate="no">http://localhost:18100</code>。<code translate="no">--web-port</code>（仅本次；默认已存偏好，然后 18100）、<code translate="no">--no-browser</code>。<code translate="no">web auth-url</code> 打印已认证链接。</td></tr>
+<tr><th scope="row"><code translate="no">acp</code></th><td>Agent Client Protocol 服务。<code translate="no">--agent</code>、<code translate="no">--permission</code>。</td></tr>
+</tbody>
+</table>
+<h2 id="background-service">后台服务</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">status</code></th><td>是否运行：PID、端口、运行时长</td></tr>
+<tr><th scope="row"><code translate="no">stop</code></th><td>停止</td></tr>
+<tr><th scope="row"><code translate="no">restart</code></th><td>代码或配置改动后重启</td></tr>
+<tr><th scope="row"><code translate="no">upgrade</code></th><td>更新代码，确认可用才重启。<code translate="no">--check</code>、<code translate="no">--dry-run</code>、<code translate="no">--channel</code>、<code translate="no">--no-restart</code>、<code translate="no">--yes</code>、<code translate="no">--json</code>；<code translate="no">upgrade status</code>。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">worker run</code></th><td>前台运行用于调试，Ctrl-C 停止</td></tr>
+<tr><th scope="row"><code translate="no">worker start</code></th><td>后台启动后返回</td></tr>
+<tr><th scope="row"><code translate="no">worker stop</code></th><td>已安装的服务保持停止，直到下次启动或登录</td></tr>
+<tr><th scope="row"><code translate="no">worker restart</code></th><td>停止并启动新实例</td></tr>
+<tr><th scope="row"><code translate="no">worker status</code></th><td>是否运行、PID、端口、运行时长</td></tr>
+<tr><th scope="row"><code translate="no">worker install</code></th><td>登录服务：macOS launchd、Linux systemd --user、Windows 任务计划程序。登录时启动，崩溃后重启。</td></tr>
+<tr><th scope="row"><code translate="no">worker uninstall</code></th><td>移除服务</td></tr>
+</tbody>
+</table>
+<h2 id="setup-and-configuration">安装与配置</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">setup</code></th><td>首次运行向导。<code translate="no">menu</code> 打开选择器；分区名直达：model、tools、agent、skills、ui、memory、profile、search、tts、channels、backend。</td></tr>
+<tr><th scope="row"><code translate="no">config</code></th><td><code translate="no">list</code>（值、分组、生效方式）、<code translate="no">get &lt;key&gt;</code>、<code translate="no">set &lt;key&gt; &lt;value&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">ports</code></th><td>查看或保存唯一的 Web UI 端口。<code translate="no">--port PORT</code>，默认 18100。</td></tr>
+<tr><th scope="row"><code translate="no">completion</code></th><td>打印 shell 补全脚本：<code translate="no">bash</code>、<code translate="no">zsh</code>、<code translate="no">powershell</code>、<code translate="no">pwsh</code></td></tr>
+<tr><th scope="row"><code translate="no">recordings</code></th><td>录制和回放 provider 调用：<code translate="no">status</code>、<code translate="no">record</code>、<code translate="no">replay</code>、<code translate="no">off</code>、<code translate="no">list</code>、<code translate="no">show</code>、<code translate="no">delete</code>、<code translate="no">prune</code></td></tr>
+<tr><th scope="row"><code translate="no">environments</code></th><td>对话运行的位置（本机、SSH、Docker）：<code translate="no">list</code>、<code translate="no">add</code>、<code translate="no">rm</code>、<code translate="no">default</code>、<code translate="no">test</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">check</code> 解释一次操作，<code translate="no">test</code> 校验预期的规则决定</td></tr>
+</tbody>
+</table>
+<h3 id="providers">providers</h3>
+<p class="note">别名 <code translate="no">secrets</code>。不带子命令时显示全部凭据的状态表。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">login &lt;provider&gt;</code></th><td><code translate="no">--api-key</code>、<code translate="no">--api-key-stdin</code> 非交互提供 key；<code translate="no">--account</code>；<code translate="no">--method</code> 强制登录方式</td></tr>
+<tr><th scope="row"><code translate="no">logout</code></th><td>移除 provider 凭据</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>按账号列出凭据池</td></tr>
+<tr><th scope="row"><code translate="no">available</code> (<code translate="no">search</code>, <code translate="no">catalog</code>)</th><td>所有可配置 provider；可加 QUERY</td></tr>
+<tr><th scope="row"><code translate="no">status</code></th><td>provider 当前凭据</td></tr>
+<tr><th scope="row"><code translate="no">use</code></th><td>provider 使用的账号</td></tr>
+<tr><th scope="row"><code translate="no">discover</code>, <code translate="no">adopt</code></th><td>扫描外部凭据来源并导入</td></tr>
+<tr><th scope="row"><code translate="no">doctor</code></th><td>过期、刷新、冷却、冲突</td></tr>
+<tr><th scope="row"><code translate="no">setup</code></th><td>交互式首次配置</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code></th><td>provider 短名</td></tr>
+<tr><th scope="row"><code translate="no">accounts</code></th><td><code translate="no">list</code>、<code translate="no">create</code>、<code translate="no">delete</code></td></tr>
+<tr><th scope="row"><code translate="no">migrate</code></th><td>把已存凭据迁移到当前格式</td></tr>
+</tbody>
+</table>
+<h3 id="mcp">mcp</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">token create</code></th><td>创建并打印本地 stdio 服务的 token</td></tr>
+<tr><th scope="row"><code translate="no">serve</code></th><td>本地 stdio 认证 MCP；需要完全匹配的 <code translate="no">OPENPROGRAM_MCP_TOKEN</code></td></tr>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">show</code></th><td>服务器和状态；单个服务器的工具和 schema</td></tr>
+<tr><th scope="row"><code translate="no">add</code></th><td>stdio 命令服务器；写入 <code translate="no">mcp_servers.json</code> 并启动</td></tr>
+<tr><th scope="row"><code translate="no">rm</code></th><td>停止并删除配置</td></tr>
+<tr><th scope="row"><code translate="no">restart</code>, <code translate="no">enable</code>, <code translate="no">disable</code></th><td><code translate="no">disable</code> 停止但保留配置</td></tr>
+<tr><th scope="row"><code translate="no">edit</code></th><td>已移除；提示改用 <code translate="no">add</code>/<code translate="no">rm</code> 或 MCP 设置页</td></tr>
+<tr><th scope="row"><code translate="no">test</code></th><td>临时启动配置以检查工具列表；不写磁盘</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>openprogram mcp token create
+export OPENPROGRAM_MCP_TOKEN="&lt;paste the token printed above&gt;"
+openprogram mcp serve</code></pre>
+<p class="note"><code translate="no">token create</code> 打印一次原始 token，不会设置变量。已有 token 时复用已保存的。</p>
+<h2 id="content-management">内容管理</h2>
+<h3 id="agents">agents</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">show</code>, <code translate="no">add</code></th><td>列出、查看、创建</td></tr>
+<tr><th scope="row"><code translate="no">rm</code></th><td>删除 agent 及其全部会话</td></tr>
+<tr><th scope="row"><code translate="no">set-default</code></th><td>设为默认 agent</td></tr>
+</tbody>
+</table>
+<h3 id="sessions">sessions</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>所有 agent 的会话</td></tr>
+<tr><th scope="row"><code translate="no">archive</code>, <code translate="no">unarchive</code></th><td>从默认列表隐藏或恢复，不删除</td></tr>
+<tr><th scope="row"><code translate="no">resume</code></th><td>回答等待中的会话</td></tr>
+<tr><th scope="row"><code translate="no">attach</code>, <code translate="no">detach</code></th><td>把渠道用户路由到会话或移除。必需 <code translate="no">--channel</code>、<code translate="no">--peer</code>；可选 <code translate="no">--account</code>、<code translate="no">--peer-kind</code>。</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code></th><td>所有会话与渠道用户的别名</td></tr>
+<tr><th scope="row"><code translate="no">export</code></th><td>导出 Markdown 或 HTML：<code translate="no">--format</code>、<code translate="no">--output</code></td></tr>
+<tr><th scope="row"><code translate="no">import</code></th><td>导入 Claude Code 和 Codex 对话；重复运行只增加新内容</td></tr>
+</tbody>
+</table>
+<h3 id="subagent">subagent</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">spawn</code></th><td>在会话中新建分支。必需 <code translate="no">--session</code>、<code translate="no">--prompt</code>；<code translate="no">--parent-msg</code>、<code translate="no">--label</code>、<code translate="no">--agent</code>（默认 <code translate="no">main</code>）、<code translate="no">--context inherit|clean</code> 或 <code translate="no">--clean</code>、<code translate="no">--no-json</code>。</td></tr>
+<tr><th scope="row"><code translate="no">merge</code></th><td>以新回合合并到目标。必需 <code translate="no">--target</code>、可重复的 <code translate="no">--branch SID</code>；<code translate="no">--message</code>、<code translate="no">--agent</code>、<code translate="no">--base N</code>、<code translate="no">--no-json</code>。</td></tr>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">show</code></th><td>会话内的 Job 资源视图</td></tr>
+</tbody>
+</table>
+<h3 id="programs">programs</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>类型、所有者、加载状态、目录、暴露层级</td></tr>
+<tr><th scope="row"><code translate="no">run &lt;name&gt; [operation]</code></th><td>在本进程调用入口，或在服务中启动应用操作。<code translate="no">--arg key=value</code>、<code translate="no">--input</code>、<code translate="no">--project</code>、<code translate="no">--request-key</code>、<code translate="no">--provider</code>、<code translate="no">--model</code>。</td></tr>
+<tr><th scope="row"><code translate="no">status</code>, <code translate="no">cancel</code></th><td>应用操作的运行</td></tr>
+<tr><th scope="row"><code translate="no">check</code></th><td>校验；测试并提交包，使其可调用</td></tr>
+<tr><th scope="row"><code translate="no">install</code>, <code translate="no">uninstall</code></th><td>目录、git URL 或 owner/repo。<code translate="no">--upgrade</code>、<code translate="no">--replace</code>、<code translate="no">--trust</code>。</td></tr>
+<tr><th scope="row"><code translate="no">enable</code>, <code translate="no">disable</code></th><td>应用的界面、资源、服务和入口。工具不能禁用。</td></tr>
+</tbody>
+</table>
+<h3 id="skills">skills</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>已发现的 skill</td></tr>
+<tr><th scope="row"><code translate="no">search</code>, <code translate="no">install</code></th><td>从发现源，默认 ClawHub</td></tr>
+<tr><th scope="row"><code translate="no">update</code></th><td>比较 SKILL.md 哈希，重新拉取过期 skill</td></tr>
+<tr><th scope="row"><code translate="no">remove</code></th><td>仅限项目、用户或远程缓存的 skill</td></tr>
+<tr><th scope="row"><code translate="no">doctor</code></th><td>扫描 skill 目录</td></tr>
+</tbody>
+</table>
+<h3 id="plugins">plugins</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">search</code></th><td>已安装插件；已配置市场</td></tr>
+<tr><th scope="row"><code translate="no">install</code></th><td>从 npm、git 或路径安装声明式插件；声明代码的 manifest 被拒绝</td></tr>
+<tr><th scope="row"><code translate="no">uninstall</code>, <code translate="no">update</code></th><td>移除；从 npm 重新安装</td></tr>
+<tr><th scope="row"><code translate="no">enable</code>, <code translate="no">disable</code>, <code translate="no">reload</code></th><td><code translate="no">reload</code> 重新读取 manifest 和文件</td></tr>
+<tr><th scope="row"><code translate="no">inspect</code></th><td>插件可包含什么、拒绝什么、每个条目的暴露层级</td></tr>
+</tbody>
+</table>
+<h3 id="channels">channels</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>各平台启用和配置状态</td></tr>
+<tr><th scope="row"><code translate="no">setup</code></th><td>向导：选渠道、登录（二维码或 token）、绑定 agent</td></tr>
+<tr><th scope="row"><code translate="no">accounts</code></th><td>机器人账号：<code translate="no">list</code>、<code translate="no">add</code>、<code translate="no">rm</code>、<code translate="no">login</code>、<code translate="no">set</code>、<code translate="no">group-users</code></td></tr>
+<tr><th scope="row"><code translate="no">bindings</code></th><td>把入站消息路由到 agent</td></tr>
+<tr><th scope="row"><code translate="no">access</code></th><td><code translate="no">list</code>、<code translate="no">approve &lt;code&gt;</code>、<code translate="no">allow &lt;user_id&gt;</code>、<code translate="no">revoke &lt;user_id&gt;</code>。未知发送者走配对；<code translate="no">allow</code> 直接添加已知用户。见<a href="../integrations/channels.zh.html#谁能和你的机器人说话">聊天渠道</a>。</td></tr>
+</tbody>
+</table>
+<h3 id="memory">memory</h3>
+<p class="note">每个实例一个工作区，所有 agent 和对话共享，包括渠道。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">子命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">status</code></th><td>内容、修订、写入器健康度、待处理回合</td></tr>
+<tr><th scope="row"><code translate="no">recall QUERY...</code></th><td>打印匹配段落</td></tr>
+<tr><th scope="row"><code translate="no">show PATH</code>, <code translate="no">edit PATH</code></th><td>单个文件；<code translate="no">edit</code> 用 <code translate="no">$EDITOR</code>，校验通过才生效</td></tr>
+<tr><th scope="row"><code translate="no">sleep</code></th><td>立即整理主题文件。<code translate="no">--model MODEL</code>。</td></tr>
+<tr><th scope="row"><code translate="no">export</code></th><td>tar+gzip 打包目录。<code translate="no">--out PATH</code>，默认 <code translate="no">./openprogram-memory-&lt;date&gt;.tar.gz</code>。</td></tr>
+</tbody>
+</table>
+<h3 id="trash-backup">内容恢复</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">trash</code></th><td><code translate="no">list</code>、<code translate="no">restore</code>：可恢复的本地删除，不覆盖</td></tr>
+<tr><th scope="row"><code translate="no">backup</code></th><td><code translate="no">create</code>、<code translate="no">list</code>、<code translate="no">restore</code>、<code translate="no">prune</code>：<code translate="no">&lt;state&gt;/backups/</code> 下的 tar.gz 快照</td></tr>
+</tbody>
+</table>
+<h2 id="execution">执行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">pause</code>、<code translate="no">continue</code>、<code translate="no">step</code>、<code translate="no">steer</code>、<code translate="no">cancel</code>、<code translate="no">fork</code>、<code translate="no">retry</code>、<code translate="no">wait-answer</code>、<code translate="no">wait-decline</code></td></tr>
+<tr><th scope="row"><code translate="no">jobs</code></th><td><code translate="no">list</code>、<code translate="no">get</code>：Job 资源视图</td></tr>
+<tr><th scope="row"><code translate="no">transcript</code></th><td>从保存的状态重建一次 <code translate="no">--print</code> 运行的记录，格式同 <code translate="no">--transcript-file</code>，用于来不及写记录就被杀掉的运行。<code translate="no">--state DIR</code>、<code translate="no">--session ID</code>、<code translate="no">--output PATH</code></td></tr>
+<tr><th scope="row"><code translate="no">scheduler-worker</code> (<code translate="no">cron-worker</code>)</th><td>前台循环，触发一次性、周期和监控任务。守护进程 tick 失败时把警告和 traceback 写到 stderr，然后在下一分钟继续，不重放失败的 <code translate="no">@reboot</code> 初始 tick。<code translate="no">--once</code> 运行一次并传播失败；<code translate="no">--list</code> 显示匹配状态。</td></tr>
+</tbody>
+</table>
+<h2 id="maintenance">维护</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">doctor</code></th><td>端到端健康检查。<code translate="no">--json</code>、<code translate="no">--repair</code>、<code translate="no">credentials</code>。</td></tr>
+<tr><th scope="row"><code translate="no">rescue</code></th><td>诊断问题，打印修复命令</td></tr>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td>脱敏的支持 zip。<code translate="no">--output PATH</code>，默认 <code translate="no">./openprogram-diagnostics-&lt;date&gt;.zip</code>。见<a href="diagnostics.zh.html">诊断包</a>。</td></tr>
+<tr><th scope="row"><code translate="no">logs</code></th><td><code translate="no">list</code>；<code translate="no">tail [name]</code> 带 <code translate="no">-n</code>、<code translate="no">-f</code>；<code translate="no">path [name]</code>。名称：worker（默认）、runtime、ink。</td></tr>
+<tr><th scope="row"><code translate="no">self-update</code></th><td><code translate="no">status</code>、<code translate="no">repair</code>：查看或恢复对话内 App 更新。见<a href="../install/upgrade.zh.html#conversational-self-update">升级</a>。</td></tr>
+<tr><th scope="row"><code translate="no">dev</code></th><td><code translate="no">status</code>、<code translate="no">deploy</code>、<code translate="no">open</code>、<code translate="no">copy-models</code>、<code translate="no">auth-url</code>、<code translate="no">promote</code>。见<a href="../install/upgrade.zh.html#development-checkout">升级</a>。</td></tr>
+<tr><th scope="row"><code translate="no">update</code></th><td>遗留命令，目前抛 <code translate="no">ImportError</code>。请用 <code translate="no">upgrade</code>。</td></tr>
+</tbody>
+</table>

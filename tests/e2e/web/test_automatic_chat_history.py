@@ -4,6 +4,8 @@ import subprocess
 
 import pytest
 
+from tests.support.transcript.history_wire import history_wire_script
+
 ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.browser
 
@@ -11,12 +13,12 @@ pytestmark = pytest.mark.browser
 def test_history_loads_on_scroll_preserves_anchor_and_recycles(tmp_path):
     from playwright.sync_api import sync_playwright, expect
 
-    entry = r'''
+    entry = history_wire_script() + r'''
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-import {MessageList} from './components/chat/messages/message-list';
+import {MessageList} from './components/chat/messages/list/message-list';
 import {useSessionStore} from './lib/session-store';
-import {registerSessionHistory} from './lib/chat/session-history';
+import {registerSessionHistory} from './lib/chat/history/session-history';
 import {runtimeState,setSocket} from './lib/runtime-bridge/state';
 class Socket extends EventTarget {
   static OPEN=1; readyState=1;
@@ -26,7 +28,7 @@ class Socket extends EventTarget {
     window.requests.push(req);
     window.reply=()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({
       type:'session_history_page', data:{id:'history',action:'load_session',request_id:req.request_id,
-      messages:rows(0,40),history:{head_id:'m99',before:null}}
+      ...asWire({messages:rows(0,40),history:{head_id:'m99',before:null,after:'m39',start:0,end:40,total:100}})}
     })}));
   }
 }
@@ -36,8 +38,8 @@ setSocket(new Socket());
 runtimeState.currentSessionId='history';
 runtimeState.conversations.history={id:'history',messages:rows(40,100)};
 useSessionStore.setState({currentSessionId:'history',activeChatKey:'history'});
-useSessionStore.getState().setMessages('history',rows(40,100));
-registerSessionHistory('history',{head_id:'m99',before:'m40'});
+useSessionStore.getState().applyRead('history',rows(40,100));
+seedWire('history',{messages:rows(40,100),history:{head_id:'m99',before:'m40',after:null,start:40,end:100,total:100}});
 window.store=useSessionStore;
 window.renderPane=(paintRows=true)=>root.render(<MessageList paintRows={paintRows}/>);
 const root=createRoot(document.getElementById('messages-mount'));window.renderPane();

@@ -1,0 +1,73 @@
+<title>升级源码 checkout</title>
+<meta name="description" content="openprogram upgrade 如何移动源码 checkout，并在新代码能启动后才重启 worker。">
+<span id="upgrading"></span>
+<h1>升级源码 checkout</h1>
+<p>带关卡的 <code translate="no">git pull</code> 加重启：坏提交在一个临时进程里失败，而不是在你要用来修它的服务里失败。桌面和托管 release，包括 v0.6.6 到 v0.7.0：<a href="../install/upgrade.zh.html">升级</a>。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">目标</th><th scope="col">命令</th></tr></thead>
+<tbody>
+<tr><th scope="row">会有什么变化？只读</th><td><code translate="no">openprogram upgrade status</code><span class="arg"><code translate="no">--json</code>：<code translate="no">head_sha</code>、<code translate="no">target_sha</code>、<code translate="no">update_available</code></span></td></tr>
+<tr><th scope="row">打印计划</th><td><code translate="no">openprogram upgrade --dry-run</code></td></tr>
+<tr><th scope="row">执行</th><td><code translate="no">openprogram upgrade</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="what-happens">步骤</h2>
+<table class="stack">
+<thead><tr><th scope="col">步骤</th><th scope="col">做什么</th><th scope="col">失败代码</th></tr></thead>
+<tbody>
+<tr><th scope="row">1 preflight</th><td>拒绝脏工作区，解析目标，降级前询问</td><td><code translate="no">dirty-worktree</code>、<code translate="no">downgrade-needs-confirmation</code></td></tr>
+<tr><th scope="row">2 checkout</th><td>快进到目标</td><td><code translate="no">checkout-failed</code></td></tr>
+<tr><th scope="row">3 deps</th><td><code translate="no">pyproject.toml</code> 或 <code translate="no">setup.py</code> 变化时 <code translate="no">pip install -e .</code>；<code translate="no">package-lock.json</code> 变化时 <code translate="no">npm ci</code></td><td><code translate="no">deps-failed</code></td></tr>
+<tr><th scope="row">4 build</th><td>对应 workspace 或 <code translate="no">package-lock.json</code> 变化时重建 <code translate="no">apps/web</code> 或 <code translate="no">apps/cli</code></td><td><code translate="no">build-failed</code></td></tr>
+<tr><th scope="row">5 probe</th><td>在隔离 profile 和临时端口上启动新代码，等 <code translate="no">/healthz</code>，跑 doctor，然后杀掉</td><td><code translate="no">probe-failed</code></td></tr>
+<tr><th scope="row">6 restart</th><td>重启真实服务</td><td><code translate="no">restart-failed</code></td></tr>
+<tr><th scope="row">7 verify</th><td>轮询直到服务报告新提交</td><td><code translate="no">verify-failed</code></td></tr>
+</tbody>
+</table>
+<p class="note">第 6 步之前运行中的服务不受影响。第一次失败即停止，打印代码并以非零退出。进度：<code translate="no">~/.openprogram/upgrade-state.json</code>。</p>
+
+<h2 id="when-a-step-fails">某步失败时</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">代码</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">dirty-worktree</code></th><td>提交你的改动</td></tr>
+<tr><th scope="row"><code translate="no">downgrade-needs-confirmation</code></th><td>目标更旧，旧代码可能读不懂新代码写的配置。确定的话加 <code translate="no">--yes</code></td></tr>
+<tr><th scope="row"><code translate="no">probe-failed</code></th><td>新代码启动不了。没有重启；修复应在上游</td></tr>
+<tr><th scope="row"><code translate="no">verify-failed</code></th><td>已重启，但服务没有报告新提交。没有自动回滚；运行打印的命令：<code translate="no">git -C &lt;repo&gt; checkout &lt;previous-sha&gt; &amp;&amp; openprogram restart</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="flags">参数</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参数</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--dry-run</code></th><td>只做计划；不改 checkout、worker 或升级状态。显式的 <code translate="no">--channel</code> 仍会持久化</td></tr>
+<tr><th scope="row"><code translate="no">--no-restart</code></th><td>在 probe 后停止。checkout 已移动，服务保持旧代码直到你重启</td></tr>
+<tr><th scope="row"><code translate="no">--yes</code>、<code translate="no">-y</code></th><td>允许降级</td></tr>
+<tr><th scope="row"><code translate="no">--channel NAME</code></th><td>跟随另一条线并持久化为 <code translate="no">update.channel</code>。只内置 <code translate="no">stable</code>，这里跟踪 <code translate="no">origin/main</code>，不是 GitHub 上的 stable Release</td></tr>
+<tr><th scope="row"><code translate="no">--json</code></th><td>含每一步的机器可读结果</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>输出示例</summary>
+<pre translate="no"><code>$ openprogram upgrade status
+  channel        stable (origin/main)
+  head           f5671fd25e4c6ae89e6d77f3fcffc4d4a2c0570a
+  target         a2d7f95633527e182ac850e40aca727aa0f6a3e6
+  update         available
+
+$ openprogram upgrade --dry-run
+  [OK  ] preflight  stable → origin/main: 80d77d1ed44c → 1a4101433b13
+  [OK  ] checkout   planned (dry run)
+  [OK  ] deps       planned (dry run)
+  [OK  ] build      planned (dry run)
+  [OK  ] probe      planned (dry run)
+  [OK  ] restart    planned (dry run)
+  [OK  ] verify     planned (dry run)</code></pre>
+</details>
+<p class="note"><code translate="no">openprogram update</code>（<code translate="no">--check</code>、<code translate="no">--force</code>）是遗留命令，会抛 <code translate="no">ImportError</code>。请用 <code translate="no">openprogram upgrade</code>。</p>
+
+<p class="next"><a href="troubleshooting.zh.html">故障排查</a></p>

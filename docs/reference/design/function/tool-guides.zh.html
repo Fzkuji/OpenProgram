@@ -1,0 +1,75 @@
+<title>工具指南</title>
+<meta name="description" content="规则很多的工具如何保持短 schema，并在调用需要时把其余说明交给模型。">
+<h1>工具指南</h1>
+<p>每个 schema 都随每次请求发送，长 schema 也更容易被草草读过。工具只保留短 schema，其余说明由 agent loop 送进工具结果。单入口工具靠这个机制：一个工具、几个参数，每个目标或动作的说明在首次使用时送达。Codex 的 computer use、Claude Code 的 skills 也是这种渐进披露。</p>
+
+<h2>声明</h2>
+<pre translate="no" tabindex="0"><code>guides.register("self_update", [
+    Guide("self_update", overview, mode="open", activates=("worktree_create",)),
+    Guide("self_update.prepare", prepare_text, summary="parameters, iteration policy and verification plan",
+          required_for=lambda args: args.get("action") == "prepare"),
+])</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">name</code></th><td>传给 <code translate="no">help</code> 的点分名称，跨工具唯一</td></tr>
+<tr><th scope="row"><code translate="no">text</code></th><td>指南，或返回指南的函数（平台差异、从代码读取的列表）</td></tr>
+<tr><th scope="row"><code translate="no">when(args)</code></th><td><code translate="no">included</code>、<code translate="no">on_error</code> 适用于哪些调用；<code translate="no">lookup</code> 是否进索引</td></tr>
+<tr><th scope="row"><code translate="no">required_for(args)</code></th><td>指南已知前不能运行的调用</td></tr>
+<tr><th scope="row"><code translate="no">activates</code></th><td>指南所讲的延迟工具；送达时在指南末尾加一行，列出这些工具和加载它们的 <code translate="no">tool_search select:</code> 调用（<a href="deferred-tools.zh.html#activation">延迟工具</a>）</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">mode</code></th><th scope="col">送达时机</th><th scope="col">用于</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">open</code></th><td>工具的第一个结果</td><td>每次使用都需要的内容</td></tr>
+<tr><th scope="row"><code translate="no">included</code></th><td>匹配 <code translate="no">when</code> 的调用的第一个结果</td><td>某个目标或平台</td></tr>
+<tr><th scope="row"><code translate="no">lookup</code></th><td>按名称和 <code translate="no">summary</code> 进索引，用 <code translate="no">help</code> 读取</td><td>带 <code translate="no">required_for</code>：错误代价高、参数长的动作。不带：特定情况才要的背景</td></tr>
+<tr><th scope="row"><code translate="no">on_error</code></th><td>匹配调用的失败结果</td><td>恢复建议</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">open</code>、<code translate="no">included</code> 指南末尾附该工具适用的 lookup 指南索引。</p>
+
+<h2>送达</h2>
+<ol>
+<li><code translate="no">_run_loop</code> 打开视图（<code translate="no">guides.begin_loop</code>）。loop 之外指南不起作用：直接 Python 调用和测试看到的是普通结果。</li>
+<li>每次模型请求前，<code translate="no">_stream_assistant_response</code> 记录发送的文本（<code translate="no">guides.observe_request</code>）。</li>
+<li>调用判定前，<code translate="no">required_for</code> 指南未知时 <code translate="no">prechecks.call_problem</code> 返回 <code translate="no">GUIDE_REQUIRED</code>：普通工具错误，没有审批卡。模型读完附上的指南再调用。</li>
+<li>调用结束时，<code translate="no">_rewrite_tool_result</code>（<code translate="no">guides.attach</code>）把应送达的指南各包在 <code translate="no">&lt;guide name="…"&gt;</code> 里，记在结果的附件（<code translate="no">details["attachment"]</code>）上，不放进工具自己的文字；它们在这组结果之后发出，也算在请求的文字里（<a href="../context/overview.zh.html#cross-turn-tool-context">工具输出</a>）。</li>
+</ol>
+<p>标记还在上一次请求文本里，或此后已送达，指南就算<strong>已知</strong>。没有台账：压缩、微压缩、worker 重启或新 agent 都会让标记消失，下一个需要它的调用会重新收到。提示词里已带标记指南的 agent 不再重复收到。</p>
+
+<h2><code translate="no">help</code></h2>
+<p><code translate="no">help(name)</code> 是常驻工具，按名返回指南；传工具名时返回其开场指南，标记方式与送达的指南相同。无需审批，属 <code translate="no">runtime.control</code> 权限。未知名称会列出现有指南。在 <code translate="no">computer_use_agent</code> 代码里，Python 的 <code translate="no">help</code>、<code translate="no">dir</code> 可用于 <code translate="no">cu</code> 对象：每个 docstring 就是目标指南里该动作的那一行。</p>
+
+<h2>单入口工具</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">指南</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">self_update</code></th><td><code translate="no">self_update</code>：open，激活 <code translate="no">worktree_create</code>。<code translate="no">.prepare</code>、<code translate="no">.retry</code>、<code translate="no">.undo</code>：lookup，该动作必需</td></tr>
+<tr><th scope="row"><code translate="no">computer_use_agent</code></th><td><code translate="no">.app</code>、<code translate="no">.browser</code>、<code translate="no">.vm</code>：操作该目标时 included。<code translate="no">.code</code>：随第一个操作任意目标的调用 included；没有调用等待它</td></tr>
+</tbody>
+</table>
+<p>两层：工具，然后 <code translate="no">action</code> 或 <code translate="no">target</code>。权限、authority 和审批按动作决定。</p>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">self_update</code> 动作</th><th scope="col">Authority</th><th scope="col">审批</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">status</code>、<code translate="no">versions</code></th><td><code translate="no">fs.read</code></td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">begin</code></th><td><code translate="no">process.exec</code></td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">cancel</code></th><td><code translate="no">runtime.control</code></td><td>无</td></tr>
+<tr><th scope="row"><code translate="no">prepare</code>、<code translate="no">retry</code>、<code translate="no">undo</code></th><td><code translate="no">process.exec</code></td><td>owner（<code translate="no">APPROVED_ACTIONS</code>）</td></tr>
+</tbody>
+</table>
+<p>只靠参数就能判断的检查在审批卡之前、指南检查之后运行：<code translate="no">prepare</code> 的 SHA 格式错误，或迭代策略、验证计划越界，返回 <code translate="no">INVALID_ARGUMENTS</code>。</p>
+
+<details><summary>实现文件</summary>
+<ul>
+<li><code translate="no">openprogram/programs/_authoring/guides.py</code>、<code translate="no">prechecks.py</code></li>
+<li><code translate="no">openprogram/programs/tools/runtime/help.py</code></li>
+<li><code translate="no">openprogram/runtime/agent/loop/</code>：<code translate="no">_run_loop</code>、<code translate="no">_stream_assistant_response</code>、<code translate="no">_rewrite_tool_result</code></li>
+<li><code translate="no">openprogram/runtime/permissions/policy.py</code>：<code translate="no">permission_decision</code></li>
+<li><code translate="no">openprogram/programs/tools/system/self_update/__init__.py</code></li>
+<li><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/tool.py</code>、<code translate="no">code.py</code></li>
+<li><code translate="no">tests/unit/programs/test_guides.py</code>、<code translate="no">test_prechecks.py</code></li>
+</ul>
+</details>

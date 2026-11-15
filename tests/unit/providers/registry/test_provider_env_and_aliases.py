@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.auth.account.aliases import known_aliases
-from openprogram.auth.account.aliases import resolve
-from openprogram.providers import env_api_keys
+from openprogram.models.auth.account.aliases import known_aliases
+from openprogram.models.auth.account.aliases import resolve
+from openprogram.models.providers.settings import env_api_keys
 
 
 @pytest.fixture(autouse=True)
@@ -14,7 +14,7 @@ def _no_auth_store(monkeypatch):
     """Blank out the AuthStore by default so the developer's real
     ~/.openprogram/auth credentials can't leak into assertions; tests
     that want a stored key re-monkeypatch it themselves."""
-    import openprogram.auth.resolver as _resolver
+    import openprogram.models.auth.resolver as _resolver
     monkeypatch.setattr(
         _resolver, "resolve_store_api_key_sync", lambda *a, **k: None
     )
@@ -86,7 +86,7 @@ def test_resolve_provider_key_detects_bedrock_credentials(monkeypatch) -> None:
 
 def test_resolve_provider_key_reads_the_auth_store(monkeypatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "router-key")  # inert
-    import openprogram.auth.resolver as _resolver
+    import openprogram.models.auth.resolver as _resolver
     monkeypatch.setattr(
         _resolver, "resolve_store_api_key_sync",
         lambda provider, *a, **k: "store-key" if provider == "openrouter" else None,

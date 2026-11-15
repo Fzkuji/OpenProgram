@@ -1,0 +1,233 @@
+<title>Operations</title>
+<meta name="description" content="Session operations from trigger to disk to frontend: startup, creation, project binding, writing, naming, listing, deletion and archiving.">
+<h1 id="session-operations">Operations</h1>
+
+<dl class="pairs">
+<dt>Session directory</dt><dd><code translate="no">&lt;state&gt;/projects/&lt;project_id&gt;/chats/&lt;session_id&gt;/</code> (project <code translate="no">default</code> when unbound)</dd>
+<dt>Metadata</dt><dd><code translate="no">id</code>, <code translate="no">agent_id</code>, <code translate="no">title</code>, <code translate="no">created_at</code>, <code translate="no">updated_at</code>, <code translate="no">source</code>, <code translate="no">status="idle"</code>, …</dd>
+</dl>
+
+<table class="stack">
+<thead><tr><th scope="col">Call</th><th scope="col">Session on disk</th><th scope="col">Registry <code translate="no">_index</code></th><th scope="col">Frame</th></tr></thead>
+<tbody>
+<tr id="creating-a-session"><th scope="row"><code translate="no">create_session</code></th><td>Directory and metadata created</td><td>Row added, written at once</td><td>None; found through <code translate="no">list_sessions</code></td></tr>
+<tr id="writing-a-message"><th scope="row"><code translate="no">append_message</code></th><td>Node line in the log; metadata, with head when the chain advances</td><td><code translate="no">updated_at</code>. User message: <code translate="no">preview</code>, 77 characters + "…" when over 80. Flushed within 5 seconds.</td><td>None; content streams separately</td></tr>
+<tr id="updating-fields"><th scope="row"><code translate="no">update_session</code></th><td>Only the given fields</td><td>Same fields, <code translate="no">updated_at</code> untouched, written at once</td><td><code translate="no">session_updated</code>, changed fields only; the frontend patches</td></tr>
+<tr id="listing"><th scope="row"><code translate="no">list_sessions</code></th><td>Not read</td><td>Rows copied, archived dropped, filtered, by <code translate="no">updated_at</code> descending, paged by offset and limit</td><td><code translate="no">sessions_list</code>: registry fields, <code translate="no">preview</code>, <code translate="no">project</code> from the project directory</td></tr>
+<tr id="deleting"><th scope="row"><code translate="no">delete_session</code></th><td>Destroyed under session locks</td><td>Row removed, written at once; location forgotten, project unbound</td><td><code translate="no">session_deleted</code></td></tr>
+<tr id="archiving"><th scope="row"><code translate="no">set_archived</code></th><td>A metadata boolean</td><td>Same boolean</td><td><code translate="no">session_updated</code>; returns <code translate="no">False</code> for an unknown id</td></tr>
+</tbody>
+</table>
+<p class="note">Registry writes go through a temporary file and rename, and flush on exit. After SIGKILL it rebuilds from logs, losing at most 5 seconds of preview. <code translate="no">commit_turn</code> makes the fields durable at the turn boundary. Frames come from the WebSocket handler.</p>
+<p class="note">Archiving deletes, moves and appends nothing, so <code translate="no">updated_at</code> holds and an unarchived session returns to its place (<a href="storage-consistency.html">storage consistency</a>); <code translate="no">get_messages</code> keeps working.</p>
+
+<details>
+<summary>Entry points and filters</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Entry</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">dispatcher.process_user_turn</code>, channel handler</th><td>Create for an unknown session, then <code translate="no">append_message</code> at once: no shell</td></tr>
+<tr><th scope="row"><code translate="no">session_context</code></th><td>Creates when CLI or harness enters with an unknown id. Exit before a message leaves an empty conversation until deleted; startup keeps it, since it has its log.</td></tr>
+<tr><th scope="row"><code translate="no">include_archived=True</code></th><td>Both. Passed by passes visiting everything: memory scan, run-state repair, "clear all", channel-binding lookup, Agent addressing.</td></tr>
+<tr><th scope="row"><code translate="no">archived=True</code></th><td>Only archived</td></tr>
+<tr><th scope="row">Sidebar payload</th><td>Every row: the client switches active, archived, all without a round trip</td></tr>
+<tr><th scope="row">Archive, WebSocket</th><td><code translate="no">{"action": "update_session_flags", "session_id": ..., "archived": true}</code></td></tr>
+<tr><th scope="row">Archive, REST</th><td><code translate="no">POST /api/sessions/archive</code>, <code translate="no">POST /api/sessions/unarchive</code>, body <code translate="no">{"session_id": ...}</code></td></tr>
+<tr><th scope="row">Archive, CLI</th><td><code translate="no">openprogram sessions archive &lt;id&gt;</code>, <code translate="no">openprogram sessions unarchive &lt;id&gt;</code></td></tr>
+<tr><th scope="row">Delete, on disk</th><td>Delete intent in <code translate="no">.deleted/</code>; session directory and recorded other location destroyed; run tables forgotten; <code translate="no">.file-recovery/&lt;id&gt;</code> removed; file history released; lock files removed. See <a href="#after-delete">after a delete</a></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="startup">Startup</h2>
+<ol>
+<li>Load <code translate="no">.chats-index.json</code> into <code translate="no">_index</code>. Missing or unparsable: scan project layouts and durable locations, rebuild from each log's metadata, write it.</li>
+<li>Reset <code translate="no">running</code> rows to <code translate="no">idle</code>; execution recovery is separate.</li>
+<li>Clean up unarchived rows older than one hour:</li>
+</ol>
+<table class="stack fixed">
+<thead><tr><th scope="col">Session directory</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Has <code translate="no">main.jsonl</code></th><td>Kept</td></tr>
+<tr><th scope="row">Absent at the default placement, no layout holds it</th><td>Summary row dropped; project bindings and locations stay</td></tr>
+<tr><th scope="row">Has <code translate="no">agents</code> or <code translate="no">events.jsonl</code>, no main log</th><td>Kept with a warning</td></tr>
+<tr><th scope="row">Otherwise (a shell)</th><td>Moved under the session lock to <code translate="no">.quarantine/&lt;id&gt;-&lt;time&gt;/session/</code> with <code translate="no">reason.json</code>; row dropped. Never outside the store root.</td></tr>
+</tbody>
+</table>
+<p class="note">Retained when uncertain: no <code translate="no">created_at</code>, archived or tombstoned, unreachable non-default placement, migration row not <code translate="no">done</code> or <code translate="no">deleted</code>, unreadable journal (pass skipped), busy lock, filesystem error. Files are never deleted; <code translate="no">.quarantine</code> stays until removed by hand. No expiry or session-count limit.</p>
+
+<h2 id="after-delete">After a delete</h2>
+<p>A delete is final: there is no undo and no trash folder. One small file stays.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Left by the conversation</th><th scope="col">After the delete</th></tr></thead>
+<tbody>
+<tr><th scope="row">Delete mark, <code translate="no">.deleted/&lt;id&gt;</code></th><td>Kept for good: about 80 bytes, read by name, never listed. It is what refuses a late writer, a migration, a channel route or a stale copy that would bring the id back</td></tr>
+<tr><th scope="row">Lock files: <code translate="no">.locks/&lt;id&gt;.lock</code>, <code translate="no">.locks/.operations-&lt;id&gt;.lock</code>, <code translate="no">.locks/.migration-&lt;id&gt;.lock</code>, <code translate="no">.goal-locks/&lt;hash&gt;.lock</code></th><td>Removed by the delete, under the conversation's lock, after the mark is written</td></tr>
+<tr><th scope="row">File history, <code translate="no">shadow-git/&lt;hash&gt;/</code></th><td>The repository belongs to a directory. It lists the conversations that committed into it in <code translate="no">.git/openprogram-sessions/</code> and is removed when the last one listed is deleted. Removing the emptied list is the claim: it fails while a conversation is listed, so one that lists itself at that moment keeps the repository</td></tr>
+<tr><th scope="row">REST reads of the id</th><td><code translate="no">404 session_not_found</code> on <code translate="no">/context</code>, <code translate="no">/tokens</code>, <code translate="no">/branches/tokens</code>, <code translate="no">/context-range</code> and <code translate="no">/dag</code>, as for an id nobody created. A conversation the server holds in memory is known, so a draft's first Send is answered</td></tr>
+</tbody>
+</table>
+<p>A store that opens removes the idle lock files of ids it has no conversation for, and releases the file history of a delete that stopped half way. A held lock file stays.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">The sweep</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where it runs</th><td>Opening reads the names in <code translate="no">.locks/</code> and <code translate="no">.goal-locks/</code>. The removals run on a thread of their own, so a store opened on the server's event loop does not wait for them</td></tr>
+<tr><th scope="row">A conversation the index missed</th><td>Loses nothing. Only an idle lock file can go, it holds no state, and the next lock of the id makes it again</td></tr>
+<tr><th scope="row">File history</th><td>Removed only when every conversation listed in it has a delete mark in this store. A repository with no list, or one listing an id of another store, stays</td></tr>
+<tr><th scope="row">Reach</th><td>The store's own root and the <code translate="no">shadow-git/</code> folder of its state directory, both fixed when the store opens. Another profile's state directory is never read</td></tr>
+</tbody>
+</table>
+<details><summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Decision</th><th scope="col">Reasoning</th></tr></thead>
+<tbody>
+<tr><th scope="row">The mark has no expiry</th><td>Removing lock files is safe only because whoever takes the lock next finds the mark and stops. An expired mark would let a waiter or a leftover copy write the id again. Claude Code and OpenCode delete in place with no mark, and keep one copy of a conversation in one place; here a second process, a channel route and a moved placement can each write an id again</td></tr>
+<tr><th scope="row">Lock files are removable</th><td>Every acquisition checks, after locking, that the path still names the file it locked, and opens the path again when it does not. Without that check a removed lock file gives two holders, which is why the files used to stay</td></tr>
+<tr><th scope="row">File history lives as long as its writers</th><td>Claude Code keeps file history per conversation and removes it with the transcript. OpenCode keeps one snapshot repository per project and prunes by age. A repository shared by a directory cannot drop one conversation's commits, since the others' diffs are read from the same history, so it goes with its last writer</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="main-project-binding">Main project binding</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 96" role="img" aria-label="A project picked in a draft is held in pendingProjectsByChat. The first chat frame carries project_id, handle_chat creates the session with that project, and chat_ack sends the idempotent set_session_project for the label and reverse index. The binding is then frozen.">
+  <defs><marker id="ops-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Draft</text>
+  <text class="t-soft" x="0" y="66">composer chip</text>
+  <text class="t-soft" x="0" y="86">nothing sent</text>
+  <line class="ln" x1="120" y1="33" x2="160" y2="33" marker-end="url(#ops-a)"/>
+  <text class="t-big" x="172" y="40">First frame</text>
+  <text class="t-soft" x="172" y="66">carries project_id</text>
+  <line class="ln" x1="308" y1="33" x2="348" y2="33" marker-end="url(#ops-a)"/>
+  <text class="t-big" x="360" y="40">handle_chat</text>
+  <text class="t-soft" x="360" y="66">creates with project</text>
+  <line class="ln" x1="500" y1="33" x2="540" y2="33" marker-end="url(#ops-a)"/>
+  <text class="t-big" x="552" y="40">Frozen</text>
+  <text class="t-soft" x="552" y="66">chat_ack labels,</text>
+  <text class="t-soft" x="552" y="86">indexes the binding</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Draft</strong><small>composer chip, nothing sent</small></li>
+  <li><strong>First frame</strong><small>carries project_id</small></li>
+  <li><strong>handle_chat</strong><small>creates with project</small></li>
+  <li class="flow-end"><strong>Frozen</strong><small>chat_ack labels, indexes the binding</small></li>
+</ol>
+</figure>
+<dl class="pairs">
+<dt>Main directory</dt><dd>The project's path. Conversations sit under application state by stable project id, so a path change touches neither binding nor repository. <a href="additional-working-directories.html">Additional directories</a> stay editable.</dd>
+<dt>Draft state</dt><dd>Held in <code translate="no">pendingProjectsByChat[chatKey]</code> until <code translate="no">chat_ack</code>; that send of <code translate="no">set_session_project</code> is idempotent</dd>
+<dt>Settings-only repository</dt><dd>Can exist before creation without an <code translate="no">id</code>. <code translate="no">handle_chat</code> asks <code translate="no">is_created</code> (metadata <code translate="no">id</code>, or history); <code translate="no">create_session</code> moves it to the project's placement, keeping settings.</dd>
+<dt>After the first turn</dt><dd><code translate="no">set_session_project</code> accepts only the current project, else <code translate="no">project is frozen after the first turn</code> (<code translate="no">FROZEN_ERROR</code>). The chip is read-only with a session id.</dd>
+</dl>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col" id="moving-a-conversation">Move to another project</th><th scope="col" id="repairing-a-missing-directory">Repair a missing directory</th></tr></thead>
+<tbody>
+<tr><th scope="row">User</th><td>Drags a chat row onto a project, or <strong>Move to project</strong></td><td>Folder moved or renamed on disk, then picks it again</td></tr>
+<tr><th scope="row">Action</th><td><code translate="no">move_session_to_project {session_id, project_id}</code></td><td><code translate="no">relocate_project {session_id, project_id, path}</code></td></tr>
+<tr><th scope="row">Changes</th><td>The session's project. <code translate="no">SessionStore.move_session</code>, under session locks: cached repository dropped; <code translate="no">projects/&lt;old&gt;/chats/&lt;id&gt;</code> and <code translate="no">.file-recovery/&lt;id&gt;</code> renamed to <code translate="no">projects/&lt;new&gt;/chats/</code>; location recorded, registry rebound, <code translate="no">meta.project_id</code> set; old project appended to <code translate="no">meta.project_history</code></td><td>The project's path, never the binding, so legal after the freeze. <code translate="no">project_store.relocate_project</code> validates, rewrites the path, keeps the id.</td></tr>
+<tr><th scope="row">Refused</th><td>While a turn runs (<code translate="no">RUNNING_ERROR</code>); destination exists; folder <a href="#held-folder">held by another program</a>. Same project: no change, no node.</td><td>Default project: its display path returns to home on every <code translate="no">get_default_project</code> read, and it has no project Git repository</td></tr>
+<tr><th scope="row">Reply</th><td><code translate="no">projects_changed</code> to every client first, then <code translate="no">session_moved {ok, from_project_id, project_id, node_id}</code> and a fresh <code translate="no">projects_list</code> to the requester</td><td><code translate="no">projects_changed</code> to every client first, then <code translate="no">project_relocated {ok, old_path, path, node_id}</code> and a fresh <code translate="no">projects_list</code> to the requester</td></tr>
+<tr id="relocate-node"><th scope="row">Node <code translate="no">name</code></th><td><code translate="no">project/move</code>, by <code translate="no">record_move</code></td><td><code translate="no">project/relocate</code>, by <code translate="no">record_relocate</code></td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td>Old project name → new project name</td><td>Old path → new path</td></tr>
+<tr><th scope="row"><code translate="no">metadata</code></th><td><code translate="no">old_project_id</code>, <code translate="no">new_project_id</code></td><td><code translate="no">display: "runtime"</code>, <code translate="no">project_id</code>, <code translate="no">old_path</code>, <code translate="no">new_path</code></td></tr>
+</tbody>
+</table>
+<p class="note">Both nodes: <code translate="no">role</code> <code translate="no">code</code>, <code translate="no">caller</code> <code translate="no">ROOT</code>, <code translate="no">predecessor</code> <code translate="no">None</code>; shape of <code translate="no">context/system_prompt</code>; code in <code translate="no">state/store/project/relocate_node.py</code>. <code translate="no">caller</code> keeps head where it is. Not under <code translate="no">context/</code>, hidden from the transcript: this is a user action worth seeing.</p>
+<h3 id="held-folder">A held conversation folder</h3>
+<p>Windows refuses to rename a folder while any file inside it is open. The Worker keeps none open between writes, so the holder is a reader in another process, an indexer, an antivirus scan, or a command running in the work folder. <code translate="no">move_session_folder</code> retries for one second, then raises <code translate="no">SessionFolderBusy</code>. A folder is never copied instead.</p>
+<table class="stack">
+<thead><tr><th scope="col">Rename</th><th scope="col">When the folder stays held</th></tr></thead>
+<tbody>
+<tr><th scope="row">Move to another project</th><td><code translate="no">session_moved</code> carries <code translate="no">ok: false</code> and the error; folder, recovery tree, binding and turns are unchanged. If the recovery tree is the held one, the conversation is renamed back first</td></tr>
+<tr><th scope="row">Binding a draft</th><td><code translate="no">set_session_project</code>: the binding changes and the folder stays, recorded in the location map. First message: the create fails and the draft keeps its settings</td></tr>
+<tr><th scope="row">Startup quarantine</th><td>The shell stays and the empty quarantine entry is removed</td></tr>
+<tr><th scope="row">Publishing a migrated copy</th><td>The journal row is <code translate="no">failed</code> with the error; the source is untouched, and the next run publishes the verified copy</td></tr>
+</tbody>
+</table>
+<p class="note">If the conversation cannot be renamed back either, the location map names its new folder so it stays readable, and the error names both folders. Moving it to the same project again finishes the move: the recovery tree joins the conversation, then the binding changes.</p>
+<p class="note">Archiving sets a field and deleting removes files in place; neither renames a folder. A conversation id never changes.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">After</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Next turn after a move</th><td>New project's path: <code translate="no">project_workdir_for</code> resolves fresh every call</td></tr>
+<tr><th scope="row">Memory after a move</th><td><code translate="no">project_layer.left_workspace_ids</code> maps <code translate="no">project_history</code> to workspaces; <code translate="no">write_target</code> counts turns they marked, so the new project's memory takes only what follows. The home project works the same with the personal workspace.</td></tr>
+<tr><th scope="row">Settings after a move</th><td>Each branch's Agent, model and permission mode travel with the metadata; project defaults (<code translate="no">settings.json</code>) come from the new project</td></tr>
+<tr><th scope="row">Directory missing</th><td><code translate="no">project_workdir_for</code> returns <code translate="no">None</code>, never the default project's home. New bound work blocked while missing, replaced, pending, migrating or unavailable. The session stays readable; the UI gets location state and missing path.</td></tr>
+</tbody>
+</table>
+
+<details id="following-a-move">
+<summary>Following a folder move automatically</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mechanism</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Identity</th><td>The stable id; the path is an attribute. Codex matches recorded cwd against recent turn context, DeepSeek validates against an immutable session header cwd; neither tracks arbitrary folder moves.</td></tr>
+<tr><th scope="row">Native identity</th><td>On startup, access, volume reconnect, or a directory or ancestor event, resolve a stored bookmark or inode; a match updates the path. No walk of HOME.</td></tr>
+<tr><th scope="row">Application-owned placement</th><td><code translate="no">projects/&lt;project-id&gt;/chats/&lt;session-id&gt;/</code>: relocating moves no chat files. Legacy copies migrate through a journal. Undo recovery stays in the sibling <code translate="no">.file-recovery/&lt;session_id&gt;/&lt;turn&gt;/</code>.</td></tr>
+<tr><th scope="row">No auto-adoption</th><td>Names, Git remotes, contents and leftover <code translate="no">.openprogram/sessions</code> prove nothing</td></tr>
+<tr><th scope="row"><strong>Locate folder</strong></th><td>May replace identity after showing the expected old path and revision. Refuses a destination owned by another project, unless the located project is missing with no conversations: then it folds into the owner, which the picker selects.</td></tr>
+<tr><th scope="row">Surfaces</th><td>The draft picker lists <code translate="no">path_missing</code> projects (a click opens the locate flow); <code translate="no">/projects</code> shows the warning with "Locate folder…"</td></tr>
+<tr><th scope="row">Not a shell</th><td>A project-bound session with an unreachable location or unsettled journal</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="attachments-and-recovery">
+<summary>Attachments and migration</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Browser uploads</th><td>Decoded and saved before dispatch under <code translate="no">&lt;session directory&gt;/workdir/attachments/</code>; the path goes in the user message marker</td></tr>
+<tr><th scope="row">IndexedDB</th><td>Only unsent composer drafts; cleared after publication</td></tr>
+<tr><th scope="row">Legacy migration</th><td>Inventories any external recovery tree, copies session and recovery data under <code translate="no">&lt;state&gt;/projects/.migration/staging/</code>, verifies, publishes to <code translate="no">projects/&lt;project_id&gt;/chats/&lt;session_id&gt;/</code> and its sibling <code translate="no">.file-recovery</code>, then updates the location authority. A failed publication keeps the project non-available.</td></tr>
+<tr><th scope="row">Old markers</th><td><a href="storage.html#cache-and-attachments">The storage rule</a></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="place-in-project-list">A place in the project list</h2>
+<dl class="pairs">
+<dt>Written by</dt><dd><code translate="no">update_session_flags</code> with <code translate="no">sort_at</code> (seconds), stored with <code translate="no">sort_since</code> (its <code translate="no">updated_at</code> then). <code translate="no">sort_at</code> 0 clears both.</dd>
+<dt>Picked by the client</dt><dd>A time between the neighbours, or now at the top</dd>
+<dt>Holds until</dt><dd><code translate="no">updated_at</code> passes <code translate="no">sort_since</code>: its own next turn. Others' activity can still pass it.</dd>
+</dl>
+
+<h2 id="status-writes">When status is written</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Moment</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Turn start</th><td><code translate="no">running</code></td></tr>
+<tr><th scope="row">Turn ends</th><td><code translate="no">done</code>; <code translate="no">unread</code> unless on screen (a quiet turn leaves the dot)</td></tr>
+<tr><th scope="row">Turn fails</th><td><code translate="no">failed</code>; <code translate="no">unread</code> unless on screen</td></tr>
+<tr><th scope="row">Cancelled, nothing else running</th><td><code translate="no">idle</code></td></tr>
+<tr><th scope="row">Background turn</th><td>Not written</td></tr>
+</tbody>
+</table>
+<p class="note">Clients also accept <code translate="no">needs_input</code> (amber dot); the server does not write it to the session.</p>
+
+<h2 id="naming">Naming</h2>
+<p class="note">One implementation, <code translate="no">turn_runtime/titles.py</code>: WS, fn-form, channel, CLI and spawn all reach <code translate="no">finalize_turn end → _maybe_auto_title</code>. Channels add only a brand logo in the sidebar, chats page and command palette.</p>
+<table class="stack">
+<thead><tr><th scope="col">Marker</th><th scope="col">Meaning</th><th scope="col">Set by</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_user_titled</code></th><td>The user typed it: permanent lock</td><td>Only rename: set for a typed name, cleared for a generated one</td></tr>
+<tr><th scope="row"><code translate="no">_auto_titled</code></th><td>An automatic title exists: do not truncate again. Apart from the lock, since truncation is expected to be superseded.</td><td><code translate="no">_maybe_auto_title</code>, rename for a generated name</td></tr>
+<tr><th scope="row"><code translate="no">_title_gen_count</code></th><td>Which <code translate="no">_RETITLE_AT_TURNS</code> entry was hit</td><td>Internal to <code translate="no">_maybe_auto_title</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">When</th><td>Replies 1, 6, 16, 40; also 2, 3 when the first user message is small talk. Never with <code translate="no">_user_titled</code>.</td></tr>
+<tr><th scope="row">Reply 1, at once</th><td><code translate="no">_title_from_text(first user message)</code>: markers stripped, first line, 50 characters + "…"; <code translate="no">_auto_titled=True</code>, <code translate="no">_title_gen_count=1</code></td></tr>
+<tr><th scope="row">Then, in the background</th><td>LLM title over the noted title, <code translate="no">_title_gen_count=N+1</code>, broadcast <code translate="no">session_updated</code>. Gives up if <code translate="no">_user_titled</code> appeared or the title changed.</td></tr>
+<tr><th scope="row">Excerpt</th><td><code translate="no">build_title_context(get_branch(id))</code>, within 1,000 characters (<code translate="no">2 × _MAX_INPUT_CHARS</code>). User text and each turn's final assistant text; no tool records, attachment markers or <code translate="no">&lt;think&gt;</code>.</td></tr>
+<tr><th scope="row">Small talk</th><td>Greeting, thanks, acknowledgement, or one or two characters such as <code translate="no">hl</code>. Opening small-talk turns drop with their replies; a later low-content message drops, its reply stays. All small talk: everything stays.</td></tr>
+<tr><th scope="row">Always included</th><td>First substantive turn and latest turn. Others fill newest first; <code translate="no">…</code> marks a gap.</td></tr>
+<tr><th scope="row">Typed rename</th><td><code translate="no">update_session(title, _user_titled=True)</code></td></tr>
+<tr><th scope="row"><strong>Auto rename</strong> (empty title)</th><td><code translate="no">_llm_rename()</code> → <code translate="no">_user_titled=False</code>, <code translate="no">_auto_titled=True</code>, <code translate="no">_title_gen_count=max(1, N)</code>. If the title or lock changed meanwhile: <code translate="no">superseded</code>, not written.</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="name.html">LLM title generation</a></p>

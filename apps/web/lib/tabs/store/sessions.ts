@@ -3,19 +3,37 @@ import { draftTab, replaceGroupTabId } from "@/lib/tabs/center-tabs-persistence"
 import type { StoreApi } from "zustand";
 import { mapTabPages, recordTabPage } from "../navigation/page-history";
 import { sessionHistory, withSessionHistory } from "../navigation/session-history";
-import { commitCenterTabsState } from "./core";
+import { commitCenterTabsState, insertNextTo } from "./core";
 import type { CenterTab, CenterTabsState } from "./types";
 
-export function sessionsActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>): Pick<CenterTabsState, "openSessionTab" | "openDraftSessionTab" | "claimDraftSessionTab" | "markSessionReady" | "renameSessionTab"> {
+/** A session tab that shows a page (Settings, History…) opened from it
+ *  goes back to its conversation; the page stays one Back away. */
+function showConversation(tab: CenterTab): CenterTab {
+  if (!tab.navigationRoute) return tab;
+  const { navigationRoute: _route, ...conversation } = tab;
+  return recordTabPage(tab, conversation);
+}
+
+export function sessionsActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>, sentDraftSessions: Set<string>): Pick<CenterTabsState, "openSessionTab" | "openDraftSessionTab" | "claimDraftSessionTab" | "markSessionReady" | "markSessionSent" | "renameSessionTab"> {
   return {
-    openSessionTab: (sessionId, title) =>
+    openSessionTab: (sessionId, title, options) =>
       set((s) => {
         closedSessionAckTombstones.delete(sessionId);
         const active = s.tabs.find(tab => tab.id === s.activeId);
         const existing = s.tabs.find(tab => tab.kind === "session" && tab.sessionId === sessionId);
-        if (existing && existing.id !== active?.id) return commitCenterTabsState(s, { activeId: existing.id });
-        if (active?.kind === "session") {
+        if (existing && existing.id !== active?.id) {
+          return commitCenterTabsState(s, {
+            activeId: existing.id,
+            tabs: s.tabs.map(tab => tab.id === existing.id ? showConversation(tab) : tab),
+          });
+        }
+        if (active?.kind === "session" && !(options?.newTab && active.sessionId !== sessionId)) {
           if (active.sessionId === sessionId) {
+            if (active.navigationRoute) {
+              return commitCenterTabsState(s, {
+                tabs: s.tabs.map(tab => tab.id === active.id ? showConversation({ ...tab, title: title || tab.title }) : tab),
+              });
+            }
             if (active.title === title) return {};
             const history = sessionHistory(active);
             const entries = history.entries.map((entry, index) => index === history.index
@@ -42,7 +60,7 @@ export function sessionsActions(set: StoreApi<CenterTabsState>["setState"], get:
         const tab: CenterTab = { id, kind: "session", title, sessionId };
         const replace = active?.kind === "ntp";
         return commitCenterTabsState(s, {
-          tabs: replace ? s.tabs.map(item => item.id === active.id ? recordTabPage(item, tab) : item) : [...s.tabs, tab],
+          tabs: replace ? s.tabs.map(item => item.id === active.id ? recordTabPage(item, tab) : item) : insertNextTo(s.tabs, s.activeId, tab),
           activeId: id,
           groups: replace ? replaceGroupTabId(s.groups, active.id, id) : s.groups,
         });
@@ -86,8 +104,14 @@ export function sessionsActions(set: StoreApi<CenterTabsState>["setState"], get:
       return tab.sessionId!;
     },
 
+    markSessionSent: (sessionId, sent = true) => {
+      if (sent) sentDraftSessions.add(sessionId);
+      else sentDraftSessions.delete(sessionId);
+    },
+
     markSessionReady: (sessionId) =>
       set((s) => {
+        sentDraftSessions.delete(sessionId);
         const tabs = s.tabs.map(original => mapTabPages(original, tab => {
           if (tab.kind !== "session") return tab;
           const history = sessionHistory(tab);

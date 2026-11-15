@@ -17,8 +17,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.context.nodes import Call, ROLE_CODE, ROLE_USER
-from openprogram.webui.ws_actions import chat
+from openprogram.state.store.session.nodes import Call, ROLE_CODE, ROLE_USER
+from openprogram.interfaces.server.ws_actions import chat
 
 
 def _code(name, input, seq, *, caller="ROOT", predecessor="ROOT"):
@@ -46,7 +46,7 @@ class _FakeWS:
 
 def _patch_db(monkeypatch, nodes):
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db",
+        "openprogram.runtime.context.session_db.default_db",
         lambda: _FakeDB(nodes),
     )
 
@@ -81,6 +81,51 @@ def test_retry_call_node_rejects_nested_call(monkeypatch):
 
 # ---- handle_retry_function ---------------------------------------------
 
+def test_retry_carries_the_send_id(monkeypatch):
+    nodes = [_code("word_count", {"text": "hello world"}, seq=1)]
+    _patch_db(monkeypatch, nodes)
+    seen = {}
+
+    def _fake_run(name, kwargs, session_id, **options):
+        seen.update(options)
+        return {"session_id": session_id, "msg_id": "abc"}
+
+    monkeypatch.setattr(
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call", _fake_run
+    )
+    asyncio.run(chat.handle_retry_function(_FakeWS(), {
+        "session_id": "s1", "function": "word_count",
+        "node_id": nodes[0].id, "client_request_id": "req-retry",
+    }))
+
+    assert seen["client_request_id"] == "req-retry"
+
+
+def test_retry_ack_names_the_send_and_carries_a_first_read(monkeypatch):
+    nodes = [_code("word_count", {"text": "hello world"}, seq=1)]
+    _patch_db(monkeypatch, nodes)
+    monkeypatch.setattr(
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
+        lambda name, kwargs, session_id, **options: {"session_id": session_id, "msg_id": "abc"},
+    )
+    ended = []
+
+    async def _read(_ws, _session_id):
+        return {"first_read": {"turns": [], "window": {}}}, lambda: ended.append(True)
+
+    monkeypatch.setattr("openprogram.interfaces.server.ws_actions.chat.turn._join_and_read", _read)
+    ws = _FakeWS()
+    asyncio.run(chat.handle_retry_function(ws, {
+        "session_id": "s1", "function": "word_count",
+        "node_id": nodes[0].id, "client_request_id": "req-retry",
+    }))
+
+    ack = next(json.loads(text)["data"] for text in ws.sent if json.loads(text)["type"] == "chat_ack")
+    assert ack["client_request_id"] == "req-retry"
+    assert ack["first_read"] == {"turns": [], "window": {}}
+    assert ended == [True]
+
+
 def test_retry_redispatches_with_original_kwargs(monkeypatch):
     nodes = [
         _code("word_count", {"text": "hello world"}, seq=1),
@@ -95,7 +140,7 @@ def test_retry_redispatches_with_original_kwargs(monkeypatch):
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call", _fake_run
     )
 
     ws = _FakeWS()
@@ -133,7 +178,7 @@ def test_retry_targets_clicked_node_and_acks_canonical_execution(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run,
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call", _fake_run,
     )
     ws = _FakeWS()
     asyncio.run(chat.handle_retry_function(ws, {
@@ -157,11 +202,11 @@ def test_retry_requires_exact_node_id_instead_of_latest_name(monkeypatch):
     dispatched = []
     errors = []
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call",
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
         lambda *args, **kwargs: dispatched.append((args, kwargs)),
     )
     monkeypatch.setattr(
-        "openprogram.webui.server._broadcast_chat_response",
+        "openprogram.interfaces.server.server._broadcast_chat_response",
         lambda sid, mid, env: errors.append(env),
     )
 
@@ -193,7 +238,7 @@ def test_retry_anchors_at_original_calls_predecessor(monkeypatch):
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call", _fake_run
     )
     asyncio.run(chat.handle_retry_function(
         _FakeWS(), {
@@ -223,7 +268,7 @@ def test_retry_targets_exact_top_level_call_not_nested(monkeypatch):
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call", _fake_run
     )
     asyncio.run(chat.handle_retry_function(
         _FakeWS(), {
@@ -237,13 +282,13 @@ def test_retry_targets_exact_top_level_call_not_nested(monkeypatch):
 
 
 def test_retry_preserves_registered_origin_window(monkeypatch):
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.interfaces.server.ws_actions import webtab
 
     node = _code("gui_agent", {"task": "inspect"}, seq=1)
     _patch_db(monkeypatch, [node])
     seen = {}
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call",
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
         lambda *args, **kwargs: seen.update(kwargs) or {
             "session_id": args[2], "msg_id": "abc",
         },
@@ -267,13 +312,13 @@ def test_retry_preserves_registered_origin_window(monkeypatch):
 
 
 def test_retry_legacy_node_uses_click_time_origin_page(monkeypatch):
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.interfaces.server.ws_actions import webtab
 
     node = _code("gui_agent", {"task": "inspect"}, seq=1)
     _patch_db(monkeypatch, [node])
     seen = {}
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call",
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
         lambda *args, **kwargs: seen.update(kwargs) or {
             "session_id": args[2], "msg_id": "abc",
         },
@@ -321,7 +366,7 @@ def test_retry_legacy_node_uses_click_time_origin_page(monkeypatch):
 def test_retry_uses_versioned_persisted_origin_not_current_page(
     monkeypatch, stored_tab, expected_surface,
 ):
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.interfaces.server.ws_actions import webtab
 
     node = _code("gui_agent", {"task": "inspect"}, seq=1)
     node.metadata["surface_origin"] = {
@@ -333,7 +378,7 @@ def test_retry_uses_versioned_persisted_origin_not_current_page(
     _patch_db(monkeypatch, [node])
     seen = {}
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call",
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
         lambda *args, **kwargs: seen.update(kwargs) or {
             "session_id": args[2], "msg_id": "transport",
             "execution_id": "execution",
@@ -384,7 +429,7 @@ def test_retry_uses_versioned_persisted_origin_not_current_page(
 def test_retry_rejects_invalid_or_disconnected_persisted_origin(
     monkeypatch, stored_origin, registered_window, error_fragment,
 ):
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.interfaces.server.ws_actions import webtab
 
     node = _code("gui_agent", {"task": "inspect"}, seq=1)
     node.metadata["surface_origin"] = stored_origin
@@ -392,11 +437,11 @@ def test_retry_rejects_invalid_or_disconnected_persisted_origin(
     dispatched = []
     errors = []
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call",
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
         lambda *args, **kwargs: dispatched.append((args, kwargs)),
     )
     monkeypatch.setattr(
-        "openprogram.webui.server._broadcast_chat_response",
+        "openprogram.interfaces.server.server._broadcast_chat_response",
         lambda sid, mid, env: errors.append(env),
     )
     ws = _FakeWS()
@@ -420,20 +465,20 @@ def test_retry_rejects_invalid_or_disconnected_persisted_origin(
 
 
 def test_retry_rejects_surface_from_another_window(monkeypatch):
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.interfaces.server.ws_actions import webtab
 
     node = _code("gui_agent", {"task": "inspect"}, seq=1)
     _patch_db(monkeypatch, [node])
     dispatched = []
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call",
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
         lambda *args, **kwargs: dispatched.append((args, kwargs)) or {
             "session_id": args[2], "msg_id": "abc",
         },
     )
     errors = []
     monkeypatch.setattr(
-        "openprogram.webui.server._broadcast_chat_response",
+        "openprogram.interfaces.server.server._broadcast_chat_response",
         lambda sid, mid, env: errors.append(env),
     )
     ws = _FakeWS()
@@ -467,12 +512,12 @@ def test_retry_never_strips_messages_and_errors_without_prior_call(monkeypatch):
 
     dispatched = []
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call",
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
         lambda *a, **k: dispatched.append(a) or {"session_id": "s1", "msg_id": "x"},
     )
     errors = []
     monkeypatch.setattr(
-        "openprogram.webui.server._broadcast_chat_response",
+        "openprogram.interfaces.server.server._broadcast_chat_response",
         lambda sid, mid, env: errors.append(env),
     )
 
@@ -493,7 +538,7 @@ def test_retry_never_strips_messages_and_errors_without_prior_call(monkeypatch):
 def test_retry_noop_on_missing_args(monkeypatch):
     dispatched = []
     monkeypatch.setattr(
-        "openprogram.webui.routes.chat.run_agentic_function_call",
+        "openprogram.interfaces.server.routes.chat.run_agent_method_call",
         lambda *a, **k: dispatched.append(a),
     )
     ws = _FakeWS()
@@ -530,41 +575,44 @@ def test_new_run_rejected_while_run_active(monkeypatch):
     # in flight in the same session — otherwise two runs advance HEAD
     # concurrently and interleave the conversation chain. Mirrors the
     # chat-retry path's _is_run_active guard.
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     monkeypatch.setattr(
-        "openprogram.webui.server._get_or_create_session",
+        "openprogram.interfaces.server.server._get_or_create_session",
         lambda sid=None, **k: {"id": sid or "s1"},
     )
     class _Tool:
         name = "word_count"
-        _is_agentic = True
+        _is_agent_method = True
 
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()]
     )
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *a, **k: _Tool() if name == _Tool.name else None,
     )
 
     class _RM:
         def _enabled_model_keys(self):
             return ["k"]
-    monkeypatch.setattr("openprogram.webui.server._runtime_management", _RM())
+    monkeypatch.setattr("openprogram.interfaces.server.server.runtime_management", _RM())
 
     # The session already has an in-flight run.
     monkeypatch.setattr(
-        "openprogram.webui.server._is_run_active", lambda sid: True
+        "openprogram.interfaces.server.server._is_run_active", lambda sid: True
+    )
+    monkeypatch.setattr(
+        "openprogram.interfaces.server.server._is_selected_run_active", lambda sid: True
     )
 
     dispatched = []
     monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
+        "openprogram.runtime.conversation.turn_runtime.dispatch_forced_tool_call",
         lambda **kw: dispatched.append(kw),
     )
 
-    result = routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
+    result = routes_chat.run_agent_method_call("word_count", {"text": "hi"}, "s1")
     assert result.get("status_code") == 409
     assert result.get("code") == "run_active"
     # Never spawned a competing dispatch.
@@ -579,11 +627,11 @@ def test_new_run_rejected_while_run_active(monkeypatch):
 # can reach the other version. These lock that contract end-to-end.
 
 def _fresh_store(tmp_path):
-    from openprogram.store.session.session_store import SessionStore
+    from openprogram.state.store.session.session_store import SessionStore
     s = SessionStore(tmp_path / "sessions-git")
     s.create_session("s1", "main", title="t")
     # A ROOT anchor (the fn-form / retry predecessor), like
-    # run_agentic_function_call writes before dispatching.
+    # run_agent_method_call writes before dispatching.
     s.append_message("s1", {"id": "ROOT", "role": "user", "content": "",
                             "timestamp": 0, "predecessor": None,
                             "display": "root"})
@@ -605,7 +653,7 @@ def _append_code(store, node_id, pred="ROOT", seq_ts=1):
 # ENTRY nodes so a retry shows exactly the alternative runs, nothing else.
 
 def test_is_top_function_run_keys_on_caller_not_predecessor():
-    from openprogram.webui.ws_actions.session import _is_top_function_run
+    from openprogram.interfaces.server.ws_actions.session import _is_top_function_run
     nodes = [
         {"id": "ROOT", "role": "user", "display": "root"},
         # first run: empty caller, no predecessor (root-level)
@@ -635,32 +683,32 @@ def test_is_top_function_run_keys_on_caller_not_predecessor():
 
 def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
     # A NEW run (anchor left unset) must pass an EMPTY caller to dispatch,
-    # so the @agentic_function decorator stamps metadata.predecessor with
+    # so the Agent method decorator stamps metadata.predecessor with
     # the session's current head — chaining off the previous turn like a
     # new chat turn (distinct predecessor → its own 1/1 card). It must NOT
     # hardcode "ROOT" (which lumped every run into one None-parent group,
     # the "1/12" the user saw).
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     captured = {}
 
     monkeypatch.setattr(
-        "openprogram.webui.server._get_or_create_session",
+        "openprogram.interfaces.server.server._get_or_create_session",
         lambda sid=None, **k: {"id": sid or "s1"},
     )
     monkeypatch.setattr(
-        "openprogram.webui.server._is_run_active", lambda _sid: False
+        "openprogram.interfaces.server.server._is_run_active", lambda _sid: False
     )
 
     class _Tool:
         name = "word_count"
-        _is_agentic = True
+        _is_agent_method = True
 
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()]
     )
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *a, **k: _Tool() if name == _Tool.name else None,
     )
 
@@ -670,7 +718,7 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
 
         def _resolve_session_provider_model(self, conv):
             return "minimax-cn-coding-plan", "MiniMax-M3"
-    monkeypatch.setattr("openprogram.webui.server._runtime_management", _RM())
+    monkeypatch.setattr("openprogram.interfaces.server.server.runtime_management", _RM())
 
     class _DB:
         def get_session(self, sid):
@@ -680,14 +728,14 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
         def update_session(self, *a, **k):
             pass
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db", lambda: _DB()
+        "openprogram.runtime.context.session_db.default_db", lambda: _DB()
     )
     monkeypatch.setattr(
-        "openprogram.webui.server._default_agent_id", lambda: "main"
+        "openprogram.interfaces.server.server._default_agent_id", lambda: "main"
     )
 
-    from openprogram.agent import production_driver
-    from openprogram.execution.model import ExecutionStatus
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.execution.model import ExecutionStatus
     real_adapter = production_driver.CanonicalAgentAdapter
 
     class _Adapter:
@@ -704,7 +752,6 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
                 admission.execution_id,
                 expected_version=admission.status_version,
                 owner_id="unit-test",
-                ttl_seconds=30,
             )
             active, running = service.attempts.activate(
                 attempt.attempt_id,
@@ -730,11 +777,11 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
 
     monkeypatch.setattr(production_driver, "CanonicalAgentAdapter", _Adapter)
     monkeypatch.setattr(
-        "openprogram.agentic_programming.function.create_pending_call_node",
+        "openprogram.runtime.agent.call_state.create_pending_call_node",
         lambda **k: None,
     )
     monkeypatch.setattr(
-        "openprogram.webui.server._emit_running_task_event", lambda *a, **k: None
+        "openprogram.interfaces.server.server._emit_running_task_event", lambda *a, **k: None
     )
 
     def _inline_thread(target=None, args=(), kwargs=None, daemon=None):
@@ -751,7 +798,7 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
         routes_chat, "threading", SimpleNamespace(Thread=_inline_thread)
     )
 
-    routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
+    routes_chat.run_agent_method_call("word_count", {"text": "hi"}, "s1")
     # Empty caller → decorator's top-level-call branch stamps the head.
     assert captured.get("anchor_msg_id") == ""
 
@@ -781,7 +828,7 @@ def test_retry_run_is_sibling_and_only_active_head_renders(tmp_path):
 
 
 def test_fn_run_siblings_sort_once_with_stable_source_positions():
-    from openprogram.webui.ws_actions import session as ws_session
+    from openprogram.interfaces.server.ws_actions import session as ws_session
 
     messages = [
         {"id": "internal", "role": "code", "predecessor": "p", "created_at": 1},
@@ -812,7 +859,7 @@ def test_fn_run_siblings_sort_once_with_stable_source_positions():
 
 @pytest.mark.parametrize("message_id", ["unknown", None])
 def test_fn_run_siblings_handles_unknown_and_malformed_ids(message_id):
-    from openprogram.webui.ws_actions import session as ws_session
+    from openprogram.interfaces.server.ws_actions import session as ws_session
 
     messages = [
         {"id": "duplicate", "role": "code", "predecessor": None},
@@ -840,7 +887,7 @@ def test_fn_run_siblings_handles_unknown_and_malformed_ids(message_id):
 
 
 def test_fn_run_siblings_does_not_call_list_index():
-    from openprogram.webui.ws_actions import session as ws_session
+    from openprogram.interfaces.server.ws_actions import session as ws_session
 
     source = inspect.getsource(ws_session.handle_load_session)
     assert "all_msgs.index" not in source

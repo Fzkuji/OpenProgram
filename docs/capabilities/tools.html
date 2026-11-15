@@ -1,0 +1,231 @@
+<title>Built-in tools</title>
+<meta name="description" content="Every tool the model can call in chat, what it does and what it needs.">
+<meta name="covers" content="openprogram/programs/tools/__init__.py">
+<h1>Built-in tools</h1>
+<p>Each needs nothing unless its row says so. Approval and live changes: <a href="permissions.html">tool permissions</a>.</p>
+<h2 id="files-and-code">Files and code</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">read</code></th><td>Read file contents</td></tr>
+<tr><th scope="row"><code translate="no">write</code></th><td>Create a file or overwrite one wholesale</td></tr>
+<tr><th scope="row"><code translate="no">edit</code></th><td>String replacement inside a file</td></tr>
+<tr><th scope="row"><code translate="no">apply_patch</code></th><td>Structured multi-file patches in Codex or OpenClaw format</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>List directory contents</td></tr>
+<tr><th scope="row"><code translate="no">glob</code></th><td>Find files by name pattern</td></tr>
+<tr><th scope="row"><code translate="no">grep</code></th><td>Content search: ripgrep when present (faster), else Python <code translate="no">re</code></td></tr>
+<tr><th scope="row"><code translate="no">semble_search</code>, <code translate="no">semble_find_related</code></th><td>Semantic and lexical code search returning ranked blocks. In every supported release; source developers install the <code translate="no">search</code> extra through the locked environment.</td></tr>
+<tr><th scope="row"><code translate="no">lsp_diagnostics</code>, <code translate="no">lsp_references</code>, <code translate="no">lsp_definition</code></th><td>Type-checker errors, real call sites, true definitions: <a href="lsp.html">language server tools</a>. Needs <code translate="no">pyright</code> (Python) or <code translate="no">typescript-language-server</code> (TypeScript); the tools name the install command when missing.</td></tr>
+</tbody></table>
+<h3 id="document-versions">Files, previews and versions</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">Format</th><th scope="col">In the file window</th></tr></thead>
+<tbody>
+<tr><th scope="row">Supported UTF-8 text</th><td>Preview, then Edit. Autosaves; <code translate="no">Ctrl/Cmd+S</code> flushes. Switching keeps undo history.</td></tr>
+<tr><th scope="row">PDF</th><td>Pages, zoom, text search over the first 500 pages (longer documents state the limit). Read-only.</td></tr>
+<tr><th scope="row">PSD</th><td>Saved composite and layer names, 8-bit RGB. Read-only.</td></tr>
+<tr><th scope="row">TIFF</th><td>First page. Read-only.</td></tr>
+<tr><th scope="row">Common images</th><td>Preview by default.</td></tr>
+<tr><th scope="row">PNG, JPEG, WebP (static)</th><td>Edit: crop, rotate, draw, shapes, text. Autosaves; <strong>Convert to PNG</strong> makes a separate file and rejects an existing destination.</td></tr>
+<tr><th scope="row">Animated PNG/WebP, 16-bit PNG</th><td>Read-only</td></tr>
+<tr><th scope="row">Audio, video</th><td>Browser controls; codecs depend on the browser</td></tr>
+<tr><th scope="row">DOCX, PPTX, XLSX, ODT, ODP, ODS</th><td><strong>ONLYOFFICE</strong> application, ready to edit, no Preview switch</td></tr>
+<tr><th scope="row">DOC, PPT, XLS</th><td>Convert to a new DOCX, PPTX or XLSX path; original kept, existing destination rejected</td></tr>
+</tbody></table>
+<p class="note">Damaged or unsupported files keep an original-file download. Chat attachments and history previews are read-only.</p>
+<details>
+<summary>Publish a generated document from the model</summary>
+<ul>
+<li><code translate="no">write(file_path="/absolute/final.docx", source_path="/absolute/staged.docx")</code> publishes a separate temporary result, for Word, PowerPoint, PDF, images and other binaries. <code translate="no">source_path</code> and <code translate="no">content</code> are mutually exclusive; the source is a regular local file of at most 64 MiB. Existing targets must be read first; binary reads return metadata and set the same freshness check.</li>
+<li>Records complete before/after bytes in the turn's file history, surviving reopen and restart. Undo and reapply refuse to overwrite conflicting later changes. New files can be undone. No Git repository needed. Local generators use this same interface.</li>
+<li>A failed later history commit keeps the previously published version. An interrupted write is reported as unconfirmed and blocks exact recovery. Corrupt history blocks further recorded writes rather than being replaced. After a failed first attempt, reread before retrying. Versions follow the turn's retention.</li>
+<li>Binary versions keep formatting and media; Review does not compare layout or show Word tracked changes. Shell commands overwriting the final file are not recorded, and unrecorded versions cannot be rebuilt from a card or output: write a separate result and publish it.</li>
+</ul>
+</details>
+<details>
+<summary>Manual edits and history</summary>
+<ul>
+<li>Project-file edits keep before/after bytes independently of conversations. Each successful write publishes at once. Changes from one editor group for at most five minutes; closing the group or an intervening outside change starts another version.</li>
+<li>History lists retained versions and restores a selected one, creating a new entry after checking the current revision.</li>
+<li>A failed save or an outside change keeps the draft for retry, export or explicit discard. Closing waits for pending changes; a failed save keeps the tab open.</li>
+<li>History combines manual edits and confirmed model changes for the project-relative file. Model entries read retained bytes from the original session checkpoint, without a second archive. Restoring changes only this file.</li>
+<li>Archived sessions keep their file history; permanent deletion makes their model versions unavailable; manual history is independent.</li>
+<li>Older history indexes in bounded batches: <strong>Continue loading history</strong>. Incomplete or unverifiable history is labeled. Legacy paths appear only when project ownership can be established.</li>
+<li>History follows the project when it moves and stays readable while its disk is disconnected; writing and restoring need an available location.</li>
+<li>The document API accepts bounded binary content up to 64 MiB, which does not itself provide an editor for every format.</li>
+<li>PDF, PSD and TIFF decoders accept at most 64 MiB, bound the rendered size, are local and load only when that format opens. Previewing a history version uses its retained bytes.</li>
+</ul>
+</details>
+<details>
+<summary>Office editing (ONLYOFFICE)</summary>
+<ul>
+<li>Built-in application <code translate="no">office_editor</code>, an optional local install shared by all Office formats; not in the default App or runtime. Disabled on <strong>Applications</strong>: the file offers only its download and nothing installs.</li>
+<li>Without the component, <strong>Install</strong> or <strong>Cancel</strong>; nothing downloads until you choose. About 699 MiB, with resources, fonts, licenses and source materials, downloaded from your version's GitHub release. Files process locally.</li>
+<li>Releases before 1.3.0 do not carry it: such a version says so and asks you to update OpenProgram first, instead of offering a retry.</li>
+<li>The pinned archive and all resources are verified before a complete version is selected. Failures can retry and existing installs remain. On success the document opens without restarting. <strong>Cancel</strong> leaves the download, and <strong>Installation options</strong> lets you choose again.</li>
+<li>Unavailable through remote application access. PDF viewing does not need it.</li>
+<li>A centered status shows preparation and opening. Closing during startup cancels; a failure offers <strong>Retry</strong>.</li>
+<li>Editing starts once the native editor is writable; autosaves. Tabs, split layouts and History keep the editor and its undo history. Closing waits for pending input; a failed write keeps the document for retry.</li>
+<li>History previews are read-only and restoring creates a new version. No semantic Office redlines. The download stays when the editor cannot load.</li>
+</ul>
+</details>
+<details>
+<summary>Image editing limits</summary>
+<p>At most 64 MiB, 16 million pixels and 16,384 pixels per side. Changes save through the document history controller; Preview, History, tabs and routes keep undo and redo. Failed publication keeps the draft; closing waits for export. Exports rendered pixels, so embedded metadata may not survive.</p>
+</details>
+<h2 id="execution">Execution</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">bash</code></th><td>Run a shell command; returns output and exit code. Still running after its wait: keeps running as a session.</td></tr>
+<tr><th scope="row"><code translate="no">write_stdin</code></th><td>Wait for more output from that session, interrupt it, or type into it</td></tr>
+<tr><th scope="row"><code translate="no">execute_code</code></th><td>Python snippet in a fresh isolated subprocess. Returns stdout, stderr, exit code. Success needs exit 0; nonzero or timeout is an error with partial output kept.</td></tr>
+</tbody></table>
+<h3 id="commands-that-keep-running">Commands that keep running</h3>
+<p><code translate="no">bash</code> waits up to <code translate="no">yield_time_ms</code> (250 minimum, 30000 default and maximum), then returns either <code translate="no">Process exited with code N</code> or <code translate="no">Process running with session ID &lt;id&gt;</code> with the output so far. No separate start step.</p>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">write_stdin</code> <code translate="no">chars</code></th><th scope="col">Effect</th><th scope="col"><code translate="no">yield_time_ms</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">empty</th><td>Returns new output, or the exit code once ended</td><td>5000–300000, default 5000</td></tr>
+<tr><th scope="row"><code translate="no">"\u0003"</code></th><td>Interrupts, like Ctrl-C</td><td>Default 250</td></tr>
+<tr><th scope="row">anything else</th><td>Typed as is; end a line with <code translate="no">"\n"</code></td><td>250–30000, default 250</td></tr>
+</tbody></table>
+<details>
+<summary>Limits, notices and approval</summary>
+<ul>
+<li>Typing needs <code translate="no">bash(..., tty=true)</code> (pseudo-terminal, local backend on macOS or Linux). Without it stdin is closed, so a command waiting for input ends, and only the interrupt is accepted.</li>
+<li>A call keeps up to 1 MiB of output: first and last halves when longer.</li>
+<li>A background command ending unseen sends the conversation a notice turn with command, exit code and last output, after any running turn. A command you stop sends none.</li>
+<li>Listed as <strong>Background terminal</strong> under Terminal in Resources, where you can watch and stop them, and in Activity. Record and output are deleted a day after it ends or its status became unknown.</li>
+<li>At most 64 per conversation. Another stops the least recently used, never one of the eight most recent, and the result names it. Cancelling a turn stops a command in its first wait; background ones keep running.</li>
+<li>Polling and interrupting are never asked about. Typing follows the permission mode, like <code translate="no">bash</code>.</li>
+</ul>
+</details>
+<h3 id="one-shot-command-directories"><code translate="no">workdir</code></h3>
+<p>Each <code translate="no">bash</code> call is a new shell: <code translate="no">bash(command="npm test", workdir="apps/web")</code>. A <code translate="no">cd</code> or <code translate="no">export</code> does not carry over. It does not change the worktree binding or the file tools' base, and it is not the Desktop terminal (that is <code translate="no">terminal_use</code>).</p>
+<details>
+<summary>Path rules</summary>
+<ul>
+<li>Relative paths resolve from the bound worktree, or the host process directory when none. Absolute paths work. Literal: no <code translate="no">~</code>, variables or expressions. Omit it for the existing default.</li>
+<li>Missing, non-directory or denied directories fail without running; none is created and nothing falls back.</li>
+<li>Selecting a directory grants nothing. Under a local sandbox policy it must satisfy the workspace's policy, including symlinks and extra authorized roots, and execution stays in that boundary. An unavailable configured sandbox is not bypassed.</li>
+<li>SSH and Docker read it as a POSIX path on the backend. Relative remote paths need an absolute POSIX worktree binding. A guarded change prevents the command list from running if the directory is unavailable; Docker does not create it via <code translate="no">-w</code>. With a host sandbox policy, explicit remote workdirs are refused until backend-native authorization exists.</li>
+<li>Results include the local starting <code translate="no">cwd</code>, or <code translate="no">requested_cwd</code> for remote paths. Not an ending directory or persistent state.</li>
+<li>Tool-call notation; the Python export is an AgentTool, not a shell function.</li>
+</ul>
+</details>
+<h2 id="web">Web</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">web_search</code></th><td>Keywords to relevant URLs, multiple backends</td></tr>
+<tr><th scope="row"><code translate="no">web_fetch</code></th><td>URL to readable text; <code translate="no">trafilatura</code> gives cleaner extraction</td></tr>
+</tbody></table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Backend</th><th scope="col">Key</th></tr></thead>
+<tbody>
+<tr><th scope="row">DuckDuckGo, arXiv</th><td>None, always available</td></tr>
+<tr><th scope="row">Brave</th><td><code translate="no">BRAVE_API_KEY</code></td></tr>
+<tr><th scope="row">Exa</th><td><code translate="no">EXA_API_KEY</code></td></tr>
+<tr><th scope="row">Firecrawl</th><td><code translate="no">FIRECRAWL_API_KEY</code></td></tr>
+<tr><th scope="row">Google PSE</th><td><code translate="no">GOOGLE_PSE_API_KEY</code> and <code translate="no">GOOGLE_PSE_CX</code></td></tr>
+<tr><th scope="row">Jina</th><td><code translate="no">JINA_API_KEY</code></td></tr>
+<tr><th scope="row">Kagi</th><td><code translate="no">KAGI_API_KEY</code></td></tr>
+<tr><th scope="row">MiniMax</th><td><code translate="no">MINIMAX_CODE_PLAN_KEY</code>, <code translate="no">MINIMAX_CODING_API_KEY</code> or <code translate="no">MINIMAX_API_KEY</code></td></tr>
+<tr><th scope="row">Moonshot (Kimi)</th><td><code translate="no">KIMI_API_KEY</code> or <code translate="no">MOONSHOT_API_KEY</code></td></tr>
+<tr><th scope="row">Perplexity</th><td><code translate="no">PERPLEXITY_API_KEY</code></td></tr>
+<tr><th scope="row">SearXNG</th><td><code translate="no">SEARXNG_URL</code>, a self-hosted instance</td></tr>
+<tr><th scope="row">Serper</th><td><code translate="no">SERPER_API_KEY</code></td></tr>
+<tr><th scope="row">Tavily</th><td><code translate="no">TAVILY_API_KEY</code></td></tr>
+<tr><th scope="row">You.com</th><td><code translate="no">YDC_API_KEY</code> or <code translate="no">YOU_API_KEY</code></td></tr>
+<tr><th scope="row">Ollama</th><td>Local Ollama (<code translate="no">ollama signin</code>), or <code translate="no">OLLAMA_API_KEY</code> for Ollama Cloud</td></tr>
+</tbody></table>
+<details>
+<summary>The Web Search switch and backend selection</summary>
+<ul>
+<li>Per message. Providers with their own search (ChatGPT subscription, OpenAI Responses API, Anthropic) search through the provider: one "Searched the web" step per search with sources, a sources row on the answer, and no local <code translate="no">web_search</code>.</li>
+<li>Other providers, Gemini included (its grounding cannot combine with function tools), get the local tool.</li>
+<li>Off excludes both, even in automatic tool mode. On makes the schema available immediately, including when Tools is off, and still respects disabled tools and permissions. Tool profiles belong to each conversation and survive tab changes and refreshes.</li>
+<li>Keys apply to the next call without restart. An unavailable saved default falls back; a named unavailable provider gives the reason and lists usable ones.</li>
+<li>An unpinned search tries the saved default, then every other available web backend (arXiv only when named). When all fail with no key configured, the error points to <strong>Settings > Search</strong>.</li>
+<li>DuckDuckGo reads its no-JavaScript page and returns about ten first-page hits; a bot challenge or unreadable page is an error, not an empty search.</li>
+<li><code translate="no">combine="race"</code> returns the first nonempty success; unrunnable <code translate="no">providers</code> are skipped, and if none runs the error lists each reason. <code translate="no">combine="rrf"</code> keeps results completed before the deadline. Total failure is an error, distinct from an empty search. Running requests finish under their transport timeouts.</li>
+</ul>
+</details>
+<h2 id="desktop">Desktop</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">computer_use_agent</code></th><td>Operate application windows in the background (screenshot and Accessibility tree), built-in browser Pages, or a configured virtual machine. One step, a batch, Python code, or a new agent from a brief. One approval per application. Needs macOS Accessibility and Screen Recording for the runtime, Linux X11 with AT-SPI and xdotool, Windows UI Automation, or <code translate="no">computer_use.vm_url</code>. <a href="computer-use.html">Computer use</a></td></tr>
+<tr><th scope="row"><code translate="no">terminal_use</code></th><td>The built-in Desktop Terminal, including one you already opened</td></tr>
+</tbody></table>
+<h2 id="images-and-pdf">Images and PDF</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">image_generate</code></th><td>Prompt to a saved PNG. One of OpenAI (<code translate="no">OPENAI_API_KEY</code>), Gemini (<code translate="no">GEMINI_API_KEY</code> or <code translate="no">GOOGLE_API_KEY</code>), fal (<code translate="no">FAL_KEY</code>)</td></tr>
+<tr><th scope="row"><code translate="no">image_analyze</code></th><td>Describe or answer about an image, local path or URL. Any configured OpenAI, Anthropic or Gemini vision key.</td></tr>
+<tr><th scope="row"><code translate="no">pdf</code></th><td>Extract text, with offset and limit paging. <code translate="no">pypdf</code>, bundled with the complete release.</td></tr>
+</tbody></table>
+<p class="note">Image tools return an error when the provider is unavailable, its request fails, or an image cannot be saved.</p>
+<h2 id="session-and-collaboration">Session and collaboration</h2>
+<table class="stack">
+<thead><tr><th scope="col">Domain</th><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open work</th><td><code translate="no">open_work</code></td><td>What the Agent still owes you here, in its instructions every turn: <a href="agents.html#open-work">Open work</a></td></tr>
+<tr><th scope="row">Planning</th><td><code translate="no">todo_create</code>, <code translate="no">todo_update</code>, <code translate="no">todo_list</code></td><td>The session's written checklist: entries, status, owner, dependencies, listed by status. Writing starts nothing. Web shows it as a <a href="../interfaces/web.html#task-list">task list</a> under the reply that changed it.</td></tr>
+<tr><th scope="row">Execution</th><td><code translate="no">list_jobs</code>, <code translate="no">job_output</code></td><td>List this session's background tasks; wait for or inspect a result. Access checks the dispatching session and ancestors.</td></tr>
+<tr><th scope="row">Entity</th><td><code translate="no">agent</code></td><td>Spawn an agent and collect its reply, or <code translate="no">to=</code> hand a tracked task to an existing one. <code translate="no">run_in_background=true</code> returns a task id. <code translate="no">start_from</code>: <code translate="no">clean</code>, <code translate="no">inherit</code> or <code translate="no">SID:MSG_ID</code>. <code translate="no">archive_when_done=true</code> archives after the result returns.</td></tr>
+<tr><th scope="row">Entity</th><td><code translate="no">list_agents</code></td><td>Names, addresses, sizes, busy state; <code translate="no">scope="archived"</code> for archived ones</td></tr>
+<tr><th scope="row">Entity</th><td><code translate="no">archive_agent</code></td><td>Leaves <code translate="no">list_agents</code>, refuses <code translate="no">send_message</code> and <code translate="no">agent(to=)</code>; <code translate="no">read_conversation</code> and <code translate="no">agent(start_from="SID:MSG_ID")</code> still work. Any session may archive any agent. One-way.</td></tr>
+<tr><th scope="row">Communication</th><td><code translate="no">send_message</code></td><td>To an existing agent, by <code translate="no">"SID:HEAD"</code> or name. No task or id, so anyone may write to anyone. Empty <code translate="no">message</code> with <code translate="no">notify_when_idle=true</code> gets one notice with its latest reply when idle.</td></tr>
+<tr><th scope="row">Communication</th><td><code translate="no">read_conversation</code></td><td>Any agent's history as plain text, tool calls included, with turn ranges and a character budget</td></tr>
+</tbody></table>
+<p class="note">The four domains: <a href="../reference/design/runtime/collaboration/agent-collaboration.html">agent collaboration</a>.</p>
+<details>
+<summary>When a background agent finishes</summary>
+<ul>
+<li>The sender gets a notice turn marked automated, after any running turn; every agent finished meanwhile arrives in the same notice.</li>
+<li>None if already read with <code translate="no">job_output</code> (which also waits for a <code translate="no">send_message</code> reply by <code translate="no">delivery_id</code>), handed back by <code translate="no">notify_when_idle</code>, or cancelled.</li>
+<li>The notice carries the task and final reply, not the transcript; use <code translate="no">read_conversation</code> for the steps.</li>
+<li>A message to a busy agent queues until it is free.</li>
+<li><code translate="no">job_output</code> works when the collaboration message allowance is exhausted and does not consume it. New deliveries still obey limits.</li>
+<li>Cancel through execution controls: API <code translate="no">execution.command</code> with <code translate="no">action="execution.cancel"</code> and the current version. There is no <code translate="no">job_stop</code>.</li>
+</ul>
+</details>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">program</code></th><td>Invoke any registered <code translate="no">Agent</code> method</td></tr>
+<tr><th scope="row"><code translate="no">mixture_of_agents</code></th><td>Ask N models in parallel, then synthesize; defaults take one per provider from the model registry, at least 2 needed. Error for unknown references, all references failing, or failed synthesis; success stands if some fail or its text says Error.</td></tr>
+<tr><th scope="row"><code translate="no">ask_user_question</code></th><td>Ask 1–N questions with options. Needs an interactive frontend; missing input infrastructure, invalid arrays and non-interactive contexts return tool errors.</td></tr>
+<tr><th scope="row"><code translate="no">chat_send</code></th><td>Post into the originating chat channel; hidden elsewhere. In an <a href="../integrations/channels.html#group-behavior">ambient group</a> the only way to speak; elsewhere a short note before long work. At most 5 per turn.</td></tr>
+<tr><th scope="row"><code translate="no">send_file</code></th><td>Attach a file for the person; each surface delivers it when the turn ends</td></tr>
+<tr><th scope="row"><code translate="no">exit_plan_mode</code></th><td>Leave Plan and restore the prior mode. Plan is entered from the selector; the model cannot enter it.</td></tr>
+<tr><th scope="row"><code translate="no">canvas</code></th><td>Write into named blocks of a markdown file. <code translate="no">set</code> with <code translate="no">content=""</code> clears; omitted content is an error. Explicit validation and process failures are errors; content beginning <code translate="no">Error:</code> stays successful.</td></tr>
+<tr><th scope="row"><code translate="no">memory_search</code>, <code translate="no">memory_get</code>, <code translate="no">memory_update</code></th><td>Search by meaning or exact string; get what exists, one file, section, block or a cited chat message; add or correct records. Recording the conversation happens in the background. One workspace per instance, shared by every agent and conversation, chat channels included: <a href="../integrations/channels.html#who-can-talk-to-your-bot">who can talk to your bot</a>.</td></tr>
+<tr><th scope="row"><code translate="no">worktree_create</code>, <code translate="no">worktree_merge</code>, <code translate="no">worktree_discard</code>, <code translate="no">worktree_list</code>, <code translate="no">worktree_keep</code></th><td>Git worktrees. <code translate="no">worktree_create</code> also opens a PR: <code translate="no">pr="123"</code>, <code translate="no">"#123"</code> or a URL, via <code translate="no">gh</code>. Needs git.</td></tr>
+<tr><th scope="row"><code translate="no">remind</code></th><td>Notify at a time or wake the agent: <a href="reminders.html">reminders</a></td></tr>
+<tr><th scope="row"><code translate="no">scheduler</code> (alias <code translate="no">cron</code>)</th><td>Register, list and delete recurring agent tasks</td></tr>
+<tr><th scope="row"><code translate="no">save_routine</code></th><td>Save this work as a skill: <a href="skills.html#save-work-as-a-routine">routines</a></td></tr>
+<tr><th scope="row"><code translate="no">skill</code></th><td>Load a skill's instructions into this turn: <a href="skills.html">skills</a></td></tr>
+<tr><th scope="row"><code translate="no">plugin</code></th><td>Guide, install and reload a plugin: <a href="plugins.html">plugins</a></td></tr>
+<tr><th scope="row"><code translate="no">create_goal</code>, <code translate="no">get_goal</code>, <code translate="no">update_goal</code></th><td>A persistent objective for this chat, only when explicitly asked: <a href="goal.html">Goal</a></td></tr>
+<tr><th scope="row"><code translate="no">handoff</code>, <code translate="no">always_on_schedule</code>, <code translate="no">always_on_report</code>, <code translate="no">always_on_preference</code></th><td>Always-on conversations: hand work to another conversation, set the next check-in, report findings, remember preferences: <a href="always-on-agents.html">Always-on Agents</a></td></tr>
+<tr><th scope="row"><code translate="no">list_mcp_resources</code>, <code translate="no">read_mcp_resource</code>, <code translate="no">list_mcp_prompts</code>, <code translate="no">get_mcp_prompt</code></th><td>MCP resources and prompts (the <code translate="no">mcp_meta</code> directory). Needs a configured <a href="mcp.html">MCP</a> server.</td></tr>
+<tr><th scope="row"><code translate="no">tool_search</code></th><td>Load a deferred tool; its schema joins the next request</td></tr>
+<tr><th scope="row"><code translate="no">help</code></th><td>A tool guide by name (<code translate="no">help("self_update.prepare")</code>), or a tool's overview</td></tr>
+<tr><th scope="row"><code translate="no">self_update</code></th><td>Change OpenProgram from an isolated worktree through build, trial, switch, rollback and repair. <code translate="no">status</code> (default), <code translate="no">begin</code>, <code translate="no">prepare</code>, <code translate="no">retry</code>, <code translate="no">cancel</code>, <code translate="no">versions</code>, <code translate="no">undo</code>; each follows the permission mode. Needs an installation from sealed versions, or a checkout with a <code translate="no">stable</code> branch. <a href="self-update.html">Self-update</a></td></tr>
+</tbody></table>
+<details>
+<summary>Tool guides</summary>
+<p>Tools with many rules keep their schema short and deliver the rest as guides.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">When</th><th scope="col">Guide</th></tr></thead>
+<tbody>
+<tr><th scope="row">First result of <code translate="no">computer_use_agent</code> for a target, or of <code translate="no">self_update</code></th><td>Starts with its guide and lists further ones</td></tr>
+<tr><th scope="row">Call needing an unseen guide: first <code translate="no">self_update(action="prepare")</code>, or first <code translate="no">computer_use_agent</code> with <code translate="no">code</code></th><td>Refused once with the guide; the next call runs</td></tr>
+<tr><th scope="row">After compaction</th><td>Delivered again when needed</td></tr>
+</tbody></table>
+</details>
+<p class="note">Plain Python <code translate="no">execute(...)</code> calls keep their string results.</p>

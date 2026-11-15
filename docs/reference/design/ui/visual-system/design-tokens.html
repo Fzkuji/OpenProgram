@@ -1,0 +1,259 @@
+<title>Design tokens</title>
+<meta name="description" content="Every size, shape and ink tier in the Web app, which component sits on which, and the guard that enforces them.">
+<h1>Design tokens</h1>
+<p>A component names a tier and never writes a value. Tiers live in <code translate="no">apps/web/app/styles/design/</code>; <code translate="no">npm run check</code> fails on anything written by hand. A value that fits no tier is a design change: add the tier or the table row first.</p>
+
+<h2 id="files">Files</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">globals.css</code></th><td>Entry: tailwindcss, then design, themes, styles</td></tr>
+<tr><th scope="row"><code translate="no">design/layout.css</code></th><td>Rail widths, chat column, drag surface</td></tr>
+<tr><th scope="row"><code translate="no">design/controls.css</code></th><td>Control height tiers, list row, button corner</td></tr>
+<tr><th scope="row"><code translate="no">design/composer.css</code></th><td>The input box's own geometry</td></tr>
+<tr><th scope="row"><code translate="no">design/type.css</code></th><td>Type tiers, font stacks</td></tr>
+<tr><th scope="row"><code translate="no">design/shape.css</code></th><td>Spacing unit, radius tiers</td></tr>
+<tr><th scope="row"><code translate="no">design/color.css</code></th><td>Accent family, the four text inks, fixed interface colours</td></tr>
+<tr><th scope="row"><code translate="no">design/icons.css</code></th><td>Icon size tiers</td></tr>
+<tr><th scope="row"><code translate="no">design/motion.css</code></th><td>Durations, the easing</td></tr>
+<tr><th scope="row"><code translate="no">design/layers.css</code></th><td>Stacking layers (<code translate="no">z-index</code>)</td></tr>
+<tr><th scope="row"><code translate="no">design/shadcn.css</code></th><td>shadcn's colour names to the app's roles</td></tr>
+<tr><th scope="row"><code translate="no">design/tailwind.css</code></th><td>Tailwind's scan paths, variants, utility names</td></tr>
+<tr><th scope="row"><code translate="no">themes/</code></th><td>Colour values, one file per theme and a fallback</td></tr>
+<tr><th scope="row"><code translate="no">base/</code></th><td>Document, focus, list row, shell layout, scrollbar, sidebar, desktop chrome, motion</td></tr>
+<tr><th scope="row"><code translate="no">chat/</code>, <code translate="no">right-dock/</code>, <code translate="no">dag/</code></th><td>Global styles of those areas</td></tr>
+</tbody>
+</table>
+<p class="note">Paths under <code translate="no">apps/web/app/styles/</code> except <code translate="no">globals.css</code>. Component styles sit beside their component in <code translate="no">*.module.css</code>, read tokens and add no values.</p>
+
+<h2 id="control-heights">Control heights</h2>
+<table class="stack">
+<thead><tr><th scope="col">Tier</th><th scope="col">Height</th><th scope="col">Token</th><th scope="col">Button size</th><th scope="col">Font</th></tr></thead>
+<tbody>
+<tr><th scope="row">inline</th><td>20px</td><td><code translate="no">--ui-control-inline</code></td><td>None</td><td>None</td></tr>
+<tr><th scope="row">row</th><td>24px</td><td><code translate="no">--ui-button-h-xs</code></td><td>xs, icon-xs</td><td>12px</td></tr>
+<tr><th scope="row">menu</th><td>28px</td><td><code translate="no">--ui-button-h-sm</code></td><td>sm, icon-sm</td><td>13px</td></tr>
+<tr><th scope="row">standard</th><td>30px</td><td><code translate="no">--ui-button-h</code></td><td>default, icon</td><td>14px</td></tr>
+<tr><th scope="row">composer</th><td>32px</td><td><code translate="no">--ui-button-h-lg</code></td><td>lg, icon-lg</td><td>14px</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">--ui-button-h</code> is <code translate="no">--ui-list-h</code>: an ordinary button is as tall as a sidebar chat row.</p>
+<ul>
+<li>A Button picks its tier through <code translate="no">size</code>, never a height class. A control from class strings takes <code translate="no">h-(--ui-button-h…)</code> or <code translate="no">size-(--ui-button-h…)</code>; the Nova test scans every <code translate="no">.ts</code> and <code translate="no">.tsx</code> file.</li>
+<li>A hand-written stylesheet button sets <code translate="no">height</code>, and <code translate="no">width</code> when square, to a tier token; the test scans every stylesheet.</li>
+</ul>
+<details>
+<summary>Which component sits in which tier</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">tier</th><th scope="col">components</th></tr></thead>
+<tbody>
+<tr><th scope="row">inline 20</th><td>controls drawn inside another control: the center tab's ×, the image annotator's colour swatches, the remove badge on a Launchpad tile, a new-tab shortcut tile and an image chip, the tool switch on a function card, the secret-reveal toggle in a user bubble</td></tr>
+<tr><th scope="row">row 24, chat</th><td>actions that sit on a row, card or message: the sidebar chat row's ⋯, message hover actions (copy, retry …), queued-message actions, attachment remove and preview close, the composer popover's close, the fast toggle in the effort pill, the Mermaid source toggle, the annotate button on an image tile</td></tr>
+<tr><th scope="row">row 24, browser and files</th><td>the find bar's arrows, the address bar's star, the diff hunk and line-comment buttons, session-resource row actions, branch row actions, bookmark actions, the split picker's close, the DAG zoom readout, the file search's match-mode segment</td></tr>
+<tr><th scope="row">row 24, catalogs and settings</th><td>the project editor's remove, the Agent catalog's required toggle, settings and avatar colour swatches, the sidebar's project actions (pin, new chat, options) and refresh, the recents filter, the Agents view menu, the skill catalog's install button, <code translate="no">ManageIconButton</code> row actions and <code translate="no">RailAction</code>, provider account and model rows, an application row's ⋯, an Agent card's menu</td></tr>
+<tr><th scope="row">menu 28, chat and tabs</th><td>rows in a menu or popover (<code translate="no">itemCls</code>), and compact controls in toolbars and chip rows: the composer's environment chips (Local, channel, folder) and corner menu buttons, the mic and send buttons, top-bar chips and menu triggers, center tabs and the tab strip's + / overview / menu buttons, the transcript's view controls, function-card "Use", function-form chips</td></tr>
+<tr><th scope="row">menu 28, tool surfaces</th><td>the built-in browser toolbar, download and find pills, terminal actions, the PiP title bar buttons, Review's menu and pagination, the DAG tool rail, Programs' view switch, Memory's view switch, file-panel and settings icon buttons</td></tr>
+<tr><th scope="row">menu 28, inputs</th><td>inputs that sit in a menu or toolbar: the command palette's search, the git menu's input, a bookmark's title, Launchpad's search, the file search options, the DAG selection actions</td></tr>
+<tr><th scope="row">standard 30</th><td>every other Button, input, select, toggle group and search field — page headers, cards, dialogs (the confirm dialog's Cancel / confirm), settings rows, Agents, Applications, Projects, the folder picker; sidebar rows and sidebar icon buttons (<code translate="no">ui-list-item</code>); the PDF toolbar; the message editor's buttons</td></tr>
+<tr><th scope="row">composer 32</th><td>the composer's corner buttons (<code translate="no">--composer-button-size</code>), the effort pill, the function form's inputs, and the canvas control tiles</td></tr>
+</tbody>
+</table>
+<p class="note">Not tiered (listed as exemptions in <code translate="no">apps/web/tests/ui/ui-kit-is-nova.test.mjs</code>): the account footer row (64px), Agents settings width handle (20 x 44px), center tab's active state (28px and its 6px foot), the tab strip drawing in the effects preview, the browser action cue, label tags, the Switch (Nova's 32 x 18.4px track), switch knobs, icon glyph sizes.</p>
+</details>
+
+<h2 id="type">Type</h2>
+<table class="stack">
+<thead><tr><th scope="col">Tier</th><th scope="col">Size</th><th scope="col">Line</th><th scope="col">Token</th><th scope="col">Tailwind</th></tr></thead>
+<tbody>
+<tr><th scope="row">2xs</th><td>11px</td><td>16px</td><td><code translate="no">--fs-2xs</code></td><td><code translate="no">text-fs-2xs</code></td></tr>
+<tr><th scope="row">xs</th><td>12px</td><td>16px</td><td><code translate="no">--fs-xs</code></td><td><code translate="no">text-fs-xs</code></td></tr>
+<tr><th scope="row">sm</th><td>13px</td><td>18px</td><td><code translate="no">--fs-sm</code></td><td><code translate="no">text-fs-sm</code></td></tr>
+<tr><th scope="row">base</th><td>14px</td><td>20px</td><td><code translate="no">--fs-base</code></td><td><code translate="no">text-fs-base</code></td></tr>
+<tr><th scope="row">chat</th><td>15px</td><td>24px</td><td><code translate="no">--fs-chat</code></td><td><code translate="no">text-fs-chat</code></td></tr>
+<tr><th scope="row">md</th><td>16px</td><td>24px</td><td><code translate="no">--fs-md</code></td><td><code translate="no">text-fs-md</code></td></tr>
+<tr><th scope="row">title</th><td>18px</td><td>28px</td><td><code translate="no">--fs-title</code></td><td><code translate="no">text-fs-title</code></td></tr>
+<tr><th scope="row">lg</th><td>20px</td><td>28px</td><td><code translate="no">--fs-lg</code></td><td><code translate="no">text-fs-lg</code></td></tr>
+<tr><th scope="row">display</th><td>30px</td><td>36px</td><td><code translate="no">--fs-display</code></td><td><code translate="no">text-fs-display</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>CSS writes <code translate="no">font-size: var(--fs-*)</code>, class strings <code translate="no">text-fs-*</code>, inline styles <code translate="no">fontSize: "var(--fs-*)"</code>. Never a px or rem literal, an arbitrary <code translate="no">text-[…]</code>, or stock <code translate="no">text-xs</code> to <code translate="no">text-2xl</code>. <code translate="no">@theme</code> still maps stock names to the shadcn docs' meaning so pasted registry code renders right.</li>
+<li>Weights: 400 body, 500 labels, controls and row titles, 600 titles and emphasis, 700 transcript headings only.</li>
+</ul>
+<details>
+<summary>Which text sits on which tier</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">tier</th><th scope="col">text</th></tr></thead>
+<tbody>
+<tr><th scope="row">2xs 11</th><td>counters and dots in a badge, tab counts, kbd hints in the PiP, uppercase group labels on detail pages, DAG node and panel meta, context-commit timeline meta, folder sizes, the attachment strip's size line, the composer chips' small hints, model-list tags</td></tr>
+<tr><th scope="row">xs 12</th><td>secondary meta beside or under a row: timestamps, paths, counts, the account footer's subtitle; menu section labels, menu notes and key hints (<code translate="no">GROUP_LABEL</code>, <code translate="no">MENU_NOTE</code>, <code translate="no">SHORTCUT</code>); field descriptions; xs (24px) Buttons</td></tr>
+<tr><th scope="row">sm 13</th><td>descriptions and helper text, center tabs, page tab pills (<code translate="no">manage-page</code> tabs, project tabs), Agent card text and pills, sm (28px) Buttons and toggles, settings labels in dialogs</td></tr>
+<tr><th scope="row">base 14</th><td>body text; sidebar and list rows; menu and Select rows (<code translate="no">itemCls</code>); default (30px) and lg (32px) Buttons, inputs, textareas, selects, toggles; dialog descriptions; card titles in grids</td></tr>
+<tr><th scope="row">chat 15</th><td>transcript copy, the composer's input, embedded conversation cards, the running panel title, the Markdown file preview</td></tr>
+<tr><th scope="row">md 16</th><td>section headings inside a page (Settings card titles, "All chats"), dialog titles, Markdown h3/h4</td></tr>
+<tr><th scope="row">title 18</th><td>the page title in the header (<code translate="no">manage-page</code>), the title of a detail pane: Settings detail, Programs entry, Agent editor, Project, Memory editor; Markdown h2</td></tr>
+<tr><th scope="row">lg 20</th><td>the sidebar wordmark, big figures (usage totals), glyph tiles (project icons), the effects preview, Markdown h1</td></tr>
+<tr><th scope="row">display 30</th><td>the Launchpad folder title</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="spacing-and-radius">Spacing and radius</h2>
+<p>Tailwind's spacing unit is 4px on every surface (<code translate="no">p-2</code> = 8px), because the default <code translate="no">0.25rem</code> lands on half pixels on the 14px root. Hand-written CSS uses whole px multiples where it can.</p>
+<table class="stack">
+<thead><tr><th scope="col">Tier</th><th scope="col">Size</th><th scope="col">Used by</th></tr></thead>
+<tbody>
+<tr><th scope="row">2xs</th><td>2px</td><td>Hairline bars, progress tracks, carets, a tip's arrow</td></tr>
+<tr><th scope="row">xs</th><td>4px</td><td>Tags, kbd, checkboxes, inline code, badges</td></tr>
+<tr><th scope="row">sm</th><td>6px</td><td>Chips and small controls inside a row</td></tr>
+<tr><th scope="row">md</th><td>8px</td><td>Every Button size, inputs, selects, hand-written buttons</td></tr>
+<tr><th scope="row">lg</th><td>10px</td><td>List rows, menus, popovers, Select popups, cards</td></tr>
+<tr><th scope="row">xl</th><td>12px</td><td>The centre card, split panes, page panels, dialogs</td></tr>
+<tr><th scope="row">2xl</th><td>16px</td><td>User bubbles, large floating surfaces</td></tr>
+<tr><th scope="row">full</th><td>9999px</td><td>Pills, avatars, dots</td></tr>
+</tbody>
+</table>
+<p class="note">Same names in CSS (<code translate="no">var(--radius-lg)</code>) and Tailwind (<code translate="no">rounded-lg</code>). <code translate="no">--ui-button-radius</code> is md, <code translate="no">--ui-list-radius</code> lg. A share of the box (<code translate="no">50%</code>, a squircle's <code translate="no">26%</code>) and a concentric <code translate="no">calc()</code> over a tier are allowed. A radius from a surface with no tier says so with a <code translate="no">shape:</code> comment.</p>
+
+<h2 id="text-inks">Text inks</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">ink</th><th scope="col">text</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--text-bright</code></th><td>titles, the hovered or selected row, values</td></tr>
+<tr><th scope="row"><code translate="no">--text-primary</code></th><td>body text, list rows, controls</td></tr>
+<tr><th scope="row"><code translate="no">--text-secondary</code></th><td>descriptions, helper text, inactive tabs, counts</td></tr>
+<tr><th scope="row"><code translate="no">--text-muted</code></th><td>meta (timestamps, paths, placeholders), disabled text</td></tr>
+</tbody>
+</table>
+<p class="note">Tailwind: <code translate="no">text-text-bright</code>, <code translate="no">-primary</code>, <code translate="no">-secondary</code>, <code translate="no">-muted</code>. Parts in <code translate="no">components/ui</code> keep <code translate="no">text-foreground</code> and <code translate="no">text-muted-foreground</code>, which resolve to the same inks; other code does not use those. Accents (<code translate="no">--accent-*</code>, <code translate="no">--theme-accent</code>) mark state, never hierarchy.</p>
+
+<h2 id="interface-colours">Interface colours</h2>
+<p>Theme colours live in <code translate="no">themes/</code>. A colour the same in every theme is a named token in <code translate="no">color.css</code> on <code translate="no">:root</code>; components name the token. <code translate="no">light-dark(a, b)</code> follows the using element's color-scheme.</p>
+<details>
+<summary>Token groups</summary>
+<table class="stack">
+<thead><tr><th scope="col">group</th><th scope="col">tokens</th><th scope="col">used by</th></tr></thead>
+<tbody>
+<tr><th scope="row">session status</th><td><code translate="no">--status-working</code> <code translate="no">--status-needs-input</code> <code translate="no">--status-failed</code> <code translate="no">--status-unread</code> <code translate="no">--status-refresh-done</code></td><td>the sidebar's session markers, the refresh flash</td></tr>
+<tr><th scope="row">permission tiers</th><td><code translate="no">--permission-deny</code> <code translate="no">--permission-ask</code> <code translate="no">--permission-allow</code></td><td>the project permissions dots</td></tr>
+<tr><th scope="row">error text</th><td><code translate="no">--error-form</code> <code translate="no">--error-message-edit</code> <code translate="no">--error-document</code></td><td>plugin dialogs, the message editor, the document window</td></tr>
+<tr><th scope="row">catalog pills</th><td><code translate="no">--pill-warn</code> <code translate="no">--pill-danger</code></td><td>the skills catalog's hover tints</td></tr>
+<tr><th scope="row">commit timeline</th><td><code translate="no">--commit-state-*</code> (<code translate="no">-bg</code> and ink per state), <code translate="no">--commit-error</code>, <code translate="no">--commit-anchor</code>, <code translate="no">--commit-refresh-done</code></td><td>the context commit timeline</td></tr>
+<tr><th scope="row">ANSI</th><td><code translate="no">--ansi-red</code> <code translate="no">--ansi-green</code> <code translate="no">--ansi-yellow</code> <code translate="no">--ansi-blue</code> <code translate="no">--ansi-magenta</code> <code translate="no">--ansi-cyan</code></td><td>a program's progress log</td></tr>
+<tr><th scope="row">ink on fill</th><td><code translate="no">--ink-on-fill</code>, <code translate="no">--avatar-fallback-bg</code></td><td>text on a coloured fill (snap label, Save, count badge, active colour well, letter avatar)</td></tr>
+<tr><th scope="row">agent cursor</th><td><code translate="no">--agent-cursor-keyline</code> <code translate="no">--agent-cursor-shadow</code> <code translate="no">--agent-light-pulse</code></td><td>the agent cursor and the controlled-app lights</td></tr>
+<tr><th scope="row">browser</th><td><code translate="no">--browser-control-surface</code> <code translate="no">--browser-control-ink</code>, <code translate="no">--browser-pane-active</code> <code translate="no">--browser-pane-yielding</code>, <code translate="no">--browser-glyph-*</code></td><td>the browser-control chip, the browser tab's pane outlines and home glyph</td></tr>
+<tr><th scope="row">canvas controls</th><td><code translate="no">--pane-light-&lt;em&gt;</code>, <code translate="no">--pane-divider-&lt;/em&gt;</code></td><td>a pane's window lights and the split divider</td></tr>
+<tr><th scope="row">scrim</th><td><code translate="no">--scrim-attachment-preview</code></td><td>an enlarged message attachment</td></tr>
+<tr><th scope="row">PDF preview</th><td><code translate="no">--pdf-viewport-bg</code> <code translate="no">--pdf-thumb-shadow</code> <code translate="no">--pdf-thumb-current</code></td><td>the PDF page well and thumbnails</td></tr>
+<tr><th scope="row">GUI tool</th><td><code translate="no">--gui-tool-rule</code></td><td>the hairlines of a GUI tool's activity card</td></tr>
+<tr><th scope="row">sidebar</th><td><code translate="no">--nav-toggle-press</code> <code translate="no">--nav-item-press</code> <code translate="no">--new-chat-chip</code> <code translate="no">--new-chat-chip-hover</code> <code translate="no">--wordmark-from</code> <code translate="no">--wordmark-to</code></td><td>pressed nav rows, the New chat chip, the wordmark</td></tr>
+<tr><th scope="row">provider card</th><td><code translate="no">--provider-card-highlight</code></td><td>a provider's model card</td></tr>
+<tr><th scope="row">theme scenes</th><td><code translate="no">--theme-scene-rain-&lt;em&gt;</code> <code translate="no">--theme-scene-gradient-&lt;/em&gt;</code></td><td>the Code rain and Gradient previews in Settings, the Gradient scene and its glass chrome behind Launchpad</td></tr>
+<tr><th scope="row">Launchpad</th><td><code translate="no">--launchpad-*</code></td><td>the shadows under app icons and an open folder, the edit-mode remove badge, the label shadow on the Gradient scene</td></tr>
+<tr><th scope="row">running glow</th><td><code translate="no">--running-glow-blue</code> <code translate="no">--running-glow-violet</code> <code translate="no">--running-glow-green</code></td><td>the flowing glow on a running conversation's sidebar row</td></tr>
+<tr><th scope="row">branch lanes</th><td><code translate="no">--lane-0</code> … <code translate="no">--lane-17</code></td><td>the conversation graph's lines, nodes and tags, the Activity panel's branch rows, the browser's new-tab tile initials (<code translate="no">lib/format-utils/lane-colors.ts</code> hands out <code translate="no">var(--lane-N)</code>)</td></tr>
+<tr><th scope="row">code highlighting</th><td><code translate="no">--hl-keyword</code> <code translate="no">--hl-string</code> <code translate="no">--hl-number</code> <code translate="no">--hl-comment</code> <code translate="no">--hl-title</code> <code translate="no">--hl-type</code> <code translate="no">--hl-attr</code></td><td>highlight.js tokens in a message's code block</td></tr>
+</tbody>
+</table>
+<p class="note">Step tones in <code translate="no">styles/tool-tones.css</code> (<code translate="no">--tool-tone-*</code>, <code translate="no">--timeline-*</code>) are the same kind of token.</p>
+</details>
+<ul>
+<li>Every shadcn role is a full colour: read <code translate="no">var(--ring)</code>. Wrapping in <code translate="no">hsl()</code> resolves invalid. Translucent: <code translate="no">color-mix(in srgb, var(--muted) 34%, transparent)</code>.</li>
+<li><code translate="no">var(--role, literal)</code> names an always-defined role (theme roles, <code translate="no">--accent</code>, <code translate="no">--destructive</code>, <code translate="no">--muted-foreground</code>) with no dead literal. A role no theme defines (<code translate="no">--danger</code>, <code translate="no">--warning</code>, <code translate="no">--success</code>, <code translate="no">--red</code>, <code translate="no">--orange</code>, <code translate="no">--status-error</code>, <code translate="no">--border-color</code>) is replaced by the token holding its literal.</li>
+</ul>
+
+<h2 id="icons">Icons</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">size</th><th scope="col">where</th></tr></thead>
+<tbody>
+<tr><th scope="row">12</th><td>inside xs (24px) controls, beside 11–12px text</td></tr>
+<tr><th scope="row">14</th><td>inside sm (28px) controls, menu rows, chips</td></tr>
+<tr><th scope="row">16</th><td>default controls, toolbars, page buttons</td></tr>
+<tr><th scope="row">20</th><td>sidebar navigation, empty states, tiles, page-header glyphs</td></tr>
+<tr><th scope="row">24</th><td>hero glyphs on empty pages</td></tr>
+</tbody>
+</table>
+<p class="note">A <code translate="no">size</code> of 28 and up is an illustration (avatar, logo).</p>
+
+<h2 id="motion">Motion</h2>
+<table class="stack">
+<thead><tr><th scope="col">tier</th><th scope="col">value</th><th scope="col">where</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--motion-fast</code></th><td>120ms</td><td>hover, press, colour and border changes</td></tr>
+<tr><th scope="row"><code translate="no">--motion-medium</code></th><td>160ms</td><td>reveals, fades, small movements</td></tr>
+<tr><th scope="row"><code translate="no">--motion-slow</code></th><td>240ms</td><td>panels, drawers, larger movements</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">transition: opacity var(--motion-medium) var(--ease-standard)</code>. <code translate="no">--ease-standard</code> is the one easing. Looping animations and spring curves keep their timing. A script waiting on a transition times out no sooner than its tier.</p>
+
+<h2 id="shadows">Shadows</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Token</th><th scope="col">For</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--shadow-sm</code></th><td>Cards, small raised parts</td></tr>
+<tr><th scope="row"><code translate="no">--shadow</code></th><td>Raised panels</td></tr>
+<tr><th scope="row"><code translate="no">--shadow-popover</code></th><td>Menus, floating bars, drag previews</td></tr>
+<tr><th scope="row"><code translate="no">--shadow-dialog</code></th><td>Dialogs, full-window overlays</td></tr>
+<tr><th scope="row"><code translate="no">--shadow-raised</code>, <code translate="no">--shadow-raised-hover</code></th><td>The input box, elevated buttons</td></tr>
+</tbody>
+</table>
+<p class="note">Never an <code translate="no">rgba</code> in a component. Inset lines and focus rings are borders, not elevation.</p>
+
+<h2 id="layers">Layers</h2>
+<table class="stack">
+<thead><tr><th scope="col">layer</th><th scope="col">value</th><th scope="col">what</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--z-sticky</code></th><td>20</td><td>sticky headers inside a pane</td></tr>
+<tr><th scope="row"><code translate="no">--z-floating</code></th><td>50</td><td>panels floating inside a pane</td></tr>
+<tr><th scope="row"><code translate="no">--z-drawer</code></th><td>100</td><td>sidebars laid over the content at narrow widths</td></tr>
+<tr><th scope="row"><code translate="no">--z-overlay</code></th><td>110</td><td>the dim layer behind a dialog</td></tr>
+<tr><th scope="row"><code translate="no">--z-dialog</code></th><td>120</td><td>Dialog, AlertDialog</td></tr>
+<tr><th scope="row"><code translate="no">--z-popover</code></th><td>130</td><td>Popover, DropdownMenu, ContextMenu, Select, above dialogs</td></tr>
+<tr><th scope="row"><code translate="no">--z-tooltip</code></th><td>140</td><td>Tooltip</td></tr>
+<tr><th scope="row"><code translate="no">--z-toast</code></th><td>300</td><td>toasts</td></tr>
+<tr><th scope="row"><code translate="no">--z-fullscreen</code></th><td>10000</td><td>full-window editors and lightboxes</td></tr>
+<tr><th scope="row"><code translate="no">--z-drag</code></th><td>100000</td><td>drag previews and the drag surface</td></tr>
+</tbody>
+</table>
+<p class="note">Values 1 to 12 inside one component stay local. Tailwind: <code translate="no">z-(--z-popover)</code>. CSS: <code translate="no">z-index: var(--z-popover)</code>, or <code translate="no">calc(var(--z-drag) + 1)</code> for a part just above its layer.</p>
+
+<h2 id="which-layer-writes-what">Which layer writes what</h2>
+<table class="stack">
+<thead><tr><th scope="col">Layer</th><th scope="col">Writes</th><th scope="col">Never</th></tr></thead>
+<tbody>
+<tr><th scope="row">shadcn parts in <code translate="no">components/ui</code></th><td>every control: button, input, select, menu, dialog, switch, checkbox</td><td>—</td></tr>
+<tr><th scope="row">Tailwind classes in the JSX</th><td>layout and spacing (flex, grid, gap, padding, size), simple states</td><td>complex selectors</td></tr>
+<tr><th scope="row"><code translate="no">*.module.css</code> next to the component</th><td>what Tailwind cannot say: pseudo-elements (the project guide line), <code translate="no">data-*</code> and parent selectors, keyframes, layered cascades</td><td>a hand-made control, a literal value</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Layout rules still in modules</summary>
+<p>About 280 one-class, layout-only rules remain. A Tailwind utility sits in <code translate="no">@layer utilities</code> and a module rule is unlayered, so a moved rule loses to every unlayered rule on the element.</p>
+<p>A rule stays when its class appears earlier in the stylesheet, the element merges its own classes (a <code translate="no">DialogContent</code> keeps <code translate="no">sm:max-w-*</code>), another module class sets one of the same properties, or the styles object is re-exported or passed whole. They move when their component is edited; the guard makes sure the number only goes down.</p>
+</details>
+
+<h2 id="the-guard">The guard</h2>
+<p><code translate="no">apps/web/scripts/ui/check-design-tokens.mjs</code>, run by <code translate="no">npm run check</code>, scans every stylesheet and <code translate="no">.ts</code> or <code translate="no">.tsx</code> file. <code translate="no">apps/web/tests/ui/ui-kit-is-nova.test.mjs</code> refuses a literal control height.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Kind</th><th scope="col">Refused</th></tr></thead>
+<tbody>
+<tr><th scope="row">Font</th><td>Size off the <code translate="no">--fs-*</code> tiers, arbitrary <code translate="no">text-[…]</code>, stock <code translate="no">text-xs</code> to <code translate="no">text-2xl</code>, a font named by hand, the <code translate="no">font</code> shorthand, forced <code translate="no">tabular-nums</code> (Settings owns typeface and digits)</td></tr>
+<tr><th scope="row">Weight</th><td>Anything but 400, 500, 600, 700</td></tr>
+<tr><th scope="row">Radius</th><td>px, arbitrary <code translate="no">rounded-[…]</code>, bare <code translate="no">rounded</code>, <code translate="no">rounded-3xl</code> and up, <code translate="no">--radius</code>, a <code translate="no">--radius-*</code> that is not a tier</td></tr>
+<tr><th scope="row">Ink</th><td><code translate="no">--text-tertiary</code>, <code translate="no">--text-dim</code>, <code translate="no">text-[var(--text-*)]</code>, shadcn ink names outside <code translate="no">components/ui</code></td></tr>
+<tr><th scope="row">Icon</th><td>A <code translate="no">size</code> below 28 that is not a tier</td></tr>
+<tr><th scope="row">Colour</th><td><code translate="no">#hex</code>, <code translate="no">rgb()</code>, <code translate="no">hsl()</code> outside <code translate="no">app/styles/themes/</code>, <code translate="no">app/styles/design/</code> and custom-property lines in <code translate="no">app/styles/</code></td></tr>
+<tr><th scope="row">Module layout</th><td>More layout-only rules than <code translate="no">apps/web/scripts/ui/module-layout-baseline.json</code> allows; a new module may have none. <code translate="no">node apps/web/scripts/ui/check-design-tokens.mjs --write-layout-baseline</code> lowers the numbers</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Named exceptions</summary>
+<ul>
+<li>APIs that take pixels: xterm, Mermaid, canvas, Electron views.</li>
+<li>Framer Motion's numeric radius on the Agent cards.</li>
+<li>The input box: its radii, weights and icons stay as drawn.</li>
+<li>A line that says <code translate="no">glyph:</code>, <code translate="no">shape:</code> or <code translate="no">mask:</code>.</li>
+<li><code translate="no">COLOUR_DATA</code>: user-picked palettes and chart series, artwork (Launchpad and memory icons, code rain, search-provider glyphs), APIs taking a colour string (canvas, WebGL, xterm, Mermaid, pdf.js, the web manifest), the effort heat scale computed as <code translate="no">hsl()</code>.</li>
+</ul>
+</details>

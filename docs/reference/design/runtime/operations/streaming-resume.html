@@ -1,0 +1,69 @@
+<title>In-flight state recovery</title>
+<meta name="description" content="How running work stays visible through a refresh, a reconnect or a worker restart.">
+<h1>In-flight state recovery</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">What happens</th><th scope="col">What the chat shows</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">Page refresh, worker alive</th><td>The running row with its latest saved state, then numbered updates and text frames placed by offset</td><td>The row as stored, <code translate="no">running_task</code> frame, <code translate="no">transcript_update</code></td></tr>
+<tr><th scope="row">Run ended during the load</th><td>The running slot closes</td><td><code translate="no">running_task_clear</code></td></tr>
+<tr><th scope="row">Worker restart</th><td>Row marked <code translate="no">interrupted</code>, amber, with “Worker restarted before this turn finished”</td><td><code translate="no">reconcile_interrupted_runs</code></td></tr>
+<tr><th scope="row">Open question or approval</th><td>The card is drawn again</td><td><code translate="no">_replay_open_waits</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="placeholders">Placeholders</h2>
+<p>Work that runs for a while writes its node before it starts. Status lives in <code translate="no">metadata</code>; the <code translate="no">Call</code> dataclass does not change.</p>
+<table class="stack">
+<thead><tr><th scope="col">Producer</th><th scope="col">Written by</th><th scope="col">Saved while running</th></tr></thead>
+<tbody>
+<tr><th scope="row">Assistant reply</th><td><code translate="no">turn_lifecycle.py</code>: empty <code translate="no">role="llm"</code> row with <code translate="no">status="running"</code>, <code translate="no">worker_id</code>, <code translate="no">started_at</code></td><td>Text and thinking blocks as they stream, through <code translate="no">stream_tap</code>'s quiet path (<code translate="no">update_stream_progress</code>, not fsynced) before each frame goes out; the full row at the end of the turn, partial output on cancel</td></tr>
+<tr><th scope="row">Agent method run</th><td>Placeholder <code translate="no">&lt;msg_id&gt;_reply</code></td><td>The poller in <code translate="no">execution/dag.py</code> writes <code translate="no">context_tree</code>, <code translate="no">status</code> and <code translate="no">last_update_at</code></td></tr>
+<tr><th scope="row">Agent method called by the model</th><td><code translate="no">runtime_attach.py</code>: <code translate="no">display=runtime</code> row</td><td>Same tree</td></tr>
+<tr><th scope="row"><code translate="no">/task --async</code>, merge</th><td><code translate="no">slash_actions.py</code>: attach pointer</td><td>Job status on the card</td></tr>
+<tr><th scope="row">Sub-agent</th><td><code translate="no">sub_agent_run.py</code></td><td>Job status on the card</td></tr>
+</tbody>
+</table>
+<p class="note">The poller runs from every 0.15 s, backing off to 1.2 s. It flushes once more at the end, so a refresh after the run shows it done.</p>
+
+<details>
+<summary>Status values</summary>
+<dl class="pairs">
+<dt>Waiting</dt><dd><code translate="no">pending</code>, <code translate="no">paused</code></dd>
+<dt>Producing</dt><dd><code translate="no">running</code>, <code translate="no">streaming</code>, <code translate="no">cancelling</code></dd>
+<dt>Finished</dt><dd><code translate="no">completed</code>, <code translate="no">done</code>, <code translate="no">error</code>, <code translate="no">cancelled</code>, <code translate="no">interrupted</code></dd>
+<dt>No status</dt><dd><code translate="no">_node_to_msg</code> reads an older node as <code translate="no">done</code></dd>
+</dl>
+</details>
+
+<h2 id="reconnect">Reconnect</h2>
+<p>A session load returns the saved rows, then <code translate="no">running_task</code> for the live run:</p>
+<pre translate="no" tabindex="0">{ "type": "running_task",
+  "data": { "session_id", "msg_id", "func_name", "execution_id", "status_version",
+            "started_at", "display_params", "partial_tree": null,
+            "stream_events", "status", "reason_code", "run_seq" } }</pre>
+<p class="note">Frames are per session; <code translate="no">run_seq</code> orders them so a late frame cannot revive a closed slot.</p>
+<p class="note">Rows and live trees arrive as numbered <code translate="no">transcript_update</code> changes: a function run's tree as a <code translate="no">row_patch</code>, a model-issued call's tree in its reply's <code translate="no">callRoots</code>. A reloaded tab reads first and then follows the updates; a missed update or a text frame past the row's text makes it read once more.</p>
+
+<h2 id="worker-restart">Worker restart</h2>
+<p>A new worker has nothing running, so startup reconciles every session, archived ones included, on a background thread. There is no age threshold.</p>
+<table class="grid">
+<thead><tr><th scope="col">Node</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">running</code></th><td class="deny">Becomes <code translate="no">interrupted</code></td></tr>
+<tr><th scope="row"><code translate="no">cancelling</code>, owner dead</th><td class="deny">Becomes <code translate="no">cancelled</code></td></tr>
+<tr><th scope="row"><code translate="no">cancelling</code>, owner alive</th><td class="run">Cancellation resumes</td></tr>
+<tr><th scope="row">Has an open durable wait</th><td class="run">Stays resumable</td></tr>
+<tr><th scope="row">Execution still active</th><td class="run">Left to the execution</td></tr>
+</tbody>
+</table>
+<p class="note">Continuing an execution after a restart is the job of <code translate="no">openprogram/runtime/execution/restart.py</code>, within <code translate="no">execution.auto_resume_window_seconds</code>.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Built</th><td>Placeholders, tree persistence, saving a reply's partial text while it streams, status rendering, reconnect frames, restart reconcile</td></tr>
+<tr><th scope="row">Not built</th><td>Subscribing to one message; a panel of active work across sessions</td></tr>
+</tbody>
+</table>

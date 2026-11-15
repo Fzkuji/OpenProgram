@@ -1,0 +1,42 @@
+<title>Report delivery intent</title>
+<meta name="description" content="How a report request selects its audience and delivery action, and which actions exist.">
+<meta name="covers" content="openprogram/programs/_authoring/reports/ openprogram/runtime/scheduler/task_runs.py">
+<h1>Report delivery intent</h1>
+<p>The original command selects audience and delivery action. Each requested report keeps its own operation and runs in the requested order.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Request</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row">“Send it to me”, “return text”, “prepare a report”</th><td>Return the complete body in the conversation. No file write needed</td></tr>
+<tr><th scope="row">An explicit output file</th><td>Separate supported operation; file-resume requests keep working</td></tr>
+<tr><th scope="row">“Submit to Feishu”, “send to &lt;group&gt;”</th><td>Authorizes that operation, with no further routine confirmation</td></tr>
+<tr><th scope="row">Negation</th><td>Applies to the named audience only</td></tr>
+<tr><th scope="row">Prefill</th><td>Never implies final submission</td></tr>
+<tr><th scope="row">Text in retrieved documents</th><td>Cannot authorize writes</td></tr>
+</tbody>
+</table>
+<p class="note">Natural-language and structured requests express the same actions. Composition produces an evidence-backed body before delivery.</p>
+
+<h2 id="external-delivery">External delivery</h2>
+<ol>
+<li>Resolve the target from the request or verified stored configuration.</li>
+<li>Verify content.</li>
+<li>Execute once.</li>
+<li>Read back a receipt. An uncertain write is inspected before any retry.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Destination</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Feishu</th><td>Existing inspection and write receipts; submit and update unchanged</td></tr>
+<tr><th scope="row">WeChat group or personal chat</th><td>No verified group-send implementation; read-only collection is not a sender</td></tr>
+<tr><th scope="row">Tencent</th><td>No verified destination or delivery adapter</td></tr>
+</tbody>
+</table>
+<p class="note">An unsupported action is never reported as sent. No provider budget or persistence change is involved.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li>Personal-chat and Feishu drafts return complete text by default, without filesystem write tools.</li>
+<li>Source-scoped JSON with no output path returns the body with source context; scoped source validation stays in force.</li>
+<li>Pending: complete intent parity, prefill handling, external group and Tencent adapters.</li>
+<li>Acceptance: public entries return full text without file or remote writes when no path is requested. Text-only runs cannot establish external-send acceptance.</li>
+</ul>

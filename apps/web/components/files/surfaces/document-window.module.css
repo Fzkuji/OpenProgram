@@ -1,0 +1,18 @@
+.window { flex:1; min-width:0; width:100%; display:flex; flex-direction:column; height:100%; min-height:0; background:var(--bg-primary); }
+.toolbar { display:flex; flex-wrap:wrap; row-gap:8px; padding-block:8px; align-items:center; gap:6px; min-height:40px; padding:0 12px; border-bottom:1px solid var(--border-subtle); }
+.title { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--fs-sm); color:var(--text-primary); }
+/* Geometry and colour come from buttonVariants (elevated, sm); unlayered
+   rules here would override those utilities, so only the gap is set. */
+.button { gap:6px; }
+/* The pressed mode (Preview / Edit) sits flat and a step darker than the
+   raised buttons beside it. */
+.active { background:color-mix(in srgb, var(--text-bright) 9%, var(--bg-input)); color:var(--text-bright); box-shadow:none; }
+.history { border-top:1px solid var(--border-subtle); max-height:220px; overflow:auto; padding:8px 12px; }
+.historyTitle { font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:6px; }
+.entry { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:var(--fs-xs); }
+.entry button { margin-left:auto; }
+.error { padding:6px 12px; color:var(--error-document); font-size:var(--fs-xs); border-bottom:1px solid var(--border-subtle); }
+
+.button:disabled { opacity:.5; cursor:default; }
+.button:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.updateNotice { display:flex; flex-wrap:wrap; gap:6px 12px; padding:8px 12px; font-size:var(--fs-xs); color:var(--text-secondary); background:var(--bg-secondary); border-bottom:1px solid var(--border-subtle); }

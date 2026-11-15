@@ -11,9 +11,10 @@
  * the same set of variables, just collected in one file.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
-import type { GNode, HighlightMode } from "../types";
+import type { GNode } from "../types";
+import type { ThreadModel } from "../passes/thread";
 
 // ── HEAD / context / highlight mode ───────────────────────────────
 export let _currentHead: string | null = null;
@@ -36,9 +37,6 @@ export function setCoverageSet(
   _coverageSet = v;
 }
 
-export let _highlightMode: HighlightMode = "viewport";
-export function setHighlightMode(v: HighlightMode): void { _highlightMode = v; }
-
 // ── visibility / ancestry / internal sets ─────────────────────────
 export let _visibleIds: Record<string, boolean> = Object.create(null);
 export function setVisibleIds(v: Record<string, boolean>): void {
@@ -50,18 +48,6 @@ export function setHeadAncestorSet(v: Record<string, boolean>): void {
   _headAncestorSet = v;
 }
 
-export let _internalSet: Record<string, boolean> = Object.create(null);
-export function setInternalSet(v: Record<string, boolean>): void {
-  _internalSet = v;
-}
-
-export let _internalOwner: Record<string, string> = Object.create(null);
-export function setInternalOwner(v: Record<string, string>): void {
-  _internalOwner = v;
-}
-
-export let _parentOf: Record<string, string> = Object.create(null);
-export function setParentOf(v: Record<string, string>): void { _parentOf = v; }
 
 // ── render signature + leaf cache + collapse ──────────────────────
 export let _lastSignature: string | null = null;
@@ -108,7 +94,7 @@ export function setSummaryExpanded(v: Record<string, boolean>): void {
 }
 
 
-// ── infinite-canvas view (see ../interaction/canvas.ts) ──────────
+// ── infinite-canvas view (see ../interaction/view/canvas.ts) ──────────
 // Where the user has panned and zoomed to. Module state rather than
 // per-render state because the graph repaints on every capture and the
 // camera must not move when it does. ``_viewSession`` is what tells a
@@ -134,16 +120,10 @@ export function setLastGraph(g: GNode[] | null, h: string | null): void {
   _lastHeadId = h;
 }
 
-// ── chat-sync wiring latches ──────────────────────────────────────
-export let _chatScrollWired = false;
-export function setChatScrollWired(v: boolean): void { _chatScrollWired = v; }
-
-export let _chatMutationWired = false;
-export function setChatMutationWired(v: boolean): void {
-  _chatMutationWired = v;
-}
-
-export let _chatMutationObserver: MutationObserver | null = null;
-export function setChatMutationObserver(v: MutationObserver | null): void {
-  _chatMutationObserver = v;
+// The last render's call-thread model: which raw rows merged into the
+// node that stands for them on the canvas (interaction/selection/node-delete.ts
+// widens a selection with it, so deleting a glyph deletes all it shows).
+export let _lastThreadModel: ThreadModel | null = null;
+export function setLastThreadModel(v: ThreadModel | null): void {
+  _lastThreadModel = v;
 }

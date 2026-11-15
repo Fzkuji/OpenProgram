@@ -1,0 +1,125 @@
+<title>Composer interaction layout</title>
+<meta name="description" content="Layout and behaviour of tool approvals, question panels, function forms, discussion, history recall and file mentions.">
+<meta name="covers" content="apps/web/components/chat/composer/">
+<h1>Composer interaction layout</h1>
+
+<p class="note">Ownership and delivery: <a href="composer-interaction-modes.html">composer and user decision output</a>. No new theme or dependency; existing neutral palette, 12px spacing and 28px decision controls.</p>
+
+<h2>Surfaces</h2>
+<table class="stack">
+<thead><tr><th scope="col">Surface</th><th scope="col">Shows</th><th scope="col">Actions</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool approval</th><td>"Your input is needed", 1/1, "Allow this command?", the operation in <code translate="no">OperationCode</code></td><td>Deny and Allow once share the bottom row and submit directly. No selection, discussion or Send step.</td></tr>
+<tr><th scope="row">Question panel</th><td>Progress badge, current question, full-width option rows (title, optional description, number), Other with its input visible</td><td>Back on the left; Skip and Next or Submit on the right</td></tr>
+<tr><th scope="row">Function form</th><td>Task inputs only, 12px padding on every side</td><td>Existing header: Run, Close</td></tr>
+</tbody>
+</table>
+
+<h2>Question panel</h2>
+<p>Same width as the composer; fonts, size and colours are the application's.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Next</th><td>Validates the current answer, shows the next question, sends nothing</td></tr>
+<tr><th scope="row">Back</th><td>Keeps all selections</td></tr>
+<tr><th scope="row">Submit</th><td>Sends one ordered answer list through the acknowledged execution command</td></tr>
+<tr><th scope="row">Skip</th><td>Declines the whole request. The backend requires a valid answer per question, so there are no partial or empty answers.</td></tr>
+<tr><th scope="row">Collapse, close</th><td>Reduce to the header. Reopening keeps answers; no command is sent.</td></tr>
+<tr><th scope="row">Digits</th><td>Select options, outside editable text only</td></tr>
+<tr><th scope="row">Ctrl/Cmd+Enter</th><td>Advances or submits. IME composition and multiline discussion keep editing.</td></tr>
+<tr><th scope="row">Arrival</th><td>Never moves focus</td></tr>
+<tr><th scope="row">Short screens</th><td>The body scrolls; header and actions stay</td></tr>
+</tbody>
+</table>
+<p class="note">Optional <code translate="no">question_title</code> and <code translate="no">option_descriptions</code> supply the row layout. Only explicit string entries render; inherited object properties are not metadata and do not restrict labels. Plain answers and prompts remain for other clients. Multiple pending requests are separate keyed panels.</p>
+
+<h2>Discussion</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where</th><td>Ordinary questions: Chat about this. Approvals have only Allow once and Deny.</td></tr>
+<tr><th scope="row">Field</th><td>Inline in the card; heading names discussion; 96px minimum; shared <code translate="no">Textarea</code>. The original question stays read-only, without duplicate answer controls. Progress is hidden.</td></tr>
+<tr><th scope="row">Open, cancel</th><td>Send nothing; the wait stays unresolved</td></tr>
+<tr><th scope="row">Send</th><td>Binds question, tool details and feedback to the exact canonical wait, as the decline reason in the same turn</td></tr>
+<tr><th scope="row">Deny</th><td>Declines without a discussion turn</td></tr>
+<tr><th scope="row">During submission</th><td>Competing approval controls are blocked. Unknown delivery keeps the command and feedback for retry. Switching conversations cannot retarget it.</td></tr>
+<tr><th scope="row">Identity</th><td>Session and wait jointly identify the request; feedback, command id and delivery state survive remounts</td></tr>
+</tbody>
+</table>
+<p class="note">Like the <a href="https://code.claude.com/docs/en/agent-sdk/user-input">Claude Agent SDK</a> and <a href="https://opencode.ai/v2/docs/permissions">OpenCode</a>, feedback attaches to the original call. OpenProgram synthesizes no first-person rejection and does not treat questions as tool permissions.</p>
+
+<h2>Typography and alignment</h2>
+<dl class="pairs">
+<dt>Text</dt><dd>Application sans-serif at the base token, line height 1.5, no shrink at desktop breakpoints. Prompts and field headings 600; values, hints and placeholders 400.</dd>
+<dt>Code</dt><dd>Commands and JSON: shared <code translate="no">OperationCode</code>, monospace, language label sized as the first code line, secondary background, inset 1px theme border, copy icon on the first line. No separate toolbar.</dd>
+<dt>Copy</dt><dd>Success only after clipboard acknowledgment; failure is announced</dd>
+<dt>Edges</dt><dd>Headings, body and editor border share one left edge, 12px inside the container. No negative margins.</dd>
+<dt>Actions</dt><dd>A non-shrinking sibling of the scrolling body, anchored to the bottom through height transitions and overflow</dd>
+<dt>Command details</dt><dd>Native disclosure, 12px gap; the working directory appears only in the JSON arguments. Sandbox escalation explanations stay visible.</dd>
+</dl>
+
+<h2>Function forms</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Inputs</th><td>Task inputs only, in Programs Use, favorites and reopened forms. Limits, timeouts, backends and session handles are internal with working defaults; no disclosure or hint.</td></tr>
+<tr><th scope="row">Single-purpose forms</th><td>Browser Workflow: task and optional URL. Text polishing picks a style from the text. Page ranges, output destinations and revision targets remain inputs.</td></tr>
+<tr><th scope="row">Pending Use</th><td>Pending Use requests are consumed after chat initialization, which therefore cannot clear the form.</td></tr>
+<tr><th scope="row">Height</th><td>Height measurement releases textarea flex growth and includes the native row height and border, so the last field keeps its padding.</td></tr>
+<tr><th scope="row">Goal details</th><td>Goal details keep progress and task controls, without agent or budget editors. New Goals pick reasoning effort with one tool-free model request, falling back to defaults; resumed Goals keep saved roles.</td></tr>
+</tbody>
+</table>
+
+<h2>Keyboard ownership</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Feature</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">History recall</th><td>Keeps the exact draft; Down after the newest restores it. Editing recalled text starts a new cycle. State is scoped to the composer owner, so another split pane does not reset it. Selection, modifier arrows, IME, file and slash menus keep precedence.</td></tr>
+<tr><th scope="row">File mention results</th><td>Bound to the token location and query. A changed query invalidates them; a late response cannot restore them after Escape, replacement or unmount. Escape dismisses until the token changes.</td></tr>
+<tr><th scope="row">Mention pending</th><td>Enter and Tab keep the draft and neither select nor send. Escape works. IME and Shift+Enter keep editing. No timeout or retry.</td></tr>
+<tr><th scope="row">Mention empty or failed</th><td>Enter sends; Tab moves focus</td></tr>
+<tr><th scope="row">Rejected send intent</th><td>The owner reservation keeps the unsent body even when only attachments or settings differ, across focused and bound composers. An accepted frame keeps its payload; success clears only matching text. The reservation token is released in <code translate="no">finally</code>.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Long-lived approvals</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Expiry</th><td>Human tool approvals have no default expiry. The durable wait keeps the exact operation and file fingerprints; the safe-point handoff ends the attempt and frees the slot. Explicit deadlines remain for other waits.</td></tr>
+<tr><th scope="row">Resume</th><td>Resume loads the checkpoint and reuses the saved system prompt and browser-tool selection. Model, tool implementation, permissions and location are validated; live Page access is checked per call. An incompatible continuation reports that execution did not resume.</td></tr>
+<tr><th scope="row">Clearing errors</th><td>Once recovery reaches running or completed, prior continuation error metadata is cleared. Replay repairs a completed message without rerunning.</td></tr>
+<tr><th scope="row">Cancellation</th><td>Cancellation and terminal events remove pending decisions, including after reconnect. Expired requests stay expired. Job recovery handles only Job admissions. An operation that paused again does not retry on its old answer.</td></tr>
+<tr><th scope="row">File approvals</th><td>File edit, write and patch approvals bind paths and contents, checked before dispatch and before mutation. Changed or missing targets are not written; the agent gets a non-executed result and must re-read. Opaque shell commands cannot claim this guarantee.</td></tr>
+<tr><th scope="row">Declined or expired</th><td>A terminal declined or expired wait projects an outcome into its assistant node through the durable DAG outbox, with no execution or new turn; replay does not duplicate it.</td></tr>
+<tr><th scope="row">Terminal release</th><td>A terminal execution releases the active conversation's composer, unless a newer execution is active; the reply's terminal row arrives as a transcript update, with no reload. A continuation opening another approval publishes it on the shared WebSocket stream.</td></tr>
+<tr><th scope="row">Peers</th><td>Claude Agent SDK indefinite <code translate="no">canUseTool</code> waits, OpenCode <code translate="no">permission/next.ts</code>, Codex <code translate="no">tools/approvals.rs</code>.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Project rule management</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Requests</th><td>Correlated permission-rule requests as non-coalescing WebSocket frames</td></tr>
+<tr><th scope="row">Broadcasts</th><td>Coalesce within one project and update other open views</td></tr>
+<tr><th scope="row">Writes</th><td>Read back before acknowledgment; failed or unknown writes keep the draft. Persistent approval grants are verified after writing</td></tr>
+<tr><th scope="row">Authorization</th><td>Owner operations read merged rules at the next boundary; authorized calls and admitted children keep their captured authorization</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Discussion: empty field with context; cancel keeps the request; sending declines and returns feedback in the turn with no extra message; Deny alone adds none; pending submission cannot approve; retries keep one command.</li>
+<li>Questions, on real Composer and QuestionMode: Back, Next, Submit order, digits, custom and multiple answers, remounts, narrow and short views, collapse, session isolation, uncertain retry, receipts.</li>
+<li>Mentions, on the real hook and menu: changed-query Enter cannot select old results; Escape survives a delayed response; failed and empty fallbacks; pending input and IME do not submit; disposal suppresses late work.</li>
+</ul>
+</details>
+
+<h2>Implementation status</h2>
+<p>Implemented. Installed-App verification of the file-mention lifecycle and the rejected-intent body is pending.</p>

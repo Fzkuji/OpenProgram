@@ -23,14 +23,17 @@ from typing import Any
 
 import httpx
 
-from openprogram.security.safe_http import safe_client
-from openprogram.security.url_policy import normalize_origin
+from openprogram.host.security.safe_http import safe_client
+from openprogram.host.security.url_policy import normalize_origin
+from openprogram.programs.tools.web._owner_fetch import owner_open
 
-from openprogram.programs._helpers import read_int_param, read_string_param
-from openprogram.programs._runtime import function
+from openprogram.programs._authoring.helpers import read_int_param, read_string_param
+from openprogram.programs._host.runtime import ToolReturn, function
+from openprogram.runtime.permissions import refusal
 from ..image_analyze._encode import detect_raster_mime
 from . import providers as _  # registers builtins  # noqa: F401
 from .registry import GeneratedImage, registry
+from openprogram.host._platform.filesystem import replace_file
 
 
 NAME = "image_generate"
@@ -81,10 +84,10 @@ SPEC: dict[str, Any] = {
 def _resolve_output_dir(override: str | None) -> Path:
     raw = override or os.environ.get("OPENPROGRAM_IMAGE_DIR") or "./generated_images"
     p = Path(raw).expanduser().resolve()
-    from openprogram.sandbox import validate_write_path
+    from openprogram.host.sandbox import validate_write_path
     violation = validate_write_path(p)
     if violation:
-        raise PermissionError(f"sandbox policy: {violation}")
+        raise refusal.sandbox("image_generate", violation)
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -103,7 +106,7 @@ def _ext_for_mime(mime: str) -> str:
 
 
 def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
-    from openprogram.sandbox import validate_write_path
+    from openprogram.host.sandbox import validate_write_path
     if img.data:
         mime = detect_raster_mime(img.data)
         if mime is None:
@@ -111,7 +114,7 @@ def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
         target = out_dir / f"{stem}_{idx}{_ext_for_mime(mime)}"
         violation = validate_write_path(target)
         if violation:
-            raise PermissionError(f"sandbox policy: {violation}")
+            raise refusal.sandbox("image_generate", violation)
         target.write_bytes(img.data)
     elif img.url:
         safe_error: RuntimeError | None = None
@@ -120,7 +123,9 @@ def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
         ) as temporary_dir:
             staging = Path(temporary_dir) / "download"
             try:
-                with safe_client("tool.image_result.download") as client:
+                client_context = (safe_client("tool.image_result.download.owner") if owner_open()
+                                  else safe_client("tool.image_result.download"))
+                with client_context as client:
                     client.download(img.url, staging)
             except httpx.HTTPStatusError as e:
                 safe_error = RuntimeError(
@@ -146,8 +151,8 @@ def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
             target = out_dir / f"{stem}_{idx}{_ext_for_mime(mime)}"
             violation = validate_write_path(target)
             if violation:
-                raise PermissionError(f"sandbox policy: {violation}")
-            os.replace(staging, target)
+                raise refusal.sandbox("image_generate", violation)
+            replace_file(staging, target)
     else:
         raise RuntimeError("GeneratedImage had neither bytes nor URL")
     return target
@@ -155,6 +160,62 @@ def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
 
 def _tool_check_fn() -> bool:
     return bool(registry.available())
+
+
+def _execute_result(
+    prompt: str | None = None,
+    model: str | None = None,
+    size: str = "1024x1024",
+    n: int = 1,
+    provider: str | None = None,
+    output_dir: str | None = None,
+    **kw: Any,
+) -> ToolReturn:
+    prompt = prompt or read_string_param(kw, "prompt", "text")
+    model = model or read_string_param(kw, "model", "modelId")
+    provider = provider or read_string_param(kw, "provider", "backend")
+    size = read_string_param(kw, "size", default=size) or size
+    n = read_int_param(kw, "n", "numImages", "count", default=n) or n
+    output_dir = output_dir or read_string_param(kw, "output_dir", "outputDir")
+
+    if not prompt:
+        return ToolReturn(text="Error: `prompt` is required.", is_error=True)
+
+    try:
+        backend = registry.select(prefer=provider)
+    except LookupError as e:
+        return ToolReturn(text=f"Error: {e}", is_error=True)
+
+    try:
+        images = backend.generate(prompt, model=model, size=size, n=max(1, min(int(n), 4)))
+    except Exception as e:
+        return ToolReturn(text=f"Error: {backend.name} generation failed: {type(e).__name__}: {e}", is_error=True)
+
+    if not images:
+        return ToolReturn(text=f"Error: {backend.name} returned no images for prompt {prompt!r}.", is_error=True)
+
+    try:
+        out_dir = _resolve_output_dir(output_dir)
+    except PermissionError as e:
+        return ToolReturn(text=f"Error: {e}", is_error=True)
+    stem = time.strftime("%Y%m%d_%H%M%S")
+    saved: list[Path] = []
+    for i, img in enumerate(images, 1):
+        try:
+            saved.append(_save(img, out_dir, stem, i))
+        except refusal.Refused:
+            raise
+        except Exception as e:
+            return ToolReturn(text=f"Error: {backend.name} save failed at image {i}: {e}", is_error=True)
+
+    lines = [f"# image_generate (via {backend.name}, {len(saved)} image{'s' if len(saved) != 1 else ''})"]
+    lines.append(f"output_dir: {out_dir}")
+    if images[0].revised_prompt and images[0].revised_prompt != prompt:
+        lines.append(f"revised_prompt: {images[0].revised_prompt!r}")
+    lines.append("")
+    for p in saved:
+        lines.append(f"- {p}")
+    return ToolReturn(text="\n".join(lines))
 
 
 def execute(
@@ -166,49 +227,11 @@ def execute(
     output_dir: str | None = None,
     **kw: Any,
 ) -> str:
-    prompt = prompt or read_string_param(kw, "prompt", "text")
-    model = model or read_string_param(kw, "model", "modelId")
-    provider = provider or read_string_param(kw, "provider", "backend")
-    size = read_string_param(kw, "size", default=size) or size
-    n = read_int_param(kw, "n", "numImages", "count", default=n) or n
-    output_dir = output_dir or read_string_param(kw, "output_dir", "outputDir")
-
-    if not prompt:
-        return "Error: `prompt` is required."
-
-    try:
-        backend = registry.select(prefer=provider)
-    except LookupError as e:
-        return f"Error: {e}"
-
-    try:
-        images = backend.generate(prompt, model=model, size=size, n=max(1, min(int(n), 4)))
-    except Exception as e:
-        return f"Error: {backend.name} generation failed: {type(e).__name__}: {e}"
-
-    if not images:
-        return f"Error: {backend.name} returned no images for prompt {prompt!r}."
-
-    try:
-        out_dir = _resolve_output_dir(output_dir)
-    except PermissionError as e:
-        return f"Error: {e}"
-    stem = time.strftime("%Y%m%d_%H%M%S")
-    saved: list[Path] = []
-    for i, img in enumerate(images, 1):
-        try:
-            saved.append(_save(img, out_dir, stem, i))
-        except Exception as e:
-            return f"Error: {backend.name} save failed at image {i}: {e}"
-
-    lines = [f"# image_generate (via {backend.name}, {len(saved)} image{'s' if len(saved) != 1 else ''})"]
-    lines.append(f"output_dir: {out_dir}")
-    if images[0].revised_prompt and images[0].revised_prompt != prompt:
-        lines.append(f"revised_prompt: {images[0].revised_prompt!r}")
-    lines.append("")
-    for p in saved:
-        lines.append(f"- {p}")
-    return "\n".join(lines)
+    """Retain the plain-call string contract; registered tools use typed outcomes."""
+    return _execute_result(
+        prompt=prompt, model=model, size=size, n=n,
+        provider=provider, output_dir=output_dir, **kw,
+    ).text or ""
 
 
 
@@ -222,6 +245,6 @@ function(
     toolset=['core'],
     check_fn=_tool_check_fn,
     path_params={"output_dir": "write"},
-)(execute)
+)(_execute_result)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION", "_tool_check_fn"]

@@ -7,7 +7,7 @@ import re
 import shutil
 import subprocess
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 
 
 _DESCRIPTION = (
@@ -64,7 +64,7 @@ def _line_path(line: str) -> str:
 def _drop_denied_lines(out: str) -> str:
     """Remove result lines naming a deny-read path. rg runs in-process
     here (no OS sandbox wraps it), so the policy has no other seam."""
-    from openprogram.sandbox import read_denier
+    from .file_safety import read_denier
     denied = read_denier()
     if denied is None or not out:
         return out
@@ -87,7 +87,7 @@ def _run_python_fallback(pattern: str, path: str, glob: str | None,
     content_lines: list[str] = []
     counts: dict[str, int] = {}
 
-    from openprogram.sandbox import read_denier
+    from .file_safety import read_denier
     denied = read_denier()
 
     if os.path.isfile(path):
@@ -136,7 +136,7 @@ def _run_python_fallback(pattern: str, path: str, glob: str | None,
     name="grep",
     accept_edits_safe=True,   # acceptEdits 档下自动放行（只读）
     description=_DESCRIPTION,
-    max_result_chars=20_000,    # Claude Code default for grep
+    max_result_weight=5_000,    # about Claude Code's 20,000-character grep cap
     toolset=["core", "research"],
     path_params={"path": "read"},
 )
@@ -154,20 +154,22 @@ def grep(pattern: str,
         output_mode: Output format: "files_with_matches", "content", or "count".
         case_insensitive: Case-insensitive match. Default false.
     """
-    if path:
-        root = path
-    else:
-        try:
-            from openprogram.paths import get_default_workdir
-            root = get_default_workdir()
-        except Exception:
-            root = os.getcwd()
+    from ._remote import remote_target
+    _remote_fs = remote_target()
+    if _remote_fs is not None:
+        from . import _remote
+        return _remote.grep(_remote_fs, pattern, path, glob, output_mode, case_insensitive)
+    from openprogram.state.worktree.path_resolve import resolve_root
+    root, outside_warning = resolve_root(path)
     if not os.path.exists(root):
         return f"Error: path not found: {root}"
-    from openprogram.sandbox import validate_read_path
+    from openprogram.host.sandbox import validate_read_path
     violation = validate_read_path(root)
     if violation:
-        return f"Error: sandbox policy: {violation}"
+        from openprogram.runtime.permissions import refusal
+        raise refusal.sandbox("grep", violation)
     if shutil.which("rg"):
-        return _run_rg(pattern, root, glob, output_mode, case_insensitive)
-    return _run_python_fallback(pattern, root, glob, output_mode, case_insensitive)
+        out = _run_rg(pattern, root, glob, output_mode, case_insensitive)
+    else:
+        out = _run_python_fallback(pattern, root, glob, output_mode, case_insensitive)
+    return f"{outside_warning}\n{out}" if outside_warning else out

@@ -1,0 +1,295 @@
+"""Browser-based OAuth 2.1 PKCE flow plumbing for remote MCP servers.
+
+Two pieces glued to :class:`mcp.client.auth.OAuthClientProvider`:
+
+  * :func:`open_browser_redirect` — opens the authorisation URL in the
+    user's default browser. Hands control back immediately; the user
+    completes consent in the browser.
+  * :class:`LocalhostCallback` — an ephemeral HTTP server that captures
+    the redirect, returning ``(code, state)`` to the SDK once received.
+
+The SDK drives both via callbacks passed to its constructor. We never
+do the OAuth dance ourselves — the SDK handles metadata discovery,
+dynamic client registration, PKCE, token exchange, refresh, step-up.
+
+Lifecycle: ``LocalhostCallback`` is built per OAuth attempt and torn
+down as soon as the code arrives (or the context manager exits).
+"""
+from __future__ import annotations
+
+import contextvars
+import logging
+import asyncio
+import os
+import socket
+import sys
+import threading
+import urllib.parse
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Optional
+
+_log = logging.getLogger(__name__)
+
+
+# Module-level so the API endpoint (``GET /api/mcp/servers/{name}
+# /auth/pending_url``) and tests can read the currently-pending OAuth
+# URL when running headless and the user can't see the worker's stderr.
+# Keyed by callback port (each LocalhostCallback has a unique one).
+# Cleared on success / close.
+_pending_auth_urls: dict[int, str] = {}
+
+# Set while the worker connects its servers by itself, at startup and on its
+# own reconnects: nobody asked for a sign-in at that moment, so no browser is
+# brought in front of what the user is doing. The link stays pending, and
+# reconnecting the server from the App or the CLI opens it.
+unattended: contextvars.ContextVar[bool] = contextvars.ContextVar("mcp_oauth_unattended", default=False)
+_pending_auth_lock = threading.Lock()
+
+
+def get_all_pending_auth() -> dict[int, str]:
+    """Snapshot of every callback port → its pending URL."""
+    with _pending_auth_lock:
+        return dict(_pending_auth_urls)
+
+
+def _set_pending_auth_url(port: int, url: str) -> None:
+    with _pending_auth_lock:
+        _pending_auth_urls[port] = url
+
+
+def _clear_pending_auth_url(port: int) -> None:
+    with _pending_auth_lock:
+        _pending_auth_urls.pop(port, None)
+
+
+_SUCCESS_BODY = (
+    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<title>OpenProgram MCP — authorised</title>"
+    "<style>body{font-family:system-ui;padding:48px;max-width:560px;"
+    "margin:auto;color:#1a1a1a}h1{font-size:20px}"
+    "code{background:#f3f3f3;padding:2px 6px;border-radius:4px}</style>"
+    "</head><body><h1>✓ Authorisation captured</h1>"
+    "<p>You can close this tab and return to OpenProgram.</p>"
+    "</body></html>"
+)
+
+_ERROR_BODY_FMT = (
+    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<title>OpenProgram MCP — authorisation failed</title>"
+    "</head><body><h1>Authorisation failed</h1>"
+    "<pre>{msg}</pre></body></html>"
+)
+
+
+def _make_redirect_handler(callback_port: int):
+    """Build a redirect handler tagged to a specific callback port so
+    the headless-friendly logs / SSH hint reference the right URL.
+
+    Returned coroutine has the signature the MCP SDK's
+    ``OAuthClientProvider`` expects: ``async (url: str) -> None``.
+    """
+    async def _redirect(url: str) -> None:
+        # Always remember the URL so the management API can return it
+        # to a user who can't see the worker's stderr.
+        _set_pending_auth_url(callback_port, url)
+
+        # Always print, even when the browser opens — saves users
+        # whose default browser is the wrong one (work account vs
+        # personal, etc.) from hunting for the right URL.
+        print(f"\n[mcp][oauth] authorisation required.\n"  # noqa: T201 - terminal prompt
+              f"  Open this URL in your browser:\n"
+              f"    {url}\n", file=sys.stderr)
+
+        # SSH session detected? The redirect target
+        # http://127.0.0.1:{port}/callback resolves to the LOCAL
+        # machine in the user's browser, not the remote worker. Tell
+        # them the exact port-forward command to bridge it. Same
+        # pattern hermes-agent uses for the same problem.
+        is_ssh = bool(os.getenv("SSH_CLIENT") or os.getenv("SSH_TTY"))
+        if is_ssh:
+            print(  # noqa: T201 - terminal prompt
+                f"  Remote SSH session detected. The callback listens "
+                f"on this worker's 127.0.0.1:{callback_port}, but the "
+                f"browser you open will hit YOUR laptop's 127.0.0.1.\n"
+                f"  Forward the port first in a separate terminal:\n"
+                f"    ssh -N -L {callback_port}:127.0.0.1:{callback_port} "
+                f"<user>@<this-host>\n"
+                f"  Then open the URL above.\n",
+                file=sys.stderr,
+            )
+
+        # Best-effort browser open. Skip entirely when there's
+        # obviously no display — webbrowser.open on a headless box
+        # tends to either error or silently spawn a dead xdg-open.
+        if _can_open_browser() and not unattended.get():
+            try:
+                if webbrowser.open(url, new=2):
+                    print("  (browser opened automatically)\n",  # noqa: T201 - terminal prompt
+                          file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                # The URL is already printed; the user can open it by hand.
+                _log.debug("browser open failed for MCP OAuth", exc_info=True)
+
+    return _redirect
+
+
+# Back-compat module-level export — uses port 0 so the SSH hint will
+# show ``ssh -L 0:127.0.0.1:0``. Always prefer ``_make_redirect_handler``
+# when the callback port is known (every new code path passes it).
+async def open_browser_redirect(url: str) -> None:
+    await _make_redirect_handler(0)(url)
+
+
+def _can_open_browser() -> bool:
+    """Cheap heuristic: are we somewhere a browser can actually open?
+
+    macOS / Windows: assume yes. Linux: only when DISPLAY or
+    WAYLAND_DISPLAY is set (xdg-open inside a bare ssh shell either
+    errors or pops on the remote host's screen, neither useful).
+    """
+    from openprogram.host._platform.environment import can_open_browser
+
+    return can_open_browser()
+
+
+class LocalhostCallback:
+    """Ephemeral HTTP server that captures the OAuth redirect.
+
+    Usage::
+
+        cb = LocalhostCallback(port=0)
+        await cb.start()
+        try:
+            # Pass cb.redirect_uri to OAuthClientProvider via the
+            # client_metadata.redirect_uris; pass cb.wait to its
+            # callback_handler.
+            ...
+        finally:
+            await cb.close()
+
+    ``port=0`` picks a free ephemeral port; explicit ports are needed
+    only when the MCP server pre-allowlists redirect URIs.
+    """
+
+    def __init__(self, *, port: int = 0,
+                 host: str = "127.0.0.1",
+                 timeout: float = 300.0) -> None:
+        self._host = host
+        self._requested_port = int(port)
+        self._timeout = float(timeout)
+
+        # Populated in start():
+        self._server: Optional[HTTPServer] = None
+        self._thread: Optional[threading.Thread] = None
+        self._result_event = threading.Event()
+        self._code: Optional[str] = None
+        self._state: Optional[str] = None
+        self._error: Optional[str] = None
+        self._port: int = 0
+
+    @property
+    def port(self) -> int:
+        return self._port
+
+    @property
+    def redirect_uri(self) -> str:
+        return f"http://{self._host}:{self._port}/callback"
+
+    async def start(self) -> None:
+        # http.server.HTTPServer wants a sync socket. We bind ourselves
+        # so port=0 still gives us the chosen port before the thread
+        # runs, then hand the socket to HTTPServer.
+        port = self._requested_port or _pick_free_port(self._host)
+        handler = self._make_handler()
+        self._server = HTTPServer((self._host, port), handler)
+        self._port = self._server.server_address[1]
+        self._thread = threading.Thread(
+            target=self._server.serve_forever,
+            name=f"mcp-oauth-callback:{self._port}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    async def wait(self) -> tuple[str, Optional[str]]:
+        """Block until the redirect arrives (or timeout).
+
+        Returns ``(code, state)`` on success; raises on timeout or
+        OAuth error response.
+        """
+        loop = asyncio.get_running_loop()
+        ok = await loop.run_in_executor(
+            None, self._result_event.wait, self._timeout,
+        )
+        if not ok:
+            raise TimeoutError(
+                f"OAuth callback not received within {self._timeout}s"
+            )
+        if self._error:
+            raise RuntimeError(f"OAuth error: {self._error}")
+        if not self._code:
+            raise RuntimeError("OAuth callback missing 'code' parameter")
+        return self._code, self._state
+
+    async def close(self) -> None:
+        # A canceled async waiter leaves its executor Event.wait running.
+        # Release it without manufacturing an authorization result.
+        self._result_event.set()
+        srv = self._server
+        if srv is not None:
+            srv.shutdown()
+            srv.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+
+    def _make_handler(self):
+        outer = self
+
+        class _Handler(BaseHTTPRequestHandler):
+            # Silence the default stderr access-log spam.
+            def log_message(self, fmt, *args):  # noqa: N802 — stdlib signature
+                return
+
+            def do_GET(self):  # noqa: N802 — stdlib signature
+                parsed = urllib.parse.urlparse(self.path)
+                if parsed.path not in ("/callback", "/"):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                qs = urllib.parse.parse_qs(parsed.query)
+                err = qs.get("error", [None])[0]
+                if err:
+                    desc = qs.get("error_description", [""])[0]
+                    msg = f"{err}: {desc}" if desc else err
+                    outer._error = msg
+                    self._send_html(400, _ERROR_BODY_FMT.format(msg=msg))
+                else:
+                    outer._code = qs.get("code", [None])[0]
+                    outer._state = qs.get("state", [None])[0]
+                    self._send_html(200, _SUCCESS_BODY)
+                _clear_pending_auth_url(outer._port)
+                outer._result_event.set()
+
+            def _send_html(self, status: int, body: str) -> None:
+                payload = body.encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+        return _Handler
+
+
+def _pick_free_port(host: str) -> int:
+    """Reserve and immediately release a free TCP port. There is a
+    tiny race window between release and HTTPServer's own bind, but
+    the cost of a stale collision (OAuth flow fails, user retries) is
+    much lower than the cost of a longer-held socket.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind((host, 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port

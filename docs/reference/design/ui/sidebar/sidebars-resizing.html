@@ -1,0 +1,80 @@
+<title>Sidebar widths and collapsed state</title>
+<meta name="description" content="The width, drag, collapse and open-and-close rules both sidebars share.">
+<h1>Sidebar widths and collapsed state</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">State</th><th scope="col">Width</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Left expanded</th><td>180–480px, and at most 30% of a window wider than 900px</td><td>Drag from the right edge; stops at the limit. A narrower window limits what is drawn, not the stored width, so widening it brings the width back</td></tr>
+<tr><th scope="row">Right expanded</th><td>240–800px, and at most 50% of a window wider than 900px</td><td>Drag from the left edge; stops at the limit. A narrower window limits what is drawn, not the stored width, so widening it brings the width back</td></tr>
+<tr><th scope="row">Collapsed</th><td>62px: a 46px card inside the 8px gutters</td><td>Same 200ms width animation on both sides</td></tr>
+<tr><th scope="row">Expand again</th><td>The valid width from before collapse</td><td>Same animation; keeps the most recently adjusted width</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-boundaries">Width behavior</h2>
+<p><code translate="no">components/layout/use-resizable-rail.ts</code> is the only implementation: saves expanded widths, enforces limits, handles pointer capture, generates expanded and collapsed styles, controls transitions. Each sidebar passes its limits and growth direction.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Handle</th><td><code translate="no">.rail-resize-handle</code>, hit area about 8px either side of the divider, no effect on layout width. The shell permits its overflow; the inner content stays clipped.</td></tr>
+<tr><th scope="row">Drag</th><td>Primary button only; touch panning and text selection on the handle disabled. Hovering shows the same short grip as a split's divider, centred in the 8px gap between the cards; dragging makes it solid, and it turns the accent colour while the width rests on the default.</td></tr>
+<tr><th scope="row">Back to the default</th><td>Either rail: a double-click on the handle, or Enter with the handle focused, returns to 288px over 280ms, easing out. The width is walked a frame at a time, as in a drag, so what is inside the rail moves with its edge. At the default nothing is stored.</td></tr>
+<tr><th scope="row">Snaps</th><td>A drag within 8px of a snap rests on it, and the handle turns blue. The left rail's only snap is 288px. The right rail's are 288, 544 and 800px, where one, two and three columns of the <a href="../chat/activity-panel.html#agent-chart">Activity time chart</a> fit whole.</td></tr>
+<tr><th scope="row">Drag ends</th><td>Release, pointer cancel or window blur. Window-level end events back up the captured handle events; a move that sees a released button also ends it. The collapse animation is restored each time.</td></tr>
+</tbody>
+</table>
+
+<h2 id="opening-and-closing">Opening and closing</h2>
+<p>Every part exists in both states: opening and closing never mount, unmount or change <code translate="no">display</code> inside the rail, in either direction or when toggled mid-move. The shell's width starts in the click's frame; <code translate="no">.collapsed</code> changes in that render. Rules: <code translate="no">app/styles/base/layout.css</code>, "Opening and closing".</p>
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">Parts</th><th scope="col">How it moves</th></tr></thead>
+<tbody>
+<tr><th scope="row">One place</th><td>The left sidebar's New chat chip and link icons</td><td>Laid out against the left edge, which stays put. Each row's box rides the card's moving edge 8px in.</td></tr>
+<tr><th scope="row">Two places</th><td>Both toggles, the right panel's view rows, the left footer's avatar</td><td>Toggles sit 8px in from the moving edge, open and centred in the collapsed card. The right panel's rows are one column riding its moving left edge. The avatar's left padding glides from 16px to 5px, its right from 16px to 27px, so the name keeps one width.</td></tr>
+<tr><th scope="row">Open only</th><td>Wordmark, labels, the Ability refresh action, favourites, the conversation list, the scroll divider, the footer's name and chevron, the right panel's views (Files, Activity, Resources, Detail, Context)</td><td>Laid out at the open width in both states and clipped by the card, so nothing re-wraps. Faded by opacity alone on the width's duration and curve (the footer's name on its own 160ms curve). Inert from a close's settle to an open's settle. Labels and the footer's name stay reachable inside the rows the collapsed rail keeps.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Why no inherited property changes</summary>
+<p>A move changes no inherited property (<code translate="no">pointer-events</code>, <code translate="no">visibility</code>, <code translate="no">color</code>, custom properties). The browser restyles the whole subtree under such a change, which in the click's frame is the whole conversation list: 1,764 elements for <code translate="no">pointer-events</code>, 1,946 for <code translate="no">visibility</code>, 1 for <code translate="no">opacity</code> (traced).</p>
+<p><code translate="no">use-resizable-rail.ts</code> writes <code translate="no">inert</code> on the outermost open-only parts itself at the settle (the width's <code translate="no">transitionend</code>, or a timer), so that restyle lands after the move. A part that mounts while the rail is at rest collapsed becomes inert with it.</p>
+</details>
+
+<details>
+<summary>Settled state and first paint</summary>
+<ul>
+<li>The toggle's two glyphs (hide, show) stay mounted and cross-fade.</li>
+<li><code translate="no">data-rail-closed</code> marks a settled close. Only what cannot be seen keys on it: the narrow layout's return to the flow beside a split canvas, the left list's scroll reset, paused running markers in the hidden list.</li>
+<li>A left sidebar closed while scrolled slides its links to the top with the width (one Web Animation on transform) and resets the scroll at the settle in the same frame.</li>
+<li>The right panel's views work only while it is open: Activity, Resources' processes, page pictures and terminal reads pause while collapsed.</li>
+<li>A stored closed left sidebar paints collapsed in the first frame under <code translate="no">html[data-sidebar-closed]</code>, no transition, its open-only parts out of reach by <code translate="no">interactivity: inert</code> until the mounted rail makes them inert.</li>
+</ul>
+</details>
+
+<h2 id="component-boundaries">Components</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">File</th><th scope="col">Responsibility</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">sidebar/sidebar.tsx</code></th><td>Left shell, persisted toggle, New chat, favorites and session composition</td></tr>
+<tr><th scope="row"><code translate="no">sidebar/sidebar-primary-nav.tsx</code></th><td>Fixed navigation, route highlighting, navigation icon animation, Programs refresh</td></tr>
+<tr><th scope="row"><code translate="no">right-sidebar/right-sidebar.tsx</code></th><td>Right shell, file entry, view container</td></tr>
+<tr><th scope="row"><code translate="no">right-sidebar/detail-panel.tsx</code></th><td>Details and Context switching, detail rendering for the selected DAG node</td></tr>
+</tbody>
+</table>
+<p class="note">The session list and AppShell keep their own state and interaction boundaries, separate from the sidebar shells.</p>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Drag each sidebar to its limit and collapse: it becomes 62px within 200ms, nothing vanishing or appearing in one frame.</li>
+<li>Expanding restores the previous width.</li>
+<li>Double-clicking a rail's handle returns it to 288px, and it stays there after a reload.</li>
+<li>Dragging either rail with a long conversation open shows no scrollbar in the chat.</li>
+<li>Dragging can begin within about 8px either side of the divider, shows the short grip, and continues after the pointer leaves the handle.</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented. Both sidebars use the same width module; shell components only compose navigation and detail rendering.</p>

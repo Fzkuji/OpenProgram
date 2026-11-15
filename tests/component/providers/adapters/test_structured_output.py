@@ -4,11 +4,11 @@ import urllib.request
 
 import pytest
 
-from openprogram.providers import JsonSchemaOutput
-from openprogram.providers import structured_output as structured_output_module
-from openprogram.providers import api_registry
-from openprogram.providers.api_registry import register_api_provider
-from openprogram.providers.structured_output import (
+from openprogram.models.providers import JsonSchemaOutput
+from openprogram.models.providers import structured_output as structured_output_module
+from openprogram.models.providers.catalog import api_registry
+from openprogram.models.providers.catalog.api_registry import register_api_provider
+from openprogram.models.providers.structured_output import (
     StructuredOutputSchemaError,
     StructuredOutputValidationError,
     StructuredOutputUnsupportedError,
@@ -16,7 +16,7 @@ from openprogram.providers.structured_output import (
     normalize_response_format,
     parse_and_validate_json,
 )
-from openprogram.providers.types import Model, Tool
+from openprogram.models.providers.types import Model, Tool
 
 
 SCHEMA = {
@@ -32,7 +32,7 @@ def test_json_schema_output_is_public_provider_api():
 
 
 def test_capability_types_and_lookup_are_public_provider_api():
-    import openprogram.providers as providers
+    import openprogram.models.providers as providers
 
     assert providers.StructuredOutputCapabilities().native == "unknown"
     assert providers.get_structured_output_capabilities("missing-api").native == "unknown"
@@ -71,7 +71,7 @@ def test_normalize_envelope_and_reject_invalid_schema_before_request():
     ("strict", "yes"),
     ("fallback", "silent"),
     ("max_validation_retries", True),
-    ("max_validation_retries", 2),
+    ("max_validation_retries", 3),
 ])
 def test_normalize_rejects_invalid_control_fields(field, value):
     envelope = {"type": "json_schema", "schema": SCHEMA, field: value}
@@ -380,6 +380,8 @@ def test_lossy_native_projection_reports_first_bounded_schema_path():
 def test_capability_registration_replaces_provider_and_capabilities_together(monkeypatch):
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
     first = object()
     second = object()
     first_capabilities = _capabilities(native="supported")
@@ -396,6 +398,8 @@ def test_capability_registration_replaces_provider_and_capabilities_together(mon
 def test_provider_transform_preserves_replaced_capabilities(monkeypatch):
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
 
     class Wrapped:
@@ -420,6 +424,8 @@ def test_provider_transform_preserves_replaced_capabilities(monkeypatch):
 def test_registry_entry_reads_remain_coherent_during_replacement(monkeypatch):
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
     pairs = [
         (object(), _capabilities(native="supported")),

@@ -5,6 +5,13 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 
 import { cn } from "@/lib/utils"
 
+// shadcn/ui Tooltip, radix-nova style (the style ui.shadcn.com's docs use),
+// from the official registry (/r/styles/radix-nova/tooltip.json): an
+// inverted badge with an arrow. Adaptations: package imports, a forwarded
+// ref (React 18), the app's type tier instead of text-xs, and
+// a z-index above the app's dialogs. HoverTip / TipBody below are the
+// app's wrapper around it.
+
 const TooltipProvider = TooltipPrimitive.Provider
 
 const Tooltip = TooltipPrimitive.Root
@@ -14,19 +21,23 @@ const TooltipTrigger = TooltipPrimitive.Trigger
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
-  <TooltipPrimitive.Content
-    ref={ref}
-    sideOffset={sideOffset}
-    className={cn(
-      // `hover-tip` (app/styles/chat.css) carries the Claude-style look:
-      // NO border, a solid badge a touch lighter than the surface, crisp
-      // text. Keep only geometry / shadow / animation here.
-      "hover-tip z-50 overflow-hidden rounded-[8px] px-[10px] py-[6px] text-[13px] shadow-[var(--shadow-popover)] animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-tooltip-content-transform-origin]",
-      className
-    )}
-    {...props}
-  />
+>(({ className, sideOffset = 0, children, ...props }, ref) => (
+  <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Content
+      ref={ref}
+      data-slot="tooltip-content"
+      sideOffset={sideOffset}
+      className={cn(
+        // Above dialogs and every menu (layers.css): the tip is portalled.
+        "z-(--z-tooltip) inline-flex w-fit max-w-xs origin-(--radix-tooltip-content-transform-origin) items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-fs-xs text-background has-data-[slot=kbd]:pr-1.5 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-sm data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        className
+      )}
+      {...props}
+    >
+      {children}
+      <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-2xs bg-foreground fill-foreground" />
+    </TooltipPrimitive.Content>
+  </TooltipPrimitive.Portal>
 ))
 TooltipContent.displayName = TooltipPrimitive.Content.displayName
 
@@ -37,8 +48,15 @@ interface HoverTipProps {
   label: React.ReactNode
   children: React.ReactElement
   side?: "top" | "right" | "bottom" | "left"
+  /** false keeps the tip on `side` even when it is short of room, for
+   *  controls whose other sides are covered (a native web view). */
+  avoidCollisions?: boolean
 }
-function HoverTip({ label, children, side = "top" }: HoverTipProps) {
+/** Hover dwell before a tip shows: long enough that passing the pointer
+ *  over the controls never flashes tips, short enough to still help. */
+const HOVER_TIP_DELAY_MS = 1500
+
+function HoverTip({ label, children, side = "top", avoidCollisions }: HoverTipProps) {
   const [open, setOpen] = React.useState(false)
   const triggerRef = React.useRef<HTMLElement | null>(null)
   // 指针是否真的悬在 trigger 上。radix 在 trigger 拿到焦点时也会请求
@@ -46,7 +64,7 @@ function HoverTip({ label, children, side = "top" }: HoverTipProps) {
   // 提示"的来源。纯 focus（指针不在）一律不冒。
   const pointerInside = React.useRef(false)
   return (
-    <TooltipProvider delayDuration={600}>
+    <TooltipProvider delayDuration={HOVER_TIP_DELAY_MS}>
       <Tooltip
         open={open}
         onOpenChange={(next) => {
@@ -57,6 +75,9 @@ function HoverTip({ label, children, side = "top" }: HoverTipProps) {
           if (
             next &&
             (triggerRef.current?.getAttribute("aria-expanded") === "true" ||
+              // A tip on a wrapper (a Select keeps its own trigger) stays
+              // away while the control inside has its popup open.
+              triggerRef.current?.querySelector('[aria-expanded="true"]') != null ||
               !pointerInside.current ||
               document.querySelector(
                 '[data-radix-popper-content-wrapper] :is([role="dialog"],[role="menu"])',
@@ -79,10 +100,22 @@ function HoverTip({ label, children, side = "top" }: HoverTipProps) {
         >
           {children}
         </TooltipTrigger>
-        <TooltipContent side={side}>{label}</TooltipContent>
+        <TooltipContent side={side} avoidCollisions={avoidCollisions}>{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   )
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, HoverTip }
+/** The one hover-tip layout for controls: a bright first line saying what
+ *  the control is and its current value, then an optional muted line with
+ *  the detail (a path, what a click does). Pass it as HoverTip's label. */
+function TipBody({ title, detail }: { title: React.ReactNode; detail?: React.ReactNode }) {
+  return (
+    <span className="hover-tip-body">
+      <span className="hover-tip-title">{title}</span>
+      {detail ? <span className="hover-tip-detail">{detail}</span> : null}
+    </span>
+  )
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, HoverTip, TipBody }

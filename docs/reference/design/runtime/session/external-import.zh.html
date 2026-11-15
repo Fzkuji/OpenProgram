@@ -1,0 +1,76 @@
+<title>导入其他 agent 的会话</title>
+<meta name="description" content="Claude Code 和 Codex 的对话如何成为原生 OpenProgram 会话：可重复导入，不带凭据。">
+<meta name="covers" content="openprogram/state/store/session/external_import/">
+<h1>导入其他 agent 的会话</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 200" role="img" aria-label="列举时只粗略读取每个对话文件。导入时把选中的文件解析成中立结构，去掉凭据，与台账比较，用从来源推导的 id 写入原生节点，再把结果记进台账。">
+  <defs><marker id="ei-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">对话文件</text>
+  <text class="t-soft" x="0" y="52">.jsonl，只读</text>
+  <line class="ln" x1="120" y1="24" x2="182" y2="24" marker-end="url(#ei-a)"/>
+  <text class="t-big" x="192" y="30">解析</text>
+  <text class="t-soft" x="192" y="52">ExternalSession</text>
+  <line class="ln" x1="306" y1="24" x2="368" y2="24" marker-end="url(#ei-a)"/>
+  <text class="t-big" x="378" y="30">清理</text>
+  <text class="t-soft" x="378" y="52">宿主上下文、凭据</text>
+  <line class="ln" x1="524" y1="24" x2="560" y2="24" marker-end="url(#ei-a)"/>
+  <text class="t-big" x="570" y="30">比较</text>
+  <text class="t-soft" x="570" y="52">对照台账</text>
+  <path class="ln" d="M610 64V100H60V128" marker-end="url(#ei-a)"/>
+  <rect class="tile" x="0" y="134" width="680" height="62" rx="8"/>
+  <text class="t-big" x="16" y="160">写入节点</text>
+  <text class="t-soft" x="16" y="182">id 由 agent + 来源 id + 轮次得出</text>
+  <line class="ln" x1="290" y1="160" x2="360" y2="160" marker-end="url(#ei-a)"/>
+  <text class="t-big" x="372" y="160">台账条目</text>
+  <text class="t-soft" x="372" y="182">会话、轮数、最后指纹、head</text>
+</svg>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">模块</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">claude_code.py</code>、<code translate="no">codex.py</code></th><td>查找、概述、解析各自的格式</td></tr>
+<tr><th scope="row"><code translate="no">model.py</code></th><td>中立结构：一轮轮用户文字和按顺序的回复块</td></tr>
+<tr><th scope="row"><code translate="no">sanitize.py</code></th><td>去掉宿主注入的内容，去掉凭据</td></tr>
+<tr><th scope="row"><code translate="no">writer.py</code></th><td>把轮次写成和原生轮次一样的 DAG</td></tr>
+<tr><th scope="row"><code translate="no">ledger.py</code></th><td>什么导入到了哪里</td></tr>
+<tr><th scope="row"><code translate="no">service.py</code></th><td><code translate="no">list_candidates</code>、<code translate="no">plan_imports</code>、<code translate="no">import_transcripts</code></td></tr>
+</tbody>
+</table>
+<p class="note">入口：<code translate="no">openprogram sessions import</code>、<code translate="no">/api/sessions/import</code>、设置里的导入对话页。CLI 有运行中的 Worker 时分批交给它写，否则直接写存储。产品页：<a href="../../../session-import.zh.html">会话导入</a>。</p>
+
+<h2 id="formats">读取格式</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">Codex</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件</th><td><code translate="no">projects/&lt;slug&gt;/&lt;id&gt;.jsonl</code></td><td><code translate="no">sessions/YYYY/MM/DD/rollout-*.jsonl</code></td></tr>
+<tr><th scope="row">来源 id</th><td>文件名；<code translate="no">sessionId</code> 会被复制进分叉</td><td><code translate="no">session_meta.id</code></td></tr>
+<tr><th scope="row">对话顺序</th><td>从最新记录沿 <code translate="no">parentUuid</code> / <code translate="no">logicalParentUuid</code> 往回走出的链</td><td>文件顺序；压缩和分叉不改写它</td></tr>
+<tr><th scope="row">标题</th><td><code translate="no">custom-title</code>，其次 <code translate="no">ai-title</code>，再次 <code translate="no">summary</code></td><td><code translate="no">session_index.jsonl</code>，最后一次改名</td></tr>
+<tr><th scope="row">模型、cwd</th><td><code translate="no">message.model</code>、记录的 <code translate="no">cwd</code></td><td><code translate="no">turn_context.model</code>、<code translate="no">session_meta.cwd</code></td></tr>
+<tr><th scope="row">跳过</th><td><code translate="no">isMeta</code>、<code translate="no">isSidechain</code>、压缩摘要、API 错误记录</td><td>子 agent 的 rollout、注入的上下文块、加密的推理</td></tr>
+</tbody>
+</table>
+<p>不是 JSON 对象的行、还没写完的记录都跳过，文件其余部分照常导入。</p>
+
+<h2 id="decisions">决定</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">选择</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">按原 agent 恢复对话的方式读取</th><td>Claude Code 恢复时从最新记录沿父链走；Codex 按顺序重放 rollout。导入的就是用户在那边最后看到的对话，不含被放弃的分支。</td></tr>
+<tr><th scope="row">写成原生节点，不做附件</th><td>搜索、导出、回退、继续对话都照常工作。这里没有的工具，其调用以文字形式重放给模型。</td></tr>
+<tr><th scope="row">id 由 agent、来源 id 和轮次序号得出</th><td>同一轮写两次不产生变化，来源变长时原地追加。和 OpenCode 的导入同一思路：它按原 id 存导入的会话。</td></tr>
+<tr><th scope="row">台账记最后指纹和 head</th><td>没变的来源不解析就跳过。在原 agent 里回退过、或在这里继续过的会话，导入成新会话，已有内容不被改写。</td></tr>
+<tr><th scope="row">新旧按最后一条消息判断，不看文件大小或修改时间</th><td>运行中的 agent 会不断往对话没动的文件里追加记账记录。</td></tr>
+<tr><th scope="row">凭据按请求脱敏的模式去掉</th><td>导入的轮次会重放给接着对话的模型。<code translate="no">models/providers/utils/redaction.py</code> 的高精度模式能抓到密钥和令牌，又不改写只是提到 key 或 token 的正文；导出用的宽规则会改写。标题先去凭据再截断，因为截短的密钥不再符合它的模式；列表的扫描缓存里存的第一条消息和标题也去掉凭据。登录文件从不打开。</td></tr>
+<tr><th scope="row">放进所在文件夹的项目</th><td>和在这里打开那个文件夹一样；原 cwd 保留在 <code translate="no">imported_from.cwd</code>。</td></tr>
+<tr><th scope="row"><code translate="no">--list</code> 之外另有 <code translate="no">--dry-run</code></th><td><code translate="no">--list</code> 列出所有对话文件及状态；<code translate="no">--dry-run</code> 只列出同一条命令会新建或追加的对话。它运行 <code translate="no">plan_imports</code>，和导入做同样的判断，所以回退过的来源显示为新对话，而不是追加。</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<ul>
+<li>只扫描默认目录（或 <code translate="no">$CLAUDE_CONFIG_DIR</code>、<code translate="no">$CODEX_HOME</code>）；不能在命令行指定从别的机器拷来的文件夹。</li>
+<li>去掉凭据之前导入的会话，在来源变长之前保持原样；来源变长时只重写最后导入的那一轮。轮次指纹取自读到的原文，所以脱敏不会让这样的来源变成重复会话。</li>
+</ul>

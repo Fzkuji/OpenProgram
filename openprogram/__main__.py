@@ -5,7 +5,7 @@ to re-exec the current python/virtualenv without relying on whatever
 ``openprogram`` shim happens to be on PATH. That only works if this
 module exists.
 """
-from openprogram.cli import main
+from openprogram.interfaces.cli.application import main
 
 if __name__ == "__main__":
     main()

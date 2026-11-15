@@ -1,0 +1,31 @@
+<title>Avatar settings</title>
+<meta name="description" content="How the user avatar is picked: type first, then that type's controls.">
+<h1>Avatar settings</h1>
+
+<p><code translate="no">AvatarPicker</code> sets the user avatar shown at the bottom of the sidebar. Type is the only entry point; generated variants belong to the current style alone.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Type</th><th scope="col">Controls</th><th scope="col">Saved as</th></tr></thead>
+<tbody>
+<tr><th scope="row">Generated</th><td>Style from <code translate="no">AVATAR_STYLES</code>, then a variant of that style. Regenerate changes only the seed. Changing style keeps the seed if possible, otherwise uses the display name.</td><td><code translate="no">kind: "dicebear"</code>, current style, seed</td></tr>
+<tr><th scope="row">Letter</th><td>Characters and colour, inside the picker</td><td>Profile <code translate="no">initial</code> and <code translate="no">color</code></td></tr>
+<tr><th scope="row">Upload</th><td>An image file</td><td><code translate="no">kind: "upload"</code></td></tr>
+</tbody>
+</table>
+
+<h2>Layout</h2>
+<p>A settings row has a non-stretching label on the left and content-sized controls on the right; Avatar follows Preview and Display name. Variants use fixed 48px tracks (<code translate="no">repeat(auto-fill, 48px)</code>) that wrap inside the right-hand group and never stretch.</p>
+
+<details>
+<summary>Rejected options</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Option</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">One row of every style plus Letter and Upload</th><td>Mixes type and style on one level, and puts Letter characters outside the card</td></tr>
+<tr><th scope="row">Variants across all styles</th><td>Selecting a variant would change the chosen style</td></tr>
+<tr><th scope="row">Variant grid with <code translate="no">1fr</code></th><td>Stretches tiles to fill the card</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="note">Unchanged: <code translate="no">AvatarConfig</code> kinds (<code translate="no">dicebear</code>, <code translate="no">letter</code>, <code translate="no">upload</code>), stored fields, <code translate="no">Avatar</code> rendering, Agent and User profile stores, the DiceBear dependency. Implemented in <code translate="no">apps/web/components/avatar/avatar-picker.tsx</code> and <code translate="no">variants.ts</code>; tested by <code translate="no">apps/web/tests/settings/avatar-randomization.test.mjs</code> and <code translate="no">theme-appearance.test.mjs</code>.</p>

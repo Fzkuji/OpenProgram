@@ -1,0 +1,122 @@
+<title>Queue and steering</title>
+<meta name="description" content="How a message typed during a run steers the active execution or queues a follow-up, and how delivery stays exact.">
+<h1>Queue and steering</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Key</th><th scope="col">Action</th><th scope="col">Destination</th></tr></thead>
+<tbody>
+<tr><th scope="row">Enter, send button</th><td>Steer</td><td>The exact active execution, at a supported safe point</td></tr>
+<tr><th scope="row">Cmd/Ctrl+Enter</th><td>Queue</td><td>One follow-up after the preceding turn ends</td></tr>
+<tr><th scope="row">Stop</th><td>Cancel</td><td>Separate control; neither action above cancels</td></tr>
+</tbody>
+</table>
+<p class="note">No standing preference: the key decides at send time. The active session and its running execution set the target; another session or sub-Agent is never picked.</p>
+
+<h2 id="delivery">Delivery</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 100" role="img" aria-label="Queued text binds to the execution identity and version, becomes a durable execution.steer command, waits for the next safe point, and is persisted as a steering user message.">
+  <defs><marker id="sq-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Queued</text>
+  <text class="t-soft" x="0" y="66">row kept</text>
+  <line class="ln" x1="72" y1="33" x2="124" y2="33" marker-end="url(#sq-a)"/>
+  <text class="t-big" x="136" y="40">Bind</text>
+  <text class="t-soft" x="136" y="66">execution, version</text>
+  <line class="ln" x1="184" y1="33" x2="252" y2="33" marker-end="url(#sq-a)"/>
+  <text class="t-big" x="264" y="40">Command</text>
+  <text class="t-cmd" translate="no" x="264" y="66">execution.steer</text>
+  <line class="ln" x1="352" y1="33" x2="396" y2="33" marker-end="url(#sq-a)"/>
+  <text class="t-big" x="408" y="40">Safe point</text>
+  <text class="t-soft" x="408" y="66">the next one</text>
+  <line class="ln" x1="508" y1="33" x2="556" y2="33" marker-end="url(#sq-a)"/>
+  <text class="t-big" x="568" y="40">Persisted</text>
+  <text class="t-soft" x="568" y="66">user message</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Queued</strong><small>row kept</small></li>
+  <li><strong>Bind</strong><small>execution, version</small></li>
+  <li><strong>Command</strong><small><code translate="no">execution.steer</code></small></li>
+  <li><strong>Safe point</strong><small>the next one</small></li>
+  <li class="flow-end"><strong>Persisted</strong><small>user message</small></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry kept until</th><td>A matching applied receipt confirms the user message is persisted; safe-point admission alone stays applying</td></tr>
+<tr><th scope="row">Command carries</th><td>Only message, exact execution identity, version, idempotency key. No permissions, models, tools or program changes</td></tr>
+<tr><th scope="row">Before posting</th><td>The client keeps the immutable envelope</td></tr>
+<tr><th scope="row">Lost acknowledgement</th><td>Delivery unconfirmed: row stays visible, normal drain cannot resend, confirmation retries reuse the envelope</td></tr>
+<tr><th scope="row">Confirmation timer</th><td>One per row; 1.5 s, backing off to 30 s after transport failures. A definitive receipt clears it</td></tr>
+<tr><th scope="row">Stale-version rejection</th><td>One new envelope against a fresh snapshot of the same execution</td></tr>
+<tr><th scope="row">Target</th><td>Bound when the user asks. A version retry refreshes the version and cannot select a replacement execution</td></tr>
+<tr><th scope="row">Unsupported or ended</th><td>Entry stays queued; idle reconciliation drains normal follow-ups FIFO. At execution end undelivered steering is rejected, and rows can resume queuing</td></tr>
+<tr><th scope="row">Stop</th><td>Keeps an in-flight instruction as an unsent draft, even before admission. An uncertain command stays immutable until a definitive receipt; Stop cannot erase it or allow ordinary dispatch</td></tr>
+<tr><th scope="row">Tools</th><td>A completed tool batch is never skipped because steering arrived</td></tr>
+<tr><th scope="row">Owner expiry</th><td>Cannot authorize a late input write. Execution closure resolves undelivered commands, even awaiting effect reconciliation</td></tr>
+</tbody>
+</table>
+<p class="note">Errors are visible; injected flags are always released after transport failure. References: <a href="https://learn.chatgpt.com/docs/prompting#steering-and-queuing">Codex prompting</a>, <a href="https://learn.chatgpt.com/docs/app-server#steer-an-active-turn">App Server steering</a>, which binds to the expected turn with no runtime overrides. OpenProgram uses its execution command service and safe points, with no second session inbox, message broker or provider-specific transport.</p>
+
+<h2 id="queue-card">Queue card</h2>
+<p>One raised card docked above the input box. The heading counts rows and how many join this turn, and collapses the card.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Row part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tag</th><td>This turn (steer in flight), Next turn (waiting), Not sent or Unconfirmed (after a failure)</td></tr>
+<tr><th scope="row">Text</th><td>First line; clicking expands the full message and attachments</td></tr>
+<tr><th scope="row">Actions, on hover or keyboard focus</th><td>Add to this turn (non-cancelling), retry, edit, removal when delivery is not uncertain</td></tr>
+<tr><th scope="row">Clear all</th><td>One write removing every row except those being delivered or edited, so it never drains a row about to go</td></tr>
+<tr><th scope="row">Limits</th><td>Attachments keep their draft behavior; steering accepts text up to 4,096 Unicode code points</td></tr>
+</tbody>
+</table>
+
+<h2 id="storage">Storage</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Data</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ordinary queue entries, attachments</th><td>Renderer memory</td></tr>
+<tr><th scope="row">Pending text steering receipts, stopped or ended steering drafts</th><td>Same-window session storage; restored on refresh without replaying chat; best-effort, not a second command log</td></tr>
+<tr><th scope="row">Accepted command</th><td>Server, canonical acceptance</td></tr>
+<tr><th scope="row">Applied input</th><td>Persisted user message</td></tr>
+</tbody>
+</table>
+<p class="note">Pending steering cannot drain as ordinary messages until resolved. A steer settles when a read or transcript update delivers a row carrying its command id; after a read, unresolved commands are confirmed with their original identity.</p>
+
+<h2 id="history">History</h2>
+<ul>
+<li>A normal follow-up resolves its predecessor from the durable session head before updating the server mirror, including the preceding reply, tool results and delivered steering. Explicit branch predecessors stay.</li>
+<li>Cancelled and interrupted turns keep partial content and show terminal status, including empty replies. A cancellation notice does not infer who cancelled.</li>
+</ul>
+
+<h2 id="function-retry-acknowledgement">Function retry acknowledgement</h2>
+<p>Each retry carries a request identity echoed by its acknowledgement or rejection. The acceptance timer ends at dispatch, not when the function finishes. A rejection or disconnected send restores only that pending card and reports the cause once. Missing acknowledgements stay uncertain and are not resubmitted. History and surface validation stay authoritative.</p>
+
+<details id="audit-coverage">
+<summary>Acceptance and audit coverage</summary>
+<ul>
+<li>Two queued follow-ups each start after the preceding turn ends.</li>
+<li>Text added while a tool runs: same execution and tool continue; the instruction reaches later model context.</li>
+<li>Lost acknowledgement: row retained, same command replayed without duplicate delivery.</li>
+<li>Ended, unavailable and unsupported targets retain input and report state.</li>
+<li>Scope switching cannot steer another conversation.</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">Boundary</th><th scope="col">Behavior</th><th scope="col">Regression</th></tr></thead>
+<tbody>
+<tr><th scope="row">Input preparation</th><td>Expanded paste, attachments, 4,096 code points</td><td><code translate="no">submit-reliability.test.mjs</code></td></tr>
+<tr><th scope="row">Target ownership</th><td>Session identity; snapshot replacement; same-execution version retry</td><td><code translate="no">submit-reliability.test.mjs</code>, <code translate="no">test_execution_cursor_auth_audit.py</code></td></tr>
+<tr><th scope="row">Duplicate and uncertain commands</th><td>Same-envelope retry; one timer; bounded backoff</td><td><code translate="no">submit-reliability.test.mjs</code></td></tr>
+<tr><th scope="row">Stop before admission</th><td>Snapshot and version-rejection races retain the draft</td><td><code translate="no">submit-reliability.test.mjs</code></td></tr>
+<tr><th scope="row">Refresh and storage</th><td>Accepted, lost ACK and stopped commands; exact replay; storage denial</td><td><code translate="no">test_queue_steer.py</code>, <code translate="no">submit-reliability.test.mjs</code></td></tr>
+<tr><th scope="row">Streaming</th><td>Text, reasoning and silent wait interrupt; partial content survives</td><td><code translate="no">test_streaming_steer.py</code></td></tr>
+<tr><th scope="row">Tools and pause</th><td>Whole tool batch completes; paused inputs enter continuation</td><td><code translate="no">test_safe_points.py</code>, <code translate="no">test_continue_step_steer.py</code></td></tr>
+<tr><th scope="row">Durable commands</th><td>Accepted order, idempotency, checkpoint rollback, owner expiry</td><td><code translate="no">test_safe_points.py</code>, <code translate="no">test_continue_step_steer.py</code></td></tr>
+<tr><th scope="row">History</th><td>Cancelled partial reply; explicit next-turn predecessor; no head rewind</td><td><code translate="no">test_streaming_steer.py</code>, <code translate="no">test_queue_steer.py</code></td></tr>
+</tbody>
+</table>
+<p class="note">Also covered: multiple accepted inputs, provider silent waits, pause and continuation, cold history, cross-session authorization.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented: canonical execution commands, non-cancelling queue controls, automatic receipt confirmation, terminal assistant status notices, the lifecycle contract above. Static checks do not replace runtime acceptance in the App.</p>

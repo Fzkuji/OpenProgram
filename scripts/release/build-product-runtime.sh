@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pinned first-party inputs are declared beside this script in product-runtime.json:
-# GUI-Agent-Harness, Research-Agent-Harness, and Wiki-Agent-Harness.
+# Pinned inputs (Python, uv, Git, the office runtime) are declared beside this
+# script in product-runtime.json. build-base.sh unpacks the pinned Git into the
+# runtime, and verification below fails without it. The runtime bundles no
+# Programs.
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 product_config="$repo_root/scripts/release/product-runtime.json"
@@ -72,7 +74,6 @@ trap restore_previous_runtime EXIT HUP INT TERM
 rm -rf "$repo_root/build"
 mkdir -p \
   "$runtime_root/assets/playwright" \
-  "$runtime_root/assets/gpa" \
   "$runtime_root/assets/tui" \
   "$runtime_root/bin" \
   "$runtime_root/python" \
@@ -93,63 +94,10 @@ test -n "$wheel" || {
   exit 1
 }
 
-"$uv_bin" export --project "$repo_root" --frozen --no-dev \
-  --extra all --extra search --no-emit-project \
-  --output-file "$runtime_root/product-requirements.txt" >/dev/null
-"$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
-  --require-hashes --requirements "$runtime_root/product-requirements.txt"
+OPENPROGRAM_UV_BIN="$uv_bin" "$repo_root/scripts/release/build-base.sh" \
+  --embedded-runtime "$runtime_root" --python "$python_bin"
 "$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
   --no-deps "$wheel"
-
-# Product runtimes do not ship torch. GUI perception (ultralytics / EasyOCR)
-# pulls it, so the harness is installed without those extras; it still
-# registers. Research PDF and Wiki do not need torch.
-program_staging="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-programs.XXXXXX")"
-cleanup() { rm -rf "$program_staging"; restore_previous_runtime; }
-trap cleanup EXIT HUP INT TERM
-
-for program_name in gui research wiki; do
-  program_repo="$(read_config "programs.$program_name.repository")"
-  program_commit="$(read_config "programs.$program_name.commit")"
-  program_dir="$program_staging/$program_name"
-  git init -q "$program_dir"
-  git -C "$program_dir" remote add origin "$program_repo"
-  git -C "$program_dir" fetch -q --depth 1 origin "$program_commit"
-  git -C "$program_dir" checkout -q --detach FETCH_HEAD
-  if test "$program_name" = gui; then
-    "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages --no-deps "$program_dir"
-  elif test "$program_name" = research; then
-    "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages "${program_dir}[pdf]"
-  else
-    "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages "$program_dir"
-  fi
-done
-
-"$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
-  huggingface-hub
-
-PLAYWRIGHT_BROWSERS_PATH="$runtime_root/assets/playwright" \
-  "$python_bin" -m playwright install chromium
-
-gpa_repository="$(read_config assets.gpa_detector.repository)"
-gpa_revision="$(read_config assets.gpa_detector.revision)"
-gpa_filename="$(read_config assets.gpa_detector.filename)"
-"$python_bin" - "$runtime_root/assets/gpa" \
-  "$gpa_repository" "$gpa_revision" "$gpa_filename" <<'PY'
-import pathlib
-import shutil
-import sys
-from huggingface_hub import hf_hub_download
-
-target, repository, revision, filename = sys.argv[1:]
-path = hf_hub_download(repository, filename, revision=revision)
-destination = pathlib.Path(target) / filename
-destination.parent.mkdir(parents=True, exist_ok=True)
-shutil.copy2(path, destination)
-PY
 
 # uv creates a convenience alias whose target is the absolute staging path.
 # Remove only aliases that would escape after the runtime is relocated.
@@ -192,12 +140,12 @@ package_version="$("$python_bin" -I -c \
 "$python_bin" -I "$runtime_root/bin/verify-product-runtime.py" \
   "$runtime_root" \
   --write \
+  --require-git \
   --python-relative "$python_relative" \
   --openprogram-version "$package_version" \
   --uv-version "$UV_VERSION"
 
 trap - EXIT HUP INT TERM
 rm -rf "$previous_runtime"
-cleanup
 printf 'prepared complete OpenProgram runtime %s at %s\n' \
   "$package_version" "$runtime_root"

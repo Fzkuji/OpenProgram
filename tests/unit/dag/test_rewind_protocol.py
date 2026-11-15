@@ -11,8 +11,8 @@ class _Console:
 
 
 def test_cli_rewind_previews_before_confirming(monkeypatch):
-    from openprogram.agent import _rewind
-    from openprogram_cli._impl.repl.handlers import _handle_rewind
+    from openprogram.runtime.conversation import rewind as _rewind
+    from openprogram.interfaces.cli.repl.handlers import _handle_rewind
 
     point = {
         "msg_id": "u2", "summary": "change two", "files_affected": ["a.py"],
@@ -53,8 +53,8 @@ def test_cli_rewind_previews_before_confirming(monkeypatch):
 
 
 def test_cli_confirm_rejects_changed_plan(monkeypatch):
-    from openprogram.agent import _rewind
-    from openprogram_cli._impl.repl.handlers import _handle_rewind
+    from openprogram.runtime.conversation import rewind as _rewind
+    from openprogram.interfaces.cli.repl.handlers import _handle_rewind
 
     monkeypatch.setattr(_rewind, "list_rewind_points", lambda _sid: [{
         "msg_id": "u2", "summary": "change two", "files_affected": [],

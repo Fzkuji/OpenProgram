@@ -1,0 +1,86 @@
+<title>Secondary rail</title>
+<meta name="description" content="The one list-column component between the main sidebar and page content: parts, states, collapse, pages and buttons.">
+<h1>Secondary rail</h1>
+<p>The list column between the main sidebar and a page's content. Every one is <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/ui/secondary-rail.tsx"><code translate="no">SecondaryRail</code></a>; no page styles its own rail rows.</p>
+
+<h2 id="anatomy">Parts</h2>
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Built from</th><th scope="col">Notes</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">RailSplit</code></th><td>CSS grid</td><td>Rail column is <code translate="no">--sidebar-width - 1px</code>, so it lines up with the main sidebar; <code translate="no">--rail-collapsed-w</code> when collapsed.</td></tr>
+<tr><th scope="row"><code translate="no">SecondaryRail</code></th><td><code translate="no">nav</code> or <code translate="no">aside</code></td><td>8px padding, 1px rows gap, right hairline, no background of its own.</td></tr>
+<tr><th scope="row"><code translate="no">RailSearch</code></th><td><code translate="no">ui/search-input</code></td><td>The one search box. Hidden when collapsed. An optional <code translate="no">action</code> sits beside it.</td></tr>
+<tr><th scope="row"><code translate="no">RailGroupLabel</code></th><td><code translate="no">GROUP_LABEL</code> from <code translate="no">menu-styles.ts</code></td><td>Same section label as menus. An optional <code translate="no">action</code> sits at its right end.</td></tr>
+<tr><th scope="row"><code translate="no">RailAction</code></th><td><code translate="no">ui/button</code> <code translate="no">ghost</code> <code translate="no">icon-xs</code></td><td>Icon action in a search or label <code translate="no">action</code> slot (Memory's refresh), with a <code translate="no">HoverTip</code>.</td></tr>
+<tr><th scope="row"><code translate="no">RailItem</code></th><td><code translate="no">.ui-list-item</code></td><td>The main sidebar's row: 30px, 6px 8px padding, 12px gap, <code translate="no">--nav-color</code> text. A <code translate="no">description</code> makes it a two-line row (min 48px, clamped to two lines). <code translate="no">depth</code> indents a tree level by 16px. <code translate="no">href</code> renders a <code translate="no">Link</code>, otherwise a <code translate="no">button</code>.</td></tr>
+<tr><th scope="row"><code translate="no">RailBadge</code></th><td><code translate="no">ui/badge</code> outline</td><td>Small tag after the name ("Default", "Hidden").</td></tr>
+<tr><th scope="row"><code translate="no">RailCount</code></th><td>text</td><td>Quiet trailing count.</td></tr>
+<tr><th scope="row"><code translate="no">RailSeparator</code></th><td><code translate="no">ui/separator</code></td><td>Above an "Add …" row.</td></tr>
+</tbody>
+</table>
+<p class="note">Top to bottom: search, group labels, rows, separator, a quiet "Add …" row. The page header (<code translate="no">ManagePageHeader</code>, 64px) spans above rail and content.</p>
+
+<h2 id="states">Row states</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Style</th></tr></thead>
+<tbody>
+<tr><th scope="row">Hover, keyboard focus</th><td><code translate="no">--bg-hover</code></td></tr>
+<tr><th scope="row">Selected</th><td><code translate="no">--bg-hover</code> with <code translate="no">--text-bright</code>; one selected colour for every rail</td></tr>
+<tr><th scope="row">"Add …" row</th><td><code translate="no">quiet</code>: muted text</td></tr>
+</tbody>
+</table>
+<p class="note">Recipe: <a href="../visual-system/surface-system.html">surface system</a>.</p>
+
+<h3 id="folders">Folder glyph</h3>
+<p>The main sidebar's Solar <code translate="no">folder</code> and <code translate="no">folder-open</code> (duotone, <code translate="no">--folder-color</code>, one value per light and dark scheme), in the project rail, Memory topics tree, Programs tree and Files panel tree (its Pierre sprite and root path).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Glyph</th></tr></thead>
+<tbody>
+<tr><th scope="row">Expanded tree folder, selected project</th><td>Open folder</td></tr>
+<tr><th scope="row">Page</th><td>Solar <code translate="no">file-text</code></td></tr>
+<tr><th scope="row">Missing folder</th><td>Solar <code translate="no">danger-triangle</code></td></tr>
+<tr><th scope="row">Section row (Memory's Topics, Timeline, …)</th><td>The main sidebar's line nav icons</td></tr>
+</tbody>
+</table>
+
+<h2 id="collapse">Collapse</h2>
+<p>A rail with a <code translate="no">railKey</code> collapses to an icon column. <code translate="no">RailToggle</code> sits in the page header before the title (<code translate="no">ManagePageHeader</code> <code translate="no">railToggle</code>), on the row icons' vertical axis.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Hidden when collapsed</th><td>Search, group labels, text, trailing slots, nested rows</td></tr>
+<tr><th scope="row">Top-level row</th><td>32px square; its name moves to a <code translate="no">HoverTip</code></td></tr>
+<tr><th scope="row">Stored</th><td><code translate="no">localStorage["&amp;lt;railKey&amp;gt;NavOpen"]</code>: <code translate="no">settingsNavOpen</code>, <code translate="no">projectsNavOpen</code>, <code translate="no">agentsNavOpen</code></td></tr>
+<tr><th scope="row">No stored choice</th><td>Starts collapsed below 760px</td></tr>
+<tr><th scope="row">Window narrows below 760px</th><td>Collapses without saving; widening never expands</td></tr>
+</tbody>
+</table>
+
+<h2 id="pages">Pages</h2>
+<table class="stack">
+<thead><tr><th scope="col">Page</th><th scope="col">Rail</th><th scope="col">Collapsible</th></tr></thead>
+<tbody>
+<tr><th scope="row">History</th><td>Projects (<code translate="no">PROJECTS_RAIL</code>)</td><td>yes, toggle in the History header</td></tr>
+<tr><th scope="row">Agents</th><td>Agent list with search, two-line rows, shown with the full editor (the page opens on cards)</td><td>yes</td></tr>
+<tr><th scope="row">Settings</th><td>Categories (<code translate="no">Link</code> rows)</td><td>yes</td></tr>
+<tr><th scope="row">Abilities → Programs</th><td>Catalog tree (<code translate="no">depth</code>)</td><td>no; the Abilities header belongs to all four tabs</td></tr>
+<tr><th scope="row">History → project → Memory</th><td>Sections, topics tree (folders, a type badge when it differs from the folder, date), timeline (year › month › day)</td><td>no; it sits inside the project page</td></tr>
+<tr><th scope="row">Chat list (stand-alone)</th><td>Recency filters with counts</td><td>no</td></tr>
+</tbody>
+</table>
+<p class="note">Pages without a list column (Scheduler, Applications, Abilities' Plugins, Skills and MCP) use the page header's tabs and <code translate="no">ManageSubnav</code>.</p>
+
+<h2 id="buttons">Buttons</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Role</th><th scope="col">Variant</th></tr></thead>
+<tbody>
+<tr><th scope="row">The page's main action (New, Add, Install, Open)</th><td><code translate="no">default</code></td></tr>
+<tr><th scope="row">Secondary actions (Update, Retry, Memory settings)</th><td><code translate="no">outline</code></td></tr>
+<tr><th scope="row">Row icon actions (pause, delete) via <code translate="no">ManageIconButton</code></th><td><code translate="no">ghost</code>, <code translate="no">icon-xs</code>, with a <code translate="no">HoverTip</code></td></tr>
+<tr><th scope="row">Removing something (Uninstall)</th><td><code translate="no">destructive</code></td></tr>
+</tbody>
+</table>
+<p class="note">Nova <code translate="no">ui/button</code> variants only, no per-page overrides. Icon-only buttons name themselves with <code translate="no">aria-label</code> and show a <code translate="no">HoverTip</code>, never a native <code translate="no">title</code>. Page menus are <code translate="no">ui/dropdown-menu</code> styled with <code translate="no">menu-styles.ts</code>.</p>
+
+<h2 id="guard">Guard</h2>
+<p><code translate="no">apps/web/scripts/ui/check-secondary-rail.mjs</code>, run by <code translate="no">npm run check</code>, fails when a rail page stops using <code translate="no">SecondaryRail</code>, its stylesheet defines rail rows again, or a collapsible rail and its header toggle use different keys.</p>

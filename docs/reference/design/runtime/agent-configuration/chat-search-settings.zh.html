@@ -1,0 +1,45 @@
+<title>聊天设置和网页搜索</title>
+<meta name="description" content="分支级聊天控件、消息上的搜索意图和有界搜索聚合分别归谁负责。">
+<h1>聊天设置和网页搜索</h1>
+<p>Agent 权限、审批规则和网络策略不变。</p>
+
+<h2 id="contract">状态和请求归属</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">持有</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入框作用域</th><td>当前分支设置和回调</td></tr>
+<tr><th scope="row">持久化草稿</th><td>搜索意图</td></tr>
+<tr><th scope="row">已接收消息</th><td><code translate="no">SessionRunConfig</code> 和权限</td></tr>
+<tr><th scope="row">执行</th><td>可用工具和供应商结果</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">边界</th><th scope="col">行为</th><th scope="col">验收</th></tr></thead>
+<tbody>
+<tr><th scope="row">分支控件</th><td>搜索和思考强度在发送下一条消息前即保存到当前分支。新分支只在创建时继承。</td><td>在同一会话内切换 A、B、A，重新加载后各分支仍保持各自的值</td></tr>
+<tr><th scope="row">沙箱</th><td>读写按请求 ID 对应。忽略过期回复，作用域变化时中止监听，写失败时上报且状态不漂移。</td><td>两次相反写入、过期读取、断线和临时会话读取都不能覆盖当前选择</td></tr>
+<tr><th scope="row">搜索意图</th><td>关闭时移除 <code translate="no">web_search</code>。开启时在 Agent 策略内加入；模式 <code translate="no">none</code> 优先。消息省略它时（CLI 和 TUI 都不发），沿用分支已存的意图；没存过就跟随 Agent。</td><td>解析开、关、省略和 Agent <code translate="no">none</code> 的工具；后一轮省略字段时，已存的开保持不变</td></tr>
+<tr><th scope="row">供应商配置</th><td>确认保存后才显示默认项。Jina 需要密钥。已存默认不可用时换另一个可用供应商。注册用稳定名称，每次调用检查可用性，新配置的供应商无需重启。</td><td>HTTP 失败保留旧默认；无密钥和热更新密钥测试</td></tr>
+<tr><th scope="row">聚合</th><td>Race 返回第一个非空成功。RRF 保留及时的部分结果。全部失败或到期仍无成功时报错。运行中的同步请求按传输期限结束，排队工作取消。</td><td>事件控制的供应商验证提前返回、部分超时、空成功、全部失败和清理</td></tr>
+<tr><th scope="row">连接测试</th><td>同步供应商工作不在服务器事件循环上运行</td><td>探测阻塞时异步响应仍能推进</td></tr>
+<tr><th scope="row">供应商 schema</th><td>显式搜索把 schema 放进供应商请求，包括只搜索的聊天。提升时复制所选工具，保留共享延迟注册表和 Agent 排除项。</td><td>冷会话和冻结轮次回归检查</td></tr>
+</tbody>
+</table>
+<p class="note">输入框没有工具开关，也没有按聊天的工具配置：<a href="tool-toggle-management.zh.html">工具开关</a>。</p>
+
+<details id="evidence">
+<summary>为什么用这些机制</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">依据</th><th scope="col">结论</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://react.dev/reference/react/useCallback">React 回调依赖</a></th><td>响应式 setter 是依赖项。复用会话 store，绝不靠重新挂载输入框掩盖过期回调。</td></tr>
+<tr><th scope="row"><a href="https://docs.python.org/3/library/concurrent.futures.html">Python 执行器生命周期</a></th><td>上下文管理器退出时会等待。不等待的关闭允许提前返回，但取消不了运行中的同步请求，所以保留传输期限，不新增异步供应商 API。</td></tr>
+<tr><th scope="row"><a href="https://jina.ai/reader/">Jina 搜索</a></th><td>需要认证访问，可用性跟随凭据</td></tr>
+</tbody>
+</table>
+<p class="note">回归检查使用生产环境的 hook、socket 请求助手、工具执行器和解析器。</p>
+</details>
+
+<h2 id="status"><span id="implementation-status"></span>实现状态</h2>
+<p>搜索执行及分支设置持久化已实现。回归测试覆盖切换、恢复和过期写入。</p>
+<p class="next"><a href="tool-toggle-management.zh.html">工具开关和工具集管理</a></p>

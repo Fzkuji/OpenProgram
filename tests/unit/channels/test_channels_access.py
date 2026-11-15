@@ -11,17 +11,17 @@ import threading
 
 import pytest
 
-from openprogram.channels import _access
-from openprogram.channels._message import ChannelMessage
-from openprogram.channels._transport import SendResult
-from openprogram.channels.base import Channel
+from openprogram.interfaces.channels import _access
+from openprogram.interfaces.channels._message import ChannelMessage
+from openprogram.interfaces.channels._transport import SendResult
+from openprogram.interfaces.channels.base import Channel
 
 
 @pytest.fixture(autouse=True)
 def _tmp_state(tmp_path, monkeypatch: pytest.MonkeyPatch):
     state = tmp_path / "state"
     state.mkdir(mode=0o700)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
 
 def test_default_policy_is_pairing() -> None:
@@ -121,7 +121,7 @@ def test_legacy_open_policy_is_ignored_fail_closed() -> None:
 
 
 def test_cli_cannot_disable_pairing_policy() -> None:
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     with pytest.raises(SystemExit):
         build_parser().parse_args([
@@ -223,7 +223,7 @@ def _msg(**kw) -> ChannelMessage:
 def test_unknown_sender_never_reaches_dispatch(monkeypatch) -> None:
     called = []
     monkeypatch.setattr(
-        "openprogram.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels._conversation.dispatch_inbound",
         lambda **kw: called.append(kw) or "reply")
     ch = _GateChannel()
     ch._dispatch_and_reply(_msg())
@@ -232,52 +232,42 @@ def test_unknown_sender_never_reaches_dispatch(monkeypatch) -> None:
     assert "pairing code" in ch.sent[0][1].lower()
 
 
-def test_unpaired_group_message_is_archived_without_entering_agent(
-    monkeypatch,
-) -> None:
-    from openprogram.paths import get_state_dir
-    from openprogram.memory.retrieval.bm25 import MemoryBM25Index
+def test_unpaired_group_message_is_not_recorded(monkeypatch) -> None:
+    """Memory cites chat turns, and an unpaired message never becomes one."""
+    from openprogram.state.paths import get_state_dir
+    from openprogram.state.memory.retrieval.bm25 import MemoryBM25Index
 
     called = []
     monkeypatch.setattr(
-        "openprogram.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels._conversation.dispatch_inbound",
         lambda **kw: called.append(kw) or "reply",
     )
     ch = _GateChannel()
     ch._dispatch_and_reply(_msg(
-        text="group context",
-        chat_id="group-42",
-        chat_type="group",
+        text="group context", chat_id="group-42", chat_type="group",
         message_id="m-9",
-        user_display="[Bob]\n\u202e",
     ))
 
     assert called == []
-    hits = MemoryBM25Index(
-        get_state_dir() / "memory",
-        persist=False,
-    ).search("group context")
-    assert hits[0]["trust_state"] == "pending"
-    assert hits[0]["speaker_trusted"] is False
-    assert hits[0]["speaker_id"] == "7"
-    assert hits[0]["speaker_display"] == "(Bob)"
+    memory_root = get_state_dir() / "projects" / "default" / "memory"
+    assert MemoryBM25Index(memory_root).search("group context") == []
 
 
 def test_unpaired_direct_message_is_not_archived() -> None:
-    from openprogram.paths import get_state_dir
-    from openprogram.memory.retrieval.bm25 import MemoryBM25Index
+    from openprogram.state.paths import get_state_dir
+    from openprogram.state.memory.retrieval.bm25 import MemoryBM25Index
 
     ch = _GateChannel()
     ch._dispatch_and_reply(_msg(text="direct private", message_id="m-10"))
-    memory_root = get_state_dir() / "memory"
-    assert MemoryBM25Index(memory_root, persist=False).search("direct private") == []
+    memory_root = get_state_dir() / "projects" / "default" / "memory"
+    assert MemoryBM25Index(memory_root).search("direct private") == []
 
 
 def test_channel_message_cannot_approve_itself(monkeypatch) -> None:
     """A message whose text is exactly the approve command is still just
     a message: it stays pending and never lands in the allowlist."""
     monkeypatch.setattr(
-        "openprogram.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels._conversation.dispatch_inbound",
         lambda **kw: pytest.fail("dispatch must not run for unknown sender"))
     ch = _GateChannel()
     ch._dispatch_and_reply(
@@ -290,10 +280,10 @@ def test_channel_message_cannot_approve_itself(monkeypatch) -> None:
 def test_allowed_sender_reaches_dispatch(monkeypatch) -> None:
     seen = {}
     monkeypatch.setattr(
-        "openprogram.channels._conversation.dispatch_inbound",
+        "openprogram.interfaces.channels._conversation.dispatch_inbound",
         lambda **kw: seen.update(kw) or None)
     _access.approve_user("faketg", "acct1", "7")
     ch = _GateChannel()
     ch._dispatch_and_reply(_msg())
-    assert seen["user_text"] == "[Bob (7)] hi"
+    assert seen["user_text"] == "hi"
     assert ch.sent == []

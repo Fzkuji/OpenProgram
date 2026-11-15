@@ -1,0 +1,383 @@
+<title>记忆机制</title>
+<meta name="description" content="对话如何变成 Topic 文件：写入入口、事务、节点标记、常驻块、后端接口、失败和结构化修改。">
+<h1>记忆机制</h1>
+
+<h2 id="flow">从对话到长期记忆</h2>
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">触发</th><th scope="col">调用</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">每轮结束</th><td><code translate="no">runtime/conversation/turn_runtime</code></td><td><code translate="no">write(session_id=…)</code></td><td>一次写入，且累计到 <code translate="no">memory.writer.trigger_tokens</code> 才动手（8000、16000 或 32000，默认 16000）</td></tr>
+<tr><th scope="row">会话空闲</th><td><code translate="no">state/memory/session_watcher</code>：每 5 分钟扫描，30 分钟算空闲</td><td><code translate="no">write(…, force=True)</code></td><td>一遍遍写到没有剩余。会话结束后不会再有下一批。</td></tr>
+<tr><th scope="row">每天 03:00</th><td><code translate="no">state/memory/scheduler</code>；手动 <code translate="no">openprogram memory sleep</code></td><td><code translate="no">reorganize(model=…)</code></td><td>整理磁盘上的 Topic，不增加内容</td></tr>
+</tbody>
+</table>
+<p class="note">写入通过 <code translate="no">get_branch</code> 重读会话存储，进程里不缓冲，所以重启不丢内容，每条消息的 ID 也稳定。只算用户消息和助手回复：工具调用与结果、运行时调度的轮次（子 Agent 汇报、分支合并通知）和空消息都不进入记忆。</p>
+
+<h2 id="steps">写入五步</h2>
+<p>一次写入，全程持跨进程写锁。阈值决定要不要调用模型，不决定一次写多少。</p>
+<ol>
+<li><strong>选取</strong>分支上没有已写标记的消息，排除工具调用和运行时调度的轮次（<code translate="no">runtime.pending()</code>）。</li>
+<li><strong>分批</strong>：从最早的消息累计到 token 阈值，其余留给下一次。</li>
+<li><strong>编辑</strong>：写入器拿到这批原文和目录结构，在暂存区里改 <code translate="no">topics/</code>。</li>
+<li><strong>整理</strong>：满 5 批或 40000 token 时整理一次；距上次全局整理满一天且有新提交时再整理一次。都不满足则跳过。</li>
+<li><strong>提交</strong>事务，再标记节点。这批内容留在聊天记录里，脚注链接到消息，不复制。</li>
+</ol>
+<details>
+<summary>安装前的校验</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">无引用正文</th><td>规范化给本次写入写过的文件里每一段都加块 ID，带不带引用都一样。之后提交时，自动写入器或整理器新增、改写的无引用段落被拒（<code translate="no">MISSING_SOURCE</code>）；人保存的保留，只剩标题的 Topic 也保留。写入器的编辑仍会清掉它留空的章节和 Topic。</td></tr>
+<tr><th scope="row">被拒绝时</th><td>已提交的 Topic、Runtime 状态、revision 和 Git 历史不变。</td></tr>
+<tr><th scope="row">安装前回调</th><td>实例持有的可信回调在校验和暂存准备之后、文件移动之前记录自动保存或恢复历史。无效编辑不产生检查点；回调失败则不安装。有效编辑记录编辑前的精确快照和现有检查点期限。工具和请求文本无法提供这个回调。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="txn">事务：暂存、校验、安装</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="一次写入把仓库复制到暂存区，在暂存区编辑，校验后整体安装。第一次被拒绝时恢复暂存区并允许修复一次；第二次被拒绝时仓库不变，返回 COMMIT_REJECTED。">
+  <defs>
+    <marker id="tx-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="tx-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <text class="t-big" x="0" y="40">复制</text>
+  <text class="t-soft" x="0" y="66">先读基线，</text>
+  <text class="t-soft" x="0" y="86">再复制到系统临时目录</text>
+  <line class="ln" x1="64" y1="33" x2="160" y2="33" marker-end="url(#tx-a)"/>
+  <text class="t-big" x="172" y="40">编辑</text>
+  <text class="t-soft" x="172" y="66">只有暂存区的</text>
+  <text class="t-soft" x="172" y="86"><tspan translate="no">topics/</tspan> 可写</text>
+  <line class="ln" x1="226" y1="33" x2="332" y2="33" marker-end="url(#tx-a)"/>
+  <text class="t-big" x="344" y="40">校验</text>
+  <text class="t-soft" x="344" y="66">四项检查，</text>
+  <text class="t-soft" x="344" y="86">见下表</text>
+  <line class="ln" x1="432" y1="33" x2="504" y2="33" marker-end="url(#tx-a)"/>
+  <text class="t-big" x="516" y="40">安装</text>
+  <text class="t-soft" x="516" y="66">备份，整体安装，</text>
+  <text class="t-soft" x="516" y="86">重建视图，Git</text>
+  <path class="ln-no" d="M384 98V128H198V98" marker-end="url(#tx-n)"/>
+  <text class="t-no" x="198" y="150">第一次被拒：恢复暂存区，按规则给出指引，修复一次</text>
+  <text class="t-no" x="198" y="176">第二次被拒：<tspan translate="no">COMMIT_REJECTED</tspan>，仓库不变</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>复制</strong><small>先读基线，再复制到系统临时目录</small></li>
+  <li><strong>编辑</strong><small>只有暂存区的 <code translate="no">topics/</code> 可写</small></li>
+  <li><strong>校验</strong><small>四项检查，见下表</small><p class="refused">第一次被拒：恢复暂存区，按规则给出指引，修复一次。第二次被拒：<code translate="no">COMMIT_REJECTED</code>，仓库不变</p></li>
+  <li class="flow-end"><strong>安装</strong><small>备份，整体安装，重建视图，Git</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead><tr><th scope="col">检查</th><th scope="col">要求</th></tr></thead>
+<tbody>
+<tr><th scope="row">格式</th><td>本次写入写过的文件结构正确：每段是带 <code translate="no">^id</code> 的块，每个 ID 只出现一次，引用的脚注都有定义。没碰的文件、OpenProgram 之外写的文件按原样读，不让任何写入失败</td></tr>
+<tr><th scope="row">块 ID</th><td>其他段落、Timeline 和关系靠这个 ID 定位段落。写入器和整理器可以删除块，Git 留着它；记录编辑和设置页保存只能去掉它点名删除的 ID，或它删除的 Topic 里的 ID。段落可以改写、合并或移动。</td></tr>
+<tr><th scope="row">链接</th><td>跨 Topic 链接指向 <code translate="no">#^</code> 块 ID，没有悬空，所以删除仍被链接的块会被拒绝</td></tr>
+<tr><th scope="row">引用</th><td>按作者检查本次新增或改写的段落：自动写入器和整理器的段落必须引用本次执行、本批次的消息（<code translate="no">MISSING_SOURCE</code>、<code translate="no">SOURCE_NOT_ALLOWED</code>）；人的段落可以不引用，引用了就必须可引用</td></tr>
+<tr><th scope="row">外部文件</th><td><code translate="no">installed.json</code> 记为 <code translate="no">outside</code> 的文件，除了人自己保存，谁都不能改、移动、删除或链接进去（<code translate="no">OUTSIDE_FILE_READ_ONLY</code>，本次写入什么都不装）</td></tr>
+<tr><th scope="row">写入期间的外部改动</th><td>在写锁内，比较暂存之后磁盘上变过的每个文件：本次写入没碰的，从磁盘取进来原样安装，内容是什么都行。本次也改了的、游标，或者取进来后让我们的链接悬空的文件，报 <code translate="no">CONCURRENT_UPDATE</code>。检索缓存等暂存区不安装的文件不管。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么是这个顺序</summary>
+<ul>
+<li>基线在复制之前读取：之后再读，编辑就是在和自己比较，丢失的块 ID 发现不了。被拒后的第二次尝试重新取基线，理由相同。</li>
+<li>第二次被拒绝时，这些轮次继续待处理，不打标记。报告成功会让调用方越过没有安装的内容。</li>
+<li>人工编辑 Topic 走同一套暂存和校验，无效编辑当场拒绝。</li>
+<li>每次安装都在运行目录的 <code translate="no">installed.json</code> 记下每个 Topic 文件的哈希、块 ID 和来源：<code translate="no">runtime</code> 是我们的事务写的文件，或在别处编辑过但保留了我们装进去的每个 ID；<code translate="no">outside</code> 是不经我们出现的文件，或丢了我们装进去的 ID。</li>
+<li>从没记录过的文件，只有每段都引用聊天消息时才算我们的。<code translate="no">ownership.outside_paths</code> 在每次暂存时读这份记录，<a href="#outside">OpenProgram 之外写的文件</a>里的规则据此生效；macOS 和 Windows 上路径按忽略大小写比较。</li>
+</ul>
+</details>
+
+<h2 id="cursor">已写标记：身份，而不是位置</h2>
+<p>会话是图。重新提问、重试或派生子 Agent 都会产生分支。每条分支的消息都进入记忆，共享前缀不重复写入。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="九条消息 m1 到 m9 已写入并标记。从 m3 分出的分支增加 b4 到 b9，未标记，head 在 b9。从 head 回溯收集六个未标记节点，在已标记的 m3 停下。">
+  <path class="ln" d="M30 40H478M142 40V130H478"/>
+  <circle class="tile" cx="30" cy="40" r="16"/><text class="mid" x="30" y="45">m1</text>
+  <circle class="tile" cx="86" cy="40" r="16"/><text class="mid" x="86" y="45">m2</text>
+  <circle class="tile" cx="142" cy="40" r="16"/><text class="mid" x="142" y="45">m3</text>
+  <circle class="tile" cx="198" cy="40" r="16"/><text class="mid" x="198" y="45">m4</text>
+  <circle class="tile" cx="254" cy="40" r="16"/><text class="mid" x="254" y="45">m5</text>
+  <circle class="tile" cx="310" cy="40" r="16"/><text class="mid" x="310" y="45">m6</text>
+  <circle class="tile" cx="366" cy="40" r="16"/><text class="mid" x="366" y="45">m7</text>
+  <circle class="tile" cx="422" cy="40" r="16"/><text class="mid" x="422" y="45">m8</text>
+  <circle class="tile" cx="478" cy="40" r="16"/><text class="mid" x="478" y="45">m9</text>
+  <circle class="gate" cx="198" cy="130" r="16"/><text class="mid" x="198" y="135">b4</text>
+  <circle class="gate" cx="254" cy="130" r="16"/><text class="mid" x="254" y="135">b5</text>
+  <circle class="gate" cx="310" cy="130" r="16"/><text class="mid" x="310" y="135">b6</text>
+  <circle class="gate" cx="366" cy="130" r="16"/><text class="mid" x="366" y="135">b7</text>
+  <circle class="gate" cx="422" cy="130" r="16"/><text class="mid" x="422" y="135">b8</text>
+  <circle class="gate" cx="478" cy="130" r="16"/><text class="mid" x="478" y="135">b9</text>
+  <text x="510" y="46">已写，已标记</text>
+  <text x="510" y="128">未标记，待写入</text>
+  <text class="t-soft" x="510" y="150">head 在 b9</text>
+  <text class="t-soft" x="198" y="178">从 head 回溯，到第一个标记（m3）停下</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>m1 到 m9</strong><small>已写，已标记</small></li>
+  <li><strong>从 m3 分支：b4 到 b9</strong><small>未标记，待写入；head 在 b9</small></li>
+  <li class="flow-end"><strong>从 head 回溯</strong><small>到第一个标记（m3）停下</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置</th><td>节点元数据，键是 <code translate="no">writing.py</code> 里的 <code translate="no">WRITTEN_NODE_MARKER</code>。值标识记忆工作区，导出的会话保留标记，也不会被当成另一个工作区的。</td></tr>
+<tr><th scope="row">时机</th><td>事务安装成功且这次确实改了文件之后。两步之间崩溃时不留标记，同一批继续待处理。先打标记会悄悄丢轮次。</td></tr>
+<tr><th scope="row">前缀</th><td>分支之间不需要先后：先写的分支标记共享消息，下一次回溯到那里停下。</td></tr>
+<tr><th scope="row">假设</th><td>回溯把标记当作前缀，这依赖每批都取最早的轮次。</td></tr>
+<tr><th scope="row">会话存储</th><td>标记不改 <code translate="no">updated_at</code>（空闲监视器读取它），也不走“标记已同步”的路径。</td></tr>
+<tr><th scope="row">代价</th><td>只标记当前批次。全量重扫会让 Git 增长变成平方级，因为会话目录每轮 <code translate="no">git add -A</code>，改动的节点是新 blob。会话索引重建实测：289 个节点、4.2 MB 用 14–50 ms。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么不用序号或 ID 集合</summary>
+<p>序号描述的是链表结构的一次展开，不是消息。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">对序号的影响</th></tr></thead>
+<tbody>
+<tr><th scope="row">同一消息走两条路径</th><td>序号不同</td></tr>
+<tr><th scope="row">同深度的不同消息</th><td>序号相同</td></tr>
+<tr><th scope="row"><code translate="no">get_branch</code> 过滤 <code translate="no">rewind</code> 轮次；压缩插入摘要节点</th><td>同一路径两次读取也会变</td></tr>
+<tr><th scope="row">存着位置 9</th><td>五轮的分支被当成空；十一轮的分支只写最后两轮</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">方面</th><th scope="col">节点标记</th><th scope="col">记忆里存 ID 集合</th></tr></thead>
+<tbody>
+<tr><th scope="row">待写内容</th><td>回溯到第一个标记</td><td>遍历分支，减去集合</td></tr>
+<tr><th scope="row">存储</th><td>现有节点上加一个字段</td><td>每个线程一个文件，存全部已写 ID</td></tr>
+<tr><th scope="row">增长</th><td>无；每次读几个节点</td><td>每条消息一项；读取要加载整张表</td></tr>
+<tr><th scope="row">缺失一项</th><td>回溯提前停下，更早的内容继续待处理</td><td>恰好那一轮重新待处理</td></tr>
+<tr><th scope="row">耦合</th><td>记忆往会话存储写字段，来源、显示类型、分支根和 rewind 状态本来也在那里</td><td>记忆自管文件、迁移和永久保留</td></tr>
+</tbody>
+</table>
+<p>九个框架里，三个存分支对话（Claude Code、OpenClaw、pi-mono：带父指针的只追加文件），三个是线性的，一个重试时重写整个会话并毁掉旧分支，两个不存对话。没有一个把轮次标记为已被记忆消费。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>分叉成新文件；提取用线程级水位和租约</td></tr>
+<tr><th scope="row">pi-mono</th><td>记录不可改；标注和游标移动追加引用，分支摘要在切换时从树上算覆盖范围</td></tr>
+<tr><th scope="row">Claude Code</th><td>游标放在进程内存里；引用的消息找不到时重新处理整个会话</td></tr>
+<tr><th scope="row">OpenClaw</th><td>在派生记录上写 <code translate="no">promotedAt</code>；记忆 hook 把最后十五行当扁平列表读</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="core">常驻块</h2>
+<p>Core 是每个会话开始时注入的块，即 <code translate="no">MEMORY.md</code> 的 core 部分。</p>
+<table class="stack">
+<thead><tr><th scope="col">方面</th><th scope="col">角色</th><th scope="col">大小</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">topics/core.md</code></th><td>权威来源；写入器和夜间整理只改它</td><td>不限</td></tr>
+<tr><th scope="row">渲染出的 core 部分</th><td>每次安装后重建</td><td>2000 token 预算（<code translate="no">core_max_tokens</code>）</td></tr>
+</tbody>
+</table>
+<p class="note">预算限制渲染，不限制写入。超出预算的块只是这次不注入，仍留在来源里，能通过搜索和 <code translate="no">memory_get</code> 找到。想让某段可见，就把它往前移。11883 token 的来源不阻塞任何写入，渲染出 1983 token。</p>
+<details>
+<summary>为什么用派生视图</summary>
+<p>写路径上设门，文件一满就挡住稳定事实并拒绝无关事务。裁剪可写文件可能删掉独有的块 ID，校验失败；渲染出的 ID 永远是来源 ID 的子集。完整来源还在，裁剪也不用区分人写的和自动写的。</p>
+</details>
+<details>
+<summary>Web、Writer 和 Organizer 中的 Core</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">要求</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/memory/core</code></th><td>在工作区锁下读完整快照。<code translate="no">content</code>、<code translate="no">size</code>、<code translate="no">mtime</code> 指来源；另外返回渲染内容、考虑 <code translate="no">memory.core.inject</code> 后的实际注入、开关、token 数和预算。</td></tr>
+<tr><th scope="row">记忆页 Core</th><td>默认显示只读的实际注入内容和 token 预算，关闭注入时显示为空。Source records 可编辑，通过 compare-and-set 事务保存。保存期间输入的草稿不被刷新覆盖。预览共用一个净化器。</td></tr>
+<tr><th scope="row">Writer 提示词</th><td>读全部内容，只记之后有用的事实：不记重复的状态检查、没变化的测量、一次性工具过程和能从项目文件找回的细节。项目进展进该项目的 Topic，不进 Core。</td></tr>
+<tr><th scope="row">Organizer 提示词</th><td>在 <code translate="no">topics/core.md</code> 里把项目相关、过期或重复的内容移到 Topic 或删除，只留多数未来会话需要的规则、偏好和身份事实。删除的内容留在 Git 历史。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="hooks">九个接口方法</h2>
+<p>记忆和 Agent 运行时之间唯一的接口，在 <code translate="no">state/memory/backend.py</code>。除 <code translate="no">name</code> 外都有默认实现。</p>
+<table class="stack">
+<thead><tr><th scope="col">方法</th><th scope="col">时机</th><th scope="col">运行时调用方</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">name</code></th><td>标识后端</td><td>作为属性读取</td></tr>
+<tr><th scope="row"><code translate="no">is_available()</code></th><td>这个后端能否启用</td><td>就绪检查和渠道 provider 路由</td></tr>
+<tr><th scope="row"><code translate="no">system_prompt(tier=…)</code></th><td>会话开始：把 <code translate="no">MEMORY.md</code> 包进 <code translate="no">memory-context</code> 注入，与用户输入区分</td><td>已接入</td></tr>
+<tr><th scope="row"><code translate="no">search(query)</code></th><td>每轮之前；默认 BM25，取前 5，时间预算紧</td><td>已接入</td></tr>
+<tr><th scope="row"><code translate="no">write(…)</code></th><td>每轮之后和空闲时，只有 <code translate="no">force</code> 不同</td><td>已接入</td></tr>
+<tr><th scope="row"><code translate="no">reorganize()</code></th><td>每天 03:00 和 <code translate="no">openprogram memory sleep</code></td><td>已接入</td></tr>
+<tr><th scope="row"><code translate="no">initialize(…)</code></th><td>会话开始时一次</td><td>只有策略包装层转发，运行时不调用</td></tr>
+<tr><th scope="row"><code translate="no">extract_before_discard()</code></th><td>压缩时询问摘要该保留什么；不存储</td><td>只有策略包装层转发，运行时不调用</td></tr>
+<tr><th scope="row"><code translate="no">shutdown()</code></th><td>最后一轮之后；现在由空闲监视器通过 <code translate="no">write(force=True)</code> 收尾</td><td>只有策略包装层转发，运行时不调用</td></tr>
+</tbody>
+</table>
+<p class="note">三个未接入的方法是扩展点，留给需要连接、最终刷写或压缩前保存的第三方系统；内置后端不需要。召回文本在产生处就包好 <code translate="no">&lt;memory-context&gt;</code>。没有工具注册方法：带工具的记忆系统就是插件。</p>
+
+<h2 id="fail">失败行为</h2>
+<table class="stack">
+<thead><tr><th scope="col">write() 返回</th><th scope="col">情况</th><th scope="col">空闲监视器</th></tr></thead>
+<tbody>
+<tr><th scope="row">无返回</th><td>已写完，或低于阈值</td><td>标记已处理，下次轮询跳过</td></tr>
+<tr><th scope="row">失败，可重试</th><td>锁被占，或本次改过的文件被别处改了；向量后端、模型或写入进程不可用；编辑被拒</td><td>不标记，按原因的范围记（见下）</td></tr>
+<tr><th scope="row">失败，不可重试</th><td>两次编辑都被拒（<code translate="no">COMMIT_REJECTED</code>）；来源不可用或 patch 无效；没有 session ID</td><td>标记已处理并发布 <code translate="no">memory.ingest_ended</code>（<code translate="no">ok: false</code>）。内容相同，结果相同。登录或记忆库的原因按它的范围记。</td></tr>
+</tbody>
+</table>
+<p>空闲监视器的全部记录放在一个文件里：个人记忆运行目录下的 <code translate="no">ingest-state.json</code>，因为对话会在项目之间移动。失败按原因的范围记：</p>
+<table class="stack">
+<thead><tr><th scope="col">范围</th><th scope="col">原因</th><th scope="col">规则</th><th scope="col">恢复条件</th></tr></thead>
+<tbody>
+<tr><th scope="row">对话</th><td>下面没列的原因</td><td>按对话的 <code translate="no">updated_at</code> 记。最多失败三次，间隔一小时；夹在中间的瞬态失败既不消耗也不重置次数，只决定它自己翻倍的等待</td><td>对话变化。别处写入成功不算</td></tr>
+<tr><th scope="row">记忆库</th><td><code translate="no">WRITER_PRECONDITION_FAILED</code>、<code translate="no">GIT_COMMIT_FAILED</code></td><td>对目标记忆只记一次，写到那里的对话都跳过</td><td>那份记忆被编辑、配置变化或重启</td></tr>
+<tr><th scope="row">登录</th><td><code translate="no">MODEL_AUTHENTICATION</code>、<code translate="no">MODEL_AUTHORIZATION</code></td><td>只记一次，所有对话都跳过</td><td>保存的登录或配置变化</td></tr>
+<tr><th scope="row">无</th><td>传输、限流、服务错误、超时、embedding 不可用、<code translate="no">CONCURRENT_UPDATE</code></td><td>5 分钟起翻倍到 6 小时，不停止</td><td>自然恢复</td></tr>
+</tbody>
+</table>
+<p class="note">停下时，那份记忆的写入器状态记为不可重试，同一原因只通知一次。状态字段不变：<code translate="no">retries.max_identical_failures</code> 就是那三次。登录失效、二十个空闲对话时，一小时的轮询只调用一次模型；以前是二十次，而且二十个对话全部放弃。从旧文件读入的记录都不带停止状态：登录或记忆库原因的记录丢掉，对话会再被提供一次；其他原因的保留一次机会。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">无返回即成功</th><td>忘了 return 也是无返回，反过来解读会无限重试</td></tr>
+<tr><th scope="row">失败</th><td>封闭的 <code translate="no">MemoryWriteFailureCode</code> 集合；未分类的异常不重试</td></tr>
+<tr><th scope="row">每轮路径</th><td>在 debug 日志记下待写内容，下一轮重试</td></tr>
+<tr><th scope="row">锁竞争</th><td>算失败，不算未达阈值</td></tr>
+<tr><th scope="row">对话</th><td>记忆失败不会让对话失败：每个 hook 自己捕获并记录异常</td></tr>
+</tbody>
+</table>
+
+<h2 id="open">分支处理</h2>
+<table class="stack">
+<thead><tr><th scope="col">情况</th><th scope="col">现状</th><th scope="col">缺口</th></tr></thead>
+<tbody>
+<tr><th scope="row">其他分支</th><td>强制的边界写入先写 head，再写其他未归档分支端点；标记给前缀去重。一轮之内只写 head。</td><td>由空闲监视器触发，不由 head 变化触发</td></tr>
+<tr><th scope="row">互斥分支</th><td>一条分支用 Flask，另一条用 FastAPI：同一 Topic 里相邻两段</td><td>Topic 格式表达不了互斥；检索两条都返回，整理还可能合并</td></tr>
+<tr><th scope="row">跨会话派生</th><td>两半各自记账，不丢不重。同一会话内的派生分支共用节点标记。</td><td>没有链接说明一半是另一半的延续</td></tr>
+<tr><th scope="row">压缩摘要成为 head</th><td>通常是侧分支，接在第一条被摘要轮次的前驱上</td><td>head 移上去时，摘要算未写的助手轮次，同样的事实换措辞再写一遍</td></tr>
+</tbody>
+</table>
+
+<h2 id="web">记忆 Web 页面</h2>
+<p>四个分区（Topics、Timeline、Recent、Core），用现有 API，在 <code translate="no">apps/web/components/memory/</code>：<code translate="no">index.tsx</code>、<code translate="no">parts.tsx</code>、<code translate="no">memory-page.module.css</code>，以及复用现有渲染器和净化器的 Markdown 辅助模块。</p>
+<table class="stack">
+<thead><tr><th scope="col">区域</th><th scope="col">结构</th><th scope="col">避免</th></tr></thead>
+<tbody>
+<tr><th scope="row">顶栏</th><td>页面标题、记忆设置，以及来自 <code translate="no">/api/memory/status</code> 的写入失败行、“写入暂停”行（<code translate="no">ingest-state.json</code> 里这份记忆或登录的停止记录）和“不是文本”行（列出解码失败的 Topic 文件）</td><td>API 算不准的总数</td></tr>
+<tr><th scope="row">二级侧栏</th><td>文件夹、Topic、Timeline 年/月/日、Recent 和 Core 行：高 36px，水平内边距 10px，圆角 8px，字号 13px。共用 14×14 的 <code translate="no">ChevronRight</code> 和数字徽标；层级只靠缩进。</td><td>小实心三角；<code translate="no">topics/core.md</code> 列两遍</td></tr>
+<tr><th scope="row">内容头</th><td>名称、类型、路径、修改时间、视图和操作集中在一个 76px 区域；Recent 显示 <code translate="no">records / memory.recent.limit</code></td><td>单独的元数据条；把记录数和 token 预算混淆</td></tr>
+<tr><th scope="row">正文</th><td>Preview、Timeline、Recent、Core 居中，最宽 780px。Edit 通栏等宽。</td><td>过宽文本</td></tr>
+<tr><th scope="row">Markdown 预览</th><td>Obsidian Flavored Markdown，经 <code translate="no">marked</code> 和净化器。命名和行内脚注变成编号上标和文末列表，支持两空格续行。段尾 <code translate="no">^block-id</code> 变成不可见锚点。代码和转义语法保持原样。</td><td>正文露出内部 ID；改动磁盘原文</td></tr>
+<tr><th scope="row">720px 以下</th><td>分区图标，然后单页列表或详情，带返回。Core、Timeline、Recent 直接进内容。先隐藏分区文字；宽度优先级是详情、列表、文字。窗口宽度不改写侧栏状态。</td><td>三栏堆叠、重叠</td></tr>
+</tbody>
+</table>
+<details>
+<summary>边界</summary>
+<ul>
+<li>Timeline 仍是派生视图，按年、月、日折叠。不加事件时间，也不把重建时间当记录时间。</li>
+<li>保留：Core 的 compare-and-set 保存、Timeline 部分日期、键盘焦点、设置入口。脚注转换在净化之前，生成的链接和锚点走同一个净化器；任意输入都不会撞上内部占位符。</li>
+<li>不做：首页仪表盘、图表、Topic 向导、拖动排序、批量编辑、自动收起侧栏、新 API、新依赖、新持久 UI 状态、来源浏览 API。不显示 Commitments 和 Scheduler 状态。没选内容时只显示简短提示和设置入口。</li>
+<li>语法依据公开的 <a href="https://obsidian.md/help/obsidian-flavored-markdown">Obsidian Flavored Markdown</a>、<a href="https://obsidian.md/help/syntax#Footnotes">脚注</a>和<a href="https://obsidian.md/help/links#Link%20to%20a%20block%20in%20a%20note">块链接</a>规则以及可观察的阅读视图输出；Obsidian 渲染器不开源。</li>
+</ul>
+</details>
+
+<h2 id="changes">统一修改接口</h2>
+<p>两种表达，一条路径：Runtime 暂存、规范化、引用和关系检查、重建 Timeline/Recent/Relations/Core、原子安装、Git。安装后 Git 失败不假装回滚：结果带 <code translate="no">memory_committed</code> 和 <code translate="no">git_committed</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">方式</th><th scope="col">谁用</th><th scope="col">怎么做</th></tr></thead>
+<tbody>
+<tr><th scope="row">改文件</th><td>后台写入器、整理器、Web 和 CLI 文件编辑（<code translate="no">staged_edit</code>）</td><td>在暂存区改 <code translate="no">topics/**/*.md</code>，引用写成 <code translate="no">[短关键词](/s/&lt;session&gt;#&lt;message&gt;)</code>，然后 <code translate="no">commit_edits</code></td></tr>
+<tr><th scope="row">结构化</th><td>模型工具 <code translate="no">memory_update</code> 和 owner 的 <code translate="no">POST /api/memory/changes</code></td><td><code translate="no">memory_changes[]</code>；每个请求在 <code translate="no">memory_changes</code>、整 Topic 的 <code translate="no">changes[path/action/content]</code>、统一 diff <code translate="no">patch</code> 中选一种，都走 <code translate="no">MemoryWorkspace.update</code></td></tr>
+</tbody>
+</table>
+<h3 id="structured-operations">结构化操作</h3>
+<table class="stack">
+<thead><tr><th scope="col">操作</th><th scope="col">必填</th><th scope="col">Runtime</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">create_record</code></th><td>最终内容、时间（模型 schema 用 <code translate="no">undated</code>，owner REST 也接受 null）、非空 <code translate="no">sources[{source,label}]</code>、<code translate="no">destination</code>（<code translate="no">topic_path</code>、<code translate="no">headings</code>、<code translate="no">position</code>）</td><td>校验 Topic、位置和每条新引用；原样保留 label；分配块和证据 ID</td></tr>
+<tr><th scope="row"><code translate="no">update_record</code></th><td><code translate="no">memory_id</code> 加完整的最终内容、时间、来源</td><td>替换段落和证据定义；块 ID 和位置不变</td></tr>
+<tr><th scope="row"><code translate="no">delete_record</code></th><td><code translate="no">memory_id</code></td><td>删除记录和不再使用的证据；有块链接会悬空时整体拒绝</td></tr>
+<tr><th scope="row"><code translate="no">move_records</code></th><td>有序非空 <code translate="no">memory_ids</code>，同样的 <code translate="no">destination</code></td><td>按给定顺序移动，保留 ID、内容、时间、引用、创建顺序</td></tr>
+</tbody>
+</table>
+<details>
+<summary>来源和标签</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">source</code></th><td>聊天链接 <code translate="no">/s/&lt;session&gt;#&lt;message&gt;</code>、它的 ref <code translate="no">openprogram/&lt;session&gt;/&lt;message&gt;</code>，或表示本轮用户消息的 <code translate="no">current</code>。没有来源的记录引用这条消息。<code translate="no">source_refs: [string]</code> 接受同样的链接。调用方不能提交来历或 owner 身份。</td></tr>
+<tr><th scope="row"><code translate="no">label</code></th><td>这一条引用的显示文字，在同一次写入调用中生成。提示词和 schema 要求简短、贴合上下文的关键词，不含 Markdown、URL、ID、发言人名字或时间模板。Runtime 只要求非空字符串，不截断不改写。</td></tr>
+<tr><th scope="row">输出</th><td><code translate="no">{"content":"…","sources":[{"source":"/s/session#message","label":"研究范围"}]}</code> 变成 <code translate="no">[研究范围](/s/session#message)</code>。解析器读链接目标，不读显示文字。</td></tr>
+<tr><th scope="row">旧工作区</th><td>带旧 <code translate="no">sources/</code> 副本的工作区由 <code translate="no">store.cite_chats_directly</code> 转换一次。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>位置、组合和冲突</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置</th><td><code translate="no">start</code>、<code translate="no">end</code>、<code translate="no">before</code>、<code translate="no">after</code>。锚点需要 <code translate="no">anchor_memory_id</code>，在目标 Topic 和标题链内，不在移动集合里。每个 ID 最多一次内容操作和一次移动；删除和移动不能针对同一 ID。</td></tr>
+<tr><th scope="row">组合</th><td>合并：一次更新、若干删除、按需移动。拆分：一次更新、若干创建、按需移动。没有 <code translate="no">merge_records</code>、<code translate="no">split_record</code>、<code translate="no">place_records</code>、<code translate="no">reorder_records</code>。</td></tr>
+<tr><th scope="row">清理</th><td>Runtime 删除没有记录的标题链和 Topic 文件。</td></tr>
+<tr><th scope="row">旧记录</th><td><code translate="no">mem_*</code> 保留 ID。共用一个物理段落的所有 ID 按段落顺序连续地一起移动。</td></tr>
+<tr><th scope="row">证据冲突</th><td>跨 Topic 同一证据标签但时间或引用语义不同：整体以 <code translate="no">INVALID_ARGUMENT</code> 拒绝。只是相对路径不同不算冲突。</td></tr>
+<tr><th scope="row">旧输入</th><td>早期 create、update、delete 输入会被转换；schema 只暴露四个名字。</td></tr>
+<tr><th scope="row">Scheduler</th><td>本地 owner 的提示任务可调用 <code translate="no">memory_search</code>、<code translate="no">memory_get</code>、<code translate="no">memory_update</code>；服务不双写。已删除的 <code translate="no">memory_id</code> 返回 <code translate="no">NOT_FOUND</code>，不留占位。</td></tr>
+<tr><th scope="row">模型范围</th><td>交互模型、写入器和整理器可以改写、合并、拆分或删除。删除块要在同一事务里修好指向它的链接。已提交的引用不复查。</td></tr>
+<tr><th scope="row">读取</th><td>只有一个读取器 <code translate="no">read_topic_tree</code> 逐个读取每个 <code translate="no">topics/**/*.md</code> 文件（扩展名不分大小写）；<code translate="no">read_checked_tree</code> 只对本次写入写过的文件做严格结构检查。去掉 BOM 和 CRLF，frontmatter 不算正文。没有 <code translate="no">^id</code> 的段落，或 ID 已被前面文件占用的段落，用路径和文字派生 ID。坏脚注当普通文字；不是 UTF-8 的文件产出为空；一个文件不影响其他文件。</td></tr>
+<tr><th scope="row">检索</th><td>BM25 和 embedding 都索引读取器返回的每个单元：每个带引用的论断一个事件，每个不带引用的段落也一个事件，用它自己的 ID，带 <code translate="no">origin</code>。BM25 不再有磁盘缓存：读最大的工作区只要几十毫秒，进程内索引按 Topic 文件签名复用；embedding 复用解析结果和向量。时间、大小或 inode 变化即失效。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>参考过的接口</summary>
+<table class="stack">
+<thead><tr><th scope="col">接口</th><th scope="col">约定</th><th scope="col">这里的选择</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://www.rfc-editor.org/rfc/rfc6902.html">RFC 6902 JSON Patch</a></th><td>add、remove、replace、move 分开；没有语义合并</td><td>内容操作和移动分开，作用于稳定的 <code translate="no">memory_id</code> 而不是 Markdown 路径</td></tr>
+<tr><th scope="row"><a href="https://developers.notion.com/reference/patch-block-children">Notion block children</a></th><td>创建时说明位置，由父结构持有</td><td><code translate="no">create_record.destination</code> 同时描述 Topic、标题和位置</td></tr>
+<tr><th scope="row"><a href="https://prosemirror.net/docs/ref/#transform">ProseMirror Transform</a></th><td>合并和拆分分解成可校验的步骤</td><td>模型把合并规划成更新、创建、删除、移动</td></tr>
+<tr><th scope="row"><a href="https://docs.mem0.ai/platform/api-reference/memory/update-memory">Mem0</a>、<a href="https://docs.letta.com/api-reference/memory/modify-block">Letta</a></th><td>记录或块的增删改</td><td>记录级增删改，加上多文件 Topic 需要的批量移动</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="outside">OpenProgram 之外写的文件</h2>
+<p>Topic 文件里有什么，什么就是记忆。别的工具写的笔记、人写的没有引用的段落、聊天 agent 用文件工具写的文件，都会被读取、索引、搜到。不同的只是谁能改、怎么标注。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">主题</th><th scope="col">设计</th><th scope="col">跟随</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源在哪检查</th><td>只在 <code translate="no">commit_edits</code>（<code translate="no">_check_block_references</code>）检查一次，对象是本次新增或改写的段落，按作者区分。parser 的严格形式只管结构</td><td>Grok Build（检查放在写入路径），Maka（来源是写入方的属性）</td></tr>
+<tr><th scope="row">外部文件</th><td>原位读取，从不改写：规范化、链接改写和整理器都跳过它，写入器改它会被拒，也没人能链接进去。人在设置里保存后，文件归我们（<code translate="no">runtime</code>），规范化给它的段落加 ID。我们的文件在别处被重排、ID 都在，仍归我们</td><td>Claude Code 和 Oh My Pi（原位读取，整理器不碰）；采纳人对我们文件的编辑跟随 Codex</td></tr>
+<tr><th scope="row">坏文件</th><td>只影响它自己。没有修复 agent，也没有“放到一边”：解码失败的文件在“不是文本”里列一次</td><td>所有对手都不用模型修复；最接近 Grok Build</td></tr>
+<tr><th scope="row">标注</th><td>每个单元有 <code translate="no">origin</code>：<code translate="no">cited</code>、<code translate="no">person</code>（我们的文件，没有引用）或 <code translate="no">outside</code>。搜索结果用 <code translate="no">source: outside file</code> 或 <code translate="no">source: added by person</code> 代替 refs；编辑器在人写的段落旁放一个 Nova Badge，外部文件在标题旁放一个，文字本身说清楚，不用悬停提示</td><td>Maka（每条记出处），Codex（把来源类别告诉模型）</td></tr>
+<tr><th scope="row">地图</th><td>提示词里 agent 地图之后的“Other files”一节，由代码生成到运行目录（<code translate="no">outside-map.md</code>）：最多占 <code translate="no">GUIDE_MAX_BYTES</code> 的四分之一，其中四分之三给带标题的条目（frontmatter <code translate="no">name</code>、第一个标题），之后只列路径，最后一行“N more files are not listed”。只在安装后和 Worker 启动时重画；<code translate="no">MEMORY.md</code> 仍归 agent</td><td>Grok Build（代码生成清单、3/4 分配、只在会话边界重新生成）</td></tr>
+<tr><th scope="row">时间线</th><td>不带引用的段落按记忆第一次读到它的日子归档，日期在 <code translate="no">first-seen.json</code>（按段落 ID），显示为“recorded &lt;日期&gt;”。已经在 Git 里的文件取它第一次加入的日子，否则取今天。改了字的段落算新段落，记新的日子</td><td>Grok Build（首次进索引的时间）；不用 Claude Code 的修改时间</td></tr>
+<tr><th scope="row">聊天 agent 的文件工具</th><td>不接入事务：它写进 <code translate="no">topics/</code> 的文件就是外部文件。<code translate="no">MEMORY.md</code> 的布局说明告诉它要记东西用 <code translate="no">memory_update</code></td><td>Claude Code（文件工具直接写记忆），Codex（引导模型用记忆工具）</td></tr>
+<tr><th scope="row">派生 ID</th><td><code translate="no">~&lt;路径的 6 位十六进制&gt;-&lt;路径和文字的 12 位&gt;</code>。旧的派生 ID 交给 <code translate="no">memory_get</code>，按路径部分找到文件，返回它当前的段落和一句说明</td><td>Codex 和 Grok Build（按文件或位置定位，不保证跨编辑稳定）</td></tr>
+<tr><th scope="row">对话中途关闭记忆</th><td>已经召回过的内容留在历史里，直到下一次压缩；只停止新的召回和记忆工具（由 cache-prefix 的设计实现）</td><td>Hermes、Codex、Claude Code：都不撤回已发出的内容</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>按作者、在提交时查来源</dt><dd>比较过：parser 要求每个文件都带脚注，和提交时看是谁写的。读取侧的格式规则让别的工具写的一个文件就能让所有写入失败，记忆就是这样停止增长的。</dd>
+<dt>写入时检查</dt><dd>Claude Code、Codex、Grok Build 都在写入那一刻检查写入方；我们对自动写入器照样要求精确引用，执行策略的边界依赖它。</dd>
+<dt>外部文件原位只读</dt><dd>比较过：改写成我们的格式、复制进收件箱（Codex 的 ad-hoc note）、原位读取。别的工具随时重写自己的文件，我们加的 ID 和链接会断；复制会分叉、重复。只有原位读取两样都没有。</dd>
+<dt>按 ID 集合判断归属</dt><dd>“还归我们”按 ID 集合判断、不看顺序，所以编辑器重排段落也覆盖得到。</dd>
+<dt>没有修复 agent</dt><dd>别的工具写的正文背后没有聊天消息，修复从原理上就做不成；实测期间它跑了 127 次，写入只有 36 次。格式不再决定什么算记忆之后，就没有需要放到一边的东西了。</dd>
+<dt>来源标注</dt><dd>“无来源”只说了缺什么，没说这段从哪来；人和模型要判断的是该信多少。来源从 <code translate="no">installed.json</code> 和脚注推出，不新存任何东西。</dd>
+<dt>地图只在安装时重画</dt><dd>比较过给记忆便条节流（变化超过 10% 或每 5 轮），没有对手这样做。把这一节绑在我们自己的安装上，记忆段每次写入最多变一次，和写入器改地图的频率相同；新文件一落地搜索就能找到。</dd>
+<dt>首次看到的日子，不用修改时间</dt><dd>复制、同步、格式化都会改修改时间，同一句话的日期会无故跳动。我们自己记的日子稳定也诚实：它说的是记忆什么时候记下，标“recorded”，和带引用段落的事件日期分开。</dd>
+<dt>文件工具不接入</dt><dd>Grok Build 必须把它们接入记忆策略，因为它的整理器拥有所有 topic，会覆盖掉。我们不碰外部文件，直接写已经安全；在这里要求引用，模型只会得到一种 Write 和 Edit 无法避免的失败。</dd>
+<dt>派生 ID 不稳定</dt><dd>稳定 ID 只能写回文件，违反只读规则；外部段落也不能被链接，受影响的只有聊天里一次性的引用，退回到文件就够用。</dd>
+</dl>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>两个写入入口、暂存事务、已写标记、会话边界枚举活分支、渲染式 Core、跟随默认 Agent 的写入器和 <code translate="no">memory.writer.model</code>、工具/CLI/Web 的写入器状态、<code translate="no">memory.backend=none</code> 在创建工作区前拒绝 CLI 动词和 <code translate="no">/api/memory/*</code>、结构化修改和来源标签</td></tr>
+<tr><th scope="row">本轮重新设计已实现</th><td>两个索引共用一个宽松读取器，按文件隔离；删除规则按实际执行的写清；写入期间的外部改动取进来；监视器的失败按范围记在 <code translate="no">ingest-state.json</code>，首次加载时取代 <code translate="no">session-end.json</code> 和 <code translate="no">session-end-retries.json</code>；<code translate="no">installed.json</code> 来源记录；<a href="#outside">OpenProgram 之外写的文件</a>一节的全部内容</td></tr>
+<tr><th scope="row">部署后实测</th><td>在开发版上：24 小时内没有 <code translate="no">repair-format</code>（这个阶段已经不存在），写入模型 key 无效时一小时内 <code translate="no">memory.ingest_ended</code> 的次数；用真实模型跑一次写入和一次 03:00 整理，外部文件字节不变。这些要真实的模型请求和运行中的实例</td></tr>
+<tr><th scope="row">上线之前</th><td>编辑器来源标记和两行状态提示的前后对比截图，等批准</td></tr>
+<tr><th scope="row">未实现</th><td>越权 hold 队列、按请求方过滤、互斥分支语义、跨会话派生链接、head 变化触发写入、运行时调用 <code translate="no">initialize</code>、<code translate="no">shutdown</code>、<code translate="no">extract_before_discard</code>、外部 token 能力、非 owner 的修改范围</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="written-marker.zh.html">已写标记的完整设计</a> · <a href="comparison.zh.html">记忆写入对比</a></p>

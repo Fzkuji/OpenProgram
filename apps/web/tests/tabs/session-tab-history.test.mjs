@@ -33,6 +33,8 @@ globalThis.window = { addEventListener() {}, dispatchEvent() {} };
 globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) };
 const { useCenterTabs, sessionAckIsActive } = await import("../../lib/tabs/center-tabs-store.ts");
 const { normalizeCenterTabsPayload, readCenterTabsPayload } = await import("../../lib/tabs/center-tabs-persistence.ts");
+const { labelOf } = await import("../../components/center-tabs/strip/tab-label.ts");
+const label = tab => labelOf(tab, key => key, (english) => english);
 const state = () => useCenterTabs.getState();
 const active = () => state().tabs.find(t => t.id === state().activeId);
 function reset() { useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null, navigationRoute: undefined, fileNavigationHistory: { entries: [], index: -1 }, fileNavigationRestore: null }); }
@@ -128,7 +130,7 @@ test("restore retains the active grouped session and removes duplicates", () => 
   });
   assert.deepEqual(payload.tabs.map(tab => tab.id), ["s:A:duplicate", "w:1"]);
   assert.equal(payload.activeId, "s:A:duplicate");
-  assert.deepEqual(payload.groups, [{ id: "g", memberIds: ["s:A:duplicate", "w:1"], visibleIds: ["s:A:duplicate", "w:1"], focusedId: "s:A:duplicate" }]);
+  assert.deepEqual(payload.groups.map(({ canvas: _canvas, ...group }) => group), [{ id: "g", memberIds: ["s:A:duplicate", "w:1"], visibleIds: ["s:A:duplicate", "w:1"], focusedId: "s:A:duplicate" }]);
 });
 
 test("same-title sessions remain distinct", () => {
@@ -186,7 +188,7 @@ test("legacy and malformed persisted histories preserve the current session", ()
 
 test("desktop transfer keeps history and rejects inconsistent current entries", async () => {
   const { createRequire } = await import("node:module");
-  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/tab-transfer-validation.js");
+  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/main/web-views/tab-transfer-validation.js");
   const entries = ["A", "B", "C", "D"].map(sessionId => ({ sessionId, title: sessionId, draft: false }));
   const tab = { id: "s:A", kind: "session", sessionId: "D", title: "D", draft: false,
     sessionHistory: { entries, index: 3 } };
@@ -288,35 +290,26 @@ test("default launcher remains the origin when opening an existing destination",
   state().navigateHistory(1); assert.equal(active().page, "files");
 });
 
-test("page and session navigation returns to its own launcher", () => {
+test("session navigation returns to its own launcher after management pages", () => {
   reset(); state().openNewTabPage(); const home = active().id;
   state().openSessionTab("ordered-A", "A"); state().openSessionTab("ordered-B", "B");
   state().recordRouteNavigation("/skills");
+  assert.equal(active().sessionId, "ordered-B");
   state().navigateHistory(-1); assert.equal(active().sessionId, "ordered-B");
-  assert.equal(state().navigationRoute, undefined);
+  assert.equal(active().navigationRoute, undefined);
   state().navigateHistory(-1); assert.equal(active().sessionId, "ordered-A");
-  state().navigateHistory(-1); assert.equal(active().id, home);
+  state().navigateHistory(-1); assert.equal(active().id,home);
+  state().navigateHistory(1); assert.equal(active().sessionId, "ordered-A");
 });
-
-test("tab switches restore each tab's sidebar route without adding visits", () => {
-  reset(); state().openNewTabPage(); const first = active().id;
-  state().recordRouteNavigation("/skills"); const before = structuredClone(active());
-  state().openNewTabPage(); const second = active().id;
+test("tab switches restore content after opening sidebar management pages", () => {
+  reset(); state().openSessionTab("first","First"); const first = active().id;
+  state().recordRouteNavigation("/agents"); const before = structuredClone(active());
+  state().openNewTabPage(); state().openSessionTab("second","Second"); const second = active().id;
   state().recordRouteNavigation("/programs");
-  state().setActive(first); assert.equal(state().navigationRoute, "/skills");
-  assert.deepEqual(active(), before);
-  state().navigateHistory(-1); assert.equal(state().navigationRoute, undefined);
-  state().setActive(second); assert.equal(state().navigationRoute, "/programs");
-});
-
-test("sidebar routes also return to the launcher in visit order", () => {
-  reset(); state().openNewTabPage(); const home = active().id;
-  state().recordRouteNavigation("/skills"); state().recordRouteNavigation("/programs");
-  state().navigateHistory(-1); assert.equal(state().navigationRoute, "/skills");
-  state().navigateHistory(-1); assert.equal(active().id, home); assert.equal(state().navigationRoute, undefined);
-  state().navigateHistory(1); assert.equal(state().navigationRoute, "/skills");
-  state().openBuiltinTab("files"); assert.equal(state().canNavigateHistory(1), false);
-  state().navigateHistory(-1); assert.equal(state().navigationRoute, "/skills");
+  state().setActive(first); assert.equal(state().navigationRoute, "/agents");
+  assert.deepEqual(active(),before);
+  state().setActive(second); assert.equal(active().sessionId, "second");
+  assert.equal(state().navigationRoute, "/programs");
 });
 
 test("launcher round trip preserves a draft acknowledgement and title", () => {
@@ -353,7 +346,7 @@ test("switching tabs does not create return history in the selected tab", () => 
 
 test("native transfer preserves launcher, file view and isolated application histories", async () => {
   const { createRequire } = await import("node:module");
-  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/tab-transfer-validation.js");
+  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/main/web-views/tab-transfer-validation.js");
   const { replaceCenterTabsPayload } = await import("../../lib/tabs/center-tabs-store.ts");
   reset(); state().openNewTabPage(); const home = active().id;
   state().openBuiltinTab("files");
@@ -404,10 +397,10 @@ test("renaming a file preserves its launcher history and another same-target tab
 
 test("transfers include historical file drafts and preserve keys still used by another tab", async () => {
   window.location = { pathname: "/chat" };
-  const { buildTransferPayload, handleRemoveSource } = await import("../../lib/desktop/bridge-transfer.ts");
+  const { buildTransferPayload, handleRemoveSource } = await import("../../lib/desktop/bridge/bridge-transfer.ts");
   const { fileDrafts, fileDraftKey } = await import("../../lib/files/files-shared.ts");
   const { createRequire } = await import("node:module");
-  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/tab-transfer-validation.js");
+  const { validateTransferPayload } = createRequire(import.meta.url)("../../../desktop/main/web-views/tab-transfer-validation.js");
   reset(); state().openNewTabPage();
   const keys = [];
   for (const path of ["a.ts", "b.ts", "c.ts", "d.ts"]) {
@@ -454,53 +447,180 @@ test("transfers reject duplicate conversation identities without replacing eithe
 });
 
 
-test("application settings leave tab content and forward history unchanged", (t) => {
-  const location = window.location;
-  delete window.location;
+const managementRoutes = ["/agents",
+  "/agents/main",
+  "/settings",
+  "/settings/providers/x",
+  "/skills",
+  "/skills/x",
+  "/programs",
+  "/functions",
+  "/mcp",
+  "/plugins",
+  "/applications",
+  "/chats",
+  "/projects",
+  "/memory",
+  "/history",
+  "/scheduler"];
+
+test("page names and history follow each route in the current tab", (t) => {
+  const location = window.location; delete window.location;
   t.after(() => { window.location = location; });
-  for (const kind of ["session", "ntp", "files", "browser"]) {
+  for (const kind of ["session", "ntp", "files", "browser", "web", "terminal", "application"]) {
     reset(); state().openNewTabPage();
-    if (kind === "session") state().openSessionTab("settings-owner", "Owner");
-    if (kind === "files" || kind === "browser") state().openBuiltinTab(kind);
-    state().recordRouteNavigation("/skills");
-    state().recordRouteNavigation("/programs");
-    state().navigateHistory(-1);
-    const before = structuredClone(state().tabs);
-    for (const path of ["/settings", "/settings/general", "/settings/providers/provider", "/settings/browser#clear-data"]) {
+    if (kind === "session") state().openSessionTab("route-owner", "Research discussion");
+    if (["files", "browser", "terminal"].includes(kind)) state().openBuiltinTab(kind);
+    if (kind === "web") state().openWebTab("https://example.com");
+    if (kind === "application") state().openApplicationTab("app", "a".repeat(64), "App");
+    const base = structuredClone(active());
+    for (const path of managementRoutes) {
       state().recordRouteNavigation(path);
-      assert.deepEqual(state().tabs, before, `${kind}: ${path}`);
-      assert.equal(state().navigationRoute, "/skills");
+      assert.equal(active().navigationRoute, path);
+      assert.notEqual(label(active()), label(base), `${kind}: ${path}`);
+      assert.equal(active().title, base.title); // Content title is never renamed.
     }
+    for (let i = managementRoutes.length - 2; i >= 0; i--) {
+      state().navigateHistory(-1);
+      assert.equal(active().navigationRoute, managementRoutes[i]);
+    }
+    state().navigateHistory(-1);
+    assert.equal(label(active()), label(base));
     state().navigateHistory(1);
-    assert.equal(state().navigationRoute, "/programs");
+    assert.equal(active().navigationRoute, managementRoutes[0]);
+    state().recordRouteNavigation("/settings/browser");
+    assert.equal(label(active()), "Browser");
+    assert.equal(state().canNavigateHistory(1), false);
   }
 });
 
-test("legacy settings visits are removed on reload without losing current metadata", () => {
-  const base = { id: "s:A", kind: "session", sessionId: "A", title: "Old" };
-  const pages = [base, { ...base, navigationRoute: "/skills" },
-    { ...base, navigationRoute: "/settings/general" },
-    { ...base, navigationRoute: "/settings/providers" },
-    { ...base, navigationRoute: "/programs" }];
+test("management routes and labels survive reload and transfer normalization", () => {
+  const base = { id: "s:A", kind: "session", sessionId: "A", title: "Research discussion" };
+  const pages = [base, ...managementRoutes.map(navigationRoute => ({ ...base, navigationRoute }))];
   for (let index = 0; index < pages.length; index++) {
-    const tab = { ...pages[index], title: "Latest", pageHistory: { entries: pages, index } };
+    const tab = { ...pages[index], title: "Updated conversation", pageHistory: { entries: pages, index } };
     storage.set("centerTabs", JSON.stringify({ version: 2, tabs: [tab], activeId: base.id }));
     const restored = readCenterTabsPayload().tabs[0];
-    assert.equal(restored.title, "Latest");
-    assert.equal(restored.navigationRoute, index === 0 ? undefined : index === 4 ? "/programs" : "/skills");
-    assert.equal(restored.pageHistory.entries.length, 3);
-    assert.equal(restored.pageHistory.index, index === 0 ? 0 : index === 4 ? 2 : 1);
-    assert.equal(restored.pageHistory.entries.some(p => p.navigationRoute?.startsWith("/settings")), false);
-    assert.deepEqual(normalizeCenterTabsPayload({ tabs: [restored], activeId: base.id }).tabs[0], restored);
+    assert.equal(restored.navigationRoute, pages[index].navigationRoute);
+    assert.deepEqual(restored.pageHistory.entries, pages);
+    assert.equal(label(restored), index ? label(pages[index]) : "Updated conversation");
+    const transferred = normalizeCenterTabsPayload({ tabs: [tab], activeId: tab.id }).tabs[0];
+    assert.equal(transferred.navigationRoute, pages[index].navigationRoute);
   }
 });
 
-test("legacy settings without an underlying visit retain their content identity", () => {
-  const tab = { id: "s:orphan", kind: "session", sessionId: "orphan", title: "Draft", draft: true, navigationRoute: "/settings/general" };
-  for (const input of [tab, { ...tab, pageHistory: { entries: [tab, { ...tab, navigationRoute: "/settings/browser" }], index: 1 } }]) {
-    const restored = normalizeCenterTabsPayload({ tabs: [input], activeId: tab.id }).tabs[0];
-    assert.equal(restored.navigationRoute, undefined);
-    assert.equal(restored.sessionId, "orphan"); assert.equal(restored.draft, true);
-    assert.equal(restored.pageHistory?.entries.some(p => p.navigationRoute?.startsWith("/settings")) ?? false, false);
+test("visible route names restore independently and retain background conversation titles", (t) => {
+  const location = window.location; delete window.location;
+  t.after(() => { window.location = location; });
+  reset(); state().openSessionTab("first", "Original conversation"); const first = active().id;
+  state().recordRouteNavigation("/agents"); assert.equal(label(active()), "Agents");
+  state().openNewTabPage(); state().openSessionTab("second", "Second");
+  state().recordRouteNavigation("/applications"); const second = structuredClone(active());
+  state().renameSessionTab("first", "Updated conversation");
+  state().setActive(first); assert.equal(label(active()), "Agents");
+  state().navigateHistory(-1); assert.equal(label(active()), "Updated conversation");
+  assert.deepEqual(state().tabs.find(tab => tab.id === second.id), second);
+});
+
+test("settings sections and unknown routes use the current page label", () => {
+  const tab = { id: "s:page", kind: "session", title: "Research discussion" };
+  for (const [route, expected] of [["/agents", "Agents"], ["/programs", "Abilities"],
+    ["/applications", "Applications"], ["/settings/providers/ollama", "LLM Providers"],
+    ["/settings/general", "General"], ["/scheduler", "Scheduler"], ["/unknown-page", "/unknown-page"]]) {
+    assert.equal(label({ ...tab, navigationRoute: route }), expected);
   }
+});
+
+test("a management page opened from a split pane gets its own tab and leaves the split intact", () => {
+  reset(); const a = "s:split-A", b = "s:split-B";
+  useCenterTabs.setState({
+    tabs: [{ id: a, kind: "session", sessionId: "split-A", title: "A" }, { id: b, kind: "session", sessionId: "split-B", title: "B" }],
+    activeId: b, groups: [{ id: "g", memberIds: [a, b], visibleIds: [a, b], focusedId: b }],
+  });
+  state().recordRouteNavigation("/scheduler");
+  assert.equal(active().navigationRoute, "/scheduler");
+  assert.ok(![a, b].includes(active().id));
+  assert.deepEqual(state().groups.find(group => group.id === "g")?.memberIds, [a, b]);
+  assert.equal(state().tabs.find(tab => tab.id === b).navigationRoute, undefined);
+  assert.deepEqual(state().tabs.map(tab => tab.id).slice(-1), [active().id]);
+});
+
+test("a persisted split member carrying a page route leaves its group", () => {
+  const a = { id: "s:A", kind: "session", sessionId: "A", title: "A" };
+  const b = { id: "s:B", kind: "session", sessionId: "B", title: "B", navigationRoute: "/scheduler" };
+  const payload = normalizeCenterTabsPayload({
+    tabs: [a, b], activeId: b.id,
+    groups: [{ id: "g", memberIds: [a.id, b.id], visibleIds: [a.id, b.id], focusedId: b.id }],
+  });
+  assert.deepEqual(payload.groups, []);
+  assert.deepEqual(payload.tabs.map(tab => tab.id), [a.id, b.id]);
+  assert.equal(payload.activeId, b.id);
+});
+
+test("the sidebar opening a conversation whose tab shows Settings returns that tab to the conversation", () => {
+  reset(); state().openSessionTab("A", "Alpha");
+  state().recordRouteNavigation("/settings/memory");
+  assert.equal(state().navigationRoute, "/settings/memory");
+  state().openSessionTab("A", "Alpha");
+  assert.equal(active().sessionId, "A");
+  assert.equal(active().navigationRoute, undefined);
+  assert.equal(state().navigationRoute, undefined);
+  state().navigateHistory(-1);
+  assert.equal(active().navigationRoute, "/settings/memory");
+});
+
+test("the sidebar switching to another tab that shows Settings opens its conversation", () => {
+  reset(); state().openSessionTab("A", "Alpha");
+  state().recordRouteNavigation("/settings/memory");
+  const settingsTab = active().id;
+  state().openDraftSessionTab();
+  assert.notEqual(state().activeId, settingsTab);
+  state().openSessionTab("A", "Alpha");
+  assert.equal(state().activeId, settingsTab);
+  assert.equal(active().navigationRoute, undefined);
+  assert.equal(state().navigationRoute, undefined);
+});
+
+test("closing the focused pane of a split leaves focus on the pane beside it", () => {
+  reset();
+  // The review pane sits last in the tab list, after an unrelated new chat.
+  useCenterTabs.setState({
+    tabs: [
+      { id: "s:A", kind: "session", title: "Alpha", sessionId: "A" },
+      { id: "s:new", kind: "session", title: "", sessionId: "new", draft: true },
+      { id: "r:A", kind: "builtin", title: "", page: "review", reviewSessionId: "A" },
+    ],
+    groups: [{ id: "g", memberIds: ["s:A", "r:A"], visibleIds: ["s:A", "r:A"], focusedId: "r:A" }],
+    activeId: "r:A",
+  });
+  state().closeTab("r:A");
+  assert.equal(state().activeId, "s:A");
+});
+
+test("a page that already has a tab is focused instead of opened again", () => {
+  reset(); state().openSessionTab("first", "First");
+  state().recordRouteNavigation("/agents"); const agents = active().id;
+  state().openNewTabPage(); state().openSessionTab("second", "Second"); const second = active().id;
+  state().recordRouteNavigation("/agents");
+  assert.equal(active().id, agents);
+  assert.equal(state().tabs.filter(tab => tab.navigationRoute === "/agents").length, 1);
+  assert.equal(state().tabs.find(tab => tab.id === second).navigationRoute, undefined);
+  state().recordRouteNavigation("/skills"); state().setActive(second);
+  state().recordRouteNavigation("/mcp");
+  assert.equal(active().id, agents); // Ability's routes share one tab.
+  assert.equal(state().navigationRoute, "/mcp");
+});
+
+test("opening a built-in tab again after it went on to a management page shows its own page", () => {
+  reset(); state().openSessionTab("A", "Alpha");
+  state().openBuiltinTab("meeting"); const meeting = active().id;
+  state().recordRouteNavigation("/scheduler");
+  assert.equal(active().navigationRoute, "/scheduler");
+  state().openSessionTab("A", "Alpha");
+  state().openBuiltinTab("meeting");
+  assert.equal(active().id, meeting);
+  assert.equal(active().navigationRoute, undefined);
+  assert.equal(state().navigationRoute, undefined);
+  state().navigateHistory(-1);
+  assert.equal(active().navigationRoute, "/scheduler");
 });

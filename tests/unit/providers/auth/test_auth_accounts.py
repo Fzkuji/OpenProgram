@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.auth.account.accounts import DEFAULT_ACCOUNT_NAME
-from openprogram.auth.account.accounts import AccountManager
-from openprogram.auth.types import AuthConfigError
+from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
+from openprogram.models.auth.account.accounts import AccountManager
+from openprogram.models.auth.types import AuthConfigError
 
 
 @pytest.fixture

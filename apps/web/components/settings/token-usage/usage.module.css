@@ -4,16 +4,8 @@
 
 .muted {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-family: var(--font-sans);
-}
-
-/* ── stat cards ─────────────────────────────────────────────────────────── */
-
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 12px;
 }
 
 .card {
@@ -22,22 +14,26 @@
   gap: 4px;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: var(--ui-list-radius, 8px);
+  border-radius: var(--ui-list-radius);
   background: var(--bg-primary);
 }
 
 .cardValue {
-  font-size: 22px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-bright);
   font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums;
 }
 
 .cardLabel {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   font-family: var(--font-sans);
+}
+
+/* "· 25 calls unpriced" after the cost card's label. */
+.cardNote {
+  color: var(--text-muted);
 }
 
 /* ── section wrapper ─────────────────────────────────────────────────────── */
@@ -49,7 +45,7 @@
 }
 
 .sectionTitle {
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text-bright);
   margin: 0;
@@ -58,35 +54,10 @@
 
 /* ── dimension tabs ──────────────────────────────────────────────────────── */
 
-.dimTabs {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  width: fit-content;
-}
-
-.dimTab {
-  all: unset;
-  cursor: pointer;
-  padding: 5px 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: var(--font-sans);
-  color: var(--text-secondary);
-  transition: background 0.15s, color 0.15s;
-}
-
-.dimTab:hover {
-  color: var(--text-primary);
-}
-
-.dimTabActive {
-  background: var(--bg-primary);
-  color: var(--text-bright);
-  font-weight: 500;
-  box-shadow: var(--shadow-sm);
+/* The shared ManageSubnav, flush with the page body's own gutter. */
+.usagePage .dimSubnav {
+  padding: 0;
+  min-height: 44px;
 }
 
 /* ── legend ──────────────────────────────────────────────────────────────── */
@@ -96,22 +67,16 @@
   flex-wrap: wrap;
   gap: 10px 16px;
   padding: 6px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-family: var(--font-sans);
   color: var(--text-secondary);
-}
-
-.legendItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
 }
 
 .legendDot {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: var(--radius-2xs);
   flex-shrink: 0;
 }
 
@@ -122,7 +87,7 @@
   width: 100%;
   height: 168px;
   border: 1px solid var(--border);
-  border-radius: var(--ui-list-radius, 8px);
+  border-radius: var(--ui-list-radius);
   background: var(--bg-primary);
 }
 
@@ -140,7 +105,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-family: var(--font-sans);
   color: var(--text-secondary);
 }
@@ -150,11 +115,11 @@
   top: 6px;
   transform: translateX(-50%);
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-family: var(--font-sans);
   white-space: nowrap;
   pointer-events: none;
@@ -175,13 +140,9 @@
   grid-template-columns: auto 1fr auto;
   gap: 8px 12px;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-family: var(--font-sans);
   padding: 0 8px;
-}
-
-.barRow {
-  display: contents;
 }
 
 .barLabel {
@@ -195,34 +156,27 @@
 
 .barTrack {
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--bg-hover);
   overflow: hidden;
 }
 
 .barFill {
   height: 100%;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--accent-blue);
-  transition: width 0.3s ease;
+  transition: width var(--motion-slow) var(--ease-standard);
 }
 
 .barValue {
-  font-variant-numeric: tabular-nums;
   color: var(--text-primary);
   text-align: right;
-}
-
-/* ── model table ─────────────────────────────────────────────────────────── */
-
-.tableWrap {
-  overflow-x: auto;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-family: var(--font-sans);
 }
 
@@ -253,12 +207,10 @@
 .table td.num {
   text-align: right;
   font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .modelCell {
-  font-family: var(--font-mono, monospace);
   color: var(--text-bright);
   overflow: hidden;
   text-overflow: ellipsis;

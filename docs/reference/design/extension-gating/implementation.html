@@ -1,0 +1,60 @@
+<title>Gating implementation</title>
+<meta name="description" content="Where the extension gating model lives in the code.">
+<h1>Gating implementation</h1>
+
+<h2 id="file-map">Gate sites</h2>
+<p>Each gate runs where the model is about to see the extension.</p>
+<table class="stack">
+<thead><tr><th scope="col">Extension</th><th scope="col">Seen when</th><th scope="col">Gate</th><th scope="col">On rejection</th></tr></thead>
+<tbody>
+<tr id="gate-site-1-skills-skill-command"><th scope="row">Skill</th><td><code translate="no">/skill X</code> injects SKILL.md</td><td><code translate="no">_skill_gate_error</code> in <code translate="no">interfaces/server/ws_actions/chat/turn_skill.py</code>, calling <code translate="no">gate()</code></td><td><code translate="no">skill_blocked</code>, "Skill blocked: reason"; body not expanded</td></tr>
+<tr id="gate-site-2-tools"><th scope="row">Tool</th><td><code translate="no">resolve_tools()</code> builds the turn's tools</td><td><code translate="no">runtime/conversation/model_tools.py</code></td><td>Filtered out</td></tr>
+<tr id="gate-site-3-mcp"><th scope="row">MCP</th><td>Same pipeline, names <code translate="no">&lt;server&gt;__&lt;tool&gt;</code></td><td><code translate="no">_apply_profile_gates</code>, inner to <code translate="no">resolve_tools</code>, on every return path</td><td>Filtered by server. A missing <code translate="no">required</code> raises <code translate="no">RequiredMcpUnavailable</code></td></tr>
+</tbody>
+</table>
+<p class="note">No single earlier chokepoint: skills arrive as objects with a category, tools as bare names, MCP tools as namespaced names. Only the input shape differs.</p>
+
+<h2 id="shared-helper-module">Shared helpers</h2>
+<p><code translate="no">openprogram/extensions/gating.py</code>: pure functions, importable from any layer.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Function</th><th scope="col">Returns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">match_any(name, patterns)</code></th><td>Whether any <code translate="no">fnmatchcase</code> pattern matches; empty patterns give false</td></tr>
+<tr><th scope="row"><code translate="no">gate(*, name, category="", disabled=(), allowed=(), categories=())</code></th><td><code translate="no">None</code> if it passes, otherwise a reason string</td></tr>
+<tr><th scope="row"><code translate="no">check_required(installed, required)</code></th><td>Required patterns nothing matches</td></tr>
+</tbody>
+</table>
+
+<h2 id="canonical-schema">Schema</h2>
+<p><code translate="no">AgentSpec</code> in <code translate="no">runtime/agent_registry/manager.py</code>. Each block is a plain <code translate="no">dict</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Block</th><th scope="col">Default</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">skills</code></th><td><code translate="no">{"disabled": [], "allowed": [], "categories": []}</code></td></tr>
+<tr><th scope="row"><code translate="no">tools</code></th><td><code translate="no">{"mode": "automatic"}</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td><code translate="no">{"disabled": [], "allowed": [], "required": []}</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="resolve-tools"><code translate="no">resolve_tools</code></h2>
+<p>A per-turn <code translate="no">override</code> beats <code translate="no">profile.tools</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Wanted</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">None</code></th><td><code translate="no">agent_tools(source=…, only_available=True)</code></td></tr>
+<tr><th scope="row"><code translate="no">[]</code>, <code translate="no">mode: none</code></th><td>No tools</td></tr>
+<tr><th scope="row"><code translate="no">mode: automatic</code>, or a dict with no <code translate="no">enabled</code>, <code translate="no">toolset</code>, <code translate="no">preset</code>, <code translate="no">allowed</code></th><td>Full toolset minus <code translate="no">disabled</code></td></tr>
+<tr><th scope="row"><code translate="no">mode: selected</code> or <code translate="no">preset</code></th><td>Those names minus <code translate="no">disabled</code>; adds <code translate="no">tool_search</code> when any is deferred</td></tr>
+<tr><th scope="row"><code translate="no">enabled</code> list</th><td>Exactly those names; beats <code translate="no">allowed</code></td></tr>
+<tr><th scope="row"><code translate="no">toolset</code></th><td>That set, filtered by both pattern lists</td></tr>
+<tr><th scope="row">Other dict</th><td><code translate="no">DEFAULT_TOOLS</code> filtered by both pattern lists</td></tr>
+<tr><th scope="row">List of names</th><td>Exactly those, resident unless <code translate="no">tool_search</code> is present</td></tr>
+</tbody>
+</table>
+<p class="note">Profile MCP gates apply on every path, including per-turn lists. <code translate="no">web_search</code> is overlaid separately by its own boolean. <code translate="no">required</code> is checked after filtering, before provider execution.</p>
+
+<h2 id="backward-compatibility">Compatibility</h2>
+<p><code translate="no">skills</code>, <code translate="no">tools</code> and <code translate="no">mcp</code> must be objects. <code translate="no">AgentSpec.from_dict</code> passes them through <code translate="no">dict()</code>, so legacy lists such as <code translate="no">skills: ["pdf", "drawio"]</code> raise <code translate="no">ValueError</code> on load and are not migrated. A tools dict holding only empty lists counts as <code translate="no">automatic</code>.</p>
+
+<h2 id="testing">Testing</h2>
+<p>No dedicated unit tests: <code translate="no">match_any</code> is <code translate="no">fnmatchcase</code> plus iteration. <code translate="no">openprogram doctor</code> checks that skills load and MCP configs read, not gating. Add tests if semantics diverge from <code translate="no">fnmatchcase</code>, such as <code translate="no">**</code> support.</p>

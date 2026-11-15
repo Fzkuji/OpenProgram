@@ -10,17 +10,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram import paths
-from openprogram.agent import authority
-from openprogram.self_update import SelfUpdateStore, UpdatePhase
-from openprogram.self_update.control import supervisor
-from openprogram.self_update.control.commit_intent import read_journal
-from openprogram.self_update.verification.verifier_config import config_evidence
-from openprogram.self_update.verification.verifier_config import freeze_verifier_config
-from tests.component.self_update.delivery.test_package_protocol import package_factory
+from openprogram.state import paths
+from openprogram.runtime.permissions import authority
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+from openprogram.operations.self_update.control import supervisor
+from openprogram.operations.self_update.control.commit_intent import read_journal
+from openprogram.operations.self_update.verification.verifier_config import config_evidence
+from openprogram.operations.self_update.verification.verifier_config import freeze_verifier_config
+from tests.component.self_update.delivery import test_package_protocol as _test_package_protocol
 from tests.component.self_update.delivery.test_install_transaction import INSTALLER, version
 from tests.component.config.test_distribution_release._support import MACOS_DESKTOP_INSTALL
 from tests.unit.self_update.test_store import _request
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+package_factory = _test_package_protocol.package_factory
 
 pytestmark = [pytest.mark.macos, MACOS_DESKTOP_INSTALL]
 
@@ -29,7 +32,7 @@ pytestmark = [pytest.mark.macos, MACOS_DESKTOP_INSTALL]
 def producer(package_factory, tmp_path, monkeypatch):
     profile = tmp_path / "profile"
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed"))
     request = _request()
     config = freeze_verifier_config(request, SimpleNamespace(
@@ -37,7 +40,7 @@ def producer(package_factory, tmp_path, monkeypatch):
     request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(config)))
     store = SelfUpdateStore(profile / "self-updates")
     store.create(request, verifier_config=config)
-    store.transition(request.update_id, UpdatePhase.STAGING)
+    store.transition(request.update_id, UpdatePhase.BUILDING)
     directory = store.root / request.update_id
     installer = directory / "controller/install-app.sh"
     installer.parent.mkdir()
@@ -57,9 +60,9 @@ def producer(package_factory, tmp_path, monkeypatch):
     monkeypatch.setattr(supervisor, "DEFAULT_APP_PATH", str(target))
     monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: artifact)
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_: True)
-    monkeypatch.setattr("openprogram.self_update.verification.system_probe.probe_current_system",
+    monkeypatch.setattr("openprogram.operations.self_update.verification.system_probe.probe_current_system",
                         lambda *_: {"candidate_sha": request.base_sha})
-    monkeypatch.setattr("openprogram.self_update.verification.system_probe.probe_system",
+    monkeypatch.setattr("openprogram.operations.self_update.verification.system_probe.probe_system",
                         lambda *_: {"candidate_sha": request.candidate_sha, "worker_pid": os.getpid()})
     monkeypatch.setattr(supervisor, "_finish_verification", lambda *_: 0)
     def validate(path):
@@ -101,7 +104,7 @@ def test_controller_persists_reopen_before_native_activation(producer, monkeypat
             with pytest.raises(SystemExit, match="controller interrupted"):
                 supervisor.run_supervisor(directory.name, state_root=store.root, installer_sha256=digest)
         assert version(target) == "0.6.1" and activations == []
-        from openprogram.self_update.control.reopen import prepare_reopen
+        from openprogram.operations.self_update.control.reopen import prepare_reopen
         prepare_reopen(store, directory.name)
         intent_path = directory / "reopen-1.json"
         intent_before = intent_path.read_bytes(), intent_path.stat().st_mtime_ns
@@ -148,7 +151,7 @@ def test_ready_reentry_refuses_invalid_handoff_before_stopping_app(producer, dam
     elif damage == "owner_config":
         (directory / "verifier-config.json").unlink()
     else:
-        from openprogram.self_update.control.reopen import prepare_reopen
+        from openprogram.operations.self_update.control.reopen import prepare_reopen
         intent = prepare_reopen(store, directory.name)
         store._write_json(directory / "reopen-1.json", {**intent, "session_id": "other"})
     before = supervisor._tree_digest(target), supervisor._tree_digest(tx)

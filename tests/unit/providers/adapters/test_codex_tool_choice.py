@@ -6,11 +6,11 @@ The Codex backend speaks the Responses API, which natively accepts
 (and parallel_tool_calls=True), silently dropping a caller's
 tool_choice="required". That broke call_with_schema's forced-submit
 pattern: gpt-5.5 would reply with text instead of calling the submit
-tool, so structured-output helpers (e.g. research_harness review_loop's
+tool, so structured-output helpers (e.g. a harness review loop's
 submit_meta_review) failed every time and the agent looped.
 """
-import openprogram.providers.openai_codex.openai_codex as cx
-from openprogram.providers.types import SimpleStreamOptions
+import openprogram.models.providers.adapters.openai_codex.openai_codex as cx
+from openprogram.models.providers.types import SimpleStreamOptions
 
 
 class _M:

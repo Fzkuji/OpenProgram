@@ -1,7 +1,8 @@
 "use client";
 
 import styles from "../plugins.module.css";
-import { managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManageEmptyState } from "@/components/ui/manage-page";
+import { CheckIcon, SearchIcon } from "@/components/animated-icons";
 import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 
@@ -20,10 +21,17 @@ export function PluginErrors({ filter }: { filter?: string } = {}) {
     ? rows.filter(([name, msg]) => name.toLowerCase().includes(q) || msg.toLowerCase().includes(q))
     : rows;
   if (rows.length === 0) {
-    return <div className={shared.empty}>{text("No errors.", "没有错误。")}</div>;
+    return (
+      <ManageEmptyState
+        compact
+        icon={<CheckIcon size={20} />}
+        title={text("No issues", "没有问题")}
+        description={text("Plugins that fail to load or validate are listed here.", "加载或校验失败的插件会显示在这里。")}
+      />
+    );
   }
   if (shown.length === 0) {
-    return <div className={shared.empty}>{text("No matches.", "没有匹配结果。")}</div>;
+    return <ManageEmptyState compact icon={<SearchIcon size={20} />} title={text("No matching issues", "没有匹配的问题")} description={text("Try a different search.", "换个关键词试试。")} />;
   }
   return (
     <div>

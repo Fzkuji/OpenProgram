@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.agent.dispatcher import _resolve_model
-from openprogram.providers.models import get_model
-from openprogram.providers.utils.errors import ErrorReason, LLMError
+from openprogram.runtime.conversation.turn_runtime import _resolve_model
+from openprogram.models.providers.catalog.models import get_model
+from openprogram.models.providers.utils.errors import ErrorReason, LLMError
 
 from tests.component.providers._registry_fixture import install_registry
 
@@ -36,7 +36,7 @@ def _seed_registry(monkeypatch):
     })
     # Re-derive the codex model's thinking picker (levels/default) the same way
     # the runtime does at import; install_registry loads a plain config row.
-    from openprogram.providers.openai_codex.runtime import (
+    from openprogram.models.providers.adapters.openai_codex.catalog import (
         ensure_codex_model_registered,
     )
     ensure_codex_model_registered("gpt-5.5")
@@ -99,7 +99,7 @@ def test_codex_55_exposes_full_thinking_levels() -> None:
     gpt-5.5 dropped ``minimal`` (the API 400s on it), so its picker is
     low/medium/high/xhigh/max — see ``thinking_spec.supports_minimal_effort``.
     """
-    import openprogram.providers.openai_codex.runtime  # noqa: F401
+    import openprogram.models.providers.adapters.openai_codex.catalog  # noqa: F401
 
     m = get_model("openai-codex", "gpt-5.5")
     assert m is not None

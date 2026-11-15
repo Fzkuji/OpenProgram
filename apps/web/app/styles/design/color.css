@@ -1,0 +1,260 @@
+/* Colour roles every theme fills in (../themes/). Components name a
+   role, never a hex value.
+
+   Text has four inks, strongest first:
+     --text-bright     titles, the hovered or selected row, values
+     --text-primary    body text, list rows, controls
+     --text-secondary  descriptions, helper text, inactive tabs, counts
+     --text-muted      meta (timestamps, paths, placeholders), disabled
+   Tailwind writes them text-text-bright / -primary / -secondary /
+   -muted; the shadcn parts in components/ui keep the registry's
+   text-foreground / text-muted-foreground, which are the same inks. */
+:root {
+  /* Theme-owned primary colour family. The accent-orange names are legacy
+     Custom CSS entry points, so keep them writable and derive semantic roles
+     from them. Neutral themes use blue, warm themes coral, Aurora teal. */
+  --accent-orange: #6ea8fe;
+  --tabrow-tint: 0%;
+  --accent-fill: #3b82f6;
+  --accent-orange-hover: #2563eb;
+  --theme-accent: var(--accent-orange);
+  --theme-accent-fill: var(--accent-fill);
+  --theme-accent-fill-hover: var(--accent-orange-hover);
+  --accent-blue: var(--theme-accent);
+  --accent-green: #6e9b76;
+  --accent-red: #c24e42;
+  /* +N / −N diff counts: the Claude app's git green and red, picked by
+     each theme's color-scheme. */
+  --git-added: light-dark(#1e9e3c, #32d74b);
+  --git-removed: light-dark(#cd2054, #ff2c56);
+  --accent-yellow: #d4a346;
+  /* Folder glyphs everywhere (sidebar, rails, Memory, Programs, Files):
+     macOS Finder's light folder blue, picked by each theme's
+     color-scheme so every theme shares it. */
+  --folder-color: light-dark(#3f9fe8, #64b2f4);
+  --accent-purple: #a371f7;
+  --accent-cyan: #3bc9db;
+  accent-color: var(--theme-accent); /* native checkbox/radio tint */
+}
+
+/* Fixed interface colours. Each one was a literal in a component and keeps
+   that literal's exact value, so it is the same in every theme; a value
+   written as light-dark() follows the color-scheme of the element that
+   uses it, as it did inline. Values hold no var(), so declaring them here
+   on :root changes nothing about where they resolve. */
+:root {
+  /* Session state markers in the sidebar (sessions/status-marker.tsx) and
+     the refresh button's done flash (sidebar-primary-nav.tsx). */
+  --status-working: #3fb950;
+  --status-needs-input: #ffd014;
+  --status-failed: #f2615a;
+  --status-unread: #5aa6f2;
+  --status-refresh-done: #4ade80;
+
+  /* Project permission tiers: the dot beside Deny / Ask / Allow
+     (projects/permissions-section.tsx). */
+  --permission-deny: #d72518;
+  --permission-ask: #d78a18;
+  --permission-allow: #3a9d5a;
+
+  /* Error text that names no theme role: plugin dialogs, the message
+     editor and the document window. */
+  --error-form: #ef4444;
+  --error-message-edit: #cf5549;
+  --error-document: #d66;
+
+  /* Skills catalog pills: the warn and danger hover tints
+     (skills/discovery/catalog-list.tsx). */
+  --pill-warn: #f59e0b;
+  --pill-danger: #ef4444;
+
+  /* The recording bar's record mark and stop button (menu-overlay/recording-bar):
+     the record dot of the application's icon, fixed art like the icon, and
+     the same red pressed towards black for the stop button's hover. */
+  --recording-red: #ef4444;
+  --recording-red-pressed: #d23c3c;
+
+  /* Context commit timeline (right-sidebar/context-commit-timeline):
+     state badge tint and ink, the error line, the anchor label and the
+     refresh-done flash. */
+  --commit-state-full-bg: rgba(255, 255, 255, 0.06);
+  --commit-state-aged-bg: rgba(227, 179, 65, 0.14);
+  --commit-state-aged: #e3b341;
+  --commit-state-cleared-bg: rgba(248, 81, 73, 0.14);
+  --commit-state-cleared: #f85149;
+  --commit-state-summarized-bg: rgba(110, 118, 129, 0.20);
+  --commit-state-summary-bg: rgba(86, 211, 100, 0.14);
+  --commit-state-summary: #56d364;
+  --commit-error: #f85149;
+  --commit-anchor: #e3b341;
+  --commit-refresh-done: #56d364;
+
+  /* ANSI colours in a program's progress log
+     (right-sidebar/running/program-progress.module.css). */
+  --ansi-red: light-dark(#c62828, #ff7b72);
+  --ansi-green: light-dark(#2e7d32, #7ee787);
+  --ansi-yellow: light-dark(#a15c00, #e3b341);
+  --ansi-blue: light-dark(#1d4ed8, #79c0ff);
+  --ansi-magenta: light-dark(#a21caf, #d2a8ff);
+  --ansi-cyan: light-dark(#0e7490, #56d4dd);
+
+  /* Text on a coloured fill: the canvas snap label and Save button, the
+     Running count badge, the active custom-colour well in Settings and a
+     letter avatar. */
+  --ink-on-fill: #fff;
+  /* A letter avatar with no colour of its own (avatar/avatar.tsx). */
+  --avatar-fallback-bg: #888;
+
+  /* Agent cursor drawing (agent-cursor/agent-cursor.module.css): the
+     white keyline and click-dot ring, and the contact shadow. The
+     traffic-light pulse over an app the Agent controls
+     (menu-overlay/agent-control). */
+  --agent-cursor-keyline: #fff;
+  --agent-cursor-shadow: rgb(0 0 0 / 0.25);
+  --agent-light-pulse: #fff;
+
+  /* The floating browser-control chip (menu-overlay/browser-control). */
+  --browser-control-surface: rgba(32,33,36,.55);
+  --browser-control-ink: #f4f5f8;
+
+  /* Browser tab (center-tabs/browser/browser.module.css): the outline of
+     a pane the Agent drives or is yielding, and the home glyph's second
+     colour, highlight and top edge. */
+  --browser-pane-active: #5b8cff;
+  --browser-pane-yielding: #d4a017;
+  --browser-glyph-secondary: #8b5cf6;
+  --browser-glyph-highlight: rgba(255, 255, 255, 0.24);
+  --browser-glyph-edge: rgba(255, 255, 255, 0.12);
+
+  /* Canvas pane controls (center-tabs/canvas/canvas-controls.module.css):
+     the macOS window lights, the glyph and ring on them, and the split
+     divider's hover and drag colours. */
+  --pane-light-close: #ff5f57;
+  --pane-light-minimize: #febc2e;
+  --pane-light-zoom: #28c840;
+  --pane-light-glyph: rgba(0, 0, 0, 0.6);
+  --pane-light-ring: rgba(0, 0, 0, 0.18);
+  --pane-divider-hover-mix: #fff;
+  --pane-divider-hover-dark: rgb(255 255 255 / .85);
+  --pane-divider-active: #fff;
+  --pane-divider-ring-near: rgb(0 0 0 / .12);
+  --pane-divider-ring-far: rgb(0 0 0 / .18);
+  /* A row lifted on hover where the panel is the input surface itself:
+     tinted a step toward the text colour to show its edge. */
+  --row-raised-bg: color-mix(in srgb, var(--text-primary) 4%, var(--bg-input));
+  /* The short grip on a split's divider and on a sidebar's handle. */
+  --pane-divider-hover: light-dark(color-mix(in oklch, var(--text-muted) 32%, var(--pane-divider-hover-mix)), var(--pane-divider-hover-dark));
+  --pane-divider-active-ring: 0 0 0 .5px light-dark(var(--pane-divider-ring-near), transparent), 0 1px 3px light-dark(var(--pane-divider-ring-far), transparent);
+
+  /* The scrim behind an enlarged message attachment
+     (chat/messages/user-attachments.css). */
+  --scrim-attachment-preview: rgb(0 0 0 / 55%);
+
+  /* The paper a document page or a web page is drawn on: white in every
+     theme, as the page itself is. */
+  --document-paper: #fff;
+
+  /* PDF preview (files/preview/pdf-preview.module.css): the page well,
+     the thumbnail shadow and the current-page outline. */
+  --pdf-viewport-bg: #252527;
+  --pdf-thumb-shadow: #0004;
+  --pdf-thumb-current: #4a90e2;
+
+  /* Hairlines of a GUI tool's activity card and step list
+     (right-sidebar/running/gui-tool-detail.module.css). */
+  --gui-tool-rule: #8884;
+
+  /* Sidebar: the pressed toggle and nav row, the New chat chip and the
+     wordmark gradient (sidebar/nav-classes.ts, sidebar/sidebar.tsx). */
+  --nav-toggle-press: rgba(0,0,0,0.2);
+  --nav-item-press: rgba(0,0,0,0.15);
+  --new-chat-chip: rgba(151,149,140,0.15);
+  --new-chat-chip-hover: rgba(151,149,140,0.25);
+  --wordmark-from: #3B9EFF;
+  --wordmark-to: #A855F7;
+
+  /* The top light edge of a provider's model card
+     (settings/providers/model-list.tsx). */
+  --provider-card-highlight: rgba(255,255,255,0.02);
+
+  /* Theme previews in Settings that draw their own scene
+     (settings/settings-page.module.css): Code rain and Gradient. */
+  --theme-scene-rain-bg: #050a06;
+  --theme-scene-rain-edge: rgba(74, 222, 128, 0.35);
+  --theme-scene-rain-ink: #4ade80;
+  --theme-scene-rain-glow: rgba(74, 222, 128, 0.7);
+  --theme-scene-gradient-1: #3b3fb8;
+  --theme-scene-gradient-2: #6d3bc4;
+  --theme-scene-gradient-3: #0f6d86;
+  --theme-scene-gradient-base: #10111c;
+  /* The Gradient theme's scene behind Launchpad
+     (center-tabs/pages/launchpad/launchpad.module.css): the four blobs and
+     base above, the veil over them, and the glass chrome drawn on the
+     scene; its light-mode blobs, base and ink. Fixed art: the Gradient
+     theme is the same scene whatever the colour style. */
+  --theme-scene-gradient-4: #2b2367;
+  --theme-scene-gradient-veil: rgba(0, 0, 0, 0.18);
+  --theme-scene-gradient-glass: #fff;
+  --theme-scene-gradient-glass-panel: rgba(40, 40, 52, 0.42);
+  --theme-scene-gradient-light-1: #c7cbff;
+  --theme-scene-gradient-light-2: #e2cffd;
+  --theme-scene-gradient-light-3: #bfe8f2;
+  --theme-scene-gradient-light-4: #dcdcfb;
+  --theme-scene-gradient-light-base: #f1f2fb;
+  --theme-scene-gradient-light-veil: rgba(255, 255, 255, 0.12);
+  --theme-scene-gradient-light-ink: #1d1f2b;
+  --theme-scene-gradient-light-rule: rgb(20, 24, 60);
+
+  /* Launchpad (center-tabs/pages/launchpad/launchpad.module.css), drawn
+     like macOS's: the shadow under an app icon, under a lifted one and
+     under an open folder, and the grey remove badge in edit mode. */
+  --launchpad-icon-shadow: rgba(0, 0, 0, 0.22);
+  --launchpad-icon-lifted-shadow: rgba(0, 0, 0, 0.3);
+  --launchpad-folder-shadow: rgba(0, 0, 0, 0.25);
+  --launchpad-remove-bg: rgba(120, 120, 128, 0.92);
+  --launchpad-remove-ring: rgba(255, 255, 255, 0.85);
+  --launchpad-remove-shadow: rgba(0, 0, 0, 0.3);
+  --launchpad-label-shadow: rgba(0, 0, 0, 0.55);
+
+  /* A conversation that is running (base/motion.css .convRunning): the
+     flowing blue, violet and green glow on its sidebar row. */
+  --running-glow-blue: #4f8cff;
+  --running-glow-violet: #a06bff;
+  --running-glow-green: #3ecf8e;
+
+  /* Branch lanes, one colour per branch: the conversation graph's lines,
+     nodes and tags, the Activity panel's branch rows and the browser's
+     new-tab tile initials (lib/format-utils/lane-colors.ts). Lane 0 is the
+     trunk. A categorical set, the same in every theme; no red hue, since a
+     red outline marks a failed node on the graph. */
+  --lane-0: #4f8ef7;   /* blue (trunk) */
+  --lane-1: #5aad4e;   /* green */
+  --lane-2: #d4843a;   /* orange */
+  --lane-3: #9d6fe0;   /* purple */
+  --lane-4: #1f8a8a;   /* deep teal */
+  --lane-5: #2db3d5;   /* cyan */
+  --lane-6: #e0b020;   /* gold */
+  --lane-7: #35b89a;   /* teal */
+  --lane-8: #e066b3;   /* magenta */
+  --lane-9: #6b8dd6;   /* slate blue */
+  --lane-10: #8fbf3f;  /* lime */
+  --lane-11: #d9694f;  /* coral */
+  --lane-12: #52c4c4;  /* aqua */
+  --lane-13: #b08be0;  /* lavender */
+  --lane-14: #c79a4a;  /* tan */
+  --lane-15: #e08a3a;  /* amber */
+  --lane-16: #6fae6f;  /* sage */
+  --lane-17: #d05fa0;  /* rose */
+
+  /* Code highlighting in messages (chat/messages/bubbles.css, highlight.js
+     classes): one restrained palette per scheme so code reads as code,
+     not a rainbow. light-dark() follows the color-scheme of the code
+     block that uses it. */
+  --hl-keyword: light-dark(#a626a4, #c792ea);
+  --hl-string: light-dark(#3f7d3a, #a5d6a7);
+  --hl-number: light-dark(#b25d00, #f7a76c);
+  --hl-comment: light-dark(#8a8a80, #7f8a8d);
+  --hl-title: light-dark(#2560c9, #82aaff);
+  --hl-type: light-dark(#b45309, #ffcb6b);
+  --hl-attr: light-dark(#0e7490, #89ddff);
+}

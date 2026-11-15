@@ -1,0 +1,77 @@
+<title>Programs 页面</title>
+<meta name="description" content="Programs 页面如何区分文件位置和调用逻辑，以及 Program 表单如何在正确的标签页打开。">
+<h1>Programs 页面</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 230" role="img" aria-label="左侧文件树：programs、workflows，其中 paper_search、literature_review、survey_pipeline 各出现一次。右侧是选中的 survey_pipeline 的调用树：它直接调用 literature_review，后者调用 paper_search，属于传递依赖。">
+  <text class="t-big" x="0" y="24">文件树</text>
+  <text class="t-soft" x="0" y="46">代码在哪里</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="84">programs/</text>
+  <text class="t-cmd notranslate" translate="no" x="20" y="110">workflows/</text>
+  <text class="t-cmd notranslate" translate="no" x="40" y="136">paper_search</text>
+  <text class="t-cmd notranslate" translate="no" x="40" y="162">literature_review</text>
+  <text class="t-cmd notranslate" translate="no" x="40" y="188">survey_pipeline</text>
+  <line class="ln-faint" x1="250" y1="10" x2="250" y2="220"/>
+  <text class="t-big" x="280" y="24">调用树或图</text>
+  <text class="t-soft" x="280" y="46">谁调用谁</text>
+  <text class="t-cmd notranslate" translate="no" x="280" y="84">survey_pipeline</text>
+  <text class="t-soft" x="520" y="84">选中</text>
+  <path class="ln" d="M292 94V124H316"/>
+  <text class="t-cmd notranslate" translate="no" x="324" y="130">literature_review</text>
+  <text class="t-soft" x="520" y="130">直接</text>
+  <path class="ln" d="M336 140V170H360"/>
+  <text class="t-cmd notranslate" translate="no" x="368" y="176">paper_search</text>
+  <text class="t-soft" x="520" y="176">传递</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>文件树</strong><small>代码在哪里；每个 Program 只出现一次</small></li>
+  <li><strong>调用树或图</strong><small><code translate="no">survey_pipeline</code>，选中</small><small><code translate="no">literature_review</code>，直接</small><small><code translate="no">paper_search</code>，传递</small></li>
+</ol>
+</figure>
+<p class="note">表示调用方向，不是文件夹包含关系。树和图共用同一份关系数据，从源码得出（静态 Program import 和 Agentic Programming 调用）。代码：<code translate="no">apps/web/components/programs/programs-page.tsx</code>。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">区域</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件树</th><td>文件夹、文件、数量和 Git 状态（clean、modified）</td></tr>
+<tr><th scope="row">详情头</th><td>路径、说明、类型、HEAD 状态、签名、直接和传递 Workflow 数、分支和提交</td></tr>
+<tr><th scope="row">调用行</th><td>名称、关系、如何到达</td></tr>
+</tbody>
+</table>
+
+<section id="portable-workflow-integration">
+<h2>目录和表单启动</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">目录</th><td>Programs 页面、收藏栏和参数表单共用一份可调用目录；HTTP 刷新和 WebSocket 更新写入同一 store</td></tr>
+<tr><th scope="row">刷新失败</th><td>保留上次成功的缓存</td></tr>
+<tr><th scope="row">过期响应</th><td>不能覆盖更新的目录</td></tr>
+<tr><th scope="row">使用</th><td>只打开表单</td></tr>
+<tr><th scope="row">函数缺失</th><td>刷新目录并显示明确错误</td></tr>
+<tr><th scope="row">切换聊天</th><td>取消上一个表单请求</td></tr>
+</tbody>
+</table>
+<p class="note">约定：<a href="workflow.html">Workflow 包</a>。</p>
+
+<h3 id="tab-ownership">标签页归属</h3>
+<p>启动器在解析 Program 前记下选中的标签页和聊天。旧请求、取消、切换聊天或标签页都不会在别的视图打开表单。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">选中的视图</th><th scope="col">成功后</th></tr></thead>
+<tbody>
+<tr><th scope="row">活动 session</th><td>保留草稿和运行中的任务</td></tr>
+<tr><th scope="row">新标签页</th><td>原地变成草稿 session</td></tr>
+<tr><th scope="row">其他视图</th><td>打开单独的草稿，保留其标签页</td></tr>
+</tbody>
+</table>
+<p class="note">草稿先被选中并初始化，然后打开表单。目录失败时视图不变并显示错误。显式发送前不运行也不提交。</p>
+
+<details>
+<summary>验证</summary>
+<ul>
+<li>在新标签页点击真实的侧栏收藏，编辑任务字段后不提交关闭。</li>
+<li>保留另一个活动任务及其草稿。标签页变化时取消目录解析。</li>
+<li>Program 启动器单元测试、渲染的浏览器测试、Web 单元和源码检查、TypeScript、生产导出、仓库约定、文档链接。已安装 App 的验收是单独的关卡。</li>
+<li>保留现有 runtime 和浏览器 API；不做外部产品对齐和依赖升级。</li>
+</ul>
+</details>
+</section>

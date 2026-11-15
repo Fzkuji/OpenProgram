@@ -1,0 +1,579 @@
+<title>文件变更、Review 与恢复</title>
+<meta name="description" content="App、Web、TUI 与 runtime 共用的文件归属、版本历史、Undo、Revert、Rewind、Review 范围、冲突和恢复存储。">
+<h1>文件变更、Review 与恢复</h1>
+<p>历史回退标记只显示在已加载窗口内对应的消息旁。锚点不在当前窗口时，不把旧标记挪到最新消息后面。待处理的回退操作仍在当前末尾显示。</p>
+
+<h2 id="model">Undo、Revert、Rewind</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">撤销最新轮次</th><th scope="col">撤销这一轮</th><th scope="col">回退到这里</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>当前分支的最新轮次</td><td>某一历史轮次</td><td>源分支上所选检查点之后的后缀</td></tr>
+<tr><th scope="row">文件</th><td>所有文件通过预检后恢复</td><td>后续没有同路径依赖且摘要一致时才恢复</td><td>从日志投影目标状态，在持久意图下应用</td></tr>
+<tr><th scope="row">对话</th><td>HEAD 和所有消息保留</td><td>不变</td><td>当前分支回退；撤回的后缀只作恢复历史，不成为另一分支</td></tr>
+<tr><th scope="row">分支</th><td>不创建或移动</td><td>HEAD 保留</td><td>分支身份和名称不变；新消息延续回退后的当前分支</td></tr>
+<tr><th scope="row">冲突</th><td>任一路径不一致，整个操作被阻止</td><td>不做自动反向合并</td><td>任一不可恢复项都会阻止</td></tr>
+<tr><th scope="row">之后</th><td>追加撤销事务；卡片显示 Reverted；预检通过时可 Redo</td><td>当前分支 Review 折叠该撤销；预检通过时可 Reapply</td><td>预填原提示；没有文件对齐选择</td></tr>
+</tbody>
+</table>
+<p class="note">轮次卡片显示适用的 Undo 或 Revert；用户检查点打开 Restore 面板。Redo 和 Reapply 是新事务，没有线性 redo 栈。对话记录不提供分支操作；Copy conversation 在对话的 ⋯ 菜单里。</p>
+
+<h2 id="shared-workspace-contract">共享工作区与当前分支回退</h2>
+<p>对话分支记录消息路径，并不拥有独立文件系统。显式分支和重试保留各自的对话版本；切换它们不恢复文件、不暂停工具，也不要求选择文件版本。模型收到当前工作区说明，编辑前必须重新读文件。</p>
+<p>Rewind 是另一种操作：在当前分支撤回选中提示及后续内容；选择代码恢复时，同时恢复对应的已记录文件修改。</p>
+<p>已有兄弟分支及其共享消息保持完整。撤回内容保留在持久恢复存储中，供 Undo 和崩溃恢复使用，但不在分支列表、版本导航、对话图和普通上下文中出现。</p>
+<p>新消息延续同一命名分支。Undo 和 Redo 在同一分支切换撤回视图；明确说明其现有语义只改变消息，不恢复文件。</p>
+<p>恢复不能覆盖其他分支、其他会话或用户的后续写入。代码恢复遇到不安全、缺失或冲突文件时，在任何文件或对话变化之前整体阻止；仅回退对话仍是显式选项。</p>
+<p>预览绑定 HEAD、目标、文件状态和模式。重复请求重放记录结果；失败回滚，中断操作恢复后才展示。旧意图保持原有恢复语义。旧文件对齐标记不能阻止消息或工具。</p>
+<table class="stack"><thead><tr><th scope="col">验收路径</th><th scope="col">要求的结果</th></tr></thead><tbody>
+<tr><th scope="row">编辑后切换、失败重试、旧不一致标记</th><td>文件不变；消息和通常允许的工具可用；切换时清除旧读取基线。</td></tr>
+<tr><th scope="row">Rewind 后发送，包括首条提示</th><td>分支身份和名称不变；不提供已撤回版本；当前文件符合已确认的恢复。</td></tr>
+<tr><th scope="row">兄弟分支共享部分撤回历史</th><td>兄弟分支及必要祖先保留；只撤回选中分支。</td></tr>
+<tr><th scope="row">冲突、过期预览、运行中的写入、归档</th><td>对话和文件不会部分改变；拒绝原因明确说明恢复条件。</td></tr>
+<tr><th scope="row">Undo、Redo、重复请求、应用期间重启</th><td>分支可见性、身份和文件一致；记录的事务决定结果。</td></tr>
+</tbody></table>
+
+<p>分支身份独立于末尾消息。两次回退落在同一检查点或 ROOT 时，各 ref 保留自己的名称，并可按分支 id 分别选择。Undo 标记属于该身份。旧客户端按 head 选择的方式在没有歧义时保持兼容。</p>
+
+<h2 id="architecture">事实来源</h2>
+<svg class="fig-wide" viewBox="0 0 680 244" role="img" aria-label="可信文件修改工具（write、edit、apply_patch、经验证的适配器）把修改回执写入修改日志，日志提供本轮和当前分支 Review。Git 提供工作区 Review。普通 Bash 和外部进程没有回执。历史规划器读取日志、对话 DAG 和 Git，然后写持久意图、应用工作区事务，仅在对话模式下移动 HEAD。">
+  <defs><marker id="fm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="28">可信修改工具</text>
+  <text class="t-soft" x="0" y="50">write、edit、apply_patch、</text>
+  <text class="t-soft" x="0" y="68">经验证的适配器</text>
+  <line class="ln" x1="170" y1="23" x2="248" y2="23" marker-end="url(#fm-a)"/>
+  <text class="t-soft" x="178" y="14">回执</text>
+  <text class="t-big" x="260" y="28">修改日志</text>
+  <text class="t-soft" x="260" y="50">前后摘要、版本内容</text>
+  <line class="ln" x1="432" y1="23" x2="500" y2="23" marker-end="url(#fm-a)"/>
+  <text class="t-big" x="512" y="28">Review</text>
+  <text class="t-soft" x="512" y="50">本轮、当前分支</text>
+  <text class="t-no" x="0" y="112">普通 Bash、外部写入</text>
+  <text class="t-soft" x="0" y="132">无回执，无轮次 Undo</text>
+  <text class="t-big" x="260" y="112">Git 工作区</text>
+  <text class="t-soft" x="260" y="132">HEAD、index、worktree</text>
+  <line class="ln" x1="432" y1="107" x2="500" y2="107" marker-end="url(#fm-a)"/>
+  <text class="t-big" x="512" y="112">Review</text>
+  <text class="t-soft" x="512" y="132">工作区</text>
+  <text class="t-big" x="0" y="196">对话 DAG</text>
+  <text class="t-soft" x="0" y="216">节点、HEAD、分支</text>
+  <text class="t-big" x="260" y="196">历史规划器</text>
+  <text class="t-soft" x="260" y="216">读取三者；只有日志</text>
+  <text class="t-soft" x="260" y="234">能授权恢复</text>
+  <line class="ln" x1="170" y1="191" x2="248" y2="191" marker-end="url(#fm-a)"/>
+  <line class="ln" x1="432" y1="191" x2="500" y2="191" marker-end="url(#fm-a)"/>
+  <text class="t-big" x="512" y="196">持久意图</text>
+  <text class="t-soft" x="512" y="216">加锁、应用、校验</text>
+  <text class="t-soft" x="512" y="234">需要时再移动 HEAD</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>可信修改工具</strong><small>write、edit、apply_patch、经验证的适配器</small><p class="refused">普通 Bash、外部写入：无回执，无轮次 Undo</p></li>
+  <li><strong>修改日志</strong><small>提供本轮和当前分支 Review</small></li>
+  <li><strong>Git 工作区</strong><small>提供工作区 Review</small></li>
+  <li><strong>历史规划器</strong><small>读取这三者和对话 DAG；只有日志能授权恢复</small></li>
+  <li class="flow-end"><strong>持久意图</strong><small>加锁、应用、校验，需要时再移动 HEAD</small></li>
+</ol>
+<p class="note">Bash 可以在沙箱或 worktree 中运行。Git 显示当前变更，但不证明它们属于哪一轮，也不授予 Undo。</p>
+
+<h2 id="file-window">文件窗口</h2>
+<p>文件先以预览打开。进入编辑后自动保存。History 列出人和模型的修改。</p>
+<table class="stack">
+<thead><tr><th scope="col">格式</th><th scope="col">预览</th><th scope="col">编辑</th></tr></thead>
+<tbody>
+<tr><th scope="row">文本、代码、Markdown</th><td>渲染</td><td>源码，自动保存</td></tr>
+<tr><th scope="row">DOCX、PPTX、XLSX</th><td>本地引擎，完整页面或幻灯片；不能用文本提取代替</td><td>本地引擎完整编辑，保留公式和结构</td></tr>
+<tr><th scope="row">DOC、PPT、XLS</th><td>支持</td><td>显式另存为 OOXML，绝不覆盖原文件</td></tr>
+<tr><th scope="row">ODT、ODS、ODP</th><td>支持</td><td>原格式导出</td></tr>
+<tr><th scope="row">CSV、TSV</th><td>表格</td><td>文本</td></tr>
+<tr><th scope="row">PDF</th><td>连续页面、缩放、搜索、目录、缩略图</td><td>高亮和自由文本批注；上限 64 MiB</td></tr>
+<tr><th scope="row">PNG、JPEG、WebP</th><td>缩放</td><td>裁剪、旋转、绘制、形状、文字。转换会生成单独的 PNG。上限 64 MiB、1600 万像素、每边 16384 px。</td></tr>
+<tr><th scope="row">动画或 16 位 PNG、BMP、GIF、SVG、TIFF</th><td>支持</td><td>只读；保存绝不静默栅格化</td></tr>
+<tr><th scope="row">PSD</th><td>合成图和图层列表</td><td>验证无损往返之前只读</td></tr>
+<tr><th scope="row">音频、视频</th><td>本地 HTML 播放器</td><td>只读</td></tr>
+<tr><th scope="row">损坏、加密、过大、不支持</th><td>明确状态和下载入口</td><td>无</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">编辑后切换标签页</th><td>修改先存为本地草稿，再后台写入。没有保存操作，也没有常驻的“已保存”标签。</td></tr>
+<tr><th scope="row">其他程序改了文件</th><td>“文件已被其他操作修改。”草稿保留；可查看磁盘版本或另存副本。绝不覆盖。</td></tr>
+<tr><th scope="row">打开旧版本</th><td>使用当前文件的预览器，只读。恢复是一次新记录的操作，保留恢复前内容，可重新应用。</td></tr>
+</tbody>
+</table>
+
+<details id="unified-protocol">
+<summary>打开方式、适配器与引擎</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件引用</th><td>稳定的项目或会话归属加相对路径。显示路径不是凭证。</td></tr>
+<tr><th scope="row">选择适配器</th><td>先校验扩展名、类型和内容</td></tr>
+<tr><th scope="row">适配器接口</th><td>只接收文档内容和版本，不能访问磁盘。提供字节或 Blob 导出、变更和错误事件、销毁。</td></tr>
+<tr><th scope="row">加载</th><td>大型 Office 和图像资源只在相关文件时加载。KaTeX 保留完整 WOFF2，不带旧格式回退。预算：初始传输压缩后 2 MiB，每个分块压缩后 350 KiB。</td></tr>
+<tr><th scope="row">大型二进制</th><td>有界字节上传或本地暂存，不走聊天消息。读取时限制大小；取消时清理临时文件。</td></tr>
+<tr><th scope="row">活动内容</th><td>引擎消息校验来源、实例和请求 ID。文档脚本、宏、活动 HTML 和 SVG 没有主窗口权限。</td></tr>
+<tr><th scope="row">第三方服务</th><td>只能由用户显式配置，并告知文件会发送过去</td></tr>
+<tr><th scope="row">无法安全写回原格式</th><td>导出带标记的副本；绝不把 PNG 或 OOXML 字节写到其他扩展名下</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">引擎</th><th scope="col">角色</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/mozilla/pdf.js">PDF.js</a></th><td>PDF 查看器，固定版本</td></tr>
+<tr><th scope="row"><a href="https://github.com/ONLYOFFICE/DocumentServer">ONLYOFFICE</a></th><td>Office 编辑，本地，可选安装。完整服务端仍可配置为适配器。比较过的候选：<a href="https://github.com/agentbridges-ai/onlyoffice-browser">OnlyOffice browser/WASM</a>、<a href="https://github.com/LibreOffice/core/blob/master/static/README.wasm.md">LibreOffice WASM</a>。</td></tr>
+<tr><th scope="row"><code translate="no">fabric</code></th><td>位图编辑</td></tr>
+<tr><th scope="row"><a href="https://github.com/Agamnentzar/ag-psd">ag-psd</a>、<code translate="no">utif</code></th><td>PSD 和 TIFF 解码。ag-psd 的色彩模式、文字图层和效果限制决定了必须保留原文件。</td></tr>
+<tr><th scope="row"><a href="https://www.photopea.com/api/">Photopea</a></th><td>第三方托管：默认绝不加载，也绝不发送本地文件</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="markdown-document-safety">Markdown 渲染</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">原始 HTML</th><td>转义</td></tr>
+<tr><th scope="row">链接</th><td>本地引用、裸 fragment、HTTP(S)、mailto。协议相对地址使用 HTTPS。</td></tr>
+<tr><th scope="row">图片</th><td>限定范围的本地文件 URL 和 HTTP(S)。拒绝 data 和可执行协议。</td></tr>
+<tr><th scope="row">本地查询</th><td>绝不携带授权参数；SVG fragment 与磁盘路径分开</td></tr>
+<tr><th scope="row">公式</th><td>在字面代码之外识别为 token，排版前转义，绝不通过原始占位符替换恢复</td></tr>
+<tr><th scope="row">不在此子集</th><td>Wiki 链接、嵌入、大纲、Agent 段落附件</td></tr>
+</tbody>
+</table>
+
+<h3 id="markdown-heading-navigation">Markdown 标题导航</h3>
+<dl class="pairs">
+<dt>键</dt><dd>取自可见的行内标题文本：保留 Unicode 字母和数字，转小写，去掉 <code translate="no">_</code> 和 <code translate="no">-</code> 以外的标点，连续空白变成 <code translate="no">-</code>。为空时用 <code translate="no">section</code>。</dd>
+<dt>重复</dt><dd>取第一个未使用的数字后缀，单次解析内唯一，也考虑与显式编号名的碰撞。每次渲染重置。</dd>
+<dt>裸 fragment</dt><dd>百分号解码一次；只按标题键属性搜索来源文章，绝不拼入 CSS 选择器。无效或缺失时不滚动。</dd>
+<dt>跨文件链接</dt><dd>经现有目标解析器和授权打开路径保留 fragment</dd>
+<dt>段落请求</dt><dd>临时视图状态，不进入 <code translate="no">CenterTab</code>、标签历史、快照和窗口迁移载荷。包含唯一序号、物理标签 id、预期文档身份和 fragment。</dd>
+</dl>
+<details>
+<summary>段落请求细节</summary>
+<ul>
+<li>项目文件打开使用解析后的实际目标 id，包括历史复用的标签。附件预览使用解析后的文件预览 id，而不是可能仍停在聊天的 <code translate="no">activeId</code>。</li>
+<li>被拒绝的自动打开不创建请求；已接受的无段落打开会清除旧请求。关闭或改指向使其失效。消费时比较序号，旧渲染不能移除新请求。</li>
+<li><code translate="no">PersistentFilePanes</code> 为每个文档身份保留一个物理 <code translate="no">DocumentWindow</code>。段落请求把活动别名选为首选宿主，绝不创建第二个 <code translate="no">DocumentController</code>。</li>
+<li>请求作为视图上下文经过 <code translate="no">FileTabPane</code>、<code translate="no">DocumentWindow</code>、<code translate="no">FileViewer</code>、<code translate="no">TextViewer</code>，保留授权。它把源码模式切到预览而不丢弃未保存字节，并等待该草稿或版本渲染完成。</li>
+<li>所选历史版本中的链接使用该版本的标题。附件路径保留只读标记和原会话。</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">要求的结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">Unicode、行内文本、重复标题、代码围栏</th><td>键稳定且唯一；只有标题参与</td></tr>
+<tr><th scope="row">两个已挂载文档有相同标题</th><td>裸 fragment 只滚动来源文章</td></tr>
+<tr><th scope="row">跨文件加载或重复同段请求</th><td>加载期间保留；每个序号在渲染后滚动一次</td></tr>
+<tr><th scope="row">历史复用 id 或聊天活动时的预览</th><td>到达实际文件面板</td></tr>
+<tr><th scope="row">两个别名、未保存草稿、源码模式、所选版本</th><td>一个控制器和缓冲区；导航正确的别名和渲染版本</td></tr>
+<tr><th scope="row">被拒绝的自动打开、无段落重开、关闭、改指向、重新加载</th><td>不应用过期请求</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="pdf-reading-annotations">PDF 阅读与批注</h3>
+<dl class="pairs">
+<dt>布局</dt><dd>文档标签在扁平工具栏之上；可移除的 180 px 左侧栏含缩略图和目录；连续页面。批注行按需出现；窄面板换行，不遮挡正文。</dd>
+<dt>控件</dt><dd>翻页、适合宽度、适合页面、数字缩放、选择、文档内链接、搜索高亮。高 32 px，应用字体 13 px。只显示已实现的工具。</dd>
+<dt>颜色</dt><dd>应用主题 token。参考：ink #202124、toolbar #27272a、canvas #151517、paper #ffffff、divider #414145、focus #4a90e2。</dd>
+<dt>样式表</dt><dd>上游查看器 CSS 限定在 <code translate="no">[data-pdf-reader]</code> 内，含根变量，通用类名不会改变外壳</dd>
+<dt>复制</dt><dd>合并排版换行；保留段落和标点；中日韩文本不插空格；保留普通连字符；去掉软连字符。只改剪贴板，只作用于文本层。可见的复选框可保留原换行。</dd>
+<dt>批注</dt><dd>标准 PDF 高亮和自由文本批注，经 <code translate="no">DocumentController</code> 富编辑器租约、持久草稿和版本检查保存。草稿字节更新不重建查看器，也不丢撤销栈。历史和附件只读。</dd>
+<dt>禁用</dt><dd>PDF 脚本和外部上传。不在范围内：原文编辑、OCR、页面增删、格式转换。</dd>
+</dl>
+
+<h3 id="pdf-runtime-compatibility">PDF 运行环境</h3>
+<dl class="pairs">
+<dt>解码器</dt><dd>PDF.js 6.3.289，模块和 worker 均取自 <code translate="no">legacy/build</code>，由同源 <code translate="no">/document-assets/pdfjs/</code> 提供。清单记录版本和发行分支。保留本地 CMap、字体、WASM 和许可清单。</dd>
+<dt>为何用 legacy</dt><dd>兼容代码必须同时在页面和 worker 中加载；只在页面打补丁修不了 worker。现代构建需要 <code translate="no">Uint8Array.prototype.toHex</code>。上游：<a href="https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions#faq-support">浏览器支持</a>。</dd>
+<dt>外壳策略</dt><dd><code translate="no">connect-src 'self' blob:</code> 让解码器通过 object URL 读取保留的版本。外部 HTTP 和 WebSocket 仍被阻止；blob 脚本、eval、object 和第三方 frame 仍关闭。</dd>
+<dt>查看器参考</dt><dd><a href="https://github.com/mozilla/pdf.js/tree/v6.3.289/web">viewer 源码</a>、<a href="https://pdfexpert.com/features">PDF Expert 功能</a>。不使用 <a href="https://www.embedpdf.com/docs/react/viewer/getting-started">EmbedPDF</a>：第二个渲染引擎对阅读、高亮和批注没有帮助。</dd>
+</dl>
+
+<h3 id="optional-office-installation">Office 安装与加载</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">默认构建</th><td>App、runtime 和 Python 构建都不包含也不下载 Office 资源。PDF 独立。</td></tr>
+<tr><th scope="row">选择</th><td>打开 Office 文档只检查本地是否可用。缺失时显示：支持格式、约 699 MiB、本地处理、ONLYOFFICE 许可、安装和取消。取消不下载任何内容。</td></tr>
+<tr><th scope="row">安装</th><td>所有者鉴权的本地来源 POST；固定发布 URL、固定压缩包 SHA-256。下载和解压有界，拒绝不安全路径和链接，校验完整清单，原子发布到 profile 缓存。并发请求共享一次安装。</td></tr>
+<tr><th scope="row">失败</th><td>继续使用之前选定的资源包；删除临时下载</td></tr>
+<tr><th scope="row">安装之后</th><td>当前 worker 无需重启即可提供，文档自动打开。关闭文档会停止它的请求；已请求的安装可继续完成。</td></tr>
+<tr><th scope="row">旧资源包</th><td>profile 资源仍可用；旧版本 App 内置资源不再选用。开发暂存是独立命令，普通构建忽略。</td></tr>
+<tr><th scope="row">隔离</th><td>独立来源，只允许资源树 GET 和 HEAD；不能访问主 API、鉴权或 WebSocket。两侧页面校验来源、实例、请求。宏默认关闭。没有独立来源的远程部署禁用编辑。</td></tr>
+<tr><th scope="row">加载</th><td>全尺寸渲染面上方居中的主题化遮罩，区分“加载资源”和“打开文档”。没有模拟百分比。错误会替换状态并提供重试。</td></tr>
+<tr><th scope="row">销毁</th><td>固定的 mount 和 activate API，关闭时立即销毁待启动宿主。AbortSignal 在有界期限内取消可用性检查和激活。失败实例绝不挂到控制器。</td></tr>
+<tr><th scope="row">不提供</th><td>通用扩展注册表、自动更新、卸载控件、第三方上传</td></tr>
+</tbody>
+</table>
+
+<h3 id="file-navigation">前进与后退</h3>
+<p>每个标签页有自己的页面历史：文件夹 A、子文件夹 B、文件 1、文件 2。后退后打开新位置会替换前进历史。文件夹恢复路径、展开和滚动；文件保持自动保存。</p>
+<p class="note">只有显式定位、搜索导航或恢复会移动视口；列表分页、后台刷新和大小更新不会。导航历史绝不与文件版本 History 混合、写磁盘或轮询。</p>
+
+<h2 id="durable-history">版本生命周期</h2>
+<table class="stack">
+<thead><tr><th scope="col">情况</th><th scope="col">存储</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">一轮内多次修改</th><td>保留最初的 before，更新 after。新版本提交后才替换记录。</td><td>一个净变更</td></tr>
+<tr><th scope="row">保存被中断</th><td>待确认标记。不推断成功，不从磁盘编造 after。</td><td>未完成，无法精确恢复；绝不显示“无变更”</td></tr>
+<tr><th scope="row">已取消且确认未提交</th><td>标记为 aborted</td><td>无变更</td></tr>
+<tr><th scope="row">清单损坏或不支持</th><td>保留；不创建空历史，不覆盖</td><td>明确错误。只有清单确实不存在才算无记录。</td></tr>
+<tr><th scope="row">重新打开会话</th><td>同一批持久记录；不依赖脚本输出或内存</td><td>相同文件，可 Undo 或 Reapply</td></tr>
+<tr><th scope="row">文件后来被修改</th><td>不变</td><td>阻止恢复，保留后续修改</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>保存顺序与发布</summary>
+<ol>
+<li>把每个 before 和 after 写成独立完整的文件；校验；fsync 版本目录。</li>
+<li>发布清单。更新失败时已引用内容不变；失败的尝试绝不覆盖已发布版本。</li>
+<li>只有明确取消失败的尝试后，重试才重新读取当前文件作为 before。成功的修改始终保留本轮最初的 before。</li>
+</ol>
+<ul>
+<li>普通文件快照在读取前后比较描述符元数据，在打开前和读取后比较路径元数据。</li>
+<li>设备号和 inode 必须一致；来自不同操作系统 API 的元数据绝不当作同类比较。任何变化都中止发布。</li>
+<li>存储的模式取自路径观测。</li>
+<li>Windows 上的旧版迁移在刷新前以可写方式打开暂存文件，并保留源文件直到发布成功。</li>
+</ul>
+<p>旧清单和 <code translate="no">blob_ref</code> 无需批量重写即可读取。丢失的历史不重建。系统崩溃和无视锁的外部程序可能需要手动恢复：保留证据，拒绝不确定的覆盖。</p>
+</details>
+
+<details id="document-history">
+<summary>发布文档：<code translate="no">write(file_path, source_path=...)</code></summary>
+<ul>
+<li><code translate="no">content</code> 和 <code translate="no">source_path</code> 二选一。来源是有读权限的本地普通文件，上限 64 MiB。路径相同、目录、链接、过大或不可读的来源在修改前失败。</li>
+<li>目标保留写授权、读取基线和审批指纹。来源和目标指纹都参与审批等待，发布前再次校验。</li>
+<li>字节先写入目标目录的完整临时文件，再替换。失败时清理并保留目标。写原始字节，绝不做文本转换。</li>
+<li>建议锁只串行化配合的写入者。Windows 替换前关闭缺少删除共享的句柄并再次校验；没有操作系统级条件替换。</li>
+<li>先读：模型读原文件，再生成暂存版本。二进制读取返回类型和字节数。新文件无需先读。</li>
+<li>生成器都走这条路径；文本工具保留 write、edit、apply_patch，共用 prepare、commit、abort。<code translate="no">CheckpointStore</code> 持有状态；Review 和摘要是投影。</li>
+<li>不提供：Word 修订、PPT 可视差异、Office 语义差异、远程存储（声称可恢复前需要条件写入和可校验的版本 ID）、全盘扫描、轮询、插件注册表。</li>
+</ul>
+</details>
+
+<details id="human-edits">
+<summary>人工编辑、自动保存与编辑器生命周期</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row">共用路径</th><td>人和模型的写入共用版本校验、完整文件发布和不可变的前后版本。<code translate="no">project_file_write</code> 幂等记录保存结果和指纹，不保存版本。</td></tr>
+<tr><th scope="row">归属</th><td>人工记录使用 <code translate="no">actor=user</code>；模型记录链接真实会话和轮次。不伪造聊天轮次；人工历史绝不变成侧栏会话。History 按文件聚合；轮次 Review 保留归属。</td></tr>
+<tr><th scope="row">保留</th><td>人工项目修改归项目，模型记录归会话。聚合索引引用版本，不复制。归档会话仍可读。永久删除会移除所属版本，缓存不得再显示；记忆来源显示“原会话已删除”或失去链接。项目文件和人工历史在聊天删除后仍在。移动的项目按当前位置恢复；离线时只读。旧历史分批回填；无法确认归属的显示不可用。</td></tr>
+<tr><th scope="row">自动保存</th><td>编辑器撤销处理即时修改。草稿先持久化；文件在短合并窗口后发布，绝不等待历史周期。每次发布校验读取版本；重试幂等；迟到响应不能覆盖更新的草稿。失败保留草稿和可重试错误，不关闭标签。</td></tr>
+<tr><th scope="row">历史周期</th><td>连续编辑间隔约五分钟。切换文档、结束编辑或恢复也会结束周期。重启读取记录，绝不读当前文件。</td></tr>
+<tr><th scope="row">富编辑器</th><td>与标签无关：视图隐藏时导出引擎继续存活，最新内容进入持久草稿后才释放。Office iframe 不因 React 重挂载或 DOM 移动而重建。关闭、重命名和恢复等待最终导出；失败保留编辑器和草稿。预览和编辑共用实例；历史实例不能写。重命名期间禁用编辑，成功后重新打开新路径。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="journal">修改日志</h2>
+<p>每轮一个清单，由 <code translate="no">CheckpointStore</code>（<code translate="no">openprogram/state/store/snapshot/checkpoint/</code>）管理。每个文件条目：</p>
+<dl class="pairs">
+<dt><code translate="no">path</code>、<code translate="no">operation</code></dt><dd><code translate="no">create</code>、<code translate="no">modify</code>、<code translate="no">delete</code>、<code translate="no">rename</code></dd>
+<dt><code translate="no">before</code>、<code translate="no">after</code></dt><dd><code translate="no">{kind: "regular", digest, blob_ref, mode, size}</code> 或 <code translate="no">{kind: "absent"}</code></dd>
+<dt><code translate="no">status</code></dt><dd>prepared、committed 或 aborted，带 <code translate="no">prepared_at</code>、<code translate="no">committed_at</code></dd>
+<dt><code translate="no">stats</code>、<code translate="no">diff_state</code></dt><dd>增删行数、是否二进制；available、large、binary 或 timeout</dd>
+<dt><code translate="no">recoverability</code></dt><dd>exact 或 unavailable，带 <code translate="no">unavailable_reason</code></dd>
+<dt><code translate="no">mutation_sequence</code></dt><dd>持久且单调；多轮折叠用它，而不是 DAG 顺序</dd>
+</dl>
+<details>
+<summary>不变量</summary>
+<ul>
+<li>prepared 在写入前持久化；确认 after 状态后才 committed。准备失败时修改工具在碰磁盘前停止。</li>
+<li><code translate="no">absent</code> 表示已确认不存在。读取基线失败记为 <code translate="no">recoverability=unavailable</code>，绝不记 absent。</li>
+<li><code translate="no">unavailable</code> 只用于已记录、因大小或类型策略省略内容的修改，不用于掩盖日志失败。</li>
+<li>同一轮同文件的修改折叠为最初 before 到最后 after 的净变更；重命名保留谱系。普通文件的前后都保留内容引用。</li>
+<li>路径在捕获、规划和应用时重新规范化；用已校验的句柄或 no-follow 原语检查父链、叶子 lstat、设备、inode 和链接数。</li>
+<li>Revert、Restore、Reapply 也是事务；原记录不可变。当前分支只折叠活动谱系。</li>
+<li>每个提示定义 <code translate="no">before_turn</code>，assistant 完成定义 <code translate="no">after_turn</code>；界面明确显示恢复的边界。</li>
+</ul>
+</details>
+
+<h3 id="review-scopes">三种 Review 范围</h3>
+<table class="stack">
+<thead><tr><th scope="col">范围</th><th scope="col">来源</th><th scope="col">包含</th><th scope="col">恢复</th></tr></thead>
+<tbody>
+<tr><th scope="row">本轮</th><td>某 origin 轮次已提交的变更集</td><td>父轮变更集加所属子任务，各保留自己的 producer 轮次，去重，显示执行者</td><td>Undo 或 Revert：闭包内都有精确回执，执行者已结束，摘要一致</td></tr>
+<tr><th scope="row">当前分支</th><td>活动谱系的日志投影</td><td>所有轮次和显式 revert、rewind、reapply；不含兄弟分支和外部写入</td><td>从具体轮次或检查点发起；没有一键分支 Undo</td></tr>
+<tr><th scope="row">工作区</th><td>Git diff 加 <code translate="no">git ls-files --others --exclude-standard</code></td><td>未提交的变更，遵守 <code translate="no">.gitignore</code>；Unstaged、Staged、Branch、Commit</td><td>没有轮次 Undo。Git Discard 是单独入口。非 Git：不可用。</td></tr>
+</tbody>
+</table>
+
+<h2 id="rewind">Rewind</h2>
+<p>一个计划，一个事务。WebSocket 的 <code translate="no">phase</code> 默认 <code translate="no">plan</code>；<code translate="no">apply</code> 需要 <code translate="no">plan_hash</code> 和 <code translate="no">idempotency_key</code>。计划状态：<code translate="no">ready</code>、<code translate="no">unavailable</code>、<code translate="no">blocked</code>、<code translate="no">stale_plan</code>、<code translate="no">error</code>。意图终态：<code translate="no">committed</code>、<code translate="no">rolled_back</code>、<code translate="no">recovery_required</code>、<code translate="no">aborted</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">规则</th><th scope="col">失败时</th></tr></thead>
+<tbody>
+<tr><th scope="row">解析谱系</th><td>从 HEAD 沿 predecessor 到目标非根用户轮次；子树只通过显式归属纳入</td><td>不在活动分支上：拒绝</td></tr>
+<tr><th scope="row">目标状态</th><td>每个发起一轮的 prompt 有一个 checkpoint：<code translate="no">.file-recovery/&lt;session&gt;/checkpoints/&lt;user_msg_id&gt;.json</code> 记录每个被跟踪路径的状态，内容在共享的 <code translate="no">blobs/&lt;sha256&gt;</code>。没列出的路径取其后第一次编辑前记录的状态。没有 checkpoint 的 prompt（旧会话、运行中插入的消息）在读取时折叠 journal，不改写数据。</td><td>捕获失败不阻塞工具，该路径记为 <code translate="no">unavailable</code>。没有可用备份的 prompt（<code translate="no">evicted</code>、<code translate="no">journal_gap</code>、<code translate="no">no_checkpoint</code>）对代码模式返回 <code translate="no">unavailable</code>，仅对话仍可用。</td></tr>
+<tr><th scope="row">计划行</th><td>每个目标和磁盘上的文件比较：<code translate="no">restore</code>、<code translate="no">delete</code> 或带原因的 <code translate="no">skip</code>，附 +A &minus;D（单文件 1 MiB，总预算 3 秒）。只恢复撤回轮次实际写入的路径。范围外的后续修改受保护，包括 Bash、手动、hunk Revert 和 Undo 的修改。规划不写任何东西，session 有 run 时也不跑崩溃恢复。</td><td>任一跳过行都会在修改前阻止整个代码恢复：<code translate="no">other_session</code>（目标状态读取之后，另一会话开始或完成过可信写入；读自 <code translate="no">mutation-locks/last-writers/</code> 下各会话最新写入的按路径索引）、<code translate="no">changed_since_edit</code>（文件已和记录的写入不一致，或这些写入之间夹有其他修改）、<code translate="no">unsafe_path</code>、<code translate="no">parent_missing</code>、<code translate="no">no_backup</code>、<code translate="no">changed_while_reading</code>。自有 job 运行中时以 <code translate="no">job_running</code> 阻止。</td></tr>
+<tr><th scope="row">其他分支</th><td>checkpoint 记下属于它的轮次（<code translate="no">turn_ids</code>）；文件在某一轮第一次改它之前的状态，记在这一轮的 checkpoint 里。目标取范围内最早读到的那条记录。另一条 prompt 的轮次也写过的路径，取在那次写入之后、范围内自己第一次写入（轮次日志记录里的 <code translate="no">first_sequence</code>）之前最早读到的记录。已提交的回退撤回过的写入（其 intent 上的 <code translate="no">restores_through</code>）不计入。</td><td>那次写入晚于范围内自己的第一次写入，或两者之间没有读到过记录：<code translate="no">changed_since_edit</code>。见<a href="../execution/control.zh.html#branch-rewind">两个分支</a>。</td></tr>
+<tr><th scope="row">准备意图</th><td>占住 run 槽位，把每个计划路径的当前内容存成 blob，journal 没见过的变化也能回滚；持久化计划 id、预期 HEAD、前后镜像、模式、跳过行；幂等</td><td>在工作区锁内重建计划，hash 不同返回 <code translate="no">stale_plan</code>，零写入</td></tr>
+<tr><th scope="row">应用</th><td>工作区锁；持久化每个动作的状态；原子替换；摘要一致才删除</td><td>只有摘要仍等于本事务写入的值才回滚；否则 <code translate="no">recovery_required</code>，保留外部内容</td></tr>
+<tr><th scope="row">分支</th><td>用预期 HEAD 的 compare-and-set 移动当前分支。分支身份、撤回可见性和恢复元数据一起提交。首轮之前的目标使用持久 ROOT。</td><td>按意图恢复文件；源分支和活动分支不变</td></tr>
+<tr><th scope="row">收尾</th><td>追加事务和导航事件；不标记旧节点；推进 writer epoch，旧任务无法写回</td><td>启动时完成或回滚未结束的意图，绝不猜测</td></tr>
+</tbody>
+</table>
+<p class="note">多文件恢复不是文件系统的单次原子操作。保证来自持久意图、回滚暂存、逐文件原子替换和重启恢复。数千文件的预检分页列出冲突；开始应用后只能完成或回滚。</p>
+
+<table class="stack" id="recovery-modes">
+<thead><tr><th scope="col">模式</th><th scope="col">文件</th><th scope="col">对话</th><th scope="col">下一轮</th></tr></thead>
+<tbody>
+<tr><th scope="row">代码和对话</th><td>恢复</td><td>提交后回退当前分支；预填提示；撤回消息只保留为恢复历史</td><td>正常</td></tr>
+<tr><th scope="row">仅对话（<code translate="no">conversation</code>）</th><td>保留</td><td>当前分支 HEAD compare-and-set 到目标之前的消息；后续消息被撤回，不展示为分支</td><td>告知模型文件未回退；发送不被阻止</td></tr>
+<tr><th scope="row">仅代码（<code translate="no">code</code>）</th><td>恢复</td><td>保留；事务把 HEAD compare-and-set 为自身</td><td>告知模型文件回退了而对话没有</td></tr>
+</tbody>
+</table>
+
+<h3>Rewind 之后</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Rewind 边</th><td>session meta 的 <code translate="no">rewind_edges</code>，随 HEAD 移动一起写入。标记按当前链计算：下次发送前 <code translate="no">pending</code>，之后 <code translate="no">back</code>，Undo 后 <code translate="no">forward</code>。</td></tr>
+<tr><th scope="row">Undo、Redo</th><td>占住 run 槽位，沿边 compare-and-set HEAD。只动消息。</td></tr>
+<tr><th scope="row">给模型的说明</th><td>session meta 的 <code translate="no">pending_rewind_note</code>，下一轮构建系统提示时读取一次：<code translate="no">conversation_only</code>、<code translate="no">restored</code>、<code translate="no">branch_kept_files</code>、<code translate="no">partial</code>（先前仅对话回退留下的文件说明仍有效）、<code translate="no">code_only</code>、<code translate="no">undo_kept_files</code>。</td></tr>
+<tr><th scope="row">读取记录</th><td>Rewind、Undo、Redo 丢弃该会话的读取基线，下次编辑前先读文件。</td></tr>
+<tr><th scope="row">复制会话</th><td><code translate="no">branch_session</code> 带上被复制消息的 checkpoint、blob 和写入归属，并在 <code translate="no">origin.json</code> 记录来源和 mutation 序号，来源早先的写入不算另一会话。</td></tr>
+<tr><th scope="row">保留</th><td>每会话 100 个 turn 目录、100 个 checkpoint，分开计数。<code translate="no">intents</code>、<code translate="no">intent-locks</code>、<code translate="no">checkpoints</code>、<code translate="no">blobs</code> 不算 turn 目录。被移除的 turn id 记入 <code translate="no">evicted-turns.json</code>；没有保留的 checkpoint 或未结束意图引用的 blob 才删除。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>恢复对象</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row">分支</th><td>稳定 id、HEAD、<code translate="no">head_version</code>、writer epoch；会话保存 <code translate="no">active_branch_id</code>。显式 Rewind 使当前分支 HEAD 后退；普通分支导航不恢复文件。</td></tr>
+<tr><th scope="row">检查点</th><td>恢复目标，不复制文件列表</td></tr>
+<tr><th scope="row">变更集</th><td>producer 和 origin 轮次、执行者。卡片按 origin 分组并保留 producer。</td></tr>
+<tr><th scope="row">计划</th><td>只读预览；计划哈希防止预览到确认之间的竞争</td></tr>
+<tr><th scope="row">意图</th><td>已确认的持久记录：<code translate="no">idempotency_key</code>、<code translate="no">plan_hash</code>、<code translate="no">expected_head_id</code>、<code translate="no">target_head_id</code>、源和目标分支、动作。重启绝不从目录推断进度。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branches">分支与执行者</h2>
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">含义</th><th scope="col">文件</th></tr></thead>
+<tbody>
+<tr><th scope="row">从结果分支</th><td>创建并激活目标分支；源 HEAD 不变</td><td>不变，“Files stay as they are”</td></tr>
+<tr><th scope="row">Fork 为新任务</th><td>保留源任务和 HEAD；复制对话历史</td><td>文件保持共享，除非用户明确要求文件系统隔离。</td></tr>
+<tr><th scope="row">切换兄弟分支</th><td>选择另一条对话谱系，不改变文件、不要求对齐</td><td>普通分支共享当前工作区。清除读取基线并告知模型文件没有恢复。读写遵守正常权限和当前文件检查。</td></tr>
+<tr><th scope="row">所属子任务</th><td>按 relation、<code translate="no">creates_agent</code>、origin 轮次判断；有自己的 producer 和变更集</td><td>运行中阻止父级恢复。结束后纳入闭包。</td></tr>
+<tr><th scope="row">独立执行者</th><td>后台终端、任务执行器、频道、调度器</td><td>运行中阻止同工作区恢复；writer epoch 阻止旧写回</td></tr>
+<tr><th scope="row">已有同伴、跨会话</th><td>关联，不归属</td><td>不修改；在影响中列出；重叠时阻止代码恢复</td></tr>
+<tr><th scope="row">Worktree 子任务</th><td>独立状态</td><td>父级 Undo 或 Rewind 绝不碰它；合并是单独事务</td></tr>
+<tr><th scope="row">兄弟分支</th><td>不在 Rewind 范围内</td><td>日志不变；切回时共享当前文件</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Resume、Archive、Purge</summary>
+<table class="stack">
+<thead><tr><th scope="col">操作</th><th scope="col">约定</th><th scope="col">绝不</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resume</th><td>未知会话返回未找到。先恢复未结束的事务，再加载真实节点 id、分支和版本。</td><td>把未知 id 当新会话或伪造 id</td></tr>
+<tr><th scope="row">空分支</th><td>HEAD 指向持久 ROOT。Web、TUI、CLI 共用一种分支结果。</td><td>自动选择其他 tip</td></tr>
+<tr><th scope="row">Archive</th><td>只归档 ref；节点、日志和检查点保留</td><td>删除共享祖先</td></tr>
+<tr><th scope="row">Purge</th><td>引用计数，显式操作，只释放独占对象</td><td>从叶子逐个删除或绕过引用</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="failures">冲突与不可用</h2>
+<table class="grid">
+<thead><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">后续修改了同一文件：Revert</th><td class="deny">不反向合并</td></tr>
+<tr><th scope="row">后续修改了同一文件：Rewind</th><td class="review">撤回范围之外的后续修改阻止整个代码恢复；仅对话仍可用</td></tr>
+<tr><th scope="row">确认后计划已变</th><td class="deny"><code translate="no">stale_plan</code>，零写入</td></tr>
+<tr><th scope="row">运行中的轮次或后台任务</th><td class="deny">没有可确认的计划</td></tr>
+<tr><th scope="row">符号链接、硬链接、特殊文件</th><td class="deny">不跟随不覆盖；显示路径和原因</td></tr>
+<tr><th scope="row">内容已被垃圾回收</th><td class="review">Review 可读，代码恢复关闭</td></tr>
+<tr><th scope="row">大文件无内容副本</th><td class="review">路径和大小精确；行数未知；无 Undo</td></tr>
+<tr><th scope="row">非 Git 工作区</th><td class="review">日志范围可用；工作区不可用</td></tr>
+<tr><th scope="row">Reapply</th><td class="review">需要撤销后的摘要、后续无同谱系修改、after 内容可用</td></tr>
+<tr><th scope="row">应用时崩溃</th><td class="review">回滚；若回滚会破坏外部写入则 <code translate="no">recovery_required</code></td></tr>
+<tr><th scope="row">对被忽略路径或已授权外部路径的精确修改</th><td class="run">进入日志，可 Undo，不在工作区范围</td></tr>
+<tr><th scope="row">被忽略的后台日志增长</th><td class="run">按设计排除</td></tr>
+<tr><th scope="row">数据库、API、部署、安装、Git index、进程、网络、未记录的 Bash</th><td class="ask">不在 Restore 范围；确认时列出可能重复的影响</td></tr>
+</tbody>
+</table>
+
+<h2 id="ui">界面</h2>
+<table class="stack">
+<thead><tr><th scope="col">位置</th><th scope="col">显示</th><th scope="col">操作</th><th scope="col">绝不</th></tr></thead>
+<tbody>
+<tr><th scope="row">Assistant 轮次卡片</th><td>文件数、净增删（含零）、前三个文件、约 40 px 标题、19 px <code translate="no">FeatherIcon</code>、2.5 px 双色比例条。强调文件名。宽度 420 px 以下显示 “N files”。</td><td>最新：Undo，然后 Redo。历史：Revert，然后 Reapply。每轮：Review。标题只显示可执行操作；不可用和被阻止的说明放在页脚。</td><td>标题徽标、禁用态徽章、产品品牌</td></tr>
+<tr><th scope="row">用户消息</th><td>Restore checkpoint</td><td>影响面板，明确边界，默认代码和对话</td><td>点击立即恢复</td></tr>
+<tr><th scope="row">对话 ⋯ 菜单</th><td>Copy conversation</td><td>只复制历史；文件不变</td><td>隐式恢复</td></tr>
+<tr><th scope="row">Changes 标签页</th><td>三种范围；文件列表和单文件差异；来源标签；计数覆盖完整筛选结果</td><td>Unified 或 side-by-side、行评论、Open file、Reveal。范围或筛选变化清空游标、选择和差异。</td><td>工作区轮次 Undo；只在客户端筛选</td></tr>
+<tr><th scope="row">影响面板</th><td>提示、轮次和文件数、分支结果、模式、冲突</td><td>确认；取消无影响</td><td>阻止时强制执行</td></tr>
+<tr><th scope="row">分支切换</th><td>对话变化，文件保持</td><td>继续对话并处理当前文件</td><td>由分支历史引发的文件对齐提示或工具限制</td></tr>
+</tbody>
+</table>
+
+<h2 id="file-query">文件查询</h2>
+<p>项目浏览器和 Review 读取服务端快照。顺序固定：解析归属、快照、服务端筛选排序、分页、渲染一页。</p>
+<table class="stack">
+<thead><tr><th scope="col">查询</th><th scope="col">来源</th><th scope="col">分页</th><th scope="col">过期条件</th></tr></thead>
+<tbody>
+<tr><th scope="row">目录</th><td>按 <code translate="no">project_id</code> 解析项目根；规范化、相对根、不允许穿越或符号链接逃逸</td><td>先目录后文件，按路径；每页 100</td><td>目录版本、忽略规则、项目、路径、排序</td></tr>
+<tr><th scope="row">项目搜索</th><td>相同根和规则，与展开节点无关；匹配名称或相对路径</td><td>筛选、排名后分页</td><td>切换项目、快照过期、根版本</td></tr>
+<tr><th scope="row">Review 范围</th><td>日志，或 Git HEAD、index、worktree</td><td>服务端按类别、路径、操作、差异状态筛选；每页 100；总数覆盖完整结果</td><td>范围、消息、筛选、排序、快照、候选或身份变化</td></tr>
+<tr><th scope="row">Review 文件差异</th><td>同一快照返回的路径；记录的内容对</td><td>每次 200 行或 256 KiB</td><td>快照、候选、身份或内容对变化</td></tr>
+</tbody>
+</table>
+<p class="note">过期返回 <code translate="no">STALE_SNAPSHOT</code> 或 <code translate="no">STALE_CURSOR</code>；客户端从第一页重新开始。</p>
+
+<details id="cursors">
+<summary>游标与工作区快照</summary>
+<ul>
+<li>游标不透明，只对相同快照、归属、查询类型、筛选和排序有效。拒绝偏移量、路径锚点和跨项目 token。目录、搜索、Review 列表和差异的游标不能互换。</li>
+<li>快照保持候选顺序稳定。后续页绝不重新扫描。容量和 TTL 淘汰时报告过期。</li>
+<li>工作区快照按相对路径固定已暂存、未暂存、未跟踪以及重命名或删除的路径，钉住 HEAD 基线、index 内容、worktree 身份和新旧路径。差异由该内容对渲染，绝不用后来的 <code translate="no">git diff</code>。</li>
+<li>取后续页或差异前，重新读取状态向量、index 树和 no-follow 的 worktree 身份。任何变化都算过期。</li>
+<li>工作树一侧按 Git 的方式比较：当 <code translate="no">text</code>、<code translate="no">eol</code> 或 <code translate="no">core.autocrlf</code> 清理行尾时，先把 CRLF 转为 LF（<code translate="no">auto</code> 时仅当索引 blob 不含 CR），所以 LF blob 的 CRLF 检出只显示编辑过的行。</li>
+<li>按块还原时使用文件自身的行尾。</li>
+<li>快照内容共用 Review 配额；缺失或过期报告过期，绝不从 worktree 近似。</li>
+</ul>
+</details>
+
+<h3 id="file-requests">文件 WebSocket 请求</h3>
+<table class="stack">
+<thead><tr><th scope="col">规则</th><th scope="col">约定</th><th scope="col">绝不</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">request_id</code></th><td>每个浏览、读取、写入、重命名、复制、删除、显示和 Review 请求都带客户端 UUID；每个结果原样返回</td><td>按类型、路径或到达顺序匹配</td></tr>
+<tr><th scope="row">响应校验</th><td>唯一的待处理键，另校验动作、项目、会话、快照、目标。卸载或新查询丢弃旧键。</td><td>全局队列</td></tr>
+<tr><th scope="row"><code translate="no">idempotency_key</code></th><td>副作用操作的单独键，带乐观锁条件</td><td>把新的 <code translate="no">request_id</code> 当作新写入</td></tr>
+<tr><th scope="row">错误</th><td><code translate="no">error_code</code>：<code translate="no">STALE_SNAPSHOT</code>、<code translate="no">NOT_FOUND</code>、<code translate="no">CONFLICT</code>、<code translate="no">INVALID_REQUEST</code>、<code translate="no">IDEMPOTENCY_KEY_CONFLICT</code>、<code translate="no">OUTSIDE_PROJECT</code>、<code translate="no">TOO_LARGE</code>、<code translate="no">RECOVERY_REQUIRED</code></td><td>应用身份不明的帧</td></tr>
+</tbody>
+</table>
+<details>
+<summary>写入幂等</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">记录键</th><td>归属（profile 和项目）、动作、键</td></tr>
+<tr><th scope="row">指纹</th><td>动作、归属、规范载荷（规范路径、参数、摘要）、前提（mtime 或摘要、路径、覆盖条件、目录版本）。不含 <code translate="no">request_id</code>。</td></tr>
+<tr><th scope="row">记录</th><td>从 <code translate="no">in_flight</code> 变为 <code translate="no">completed</code>、<code translate="no">conflict</code> 或 <code translate="no">error</code>，带 <code translate="no">operation_id</code> 和终态结果，在与修改相同的持久范围内认领</td></tr>
+<tr><th scope="row">相同键、不同指纹</th><td><code translate="no">IDEMPOTENCY_KEY_CONFLICT</code>，零写入</td></tr>
+<tr><th scope="row">相同指纹、进行中</th><td>绑定原操作直到期限，然后报告进行中；客户端只能重试该键</td></tr>
+<tr><th scope="row">相同指纹、已完成</th><td>重放结果，不重新执行</td></tr>
+<tr><th scope="row">重启</th><td>先恢复或归类进行中的记录再重放。过期绝不删除它们，也不重放不同指纹。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="caches">缓存与草稿</h3>
+<table class="stack">
+<thead><tr><th scope="col">存储</th><th scope="col">上限</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取缓存</th><td>64 项、16 MiB、LRU；键为项目、路径、版本</td><td>只缓存成功的完整读取；不存未保存文本</td></tr>
+<tr><th scope="row">文本草稿</th><td>32 项、8 MiB</td><td>IndexedDB <code translate="no">openprogram-file-drafts</code>，存储 <code translate="no">drafts</code>、<code translate="no">project_index</code>；绝不被 LRU 淘汰</td></tr>
+<tr><th scope="row">二进制文档草稿</th><td>32 项、每项 64 MiB、合计 256 MiB</td><td>存储 <code translate="no">document_drafts</code>、<code translate="no">document_draft_metadata</code>；按文件存 Blob</td></tr>
+</tbody>
+</table>
+<details>
+<summary>草稿规则</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">键</th><td>项目加规范路径；绝不跨项目共享</td></tr>
+<tr><th scope="row">内容</th><td>UTF-8 文本、基线字节、版本、mtime、更新顺序。配额按 <code translate="no">TextEncoder</code> 字节统计草稿、基线和元数据。</td></tr>
+<tr><th scope="row">保留</th><td>重新加载、卸载、切换项目和缓存淘汰都保留未保存草稿。服务端变化时草稿进入冲突状态，按原基线保存。</td></tr>
+<tr><th scope="row">绝不重置缓冲区</th><td>树刷新、Review 变化、注册表空缺、后台响应</td></tr>
+<tr><th scope="row">创建、更新、重命名、丢弃</th><td>草稿和索引在同一事务</td></tr>
+<tr><th scope="row">配额</th><td>超配额时不写入。接受输入前检查预算；存储已满时提供保存、还原、导出或丢弃。遇到 <code translate="no">QuotaExceededError</code> 时保留最后的持久版本并暂停增长。</td></tr>
+<tr><th scope="row">重命名、复制、删除</th><td>重命名原子地移动键；复制不共享；失败的操作不改变任何内容。删除有草稿的文件需要保存、导出或丢弃。</td></tr>
+<tr><th scope="row">项目清理</th><td>等待一个目前还不存在的显式命令；从 <code translate="no">list_projects</code> 消失不算授权。启动时通过扫描重建缺失的索引，不删除。</td></tr>
+<tr><th scope="row">隐私</th><td>只在当前来源的 IndexedDB，不进日志、遥测、模型上下文、WebSocket 和同步。恢复绝不自动上传。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="performance">限制、安全、一致性</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">轮次收尾</th><td>成本只取决于变更路径。摘要持久化并随对话记录返回；卡片最多挂载 20 行，不挂差异。</td></tr>
+<tr><th scope="row">差异预算</th><td>超预算返回超时元数据，绝不阻塞 Agent 或近似</td></tr>
+<tr><th scope="row">恢复内容</th><td>内容寻址、去重、仅本地用户可读、不在会话 Git 中。</td></tr>
+<tr><th scope="row">GC</th><td>绝不回收已固定的检查点、活动任务、未解决冲突、未结束意图或分支引用的检查点</td></tr>
+<tr><th scope="row">敏感内容</th><td>内容不进日志、遥测和模型上下文。删除会话时清理未被引用的内容。外部路径在捕获和恢复时都需要授权。</td></tr>
+<tr><th scope="row">旧会话</th><td>按原样读取。journal 已不存在或不连续：无法恢复代码，提供仅对话</td></tr>
+<tr><th scope="row">TUI、CLI、App、Web</th><td>选择模式和确认前显示同一个服务端计划，同样的幂等；界面只渲染服务端影响，不重新计算</td></tr>
+<tr><th scope="row">行评论</th><td>绑定变更集、内容、侧、hunk 和行。范围或恢复变化时标记过期。</td></tr>
+</tbody>
+</table>
+
+<details id="modules">
+<summary>模块</summary>
+<table class="stack">
+<thead><tr><th scope="col">模块</th><th scope="col">负责</th><th scope="col">不负责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/files/</code></th><td>根授权、列表、搜索、读取、修改；校验 id 和快照</td><td>Review 计算、浏览器缓存</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/interfaces/server/ws_actions/turn_files/</code></th><td>Review 范围、筛选分页、绑定快照的差异</td><td>项目搜索</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/conversation/revert.py</code>、<code translate="no">rewind.py</code></th><td>单轮和多轮事务</td><td>Git reset 或 revert；它们有单独入口</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/net/ws/ws-request.ts</code></th><td>请求 id、待处理表、超时、响应校验</td><td>按类型匹配</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/files/files-shared.ts</code></th><td>有界读取缓存、草稿、失效</td><td>Review 分页、socket 监听</td></tr>
+<tr><th scope="row"><code translate="no">FileTree</code>、<code translate="no">FilesPage</code></th><td>服务端分页和搜索结果</td><td>把已加载节点当搜索</td></tr>
+<tr><th scope="row"><code translate="no">ReviewTabPane</code></th><td>范围、筛选、快照、游标、选择</td><td>当前页筛选</td></tr>
+<tr><th scope="row"><code translate="no">FileTabPane</code></th><td>缓冲区、冲突、草稿生命周期</td><td>直接取轮次差异；比较在 Review 中打开</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="references">
+<summary>与 Claude Code 和 Codex 的比较</summary>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">已确认</th><th scope="col">采用</th><th scope="col">未采用或未知</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code <a href="https://code.claude.com/docs/en/checkpointing">检查点</a>（<a href="https://code.claude.com/docs/en/agent-sdk/file-checkpointing">SDK</a>）</th><td>每个提示一个，跟踪 Write、Edit、NotebookEdit，不含 Bash。恢复代码、对话或两者。除前台 <code translate="no">context: fork</code> 外其他子 Agent 的修改不恢复。非普通路径跳过并警告。每会话 100 个；由 <code translate="no">cleanupPeriodDays</code> 清理，默认 30。</td><td>提示检查点、分开的选项、明确的不可用状态</td><td>任一路径失败我们就阻止或回滚；跳过路径不能算成功</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/sessions">Fork</a>、<a href="https://code.claude.com/docs/en/vs-code">VS Code</a></th><td><code translate="no">/branch</code> 只复制对话</td><td>同任务 Branch 加保留源的 Fork，Git 下用 worktree</td><td>fork 后未告知地复用当前文件</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/desktop">Desktop</a>、<a href="https://code.claude.com/docs/en/web-quickstart">Web</a></th><td>文件列表和单文件差异、行评论；Web 还有 Create PR</td><td>独立 Review、按需差异、行反馈</td><td>品牌、尺寸、PR 控件。Web 的 Review code 未确认。</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex 轮次差异</a></th><td>当前轮次精确增量的内存聚合器；不精确的数据使其失效</td><td>精确增量作归属；我们增加持久回执和内容</td><td>不声称 Codex 有持久 Undo 日志</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs">Codex 历史</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/app_backtrack.rs">backtrack</a></th><td><code translate="no">thread/fork</code> 复制历史；<code translate="no">thread/rollback</code> 已弃用；<code translate="no">thread/revert</code> 只处理对话</td><td>保留源的 fork、不可变历史</td><td>未公开的逐轮文件 Undo 未知</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/get_git_diff.rs">Codex Git</a>、<a href="https://learn.chatgpt.com/docs/code-review">review</a></th><td>Last turn 与 Git 分开；Unstaged、Staged、Commit、Branch；多仓库；<code translate="no">--exclude-standard</code></td><td>工作区子范围、排除被忽略文件</td><td>Git Discard 不是 Restore</td></tr>
+<tr><th scope="row"><a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/session/session-persistence-jsonl/src/index.ts">DeepSeek JSONL</a>、<a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/core/session/src/repair.ts">repair</a>、<a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/fs/fs-local/src/index.ts">fs-local</a></th><td>同步临时文件、独占发布、目录同步、区分损坏和缺失；中断工具标记未知；有锁和版本条件，无完整文件撤销</td><td>完整性和中断原则</td><td>会话日志恢复不等于文件恢复</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/shell_snapshot.rs">Codex shell snapshot</a></th><td>Shell 环境的暂存、校验、替换</td><td>暂存模式</td><td>它不是文档版本</td></tr>
+</tbody>
+</table>
+<p class="note">两者的公开资料都不保证外部并发规则、多文件原子性、摘要预检或崩溃一致性。完整预检、工作区锁、持久意图、回滚暂存和崩溃恢复是 OpenProgram 自己的。</p>
+</details>
+
+<h2 id="acceptance">验收</h2>
+<table class="stack">
+<thead><tr><th scope="col">领域</th><th scope="col">边界</th><th scope="col">通过公开入口必须成立</th><th scope="col">不含</th></tr></thead>
+<tbody>
+<tr><th scope="row">日志</th><td><code translate="no">programs/tools/files/</code>、轮次收尾、检查点存储</td><td>超过 5 MiB 的已有文件首次编辑不算新建；被忽略的 Bash 日志不进入；失败的编辑没有回执</td><td>Review 界面、用户 Git</td></tr>
+<tr><th scope="row">Undo、Revert</th><td><code translate="no">conversation/revert.py</code>、工作区锁、意图</td><td>后续同文件修改：零写入。摘要不一致不删除。中途 I/O 绝不部分成功。</td><td>多轮 HEAD 移动</td></tr>
+<tr><th scope="row">Rewind</th><td><code translate="no">conversation/rewind.py</code>、head API、意图恢复</td><td>一个文件跨三轮；文件失败保留 HEAD；兄弟分支不受影响；过期计划不写入</td><td>压缩、DAG schema</td></tr>
+<tr><th scope="row">Review</th><td><code translate="no">turn_files/</code>、元数据、中心标签、卡片</td><td>历史不逐消息查询；工作区排除被忽略文件；只挂载一个有界差异；来源一致。普通回复不挂卡片；空结果隐藏；失败可重试。</td><td>第三栏、新窗口</td></tr>
+<tr><th scope="row">共享工作区、归属</th><td>切换、活动谱系折叠、归属</td><td>切换后可正常处理当前文件，编辑前重新读取。运行中的所属子任务阻止父级恢复；结束的纳入。同伴和 worktree 不动。</td><td>工作区克隆</td></tr>
+<tr><th scope="row">查询快照</th><td><code translate="no">files/</code> 查询、<code translate="no">FileTree</code></td><td>搜索能找到未展开的文件。第一页后的目录变化不进入旧游标；拒绝跨项目游标。并发创建或重命名后按稳定顺序重来。</td><td>全文搜索、布局</td></tr>
+<tr><th scope="row">请求身份</th><td>文件分发、<code translate="no">ws-request.ts</code>、幂等</td><td>乱序响应到达正确调用方。缺少 <code translate="no">request_id</code> 被拒绝。重试重放；不同指纹冲突。</td><td>非文件协议</td></tr>
+<tr><th scope="row">缓存、草稿</th><td><code translate="no">files-shared.ts</code>、IndexedDB、标签生命周期</td><td>只淘汰干净的 LRU 项。未保存草稿在重新加载、标签和项目切换后仍在。配额失败时原子保留旧草稿并提示。</td><td>协作、远程同步</td></tr>
+<tr><th scope="row">筛选 Review</th><td><code translate="no">turn_files/</code>、<code translate="no">ReviewTabPane</code></td><td>类别覆盖所有页。变化使游标和差异失效。后续 index 或 worktree 变化报告过期。</td><td>新的事实来源</td></tr>
+<tr><th scope="row">单一入口</th><td>文件模块调用图</td><td>没有全局队列、无 id 动作、界面直接调用 <code translate="no">turn_file_diff</code> 或旧回退</td><td>隐藏的兼容开关</td></tr>
+<tr><th scope="row">文档</th><td><code translate="no">write</code>、会话、历史</td><td>DOCX 和 PPTX 有版本；undo 和 reapply 字节一致；外部修改冲突；失败写入保留目标；文本写入仍有效</td><td>Office 差异</td></tr>
+<tr><th scope="row">每种格式</th><td><code translate="no">FileViewer</code>、<code translate="no">DocumentWindow</code></td><td>真实文件，不用伪造的二进制：编辑、写回、重开、恢复。并发修改、中断写入、损坏、过大、取消、离线、项目移动、旧历史。</td><td>部分格式成功</td></tr>
+<tr><th scope="row">PDF</th><td>在真实外壳策略下</td><td>非空可选页面、剪贴板用例、侧栏、缩放、搜索、只读历史、批注保存且由独立解码器读出、失败保留、拒绝外部请求；在页面和 worker 没有原生 <code translate="no">toHex</code> 和 <code translate="no">Math.sumPrecise</code> 时同样通过</td><td>宽松测试页不能证明安装版行为</td></tr>
+<tr><th scope="row">崩溃</th><td>每个意图阶段</td><td>结束于 committed、rolled back 或按路径的 <code translate="no">recovery_required</code>；绝不虚假提交或覆盖外部写入</td><td></td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>日志、Undo、Revert、代码和对话 Rewind、三种 Review 范围、查询快照、请求身份、持久修改、有界缓存、草稿、统一文件窗口、History、格式适配器、可选 Office 安装、文档发布</td></tr>
+<tr><th scope="row" id="pdf-reading-status">PDF</th><td>阅读器、批注和运行兼容性已实现</td></tr>
+<tr><th scope="row" id="markdown-reading-status">Markdown</th><td>渲染和标题导航已实现；安装版验收待完成</td></tr>
+<tr><th scope="row">未实现</th><td>项目解绑及其草稿清理；Office 语义差异；远程条件存储</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../../ui/chat/chat-turn-visual-spec.zh.html">聊天轮次视觉规范</a></p>
+
+<p class="note" id="shared-workspace-status">共享工作区与当前分支回退已实现。独立规格审查、质量审查和受影响范围的验证均通过。</p>

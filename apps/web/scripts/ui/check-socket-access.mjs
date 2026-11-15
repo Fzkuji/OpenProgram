@@ -51,7 +51,7 @@ function* sources(dir) {
  *  really does assign and therefore pass on their own merit. */
 const PLATFORM_GLOBALS = new Set([
   // Injected by the Electron preload via `contextBridge.exposeInMainWorld`
-  // (apps/desktop/preload.js), so the write is outside web/ by design. Reads are
+  // (apps/desktop/main/preload.js), so the write is outside web/ by design. Reads are
   // all null-guarded — in a browser tab the bridge is legitimately absent.
   "openprogramDesktop",
   "openprogramTerminals",

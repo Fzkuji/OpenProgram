@@ -1,0 +1,115 @@
+<title>Environments</title>
+<meta name="description" content="Design of local, SSH and Docker environments: registry, conversation binding, backends, remote file tools and composer chips.">
+<h1>Environments</h1>
+<p>Where a conversation's commands and file tools run. A channel (WeChat, Telegram, …) only decides where messages are mirrored. Product page: <a href="../../../../capabilities/environments.html">Run conversations on another machine</a>.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">Backend</th><th scope="col">Command form</th><th scope="col">Working folder</th><th scope="col">Host sandbox</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">local</code></th><td><code translate="no">LocalBackend</code></td><td>Host subprocess. macOS and Linux: <code translate="no">bash -c</code>, sandboxed or not (<code translate="no">sh</code> only without bash), so <code translate="no">echo</code> prints <code translate="no">\n</code> as written and <code translate="no">printf</code> expands it; scheduled task commands run the same way. Windows: Git Bash or PowerShell, WSL bash when sandboxed</td><td>Host</td><td>Applies</td></tr>
+<tr><th scope="row"><code translate="no">ssh</code></th><td><code translate="no">SshBackend(target, workdir)</code></td><td><code translate="no">ssh … &lt;target&gt; 'cd &lt;dir&gt; &amp;&amp; &lt;cmd&gt;'</code></td><td>Remote absolute path</td><td>Off; isolation is the remote account</td></tr>
+<tr><th scope="row"><code translate="no">docker</code></th><td><code translate="no">DockerBackend(image, container, mounts)</code></td><td><code translate="no">docker exec -i [-w cwd] &lt;container&gt; sh -c &lt;cmd&gt;</code></td><td>Host path, mounted at the same path</td><td>Off; isolation is the container</td></tr>
+</tbody>
+</table>
+
+<h2 id="registry">Registry</h2>
+<pre translate="no" tabindex="0"><code>"environments": {
+  "default": "local",
+  "items": [
+    {"id": "devbox", "name": "devbox", "kind": "ssh", "ssh_target": "me@devbox", "workdir": "~/work"},
+    {"id": "sandbox", "name": "sandbox", "kind": "docker", "image": "ubuntu:24.04"}
+  ]
+}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">local</code></th><td>Built in; never stored, changed or removed</td></tr>
+<tr><th scope="row"><code translate="no">id</code></th><td><code translate="no">^[a-z0-9][a-z0-9_-]{0,47}$</code></td></tr>
+<tr><th scope="row"><code translate="no">ssh_target</code>, <code translate="no">image</code></th><td>No whitespace, no leading <code translate="no">-</code> (stays out of option parsing)</td></tr>
+<tr><th scope="row"><code translate="no">workdir</code></th><td>Absolute or starting with <code translate="no">~</code></td></tr>
+<tr><th scope="row">Removing the default</th><td>Default becomes <code translate="no">local</code></td></tr>
+<tr><th scope="row">Old <code translate="no">backend.terminal</code> / <code translate="no">ssh_target</code> / <code translate="no">docker_image</code></th><td>Read as an environment named after its kind, made default; the first write folds it into <code translate="no">environments</code></td></tr>
+</tbody>
+</table>
+<p class="note">Code: <code translate="no">openprogram/host/environments/__init__.py</code>. Writes go through <code translate="no">update_config</code> (cross-process lock). <code translate="no">openprogram environments</code>, the setup wizard and the WebSocket actions <code translate="no">list_environments</code>, <code translate="no">save_environment</code>, <code translate="no">delete_environment</code>, <code translate="no">set_default_environment</code>, <code translate="no">test_environment</code> are thin layers. Every mutation broadcasts an <code translate="no">environments</code> frame.</p>
+
+<h2 id="conversation-binding">Conversation binding</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">When</th><th scope="col">What happens to <code translate="no">environment_id</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Draft</th><td>Kept in <code translate="no">ComposerSettings.environment</code>; the first <code translate="no">chat</code> frame carries it</td></tr>
+<tr><th scope="row">First message</th><td><code translate="no">assign_new_session_environment</code> validates (<code translate="no">unknown_environment</code> error) and writes it, or the default. <code translate="no">chat_ack</code> reports the ID in force</td></tr>
+<tr><th scope="row">After that</th><td>Never changes</td></tr>
+<tr><th scope="row">History but no ID</th><td>Created before environments; follows the default, not moved by a later pick</td></tr>
+<tr><th scope="row">Channel conversation</th><td>Default environment's ID</td></tr>
+<tr><th scope="row">Stored ID gone</th><td><code translate="no">resolve_for_session</code> raises <code translate="no">EnvironmentError</code>; the backend becomes <code translate="no">UnavailableBackend</code> and every command returns the same explanation. Tools never fall back to this computer</td></tr>
+</tbody>
+</table>
+<p class="note">The field is indexed, so lists carry it.</p>
+
+<h2 id="turn-binding">Turn binding</h2>
+<p><code translate="no">TurnBindings.bind</code> sets the <code translate="no">_current_environment</code> ContextVar. <code translate="no">current_environment()</code> reads it first, then the current session's environment, then the default. <code translate="no">get_active_backend()</code> builds the backend from that and the current session. The tool runtime prompt names the SSH host or Docker image.</p>
+<ul>
+<li>SSH: the worktree ContextVar is the remote folder, so the permission fence checks it too. <code translate="no">remote_workdir</code> runs <code translate="no">pwd</code> after <code translate="no">cd</code> (<code translate="no">~</code> resolves on the host), cached per environment. Relative tool paths join with <code translate="no">posixpath</code> and never touch the host filesystem.</li>
+</ul>
+
+<details>
+<summary>SSH command options</summary>
+<pre translate="no" tabindex="0"><code>ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new
+    -o ControlMaster=auto -o ControlPath=&lt;state&gt;/ssh/%C -o ControlPersist=300
+    &lt;target&gt; 'cd &lt;dir&gt; &amp;&amp; &lt;cmd&gt;'</code></pre>
+<ul>
+<li>Connection sharing keeps each tool call to one round trip after the first.</li>
+<li><code translate="no">%C</code> hashes host, port and user, keeping the socket under the macOS <code translate="no">sun_path</code> limit. ControlMaster is skipped on Windows.</li>
+<li>A leading <code translate="no">~</code> reaches the remote shell unquoted so it expands there.</li>
+</ul>
+</details>
+
+<details>
+<summary>Docker container lifecycle</summary>
+<ul>
+<li>One long-lived container per conversation, <code translate="no">openprogram-&lt;env&gt;-&lt;session&gt;</code> (characters outside <code translate="no">[a-zA-Z0-9_.-]</code> become <code translate="no">-</code>), started with <code translate="no">docker run -d --init … tail -f /dev/null</code>.</li>
+<li>Working folder, project folder and additional working directories are bind-mounted at identical paths. The first mount is the starting folder.</li>
+<li>A hash of image plus mounts is the <code translate="no" data-claim="example">openprogram.mounts</code> label. Changed: remove and recreate. Matching: start a stopped container again. A per-process cache skips <code translate="no">docker inspect</code> after the first command.</li>
+<li>Deleting the session removes its containers in a background thread. Without a session ID the backend uses one-shot <code translate="no">docker run --rm</code>.</li>
+</ul>
+</details>
+
+<h2 id="file-tools">Remote file tools</h2>
+<p><code translate="no">read</code>, <code translate="no">write</code>, <code translate="no">edit</code>, <code translate="no">apply_patch</code>, <code translate="no">glob</code>, <code translate="no">grep</code> and <code translate="no">list</code> call <code translate="no">remote_target()</code>. SSH gets a <code translate="no">RemoteFS</code> and delegates to <code translate="no">programs/tools/files/_remote.py</code>, with the local tool's output format. Docker and local get <code translate="no">None</code> and stay local.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Operation</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">stat</code></th><td>One <code translate="no">test</code> command: exists, directory, size</td></tr>
+<tr><th scope="row"><code translate="no">read_bytes</code></th><td><code translate="no">cat</code>, at most 32 MiB</td></tr>
+<tr><th scope="row"><code translate="no">write_bytes</code></th><td><code translate="no">mkdir -p</code>, temporary file in the same folder, then <code translate="no">mv</code> over the target</td></tr>
+<tr><th scope="row">Exit 255</th><td>ssh's own failure: <code translate="no">ConnectionError</code>, reported as an error, not file content</td></tr>
+<tr><th scope="row"><code translate="no">glob</code></th><td><code translate="no">find</code> on the host plus a regex translated from the glob. GNU <code translate="no">-printf</code> for mtimes, BSD <code translate="no">stat</code> as fallback</td></tr>
+<tr><th scope="row"><code translate="no">grep</code></th><td><code translate="no">rg</code> if present, else <code translate="no">grep -rE</code>, capped by <code translate="no">head</code></td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>Shell loop</td></tr>
+<tr><th scope="row">PDF read</th><td>Bytes copied to a local temporary file, local reader</td></tr>
+<tr><th scope="row">Read before edit</th><td>sha256 per (session, host, path). <code translate="no">write</code> over a file, <code translate="no">edit</code> and <code translate="no">apply_patch</code> refuse when never read or changed</td></tr>
+<tr><th scope="row"><code translate="no">write</code> <code translate="no">source_path</code></th><td>Refused on SSH: it would cross machines silently</td></tr>
+</tbody>
+</table>
+
+<h2 id="composer">Composer</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Chip</th><th scope="col">Shows and does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Environment</th><td>Always shown. Icon by kind (monitor, cpu, box), colour is the worker connection tone, label is the name. Draft: list plus a link to Settings → Environments. Existing conversation: other environments greyed out, says the choice is fixed</td></tr>
+<tr><th scope="row">Channel</th><td>Always shown. Unbound: chat glyph and “No channel”. Bound: <code translate="no">ChannelLogo</code> and account id; logo alone when squeezed. <code translate="no">channelHealth</code> is a 6px corner dot: yellow degraded, red unreachable. The menu has one row per app with enabled accounts, each with an accounts submenu (bound one checked), then “Disconnect” while bound and “Manage channels”</td></tr>
+</tbody>
+</table>
+<p class="note">The chip is the only place the composer sets the channel. Menu and chip share <code translate="no">channel-choices.ts</code> and follow the composer's pane (<code translate="no">useBoundChat</code>). <code translate="no">statusBadge</code> and <code translate="no">channelHealth</code> are separate store slices.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented: local, SSH, Docker; registry, CLI, wizard step, settings page, WebSocket actions; first-message pinning; SSH file tools; per-session Docker containers.</p>
+<p>Not implemented:</p>
+<ul>
+<li>Per-project default environments</li>
+<li>WSL and cloud environments</li>
+<li>Password or interactive SSH sign-in</li>
+<li>Checkpoint or undo for remote files; revert does not restore them</li>
+<li>Moving an existing conversation to another environment</li>
+</ul>

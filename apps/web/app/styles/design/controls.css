@@ -1,0 +1,23 @@
+/* Control height tiers. Every button-like control takes one of five
+   heights, in px so no container can rescale them:
+
+     --ui-control-inline  20px  inside another control: tab ×, swatch,
+                                remove badge on a tile, inline switch
+     --ui-button-h-xs     24px  actions on a row, card or message
+     --ui-button-h-sm     28px  menus, popovers, toolbars, chips
+     --ui-button-h        30px  standard: page / dialog / settings
+                                buttons, inputs, selects, sidebar rows
+     --ui-button-h-lg     32px  the composer's corner buttons */
+:root {
+  /* The sidebar chat row is the standard height; --ui-button-h reads it. */
+  --ui-list-h: 30px;
+  --ui-control-inline: 20px;
+  --ui-button-h-xs: 24px;
+  --ui-button-h-sm: 28px;
+  --ui-button-h: var(--ui-list-h);
+  --ui-button-h-lg: var(--composer-button-size);
+  /* List rows take the panel corner; every button, Button or hand-written,
+     the control corner. */
+  --ui-list-radius: var(--radius-lg);
+  --ui-button-radius: var(--radius-md);
+}

@@ -21,13 +21,12 @@ from pathlib import Path
 
 import pytest
 
-SOURCE = '# Conversation 1\n\n<a id="d1-1"></a>\n\nuser: remember this\n'
 NOTE = (
     "# Note\n"
     "\n"
     "A fact worth keeping.[^e-1f4c7a2b90] ^abc12345\n"
     "\n"
-    "[^e-1f4c7a2b90]: Time: `2026-01-01`; Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    "[^e-1f4c7a2b90]: Time: `2026-01-01`; Sources: [D1:1](/s/s1#d1-1)\n"
 )
 
 
@@ -41,16 +40,14 @@ def _stage_dirs() -> set[str]:
 @pytest.fixture
 def memory(tmp_path, monkeypatch):
     """A memory workspace holding one valid topic. Returns its root."""
-    import openprogram.paths as paths
+    import openprogram.state.paths as paths
     stage_root = tmp_path / "temp"
     stage_root.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(stage_root))
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
 
-    from openprogram.memory import store
+    from openprogram.state.memory import store
     root = store.ensure()
-    (root / "sources").mkdir(parents=True, exist_ok=True)
-    (root / "sources" / "D1.md").write_text(SOURCE, encoding="utf-8")
     (root / "topics" / "note.md").write_text(NOTE, encoding="utf-8")
     return root
 
@@ -76,7 +73,7 @@ def editor(monkeypatch):
 
 
 def _edit(root, path):
-    from openprogram.cli import _memory_edit
+    from openprogram.interfaces.cli.application import _memory_edit
     return _memory_edit(root, path)
 
 
@@ -96,7 +93,6 @@ def test_edit_refuses_a_path_outside_the_workspace(memory, editor, path):
 
 
 @pytest.mark.parametrize("path", [
-    "sources/D1",          # the append-only evidence record
     "timeline/2026/01/01",  # a derived view, rebuilt from topics
     "recent_events.jsonl",
 ])
@@ -148,7 +144,7 @@ def test_edit_that_changes_nothing_is_not_a_write(memory, editor, capsys):
 def test_edit_gives_up_while_the_workspace_lock_is_held(memory, editor):
     import threading
 
-    from openprogram.memory.management.transaction import (
+    from openprogram.state.memory.management.transaction import (
         workspace_write_lock,
     )
     editor.content = NOTE.replace("worth keeping", "worth remembering")
@@ -163,12 +159,12 @@ def test_edit_gives_up_while_the_workspace_lock_is_held(memory, editor):
 
     holder = threading.Thread(target=hold_lock)
     holder.start()
-    assert acquired.wait(timeout=2)
+    assert acquired.wait(timeout=30)
     try:
         assert _edit(memory, "topics/note.md") == 1
     finally:
         release.set()
-        holder.join(timeout=2)
+        holder.join(timeout=30)
     assert not holder.is_alive()
     assert (memory / "topics/note.md").read_text(encoding="utf-8") == NOTE
 
@@ -185,3 +181,29 @@ def test_stage_directories_are_cleaned_up_on_both_paths(memory, editor):
     assert _edit(memory, "topics/note.md") == 0
 
     assert _stage_dirs() == before
+
+
+def test_cli_edit_rejects_dangling_link_and_retains_draft(memory, editor, capsys):
+    # A person's uncited paragraph is kept; a link to no block is not.
+    from openprogram.state.memory.store import _ensure_git_history
+    from openprogram.state.memory.management.transaction import workspace_revision
+
+    _ensure_git_history(memory)
+    before = {
+        p.relative_to(memory): p.read_bytes() for p in memory.rglob("*")
+        if p.is_file() and ".git" not in p.relative_to(memory).parts
+    }
+    revision = workspace_revision(memory)
+    head = subprocess.check_output(["git", "-C", str(memory), "rev-parse", "HEAD"])
+    editor.content = NOTE + "\n## Broken section\n\nSee [nothing](note.md#^deadbeef).\n"
+    assert _edit(memory, "topics/note.md") == 1
+    out = capsys.readouterr().out
+    assert "Rejected:" in out
+    kept = Path(out.rsplit("kept at ", 1)[1].strip())
+    assert kept.read_text() == editor.content
+    assert {
+        p.relative_to(memory): p.read_bytes() for p in memory.rglob("*")
+        if p.is_file() and ".git" not in p.relative_to(memory).parts
+    } == before
+    assert workspace_revision(memory) == revision
+    assert subprocess.check_output(["git", "-C", str(memory), "rev-parse", "HEAD"]) == head

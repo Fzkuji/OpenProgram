@@ -1,0 +1,44 @@
+<title>输入框悬停提示</title>
+<meta name="description" content="输入框每个控件的悬停提示写什么、如何显示。">
+<h1>输入框悬停提示</h1>
+
+<p>来自 <code translate="no">components/ui/tooltip.tsx</code> 的 <code translate="no">HoverTip</code> 和 <code translate="no">TipBody</code>：标题行写控件和当前值，可选的弱化详情行。停留 1.5 秒后出现，控件菜单打开时不出现。反色 radix-nova 徽标带箭头，12px，最宽 <code translate="no">max-w-xs</code>，路径可在任意处换行。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">控件</th><th scope="col">标题</th><th scope="col">详情</th></tr></thead>
+<tbody>
+<tr><th scope="row">通道（Local）</th><td>通道：&lt;名称&gt;</td><td>对话在哪里运行；点击切换</td></tr>
+<tr><th scope="row">项目分段</th><td>项目：&lt;名称&gt;</td><td>文件夹路径；本对话已固定，或点击选择</td></tr>
+<tr><th scope="row">工作文件夹分段</th><td>工作文件夹：&lt;名称&gt;</td><td>完整路径；Agent 可以读写</td></tr>
+<tr><th scope="row">工作文件夹上的 ✕</th><td>从本对话移除</td><td>磁盘上的文件保留</td></tr>
+<tr><th scope="row">Git 分段</th><td>&lt;仓库&gt; · &lt;完整分支&gt;</td><td>未提交文件和 +/−；worktree 路径；菜单提供什么</td></tr>
+<tr><th scope="row">添加文件夹</th><td>添加工作文件夹</td><td>再给 Agent 一个文件夹</td></tr>
+<tr><th scope="row">网页 chip</th><td>网页：&lt;标题&gt;</td><td>Agent 可以读取和操作；点击关闭预览或重新显示</td></tr>
+<tr><th scope="row">Goal chip</th><td>目标</td><td>目标文字；点击查看进度和控件</td></tr>
+<tr><th scope="row">权限徽标</th><td>权限：&lt;模式&gt;</td><td>该模式的说明</td></tr>
+<tr><th scope="row">选项（+）</th><td>选项</td><td>添加文件，开关网页搜索或沙箱</td></tr>
+<tr><th scope="row">已开启的 chip</th><td>网页搜索已开启、沙箱已开启、无人值守已开启</td><td>它的作用；点击关闭</td></tr>
+<tr><th scope="row">深度</th><td>思考深度：&lt;档位&gt;</td><td>模型思考多久；点击调整</td></tr>
+<tr><th scope="row"><a href="effort-picker.zh.html">深度卡片</a>里的 <code translate="no">?</code></th><td>思考深度</td><td>档位越高思考越久、用量越多，越低回答越快；“推荐”标记模型默认值</td></tr>
+<tr><th scope="row">模型徽标</th><td>模型：&lt;模型&gt;</td><td>它的角色；点击更换模型</td></tr>
+<tr><th scope="row">Agent 徽标</th><td>Agent：&lt;名称&gt;</td><td>对话使用的配置，或它常驻；点击更换 Agent</td></tr>
+</tbody>
+</table>
+
+<h2>网页预览标题栏</h2>
+<table class="stack">
+<thead><tr><th scope="col">控件</th><th scope="col">标题</th><th scope="col">详情</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开页面</th><td>打开页面</td><td>切到中间区域的这个标签</td></tr>
+<tr><th scope="row">审核请求，等待审批时</th><td>审核请求</td><td>Agent 在等待你的确认</td></tr>
+<tr><th scope="row">更多（⋮）</th><td>更多</td><td>自动跟随、操作标记和操作历史</td></tr>
+<tr><th scope="row">关闭（✕）</th><td>关闭预览</td><td>隐藏预览；Agent 继续工作</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">components/center-tabs/pip/web-tab-pip.tsx</code>。八个调整大小的手柄保留 <code translate="no">aria-label</code>，不显示提示。标题和状态文字是标签，保留原生 <code translate="no">title</code> 以显示截断内容。</p>
+
+<h2>原生 title 例外</h2>
+<dl class="pairs">
+<dt>发送按钮</dt><dd>保留原生 <code translate="no">title</code>：禁用时（粘贴丢失、附件加载中）不触发 <code translate="no">HoverTip</code> 需要的指针事件</dd>
+<dt>Fast 开关</dt><dd>保留现有提示文字</dd>
+</dl>

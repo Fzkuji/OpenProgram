@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from openprogram._ports import backend_is_ours
-from openprogram.backend_endpoint import create_owner_challenge_proof
-from openprogram.webui.owner_auth import OwnerAuthState
+from openprogram.operations.worker.ports import backend_is_ours
+from openprogram.host.security.backend_endpoint import create_owner_challenge_proof
+from openprogram.interfaces.server.owner_auth import OwnerAuthState
 
 
 RAW_TOKEN = bytes(range(32))
@@ -16,14 +16,14 @@ def test_backend_identity_uses_worker_ownership_without_network_credentials(
     port_file = tmp_path / "worker.port"
     port_file.write_text("18100\n", encoding="utf-8")
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid",
+        "openprogram.operations.worker.lifecycle.current_worker_pid",
         lambda: 12345,
     )
     monkeypatch.setattr(
-        "openprogram.worker.paths.port_path",
+        "openprogram.operations.worker.paths.port_path",
         lambda: port_file,
     )
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
 
     auth_state = OwnerAuthState.start(
         state_dir=tmp_path,
@@ -70,7 +70,7 @@ def test_backend_identity_uses_worker_ownership_without_network_credentials(
         return ChallengeClient()
 
     monkeypatch.setattr(
-        "openprogram.security.safe_http.configured_safe_client", configured
+        "openprogram.host.security.safe_http.configured_safe_client", configured
     )
 
     try:
@@ -82,7 +82,7 @@ def test_backend_identity_uses_worker_ownership_without_network_credentials(
 
 def test_backend_identity_is_inconclusive_without_a_managed_worker(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid",
+        "openprogram.operations.worker.lifecycle.current_worker_pid",
         lambda: None,
     )
 

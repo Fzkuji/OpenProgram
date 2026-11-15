@@ -7,12 +7,31 @@
  */
 
 import { translateText } from "@/lib/i18n";
+import { showToast } from "@/lib/format-utils/toast";
+import { openRewindPicker } from "@/lib/chat/rewind/rewind-actions";
 
 export interface SlashContext {
   sessionId: string | null;
+  /** Raw socket write; false when the socket did not take the frame. */
   send: (payload: unknown) => boolean;
+  /** Send `text` as a chat turn through the composer's normal send path
+   *  (optimistic bubble, the chat's permission mode and Agent). During a
+   *  run, while a request waits or while disconnected it is queued for
+   *  the next turn. */
+  sendChat: (text: string) => boolean;
+  /** Send `text` as a backend-run command (/goal, /rename …) of this
+   *  composer's conversation. When idle it is that conversation's message:
+   *  a draft's first one carries the draft's own id and settings, so the
+   *  command runs in the draft and the tab becomes that conversation, and
+   *  its bubble shows at once. During a run or a waiting request it goes
+   *  at once beside the turn (the server runs it before reserving one). */
+  sendCommand: (text: string) => boolean;
+  /** This conversation has a turn running or a request waiting. */
+  busy: boolean;
   newConversation: () => void;
   setInput: (value: string, focus?: boolean) => void;
+  /** Show `text` as a transient system row in this conversation. */
+  showLocalReply: (text: string) => void;
   /** 打开 /context 分类分解面板（token breakdown）。 */
   openContextPanel?: () => void;
 }
@@ -21,8 +40,21 @@ export interface SlashCommand {
   name: string;
   args?: string;
   description: string;
+  /** Changes the conversation's history, so it waits for an idle chat. */
+  needsIdle?: boolean;
+  /** While a turn runs the command does nothing and says nothing. */
+  ignoredWhileBusy?: boolean;
+  /** False when the command could not be carried out (the socket refused
+   *  its frame); the draft then stays for a retry. */
   run: (rest: string, ctx: SlashContext) => boolean;
 }
+
+/** What a submit did with a slash command: ran it, or recognised it but
+ *  could not run it (the draft stays). `null`: the text names no command. */
+export type SlashOutcome = "ran" | "failed" | null;
+
+const startFirst = () =>
+  showToast(translateText("Start a conversation first", "先开始一段对话再执行此命令"), { tone: "warn" });
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
@@ -30,18 +62,18 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     args: "[keep_recent_tokens]",
     description:
       "Summarise older history; keep recent N tokens verbatim (default: window-adaptive)",
+    needsIdle: true,
     run(rest, { sessionId, send }) {
       if (!sessionId) {
-        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        startFirst();
         return true;
       }
       const n = parseInt(rest.trim(), 10);
-      send({
+      return send({
         action: "compact",
         session_id: sessionId,
         ...(Number.isFinite(n) && n > 0 ? { keep_recent_tokens: n } : {}),
       });
-      return true;
     },
   },
   {
@@ -77,7 +109,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       + "let the model summarise one",
     run(rest, { sessionId, send }) {
       if (!sessionId) {
-        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        startFirst();
         return true;
       }
       // A branch in this DAG IS a named leaf — there is no separate
@@ -85,27 +117,21 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       // non-tip node. So naming the active head is what "/branch" means;
       // both handlers resolve head_msg_id from the session's head.
       const name = rest.trim();
-      send(
+      return send(
         name
           ? { action: "rename_branch", session_id: sessionId, name }
           : { action: "auto_name_branch", session_id: sessionId },
       );
-      return true;
     },
   },
   {
     name: "/skill",
     args: "<name>",
     description: "Run a registered skill by name",
-    run(rest, { sessionId, send }) {
+    run(rest, { sendChat }) {
       const name = rest.trim();
-      if (!sessionId) {
-        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
-        return true;
-      }
       if (!name) return true;
-      send({ action: "chat", session_id: sessionId, text: `/skill ${name}` });
-      return true;
+      return sendChat(`/skill ${name}`);
     },
   },
   {
@@ -127,17 +153,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       + "animates the row while it runs and you can keep chatting. "
       + "Without --async this blocks until the spawned agent "
       + "finishes (legacy behaviour).",
-    run(rest, { sessionId, send }) {
-      if (!sessionId) {
-        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
-        return true;
-      }
-      send({
-        action: "chat",
-        session_id: sessionId,
-        text: "/task " + rest,
-      });
-      return true;
+    run(rest, { sendChat }) {
+      return sendChat("/task " + rest);
     },
   },
   {
@@ -146,17 +163,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description:
       "Merge N peer branches into a reply on this session. "
       + "Same-session: 'sid:head_id'. Mark base with '*' prefix.",
-    run(rest, { sessionId, send }) {
-      if (!sessionId) {
-        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
-        return true;
-      }
-      send({
-        action: "chat",
-        session_id: sessionId,
-        text: "/merge " + rest,
-      });
-      return true;
+    run(rest, { sendChat }) {
+      return sendChat("/merge " + rest);
     },
   },
   {
@@ -173,30 +181,23 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: "/sandbox",
     description: "Toggle system sandbox — restrict bash to cwd writes only",
     run(_rest, { send }) {
-      send({ action: "sandbox" });
-      return true;
+      return send({ action: "sandbox" });
     },
   },
   {
     name: "/rewind",
-    args: "[N]",
-    description:
-      "Roll back to a previous point. No arg = list points; N = rewind to the Nth point",
-    run(rest, { sessionId, send }) {
+    description: "Go back to an earlier message: pick it from a list",
+    ignoredWhileBusy: true,
+    run(rest, { sessionId }) {
       if (!sessionId) {
-        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        startFirst();
         return true;
       }
-      const n = parseInt(rest.trim(), 10);
-      if (Number.isFinite(n) && n > 0) {
-        send({
-          action: "rewind",
-          session_id: sessionId,
-          target_msg_id: `__by_index__${n}`,
-        });
-      } else {
-        send({ action: "rewind_list", session_id: sessionId });
+      if (rest.trim()) {
+        showToast(translateText("/rewind takes no arguments. Send it alone and pick a message.", "/rewind 不带参数，直接发送后选择消息。"), { tone: "warn" });
+        return true;
       }
+      void openRewindPicker(sessionId);
       return true;
     },
   },
@@ -204,7 +205,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: "/doctor",
     description:
       "Run health checks: python, node, skills, plugins, providers, mcp, cache",
-    run(_rest, { sessionId, send }) {
+    // A local check: the report is shown here, never sent to the model.
+    run(_rest, { sessionId, showLocalReply }) {
       (async () => {
         try {
           const r = await fetch("/api/doctor");
@@ -220,13 +222,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
             (data.all_ok
               ? "\n\n" + translateText("All checks passed.", "所有检查通过。")
               : "\n\n" + translateText("Some checks failed.", "部分检查失败。"));
-          if (sessionId) {
-            send({ action: "chat", session_id: sessionId, text });
-          } else {
-            alert(text);
-          }
+          if (sessionId) showLocalReply(text);
+          else showToast(text, { tone: "info" });
         } catch (e) {
-          alert(translateText("Doctor check failed: ", "Doctor 检查失败：") + String(e));
+          showToast(translateText("Doctor check failed: ", "Doctor 检查失败：") + String(e), { tone: "error" });
         }
       })();
       return true;

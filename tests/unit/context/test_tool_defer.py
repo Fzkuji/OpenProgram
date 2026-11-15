@@ -10,25 +10,35 @@ from openprogram.programs import (
     apply_default_deferral,
     agent_tools,
     deferred_catalog_text,
-    freeze_turn_tools,
-    install_loaded_deferred,
-    release_turn_tools,
+    loaded_tools,
+    note_request_loaded,
     split_tools_for_dispatch,
     tool_search,
 )
+from openprogram.models.providers.types import ToolResultMessage
 
 
 @pytest.fixture(autouse=True)
-def _no_frozen_turn():
-    """Every test starts outside a turn, so the split reads the live loaded
-    set unless the test freezes on purpose."""
-    from openprogram.programs._runtime import _allowed_tool_names
+def _no_loaded_tools():
+    """Every test starts with no request sent, so nothing is loaded."""
+    from openprogram.programs._host.runtime import _allowed_tool_names, _request_loaded
 
     allowed_token = _allowed_tool_names.set(None)
-    release_turn_tools()
+    loaded_token = _request_loaded.set(frozenset())
     yield
-    release_turn_tools()
+    _request_loaded.reset(loaded_token)
     _allowed_tool_names.reset(allowed_token)
+
+
+def _search(name: str, call_id: str = "call-1") -> ToolResultMessage:
+    """The result message of ``tool_search select:<name>``, as the loop keeps it."""
+    result = asyncio.run(tool_search.execute(call_id, {"select": f"select:{name}"}, None, None))
+    return ToolResultMessage(tool_call_id=call_id, tool_name="tool_search",
+                             content=result.content, details=result.details, timestamp=0)
+
+
+def _split(tools, messages=()):
+    return split_tools_for_dispatch(list(tools), loaded_tools(messages))
 
 
 def test_resident_tools_not_deferred():
@@ -68,7 +78,6 @@ def test_apply_is_idempotent():
 
 
 def test_deferred_defaults_absent_from_resident_schema():
-    install_loaded_deferred()  # fresh session — nothing loaded yet
     apply_default_deferral()
     provider_tools, _ = split_tools_for_dispatch(agent_tools(toolset="full"))
     resident = {t.name for t in provider_tools}
@@ -81,34 +90,35 @@ def test_deferred_defaults_absent_from_resident_schema():
 
 
 def test_deferred_defaults_appear_in_catalog_line():
-    install_loaded_deferred()
     apply_default_deferral()
     _, catalog = split_tools_for_dispatch(agent_tools(toolset="full"))
     catalog_names = {n for n, _ in catalog}
     missing = DEFERRED_DEFAULT_TOOLS - catalog_names
     assert not missing, f"deferred tools missing from catalog: {sorted(missing)}"
-    # The prompt intentionally keeps only a bounded count and search guidance;
-    # names and schemas are returned by tool_search on demand.
+    # The prompt names the deferred tools, at most DEFERRED_NAMES_SHOWN of
+    # them; schemas are returned by tool_search on demand.
+    from openprogram.programs._host.runtime import DEFERRED_NAMES_SHOWN
     text = deferred_catalog_text(catalog)
     assert text.startswith(f"{len(catalog)} deferred tools are available")
-    assert "Their names and schemas are not loaded" in text
+    assert "Only these tools need loading" in text
+    assert "Every tool already in your tools list is callable as it is" in text
     assert "tool_search" in text
-    assert not any(name in text for name in DEFERRED_DEFAULT_TOOLS)
+    shown = [name for name, _ in catalog][:DEFERRED_NAMES_SHOWN]
+    assert all(name in text for name in shown)
 
 
 def test_default_web_prompt_advertises_deferred_memory_tools(monkeypatch):
     """Ordinary chats can discover memory without paying for its schemas."""
-    import openprogram.setup as setup
-    from openprogram.context.components import build_system_prompt
+    from openprogram.state import config as user_config
+    from openprogram.runtime.context.components import build_system_prompt
 
-    monkeypatch.setattr(setup, "_read_config", lambda: {})
-    install_loaded_deferred()
+    monkeypatch.setattr(user_config, "read_config", lambda: {})
     apply_default_deferral()
     tools = agent_tools(source="web", only_available=True)
     provider_tools, catalog = split_tools_for_dispatch(tools)
     provider_names = {tool.name for tool in provider_tools}
     catalog_names = {name for name, _ in catalog}
-    expected = {"memory_search", "memory_update", "memory_status"}
+    expected = {"memory_search", "memory_update", "memory_get"}
 
     assert expected <= {tool.name for tool in tools}
     assert not (expected & provider_names)
@@ -120,10 +130,10 @@ def test_default_web_prompt_advertises_deferred_memory_tools(monkeypatch):
 
 
 def test_disabled_memory_backend_removes_default_memory_tools(monkeypatch):
-    import openprogram.setup as setup
+    from openprogram.state import config as user_config
 
     monkeypatch.setattr(
-        setup, "_read_config", lambda: {"memory": {"backend": "none"}},
+        user_config, "read_config", lambda: {"memory": {"backend": "none"}},
     )
 
     names = {
@@ -133,133 +143,119 @@ def test_disabled_memory_backend_removes_default_memory_tools(monkeypatch):
 
 
 def test_tool_search_loads_a_deferred_default():
-    """After tool_search, the tool moves into the provider array."""
-    install_loaded_deferred()
+    """After tool_search, the tool moves into the provider array of the
+    request whose messages hold its result."""
     apply_default_deferral()
-    name = "playwright_browser"
-    before, _ = split_tools_for_dispatch(agent_tools(toolset="full"))
+    name = "scheduler"
+    tools = agent_tools(toolset="full")
+    before, _ = _split(tools)
     assert name not in {t.name for t in before}
 
-    asyncio.run(tool_search.execute(
-        "call-1", {"select": f"select:{name}"}, None, None,
-    ))
-
-    after, catalog = split_tools_for_dispatch(agent_tools(toolset="full"))
+    after, catalog = _split(tools, [_search(name)])
     assert name in {t.name for t in after}, "tool_search did not load the schema"
-    assert name not in {n for n, _ in catalog}, "still listed as unloaded"
-    install_loaded_deferred()  # reset so test order can't leak state
+    assert name in {n for n, _ in catalog}, "the prompt's list must not change"
 
 
-# --- Turn-boundary freeze ---------------------------------------------------
+# --- The loaded set is read from the request's messages ---------------------
 #
-# The tools array is the root of both providers' cached prefix. Growing it
-# the moment tool_search runs invalidates that prefix for the rest of the
-# turn, so the array is pinned at the turn boundary instead.
+# Nothing holds what is loaded: a request loads what its own messages loaded.
 
 
-def _load(name: str) -> None:
-    asyncio.run(tool_search.execute(
-        "call-1", {"select": f"select:{name}"}, None, None,
-    ))
-
-
-def test_discovery_promotes_only_the_loaded_tool_within_a_turn():
+def test_discovery_promotes_only_the_loaded_tool():
     """Explicit discovery updates the next provider request's tool array."""
-    install_loaded_deferred()
     apply_default_deferral()
     tools = agent_tools(toolset="full")
-
-    freeze_turn_tools(list(tools))  # turn boundary
-    before, cat_before = split_tools_for_dispatch(list(tools))
-
-    _load("playwright_browser")
-
-    after, cat_after = split_tools_for_dispatch(list(tools))
-    assert {t.name for t in after} == {t.name for t in before} | {"playwright_browser"}
-    assert cat_after == [(name, hint) for name, hint in cat_before if name != "playwright_browser"]
-    _load("playwright_browser")
-    repeated, _ = split_tools_for_dispatch(list(tools))
+    before, cat_before = _split(tools)
+    first = _search("scheduler")
+    after, cat_after = _split(tools, [first])
+    assert {t.name for t in after} == {t.name for t in before} | {"scheduler"}
+    assert cat_after == cat_before
+    repeated, _ = _split(tools, [first, _search("scheduler", "call-2")])
     assert [t.name for t in repeated] == [t.name for t in after]
-    install_loaded_deferred()
 
 
-def test_discovered_tool_remains_in_array_at_the_next_turn():
-    install_loaded_deferred()
+def test_a_request_without_the_search_does_not_load_the_tool():
+    """A nested run, another branch, or an edit from before the search reads
+    messages without the result, so the tool is not loaded there."""
     apply_default_deferral()
     tools = agent_tools(toolset="full")
-    name = "playwright_browser"
+    loaded_elsewhere = _search("scheduler")
+    assert "scheduler" in {t.name for t in _split(tools, [loaded_elsewhere])[0]}
+    assert "scheduler" not in {t.name for t in _split(tools, [])[0]}
 
-    freeze_turn_tools(list(tools))
-    _load(name)
-    assert name in {t.name for t in split_tools_for_dispatch(list(tools))[0]}
 
-    freeze_turn_tools(list(tools))  # next turn boundary
-    after, catalog = split_tools_for_dispatch(list(tools))
-    assert name in {t.name for t in after}, "not promoted on the next turn"
-    assert name not in {n for n, _ in catalog}, "still advertised as unloaded"
-    install_loaded_deferred()
+def test_a_failed_search_loads_nothing():
+    apply_default_deferral()
+    missing = _search("zzzz_no_such_tool_qqq")
+    assert loaded_tools([missing]) == []
+
+
+def test_loading_a_tool_leaves_the_system_prompt_unchanged():
+    """The prompt is sent ahead of the conversation. A catalogue that dropped
+    a tool once loaded changed it on the next turn, and the provider re-read
+    the whole conversation uncached."""
+    from openprogram.runtime.context.components import build_system_prompt
+
+    apply_default_deferral()
+    tools = agent_tools(toolset="full")
+    before = build_system_prompt(None, tools=tools)
+    assert "scheduler" in {t.name for t in _split(tools, [_search("scheduler")])[0]}
+    assert build_system_prompt(None, tools=tools) == before
 
 
 def test_tool_search_returns_the_schema_for_same_turn_use():
     """Availability must not wait for the array: the result text carries the
     full schema so the model can construct the call this turn."""
-    install_loaded_deferred()
     apply_default_deferral()
-    from openprogram.programs._runtime import _tool_search_impl
+    from openprogram.programs._host.runtime import _tool_search_impl
 
-    text = _tool_search_impl("select:playwright_browser")
-    assert "playwright_browser" in text
+    text = _tool_search_impl("select:scheduler")
+    assert "scheduler" in text
     # The parameter schema itself, not just the name + description.
     assert '"parameters"' in text
     assert '"properties"' in text
     # And it says the tool is callable right now.
     assert "THIS turn" in text
     assert "next turn" not in text
-    install_loaded_deferred()
 
 
-def test_tool_search_already_loaded_keyword_points_to_direct_call():
-    install_loaded_deferred()
+def test_tool_search_already_loaded_keyword_loads_it_again():
+    """A tool the request already loaded is ranked and loaded like the
+    others: its definition comes back (Claude Code returns the reference),
+    never a 'no match'."""
     apply_default_deferral()
-    from openprogram.programs._runtime import _tool_search_impl
+    from openprogram.programs._host.runtime import _tool_search_impl
 
-    first = _tool_search_impl("select:playwright_browser")
+    first = _tool_search_impl("select:scheduler")
     assert "Loaded 1 deferred tool" in first
-    again = _tool_search_impl("playwright_browser")
-    assert "already loaded in this turn's tool list" in again
-    assert "call it directly" in again
+    note_request_loaded(["scheduler"])  # the next request read it from its messages
+    again = _tool_search_impl("scheduler")
+    assert again.startswith("Loaded ")
+    assert '{"name": "scheduler"' in again
     assert "No deferred tools matched" not in again
-    install_loaded_deferred()
 
 
 def test_tool_search_true_miss_still_says_no_match():
-    install_loaded_deferred()
     apply_default_deferral()
-    from openprogram.programs._runtime import _tool_search_impl
+    from openprogram.programs._host.runtime import _tool_search_impl
 
-    text = _tool_search_impl("zzzz_no_such_deferred_tool_qqq")
+    # No query word appears in any tool (BM25 ranks "tool" or "deferred").
+    text = _tool_search_impl("zzzzqqq xyzzyplugh")
     assert text.startswith("No deferred tools matched query")
-    install_loaded_deferred()
 
 
 def test_discovered_tool_keeps_the_resolved_dispatch_target():
     """Provider promotion keeps the existing resolved tool for dispatch."""
-    install_loaded_deferred()
     apply_default_deferral()
     tools = agent_tools(toolset="full")
-    name = "playwright_browser"
-
-    freeze_turn_tools(list(tools))
-    _load(name)
-
-    provider_array = {t.name for t in split_tools_for_dispatch(list(tools))[0]}
+    name = "scheduler"
+    provider_array = {t.name for t in _split(tools, [_search(name)])[0]}
     assert name in provider_array, "discovered tool must be in the next request"
 
     # Same lookup agent_loop._execute_tool_calls performs.
     resolved = next((t for t in tools if t.name == name), None)
     assert resolved is not None, "loaded tool must still be dispatchable"
     assert callable(resolved.execute)
-    install_loaded_deferred()
 
 
 def test_deferred_catalog_component_reflects_deferral():
@@ -269,10 +265,36 @@ def test_deferred_catalog_component_reflects_deferral():
     also proves the ``deferred_catalog`` component is still registered and
     reached during assembly.
     """
-    from openprogram.context.components import build_system_prompt
+    from openprogram.runtime.context.components import build_system_prompt
 
-    install_loaded_deferred()
     apply_default_deferral()
     prompt = build_system_prompt(None, tools=agent_tools(toolset="full"))
     for name in DEFERRED_DEFAULT_TOOLS:
         assert name in prompt, f"{name} missing from assembled system prompt"
+
+
+def test_a_tool_name_loads_exactly_that_tool():
+    """``select:scheduler`` and a query that is the name ``scheduler`` both
+    load the one tool: other tools that merely mention scheduling (``cron``,
+    ``remind``) are what a keyword query is for. The argument is itself
+    called ``select``, so a model asking for one tool writes either form."""
+    apply_default_deferral()
+    from openprogram.programs._host.runtime import _tool_search_run
+
+    for query in ("select:scheduler", "select: scheduler", "scheduler"):
+        text, loaded = _tool_search_run(query)
+        assert [t.name for t in loaded] == ["scheduler"], query
+        assert text.startswith("Loaded 1 deferred tool."), query
+        assert "matching" not in text.splitlines()[0], query
+
+    _text, loaded = _tool_search_run("select:scheduler,cron")
+    assert [t.name for t in loaded] == ["scheduler", "cron"]
+
+
+def test_a_keyword_query_still_matches_several_tools():
+    apply_default_deferral()
+    from openprogram.programs._host.runtime import _tool_search_run
+
+    text, loaded = _tool_search_run("scheduler recurring")
+    assert len(loaded) > 1
+    assert "matching 'scheduler recurring'" in text

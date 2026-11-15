@@ -16,7 +16,7 @@ def test_file_tree_restores_anchor_without_refocusing_first_row(tmp_path: Path) 
 const {build}=require('esbuild');
 build({stdin:{contents:`
 import React from 'react';import{createRoot}from'react-dom/client';
-import{PierreFileTree}from'./components/files/pierre-file-tree';
+import{PierreFileTree}from'./components/files/explorer/pierre-file-tree';
 function App(){
  const ref=React.useRef(null),saved=React.useRef(null);
  const[revision,setRevision]=React.useState(0),[selected,setSelected]=React.useState(null);
@@ -28,7 +28,9 @@ function App(){
  <button onClick={()=>setRevision(x=>x+1)}>Refresh metadata</button>
  <div style={{height:400,width:400}}><PierreFileTree ref={ref} projectId="test" entries={rows} expanded={expanded} selected={selected} onExpandedChange={setExpanded} onSelect={setSelected} onOpen={()=>{}} onContextMenu={()=>{}}/></div><output>{revision}</output></>;
 }createRoot(document.getElementById('root')).render(<App/>);`,resolveDir:process.cwd()+'/apps/web',loader:'tsx'},bundle:true,jsx:'automatic',format:'iife',outfile:process.argv[1],plugins:[{name:'metadata',setup(b){
-b.onResolve({filter:/^\.\/file-management$/},()=>({path:'meta',namespace:'fixture'}));
+b.onResolve({filter:/^@\/lib\/i18n$/},()=>({path:'i18n',namespace:'translation'}));
+b.onLoad({filter:/.*/,namespace:'translation'},()=>({contents:'export const useTranslation=()=>({text:en=>en,locale:"en"});',loader:'js'}));
+b.onResolve({filter:/^\.\.\/file-management$/},()=>({path:'meta',namespace:'fixture'}));
 b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const formatFileBytes=x=>String(x); export const useFolderSize=()=>({value:{bytes:0,state:"ready"}});',loader:'js'}));
 }}]}).catch(e=>{console.error(e);process.exit(1)});
 """

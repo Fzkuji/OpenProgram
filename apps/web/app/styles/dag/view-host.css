@@ -1,5 +1,5 @@
 /* 中央 DAG 视角宿主：.dag-view 与 data-center-view 切换规则。
-   对应组件：components/chat/dag-view.tsx、components/app-shell.tsx */
+   对应组件：components/chat/dag/dag-view.tsx、components/app-shell.tsx */
 
 /* The graph perspective hides the TRANSCRIPT, not `#chatView`. The
    composer is a singleton portalled into `#composer-mount` inside
@@ -13,7 +13,7 @@
 }
 /* The DAG host, center-width. `.history-body` (right-dock.css) is the
    infinite canvas the renderer writes the SVG into — it fills this box
-   and pans/zooms under the user's hand (lib/runtime-bridge/dag/interaction/canvas.ts),
+   and pans/zooms under the user's hand (lib/runtime-bridge/dag/interaction/view/canvas.ts),
    so a perspective switch or a split-view drag changes what is on screen
    without re-flowing the graph. */
 .dag-view {

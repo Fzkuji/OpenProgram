@@ -1,0 +1,18 @@
+/* Floats the find pill over the top-right of the chat column (#chatView,
+   which does not scroll), left of the view controls column the way the
+   graph's selection bar sits (dag/panels/tools.css). The pill itself is the web
+   tab's find pill. */
+.anchor {
+  position: absolute;
+  top: 9px;
+  right: 48px;
+  z-index: 8;
+  container-type: inline-size;
+  width: min(500px, calc(100% - 64px));
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.anchor > * {
+  pointer-events: auto;
+}

@@ -1,0 +1,128 @@
+<title>Capability differences</title>
+<meta name="description" content="Capabilities the reference frameworks have that OpenProgram lacks, and the mechanisms OpenProgram has that they lack.">
+<h1>Capability differences</h1>
+<p class="note">Part of the <a href="framework-comparison.html">framework comparison</a>. Listing a capability does not approve building it.</p>
+
+<h2 id="blind">Missing capabilities</h2>
+
+<h3>Challenges to the current approach</h3>
+<table class="stack">
+<thead><tr><th scope="col">Capability</th><th scope="col">Mechanism</th><th scope="col">OpenProgram today</th><th scope="col">Assessment</th></tr></thead>
+<tbody>
+<tr><th scope="row">code mode · codex</th><td>The model writes JavaScript instead of emitting tool calls; details in <a href="framework-comparison.html#three">Conclusions</a></td><td>Workflows become Python in advance. Model-written code during the turn is unexplored: the other form of the same approach</td><td><b>Warrants a separate comparison.</b> Also a different tool-selection mechanism: the whole tool surface behind one exec entry</td></tr>
+<tr><th scope="row">Training data from the harness · hermes</th><td>Batch runs over datasets; each example's visible toolset sampled from a distribution; trajectories compressed to a token budget and fed to the Atropos reinforcement-learning environment. <code translate="no">batch_runner.py</code> · <code translate="no">toolset_distributions.py</code> · <code translate="no">trajectory_compressor.py</code> · <code translate="no">environments/</code></td><td>Tool selection is a permission question, not sampling of an example's observation space</td><td>Training pipelines are out of scope. A complete versioned trajectory format stays a candidate</td></tr>
+</tbody>
+</table>
+
+<h3>Adoption by other users</h3>
+<table class="stack">
+<thead><tr><th scope="col">Capability</th><th scope="col">Mechanism</th><th scope="col">OpenProgram today</th><th scope="col">Assessment</th></tr></thead>
+<tbody>
+<tr><th scope="row">Import from other agents · codex, openclaw</th><td>Codex: a crate of about 16 thousand lines, <code translate="no">external-agent-migration</code>, imports sessions, configuration and skills, including claude-code's, and keeps <code translate="no">external_agent_session_imports.json</code>. OpenClaw: two extensions</td><td>Completeness got attention; moving months of work from another tool did not</td><td><b>Not implemented.</b> Reading an external skills format is not migration</td></tr>
+<tr><th scope="row">105-entry feature registry · codex</th><td><code translate="no">features/src/lib.rs</code> gives each capability a stage (Stable, UnderDevelopment, Experimental, Removed, Deprecated) and <code translate="no">default_enabled</code>. One third of shipped capabilities are off by default</td><td>Capabilities are spread through the code; nothing shows what ships or sits behind experimental switches</td><td><b>Not implemented</b></td></tr>
+<tr><th scope="row">Prompts and tool authorization as data · codebuddy</th><td><code translate="no">product.json</code> swaps per deployment; see <a href="#codebuddy">codebuddy-code</a></td><td>Prompt components are Python functions, tool authorization is in <code translate="no">agent.json</code>; no replaceable profile with the full configuration</td><td>Partly applicable: the component registry is the structure, the values are not yet external</td></tr>
+<tr><th scope="row">Relocate and share sessions · opencode</th><td><code translate="no">control-plane/move-session.ts</code> moves a session and Git changes to another directory or worktree of the project, not another machine or an active turn. <code translate="no">share/share-next.ts</code> publishes a session at a public URL, streaming into a Durable Object and object storage; self-hosting works too</td><td>Sessions are local assets. The worker, WebSocket clients and per-session logs can support this; no product entry point exists</td><td><b>Evaluate local relocation and public sharing.</b> Cross-worker migration needs a versioned protocol, target placement, authentication, active-turn semantics and failure recovery</td></tr>
+</tbody>
+</table>
+
+<h3>Agent trust</h3>
+<table class="stack">
+<thead><tr><th scope="col">Capability</th><th scope="col">Mechanism</th><th scope="col">OpenProgram today</th><th scope="col">Assessment</th></tr></thead>
+<tbody>
+<tr><th scope="row">Intercept deletion below the tool layer · codebuddy</th><td><code translate="no">rm</code>, <code translate="no">rmdir</code>, <code translate="no">unlink</code> replacements on PATH and <code translate="no">sitecustomize.py</code> through PYTHONPATH redirect deletion to a trash binary, in agent subprocesses too</td><td>Covers common shell, Python and Node deletion in local agent subprocesses bound to a session or turn. Not covered: unbound cron and background jobs, Docker, SSH, absolute-path commands, direct syscalls, disabled injection</td><td><b>Partially implemented.</b> Not a complete security boundary</td></tr>
+<tr><th scope="row">execpolicy · codex</th><td>A small language for command allowlists, rules in <code translate="no">~/.codex/rules/default.rules</code>, separate from the OS sandbox. <b>guardian</b>: an LLM reviews approval prompts</td><td>String matching and fnmatch cannot say "the third argument must not be an absolute path". Reviewing approvals is unexplored</td><td>Defer the DSL. Evaluate a guardian: it addresses the unresolved state in <code translate="no">Gate.ask</code></td></tr>
+<tr><th scope="row">Sandbox capability versus default · openclaw</th><td>Docker, Podman, SSH, OpenShell backends. <code translate="no">mode</code>: <code translate="no">off</code> (default), <code translate="no">non-main</code>, <code translate="no">all</code>. Docker defaults: no network, read-only root, non-root, dropped capabilities. Its documentation says it is not a perfect boundary</td><td>A Docker backend does not imply isolation by default. Compare backend, activation scope, defaults and guarantees separately</td><td>Consider the restrictive defaults; containers are not a complete trust boundary. Acceptance checks the default mode and actual launch arguments</td></tr>
+<tr><th scope="row">Marketplace and public Gateway · openclaw</th><td>Anyone can publish on ClawHub; malicious instruction injection has occurred. Gateway has <code translate="no">CVE-2026-25253</code></td><td>Skills and the owner-authenticated Gateway assume one local user</td><td>Marketplace needs publisher identity, permission descriptions, scanning, takedown, install confirmation. Public exposure needs authentication, binding defaults, patch response, version upgrades</td></tr>
+<tr><th scope="row">Measure AI-written code · codebuddy</th><td>A Git HEAD watcher attributes and reports per-file agent versus human changes</td><td>Records tokens and costs, not output attribution, which enterprises may require</td><td>Record locally before reporting. Per-turn shadow Git and project commits already hold the data</td></tr>
+<tr><th scope="row">Trajectory export · openclaw</th><td><code translate="no">src/trajectory/</code>: system prompt, tool definitions and every event, redacted, in a versioned format with 10 MB / 50 MB / 256 KB limits</td><td>Markdown or HTML for people, tool arguments and results truncated. No versioned package of prompts, full tool definitions, runtime events, provider artifacts, usage and cache data, runtime settings</td><td><b>Partially implemented.</b> Complete trajectories are an unconfirmed candidate</td></tr>
+</tbody>
+</table>
+
+<h3>Proactivity and testing</h3>
+<table class="stack">
+<thead><tr><th scope="col">Capability</th><th scope="col">Mechanism</th><th scope="col">OpenProgram today</th><th scope="col">Assessment</th></tr></thead>
+<tbody>
+<tr><th scope="row">Automations and Heartbeat · openclaw</th><td>Cron, interval and one-time tasks delivering to chat channels or webhooks. Heartbeat: a proactive main-session turn every 30 minutes by default, reporting only noteworthy items</td><td>Scheduler persists one-time, recurring and monitoring tasks with signed execution, retries and recovery; runs agent prompts or controlled commands. No delivery to channels or webhooks, no default heartbeat</td><td><b>Two independent scopes:</b> a result-delivery protocol, and a heartbeat with frequency, quiet-period and filtering rules</td></tr>
+<tr><th scope="row">Commitment tracking · openclaw</th><td><code translate="no">src/commitments/</code>: typed entries (agreements, deadlines, concerns, unfinished work) extracted from chat, confidence threshold 0.86, at most three proactive messages a day. Heartbeat and one-time startup actions are separate paths</td><td>Runs registered external events or Scheduler tasks; conversation does not create future actions</td><td>Would need a threshold, daily limit, revocation and false-trigger handling. Not approved</td></tr>
+<tr><th scope="row">Dreaming · openclaw</th><td>Background promotion of entries above a score from <code translate="no">memory/YYYY-MM-DD.md</code> to <code translate="no">MEMORY.md</code>. A separate automatic pre-compaction flush saves long-term information</td><td>Nightly <code translate="no">reorganize()</code>; no scored promotion from daily notes into core memory</td><td>Keep comparing. Define thresholds, write attribution and pre-compaction failure semantics together</td></tr>
+<tr><th scope="row">Remote device nodes · openclaw</th><td>Native macOS, iOS, watchOS, Android nodes. Mobile: sensors, calendars, notifications; Android control through accessibility services; macOS <code translate="no">computer.act</code></td><td>Channels only exchange messages. A node protocol and a native app are separate choices</td><td>The node protocol warrants a design. Pick device capabilities by permissions, revocable authorization and platform cost</td></tr>
+<tr><th scope="row">Scripted provider and record/replay · pi-mono</th><td>A registered simulated model emits scripted text, reasoning and tool calls with configurable chunks. HTTP and WebSocket recordings live in test fixtures</td><td>Test-only scripted provider through normal registration: text, reasoning, tool calls, errors, multi-turn, real <code translate="no">agent_loop</code> tool-result feedback</td><td><b>Partially implemented.</b> Shipping it needs design approval</td></tr>
+<tr><th scope="row">Switch providers within a session · pi-mono</th><td>Reasoning-block signatures and tool-call IDs are normalized so history continues. A separate extension starts a new session from a generated handoff prompt</td><td>Web and TUI switch models in one session; <code translate="no">models/providers/shared/transform_messages.py</code> normalizes messages, reasoning blocks and tool-call IDs, with tests over cross-provider history</td><td><b>Implemented in one session.</b> A new-session handoff is not required</td></tr>
+</tbody>
+</table>
+
+<h2 id="ours">Distinctive mechanisms</h2>
+<p class="note">Two add capability. The four domains differ mainly in naming.</p>
+<table class="stack">
+<thead><tr><th scope="col">Mechanism</th><th scope="col">Definition</th><th scope="col">Closest counterpart</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Session DAG: branches are head pointers</th><td>Creating a node, backfilling output or metadata, deleting a node, the head, branches, title and archive are each a line in the log. One writer per log; state is folded in memory</td><td><b>OpenClaw</b>: Control UI transcript fork, rewind, branch. <b>pi-mono</b>: <code translate="no">parentId</code>; <code translate="no">/tree</code> also summarizes abandoned branches. <b>opencode</b>: fork makes a new session. <b>codex</b>: agent graph records agent relationships</td><td>Confirmed distinction: transcript branches, a unified DAG and per-session logs together. Transcript branching alone is not unique</td></tr>
+<tr><th scope="row">Agent method: workflows as code</th><td>Calls become code nodes under the <a href="framework-comparison.html#three">conditions in Conclusions</a></td><td>None direct. <b>pi-mono</b> extensions, <b>opencode</b> <code translate="no">tool/*.ts</code>, <b>hermes</b> skills register tools, but history shows only inputs and returns. Complementary: Codex code mode</td><td>Persisted internal steps can be reviewed with the conversation. Top-level manual functions branch through Retry/Edit. Restoring or replaying nested steps is not implemented</td></tr>
+<tr><th scope="row">Four-domain tools: todo, task, agent, message</th><td>todo for plans, task for running work, agent for executors, message for communication; each tool acts only on its noun</td><td><b>opencode</b>: <code translate="no">task</code>, <code translate="no">todowrite</code>. <b>hermes</b>: <code translate="no">delegate</code>, a board. <b>claude-code</b>: Agent, TaskCreate, TaskStop, SendMessage. <b>codebuddy</b>: TaskCreate/Get/Update/List/Stop/Output, undivided</td><td>A difference <b>in naming</b>. The substantive one is in <a href="runtime/collaboration/agent-collab-comparison.html">Agent collaboration</a>: among eight references only OpenProgram limits subagent tools by remaining message budget; its loop prevention matches OpenClaw's</td></tr>
+</tbody>
+</table>
+
+<h2 id="cn">Four Chinese CLIs</h2>
+<p class="note">Packages under <code translate="no">~/.npm-global/lib/node_modules/</code>, read from their <code translate="no">dist/</code> bundles.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Version</th><th scope="col">Size</th><th scope="col">Form</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="#claude"><code translate="no">claude-code-internal</code></a></th><td>1.1.9</td><td>388 lines, 133 KB</td><td>Launcher wrapper around unchanged <code translate="no">@anthropic-ai/claude-code@2.1.154</code></td></tr>
+<tr><th scope="row"><a href="#codex"><code translate="no">codex-internal</code></a></th><td>0.0.8</td><td>502 lines, 572 KB</td><td>Wrapper around <code translate="no">@openai/codex@0.118.0</code></td></tr>
+<tr><th scope="row"><a href="#gemini"><code translate="no">gemini-cli-internal</code></a></th><td>1.9.0</td><td>576,579 lines, 25 MB</td><td>The only source fork of the three adaptations</td></tr>
+<tr><th scope="row"><a href="#codebuddy"><code translate="no">codebuddy-code</code></a></th><td>2.109.3</td><td>2,629 bundled lines, 21.7 MB, plus 16 MB headless</td><td>Tencent's own implementation, internally genie, on an IoC container</td></tr>
+</tbody>
+</table>
+
+<h3 id="claude"><code translate="no">claude-code-internal</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><th scope="row">Endpoint and proxy</th><td>Intranet gateway; local MITM proxy daemon on fixed port 12639</td></tr>
+<tr><th scope="row">Models</th><td>Allowlist fetched from the gateway; Opus and Sonnet both map to GLM-5.1</td></tr>
+<tr><th scope="row">Configuration</th><td>Directory moved to <code translate="no">~/.claude-internal</code>; every <code translate="no">ANTHROPIC_*</code> key is scanned out of settings files, so users cannot override it</td></tr>
+<tr><th scope="row">Telemetry</th><td>Upstream off; intranet reporting includes the Git repository and commit</td></tr>
+<tr><th scope="row">Authentication</th><td>Three methods, including device-code flow for CI</td></tr>
+<tr><th scope="row">Announcements</th><td>Server-provided at startup; require acknowledgment</td></tr>
+</tbody>
+</table>
+
+<h3 id="codex"><code translate="no">codex-internal</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><th scope="row">Provider</th><td>Rewrites <code translate="no">config.toml</code> to inject and force an intranet provider</td></tr>
+<tr><th scope="row">Upstream services</th><td>Update checks and feedback reporting off</td></tr>
+<tr><th scope="row">Reporting</th><td>Injected request headers send open repositories, YOLO mode and session ID to the gateway</td></tr>
+<tr><th scope="row">Restricted commands</th><td><code translate="no">codex mcp add</code> refuses changes to administrator-managed settings; <code translate="no">codex app-server</code> exits immediately</td></tr>
+<tr><th scope="row">Environment</th><td>Clears inherited <code translate="no">OPENAI_*</code> and <code translate="no">CODEX_HOME</code>; binds user ID and email to the subprocess</td></tr>
+</tbody>
+</table>
+
+<h3 id="gemini"><code translate="no">gemini-cli-internal</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><th scope="row">Backend</th><td>New <code translate="no">codebuddy/</code> core module: a fourth ContentGenerator beside Google</td></tr>
+<tr><th scope="row">Authentication</th><td>Two added variants, intranet GitLab OAuth and intranet API key. Google methods remain, so one binary works inside and outside the intranet</td></tr>
+<tr><th scope="row">Reporting</th><td>Repository remotes and submodule paths go to the gateway</td></tr>
+<tr><th scope="row">Sandbox</th><td>API keys are passed into container environments</td></tr>
+</tbody>
+</table>
+
+<h3 id="codebuddy"><code translate="no">codebuddy-code</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tools</th><td>44, many named like claude-code (Agent, Skill, ToolSearch, EnterWorktree, SendMessage, TeamCreate), plus LSP, ComputerUse, CronCreate, Workflow and WeChatReply/WeComReply</td></tr>
+<tr><th scope="row">Prompts and authorization</th><td>Data, not code: a 326 KB <code translate="no">product.json</code> holds 109 Nunjucks templates, per-agent tool allowlists, model allowlists and command tables</td></tr>
+<tr><th scope="row">Deployment</th><td>SaaS, intranet, zero-trust, self-hosted and cloud-hosted share one codebase; only that file changes</td></tr>
+<tr><th scope="row">Sessions</th><td><code translate="no">~/.codebuddy/projects/&lt;cwd-slot&gt;/&lt;uuid&gt;.jsonl</code></td></tr>
+<tr><th scope="row">Sandbox</th><td>Native binary with bubblewrap and seatbelt fallbacks</td></tr>
+<tr><th scope="row">Remote control</th><td>A PWA, "CodeBuddy Code Remote Control", drives local sessions from a mobile browser</td></tr>
+<tr><th scope="row">Headless</th><td>A separate webpack artifact, not a CLI flag</td></tr>
+<tr><th scope="row">Enterprise policy</th><td>The organization server decides whether users may add custom models or upload skills; decisions are cached locally and fail open</td></tr>
+<tr><th scope="row">Compliance</th><td>Content policy opens the system prompt; the client intercepts before model execution</td></tr>
+</tbody>
+</table>

@@ -1,0 +1,34 @@
+<title>故障排查</title>
+<meta name="description" content="解决 provider 缺失、找不到命令、端口冲突、worker 无法启动和导入错误。">
+<h1>故障排查</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">现象</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">"No provider available"</th><td><code translate="no">openprogram providers</code> 列出已存凭据。<code translate="no">openprogram providers discover</code> 查找 Claude Code、Codex、Gemini CLI 登录和可接管的 <code translate="no">env:</code> 密钥。<br>未登录：<code translate="no">openprogram providers login &lt;provider&gt;</code>，或登录对应的外部 CLI。<br>密钥设在另一个 shell：接管它，见<a href="../start/faq.zh.html#no-provider">常见问题</a>。<br>令牌过期：重新登录；<code translate="no">openprogram providers doctor</code> 检查过期、刷新和冲突。</td></tr>
+<tr><th scope="row">"command not found: openprogram"</th><td>重新运行安装脚本，再把 <code translate="no">~/.local/bin</code> 加入 <code translate="no">PATH</code>（见下）</td></tr>
+<tr><th scope="row">Web UI 端口被占用</th><td>启动前 <code translate="no">export OPENPROGRAM_WEB_PORT=8101</code>，或用 <code translate="no">openprogram ports --port 8101</code> 持久化</td></tr>
+<tr><th scope="row">Worker 无法启动，或端口不对</th><td><code translate="no">openprogram doctor</code>，再 <code translate="no">openprogram rescue</code>，后者会打印修复命令。App 或终端安装检查它自带的 Node.js、终端界面和 Web 界面，缺了就提示重新安装；npm 构建命令只在源码 checkout 里出现。提 issue 前先读输出</td></tr>
+<tr><th scope="row"><code translate="no">import openprogram</code> 报 <code translate="no">ModuleNotFoundError</code></th><td>产品安装刻意使用私有 Python。源码 checkout 中运行 <code translate="no">uv sync --locked</code>，再 <code translate="no">uv run --project /path/to/OpenProgram python ...</code>，或激活其 <code translate="no">.venv</code></td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.zshrc</code></pre>
+
+<details>
+<summary><code translate="no">openprogram doctor</code> 检查什么</summary>
+<p>Python、Node 和 git；skill 和插件加载；provider 凭据；MCP 服务器；磁盘缓存；worker 是否监听 18100。</p>
+<p>命令所用的 shell、是否在沙箱里，以及一条必须原样带回 UTF-8 文本和退出码的测试命令（失败只作提示，不拦截任何操作）。</p>
+<p>Windows 上还有长路径配置和只读的 Defender 性能提示。它从不修改注册表、Defender 排除项或文件 ACL。</p>
+</details>
+
+<details>
+<summary>从源码开发</summary>
+<ul>
+<li>用 <code translate="no">uv sync --locked --extra dev</code> 配置。外部 harness 开发：<a href="../capabilities/installing-programs.zh.html">安装 Program</a>。</li>
+<li>部分测试在裸 CI 上跳过，因为需要 <code translate="no">$HOME</code> 里配置好的 provider，所以有凭据的 Mac 跑得更多。搜索 <code translate="no">pytest.mark.skipif</code>。</li>
+</ul>
+</details>
+
+<p class="next"><a href="../start/GETTING_STARTED.zh.html">快速开始</a></p>
+

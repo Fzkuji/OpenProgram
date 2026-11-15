@@ -1,24 +1,23 @@
-"""Unit tests for ``openprogram.worktree.manager.WorktreeManager``.
+"""Unit tests for ``openprogram.state.worktree.manager.WorktreeManager``.
 
 Exercise the state machine, safety guards, and the actual ``git
 worktree`` lifecycle against a throwaway repo in pytest's tmp_path.
 """
 from __future__ import annotations
 
-import os
 import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from openprogram.worktree.manager import (
+from openprogram.state.worktree.manager import (
     WorktreeError,
     WorktreeManager,
     _reset_manager_for_tests,
 )
-from openprogram.worktree.store import _store_path, load_worktree
-from openprogram.worktree.types import WorktreeStatus, can_transition
+from openprogram.state.worktree.store import _store_path, load_worktree
+from openprogram.state.worktree.types import WorktreeStatus, can_transition
 
 
 def _init_repo(path: Path) -> None:
@@ -40,26 +39,18 @@ def isolated_state(tmp_path, monkeypatch):
     state.mkdir()
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "")
     monkeypatch.setattr(
-        "openprogram.paths.get_state_dir",
+        "openprogram.state.paths.get_state_dir",
         lambda: state,
     )
     monkeypatch.setattr(
-        "openprogram.paths.ensure_state_dir",
+        "openprogram.state.paths.ensure_state_dir",
         lambda: state,
     )
-    # ``manager`` and ``store`` modules import these symbols by-name
-    # at module load — we have to rebind those too or the sessions-git
-    # check uses the user's real ~/.agentic.
+    # ``manager`` imports this symbol by-name at module load — we have
+    # to rebind it too or the sessions-git check uses the user's real
+    # ~/.agentic.
     monkeypatch.setattr(
-        "openprogram.worktree.manager.get_state_dir",
-        lambda: state,
-    )
-    monkeypatch.setattr(
-        "openprogram.worktree.store.get_state_dir",
-        lambda: state,
-    )
-    monkeypatch.setattr(
-        "openprogram.worktree.store.ensure_state_dir",
+        "openprogram.state.worktree.manager.get_state_dir",
         lambda: state,
     )
     _reset_manager_for_tests()
@@ -129,7 +120,7 @@ def test_create_rejects_non_git_repo(isolated_state, tmp_path):
 
 
 def test_create_rejects_path_inside_sessions_git(isolated_state, tmp_path):
-    sessions_root = isolated_state / "sessions-git" / "sess1"
+    sessions_root = isolated_state / "projects" / "default" / "chats" / "sess1"
     sessions_root.mkdir(parents=True)
     subprocess.run(["git", "init", "-q"], cwd=sessions_root, check=True)
     mgr = WorktreeManager()
@@ -251,6 +242,15 @@ def test_list_and_get_worktree(isolated_state, repo):
     assert g is not None and g.id == wt1.id
 
 
+def test_a_job_bound_worktree_is_not_the_session_working_tree(isolated_state, repo):
+    mgr = WorktreeManager()
+    own = mgr.create_worktree(str(repo), label="own", parent_session="sess-A")
+    repair = mgr.create_worktree(str(repo), label="repair", parent_session="sess-A",
+                                 parent_job="self-update:su_x:repair:1")
+    assert {w.id for w in mgr.list_worktrees(parent_session="sess-A")} == {own.id, repair.id}
+    assert mgr.find_active_for_session("sess-A").id == own.id
+
+
 def test_persistence_round_trip(isolated_state, repo):
     """Worktree state should survive a fresh manager instance, as
     long as the same store path is in play."""
@@ -310,13 +310,13 @@ def _stub_fetch_pr_branch(monkeypatch, *, source_repo: Path):
         subprocess.run(
             ["git", "branch", local_branch], cwd=source_repo, check=True,
         )
-        from openprogram.worktree.pr_ref import PrInfo
+        from openprogram.state.worktree.pr_ref import PrInfo
         return PrInfo(
             number=pr_number, head_ref_name="feature",
             is_cross_repository=False, head_owner=None,
         )
 
-    monkeypatch.setattr("openprogram.worktree.manager.fetch_pr_branch", fake)
+    monkeypatch.setattr("openprogram.state.worktree.manager.fetch_pr_branch", fake)
     return calls
 
 
@@ -362,10 +362,10 @@ def test_create_worktree_pr_ref_error_surfaces_as_worktree_error(
     isolated_state, repo, monkeypatch,
 ):
     def boom(*args, **kwargs):
-        from openprogram.worktree.pr_ref import PrRefError
+        from openprogram.state.worktree.pr_ref import PrRefError
         raise PrRefError("gh_not_found: the GitHub CLI (`gh`) is required")
 
-    monkeypatch.setattr("openprogram.worktree.manager.fetch_pr_branch", boom)
+    monkeypatch.setattr("openprogram.state.worktree.manager.fetch_pr_branch", boom)
     mgr = WorktreeManager()
     with pytest.raises(WorktreeError, match="pr_ref_error.*gh_not_found"):
         mgr.create_worktree(str(repo), pr="1")

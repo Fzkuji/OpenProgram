@@ -1,0 +1,44 @@
+<title>Effort picker</title>
+<meta name="description" content="The composer's thinking effort popup: options, slider motion, the highest-option field and its lifecycle.">
+<meta name="covers" content="apps/web/components/chat/composer/controls/effort/ apps/web/lib/effort/">
+<h1>Effort picker</h1>
+
+<p>Layout and timing follow the observed Claude desktop 2.31226.0, written independently. Claude's Ultracode workflow mode has no counterpart: OpenProgram keeps provider effort ids. Options and Recommended come from the selected model; Radix owns pointer and keyboard selection; state flows through composer settings. <a href="composer-fast-control.html">Fast</a> and help are independent.</p>
+
+<h2>Motion</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Track</th><td>Neutral fill, discrete ticks, clipped fill with an inverse-translated full-width field</td></tr>
+<tr><th scope="row">Handle</th><td>White; 12% larger while dragging; elastic sub-step feedback; snaps in 120ms</td></tr>
+<tr><th scope="row">Selection</th><td>Previews while dragging, commits on release. Pointer cancel clears drag feedback.</td></tr>
+<tr><th scope="row">Labels</th><td>Four-layer transition: vertical move, resolving from blur in 200ms</td></tr>
+</tbody>
+</table>
+
+<h2>Highest-option field</h2>
+<p>Runs on the highest of several options (<code translate="no">xhigh</code>, <code translate="no">max</code> or <code translate="no">high</code>). One or zero options never animate.</p>
+<dl class="pairs">
+<dt>Cells</dt><dd>Rounded 3px squares on a 4px grid; lavender</dd>
+<dt>Pattern</dt><dd>WebGL2 eight-pulse field propagating from the right, five intensity steps, per-cell brightness drift, premultiplied per-theme colour</dd>
+<dt>Timing</dt><dd>Enters over 700ms; fades over 850ms on leaving, canvas staying full track width</dd>
+<dt>Resolution</dt><dd>Device pixel ratio, capped at 4,147,200 pixels</dd>
+</dl>
+
+<h2>Lifecycle</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Animation</th><td>One animation callback, cancelled on close, unmount, hidden document or reduced motion.</td></tr>
+<tr><th scope="row">Failure</th><td>Reduced motion disables the field. Canvas failure leaves a usable slider.</td></tr>
+<tr><th scope="row">Accessibility</th><td>Theme colours come from CSS tokens. Named values, keyboard focus and the recommended tick stay accessible.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Acceptance</summary>
+<p>On the real <code translate="no">ThinkingEffortPill</code>: pointer and keyboard select unchanged effort ids; <code translate="no">xhigh</code> animates; leaving fades to empty; reopen and model changes work; Fast stays independent; reduced motion gives a stable frame; dark, light and narrow layouts stay legible.</p>
+</details>
+
+<h2>Implementation status</h2>
+<p>Implemented. Pixel-identical match with the reference is not claimed.</p>

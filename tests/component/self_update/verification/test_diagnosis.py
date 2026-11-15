@@ -2,28 +2,46 @@
 from dataclasses import replace
 import json
 import os
+from pathlib import Path
 import time
 
 import pytest
 
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.programs.tools.test_self_update_tools import _candidate, _Manager, _request, _isolated_owner
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.programs.tools.test_self_update_tools import (
+    _candidate,
+    _git,
+    _Manager,
+    _request,
+)
+from tests.component.programs.tools import test_self_update_tools as _test_self_update_tools
 from tests.support.waiting import wait_until
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+_isolated_owner = _test_self_update_tools._isolated_owner
 
 
 @pytest.fixture
 def diagnosis_environment(tmp_path, monkeypatch, store_fixture, request):
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.self_update import SelfUpdateStore, UpdatePhase
-    from openprogram.self_update.control.maintenance import leave_maintenance
-    from openprogram.self_update.control.recovery import SYSTEM_CHECKS
-    from openprogram.self_update.control.rollback_intent import begin_rollback
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+    from openprogram.operations.self_update.control.maintenance import leave_maintenance
+    from openprogram.operations.self_update.control.recovery import SYSTEM_CHECKS
+    from openprogram.operations.self_update.control.rollback_intent import begin_rollback
     from openprogram.programs.tools.system.self_update import _prepare_update
     worktree, _, sha = _candidate(tmp_path)
     worktree = replace(worktree, parent_session="p1")
     store = SelfUpdateStore()
     policy = dict(getattr(request, "param", None) or {})
+    if policy.pop("owner_protected_change", False):
+        owner_script = Path(worktree.worktree_path) / "scripts/release/owner.sh"
+        owner_script.parent.mkdir(parents=True)
+        owner_script.write_text("# approved by the owner\n", encoding="utf-8")
+        _git(Path(worktree.worktree_path), "add", "scripts/release/owner.sh")
+        _git(Path(worktree.worktree_path), "commit", "-m", "owner release script")
+        sha = _git(Path(worktree.worktree_path), "rev-parse", "HEAD")
     verification_plan = policy.pop("verification_plan", None)
     result = _prepare_update(worktree_id=worktree.id, candidate_sha=sha, goal="Fix behavior",
                              assertions=["Expected behavior is observable"], iteration_policy=policy or None,
@@ -31,7 +49,7 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture, request):
                              req=_request(session_id="p1", user_msg_id="u1"), assistant_id="a1",
                              manager=_Manager(worktree), store=store)
     update_id = result["update_id"]
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(update_id, phase)
     detail = {"previous_system_gate": {"candidate_sha": "3" * 40}, "error": "system probe failed: web"}
     store.transition(update_id, UpdatePhase.VERIFYING, detail=detail)
@@ -48,13 +66,13 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture, request):
         return TurnResult(json.dumps(dict(schema=1, update_id=update_id, candidate_sha=sha, attempt=1,
                                          category="implementation", cause="The changed branch returns the wrong value",
                                          evidence_refs=["failure"], corrections=["Correct the return value"])), "du", "da")
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", execute)
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", execute)
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     runner = JobRunner(max_workers=1)
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     leave_maintenance(update_id)
     yield store, runner, calls, update_id
-    from openprogram.self_update.repair import diagnosis
+    from openprogram.operations.self_update.repair import diagnosis
     with diagnosis._monitor_lock:
         monitor = diagnosis._monitors.get((str(store.root), update_id))
     if monitor is not None:
@@ -62,7 +80,7 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture, request):
             diagnosis.cancel_pending(store, reason="fixture teardown")
         monitor.join(timeout=5)
         assert not monitor.is_alive()
-    from openprogram.self_update.repair import source_repair
+    from openprogram.operations.self_update.repair import source_repair
     with source_repair._thread_lock:
         repair = source_repair._threads.get((str(store.root), update_id))
     if repair is not None:
@@ -74,7 +92,7 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture, request):
 
 
 def test_restored_startup_automatically_runs_one_diagnosis(diagnosis_environment):
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
     store, runner, calls, update_id = diagnosis_environment
     assert recover_pending_updates() is True
     job_id = f"self-update:{update_id}:diagnose:1"
@@ -91,7 +109,7 @@ def test_restored_startup_automatically_runs_one_diagnosis(diagnosis_environment
 
 def test_concurrent_startup_keeps_one_diagnostic_job(diagnosis_environment):
     from concurrent.futures import ThreadPoolExecutor
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
     store, runner, calls, update_id = diagnosis_environment
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert list(pool.map(lambda _: recover_pending_updates(), range(2))) == [True, True]
@@ -101,7 +119,7 @@ def test_concurrent_startup_keeps_one_diagnostic_job(diagnosis_environment):
 
 @pytest.mark.parametrize("damage", ["config", "request", "pointer", "evidence"])
 def test_invalid_diagnosis_does_not_block_restored_service(diagnosis_environment, damage):
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
     store, runner, calls, update_id = diagnosis_environment
     directory = store.root / update_id
     if damage == "pointer":
@@ -131,8 +149,8 @@ def test_invalid_diagnosis_does_not_block_restored_service(diagnosis_environment
 
 def test_expired_diagnosis_never_restarts_its_clock(diagnosis_environment, monkeypatch):
     from types import SimpleNamespace
-    from openprogram.self_update.repair import diagnosis
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.operations.self_update.repair import diagnosis
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
     store, runner, calls, update_id = diagnosis_environment
     request = store.root / update_id / "diagnosis-request-1.json"
     before = request.read_bytes()
@@ -148,17 +166,17 @@ def test_expired_diagnosis_never_restarts_its_clock(diagnosis_environment, monke
 def test_running_diagnosis_is_cancelled_without_changing_update(diagnosis_environment, monkeypatch, stop):
     import threading
     from types import SimpleNamespace
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.agent.run_control import is_cancelled
-    from openprogram.self_update.repair import diagnosis
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.runtime.conversation.run_control import is_cancelled
+    from openprogram.operations.self_update.repair import diagnosis
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
     store, runner, calls, update_id = diagnosis_environment
     entered = threading.Event()
     def execute(req):
         entered.set()
         wait_until(lambda: is_cancelled(req.session_id), timeout=5)
         return TurnResult("cancelled", "du", "da")
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", execute)
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", execute)
     assert recover_pending_updates() is True
     assert entered.wait(5)
     if stop == "owner":
@@ -177,10 +195,10 @@ def test_running_diagnosis_is_cancelled_without_changing_update(diagnosis_enviro
 
 
 def test_malformed_model_output_is_not_accepted(diagnosis_environment, monkeypatch):
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
     store, runner, calls, update_id = diagnosis_environment
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", lambda _: TurnResult("{\"approve\":true}", "du", "da"))
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", lambda _: TurnResult("{\"approve\":true}", "du", "da"))
     assert recover_pending_updates() is True
     path = store.root / update_id / "diagnosis-result-1.json"
     wait_until(path.exists, timeout=5)
@@ -189,7 +207,7 @@ def test_malformed_model_output_is_not_accepted(diagnosis_environment, monkeypat
 
 
 def test_partial_publication_restores_only_original_pending_pointer(diagnosis_environment):
-    from openprogram.self_update.repair import diagnosis
+    from openprogram.operations.self_update.repair import diagnosis
     store, runner, calls, update_id = diagnosis_environment
     request = store.root / update_id / "diagnosis-request-1.json"
     before = request.read_bytes()
@@ -202,9 +220,9 @@ def test_partial_publication_restores_only_original_pending_pointer(diagnosis_en
 
 @pytest.mark.parametrize("damage", ["claim", "prompt", "tools", "owner", "followup", "valid"])
 def test_restored_queue_validates_diagnosis_before_model(diagnosis_environment, monkeypatch, damage):
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.self_update.repair import diagnosis
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.operations.self_update.repair import diagnosis
     store, runner, calls, update_id = diagnosis_environment
     monkeypatch.setattr(runner, "_dispatch_followup", lambda _: pytest.fail("diagnosis must not trigger general followup"))
     with store._locked():
@@ -225,8 +243,8 @@ def test_restored_queue_validates_diagnosis_before_model(diagnosis_environment, 
                          source="self_update_diagnose", context_mode="clean", spawn_caller="a1",
                          advance_head=False, wait=damage != "followup", defer_dispatch=True, creates_agent=False)
     runner.shutdown()
-    with runner._governor.ledger.immediate() as conn:
-        conn.execute("UPDATE job_admissions SET dispatch_ready = 1 WHERE job_id = ?", (request["job_id"],))
+    with runner._governor.ledger.run_tables().transaction() as conn:
+        conn.update("job_admissions", {"dispatch_ready": 1}, job_id=request["job_id"])
     recovered = JobRunner(max_workers=1, governor=runner._governor)
     monkeypatch.setattr(recovered, "_dispatch_followup", lambda _: pytest.fail("diagnosis must not trigger general followup"))
     try:
@@ -249,9 +267,9 @@ def test_diagnosis_tool_policy_rejects_writes_and_forged_read_tools():
 
 
 def test_missing_model_fails_diagnosis_without_blocking_service(diagnosis_environment, monkeypatch):
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
     store, runner, calls, update_id = diagnosis_environment
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: (_ for _ in ()).throw(ValueError("model unavailable")))
     assert recover_pending_updates() is True
     assert calls == [] and runner.list_jobs("p1") == []

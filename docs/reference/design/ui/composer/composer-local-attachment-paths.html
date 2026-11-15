@@ -1,0 +1,72 @@
+<title>Composer local paths</title>
+<meta name="description" content="How the desktop composer keeps the original absolute path of dropped files, images and folders.">
+<meta name="covers" content="apps/web/components/chat/composer/attach/">
+<h1>Composer local paths</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 110" role="img" aria-label="A dropped or picked File goes through the preload bridge's getPathForFile, then into pending state and a message marker holding the JSON-encoded absolute path.">
+  <defs><marker id="lp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Drop or picker</text>
+  <text class="t-cmd" translate="no" x="0" y="66">File</text>
+  <line class="ln" x1="150" y1="33" x2="206" y2="33" marker-end="url(#lp-a)"/>
+  <text class="t-big" x="218" y="40">Preload</text>
+  <text class="t-cmd" translate="no" x="218" y="66">getPathForFile(file)</text>
+  <line class="ln" x1="384" y1="33" x2="436" y2="33" marker-end="url(#lp-a)"/>
+  <text class="t-big" x="448" y="40">Pending state, marker</text>
+  <text class="t-cmd" translate="no" x="443" y="66">[attachment: … @json "/abs"]</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Drop or picker</strong><small>File</small></li>
+  <li><strong>Preload</strong><small>getPathForFile(file)</small></li>
+  <li class="flow-end"><strong>Pending state, marker</strong><small>[attachment: … @json "/abs"]</small></li>
+</ol>
+</figure>
+<p class="note">The bridge wraps Electron's <code translate="no">webUtils.getPathForFile</code> and is the renderer's only source of a native path; it has no Node filesystem access. Each <code translate="no">File</code> is queried once, before any read.</p>
+
+<h2>By item</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Document with bytes</th><td>Existing upload and preview. The marker uses the original path; the backend may also keep a session copy.</td></tr>
+<tr><th scope="row">Image</th><td>Multimodal payload plus one original-path marker. <code translate="no">source_path</code> is removed from attachment metadata before provider dispatch.</td></tr>
+<tr><th scope="row">Folder or unreadable item</th><td>A valid path reference with no bytes, never "too large — not sent"</td></tr>
+<tr><th scope="row">Clipboard blob, plain browser file</th><td>No native path: existing upload and generated session path</td></tr>
+</tbody>
+</table>
+
+<h2>Marker</h2>
+<dl class="pairs">
+<dt><code translate="no">@json</code></dt><dd>Original path as a JSON string, for the agent. Preserves brackets, quotes, backslashes and trailing spaces. Readers accept older unquoted markers.</dd>
+<dt><code translate="no">@previewjson</code></dt><dd>Immutable session-copy path, for the UI. Older messages without it remain readable. The raw-file endpoint does not add the source's parent directory to its readable roots.</dd>
+<dt><code translate="no">source_path</code></dt><dd>On each uploaded attachment. The backend keeps a frontend marker only when that attachment's exact source path is present, so same-name uploads stay distinct.</dd>
+</dl>
+
+<h2>Project and additional folders</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Project chip</th><td>The draft's main working directory. Read-only after the first committed turn: cwd, permission baseline and session-repository placement are fixed.</td></tr>
+<tr><th scope="row">Folder-plus</th><td>Additional working directories; editable during a session. Without a session it derives the main project from the draft's pending choice and never offers it.</td></tr>
+<tr><th scope="row">Choosing</th><td>An existing project updates only the draft. A new folder creates or resolves the project and selects the result.</td></tr>
+<tr><th scope="row">Backend unavailable</th><td>The connected reply is authoritative; controls keep their prior state</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Boundaries and rejected options</summary>
+<p>Out of scope: tile styling, directory traversal, recursive browser uploads, filesystem scanning, new IPC handlers, upload-size changes, Programs UI, dependencies.</p>
+<p>Rejected: legacy <code translate="no">File.path</code>; Node integration in the renderer; path-only messages for readable files; inventing a relative path in a browser; enumerating a dropped directory.</p>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Preload returns the exact path for the same <code translate="no">File</code>; capture handles an absent bridge, empty result and exception.</li>
+<li>Document, image and unreadable-folder markers contain the full path; filenames with parentheses are display-safe.</li>
+<li>Paths with <code translate="no">]</code>, quotes and trailing spaces round-trip through both parsers.</li>
+<li>Path-less attachments keep their marker; same-name and mixed-source attachments stay distinct; persistence does not duplicate a pre-marked attachment.</li>
+</ul>
+</details>
+
+<h2>Implementation status</h2>
+<p>Implemented. The preload boundary is exercised in a VM with the same <code translate="no">File</code> object, not by real-window dragging.</p>

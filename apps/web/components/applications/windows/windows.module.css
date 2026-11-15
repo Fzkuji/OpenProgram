@@ -1,0 +1,39 @@
+/* The ONLYOFFICE and Workflow Recording windows: one centred column
+   (layout in the JSX). */
+.heading { margin:0 0 10px; color:var(--text-secondary); font-size:var(--fs-sm); font-weight:500; }
+.notice { margin:0; padding:10px 14px; border-radius:var(--radius-lg); background:var(--bg-input); color:var(--text-secondary); font-size:var(--fs-sm); }
+.kind { display:flex; align-items:center; gap:12px; padding:14px; border:0; border-radius:var(--radius-2xl); background:var(--bg-input); box-shadow:var(--composer-shadow); color:var(--text-secondary); font:inherit; text-align:left; cursor:pointer; transition:box-shadow .15s; }
+.kind:hover:not(:disabled) { box-shadow:var(--composer-shadow-focus); color:var(--text-primary); }
+.kind:disabled { cursor:default; opacity:.6; }
+.kind:focus-visible { outline:2px solid var(--ring); outline-offset:3px; }
+.kindIcon { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:42px; height:42px; border-radius:var(--radius-md); color:var(--bg-primary); }
+.kind[data-kind="docx"] .kindIcon { background:var(--accent-blue); }
+.kind[data-kind="xlsx"] .kindIcon { background:var(--accent-green); }
+.kind[data-kind="pptx"] .kindIcon { background:var(--accent-orange); }
+.kindLabel strong { color:var(--text-primary); font-size:var(--fs-base); font-weight:500; }
+.kindLabel small { font-size:var(--fs-xs); }
+.list { display:flex; flex-direction:column; margin:0; padding:0; list-style:none; }
+.row { display:flex; align-items:center; justify-content:flex-start; gap:10px; width:100%; height:36px; padding:0 10px; font-weight:400; }
+.rowIcon[data-kind="docx"] { color:var(--accent-blue); }
+.rowIcon[data-kind="xlsx"] { color:var(--accent-green); }
+.rowIcon[data-kind="pptx"] { color:var(--accent-orange); }
+.rowName { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); }
+.rowDir { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-muted); font-size:var(--fs-xs); }
+.recordCard { display:flex; flex-direction:column; gap:16px; padding:20px; border-radius:var(--radius-2xl); background:var(--bg-input); box-shadow:var(--composer-shadow); }
+.lead { margin:0; color:var(--text-secondary); font-size:var(--fs-sm); line-height:1.6; }
+/* The Meetings window: the live recording line, the summary and the transcript. */
+.liveDot { flex-shrink:0; width:10px; height:10px; border-radius:var(--radius-full); background:var(--accent-red); animation:livePulse 1.6s ease-in-out infinite; }
+@keyframes livePulse { 50% { opacity:.35; } }
+@media (prefers-reduced-motion: reduce) { .liveDot { animation:none; } }
+.liveClock { color:var(--text-primary); font-size:var(--fs-lg); font-weight:600; }
+.meetingSummary { padding-top:12px; color:var(--text-primary); font-size:var(--fs-sm); line-height:1.65; overflow-wrap:anywhere; }
+.meetingSummary :is(h1, h2, h3) { margin:1.2em 0 .4em; color:var(--text-bright); font-size:var(--fs-base); font-weight:600; }
+.meetingSummary :is(h1, h2, h3):first-child { margin-top:0; }
+.meetingSummary :is(p, ul, ol) { margin:0 0 .8em; }
+.meetingSummary :is(ul, ol) { padding-left:1.4em; }
+.transcript { display:flex; flex-direction:column; gap:6px; margin:0; padding:12px 0 0; list-style:none; max-height:480px; overflow:auto; }
+.transcriptLine { display:grid; grid-template-columns:52px 64px 1fr; gap:8px; font-size:var(--fs-sm); line-height:1.55; }
+.transcriptTime { color:var(--text-muted); }
+.transcriptSpeaker { color:var(--text-secondary); font-weight:500; }
+.transcriptLine[data-speaker="me"] .transcriptSpeaker { color:var(--accent-blue); }
+.transcriptText { min-width:0; color:var(--text-primary); overflow-wrap:anywhere; }

@@ -1,0 +1,73 @@
+<title>上下文设计对比</title>
+<meta name="description" content="参考项目喂给 LLM 的上下文组件，与 OpenProgram 的 L0、L1、L2 层对比。">
+<h1 id="context-composition-comparison-reference-projects-vs-us-organized-by-the-three-layers">上下文设计对比</h1>
+
+<p>设计：<a href="composition.zh.html">组成</a>。各行按层内线上顺序排列：越稳定越靠前，因为缓存前缀匹配让顺序有意义。“分散”表示有但没有归入某层。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Hermes 的层，按稳定性</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">stable</code>：身份、工具指导、skill、模型、平台和环境提示</th><td>L0</td></tr>
+<tr><th scope="row"><code translate="no">context</code>：调用方 system_message、上下文文件</th><td>L1 项目层</td></tr>
+<tr><th scope="row"><code translate="no">volatile</code>：记忆快照、USER.md、外部记忆</th><td>L1 项目记忆、L2</td></tr>
+</tbody>
+</table>
+<p class="note">opencode、claude-code、openclaw、pi-mono 的组件都比 Hermes 少。</p>
+
+<h2 id="l0">L0 系统：配置一次</h2>
+<table class="stack">
+<thead><tr><th scope="col">组件</th><th scope="col">hermes</th><th scope="col">claude-code</th><th scope="col">其他</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">整体身份</th><td>有</td><td>有</td><td>pi</td><td>L0（identity）</td></tr>
+<tr><th scope="row">内联 Agent 提示</th><td>有</td><td>有</td><td>无</td><td>L0（inline_prompt）</td></tr>
+<tr><th scope="row">工具强制（动手别问）</th><td>有</td><td>无</td><td>无</td><td>L0，基础提示 <code translate="no">guides/base.md</code></td></tr>
+<tr><th scope="row">按模型的操作指导</th><td>有</td><td>无</td><td>无</td><td>无：需要的模型有自己的基础提示</td></tr>
+<tr><th scope="row">平台渲染格式</th><td>有</td><td>无</td><td>无</td><td>L1，按 channel 的环境块一行</td></tr>
+<tr><th scope="row">computer-use 指导</th><td>有</td><td>无</td><td>无</td><td>无；仅启用时适用</td></tr>
+<tr><th scope="row">skill 索引</th><td>有</td><td>无</td><td>pi</td><td>L1（capabilities）</td></tr>
+<tr><th scope="row">工具和 MCP schema</th><td>有</td><td>有</td><td>opencode、openclaw</td><td>L0</td></tr>
+<tr><th scope="row">全局或用户记忆</th><td>有</td><td>无</td><td>无</td><td>L1（memory）</td></tr>
+<tr><th scope="row">环境（OS、shell、远程后端）</th><td>有</td><td>无</td><td>无</td><td>L0（OS、shell）；cwd 由 tool-runtime 处理</td></tr>
+<tr><th scope="row">当前日期，天粒度</th><td>有</td><td>无</td><td>pi</td><td>L0（current_date）</td></tr>
+</tbody>
+</table>
+<p class="note">环境随机器或日期变化，所以放最后。</p>
+
+<h2 id="l1">L1 会话和项目</h2>
+<table class="stack">
+<thead><tr><th scope="col">组件</th><th scope="col">hermes</th><th scope="col">claude-code</th><th scope="col">其他</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">项目身份（AGENTS.md、.cursorrules）</th><td>有</td><td>有</td><td>openclaw</td><td>L1</td></tr>
+<tr><th scope="row">提示注入检测，加载前</th><td>有</td><td>无</td><td>无</td><td>基础提示的信任规则，按文件 <code translate="no">detect_injection_patterns</code></td></tr>
+<tr><th scope="row">上下文文件截断</th><td>有</td><td>无</td><td>无</td><td>L1，AGENTS.md 链共用 32 KiB（<code translate="no">agents_md.MAX_BYTES</code>）</td></tr>
+<tr><th scope="row">项目记忆</th><td>有</td><td>无</td><td>无</td><td>L1</td></tr>
+<tr><th scope="row">用户画像 USER.md</th><td>有</td><td>无</td><td>无</td><td>L1（Memory Core）</td></tr>
+<tr><th scope="row">工作目录</th><td>有</td><td>无</td><td>pi</td><td>L1</td></tr>
+<tr><th scope="row">是否在 git 仓库</th><td>有</td><td>无</td><td>无</td><td>L1，环境块</td></tr>
+<tr><th scope="row">session_id、model、thinking、tier</th><td>有</td><td>无</td><td>无</td><td>L1</td></tr>
+<tr><th scope="row">延迟工具目录</th><td>无</td><td>无</td><td>无</td><td>L1</td></tr>
+<tr><th scope="row">历史和工具调用记录</th><td>有</td><td>无</td><td>无</td><td>L1，每轮追加，最后</td></tr>
+</tbody>
+</table>
+<p class="note">固定的项目信息只随项目变化。检测和截断紧邻它们保护的文件。</p>
+
+<h2 id="l2">L2 任务：本轮</h2>
+<table class="stack">
+<thead><tr><th scope="col">组件</th><th scope="col">hermes</th><th scope="col">claude-code</th><th scope="col">其他</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">情境（函数、调用栈、步骤）</th><td><code translate="no">_situational</code></td><td>无</td><td>无</td><td>L2（situation、call_path，步骤 6a、6b）</td></tr>
+<tr><th scope="row">Git 分支和状态</th><td>分散（git root）</td><td>无</td><td>无</td><td>L2（git_status，order 20）</td></tr>
+<tr><th scope="row">待办、计划、进度</th><td>无</td><td>todo 工具</td><td>无</td><td>L2（todo_progress，读 <code translate="no">_TODOS</code>）</td></tr>
+<tr><th scope="row">token 预算提示</th><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">每轮记忆预取</th><td>有</td><td>无</td><td>无</td><td>L2</td></tr>
+<tr><th scope="row">用户输入、附件</th><td>有</td><td>有</td><td>有</td><td>L2</td></tr>
+<tr><th scope="row">输出格式或 schema</th><td>无</td><td>有</td><td>无</td><td>L2</td></tr>
+<tr><th scope="row">输出契约</th><td>无</td><td>无</td><td>无</td><td>L2，在 <code translate="no">_situational_prefix</code> 内</td></tr>
+<tr><th scope="row">时间戳</th><td>有</td><td>无</td><td>pi</td><td>L2，最后</td></tr>
+<tr><th scope="row">Kanban 多 Agent 协调</th><td>有</td><td>无</td><td>无</td><td>无；Hermes 特有</td></tr>
+</tbody>
+</table>
+<p class="note">情境、环境和待办在本轮内相对固定；时间戳每次都变。</p>
+
+<h2 id="not-carried">没有带的组件</h2>
+<p>computer-use 指导、Nous 订阅指导、Kanban 协调、Hermes profile 机制和外部记忆 provider 在这里没有对应功能。要做时注册一个 <code translate="no">ContextComponent</code> 即可，不改框架。</p>

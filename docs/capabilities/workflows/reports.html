@@ -1,0 +1,136 @@
+<title>Weekly reports</title>
+<meta name="description" content="The weekly report Workflows: what each writes, what evidence it accepts, and how to recover.">
+<h1>Weekly reports</h1>
+<p>Five packages in <code translate="no">~/.openprogram/programs</code>, independently versioned; source checkouts do not include them. Shared helpers: <code translate="no">openprogram.programs._authoring.reports</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Entry</th><th scope="col">Purpose</th><th scope="col">External writes</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">personal_weekly_report(task)</code></th><td>Personal Feishu drafts, inspection, filling, submission, record updates</td><td>Filling changes fields without saving; submitting or updating needs an explicit request</td></tr>
+<tr><th scope="row"><code translate="no">personal_chat_weekly_report(task)</code></th><td>Owner's three-section WeChat-group copy: progress, discussion topics, next-week plans, in Chinese</td><td>Local draft; never sends</td></tr>
+<tr><th scope="row"><code translate="no">group_weekly_report(task)</code></th><td>Collect group reports, track missing members, prepare a summary</td><td>Never sends</td></tr>
+<tr><th scope="row"><code translate="no">tencent_weekly_report(task)</code></th><td>About 100 Chinese characters of Tencent progress for a leader</td><td>Local draft</td></tr>
+<tr><th scope="row"><code translate="no">weekly_report(task)</code></th><td>Selects the requested Workflows and forwards the complete request; imports the other four</td><td>As the child</td></tr>
+</tbody></table>
+<p class="note">Personal-chat and Feishu drafts return the full Markdown body by default, with no file write needed; returning text submits nothing. An explicit Markdown path keeps file delivery, and existing file-delivery resume requests still work.</p>
+<h2 id="prepare-several-reports"><code translate="no">weekly_report</code></h2>
+<p>Select it in Abilities. Natural language goes to a routing agent; JSON <code translate="no">requests</code> addresses children directly with no routing inference.</p>
+<pre translate="no" tabindex="0"><code>{
+  "requests": {
+    "personal": {
+      "week": "2026-W37",
+      "materials": [{"id": "p1", "week": "2026-W37", "text": "Experiments remain in progress; next week we will check the results."}]
+    },
+    "tencent": {
+      "week": "2026-W37",
+      "materials": [{"id": "t1", "week": "2026-W37", "text": "Tencent evaluation is still in progress. No final performance conclusion is available."}]
+    }
+  }
+}</code></pre>
+<p class="note">Materials are separate by audience. Personal and Tencent inputs need matching ISO weeks and unique source IDs. Thin evidence returns a request for input or review, never invented progress.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Routing</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Selection</th><td>One to four destinations by meaning and negation; the entire original request passes unchanged to each</td></tr>
+<tr><th scope="row">Never</th><td>Splits on punctuation, extracts materials, forces drafts, assigns a common week, asks for clarification</td></tr>
+<tr><th scope="row">Defaults</th><td>A generic progress draft without Feishu language is <code translate="no">personal_chat</code>; an unspecified audience is the unsent personal-chat draft</td></tr>
+<tr><th scope="row">Results</th><td>One: verbatim. Several: labeled by audience</td></tr>
+<tr><th scope="row">Timeouts</th><td>Routing, group parsing and personal model calls inherit <code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></td></tr>
+<tr><th scope="row">Child failure</th><td>The exception keeps earlier completed results, not rerun. Browser access failures propagate.</td></tr>
+</tbody></table>
+<h2 id="prepare-a-tencent-report-from-existing-records">Tencent report</h2>
+<p>Select <code translate="no">tencent_weekly_report</code> and enter <code translate="no">Prepare this week's Tencent weekly_report</code>. Uses the current ISO week in <code translate="no">Asia/Shanghai</code>, targets 80–120 non-whitespace characters aiming for 100, intended for Friday afternoon. It creates no schedule and sends nothing; a scheduled run needs an exact time and material source configured separately.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Order</th><th scope="col">Evidence</th></tr></thead>
+<tbody>
+<tr><th scope="row">Explicit materials</th><td>Take precedence</td></tr>
+<tr><th scope="row">1. <code translate="no">reports</code> directory</th><td>Original current-week Tencent evidence; optional <code translate="no">report_roots</code> selects up to five directories</td></tr>
+<tr><th scope="row">2. Other report sources</th><td>Considered next</td></tr>
+<tr><th scope="row">3. Recent OpenProgram sessions</th><td>Original owner messages, keeping date and session/message reference. At most 20 sessions and the last 200 messages each.</td></tr>
+<tr><th scope="row">4. Dated memory</th><td>Generated notes are lookup candidates, not verified facts</td></tr>
+<tr><th scope="row">Excluded</th><td>Assistant drafts, unattributed messages, other weeks, month/year-only dates, pending memory records, untrusted raw memory, test records</td></tr>
+<tr><th scope="row">Other audiences</th><td>Need source selection with exact quotes</td></tr>
+</tbody></table>
+<p class="note">A dated request or plan is a candidate, not proof. Combined context is at most 30 records and 18,000 UTF-8 bytes. Insufficient sources require clarification within that scope, which does not establish that no work exists elsewhere.</p>
+<details>
+<summary>Output, timeouts and failures</summary>
+<ul>
+<li>Success returns the report body. Sources, character count and model calls stay in local drafts. <code translate="no">"result_format": "structured"</code> in the JSON task returns status, artifact paths and a recovery object; the router forwards explicit child options unchanged.</li>
+<li>Generation and verification use low effort, 180 seconds per call and preserved retry budgets. Request interpretation inherits the deployment timeout. Every JSON stage declares a schema and reuses Runtime format repair.</li>
+<li>Model failures produce no success draft and keep the typed failure and resume task, never treated as missing input.</li>
+</ul>
+</details>
+<h2 id="group-report">Group report</h2>
+<p><code translate="no">Prepare the group report</code> is enough: identity, roster, materials and author evidence come from memory, local records and the identified WeChat group. Supplied bodies are kept. No period given: the current ISO week, recorded as an assumption.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Default source</th><td><code translate="no">auto</code>; <code translate="no">source: "supplied"</code> restricts to supplied materials</td></tr>
+<tr><th scope="row">Unresolved authors</th><td>Visibly unverified</td></tr>
+<tr><th scope="row">Missing evidence</th><td>Partial draft with diagnostics</td></tr>
+<tr><th scope="row">WeChat controls unavailable</th><td>Recorded; continues with local evidence as an explicitly partial draft</td></tr>
+<tr><th scope="row">WeChat access fails</th><td>Local sources remain</td></tr>
+<tr><th scope="row">Native collection</th><td>Verifies the group and keeps source evidence; historical coverage is partial; cannot send or change system permissions</td></tr>
+<tr><th scope="row">Model or provider failure</th><td>Keeps the actual error, not missing input</td></tr>
+</tbody></table>
+<h2 id="fill-the-personal-feishu-form-without-submitting">Personal Feishu report</h2>
+<p>Select <code translate="no">personal_weekly_report</code> and request <code translate="no">Fill the personal Feishu weekly report without submitting</code>. It checks records, prepares six fields, fills them and reads each back.</p>
+<table class="grid">
+<thead><tr><th scope="col">Situation</th><th scope="col"><code translate="no">FILLED</code></th><th scope="col"><code translate="no">SUBMITTED</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">No record exists, fill requested</th><td class="run">Yes</td><td class="deny">No</td></tr>
+<tr><th scope="row">Explicit submit request, no record</th><td class="deny">No</td><td class="run">Yes</td></tr>
+<tr><th scope="row">Existing record or capped form, fill requested</th><td class="deny"><code translate="no">BLOCKED</code></td><td class="deny">No</td></tr>
+<tr><th scope="row">Missing or ambiguous field, truncated value, uncertain write</th><td class="deny">No</td><td class="deny">No</td></tr>
+</tbody></table>
+<p class="note">A submit request meeting an existing record returns its inspection result; changing it needs an explicit update request.</p>
+<details>
+<summary>Fill, readback and browser rules</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Fill-only</th><td>Permits the observed records navigation and the exact textbox values; rejects submit and save clicks, keypresses, coordinates and stale observations before the browser runs</td></tr>
+<tr><th scope="row">Readback</th><td>Compares complete actual values exactly, including line breaks and repeated spaces. ARIA text alone or browser schemas without values cannot return <code translate="no">FILLED</code></td></tr>
+<tr><th scope="row">Labels</th><td>The native backend supports form labels and unique visible labels around contenteditable fields. Missing or ambiguous labels stop before a write</td></tr>
+<tr><th scope="row">Tool</th><td>Only <code translate="no">computer_use_agent</code>, on web pages in the built-in browser; real tool receipts needed, so quoted calls in model text are not actions</td></tr>
+<tr><th scope="row">Limits</th><td>No hard-coded aggregate timeout or round limit; deployment limits apply</td></tr>
+<tr><th scope="row">Submit and update</th><td>Same field binding and readback. The final attempt is recorded before dispatch, so an uncertain result never repeats</td></tr>
+<tr><th scope="row">Placeholders</th><td>Empty five-dimension placeholders are not progress</td></tr>
+<tr><th scope="row">Uncertain remote writes</th><td>Non-retryable: inspect the record first</td></tr>
+<tr><th scope="row">Model failures</th><td>Unresolved ones propagate as errors</td></tr>
+</tbody></table>
+</details>
+<details>
+<summary>Evidence for personal and personal-chat reports</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reader</th><td>A read-only Agent uses <code translate="no">list_agents(scope="all")</code>, <code translate="no">read_conversation</code>, memory and original local notes</td></tr>
+<tr><th scope="row">Period</th><td>Turns expose UTC timestamps; the default is the current ISO week in <code translate="no">Asia/Shanghai</code>. Recent activity does not make older turns current</td></tr>
+<tr><th scope="row">Not proof of work</th><td>Requests, plans, generated drafts and README text</td></tr>
+<tr><th scope="row">Failed or incomplete work</th><td>Kept, with missing evidence stated</td></tr>
+<tr><th scope="row">Each retained item</th><td>Binds to an actual owner statement or tool result, with exact source ID and visible quote</td></tr>
+<tr><th scope="row">Leads only</th><td>Memory, files and assistant summaries</td></tr>
+<tr><th scope="row">Supplied owner facts</th><td>Must match the owner's input; may describe an earlier period after temporal verification, keeping their input date</td></tr>
+<tr><th scope="row">Weeks</th><td>Each audience resolves its own; a unique explicit ISO week is retained</td></tr>
+<tr><th scope="row">Discovery</th><td>Lists up to 100 recent sessions and reads up to 10 branches, preferring project titles in the request</td></tr>
+<tr><th scope="row">Source records</th><td>Date, operation, arguments, status and error flag</td></tr>
+<tr><th scope="row"><code translate="no">NEEDS_INPUT</code></th><td>Missing originals</td></tr>
+<tr><th scope="row"><code translate="no">NEEDS_REVIEW</code></th><td>Unsupported references or claims, before delivery or form writing</td></tr>
+<tr><th scope="row">Semantic verification</th><td>Checks every item and week but does not guarantee correctness</td></tr>
+<tr><th scope="row">Create no claims</th><td>Identity defaults, explicit clearing and absent optional content</td></tr>
+<tr><th scope="row">Schemas</th><td>A JSON Schema validates fields or sparse edits, with prompt fallback and the existing repair attempt before any write. Operation selection and verification declare schemas</td></tr>
+<tr><th scope="row">Iterations</th><td>Tool rounds count against <code translate="no">max_iterations</code>, not the failed-request allowance; format repairs and failed requests share that. The iteration limit stops without replaying tools</td></tr>
+<tr><th scope="row">Memory tools</th><td>Read-only search, grep, get and browse use the safe-tool policy; deny and ask rules and <code translate="no">memory.read</code> authority apply</td></tr>
+</tbody></table>
+</details>
+<h2 id="continue-incomplete-work">Continue incomplete work</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Recovery</th></tr></thead>
+<tbody>
+<tr><th scope="row">Router</th><td>No shared checkpoint: use the relevant child's recovery instructions</td></tr>
+<tr><th scope="row">Old coordinator resume payloads</th><td>Rejected with that guidance</td></tr>
+<tr><th scope="row">Local delivery failure</th><td>Keeps prepared content for retry</td></tr>
+<tr><th scope="row">Tencent</th><td>Keeps generation and verification budgets across resumes</td></tr>
+<tr><th scope="row">External record updates</th><td>Never repeat automatically after an uncertain failure</td></tr>
+<tr><th scope="row">Checkpoints and retry payloads</th><td>Hold private content: keep them local</td></tr>
+</tbody></table>

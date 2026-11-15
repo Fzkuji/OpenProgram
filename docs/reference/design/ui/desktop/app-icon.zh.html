@@ -1,0 +1,51 @@
+<title>应用图标规格</title>
+<meta name="description" content="OpenProgram 图标：几何、颜色、素材规则、输出目标和检查。">
+<h1>应用图标规格</h1>
+
+<figure>
+<img src="../../../../images/openprogram-app-icon.svg" alt="OpenProgram 应用图标：靛蓝色底板上一个带波浪轮廓的淡紫色单元，里面有三个重叠的扁平圆盘" width="160" height="160">
+</figure>
+<p>一个标记用于 macOS App、Windows 安装包、WebUI 标签页、PWA 和文档站。macOS 发布扁平的 <code translate="no">icon.icns</code>；<code translate="no">AppIcon.icon</code> 以 Icon Composer 图层保存同一图形。</p>
+
+<h2>几何与颜色</h2>
+<table class="stack">
+<thead><tr><th scope="col">元素</th><th scope="col">位置 (dx, dy)</th><th scope="col">半径</th><th scope="col">颜色</th></tr></thead>
+<tbody>
+<tr><th scope="row">靛蓝圆盘，最后</th><td>−0.084, −0.070</td><td>0.159</td><td><code translate="no">#4F46E5</code></td></tr>
+<tr><th scope="row">紫色圆盘</th><td>+0.094, +0.057</td><td>0.124</td><td><code translate="no">#8B5CF6</code>，柔和阴影</td></tr>
+<tr><th scope="row">天蓝圆盘，最前</th><td>−0.038, +0.132</td><td>0.081</td><td><code translate="no">#38BDF8</code>，柔和阴影</td></tr>
+<tr><th scope="row">单元</th><td>居中</td><td>0.364 ± 波浪</td><td>径向 <code translate="no">#F4F2FF</code> → <code translate="no">#E6E2FA</code></td></tr>
+<tr><th scope="row">底板</th><td>全部</td><td>全部</td><td>线性 <code translate="no">#4B4FD6</code> → <code translate="no">#3A3AA8</code> → <code translate="no">#23214F</code></td></tr>
+</tbody>
+</table>
+<p class="note">以底板边长为单位，从中心量起。单元轮廓：<code translate="no">r(θ) = R · (1 + Σ aₖ cos(kθ + φₖ))</code>，旋转 −15°，<code translate="no">R = 0.364</code>。谐波 (k, a, φ)：(9, 0.12, 1.3)、(7, 0.05, 0.2)、(12, 0.035, 2.4)、(2, 0.02, 1.8)。第 9 次谐波形成约九个大小不一的圆润射线；没有尖点。最远到 0.446。</p>
+
+<h2>素材规则</h2>
+<dl class="commands">
+<dt>保留</dt><dd>三个扁平圆盘；平滑的波浪轮廓；靛蓝底板渐变；分隔前方圆盘的阴影</dd>
+<dt>避免</dt><dd class="struck">球面光照、玻璃半透明、单元外环、尖点、标记内的文字或位图</dd>
+</dl>
+<dl class="pairs">
+<dt>Icon Composer 图层</dt><dd>透明 1024 × 1024，每层一个元素，SVG 里没有圆角矩形、边框、滤镜或阴影。阴影来自组设置。</dd>
+<dt>扁平渲染</dt><dd>ICNS、favicon 和 PWA 来自扁平 SVG 源，绝不用打包 App 的截图</dd>
+</dl>
+
+<h2>目标</h2>
+<table class="stack">
+<thead><tr><th scope="col">目标</th><th scope="col">来源</th><th scope="col">输出</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS App</th><td><code translate="no">docs/images/openprogram-app-icon.svg</code>：Big Sur 网格，1024 画布上偏移 100 的 824px 底板，连续圆角（半径 185.4px，60% 平滑），柔和底板阴影</td><td><code translate="no">apps/desktop/build/icon.icns</code>（16–1024px），<code translate="no">apps/desktop/package.json</code> 的打包输入</td></tr>
+<tr><th scope="row">Liquid Glass</th><td><code translate="no">apps/desktop/build/AppIcon.icon</code></td><td>从前到后的组：天蓝、紫色、靛蓝、单元。Specular、半透明和玻璃关闭；中性阴影（前方圆盘 0.5，其余 0.3）。<code translate="no">ictool</code> 导出 Default、Dark、ClearLight、TintedDark。</td></tr>
+<tr><th scope="row">WebUI 标签页、文档站</th><td><code translate="no">docs/images/openprogram-tab-icon.source.svg</code>，64px 底板填满画布</td><td>复制到 <code translate="no">apps/web/app/icon.svg</code>、<code translate="no">scripts/docs_site/assets/mark.svg</code></td></tr>
+<tr><th scope="row">Favicon、Windows 安装包</th><td>64px 标签页图标</td><td><code translate="no">apps/web/app/favicon.ico</code>：16、32、48、64、128、256px</td></tr>
+<tr><th scope="row">PWA</th><td>64px 标签页图标；maskable 用全出血变体</td><td><code translate="no">apps/web/public/icons/icon-192.png</code>、<code translate="no">icon-512.png</code>、<code translate="no">icon-512-maskable.png</code>（单元在 80% 安全圆内）</td></tr>
+<tr><th scope="row">README、网站、社交卡片</th><td>126px 标记，旁边是轮廓化的 Instrument Sans 字标和 Geist Mono 标语</td><td><code translate="no">docs/images/logo-lockup-dark.svg</code>、<code translate="no">logo-lockup-light.svg</code>、PNG 渲染、圆盘由后向前弹入的 GIF、<code translate="no">logo.svg</code>、<code translate="no">openprogram-social-card.svg</code>/<code translate="no">.png</code>。<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/docs/images/README.md">图片来源指南</a>。</td></tr>
+</tbody>
+</table>
+
+<h2>检查</h2>
+<dl class="commands">
+<dt><code translate="no">npm run icon:check</code></dt><dd><code translate="no">apps/desktop/scripts/check-icon.sh</code>：四个图层、批准颜色的三个扁平圆盘、单元填充、渐变底板、组顺序，Specular、半透明和玻璃关闭。拒绝图层里的圆角矩形、边框、滤镜、阴影、文字和位图。</dd>
+<dt><code translate="no">_complete_icon_probe</code></dt><dd><code translate="no">openprogram/operations/self_update/control/supervisor.py</code>：用 <code translate="no">sips</code> 渲染每个图层，要求 1024 × 1024 透明画布</dd>
+</dl>
+<p class="note">遵循 Apple 的 <a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">App icons HIG</a>、<a href="https://developer.apple.com/icon-composer/">Icon Composer</a> 和 <a href="https://www.electron.build/docs/features/icons-and-images/">Electron Builder 图标文档</a>。</p>

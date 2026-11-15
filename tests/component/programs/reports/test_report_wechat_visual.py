@@ -1,7 +1,7 @@
 """Visual collection boundaries; these fixtures do not prove live collection."""
 
 import pytest
-from openprogram.programs.workflow import report_wechat_visual as visual
+from openprogram.programs._authoring.reports import wechat_visual as visual
 
 
 @pytest.fixture(autouse=True)
@@ -11,7 +11,7 @@ def native_error_boundary(monkeypatch):
 
     monkeypatch.setitem(
         sys.modules,
-        "gui_harness.adapters.mac_window",
+        "openprogram.programs._authoring.reports.mac_window",
         SimpleNamespace(
             WindowUnavailable=type("WindowUnavailable", (RuntimeError,), {})
         ),
@@ -20,7 +20,7 @@ def native_error_boundary(monkeypatch):
 
 @pytest.fixture
 def working_dir(monkeypatch, tmp_path):
-    from openprogram.worktree.context import set_worktree, reset_worktree
+    from openprogram.state.worktree.context import set_worktree, reset_worktree
 
     monkeypatch.chdir(tmp_path)
     token = set_worktree(None)
@@ -184,6 +184,92 @@ def test_unknown_group_never_persists_private_snapshot(
     assert list(tmp_path.iterdir()) == [] and window.closed
 
 
+def test_screenshot_only_window_reads_the_shown_page_and_reports_no_paging(
+    monkeypatch, tmp_path, working_dir
+):
+    image = tmp_path / "input.png"
+    image.write_bytes(b"test fixture")
+    frame = _frame(
+        [
+            _row("星期四 15:00", 600, 90),
+            _row("A", 350, 130),
+            _row("尚未完成。", 370, 180),
+            _row("B", 350, 230),
+        ]
+    )
+    frame["image"] = str(image)
+
+    class Window:
+        capture_only = True
+        closed = False
+        observed = 0
+
+        def observe(self):
+            self.observed += 1
+            return dict(frame)
+
+        def search(self, *args):
+            pytest.fail("a screenshot-only window cannot search")
+
+        def older(self, *args):
+            pytest.fail("a screenshot-only window cannot page")
+
+        def close(self):
+            self.closed = True
+
+    window = Window()
+    monkeypatch.setattr(visual, "WeChatWindow", lambda: window)
+    outcome = visual.read_visual_group("Target group", ["A", "B"], str(tmp_path))
+    assert outcome["status"] == "READY" and outcome["complete"] is False
+    assert [(b["author"], b["text"]) for b in outcome["blocks"]] == [("A", "尚未完成。")]
+    assert len(outcome["evidence"]) == 1 and window.observed == 1 and window.closed
+    assert outcome["window_controls"] == "unavailable"
+    assert outcome["coverage"].startswith("One visible page only")
+    assert "cannot page to older messages" in outcome["coverage"]
+
+
+def test_screenshot_only_window_showing_another_conversation_persists_nothing(
+    monkeypatch, tmp_path, working_dir
+):
+    class Window:
+        capture_only = True
+        closed = False
+
+        def observe(self):
+            return _frame([])
+
+        def search(self, *args):
+            pytest.fail("a screenshot-only window cannot search")
+
+        def close(self):
+            self.closed = True
+
+    window = Window()
+    monkeypatch.setattr(visual, "WeChatWindow", lambda: window)
+    outcome = visual.read_visual_group("Another group", ["A"], str(tmp_path))
+    assert outcome["status"] == "CAPTURE_ONLY_GROUP_NOT_SHOWN"
+    assert outcome["window_controls"] == "unavailable" and "screenshot only" in outcome["reason"]
+    assert list(tmp_path.iterdir()) == [] and window.closed
+
+
+def test_screenshot_only_state_comes_from_bound_window_and_refusals_change_nothing():
+    from types import SimpleNamespace as NS
+
+    window = object.__new__(visual.WeChatWindow)
+    window.native = None
+    assert window.capture_only is False
+    window.check = lambda: None
+    window.frame = _frame([])
+    window.native = NS(
+        capture_only=True,
+        dispatch=lambda plan: {"success": False, "action_status": "refused"},
+    )
+    assert window.capture_only is True
+    with pytest.raises(visual.VisualUnavailable, match="BACKGROUND_ACTION_UNAVAILABLE"):
+        window._dispatch("window_scroll", "0", direction="up")
+    assert window.frame is not None
+
+
 def test_unlisted_sender_content_does_not_enter_prior_members_report():
     frame = _frame(
         [
@@ -291,11 +377,18 @@ def test_multiple_process_visual_selection_does_not_reopen_bundle(
         "AppKit",
         NS(
             NSApplication=NS(sharedApplication=lambda: None),
-            NSWorkspace=NS(
-                sharedWorkspace=lambda: NS(runningApplications=lambda: apps)
+            # The workspace list is stale in a worker; the per-pid lookup is not.
+            NSWorkspace=NS(sharedWorkspace=lambda: NS(runningApplications=lambda: [])),
+            NSRunningApplication=NS(
+                runningApplicationWithProcessIdentifier_=lambda pid: next(
+                    (a for a in apps if a.processIdentifier() == pid), None
+                )
             ),
         ),
     )
+    from openprogram.programs.tools.computer_use.computer_use_agent.desktop import processes
+
+    monkeypatch.setattr(processes, "all_pids", lambda: [1, *pids, 999])
     monkeypatch.setitem(
         sys.modules,
         "Quartz",
@@ -333,7 +426,7 @@ def test_actions_use_window_controls_and_invalidate_observation(monkeypatch):
 
     monkeypatch.setitem(
         sys.modules,
-        "gui_harness.adapters.mac_window",
+        "openprogram.programs._authoring.reports.mac_window",
         NS(WindowUnavailable=Unavailable),
     )
     window = object.__new__(visual.WeChatWindow)
@@ -405,7 +498,7 @@ def test_public_reader_uses_exact_window_session_and_releases_capture(
 
     monkeypatch.setitem(
         sys.modules,
-        "gui_harness.adapters.mac_window",
+        "openprogram.programs._authoring.reports.mac_window",
         NS(window_session=session, WindowUnavailable=RuntimeError),
     )
     window = object.__new__(visual.WeChatWindow)
@@ -423,3 +516,23 @@ def test_public_reader_uses_exact_window_session_and_releases_capture(
     from pathlib import Path
 
     assert not capture_dir.exists() and not Path(scratch).exists()
+
+
+def test_vision_rows_become_ocr_lines_with_rounded_confidence():
+    rows = [{"text": "群聊", "x": 10, "y": 20, "w": 30, "h": 12, "cx": 25, "cy": 26, "conf": 0.98765}]
+    assert visual._ocr_lines(rows) == [
+        {
+            "type": "text",
+            "source": "vision_ocr",
+            "x": 10,
+            "y": 20,
+            "w": 30,
+            "h": 12,
+            "cx": 25,
+            "cy": 26,
+            "confidence": 0.988,
+            "label": "群聊",
+        }
+    ]
+    with pytest.raises(ValueError):
+        visual._ocr_lines({"text": "not a list"})

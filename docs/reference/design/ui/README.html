@@ -1,0 +1,90 @@
+<title>Web UI</title>
+<meta name="description" content="The workspace UI at a glance and an index of every surface's design.">
+<meta name="covers" content="none">
+<h1>Web UI</h1>
+<p>One workspace UI: a React and Next.js app (<code translate="no">apps/web/</code>), built ahead of time and served by the Python worker on the API's port, so the same pages run in a browser tab, the desktop app and against a remote server. <code translate="no">apps/desktop/</code> is an Electron shell for macOS and Windows; Linux and servers use a browser.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Today</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sidebar and pages</th><td>Projects and chats; Agents, Abilities (Programs, skills, plugins, MCP), Applications, History, Scheduler. Settings in the user menu. List pages share one secondary rail.</td></tr>
+<tr><th scope="row">Center tabs</th><td>Chats, files, terminals, web pages. Tabs split into panes; tabs and groups move between windows.</td></tr>
+<tr><th scope="row">Transcript</th><td>Reply with tool calls folded into rows, file-change summary, sub-agent rows, waiting requests. Follows new output until you scroll away.</td></tr>
+<tr><th scope="row">Composer</th><td>Attachments, model and effort pickers, per-folder git pills, Options menu. Local paths survive into model context.</td></tr>
+<tr><th scope="row">Visual system</th><td>Colours, sizes and shapes from tokens and themes; icons, dots and hover tips each follow one rule set.</td></tr>
+</tbody>
+</table>
+<p class="note">Before touching related modules, walk <a href="invariants.html">cross-module UI invariants</a>.</p>
+
+<h2>Chat</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Design</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="chat/chat-transcript-follow.html">Transcript follow</a></th><td>One attach and detach policy for send, stream, Jump to latest, session switch, history windows</td></tr>
+<tr><th scope="row"><a href="chat/chat-turn-visual-spec.html">Chat-turn visual spec</a></th><td>Execution timeline, file-change summary, manual function runs, minimap. File history: <a href="../runtime/operations/file-management.html">canonical runtime design</a></td></tr>
+<tr><th scope="row"><a href="chat/tool-group-summary.html">Tool group summary</a></th><td>Header of a folded run: grammar, +N −M badge, running tense, turn-level summary</td></tr>
+<tr><th scope="row"><a href="chat/activity-panel.html">Activity panel</a></th><td>Sub-agents as rows, issues that need you, one page per row</td></tr>
+<tr><th scope="row"><a href="chat/sub-agent-row.html">Sub-agent row</a></th><td>Status, its own conversation, <code translate="no">job_id</code>-stamped frames, branch transcript load</td></tr>
+<tr><th scope="row"><a href="chat/attachment-handling.html">Attachment handling</a></th><td>Storage, admission, delivery, recovery, acceptance</td></tr>
+<tr><th scope="row"><a href="chat/chat-attachments.html">Chat attachments</a></th><td>What the transcript shows, how the agent hands a file back, how a file opens</td></tr>
+<tr><th scope="row"><a href="turn-lifecycle/turn-occupancy.html">Turn occupancy</a></th><td>Stop, send queue and session slot, released on cancel intent</td></tr>
+</tbody>
+</table>
+
+<h2>Composer</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Design</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="composer/composer-interaction-modes.html">Interaction modes</a></th><td>Composer modes</td></tr>
+<tr><th scope="row"><a href="composer/composer-options-menu.html">Options menu</a></th><td>(+) on the shared menu grammar; tools come from the Agent</td></tr>
+<tr><th scope="row"><a href="composer/composer-responsive-controls.html">Responsive controls</a></th><td>Compact-state interaction contract</td></tr>
+<tr><th scope="row"><a href="composer/composer-local-attachment-paths.html">Local attachment paths</a></th><td>Path preservation to model context</td></tr>
+<tr><th scope="row"><a href="composer/effort-picker.html">Effort picker</a></th><td>Level name and <code translate="no">?</code> tip, stepped track with animated top level, thumb tip, Recommended caption</td></tr>
+<tr><th scope="row"><a href="composer/git-folder-pills.html">Git folder pills</a></th><td>Branch, change counts, branch switch, worktrees, pull requests</td></tr>
+<tr><th scope="row"><a href="composer/hover-tips.html">Hover tips</a></th><td>One <code translate="no">HoverTip</code> + <code translate="no">TipBody</code> layout</td></tr>
+</tbody>
+</table>
+
+<h2>Workspace and browser</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Design</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="workspace/center-tabs-and-split-layout.html">Center tabs and split layout</a></th><td>Single and composite tab lifecycle, rendering, persistence, transfer</td></tr>
+<tr><th scope="row"><a href="workspace/integrated-terminal.html">Integrated terminal</a></th><td>Real PTY, direct local Claude Code launcher</td></tr>
+<tr><th scope="row"><a href="workspace/pane-recording.html">Pane recording</a></th><td>An Agent records one pane to a video: actions, rules, capture route, file</td></tr>
+<tr><th scope="row"><a href="browser/built-in-browser.html">Built-in browser</a></th><td>Home, profile import, compact History, new-pane launcher</td></tr>
+<tr><th scope="row"><a href="browser/browser-extensions.html">Browser extensions</a></th><td>Not supported, retained capabilities, inert legacy data</td></tr>
+<tr><th scope="row"><a href="browser/agent-control-overlay.html">Agent control overlay</a></th><td>Glow, lights and pointer over what the agent controls</td></tr>
+<tr><th scope="row"><a href="resources/resource-preview.html">Resource preview</a></th><td>Resources list, operation preview, human takeover of Pages</td></tr>
+<tr><th scope="row"><a href="programs/programs-source-categories.html">Programs categories</a></th><td>Grouping and source categories</td></tr>
+<tr><th scope="row"><a href="sidebar/secondary-rail.html">Secondary rail</a></th><td>The one list column: rows, collapse, button roles</td></tr>
+<tr><th scope="row"><a href="settings/settings-collapsible-columns.html">Settings columns</a></th><td>Independent 49px collapse; Providers list stays expanded</td></tr>
+<tr><th scope="row"><a href="settings/avatar-randomization.html">Avatar picker</a></th><td>Type first, then same-style variants or letter fields</td></tr>
+</tbody>
+</table>
+
+<h2>Visual system</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Design</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="visual-system/theme-system.html">Theme system</a></th><td>Theme entry, token contract, consumption, overlay propagation</td></tr>
+<tr><th scope="row"><a href="visual-system/design-tokens.html">Design tokens</a></th><td>Every size, shape and ink tier</td></tr>
+<tr><th scope="row"><a href="visual-system/surface-system.html">Surface system</a></th><td>Surfaces</td></tr>
+<tr><th scope="row"><a href="visual-system/icons.html">Icons</a></th><td>Which family goes where, motion, attribution</td></tr>
+<tr><th scope="row"><a href="visual-system/indicator-dots.html">Indicator dots</a></th><td>Dots</td></tr>
+<tr><th scope="row"><a href="visual-system/agent-avatars.html">Agent avatars</a></th><td>Character, storage, placement, sources and licences</td></tr>
+<tr><th scope="row"><a href="visual-system/web-styles.html">Web styles</a></th><td>One component, one file; directories mirror the tree</td></tr>
+</tbody>
+</table>
+
+<h2>State and desktop</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Design</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="interaction-feedback.html">Interaction feedback</a></th><td>0 ms rule: optimistic state first, data backfills</td></tr>
+<tr><th scope="row"><a href="state-layer.html">State layer</a></th><td>One store per session; shared data global</td></tr>
+<tr><th scope="row"><a href="desktop/window-state.html">Window state</a></th><td>Bounds, maximize, fullscreen, titlebar hit-testing</td></tr>
+<tr><th scope="row"><a href="desktop/window-lifecycle.html">Window lifecycle</a></th><td>One main window: launch, Dock activate, second instance share one create</td></tr>
+<tr><th scope="row"><a href="desktop/window-tab-transfer.html">Window tab transfer</a></th><td>One transaction, the same live page, journals, rollback</td></tr>
+</tbody>
+</table>

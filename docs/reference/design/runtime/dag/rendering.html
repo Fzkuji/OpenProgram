@@ -1,0 +1,360 @@
+<title>DAG rendering specification</title>
+<meta name="description" content="How the session graph draws: canvas, layout, edges, node chips, branch tags, coverage, compaction, call threads and selection.">
+<h1 id="dag-rendering-spec-layout-edges-legend-default-visibility">DAG rendering specification</h1>
+<p>The implementation standard for drawing. Data semantics: <a href="overview.html">Session DAG design</a>. The figures in <a href="layout.html">layout</a> show the scenes (<a href="#s6">§6</a>) and win over any text here.</p>
+<p class="note">Paths below: <code translate="no">dag/</code> is <code translate="no">apps/web/lib/runtime-bridge/dag/</code>; <code translate="no">styles/</code> is <code translate="no">apps/web/app/styles/</code>; <code translate="no">chat/</code> is <code translate="no">apps/web/components/chat/</code>.</p>
+
+<h2 id="where">Where the graph lives</h2>
+<p>A perspective of the chat pane, per tab, for the full column width a branchy session needs. The perspective is not persisted; a reload opens the transcript.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Piece</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Perspective state</th><td><code translate="no">CenterTab.dagView</code>, <code translate="no">apps/web/lib/tabs/center-tabs-store.ts</code></td></tr>
+<tr><th scope="row">Controls (toggle and <code translate="no">…</code> menu, top right)</th><td><code translate="no">chat/pane/view-controls.tsx</code></td></tr>
+<tr><th scope="row">Host (<code translate="no">#historyPanel</code>, <code translate="no">.history-body</code>)</th><td><code translate="no">chat/dag/dag-view.tsx</code>; selected by <code translate="no">dag/pipeline.ts</code>, <code translate="no">dag/render/visibility.ts</code></td></tr>
+<tr><th scope="row">Swap</th><td><code translate="no">.center-pane-chat[data-center-view]</code> in <code translate="no">styles/dag/view-host.css</code></td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>Both surfaces stay mounted and swap by <code translate="no">display</code>: the renderer paints on every capture, and unmounting would blank the graph.</li>
+<li>The swap hides <code translate="no">#chatArea</code>, never <code translate="no">#chatView</code>. The singleton composer lives in <code translate="no">#composer-mount</code> there, so both perspectives share one draft and send path; a node sent from the graph appears on the next capture.</li>
+<li>The graph covers the pane instead of taking its slot, under the composer's <code translate="no">z-index: 5</code>, so the composer stays on the bottom edge. The canvas runs under it; <code translate="no">fitCanvas</code> centres in the strip above.</li>
+<li>Clicking a node fills the right sidebar's Details and Context views. Rename, delete, merge and attach stay in its branch list. Branch switching is in the graph (<a href="#s5">§5</a>); no strip above the canvas.</li>
+</ul>
+
+<h3 id="canvas">The infinite canvas</h3>
+<p>No scroll box: the SVG fills the pane and one <code translate="no">&lt;g&gt;</code> carries translate and scale, so size and centre are not decided by content. The host never re-flows on resize.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Gesture or key</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Mouse wheel, pinch, ⌘ + wheel</th><td>Zoom about the cursor, 25%–300%; pinch at a faster rate</td></tr>
+<tr><th scope="row">Two fingers on a trackpad</th><td>Pan</td></tr>
+<tr><th scope="row">Right or middle drag</th><td>Pan from anywhere, and on macOS the desktop App keeps following the cursor past the window's edge until the button comes up; a right click that did not move opens the menu on release; every drag ends when its button is no longer down, even if the release was lost outside the window</td></tr>
+<tr><th scope="row">Left drag on empty canvas</th><td>Selection box; touching selects (<a href="#s13">§13</a>)</td></tr>
+<tr><th scope="row">Left press on a node</th><td>The node's click or double-click</td></tr>
+<tr><th scope="row">Shift+1 / Shift+0 / Shift+2</th><td>Fit graph, down to 25% / 100% / fit selection</td></tr>
+<tr><th scope="row">+ / −</th><td>Step one wheel notch (<code translate="no">ZOOM_STEP</code>)</td></tr>
+<tr><th scope="row">F</th><td>Glide to a working agent, next one on repeat, HEAD if none (<code translate="no">focusAgent</code>)</td></tr>
+<tr><th scope="row">M / ?</th><td>Minimap / controls sheet</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Wheel kind (<code translate="no">interaction/view/wheel.ts</code>)</th><td><code translate="no">ctrlKey</code> = pinch; sideways delta = two fingers; Chromium's <code translate="no">wheelDeltaY == -3 × deltaY</code> = trackpad, notches are multiples of 120. Judged on the first event, held until a 180 ms pause so inertia never flips to zoom. Line and page deltas become pixels. A pixel-smooth mouse reporting the trackpad ratio pans</td></tr>
+<tr><th scope="row">Dot lattice</th><td>Pitch <code translate="no">COL_W</code>, same pan and zoom, a dot centred under every anchor; drift is a visible bug, so the fit rounds to whole pixels. Radius follows zoom, 1–3px</td></tr>
+<tr><th scope="row">View state</th><td>Pan and zoom in <code translate="no">dag/store/globals.ts</code> per session. Only a different session re-fits; a pane resize never does</td></tr>
+<tr><th scope="row">Opening view</th><td>The fit, floored at 80% (<code translate="no">OPEN_MIN_SCALE</code>); an overflowing axis follows HEAD near the bottom of the strip</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Zoom column, panels and full screen</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Zoom column (<code translate="no">DagZoomColumn</code>)</th><td>Top right, under the perspective strip. Strip one: + · readout · −, hairline, Find the working agent. Strip two: minimap, hairline, legend, controls sheet. Each stays open until pressed again. A toggle that is on holds the hover grey</td></tr>
+<tr><th scope="row">Readout and buttons</th><td>Clicking the readout resets to 100%; buttons anchor on the pane centre and glide 0.22 s, even in log space; a press mid-glide steps on from the destination; a wheel or pan takes over (<code translate="no">glideZoom</code>). The readout is written imperatively, because routing every wheel event through React repaints the tree</td></tr>
+<tr><th scope="row">Side column</th><td>Left of the zoom column, map width (280px): map, docked web preview, legend, controls sheet, 16px apart, full height, ending 16px above the composer, scrolling as a whole; a hidden panel folds its place</td></tr>
+<tr><th scope="row">Web preview</th><td>Starts docked (<code translate="no">web-tab-pip-dock.ts</code>, <code translate="no">PipDockSlot</code>). A still frame stands in while scrolled partly out. Dragging frees it after 36px; within 56px of the column top it snaps in, and needs 88px to leave. One spring (framer-motion) per move. An expanded preview floats. The conversation perspective has the same dock</td></tr>
+<tr><th scope="row">Panel motion</th><td>Fade, 95% scale, 8px slide over 100ms, reversed on exit (<code translate="no">PANEL_MOTION</code> in <code translate="no">chat/dag/dag-key-sheet.tsx</code>, <code translate="no">.is-hidden</code> in <code translate="no">styles/dag/panels/tools.css</code>). <code translate="no">stowMinimap</code> puts the map away without motion on entry. Strips slide in top to bottom, 150ms each, 40ms apart; leaving is instant</td></tr>
+<tr><th scope="row">Material</th><td>One raised strip material, <code translate="no">styles/dag/panels/tools.css</code>; legend and sheet padding from <code translate="no">MENU_PANEL</code>, frame shared with the minimap, no ring. Glyphs are Solar Bold Duotone (<a href="../../ui/visual-system/icons.html">icons</a>)</td></tr>
+<tr><th scope="row">Full screen</th><td>Belongs to the session pane; its button is in the perspective strip. The body grows over both sidebars and the tab strip to <code translate="no">--canvas-fullscreen-inset</code> (8px); the window keeps its size and native web views hide. Ends on press, Esc with nothing selected, another tab kind or reload (<code translate="no">canvas-fullscreen.ts</code>; <code translate="no">html[data-canvas-fullscreen]</code> in <code translate="no">chat/pane/center-pane.css</code>)</td></tr>
+<tr><th scope="row">Full-screen motion</th><td>Web Animations, four real edges, 400ms ease-in-out in, 320ms out; content lays out at the box size each frame, never at the end size first, or transcript scroll would clamp. While moving, <code translate="no">canvas-motion.ts</code> keeps re-wrap to visible rows. Toggle mid-glide reverses; Reduce Motion skips</td></tr>
+<tr><th scope="row">Code</th><td>Pan, zoom, fit: <code translate="no">interaction/view/canvas.ts</code>. <code translate="no">_viewTx</code>, <code translate="no">_viewTy</code>, <code translate="no">_viewScale</code>, <code translate="no">_viewSession</code>: <code translate="no">store/globals.ts</code>. Lattice: <code translate="no">.history-body</code> in <code translate="no">styles/dag/graph/canvas.css</code>. Legend rows: <code translate="no">styles/dag/panels/legend.css</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="s0">0. What to draw</h2>
+<table class="stack">
+<thead><tr><th scope="col">Layer</th><th scope="col">Nodes</th><th scope="col">Answers</th><th scope="col">Count</th></tr></thead>
+<tbody>
+<tr><th scope="row">Conversation</th><td>ROOT, user, llm replies, spawn roots, merge, manually invoked top-level functions</td><td>The session's shape</td><td>Single digits to dozens</td></tr>
+<tr><th scope="row">Execution</th><td>Tool calls and sub-calls</td><td>What one turn did</td><td>Dozens per turn</td></tr>
+</tbody>
+</table>
+
+<p>The viewport lays out only the conversation layer. A turn's calls and agents are its call thread (<a href="#s12">§12</a>). One chip is one reply and everything the model did until the next user message:</p>
+<ul>
+<li>A runtime-notice reply (<code translate="no">job_followup</code>, <code translate="no">process_exit</code>) merges into its anchor, found by climbing <code translate="no">predecessor</code> past every followup. Its synthetic <code translate="no">display=runtime</code> user message is never painted; <code translate="no">filter.py</code> (<code translate="no">bridge_hidden</code>) re-parents the reply onto the notice's predecessor so it is never an orphan.</li>
+<li>A restart's "continue the interrupted task" reply is stamped <code translate="no">resumed</code> and merges into the same anchor as the reply it continues.</li>
+</ul>
+<p class="note">Chat stream and call tree are unaffected: same data, three projections.</p>
+
+<h2 id="s1">1. Position = (column, row)</h2>
+<p>Column = lane start + tier. Both axes step one unit (<code translate="no">COL_W == ROW_H == 40</code>), offset by <code translate="no">PAD_X</code>, <code translate="no">PAD_Y</code>.</p>
+<h3>Lane: which branch</h3>
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">New branch root</th><th scope="col">Attachment</th></tr></thead>
+<tbody>
+<tr><th scope="row">Retry or rewrite</th><td>Forked user or llm node</td><td>Shares predecessor with the replaced node</td></tr>
+<tr><th scope="row">Spawn</th><td><code translate="no">source=agent_spawn</code> user node</td><td>caller = initiator, predecessor empty</td></tr>
+<tr><th scope="row">Merge</th><td>The merge node</td><td>Base branch lane; no new lane</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>Columns 0, 1, 2… by appearance, no gaps, no "trunk". A branch occupies its start column to its deepest visible chain node; the next starts one right.</li>
+<li>A fork lane keeps one extra gap column, and tiers are zeroed per lane.</li>
+<li>A fork lane mirrors the trunk: its first column is an empty spine where the dashed bridge lands; every turn steps one right and stubs off it. Capsules and relics take the bridge to the chip.</li>
+<li>Thread items reserve no width: they take the nearest column right of the anchor that no line crosses at the insertion row, so threads on different rows share a column and two open threads never share a cell.</li>
+</ul>
+<h3>Tier and depth</h3>
+<table class="stack">
+<thead><tr><th scope="col">Node</th><th scope="col">Layer</th><th scope="col">Column</th></tr></thead>
+<tbody>
+<tr><th scope="row">ROOT</th><td>conversation</td><td>tier 0</td></tr>
+<tr><th scope="row">user</th><td>conversation</td><td>tier 1</td></tr>
+<tr><th scope="row">llm reply, merge</th><td>conversation</td><td>tier 2</td></tr>
+<tr><th scope="row">Thread item (call, spawn head)</th><td>execution</td><td>anchor's column +1; a nested open thread +1 more</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>Chain rows: a preorder walk of the structural parent tree; every visible node takes its own row.</li>
+<li>A fork root sits on the row of its sibling, and every branch off one point shares that row. Each bridges to the branch immediately left, so the dash is straight and two units long.</li>
+<li>Thread rows: from the anchor's next row, one per event; an open spawn's thread continues from its row. Later rows shift down: expansion is insertion, never overlay.</li>
+<li>Cross-session spawns land as the target's own chain, lane 0.</li>
+</ul>
+
+<h2 id="s2">2. Layout rules</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Square grid</th><td>Child at the parent's lower-right, 45°; the lattice makes it checkable</td></tr>
+<tr><th scope="row">Alignment and compaction</th><td>Nodes on grid points; empty rows and columns close on every visibility change. A placeholder box violates this: running shows on the chip</td></tr>
+<tr><th scope="row">Chips are cells</th><td>Same 28px chip, one cell, 12px gap, no shape sized to text. Captions in annotation grey right of a call or user message (<code translate="no">render/labels/captions.ts</code>) take only free room up to the next tile, tag or crossing, step past a fork line, drop when tight, and never move layout. An agent's tile shows its bubble; zoomed far out captions hide</td></tr>
+</tbody>
+</table>
+
+<h2 id="s3">3. Edges: colour = branch, line = type</h2>
+<table class="stack">
+<thead><tr><th scope="col">Edge</th><th scope="col">Line</th><th scope="col">Colour</th><th scope="col">Shown</th></tr></thead>
+<tbody>
+<tr><th scope="row">Same-branch parent to child</th><td>Solid on belt</td><td>Branch</td><td>Always</td></tr>
+<tr><th scope="row">Retry fork bridge</th><td>Dashed <code translate="no">6 4</code>, horizontal; elbow only if rows diverged</td><td>Branch</td><td>Always</td></tr>
+<tr><th scope="row">Call thread</th><td>Solid on belt: vertical in the anchor's column, stub per item</td><td>Anchor's branch</td><td>While open</td></tr>
+<tr><th scope="row">Merge convergence</th><td>Solid 2.4px</td><td>Peer branch</td><td>Always</td></tr>
+<tr><th scope="row">Attach merge-back</th><td>Dashed <code translate="no">4 4</code></td><td>Source branch</td><td>When both ends are visible</td></tr>
+<tr><th scope="row">Ghost (covered range)</th><td>Dashed <code translate="no">3 3</code>, no belt</td><td>Branch</td><td>When expanded</td></tr>
+<tr><th scope="row">send_message</th><td>Dotted <code translate="no">1 5</code></td><td>Target branch</td><td>Hover only</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>Lane colours: <code translate="no">LANE_COLORS</code>, <code translate="no">--lane-*</code> in <code translate="no">styles/design/color.css</code>. No category of edge has a fixed colour.</li>
+<li>The road to HEAD wears HEAD's colour (<code translate="no">_stampPathLanes</code>, <code translate="no">_pathLane</code> in <code translate="no">layout/assign-lanes.ts</code>), and <code translate="no">render/edges.ts</code> draws it last.</li>
+<li>Belts: an 8px opaque neutral track (<code translate="no">.dag-belt</code>) under a 2px branch line. Beads ride towards work under the line: a chain belt into a running node, a thread belt while anything down its item runs, the trunk only to that item. <code translate="no">paintBelts</code> reads <code translate="no">data-to</code>, so in-place status patches repaint it.</li>
+<li>Every line runs centre to centre; chip fills bury the ends.</li>
+</ul>
+
+<h2 id="s4">4. Node chips</h2>
+<p>Every node is the same round chip (<code translate="no">render/tiles.ts</code>): a tint of its tone mixed into the canvas, opaque over the belts, with its icon. State restyles the chip; nothing is drawn around it.</p>
+<table class="stack">
+<thead><tr><th scope="col">State</th><th scope="col">Chip</th></tr></thead>
+<tbody>
+<tr><th scope="row">Normal</th><td>18% tint, full-colour icon</td></tr>
+<tr><th scope="row">Hover</th><td>30% tint</td></tr>
+<tr><th scope="row">Selected</th><td>Solid fill, canvas-colour icon, 8% larger</td></tr>
+<tr><th scope="row">HEAD</th><td>24% tint, breathing glow (2.4 s <code translate="no">drop-shadow</code>, <code translate="no">data-head</code>); steady under reduced motion. Carries no coverage mark</td></tr>
+<tr><th scope="row">Not in next request (<a href="#s8">§8</a>)</th><td>10% tint, icon 60%</td></tr>
+<tr><th scope="row">Running</th><td><code translate="no">is-running</code>: icon breathes; agent dot and bubble appear</td></tr>
+<tr><th scope="row">Error</th><td><code translate="no">is-error</code>: red <code translate="no">!</code> on the upper right; tone stays</td></tr>
+<tr><th scope="row">Cancelled</th><td><code translate="no">is-faded</code>: ghost grey</td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">Node</th><th scope="col">Icon</th><th scope="col">Tone</th></tr></thead>
+<tbody>
+<tr><th scope="row">ROOT</th><td>House</td><td>Secondary ink</td></tr>
+<tr><th scope="row">User</th><td>Person</td><td>Branch</td></tr>
+<tr><th scope="row">Agent reply</th><td>The agent's character</td><td>Branch</td></tr>
+<tr><th scope="row">Call</th><td>Per tool (<code translate="no">presentTool</code>, same as the transcript)</td><td>Per tool (<code translate="no">styles/tool-tones.css</code>)</td></tr>
+<tr><th scope="row">Sub-agent spawn</th><td>The sub-agent's character</td><td>Branch</td></tr>
+<tr><th scope="row">Compaction summary</th><td>Archive</td><td>Memory</td></tr>
+<tr><th scope="row">Merge / attach</th><td>Pull request / link</td><td>Plan</td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">Badge</th><th scope="col">Place</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">+N</code></th><td>Upper-right shoulder, annotation grey, no shape</td><td>Folded thread size; gone when open</td></tr>
+<tr><th scope="row"><code translate="no">↗</code></th><td>Top right, both sides of a cross-session spawn</td><td><code translate="no">spawn_remote</code> and <code translate="no">spawn_out</code>. No in-graph <code translate="no">attach_returns</code> edge; not clickable. Same-session spawns have none</td></tr>
+<tr><th scope="row"><code translate="no">▤</code></th><td>Upper left</td><td>Spilled (<a href="#s8">§8</a>)</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Agents on the canvas and semantic zoom</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Character</th><td>Avatar shape (<a href="../../ui/visual-system/agent-avatars.html">avatars</a>) drawn flat, eyes cut through (<code translate="no">components/avatar/bot/glyph.ts</code>), in the branch colour. The main agent wears the conversation Agent's; <code translate="no">chat/dag/dag-view.tsx</code> reports it to <code translate="no">render/agent-look.ts</code>. A sub-agent's comes from its name. Legend and Activity panel draw the same glyphs</td></tr>
+<tr><th scope="row">Working agents (<code translate="no">render/agents.ts</code>)</th><td>A breathing status dot of branch colour on the upper-left of the tile; a bubble says "name · doing" in present tense. A node belongs to the sub-agent its chain leads to, else the main agent; each shows its latest running node. If folded, the dot sits on the nearest drawn tile. Shared tiles stack. Idle, the main agent's dot rests on HEAD, steady</td></tr>
+<tr><th scope="row">Markers</th><td>Keep on-screen size (<code translate="no">--dag-marker-scale</code>), pinned to the tile in world units</td></tr>
+<tr><th scope="row">Below 55% (<code translate="no">FAR_SCALE</code>, <code translate="no">is-far</code>)</th><td>Tiles become 7px solid dots, lines 1.5px, press target about 10px; corner dots, call captions, counts hide. With a selection, the rest fades to 25% (<code translate="no">has-selection</code>); the minimap draws selected nodes larger in the accent</td></tr>
+<tr><th scope="row">Labels</th><td>One curve below 100% (<code translate="no">--dag-label-scale</code>), 12px down to about 8.5px. <code translate="no">interaction/view/far-labels.ts</code> hides any within 8px of one shown: branch names first, current branch first, then messages nearest HEAD, then calls</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="s5">5. Branch tags</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Anchor</th><td>Row of the branch's own deepest visible node, right of the tile; follows an open thread and returns on fold. An agent's bubble hides it</td></tr>
+<tr><th scope="row">Button</th><td>Active: flat block in lane colour. Click another to check it out</td></tr>
+<tr><th scope="row">Spawned agent</th><td>No branch tag: the agent is its chip. With its owner's thread open, the spawn head wears a name tag on its right; clicking checks out the agent's tip</td></tr>
+<tr><th scope="row">Lines</th><td>A line along the row breaks around letters (canvas-colour halo)</td></tr>
+<tr><th scope="row">Collision</th><td>Measured pixel boxes; every visible glyph is seeded, and the later tag steps down a row</td></tr>
+<tr><th scope="row">Source</th><td><code translate="no">list_branches</code> only. Merging erases the name (kept on disk), which moves to the merge node's tooltip</td></tr>
+</tbody>
+</table>
+
+<h2 id="s6">6. Scenes</h2>
+<table class="stack">
+<thead><tr><th scope="col">Scene</th><th scope="col">Topic</th><th scope="col">Key points</th></tr></thead>
+<tbody>
+<tr><th scope="row">1–7</th><td>Base: single turn, multi-turn, retry, tool indent, manual function, composite, collapse</td><td>Tool calls show as the shoulder count until opened</td></tr>
+<tr><th scope="row">8</th><td>Merge</td><td>On the base lane, peer lines 2.4px; attach pointers are lines only</td></tr>
+<tr><th scope="row">9</th><td>send_message</td><td>A <code translate="no">from_branch</code> user node lands at the target branch tail</td></tr>
+<tr><th scope="row">10</th><td>Spawn and return</td><td>The head sits in sequence on its caller's thread. The followup reply merges into the same anchor, so no return line</td></tr>
+<tr><th scope="row">11</th><td>Thread aggregation</td><td>Open state is per node and recursive</td></tr>
+<tr><th scope="row">12</th><td>Status and badges</td><td><a href="#s4">§4</a></td></tr>
+<tr><th scope="row">13</th><td>Tag placement</td><td><a href="#s5">§5</a></td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Note</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Send-back node</th><td>With <code translate="no">predecessor</code> = initiator, forms a fork if the user also sent a message, and joins the <code translate="no">&lt; N/M &gt;</code> switcher (<a href="../../ui/invariants.html">invariants</a> rule 7). A turn of the receiving chain whatever its <code translate="no">caller</code>: user tier, reply one right. Label is the sender's name and words; <code translate="no">message_from</code> carries the sender</td></tr>
+<tr><th scope="row">Sub-agent spawning again</th><td><code translate="no">agent.max_spawn_depth</code>, default 1. Past the limit a spawn is refused. The renderer recurses at any depth</td></tr>
+</tbody>
+</table>
+
+<h2 id="s7">7. Render pipeline</h2>
+<ol>
+<li><code translate="no">passes/</code>: <code translate="no">merge-runs</code>; <code translate="no">collapse-runtime-pairs</code> (legacy wrapper pairs); <code translate="no">demote-decoration-cards</code> (a card child is not a fork); <code translate="no">fold-summaries</code>; <code translate="no">thread</code>.</li>
+<li><code translate="no">layout/geometry.ts</code>: lattice positions from the backend's lane, tier and depth, which the front end only consumes (<code translate="no">openprogram/state/store/session/graph/layout/</code>, tier in <code translate="no">tier.py</code>).</li>
+<li><code translate="no">render/edges.ts</code>, <code translate="no">render/nodes.ts</code>, <code translate="no">render/labels/badges.ts</code>, then the canvas (<code translate="no">interaction/view/canvas.ts</code>, <code translate="no">gestures.ts</code>). <code translate="no">render/seat.ts</code> reads a drawn group's position back.</li>
+</ol>
+<p class="note">Orchestration: <code translate="no">pipeline.ts</code>. Payload: <code translate="no">openprogram/state/store/session/graph/builder.py</code>. Debug: <code translate="no">python scripts/dag_dump.py &lt;session_id&gt;</code> prints lane, tier, depth and an ASCII grid. A capture caches icons, tool presentation and text widths; attaching defers pane-size work a frame; <code translate="no">applyView</code> paints once a frame; a pan rewrites only translations. A repaint of 150 nodes takes about 5ms.</p>
+
+<h2 id="s8">8. Fill means context coverage</h2>
+<p>A covered tile (<code translate="no">is-covered</code>, <code translate="no">render/visibility.ts</code>) is part of the next LLM call. The graph never derives context semantics: <code translate="no">GET /api/sessions/{id}/context-range</code> returns them, built from the functions the real render uses. <code translate="no">enterExclusiveCoverageMode</code> (<code translate="no">dag/index.ts</code>) fetches it.</p>
+<p>The set is the active branch from head back to the latest summary, plus each covered turn's code nodes listed after their owner (<code translate="no">_with_code_nodes</code>, <code translate="no">_coverage_nodes</code> in <code translate="no">openprogram/interfaces/server/routes/files/tree.py</code>). Context ids with no drawn node are ignored.</p>
+<pre translate="no" tabindex="0">{"session_id": "…", "node_ids": ["…"], "count": 12,
+ "nodes": [{"node_id": "…", "in_context": true, "aged": false, "spilled": true}]}</pre>
+<table class="stack">
+<thead><tr><th scope="col">Field</th><th scope="col">Meaning</th><th scope="col">Source</th><th scope="col">Drawing</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">in_context</code></th><td>In the covered set</td><td><code translate="no">get_branch</code></td><td>Full chip</td></tr>
+<tr><th scope="row"><code translate="no">aged</code></th><td>Always false: old results are never aged. Kept so the payload keeps its shape</td><td><code translate="no">routes/files/tree.py</code></td><td>None</td></tr>
+<tr><th scope="row"><code translate="no">spilled</code></th><td>Written to <code translate="no">large_nodes/</code>, render cites it</td><td><code translate="no">metadata.spilled</code>, <code translate="no">spill.py::spill_if_large</code></td><td><code translate="no">▤</code> drawn as <code translate="no">&lt;text&gt;</code>, so the first-shape scan skips it</td></tr>
+</tbody>
+</table>
+
+<p class="note">Re-fetched on <code translate="no">context_stats</code> and <code translate="no">compaction_finished</code> (<code translate="no">chat-handlers.ts</code>). <code translate="no">spilled</code> is outside the render signature, so new coverage clears it (<code translate="no">setLastSignature(null)</code>). The summary is an ordinary chain member, so branch ids are drawn ids and need no translation; only synthetic bridges are filtered (<code translate="no">filter.py</code>).</p>
+
+<h2 id="s9">9. Compaction as one capsule</h2>
+<p>A summary stands for its range, so it draws as one chip with the archive icon, its covered count <code translate="no">+N</code> on the shoulder. <code translate="no">metadata.covers_ids</code> (<code translate="no">context/persistence.py</code>), passed through <code translate="no">builder.py</code> with covered turns' caller subtrees and missing ids dropped, drives shape, fold, count, ghosts and inspector. The front end does no seq arithmetic, which would catch dead forks.</p>
+<table class="stack">
+<thead><tr><th scope="col">Viewing</th><th scope="col">Covered turns</th><th scope="col">Capsule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Carrying branch, folded</th><td>Elided; capsule first on the trunk</td><td>Coloured, <code translate="no">+N</code></td></tr>
+<tr><th scope="row">Carrying branch, open</th><td>Ghosts: branch colour, dashed edge, no covered fill</td><td>After its ghosts; no count</td></tr>
+<tr><th scope="row">Other branch</th><td>Live and raw</td><td>After those turns, inert: no fold, count or fill</td></tr>
+<tr><th scope="row">Superseded (<code translate="no">superseded_summary</code>)</th><td>—</td><td>Keeps its row, ghost grey, folds nothing</td></tr>
+</tbody>
+</table>
+
+<p class="note">The carrying branch's chain contains the whole segment (<a href="../../context/compaction.html">compaction §3</a>). Fold state is view-only (<code translate="no">_summaryExpanded</code>), starts folded, and sticks across branch switches. The slot never moves. Placements are clone rewrites in <code translate="no">fold-summaries.ts</code>; the stored row keeps its real <code translate="no">predecessor</code>. Grey is reserved for history no branch can carry.</p>
+
+<h2 id="s10">10. Failed turns</h2>
+<p><code translate="no">status=error</code> and off the HEAD chain (<code translate="no">_isArchivedFailure</code>): the same grey as a covered turn, the <code translate="no">!</code> kept, inspector <code translate="no">Failed turn · Recorded</code>. Both conditions matter: status alone would grey the error you are looking at; off-HEAD alone would grey every sibling. The store writes <code translate="no">status</code> (<a href="../execution/control.html">execution control</a>); a cancel stays <code translate="no">cancelled</code>.</p>
+
+<h2 id="s11">11. Hover, click, right-click, double-click</h2>
+<table class="stack">
+<thead><tr><th scope="col">Action</th><th scope="col">Result</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row">Hover</th><td>Brief card: role (<code translate="no">Subagent · &lt;name&gt;</code> on a spawn), model and tokens, preview, folded count, status if not finished. Tokens: <code translate="no">llm.output_tokens</code>, else <code translate="no">chars/4</code> labelled estimated, none for empty text</td><td><code translate="no">interaction/node/tooltip.ts</code></td></tr>
+<tr><th scope="row">Click</th><td>Fold or unfold the thread; nothing else. Details fills quietly</td><td><code translate="no">interaction/node/nodes.ts</code></td></tr>
+<tr><th scope="row">Right-click</th><td>The same card expands in place with every field, coverage, full id and verbs; stays until a click elsewhere. Raw JSON opens in the inspector shell</td><td><code translate="no">expandTooltip</code>, <code translate="no">renderNodeInfo</code>, <code translate="no">inspector.ts</code></td></tr>
+<tr><th scope="row">Double-click a user turn</th><td>Fork and edit</td><td><code translate="no">forkAndEditNode</code></td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">Verb</th><th scope="col">Route</th><th scope="col">Why it is enough</th></tr></thead>
+<tbody>
+<tr><th scope="row">Checkout</th><td><code translate="no">POST /api/chat/checkout</code></td><td>A pure HEAD move</td></tr>
+<tr><th scope="row">Fork from node</th><td>Same</td><td>Sending from a HEAD with children makes a sibling</td></tr>
+<tr><th scope="row">Fork and edit (user turns)</th><td>Same, to the node's predecessor, then the text in the composer</td><td>An ordinary send; the same shape as <code translate="no">POST /api/chat/edit</code></td></tr>
+<tr><th scope="row">Copy id, raw JSON</th><td>Client only</td><td>—</td></tr>
+</tbody>
+</table>
+
+<p class="note">Legend: <code translate="no">DagLegend</code>, starts closed, survives canvas clicks.</p>
+
+<h2 id="s12">12. The call thread</h2>
+<p>Everything a turn did is one time-ordered sequence. <code translate="no">passes/thread.ts</code> builds it; <code translate="no">_threadOpen</code> holds view state per anchor, never persisted, reset on session switch.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Drawing</th></tr></thead>
+<tbody>
+<tr><th scope="row">Folded</th><td>Only <code translate="no">+N</code> on the shoulder. No outline: anything shaped reads as a node</td></tr>
+<tr><th scope="row">Open</th><td>A solid branch-colour line down the anchor's column, one stub and one real chip per event. Later rows move down; fold reclaims them</td></tr>
+<tr><th scope="row">Spawn</th><td>The head is a call-thread chip with the sub-agent's character. The dispatch call (<code translate="no">agent</code>, <code translate="no">send_message</code>) folds into it unless no spawn opened. Internal turns merge in; its thread sits one column right. Recursive</td></tr>
+<tr><th scope="row">Return</th><td>No line: the followup merges into the same anchor, so dispatch, work and return read top to bottom</td></tr>
+<tr><th scope="row">Name</th><td>Tooltip, inspector and name tag; from <code translate="no">spawned_from.label</code>, stamped by the runner (<code translate="no">attach["label"]</code>, <code translate="no">runtime/jobs/runner/progress.py</code>; <code translate="no">ws_actions/session/transcript.py</code>), else the branch name</td></tr>
+<tr><th scope="row">Visibility</th><td>An item shows only while every thread above it is open</td></tr>
+</tbody>
+</table>
+
+<h2 id="s13">13. Selection, deleting, minimap</h2>
+<p>One mouse, no tool modes; gestures are in <a href="#canvas">the table above</a>. Shift or ⌘ with click or drag adds and removes; a click on empty canvas clears. Code: <code translate="no">interaction/selection/</code>, <code translate="no">interaction/view/gestures.ts</code>, <code translate="no">chat/dag/dag-tools.tsx</code>.</p>
+<ul>
+<li>Selection lights chips in place. The box is an accent outline over 8% accent. Re-applied each repaint, pruned to drawn nodes, dropped on session switch. It takes focus from the composer. Esc clears it, then leaves full screen.</li>
+<li>Action bar, top left: <code translate="no">N selected | ⌖ · Copy ID · Delete · ✕</code>; afterwards <code translate="no">Deleted N nodes | Undo</code> for a few seconds.</li>
+<li>Minimap (<code translate="no">interaction/view/minimap.ts</code>): dots on faint lines, an accent frame for the view, HEAD larger and ringed. Press or drag moves the camera; wheel zooms about the middle. Starts hidden; the choice is kept in the browser.</li>
+</ul>
+<h3>Deleting</h3>
+<p>Delete or ⌫ acts at once; ⌘Z undoes.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">What goes</th><td>Selected nodes plus what they own through <code translate="no">caller</code>. Conversation followers stay, re-pointed at the nearest surviving predecessor</td></tr>
+<tr><th scope="row">A glyph stands for its rows</th><td>A merged followup goes with its anchor; a spawn head takes its dispatch call and agent branch</td></tr>
+<tr><th scope="row">Refused</th><td>Root, a lone spawn root, summaries, attach and merge machinery</td></tr>
+<tr><th scope="row">HEAD, branch names</th><td>Move to the nearest surviving predecessor</td></tr>
+<tr><th scope="row">Storage</th><td>Files move to <code translate="no">&lt;sessions root&gt;/.deleted-nodes/&lt;session&gt;/&lt;op_id&gt;/</code> with a journal; purged after 24 hours on the next delete</td></tr>
+<tr><th scope="row">Undo</th><td>Replays the journal; anything moved since keeps its newer value. Stack is per session, for the page's life</td></tr>
+<tr><th scope="row">During a turn</th><td>Both refused</td></tr>
+<tr><th scope="row">Wire</th><td><code translate="no">delete_nodes {session_id, node_ids}</code> → <code translate="no">nodes_deleted {ok, op_id, deleted, error}</code>; <code translate="no">restore_deleted_nodes {session_id, op_id}</code> → <code translate="no">nodes_restored</code>; on success an open chat gets <code translate="no">window_stale</code> and reads again. Any attach, merge or deletion also sends <code translate="no">branches_changed</code>, and the client asks <code translate="no">list_branches</code> again, which refreshes the graph. Store: <code translate="no">session_store/node_deletion.py</code>; socket: <code translate="no">ws_actions/dag_nodes.py</code></td></tr>
+</tbody>
+</table>
+
+<h2>Implementation status</h2>
+<p>All implemented, except navigation from the cross-session <code translate="no">↗</code>.</p>
+<details>
+<summary>Tests</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Test</th></tr></thead>
+<tbody>
+<tr><th scope="row">Geometry, threads</th><td><code translate="no">apps/web/tests/dag/dag-subagent-thread.test.mjs</code></td></tr>
+<tr><th scope="row">Compaction fold</th><td><code translate="no">apps/web/tests/dag/fold-summaries.test.mjs</code></td></tr>
+<tr><th scope="row">Selection</th><td><code translate="no">apps/web/tests/dag/dag-selection.test.mjs</code></td></tr>
+<tr><th scope="row">Shared composer</th><td><code translate="no">apps/web/tests/tabs/center-perspective.test.mjs</code></td></tr>
+<tr><th scope="row">Coverage query</th><td><code translate="no">tests/unit/context/test_context_range_coverage.py</code></td></tr>
+<tr><th scope="row"><code translate="no">covers_ids</code></th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
+<tr><th scope="row">Deletion</th><td><code translate="no">tests/component/store/test_node_deletion.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="layout.html">Layout scenes</a></p>

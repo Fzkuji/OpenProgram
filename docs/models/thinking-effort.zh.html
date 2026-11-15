@@ -1,0 +1,24 @@
+<title>思考强度</title>
+<meta name="description" content="统一的推理深度档位、各 Provider 的默认值和修改位置。">
+<h1>思考强度</h1>
+<p>用一个滑块覆盖各厂商自己的参数；Provider 在每次请求前翻译档位。</p>
+<pre translate="no"><code>minimal · low · medium · high · xhigh · max</code></pre>
+<p class="note"><code translate="no">off</code> 是设置值，不是选择器里的档位：Provider 有办法时它关闭推理，例如 OpenAI Responses 上发送 <code translate="no">effort: "none"</code>。</p>
+<p>界面只显示模型支持的档位。Opus 4.8 有 low 到 max 五档；DeepSeek reasoner 不可调；GitHub Copilot 没有。档位来自 <code translate="no">provider.json</code> 的 <code translate="no">thinking</code> 块及按模型的覆盖；端点报告能力时（Anthropic <code translate="no">/v1/models</code>、Codex 订阅模型）Fetch 会刷新。没有声明时：low、medium、high。</p>
+<table class="stack">
+<thead><tr><th scope="col">Provider 系列</th><th scope="col">默认值，<code translate="no">provider.json</code> 的 <code translate="no">default_effort</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenAI Responses 和 Completions、Codex、Azure OpenAI</th><td><code translate="no">xhigh</code></td></tr>
+<tr><th scope="row">Anthropic、Amazon Bedrock</th><td><code translate="no">high</code></td></tr>
+<tr><th scope="row">Google、Gemini CLI（经 token 预算）、DeepSeek</th><td><code translate="no">medium</code></td></tr>
+<tr><th scope="row">没有声明</th><td><code translate="no">medium</code></td></tr>
+</tbody>
+</table>
+<h2>修改</h2>
+<p>内层覆盖外层。</p>
+<ol>
+<li><strong>Agent</strong>：Agent 设置里的 <code translate="no">thinking_effort</code></li>
+<li><strong>项目</strong>：项目级默认值</li>
+<li><strong>轮次</strong>：Web UI 输入框旁的选择器，或 TUI 的 <code translate="no">/effort</code>。随会话保存。</li>
+</ol>
+<p class="next"><a href="../reference/design/providers/models/thinking-effort.html">映射规则与检测</a></p>

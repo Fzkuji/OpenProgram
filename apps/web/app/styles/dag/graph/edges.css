@@ -1,0 +1,46 @@
+/* DAG 边：可点击命中区、hover 加粗、出上下文淡化。
+   对应来源：lib/runtime-bridge/dag/render/edges.ts */
+
+/* Edge colour / stroke-width are set inline per-lane in history-graph.js
+   so every branch reads as its own continuous ribbon. No CSS overrides
+   here beyond fill:none (belt-and-braces in case the inline drops). */
+.history-edge { fill: none; }
+
+/* Belts (dag/rendering.md §3): chain and thread edges run on a wide
+   neutral track; the line into a working node flows along it. */
+.dag-belt {
+  /* Opaque: tracks overlap at every junction and along a shared trunk,
+     and a translucent track would darken where they stack. */
+  stroke: color-mix(in srgb, var(--text-muted) 22%, var(--bg-primary));
+  stroke-width: 8;
+}
+/* A running belt carries goods: round beads in the branch colour ride
+   the track towards the working node, under the solid line. */
+.dag-belt-goods { display: none; }
+.dag-belt-goods.is-live {
+  display: inline;
+  stroke: color-mix(in srgb, var(--belt-goods) 60%, var(--bg-primary));
+  stroke-width: 6;
+  stroke-dasharray: 0.1 13;
+  animation: dag-belt-flow 0.8s linear infinite;
+}
+@keyframes dag-belt-flow { to { stroke-dashoffset: -13.1; } }
+@media (prefers-reduced-motion: reduce) {
+  .dag-belt-goods.is-live { animation: none; }
+}
+/* Edges are double-clickable. The hit-area is a wide invisible
+   sibling path under the visible stroke (see ``history-edge-hit``).
+   Hovering the hit path fattens the visible stroke for feedback. */
+.history-edge-hit {
+  cursor: pointer;
+}
+.history-edge-group:hover .history-edge {
+  stroke-width: 3.5;
+  opacity: 1;
+}
+.history-edge-hit.attach-edge-hit:hover ~ .attach-edge {
+  stroke-width: 2.4;
+  opacity: 1;
+}
+
+.history-edge.out-of-context { opacity: 0.4; transition: opacity var(--motion-slow) var(--ease-standard); }

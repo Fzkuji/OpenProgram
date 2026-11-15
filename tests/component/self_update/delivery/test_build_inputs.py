@@ -4,11 +4,12 @@ from pathlib import Path
 import json
 import shutil
 import subprocess
+import sys
 import time
 
 import pytest
 
-from openprogram.self_update.delivery import controller_bundle as bundle
+from openprogram.operations.self_update.delivery import controller_bundle as bundle
 
 
 @pytest.mark.parametrize(
@@ -16,13 +17,13 @@ from openprogram.self_update.delivery import controller_bundle as bundle
     (
         (
             "arm64",
-            "electron-v37.10.3-darwin-arm64.zip",
-            "24529be1f2f87c587d06c7474607f1b57d1184b3f45d916cac33791de3a70014",
+            "electron-v44.4.3-darwin-arm64.zip",
+            "6b728f5dcfae74f3f936f2bca5b3cd9b9659ffea464f67939f004acb55425a85",
         ),
         (
             "x86_64",
-            "electron-v37.10.3-darwin-x64.zip",
-            "e545e2a41e5fd7d28bf1349b4f60f1bcfd8e4c216f57b2d3e698ec1c00b719cf",
+            "electron-v44.4.3-darwin-x64.zip",
+            "015b52631d92187b552ff4e047255f596a7af4707e388a5890951f0b2645764e",
         ),
     ),
 )
@@ -31,9 +32,19 @@ def test_electron_archive_is_pinned_by_version_and_architecture(
 ):
     package = tmp_path / "apps/desktop/package.json"
     package.parent.mkdir(parents=True)
-    package.write_text(json.dumps({"devDependencies": {"electron": "37.10.3"}}))
-    monkeypatch.setattr(bundle.platform, "machine", lambda: machine)
+    package.write_text(json.dumps({"devDependencies": {"electron": "44.4.3"}}))
+    monkeypatch.setattr(bundle, "interpreter_architecture", lambda: machine)
     assert bundle._electron_archive_spec(tmp_path) == (filename, sha256)
+
+
+@pytest.mark.parametrize("machine", ["arm64", "x86_64"])
+def test_the_desktop_electron_version_is_pinned(monkeypatch, machine):
+    # Bumping Electron without the controller pin breaks every complete build.
+    root = Path(__file__).resolve().parents[4]
+    monkeypatch.setattr(bundle, "interpreter_architecture", lambda: machine)
+    filename, _sha256 = bundle._electron_archive_spec(root)
+    version = json.loads((root / "apps/desktop/package.json").read_text())["devDependencies"]["electron"]
+    assert filename.startswith(f"electron-v{version}-darwin-")
 
 
 @pytest.fixture
@@ -170,3 +181,83 @@ def test_public_runtime_preparation_rejects_incompatible_base_before_staging(tmp
         assert (output / "preserve").read_text() == "owned"
     else:
         assert not output.exists()
+
+
+@pytest.mark.macos
+def test_incremental_inputs_skip_electron_and_tolerate_missing_native_caches(inputs, monkeypatch):
+    if not Path("/usr/bin/sandbox-exec").is_file():
+        pytest.skip("requires macOS copy-on-write copies")
+    home, update, candidate, build_home = inputs
+    shutil.rmtree(home / ".electron-gyp")
+    shutil.rmtree(home / "Library/Caches/electron-builder")
+    monkeypatch.setattr(bundle, "stage_electron_distribution",
+                        lambda *args, **kwargs: pytest.fail("incremental builds need no Electron"))
+    environment = bundle.prepare_build_inputs(update, candidate, build_home,
+                                              deadline=time.time() + 20, complete=False)
+    assert "OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST" not in environment
+    assert list((build_home / ".electron-gyp").iterdir()) == []
+    assert (build_home / "Library/Caches/electron-builder").is_dir()
+
+
+class _Archive:
+    def __init__(self, payload):
+        self.payload = payload
+        self.urls = []
+
+    def safe_client(self, consumer, **_kwargs):
+        assert consumer == "self_update.electron"
+        archive = self
+
+        class Client:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def stream(self, method, url):
+                archive.urls.append((method, url))
+
+                class Response:
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, *exc):
+                        return False
+
+                    def raise_for_status(self):
+                        pass
+
+                    def iter_bytes(self, _size):
+                        yield archive.payload
+
+                return Response()
+
+        return Client()
+
+
+@pytest.mark.parametrize("matches", [True, False])
+@pytest.mark.skipif(sys.platform != "darwin", reason="stages the archive with an APFS clone (/bin/cp -c)")
+def test_missing_electron_archive_is_downloaded_and_verified(tmp_path, monkeypatch, matches):
+    from openprogram.host.security import safe_http
+
+    home = tmp_path / "owner"
+    home.mkdir()
+    update = tmp_path / "update"
+    update.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    payload = b"official electron"
+    filename = "electron-v44.4.3-darwin-arm64.zip"
+    expected = bundle.hashlib.sha256(payload if matches else b"other").hexdigest()
+    monkeypatch.setattr(bundle, "_electron_archive_spec", lambda _candidate: (filename, expected))
+    archive = _Archive(payload)
+    monkeypatch.setattr(safe_http, "safe_client", archive.safe_client)
+    if not matches:
+        with pytest.raises(ValueError, match="pinned archive"):
+            bundle.stage_electron_distribution(update, tmp_path, deadline=time.time() + 20)
+        assert list((home / "Library/Caches/electron").iterdir()) == []
+        return
+    staged = bundle.stage_electron_distribution(update, tmp_path, deadline=time.time() + 20)
+    assert archive.urls == [("GET", f"https://github.com/electron/electron/releases/download/v44.4.3/{filename}")]
+    assert (home / "Library/Caches/electron" / filename).read_bytes() == payload
+    assert staged.read_bytes() == payload

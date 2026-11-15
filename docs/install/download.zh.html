@@ -1,0 +1,28 @@
+<title>下载</title>
+<meta name="description" content="按电脑列出 OpenProgram 的全部文件：App 安装包、终端压缩包、最新版本的一键下载链接，以及每个校验值在哪。">
+<h1>下载</h1>
+<p>按电脑列出全部文件。多数人只需要<a href="install.zh.html">安装</a>页上的 DMG 或命令。</p>
+
+<h2 id="latest">最新版本</h2>
+<table class="stack">
+<thead><tr><th scope="col">电脑</th><th scope="col">App 文件</th><th scope="col">最新</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS Apple 芯片</th><td data-label="App 文件"><code translate="no">OpenProgram-X.Y.Z-mac-arm64.dmg</code>、<code translate="no">.zip</code></td><td data-label="最新"><a href="../latest.html?OpenProgram-mac-arm64.dmg">DMG</a></td></tr>
+<tr><th scope="row">macOS Intel</th><td data-label="App 文件"><code translate="no">OpenProgram-X.Y.Z-mac-x64.dmg</code>、<code translate="no">.zip</code></td><td data-label="最新"><a href="../latest.html?OpenProgram-mac-x64.dmg">DMG</a></td></tr>
+<tr><th scope="row">Linux x86_64</th><td data-label="App 文件"><code translate="no">OpenProgram-X.Y.Z-linux-amd64.deb</code><br><code translate="no">OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></td><td data-label="最新"><a href="../latest.html?OpenProgram-linux-amd64.deb">deb</a> · <a href="../latest.html?OpenProgram-linux-x86_64.AppImage">AppImage</a></td></tr>
+<tr><th scope="row">Linux arm64</th><td data-label="App 文件"><code translate="no">OpenProgram-X.Y.Z-linux-arm64.deb</code><br><code translate="no">OpenProgram-X.Y.Z-linux-arm64.AppImage</code></td><td data-label="最新"><a href="../latest.html?OpenProgram-linux-arm64.deb">deb</a> · <a href="../latest.html?OpenProgram-linux-arm64.AppImage">AppImage</a></td></tr>
+<tr><th scope="row">Windows x64</th><td data-label="App 文件"><code translate="no">OpenProgram-X.Y.Z-win-x64.exe</code></td><td data-label="最新"><a href="../latest.html?OpenProgram-win-x64.exe">安装程序</a></td></tr>
+</tbody>
+</table>
+<p class="note">每个版本的每个文件只上传一份，文件名带版本号。这些链接从最新版本里下载对应文件，做不到时打开最新版本的发布页。没有发布者签名的 macOS 或 Windows 构建在文件名里加 <code translate="no">-unsigned</code>。终端压缩包 <code translate="no">OpenProgram-X.Y.Z-runtime-…</code> 在<a href="https://github.com/FuzzyKuji/OpenProgram/releases/latest">最新版本的发布页</a>上；终端安装会自动下载合适的那个。</p>
+
+<h2 id="checksum-files">校验值</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">SHA-256 在哪</th></tr></thead>
+<tbody>
+<tr><th scope="row">所有文件</th><td>发布页上文件旁边，以及该版本的 <code translate="no">release-manifest.json</code></td></tr>
+<tr><th scope="row">终端压缩包</th><td>另有 <code translate="no">OpenProgram-X.Y.Z-runtime-&lt;macos|linux&gt;-&lt;x86_64|arm64&gt;.tar.gz.sha256</code><br><code translate="no">OpenProgram-X.Y.Z-runtime-windows-x86_64.zip.sha256</code></td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="install.zh.html#checksums">校验下载</a> · <a href="https://github.com/FuzzyKuji/OpenProgram/releases">全部版本</a></p>

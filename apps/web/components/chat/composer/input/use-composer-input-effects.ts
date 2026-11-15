@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type RefObject } from "react";
+import { COMPOSER_TUCK_SHIFT_EVENT, visibleComposerHeight } from "@/lib/chat/history/chat-scroll";
 
 interface Options {
   bound: string | null;
@@ -21,19 +22,23 @@ export function useComposerInputEffects({
     if (bound !== null) return;
     const element = inputAreaRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
+    // The covered height: a tucked row's empty strip above the box is
+    // left to the transcript (use-tuck-backdrop.ts).
     const publishHeight = () => {
       if (element.offsetHeight > 0) {
         document.documentElement.style.setProperty(
           "--main-composer-height",
-          `${Math.round(element.offsetHeight)}px`,
+          `${Math.round(visibleComposerHeight(element))}px`,
         );
       }
     };
     publishHeight();
     const observer = new ResizeObserver(publishHeight);
     observer.observe(element);
+    element.addEventListener(COMPOSER_TUCK_SHIFT_EVENT, publishHeight);
     return () => {
       observer.disconnect();
+      element.removeEventListener(COMPOSER_TUCK_SHIFT_EVENT, publishHeight);
       document.documentElement.style.removeProperty("--main-composer-height");
     };
   }, [bound]);

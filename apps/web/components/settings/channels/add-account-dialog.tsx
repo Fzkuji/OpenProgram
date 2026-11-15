@@ -1,11 +1,15 @@
 "use client";
 
+import { jsonFetch } from "@/lib/net/fetch-client";
 import { useState } from "react";
 
 import styles from "./channels.module.css";
+import { SimpleSelect } from "@/components/ui/select";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { PLATFORMS, PLATFORM_LABEL } from "./types";
+import { Input } from "@/components/ui/input";
 
 interface Props {
   onClose: () => void;
@@ -51,70 +55,42 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
     }
     setSubmitting(true);
     try {
-      const r = await fetch("/api/channels/accounts", {
+      await jsonFetch("/api/channels/accounts", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           channel,
           account_id: accountId.trim(),
           token: token.trim(),
         }),
       });
-      if (!r.ok) {
-        const d = await r.json().catch(() => null);
-        setError(d?.detail || `HTTP ${r.status}`);
-        setSubmitting(false);
-        return;
-      }
       await onAdded();
     } catch (e) {
-      setError(String(e));
+      setError((e as Error).message);
       setSubmitting(false);
     }
   };
 
-  // Escape / Tab-trap / focus restore for this hand-rolled panel.
-  const modal = useModalA11y(onClose, text("Add a bot", "添加 bot"));
-
   return (
-    <div className={styles.modalBackdrop} onClick={onClose}>
-      <div
-        {...modal}
-        className={styles.modal}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.modalHeader}>
-          <span className={styles.modalTitle}>{text("Add a bot", "添加 bot")}</span>
-          <button
-            className={styles.iconBtn}
-            onClick={onClose}
-            type="button"
-            aria-label={text("Close", "关闭")}
-          >
-            ×
-          </button>
-        </div>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className={styles.modal} aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{text("Add a bot", "添加 bot")}</DialogTitle>
+        </DialogHeader>
 
-        <div className={styles.modalBody}>
-          <label className={styles.formRow}>
+        <div className="flex flex-col gap-[14px] min-h-0 overflow-y-auto">
+          <label className="flex flex-col gap-[6px]">
             <span className={styles.formLabel}>{text("Platform", "平台")}</span>
-            <select
-              className={styles.formInput}
+            <SimpleSelect label={text("Platform", "平台")}
+              className="w-full"
               value={channel}
-              onChange={(e) => setChannel(e.target.value)}
-            >
-              {PLATFORMS.map((p) => (
-                <option key={p} value={p}>
-                  {PLATFORM_LABEL[p] || p}
-                </option>
-              ))}
-            </select>
+              onValueChange={setChannel}
+              options={PLATFORMS.map((p) => ({ value: p, label: PLATFORM_LABEL[p] || p }))}
+            />
           </label>
 
-          <label className={styles.formRow}>
+          <label className="flex flex-col gap-[6px]">
             <span className={styles.formLabel}>{text("Give it a name", "给它命名")}</span>
-            <input
-              className={styles.formInput}
+            <Input
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
               placeholder={text("e.g. default / work / personal", "例如 default / work / personal")}
@@ -136,10 +112,9 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
               {text("After you scan, the new bot shows up in the list above automatically. No need to refresh this page.", "扫码后，新 bot 会自动显示在上方列表，无需刷新页面。")}
             </div>
           ) : (
-            <label className={styles.formRow}>
+            <label className="flex flex-col gap-[6px]">
               <span className={styles.formLabel}>Bot token</span>
-              <input
-                className={styles.formInput}
+              <Input
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
@@ -155,26 +130,25 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
           {error && <div className={styles.formError}>{error}</div>}
         </div>
 
-        <div className={styles.modalFooter}>
-          <button
-            className={styles.secondaryBtn}
+        <DialogFooter>
+          <Button
+            variant="elevated"
             onClick={onClose}
             type="button"
           >
             {t("sidebar.cancel")}
-          </button>
+          </Button>
           {!isWeChat && (
-            <button
-              className={styles.primaryBtn}
+            <Button
               onClick={submit}
               disabled={submitting}
               type="button"
             >
               {submitting ? text("Adding...", "添加中...") : text("Add bot", "添加 bot")}
-            </button>
+            </Button>
           )}
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

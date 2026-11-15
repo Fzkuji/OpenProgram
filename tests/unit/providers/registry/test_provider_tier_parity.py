@@ -25,11 +25,11 @@ import copy
 
 import pytest
 
-from openprogram.webui._model_listing import listing
-from openprogram.webui._model_listing import provider_models as pm
-from openprogram.providers import metadata as cat
-from openprogram.providers import storage as st
-from openprogram.webui._model_listing import toggle as tg
+from openprogram.models.listing import listing
+from openprogram.models.listing import provider_models as pm
+from openprogram.models.providers.catalog import metadata as cat
+from openprogram.models.providers.settings import storage as st
+from openprogram.models.listing import toggle as tg
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +55,7 @@ def mem_cfg(monkeypatch):
     monkeypatch.setattr(st, "_update_providers_cfg", _update)
     monkeypatch.setattr(tg, "_update_providers_cfg", _update)
     # The spec-migration marker lives in the TOP-LEVEL config
-    # (setup._read_config / _write_config), not in the providers
+    # (state.config.read_config / write_config), not in the providers
     # section stubbed above. Without these two stubs the migration pass
     # that create_custom_provider / add_manual_model trigger READS the
     # host's real ~/.openprogram marker (making the outcome depend on
@@ -78,7 +78,7 @@ def mem_cfg(monkeypatch):
 @pytest.fixture
 def _offline(monkeypatch):
     """Keep every models.dev lookup off the network."""
-    from openprogram.providers import sources as S
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     monkeypatch.setattr(cat, "_models_dev_info", lambda pid: {})
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {})
@@ -120,13 +120,14 @@ def test_repair_still_prunes_v1_bulk_merge_artefacts(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_fresh_install_lists_shipped_providers(mem_cfg, _offline, monkeypatch):
-    import openprogram.providers as P
+    import openprogram.models.providers as P
     monkeypatch.setattr(P, "get_providers", lambda: [])   # empty registry
     monkeypatch.setattr(P, "get_models", lambda pid: [])
     monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     ids = {p["id"] for p in listing.list_providers()}
     # Subscription providers models.dev doesn't list MUST still be present.
-    assert {"openai-codex", "claude-code", "gemini-subscription"} <= ids
+    assert {"openai-codex", "gemini-subscription"} <= ids
+    assert "claude-code" not in ids
     # Regular shipped key providers too.
     assert {"openai", "anthropic", "deepseek", "atlascloud"} <= ids
     # Alias dirs never surface as their own row.
@@ -144,7 +145,7 @@ def test_fresh_install_lists_shipped_providers(mem_cfg, _offline, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def _model(pid, mid="m1", base="https://x.test/v1"):
-    from openprogram.providers.types import Model
+    from openprogram.models.providers.types import Model
     return Model.model_validate({
         "id": mid, "name": mid, "provider": pid,
         "api": "openai-completions", "base_url": base,
@@ -152,8 +153,8 @@ def _model(pid, mid="m1", base="https://x.test/v1"):
 
 
 def test_promoted_community_provider_keeps_supports_fetch(mem_cfg, monkeypatch):
-    import openprogram.providers as P
-    from openprogram.providers import sources as S
+    import openprogram.models.providers as P
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(P, "get_providers", lambda: ["fireworks"])
     monkeypatch.setattr(P, "get_models", lambda pid: [_model(pid)])
     monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
@@ -178,7 +179,7 @@ def test_promoted_community_provider_keeps_supports_fetch(mem_cfg, monkeypatch):
 
 
 def test_promoted_custom_provider_keeps_label_badge_and_fetch(mem_cfg, _offline, monkeypatch):
-    import openprogram.providers as P
+    import openprogram.models.providers as P
     monkeypatch.setattr(P, "get_providers", lambda: ["my-vllm"])
     monkeypatch.setattr(P, "get_models", lambda pid: [_model(pid, "qwen3")])
     monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
@@ -201,8 +202,8 @@ def test_tier2_rows_carry_setup_hint_and_login_methods(mem_cfg, monkeypatch):
     # anthropic listed only by the community catalogue (nothing enabled,
     # shipped tier stubbed away) must still surface its native login methods
     # and setup hint — a fresh install's first screen.
-    import openprogram.providers as P
-    from openprogram.providers import sources as S
+    import openprogram.models.providers as P
+    from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(P, "get_providers", lambda: [])
     monkeypatch.setattr(P, "get_models", lambda pid: [])
     monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
@@ -216,7 +217,7 @@ def test_tier2_rows_carry_setup_hint_and_login_methods(mem_cfg, monkeypatch):
     rows = {p["id"]: p for p in listing.list_providers()}
     row = rows["anthropic"]
     assert row.get("setup_hint")
-    assert [m["id"] for m in row.get("login_methods", [])]  # native logins
+    assert not row.get("login_methods")  # API-key entry, no subscription login
 
 
 # ---------------------------------------------------------------------------
@@ -249,9 +250,9 @@ def test_manual_row_disable_keeps_row_and_reenables(mem_cfg, _offline, monkeypat
 
 
 def test_disabled_manual_row_excluded_from_runtime_registry(mem_cfg, _offline):
-    from openprogram.providers.enabled_models import _build_model_from_row  # noqa: F401
-    import openprogram.providers.enabled_models as mg
-    import openprogram.providers._config_read as cr
+    from openprogram.models.providers.catalog.enabled_models import _build_model_from_row  # noqa: F401
+    import openprogram.models.providers.catalog.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
     cfg = {"acme": {"enabled": True, "models": [
         {"id": "on", "name": "on", "api": "openai-completions",
          "base_url": "https://a.test/v1"},
@@ -265,3 +266,15 @@ def test_disabled_manual_row_excluded_from_runtime_registry(mem_cfg, _offline):
     finally:
         cr.read_providers_config = orig
     assert "acme/on" in fresh and "acme/off" not in fresh
+
+
+def test_disabling_last_model_survives_legacy_migration(mem_cfg, _offline):
+    mem_cfg['acme'] = {
+        'enabled': True, 'models': [{'id': 'm1', 'api': 'openai-completions'}],
+        'enabled_models': ['m1'],
+    }
+    tg.toggle_model('acme', 'm1', False)
+    assert mem_cfg['acme']['models'] == []
+    assert listing._enabled_ids(mem_cfg['acme']) == set()
+    st._migrate_specs(mem_cfg)
+    assert mem_cfg['acme']['models'] == []

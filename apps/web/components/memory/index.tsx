@@ -15,24 +15,27 @@
  *   - parts.tsx          TabButton, TreeGroup, EditorPanel,
  *                        LoadingSkeleton, EmptyState, Placeholder
  */
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Settings2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-import { renderMarkdown } from "./markdown";
-import { formatDate, formatSize, groupByFolder, groupTimelineDays } from "./format";
+import { renderMarkdown } from "./markdown/markdown";
+import { formatDate, formatSize, groupByFolder, groupTimelineDays } from "./markdown/format";
 import { ClockIcon, TypeBadge } from "./icons";
 import { useTranslation } from "@/lib/i18n";
 import {
-  type AnimatedNavIconHandle,
   ActivityIcon,
+  ClockIcon as TimelineIcon,
   FileTextIcon,
   RefreshCwIcon,
   SparklesIcon,
 } from "@/components/animated-icons";
 import {
-  DisclosureChevron,
+  DocGlyph,
   EmptyState,
+  FolderGlyph,
   LoadingSkeleton,
   Placeholder,
   TabButton,
@@ -43,28 +46,46 @@ import type {
   Tab,
   TimelineDay,
   TopicPage,
-} from "./types";
+} from "./data/types";
 import styles from "./memory-page.module.css";
-import { SearchInput } from "@/components/ui/search-input";
-import { sidebarToggleClass } from "@/components/sidebar/nav-classes";
+import { RailAction, RailCount, RailGroupLabel, RailItem, RailSearch, SecondaryRail } from "@/components/ui/secondary-rail";
+import { ManageEmptyState } from "@/components/ui/manage-page";
 import { MemorySourcePreview } from "./source-preview";
 import { MemoryDocument } from "./document";
+import { MemoryProjectContext, memoryUrl } from "./data/api";
+import { WriterHealthBanner } from "./writer-health";
+import { confirmAction } from "@/components/ui/confirm-dialog";
+import { showToast } from "@/lib/format-utils/toast";
 
 export function MemoryPage({
   embedded,
   query,
+  projectId = null,
 }: {
   embedded?: boolean;
   query?: string;
+  /** Show this project's memory instead of the personal one. Give the page
+   *  a `key` per project so its state starts over on a switch. */
+  projectId?: string | null;
 } = {}) {
   const { t, text, locale } = useTranslation();
-  const refreshIconRef = useRef<AnimatedNavIconHandle>(null);
+  const api = useCallback((path: string) => memoryUrl(path, projectId), [projectId]);
   const [tab, setTab] = useState<Tab>("topics");
+  // Timeline years / months the user opened or closed; the rest use their
+  // default (the newest year and its newest month start open).
+  const [timelineOpen, setTimelineOpen] = useState<Record<string, boolean>>({});
+  const isTimelineOpen = (key: string, fallback: boolean) => timelineOpen[key] ?? fallback;
+  const toggleTimeline = (key: string, fallback: boolean) =>
+    setTimelineOpen((current) => ({ ...current, [key]: !(current[key] ?? fallback) }));
 
   // Topics state
   const [topicPages, setTopicPages] = useState<TopicPage[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(true);
   const [selectedTopic, setSelectedTopic] = useState<TopicPage | null>(null);
+  // Bumped when a topic save or delete lands, so the banner re-reads which
+  // files are still held aside after the person fixes one in the editor.
+  const [statusRevision, setStatusRevision] = useState(0);
+  const refreshStatus = useCallback(() => setStatusRevision((value) => value + 1), []);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const searchValue = query !== undefined ? query : search;
@@ -97,7 +118,7 @@ export function MemoryPage({
 
   const fetchTopics = useCallback(() => {
     setTopicsLoading(true);
-    fetch("/api/memory/topics")
+    fetch(api("/api/memory/topics"))
       .then((r) => r.json())
       .then((pages) => {
         const content = Array.isArray(pages) ? pages : [];
@@ -111,19 +132,24 @@ export function MemoryPage({
         setTopicsLoading(false);
       })
       .catch(() => setTopicsLoading(false));
-  }, []);
+  }, [api]);
+  const refreshTopics = (
+    <RailAction label={t("sidebar.refresh")} onClick={fetchTopics}>
+      <RefreshCwIcon size={14} />
+    </RailAction>
+  );
 
   useEffect(() => { fetchTopics(); }, [fetchTopics]);
 
   useEffect(() => {
-    fetch("/api/memory/timeline")
+    fetch(api("/api/memory/timeline"))
       .then((r) => r.json())
       .then((data) => { setTimelineDays(Array.isArray(data) ? data : []); setTimelineLoading(false); })
       .catch(() => setTimelineLoading(false));
-  }, []);
+  }, [api]);
 
   useEffect(() => {
-    fetch("/api/memory/recent")
+    fetch(api("/api/memory/recent"))
       .then((r) => {
         const limit = Number(r.headers.get("X-Memory-Recent-Limit"));
         if (Number.isInteger(limit) && limit > 0) setRecentLimit(limit);
@@ -131,10 +157,10 @@ export function MemoryPage({
       })
       .then((data) => { setRecentEvents(Array.isArray(data) ? data : []); setRecentLoading(false); })
       .catch(() => setRecentLoading(false));
-  }, []);
+  }, [api]);
 
   const fetchCore = useCallback(() => {
-    return fetch("/api/memory/core")
+    return fetch(api("/api/memory/core"))
       .then((r) => {
         if (!r.ok) throw new Error(`Core request failed: ${r.status}`);
         return r.json();
@@ -154,7 +180,7 @@ export function MemoryPage({
         setCoreLoading(false);
       })
       .catch(() => setCoreLoading(false));
-  }, []);
+  }, [api]);
 
   useEffect(() => { void fetchCore(); }, [fetchCore]);
 
@@ -173,29 +199,36 @@ export function MemoryPage({
     );
   }, [topicPages]);
 
-  async function deleteTopic() {
+  async function deleteTopic(target?: { removed?: boolean }) {
     if (!selectedTopic) return;
-    if (!confirm(text(
-      `Delete "${selectedTopic.title || selectedTopic.path}"? This cannot be undone.`,
-      `删除“${selectedTopic.title || selectedTopic.path}”？此操作无法撤销。`,
-    ))) return;
-    const r = await fetch(`/api/memory/topics/${selectedTopic.path}`, { method: "DELETE" });
+    if (!(await confirmAction({
+      title: text(`Delete "${selectedTopic.title || selectedTopic.path}"?`, `删除“${selectedTopic.title || selectedTopic.path}”？`),
+      description: text("This cannot be undone.", "此操作无法撤销。"),
+      confirmLabel: text("Delete", "删除"),
+      destructive: true,
+    }))) return;
+    // A save that left only the title already removed the file; deleting
+    // it is closing what is left in the editor.
+    const r = target?.removed
+      ? { ok: true as const }
+      : await fetch(api(`/api/memory/topics/${selectedTopic.path}`), { method: "DELETE" });
     if (r.ok) {
       setSelectedTopic(null);
       fetchTopics();
+      refreshStatus();
     } else {
       // A refused delete says why (a block another topic still links to,
       // for one), so show the reason instead of swallowing it — same as
       // the PUT path above.
       const detail = await r.json().catch(() => ({}));
-      alert(detail.error || text("Delete failed", "删除失败"));
+      showToast(detail.error || text("Delete failed", "删除失败"), { tone: "error" });
     }
   }
 
   function openTimelineDay(date: string) {
     setSelectedDate(date);
     setTimelineContent("");
-    fetch(`/api/memory/timeline/${date}`)
+    fetch(api(`/api/memory/timeline/${date}`))
       .then((r) => r.json())
       .then((data) => setTimelineContent(data.content ?? ""));
   }
@@ -236,50 +269,47 @@ export function MemoryPage({
       {!embedded && (
       <div className={styles.topbar}>
         <span className={styles.title}>{t("nav.memory")}</span>
-        <Link className={styles.settingsLink} href="/settings/memory">
-          <Settings2 size={15} />
-          {text("Memory settings", "Memory 设置")}
-        </Link>
+        <Button asChild variant="elevated" className="ml-auto">
+          <Link href="/settings/memory">
+            <Settings2 size={16} />
+            {text("Memory settings", "记忆设置")}
+          </Link>
+        </Button>
       </div>
       )}
+      <WriterHealthBanner statusUrl={api("/api/memory/status")} revision={statusRevision} />
 
       {/* Body — single grid: tabBar (row 1 col 1) + tree (row 2 col 1) +
           editor/placeholder (col 2 spans both rows so it starts right at
           the topbar, ignoring the tab bar's height). */}
-      <div className={styles.body}>
-        <div className={styles.layout}>
-          <nav className={styles.tabBar} aria-label={text("Memory sections", "Memory 分区")}>
-            <TabButton active={tab === "topics"} onClick={() => setTab("topics")} icon={<FileTextIcon size={13} />}>{text("Topics", "主题")}</TabButton>
-            <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")} icon={<ClockIcon className={styles.fileIcon} />}>{text("Timeline", "时间线")}</TabButton>
-            <TabButton active={tab === "recent"} onClick={() => setTab("recent")} icon={<ActivityIcon size={13} />}>{text("Recent", "最近")}</TabButton>
-            <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={<SparklesIcon size={13} />}>{text("Core", "核心")}</TabButton>
-          </nav>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <div className={`${styles.layout} grid grid-cols-[calc(var(--sidebar-width)_-_1px)_1fr] grid-rows-[auto_minmax(0,_1fr)] h-full min-h-0`}>
+          <SecondaryRail className={styles.tabBar} label={text("Memory sections", "记忆分区")}>
+            <TabButton active={tab === "topics"} onClick={() => setTab("topics")} icon={<FileTextIcon size={16} />}>{text("Topics", "主题")}</TabButton>
+            <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")} icon={<TimelineIcon size={16} />}>{text("Timeline", "时间线")}</TabButton>
+            <TabButton active={tab === "recent"} onClick={() => setTab("recent")} icon={<ActivityIcon size={16} />}>{text("Recent", "最近")}</TabButton>
+            <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={<SparklesIcon size={16} />}>{text("Core", "核心")}</TabButton>
+          </SecondaryRail>
 
           {/* ── Topics ── */}
           {tab === "topics" && (
             <>
-              <div className={styles.tree}>
-              {/* Search + refresh */}
-              <div className={styles.treeToolbar}>
-                {query === undefined && (
-                <SearchInput
-                  className="flex-1"
+              <SecondaryRail as="aside" className={styles.tree} label={text("Topics", "主题")}>
+              {query === undefined ? (
+                <RailSearch
                   placeholder={text("Search topics...", "搜索主题...")}
                   value={search}
                   onChange={setSearch}
+                  action={refreshTopics}
                 />
-                )}
-                <button
-                  className={sidebarToggleClass}
-                  onClick={fetchTopics}
-                  title={t("sidebar.refresh")}
-                  aria-label={t("sidebar.refresh")}
-                  onMouseEnter={() => refreshIconRef.current?.startAnimation?.()}
-                  onMouseLeave={() => refreshIconRef.current?.stopAnimation?.()}
-                >
-                  <RefreshCwIcon ref={refreshIconRef} size={13} />
-                </button>
-              </div>
+              ) : (
+                // The hub header owns search; label the row so the
+                // refresh button does not float on its own.
+                <RailGroupLabel action={refreshTopics}>
+                  {text("Topics", "主题")}
+                  {!topicsLoading && <RailCount>{filteredTopics.length}</RailCount>}
+                </RailGroupLabel>
+              )}
               {topicsLoading ? <LoadingSkeleton /> : filteredTopics.length === 0 ? (
                 // Only the search miss lives in the rail; the plain empty
                 // state is the right pane's emptyPanel — showing both said
@@ -292,7 +322,7 @@ export function MemoryPage({
                   />
                 ) : null
               ) : (
-                <div className={styles.treeContent}>
+                <>
                   {Array.from(topicGroups.entries()).map(([folder, pages]) => (
                     <TreeGroup
                       key={folder}
@@ -305,9 +335,9 @@ export function MemoryPage({
                       forceOpen={!!searchValue}
                     />
                   ))}
-                </div>
+                </>
               )}
-            </div>
+            </SecondaryRail>
               <div className={styles.rightPane}>
                 {selectedTopic ? (
                   <MemoryDocument
@@ -320,21 +350,25 @@ export function MemoryPage({
                     ]}
                     key={selectedTopic.path}
                     path={selectedTopic.path}
-                    url={`/api/memory/topics/${selectedTopic.path.split("/").map(encodeURIComponent).join("/")}`}
+                    url={api(`/api/memory/topics/${selectedTopic.path.split("/").map(encodeURIComponent).join("/")}`)}
                     onDelete={deleteTopic}
+                    onSaved={refreshStatus}
+                    onRemovedChange={fetchTopics}
                     onPreviewClick={handlePreviewClick}
                   />
                 ) : !topicsLoading && topicPages.length === 0 && !searchValue ? (
                   <div className={styles.emptyPanel}>
-                    <FileTextIcon size={25} />
+                    <FileTextIcon size={24} />
                     <h2>{text("No topics yet", "还没有主题")}</h2>
                     <p>{text(
                       "Durable memory created from conversations and the background writer will appear here. Core rules are managed separately.",
-                      "由对话和后台写入器生成的持久记忆会显示在这里；Core 规则单独管理。",
+                      "由对话和后台写入器生成的持久记忆会显示在这里；核心规则单独管理。",
                     )}</p>
-                    <Link className={styles.emptySettingsLink} href="/settings/memory">
-                      {text("Open Memory settings", "打开 Memory 设置")}
-                    </Link>
+                    <Button asChild variant="elevated" className="mt-[7px]">
+                      <Link href="/settings/memory">
+                        {text("Open Memory settings", "打开记忆设置")}
+                      </Link>
+                    </Button>
                   </div>
                 ) : (
                   <Placeholder icon="doc" text={text("Select a topic to view or edit", "选择一个主题进行查看或编辑")} />
@@ -346,61 +380,77 @@ export function MemoryPage({
           {/* ── Timeline ── */}
           {tab === "timeline" && (
             <>
-              <div className={styles.tree}>
+              <SecondaryRail as="aside" className={styles.tree} label={text("Timeline", "时间线")}>
               {timelineLoading ? <LoadingSkeleton /> : timelineGroups.length === 0 ? (
                 <EmptyState
                   icon="clock"
                   text={text("No timeline yet", "还没有时间线")}
                   sub={text("Rebuilt from topics after every write", "每次写入后从主题重建")}
                 />
-              ) : (
-                <div className={styles.timelineTree}>
-                  {timelineGroups.map((year, yearIndex) => (
-                    <details key={year.year} className={styles.timelineYear} open={yearIndex === 0}>
-                      <summary className={`${styles.timelineYearSummary} ${styles.sidebarRow}`}>
-                        <DisclosureChevron className={styles.timelineChevron} />
-                        <span>{year.year}</span>
-                        <span className={styles.sidebarCount}>{year.entryCount}</span>
-                      </summary>
-                      <div className={styles.timelinePeriodEntries}>
-                        {year.entries.map((entry) => (
-                          <button key={entry.date} className={`${styles.timelinePeriod} ${styles.sidebarRow} ${selectedDate === entry.date ? `${styles.timelinePeriodActive} ${styles.sidebarRowActive}` : ""}`} onClick={() => openTimelineDay(entry.date)}>
-                            <span>{entry.label}</span><span className={styles.fileMeta}>{formatSize(entry.size)}</span>
-                          </button>
-                        ))}
-                      </div>
-                      {year.months.map((month, monthIndex) => (
-                        <details key={month.key} className={styles.timelineMonth} open={yearIndex === 0 && monthIndex === 0}>
-                          <summary className={`${styles.timelineMonthSummary} ${styles.sidebarRow}`}>
-                            <DisclosureChevron className={styles.timelineChevron} />
-                            <span>{month.label}</span>
-                            <span className={styles.sidebarCount}>{month.entries.length + month.days.length}</span>
-                          </summary>
-                          <div className={styles.timelineDays}>
-                            {month.entries.map((entry) => (
-                              <button key={entry.date} className={`${styles.timelinePeriod} ${styles.sidebarRow} ${selectedDate === entry.date ? `${styles.timelinePeriodActive} ${styles.sidebarRowActive}` : ""}`} onClick={() => openTimelineDay(entry.date)}>
-                                <span>{entry.label}</span><span className={styles.fileMeta}>{formatSize(entry.size)}</span>
-                              </button>
-                            ))}
-                            {month.days.map((day) => (
-                              <button
-                                key={day.date}
-                                className={`${styles.timelineDay} ${styles.sidebarRow} ${selectedDate === day.date ? `${styles.timelineDayActive} ${styles.sidebarRowActive}` : ""}`}
-                                onClick={() => openTimelineDay(day.date)}
-                              >
-                                <span className={styles.timelineDayNumber}>{day.dayLabel}</span>
-                                <span className={styles.timelineWeekday}>{day.weekday}</span>
-                                <span className={styles.fileMeta}>{formatSize(day.size)}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </details>
-                      ))}
-                    </details>
-                  ))}
-                </div>
-              )}
-            </div>
+              ) : timelineGroups.map((year, yearIndex) => {
+                const yearOpen = isTimelineOpen(year.year, yearIndex === 0);
+                return (
+                  <Fragment key={year.year}>
+                    <RailItem
+                      icon={<FolderGlyph open={yearOpen} />}
+                      label={year.year}
+                      trailing={<RailCount>{year.entryCount}</RailCount>}
+                      aria-expanded={yearOpen}
+                      onClick={() => toggleTimeline(year.year, yearIndex === 0)}
+                    />
+                    {yearOpen && year.entries.map((entry) => (
+                      <RailItem
+                        key={entry.date}
+                        depth={1}
+                        icon={<DocGlyph />}
+                        label={entry.label}
+                        trailing={<RailCount>{formatSize(entry.size)}</RailCount>}
+                        active={selectedDate === entry.date}
+                        onClick={() => openTimelineDay(entry.date)}
+                      />
+                    ))}
+                    {yearOpen && year.months.map((month, monthIndex) => {
+                      const monthOpen = isTimelineOpen(month.key, yearIndex === 0 && monthIndex === 0);
+                      return (
+                        <Fragment key={month.key}>
+                          <RailItem
+                            depth={1}
+                            icon={<FolderGlyph open={monthOpen} />}
+                            label={month.label}
+                            trailing={<RailCount>{month.entries.length + month.days.length}</RailCount>}
+                            aria-expanded={monthOpen}
+                            onClick={() => toggleTimeline(month.key, yearIndex === 0 && monthIndex === 0)}
+                          />
+                          {monthOpen && month.entries.map((entry) => (
+                            <RailItem
+                              key={entry.date}
+                              depth={2}
+                              icon={<DocGlyph />}
+                              label={entry.label}
+                              trailing={<RailCount>{formatSize(entry.size)}</RailCount>}
+                              active={selectedDate === entry.date}
+                              onClick={() => openTimelineDay(entry.date)}
+                            />
+                          ))}
+                          {monthOpen && month.days.map((day) => (
+                            <RailItem
+                              key={day.date}
+                              depth={2}
+                              icon={<DocGlyph />}
+                              label={<>{day.dayLabel} <span className={styles.timelineWeekday}>{day.weekday}</span></>}
+                              name={`${day.dayLabel} ${day.weekday}`}
+                              trailing={<RailCount>{formatSize(day.size)}</RailCount>}
+                              active={selectedDate === day.date}
+                              onClick={() => openTimelineDay(day.date)}
+                            />
+                          ))}
+                        </Fragment>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+            </SecondaryRail>
               <div className={styles.rightPane}>
                 {selectedDate ? (
                   <div className={styles.editor}>
@@ -413,7 +463,7 @@ export function MemoryPage({
                         <span className={styles.fileMeta}>{timelineContent.length} {text("chars", "字符")}</span>
                       </div>
                     </div>
-                    <div className={styles.preview}>
+                    <div className="flex-1 overflow-y-auto min-h-0">
                       <div className={styles.markdown} dangerouslySetInnerHTML={{ __html: timelineContent ? renderMarkdown(timelineContent) : `<em>${text("Loading...", "加载中...")}</em>` }} />
                     </div>
                   </div>
@@ -427,7 +477,7 @@ export function MemoryPage({
           {/* ── Recent ── */}
           {tab === "recent" && (
             <>
-              <div className={`${styles.tree} ${styles.treeEmpty}`} />
+              <SecondaryRail as="aside" className={`${styles.tree} ${styles.treeEmpty}`} label={text("Recent", "最近")}>{null}</SecondaryRail>
               <div className={styles.rightPane}>
                 {recentLoading ? (
                   <LoadingSkeleton />
@@ -446,7 +496,7 @@ export function MemoryPage({
                         </span>
                       </div>
                     </div>
-                    <div className={styles.preview}>
+                    <div className="flex-1 overflow-y-auto min-h-0">
                       <div className={styles.markdown}>
                         {recentEvents.map((event) => (
                           <div key={event.memory_id} className={styles.recentEvent}>
@@ -467,25 +517,19 @@ export function MemoryPage({
           {/* ── Core ── */}
           {tab === "core" && (
             <>
-              <div className={`${styles.tree} ${styles.treeEmpty}`} />
+              <SecondaryRail as="aside" className={`${styles.tree} ${styles.treeEmpty}`} label={text("Core", "核心")}>{null}</SecondaryRail>
               <div className={styles.rightPane}>
-                <div className={styles.coreControls}>
-                  <div className={styles.coreViewSwitch} role="group" aria-label={text("Core view", "Core 视图")}>
-                    <button
-                      className={coreView === "injected" ? styles.coreViewButtonActive : styles.coreViewButton}
-                      aria-pressed={coreView === "injected"}
-                      onClick={() => setCoreView("injected")}
-                    >
-                      {text("Prompt preview", "提示词预览")}
-                    </button>
-                    <button
-                      className={coreView === "records" ? styles.coreViewButtonActive : styles.coreViewButton}
-                      aria-pressed={coreView === "records"}
-                      onClick={() => setCoreView("records")}
-                    >
-                      {text("Source records", "源记录")}
-                    </button>
-                  </div>
+                <div className={`${styles.coreControls} grid grid-cols-[minmax(220px,_320px)_minmax(260px,_1fr)] gap-[10px] mb-[10px] shrink-0`}>
+                  <ToggleGroup
+                    type="single" variant="elevated" size="sm" spacing={1}
+                    className="grid w-full grid-cols-2"
+                    value={coreView}
+                    onValueChange={(value: string) => { if (value) setCoreView(value as typeof coreView); }}
+                    aria-label={text("Core view", "核心视图")}
+                  >
+                    <ToggleGroupItem value="injected" className="min-w-0">{text("MEMORY.md as injected", "注入的 MEMORY.md")}</ToggleGroupItem>
+                    <ToggleGroupItem value="records" className="min-w-0">{text("Source records", "源记录")}</ToggleGroupItem>
+                  </ToggleGroup>
                   {coreMeta && (
                     <div className={styles.coreStatusCard}>
                       <div className={styles.coreStatusRow}>
@@ -497,7 +541,7 @@ export function MemoryPage({
                       <div
                         className={styles.coreTokenMeter}
                         role="progressbar"
-                        aria-label={text("Core token budget usage", "Core token 预算使用量")}
+                        aria-label={text("Core token budget usage", "核心记忆 token 预算使用量")}
                         aria-valuemin={0}
                         aria-valuemax={coreMeta.budgetTokens}
                         aria-valuenow={coreMeta.injectedTokens}
@@ -529,11 +573,11 @@ export function MemoryPage({
                   <LoadingSkeleton />
                 ) : coreView === "records" ? (
                   <MemoryDocument
-                    title={text("Core source records", "Core 源记录")}
+                    title={text("Core source records", "核心源记录")}
                     meta={["topics/core.md"]}
                     key="core.md"
                     path="core.md"
-                    url="/api/memory/core"
+                    url={api("/api/memory/core")}
                     onSaved={fetchCore}
                   />
                 ) : (
@@ -541,14 +585,23 @@ export function MemoryPage({
                     <div className={styles.editorHeader}>
                       <div className={styles.editorHeaderLeft}>
                         <SparklesIcon size={14} />
-                        <span className={styles.editorTitle}>{text("Prompt preview", "提示词预览")}</span>
+                        <span className={styles.editorTitle}>{text("MEMORY.md as injected", "注入的 MEMORY.md")}</span>
                       </div>
                     </div>
-                    <div className={styles.preview}>
-                      <div
-                        className={styles.markdown}
-                        dangerouslySetInnerHTML={{ __html: coreInjected ? renderMarkdown(coreInjected) : `<em>${text("No Core memory is currently injected", "当前没有注入 Core 记忆")}</em>` }}
-                      />
+                    <div className="flex-1 overflow-y-auto min-h-0">
+                      {coreInjected ? (
+                        <div
+                          className={styles.markdown}
+                          dangerouslySetInnerHTML={{ __html: renderMarkdown(coreInjected) }}
+                        />
+                      ) : (
+                        <ManageEmptyState
+                          compact
+                          icon={<SparklesIcon size={20} />}
+                          title={text("No Core memory is currently injected", "当前没有注入核心记忆")}
+                          description={text("Core rules you add are injected into every conversation's prompt.", "你添加的核心规则会注入每个对话的提示词。")}
+                        />
+                      )}
                     </div>
                   </div>
                 )}
@@ -560,10 +613,18 @@ export function MemoryPage({
     </div>
   );
 
-  if (embedded) return <MemorySourcePreview>{view}</MemorySourcePreview>;
+  if (embedded) {
+    return (
+      <MemoryProjectContext.Provider value={projectId}>
+        <MemorySourcePreview>{view}</MemorySourcePreview>
+      </MemoryProjectContext.Provider>
+    );
+  }
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-      <MemorySourcePreview>{view}</MemorySourcePreview>
+      <MemoryProjectContext.Provider value={projectId}>
+        <MemorySourcePreview>{view}</MemorySourcePreview>
+      </MemoryProjectContext.Provider>
     </div>
   );
 }

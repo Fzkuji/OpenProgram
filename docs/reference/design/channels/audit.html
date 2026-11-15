@@ -1,0 +1,161 @@
+<title>Channel requirements and invariants</title>
+<meta name="description" content="The contract channel adapters satisfy, why the two send paths exist, and how the layer compares with OpenClaw and Hermes.">
+<h1>Channel requirements and invariants</h1>
+<p class="note">Structure and message flow: <a href="design.html">Channel subsystem design</a>.</p>
+<h2 id="the-abstraction">The contract</h2>
+<pre translate="no"><code>@dataclass(frozen=True)
+class MessageHandle:
+    platform: str
+    account_id: str
+    target: str
+    message_id: str
+
+    @property
+    def editable(self) -&gt; bool: ...
+
+
+class Channel(abc.ABC):
+    platform_id: str = ""
+
+    @abc.abstractmethod
+    def run(self, stop: threading.Event) -&gt; None: ...
+
+    def send_text(self, target, text) -&gt; Optional[MessageHandle]: ...
+    def send_text_full(self, target, text, thread_id=None) -&gt; SendResult: ...
+    def send_file(self, target, path, caption="", thread_id=None) -&gt; SendResult: ...
+    def edit_text(self, handle, new_text) -&gt; bool: ...
+    def edit_text_full(self, handle, new_text) -&gt; SendResult: ...</code></pre>
+<table class="stack fixed">
+<thead><tr><th scope="col">Invariant</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">run</code> is the only abstract method</th><td>Inbound loops have no common shape. Outbound does, so send and edit are concrete over <code translate="no">_transport</code>. An adapter implementing only <code translate="no">run</code> can fully send and edit; overrides exist only when an SDK adds something, such as mention parsing or upload. Mandating <code translate="no">send</code>/<code translate="no">edit</code>/<code translate="no">react</code> would force capabilities a platform may lack.</td></tr>
+<tr><th scope="row"><code translate="no">MessageHandle</code> is all strings</th><td>Survives serialization: one process sends, another edits</td></tr>
+<tr><th scope="row">Two entry points, one implementation</th><td><code translate="no">outbound.send</code> works with no adapter in the process; <code translate="no">adapter.send_text</code> keeps the id to edit. <code translate="no">_transport</code> alone owns HTTP, credentials and chunking, so a new operation is one implementation, not eight.</td></tr>
+<tr><th scope="row">Sends return <code translate="no">SendResult</code></th><td>A bool cannot separate a transient failure from a permanent one. <code translate="no">error_kind</code> (<code translate="no">auth</code>, <code translate="no">rate_limit</code>, <code translate="no">bad_target</code>, <code translate="no">network</code>, <code translate="no">not_supported</code>, <code translate="no">format</code>, <code translate="no">unknown</code>) comes from <code translate="no">_classify_http_status</code>, <code translate="no">_telegram_kind_from_description</code>, <code translate="no">_slack_kind_from_error</code>. Bool forms remain.</td></tr>
+<tr><th scope="row">Edit capability is a handle property</th><td>iLink cannot edit. WeChat handles report <code translate="no">editable == False</code>; <code translate="no">edit_text_full</code> returns <code translate="no">SendResult.fail("not_supported", ...)</code>, never faking it by deleting and reposting. No caller special-cases a platform name.</td></tr>
+<tr><th scope="row">Cross-platform edits are refused</th><td><code translate="no">handle.platform != self.platform_id</code> returns <code translate="no">SendResult.fail("bad_target", ...)</code>. Coordinating adapters is the caller's concern.</td></tr>
+<tr><th scope="row">Built-ins win registration</th><td><code translate="no">_BUILTIN_CHANNEL_CLASSES</code> over <code translate="no">_PLUGIN_CHANNEL_CLASSES</code>. Plugins use <code translate="no" data-claim="example">[project.entry-points."openprogram.channels"]</code> or <code translate="no">register_channel(name, cls)</code>. <code translate="no">CHANNEL_CLASSES</code> is a dict-like proxy over both.</td></tr>
+</tbody>
+</table>
+<h2 id="neutral-inbound-message">Neutral inbound message</h2>
+<p><code translate="no">_message.py:ChannelMessage</code>, frozen: <code translate="no">text</code>, <code translate="no">chat_id</code>, <code translate="no">user_id</code>, <code translate="no">user_display</code>, <code translate="no">message_id</code>, <code translate="no">chat_type</code>, <code translate="no">ts</code>, <code translate="no">reply_to_id</code>, <code translate="no">quoted_text</code>, <code translate="no">thread_id</code>, <code translate="no">parent_chat_id</code>, <code translate="no">attachments</code> (tuple of <code translate="no">Attachment</code>), <code translate="no">mentioned</code>, <code translate="no">from_bot</code>.</p>
+<p class="note">The pipeline prepends <code translate="no">quoted_text</code> as a <code translate="no">&gt;</code> block and downloads <code translate="no">attachments</code>, forwarding small images as vision input. <code translate="no">thread_id</code> sends placeholders, replies and files back to the thread; it does not join session routing.</p>
+<h2 id="inbound-dispatch">Inbound dispatch</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. Route</th><td><code translate="no">session_aliases</code> and <code translate="no">bindings</code> decide <code translate="no">agent_id</code></td></tr>
+<tr><th scope="row">2. Key</th><td><code translate="no">session_key</code> per <code translate="no">agent.session_scope</code></td></tr>
+<tr><th scope="row">3. Reset</th><td><code translate="no">daily_reset</code> or <code translate="no">idle_minutes</code></td></tr>
+<tr><th scope="row">4. Store</th><td><code translate="no">_load_or_init_session</code> writes the session store</td></tr>
+<tr><th scope="row">5. Turn</th><td><code translate="no">build_turn_request</code> makes the <code translate="no">TurnRequest</code>; <code translate="no">CanonicalAgentAdapter</code> admits and runs it</td></tr>
+<tr><th scope="row">6. Reply</th><td>Appended</td></tr>
+<tr><th scope="row">7. Broadcast</th><td>A <code translate="no">channel_turn</code> envelope to the Web UI</td></tr>
+</tbody></table>
+<p class="note"><code translate="no">progress_stream=False</code> returns the reply for the adapter to send. <code translate="no">True</code> drives <code translate="no">send_text</code>/<code translate="no">edit_text</code>, so tool events reach the user mid-turn; the dispatcher already emits them, so streaming is wiring over <code translate="no">MessageHandle</code> and <code translate="no">patch_message</code>. Routing, storage and broadcast are split into <code translate="no">_session_routing.py</code>, <code translate="no">_session_store.py</code>, <code translate="no">_broadcast.py</code>.</p>
+<h2 id="stateless-outbound">Why the stateless entry point exists</h2>
+<table class="stack">
+<thead><tr><th scope="col">Paradigm</th><th scope="col">Who drives</th><th scope="col">Entry</th></tr></thead>
+<tbody>
+<tr><th scope="row">A: agentic programming</th><td>Python control flow; <code translate="no">Agent</code> method makes a Context node; <code translate="no">Runtime.exec</code> asks the LLM only when called</td><td>Code written by the programmer</td></tr>
+<tr><th scope="row">B: agent loop (channels, Web UI chat)</th><td>The LLM picks tools: <code translate="no">process_user_turn</code> → <code translate="no">agent_loop</code> → tool streaming</td><td>An external message</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Deployment</th><th scope="col">Adapter instance</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram</code> worker running</th><td>in the worker</td></tr>
+<tr><th scope="row">Script importing an Agent method; job in a separate process; notebook; pytest</th><td>nowhere</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Channels attach to B, but A still sends. A is library mode: no worker assumed. OpenClaw's and Hermes's adapter-only sends fit their single daemon, where a job can get adapters by injection.</li>
+<li>Any async-first base must keep a synchronous module-level wrapper, so an <code translate="no">Agent</code> method can send without asyncio.</li>
+<li>Streaming edit stays reachable from A: an <code translate="no">Agent</code> method can hold a <code translate="no">MessageHandle</code> and edit it.</li>
+</ul>
+<h2 id="three-way-comparison">Comparison</h2>
+<p class="note">OpenClaw is the TypeScript source OpenProgram forked from; Hermes is a Python chat-bot project. Opencode and Claude Code have no channel subsystem.</p>
+<table class="stack">
+<thead><tr><th scope="col">Aspect</th><th scope="col">OpenProgram</th><th scope="col">OpenClaw</th><th scope="col">Hermes</th></tr></thead>
+<tbody>
+<tr><th scope="row">Abstract methods</th><td>1 (<code translate="no">run</code>), concrete send and edit</td><td>5+ (SendAdapter, LiveAdapter, ApprovalAdapter...)</td><td>5+ (<code translate="no">send</code>, <code translate="no">edit</code>, <code translate="no">draft</code>, <code translate="no">typing</code>, <code translate="no">handoff</code>)</td></tr>
+<tr><th scope="row">Neutral message</th><td><code translate="no">ChannelMessage</code></td><td><code translate="no">ChannelMeta</code> with media, richtext, components</td><td><code translate="no">MessageEvent</code>, <code translate="no">SessionSource</code></td></tr>
+<tr><th scope="row">Send result</th><td><code translate="no">SendResult</code> (ok, message_id, error_kind, retryable, retry_after)</td><td><code translate="no">DurableMessageSendResult</code> (message_id, edited_ids, retry policy)</td><td><code translate="no">SendResult</code> (message_id, retryable)</td></tr>
+<tr><th scope="row">Dispatch</th><td>sync → str, or <code translate="no">progress_stream=True</code></td><td>async pipeline: draft → live → final</td><td>async streaming events</td></tr>
+<tr><th scope="row">Session isolation</th><td><code translate="no">session_scope</code>, 4 values</td><td><code translate="no">dmScope</code>, thread-bindings-policy</td><td>chat × user × thread</td></tr>
+<tr><th scope="row">Progress</th><td>dispatcher drives send and edit</td><td>three stages, throttled</td><td><code translate="no">edit_message</code>, automatic overflow split</td></tr>
+<tr><th scope="row">Approval</th><td>text bridge (<code translate="no">_question_commands.py</code>)</td><td>reaction ✓/✗, onApprove, onDecline, onTimeout</td><td><code translate="no">/approve</code> text command</td></tr>
+<tr><th scope="row">Debounce</th><td>none</td><td>unknown</td><td>0.35 s delay, 1 s cap</td></tr>
+<tr><th scope="row">Health check</th><td>none at startup; heartbeats feed status</td><td><code translate="no">health-check-adapter.ts</code></td><td>unknown</td></tr>
+<tr><th scope="row">Receipts</th><td>none</td><td>yes</td><td>unknown</td></tr>
+<tr><th scope="row">Structured replies</th><td>text only</td><td>embed, button, menu</td><td>partial</td></tr>
+<tr><th scope="row">Attachments</th><td>state dir, vision input</td><td>cached</td><td>UUID prefix, 24 h cleanup</td></tr>
+<tr><th scope="row">Outbound API</th><td><code translate="no">outbound.send</code> shares <code translate="no">_transport</code></td><td>through adapters</td><td><code translate="no">DeliveryRouter(adapters: dict)</code></td></tr>
+<tr><th scope="row">Process model</th><td>lib, worker, script</td><td>single daemon</td><td>single gateway</td></tr>
+<tr><th scope="row">Chunking</th><td><code translate="no">_transport._chunk</code></td><td>in the platform plugin</td><td><code translate="no">truncate_message</code></td></tr>
+<tr><th scope="row">Registration</th><td>built-in dict, entry points</td><td>Plugin SDK: manifest, dynamic loader</td><td>built-in plus registry</td></tr>
+<tr><th scope="row">Language</th><td>Python</td><td>TypeScript</td><td>Python</td></tr>
+</tbody>
+</table>
+<details>
+<summary>What OpenClaw does</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mechanism</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Layout</th><td><code translate="no">references/openclaw/src/channels/</code> holds fine-grained files; each platform has <code translate="no">extensions/{name}/</code> (discord 70+ files, slack 40+, telegram 35+)</td></tr>
+<tr><th scope="row">Plugin SDK</th><td><code translate="no">src/plugin-sdk/channel-*.ts</code>, 50+ contract files: <code translate="no">ChannelMessageSendAdapter</code>, <code translate="no">ChannelMessageLiveAdapterShape</code>, <code translate="no">ChannelApprovalAdapter</code>, <code translate="no">ChannelMessageActionAdapter</code>, <code translate="no">ChannelOutboundAdapter</code></td></tr>
+<tr><th scope="row">Streaming edit</th><td>draft → live-preview (throttled) → final; throttling in the pipeline</td></tr>
+<tr><th scope="row">Reaction approval</th><td>✓/✗ reactions on dangerous tools, with timeout, retry, cancel (<code translate="no">ack-reactions.ts</code>, <code translate="no">approval-native.ts</code>)</td></tr>
+<tr><th scope="row">Health check</th><td>Startup probe; one dead platform does not take down the worker</td></tr>
+<tr><th scope="row">Registration</th><td><code translate="no">openclaw.plugin.json</code> manifests, core loader scans <code translate="no">extensions/*/</code> or npm, lazy instantiation</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>What Hermes does</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mechanism</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Base</th><td><code translate="no">BasePlatformAdapter</code> (1500 lines), 14+ platforms, one file per adapter, async <code translate="no">send</code>, <code translate="no">edit_message</code>, <code translate="no">send_draft</code>, <code translate="no">send_typing</code>, <code translate="no">create_handoff_thread</code></td></tr>
+<tr><th scope="row">Session key</th><td>DM <code translate="no">agent:main:{platform}:dm:{chat_id}[:{thread_id}]</code>; group <code translate="no">agent:main:{platform}:group:{chat_id}[:{thread_id}][:{user_id}]</code>. Threads shared, groups per user, per-channel override.</td></tr>
+<tr><th scope="row">Progress</th><td><code translate="no">_edit_progress_message</code>; <code translate="no">_roll_progress_overflow_if_needed</code> starts new bubbles past the platform limit</td></tr>
+<tr><th scope="row">Debounce</th><td><code translate="no">_queue_text_debounce</code> merges consecutive texts into one turn: 0.35 s, cap 1.0 s</td></tr>
+<tr><th scope="row">Quick commands</th><td><code translate="no">/stop</code>, <code translate="no">/new</code>, <code translate="no">/reset</code>, <code translate="no">/approve</code> bypass the session queue</td></tr>
+<tr><th scope="row">Attachment cache</th><td><code translate="no">doc_{uuid12}_{name}</code>; Telegram URLs downloaded before their one-hour expiry; cleanup after 24 h</td></tr>
+<tr><th scope="row">Delivery</th><td><code translate="no">DeliveryRouter</code> with <code translate="no">DeliveryTarget</code> (origin, local, telegram:123...), through adapters</td></tr>
+<tr><th scope="row">Approval</th><td><code translate="no">/approve</code> sets an Event the tool thread waits on; reactions exist but are off the approval path</td></tr>
+<tr><th scope="row">Registration</th><td><code translate="no">PlatformEntry</code> in <code translate="no">platform_registry</code>; built-ins take a hardcoded fast path</td></tr>
+</tbody>
+</table>
+</details>
+<h2 id="what-to-learn">What is borrowed</h2>
+<table class="stack">
+<thead><tr><th scope="col">Topic</th><th scope="col">From OpenClaw</th><th scope="col">From Hermes</th></tr></thead>
+<tbody>
+<tr><th scope="row">Method signatures, lifecycles, return structures</th><td>Yes, more complete</td><td>Yes</td></tr>
+<tr><th scope="row">Streaming</th><td>Three-state</td><td>Single edit</td></tr>
+<tr><th scope="row">Approval lifecycle</th><td>Complete</td><td><code translate="no">/approve</code> command</td></tr>
+<tr><th scope="row">Health probe</th><td>Yes</td><td>—</td></tr>
+<tr><th scope="row">Code organization</th><td>No: 50+ contracts and 70+ files per platform are overkill</td><td>Yes: one base file, one per platform</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why OpenClaw is not copied, and what is deferred</summary>
+<ul>
+<li>No Python to copy: OpenClaw is entirely TypeScript; its only <code translate="no">.py</code> files are CI and skill tooling. Reuse means re-implementing the design; TS interfaces map to <code translate="no">Protocol</code>/<code translate="no">abc.ABC</code>, dataclasses and plugin manifests carry across.</li>
+<li>Static typing is what makes 50+ contract files pay off. Python <code translate="no">Protocol</code>s are not enforced at runtime, and mypy is not on by default. So one file per interface is not worth it; the interface shapes are.</li>
+<li>OpenClaw and Hermes are async-first; this layer is synchronous with one thread per adapter. Going async means turning <code translate="no">dispatch_inbound</code> into an async generator and rewiring four event loops.</li>
+<li>Hermes's debounce merging, quick-command bypass and attachment caching came from production traffic and are deferred until those problems appear.</li>
+</ul>
+</details>
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">In place</th><td><code translate="no">Channel</code> ABC, <code translate="no">MessageHandle</code>, concrete send and edit; <code translate="no">_transport</code> shared by both entries and the only chunker; <code translate="no">SendResult</code> classification; <code translate="no">ChannelMessage</code>; entry-point registration; <code translate="no">progress_stream=True</code>; the <code translate="no">_conversation.py</code> split</td></tr>
+<tr><th scope="row">Session isolation</th><td>One-dimensional: <code translate="no">peer_id</code> joins chat and user; <code translate="no">session_scope</code> is main, per-peer, per-channel-peer or per-account-channel-peer. Hermes's thread-shared mode is not expressible.</td></tr>
+<tr><th scope="row"><code translate="no">account_id</code> passed twice</th><td>To the adapter constructor and <code translate="no">dispatch_inbound</code>, which blocks one adapter serving several accounts in a process</td></tr>
+<tr><th scope="row">Thread-scoped sessions</th><td><code translate="no">thread_id</code> routes replies only</td></tr>
+<tr><th scope="row">Startup probe, receipts</th><td>Not implemented</td></tr>
+</tbody>
+</table>

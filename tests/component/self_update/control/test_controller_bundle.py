@@ -24,12 +24,12 @@ def _is_under(path: Path | str | None, root: Path) -> bool:
 
 def _release_native_workspace(root: Path) -> None:
     """Drain process-local singletons redirected into the eager runtime copy."""
-    from openprogram.agent.job import runner as runner_mod
-    from openprogram.agent.job.runner import shutdown_runner
-    from openprogram.execution.projections import stop_projection_worker
-    from openprogram.execution.store import _store_for_path
-    from openprogram.store.session import session_store as ss_mod
-    from openprogram.usage.ledger import default_ledger
+    from openprogram.runtime.jobs import runner as runner_mod
+    from openprogram.runtime.jobs.runner import shutdown_runner
+    from openprogram.runtime.execution.event_effects import stop_event_effects
+    from openprogram.runtime.execution.store import _store_for_path
+    from openprogram.state.store.session import session_store as ss_mod
+    from openprogram.models.usage.ledger import default_ledger
 
     existing = runner_mod.shared._runner
     if existing is not None:
@@ -45,8 +45,8 @@ def _release_native_workspace(root: Path) -> None:
                 "not clearing the singleton or deleting the workspace"
             )
         shutdown_runner()
-    if not stop_projection_worker():
-        raise RuntimeError("execution projection worker did not stop before native workspace cleanup")
+    if not stop_event_effects():
+        raise RuntimeError("execution event effects did not stop before native workspace cleanup")
     cached = ss_mod.shared._default_store
     if cached is not None and _is_under(getattr(cached, "root_path", None), root):
         cached.close()
@@ -66,30 +66,29 @@ def _native_workspace_dir(tmp_path: Path):
 
 
 def _start_redirected_state_writers(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from openprogram import paths
-    from openprogram.agent.job.runner import get_runner, shutdown_runner
-    from openprogram.agent.session_db import default_db
-    from openprogram.store.session import session_store as ss_mod
+    from openprogram.state import paths
+    from openprogram.runtime.jobs.runner import get_runner, shutdown_runner
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.state.store.session import session_store as ss_mod
 
     state = root / "owner" / ".openprogram"
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
     monkeypatch.setattr(
-        "openprogram.worker.lock.is_held_by", lambda _pid: True, raising=False,
+        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True, raising=False,
     )
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     shutdown_runner()
     ss_mod.shared._default_store = None
     db = default_db()
     db.create_session("late-writer", "main")
     get_runner()
     assert db.root_path.resolve().is_relative_to(root.resolve())
-    assert (state / "sessions").is_dir()
-    assert (state / "usage.db").is_file() or (state / "executions.db").is_file()
+    assert (state / "projects").is_dir()
 
 
 @pytest.fixture
 def fake_resources(tmp_path, monkeypatch):
-    from openprogram.self_update.delivery import controller_bundle as bundle
+    from openprogram.operations.self_update.delivery import controller_bundle as bundle
 
     resources = tmp_path / "installed-resources"
     runtime = resources / "runtime"
@@ -108,7 +107,7 @@ def fake_resources(tmp_path, monkeypatch):
 
 
 def test_controller_bundle_preserves_original_installer_and_runtime(fake_resources):
-    from openprogram.self_update.delivery import controller_bundle as bundle
+    from openprogram.operations.self_update.delivery import controller_bundle as bundle
     resources, update = fake_resources
     python = resources / "runtime/bin/python"
     first = bundle.prepare_controller(update)
@@ -126,7 +125,7 @@ def test_controller_bundle_preserves_original_installer_and_runtime(fake_resourc
 
 @pytest.mark.parametrize("failure", ["external_symlink", "manifest_escape", "probe", "source_drift"])
 def test_snapshot_failure_does_not_publish_or_leave_partial_copy(fake_resources, monkeypatch, failure):
-    from openprogram.self_update.delivery import controller_bundle as bundle
+    from openprogram.operations.self_update.delivery import controller_bundle as bundle
     resources, update = fake_resources
     if failure == "external_symlink":
         (resources / "runtime/escape").symlink_to(resources / "update/install-app.sh")
@@ -143,6 +142,22 @@ def test_snapshot_failure_does_not_publish_or_leave_partial_copy(fake_resources,
     assert list(update.iterdir()) == []
 
 
+def copy_installed_runtime(installed: Path, destination: Path) -> None:
+    """Copy the installed runtime as APFS clones; fall back to a byte copy elsewhere.
+
+    The clone is an independent copy-on-write file tree, so later writes to
+    either side never reach the other, and it takes seconds instead of
+    rewriting the complete 1.6 GB runtime.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    cloned = subprocess.run(["/bin/cp", "-cRp", str(installed), str(destination)],
+                            capture_output=True, text=True)
+    if cloned.returncode != 0:
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(installed, destination, symlinks=True)
+
+
 @pytest.fixture
 def native_workspace(tmp_path):
     # The complete runtime is large; do not retain copies in pytest's cache.
@@ -150,7 +165,7 @@ def native_workspace(tmp_path):
 
 
 def test_native_workspace_stops_redirected_state_writers_before_cleanup(tmp_path, monkeypatch):
-    from openprogram.agent.job import runner as runner_mod
+    from openprogram.runtime.jobs import runner as runner_mod
 
     gen = _native_workspace_dir(tmp_path)
     root = next(gen)
@@ -190,7 +205,7 @@ def test_native_workspace_stops_redirected_state_writers_before_cleanup(tmp_path
 
 
 def test_native_controller_imports_after_original_runtime_is_moved(native_workspace, monkeypatch):
-    from openprogram.self_update.delivery import controller_bundle as bundle
+    from openprogram.operations.self_update.delivery import controller_bundle as bundle
 
     tmp_path = native_workspace
     installed = Path("/Applications/OpenProgram.app/Contents/Resources/runtime")
@@ -198,12 +213,12 @@ def test_native_controller_imports_after_original_runtime_is_moved(native_worksp
         pytest.skip("requires the installed macOS standalone runtime")
     resources = tmp_path / "installed-resources"
     runtime = resources / "runtime"
-    shutil.copytree(installed, runtime, symlinks=True)
+    copy_installed_runtime(installed, runtime)
     manifest = json.loads((runtime / "runtime-manifest.json").read_text())
     python = runtime / manifest["python"]
     package = next((runtime / "python").glob("*/lib/python*/site-packages/openprogram"))
     source = Path(bundle.__file__).parent.parent
-    shutil.copytree(source, package / "self_update", dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(source, package / "operations" / "self_update", dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
     (resources / "update").mkdir()
     installer = Path(__file__).resolve().parents[4] / "apps/desktop/scripts/install-app.sh"
     shutil.copy2(installer, resources / "update/install-app.sh")
@@ -217,7 +232,7 @@ def test_native_controller_imports_after_original_runtime_is_moved(native_worksp
         "from pathlib import Path; import importlib, sys; "
         "root=Path(sys.argv[1]); "
         "mods=[importlib.import_module(n) for n in "
-        "['openprogram.self_update.control.supervisor','openprogram.self_update.verification.verification','sqlite3','ssl']]; "
+        "['openprogram.operations.self_update.control.supervisor','openprogram.operations.self_update.verification.verification','sqlite3','ssl']]; "
         "assert all(Path(m.__file__).resolve().is_relative_to(root) for m in mods); "
         "assert Path(sys.prefix).resolve().is_relative_to(root); print('PINNED_RUNTIME_OK')"
     )

@@ -4,14 +4,14 @@ import time
 
 import pytest
 
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.checkpoints import (
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.checkpoints import (
     CheckpointConflict,
     ExecutionCheckpointStore,
 )
-from openprogram.execution.effects import EffectClassification, EffectStore
-from openprogram.execution.model import CapabilitySet
-from openprogram.execution.store import ExecutionStore
+from openprogram.runtime.execution.effects import EffectClassification, EffectStore
+from openprogram.runtime.execution.model import CapabilitySet
+from openprogram.runtime.execution.store import ExecutionStore
 
 
 def _execution(tmp_path):
@@ -34,7 +34,6 @@ def _execution(tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="worker_1",
-        ttl_seconds=30,
         attempt_id="attempt_1",
     )
     _, running = attempts.activate(
@@ -227,26 +226,3 @@ def test_checkpoint_refuses_unresolved_external_effect(tmp_path) -> None:
         )
     assert unresolved.value.code == "unresolved_effect"
 
-
-def test_expired_attempt_cannot_publish_checkpoint(tmp_path) -> None:
-    executions, execution = _execution(tmp_path)
-    checkpoints = ExecutionCheckpointStore(
-        executions,
-        clock=lambda: time.time() + 60,
-    )
-
-    with pytest.raises(CheckpointConflict) as stale:
-        checkpoints.publish(
-            execution.execution_id,
-            expected_version=execution.status_version,
-            revision_id=execution.revision_id,
-            parent_checkpoint_id=None,
-            frontier=({"step_id": "start", "phase": "after"},),
-            state_refs={},
-            completed_actions=(),
-            effect_receipts=(),
-            child_frontier={},
-            pending_command_ids=(),
-            created_by_attempt_id="attempt_1",
-        )
-    assert stale.value.code == "stale_attempt"

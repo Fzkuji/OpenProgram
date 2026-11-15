@@ -1,0 +1,55 @@
+<title>DAG edge fields</title>
+<meta name="description" content="The caller and predecessor edges of a DAG node and where each name is used.">
+<h1>DAG edge fields</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">caller</code></th><th scope="col"><code translate="no">predecessor</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Question</th><td>Who called me</td><td>Who I follow in chat order</td></tr>
+<tr><th scope="row">Edge</th><td>Sub-call</td><td>Conversation chain</td></tr>
+<tr><th scope="row">Field</th><td><code translate="no">Call.caller</code></td><td><code translate="no">Call.predecessor</code></td></tr>
+<tr><th scope="row">Example</th><td>The LLM that invoked a tool</td><td>Second-round user follows first-round reply</td></tr>
+<tr><th scope="row">Decides</th><td>Sub-call indentation, internal nodes</td><td>Forks: one predecessor with several children</td></tr>
+</tbody>
+</table>
+
+<p class="note">The two often differ. A top-level user node hangs off ROOT but follows the previous reply, and a spawn root has a caller but no predecessor. One name for both once let a helper read the wrong edge.</p>
+
+<h2 id="no-on-disk-compatibility-layer">No compatibility layer</h2>
+
+<p>Only these two key names exist: no alias, no backfill in <code translate="no">from_dict</code> or the message adapters, no unused parent field in <code translate="no">GNode</code>. The backend graph dict and frontend are one protocol, so a key rename lands on both sides at once.</p>
+
+<details>
+<summary>Where each name is used</summary>
+<h3>Backend (openprogram/state/store/session/)</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Symbol</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">nodes.py</code> <code translate="no">Call</code></th><td>The two dataclass fields</td></tr>
+<tr><th scope="row"><code translate="no">_msg_adapter.py</code> <code translate="no">_msg_to_node</code></th><td>Message keys to fields; <code translate="no">predecessor</code> is popped from metadata so no mirror survives</td></tr>
+<tr><th scope="row"><code translate="no">_msg_adapter.py</code> <code translate="no">_node_to_msg</code></th><td>Fields to two explicit keys</td></tr>
+<tr><th scope="row"><code translate="no">session_store/shared.py</code></th><td><code translate="no">_node_conv_predecessor</code>, <code translate="no">_node_caller</code></td></tr>
+<tr><th scope="row"><code translate="no">memory_index.py</code> <code translate="no">append</code></th><td>Indexes <code translate="no">children_by_predecessor</code>, <code translate="no">children_by_caller</code></td></tr>
+<tr><th scope="row"><code translate="no">graph/builder.py</code> <code translate="no">build_session_graph</code></th><td>Graph dict with both keys</td></tr>
+<tr><th scope="row"><code translate="no">graph/layout/_common.py</code></th><td><code translate="no">predecessor_of</code>, <code translate="no">caller_of</code></td></tr>
+<tr><th scope="row"><code translate="no">graph/layout/tier.py</code></th><td>Caller, for sub-call indentation</td></tr>
+<tr><th scope="row"><code translate="no">graph/layout/lane.py</code></th><td>Predecessor</td></tr>
+<tr><th scope="row"><code translate="no">graph/layout/depth.py</code>, <code translate="no">topology.py</code></th><td>Both; depth takes predecessor first, then caller</td></tr>
+</tbody>
+</table>
+<h3>Frontend (apps/web/lib/runtime-bridge/)</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Symbol</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">dag/types.ts</code> <code translate="no">GNode</code></th><td>Carries both</td></tr>
+<tr><th scope="row"><code translate="no">dag/types.ts</code> <code translate="no">semanticParent</code>, <code translate="no">layoutParent</code></th><td><code translate="no">predecessor</code>, else <code translate="no">caller</code>; layout prefers <code translate="no">_overview_parent</code>. The caller fallback connects internal code and LLM rows and spawn roots.</td></tr>
+<tr><th scope="row"><code translate="no">dag/pipeline.ts</code> <code translate="no">render</code></th><td><code translate="no">caller</code> marks internal nodes; <code translate="no">predecessor</code> drives the chain</td></tr>
+<tr><th scope="row"><code translate="no">dag/render/</code> <code translate="no">edges</code>, <code translate="no">nodes</code>, <code translate="no">agents</code>, <code translate="no">labels/badges</code></th><td>Read <code translate="no">predecessor</code> to draw edges and detect branches</td></tr>
+<tr><th scope="row"><code translate="no">session/conversations.ts</code> <code translate="no">LegacyMessage</code>, <code translate="no">BranchRow</code></th><td>Carry both keys through</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<p>Implemented on both sides. <a href="../dag/overview.html">The session data model</a> treats both edges as authoritative.</p>

@@ -1,0 +1,45 @@
+<title>错误原因传到界面</title>
+<meta name="description" content="reason、retryable、retry_after_s 如何从提供商失败一路传到对话错误。">
+<h1>错误原因传到界面</h1>
+<p>压成字符串后，限流、密钥被拒和对话过长看起来都一样，也给不出下一步。范围：对话轮的主流式错误。重试和压缩失败的字符串保持纯文本。</p>
+
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">reason</code></th><th scope="col">枚举</th><th scope="col">可重试</th><th scope="col">对话标题</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">rate_limit</code></th><td><code translate="no">RATE_LIMIT</code></td><td>是</td><td>请求过于频繁 —— {retry_after_s} 秒后重试</td></tr>
+<tr><th scope="row"><code translate="no">auth</code></th><td><code translate="no">AUTHENTICATION</code></td><td>否</td><td>API key 被拒 —— 去 设置 → Providers 检查</td></tr>
+<tr><th scope="row"><code translate="no">authz</code></th><td><code translate="no">AUTHORIZATION</code></td><td>否</td><td>无权限 —— 检查该模型的套餐 / 访问权限</td></tr>
+<tr><th scope="row"><code translate="no">blocked</code></th><td><code translate="no">NETWORK_BLOCK</code></td><td>否</td><td>模型服务的网络拒绝了你当前的出口地址 —— 换一个代理节点或关闭 VPN 后重试</td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td><code translate="no">CONTEXT_LENGTH</code></td><td>否</td><td>对话太长 —— 压缩或新开对话</td></tr>
+<tr><th scope="row"><code translate="no">policy</code></th><td><code translate="no">CONTENT_POLICY</code></td><td>否</td><td>提供商按内容政策拦截了此请求</td></tr>
+<tr><th scope="row"><code translate="no">provider</code></th><td><code translate="no">PROVIDER_INTERNAL</code></td><td>是</td><td>提供商 / 网络临时错误 —— 重试即可</td></tr>
+<tr><th scope="row"><code translate="no">transport</code></th><td><code translate="no">TRANSPORT</code></td><td>是</td><td>提供商 / 网络临时错误 —— 重试即可</td></tr>
+<tr><th scope="row"><code translate="no">timeout</code></th><td><code translate="no">TIMEOUT</code></td><td>否</td><td>请求超时 —— 重试</td></tr>
+<tr><th scope="row"><code translate="no">invalid</code></th><td><code translate="no">INVALID_REQUEST</code></td><td>否</td><td>只显示原始消息</td></tr>
+<tr><th scope="row"><code translate="no">unknown</code></th><td><code translate="no">UNKNOWN</code></td><td>否</td><td>只显示原始消息</td></tr>
+</tbody>
+</table>
+<p class="note">记忆策略错误归为 <code translate="no">unknown</code>，不可重试；由 <code translate="no">error_kind: memory_unavailable</code> 标明类别，原因字段不出集合。</p>
+
+<h2 id="event-shape">事件</h2>
+<pre translate="no"><code>{"type": "error", "content": "&lt;text&gt;", "reason": "&lt;reason&gt;",
+ "retryable": true, "retry_after_s": 30.0}</code></pre>
+
+<h2 id="where-classified">发生在哪里</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/utils/errors.py</code></th><td><code translate="no">ErrorReason</code>、<code translate="no">LLMError</code>、<code translate="no">classify_error</code>、<code translate="no">taxonomy_fields</code>；<code translate="no">stream_retry</code> 据此退避。<code translate="no">error_kind</code> 沿被包装的原因找出更细的稳定名称（<code translate="no">stream_idle</code>、<code translate="no">stream_total</code>、<code translate="no">model_unavailable</code>、<code translate="no">auth</code>…）</td></tr>
+<tr><th scope="row"><code translate="no">runtime/agent/loop/driver.py</code></th><td>Agent 边界；在消息上设 <code translate="no">error_reason</code>、<code translate="no">error_retryable</code>、<code translate="no">error_retry_after_s</code>。供应商明确说出的拒绝（没有余额或额度、登录被拒或过期、套餐或地区不提供）只记一行 warning 日志，写明供应商和原因；其他失败照旧把 traceback 打到 stderr</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/error_path.py</code></th><td>对话轮；分类、保存 <code translate="no">error_metadata</code>、填 <code translate="no">TurnResult</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/chat/messages/bubbles/assistant-bubble.tsx</code></th><td>按 <code translate="no">errorReason</code> 显示标题，原始消息在下方</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/transcript/rows.py</code></th><td>从存储的消息投影出这些字段，重新加载后标题还在</td></tr>
+</tbody>
+</table>
+<p class="note">API 使用方、日志和其他频道也读这个原因。自动重试策略不变，这里只暴露字段。更大范围的 <code translate="no">except Exception</code> 审计另行处理。</p>
+
+<details>
+<summary>验证</summary>
+<p>密钥被拒得到 <code translate="no">auth</code>，致命。429 得到 <code translate="no">rate_limit</code>，可重试，带提示。上下文过大得到 <code translate="no">context</code>，致命。单元测试覆盖映射，以及 Agent 边界保留 <code translate="no">LLMError</code> 的原因。</p>
+<p>端到端需要前端所选模型上可重复的失败，因为前端发送自己选的模型：过期密钥对应 <code translate="no">auth</code>，返回 503 的 OpenRouter <code translate="no">:free</code> 模型对应 <code translate="no">provider</code>。</p>
+</details>

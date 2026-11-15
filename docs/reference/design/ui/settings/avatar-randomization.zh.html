@@ -1,0 +1,31 @@
+<title>头像设置</title>
+<meta name="description" content="如何选择用户头像：先选类型，再用该类型的控件。">
+<h1>头像设置</h1>
+
+<p><code translate="no">AvatarPicker</code> 设置显示在侧栏底部的用户头像。类型是唯一入口；生成的变体只属于当前风格。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">控件</th><th scope="col">保存为</th></tr></thead>
+<tbody>
+<tr><th scope="row">生成</th><td>从 <code translate="no">AVATAR_STYLES</code> 选风格，再选该风格的变体。重新生成只改种子。换风格时尽量保留种子，否则使用显示名称。</td><td><code translate="no">kind: "dicebear"</code>、当前风格、种子</td></tr>
+<tr><th scope="row">字母</th><td>字符和颜色，在选择器内编辑</td><td>资料的 <code translate="no">initial</code> 和 <code translate="no">color</code></td></tr>
+<tr><th scope="row">上传</th><td>一个图片文件</td><td><code translate="no">kind: "upload"</code></td></tr>
+</tbody>
+</table>
+
+<h2>布局</h2>
+<p>设置行左侧是不拉伸的标签，右侧是按内容取宽的控件；头像排在预览和显示名称之后。变体使用固定 48px 轨道（<code translate="no">repeat(auto-fill, 48px)</code>），在右侧控件组内换行，绝不拉伸。</p>
+
+<details>
+<summary>未采用的方案</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方案</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">一行列出全部风格加字母和上传</th><td>类型和风格混在一层，字母字符还要到卡片外编辑</td></tr>
+<tr><th scope="row">变体覆盖全部风格</th><td>选变体会改变已选风格</td></tr>
+<tr><th scope="row">变体网格用 <code translate="no">1fr</code></th><td>图块被拉伸以填满卡片</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="note">不变：<code translate="no">AvatarConfig</code> 的 kind（<code translate="no">dicebear</code>、<code translate="no">letter</code>、<code translate="no">upload</code>）、存储字段、<code translate="no">Avatar</code> 渲染、Agent 和用户资料存储、DiceBear 依赖。实现在 <code translate="no">apps/web/components/avatar/avatar-picker.tsx</code> 和 <code translate="no">variants.ts</code>；由 <code translate="no">apps/web/tests/settings/avatar-randomization.test.mjs</code> 和 <code translate="no">theme-appearance.test.mjs</code> 测试。</p>

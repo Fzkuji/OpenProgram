@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.code.lsp.shared import (
     MAX_DIAGNOSTICS,
     display_column,

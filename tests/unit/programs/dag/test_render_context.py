@@ -7,16 +7,9 @@ under various frame / expose / render_range configurations.
 
 from __future__ import annotations
 
-import pytest
 
-from openprogram.context.nodes import (
-    Call,
-    Graph,
-    ROLE_USER,
-    ROLE_LLM,
-    ROLE_CODE,
-    render_context,
-)
+from openprogram.state.store.session.nodes import Call, Graph, ROLE_USER, ROLE_LLM, ROLE_CODE
+from openprogram.runtime.context.nodes import render_context
 
 
 def _spine_tip(g: Graph) -> str | None:
@@ -64,7 +57,7 @@ def test_head_seq_caps_the_chain():
     g = Graph()
     u = _user(g, "q1")
     m = _llm(g, "a1")
-    u2 = _user(g, "q2")
+    _user(g, "q2")
     # Slice at m: u2 excluded.
     assert render_context(g, head_seq=m.seq) == [u.id, m.id]
 
@@ -80,7 +73,7 @@ def test_empty_graph_returns_empty_list():
 def test_in_frame_visible_by_default():
     """A frame naturally sees its own in-frame progress. Default
     ``subcalls`` is -1 (uncapped); expose handles hiding internals
-    of child @agentic_functions, not subcalls counting."""
+    of child Agent methods, not subcalls counting."""
     g = Graph()
     u = _user(g, "q")
     m = _llm(g, "a")
@@ -131,8 +124,8 @@ def test_callers_zero_isolates_in_frame():
 
 def test_callers_keeps_recent_pre_frame_only():
     g = Graph()
-    a = _user(g, "1")
-    b = _llm(g, "2")
+    _user(g, "1")
+    _llm(g, "2")
     c = _user(g, "3")
     d = _llm(g, "4")
     entry = d.seq

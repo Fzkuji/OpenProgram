@@ -1,0 +1,164 @@
+<title>Adoption and adaptation</title>
+<meta name="description" content="Which memory practices from other agents OpenProgram takes, how each fits its structure, and why one is rejected.">
+<h1>Adoption and adaptation</h1>
+
+<p>What happens to each practice picked out by the <a href="comparison.html">framework comparison</a>. Design: <a href="overview.html">overview</a>. Mechanisms: <a href="architecture.html">illustrated</a>.</p>
+
+<h2 id="board">Four decisions</h2>
+<table class="stack">
+<thead><tr><th scope="col">Practice</th><th scope="col">From</th><th scope="col">Decision</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="#recall">Retrieval without an index</a></th><td>claude-code</td><td>Rejected</td><td>The extra model call buys semantic lookup without an index. An index already exists, at finer than file granularity.</td></tr>
+<tr><th scope="row"><a href="#core">Trim resident content by ownership</a></th><td>openclaw</td><td>Adapted, built</td><td>Ownership matters only when removal destroys content, so the resident section is derived instead.</td></tr>
+<tr><th scope="row"><a href="#branch">Summarize a branch on leaving it</a></th><td>pi-mono</td><td>Adapted, built</td><td>The goal stays, the summary node goes: session boundaries visit every live branch.</td></tr>
+<tr><th scope="row"><a href="#cursor">Lost cursor means nothing written</a></th><td>claude-code</td><td>Adopted, built</td><td>Repeated writes cost a bounded amount; a silent stop does not.</td></tr>
+</tbody>
+</table>
+
+<h2 id="recall">Retrieval without an index</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">OpenProgram</th><th scope="col">claude-code</th></tr></thead>
+<tbody>
+<tr><th scope="row">Selection</th><td>Index search before each turn</td><td>A small model picks from a list of one-line file descriptions</td></tr>
+<tr><th scope="row">Result</th><td><code translate="no">retrieval_top_k</code> paragraphs (default 5, at most 10) with block IDs and footnotes, fenced into the prompt</td><td>Five filenames; the Agent then reads them</td></tr>
+<tr><th scope="row">Extra model round trips per turn</th><td>0</td><td>1, while the user waits</td></tr>
+<tr><th scope="row">Maintained</th><td>BM25 and <code translate="no">retrieval/embedding.py</code> indexes</td><td>Nothing: no inverted index, vectors or cache, part of why its implementation is the smallest compared</td></tr>
+<tr><th scope="row">Cut-off</th><td>Dropped only at <code translate="no">lexical&lt;=0</code> and <code translate="no">adjustment&lt;=0.02</code>, so one shared word is a hit and an unrelated turn still gets paragraphs</td><td>Omit uncertain matches, prefer empty (<code translate="no">findRelevantMemories.ts</code>)</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">The model call</th><td>Not taken. It would pay every turn for what the index already does.</td></tr>
+<tr><th scope="row">File descriptions</th><td>Not taken. Results are paragraphs, and a path such as <code translate="no">topics/people/dave.md</code> already describes its one topic. Strict parsing also rejects an introductory paragraph or blockquote (<code translate="no">TopicFormatError: memory block ID required</code>); only an HTML comment passes.</td></tr>
+<tr><th scope="row">"Prefer empty"</th><td>Taken as a minimum score for results.</td></tr>
+</tbody>
+</table>
+
+<h3 id="retrieval-time">Search time by workspace size</h3>
+<table class="stack">
+<thead><tr><th scope="col">Topic bytes</th><th scope="col">First search</th><th scope="col">New process, cache on disk</th><th scope="col">Same process, files unchanged</th></tr></thead>
+<tbody>
+<tr><th scope="row">0.5 MB</th><td>108 ms</td><td>57 ms</td><td>50 ms</td></tr>
+<tr><th scope="row">3.35 MB</th><td>584 ms</td><td>413 ms</td><td>342 ms</td></tr>
+<tr><th scope="row">9.8 MB</th><td>1832 ms</td><td>1216 ms</td><td>1101 ms</td></tr>
+</tbody>
+</table>
+<p class="note">Synthetic workspaces in the real format, 12 blocks per file, mean of three runs on one machine. Parsing is cached by file signature, but every search rebuilds the scoring corpus, so time stays linear in bytes. That cost is local and fixable; an added model round trip can only be avoided.</p>
+
+<h2 id="core">Trimming resident content</h2>
+<p>The resident section is the core of <code translate="no">MEMORY.md</code>, rendered from <code translate="no">topics/core.md</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">openclaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Who writes</th><td>Automatic promotion and hand edits, in one file</td><td>Writers and people edit <code translate="no">topics/core.md</code>; the Runtime renders the section</td></tr>
+<tr><th scope="row">Limit</th><td>10000 characters</td><td>Render budget <code translate="no">core_max_tokens</code>, 2000</td></tr>
+<tr><th scope="row">When full</th><td>Removes oldest automatic paragraphs, keeps hand-written ones (<code translate="no">memory-budget.ts</code>)</td><td>Renders in file order until the next paragraph does not fit; a heading left with nothing under it goes too</td></tr>
+<tr><th scope="row">Removal destroys content</th><td>Yes, so ownership must be tracked</td><td>No: the rest stays in the source, indexed and citing its evidence</td></tr>
+<tr><th scope="row">Runs</th><td>During writes</td><td>After each write, with <code translate="no">timeline/</code>, <code translate="no">recent_events.jsonl</code> and <code translate="no">relations.json</code></td></tr>
+<tr><th scope="row">Reports</th><td>Removed dates, to the caller</td><td>Rendered tokens and left-out block IDs, on <code translate="no">last_core_block</code></td></tr>
+</tbody>
+</table>
+<p class="note">To keep a paragraph resident, move it earlier in the file. No marker exists for this.</p>
+
+<details>
+<summary>Why a derived section, and a budget rather than a limit that rejects</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Concern</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Block IDs</th><td>Every block ID present before an edit must survive it, or the transaction fails with <code translate="no">block ID must not be removed</code>. Trimming a file that holds the only copy of an ID cannot pass. Rendered IDs are always a copy of an ID in <code translate="no">topics/</code>.</td></tr>
+<tr><th scope="row">A rejecting limit</th><td>One overflow would roll back the whole transaction, Topic changes included, and every later stable fact would be sent elsewhere, leaving the section frozen.</td></tr>
+<tr><th scope="row">One file kind</th><td><code translate="no">topics/core.md</code> follows the Topic contract. <code translate="no">validate_writable_path</code> refuses edits outside <code translate="no">topics/**/*.md</code> with <code translate="no">READ_ONLY_PATH</code>.</td></tr>
+<tr><th scope="row">Old root <code translate="no">core.md</code></th><td><code translate="no">promote_legacy_core</code> moves it into <code translate="no">topics/</code> once.</td></tr>
+<tr><th scope="row">Reorganization</th><td>The organize prompt keeps <code translate="no">topics/core.md</code> to facts useful across most interactions; being past the budget is no reason to keep a paragraph. Size-based splitting skips this file.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="reorganize-report">Reporting whether anything changed</h3>
+<p>Reorganization rests on model judgment, and a model that finds nothing to do does nothing. <code translate="no">reorganize</code> returns <code translate="no">changed_files</code> beside <code translate="no">topics</code>, the count of files examined, so an empty list is visible.</p>
+
+<h2 id="branch">Departed branches</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 290" role="img" aria-label="A session tree at a session boundary. Three nodes form a shared prefix, deduplicated by written markers. From it the current head branch is always written. A long branch the user left is written once its pending tokens reach the threshold. A one-turn retry is below the threshold and skipped. A rewound segment is filtered out by get_branch.">
+  <path class="ln" d="M28 40H208M208 40H398"/>
+  <path class="ln" d="M208 40V110H398"/>
+  <path class="ln" d="M208 110V180H298"/>
+  <path class="ln-faint" d="M208 180V250H398"/>
+  <circle class="gate" cx="28" cy="40" r="7"/><circle class="gate" cx="118" cy="40" r="7"/><circle class="gate" cx="208" cy="40" r="7"/>
+  <circle class="gate" cx="298" cy="40" r="7"/><circle class="gate" cx="398" cy="40" r="7"/>
+  <circle class="gate" cx="298" cy="110" r="7"/><circle class="gate" cx="398" cy="110" r="7"/>
+  <circle class="gate" cx="298" cy="180" r="7"/>
+  <text class="t-soft mid" x="118" y="74">shared prefix</text>
+  <text class="t-big" x="430" y="38">Current head</text>
+  <text class="t-soft" x="430" y="60">always written</text>
+  <text class="t-big" x="430" y="108">Long branch left</text>
+  <text class="t-soft" x="430" y="130">written at the token threshold</text>
+  <text class="t-big" x="430" y="178">One-turn retry</text>
+  <text class="t-soft" x="430" y="200">below the threshold, skipped</text>
+  <text class="t-big" x="430" y="248">Rewound</text>
+  <text class="t-soft" x="430" y="270">filtered out by get_branch</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Current head</strong><small>always written</small></li>
+  <li class="flow-end"><strong>Other live tips</strong><small>long branch left: written at the token threshold</small><small>one-turn retry: below the threshold, skipped</small><small>rewound: filtered out by <code translate="no">get_branch</code></small></li>
+</ol>
+</figure>
+<p class="note">The idle watcher's forced write calls <code translate="no">list_branches</code>, skips archived branches, then <code translate="no">get_branch(session_id, tip)</code> for each. Written markers cover shared prefixes. Post-turn writes follow the head only.</p>
+
+<details>
+<summary>Why not pi-mono's summary node (<code translate="no">branch-summarization.ts</code>)</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Point</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Destination</th><td>pi-mono has only session JSONL and <code translate="no">AGENTS.md</code>, so a summary is the only place abandoned statements can go. Here facts belong in Topic files; a node on the DAG has no footnotes or block IDs and cannot be retrieved.</td></tr>
+<tr><th scope="row">Another location</th><td>Compaction summaries in <code translate="no">context/summary</code> already attach to the DAG, for the context window. A second kind is one more place to look.</td></tr>
+<tr><th scope="row">No leave event</th><td>Neither head movement nor branch switching is an event. Head writes are spread across <code translate="no">set_head</code>, <code translate="no">append_message</code>, <code translate="no">SessionNodeWriter.append</code>, <code translate="no">update_session</code> and rewind, and <code translate="no">SessionMemoryIndex.set_head</code> discards the old value. Copying pi-mono would add an event and retain the old head for work that serves equally well at session end.</td></tr>
+<tr><th scope="row">Deliberate abandonment</th><td>Needs no inference: rewinding marks a segment <code translate="no">rewound</code>; its nodes stay in the graph and leave the conversation path.</td></tr>
+<tr><th scope="row">Idle rule</th><td><code translate="no">should_incremental_write</code> also fires when anything is pending and the last message is an hour old, which every left branch satisfies. Non-head branches check the token threshold first, so one-turn retries are skipped.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="cursor">Cursor fallback</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>The cursor is a message UUID. If that message is gone, everything counts as unwritten, because returning zero messages would end extraction for the session.</td></tr>
+<tr><th scope="row">Rule here</th><td>Unreadable accounting means nothing was written, never an exception that blocks writing for good. Rewriting a batch is bounded, and transactions merge paragraphs stating the same fact.</td></tr>
+<tr><th scope="row">Node markers</th><td>Written state is a marker on session nodes (<code translate="no">memory_written_scriptorium</code>), so no cursor file can go unreadable. A missing marker causes repeated work.</td></tr>
+<tr><th scope="row"><code translate="no">runtime.json</code></th><td>Missing, unparsable or the wrong shape: <code translate="no">RuntimeStateStore.load</code> returns empty state. The file counts toward the workspace revision, so restored content does not pair with newer state.</td></tr>
+<tr><th scope="row">Upgrades</th><td>A separate, one-time case with the same tradeoff: see <a href="written-marker.html">written markers</a>.</td></tr>
+</tbody>
+</table>
+
+<h2 id="land">Change locations</h2>
+<p class="note">Paths under <code translate="no">openprogram/state/memory/</code>. The rejected practice changes none.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Path</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row" colspan="2">Derived core</th></tr>
+<tr><th scope="row"><code translate="no">runtime/derived_views.py</code></th><td><code translate="no">render_core_block</code>, <code translate="no">promote_legacy_core</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/memory_guide.py</code></th><td>Writes the core between its markers in <code translate="no">MEMORY.md</code></td></tr>
+<tr><th scope="row"><code translate="no">management/block_views.py</code></th><td>Calls the render after the other views</td></tr>
+<tr><th scope="row"><code translate="no">management/transaction.py</code></th><td>Writable paths</td></tr>
+<tr><th scope="row"><code translate="no">prompts/write.py</code>, <code translate="no">prompts/system.py</code>, <code translate="no">prompts/organize.py</code></th><td>Direct agents to <code translate="no">topics/core.md</code></td></tr>
+<tr><th scope="row" colspan="2">All branches at session boundaries</th></tr>
+<tr><th scope="row"><code translate="no">writing.py</code></th><td><code translate="no">_eligible_session_branches</code>, forced write loop</td></tr>
+<tr><th scope="row"><code translate="no">session_watcher.py</code></th><td>Idle entry, <code translate="no">force=True</code></td></tr>
+<tr><th scope="row" colspan="2">Unreadable state</th></tr>
+<tr><th scope="row"><code translate="no">runtime/state.py</code></th><td><code translate="no">load</code></td></tr>
+<tr><th scope="row" colspan="2">Node markers</th></tr>
+<tr><th scope="row"><code translate="no">runtime/online.py</code>, <code translate="no">writing.py</code></th><td>Marker reads and writes at the <code translate="no">_records</code> boundary</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Derived core, all-branch writes at session boundaries, unreadable state as empty state, node markers, <code translate="no">changed_files</code></td></tr>
+<tr><th scope="row">Not yet</th><td>A minimum result score; search that does not rebuild the scoring corpus; a writer notified directly by head changes (post-turn thresholds and the idle watcher trigger writes)</td></tr>
+</tbody>
+</table>

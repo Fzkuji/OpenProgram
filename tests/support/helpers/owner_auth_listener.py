@@ -24,7 +24,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
 
-from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
 
 
 OWNER_PRINCIPAL_ID = "owner/install/0123456789abcdef"

@@ -1,0 +1,59 @@
+<title>Retry decisions for model calls</title>
+<meta name="description" content="When each layer of one model call retries, gives up, or reports a permanent error.">
+<h1>Retry decisions for model calls</h1>
+<p>Errors take shape in two places, and both become a message with <code translate="no">stop_reason="error"</code> and an <code translate="no">error_message</code> that may be empty: an exception caught in <code translate="no">runtime/agent/loop/driver.py</code>, or an <code translate="no">error</code> event from the provider stream.</p>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">AgentSession</code></th><th scope="col"><code translate="no">Runtime.exec</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Code</th><td><code translate="no">runtime/agent/loop/session.py</code>, <code translate="no">retry.py</code></td><td><code translate="no">runtime/agent/runtime/execution.py</code>, <code translate="no">shared.py</code></td></tr>
+<tr><th scope="row">Sees</th><td>The last assistant message</td><td>An exception from <code translate="no">_call</code></td></tr>
+<tr><th scope="row">Budget</th><td>Invocation's <code translate="no">transport_limit</code> (default 4); <code translate="no">max_retries=3</code> without a recovery state</td><td><code translate="no">max_retries=3</code>, <code translate="no">OPENPROGRAM_MAX_RETRIES</code></td></tr>
+<tr><th scope="row">Backoff</th><td><code translate="no">2000·2^(attempt-1)</code> ms</td><td><code translate="no">1.5·2^attempt</code> s, ±25%; <code translate="no">OPENPROGRAM_RETRY_BACKOFF_BASE</code></td></tr>
+<tr><th scope="row">With Retry-After</th><td>–</td><td>Lower bound, positive jitter only</td></tr>
+<tr><th scope="row">Before a retry</th><td>Pops the failed assistant message</td><td>–</td></tr>
+</tbody>
+</table>
+
+<h2 id="session-decision">AgentSession: <code translate="no">is_retryable_error</code></h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Checked in order</th><th scope="col">Retry</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">stop_reason</code> is not <code translate="no">error</code></th><td>No</td></tr>
+<tr><th scope="row">Context overflow</th><td>No; compaction handles it</td></tr>
+<tr><th scope="row"><code translate="no">error_transport_exhausted</code></th><td>No</td></tr>
+<tr><th scope="row"><code translate="no">error_retryable</code> set by the provider</th><td>That verdict</td></tr>
+<tr><th scope="row">Empty <code translate="no">error_message</code></th><td>Yes</td></tr>
+<tr><th scope="row">Anything else</th><td>Yes if it matches <code translate="no">_RETRY_PATTERN</code></td></tr>
+</tbody>
+</table>
+<p class="note">Empty counts as retryable because a dropped stream breaks before any error body arrives. <code translate="no">_RETRY_PATTERN</code>: overloaded, rate limit, too many requests, 429, 500, 502, 503, 504, service unavailable, server error, internal error, connection error, connection refused, other side closed, fetch failed, upstream connect, reset before headers, terminated, retry delay.</p>
+
+<h2 id="exec-decision">Runtime.exec</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Exception</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ExecInterrupt</code>, <code translate="no">TypeError</code>, <code translate="no">NotImplementedError</code>, <code translate="no">ImportError</code>, <code translate="no">StructuredOutputError</code></th><td>Raised directly</td></tr>
+<tr><th scope="row"><code translate="no">retryable=False</code>, or a marker in <code translate="no">_PERMANENT_ERROR_MARKERS</code></th><td>Gives up, "failed permanently"</td></tr>
+<tr><th scope="row"><code translate="no">transport_exhausted</code>, deadline passed, attempts spent, Retry-After past the cap</th><td>Gives up</td></tr>
+<tr><th scope="row">Sleeping would cross the deadline</th><td>Gives up as <code translate="no">TIMEOUT</code></td></tr>
+<tr><th scope="row">Otherwise</th><td>Sleeps and retries</td></tr>
+</tbody>
+</table>
+<p class="note">Markers: not a valid image, invalid image, image data is not, login expired, login failed, re-auth, unauthorized, invalid api key, invalid_api_key.</p>
+
+<h2 id="layers-together">The layers together</h2>
+<p>Transport retries are counted once: <code translate="no">AgentSession</code> and the provider stream draw on one <code translate="no">RecoveryState</code>. When it runs out the message is flagged <code translate="no">error_transport_exhausted</code> and exec does not restart the invocation with a fresh tool context.</p>
+
+<h2 id="retry-cannot-solve">What retry cannot solve</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Failure</th><th scope="col">Goes to</th></tr></thead>
+<tbody>
+<tr><th scope="row">Gateway auth invalid (<code translate="no">openai-codex</code> login expired or failed)</th><td>Permanent; sign in before a batch run</td></tr>
+<tr><th scope="row">Context overflow</th><td>Compaction</td></tr>
+<tr><th scope="row"><code translate="no">TypeError</code>, <code translate="no">NotImplementedError</code></th><td>The code</td></tr>
+</tbody>
+</table>
+
+<h2 id="diagnostics">Messages</h2>
+<p>A caught exception becomes <code translate="no">type_name: text</code>, or the type alone when the text is empty, with the traceback on stderr. The final error lists each attempt's <code translate="no">type_name: text</code> and whether it failed permanently or after N attempts.</p>

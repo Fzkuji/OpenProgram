@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from openprogram.providers.github_copilot import token_cache
+from openprogram.models.providers.adapters.github_copilot import token_cache
 
 
 @pytest.fixture(autouse=True)

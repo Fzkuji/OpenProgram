@@ -55,8 +55,9 @@ def _make_pack(root: Path) -> None:
 
 @pytest.fixture
 def office_browser(tmp_path):
-    from openprogram.webui.office_assets import OfficeAssetPack
-    from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.programs.applications.office_editor.assets import OfficeAssetPack
+    from openprogram.programs.applications.office_editor.service import OfficeEditorService
+    from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
 
     import uvicorn
     from playwright.sync_api import sync_playwright
@@ -83,7 +84,7 @@ def office_browser(tmp_path):
         port=port,
         allowed_origins=(),
     )
-    server = uvicorn.Server(uvicorn.Config(OwnerAuthMiddleware(app, auth_state=state, office_assets=pack), log_level="error"))
+    server = uvicorn.Server(uvicorn.Config(OwnerAuthMiddleware(app, auth_state=state, office=lambda: OfficeEditorService(pack)), log_level="error"))
     thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
     thread.start()
     deadline = time.monotonic() + 10

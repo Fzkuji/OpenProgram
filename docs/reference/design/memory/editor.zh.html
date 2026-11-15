@@ -1,0 +1,58 @@
+<title>阅读、编辑与历史</title>
+<meta name="description" content="Memory 的主题和 Core 如何打开、无需按钮地保存、保留 Git 历史并恢复版本。">
+<h1>阅读、编辑与历史</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开</th><td>主题或 Core 源记录显示渲染后的 Markdown，带脚注和链接。控件：预览、编辑、历史。</td></tr>
+<tr><th scope="row">编辑</th><td>源文本。没有保存按钮。</td></tr>
+<tr><th scope="row">保存</th><td>每次编辑立即进本地草稿存储，并经按文件串行的写入器提交。较旧的响应不会把更新的输入标成已保存。</td></tr>
+<tr><th scope="row">撤销、重做</th><td>按单次编辑，跨自动保存有效</td></tr>
+<tr><th scope="row">历史</th><td>最新在前，每次 50 条，带本地日期时间和提交说明。更早的按需加载。</td></tr>
+<tr><th scope="row">选中一个版本</th><td>相对父提交增删的行</td></tr>
+<tr><th scope="row">恢复此版本</th><td>先提交当前状态，再用所选文档新建一个提交。历史保留。</td></tr>
+</tbody>
+</table>
+
+<h2 id="checkpoints">Git 检查点</h2>
+<p>手动编辑按五分钟合成检查点。第一次编辑先提交 <code translate="no">memory: before manual editing</code> 并记下持久的截止时间，界面之外写入的编辑前状态也不会丢。服务端任务每 15 秒检查截止时间并提交 <code translate="no">memory: manual editing checkpoint</code>，页面关了也照常。重启后恢复未到期的截止时间。</p>
+
+<h2 id="data-and-failure-handling">数据与失败处理</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">写入路径</th><td>分阶段写入：校验引用、重建派生视图、提交 Git 历史，Markdown 渲染不变。源校验不变。</td></tr>
+<tr><th scope="row">过期编辑</th><td>在写锁内比较提交的 <code translate="no">base_content</code>；不一致则拒绝，保留草稿并显示错误。</td></tr>
+<tr><th scope="row">规范化</th><td>响应返回规范化后实际保存的文本，因为规范化可能改动源文本。</td></tr>
+<tr><th scope="row">只有标题</th><td>按保存的样子保留：人的保存从不清理 Topic，人写的无引用段落和其他段落一样获得 block ID。</td></tr>
+<tr><th scope="row">显示的状态</th><td>行内只显示错误和警告（Git 提交失败）；没有“保存中”或“已保存”提示。预览在人不带引用添加的每段后放一个 Nova 徽标“你添加的”；OpenProgram 之外写的文件在标题旁放一个徽标“OpenProgram 之外写的 · 记忆只读不改”。</td></tr>
+<tr><th scope="row">切换、刷新</th><td>草稿保留在本地。</td></tr>
+<tr><th scope="row">访问</th><td>需所有者授权的端点读取有界的 Git 历史，仅限主题 Markdown。路径和版本输入不能逃出 Memory；版本必须是完整提交 id。</td></tr>
+</tbody>
+</table>
+
+<h2 id="source-links-and-sidebar">来源链接与侧栏</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">归档的会话</th><td>隐藏，不按时间或容量删除</td></tr>
+<tr><th scope="row">删除的会话</th><td>其链接不可用，标为“原会话已删除”；不额外保留来源副本。记忆本身还在。</td></tr>
+<tr><th scope="row">来源内容</th><td>暴露前先检查现有的 Memory 来源存储。</td></tr>
+<tr><th scope="row">Memory 导航、刷新</th><td>复用主侧栏的行和图标按钮样式。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>参考</summary>
+<table class="stack">
+<thead><tr><th scope="col">参考</th><th scope="col">采用</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://hackmd.io/@hackmd-blog/hackmd-versions-api-2026">HackMD 版本</a></th><td>版本列表和可见差异</td><td>不做协同编辑和命名版本</td></tr>
+<tr><th scope="row"><a href="https://obsidian.md/help/sync/version-history">Obsidian 历史</a></th><td>自动持久化和可访问的历史</td><td>本地 Git；没有同步服务</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。路由测试覆盖延迟 Git 提交、恢复和已删除来源的访问；控制器测试覆盖串行写入和撤销重做；归档测试覆盖重启后的保留。</p>

@@ -47,7 +47,7 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
     assert "ruff check" in quality
     assert "tests/contracts" in quality
     assert "systemd-analyze verify" in quality
-    assert "from openprogram.worker.services.systemd import _build_unit" in quality
+    assert "from openprogram.operations.worker.services.systemd import _build_unit" in quality
     assert "scripts.docs_site.build" in quality
     assert "tests/unit" in _run_commands(jobs["unit"])
     assert "tests/component" in _run_commands(jobs["component"])

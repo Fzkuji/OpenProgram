@@ -1,0 +1,58 @@
+<title>会话导入</title>
+<meta name="description" content="把 Claude Code 和 Codex 的对话导入 OpenProgram；再次导入只添加新内容。">
+<h1>会话导入</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 120" role="img" aria-label="读取 ~/.claude/projects 里的 Claude Code 对话和 ~/.codex/sessions 里的 Codex 对话，去掉凭据，每个成为 OpenProgram 中的一个对话，放进它运行时所在文件夹的项目。">
+  <defs><marker id="si-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">Claude Code</text>
+  <text class="t-soft" x="0" y="56">~/.claude/projects</text>
+  <text class="t-big" x="0" y="92">Codex</text>
+  <text class="t-soft" x="0" y="114">~/.codex/sessions</text>
+  <line class="ln" x1="170" y1="62" x2="250" y2="62" marker-end="url(#si-a)"/>
+  <text class="t-big" x="262" y="56">去掉凭据</text>
+  <text class="t-soft" x="262" y="80">丢弃宿主注入的上下文</text>
+  <line class="ln" x1="440" y1="62" x2="500" y2="62" marker-end="url(#si-a)"/>
+  <text class="t-big" x="512" y="56">对话</text>
+  <text class="t-soft" x="512" y="80">放进所在文件夹的项目</text>
+</svg>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web 界面</th><td><strong>设置</strong> › <strong>导入对话</strong>：每个 agent 一个列表，每行有<strong>导入</strong>或<strong>更新</strong></td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram sessions import</code><span class="arg"><code translate="no">--from all|claude-code|codex</code>，默认 <code translate="no">all</code></span><span class="arg"><code translate="no">--since DAYS</code></span><span class="arg"><code translate="no">--dry-run</code>：按导入时的判断显示会新建或追加的对话，不导入</span><span class="arg"><code translate="no">--list</code>：找到的所有对话及其状态</span><span class="arg"><code translate="no">PATH ...</code>：只导入这些对话文件</span></td></tr>
+<tr><th scope="row">HTTP</th><td><code translate="no">GET /api/sessions/import/candidates</code>、<code translate="no">POST /api/sessions/import</code></td></tr>
+</tbody>
+</table>
+<p class="note">设置了 <code translate="no">$CLAUDE_CONFIG_DIR</code> 时从那里读 Claude Code，设置了 <code translate="no">$CODEX_HOME</code> 时从那里读 Codex。</p>
+
+<h2>导入哪些内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">标题</th><td>该 agent 显示的名字：改过的标题，其次是它生成的标题，再次是第一条消息</td></tr>
+<tr><th scope="row">消息</th><td>你输入的内容，以及每次回复的正文、思考、工具调用和结果，保留原来的时间</td></tr>
+<tr><th scope="row">模型</th><td>记在每条回复上</td></tr>
+<tr><th scope="row">文件夹</th><td>对话放进它运行时所在文件夹的项目，没有就新建；主目录或已不存在的文件夹放进默认项目</td></tr>
+<tr><th scope="row">Claude Code 中回退过的轮次</th><td>只取你最后看到的那条分支</td></tr>
+<tr><th scope="row">不导入</th><td>系统提醒、环境和 <code translate="no">AGENTS.md</code> 上下文、子 agent 的对话、没有回复的对话</td></tr>
+</tbody>
+</table>
+
+<h2>凭据</h2>
+<p>从不读取登录文件（<code translate="no">~/.claude/.credentials.json</code>、<code translate="no">~/.codex/auth.json</code>）。对话里的服务商密钥，GitHub、Slack、AWS、Google 令牌，JWT，私钥，<code translate="no">Bearer …</code> 和 <code translate="no">password=…</code> 的值，以及名为 <code translate="no">api_key</code>、<code translate="no">token</code> 这类的工具参数，都替换成 <code translate="no">[secret removed]</code>，标题和列表缓存里也一样。原对话文件不改动。</p>
+
+<h2>再次导入</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">上次导入之后</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">没有新内容</th><td>跳过，不写入</td></tr>
+<tr><th scope="row">有新消息</th><td>追加到同一个对话</td></tr>
+<tr><th scope="row">在原 agent 里回退过，或在这里继续过</th><td>新建一个对话；已有内容不被改写</td></tr>
+<tr><th scope="row">导入的对话在这里被删除</th><td>重新作为新对话导入</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="session-export.zh.html">会话导出</a> · <a href="cli.zh.html">CLI 命令</a></p>

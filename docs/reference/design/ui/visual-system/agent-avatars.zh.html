@@ -1,0 +1,145 @@
+<title>Agent 头像</title>
+<meta name="description" content="每个 Agent 如何得到一张图：角色、存储、渲染、尺寸、选择器和许可。">
+<h1>Agent 头像</h1>
+<p>每个 Agent 的名字旁都有一张图。没设置过的显示由 id 派生的角色，所以任何界面都不会退回通用图标，已存储的 Agent 也无需迁移。Agent 使用与个人头像相同的 <code translate="no">Avatar</code> 和 <code translate="no">AvatarConfig</code>（<code translate="no">apps/web/components/avatar/</code>）；角色只是 <code translate="no">dicebear</code>、<code translate="no">upload</code>、<code translate="no">letter</code> 之外的又一种 <code translate="no">kind</code>。</p>
+
+<h2 id="the-character">角色</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">组成</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row">形状</th><td>22 种：<code translate="no">chat</code>、<code translate="no">controller</code>、<code translate="no">mug</code>、<code translate="no">lightbulb</code>、<code translate="no">sprout</code>、<code translate="no">watering-can</code>、<code translate="no">barbell</code>、<code translate="no">book</code>、<code translate="no">brain</code>、<code translate="no">bull</code>、<code translate="no">bunny</code>、<code translate="no">camera</code>、<code translate="no">cat</code>、<code translate="no">cloud</code>、<code translate="no">ghost</code>、<code translate="no">magnifier</code>、<code translate="no">paint-brush</code>、<code translate="no">palette</code>、<code translate="no">rocket</code>、<code translate="no">shield</code>、<code translate="no">star</code>、<code translate="no">witch-hat</code></td></tr>
+<tr><th scope="row">颜色</th><td>8 种具名颜色：<code translate="no">blue</code>、<code translate="no">orange</code>、<code translate="no">green</code>、<code translate="no">violet</code>、<code translate="no">pink</code>、<code translate="no">teal</code>、<code translate="no">yellow</code>、<code translate="no">red</code></td></tr>
+<tr><th scope="row">眼睛</th><td>白色</td></tr>
+<tr><th scope="row">状态</th><td><code translate="no">idle</code>、<code translate="no">thinking</code>、<code translate="no">happy</code></td></tr>
+</tbody>
+</table>
+<p class="note">目录：<code translate="no">components/avatar/bot/catalog.ts</code>。颜色按名称保存，用固定十六进制值绘制；角色图是唯一不跟主题的地方。卡片、圆环和文字仍用主题 token。</p>
+
+<h2 id="the-character-an-id-gets">id 对应的角色</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">函数</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">botLookFor(id)</code>，<code translate="no">bot/identity.ts</code></th><td>32 位 FNV-1a：哈希决定形状，高 16 位决定颜色，两者不联动。内置 Agent 用一张表（PR Verifier 盾牌、Research Desk 大脑、Knowledge Keeper 幼苗），形状不重复。</td></tr>
+<tr><th scope="row"><code translate="no">agentAvatarConfig(agent)</code>，<code translate="no">lib/agents/agent-avatar.ts</code></th><td>已保存的头像；没有或上传的图缺失时用 id 的角色</td></tr>
+</tbody>
+</table>
+
+<h2 id="storage">存储</h2>
+<p><code translate="no">&lt;state&gt;/agents/&lt;id&gt;/agent.json</code> 里的 <code translate="no">AgentSpec.avatar</code>，随每次 Agent 列表返回。</p>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">使用者</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">kind</code></th><td>全部</td><td><code translate="no">bot</code>、<code translate="no">dicebear</code>、<code translate="no">upload</code> 或 <code translate="no">letter</code>；头像非空时必填</td></tr>
+<tr><th scope="row"><code translate="no">shape</code>、<code translate="no">color</code></th><td><code translate="no">bot</code></td><td>短标识；有哪些由前端目录决定，未知值按 id 的角色绘制</td></tr>
+<tr><th scope="row"><code translate="no">style</code>、<code translate="no">seed</code></th><td><code translate="no">dicebear</code></td><td>标识；最多 120 个字符</td></tr>
+<tr><th scope="row"><code translate="no">file</code></th><td><code translate="no">upload</code></td><td><code translate="no">data:image/</code> 开头的 URL，最多 350,000 个字符</td></tr>
+<tr><th scope="row"><code translate="no">letter</code>、<code translate="no">bg</code></th><td><code translate="no">letter</code></td><td>最多 2 个和 40 个字符</td></tr>
+</tbody>
+</table>
+<ul>
+<li><code translate="no">{}</code> 表示没有自己的头像，是默认值。更新时整体替换。</li>
+<li>API 严格校验，不合格返回 400（<code translate="no">openprogram/runtime/agent_registry/manager.py</code> 的 <code translate="no">validate_avatar</code>）。加载时宽松：不再合格的已存头像读作 <code translate="no">{}</code>。</li>
+<li>Agent 选择器限制上传 256 KB，因为每次列表都带这张图。</li>
+<li>试用对话的配置快照不含头像。</li>
+</ul>
+
+<h2 id="rendering">渲染</h2>
+<table class="stack">
+<thead><tr><th scope="col">模式</th><th scope="col">绘制内容</th><th scope="col">何时</th></tr></thead>
+<tbody>
+<tr><th scope="row">静止</th><td>一张静态 SVG</td><td><code translate="no">Avatar</code> 的默认</td></tr>
+<tr><th scope="row">活动</th><td>一个会眨眼、晃动、东张西望的 canvas</td><td><code translate="no">live</code>；<code translate="no">AgentAvatar</code> 的默认</td></tr>
+</tbody>
+</table>
+<p class="note">渲染器：<code translate="no">open-bot-avatar</code>，由 <code translate="no">bot/runtime.ts</code> 首次使用时加载。<code translate="no">BotAvatar</code> 挂载到指定大小的宿主元素。活动角色共用一个动画循环，离开屏幕或页面隐藏时暂停，减少动态时显示静态图。</p>
+<p class="note">轮廓本身就是图：不裁圆，没有底板。上传和生成的 Agent 图保留圆角方框。<code translate="no">app/styles/design/icons.css</code> 让角色在把 svg 当图标定尺寸的控件里保持身体框大小。</p>
+
+<details>
+<summary>预热：不在一帧里准备形状</summary>
+<p>渲染器首次绘制时从轮廓推算形状体积，每个形状 25 到 90 ms，在页面生命周期内保留。十七个 Agent 同时出现要在一帧里花半秒以上，静态图也需要同样的准备。</p>
+<p><code translate="no">bot/warm.ts</code> 每个任务准备一个形状：等待中的放到下一个任务，其余在渲染器加载后的空闲时间。准备好之前以及服务端标记里，角色是渲染器将要使用的框里的扁平图形；渲染器在同一次提交里替换它。</p>
+</details>
+
+<details>
+<summary>四处张望</summary>
+<p>内置的空闲游移在图标尺寸下只移动眼睛约一像素，同形状步调一致。<code translate="no">bot/wander.ts</code> 让每个角色有自己的 <code translate="no">lookAt</code> 目标：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">数值</th></tr></thead>
+<tbody>
+<tr><th scope="row">停留</th><td>0.9 到 2.6 秒</td></tr>
+<tr><th scope="row">范围</th><td>x 最多 0.95，y 最多 0.6；至少偏向一侧约三分之一</td></tr>
+<tr><th scope="row">看正前方</th><td>四次里一次</td></tr>
+<tr><th scope="row">成本</th><td>每个角色一个定时器，每次张望触发一次；随机起始和停顿</td></tr>
+<tr><th scope="row">情绪</th><td>思考或开心时保持姿势</td></tr>
+</tbody>
+</table>
+<p><code translate="no">followPointer</code> 保持关闭：跟随光标显得在盯着用户，还会每帧调用 <code translate="no">getBoundingClientRect</code>。</p>
+</details>
+
+<h3 id="optical-size">视觉大小</h3>
+<p>各图形在 100 单位的框里留白不同：云 82 x 52，幽灵 54 x 76。<code translate="no">BotAvatar</code> 有指定大小的槽位和其中的身体框，渲染器按实际显示大小绘入身体框。</p>
+<table class="stack">
+<thead><tr><th scope="col">适配</th><th scope="col">用于</th><th scope="col">规则</th><th scope="col">16px 的云</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">botFit</code></th><td>其他所有地方</td><td>几何平均边长为槽位 0.8，任一边不超过 0.94，居中（来自 <code translate="no">BOT_EXTENTS</code>，有测试校验）</td><td>约 15 x 9.5px</td></tr>
+<tr><th scope="row"><code translate="no">botMarkFit</code>，<code translate="no">fit="mark"</code></th><td>输入框 Agent 芯片、Agent 菜单行（<a href="icons.zh.html#the-composers-fill-rule">填充规则</a>）</td><td>长边等于 16 x 16px 槽位，居中</td><td>16 x 10.1px</td></tr>
+</tbody>
+</table>
+<p class="note">上传、字母和 DiceBear 头像本来就填满槽位，<code translate="no">fit="mark"</code> 只给它们 18px 的悬停。</p>
+
+<h3 id="hover">悬停</h3>
+<p>槽位随控件弹起，与<a href="icons.html">图标</a>完全相同：<code translate="no">components/ui/hover-pop.ts</code> 保存可点击宿主选择器、1.12 倍比例和弹簧，<code translate="no">SolarIcon</code> 和 <code translate="no">BotAvatar</code> 共用。控件之外按自身悬停。输入框 Agent 芯片和 Agent 菜单行里长到正好 18 x 18px（<code translate="no">HOVER_POP_FILL</code>）。减少动态时关闭。</p>
+
+<h2 id="where-it-shows">显示位置</h2>
+<table class="stack">
+<thead><tr><th scope="col">位置</th><th scope="col">尺寸</th><th scope="col">模式</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agents 页：卡片、快速设置标题</th><td>32</td><td>活动</td></tr>
+<tr><th scope="row">Agents 页：编辑区标题</th><td>40</td><td>活动</td></tr>
+<tr><th scope="row">Agents 页：左侧列表</th><td>16</td><td>活动</td></tr>
+<tr><th scope="row">头像选择器的形状格</th><td>34</td><td>静止</td></tr>
+<tr><th scope="row">输入框的 Agent 按钮</th><td>16</td><td>活动</td></tr>
+<tr><th scope="row">Agent 菜单的每一行</th><td>16</td><td>活动</td></tr>
+<tr><th scope="row">非默认 Agent 回复上方的名字</th><td>18</td><td>活动</td></tr>
+<tr><th scope="row">运行记录面板：常驻行</th><td>22</td><td>活动，Agent 工作时为 <code translate="no">thinking</code></td></tr>
+<tr><th scope="row">运行记录面板：常驻详情标题</th><td>16</td><td>活动</td></tr>
+<tr><th scope="row">设置：频道绑定</th><td>16</td><td>活动</td></tr>
+<tr><th scope="row">图：agent 回复和子 agent 起点节点、图例</th><td>16</td><td>分支色的平面图案</td></tr>
+<tr><th scope="row">运行记录面板：agent 和子 agent 行</th><td>22（详情标题里 16）</td><td>分支色的平面图案</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">AgentAvatar</code> 默认活动；选择器的形状卡是样例，不代表 Agent。只有 id 的界面用 <code translate="no">AgentAvatarById</code>，读共享的 <code translate="no">useAgents</code> 列表，加载前显示 id 的角色；Agents 页写入同一缓存。</p>
+<p class="note">Agents 的页面图标（导航入口、中间标签）和子 Agent 工具调用的 <code translate="no">ghost</code> 表示一类事物，仍是图标。</p>
+
+<details>
+<summary>彩色芯片里的扁平图形</summary>
+<p><code translate="no">bot/glyph.ts</code>，React 里是 <code translate="no">BotGlyph</code>：身体路径用当前颜色，眼睛镂空。轮廓顺时针，眼睛下身体的环绕数为 1，所以每只眼是逆时针胶囊，nonzero 填充把它挖掉；有测试检查每个形状。视图框按 <code translate="no">botFit</code> 贴合身体。</p>
+<p>它不动，像 Solar 图标一样克隆进图的 SVG，颜色取分支色（<a href="../../runtime/dag/rendering.html">图渲染</a>）。主 Agent 的图形是对话 Agent 的角色（<code translate="no">useConversationAgentShape</code>；用上传或生成图的 Agent 用其 id 的角色）；子 Agent 的由名字决定。</p>
+</details>
+
+<h2 id="the-picker">选择器</h2>
+<p>Agent 编辑器的通用区使用个人资料的 <code translate="no">AvatarPicker</code>，来源为角色、生成和上传。角色显示形状卡（预览当前颜色）和色板。它编辑草稿，随其他配置一起保存或丢弃。</p>
+
+<details>
+<summary>来源和许可</summary>
+<table class="stack">
+<thead><tr><th scope="col">来源</th><th scope="col">提供的内容</th><th scope="col">许可</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">open-bot-avatar</code>（npm，锁定版本）</th><td>渲染器和 7 个形状</td><td>MIT，Copyright Dominik Scholz</td></tr>
+<tr><th scope="row">同一项目仓库里的 gallery</th><td>另外 15 个形状，原样复制到 <code translate="no">components/avatar/bot/gallery.ts</code>，带许可声明</td><td>MIT，Copyright Dominik Scholz</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">方案</th><th scope="col">不采用的原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">从 Grok Bot 客户端取出的渲染器，以及对其角色的复刻</th><td>无论仓库标注什么许可，代码或角色设计属于 xAI</td></tr>
+<tr><th scope="row"><code translate="no">@aora-bot/react</code></th><td>许可不是开源许可（有署名和团队规模条款），并且要求 React 19</td></tr>
+<tr><th scope="row"><code translate="no">agent-robot-avatar</code></th><td>只有一个机器人形象，角色身份由作者保留</td></tr>
+<tr><th scope="row">DiceBear Bottts、Facehash、动态表情集</th><td>和选定的样子不同：生成的机器人、字母脸，或者看起来不成一家的表情</td></tr>
+</tbody>
+</table>
+<p class="note">形状是该项目自己的设计。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。<code translate="no">happy</code> 情绪可供调用，目前没有界面使用。</p>

@@ -1,0 +1,49 @@
+<title>Outbound hold</title>
+<meta name="description" content="Which MCP tool calls an Agent holds as drafts for the user to approve, and where that hold sits in the permission decision.">
+<h1>Outbound hold</h1>
+
+<p>An email, chat message or comment reaches people who asked the Agent nothing. With the hold on, each such call waits as a draft the user approves, in every permission mode.</p>
+
+<h2 id="which-calls-are-held">Which calls are held</h2>
+<p><code translate="no">mcp/adapter.py</code> (<code translate="no">sends_on_behalf</code>) decides once per MCP tool, at registration, and stores <code translate="no">_sends_on_behalf</code> on the AgentTool. The raw name is split on punctuation and camelCase.</p>
+<table class="stack">
+<thead><tr><th scope="col">Check, in order</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Server declares <code translate="no">readOnlyHint: true</code></th><td>Not sending</td></tr>
+<tr><th scope="row">First word is <code translate="no">get</code> <code translate="no">list</code> <code translate="no">read</code> <code translate="no">search</code> <code translate="no">fetch</code> <code translate="no">find</code> <code translate="no">query</code> <code translate="no">view</code> <code translate="no">describe</code> <code translate="no">count</code> <code translate="no">check</code> <code translate="no">lookup</code></th><td>Not sending</td></tr>
+<tr><th scope="row">Any word is <code translate="no">send</code> <code translate="no">reply</code> <code translate="no">respond</code> <code translate="no">post</code> <code translate="no">publish</code> <code translate="no">forward</code> <code translate="no">invite</code> <code translate="no">share</code> <code translate="no">comment</code> <code translate="no">tweet</code> <code translate="no">broadcast</code> <code translate="no">notify</code> <code translate="no">dm</code></th><td>Sending</td></tr>
+<tr><th scope="row">First word is <code translate="no">create</code> <code translate="no">add</code> <code translate="no">new</code> <code translate="no">write</code> <code translate="no">compose</code>, and a later word is message, email, mail, comment, reply, post, tweet, invite, invitation or dm (plurals of message, email, comment, post included)</th><td>Sending</td></tr>
+<tr><th scope="row">Anything else</th><td>Not sending</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Held</dt><dd><code translate="no">send_email</code>, <code translate="no">chat.postMessage</code>, <code translate="no">create_comment</code></dd>
+<dt>Not held</dt><dd><code translate="no">list_messages</code>, <code translate="no">get_posts</code>, <code translate="no">create_draft</code></dd>
+<dt>Not used</dt><dd><code translate="no">openWorldHint</code>: it defaults to true and most servers leave it unset, so it does not separate a send from a read</dd>
+<dt>Built-in tools</dt><dd>Never held. <code translate="no">chat_send</code> speaks in the conversation's own chat; <code translate="no">send_message</code> talks to other OpenProgram sessions.</dd>
+</dl>
+
+<h2 id="where-the-hold-applies">Where the hold applies</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Order</th><td>In <code translate="no">permission_decision</code>, after deny rules, Plan's refusal and ask rules; before allow rules and the mode. See <a href="permission-decision.html">Permission decision and refusals</a>.</td></tr>
+<tr><th scope="row">Outcome</th><td><code translate="no">ask</code> with <code translate="no">RULE_OUTBOUND_HOLD</code>, whatever the mode and even with an allow rule. A turn that cannot approve gets <code translate="no">NO_ONE_TO_APPROVE</code>.</td></tr>
+<tr><th scope="row">Which Agent</th><td>The turn's <code translate="no">req.agent_id</code>, <code translate="no">main</code> when absent. An unknown Agent does not hold. A turn with a <code translate="no">profile_snapshot</code>, such as a trial of an unsaved draft, also holds when the snapshot has the hold on; a snapshot never lifts a hold the saved Agent has.</td></tr>
+<tr><th scope="row">Approval</th><td><code translate="no">one_shot_approval</code> covers every sending tool, held or not: never "always", never an allow rule. Each message is approved alone.</td></tr>
+<tr><th scope="row">The draft</th><td>The approval card's tool name and full arguments; <code translate="no">approval._approval_detail</code> does not truncate one-shot calls.</td></tr>
+<tr><th scope="row">Deny with a note</th><td>The note returns to the model as the tool result. Its next call is a new draft that asks again.</td></tr>
+</tbody>
+</table>
+
+<h2 id="configuration">Configuration</h2>
+<p><code translate="no">hold_outbound</code>, a top-level boolean in <code translate="no">agent.json</code>, set by the last checkbox on the Agent's Always-on tab and accepted by <code translate="no">PATCH /api/agents/{id}</code>. Only an explicit <code translate="no">true</code> turns it on; <code translate="no">AgentSpec.hold_outbound</code> defaults to <code translate="no">false</code>. Off, the call follows the conversation's mode and rules like any other tool. A one-time worker migration rewrites stored <code translate="no">true</code> values, which came from an earlier default, to <code translate="no">false</code>.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Parts</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>MCP tool classification, the hold in every mode, one-shot approvals, the per-Agent setting through the Always-on tab, <code translate="no">agent.json</code> and the HTTP API</td></tr>
+<tr><th scope="row">Not implemented</th><td>Holding actions done through computer use or the browser: a click on a page's Send button is not recognizable as a send from the call.</td></tr>
+</tbody>
+</table>

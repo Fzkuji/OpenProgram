@@ -1,38 +1,43 @@
 """Real Agent update pause and fresh planning after a tool contract change."""
 
-from tests.component.agent.execution.test_agent_continuation_real import real_agent_chat, _chat, _wait
+from tests.component.agent.execution.test_agent_continuation_real import _chat, _wait
+from tests.component.agent.execution import test_agent_continuation_real as _test_agent_continuation_real
 
 
 import pytest
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+real_agent_chat = _test_agent_continuation_real.real_agent_chat
 
 
 @pytest.mark.parametrize("elapsed,enabled", [(60, True), (7201, True), (60, False)])
 def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch, elapsed, enabled):
     from tests.component.providers.scripted_provider import ScriptedText
-    from openprogram.self_update import SelfUpdateStore
-    from openprogram.self_update import UpdatePhase
-    from openprogram.self_update.delivery import restart
-    from openprogram.self_update.control.maintenance import enter_maintenance
-    from openprogram.self_update.control.maintenance import leave_maintenance
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.operations.self_update import SelfUpdateStore
+    from openprogram.operations.self_update import UpdatePhase
+    from openprogram.operations.self_update.delivery import restart
+    from openprogram.operations.self_update.control.maintenance import enter_maintenance
+    from openprogram.operations.self_update.control.maintenance import leave_maintenance
+    from openprogram.runtime.jobs.runner import JobRunner
     from tests.unit.self_update.test_store import _request
 
-    monkeypatch.setattr("openprogram.worker.lock.is_held_by", lambda _pid: True)
+    monkeypatch.setattr("openprogram.operations.worker.lock.is_held_by", lambda _pid: True)
     h = real_agent_chat
     # This scripted provider has deterministic usage and no external billing.
     # Job dispatch requires an audited identity even in an in-process test.
-    from openprogram.providers import api_registry, budget
+    from openprogram.models.providers.catalog import api_registry
+    from openprogram.models.providers.streaming import budget
 
     monkeypatch.setitem(api_registry._audited_accounting, id(h.provider), {h.model.api})
     monkeypatch.setattr(
         budget, "_BYTE_BOUNDED_APIS", budget._BYTE_BOUNDED_APIS | {h.model.api}
     )
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
-    monkeypatch.setattr("openprogram.execution.store.default_store", lambda: h.store)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.runtime.execution.store.default_store", lambda: h.store)
     monkeypatch.setattr(
-        "openprogram.execution.control.default_control_service", lambda: h.control
+        "openprogram.runtime.execution.control.default_control_service", lambda: h.control
     )
-    monkeypatch.setattr("openprogram.store.default_store", lambda: h.sessions)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: h.sessions)
     h.provider.add_response(ScriptedText("old answer"))
     h.provider.add_response(ScriptedText("replanned answer"))
     h.provider.block_calls.add(0)
@@ -40,10 +45,10 @@ def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch, elapsed, e
     _wait(h.provider.entered.is_set)
     updates = SelfUpdateStore()
     updates.create(_request())
-    updates.transition("su_test", UpdatePhase.STAGING)
+    updates.transition("su_test", UpdatePhase.BUILDING)
     updates.transition("su_test", UpdatePhase.READY)
     runner = JobRunner(max_workers=1)
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._runner', runner)
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._runner', runner)
     try:
         assert runner._execution_store is h.store
         enter_maintenance("su_test")
@@ -52,7 +57,8 @@ def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch, elapsed, e
         _wait(lambda: h.store.get_execution(ex.execution_id).status.value == "paused")
         h.tools.implementation_variant = "changed"
         updates.transition("su_test", UpdatePhase.ABORTED)
-        from openprogram.execution import restart as policy
+        from openprogram.runtime.execution import restart as policy
+        monkeypatch.setattr(policy, "window_seconds", lambda: 7200)
         stopped = updates.load("su_test").state.updated_at
         monkeypatch.setattr(policy, "time", lambda: stopped + elapsed)
         if not enabled:
@@ -83,9 +89,9 @@ def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch, elapsed, e
         assert h.provider.call_count == 2
         # A later update in the same conversation must still wake its origin.
         from dataclasses import replace
-        from openprogram.self_update.control.continuation import config_evidence
-        from openprogram.self_update.control.continuation import reconcile as followup
-        from openprogram.agent.authority import owner_authority, owner_principal_id
+        from openprogram.operations.self_update.control.continuation import config_evidence
+        from openprogram.operations.self_update.control.continuation import reconcile as followup
+        from openprogram.runtime.permissions.authority import owner_authority, owner_principal_id
 
         authority = owner_authority(owner_principal_id())
         authority.update(speaker_kind="agent", interaction="background")

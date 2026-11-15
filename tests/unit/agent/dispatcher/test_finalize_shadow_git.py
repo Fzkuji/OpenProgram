@@ -12,30 +12,30 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent.dispatcher.finalize import (
+from openprogram.runtime.conversation.turn_runtime.finalize import (
     commit_turn_to_shadow_git,
     persist_turn_file_summary,
 )
-from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
 
 @pytest.fixture
 def store(tmp_path: Path, monkeypatch) -> SessionStore:
     s = SessionStore(root_path=tmp_path / "sessions")
     monkeypatch.setattr(
-        'openprogram.store.session.session_store.shared._default_store', s, raising=False,
+        'openprogram.state.store.session.session_store.shared._default_store', s, raising=False,
     )
     monkeypatch.setattr(
-        'openprogram.store.session.session_store.shared._default_store', s,
+        'openprogram.state.store.session.session_store.shared._default_store', s,
         raising=False,
     )
-    # `openprogram.store.default_store` is normally a lazy __getattr__
+    # `openprogram.state.store.default_store` is normally a lazy __getattr__
     # re-export, but other suites setattr a real attribute onto the
     # module, which permanently shadows the lazy hook. Pin it here so
     # this file passes standalone AND after those suites have run.
     monkeypatch.setattr(
-        "openprogram.store.default_store", lambda: s, raising=False,
+        "openprogram.state.store.default_store", lambda: s, raising=False,
     )
     return s
 
@@ -85,11 +85,11 @@ def test_exact_mutation_summary_is_persisted(store, tmp_path):
     assert index.nodes_by_id[msg_id].metadata["turn_files"] == summary
 
 
-def test_mutation_summary_embeds_only_three_preview_rows(store, tmp_path):
+def test_mutation_summary_embeds_the_card_row_cap(store, tmp_path):
     session_id, msg_id = "s_summary_many", "u1_reply"
     _seed(store, session_id, msg_id)
     journal = CheckpointStore(store._session_dir(session_id))
-    for number in range(5):
+    for number in range(25):
         target = tmp_path / f"f{number}.py"
         target.write_text("before\n", encoding="utf-8")
         journal.backup_before_edit(msg_id, str(target))
@@ -98,10 +98,11 @@ def test_mutation_summary_embeds_only_three_preview_rows(store, tmp_path):
 
     summary = persist_turn_file_summary(session_id, msg_id)
 
-    assert summary["file_count"] == 5
-    assert len(summary["files"]) == 3
-    assert summary["added"] == 5
-    assert summary["removed"] == 5
+    # Bounded at the chat card's 20-row cap; totals still cover every file.
+    assert summary["file_count"] == 25
+    assert len(summary["files"]) == 20
+    assert summary["added"] == 25
+    assert summary["removed"] == 25
 
 
 def test_commit_stamps_node_and_produces_diff(store, tmp_path):
@@ -120,9 +121,9 @@ def test_commit_stamps_node_and_produces_diff(store, tmp_path):
 
     shadow_root = tmp_path / "shadow"
     shadow_root.mkdir()
-    with patch("openprogram.store.shadow_git.store._shadow_root",
+    with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root), \
-         patch("openprogram.store.project.project_commit._project_for",
+         patch("openprogram.state.store.project.project_commit._project_for",
                return_value=SimpleNamespace(path=str(project))):
         sha = commit_turn_to_shadow_git(session_id, msg_id, "make an edit")
 
@@ -135,8 +136,8 @@ def test_commit_stamps_node_and_produces_diff(store, tmp_path):
     assert meta["after"] == sha
 
     # The recorded shas yield a real diff of this turn.
-    from openprogram.store.shadow_git.store import ShadowGitStore
-    with patch("openprogram.store.shadow_git.store._shadow_root",
+    from openprogram.state.store.shadow_git.store import ShadowGitStore
+    with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root):
         diff = ShadowGitStore(str(project)).diff(
             meta["before"] or "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
@@ -160,9 +161,9 @@ def test_stamp_survives_reload(store, tmp_path):
 
     shadow_root = tmp_path / "shadow"
     shadow_root.mkdir()
-    with patch("openprogram.store.shadow_git.store._shadow_root",
+    with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root), \
-         patch("openprogram.store.project.project_commit._project_for",
+         patch("openprogram.state.store.project.project_commit._project_for",
                return_value=SimpleNamespace(path=str(project))):
         assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
 
@@ -191,11 +192,11 @@ def test_no_project_falls_back_to_working_root(store, tmp_path):
 
     shadow_root = tmp_path / "shadow"
     shadow_root.mkdir()
-    with patch("openprogram.store.shadow_git.store._shadow_root",
+    with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root), \
-         patch("openprogram.store.project.project_commit._project_for",
+         patch("openprogram.state.store.project.project_commit._project_for",
                return_value=None), \
-         patch("openprogram.worktree.context.current_worktree_path",
+         patch("openprogram.state.worktree.context.current_worktree_path",
                return_value=str(project)):
         sha = commit_turn_to_shadow_git(session_id, msg_id, "edit")
 
@@ -224,13 +225,13 @@ def test_no_project_no_workdir_uses_common_ancestor(store, tmp_path):
 
     shadow_root = tmp_path / "shadow"
     shadow_root.mkdir()
-    with patch("openprogram.store.shadow_git.store._shadow_root",
+    with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root), \
-         patch("openprogram.store.project.project_commit._project_for",
+         patch("openprogram.state.store.project.project_commit._project_for",
                return_value=None), \
-         patch("openprogram.worktree.context.current_worktree_path",
+         patch("openprogram.state.worktree.context.current_worktree_path",
                return_value=None), \
-         patch("openprogram.agent.internals._workdir.project_workdir_for",
+         patch("openprogram.runtime.conversation.workdir.project_workdir_for",
                return_value=None):
         assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
 
@@ -240,13 +241,13 @@ def test_turn_touching_no_files_is_noop(store, tmp_path):
     _seed(store, session_id, msg_id)
     project = tmp_path / "proj"
     project.mkdir()
-    with patch("openprogram.store.project.project_commit._project_for",
+    with patch("openprogram.state.store.project.project_commit._project_for",
                return_value=SimpleNamespace(path=str(project))):
         assert commit_turn_to_shadow_git(session_id, msg_id, "x") is None
 
 
 def test_failure_is_swallowed(store):
     """A shadow-git blowup must never propagate into the turn."""
-    with patch("openprogram.store.project.project_commit._project_for",
+    with patch("openprogram.state.store.project.project_commit._project_for",
                side_effect=RuntimeError("boom")):
         assert commit_turn_to_shadow_git("s", "m", "x") is None

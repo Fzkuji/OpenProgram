@@ -1,0 +1,87 @@
+<title>Plugins</title>
+<meta name="description" content="Install and manage declarative plugins: skills, commands, agents, hooks, MCP servers and providers.">
+<h1>Plugins</h1>
+<p>A plugin is a manifest naming skills, slash commands, agents, hooks, MCP servers and model provider directories, in the format Claude Code, Codex, OpenCode or Hermes already use. OpenProgram mounts the contents; no plugin code runs inside it. Code that adds tools or a screen is an <a href="applications.html">application</a>.</p>
+<h2 id="install-and-manage">Commands</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram plugins list</code></th><td>Installed plugins</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins search &lt;query&gt;</code></th><td>Search the configured marketplaces</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins install git &lt;url&gt; --ref v1.2</code></th><td>Clone into <code translate="no">~/.openprogram/plugins/</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins install npm &lt;package&gt;</code></th><td>Into its <code translate="no">node_modules/</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins install path /abs/path</code></th><td>Link there, so edits apply on <code translate="no">reload</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins update --all</code></th><td>Reinstall npm plugins, or pass one name</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins enable &lt;name&gt;</code>, <code translate="no">disable &lt;name&gt;</code></th><td>Toggle</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins reload &lt;name&gt;</code></th><td>Re-read its manifest and files</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins uninstall &lt;name&gt;</code></th><td>For a linked plugin, removes only the link</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins inspect</code></th><td>What a plugin may contain, every hook event, what is refused, each entry's exposure tier; <code translate="no">--json</code></td></tr>
+</tbody></table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Trust</th><th scope="col">In <code translate="no">~/.openprogram/plugin-trust.json</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">verified</code>, <code translate="no">community</code></th><td>Can be enabled. A local <code translate="no">path</code> install is <code translate="no">community</code>.</td></tr>
+<tr><th scope="row"><code translate="no">untrusted</code></th><td>Default for unlisted plugins. Not enabled, because hooks and MCP servers run commands.</td></tr>
+</tbody></table>
+<p class="note">The Web UI uses the same management API through the plugin routes.</p>
+<h2 id="what-a-plugin-may-contain">Contents</h2>
+<p>Manifests are tried in this order:</p>
+<ol>
+<li><code translate="no">.claude-plugin/plugin.json</code> (Claude Code), <code translate="no">.codex-plugin/plugin.json</code> (Codex), or <code translate="no">plugin.json</code> at the root</li>
+<li><code translate="no">[tool.openprogram.plugin]</code> in <code translate="no">pyproject.toml</code></li>
+<li>the <code translate="no">openprogram</code>, <code translate="no">opencode</code> or <code translate="no">hermes</code> field of <code translate="no">package.json</code></li>
+<li><code translate="no">plugin.yaml</code> or <code translate="no">plugin.yml</code> (Hermes)</li>
+</ol>
+<p>Fields: <code translate="no">name</code>, <code translate="no">version</code>, <code translate="no">description</code>, <code translate="no">trust</code>, <code translate="no">entrypoints</code>, <code translate="no">options</code>, <code translate="no">requires</code>. Contribution keys may sit at the top level, as Claude Code writes them. <code translate="no">requires</code> orders loading topologically and reports <code translate="no">missing dependencies: ...</code>.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Key</th><th scope="col">Contents</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">skills</code></th><td>A directory of <code translate="no">SKILL.md</code> skills</td></tr>
+<tr><th scope="row"><code translate="no">commands</code></th><td><code translate="no">{name: {description, prompt}}</code>, or a directory of <code translate="no">.md</code> files with front matter</td></tr>
+<tr><th scope="row"><code translate="no">agents</code></th><td><code translate="no">{name, description, prompt, tools}</code> list, or a directory of <code translate="no">.md</code> agents. Created as <code translate="no">&lt;plugin&gt;-&lt;name&gt;</code>; kept on disable, because deleting an agent would delete its sessions.</td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>Shell commands on events, inline or a <code translate="no">.json</code> path</td></tr>
+<tr><th scope="row"><code translate="no">mcpServers</code></th><td><code translate="no">{name: {command, args, env} | {url}}</code> inline, or a <code translate="no">.mcp.json</code> path. Running while enabled.</td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>A directory whose children each hold a <code translate="no">provider.json</code></td></tr>
+</tbody></table>
+<p class="note">Everything mounts through one context owned by <code translate="no">plugin:&lt;name&gt;</code>; <code translate="no">disable</code> and <code translate="no">reload</code> remove all of it.</p>
+<h3>Hooks</h3>
+<p>OpenProgram's shape (same as <code translate="no">hooks</code> in <code translate="no">config.json</code>), then Claude Code's <code translate="no">hooks/hooks.json</code>:</p>
+<pre translate="no" tabindex="0"><code>{"tool.before": [{"command": "${CLAUDE_PLUGIN_ROOT}/check.sh", "timeout": 30}]}</code></pre>
+<pre translate="no" tabindex="0"><code>{"hooks": {"PreToolUse": [{"matcher": "bash|write", "hooks": [
+  {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/check.sh"}]}]}}</code></pre>
+<table class="stack fixed">
+<thead><tr><th scope="col">Claude Code</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">PreToolUse</code></th><td><code translate="no">tool.before</code></td></tr>
+<tr><th scope="row"><code translate="no">PostToolUse</code></th><td><code translate="no">tool.after</code></td></tr>
+<tr><th scope="row"><code translate="no">UserPromptSubmit</code></th><td><code translate="no">chat.before_send</code></td></tr>
+<tr><th scope="row"><code translate="no">Stop</code></th><td><code translate="no">turn.stop</code></td></tr>
+<tr><th scope="row"><code translate="no">SessionStart</code></th><td><code translate="no">session.start</code></td></tr>
+</tbody></table>
+<ul>
+<li><code translate="no">matcher</code> is a regular expression over the tool name.</li>
+<li><code translate="no">${CLAUDE_PLUGIN_ROOT}</code> becomes the plugin directory. Commands run in the worker's working directory and receive the event as JSON on stdin.</li>
+<li>On a gate event (<code translate="no">tool.before</code>, <code translate="no">turn.stop</code>), exit code 2 denies with stderr as the reason; any other code allows.</li>
+</ul>
+<h3 id="what-is-refused">Refused</h3>
+<p><code translate="no">install</code> refuses a manifest that names code and removes the git clone or npm package; one placed by hand is listed with the error and never loads. The refusal names the keys and says to add an <code translate="no">application.json</code> and run <code translate="no">openprogram programs install &lt;dir&gt;</code>.</p>
+<ul>
+<li><code translate="no">python</code>, <code translate="no">module</code>, <code translate="no">setup</code>, <code translate="no">main</code>, <code translate="no">tools</code>: Python or JavaScript code</li>
+<li><code translate="no">client</code>, <code translate="no">web</code>, <code translate="no">sidebar</code>: a screen of its own</li>
+<li><code translate="no">hooks</code> written as <code translate="no">module:name</code>: a Python handler mapping</li>
+<li>A Hermes <code translate="no">plugin.yaml</code> beside an <code translate="no">__init__.py</code></li>
+<li>pip as a source</li>
+</ul>
+<h2 id="write-a-plugin">Write one</h2>
+<pre translate="no" tabindex="0"><code>house-style/
+  .claude-plugin/plugin.json
+  skills/review/SKILL.md
+  commands/summarize.md
+  hooks/hooks.json</code></pre>
+<pre translate="no" tabindex="0"><code>{"name": "house-style", "version": "0.1.0", "skills": "./skills",
+ "commands": "./commands", "hooks": "./hooks/hooks.json"}</code></pre>
+<pre translate="no" tabindex="0"><code>openprogram plugins install path /abs/path/to/house-style   # links the directory
+openprogram plugins enable house-style
+openprogram plugins reload house-style                      # after editing its files</code></pre>
+<p class="note">Agents have a <code translate="no">plugin</code> tool (approval required; not offered on chat channels or in plan mode). <code translate="no">guide</code> returns the authoring guide from the running build; <code translate="no">install</code> with the directory's absolute path links, trusts and enables in one step; <code translate="no">reload</code> applies edits. A plugin naming code is refused with the CLI's message.</p>
+<p class="next"><a href="applications.html">Applications</a></p>

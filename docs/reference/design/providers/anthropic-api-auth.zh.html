@@ -1,0 +1,21 @@
+<title>Anthropic API 认证</title>
+<meta name="description" content="Anthropic 请求使用官方 Messages API、API key 和 API 账户计费。">
+<h1>Anthropic API 认证</h1>
+
+<p>使用官方 Anthropic Messages API、API key 和 API 账户计费。所有使用遵守适用的服务条款与使用政策。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">登录</th><td>把 API key 存入凭据存储</td></tr>
+<tr><th scope="row">请求</th><td>解析器把 key 交给 Anthropic SDK；API key 认证</td></tr>
+<tr><th scope="row">发现、校验</th><td>与推理使用相同的凭据要求</td></tr>
+<tr><th scope="row">兼容的第三方 API</th><td>保留各自的端点和凭据</td></tr>
+<tr><th scope="row">不支持的凭据类型和 provider</th><td>在访问网络前拒绝</td></tr>
+<tr><th scope="row">界面</th><td>凭据始终掩码显示</td></tr>
+<tr><th scope="row">入口</th><td>Provider、账户、登录和模型列表都强制 API key 认证，并对支持范围保持一致</td></tr>
+<tr><th scope="row">测试</th><td>使用合成凭据，不发真实 provider 请求</td></tr>
+</tbody>
+</table>
+
+<p class="note"><a href="https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use">Anthropic 认证与凭据要求</a>。外部 CLI 账户管理不属于此集成。</p>

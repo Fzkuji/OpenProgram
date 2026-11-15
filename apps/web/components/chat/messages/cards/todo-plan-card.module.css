@@ -1,0 +1,50 @@
+/* The task list under a turn's reply: the tool steps' family, one hairline
+   and the page's own ground, no shadow and no caption. Layout lives in the
+   component's Tailwind classes. */
+.card {
+  margin: 4px 0 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+/* Centre the icon on the first line of a wrapping subject. */
+.icon {
+  flex: none;
+  margin-top: calc((1.5em - 16px) / 2);
+  color: var(--text-secondary);
+}
+
+/* Done: the icon's circle filled, its check cut out in the page's ground. */
+.checked { fill: var(--text-secondary); color: var(--bg-primary); }
+.checked circle { stroke: none; }
+
+.item[data-status="completed"] .subject {
+  color: var(--text-secondary);
+}
+
+.subject { overflow-wrap: anywhere; }
+.current { color: var(--text-primary); }
+.todo { color: var(--text-muted); }
+.note { margin: 0; color: var(--text-muted); font-size: var(--fs-xs); }
+.indented { padding-inline-start: 20px; }
+.detail { display: block; color: var(--text-secondary); font-size: var(--fs-xs); }
+
+/* A list that is done folds up and fades. */
+.exit {
+  display: grid;
+  overflow: clip;
+  animation: todo-exit 400ms var(--ease-standard) forwards;
+}
+@keyframes todo-exit {
+  from { grid-template-rows: 1fr; opacity: 1; }
+  to { grid-template-rows: 0fr; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exit { animation: none; }
+  .icon[data-live] { animation: none; }
+}

@@ -1,0 +1,44 @@
+<title>OpenAI 兼容端点</title>
+<meta name="description" content="OpenProgram 的 Agent 如何在 /v1/chat/completions 上作为模型回答，以及每个选择跟随了哪个同类框架。">
+<meta name="covers" content="openprogram/interfaces/server/routes/openai_compatible.py">
+<h1>OpenAI 兼容端点</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">端点</th></tr></thead>
+<tbody>
+<tr><th scope="row">服务对象</th><td>说 OpenAI Chat Completions、把 OpenProgram 的 Agent 当模型用的工具</td></tr>
+<tr><th scope="row">路由</th><td>Worker 端口上的 <code translate="no">GET /v1/models</code>、<code translate="no">POST /v1/chat/completions</code></td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">openprogram/interfaces/server/routes/openai_compatible.py</code>；这一轮经 <code translate="no">runtime/conversation/owner_turn.py</code> 启动；<code translate="no">/v1</code> 的拒绝在 <code translate="no">owner_auth.py</code></td></tr>
+<tr><th scope="row">用户文档</th><td><a href="../../../interfaces/openai-api.zh.html">OpenAI 兼容接口</a></td></tr>
+<tr><th scope="row">测试</th><td><code translate="no">tests/component/webui/runtime/test_openai_compatible.py</code>：真实的一轮路径加脚本模型，覆盖流式、客户端离开、认证拒绝</td></tr>
+</tbody>
+</table>
+
+<h2 id="peers">同类框架</h2>
+<p>对比的 21 个框架里有两个提供这个端点：Hermes Agent（<code translate="no">/v1/chat/completions</code> 与 <code translate="no">/v1/responses</code>）和 OpenClaw（<code translate="no">/v1/chat/completions</code>，默认关闭）。Claude Code 和 Codex 提供的是自己的 SDK 和 app-server 协议，OpenProgram 对应的是 ACP 和 MCP 服务端。下面的选择在两者一致时照它们做，不一致时写明跟的是哪个。</p>
+
+<h2 id="decisions">决定</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">问题</th><th scope="col">选择、跟随的框架与理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">端口与密钥</th><td>Worker 自己的端口，用它的主人令牌作 <code translate="no">Authorization: Bearer</code>；不另设密钥、开关或权限关卡。两家都把端点放在服务端已有的 bearer 密钥后面。这个令牌本来就能打开 Worker 的所有主人 API，包括发起一轮对话，所以再加一个密钥或开关只多一道关卡，并不缩小持有令牌者能做的事。</td></tr>
+<tr><th scope="row">模型</th><td><code translate="no">model</code> 是 Agent 的 id；<code translate="no">/v1/models</code> 列出各个 Agent，默认的在最前。跟 OpenClaw：它的模型名选择 agent。Hermes 只有一个 agent，所以只公布一个固定模型；OpenProgram 有多个。</td></tr>
+<tr><th scope="row">对话</th><td>每个请求新开该 Agent 的一个对话；请求体里的 <code translate="no">conversation_id</code> 接着已有对话，每个回答都在请求体和 <code translate="no">X-OpenProgram-Conversation-Id</code> 头里写明所属对话。两家都是每个请求无状态，另用一个可选键延续（Hermes 用请求头，OpenClaw 用 <code translate="no">user</code> 字段）。请求体字段能经 OpenAI SDK 的 <code translate="no">extra_body</code> 传过去，大多数工具都开放了它。</td></tr>
+<tr><th scope="row">之前的消息</th><td>最后一条用户消息是这一轮的消息；它之前的消息按角色标注、指令在前，合进同一份输入。OpenClaw 就是这样拼 agent 提示的。对话存储里只放真实发生过的轮次，所以不把调用方的历史写成 Agent 从没给过的存储轮次。</td></tr>
+<tr><th scope="row">这一轮</th><td>对话的正常一轮：占用运行槽，用 Agent 自己的模型、工具和权限模式，被存下并在 App 里可见。来源是 <code translate="no">api</code>，用 bearer 的主人权限并标为非交互，加上无人值守的运行说明，和 <code translate="no">openprogram --print</code> 一样：没有人能回答审批或提问，所以这类步骤直接拒绝而不是等待。采样参数和 <code translate="no">tools</code> 字段被忽略，两家也是如此：用的是 Agent 自己的设置。</td></tr>
+<tr><th scope="row">流式</th><td>回复文字作为 <code translate="no">chat.completion.chunk</code> 增量，然后是带 <code translate="no">finish_reason</code> 的最后一块、可选的用量块，最后 <code translate="no">data: [DONE]</code>。工具活动不写进 <code translate="no">content</code>：客户端会把它当成回复显示。客户端关闭流就取消这一轮，和 OpenAI API 停止生成一样。</td></tr>
+<tr><th scope="row">错误</th><td>所有拒绝都用 OpenAI 的 <code translate="no">{"error": {message, type, param, code}}</code>，包括认证中间件对 <code translate="no">/v1</code> 路径的拒绝，这样 OpenAI 客户端能显示原因；本服务不提供的 <code translate="no">/v1</code> 路径同样以这种格式返回 404，而不是 App 的页面。流开始后才出的错，是 <code translate="no">[DONE]</code> 之前的一个错误事件。</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chat Completions、模型列表、流式、延续、取消</th><td>已实现</td></tr>
+<tr><th scope="row">Worker 重启后仍有效的密钥</th><td>未解决：主人令牌每个 Worker 进程新生成，所以工具要在调用时读令牌文件</td></tr>
+<tr><th scope="row"><code translate="no">/v1/responses</code>、图片输入、调用方自带的工具</th><td>未做；Hermes 提供 Responses API</td></tr>
+<tr><th scope="row">流式中途重发的模型请求</th><td>未解决：传输失败后 Agent 的模型请求会重发，之前流出的文字作废；客户端无法收回已收到的分块，所以遇到重发的流会重复回复的开头</td></tr>
+<tr><th scope="row">来自其他源的浏览器调用方</th><td>未做：主人中间件拒绝外来 Origin，也没有 CORS</td></tr>
+</tbody>
+</table>

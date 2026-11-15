@@ -1,0 +1,14 @@
+.activity { color: var(--text-primary); padding: 12px; margin-bottom: 16px; border: 1px solid var(--gui-tool-rule); border-radius: var(--radius-md); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.status { flex: none; font-size: var(--fs-xs); color: var(--text-secondary); }
+.activity p { margin: 8px 0 0; white-space: pre-wrap; }
+.handoff { margin-top: 10px; border-left: 2px solid var(--accent-orange); padding-left: 10px; }
+.handoff p:first-child { margin-top: 0; }
+.summary, .empty { color: var(--text-secondary); }
+.steps { list-style: none; padding: 0; margin: 12px 0 0; border-top: 1px solid var(--gui-tool-rule); }
+.steps li { padding: 7px 0; border-bottom: 1px solid var(--gui-tool-rule); }
+.steps li:last-child { border-bottom: none; padding-bottom: 0; }
+.stepName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.target { color: var(--text-secondary); }
+.activity .reason { margin-top: 3px; font-size: var(--fs-xs); color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.activity [data-gui-status="failed"], .activity [data-gui-status="infeasible"] { color: var(--accent-red); }
+.activity [data-gui-status="succeeded"] { color: var(--accent-green, var(--text-secondary)); }

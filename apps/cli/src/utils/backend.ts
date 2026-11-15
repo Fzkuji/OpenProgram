@@ -7,8 +7,9 @@
  * the TUI hits whatever port the user actually launched on — no second
  * config. Falls back to the same default the WS client uses (18100, the
  * single port since the frontend moved onto the backend — see
- * docs/reference/design/cli/single-port.md).
+ * docs/reference/design/cli/single-port.html).
  */
+import { spawn } from 'child_process';
 
 export function backendBase(): string {
   return (
@@ -23,7 +24,7 @@ export function backendBase(): string {
 
 /**
  * Owner token for the backend, handed down by the Python launcher through
- * the environment (apps/cli/python/openprogram_cli/_impl/ink.py). Empty when
+ * the environment (openprogram/interfaces/cli/ink.py). Empty when
  * the TUI was started
  * without a verified backend endpoint.
  */
@@ -112,16 +113,44 @@ export function webUiUrls(): { display: string; bootstrap: string } | null {
  * never blocks the Ink render loop; silently no-ops if the opener isn't
  * available (the caller always also prints the URL as a fallback).
  */
-export function openInBrowser(url: string): void {
-  void import('child_process').then(({ spawn }) => {
-    const opener =
-      process.platform === 'darwin' ? 'open'
-      : process.platform === 'win32' ? 'start'
-      : 'xdg-open';
-    try {
-      spawn(opener, [url], { stdio: 'ignore', detached: true }).unref();
-    } catch {
-      /* ignore — URL is printed by the caller as a fallback */
-    }
-  });
+export function openInBrowser(
+  url: string,
+  launch: BrowserLauncher = spawn,
+  platform: NodeJS.Platform = process.platform,
+): void {
+  const [opener, args] = browserOpenCommand(url, platform);
+  try {
+    const child = launch(opener, [...args], {
+      stdio: 'ignore',
+      detached: true,
+      windowsHide: true,
+    });
+    // A missing opener is reported as an 'error' event after spawn returns;
+    // with no listener Node raises it and the TUI exits.
+    child.on('error', () => { /* URL is printed by the caller as a fallback */ });
+    child.unref();
+  } catch {
+    /* ignore — URL is printed by the caller as a fallback */
+  }
+}
+
+type BrowserLauncher = (
+  command: string,
+  args: string[],
+  options: { stdio: 'ignore'; detached: boolean; windowsHide: boolean },
+) => { on(event: 'error', listener: (error: Error) => void): unknown; unref(): void };
+
+/**
+ * The program that hands a URL to the user's default browser. `start` is a
+ * cmd.exe builtin, not a program Node can spawn, and going through cmd.exe
+ * would let `&` in a URL end the command; the URL handler takes it as one
+ * argument.
+ */
+export function browserOpenCommand(
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+): readonly [command: string, args: readonly string[]] {
+  if (platform === 'darwin') return ['open', [url]];
+  if (platform === 'win32') return ['rundll32', ['url.dll,FileProtocolHandler', url]];
+  return ['xdg-open', [url]];
 }

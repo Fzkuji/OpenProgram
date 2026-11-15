@@ -22,9 +22,10 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.agent.session_db import SessionDB
-from openprogram.providers.types import (
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.models.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
     EventDone,
@@ -32,7 +33,6 @@ from openprogram.providers.types import (
     EventTextDelta,
     EventTextEnd,
     EventTextStart,
-    ImageContent,
     Model,
     TextContent,
     Usage,
@@ -74,7 +74,7 @@ def make_text_stream(text: str):
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db",
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db",
                         lambda: db)
     return db
 
@@ -113,7 +113,7 @@ def test_attachments_become_image_content_blocks(
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(
+            agent_turn_request.TurnRequest(
                 session_id="c1", user_text="What's in this image?",
                 agent_id="main", source="tui",
                 attachments=[{
@@ -158,7 +158,7 @@ def test_attachment_manifest_in_session_db(
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(
+            agent_turn_request.TurnRequest(
                 session_id="c1", user_text="caption pls",
                 agent_id="main", source="tui",
                 attachments=[
@@ -200,7 +200,7 @@ def test_malformed_attachment_skipped_gracefully(
 
     with patch.object(D, "_run_loop_blocking", _w):
         result = D.process_user_turn(
-            D.TurnRequest(
+            agent_turn_request.TurnRequest(
                 session_id="c1", user_text="hi",
                 agent_id="main", source="tui",
                 attachments=[
@@ -242,12 +242,16 @@ def test_agent_profile_tools_field_filters_registry(
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi",
                           agent_id="main", source="tui",
                           permission_mode="bypass"),
         )
     assert seen_tools
-    assert seen_tools[0] == ["bash"]
+    # Only the profile's tools, plus the screen tool, which is always last in
+    # the array while the browser application is loaded (refused without a
+    # Page) and leaves only when a tools override excludes it.
+    assert [name for name in seen_tools[0] if name != "computer_use_agent"] == ["bash"]
+    assert seen_tools[0][0] == "bash"
 
 
 def test_per_turn_tools_override_beats_profile(
@@ -275,7 +279,7 @@ def test_per_turn_tools_override_beats_profile(
 
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi",
                           agent_id="main", source="tui",
                           tools_override=["read"],   # narrower than profile
                           permission_mode="bypass"),
@@ -302,7 +306,7 @@ def test_new_image_is_rejected_for_text_only_model_before_provider_call(tmp_db, 
         return original(req=req, history=history, on_event=on_event,
                         cancel_event=cancel_event, stream_fn=provider)
     with patch.object(D, "_run_loop_blocking", run):
-        result = D.process_user_turn(D.TurnRequest(
+        result = D.process_user_turn(agent_turn_request.TurnRequest(
             session_id="text-only", user_text="Inspect this", agent_id="main", source="web",
             attachments=[{"type": "image", "data": "AAAA", "media_type": "image/png"}],
         ), on_event=events.append)

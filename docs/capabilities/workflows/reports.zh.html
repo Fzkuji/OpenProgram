@@ -1,0 +1,136 @@
+<title>周报</title>
+<meta name="description" content="周报 Workflow：各自写什么、接受什么证据、如何恢复。">
+<h1>周报</h1>
+<p><code translate="no">~/.openprogram/programs</code> 里的五个包，各自独立版本；源码检出不包含它们。共用辅助函数：<code translate="no">openprogram.programs._authoring.reports</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">用途</th><th scope="col">外部写入</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">personal_weekly_report(task)</code></th><td>个人飞书草稿、查看、填写、提交、更新记录</td><td>填写只改字段不保存；提交或更新需明确要求</td></tr>
+<tr><th scope="row"><code translate="no">personal_chat_weekly_report(task)</code></th><td>本人发到微信群的三段文字：进展、讨论话题、下周计划，中文</td><td>本地草稿；从不发送</td></tr>
+<tr><th scope="row"><code translate="no">group_weekly_report(task)</code></th><td>收集组内周报、跟踪缺交、准备汇总</td><td>从不发送</td></tr>
+<tr><th scope="row"><code translate="no">tencent_weekly_report(task)</code></th><td>给领导的约 100 字腾讯进展</td><td>本地草稿</td></tr>
+<tr><th scope="row"><code translate="no">weekly_report(task)</code></th><td>选择所需 Workflow 并转发完整请求；导入其他四个</td><td>与子项相同</td></tr>
+</tbody></table>
+<p class="note">个人微信和飞书草稿默认返回完整 Markdown 正文，无需写文件；返回文本不提交任何东西。明确的 Markdown 路径保留文件交付，已有的文件交付恢复请求仍可用。</p>
+<h2 id="prepare-several-reports"><code translate="no">weekly_report</code></h2>
+<p>在 Abilities 里选择。自然语言交给路由 agent；JSON <code translate="no">requests</code> 直接指向子项，不经路由推断。</p>
+<pre translate="no" tabindex="0"><code>{
+  "requests": {
+    "personal": {
+      "week": "2026-W37",
+      "materials": [{"id": "p1", "week": "2026-W37", "text": "Experiments remain in progress; next week we will check the results."}]
+    },
+    "tencent": {
+      "week": "2026-W37",
+      "materials": [{"id": "t1", "week": "2026-W37", "text": "Tencent evaluation is still in progress. No final performance conclusion is available."}]
+    }
+  }
+}</code></pre>
+<p class="note">材料按受众分开。个人和腾讯输入需要匹配的 ISO 周和唯一来源 ID。证据不足时请求输入或审核，绝不编造进展。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路由</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">选择</th><td>按含义和否定选一到四个目标；原始请求完整传给每个</td></tr>
+<tr><th scope="row">绝不</th><td>按标点拆分、提取材料、强制草稿、指定共同周次、请求澄清</td></tr>
+<tr><th scope="row">默认</th><td>没提飞书的一般进展草稿是 <code translate="no">personal_chat</code>；未指定受众是未发送的个人微信草稿</td></tr>
+<tr><th scope="row">结果</th><td>一个：原样返回。多个：按受众标注</td></tr>
+<tr><th scope="row">超时</th><td>路由、组内解析和个人模型调用继承 <code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></td></tr>
+<tr><th scope="row">子项失败</th><td>异常保留之前完成的结果，不重新运行。浏览器访问失败向上传递。</td></tr>
+</tbody></table>
+<h2 id="prepare-a-tencent-report-from-existing-records">腾讯周报</h2>
+<p>选择 <code translate="no">tencent_weekly_report</code>，输入 <code translate="no">Prepare this week's Tencent weekly_report</code>。用 <code translate="no">Asia/Shanghai</code> 的当前 ISO 周，目标 80–120 个非空白字符、争取 100，面向周五下午。不建定时、不发送；定时运行需另行配置确切时间和材料来源。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">顺序</th><th scope="col">证据</th></tr></thead>
+<tbody>
+<tr><th scope="row">明确提供的材料</th><td>优先</td></tr>
+<tr><th scope="row">1. <code translate="no">reports</code> 目录</th><td>当前周的原始腾讯证据；可选 <code translate="no">report_roots</code> 选最多五个目录</td></tr>
+<tr><th scope="row">2. 其他报告来源</th><td>接着查看</td></tr>
+<tr><th scope="row">3. 最近的 OpenProgram 会话</th><td>本人原始消息，保留日期和会话/消息引用。最多 20 个会话，每个最后 200 条。</td></tr>
+<tr><th scope="row">4. 带日期的记忆</th><td>生成的笔记只作查找线索，不是已验证事实</td></tr>
+<tr><th scope="row">排除</th><td>助手草稿、无归属消息、其他周、只有年月的日期、待定记忆记录、不可信的原始记忆、测试记录</td></tr>
+<tr><th scope="row">其他受众</th><td>需要带确切引文的来源选择</td></tr>
+</tbody></table>
+<p class="note">带日期的请求或计划只是候选，不是证据。合并上下文最多 30 条、18,000 UTF-8 字节。来源不足时在该范围内请求澄清，这不代表别处没有相关工作。</p>
+<details>
+<summary>输出、超时和失败</summary>
+<ul>
+<li>成功返回报告正文。来源、字符数和模型调用留在本地草稿。JSON 任务里的 <code translate="no">"result_format": "structured"</code> 返回状态、产物路径和恢复对象；路由原样转发明确的子项选项。</li>
+<li>生成和验证用低推理强度、每次 180 秒、保留重试预算。请求解析继承部署超时。每个 JSON 阶段声明 schema 并复用 Runtime 格式修复。</li>
+<li>模型失败不产生成功草稿，保留类型化的失败和恢复任务，绝不当作缺少输入。</li>
+</ul>
+</details>
+<h2 id="group-report">组内周报</h2>
+<p><code translate="no">Prepare the group report</code> 就够了：群身份、名单、材料和作者证据来自记忆、本地记录和识别出的微信群。提供的正文保留。没指定周期时用当前 ISO 周并记录这一假设。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">默认来源</th><td><code translate="no">auto</code>；<code translate="no">source: "supplied"</code> 限于提供的材料</td></tr>
+<tr><th scope="row">未确定的作者</th><td>明确标为未验证</td></tr>
+<tr><th scope="row">缺少证据</th><td>部分草稿，带诊断</td></tr>
+<tr><th scope="row">微信控件不可用</th><td>记录下来；用本地证据继续，明确标为部分草稿</td></tr>
+<tr><th scope="row">微信访问失败</th><td>本地来源仍可用</td></tr>
+<tr><th scope="row">原生收集</th><td>验证群并保留来源证据；历史覆盖不完整；不能发送或修改系统权限</td></tr>
+<tr><th scope="row">模型或服务商失败</th><td>保留真实错误，不算缺少输入</td></tr>
+</tbody></table>
+<h2 id="fill-the-personal-feishu-form-without-submitting">个人飞书周报</h2>
+<p>选择 <code translate="no">personal_weekly_report</code>，请求 <code translate="no">Fill the personal Feishu weekly report without submitting</code>。它检查记录、准备六个字段、填写并逐字段读回。</p>
+<table class="grid">
+<thead><tr><th scope="col">情况</th><th scope="col"><code translate="no">FILLED</code></th><th scope="col"><code translate="no">SUBMITTED</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">没有记录，要求填写</th><td class="run">是</td><td class="deny">否</td></tr>
+<tr><th scope="row">明确要求提交，没有记录</th><td class="deny">否</td><td class="run">是</td></tr>
+<tr><th scope="row">已有记录或表单满额，要求填写</th><td class="deny"><code translate="no">BLOCKED</code></td><td class="deny">否</td></tr>
+<tr><th scope="row">字段缺失或歧义、值被截断、写入不确定</th><td class="deny">否</td><td class="deny">否</td></tr>
+</tbody></table>
+<p class="note">提交请求遇到已有记录时返回检查结果；修改需要明确的更新请求。</p>
+<details>
+<summary>填写、读回和浏览器规则</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">仅填写</th><td>只允许观察到的记录导航和确切的文本框值；在浏览器执行前拒绝提交和保存的点击、按键、坐标及过期观察</td></tr>
+<tr><th scope="row">读回</th><td>完整比较实际值，包括换行和连续空格。仅 ARIA 文本或没有实际值的浏览器 schema 不能返回 <code translate="no">FILLED</code></td></tr>
+<tr><th scope="row">标签</th><td>原生后端支持表单标签和 contenteditable 字段周围唯一可见的标签。标签缺失或歧义时在写入前停止</td></tr>
+<tr><th scope="row">工具</th><td>只用 <code translate="no">computer_use_agent</code> 操作内置浏览器里的网页；需要真实工具回执，模型文本里引用的调用不算操作</td></tr>
+<tr><th scope="row">限制</th><td>没有硬编码的总超时或轮次上限，部署限制仍适用</td></tr>
+<tr><th scope="row">提交和更新</th><td>同样的字段绑定和读回。最后一次尝试在派发前记录，结果不确定时不重复</td></tr>
+<tr><th scope="row">占位</th><td>空的五维占位不算进展</td></tr>
+<tr><th scope="row">不确定的远程写入</th><td>不可重试：先查看实际记录</td></tr>
+<tr><th scope="row">模型失败</th><td>未解决的作为错误传递</td></tr>
+</tbody></table>
+</details>
+<details>
+<summary>个人和个人微信周报的证据</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取</th><td>只读 Agent 用 <code translate="no">list_agents(scope="all")</code>、<code translate="no">read_conversation</code>、记忆和原始本地笔记</td></tr>
+<tr><th scope="row">周期</th><td>轮次带 UTC 时间戳；默认是 <code translate="no">Asia/Shanghai</code> 的当前 ISO 周。最近有活动不代表旧轮次属于本周</td></tr>
+<tr><th scope="row">不证明工作完成</th><td>请求、计划、生成的草稿和 README</td></tr>
+<tr><th scope="row">失败或未完成的工作</th><td>保留，并说明缺失证据</td></tr>
+<tr><th scope="row">每个保留项</th><td>绑定到实际的本人陈述或工具结果，带确切来源 ID 和可见引文</td></tr>
+<tr><th scope="row">只是线索</th><td>记忆、文件和助手摘要</td></tr>
+<tr><th scope="row">提供的本人事实</th><td>必须与本人输入一致；时间验证后可描述更早的周期，保留实际输入日期</td></tr>
+<tr><th scope="row">周次</th><td>每个受众解析自己的周次；请求里唯一明确的 ISO 周保留</td></tr>
+<tr><th scope="row">发现</th><td>列出最多 100 个最近会话、读取最多 10 个分支，优先请求里提到的项目标题</td></tr>
+<tr><th scope="row">来源记录</th><td>日期、操作、参数、状态和错误标记</td></tr>
+<tr><th scope="row"><code translate="no">NEEDS_INPUT</code></th><td>缺原文</td></tr>
+<tr><th scope="row"><code translate="no">NEEDS_REVIEW</code></th><td>不支持的引用或说法，在交付或写表单之前</td></tr>
+<tr><th scope="row">语义验证</th><td>检查每项和周次，但不保证正确</td></tr>
+<tr><th scope="row">不构成主张</th><td>身份默认值、明确清空和缺失的可选内容</td></tr>
+<tr><th scope="row">Schema</th><td>JSON Schema 校验完整字段或稀疏编辑，写入前有提示回退和现有修复尝试。操作选择和验证声明 schema</td></tr>
+<tr><th scope="row">迭代</th><td>工具轮次计入 <code translate="no">max_iterations</code>，不计入失败请求额度；格式修复和失败请求共用该额度。到达迭代上限时停止，不重放工具</td></tr>
+<tr><th scope="row">记忆工具</th><td>只读搜索、grep、get、browse 走安全工具策略；deny、ask 规则和 <code translate="no">memory.read</code> 权限仍适用</td></tr>
+</tbody></table>
+</details>
+<h2 id="continue-incomplete-work">继续未完成的工作</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">恢复</th></tr></thead>
+<tbody>
+<tr><th scope="row">路由</th><td>没有共享检查点：用相应子项的恢复说明</td></tr>
+<tr><th scope="row">旧的协调器恢复负载</th><td>被拒绝并给出这一指引</td></tr>
+<tr><th scope="row">本地交付失败</th><td>保留已准备的内容以便重试</td></tr>
+<tr><th scope="row">腾讯</th><td>恢复时保留生成和验证预算</td></tr>
+<tr><th scope="row">外部记录更新</th><td>不确定失败后不自动重复</td></tr>
+<tr><th scope="row">检查点和重试负载</th><td>包含隐私内容，留在本地</td></tr>
+</tbody></table>

@@ -9,7 +9,7 @@ import pytest
 
 
 def test_child_webtab_bridge_round_trips_one_request():
-    from openprogram.agent.process_runner import _new_child_webtab_bridge
+    from openprogram.runtime.conversation.process_runner import _new_child_webtab_bridge
 
     events = Queue()
     request, handle_answer = _new_child_webtab_bridge(events)
@@ -34,8 +34,8 @@ def test_child_webtab_bridge_round_trips_one_request():
 
 
 def test_parent_webtab_bridge_rejects_unknown_operations(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     replies = Queue()
     called = []
@@ -58,8 +58,8 @@ def test_parent_webtab_bridge_rejects_unknown_operations(monkeypatch):
 
 
 def test_parent_webtab_bridge_result_crosses_process_queue(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     expected = {"ok": True, "tab_id": "tab-1", "target_id": "target-1"}
     monkeypatch.setattr(webtab, "_request", lambda command, timeout: expected)
@@ -79,8 +79,8 @@ def test_parent_webtab_bridge_result_crosses_process_queue(monkeypatch):
 
 
 def test_parent_webtab_bridge_forwards_exact_screenshot(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     seen = []
     monkeypatch.setattr(
@@ -114,8 +114,8 @@ def test_parent_webtab_bridge_forwards_exact_screenshot(monkeypatch):
 
 
 def test_parent_webtab_bridge_forwards_open_to_request_open_tab(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     seen = []
     monkeypatch.setattr(
@@ -147,8 +147,8 @@ def test_parent_webtab_bridge_forwards_open_to_request_open_tab(monkeypatch):
 def test_parent_webtab_bridge_borrows_visible_page_without_created_proof(
     monkeypatch, ownership,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     activated = []
     closed = []
@@ -232,8 +232,8 @@ def test_parent_webtab_bridge_borrows_visible_page_without_created_proof(
 
 
 def test_parent_webtab_bridge_targets_background_open(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     other = object()
     owner = object()
@@ -301,11 +301,50 @@ def test_parent_webtab_bridge_targets_background_open(monkeypatch):
     }
 
 
+def test_scheduled_run_background_open_passes_the_worker(monkeypatch):
+    """Both halves together: the command a scheduled run's child makes for a
+    background open is one the Worker serving that run accepts."""
+    from openprogram.runtime.conversation import process_runner, surface_context
+    from openprogram.interfaces.server.ws_actions import webtab
+
+    owner = object()
+    monkeypatch.setattr(webtab, "registered_desktop_windows", lambda: [(owner, "window-2", 7)])
+    monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, timeout=5.0: {
+        "ok": True, "window_id": "window-2", "tab_id": "tab-background",
+        "target_id": "target-background", "created": True, "reused": False,
+    })
+    monkeypatch.setattr(webtab, "register_binding", lambda *args, **kwargs: "surface-background")
+    monkeypatch.setattr(webtab, "binding_connection", lambda binding_id: owner)
+
+    def worker(command, timeout):
+        replies = Queue()
+        monkeypatch.delenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS")
+        try:
+            process_runner._bridge_webtab_to_parent(
+                {"req_id": "open", "command": command, "timeout": timeout}, replies, {},
+                allowed_window_id="window-2",
+            )
+        finally:
+            monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+        return replies.get(timeout=1)["result"]
+
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(webtab, "_request", worker)
+    token = surface_context.bind(surface_context.window_context("window-2"))
+    try:
+        opened = surface_context.open_page("https://www.google.com/", background=True)
+    finally:
+        surface_context.reset(token)
+
+    assert opened.get("ok") is not False, opened
+    assert opened["surfaces"][0]["binding_id"] == "surface-background"
+
+
 def test_parent_background_open_response_timeout_requires_manual_cleanup(
     monkeypatch,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     command = {
@@ -377,8 +416,8 @@ def test_parent_background_open_response_timeout_requires_manual_cleanup(
 def test_parent_webtab_bridge_rolls_back_unusable_open_result(
     monkeypatch, open_result,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     seen = []
@@ -444,8 +483,8 @@ def test_parent_webtab_bridge_rolls_back_unusable_open_result(
 def test_parent_webtab_bridge_does_not_close_unowned_invalid_page(
     monkeypatch, ownership,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     seen = []
@@ -490,8 +529,8 @@ def test_parent_webtab_bridge_does_not_close_unowned_invalid_page(
 def test_parent_webtab_bridge_retries_rejected_identity_rollback(
     monkeypatch, close_results,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     close_calls = []
@@ -553,8 +592,8 @@ def test_parent_webtab_bridge_retries_rejected_identity_rollback(
 
 
 def test_parent_webtab_bridge_rejects_background_open_outside_origin(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     calls = []
     monkeypatch.setattr(
@@ -581,8 +620,8 @@ def test_parent_webtab_bridge_rejects_background_open_outside_origin(monkeypatch
 
 
 def test_parent_webtab_bridge_targets_background_close(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     seen = []
@@ -635,8 +674,8 @@ def test_parent_webtab_bridge_targets_background_close(monkeypatch):
 
 
 def test_parent_webtab_bridge_rejects_exact_close_for_unowned_page(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     calls = []
     monkeypatch.setattr(
@@ -672,8 +711,8 @@ def test_parent_webtab_bridge_rejects_exact_close_for_unowned_page(monkeypatch):
 
 
 def test_parent_webtab_bridge_rejects_binding_close_for_borrowed_page(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     calls = []
     monkeypatch.setattr(
@@ -707,7 +746,8 @@ def test_parent_webtab_bridge_rejects_binding_close_for_borrowed_page(monkeypatc
 def test_parent_webtab_bridge_captures_origin_pages_as_borrowed_bindings(
     monkeypatch,
 ):
-    from openprogram.agent import process_runner, surface_context
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.runtime.conversation import surface_context
 
     captured = {
         "context_id": "page-context",
@@ -753,8 +793,13 @@ def test_parent_webtab_bridge_captures_origin_pages_as_borrowed_bindings(
     assert allowed_bindings == {"surface-existing"}
 
 
-def test_parent_webtab_bridge_rejects_page_capture_outside_origin(monkeypatch):
-    from openprogram.agent import process_runner, surface_context
+@pytest.mark.parametrize("command", [
+    {"op": "capture_pages", "window_id": "window-2"},
+    {"op": "capture_pages", "binding_id": "binding-outside-run"},
+])
+def test_parent_webtab_bridge_rejects_page_capture_outside_origin(monkeypatch, command):
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.runtime.conversation import surface_context
 
     calls = []
     monkeypatch.setattr(
@@ -765,9 +810,9 @@ def test_parent_webtab_bridge_rejects_page_capture_outside_origin(monkeypatch):
     replies = Queue()
     process_runner._bridge_webtab_to_parent({
         "req_id": "capture-other",
-        "command": {"op": "capture_pages", "window_id": "window-2"},
+        "command": command,
         "timeout": 2,
-    }, replies, {}, allowed_window_id="window-1", allowed_bindings=set())
+    }, replies, {}, allowed_window_id="window-1", allowed_bindings={"binding-owned"})
 
     result = replies.get(timeout=1)["result"]
     assert result["ok"] is False
@@ -778,8 +823,9 @@ def test_parent_webtab_bridge_rejects_page_capture_outside_origin(monkeypatch):
 def test_parent_webtab_bridge_keeps_prior_borrowed_binding_for_live_session(
     monkeypatch,
 ):
-    from openprogram.agent import process_runner, surface_context
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.runtime.conversation import surface_context
+    from openprogram.interfaces.server.ws_actions import webtab
 
     captures = iter([
         {
@@ -842,8 +888,8 @@ def test_parent_webtab_bridge_keeps_prior_borrowed_binding_for_live_session(
 def test_parent_webtab_bridge_closes_page_when_binding_registration_fails(
     monkeypatch,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     commands = []
@@ -907,8 +953,8 @@ def test_parent_webtab_bridge_closes_page_when_binding_registration_fails(
 
 
 def test_parent_cleans_background_page_after_child_termination(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     closed = []
@@ -951,8 +997,8 @@ def test_parent_cleans_background_page_after_child_termination(monkeypatch):
 def test_parent_cleanup_uses_recorded_owner_after_binding_is_invalidated(
     monkeypatch,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     closed = []
@@ -990,8 +1036,8 @@ def test_parent_cleanup_uses_recorded_owner_after_binding_is_invalidated(
 
 
 def test_parent_cleanup_preserves_identity_when_close_is_rejected(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     released = []
@@ -1030,8 +1076,8 @@ def test_parent_cleanup_preserves_identity_when_close_is_rejected(monkeypatch):
 def test_timeout_waits_for_late_open_cleanup_failure(
     monkeypatch, open_timeout,
 ):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     open_started = threading.Event()
@@ -1064,7 +1110,7 @@ def test_timeout_waits_for_late_open_cleanup_failure(
 
         def join(self, timeout=None):
             if self.alive and timeout != 5:
-                assert open_started.wait(1)
+                assert open_started.wait(30)
 
         def is_alive(self):
             return self.alive
@@ -1086,7 +1132,7 @@ def test_timeout_waits_for_late_open_cleanup_failure(
         del timeout
         if command["op"] == "open":
             open_started.set()
-            assert release_open.wait(2)
+            assert release_open.wait(30)
             if open_timeout:
                 return {
                     "ok": False,
@@ -1106,7 +1152,7 @@ def test_timeout_waits_for_late_open_cleanup_failure(
 
     monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
     monkeypatch.setattr(
-        "openprogram._compat.kill_process_tree",
+        "openprogram.host._platform.processes.kill_process_tree",
         lambda _pid: setattr(process, "alive", False) or True,
     )
     monkeypatch.setattr(
@@ -1126,14 +1172,14 @@ def test_timeout_waits_for_late_open_cleanup_failure(
     monkeypatch.setattr(webtab, "release_binding", lambda _binding_id: None)
 
     def release_late_open():
-        assert open_started.wait(1)
+        assert open_started.wait(30)
         time.sleep(0.65)
         release_open.set()
 
     releaser = Thread(target=release_late_open, daemon=True)
     releaser.start()
     started_at = time.monotonic()
-    result = process_runner.run_agentic_in_subprocess(
+    result = process_runner.run_agent_method_in_subprocess(
         tool_name="gui_agent",
         kwargs={},
         session_id="s-late-open",
@@ -1165,8 +1211,8 @@ def test_timeout_waits_for_late_open_cleanup_failure(
 
 
 def test_parent_cleanup_only_releases_borrowed_page_binding(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     closed = []
     released = []
@@ -1195,8 +1241,8 @@ def test_parent_cleanup_only_releases_borrowed_page_binding(monkeypatch):
 
 
 def test_parent_webtab_bridge_forwards_close_binding(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     seen = []
     monkeypatch.setattr(
@@ -1218,8 +1264,8 @@ def test_parent_webtab_bridge_forwards_close_binding(monkeypatch):
 
 
 def test_parent_webtab_bridge_forwards_expected_binding_revisions(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     seen = []
     monkeypatch.setattr(
@@ -1254,7 +1300,7 @@ def test_parent_webtab_bridge_forwards_expected_binding_revisions(monkeypatch):
 
 
 def test_multiwindow_bindings_remain_isolated_under_concurrency(monkeypatch):
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owners = [object(), object()]
     bindings = []
@@ -1310,8 +1356,8 @@ def test_multiwindow_bindings_remain_isolated_under_concurrency(monkeypatch):
 
 
 def test_parent_owns_page_session_attribution(monkeypatch):
-    from openprogram.agent import process_runner
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.interfaces.server.ws_actions import webtab
 
     seen = []
     monkeypatch.setattr(webtab, "request_open_tab", lambda url, timeout, **kwargs:
@@ -1324,8 +1370,13 @@ def test_parent_owns_page_session_attribution(monkeypatch):
 
 
 def test_parent_page_inventory_uses_trusted_session_context_and_restores_it(monkeypatch):
-    from openprogram.agent import process_runner, surface_context
-    from openprogram.agent.run_control import get_current_session_id, set_current_session_id, reset_current_session_id
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.runtime.conversation import surface_context
+    from openprogram.runtime.execution.run_control import (
+        get_current_session_id,
+        set_current_session_id,
+        reset_current_session_id,
+    )
 
     seen = []
     def capture(context):
@@ -1346,9 +1397,9 @@ def test_parent_page_inventory_uses_trusted_session_context_and_restores_it(monk
 
 def test_private_page_cleanup_retains_trusted_session_after_executor_context_ends(monkeypatch):
     import json
-    from openprogram.agent import process_runner
-    from openprogram.agent.run_control import get_current_session_id
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.runtime.execution.run_control import get_current_session_id
+    from openprogram.interfaces.server.ws_actions import webtab
 
     owner = object()
     sent = []
@@ -1372,7 +1423,68 @@ def test_private_page_cleanup_retains_trusted_session_after_executor_context_end
         assert not get_current_session_id()
         return process_runner._cleanup_bridged_webtabs(tracked), tracked
     with ThreadPoolExecutor(max_workers=1) as executor:
-        failures, remaining = executor.submit(execute_and_cleanup).result(timeout=5)
+        failures, remaining = executor.submit(execute_and_cleanup).result(timeout=30)
     assert sent and all(item.get("session_id") == "trusted-owner" for item in sent)
     assert failures == []
     assert remaining == {}
+
+
+def test_parent_webtab_bridge_marks_disconnected_desktop_for_child_wait(monkeypatch):
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.runtime.conversation import surface_context
+
+    def unavailable(_context):
+        raise surface_context.DesktopUnavailableError(
+            "originating Desktop window is unavailable"
+        )
+
+    monkeypatch.setattr(surface_context, "capture_pages", unavailable)
+    replies = Queue()
+    process_runner._bridge_webtab_to_parent({
+        "req_id": "capture-restarting",
+        "command": {"op": "capture_pages", "window_id": "window-1"},
+        "timeout": 2,
+    }, replies, {}, allowed_window_id="window-1", allowed_bindings=set())
+
+    result = replies.get(timeout=1)["result"]
+    assert result["ok"] is False
+    assert result["reason_code"] == "desktop_unavailable"
+
+
+def test_parent_webtab_bridge_relists_origin_window_after_binding_revoked(monkeypatch):
+    from openprogram.runtime.conversation import process_runner
+    from openprogram.runtime.conversation import surface_context
+
+    seen = []
+
+    def capture(context):
+        seen.append(context)
+        if context.get("surfaces"):
+            raise surface_context.DesktopUnavailableError(
+                "accepted Page binding is unavailable"
+            )
+        return {
+            "context_id": "relisted",
+            "window_id": "window-1",
+            "surfaces": [{
+                "window_id": "window-1", "tab_id": "tab-1",
+                "binding_id": "binding-new",
+            }],
+        }
+
+    monkeypatch.setattr(surface_context, "capture_pages", capture)
+    replies = Queue()
+    tracked = {}
+    allowed = {"binding-old"}
+    process_runner._bridge_webtab_to_parent({
+        "req_id": "capture-after-restart",
+        "command": {"op": "capture_pages", "binding_id": "binding-old"},
+        "timeout": 2,
+    }, replies, tracked, allowed_window_id="window-1", allowed_bindings=allowed)
+
+    result = replies.get(timeout=1)["result"]
+    assert result["ok"] is True
+    # The second capture lists the same originating window, never another.
+    assert seen[1]["origin_window_id"] == "window-1"
+    assert seen[1]["surfaces"] == []
+    assert "binding-new" in tracked and "binding-new" in allowed

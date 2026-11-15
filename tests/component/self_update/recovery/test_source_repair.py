@@ -7,17 +7,22 @@ import time
 
 import pytest
 
-from tests.component.self_update.verification.test_diagnosis import diagnosis_environment
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.programs.tools.test_self_update_tools import _isolated_owner
+from tests.component.self_update.verification import test_diagnosis as _test_diagnosis
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.programs.tools import test_self_update_tools as _test_self_update_tools
 from tests.support.waiting import wait_until
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+diagnosis_environment = _test_diagnosis.diagnosis_environment
+store_fixture = _async_job_support.store_fixture
+_isolated_owner = _test_self_update_tools._isolated_owner
 
 native_sandbox = pytest.mark.skipif(not Path("/usr/bin/sandbox-exec").is_file(), reason="requires macOS sandbox-exec")
 
 
 def _turn(environment, monkeypatch, *, edit=None):
-    from openprogram.agent.dispatcher import TurnResult
-    import openprogram.agent.dispatcher as dispatcher
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    import openprogram.runtime.conversation.turn_runtime as dispatcher
     store, runner, calls, update_id = environment
     diagnose = dispatcher.process_user_turn
     def execute(req):
@@ -38,7 +43,7 @@ def _result(environment):
 
 
 def _start():
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
     assert recover_pending_updates() is True
 
 
@@ -72,6 +77,27 @@ def test_candidate_runs_real_sandboxed_required_test(diagnosis_environment, monk
     assert Path(candidate["tests"][0]["log_path"]).is_file()
 
 
+@pytest.mark.parametrize("diagnosis_environment", [{"owner_protected_change": True, "required_tests": [
+    "python -c " + shlex.quote("from pathlib import Path; assert Path('feature.txt').read_text() == 'repaired\\n'")]}],
+    indirect=True)
+@native_sandbox
+def test_owner_approved_protected_paths_do_not_block_an_in_scope_repair(diagnosis_environment, monkeypatch):
+    _turn(diagnosis_environment, monkeypatch)
+    _start()
+    result = _result(diagnosis_environment)
+    assert result["status"] == "candidate_ready", result
+    assert set(result["candidate"]["changed_paths"]) == {"feature.txt", "scripts/release/owner.sh"}
+
+
+@pytest.mark.parametrize("diagnosis_environment", [{"owner_protected_change": True}], indirect=True)
+def test_repair_may_edit_what_used_to_be_a_protected_path(diagnosis_environment, monkeypatch):
+    _turn(diagnosis_environment, monkeypatch, edit=dict(
+        path="scripts/release/owner.sh", old_text="# approved by the owner\n", new_text="# changed\n"))
+    _start()
+    result = _result(diagnosis_environment)
+    assert "protected" not in str(result.get("reason", "")), result
+
+
 @pytest.mark.parametrize("edit", [
     dict(path="../outside", old_text=None, new_text="bad"),
     dict(path=".git/config", old_text=None, new_text="bad"),
@@ -103,12 +129,12 @@ def test_failed_test_or_source_drift_is_not_candidate_ready(diagnosis_environmen
 
 @pytest.mark.parametrize("diagnosis_environment", [{"required_tests": ["python -c " + shlex.quote(
     "import os,time; from pathlib import Path; Path('test-pid.tmp').write_text(str(os.getpid())); Path('test-pid.tmp').replace('test-pid'); time.sleep(30)")]}], indirect=True)
-@pytest.mark.parametrize("stop", ["owner", "iteration", "new_update", "timeout"])
+@pytest.mark.parametrize("stop", ["owner", "new_update", "timeout"])
 @native_sandbox
 def test_stopping_after_model_completion_reaps_test(diagnosis_environment, monkeypatch, stop):
     from dataclasses import replace
     from types import SimpleNamespace
-    from openprogram.self_update.repair import source_repair
+    from openprogram.operations.self_update.repair import source_repair
     from openprogram.programs.tools.system import self_update as tool_module
     from tests.component.programs.tools.test_self_update_tools import _request
     store, runner, _, update_id = diagnosis_environment
@@ -120,12 +146,11 @@ def test_stopping_after_model_completion_reaps_test(diagnosis_environment, monke
     pid_file = Path(candidate["worktree_path"]) / "test-pid"
     assert wait_until(pid_file.exists, timeout=5)
     pid = int(pid_file.read_text())
-    if stop in {"owner", "iteration"}:
+    if stop == "owner":
         monkeypatch.setattr(tool_module, "_turn_context", lambda: (_request(session_id="p1"), "a1"))
         # Execute the registered tool's ordinary wrapper, not a private cancel helper.
         import asyncio
-        tool = tool_module.self_update_repair_cancel if stop == "owner" else tool_module.self_update_iteration_cancel
-        asyncio.run(tool.execute("cancel", {"update_id": update_id}, None, None))
+        asyncio.run(tool_module.self_update.execute("cancel", {"action": "cancel", "update_id": update_id}, None, None))
     elif stop == "new_update":
         store.create(replace(store.load(update_id).request, update_id="su_next", pre_update_evidence=("new request",)))
     else:
@@ -145,7 +170,7 @@ def test_stopping_after_model_completion_reaps_test(diagnosis_environment, monke
 
 def test_expired_repair_never_resets_deadline(diagnosis_environment, monkeypatch):
     from types import SimpleNamespace
-    from openprogram.self_update.repair import source_repair
+    from openprogram.operations.self_update.repair import source_repair
     _turn(diagnosis_environment, monkeypatch)
     now = time.time() + source_repair.SECONDS + 1
     monkeypatch.setattr(source_repair, "time", SimpleNamespace(time=lambda: now, monotonic=time.monotonic))
@@ -157,14 +182,14 @@ def test_expired_repair_never_resets_deadline(diagnosis_environment, monkeypatch
 
 
 def test_legacy_request_does_not_acquire_repair_permissions(diagnosis_environment, monkeypatch):
-    from openprogram.self_update.repair import source_repair
+    from openprogram.operations.self_update.repair import source_repair
     store, _, _, update_id = diagnosis_environment
     path = store.root / update_id / "request.json"
     request = json.loads(path.read_text())
     request["pre_update_evidence"] = [x for x in request["pre_update_evidence"] if not x.startswith(source_repair.PREFIX)]
     store._write_json(path, request)
     # Re-publish the diagnostic binding as an old immutable request would have.
-    from openprogram.self_update.repair import diagnosis
+    from openprogram.operations.self_update.repair import diagnosis
     record = store.load(update_id)
     diagnostic_path = diagnosis._path(store, record, "request")
     value = json.loads(diagnostic_path.read_text())
@@ -179,9 +204,9 @@ def test_legacy_request_does_not_acquire_repair_permissions(diagnosis_environmen
 
 @pytest.mark.parametrize("damage", ["claim", "prompt", "tools", "owner", "followup", "valid"])
 def test_restored_repair_queue_checks_frozen_authority(diagnosis_environment, monkeypatch, damage):
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.self_update.repair import source_repair
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.operations.self_update.repair import source_repair
     store, runner, _, update_id = diagnosis_environment
     _turn(diagnosis_environment, monkeypatch)
     monkeypatch.setattr(source_repair, "dispatch_pending", lambda: None)
@@ -205,8 +230,8 @@ def test_restored_repair_queue_checks_frozen_authority(diagnosis_environment, mo
             source="self_update_repair", context_mode="clean", spawn_caller="a1", advance_head=False,
             wait=damage != "followup", defer_dispatch=True, creates_agent=False)
     runner.shutdown()
-    with runner._governor.ledger.immediate() as conn:
-        conn.execute("UPDATE job_admissions SET dispatch_ready=1 WHERE job_id=?", (request["job_id"],))
+    with runner._governor.ledger.run_tables().transaction() as conn:
+        conn.update("job_admissions", {"dispatch_ready": 1}, job_id=request["job_id"])
     recovered = JobRunner(max_workers=1, governor=runner._governor)
     monkeypatch.setattr(recovered, "_dispatch_followup", lambda _: pytest.fail("repair cannot trigger general Agent"))
     try:
@@ -217,7 +242,7 @@ def test_restored_repair_queue_checks_frozen_authority(diagnosis_environment, mo
 
 
 def test_partial_materialization_is_retained_and_not_replayed(diagnosis_environment, monkeypatch):
-    from openprogram.self_update.repair import repair_candidate
+    from openprogram.operations.self_update.repair import repair_candidate
     store, _, _, update_id = diagnosis_environment
     _turn(diagnosis_environment, monkeypatch)
     original_git = repair_candidate._git
@@ -241,7 +266,7 @@ def test_partial_materialization_is_retained_and_not_replayed(diagnosis_environm
 def test_native_watchdog_stops_when_worker_identity_is_lost():
     import subprocess
     import sys
-    from openprogram.self_update.repair.repair_candidate import _WATCHDOG
+    from openprogram.operations.self_update.repair.repair_candidate import _WATCHDOG
     result = subprocess.run([sys.executable, "-I", "-c", _WATCHDOG, "99999999", "30", "/bin/sleep", "30"], timeout=3)
     assert result.returncode == 125
 
@@ -250,7 +275,7 @@ def test_native_watchdog_stops_when_worker_identity_is_lost():
 def test_candidate_test_watchdog_does_not_write_runtime_bytecode(tmp_path, monkeypatch):
     import sys
     from types import SimpleNamespace
-    from openprogram.self_update.repair import repair_candidate
+    from openprogram.operations.self_update.repair import repair_candidate
 
     root = tmp_path.resolve()
     caches = root / "runtime-caches"
@@ -287,7 +312,7 @@ def test_required_tests_cannot_write_outside_candidate_or_use_network(diagnosis_
 def test_source_repair_has_only_pinned_read_tools():
     from types import SimpleNamespace
     from openprogram.programs import agent_tools, apply_tool_policy
-    assert {t.name for t in agent_tools(names=["read", "bash", "write", "self_update_repair_cancel", "self_update_observe"],
+    assert {t.name for t in agent_tools(names=["read", "bash", "write", "self_update", "self_update_observe"],
                                       source="self_update_repair", include_disabled=True)} == {"read"}
     assert apply_tool_policy([SimpleNamespace(name="read", execute=lambda: None)],
                              source="self_update_repair", exposure_filter=False) == []
@@ -295,10 +320,10 @@ def test_source_repair_has_only_pinned_read_tools():
 
 def test_corrupt_pointer_still_cancels_running_repair_job(diagnosis_environment, monkeypatch):
     import threading
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.agent.run_control import is_cancelled
-    from openprogram.agent.job.store import load_job
-    import openprogram.agent.dispatcher as dispatcher
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.runtime.conversation.run_control import is_cancelled
+    from openprogram.runtime.jobs.store import load_job
+    import openprogram.runtime.conversation.turn_runtime as dispatcher
     store, runner, _, update_id = diagnosis_environment
     diagnose = dispatcher.process_user_turn
     entered = threading.Event()
@@ -319,7 +344,7 @@ def test_corrupt_pointer_still_cancels_running_repair_job(diagnosis_environment,
         pointer.write_bytes(b"invalid source repair pointer")
     job_id = f"self-update:{update_id}:repair:1"
     assert wait_until(lambda: load_job("p1", job_id).cancel_requested_at is not None, timeout=3)
-    from openprogram.self_update.repair import source_repair
+    from openprogram.operations.self_update.repair import source_repair
     assert wait_until(lambda: (str(store.root), update_id) not in source_repair._threads, timeout=5)
     runner.await_job(job_id, timeout=5)
 
@@ -331,8 +356,8 @@ def test_corrupt_pointer_still_cancels_running_repair_job(diagnosis_environment,
                     reason="requires installed macOS standalone runtime")
 def test_packaged_python_can_run_read_only_candidate_tests(diagnosis_environment, monkeypatch):
     from types import SimpleNamespace
-    from openprogram.self_update.repair import repair_candidate
-    from openprogram.self_update.delivery.controller_bundle import _runtime_python
+    from openprogram.operations.self_update.repair import repair_candidate
+    from openprogram.operations.self_update.delivery.controller_bundle import _runtime_python
     runtime = Path("/Applications/OpenProgram.app/Contents/Resources/runtime")
     python = _runtime_python(runtime)
     monkeypatch.setattr(repair_candidate, "sys", SimpleNamespace(executable=str(python), base_prefix=str(python.parent.parent)))
@@ -343,8 +368,8 @@ def test_packaged_python_can_run_read_only_candidate_tests(diagnosis_environment
 
 
 def test_restart_reconciles_completed_diagnosis_before_clearing_pointer(diagnosis_environment, monkeypatch):
-    from openprogram.self_update.repair import diagnosis
-    from openprogram.self_update.repair import source_repair
+    from openprogram.operations.self_update.repair import diagnosis
+    from openprogram.operations.self_update.repair import source_repair
     store, runner, calls, update_id = diagnosis_environment
     _turn(diagnosis_environment, monkeypatch)
     monkeypatch.setattr(diagnosis, "_monitor", lambda *args: None)

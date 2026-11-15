@@ -1,0 +1,223 @@
+<title>文件树与文件管理</title>
+<meta name="description" content="侧边栏与 Files 页面共用的文件树：列、大小、路径、搜索、移动、上传、刷新与错误。">
+<h1>文件树与文件管理</h1>
+
+<p>侧边栏与中央 Files 页面共用一棵基于 <a href="https://github.com/pierrecomputer/pierre/tree/main/packages/trees"><code translate="no">@pierre/trees</code></a> 1.0.0-beta.6 的树。Pierre 负责行、层级、选中、焦点、虚拟滚动、固定祖先行和键盘导航；OpenProgram 负责文件系统状态。行高 30 像素，密度 1。</p>
+
+<svg class="fig-wide" viewBox="0 0 680 300" role="img" aria-label="面板从上到下。路径行：面包屑，右端为复制按钮。工具行：搜索、新建文件、新建文件夹、刷新、排序、信息。搜索行，按需展开。文件行上方是列标题：名称使用剩余宽度并中间缩略，大小 100 像素，修改时间 200 像素，类型 140 像素。宽度小于 720 像素时只显示名称和大小。">
+  <rect class="tile" x="110" y="1" width="569" height="210" rx="8"/>
+  <text class="t-soft" x="0" y="31">路径</text>
+  <text x="126" y="31">OpenProgram › … › scripts › install.sh</text>
+  <text class="t-soft" x="622" y="31">复制</text>
+  <text class="t-soft" x="0" y="67">工具</text>
+  <text x="126" y="67">搜索  ·  新建文件  ·  新建文件夹  ·  刷新  ·  排序  ·  信息</text>
+  <text class="t-soft" x="0" y="103">搜索</text>
+  <text class="t-soft" x="126" y="103">输入框，按需展开</text>
+  <line class="ln-faint" x1="110" y1="120" x2="679" y2="120"/>
+  <text class="t-soft" x="0" y="145">列标题</text>
+  <text x="126" y="145">名称</text>
+  <text x="358" y="145">大小</text>
+  <text x="438" y="145">修改时间</text>
+  <text x="578" y="145">类型</text>
+  <line class="ln-faint" x1="110" y1="158" x2="679" y2="158"/>
+  <line class="ln-faint" x1="346" y1="120" x2="346" y2="211"/>
+  <line class="ln-faint" x1="426" y1="120" x2="426" y2="211"/>
+  <line class="ln-faint" x1="566" y1="120" x2="566" y2="211"/>
+  <text class="t-soft" x="0" y="181">文件行</text>
+  <text class="t-soft" x="126" y="181">剩余宽度</text>
+  <text class="t-soft" x="126" y="200">中间缩略</text>
+  <text class="t-soft" x="358" y="181">100 px</text>
+  <text class="t-soft" x="438" y="181">200 px</text>
+  <text class="t-soft" x="578" y="181">140 px</text>
+  <text class="t-soft" x="0" y="264">小于</text>
+  <text class="t-soft" x="0" y="283">720 px</text>
+  <rect class="tile" x="110" y="240" width="316" height="52" rx="8"/>
+  <line class="ln-faint" x1="346" y1="240" x2="346" y2="292"/>
+  <text x="126" y="272">名称</text>
+  <text x="358" y="272">大小</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>路径</strong><small>面包屑，右端为复制按钮</small></li>
+  <li><strong>工具</strong><small>搜索、新建文件、新建文件夹、刷新、排序、信息</small></li>
+  <li><strong>搜索</strong><small>输入框，按需展开</small></li>
+  <li><strong>列标题</strong><small>名称、大小、修改时间、类型</small></li>
+  <li class="flow-end"><strong>文件行</strong><small>名称：剩余宽度，中间缩略</small><small>大小 100 px，修改时间 200 px，类型 140 px</small><small>小于 720 px：只有名称和大小</small></li>
+</ol>
+
+<h2 id="file-columns">列</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">宽度</th><td><code translate="no">ResizeObserver</code> 测量视口，设置名称列宽度和可见列，卸载时断开。文件行不超出面板，也不横向滚动（与 Codex 的文件树一致），因此 Pierre 的选中、焦点框和命名框无需覆盖即可完整显示。</td></tr>
+<tr><th scope="row">表头</th><td>纵向滚动时保持可见，与文件行共享列边界。</td></tr>
+<tr><th scope="row">单元格</th><td>Pierre 没有可排序列。通过 <code translate="no">renderRowDecoration</code> 输出三个文本片段，用 <code translate="no">unsafeCSS</code> 设置样式，放不下的片段被裁掉。不引入表格框架，不做逐文件元数据请求。</td></tr>
+<tr><th scope="row">修改时间</th><td>目录与搜索响应中的秒级 <code translate="no">mtime</code>，按当前语言和本地时区显示。缺少时间及搜索结果的合成祖先目录留空。</td></tr>
+<tr><th scope="row">类型</th><td>文件夹；大写扩展名加“文件”；无扩展名时为“文件”。</td></tr>
+<tr><th scope="row">排序</th><td>目录列标题切换按项目保存的服务端排序，保留文件夹优先、隐藏和忽略项设置。搜索保持相关性排序，列标题不起作用。</td></tr>
+<tr><th scope="row">深层目录</th><td>缩进限制在名称列内部，为图标和文件名留出空间，各列保持对齐。</td></tr>
+<tr><th scope="row">重命名</th><td>内联重命名保持 Pierre 的列内容隐藏行为。</td></tr>
+<tr><th scope="row">不包括</th><td>列拖动排序、手动调宽、额外元数据字段、文件系统监听。</td></tr>
+</tbody>
+</table>
+
+<h2 id="display">外观</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件夹</th><td>箭头通过 <code translate="no">icons.remap</code> 换成主侧边栏的 Solar 文件夹 sprite；展开状态决定开合。文件夹不旋转。</td></tr>
+<tr><th scope="row">文件行</th><td>距面板两侧 6 像素，内部留 6 像素。无额外上下内边距。Pierre 的缩进参考线始终显示；不用固定缩进和自定义连线。</td></tr>
+<tr><th scope="row">滚动条</th><td>应用的悬浮滑块不占宽度，文件行延伸到面板右边缘。</td></tr>
+<tr><th scope="row">选中</th><td>选中行无边框。未选中行保留键盘焦点指示。</td></tr>
+<tr><th scope="row">工具栏</th><td>与路径行共用 8 像素左右外留白。工具栏与列表之间无分隔线。沿用现有按钮和圆角菜单。</td></tr>
+</tbody>
+</table>
+
+<h2 id="paths">路径行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">组件</th><td>shadcn Breadcrumb，radix-nova 样式，面板的 14 像素字号，单行。Nova 的箭头分隔符位于列表 6 像素间距之中。</td></tr>
+<tr><th scope="row">颜色</th><td>祖先弱化，悬停时为前景色；当前项为前景色。</td></tr>
+<tr><th scope="row">放不下时</th><td>放不下的祖先收进 Nova 的省略号，点击后以菜单列出。有余量时多显示一个祖先的部分名称。不显示重复名称的悬浮提示。</td></tr>
+<tr><th scope="row">点击</th><td>在已加载条目中定位并展开祖先，不重新读取列表或重算大小。仅目标缺失时查询。</td></tr>
+<tr><th scope="row">复制按钮</th><td>复制绝对路径，成功后显示 1.5 秒勾选。</td></tr>
+<tr><th scope="row">右键菜单</th><td>所点位置的相对路径、绝对路径或名称。</td></tr>
+</tbody>
+</table>
+
+<h2 id="queries">列表与搜索</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">列表</th><td><code translate="no">project_file_tree</code>：按目录懒加载、分页，由服务端排序。可按名称、类型、修改时间、大小排序，并可文件夹优先。框架比较器保持后端顺序，不回到字母排序。</td></tr>
+<tr><th scope="row">分页</th><td>接近目录已加载条目末尾时自动读取下一页，没有分页按钮。</td></tr>
+<tr><th scope="row">搜索</th><td>使用后端权限范围与分页。结果用 Pierre 层级显示；高亮模式保留目录。</td></tr>
+<tr><th scope="row">匹配</th><td>模糊匹配由后端判定，以匹配标记及原生当前项选中表示。字面查询使用框架文本高亮。</td></tr>
+<tr><th scope="row">定位</th><td>由控制器展开与滚动，不依赖手写行 DOM。</td></tr>
+</tbody>
+</table>
+
+<h2 id="sizes">文件与文件夹大小</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件</th><td>字节数。</td></tr>
+<tr><th scope="row">可见文件夹</th><td>每个文件夹只发一次 <code translate="no">project_folder_size</code> 请求（<code translate="no">measure</code>）：有保存的样本就直接返回，否则服务器遍历最多一秒并保存结果，无论是否完成。只有刷新或 Files 修改后才再次请求，不再逐块追问。共用队列同时运行两个。状态：缓存、扫描中、完整、部分、取消、错误。搜索忽略的目录（如 <code translate="no">.cache</code>、<code translate="no">node_modules</code>）仍有元数据和大小。</td></tr>
+<tr><th scope="row">列表中</th><td>只显示数值，不附加 <code translate="no">≈</code> 或 <code translate="no">≥</code>。</td></tr>
+<tr><th scope="row">统计中</th><td>已有数值继续更新，并以灰色缓慢明暗变化；统计停止后恢复正常。不新增文字或图标。</td></tr>
+<tr><th scope="row">暂无数值</th><td>留空，不显示横线。</td></tr>
+<tr><th scope="row">详细信息</th><td>估算、下界、时间和完整性。只有重新计算和继续统计才分块统计。</td></tr>
+</tbody>
+</table>
+
+<h3 id="size-samples">持久样本</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">复用</th><td>已结束的样本在视图重新挂载和 worker 重启后保留，显示时不递归读取。最多 256 条，存于默认 profile 状态。大小排序保持近期完整样本规则。</td></tr>
+<tr><th scope="row">新扫描</th><td>只有无样本文件夹的首次显示、刷新、Files 修改和重新计算。</td></tr>
+<tr><th scope="row">失效</th><td>Files 修改成功后，从内存和磁盘清除受影响的祖先与子目录样本，并取消相关活动扫描，包含根目录重叠的项目。</td></tr>
+<tr><th scope="row">键</th><td>验证后的绝对路径。设备和 inode 也须一致，因此项目重绑定或目录替换不会读到另一目录的结果。</td></tr>
+<tr><th scope="row">不完整扫描</th><td>保持不完整，保留跳过条目的记录。因时间上限中断的遍历保存为下界，下次显示时不再遍历。活动扫描 token 不保存。</td></tr>
+<tr><th scope="row">过期样本</th><td>深层编辑可能使样本过期；详细信息显示时间和完整性。不增加文件监听、递归新鲜度检查、内容读取或额外 profile。</td></tr>
+<tr><th scope="row">存储</th><td>现有原子 JSON 写入函数：私有临时文件加原子替换。缓存损坏或不可用时回到扫描。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么不用别的存储</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方案</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://docs.python.org/3/library/sqlite3.html">Python sqlite3</a></th><td>支持持久事务和并发连接，但一个 worker 拥有的有界缓存用不上。不增加表结构或依赖。</td></tr>
+<tr><th scope="row">Pierre 树、React 队列</th><td>继续负责虚拟化和两个可见目录任务。二者都不提供服务端持久样本。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="editing">新建、重命名与菜单</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">新建条目</th><td>直接在树中命名：所在文件夹出现占位行，名称编辑框为空，默认名称作为浅色提示。</td></tr>
+<tr><th scope="row">提交</th><td>Enter 或离开编辑框时按输入的名称创建。Escape 或未输入就离开时移除占位行。现有表单验证后再提交。</td></tr>
+<tr><th scope="row">右键菜单</th><td>详情、系统定位、新建文件、新建文件夹、复制路径、剪切、复制、粘贴、移动到、重命名、确认后删除。</td></tr>
+<tr><th scope="row">多行</th><td>剪切、复制、移动和删除作用于全部选中项，菜单显示数量；重命名只适用于单行。</td></tr>
+<tr><th scope="row">选择</th><td>Cmd/Ctrl 点击切换单行，Shift 点击选择范围。在别处打开标签页或定位文件时，选择替换为该行。</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">按键</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Cmd/Ctrl+C</code>、<code translate="no">Cmd/Ctrl+X</code></th><td>复制、剪切</td></tr>
+<tr><th scope="row"><code translate="no">Cmd/Ctrl+V</code></th><td>粘贴到选中的文件夹或选中文件所在文件夹</td></tr>
+<tr><th scope="row"><code translate="no">Cmd+Backspace</code>、<code translate="no">Delete</code></th><td>确认后删除</td></tr>
+<tr><th scope="row"><code translate="no">F2</code></th><td>重命名</td></tr>
+<tr><th scope="row"><code translate="no">Cmd/Ctrl+Shift+M</code></th><td>移动到</td></tr>
+</tbody>
+</table>
+
+<h2 id="moving">移动</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">拖放</th><td>Pierre 的拖放，拖到文件夹或根目录；悬停 600 毫秒自动展开文件夹。</td></tr>
+<tr><th scope="row">执行</th><td>树立即显示移动结果；实际移动走与剪切粘贴相同的服务端重命名，保留草稿保护和已打开标签页的路径跟随。被拒绝时重新读取列表。</td></tr>
+<tr><th scope="row">撤销</th><td>每次移动显示带“撤销”的提示，撤销会把条目移回原处。</td></tr>
+<tr><th scope="row">跳过</th><td>移到原父目录，或移进被移动的文件夹自身。</td></tr>
+</tbody>
+</table>
+
+<h3 id="move-to">移动到</h3>
+<p>shadcn Command 对话框，把输入当作路径。沿用同一服务端重命名与带撤销的提示；选中的文件夹在树中展开。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">输入</th><th scope="col">列出</th></tr></thead>
+<tbody>
+<tr><th scope="row">未输入</th><td>项目根目录、本项目最近移动到的五个文件夹、顶层文件夹。</td></tr>
+<tr><th scope="row"><code translate="no">folder/name</code></th><td>最后一个斜杠之前的部分所指文件夹的子文件夹，来自 <code translate="no">project_file_tree</code>，再按其后的部分筛选，以它开头的排在前面。文件夹排在前面，读到第一个文件即停止。每层一次列表读取，因此任何大小的项目都能用。Tab 进入高亮的文件夹。</td></tr>
+<tr><th scope="row"><code translate="no">name</code></th><td>还会用 <code translate="no">project_file_search</code>（<code translate="no">type: "dir"</code>）列出项目其他位置的结果；超过搜索快照上限时没有这部分。</td></tr>
+<tr><th scope="row">路径不存在</th><td>可新建该文件夹（含缺失的父目录）并移入。</td></tr>
+</tbody>
+</table>
+<p class="note">当前所在文件夹与被移动的文件夹不可选。</p>
+
+<h2 id="desktop-files">从桌面拖入</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">目标</th><td>指针下的文件夹、指针下文件所在的文件夹或项目根目录。树显示描边，提示标签写明目标。</td></tr>
+<tr><th scope="row">传输</th><td>浏览器读取拖入的文件，逐个以项目相对路径流式发送到 <code translate="no">POST /api/files/upload</code>。不传本地路径，不打开项目以外的内容。</td></tr>
+<tr><th scope="row">文件夹</th><td>按其中的文件上传，并创建缺少的父目录。</td></tr>
+<tr><th scope="row">同名项</th><td>从不覆盖：上传拒绝，提示中统计未改动的数量。</td></tr>
+<tr><th scope="row">上限</th><td>单个文件 1 GiB。</td></tr>
+<tr><th scope="row">输入框</th><td>拖放停留在文件树内，不进入附件拖放。</td></tr>
+</tbody>
+</table>
+
+<h2 id="refresh-and-errors">刷新与错误</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">窗口重新获得焦点</th><td>重新列出已展开的目录，最多每三秒一次，不重新统计大小。</td></tr>
+<tr><th scope="row">任何刷新</th><td>保留选中路径、展开目录和已加载分页；等待时保留旧行。</td></tr>
+<tr><th scope="row">父目录收起</th><td>保持关闭，即使子目录曾展开；重新展开时恢复。</td></tr>
+<tr><th scope="row">目录或分页失败</th><td>停止自动重试。显示路径和显式重试，不显示虚假条目。</td></tr>
+<tr><th scope="row">项目文件夹不可用</th><td>原因和修复操作取代列表：确认记录位置上的文件夹，或定位文件夹。见<a href="../workspace/project-location.zh.html">项目位置</a>。</td></tr>
+<tr><th scope="row">保持的合同</th><td>工作区范围、取消、过期响应隔离、草稿保护、服务端幂等变更、元数据和大小缓存权限。框架不接触文件内容，也不判定权限。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary id="implementation-status">实现状态</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">范围</th><th scope="col">已检查</th></tr></thead>
+<tbody>
+<tr><th scope="row" id="columns-evidence">列</th><td>真实 Chromium 中的 <code translate="no">FileTree</code> 和 <code translate="no">PierreFileTree</code>：默认名称与大小、四列对齐、宽视图、固定祖先行、窄面板十层缩进、时间与类型值、排序请求、偏好保留、搜索相关性、纵向滚动恢复。</td></tr>
+<tr><th scope="row" id="size-cache-evidence">持久大小</th><td>通过 <code translate="no">project_folder_size</code>：完成的样本在重新加载后无需递归遍历；存储损坏不阻断元数据查询；不完整样本保持不完整；替换的目录不复用样本。通过 Files：重新打开两个视图和详细信息不为缓存样本启动扫描；刷新和重新计算仍通过共用队列更新；修改使持久祖先样本和根目录扫描失效。</td></tr>
+<tr><th scope="row">App 深色界面</th><td>目录开合、虚拟滚动、大小、文件标签页、原生右键菜单、排序菜单、刷新后路径保留、嵌套父目录收起、自动分页。组件回归测试覆盖父目录收起后的刷新。</td></tr>
+<tr><th scope="row">未检查</th><td>浅色模式的单独人工验收。</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="note">文件类型图标：<a href="../visual-system/file-type-icons.zh.html">图标设计</a>。文件内容、草稿与恢复：<a href="../../runtime/operations/file-management.zh.html">文件操作</a>。Pierre 的 Apache 2.0 与图标 MIT 许可随产品发布。</p>

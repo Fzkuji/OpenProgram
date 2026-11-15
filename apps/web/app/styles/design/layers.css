@@ -1,0 +1,26 @@
+/* Stacking layers for anything that floats above the page. Values inside
+   one component (1–12) stay local; a surface that has to sit above other
+   surfaces names its layer here, so the order is written down once.
+
+     sticky        20  sticky headers inside a pane
+     floating      50  panels floating inside a pane (legends, pills, chips)
+     drawer       100  sidebars laid over the content at narrow widths
+     overlay      110  the dim layer behind a dialog
+     dialog       120  dialogs and alert dialogs
+     popover      130  menus, popovers and Select popups, above dialogs
+     tooltip      140  tooltips, above every menu
+     toast        300  toasts
+     fullscreen 10000  full-window editors and lightboxes
+     drag      100000  drag previews and the drag surface */
+:root {
+  --z-sticky: 20;
+  --z-floating: 50;
+  --z-drawer: 100;
+  --z-overlay: 110;
+  --z-dialog: 120;
+  --z-popover: 130;
+  --z-tooltip: 140;
+  --z-toast: 300;
+  --z-fullscreen: 10000;
+  --z-drag: 100000;
+}

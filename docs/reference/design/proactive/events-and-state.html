@@ -1,0 +1,44 @@
+<title>Events and state</title>
+<meta name="description" content="How the proactive layer folds the event stream into per-session state that rules can read.">
+<meta name="covers" content="openprogram/runtime/proactive/">
+<h1>Events and state</h1>
+
+<p>Rules read state; nobody maintains it by hand. It is the event stream folded from empty, one event at a time.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">Payload read</th><th scope="col"><code translate="no">SessionState</code> after</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">user.prompt_submitted</code></th><td></td><td><code translate="no">turn_has_file_change</code> and <code translate="no">turn_has_verification</code> reset to false</td></tr>
+<tr><th scope="row"><code translate="no">tool.before</code></th><td><code translate="no">tool</code>, <code translate="no">args.command</code></td><td><code translate="no">last_tool</code> set; <code translate="no">turn_has_verification</code> true when it is a verification</td></tr>
+<tr><th scope="row"><code translate="no">file.changed</code></th><td><code translate="no">path</code></td><td><code translate="no">changed_files</code> adds it; <code translate="no">turn_has_file_change</code> true</td></tr>
+<tr><th scope="row"><code translate="no">tool.after</code>, <code translate="no">is_error</code></th><td><code translate="no">tool</code></td><td><code translate="no">tool_fail_count[tool]</code> + 1</td></tr>
+<tr><th scope="row"><code translate="no">tool.after</code>, success</th><td><code translate="no">tool</code></td><td><code translate="no">tool_fail_count[tool]</code> = 0</td></tr>
+</tbody>
+</table>
+<p class="note">A verification is a tool named with <code translate="no">pytest</code>, <code translate="no">test</code>, <code translate="no">chrome</code>, <code translate="no">browser</code> or <code translate="no">navigate</code>, or a <code translate="no">bash</code> or <code translate="no">test</code> tool whose command holds <code translate="no">test</code>, <code translate="no">pytest</code>, <code translate="no">npm run</code> or <code translate="no">make </code>.</p>
+
+<h2>Fold</h2>
+<pre translate="no"><code>state = empty_state()
+for event in stream:
+    state = update(state, event)</code></pre>
+<p>From scratch is the definition. <code translate="no">StateStore.apply</code> updates incrementally and must give the same result.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Property</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stream</th><td>Ordered and append-only, so any moment can be recomputed. The <a href="event-layer.html">event layer</a> defines the event.</td></tr>
+<tr><th scope="row">Concurrency</th><td>One state per <code translate="no">metadata["session"]</code>. Subagents folded together would pair one's changes with another's situation.</td></tr>
+<tr><th scope="row"><code translate="no">origin</code></th><td>Events the framework caused are not folded or shown to rules: <a href="invariants.html">Invariants</a>.</td></tr>
+<tr><th scope="row">Depth</th><td>Mechanical facts only (L0). Heuristic and LLM layers are added when a rule needs them.</td></tr>
+</tbody>
+</table>
+
+<h2>Reading state</h2>
+<pre translate="no"><code>class StuckToolWatcher(Policy):
+    on = {"tool.after"}
+    def evaluate(self, event, state):
+        tool = event.payload["tool"]
+        if state.tool_fail_count.get(tool, 0) &gt;= 3:
+            return Notify(f"{tool} has failed repeatedly, may be stuck")</code></pre>
+
+<p class="next"><a href="execution-model.html">Rules and how they run</a></p>

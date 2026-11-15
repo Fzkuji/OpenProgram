@@ -1,0 +1,133 @@
+<title>JSON Schema 结构化输出</title>
+<meta name="description" content="Runtime.exec 配 response_format 时如何协商模式、本地校验并返回 Python JSON 值。">
+<h1>JSON Schema 结构化输出</h1>
+<p><code translate="no">Runtime.exec(..., response_format=...)</code> 是唯一的公开入口。无论供应商怎么声称，结果都严格解析，并按调用方的原始 schema 校验。普通调用仍返回 <code translate="no">str</code>。</p>
+<h2>模式</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">mode</code></th><th scope="col">做法</th><th scope="col">选用条件</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">native</code></th><td>供应商的 JSON Schema 字段</td><td>适配器支持、模型字段不为 <code translate="no">False</code>、schema 无损投影、支持当前工具</td></tr>
+<tr><th scope="row"><code translate="no">tool</code></th><td>隐藏工具 <code translate="no">__openprogram_submit_json</code></td><td><code translate="no">fallback="auto"</code>、严格工具 schema、无损、<code translate="no">tool_choice</code> 允许</td></tr>
+<tr><th scope="row"><code translate="no">prompt</code></th><td>系统层放精简 schema，只做本地检查</td><td>仅在显式 <code translate="no">fallback="prompt"</code> 时</td></tr>
+<tr><th scope="row">无</th><td>发送前抛 <code translate="no">StructuredOutputUnsupportedError</code></td><td>其他情况</td></tr>
+</tbody>
+</table>
+<p class="note">非法 schema 最先失败。<code translate="no">Model.structured_output=None</code> 表示未知，不等于 <code translate="no">False</code>。有损投影会报出确切路径并禁用 native。</p>
+<h2>适配器</h2>
+<table class="stack">
+<thead><tr><th scope="col">API</th><th scope="col">原生字段</th><th scope="col">能力</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai-completions</code></th><td><code translate="no">response_format={type:"json_schema", json_schema:{…}}</code></td><td>支持，可带工具</td></tr>
+<tr><th scope="row"><code translate="no">openai-responses</code></th><td><code translate="no">text.format={type:"json_schema", …}</code></td><td>支持，可带工具</td></tr>
+<tr><th scope="row"><code translate="no">anthropic-messages</code></th><td><code translate="no">output_config.format</code>，与 <code translate="no">effort</code> 合并</td><td>支持，可带工具</td></tr>
+<tr><th scope="row"><code translate="no">google-generative-ai</code></th><td><code translate="no">response_mime_type</code> 和 <code translate="no">response_json_schema</code></td><td>支持，不带工具，Google 子集</td></tr>
+<tr><th scope="row"><code translate="no">azure-openai-responses</code></th><td>Responses <code translate="no">text.format</code></td><td>按模型显式开启</td></tr>
+<tr><th scope="row"><code translate="no">bedrock-converse-stream</code></th><td><code translate="no">outputConfig.textFormat.structure.jsonSchema</code>，JSON 字符串</td><td>按模型显式开启</td></tr>
+<tr><th scope="row"><code translate="no">openai-codex</code></th><td>无</td><td>工具回退</td></tr>
+<tr><th scope="row"><code translate="no">gemini-subscription</code></th><td>无</td><td>未知：只能显式 prompt</td></tr>
+</tbody>
+</table>
+<h2>一次尝试</h2>
+<ol>
+<li>文本和工具增量带 <code translate="no">output_attempt</code> 进入客户端候选缓冲，不持久化。</li>
+<li>收到供应商原始 <code translate="no">done</code> 后解析并校验。成功：<code translate="no">structured_output_end</code>，然后一个 <code translate="no">done</code>。流结束却没有终止事件按 <code translate="no">incomplete</code> 失败。</li>
+<li>可修复的失败：<code translate="no">structured_output_retry</code>；客户端清空缓冲；开始新的供应商流。</li>
+<li>预算用尽：<code translate="no">error</code>，没有 <code translate="no">done</code>，不持久化非法的助手消息。</li>
+</ol>
+<h2>失败处理</h2>
+<table class="grid">
+<thead><tr><th scope="col">失败</th><th scope="col">请求</th><th scope="col">修复</th></tr></thead>
+<tbody>
+<tr><th scope="row">非法 schema</th><td class="deny">不发送：<code translate="no">StructuredOutputSchemaError</code></td><td class="deny">否</td></tr>
+<tr><th scope="row">不支持或配置冲突</th><td class="deny">不发送：<code translate="no">StructuredOutputUnsupportedError</code></td><td class="deny">否</td></tr>
+<tr><th scope="row">JSON 语法、违反 schema、缺失或混合提交</th><td class="run">已发送</td><td class="review">是，最多 <code translate="no">max_validation_retries</code> 次</td></tr>
+<tr><th scope="row">拒答、内容过滤</th><td class="run">已发送</td><td class="deny">否：<code translate="no">refusal</code></td></tr>
+<tr><th scope="row"><code translate="no">max_tokens</code>、不完整、上下文长度</th><td class="run">已发送</td><td class="deny">否：保留原因，不改上限</td></tr>
+<tr><th scope="row">传输、限流、供应商内部错误</th><td class="run">已发送</td><td class="review">现有重试，共用预算</td></tr>
+<tr><th scope="row">取消、超期</th><td class="run">已发送</td><td class="deny">否：直接传播</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">max_validation_retries</code>（0、1 或 2；默认 2）限制修复次数；<code translate="no">max_retries</code> 限制 Runtime 边界的全部供应商调用，修复两者都要满足。只有真的要修复时才发重试事件。修复提示只含失败类型和有界问题列表，只在这次 exec 内有效。</p>
+<h2>与工具共存</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">原生，适配器 <code translate="no">with_tools</code></th><td>每轮都带 schema；校验不含工具调用那一轮的文本</td></tr>
+<tr><th scope="row">原生，工具组合未验证</th><td><code translate="no">auto</code> 时用隐藏工具，否则预检失败</td></tr>
+<tr><th scope="row">隐藏工具加用户工具</th><td>一起提供；普通工具可跑多轮；提交即结束。<code translate="no">parallel_tool_calls=False</code>。</td></tr>
+<tr><th scope="row">同一响应既有提交又有普通工具</th><td><code translate="no">mixed_submission</code>：拒绝，不执行工具</td></tr>
+<tr><th scope="row">纯文本，没有提交</th><td><code translate="no">missing_submission</code></td></tr>
+<tr><th scope="row">强制工具、<code translate="no">none</code> 或要求并行</th><td>不覆盖：能原生就原生，否则不支持</td></tr>
+</tbody>
+</table>
+<p class="note">提交不执行，也没有 <code translate="no">ToolResultMessage</code>。校验在 Agent 循环的无工具终点；没有单独的供应商路径，工具、期限、DAG、录制回放保持一套。</p>
+<h2>各入口</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row">Python</th><td>返回 <code translate="no">JsonValue</code>；抛 <code translate="no">StructuredOutputError</code>，带 <code translate="no">code</code>、<code translate="no">provider</code>、<code translate="no">model</code>、<code translate="no">attempts</code>、<code translate="no">issues</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram --print --json-schema PATH</code>（<code translate="no">-</code> 读 stdin）</th><td>stdout 是一个紧凑 UTF-8 JSON 文档。退出码 2 非法，3 不支持，4 生成或校验失败；stderr 只有错误码。</td></tr>
+<tr><th scope="row">WebSocket 聊天、<code translate="no">POST /api/function/{name}</code></th><td><code translate="no">response_format?</code>；结果在 <code translate="no">chat_response</code>，带 <code translate="no">structured_output</code> 和 <code translate="no">structured_output_mode</code>；HTTP 路由仍只确认 <code translate="no">{session_id,msg_id}</code></td></tr>
+<tr><th scope="row">网页聊天</th><td>默认不发 schema，没有 schema 编辑器；重试清空候选文本</td></tr>
+<tr><th scope="row">会话历史</th><td>规范 JSON 内容；模式、尝试次数、schema 哈希在 metadata；非法候选不进入</td></tr>
+</tbody>
+</table>
+<details><summary>类型</summary>
+<pre translate="no" tabindex="0"><code>@dataclass(frozen=True)
+class JsonSchemaOutput:
+    schema: dict[str, Any]     # never mutated
+    name: str = "response"     # ^[A-Za-z_][A-Za-z0-9_-]{0,63}$
+    description: str | None = None
+    strict: bool = True
+    fallback: Literal["auto", "none", "prompt"] = "auto"
+    max_validation_retries: Literal[0, 1, 2] = 2
+    type: Literal["json_schema"] = "json_schema"
+
+Runtime.exec(content=..., response_format={"type": "object", ...}) -&gt; JsonValue
+Runtime.exec(content=..., response_format=JsonSchemaOutput(...)) -&gt; JsonValue
+Runtime.exec(content=..., response_format=None) -&gt; str</code></pre>
+<p>裸 dict 就是 schema，不是供应商 payload。<code translate="no">Model.structured_output</code>、<code translate="no">StreamOptions.response_format</code>，以及 <code translate="no">AssistantMessage.structured_output</code>、<code translate="no">structured_output_mode</code>、<code translate="no">structured_output_attempt</code>。原始 JSON 文本留在助手内容里供历史和审计。<code translate="no">jsonschema&gt;=4.23</code> 是直接依赖。错误 <code translate="no">code</code>：<code translate="no">invalid_schema</code>、<code translate="no">unsupported</code>、<code translate="no">invalid_json</code>、<code translate="no">validation_failed</code>、<code translate="no">missing_submission</code>、<code translate="no">mixed_submission</code>、<code translate="no">refusal</code>、<code translate="no">incomplete</code>。</p>
+</details>
+<details><summary>解析和限制</summary>
+<ul>
+<li><code translate="no">json.loads</code> 拒绝 <code translate="no">NaN</code>、<code translate="no">Infinity</code>、Markdown 围栏、前后说明和尾部内容；不用宽松解析器，隐藏工具参数也一样。</li>
+<li><code translate="no">validator_for(schema)</code>，注册表禁止外部访问，错误按实例路径、schema 路径、消息排序。</li>
+<li>预检拒绝不能在 schema 内解析的 <code translate="no">$ref</code>、<code translate="no">$dynamicRef</code>、<code translate="no">$recursiveRef</code> 和直接引用环。允许有限递归。</li>
+<li>Schema 预算：1 MiB、4096 容器节点、8192 边、深度 100；超出为 <code translate="no">invalid_schema</code>。</li>
+<li>最多 20 个问题，每个 500 字符。</li>
+<li>工具参数：严格导出把可选字段变成必填可空；共用规范化在副本上只还原新增的 null，再做规范校验。enum、条件和组合约束不变。</li>
+</ul>
+</details>
+<details><summary>录制与回放</summary>
+<p><code translate="no">RECORDING_FORMAT_VERSION</code> 为 2。请求记录规范化的 <code translate="no">response_format</code>；记录原始供应商事件，回放时确定性重建重试、结束和错误。每次修复都是新的供应商调用和 <code translate="no">call_index</code>。拒绝 v1 结构化录制；普通 v1 保持兼容。schema 做 SHA-256 哈希（键排序）用于日志、DAG 和错误；录制保留完整 schema。</p>
+</details>
+<details><summary>会话标题使用方</summary>
+<p><code translate="no">conversation/turn_runtime/titles.py</code>：<code translate="no">TITLE_SCHEMA</code> 为 <code translate="no">{title: string, 1–80}</code>，<code translate="no">toolset="none"</code>，<code translate="no">max_iterations=2</code>，<code translate="no">fallback="prompt"</code>，<code translate="no">max_validation_retries=1</code>。尽力而为：结构化错误时保留占位标题。使用方只做 Unicode 修剪和存储长度保护；日志只有固定的生命周期标签。</p>
+</details>
+<details><summary>没有采用的做法</summary>
+<ul>
+<li>只靠供应商 strict 并返回原文：拒答、截断和兼容端点都需要本地检查。</li>
+<li>用宽松或部分 JSON 解析修复。</li>
+<li>把每个增量解析成对象。</li>
+<li>单独的结构化供应商路径。</li>
+<li>有损 schema 改写、自动 Pydantic 类型、跨语言代码生成、增量 JSON AST。</li>
+</ul>
+<p class="note"><code translate="no">references/pi-ai</code> 有共用选项和严格工具 schema，但没有响应 schema。每个适配器开启能力前都要有 payload 契约测试。</p>
+</details>
+<details><summary>文件</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/structured_output.py</code></th><td>规范化、预检、协商、解析、错误</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/types.py</code></th><td>字段和事件</td></tr>
+<tr><th scope="row"><code translate="no">providers/catalog/{api_registry,register}.py</code></th><td>适配器能力</td></tr>
+<tr><th scope="row"><code translate="no">providers/schema/</code></th><td>方言、严格投影</td></tr>
+<tr><th scope="row"><code translate="no">runtime/agent/loop/</code></th><td>终点校验、隐藏工具、修复</td></tr>
+<tr><th scope="row"><code translate="no">runtime/agent/runtime/</code></th><td>解析后的返回值、callable 模型</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/event_parsing.py</code></th><td>流事件</td></tr>
+<tr><th scope="row"><code translate="no">providers/recording/{recording,replay}.py</code></th><td>格式 2</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/cli/{parser,application,chat,print_turn}.py</code></th><td>一次性 CLI</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/chat/</code>、<code translate="no">routes/chat.py</code></th><td>WebSocket 和 API</td></tr>
+</tbody>
+</table>
+</details>

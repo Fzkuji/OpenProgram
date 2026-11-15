@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import atexit
 import json
-import threading
 import time
 
 import pytest
@@ -22,24 +21,24 @@ import pytest
 @pytest.fixture(autouse=True)
 def runner_lifecycle(monkeypatch):
     """Run the real local pool under the worker lock and always close it."""
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
 
     runner_mod.shutdown_runner()
-    monkeypatch.setattr("openprogram.worker.lock.is_held_by", lambda _pid: True)
+    monkeypatch.setattr("openprogram.operations.worker.lock.is_held_by", lambda _pid: True)
     yield
     runner_mod.shutdown_runner()
 
 
 @pytest.fixture
 def isolated_store(tmp_path, monkeypatch):
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.agent import session_db as sdb_mod
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.runtime.context import session_db as sdb_mod
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
     monkeypatch.setattr(
-        "openprogram.store.session.session_store.default_store", lambda: s,
+        "openprogram.state.store.session.session_store.default_store", lambda: s,
     )
-    monkeypatch.setattr("openprogram.store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: s)
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "hi",
@@ -65,9 +64,9 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
     job pointing at it, fake worker completes, and verify the
     attach card's extra blob now carries status=completed + head_id."""
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
 
     # 1. Write placeholder attach card (mirrors _run_spawn_async).
@@ -90,7 +89,7 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
 
     # 2. Fake the canonical Agent turn runner so the worker finishes in milliseconds.
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
         # Write the assistant_msg the dispatcher would have written.
         isolated_store.append_message(request.session_id, {
             "id": "head_alpha", "role": "assistant",
@@ -104,12 +103,12 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_run),
     )
 
     # 3. Submit through the runner with attach_pointer_id wired in.
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
     tid = runner.spawn_job(
         session_id="p1", prompt="do thing", agent_id="main",
@@ -150,9 +149,9 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
     to ``subject`` when the caller passed no explicit label.
     """
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
 
     attach_node_id = "atc_named"
@@ -166,7 +165,7 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
     def fake_run(*, request, cancel_event, **_kwargs):
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
         isolated_store.append_message(request.session_id, {
             "id": "head_named", "role": "assistant", "content": "done",
             "predecessor": request.branch_from, "timestamp": time.time(),
@@ -175,11 +174,11 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
         return AgentTurnResult(head_id="head_named", final_text="done")
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_run),
     )
 
-    from openprogram.agent.job import get_runner
+    from openprogram.runtime.jobs import get_runner
     runner = get_runner()
     # No ``label`` — only a subject, which is where the case data's name
     # actually lived.
@@ -210,24 +209,22 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
     assert extra["attach"]["label"] == "后端架构"
 
 
-def test_attach_write_broadcasts_reload_and_context_stats(
+def test_attach_write_refreshes_context_stats(
     isolated_store, monkeypatch,
 ):
-    """Finishing a sub-agent tells both readers of the graph.
+    """Finishing a sub-agent re-estimates the context ring at the write.
 
-    The DAG re-pulls the session and the context ring re-estimates —
-    without this the graph on screen still showed the pre-spawn shape
-    until the user clicked something.
+    Open transcripts and the DAG panel learn of the card from the
+    transcript publisher (test_transcript_publisher.py).
     """
-    frames: list[dict] = []
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', frames.append,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda _frame: None,
     )
     stats: list[str] = []
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._refresh_context_stats', stats.append,
+        'openprogram.runtime.jobs.runner.shared._refresh_context_stats', stats.append,
     )
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
 
     attach_node_id = "atc_cast"
@@ -240,7 +237,7 @@ def test_attach_write_broadcasts_reload_and_context_stats(
     })
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
-    from openprogram.agent.job.types import Job, JobStatus
+    from openprogram.runtime.jobs.types import Job, JobStatus
     runner_mod.get_runner()._update_attach_card(Job(
         id="t_cast", parent_session_id="p1", prompt="x", agent_id="main",
         status=JobStatus.COMPLETED, head_id="head_alpha",
@@ -248,10 +245,4 @@ def test_attach_write_broadcasts_reload_and_context_stats(
         attach_pointer_id=attach_node_id,
     ))
 
-    reloads = [
-        f for f in frames
-        if f.get("type") == "session_reload"
-        and (f.get("data") or {}).get("session_id") == "p1"
-    ]
-    assert reloads, "attach write must broadcast a session reload"
     assert stats == ["p1"]

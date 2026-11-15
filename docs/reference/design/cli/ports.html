@@ -1,0 +1,85 @@
+<title>Web UI port</title>
+<meta name="description" content="How OpenProgram chooses, configures and defends the single port its web UI runs on, one per account.">
+<h1>Web UI port</h1>
+
+<dl class="pairs">
+<dt>Default</dt><dd><code translate="no">18100</code>, or the next free port from it, chosen once per account and kept</dd>
+<dt>Serves</dt><dd>FastAPI <code translate="no">/api/*</code>, the OpenAI-compatible <code translate="no">/v1/*</code>, <code translate="no">/ws</code>, <code translate="no">/healthz</code>, the static web UI export, to browser, TUI and CLI alike. <a href="single-port.html">Single-port architecture</a></dd>
+</dl>
+
+<h2 id="configuration-surface">Setting it</h2>
+<p>Highest first:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram web --web-port &lt;p&gt;</code></th><td>That run, not persisted; <code translate="no">openprogram web</code> only</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_WEB_PORT</code></th><td>That process, not persisted</td></tr>
+<tr><th scope="row"><code translate="no">ui.web_port</code> in <code translate="no">~/.openprogram/config.json</code></th><td>Persisted, read at the next <code translate="no">openprogram web</code>, <code translate="no">openprogram worker</code> or App start. Nothing live is rebound</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/web-port</code></th><td>The port the account chose for itself at its first start: the lowest free port from <code translate="no">18100</code> up. Kept on this machine, not in backups</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram ports</code></th><td>Shows the current port</td></tr>
+<tr><th scope="row"><code translate="no">openprogram ports --port 9100</code></th><td>Sets and persists</td></tr>
+<tr><th scope="row"><code translate="no">openprogram setup ui</code></th><td>Wizard: port (<code translate="no">1–65535</code>) and auto-open-browser</td></tr>
+</tbody>
+</table>
+<p class="note">The worker is the only thing that chooses: <code translate="no">claim_worker_port()</code> in <code translate="no">operations/worker/lifecycle.py</code> settles the port right after the worker takes its lock, and <code translate="no">resolve_worker_port()</code> reads it. The App reads the same files (<code translate="no">apps/desktop/main/worker/web-port.js</code>), so the two always agree.</p>
+
+<h2 id="one-port-per-account">One port per account</h2>
+<p>Loopback ports belong to the whole computer. With one fixed port, a second account signed in on the same PC, or anyone with another program already on 18100, had no worker and an App that waited forever. Each account therefore owns its port:</p>
+<ol>
+<li>The first start of an account's worker takes the lowest port from 18100 up that it can bind, and writes it to <code translate="no">web-port</code>. The first writer wins, so a first App start and a first CLI start agree.</li>
+<li>Later starts use the recorded port, so the address stays the same.</li>
+<li>When something else holds the recorded port at start, the worker moves to the next free one and rewrites the record. The App sees the record change and opens again on the new port.</li>
+<li>A port the user set (<code translate="no">ui.web_port</code>, <code translate="no">OPENPROGRAM_WEB_PORT</code>) never moves. Its holder is named and the worker exits.</li>
+</ol>
+<p class="note">Jupyter works the same way: it takes the next free port and writes the address it serves to a runtime file the clients read.</p>
+
+<h2 id="conflict-handling">When the port is taken</h2>
+<table class="stack">
+<thead><tr><th scope="col">The port is</th><th scope="col">The worker</th><th scope="col">The App</th><th scope="col"><code translate="no">openprogram web</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Free</th><td>Binds, starts</td><td>Opens the chat signed in</td><td>Starts the worker, opens the browser signed in</td></tr>
+<tr><th scope="row">Held by this account's worker</th><td>The worker lock already prevents a second worker</td><td>Opens the chat signed in</td><td>Points the browser at the UI</td></tr>
+<tr><th scope="row">Held by another program or account, port chosen</th><td>Names the holder, moves to the next free port, rewrites <code translate="no">web-port</code></td><td>Starts this account's worker, then opens again on the new port</td><td>Starts the worker and opens the port it names</td></tr>
+<tr><th scope="row">Held by another program or account, port set by the user</th><td>Names the holder and exits; the version is not blamed for it</td><td>Shows <em>Port N is in use</em> with the holder and how to choose another port, and loads the chat once the port is freed</td><td>Refuses, names the holder</td></tr>
+<tr><th scope="row">Recently exited (TIME_WAIT)</th><td colspan="3">Counts as free: POSIX probes with <code translate="no">SO_REUSEADDR</code>; Windows rebinds such a port anyway</td></tr>
+</tbody>
+</table>
+<p class="note">Never kills the holder, and never gives a listener this account's token unless it proves it is this account's worker.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Check in operations/worker/ports.py</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Liveness: <code translate="no">port_in_use(port)</code></th><td>Bare TCP connect</td></tr>
+<tr><th scope="row">Free to listen: <code translate="no">port_bindable(port)</code></th><td>A trial bind. On Windows with <code translate="no">SO_EXCLUSIVEADDRUSE</code>: <code translate="no">SO_REUSEADDR</code> there would bind over a live listener and call a held port free</td></tr>
+<tr><th scope="row">Identity: <code translate="no">backend_is_ours(port)</code></th><td>Needs this profile's live worker (its lock) and its <code translate="no">worker.port</code>, then the profile's owner-only <code translate="no">web/access.json</code>; sends a random nonce to <code translate="no">/api/auth/challenge</code> and verifies the token-HMAC proof locally. Never sends the owner token or a Bearer header, so a foreign listener cannot obtain the credential. Optional <code translate="no">expected_revision</code> binds the proof to an upgrade target's revision.</td></tr>
+<tr><th scope="row">Ownership: <code translate="no">describe_port_owner(port)</code>, <code translate="no">port_owner_hint(port)</code></th><td><code translate="no">lsof</code> or <code translate="no">netstat</code> + <code translate="no">/proc</code>, <code translate="no">ps</code>, Windows CIM: PID and command line</td></tr>
+</tbody>
+</table>
+<p><code translate="no">openprogram web auth-url</code> exits with code 3 and names the holder when this account has no worker but something listens on the asked port; the App shows that holder instead of waiting.</p>
+
+<details>
+<summary>Why 18100</summary>
+<ul>
+<li>Below 49152, so never in the OS ephemeral range handed to outbound sockets.</li>
+<li>The <code translate="no">18xxx</code> block is rarely used by dev tooling, unlike 3000, 5173, 8000, 8080. The development instance's 18200 is outside the 18100–18199 range accounts choose from.</li>
+<li>Kept once chosen: a bookmarkable URL, and browser state (localStorage, service worker scope) that survives restarts.</li>
+</ul>
+</details>
+
+<details>
+<summary>Compared with OpenClaw</summary>
+<p>OpenClaw pins its gateway to <code translate="no">18789</code> and refuses when it is taken; OpenProgram keeps that for a port the user set and moves a port it chose itself.</p>
+<table class="stack">
+<thead><tr><th scope="col">OpenClaw layer</th><th scope="col">Source</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Single-instance lock (pid, start time, argv)</th><td><code translate="no">src/infra/gateway-lock.ts</code></td><td><code translate="no">worker.lock</code> (fcntl), <code translate="no">worker.pid</code> with start time, <code translate="no">_process_alive</code></td></tr>
+<tr><th scope="row">EADDRINUSE retry for TIME_WAIT</th><td><code translate="no">src/gateway/server/http-listen.ts</code></td><td><code translate="no">SO_REUSEADDR</code> on POSIX, no retry loop</td></tr>
+<tr><th scope="row">Names the holder via <code translate="no">lsof</code></th><td><code translate="no">src/infra/ports.ts</code>, SSH-tunnel path only</td><td><code translate="no">describe_port_owner</code>, <code translate="no">port_owner_hint</code>, in every "port in use" message on the start path and on the App's page</td></tr>
+</tbody>
+</table>
+</details>

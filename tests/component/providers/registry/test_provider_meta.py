@@ -1,4 +1,4 @@
-from openprogram.providers.metadata import provider_apis, provider_base_url
+from openprogram.models.providers.catalog.metadata import provider_apis, provider_base_url
 
 
 def test_single_wire_meta():

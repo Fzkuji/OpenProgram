@@ -1,0 +1,224 @@
+<title>会议</title>
+<meta name="description" content="OpenProgram 如何在这台电脑上录制通话、转写双方声音、区分其他说话人，并在新对话里写出摘要。">
+<h1>会议</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 310" role="img" aria-label="采集两路声音：页面上的麦克风和服务器上的电脑声音，每 30 秒一段。每段转换、静音则跳过、转写，再合并进转写稿。停止时队列排空，对 system 轨做一次说话人分离，一轮不带工具的对话写出摘要，会议完成。">
+  <defs><marker id="mt-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="18">采集</text><text class="t-soft" x="232" y="18">每一段，单个 worker</text><text class="t-soft" x="470" y="18">停止时</text>
+  <text class="t-big" x="0" y="56">麦克风</text><text class="t-soft" x="0" y="78">页面，WebM，30 秒</text>
+  <text class="t-big" x="0" y="126">电脑声音</text><text class="t-soft" x="0" y="148">服务器，WAV，30 秒</text>
+  <line class="ln" x1="150" y1="49" x2="222" y2="49" marker-end="url(#mt-a)"/>
+  <path class="ln" d="M170 119H190V49"/>
+  <text class="t-big" x="232" y="56">转换</text>
+  <text class="t-soft" x="232" y="78">16 kHz 单声道 WAV</text>
+  <line class="ln" x1="238" y1="88" x2="238" y2="108" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="232" y="126">跳过静音</text>
+  <text class="t-soft" x="232" y="148">峰值低于 300/32767</text>
+  <line class="ln" x1="238" y1="158" x2="238" y2="178" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="232" y="196">转写</text>
+  <text class="t-soft" x="232" y="218">按会议的语言</text>
+  <line class="ln" x1="238" y1="228" x2="238" y2="248" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="232" y="266">合并</text>
+  <text class="t-soft" x="232" y="288">重写 transcript.json</text>
+  <text class="t-big" x="470" y="56">transcribing</text>
+  <text class="t-soft" x="470" y="78">队列排空</text>
+  <line class="ln" x1="476" y1="88" x2="476" y2="108" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="470" y="126">说话人分离</text>
+  <text class="t-soft" x="470" y="148">system 轨，一次</text>
+  <line class="ln" x1="476" y1="158" x2="476" y2="178" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="470" y="196">summarizing</text>
+  <text class="t-soft" x="470" y="218">一轮不带工具</text>
+  <line class="ln" x1="476" y1="228" x2="476" y2="248" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="470" y="266">done</text>
+  <text class="t-soft" x="470" y="288">summary.md</text>
+  <path class="ln" d="M380 259H430V49H460" marker-end="url(#mt-a)"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>麦克风</strong><small>页面，WebM，30 秒</small></li><li><strong>电脑声音</strong><small>服务器，WAV，30 秒</small></li><li><strong>转换</strong><small>16 kHz 单声道 WAV</small></li><li><strong>跳过静音</strong><small>峰值低于 300/32767</small></li><li><strong>转写</strong><small>按会议的语言</small></li><li><strong>合并</strong><small>重写 transcript.json</small></li><li><strong>transcribing</strong><small>队列排空</small></li><li><strong>说话人分离</strong><small>system 轨，一次</small></li><li><strong>summarizing</strong><small>一轮不带工具</small></li>
+  <li class="flow-end"><strong>done</strong><small>summary.md</small></li>
+</ol>
+</figure>
+<p class="note">全部用已有部件搭成：语音输入的识别引擎、录制 Workflow 的长时会话形态、提醒和常驻 Agent 的 owner turn、浏览器麦克风 API、电脑操作的 ScreenCaptureKit 音频流。不新增基础设施。</p>
+
+<h2 id="shape">组成</h2>
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">位置</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">麦克风</th><td><code translate="no">apps/web/lib/meetings/meeting-recorder.ts</code></td><td><code translate="no">getUserMedia</code>，一个 <code translate="no">MediaRecorder</code>，按顺序上传分段</td></tr>
+<tr><th scope="row">电脑声音</th><td><code translate="no">meeting/system_audio.py</code>，基于 <code translate="no">openprogram/host/_platform/screen_capture_audio.py</code></td><td>随会议开始的整屏、只录音频的流</td></tr>
+<tr><th scope="row">路由</th><td><code translate="no">openprogram/interfaces/server/routes/execution/meetings.py</code></td><td><code translate="no">/api/meetings</code>：列表、开始、上传音频、停止、状态、转写稿、摘要、重新总结、删除</td></tr>
+<tr><th scope="row">应用</th><td><code translate="no">openprogram/programs/applications/meeting/</code></td><td><code translate="no">meeting</code> 服务：存储、转换、转写队列、合并、摘要</td></tr>
+<tr><th scope="row">语音</th><td><code translate="no">openprogram/runtime/speech_link.py</code> → <code translate="no">openprogram/interfaces/speech/stt.py</code></td><td><code translate="no">transcribe_segments</code>：用“设置 → 语音”里的引擎得到带时间的片段</td></tr>
+<tr><th scope="row">说话人</th><td><code translate="no">meeting/diarize.py</code>，可选的 <code translate="no">sherpa-onnx</code></td><td>给 system 片段标上 <code translate="no">others:&lt;n&gt;</code></td></tr>
+<tr><th scope="row">摘要</th><td><code translate="no">openprogram/runtime/conversation/owner_turn.py</code></td><td>新对话里的一轮 owner turn</td></tr>
+<tr><th scope="row">窗口</th><td><code translate="no">apps/web/components/applications/windows/meeting-window.tsx</code></td><td>开始和停止、实时进度、过往会议的摘要与转写稿</td></tr>
+</tbody>
+</table>
+<p class="note">核心从不导入这个应用。路由按名字查找服务，应用停用时返回 404（<code translate="no">meeting_not_enabled</code>）；销毁它的 context 会停止正在进行的录制。</p>
+
+<h2 id="capture">采集</h2>
+<table class="stack">
+<thead><tr><th scope="col">轨</th><th scope="col">来源</th><th scope="col">说话人</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">mic</code></th><td>页面，<code translate="no">getUserMedia({audio})</code>，开启回声消除、降噪和自动增益</td><td>“我”：来自声音从哪里录到，不靠模型</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td>服务器，ScreenCaptureKit：电脑的声音输出</td><td>“对方”，再由<a href="#speaker-diarization">说话人分离</a>编号</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>电脑声音，在服务器上录</summary>
+<ul>
+<li><code translate="no">POST /api/meetings</code> 在 <code translate="no">Meeting.begin</code> 里开始采集。<code translate="no">ScreenCaptureSource</code> 读取可共享内容，为第一块显示器构造 <code translate="no">SCContentFilter.initWithDisplay_excludingWindows_(display, [])</code>，不排除任何窗口。</li>
+<li><code translate="no">screen_capture_audio.open_audio</code> 打开流：<code translate="no">capturesAudio</code>、16 kHz、单声道、<code translate="no">excludesCurrentProcessAudio</code>、每秒一帧 2×2、不接屏幕输出。电脑操作的按应用录制（<code translate="no">desktop/audio.py</code>）共用这个模块，只有过滤器不同。</li>
+<li>macOS 首次会询问“屏幕与系统音频录制”。worker 运行在 App 的运行时包内（<code translate="no">openprogram/host/system_access</code> 的 <code translate="no">screen_recording</code> 能力），所以提示和系统设置里的条目显示 App 的名字。ScreenCaptureKit 音频不需要其他声明。</li>
+<li><code translate="no">SystemAudio</code> 不依赖 ScreenCaptureKit。来源推入 float32 缓冲，按采样数切成 30 秒一段。每段的 <code translate="no">t_ms</code> 是第一个采样的会议时钟：起始缓冲的到达时间减去它的剩余长度。</li>
+<li>独立线程把每段转成 16 位 WAV，调用 <code translate="no">Meeting.append("system", seq, t_ms, wav, "wav")</code>，即音频路由使用的入口。</li>
+<li><code translate="no">Meeting.finish</code> 在仍处于 <code translate="no">recording</code> 时停止流并写出最后不完整的一段。删除会议则取消采集，不写出。</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">system_audio_reason</code></th><th scope="col">情况</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">unsupported</code></th><td>不是 macOS，或 PyObjC 的 ScreenCaptureKit 无法导入</td></tr>
+<tr><th scope="row"><code translate="no">permission</code></th><td>ScreenCaptureKit 拒绝（错误 -3801 “declined TCCs”），或 <code translate="no">CGPreflightScreenCaptureAccess</code> 报告未授权</td></tr>
+<tr><th scope="row"><code translate="no">error</code></th><td>其他情况；文字在 <code translate="no">system_audio_message</code></td></tr>
+</tbody>
+</table>
+<p class="note">来源无法启动时，会议只录麦克风，状态和 <code translate="no">meta.json</code> 写 <code translate="no">system_audio: "unavailable"</code>。正常采集报告 <code translate="no">recording</code>。旧会议没有这个字段。</p>
+</details>
+
+<details>
+<summary>麦克风，在页面上录</summary>
+<ul>
+<li>页面请求麦克风后开始会议，按开始响应里的 <code translate="no">elapsed_ms</code> 计算分段偏移，两路声音因此共用一个时钟。</li>
+<li><code translate="no">MediaRecorder</code> 每 30 秒停止并重启。timeslice 录制器后续分段没有 WebM 头；重启让每段都是完整文件，代价是每段几毫秒的空隙。</li>
+<li>每段带轨、序号和偏移（<code translate="no">t_ms</code>），乱序上传也能落到正确位置。启动后不到 100 毫秒就停止的分段只有文件头，不上传。</li>
+<li>上传串行执行，遇网络或 5xx 错误共尝试三次。</li>
+<li>录制器在模块级 store 里：离开窗口不会停止，只有点停止才会。</li>
+<li>麦克风被拒绝时收到 <code translate="no">NotAllowedError</code>，窗口指出系统设置的对应面板。</li>
+<li>录制卡片说明是否录了电脑声音。没有时说明只录麦克风；若原因是 <code translate="no">permission</code>，指出“隐私与安全性 → 屏幕与系统音频录制”，并要求重新打开 App。</li>
+</ul>
+</details>
+
+<h2 id="server">存储与转写</h2>
+<pre translate="no" tabindex="0">&lt;state&gt;/meetings/&lt;id&gt;/
+  meta.json                   标题、语言、时间、状态、分段计数、错误、引擎、
+                              session_id、system_audio、diarization、speakers
+  tracks/&lt;track&gt;/&lt;seq&gt;.webm   上传的分段（system 分段是 .wav）
+  tracks/&lt;track&gt;/&lt;seq&gt;.json   带时间的片段（或 silent / error）；system 片段带 speaker
+  transcript.json             合并后的转写稿
+  summary.md                  摘要，转写稿放在 &lt;details&gt; 块里</pre>
+<p class="note">同一时间只录一场，最长 4 小时。每段（最大 16 MiB）先写盘，再排给这场会议的单个 worker 线程，内存里只有一段。重复的 <code translate="no">(track, seq)</code> 被忽略。失败的分段记录并计数，会议继续。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">转换</th><td><code translate="no">ffmpeg</code>，依次在 <code translate="no">PATH</code>、<code translate="no">/opt/homebrew/bin</code>、<code translate="no">/usr/local/bin</code>、<code translate="no">/usr/bin</code> 查找，格式从数据读取。已符合要求的 WAV 直接使用。没有 ffmpeg 时拒绝开始，返回 <code translate="no">ffmpeg_missing</code> 和安装提示。</td></tr>
+<tr><th scope="row">跳过静音</th><td>Whisper 会为静音编造文字。</td></tr>
+<tr><th scope="row">转写</th><td><code translate="no">speech_link.transcribe_segments(wav, duration_ms, language)</code>。没有这个方法的链路退回 <code translate="no">transcribe</code>，得到一个片段。</td></tr>
+<tr><th scope="row">语言</th><td>用会议的语言，绝不用“设置 → 语音”的：强加语音输入语言会让 Whisper 编造文字。<code translate="no">POST /api/meetings</code> 接受可选的 ISO <code translate="no">language</code>，存入 <code translate="no">meta.json</code>。窗口发送会议名旁选择的语言，“自动检测”则不发。空表示检测：whisper.cpp <code translate="no">-l auto</code>，OpenAI 和 Groq 不带 <code translate="no">language</code> 字段。</td></tr>
+<tr><th scope="row">各引擎的时间</th><td>whisper.cpp 输出 <code translate="no">[from --&gt; to]</code> 行（不加 <code translate="no">-nt</code>）。Groq 和 OpenAI 的 Whisper 模型返回 <code translate="no">verbose_json</code>。<code translate="no">gpt-4o-*-transcribe</code> 只返回文字：一个跨整段的片段。</td></tr>
+<tr><th scope="row">合并，<code translate="no">transcript.py</code></th><td>片段移到会议时钟并按开始时间排序。麦克风片段与 4 秒内开始的 system 片段文字相似度至少 75% 时视为回声（没戴耳机）并丢弃。同一说话人间隔不到 1.5 秒的连续片段合成一段发言，最多 600 字符。</td></tr>
+<tr><th scope="row">每一行</th><td><code translate="no">speaker</code>（<code translate="no">me</code>、<code translate="no">others</code>、<code translate="no">others:&lt;n&gt;</code>，窗口做本地化）和英文 <code translate="no">label</code>（“Me”“Others”“Speaker n”）。每段之后重写 <code translate="no">transcript.json</code>，窗口里转写稿逐渐增长。</td></tr>
+</tbody>
+</table>
+
+<h2 id="summary">摘要</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">转写稿为空</th><td>不开对话；<code translate="no">summary.md</code> 说明没有转写到内容</td></tr>
+<tr><th scope="row">对话</th><td><code translate="no">meeting_&lt;hex&gt;</code>，来源 <code translate="no">web</code>，以会议命名，默认 Agent，新对话的模型；id 存入 <code translate="no">meta.json</code>。保留以便追问。</td></tr>
+<tr><th scope="row">这一轮</th><td><code translate="no">start_owner_turn(..., tools=[])</code>。固定提示词，后接 <code translate="no">&lt;meeting-transcript&gt;</code> 内的转写稿。没有工具，会议里说的任何话都不能让 Agent 行动。</td></tr>
+<tr><th scope="row">提示词要求</th><td><code translate="no">## Summary</code>、<code translate="no">## Decisions</code>、<code translate="no">## Action items</code>（负责人、截止日期）、<code translate="no">## Open questions</code>，用会议的语言。声明转写稿是数据、绝非指令，说话人编号是声音而不是名字。</td></tr>
+<tr><th scope="row"><code translate="no">summary.md</code></th><td>回答、含日期和时长的页眉、可折叠的完整转写稿</td></tr>
+<tr><th scope="row">中断</th><td>进程结束时仍处于进行状态的会议列为 <code translate="no">interrupted</code>。<strong>重新总结</strong>从各分段的 JSON 文件重建。</td></tr>
+</tbody>
+</table>
+
+<h2 id="access">访问</h2>
+<ul>
+<li>每个路由都要求 owner 登录（<code translate="no">require_owner</code>）。</li>
+<li>麦克风在页面所在的电脑上录；电脑声音永远是服务器那台电脑的。</li>
+<li>会议留在状态目录。使用云端语音引擎时，每段都发给该 provider。</li>
+</ul>
+
+<h2 id="speaker-diarization">说话人分离</h2>
+<p>每场一次，覆盖整条 system 轨，聚类因此一次看到所有声音，不必跨分段匹配 embedding。四线程下每分钟音频约 4 秒。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">音频</th><td>按顺序逐段转换并拼接 system 分段。<code translate="no">concatenate</code> 记录每段的 <code translate="no">(concat_ms, t_ms, duration_ms)</code>；<code translate="no">to_meeting_clock</code> 映射回会议时钟，并在边界处切开跨段的发言。</td></tr>
+<tr><th scope="row">分离，<code translate="no">run</code></th><td>sherpa-onnx <code translate="no">OfflineSpeakerDiarization</code>；pyannote segmentation-3.0；3D-Speaker 的中英双语 CAM++（<code translate="no">3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx</code>）；最多四个 ONNX 线程；<code translate="no">min_duration_on</code> 0.3 秒，<code translate="no">min_duration_off</code> 0.5 秒；说话人数未知，用 <code translate="no">FastClusteringConfig(num_clusters=-1, threshold=0.75)</code>。</td></tr>
+<tr><th scope="row">标注，<code translate="no">assign</code></th><td>每个 system 片段取重叠最长的说话人（相同取 sherpa 编号小的）。按首次出现重新编号 <code translate="no">others:1</code>、<code translate="no">others:2</code>…… 写回分段 JSON 并重新合并，<code translate="no">transcript.json</code>、<code translate="no">summary.md</code> 和提示词都带“Speaker n”。</td></tr>
+<tr><th scope="row">保持“对方”</th><td>没有发言重叠的片段，或其唯一声音整场不足 <code translate="no">MIN_SPEAKER_MS</code>（3 秒）。聚类会留下一两秒的零散声音，否则会变成“Speaker 5”到“Speaker 7”。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">diarization</code></th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">running</code></th><td>进行中</td></tr>
+<tr><th scope="row"><code translate="no">done</code></th><td><code translate="no">speakers</code> 是编号说话人的数量</td></tr>
+<tr><th scope="row"><code translate="no">unavailable</code></th><td><code translate="no">diarization_reason</code>：<code translate="no">not_installed</code>（没有 <code translate="no">sherpa_onnx</code>）或 <code translate="no">no_model</code>（下载或模型文件失败）</td></tr>
+<tr><th scope="row"><code translate="no">failed</code></th><td><code translate="no">diarization_reason</code> 为 <code translate="no">error</code>，文字在 <code translate="no">diarization_message</code></td></tr>
+<tr><th scope="row">空</th><td>没录电脑声音，或没从中转写到内容：跳过这一步</td></tr>
+</tbody>
+</table>
+<p class="note">除 <code translate="no">done</code> 外，转写稿都不变。</p>
+
+<details>
+<summary>为什么用这个模型和阈值</summary>
+<p>在四段已知说话人的录音上测试：pyannote 的 AMI 片段（两人抢话，对照参考标注评分）、sherpa-onnx 的四人测试录音、一段两人录音、四个合成声音。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">CAM++，0.6–0.75</th><td>四段都找对说话人；AMI 91% 的语音标注正确</td></tr>
+<tr><th scope="row">CAM++，0.8</th><td>合并四位中文说话人中的两位</td></tr>
+<tr><th scope="row">区间上限 0.75</th><td>在经电话会议和普通播放的四人 AMI 会议上，把一个人拆成两个编号的情况最少：五个编号声音，0.65 时为七个</td></tr>
+<tr><th scope="row">ERes2Net zh-cn（sherpa-onnx 示例）</th><td>每段录音需要不同阈值；凡能让四人录音保持四人的取值，都会合并 AMI 的两人</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>依赖与模型下载</summary>
+<ul>
+<li><code translate="no">sherpa-onnx</code> 是可选的 <code translate="no">meetings</code> extra（含 <code translate="no">numpy</code>），也在 <code translate="no">all</code> 中，打包的 App 因此自带。只在 <code translate="no">run</code> 内导入。</li>
+<li>模型首次使用时从 sherpa-onnx 的 GitHub releases 下载到 <code translate="no">&lt;state&gt;/models/diarization/</code>：<code translate="no">speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2</code>（只解出 <code translate="no">model.onnx</code>）和 <code translate="no">speaker-recongition-models/…_16k.onnx</code>。</li>
+<li>都经过临时文件，在同一把锁下原子重命名，和语音输入下载 Whisper 模型相同。</li>
+</ul>
+</details>
+
+<h2 id="alternatives">对比</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">产品</th><th scope="col">会议</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude（桌面版）</th><td>没有会议功能</td></tr>
+<tr><th scope="row">Codex / ChatGPT（桌面版）</th><td>ChatGPT 的录制模式：伴随程序通过会议应用加入，列出即将到来的会议，转写并总结。Codex 没有。</td></tr>
+<tr><th scope="row">DeepSeek Harness</th><td>只有实验性的语音输入插件</td></tr>
+<tr><th scope="row">OpenProgram</th><td>录制麦克风和任何应用的声音，转写两路，在这台电脑上区分声音，在对话里写摘要。没有日历里的会议列表。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>开源录制工具</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">形态</th></tr></thead>
+<tbody>
+<tr><th scope="row">meetscribe-offline</th><td>Python，pyannote 分离，Ollama 或云端摘要；需要 HuggingFace token，倾向 NVIDIA GPU</td></tr>
+<tr><th scope="row">HushScribe</th><td>macOS 26，Apple Silicon，本地 WhisperKit 和 Parakeet；会后才有说话人标签</td></tr>
+<tr><th scope="row">AI-Meeting-Bot</th><td>围绕本地 Whisper 的开发者流水线</td></tr>
+</tbody>
+</table>
+<p>都没有整体复用：各自带着采集、模型和存储。复用的是组件选择：Whisper 负责语音，pyannote 分割加说话人 embedding 模型负责谁在说话，经 sherpa-onnx 运行，不需要 PyTorch 或 token。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>以上内容均已实现。待完成：在全新安装的 App 里检查“屏幕与系统音频录制”提示和权限分类。</p>
+<details>
+<summary>如何验证</summary>
+<ul>
+<li>用假的采样源、ffmpeg、语音、分离器和摘要轮次做测试。</li>
+<li>稳定版 App 录制经电脑声音输出播放的录音：sherpa-onnx 四人测试、AMI 两人片段（两人都找到）、AMI 四人片段（四人都找到，每行编号与参考一致）。</li>
+<li>真实通话：Jitsi Meet 房间里两位参会者，第二位以 AMI 四人片段为音轨发言，第一位在这台电脑上播放。正好四个编号说话人，每行一致。通话声音与 Zoom 等应用走同一路径到达录制器。</li>
+<li>麦克风轨：在浏览器的会议窗口里，以 AMI 片段作麦克风：上传七段，六行标为“Me”，摘要写成。唯一失败是只有文件头的最后一段，页面现在已跳过它。</li>
+</ul>
+</details>

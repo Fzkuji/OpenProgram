@@ -1,0 +1,59 @@
+"""Path hashing + directory layout for mutation recovery snapshots.
+
+The backup store mirrors Claude Code's fileHistory.ts in spirit: keep
+original copies of files BEFORE an agent's first edit in a given turn,
+keyed by ``(turn_id, original_path)``. Restoring a turn means walking
+its directory and copying each backup back to its original location.
+
+Layout::
+
+    ~/.openprogram/projects/<project>/chats/.file-recovery/<session_id>/
+    └── <turn_id>/
+        ├── manifest.json     # { backup_basename → original_abs_path }
+        ├── <hash>.<version>   # immutable before image
+        └── <hash>.after.<version>  # immutable after image
+
+``<hash>`` is a short content-addressed-ish basename derived from the
+original path (we want backups to be readable when humans poke around,
+not collision-free across paths). Legacy unsuffixed blobs remain readable. Referenced versions are retained
+until their turn is pruned; files are never overwritten in place.
+The manifest is the source of truth
+for "which backup belongs to which path".
+
+Beside the turn directories sit ``checkpoints/`` and ``blobs/`` (one recovery
+point per prompt, see ``prompt_checkpoints``) and ``intents/`` + ``intent-locks/``
+(durable rewind transactions).
+"""
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+
+
+def session_backup_root(session_dir: Path) -> Path:
+    """Recovery data lives outside the session Git worktree."""
+    session_dir = Path(session_dir)
+    return session_dir.parent / ".file-recovery" / session_dir.name
+
+
+def turn_backup_dir(session_dir: Path, turn_id: str) -> Path:
+    """Per-turn directory under the session backup root."""
+    external = session_backup_root(session_dir) / turn_id
+    legacy = Path(session_dir) / "file_backups" / turn_id
+    return legacy if legacy.exists() and not external.exists() else external
+
+
+def turn_manifest_path(session_dir: Path, turn_id: str) -> Path:
+    return turn_backup_dir(session_dir, turn_id) / "manifest.json"
+
+
+def path_basename(original_path: str) -> str:
+    """Stable basename for a backup file derived from its original path.
+
+    Uses the last 12 chars of an sha1 plus the original filename tail
+    for human readability — so when someone runs ``ls`` they can guess
+    what each backup was for without needing the manifest.
+    """
+    h = hashlib.sha1(original_path.encode("utf-8")).hexdigest()[:12]
+    tail = Path(original_path).name.replace("/", "_")[:40] or "file"
+    return f"{h}_{tail}"

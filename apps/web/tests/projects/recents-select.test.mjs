@@ -4,8 +4,7 @@ import test from "node:test";
 import {
   recentsConversationsEqual,
   runningIdSetEqual,
-} from "../../components/sidebar/sessions-list/recents-select.ts";
-import { messagePatchUnchanged } from "../../lib/session-store/message-patch.ts";
+} from "../../components/sidebar/sessions/recents-select.ts";
 
 test("recents equality ignores non-list fields", () => {
   const a = {
@@ -49,9 +48,3 @@ test("running set equality ignores task payload", () => {
   assert.equal(runningIdSetEqual({ s1: {} }, {}), false);
 });
 
-test("identical stream patch is a no-op", () => {
-  const cur = { id: "m1", role: "assistant", content: "hello", status: "streaming" };
-  assert.equal(messagePatchUnchanged(cur, { content: "hello" }), true);
-  assert.equal(messagePatchUnchanged(cur, { content: "hello " }), false);
-  assert.equal(messagePatchUnchanged(cur, { content: "hello", status: "streaming" }), true);
-});

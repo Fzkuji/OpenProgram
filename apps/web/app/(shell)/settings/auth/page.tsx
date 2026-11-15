@@ -16,9 +16,18 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
+import { KeyRound } from "lucide-react";
+
 import { api } from "@/lib/net/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { SimpleSelect } from "@/components/ui/select";
+import { ManageEmptyState } from "@/components/ui/manage-page";
+import { PlusIcon } from "@/components/animated-icons";
+import pageStyles from "@/components/settings/settings-page.module.css";
+import styles from "@/components/settings/providers/provider-pane.module.css";
 import { useTranslation } from "@/lib/i18n";
-import { subscribeProviderAuthEvents as subscribeAuthEvents } from "@/lib/net/provider-auth-events";
+import { subscribeProviderAuthEvents as subscribeAuthEvents } from "@/lib/net/auth/provider-auth-events";
 import type {
   AuthAccount,
   CredentialView,
@@ -135,162 +144,167 @@ export default function AuthSettingsPage() {
     }
   };
 
-  if (loading) return <div className="p-6 text-sm text-muted-foreground">{text("Loading auth...", "加载认证信息中...")}</div>;
+  if (loading) {
+    return (
+      <div className={pageStyles.page}>
+        <div className={pageStyles.pageHeader}>
+          <h2 className={pageStyles.pageTitle}>{text("Auth", "认证")}</h2>
+        </div>
+        <div className={pageStyles.pageBody}>
+          <div className={pageStyles.rowHelp}>{text("Loading auth...", "加载认证信息中...")}</div>
+        </div>
+      </div>
+    );
+  }
 
+  // Same shell as the other Settings pages: .page > .pageHeader > .pageBody,
+  // a <section> per block with .sectionTitle and a .card of rows.
   return (
-    <div className="mx-auto max-w-5xl p-6 space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">{text("Auth", "认证")}</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className={pageStyles.page}>
+      <div className={pageStyles.pageHeader}>
+        <h2 className={pageStyles.pageTitle}>{text("Auth", "认证")}</h2>
+        <p className={pageStyles.pageMeta}>
           {text(
             "Credential pools for each provider in the active account. Secrets are masked on display; the raw value never leaves the server after it has been stored.",
             "当前账号下每个 provider 的凭据池。密钥展示时会被遮蔽；保存后原始值不会离开服务器。",
           )}
         </p>
-      </header>
+      </div>
+      <div className={pageStyles.pageBody}>
+        {error && <div className={pageStyles.rowStatusError} role="alert">{error}</div>}
 
-      {error && (
-        <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      <section className="space-y-2">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">{text("Account", "账号")}</label>
-          <select
-            className="rounded border bg-background px-2 py-1 text-sm"
-            value={activeAccount}
-            onChange={(e) => setActiveAccount(e.target.value)}
-          >
-            {accounts.map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.display_name || p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium">{text("Credential pools", "凭据池")}</h2>
-          <button
-            className="rounded border px-3 py-1 text-sm hover:bg-muted"
-            onClick={onDiscover}
-          >
-            {text("Discover", "发现")}
-          </button>
-        </div>
-        {pools.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {text(
-              "No credentials for this account yet. Add one below or click Discover to scan external sources.",
-              "这个账号还没有凭据。可以在下方添加，或点击发现扫描外部来源。",
-            )}
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {pools.map((pool) => (
-              <PoolCard key={`${pool.provider_id}:${pool.account_id}`} pool={pool} onRemove={onRemove} text={text} />
-            ))}
+        <section>
+          <div className={pageStyles.card}>
+            <div className={pageStyles.row}>
+              <label className={pageStyles.label} htmlFor="auth-account">{text("Account", "账号")}</label>
+              <div className={pageStyles.control}>
+                <SimpleSelect label={text("Account", "账号")}
+                  id="auth-account"
+                  value={activeAccount}
+                  onValueChange={setActiveAccount}
+                  options={accounts.map((p) => ({ value: p.name, label: p.display_name || p.name }))}
+                />
+              </div>
+            </div>
           </div>
-        )}
-      </section>
-
-      {discovered && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-medium">{text("Discovered credentials", "发现的凭据")}</h2>
-          <p className="text-xs text-muted-foreground">
-            {text(
-              "Found on this machine but not yet adopted. Add them via the form below if you want OpenProgram to use them.",
-              "这些凭据存在于本机，但尚未被采用。如需 OpenProgram 使用它们，请通过下方表单添加。",
-            )}
-          </p>
-          <ul className="space-y-2 text-sm">
-            {discovered.map((d, i) => (
-              <li key={i} className="rounded border px-3 py-2">
-                <div className="font-mono text-xs text-muted-foreground">{d.source_id}</div>
-                {d.credential ? (
-                  <div>
-                    {d.credential.provider_id} / {d.credential.account_id}
-                    {" — "}
-                    {renderPayloadPreview(d.credential, text)}
-                  </div>
-                ) : (
-                  <div className="text-destructive">{text("Error: ", "错误：")}{d.error}</div>
-                )}
-              </li>
-            ))}
-          </ul>
         </section>
-      )}
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-medium">{text("Add credential", "添加凭据")}</h2>
-        <form onSubmit={onAdd} className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded border p-4">
-          <label className="text-sm">
-            {text("Provider", "服务商")}
-            <input
-              className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm"
-              placeholder="openai / anthropic / google-gemini-cli / …"
-              value={addForm.provider}
-              onChange={(e) => setAddForm((f) => ({ ...f, provider: e.target.value }))}
-              required
+        <section>
+          <div className={`${pageStyles.authSectionHead} flex items-center justify-between gap-[12px]`}>
+            <h3 className={pageStyles.sectionTitle}>{text("Credential pools", "凭据池")}</h3>
+            <Button variant="elevated" onClick={onDiscover}>{text("Discover", "发现")}</Button>
+          </div>
+          {pools.length === 0 ? (
+            <ManageEmptyState
+              compact
+              icon={<KeyRound />}
+              title={text("No credentials for this account yet", "这个账号还没有凭据")}
+              description={text(
+                "Add one below or click Discover to scan external sources.",
+                "可以在下方添加，或点击发现扫描外部来源。",
+              )}
             />
-          </label>
-          <label className="text-sm">
-            {text("Type", "类型")}
-            <select
-              className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm"
-              value={addForm.type}
-              onChange={(e) =>
-                setAddForm((f) => ({ ...f, type: e.target.value as "api_key" | "oauth" }))
-              }
-            >
-              <option value="api_key">{text("API key", "API key")}</option>
-              <option value="oauth">OAuth</option>
-            </select>
-          </label>
-          {addForm.type === "api_key" ? (
-            <label className="text-sm md:col-span-2">
-              {text("API key", "API key")}
-              <input
-                type="password"
-                className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm font-mono"
-                value={addForm.apiKey}
-                onChange={(e) => setAddForm((f) => ({ ...f, apiKey: e.target.value }))}
+          ) : (
+            pools.map((pool) => (
+              <PoolCard key={`${pool.provider_id}:${pool.account_id}`} pool={pool} onRemove={onRemove} text={text} />
+            ))
+          )}
+        </section>
+
+        {discovered && (
+          <section>
+            <h3 className={pageStyles.sectionTitle}>{text("Discovered credentials", "发现的凭据")}</h3>
+            <p className={pageStyles.pageMeta}>
+              {text(
+                "Found on this machine but not yet adopted. Add them via the form below if you want OpenProgram to use them.",
+                "这些凭据存在于本机，但尚未被采用。如需 OpenProgram 使用它们，请通过下方表单添加。",
+              )}
+            </p>
+            <div className={pageStyles.card}>
+              {discovered.map((d, i) => (
+                <div key={i} className={pageStyles.row}>
+                  <div className={pageStyles.label}>
+                    <div className={pageStyles.authMono}>{d.source_id}</div>
+                    {d.credential ? (
+                      <p className={pageStyles.rowHelp}>
+                        {d.credential.provider_id} / {d.credential.account_id}
+                        {" — "}
+                        {renderPayloadPreview(d.credential, text)}
+                      </p>
+                    ) : (
+                      <p className={pageStyles.rowStatusError}>{text("Error: ", "错误：")}{d.error}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section>
+          <h3 className={pageStyles.sectionTitle}>{text("Add credential", "添加凭据")}</h3>
+          <form onSubmit={onAdd} className={`${pageStyles.card} ${pageStyles.authForm}`}>
+            <label className={pageStyles.authField}>
+              {text("Provider", "服务商")}
+              <Input
+                placeholder="openai / anthropic / google-gemini-cli / …"
+                value={addForm.provider}
+                onChange={(e) => setAddForm((f) => ({ ...f, provider: e.target.value }))}
                 required
               />
             </label>
-          ) : (
-            <>
-              <label className="text-sm md:col-span-2">
-                {text("Access token", "访问 token")}
-                <input
+            <label className={pageStyles.authField}>
+              {text("Type", "类型")}
+              <SimpleSelect label={text("Type", "类型")}
+                className="w-full"
+                value={addForm.type}
+                onValueChange={(value) => setAddForm((f) => ({ ...f, type: value }))}
+                options={[
+                  { value: "api_key" as const, label: text("API key", "API key") },
+                  { value: "oauth" as const, label: "OAuth" },
+                ]}
+              />
+            </label>
+            {addForm.type === "api_key" ? (
+              <label className={`${pageStyles.authField} ${pageStyles.authFieldWide}`}>
+                {text("API key", "API key")}
+                <Input
                   type="password"
-                  className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm font-mono"
-                  value={addForm.accessToken}
-                  onChange={(e) => setAddForm((f) => ({ ...f, accessToken: e.target.value }))}
+                  className={pageStyles.authMono}
+                  value={addForm.apiKey}
+                  onChange={(e) => setAddForm((f) => ({ ...f, apiKey: e.target.value }))}
                   required
                 />
               </label>
-              <label className="text-sm md:col-span-2">
-                {text("Refresh token (optional)", "刷新 token（可选）")}
-                <input
-                  type="password"
-                  className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm font-mono"
-                  value={addForm.refreshToken}
-                  onChange={(e) => setAddForm((f) => ({ ...f, refreshToken: e.target.value }))}
-                />
-              </label>
-            </>
-          )}
-          <button type="submit" className="md:col-span-2 rounded bg-primary px-3 py-2 text-sm text-primary-foreground">
-            {text("Add", "添加")}
-          </button>
-        </form>
-      </section>
+            ) : (
+              <>
+                <label className={`${pageStyles.authField} ${pageStyles.authFieldWide}`}>
+                  {text("Access token", "访问 token")}
+                  <Input
+                    type="password"
+                    className={pageStyles.authMono}
+                    value={addForm.accessToken}
+                    onChange={(e) => setAddForm((f) => ({ ...f, accessToken: e.target.value }))}
+                    required
+                  />
+                </label>
+                <label className={`${pageStyles.authField} ${pageStyles.authFieldWide}`}>
+                  {text("Refresh token (optional)", "刷新 token（可选）")}
+                  <Input
+                    type="password"
+                    className={pageStyles.authMono}
+                    value={addForm.refreshToken}
+                    onChange={(e) => setAddForm((f) => ({ ...f, refreshToken: e.target.value }))}
+                  />
+                </label>
+              </>
+            )}
+            <div className={pageStyles.authFieldWide}>
+              <Button type="submit"><PlusIcon size={16} aria-hidden />{text("Add", "添加")}</Button>
+            </div>
+          </form>
+        </section>
+      </div>
     </div>
   );
 }
@@ -305,42 +319,41 @@ function PoolCard({
   text: (en: string, zh: string) => string;
 }) {
   return (
-    <div className="rounded border">
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <div>
-          <div className="font-medium">{pool.provider_id}</div>
-          <div className="text-xs text-muted-foreground">
+    <div className={pageStyles.card}>
+      <div className={pageStyles.row}>
+        <div className={pageStyles.label}>
+          <div className={styles.authPoolTitle}>{pool.provider_id}</div>
+          <p className={pageStyles.rowHelp}>
             {text("account", "账号")}：{pool.account_id} · {text("strategy", "策略")}：{pool.strategy}
-          </div>
+          </p>
         </div>
-        <div className="text-xs text-muted-foreground">{pool.credentials.length} {text("credential(s)", "个凭据")}</div>
+        <div className={pageStyles.control}>
+          <span className={pageStyles.rowHelp}>{pool.credentials.length} {text("credential(s)", "个凭据")}</span>
+        </div>
       </div>
-      <ul>
-        {pool.credentials.map((cred) => (
-          <li
-            key={cred.credential_id}
-            className="flex items-center justify-between px-3 py-2 text-sm even:bg-muted/30"
-          >
-            <div className="flex flex-col gap-0.5">
-              <div className="font-mono text-xs">{cred.credential_id}</div>
-              <div>{renderPayloadPreview(cred, text)}</div>
-              <div className="text-xs text-muted-foreground">
-                {text("source", "来源")}：{cred.source}
-                {cred.read_only ? ` · ${text("read-only", "只读")}` : ""}
-                {" · "}{text("status", "状态")}：
-                {cred.status}
-              </div>
-            </div>
-            <button
-              className="rounded border px-2 py-1 text-xs hover:bg-destructive/10"
+      {pool.credentials.map((cred) => (
+        <div key={cred.credential_id} className={pageStyles.row}>
+          <div className={pageStyles.label}>
+            <div className={pageStyles.authMono}>{cred.credential_id}</div>
+            <div>{renderPayloadPreview(cred, text)}</div>
+            <p className={pageStyles.rowHelp}>
+              {text("source", "来源")}：{cred.source}
+              {cred.read_only ? ` · ${text("read-only", "只读")}` : ""}
+              {" · "}{text("status", "状态")}：
+              {cred.status}
+            </p>
+          </div>
+          <div className={pageStyles.control}>
+            <Button
+              variant="destructive"
               onClick={() => onRemove(cred)}
               aria-label={`${text("Remove", "移除")} ${cred.credential_id}`}
             >
               {text("Remove", "移除")}
-            </button>
-          </li>
-        ))}
-      </ul>
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,78 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { startWebTabCaptureLoop } from "../../lib/browser/web-tab-capture-loop.ts";
-import { fittedImageRect, mapOperationPoint } from "../../lib/browser/browser-marker-geometry.ts";
-
-const pipSource = readFileSync(new URL("../../components/center-tabs/web-tab-pip.tsx", import.meta.url), "utf8");
-const paneSource = readFileSync(new URL("../../components/center-tabs/web-tab-pane.tsx", import.meta.url), "utf8");
-
-test("read-only PiP never mounts a native view or iframe", () => {
-  assert.doesNotMatch(pipSource, /<iframe/);
-  assert.doesNotMatch(pipSource, /ensureWebView/);
-  assert.doesNotMatch(pipSource, /registerVisibleWebTabBounds/);
-  assert.doesNotMatch(pipSource, /setPipZoom/);
-  assert.match(pipSource, /webTab\.capture/);
-  assert.match(pipSource, /Last frame|unavailable/);
-});
-
-test("live tab stays usable and is not replaced by a bound mask", () => {
-  assert.doesNotMatch(paneSource, /PipBoundMask/);
-  assert.doesNotMatch(paneSource, /Controlled by/);
-  assert.doesNotMatch(paneSource, /webBoundMask/);
-  assert.doesNotMatch(paneSource, /isHumanYieldEvent/);
-  assert.match(paneSource, /onKeyDownCapture=\{handleRendererShortcut\}/);
-  assert.doesNotMatch(paneSource, /yieldFromLiveTab\(tabId, \{ type: "keydown"/);
-  assert.match(paneSource, /data-state=\{control \? displayedControlState\(control\)/);
-  assert.match(paneSource, /data-native-view-occluder="true"/);
-  assert.doesNotMatch(paneSource, /\[data-pip\]/);
-  assert.doesNotMatch(paneSource, /data-web-pip-dock/);
-  assert.doesNotMatch(paneSource, /setPipPageDock|pipDockEdge|createPortal/);
-  assert.match(paneSource, /measureWebTabBounds\(el\)/);
-  assert.doesNotMatch(paneSource, /remainingNative|subtractRect|largest-leftover/);
-});
+import { startWebTabCaptureLoop } from "../../lib/browser/web-tab/web-tab-capture-loop.ts";
+import { fittedImageRect, mapOperationPoint } from "../../lib/browser/control/browser-marker-geometry.ts";
 
 test("PiP screenshot maps pixel points onto a letterboxed contain fit", () => {
-  const css = readFileSync(new URL("../../components/center-tabs/center-tabs.module.css", import.meta.url), "utf8");
-  assert.match(css, /\.webPipShot \{[\s\S]*?object-fit: contain/);
-  assert.match(css, /\.webPip\[data-state="active"\]/);
-  assert.match(css, /\.webPane\[data-state="yielding"\]/);
-  assert.match(css, /\.webPipChrome \{[\s\S]*?flex-direction: row/);
-  assert.match(css, /\.webPipChrome \{[\s\S]*?flex-wrap: nowrap/);
-  assert.match(css, /\.webPipChrome \{[\s\S]*?overflow: hidden/);
-  assert.match(css, /\.webPipActions \{[\s\S]*?flex-wrap: nowrap/);
-  assert.match(css, /\.webPipTitle \{[\s\S]*?min-width: 0/);
-  assert.match(css, /\.webPipChrome \.webToolbarBtn \{[\s\S]*?width: 24px/);
-  assert.match(css, /\.webPipChrome \.webToolbarBtn svg \{[\s\S]*?width: 14px/);
-  assert.match(css, /\.webPipActions \{[\s\S]*?flex-wrap: nowrap/);
-  assert.match(css, /\.webPipActions \{[\s\S]*?flex-shrink: 0/);
-  assert.match(css, /\.webPip \{[\s\S]*?width: 300px/);
-  assert.match(css, /\.webPip \{[\s\S]*?height: 198\.75px/);
-  assert.doesNotMatch(css, /linear-gradient\(135deg/);
-  assert.match(pipSource, /data-pip-resize=\{dir\}/);
-  assert.match(pipSource, /PIP_RESIZE_DIRS/);
-  assert.match(css, /\.webPipExpanded \{[\s\S]*?720px/);
-  assert.match(css, /\.webPipExpanded \{[\s\S]*?435px/);
-  assert.match(css, /\.webPipBody \{[\s\S]*?margin: 0/);
-  assert.doesNotMatch(css, /\.webPipBar \{/);
-  assert.doesNotMatch(css, /\.webPipBarBtn/);
-  assert.match(css, /\.webPipMode \{[\s\S]*?flex: 0 0 auto/);
-  assert.doesNotMatch(pipSource, /webPipBarBtn/);
-  assert.doesNotMatch(css, /data-pip-dock/);
-  assert.doesNotMatch(css, /margin: 0 10px 10px 0/);
-  assert.match(pipSource, /Open page/);
-  assert.match(pipSource, /Pause Agent to use page/);
-  assert.match(pipSource, /<ExternalLink /);
-  assert.match(pipSource, /<Pin /);
-  assert.doesNotMatch(pipSource, /<Locate /);
-  assert.doesNotMatch(pipSource, /"Follow"/);
-  assert.doesNotMatch(pipSource, /className=\{styles\.webPipBar\}/);
-  assert.doesNotMatch(pipSource, /COMPACT_PIP_WIDTH/);
-  assert.doesNotMatch(pipSource, /Use in webpage/);
-  assert.doesNotMatch(pipSource, /createPortal/);
-  assert.doesNotMatch(css, /\.browserControl\[data-state="active"\] \{\s*box-shadow: inset/);
-  assert.doesNotMatch(pipSource, /recordOperationCue/);
-  assert.doesNotMatch(pipSource, /left: `\$\{marker\.point\.x\}%`/);
   const fitted = fittedImageRect({ width: 200, height: 200 }, { width: 800, height: 400 });
   assert.equal(fitted.x, 0);
   assert.equal(fitted.y, 50);

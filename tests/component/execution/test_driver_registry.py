@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from openprogram.execution.driver import (
+from openprogram.runtime.execution.driver import (
     DriverAck,
     DriverBinding,
     DriverRegistry,
@@ -12,7 +12,7 @@ from openprogram.execution.driver import (
     RuntimeSnapshot,
     TerminationReceipt,
 )
-from openprogram.execution.model import CapabilitySet
+from openprogram.runtime.execution.model import CapabilitySet
 
 
 @dataclass

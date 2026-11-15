@@ -6,12 +6,12 @@ cross-branch delivery and require confirmation. This locks that guarantee:
 a gate that denies send_message is honoured, and doesn't touch other
 tools.
 
-See docs/design/runtime/agent-collaboration.md (C7).
+See docs/reference/design/runtime/collaboration/agent-collaboration.html (C7).
 """
 from __future__ import annotations
 
-from openprogram.events import make_event
-from openprogram.events import register_tool_gate, decide_tool_gate
+from openprogram.runtime.events import make_event
+from openprogram.runtime.events import register_tool_gate, decide_tool_gate
 
 
 def _before(tool_name: str, args=None):

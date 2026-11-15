@@ -1,0 +1,59 @@
+/* Type tiers. Every font size is one of nine; CSS writes
+   `font-size: var(--fs-*)`, Tailwind `text-fs-*`, inline styles
+   `fontSize: "var(--fs-*)"`.
+
+     --fs-2xs      11px — counters, badges, kbd hints, uppercase group
+                          labels, DAG node meta.
+     --fs-xs       12px — secondary meta (timestamps, paths, counts),
+                          captions, menu notes, xs (24px) controls.
+     --fs-sm       13px — descriptions, helper text, tabs, pills,
+                          sm (28px) controls.
+     --fs-base     14px — body, sidebar and list rows, menu rows,
+                          default (30px) controls, inputs.
+     --fs-chat     15px — transcript copy and the composer.
+     --fs-md       16px — section headings, dialog titles.
+     --fs-title    18px — page titles and the title of a detail pane.
+     --fs-lg       20px — brand, big figures, glyph tiles, markdown h1.
+     --fs-display  30px — the Launchpad folder title.
+
+   Each tier carries its line height (--lh-*): text-fs-* sets both,
+   CSS sets the line height itself where it needs another one.
+
+   Weights are 400 body, 500 labels and controls, 600 titles and
+   emphasis, 700 only for transcript headings (font-normal / medium /
+   semibold / bold). */
+:root {
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-chat: 15px;
+  --fs-md: 16px;
+  --fs-title: 18px;
+  --fs-lg: 20px;
+  --fs-display: 30px;
+  --lh-2xs: 16px;
+  --lh-xs: 16px;
+  --lh-sm: 18px;
+  --lh-base: 20px;
+  --lh-chat: 24px;
+  --lh-md: 24px;
+  --lh-title: 28px;
+  --lh-lg: 28px;
+  --lh-display: 36px;
+
+  /* No `var(--font-jetbrains-mono)` lead: that var is never defined
+     (next/font was removed, see layout.tsx). A `var()` with no
+     fallback that resolves to nothing makes the WHOLE declaration
+     invalid-at-computed-value-time, collapsing --font-mono to empty
+     and dropping every mono column to the browser default. Start the
+     chain at real, always-present font names. */
+  --font-mono: var(--font-mono-latin, 'JetBrains Mono Variable'), 'JetBrains Mono Variable', 'JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', ui-monospace, monospace;
+  /* SSR default. The runtime inline script in layout.tsx overrides
+     this per agentic_font in localStorage, but it can lose the race
+     with first paint on a cold load — so this SSR value must already
+     be a valid font stack, NOT `var(--font-inter), ...`. That var is
+     never defined; leading with it invalidated the whole declaration
+     and first paint fell back to Times before the script caught up. */
+  --font-sans: var(--font-inter-latin, 'Inter Variable'), 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+}

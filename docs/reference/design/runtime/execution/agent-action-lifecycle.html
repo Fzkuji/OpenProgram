@@ -1,63 +1,139 @@
+<title>Unified agent action lifecycle</title>
+<meta name="description" content="One lifecycle for permission decisions, execution, tool results, retries and recovery.">
 <h1>Unified agent action lifecycle</h1>
-<p>OpenProgram uses one action lifecycle for permission decisions, execution, tool results, retries, and recovery. The design retains the existing Agent loop, permission service, execution store, durable waits, and interface projections. It does not add a second workflow engine.</p>
-<h2>Current implementation and remaining gaps</h2>
-<ul><li>The loop bounds recent failure keys to the same 16-entry capacity enforced by AgentCheckpointV1. Distinct failures no longer overflow checkpoint state.</li><li>Bash repeat identity excludes its display-only description; executable arguments and fields of other tools remain part of identity.</li><li>Auto permission checks reject Bash by tool name before classifying its command. The current classifier also truncates arguments to 800 characters and does not receive sufficient trusted task and working-directory context. Removing the denylist alone is unsafe.</li><li>Approval manifests are prepared synchronously before dispatch, but automatic classification runs asynchronously inside execution. A classifier denial cannot safely become an approval wait at that location.</li><li>A known permission rejection can remain a dispatched effect if checkpoint construction fails. Execution then reports an unresolved effect despite a known non-execution result.</li></ul>
-<h2>Reference corpus and limits</h2>
-<table><thead><tr><th>Reference</th><th>Verified behavior</th><th>Adoption</th></tr></thead><tbody>
-<tr><td><a href="https://github.com/openai/codex/blob/8b78600dc85cc265d7e7e827f6aa903875405287/codex-rs/core/src/tools/orchestrator.rs">Codex ToolOrchestrator</a></td><td>Approval precedes sandbox selection and execution. Explicit rejection is distinct from sandbox denial. Escalated retries depend on policy.</td><td>One pre-execution decision and typed outcomes. A retry never changes authority implicitly.</td></tr>
-<tr><td><a href="https://code.claude.com/docs/en/permission-modes#when-auto-mode-falls-back">Claude Code auto mode</a></td><td>Classifier denials are visible. Three consecutive or twenty cumulative classifier blocks trigger manual prompting where supported; noninteractive runs retain the denial and can continue other work.</td><td>Separate consecutive and total refusal counters; reuse durable approval waits. These are permission fallback thresholds, not task completion or storage limits.</td></tr>
-<tr><td><a href="https://code.claude.com/docs/en/permissions">Claude Code permission rules</a></td><td>Rules are enforced by the harness. Whole-tool denial removes the tool; scoped denial is enforced on matching operations.</td><td>Tool visibility reflects effective capability. Dynamic revocation remains enforced at execution.</td></tr>
-<tr><td><a href="https://code.claude.com/docs/en/checkpointing">Claude Code checkpoints</a></td><td>File-edit rewind does not undo Bash changes or external effects.</td><td>Keep conversation recovery, file undo, and effect reconciliation distinct. Do not claim arbitrary exactly-once execution.</td></tr>
-</tbody></table>
-<p>The Codex source link pins an upstream revision. Product documentation remains mutable; implementation briefs preserve the retrieved evidence before code review. Claude Code internal retry-map and receipt storage algorithms are not established by these references. The result-receipt protocol below is an OpenProgram design, not a claim about Claude Code internals.</p>
-<h2>One public contract, three independent states</h2>
-<p>An action has a permission decision, an execution outcome, and a delivery state. They are not interchangeable. An action identifier, execution identifier, tool-call identifier, policy version, and canonical argument digest bind every decision, approval, receipt, and recovery operation.</p>
-<table><thead><tr><th>Dimension</th><th>Values</th><th>Meaning</th></tr></thead><tbody>
-<tr><td>Permission</td><td>allow / ask / deny</td><td>Whether this exact operation may begin under current authority.</td></tr>
-<tr><td>Outcome</td><td>not_started / succeeded / failed / unknown</td><td>What is known about actual execution. A failure can have partial effects.</td></tr>
-<tr><td>Delivery</td><td>pending / recorded / projected</td><td>Whether the result is durably stored and reflected in conversation and UI state.</td></tr>
-</tbody></table>
-<pre>prepare → authorize → [durable wait → revalidate] → dispatch → record result → checkpoint → project
+
+<table class="stack">
+<thead><tr><th scope="col">Dimension</th><th scope="col">Values</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Permission</th><td>allow / ask / deny</td><td>Whether this exact operation may begin under current authority</td></tr>
+<tr><th scope="row">Outcome</th><td>not_started / succeeded / failed / unknown</td><td>What is known about execution. A failure can have partial effects.</td></tr>
+<tr><th scope="row">Delivery</th><td>pending / recorded / projected</td><td>Whether the result is durably stored and reflected in conversation and UI</td></tr>
+</tbody>
+</table>
+
+<figure>
+<pre translate="no">prepare → authorize → [durable wait → revalidate] → dispatch → record result → checkpoint → project
                   ↘ deny → record not_started → checkpoint → model continues or explains blocker</pre>
-<p>A permission rejection is a completed decision with outcome not_started. It does not imply the task is completed. Unknown means that an operation may have started and its outcome cannot be established; only that situation requires effect reconciliation.</p>
+</figure>
+
+<p class="note">Built on the existing Agent loop, permission service, execution store, durable waits and interface projections; no second workflow engine. Action ID, execution ID, tool-call ID, policy version and canonical argument digest bind every decision, approval, receipt and recovery. A rejection is a completed decision with outcome not_started, not a completed task. Only unknown needs effect reconciliation.</p>
+
 <h2>Permission preparation and automatic review</h2>
-<ol><li>Resolve authenticated authority, current policy version, tool capabilities, project binding and exact arguments. Preserve existing hard constraints, authority checks, plan restrictions, explicit deny rules, ask rules and scoped grants.</li><li>Perform asynchronous preflight before publishing a dispatch intent. Auto review uses the complete bounded operation, trusted working directory and scope, relevant owner request and explicit restrictions. Treat tool arguments and repository content as untrusted data. Oversized or unparseable input cannot be approved from a truncated prefix.</li><li>Classifier timeout, cancellation and provider failure are distinct from a risk rejection. They never execute the action and do not count as classifier risk verdicts.</li><li>Publish an existing durable approval wait only for an eligible interactive owner. Hard constraints and explicit denials cannot become overridable prompts. Noninteractive execution reports the precise restriction and may continue independent allowed work.</li><li>Before dispatch, revalidate permission version, exact argument digest, approval identity and file preconditions. A mode change during review invalidates an obsolete decision. A grant for one action never authorizes a modified command.</li></ol>
-<p>Auto review does not grant the model permission to rewrite its own policy. Changes to tools, permission state, project binding or user restrictions invalidate relevant cached decisions. No global allow cache is introduced.</p>
-<p>Do not label every denial as not_started. A denial before the executor begins proves non-execution; a rejected escalation after a sandbox attempt may follow partial execution and must retain that evidence.</p>
-<h2>Failure handling and progress</h2>
-<table><thead><tr><th>Failure</th><th>Response</th></tr></thead><tbody>
-<tr><td>Invalid arguments</td><td>Return structured validation details. The model may correct execution-relevant arguments.</td></tr>
-<tr><td>Permission rejection</td><td>Record not_started with reason, policy version and allowed resolution. Do not retry under unchanged authority just by changing descriptive text.</td></tr>
-<tr><td>Transient transport failure</td><td>Retry only with a bounded policy and evidence of no execution or supported idempotency. Never automatically replay a potentially completed write.</td></tr>
-<tr><td>Deterministic tool failure</td><td>Return output for diagnosis; repeated equivalent attempts require changed relevant input or conditions. Other useful work may continue.</td></tr>
-<tr><td>Unknown side effect</td><td>Preserve exact action evidence and require reconciliation; retry is not equivalent to reconciliation.</td></tr>
-<tr><td>Infrastructure or checkpoint failure</td><td>Report runtime failure independently of the tool outcome; retain a recoverable result receipt when available.</td></tr>
-</tbody></table>
-<p>The recent failure map has a fixed capacity shared by the loop and checkpoint serializer. Eviction bounds storage, not permission or execution budgets. Full diagnostic history remains in existing events. Separate durable scalar counters retain cumulative refusal information across map eviction and restart. No total historical failure count declares a task complete.</p>
-<p>Canonical identity is tool-specific: exclude known presentation-only fields such as Bash description, but retain execution-relevant fields including command, working directory and permissions. Do not remove a field named description from arbitrary user tools. Do not infer equivalence of arbitrary shell programs. Legacy checkpoints remain readable; migration normalizes old keys only where their tool contract is known.</p>
-<p>Adopt the documented three-consecutive / twenty-total classifier-refusal defaults for interactive fallback. Allowed actions reset only the consecutive counter. Counter updates use durable action identity to avoid double counting on resume. No-verdict failures and explicit rule denials remain distinguishable. The implementation must document the session scope, reset behavior and concurrency semantics before enabling fallback.</p>
+
+<ol>
+<li>Resolve authenticated authority, policy version, tool capabilities, project binding and exact arguments; existing hard constraints, authority checks, plan restrictions, deny and ask rules and scoped grants stay.</li>
+<li>Preflight runs asynchronously before a dispatch intent. Auto review gets the complete bounded operation, trusted working directory and scope, the owner request and restrictions. Tool arguments and repository content are untrusted. Oversized or unparseable input is never approved from a truncated prefix.</li>
+<li>Classifier timeout, cancellation and provider failure differ from a risk rejection: they never execute the action and count as no verdict.</li>
+<li>A durable approval wait is published only for an eligible interactive owner. Hard constraints and explicit denials cannot become prompts. Noninteractive runs report the restriction and may continue independent work.</li>
+<li>Before dispatch, revalidate permission version, argument digest, approval identity and file preconditions. A mode change invalidates an obsolete decision; a grant never authorizes a modified command.</li>
+</ol>
+
+<details>
+<summary>Limits on decisions</summary>
+<ul>
+<li>Auto review cannot rewrite its own policy. Changes to tools, permission state, project binding or restrictions invalidate cached decisions; there is no global allow cache.</li>
+<li>Not every denial is not_started: a denial before the executor proves non-execution, but a rejected escalation after a sandbox attempt may follow partial execution and keeps that evidence.</li>
+</ul>
+</details>
+
+<h2>Failure handling</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Failure</th><th scope="col">Response</th></tr></thead>
+<tbody>
+<tr><th scope="row">Invalid arguments</th><td>Structured validation details; the model may correct execution-relevant arguments</td></tr>
+<tr><th scope="row">Permission rejection</th><td>Record not_started with reason, policy version and allowed resolution. No retry under unchanged authority by altering descriptive text.</td></tr>
+<tr><th scope="row">Transient transport failure</th><td>Bounded retry only with evidence of no execution or supported idempotency; never replay a possibly completed write</td></tr>
+<tr><th scope="row">Deterministic tool failure</th><td>Output returned for diagnosis; repeats need changed input or conditions; other work may continue</td></tr>
+<tr><th scope="row">Unknown side effect</th><td>Exact evidence preserved; reconciliation required, and a retry does not count as one</td></tr>
+<tr><th scope="row">Infrastructure or checkpoint failure</th><td>Reported independently of the tool outcome; a recoverable receipt is kept when available</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Repeat tracking and refusal counters</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Recent failure map</th><td>Bounded to the 16 entries <code translate="no">AgentCheckpointV1</code> enforces, shared by loop and serializer. Eviction bounds storage, not permission or execution budgets. Full history stays in events; no failure count declares a task complete.</td></tr>
+<tr><th scope="row">Identity</th><td>Tool-specific: excludes presentation-only fields such as Bash description, keeps command, working directory and permissions. Fields named description on other tools are kept. Shell programs are never inferred equivalent. Legacy checkpoints stay readable; old keys are normalized only where the tool contract is known.</td></tr>
+<tr><th scope="row">Fallback thresholds</th><td>Three consecutive or twenty total classifier refusals trigger manual prompting, through the existing owner approval wait; never overrides explicit denial</td></tr>
+<tr><th scope="row">Scope</th><td>Session and owner policy version; a permission version change starts a new epoch</td></tr>
+<tr><th scope="row">Resets</th><td>Allowed and approved fallback operations reset only the consecutive count; the total resets when its threshold approval completes or the epoch changes</td></tr>
+<tr><th scope="row">No double counting</th><td>Canonical execution events keep each operation identity and verdict in the existing SQLite transaction</td></tr>
+<tr><th scope="row">No verdict</th><td>Changes neither counter and never authorizes execution; risk refusals do not consume the execution-failure repeat budget</td></tr>
+</tbody>
+</table>
+</details>
+
 <h2>Receipts and recovery</h2>
-<p>Retain the existing execution store. A durable result receipt contains the exact tool-call identity, outcome, execution-start evidence, error code, result reference and digest. Store the authoritative result independently of optional display and diagnostic state. Checkpoint construction cannot erase a known result.</p>
-<p>Recovery distinguishes: receipt recorded but checkpoint missing; checkpoint recorded but projection missing; dispatch present without a trustworthy receipt. The first reconstructs the continuation from the recorded result; the second replays only projection; the third uses the existing effect reconciliation policy. Results and checkpoints require idempotent writes and version checks. An external operation and local SQLite cannot generally share a transaction, so this design does not promise exactly-once external effects.</p>
-<p>Permission denial needs no external-effect dispatch. When recovering older records, do not infer non-execution from arbitrary tool text alone. Reconcile the exact trusted permission event, call identity and stored command evidence. Never mark the entire task completed as a repair.</p>
-<h2>Implementation ownership</h2>
-<table><thead><tr><th>Existing area</th><th>Responsibility</th></tr></thead><tbody>
-<tr><td>agent/permissions</td><td>Policy, asynchronous preflight, trusted review input, refusal counters and existing durable approval waits.</td></tr>
-<tr><td>agent tool execution</td><td>Bounded repeat tracking and execution-relevant identity; consume decisions, emit outcomes. Extract a small failure-policy module rather than extending the large loop.</td></tr>
-<tr><td>agent/production_driver and execution</td><td>Record receipts, checkpoint cursor, recovery and effect reconciliation. Reuse existing stores and transaction primitives.</td></tr>
-<tr><td>Web execution projection</td><td>Show waiting, denied, failed, unknown outcome and remaining work; reuse existing approval UI and backend actions.</td></tr>
-</tbody></table>
-<p>Native tools, Terminal, Web resources and application providers use this lifecycle through their existing common tool entry. Do not create provider-specific permission or retry engines. Human UI actions retain their own authenticated human origin; routing an agent action through an HTTP interface does not grant human privileges.</p>
-<h2>Delivery sequence and acceptance</h2>
-<ol><li>Repair bounded failure tracking. Real Agent calls produce more than sixteen distinct failures without schema errors; descriptive changes do not bypass repeat suppression; changed executable arguments remain distinct; old checkpoints load.</li><li>Introduce preflight and typed rejection. A denied operation never calls its executor; full-command review catches dangerous suffixes; cancellation and policy changes during review do not dispatch; exact approvals survive restart once.</li><li>Add refusal fallback using existing waits. Interactive and noninteractive behavior differ explicitly; hard denials remain non-overridable; counters survive resume and parallel calls without duplicate updates.</li><li>Make receipts recoverable across checkpoint failures. Inject failure between result recording and checkpoint commit, restart, and prove a mutating executor is not called again. Unknown effects remain blocked.</li><li>Align capability visibility and UI projection. Dynamic revocation takes effect immediately; a hidden tool cannot be invoked by an old model decision; UI and backend show the same precise reason and valid recovery actions.</li></ol>
-<p>Each stage has a focused public/shared-entry regression, isolated implementation commit, independent specification and quality reviews, affected tests and final verification. Do not combine an unsafe permission expansion with the emergency overflow repair.</p>
-<h2>Implementation status</h2>
-<p data-status="partial">Permission preflight and durable refusal fallback have passed prior independent reviews and full Python gates. Receipt recovery, host execution evidence, model visibility and outcome projection are under integration verification. No deployment or merge is claimed.</p>
 
-<p>Counters are scoped to session and owner policy version. An explicit permission version change selects a fresh accounting epoch. Allowed operations and approved fallback operations reset only the consecutive count; the cumulative count resets when its threshold-triggered approval completes or the epoch changes. Canonical execution events retain each exact operation identity and verdict under the existing SQLite transaction, so resumed or concurrent calls cannot double count. A classifier failure without a boolean verdict does not change either counter. Fallback uses the existing owner approval wait and never overrides explicit denial.</p>
+<p>A durable receipt holds exact tool-call identity, outcome, execution-start evidence, error code, result reference and digest, stored independently of display state. Checkpoint construction cannot erase a known result. External operations and local SQLite cannot share a transaction, so exactly-once external effects are not promised.</p>
 
-<h2>Approval integration</h2>
-<p>Reuse the existing durable approval wait. Automatic risk refusals do not consume the execution-failure repeat budget, so identical operations reach the existing manual-approval threshold. No-verdict errors remain distinct and never implicitly authorize execution. The host records execution start immediately before the authorized implementation. Both completed and not-started results are sealed before checkpoint serialization; application result details are not execution evidence. Model-facing tools are filtered against applicable live rules for each provider request, without changing the saved execution contract. Host outcomes are projected through live events and history.</p>
-<p>The Claude Code reference documents refusal fallback; Codex's orchestrator documents approval before execution and policy-limited escalation. Neither establishes a universal recovery algorithm for this execution database. The receipt implementation adapts the existing local transaction and checkpoint contracts.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Found on recovery</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row">Receipt recorded, checkpoint missing</th><td>Rebuild the continuation from the recorded result</td></tr>
+<tr><th scope="row">Checkpoint recorded, projection missing</th><td>Replay projection only</td></tr>
+<tr><th scope="row">Dispatch without a trustworthy receipt</th><td>Existing effect reconciliation</td></tr>
+<tr><th scope="row">Older records</th><td>Non-execution is never inferred from tool text; reconcile the trusted permission event, call identity and stored command. A task is never marked completed as a repair.</td></tr>
+</tbody>
+</table>
 
-<h2>Provider response events</h2><p>Every dispatched model request has a unique request_id and exactly one started and completed event. Completion records completed, failed, cancelled or incomplete, including transport exceptions and EOF without a provider terminal event. Exceptions and cancellation propagate unchanged; event accounting does not replay tools or authorize model retries. Legacy partial text fallback remains incomplete. Completion observers do not treat unsuccessful requests as successful answers.</p>
+<h2>Host integration</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Execution start</th><td>Recorded immediately before the authorized implementation</td></tr>
+<tr><th scope="row">Results</th><td>Completed and not-started results are sealed before checkpoint serialization; application result details are not execution evidence</td></tr>
+<tr><th scope="row">Tool visibility</th><td>Model-facing tools are filtered against live rules per provider request, without changing the saved execution contract; dynamic revocation is enforced at execution</td></tr>
+<tr><th scope="row">Projection</th><td>Host outcomes reach live events and history</td></tr>
+<tr><th scope="row">Human UI actions</th><td>Keep their authenticated human origin; routing an agent action through HTTP grants no human privileges</td></tr>
+</tbody>
+</table>
+
+<h2>Provider response events</h2>
+
+<p>Each dispatched model request has a unique <code translate="no">request_id</code> and exactly one started and one completed event. Completion records completed, failed, cancelled or incomplete, including transport exceptions and EOF without a terminal event. Exceptions and cancellation propagate unchanged; accounting does not replay tools or authorize retries. Legacy partial text stays incomplete, and observers do not treat unsuccessful requests as answers.</p>
+
+<h2>Ownership</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Responsibility</th></tr></thead>
+<tbody>
+<tr><th scope="row">permissions</th><td>Policy, asynchronous preflight, trusted review input, refusal counters, durable approval waits</td></tr>
+<tr><th scope="row">agent tool execution</th><td>Repeat tracking and identity in a small failure-policy module; consumes decisions, emits outcomes</td></tr>
+<tr><th scope="row"><code translate="no">conversation/production_driver</code> and execution</th><td>Receipts, checkpoint cursor, recovery, effect reconciliation</td></tr>
+<tr><th scope="row">Web execution projection</th><td>Waiting, denied, failed, unknown and remaining work, on existing approval UI and actions</td></tr>
+<tr><th scope="row">Native tools, Terminal, Web resources, application providers</th><td>Use this lifecycle through the common tool entry; no provider-specific engines</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Acceptance</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Must hold</th></tr></thead>
+<tbody>
+<tr><th scope="row">Failure tracking</th><td>More than sixteen distinct failures cause no schema error; descriptive changes do not bypass suppression; changed executable arguments stay distinct; old checkpoints load</td></tr>
+<tr><th scope="row">Preflight</th><td>A denied operation never calls its executor; dangerous suffixes are caught; cancellation and policy changes do not dispatch; exact approvals survive restart once</td></tr>
+<tr><th scope="row">Refusal fallback</th><td>Interactive and noninteractive differ explicitly; hard denials stay; counters survive resume and parallel calls</td></tr>
+<tr><th scope="row">Receipts</th><td>A failure between result and checkpoint, then restart, does not call a mutating executor again; unknown effects stay blocked</td></tr>
+<tr><th scope="row">Visibility</th><td>Revocation is immediate; a hidden tool cannot be invoked by an old decision; UI and backend show the same reason and recovery actions</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>References</summary>
+<table class="stack">
+<thead><tr><th scope="col">Reference</th><th scope="col">Behaviour</th><th scope="col">Adopted as</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/8b78600dc85cc265d7e7e827f6aa903875405287/codex-rs/core/src/tools/orchestrator.rs">Codex ToolOrchestrator</a></th><td>Approval precedes sandbox selection and execution; rejection differs from sandbox denial; escalated retries depend on policy</td><td>One pre-execution decision and typed outcomes; a retry never changes authority implicitly</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/permission-modes#when-auto-mode-falls-back">Claude Code auto mode</a></th><td>Classifier denials are visible; 3 consecutive or 20 total trigger prompting where supported; noninteractive runs keep the denial</td><td>Separate counters on durable approval waits; fallback thresholds, not task or storage limits</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/permissions">Claude Code permission rules</a></th><td>Harness-enforced; whole-tool denial removes the tool, scoped denial applies to matching operations</td><td>Tool visibility reflects capability</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/checkpointing">Claude Code checkpoints</a></th><td>File-edit rewind does not undo Bash or external effects</td><td>Conversation recovery, file undo and effect reconciliation stay distinct</td></tr>
+</tbody>
+</table>
+<p class="note">The receipt protocol is an OpenProgram design, not a claim about other systems' internals.</p>
+</details>

@@ -1,0 +1,89 @@
+<title>Provider</title>
+<meta name="description" content="内置 Provider 及接入方式、自定义端点、模型使用图、回退、脱敏和库用法。">
+<h1>Provider</h1>
+<p><code translate="no">openprogram providers available</code> 还列出数百个 OpenAI 兼容的社区条目，配置方式相同。</p>
+<table class="stack">
+<thead><tr><th scope="col">Provider</th><th scope="col">协议</th><th scope="col">接入</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anthropic</code></th><td>Anthropic Messages</td><td><code translate="no">ANTHROPIC_API_KEY</code></td><td>显式缓存，<code translate="no">cache_control</code>，支持 1 小时 TTL</td></tr>
+<tr><th scope="row"><code translate="no">openai</code></th><td>OpenAI Responses</td><td><code translate="no">OPENAI_API_KEY</code></td><td>自动缓存，<code translate="no">prompt_cache_key</code></td></tr>
+<tr><th scope="row"><code translate="no">openai_responses</code> <code translate="no">openai_completions</code></th><td>Responses、Chat Completions</td><td>共用实现</td><td>被许多 Provider 复用</td></tr>
+<tr><th scope="row"><code translate="no">openai_codex</code></th><td>ChatGPT 后端</td><td>OAuth（ChatGPT 订阅），或导入 <code translate="no">codex</code> 登录</td><td>实时模型列表</td></tr>
+<tr><th scope="row"><code translate="no">azure_openai_responses</code></th><td>Azure OpenAI Responses</td><td><code translate="no">AZURE_OPENAI_API_KEY</code> 和你的 base URL</td><td></td></tr>
+<tr><th scope="row"><code translate="no">google</code></th><td>Google Generative AI</td><td><code translate="no">GEMINI_API_KEY</code>、<code translate="no">GOOGLE_API_KEY</code></td><td>用 token 预算控制思考</td></tr>
+<tr><th scope="row"><code translate="no">google_gemini_cli</code></th><td>Cloud Code Assist</td><td>CLI 凭据：读 <code translate="no">~/.gemini/oauth_creds.json</code>，由 Gemini CLI 刷新</td><td></td></tr>
+<tr><th scope="row"><code translate="no">gemini_subscription</code></th><td>Cloud Code Assist</td><td>CLI 凭据：导入同一文件</td><td>别名 <code translate="no">gemini</code>、<code translate="no">gemini-cli</code></td></tr>
+<tr><th scope="row"><code translate="no">amazon_bedrock</code></th><td>Bedrock Converse Stream</td><td>云凭据链，运行时检测</td><td>显式缓存，<code translate="no">cachePoint</code></td></tr>
+<tr><th scope="row"><code translate="no">github_copilot</code></th><td>OpenAI Responses 等</td><td><a href="auth.html">GitHub 设备码或导入 token</a></td><td>不支持思考强度</td></tr>
+<tr><th scope="row"><code translate="no">deepseek</code></th><td>OpenAI Completions</td><td><code translate="no">DEEPSEEK_API_KEY</code></td><td>reasoner 强度不可调</td></tr>
+<tr><th scope="row"><code translate="no">openrouter</code></th><td>OpenAI Completions</td><td><code translate="no">OPENROUTER_API_KEY</code></td><td>网关</td></tr>
+<tr><th scope="row"><code translate="no">vercel_ai_gateway</code></th><td>Anthropic Messages</td><td><code translate="no">AI_GATEWAY_API_KEY</code></td><td>网关</td></tr>
+<tr><th scope="row"><code translate="no">groq</code></th><td>OpenAI Completions</td><td><code translate="no">GROQ_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">cerebras</code></th><td>OpenAI Completions</td><td><code translate="no">CEREBRAS_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">mistral</code></th><td>OpenAI Completions</td><td><code translate="no">MISTRAL_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">xai</code></th><td>OpenAI Completions</td><td><code translate="no">XAI_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">xai_subscription</code></th><td>OpenAI Responses</td><td>OAuth（SuperGrok、X Premium+），浏览器 PKCE</td><td>与 <code translate="no">xai</code> 相同的模型，经 <code translate="no">cli-chat-proxy.grok.com</code>。保留所选模型 ID：<code translate="no">grok-4.6</code> 不会被换成 <code translate="no">grok-build</code>。</td></tr>
+<tr><th scope="row"><code translate="no">zai</code></th><td>OpenAI Completions</td><td><code translate="no">ZAI_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">huggingface</code></th><td>OpenAI Completions</td><td><code translate="no">HF_TOKEN</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">minimax</code> <code translate="no">minimax_cn</code></th><td>Anthropic Messages</td><td><code translate="no">MINIMAX_API_KEY</code>、<code translate="no">MINIMAX_CN_API_KEY</code></td><td>国际、中国</td></tr>
+<tr><th scope="row"><code translate="no">minimax_cn_coding_plan</code></th><td>Anthropic Messages</td><td><code translate="no">MINIMAX_CN_API_KEY</code>、<code translate="no">MINIMAX_API_KEY</code></td><td>MiniMax Token Plan (CN)，与 <code translate="no">minimax_cn</code> 同账户</td></tr>
+<tr><th scope="row"><code translate="no">kimi_coding</code></th><td>Anthropic Messages</td><td><code translate="no">KIMI_API_KEY</code>、<code translate="no">MOONSHOT_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">alibaba_token_plan_cn</code></th><td>OpenAI Completions</td><td>套餐 API 密钥</td><td>别名 <code translate="no">bailian</code></td></tr>
+<tr><th scope="row"><code translate="no">opencode</code></th><td>OpenAI Completions 等</td><td><code translate="no">OPENCODE_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">opencode_go</code></th><td>OpenAI Completions</td><td><code translate="no">OPENCODE_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">atlascloud</code></th><td>OpenAI Completions</td><td><code translate="no">ATLASCLOUD_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">ollama</code> <code translate="no">lmstudio</code> <code translate="no">vllm</code> <code translate="no">llamacpp</code> <code translate="no">local</code></th><td>OpenAI Completions</td><td>密钥可选</td><td><a href="local-models.html">本地模型</a></td></tr>
+</tbody>
+</table>
+<p class="note">API 密钥导入凭据库：<a href="auth.html">认证</a>。所有 Provider 都支持流式。多模态按模型决定，以 UI 为准。提示词缓存仅在标注处经代码验证。</p>
+<h2>自定义 Provider</h2>
+<p>设置 → Provider：必填显示名称和 base URL；不填 id 时由名称生成。<code translate="no">https://api.example.com</code> 解析为 <code translate="no">/v1</code>；明确的路径如 <code translate="no">/compatible-mode/v1</code> 保留。<strong>Fetch models</strong> 浏览端点的 <code translate="no">/models</code>。存为 <code translate="no">providers.&lt;id&gt;</code>，带 <code translate="no">source: "custom"</code>。</p>
+<h2>哪个会话在用哪个模型</h2>
+<p>设置 → Provider 打开时是 <strong>Overview</strong>，一张按现在、24 小时或 7 天显示的图。</p>
+<table class="stack">
+<thead><tr><th scope="col">左侧</th><th scope="col">右侧</th></tr></thead>
+<tbody>
+<tr><th scope="row">窗口内正在回答或调用过模型的会话；其下是分支、子 Agent 和程序运行产生的子会话。不属于会话的调用（如取标题）在 <strong>Background calls</strong> 下。</th><td>正在使用的模型，按 Provider 分组</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">标记</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">蓝线加移动的点</th><td>请求进行中</td></tr>
+<tr><th scope="row">橙色虚线</th><td>失败后被切换掉的模型</td></tr>
+<tr><th scope="row">Provider 旁的说明</th><td>密钥冷却中或需要修复</td></tr>
+</tbody>
+</table>
+<p class="note">悬停一行可突出它的连线。点会话打开，点 Provider 进入设置。下方 <strong>Recent model switches</strong> 列出每次切换及原因。窗口内没有调用的会话只计数。这张图需要较宽的窗格。</p>
+<h2 id="fallback-models">回退模型</h2>
+<p>用于被限流、过载、宕机或不可达的模型。在设置 → 系统 → 模型里设置，或：</p>
+<pre translate="no"><code>openprogram config set model_fallback.mode same-provider
+openprogram config set model_fallback.models '["anthropic/claude-sonnet-5-5", "openai/gpt-5.5"]'</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">model_fallback.mode</code></th><th scope="col">发生此类失败时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">off</code>（默认）</th><td>显示错误</td></tr>
+<tr><th scope="row"><code translate="no">same-provider</code></th><td>按设置中的顺序尝试该 Provider 其他最多两个已启用模型。不联系其他 Provider。</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>按顺序尝试 <code translate="no">model_fallback.models</code>，可跨 Provider</td></tr>
+</tbody>
+</table>
+<p class="note">只在回复还没有任何文本时切换。认证错误、无效请求、上下文已满和内容策略拒绝不重试。<code translate="no">OPENPROGRAM_FALLBACK_MODELS</code> 覆盖此设置。</p>
+<h2 id="redacting-secrets-in-requests">请求脱敏</h2>
+<p>默认关闭。设置 → 系统 → 模型里的 <strong>Redact secrets in requests</strong>，或 <code translate="no">openprogram config set privacy.redact_requests true</code>。每次请求前，这些内容换成 <code translate="no">[[SECRET_1]]</code>、<code translate="no">[[EMAIL_2]]</code> 这样的占位符：</p>
+<ul>
+<li>形状可识别的 API 密钥和 token：Anthropic、OpenAI、GitHub、AWS、Google、Slack、JWT</li>
+<li>私钥块</li>
+<li><code translate="no">password=…</code>、<code translate="no">api_key: …</code>、<code translate="no">Authorization: Bearer …</code> 等赋值里的值</li>
+<li>邮箱地址</li>
+</ul>
+<p class="note">回复及其工具调用先还原真实值，所以用 <code translate="no">[[SECRET_1]]</code> 写的命令会带着真密钥运行。映射只在内存里保留一次请求。自由文本里没有赋值形式的密码会原样发送。</p>
+<h2>作为库使用</h2>
+<pre translate="no"><code>from openprogram.runtime.agent.runtime.factory import create_runtime
+
+runtime = create_runtime()                                        # 第一个可用的 Provider
+runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")  # Anthropic API 密钥
+runtime = create_runtime(provider="openai", model="gpt-4.1")               # OpenAI Responses
+runtime = create_runtime(provider="gemini", model="gemini-2.5-flash")      # Google Generative AI
+runtime = create_runtime(provider="openai-codex")                          # ChatGPT 订阅
+runtime = create_runtime(provider="gemini-cli")                            # Gemini CLI 登录</code></pre>
+<p class="note">这五个有专门的行为。其他 Provider 按模型协议路由，与聊天相同。</p>

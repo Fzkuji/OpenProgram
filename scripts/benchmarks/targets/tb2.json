@@ -1,0 +1,26 @@
+{
+  "name": "tb2",
+  "description": "Terminal-Bench 2.0, all 89 tasks, 5 attempts each, under the leaderboard's rules: task timeouts and resources as published, no overrides.",
+  "sources": [
+    "Terminal-Bench 2.0 leaderboard rules: at least 5 attempts per task, timeout multiplier 1.0, no timeout or resource overrides",
+    "Harbor registry: terminal-bench@2.0 (89 tasks)"
+  ],
+  "dataset": {"name": "terminal-bench", "version": "2.0", "task_prefix": ""},
+  "tasks": null,
+  "attempts": 5,
+  "selection": "all_attempts",
+  "retry": {"max_retries": 0},
+  "trial_wall_clock_cap_min": null,
+  "overrides_allowed": false,
+  "model": "openai/gpt-5.6-terra",
+  "reasoning_effort": "medium",
+  "control": {"agent": "codex", "version": "0.148.0"},
+  "harbor_version": "0.25.0",
+  "comparable_environments": ["runta"],
+  "harbor": {"agent_setup_timeout_multiplier": 3.0, "environment_build_timeout_multiplier": 3.0},
+  "prices": {
+    "source": "models.dev, read 2026-11-12; base tier, prompts up to 272,000 tokens",
+    "unit_tokens": 1000000,
+    "models": {"openai/gpt-5.6-terra": {"input": 2.0, "cached_input": 0.2, "output": 12.0}}
+  }
+}

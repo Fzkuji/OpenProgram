@@ -1,0 +1,222 @@
+<title>Open applications from the new tab page</title>
+<meta name="description" content="Install, open, write and operate OpenProgram applications: packages, capabilities, APIs, lifecycle and the resource interface.">
+<h1>Open applications from the new tab page</h1>
+<p>An application is a Program with its own interface: standard HTML, CSS and JavaScript, optionally backed by Python operations. It appears beside Files, New chat, Browser and Terminal; clicking opens it in a tab, opening again selects the same instance, and closing the tab does not cancel its operations.</p>
+<h2 id="where-they-appear">Where they appear</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Place</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Applications</strong> in the sidebar</th><td>Every application with icon, title, version, scope and description. Filters <strong>All</strong>, <strong>Built in</strong>, <strong>Installed</strong>. Row: <strong>Open</strong> if it has a window, enabled switch, <strong>⋯</strong> menu (<strong>Show in Abilities</strong>, <strong>Hide from new tab</strong> or <strong>Show in new tab</strong>, <strong>Update from source</strong>, <strong>Uninstall</strong>). <strong>Install…</strong> opens the install form.</td></tr>
+<tr><th scope="row"><strong>Abilities → Programs</strong></th><td>Plain folder view, one folder per application directory, sorted by name (<code translate="no">browser</code>, <code translate="no">calculator</code>, <code translate="no">auto_research</code>), holding real subfolders and source files. Applications under <strong>Applications</strong> with installed programs that have no UI; built-in tools under <strong>Tools</strong>.</td></tr>
+<tr><th scope="row">Selecting an application there</th><td>Same icon, title and description, directory name, kind, version; <strong>Open</strong>, <strong>Use in chat</strong> with a single Agent entry; enabled switch; Agent entries with descriptions; location, window and permissions. Call logic folded at the bottom. A tool lists parameters; a source file shows its call logic.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Details of these views</summary>
+<ul>
+<li><strong>Uninstall</strong> asks first and keeps the application's data. <strong>Update from source</strong> shows the source directory and opens the install form filled in; review the source before submitting.</li>
+<li>The install form requires explicit trust for Python backends and for <code translate="no">files.project.write</code>.</li>
+<li>An application inside an installed package is that package's subfolder, such as <code translate="no">auto_research/app</code>. Its call logic is the union of the Agent entries it registers.</li>
+<li>An application the Agent cannot call says so in one line: a UI-only application only opens as a window; a package that only exports Python functions for other Programs is a Python library.</li>
+<li>The new tab page refreshes its list when focused and every ten seconds.</li>
+</ul>
+</details>
+<h2 id="install-and-open">Install and open</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram programs install /absolute/path/to/application</code></th><td>Records the directory, which loads from where it is. Keep it there. Needs the worker running.</td></tr>
+<tr><th scope="row"><code translate="no">… --trust</code></th><td>Authorizes a Python backend and <code translate="no">files.project.write</code>. Review source and dependencies first.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs install owner/repo --trust</code></th><td>A git URL or GitHub <code translate="no">owner/repo</code> is cloned into <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> and recorded</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs list</code></th><td>Id, state (<code translate="no">enabled</code>, <code translate="no">disabled</code>, <code translate="no">error</code>), directory, Agent entries and tier (<code translate="no">deferred</code> for applications). No worker needed. <code translate="no">--json</code> gives a <code translate="no">tiers</code> map per row.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs check DIRECTORY</code></th><td>Validates manifest, package tree and declared backend operations; records nothing</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs disable ID</code></th><td>Removes interface, resource, services and Agent entries; cancels active operations. Saved in <code translate="no">catalog.json</code>, holds across restarts.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs enable ID</code></th><td>Loads it again</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs uninstall local.notes</code></th><td>Removes the entry and cancels operations; keeps data and the schema/scope identity. A compatible reinstall restores data; an incompatible one is rejected before activation.</td></tr>
+</tbody>
+</table>
+<p class="note">Python backends run as trusted local code with your operating-system account. <code translate="no">files.project.write</code> lets it create and replace files in the bound project. A directory placed directly in <code translate="no">~/.openprogram/programs/</code> needs no <code translate="no">install</code>: the worker records it on its next scan, and one needing trust is listed as <code translate="no">needs trust</code> until installed with <code translate="no">--trust</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stored in</th><th scope="col">What</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> or anywhere</th><td>The application directory</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/catalog.json</code></th><td>Source directory, enabled, hidden and display-title; nothing is copied</td></tr>
+<tr><th scope="row"><code translate="no">~/.openprogram/programs/.runtime/</code></th><td>Business data, run records, Python environments</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Built-in</th><th scope="col">What it does</th><th scope="col">Disabling removes</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">browser</code></th><td>The built-in browser that <code translate="no">computer_use_agent</code> operates</td><td>The browser target; desktop targets keep working</td></tr>
+<tr><th scope="row"><code translate="no">workflow_recording</code></th><td><a href="workflows/recording.html">Workflow recording</a>; its window starts a recording without the composer</td><td>The composer's <strong>Record a workflow</strong> and the routes</td></tr>
+<tr><th scope="row"><code translate="no">office_editor</code> (<strong>ONLYOFFICE</strong>)</th><td>Word, Excel and PowerPoint in the file window; its window starts a blank file in the current project and lists its Office documents</td><td>Those files offer only the original-file download</td></tr>
+<tr><th scope="row"><code translate="no">meeting</code></th><td><a href="meetings.html">Meetings</a>: records a call, transcribes it, summarizes in a new chat</td><td>Meetings</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">browser</code>, <code translate="no">office_editor</code>, <code translate="no">workflow_recording</code> and <code translate="no">meeting</code> take <code translate="no">enable</code> and <code translate="no">disable</code> too, the same as their enabled switch. Tools (<code translate="no">bash</code>, <code translate="no">read</code>, <code translate="no">goal</code> …) are always given to the Agent and cannot be disabled. Packages adding tools or a screen from Claude Code, Codex, OpenCode or Hermes install as an application: add an <code translate="no">application.json</code>. See <a href="plugins.html">Plugins</a>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Scope</th><th scope="col">Instances</th></tr></thead>
+<tbody>
+<tr><th scope="row">Global</th><td>One shared instance for the owner</td></tr>
+<tr><th scope="row">Project</th><td>One per project, separate business data. Uses the selected project when opened; changing the conversation's project does not rebind. No current project: a single saved binding is reused; first use or several bindings opens a chooser, which also accepts a new folder.</td></tr>
+</tbody>
+</table>
+<p class="next">Examples: <a href="https://github.com/FuzzyKuji/OpenProgram/tree/main/examples/applications/calculator">calculator</a>, <a href="https://github.com/FuzzyKuji/OpenProgram/tree/main/examples/applications/pdf_editor">PDF editor</a> (reads, annotates and reorganizes the project's PDFs; uses your model only when you ask for a summary)</p>
+<h2 id="application-package">Application package</h2>
+<pre translate="no" tabindex="0"><code>{
+  "id": "local.notes",
+  "title": "Notes",
+  "description": "Keeps notes per project and summarises them on request.",
+  "icon": "notebook-pen",
+  "version": "1.0.0",
+  "scope": "global",
+  "dataSchema": 1,
+  "ui": {"root": "ui", "entry": "index.html"},
+  "capabilities": ["storage.app", "model.invoke"],
+  "backend": {"kind": "python", "entry": "backend:operations"},
+  "operations": {
+    "summarize": {
+      "agent": true,
+      "input": {"type": "object"},
+      "output": {"type": "string"}
+    }
+  }
+}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">application.json</code></th><td>In the package root</td></tr>
+<tr><th scope="row"><code translate="no">title</code>, <code translate="no">description</code></th><td>Shown on the New tab page, Applications page and Abilities. Description: one plain sentence, one line, at most 300 characters. Without <code translate="no">application.json</code> a Program uses the first <code translate="no"># Heading</code> of its <code translate="no">README.md</code> and the first sentence below it, or its directory name.</td></tr>
+<tr><th scope="row"><code translate="no">icon</code></th><td>Glyph on those pages and the tab. Any other name, or none: a generic tile coloured from the id.</td></tr>
+<tr><th scope="row"><code translate="no">ui.root</code>, <code translate="no">ui.entry</code></th><td>Root is relative to the package, entry to the root. Keep Python and private configuration outside <code translate="no">ui.root</code>.</td></tr>
+<tr><th scope="row"><code translate="no">backend</code></th><td>Exports a dictionary of callables taking <code translate="no">(input, context)</code> and returning JSON, sync or async</td></tr>
+<tr><th scope="row"><code translate="no">backend.dependencies</code></th><td>Exact pins, such as <code translate="no">["package-name==1.2.3"]</code>. One Python environment per set, created on first use; it also uses the installed host framework.</td></tr>
+<tr><th scope="row"><code translate="no">operations</code></th><td>Input and output are JSON Schema. Only <code translate="no">agent: true</code> is callable through the Program client.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Icon names</summary>
+<p><code translate="no">calculator</code>, <code translate="no">book-open</code>, <code translate="no">file-search</code>, <code translate="no">file-text</code>, <code translate="no">file-pdf</code>, <code translate="no">telescope</code>, <code translate="no">notebook-pen</code>, <code translate="no">table</code>, <code translate="no">chart-column</code>, <code translate="no">database</code>, <code translate="no">image</code>, <code translate="no">music</code>, <code translate="no">video</code>, <code translate="no">map</code>, <code translate="no">calendar</code>, <code translate="no">globe</code>, <code translate="no">code</code>, <code translate="no">terminal</code>, <code translate="no">mail</code>, <code translate="no">message-square</code>, <code translate="no">list-checks</code>, <code translate="no">languages</code>, <code translate="no">pen-tool</code>, <code translate="no">palette</code>, <code translate="no">sigma</code>, <code translate="no">flask-conical</code>, <code translate="no">briefcase</code>, <code translate="no">bot</code>, <code translate="no">sparkles</code></p>
+</details>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Capability</th><th scope="col">Grants the backend</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">storage.app</code></th><td><code translate="no">context.load()</code> and <code translate="no">context.save()</code>: the instance's saved state</td></tr>
+<tr><th scope="row"><code translate="no">model.invoke</code></th><td>An ambient Runtime for <code translate="no">llm()</code> and <code translate="no">agent()</code></td></tr>
+<tr><th scope="row"><code translate="no">files.project.read</code></th><td><code translate="no">context.read_file(relative_path)</code> inside the bound project</td></tr>
+<tr><th scope="row"><code translate="no">files.project.write</code></th><td><code translate="no">context.write_file(relative_path, content)</code> inside the bound project; needs a Python backend and <code translate="no">--trust</code></td></tr>
+</tbody>
+</table>
+<p class="note">Capabilities restrict the host bridge, not the operating-system permissions of trusted Python. Backends are checked in a separate process before registration; listing applications does not import their code.</p>
+<details>
+<summary>Sandbox</summary>
+<ul>
+<li>Web UI runs in a sandboxed iframe with an opaque origin. Its interface need not use OpenProgram components.</li>
+<li>Bundle frontend dependencies locally and use relative asset URLs, including JavaScript module imports.</li>
+<li>Blocked: remote scripts, direct owner API access, nested frames and form navigation.</li>
+<li>A resource URL authorizes reads of only that application's UI directory at the digest it was opened with; it is not an owner credential.</li>
+</ul>
+</details>
+<h2 id="browser-and-python-apis">Browser and Python APIs</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">window.openprogramApp</code></th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">load()</code></th><td>Returns <code translate="no">{value, version}</code></td></tr>
+<tr><th scope="row"><code translate="no">save(value, version)</code></th><td>Saves only if that version is current; reload after a concurrent-write error</td></tr>
+<tr><th scope="row"><code translate="no">run(operation, input, requestKey)</code></th><td>Returns a durable run record. Reuse the key when retrying; different input with it is rejected.</td></tr>
+<tr><th scope="row"><code translate="no">runs()</code></th><td>Recent runs</td></tr>
+<tr><th scope="row"><code translate="no">status(id, after)</code></th><td>Status, result, error, pending question, events after a cursor</td></tr>
+<tr><th scope="row"><code translate="no">cancel(id)</code></th><td>Cancels execution</td></tr>
+<tr><th scope="row"><code translate="no">answer(id, requestId, answer)</code></th><td>Answers its current question</td></tr>
+</tbody>
+</table>
+<p class="note">Runs from another instance are inaccessible through this bridge.</p>
+<table class="stack">
+<thead><tr><th scope="col">Python <code translate="no">context</code></th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">load()</code>, <code translate="no">save(value, expected_version=...)</code></th><td>Instance state</td></tr>
+<tr><th scope="row"><code translate="no">progress(value)</code></th><td>Reports progress</td></tr>
+<tr><th scope="row"><code translate="no">ask(question)</code></th><td>Application questions. Runtime workflow interactions needing predeclared durable waits keep their requirements.</td></tr>
+<tr><th scope="row"><code translate="no">read_file(relative_path)</code></th><td>Needs the capability and a bound project</td></tr>
+<tr><th scope="row"><code translate="no">write_file(relative_path, content)</code></th><td>Text or bytes. Refuses a path resolving outside the project, symlinks included, and any path into <code translate="no">.git</code>. Writes a temporary file and renames, so readers never see a partial file. Returns <code translate="no">path</code> and <code translate="no">bytes</code>.</td></tr>
+</tbody>
+</table>
+<p class="note">Model-enabled operations can call <code translate="no">llm()</code> and <code translate="no">agent()</code>; credentials stay in the backend.</p>
+<p>Programs use the same operations:</p>
+<pre translate="no" tabindex="0"><code>from openprogram.programs._authoring.application_client import run, status
+
+job = run("local.notes", "summarize", {"text": "..."}, request_key="summary-1")
+print(status(job["id"]))</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">CLI</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram programs run APP OPERATION --input JSON</code></th><td>Starts an operation; <code translate="no">--project ID</code> for project scope</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs status RUN_ID</code></th><td>Status and events</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs cancel RUN_ID</code></th><td>Cancels</td></tr>
+</tbody>
+</table>
+<h2 id="persistence-and-lifecycle">Persistence and lifecycle</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Event</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Load</th><td>Content digest of the directory, ignoring <code translate="no">.git</code>, <code translate="no">node_modules</code>, <code translate="no">__pycache__</code>, <code translate="no">.venv</code></td></tr>
+<tr><th scope="row">Source edited</th><td>Reloads with a new digest; a reopened page and new operations use the edit. A page or resource <code translate="no">open</code> from before is refused; reopen. Running operations continue.</td></tr>
+<tr><th scope="row">Edit changes <code translate="no">dataSchema</code> or <code translate="no">scope</code>, or adds a Python backend or <code translate="no">files.project.write</code> without trust</th><td>Stops loading until installed again</td></tr>
+<tr><th scope="row">Schema or scope change at install</th><td>Rejected before activation. No automatic data migrations.</td></tr>
+<tr><th scope="row">Worker stopped</th><td>Unfinished Python is reported as interrupted after restart, never resumed. Persist progress and start another operation after reviewing.</td></tr>
+<tr><th scope="row">Project moved</th><td>Same instance and data</td></tr>
+<tr><th scope="row">Project missing, replaced or unverified</th><td>New operations blocked; saved data readable. The bound ID is resolved before starting and before each project file read.</td></tr>
+<tr><th scope="row">Older registrations</th><td>Load from their recorded source; copies in <code translate="no">.runtime/versions/</code> only if that directory is gone</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Limit</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">State</th><td>Per instance, SQLite, 4 MiB JSON value</td></tr>
+<tr><th scope="row">Events</th><td>1 MiB</td></tr>
+<tr><th scope="row">Execution status</th><td>Existing execution store; model calls in the session-node writer under application run storage</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Owner API</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">PATCH /api/applications/{id}</code></th><td><code translate="no">enabled</code>, <code translate="no">hidden</code>, <code translate="no">display_title</code>. Hiding does not cancel a task; disabling does.</td></tr>
+</tbody>
+</table>
+<p class="note">Not implemented: standalone deployment, non-Python backend adapters, MCP Apps compatibility, embedding native GUI windows.</p>
+<h2 id="use-an-application-as-a-resource">Use an application as a resource</h2>
+<p>Enabled applications appear as <code translate="no">application.&lt;id&gt;</code> in <code translate="no">resource(action="describe")</code>, reflecting install, disable, update and uninstall without a restart. The Resources view and top tab open the same instance in the same sandboxed frame.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">open</code></th><td>Accepts <code translate="no">project_id</code> for project scope. Associates the instance with the calling session. Returns the <code translate="no">instance_id</code> and <code translate="no">digest</code> to use; an older digest is rejected after an update.</td></tr>
+<tr><th scope="row"><code translate="no">observe</code></th><td>Instance state and recent runs</td></tr>
+<tr><th scope="row"><code translate="no">act</code></th><td>A declared Agent-visible operation and a stable <code translate="no">request_key</code></td></tr>
+<tr><th scope="row"><code translate="no">status</code>, <code translate="no">cancel</code>, <code translate="no">answer</code></th><td>Need a run of that exact instance</td></tr>
+<tr><th scope="row"><code translate="no">save</code></th><td>Uses the expected storage version when <code translate="no">storage.app</code> is declared</td></tr>
+<tr><th scope="row"><code translate="no">release</code></th><td>Removes the session association; keeps instance, data and running operations. Hiding its view also leaves operations running.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Agent entries</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Name</th><td><code translate="no">&lt;id&gt;__&lt;operation&gt;</code>, other characters than letters, digits, <code translate="no">_</code> and <code translate="no">-</code> replaced by <code translate="no">_</code>: <code translate="no">local_notes__summarize</code></td></tr>
+<tr><th scope="row">Input</th><td>The operation input as <code translate="no">input</code>, plus <code translate="no">project_id</code> for project scope. Waits for the run and returns it. A run waiting on a question returns its id, for <code translate="no">status</code>, <code translate="no">answer</code> or <code translate="no">cancel</code>.</td></tr>
+<tr><th scope="row">Exposure</th><td>Need approval, like <code translate="no">resource</code>. Deferred: the model sees names and loads a schema with <code translate="no">tool_search</code>. Opening the application for a conversation loads nothing: the catalog notes it is open and the model loads its entries by name.</td></tr>
+<tr><th scope="row"><code translate="no">agent: false</code></th><td>No entry</td></tr>
+</tbody>
+</table>
+<p class="note">Owner API for a window: <code translate="no">POST /api/applications/{id}/open</code> with <code translate="no">session_id</code> associates; <code translate="no">POST /api/applications/{id}/close</code> with <code translate="no">instance_id</code> and <code translate="no">session_id</code> releases.</p>
+<details>
+<summary>Generate a starter package</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Generate</th><td><code translate="no">POST /api/applications/scaffold</code> with <code translate="no">path</code>, <code translate="no">app_id</code> and <code translate="no">title</code>, also through the <a href="framework-control.html">framework tool</a></td></tr>
+<tr><th scope="row">Target</th><td>The parent directory must exist and the target must not</td></tr>
+<tr><th scope="row">Package</th><td>Separates <code translate="no" data-claim="example">backend/operations.py</code>, <code translate="no">ui/index.html</code> and <code translate="no">application.json</code>; UI and Agent both call the declared read/save operations</td></tr>
+<tr><th scope="row">Install</th><td>Review, then <code translate="no">/api/applications/install</code> with the source path and <code translate="no">trust: true</code></td></tr>
+<tr><th scope="row">New operations</th><td>In the backend and manifest, not inside UI events</td></tr>
+</tbody>
+</table>
+</details>

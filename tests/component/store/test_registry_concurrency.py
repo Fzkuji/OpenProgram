@@ -3,8 +3,8 @@ from __future__ import annotations
 import multiprocessing
 from pathlib import Path
 
-from openprogram.store.session.migration import load_journal, update_journal_row
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.migration import load_journal, update_journal_row
+from openprogram.state.store.session.session_store import SessionStore
 
 
 def _journal_worker(root: str, session_id: str, barrier) -> None:

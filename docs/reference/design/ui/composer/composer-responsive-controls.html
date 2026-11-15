@@ -1,0 +1,109 @@
+<title>Responsive composer controls</title>
+<meta name="description" content="How the composer's environment row and control row squeeze, their surfaces, and the context popover's cache.">
+<h1>Responsive composer controls</h1>
+
+<p>Each row responds to its own measured width, with no fixed breakpoint: chat and DAG pages have different controls at the same width. Menus, values, keyboard, tooltips and accessible names never change.</p>
+
+<h2>Environment row</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Level</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">0</th><td>Everything</td></tr>
+<tr><th scope="row">1</th><td>Names capped near 12 characters with an ellipsis; Local chip icon-only</td></tr>
+<tr><th scope="row">2</th><td>Branch names hidden: branch icon and diff badge</td></tr>
+<tr><th scope="row">3 (<code translate="no">data-compact</code>)</th><td>Every label hidden (status, surface, project, directory, DAG Fit, zoom percentage, Legend); diff badge becomes a half-green, half-red dot</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">use-compact-environment-row.ts</code> lays the row out per level with transitions off (<code translate="no">data-measuring</code>), then animates to the first <code translate="no">data-squeeze</code> level that fits <code translate="no">clientWidth</code>. It measures the last chip's right edge with auto margins zeroed: that margin makes <code translate="no">scrollWidth</code> always fill the row. Roomier levels need 12px of slack. Split panes use the same logic.</p>
+
+<h2>Control row</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Measure</th><td><code translate="no">use-compact-controls-row.ts</code> sums clusters and gap in a hidden max-content copy beside <code translate="no">.composer-bottom-row</code>, removed before paint</td></tr>
+<tr><th scope="row">Compact</th><td>Sets <code translate="no">data-compact</code> when the sum exceeds the width: permission, model and effort labels collapse to Shield, Message, Terminal and Biceps icons</td></tr>
+<tr><th scope="row">Expand</th><td>Needs 12px of slack</td></tr>
+<tr><th scope="row">Re-measures on</th><td>Resize, content or class changes, web-font load</td></tr>
+<tr><th scope="row">Why a copy</th><td>The live row is never toggled: its Buttons transition every property, so it would still report compact widths</td></tr>
+</tbody>
+</table>
+
+<h2>Rules</h2>
+<ul>
+<li>One row, never wrapping; no control hidden. Composer height and <code translate="no">splitRatio</code> do not change.</li>
+<li>Labels do not flex-shrink. A capped name ends in an ellipsis. One transition rule, no <code translate="no">display:none</code>.</li>
+<li>Icon triggers keep size, order and operation; chat and execution use distinct icons; effort-icon colour shows the level.</li>
+<li>Native <code translate="no">ResizeObserver</code> and <code translate="no">MutationObserver</code>; model, permission and effort state untouched.</li>
+</ul>
+
+<h2>Bottom control surface</h2>
+<table class="stack">
+<thead><tr><th scope="col">State</th><th scope="col">Surface</th><th scope="col">Unchanged</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resting</th><td><code translate="no">background:var(--chip-bg)</code>; border 0, no shadow</td><td>20px height, 5px radius, icon and label colours</td></tr>
+<tr><th scope="row">Hover, open</th><td>8% of <code translate="no">--chip-bg</code> mixed into <code translate="no">--text-bright</code></td><td>Menus, tooltips, animations, effort colours</td></tr>
+<tr><th scope="row">Narrow</th><td>As resting</td><td>Triggers stay 20px icon buttons</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">focus-visible</code> indicators stay.</p>
+
+<h2>Context popover</h2>
+<p><code translate="no">ContextBreakdownPanel</code> unmounts when closed, so a cache prevents a Loading-only card on reopen.</p>
+<table class="stack">
+<thead><tr><th scope="col">Case</th><th scope="col">Shows at once</th><th scope="col">Background</th></tr></thead>
+<tbody>
+<tr><th scope="row">Same session and branch</th><td>Last complete statistics</td><td>Request, update in place</td></tr>
+<tr><th scope="row">First open, no cache</th><td>Loading state</td><td>Request, cache on success</td></tr>
+<tr><th scope="row">Other session or branch</th><td>Cache for that <code translate="no">sessionId + headId</code></td><td>Old request cancelled, cannot overwrite</td></tr>
+<tr><th scope="row">Refresh fails</th><td>Cached content</td><td>No error page</td></tr>
+</tbody>
+</table>
+<p class="note">Frontend process only, 32 branches, least recently used out (<code translate="no">apps/web/lib/chat/context-breakdown-cache.ts</code>). For concurrent refreshes of one key the newest wins.</p>
+
+<details>
+<summary>Component boundaries</summary>
+<table class="stack">
+<thead><tr><th scope="col">Under <code translate="no">composer/</code></th><th scope="col">Does</th><th scope="col">Does not</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">environment-row/environment-row.tsx</code></th><td>Composes chips, renders caller-supplied trailing content</td><td>DAG names, portal ids, submission, project state</td></tr>
+<tr><th scope="row"><code translate="no">environment-row/use-compact-environment-row.ts</code></th><td>Measures and sets level</td><td>Render or style</td></tr>
+<tr><th scope="row"><code translate="no">environment-row/environment-row.module.css</code></th><td>Layout, pills, squeeze animation, DAG slot</td><td>Input or bottom controls</td></tr>
+<tr><th scope="row"><code translate="no">environment-row/chips/</code></th><td><code translate="no">channel-chip</code>, <code translate="no">environment-chip</code>, <code translate="no">web-surface-chip</code>, <code translate="no">worktree-chip</code></td><td>The row's responsive state</td></tr>
+<tr><th scope="row"><code translate="no">input/</code></th><td>Textarea, keyboard, history callbacks</td><td>Send or switch mode</td></tr>
+<tr><th scope="row"><code translate="no">attach/</code>, <code translate="no">paste/</code>, <code translate="no">modes/question/</code></th><td>Component and its CSS Module together</td><td>Selectors in the root module</td></tr>
+<tr><th scope="row"><code translate="no">submit/</code></th><td>Build and submit messages, side effects</td><td>Render the input</td></tr>
+<tr><th scope="row"><code translate="no">modes/composer-body.tsx</code></th><td>Selects input, function form or question form</td><td>Own input, attachment or session state</td></tr>
+<tr><th scope="row"><code translate="no">state/use-composer-settings.ts</code></th><td>Settings for the current SessionScope</td><td>Global focused-session fallback</td></tr>
+<tr><th scope="row"><code translate="no">controls/use-*.ts</code></th><td>Model availability, tool profiles, unattended state</td><td>Sync in the Composer root</td></tr>
+<tr><th scope="row"><code translate="no">index.tsx</code></th><td>Passes arguments, renders one EnvironmentRow</td><td>Hold refs, observers or row JSX</td></tr>
+</tbody>
+</table>
+<p class="note">The DAG module owns its HUD and supplies it through EnvironmentRow's trailing slot. ProjectBadge, WorkingDirChips and GoalChip stay in shared modules. Check: <code translate="no">apps/web/scripts/chat/check-composer-environment-row.mjs</code>.</p>
+</details>
+
+<details>
+<summary>Options compared</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Option</th><th scope="col">Outcome</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://www.w3.org/TR/css-contain-3/">Container queries</a></th><td>Only for the context ring label and effort card width: the row's need is not a function of width alone</td></tr>
+<tr><th scope="row"><a href="https://www.w3.org/WAI/ARIA/apg/practices/names-and-descriptions/">Accessible names</a></th><td>Reuse tooltips, triggers and labels; visual hiding keeps DOM semantics</td></tr>
+<tr><th scope="row">Horizontal scrolling</th><td>Fallback for extremely narrow widths only</td></tr>
+<tr><th scope="row">Wrap to two rows</th><td>Rejected: changes composer height and transcript spacing</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ol>
+<li>Overflow squeezes through <code translate="no">data-squeeze</code> to <code translate="no">data-compact</code>, with no fixed-width cases or label <code translate="no">flex-shrink:1</code>.</li>
+<li>All labels share one animation rule.</li>
+<li>Past the split-pane threshold, all right-hand settings and left permission and more controls stay visible without overlap.</li>
+<li>Permission, chat model, execution model and effort icons each open their menu.</li>
+<li>Widening returns all labels; reselecting split, switching chat and DAG, and refreshing preserve this.</li>
+<li>Bottom controls have a non-transparent surface at rest, border 0, no shadow, and a stronger background on hover or open.</li>
+<li>Reopened Context statistics come from the cache; background completion updates cache and ring.</li>
+<li>Cache isolated by session and branch; stale requests cancelled; failed refreshes keep the cache; 32-entry eviction.</li>
+</ol>
+</details>

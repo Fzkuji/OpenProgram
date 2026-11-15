@@ -1,0 +1,85 @@
+<title>扩展管理</title>
+<meta name="description" content="在 Web 上用同一套管理语法发现、添加、配置、启用、诊断和移除插件、技能与 MCP 服务。">
+<h1>扩展管理</h1>
+
+<p>所有者如何在 Web UI 管理三类扩展。不在本设计内：Programs、agent 白名单、第三方市场治理、新包格式。</p>
+
+<h2 id="model">共同的任务模型</h2>
+<table class="stack">
+<thead><tr><th scope="col">任务</th><th scope="col">插件</th><th scope="col">技能</th><th scope="col">MCP 服务</th></tr></thead>
+<tbody>
+<tr><th scope="row">已安装</th><td>已安装的包</td><td>本地和内置的 <code translate="no">SKILL.md</code> 条目</td><td>已配置的服务</td></tr>
+<tr><th scope="row">发现</th><td>市场索引</td><td>已配置的技能目录</td><td>精选和自定义 MCP 目录</td></tr>
+<tr><th scope="row">添加</th><td>安装包或本地路径</td><td>从目录安装或本地创建</td><td>安装目录条目或手动配置</td></tr>
+<tr><th scope="row">可用性</th><td>已启用 + 已加载</td><td>已启用</td><td>已启用 + 就绪</td></tr>
+<tr><th scope="row">诊断</th><td>校验和加载错误</td><td>解析或加载错误</td><td>连接错误和工具</td></tr>
+<tr><th scope="row">移除</th><td>卸载</td><td>删除自有技能</td><td>删除配置</td></tr>
+</tbody>
+</table>
+
+<h2 id="surface">页面结构</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">顶部工具栏</th><td>能力标签（插件、技能、MCP），只有搜索和刷新</td></tr>
+<tr><th scope="row">二级标签</th><td>已安装、发现，以及该类型有的问题页。拥有正文，比顶部标签安静，放唯一的添加动作。数字写明是已安装、可用还是问题。</td></tr>
+<tr><th scope="row">已安装条目</th><td><code translate="no">ManageRow</code>，三类同一结构</td></tr>
+<tr><th scope="row">发现条目</th><td><code translate="no">ManageCatalogCard</code>，三类同一结构</td></tr>
+<tr><th scope="row">MCP 详情</th><td>标准详情对话框</td></tr>
+<tr><th scope="row">页面背景</th><td>开放，没有装饰性外框，与 OpenProgram 其他页面一致</td></tr>
+</tbody>
+</table>
+
+<h2 id="flow">每个动作</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 120" role="img" aria-label="页面动作进入忙碌状态并保留名称。一个带类型的 JSON 请求解析 error 和 FastAPI detail，保留状态和错误码，抛出同一种错误。成功时刷新受影响的集合和选择；失败时在集合或对话框旁持续显示恢复办法。">
+  <defs><marker id="ext-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">动作</text>
+  <text class="t-soft" x="0" y="56">添加、启用、刷新、测试、</text>
+  <text class="t-soft" x="0" y="76">更新、移除；忙碌时</text>
+  <text class="t-soft" x="0" y="96">保留动作名称</text>
+  <line class="ln" x1="176" y1="24" x2="226" y2="24" marker-end="url(#ext-a)"/>
+  <text class="t-big" x="238" y="30">带类型的请求</text>
+  <text class="t-soft" x="238" y="56">解析 error 和 FastAPI</text>
+  <text class="t-soft" x="238" y="76">detail，保留状态和错误码，</text>
+  <text class="t-soft" x="238" y="96">抛同一种错误</text>
+  <line class="ln" x1="410" y1="24" x2="460" y2="24" marker-end="url(#ext-a)"/>
+  <text class="t-big" x="472" y="30">结果</text>
+  <text class="t-soft" x="472" y="56">成功：刷新集合</text>
+  <text class="t-soft" x="472" y="76">失败：在旁边持续显示，</text>
+  <text class="t-soft" x="472" y="96">并说明如何恢复</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>动作</strong><small>添加、启用、刷新、测试、更新、移除；忙碌时保留动作名称</small></li>
+  <li><strong>带类型的请求</strong><small>解析 error 和 FastAPI detail，保留状态和错误码，抛同一种错误</small></li>
+  <li class="flow-end"><strong>结果</strong><small>成功：刷新集合；失败：在旁边持续显示，并说明如何恢复</small></li>
+</ol>
+</figure>
+
+<h2 id="boundaries">边界</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">复用</th><td><code translate="no">ManagePageHeader</code>、<code translate="no">ManageSubnav</code>、现有对话框和路由、原生 fetch；各子系统的后端和安全边界</td></tr>
+<tr><th scope="row">统一</th><td>任务词汇、摘要位置、加载和错误反馈、请求错误解析</td></tr>
+<tr><th scope="row">不用</th><td>外层框、MCP 专用分栏页、重复的发现动作、发现弹窗、通用扩展后端、合并的持久化 schema、新状态库</td></tr>
+<tr><th scope="row">不变</th><td>URL、API 载荷、存储数据、密钥掩码、目录来源、技能层级、插件信任确认、MCP 重启和选择</td></tr>
+<tr><th scope="row">安全</th><td>不取回也不回显已存密钥。远程目录策略留在服务端。界面错误不加入凭据或原始密钥。</td></tr>
+<tr><th scope="row">排除</th><td>Programs、agent 白名单、后端 schema 合并、Windows 工作、keyring、新市场、插件运行隔离</td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">apps/web/components/capabilities/</code>、<code translate="no">plugins/</code>、<code translate="no">skills/</code>、<code translate="no">mcp/</code>、<code translate="no">apps/web/components/ui/manage-page*</code>、<code translate="no">apps/web/lib/net/fetch-client.ts</code></td></tr>
+<tr><th scope="row">来源</th><td><a href="skills-and-plugins.zh.html">技能与插件</a>、<a href="mcp-integration.zh.html">MCP 客户端</a>、公开路由 <code translate="no">/plugins</code>、<code translate="no">/skills</code>、<code translate="no">/mcp</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>其他产品</summary>
+<p>Claude Code 的插件管理有已安装、发现和错误任务，但没有 OpenProgram 的技能或 MCP 运行就绪状态。opencode 的 MCP 和插件界面没有跨类型模型。Hermes 给技能分组，但没有三类可用性摘要。因此采用共同任务词汇，并保留 OpenProgram 的 MCP 实时状态和技能层级。</p>
+</details>
+
+<h2 id="implementation">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>上述结构，包括标签与面板、Switch、文件夹按钮语义，对话框内的 MCP 错误，插件和技能的加载状态。可执行检查覆盖词汇和状态摘要、非 2xx 请求的可见路径、共用条目和卡片契约、所有者认证、密钥不取回。</td></tr>
+<tr><th scope="row">未复核</th><td>App 上桌面和窄宽度的可视验收留给用户直接查看。</td></tr>
+</tbody>
+</table>

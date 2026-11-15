@@ -1,0 +1,301 @@
+<title>Compaction</title>
+<meta name="description" content="How compaction stores a summary per chain, changes what the model reads, recovers from an overflow, restores working state and protects HEAD.">
+<h1 id="context-compaction">Compaction</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="The stored chain stays unchanged: root, then covered turns A, B and C, then kept turns K1 and K2. Summary node S has the root as predecessor and lists A, B and C in covers_ids. The request sent to the model is: system prompt, S as a user message, the kept tail verbatim, then the new user message.">
+  <defs><marker id="cp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="34">Stored</text>
+  <text class="t-big" x="84" y="34">ROOT</text>
+  <line class="ln" x1="132" y1="28" x2="166" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="176" y="34">A</text>
+  <line class="ln" x1="196" y1="28" x2="238" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="248" y="34">B</text>
+  <line class="ln" x1="268" y1="28" x2="310" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="320" y="34">C</text>
+  <line class="ln" x1="340" y1="28" x2="392" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="402" y="34">K1</text>
+  <line class="ln" x1="430" y1="28" x2="472" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="482" y="34">K2</text>
+  <text class="t-soft" x="524" y="34">HEAD stays here</text>
+  <path class="ln-faint" d="M172 46V54H332V46"/>
+  <text class="t-cmd notranslate" translate="no" x="184" y="74">covers_ids</text>
+  <path class="ln" d="M104 42V104H238" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="248" y="110">S</text>
+  <text class="t-soft" x="272" y="110">one summary node; predecessor is the splice point</text>
+  <text class="t-soft" x="0" y="168">Sent</text>
+  <text x="84" y="168">system prompt</text>
+  <text class="t-big" x="196" y="168">S</text>
+  <text x="222" y="168">kept tail, verbatim</text>
+  <text x="372" y="168">new user message</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>Stored</dt><dd>ROOT, A, B, C, K1, K2; HEAD stays on K2</dd>
+<dt>Summary</dt><dd>S: predecessor ROOT, <code translate="no">covers_ids</code> A, B, C</dd>
+<dt>Sent</dt><dd>system prompt, S as user input, kept tail verbatim, new user message</dd>
+</dl>
+</figure>
+
+<p>A summary stands in for the turns it covers on every chain that holds them all, and each chain reads its own. One rule, <code translate="no">active_summary_for_chain</code> (<code translate="no">state/store/session/summaries.py</code>), serves the render, the compaction input and the graph builder, so they never disagree. The capsule that draws a summary: <a href="../runtime/dag/rendering.html">DAG rendering §9</a>.</p>
+
+<h2 id="data-model">Summary node</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code></th><td><code translate="no">summary_&lt;hex&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">role</code></th><td><code translate="no">llm</code>, <code translate="no">name = "context/summary"</code></td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td><code translate="no">The earlier part of this conversation was compacted into this summary:\n&lt;text&gt;</code>. A node written before this prefix keeps <code translate="no">[Previous conversation summary]\n</code> and renders as it did</td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>Predecessor of the first covered node</td></tr>
+<tr><th scope="row"><code translate="no">metadata.covers_ids</code></th><td>Ordered ids of the chain nodes it replaces</td></tr>
+<tr><th scope="row"><code translate="no">metadata.render_role</code></th><td><code translate="no">user</code> for every new node; a node without it is an assistant message</td></tr>
+<tr><th scope="row"><code translate="no">metadata.restored_state</code>, <code translate="no">restored_files</code></th><td>The working state written after the summary, and the path lists the next compaction adds to (<a href="#restores">What a compaction restores</a>)</td></tr>
+<tr><th scope="row"><code translate="no">metadata.carried_tool_names</code></th><td>Deferred tools the covered turns loaded</td></tr>
+<tr><th scope="row">Facts</th><td><code translate="no">trigger</code> (<code translate="no">manual</code>, <code translate="no">auto</code>, <code translate="no">reactive</code>, <code translate="no">mid_turn</code>, <code translate="no">model_downshift</code>), <code translate="no">model</code>, <code translate="no">tokens_before</code>, <code translate="no">tokens_after</code>, <code translate="no">summarised_count</code>, <code translate="no">compacted_at</code>; written with the node</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Append-only.</strong> One node written, complete, in one write: no cloned tail, no edge rewrites, no head movement, no metadata stamped afterwards, no session field naming it. Ignoring the summary reconstructs the original view.</li>
+<li><strong>Ids, not seq intervals.</strong> Sibling branches interleave seqs, so an interval would drag in dead forks and change with HEAD.</li>
+<li><strong><code translate="no">covers_ids</code> is a contiguous segment of real turns.</strong> It never names a summary: re-compaction extends the old segment by the new turns.</li>
+</ul>
+
+<h2 id="which-summary">Which summary</h2>
+<p>Of the summaries whose covered turns all lie on a chain, the chain reads the one whose coverage reaches furthest along it; <code translate="no">seq</code> breaks a tie. A rolling summary covers the one before it plus newer turns, so it wins on its chain and the older one serves only chains that branch off earlier.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Chain reads</th></tr></thead>
+<tbody>
+<tr><th scope="row">Two branches compacted one after the other</th><td>Each its own summary. Switching between them renders each with its own and writes nothing</td></tr>
+<tr><th scope="row">A summary written before the fork point</th><td>Both branches</td></tr>
+<tr><th scope="row">A rewind retracts turns in place</th><td>A retracted message is not on the chain and a retracted summary does not exist, so a rewind into a summary's range falls back to an earlier summary still wholly on the chain, or to the raw turns</td></tr>
+<tr><th scope="row">Edit, retry or fork inside a covered segment</th><td>The new branch lacks part of the segment: it reads an earlier summary that fits, or raw</td></tr>
+<tr><th scope="row">Two branches that loaded different tools</th><td>Each summary carries its own <code translate="no">carried_tool_names</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>A summary per chain</dt><dd>Follows Pi: the last compaction on the path from the leaf. Compared: one newest summary per conversation (Claude Code, Codex, with one linear history), which leaves every other branch raw to compact again. Branches here run in parallel, so the summary belongs to the chain.</dd>
+<dt>Rewind falls back</dt><dd>Codex drops a compaction when the rollback goes behind it; the same rule here keeps a retracted summary from naming turns the chain no longer holds.</dd>
+</dl>
+</details>
+
+<h2 id="rendering-rule">Rendering rule</h2>
+<p><code translate="no">render_context</code> in <code translate="no">context/nodes.py</code> decides what the model reads. With S the chain's summary and L its <code translate="no">covers_ids</code>: drop L and admit S at its position, as one user message (summary, then restored state); on Anthropic it joins the next user message.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Compacted branch</th><td><code translate="no">[ROOT, S, kept tail…]</code></td></tr>
+<tr><th scope="row">Covered turns that loaded deferred tools</th><td>Left out with their turns. S carries the tools' names (<code translate="no">carried_tool_names</code>, written with S: most recently loaded or called first, cut where the definitions would pass 5% of the window), so every request still loads them</td></tr>
+<tr><th scope="row">The carried tools, on openai-codex</th><td>One <code translate="no">tool_search_call</code> / <code translate="no">tool_search_output</code> pair just before S, with the definitions the conversation first sent; the tools array stays as it was. Any other provider offers them in its tools array, and the request opens on S. A bounded background tail keeps only S of the covered part</td></tr>
+<tr><th scope="row">Any checkout, any time</th><td>Deterministic from data; nothing depends on where HEAD was</td></tr>
+<tr><th scope="row">Summaries no chain reads</th><td>Never elide anything</td></tr>
+</tbody>
+</table>
+<p class="note">The DAG capsule folds by the same rule over the same <code translate="no">covers_ids</code>.</p>
+
+<h2 id="pipeline">Pipeline</h2>
+<p><code translate="no">/compact</code> (<code translate="no">trigger_compaction</code>), auto-compact (budget at <code translate="no">context.auto_compact_percent</code>, default 80%, before a turn and between a turn's steps) and overflow recovery all run <code translate="no">engine.compact</code> on a chain the caller names by its tip: <code translate="no">/compact</code> the session head as it reads it, the others the turn's own branch. All but <code translate="no">/compact</code> pass the turn's stop signal.</p>
+<ol>
+<li><strong>Freeze the rendered input</strong> of that chain. <code translate="no">compaction.view.load_compaction_view</code> uses <code translate="no">render_context</code> and <code translate="no">render_dag_messages</code>, with tool results, expose and spill references. Top-level turns define coverage; visible child calls count toward input and budgets.</li>
+<li><strong>Select whole turns.</strong> Retain 10% of the window, bounded to 8,000–40,000 tokens (an explicit override wins). Prefer at least four conversational messages at a user boundary; a posted report is a boundary too. Below target: no-op. If the last two turns exceed the target, the cut can advance to the latest user boundary. That latest turn stays intact unless only reports follow it.</li>
+<li><strong>Summarize the whole covered prefix</strong> with the summary prompt (<a href="#summary-prompt">Summary prompt and role</a>): every replaced turn, the initial request, the chain's previous summary, rendered child calls. Non-text media becomes a reference notice.</li>
+<li><strong>Validate before writing.</strong> Reject empty, failed, cancelled, incomplete, capped or non-reducing summaries; a candidate, rendered in memory the same way, must be strictly smaller. After the model call, recheck the chain's rendered nodes; a change is a retryable no-op, other branches and a head moved elsewhere do not count. Provider failure keeps the history, with no lossy structural fallback.</li>
+<li><strong>Persist and report.</strong> One write, with the restored state; <code translate="no">covers_ids</code> expands any previous summary to real turn ids. The before figure is the context panel's reading of the chain; the after figure is that reading less what the candidate saves. No-ops write nothing and do not count.</li>
+</ol>
+<p class="note">The context display uses provider input usage. Each request also records a local estimate of the same messages, so a later graph edit scales its estimate by the measured ratio, labelled as an estimate until the next report. Legacy usage with no matched estimate does not calibrate.</p>
+<p><code translate="no">/compact</code> is the branch's foreground operation (<code translate="no">op_kind: compact</code>, an <code translate="no">op_id</code> on <code translate="no">compaction_started</code>). The page's Stop and the terminal's Ctrl-C both send <code translate="no">operation.cancel</code> with that id; the summary request ends with nothing written and the row reads "stopped". An automatic compaction that fails says nothing; the next request tries again.</p>
+<p class="note">Why: Claude Code, Codex and Kimi Code all cancel a manual compaction with the key that stops a turn; follows Claude Code, whose terminal is also Ink.</p>
+
+<details id="repeated-failures">
+<summary>Automatic compaction that keeps failing</summary>
+<p>Each failed try still pays for the whole conversation. After <code translate="no">FAILS_MOST</code> (3) failures in a row of one branch on one model, each within <code translate="no">HELD_FOR_S</code> (5 minutes) of the last, automatic compaction on that branch waits five minutes from the last failure, then tries once (<code translate="no">runtime/context/compaction/hold.py</code>, keyed by conversation, model and branch, consulted by <code translate="no">DefaultContextEngine.compact</code>). Another branch keeps compacting.</p>
+<ul>
+<li>Failures: summarizer error (a 429, for example), a summary missing sections after the reminder, one that reaches its output cap, empty with an error, no reduction.</li>
+<li>Not failures: cancellation, changed source.</li>
+<li>A summary that installs clears the count. <code translate="no">/compact</code> always goes.</li>
+<li>Follows magpie's compaction guard (yetone/magpie, MIT).</li>
+</ul>
+</details>
+
+<h2 id="overflow-recovery">Overflow recovery</h2>
+<p>The agent loop (<code translate="no">runtime/agent/loop/loop.py</code>) compacts a turn's chain in two places; the turn's own steps stay verbatim.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">When</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">The provider rejects a request as too long</th><td>Drop the rejected reply, compact (<code translate="no">reactive</code>), re-render and send the same request again. One compaction per request, two per turn; a second overflow, or nothing freed, fails the turn with the provider's error. The turn never reruns from its start, so tools are not called again</td></tr>
+<tr><th scope="row">A round of tool results passes the auto-compact threshold</th><td>Compact once per turn (<code translate="no">mid_turn</code>) and continue on the re-rendered request</td></tr>
+<tr><th scope="row">A stop during either</th><td>The turn ends as stopped</td></tr>
+<tr><th scope="row">A call that cannot compact durably</th><td>Failover to a smaller window, <code translate="no">Runtime.exec</code>, background and clean runs, an override history: the request checkpoint below</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>Retry the one request</dt><dd>Follows Claude Code and Codex: both compact on a context-length error and resend the request that failed, with a bound on attempts. Compared: rerunning the whole turn's loop, which repeats every step already done, tool calls with side effects included.</dd>
+<dt>Compact between steps</dt><dd>Codex compacts mid-turn when usage passes its limit after a sampling step; Claude Code checks before each request. A long tool loop inside one message otherwise only grows until the provider refuses it.</dd>
+</dl>
+</details>
+
+<h2 id="summary-prompt">Summary prompt and role</h2>
+<p>One prompt (<code translate="no">compaction/prompts.py</code>) writes every summary, first or rolling, with these <code translate="no">## </code> sections: User intent, All user messages, Decisions and constraints, Completed work, Current work, Next step, Relevant files. It leaves out what every request sends anyway (system prompt, AGENTS.md, guides, memory), marks cancelled requests, and attributes claims.</p>
+<ul>
+<li>A reply without every section is asked once more with a reminder (<code translate="no">NUDGE</code>); still incomplete, the compaction fails, writes nothing and counts toward the hold.</li>
+<li>The output cap is 20,000 tokens, or a quarter of a smaller window. A summary that reaches it fails instead of being kept cut off.</li>
+<li>The summary is user input with a prefix that says what it is.</li>
+</ul>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>Sections and a reminder</dt><dd>Follows Claude Code's sectioned summary, with the user's own messages kept, and its check for a summary that left them out. Compared: two prompts (first and update) with five loose parts, which let a rolling summary drop the user's earlier instructions.</dd>
+<dt>User role, with a prefix</dt><dd>Follows Codex and Pi, which hand the summary back as user input that names itself. An assistant-role summary reads as something the model said and was believed as its own claim.</dd>
+<dt>A capped summary fails</dt><dd>Claude Code treats an incomplete summary as a failure; a cut-off summary loses the Next step and Relevant files, the parts a continuation needs most.</dd>
+</dl>
+</details>
+
+<h2 id="restores">What a compaction restores</h2>
+<p>After the summary text, in the same message, the node carries a <code translate="no">&lt;restored-state&gt;</code> block (<code translate="no">compaction/restore.py</code>), within 10,000 tokens and the same bytes on every request:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Section</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">Approved plan</th><td>The last <code translate="no">exit_plan_mode</code> the user approved on the chain, unless plan mode was entered again after it; over 6,000 tokens it is cut with a note</td></tr>
+<tr><th scope="row">Todo list</th><td>The conversation's todo board, with each item's status</td></tr>
+<tr><th scope="row">Background jobs still running</th><td>Jobs that have not ended</td></tr>
+<tr><th scope="row">Files read, Files changed</th><td>Paths the covered calls read, wrote or edited, added to the previous summary's lists, the latest 30 of each. A stored call keeps its arguments as the JSON text the model sent, and the path (and the plan) are read from it</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>State written, not re-read</dt><dd>Follows Claude Code, which re-attaches the plan, todos, running tasks and read files after compacting. Compared: re-reading file contents, the most bytes and stale once the file changes; paths let the model read again. Kept in the node, the block stays cached.</dd>
+</dl>
+</details>
+
+<h2 id="summary-request">Summary request</h2>
+<p>The summary sends the last request again with the summary prompt as one user message more (<code translate="no">compaction/fork.py</code>): same system prompt, tools and cache key, so the provider reads the prefix from its cache. A tool call in the reply is not run; the summary is asked once more.</p>
+<p>That message opens by saying it comes from the system, not the user (<code translate="no">FORK_SUMMARY_PROMPT</code>): it is left out of every section, and the latest request quoted under Next step is the user message before it. The summary covers the whole conversation up to it, kept turns included; the kept turns still render raw after it.</p>
+<p>It reads the covered text instead when the model differs, the request plus the summary would not fit, the request is not on the chain, or the compaction recovers from an overflow.</p>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>Fork the cached prefix</dt><dd>Follows Claude Code's forked summary and OpenCode's compaction on the same message list: the conversation is already cached, so the summary pays cache reads instead of a fresh input. Compared: rendering the covered turns as text in a new request, which pays every token at full price; it remains the fallback.</dd>
+<dt>The prompt names itself</dt><dd>Follows Codex, whose compaction prompt opens as a context checkpoint, and Claude Code, which asks for "the conversation so far". Sent bare, the prompt is the newest user message, and a model quoted it as the user's latest request. Compared: covering only the turns before the kept tail, which changes the prefix and loses the cache.</dd>
+</dl>
+</details>
+
+<h2 id="model-downshift">Model downshift</h2>
+<p>A branch that follows its Agent onto a model with a smaller window is compacted before its next turn with the model the history was written with (<code translate="no">trigger: model_downshift</code>). If that model fails, the turn's own model summarises once. A model whose window is not larger takes no part.</p>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>The larger model summarises</dt><dd>Follows Codex's model downshift compaction. The smaller model may not hold the history it is asked to summarise; the one that read it still does.</dd>
+</dl>
+</details>
+
+<h2 id="head-integrity">HEAD integrity</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Writer</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SessionStore.set_head</code></th><td>The way HEAD changes, for explicit moves: send-turn advance, retry or edit fork, checkout, rewind, branch delete. Compaction, session load, worker restart, model switch and meta saves never call it</td></tr>
+<tr><th scope="row"><code translate="no">append_message</code></th><td>Moves HEAD only when the node's predecessor is the current HEAD. Summary splices, side-branch writes and relics leave it alone</td></tr>
+<tr><th scope="row">Spawned turns</th><td>Same-session sub-agent turns run with <code translate="no">TurnRequest.advance_head=False</code>; every inner write is head-neutral, so the user's window is not switched mid-run. Cross-session sends do advance the target's head</td></tr>
+<tr><th scope="row">Writes that are not moves</th><td>Attach cards, inbox and sub-agent paths that append through the store restore <code translate="no">head_before</code> afterwards</td></tr>
+<tr><th scope="row"><code translate="no">TurnWriter</code> (<code translate="no">turn_runtime/turn_writer.py</code>)</th><td>Performs a turn's chain writes and alone applies <code translate="no">advance_head</code>. In that package only this file moves HEAD, plus the user-initiated function-run path in <code translate="no">forced_tool.py</code> and the restores in <code translate="no">slash_actions.py</code></td></tr>
+<tr><th scope="row">Mirrors</th><td>The webui <code translate="no">conv</code> mirror and one-shot <code translate="no">load_session</code> snapshot are read-only. The React session store is the only live transcript. <code translate="no">save_meta</code> strips <code translate="no">head_id</code>; no mirror row becomes stored</td></tr>
+<tr><th scope="row">Stored HEAD on a call</th><td>Older sessions can hold one; a call has no predecessor, so the next request would have no history. <code translate="no">_conversation_head</code> in <code translate="no">store/session/memory_index.py</code> reads it as the reply that made the call</td></tr>
+</tbody>
+</table>
+
+<h2 id="graph-contract">Graph contract</h2>
+<ul>
+<li>For each branch tip, the summary its chain reads carries <code translate="no">covers_ids</code>: <code translate="no">metadata.covers_ids</code>, extended with covered turns' caller subtrees, minus ids no longer present.</li>
+<li>A summary no branch reads carries <code translate="no">superseded_summary: true</code> and no <code translate="no">covers_ids</code>.</li>
+<li>The builder does no seq arithmetic or head-dependent filtering.</li>
+</ul>
+
+<details id="inside-one-message">
+<summary>Request checkpoint</summary>
+<p>Every AgentLoop provider request, tool continuations and function-local <code translate="no">llm()</code> and <code translate="no">agent()</code> included, is budgeted (<code translate="no">compaction/request.py</code>). Over the limit, the request gets a checkpoint; messages and the DAG stay intact.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Output cap</th><td>Unspecified: the smallest of model capability, 16,384 and a quarter of the window, used for budgeting and dispatch alike. Explicit caps are never reduced</td></tr>
+<tr><th scope="row">Checkpoint</th><td>Older complete text-only history becomes one task summary. All user messages and the latest assistant segment stay verbatim. Incomplete tool groups, multimodal input and the current turn's signed reasoning are not eligible; a finished turn's reasoning is summarized by its summary text, without the encrypted payloads and ids</td></tr>
+<tr><th scope="row">Reuse</th><td>Within the invocation, for the same model and an unchanged source prefix</td></tr>
+<tr><th scope="row">Summary calls</th><td>Bounded chunks, retried smaller on overflow; at most 32 requests; bypass AgentLoop. Each request runs while its stream keeps producing and fails after 60 seconds without an event; a stop closes it at once. Failures leave history intact</td></tr>
+<tr><th scope="row">Over budget</th><td>Local estimates only. Protected content that cannot fit fails explicitly; a request estimated over budget is not sent</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>No per-result summaries</dt><dd>Codex, OpenCode, Pi and Kimi Code have none, and Hermes turns its own off: replacing tool results one by one rewrites the middle of the request, so every later request misses the prompt cache, and nothing is kept for the next turn. A durable compaction between steps does the work instead.</dd>
+<dt>No cache-edit clearing</dt><dd>Anthropic's <code translate="no">clear_tool_uses</code> context edit cleared old results on the provider side with the same effect on the cache and only on one provider; it is not sent.</dd>
+</dl>
+</details>
+</details>
+
+<details id="tuning">
+<summary>Choosing the share from the user's own calls</summary>
+<p>Compacting sooner reads less per call but pays for more summaries and rework. <code translate="no">context.auto_compact_percent</code> (Settings → System → Models → Summarize long conversations at, 50–95, read at each decision) is advised by <code translate="no">GET /api/usage/tuning?days=30</code> (<code translate="no">runtime/context/tuning.py</code>), replaying every share from 50% to 95% on the period's chat, exec and subagent calls, per model. Follows magpie's tune (yetone/magpie, MIT).</p>
+<ul>
+<li>Calls replay in order, each prompt growing as it really grew, with recorded compactions (a drop to under 60% of a prompt of at least 20K) removed.</li>
+<li>Past the threshold (the share of the window less the reply reserve), a compaction reads the whole prompt and writes a summary as long as those seen (or 10K over the start when none were). The next call writes it to cache; later ones read back what recorded compactions were followed by (at least 10K until five were seen).</li>
+<li>Tokens are weighed against plain input with catalog prices or the vendor's usual ratios.</li>
+<li>Shares leaving less than half a summary, or twenty calls' growth, of room are not tried. Of those within 1% of the cheapest, the largest is advised, only if it saves at least 3% over the current one. Fewer than 50 calls: no advice.</li>
+<li>The same endpoint advises <code translate="no">models.prompt_cache_ttl</code> (<code translate="no">5m</code> or <code translate="no">1h</code>) for Anthropic API and Bedrock calls: hour-long writes cost twice input, and a call after expiry writes its whole prompt again. The setting lengthens only a plain cache (<code translate="no">with_lifetime_setting</code> in <code translate="no">providers/settings/cache_spec.py</code>).</li>
+</ul>
+</details>
+
+<details id="extension-points">
+<summary>Other compaction schemes</summary>
+<p>One rolling summary per chain keeps the cache prefix stable. It is policy, not storage: schemes differ only in which summaries are active and how the renderer substitutes them, so switching migrates no data.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Scheme</th><th scope="col">Change</th></tr></thead>
+<tbody>
+<tr><th scope="row">Segmented (several live on one chain)</th><td>N nodes over disjoint segments; the rule returns a set per chain</td></tr>
+<tr><th scope="row">Nested</th><td><code translate="no">covers_ids</code> admits summary ids; substitution is recursive</td></tr>
+<tr><th scope="row">External memory</th><td>Same node; the renderer stops inlining it</td></tr>
+</tbody>
+</table>
+<p>Any scheme keeps two contracts: context is a deterministic view over append-only nodes, and the ids that entered a prompt are stamped on the call as <code translate="no">reads</code>.</p>
+</details>
+
+<h2 id="invariants">Invariants</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Invariant</th><th scope="col">Tested in</th></tr></thead>
+<tbody>
+<tr><th scope="row">After compaction, the active branch renders <code translate="no">[ROOT, S, kept tail…]</code></th><td><code translate="no">tests/unit/context/test_compaction_covers.py</code>; scenario suite</td></tr>
+<tr><th scope="row">Each chain reads its own summary; switching writes nothing; a rewind falls back; the builder agrees</th><td><code translate="no">tests/unit/context/test_summary_per_chain.py</code></td></tr>
+<tr><th scope="row">An overflow retries the one request, at most twice per turn; a stop ends it as stopped</th><td><code translate="no">tests/component/context/test_reactive_retry.py</code></td></tr>
+<tr><th scope="row">A new summary is user input with its prefix; an incomplete or capped one fails and counts toward the hold</th><td><code translate="no">tests/unit/context/test_summary_prompt_and_role.py</code></td></tr>
+<tr><th scope="row">The restored state follows the summary, in budget, the same bytes on every request</th><td><code translate="no">tests/unit/context/test_compaction_restore.py</code></td></tr>
+<tr><th scope="row">The summary request reuses the last request's prefix; an overflow recovery never forks</th><td><code translate="no">tests/unit/context/test_compaction_fork.py</code></td></tr>
+<tr><th scope="row">A downshift is summarised by the larger model, then the turn's</th><td><code translate="no">tests/unit/agent/test_downshift_compaction.py</code></td></tr>
+<tr><th scope="row">Under the window a turn's requests only grow at the end; over it, one checkpoint and no per-result summary</th><td><code translate="no">tests/component/context/test_request_checkpoint_only.py</code></td></tr>
+<tr><th scope="row">S carries the tools its turns loaded, ordered and cut to the window; on openai-codex one pair before S keeps the tools array the same before and after compaction; any other provider reads S first</th><td><code translate="no">tests/unit/context/test_compaction_keeps_loaded_tools.py</code></td></tr>
+<tr><th scope="row">Compaction never moves HEAD</th><td>Scenario suite</td></tr>
+<tr><th scope="row"><code translate="no">covers_ids</code> never names a node off the summarized chain</th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
+<tr><th scope="row">HEAD survives restart, session load, model switch, meta save</th><td><code translate="no">tests/integration/dag/test_dag_mutation_scenarios.py</code></td></tr>
+<tr><th scope="row">No mirror row or head writes back into the store</th><td>Web UI persistence tests</td></tr>
+</tbody>
+</table>
+<p class="note">The scenario suite runs chat, fork, checkout, compact, chat, compact, chat, restart-load on a real <code translate="no">SessionStore</code>, checking head and rendering after every step.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row">Node shape and pipeline</th><td><code translate="no">runtime/context/persistence.py</code> (<code translate="no">insert_summary_node</code>, <code translate="no">covered_chain_ids</code>, <code translate="no">rendered_history</code>), <code translate="no">runtime/context/engine.py</code></td></tr>
+<tr><th scope="row">Which summary</th><td><code translate="no">state/store/session/summaries.py</code>; <code translate="no">runtime/context/nodes.py</code> (<code translate="no">render_context</code>); <code translate="no">state/store/session/graph/builder.py</code></td></tr>
+<tr><th scope="row">Overflow recovery, mid-turn compaction</th><td><code translate="no">runtime/agent/loop/loop.py</code>, <code translate="no">turn_runtime/turn_compaction.py</code></td></tr>
+<tr><th scope="row">Prompt, restore, fork</th><td><code translate="no">compaction/prompts.py</code>, <code translate="no">summarize.py</code>, <code translate="no">bounded_summary.py</code>, <code translate="no">restore.py</code>, <code translate="no">fork.py</code></td></tr>
+<tr><th scope="row">Model downshift</th><td><code translate="no">turn_runtime/loop_runner.py</code> (<code translate="no">_auto_compact_new_turn</code>)</td></tr>
+<tr><th scope="row"><code translate="no">/compact</code> as an operation</th><td><code translate="no">server_runtime/run_slots.py</code>, <code translate="no">ws_actions/chat/commands.py</code>; terminal Ctrl-C in <code translate="no">apps/cli/src/screens/REPL.tsx</code></td></tr>
+<tr><th scope="row">HEAD integrity</th><td><code translate="no">state/store/session/session_store/messages.py</code>; <code translate="no">interfaces/server/persistence.py</code> strips <code translate="no">head_id</code></td></tr>
+<tr><th scope="row">Not built: cutting inside the current turn</th><td>Mid-turn and overflow compaction cover only the history before the turn's user message; a turn whose own steps outgrow the window still relies on the request checkpoint. Covering the turn's finished steps needs each step stored as it ends, and the transcript marker placed mid-turn</td></tr>
+<tr><th scope="row">Not built: the in-process terminal through the server</th><td>The older Python REPL's <code translate="no">/compact</code> runs in its own process, outside the branch's foreground slot</td></tr>
+<tr><th scope="row">Not built: unread job results</th><td>The restored state lists running jobs; finished jobs whose results were never read are not tracked yet</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="compaction-diagram.html">Compaction tiers</a></p>

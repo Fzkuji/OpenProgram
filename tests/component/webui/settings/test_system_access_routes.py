@@ -1,13 +1,13 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from openprogram.webui.routes.settings import misc
-from openprogram.webui.routes import self_updates
-from openprogram import system_access
-from openprogram.self_update.control.projection import ProjectionAccessError
-import openprogram.execution as execution_module
-from openprogram.execution import AttemptStore, CapabilitySet, ExecutionStore
-from openprogram.execution.waits import DurableWaitStore
-from openprogram.agent.authority import owner_authority
+from openprogram.interfaces.server.routes.settings import misc
+from openprogram.interfaces.server.routes import self_updates
+from openprogram.host import system_access
+from openprogram.operations.self_update.control.projection import ProjectionAccessError
+import openprogram.runtime.execution as execution_module
+from openprogram.runtime.execution import AttemptStore, CapabilitySet, ExecutionStore
+from openprogram.runtime.execution.waits import DurableWaitStore
+from openprogram.runtime.permissions.authority import owner_authority
 
 
 def test_status_never_requests_and_remote_setup_is_denied(monkeypatch):
@@ -15,7 +15,7 @@ def test_status_never_requests_and_remote_setup_is_denied(monkeypatch):
     misc.register(app)
     monkeypatch.setattr(system_access, 'report', lambda: {'capabilities': []})
     requested = []
-    monkeypatch.setattr(system_access, 'request_access', lambda cap: requested.append(cap) or {'status': 'granted'})
+    monkeypatch.setattr(system_access, 'request_access', lambda cap, **kwargs: requested.append((cap, kwargs)) or {'status': 'granted'})
     monkeypatch.setattr(self_updates, 'require_owner', lambda request: None)
     with TestClient(app, client=('203.0.113.4', 4000)) as client:
         assert client.get('/api/system/access').json() == {'capabilities': []}
@@ -23,7 +23,24 @@ def test_status_never_requests_and_remote_setup_is_denied(monkeypatch):
     assert requested == []
     with TestClient(app, base_url='http://127.0.0.1:18100', headers={'origin': 'http://127.0.0.1:18100'}, client=('127.0.0.1', 4000)) as client:
         assert client.post('/api/system/access/accessibility').json()['status'] == 'granted'
-    assert requested == ['accessibility']
+        assert client.post('/api/system/access/accessibility?open_settings=true').json()['status'] == 'granted'
+    assert requested == [('accessibility', {'open_settings': False}), ('accessibility', {'open_settings': True})]
+
+
+def test_unified_setup_is_explicit_local_owner_action(monkeypatch):
+    app = FastAPI()
+    misc.register(app)
+    monkeypatch.setattr(self_updates, 'require_owner', lambda request: None)
+    calls = []
+    monkeypatch.setattr(system_access, 'setup_all_access', lambda: calls.append(True) or {
+        'status': 'granted', 'capabilities': [], 'requested_capabilities': [],
+        'remaining_capabilities': [],
+    })
+    with TestClient(app, base_url='http://127.0.0.1:18100',
+                    headers={'origin': 'http://127.0.0.1:18100'},
+                    client=('127.0.0.1', 4000)) as client:
+        assert client.post('/api/system/access/setup').json()['status'] == 'granted'
+    assert calls == [True]
 
 
 def test_non_owner_cannot_prompt(monkeypatch):
@@ -61,7 +78,7 @@ def test_system_access_waits_are_scoped_and_not_questions(monkeypatch, tmp_path)
     attempt_store = AttemptStore(store)
     leased, reserved = attempt_store.lease(
         execution.execution_id, expected_version=execution.status_version,
-        owner_id="route-test", ttl_seconds=30,
+        owner_id="route-test",
     )
     attempt_store.activate(
         leased.attempt_id, generation=leased.generation,
@@ -78,11 +95,11 @@ def test_system_access_waits_are_scoped_and_not_questions(monkeypatch, tmp_path)
     )
     monkeypatch.setattr(execution_module, "default_store", lambda: store)
     monkeypatch.setattr(
-        "openprogram.webui.routes.execution.lifecycle._actor_and_session",
+        "openprogram.interfaces.server.routes.execution.lifecycle._actor_and_session",
         lambda request: (owner_authority("owner/install/0123456789abcdef"), None),
     )
     monkeypatch.setattr(
-        "openprogram.webui.routes.execution.lifecycle._authorize_read",
+        "openprogram.interfaces.server.routes.execution.lifecycle._authorize_read",
         lambda *args, **kwargs: True,
     )
     app = FastAPI()

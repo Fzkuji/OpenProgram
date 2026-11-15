@@ -3,13 +3,15 @@ import hashlib
 import os
 from types import SimpleNamespace
 
+import sqlite3
 import pytest
+from openprogram.state.store import reader_floor
 
-from openprogram.store.document_history import DocumentHistory, DocumentHistoryError
-from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore, manifest
-from openprogram.store.snapshot.checkpoint.paths import turn_manifest_path, turn_backup_dir
-from openprogram.store.project.identity import capture_directory_identity
+from openprogram.state.store.document_history import DocumentHistory, DocumentHistoryError
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore, manifest
+from openprogram.state.store.snapshot.checkpoint.paths import turn_manifest_path, turn_backup_dir
+from openprogram.state.store.project.identity import capture_directory_identity
 
 
 def digest(raw):
@@ -21,17 +23,17 @@ def model_history(tmp_path, monkeypatch):
     root = tmp_path / "project"
     root.mkdir()
     state = tmp_path / "state"
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
     project = SimpleNamespace(id="p1", path=str(root), is_default=False,
                               session_ids=["s1"],
                               location_state="available", location_revision=0,
                               **capture_directory_identity(root))
-    monkeypatch.setattr("openprogram.store.project.project_store.get_project",
+    monkeypatch.setattr("openprogram.state.store.project.project_store.get_project",
                         lambda key: project if key == "p1" else None)
     sessions = SessionStore(root_path=state / "sessions")
     sessions.create_session("s1", agent_id="main", title="model")
     sessions.update_session("s1", project_id="p1", project_path=str(root))
-    monkeypatch.setattr("openprogram.store.default_store", lambda: sessions)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: sessions)
     history = DocumentHistory(root=state / "history")
     yield history, sessions, root, project
     sessions.close()
@@ -197,7 +199,7 @@ def test_pending_receipt_overrides_stale_committed_projection(model_history):
 
 
 def test_projection_failure_does_not_remove_existing_turn_summary(model_history,monkeypatch):
-    from openprogram.agent.dispatcher.finalize import persist_turn_file_summary
+    from openprogram.runtime.conversation.turn_runtime.finalize import persist_turn_file_summary
     model_write(model_history)
     def unavailable(*args,**kwargs):
         raise OSError("history index unavailable")
@@ -233,9 +235,19 @@ def test_future_history_schema_is_not_silently_written(model_history):
     history,_,_,_=model_history
     with history._database() as db:
         db.execute("PRAGMA user_version=99")
+        reader_floor.record_floor(db,99); db.commit()
     with pytest.raises(DocumentHistoryError) as error:
         history.list("p1","a.docx")
     assert error.value.code=="HISTORY_CORRUPT"
+
+
+def test_history_newer_by_an_additive_migration_still_opens(model_history):
+    history,_,_,_=model_history
+    with history._database() as db:
+        db.execute("PRAGMA user_version=99")
+    assert history.list("p1","a.docx") is not None
+    with sqlite3.connect(history.root/"history.sqlite3") as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0]==99
 
 
 @pytest.mark.skipif(os.name=='nt',reason='POSIX directory modes')

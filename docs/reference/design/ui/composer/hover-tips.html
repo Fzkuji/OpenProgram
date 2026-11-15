@@ -1,0 +1,44 @@
+<title>Hover tips in the composer</title>
+<meta name="description" content="What every composer control's hover tip says and how it behaves.">
+<h1>Hover tips in the composer</h1>
+
+<p><code translate="no">HoverTip</code> and <code translate="no">TipBody</code> from <code translate="no">components/ui/tooltip.tsx</code>: a title line with the control and its value, an optional muted detail line. Appears after 1.5 s, never while the control's menu is open. Inverted radix-nova badge with an arrow, 12px, up to <code translate="no">max-w-xs</code>; paths wrap anywhere.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Control</th><th scope="col">Title</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Channel (Local)</th><td>Channel: &lt;name&gt;</td><td>Where the conversation runs; click to switch</td></tr>
+<tr><th scope="row">Project segment</th><td>Project: &lt;name&gt;</td><td>Folder path; fixed for this conversation, or click to choose</td></tr>
+<tr><th scope="row">Working-folder segment</th><td>Working folder: &lt;name&gt;</td><td>Full path; the agent can read and edit it</td></tr>
+<tr><th scope="row">✕ on a working folder</th><td>Remove from this conversation</td><td>Files on disk stay</td></tr>
+<tr><th scope="row">Git segment</th><td>&lt;repo&gt; · &lt;full branch&gt;</td><td>Uncommitted files and +/−; worktree path; what the menu offers</td></tr>
+<tr><th scope="row">Add folder</th><td>Add working folder</td><td>Give the agent another folder</td></tr>
+<tr><th scope="row">Web page chip</th><td>Web page: &lt;title&gt;</td><td>The agent can read and operate it; click to close the preview or bring it back</td></tr>
+<tr><th scope="row">Goal chip</th><td>Goal</td><td>The goal text; click for progress and controls</td></tr>
+<tr><th scope="row">Permission badge</th><td>Permissions: &lt;mode&gt;</td><td>The mode's description</td></tr>
+<tr><th scope="row">Options (+)</th><td>Options</td><td>Attach files, turn web search or sandbox on and off</td></tr>
+<tr><th scope="row">Active chips</th><td>Web search on, Sandbox on, Unattended on</td><td>What it does; click to turn off</td></tr>
+<tr><th scope="row">Effort</th><td>Thinking effort: &lt;level&gt;</td><td>How long the model thinks; click to adjust</td></tr>
+<tr><th scope="row"><code translate="no">?</code> in the <a href="effort-picker.html">effort card</a></th><td>Thinking effort</td><td>Higher levels think longer and use more tokens, lower levels answer faster; Recommended marks the model's default</td></tr>
+<tr><th scope="row">Model badge</th><td>Model: &lt;model&gt;</td><td>Its role; click to change model</td></tr>
+<tr><th scope="row">Agent badge</th><td>Agent: &lt;name&gt;</td><td>The configuration used, or that it is always on; click to change Agent</td></tr>
+</tbody>
+</table>
+
+<h2>Web page preview header</h2>
+<table class="stack">
+<thead><tr><th scope="col">Control</th><th scope="col">Title</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open page</th><td>Open page</td><td>Switch to this tab in the centre</td></tr>
+<tr><th scope="row">Review request, while awaiting approval</th><td>Review request</td><td>The agent is waiting for your confirmation</td></tr>
+<tr><th scope="row">More (⋮)</th><td>More</td><td>Auto-follow, action markers and operation history</td></tr>
+<tr><th scope="row">Close (✕)</th><td>Close preview</td><td>Hides the preview; the agent keeps working</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">components/center-tabs/pip/web-tab-pip.tsx</code>. The eight resize handles keep <code translate="no">aria-label</code>s but show no tip. Title and status text are labels and keep a native <code translate="no">title</code> for truncation.</p>
+
+<h2>Native title exceptions</h2>
+<dl class="pairs">
+<dt>Send button</dt><dd>Keeps the native <code translate="no">title</code>: when disabled (paste lost, attachment loading) it fires no pointer events for <code translate="no">HoverTip</code></dd>
+<dt>Fast toggle</dt><dd>Keeps its existing hint text</dd>
+</dl>

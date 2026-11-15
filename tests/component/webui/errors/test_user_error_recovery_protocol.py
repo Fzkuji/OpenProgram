@@ -10,10 +10,11 @@ import time
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.agent.authority import owner_authority
-from openprogram.webui import server, ws_errors
-from openprogram.webui.user_errors import UserErrorRecord, UserErrorStore
-from openprogram.webui.ws_actions import user_error as user_error_actions
+from openprogram.runtime.permissions.authority import owner_authority
+from openprogram.interfaces.server import server
+from openprogram.interfaces.server import ws_errors
+from openprogram.interfaces.server.user_errors import UserErrorRecord, UserErrorStore
+from openprogram.interfaces.server.ws_actions import user_error as user_error_actions
 
 
 OWNER_ID = "owner/install/0123456789abcdef"
@@ -60,8 +61,10 @@ class _HeldWS(_SequenceWS):
 
 
 class _FailingSendWS(_SequenceWS):
+    """The acknowledging window disconnects as its reply is sent."""
+
     async def send_text(self, text: str) -> None:
-        if len(self.sent) >= 2:
+        if json.loads(text).get("type") == "user_error_acknowledged":
             raise WebSocketDisconnect(1013)
         await super().send_text(text)
 
@@ -75,7 +78,7 @@ def isolated_websocket_state(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def user_error_store(tmp_path, monkeypatch: pytest.MonkeyPatch) -> UserErrorStore:
-    store = UserErrorStore(tmp_path / "user_errors.db")
+    store = UserErrorStore(tmp_path / "user_errors.jsonl")
     monkeypatch.setattr(ws_errors, "default_user_error_store", lambda: store)
     monkeypatch.setattr(
         user_error_actions,

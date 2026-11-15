@@ -19,7 +19,7 @@ import { useSessionStore } from "@/lib/session-store";
 import {
   collectImagesFromTransfer,
   type PendingImage,
-} from "../attach/image-attach";
+} from "../attach/image/image-attach";
 import {
   LONG_PASTE_THRESHOLD,
   missingPasteIds,
@@ -47,28 +47,10 @@ export function usePasteTokens({
   addFiles,
   setImageError,
 }: PasteTokensOptions) {
-  // Subscribing to the store rerenders the chip row whenever a paste is
+  // Subscribing to the store re-checks missing pastes whenever one is
   // added or removed.
   const [pasteTick, setPasteTick] = useState(0);
   useEffect(() => pasteStore.subscribe(() => setPasteTick((t) => t + 1)), []);
-
-  const pastedEntries = React.useMemo(() => {
-    const referenced = referencedPasteIds(input);
-    // Only show chips for tokens still present in the live draft.
-    // Include lost ones (chips in "missing" state) so the user sees
-    // them and can remove the dead tokens.
-    const live = pasteStore.list().filter((e) => referenced.has(e.id));
-    const liveIds = new Set(live.map((e) => e.id));
-    const out = [...live];
-    referenced.forEach((id) => {
-      if (!liveIds.has(id)) {
-        out.push({ id, content: "", numLines: 0 });
-      }
-    });
-    return out.sort((a, b) => a.id - b.id);
-    // pasteTick is read implicitly by re-running this memo on tick bump.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, pasteTick]);
 
   const pasteMissing = React.useMemo(
     () => missingPasteIds(input),
@@ -156,15 +138,5 @@ export function usePasteTokens({
     [activeChatKey, input, setInput, addImagesForOwner, addFiles, setImageError],
   );
 
-  // Remove a paste chip — also strips the token from the textarea.
-  const removePaste = useCallback(
-    (id: number) => {
-      const re = new RegExp(`\\[Pasted #${id} \\+\\d+ lines\\]`, "g");
-      setInput(input.replace(re, ""));
-      pasteStore.remove(id);
-    },
-    [input, setInput],
-  );
-
-  return { pastedEntries, pasteMissing, onPaste, removePaste };
+  return { pasteMissing, onPaste };
 }

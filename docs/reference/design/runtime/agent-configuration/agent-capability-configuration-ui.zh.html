@@ -1,0 +1,78 @@
+<title>Agent 能力策略</title>
+<meta name="description" content="Agent 如何在不复制定义的情况下选择 Programs、Skills 和 MCP 服务，以及生效集合如何计算。">
+<h1>Agent 能力策略</h1>
+
+<h2 id="ownership">全局目录与 Agent 引用</h2>
+<p>Agent 选择范围，不复制定义。继承和强制权限见<a href="agent-configuration-ui.zh.html">可配置 Agent</a>。</p>
+<table class="stack">
+<thead><tr><th scope="col">目录拥有</th><th scope="col">Agent 保存</th><th scope="col">Agent 不保存</th></tr></thead>
+<tbody>
+<tr><th scope="row">Programs：可调用的 Tools、Workflows、Applications</th><td>策略、预设引用、显式名称和拒绝项</td><td>Python 源码、展开的 schema、工作流仓库</td></tr>
+<tr><th scope="row">Skills：过程性指令</th><td>模式、名称/类别、排除项</td><td>复制的 Skill 目录或永久注入的全文</td></tr>
+<tr><th scope="row">MCP：连接和凭据</th><td>允许和必需的服务引用</td><td>凭据、认证 cookie、服务器实现</td></tr>
+</tbody>
+</table>
+
+<h2 id="modes">策略模式与迁移</h2>
+<table class="stack">
+<thead><tr><th scope="col">模式</th><th scope="col">请求集合</th><th scope="col">约束</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">inherit</code></th><td>基础策略</td><td>在发现前解析</td></tr>
+<tr><th scope="row"><code translate="no">all</code></th><td>全部全局可用条目</td><td>拒绝项和强制上限仍生效</td></tr>
+<tr><th scope="row"><code translate="no">selected</code></th><td>显式名称与类别过滤取交集；Programs 也可改为引用一个预设</td><td><code translate="no">allowed=[]</code> 表示空；Programs 的预设与显式名称不能同时使用</td></tr>
+<tr><th scope="row"><code translate="no">none</code></th><td>空</td><td>延迟的显式名称加载也不能绕过</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0">effective = requested ∩ global availability ∩ caller authority
+            ∩ parent delegation ceiling ∩ environment restrictions − explicit denies</pre>
+<ul>
+<li>缺失的引用保留存储，但不可调用。</li>
+<li>必需的 MCP 引用必须是生效服务的子集。矛盾的模式（含通配拒绝）被拒绝。</li>
+<li>Skill 指令不能授权它提到的工具。</li>
+</ul>
+
+<details>
+<summary>Skills 的 <code translate="no">selected</code> 与旧版迁移</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">输入</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">省略 <code translate="no">allowed</code>，类别非空</th><td>只按类别过滤</td></tr>
+<tr><th scope="row">两者都非空</th><td>取交集</td></tr>
+<tr><th scope="row"><code translate="no">allowed=[]</code></th><td>无条目，即使有类别</td></tr>
+<tr><th scope="row">两者都没有</th><td>什么都不选</td></tr>
+<tr><th scope="row">没有类别的条目</th><td>声明的类别必须匹配；未分类条目保留豁免，并显示为未分类</td></tr>
+<tr><th scope="row">旧版 automatic</th><td><code translate="no">all</code></td></tr>
+<tr><th scope="row">旧版 <code translate="no">disabled=["*"]</code></th><td><code translate="no">none</code></td></tr>
+<tr><th scope="row">旧版非空 allowed 或类别</th><td><code translate="no">selected</code></td></tr>
+<tr><th scope="row">旧版空允许列表</th><td>仅在 schema 迁移时为 <code translate="no">all</code>。类别生效时省略它，保持旧判断，而不是变成空白名单。目标 <code translate="no">selected=[]</code> 绝不走旧的“空即全部”语义。</td></tr>
+</tbody>
+</table>
+<p class="note">在一个边界统一规范化，不在 UI、搜索和执行器中各做一次。目标策略对 Skills 和 MCP 也有显式模式。</p>
+</details>
+
+<h2 id="flow">发现、调用与变化</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时机</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">保存</th><td>存储意图</td></tr>
+<tr><th scope="row">运行</th><td>解析带版本的生效范围和目录/预设引用；完整 schema 清单不进入首个提示</td></tr>
+<tr><th scope="row"><code translate="no">tool_search</code></th><td>只在生效范围内搜索，返回有限的匹配 schema。显式名称和嵌套工作流/程序调用使用同一策略</td></tr>
+<tr><th scope="row">调用</th><td>重新检查撤销、可用性和资源权限。全局禁用的条目在下一个边界即不可调用，排队或固定的运行也一样</td></tr>
+<tr><th scope="row">MCP 故障</th><td>可选：禁用该服务并显示状态。必需：阻止准入或启动。认证错误绝不自动连接到其他账号</td></tr>
+<tr><th scope="row">缺失名称</th><td>选择器一直显示，直到显式移除；保存不会清除</td></tr>
+<tr><th scope="row">预设更新</th><td>影响新解析的调用；进行中的快照保留原选择，但受撤销约束</td></tr>
+<tr><th scope="row">记忆工具</th><td>还受执行记忆策略收窄；允许列表不能覆盖记忆关闭或只读</td></tr>
+</tbody>
+</table>
+
+<h2 id="ui">编辑器</h2>
+<ul>
+<li>Programs、Skills 和 MCP 分开；每项显示模式、继承来源、生效数量、缺失数量和目录操作。</li>
+<li>目录只在打开时加载。类别和预设是选择器，不是副本。</li>
+<li>MCP 增加必需标记和全局连接链接；凭据不进草稿。</li>
+<li>列表、树和检查器归<a href="agent-tool-configuration-ui.zh.html">Programs 选择器</a>。</li>
+</ul>
+<dl class="pairs">
+<dt>验收</dt><dd>selected 为空时搜索和调用都为空；被拒绝的显式名称失败；缺失必需服务在副作用前阻止；缺失引用在重新加载后保留；切换标签保持同一草稿；记忆关闭时记忆工具不能执行。</dd>
+<dt>状态</dt><dd>策略基元已存在。目标规范模式和跨入口强制待<a href="agent-configuration-plan.zh.html">实现计划</a>完成。</dd>
+</dl>

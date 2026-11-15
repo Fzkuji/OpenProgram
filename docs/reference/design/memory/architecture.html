@@ -1,0 +1,383 @@
+<title>Memory mechanisms</title>
+<meta name="description" content="How a conversation becomes Topic files: write entries, transactions, node markers, the resident block, the backend interface, failures and structured changes.">
+<h1>Memory mechanisms</h1>
+
+<h2 id="flow">From conversation to long-term memory</h2>
+<table class="stack">
+<thead><tr><th scope="col">Entry</th><th scope="col">Trigger</th><th scope="col">Call</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">End of each turn</th><td><code translate="no">runtime/conversation/turn_runtime</code></td><td><code translate="no">write(session_id=…)</code></td><td>One pass, only once <code translate="no">memory.writer.trigger_tokens</code> have accumulated (8,000, 16,000 or 32,000; default 16,000)</td></tr>
+<tr><th scope="row">Session idle</th><td><code translate="no">state/memory/session_watcher</code>: scan every 5 minutes, idle after 30</td><td><code translate="no">write(…, force=True)</code></td><td>Passes until nothing remains. A finished session has no later batch.</td></tr>
+<tr><th scope="row">Daily at 03:00</th><td><code translate="no">state/memory/scheduler</code>; by hand <code translate="no">openprogram memory sleep</code></td><td><code translate="no">reorganize(model=…)</code></td><td>Reorganizes Topics on disk, adds no content</td></tr>
+</tbody>
+</table>
+<p class="note">Writes reread the session store through <code translate="no">get_branch</code>. Nothing is buffered in the process, so a restart loses nothing and every message keeps a stable ID. Only user messages and assistant replies count: tool calls and results, runtime-scheduled turns (subagent reports, branch-merge notices) and empty messages never enter memory.</p>
+
+<h2 id="steps">Five write steps</h2>
+<p>One pass, under a cross-process write lock. The threshold decides whether a model is called, not how much one call writes.</p>
+<ol>
+<li><strong>Select</strong> every branch message without a written marker, minus tool calls and runtime-scheduled turns (<code translate="no">runtime.pending()</code>).</li>
+<li><strong>Batch</strong> from the oldest message up to the token threshold. The rest waits for the next pass.</li>
+<li><strong>Edit</strong>: the writer gets the batch text and the directory structure, and edits <code translate="no">topics/</code> in staging.</li>
+<li><strong>Organize</strong> after 5 batches or 40,000 tokens, and again once a day has passed since global organization with new commits. Skipped otherwise.</li>
+<li><strong>Commit</strong> the transaction, then mark the nodes. The batch stays in chat history; footnotes link its messages, so nothing is copied.</li>
+</ol>
+<details>
+<summary>Validation before install</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Uncited prose</th><td>Normalization gives every paragraph of a file the write wrote a block ID, cited or not. The commit then refuses an uncited paragraph an automatic writer or the organizer added or reworded (<code translate="no">MISSING_SOURCE</code>); a person's save keeps it, and keeps a Topic left with headings only. A writer's edit still prunes sections and Topics it left empty.</td></tr>
+<tr><th scope="row">On rejection</th><td>Committed Topics, Runtime state, revision and Git history are unchanged.</td></tr>
+<tr><th scope="row">Pre-install callback</th><td>An instance-owned trusted callback records autosave or restore history after validation and stage preparation, before files move. Invalid edits create no checkpoint; a callback failure installs nothing. A valid edit records the exact pre-edit snapshot and the existing checkpoint deadline. Tools and request text cannot supply it.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="txn">Transactions: stage, validate, install</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="A write copies the repository to staging, edits it there, validates it and installs everything. A first rejection restores staging and allows one repair; a second rejection leaves the repository unchanged and returns COMMIT_REJECTED.">
+  <defs>
+    <marker id="tx-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="tx-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <text class="t-big" x="0" y="40">Copy</text>
+  <text class="t-soft" x="0" y="66">baseline read first,</text>
+  <text class="t-soft" x="0" y="86">then to system temp</text>
+  <line class="ln" x1="64" y1="33" x2="160" y2="33" marker-end="url(#tx-a)"/>
+  <text class="t-big" x="172" y="40">Edit</text>
+  <text class="t-soft" x="172" y="66">only staged</text>
+  <text class="t-soft" x="172" y="86"><tspan translate="no">topics/</tspan> is writable</text>
+  <line class="ln" x1="226" y1="33" x2="332" y2="33" marker-end="url(#tx-a)"/>
+  <text class="t-big" x="344" y="40">Validate</text>
+  <text class="t-soft" x="344" y="66">four checks,</text>
+  <text class="t-soft" x="344" y="86">see below</text>
+  <line class="ln" x1="432" y1="33" x2="504" y2="33" marker-end="url(#tx-a)"/>
+  <text class="t-big" x="516" y="40">Install</text>
+  <text class="t-soft" x="516" y="66">back up, install all,</text>
+  <text class="t-soft" x="516" y="86">rebuild views, Git</text>
+  <path class="ln-no" d="M384 98V128H198V98" marker-end="url(#tx-n)"/>
+  <text class="t-no" x="198" y="150">First rejection: restore staging, one repair with rule-specific guidance</text>
+  <text class="t-no" x="198" y="176">Second rejection: <tspan translate="no">COMMIT_REJECTED</tspan>, repository untouched</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Copy</strong><small>baseline read first, then to system temp</small></li>
+  <li><strong>Edit</strong><small>only staged <code translate="no">topics/</code> is writable</small></li>
+  <li><strong>Validate</strong><small>four checks, see below</small><p class="refused">First rejection: restore staging, one repair with rule-specific guidance. Second rejection: <code translate="no">COMMIT_REJECTED</code>, repository untouched</p></li>
+  <li class="flow-end"><strong>Install</strong><small>back up, install all, rebuild views, Git</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead><tr><th scope="col">Check</th><th scope="col">Requirement</th></tr></thead>
+<tbody>
+<tr><th scope="row">Format</th><td>The files this write wrote have the structure: every paragraph a block with an <code translate="no">^id</code>, each ID held once, every cited footnote defined. A file the write left alone, or one written outside OpenProgram, is read as it is and fails nothing</td></tr>
+<tr><th scope="row">Block IDs</th><td>Other paragraphs, Timeline and relations locate a paragraph by this ID. A writer or organizer may delete a block, since Git keeps it; a record edit or a save in Settings may remove only the IDs it deletes by name, or those of the Topic it deletes. Paragraphs may be rewritten, merged or moved.</td></tr>
+<tr><th scope="row">Links</th><td>Cross-Topic links target <code translate="no">#^</code> block IDs and none dangle, so deleting a block that is still linked is refused</td></tr>
+<tr><th scope="row">Citations</th><td>Checked by author, on the paragraphs this write added or reworded: an automatic writer's or the organizer's must cite a message of this execution and batch (<code translate="no">MISSING_SOURCE</code>, <code translate="no">SOURCE_NOT_ALLOWED</code>); a person's may cite nothing, and what it does cite must be citable</td></tr>
+<tr><th scope="row">Outside files</th><td>A file <code translate="no">installed.json</code> calls <code translate="no">outside</code> is not changed, moved, deleted or linked into by anyone but a person saving it (<code translate="no">OUTSIDE_FILE_READ_ONLY</code>, and nothing of the write installs)</td></tr>
+<tr><th scope="row">Changes beside the write</th><td>Under the write lock, each file changed on disk since staging is compared: one the write left alone is taken in from disk and installed as it is, whatever it holds. One the write changed too, the cursor, or a file taken in that leaves one of our links dangling is <code translate="no">CONCURRENT_UPDATE</code>. A retrieval cache or anything else the stage does not install is ignored.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this order</summary>
+<ul>
+<li>The baseline is read before copying: read later, an edit would compare with itself and lost block IDs would go unseen. The second attempt after a rejection takes a fresh baseline for the same reason.</li>
+<li>A second rejection keeps the turns pending and the markers unset. Reporting success would let the caller pass content never installed.</li>
+<li>Human edits of Topics use the same staging and validation; invalid ones are rejected at once.</li>
+<li>Every install records each Topic file's hash, its block IDs and its origin in <code translate="no">installed.json</code> in the runtime directory: <code translate="no">runtime</code> for a file one of our transactions wrote, or one edited elsewhere that kept every ID we installed; <code translate="no">outside</code> for a file that appeared without us, or lost IDs we installed.</li>
+<li>A file never recorded is ours only when every paragraph cites a chat message. <code translate="no">ownership.outside_paths</code> reads the record at every stage, so the rules in <a href="#outside">Files written outside OpenProgram</a> act on it; paths compare case-folded on macOS and Windows.</li>
+</ul>
+</details>
+
+<h2 id="cursor">Written markers: identity, not position</h2>
+<p>A session is a graph. Re-asking, retrying or spawning a subagent makes a branch. Each branch's messages enter memory; shared prefixes do not enter twice.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="Nine messages m1 to m9 are written and marked. A branch from m3 adds b4 to b9, unmarked, with head at b9. Walking back from head collects the six unmarked nodes and stops at marked m3.">
+  <path class="ln" d="M30 40H478M142 40V130H478"/>
+  <circle class="tile" cx="30" cy="40" r="16"/><text class="mid" x="30" y="45">m1</text>
+  <circle class="tile" cx="86" cy="40" r="16"/><text class="mid" x="86" y="45">m2</text>
+  <circle class="tile" cx="142" cy="40" r="16"/><text class="mid" x="142" y="45">m3</text>
+  <circle class="tile" cx="198" cy="40" r="16"/><text class="mid" x="198" y="45">m4</text>
+  <circle class="tile" cx="254" cy="40" r="16"/><text class="mid" x="254" y="45">m5</text>
+  <circle class="tile" cx="310" cy="40" r="16"/><text class="mid" x="310" y="45">m6</text>
+  <circle class="tile" cx="366" cy="40" r="16"/><text class="mid" x="366" y="45">m7</text>
+  <circle class="tile" cx="422" cy="40" r="16"/><text class="mid" x="422" y="45">m8</text>
+  <circle class="tile" cx="478" cy="40" r="16"/><text class="mid" x="478" y="45">m9</text>
+  <circle class="gate" cx="198" cy="130" r="16"/><text class="mid" x="198" y="135">b4</text>
+  <circle class="gate" cx="254" cy="130" r="16"/><text class="mid" x="254" y="135">b5</text>
+  <circle class="gate" cx="310" cy="130" r="16"/><text class="mid" x="310" y="135">b6</text>
+  <circle class="gate" cx="366" cy="130" r="16"/><text class="mid" x="366" y="135">b7</text>
+  <circle class="gate" cx="422" cy="130" r="16"/><text class="mid" x="422" y="135">b8</text>
+  <circle class="gate" cx="478" cy="130" r="16"/><text class="mid" x="478" y="135">b9</text>
+  <text x="510" y="46">written, marked</text>
+  <text x="510" y="128">unmarked, pending</text>
+  <text class="t-soft" x="510" y="150">head is b9</text>
+  <text class="t-soft" x="198" y="178">Walk back from head; stop at the first marker (m3)</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>m1 to m9</strong><small>written, marked</small></li>
+  <li><strong>Branch from m3: b4 to b9</strong><small>unmarked, pending; head is b9</small></li>
+  <li class="flow-end"><strong>Walk back from head</strong><small>stop at the first marker (m3)</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where</th><td>Node metadata, key <code translate="no">WRITTEN_NODE_MARKER</code> in <code translate="no">writing.py</code>. The value names the memory workspace, so exported sessions keep markers without passing for another workspace.</td></tr>
+<tr><th scope="row">When</th><td>After the transaction installs and the pass changed files. A crash between the two leaves no marker and the same batch pending. Marking first would lose turns silently.</td></tr>
+<tr><th scope="row">Prefix</th><td>Branches need no ordering: the first writer marks shared messages; the next walk stops there.</td></tr>
+<tr><th scope="row">Assumption</th><td>Traversal treats markers as a prefix, which relies on each batch taking the oldest turns.</td></tr>
+<tr><th scope="row">Session store</th><td>Markers must not change <code translate="no">updated_at</code>, which the idle watcher reads, and do not use the mark-synchronized path.</td></tr>
+<tr><th scope="row">Cost</th><td>Only the current batch is marked. Rescanning would make Git growth quadratic, since the session directory runs <code translate="no">git add -A</code> per turn and a changed node is a new blob. The session-index rebuild measured 14–50 ms for 289 nodes, 4.2 MB.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why not an ordinal or an ID set</summary>
+<p>An ordinal describes one expansion of a linked structure into a list, not a message.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Effect on an ordinal</th></tr></thead>
+<tbody>
+<tr><th scope="row">Two paths to one message</th><td>Different ordinals</td></tr>
+<tr><th scope="row">Different messages at equal depth</th><td>The same ordinal</td></tr>
+<tr><th scope="row"><code translate="no">get_branch</code> filters <code translate="no">rewind</code> turns; compaction inserts summary nodes</th><td>One path changes between reads</td></tr>
+<tr><th scope="row">Stored position 9</th><td>A five-turn branch looks empty; an eleven-turn branch writes only its last two turns</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Aspect</th><th scope="col">Node marker</th><th scope="col">ID set in memory</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pending</th><td>Walk back to the first marker</td><td>Traverse the branch, subtract the set</td></tr>
+<tr><th scope="row">Storage</th><td>One field on an existing node</td><td>One file per thread with every written ID</td></tr>
+<tr><th scope="row">Growth</th><td>None; each read walks a few nodes</td><td>One entry per message; reads load the list</td></tr>
+<tr><th scope="row">Missing entry</th><td>Walk stops early, older content stays pending</td><td>Exactly that turn becomes pending</td></tr>
+<tr><th scope="row">Coupling</th><td>Memory writes a field into session storage, as provenance, display kind, branch root and rewind state already do</td><td>Memory owns files, migration and permanent retention</td></tr>
+</tbody>
+</table>
+<p>Across nine frameworks, three store branching conversations (Claude Code, OpenClaw, pi-mono: append-only files with parent pointers), three are linear, one rewrites the session on retry and destroys the old branch, and two do not store conversations. None marks turns as consumed by memory.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Framework</th><th scope="col">Approach</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>Forks into a new file; extraction uses thread-level watermarks and leases</td></tr>
+<tr><th scope="row">pi-mono</th><td>Records are immutable; annotations and cursor moves append references, and branch summaries compute coverage from the tree when switching</td></tr>
+<tr><th scope="row">Claude Code</th><td>Cursor in process memory; reprocesses the session when the referenced message is missing</td></tr>
+<tr><th scope="row">OpenClaw</th><td>Writes <code translate="no">promotedAt</code> on derived records; its memory hook reads the last fifteen lines as a flat list</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="core">The resident block</h2>
+<p>Core is the block injected at each session's start: the core section of <code translate="no">MEMORY.md</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Aspect</th><th scope="col">Role</th><th scope="col">Size</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">topics/core.md</code></th><td>Source of truth; writers and nightly organization edit only this</td><td>No limit</td></tr>
+<tr><th scope="row">Rendered core section</th><td>Rebuilt after each install</td><td>2,000-token budget (<code translate="no">core_max_tokens</code>)</td></tr>
+</tbody>
+</table>
+<p class="note">The budget limits rendering, not writes. A block past the budget is left out of that injection, stays in the source and remains reachable through search and <code translate="no">memory_get</code>. To keep a paragraph visible, move it earlier. An 11,883-token source blocks no write and renders 1,983 tokens.</p>
+<details>
+<summary>Why a derived view</summary>
+<p>A write-path gate would stop stable facts and reject unrelated transactions once the file is full. Clipping a writable file could remove unique block IDs and fail validation; rendered IDs are always a subset of source IDs. Clipping also needs no human-versus-automatic split, because the full source survives.</p>
+</details>
+<details>
+<summary>Core in Web, Writer and Organizer</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Requirement</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/memory/core</code></th><td>Reads a complete snapshot under the workspace lock. <code translate="no">content</code>, <code translate="no">size</code>, <code translate="no">mtime</code> mean the source; also returns rendered content, effective injection after <code translate="no">memory.core.inject</code>, the switch, tokens and budget.</td></tr>
+<tr><th scope="row">Memory, Core</th><td>Defaults to the read-only injected view with tokens and budget, and shows an empty injection when disabled. Source records open for editing and save through compare-and-set transactions. Drafts typed during a save survive refresh. Previews share one sanitizer.</td></tr>
+<tr><th scope="row">Writer prompt</th><td>Reads everything, records only what stays useful: no repeated status checks, unchanged measurements, one-off tool processes or details recoverable from project files. Project progress goes to that project's Topic, not Core.</td></tr>
+<tr><th scope="row">Organizer prompt</th><td>In <code translate="no">topics/core.md</code>, moves project-specific, stale or duplicate content to Topics or deletes it, keeping rules, preferences and identity facts most future sessions need. Deleted content stays in Git history.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="hooks">Nine interface methods</h2>
+<p>The sole interface between memory and the agent runtime, in <code translate="no">state/memory/backend.py</code>. Every method but <code translate="no">name</code> has a default.</p>
+<table class="stack">
+<thead><tr><th scope="col">Method</th><th scope="col">When</th><th scope="col">Runtime caller</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">name</code></th><td>Identifies a backend</td><td>Read as a property</td></tr>
+<tr><th scope="row"><code translate="no">is_available()</code></th><td>Can this backend be activated</td><td>Readiness checks and the channel provider route</td></tr>
+<tr><th scope="row"><code translate="no">system_prompt(tier=…)</code></th><td>Session start: injects <code translate="no">MEMORY.md</code> in <code translate="no">memory-context</code>, apart from user input</td><td>Connected</td></tr>
+<tr><th scope="row"><code translate="no">search(query)</code></th><td>Before each turn; default BM25, top 5, tight time budget</td><td>Connected</td></tr>
+<tr><th scope="row"><code translate="no">write(…)</code></th><td>After each turn and on idle; only <code translate="no">force</code> differs</td><td>Connected</td></tr>
+<tr><th scope="row"><code translate="no">reorganize()</code></th><td>Daily at 03:00 and <code translate="no">openprogram memory sleep</code></td><td>Connected</td></tr>
+<tr><th scope="row"><code translate="no">initialize(…)</code></th><td>Once at session start</td><td>Only forwarded by the policy wrapper; no runtime call</td></tr>
+<tr><th scope="row"><code translate="no">extract_before_discard()</code></th><td>Compaction asks what the summary should keep; stores nothing</td><td>Only forwarded by the policy wrapper; no runtime call</td></tr>
+<tr><th scope="row"><code translate="no">shutdown()</code></th><td>After the last turn; the idle watcher finalizes through <code translate="no">write(force=True)</code> today</td><td>Only forwarded by the policy wrapper; no runtime call</td></tr>
+</tbody>
+</table>
+<p class="note">The three unconnected methods are extension points for third-party systems that need connections, final flushes or pre-compaction saves; the built-in backend needs none. Recalled text is wrapped in <code translate="no">&lt;memory-context&gt;</code> where it is produced. There is no tool-registration method: a memory system with tools is a plugin.</p>
+
+<h2 id="fail">Failure behaviour</h2>
+<table class="stack">
+<thead><tr><th scope="col">write() returns</th><th scope="col">Cases</th><th scope="col">Idle watcher</th></tr></thead>
+<tbody>
+<tr><th scope="row">Nothing</th><td>Written, or below threshold</td><td>Marks handled, skips next poll</td></tr>
+<tr><th scope="row">Failure, retryable</th><td>Lock held or a file this write changed was changed elsewhere; vector backend, model or writer process unavailable; edits refused</td><td>Unmarked, and kept at the scope of its cause (below)</td></tr>
+<tr><th scope="row">Failure, not retryable</th><td>Both edits rejected (<code translate="no">COMMIT_REJECTED</code>); unavailable source or invalid patch; no session ID</td><td>Marks handled and publishes <code translate="no">memory.ingest_ended</code> with <code translate="no">ok: false</code>. Same content, same rejection. A failure in the sign-in or the memory is kept at its scope instead.</td></tr>
+</tbody>
+</table>
+<p>The idle watcher keeps all of its bookkeeping in one file, <code translate="no">ingest-state.json</code> in the personal memory's runtime directory, because a conversation can move between projects. A failure is recorded at the scope of its cause:</p>
+<table class="stack">
+<thead><tr><th scope="col">Scope</th><th scope="col">Causes</th><th scope="col">Rule</th><th scope="col">Lifted by</th></tr></thead>
+<tbody>
+<tr><th scope="row">Conversation</th><td>Any cause not listed below</td><td>Keyed by the conversation's <code translate="no">updated_at</code>. At most three failures, an hour apart; a transient failure between them neither spends nor resets them and sets only its own doubling wait</td><td>The conversation changing. A successful write elsewhere does not count</td></tr>
+<tr><th scope="row">Memory</th><td><code translate="no">WRITER_PRECONDITION_FAILED</code>, <code translate="no">GIT_COMMIT_FAILED</code></td><td>Recorded once for the target memory; every conversation writing there is passed over</td><td>An edit to that memory, a configuration change, or a restart</td></tr>
+<tr><th scope="row">Sign-in</th><td><code translate="no">MODEL_AUTHENTICATION</code>, <code translate="no">MODEL_AUTHORIZATION</code></td><td>Recorded once; every conversation is passed over</td><td>A stored sign-in or the configuration changing</td></tr>
+<tr><th scope="row">None</th><td>Transport, rate limit, provider error, timeout, embedding unavailable, <code translate="no">CONCURRENT_UPDATE</code></td><td>5 min, doubling to 6 h, never stopped</td><td>Ending by itself</td></tr>
+</tbody>
+</table>
+<p class="note">A stop is written to that memory's writer status as not retryable, announced once per cause. The status keeps its fields: <code translate="no">retries.max_identical_failures</code> is the three tries. With a bad sign-in and twenty idle conversations, an hour of polls makes one model call, where it made twenty and gave up on all twenty. Entries read from the replaced files come over unstopped: a sign-in or memory cause is dropped so the conversation is offered once more, any other keeps one try.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Silence means success</th><td>Forgetting a return also returns nothing, and the opposite reading would retry forever</td></tr>
+<tr><th scope="row">Failures</th><td>The closed <code translate="no">MemoryWriteFailureCode</code> set; unclassified exceptions do not retry</td></tr>
+<tr><th scope="row">Per-turn path</th><td>Logs pending content at debug level and retries next turn</td></tr>
+<tr><th scope="row">Lock contention</th><td>A failure, not an unmet threshold</td></tr>
+<tr><th scope="row">Conversation</th><td>Memory failures never fail it: each hook catches and logs its own exceptions</td></tr>
+</tbody>
+</table>
+
+<h2 id="open">Branch handling</h2>
+<table class="stack">
+<thead><tr><th scope="col">Case</th><th scope="col">Today</th><th scope="col">Gap</th></tr></thead>
+<tbody>
+<tr><th scope="row">Other branches</th><td>Forced boundary writes take head, then other unarchived tips; markers dedupe prefixes. Within a turn only head is written.</td><td>Triggered by the idle watcher, not by head changes</td></tr>
+<tr><th scope="row">Exclusive branches</th><td>Flask on one branch, FastAPI on another: adjacent paragraphs in one Topic</td><td>The Topic format cannot say they conflict; retrieval returns both and organization may merge them</td></tr>
+<tr><th scope="row">Cross-session spawn</th><td>Each half keeps its own bookkeeping; nothing lost or duplicated. Spawn branches in one session share node marks.</td><td>No link says one continues the other</td></tr>
+<tr><th scope="row">Compaction summary as head</th><td>Normally a side branch off the first summarized turn's predecessor</td><td>If head moves onto it, the summary counts as an unwritten assistant turn and repeats facts in new words</td></tr>
+</tbody>
+</table>
+
+<h2 id="web">Memory Web page</h2>
+<p>Four sections (Topics, Timeline, Recent, Core) on existing APIs, in <code translate="no">apps/web/components/memory/</code>: <code translate="no">index.tsx</code>, <code translate="no">parts.tsx</code>, <code translate="no">memory-page.module.css</code>, and a Markdown helper that reuses the existing renderer and sanitizer.</p>
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">Structure</th><th scope="col">Avoids</th></tr></thead>
+<tbody>
+<tr><th scope="row">Top bar</th><td>Page title, Memory settings, and from <code translate="no">/api/memory/status</code> a writer-failure row, a "writing paused" row (this memory's or the sign-in's stop in <code translate="no">ingest-state.json</code>) and a "not text" row naming Topic files that do not decode</td><td>Totals the APIs cannot count</td></tr>
+<tr><th scope="row">Secondary sidebar</th><td>Folder, Topic, Timeline year/month/day, Recent and Core rows: 36px height, 10px horizontal padding, 8px radius, 13px text. Shared 14×14 <code translate="no">ChevronRight</code> and numeric badges; hierarchy by indentation only.</td><td>Tiny triangles; <code translate="no">topics/core.md</code> listed twice</td></tr>
+<tr><th scope="row">Content header</th><td>Name, type, path, modified time, view and actions in one 76px area; Recent shows <code translate="no">records / memory.recent.limit</code></td><td>A separate metadata strip; record counts confused with token budget</td></tr>
+<tr><th scope="row">Body</th><td>Preview, Timeline, Recent, Core: centred, at most 780px. Edit: full-width monospace.</td><td>Over-wide text</td></tr>
+<tr><th scope="row">Markdown preview</th><td>Obsidian Flavored Markdown through <code translate="no">marked</code> and the sanitizer. Named and inline footnotes become numbered superscripts and an end list, with two-space continuation. A trailing <code translate="no">^block-id</code> becomes an invisible anchor. Code and escaped syntax stay literal.</td><td>Internal IDs in prose; changes to the source on disk</td></tr>
+<tr><th scope="row">Below 720px</th><td>Section icons, then one page of list or detail with Back. Core, Timeline and Recent go straight to content. Section labels hide first; width priority is detail, list, labels. Window width never rewrites sidebar state.</td><td>Three stacked panes, overlap</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Boundaries</summary>
+<ul>
+<li>Timeline stays a derived view, collapsing by year, month and day. It adds no event times and never shows rebuild time as record time.</li>
+<li>Kept: Core compare-and-set saves, partial Timeline dates, keyboard focus, settings navigation. Footnote transformation runs before sanitizing, so generated links and anchors pass the same sanitizer; arbitrary input cannot collide with internal placeholders.</li>
+<li>Not included: home dashboard, charts, Topic wizard, drag sorting, bulk editing, automatic sidebar collapse, new APIs, new dependencies, new persisted UI state, or a source-browsing API. Commitments and Scheduler state are not shown. Empty selection shows a short prompt and the settings entry.</li>
+<li>Syntax follows the published <a href="https://obsidian.md/help/obsidian-flavored-markdown">Obsidian Flavored Markdown</a>, <a href="https://obsidian.md/help/syntax#Footnotes">footnote</a> and <a href="https://obsidian.md/help/links#Link%20to%20a%20block%20in%20a%20note">block-link</a> rules and observable Reading output; Obsidian's renderer is closed source.</li>
+</ul>
+</details>
+
+<h2 id="changes">Unified modification interface</h2>
+<p>Two ways to say a change, one path: Runtime staging, normalization, citation and relation checks, Timeline/Recent/Relations/Core rebuild, atomic install, Git. Git failure after install does not pretend to roll back: results carry <code translate="no">memory_committed</code> and <code translate="no">git_committed</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Way</th><th scope="col">Who</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Edit files</th><td>Background writers, organizers, Web and CLI file edits (<code translate="no">staged_edit</code>)</td><td>Edit <code translate="no">topics/**/*.md</code> in staging, cite as <code translate="no">[short keyword](/s/&lt;session&gt;#&lt;message&gt;)</code>, then <code translate="no">commit_edits</code></td></tr>
+<tr><th scope="row">Structured</th><td>Model tools <code translate="no">memory_update</code> and owner <code translate="no">POST /api/memory/changes</code></td><td><code translate="no">memory_changes[]</code>; each request picks one of <code translate="no">memory_changes</code>, whole-Topic <code translate="no">changes[path/action/content]</code> or unified <code translate="no">patch</code>, all ending in <code translate="no">MemoryWorkspace.update</code></td></tr>
+</tbody>
+</table>
+<h3 id="structured-operations">Structured operations</h3>
+<table class="stack">
+<thead><tr><th scope="col">Operation</th><th scope="col">Required</th><th scope="col">Runtime</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">create_record</code></th><td>Final content, time (<code translate="no">undated</code> in the model schema; owner REST also accepts null), non-empty <code translate="no">sources[{source,label}]</code>, <code translate="no">destination</code> (<code translate="no">topic_path</code>, <code translate="no">headings</code>, <code translate="no">position</code>)</td><td>Validates Topic, position and each new citation; keeps the label verbatim; allocates block and evidence IDs</td></tr>
+<tr><th scope="row"><code translate="no">update_record</code></th><td><code translate="no">memory_id</code> plus complete final content, time, sources</td><td>Replaces paragraph and evidence definition; keeps block ID and position</td></tr>
+<tr><th scope="row"><code translate="no">delete_record</code></th><td><code translate="no">memory_id</code></td><td>Deletes record and unused evidence; rejects all if a block link would dangle</td></tr>
+<tr><th scope="row"><code translate="no">move_records</code></th><td>Ordered non-empty <code translate="no">memory_ids</code>, same <code translate="no">destination</code></td><td>Moves in that order, keeping IDs, content, time, citations, creation order</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Sources and labels</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">source</code></th><td>Chat link <code translate="no">/s/&lt;session&gt;#&lt;message&gt;</code>, its ref <code translate="no">openprogram/&lt;session&gt;/&lt;message&gt;</code>, or <code translate="no">current</code> for this turn's user message. A record with no sources cites that message. <code translate="no">source_refs: [string]</code> accepts the same links. Callers cannot submit provenance or owner identity.</td></tr>
+<tr><th scope="row"><code translate="no">label</code></th><td>Display text for this one citation, made in the same write call. Prompts and schemas ask for short contextual keywords, no Markdown, URLs, IDs, speaker names or time templates. Runtime requires only a non-empty string and never truncates or rewrites it.</td></tr>
+<tr><th scope="row">Output</th><td><code translate="no">{"content":"…","sources":[{"source":"/s/session#message","label":"research scope"}]}</code> becomes <code translate="no">[research scope](/s/session#message)</code>. The parser reads the target, never the display text.</td></tr>
+<tr><th scope="row">Old workspaces</th><td>A workspace with an old <code translate="no">sources/</code> copy is converted once by <code translate="no">store.cite_chats_directly</code>.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Position, composition and conflicts</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Position</th><td><code translate="no">start</code>, <code translate="no">end</code>, <code translate="no">before</code>, <code translate="no">after</code>. An anchor needs <code translate="no">anchor_memory_id</code>, in the destination's Topic and heading chain, outside the move set. Each ID takes at most one content operation and one move; delete and move cannot share an ID.</td></tr>
+<tr><th scope="row">Composition</th><td>Merge: one update, several deletes, moves as needed. Split: one update, several creates, moves as needed. No <code translate="no">merge_records</code>, <code translate="no">split_record</code>, <code translate="no">place_records</code> or <code translate="no">reorder_records</code>.</td></tr>
+<tr><th scope="row">Cleanup</th><td>Runtime removes heading chains with no records and Topic files with none.</td></tr>
+<tr><th scope="row">Legacy records</th><td><code translate="no">mem_*</code> keep their IDs. All IDs sharing one physical paragraph move together, contiguously, in paragraph order.</td></tr>
+<tr><th scope="row">Evidence conflict</th><td>Same evidence label with different time or citation across Topics: all rejected with <code translate="no">INVALID_ARGUMENT</code>. Different relative paths alone are no conflict.</td></tr>
+<tr><th scope="row">Old inputs</th><td>Earlier create, update and delete inputs are converted; schemas expose only the four names.</td></tr>
+<tr><th scope="row">Scheduler</th><td>Local-owner prompt tasks may call <code translate="no">memory_search</code>, <code translate="no">memory_get</code>, <code translate="no">memory_update</code>; the service does not dual-write. A deleted <code translate="no">memory_id</code> returns <code translate="no">NOT_FOUND</code>, with no placeholder.</td></tr>
+<tr><th scope="row">Model scope</th><td>Interactive models, writers and organizers can rewrite, merge, split or delete. Deleting a block means fixing links to it in the same transaction. Committed citations are not re-checked.</td></tr>
+<tr><th scope="row">Reading</th><td>One reader, <code translate="no">read_topic_tree</code>, reads each <code translate="no">topics/**/*.md</code> file (any case) on its own; <code translate="no">read_checked_tree</code> holds only the files a write wrote to the strict structure. BOM and CRLF are dropped and front matter is not prose. A paragraph without an <code translate="no">^id</code>, or whose ID an earlier file holds, gets one derived from path and text. A bad footnote reads as text; a non-UTF-8 file yields nothing; no file stops the rest.</td></tr>
+<tr><th scope="row">Retrieval</th><td>BM25 and embedding both index every unit the reader returns: one event per cited claim, and one per paragraph that cites nothing, under its own ID with an <code translate="no">origin</code>. BM25 keeps no disk cache: reading the largest workspace takes tens of milliseconds, and in-process indexes are reused by Topic file signature; embedding reuses parsed events and vectors. Time, size or inode changes invalidate them.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Interfaces studied</summary>
+<table class="stack">
+<thead><tr><th scope="col">Interface</th><th scope="col">Convention</th><th scope="col">Choice here</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://www.rfc-editor.org/rfc/rfc6902.html">RFC 6902 JSON Patch</a></th><td>add, remove, replace, move are separate; no semantic merge</td><td>Content operations and move stay apart, on stable <code translate="no">memory_id</code> rather than Markdown paths</td></tr>
+<tr><th scope="row"><a href="https://developers.notion.com/reference/patch-block-children">Notion block children</a></th><td>Creation states position, owned by the parent</td><td><code translate="no">create_record.destination</code> carries Topic, headings, position</td></tr>
+<tr><th scope="row"><a href="https://prosemirror.net/docs/ref/#transform">ProseMirror Transform</a></th><td>Join and split decompose into checkable steps</td><td>Models plan merges as update, create, delete, move</td></tr>
+<tr><th scope="row"><a href="https://docs.mem0.ai/platform/api-reference/memory/update-memory">Mem0</a>, <a href="https://docs.letta.com/api-reference/memory/modify-block">Letta</a></th><td>Record or block CRUD</td><td>Record CRUD plus the batch move multi-file Topics need</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="outside">Files written outside OpenProgram</h2>
+<p>Whatever a Topic file holds is memory. Another tool's notes, a person's paragraph without a citation and a file the chat agent wrote with its file tools are all read, indexed and found. What differs is who may change them and how they are labelled.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Topic</th><th scope="col">Design</th><th scope="col">Follows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where sources are checked</th><td>Once, in <code translate="no">commit_edits</code> (<code translate="no">_check_block_references</code>), on the paragraphs a write added or reworded, by author. The parser's strict form checks structure only</td><td>Grok Build (checks on the write path), Maka (sources are a property of the writer)</td></tr>
+<tr><th scope="row">Outside files</th><td>Read in place, never rewritten: normalization, link rewriting and the organizer skip them, a writer's edit to one is refused, nothing links into them. A person's save in Settings makes the file ours (<code translate="no">runtime</code>) and normalization gives its paragraphs IDs. Our file reordered elsewhere with every ID kept stays ours</td><td>Claude Code and Oh My Pi (read in place, the organizer leaves it alone); Codex for taking a person's edit of our file</td></tr>
+<tr><th scope="row">A broken file</th><td>Spoils only itself. No repair agent, nothing held aside: a file that does not decode is named once under "not text"</td><td>Every peer: none repairs with a model; Grok Build closest</td></tr>
+<tr><th scope="row">Labels</th><td><code translate="no">origin</code> on each unit: <code translate="no">cited</code>, <code translate="no">person</code> (ours, no citation) or <code translate="no">outside</code>. Search results say <code translate="no">source: outside file</code> or <code translate="no">source: added by person</code> instead of refs; the editor shows a Nova badge by a person's paragraph and one by the title of an outside file, worded to need no hover text</td><td>Maka (origin per item), Codex (source class told to the model)</td></tr>
+<tr><th scope="row">Map</th><td>An "Other files" list after the agents' map in the prompt, generated by code into the runtime directory (<code translate="no">outside-map.md</code>): at most a quarter of <code translate="no">GUIDE_MAX_BYTES</code>, titled entries (front matter <code translate="no">name</code>, first heading) in three quarters of that, bare paths after, then "N more files are not listed". Redrawn only at installs and at Worker start; <code translate="no">MEMORY.md</code> stays the agents'</td><td>Grok Build (generated manifest, the 3/4 split, regenerated at session boundaries)</td></tr>
+<tr><th scope="row">Timeline</th><td>A paragraph that cites nothing is filed under the day memory first read it, from <code translate="no">first-seen.json</code> (keyed by paragraph ID), shown "recorded &lt;date&gt;". A file already in Git takes the day it was first added; otherwise today. A reworded paragraph is new and gets a new day</td><td>Grok Build (time first indexed); not Claude Code's modification time</td></tr>
+<tr><th scope="row">The chat agent's file tools</th><td>Not routed into a transaction: a file it writes into <code translate="no">topics/</code> is an outside file. <code translate="no">MEMORY.md</code>'s layout tells it to use <code translate="no">memory_update</code> to remember</td><td>Claude Code (file tools write memory), Codex (point the model at the memory tool)</td></tr>
+<tr><th scope="row">Derived IDs</th><td><code translate="no">~&lt;6 hex of path&gt;-&lt;12 hex of path and text&gt;</code>. A stale one given to <code translate="no">memory_get</code> returns its file's current paragraphs with a note, found by the path part</td><td>Codex and Grok Build (locate by file or position, no stability across edits)</td></tr>
+<tr><th scope="row">Memory turned off mid-conversation</th><td>Recall already shown stays in the history until the next compaction; only new recall and the memory tools stop (the cache-prefix design implements this)</td><td>Hermes, Codex, Claude Code: none withdraws what was sent</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Why this design</summary>
+<dl>
+<dt>Sources by author, at commit</dt><dd>Compared: the parser requiring a footnote in every file, against the commit checking who wrote what. A format rule on the read side let one file from another tool fail every write, which is how memory stopped growing.</dd>
+<dt>Checked when written</dt><dd>Claude Code, Codex and Grok Build all check the writer at the moment it writes; our exact citations stay required of the automatic writers, where the execution policy depends on them.</dd>
+<dt>Outside files read-only in place</dt><dd>Compared: rewriting them into our format, copying them into an inbox (Codex's ad-hoc notes), and reading them in place. Another tool rewrites its own files at any time, so IDs and links we add break; a copy diverges and duplicates. Reading in place is the only option with neither.</dd>
+<dt>Ours by the set of IDs</dt><dd>Judging "still ours" by the set of IDs, not their order, covers an editor that reorders paragraphs.</dd>
+<dt>No repair agent</dt><dd>A repair could never succeed on another tool's prose, since no chat message stands behind it, and it ran 127 times against 36 writes in the measured period. Once format no longer decides what is memory, nothing needs holding aside.</dd>
+<dt>Origin labels</dt><dd>"No source" says what is missing, not where a paragraph came from; the reader and the model need to know how far to trust it. The origin is derived from <code translate="no">installed.json</code> and the footnotes, so nothing new is stored.</dd>
+<dt>Map redrawn at installs</dt><dd>Compared with throttling the memory note (every 10% or every 5 turns), which no peer does. Tying the list to our own installs means the memory section changes at most once per write, the rate the writer already changes the map at, and search finds a new file the moment it lands.</dd>
+<dt>First-seen day, not modification time</dt><dd>Copying, syncing and formatting move a modification time, so the same sentence would change days. The day we record is stable and honest: it says when memory learned it, labelled "recorded", apart from the event dates of cited paragraphs.</dd>
+<dt>File tools left alone</dt><dd>Grok Build routes them into its memory policy because its organizer owns every topic and would overwrite them. Ours leaves outside files alone, so a direct write is already safe, and requiring citations there would give the model a failure Write and Edit cannot avoid.</dd>
+<dt>Unstable derived IDs</dt><dd>A stable ID could only live in the file, which the read-only rule forbids; outside paragraphs are never link targets, so only a one-off reference in a chat is affected, and falling back to the file serves it.</dd>
+</dl>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Both write entries, staged transactions, written markers, live-branch enumeration at session boundaries, rendered Core, default-Agent writer with <code translate="no">memory.writer.model</code>, writer status in tools, CLI and Web, <code translate="no">memory.backend=none</code> rejecting CLI verbs and <code translate="no">/api/memory/*</code> before a workspace exists, structured changes and source labels</td></tr>
+<tr><th scope="row">Implemented in the redesign</th><td>One lenient reader for both indexes, with per-file isolation; deletion rules stated as they are enforced; changes beside a write taken in; the watcher's failures kept by scope in <code translate="no">ingest-state.json</code>, which replaced <code translate="no">session-end.json</code> and <code translate="no">session-end-retries.json</code> on first load; the <code translate="no">installed.json</code> origin record; everything in <a href="#outside">Files written outside OpenProgram</a></td></tr>
+<tr><th scope="row">Measured after deployment</th><td>On the dev instance: no <code translate="no">repair-format</code> run in 24 hours (there is no such stage any more), and how often <code translate="no">memory.ingest_ended</code> fires in an hour with an invalid writer key; a real-model writer pass and 03:00 pass leaving every outside file byte for byte. These need real model requests and a running instance</td></tr>
+<tr><th scope="row">Before it ships</th><td>Before-and-after screenshots of the editor's origin badges and the two status rows, for approval</td></tr>
+<tr><th scope="row">Not yet</th><td>Over-tier hold queue, requester-level filtering, exclusive-branch semantics, cross-session spawn links, head-change-triggered writes, runtime calls to <code translate="no">initialize</code>, <code translate="no">shutdown</code>, <code translate="no">extract_before_discard</code>, external token capabilities, non-owner mutation scope</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="written-marker.html">Written markers in full</a> · <a href="comparison.html">Memory writing compared</a></p>

@@ -27,29 +27,24 @@ export type ThinkingEffort =
   | 'xhigh';
 
 /**
- * The five permission tiers — must match the backend VALID_PERMISSION
- * (agent/session_config.py) and the web Mode menu (use-permission-mode.ts):
- * 1 ask · 2 acceptEdits · 3 plan · 4 auto · 5 bypass.
+ * The permission tiers — must match the backend VALID_PERMISSION
+ * (runtime/permissions/modes.py) and the web Mode menu (use-permission-mode.ts):
+ * 1 bypass (Bypass, the default) · 2 auto · 3 ask · 4 plan.
+ * acceptEdits is an unused option kept valid for stored conversations;
+ * the picker lists it only while it is the current mode.
  */
 export type PermissionMode = 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
 
 export const PERMISSION_MODES: PermissionMode[] =
-  ['ask', 'acceptEdits', 'plan', 'auto', 'bypass'];
+  ['bypass', 'auto', 'ask', 'plan'];
 
 export const PERMISSION_LABELS: Record<PermissionMode, string> = {
-  ask: 'Ask permissions',
-  acceptEdits: 'Accept edits',
-  plan: 'Plan mode',
-  auto: 'Auto mode',
   bypass: 'Bypass permissions',
+  auto: 'Auto',
+  ask: 'Manual',
+  plan: 'Plan',
+  acceptEdits: 'Accept edits',
 };
-
-/** Shift+Tab quick-cycle order. bypass is deliberately NOT in the cycle
- *  (same as Claude Code's Shift+Tab): it's only reachable through
- *  /permissions with an explicit confirm, so a stray key can't land on
- *  run-everything. Pressing Shift+Tab while in bypass exits to ask. */
-export const PERMISSION_CYCLE: PermissionMode[] =
-  ['ask', 'acceptEdits', 'plan', 'auto'];
 
 export interface Activity {
   /** Verb shown next to the spinner — "Thinking", "Calling Bash", etc. */
@@ -81,9 +76,8 @@ export interface Activity {
 export type PickerKind =
   | null
   | 'model' | 'resume' | 'agent' | 'channel' | 'channel_account' | 'theme' | 'effort'
-  // Permission tier picker (the 5 modes, numbered like the web menu) and
-  // the bypass safety confirm it detours through.
-  | 'permission' | 'permission_bypass_confirm'
+  // Permission tier picker, numbered like the web menu.
+  | 'permission'
   | 'branch'
   | 'jobs' | 'job_detail'
   | 'settings'
@@ -106,7 +100,7 @@ export type PickerKind =
  * (apps/web/lib/session-store.ts) so both surfaces share one backend
  * contract. A FIFO queue holds these; the head occupies the input slot
  * as the `question` picker. See
- * docs/design/ui/composer-interaction-modes.md.
+ * docs/reference/design/ui/composer/composer-interaction-modes.html.
  */
 export interface PendingDecision {
   id: string;
@@ -122,6 +116,8 @@ export interface PendingDecision {
   /** approval-only: the gated tool + its args, for the danger summary. */
   tool?: string;
   args?: Record<string, unknown>;
+  /** The sub-agent that asks, when it is not the conversation's own agent. */
+  askedBy?: string;
   /** form-only: flat-object field schema (field name → field def). The
    *  answer is an object (field → value). runtime.form / Phase 4a. */
   schema?: Record<string, FormFieldSchema>;

@@ -1,0 +1,187 @@
+<title>Runtime</title>
+<meta name="description" content="Runtime 类：构造函数、exec 参数、内容块、错误和重试行为。">
+<h1>Runtime</h1>
+<p>封装 LLM provider，从会话 DAG 计算上下文，调用模型并写回回复。<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/agent/runtime/runtime.py">源码</a>。</p>
+<pre translate="no"><code>from openprogram import Agent, Runtime
+
+def my_llm(content, model="host-model", response_format=None):
+    texts = [block["text"] for block in content if block["type"] == "text"]
+    return call_my_api("\n".join(texts), model=model)
+
+runtime = Runtime(call=my_llm, model="host-model")
+
+class Observer(Agent):
+    tools = []
+
+    def observe(self, task: str):
+        """Identify the requested screen element."""
+        return self([
+            {"type": "text", "text": f"Find: {task}"},
+            {"type": "image", "path": "screenshot.png"},
+        ])
+
+observer = Observer(runtime=runtime)
+try:
+    answer = observer.observe("login button")
+finally:
+    runtime.close()</code></pre>
+<p class="note">普通方法继承 Runtime，无需装饰器或手动 Context。见 <a href="agent.zh.html">Agent 与 Context</a>。</p>
+<h2 id="class-runtime">构造函数</h2>
+<pre translate="no"><code>Runtime(call=None, model="default", max_retries=None, api_key=None, skills=None)</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参数</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">call</code></th><td><code translate="no">fn(content: list[dict], model: str, response_format: dict) -&gt; str</code>，经 <code translate="no">CallableModel</code> 包入标准 provider 路径，DAG 记录和历史渲染相同。既无 <code translate="no">call</code> 也无 <code translate="no">provider:model_id</code> 模型时，子类化并覆盖 <code translate="no">_call()</code>。</td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>默认 <code translate="no">"default"</code>。<code translate="no">"provider:model_id"</code> 经 <code translate="no">openprogram.models.providers</code> 解析，未知值抛 <code translate="no">ValueError</code>。其他字符串只在有 <code translate="no">call=</code> 或子类时有效。</td></tr>
+<tr><th scope="row"><code translate="no">max_retries</code></th><td>尝试次数，含第一次，至少 1。<code translate="no">None</code> 读 <code translate="no">OPENPROGRAM_MAX_RETRIES</code>，默认 6。</td></tr>
+<tr><th scope="row"><code translate="no">api_key</code></th><td><code translate="no">None</code> 从凭据库解析</td></tr>
+<tr><th scope="row"><code translate="no">skills</code></th><td><code translate="no">None</code>/<code translate="no">False</code> 关闭；<code translate="no">True</code> 探测默认用户和仓库目录；<code translate="no">list[str]</code> 显式指定。每次 <code translate="no">exec()</code> 向系统提示追加 <code translate="no">&lt;available_skills&gt;</code>。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">属性</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">model</code></th><td>默认模型名</td></tr>
+<tr><th scope="row"><code translate="no">max_retries</code></th><td>解析后的重试额度</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td>可赋值的系统提示；<code translate="no">method_options[...]["system"]</code> 在单次调用中设置</td></tr>
+<tr><th scope="row"><code translate="no">thinking_level</code></th><td><code translate="no">"off"</code>（默认）、<code translate="no">"low"</code>、<code translate="no">"medium"</code>、<code translate="no">"high"</code>、<code translate="no">"xhigh"</code>；传给 provider</td></tr>
+<tr><th scope="row"><code translate="no">session_id</code></th><td>这个 Runtime 自己的 <code translate="no">"op-&lt;hex&gt;"</code>。不作提示缓存 key 发出：模型、系统提示和工具都相同的调用共用一个由它们算出的 id，跨 Runtime 也一样。给它赋值即自己指定 key</td></tr>
+<tr><th scope="row"><code translate="no">on_stream</code></th><td><code translate="no">fn(event_dict)</code>，接收 text、thinking、tool_use、tool_result 事件</td></tr>
+<tr><th scope="row"><code translate="no">last_usage</code></th><td>上次调用的 <code translate="no">{input_tokens, output_tokens, total_tokens, cache_read, cache_create, ...}</code></td></tr>
+</tbody>
+</table>
+<h2 id="exec">exec()</h2>
+<pre translate="no"><code>Runtime.exec(content, context=None, response_format=None, model=None,
+             tools=None, toolset=None, tools_source=None, tools_allow=None,
+             tools_deny=None, tool_choice=None, parallel_tool_calls=None,
+             max_iterations=None, stop_after_tool_round=False, choices=None,
+             timeout_s=None, on_retry=None, web_search=None, stream_fn=None,
+             effort=None, execution_kind="agent") -&gt; Any</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用场景</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">在 Agent 方法或受管函数内</th><td><code translate="no">render_context</code> 按 <code translate="no">expose</code> 和 <code translate="no">render_range</code> 选历史节点，<code translate="no">render_dag_messages</code> 渲染，<code translate="no">_call()</code> 发送，回复写入开始时打开的 <code translate="no">llm</code> 节点。每次 <code translate="no">exec()</code> 都是新 <code translate="no">llm</code> 节点。</td></tr>
+<tr><th scope="row">未安装 DAG 存储</th><td><code translate="no">content</code> 作为一条用户消息单轮调用，不记录</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参数</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">content</code></th><td><code translate="no">list[dict]</code> 或字符串（一个文本块）</td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td>遗留参数，被忽略</td></tr>
+<tr><th scope="row"><code translate="no">response_format</code></th><td>JSON Schema 或 <code translate="no">JsonSchemaOutput</code>，见<a href="#structured-output">结构化输出</a></td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>覆盖默认模型</td></tr>
+<tr><th scope="row"><code translate="no">tools</code></th><td>已注册的 Agent 方法、<code translate="no">{"spec":..., "execute":...}</code> 字典或带 <code translate="no">.spec</code>/<code translate="no">.execute</code> 的对象；循环直到返回纯文本。<strong><code translate="no">None</code> 不是“无工具”</strong>：它拿到全部已注册工具。要无工具用 <code translate="no">toolset="none"</code> 或 <code translate="no">tools=[]</code>。</td></tr>
+<tr><th scope="row"><code translate="no">toolset</code></th><td>预设；<code translate="no">"full"</code> 是隐式默认，<code translate="no">"none"</code> 不用工具</td></tr>
+<tr><th scope="row"><code translate="no">tools_source</code></th><td>按渠道来源过滤</td></tr>
+<tr><th scope="row"><code translate="no">tools_allow</code>, <code translate="no">tools_deny</code></th><td>名称允许和拒绝列表</td></tr>
+<tr><th scope="row"><code translate="no">tool_choice</code></th><td>未设即 <code translate="no">"auto"</code>。<code translate="no">"required"</code>、<code translate="no">"none"</code> 或 <code translate="no">{"type":"function","name":"X"}</code>；按 provider 映射。</td></tr>
+<tr><th scope="row"><code translate="no">parallel_tool_calls</code></th><td>未设时用 provider 默认；<code translate="no">True</code>/<code translate="no">False</code> 允许或禁止一轮多个调用</td></tr>
+<tr><th scope="row"><code translate="no">max_iterations</code></th><td>未设即 20。一次迭代是一次模型调用加其工具。实际值 <code translate="no">max(1, n)</code>。聊天回合不设上限。</td></tr>
+<tr><th scope="row"><code translate="no">stop_after_tool_round</code></th><td>一轮工具后停止，供先消费回执的调用方工作流使用。不能与 <code translate="no">response_format</code> 同用。</td></tr>
+<tr><th scope="row"><code translate="no">choices</code></th><td>约束回合<strong>结束</strong>方式，见<a href="../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.zh.html">下一步决策</a></td></tr>
+<tr><th scope="row"><code translate="no">timeout_s</code></th><td>整个调用的墙钟预算，含重试等待；抛 <code translate="no">LLMError</code>（<code translate="no">reason=TIMEOUT</code>，<code translate="no">retryable=False</code>）。<code translate="no">None</code> 回退到 <code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code>（未设或 <code translate="no">0</code>：不限）。</td></tr>
+<tr><th scope="row"><code translate="no">on_retry</code></th><td>每次退避等待前收到 <code translate="no">RetryInfo</code>；最终失败不触发；回调异常被吞掉</td></tr>
+<tr><th scope="row"><code translate="no">web_search</code></th><td>provider 原生网络搜索（如支持）</td></tr>
+<tr><th scope="row"><code translate="no">stream_fn</code></th><td>单次流函数覆盖，供分发器和测试使用</td></tr>
+<tr><th scope="row"><code translate="no">effort</code></th><td>仅本次调用的推理强度，不改 <code translate="no">thinking_level</code></td></tr>
+<tr><th scope="row"><code translate="no">execution_kind</code></th><td>DAG 标签；单请求原语为 <code translate="no">llm</code>，否则 <code translate="no">agent</code></td></tr>
+</tbody>
+</table>
+<h3 id="content-block-format">内容块</h3>
+<pre translate="no"><code>{"type": "text",  "text": "Find the login button."}
+{"type": "image", "path": "screenshot.png"}
+{"type": "image", "data": "&lt;base64&gt;", "mime_type": "image/png"}
+{"type": "video", "path": "clip.mp4"}
+{"type": "audio", "path": "recording.wav"}</code></pre>
+<p class="note">媒体接受 <code translate="no">path</code>（自动读取编码，按扩展名猜类型）或 <code translate="no">data</code> + <code translate="no">mime_type</code>。文本块可带 <code translate="no">"role": "system"</code>。文本和图片块接受 <code translate="no">cache_control</code>。未知类型被跳过。</p>
+<h3 id="return-value">返回值</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用</th><th scope="col">返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">response_format=None</code></th><td>回复 <code translate="no">str</code></td></tr>
+<tr><th scope="row">结构化 <code translate="no">response_format</code></th><td>本地校验后的 Python JSON 值</td></tr>
+<tr><th scope="row"><code translate="no">choices</code></th><td>所选函数的返回值，或所选的值</td></tr>
+</tbody>
+</table>
+<h3 id="exceptions">异常</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">异常</th><th scope="col">时机</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">RuntimeError</code></th><td>runtime 已关闭</td></tr>
+<tr><th scope="row"><code translate="no">TypeError</code>, <code translate="no">NotImplementedError</code></th><td>编程错误，从不重试</td></tr>
+<tr><th scope="row"><code translate="no">LLMError</code></th><td>重试耗尽或不可重试。字段包括 <code translate="no">reason</code>、<code translate="no">retryable</code>、<code translate="no">http_status</code>、<code translate="no">retry_after_s</code>、<code translate="no">attempts</code>、<code translate="no">elapsed_s</code>、<code translate="no">provider</code>、<code translate="no">model</code>。</td></tr>
+<tr><th scope="row"><code translate="no">StructuredOutputSchemaError</code></th><td><code translate="no">invalid_schema</code></td></tr>
+<tr><th scope="row"><code translate="no">StructuredOutputUnsupportedError</code></th><td><code translate="no">unsupported</code>：没有经过验证的无损 provider 或回退</td></tr>
+<tr><th scope="row"><code translate="no">StructuredOutputValidationError</code></th><td><code translate="no">invalid_json</code>, <code translate="no">validation_failed</code>, <code translate="no">missing_submission</code>, <code translate="no">mixed_submission</code></td></tr>
+<tr><th scope="row"><code translate="no">StructuredOutputGenerationError</code></th><td><code translate="no">refusal</code>, <code translate="no">incomplete</code></td></tr>
+</tbody>
+</table>
+<p class="note">结构化输出错误提供 <code translate="no">.code</code> 和有界的 <code translate="no">.issues</code>。provider 候选文本不属于诊断内容。</p>
+<details id="structured-output">
+<summary>结构化输出</summary>
+<ul>
+<li>已验证的 provider 和模型组合使用原生映射。否则 <code translate="no">fallback="auto"</code> 可走已验证的隐藏严格工具路径；提示回退需要显式 <code translate="no">fallback="prompt"</code>。不支持或有损的组合直接失败。</li>
+<li>最终值在本地按原 schema 解析和校验。</li>
+<li><code translate="no">max_validation_retries</code> 为 <code translate="no">0</code>、<code translate="no">1</code> 或 <code translate="no">2</code>（默认 <code translate="no">2</code>），校验修复和截断生成共用。同时转给 <code translate="no">_call()</code>。</li>
+</ul>
+</details>
+<h2 id="methods">其他方法</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方法</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">await async_exec(content, ...)</code></th><td>参数相同（无 <code translate="no">choices</code>），返回和错误契约相同。调用 <code translate="no">_async_call()</code>；<code translate="no">call=</code> 函数可同步或异步；重试用 <code translate="no">asyncio.sleep</code>，可取消。</td></tr>
+<tr><th scope="row"><code translate="no">_call(content, model="default", response_format=None)</code></th><td>一次调用，无重试。配置了 provider 模型或 <code translate="no">call=</code> 时经 <code translate="no">AgentSession</code>，否则 <code translate="no">NotImplementedError</code>。<strong>子类化时覆盖它。</strong> 历史由 provider 路径从 DAG 渲染。返回原始文本或校验后的 JSON 值。</td></tr>
+<tr><th scope="row"><code translate="no">await _async_call(...)</code></th><td>异步 <code translate="no">_call()</code>；异步 provider 覆盖它</td></tr>
+<tr><th scope="row"><code translate="no">close()</code></th><td>结束会话；之后 <code translate="no">exec()</code> 抛 <code translate="no">RuntimeError</code>。<code translate="no">with Runtime(...) as rt:</code> 退出时关闭。子类在此清理。</td></tr>
+</tbody>
+</table>
+<span id="async_exec"></span>
+<span id="_call"></span>
+<span id="_async_call"></span>
+<span id="close"></span>
+<h3 id="asking-the-user">询问用户</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方法</th><th scope="col">询问</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ask(prompt, options=, multi=, allow_custom=, questions=[...], timeout=300.0, default=None)</code></th><td>一个问题或一张卡片多个问题</td></tr>
+<tr><th scope="row"><code translate="no">confirm(prompt, detail=, timeout=300.0, default=False)</code></th><td>是或否</td></tr>
+<tr><th scope="row"><code translate="no">form(prompt, fields, detail=, timeout=300.0, default=None)</code></th><td>多字段表单</td></tr>
+<tr><th scope="row"><code translate="no">can_ask()</code></th><td>是否有人应答；无头运行时为 False</td></tr>
+</tbody>
+</table>
+<p class="note">需要已连接的前端会话。拒绝回答抛 <code translate="no">UserDeclined</code>。超时时有 <code translate="no">default</code> 则返回，否则抛 <code translate="no">AskTimeout</code>。</p>
+<h2 id="retry-mechanism">重试</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">瞬态异常</th><td>记录尝试，退避 1.5 秒 × 2^attempt ±25% 抖动，重试至 <code translate="no">max_retries</code>。<code translate="no">Retry-After</code> 作为下限。基数：<code translate="no">OPENPROGRAM_RETRY_BACKOFF_BASE</code>。</td></tr>
+<tr><th scope="row">永久错误：图片数据错误、认证过期、key 无效或 <code translate="no">retryable=False</code></th><td>立即 <code translate="no">LLMError</code>，<code translate="no">retryable=False</code></td></tr>
+<tr><th scope="row">provider 已耗尽传输重试（<code translate="no">transport_exhausted</code>）</th><td><code translate="no">LLMError</code>，不再重试</td></tr>
+<tr><th scope="row"><code translate="no">TypeError</code>, <code translate="no">NotImplementedError</code></th><td>立即抛出</td></tr>
+<tr><th scope="row">全部失败</th><td>带尝试报告的结构化 <code translate="no">LLMError</code></td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>LLMError: exec() failed after 3 attempt(s):
+Attempt 1: ConnectionError: timeout
+Attempt 2: RateLimitError: 429 Too Many Requests
+Attempt 3: ConnectionError: timeout</code></pre>
+<pre translate="no"><code>rt = Runtime(call=my_llm)                # OPENPROGRAM_MAX_RETRIES, else 6
+rt = Runtime(call=my_llm, max_retries=1) # raise on the first failure</code></pre>
+<details>
+<summary>重试的边界</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">额度</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">失败恢复</th><td>结构化输出修复和重复的工具响应共用。重复响应被丢弃，在同一 Agent 上下文中重新生成，保留已完成的工具结果和回执。没有总 token 或时长上限。</td></tr>
+<tr><th scope="row">传输</th><td><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code> 减一，独立计算，断连不消耗修复额度。恢复的请求归还额度：按请求限制，而不是按 Agent 循环。</td></tr>
+<tr><th scope="row">等待网络</th><td>端点不可达、重试用尽且没有已提交输出：最多等待 <code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code>（默认 30 分钟），每 5 至 30 秒检查，然后继续。恢复上限为 0、单次尝试请求、取消或截止时间会结束等待。</td></tr>
+</tbody>
+</table>
+<ul>
+<li>调用方的显式限制、取消、权限失败和恢复耗尽仍是最终结果。</li>
+<li>重复响应不等于允许重复外部写入；结果不确定的写入须先检查。</li>
+<li>函数逻辑错误仍需修改代码。</li>
+</ul>
+</details>
+<p class="next"><a href="providers.zh.html">Providers</a></p>

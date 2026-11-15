@@ -3,9 +3,8 @@
 /**
  * Input-area body per composer mode.
  *
- * 按当前 mode 渲染输入区主体。所有「问用户」的形态（ask/confirm/approval/
- * form/ask_many）都由唯一的 QuestionMode 承接，不再分组件；fn-form 走
- * FunctionForm；其余走普通聊天的 ChatInputRow。
+ * Function forms use FunctionForm; ordinary chat uses ChatInputRow.
+ * User decisions are rendered in the conversation output.
  *
  * The outgoing fn-form crossfade layer rides along here because it must be
  * a sibling rendered AFTER the live form (see the comment at its JSX).
@@ -13,10 +12,9 @@
 import React from "react";
 
 import { FunctionForm } from "./fn-form/fn-form";
-import { QuestionMode } from "./question/question-mode";
 import { ChatInputRow } from "../input/chat-input-row";
 import type { useFnFormState } from "./fn-form/use-fn-form-state";
-import type { useFileMention } from "../attach/use-file-mention";
+import type { useFileMention } from "../attach/mention/use-file-mention";
 import type { useSlashMenu } from "../slash/use-slash-menu";
 import type { usePasteTokens } from "../paste/use-paste-tokens";
 import styles from "../composer.module.css";
@@ -24,14 +22,10 @@ import styles from "../composer.module.css";
 const noop = () => {};
 
 type FnFormFn = React.ComponentProps<typeof FunctionForm>["fn"];
-type Decision = React.ComponentProps<typeof QuestionMode>["decision"];
 
 export interface ComposerBodyProps {
   bound: string | null;
   composerMode: string;
-  activeDecision: Decision | null;
-  dequeueDecision(id: string): void;
-  onChatAbout(feedback: string): void | Promise<void>;
   fnFormFunction: FnFormFn | null;
   fnForm: ReturnType<typeof useFnFormState>;
   handleFnFormClose(): void;
@@ -42,21 +36,21 @@ export interface ComposerBodyProps {
   setInput(next: string): void;
   isRunning: boolean;
   runningPlaceholder: string;
+  /** Placeholder while idle (e.g. while disconnected); the default otherwise. */
+  idlePlaceholder?: string;
+  /** The chat whose draft the input holds. */
+  draftOwner?: string;
+  /** Suggested next message, taken with Tab (use-next-prompt.ts). */
+  suggestion?: string | null;
   onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>;
   onPaste: ReturnType<typeof usePasteTokens>["onPaste"];
   slash: ReturnType<typeof useSlashMenu>;
   fileMention: ReturnType<typeof useFileMention>;
-  pastedEntries: ReturnType<typeof usePasteTokens>["pastedEntries"];
-  pasteMissing: ReturnType<typeof usePasteTokens>["pasteMissing"];
-  removePaste: ReturnType<typeof usePasteTokens>["removePaste"];
 }
 
 export function ComposerBody({
   bound,
   composerMode,
-  activeDecision,
-  dequeueDecision,
-  onChatAbout,
   fnFormFunction,
   fnForm,
   handleFnFormClose,
@@ -67,26 +61,17 @@ export function ComposerBody({
   setInput,
   isRunning,
   runningPlaceholder,
+  idlePlaceholder,
+  draftOwner,
+  suggestion,
   onKeyDown,
   onPaste,
   slash,
   fileMention,
-  pastedEntries,
-  pasteMissing,
-  removePaste,
 }: ComposerBodyProps) {
   return (
     <>
-        {/* 按当前 mode 渲染输入区主体。所有「问用户」的形态（ask/confirm/
-            approval/form/ask_many）都由唯一的 QuestionMode 承接，不再分组件。 */}
-        {activeDecision ? (
-          <QuestionMode
-            key={activeDecision.id}
-            decision={activeDecision}
-            onResolve={dequeueDecision}
-            onChatAbout={onChatAbout}
-          />
-        ) : composerMode === "fn-form" && fnFormFunction ? (
+        {composerMode === "fn-form" && fnFormFunction ? (
           <FunctionForm
             // `key` ties to fn name so React re-mounts on every
             // switch — the freshly mounted header/body run their own
@@ -107,15 +92,14 @@ export function ComposerBody({
             input={input}
             setInput={setInput}
             inputId={bound ? `composer-chat-input-${bound}` : undefined}
-            placeholder={isRunning ? runningPlaceholder : undefined}
+            placeholder={isRunning ? runningPlaceholder : idlePlaceholder}
+            historyKey={draftOwner}
+            suggestion={isRunning ? null : suggestion}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             onFocus={() => slash.setFocused(true)}
             onBlur={() => slash.setFocused(false)}
             setCaretPos={fileMention.setCaretPos}
-            pastedEntries={pastedEntries}
-            pasteMissing={pasteMissing}
-            removePaste={removePaste}
             atToken={fileMention.atToken}
             fileMatches={fileMention.fileMatches}
             fileMenuIndex={fileMention.fileMenuIndex}

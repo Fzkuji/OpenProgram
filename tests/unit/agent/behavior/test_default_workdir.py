@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.internals._workdir import (
+from openprogram.runtime.conversation.workdir import (
     apply_default_workdir,
     project_workdir_for,
     session_workdir_for,
@@ -29,9 +29,9 @@ class _NoWorkdirRuntime:
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.agent import session_db as sdb_mod
-    from openprogram.store.project import project_store
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.runtime.context import session_db as sdb_mod
+    from openprogram.state.store.project import project_store
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_db", lambda: s)
     # 与真实项目注册表隔离：默认无绑定、无默认项目，让"回落会话
@@ -84,16 +84,17 @@ def test_apply_default_workdir_unknown_session(store):
 
 class _FakeProject:
     def __init__(self, path, is_default=False, directory_identity="test-identity"):
+        self.id = "test-project"
         self.path = path
         self.is_default = is_default
         if directory_identity == "test-identity":
-            from openprogram.store.project.identity import inode_token
+            from openprogram.state.store.project.identity import inode_token
             directory_identity = inode_token(Path(path))
         self.directory_identity = directory_identity
 
 
 def _bind_project(monkeypatch, proj):
-    from openprogram.store.project import project_store
+    from openprogram.state.store.project import project_store
     monkeypatch.setattr(project_store, "project_for_session",
                         lambda sid: proj)
 
@@ -119,7 +120,7 @@ def test_project_workdir_for_default_project_path_used(store, tmp_path, monkeypa
 
 def test_project_workdir_for_unbound_uses_default_project(store, tmp_path, monkeypatch):
     """未绑定项目的会话回落到默认项目路径（chip 显示的就是它）。"""
-    from openprogram.store.project import project_store
+    from openprogram.state.store.project import project_store
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(project_store, "get_default_project",
@@ -132,7 +133,7 @@ def test_project_workdir_for_missing_dir_is_none_not_default(store, tmp_path,
     """A bound project whose path vanished must not become the cwd — and
     must NOT silently resolve to the default project's home directory
     either. ``None`` sends the turn to the session's own workdir/."""
-    from openprogram.store.project import project_store
+    from openprogram.state.store.project import project_store
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(project_store, "get_default_project",

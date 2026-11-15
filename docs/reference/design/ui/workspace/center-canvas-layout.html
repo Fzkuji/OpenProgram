@@ -1,0 +1,264 @@
+<title>Center canvas layout</title>
+<meta name="description" content="How the centre area splits into any arrangement of panes: model, grip, tiling, window overview, animation and persistence.">
+<h1>Center canvas layout</h1>
+
+<p>Each layout occupies one top-level tab. Any tab content fits a pane: chat, web page, terminal, file preview, program view. The real limit on panes is <a href="#dividers">their minimum size</a>. Floating windows belong to picture-in-picture; a pane is never shared across windows.</p>
+
+<h2 id="model">Layout tree</h2>
+<pre translate="no" tabindex="0">type LayoutNode =
+  | { kind: "pane";  id: string; content: string | null }   // null = empty pane
+  | { kind: "split"; id: string; dir: "row" | "col";
+      children: LayoutNode[]; sizes: number[] };
+
+type CanvasLayout = { root: LayoutNode; focusedPaneId: string; zoomedPaneId?: string };</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Normalisation, after each change</th><td>A split with one child becomes that child; a split with its parent's direction merges into it, weights multiplied; weights rescale and clamp to minimum size</td></tr>
+<tr><th scope="row">Content</th><td>Appears once in a layout</td></tr>
+<tr><th scope="row">Migration</th><td>A two-pane group becomes a row split with its saved ratio</td></tr>
+<tr><th scope="row">Empty pane</th><td>Lists the strip's content; a click fills it</td></tr>
+<tr><th scope="row">Focus</th><td>One pane; keyboard input, close, tiling shortcuts and right-sidebar context follow it</td></tr>
+<tr><th scope="row">Fill</th><td>Stretches a pane over the canvas; others stay mounted, hidden</td></tr>
+</tbody>
+</table>
+<p class="note">Code: <code translate="no">apps/web/lib/tabs/canvas/canvas-layout.ts</code>.</p>
+
+<h2 id="pane-grip">Pane grip</h2>
+<p>No persistent toolbar and no title bar. A <code translate="no">•••</code> grip sits top centre, with an 88×22px hit area. Pressing it never selects text and only prepares a drag: no store commit, focus or route change. A click focuses.</p>
+<table class="stack">
+<thead><tr><th scope="col">Button</th><th scope="col">Click</th><th scope="col">Extra</th></tr></thead>
+<tbody>
+<tr><th scope="row">Red</th><td>Closes the tab through the strip's close, saving open files first</td><td>No menu</td></tr>
+<tr><th scope="row">Yellow</th><td>Folds the pane back into the strip; the session stays</td><td>No menu</td></tr>
+<tr><th scope="row">Green</th><td>Opens the tab on its own</td><td>Rest 250ms: attached tiling menu, folds when the pointer leaves. <kbd>↓</kbd> on green or right-click on the grip: pinned menu.</td></tr>
+</tbody>
+</table>
+<p class="note">A press on a button that moves 6px becomes a drag and never clicks; pointer capture starts only with the drag. A closed pane's space goes to its neighbour.</p>
+<details>
+<summary>Grip motion</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Motion</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sheet</th><td>Under the pointer the grip drops a grey sheet from the top edge, shoulders flaring into it, growing from a sliver with a slight spring</td></tr>
+<tr><th scope="row">Dots</th><td>The window buttons at rest: they spread, grow one after another into red, yellow and green, then their glyphs fade in</td></tr>
+<tr><th scope="row">Leaving</th><td>Runs it backwards</td></tr>
+<tr><th scope="row">Menu</th><td>Grows out of the sheet as the grip widens; closing, it stays drawn 200ms to fold up before the grip narrows</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="tiling-menu">Tiling menu</h2>
+<p>Mirrors the macOS green-button menu with small layout glyphs. A hint line names the glyph under the pointer, otherwise says to hold Option for quarters. On macOS it also names the shortcut; on Windows and Linux the tiling keys do not exist, the line names none, and Option reads Alt.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Group</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Move and resize, this pane</th><td>Left, right, top, bottom halves; four quarters while Option is held. Others keep their order in the other half; a quarter fully held by another pane trades places.</td></tr>
+<tr><th scope="row">Fill and arrange</th><td>Fill; left and right; left and stacked right; quarters. This pane first, contents in reading order, overflow to the strip, spare panes empty.</td></tr>
+<tr><th scope="row">Return to previous layout</th><td>Leaves Fill, then steps back past the last tile, arrange, drop, equalize, close or divider drag. Entries are found by any tab or group involved, so a pane pulled out can be put back.</td></tr>
+<tr><th scope="row">Equalize sizes</th><td>Panes take equal sizes</td></tr>
+<tr><th scope="row">More layouts</th><td>Top and bottom, single, nine, sixteen, saved layouts, Save layout…</td></tr>
+</tbody>
+</table>
+
+<h2 id="shortcuts">Shortcuts</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Keys</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row"><kbd>⌃⌥</kbd> + arrow</th><td>Tile the focused pane to a half. Control + Option because Fn + Control is macOS's.</td></tr>
+<tr><th scope="row"><kbd>⌃⌥⇧</kbd> + arrow</th><td>Arrange left and right or top and bottom, focused pane on the arrow's side; alone, the other side is empty</td></tr>
+<tr><th scope="row"><kbd>⌃⌥F</kbd>, <kbd>⌘⇧↩</kbd></th><td>Toggle Fill</td></tr>
+<tr><th scope="row"><kbd>⌃⌥R</kbd></th><td>Return to previous layout</td></tr>
+<tr><th scope="row"><kbd>⌘\</kbd>, <kbd>⌘⇧\</kbd></th><td>Split right, split below</td></tr>
+<tr><th scope="row"><kbd>⌘W</kbd></th><td>Close the focused pane in a multi-pane layout</td></tr>
+<tr><th scope="row"><kbd>⌥⌘</kbd> + arrow</th><td>Move spatial focus</td></tr>
+</tbody>
+</table>
+<p class="note"><kbd>⌘</kbd> is Control on Windows and Linux.</p>
+
+<h2 id="dividers">Dividers</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Look</th><td>Nothing until the pointer rests on the gap, then a short grey pill in its middle. The whole gap drags.</td></tr>
+<tr><th scope="row">Minimum</th><td>Stops where a pane would drop below 240×160px; a smaller pane is never squeezed further</td></tr>
+<tr><th scope="row">Snap</th><td>Within 10px of a third, half or two thirds; shows the ratio</td></tr>
+<tr><th scope="row">Equalize</th><td>Double-click, adjacent pair</td></tr>
+<tr><th scope="row">Keyboard</th><td>Arrows on a focused divider, 2% a step</td></tr>
+<tr><th scope="row">Drag cost</th><td><code translate="no">previewCanvas</code> repaints at most once a frame, in memory only; <code translate="no">setCanvas</code> commits once on release</td></tr>
+<tr><th scope="row">Below 900px</th><td>While split, collapsed rails keep their columns so they never cover a pane</td></tr>
+</tbody>
+</table>
+
+<h2 id="split-tab">The split in the strip</h2>
+<p>A split window is one tab, as wide as any other, like Chrome's and Arc's split views: the focused pane's icon and title, a miniature of the split with that pane filled, and the pane count. Its close acts on the whole window.</p>
+<p>A pane closed from a split that stays is removed in the same tick as the click and the canvas plays the close. When focus changes or a merge just formed the split, icon and name rise in over 200ms.</p>
+
+<h2 id="overview">Window overview</h2>
+<p>Modelled on Mission Control and the iPad app switcher. The center area recedes to the page colour and every window in the strip becomes a card on a grid, as large as fits, never wider than half the area.</p>
+<p>A card keeps its window's split, drawn from the same tree and geometry. Panes have no drop zones: on a visible canvas the bottom half and corners were hard to tell apart.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Opened by</th><th scope="col">Mode</th></tr></thead>
+<tbody>
+<tr><th scope="row">A tab leaving the strip vertically, a grip starting to move</th><td>Drag</td></tr>
+<tr><th scope="row">The button beside the main menu, pinching in on the center area or strip</th><td>Browse</td></tr>
+</tbody>
+</table>
+
+<svg class="fig-wide" viewBox="0 0 680 164" role="img" aria-label="A card's drop zones. The left and right quarters put the tab beside the whole window. The middle half puts it above or below, by the half under the pointer.">
+  <rect class="tile" x="1" y="1" width="480" height="162" rx="10"/>
+  <line class="ln" x1="121" y1="1" x2="121" y2="163"/>
+  <line class="ln" x1="361" y1="1" x2="361" y2="163"/>
+  <line class="ln" x1="121" y1="82" x2="361" y2="82"/>
+  <text class="t-soft mid" x="61" y="87">Beside, left</text>
+  <text class="t-soft mid" x="421" y="87">Beside, right</text>
+  <text class="t-soft mid" x="241" y="47">Above</text>
+  <text class="t-soft mid" x="241" y="127">Below</text>
+  <text class="t-soft" x="498" y="76">Calls dockCanvas with</text>
+  <text class="t-soft" x="498" y="96">root and the side</text>
+</svg>
+<table class="stack fixed fig-narrow">
+<thead class="sr"><tr><th scope="col">Pointer over</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Left or right quarter</th><td>Tab beside the whole window</td></tr>
+<tr><th scope="row">Middle half</th><td>Above or below, by the half under the pointer</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Release on</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">The strip</th><td>Reorder; a pane returns to a standalone tab, with the same blue rounded preview as docking, following the strip's bounds</td></tr>
+<tr><th scope="row">A card's zone</th><td>Merge with <code translate="no">dockCanvas(sources, card tab, "root", side)</code>. A pane on its own window's card moves to that half. The card grows, the half highlights, a hint names window and side.</td></tr>
+<tr><th scope="row">Empty space</th><td>Opens on its own in the gap</td></tr>
+<tr><th scope="row">Resources view</th><td>Binds the web page as a session resource</td></tr>
+<tr><th scope="row">Beyond the window</th><td>Detaches into a new window</td></tr>
+<tr><th scope="row">Escape, or back to the strip</th><td>Cancels; a plain reorder</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Input</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Click a card</th><td>Switches to that window before the zoom, so the live window is ready underneath</td></tr>
+<tr><th scope="row">Escape, pinch out</th><td>Zooms the current window back</td></tr>
+<tr><th scope="row">Click outside</th><td>Closes</td></tr>
+<tr><th scope="row">Click between cards</th><td>Nothing</td></tr>
+<tr><th scope="row">Press and move 6px on a card, browsing</th><td>Picks up that window, or one pane of a split card, as a same-size copy; see-through over a card</td></tr>
+<tr><th scope="row">Pinch on content that zooms</th><td>The context graph keeps the gesture</td></tr>
+<tr><th scope="row">Pinch in on a web page</th><td><code translate="no">main/web-views/webtab-preload.js</code> (isolated world, exposes nothing) opens the overview only if the gesture starts at <code translate="no">visualViewport.scale</code> 1. Pinching out magnifies natively, 1× to 3×; pinching in on a magnified page only zooms it back.</td></tr>
+</tbody>
+</table>
+<p class="note">The overview covers only the center area and is a native-view occluder. As in Mission Control nothing marks the current window. Browsing keeps the hint's room, hidden.</p>
+
+<details>
+<summary>Pictures on the cards</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Store</th><td>Per tab, in memory and IndexedDB (<code translate="no">lib/tabs/canvas/window-snapshots.ts</code>), one theme only: a theme change drops them all and other-theme ones are not restored, since a card flashed against the live window. An empty tab list while the store loads never prunes.</td></tr>
+<tr><th scope="row">Taken</th><td>Before any overview opens, the dragged tab's pane included (its preview hides); 900ms after a switch or layout change; when the App loses focus or hides; every 30s after 5s with no input</td></tr>
+<tr><th scope="row">Page panes</th><td><code translate="no">window:capture-region</code> IPC, a window's main page capturing itself only; JPEG at most 720px wide</td></tr>
+<tr><th scope="row">Web panes</th><td>From their own views, so off-screen ones stay current. A view holds the page only, so an on-screen pane is pictured as its region with the page drawn into <code translate="no">[data-web-frame]</code>; the toolbar band is kept and frames off-screen pages, keeping the pane's proportions.</td></tr>
+<tr><th scope="row">Card shape</th><td>Its window shrunk whole: a lone pane flush (1rem corners), split panes 1px inside their slots (16px corners), all at the card's scale so nothing jumps on landing</td></tr>
+<tr><th scope="row">Clean content</th><td>Grips are hidden for the two frames before a capture</td></tr>
+<tr><th scope="row">Never pictured</th><td>Only the tab's icon, centred; the name is the card's caption</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Dragging over the overview</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source tab's slot</th><td><code translate="no">data-drag-out</code> closes it by width (flex-basis, width, padding to 0, 8px gap taken back) in 160ms, so later tabs and + slide over. It stays closed through a merge or a move to another window; reopens with <code translate="no">data-slot-reopen</code> only when the tab stays.</td></tr>
+<tr><th scope="row">Dragged tab</th><td>A small window under the pointer: tab on top, last picture below, 240px wide, 110 to 190px tall, opening in 200ms, folding back in 140ms over the strip. Never pictured: stays a tab, opens if a picture arrives.</td></tr>
+<tr><th scope="row">Cards</th><td>The tab leaves its own card; a card with no tab disappears; the card under the pointer grows slightly</td></tr>
+<tr><th scope="row">Gap</th><td><code translate="no">slot</code> in the overview store, where the tab would stand alone. Starts at the dragged window, or just after the window a pane leaves. Cards are sized for cards plus gap, so a pick-up resizes nothing. Off the cards it stays while nearer than any card, else goes beside the nearest card on the pointer's side; distances use layout offsets, without framer-motion transforms. Outlined over empty space.</td></tr>
+<tr><th scope="row">Drop in the gap</th><td>Carries <code translate="no">before</code>; <code translate="no">commitCanvasDrop</code> calls <code translate="no">moveTab</code> (after ungrouping a pane) or <code translate="no">moveGroup</code>, so the strip takes the overview's order. Only a pane out of a split is activated. The overview stays open browsing: <code translate="no">holdOverviewLanding</code>, then <code translate="no">sourceIds</code> clears and the tab's card returns.</td></tr>
+<tr><th scope="row">Dragging a card</th><td>Goes through <code translate="no">overviewDropAt</code> like any drag: a card's side merges, empty space moves the window to its gap (a pane gets its own window), anything but a merge browses on (<code translate="no">browseOverview</code>); Escape cancels.</td></tr>
+<tr><th scope="row">Modes</th><td>Same area and buttons, so pictures survive a switch; no replayed fade (<code translate="no">data-opened-as</code>); empty space tints only the hint</td></tr>
+<tr><th scope="row">Motion</th><td>Open or close zoom is a framer-motion layout animation, 340ms, a placeholder holding the slot; drag overviews fade in. Grid changes use a layout spring; new cards grow in where they land, only on mount.</td></tr>
+<tr><th scope="row">Strip after a merge</th><td><code translate="no">placeDockedTabs</code> moves docked tabs before the window they join, so the split keeps that window's slot</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Landing a merge</summary>
+<p>One zoom, begun at the release. The commit waits on the desktop shell's transfer cancel (about 50ms) and a render of the split (about 40ms), so waiting would show a gone window and an unchanged card for some 90ms.</p>
+<ol>
+<li>The release holds the overview, notes the drop and tabs, and sets <code translate="no">landing</code>. The target card grows from its grid place over the center area in 340ms, one uniform-scale transform that plays through the wait. Its window activates underneath, so panes are loaded by the time they make room.</li>
+<li><code translate="no">commitCanvasDrop</code> hands the merge to <code translate="no">landOverview</code>, which holds it and marks <code translate="no">landed</code>.</li>
+<li>Landed and under way (about a tenth of a second in), the overview reads each pane's rect in the zooming card, converts to the canvas's unscaled frame, and passes rects plus zoom start, curve and progress to <code translate="no">captureCanvasLanding</code>.</li>
+<li>It closes, applying the merge in the same tick. A fallback timer applies it too, unanimated.</li>
+<li>The shell plays the capture: panes animate real geometry into the split; the docked tab enters from the drop side at final size, translated out and clipped at the canvas edge (<code translate="no">clip-path</code>), same 300ms, so the seam moves as one and content never re-wraps.</li>
+<li>Measured unscaled first, the canvas root takes over the zoom with the same keyframes and the card animation's own <code translate="no">startTime</code>, one clock, on live content rather than blurry JPEGs.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Detail</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">startTime</code></th><td>Set explicitly at creation: a compositor animation otherwise stays pending to the main thread</td></tr>
+<tr><th scope="row"><code translate="no">data-canvas-landing</code></th><td>Keeps the centre column open page meanwhile</td></tr>
+<tr><th scope="row">Other cards</th><td>Fade in 80ms; the hint fades but keeps its room, so the grid does not re-centre</td></tr>
+<tr><th scope="row">Failed merge</th><td>The shell keeps the tab: the overview closes at once</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="layout-animation">Layout animation</h2>
+<p>Changes from window buttons, tiling menu, Fill and Return to previous layout animate as macOS moves windows (<code translate="no">lib/tabs/canvas/canvas-transition.ts</code>). Reduce Motion skips it; divider drags do not animate.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Pane</th><th scope="col">Animation</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stays</th><td>Real geometry (<code translate="no">left</code>, <code translate="no">top</code>, <code translate="no">width</code>, <code translate="no">height</code>) through Web Animations, 300ms, so text re-wraps; inline <code translate="no">calc()</code> untouched</td></tr>
+<tr><th scope="row">Arrives</th><td>Fades in</td></tr>
+<tr><th scope="row">Red</th><td>Copy fades and sinks, 180ms, over the panes taking its space. A close held by a save prompt plays when the tab is really gone.</td></tr>
+<tr><th scope="row">Yellow</th><td>Genie into its tab, 600ms</td></tr>
+<tr><th scope="row">Yellow, no tab above</th><td>Copy shrinks toward the tab, 340ms</td></tr>
+<tr><th scope="row">Green, Fill</th><td>A hidden pane fades under the one growing over it</td></tr>
+</tbody>
+</table>
+<details>
+<summary>How it plays</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Record</th><td>Just before a change the canvas records each pane's rect by tab id and keeps a still copy. The shell plays it in the layout effect of the committing render, before paint. A record no commit follows lapses after 1.5s.</td></tr>
+<tr><th scope="row">Matching</th><td>By tab id, so a session moving from peer pane to lone chat shell still animates. The hidden shell switches to the remaining session in the layout's tick, not renders later.</td></tr>
+<tr><th scope="row">Transcripts</th><td>Fade in only when rows arrive after a switch; a message row's appear animation runs only within a second of arrival, so remounts show as they are</td></tr>
+<tr><th scope="row">During the move</th><td>Counts as dragging: web panes show snapshots, chats re-wrap rows in view only; frames and dividers fade out and back</td></tr>
+<tr><th scope="row">Genie</th><td>The shell takes a full-resolution still (<code translate="no">captureRegion</code> with <code translate="no">full</code>; waits at most 160ms). Each frame draws it on one canvas in 2px rows, stretched between the funnel's edges, neck at the tab's bottom edge. The edge nearest the tab pinches first, then the pane pours through and clips at the neck. The tab button lights once; panes taking the space start 90ms later.</td></tr>
+<tr><th scope="row">Genie, plain browser</th><td>Copies cut into 6 to 20 bands (fewer when heavy), each mapped to a quad with <code translate="no">matrix3d</code></td></tr>
+<tr><th scope="row">Leaving a split</th><td>The new tab button slides out of the tab it left while later tabs slide over (260ms, transform and opacity only); the fold, aimed at the button's end position, starts 80ms later</td></tr>
+<tr><th scope="row">Fold clock</th><td>At most 34ms a frame: a busy main thread pauses it instead of skipping</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="drag-lifecycle">Drag lifecycle</h2>
+<p>The canvas will host many small app windows, so every drag ends cleanly and leaves other panes alone.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Handling</th></tr></thead>
+<tbody>
+<tr><th scope="row">Any end</th><td>Release, Escape, pointercancel, window blur or a drop-lookup error run one cleanup once: label and cue go, grip returns, capture released, <code translate="no">data-canvas-dragging</code> cleared. A failed lookup is no drop.</td></tr>
+<tr><th scope="row">Missed release</th><td>Over the window-drag strip, a native view or another app the page gets no pointerup. Each drag registers with <code translate="no">setCanvasDragging(true, owner)</code>; the first pointermove with no button down is the release; a new press cancels the old drag. No <code translate="no">-webkit-app-region: drag</code> while dragging.</td></tr>
+<tr><th scope="row">Grip state</th><td><code translate="no">data-pane-dragging</code> hides it through CSS, never inline; a new drag clears any stale one</td></tr>
+<tr><th scope="row">Native web view</th><td>Captured first, hidden on arrival or after 160ms, so no paused card flashes</td></tr>
+<tr><th scope="row">Drop cue</th><td>No backdrop blur; 120ms ease-out with no overshoot</td></tr>
+</tbody>
+</table>
+
+<h2 id="rendering">Rendering and native views</h2>
+<ul>
+<li>Recursive geometry feeds stable content hosts: tree edits and zoom do not reparent file editors, terminals or sessions.</li>
+<li>A pane under 150×110px shows its title and type with a zoom action.</li>
+<li>Each web pane reports its own bounds (<code translate="no">registerVisibleWebTabBounds</code>). While dragging, undersized, or beyond eight visible native views, a pane shows its captured image. Selecting a paused view gives it priority. Hidden views stay alive; no process ends.</li>
+</ul>
+
+<h2 id="persistence">Persistence</h2>
+<p>The window's tab payload stores each group's tree, focus and zoom, with tab references only. Missing references become empty panes. Cross-window payload validation bounds tree depth, node count and serialized size independently of the layout editor. Resources attachment uses its existing backend ownership operation.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented: everything above.</p>

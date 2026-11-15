@@ -19,7 +19,6 @@ const makeCtx = (overrides: Partial<SlashContext> = {}): SlashContext => ({
   exit: vi.fn(),
   openPicker: vi.fn(),
   openClaudeAccounts: vi.fn(),
-  toggleTools: vi.fn(),
   toggleBell: vi.fn(() => true),
   showWelcome: vi.fn(),
   showAgentInfo: vi.fn(),
@@ -193,12 +192,6 @@ describe('handleSlash', () => {
     const ctx = makeCtx();
     handleSlash('/resume', ctx);
     expect(ctx.openPicker).toHaveBeenCalledWith('resume');
-  });
-
-  it('/tools toggles', () => {
-    const ctx = makeCtx();
-    handleSlash('/tools', ctx);
-    expect(ctx.toggleTools).toHaveBeenCalled();
   });
 
   it('/effort sets thinking effort', () => {

@@ -9,6 +9,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
 TOP_LEVEL_DIRECTORIES = {
+    ".claude",
     ".github",
     "apps",
     "docs",
@@ -25,11 +26,19 @@ TOP_LEVEL_FILES = {
     ".gitignore",
     "AGENTS.md",
     "CITATION.cff",
-    "CLAUDE.md",
     "LICENSE",
     "package-lock.json",
     "package.json",
     "README.md",
+    "README.de.md",
+    "README.es.md",
+    "README.fr.md",
+    "README.ja.md",
+    "README.ko.md",
+    "README.pt-BR.md",
+    "README.ru.md",
+    "README.zh-Hant.md",
+    "README.zh.md",
     "pyproject.toml",
     "setup.py",
     "uv.lock",
@@ -42,37 +51,37 @@ MAINTENANCE_TOOL_PATHS = (
 )
 CURRENT_STRUCTURE_GUIDES = (
     "README.md",
-    "docs/README.md",
-    "docs/README.zh.md",
-    "docs/capabilities/installing-harnesses.md",
-    "docs/capabilities/installing-harnesses.zh.md",
-    "docs/server/troubleshooting.md",
-    "docs/server/troubleshooting.zh.md",
+    "docs/README.html",
+    "docs/README.zh.html",
+    "docs/capabilities/installing-programs.html",
+    "docs/capabilities/installing-programs.zh.html",
+    "docs/server/troubleshooting.html",
+    "docs/server/troubleshooting.zh.html",
 )
 
 WORKSPACE_READMES = (
     "openprogram/README.md",
-    "apps/server/README.md",
+    "openprogram/interfaces/server/README.md",
     "apps/web/README.md",
     "apps/desktop/README.md",
     "apps/cli/README.md",
 )
 
 PYTHON_CLI_PATHS = (
-    "apps/cli/python/openprogram_cli/__init__.py",
-    "apps/cli/python/openprogram_cli/__main__.py",
-    "apps/cli/python/openprogram_cli/_impl/application.py",
-    "apps/cli/python/openprogram_cli/_impl/parser.py",
-    "apps/cli/python/openprogram_cli/_impl/chat.py",
-    "apps/cli/python/openprogram_cli/_impl/ink.py",
-    "apps/cli/python/openprogram_cli/_impl/commands/__init__.py",
-    "apps/cli/python/openprogram_cli/_impl/repl/__init__.py",
-    "apps/cli/python/openprogram_cli/_impl/setup_sections/__init__.py",
-    "openprogram/cli/__init__.py",
-    "openprogram/cli/__main__.py",
+    "openprogram/interfaces/cli/__init__.py",
+    "openprogram/interfaces/cli/__main__.py",
+    "openprogram/interfaces/cli/application.py",
+    "openprogram/interfaces/cli/parser.py",
+    "openprogram/interfaces/cli/chat.py",
+    "openprogram/interfaces/cli/ink.py",
+    "openprogram/interfaces/cli/commands/__init__.py",
+    "openprogram/interfaces/cli/repl/__init__.py",
+    "openprogram/interfaces/cli/setup_sections/__init__.py",
 )
 
 REMOVED_PYTHON_CLI_PATHS = (
+    "openprogram/cli",
+    "openprogram/webui",
     "openprogram/cli.py",
     "openprogram/_cli_parser.py",
     "openprogram/cli_chat.py",
@@ -121,8 +130,8 @@ def test_repository_maintenance_tools_live_under_scripts() -> None:
 def test_context_git_lives_inside_the_context_domain() -> None:
     tracked = set(_tracked_paths())
 
-    assert "openprogram/context/git/__init__.py" in tracked
-    assert "openprogram/context/git/dag.py" in tracked
+    assert "openprogram/runtime/context/git/__init__.py" in tracked
+    assert "openprogram/runtime/context/git/dag.py" in tracked
     assert not any(path.startswith("openprogram/contextgit/") for path in tracked)
 
 
@@ -144,8 +153,7 @@ def _finder_numbered_duplicates(root: Path) -> list[str]:
     numbered_copy = re.compile(r".* [2-9][0-9]*(?:\..*)?$")
     source_roots = ("openprogram", "apps", "scripts", "tests", "docs/reference")
     generated_roots = (
-        "openprogram/programs/applications/gui_harness/",
-        "apps/server/openprogram_server/_webui/_frontend/",
+        "openprogram/interfaces/server/_frontend/",
     )
 
     def belongs_to_nested_git(path: Path) -> bool:
@@ -227,7 +235,7 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
     assert missing == []
 
     python_readme = (ROOT / "openprogram/README.md").read_text(encoding="utf-8")
-    server_readme = (ROOT / "apps/server/README.md").read_text(encoding="utf-8")
+    server_readme = (ROOT / "openprogram/interfaces/server/README.md").read_text(encoding="utf-8")
     web_readme = (ROOT / "apps/web/README.md").read_text(encoding="utf-8")
     desktop_readme = (ROOT / "apps/desktop/README.md").read_text(encoding="utf-8")
     cli_readme = (ROOT / "apps/cli/README.md").read_text(encoding="utf-8")
@@ -235,7 +243,7 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
     assert "programs/" in python_readme
     assert "skills_bundled/" not in python_readme
     assert "FastAPI" in server_readme
-    assert "openprogram_server" in server_readme
+    assert "openprogram.interfaces.server" in server_readme
     assert "OpenProgram Web workspace" in web_readme
     assert "create-next-app" not in web_readme
     assert "Electron" in desktop_readme
@@ -251,7 +259,8 @@ def test_python_cli_implementation_is_owned_by_the_cli_app() -> None:
         if path.startswith("openprogram/") and path.count("/") >= 2
     }
 
-    assert "cli" in first_level_packages
+    assert "cli" not in first_level_packages
+    assert "webui" not in first_level_packages
     assert all(relative in tracked for relative in PYTHON_CLI_PATHS)
     assert all(
         relative not in tracked
@@ -270,7 +279,7 @@ def test_generated_cli_reference_names_the_current_parser_source(tmp_path) -> No
     assert pages
     for page in pages:
         text = page.read_text(encoding="utf-8")
-        assert "from apps/cli/python/openprogram_cli/_impl/parser.py" in text
+        assert "from openprogram/interfaces/cli/parser.py" in text
         assert "from openprogram/cli.py" not in text
 
 
@@ -290,7 +299,10 @@ def test_generated_package_readmes_are_current() -> None:
     marker = "Auto-generated from `__init__.py`"
     stale = []
 
-    for readme in sorted((ROOT / "openprogram").glob("*/README.md")):
+    for package in generator["_package_dirs"](ROOT / "openprogram"):
+        readme = package / "README.md"
+        if not readme.is_file():
+            continue
         current = readme.read_text(encoding="utf-8")
         if marker in current and current != render(readme.parent):
             stale.append(readme.relative_to(ROOT).as_posix())
@@ -301,19 +313,17 @@ def test_generated_package_readmes_are_current() -> None:
 def test_user_docs_do_not_advertise_removed_bundled_skills() -> None:
     user_docs = [
         ROOT / "README.md",
-        ROOT / "docs/README.md",
-        ROOT / "docs/README.zh.md",
+        ROOT / "docs/README.html",
+        ROOT / "docs/README.zh.html",
         *sorted((ROOT / "docs/capabilities").glob("*.md")),
         *sorted((ROOT / "docs/start").glob("*.md")),
-        ROOT / "docs/reference/design/runtime/session/distill.md",
-        ROOT / "docs/reference/design/runtime/session/distill.zh.md",
         ROOT / "openprogram/__init__.py",
-        ROOT / "openprogram/skills/loader.py",
-        *sorted((ROOT / "openprogram/agentic_programming/runtime").glob("*.py")),
-        ROOT / "apps/cli/python/openprogram_cli/_impl/parser.py",
-        ROOT / "apps/cli/python/openprogram_cli/_impl/commands/skills.py",
-        ROOT / "apps/server/openprogram_server/_webui/routes/catalog/functions.py",
-        ROOT / "apps/server/openprogram_server/_webui/routes/catalog/skills.py",
+        ROOT / "openprogram/extensions/skills/loader.py",
+        *sorted((ROOT / "openprogram/runtime/agent/runtime").glob("*.py")),
+        ROOT / "openprogram/interfaces/cli/parser.py",
+        ROOT / "openprogram/interfaces/cli/commands/skills.py",
+        ROOT / "openprogram/interfaces/server/routes/catalog/functions.py",
+        ROOT / "openprogram/interfaces/server/routes/catalog/skills.py",
     ]
     stale_markers = (
         "skills_bundled/",

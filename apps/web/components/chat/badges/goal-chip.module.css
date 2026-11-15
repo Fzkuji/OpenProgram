@@ -1,0 +1,98 @@
+.trigger {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.dialog {
+  max-height: min(760px, 88vh);
+  overflow-y: auto;
+  width: min(620px, calc(100vw - 24px));
+  max-width: none;
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.field textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.metrics div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 9px 10px;
+  background: color-mix(in srgb, var(--muted) 34%, transparent);
+}
+
+.metrics span,
+.metrics strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics span { color: var(--text-muted); font-size: var(--fs-2xs); }
+.metrics strong {
+  margin-top: 3px;
+  font-size: var(--fs-xs);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.draftNotice { margin: 0; font-size: var(--fs-xs); color: var(--text-muted); }
+
+.reason {
+  margin: 0;
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-xs);
+  padding: 9px 11px;
+  background: color-mix(in srgb, var(--muted) 38%, transparent);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.checklist {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+}
+
+.checklist li { color: var(--foreground); }
+.checklist li[data-done="true"] { color: var(--text-muted); text-decoration: line-through; }
+.error { margin: 0; color: var(--destructive); font-size: var(--fs-xs); }
+.actions { gap: 8px; flex-wrap: wrap; }
+.operations { display: grid; gap: 8px; font-size: var(--fs-xs); }
+.operations p { margin: 0; }
+.operations > div { display: grid; gap: 4px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.operations code { overflow-wrap: anywhere; }
+.operations button { justify-self: start; }
+.inspector { min-width: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .actions { align-items: stretch; }
+  .actions > button { width: 100%; }
+}

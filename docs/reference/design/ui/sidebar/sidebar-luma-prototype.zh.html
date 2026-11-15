@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Sidebar Luma draft</title>
+<meta name="description" content="Luma 侧栏的交互原型。">
+<style>
+  /* ===== 真实 token：apps/web/app/styles/themes/beige-light.css / beige-dark.css ===== */
+  :root, [data-theme="light"] {
+    --bg-primary:#faf9f5; --bg-secondary:#f0eee5; --bg-tertiary:#e8e6dc;
+    --bg-hover:rgba(20,20,19,.05); --bg-selected:rgba(20,20,19,.08); --bg-input:#ffffff;
+    --border:rgba(20,20,19,.08); --border-light:#dedcd1;
+    --text-primary:#3d3d3a; --text-secondary:#5e5d59; --text-bright:#141413; --text-muted:#91908c;
+    --nav:#5e5d59; --nav-hover:#141413;
+    --accent:#c15f3c; --green:#3f7a4e;
+    --raised:0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1);
+    --raised-hover:0 4px 6px -1px rgb(0 0 0/.16),0 2px 4px -2px rgb(0 0 0/.16);
+    --sidebar-ring:rgba(20,20,19,.08);
+    color-scheme:light;
+  }
+  [data-theme="dark"] {
+    --bg-primary:#191918; --bg-secondary:#141413; --bg-tertiary:#252523;
+    --bg-hover:rgba(255,255,255,.06); --bg-selected:rgba(255,255,255,.10); --bg-input:#262624;
+    --border:rgba(255,255,255,.06); --border-light:rgba(255,255,255,.10);
+    --text-primary:#b8b5ad; --text-secondary:#94928b; --text-bright:#f0efea; --text-muted:#757370;
+    --nav:#b8b5ad; --nav-hover:#f0efea;
+    --accent:#d97757; --green:#6e9b76;
+    --raised:0 1px 3px 0 rgb(0 0 0/.25),0 1px 2px -1px rgb(0 0 0/.25);
+    --raised-hover:0 4px 6px -1px rgb(0 0 0/.35),0 2px 4px -2px rgb(0 0 0/.35);
+    --sidebar-ring:rgba(255,255,255,.10);
+    color-scheme:dark;
+  }
+  /* Tailwind 在 14px 根字号下的实际尺寸 */
+  :root{ --r-xl:10.5px; --r-2xl:14px; --r-4xl:28px; --h9:31.5px; --h8:28px; --h7:24.5px; --px3:10.5px; --gap2:7px; }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:14px}
+  body{background:var(--bg-primary);color:var(--text-primary);font-family:"Inter Variable",Inter,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;padding:20px 16px 40px}
+  .top{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px}
+  h1{font-size:16px;font-weight:650;color:var(--text-bright);margin-right:auto}
+  .seg{display:flex;background:var(--bg-tertiary);border-radius:999px;padding:3px;gap:2px}
+  .seg button{border:0;background:transparent;color:var(--text-secondary);font:inherit;font-size:12.5px;padding:5px 12px;border-radius:999px;cursor:pointer}
+  .seg button.on{background:var(--bg-input);color:var(--text-bright);box-shadow:var(--raised)}
+  .note{font-size:12.5px;line-height:1.7;color:var(--text-secondary);max-width:1180px;margin:0 auto 14px}
+  .note b{color:var(--text-bright);font-weight:600}
+  .note code{font-family:"JetBrains Mono",Menlo,monospace;font-size:11.5px;background:var(--bg-tertiary);padding:1px 5px;border-radius:5px}
+
+  /* ===== mock 框架 ===== */
+  .stage{max-width:1180px;margin:0 auto}
+  .mock{display:none;width:1180px;height:620px;background:var(--bg-primary);border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px var(--border);position:relative;transform-origin:top left}
+  .mock.show{display:flex}
+  .cap{font-size:12.5px;color:var(--text-secondary);margin:0 0 8px;line-height:1.6}
+  .cap b{color:var(--text-bright)}
+
+  /* 共用：列 */
+  .rail{display:flex;flex-direction:column;width:248px;flex:none;min-height:0}
+  .rail.right{width:262px}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+
+  /* 官方 shadcn Sidebar 三种 variant 的壳子 */
+  .v-sidebar .rail{background:var(--bg-secondary)}
+  .v-sidebar .rail.left{border-right:1px solid var(--border)}
+  .v-sidebar .rail.right{border-left:1px solid var(--border)}
+
+  .v-floating{padding:7px;gap:7px}
+  .v-floating .rail{background:var(--bg-input);border-radius:var(--r-2xl);box-shadow:var(--raised)}
+  .v-floating .rail.ringed{box-shadow:var(--raised),0 0 0 1px var(--sidebar-ring)}
+
+  .v-inset{background:var(--bg-secondary);padding:7px 0;gap:0}
+  .v-inset .rail{background:var(--bg-secondary)}
+  .v-inset .main{margin:0 7px;background:var(--bg-primary);border-radius:var(--r-2xl);box-shadow:var(--raised)}
+  .v-inset .main .composer{box-shadow:var(--raised)}
+
+  /* D = B + C：页面底沉到 --bg-secondary，三栏各自浮起 */
+  .v-both{background:var(--bg-secondary);padding:7px;gap:7px}
+  .v-both .rail{background:var(--bg-input);border-radius:var(--r-2xl);box-shadow:var(--raised)}
+  .v-both.cream .rail{background:var(--bg-primary)}
+  .v-both .main{background:var(--bg-primary);border-radius:var(--r-2xl);box-shadow:var(--raised)}
+  .v-both .rail.ringed,.v-both .main.ringed{box-shadow:var(--raised),0 0 0 1px var(--sidebar-ring)}
+
+  /* ===== 官方 SidebarHeader / Menu / Group / Footer 的度量 ===== */
+  .hdr{display:flex;align-items:center;height:48px;padding:7px;flex:none}
+  .hdr .brand{font-size:20px;font-weight:700;letter-spacing:-.01em;padding-left:var(--px3);flex:1;color:var(--text-bright)}
+  .hdr .brand i{font-style:normal;background:linear-gradient(90deg,#3B9EFF,#A855F7);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .icon-btn{width:var(--h8);height:var(--h8);display:flex;align-items:center;justify-content:center;border-radius:var(--r-4xl);color:var(--nav)}
+  .icon-btn:hover{background:var(--bg-hover);color:var(--nav-hover)}
+  svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+
+  .content{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:var(--gap2)}
+  .group{padding:7px;display:flex;flex-direction:column}
+  .group + .group{padding-top:0}
+  .glabel{display:flex;align-items:center;height:var(--h8);padding:0 var(--px3);font-size:12px;font-weight:500;color:var(--text-secondary);opacity:.9}
+  .glabel .act{margin-left:auto;opacity:0;color:var(--text-muted)}
+  .group:hover .glabel .act{opacity:1}
+  .menu{display:flex;flex-direction:column;gap:1.75px}
+  .mb{display:flex;align-items:center;gap:var(--gap2);height:var(--h9);padding:0 var(--px3);border-radius:var(--r-xl);font-size:14px;color:var(--nav);cursor:pointer;position:relative;white-space:nowrap}
+  .mb:hover{background:var(--bg-hover);color:var(--nav-hover)}
+  .mb.active{background:var(--bg-selected);color:var(--nav-hover);font-weight:500}
+  .mb span.lb{flex:1;overflow:hidden;text-overflow:ellipsis}
+  .mb .badge{font-size:11.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+  .mb .chev{opacity:.6}
+  .sub{margin:0 0 0 12.25px;padding:1.75px 0 1.75px 8.75px;border-left:1px solid var(--border);display:flex;flex-direction:column;gap:1.75px}
+  .sb{display:flex;align-items:center;gap:var(--gap2);height:var(--h8);padding:0 var(--px3);border-radius:var(--r-xl);font-size:13px;color:var(--nav);cursor:pointer;white-space:nowrap}
+  .sb:hover{background:var(--bg-hover);color:var(--nav-hover)}
+  .sb.active{background:var(--bg-selected);color:var(--nav-hover);font-weight:500}
+  .sb span{flex:1;overflow:hidden;text-overflow:ellipsis}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 2px color-mix(in srgb,var(--green) 25%,transparent);flex:none}
+  .dot.idle{background:transparent;box-shadow:inset 0 0 0 1.5px var(--text-muted)}
+  .sep{height:1px;background:var(--border);margin:0 7px}
+  .foot{display:flex;align-items:center;gap:var(--gap2);padding:7px;flex:none}
+  .foot .mb{height:49px;border-radius:var(--r-xl);width:100%}
+  .avatar{width:28px;height:28px;border-radius:50%;background:conic-gradient(from 200deg,#3B9EFF,#A855F7,#3B9EFF);flex:none}
+  .foot .who{display:flex;flex-direction:column;line-height:1.25;flex:1}
+  .foot .who b{font-size:13px;font-weight:500;color:var(--text-bright)}
+  .foot .who small{font-size:11.5px;color:var(--text-muted)}
+
+  /* 右栏文件列表 */
+  .files{padding:0 7px;font-size:13px}
+  .files .fh{display:flex;align-items:center;justify-content:space-between;height:var(--h8);padding:0 var(--px3);color:var(--text-bright);font-weight:500}
+  .files .fr{display:flex;align-items:center;gap:var(--gap2);height:var(--h8);padding:0 var(--px3);border-radius:var(--r-xl);color:var(--text-primary);cursor:pointer}
+  .files .fr:hover{background:var(--bg-hover)}
+  .files .fr span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .files .fr small{color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums}
+  .files .fr svg{color:var(--text-muted)}
+
+  /* 中栏（现状照抄，用来看和谐度） */
+  .topbar{height:40px;display:flex;align-items:center;justify-content:flex-end;padding:0 16px;color:var(--text-muted)}
+  .chat{flex:1;padding:8px 48px 0;display:flex;flex-direction:column;gap:18px;overflow:hidden}
+  .bubble{align-self:flex-end;background:var(--bg-input);box-shadow:var(--raised);border-radius:18px;padding:10px 16px;font-size:14px;color:var(--text-bright)}
+  .line{height:10px;border-radius:5px;background:var(--bg-tertiary)}
+  .line.w60{width:60%}.line.w40{width:40%}.line.w85{width:85%}
+  .card{background:var(--bg-tertiary);border-radius:12px;padding:14px;font-size:13px;line-height:1.7;color:var(--text-primary)}
+  .composerWrap{padding:12px 24px 13px;display:flex;flex-direction:column;gap:8px}
+  .pills{display:flex;gap:7px;padding:3px 0}
+  .pill{display:inline-flex;align-items:center;gap:5px;height:var(--h8);padding:0 var(--px3);border-radius:var(--r-4xl);background:var(--bg-input);box-shadow:var(--raised);font-size:12.25px;font-weight:500;color:var(--text-bright)}
+  .pill.ic{width:var(--h8);padding:0;justify-content:center}
+  .composer{height:46px;border-radius:23px;background:var(--bg-input);box-shadow:var(--raised);display:flex;align-items:center;padding:0 18px;color:var(--text-muted);font-size:14px}
+  .composer span{flex:1}
+  .controls{display:flex;gap:7px;justify-content:space-between}
+  .controls > div{display:flex;gap:7px}
+
+  .legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:12px;color:var(--text-secondary);margin:10px auto 0;max-width:1180px}
+  .legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:var(--bg-input);box-shadow:var(--raised)}
+  .legend span.sec::before{background:var(--bg-secondary);box-shadow:0 0 0 1px var(--border)}
+  .legend span.pri::before{background:var(--bg-primary);box-shadow:0 0 0 1px var(--border)}
+
+  table.spec{border-collapse:collapse;font-size:12.5px;margin:18px auto 0;max-width:1180px;width:100%}
+  table.spec th,table.spec td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55}
+  table.spec th{color:var(--text-bright);font-weight:600}
+  table.spec td:first-child{color:var(--text-bright);white-space:nowrap}
+  table.spec code{font-family:"JetBrains Mono",Menlo,monospace;font-size:11.5px;background:var(--bg-tertiary);padding:1px 5px;border-radius:5px}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>侧边栏 · shadcn radix-luma Sidebar 草稿</h1>
+  <div class="seg" id="variant">
+    <button data-v="both" class="on">D · B+C 三栏浮起</button>
+    <button data-v="floating">B · floating</button>
+    <button data-v="sidebar">A · sidebar（官方默认）</button>
+    <button data-v="inset">C · inset</button>
+  </div>
+  <div class="seg" id="theme">
+    <button data-t="light" class="on">beige-light</button>
+    <button data-t="dark">beige-dark</button>
+  </div>
+  <div class="seg" id="mat">
+    <button data-m="white" class="on">侧栏白色</button>
+    <button data-m="cream">侧栏米色</button>
+  </div>
+  <div class="seg" id="ring">
+    <button data-r="0" class="on">无描边</button>
+    <button data-r="1">官方 ring</button>
+  </div>
+</div>
+
+<p class="note">三版都是官方 <code>Sidebar</code> 组件自带的 <code>variant</code>，行、分组标题、二级列表、页脚全部按官方度量在 14px 根字号下换算
+  （行高 31.5 / 二级 28 / 圆角 10.5 / 图标 16）。</p>
+<p class="note"><b>B</b> 把左右栏做成和输入框同一种"无边框白色浮起卡片"（<code>--bg-input</code> + <code>shadow-raised</code>，7px 留白，14px 圆角）；
+  <b>A</b> 保持现在的"深一层米色 + 发丝线"，只换行的度量；
+  <b>C</b> 反过来让中间聊天区浮起、侧边栏沉底。切换主题和描边看效果。
+  目前使用的组件风格是 Nova，当前侧栏几何见<a href="sidebars-resizing.zh.html">侧栏宽度与折叠状态</a>；本页比较 Luma 的几种变体。</p>
+
+<div class="stage">
+  <p class="cap" id="cap"></p>
+
+  <!-- ====== 一个 mock 模板，JS 复制三份 ====== -->
+  <template id="tpl">
+  <div class="mock">
+    <!-- 左栏 -->
+    <aside class="rail left">
+      <div class="hdr"><div class="brand">Open<i>Program</i></div><div class="icon-btn"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16M6 9l-2 3 2 3"/></svg></div></div>
+      <div class="content">
+        <div class="group">
+          <div class="menu">
+            <div class="mb"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="lb">New chat</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M8 13h.01M16 13h.01"/></svg><span class="lb">Agents</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg><span class="lb">Abilities</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><span class="lb">Applications</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lb">History</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span class="lb">Scheduler</span></div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="glabel">Favorite Programs</div>
+          <div class="menu">
+            <div class="mb"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg><span class="lb">goal</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg><span class="lb">report_workflow</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg><span class="lb">weekly_report</span></div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="glabel">Projects <svg class="act" viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg></div>
+          <div class="menu">
+            <div class="mb"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span class="lb">alex</span><svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+            <div class="sub">
+              <div class="sb active"><i class="dot"></i><span>周报撰写与 ctxpress 框架核实</span></div>
+              <div class="sb"><i class="dot idle"></i><span>Count numbered row lines</span></div>
+              <div class="sb"><i class="dot idle"></i><span>打印前五个斐波那契数的 Python 脚本</span></div>
+              <div class="sb"><i class="dot idle"></i><span>聊天动画与函数调用界面验收</span></div>
+              <div class="sb"><i class="dot idle"></i><span>界面渲染验收：中文段落、表格与代码</span></div>
+              <div class="sb"><i class="dot idle"></i><span>流式交互验收测试：输出 1 到 500</span></div>
+              <div class="sb"><i class="dot idle"></i><span>NeurIPS 2026 悉尼注册与澳洲签证</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="sep"></div>
+      <div class="foot"><div class="mb"><i class="avatar"></i><div class="who"><b>User</b><small>Local instance</small></div><svg viewBox="0 0 24 24"><path d="M8 9l4-4 4 4M8 15l4 4 4-4"/></svg></div></div>
+    </aside>
+
+    <!-- 中栏 -->
+    <div class="main">
+      <div class="topbar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></div>
+      <div class="chat">
+        <div class="bubble">你字数写太多了。</div>
+        <div class="line w60"></div>
+        <div class="line w40"></div>
+        <div class="card">1. 本周进展<br>&nbsp;&nbsp;&nbsp;- 开发 ctxpress 上下文管理框架<br>&nbsp;&nbsp;&nbsp;- 对齐基准评测与评分脚本<br>2. 开会讨论要点<br>&nbsp;&nbsp;&nbsp;- 上下文压缩的质量与成本</div>
+        <div class="line w85"></div>
+      </div>
+      <div class="composerWrap">
+        <div class="pills"><span class="pill">▭ Local</span><span class="pill">▣ alex</span><span class="pill ic">⌂</span></div>
+        <div class="composer"><span>create / run / edit or ask anything... (type / for commands)</span><svg viewBox="0 0 24 24"><path d="M5 12l14-7-4 14-3-5z"/></svg></div>
+        <div class="controls">
+          <div><span class="pill">Bypass permissions</span><span class="pill ic">◐</span><span class="pill ic">◈</span><span class="pill ic">◉</span></div>
+          <div><span class="pill">GPT-6-Astra</span><span class="pill">Medium</span><span class="pill ic">◌</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右栏 -->
+    <aside class="rail right">
+      <div class="hdr"><div class="icon-btn"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16M18 9l2 3-2 3"/></svg></div></div>
+      <div class="content">
+        <div class="group">
+          <div class="menu">
+            <div class="mb active"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span class="lb">Files</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><span class="lb">Activity</span></div>
+            <div class="mb"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg><span class="lb">Resources</span></div>
+          </div>
+        </div>
+        <div class="files">
+          <div class="fh">alex <svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.agents</span><small>14.4 MiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.bash_sessions</span><small>712 B</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.bun</span><small>58.3 MiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.cache</span><small>249.7 MiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.cargo</span><small>407.0 MiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.claude</span><small>66.2 KiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.codegraph</span><small>9.3 KiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.codex</span><small>1.2 GiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.colima</span><small>120.0 GiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.config</span><small>16.4 MiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.cursor</span><small>151.8 MiB</small></div>
+          <div class="fr"><svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v10H3z"/></svg><span>.docker</span><small>7.0 KiB</small></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  </template>
+  <div id="mocks"></div>
+
+  <div class="legend">
+    <span>--bg-input 浮起面（输入框 / 气泡 / pills / B 的侧边栏）</span>
+    <span class="pri">--bg-primary 页面底</span>
+    <span class="sec">--bg-secondary 深一层（A、C 的侧边栏）</span>
+  </div>
+</div>
+
+<table class="spec">
+  <tr><th>元素</th><th>官方 Luma 度量（14px 根字号换算）</th><th>现状</th><th>替换对象</th></tr>
+  <tr><td>主导航行</td><td><code>SidebarMenuButton</code> h-9 = 31.5px，px-3 = 10.5，gap-2 = 7，rounded-xl = 10.5，图标 16；active = <code>bg-sidebar-accent</code> + font-medium</td><td>30px，6px 8px，gap 12，10px，图标 20，active 只换底色</td><td><code>nav-classes.ts</code> 的 5 组常量 + 全局 <code>.ui-list-item</code></td></tr>
+  <tr><td>分组标题</td><td><code>SidebarGroupLabel</code> h-8 = 28，text-xs 12px，font-medium，前景 70%</td><td>14px / 400 / secondary 80%，pt 15 pb 6</td><td><code>section-header.tsx</code></td></tr>
+  <tr><td>项目下的会话</td><td><code>SidebarMenuSub</code> + <code>SubButton</code>：左侧 1px 引导线，h-7 = 24.5（草稿按 28 画以容纳状态点），13px</td><td><code>.projectKids</code> 自画引导线，30px，13px</td><td><code>sidebar.module.css</code> + <code>sessions-list.tsx</code></td></tr>
+  <tr><td>页脚用户</td><td><code>SidebarFooter</code> + <code>SidebarMenuButton size="lg"</code> h-14 = 49</td><td>64px 自定义 trigger，上边线</td><td><code>user-menu-footer.*</code></td></tr>
+  <tr><td>壳子</td><td><code>variant="floating"</code>：p-2 = 7 留白，rounded-2xl = 14，shadow-sm；官方还带 ring-1，按输入框的既定做法去掉</td><td>bg-secondary + 1px 发丝线</td><td><code>sidebar.tsx</code> / <code>right-sidebar.tsx</code> 根节点 + <code>base.css</code> 的 .sidebar 规则</td></tr>
+  <tr><td>收起态</td><td><code>collapsible="icon"</code>：3rem = 42px 窄轨，行变 size-8 方块，label 隐藏，tooltip 自动在收起时出现</td><td>49px 窄轨，<code>.sidebar.collapsed</code> 级联</td><td>保留现有宽度 token，只把级联换成 <code>data-state</code></td></tr>
+  <tr><td>拖宽</td><td>官方 <code>SidebarRail</code> 只负责点击开合，不拖宽</td><td><code>use-resizable-rail.ts</code> 16px 隐形把手</td><td>保留，挂在官方壳子上</td></tr>
+</table>
+
+<script>
+  const tpl = document.getElementById('tpl');
+  const host = document.getElementById('mocks');
+  const caps = {
+    floating: '<b>B · floating</b>：左右栏是和输入框同材质的浮起卡片（--bg-input + shadow-raised），页面底 --bg-primary 一通到底；行用 --bg-hover / --bg-selected 的灰调，不再有发丝线。',
+    sidebar: '<b>A · sidebar</b>：壳子不变（--bg-secondary + 发丝线），只把行、分组标题、二级列表、页脚换成官方度量。改动最小，但和输入框的"浮起"语言不是一套。',
+    both: '<b>D · B+C（已采用，侧栏白色）</b>：页面底沉到 --bg-secondary，左右栏和中间聊天区各是一张浮起卡片（14px 圆角、7px 缝）。侧栏可选白色（和输入框同材质）或米色（和聊天区同材质）；聊天区始终米色，让白色输入框和气泡保持对比。',
+    inset: '<b>C · inset</b>：侧边栏沉到 --bg-secondary，中间聊天区变成浮起卡片。会和白色输入框 / 用户气泡抢"浮起"这一层，对比度被吃掉。'
+  };
+  for (const v of ['both','floating','sidebar','inset']) {
+    const n = tpl.content.firstElementChild.cloneNode(true);
+    n.classList.add('v-' + v); n.dataset.v = v; host.appendChild(n);
+  }
+  const state = { v:'both', ring:'0', mat:'white' };
+  function render(){
+    document.querySelectorAll('.mock').forEach(m => {
+      m.classList.toggle('show', m.dataset.v === state.v);
+      m.classList.toggle('cream', state.mat === 'cream');
+      m.querySelectorAll('.rail,.main').forEach(r => r.classList.toggle('ringed', state.ring === '1' && (state.v === 'floating' || state.v === 'both')));
+    });
+    document.getElementById('cap').innerHTML = caps[state.v];
+    fit();
+  }
+  function fit(){
+    const w = Math.min(1, (document.body.clientWidth - 32) / 1180);
+    document.querySelectorAll('.mock').forEach(m => { m.style.transform = 'scale(' + w + ')'; });
+    host.style.height = (620 * w) + 'px';
+  }
+  document.querySelectorAll('#variant button').forEach(b => b.onclick = () => { state.v = b.dataset.v; seg(b); render(); });
+  document.querySelectorAll('#theme button').forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.t; seg(b); });
+  document.querySelectorAll('#mat button').forEach(b => b.onclick = () => { state.mat = b.dataset.m; seg(b); render(); });
+  document.querySelectorAll('#ring button').forEach(b => b.onclick = () => { state.ring = b.dataset.r; seg(b); render(); });
+  function seg(b){ b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }
+  window.addEventListener('resize', fit);
+  render();
+</script>
+</body>
+</html>

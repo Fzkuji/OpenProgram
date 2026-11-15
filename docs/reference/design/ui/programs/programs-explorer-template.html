@@ -1,0 +1,58 @@
+<title>Programs explorer</title>
+<meta name="description" content="The Programs explorer's tree, search controls and incremental loading.">
+<h1>Programs explorer</h1>
+
+<p>The left column of the Programs page: a folder tree with a search panel behind a toolbar button.</p>
+<pre translate="no" tabindex="0">tools/
+  files/  web/  knowledge/  planning/  …
+applications/
+  browser/  meeting/  office_editor/  workflow_recording/</pre>
+<p class="note">Rows and classification: <a href="programs-source-categories.html">Programs source categories</a>.</p>
+
+<h2 id="search">Search</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Toolbar search button</th><td>Opens or closes the panel; closing clears the query</td></tr>
+<tr><th scope="row">Filter (default)</th><td>Keeps matches and their ancestors; collapsed folders open while searching; no match shows an empty hint</td></tr>
+<tr><th scope="row">Highlight</th><td>Keeps every row and marks matching characters</td></tr>
+<tr><th scope="row">Fuzzy (default on)</th><td>Characters in order; off means a contiguous substring</td></tr>
+<tr><th scope="row">Match target</th><td>Row name or catalog label, case-insensitive</td></tr>
+<tr><th scope="row">Count</th><td>Current and total, as <code translate="no">2 / 5</code></td></tr>
+<tr><th scope="row">Previous, next, ArrowUp, ArrowDown</th><td>Move the current match and wrap around</td></tr>
+<tr><th scope="row">Clear</th><td>Empties the query, keeps the panel open</td></tr>
+<tr><th scope="row">Escape</th><td>Closes the panel</td></tr>
+</tbody>
+</table>
+
+<h2 id="tree">Tree</h2>
+<p>A branch row toggles with a click, Enter or Space, and its folder icon follows. Refresh rescans Programs.</p>
+
+<h2 id="incremental-loading">Incremental loading</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Client</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Kept across navigation</th><td>Loaded directories, selection, expanded folders, call graphs</td></tr>
+<tr><th scope="row">Revalidated</th><td>Visible folders and the selected graph, in the background every five seconds and on focus or manual refresh</td></tr>
+<tr><th scope="row">Unchanged response</th><td>A revision acknowledgement only</td></tr>
+<tr><th scope="row">Failure</th><td>Usable content stays; retry is offered</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Server</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Dependencies</th><td>File and directory metadata recorded while a response is built; revalidation checks them and registry and catalog identity</td></tr>
+<tr><th scope="row">Parsed modules</th><td>Invalidated by file identity, size, and nanosecond modification and change times</td></tr>
+<tr><th scope="row">New or removed entries</th><td>Invalidate the parent directory</td></tr>
+<tr><th scope="row">Limits</th><td>Existing containment checks and source limits remain authoritative</td></tr>
+<tr><th scope="row">Storage</th><td>Bounded process memory; no filesystem watcher, no persistent user-data cache</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Acceptance</summary>
+<p>Warm navigation renders immediately; unchanged sources are neither read nor parsed; edits, additions and deletions update affected views; refresh preserves selection and expansion.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented in <code translate="no">apps/web/components/programs/programs-page.tsx</code>, <code translate="no">programs-cache.ts</code> and <code translate="no">openprogram/interfaces/server/routes/catalog/programs_cache.py</code>.</p>

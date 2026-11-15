@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openprogram.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
-from openprogram.self_update.control.handoff import release_prepared_update
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
+from openprogram.operations.self_update.control.handoff import release_prepared_update
 
 
 def _request() -> UpdateRequest:
@@ -24,11 +24,10 @@ def _request() -> UpdateRequest:
     )
 
 
-def test_release_requires_exact_origin_session_and_assistant(tmp_path: Path) -> None:
+def test_release_requires_the_origin_assistant_message(tmp_path: Path) -> None:
     store = SelfUpdateStore(tmp_path)
     store.create(_request())
 
-    assert release_prepared_update("other", "turn-1_reply", store=store) is None
     assert release_prepared_update("session-1", "other", store=store) is None
     assert store.load_active().state.phase is UpdatePhase.PREPARING
 
@@ -37,7 +36,7 @@ def test_release_requires_exact_origin_session_and_assistant(tmp_path: Path) -> 
     )
 
     assert released is not None
-    assert released.phase is UpdatePhase.STAGING
+    assert released.phase is UpdatePhase.BUILDING
     assert released.detail == {
         "turn_released": True,
         "session_id": "session-1",

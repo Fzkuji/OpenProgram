@@ -1,0 +1,24 @@
+<title>函数设计</title>
+<meta name="description" content="函数与工具调用框架的设计记录。">
+<h1>函数设计</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">记录</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="program-model.zh.html">Program 模型</a></th><td>tools 与 applications、<code translate="no">ProgramContext</code>、插件、暴露层级、用户目录、CLI</td></tr>
+<tr><th scope="row"><a href="calling-unification.zh.html">函数调用</a></th><td><code translate="no">@function</code> 与 Agent method、共享注册表、gating、延迟加载</td></tr>
+<tr><th scope="row"><a href="deferred-tools.zh.html">延迟工具</a></th><td>目录、<code translate="no">tool_search</code> 排序、各 provider 的加载方式、不可用工具、工具数组纪元</td></tr>
+<tr><th scope="row"><a href="tool-guides.zh.html">工具指南</a></th><td>调用需要时送达的说明、<code translate="no">help</code>、单入口工具</td></tr>
+<tr><th scope="row"><a href="agentic-program.zh.html">Agent 类、Program 与工具</a></th><td>Agent 类及每种形态的用途</td></tr>
+<tr><th scope="row"><a href="calling/code-call.zh.html">固定顺序调用</a></th><td>方法按源码顺序调用子函数</td></tr>
+</tbody>
+</table>
+<p class="note">装饰器用法、元数据、工具调用循环和纯 Python 辅助函数只在 <a href="../../../capabilities/agentic-programming/README.zh.html">Agentic programming 指南</a>。</p>
+
+<h2>实现</h2>
+<ul>
+<li><code translate="no">openprogram/runtime/agent/call_state.py</code></li>
+<li><code translate="no">openprogram/runtime/agent/runtime/</code></li>
+<li><code translate="no">openprogram/runtime/agent/decision.py</code></li>
+<li><code translate="no">openprogram/programs/tools/&lt;group&gt;/&lt;name&gt;/</code></li>
+</ul>

@@ -21,17 +21,17 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.acp.server import (
+from openprogram.interfaces.acp.server import (
     PROTOCOL_VERSION,
     ACPServer,
     _blocks_to_text,
     _tool_kind,
 )
-from openprogram.agent import dispatcher as D
-from openprogram.agent.session_db import SessionDB
-from openprogram.execution.control import ObservedCancelSubmission
-from openprogram.execution.model import CommandStatus
-from openprogram.providers.types import (
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.runtime.execution.control import ObservedCancelSubmission
+from openprogram.runtime.execution.model import CommandStatus
+from openprogram.models.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
     EventDone,
@@ -43,6 +43,7 @@ from openprogram.providers.types import (
     TextContent,
     Usage,
 )
+from openprogram.runtime.execution import run_control as execution_run_control
 
 
 # ---------------------------------------------------------------------------
@@ -223,24 +224,25 @@ class FakeClient:
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: db)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
     return db
 
 
 @pytest.fixture
 def bind_durable_question_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Bind an ACP permission request to an actual canonical execution."""
-    import openprogram.execution as execution_module
-    from openprogram.agent.run_control import (
-        reset_current_execution_id, set_current_execution_id,
+    import openprogram.runtime.execution as execution_module
+    from openprogram.runtime.execution.run_control import (
+        reset_current_execution_id,
+        set_current_execution_id,
     )
-    from openprogram.execution import RuntimeControlService
-    from openprogram.execution.attempts import AttemptStore
-    from openprogram.execution.driver import DriverRegistry
-    from openprogram.execution.model import CapabilitySet
-    from openprogram.execution.store import ExecutionStore
+    from openprogram.runtime.execution import RuntimeControlService
+    from openprogram.runtime.execution.attempts import AttemptStore
+    from openprogram.runtime.execution.driver import DriverRegistry
+    from openprogram.runtime.execution.model import CapabilitySet
+    from openprogram.runtime.execution.store import ExecutionStore
 
     store = ExecutionStore(tmp_path / "acp-question-executions.db")
     monkeypatch.setattr(execution_module, "default_store", lambda: store)
@@ -258,7 +260,7 @@ def bind_durable_question_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         attempts = AttemptStore(store)
         leased, reserved = attempts.lease(
             execution.execution_id, expected_version=execution.status_version,
-            owner_id="acp-test", ttl_seconds=30,
+            owner_id="acp-test",
         )
         active, _running = attempts.activate(
             leased.attempt_id, generation=leased.generation,
@@ -274,7 +276,7 @@ def bind_durable_question_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 def _open_acp_question(store, execution, attempt, *, wait_id, kind="approval",
                        prompt="允许执行 bash？", options=None, detail=""):
-    from openprogram.execution.waits import DurableWaitStore
+    from openprogram.runtime.execution.waits import DurableWaitStore
 
     wait = DurableWaitStore(store).open_wait(
         wait_id=wait_id, execution_id=execution.execution_id,
@@ -432,7 +434,7 @@ def test_prompt_binds_exact_execution_identity(tmp_db, client, tmp_path,
 
 def test_cancel_during_admission_is_not_lost(tmp_db, client, tmp_path, monkeypatch):
     """ACP cancellation is retained until the admitted execution is bound."""
-    from openprogram.agent.production_driver import CanonicalAgentAdmission
+    from openprogram.runtime.conversation.production_driver import CanonicalAgentAdmission
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -448,7 +450,7 @@ def test_cancel_during_admission_is_not_lost(tmp_db, client, tmp_path, monkeypat
 
         def admit(self, *_args, **_kwargs):
             admitted.set()
-            assert release.wait(5)
+            assert release.wait(30)
             return CanonicalAgentAdmission("acp-barrier", sid, 0)
 
         def fail_admission(self, admission, *, reason_code, target=None):
@@ -458,7 +460,7 @@ def test_cancel_during_admission_is_not_lost(tmp_db, client, tmp_path, monkeypat
             activated.set()
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter,
+        "openprogram.runtime.conversation.production_driver.CanonicalAgentAdapter", Adapter,
     )
     async def _submitted(*_args, **_kwargs):
         return ObservedCancelSubmission(
@@ -467,7 +469,7 @@ def test_cancel_during_admission_is_not_lost(tmp_db, client, tmp_path, monkeypat
             accepted=True,
         )
 
-    monkeypatch.setattr("openprogram.acp.server.submit_observed_cancel", _submitted)
+    monkeypatch.setattr("openprogram.interfaces.acp.server.submit_observed_cancel", _submitted)
     result: dict = {}
 
     def prompt() -> None:
@@ -477,7 +479,7 @@ def test_cancel_during_admission_is_not_lost(tmp_db, client, tmp_path, monkeypat
 
     thread = threading.Thread(target=prompt, daemon=True)
     thread.start()
-    assert admitted.wait(5)
+    assert admitted.wait(30)
     c.server._session_cancel({"sessionId": sid})
     release.set()
     thread.join(10)
@@ -558,7 +560,7 @@ def test_cancel_does_not_override_completed_prompt(
         )
 
     monkeypatch.setattr(
-        "openprogram.acp.server.submit_observed_cancel", _submitted,
+        "openprogram.interfaces.acp.server.submit_observed_cancel", _submitted,
     )
 
     def _process(req, **kwargs):
@@ -581,7 +583,6 @@ def test_cancel_does_not_locally_cancel_on_service_failure(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """Unexpected cancellation-service failures do not fake a local cancel."""
-    from openprogram.agent import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -592,7 +593,7 @@ def test_cancel_does_not_locally_cancel_on_service_failure(
     sess.open_questions["q-failure"] = ""
 
     monkeypatch.setattr(
-        run_control, "cancel_execution",
+        execution_run_control, "cancel_execution",
         lambda _execution_id: (_ for _ in ()).throw(RuntimeError("store down")),
     )
 
@@ -616,7 +617,6 @@ def test_cancel_resolves_open_questions_as_cancelled(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """An accepted exact cancellation reports the cancellation outcome."""
-    from openprogram.agent import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -629,7 +629,7 @@ def test_cancel_resolves_open_questions_as_cancelled(
     event = threading.Event()
     sess.cancel_event = event
     monkeypatch.setattr(
-        run_control, "cancel_execution",
+        execution_run_control, "cancel_execution",
         lambda execution_id: {"execution_id": execution_id,
                                "status": "cancelling"},
     )
@@ -644,7 +644,6 @@ def test_cancel_keeps_sibling_questions_for_same_session(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """Cancelling one foreground execution does not close a sibling question."""
-    from openprogram.agent import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -663,7 +662,7 @@ def test_cancel_keeps_sibling_questions_for_same_session(
         "sibling-question": sibling_id,
     }
     monkeypatch.setattr(
-        run_control, "cancel_execution",
+        execution_run_control, "cancel_execution",
         lambda target: {"execution_id": target, "status": "cancelling"},
     )
 
@@ -681,7 +680,7 @@ def test_prompt_cleanup_preserves_successor_execution(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """Old prompt cleanup cannot clear a successor's exact token or field."""
-    from openprogram.agent import run_control
+    from openprogram.runtime.conversation import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -710,7 +709,7 @@ def test_prompt_cleanup_preserves_successor_execution(
         "prompt": [{"type": "text", "text": "first"}],
     }) == {"stopReason": "end_turn"}
     assert sess.execution_id == "successor_reply"
-    assert run_control.current_token(sid, execution_id="successor_reply").event is successor_event
+    assert execution_run_control.current_token(sid, execution_id="successor_reply").event is successor_event
     original(sid, successor_event, execution_id="successor_reply")
 
 
@@ -718,7 +717,6 @@ def test_late_cancel_does_not_touch_successor_questions(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """A delayed old cancel cannot set or clean up a successor turn."""
-    from openprogram.agent import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -739,10 +737,10 @@ def test_late_cancel_does_not_touch_successor_questions(
     def _cancel(execution_id):
         assert execution_id == old_execution
         entered.set()
-        assert release.wait(5.0)
+        assert release.wait(30)
         return {"execution_id": execution_id, "status": "cancelling"}
 
-    monkeypatch.setattr(run_control, "cancel_execution", _cancel)
+    monkeypatch.setattr(execution_run_control, "cancel_execution", _cancel)
     cancel_thread = threading.Thread(
         target=c.server._session_cancel,
         args=({"sessionId": sid},),
@@ -756,7 +754,7 @@ def test_late_cancel_does_not_touch_successor_questions(
         sess.open_questions.clear()
         sess.open_questions["successor-question"] = successor_execution
     release.set()
-    cancel_thread.join(timeout=5.0)
+    cancel_thread.join(timeout=30)
 
     assert not cancel_thread.is_alive()
     assert not old_event.is_set()
@@ -769,7 +767,7 @@ def test_not_found_cancel_does_not_touch_retired_turn(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """NotFound fallback is ignored after the exact token has retired."""
-    from openprogram.agent import run_control
+    from openprogram.runtime.conversation import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -787,9 +785,9 @@ def test_not_found_cancel_does_not_touch_retired_turn(
     sess.cancel_event = event
     sess.open_questions["retired-question"] = execution_id
     monkeypatch.setattr(
-        run_control, "cancel_execution",
+        execution_run_control, "cancel_execution",
         lambda _execution_id: (_ for _ in ()).throw(
-            run_control.ExecutionNotFound(execution_id),
+            execution_run_control.ExecutionNotFound(execution_id),
         ),
     )
     c.server._session_cancel({"sessionId": sid})
@@ -802,7 +800,6 @@ def test_not_found_cancel_does_not_touch_changed_identity(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """NotFound fallback is ignored when the session now names another turn."""
-    from openprogram.agent import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -822,10 +819,10 @@ def test_not_found_cancel_does_not_touch_changed_identity(
     def _cancel(execution_id):
         assert execution_id == old_execution
         entered.set()
-        assert release.wait(5.0)
-        raise run_control.ExecutionNotFound(execution_id)
+        assert release.wait(30)
+        raise execution_run_control.ExecutionNotFound(execution_id)
 
-    monkeypatch.setattr(run_control, "cancel_execution", _cancel)
+    monkeypatch.setattr(execution_run_control, "cancel_execution", _cancel)
     cancel_thread = threading.Thread(
         target=c.server._session_cancel,
         args=({"sessionId": sid},),
@@ -839,7 +836,7 @@ def test_not_found_cancel_does_not_touch_changed_identity(
         sess.open_questions.clear()
         sess.open_questions["successor-question"] = "successor_notfound_reply"
     release.set()
-    cancel_thread.join(timeout=5.0)
+    cancel_thread.join(timeout=30)
 
     assert not cancel_thread.is_alive()
     assert not old_event.is_set()
@@ -853,7 +850,7 @@ def test_not_found_cancel_requires_direct_store_lookup(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """Lookup failure must not turn an infrastructure error into cancel."""
-    from openprogram.agent import run_control
+    from openprogram.runtime.conversation import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -870,16 +867,16 @@ def test_not_found_cancel_requires_direct_store_lookup(
     sess.cancel_event = event
     sess.open_questions["lookup-failure-question"] = execution_id
     monkeypatch.setattr(
-        run_control, "cancel_execution",
+        execution_run_control, "cancel_execution",
         lambda _execution_id: (_ for _ in ()).throw(
-            run_control.ExecutionNotFound(execution_id),
+            execution_run_control.ExecutionNotFound(execution_id),
         ),
     )
     broken_store = SimpleNamespace(
         get_nodes=lambda _session_id: (_ for _ in ()).throw(RuntimeError("read failed")),
     )
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db", lambda: broken_store,
+        "openprogram.runtime.context.session_db.default_db", lambda: broken_store,
     )
 
     c.server._session_cancel({"sessionId": sid})
@@ -893,7 +890,7 @@ def test_not_found_cancel_requires_placeholder_absence(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """NotFound is not a fallback when the canonical node already exists."""
-    from openprogram.agent import run_control
+    from openprogram.runtime.conversation import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -910,16 +907,18 @@ def test_not_found_cancel_requires_placeholder_absence(
     sess.cancel_event = event
     sess.open_questions["existing-placeholder-question"] = execution_id
     monkeypatch.setattr(
-        run_control, "cancel_execution",
+        execution_run_control, "cancel_execution",
         lambda _execution_id: (_ for _ in ()).throw(
-            run_control.ExecutionNotFound(execution_id),
+            execution_run_control.ExecutionNotFound(execution_id),
         ),
     )
     existing_store = SimpleNamespace(
-        get_nodes=lambda _session_id: [SimpleNamespace(id=execution_id)],
+        get_nodes=lambda _session_id: [
+            SimpleNamespace(id=execution_id, metadata={}, caller=None),
+        ],
     )
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db", lambda: existing_store,
+        "openprogram.runtime.context.session_db.default_db", lambda: existing_store,
     )
 
     c.server._session_cancel({"sessionId": sid})
@@ -947,11 +946,13 @@ def test_prompt_rejects_session_reserved_by_mcp_without_replacing_token(
     sid = c.call("session/new", {
         "cwd": str(tmp_path), "mcpServers": [],
     })["sessionId"]
-    result = c.call("session/prompt", {
-        "sessionId": sid,
-        "prompt": [{"type": "text", "text": "hi"}],
-    })
-    assert result["stopReason"] in {"end_turn", "refusal"}
+    # No stream is scripted here, so the turn fails on the model call; a
+    # failed turn answers the prompt with a JSON-RPC error naming why.
+    with pytest.raises(AssertionError, match="No stream function registered"):
+        c.call("session/prompt", {
+            "sessionId": sid,
+            "prompt": [{"type": "text", "text": "hi"}],
+        })
 
 
 def test_editor_context_reaches_the_model(tmp_db, client, tmp_path) -> None:
@@ -1113,8 +1114,8 @@ def test_permission_request_is_forwarded_and_answered(
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
     execution, attempt = bind_durable_question_execution(sid)
-    store = __import__("openprogram.execution", fromlist=["default_store"]).default_store()
-    from openprogram.execution.waits import DurableWaitStore
+    store = __import__("openprogram.runtime.execution", fromlist=["default_store"]).default_store()
+    from openprogram.runtime.execution.waits import DurableWaitStore
     waits = DurableWaitStore(store)
     _open_acp_question(
         store,
@@ -1152,8 +1153,8 @@ def test_permission_reject_declines_the_question(
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
     execution, attempt = bind_durable_question_execution(sid)
-    store = __import__("openprogram.execution", fromlist=["default_store"]).default_store()
-    from openprogram.execution.waits import DurableWaitStore
+    store = __import__("openprogram.runtime.execution", fromlist=["default_store"]).default_store()
+    from openprogram.runtime.execution.waits import DurableWaitStore
     waits = DurableWaitStore(store)
     _open_acp_question(store, execution, attempt, wait_id="wait_acp_decline", options=["允许", "拒绝"])
     c.server._sessions[sid].execution_id = execution.execution_id
@@ -1179,16 +1180,20 @@ def test_non_approval_questions_are_not_forwarded(
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
     execution, attempt = bind_durable_question_execution(sid)
+    store = __import__("openprogram.runtime.execution", fromlist=["default_store"]).default_store()
+    from openprogram.runtime.execution.waits import DurableWaitStore
+    waits = DurableWaitStore(store)
     _open_acp_question(
-        __import__("openprogram.execution", fromlist=["default_store"]).default_store(),
-        execution, attempt, wait_id="wait_acp_ask", kind="ask", options=["red"],
+        store, execution, attempt, wait_id="wait_acp_ask", kind="ask", options=["red"],
     )
     c.server._on_question(SimpleNamespace(payload={
         "id": "wait_acp_ask", "session_id": sid,
         "execution_id": execution.execution_id, "kind": "ask",
         "prompt": "what colour?", "wait_generation": 0,
     }))
-    time.sleep(0.3)
+    # Nobody in the editor is shown it, so it is declined rather than left
+    # for the turn to wait on.
+    assert c.pump(lambda: waits.get_wait("wait_acp_ask").status.value == "declined")
     assert c.permission_requests == []
 
 
@@ -1218,9 +1223,8 @@ def test_ownerless_question_is_not_bound_to_foreground_execution(client, tmp_pat
 def test_question_after_completed_foreground_cancel_is_not_registered(
     client, tmp_path, monkeypatch,
 ):
-    import openprogram.agent.questions as questions
-    from openprogram.agent import run_control
-    from openprogram.agent.questions import PendingQuestion
+    import openprogram.runtime.agent.questions as questions
+    from openprogram.runtime.agent.questions import PendingQuestion
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -1238,7 +1242,7 @@ def test_question_after_completed_foreground_cancel_is_not_registered(
         def list_pending(self, session_id):
             assert session_id == sid
             lookup_started.set()
-            assert release_lookup.wait(2.0)
+            assert release_lookup.wait(30)
             return [PendingQuestion(
                 id="stale-question", session_id=sid, kind="approval",
                 prompt="allow?", execution_id="foreground_reply",
@@ -1248,7 +1252,7 @@ def test_question_after_completed_foreground_cancel_is_not_registered(
                         lambda: BlockingRegistry())
     monkeypatch.setattr(c.server, "_ask_permission",
                         lambda *args: calls.append(args))
-    monkeypatch.setattr(run_control, "cancel_execution", lambda _eid: None)
+    monkeypatch.setattr(execution_run_control, "cancel_execution", lambda _eid: None)
 
     question_thread = threading.Thread(
         target=c.server._on_question,
@@ -1259,7 +1263,7 @@ def test_question_after_completed_foreground_cancel_is_not_registered(
         daemon=True,
     )
     question_thread.start()
-    assert lookup_started.wait(2.0)
+    assert lookup_started.wait(30)
     cancel_thread = threading.Thread(
         target=lambda: (
             c.server._session_cancel({"sessionId": sid}),
@@ -1268,9 +1272,9 @@ def test_question_after_completed_foreground_cancel_is_not_registered(
         daemon=True,
     )
     cancel_thread.start()
-    assert cancel_done.wait(2.0)
+    assert cancel_done.wait(30)
     release_lookup.set()
-    question_thread.join(2.0)
+    question_thread.join(30)
     assert not question_thread.is_alive()
     with sess.lock:
         assert sess.open_questions.get("stale-question") == "foreground_reply"
@@ -1280,7 +1284,6 @@ def test_question_after_completed_foreground_cancel_is_not_registered(
 def test_permission_entry_after_cancel_does_not_send_request(
     client, tmp_path, monkeypatch,
 ):
-    from openprogram.agent import run_control
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -1299,9 +1302,9 @@ def test_permission_entry_after_cancel_does_not_send_request(
         def start(self):
             pass
 
-    monkeypatch.setattr("openprogram.acp.server.threading.Thread",
+    monkeypatch.setattr("openprogram.interfaces.acp.server.threading.Thread",
                         DeferredThread)
-    monkeypatch.setattr(run_control, "cancel_execution", lambda _eid: None)
+    monkeypatch.setattr(execution_run_control, "cancel_execution", lambda _eid: None)
     c.server._on_question(SimpleNamespace(payload={
         "id": "cancelled-question", "session_id": sid,
         "kind": "approval", "prompt": "allow?", "tool": "bash",

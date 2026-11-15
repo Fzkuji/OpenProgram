@@ -67,7 +67,7 @@ import sys, time
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from openprogram.webui.routes.catalog import mcp
+from openprogram.interfaces.server.routes.catalog import mcp
 operation, name = sys.argv[1:3]
 ready, release = map(Path, sys.argv[3:5])
 real_load = mcp.load_configs_with_revision
@@ -124,7 +124,7 @@ if response.status_code not in (200, 201):
         codes = sorted(process.wait(timeout=wait_timeout) for process in processes)
     finally:
         release.touch(exist_ok=True)
-        from openprogram._compat import kill_process_tree
+        from openprogram.host._platform.processes import kill_process_tree
 
         for process in processes:
             if process.poll() is None:
@@ -148,7 +148,7 @@ if response.status_code not in (200, 201):
 def test_mcp_revision_does_not_reject_external_exact_byte_edit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram.mcp import config
+    from openprogram.extensions.mcp import config
 
     root = tmp_path / "state"
     root.mkdir(mode=0o700)

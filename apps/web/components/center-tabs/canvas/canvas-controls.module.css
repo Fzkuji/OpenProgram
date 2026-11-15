@@ -1,0 +1,475 @@
+/* 中间画布：macOS 风格——大圆角、极细分隔、标题栏半透明、控件悬停才出现。
+   颜色全部取主题 token，深浅主题都自动适配。 */
+
+.pane {
+  position: absolute;
+  z-index: 10;
+  box-sizing: border-box;
+  /* 与格子卡片同圆角。多格时每个格子本身就是一张浮起卡片
+     （styles/base/layout.css 的 .center-col[data-split]），不再画细描边。 */
+  border-radius: var(--radius-xl);
+  pointer-events: none;
+  transition: box-shadow var(--motion-medium) var(--ease-standard), opacity var(--motion-medium) var(--ease-standard);
+}
+
+/* An animated layout change moves the content panes; their frames and the
+   dividers would sit at the new layout from the first frame, so they wait
+   out the move and fade back in. */
+:global([data-canvas-animating]) > .pane,
+:global([data-canvas-animating]) > .divider {
+  opacity: 0;
+  transition: none;
+}
+.divider { transition: opacity var(--motion-medium) var(--ease-standard); }
+
+.pane[data-single="true"] {
+  box-shadow: none;
+}
+
+/* 空格子没有内容卡片垫底，自己画同一种浮起卡片。 */
+.pane:not([data-single="true"]):has(> .empty) {
+  background: var(--bg-primary);
+  box-shadow: var(--composer-shadow);
+}
+
+/* 格子没有标题栏：顶部正中一个 iPadOS 分屏式的"•••"把手，拖它移动格子。
+   指针移上去，把手从顶边垂下一小片，三个点变成 macOS 的红黄绿窗口按钮；
+   停在绿灯上，这一片继续往下展开成贴靠菜单——和把手是同一块面，
+   不另起悬浮小窗。 */
+.pane[data-menu-open] {
+  z-index: 12;
+}
+.handle {
+  --handle-bg: color-mix(in oklch, var(--text-primary) 7%, var(--bg-primary));
+  --pop: cubic-bezier(.3, 1.25, .55, 1);
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  isolation: isolate;
+  transform: translateX(-50%);
+  width: 88px;
+  box-sizing: border-box;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+  font-family: var(--font-sans);
+  transition: width var(--motion-slow) cubic-bezier(.2, .8, .2, 1);
+}
+/* The grey sheet behind the buttons drops from the top edge: it grows
+   down and out from a narrow sliver, with a slight spring, and folds
+   back up the same way. Its shoulders flare into the edge like a sheet
+   hanging from it, and grow with it. */
+.sheet {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  background: var(--handle-bg);
+  transform-origin: 50% 0;
+  transform: scale(.5, 0);
+  opacity: 0;
+  transition: transform var(--motion-medium) ease-in, opacity var(--motion-fast) ease-in 40ms;
+  pointer-events: none;
+}
+.sheet::before,
+.sheet::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+}
+.sheet::before {
+  left: -10px;
+  background: radial-gradient(circle at 0 100%, transparent 9.5px, var(--handle-bg) 10px);
+}
+.sheet::after {
+  right: -10px;
+  background: radial-gradient(circle at 100% 100%, transparent 9.5px, var(--handle-bg) 10px);
+}
+.handle:hover .sheet,
+.handle:focus-within .sheet,
+.handle[data-open] .sheet,
+.handle[data-folding] .sheet {
+  transform: none;
+  opacity: 1;
+  transition: transform var(--motion-slow) var(--pop), opacity 90ms var(--ease-standard);
+}
+/* The menu widens the grip as it unfolds; when it closes the grip keeps
+   its width and colours until the menu has folded back, then shrinks. */
+.handle[data-open],
+.handle[data-folding] {
+  width: 268px;
+}
+.grip {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+}
+.grip:active {
+  cursor: grabbing;
+}
+/* 拖动中的格子：把手跟着指针走（由拖动标签代替），原位置不显示。
+   状态在格子上而不是把手的内联样式里，拖动怎么结束都会被清掉。 */
+.pane[data-pane-dragging] .handle,
+:global(html[data-capturing-panes]) .handle {
+  visibility: hidden;
+}
+/* The three grey dots ARE the window buttons at rest. Under the pointer
+   each one grows, spreads out and fills with its macOS colour, one after
+   another, then its glyph fades in; leaving runs it backwards. */
+.lights {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transform: translateY(-5px);
+  transition: gap var(--motion-slow) cubic-bezier(.2, .8, .2, 1), transform var(--motion-slow) cubic-bezier(.2, .8, .2, 1);
+}
+.handle:hover .lights,
+.handle:focus-within .lights,
+.handle[data-open] .lights,
+.handle[data-folding] .lights {
+  gap: 8px;
+  transform: none;
+}
+/* macOS 系统窗口按钮的颜色，深浅主题都一样。 */
+.light {
+  --light: var(--text-muted);
+  display: grid;
+  place-items: center;
+  width: 4px;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--pane-light-glyph);
+  background: var(--text-muted);
+  opacity: 0.6;
+  cursor: default;
+  box-shadow: inset 0 0 0 0.5px transparent;
+  transition:
+    width var(--motion-slow) var(--pop), height var(--motion-slow) var(--pop),
+    background-color var(--motion-medium) var(--ease-standard), opacity var(--motion-medium) var(--ease-standard), box-shadow var(--motion-medium) var(--ease-standard);
+}
+.light[data-pane-light="close"] { --light: var(--pane-light-close); }
+.light[data-pane-light="minimize"] { --light: var(--pane-light-minimize); transition-delay: 30ms; }
+.light[data-pane-light="zoom"] { --light: var(--pane-light-zoom); transition-delay: 60ms; }
+.pane[data-focused="true"] .light { opacity: 0.9; }
+.handle:hover .light,
+.handle:focus-within .light,
+.handle[data-open] .light,
+.handle[data-folding] .light {
+  width: 12px;
+  height: 12px;
+  opacity: 1;
+  background: var(--light);
+  box-shadow: inset 0 0 0 0.5px var(--pane-light-ring);
+}
+.light svg {
+  width: 8px;
+  height: 8px;
+  stroke-width: 3;
+  opacity: 0;
+  transform: scale(.4);
+  transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+.handle:hover .light svg,
+.handle:focus-within .light svg,
+.handle[data-open] .light svg,
+.handle[data-folding] .light svg {
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--motion-medium) var(--ease-standard) 120ms, transform var(--motion-medium) var(--pop) 120ms;
+}
+.light:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+/* The menu unfolds out of the sheet: its height grows from nothing, so
+   the sheet behind it grows with it, and folds back before it goes. */
+.drawerWrap {
+  display: grid;
+  overflow: hidden;
+  grid-template-rows: 1fr;
+  animation: drawerGrow 220ms cubic-bezier(.2, .8, .2, 1);
+}
+.drawerWrap[data-folding] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition: grid-template-rows var(--motion-medium) ease-in, opacity var(--motion-medium) ease-in;
+  animation: none;
+}
+@keyframes drawerGrow {
+  from { grid-template-rows: 0fr; opacity: 0; }
+  to { grid-template-rows: 1fr; opacity: 1; }
+}
+.drawer {
+  min-height: 0;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  width: 268px;
+  box-sizing: border-box;
+  padding: 0 5px 5px;
+}
+
+/* 空格子：居中一张卡片，列出可放进来的 tab。 */
+.empty {
+  pointer-events: auto;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  height: 100%;
+  overflow: auto;
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+}
+.emptyCard {
+  width: min(280px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  overflow: auto;
+  box-sizing: border-box;
+  border-radius: var(--radius-xl);
+  background: var(--bg-secondary);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-sm);
+}
+.emptyHint {
+  padding: 6px 8px 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  text-align: center;
+}
+.emptyItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.emptyItem:hover,
+.emptyItem:focus-visible {
+  outline: none;
+  background: var(--accent);
+  color: var(--text-bright);
+}
+.emptyItem svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--text-secondary);
+}
+.emptyItem span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 格子太小：只剩一个"点开放大"的胶囊。 */
+.tiny {
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.tiny span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-2xs);
+}
+.tiny svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* 分隔条：像 macOS 平铺窗口之间那样，平时什么都不画；指针停在缝上时
+   缝隙正中出现一小段白色短条——浅色主题是偏灰的白，深色主题是亮白——
+   拖动时变成纯白（浅色主题再垫一圈浅阴影，免得融进米色缝隙）。
+   整条缝隙都能拖。 */
+.divider {
+  --divider-hover: var(--pane-divider-hover);
+  --divider-active: var(--pane-divider-active);
+  --divider-active-ring: var(--pane-divider-active-ring);
+  position: absolute;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.divider::after {
+  content: "";
+  border-radius: var(--radius-full);
+  background: transparent;
+  transition: background var(--motion-medium) var(--ease-standard), width var(--motion-medium) var(--ease-standard), height var(--motion-medium) var(--ease-standard);
+}
+.divider[aria-orientation="vertical"] {
+  cursor: col-resize;
+}
+.divider[aria-orientation="vertical"]::after {
+  width: 4px;
+  height: 36px;
+}
+.divider[aria-orientation="horizontal"] {
+  cursor: row-resize;
+}
+.divider[aria-orientation="horizontal"]::after {
+  width: 36px;
+  height: 4px;
+}
+.divider:hover::after,
+.divider:focus-visible::after {
+  background: var(--divider-hover);
+}
+.divider[aria-orientation="vertical"]:hover::after,
+.divider[aria-orientation="vertical"]:focus-visible::after,
+.divider[aria-orientation="vertical"][data-active="true"]::after {
+  height: 48px;
+}
+.divider[aria-orientation="horizontal"]:hover::after,
+.divider[aria-orientation="horizontal"]:focus-visible::after,
+.divider[aria-orientation="horizontal"][data-active="true"]::after {
+  width: 48px;
+}
+.divider[data-active="true"]::after {
+  background: var(--divider-active);
+  box-shadow: var(--divider-active-ring);
+}
+.divider:focus-visible {
+  outline: none;
+}
+/* 拖到 1/3、1/2、2/3 时吸住，并在分隔线中点标出比例。 */
+.snap {
+  position: absolute;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-blue);
+  color: var(--ink-on-fill);
+  font-size: var(--fs-2xs);
+  line-height: 14px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+.tile:hover,
+.tile:focus-visible,
+.tile[aria-checked="true"] {
+  outline: none;
+  background: var(--accent);
+}
+.glyph {
+  position: relative;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 20px;
+  box-sizing: border-box;
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--text-secondary) 55%, transparent);
+}
+.glyph i {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--radius-2xs);
+  background-color: color-mix(in oklch, var(--text-secondary) 40%, transparent);
+}
+.tile:hover .glyph i,
+.tile:focus-visible .glyph i,
+.tile[aria-checked="true"] .glyph i,
+.preset:hover .glyph i,
+.preset:focus-visible .glyph i {
+  background-color: var(--accent-blue);
+}
+/* 指向图示时在这里说出它的名字和快捷键（不用原生 title）。 */
+.hint {
+  min-height: 16px;
+  padding: 4px 6px 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-2xs);
+  line-height: 1.1;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+.preset:hover,
+.preset:focus-visible {
+  outline: none;
+  background: var(--accent);
+  color: var(--text-bright);
+}
+.saveInput {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-bright);
+  font: inherit;
+}
+.saveInput:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawerWrap { animation: none; }
+  .pane, .handle, .sheet, .lights, .light, .light svg, .drawerWrap, .divider::after { transition: none !important; }
+}

@@ -5,7 +5,10 @@
   gap: 8px;
   min-width: 0;
   min-height: 44px;
-  padding: 12px 42px 12px 14px;
+  /* Side gutters keep the text clear of the mic (left) and the send
+     button (right): inset + button + a small gap. */
+  padding: 12px calc(var(--composer-action-inset) + var(--composer-action-size) + 5px) 12px
+    calc(var(--composer-action-inset) + var(--composer-action-size) + 6px);
   flex-shrink: 0;
 }
 
@@ -21,16 +24,60 @@
   background: none;
   border: none;
   color: var(--text-bright);
-  font-size: 15px;
+  font-size: var(--fs-chat);
   font-family: var(--font-sans);
   outline: none;
   resize: none;
   min-height: 22px;
-  max-height: 200px;
   padding: 0 2px;
   line-height: 22px;
   flex: 1;
-  overflow: hidden;
+}
+
+/* CodeMirror chrome (markdown-editor.tsx): transparent, the composer's
+   own type, scrolling past 200px like the old textarea. */
+.chatInput :global(.cm-editor) { background: none; color: inherit; }
+.chatInput :global(.cm-editor.cm-focused) { outline: none; }
+.chatInput :global(.cm-scroller) {
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-sans);
+  line-height: 22px;
+}
+.chatInput :global(.cm-content) {
+  padding: 0;
+  min-height: 22px;
+  caret-color: var(--text-bright);
+}
+.chatInput :global(.cm-line) { padding: 0; }
+
+/* Live preview: formatting drawn over the literal markdown. */
+.chatInput :global(.cm-md-strong) { font-weight: 650; }
+.chatInput :global(.cm-md-em) { font-style: italic; }
+.chatInput :global(.cm-md-strike) { text-decoration: line-through; color: var(--text-secondary); }
+.chatInput :global(.cm-md-code) {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+.chatInput :global(.cm-md-link) { color: var(--accent-blue); }
+.chatInput :global(.cm-md-url),
+.chatInput :global(.cm-md-list) { color: var(--text-muted); }
+.chatInput :global(.cm-md-line-h1) { font-size: 1.25em; font-weight: 650; }
+.chatInput :global(.cm-md-line-h2) { font-size: 1.13em; font-weight: 650; }
+.chatInput :global(.cm-md-line-h3) { font-weight: 650; }
+.chatInput :global(.cm-md-line-quote) {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+  color: var(--text-secondary);
+}
+.chatInput :global(.cm-md-line-fence) {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  padding: 0 8px;
 }
 
 .chatPlaceholder {
@@ -42,13 +89,61 @@
   line-height: 22px;
   color: var(--text-secondary);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: var(--fs-chat);
   overflow: hidden;
   pointer-events: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chatInput::placeholder {
-  color: var(--text-secondary);
+/* Atomic chips for paste tokens and finished @file mentions. */
+.chatInput :global(.cm-md-chip) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 1px;
+  padding: 0 8px 0 6px;
+  height: 20px;
+  vertical-align: 1px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+.chatInput :global(.cm-md-chip-file) {  font-size: var(--fs-xs); }
+.chatInput :global(.cm-md-chip-icon) {
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  color: var(--accent-blue);
+}
+.chatInput :global(.cm-md-chip-paste .cm-md-chip-icon) { color: var(--text-muted); }
+.chatInput :global(.cm-md-chip-missing) {
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-red) 35%, transparent);
+}
+.chatInput :global(.cm-md-chip-missing .cm-md-chip-icon) { color: var(--accent-red); }
+
+/* While dictating, the level strip (98px) sits before the send button. */
+:global([data-voice]) .inputTopRow {
+  padding-right: calc(var(--composer-action-inset) + var(--composer-action-size) + 2 * var(--composer-action-gap) + 98px);
+}
+
+/* A suggested next message sits where the placeholder does: same muted
+   line, with the key that takes it. */
+.chatSuggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chatSuggestionText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

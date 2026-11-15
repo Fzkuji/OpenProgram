@@ -1,0 +1,539 @@
+<title>活动与控制</title>
+<meta name="description" content="Activity 统计什么、每个执行控制做什么、重启后保留什么。">
+<h1>活动与控制</h1>
+
+<p>Activity 统计会话分支。在同一分支上再发消息不会增加 History 条目。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">对象</th><th scope="col">含义</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话分支</th><td>会话中的一条路径；真正分叉才产生另一条</td><td>一行计数的 Activity</td></tr>
+<tr><th scope="row">执行</th><td>一次任务运行，例如生成一条回复</td><td>在分支详情中；其 id 是确切控制目标</td></tr>
+<tr><th scope="row">托管进程</th><td>工具启动的命令</td><td>挂在其执行下，有自己的输出和停止控制</td></tr>
+</tbody>
+</table>
+
+<h2 id="activity-conversation-branches">分支如何计数</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">示例</th><th scope="col">计数</th><th scope="col">详情</th></tr></thead>
+<tbody>
+<tr><th scope="row">发消息，再说“继续”</th><td>1</td><td>两次执行在同一分支</td></tr>
+<tr><th scope="row">从较早位置创建另一回复</th><td>2</td><td>各一行</td></tr>
+<tr><th scope="row">同一分支后续执行失败</th><td>1</td><td>保留在详情中</td></tr>
+<tr><th scope="row">两个分支共享较早消息</th><td>2</td><td>共享的执行可出现在两边详情，不加行</td></tr>
+</tbody>
+</table>
+
+<p class="note">分支详情用短标题和执行计数；请求只出现在执行行。归属来自会话图和消息 id，压缩保留较早的关联。缺失的记录不会被猜成新分支。</p>
+
+<h2 id="provider-terminal-activity">显示哪种状态</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">情况</th><th scope="col">分区</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">审批、问题、暂停或未解决的工具结果</th><td>Needs attention</td><td>新消息不会消除它</td></tr>
+<tr><th scope="row">执行、子任务或所属进程在运行</th><td>In progress</td><td>Agent 回复结束不代表后台进程停止</td></tr>
+<tr><th scope="row">已结束，无活动或待处理</th><td>History</td><td>失败和输出保留在详情</td></tr>
+<tr><th scope="row">owner 已结束，只缺模型响应记录，无活动等待或非取消控制</th><td>History</td><td>显示“已结束 · 响应记录不完整”。旧的 Cancel 不使其可操作；只有子任务仍活动时才提供 Cancel。不表示成功。</td></tr>
+</tbody>
+</table>
+
+<p class="note">状态取分支最新执行，并检查真实等待、活动后代和所属进程。已拒绝的等待显示 Declined，未决的显示 Waiting for your response；拒绝不会执行待处理操作。</p>
+<p class="note">首次加载、重连或游标重新同步时 Activity 不显示错误：只有当前会话已确认的请求失败才提示。读取失败时保留已保存记录并重试。</p>
+
+<h2 id="branch-run-slots">两个分支同时运行</h2>
+
+<p>会话的每个分支有自己的运行槽。选中的分支沿用会话的槽；消息指名另一个已记录的分支（<code translate="no">branch_id</code>）时占用那个分支的槽，所以它能在选中分支运行时一起运行。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">方面</th><th scope="col">选中分支上的轮次</th><th scope="col">其他分支上的轮次</th></tr></thead>
+<tbody>
+<tr><th scope="row">槽</th><td>会话的槽，按会话区分</td><td>它所在分支的槽，按会话和分支区分；该分支有任何未结束的执行（包括定时运行）时拒绝</td></tr>
+<tr><th scope="row">写入</th><td>移动 head 和选中分支</td><td>写在该分支末端下，只移动该分支的记录；head、选中状态和内存镜像不动</td></tr>
+<tr><th scope="row">模型输入</th><td>选中分支</td><td>自己分支的历史和设置（Agent、模型、权限）</td></tr>
+<tr><th scope="row">会话状态</th><td>状态、未读点、模型、token 数、标题、频道回复</td><td>都不改；仍是选中分支的</td></tr>
+<tr><th scope="row">分支状态</th><td colspan="2">每一轮超出预算时压缩自己的链（摘要落在这条链上，head 不动），并把最后一次请求的占用记在自己的分支记录上（<code translate="no">last_prompt_tokens</code>）；会话上的数字是选中分支的。后台签到两样都不做：它只读有界的尾部。</td></tr>
+<tr><th scope="row">运行状态</th><td><code translate="no">running_task</code>、<code translate="no">run_active</code>、<code translate="no">run_task</code>：含义不变</td><td><code translate="no">branch_running_task</code> 及其清除帧，带 <code translate="no">branch_id</code>；该轮的每个帧都标明分支</td></tr>
+<tr><th scope="row">停止</th><td colspan="2">对一个执行的精确命令，只释放那一轮的槽</td></tr>
+<tr><th scope="row">回退点</th><td colspan="2">每条 prompt 一个，不分分支。文件在某一轮第一次改它之前的状态，记在这一轮自己的回退点里，不记在最新的那个里。</td></tr>
+</tbody>
+</table>
+
+<p>一轮运行在哪条分支上，在准入时定下（<code translate="no">branch_id</code>）；那条分支是不是选中分支，在读的时候对照 <code translate="no">active_branch_id</code> 判断。</p>
+<p>一轮能否改会话状态，在准入时冻结为 <code translate="no">owns_conversation_effects</code>：其他分支上的轮次和后台签到为 false，所以暂停、恢复和 Worker 重启后归属都不变。这个标志出现之前准入的请求，由 <code translate="no">side_branch</code> 和 <code translate="no">background</code> 推出。</p>
+
+<h3 id="branch-switch">切换分支</h3>
+
+<p>切换只是换个视图。它不占槽，也从不因为离开或进入的分支上有轮次、压缩或其他操作在运行而被拒绝。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">切换做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">选中</th><td>把 head 移到进入分支的末端（比较后设置），再给槽换键：离开分支的操作移到那条分支自己的槽，用 <code translate="no">branch_running_task</code> 报告；进入分支的操作成为选中分支的操作，用 <code translate="no">running_task</code> 报告（<code translate="no">switch_branch</code>）</td></tr>
+<tr><th scope="row">运行中的轮次</th><td>留在自己的分支上。它的用户消息、历史和回复都在那条分支上，结束时只移动那条分支的记录：写 head 和选中分支字段时带 <code translate="no">expected_branch_id</code>，选中别的分支后就跳过</td></tr>
+<tr><th scope="row">网页和终端界面</th><td>只画选中分支，也只为它保留运行状态。一轮的每一帧都写明分支，其他分支的帧不画。切换的回复写明进入的分支，加载时交出那条分支正在运行的轮次，所以重新加载后停止键仍能停它</td></tr>
+<tr><th scope="row">分支记录</th><td>切回去时按末端找到这条分支的记录；记录的末端落后于它那条线时，取那条线上最近的记录（<code translate="no">record_on_line</code>）。旧数据不用迁移</td></tr>
+<tr><th scope="row">仍然拒绝</th><td>删除包含正在运行分支末端的尾部，以及在正在运行的分支上回退。改动文件的回退仍是整个会话范围</td></tr>
+</tbody>
+</table>
+
+<p>切换、重新开始和回退各自新建什么，以及哪些工作在切换后仍留在原分支：<a href="../dag/branch-collaboration.zh.html#three-operations">分支协作</a>。</p>
+
+<h3 id="branch-settings">一轮用的设置</h3>
+
+<p>准入时还冻结每项设置的值、来源和它所属的 Agent，这一轮把它们写在自己的用户消息上，即 <code translate="no">turn_settings</code>。“这一轮用的什么模型、effort 和权限”由这条记录回答。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">来源</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">request</code></th><td>调用方随这一轮发来的值</td></tr>
+<tr><th scope="row"><code translate="no">parent</code></th><td>取自同一会话里发起这一轮的运行中轮次</td></tr>
+<tr><th scope="row"><code translate="no">branch</code></th><td>取自这一轮所在分支的记录</td></tr>
+<tr><th scope="row"><code translate="no">agent</code></th><td>留空；运行时由 Agent 或它的回落层决定</td></tr>
+</tbody>
+</table>
+
+<p>分支没设的项从哪里来，哪些工具状态归分支：<a href="branch-settings.zh.html">分支设置</a>。</p>
+
+<h3 id="branch-operations">每个分支一个前台操作</h3>
+
+<p>一个分支的运行槽同一时间只放一个前台操作。每个操作都有 <code translate="no">op_id</code>、种类，以及停止时会加一的版本；加载、<code translate="no">running_task</code> 和 <code translate="no">branch_running_task</code> 都报告种类，所以运行条可以显示“正在压缩上下文”和停止按钮，刷新后也一样。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">种类</th><th scope="col">占槽的是什么</th><th scope="col">停止</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">reply</code>、<code translate="no">retry</code>、<code translate="no">edit</code>、<code translate="no">function</code></th><td>一轮，从预留到结束；发出 <code translate="no">result</code> 后到达的请求<a href="../../ui/turn-lifecycle/turn-occupancy.zh.html#finishing">等槽位空出</a></td><td>停在它的执行上，按版本精确停止</td></tr>
+<tr><th scope="row"><code translate="no">compact</code></th><td><code translate="no">/compact</code>；停止时摘要请求结束，什么都不写</td><td>用它的 <code translate="no">op_id</code> 发 <code translate="no">operation.cancel</code></td></tr>
+<tr><th scope="row"><code translate="no">rewind</code></th><td>回退，以及回退的撤销和重做</td><td><code translate="no">operation.cancel</code></td></tr>
+<tr><th scope="row"><code translate="no">branch</code></th><td>删除分支，只占一瞬间；运行时不显示。切换不占槽</td><td>无</td></tr>
+</tbody>
+</table>
+
+<p>分支之间互不阻塞：一个操作只要求自己的分支空闲；同一分支上的第二个操作被拒绝（<code translate="no">run_active</code>），拒绝里写明正在运行的种类，客户端可以自己排队。删除包含正在运行分支末端的尾部，会被拒绝并写明是哪条分支。</p>
+<p>请求在槽位上看到自己的键，就是重复，不是第二个操作：</p>
+<table class="stack">
+<caption>第一个请求占着槽位时重复发来的同一请求</caption>
+<thead><tr><th scope="col">请求</th><th scope="col">键</th><th scope="col">重复的那个</th></tr></thead>
+<tbody>
+<tr><th scope="row">执行回退</th><td><code translate="no">idempotency_key</code></td><td rowspan="2">等第一个结束（最多一分钟，与存储的锁预算相同），再占槽位；存储返回第一个记下的结果（<a href="../session/storage-consistency.zh.html">存储一致性</a>），文件和 head 只变一次，两个调用方拿到同一个结果，包括 <code translate="no">head_changed</code></td></tr>
+<tr><th scope="row">撤销、重新应用</th><td><code translate="no">idempotency_key</code> 加该轮</td></tr>
+<tr><th scope="row">回退之后的 head</th><td><code translate="no">idempotency_key</code></td><td>执行回退的那个请求在释放槽位前把新 head 同步到服务端并重新测量上下文。重复的请求只有在存储的 head 仍是这次回退留下的那个时才再同步一次，所以之后又往前走的对话不会被拉回去</td></tr>
+<tr><th scope="row">聊天发送、函数运行</th><td><code translate="no">client_request_id</code></td><td>回答 <code translate="no">request_admitted</code>，带正在运行的轮次的 id，不带 <code translate="no">retry_query</code>：一次发送只准入一个执行，而 <code translate="no">run_active</code> 会让客户端把它当新的一轮排队</td></tr>
+<tr><th scope="row">键不同或没有键</th><td>任意</td><td>拒绝，<code translate="no">run_active</code>。槽位比存储先检查，所以这一层也要认得重复</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<caption>删除分支删掉什么</caption>
+<thead><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">删除</th><td>从末端往上到分叉点（第一个其前驱还有别的对话子节点的消息），其下的工具调用，以及这条分支的记录</td></tr>
+<tr><th scope="row">保留</th><td>分叉点和它上面的一切：别的分支也在用</td></tr>
+<tr><th scope="row">哪条分支</th><td>分支上任何一条消息都能指定它；不指定就是选中的分支，先切走再删</td></tr>
+<tr><th scope="row">拒绝</th><td>会话唯一的一条线（应删除整个会话），或下面有几条分支继续的消息</td></tr>
+<tr><th scope="row">依据</th><td>Git 的 <code translate="no">branch -d</code> 也只删别的分支到不了的部分。只删指定的那条消息，会让分支仍被列出，记录还能接收消息</td></tr>
+</tbody>
+</table>
+<p>一轮在运行中途压缩自己的上下文时仍是 <code translate="no">reply</code>；网页在 <code translate="no">compaction_started</code> 持续期间显示这一步。</p>
+
+<p>只有改动文件的回退作用于整个会话：</p>
+<ul>
+<li>只要其他分支在运行，或有一轮在等待批准或回答问题，它就被拒绝，返回 <code translate="no">code: branch_running</code> 和 <code translate="no">blocking</code>：那条分支的名字、它的执行 id 和版本，或它的 <code translate="no">op_id</code>。</li>
+<li>这时回退对话框提供“停止它再回退”：停掉那次运行，等它结束后再执行同一个回退。</li>
+<li>它运行期间，一条持久化记录占住会话的文件。任何分支都不准入，新的执行（定时运行、排队的 Job、另一个进程准入的轮次）在准入时等它结束。</li>
+</ul>
+
+<p>每个运行中的操作也记在磁盘上（<code translate="no">state/store/session/operations.py</code>）。重启后，第一个读取方把进程已经不在的操作标为已取消，<code translate="no">reason_code: restart</code>；不会恢复任何一个。</p>
+
+<p>其他操作只占用它们碰到的分支（<code translate="no">reserve_branches_operation</code>，按排序依次占用），拒绝时点名忙的分支：</p>
+<ul>
+<li>删除消息和轮次文件历史操作：线上含有该节点的每个分支；公共祖先碰到它下面的每个分支。</li>
+<li>切换 Agent：自己的分支。</li>
+<li>定时运行：开始前读自己分支的持久记录，分支忙就跳过这次。</li>
+<li>命令、技能和 Agent 调用：消息指定的分支。只有 <code translate="no">/clear</code>、<code translate="no">/rename</code> 和开始 Goal 改变整个会话，留在选中分支。</li>
+</ul>
+
+<h3 id="branch-rewind">旁边有另一个分支时的回退</h3>
+
+<p>回退只撤回本分支的轮次在所选 prompt 之后写的内容。定时运行在自己的分支上，算作另一个分支。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">另一个分支改过同一个文件</th><th scope="col">回退怎么做</th></tr></thead>
+<tbody>
+<tr><th scope="row">没改过</th><td>把文件恢复到该 prompt 时的状态</td></tr>
+<tr><th scope="row">在本分支第一次编辑之前</th><td>把文件恢复到另一个分支留下的样子，它的改动保留</td></tr>
+<tr><th scope="row">在本分支的编辑之后或之间</th><td>不动这个文件。计划在写入前以 <code translate="no">changed_since_edit</code> 阻止；仍可只回退对话。</td></tr>
+<tr><th scope="row">在本分支第一次编辑之后，且另一个分支的回退已经撤回了那次改动</th><td>那次改动不再计入；文件按上面几行恢复</td></tr>
+</tbody>
+</table>
+
+<p>子 Agent 的轮次记在派生它的那一轮的回退点里。运行时发起的轮次记在本分支上最近的前一条 prompt 里。这样的轮次第一次改某个文件时，后面的 prompt 的轮次可能已经改过它；越过两者的回退把文件恢复到两者都没改之前的状态。单个文件的规则见<a href="../operations/file-management.zh.html#rewind">文件管理</a>。</p>
+
+<p class="note">Claude Code 的回退把每个被跟踪的文件恢复到 checkpoint 时的状态，之后 Bash 对它的修改也一并撤回。Codex 已经移除了撤销；它的 <code translate="no">thread/rollback</code> 只从上下文里丢掉轮次，不动文件。两者都没有说明会检查另一会话之后的编辑，所以这里遇到这样的文件就不动它，并指出是哪个文件。</p>
+
+<p class="note">Claude Code 和 Codex 用复制来分叉：分叉得到新的 session 或 thread id，作为独立会话运行。两者都没有公开同一 session 或 thread 内两轮并发的规则；Claude Code 的问题报告描述了并发恢复同一 session 时无锁写出交错分支。</p>
+
+<h2 id="commands">每个控制做什么</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">控制</th><th scope="col">结果</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pause</th><td>在下一个安全点停止</td><td>当前动作可能先完成；不冻结任意代码行</td></tr>
+<tr><th scope="row">Continue</th><td>从已保存进度恢复同一执行</td><td>仅在保存状态和能力允许时</td></tr>
+<tr><th scope="row">Step</th><td>运行一个声明的步骤后暂停</td><td>工具动作或声明边界，不是源码行</td></tr>
+<tr><th scope="row">Steer</th><td>为尚未运行的工作添加指令</td><td>已完成工作不变</td></tr>
+<tr><th scope="row">Cancel</th><td>结束该执行和它在等的东西：同步子代理及其下的轮次</td><td>不能撤销已完成的外部操作；托管进程有自己的控制。后台子代理和从保存点建的分支继续运行。由另一个存活进程持有的轮次（定时运行）通过该执行的函数日志收到请求，由它自己停下。</td></tr>
+<tr><th scope="row">Fork / Retry</th><td>从允许的保存点创建独立子执行</td><td>原历史保留。Agent 聊天子执行以暂停开始，需要 Continue；其他按调度器。</td></tr>
+</tbody>
+</table>
+
+<p class="note">界面只提供该执行支持的控制。“accepted”表示已保存，“applied”表示已生效。终态协调赢得竞争时命令完成是幂等的：比较交换冲突后，服务只接受同一执行和结果版本上已应用的命令，保留已存回执，其他冲突继续上抛。</p>
+
+<h2 id="stop">停止一轮</h2>
+
+<p>停止结束一个分支上的前台操作，已经产出的内容保留。对比了 Codex、Claude Code、OpenCode、Pi、KimiCode、Grok Build、Hermes Agent、ZCode 和 Cline；每一项写明跟随哪家。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">怎么做</th><th scope="col">跟随</th></tr></thead>
+<tbody>
+<tr><th scope="row">被停止的回复</th><td>已完成的模型调用连同推理签名留在历史里。流式中被截断的文字作为最后一次不带签名的调用保留；它不带签名的推理只显示、不发送；参数还没收完的工具调用丢掉。保留的文字就是已经作为流帧发出去的那些增量，不多不少。被 steer 截断的回复也截回到这些增量。</td><td>OpenCode</td></tr>
+<tr><th scope="row">被停止回复的文字</th><td>各块的文字（<a href="dispatcher-split.zh.html#reply-text">段与段之间一个空行</a>），再加它附带的文件。存下来的回复、最后的 <code translate="no">result</code> 帧、<code translate="no">--print</code> 和渠道拿到的都是这一个值。</td><td>OpenCode</td></tr>
+<tr><th scope="row">每个调用都有结果</th><td>运行中的调用：先放已有输出，再接 <code translate="no">Stopped by the user after 3.2s.</code>。已发出没运行的：<code translate="no">Not run: the turn was stopped before this call started.</code>。Worker 重启：<code translate="no">Interrupted after 3.2s because the service restarted.</code>。会话 id 不再发给模型。</td><td>Codex，已有输出按 OpenCode</td></tr>
+<tr><th scope="row">下一条消息上的说明</th><td>停止时在回复上写 <code translate="no">interruption</code>（原因、阶段、是否截断了调用）。下一条消息的轮次块里加一句说明上一条为什么停了；截断过调用时再加 "A tool call that was stopped may have partly run."。它只写一次，存在这条消息的节点上，之后每次请求字节相同。</td><td>文字跟 Codex，位置跟 Grok Build</td></tr>
+<tr><th scope="row">空的被停止回复</th><td>助手位置不写任何内容。Anthropic 和 Gemini 的请求把相邻的两条普通用户消息合成一条。</td><td>Codex</td></tr>
+<tr><th scope="row">终端界面的停止键</th><td>一轮在流式输出、或发出后还没收到确认时，Ctrl-C 或 Esc 第一下就停止；否则按 <code translate="no">op_id</code> 停止这个分支上的 <code translate="no">/compact</code>。之后再按，用同一个命令 id 重发同一个停止，不再加行。空闲时双击 Ctrl-C 仍是退出。</td><td>Claude Code；一键停当前任务跟 Codex</td></tr>
+<tr><th scope="row">有 id 之前的停止</th><td>聊天、函数运行和重试都带 <code translate="no">client_request_id</code>；确认之前的停止指明它。网页保留 <code translate="no">_optimisticStops</code>，免得确认消息把已停止的一轮重新显示成运行中。</td><td>Claude Code 的 <code translate="no">queryGuard</code>；返回 id 跟 Codex</td></tr>
+<tr><th scope="row">信号怎么到达</th><td>停止设置这一轮的普通 Event，并执行登记在它旁边的动作（<code translate="no">run_control/wakeups.py</code>）：立即唤醒这一轮的事件循环，取消读取提供方的任务。为没走这一步就设置的信号保留一个 0.5 秒的检查；跨进程的停止仍经函数日志送达。</td><td>Codex <code translate="no">or_cancel(&amp;token)</code></td></tr>
+<tr><th scope="row">后台代理</th><td>停止不连带它们。在它自己那一行停止时，给发起它的会话排一条 "Background agent … was stopped by the user."。</td><td>Claude Code</td></tr>
+<tr><th scope="row">排队的消息</th><td>服务端释放被停止的一轮后发出。</td><td>Claude Code</td></tr>
+<tr><th scope="row">还没回复就停止</th><td>消息保留，带"开始前已停止"那一行。要撤回用回退。</td><td>Codex、Pi、OpenCode</td></tr>
+<tr><th scope="row">等待状态</th><td>停止取代暂停、打开的提问和待核对，它们随之关闭。</td><td>Codex、Claude Code</td></tr>
+<tr><th scope="row">Windows 上的 <code translate="no">--print</code></th><td>Ctrl-C 和 Ctrl-Break 走停止路径；关闭控制台也一样，宽限 3.5 秒，在 Windows 允许的时间之内。</td><td>Claude Code 所用的 Node 信号映射</td></tr>
+</tbody>
+</table>
+
+<h3 id="stop-why">为什么这样设计</h3>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">被停止的回复</th><td>模型看到的应当就是用户看到的：停下后用户常说"继续"或"改一下那句"，丢掉截断的文字（Codex、Pi）会让模型从头再写。已完成的调用是合法的带签名历史。Anthropic 不接受不带签名的推理，所以只丢被截断那次的推理。</td></tr>
+<tr><th scope="row">被停止回复的文字</th><td>provider 先把每个增量加进它的 partial 消息，循环之后才读到这个增量的事件，所以停止或 steer 时 partial 可能比流多出内容；保留它会存下没有任何客户端收到的文字，steer 之后还会把这些文字发给模型。OpenCode 用它处理过的增量事件来组成存储的片段，流和存储因此一致。被截断的文字在循环结束处并入这一轮的文字，后面的步骤手里没有第二个值。</td></tr>
+<tr><th scope="row">调用结果</th><td>调用没有结果，提供方会拒绝请求。运行时长和"未运行"让模型判断要不要重跑；按工具维护副作用表（Hermes）要长期维护，那句"可能执行了一半"已经覆盖。</td></tr>
+<tr><th scope="row">说明的位置</th><td>放在助手位置的文字会被模型复述（Hermes 的经验），所以说明放在用户的轮次块上，和回退说明同一机制。停止时就写下，缓存前缀保持稳定。</td></tr>
+<tr><th scope="row">停止键</th><td>Codex 和 Claude Code 都是第一下就停；先给提示会让人以为没反应，第二下又误入退出流程。每次停止一行就够，但重发保留，因为第一次信号可能丢。</td></tr>
+<tr><th scope="row">信号</th><td>同行全是事件驱动；两层轮询让中位数约 160 毫秒，每轮还多一个线程。Event 保持普通对象，因为持有它的请求选项会被深拷贝。</td></tr>
+<tr><th scope="row">后台代理</th><td>用户让它们在后台继续跑。没有这条通知，模型会一直等一个不会来的结果。</td></tr>
+<tr><th scope="row">排队的消息</th><td>Codex 和 Pi 把队列放回输入框，是因为它们的队列不能编辑；这里排队的消息在输入框上方可见、可编辑，和 Claude Code 一样。</td></tr>
+<tr><th scope="row">还没回复就停止</th><td>回退是用户主动的操作；停止时撤回消息会让一个按钮做两件事。</td></tr>
+<tr><th scope="row">Windows</th><td>Windows 没有 SIGTERM；脚本发 Ctrl-Break，关闭控制台只给约 5 秒，之后进程被杀，执行停在运行中。</td></tr>
+</tbody>
+</table>
+
+<h2 id="checkpoint">重启后保留什么</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">记录</th><th scope="col">含义</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">检查点</th><td>模型决定或工具结果之后的下一步</td><td>Continue 从这里开始，不恢复冻结的线程</td></tr>
+<tr><th scope="row">效果回执</th><td>模型或工具请求是否完成及确认内容</td><td>已确认工作不重复；不确定的外部操作先核实</td></tr>
+<tr><th scope="row">尝试归属</th><td>哪个 worker 可更新该执行</td><td>旧 worker 不能覆盖替代者</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">情形</th><th scope="col">恢复</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中的 Agent 执行，Worker 消失</th><td>启动时认领一次，用持久输入和最新续接记录激活原执行、修订、轮次和助手回复</td></tr>
+<tr><th scope="row">中断的模型请求</th><td>从已提交上下文重新生成；已完成工具跳过</td></tr>
+<tr><th scope="row">尚无第一个模型响应</th><td>在原期限内从准入输入重启</td></tr>
+<tr><th scope="row">外部操作未解决</th><td>不重复，保持需要核对。绝不伪造未提交回执。</td></tr>
+<tr><th scope="row">手动暂停、取消中、已取消、已完成</th><td>不自动继续</td></tr>
+<tr><th scope="row">界面关闭或重连</th><td>转录保留；worker 拥有的执行继续运行</td></tr>
+</tbody>
+</table>
+
+<p class="note">Worker 中断不是助手失败：不追加错误回复，也不显示重启或恢复消息。真实的 provider 和工具失败照常显示。不需要专门保存或优雅退出。</p>
+
+<h2 id="restart-window">自动继续窗口</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution.auto_resume_window_seconds</code></th><td>默认 <code translate="no">-1</code>，无时间限制（空期限）。<code translate="no">0</code> 关闭自动重启。正数为时长。</td></tr>
+<tr><th scope="row">起算</th><td>有序关闭意图，或被放弃尝试的最后持久活动，不是下次启动。再次重启不延长；已有的有限意图升级后仍有限。</td></tr>
+<tr><th scope="row">有序停止</th><td>先在退出中的 runner 关闭调度和重启协调，再请求本进程拥有的那些轮协作暂停；定时对话在自己的进程里运行，不受影响。竞争的检查点版本在同一尝试和期限内最多重试三次。</td></tr>
+<tr><th scope="row">尝试已结束</th><td>启动恢复采用该轮日志记录的结局，并拒绝未完成的命令。没有记录结局时不发布检查点：运行变为 <code translate="no">interrupted</code>，未完成的暂停被拒绝。</td></tr>
+<tr><th scope="row">自动恢复</th><td>只有重启恢复拥有的暂停</td></tr>
+<tr><th scope="row">保持显式</th><td>用户暂停、取消、未答审批、未解决效果、过期检查点、不兼容运行时契约、没有重启意图的旧暂停记录</td></tr>
+<tr><th scope="row">过期</th><td>保留检查点供手动继续，绝不删除会话数据</td></tr>
+<tr><th scope="row">自更新</th><td>相同时长，从已完成更新的最后持久活动起算；期限和过期存于更新目录。恢复、契约修复规划和原会话后续都遵守。仍在运行的更新不被停止。维护模式仍控制准入和校验。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>重启机制</summary>
+<ul>
+<li>provider 决定和完成的工具动作在普通执行中原子地发布检查点和效果回执。原执行 id、不可变输入、权限、预算和续接命令保持权威；排队的 Job 使用资源队列。</li>
+<li>重启意图是规范执行事件，与转换一起存储；固定的命令身份使重复启动幂等。没有第二个数据库、调度器、进程 owner 或权限路径。</li>
+<li>恢复归属记录确切继承的检查点；新效果之前的第二次中断保留它。</li>
+<li>新 Job 在准入时拥有稳定的用户和助手消息 id。暂停完成时按 Job 等待方保留的尝试和租约身份释放资源。</li>
+<li>启动时先分类被放弃的归属，再由 runner 应用此策略。仅 provider 或从未激活的聊天准入可在原活动期限内从不可变输入继续。</li>
+</ul>
+</details>
+
+<h2 id="resumed-turn-identity">恢复同一轮次</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">绑定</th><td>还原相同的会话、轮次、回复、运行时和工具绑定，并在完成、挂起或出错时释放</td></tr>
+<tr><th scope="row">浏览器页面能力</th><td>仍绑定原 owner，绝不接受其他 owner 的 token。浏览器拒绝是显式工具错误，保留原因。</td></tr>
+<tr><th scope="row">用尽迭代上限</th><td>运行以未成功结束，保留文本和操作历史</td></tr>
+<tr><th scope="row">已结束的等待</th><td>只处理检查点仍为当前检查点的等待，旧答案不能恢复、失败或取消新等待。重复恢复是幂等的。</td></tr>
+<tr><th scope="row">被拒绝的等待</th><td>检查点保留已显示的文本、思考和工具调用；终态投影在保存后发布会话重新加载</td></tr>
+<tr><th scope="row">待审批</th><td>只有在权威执行更新指明同一会话内的消息时才显示在该消息旁。重连时请求规范回放。缺少证据时绝不把其他运行的决定挂到消息上。</td></tr>
+</tbody>
+</table>
+
+<h2 id="function-version-resume">函数版本</h2>
+
+<p><code translate="no">execution.code_change_policy</code> 选择 <code translate="no">keep_original</code>（默认）或 <code translate="no">use_latest</code>；Continue 可按执行覆盖。相关函数和依赖的身份决定代码是否变化。策略变更是带版本围栏的命令，不会创建新调用。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">持久函数记录</th><td>源码和依赖身份、输入、已完成步骤和结果、下一个安全位置、可序列化状态、未决效果</td></tr>
+<tr><th scope="row">边界</th><td>同步 <code translate="no">step</code>、嵌套 <code translate="no">workflow</code>、命名 <code translate="no">parallel</code>。纯编排从已提交结果重建本地 JSON 状态。</td></tr>
+<tr><th scope="row">存储</th><td>现有执行事件、blob、检查点和效果账本</td></tr>
+<tr><th scope="row"><code translate="no">use_latest</code></th><td>保留已完成结果及来源，校验其余部分。状态转换和步骤对应必须显式；含糊的修改保持暂停并列出差异。兼容的候选在新工作前成为保留版本。</td></tr>
+<tr><th scope="row">绝不降级</th><td>缺失源码、依赖不可用、状态不可序列化或边界不支持时，不能退回全新执行。不兼容的 <code translate="no">use_latest</code> 不退回 <code translate="no">keep_original</code>。重试是单独的新执行。</td></tr>
+<tr><th scope="row">效果</th><td>已完成效果被复用。没有确认结果的进行中步骤保持未解决，除非其协议证明安全。重复恢复和第二次崩溃不会重复已接受的效果。</td></tr>
+<tr><th scope="row">嵌套</th><td>嵌套调用保留父身份，并行分支保留各自进度</td></tr>
+<tr><th scope="row">Agent 拥有的调用</th><td>与手动调用共用机制。结果回到原工具调用位置；已存结果投递时不重新执行。手动调用更新原结果记录。</td></tr>
+<tr><th scope="row">契约之外</th><td>原生栈帧、异步编排、活动句柄和任意 Python 函数。外部步骤前拒绝 helper 内部导入和不透明的非标准库依赖。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>步骤边界上的暂停</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">在持久步骤检查边界之后、效果注册或调度准入之前接受的暂停</th><td>通过待处理的 Pause 命令挂起函数</td></tr>
+<tr><th scope="row">准入关闭冲突</th><td>只有在该命令确实待处理时才转换；其他冲突保留错误</td></tr>
+<tr><th scope="row">从未调度的计划意图</th><td>在暂停前记录未开始回执</td></tr>
+<tr><th scope="row">已调度的操作</th><td>绝不归为未开始</td></tr>
+<tr><th scope="row">取消</th><td>优先</td></tr>
+</tbody>
+</table>
+<p>Continue 保留调用游标并复用已提交步骤。崩溃恢复使用最后的持久边界并隔离前 owner。函数子进程启动不持有全历史写事务，序列回填只属于添加该列的迁移。独立函数的进度帧指向现有 code 节点，完成时在可选的会话命名之前释放前台占用。</p>
+</details>
+
+<h2 id="store-schema-ownership">谁拥有运行状态</h2>
+
+<p>运行状态由每个会话的日志折叠成内存表，没有数据库文件。见<a href="../session/storage.zh.html">会话存储</a>。持有 <code translate="no">worker.lock</code> 的进程拥有它启动的运行。</p>
+<p>函数子进程读取表，把变更交给父进程。定时任务的一轮，以及独立的 ACP、MCP 进程里的一轮，属于这些进程自己，这一轮的行写到它们自己的日志。定时任务启动的子 Agent 由 Worker 接纳并运行，只有 Worker 能认领排队的 Job。</p>
+
+<h2 id="attempt-leases">尝试和围栏</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner</th><td>激活的执行有一个当前尝试，由 <code translate="no">worker.lock</code> 持有者拥有，没有心跳</td></tr>
+<tr><th scope="row">在别的进程里跑的一轮</th><td>owner 租约记录该进程的 id 和启动时间</td></tr>
+<tr><th scope="row">进程退出，锁被释放</th><td>新 Worker 拿到锁后可关闭日志中仍开放的尝试，除非记录的进程还在运行；这时等该进程退出后读取这一轮的结局</td></tr>
+<tr><th scope="row">有序停止、自更新检查点</th><td>都不碰别的进程拥有的一轮</td></tr>
+<tr><th scope="row">日志记录过某一轮的结束状态，后面的行又写成未结束</th><td>启动时恢复记录的结束状态</td></tr>
+<tr><th scope="row">暂停或停止抢在启动方前面</th><td>启动一轮的每一步都是比较并交换（租约、激活），或是驱动可能拒绝的交接。无论哪一步输了，都由同一个检查重新读取执行，给它看到的控制意图让路。其他情况是启动方自己的失败。</td></tr>
+<tr><th scope="row">启动方输了时看到的情况</th><td>已暂停、没有检查点也没有尝试：什么也不写，之后的 Continue 再启动这一轮。取消中或已取消、没有尝试：由停止自己结束排队中的这一轮。取消中、尝试是启动方自己的且没有驱动收到过：这个尝试报告自己丢失，执行以已取消结束，取消命令生效，尝试以 <code translate="no">cancelled_during_activation</code> 结束。</td></tr>
+<tr><th scope="row">开始前已停止的一轮</th><td>激活不返回结果。每个调用方都把这一轮报告为开始前已停止：子 Agent、合并、定时签到、渠道回复、MCP 调用和函数调用。</td></tr>
+<tr><th scope="row">它的回复</th><td>聊天的一轮在开始时才打开回复，所以由停止来写：在消息后面写一条空的、已停止的回复。页面实时和刷新后都显示已停止的回复，和刚开始就停止时一样。消息要到开始时才写的一轮没有可关闭的内容。</td></tr>
+<tr><th scope="row">其他没有回复行的情况</th><td>函数调用的行在准入后才写，可能稍后到达；已经开始却没留下回复的一轮是丢失了它。停止时记一条错误，事件效果重试五次，之后记下放弃。</td></tr>
+<tr><th scope="row">每次 owner 写入（工具结果、安全点、等待、调整投递、结束）</th><td>在事务内验证尝试未结束、代次为当前、执行仍指向它。未通过的 owner 停止。</td></tr>
+</tbody>
+</table>
+
+<p>失败的尝试把可读的错误文字留在尝试记录上，其中形似凭据的内容会被抹掉，最多 4000 字符。它不进快照和事件内容，只有 Activity 的单次运行事件读取它。因持有者丢失而关闭的尝试没有这段文字，旧记录读出来也是空。</p>
+
+<h2 id="engine-hooks">控制面如何到达引擎</h2>
+
+<p><code translate="no">openprogram.runtime.execution</code> 不导入任何引擎或 Program。需要解码的数据归它所有；要启动或询问引擎时，调用引擎在导入时注册到 <code translate="no">execution/hooks.py</code> 的钩子。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">钩子</th><th scope="col">注册方</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent_activator</code></th><td>conversation，必需</td><td>构建激活尝试的生产 driver</td></tr>
+<tr><th scope="row"><code translate="no">recovery_turn_starter</code></th><td>conversation，必需</td><td>准入继续中断聊天的轮次</td></tr>
+<tr><th scope="row"><code translate="no">permission_wait_reconciler</code></th><td>conversation，必需</td><td>恢复时重新运行权限审批等待</td></tr>
+<tr><th scope="row"><code translate="no">session_goals</code></th><td>conversation，必需</td><td>重启协调用的会话 Goal owner 锁；Workflow Goal 的可恢复暂停</td></tr>
+<tr><th scope="row"><code translate="no">live_owner_signals</code></th><td>conversation，可选</td><td>停止或杀死子进程和 exec 运行时</td></tr>
+<tr><th scope="row"><code translate="no">terminal_settler</code></th><td>conversation，可选</td><td>结算聊天 Goal：用量、空闲计数、下一轮。Goal 正忙或用量尚未到账时，记账交给轮次的所有者和下一次读取 Goal 来完成，不抛出异常。被停止的轮次，无论结算结果如何，都会写出“已取消”回复并释放资源。</td></tr>
+<tr><th scope="row"><code translate="no">job_records</code></th><td>jobs，必需</td><td>取消时查找、列出和结算 Job 记录</td></tr>
+<tr><th scope="row"><code translate="no">turn_request_fields</code></th><td>jobs，必需</td><td>存储的 Job 输入可携带的字段</td></tr>
+<tr><th scope="row"><code translate="no">job_runner</code></th><td>jobs，可选</td><td>绑定执行存储的活动 runner</td></tr>
+</tbody>
+</table>
+
+<p class="note">缺少必需钩子时抛 <code translate="no">EngineNotRegistered</code>（<code translate="no">engine_not_registered</code>），指明钩子和包，绝不静默跳过。缺少可选钩子本身就是答案：此进程没有该引擎。加载 conversations 时也加载 Jobs。</p>
+
+<details>
+<summary>控制面拥有的内容</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution/agent_journal.py</code></th><td>版本化的 Agent 状态载荷，以会话日志行写入</td></tr>
+<tr><th scope="row"><code translate="no">execution/job_input.py</code></th><td>Job 的严格准入输入封装</td></tr>
+<tr><th scope="row"><code translate="no">execution/run_control/</code></th><td>绑定的会话和执行、取消 token、活动 owner 和宽限期、确切取消和子准入</td></tr>
+<tr><th scope="row"><code translate="no">conversation/run_control</code></th><td>轮次侧：轮次 token、取消事件、活动 exec 运行时</td></tr>
+<tr><th scope="row"><code translate="no">execution/resource_saga.py</code></th><td>以参数接收 governor；governor 实现 <code translate="no">ResourceGovernor</code></td></tr>
+</tbody>
+</table>
+<p>Goal 钩子属于 conversations，因为聊天 Goal 以会话轮次运行；它们在首次调用时导入 <code translate="no">openprogram.programs.tools.planning.goal</code>，因为该工具可能在启动恢复之后才加载。</p>
+</details>
+
+<h2 id="workflow-questions">Workflow 问题</h2>
+
+<ul>
+<li>运行中的 Python Workflow 提出的问题在当前进程内等待，绑定确切的执行、尝试和代次。它使用规范等待存储和问题界面，不做 Workflow 检查点，也不重启调用栈。</li>
+<li>答案回到原调用。浏览器刷新时重新加载待处理请求。</li>
+<li>只有活动的当前 owner 能创建或回答。取消、执行结束或失去进程 owner 会使其失效。Worker 重启不回放 Workflow。</li>
+<li>子进程通过现有队列桥接发布。意外错误上抛，不会变成未答结果。声明了等待前检查点的 Agent 工具问题保持持久续接。</li>
+</ul>
+
+<h2 id="decision-output">用户决定面板和回执</h2>
+
+<p>问题、确认、表单和权限审批是输入框上方按会话划分的面板。终态回执留在会话中。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">输入框</th><td>保留草稿、附件、函数表单、焦点和发送或排队行为。新请求绝不占用它或移动焦点。</td></tr>
+<tr><th scope="row">导航</th><td>Back、Next 和折叠保留草稿，不发送</td></tr>
+<tr><th scope="row">Skip</th><td>拒绝整个问题请求</td></tr>
+<tr><th scope="row">提交</th><td>立即显示提交的答案和发送中状态</td></tr>
+<tr><th scope="row">已应用</th><td>已回答回执</td></tr>
+<tr><th scope="row">投递未知</th><td>重试保持相同的命令身份和答案</td></tr>
+<tr><th scope="row">被拒或过期</th><td>不能暗示批准</td></tr>
+<tr><th scope="row">多个请求</th><td>独立分键卡片，按会话和执行划分，包括分屏</td></tr>
+</tbody>
+</table>
+
+<p class="note">卡片复用共享的问题渲染器、规范问题事件和执行命令。每张卡片拥有自己的答案字段、提交控件和投递状态。回执不是 Workflow 检查点；刷新重新加载待处理问题，不增加历史回执持久化。</p>
+
+<details id="engineering">
+<summary>标识符和安全规则</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_id</code></th><td>会话范围和授权；绝不是控制目标</td></tr>
+<tr><th scope="row"><code translate="no">run_id</code></th><td>归组相关的原始、分叉和重试执行</td></tr>
+<tr><th scope="row"><code translate="no">execution_id</code></th><td>确切控制目标。Pause 和 Continue 保持不变；分叉或重试创建新的。</td></tr>
+<tr><th scope="row"><code translate="no">attempt_id</code></th><td>worker 的一次激活</td></tr>
+<tr><th scope="row"><code translate="no">revision_id</code></th><td>程序及其契约的不可变版本</td></tr>
+<tr><th scope="row"><code translate="no">command_id</code> + <code translate="no">expected_version</code></th><td>防止重复操作并拒绝过期命令。取消只指明执行：它的版本只记录，不比较</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令服务</th><td>所有传输使用同一命令服务，在 owner 应用之前保存命令。界面状态不授权操作。</td></tr>
+<tr><th scope="row">优先级</th><td>取消优先于暂停、单步、继续和调整。只有当前 owner 发布进度或最终状态。</td></tr>
+<tr><th scope="row">停止与版本</th><td>停止指明执行，不指明版本。一轮对话的版本在开始后的十分之一秒内会变两次（租约，然后运行），所以刚发送就按停止，带的往往是旧版本。存储在一个事务里按当前版本受理停止，只把发送方看到的版本记进日志（<code translate="no">cancel.version_moved</code>）。</td></tr>
+<tr><th scope="row">其他命令与版本</th><td>暂停、继续、插话和回答仍需当前版本：它们是针对某个快照的决定。</td></tr>
+<tr><th scope="row">同一个停止，按状态回答</th><td>内部和对外的停止是同一个，结果只取决于状态。运行中：执行变为取消中，并通知拥有者。已在取消中：返回生效中的那次停止，并再通知一次拥有者，因为第一次信号可能丢了。不新写任何东西。已经结束：返回最终状态和 <code translate="no">already_terminal</code>，这不是拒绝。</td></tr>
+<tr><th scope="row">同一命令 id</th><td>同一个命令 id 停止同一个执行就是同一次停止，不论给出什么原因。</td></tr>
+<tr><th scope="row">排队中的 Job</th><td>排队中的 Job 会立刻结束，所以先按那个快照封住它的派发；停止写入前快照变了，就把封锁交给恢复处理。</td></tr>
+<tr><th scope="row">哪些一起停</th><td>"哪些跟着一起停"由一个函数回答。一个执行的上级是它的规范父执行；对 Job 来说，还有它的输入里写明的调用方和父 Job，不论在哪个对话。遍历会穿过已经结束的执行。</td></tr>
+<tr><th scope="row">对外与内部停止</th><td>对外的停止（网页、Activity、终端、<code translate="no">--print</code>、ACP 和 MCP 客户端）只停这一轮在等的：同步子代理及其下的轮次，不停后台子代理和分支。内部停止（渠道的 <code translate="no">/stop</code>、Goal、时间上限）停所有下级。</td></tr>
+<tr><th scope="row">顺序</th><td>下级先于上级停止，最深的先停，这样排队中的下级在上级结束、空出运行槽位之前就被拦下。上级停止期间新准入的下级，在上级之后再停。</td></tr>
+<tr><th scope="row">交给拥有者</th><td>一次停止只交给拥有者一次。重复的停止回答 <code translate="no">already_delivered</code>，不再调用已经收到的拥有者（它的句柄可能已经释放）；没收到的拥有者，或之后接手的拥有者，这时收到。</td></tr>
+<tr><th scope="row">客户端</th><td>客户端只发一次停止。网页在执行自己的帧报告已取消时才提示 "Stopped."，不看命令的应答。网页只知道 id、不知道版本的一轮，按停止会立即发出。</td></tr>
+<tr><th scope="row">Worker 声明的能力</th><td>连接时 Worker 发送 <code translate="no">worker_capabilities</code>：<code translate="no">cancel_ignores_version</code>（停止从不因版本过期被拒）和 <code translate="no">cancel_by_request</code>（停止可以指明一次发送）。终端界面和 <code translate="no">--print</code> 是否补发被拒的停止、是否按发送停止，只看当前连接上的 Worker 声明了什么；旧 Worker 或远程服务器保持原来的做法。</td></tr>
+<tr><th scope="row">还没有 id 时的停止</th><td>客户端还不知道这一轮的执行时按下的停止，指明这次发送：它的 <code translate="no">session_id</code> 和 <code translate="no">client_request_id</code>。准入时把请求 id 和执行一起记下，同一会话里一次发送只准入一个执行。由一个存储事务决定。发送已经准入，就像平常一样停掉它的执行。网页、终端界面和 <code translate="no">--print</code> 都这样发。终端界面的新对话和网页草稿一样，在发出第一条消息时就有了 id。</td></tr>
+<tr><th scope="row">停止标记</th><td>还没准入的发送被停止时，在会话的运行日志里写一条标记，回答 <code translate="no">marked</code>。这次发送准入时取走标记，这一轮在激活时、租约之前就以已取消结束，回复写成"开始前已停止"。标记在 Worker 重启后仍然有效，十分钟后失效。</td></tr>
+<tr><th scope="row">模型错误与工具结果</th><td>已知模型错误和中止有响应记录。未知工具结果保持未解决，History 标签不会清除它们。</td></tr>
+<tr><th scope="row">分叉</th><td>分叉校验保存点、不可变修订和权限。程序、模型或工具契约变更保留独立审查。</td></tr>
+<tr><th scope="row">Job</th><td>Job 的 <code translate="no">job_id</code> 等于 <code translate="no">execution_id</code>。资源分配与执行状态分离。</td></tr>
+<tr><th scope="row">项目位置</th><td>加载会话前读取当前存储的项目位置。读取和控制限于已授权的会话。重连使用已保存版本和事件位置，不产生重复任务。</td></tr>
+<tr><th scope="row">托管进程</th><td>托管进程保留身份、归属和有界输出。重启恢复检查 supervisor，仅有保存的 PID 不构成发信号的许可。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="status">实现状态</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">领域</th><th scope="col">实现</th><th scope="col">验收</th></tr></thead>
+<tbody>
+<tr><th scope="row">分支计数</th><td>每个真实分支一行</td><td>线性会话 → History 1。三个末端 → History 3。</td></tr>
+<tr><th scope="row">需要处理</th><td>仅缺 provider 记录与真实等待、不确定效果区分开</td><td>真实审批保持可见；单独结束的模型请求不要求确认</td></tr>
+<tr><th scope="row">执行控制</th><td>共享命令、检查点和修订；能力因执行而异</td><td>只测试声明的控制。强制工具、派生和合并路径保留限制。</td></tr>
+<tr><th scope="row">进程和恢复</th><td>默认 macOS App 上的归属、独立停止、输出保留和刷新</td><td>这些检查不能确立 Windows 和 Linux 的结果</td></tr>
+<tr><th scope="row">分支运行槽</th><td>服务端：按分支准入、写入归分支、按分支报告运行状态和停止</td><td>两个分支并发完成且各有自己的 head；停止一个，另一个继续运行；运行时切换照常进行，那一轮在自己的分支上结束，选中不变</td></tr>
+<tr><th scope="row">前台操作</th><td>一张按会话和分支建键的槽表（<code translate="no">server_runtime/run_slots.py</code>）；compact、rewind、retry、edit、branch 和 function 都走 <code translate="no">reserve_operation</code>；<code translate="no">operation.cancel</code>；持久化记录和改动文件的回退 hold</td><td>一个分支上的操作和另一个分支的轮次并行；改动文件的回退被拒绝并写明正在运行的分支；另一个进程的 hold 会让本进程的操作被拒绝；第一个运行期间带同一个键重复的回退或撤销拿到第一个的结果，别的键照旧被拒绝，重复的发送得到 <code translate="no">request_admitted</code>（<code translate="no">tests/component/webui/chat/test_keyed_operation_repeat.py</code>）</td></tr>
+</tbody>
+</table>
+
+<p>其他分支上的轮次尚未支持：</p>
+<ul>
+<li>网页面板：只显示并发送到选中分支。</li>
+<li>Steer 和网页排队的消息：送到选中分支的轮次。</li>
+<li>暂停或 Worker 重启后继续：恢复的轮次是否读自己分支的上下文尚未验证。</li>
+<li>选中分支自己的轮次在跑时的编辑和重试：等待，因为新分支会占用选中分支的槽。</li>
+<li>定时运行：它的进程不占服务端的分支槽；该分支有运行未结束时拒绝消息，反过来不拒绝。</li>
+</ul>
+
+<p>分支设置和分支状态方面还没做到：</p>
+<ul>
+<li>合并占用选中分支的槽，而不是来源和目标分支。</li>
+<li>菜单首项"Agent 默认（当前：…）"和输入框旁其他分支运行的徽标：数据已发送（<code translate="no">inherited</code>、<code translate="no">wait_state</code>），控件等设计批准。</li>
+<li>不指定分支的入口（渠道）在选中分支上继续；最后写入的分支已记录（<code translate="no">last_branch_id</code>），尚未使用。</li>
+<li>在真实会话上运行跟随 Agent 的迁移。</li>
+<li>运行状态只从执行存储读取：槽表仍是预留和无执行操作的实时记录，暂停和定时的轮次才查执行存储。</li>
+<li>一种分支记录：名字、轮数和归档状态仍按末端存在 <code translate="no">meta.branches</code> 里，和 <code translate="no">branch_refs</code> 并存。迁过去需要给客户端按消息 id 指认的每个末端都建记录（派生分支、分支记录出现之前的末端），并迁移所有按末端读取的地方。</li>
+<li>在终端界面停止回退：它的停止键作用于轮次和 <code translate="no">/compact</code>。</li>
+</ul>
+
+<p>停止方面还没做到：</p>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">缺口</th><th scope="col">现状</th></tr></thead>
+<tbody>
+<tr><th scope="row">重发版本过期的停止</th><td>终端界面和 <code translate="no">--print</code> 只对没有声明 <code translate="no">cancel_ignores_version</code> 的 Worker 补发被以版本过期拒绝的停止。两个本地 Worker 都声明之后删掉这个分支；远程服务器的分支保留到下一次发版。</td></tr>
+<tr><th scope="row">Job 运行器自己的停止</th><td>Job 运行器自己的停止（Activity 里取消 Job、Job 预算用尽）仍然自己沿 <code translate="no">parent_job_id</code> 找下级 Job，因为它要维护每个 Job 的队列、收件箱和资源记录；它还没有改用共用的查找函数。只有会话图记录的函数运行，按图里的调用关系停掉它调用的节点。</td></tr>
+<tr><th scope="row">信号延迟</th><td>两层轮询时，开发版上停止到已取消的中位数约 160 毫秒。直接唤醒还没在那里测过。</td></tr>
+<tr><th scope="row">停止说明的效果</th><td>说"继续"后模型是否从断点接着写，还没用真实请求测过；文字按同行定下。</td></tr>
+<tr><th scope="row">Windows 上的 <code translate="no">--print</code></th><td>Ctrl-Break 的测试为 Windows CI 写好，还没在那里跑过。</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>不提供：任意线程栈恢复、自动撤销、重建从未保存的进程记录。</li>
+<li>普通函数内提问的运行时调用需要声明交互边界。</li>
+<li>等待期限和 Job 预算尚未接入资源管理。</li>
+</ul>
+
+<details id="reference">
+<summary>源码和参考</summary>
+<ul>
+<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/execution/activity_branches.py">分支归属</a></li>
+<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/tests/component/webui/execution/test_activity_branches.py">分支归属测试</a></li>
+<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/tests/execution/activity-panel.test.mjs">Activity 面板测试</a></li>
+<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/execution">执行协议和持久化</a></li>
+</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://microsoft.github.io/debug-adapter-protocol/">Debug Adapter Protocol</a></th><td>观察与控制分离；声明支持的控制</td></tr>
+<tr><th scope="row"><a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/workflow/workflow-execution/workflow-execution.mdx">Temporal Workflow Execution</a></th><td>持久化执行状态</td></tr>
+<tr><th scope="row"><a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/workflow/workflow-pause.mdx">Temporal Workflow Pause</a></th><td>暂停不撤销已开始的工作</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/persistence">LangGraph persistence</a></th><td>在检查点保存进度</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/interrupts">LangGraph interrupts</a></th><td>等待输入并在定义的边界恢复</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/use-time-travel">LangGraph time travel</a></th><td>创建分支时保留原历史</td></tr>
+<tr><th scope="row"><a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/">Kubernetes Pod lifecycle</a></th><td>请求终止，再确认 owner 关闭</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/checkpointing">Claude Code checkpointing</a></th><td>每条 prompt 一个 checkpoint；另一会话的编辑只有碰到同一批文件时才被记录</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs">Codex features</a></th><td>撤销已标为移除；rollback 不恢复文件</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="async-job-lifecycle.zh.html">后台 Job</a> · <a href="../reliability/agent-resource-governance.html">资源分配</a> · <a href="../../error-handling.zh.html">错误处理</a></p>

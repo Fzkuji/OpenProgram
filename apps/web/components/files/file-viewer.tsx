@@ -1,4 +1,5 @@
 "use client";
+import type { FileSectionNavigation } from "@/lib/tabs/panes/file-section-requests";
 
 /** Shared project, attachment and retained-version preview dispatch.
  * FileViewer owns the authorized source URL. Format adapters only consume that
@@ -8,13 +9,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { lazy, Suspense } from "react";
 import { fileCapabilities, fileExtension, IMAGE_EXTENSIONS } from "@/lib/documents/file-formats";
-import { ImagePreview } from "./preview/image-preview";
+import { isArchivePath } from "@/lib/files/archive";
+import { ImagePreview } from "./preview/image/image-preview";
 import { MediaPreview } from "./preview/media-preview";
 import { Download } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
-import { wsRequest } from "@/lib/net/ws-request";
-import { Markdown } from "@/lib/format-utils/markdown";
+import { wsRequest } from "@/lib/net/ws/ws-request";
+import { MarkdownPreview } from "./preview/markdown-preview";
 import {
   absFileReadUrl,
   absRawFileUrl,
@@ -30,7 +32,8 @@ import previewStyles from "./preview/preview.module.css";
 
 export const IMAGE_EXTS = IMAGE_EXTENSIONS;
 const PdfPreview = lazy(() => import("./preview/pdf-preview").then((module) => ({ default: module.PdfPreview })));
-const LayeredImagePreview = lazy(() => import("./preview/layered-image-preview").then((module) => ({ default: module.LayeredImagePreview })));
+const ArchivePreview = lazy(() => import("./preview/archive-preview").then((module) => ({ default: module.ArchivePreview })));
+const LayeredImagePreview = lazy(() => import("./preview/image/layered-image-preview").then((module) => ({ default: module.LayeredImagePreview })));
 
 function fmtSize(bytes: number): string {
   if (!Number.isFinite(bytes)) return "";
@@ -45,11 +48,13 @@ export function FileViewer({
   abs = false,
   sessionId,
   mdRendered = true,
+  sectionNavigation,
   draft,
   onDraftChange,
   onLoaded,
   snapshot,
   sourceBlob,
+  inArchive = false,
 }: {
   projectId: string;
   path: string;
@@ -62,6 +67,7 @@ export function FileViewer({
   /** Markdown files: true → <Markdown> render, false → source lines.
    *  The toggle UI lives in the file tab's toolbar. */
   mdRendered?: boolean;
+  sectionNavigation?: FileSectionNavigation;
   /** The pane's editor buffer. When set (together with onDraftChange)
    *  the text body renders as the editable gutter+textarea and — for
    *  markdown in Rendered mode — the preview renders the draft, so an
@@ -73,6 +79,9 @@ export function FileViewer({
   onLoaded?: (data: FileReadResult | null) => void;
   snapshot?: FileReadResult | null;
   sourceBlob?: Blob | null;
+  /** A member previewed from inside an archive: its bytes come in
+   *  ``sourceBlob`` and an archive inside it is not opened again. */
+  inArchive?: boolean;
 }) {
   const ext = fileExtension(path);
   const capability = fileCapabilities(path);
@@ -86,6 +95,11 @@ export function FileViewer({
     ? absRawFileUrl(path, sessionId)
     : rawFileUrl(projectId, path);
   const sourceUrl = blobUrl ?? rawUrl;
+  if (!inArchive && isArchivePath(path)) {
+    return <Suspense fallback={<div className={styles.viewerHint}>{text("Loading…", "加载中…")}</div>}>
+      <ArchivePreview source={abs ? { kind: "absolute", path, sessionId } : { kind: "project", projectId, path }} />
+    </Suspense>;
+  }
   if (capability.preview === "image") return <div className={previewStyles.preview}><ImagePreview key={sourceUrl} sourceUrl={sourceUrl} path={path} /></div>;
   if (capability.preview === "pdf" || capability.preview === "layered-image") {
     return <div className={previewStyles.preview}><Suspense fallback={<div>{text("Loading…", "加载中…")}</div>}>
@@ -104,6 +118,7 @@ export function FileViewer({
       sessionId={sessionId}
       isMarkdown={ext === "md"}
       rendered={mdRendered}
+      sectionNavigation={sectionNavigation}
       draft={draft}
       onDraftChange={onDraftChange}
       onLoaded={onLoaded}
@@ -120,6 +135,7 @@ function TextViewer({
   sessionId,
   isMarkdown,
   rendered,
+  sectionNavigation,
   draft,
   onDraftChange,
   onLoaded,
@@ -133,13 +149,15 @@ function TextViewer({
   sessionId?: string;
   isMarkdown: boolean;
   rendered: boolean;
+  sectionNavigation?: FileSectionNavigation;
   draft?: string;
   onDraftChange?: (value: string) => void;
   onLoaded?: (data: FileReadResult | null) => void;
   snapshot?: FileReadResult | null;
 }) {
   const { text } = useTranslation();
-  const [data, setData] = useState<FileReadResult | null>(null);
+  const [loadedData, setData] = useState<FileReadResult | null>(null);
+  const data = snapshot ?? loadedData;
   const [failed, setFailed] = useState(false);
   // Ref so a changing callback identity never re-triggers the fetch.
   const onLoadedRef = useRef(onLoaded);
@@ -244,7 +262,7 @@ function TextViewer({
             href={downloadUrl ?? (abs ? absRawFileUrl(path, sessionId) : rawFileUrl(projectId, path))}
             download={path.split("/").pop()}
           >
-            <Download size={13} />
+            <Download size={14} />
             {text("Download", "下载")}
           </a>
         </div>
@@ -253,14 +271,7 @@ function TextViewer({
   }
 
   if (isMarkdown && rendered) {
-    return (
-      <div className={styles.viewerScroll}>
-        {/* message-content 复用 chat.css 的 markdown 元素样式（标题/列表/表格） */}
-        <div className={`${styles.mdBody} message-content`}>
-          <Markdown source={draft ?? data.content} escapeRawHtml />
-        </div>
-      </div>
-    );
+    return <MarkdownPreview sectionNavigation={sectionNavigation} source={draft ?? data.content} projectId={projectId} path={path} abs={abs} sessionId={sessionId} />;
   }
 
   // Default for text files: the editable buffer. Falls back to the
@@ -272,7 +283,7 @@ function TextViewer({
   }
 
   return (
-    <div className={styles.viewerScroll}>
+    <div className="flex-1 min-h-0 overflow-auto p-[12px_14px]">
       {data.truncated ? (
         <div className={styles.truncatedNote}>
           {text("Truncated at 1 MB", "已在 1 MB 处截断")}

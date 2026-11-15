@@ -9,11 +9,11 @@ registerHooks({
     if (specifier === "react" && context.parentURL?.endsWith("use-pending-run-function.ts")) {
       return { shortCircuit: true, url: "data:text/javascript,export const useEffect = (effect) => globalThis.launchEffects.push(effect);" };
     }
-    if (context.parentURL?.endsWith("use-pending-run-function.ts")) {
+    if (context.parentURL?.endsWith("use-pending-run-function.ts") || context.parentURL?.endsWith("functions-actions.ts")) {
       if (specifier === "@/lib/tabs/center-tabs-store") {
         return { shortCircuit: true, url: "data:text/javascript,export const useCenterTabs = {getState: () => globalThis.launcherTabs};" };
       }
-      if (specifier === "@/lib/runtime-bridge/conversations") {
+      if (specifier === "@/lib/runtime-bridge/session/conversations") {
         return { shortCircuit: true, url: "data:text/javascript,export const newSession = (id) => globalThis.launcherNewSession(id);" };
       }
     }
@@ -49,19 +49,36 @@ function reset() {
   notices.length = 0;
   opened.length = 0;
   launcherSession.activeChatKey = "chat-a";
+  globalThis.launcherTabs = { activeId: "s:chat-a", tabs: [{ id: "s:chat-a", kind: "session", sessionId: "chat-a" }] };
   useFunctions.getState().setFunctions([]);
   runtimeState.availableFunctions = [];
 }
 
-test("Use resolves an uncached workflow and publishes it for favorites", async () => {
+test("Use resolves an uncached application and publishes it for favorites", async () => {
   reset();
-  const workflow = { name: "weekly_report", params: { task: { type: "string" } } };
-  globalThis.fetch = async () => Response.json([workflow]);
+  const application = { name: "weekly_report", category: "application", params: { task: { type: "string" } } };
+  globalThis.fetch = async () => Response.json([application]);
   assert.equal(typeof actions.openFunctionForm, "function");
   await actions.openFunctionForm("weekly_report");
   assert.deepEqual(opened, ["weekly_report"]);
-  assert.deepEqual(useFunctions.getState().functions, [workflow]);
-  assert.deepEqual(runtimeState.availableFunctions, [workflow]);
+  assert.deepEqual(useFunctions.getState().functions, [application]);
+  assert.deepEqual(runtimeState.availableFunctions, [application]);
+});
+
+test("switching non-session tabs during resolution cancels the old launch", async () => {
+  reset();
+  launcherTabs.activeId = "ntp-a";
+  launcherTabs.tabs = [{ id: "ntp-a", kind: "ntp" }, { id: "ntp-b", kind: "ntp" }];
+  let reply;
+  let started;
+  const ready = new Promise((resolve) => { started = resolve; });
+  globalThis.fetch = () => new Promise((resolve) => { reply = resolve; started(); });
+  const pending = actions.openFunctionForm("weekly_report");
+  await ready;
+  launcherTabs.activeId = "ntp-b";
+  reply(Response.json([{ name: "weekly_report" }]));
+  await pending;
+  assert.deepEqual(opened, []);
 });
 
 test("a failed refresh preserves the last usable catalog", async () => {
@@ -75,7 +92,7 @@ test("a failed refresh preserves the last usable catalog", async () => {
   assert.deepEqual(runtimeState.availableFunctions, existing);
 });
 
-test("an unavailable workflow produces a visible error", async () => {
+test("an unavailable application produces a visible error", async () => {
   reset();
   globalThis.fetch = async () => Response.json([]);
   await actions.openFunctionForm("weekly_report");
@@ -207,14 +224,14 @@ test("a shared store update supersedes an in-flight HTTP snapshot", async () => 
 });
 
 
-test("pending Use waits for chat initialization before consuming the request", async (t) => {
+test("pending Use waits for chat initialization before consuming the request", async () => {
   reset();
   globalThis.launchEffects = [];
   const launcher = await import("../../lib/execution/use-pending-run-function.ts");
-  launcher.setPendingRunFunction({ name: "browser_agent" });
+  launcher.setPendingRunFunction({ name: "web_fetch" });
   launcher.usePendingRunFunction("/chat", false);
   assert.equal(launchEffects.pop()(), undefined);
-  assert.deepEqual(launcher.takePendingRunFunction(), { name: "browser_agent" });
+  assert.deepEqual(launcher.takePendingRunFunction(), { name: "web_fetch" });
 });
 
 
@@ -222,9 +239,9 @@ test("Use query survives a chat reset before the page becomes ready", async () =
   reset();
   globalThis.launchEffects = [];
   const launcher = await import("../../lib/execution/use-pending-run-function.ts");
-  window.location.search = "?run=browser_agent&cat=workflow";
+  window.location.search = "?run=web_fetch&cat=tool";
   launcher.usePendingRunFunction("/chat", false);
   launchEffects.pop()();
   window.location.search = "";
-  assert.deepEqual(launcher.takePendingRunFunction(), { name: "browser_agent", cat: "workflow" });
+  assert.deepEqual(launcher.takePendingRunFunction(), { name: "web_fetch", cat: "tool" });
 });

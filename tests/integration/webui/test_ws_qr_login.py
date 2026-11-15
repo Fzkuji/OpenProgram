@@ -8,20 +8,19 @@ phase envelopes and verify the WS handler forwards them as
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.agent.session_db import SessionDB
-from openprogram.webui.server import create_app
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.interfaces.server.server import create_app
 
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db",
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db",
                         lambda: db)
     app = create_app()
     with TestClient(
@@ -78,7 +77,7 @@ def test_qr_login_streams_phases_to_ws(
                                                       "ilink_bot_id": "y"}})
 
     monkeypatch.setattr(
-        "openprogram.channels.implementations.wechat.login_account_event_driven",
+        "openprogram.interfaces.channels.implementations.wechat.login_account_event_driven",
         _fake_login,
     )
 
@@ -139,7 +138,7 @@ def test_qr_login_expired_propagates(
         on_event({"phase": "expired"})
 
     monkeypatch.setattr(
-        "openprogram.channels.implementations.wechat.login_account_event_driven",
+        "openprogram.interfaces.channels.implementations.wechat.login_account_event_driven",
         _fake_login,
     )
 

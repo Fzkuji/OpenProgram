@@ -23,13 +23,13 @@ const {
   markScopeYielding,
   resetBrowserControl,
   useBrowserControlStore,
-} = await import("../../lib/browser/browser-control.ts");
+} = await import("../../lib/browser/control/browser-control.ts");
 const {
   ingestBrowserResource,
   resetBrowserResources,
   setBrowserConnection,
   useBrowserResourceStore,
-} = await import("../../lib/chat/session-resources.ts");
+} = await import("../../lib/chat/resources/session-resources.ts");
 
 after(() => {
   resetBrowserControl();

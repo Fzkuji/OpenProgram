@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF editor</title>
+<link rel="stylesheet" href="vendor/pdfjs/web/pdf_viewer.css">
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="app.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4z"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></symbol>
+  <symbol id="i-read" viewBox="0 0 24 24"><path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H9a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4.5A1.5 1.5 0 0 1 3 16.5z"/><path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H15a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></symbol>
+  <symbol id="i-annotate" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+  <symbol id="i-organize" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="7" rx="1.2"/><rect x="13.5" y="4" width="6.5" height="7" rx="1.2"/><rect x="4" y="13" width="6.5" height="7" rx="1.2"/><rect x="13.5" y="13" width="6.5" height="7" rx="1.2"/></symbol>
+  <symbol id="i-sign" viewBox="0 0 24 24"><path d="M3 17c2.5 0 3.5-9 6-9s1 7 3.5 7 2-4 4-4 1.5 3 4.5 3"/><path d="M3 21h18"/></symbol>
+  <symbol id="i-cursor" viewBox="0 0 24 24"><path d="m5 3 14 7.5-6.2 1.7L10 19z"/></symbol>
+  <symbol id="i-highlight" viewBox="0 0 24 24"><path d="m9 14 6.5-9.5 4 3L13 17z"/><path d="M9 14l-1.5 4.5L13 17"/><path d="M4 21h9"/></symbol>
+  <symbol id="i-underline" viewBox="0 0 24 24"><path d="M7 4v6a5 5 0 0 0 10 0V4"/><path d="M5 20h14"/></symbol>
+  <symbol id="i-strike" viewBox="0 0 24 24"><path d="M16.5 7.5C16 5.5 14.3 4.5 12 4.5c-2.8 0-4.5 1.5-4.5 3.5 0 1.2.6 2.2 2 2.9"/><path d="M4 12h16"/><path d="M8 16.5c.5 2 2.2 3 4.5 3 2.8 0 4.5-1.4 4.5-3.4 0-.8-.2-1.5-.7-2.1"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M3 21c3-1 4.5-2 6-4l9.5-9.5a2.1 2.1 0 0 0-3-3L6 14c-2 1.5-3 3-3 7z"/><path d="m14 6 4 4"/></symbol>
+  <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-3.6-3.6a2 2 0 0 1 0-2.8L14.6 3.4a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L9.2 21z"/><path d="M9 21h11M9.5 8.5l6 6"/></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="7.5"/></symbol>
+  <symbol id="i-line" viewBox="0 0 24 24"><path d="M5 19 19 5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M10 5h9v9"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 7V5h14v2M12 5v14M9 19h6"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v10a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17h0A1.5 1.5 0 0 1 4 15.5z"/><path d="M8 9h8M8 12.5h5"/></symbol>
+  <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M9.5 13.5 9 9.5a3 3 0 1 1 6 0l-.5 4"/><path d="M4 17a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1H4z"/><path d="M6 21h12"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m20 16-4.5-4.5L7 20"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+  <symbol id="i-rotate-left" viewBox="0 0 24 24"><path d="M4 4v5h5"/><path d="M4.6 15a8 8 0 1 0 1.8-8.2L4 9"/></symbol>
+  <symbol id="i-rotate-right" viewBox="0 0 24 24"><path d="M20 4v5h-5"/><path d="M19.4 15a8 8 0 1 1-1.8-8.2L20 9"/></symbol>
+  <symbol id="i-duplicate" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10M14 11v6M11 14h6"/></symbol>
+  <symbol id="i-page-plus" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/></symbol>
+  <symbol id="i-extract" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M14 3v5h5v3"/><path d="M15 17h6M18 14l3 3-3 3"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8 7.5 20 17M8 16.5 20 7"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 24 24"><path d="M8 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h2M16 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2"/><path d="M12 7v10M8.5 13.5 12 17l3.5-3.5"/></symbol>
+  <symbol id="i-single" viewBox="0 0 24 24"><rect x="6.5" y="3.5" width="11" height="17" rx="1.5"/></symbol>
+  <symbol id="i-continuous" viewBox="0 0 24 24"><rect x="6.5" y="2" width="11" height="8.5" rx="1.2"/><rect x="6.5" y="13.5" width="11" height="8.5" rx="1.2"/></symbol>
+  <symbol id="i-spread" viewBox="0 0 24 24"><rect x="2.5" y="5" width="8.5" height="14" rx="1.2"/><rect x="13" y="5" width="8.5" height="14" rx="1.2"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+  <symbol id="i-sepia" viewBox="0 0 24 24"><path d="M5 8h12v5a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6z"/><path d="M17 9.5h1.5a2.5 2.5 0 0 1 0 5H16.5M8 2.5v2.5M12 2.5v2.5"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+  <symbol id="i-thumbs" viewBox="0 0 24 24"><rect x="4" y="3" width="7" height="8" rx="1"/><rect x="13" y="3" width="7" height="8" rx="1"/><rect x="4" y="13" width="7" height="8" rx="1"/><rect x="13" y="13" width="7" height="8" rx="1"/></symbol>
+  <symbol id="i-comments" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v10a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17A1.5 1.5 0 0 1 4 15.5z"/><path d="M8.5 9.5h7M8.5 12.5h4"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></symbol>
+  <symbol id="i-field" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 10v4"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 12h12M13 7l5 5-5 5"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 12H7M11 7l-5 5 5 5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-select-all" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.4"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.2v.1"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.6 0-.9.8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></symbol>
+</svg>
+
+<!-- Library: choose a PDF from the project -->
+<section id="library" class="library" hidden>
+  <div class="library-card">
+    <header class="library-head">
+      <div>
+        <h1>PDF editor</h1>
+        <p class="sub" id="project-name">Open a PDF from this project</p>
+      </div>
+      <button class="btn ghost icon" id="refresh-files" aria-label="Refresh list" data-tip="Refresh"><svg><use href="#i-refresh"/></svg></button>
+    </header>
+    <label class="filter">
+      <svg class="icon-svg"><use href="#i-search"/></svg>
+      <input id="file-filter" placeholder="Filter PDFs" autocomplete="off" spellcheck="false" aria-label="Filter PDFs">
+    </label>
+    <div id="file-list" class="file-list scroll" role="listbox" aria-label="PDF files"></div>
+    <footer class="library-foot"><span class="kbd">↑</span><span class="kbd">↓</span> choose · <span class="kbd">Enter</span> open · edits stay in a draft until you save</footer>
+  </div>
+</section>
+
+<!-- Editor -->
+<section id="reader" class="reader" data-mode="read" hidden>
+  <header class="toolbar">
+    <div class="tb-group tb-left">
+      <button class="btn ghost icon" id="toggle-sidebar" aria-label="Toggle sidebar" data-tip="Sidebar"><svg><use href="#i-sidebar"/></svg></button>
+      <button class="btn ghost doc-title" id="back" data-tip="Open another PDF (⌘O)">
+        <svg><use href="#i-file"/></svg><span id="doc-title">Document</span>
+      </button>
+      <div class="draft-wrap">
+        <button class="draft-chip" id="draft-chip" aria-haspopup="dialog" aria-expanded="false">
+          <span class="dot"></span><span id="draft-text">Saved</span>
+        </button>
+        <div class="popover draft-pop" id="draft-pop" hidden>
+          <div class="pop-head">Draft</div>
+          <p class="pop-note" id="draft-note"></p>
+          <ol class="edit-log scroll" id="edit-log"></ol>
+          <div class="pop-actions">
+            <button class="btn danger" id="discard">Discard changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <nav class="modes" role="tablist" aria-label="Mode">
+      <button role="tab" data-mode="read" aria-selected="true" data-tip="Read (⌘1)"><svg><use href="#i-read"/></svg><span>Read</span></button>
+      <button role="tab" data-mode="annotate" aria-selected="false" data-tip="Annotate (⌘2)"><svg><use href="#i-annotate"/></svg><span>Annotate</span></button>
+      <button role="tab" data-mode="organize" aria-selected="false" data-tip="Organize pages (⌘3)"><svg><use href="#i-organize"/></svg><span>Organize</span></button>
+      <button role="tab" data-mode="fill" aria-selected="false" data-tip="Fill &amp; Sign (⌘4)"><svg><use href="#i-sign"/></svg><span>Fill &amp; Sign</span></button>
+    </nav>
+    <div class="tb-group tb-right">
+      <div class="page-box">
+        <button class="btn ghost icon sm" id="prev-page" aria-label="Previous page" data-tip="Previous page"><svg><use href="#i-chevron-up"/></svg></button>
+        <input id="page-input" class="field page-input" inputmode="numeric" aria-label="Page number" value="1">
+        <span class="page-total" id="page-total">/ 1</span>
+        <button class="btn ghost icon sm" id="next-page" aria-label="Next page" data-tip="Next page"><svg><use href="#i-chevron-down"/></svg></button>
+      </div>
+      <span class="tb-sep"></span>
+      <div class="zoom-group">
+        <button class="btn ghost icon sm" id="zoom-out" aria-label="Zoom out" data-tip="Zoom out (⌘−)"><svg><use href="#i-minus"/></svg></button>
+        <div class="menu-wrap zoom-menu-wrap">
+          <button class="btn ghost zoom-label" id="zoom-label" aria-haspopup="menu" aria-expanded="false">100%</button>
+          <div class="menu" id="zoom-menu" role="menu" hidden>
+            <button role="menuitem" data-zoom="auto">Automatic</button>
+            <button role="menuitem" data-zoom="page-width">Fit width <span class="kbd">⌘0</span></button>
+            <button role="menuitem" data-zoom="page-fit">Fit page</button>
+            <div class="menu-sep"></div>
+            <button role="menuitem" data-zoom="0.5">50%</button>
+            <button role="menuitem" data-zoom="0.75">75%</button>
+            <button role="menuitem" data-zoom="1">100%</button>
+            <button role="menuitem" data-zoom="1.25">125%</button>
+            <button role="menuitem" data-zoom="1.5">150%</button>
+            <button role="menuitem" data-zoom="2">200%</button>
+            <button role="menuitem" data-zoom="3">300%</button>
+          </div>
+        </div>
+        <button class="btn ghost icon sm" id="zoom-in" aria-label="Zoom in" data-tip="Zoom in (⌘+)"><svg><use href="#i-plus"/></svg></button>
+      </div>
+      <span class="tb-sep"></span>
+      <button class="btn ghost icon" id="open-search" aria-label="Search" data-tip="Search (⌘F)"><svg><use href="#i-search"/></svg></button>
+      <button class="btn ghost icon" id="open-summary" aria-label="Summarize" data-tip="Summarize"><svg><use href="#i-sparkles"/></svg></button>
+      <button class="btn ghost icon" id="undo" aria-label="Undo" data-tip="Undo (⌘Z)" disabled><svg><use href="#i-undo"/></svg></button>
+      <button class="btn ghost icon" id="redo" aria-label="Redo" data-tip="Redo (⇧⌘Z)" disabled><svg><use href="#i-redo"/></svg></button>
+      <div class="split-btn menu-wrap">
+        <button class="btn primary" id="save" disabled><svg><use href="#i-save"/></svg>Save</button>
+        <button class="btn primary caret" id="save-menu-btn" aria-label="More save options" aria-haspopup="menu" aria-expanded="false"><svg><use href="#i-caret"/></svg></button>
+        <div class="menu menu-right" id="save-menu" role="menu" hidden>
+          <button role="menuitem" id="save-copy">Save a copy… <span class="kbd">⇧⌘S</span></button>
+          <button role="menuitem" id="revert">Revert to saved</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Tool strips: one per mode -->
+  <div class="strip" id="strip-read" data-for="read">
+    <div class="seg" role="radiogroup" aria-label="Page layout" id="layout-seg">
+      <button role="radio" data-layout="single" aria-checked="false" data-tip="Single page"><svg><use href="#i-single"/></svg><span>Single</span></button>
+      <button role="radio" data-layout="continuous" aria-checked="true" data-tip="Continuous scroll"><svg><use href="#i-continuous"/></svg><span>Continuous</span></button>
+      <button role="radio" data-layout="spread" aria-checked="false" data-tip="Two-page spread"><svg><use href="#i-spread"/></svg><span>Two pages</span></button>
+    </div>
+    <span class="strip-sep"></span>
+    <div class="seg" role="radiogroup" aria-label="Page tint" id="tint-seg">
+      <button role="radio" data-tint="day" aria-checked="true" data-tip="Day"><svg><use href="#i-sun"/></svg><span>Day</span></button>
+      <button role="radio" data-tint="sepia" aria-checked="false" data-tip="Sepia"><svg><use href="#i-sepia"/></svg><span>Sepia</span></button>
+      <button role="radio" data-tint="night" aria-checked="false" data-tip="Night"><svg><use href="#i-moon"/></svg><span>Night</span></button>
+    </div>
+    <span class="strip-sep"></span>
+    <button class="tool" id="bookmark-page" aria-pressed="false" data-tip="Bookmark page (⌘D)"><svg><use href="#i-bookmark"/></svg><span>Bookmark</span></button>
+    <span class="strip-fill"></span>
+    <span class="strip-hint">Select text to highlight, underline or comment</span>
+  </div>
+
+  <div class="strip" id="strip-annotate" data-for="annotate" hidden>
+    <div class="tools" role="toolbar" aria-label="Annotation tools">
+      <button class="tool" data-tool="select" aria-pressed="true" data-tip="Select text (V)"><svg><use href="#i-cursor"/></svg></button>
+      <span class="strip-sep"></span>
+      <button class="tool" data-tool="highlight" aria-pressed="false" data-tip="Highlight (H)"><svg><use href="#i-highlight"/></svg></button>
+      <button class="tool" data-tool="underline" aria-pressed="false" data-tip="Underline (U)"><svg><use href="#i-underline"/></svg></button>
+      <button class="tool" data-tool="strikethrough" aria-pressed="false" data-tip="Strikethrough (K)"><svg><use href="#i-strike"/></svg></button>
+      <span class="strip-sep"></span>
+      <button class="tool" data-tool="ink" aria-pressed="false" data-tip="Pen (P)"><svg><use href="#i-pen"/></svg></button>
+      <button class="tool" data-tool="eraser" aria-pressed="false" data-tip="Eraser (E)"><svg><use href="#i-eraser"/></svg></button>
+      <div class="menu-wrap">
+        <button class="tool with-caret" data-tool="rectangle" id="shape-tool" aria-pressed="false" data-tip="Shapes (R)"><svg class="shape-icon"><use href="#i-square"/></svg><svg class="caret-icon"><use href="#i-caret"/></svg></button>
+        <div class="menu" id="shape-menu" role="menu" hidden>
+          <button role="menuitem" data-shape="rectangle"><svg class="icon-svg"><use href="#i-square"/></svg>Rectangle <span class="kbd">R</span></button>
+          <button role="menuitem" data-shape="ellipse"><svg class="icon-svg"><use href="#i-circle"/></svg>Ellipse <span class="kbd">O</span></button>
+          <button role="menuitem" data-shape="line"><svg class="icon-svg"><use href="#i-line"/></svg>Line <span class="kbd">L</span></button>
+          <button role="menuitem" data-shape="arrow"><svg class="icon-svg"><use href="#i-arrow"/></svg>Arrow <span class="kbd">A</span></button>
+        </div>
+      </div>
+      <button class="tool" data-tool="freetext" aria-pressed="false" data-tip="Text box (T)"><svg><use href="#i-text"/></svg></button>
+      <button class="tool" data-tool="note" aria-pressed="false" data-tip="Note (N)"><svg><use href="#i-note"/></svg></button>
+      <div class="menu-wrap">
+        <button class="tool with-caret" id="stamp-tool" aria-pressed="false" data-tip="Stamp and signature"><svg><use href="#i-stamp"/></svg><svg class="caret-icon"><use href="#i-caret"/></svg></button>
+        <div class="menu" id="stamp-menu" role="menu" hidden>
+          <button role="menuitem" data-stamp="image"><svg class="icon-svg"><use href="#i-image"/></svg>Image…</button>
+          <button role="menuitem" data-stamp="signature"><svg class="icon-svg"><use href="#i-sign"/></svg>Signature…</button>
+        </div>
+      </div>
+    </div>
+    <span class="strip-sep"></span>
+    <div class="style" id="style-bar">
+      <div class="swatches" id="swatches" role="radiogroup" aria-label="Colour"></div>
+      <label class="width-ctl" id="width-ctl" data-tip="Line width">
+        <span class="width-dot" id="width-dot"></span>
+        <input type="range" id="width-input" min="1" max="12" step="1" value="2" aria-label="Line width">
+      </label>
+      <label class="size-ctl" id="size-ctl" hidden>
+        <select class="field sm" id="size-input" aria-label="Font size">
+          <option>8</option><option>10</option><option selected>12</option><option>14</option><option>18</option><option>24</option><option>32</option>
+        </select>
+      </label>
+    </div>
+    <span class="strip-fill"></span>
+    <span class="strip-hint" id="tool-hint">Select text to annotate it</span>
+  </div>
+
+  <div class="strip" id="strip-organize" data-for="organize" hidden>
+    <button class="tool" id="org-rotate-left" data-tip="Rotate left ([)"><svg><use href="#i-rotate-left"/></svg></button>
+    <button class="tool" id="org-rotate-right" data-tip="Rotate right (])"><svg><use href="#i-rotate-right"/></svg></button>
+    <span class="strip-sep"></span>
+    <button class="tool" id="org-duplicate" data-tip="Duplicate (⌘D)"><svg><use href="#i-duplicate"/></svg><span>Duplicate</span></button>
+    <button class="tool" id="org-delete" data-tip="Delete (⌫)"><svg><use href="#i-trash"/></svg><span>Delete</span></button>
+    <span class="strip-sep"></span>
+    <button class="tool" id="org-blank" data-tip="Insert a blank page after the selection"><svg><use href="#i-page-plus"/></svg><span>Blank page</span></button>
+    <button class="tool" id="org-merge" data-tip="Insert pages from another PDF"><svg><use href="#i-merge"/></svg><span>Insert file…</span></button>
+    <span class="strip-sep"></span>
+    <button class="tool" id="org-extract" data-tip="Save the selected pages as a new PDF"><svg><use href="#i-extract"/></svg><span>Extract…</span></button>
+    <button class="tool" id="org-split" data-tip="Split into several PDFs"><svg><use href="#i-split"/></svg><span>Split…</span></button>
+    <span class="strip-fill"></span>
+    <span class="strip-hint" id="org-count">1 of 1 selected</span>
+    <button class="tool" id="org-select-all" data-tip="Select all (⌘A)"><svg><use href="#i-select-all"/></svg></button>
+    <label class="thumb-size" data-tip="Thumbnail size"><svg class="icon-svg"><use href="#i-thumbs"/></svg><input type="range" id="org-size" min="110" max="260" value="160" aria-label="Thumbnail size"></label>
+  </div>
+
+  <div class="strip" id="strip-fill" data-for="fill" hidden>
+    <button class="tool" data-tool="freetext" aria-pressed="false" data-tip="Add text (T)"><svg><use href="#i-text"/></svg><span>Text</span></button>
+    <button class="tool" data-tool="date" aria-pressed="false" data-tip="Add today's date"><svg><use href="#i-calendar"/></svg><span>Date</span></button>
+    <button class="tool" data-stamp="signature" data-tip="Draw or place a signature"><svg><use href="#i-sign"/></svg><span>Signature…</span></button>
+    <span class="strip-sep"></span>
+    <span class="field-count" id="field-count">No form fields</span>
+    <button class="tool" id="field-prev" data-tip="Previous field (⇧Tab)" disabled><svg><use href="#i-prev"/></svg></button>
+    <button class="tool" id="field-next" data-tip="Next field (Tab)" disabled><svg><use href="#i-next"/></svg><span>Next field</span></button>
+    <button class="tool" id="field-highlight" aria-pressed="true" data-tip="Highlight fillable fields"><svg><use href="#i-field"/></svg><span>Highlight fields</span></button>
+    <span class="strip-fill"></span>
+    <span class="strip-hint">Click a field to fill it · values are saved into the PDF</span>
+  </div>
+
+  <div class="banner" id="banner" hidden>
+    <svg class="icon-svg"><use href="#i-alert"/></svg><span id="banner-text"></span>
+    <span class="strip-fill"></span>
+    <span id="banner-actions"></span>
+  </div>
+
+  <div class="body">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-tabs" role="tablist" aria-label="Sidebar">
+        <button role="tab" data-tab="thumbs" aria-selected="true" data-tip="Pages"><svg><use href="#i-thumbs"/></svg></button>
+        <button role="tab" data-tab="outline" aria-selected="false" data-tip="Outline"><svg><use href="#i-list"/></svg></button>
+        <button role="tab" data-tab="bookmarks" aria-selected="false" data-tip="Bookmarks"><svg><use href="#i-bookmark"/></svg><span class="count" id="bookmark-count"></span></button>
+        <button role="tab" data-tab="annotations" aria-selected="false" data-tip="Annotations"><svg><use href="#i-comments"/></svg><span class="count" id="annotation-count"></span></button>
+        <button role="tab" data-tab="results" aria-selected="false" data-tip="Search results"><svg><use href="#i-search"/></svg><span class="count" id="result-count"></span></button>
+      </div>
+      <div class="side-title" id="side-title">Pages</div>
+      <div class="tab-panel scroll" id="panel-thumbs" role="tabpanel"></div>
+      <div class="tab-panel scroll" id="panel-outline" role="tabpanel" hidden></div>
+      <div class="tab-panel scroll" id="panel-bookmarks" role="tabpanel" hidden></div>
+      <div class="tab-panel scroll" id="panel-annotations" role="tabpanel" hidden></div>
+      <div class="tab-panel scroll" id="panel-results" role="tabpanel" hidden></div>
+      <footer class="side-foot" id="author-foot" hidden>
+        <label>Author <input class="field sm" id="author-input" placeholder="Your name" spellcheck="false" aria-label="Author name for new annotations"></label>
+      </footer>
+    </aside>
+
+    <div class="viewer-wrap" id="viewer-wrap">
+      <div class="searchbar" id="searchbar" hidden>
+        <svg class="icon-svg"><use href="#i-search"/></svg>
+        <input id="search-input" placeholder="Find in document" autocomplete="off" spellcheck="false" aria-label="Find in document">
+        <span class="search-count" id="search-count"></span>
+        <button class="btn ghost icon toggle" id="search-case" aria-pressed="false" aria-label="Match case" data-tip="Match case">Aa</button>
+        <button class="btn ghost icon" id="search-prev" aria-label="Previous match" data-tip="Previous (⇧Enter)"><svg><use href="#i-chevron-up"/></svg></button>
+        <button class="btn ghost icon" id="search-next" aria-label="Next match" data-tip="Next (Enter)"><svg><use href="#i-chevron-down"/></svg></button>
+        <button class="btn ghost icon" id="search-close" aria-label="Close search" data-tip="Close (Esc)"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <div class="viewer scroll" id="viewer" tabindex="0" aria-label="Document pages" data-tint="day">
+        <div class="pdfViewer" id="pages"></div>
+      </div>
+      <div class="organize scroll" id="organize" hidden tabindex="0" aria-label="Pages">
+        <div class="org-grid" id="org-grid" role="listbox" aria-multiselectable="true"></div>
+      </div>
+
+      <!-- Floating selection popover -->
+      <div class="sel-pop" id="sel-pop" hidden role="toolbar" aria-label="Selection">
+        <button data-act="highlight" data-tip="Highlight"><svg><use href="#i-highlight"/></svg></button>
+        <button data-act="underline" data-tip="Underline"><svg><use href="#i-underline"/></svg></button>
+        <button data-act="strikethrough" data-tip="Strikethrough"><svg><use href="#i-strike"/></svg></button>
+        <button data-act="note" data-tip="Comment"><svg><use href="#i-note"/></svg></button>
+        <button data-act="copy" data-tip="Copy"><svg><use href="#i-copy"/></svg></button>
+        <span class="pop-sep"></span>
+        <div class="pop-swatches" id="sel-swatches"></div>
+      </div>
+
+      <!-- Popover for the selected annotation (pending or saved) -->
+      <div class="item-pop" id="item-pop" hidden role="toolbar" aria-label="Annotation">
+        <div class="pop-swatches" id="item-swatches"></div>
+        <label class="width-ctl pop-width" id="item-width-ctl" hidden data-tip="Line width">
+          <span class="width-dot" id="item-width-dot"></span>
+          <input type="range" id="item-width" min="1" max="12" step="1" value="2" aria-label="Line width">
+        </label>
+        <span class="pop-sep" id="item-sep"></span>
+        <button data-act="note" data-tip="Edit note"><svg><use href="#i-note"/></svg></button>
+        <button data-act="delete" data-tip="Delete (⌫)"><svg><use href="#i-trash"/></svg></button>
+      </div>
+
+      <!-- Note popup -->
+      <div class="note-pop" id="note-pop" hidden role="dialog" aria-label="Note">
+        <header><span class="note-dot" id="note-dot"></span><span class="note-author" id="note-author">Note</span><span class="note-date" id="note-date"></span>
+          <button class="btn ghost icon sm" id="note-delete" aria-label="Delete note" data-tip="Delete"><svg><use href="#i-trash"/></svg></button>
+          <button class="btn ghost icon sm" id="note-close" aria-label="Close note"><svg><use href="#i-x"/></svg></button></header>
+        <textarea id="note-text" rows="5" placeholder="Write a comment…" spellcheck="true"></textarea>
+        <footer><span class="note-quote" id="note-quote"></span><span class="kbd">⌘↵</span></footer>
+      </div>
+
+      <div class="loading" id="loading" hidden>
+        <div class="spinner"></div>
+        <div class="loading-text" id="loading-text">Opening…</div>
+        <div class="bar"><div class="bar-fill" id="loading-bar"></div></div>
+      </div>
+      <div class="busy-pill" id="busy-pill" hidden><div class="spinner"></div><span id="busy-text">Working…</span></div>
+    </div>
+
+    <aside class="summary" id="summary" hidden>
+      <header class="summary-head">
+        <h2><svg class="icon-svg"><use href="#i-sparkles"/></svg>Summary</h2>
+        <button class="btn ghost icon" id="close-summary" aria-label="Close summary"><svg><use href="#i-x"/></svg></button>
+      </header>
+      <div class="summary-controls">
+        <div class="segmented" role="radiogroup" aria-label="Pages to summarize">
+          <button role="radio" data-range="all" aria-checked="true">All pages</button>
+          <button role="radio" data-range="current" aria-checked="false">This page</button>
+          <button role="radio" data-range="custom" aria-checked="false">Range</button>
+        </div>
+        <div class="range-inputs" id="range-inputs" hidden>
+          <input class="field" id="range-start" inputmode="numeric" aria-label="First page"> –
+          <input class="field" id="range-end" inputmode="numeric" aria-label="Last page">
+        </div>
+        <input class="field focus-input" id="summary-focus" placeholder="Focus (optional), e.g. methods and results" aria-label="Focus">
+        <button class="btn primary" id="run-summary"><svg><use href="#i-sparkles"/></svg>Summarize</button>
+      </div>
+      <div class="summary-body scroll" id="summary-body">
+        <div class="empty-note">Uses your configured model. The summary is saved with this document.</div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- Dialogs -->
+<div class="dialog-backdrop" id="dialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <header class="dialog-head"><h2 id="dialog-title">Dialog</h2>
+      <button class="btn ghost icon" id="dialog-close" aria-label="Close"><svg><use href="#i-x"/></svg></button></header>
+    <div class="dialog-body" id="dialog-body"></div>
+    <footer class="dialog-foot" id="dialog-foot"></footer>
+  </div>
+</div>
+
+<input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+
+<div class="error-screen" id="error-screen" hidden>
+  <div class="error-card">
+    <h2 id="error-title">Something went wrong</h2>
+    <p id="error-text"></p>
+    <button class="btn" id="error-back">Back to files</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+</body>
+</html>

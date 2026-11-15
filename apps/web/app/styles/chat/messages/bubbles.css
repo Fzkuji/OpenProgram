@@ -1,0 +1,876 @@
+/* 消息气泡：用户/助手/系统角色、头像、markdown 正文、错误卡与中断徽条。
+   对应组件：components/chat/messages/bubbles/user-bubble.tsx、assistant-bubble.tsx */
+
+.message {
+  /* The one vertical gap inside a message: between markdown blocks, and
+     between a reply's parts (strip, text, error card, action row). */
+  --reply-gap: 12px;
+  padding: 16px 24px;
+  max-width: 100%;
+  animation: msgAppear 0.3s ease forwards;
+  position: relative;
+}
+
+@keyframes msgAppear {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Three message roles render with three distinct surfaces so the
+   eye can sort them at a glance:
+   - user      → ``--user-msg-bg`` bubble (the composer's raised
+                  surface: --bg-input + --composer-shadow, right)
+   - assistant → transparent (flows flat on the page, left)
+   - system    → transparent (chat background bleed-through;
+                  these are typically attach pointers / runtime
+                  blocks / tool-call cards rendered as standalone
+                  cards with their own border, NOT as message
+                  bubbles, so they read as overlays). */
+/* GPT/Claude-style layout: user = right-aligned bubble with a clear
+   background; assistant = left, no bubble. No avatars: the "one side
+   has a bubble, the other doesn't" + left/right makes the turn boundary
+   obvious. */
+
+.message.user {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  background: transparent;          /* the bubble carries the colour, not the row */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;            /* bubble sits on the right */
+}
+.message.user .message-content {
+  /* Bubble: rounded like the composer, clear background, hugs its content
+     (a one-liner becomes a pill; long text wraps). The right edge lines up
+     with where the assistant text ends (same 36px content inset), so the
+     bubble shares the assistant's content column — just right-aligned, not
+     jammed against the viewport edge. */
+  /* Raised surface: the same --bg-input fill and resting
+     --composer-shadow as the input box and the file-change card, no
+     border, 16px corners. Like those cards, hover deepens the shadow. */
+  background: var(--user-msg-bg);
+  box-shadow: var(--composer-shadow);
+  transition: box-shadow var(--motion-medium) var(--ease-standard);
+  border-radius: var(--radius-2xl);
+  padding: 10px 16px;
+  width: fit-content;
+  max-width: 75%;
+  margin-right: 0;
+  text-align: left;
+  color: var(--text-bright);
+}
+.message.user:not(.is-editing) .message-content:hover {
+  box-shadow: var(--composer-shadow-focus);
+}
+/* A send the server has not acknowledged yet is drawn faded; one that never
+   reached it says so on a quiet line under the bubble. */
+.message.user.is-pending .message-content { opacity: 0.6; }
+.message.user .user-not-sent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 4px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+.message.user .user-not-sent > svg { color: var(--accent-red); }
+
+/* A channel message (WeChat, Telegram…) names its platform and sender
+   on a quiet line above the bubble, since a group puts several people
+   in one conversation. */
+.message.user .user-channel-speaker {
+  margin: 0 4px 4px 0;
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+
+/* Group messages the bot was not addressed in, handed to this turn as
+   context: one quiet toggle at the top of the bubble, the list below it. */
+.message.user .user-room-history {
+  margin-bottom: 6px;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+.message.user .user-room-history-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.message.user .user-room-history-toggle:hover { color: var(--text-bright); }
+.message.user .user-room-history-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  white-space: pre-wrap;
+}
+.message.user .user-room-history-list li + li { margin-top: 2px; }
+.message.user .user-room-history-speaker {
+  margin-right: 6px;
+  color: var(--text-bright);
+}
+
+.message.assistant {
+  background: transparent;          /* no bubble — assistant text flows on the left */
+}
+/* Transcript turns run edge to edge in the column, so assistant text and
+   the user bubble line up with the composer card's left / right edges. */
+.chat-messages .message.user,
+.chat-messages .message.assistant {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.message.system {
+  background: transparent;
+}
+
+/* Compaction / snip / event: a centered divider, not a chat bubble. */
+.message.system-event {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 24px;
+  background: transparent;
+  animation: none;
+  opacity: 1;
+}
+.system-event-rule {
+  width: 28px;
+  height: 0;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.system-event-text {
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.message.compaction-card {
+  background: transparent;
+  padding: 0 16px 6px;
+  animation: none;
+  opacity: 1;
+  overflow-anchor: auto;
+}
+.compaction-card-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  padding: 4px 16px 2px;
+  /* One step below .message-content (15px); matches secondary/meta copy. */
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.compaction-card-info {
+  color: var(--text-muted);
+  cursor: default;
+  pointer-events: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compaction-card-body {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle, transparent);
+}
+.compaction-card-md-clip {
+  /* Match .message-content: 15px / 1.7. Pixel lh keeps the 7-line clip
+     and the “… Show all” overlay on a whole last line (15 × 1.7 = 25.5). */
+  --comp-md-lh: 25.5px;
+  position: relative;
+  font-size: var(--fs-chat);
+  line-height: var(--comp-md-lh);
+  max-height: calc(var(--comp-md-lh) * 7);
+  overflow: hidden;
+}
+.compaction-card-md-clip[data-full="1"] {
+  max-height: 200rem;
+}
+.compaction-card-md-clip:not([data-full="1"]):not([data-anim="1"])::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 9em;
+  height: var(--comp-md-lh);
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--bg-subtle, var(--bg)) 40%);
+}
+.compaction-card-md,
+.compaction-card-md :is(p, h1, h2, h3, h4, h5, li, ul, ol, code, pre, strong, em, a, blockquote) {
+  font-size: var(--fs-chat) !important;
+  line-height: var(--comp-md-lh, 25.5px) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.compaction-card-md {
+  color: var(--text-muted);
+}
+.compaction-card-md-clip:not([data-full="1"]):not([data-anim="1"]) .compaction-card-md {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 7;
+  overflow: hidden;
+}
+.text-hit {
+  cursor: pointer;
+  color: var(--text-muted);
+  text-underline-offset: 2px;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), text-decoration-color var(--motion-fast) var(--ease-standard);
+}
+.text-hit:hover {
+  color: var(--text-primary, var(--text));
+  text-decoration-color: currentColor;
+}
+.text-hit:active {
+  opacity: 0.65;
+}
+.compaction-card-more {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--comp-md-lh, 25.5px);
+}
+.compaction-card-md-clip:not([data-full="1"]) .compaction-card-more {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding-left: 1.5em;
+  background: linear-gradient(90deg, transparent, var(--bg-subtle, var(--bg)) 28%);
+}
+.compaction-card-md-clip[data-full="1"] .compaction-card-more {
+  display: block;
+  margin: 8px 0 0 auto;
+  width: max-content;
+}
+.compaction-orig-toggle {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  flex-shrink: 0;
+}
+.compaction-orig-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 900ms var(--ease-standard);
+}
+.compaction-orig-fold[data-open="1"] {
+  grid-template-rows: 1fr;
+}
+.compaction-orig-fold-inner {
+  overflow: hidden;
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 900ms var(--ease-standard);
+}
+.compaction-orig-fold[data-open="1"] .compaction-orig-fold-inner {
+  opacity: 1;
+  content-visibility: visible;
+}
+/* Skip layout of already-clipped originals. Delay the skip so the 0fr
+   close can still measure real inner height; opening lifts skip immediately. */
+.compaction-orig-fold[data-open="0"] .compaction-orig-fold-inner {
+  content-visibility: hidden;
+  transition:
+    opacity 900ms var(--ease-standard),
+    content-visibility 0s 900ms allow-discrete;
+}
+.covered-turn {
+  opacity: 0.55;
+  filter: saturate(0.65);
+  overflow-anchor: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .compaction-card-md-clip,
+  .compaction-orig-fold,
+  .compaction-orig-fold-inner,
+  .compaction-orig-fold[data-open="0"] .compaction-orig-fold-inner {
+    transition: none;
+  }
+}
+
+.message-content {
+  padding-left: 0;
+  padding-right: 0;
+  /* Transcript and embedded cards share the same text size. */
+  font-size: var(--fs-chat);
+  line-height: 1.7;
+  color: var(--text-primary);
+  /* `break-word` only breaks at the *end* of an overflowing line, which
+     a single unbroken token (long URL, base64 blob, hash) never reaches
+     — `anywhere` breaks mid-token so the bubble can't be pushed wider
+     than the chat column. */
+  overflow-wrap: anywhere;
+}
+
+.message-content pre {
+  /* Paper inset: soft tint, hairline border, quiet. */
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.867em;
+  line-height: 1.55;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-content code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  /* The Claude app's chip: a faint ink wash, a half-pixel hairline and
+     the danger tone on the text. */
+  background: color-mix(in srgb, var(--text-bright) 5%, transparent);
+  border: 0.5px solid color-mix(in srgb, var(--text-bright) 16%, transparent);
+  color: var(--accent-red);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  /* Inline code is one unbroken token by nature (paths, identifiers) —
+     let it wrap rather than widen the column. `pre code` opts back out
+     via the rule below, since the <pre> scrolls instead. */
+  overflow-wrap: anywhere;
+}
+.message-content pre code { background: none; border: 0; color: inherit; padding: 0; font-size: inherit; overflow-wrap: inherit; }
+
+/* Fenced code block chrome (components/chat/messages/bubbles/markdown.ts), the
+   Claude app's: one hairline card, the language as a quiet label inside
+   it rather than a header bar, the copy button only while hovered. */
+.message-content .md-code {
+  position: relative;
+  margin: 0;
+  background: color-mix(in srgb, var(--bg-input) 50%, transparent);
+  border: 0.5px solid color-mix(in srgb, var(--text-bright) 18%, transparent);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.message-content .md-code pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 16px 16px;
+  font-size: var(--fs-xs);
+  line-height: 1.625;
+}
+.md-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 6px 6px 0 16px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.md-code-head .md-code-copy { opacity: 0; transition: opacity var(--motion-medium) var(--ease-standard), background var(--transition), color var(--transition); }
+.md-code:is(:hover, :focus-within) .md-code-head .md-code-copy,
+.md-code-head .md-code-copy.copied { opacity: 1; }
+.md-code-lang { text-transform: lowercase; letter-spacing: 0.02em; }
+.md-code-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.md-code-copy:hover { background: var(--bg-hover); color: var(--text-primary); }
+.md-code-copy .md-code-icon-done { display: none; }
+.md-code-copy.copied { color: var(--accent-green); }
+.md-code-copy.copied .md-code-icon-copy { display: none; }
+.md-code-copy.copied .md-code-icon-done { display: inline; }
+/* ```mermaid cards (lib/chat/markdown/mermaid.ts): the diagram takes the code's place
+   in the same card; the header button switches back to the source. */
+.md-mermaid {
+  display: flex;
+  justify-content: center;
+  padding: 14px;
+  overflow-x: auto;
+}
+.md-mermaid svg { max-width: 100%; height: auto; }
+.md-mermaid[hidden] { display: none; }
+.md-mermaid-toggle {
+  height: var(--ui-button-h-xs);
+  margin-left: auto;
+  margin-right: 2px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.md-mermaid-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* Reply block rhythm (the Claude app's): a reply's markdown is one column
+   with a single gap, --reply-gap, between every pair of blocks — text,
+   lists, code cards, tables, quotes, rules. Blocks carry no margins of
+   their own, so nothing collapses or adds up and no pair needs its own
+   rule. The one exception is a heading: half a gap more above it and a
+   third of one less below, so it belongs to what follows. A reply's gap
+   is clearly wider than the ~11px between the lines of a paragraph, or
+   paragraphs run together. */
+.message.assistant { --reply-gap: 22px; }
+/* The Claude app's reply leading. */
+.message.assistant .message-content { line-height: 1.6; }
+.message-content .md-rendered {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--reply-gap);
+}
+.message-content .md-rendered > * { margin: 0; }
+.message-content .md-rendered > :is(h1, h2, h3, h4, h5, h6) {
+  margin: calc(var(--reply-gap) / 2) 0 calc(var(--reply-gap) / -3);
+}
+.message-content .md-rendered > :first-child { margin-top: 0; }
+.message-content .md-rendered > :last-child { margin-bottom: 0; }
+.message-content p { margin: 0; }
+/* A gap only reads as the same gap when every block's box ends where its
+   ink does. A card's border already does; a text block's line box carries
+   ~5px of leading above and below the glyphs. So in a reply, text blocks
+   trim their first and last lines to cap height and baseline, then give
+   back the ~1.6px Chinese glyphs reach past those lines. An inline-code
+   pill is taller still (more below the baseline than above), so a
+   paragraph holding one gives back what the pill reaches past. Measured
+   on screen pixels, every pair of blocks then sits one gap apart. */
+.chat-stream-body > .chat-text > .md-rendered > :is(p, ul, ol, h1, h2, h3, h4, h5, h6) {
+  text-box: trim-both cap alphabetic;
+  padding-block: 1.6px;
+}
+.chat-stream-body > .chat-text > .md-rendered > p:has(> code) { padding-block: 3.8px 6.1px; }
+/* Inside a quote or a loose list item, blocks keep the same gap. */
+.message-content :is(blockquote, li) > * + :is(p, pre, .md-code, .md-table, blockquote) { margin-top: var(--reply-gap); }
+.message-content ul, .message-content ol { padding-left: 32px; }
+.message-content li { padding-left: 8px; }
+.message-content li + li { margin-top: 4px; }
+/* Tailwind preflight strips list markers; chat markdown needs them back. */
+.message-content ul { list-style: disc; }
+.message-content ol { list-style: decimal; }
+.message-content ul ul { list-style: circle; }
+.message-content li::marker { color: var(--text-muted); }
+.message-content ul > li::marker { font-size: 0.7em; }
+.message-content li { margin: 0; }
+.message-content li > :is(ul, ol) { margin: 4px 0 0; }
+/* A task item's checkbox stands where its bullet would, the text in line
+   with the other items' (as on GitHub and in the Claude app). */
+.message-content li:has(> input[type="checkbox"]:first-child, > p:first-child > input[type="checkbox"]:first-child) { list-style: none; }
+.message-content li > input[type="checkbox"]:first-child,
+.message-content li > p:first-child > input[type="checkbox"]:first-child { margin: 0 0.5em 0 -1.4em; vertical-align: -0.1em; }
+/* Headings, the Claude app's: bold (Tailwind's preflight drops it) at
+   22 / 18 / 16 / 16 / 14 / 14px. They were rem, which the 14px root
+   shrank to 19.25 / 15.75 / 14px. */
+.message-content :is(h1, h2, h3, h4, h5, h6) { color: var(--text-bright); font-weight: 700; line-height: 1.4; }
+.message-content h1 { font-size: var(--fs-lg); }
+.message-content h2 { font-size: var(--fs-title); }
+.message-content :is(h3, h4) { font-size: var(--fs-md); }
+.message-content :is(h5, h6) { font-size: var(--fs-base); }
+.message-content a { color: var(--accent-blue); text-decoration: none; }
+.message-content a:hover { text-decoration: underline; }
+/* The sources a text block cited: one row of numbered chips under it. */
+.message-citations { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
+.message-citation {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  text-decoration: none;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+.message-citation:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.message-citation-index { flex: none; color: var(--text-muted); }
+.message-citation-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-content blockquote { margin: 0 0 0 8px; border-left: 4px solid color-mix(in srgb, var(--text-bright) 10%, transparent); padding: 0 0 0 16px; color: var(--text-secondary); }
+.message-content hr { margin: 0 6px; border: 0; border-top: 0.5px solid var(--border); }
+/* Tables, the Codex app's: the full column wide, a hairline under each
+   row (a firmer one under the header, none under the last row), no grid
+   and no fills. The renderer wraps each table in .md-table, the scroll
+   container, so the table itself can span the column and still scroll
+   when its cells cannot fit. */
+.message-content .md-table { overflow-x: auto; }
+.message-content table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.71429;
+}
+/* With no rule on top, a table's visible top is its header text, inside
+   the cell padding; it gives that back (and, with no rule under the last
+   row, the bottom too) so the reply gap reads the same around a table as
+   around anything else. */
+.message-content .md-rendered > .md-table:not(:first-child) { margin-top: -9px; }
+.message-content .md-rendered > .md-table:not(:last-child) { margin-bottom: -13px; }
+.message-content th, .message-content td {
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-bright) 9%, transparent);
+  padding: 10px 8px;
+  text-align: start;
+  /* The table scrolls, so cells keep their natural width instead of
+     inheriting the bubble's mid-token breaking. */
+  overflow-wrap: normal;
+}
+.message-content th {
+  padding-block: 8px;
+  background: transparent;
+  color: var(--text-bright);
+  font-weight: 600;
+  line-height: 1.125rem;
+  border-bottom-color: color-mix(in srgb, var(--text-bright) 16%, transparent);
+  /* A squeezed column never breaks a CJK heading between its characters
+     ("宽表" stacked one per line); it still breaks at spaces. */
+  word-break: keep-all;
+}
+.message-content :is(th, td):first-child { padding-inline-start: 0; }
+.message-content :is(th, td):last-child { padding-inline-end: 0; }
+.message-content tbody tr:last-child td { border-bottom: 0; }
+.message-content :is(th, td)[align="center"] { text-align: center; }
+.message-content :is(th, td)[align="right"] { text-align: end; }
+/* Code in a cell is Codex's quiet chip, in the text's own colour, and
+   keeps whole (breaking it anywhere let the column shrink to a few
+   letters). */
+.message-content :is(th, td) code {
+  color: inherit;
+  background: color-mix(in srgb, var(--text-bright) 5%, transparent);
+  border: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-bright) 8%, transparent);
+  border-radius: var(--radius-xs);
+  padding: 1px 0.3rem;
+  font-weight: 500;
+  overflow-wrap: normal;
+}
+/* Footnotes (marked-footnote): a small number in the text, and the notes
+   under a hairline at the end of the reply, a size down and secondary. */
+.message-content sup { position: relative; top: -0.5em; font-size: 0.75em; line-height: 0; vertical-align: baseline; }
+.message-content a[data-footnote-ref] { padding: 0 1px; }
+.message-content .footnotes { padding-top: 12px; border-top: 0.5px solid var(--border); font-size: var(--fs-xs); color: var(--text-secondary); }
+.message-content .footnotes li > p { margin: 0; }
+.message-content .footnotes .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.system-message {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  padding: 6px 0;
+  opacity: 0.7;
+}
+
+/* Error card */
+.error-content {
+  background: color-mix(in srgb, var(--accent-red) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-red) 20%, transparent);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin: 8px 0;
+  margin-left: 0;
+  /* Right edge lines up with the user bubble's right edge (same 36px inset),
+     not jammed against the message's own padding. */
+  margin-right: 0;
+  color: var(--accent-red);
+  font-size: var(--fs-base);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Soft terminal-state badges below the chat body — interrupted and
+   cancelled are not full-on errors but still mark the turn as not
+   reaching a clean "done", so they hint at it with a small inline
+   strip rather than recolouring the whole bubble. */
+.bubble-badge {
+  margin: 8px 0 0 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-xs);
+  font-family: var(--font-sans);
+  display: inline-block;
+}
+.bubble-badge-interrupted {
+  background: color-mix(in srgb, var(--accent-yellow) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-yellow) 25%, transparent);
+  color: var(--accent-yellow);
+}
+.bubble-badge-cancelled {
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 25%, transparent);
+  color: var(--text-muted);
+}
+
+.steering-badge {
+  margin-right: 6px;
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+/* Edit state: the bubble turns into an input box that matches the main
+   composer — --bg-input fill, 23px corners, resting --composer-shadow
+   that deepens to --composer-shadow-focus on hover and while focused. */
+.message.user.is-editing .message-content {
+  width: 100%;
+  max-width: 100%;
+  padding: 4px;
+  background: var(--bg-input);
+  border-radius: 23px; /* shape: the editing bubble matches the composer */
+  box-shadow: var(--composer-shadow);
+  transition: box-shadow var(--motion-medium) var(--ease-standard);
+}
+.message.user.is-editing .message-content:hover,
+.message.user.is-editing .message-content:focus-within {
+  box-shadow: var(--composer-shadow-focus);
+}
+.peer-session-pane .message.user.is-editing .message-content {
+  width: calc(100% - 8px);
+  max-width: calc(100% - 8px);
+}
+
+/* Terminal failures follow the reply trace and survive history reload.
+   The stream column's gap places it (see "Reply block rhythm"). */
+.turn-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 14px;
+  border-radius: var(--radius-2xl);
+  /* Same raised card as the file cards (assistant-file-cards.module.css);
+     the red sits only on the icon in its inset well. */
+  background: var(--bg-input);
+  box-shadow: var(--composer-shadow);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.turn-error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--accent-red);
+}
+/* One title line (18px), the 3px gap and the summary line (17px) make the
+   38px of the icon well, so the collapsed card is centred on it. */
+.turn-error-body {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.turn-error-title { color: var(--text-primary); font-weight: 500; line-height: 18px; }
+.turn-error-details { color: var(--text-secondary); font-size: var(--fs-xs); line-height: 17px; }
+.turn-error-details summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: fit-content;
+  list-style: none;
+  cursor: pointer;
+}
+.turn-error-details summary::-webkit-details-marker { display: none; }
+.turn-error-details summary:hover { color: var(--text-primary); }
+.turn-error-details summary svg { transition: transform var(--motion-medium) var(--ease-standard); }
+.turn-error-details[open] summary svg { transform: rotate(180deg); }
+.turn-error-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-xs); }
+.turn-error-details pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 240px;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+/* Syntax tokens (highlight.js classes, lib/chat/markdown/code-highlight.ts).
+   The --hl-* palette is defined with the colour roles in
+   styles/design/color.css. */
+.message-content .hljs-keyword,
+.message-content .hljs-selector-tag,
+.message-content .hljs-built_in,
+.message-content .hljs-literal { color: var(--hl-keyword); }
+.message-content .hljs-string,
+.message-content .hljs-regexp,
+.message-content .hljs-addition { color: var(--hl-string); }
+.message-content .hljs-number,
+.message-content .hljs-symbol { color: var(--hl-number); }
+.message-content .hljs-comment,
+.message-content .hljs-quote,
+.message-content .hljs-meta { color: var(--hl-comment); font-style: italic; }
+.message-content .hljs-title,
+.message-content .hljs-section,
+.message-content .hljs-function .hljs-title { color: var(--hl-title); }
+.message-content .hljs-type,
+.message-content .hljs-class .hljs-title,
+.message-content .hljs-params { color: var(--hl-type); }
+.message-content .hljs-attr,
+.message-content .hljs-attribute,
+.message-content .hljs-variable,
+.message-content .hljs-property,
+.message-content .hljs-selector-class { color: var(--hl-attr); }
+.message-content .hljs-deletion { color: var(--accent-red); }
+.message-content .hljs-emphasis { font-style: italic; }
+.message-content .hljs-strong { font-weight: 600; }
+
+/* User bubbles render their markdown (messages/bubbles/markdown.ts
+   renderUserMarkdown). Keep spacing bubble-tight and give code a surface
+   that stands apart from the bubble's own surface. */
+.message.user .user-md p { margin: 0 0 8px; }
+.message.user .user-md p:last-child { margin-bottom: 0; }
+.message.user .user-md :is(ul, ol) { margin: 4px 0; }
+.message.user .user-md .md-code { margin: 8px 0; background: var(--bg-primary); }
+.message.user .user-md code { background: color-mix(in srgb, var(--bg-primary) 70%, transparent); }
+.message.user .user-md .md-code code { background: none; }
+
+/* The message that set a Goal opens with the Goal label in the accent ink;
+   the objective follows on the same line and wraps as text does. Every
+   block of .md-rendered is a grid item and so its own box, so the opening
+   paragraph is lifted out into one paragraph with the label
+   (user-bubble.tsx splitLeadParagraph); the blocks after it sit where they
+   would in any message: a paragraph's 8px, then the grid's gap. */
+.message.user .user-goal-lead { margin: 0; }
+.message.user .user-goal-lead + .user-md { margin-top: calc(8px + var(--reply-gap)); }
+.message.user .user-goal-label {
+  margin-right: 6px;
+  color: var(--accent-blue);
+  font-weight: 500;
+}
+.message.user .user-goal-label > span { margin-right: 4px; vertical-align: text-bottom; }
+
+/* Collapsed pasted span in a sent user message (Codex text_elements). */
+.message.user .user-paste-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 2px;
+  padding: 1px 9px 1px 7px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-primary) 75%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border-light);
+  cursor: pointer;
+  vertical-align: 1px;
+}
+.message.user .user-paste-chip:hover { background: var(--bg-primary); }
+.message.user .user-paste-chip-icon { color: var(--text-muted); font-size: var(--fs-xs); }
+
+/* Access token or private key in a sent user message, masked until its
+   eye button is pressed. */
+.message.user .user-secret-text { word-break: break-all; }
+.message.user .user-secret-dots { font-size: 0.8em; letter-spacing: 0.06em; }
+.message.user .user-secret-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ui-control-inline);
+  height: var(--ui-control-inline);
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  vertical-align: -5px;
+}
+.message.user .user-secret-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* A conversation with an always-on Agent: messages only (bot-message.tsx). */
+/* The accent at a fixed lightness per mode, so the text on it stays readable in every theme. */
+:root { --bot-said-bg: light-dark(oklch(from var(--theme-accent) 0.93 calc(c * 0.15) h), oklch(from var(--theme-accent) 0.375 calc(c * 0.63) h)); }
+.bot-time { padding: 18px 0 8px; text-align: center; font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bot-row { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 3px 0; }
+.bot-bubble { --reply-gap: 12px; max-width: 100%; padding: 10px 16px; background: var(--bg-input); box-shadow: var(--composer-shadow); transition: box-shadow var(--motion-medium) var(--ease-standard); border-radius: var(--radius-2xl); overflow-wrap: anywhere; }
+.bot-bubble:not(.bot-typing, .bot-failed):hover { box-shadow: var(--composer-shadow-focus); }
+.bot-bubble img { display: block; max-width: 100%; height: auto; max-height: 420px; border-radius: var(--radius-lg); }
+/* A drawing takes the reply's width; a bubble sized to its text would hold it at 300px. */
+.bot-bubble:has(.op-visual, [data-mermaid]) { width: 100%; }
+/* Keeps the last reply where the normal view holds it above its action buttons. */
+.bot-end-room { height: 55.2px; }
+.bot-failed { color: var(--text-muted); }
+.bot-said .message-actions-footer { visibility: hidden; }
+.bot-said .message.user .message-content,
+[data-bot-look] .message.user .message-content { background: var(--bot-said-bg); color: var(--text-primary); }
+/* The normal rows take the chat look while the view switches (use-bot-view-transition.ts). */
+[data-bot-look] .message.assistant .chat-stream-body > .chat-text { --reply-gap: 12px; padding: 10px 16px; line-height: 1.7; background: var(--bg-input); box-shadow: var(--composer-shadow); }
+/* A chat bubble keeps full line boxes; the normal view trims them. Padding
+   gives each trimmed block its line box back (Inter's cap height and descent
+   at that block's line height), so the rows land on the bubbles' height. */
+[data-bot-look] .message.assistant .chat-stream-body > .chat-text > .md-rendered > :is(p, ul, ol) { padding-block: 0.486em; }
+[data-bot-look] .message.assistant .chat-stream-body > .chat-text > .md-rendered > :is(h1, h2, h3, h4, h5, h6) { padding-block: 0.336em; }
+[data-bot-look] .message.assistant { padding-block: 3px; }
+[data-bot-look] .message.assistant .chat-stream-body { gap: 0; }
+[data-bot-look] .message.assistant .chat-stream-body > .chat-text,
+[data-bot-moving] .message.assistant .chat-stream-body > .chat-text { width: fit-content; border-radius: var(--radius-2xl); }
+[data-bot-moving] .message.user,
+[data-bot-moving] .message.assistant,
+[data-bot-moving] .message.user .message-content,
+[data-bot-moving] .message.assistant .chat-stream-body,
+[data-bot-moving] .message.assistant .chat-stream-body > .chat-text,
+[data-bot-moving] .message-content .md-rendered { transition: background-color 500ms ease, color 500ms ease, box-shadow 500ms ease, padding 500ms ease, gap 500ms ease, line-height 500ms ease; }
+[data-bot-moving] .message-content .md-rendered :is(p, ul, ol, h1, h2, h3, h4, h5, h6, blockquote > *, li > *) { transition: margin 500ms ease, padding 500ms ease; }
+.bot-said .message.user .message-content .user-md { color: inherit; }
+.bot-typing { display: flex; gap: 4px; padding: 13px 14px; }
+.bot-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: bot-typing 1.2s ease-in-out infinite; }
+@keyframes bot-typing { 50% { opacity: 0.35; } }
+.bot-typing i:nth-child(2) { animation-delay: .2s; }
+.bot-typing i:nth-child(3) { animation-delay: .4s; }

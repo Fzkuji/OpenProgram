@@ -1,0 +1,53 @@
+/* DAG 角标与分支标签：.history-thread-count 折叠数、.history-branch-tag。
+   对应来源：lib/runtime-bridge/dag/render/labels/badges.ts、nodes.ts */
+
+/* 折叠数角标（rendering.md §12）：「+N」贴在字形右上角，读作"里面还收着
+   N 个"。淡灰、小号——它说明节点，不与节点争眼；画布色光晕让线从后面穿过
+   时断开。hover 提亮做可点暗示。 */
+.history-thread-count {
+  font-size: var(--fs-2xs);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  fill: var(--text-muted);
+  dominant-baseline: middle;
+  stroke: var(--bg-primary);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.history-node.has-thread:hover .history-thread-count {
+  fill: var(--text-primary);
+}
+
+/* 图内分支标签 = 分支切换按钮（顶部分支条已删）。不加背景，只有文字：
+   活动标签的名字用分支色；非活动标签 hover 文字提亮示意可点。文字带画布色
+   描边光晕，线从后面穿过时在字周围断开。 */
+.history-branch-tag text {
+  stroke: var(--bg-primary);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.history-branch-tag:not(.active):hover text {
+  fill: var(--text-bright);
+}
+/* An agent's bubble on the tile speaks for it (render/agents.ts). */
+.history-branch-tag.is-hidden { display: none; }
+
+/* Zoomed out (interaction/view/canvas.ts ``--dag-label-scale``), the way a
+   map keeps its place names readable: branch names and fold counts
+   shrink only gently (12px at 100%, about 8.5px at the least zoom),
+   pinned at their start, with no jump at the far scale;
+   interaction/view/far-labels.ts hides any name that would crowd one already
+   shown. Far out the fold count is detail, and
+   goes. */
+.history-branch-tag text,
+.history-thread-count {
+  transform-box: fill-box;
+  transform-origin: left center;
+  transform: scale(var(--dag-label-scale, 1));
+}
+.history-branch-tag text[text-anchor="middle"] { transform-origin: center; }
+.history-branch-tag.is-culled { visibility: hidden; }
+.is-far .history-thread-count,
+.is-far [data-corner-mark] { display: none; }

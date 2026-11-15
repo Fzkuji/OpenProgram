@@ -1,6 +1,7 @@
 "use client";
 
-import { traceThemeEvent } from "@/lib/prefs/theme-pref";
+import type { PastedTextElement } from "@/lib/chat/send/paste-elements";
+import { traceThemeEvent } from "@/lib/prefs/appearance/theme-pref";
 import { surfaceOriginForChat } from "@/lib/desktop/desktop-bridge";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
@@ -9,13 +10,13 @@ import { useSessionStore } from "@/lib/session-store";
 import {
   registerChatSender,
   rememberSendSettings,
-} from "@/lib/chat/send-queue";
-import { appendLocalUserTurn } from "@/lib/net/chat-stream";
-import { defaultScrollerKey, noteTakeLatest } from "@/lib/chat/chat-scroll";
+} from "@/lib/chat/send/send-queue";
+import { appendLocalUserTurn } from "@/lib/net/ws/chat-stream";
+import { defaultScrollerKey, noteTakeLatest } from "@/lib/chat/history/chat-scroll";
 import {
   draftChannelChoiceFor,
   draftChannelChoiceHost,
-} from "@/lib/runtime-bridge/draft-channel-choice";
+} from "@/lib/runtime-bridge/actions/draft-channel-choice";
 import {
   clearPendingFirstAck,
   clearPendingUserText,
@@ -24,12 +25,13 @@ import {
   getPendingUserAck,
   getPendingUserMessageId,
   getPendingUserReject,
+  getPendingUserRequestId,
   hasPendingFirstAck,
   hasPendingUserText,
   pendingUserHasAttachments,
   setPendingFirstAck,
   setPendingUserText,
-} from "@/lib/chat/pending-user-text";
+} from "@/lib/chat/send/pending-user-text";
 
 /**
  * Chat send path — owned by the React composer.
@@ -46,16 +48,16 @@ import {
  *     immediately (before the ack round-trip).
  *   - `setRunning(true)` — legacy run flag (runtime-bridge/ui.ts).
  *
- * The ack-pairing reservations live in `lib/chat/pending-user-text` (also
- * read by `lib/net/chat-stream.ts` and `lib/runtime-bridge/chat-handlers.ts`),
+ * The ack-pairing reservations live in `lib/chat/send/pending-user-text` (also
+ * read by `lib/net/ws/chat-stream.ts` and `lib/runtime-bridge/session/chat-handlers.ts`),
  * and the first-message channel attach reads `draftChannelChoiceHost`
- * (lib/runtime-bridge/draft-channel-choice) — neither rides `window`.
+ * (lib/runtime-bridge/actions/draft-channel-choice) — neither rides `window`.
  */
 
 /** One inline binary attachment delivered alongside the user message.
  *  ``data`` is raw base64 (no ``data:image/...;base64,`` prefix) so the
  *  WS payload matches what ``TurnRequest.attachments`` expects on the
- *  Python side (see ``openprogram/agent/dispatcher.py``). */
+ *  Python side (see ``openprogram/runtime/conversation/turn_runtime.py``). */
 export interface ChatAttachment {
   /** "image" → inlined as an ImageContent block for the model;
    *  "document" → saved to the session workdir by the backend so the
@@ -74,18 +76,21 @@ export interface ChatAttachment {
 
 interface SendMessageBridgeArgs {
   text: string;
+  /** Pasted spans to show collapsed (lib/chat/send/paste-elements.ts). */
+  textElements?: PastedTextElement[];
   /** Real or provisional chat key. Drafts send their local_* key so the
    *  existing server protocol can acknowledge the correct tab. */
   sessionId: string | null;
   thinking: string;
-  toolsEnabled: boolean;
-  toolsProfile?: string;
   webSearchEnabled: boolean;
   /** Per-turn speed tier — "priority" (Fast) or undefined (provider
    *  default). Sent as ``service_tier`` so the backend forwards it to
    *  the provider request body. */
   serviceTier?: string;
   attachments?: ChatAttachment[];
+  /** A finished demonstration recording; the server adds its steps and
+   *  screenshots to the message (the workflow_recording application). */
+  recording?: string;
   /** Set when the turn targets a session that is NOT the focused one
    *  (a split-view peer pane). The WS payload is identical — only the
    *  focused-shell side effects are skipped, since `setWelcomeVisible`
@@ -101,11 +106,17 @@ interface SendMessageBridgeArgs {
   hasAttachments?: boolean;
   /** Submitting scroller. Defaults from sessionId + background. Drain must not pass live activeChatKey. */
   scrollerKey?: string;
+  /** False for a command the server runs (/goal, /rename …): no bubble
+   *  until the server says it is a message. One that goes on as a turn
+   *  gets its row from chat_ack; one that only answers leaves just its
+   *  reply line. */
+  bubble?: boolean;
 }
 
 function reservePendingChatSend(
   sessionId: string | null,
   text: string,
+  requestId: string,
   onAck?: () => void,
   onReject?: () => void,
   hasAttachments = false,
@@ -122,7 +133,8 @@ function reservePendingChatSend(
   const previousHasAttachments = pendingUserHasAttachments(sessionId);
   const messageId = `pending_${crypto.randomUUID()}`;
   const previousMessageId = getPendingUserMessageId(sessionId);
-  setPendingUserText(sessionId, text, Date.now(), { onAck, onReject, hasAttachments, messageId });
+  const previousRequestId = getPendingUserRequestId(sessionId);
+  setPendingUserText(sessionId, text, Date.now(), { onAck, onReject, hasAttachments, messageId, requestId });
   if (sessionId.startsWith("local_")) {
     setPendingFirstAck(sessionId);
   }
@@ -134,6 +146,7 @@ function reservePendingChatSend(
           hasAttachments: previousHasAttachments,
           messageId: previousMessageId,
           onReject: previousReject,
+          requestId: previousRequestId,
         });
       } else {
         clearPendingUserText(sessionId);
@@ -146,6 +159,25 @@ function reservePendingChatSend(
   };
 }
 
+/** The controls a message carries. A conversation the server has stores
+ *  each control on its branch the moment it is changed, so its messages
+ *  carry none: the branch decides, and an unchanged control never pins
+ *  the Agent's value onto it. A draft carries only the controls the person
+ *  changed in it (``draftTouched``); the rest follow the Agent. */
+export function sentControls(
+  sessionId: string | null | undefined,
+  draft: { draftTouched?: string[] } | undefined,
+  controls: { thinking: string; webSearchEnabled: boolean },
+): Record<string, unknown> {
+  const existing = Boolean(sessionId && useSessionStore.getState().conversations?.[sessionId]);
+  if (existing) return {};
+  const touched = new Set(draft?.draftTouched ?? []);
+  return {
+    ...(touched.has("thinking") ? { thinking_effort: controls.thinking } : {}),
+    ...(touched.has("webSearch") ? { web_search: controls.webSearchEnabled } : {}),
+  };
+}
+
 /**
  * Write a `chat` turn to the WebSocket. Returns `true` if the socket
  * was open and the payload was sent; `false` otherwise (caller keeps
@@ -153,19 +185,20 @@ function reservePendingChatSend(
  */
 export function sendChatMessage({
   text,
+  textElements,
   sessionId,
   thinking,
-  toolsEnabled,
-  toolsProfile = "__agent__",
   webSearchEnabled,
   serviceTier,
   attachments,
+  recording,
   background = false,
   onAck,
   onSent,
   onReject,
   hasAttachments = Boolean(attachments?.length),
   scrollerKey,
+  bubble = true,
 }: SendMessageBridgeArgs): boolean {
   const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
@@ -184,12 +217,16 @@ export function sendChatMessage({
   // the same settings instead of guessed defaults.
   if (sessionId) {
     rememberSendSettings(sessionId, {
-      thinking, toolsEnabled, toolsProfile, webSearchEnabled, serviceTier, background,
+      thinking, webSearchEnabled, serviceTier, background,
     });
   }
+  // Names this turn on the wire: the server echoes it on chat_ack and on an
+  // error before the ACK, so a reply is matched to the exact send.
+  const requestId = crypto.randomUUID();
   const rollbackPendingSend = reservePendingChatSend(
     sessionId,
     text,
+    requestId,
     onAck,
     onReject,
     hasAttachments,
@@ -204,7 +241,7 @@ export function sendChatMessage({
   // Hide the welcome panel right away — before the ack round-trip.
   // Skipped for background sends: the welcome panel belongs to the
   // focused chat shell, not to the peer session being written to.
-  if (ownsFocusedShell()) setWelcomeVisible(false);
+  if (ownsFocusedShell()) setWelcomeVisible(false, true);
 
   // Exact registered `name(...)` input is intercepted by useChatSubmit and
   // never reaches this chat bridge. The removed legacy `run ...` syntax is
@@ -219,11 +256,12 @@ export function sendChatMessage({
     ? useSessionStore.getState().pendingProjectsByChat[sessionId]
     : null;
 
-  const storedMode =
-    sessionId
-      ? useSessionStore.getState().composerSettingsBySession[sessionId]
-        ?.permission_mode
-      : "";
+  // A composer with no chat key keeps its settings under "__new__", like
+  // the sandbox and environment choices below.
+  const draftSettings = useSessionStore.getState().composerSettingsBySession[
+    sessionId ?? "__new__"
+  ];
+  const storedMode = draftSettings?.permission_mode;
   const permissionMode =
     storedMode === "ask"
     || storedMode === "acceptEdits"
@@ -236,23 +274,35 @@ export function sendChatMessage({
   const payload: Record<string, unknown> = {
     action: "chat",
     text,
+    ...(textElements?.length ? { text_elements: textElements } : {}),
     session_id: sessionId,
-    thinking_effort: thinking,
+    client_request_id: requestId,
+    expected_branch_id: sessionId ? useSessionStore.getState().composerSettingsBySession[sessionId]?.active_branch_id ?? null : null,
+    ...sentControls(sessionId, draftSettings, { thinking, webSearchEnabled }),
     exec_thinking_effort: runtimeState._execThinkingEffort ?? undefined,
-    tools: toolsEnabled,
-    web_search: webSearchEnabled,
     permission_mode: permissionMode,
   };
+  const invocation = draftSettings?.agentInvocation;
+  if (invocation) {
+    payload.agent_id = invocation.agentId;
+    if (invocation.trial) {
+      payload.agent_trial = true;
+      payload.agent_config = invocation.config;
+    }
+    if (invocation.model || invocation.thinkingEffort !== undefined) {
+      payload.agent_overrides = {
+        ...(invocation.model ? { model: invocation.model } : {}),
+        ...(invocation.thinkingEffort !== undefined ? { thinking_effort: invocation.thinkingEffort } : {}),
+      };
+    }
+  }
   const sandbox = useSessionStore.getState().composerSettingsBySession[
     sessionId ?? "__new__"
   ]?.sandbox;
   if (typeof sandbox === "boolean") {
     payload.sandbox_enabled = sandbox;
   }
-  if (toolsProfile && toolsProfile !== "__agent__") {
-    payload.tools_profile = toolsProfile;
-  }
-  const surface = surfaceOriginForChat(sessionId, toolsEnabled);
+  const surface = surfaceOriginForChat(sessionId);
   if (surface) payload.surface = surface;
   if (serviceTier) {
     payload.service_tier = serviceTier;
@@ -271,8 +321,9 @@ export function sendChatMessage({
   if (additionalWorkingDirs != null) {
     payload.additional_working_dirs = additionalWorkingDirs;
   }
+  if (recording) payload.recording = recording;
   if (attachments && attachments.length > 0) {
-    // Backend (ws_actions/chat.py) reads ``attachments`` and dispatcher
+    // Backend (ws_actions/chat/turn.py) reads ``attachments`` and dispatcher
     // (TurnRequest.attachments) folds them into the user message as
     // ImageContent blocks. Strip any data-URL prefix the caller might
     // have left behind — backend expects pure base64.
@@ -301,6 +352,14 @@ export function sendChatMessage({
     payload.channel = channelChoice.channel;
     payload.account_id = channelChoice.account_id || "";
   }
+  // Environment picked on a draft: the first message pins it. The worker
+  // ignores it for a conversation that already has history.
+  const environmentChoice = useSessionStore.getState().composerSettingsBySession[
+    sessionId ?? "__new__"
+  ]?.environment;
+  if (environmentChoice) {
+    payload.environment_id = environmentChoice;
+  }
 
   try {
     ws.send(JSON.stringify(payload));
@@ -316,8 +375,8 @@ export function sendChatMessage({
   traceThemeEvent("message-send");
   const acceptedAt = Date.now();
   const optimisticMessageId = getPendingUserMessageId(sessionId ?? "");
-  if (sessionId && optimisticMessageId) {
-    appendLocalUserTurn(sessionId, optimisticMessageId, text, undefined, acceptedAt, "pending");
+  if (sessionId && optimisticMessageId && bubble) {
+    appendLocalUserTurn(sessionId, optimisticMessageId, text, undefined, acceptedAt, "pending", textElements, requestId);
     noteTakeLatest({
       sessionId,
       scrollerKey: scrollerKey ?? defaultScrollerKey(sessionId, background),
@@ -331,6 +390,7 @@ export function sendChatMessage({
       onReject,
       hasAttachments,
       messageId: optimisticMessageId,
+      requestId,
     });
   }
   // Close the clear→ACK race for every session, not only provisional

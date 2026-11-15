@@ -1,0 +1,24 @@
+<title>文档缺口</title>
+<meta name="description" content="设计记录与代码之间尚未解决的差异。">
+<span id="open-items-where-design-docs-are-out-of-sync-with-code"></span>
+<h1>文档缺口</h1>
+<p>只记录尚未解决的差异。</p>
+
+<h2 id="missing-content">缺失内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">缺口</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime/conversation/process_runner.py</code></th><td>子进程执行：启动、停止、用户输入桥接。没有自己的设计记录。</td></tr>
+</tbody>
+</table>
+
+<h2 id="open-problems-in-the-tool-calling-system">工具调用的未决问题</h2>
+<table class="stack">
+<thead><tr><th scope="col">问题</th><th scope="col">现状</th><th scope="col">待办</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness 自递归</th><td>裸调用 <code translate="no">runtime.exec(content=[task])</code> 得到 <code translate="no">DEFAULT_TOOLSET="full"</code>，其中包含入口自身；模型可能再次调用它，失败时还会重试。防护：情境提示词，以及 <code translate="no">runtime/agent/call_state.py</code> 中每个函数 5 层的深度上限。</td><td>为每个 harness 限定工具集。A→B→A 循环只在深度上限处停止。</td></tr>
+<tr><th scope="row">Harness 内部工具集</th><td>默认全量。一个 harness 可以调用另一个（research 调 gui）而跑偏。Claude Code 的子 Agent 用白名单防止这一点。</td><td>待定：(a) 各 harness 在自己的 exec 中限制；(b) 框架在 harness 运行时拒绝所有 harness 入口；(c) 维持现状。</td></tr>
+<tr><th scope="row">断点恢复</th><td><code translate="no">runtime.exec</code> 因供应商不可达耗尽重试后抛出，函数结束。帧节点为 <code translate="no">status="error"</code>，子节点保留；<code translate="no">_render_history_messages</code> 从 DAG 加载历史。</td><td><code translate="no">resume_function(session_id, node_id)</code>：把帧设回 <code translate="no">running</code>，用同一 <code translate="no">frame_node_id</code> 重新调用 exec，恢复 <code translate="no">_call_id</code> 等 contextvars，重建 runtime 上下文，并加 Web 重试按钮。位于 <code translate="no">runtime/agent/call_state.py</code> 和 <code translate="no">runtime/agent/runtime/</code>。</td></tr>
+<tr><th scope="row">Bash 文件变更跟踪</th><td>记录的限制：只扫描 cwd 顶层。<code translate="no">programs/tools/files/bash/</code> 下没有这样的扫描；系统沙箱另行限制 bash 可触及的范围。</td><td>找到现在的负责模块，再改为递归扫描或关闭此条。</td></tr>
+</tbody>
+</table>

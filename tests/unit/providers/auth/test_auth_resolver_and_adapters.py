@@ -3,22 +3,21 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 
 import pytest
 
-from openprogram.auth.context import auth_scope
-from openprogram.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
-from openprogram.auth.resolver import resolve_api_key_sync
-from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import (
+from openprogram.models.auth.context import auth_scope
+from openprogram.models.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
+from openprogram.models.auth.resolver import resolve_api_key_sync
+from openprogram.models.auth.store import AuthStore, set_store_for_testing
+from openprogram.models.auth.types import (
     Credential,
     CredentialData,
     CredentialPool,
 )
-from openprogram.providers.anthropic import auth_adapter as anthro_adapter
-from openprogram.providers.github_copilot import auth_adapter as copilot_adapter
-from openprogram.providers.google_gemini_cli import auth_adapter as gemini_adapter
+from openprogram.models.providers.adapters.anthropic import auth_adapter as anthro_adapter
+from openprogram.models.providers.adapters.github_copilot import auth_adapter as copilot_adapter
+from openprogram.models.providers.adapters.google_gemini_cli import auth_adapter as gemini_adapter
 
 
 @pytest.fixture
@@ -68,7 +67,7 @@ def test_resolver_returns_none_when_nothing_matches(store, monkeypatch):
     assert resolve_api_key_sync("anthropic") is None
 
 
-def test_resolver_extracts_oauth_access_token(store):
+def test_resolver_rejects_anthropic_subscription_token(store):
     cred = Credential(
         provider_id="anthropic", account_id="default", kind="oauth",
         payload=CredentialData(
@@ -79,7 +78,7 @@ def test_resolver_extracts_oauth_access_token(store):
     store.put_pool(CredentialPool(
         provider_id="anthropic", account_id="default", credentials=[cred],
     ))
-    assert resolve_api_key_sync("anthropic") == "ACC"
+    assert resolve_api_key_sync("anthropic") is None
 
 
 def test_resolver_respects_active_profile(store):

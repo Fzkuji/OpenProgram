@@ -1,0 +1,79 @@
+<title>Agent capability policies</title>
+<meta name="description" content="How an Agent selects Programs, Skills and MCP services without copying them, and how the effective set is computed.">
+<meta name="covers" content="apps/web/components/agents/ openprogram/runtime/agent_registry/">
+<h1>Agent capability policies</h1>
+
+<h2 id="ownership">Catalog ownership and Agent references</h2>
+<p>An Agent selects scope without copying definitions. Inheritance and enforced authority: <a href="agent-configuration-ui.html">Configurable Agents</a>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Catalog owns</th><th scope="col">Agent stores</th><th scope="col">Agent never stores</th></tr></thead>
+<tbody>
+<tr><th scope="row">Programs: callable Tools, Workflows, Applications</th><td>Policy, preset reference, explicit names and denies</td><td>Python source, expanded schemas, workflow repositories</td></tr>
+<tr><th scope="row">Skills: procedural instructions</th><td>Mode, names/categories, exclusions</td><td>A copied Skill directory or permanently injected full text</td></tr>
+<tr><th scope="row">MCP: connections and credentials</th><td>Allowed and required service references</td><td>Credentials, authentication cookies, server implementations</td></tr>
+</tbody>
+</table>
+
+<h2 id="modes">Policy modes and migration</h2>
+<table class="stack">
+<thead><tr><th scope="col">Mode</th><th scope="col">Requested set</th><th scope="col">Constraint</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">inherit</code></th><td>Base policy</td><td>Resolved before discovery</td></tr>
+<tr><th scope="row"><code translate="no">all</code></th><td>All globally available entries</td><td>Denies and enforced ceilings still apply</td></tr>
+<tr><th scope="row"><code translate="no">selected</code></th><td>Explicit names and category filters intersect; Programs may instead reference one preset</td><td><code translate="no">allowed=[]</code> means empty; preset plus explicit names is invalid for Programs</td></tr>
+<tr><th scope="row"><code translate="no">none</code></th><td>Empty</td><td>A deferred explicit-name load cannot bypass it</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0">effective = requested ∩ global availability ∩ caller authority
+            ∩ parent delegation ceiling ∩ environment restrictions − explicit denies</pre>
+<ul>
+<li>Missing references stay stored but are not callable.</li>
+<li>Required MCP references must be a subset of effective services. Contradictory patterns, wildcard denies included, are rejected.</li>
+<li>Skill instructions cannot authorize the tools they mention.</li>
+</ul>
+
+<details>
+<summary>Skills <code translate="no">selected</code> and legacy migration</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Input</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">allowed</code> omitted, categories non-empty</th><td>Category filter alone</td></tr>
+<tr><th scope="row">Both non-empty</th><td>Intersect</td></tr>
+<tr><th scope="row"><code translate="no">allowed=[]</code></th><td>No entries, even with categories</td></tr>
+<tr><th scope="row">Both absent</th><td>Selects nothing</td></tr>
+<tr><th scope="row">Item without a category</th><td>A declared category must match; uncategorized items keep their exemption and show as uncategorized</td></tr>
+<tr><th scope="row">Legacy automatic</th><td><code translate="no">all</code></td></tr>
+<tr><th scope="row">Legacy <code translate="no">disabled=["*"]</code></th><td><code translate="no">none</code></td></tr>
+<tr><th scope="row">Legacy non-empty allowed or categories</th><td><code translate="no">selected</code></td></tr>
+<tr><th scope="row">Legacy empty allowlist</th><td><code translate="no">all</code>, only during schema migration. With active categories it is omitted, keeping the old predicate rather than an empty whitelist. Target <code translate="no">selected=[]</code> never passes through legacy empty-is-all.</td></tr>
+</tbody>
+</table>
+<p class="note">Normalize at one boundary, not separately in UI, search and executor. Target policies have an explicit mode for Skills and MCP as well as Programs.</p>
+</details>
+
+<h2 id="flow">Discovery, invocation and change</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Moment</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Save</th><td>Stores intent</td></tr>
+<tr><th scope="row">Run</th><td>Resolves a versioned effective scope and catalog/preset references; no full schema inventory enters the first prompt</td></tr>
+<tr><th scope="row"><code translate="no">tool_search</code></th><td>Searches only the effective scope and returns limited matching schemas. Explicit names and nested workflow or program calls use the same policy</td></tr>
+<tr><th scope="row">Invoke</th><td>Rechecks revocation, availability and resource permission. A globally disabled entry stops being callable at the next boundary, even in queued or pinned runs</td></tr>
+<tr><th scope="row">MCP outage</th><td>Optional: disables that service and surfaces status. Required: blocks admission or startup. Auth errors never connect to a different account</td></tr>
+<tr><th scope="row">Missing names</th><td>Selectors show them until explicitly removed; saving does not erase them</td></tr>
+<tr><th scope="row">Preset update</th><td>Affects newly resolved calls; in-flight snapshots keep their selections, subject to revocation</td></tr>
+<tr><th scope="row">Memory tools</th><td>Also narrowed by the execution memory policy; an allowlist cannot override memory off or read-only</td></tr>
+</tbody>
+</table>
+
+<h2 id="ui">Editor</h2>
+<ul>
+<li>Programs, Skills and MCP are separate; each shows mode, inherited source, effective count, missing count and a catalog action.</li>
+<li>Catalogs load only when opened. Categories and presets are selectors, not copies.</li>
+<li>MCP adds required markers and global connection links; credentials stay outside the draft.</li>
+<li>The list, tree and inspector belong to <a href="agent-tool-configuration-ui.html">the Programs selector</a>.</li>
+</ul>
+<dl class="pairs">
+<dt>Acceptance</dt><dd>Selected empty is empty at search and call; denied explicit names fail; a missing required service blocks before side effects; missing references survive reload; changing tabs keeps the one draft; memory-off tools cannot execute.</dd>
+<dt>Status</dt><dd>Policy primitives exist. Target canonical modes and cross-entry enforcement are pending the <a href="agent-configuration-plan.html">implementation plan</a>.</dd>
+</dl>

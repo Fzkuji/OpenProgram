@@ -25,11 +25,17 @@
   flex-shrink: 0;
 }
 
+.topbarWithToggle {
+  /* The toggle's left edge lines up with the rail rows below it. */
+  gap: 8px;
+  padding-left: 8px;
+}
+
 .title {
   display: inline-flex;
   align-items: center;
   height: var(--ui-button-h);
-  font-size: 18px;
+  font-size: var(--fs-title);
   font-weight: 600;
   line-height: 1;
   color: var(--text-bright);
@@ -53,15 +59,17 @@
   box-sizing: border-box;
   height: var(--ui-button-h);
   padding: 0 12px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1;
-  color: var(--text-dim);
+  color: var(--text-secondary);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--ui-button-radius);
   cursor: pointer;
-  transition: background 150ms ease-out, color 150ms ease-out;
+  transition: background var(--motion-medium) var(--ease-standard), color var(--motion-medium) var(--ease-standard);
   font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tabIcon {
   display: inline-flex;
@@ -116,16 +124,96 @@
 
 .errorBar {
   padding: 8px 24px;
-  font-size: 12px;
-  color: var(--accent-red);
+  font-size: var(--fs-xs);
+  color: var(--danger-soft);
   border-bottom: 1px solid var(--border);
 }
 
 .empty {
   padding: 48px;
   text-align: center;
-  color: var(--text-dim);
-  font-size: 14px;
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+}
+
+.headerSummary {
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/* --- shared empty / first-run state ---------------------------------
+   One anatomy for every management page: framed icon, heading, one
+   explanatory line, optional action. Centered in whatever column it sits
+   in; `.emptyStateCompact` keeps it near the top of a list body. */
+.emptyState {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 48px 24px;
+  text-align: center;
+}
+.emptyStateCompact {
+  flex: none;
+  justify-content: flex-start;
+  padding: 56px 24px 40px;
+}
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.emptyIcon svg {
+  width: 20px;
+  height: 20px;
+}
+.emptyTitle {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--fs-chat);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.emptyDescription {
+  max-width: 420px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+.emptyAction {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+
+/* Section label above a list ("Installed · 3"). */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 8px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.sectionHeader > span:last-child:not(:first-child) {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 /* --- shared list row ---------------------------------------------
@@ -143,7 +231,7 @@
   border: 1px solid transparent;
   border-radius: var(--ui-list-radius);
   cursor: pointer;
-  transition: background 150ms ease-out, color 150ms ease-out;
+  transition: background var(--motion-medium) var(--ease-standard), color var(--motion-medium) var(--ease-standard);
 }
 .row:hover {
   background: var(--bg-hover);
@@ -164,10 +252,9 @@
   text-align: left;
   cursor: pointer;
 }
-.rowOpen:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-  border-radius: 4px;
+.row:has(.rowOpen:focus-visible) {
+  background: var(--bg-hover);
+  color: var(--nav-color-hover);
 }
 
 /* Non-navigating rows (nothing to open) keep the default cursor. */
@@ -181,7 +268,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .rowMain {
@@ -193,7 +280,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--fs-base);
   color: var(--nav-color);
   min-width: 0;
 }
@@ -208,7 +295,7 @@
 }
 
 .rowDesc {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -216,8 +303,8 @@
 }
 
 .rowCount {
-  font-size: 11px;
-  color: var(--text-tertiary);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
@@ -243,10 +330,10 @@
   border: 1px solid var(--border);
   border-radius: var(--ui-list-radius);
   background: color-mix(in srgb, var(--bg-secondary) 48%, transparent);
-  transition: border-color 150ms ease-out, background 150ms ease-out;
+  transition: border-color var(--motion-medium) var(--ease-standard), background var(--motion-medium) var(--ease-standard);
 }
 .catalogCard:hover {
-  border-color: color-mix(in srgb, var(--text-tertiary) 65%, var(--border));
+  border-color: var(--border-light);
   background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
 }
 .catalogHeader {
@@ -257,7 +344,7 @@
 .catalogTitles { flex: 1; min-width: 0; }
 .catalogTitle {
   color: var(--text-bright);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -265,8 +352,10 @@
 }
 .catalogSubtitle {
   margin-top: 2px;
-  color: var(--text-tertiary);
-  font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  font-family: var(--font-sans);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -277,7 +366,7 @@
   min-height: 36px;
   margin-top: 10px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 18px;
   overflow: hidden;
   -webkit-box-orient: vertical;
@@ -296,8 +385,8 @@
   flex: 1;
   min-width: 0;
   gap: 7px;
-  color: var(--text-tertiary);
-  font-size: 10px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
 }
 .catalogActions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
@@ -313,7 +402,7 @@
   background: color-mix(in srgb, var(--bg-secondary) 50%, transparent);
   cursor: pointer;
   user-select: none;
-  transition: background 150ms ease-out, color 150ms ease-out;
+  transition: background var(--motion-medium) var(--ease-standard), color var(--motion-medium) var(--ease-standard);
 }
 .groupRow:hover {
   background: var(--bg-hover);
@@ -336,7 +425,7 @@
 }
 
 .groupName {
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--nav-color);
 }
@@ -347,12 +436,12 @@
 /* Small inline badge — one style for source / trust / transport. */
 .badge {
   display: inline-block;
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   line-height: 16px;
   padding: 0 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border);
-  color: var(--text-dim);
+  color: var(--text-secondary);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -367,7 +456,7 @@
   background: color-mix(in srgb, var(--accent-yellow) 7%, transparent);
 }
 .badgeRed {
-  color: var(--accent-red);
+  color: var(--danger-soft);
   border-color: color-mix(in srgb, var(--accent-red) 27%, transparent);
   background: color-mix(in srgb, var(--accent-red) 7%, transparent);
 }
@@ -399,7 +488,7 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 .tabBtn.subnavTab:hover {
   color: var(--text-primary);
@@ -417,17 +506,17 @@
   right: 0;
   bottom: -1px;
   height: 2px;
-  border-radius: 2px 2px 0 0;
+  border-radius: var(--radius-2xs) var(--radius-2xs) 0 0;
   background: var(--accent-blue);
 }
 
 .tabCount {
   min-width: 18px;
   padding: 1px 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--bg-tertiary);
-  color: var(--text-tertiary);
-  font-size: 10px;
+  color: var(--text-secondary);
+  font-size: var(--fs-2xs);
   line-height: 16px;
   text-align: center;
 }
@@ -440,9 +529,16 @@
 }
 
 .subnavSummary {
-  color: var(--text-tertiary);
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
   white-space: nowrap;
+}
+
+/* At narrow app widths the main sidebar is position:fixed. Reserve its
+   collapsed 49px rail so page chrome is never covered (same rule as the
+   Settings frame); an expanded sidebar stays a temporary overlay. */
+@media (max-width: 900px) {
+  .view { padding-left: var(--rail-collapsed-w); }
 }
 
 @media (max-width: 760px) {
@@ -454,13 +550,7 @@
     padding: 12px 16px;
   }
   .title { width: 100%; }
-  .tabs {
-    order: 2;
-    width: 100%;
-    margin-left: 0;
-    overflow-x: auto;
-    scrollbar-width: thin;
-  }
+  .tabs .tabIcon { display: none; }
   .toolbar {
     order: 3;
     width: 100%;

@@ -9,24 +9,33 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.self_update import UpdatePhase
-from openprogram.self_update.control import supervisor
-from openprogram.self_update.delivery.launcher import launch_supervisor as real_launch_supervisor
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.self_update.verification.test_system_probe import live
-from tests.component.self_update.verification.test_verification_channel import verifier
-from tests.component.self_update.delivery.test_install_transaction import installation, phase
-from tests.component.self_update.recovery.test_commit_recovery import accepted, run, interrupt
+from openprogram.operations.self_update import UpdatePhase
+from openprogram.operations.self_update.control import supervisor
+from openprogram.operations.self_update.delivery.launcher import launch_supervisor as real_launch_supervisor
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.self_update.verification import test_system_probe as _test_system_probe
+from tests.component.self_update.verification import test_verification_channel as _test_verification_channel
+from tests.component.self_update.delivery.test_install_transaction import phase
+from tests.component.self_update.delivery import test_install_transaction as _test_install_transaction
+from tests.component.self_update.recovery.test_commit_recovery import run, interrupt
+from tests.component.self_update.recovery import test_commit_recovery as _test_commit_recovery
 from tests.component.config.test_distribution_release._support import MACOS_DESKTOP_INSTALL
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+live = _test_system_probe.live
+verifier = _test_verification_channel.verifier
+installation = _test_install_transaction.installation
+accepted = _test_commit_recovery.accepted
 
 pytestmark = [pytest.mark.macos, MACOS_DESKTOP_INSTALL]
 
 
 @pytest.fixture
 def recoverable(accepted, monkeypatch):
-    from openprogram.self_update.delivery import controller_bundle
-    from openprogram.self_update.delivery import launcher
-    from openprogram.webui.routes.settings import misc
+    from openprogram.operations.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.interfaces.server.routes.settings import misc
     from tests.component.self_update.control.test_launcher import _trusted_installer
     from tests.component.self_update.delivery.test_install_transaction import INSTALLER
     v = accepted
@@ -52,7 +61,7 @@ def recoverable(accepted, monkeypatch):
 
 
 def cli(monkeypatch, *args):
-    import openprogram.cli as application
+    from openprogram.interfaces.cli import application
     monkeypatch.setattr(sys, "argv", ["openprogram", "self-update", *args])
     with pytest.raises(SystemExit) as result:
         application.main()
@@ -61,7 +70,7 @@ def cli(monkeypatch, *args):
 
 def test_public_status_without_update_does_not_create_intent(tmp_path, monkeypatch, capsys):
     root = tmp_path / "profile"
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: root)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: root)
     assert cli(monkeypatch, "status", "--json") == 0
     assert json.loads(capsys.readouterr().out)["update_id"] is None
     assert not (root / "self-updates").exists()
@@ -89,7 +98,7 @@ def test_public_owner_repair_restores_service_without_new_verifier(recoverable, 
     state = (v.update / "state.json").read_bytes()
     grant = (v.update / "verifier-grant-1.json").read_bytes()
     assert cli(monkeypatch, "repair", v.v.request.update_id) == 0
-    from openprogram.self_update.repair.owner_repair import status
+    from openprogram.operations.self_update.repair.owner_repair import status
     current = status(v.v.request.update_id)
     assert not current["maintenance"]
     assert current["phase"] == "needs_manual_recovery"
@@ -111,7 +120,7 @@ def manual(v):
 
 def advance_probe_waits(monkeypatch):
     """Keep permanent-failure probes real; advance only the repair retry clock."""
-    from openprogram.self_update.repair import owner_repair
+    from openprogram.operations.self_update.repair import owner_repair
     elapsed = [0.0]
     monkeypatch.setattr(owner_repair, "time", SimpleNamespace(
         time=time.time, monotonic=lambda: time.monotonic() + elapsed[0],
@@ -141,8 +150,8 @@ def test_confirmation_refusal_or_stale_plan_does_not_authorize(recoverable, monk
 
 @pytest.mark.parametrize("damage", ["expired", "journal", "app", "doctor", "missing_controller"])
 def test_approved_repair_fails_closed_without_clearing_maintenance(recoverable, monkeypatch, damage):
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     from tests.component.self_update.recovery.test_commit_recovery import expire
     v = recoverable
     manual(v)
@@ -169,8 +178,8 @@ def test_approved_repair_fails_closed_without_clearing_maintenance(recoverable, 
 
 def test_concurrent_confirmations_keep_one_pending_request(recoverable):
     from concurrent.futures import ThreadPoolExecutor
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     v = recoverable
     manual(v)
     digest = _digest(repair.preview_repair(v.v.request.update_id))
@@ -186,8 +195,8 @@ def test_concurrent_confirmations_keep_one_pending_request(recoverable):
 
 
 def test_interrupted_repair_reuses_request_and_original_deadline(recoverable, monkeypatch):
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     v = recoverable
     manual(v)
     request = repair.approve_repair(v.v.request.update_id, _digest(repair.preview_repair(v.v.request.update_id)))
@@ -207,8 +216,8 @@ def test_interrupted_repair_reuses_request_and_original_deadline(recoverable, mo
 
 
 def test_interrupted_success_cleanup_does_not_repeat_app_or_worker_action(recoverable, monkeypatch):
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     v = recoverable
     manual(v)
     request = repair.approve_repair(v.v.request.update_id, _digest(repair.preview_repair(v.v.request.update_id)))
@@ -227,10 +236,10 @@ def test_interrupted_success_cleanup_does_not_repeat_app_or_worker_action(recove
 
 @pytest.mark.parametrize("outcome", ["recovered", "failed", "expired"])
 def test_startup_waits_for_approved_repair_without_new_job(recoverable, monkeypatch, outcome):
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.control import recovery
-    from openprogram.self_update.delivery import launcher
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.control import recovery
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     v = recoverable
     manual(v)
     request = repair.approve_repair(v.v.request.update_id, _digest(repair.preview_repair(v.v.request.update_id)))
@@ -254,10 +263,10 @@ def test_startup_waits_for_approved_repair_without_new_job(recoverable, monkeypa
 
 
 def test_owner_repair_launch_uses_distinct_label_and_saved_controller(recoverable, monkeypatch):
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.delivery import launcher
-    from openprogram.self_update.delivery.controller_bundle import _load_bundle
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.operations.self_update.delivery.controller_bundle import _load_bundle
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     from tests.component.self_update.control.test_launcher import _ready
     v = recoverable
     manual(v)
@@ -284,8 +293,8 @@ def test_owner_repair_launch_uses_distinct_label_and_saved_controller(recoverabl
 
 
 def test_expired_success_cleanup_preserves_receipt_and_needs_new_confirmation(recoverable, monkeypatch):
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     from tests.component.self_update.recovery.test_commit_recovery import expire
     v = recoverable
     manual(v)
@@ -307,8 +316,8 @@ def test_expired_success_cleanup_preserves_receipt_and_needs_new_confirmation(re
 
 
 def test_cleanup_io_error_preserves_success_receipt(recoverable, monkeypatch):
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     v = recoverable
     manual(v)
     request = repair.approve_repair(v.v.request.update_id, _digest(repair.preview_repair(v.v.request.update_id)))
@@ -321,12 +330,12 @@ def test_cleanup_io_error_preserves_success_receipt(recoverable, monkeypatch):
 
 def test_public_aborted_repair_checks_old_app_without_activation(live, installation, monkeypatch):
     from dataclasses import replace
-    from openprogram.self_update import SelfUpdateStore
-    from openprogram.self_update.delivery import controller_bundle
-    from openprogram.self_update.delivery import launcher
-    from openprogram.self_update.repair import owner_repair
-    from openprogram.self_update.control.maintenance import enter_maintenance
-    from openprogram.webui.routes.settings import misc
+    from openprogram.operations.self_update import SelfUpdateStore
+    from openprogram.operations.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.operations.self_update.repair import owner_repair
+    from openprogram.operations.self_update.control.maintenance import enter_maintenance
+    from openprogram.interfaces.server.routes.settings import misc
     from tests.component.self_update.control.test_launcher import _trusted_installer
     from tests.component.self_update.delivery.test_install_transaction import prepare, INSTALLER
     record, _, _ = live
@@ -336,7 +345,7 @@ def test_public_aborted_repair_checks_old_app_without_activation(live, installat
     store.transition(record.request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
     request = replace(record.request, update_id="su_aborted_owner")
     store.create(request)
-    store.transition(request.update_id, UpdatePhase.STAGING)
+    store.transition(request.update_id, UpdatePhase.BUILDING)
     store.transition(request.update_id, UpdatePhase.READY, detail={"transaction_dir": str(transaction)})
     enter_maintenance(request.update_id)
     supervisor._abort(store, request.update_id, UpdatePhase.READY, "quiescence timed out")
@@ -370,9 +379,9 @@ def test_public_aborted_repair_checks_old_app_without_activation(live, installat
 @pytest.mark.parametrize("controller_running", [False, True])
 def test_deterministic_launch_failure_requires_new_consent_unless_controller_is_running(recoverable, monkeypatch, controller_running):
     from contextlib import nullcontext
-    from openprogram.self_update.repair import owner_repair as repair
-    from openprogram.self_update.delivery import launcher
-    from openprogram.self_update.verification.verification_channel import _digest
+    from openprogram.operations.self_update.repair import owner_repair as repair
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.operations.self_update.verification.verification_channel import _digest
     v = recoverable
     manual(v)
     request = repair.approve_repair(v.v.request.update_id, _digest(repair.preview_repair(v.v.request.update_id)))
@@ -399,16 +408,16 @@ def test_deterministic_launch_failure_requires_new_consent_unless_controller_is_
 
 
 def test_public_repair_waits_for_restarted_worker_web_readiness(recoverable, monkeypatch):
-    from openprogram.self_update.repair import owner_repair
-    from openprogram.self_update.verification import system_probe
-    from openprogram.worker import lifecycle
-    from openprogram.webui.routes.settings import misc
+    from openprogram.operations.self_update.repair import owner_repair
+    from openprogram.operations.self_update.verification import system_probe
+    from openprogram.operations.worker import lifecycle
+    from openprogram.interfaces.server.routes.settings import misc
     v = recoverable
     manual(v)
     lock_path, ready_path = v.tmp / "inert-child.lock", v.tmp / "inert-child.web-ready"
     child_code = (
         "from pathlib import Path; import sys,time; "
-        "from openprogram.worker.lock import WorkerLock; "
+        "from openprogram.operations.worker.lock import WorkerLock; "
         "lock=WorkerLock(); lock.path=Path(sys.argv[1]); assert lock.try_acquire(); "
         "time.sleep(2); Path(sys.argv[2]).touch(); time.sleep(30)"
     )

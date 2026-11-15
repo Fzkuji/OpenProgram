@@ -1,0 +1,295 @@
+<title>操控电脑</title>
+<meta name="description" content="computer_use_agent 操作应用窗口、网页和虚拟机：目标、动作、审批和平台差异。">
+<h1>操控电脑</h1>
+<p>一个工具 <code translate="no">computer_use_agent</code> 让模型操作屏幕。应用窗口在后台操作：不会有窗口跳到前面，键盘和鼠标仍归你。</p>
+<h2 id="targets-and-guides">目标</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">target</code></th><th scope="col">操作什么</th><th scope="col">需要</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">app</code></th><td>这台电脑上的窗口，由 <code translate="no">args.app</code> 指定：访达、备忘录、Xcode、聊天客户端、游戏启动器。macOS、X11 下的 Linux、Windows。</td><td><a href="#requirements">要求</a></td></tr>
+<tr><th scope="row"><code translate="no">browser</code></th><td>网页，在 <code translate="no">args.browser</code> 中：默认 App 内置浏览器，或你自己的 Chrome、Edge</td><td>App；App 关闭时用没有 App 登录状态的后台浏览器。你自己的浏览器需<a href="#your-own-chrome-or-edge">扩展</a></td></tr>
+<tr><th scope="row"><code translate="no">vm</code></th><td>OSWorld 兼容服务器后面的远程机器</td><td><code translate="no">computer_use.vm_url</code>，见<a href="#virtual-machine">虚拟机</a></td></tr>
+</tbody>
+</table>
+<details>
+<summary>模型如何学会动作</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具描述</th><td>只列出每轮开始时这台电脑提供的内容：设置 <code translate="no">computer_use.vm_url</code> 后才有 <code translate="no">vm</code>，安装 Playwright Extension 后才有你的 Chrome 或 Edge，沙箱能运行的地方（macOS）才有代码。没有扩展时，你浏览器里打开的页面用 <code translate="no">app</code> 作为应用窗口操作。</td></tr>
+<tr><th scope="row">首次调用某目标</th><td>返回其指南和当前状态。代码有自己的指南 <code translate="no">computer_use_agent.code</code>，在能运行代码时随该调用送达。</td></tr>
+<tr><th scope="row">指南送达</th><td>不会因指南退回调用。指南留在模型上下文中才算读过；压缩后下一次调用重新送达。<code translate="no">action="guide"</code> 或 <code translate="no">help("computer_use_agent.app")</code> 可查看。</td></tr>
+<tr><th scope="row">检查调用</th><td>运行前对照指南。未知动作或参数立即失败，错误中写明该动作的参数。接受少数 Playwright 名称：<code translate="no">select_option</code> 即 <code translate="no">select</code>，<code translate="no">values</code> 即 <code translate="no">value</code>，<code translate="no">expression</code> 即 <code translate="no">script</code>。</td></tr>
+</tbody>
+</table>
+</details>
+<h2 id="what-a-step-looks-like">一步长什么样</h2>
+<pre translate="no" tabindex="0"><code>computer_use_agent(target="app", args={"app": "Calculator"})
+
+0 window "Calculator" actions: AXRaise
+  12 static text value="0"
+  18 button "7"
+  23 button "All Clear"
+
+computer_use_agent(target="app", action="click", args={"app": "Calculator", "element_index": 18})</code></pre>
+<p class="note">第一次调用还返回指南和窗口截图。每行：序号、角色、标签、值、<code translate="no">[focused]</code>、<code translate="no">[checked]</code> 等状态、次要动作。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">行为</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">结果</th><td><code translate="no">Done: …</code>，然后是树的 diff：<code translate="no">-</code> 消失，<code translate="no">+</code> 新增或变化</td></tr>
+<tr><th scope="row">序号</th><td>元素留在窗口时不变，新元素用没用过的编号。应用替换元素时，工具在原序号下重新找到同一控件。</td></tr>
+<tr><th scope="row">上限</th><td>树 1500 个元素，截图长边 1568 像素。<code translate="no">get_app_state</code> 加 <code translate="no">full=true</code> 返回完整树。</td></tr>
+<tr><th scope="row">等待稳定</th><td>至少 0.3 秒，直到树不再变化，最多 1.5 秒；有转圈或进度条时 5 秒</td></tr>
+<tr><th scope="row">元素稀少的窗口</th><td>少于 12 个元素（游戏、画布编辑器、远程桌面、部分 Electron 应用）：状态还列出从截图读到的文字，如 <code translate="no">"New Game" at (160, 215), 120x30</code>，以及无文字图标的轮廓，如 <code translate="no">(112, 169), 55x56</code>。识别在 Mac 上进行，首选语言优先，逐张判断。</td></tr>
+</tbody>
+</table>
+<h2 id="application-actions">应用动作</h2>
+<table class="stack">
+<thead><tr><th scope="col">动作</th><th scope="col">参数</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list_apps</code></th><td>—</td><td>运行中和已安装的应用及 bundle id</td></tr>
+<tr><th scope="row"><code translate="no">list_windows</code></th><td><code translate="no">app</code></td><td><code translate="no">window_id</code>、标题、大小；是否主窗口、聚焦、最小化或在其他空间</td></tr>
+<tr><th scope="row"><code translate="no">get_app_state</code></th><td><code translate="no">app</code>、<code translate="no">window?</code> 或 <code translate="no">window_id?</code>、<code translate="no">full?</code>、<code translate="no">include?</code></td><td>截图和树。关闭的应用在后台启动。<code translate="no">window</code>：标题子串或序号；最后读取的保持选中。<code translate="no">include</code>：<code translate="no">all</code>、<code translate="no">tree</code>、<code translate="no">screenshot</code>。</td></tr>
+<tr><th scope="row"><code translate="no">zoom</code></th><td><code translate="no">app</code>、<code translate="no">x</code>、<code translate="no">y</code>、<code translate="no">width</code>、<code translate="no">height</code></td><td>以完整像素密度取上次截图的区域。动作坐标仍以截图为准。</td></tr>
+<tr><th scope="row"><code translate="no">find</code></th><td><code translate="no">app</code>、<code translate="no">text?</code>、<code translate="no">role?</code></td><td>上次树中按标签、值或占位符查找；没有时返回显示 <code translate="no">text</code> 的截图行</td></tr>
+<tr><th scope="row"><code translate="no">click</code></th><td><code translate="no">app</code>、<code translate="no">element_index</code> 或 <code translate="no">x</code>,<code translate="no">y</code>、<code translate="no">mouse_button?</code>、<code translate="no">click_count?</code>、<code translate="no">key?</code>、<code translate="no">duration?</code></td><td><code translate="no">key</code> 按住修饰键，如 <code translate="no">cmd</code>、<code translate="no">shift+alt</code>；<code translate="no">duration</code> 按住按钮，最多 10 秒</td></tr>
+<tr><th scope="row"><code translate="no">type_text</code></th><td><code translate="no">app</code>、<code translate="no">text</code>、<code translate="no">element_index?</code></td><td>输入到焦点，或先聚焦。不能接受文字的控件拒绝。</td></tr>
+<tr><th scope="row"><code translate="no">press_key</code></th><td><code translate="no">app</code>、<code translate="no">key</code>、<code translate="no">element_index?</code>、<code translate="no">duration?</code></td><td>一个 xdotool 写法的组合键：<code translate="no">Return</code>、<code translate="no">super+c</code>、<code translate="no">ctrl+shift+Tab</code>、<code translate="no">KP_0</code>、<code translate="no">F5</code>。<code translate="no">super</code> 和 <code translate="no">cmd</code> 是 Command。</td></tr>
+<tr><th scope="row"><code translate="no">set_value</code></th><td><code translate="no">app</code>、<code translate="no">element_index</code>、<code translate="no">value</code></td><td>替换值、移动滑块、切换复选框</td></tr>
+<tr><th scope="row"><code translate="no">scroll</code></th><td><code translate="no">app</code>、<code translate="no">element_index</code> 或 <code translate="no">x</code>,<code translate="no">y</code>、<code translate="no">direction?</code>、<code translate="no">pages?</code> 或 <code translate="no">pixels?</code></td><td>按页（可小数）或点</td></tr>
+<tr><th scope="row"><code translate="no">drag</code></th><td><code translate="no">app</code>、<code translate="no">x</code>,<code translate="no">y</code>、<code translate="no">to_x</code>,<code translate="no">to_y</code></td><td>在两个截图点之间拖动</td></tr>
+<tr><th scope="row"><code translate="no">perform_secondary_action</code></th><td><code translate="no">app</code>、<code translate="no">element_index</code>、<code translate="no">action_name</code></td><td>元素列出的动作，如 <code translate="no">AXShowMenu</code>、<code translate="no">AXIncrement</code></td></tr>
+<tr><th scope="row"><code translate="no">select_text</code></th><td><code translate="no">app</code>、<code translate="no">element_index</code>、<code translate="no">text</code>、<code translate="no">prefix?</code>、<code translate="no">suffix?</code>、<code translate="no">selection_type?</code></td><td>选中短语，或把光标放在其前后</td></tr>
+<tr><th scope="row"><code translate="no">paste</code></th><td><code translate="no">app</code>、<code translate="no">text</code>、<code translate="no">format?</code>、<code translate="no">element_index?</code></td><td>经剪贴板以 <code translate="no">text</code>、<code translate="no">md</code> 或 <code translate="no">html</code> 插入；之后恢复剪贴板</td></tr>
+<tr><th scope="row"><code translate="no">copy</code></th><td><code translate="no">app</code>、<code translate="no">element_index?</code></td><td>执行应用的复制并返回文字；之后恢复剪贴板</td></tr>
+<tr><th scope="row"><code translate="no">focus</code></th><td><code translate="no">app</code>、<code translate="no">element_index</code></td><td>不点击地移动焦点</td></tr>
+<tr><th scope="row"><code translate="no">menu</code></th><td><code translate="no">app</code>、<code translate="no">menu_path?</code></td><td>无路径：菜单栏。<code translate="no">["View", "Scientific"]</code>：列出或选择叶子项。忽略大小写和末尾 <code translate="no">…</code>。屏幕上不打开菜单。</td></tr>
+<tr><th scope="row"><code translate="no">show_window</code></th><td><code translate="no">app</code>、<code translate="no">window?</code> 或 <code translate="no">window_id?</code></td><td>恢复或取消隐藏，不置前</td></tr>
+<tr><th scope="row"><code translate="no">open_file</code></th><td><code translate="no">app</code>、<code translate="no">path</code></td><td>像“打开方式”一样在后台打开文档（绝对路径）。拒绝程序、脚本、可执行文件和发给终端应用的文件。仅 macOS。</td></tr>
+<tr><th scope="row"><code translate="no">hover</code></th><td><code translate="no">app</code>、<code translate="no">element_index</code> 或 <code translate="no">x</code>,<code translate="no">y</code>、<code translate="no">duration?</code></td><td>指针停留（默认 0.8 秒）以显示提示；你的光标不动。后台忽略指针的应用没反应。</td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td><code translate="no">app</code>、<code translate="no">duration?</code></td><td>最多 10 秒（默认 1），然后返回变化</td></tr>
+<tr><th scope="row"><code translate="no">start_audio_recording</code></th><td><code translate="no">app</code>、<code translate="no">max_duration?</code></td><td>录制该应用的声音，默认 60 秒，最多 300。其间可执行其他动作。</td></tr>
+<tr><th scope="row"><code translate="no">stop_audio_recording</code></th><td><code translate="no">app</code>、<code translate="no">transcribe?</code></td><td>保存 16 kHz WAV 并返回路径，设置了语音引擎时附转写</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">app</code> 是 <code translate="no">list_apps</code> 打印的名称、bundle id 或 <code translate="no">.app</code> 路径。<code translate="no">x</code>,<code translate="no">y</code> 是该应用最新截图的像素。优先用序号；坐标用于画布和自定义控件。</p>
+<p>元素动作能到达隐藏、最小化或被遮挡的窗口；坐标点击、拖动和滚轮也在后台运行。对滚出视野的元素点击或悬停时先滚动到位。没有 frame 的元素（如未展开的下拉选项）被拒绝并提示先打开其容器，应用不受影响。</p>
+<details>
+<summary>在 macOS 上看到什么</summary>
+<p>agent 占用窗口时，窗口内缘有柔和的主题色光晕，关闭、最小化、缩放按钮变成主题色并依次脉动，agent 光标滑向每个目标，点击处留下小点。你的指针不动。</p>
+<p>覆盖层只在该窗口上方，被置前的窗口会盖住它，它也不接收点击。最后一步约 20 秒后淡出。浏览器工具栏的<strong>显示操作</strong>可对网页和应用关闭它。macOS 也会在菜单栏显示屏幕共享图标。</p>
+</details>
+<h2 id="several-steps-code-and-a-new-agent">多个步骤、代码和新 agent</h2>
+<pre translate="no" tabindex="0"><code>computer_use_agent(target="app", args={"app": "Calculator"}, actions=[
+  {"action": "click", "args": {"element_index": 18}},
+  {"action": "press_key", "args": {"key": "KP_Multiply"}},
+  {"action": "click", "args": {"element_index": 18}},
+  {"action": "press_key", "args": {"key": "KP_Enter"}}
+])</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">形式</th><th scope="col">限制</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">actions</code></th><td>最多 20 个，同一应用</td><td>按序运行，遇错停止，结束时返回一次状态。每步都用之前读取状态的序号。</td></tr>
+<tr><th scope="row"><code translate="no">code</code>（macOS）</th><td>120 秒，100 个动作，输出前 256 KB</td><td>带顶层 <code translate="no">await</code> 的 Python，在隔离解释器中运行，无文件、网络和进程；变量在本轮内保留。<code translate="no">await cu.app.click(app="Numbers", element_index=3)</code>、<code translate="no">await cu.browser.read()</code>、<code translate="no">await cu.vm.screenshot()</code>。<code translate="no">dir(cu.app)</code> 和 <code translate="no">help(cu.app.click)</code> 可探索。</td></tr>
+<tr><th scope="row"><code translate="no">context="inherit"</code>（默认）</th><td>—</td><td>模型在本会话操作屏幕并看到每个结果</td></tr>
+</tbody>
+</table>
+<details>
+<summary>代码与共享窗口</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>代码只作用于调用指定的应用或浏览器，能做单个动作能做的事，含页面脚本和打开网站。从内置浏览器上传是单独的动作。</td></tr>
+<tr><th scope="row">步骤失败</th><td>在代码中抛出，之前的步骤保留</td></tr>
+<tr><th scope="row">超时</th><td>返回错误：已做的保留，当前步骤可能已生效也可能没有，下次调用启动新解释器</td></tr>
+<tr><th scope="row">Agent 状态</th><td>每个 agent 有自己的窗口状态、序号和解释器。会话自身的轮次共享它们，后续消息沿用相同序号。</td></tr>
+<tr><th scope="row">共享应用</th><td>一个会话的多个 agent 轮流使用：调用占用到返回，其他调用最多等 60 秒，然后失败且不发送。上次查看后有别的 agent 操作时，下一个结果会说明并列出那些变化。浏览器标签页同理。</td></tr>
+</tbody>
+</table>
+</details>
+<h2 id="web-pages">网页</h2>
+<p>每个内置标签页有短 id，如 <code translate="no">tk3fa</code>，跨轮次、子 Agent 和 workflow 程序不变。<code translate="no">read</code> 返回 Playwright 无障碍大纲，如 <code translate="no">- button "Next" [ref=e12]</code>；元素在页面上时 ref 有效，也可用 <code translate="no">role</code> 和 <code translate="no">name</code> 指定。</p>
+<p>每个动作返回变化，以 <code translate="no">&lt;changed&gt;</code> 标记，<code translate="no">[unchanged]</code> 代表已看过的部分；导航后返回整页。重新渲染的 ref 按角色和名称再找；已消失时错误中带当前页面。</p>
+<table class="stack">
+<thead><tr><th scope="col">动作</th><th scope="col">参数</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tabs</code> / <code translate="no">open</code> / <code translate="no">close</code></th><td>— / <code translate="no">url</code>、<code translate="no">visible?</code> / <code translate="no">tab?</code></td><td>列出；打开，除非 <code translate="no">visible: true</code> 否则在后台；关闭。其他动作用最近的标签页，除非给 <code translate="no">tab</code>。</td></tr>
+<tr><th scope="row"><code translate="no">read</code></th><td><code translate="no">changes_only?</code></td><td>整页，或上次结果以来的变化</td></tr>
+<tr><th scope="row"><code translate="no">click</code></th><td><code translate="no">ref</code> 或 <code translate="no">role</code>,<code translate="no">name</code> 或 <code translate="no">x</code>,<code translate="no">y</code>、<code translate="no">mouse_button?</code>、<code translate="no">click_count?</code>、<code translate="no">modifiers?</code></td><td>右键、中键、双击和修饰键点击。页面被操作、导航或滚动后 <code translate="no">x</code>,<code translate="no">y</code> 失效。</td></tr>
+<tr><th scope="row"><code translate="no">type</code></th><td><code translate="no">ref?</code>、<code translate="no">text</code>、<code translate="no">clear?</code>、<code translate="no">submit?</code></td><td>替换文字；<code translate="no">clear: false</code> 在光标处插入；<code translate="no">submit: true</code> 按回车；无 <code translate="no">ref</code> 时输入到焦点</td></tr>
+<tr><th scope="row"><code translate="no">paste</code></th><td><code translate="no">text</code>、<code translate="no">format?</code>、<code translate="no">ref?</code></td><td>向页面提供粘贴：<code translate="no">md</code> 和 <code translate="no">html</code> 在富文本编辑器中带格式</td></tr>
+<tr><th scope="row"><code translate="no">select</code></th><td><code translate="no">ref</code>、<code translate="no">value</code></td><td>按值或标签选择选项</td></tr>
+<tr><th scope="row"><code translate="no">press</code></th><td><code translate="no">key</code>、<code translate="no">ref?</code></td><td>无 <code translate="no">ref</code> 时发给页面焦点</td></tr>
+<tr><th scope="row"><code translate="no">hover</code> / <code translate="no">drag</code> / <code translate="no">scroll</code></th><td><code translate="no">ref</code> / <code translate="no">ref</code>、<code translate="no">to_ref</code> / <code translate="no">ref?</code>、<code translate="no">direction?</code>、<code translate="no">amount?</code></td><td>带 <code translate="no">ref</code> 的 <code translate="no">scroll</code> 移动最近的可滚动容器；<code translate="no">amount</code> 为像素</td></tr>
+<tr><th scope="row"><code translate="no">navigate</code> / <code translate="no">back</code> / <code translate="no">forward</code> / <code translate="no">reload</code> / <code translate="no">wait</code></th><td><code translate="no">url</code> / — / <code translate="no">text?</code>、<code translate="no">seconds?</code></td><td><code translate="no">wait</code> 等到文字出现或若干秒</td></tr>
+<tr><th scope="row"><code translate="no">upload</code></th><td><code translate="no">path</code>、<code translate="no">ref?</code></td><td>最大 50 MiB 的本地文件。点击弹出的文件窗口留给 agent，由 <code translate="no">upload</code> 回答。带 <code translate="no">ref</code> 时两步一起做。</td></tr>
+<tr><th scope="row"><code translate="no">screenshot</code></th><td>—</td><td>标签页图像，不置前</td></tr>
+<tr><th scope="row"><code translate="no">console</code> / <code translate="no">network</code></th><td><code translate="no">pattern?</code>、<code translate="no">only_errors?</code>、<code translate="no">limit?</code></td><td>自 agent 首次使用该标签页以来</td></tr>
+<tr><th scope="row"><code translate="no">evaluate</code></th><td><code translate="no">script</code></td><td>JavaScript：表达式、语句或函数，可 <code translate="no">await</code>。JSON 结果最多 20,000 字符；promise 限 30 秒；密码值脱敏。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">并发</th><td>agent 和子 Agent 可共用浏览器。动作占用标签页直到结果读取，列表占用涉及的标签页直到结束；占用一分钟以 <code translate="no">tab_busy</code> 失败。每个 agent 有自己的当前标签页，能看到上次查看后的所有变化，他人操作时会被告知。等待不阻塞他人。</td></tr>
+<tr><th scope="row">重试</th><td>动作不会发送两次。输入可能已送达时的失败会说明，带上页面，不重试。</td></tr>
+<tr><th scope="row">新标签页</th><td>结果中点名动作打开的标签页；agent 在指定新标签页之前保持当前标签页。</td></tr>
+<tr><th scope="row">workflow 程序</th><td>限于启动的窗口；它打开的标签页在结束时关闭</td></tr>
+<tr><th scope="row">关闭了 agent 访问</th><td>在该会话中拒绝所有动作</td></tr>
+<tr><th scope="row">后台</th><td>输入不激活标签页。<code translate="no">visible: true</code> 置前，用于你要求观看时。<code translate="no">file://</code> 打开沙箱允许读取的本地文件。密码值绝不进入模型。</td></tr>
+<tr><th scope="row">审批</th><td>内置标签页上打开、操作和 <code translate="no">evaluate</code> 都不询问。上传在询问模式下询问。脚本只在你发起的会话中运行；定时运行和外部 MCP 客户端被拒绝并被告知使用页面动作，无论来自动作还是代码。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>查看和接管网页</summary>
+<p>Agent 打开的网页留在后台。右侧栏的 <strong>Resources</strong> 按分支列出会话的网页，含子 Agent 的。继续分支保留其分组；相同 URL 仍各自独立；无归属的出现在 <strong>Unassigned</strong>。</p>
+<p>Agent 网页的弹窗在后台作为独立网页加入同一分支，不抢占视图，下一个结果点名它。你打开的网页的弹窗以普通标签页在前台打开。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">选中资源</th><td>在聊天中显示图片预览，不固定、不抢标签页焦点</td></tr>
+<tr><th scope="row"><strong>Preview in conversation</strong></th><td>同一网页；不加顶部标签页；中央被网页占据时回到所属会话</td></tr>
+<tr><th scope="row"><strong>Pin preview</strong> / <strong>Unpin preview</strong></th><td>仅聊天预览。Fixed 固定当前页；Auto 跟随该分支最近打开、读取或操作的网页。固定持续到 App 重新加载。</td></tr>
+<tr><th scope="row"><strong>Hide</strong></th><td>停止捕获，保留网页。从资源行或 <strong>Preview in conversation</strong> 恢复。</td></tr>
+<tr><th scope="row"><strong>Expand</strong></th><td>放大预览，不改模式</td></tr>
+<tr><th scope="row"><strong>Open page</strong></th><td>把现有网页作为顶部标签页；隐藏预览，回到会话时恢复（除非已隐藏）</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">标签页和预览</th><td>不同时显示。没有遮罩，真实页面可用。</td></tr>
+<tr><th scope="row">工具栏</th><td><strong>显示操作</strong>、<strong>Operation history</strong>，Agent 等待时还有 <strong>Review request</strong>。在页面内，它们收在右下角可拖动的 Agent 按钮后，从 Agent 首次操作起，直到页面关闭。</td></tr>
+<tr><th scope="row">Agent 操作时</th><td>页面边缘发光，光标滑向每步；放手后淡出。使用页面不会暂停它；在会话中停止运行，光晕持续到确实停止。</td></tr>
+<tr><th scope="row">预览</th><td>只有一行紧凑栏，只在 Agent 需要你或状态无法确认时显示状态。App 内有全屏内容时隐藏预览页面。默认 300×198.75；拖动标题移动，拖边角缩放，比例锁定，页面本身不缩放。</td></tr>
+<tr><th scope="row">操作标记和历史</th><td>标记短暂，不拦截输入。历史只含操作类型和结果，不含输入的文字。</td></tr>
+<tr><th scope="row">关闭</th><td>影响所有引用该网页的分支。活动网页先请求停止。关闭不同于隐藏。断开时显示上一张图并标为过期。</td></tr>
+<tr><th scope="row">预览还跟随</th><td>桌面应用窗口（每步后的最新截图）和 Agent 接管或输入的 Desktop 终端（实时只读），规则相同。截图只在内存中，worker 重启后消失。这些控件只作用于 OpenProgram 网页；应用窗口和虚拟机有自己的审批。</td></tr>
+<tr><th scope="row">App 或 worker 重启</th><td>未关闭的网页在后台恢复其标签页、会话、分支和最后确认的标题与 URL，成为新的活动网页，旧句柄失效。明确关闭的留在 <strong>Closed pages</strong>，隐藏的预览保持隐藏。</td></tr>
+<tr><th scope="row">重启之后</th><td>行在原分支显示 <strong>Restoring page…</strong>、<strong>Could not restore page</strong> 或 <strong>Reconnect</strong>。不需要 <strong>Continue Agent</strong>，新动作需要新的观察和当前权限。恢复用站点持久存储重新加载 URL，未保存的 DOM 和表单值丢失。没有保留标签页描述的旧记录显示 <strong>Could not restore page</strong>。</td></tr>
+</tbody>
+</table>
+</details>
+<h2 id="your-own-chrome-or-edge">你自己的 Chrome 或 Edge</h2>
+<p>把 <code translate="no">args.browser</code> 设为 <code translate="no">chrome</code> 或 <code translate="no">edge</code>，使用你的登录状态和 cookie。动作相同：<code translate="no">tabs</code> 按序号列出，<code translate="no">read</code> 加 <code translate="no">tab=&lt;index&gt;</code> 切换。模型被告知只在你点名或任务需要登录状态时使用，并留在点名的浏览器内。没有扩展时，点名它的调用立即退回。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">服务器</th><td>微软的 Playwright MCP server（<code translate="no">@playwright/mcp --extension</code>），用 <code translate="no">npx</code> 获取，需要 Node.js</td></tr>
+<tr><th scope="row">扩展</th><td>安装一次 <a href="https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm">Playwright Extension</a>，Edge 用同一个。首次动作时它询问共享哪个标签页。</td></tr>
+<tr><th scope="row">跳过询问</th><td><code translate="no">openprogram config set computer_use.chrome_extension_token &lt;token&gt;</code>，token 由扩展显示</td></tr>
+<tr><th scope="row">审批</th><td>一次批准覆盖该浏览器内的一切，含 <code translate="no">evaluate</code> 和上传；首次调用是上传时卡片会说明。代码在调用的 <code translate="no">args.browser</code> 点名时可用。</td></tr>
+</tbody>
+</table>
+<h2 id="virtual-machine">虚拟机</h2>
+<pre translate="no" tabindex="0"><code>openprogram config set computer_use.vm_url http://192.168.64.2:5000</code></pre>
+<p>驱动 <a href="https://os-world.github.io/">OSWorld</a> 兼容服务器：<code translate="no">GET /screenshot</code> 和用 pyautogui 的 <code translate="no">POST /execute</code>。没有元素树：<code translate="no">screenshot</code>、<code translate="no">click</code>、<code translate="no">move</code>、<code translate="no">drag</code>、<code translate="no">scroll</code>、<code translate="no">type_text</code>、<code translate="no">press_key</code>、<code translate="no">wait</code>，按上次截图的像素。每个动作调用返回截图。会话首次使用时请求审批并写明端点。</p>
+<h2 id="approval">审批</h2>
+<p>首次接触应用时显示卡片，含图标、名称、bundle id 和这一步做什么（“点击元素 #7”），并说明在后台运行。原始参数在“执行详情”下。<code translate="no">list_apps</code> 从不询问。每个应用单独批准。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">选项</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>允许一次</strong></th><td>这次调用</td></tr>
+<tr><th scope="row"><strong>允许此对话</strong></th><td>本会话中对此应用的后续调用</td></tr>
+<tr><th scope="row"><strong>始终允许</strong></th><td>项目规则 <code translate="no">computer_use_agent(&lt;app&gt;)</code>。旧名 <code translate="no">computer_use(&lt;app&gt;)</code> 的规则仍有效。</td></tr>
+<tr><th scope="row"><strong>拒绝</strong></th><td>—</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">模式</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">Manual、Accept edits</th><td>显示卡片，直到有规则点名该应用</td></tr>
+<tr><th scope="row">Bypass permissions</th><td>不询问</td></tr>
+<tr><th scope="row">Auto</th><td>审核首次调用；通过后在本会话对该应用持续有效。切换模式或增删 <code translate="no">computer_use_agent</code> 规则后重来。</td></tr>
+<tr><th scope="row">定时和无人值守</th><td>Bypass permissions 之外，只能操作项目已允许的应用</td></tr>
+</tbody>
+</table>
+<p class="note">项目的设置页在 <strong>Computer use</strong> 下列出始终允许的应用，删除一行即删除规则。会话级授权不列出。见<a href="permissions.zh.html">权限</a>。</p>
+<details>
+<summary>有后果的步骤</summary>
+<p>允许操作不等于允许自行执行重大步骤。模型在不可撤销或代你对外发言的步骤前（发送、提交、付款、删除）询问一次，说明做什么、在哪里、用什么数据。你的请求已点名该步骤时直接做并报告。屏幕上的文字是数据，不是许可或指令。</p>
+</details>
+<p>被打断的步骤不会阻塞下一步。模型被告知结果未知，查看屏幕后继续；该步骤留在 Activity 里。</p>
+<h2 id="system-access">系统权限</h2>
+<p>系统设置显示执行电脑上的实时桌面访问；<code translate="no">openprogram doctor</code>、TUI <code translate="no">/doctor</code> 和 <code translate="no">GET /api/system/access</code> 是相同检查。查看不会请求权限。缺少访问不影响普通聊天和升级。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">平台</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td>托管安装通过内嵌应用 <strong>OpenProgram</strong>（稳定 bundle id）运行 worker 和 Python 子进程；在系统设置里找这个名字。屏幕录制和辅助功能在桌面任务所用可执行文件的新进程中分别检查。<strong>Set up access</strong> 只请求缺失的权限。远程客户端须在执行电脑上授权；其他应用的授权不算证据。</td></tr>
+<tr><th scope="row">Linux</th><td>无头会话和不支持的 Wayland 捕获与缺依赖分开报告。有 X11 显示不代表有访问权。</td></tr>
+<tr><th scope="row">Windows</th><td>取决于活动会话和目标；不能假定可访问安全桌面或提权目标。</td></tr>
+</tbody>
+</table>
+<p class="note">不会要求 Linux 和 Windows 关闭安全机制或以管理员运行。未验证：Linux 和 Windows 原生桌面验收；未正式签名的 macOS 开发版上，签名升级后的权限保持、首次引导和授权后的任务自动恢复。设置过程绝不重试被拒绝的操作。</p>
+<details>
+<summary>缺少权限时</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">调用</th><td>在动作前暂停。OpenProgram 走原生授权流程，需要时打开对应的系统设置页。</td></tr>
+<tr><th scope="row">会话中</th><td>简短的等待状态和 Open System Settings 操作；暂停卡片上没有表单、Continue、null 结果、Retry 或 Edit。真正失败或取消的运行保留各自状态。</td></tr>
+<tr><th scope="row">检查和继续</th><td>worker 保存任务，通过新的 OpenProgram 进程检查，不请求权限，也避免旧结果。可用后同一任务继续一次。一轮内后续步骤不再检查，下一轮再查。</td></tr>
+<tr><th scope="row">等待期间</th><td>关闭页面不停止检查，需要重启时启动后再查，取消任务阻止继续，检查失败继续等待。</td></tr>
+<tr><th scope="row">旧会话</th><td>查看时不启动操作或弹出提示；切换会话时重复送达不重新打开授权。你仍可手动打开系统设置。系统权限不替代操作审批。</td></tr>
+<tr><th scope="row">本地 ad-hoc macOS 构建</th><td>更新后录屏授权可能失效而开关仍开。OpenProgram 记住成功的检查；身份变化且录屏被拒时，下一次本地授权只更新自己过时的登记，每个身份最多一次。状态检查和重连不重置权限。Developer ID 版本使用正常流程。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>macOS 自动化权限错误</summary>
+<p>发给 System Events 或目标应用的 Apple Events 需要自动化权限，按目标授予，与屏幕录制和辅助功能无关。被拒时，在执行的 Mac 上打开<strong>系统设置 → 隐私与安全性 → 自动化</strong>，查看请求方对目标的访问。</p>
+<p>失败的操作仍是失败；改设置既不批准也不重做。其他原生失败保留实际错误。</p>
+</details>
+<h2 id="while-the-screen-is-locked">遇到阻碍时</h2>
+<span id="while-an-application-is-busy"></span><span id="windows-on-other-spaces"></span><span id="new-windows-and-file-dialogs"></span>
+<table class="stack">
+<thead><tr><th scope="col">情况</th><th scope="col">行为</th><th scope="col">接下来</th></tr></thead>
+<tbody>
+<tr><th scope="row">屏幕锁定（macOS）</th><td>应用调用返回错误，不发送；应用和窗口仍开着</td><td>解锁后继续。内置浏览器和虚拟机不受影响。</td></tr>
+<tr><th scope="row">应用正忙（保存、刚打开的对话框）</th><td>步骤发送一次并最多等 10 秒。更久：视为完成，并注明无法读取状态。</td><td>模型等待后再读，绝不重复该步骤</td></tr>
+<tr><th scope="row">读取或步骤前应用正忙</th><td>最多等 10 秒，然后失败且不发送</td><td><code translate="no">wait</code> 总能运行</td></tr>
+<tr><th scope="row">步骤后结果读不到，如点击后应用退出</th><td>步骤算完成；结果说明原因</td><td>—</td></tr>
+<tr><th scope="row">窗口在另一个桌面空间</th><td><code translate="no">list_windows</code> 标记。截图、点击、滚动、拖动和元素动作可达。按键不可达：<code translate="no">type_text</code> 和 <code translate="no">paste</code> 向焦点字段插入纯文本，<code translate="no">press_key</code> 报告无法发送。</td><td>只有你或 Dock 能移动它</td></tr>
+<tr><th scope="row">步骤在前面打开了新窗口</th><td>返回新窗口的状态，并说明覆盖了哪个窗口</td><td><code translate="no">get_app_state</code> 加 <code translate="no">window</code> 返回</td></tr>
+<tr><th scope="row">macOS 打开或存储对话框</th><td>独立进程。点击和 <code translate="no">set_value</code> 可达；按键不可达，相关动作会报告。文件列表不在辅助功能中，状态列出从截图读到的文字。</td><td>用 <code translate="no">open_file</code></td></tr>
+</tbody>
+</table>
+<h2 id="requirements">要求</h2>
+<ul>
+<li>macOS、使用 X11（Xorg）的 Linux，或 Windows 10、11。</li>
+<li>macOS：已签名的运行时（<code translate="no">ai.openprogram.runtime</code>）需要<strong>辅助功能</strong>和<strong>屏幕录制</strong>。见<a href="#system-access">系统权限</a>和<a href="permissions.zh.html">权限</a>。</li>
+</ul>
+<h2 id="on-linux">在 Linux 和 Windows 上</h2>
+<span id="on-windows"></span>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Linux</th><th scope="col">Windows</th></tr></thead>
+<tbody>
+<tr><th scope="row">树</th><td>AT-SPI：GTK 3、GTK 4、带 <code translate="no">QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1</code> 的 Qt</td><td>UI Automation：Win32、WPF、WinForms、商店应用（UWP、WinUI）、Chromium。被遮挡也能截图。</td></tr>
+<tr><th scope="row">需要</th><td>X11（Wayland 不允许操作其他窗口，工具报告不可用）、<code translate="no">python3-gi</code> 加 <code translate="no">gir1.2-atspi-2.0</code> 和 <code translate="no">gir1.2-gtk-3.0</code>、<code translate="no">xdotool</code></td><td><code translate="no">comtypes</code>，Windows 安装已包含</td></tr>
+<tr><th scope="row">可选</th><td><code translate="no">x11-utils</code>（区分真实窗口和辅助窗口）、<code translate="no">tesseract-ocr</code>、<code translate="no">pulseaudio-utils</code></td><td><code translate="no">PATH</code> 上的 <code translate="no">tesseract</code></td></tr>
+<tr><th scope="row">与 macOS 相同</th><td>树、序号、diff、截图、<code translate="no">zoom</code>、<code translate="no">find</code>、<code translate="no">actions</code>、<code translate="no">menu</code>、<code translate="no">select_text</code>、<code translate="no">set_value</code>、按元素滚动、审批</td><td>树、序号、diff、截图、<code translate="no">zoom</code>、<code translate="no">find</code>、<code translate="no">actions</code>、<code translate="no">select_text</code>、<code translate="no">set_value</code>、<code translate="no">copy</code>、<code translate="no">paste</code>（所有格式）、按元素滚动、录音、审批</td></tr>
+<tr><th scope="row">名称</th><td>桌面条目 id（<code translate="no">org.gnome.Calculator</code>）、名称或进程名，通过桌面条目启动</td><td>开始菜单名（<code translate="no">Calculator</code>）、可执行文件（<code translate="no">notepad</code>）或 pid，从开始菜单启动</td></tr>
+<tr><th scope="row">后台</th><td>元素动作（按下、切换、设值、插入和选择文字、菜单、回车）。<code translate="no">x</code>,<code translate="no">y</code> 的指针、<code translate="no">hover</code> 和其他按键只在 GTK 或 Qt 窗口聚焦时可达：窗口短暂置前，之后焦点和指针恢复。<code translate="no">hover</code> 留下指针。卡片会说明。</td><td>元素动作；点击、滚动和普通按键投递到窗口不置前；<code translate="no">hover</code> 不动你的指针</td></tr>
+<tr><th scope="row">需要置前</th><td>见上</td><td>带修饰键的按键（<code translate="no">ctrl+s</code>）、多数应用中 <code translate="no">paste</code> 按的 <code translate="no">ctrl+v</code>、商店应用外框、Chromium 和 Firefox 的指针输入；之后焦点和指针恢复。用 Windows 快捷键：<code translate="no">ctrl+c</code>。</td></tr>
+<tr><th scope="row"><code translate="no">paste</code>、<code translate="no">copy</code></th><td>纯文本直接插入焦点，不用剪贴板，没有 <code translate="no">md</code>、<code translate="no">html</code>。<code translate="no">copy</code> 不动剪贴板。</td><td><code translate="no">copy</code> 不动剪贴板。<code translate="no">paste</code> 恢复文字，不恢复其他格式。</td></tr>
+<tr><th scope="row"><code translate="no">menu</code></th><td>有菜单栏的应用</td><td>经典菜单和 UI Automation 菜单；Ribbon 在窗口树中</td></tr>
+<tr><th scope="row">没有树</th><td>列为 "no accessibility tree"；用截图（有 tesseract 时 OCR）和坐标</td><td><code translate="no">tesseract</code> 提供 OCR</td></tr>
+<tr><th scope="row">录音</th><td>应用自身及子进程的 PipeWire 或 PulseAudio 流。PipeWire 四分之一秒内开始；只有 PulseAudio 时可能漏掉已在播放的流的前一秒。</td><td>通过进程环回捕获其进程树，需 Windows 10 2004 或更高</td></tr>
+</tbody>
+</table>
+<p class="note">Windows 支持尚未由项目在 Windows 机器上实际运行过；出问题请报告失败的步骤。</p>
+<h2 id="recording-sound">录音</h2>
+<p>使用屏幕录制权限，只捕获指定应用：不含其他应用、麦克风或系统提示音。最新 20 个保存在 <code translate="no">~/.openprogram/computer-use/audio/</code>。</p>
+<p><code translate="no">stop_audio_recording</code> 用设置 → 语音中的引擎转写：whisper.cpp 把声音留在 Mac 上，OpenAI 和 Groq 发送给它们。<code translate="no">transcribe=false</code> 只保留文件。静音会报告且不转写。接受音频的聊天模型（如 Gemini 和 OpenAI 的 gpt-audio）还会收到录音本身。</p>
+<h2 id="what-the-tool-refuses">工具拒绝做的事</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram 自己的窗口</th><td>仅在显示审批卡片的模式下，否则 agent 可能回答自己的卡片；Bypass permissions 可操作</td></tr>
+<tr><th scope="row">macOS 安全键盘输入</th><td>不输入，按键到不了</td></tr>
+<tr><th scope="row"><code translate="no">computer_use.refused_apps</code></th><td>你的应用名称或 bundle id 列表</td></tr>
+<tr><th scope="row"><code translate="no">computer_use.refuse_password_fields</code></th><td>不向密码字段输入</td></tr>
+<tr><th scope="row">微信和 Telegram 渠道、plan 模式</th><td>不提供此工具</td></tr>
+</tbody>
+</table>
+<p class="note">拒绝信息会写明要改的设置。</p>

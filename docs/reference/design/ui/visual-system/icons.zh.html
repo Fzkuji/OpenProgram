@@ -1,0 +1,161 @@
+<title>图标系统</title>
+<meta name="description" content="三个图标家族、输入框填充规则、品牌标志和统一的动效合同。">
+<h1>图标系统</h1>
+
+<p>每个家族有自己的地盘，同一屏不会无意间混用填充和线条图标。没有人手写图标 SVG。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">家族</th><th scope="col">范围</th><th scope="col">来源、许可</th></tr></thead>
+<tbody>
+<tr><th scope="row">Solar Bold Duotone</th><td>输入框区域（胶囊、控件行、加号菜单、模型和权限徽章、思考力度、发送）、提问与审批面板、时间线行方块、操作菜单、DAG 视图控件和视角条</td><td><code translate="no">apps/web/components/solar-icons</code>，CC BY 4.0</td></tr>
+<tr><th scope="row">pqoqubbw 动态线条</th><td>应用外框：左侧导轨、中间标签、侧栏、设置导航、函数卡片。不打算迁移。</td><td><code translate="no">apps/web/components/animated-icons</code>，MIT</td></tr>
+<tr><th scope="row">lucide-react</th><td>其余不需要动效的地方：设置内容、对话框、时间线折叠箭头</td><td><code translate="no">lucide-react</code>，ISC</td></tr>
+</tbody>
+</table>
+<p class="note">Solar 图形由 <code translate="no">apps/web/scripts/icons/fetch-solar.mjs</code> 从 Iconify 收录到 <code translate="no">bodies.ts</code>：扩展 <code translate="no">ICONS</code>，重跑，提交，构建无需联网。填充字形加一层 50% 浅色，因为线条图标在 14 到 16px 下显得普通。用户头像来自 DiceBear；Agent 头像是角色（<a href="agent-avatars.zh.html">Agent 头像</a>）。</p>
+
+<details>
+<summary>输入框图标</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">角色</th><th scope="col">图标</th></tr></thead>
+<tbody>
+<tr><th scope="row">选项触发 <code translate="no">+</code></th><td><code translate="no">tuning-2</code></td></tr>
+<tr><th scope="row">添加文件</th><td><code translate="no">paperclip</code></td></tr>
+<tr><th scope="row">工具、工具配置</th><td><code translate="no">case-minimalistic</code>、<code translate="no">settings-minimalistic</code></td></tr>
+<tr><th scope="row">网页搜索、沙箱</th><td><code translate="no">global</code>、<code translate="no">box-minimalistic</code></td></tr>
+<tr><th scope="row">无人值守 关、开</th><td><code translate="no">eye</code>、<code translate="no">eye-closed</code></td></tr>
+<tr><th scope="row">思考力度；快速模式</th><td><code translate="no">fire</code>；快速时变红</td></tr>
+<tr><th scope="row">聊天模型徽章</th><td>供应商标志（<a href="#brand-marks">品牌标志</a>），没有则 <code translate="no">cpu</code></td></tr>
+<tr><th scope="row">渠道胶囊</th><td>品牌色的渠道标志（<a href="#brand-marks">品牌标志</a>）</td></tr>
+<tr><th scope="row">Agent 徽章</th><td>Agent 头像，按<a href="#the-composers-fill-rule">填充规则</a>放置</td></tr>
+<tr><th scope="row">权限徽章</th><td><code translate="no">shield-check</code></td></tr>
+<tr><th scope="row">本地、网页标签、目标、画中画胶囊</th><td><code translate="no">monitor</code>、<code translate="no">earth</code>、<code translate="no">target</code>、<code translate="no">pip-2</code></td></tr>
+<tr><th scope="row">工作目录、添加目录</th><td><code translate="no">folder-with-files</code>、<code translate="no">add-folder</code></td></tr>
+<tr><th scope="row">项目、项目缺失</th><td><code translate="no">folder-open</code>、<code translate="no">danger-triangle</code></td></tr>
+<tr><th scope="row">菜单勾选、关闭、箭头</th><td><code translate="no">check-circle</code>、<code translate="no">close-circle</code>、<code translate="no">alt-arrow-right</code>、<code translate="no">alt-arrow-down</code></td></tr>
+<tr><th scope="row">发送、复制</th><td><code translate="no">plain-2</code>、<code translate="no">copy</code></td></tr>
+<tr><th scope="row">模型能力：视觉、视频、工具、推理</th><td><code translate="no">eye</code>、<code translate="no">videocamera</code>、<code translate="no">case-minimalistic</code>（12px，图形撑满方框）、<code translate="no">lightbulb-bolt</code></td></tr>
+<tr><th scope="row">Git 胶囊；新分支或 worktree、worktree、PR、查看 PR</th><td><code translate="no">git-branch</code>；<code translate="no">add-circle</code>、<code translate="no">folder-path-connect</code>、<code translate="no">git-pull-request</code>、<code translate="no">square-arrow-right-up</code></td></tr>
+<tr><th scope="row">文件改动卡片标题、文件行</th><td><code translate="no">pen-new-square</code>、<code translate="no">file-text</code></td></tr>
+<tr><th scope="row">文件改动 撤销、Review</th><td>Font Awesome 实心 <code translate="no">rotate-left</code>、<code translate="no">eye</code>，配文字。Solar 的撤销在按钮尺寸下是细线。同一脚本和表；viewBox 记在 <code translate="no">SOLAR_VIEWBOXES</code>。</td></tr>
+</tbody>
+</table>
+<p class="note">切换状态时换图形，不只靠颜色：无人值守闭眼，运行中模式 Steer 显示前进箭头、Queue 显示队列，项目目录缺失显示警告三角。</p>
+<p class="note">非 Solar：思考卡片里的 Fast 保留动态仪表，指针由 <code translate="no">active</code> 旋转；思考卡片的 <code translate="no">?</code>（<a href="../composer/effort-picker.zh.html">思考力度选择器</a>）是静态 lucide <code translate="no">CircleHelp</code>，14px。</p>
+</details>
+
+<h2 id="the-composers-fill-rule">输入框的填充规则</h2>
+<p>适用于输入框及其弹层：胶囊、控件行、菜单、力度胶囊、上下文用量卡片、Goal 对话框。提问和审批卡片在回复下方，保持各自尺寸。</p>
+<dl class="pairs">
+<dt>方框</dt><dd>16 × 16px</dd>
+<dt>测量</dt><dd>实际绘制的墨迹，不是 view box</dd>
+<dt>缩放</dt><dd><code translate="no">s = 16 / max(inkWidth, inkHeight)</code></dd>
+<dt>放置</dt><dd>墨迹中心对齐方框中心</dd>
+<dt>悬停</dt><dd>控件悬停时 18 × 18px（<code translate="no">HOVER_POP_FILL</code>，1.125）</dd>
+</dl>
+<p class="note">宽图形宽 16px（微信 16 × 13.1px），高图形高 16px。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">图形</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Solar</th><td><code translate="no">SolarIcon fit="fill"</code> 把 view box 裁成围绕墨迹的正方形。边界在 <code translate="no">solar-icons/ink-bounds.ts</code>，光栅化 <code translate="no">bodies.ts</code> 生成（50% 层也算墨迹）：<code translate="no">npm run generate:solar-ink-bounds --workspace apps/web</code>。</td></tr>
+<tr><th scope="row">品牌标志</th><td><code translate="no">BrandMark fit="fill"</code>，经 <code translate="no">ModelMark</code> 和 <code translate="no">ChannelLogo fit="fill"</code>，数据来自 <code translate="no">brand-mark/ink-bounds.generated.ts</code></td></tr>
+<tr><th scope="row">Agent 角色</th><td><code translate="no">fit="mark"</code>，<code translate="no">components/avatar/bot/catalog.ts</code> 的 <code translate="no">botMarkFit</code>；身体作墨迹。上传图、字母方块或 DiceBear 本来就填满方框，只放大。</td></tr>
+<tr><th scope="row">其他</th><td><code translate="no">FillIcon</code>（<code translate="no">components/ui/fill-icon.tsx</code>）按几何加半个描边裁剪 svg，图片或 canvas 整体放入。应用图标和 favicon 是运行时位图，没有测得的墨迹。上下文圆环只响应悬停。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>例外</summary>
+<ul>
+<li>发送纸飞机：和输入框其他图标一样增大到 18px，不滑行。</li>
+<li>停止：16px 方框内 8 × 8px 方块。</li>
+<li>行尾箭头、菜单勾选：静态 lucide，16px。</li>
+<li>胶囊滑出的 ×、能力标记、力度仪表和 <code translate="no">?</code>、拖放浮层的回形针：保持各自尺寸。</li>
+<li>输入框之外，Solar 图标绘制整个 view box（墨迹占 20/24），放大 1.12（<code translate="no">HOVER_POP</code>）。</li>
+</ul>
+</details>
+
+<h2 id="brand-marks">品牌标志</h2>
+<p>供应商标志（<code translate="no">public/images/providers</code>）和渠道标志（<code translate="no">public/images/channels</code>）只由 <code translate="no">BrandMark</code>（<code translate="no">apps/web/components/brand-mark</code>）绘制。单色标志是文字色或品牌色的遮罩；彩色标志就是图片本身。输入框之外：<code translate="no">fit="contain"</code>，悬停不动。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">尺寸</th></tr></thead>
+<tbody>
+<tr><th scope="row">侧栏渠道行</th><td>14px</td></tr>
+<tr><th scope="row">命令面板、Chats 页</th><td>16px</td></tr>
+<tr><th scope="row">设置的底板，标志内缩 2px</th><td>列表 20px，路由概览 16px，供应商页 40px</td></tr>
+</tbody>
+</table>
+<p class="note">添加标志：放入文件，运行 <code translate="no">npm run generate:brand-ink-bounds --workspace apps/web</code>。生成表过期时有测试失败；<code translate="no">components/brand-mark</code> 之外的组件直接绘制标志文件时另有测试失败。</p>
+
+<h2 id="solar-in-the-execution-timeline">执行时间线</h2>
+<p>每行开头是 24px 着色方块（嵌套 20px），内含 13px 图标（嵌套 11px），静态（<code translate="no">motionPreset="none"</code>），无提示。<code translate="no">components/chat/messages/execution/tool-presentation.ts</code> 的 <code translate="no">presentTool()</code> 选图标；<code translate="no">execution-strip.tsx</code> 的 <code translate="no">StepRow</code> 按行类型兜底。</p>
+<details>
+<summary>时间线图标</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">行</th><th scope="col">图标</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令（<code translate="no">bash</code>、<code translate="no">write_stdin</code>、<code translate="no">terminal_use</code>）</th><td><code translate="no">programming</code></td></tr>
+<tr><th scope="row">执行代码</th><td><code translate="no">code-square</code></td></tr>
+<tr><th scope="row">编辑、写入、补丁</th><td><code translate="no">pen-new-square</code></td></tr>
+<tr><th scope="row">读文件、PDF</th><td><code translate="no">file-text</code></td></tr>
+<tr><th scope="row">列目录</th><td><code translate="no">folder-open</code></td></tr>
+<tr><th scope="row">查找文件（<code translate="no">glob</code>）</th><td><code translate="no">file-search</code></td></tr>
+<tr><th scope="row">搜索（<code translate="no">grep</code>、代码搜索）</th><td><code translate="no">magnifier</code></td></tr>
+<tr><th scope="row">代码智能（LSP）</th><td><code translate="no">structure</code></td></tr>
+<tr><th scope="row">网页搜索、抓取</th><td><code translate="no">global</code></td></tr>
+<tr><th scope="row">浏览器控制</th><td><code translate="no">cursor</code></td></tr>
+<tr><th scope="row">生成、分析图片</th><td><code translate="no">gallery-add</code>、<code translate="no">gallery</code></td></tr>
+<tr><th scope="row">画布、发送文件、给代理发消息</th><td><code translate="no">plain-2</code></td></tr>
+<tr><th scope="row">子代理工具</th><td><code translate="no">ghost</code></td></tr>
+<tr><th scope="row">读取对话</th><td><code translate="no">book</code></td></tr>
+<tr><th scope="row">询问用户</th><td><code translate="no">chat-round-question-mark</code></td></tr>
+<tr><th scope="row">计划模式</th><td><code translate="no">map</code></td></tr>
+<tr><th scope="row">定时任务</th><td><code translate="no">calendar</code></td></tr>
+<tr><th scope="row">运行程序</th><td><code translate="no">box</code></td></tr>
+<tr><th scope="row">使用技能</th><td><code translate="no">stars</code></td></tr>
+<tr><th scope="row">资源、记忆</th><td><code translate="no">database</code></td></tr>
+<tr><th scope="row">待办</th><td><code translate="no">checklist</code></td></tr>
+<tr><th scope="row">Worktree</th><td><code translate="no">git-branch</code></td></tr>
+<tr><th scope="row">自更新</th><td><code translate="no">refresh</code></td></tr>
+<tr><th scope="row">MCP</th><td><code translate="no">plug-circle</code></td></tr>
+<tr><th scope="row">其他函数</th><td><code translate="no">sledgehammer</code>（Solar 没有扳手）</td></tr>
+<tr><th scope="row">兜底：思考、LLM、子代理、函数</th><td><code translate="no">lightbulb-bolt</code>、<code translate="no">cpu</code>、<code translate="no">ghost</code>、<code translate="no">sledgehammer</code></td></tr>
+</tbody>
+</table>
+<p class="note">不算类型图标：失败行的细描边 ✗，以及 lucide <code translate="no">ChevronRight</code>。</p>
+</details>
+
+<h2 id="motion-contract">动效合同</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">合同</th></tr></thead>
+<tbody>
+<tr><th scope="row">Handle</th><td>所有家族共用 <code translate="no">AnimatedNavIconHandle</code>（<code translate="no">startAnimation</code>、<code translate="no">stopAnimation</code>）</td></tr>
+<tr><th scope="row">悬停目标</th><td>容器，不是 16px 的图标。没有 ref 的 Solar 图标跟随最近的可点击祖先：按钮、链接、任意菜单项、listbox 选项、胶囊</td></tr>
+<tr><th scope="row">选择器、放大比例、弹簧</th><td><code translate="no">components/ui/hover-pop.ts</code>，Agent 角色也用它</td></tr>
+<tr><th scope="row">减少动态</th><td><code translate="no">prefers-reduced-motion</code> 下全部不动</td></tr>
+<tr><th scope="row">外层</th><td><code translate="no">SolarIcon</code> 渲染与动态图标相同的 <code translate="no">span.inline-flex</code> 外层</td></tr>
+</tbody>
+</table>
+<h3 id="motion-presets">预设</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">预设</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">pop</code>（默认）</th><td>缩放 1.12；输入框内填充图标 18/16</td></tr>
+<tr><th scope="row"><code translate="no">nudge</code></th><td>箭头右移 1.5px</td></tr>
+<tr><th scope="row"><code translate="no">pulse</code></th><td>菜单项被勾选时弹入一次</td></tr>
+<tr><th scope="row"><code translate="no">none</code></th><td>装饰图标：菜单勾选、警告三角、能力标记</td></tr>
+</tbody>
+</table>
+<p class="note">pqoqubbw 图标自己重绘（扳手转动、箭头跳动）；填充图标做不到，所以用预设。</p>
+
+<h2 id="attribution">署名</h2>
+<p><a href="https://github.com/480-Design/Solar-Icon-Set">Solar Icons</a> © 480 Design，CC BY 4.0。两个 Font Awesome 图标：<a href="https://fontawesome.com/license/free">Font Awesome Free</a>，© Fonticons，CC BY 4.0。声明写在 <code translate="no">bodies.ts</code> 文件头和本页。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>输入框用 Solar（包括 <code translate="no">components/chat/top-bar</code> 的徽章）、时间线方块、填充规则</td></tr>
+<tr><th scope="row">未完成</th><td>Fast 的状态驱动仪表（关时指针在低位，开时扫到高位并变强调红）；思考卡片用 Solar <code translate="no">question-circle</code>；面向用户的 Solar 致谢入口</td></tr>
+</tbody>
+</table>

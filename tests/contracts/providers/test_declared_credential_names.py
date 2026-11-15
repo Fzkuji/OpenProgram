@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.webui.routes.identity._credential_secrets import declared_credential_names, has_credential_field, is_declared_credential_name
+from openprogram.interfaces.server.routes.identity.credential_secrets import declared_credential_names, has_credential_field, is_declared_credential_name
 
 
 @pytest.mark.parametrize(
@@ -50,13 +50,13 @@ def test_web_search_names_come_from_the_live_registry(monkeypatch):
 def test_community_provider_names_are_declared():
     """models.dev providers have no static row — their env vars must still
     resolve, or a community provider's key could never be saved."""
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     catalogue = models_dev.list_providers()
     if not catalogue:
         pytest.skip("models.dev catalogue cache is empty")
 
-    from openprogram.providers.env_api_keys import _PROVIDER_ENV_VARS
+    from openprogram.models.providers.settings.env_api_keys import _PROVIDER_ENV_VARS
 
     static = {name for names in _PROVIDER_ENV_VARS.values() for name in names}
     community = [
@@ -72,7 +72,7 @@ def test_community_provider_names_are_declared():
 
 def test_community_names_come_from_the_catalogue_not_a_local_table(monkeypatch):
     """Proves the catalogue is actually consulted, not shadowed by a table."""
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     invented = "INVENTED_COMMUNITY_PROVIDER_KEY"
     assert not is_declared_credential_name(invented)
@@ -89,7 +89,7 @@ def test_community_names_come_from_the_catalogue_not_a_local_table(monkeypatch):
 
 def test_unreachable_catalogue_still_declares_static_names(monkeypatch):
     """A cold or offline catalogue must not revoke the built-in providers."""
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     monkeypatch.setattr(
         models_dev,

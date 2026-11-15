@@ -1,0 +1,122 @@
+<title>Conversation lifecycle</title>
+<meta name="description" content="How a conversation stays readable and interactive while its transcript, executions and composer recover.">
+<meta name="covers" content="apps/web/components/page-shell.tsx apps/web/lib/execution-stream/">
+<h1>Conversation lifecycle</h1>
+
+<figure id="ownership">
+<svg class="fig-wide" viewBox="0 0 680 120" role="img" aria-label="When the connection is ready, the visible transcript loads first. Then relevant execution state recovers in bounded requests, and live deltas remain authoritative.">
+  <defs><marker id="cl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Connection ready</text>
+  <line class="ln" x1="150" y1="33" x2="212" y2="33" marker-end="url(#cl-a)"/>
+  <text class="t-big" x="224" y="40">Visible transcript</text>
+  <text class="t-soft" x="224" y="66">requested first</text>
+  <line class="ln" x1="380" y1="33" x2="436" y2="33" marker-end="url(#cl-a)"/>
+  <text class="t-big" x="417" y="40">Bounded execution recovery</text>
+  <text class="t-soft" x="448" y="66">live deltas remain authoritative</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Connection ready</strong></li>
+  <li><strong>Visible transcript</strong><small>requested first</small></li>
+  <li class="flow-end"><strong>Bounded execution recovery</strong><small>live deltas remain authoritative</small></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Owner</th><th scope="col">Owns</th></tr></thead>
+<tbody>
+<tr><th scope="row">Transcript</th><td>The rows of each view, written only by the transcript reducer from reads, numbered updates and typed local changes; one read in flight per view; pagination, search targets, scroll anchors</td></tr>
+<tr><th scope="row">Execution</th><td>Monotonic cursors and status versions; active task and approval identity. Snapshot recovery does not simulate a new terminal event</td></tr>
+<tr><th scope="row">Composer</th><td>Session-owned draft, attachments, queued entries, acknowledgement. Navigation or disconnect never clears unacknowledged input</td></tr>
+<tr><th scope="row">Connection generation</th><td>Timers, pending reads, fragment buffers. Obsolete responses cannot change a new connection or the visible session</td></tr>
+<tr><th scope="row">Server</th><td>Authorization, execution, cancellation, approvals. No client optimization bypasses them</td></tr>
+</tbody>
+</table>
+<p class="note">Storage failures degrade persistence, not event delivery. No new execution runtime, remote service, account integration or history deletion belongs to this design.</p>
+
+<h2 id="history-reads">Transcript reads</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ownership</th><td>One pending initial or refresh request per session and connection. Navigation reuses it; a mutation invalidates it and keeps one replacement with the latest options</td></tr>
+<tr><th scope="row">Replies</th><td>Each echoes its request ID. Expired, replaced and closed-connection replies are ignored</td></tr>
+<tr><th scope="row">Deadline</th><td>15 seconds; session-local loading, disconnected or failed state with a retry button; cached messages stay visible</td></tr>
+<tr><th scope="row">No merge</th><td>A read replaces the server rows of the window it covers. While it runs, the server parks that view's updates and text frames and sends them after the reply, so a read never undoes newer progress. Local rows (sends, function placeholders, notices) and overlays survive it, and a local row goes when a read or update names its <code translate="no">clientRequestId</code>. There is no second transcript store</td></tr>
+<tr><th scope="row">Invalid cursor</th><td>One cursor-free read around the reading anchor; failure is visible and retryable, and automatic paging stops</td></tr>
+<tr><th scope="row">Explicit retry</th><td>Cursor-free anchor read keeping the branch head; a separate latest-history action when the anchor is gone</td></tr>
+<tr><th scope="row">Safety</th><td>Loading transitions do not reset exponential retry delays. Read retries never repeat mutations, submissions, approvals or cancellations</td></tr>
+</tbody>
+</table>
+
+<h2 id="streaming">Streaming</h2>
+<ul>
+<li>Text and thinking frames coalesce into one animation-frame store update and are placed by offset into every view holding their row. A numbered update or a read flushes pending text first.</li>
+<li>Tools, steps, citations, status and terminal rows arrive as numbered <code translate="no">transcript_update</code> changes, the same rows a read draws.</li>
+<li>A text frame whose offset lies past the text the row holds shows a lost frame, and an update that does not follow the view's revision shows a missed one; either way the view reads once at its anchor.</li>
+<li>Connection close flushes received text before clearing which session each turn belongs to.</li>
+<li>Rendering primitives: bounded history windows, measured row recycling, lazy full tool output, independent follow locks.</li>
+</ul>
+
+<h2 id="evidence">Recovery reads</h2>
+<p>Recovery reads request snapshot-only mode: the execution record and event cursor come from one SQLite transaction with no event bodies, since persisted streams can exceed 200 MB and the Web replay handler consumes only the snapshot. Explicit event-history clients keep full replay.</p>
+
+<details>
+<summary>The baseline that drove this</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Measure</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Native refresh until transcript</th><td>11–14 seconds</td></tr>
+<tr><th scope="row">Direct initial history request</th><td>0.18–0.20 seconds</td></tr>
+<tr><th scope="row">Before the first history request</th><td>16 recoveries processed; five history loads in one refresh</td></tr>
+</tbody>
+</table>
+<p>The reconnect path sent every persisted cursor before the selected conversation, commands run serially per connection, replay snapshots entered the live update path and requested another transcript for terminal executions, and cursor storage synchronously persisted every frame. These are baseline figures, not claims about the optimized App.</p>
+</details>
+
+<h2 id="resource-projection">Resources during chat loading</h2>
+<p>Resource polling shares the worker with transcript hydration.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reuse</th><td>Each resource-list request reuses one conversation graph, one predecessor index and memoized origin and branch-name results across all visible resources; the current-branch query may use one separate snapshot. They live only for that request</td></tr>
+<tr><th scope="row">Authority</th><td>Visibility, execution attribution, control reconciliation and stable branch-reference selection stay authoritative</td></tr>
+<tr><th scope="row">Result</th><td>Equivalent queries take 124–147 ms instead of 5,741–5,760 ms on the affected conversation (resource query only, not page load)</td></tr>
+</tbody>
+</table>
+
+<h2 id="scenarios">Acceptance</h2>
+<table class="stack">
+<thead><tr><th scope="col">Scenario</th><th scope="col">Required outcome</th><th scope="col">Evidence</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open or reconnect (<code translate="no">useWS</code>)</th><td>Visible history requested before saved execution recovery. No replay-driven transcript storm. At most one recovery in flight; duplicates coalesce</td><td>Controlled transport tests; native cold and warm refresh timing</td></tr>
+<tr><th scope="row">Switch A → B → A</th><td>Draft and reading position survive. Late A responses cannot replace B. Cached content stays during refresh</td><td>Rapid switching and delayed responses</td></tr>
+<tr><th scope="row">Long history, paging, jump</th><td>Bounded reads and DOM, stable prepend anchor, stale cursor recovery, earliest message reachable, explicit retry</td><td>Large transcript, oldest, latest and search targets, interrupted paging</td></tr>
+<tr><th scope="row">Streaming text and tools</th><td>Frame-batched; reading history is not interrupted by auto-follow. Expanded output loads on demand; completion flushes final deltas</td><td>Burst and delayed deltas, output expansion, long-content render budget</td></tr>
+<tr><th scope="row">Send, queue, steer, stop</th><td>Input retained until acknowledgement; no duplicate on reconnect; explicit queued, sending or failed state; cancellation cannot revive the old turn</td><td>Disconnect before and after ACK, active queue, retry, cancellation</td></tr>
+<tr><th scope="row">Approvals and questions</th><td>Waiting is distinct from generating. Reconnect restores waits. A stale answer cannot resolve a newer generation</td><td>Refresh during ask or approval; terminal cleanup</td></tr>
+<tr><th scope="row">Background and nested work</th><td>Status recovers without resetting the foreground transcript or merging child history</td><td>Two-session and nested execution tests</td></tr>
+<tr><th scope="row">Errors and accessibility</th><td>Visible, keyboard-accessible recovery; no false success, infinite spinner or lost draft; reduced motion and narrow layout usable</td><td>Transport faults, keyboard checks, native visual inspection</td></tr>
+</tbody>
+</table>
+
+<details id="references">
+<summary>References</summary>
+<table class="stack">
+<thead><tr><th scope="col">Reference</th><th scope="col">Behavior</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://developers.openai.com/codex/app-server/">Codex App Server</a></th><td>Separate stored thread reads, resume, paginated turns and items, notifications</td><td>Separate transcript and execution recovery ownership, on OpenProgram's protocol. Experimental pagination is a reference, not a dependency</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/interactive-mode">Claude Code interactive mode</a></th><td>Queued input, interrupt, editable queue, background tasks, prompt history</td><td>Drafts and attachments independent of connection and execution; delivery and approval state explicit</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/checkpointing">Claude Code checkpointing</a></th><td>Conversation and file restoration</td><td>Own branch and rewind semantics; viewing history never executes or rewinds</td></tr>
+</tbody>
+</table>
+<p class="note">Observable behavior and public protocols only, not private implementation or benchmark equivalence.</p>
+</details>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Recovery ordering, snapshot-only reads, correlated history requests, visible retry, session-scoped streaming buffers, the resource projection, failed-reply details, streaming steer interruption, stopped-turn history retention</td></tr>
+<tr><th scope="row">Automated coverage</th><td>Bounded large-history rendering, anchor restoration, failed cursor renewal and keyboard retry, peer-session isolation, draft and attachment ownership, queue receipts, stop and steer ordering, question remounts, IME, narrow layout and reduced motion</td></tr>
+<tr><th scope="row">Installed App</th><td>Acceptance is a separate release requirement</td></tr>
+</tbody>
+</table>

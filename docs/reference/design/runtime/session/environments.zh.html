@@ -1,0 +1,115 @@
+<title>运行环境</title>
+<meta name="description" content="本机、SSH、Docker 运行环境的设计：注册表、对话绑定、后端、远程文件工具和输入框胶囊。">
+<h1>运行环境</h1>
+<p>对话的命令和文件工具在哪里运行。channel（微信、Telegram 等）只决定消息镜像到哪里。产品页：<a href="../../../../capabilities/environments.zh.html">在另一台机器上运行对话</a>。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">后端</th><th scope="col">命令形式</th><th scope="col">工作文件夹</th><th scope="col">本机沙箱</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">local</code></th><td><code translate="no">LocalBackend</code></td><td>本机子进程。macOS 和 Linux：<code translate="no">bash -c</code>，沙箱内外相同（没有 bash 才用 <code translate="no">sh</code>），所以 <code translate="no">echo</code> 原样输出 <code translate="no">\n</code>，<code translate="no">printf</code> 才展开；定时任务的命令同样这样运行。Windows：Git Bash 或 PowerShell，沙箱内是 WSL 的 bash</td><td>本机</td><td>生效</td></tr>
+<tr><th scope="row"><code translate="no">ssh</code></th><td><code translate="no">SshBackend(target, workdir)</code></td><td><code translate="no">ssh … &lt;target&gt; 'cd &lt;dir&gt; &amp;&amp; &lt;cmd&gt;'</code></td><td>远程绝对路径</td><td>关闭；隔离靠远程账户</td></tr>
+<tr><th scope="row"><code translate="no">docker</code></th><td><code translate="no">DockerBackend(image, container, mounts)</code></td><td><code translate="no">docker exec -i [-w cwd] &lt;container&gt; sh -c &lt;cmd&gt;</code></td><td>本机路径，以相同路径挂载</td><td>关闭；隔离靠容器</td></tr>
+</tbody>
+</table>
+
+<h2 id="registry">注册表</h2>
+<pre translate="no" tabindex="0"><code>"environments": {
+  "default": "local",
+  "items": [
+    {"id": "devbox", "name": "devbox", "kind": "ssh", "ssh_target": "me@devbox", "workdir": "~/work"},
+    {"id": "sandbox", "name": "sandbox", "kind": "docker", "image": "ubuntu:24.04"}
+  ]
+}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">local</code></th><td>内置；不存储，不能修改或删除</td></tr>
+<tr><th scope="row"><code translate="no">id</code></th><td><code translate="no">^[a-z0-9][a-z0-9_-]{0,47}$</code></td></tr>
+<tr><th scope="row"><code translate="no">ssh_target</code>、<code translate="no">image</code></th><td>无空白，不以 <code translate="no">-</code> 开头（避免被当成选项）</td></tr>
+<tr><th scope="row"><code translate="no">workdir</code></th><td>绝对路径或以 <code translate="no">~</code> 开头</td></tr>
+<tr><th scope="row">删除默认环境</th><td>默认变为 <code translate="no">local</code></td></tr>
+<tr><th scope="row">旧的 <code translate="no">backend.terminal</code> / <code translate="no">ssh_target</code> / <code translate="no">docker_image</code></th><td>读成一个以类型命名的环境并设为默认；首次写入时并入 <code translate="no">environments</code></td></tr>
+</tbody>
+</table>
+<p class="note">代码：<code translate="no">openprogram/host/environments/__init__.py</code>。写入都走 <code translate="no">update_config</code>（跨进程锁）。<code translate="no">openprogram environments</code>、安装向导和 WebSocket 动作 <code translate="no">list_environments</code>、<code translate="no">save_environment</code>、<code translate="no">delete_environment</code>、<code translate="no">set_default_environment</code>、<code translate="no">test_environment</code> 都是薄层。每次修改广播 <code translate="no">environments</code> 帧。</p>
+
+<h2 id="conversation-binding">对话绑定</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时机</th><th scope="col"><code translate="no">environment_id</code> 的处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">草稿</th><td>存在 <code translate="no">ComposerSettings.environment</code>，首个 <code translate="no">chat</code> 帧携带</td></tr>
+<tr><th scope="row">首条消息</th><td><code translate="no">assign_new_session_environment</code> 校验（错误 <code translate="no">unknown_environment</code>）并写入，未选则写默认。<code translate="no">chat_ack</code> 报告生效的 ID</td></tr>
+<tr><th scope="row">之后</th><td>不再改变</td></tr>
+<tr><th scope="row">有历史但没有 ID</th><td>创建于环境功能之前；跟随默认，之后的选择不移动它</td></tr>
+<tr><th scope="row">Channel 对话</th><td>默认环境的 ID</td></tr>
+<tr><th scope="row">存的 ID 已不存在</th><td><code translate="no">resolve_for_session</code> 抛 <code translate="no">EnvironmentError</code>；后端变为 <code translate="no">UnavailableBackend</code>，每条命令返回同样的说明。工具绝不回落到本机</td></tr>
+</tbody>
+</table>
+<p class="note">该字段进索引，列表可以带上它。</p>
+
+<h2 id="turn-binding">轮次绑定</h2>
+<p><code translate="no">TurnBindings.bind</code> 设置 <code translate="no">_current_environment</code> ContextVar。<code translate="no">current_environment()</code> 先读它，再读当前 session 的环境，最后取默认。<code translate="no">get_active_backend()</code> 据此和当前 session 构造后端。工具运行时 prompt 写明 SSH 主机或 Docker 镜像。</p>
+<ul>
+<li>SSH：worktree ContextVar 是远程文件夹，权限围栏也按它检查。<code translate="no">remote_workdir</code> 在 <code translate="no">cd</code> 后运行 <code translate="no">pwd</code>（<code translate="no">~</code> 在远端解析），按环境缓存。相对工具路径用 <code translate="no">posixpath</code> 拼接，不碰本机文件系统。</li>
+</ul>
+
+<details>
+<summary>SSH 命令选项</summary>
+<pre translate="no" tabindex="0"><code>ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new
+    -o ControlMaster=auto -o ControlPath=&lt;state&gt;/ssh/%C -o ControlPersist=300
+    &lt;target&gt; 'cd &lt;dir&gt; &amp;&amp; &lt;cmd&gt;'</code></pre>
+<ul>
+<li>连接共享让首次之后每次工具调用只需一个往返。</li>
+<li><code translate="no">%C</code> 对主机、端口、用户取哈希，socket 路径不超过 macOS <code translate="no">sun_path</code> 上限。Windows 跳过 ControlMaster。</li>
+<li>文件夹开头的 <code translate="no">~</code> 不加引号传到远程 shell，在那里展开。</li>
+</ul>
+</details>
+
+<details>
+<summary>Docker 容器生命周期</summary>
+<ul>
+<li>每个对话一个长期容器 <code translate="no">openprogram-&lt;env&gt;-&lt;session&gt;</code>（<code translate="no">[a-zA-Z0-9_.-]</code> 以外的字符变为 <code translate="no">-</code>），用 <code translate="no">docker run -d --init … tail -f /dev/null</code> 启动。</li>
+<li>工作文件夹、项目文件夹和附加工作目录以相同路径绑定挂载，第一个挂载是起始文件夹。</li>
+<li>镜像加挂载的哈希存为 <code translate="no" data-claim="example">openprogram.mounts</code> 标签。变了就删除重建，相同就重新启动已停止的容器。进程内缓存让首条命令后跳过 <code translate="no">docker inspect</code>。</li>
+<li>删除 session 时在后台线程删除其容器。没有 session ID 时用一次性的 <code translate="no">docker run --rm</code>。</li>
+</ul>
+</details>
+
+<h2 id="file-tools">远程文件工具</h2>
+<p><code translate="no">read</code>、<code translate="no">write</code>、<code translate="no">edit</code>、<code translate="no">apply_patch</code>、<code translate="no">glob</code>、<code translate="no">grep</code>、<code translate="no">list</code> 调用 <code translate="no">remote_target()</code>。SSH 得到 <code translate="no">RemoteFS</code>，交给 <code translate="no">programs/tools/files/_remote.py</code>，输出格式与本地工具相同。Docker 和本机得到 <code translate="no">None</code>，走本地路径。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">stat</code></th><td>一条 <code translate="no">test</code> 命令：存在、目录、大小</td></tr>
+<tr><th scope="row"><code translate="no">read_bytes</code></th><td><code translate="no">cat</code>，上限 32 MiB</td></tr>
+<tr><th scope="row"><code translate="no">write_bytes</code></th><td><code translate="no">mkdir -p</code>，在同一文件夹写临时文件，再 <code translate="no">mv</code> 覆盖目标</td></tr>
+<tr><th scope="row">退出码 255</th><td>ssh 自身失败：<code translate="no">ConnectionError</code>，作为错误报告，不当文件内容</td></tr>
+<tr><th scope="row"><code translate="no">glob</code></th><td>在远端 <code translate="no">find</code>，再用由 glob 转换的正则过滤。GNU <code translate="no">-printf</code> 取 mtime，BSD <code translate="no">stat</code> 兜底</td></tr>
+<tr><th scope="row"><code translate="no">grep</code></th><td>有 <code translate="no">rg</code> 就用它，否则 <code translate="no">grep -rE</code>，用 <code translate="no">head</code> 截断</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>Shell 循环</td></tr>
+<tr><th scope="row">读 PDF</th><td>字节复制到本地临时文件，用本地读取器</td></tr>
+<tr><th scope="row">先读后改</th><td>按（session、主机、路径）记 sha256。覆盖文件的 <code translate="no">write</code>、<code translate="no">edit</code>、<code translate="no">apply_patch</code> 在未读过或已变化时拒绝</td></tr>
+<tr><th scope="row"><code translate="no">write</code> 的 <code translate="no">source_path</code></th><td>SSH 下拒绝：它会悄悄跨机器</td></tr>
+</tbody>
+</table>
+
+<h2 id="composer">输入框</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">胶囊</th><th scope="col">显示和行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">环境</th><td>始终显示。图标按类型（monitor、cpu、box），颜色是 worker 连接状态，文字是名称。草稿：环境列表和 Settings → Environments 链接。已有对话：其他环境置灰，并说明选择已固定</td></tr>
+<tr><th scope="row">Channel</th><td>始终显示。未绑定：聊天图形和“No channel”。已绑定：<code translate="no">ChannelLogo</code> 和账号 id，被挤压时只留 logo。<code translate="no">channelHealth</code> 是角上 6px 圆点：黄色降级，红色不可达。菜单每个有启用账号的应用一行，各有账号子菜单（已绑定的打勾），绑定时再有“Disconnect”，最后是“Manage channels”</td></tr>
+</tbody>
+</table>
+<p class="note">胶囊是输入框设置 channel 的唯一位置。菜单和胶囊共用 <code translate="no">channel-choices.ts</code>，跟随输入框所在窗格（<code translate="no">useBoundChat</code>）。<code translate="no">statusBadge</code> 和 <code translate="no">channelHealth</code> 是独立的 store 切片。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现：本机、SSH、Docker；注册表、CLI、向导步骤、设置页、WebSocket 动作；首条消息固定环境；SSH 文件工具；按 session 的 Docker 容器。</p>
+<p>未实现：</p>
+<ul>
+<li>按项目的默认环境</li>
+<li>WSL 和云环境</li>
+<li>密码或交互式 SSH 登录</li>
+<li>远程文件的检查点或撤销；revert 不恢复它们</li>
+<li>把已有对话移到另一个环境</li>
+</ul>

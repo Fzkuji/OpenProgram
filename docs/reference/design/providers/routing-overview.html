@@ -1,0 +1,62 @@
+<title>Routing overview</title>
+<meta name="description" content="How the Providers Routing view maps sessions and branches to models and shows failover switches.">
+<h1>Routing overview</h1>
+
+<p>Settings → LLM Providers → Routing (beside Providers in the page header) shows which session and branch talks to which model, and what happened when a model failed. Only the failover switches are collected for it; the rest is read from existing records.</p>
+
+<h2 id="sources">Sources</h2>
+<p><code translate="no">GET /api/routing/overview?window=&lt;seconds&gt;</code> (<code translate="no">openprogram/interfaces/server/routes/settings/routing.py</code>) joins:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Source</th><th scope="col">Gives</th></tr></thead>
+<tbody>
+<tr><th scope="row">Session index (<code translate="no">list_sessions</code>)</th><td>Title, <code translate="no">source</code> / <code translate="no">channel</code>, <code translate="no">running</code> status of the current turn</td></tr>
+<tr><th scope="row">Session node graph (<code translate="no">list_branches</code>, <code translate="no">SessionNodeWriter.load</code>)</th><td>Every open branch tip, the model of its last reply, whether the tip starts at a sub-agent spawn root</td></tr>
+<tr><th scope="row">Usage ledger <code translate="no">usage_events</code></th><td>Provider calls per session and model in the window; a <code translate="no">parent_session_id</code> naming another session marks a child session</td></tr>
+<tr><th scope="row">Usage ledger <code translate="no">route_events</code></th><td>One row per failover switch: calling session, failed <code translate="no">provider/model</code>, next <code translate="no">provider/model</code>, reason</td></tr>
+<tr><th scope="row">Credential store</th><td>Each account of a provider in use: status, end of its rate-limit cooldown</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Listed when</dt><dd>The turn is running, the session was updated in the window, or the ledger has a call for it there</dd>
+<dt>Limits</dt><dd>8 sessions, running first, then latest activity; the rest count as idle. 4 branches per session, active first</dd>
+</dl>
+
+<h2 id="lanes">Lanes</h2>
+<p>A session's rows are lanes, each wired to one model.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Lane</th><th scope="col">Is</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">branch</code></th><td>An open branch tip. The longest chain is the trunk, labelled <code translate="no">main</code>; others use their branch name.</td></tr>
+<tr><th scope="row"><code translate="no">sub_agent</code></th><td>A tip whose chain starts at a sub-agent spawn root</td></tr>
+<tr><th scope="row"><code translate="no">children</code></th><td>Child sessions grouped by the model they called, with a count</td></tr>
+<tr><th scope="row"><code translate="no">calls</code></th><td>A session with ledger calls but no reply node (a program calling models directly)</td></tr>
+<tr><th scope="row"><code translate="no">background</code></th><td>Ledger calls no listed session accounts for: program runtimes with their own <code translate="no">op-…</code> ids, titling, memory upkeep. Grouped by model under one Background calls entry, so the map adds up to the call count above it.</td></tr>
+</tbody>
+</table>
+<p class="note">Live: the active tip of a running turn, or a ledger call in the last 90 seconds.</p>
+
+<details>
+<summary>Keeping the request fast</summary>
+<p>Opening a session reads its node graph file by file. Every read gives up the GIL and waits to get it back while other server threads are busy, so a cold open can take seconds.</p>
+<ul>
+<li>A session and its lanes are cached per <code translate="no">(session, index updated_at)</code>; an unchanged session is never reopened.</li>
+<li>Cold sessions open on one background thread; the request waits at most 1.5 s.</li>
+<li>A session not ready by then is shown from its index row and ledger calls. The response carries <code translate="no">partial: true</code> and the client asks again two seconds later.</li>
+</ul>
+</details>
+
+<h2 id="failover-switches">Failover switches</h2>
+<p><code translate="no">stream_with_failover</code> appends a <code translate="no">route_events</code> row, tagged with the session from the usage context, each time it moves to the next candidate. When a session's latest switch landed on a lane's model, the map draws a dashed edge from the active lane to the failed model, marks that model with the reason and lists recent switches below.</p>
+<p class="note">Switches exist only with fallback models configured. A failure shown to the user without a switch is not recorded here.</p>
+
+<h2 id="client">Client</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Component</th><td><code translate="no">apps/web/components/settings/providers/routing-overview.tsx</code>: two HTML columns, an SVG layer behind them</td></tr>
+<tr><th scope="row">Edges</th><td>End points measured from rendered rows after layout and on resize, so names can be any length</td></tr>
+<tr><th scope="row">Changing the window</th><td>Cancels the previous request; shown content dims until the new window arrives</td></tr>
+<tr><th scope="row">Motion</th><td>Live edges carry a moving dot; hovering a lane or model keeps its edges and dims the rest</td></tr>
+<tr><th scope="row">Below 560 px of pane width</th><td>The map is hidden; the pane asks the user to collapse the sidebars or widen the window</td></tr>
+</tbody>
+</table>

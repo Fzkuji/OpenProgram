@@ -1,0 +1,81 @@
+<title>备份与恢复</title>
+<meta name="description" content="用 openprogram backup 快照并恢复 OpenProgram 的记忆、对话、配置和 channel 绑定。">
+<meta name="covers" content="openprogram/operations/backup.py">
+<h1>备份与恢复</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">目标</th><th scope="col">命令</th></tr></thead>
+<tbody>
+<tr><th scope="row">立即快照</th><td><code translate="no">openprogram backup create</code></td></tr>
+<tr><th scope="row">查看已有备份</th><td><code translate="no">openprogram backup list</code></td></tr>
+<tr><th scope="row">查看恢复会覆盖什么</th><td><code translate="no">openprogram backup restore &lt;name&gt; --dry-run</code></td></tr>
+<tr><th scope="row">恢复</th><td><code translate="no">openprogram backup restore &lt;name&gt;</code><span class="arg"><code translate="no">-y</code> 跳过确认</span></td></tr>
+<tr><th scope="row">只保留最新 N 个</th><td><code translate="no">openprogram backup prune --keep 5</code><span class="arg">默认 5，小于 1 被拒绝。不会自动清理</span></td></tr>
+</tbody>
+</table>
+<p class="note">归档：<code translate="no">~/.openprogram/backups/&lt;profile&gt;-&lt;timestamp&gt;.tar.gz</code>。每条命令只作用于当前 profile；<code translate="no">--profile alpha</code> 时是 <code translate="no">~/.openprogram-alpha/backups/</code>，恢复不能跨 profile。</p>
+
+<h2>范围</h2>
+<p>采用白名单，新的缓存目录不会悄悄撑大归档。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">包含</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">memory/</code>、<code translate="no">projects/</code></th><td>记忆，以及项目及其聊天记录、运行步骤和记忆</td></tr>
+<tr><th scope="row"><code translate="no">session_aliases.json</code>、<code translate="no">run_index.jsonl</code>、<code translate="no">revisions.jsonl</code></th><td>聊天名称、每次运行属于哪个聊天、Workflow 版本</td></tr>
+<tr><th scope="row"><code translate="no">config.json</code>、<code translate="no">cli-config.json</code></th><td>配置</td></tr>
+<tr><th scope="row"><code translate="no">agents/</code>、<code translate="no">agents.json</code></th><td>Agent 定义</td></tr>
+<tr><th scope="row"><code translate="no">programs_meta.json</code>、<code translate="no">functions_meta.json</code>、<code translate="no">program-sources.json</code></th><td>Program 和函数元数据</td></tr>
+<tr><th scope="row"><code translate="no">channels/</code>、<code translate="no">bindings.json</code></th><td>Channel 账户和会话绑定</td></tr>
+<tr><th scope="row"><code translate="no">skills/</code>、<code translate="no">skills.json</code>、<code translate="no">plugins/</code>、<code translate="no">marketplaces.json</code></th><td>Skill 和插件</td></tr>
+<tr><th scope="row"><code translate="no">mcp_servers.json</code>、<code translate="no">models/</code>、<code translate="no">commands/</code></th><td>MCP 服务器、模型覆盖、自定义命令</td></tr>
+<tr><th scope="row"><code translate="no">owner.json</code>、<code translate="no">profiles/</code>、<code translate="no">worktrees.json</code>、<code translate="no">usage.db</code></th><td>所有权、账户元数据、worktree、用量历史</td></tr>
+<tr><th scope="row"><code translate="no">programs/</code>、<code translate="no">workflow_archives/</code>、<code translate="no">recordings/</code></th><td>已安装和你自己的程序、归档的 Workflow、录制的演示</td></tr>
+<tr><th scope="row"><code translate="no">scheduler/</code>、<code translate="no">always_on/</code>、<code translate="no">memory-spaces/</code></th><td>定时任务、常驻 Agent、按 Agent 保存的记忆</td></tr>
+<tr><th scope="row"><code translate="no">meetings/</code>、<code translate="no">project-file-history/</code>、<code translate="no">imports/</code></th><td>会议、文档的历史版本、已导入的外部会话</td></tr>
+<tr><th scope="row"><code translate="no">output-styles/</code>、<code translate="no">plugin-trust.json</code>、<code translate="no">plugins-enabled.json</code>、<code translate="no">AGENTS.md</code></th><td>输出风格、插件信任与启用状态、对所有项目生效的指令</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>排除：可再生成或不属于状态</summary>
+<ul>
+<li><code translate="no">cache/</code>、<code translate="no">tool_results/</code>、<code translate="no">browser-states/</code>、<code translate="no">chrome-profile/</code>、<code translate="no">trash/</code>、<code translate="no">shadow-git/</code>、<code translate="no">logs/</code></li>
+<li><code translate="no">*.log</code>、<code translate="no">*.lock</code>、<code translate="no">*.pid</code>、<code translate="no">*.port</code>、<code translate="no">*.sock</code>、状态文件的恢复副本、Web token</li>
+<li>凭据写入的临时文件，如 <code translate="no">.env.tmp</code> 和 <code translate="no">*.json.tmp</code></li>
+<li>凭据账户的 <code translate="no">profiles/*/home/</code> 目录树；只有 <code translate="no">metadata.json</code> 和已登记的 <code translate="no">.env</code>、AuthStore 路径可以进入</li>
+<li>任何位置的 <code translate="no">node_modules/</code>；符号链接被跳过，不跟随</li>
+</ul>
+</details>
+
+<h2 id="credentials">凭据</h2>
+<table class="grid">
+<thead><tr><th scope="col">数据</th><th scope="col">默认</th><th scope="col"><code translate="no">--include-credentials</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">auth/</code>、<code translate="no">mcp_tokens/</code>、<code translate="no">plugin-options/</code>、profile 的 AuthStore 和 <code translate="no">.env</code> 文件、Channel 的 <code translate="no">channels/*/credentials.json</code></th><td class="deny">排除</td><td class="ask">归档，明文</td></tr>
+<tr><th scope="row"><code translate="no">config.json[api_keys]</code>；MCP 的 env、header、bearer token 和 OAuth client secret 字段</th><td class="review">移除，文件其余部分保留</td><td class="ask">归档，明文</td></tr>
+<tr><th scope="row">Web 运行时 token、待配对的 Channel 配对码</th><td class="deny">排除</td><td class="deny">排除</td></tr>
+</tbody>
+</table>
+<p class="note">含凭据的归档要像凭据本身一样保管。换机器时重新登录通常更安全。<code translate="no">backup-manifest.json</code> 只记录实际包含、脱敏或排除的类别，以及 <code translate="no">credential_policy</code> 下的永不备份规则，不含密钥值。</p>
+
+<h2 id="restoring">恢复</h2>
+<ol>
+<li><strong>检查运行中的进程。</strong>有 worker 或 Web 服务在运行就拒绝恢复。先运行 <code translate="no">openprogram stop</code>。</li>
+<li><strong>确认。</strong>列出将被覆盖的内容，等待 <code translate="no">y</code>。</li>
+<li><strong>安全快照。</strong>当前状态存为 <code translate="no">&lt;profile&gt;-pre-restore-&lt;timestamp&gt;.tar.gz</code>。归档含凭据时快照也含，命令会说明。</li>
+<li><strong>替换</strong>归档中有的条目。缓存和日志不动。混合文件省略或脱敏的密钥字段保留本机的值。</li>
+</ol>
+
+<details>
+<summary>归档与恢复的安全性</summary>
+<ul>
+<li>POSIX 使用 <code translate="no">0600</code>。Windows 源码 checkout 保留状态目录继承的 NTFS ACL。</li>
+<li>归档写入唯一临时文件，刷盘后原子发布；POSIX 还会刷新目录。</li>
+<li>整个归档在任何内容可见之前校验：包含关系、成员类型、每个登记密钥文件的 JSON 结构。符号链接、硬链接和路径穿越成员被拒绝，被拒绝的归档不改变任何东西。</li>
+<li>文件经 owner 专用原子写入器发布，每次发布都记日志。崩溃或磁盘满中断的恢复，在下一次恢复开始时自动回退。</li>
+<li>POSIX 使用基于描述符的遍历。Windows 没有 <code translate="no">dir_fd</code>，在每次路径操作前校验包含关系，并拒绝符号链接、junction 和其他重解析点。</li>
+</ul>
+</details>
+
+<p class="next"><a href="configuration.zh.html">配置和数据目录</a></p>
+

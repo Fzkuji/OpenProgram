@@ -1,0 +1,25 @@
+<title>Layout density</title>
+<meta name="description" content="Vertical chrome per center tab type, and where the old top-bar controls live.">
+<meta name="covers" content="apps/web/app/styles/base/">
+<h1>Layout density</h1>
+
+<p>A chat tab has only the 40px tab strip above the conversation, 56px more content height than the two 48px bars it replaces. Model, permission and thinking controls live in the composer, as in Claude and ChatGPT.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Tab</th><th scope="col">Top chrome</th><th scope="col">Below the strip</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chat</th><td>40px</td><td>Conversation, then composer</td></tr>
+<tr><th scope="row">File</th><td>40 + 40 = 80px</td><td>Toolbar with breadcrumbs (part of the content), then viewer: line numbers, Markdown, images, PDF</td></tr>
+<tr><th scope="row">Web</th><td>40 + 40 = 80px</td><td>Back, forward, reload, address bar, open externally (part of the content), then the page</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>40px strip with no second bar under chat tabs; 40px file and web toolbars; session controls in the composer</td></tr>
+<tr><th scope="row">Not implemented</th><td>Sidebar with no fixed block (<code translate="no">New chat</code> stays pinned at the top); connection status as a corner dot in the strip; web tabs as a CDP screencast of a separate Chrome (Desktop web tabs are native views)</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="surface-system.html">Surface system</a></p>

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 from openprogram.programs.tools.web.web_search._http import post_json
@@ -26,7 +25,7 @@ class OpenAIVisionProvider:
     ])
 
     def is_available(self) -> bool:
-        from openprogram.providers.env_api_keys import resolve_provider_key
+        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
         return bool(resolve_provider_key("openai"))
 
     def analyze(
@@ -36,7 +35,7 @@ class OpenAIVisionProvider:
         *,
         model: str | None = None,
     ) -> str:
-        from openprogram.providers.env_api_keys import resolve_provider_key
+        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
         key = resolve_provider_key("openai") or ""
         if not key:
             raise RuntimeError(

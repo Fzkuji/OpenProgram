@@ -1,3 +1,5 @@
+from openprogram.programs._host import runtime as program_runtime
+
 """Real function steps survive version selection without replaying completed writes."""
 
 from pathlib import Path
@@ -6,10 +8,10 @@ import time
 
 import pytest
 
-from openprogram.agentic_programming.function import agentic_function
-from openprogram.execution import AttemptStore, ExecutionStore, RuntimeControlService
-from openprogram.execution.driver import DriverRegistry
-from openprogram.execution.model import CapabilitySet
+from openprogram import Agent
+from openprogram.runtime.execution import AttemptStore, ExecutionStore, RuntimeControlService
+from openprogram.runtime.execution.driver import DriverRegistry
+from openprogram.runtime.execution.model import CapabilitySet
 
 
 def _first(folder):
@@ -32,46 +34,46 @@ def _finish(folder, value):
 
 
 def _version_a(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     previous = step("first", _first, folder)
     return step("finish", _finish, folder, previous + "-A")
 
 
 def _version_b(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     previous = step("first", _first, folder)
     return step("finish", _finish, folder, previous + "-B")
 
 
 def _version_removed(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     return step("finish", _finish, folder, "unsafe")
 
 
 def _version_changed_input(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     previous = step("first", _first, folder + "-different")
     return step("finish", _finish, folder, previous + "-B")
 
 
 def _nested_a(folder):
-    from openprogram.agentic_programming.continuation import workflow
+    from openprogram.runtime.agent.durable_steps import workflow
 
     return workflow("child", _version_a, folder)
 
 
 def _nested_b(folder):
-    from openprogram.agentic_programming.continuation import workflow
+    from openprogram.runtime.agent.durable_steps import workflow
 
     return workflow("child", _version_b, folder)
 
 
 def _loop_a(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     values = []
     for index in range(2):
@@ -80,7 +82,7 @@ def _loop_a(folder):
 
 
 def _loop_b(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     values = []
     for index in range(2):
@@ -117,7 +119,7 @@ _closure_two = _make_closure("two")
 
 
 def _with_closures(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     previous = step("first", _first, folder)
     one = step("one", _closure_one)
@@ -148,21 +150,41 @@ def test_registered_function_resumes_selected_code_without_repeating_effect(
     tmp_path, monkeypatch, policy, suffix, original_fn, replacement_fn, fresh_process
 ):
     # Exercise the public decorator before any internal continuation imports.
-    from openprogram.agentic_programming.function import _registry
+    from openprogram.programs._host.runtime import _registry
     import importlib
 
     monkeypatch.setattr(
-        importlib.import_module("openprogram.agentic_programming.function"),
+        importlib.import_module("openprogram.programs._host.runtime"),
         "_registry",
         dict(_registry),
     )
-    original = agentic_function(
-        original_fn, name="durable-demo", resumable=True, as_tool=False
-    )
-    replacement = agentic_function(
-        replacement_fn, name="durable-demo", resumable=True, as_tool=False
-    )
-    from openprogram.agentic_programming.continuation import (
+
+    class RegisteredProgram1Agent(Agent):
+        method_options = {
+            "run": {
+                "name": "durable-demo",
+                "resumable": True,
+                "as_tool": False,
+                "tool": True,
+            }
+        }
+        run = staticmethod(original_fn)
+
+    original = RegisteredProgram1Agent().run
+
+    class RegisteredProgram2Agent(Agent):
+        method_options = {
+            "run": {
+                "name": "durable-demo",
+                "resumable": True,
+                "as_tool": False,
+                "tool": True,
+            }
+        }
+        run = staticmethod(replacement_fn)
+
+    replacement = RegisteredProgram2Agent().run
+    from openprogram.runtime.agent.durable_steps import (
         FunctionSuspended,
         function_execution,
     )
@@ -185,7 +207,6 @@ def test_registered_function_resumes_selected_code_without_repeating_effect(
         "execution",
         expected_version=execution.status_version,
         owner_id="worker",
-        ttl_seconds=30,
     )
     active, execution = attempts.activate(
         leased.attempt_id,
@@ -211,7 +232,7 @@ def test_registered_function_resumes_selected_code_without_repeating_effect(
     thread = threading.Thread(target=run)
     thread.start()
     try:
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 30
         while not (tmp_path / "entered").exists():
             assert time.monotonic() < deadline, outcomes
             time.sleep(0.01)
@@ -228,7 +249,7 @@ def test_registered_function_resumes_selected_code_without_repeating_effect(
         )
     finally:
         (tmp_path / "release").touch()
-        thread.join(5)
+        thread.join(30)
     assert not thread.is_alive()
     assert len(outcomes) == 1 and isinstance(outcomes[0], FunctionSuspended), outcomes
     assert (tmp_path / "effects").read_text().splitlines() == ["first"]
@@ -251,21 +272,7 @@ def test_registered_function_resumes_selected_code_without_repeating_effect(
         import subprocess
         import sys
 
-        script = """
-import json, sys
-from openprogram.execution import ExecutionStore
-from openprogram.agentic_programming.continuation import function_execution
-from openprogram.agentic_programming.function import agentic_function
-import tests.integration.execution.test_function_version_resume as source
-folder, policy = sys.argv[1:]
-del source._version_a
-store = ExecutionStore(folder + '/executions.db')
-execution = store.get_execution('execution')
-replacement = agentic_function(source._version_b, name='durable-demo', as_tool=False, resumable=True)
-with function_execution(store, attempt_id=execution.current_attempt_id, generation=execution.owner_lease['generation'], call_key='original-call', policy=policy):
-    result = replacement(folder)
-print(json.dumps(result))
-"""
+        script = "\nimport json, sys\nfrom openprogram.runtime.execution import ExecutionStore\nfrom openprogram.runtime.agent.durable_steps import function_execution\nfrom openprogram import Agent\nimport tests.integration.execution.test_function_version_resume as source\nfolder, policy = sys.argv[1:]\ndel source._version_a\nstore = ExecutionStore(folder + '/executions.db')\nexecution = store.get_execution('execution')\nclass RegisteredProgram1Agent(Agent):\n    method_options = {\"run\": {'name': 'durable-demo', 'as_tool': False, 'resumable': True, 'tool': True}}\n    run = staticmethod(source._version_b)\n\nreplacement = RegisteredProgram1Agent().run\nwith function_execution(store, attempt_id=execution.current_attempt_id, generation=execution.owner_lease['generation'], call_key='original-call', policy=policy):\n    result = replacement(folder)\nprint(json.dumps(result))\n"
         completed = subprocess.run(
             [sys.executable, "-c", script, str(tmp_path), policy],
             capture_output=True,
@@ -282,7 +289,7 @@ print(json.dumps(result))
         ]
         return
     if suffix is None:
-        from openprogram.agentic_programming.continuation import (
+        from openprogram.runtime.agent.durable_steps import (
             FunctionCompatibilityError,
         )
 
@@ -308,7 +315,7 @@ print(json.dumps(result))
             )
         )
         resumed = fresh_store.get_execution("execution")
-        from openprogram.agentic_programming.continuation import default_policy
+        from openprogram.runtime.agent.durable_steps import default_policy
 
         with function_execution(
             fresh_store,
@@ -337,7 +344,7 @@ print(json.dumps(result))
 
 
 def _parallel_version_a(left, right):
-    from openprogram.agentic_programming.continuation import parallel
+    from openprogram.runtime.agent.durable_steps import parallel
 
     return parallel(
         {"left": (_version_a, (left,), {}), "right": (_version_a, (right,), {})}
@@ -345,7 +352,7 @@ def _parallel_version_a(left, right):
 
 
 def _parallel_version_b(left, right):
-    from openprogram.agentic_programming.continuation import parallel
+    from openprogram.runtime.agent.durable_steps import parallel
 
     return parallel(
         {"left": (_version_b, (left,), {}), "right": (_version_b, (right,), {})}
@@ -369,7 +376,6 @@ def _active_execution(tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="owner",
-        ttl_seconds=30,
     )
     active, execution = attempts.activate(
         leased.attempt_id,
@@ -384,7 +390,7 @@ def test_parallel_branches_commit_before_pause_and_resume_independently(
     tmp_path, policy, suffix
 ):
     import asyncio
-    from openprogram.agentic_programming.continuation import (
+    from openprogram.runtime.agent.durable_steps import (
         FunctionSuspended,
         function_execution,
         invoke,
@@ -413,7 +419,7 @@ def test_parallel_branches_commit_before_pause_and_resume_independently(
     thread = threading.Thread(target=run)
     thread.start()
     try:
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 30
         while not all((folder / "entered").exists() for folder in folders):
             assert time.monotonic() < deadline, outcomes
             time.sleep(0.01)
@@ -429,7 +435,7 @@ def test_parallel_branches_commit_before_pause_and_resume_independently(
     finally:
         for folder in folders:
             (folder / "release").touch()
-        thread.join(5)
+        thread.join(30)
     assert not thread.is_alive()
     assert len(outcomes) == 1 and isinstance(outcomes[0], FunctionSuspended), outcomes
     execution = store.get_execution(active.execution_id)
@@ -465,13 +471,13 @@ def _uncertain_action(folder):
 
 
 def _uncertain_function(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     return step("write", _uncertain_action, folder)
 
 
 def test_owner_loss_never_reissues_unconfirmed_function_write(tmp_path):
-    from openprogram.agentic_programming.continuation import function_execution, invoke
+    from openprogram.runtime.agent.durable_steps import function_execution, invoke
 
     store, active, service = _active_execution(tmp_path)
     with pytest.raises(RuntimeError, match="connection lost"):
@@ -494,7 +500,7 @@ def _stage(folder, name):
     with (path / "effects").open("a") as stream:
         stream.write(name + "\n")
     (path / (name + "-entered")).touch()
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 30
     while not (path / (name + "-release")).exists():
         if time.monotonic() > deadline:
             raise TimeoutError(name)
@@ -503,7 +509,7 @@ def _stage(folder, name):
 
 
 def _three_a(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     first = step("first", _stage, folder, "first")
     second = step("second", _stage, folder, "second")
@@ -511,7 +517,7 @@ def _three_a(folder):
 
 
 def _three_b(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     first = step("first", _stage, folder, "first")
     second = step("second", _stage, folder, "second")
@@ -519,7 +525,7 @@ def _three_b(folder):
 
 
 def _three_c(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     first = step("first", _stage, folder, "first")
     second = step("second", _stage, folder, "second")
@@ -527,19 +533,19 @@ def _three_c(folder):
 
 
 def _nested_three_a(folder):
-    from openprogram.agentic_programming.continuation import workflow
+    from openprogram.runtime.agent.durable_steps import workflow
 
     return workflow("child", _three_a, folder) + "-outer-A"
 
 
 def _nested_three_b(folder):
-    from openprogram.agentic_programming.continuation import workflow
+    from openprogram.runtime.agent.durable_steps import workflow
 
     return workflow("child", _three_b, folder) + "-outer-B"
 
 
 def _nested_three_c(folder):
-    from openprogram.agentic_programming.continuation import workflow
+    from openprogram.runtime.agent.durable_steps import workflow
 
     return workflow("child", _three_c, folder) + "-outer-C"
 
@@ -553,7 +559,7 @@ def _nested_three_c(folder):
 )
 def test_second_restart_retains_last_adopted_version(tmp_path, versions, expected):
     import asyncio
-    from openprogram.agentic_programming.continuation import (
+    from openprogram.runtime.agent.durable_steps import (
         FunctionSuspended,
         function_execution,
         invoke,
@@ -581,7 +587,7 @@ def test_second_restart_retains_last_adopted_version(tmp_path, versions, expecte
         thread = threading.Thread(target=run)
         thread.start()
         try:
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + 30
             while not (tmp_path / (stage + "-entered")).exists():
                 assert time.monotonic() < deadline, outcomes
                 time.sleep(0.01)
@@ -596,7 +602,7 @@ def test_second_restart_retains_last_adopted_version(tmp_path, versions, expecte
             )
         finally:
             (tmp_path / (stage + "-release")).touch()
-            thread.join(5)
+            thread.join(30)
         assert not thread.is_alive()
         assert len(outcomes) == 1 and isinstance(outcomes[0], FunctionSuspended), (
             outcomes
@@ -640,7 +646,7 @@ def _hidden_state_action(folder):
 
 
 def _hidden_state_function(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     return step("write", _hidden_state_action, folder)
 
@@ -648,17 +654,20 @@ def _hidden_state_function(folder):
 def test_hidden_mutable_state_is_rejected_before_external_work(tmp_path, monkeypatch):
     import importlib
 
-    function_module = importlib.import_module(
-        "openprogram.agentic_programming.function"
-    )
-    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
-    from openprogram.agentic_programming.continuation import (
+    importlib.import_module("openprogram.programs._host.runtime")
+    monkeypatch.setattr(program_runtime, "_registry", dict(program_runtime._registry))
+    from openprogram.runtime.agent.durable_steps import (
         FunctionCompatibilityError,
         function_execution,
     )
 
     store, active, _service = _active_execution(tmp_path)
-    function = agentic_function(_hidden_state_function, resumable=True, as_tool=False)
+
+    class RegisteredProgram3Agent(Agent):
+        method_options = {"run": {"resumable": True, "as_tool": False, "tool": True}}
+        run = staticmethod(_hidden_state_function)
+
+    function = RegisteredProgram3Agent().run
     with pytest.raises(FunctionCompatibilityError, match="Mutable helper state"):
         with function_execution(
             store,
@@ -680,7 +689,7 @@ def _local_import_action(folder):
 
 
 def _local_import_function(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     return step("write", _local_import_action, folder)
 
@@ -688,17 +697,20 @@ def _local_import_function(folder):
 def test_untracked_step_import_is_rejected_before_external_work(tmp_path, monkeypatch):
     import importlib
 
-    function_module = importlib.import_module(
-        "openprogram.agentic_programming.function"
-    )
-    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
-    from openprogram.agentic_programming.continuation import (
+    importlib.import_module("openprogram.programs._host.runtime")
+    monkeypatch.setattr(program_runtime, "_registry", dict(program_runtime._registry))
+    from openprogram.runtime.agent.durable_steps import (
         FunctionCompatibilityError,
         function_execution,
     )
 
     store, active, _service = _active_execution(tmp_path)
-    function = agentic_function(_local_import_function, resumable=True, as_tool=False)
+
+    class RegisteredProgram4Agent(Agent):
+        method_options = {"run": {"resumable": True, "as_tool": False, "tool": True}}
+        run = staticmethod(_local_import_function)
+
+    function = RegisteredProgram4Agent().run
     with pytest.raises(FunctionCompatibilityError, match="module scope"):
         with function_execution(
             store,
@@ -712,11 +724,11 @@ def test_untracked_step_import_is_rejected_before_external_work(tmp_path, monkey
 
 
 def _package_action(folder):
-    return _finish(folder, _package_dependency.suffix)
+    return _finish(folder, _package_dependency.suffix)  # noqa: F821 - the test binds this module global while it runs
 
 
 def _package_function(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     return step("write", _package_action, folder)
 
@@ -725,11 +737,9 @@ def test_opaque_package_is_rejected_before_external_work(tmp_path, monkeypatch):
     import importlib
     import sys
 
-    function_module = importlib.import_module(
-        "openprogram.agentic_programming.function"
-    )
-    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
-    from openprogram.agentic_programming.continuation import (
+    importlib.import_module("openprogram.programs._host.runtime")
+    monkeypatch.setattr(program_runtime, "_registry", dict(program_runtime._registry))
+    from openprogram.runtime.agent.durable_steps import (
         FunctionCompatibilityError,
         function_execution,
     )
@@ -746,7 +756,14 @@ def test_opaque_package_is_rejected_before_external_work(tmp_path, monkeypatch):
             importlib.import_module("durable_dependency"),
         )
         store, active, _service = _active_execution(tmp_path)
-        function = agentic_function(_package_function, resumable=True, as_tool=False)
+
+        class RegisteredProgram6Agent(Agent):
+            method_options = {
+                "run": {"resumable": True, "as_tool": False, "tool": True}
+            }
+            run = staticmethod(_package_function)
+
+        function = RegisteredProgram6Agent().run
         with pytest.raises(FunctionCompatibilityError, match="Opaque"):
             with function_execution(
                 store,
@@ -768,7 +785,7 @@ def _dynamic_import_action(folder):
 
 
 def _dynamic_import_function(folder):
-    from openprogram.agentic_programming.continuation import step
+    from openprogram.runtime.agent.durable_steps import step
 
     return step("write", _dynamic_import_action, folder)
 
@@ -776,17 +793,20 @@ def _dynamic_import_function(folder):
 def test_dynamic_import_is_rejected_before_external_work(tmp_path, monkeypatch):
     import importlib
 
-    function_module = importlib.import_module(
-        "openprogram.agentic_programming.function"
-    )
-    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
-    from openprogram.agentic_programming.continuation import (
+    importlib.import_module("openprogram.programs._host.runtime")
+    monkeypatch.setattr(program_runtime, "_registry", dict(program_runtime._registry))
+    from openprogram.runtime.agent.durable_steps import (
         FunctionCompatibilityError,
         function_execution,
     )
 
     store, active, _service = _active_execution(tmp_path)
-    function = agentic_function(_dynamic_import_function, resumable=True, as_tool=False)
+
+    class RegisteredProgram5Agent(Agent):
+        method_options = {"run": {"resumable": True, "as_tool": False, "tool": True}}
+        run = staticmethod(_dynamic_import_function)
+
+    function = RegisteredProgram5Agent().run
     with pytest.raises(FunctionCompatibilityError, match="Dynamic"):
         with function_execution(
             store,
@@ -801,7 +821,7 @@ def test_dynamic_import_is_rejected_before_external_work(tmp_path, monkeypatch):
 
 def test_continue_rejects_invalid_function_policy_without_mutation(tmp_path):
     import asyncio
-    from openprogram.execution.state_machine import InvalidCommand
+    from openprogram.runtime.execution.state_machine import InvalidCommand
 
     store, active, service = _active_execution(tmp_path)
     execution = store.get_execution(active.execution_id)

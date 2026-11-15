@@ -1,0 +1,61 @@
+<title>Agent loop guards</title>
+<meta name="description" content="The guards in the agent loop that catch repeated text, repeated tool rounds, repeated failures and tool calls written as text.">
+<h1>Agent loop guards</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Stuck in</th><th scope="col">Guard in <code translate="no">openprogram/runtime/agent/loop/</code></th><th scope="col">Acts</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Repeated text</th><td><code translate="no">guards._RepeatedTextGuard</code></td><td>Stream consumer, <code translate="no">streaming.py</code></td><td>Response discarded and asked again</td></tr>
+<tr><th scope="row">Repeated tool rounds</th><td><code translate="no">tool_loop_guard.ToolLoopGuard</code></td><td>After each tool round, <code translate="no">loop.py</code></td><td>Turn ends with a notice</td></tr>
+<tr><th scope="row">Tool calls written as text</th><td><code translate="no">text_tool_calls.recover_text_tool_calls</code></td><td>When a reply ends, <code translate="no">streaming.py</code></td><td>Written calls become real ones</td></tr>
+<tr><th scope="row">Repeated failing call</th><td><code translate="no">failure_policy</code> and the tool executor</td><td>Each tool call, <code translate="no">tool_dispatch.py</code></td><td>Third identical failure is not run; a note answers it</td></tr>
+<tr><th scope="row">Long stretch with nothing shown</th><td><code translate="no">progress_note.QuietStretch</code></td><td>After each tool round of a turn somebody is watching, <code translate="no">loop.py</code></td><td>After 6 rounds of tool calls only, one note for this turn asks for a few words of progress; nothing ends</td></tr>
+</tbody>
+</table>
+<p class="note">A healthy turn is left alone. Nothing here caps output length, round count or wall time.</p>
+
+<h2>Repeated text</h2>
+<dl class="pairs">
+<dt>Checked on</dt><dd>A response offered tools; a bounded tail of its text</dd>
+<dt>Trigger</dt><dd>The tail ends in one exact segment of 32–1024 characters, repeated at least 8 times over at least 2 KB</dd>
+<dt>Raises</dt><dd><code translate="no">RepetitiveOutputError</code></dd>
+<dt>Loop</dt><dd>Closes the provider effect, keeps every completed tool result, asks again with a user note to continue without repeating. Draws on the turn's shared recovery allowance.</dd>
+<dt>Allowance spent</dt><dd>The error goes up, non-retryable, so <code translate="no">Runtime.exec</code> never replays completed tool effects in a new session</dd>
+</dl>
+
+<h2>Repeated tool rounds</h2>
+<p><code translate="no">ToolLoopGuard</code> counts consecutive rounds with the same calls, arguments and results. At <code translate="no">TOOL_LOOP_REPEATS</code> (8) the turn ends before the next request, with an error naming the call. The user's next message carries the conversation on.</p>
+<pre translate="no" tabindex="0"><code translate="no">Stopped: the agent made the same tool call 8 times in a row and got the same result every time …</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Compared</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Calls</th><td>Name and arguments with keys in one order (<code translate="no">failure_policy.repeat_key</code>); <code translate="no">bash</code>'s presentation-only <code translate="no">description</code> is ignored</td></tr>
+<tr><th scope="row">Results</th><td>Error flag, text and image content. Text about the run itself is normalized: <code translate="no">elapsed 1.2s</code>, <code translate="no">Wall time</code>, <code translate="no">duration_seconds</code></td></tr>
+<tr><th scope="row">Resets the count</th><td>A changed result; anything the user says mid-turn (steering)</td></tr>
+<tr><th scope="row">Never a loop</th><td>A round of only waits: a tool whose name has the word sleep, wait, delay, pause or poll (<code translate="no">clock__sleep</code>, <code translate="no">waitForCi</code>), or whose arguments are only a duration</td></tr>
+</tbody>
+</table>
+
+<h2>Tool calls written as text</h2>
+<p>Deep into a long conversation a model may write calls in its chat template's shape instead of making them; nothing runs, the turn ends, and on "go on" it reads its own written call back and writes the next one the same way.</p>
+<p>When a reply to a request that offered tools ends with no call, <code translate="no">text_tool_calls.read_written_calls</code> reads it from the first call-shaped tag.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Model family</th><th scope="col">Shape read</th></tr></thead>
+<tbody>
+<tr><th scope="row">Hermes, Qwen</th><td><code translate="no">&lt;tool_call&gt;{"name": …, "arguments": {…}}&lt;/tool_call&gt;</code>; arguments an object or a JSON string</td></tr>
+<tr><th scope="row">GLM</th><td><code translate="no">&lt;tool_call&gt;name&lt;arg_key&gt;k&lt;/arg_key&gt;&lt;arg_value&gt;v&lt;/arg_value&gt;&lt;/tool_call&gt;</code></td></tr>
+<tr><th scope="row">Claude, MiniMax</th><td><code translate="no">&lt;invoke name="…"&gt;&lt;parameter name="k"&gt;v&lt;/parameter&gt;&lt;/invoke&gt;</code>, bare or inside <code translate="no">&lt;function_calls&gt;</code> or <code translate="no">&lt;minimax:tool_call&gt;</code></td></tr>
+<tr><th scope="row">DeepSeek DSML</th><td>The same invoke with <code translate="no">｜DSML｜</code> in each tag, one or two pipes of either width</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Outcome</th></tr></thead>
+<tbody>
+<tr><th scope="row">Every block names an offered tool, arguments readable</th><td>Blocks become <code translate="no">ToolCall</code>s; the reply ends as a tool-use turn</td></tr>
+<tr><th scope="row">Text before the calls</th><td>Kept</td></tr>
+<tr><th scope="row">Text after the calls</th><td>Dropped: a made-up result. The real one follows.</td></tr>
+<tr><th scope="row">Parameter value</th><td>Taken as JSON when it is JSON, unless DSML marks it <code translate="no">string="true"</code></td></tr>
+<tr><th scope="row">Unknown tool, unreadable arguments, a tag in prose</th><td>Reply left as it was</td></tr>
+</tbody>
+</table>
+<p class="note">Recovery runs in the stream consumer before the reply is committed, so context, durable record and UI all see the real calls. The tool-loop guard and text-call recovery follow magpie's (yetone/magpie, MIT).</p>

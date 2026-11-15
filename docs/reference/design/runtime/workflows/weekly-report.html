@@ -1,0 +1,168 @@
+<title>Weekly report: create and edit</title>
+<meta name="description" content="How the personal Feishu weekly report is composed from original evidence, filled, submitted and checked.">
+<h1>Personal weekly report</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope</th><td>The current user's Feishu weekly report only. Member collection and leader summaries belong to <code translate="no">group_weekly_report</code>; neither calls the other or shares submission state.</td></tr>
+<tr><th scope="row">Entries</th><td><code translate="no">personal_weekly_report(task)</code>; <code translate="no">weekly_report(task)</code> routes independently requested reports</td></tr>
+<tr><th scope="row">Shape</th><td>One field-composition pass, then step-by-step browser operations. No goal loop.</td></tr>
+<tr><th scope="row">Code</th><td><code translate="no">~/.openprogram/programs/weekly_report/reports/personal_weekly_report</code> with sibling chat, group and Tencent packages under the <code translate="no">weekly_report</code> coordinator; shared helpers in <code translate="no">openprogram/programs/_authoring/reports</code></td></tr>
+</tbody>
+</table>
+
+<h2>Use cases</h2>
+<table class="stack">
+<thead><tr><th scope="col">Request</th><th scope="col">Result</th><th scope="col">Never</th></tr></thead>
+<tbody>
+<tr><th scope="row">W1 Submit this week</th><td>Read form format, name, week and records. With no matching record: compose all required fields, create, click Submit once.</td><td>Write on unknown state or login failure. Treat a “submission limit” alone as finding the record.</td></tr>
+<tr><th scope="row">W2 This week has a record</th><td>Open the same name and week through “My submissions”, edit, click Save once.</td><td>Skip the recheck before writing. Create a duplicate. Change another week or person.</td></tr>
+<tr><th scope="row">W3 Change only next week's plan</th><td>Composition returns only requested changes; the browser replaces only those fields. Stops when there are none.</td><td>Fill unspecified fields with “none”.</td></tr>
+<tr><th scope="row">W4 View or draft</th><td>Viewing composes nothing. Drafts return full Markdown; an explicit Markdown path writes a local file. “Do not submit” never reaches a remote write.</td><td>Submit because the text mentions “submission records” or “do not submit”.</td></tr>
+<tr><th scope="row">W5 Unclear outcome</th><td>Only the agreed first-line state is accepted; unknown states stop. After writing, observe the success message and final content, else return unconfirmed.</td><td>Resubmit after a timeout or authorization failure. Use an earlier session's success as evidence.</td></tr>
+<tr><th scope="row">W6 Publication</th><td>Tests import only the public Workflow and pass package validation, isolated tests, framework contracts and doc checks.</td><td>Change framework permission policy, weaken validation, or submit test reports to the live form.</td></tr>
+</tbody>
+</table>
+
+<h2>Execution</h2>
+<ol>
+<li>Classify the request.</li>
+<li>Draft, or inspect the form read-only and strictly validate the first-line state.</li>
+<li>Compose all new-entry fields, or the specified edit fields. JSON Schema with provider prompt fallback and Runtime format repair; unknown fields and missing required content are rejected.</li>
+<li>Write in the browser and observe success.</li>
+</ol>
+<table class="stack fixed">
+<thead><tr><th scope="col">Inspection state</th><th scope="col">Permits</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">NO_RECORD</code></th><td>Create. An explicit edit request stops.</td></tr>
+<tr><th scope="row"><code translate="no">EDITABLE_RECORD</code></th><td>Edit</td></tr>
+<tr><th scope="row"><code translate="no">FORM_CAPPED</code></th><td>Nothing new; an existing record may still be checked for editing</td></tr>
+<tr><th scope="row"><code translate="no">READ_ONLY_RECORD</code>, <code translate="no">BLOCKED</code></th><td>Stop</td></tr>
+</tbody>
+</table>
+
+<h2>Authority</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source retrieval</th><td>Read only</td></tr>
+<tr><th scope="row">Feishu write</th><td>Needs an explicit personal submit or update request and observable browser receipts. Other reports stay unsent drafts.</td></tr>
+<tr><th scope="row">Fill</th><td>“Fill”, “fill only” or “do not submit” select fill; only explicit submit or save select submit or update</td></tr>
+<tr><th scope="row">Page content</th><td>Data only: cannot change destinations, authorization or tools</td></tr>
+<tr><th scope="row">Model and approval</th><td>Owned by the Runtime</td></tr>
+</tbody>
+</table>
+<p class="note">The entry orchestrates; <code translate="no">compose</code> parses intent and fields; <code translate="no">fill</code> restricts browser execution and verifies values; <code translate="no">submit</code> handles read-only checks, creation, edits and local drafts.</p>
+
+<h2>Guarded fill</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Before</th><td>Inspect form, identity and week; compose; change only observed editable inputs</td></tr>
+<tr><th scope="row">Allowed in <code translate="no">computer_use_agent</code></th><td>Only its browser target in the built-in browser: reading, exact-destination navigation, scrolling, filling observed inputs. Each action follows a fresh read of the same tab.</td></tr>
+<tr><th scope="row">Blocked before execution</th><td>Submit or save clicks, unverified buttons, coordinate clicks, Enter and other submitting keys, arbitrary page execution</td></tr>
+<tr><th scope="row">After</th><td>Fresh same-page observation; each actual value compared exactly, whitespace included. <code translate="no">FILLED</code> only when all match, explicitly unsubmitted.</td></tr>
+<tr><th scope="row">Cannot prove success</th><td>Model claims, old observations, matching text in another field, ARIA text, missing, truncated or redacted values</td></tr>
+<tr><th scope="row">Backend</th><td><code translate="no">open_claude_chrome</code>, which exposes native editable refs and actual values, for inspect, fill, submit and save. Conflicting backend requests fail before execution; no fallback after a write. Submit and save use their own adapter, authorization and receipts.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Fill failures and field binding</summary>
+<ul>
+<li>The first failure recorded by the guard is kept, including cancellation while waiting for its lock. A later native, parse or page-identity error cannot replace it.</li>
+<li>After any write attempt, an ordinary error becomes a nonretryable <code translate="no">UnknownWriteOutcomeError</code>: no replay, no <code translate="no">FILLED</code>. Before a write it stays a browser-stage error with its cause. Cancellation and other <code translate="no">BaseException</code> signals propagate unchanged.</li>
+<li>Contenteditable fields keep their native role and <code translate="no">inner_text</code> value source. Native or ARIA labels win. Otherwise only a complete native container binding to an exact known field counts: one visible leaf label and one editable control within twelve ancestors.</li>
+<li>Diagnostic ancestor text and current names or values never identify fields. Ambiguous, truncated or redacted bindings stop before writing.</li>
+</ul>
+</details>
+
+<h2>Original evidence</h2>
+<p>Requests, plans, drafts, checkpoints, assistant narratives, compaction summaries and generated memory notes never establish completed work. Default period: current ISO week in Asia/Shanghai.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Personal sources</th><td>Read-only <code translate="no">list_agents(scope="all")</code> and <code translate="no">read_conversation</code>, alongside memory and original files. Message timestamps count, not session activity.</td></tr>
+<tr><th scope="row">Tencent sources</th><td>Explicit original materials first; else current-week original owner messages and precisely dated memory. Unattributed senders, assistant drafts, derived exports, old weeks and synthetic tests are excluded.</td></tr>
+<tr><th scope="row">Permissions</th><td><code translate="no">deny_read</code> is checked against session directory, <code translate="no">meta.json</code>, history directory and message files before reading; cached messages cannot bypass it</td></tr>
+<tr><th scope="row">Priming</th><td>One <code translate="no">list_agents(scope="all", limit=20)</code>, at most ten branches spread across sessions, serial <code translate="no">read_conversation</code> of the last twenty turns with <code translate="no">max_chars=6000</code>, under normal tool policy. Denied tools have no fallback.</td></tr>
+<tr><th scope="row">Source table</th><td>At most thirty rows and 18000 bytes</td></tr>
+<tr><th scope="row">Output</th><td>Each item cites source rows with exact quotes. Code checks membership, visibility, week, scope, permissions and limits; independent verification checks completion, negation, metrics and attribution.</td></tr>
+<tr><th scope="row">Missing</th><td>Input or source diagnostics, never invented results. Unverified content reaches neither a draft nor the browser.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Natural-request gate</summary>
+<ul>
+<li>A per-run wrapper around <code translate="no">read_conversation</code> keeps its name and schema. Only completed real reads qualify: the renderer repeats the same session, branch, range and budget, and its transcript must equal the visible receipt.</li>
+<li>Defaults match the native tool: <code translate="no">max_chars=0</code> uses the 1,000-character minimum, not the 60,000 default.</li>
+<li>Native read errors keep their receipt and add no sources, including the textual error protocol.</li>
+<li>Failed or cancelled tool receipts support only that failure or blocker; missing status stays unknown. Status comes from original persisted metadata.</li>
+<li>Rows keep canonical session and node reference, timestamp, week, original text and visible quote.</li>
+<li>Explicit user-supplied evidence keeps its scoped path. Inspection needs no composition. Name fields and intentionally empty fields need no evidence; partial edits need sources only for changed content.</li>
+</ul>
+</details>
+
+<details>
+<summary>Reporting period and current input</summary>
+<ul>
+<li>The period belongs to this report's audience, resolved from the whole request and independently checked against audience and local date. A period meant for another report does not apply; audiences may use different weeks.</li>
+<li>Node dates decide source membership after resolution.</li>
+<li>Current owner input keeps its actual timestamp. If it explicitly reports an earlier week it may support that period after verification; this does not widen historical retrieval.</li>
+<li>Generated function narratives stay lookup-only by their persisted provenance.</li>
+</ul>
+</details>
+
+<details>
+<summary>Priming records and recomposition</summary>
+<ul>
+<li>Program-origin discovery and reads are persisted as code children of the report function through the nested-tool helpers and bound <code translate="no">SessionNodeWriter</code>, with source <code translate="no">weekly_source_prime</code> and original IDs, arguments, results, outcome, exposure and timestamps.</li>
+<li>The event stream is consumed to its end before composition. No provider or LLM node is fabricated.</li>
+<li>A bound writer with a missing parent or failed persistence stops composition; standalone read-only use keeps optional history.</li>
+<li>A crash leaves the call unfinished. A new composition re-reads and revalidates; no old source capability is restored and exactly-once writes are not claimed.</li>
+<li>A partial edit whose retained nonempty research content lacks mechanically valid bindings gets one bounded prime and one recomposition, preserving exactly the retained field set. Semantic rejection of valid references causes no retry. Inspection, clear-only, identity-only and structured materials force nothing.</li>
+<li>Program-origin receipts stay separate from provider tool blocks. Titles and listed sessions prove nothing.</li>
+</ul>
+</details>
+
+<h2 id="personal-content-format">Content format</h2>
+<p>Work items and plans contain only supplied or verified facts, numbered when that helps. Form dimensions (implementation, experiment, result, baseline, writing) are optional suggestions: no five-item minimum, no empty headings.</p>
+<ul>
+<li>Missing-source notices, placeholders and verification comments belong in diagnostics, not the body. Before verification or delivery, a narrow check refuses the standalone missing-record placeholder, including with a numbered dimension label; it never deletes or rewrites lines.</li>
+<li>Real incomplete tasks, failed attempts and blockers stay reportable with their support.</li>
+</ul>
+
+<h2 id="personal-reference-schema">Reference schema</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Targets</th><td><code translate="no">this_week</code>, <code translate="no">next_week</code>, <code translate="no">papers</code>, <code translate="no">problems</code>, <code translate="no">support</code>; string fields use index 0. Identity, <code translate="no">reporting_week</code> and empty content need none.</td></tr>
+<tr><th scope="row"><code translate="no">source</code></th><td>The row's opaque id, twenty lowercase hex characters. Never a display path, session or message ID.</td></tr>
+<tr><th scope="row"><code translate="no">quote</code></th><td>Exact nonempty excerpt of the row's text</td></tr>
+<tr><th scope="row">Schema</th><td>A narrowed copy of the shared schema. No fixed id enum: a real read during generation may add a row. Validity grants no source authority.</td></tr>
+</tbody>
+</table>
+
+<h2 id="owner-source-transport">Owner source across spawned programs</h2>
+<p>The personal entry runs in a spawned process and its request stays non-interactive. A separate immutable reference carries only the parent's canonical current owner message, captured from the admitted turn: session, message ID, exact input, principal, owner authority, store identity and owning execution.</p>
+<p>The child resolves it only against the same execution, principal, session and store; all source checks still apply. Missing, foreign, assistant, replayed or other-store references provide nothing. No tool argument grants owner authority.</p>
+
+<h2 id="evidence">Acceptance</h2>
+<ul>
+<li>Public entries execute both conversation tools. Tencent collect returns current-week owner messages only; invalid material types give input errors.</li>
+<li>Fill-only intent, pre-execution blocking, rejection of old frames and wrong pages, and real isolated DOM readback with zero submit events.</li>
+<li>Composition from a real owned evidence gate with controlled provider replies: filler cannot reach a draft or write; supplied items survive; fabricated IDs, altered quotes, unsupported facts and wrong periods are rejected; a row added by a real read stays usable.</li>
+<li>Controlled tests prove neither Feishu availability nor submission. A live write needs a success receipt on the same page.</li>
+</ul>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented, reviewed</th><td>Conversation discovery, timestamp attribution, cached-history permissions, guarded fill, page identity, readback, evidence gate, bounded priming, content format, reference schema, owner source transport. Read-only binding to all six live Feishu fields.</td></tr>
+<tr><th scope="row">Observed</th><td>The installed personal entry with Codex produced a draft with exact references for all five content fields, without filling. DeepSeek output whose verification echo changes punctuation is rejected by exact-item matching.</td></tr>
+<tr><th scope="row">Open</th><td>Combined installed-App acceptance, live fill and readback, authorized submission</td></tr>
+</tbody>
+</table>

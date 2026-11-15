@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.self_update import UpdatePhase
-from openprogram.self_update.control import supervisor
+from openprogram.operations.self_update import UpdatePhase
+from openprogram.operations.self_update.control import supervisor
 from tests.component.self_update.control.test_supervisor import _staging, _installer
 
 
@@ -26,7 +26,7 @@ def staged(tmp_path, monkeypatch):
     transaction.mkdir()
     detail = {"artifact_path": str(artifact), "artifact_sha256": supervisor._tree_digest(artifact),
               "transaction_dir": str(transaction), "previous_system_gate": {"candidate_sha": "3" * 40}}
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: profile)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: profile)
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
     def forbidden(*args):
         pytest.fail("resumption must not rebuild, re-prepare or activate an invalid candidate")
@@ -66,9 +66,9 @@ def test_real_controller_sigkill_releases_lock_and_preserves_ready(staged, monke
     code = """
 import os, signal, sys
 from pathlib import Path
-from openprogram import paths
-from openprogram.self_update.control import supervisor
-from openprogram.self_update import SelfUpdateStore, UpdatePhase
+from openprogram.state import paths
+from openprogram.operations.self_update.control import supervisor
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
 profile = Path(sys.argv[1])
 paths.get_state_dir = lambda: profile
 def interrupted_build(record, update_dir):
@@ -122,7 +122,7 @@ def test_invalid_verifying_grant_restores_or_retains_maintenance(staged, monkeyp
         if not restored:
             raise RuntimeError("restored worker unavailable")
         return {"candidate_sha": revision}
-    monkeypatch.setattr("openprogram.self_update.verification.system_probe.probe_restored_system", probe)
+    monkeypatch.setattr("openprogram.operations.self_update.verification.system_probe.probe_restored_system", probe)
     assert run(v) == 1
     state = v.store.load("su_supervisor").state
     assert commands == ["--rollback"]
@@ -131,8 +131,8 @@ def test_invalid_verifying_grant_restores_or_retains_maintenance(staged, monkeyp
 
 
 def test_resumed_rollback_does_not_extend_an_expired_deadline(staged, monkeypatch):
-    from openprogram.self_update.control.rollback_intent import begin_rollback
-    from openprogram.self_update.control.rollback_intent import load_rollback_intent
+    from openprogram.operations.self_update.control.rollback_intent import begin_rollback
+    from openprogram.operations.self_update.control.rollback_intent import load_rollback_intent
     v = staged
     v.store.transition("su_supervisor", UpdatePhase.READY, detail=v.detail)
     supervisor.enter_maintenance("su_supervisor")

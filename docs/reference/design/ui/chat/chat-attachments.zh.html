@@ -1,0 +1,337 @@
+<title>聊天附件</title>
+<meta name="description" content="用户文件和 Agent 文件如何在聊天中显示、打开和传递：共用标记、入站路径、出站投递、文件路由和同类对比。">
+<span id="now"></span>
+<h1>聊天附件</h1>
+
+<p>消息里的每个文件都由同一种文本标记表示：</p>
+<pre translate="no"><code>[attachment: notes.txt (txt, 18 KB, 4210 lines) @json "/abs/path/notes.txt"]</code></pre>
+<p class="note">只由 <code translate="no">openprogram/state/attachments.py</code> 的 <code translate="no">format_marker</code> 写入，新增来源也调用它。网页端只由 <code translate="no">parseAttachments</code> 读取。可选的 <code translate="no">@previewjson</code> 指向保存的预览。旧写法 <code translate="no">@ /abs/path</code> 仍可读取。内容如何进入模型上下文：<a href="attachment-handling.zh.html">附件处理</a>。</p>
+
+<h2 id="now-in">入站</h2>
+<table class="stack">
+<thead><tr><th scope="col">来源</th><th scope="col">字节</th><th scope="col">模型输入</th><th scope="col">聊天显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">网页图片：粘贴、拖入、选择</th><td>会话工作目录 <code translate="no">attachments/</code>，会话内 SHA-256 去重，单文件 32 MB，单轮 64 MB</td><td>图片内容和路径</td><td>缩略图 chip，点击看原图</td></tr>
+<tr><th scope="row">网页文档：PDF、代码、二进制</th><td>同一存储；本地文件可留在原路径</td><td>路径；工具按需读取</td><td>可点击 chip，覆盖层查看</td></tr>
+<tr><th scope="row"><code translate="no">@</code> 提及、输入路径</th><td>位置不变，零复制</td><td>路径</td><td>可点击 chip</td></tr>
+<tr><th scope="row">Telegram、Discord、Slack、微信</th><td><code translate="no">&lt;state&gt;/channels/&lt;channel&gt;/accounts/&lt;account&gt;/attachments/</code>，20 MB，不去重</td><td>4 MB 以内的图片作为图片内容，其余为路径</td><td>缩略图 chip，隐藏标记</td></tr>
+</tbody>
+</table>
+<p class="note">频道文字前加 <code translate="no">[display name (id)]</code>，标记放在后面。<code translate="no">_one_line</code> 去掉名称中的方括号，防止伪造前缀。没有文件名的粘贴图片按媒体类型补扩展名。</p>
+
+<h2 id="now-bubble">消息中的显示</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">用户消息、消息导航条</th><td><code translate="no">AttachmentChips</code>；<code translate="no">AttachmentPreview</code> 用覆盖层包裹 <code translate="no">FileViewer</code> 的绝对路径模式，阅读位置不变</td></tr>
+<tr><th scope="row">助手回复</th><td><code translate="no">AssistantFileCards</code>，同一标记；在中央文件标签页打开</td></tr>
+<tr><th scope="row">刚发送</th><td><code translate="no">chat_ack</code> 回传保存后的文本，新附件立即可点击</td></tr>
+</tbody>
+</table>
+
+<h3 id="file-cards">回复文件卡片</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">附在回复上的文件</th><th scope="col">预览</th></tr></thead>
+<tbody>
+<tr><th scope="row">图片、视频、音频</th><td>原位显示或播放</td></tr>
+<tr><th scope="row">PDF</th><td>第一页，裁到 16:9 画框</td></tr>
+<tr><th scope="row">HTML</th><td>按 1280 × 720 绘制，缩放到 16:9 画框</td></tr>
+<tr><th scope="row">zip、tar</th><td>第一层，每个文件夹显示文件数</td></tr>
+<tr><th scope="row">文本</th><td>开头几行</td></tr>
+</tbody>
+</table>
+<p>只有服务端放在消息上的附件才画卡片：<code translate="no">send_file</code> 发的文件，或<a href="#produced-files">本轮产出的文件</a>。浏览器不自己推导卡片。</p>
+<p>组装本轮最终文本时（<code translate="no">with_attachments</code>），模型为本轮没有记录的文件打出的标记改成文件名，回复内容和文本块里都一样：不出卡片、路径和自动预览，实时和重新加载后都是如此。用户消息里的上传和提及标记保持不变。</p>
+<ul>
+<li>只有标记的路径和 <code translate="no">@previewjson</code> 路径都被记录过，标记才保留。</li>
+<li>回复流式输出期间存下的文本（被重启打断的回复会保留它）和常驻 Agent 的报告也一样处理。</li>
+<li><code translate="no">parseAttachments</code> 只认服务器会检查的写法。</li>
+</ul>
+<p>回复里链接的脚本（<code translate="no">[build.py](/abs/build.py)</code>）或智能体只读过的文件仍是正文里的链接（<a href="#prose-paths">回复里的路径</a>）。</p>
+<p>聚焦的对话里一条回复结束时，它第一个还没在回复里显示的附件在旁边的预览里打开：这一轮刚做出的成果。</p>
+<p class="note">预览下方：文件类型图标、名称、类型和大小（及页数或文件数），然后是<strong>打开</strong>和<strong>在 Finder 中显示</strong>（按平台为资源管理器或文件管理器）。应用无法显示的文件，打开位换成<strong>下载</strong>；Worker 不在用户机器上时，显示位改为下载。卡片接近屏幕时才加载预览。</p>
+
+<details>
+<summary>HTML 沙箱和压缩包</summary>
+<ul>
+<li><code translate="no">GET /api/file-page</code> 只提供 .html 和 .htm，带 <code translate="no">sandbox allow-scripts</code>，没有 <code translate="no">allow-same-origin</code>。<code translate="no">srcdoc</code> 框架会继承应用的 <code translate="no">script-src 'self'</code>，靠脚本绘制的页面会变成空白。</li>
+<li>页面为不透明来源：无法访问应用及其存储，<code translate="no">Origin: null</code> 请求被拒绝，不能导航或打开窗口。相对路径资源在缩略图中缺失，因为严格 Cookie 不发送；在浏览器标签页中打开时有这些资源。</li>
+<li><code translate="no">FileViewer</code> 把 zip 或 tar 交给 <code translate="no">ArchivePreview</code>：左侧完整目录树，右侧用同一个 <code translate="no">FileViewer</code> 显示所选成员。不解压到磁盘。</li>
+</ul>
+</details>
+
+<h3 id="prose-paths">回复里的路径</h3>
+<p>回复只是提到的文件，比如 <code translate="no">`exports/plan.pptx`</code> 或 <code translate="no">[plan](/Users/me/exports/plan.pptx:3)</code>，是指向该文件的链接。点击后在对话旁的预览里打开：Office 文件进文档编辑器，PDF 进 PDF 查看器，网页按网页打开。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">候选</th><td>已落定回复里的行内代码和 markdown 链接目标（不看代码块，流式输出时不看）。形状像路径的字符串：含目录分隔符，或是带扩展名的文件名；绝对路径、<code translate="no">~</code> 或相对路径；去掉 <code translate="no">:12</code>、<code translate="no">#L12</code> 后缀。命令、网址和指向应用自身页面的链接（<code translate="no">/s/…</code>、<code translate="no">/settings</code>）不算</td></tr>
+<tr><th scope="row">由 Worker 确认</th><td><code translate="no">GET /api/file-paths</code> 回答哪些候选是文件：绝对路径和 <code translate="no">~</code> 路径按 <code translate="no">readable_roots</code> 检查，相对路径先接到对话的工作目录上。只有确认过的路径才变成链接，所以长得像文件名的代码不会成为死链接</td></tr>
+<tr><th scope="row">开销</th><td>屏幕上所有回复的候选，每个对话合成一次请求（每次最多 64 条，只做 <code translate="no">stat</code>）；答案保留五分钟（不存在的文件二十秒，因为智能体可能还在生成）。文字先画出来，从不等待</td></tr>
+<tr><th scope="row">不是路由</th><td>只可能是本地路径的 markdown 链接（不是应用页面的 <code translate="no">/…</code>、<code translate="no">~/</code>、<code translate="no">./</code>、<code translate="no">../</code>、<code translate="no">file://</code>、盘符）在外壳路由之前被拦下，否则路由会把 <code translate="no">/Users/…</code> 当成页面。尚未确认的链接在点击时再查；文件不在时会提示。不带前缀的目标（<code translate="no">notes/plan.md</code>，或省略了协议的网址 <code translate="no">docs.example.ai</code>）要等确认后才变成文件链接，之前点击保持链接原本的行为</td></tr>
+<tr><th scope="row">样式</th><td>和应用里渲染的 markdown 链接（文件预览里的链接）一个画法：链接色，下面一条淡下划线，悬停时变实。行内代码保留底色，也用链接色和这条下划线，所以即使链接色和代码色相近，不悬停也能和普通代码分开。只改装饰，路径变成链接时段落排版不变。回车可打开</td></tr>
+</tbody>
+</table>
+
+<h3 id="file-menu">文件菜单</h3>
+<p>右键回复里的路径、回复文件卡片或本轮改动文件的某一行，都打开同一个菜单，来自 <code translate="no">FilePathMenuContent</code>：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">菜单项</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开预览</th><td>即点击的动作；卡片上的文件这里无法显示时不出现</td></tr>
+<tr><th scope="row">复制 ›</th><td>绝对路径、相对路径（相对对话的项目，项目外不可用）、文件名</td></tr>
+<tr><th scope="row">在 Finder 中显示</th><td>按平台为资源管理器或文件管理器，经 <code translate="no">POST /api/file-reveal</code>；仅当 Worker 在本机运行</td></tr>
+<tr><th scope="row">用默认应用打开</th><td>桌面应用的 <code translate="no">files:open-default</code>：系统像双击一样打开文件，演示文稿会在 Keynote 或 PowerPoint 里打开。拒绝文件夹、可执行文件和系统会运行的东西（脚本、应用、安装包、快捷方式）。浏览器里或其他机器上没有这一项</td></tr>
+<tr><th scope="row">作为上下文附加</th><td>在对话输入框里加上该文件的 <code translate="no">@</code> 引用</td></tr>
+</tbody>
+</table>
+<p class="note">右键回复的其他地方保留浏览器自己的菜单，回复里的卡片保留各自的菜单。改动文件卡片里已删除的文件没有菜单。</p>
+
+<h2 id="now-out">出站</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 216" role="img" aria-label="send_file 检查路径并报告成功，本身不投递。轮次结束时，运行时读取记录的 send_file 调用（包括暂停前的），加上本轮产出的交付文件，再次检查每个路径，并把标记追加到 final_text。网页显示文件卡片。频道提取标记并调用 post_file：成功则移除标记，否则改写成带路径的说明。">
+  <defs><marker id="ca-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-cmd notranslate" translate="no" x="0" y="40">send_file(path)</text>
+  <text class="t-soft" x="0" y="66">解析符号链接</text>
+  <text class="t-soft" x="0" y="86">检查允许的根目录</text>
+  <text class="t-soft" x="0" y="106">报告结果，不投递</text>
+  <line class="ln" x1="150" y1="34" x2="212" y2="34" marker-end="url(#ca-a)"/>
+  <text class="t-big" x="224" y="40">轮次结束</text>
+  <text class="t-soft" x="224" y="66">send_file 调用</text>
+  <text class="t-soft" x="224" y="86">和产出文件，再次检查</text>
+  <text class="t-soft" x="224" y="106">标记追加到 final_text</text>
+  <path class="ln" d="M372 34H416" marker-end="url(#ca-a)"/>
+  <path class="ln" d="M394 34V152H416" marker-end="url(#ca-a)"/>
+  <text class="t-big" x="428" y="40">网页</text>
+  <text class="t-soft" x="428" y="66">回复下方的文件卡片</text>
+  <text class="t-big" x="428" y="158">频道</text>
+  <text class="t-soft" x="428" y="184">post_file，移除标记</text>
+  <text class="t-no" x="428" y="206">失败：带路径的说明</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong><code translate="no">send_file(path)</code></strong><small>解析符号链接，检查允许的根目录，报告结果，不投递</small></li>
+  <li><strong>轮次结束</strong><small>记录的 <code translate="no">send_file</code> 调用加上本轮产出的文件，再次检查，标记追加到 <code translate="no">final_text</code></small></li>
+  <li class="flow-end"><strong>网页</strong><small>回复下方的文件卡片</small><strong>频道</strong><small><code translate="no">post_file</code>，移除标记</small><p class="refused">失败：带路径的说明</p></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">上限</th><td>单文件 32 MB</td></tr>
+<tr id="approval"><th scope="row">审批</th><td>任何模式都没有。在本轮自己的对话里附上文件就是回复，所以 <code translate="no">send_file</code> 是无需判定的工具（<code translate="no">SAFE_TOOL</code>），需要的是 <code translate="no">fs.read</code> 而不是 <code translate="no">network.send</code>。模型审查会把附件当成外泄而拒绝，模型被拒一次后整段对话都不再附文件。配对的聊天应用发言人没有 <code translate="no">fs.read</code>，所以不会把主人的文件发给他们</td></tr>
+<tr id="produced"><th scope="row">本轮产出的文件</th><td>不需要 <code translate="no">send_file</code> 调用也会附上（见下）</td></tr>
+<tr><th scope="row">工具在哪些地方可用</th><td><code translate="no">cli</code>、<code translate="no">tui</code>、<code translate="no">plan</code> 中没有（<code translate="no">unsafe_in</code>），模型不会试了才失败。其他地方它是常驻工具，每次请求里都是一个函数，不需要搜索；对它做 <code translate="no">tool_search</code> 会回答它已经可以调用（<a href="../../function/deferred-tools.zh.html#codex">延迟工具</a>）</td></tr>
+<tr><th scope="row">提示里怎么说</th><td>工具列表里有 <code translate="no">send_file</code> 时，对每个交付物调用它，不需要先搜索。只有 <code translate="no">send_file</code> 调用拒绝了文件，才说文件没有发出，并给出它返回的原因；绝不从工具搜索的结果推断出这个结论。不是“绝不说”：工具确实会拒绝（平台对话里的主目录文件、超过上限的文件），隐瞒它会让用户空等一个文件</td></tr>
+<tr><th scope="row">暂停</th><td>以记录为准，恢复后的轮次保留其文件</td></tr>
+<tr><th scope="row">路径被拒</th><td>向模型返回错误，说明路径在范围外，并写出本对话自己的文件夹：工作文件夹、项目文件夹和对话文件夹。其他项目的 <code translate="no">chats/</code> 文件夹也是根目录，但只给数量（"40 other folders"），所以项目再多，消息也不变长</td></tr>
+<tr><th scope="row">边界</th><td>进程内 Python，不受管理 shell 命令的 <code translate="no">openprogram/host/sandbox/</code> 约束。路径检查就是全部边界</td></tr>
+<tr><th scope="row">为什么用工具</th><td><code translate="no">MEDIA:</code> 行在提取失败时会泄露给用户。工具能报告文件不存在。提到本轮没有修改过的路径不会发送</td></tr>
+<tr><th scope="row">本轮没有附上的标记</th><td>不上传任何文件。标记是模型也能写的文本，所以频道用本轮附上的文件（<code translate="no">send_file</code> 调用和本轮产出的文件）核对标记路径。本轮最终文本里这样的标记已经是文件名；在那之前流式发出的文本里的，改写成不带路径的中文说明</td></tr>
+<tr><th scope="row"><code translate="no">post_file</code> 不支持或失败</th><td>标记改写成带路径的中文说明，失败写日志。可点击链接需要外部可访问的网页地址</td></tr>
+</tbody>
+</table>
+
+<h3 id="produced-files">本轮产出的文件</h3>
+<p>模型用脚本做好一份演示文稿，回复“好了，在 <code translate="no">exports/plan.pptx</code>”，其实什么也没附上。轮次结束时，<code translate="no">produced_files</code> 自己把这类文件附上，用同一种标记，所以出现同样的卡片，频道也会上传。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">候选</th><td>回复里提到的路径：markdown 链接目标（包括 <code translate="no">&lt;…&gt;</code> 和 <code translate="no">%20</code>）、代码片段和裸写的词；绝对路径、<code translate="no">~</code> 路径，或相对于项目、再相对于会话 workdir 的路径；去掉 <code translate="no">:12</code>、<code translate="no">#L12</code> 后缀。另加 <code translate="no">write</code> 写出和 <code translate="no">image_generate</code> 保存的文件</td></tr>
+<tr><th scope="row">保留条件</th><td><code translate="no">sendable_roots</code> 内的普通文件，不超过 32 MB，修改时间不早于本轮开始（留一秒余量）；恢复的轮次用它的用户消息时间。用户自己发进来的文件（<code translate="no">workdir/attachments/</code>、<code translate="no">steer-images/</code>）不算，它们的修改时间也落在本轮里</td></tr>
+<tr><th scope="row">格式</th><td>Office 和其他文档、PDF、图片、音频、视频、压缩包；HTML、Markdown、CSV、TSV、SVG 和 notebook 只在编辑工具没改过时才附上，因为编辑卡片已经带 diff 显示了它们。无论是回复里提到的，还是 <code translate="no">write</code> 或 <code translate="no">image_generate</code> 保存的，每个候选都按同一条规则判断，所以生成 deck 的脚本不会附上。源代码和日志一律不附，<code translate="no">.key</code> 也不附，因为它同时是私钥的扩展名</td></tr>
+<tr><th scope="row">限制</th><td>最多看 64 个候选，只用 <code translate="no">stat</code>；最多附 8 个，每个一次，排在 <code translate="no">send_file</code> 的文件之后。任何失败都只是什么也不附，不会影响本轮</td></tr>
+<tr><th scope="row">范围</th><td>只在有 <code translate="no">send_file</code> 的地方（不含 <code translate="no">cli</code>、<code translate="no">tui</code>），且发言人有 <code translate="no">fs.read</code></td></tr>
+</tbody>
+</table>
+<p class="note">修改时间就是防线：模型只读过或提到的文件早于本轮，不会附上。</p>
+<p class="note">基础指南要求模型把自己产出的每个文件写成指向绝对路径的 markdown 链接，并用 <code translate="no">send_file</code> 附上交付物；<code translate="no">send_file</code> 的说明写明它适用于用户该看的任何文件，包括脚本生成的 Office 文件。</p>
+
+<h2 id="now-parts">文件访问</h2>
+<table class="grid">
+<thead><tr><th scope="col">根目录</th><th scope="col">显示<small translate="no">readable_roots</small></th><th scope="col">发送<small translate="no">sendable_roots</small></th></tr></thead>
+<tbody>
+<tr><th scope="row">会话文件夹 <code translate="no">projects/*/chats</code></th><td class="run">允许</td><td class="run">允许</td></tr>
+<tr><th scope="row">会话绑定的项目</th><td class="run">允许</td><td class="run">允许</td></tr>
+<tr><th scope="row">OpenProgram 检出目录</th><td class="run">允许</td><td class="deny">拒绝</td></tr>
+<tr><th scope="row">频道 <code translate="no">attachments</code> 文件夹</th><td class="run">允许</td><td class="deny">拒绝</td></tr>
+<tr><th scope="row">没有项目的对话所在文件夹（默认项目的，常是主目录）</th><td class="run">受限，仅该对话</td><td class="run">受限，仅对话留在 App 里时</td></tr>
+<tr><th scope="row">其他请求下的默认项目文件夹</th><td class="deny">拒绝</td><td class="deny">拒绝</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">resolve_within</code> 先解析符号链接再检查包含关系，指向 <code translate="no">~/.ssh</code> 的链接不会通过。每个会话都自动绑定默认项目，所以只有非默认绑定才算作项目。频道目录只 glob 到 <code translate="no">attachments</code> 叶子，因为 <code translate="no">credentials.json</code> 就在它旁边。</p>
+<h3 id="no-project-folder">没有项目的对话</h3>
+<p>这样的对话在默认项目的文件夹里工作，常是主目录，所以它做的演示文稿落在那里。这个文件夹只以 <code translate="no">WorkdirRoot</code> 的身份算作根目录，而且只对存在、没有真实项目的对话。文件系统根目录永远不算，否则整块磁盘都成了根目录。规则如下：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">预览、路径链接、文件卡片、显示位置（<code translate="no">readable_roots</code>）</th><td>该对话自己的请求允许。这些都只在主人自己的 App 里</td></tr>
+<tr><th scope="row"><code translate="no">send_file</code> 和回合结束附加（<code translate="no">sendable_roots</code>）</th><td>对话不往聊天平台投递时允许。绑定了频道的主人对话（meta 里有 <code translate="no">channel</code>），或从平台联系人来的对话（meta 里有 <code translate="no">peer_id</code>，解除绑定后仍在，因为联系人的下一条消息还会回到这里），保持窄根目录：工具拒绝主目录里的文件，回合结束再检查一次也拒绝，所以主目录里的东西不会上传到微信或 Telegram</td></tr>
+<tr><th scope="row">这个文件夹下始终拒绝</th><td>经过点开头的文件夹或文件的路径（<code translate="no">~/.ssh</code>、<code translate="no">~/.aws</code>、<code translate="no">~/.openprogram*</code>、<code translate="no">.env</code>）；经过名为 <code translate="no">Library</code> 或 <code translate="no">AppData</code> 的文件夹的路径，macOS 和 Windows 的钥匙串、浏览器配置和 Cookie 都放在那里；密钥和密钥库文件（<code translate="no">.key</code>、<code translate="no">.pem</code>、<code translate="no">.p12</code>、<code translate="no">.kdbx</code> 等）；<code translate="no">id_ed25519</code>、<code translate="no">credentials.json</code>、<code translate="no">token</code> 这类名字；以及状态目录，它的会话文件夹本身另有根目录。上传文件和插话图片照旧不参与回合结束附加</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">选择</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">不当普通根目录</th><td>这个文件夹可能就是 <code translate="no">$HOME</code>，而 <code translate="no">send_file</code> 能到达聊天平台</td></tr>
+<tr><th scope="row">也不排除</th><td>否则没有项目的对话做出的东西既发不出、也链接不了、打不开。Claude Code 桌面版、Codex、Hermes、MiniMax Code 和 KimiCode 都能从回复里打开本轮写的文件，不管工作目录在哪</td></tr>
+<tr><th scope="row">不按文件记账</th><td>根目录之外、由本轮工具写下的文件不额外开放：工作文件夹已覆盖它们落地的位置，记账会成为第二套规则</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路由</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /files/raw</code></th><td>项目和相对路径，服务文件面板和中央标签页。始终拒绝绝对路径，保持这一不变量</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/file-raw</code></th><td>绝对路径，按 <code translate="no">readable_roots</code> 检查；<code translate="no">nosniff</code>、CSP <code translate="no">sandbox</code>，PDF 为浏览器查看器豁免</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/file-read</code></th><td>文本。根目录下的相对路径，或按 <code translate="no">readable_roots</code> 检查的绝对路径</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/archive-list</code></th><td>从 zip 中央目录或 tar 头读取条目，最多 5000 项，截断时标记</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/archive-member</code></th><td>单个成员，最大 32 MB，响应头同 <code translate="no">/api/file-raw</code>。名称只在压缩包索引中查找，<code translate="no">../</code> 够不到任何东西</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/file-reveal</code></th><td>同样检查后在 Worker 的文件管理器中选中路径。从不打开或运行文件；用默认应用打开由桌面应用负责，它自己检查文件（<a href="#file-menu">文件菜单</a>）</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/file-paths</code></th><td>多个 <code translate="no">path</code> 参数，最多 64 个；每个映射到它在 <code translate="no">readable_roots</code> 内指向的绝对文件，否则为 <code translate="no">null</code>，不区分不存在、是文件夹还是在根目录外。相对路径接到对话的工作目录上。只做 <code translate="no">stat</code></td></tr>
+<tr><th scope="row">事件循环</th><td><code translate="no">/api/file-paths</code>、<code translate="no">/api/file-search</code> 和 <code translate="no">/api/file-resolve</code> 要在会话锁下找对话的工作目录，搜索还要遍历文件夹。找目录这一步在该会话通道的工作线程里运行，轮次占着会话时只推迟这些请求，不卡住 Worker。搜索随后遍历文件夹，在通道外的普通工作线程里做，所以遍历大文件夹时输入 @ 提及，不会让同一对话的发送或停止排在后面</td></tr>
+</tbody>
+</table>
+<p class="note">两个压缩包路由都接受绝对路径，或项目 id 加相对路径。<code translate="no">FileViewer</code> 只有一个 <code translate="no">abs</code> 开关，图片、PDF、Markdown、带行号代码和下载卡片的渲染都是同一实现。</p>
+
+<h2 id="plan">暂缓</h2>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">暂不做的原因</th><th scope="col">何时做</th></tr></thead>
+<tbody>
+<tr><th scope="row">用户附件的中央标签页</th><td>覆盖层足够快速查看；按项目键控的标签页需要新处理。回复卡片已用标签页</td><td>有人需要长时间阅读附件时</td></tr>
+<tr><th scope="row"><code translate="no">send_file</code> 说明文字</th><td>标记没有说明字段，回复文字已随文件一起</td><td>某平台需要文字附在文件上时</td></tr>
+<tr><th scope="row">出站工具允许列表</th><td><code translate="no">send_file</code> 是唯一出站入口，已检查根目录</td><td>插件或 MCP 工具能触发投递时</td></tr>
+<tr><th scope="row">短期签名令牌</th><td>本地监听、同源防护、根目录检查</td><td>网页 UI 离开 localhost 时首先要加</td></tr>
+<tr><th scope="row">语法高亮</th><td>带行号的 <code translate="no">pre</code> 够用；文档站的高亮只在构建时运行</td><td>用户提出需要时</td></tr>
+</tbody>
+</table>
+<p class="note">同样缺少：大图的多分辨率缩略图。</p>
+
+<h2 id="ideal">目标设计</h2>
+<p>任何来源的任何文件，在每个界面都通过同一个查看器打开。用户文件和 Agent 文件只差来源字段。</p>
+<table class="stack" id="gaps">
+<thead><tr><th scope="col">能力</th><th scope="col">解决</th><th scope="col">现状</th><th scope="col">暂缓原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">一条附件记录（id、SHA-256、名称、MIME、位置、计数、来源、会话、消息）；文本只留 <code translate="no">[attachment:&lt;id&gt;]</code></th><td>重命名、去重、跨会话引用都变成查询</td><td>全部信息在文本标记里</td><td>需要改表和迁移历史；等跨会话引用成为实际需求</td></tr>
+<tr><th scope="row">一个解析器，所有界面，包括终端内联图片（iTerm2、kitty，其他显示文件卡片）</th><td>同一资源同一渲染决定</td><td>网页已如此。TUI 没有附件概念，也不能粘贴图片</td><td>与网页无关。同类项目说明实际收益有限</td></tr>
+<tr><th scope="row">完全对称</th><td>用户和 Agent 文件共用数据模型和 UI</td><td>语法、解析器、chip、查看器已共用，只有回退不同</td><td>部分完成；四个平台都能上传</td></tr>
+<tr><th scope="row">输出为实时页面</th><td>看着文档逐步形成</td><td><code translate="no">canvas</code> 写入带 id 的 Markdown 块，没有面板渲染</td><td>线路格式已定。是最有价值的下一项；三个同类项目已实现</td></tr>
+</tbody>
+</table>
+<p class="note">明确排除：全局内容寻址的 blob 存储。每个会话工作目录每轮都提交且可重放，大二进制留在 git 历史是接受的代价。</p>
+
+<h3 id="canvas-content">Canvas 文件内容</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">set</code>、<code translate="no">append</code> 带 <code translate="no">content=""</code></th><td>空字符串算内容；块保留空正文，<code translate="no">get</code> 返回空字符串</td></tr>
+<tr><th scope="row">省略内容或为 null</th><td>报错，文件不变</td></tr>
+<tr><th scope="row"><code translate="no">content</code> 与 <code translate="no">body</code> 或 <code translate="no">text</code> 同时给出</th><td>显式 <code translate="no">content</code> 优先，空也一样</td></tr>
+</tbody>
+</table>
+<p class="note">普通可调用函数和注册工具共用此语义，块格式和沙箱路径检查相同。</p>
+
+<details id="others">
+<summary>八个同类实现对比</summary>
+<table class="stack">
+<thead><tr><th scope="col">仓库</th><th scope="col">进入上下文</th><th scope="col">显示</th><th scope="col">Agent 发文件</th><th scope="col">查看、清理</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code（TUI）</th><td>内联 base64；字节在 <code translate="no">~/.claude/image-cache/&lt;session&gt;/</code>，0600。5 MB、2000 px，sharp 缩放，JPEG 质量 80/60/40/20。桥接的网页和移动端注入路径</td><td><code translate="no">[Image #N]</code> 带 OSC-8 链接到系统查看器。非图片：<code translate="no">Read &lt;path&gt; (N lines)</code></td><td><code translate="no">SendUserMessage</code> 的 <code translate="no">attachments: string[]</code>；上传返回 file_uuid；30 MB</td><td>TUI Markdown 和高亮。PDF 为文档块或逐页 JPEG。每次会话开始清理其他会话缓存；200 项路径 LRU</td></tr>
+<tr><th scope="row">codex-cli（TUI）</th><td>base64 <code translate="no">input_image</code>，包在 <code translate="no">&lt;image name path&gt;</code> 标签中。字节留在原处。2048 px，SHA-1 64 MB LRU。拒绝远程 URL</td><td><code translate="no">[Image #N]</code>，不可点击。Kitty 和 sixel 只用于吉祥物</td><td>没有通用工具。图片生成打印 <code translate="no">file://</code> 并声称已显示</td><td>Markdown、syntect。<code translate="no">file_opener</code> 把引用改写成编辑器 URI</td></tr>
+<tr><th scope="row">openclaw（网页、TUI）</th><td>视觉模型收 base64；其他收 <code translate="no">media://inbound/&lt;id&gt;</code> 回执。存储 0700。图片 6 MB、音视频 16 MB、文档 100 MB。归一化 EXIF，重新编码 JPEG</td><td>网页缩略图在新标签打开；卡片；音频播放器带状态徽标。TUI 只有标签</td><td><code translate="no">MEDIA:</code> 行和 <code translate="no">message</code> 工具。只有允许列表内的核心工具能发本地路径</td><td>Markdown-it、DOMPurify。文档只为模型提取。两分钟 TTL</td></tr>
+<tr><th scope="row">opencode（网页、TUI）</th><td>base64 data URL 存 SQLite。<code translate="no">@</code> 在提交时运行 read，注入两个合成纯文本 part。5 MB、2000 px、Lanczos3</td><td>图片卡片带灯箱；非图片不可点击；<code translate="no">@</code> 在文本中高亮</td><td>没有；工具附件进入模型上下文</td><td><code translate="no">GET /file/content</code>；图片、音频、SVG、标签页、diff。随会话行删除</td></tr>
+<tr><th scope="row">hermes-agent（频道）</th><td>每轮路由：原生 base64 加路径提示，或 <code translate="no">vision_analyze</code> 文本。文档给路径，文本内联。无初始上限，被拒后压到 4 MB</td><td>Telegram、Discord 原生；CLI、TUI、xterm 网页不可点击</td><td>最完整：<code translate="no">MEDIA:</code>、<code translate="no">send_message</code>、先解析符号链接的根检查、按平台提示；提取 <code translate="no">![alt](url)</code></td><td>Rich Markdown。24 小时 TTL</td></tr>
+<tr><th scope="row">pi-mono（TUI）</th><td><code translate="no">@file</code> 内联并带 <code translate="no">&lt;file name&gt;</code> 标记。剪贴板写临时文件并插入路径。2000 px、4.5 MB，可关闭</td><td>唯一真正的终端内联图片（Kitty、iTerm2），tmux 和 screen 下关闭；只渲染工具结果，不回显用户图片</td><td>没有</td><td>Markdown、diff；不支持 PDF，不清理临时图片</td></tr>
+<tr><th scope="row">pi-ai（协议层）</th><td>pi-mono 包的只读副本。模型未声明图片输入时移除图片块；工具结果中的图片拆成文本和合成用户消息</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">weclaw（微信）</th><td>图片被拦截保存，回复“Saved: filename”；Agent 看不到。语音用微信转写。无上限</td><td>微信就是客户端</td><td>隐式：裸绝对路径行或 <code translate="no">![](url)</code> 被上传并替换为“Attachment sent”。根目录默认 <code translate="no">~/.weclaw/workspace</code>，有扩展名允许列表</td><td>Markdown 被剥成纯文本</td></tr>
+</tbody>
+</table>
+<h3 id="out4">发送文件的四种方式</h3>
+<table class="stack">
+<thead><tr><th scope="col">设计</th><th scope="col">使用者</th><th scope="col">优点</th><th scope="col">代价</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具参数</th><td>claude-code、OpenProgram</td><td>有类型，工具层检查文件存在</td><td>占一次工具调用；说话和发文件分开</td></tr>
+<tr><th scope="row">指令行</th><td>openclaw、hermes</td><td>随文字发送，无额外往返；按频道提示</td><td>错误路径需要检查；提取不完整会泄露</td></tr>
+<tr><th scope="row">隐式扫描</th><td>weclaw</td><td>无需学习，无提示成本</td><td>提到路径就可能发送</td></tr>
+<tr><th scope="row">宿主附上本轮产出</th><td>Claude Code 桌面版、hermes Deliverable Mode、OpenProgram</td><td>模型忘了用工具、文件由脚本生成时也有效</td><td>需要规则判断什么算产出</td></tr>
+<tr><th scope="row">无</th><td>codex-cli、opencode、pi-mono、pi-ai</td><td>无需实现</td><td>模型只能贴路径</td></tr>
+</tbody>
+</table>
+<p class="note">指令行和隐式方案都把路径限制在允许的根目录内，并先解析符号链接。</p>
+<h3 id="produced-peers">交付产出文件：同类做法与取舍</h3>
+<p>frontierharness.org/live 上的 21 个框架里，做得好的都不靠模型记得附上每个文件。它们叠加三层：宿主自己呈现、回复里的路径可操作、一行提示，发送工具只是兜底。</p>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code 桌面版、Cowork</th><td>自己呈现 <code translate="no">Write</code>、<code translate="no">Edit</code> 产出的文件；<code translate="no">SendUserFile</code> 用于脚本生成的文件。有设置项自动打开它写出的 HTML、图片、PDF、视频</td></tr>
+<tr><th scope="row">hermes Deliverable Mode</th><td>扫描回复里以 .pptx、.docx、.xlsx、.pdf 结尾的绝对路径或 <code translate="no">~</code> 路径并上传；文档承认 agent 默认不会主动交文件</td></tr>
+<tr><th scope="row">Codex app、MiniMax Code</th><td>任务结束后打开生成的文件；把生成或引用的文件列为结果</td></tr>
+<tr><th scope="row">Codex、Antigravity 提示词</th><td>要求模型把文件路径写成可点击链接，不要只说报告好了却不给链接</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">取舍</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">轮次结束时附上，不只靠工具</th><td>Claude Code 桌面版的分工。Office 文件和 PDF 来自脚本，编辑日志不记录；附件被拒过一次的模型不会再试</td></tr>
+<tr><th scope="row">要求本轮修改过</th><td>hermes 的扫描没有这条，提到输入文件就会把它发回去。时间检查只需一次 <code translate="no">stat</code>，能区分产出和提及</td></tr>
+<tr><th scope="row">接受相对路径和链接</th><td>模型更常写 <code translate="no">exports/plan.pptx</code> 和 markdown 链接，而 hermes 只认裸写的绝对路径</td></tr>
+<tr><th scope="row">与 <code translate="no">send_file</code> 同样的根目录</th><td>宿主这一步不能比工具走得更远。根目录外的文件仍可从回复里的链接打开</td></tr>
+<tr><th scope="row"><code translate="no">fs.read</code> 而不是 <code translate="no">reply</code></th><td>附文件是回复，但会展示文件内容。用 <code translate="no">reply</code> 会让无权读主人文件的配对发言人拿到这些文件</td></tr>
+<tr><th scope="row">不加新提示，不用 <code translate="no">MEDIA:</code> 标签</th><td>产品方向是少弹确认；标签仍然依赖模型记得写</td></tr>
+</tbody>
+</table>
+<h3 id="prose-paths-peers">回复里的路径：同类做法与取舍</h3>
+<table class="stack">
+<thead><tr><th scope="col">同类</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code 桌面版</th><td>回复里的路径点击后在文件面板或浏览器面板打开；右键有 Attach as context、Copy（绝对、相对、文件名）、Open in、Show in Finder</td></tr>
+<tr><th scope="row">KimiCode</th><td>点击打开文件预览；右键有复制路径和显示位置</td></tr>
+<tr><th scope="row">OpenCode v2</th><td>行内代码里的路径先确认文件存在才做成链接，此前未经检查的猜测产生过死链接</td></tr>
+<tr><th scope="row">Codex 应用</th><td>提示模型写成 <code translate="no">[app.py](/abs/path/app.py:12)</code> 链接，并在自己的编辑器里打开</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">取舍</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">只链接 Worker 确认过的路径</th><td>OpenCode v2 的修法。<code translate="no">os.path.join</code> 这样的代码也有路径的形状；问一次只是一个合并的 <code translate="no">stat</code> 请求，不会画出死链接</td></tr>
+<tr><th scope="row">一个批量路由，而不是逐个调用 <code translate="no">/api/file-resolve</code></th><td><code translate="no">file-resolve</code> 只回答一个相对根目录的路径，且拒绝对话目录外的绝对路径；<code translate="no">documents/stat</code> 只回答一个路径，不给绝对形式。一条回复会提到很多路径，菜单的复制也需要真实路径</td></tr>
+<tr><th scope="row">Claude Code 桌面版的菜单，用应用自己的菜单部件</th><td>用户点名的就是这个菜单。用 <code translate="no">ContextMenu</code> 和 <code translate="no">MenuRow</code> 搭建，和其他右键菜单一个样子；路径、卡片、改动文件行共用一个组件</td></tr>
+<tr><th scope="row">用默认应用打开放在桌面应用，不放在 Worker</th><td>桌面应用运行在用户面前的机器上；Worker 路由保持只读、从不运行文件。桌面应用拒绝系统会运行的文件，所以这一项不能用来启动智能体写的脚本</td></tr>
+<tr><th scope="row">只扫描已落定的回复</th><td>流式回复每个增量都会重画最后一块；链接会闪烁，问题也会重复发</td></tr>
+</tbody>
+</table>
+
+<h3 id="tricks">其他技巧</h3>
+<ul>
+<li>输出为页面：openclaw 用 <code translate="no">[embed ref=…]</code> 嵌入 canvas 文档；Codex 把 <code translate="no">::codex-inline-vis{</code> 物化到沙箱查看器（2 MB、严格 CSP）；pi-mono 的 <code translate="no">/share</code> 把会话发布成私有 gist。</li>
+<li>签名令牌：openclaw 的 <code translate="no">mediaTicket</code>，<code translate="no">v1.&lt;payload&gt;.&lt;signature&gt;</code>，五分钟 TTL。</li>
+<li>chip 作为编辑单元：claude-code 只有在 <code translate="no">[Image #N]</code> 留在文本中时才发送图片。</li>
+<li>Hermes 把宿主缓存路径改写成容器路径。Codex 有 <code translate="no">view_image</code>。</li>
+</ul>
+</details>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">标记语法、根目录策略、入站路径、chip、覆盖层、回复卡片、文件路由、免审查的 <code translate="no">send_file</code>、本轮产出文件、回复里的路径链接、文件菜单、四个平台的频道投递、canvas 内容规则</th><td>已实现</td></tr>
+<tr><th scope="row">用户附件中央标签页、说明文字、出站允许列表、签名令牌、高亮、多分辨率缩略图</th><td>未实现</td></tr>
+<tr><th scope="row">附件记录、TUI 内联图片、实时 canvas 面板</th><td>未实现</td></tr>
+<tr><th scope="row"><code translate="no">document</code> 模态（<code translate="no">openprogram/models/providers/types.py</code> 中模型的 <code translate="no">input</code>）和投递方式能力开关</th><td>未实现</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>代码位置</summary>
+<dl class="pairs">
+<dt>标记、根目录</dt><dd><code translate="no">openprogram/state/attachments.py</code></dd>
+<dt>网页持久化</dt><dd><code translate="no">openprogram/interfaces/server/ws_actions/chat/attachments.py</code></dd>
+<dt>频道入站</dt><dd><code translate="no">openprogram/interfaces/channels/_attachments.py</code></dd>
+<dt>频道投递</dt><dd><code translate="no">openprogram/interfaces/channels/_conversation.py</code>、<code translate="no">_transport.py</code></dd>
+<dt>工具、轮次结束</dt><dd><code translate="no">openprogram/programs/tools/interaction/send_file.py</code>、<code translate="no">openprogram/runtime/conversation/turn_runtime/__init__.py</code></dd>
+<dt>路由</dt><dd><code translate="no">openprogram/interfaces/server/routes/files/file_search.py</code>、<code translate="no">archives.py</code></dd>
+<dt>chip、卡片</dt><dd><code translate="no">apps/web/components/chat/messages/attachments/</code></dd>
+<dt>回复里的路径、文件菜单</dt><dd><code translate="no">apps/web/components/chat/messages/bubbles/prose-file-links.tsx</code>、<code translate="no">apps/web/lib/files/prose-file-paths.ts</code>、<code translate="no">file-path-lookup.ts</code>、<code translate="no">apps/web/components/files/file-path-menu.tsx</code>、<code translate="no">apps/desktop/main/files/open-default.js</code></dd>
+<dt>查看器</dt><dd><code translate="no">apps/web/components/files/file-viewer.tsx</code>、<code translate="no">preview/archive-preview.tsx</code></dd>
+</dl>
+</details>

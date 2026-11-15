@@ -1,0 +1,317 @@
+<title>Chat transcript follow</title>
+<meta name="description" content="The single follow policy for the web transcript: what latest means, which gestures move the viewport, and how send, Jump, restore and history windows stay out of each other's way.">
+<h1 id="title">Chat transcript follow</h1>
+<p>One React-owned policy for the App and browser: send is a jump to latest; model output is not.</p>
+
+<h2 id="bottom-definition">What latest means</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 320" role="img" aria-label="The transcript scroller at its padding edge. The last content row sits above a pad. The floating composer overlay covers the bottom of the pad. The part of the pad above the overlay, plus 8 pixels, is the slack: scrolling up that far still counts as latest.">
+  <rect class="tile" x="90" y="16" width="230" height="288" rx="8"/>
+  <rect class="tile" x="110" y="76" width="190" height="44" rx="6"/>
+  <text class="mid" x="205" y="103">Last content</text>
+  <line class="ln-faint" x1="90" y1="120" x2="320" y2="120"/>
+  <rect class="tile" x="106" y="216" width="198" height="76" rx="8"/>
+  <text class="mid" x="205" y="259">Composer overlay</text>
+  <path class="ln" d="M76 120H66V304H76"/>
+  <text class="t-big" x="0" y="206">Pad</text>
+  <path class="ln" d="M334 120H344V216H334"/>
+  <text class="t-big" x="360" y="150">Slack</text>
+  <text class="t-cmd notranslate" translate="no" x="360" y="174">max(0, pad - overlay) + 8</text>
+  <text class="t-soft" x="360" y="196">Scrolled this far up still counts as latest</text>
+  <path class="ln" d="M334 216H344V304H334"/>
+  <text class="t-big" x="360" y="252">Overlay</text>
+  <text class="t-soft" x="360" y="276">Floats over the pad</text>
+  <line class="ln-acc" x1="90" y1="304" x2="680" y2="304"/>
+  <text class="t-cmd notranslate" translate="no" x="360" y="296">latestScrollTop lands here</text>
+  <text class="t-soft" x="360" y="84">User bubble, pending indicator,</text>
+  <text class="t-soft" x="360" y="104">streaming assistant, queued rows</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Last content</strong><small>User bubble, pending indicator, streaming assistant, queued rows</small></li>
+  <li><strong>Slack</strong><small><code translate="no">max(0, pad - overlay) + 8</code>: scrolled this far up still counts as latest</small></li>
+  <li><strong>Overlay</strong><small>Floats over the pad</small></li>
+  <li class="flow-end"><strong>Padding edge</strong><small><code translate="no">latestScrollTop</code> lands here</small></li>
+</ol>
+</figure>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Main</th><th scope="col">Peer</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pad</th><td><code translate="no">max(25vh, overlay + 24)</code></td><td><code translate="no">--peer-composer-h</code> = overlay + 24</td></tr>
+<tr><th scope="row">Overlay</th><td><code translate="no">--main-composer-height</code></td><td>Composer root <code translate="no">offsetHeight</code>; never <code translate="no">--peer-composer-h</code></td></tr>
+<tr><th scope="row">Slack</th><td>Pad − overlay + 8</td><td>24 + 8</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">latestScrollTop = max(0, scrollHeight - clientHeight)</code>. <code translate="no">isChatAtBottom</code>: remaining scroll ≤ slack.</p>
+
+<h2 id="architecture">Who writes the scroll position</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Owner</th><th scope="col">Job</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">useChatAreaStick</code></th><td>The only follow writer: main and peer placement, send, Jump, attached state, per-viewport pending latest load</td></tr>
+<tr><th scope="row"><code translate="no">chat-scroll.ts</code></th><td>Geometry, take-latest notes, saved positions, Jump animation. <code translate="no">resolveChatScrollTop</code> decides the position on a key change</td></tr>
+<tr><th scope="row"><code translate="no">history-viewport.ts</code></th><td>Anchor restoration when a history window is replaced; the one other scroll writer, not a follow policy</td></tr>
+<tr><th scope="row"><code translate="no">useHistoryWindow</code>, <code translate="no">history-autoload.ts</code></th><td>Bounded pagination and prefetch; no scroll writes</td></tr>
+<tr><th scope="row"><code translate="no">loadSessionHistoryWindow</code></th><td>Publishes rows and window metadata; never places latest</td></tr>
+<tr><th scope="row">WebSocket handlers</th><td>Never scroll and never write a note</td></tr>
+</tbody>
+</table>
+
+<h2 id="follow-triggers">What moves the viewport</h2>
+<table class="stack">
+<thead><tr><th scope="col">Entry</th><th scope="col">Attached</th><th scope="col">Motion</th></tr></thead>
+<tbody>
+<tr><th scope="row">Send: composer submit, first welcome send, queue drain that calls <code translate="no">sendChatMessage</code>, accepted queue or steer, slash or builtin submit</th><td>True at once on the latest window. On an older window: stays false, Jump stays, true after latest loads</td><td>Instant snap, <a href="#send-latch">latched</a>. Jump hides at the snap, not while waiting</td></tr>
+<tr><th scope="row">Jump to latest (main: portal on <code translate="no">#chatView</code>; peer: header button, no portal or live bars)</th><td>True once latest is verified on screen</td><td>Awaits latest, then native smooth scroll with no preliminary snap; instant with reduced motion. <a href="#jump-completion">Completion</a></td></tr>
+<tr><th scope="row">Wheel, pointer, scroll keys</th><td><code translate="no">isChatAtBottom</code> and on the latest window. Up detaches, back into slack reattaches</td><td>None. Cancels <a href="#lifecycle">pending work</a></td></tr>
+<tr><th scope="row">Growth: stream, tool, KaTeX, row recycling, pad or composer resize</th><td>Unchanged. A scroll event leaves latest only if the top moved up</td><td>Pin to latest only while attached, on the latest window, outside a Jump, and over 600 ms after real pointer, wheel or scroll-key input</td></tr>
+<tr><th scope="row">Session switch (<code translate="no">chatKey</code> change)</th><td>Per <a href="#bottom-restoration">restoration</a></td><td>Not a send. A pending note moves only to this draft's adopted session</td></tr>
+<tr><th scope="row">History window load, not from send or Jump</th><td>False while <code translate="no">after</code> is set, else geometric</td><td><a href="#history-ownership">Per-area anchor restoration</a>; older and newer pages never pin as latest</td></tr>
+<tr><th scope="row">Remote <code translate="no">local_command</code>, compaction, status, follow-up, <code translate="no">chat_response</code></th><td>Unchanged</td><td>Only via growth while attached</td></tr>
+</tbody>
+</table>
+<p class="note">Parking a queued row is not a send. Loading or failed attachments are rejected before queue creation, draft clearing and note publication; the existing note and its generation stay.</p>
+
+<h2 id="send-latch">Send latch</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Moment</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Submit</th><td>The submit path appends the local turn, then calls <code translate="no">noteTakeLatest({sessionId, scrollerKey, turnSeed})</code>. The key comes from the captured session and <code translate="no">background</code>, never from live <code translate="no">activeChatKey</code>; <code translate="no">send-queue.ts</code> is unaware of it</td></tr>
+<tr><th scope="row">Hook notified</th><td>The hook whose <code translate="no">chatKey</code> equals <code translate="no">scrollerKey</code> sees a generation newer than its last applied one. Publishing notifies it even if no row changed</td></tr>
+<tr><th scope="row"><code translate="no">after</code> or <code translate="no">loading</code> set</th><td>Stay detached, keep Jump, leave the stale page alone, await a verified latest window outside the layout effect</td></tr>
+<tr><th scope="row">On latest</th><td>Attach regardless of the 600 ms window or current geometry, then <code translate="no">snapToLatest</code></td></tr>
+<tr><th scope="row">Next column resize of this operation</th><td>Snaps once more for late row height. After that, ordinary growth rules apply</td></tr>
+<tr><th scope="row">Welcome overflow lock lifts (main only)</th><td>One retry</td></tr>
+<tr><th scope="row">Ack appends the assistant placeholder</th><td>Does not detach</td></tr>
+</tbody>
+</table>
+
+<h2 id="lifecycle">Follow operation lifetime</h2>
+<p>A note identifies a send; it is not permission to scroll forever. Every async completion, resize snap, welcome retry and animation callback first checks session, scroller key, generation and interaction epoch.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Event</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Newer send</th><td>Replaces the older operation for that scroller</td></tr>
+<tr><th scope="row">Jump during a pending send</th><td>Replaces it</td></tr>
+<tr><th scope="row">Send during Jump</th><td>Stops the native animation, then instant placement</td></tr>
+<tr><th scope="row">Wheel, touch or pointer scroll, scroll key</th><td>Invalidates pending work and retries; geometry decides attached. Delayed growth never reattaches. Programmatic scroll events do not cancel</td></tr>
+<tr><th scope="row">Key change or real unmount</th><td>Invalidates the outgoing operation; no completed or cancelled note is replayed</td></tr>
+<tr><th scope="row">Strict Mode cleanup</th><td>Cancels that effect's resources; setup resumes a still-valid operation with no second send, lost retry or orphaned request</td></tr>
+<tr><th scope="row">Request in flight, <code translate="no">after</code> not set yet</th><td><code translate="no">after || loading</code> enters the wait. A cancelled or failed request leaves no retry and cannot hide Jump; an older completion cannot clear a newer gesture</td></tr>
+<tr><th scope="row">First welcome send before the transcript shows</th><td>The pending handoff survives to its view, retries once, and keeps its identity through provisional-to-real binding: only this draft's adopted session, not any <code translate="no">local_*</code> key</td></tr>
+<tr><th scope="row">Session delete, draft drop</th><td>Forgets that session's notes</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Note storage</summary>
+<ul>
+<li>Stored per <code translate="no">(sessionId, scrollerKey)</code>, so main and peer in one session stay independent.</li>
+<li>Never deleted on read. Completion and cancellation are recorded separately, with per-view applied generations; starting a latest request does not complete one.</li>
+<li>Idle completed notes with no viewport are capped at 32; waiting notes are kept. Releasing a viewport prunes after the current turn, so a same-tick remount retains it.</li>
+<li><code translate="no">turnSeed</code> is the accepted optimistic turn, not the last row after ack.</li>
+<li>A newest page nobody asked for (renewal, retry) becomes a note for each viewport with no follow lock.</li>
+</ul>
+</details>
+
+<h2 id="jump-completion">Jump completion</h2>
+<ul>
+<li>While Jump runs, resize records the new target and does not pin.</li>
+<li>At settle, or at the 700 ms watchdog, the current target is recomputed and one instant correction applied within 2 px; the reattachment slack is not used here.</li>
+<li>Jump hides only after that, if the operation is still current. Reduced motion uses the same check.</li>
+<li>Cancel stops browser motion as well as callbacks, and no cancelled operation corrects.</li>
+</ul>
+
+<h2 id="bottom-restoration">Returning to a conversation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Opens at</th></tr></thead>
+<tbody>
+<tr><th scope="row">New App or Web document</th><td>Latest; saved state from another runtime is ignored</td></tr>
+<tr><th scope="row">First opening, or no saved position</th><td>Latest, followed through delayed layout and file-card growth</td></tr>
+<tr><th scope="row">Left under one hour ago, was following</th><td>Latest, followed through delayed layout</td></tr>
+<tr><th scope="row">Left under one hour ago, scrolled into history</th><td>Saved offset and history anchor</td></tr>
+<tr><th scope="row">Left one hour ago or more</th><td>Latest</td></tr>
+<tr><th scope="row">Application refocused after an hour unfocused</th><td>Latest. No timer moves a transcript in active view</td></tr>
+<tr><th scope="row">Legacy entry without freshness evidence</th><td>Latest</td></tr>
+<tr><th scope="row">First opening of an older loaded window</th><td>Stays detached, no snap, until a verified latest response is published</td></tr>
+</tbody>
+</table>
+<p class="note">Saved per viewport in <code translate="no">sessionStorage</code> key <code translate="no">chatScrollByKey</code>: offset, bottom intent, timestamp, runtime identity. Leaving, hiding or unmounting records departure. Skipped under <code translate="no">data-self-update-verification</code>. The threshold is <code translate="no">CHAT_READING_POSITION_TTL_MS</code>.</p>
+<details>
+<summary>Details</summary>
+<ul>
+<li>Latest restoration clears the history anchor and uses the cancellable latest-window loader. A user gesture cancels pending following; a saved pixel offset is not a latest anchor.</li>
+<li>An empty transcript keeps latest intent: rows that commit before ResizeObserver delivery keep the follow state. Height growth is not a reading gesture.</li>
+<li>The loader does not overwrite latest placement with stale pixels, and reloads schedule no second pixel restore: a cached offset can exceed the shorter latest page.</li>
+<li>An unchanged position keeps its follow state across reload. A pending welcome send survives activation until its view is ready.</li>
+</ul>
+</details>
+<details id="switch-loading">
+<summary>Legacy file-change summaries</summary>
+<ul>
+<li>Loaded only near the viewport, then kept in the session message store. A remounted card renders the result at once, including a confirmed empty one.</li>
+<li>Errors stay retryable. Aborted or stale responses never update another session.</li>
+<li>History preflight stays fresh and undo authorization stays server-side; a summary is a description, not permission to undo.</li>
+</ul>
+</details>
+
+<h2 id="history-ownership">History windows</h2>
+<ul>
+<li>Older, newer and around replacement: each registered area captures its own anchor, top and height before the update, and restores after <code translate="no">flushSync</code> only if still registered for the same session and <code translate="no">chatKey</code>. Height caches use that area's key.</li>
+<li>A registered area that lost registration is not restored. The unregistered <code translate="no">#chatArea</code> fallback applies only when nothing was registered at capture and the node is still the live main scroller; being connected is not enough.</li>
+<li>Restoration skips a viewport holding a follow lock.</li>
+<li>Rows shared by main and peer: each non-requesting pane keeps its anchor. If eviction removed it, the reader keeps the distance from the surviving end. A negative result (an expired snapshot renewed to the newest page) shows the end of the new window, not the top.</li>
+</ul>
+<h3 id="history-prefetch">Prefetch</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Minimum distance</th><td><code translate="no">max(1600px, 2 × viewport height)</code>, per edge</td></tr>
+<tr><th scope="row">Cap</th><td><code translate="no">12000px</code></td></tr>
+<tr><th scope="row">Velocity</th><td>Only motion toward an edge extends it, with the latency estimate × 1.5. Zero velocity keeps the minimum, so short content still fills</td></tr>
+<tr><th scope="row"><code translate="no">scrollHeight</code> changed</th><td>Velocity resets to zero: layout shifts, including virtualized shrink at latest, are not reader motion</td></tr>
+<tr><th scope="row">Both edges qualify</th><td>Existing direction selection</td></tr>
+</tbody>
+</table>
+<p class="note">Selects when to request; never writes <code translate="no">scrollTop</code>. Serialization, cursor and generation validation, retry backoff, snapshot renewal, hidden-view suppression, recovery and disposal are separate.</p>
+
+<h2 id="trust">Failure and limits</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Latest load fails or goes stale</th><td>Detached, Jump visible, stale page untouched; a failure settles the note</td></tr>
+<tr><th scope="row">Storage write fails</th><td>Swallowed</td></tr>
+<tr><th scope="row">Virtualization</th><td>Recycling keeps measured placeholders so <code translate="no">scrollHeight</code> stays honest; pin after recycling. No virtual-list library</td></tr>
+<tr><th scope="row">Width change</th><td>Measured heights stay as estimates, so the list is not re-rendered. While changing, the area has <code translate="no">data-width-settling</code> and off-screen rows use <code translate="no">content-visibility: auto</code>. After 120 ms still, the first visible row keeps its place unless the view is pinned at the bottom</td></tr>
+<tr><th scope="row">KaTeX</th><td><code translate="no">typesetMath</code> on the observed column, inside the pin path; no document scan</td></tr>
+</tbody>
+</table>
+<p class="note">Not followed: DAG strip expand, compaction fold <code translate="no">easeScrollBy</code> / <code translate="no">pinWhile</code>, parent-return <code translate="no">scrollIntoView</code>, message-rail seek, branch checkout <code translate="no">_postCheckoutScrollTo</code>. The CLI <code translate="no">ScrollBox</code> is separate. No backend protocol change, and occupancy, queue admission and ack pairing are unaffected.</p>
+
+<details id="api">
+<summary>Interfaces</summary>
+<pre translate="no" tabindex="0"><code>latestScrollTop(area: ScrollMetrics): number
+snapToLatest(area: HTMLElement): void
+animateJumpToLatest(area, onDone?, {getTarget?, reducedMotion?}): () =&gt; void
+readComposerOverlay(area, composerRoot?): number
+
+type TakeLatestNote = {
+  sessionId: string
+  scrollerKey: string  // background ? `peer:${sessionId}` : sessionId
+  turnSeed: string
+  generation: number   // monotonic
+}
+noteTakeLatest(note: Omit&lt;TakeLatestNote, "generation"&gt;): TakeLatestNote
+peekTakeLatest(sessionId, scrollerKey): TakeLatestNote | null
+settleTakeLatest(sessionId, scrollerKey, generation): void
+relocateTakeLatest(fromSession, fromKey, toSession, toKey): TakeLatestNote | null
+subscribeTakeLatest(listener): () =&gt; void</code></pre>
+<ul>
+<li><code translate="no">useChatAreaStick</code> returns <code translate="no">{ detached, jumpToLatest }</code>.</li>
+<li>Main <code translate="no">chatKey</code> is the session id. Peer panes use <code translate="no">peer:</code>. Panes of different sessions never share a latch; peer panes of one session share <code translate="no">peer:${sessionId}</code> and may answer the same note, by design: there is no pane instance id.</li>
+</ul>
+</details>
+
+<details id="corpus">
+<summary>Comparison with other agents</summary>
+<p>Product rules, not pixels. All three products treat send as an implicit jump to latest and model tokens as not one.</p>
+<table class="stack">
+<thead><tr><th scope="col">Surface</th><th scope="col">Send while scrolled up</th><th scope="col">Growth</th><th scope="col">Re-attach</th><th scope="col">Session</th></tr></thead>
+<tbody>
+<tr><th scope="row">ChatGPT web</th><td>New turn in the live band</td><td>Follows at the live edge; up detaches, near edge reattaches</td><td>Down-arrow, with a live variant</td><td>Aims at latest</td></tr>
+<tr><th scope="row">Claude.ai, Claude Code web</th><td>Turn lands in view</td><td>Follows at the live edge; manual up holds</td><td>Jump when away</td><td>Restores that conversation</td></tr>
+<tr><th scope="row">Cursor Composer</th><td>Prompt in the composer band</td><td>Follows while pinned</td><td>Explicit jump</td><td>Per thread</td></tr>
+<tr><th scope="row">CLI <code translate="no">ScrollBox</code></th><td><code translate="no">scrollToBottom()</code> sets sticky</td><td>While sticky; <code translate="no">scrollTo</code> and <code translate="no">scrollBy</code> clear it</td><td><code translate="no">scrollToBottom</code></td><td>TUI only</td></tr>
+<tr><th scope="row">shadcn MessageScroller</th><td>Can anchor the turn near the top</td><td><code translate="no">autoScroll</code> at bottom</td><td><code translate="no">MessageScrollerButton</code></td><td>—</td></tr>
+</tbody>
+</table>
+<p class="note">Codex and Atlas have no transcript-follow material in this repository; their notes cover <a href="../turn-lifecycle/send-queue-reliability.html">queue and steer</a> only.</p>
+</details>
+
+<details id="choices">
+<summary>Rejected</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Option</th><th scope="col">Why not</th></tr></thead>
+<tbody>
+<tr><th scope="row">Last message + 16 px as target</th><td>Measures against the visible bottom, under the overlay, and ignores the pad</td></tr>
+<tr><th scope="row">Padding edge with no slack</th><td>Jump would stay hidden until the reader scrolled about 25vh more</td></tr>
+<tr><th scope="row">Consume-once boolean, or <code translate="no">lastRole</code></th><td>Lost to Strict Mode and two hook instances; wrong after ack</td></tr>
+<tr><th scope="row">Send as smooth animation</th><td>Send is 0 ms feedback</td></tr>
+<tr><th scope="row"><code translate="no">--peer-composer-h</code> as overlay</th><td>It already includes the 24 px pad</td></tr>
+<tr><th scope="row">Handlers calling a scroller, global stick flag</th><td>Frame type is not a scroll signal</td></tr>
+<tr><th scope="row">Follow state outliving the document</th><td>Runtime identity scopes it to one document</td></tr>
+<tr><th scope="row">Virtual-list or message-scroller library, CLI <code translate="no">ScrollBox</code> in the web bundle</th><td>Not needed; the attached flag is the idea borrowed</td></tr>
+<tr><th scope="row">Previous reply anchored at top as a second mode</th><td>The pad already leaves room above the composer</td></tr>
+<tr><th scope="row">Follow on every DAG expand; send and ack protocol rewrite</th><td>Out of scope</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="acceptance">
+<summary>Acceptance</summary>
+<table class="stack">
+<thead><tr><th scope="col">Entry</th><th scope="col">Setup</th><th scope="col">Observed</th></tr></thead>
+<tbody>
+<tr><th scope="row">Composer submit</th><td>Far up on latest window</td><td>User bubble (and pending indicator) above the composer at 0 ms after append; instant; attached; Jump hides at the snap</td></tr>
+<tr><th scope="row">Composer submit</th><td>Attached</td><td>Same; the stream stays pinned</td></tr>
+<tr><th scope="row">Welcome first send</th><td>Overflow locked</td><td>Welcome hides at 0 ms; after unlock the first row is in the live band</td></tr>
+<tr><th scope="row">Queue drain</th><td>Another session focused</td><td>Same as send, key from captured session; enqueue alone does not move</td></tr>
+<tr><th scope="row">Jump</th><td>Detached on an older window</td><td>Awaits latest, smooth; visible until settled; pointer or wheel cancels</td></tr>
+<tr><th scope="row">Scroll</th><td>Last bubble under the composer</td><td>Detached, Jump visible, later deltas keep <code translate="no">scrollTop</code></td></tr>
+<tr><th scope="row">Scroll</th><td>Back into slack</td><td>Reattaches, Jump hides, growth pins</td></tr>
+<tr><th scope="row">Stream deltas</th><td>Attached, KaTeX or recycling</td><td>Pinned</td></tr>
+<tr><th scope="row">Agent row, no note</th><td>Detached</td><td><code translate="no">scrollTop</code> unchanged</td></tr>
+<tr><th scope="row">Session switch</th><td>Saved or first opening</td><td>Restores, or follows latest, without a message</td></tr>
+<tr><th scope="row">Send on older window</th><td><code translate="no">after</code> set</td><td>No snap, Jump stays, attaches after load; failure stays detached</td></tr>
+<tr><th scope="row">Peer send</th><td>Peer Y, pane X open</td><td>Only Y moves; slack 24 + 8; focused-shell flags untouched</td></tr>
+<tr><th scope="row">Ack</th><td>Placeholder last</td><td>Stays attached</td></tr>
+<tr><th scope="row">Scroll, send within 600 ms</th><td>Pointer on area</td><td>Still snaps and pins</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="test-matrix">
+<summary>Test matrix</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">ID</th><th scope="col">Required observation</th></tr></thead>
+<tbody>
+<tr><th scope="row">F01</th><td>Empty, short and overflow geometry; main slack, and peer h+24 versus h = 32 px</td></tr>
+<tr><th scope="row">F02</th><td>Independent main and peer notes in one session; increasing generations; subscription fires with no row update</td></tr>
+<tr><th scope="row">F03</th><td>Enter and Send far up: user row above the overlay before ack; placeholder and stream keep following</td></tr>
+<tr><th scope="row">F04</th><td>Scroll then send inside 600 ms; delayed growth follows once. Send then scroll up: no snap back</td></tr>
+<tr><th scope="row">F05</th><td>Detached growth keeps top; slack reattaches; execution-row expansion keeps suppression</td></tr>
+<tr><th scope="row">F06</th><td><code translate="no">after</code> send: no stale write, Jump visible, success snaps; failure and cancellation stay detached</td></tr>
+<tr><th scope="row">F07</th><td>Send during older or around load with no <code translate="no">after</code>: settle, then fetch latest; stale responses never beat newer gestures</td></tr>
+<tr><th scope="row">F08</th><td>Strict Mode send and latest cleanup: no lost intent, duplicate send or stranded pending state</td></tr>
+<tr><th scope="row">F09</th><td>Send, detach, switch away and back; unmount restores with no replay; switching mid-request leaves the incoming chat alone</td></tr>
+<tr><th scope="row">F10</th><td>Welcome send before readiness and provisional binding; one valid retry; a cancelled retry writes nothing</td></tr>
+<tr><th scope="row">F11</th><td>Peer Y sends, X detached: only Y moves; same-session notes independent; shared peer key affects matching peers</td></tr>
+<tr><th scope="row">F12</th><td>Enqueue does not move; drain uses captured session; closed socket, throw or duplicate first send writes no note</td></tr>
+<tr><th scope="row">F13</th><td>Slash submit follows with no new row; remote frames while detached do not</td></tr>
+<tr><th scope="row">F14</th><td>Older-window Jump loads then smooth-scrolls, no pre-snap; button stays until verified</td></tr>
+<tr><th scope="row">F15</th><td>Growth during Jump: final latest within 2 px, then the button hides; watchdog without <code translate="no">scrollend</code></td></tr>
+<tr><th scope="row">F16</th><td>Pointer, wheel or key cancels with no later correction; send during Jump wins; reduced motion is instant</td></tr>
+<tr><th scope="row">F17</th><td>Two areas restore their own anchors and fallback deltas; latest has no loader pin</td></tr>
+<tr><th scope="row">F18</th><td>No global follow listener; explicit locators and the self-update persistence guard work</td></tr>
+</tbody>
+</table>
+<ul>
+<li>F03–F17 use real React hooks in a browser with real submit and queue entries and controlled WebSocket responses, asserting geometry, button visibility, request order and cleanup. Strict Mode runs explicitly. Isolated test state, with no real messages or model calls. These do not establish installed-App acceptance.</li>
+<li>Fixtures: first-activation cases supply the latest response; manual older-window cases establish a saved viewport; rejected admission compares the exact note before and after.</li>
+<li>Prefetch: test opposite motion, virtual shrink at latest, both thresholds, short-content fill via the real controller. Automatic history: no initial older request, scroll-triggered loading, in-flight movement kept within 3 px after prepend, recycling, no duplicates.</li>
+<li>Summaries and opening: remount with no second request, delayed growth to latest, return restoration, manual cancel, older first open ignoring a stale completion.</li>
+</ul>
+<pre id="gates" translate="no" tabindex="0"><code>node --no-warnings --experimental-strip-types --test \
+  apps/web/tests/chat/messages/chat-scroll-follow.test.mjs \
+  apps/web/tests/chat/messages/jump-latest.test.mjs \
+  apps/web/tests/chat/composer/send-chat-message-latency.test.mjs \
+  apps/web/tests/desktop/self-update-scroll.test.mjs
+node apps/web/scripts/chat/check-chat-ui.mjs
+uv run --locked --extra dev --extra browser python -m pytest -q -m browser \
+  tests/e2e/web/test_chat_transcript_follow.py \
+  tests/e2e/web/test_chat_history_interactions.py \
+  tests/e2e/web/test_automatic_chat_history.py \
+  tests/e2e/web/test_scalable_chat_history.py</code></pre>
+</details>
+
+<h2 id="status">Implementation status</h2>
+<p>Implemented on the web renderer, with no feature flag; undoing it is a code revert, not a protocol change. Open: installed-App acceptance of geometry-aware prefetch.</p>
+<p class="next"><a href="../turn-lifecycle/send-queue-reliability.html">Send queue reliability</a></p>

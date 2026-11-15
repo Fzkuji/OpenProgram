@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram import sandbox
-from openprogram.backend.gui import spawn_gui_python
+from openprogram.host import sandbox
+from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.isolation import spawn_gui_python
 
 
 def run_script(code, outer):
@@ -77,7 +77,7 @@ else:
 
 
 def test_gui_launch_never_falls_back_without_a_supported_sandbox(tmp_path, monkeypatch):
-    from openprogram.backend import gui
+    from openprogram.programs.tools.computer_use.computer_use_agent.sandbox import isolation as gui
     monkeypatch.setattr(gui.sys, "platform", "darwin")
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "missing sandbox")
     with pytest.raises(sandbox.SandboxUnavailable, match="missing sandbox"):
@@ -86,7 +86,7 @@ def test_gui_launch_never_falls_back_without_a_supported_sandbox(tmp_path, monke
 
 
 def test_gui_launch_rejects_unsupported_platform(monkeypatch):
-    from openprogram.backend import gui
+    from openprogram.programs.tools.computer_use.computer_use_agent.sandbox import isolation as gui
     monkeypatch.setattr(gui.sys, "platform", "linux")
     with pytest.raises(sandbox.SandboxUnavailable, match="requires macOS"):
         with spawn_gui_python("pass"):

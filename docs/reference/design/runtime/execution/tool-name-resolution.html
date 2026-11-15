@@ -1,0 +1,24 @@
+<title>Tool name resolution</title>
+<meta name="description" content="Compatibility spellings a model may emit, and when each resolves to a real tool.">
+<h1>Tool name resolution</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Spelling</th><th scope="col">Target</th><th scope="col">Condition</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Bash</code></th><td><code translate="no">bash</code></td><td>Target in the turn's allowed tool list</td></tr>
+<tr><th scope="row"><code translate="no">Read</code></th><td><code translate="no">read</code></td><td>Target in the turn's allowed tool list</td></tr>
+<tr><th scope="row"><code translate="no">ToolSearch</code></th><td><code translate="no">tool_search</code></td><td>Target in the list. <code translate="no">select</code> accepted for <code translate="no">query</code>; a null optional <code translate="no">max_results</code> is omitted.</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Exact name</th><td>Always wins over an alias</td></tr>
+<tr><th scope="row">Resolved call</th><td>Uses the target's schema, preflight, gate and executor; invalid arguments still fail validation</td></tr>
+<tr><th scope="row">Unknown or disabled tool</th><td>Remains unavailable; an alias cannot reach a missing target</td></tr>
+<tr><th scope="row">Record</th><td>Original call name and ID stay in the conversation and event record</td></tr>
+</tbody>
+</table>
+
+<p class="note">Lives in <code translate="no">openprogram/runtime/agent/loop/</code> and <code translate="no">openprogram/programs/_host/runtime.py</code>. Provider request formats and permission policy are unaffected.</p>

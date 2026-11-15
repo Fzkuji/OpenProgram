@@ -1,0 +1,28 @@
+<title>Profiles</title>
+<meta name="description" content="Run several independent OpenProgram instances on one machine, each with its own state directory, port and worker.">
+<h1>Profiles</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Item</th><th scope="col">Default</th><th scope="col">Profile <code translate="no">dev</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">State: config, sessions, logs, memory</th><td><code translate="no">~/.openprogram/</code></td><td><code translate="no">~/.openprogram-dev/</code><br>Any name: <code translate="no">~/.openprogram-&lt;name&gt;/</code></td></tr>
+<tr><th scope="row">Port: API, WebSocket and web UI</th><td><code translate="no">18100</code><br><code translate="no">http://localhost:18100</code></td><td><code translate="no">openprogram --profile dev ports --port 18200</code><br><code translate="no">http://localhost:18200</code></td></tr>
+<tr><th scope="row">Start</th><td><code translate="no">openprogram web</code></td><td><code translate="no">openprogram --profile dev web</code></td></tr>
+<tr><th scope="row">Check</th><td><code translate="no">openprogram status</code></td><td><code translate="no">openprogram --profile dev status</code></td></tr>
+<tr><th scope="row">Login service</th><td><code translate="no">openprogram worker install</code></td><td><code translate="no">openprogram --profile dev worker install</code></td></tr>
+</tbody>
+</table>
+<p class="note">Instances share no data. Each profile gets its own login service, so <code translate="no">worker start</code>, <code translate="no">stop</code>, <code translate="no">restart</code>, <code translate="no">status</code> and <code translate="no">uninstall</code> act only on the active profile, and stopping or upgrading <code translate="no">dev</code> leaves the default worker alone.</p>
+
+<details>
+<summary>Other ways to choose a profile or port</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Way</th><th scope="col">Example</th></tr></thead>
+<tbody>
+<tr><th scope="row">Global flag, before any subcommand; wins over the variable</th><td><code translate="no">openprogram --profile dev sessions list</code><br><code translate="no">openprogram --profile dev worker restart</code></td></tr>
+<tr><th scope="row">Profile by environment</th><td><code translate="no">OPENPROGRAM_PROFILE=dev openprogram</code></td></tr>
+<tr><th scope="row">Port for this run</th><td><code translate="no">OPENPROGRAM_WEB_PORT=18200 openprogram web</code></td></tr>
+<tr><th scope="row">Port for this <code translate="no">openprogram web</code> only</th><td><code translate="no">openprogram web --web-port 18200</code></td></tr>
+</tbody>
+</table>
+</details>

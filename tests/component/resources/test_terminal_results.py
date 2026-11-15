@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-_PATH = Path(__file__).resolve().parents[3] / "openprogram" / "terminal_resources.py"
+_PATH = Path(__file__).resolve().parents[3] / "openprogram" / "host" / "resources" / "terminal.py"
 _SPEC = importlib.util.spec_from_file_location("terminal_result_contract", _PATH)
 module = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = module
@@ -61,17 +61,16 @@ def test_pending_result_slots_are_bounded_and_released():
 
 @pytest.mark.parametrize("connected", [True, False])
 def test_dispatch_uses_native_completion_without_browser_field_filtering(monkeypatch, connected):
-    ws, loop = object(), object()
+    from openprogram.host.resources import desktop_link
+
+    ws = object()
     broker, results = module.TerminalTickets(), module.TerminalResults()
     monkeypatch.setattr(module, "_tickets", broker)
     monkeypatch.setattr(module, "_results", results)
-    webtab = SimpleNamespace(registered_desktop_windows=lambda: [(ws, "main", 8)])
-    monkeypatch.setitem(sys.modules, "openprogram.webui.ws_actions", SimpleNamespace(webtab=webtab))
-    monkeypatch.setitem(sys.modules, "openprogram.webui", SimpleNamespace(server=SimpleNamespace(_loop=loop)))
     sent = []
 
-    def send(target, payload, event_loop):
-        assert target is ws and event_loop is loop
+    def send(target, payload):
+        assert target is ws
         message = json.loads(payload)
         assert message["type"] == "terminal.command"
         sent.append(message)
@@ -82,7 +81,9 @@ def test_dispatch_uses_native_completion_without_browser_field_filtering(monkeyp
         results.deliver(plan["result_ticket"], "main", {"ok": True, "data": "native output", "command_complete": None})
         return True
 
-    monkeypatch.setitem(sys.modules, "openprogram.webui.ws_delivery", SimpleNamespace(send_to_connection=send))
+    monkeypatch.setattr(desktop_link, "_link", SimpleNamespace(
+        registered_desktop_windows=lambda: [(ws, "main", 8)], send=send,
+    ))
     response = module._dispatch({"window_id": "main", "terminal_id": "id", "operation_id": "op"},
                                 ws=ws, window_id="main", revision=8, valid=lambda: True)
     assert response["ok"] is connected

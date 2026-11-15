@@ -1,0 +1,86 @@
+<title>User input requests</title>
+<meta name="description" content="How a running Workflow asks a question and waits in the same process, and how Agent questions differ.">
+<h1>User input requests</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Live Workflow question</th><th scope="col">Declared Agent question</th></tr></thead>
+<tbody>
+<tr><th scope="row">Caller</th><td><code translate="no">ask_user(question)</code>, <code translate="no">runtime.ask(...)</code></td><td>Agent tool interaction with a declared pre-wait</td></tr>
+<tr><th scope="row">While waiting</th><td>Same process, same call stack</td><td>Execution paused, attempt ended</td></tr>
+<tr><th scope="row">Saved</th><td>Question, policy, answer. No checkpoint.</td><td>Checkpoint</td></tr>
+<tr><th scope="row">After the answer</th><td>The function returns from the call. No new attempt, no model or finished tool replayed.</td><td>Continues from the checkpoint</td></tr>
+<tr><th scope="row">Browser refresh</th><td>Question drawn again while its owner is active</td><td>Question drawn again</td></tr>
+<tr><th scope="row">Worker restart</th><td>Execution interrupted, stack not restored, nothing replayed</td><td>Stays available</td></tr>
+<tr><th scope="row">Tool permissions</th><td>Cannot grant them</td><td>Permission approvals unchanged</td></tr>
+</tbody>
+</table>
+<p class="note">A preapproved wait takes precedence over the live binding and must match the requested presentation exactly.</p>
+
+<h2 id="api">API and outcomes</h2>
+<pre translate="no" tabindex="0">from openprogram.programs.tools.interaction.ask_user import ask_user
+answer = ask_user("Who wrote this report?")
+
+runtime.ask(prompt=None, *, options=None, multi=False, allow_custom=True,
+            questions=None, timeout=300.0, default=None)</pre>
+<table class="stack">
+<thead><tr><th scope="col">Outcome</th><th scope="col"><code translate="no">runtime.ask</code></th><th scope="col"><code translate="no">ask_user</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Answered</th><td>The answer</td><td>The answer</td></tr>
+<tr><th scope="row">Declined</th><td><code translate="no">UserDeclined</code></td><td><code translate="no">None</code></td></tr>
+<tr><th scope="row">Timed out</th><td><code translate="no">default</code> if given, else <code translate="no">AskTimeout</code></td><td><code translate="no">None</code></td></tr>
+<tr><th scope="row">Execution cancelled</th><td>Execution cancellation exception</td><td>Propagates</td></tr>
+<tr><th scope="row">Runtime, storage or transport error</th><td>Propagates</td><td>Propagates</td></tr>
+<tr><th scope="row">No handler, no usable runtime</th><td></td><td><code translate="no">None</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">runtime.confirm</code> and <code translate="no">runtime.form</code> share the question transport.</p>
+
+<details>
+<summary>How <code translate="no">ask_user</code> finds an answer</summary>
+<ol>
+<li>A handler set by <code translate="no">run_with_follow_up</code>, scoped to the execution context and inherited by its background thread, or the global CLI handler. The scoped handler neither replaces the frontend handler nor captures another concurrent Workflow's question.</li>
+<li><code translate="no">runtime.ask</code>, when the runtime has a question transport or a connected session.</li>
+<li>Terminal input, on a TTY.</li>
+<li><code translate="no">None</code>.</li>
+</ol>
+<p>Each <code translate="no">FollowUp</code> accepts one answer; a second fails at once.</p>
+</details>
+
+<h2 id="live-workflow-ownership">Live Workflow ownership</h2>
+<p>The subprocess runner binds execution ID, attempt ID, generation and producer identity for the call. A runtime without this binding cannot create a live question.</p>
+<p>Creating and answering both verify, in one transaction, that the execution is running, the attempt is the current active owner and its lease is valid.</p>
+<dl class="pairs">
+<dt>Publish</dt><dd>The child sends <code translate="no">question.asked</code> through <code translate="no">QueueTransport</code>; the parent builds the frontend event from the stored request and relays the canonical answer notification</dd>
+<dt>Answer authority</dt><dd>The canonical wait store. The registry only wakes a local waiter.</dd>
+<dt>Rejected</dt><dd>Duplicate answers and replies from another execution, by the command protocol</dd>
+</dl>
+
+<h2 id="browser-and-process-lifecycle">Browser and process lifecycle</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Event</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Session load</th><td>Open questions replayed as the same frame the question card already handles</td></tr>
+<tr><th scope="row">Answer</th><td>Question endpoints and the execution answer command use one record and one authorization check</td></tr>
+<tr><th scope="row">Execution stopped</th><td>Its open questions cancelled</td></tr>
+<tr><th scope="row">Child exits</th><td>Only that producer's live questions closed</td></tr>
+<tr><th scope="row">Owner lost</th><td>Abandoned live questions cancelled; a stale reply cannot continue an ended call</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Reference designs</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Taken from it</th></tr></thead>
+<tbody>
+<tr><th scope="row">opencode</th><td>Tool calls <code translate="no">ctx.ask(...)</code>: server Deferred and pending map, <code translate="no">permission.asked</code> down, REST reply up, a list endpoint so a reconnecting client recovers pending questions. A rejection may carry text the model sees as the tool error.</td></tr>
+<tr><th scope="row">Claude Code</th><td>AskUserQuestion rides the permission pipeline; options plus an always-present “Other”; a pending request snapshot in session metadata so remote UIs can redraw it, execution stack never saved; interactive tools disabled with no human attached.</td></tr>
+<tr><th scope="row">openclaw</th><td>30-minute timeout with an explicit fallback; channel buttons whose value is a plain text command (<code translate="no">/approve &lt;id&gt; …</code>), so text-only channels work the same; for channel-started runs the tool returns “pending” and the result is injected later.</td></tr>
+<tr><th scope="row">MCP elicitation</th><td>Three outcomes (accept, decline, cancel) and flat-object schema limits for form-style asks.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Verification</summary>
+<p>Tests use public <code translate="no">ask_user</code> with the real Runtime and canonical wait commands: same-call continuation, cancellation, invalid owner or session, transport failure, producer cleanup. Native acceptance needs a question in the installed App, a browser refresh, and an answer that lets the Workflow finish. A returned <code translate="no">WAITING_USER</code> object does not show the UI worked.</p>
+</details>

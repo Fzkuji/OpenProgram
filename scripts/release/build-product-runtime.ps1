@@ -93,7 +93,6 @@ try {
 Remove-Item -LiteralPath (Join-Path $RepoRoot "build") -Recurse -Force -ErrorAction SilentlyContinue
 foreach ($Directory in @(
     "assets\playwright",
-    "assets\gpa",
     "assets\tui",
     "bin",
     ".python-build",
@@ -157,63 +156,16 @@ if (-not $Wheel) {
     throw "OpenProgram wheel was not built"
 }
 
-$Requirements = Join-Path $RuntimeRoot "product-requirements.txt"
-Invoke-Native $Uv export --project $RepoRoot --frozen --no-dev `
-    --extra all --extra search --no-emit-project --output-file $Requirements
-Invoke-Native $Uv pip install --python $PythonBin --strict --break-system-packages `
-    --require-hashes --requirements $Requirements
+# Packages, browsers and the pinned Git; verification below fails without Git.
+$PreviousUvForBase = $env:OPENPROGRAM_UV_BIN
+$env:OPENPROGRAM_UV_BIN = $Uv
+try {
+    & (Join-Path $PSScriptRoot "build-base.ps1") -EmbeddedRuntime $RuntimeRoot -PythonBin $PythonBin
+} finally {
+    [Environment]::SetEnvironmentVariable("OPENPROGRAM_UV_BIN", $PreviousUvForBase, "Process")
+}
 Invoke-Native $Uv pip install --python $PythonBin --strict --break-system-packages `
     --no-deps $Wheel.FullName
-
-$ProgramStaging = Join-Path ([IO.Path]::GetTempPath()) ("openprogram-programs-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $ProgramStaging | Out-Null
-try {
-    foreach ($ProgramName in @("gui", "research", "wiki")) {
-        $Program = $Product.programs.$ProgramName
-        $ProgramDir = Join-Path $ProgramStaging $ProgramName
-        Invoke-Native git.exe init -q $ProgramDir
-        Invoke-Native git.exe -C $ProgramDir remote add origin ([string]$Program.repository)
-        Invoke-Native git.exe -C $ProgramDir fetch -q --depth 1 origin ([string]$Program.commit)
-        Invoke-Native git.exe -C $ProgramDir checkout -q --detach FETCH_HEAD
-        if ($ProgramName -eq "gui") {
-            Invoke-Native $Uv pip install --python $PythonBin --strict `
-                --break-system-packages --no-deps $ProgramDir
-        } elseif ($ProgramName -eq "research") {
-            Invoke-Native $Uv pip install --python $PythonBin --strict `
-                --break-system-packages "${ProgramDir}[pdf]"
-        } else {
-            Invoke-Native $Uv pip install --python $PythonBin --strict `
-                --break-system-packages $ProgramDir
-        }
-    }
-} finally {
-    Remove-Item -LiteralPath $ProgramStaging -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-Invoke-Native $Uv pip install --python $PythonBin --strict --break-system-packages huggingface-hub
-$PlaywrightPath = Join-Path $RuntimeRoot "assets\playwright"
-$PreviousBrowserPath = $env:PLAYWRIGHT_BROWSERS_PATH
-$env:PLAYWRIGHT_BROWSERS_PATH = $PlaywrightPath
-try {
-    Invoke-Native $PythonBin -m playwright install chromium
-} finally {
-    [Environment]::SetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH", $PreviousBrowserPath, "Process")
-}
-
-$Gpa = $Product.assets.gpa_detector
-$GpaTarget = Join-Path $RuntimeRoot "assets\gpa"
-Invoke-Native $PythonBin -c @'
-import pathlib
-import shutil
-import sys
-from huggingface_hub import hf_hub_download
-
-target, repository, revision, filename = sys.argv[1:]
-path = hf_hub_download(repository, filename, revision=revision)
-destination = pathlib.Path(target) / filename
-destination.parent.mkdir(parents=True, exist_ok=True)
-shutil.copy2(path, destination)
-'@ $GpaTarget ([string]$Gpa.repository) ([string]$Gpa.revision) ([string]$Gpa.filename)
 
 Copy-Item -LiteralPath $Uv -Destination (Join-Path $RuntimeRoot "bin\uv.exe") -Force
 $Node = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
@@ -244,7 +196,7 @@ $BuildMetadata = Invoke-NativeOutput $PythonBin -I -B `
     ConvertFrom-Json
 $PythonRelative = [string]$BuildMetadata.python_relative
 $PackageVersion = [string]$BuildMetadata.openprogram_version
-Invoke-Native $PythonBin -I -B $Verifier $RuntimeRoot --write `
+Invoke-Native $PythonBin -I -B $Verifier $RuntimeRoot --write --require-git `
     --python-relative $PythonRelative --openprogram-version $PackageVersion --uv-version $UvVersion
 
 Write-Host "Prepared complete OpenProgram runtime $PackageVersion at $RuntimeRoot"

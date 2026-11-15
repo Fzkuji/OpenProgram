@@ -1,0 +1,81 @@
+<title>编写文档页</title>
+<meta name="description" content="HTML 文档源的文件形状、组件和规则。">
+<h1>编写文档页</h1>
+
+<h2>文件形状</h2>
+<pre translate="no" tabindex="0">&lt;title&gt;编写文档页&lt;/title&gt;
+&lt;meta name="description" content="…"&gt;
+&lt;h1&gt;…&lt;/h1&gt;
+&lt;figure&gt; … &lt;/figure&gt;
+&lt;details&gt;&lt;summary&gt;…&lt;/summary&gt; … &lt;/details&gt;
+&lt;p class="next"&gt;&lt;a href=&quot;other.html&quot;&gt;…&lt;/a&gt;&lt;/p&gt;</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">topic.html</code></th><td>英文，默认版</td></tr>
+<tr><th scope="row"><code translate="no">topic.zh.html</code></th><td>中文，结构相同</td></tr>
+</tbody>
+</table>
+<p class="note">样式由站点提供。</p>
+
+<h2>组件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">写法</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">&lt;table class="stack fixed"&gt;</code></th><td>查询表，窄时每行一块。<code translate="no">fixed</code>：两列，第一列窄。</td></tr>
+<tr><th scope="row"><code translate="no">&lt;table class="stack even"&gt;</code></th><td>等宽列的查询表，用于并列比较多个系统</td></tr>
+<tr><th scope="row"><code translate="no">&lt;thead class="sr"&gt;</code></th><td>只给读屏器的列名</td></tr>
+<tr><th scope="row"><code translate="no">&lt;span class="arg"&gt;</code></th><td>命令下方的参数行，放在行标题里</td></tr>
+<tr><th scope="row"><code translate="no">&lt;table class="grid"&gt;</code></th><td>结果矩阵。单元格：<code translate="no">run</code>、<code translate="no">review</code>、<code translate="no">ask</code>、<code translate="no">deny</code>。</td></tr>
+<tr><th scope="row"><code translate="no">&lt;dl class="commands"&gt;</code></th><td>该跑和不该跑的命令。<code translate="no">dd.struck</code> 划掉一条。</td></tr>
+<tr><th scope="row"><code translate="no">&lt;dl class="pairs"&gt;</code></th><td>标签和值</td></tr>
+<tr><th scope="row"><code translate="no">&lt;svg class="fig-wide" viewBox="0 0 680 …" aria-label="…"&gt;</code></th><td>在 680 宽画布上 1:1 绘制的图</td></tr>
+<tr><th scope="row"><code translate="no">&lt;ol class="flow fig-narrow"&gt;</code></th><td>它在窄栏的替身。步骤：<code translate="no">li</code>、<code translate="no">li.via</code>、<code translate="no">li.flow-end</code>、<code translate="no">p.refused</code>。</td></tr>
+<tr><th scope="row"><code translate="no">&lt;details&gt;&lt;summary&gt;</code></th><td>很少用到的细节</td></tr>
+<tr><th scope="row"><code translate="no">&lt;p class="note"&gt;</code></th><td>图或表下的小字说明</td></tr>
+<tr><th scope="row"><code translate="no">&lt;p class="next"&gt;</code></th><td>下一步，放在页尾</td></tr>
+<tr><th scope="row"><code translate="no">class="sr"</code></th><td>读屏器文字</td></tr>
+<tr><th scope="row"><code translate="no">class="nb"</code></th><td>不换行</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>图内类名</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">写法</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">t-big t-soft t-cmd t-no mid</code></th><td>文字</td></tr>
+<tr><th scope="row"><code translate="no">ln ln-faint ln-acc ln-no</code></th><td>线</td></tr>
+<tr><th scope="row"><code translate="no">head head-no</code></th><td>箭头</td></tr>
+<tr><th scope="row"><code translate="no">tile gate</code></th><td>形状</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>检查</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">何时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">python -m scripts.docs_site.check PATH ...</code></th><td>结束前。按文件和行号改掉每个 error。</td></tr>
+<tr><th scope="row"><code translate="no">… check PATH ... --ack PAGE ... --reason TEXT</code></th><td>受影响的页读过，不用改</td></tr>
+<tr><th scope="row"><code translate="no">… check --all</code></th><td>全部页面和全站规则</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">&lt;meta name="covers" content="openprogram/x/"&gt;</code></th><td>页面文字显示不出来时，写明它描述哪块代码</td></tr>
+<tr><th scope="row"><code translate="no">&lt;code data-claim="example"&gt;</code></th><td>示意，或故意不存在的名字（旧位置、被否决的方案）；不检查</td></tr>
+</tbody>
+</table>
+<p class="note"><a href="governance.zh.html">文档治理</a>列出每条规则和运行位置。</p>
+
+<h2>规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">检查判断不了的</th></tr></thead>
+<tbody>
+<tr><th scope="row">事实</th><td>取自代码和命令输出，写不出真内容的区块就不要。</td></tr>
+<tr><th scope="row">文字</th><td>标题说事物本身；报错写出了什么、怎么办。一个概念一个词，全站一致。</td></tr>
+<tr><th scope="row">形状</th><td>只有真步骤才编号。不用眉题、彩色侧条、嵌套卡片、全大写标签。</td></tr>
+<tr><th scope="row">代码</th><td>等宽字体只给代码和参数，并加 <code translate="no">translate="no"</code>。</td></tr>
+<tr><th scope="row">颜色</th><td>全走变量；强调色只给链接、当前状态、焦点；红色只表示拒绝。每格都有文字。</td></tr>
+<tr><th scope="row">图</th><td>静止，有 <code translate="no">aria-label</code>；窄时换排法，不缩小。</td></tr>
+<tr><th scope="row">动效</th><td>没有入场和滚动动画；悬停只变色；手机宽度没有页面横向滚动。</td></tr>
+</tbody>
+</table>
+<p class="note">每页同时发布 <code translate="no">topic.html.md</code>，由构建生成给 Agent 读：每张图一次，折叠内容展开。</p>

@@ -1,0 +1,186 @@
+<title>MCP client integration</title>
+<meta name="description" content="How external MCP servers become Agent tools: configuration, credentials, the call path, startup and content conversion.">
+<h1>MCP client integration</h1>
+
+<p>OpenProgram as MCP client: each tool of a server in <code translate="no">mcp_servers.json</code> becomes an ordinary <code translate="no">AgentTool</code> named <code translate="no">{server}__{tool}</code>. Exposing OpenProgram's own tools is the opposite direction: <a href="mcp-server.html">MCP server</a>.</p>
+
+<h2 id="call-path">Call path</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="The model emits a tool call. agent_loop finds the AgentTool in the registry and awaits execute. The closure from adapter.register_remote_tool calls MCPClient.call_tool with the original name. MCPClient sends it over stdio JSON-RPC or HTTP to the server. The CallToolResult returns through adapter.convert_call_result to an AgentToolResult, goes into chat history, and the model is called again.">
+  <defs><marker id="mcp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Model</text>
+  <text class="t-soft" x="0" y="64">tool_call</text>
+  <line class="ln" x1="66" y1="34" x2="110" y2="34" marker-end="url(#mcp-a)"/>
+  <text class="t-big" x="122" y="40">agent_loop</text>
+  <text class="t-soft" x="122" y="64">registry lookup</text>
+  <line class="ln" x1="224" y1="34" x2="268" y2="34" marker-end="url(#mcp-a)"/>
+  <text class="t-big" x="280" y="40">Closure</text>
+  <text class="t-soft" x="280" y="64">original name</text>
+  <line class="ln" x1="372" y1="34" x2="416" y2="34" marker-end="url(#mcp-a)"/>
+  <text class="t-big" x="428" y="40">MCPClient</text>
+  <line class="ln" x1="524" y1="34" x2="568" y2="34" marker-end="url(#mcp-a)"/>
+  <text class="t-big" x="580" y="40">Server</text>
+  <line class="ln-faint" x1="610" y1="52" x2="610" y2="112"/>
+  <line class="ln-faint" x1="610" y1="112" x2="30" y2="112" marker-end="url(#mcp-a)"/>
+  <text class="t-soft" x="106" y="138">CallToolResult → convert_call_result → AgentToolResult → chat history → next model call</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Model</strong><small>tool_call</small></li>
+  <li><strong>agent_loop</strong><small>registry lookup</small></li>
+  <li><strong>Closure</strong><small>original name</small></li>
+  <li><strong>MCPClient</strong></li>
+  <li><strong>Server</strong></li>
+  <li class="flow-end"><strong>Result</strong><small>convert_call_result, chat history, next model call</small></li>
+</ol>
+</figure>
+<ul>
+<li>Awaited on the worker's event loop. A session-expired call reconnects and retries once.</li>
+<li>Only the model starts these calls. <code translate="no">programs run</code> and the <code translate="no">/programs</code> page are for local functions.</li>
+</ul>
+
+<h2 id="configuration">Configuration</h2>
+<p><code translate="no">&lt;state_dir&gt;/mcp_servers.json</code>, following the profile through <code translate="no">paths.get_state_dir</code>. A missing or unparsable file logs one warning; the worker starts with no servers.</p>
+<pre translate="no" tabindex="0"><code>{
+  "servers": {
+    "drawio": {
+      "type": "local",
+      "command": ["npx", "-y", "@drawio/mcp"],
+      "env": {},
+      "enabled": true,
+      "timeout_seconds": 60
+    }
+  }
+}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">type</code></th><td><code translate="no">local</code> (stdio subprocess), <code translate="no">http</code> (Streamable HTTP), <code translate="no">sse</code> (legacy SSE). Remote types take <code translate="no">url</code>, <code translate="no">headers</code>, <code translate="no">auth</code> (<code translate="no">none</code>, <code translate="no">bearer</code>, <code translate="no">oauth</code>)</td></tr>
+<tr><th scope="row"><code translate="no">command</code></th><td>Subprocess command and arguments</td></tr>
+<tr><th scope="row"><code translate="no">env</code></th><td>Overrides and additions to the inherited environment</td></tr>
+<tr><th scope="row"><code translate="no">enabled</code></th><td><code translate="no">false</code> disables without deleting</td></tr>
+<tr><th scope="row"><code translate="no">timeout_seconds</code></th><td>Startup wait and per-call read timeout</td></tr>
+</tbody>
+</table>
+
+<h3 id="credentials">Credentials</h3>
+<p>Every value in <code translate="no">env</code> and <code translate="no">headers</code> is a secret, since any entry can hold one, alongside the bearer token and OAuth client secret.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">PATCH /api/mcp/servers/{name}</code></th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Name or whole field absent</th><td>Preserve</td></tr>
+<tr><th scope="row">Name with a value</th><td>Replace</td></tr>
+<tr><th scope="row">Name with an empty string</th><td>Delete</td></tr>
+</tbody>
+</table>
+<p class="note">Same rule for <code translate="no">auth.token</code> and <code translate="no">auth.client_secret</code>. Changing <code translate="no">auth.kind</code> drops the other kind's secret. The Web UI opens secret inputs empty and lists stored names only.</p>
+<details>
+<summary>Serialization and storage</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">to_storage_dict()</code></th><td>Full values; only for writing <code translate="no">mcp_servers.json</code></td></tr>
+<tr><th scope="row"><code translate="no">to_response_dict()</code></th><td>Each value becomes <code translate="no">{"has_value": bool, "masked": str}</code>; auth secrets become <code translate="no">has_token</code> / <code translate="no">has_client_secret</code> and a mask. Returned by <code translate="no">/api/mcp/servers</code>, <code translate="no">/api/mcp/servers/{name}</code>, <code translate="no">/api/mcp/catalog</code>, <code translate="no">/api/mcp/catalog/diff</code>.</td></tr>
+<tr><th scope="row"><code translate="no">save_configs()</code></th><td>Owner-only: temporary file created <code translate="no">0600</code>, <code translate="no">fsync</code>, <code translate="no">os.replace</code>. An older <code translate="no">0644</code> file narrows on next save.</td></tr>
+<tr><th scope="row">Failed edit</th><td>Persisted only after the restart succeeds, so stored credentials stay intact</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="code-structure">Code</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">openprogram/extensions/mcp/</code></th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">__init__.py</code></th><td>Re-exports <code translate="no">load_mcp_servers</code>, <code translate="no">shutdown_mcp_servers</code>, <code translate="no">server_status</code></td></tr>
+<tr><th scope="row"><code translate="no">config.py</code></th><td><code translate="no">MCPServerConfig</code>, <code translate="no">load_configs</code>, <code translate="no">save_configs</code></td></tr>
+<tr><th scope="row"><code translate="no">client.py</code></th><td><code translate="no">MCPClient</code>: one server's transport, <code translate="no">ClientSession</code>, supervisor task</td></tr>
+<tr><th scope="row"><code translate="no">adapter.py</code></th><td>Stateless translation between MCP types and <code translate="no">AgentTool</code></td></tr>
+<tr><th scope="row"><code translate="no">registry.py</code></th><td>Global manager</td></tr>
+<tr><th scope="row"><code translate="no">oauth_flow.py</code></th><td>OAuth 2.1 PKCE consent and loopback callback</td></tr>
+<tr><th scope="row"><code translate="no">token_storage.py</code></th><td><code translate="no">PersistentOAuthProvider</code>: tokens, client registration, server metadata</td></tr>
+<tr><th scope="row"><code translate="no">sampling.py</code></th><td>Sampling callback on the configured host model</td></tr>
+<tr><th scope="row"><code translate="no">server/</code></th><td>The separate server direction; does not reuse client modules</td></tr>
+</tbody>
+</table>
+<p class="note">A core package in the extensions group beside <code translate="no">plugins/</code> and <code translate="no">skills/</code>, not under <code translate="no">openprogram/programs/</code>: it adapts an external protocol, as <code translate="no">openprogram/interfaces/channels/</code> does for messages. opencode (<code translate="no">src/mcp/</code>) also keeps MCP separate; this layer is essentially a Python translation of opencode's.</p>
+
+<h2 id="startup">Startup and readiness</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Situation</th><th scope="col">Observable result</th></tr></thead>
+<tbody>
+<tr><th scope="row">App lifespan and <code translate="no">/healthz</code></th><td>Ready while MCP transport, npm download or OAuth is pending; canonical execution recovery still gates readiness</td></tr>
+<tr><th scope="row">Status and tool registry</th><td>Starting and failed clients show actual ready, error and auth fields, masked secrets, no premature tools</td></tr>
+<tr><th scope="row">Successful connection</th><td>Namespaced tools and prompts become available</td></tr>
+<tr><th scope="row">Shutdown during startup</th><td>Startup cancelled and drained; clients, supervisors, callback resources and registrations released; no late registration</td></tr>
+<tr><th scope="row">Owner deletes or disables a queued server</th><td>Stays absent or disabled; no new process or tools; a management replacement wins over the startup snapshot</td></tr>
+<tr><th scope="row">Owned OAuth callback cancelled</th><td>Socket, thread and waiter released, no false code; normal code and state validation intact</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Rules behind this</summary>
+<ul>
+<li>The server lifespan runs <code translate="no">load_mcp_servers()</code> as a managed background task; servers connect in order with their configured timeouts.</li>
+<li>Each client is published in the registry before its connection is awaited: <code translate="no">ready=false</code>, no tools. The masked management API stays available.</li>
+<li>Each queued server reads the current persisted configuration when reached.</li>
+<li>Connecting lazily on first tool use is not done. Waiting for every connection is not done, since authentication may outlast the health deadline. Neither is another worker, changed owner timeouts, suppressed auth errors or a pending client marked ready.</li>
+</ul>
+</details>
+
+<h2 id="decisions">Mechanisms</h2>
+<h3 id="tool-namespace">Tool names</h3>
+<p><code translate="no">adapter.namespace_tool_name(server, tool)</code> replaces characters outside <code translate="no">[A-Za-z0-9_-]</code> with <code translate="no">_</code> and truncates to 64, OpenAI's limit, keeping the tool suffix. Double underscore because OpenAI's name pattern rejects opencode's colon. On a collision the last registered wins.</p>
+
+<h3 id="content-conversion">Content conversion</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">MCP type</th><th scope="col">Becomes</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">TextContent</code></th><td><code translate="no">providers.types.TextContent</code></td></tr>
+<tr><th scope="row"><code translate="no">ImageContent</code></th><td><code translate="no">providers.types.ImageContent</code></td></tr>
+<tr><th scope="row"><code translate="no">EmbeddedResource</code></th><td>Text <code translate="no">[resource: &lt;uri&gt;]</code>; raw bytes stay out of chat</td></tr>
+<tr><th scope="row">Unknown types</th><td><code translate="no">repr(block)</code> text</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">isError=True</code> sets <code translate="no">details["is_error"]</code>; the model sees the result text, as with local tools.</p>
+
+<details>
+<summary>Persistent connection and supervisor task</summary>
+<p>MCP is a long-lived bidirectional connection and the SDK exposes it as nested context managers. A supervisor <code translate="no">asyncio.Task</code> holds them open.</p>
+<pre translate="no" tabindex="0"><code>async def _supervisor(self):
+    async with stdio_client(params) as (r, w):
+        async with ClientSession(r, w) as session:
+            await session.initialize()
+            result = await session.list_tools()
+            self._session = session
+            self.tools = list(result.tools)
+            self._ready.set()
+            await self._shutdown.wait()</code></pre>
+<ul>
+<li><code translate="no">start()</code> creates the task and waits on <code translate="no">_ready</code>; <code translate="no">call_tool()</code> reuses <code translate="no">_session</code>; <code translate="no">stop()</code> sets <code translate="no">_shutdown</code> and the subprocess closes.</li>
+<li>A startup failure also sets <code translate="no">_ready</code> and records <code translate="no">error</code>; the manager skips registration and logs one line.</li>
+</ul>
+</details>
+<details>
+<summary>OAuth</summary>
+<ul>
+<li>Delegated to the SDK's <code translate="no">OAuthClientProvider</code> through <code translate="no">PersistentOAuthProvider</code>.</li>
+<li>Persisted across restarts: tokens with absolute <code translate="no">expires_at</code>; the dynamic client registration, whose loopback port is reused so re-auth presents a registered <code translate="no">redirect_uri</code>; the discovered server metadata, so a cold-start refresh reaches the real token endpoint.</li>
+<li>An expired token renews in the background. Browser consent runs only on first auth or a rejected refresh, surfaced as <code translate="no">error_kind="needs_reauth"</code>.</li>
+<li>The browser opens for consent only when someone connects the server, from the App or the CLI. When the worker connects its servers by itself, at startup or on its own reconnects (<code translate="no">oauth_flow.unattended</code>), the link stays in <code translate="no">/api/mcp/auth/pending</code> and no browser comes in front of what the user is doing.</li>
+</ul>
+</details>
+<details>
+<summary>Test isolation</summary>
+<p><code translate="no">config.py</code> uses <code translate="no">from openprogram.state import paths as _paths</code> and calls <code translate="no">_paths.get_state_dir()</code> live. <code translate="no">from … import get_state_dir</code> would bind the lambda that <code translate="no">tests/integration/store/test_attach_lazy_session.py</code> monkeypatches, because that test triggers the first import through <code translate="no">_start_mcp_servers</code>, and leak it. A new paths monkeypatch must still go through the module reference.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Transports</th><td>stdio, Streamable HTTP, SSE. Remote auth: static bearer, OAuth 2.1 PKCE.</td></tr>
+<tr><th scope="row">Tools, resources, prompts, sampling</th><td>Implemented. Resource and prompt meta tools reuse the persistent client; MCP prompts synchronize with the slash-command registry. Sampling returns a structured error without a configured host model.</td></tr>
+<tr><th scope="row">Management</th><td>Add, remove and restart act on the selected client with no worker restart. <code translate="no">server_status()</code> and server details give ready, error and auth status, tool count and masked credentials.</td></tr>
+<tr><th scope="row">Concurrency limit</th><td><code translate="no">MCPClient._call_lock</code> serializes calls to one server; one slow tool blocks the others on it.</td></tr>
+<tr><th scope="row">Tool list limit</th><td>Read once at startup; <code translate="no">tools/list_changed</code> is not handled.</td></tr>
+<tr><th scope="row"><code translate="no">_loaded</code></th><td>Module global; tests reset it through <code translate="no">tests/integration/programs/test_mcp_client.py::_reset_mcp_loader_flag</code>.</td></tr>
+</tbody>
+</table>

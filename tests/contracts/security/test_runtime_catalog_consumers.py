@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import http.server
-import ipaddress
 import io
 import json
 import socketserver
@@ -15,8 +14,8 @@ from dataclasses import replace
 import httpcore
 import pytest
 
-from openprogram.security import safe_http
-from openprogram.security.safe_http import OutboundSecurityConfig
+from openprogram.host.security import safe_http
+from openprogram.host.security.safe_http import OutboundSecurityConfig
 
 
 def _reset_models_dev_cache(models_dev) -> None:
@@ -31,7 +30,7 @@ def _reset_models_dev_cache(models_dev) -> None:
 
 @pytest.fixture
 def _isolated_models_dev_cache(monkeypatch, tmp_path):
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     monkeypatch.setattr(
         models_dev, "_disk_cache_path", lambda: tmp_path / "models_dev.json"
@@ -324,7 +323,7 @@ def managed_clients(monkeypatch):
 
 
 def test_skills_github_archive_uses_fixed_catalog_client(managed_clients):
-    from openprogram.skills import discovery
+    from openprogram.extensions.skills import discovery
 
     entries = discovery.browse("github://owner/repo")
 
@@ -333,7 +332,7 @@ def test_skills_github_archive_uses_fixed_catalog_client(managed_clients):
 
 
 def test_skills_configured_index_freezes_owner_origin(managed_clients):
-    from openprogram.skills import discovery
+    from openprogram.extensions.skills import discovery
 
     discovery.browse("http://127.0.0.1:19010/index.json")
 
@@ -347,7 +346,7 @@ def test_skills_configured_index_freezes_owner_origin(managed_clients):
 def test_plugin_marketplace_uses_configured_catalog_client(
     monkeypatch, managed_clients
 ):
-    from openprogram.plugins import marketplace
+    from openprogram.extensions.plugins import marketplace
 
     monkeypatch.setattr(
         marketplace,
@@ -366,21 +365,17 @@ def test_plugin_marketplace_uses_configured_catalog_client(
 @pytest.mark.parametrize(
     ("call", "consumer"),
     [
-        ("plugin_pip", "plugins.autoupdate"),
         ("plugin_npm", "plugins.autoupdate"),
         ("github_release", "updater.github"),
     ],
 )
 def test_update_metadata_uses_fixed_registry_client(managed_clients, call, consumer):
     if call.startswith("plugin"):
-        from openprogram.plugins import autoupdate
+        from openprogram.extensions.plugins import autoupdate
 
-        if call == "plugin_pip":
-            autoupdate._check_pip("demo", "0")
-        else:
-            autoupdate._check_npm("demo", "0")
+        autoupdate._check_npm("demo", "0")
     else:
-        from openprogram.updater import github
+        from openprogram.operations.self_update.github_release import github
 
         github.latest_release()
     assert managed_clients[0] == ("client", consumer, None)
@@ -389,7 +384,6 @@ def test_update_metadata_uses_fixed_registry_client(managed_clients, call, consu
 @pytest.mark.parametrize(
     ("call", "expected"),
     [
-        ("plugin_pip", "9.9.9"),
         ("plugin_npm", "9.9.9"),
         ("github_release", "release-payload"),
     ],
@@ -445,15 +439,11 @@ def test_update_metadata_requires_json_mime(
     monkeypatch.setattr(safe_http, "safe_client", lambda *_args, **_kwargs: Client())
 
     if call.startswith("plugin"):
-        from openprogram.plugins import autoupdate
+        from openprogram.extensions.plugins import autoupdate
 
-        result = (
-            autoupdate._check_pip("demo", "0")
-            if call == "plugin_pip"
-            else autoupdate._check_npm("demo", "0")
-        )
+        result = autoupdate._check_npm("demo", "0")
     else:
-        from openprogram.updater import github
+        from openprogram.operations.self_update.github_release import github
 
         result = github.latest_release()
     wanted = payload if expected == "release-payload" else expected
@@ -463,14 +453,14 @@ def test_update_metadata_requires_json_mime(
 def test_model_listing_openai_compat_freezes_configured_origin(
     monkeypatch, managed_clients
 ):
-    from openprogram.webui._model_listing.fetchers import openai_compat
+    from openprogram.models.listing.fetchers import openai_compat
 
     monkeypatch.setattr(
-        "openprogram.providers.env_api_keys.resolve_api_key_with_auth_store",
+        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
         lambda _provider: "secret",
     )
     monkeypatch.setattr(
-        "openprogram.providers.storage._resolve_base_url",
+        "openprogram.models.providers.settings.storage._resolve_base_url",
         lambda _provider: "http://127.0.0.1:19012/v1",
     )
     openai_compat._fetch_openai_compat("custom", 1)
@@ -485,11 +475,11 @@ def test_model_listing_openai_compat_freezes_configured_origin(
 def test_model_listing_credential_probe_uses_configured_registry_client(
     monkeypatch, managed_clients
 ):
-    from openprogram.webui._model_listing import credentials
+    from openprogram.models.listing import credentials
 
     monkeypatch.setattr(credentials, "_kind_for", lambda _provider: "openai_bearer")
     monkeypatch.setattr(
-        "openprogram.providers.storage._resolve_base_url",
+        "openprogram.models.providers.settings.storage._resolve_base_url",
         lambda _provider: "http://127.0.0.1:19013/v1",
     )
     credentials.validate_credential(
@@ -506,7 +496,7 @@ def test_model_listing_credential_probe_uses_configured_registry_client(
 def test_model_listing_fixed_google_probe_uses_fixed_registry_client(
     monkeypatch, managed_clients
 ):
-    from openprogram.webui._model_listing import credentials
+    from openprogram.models.listing import credentials
 
     monkeypatch.setattr(credentials, "_kind_for", lambda _provider: "google_query")
     credentials.validate_credential(
@@ -540,15 +530,15 @@ def test_codex_connectivity_probe_uses_configured_registry_client(
     import importlib
 
     test_provider = importlib.import_module(
-        "openprogram.webui._model_listing.test_provider"
+        "openprogram.models.listing.test_provider"
     )
 
     monkeypatch.setattr(
-        "openprogram.providers.env_api_keys.resolve_api_key_with_auth_store",
+        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
         lambda _provider: "secret",
     )
     monkeypatch.setattr(
-        "openprogram.providers.storage._resolve_base_url",
+        "openprogram.models.providers.settings.storage._resolve_base_url",
         lambda _provider: "http://127.0.0.1:19014/backend-api",
     )
     test_provider._codex_ping("openai-codex", "gpt-test", 1)
@@ -561,12 +551,12 @@ def test_codex_connectivity_probe_uses_configured_registry_client(
 
 
 def test_configured_credential_probe_hides_4xx_peer_body(monkeypatch, server):
-    from openprogram.webui._model_listing import credentials
+    from openprogram.models.listing import credentials
 
     base = f"http://127.0.0.1:{server.port}/echo-error"
     monkeypatch.setattr(credentials, "_kind_for", lambda _provider: "openai_bearer")
     monkeypatch.setattr(
-        "openprogram.providers.storage._resolve_base_url", lambda _provider: base
+        "openprogram.models.providers.settings.storage._resolve_base_url", lambda _provider: base
     )
 
     result = credentials.validate_credential(
@@ -580,15 +570,15 @@ def test_configured_credential_probe_hides_4xx_peer_body(monkeypatch, server):
 
 
 def test_configured_model_fetcher_hides_4xx_peer_body(monkeypatch, server):
-    from openprogram.webui._model_listing.fetchers import openai_compat
+    from openprogram.models.listing.fetchers import openai_compat
 
     base = f"http://127.0.0.1:{server.port}/echo-error"
     monkeypatch.setattr(
-        "openprogram.providers.env_api_keys.resolve_api_key_with_auth_store",
+        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
         lambda _provider: "HEADER-SECRET",
     )
     monkeypatch.setattr(
-        "openprogram.providers.storage._resolve_base_url", lambda _provider: base
+        "openprogram.models.providers.settings.storage._resolve_base_url", lambda _provider: base
     )
 
     result = openai_compat._fetch_openai_compat("custom", 1)
@@ -603,16 +593,16 @@ def test_configured_model_fetcher_hides_4xx_peer_body(monkeypatch, server):
 def test_configured_model_fetcher_rejects_non_2xx_without_leaking(
     monkeypatch, server, status
 ):
-    from openprogram.webui._model_listing.fetchers import openai_compat
+    from openprogram.models.listing.fetchers import openai_compat
 
     origin = f"http://127.0.0.1:{server.port}"
     base = f"{origin}/redirect-without-location/{status}/TOKEN-PATH?sig=QUERY-SECRET"
     monkeypatch.setattr(
-        "openprogram.providers.env_api_keys.resolve_api_key_with_auth_store",
+        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
         lambda _provider: "HEADER-SECRET",
     )
     monkeypatch.setattr(
-        "openprogram.providers.storage._resolve_base_url", lambda _provider: base
+        "openprogram.models.providers.settings.storage._resolve_base_url", lambda _provider: base
     )
 
     result = openai_compat._fetch_openai_compat("custom", 1)
@@ -631,8 +621,8 @@ def test_web_mcp_catalog_route_uses_configured_registry_client(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes.catalog import mcp
-    from openprogram import paths
+    from openprogram.interfaces.server.routes.catalog import mcp
+    from openprogram.state import paths
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     app = FastAPI()
@@ -655,8 +645,8 @@ def test_web_mcp_catalog_malformed_status_hides_signed_url_and_peer_echo(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram import paths
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.state import paths
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     app = FastAPI()
@@ -679,8 +669,8 @@ def test_web_mcp_catalog_rejects_non_2xx_without_leaking_signed_url_or_body(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram import paths
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.state import paths
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     app = FastAPI()
@@ -722,7 +712,7 @@ def _render_exception(error: BaseException) -> str:
 
 
 def test_skills_cli_status_error_hides_signed_source_url(server):
-    from openprogram.cli.commands.skills import _cmd_skills_search
+    from openprogram.interfaces.cli.commands.skills import _cmd_skills_search
 
     url = f"http://127.0.0.1:{server.port}/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
 
@@ -738,7 +728,7 @@ def test_skills_cli_status_error_hides_signed_source_url(server):
 
 
 def test_skills_rejects_redirect_without_location_as_sanitized_status(server):
-    from openprogram.skills import discovery
+    from openprogram.extensions.skills import discovery
 
     url = (
         f"http://127.0.0.1:{server.port}/redirect-without-location/302/"
@@ -758,7 +748,7 @@ def test_skills_rejects_redirect_without_location_as_sanitized_status(server):
 def test_skills_web_status_error_hides_signed_source_url(server):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes.catalog import skills
+    from openprogram.interfaces.server.routes.catalog import skills
 
     app = FastAPI()
     skills.register(app)
@@ -777,7 +767,7 @@ def test_skills_web_status_error_hides_signed_source_url(server):
 
 @pytest.mark.parametrize("operation", ["browse", "pull", "install"])
 def test_skills_invalid_index_hides_peer_values_from_runtime_entries(server, operation):
-    from openprogram.skills import discovery
+    from openprogram.extensions.skills import discovery
 
     server.mode = "index_invalid"
     url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
@@ -810,7 +800,7 @@ def test_skills_invalid_index_hides_peer_values_from_web_routes(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes.catalog import skills
+    from openprogram.interfaces.server.routes.catalog import skills
 
     server.mode = "index_invalid"
     url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
@@ -832,7 +822,7 @@ def test_skills_invalid_index_hides_peer_values_from_web_routes(
 
 
 def test_skills_invalid_index_hides_peer_values_from_cli(server):
-    from openprogram.cli.commands.skills import _cmd_skills_install, _cmd_skills_search
+    from openprogram.interfaces.cli.commands.skills import _cmd_skills_install, _cmd_skills_search
 
     server.mode = "index_invalid"
     url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
@@ -855,9 +845,9 @@ def test_marketplace_cli_and_web_status_errors_hide_signed_source_url(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.cli.commands.plugins import _cmd_plugins_search
-    from openprogram.plugins import marketplace
-    from openprogram.webui.routes.catalog import plugins
+    from openprogram.interfaces.cli.commands.plugins import _cmd_plugins_search
+    from openprogram.extensions.plugins import marketplace
+    from openprogram.interfaces.server.routes.catalog import plugins
 
     url = f"http://127.0.0.1:{server.port}/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
     entry = {"id": "signed", "name": "signed", "url": url}
@@ -880,7 +870,7 @@ def test_marketplace_cli_and_web_status_errors_hide_signed_source_url(
 
 
 def _github_over_real_managed(monkeypatch, server, *, body_cap=1024 * 1024):
-    from openprogram.skills import discovery
+    from openprogram.extensions.skills import discovery
 
     origin = f"http://public.test:{server.port}"
     monkeypatch.setattr(
@@ -933,7 +923,7 @@ def test_skills_github_archive_enforces_decoded_cap(
 
 
 def test_skills_configured_local_index_real_managed_success(monkeypatch, server):
-    from openprogram.skills import discovery
+    from openprogram.extensions.skills import discovery
 
     server.mode = "index"
     clients = []
@@ -952,7 +942,7 @@ def test_skills_configured_local_index_real_managed_success(monkeypatch, server)
 
 
 def test_skills_configured_index_rejects_wrong_json_mime(monkeypatch, server):
-    from openprogram.skills import discovery
+    from openprogram.extensions.skills import discovery
 
     server.mode = "index_wrong_mime"
 
@@ -963,8 +953,8 @@ def test_skills_configured_index_rejects_wrong_json_mime(monkeypatch, server):
 def test_web_mcp_catalog_rejects_wrong_json_mime(monkeypatch, server, tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram import paths
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.state import paths
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     server.mode = "index_wrong_mime"
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
@@ -985,9 +975,9 @@ def test_web_mcp_diff_keeps_same_origin_catalog_errors_distinct(
 ):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram import paths
-    from openprogram.mcp.config import MCPServerConfig, save_configs
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.state import paths
+    from openprogram.extensions.mcp.config import MCPServerConfig, save_configs
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     origin = f"http://127.0.0.1:{server.port}"
     sources = [

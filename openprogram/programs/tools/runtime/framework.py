@@ -1,9 +1,9 @@
 """Use product operations without clicking the OpenProgram frontend."""
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 
 
-@function(name='framework', toolset=['core'], unsafe_in=['wechat', 'telegram', 'plan'],
-          requires_approval=True, path_params={}, url_params=[], max_result_chars=48_000)
+@function(name='framework', toolset=['core'], unsafe_in=["plan"],
+          requires_approval=True, path_params={}, url_params=[])
 def framework(action: str = 'describe', operation: str = '', arguments: dict | None = None):
     """Discover and invoke authenticated OpenProgram backend operations.
 
@@ -14,11 +14,13 @@ def framework(action: str = 'describe', operation: str = '', arguments: dict | N
     ordinary JSON arguments, returning response frames. Long work continues in
     the backend; use execution/session APIs to observe it. interface with empty
     operation describes exact-window UI/native commands; use returned names and
-    schemas to manipulate views without screen automation. Never retry an
+    schemas to manipulate views without screen automation. A command on a web
+    tab names it as arguments.tab and as its first argument, by the tab's id
+    from computer_use_agent(target="browser", action="tabs"). Never retry an
     uncertain mutation or use this entry to answer your own approval request.
     Tool approval and owner/backend/sandbox restrictions still apply.
     """
-    from openprogram.framework.client import call
+    from openprogram.programs._host.framework.client import call
     from openprogram.programs import ToolReturn
     try:
         result = call(action, operation, arguments)

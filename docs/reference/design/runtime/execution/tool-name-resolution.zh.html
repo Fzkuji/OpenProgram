@@ -1,0 +1,24 @@
+<title>工具名解析</title>
+<meta name="description" content="模型可能发出的兼容拼写，以及各自何时解析到真实工具。">
+<h1>工具名解析</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">拼写</th><th scope="col">目标</th><th scope="col">条件</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Bash</code></th><td><code translate="no">bash</code></td><td>目标在本轮允许的工具列表中</td></tr>
+<tr><th scope="row"><code translate="no">Read</code></th><td><code translate="no">read</code></td><td>目标在本轮允许的工具列表中</td></tr>
+<tr><th scope="row"><code translate="no">ToolSearch</code></th><td><code translate="no">tool_search</code></td><td>目标在列表中。<code translate="no">query</code> 也接受 <code translate="no">select</code>；null 的可选 <code translate="no">max_results</code> 被省略。</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">精确名称</th><td>始终优先于别名</td></tr>
+<tr><th scope="row">解析后的调用</th><td>使用目标的 schema、预检、闸门和执行器；无效参数仍然校验失败</td></tr>
+<tr><th scope="row">未知或禁用的工具</th><td>仍不可用；别名到不了缺失的目标</td></tr>
+<tr><th scope="row">记录</th><td>原始调用名和 ID 保留在对话和事件记录中</td></tr>
+</tbody>
+</table>
+
+<p class="note">代码在 <code translate="no">openprogram/runtime/agent/loop/</code> 和 <code translate="no">openprogram/programs/_host/runtime.py</code>。不影响 provider 请求格式和权限策略。</p>

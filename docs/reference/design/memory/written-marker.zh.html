@@ -1,0 +1,178 @@
+<title>写入标记</title>
+<meta name="description" content="记忆如何知道分叉会话里哪些轮次已经写过：标记落在节点上，从每个分支尖端往回走。">
+<h1>记忆如何知道哪些轮次已写入</h1>
+
+<p>会话是 <a href="../runtime/dag/overview.zh.html">DAG</a>：重问、重试、派生都会分叉。每条分支都要进记忆，共享前缀只进一次。“已写入”记在该轮次自己的节点上。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 216" role="img" aria-label="主干九轮 m1 到 m9 全部已标记。一条分支从 m3 分出，有两轮未标记的 b1、b2。从分支尖端往回走，收集 b2 和 b1，到已标记的 m3 停下，于是交出两轮。主干和分支互相不需要知道对方。">
+  <defs><marker id="wm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="20">底色表示已标记</text>
+  <rect class="tile" x="0" y="36" width="44" height="32" rx="6"/><text class="mid" x="22" y="57">m1</text>
+  <rect class="tile" x="60" y="36" width="44" height="32" rx="6"/><text class="mid" x="82" y="57">m2</text>
+  <rect class="tile" x="120" y="36" width="44" height="32" rx="6"/><text class="mid" x="142" y="57">m3</text>
+  <rect class="tile" x="180" y="36" width="44" height="32" rx="6"/><text class="mid" x="202" y="57">m4</text>
+  <rect class="tile" x="240" y="36" width="44" height="32" rx="6"/><text class="mid" x="262" y="57">m5</text>
+  <rect class="tile" x="300" y="36" width="44" height="32" rx="6"/><text class="mid" x="322" y="57">m6</text>
+  <rect class="tile" x="360" y="36" width="44" height="32" rx="6"/><text class="mid" x="382" y="57">m7</text>
+  <rect class="tile" x="420" y="36" width="44" height="32" rx="6"/><text class="mid" x="442" y="57">m8</text>
+  <rect class="tile" x="480" y="36" width="44" height="32" rx="6"/><text class="mid" x="502" y="57">m9</text>
+  <path class="ln" d="M142 68V116H184"/>
+  <text class="mid" x="206" y="121">b1</text>
+  <line class="ln" x1="228" y1="116" x2="264" y2="116"/>
+  <text class="mid" x="286" y="121">b2</text>
+  <text class="t-soft" x="330" y="121">分支尖端，未标记</text>
+  <path class="ln-acc" d="M286 134V158H150V76" marker-end="url(#wm-a)"/>
+  <circle class="gate" cx="142" cy="72" r="5"/>
+  <text class="t-big" x="170" y="186">从尖端往回走，遇到第一个标记就停</text>
+  <text class="t-soft" x="170" y="208">交出 b1、b2，旧的在前</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>主干</strong><small>m1 到 m9，全部已标记</small></li>
+  <li class="via">分支从 m3 分出</li>
+  <li><strong>b1、b2</strong><small>未标记</small></li>
+  <li class="flow-end"><strong>从 b2 往回走</strong><small>收集 b2、b1；到已标记的 m3 停下</small></li>
+</ol>
+</figure>
+
+<h2 id="the-mark">标记</h2>
+<pre translate="no" tabindex="0"><code>{"id": "a3f1c2", "role": "user", "predecessor": "9d0e77",
+ "metadata": {"memory_written_scriptorium": "w-4f21c8e0"}}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">键名含 provider</th><td>记忆接口可插拔，共用布尔值在出现第二个 provider 时就错。这个名字是历史遗留，保持不变：改了会让已标记节点失效。不能和消息字段重名，因为 <code translate="no">_node_to_msg</code> 把 metadata 展开到顶层。</td></tr>
+<tr><th scope="row">值是 workspace</th><td>会话目录自描述，靠复制迁移。回走只在遇到本 workspace（<code translate="no">store.workspace_id()</code>）或 <code translate="no">project_layer.written_elsewhere()</code> 里的 id 时停，所以恢复备份保留标记，从别处复制来的会话从头写。一轮只写进一层，切换项目写入开关不会复制对话。</td></tr>
+<tr><th scope="row">写入方式</th><td><code translate="no">SessionStore.merge_node_metadata_batch</code>，经 <code translate="no">SessionLog.patch_node</code> 每节点一条 <code translate="no">node.patch</code> 日志记录</td></tr>
+</tbody>
+</table>
+
+<h2 id="reading">哪些轮次未写入</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">过滤</th><td><code translate="no">writing._records</code>：只取可引用发言者的 user、assistant 文本；工具行和运行时调度的轮次根本不进入，自然被跳过。没有稳定 id 的行抛错。</td></tr>
+<tr><th scope="row">回走</th><td><code translate="no">online.unwritten_turns</code>：尾部无标记的连续段，旧的在前</td></tr>
+<tr><th scope="row">分批</th><td><code translate="no">_first_batch</code>：取开头够阈值的轮次，一天的积压分多次写</td></tr>
+<tr><th scope="row">每轮</th><td><code translate="no">conversation/turn_runtime</code> 的 <code translate="no">_memory_write</code>：以 head 结尾的分支</td></tr>
+<tr><th scope="row">会话边界</th><td><code translate="no">session_watcher</code>（每 5 分钟轮询，空闲 30 分钟）强制 <code translate="no">write</code>：head 分支优先，再短也写；其余来自 <code translate="no">list_branches</code> 的存活、未归档尖端，未写文本够阈值才写</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">should_incremental_write</code> 的空闲放行不适用于被放弃的尖端：它们的最后一条消息必然旧，否则每次重试都会被放行。被回退的轮次到不了这里，<code translate="no">get_branch</code> 已滤掉。</p>
+
+<h2 id="marking">什么时候标记一批</h2>
+<table class="stack">
+<thead><tr><th scope="col">写入器结果</th><th scope="col">审计判断</th><th scope="col">这一批</th></tr></thead>
+<tbody>
+<tr><th scope="row">改了主题文件</th><td><code translate="no">_changed_files</code>：有 <code translate="no">status == "ok"</code> 的 <code translate="no">commit</code> 条目</td><td>标记</td></tr>
+<tr><th scope="row">判定没有值得保留的</th><td><code translate="no">_declined</code>：有收尾的 <code translate="no">agent</code> 条目，且 <code translate="no">Write</code>、<code translate="no">Edit</code>、<code translate="no">shell</code>、<code translate="no">commit</code> 无失败</td><td>标记。不标记会永远返回，并显示成 <code translate="no">WRITER_NO_PROGRESS</code>。</td></tr>
+<tr><th scope="row">其他</th><td>闭包返回 <code translate="no">None</code></td><td>不标记，重试</td></tr>
+</tbody>
+</table>
+<p class="note">没报错不等于有产出。实测：二十轮耗在同一个被拒的编辑上，返回成功，主题文件只有一个字节。</p>
+<ol>
+<li>以事务安装主题文件，要么全装要么不装。脚注直接链接聊天消息，不复制证据。</li>
+<li>标记这一批。两步之间崩溃就是重做；反过来会静默丢轮次。</li>
+</ol>
+
+<h2 id="losing-a-mark">标记丢失与账本损坏</h2>
+<p>宁可重做，不可沉默。读不了的 <code translate="no">runtime.json</code> 按空状态加载。一路没遇到标记就交出整条分支；写入器能看到已有主题文件，已知事实保持或合并。</p>
+<p>旧的 <code translate="no">cursors</code> 字段被忽略，也不从它派生标记：它的序号正是被分叉弄坏的值。升级后的会话多一次较大的写入。</p>
+
+<h2 id="costs">标记对会话存储的代价</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">关注点</th><th scope="col">事实</th></tr></thead>
+<tbody>
+<tr><th scope="row">记忆版本</th><td><code translate="no">workspace_revision</code> 只哈希记忆 workspace，与 <code translate="no">chats</code> 不相交，标记不会被当成并发记忆写入</td></tr>
+<tr><th scope="row">索引缓存</th><td>其他进程重建一次索引：289 节点、4.2 MB 用 14–50 毫秒（实测）。<code translate="no">mark_synced</code> 避免重复</td></tr>
+<tr><th scope="row">日志增长</th><td>每个被标记节点一条记录。只标记这一批，不扫全会话，否则随会话长度平方增长</td></tr>
+<tr><th scope="row">不能动 <code translate="no">updated_at</code></th><td>空闲监视器比较这个精确值；动了会强制写入并调用模型。所以不走 <code translate="no">append_message</code> 和 <code translate="no">SessionNodeWriter.append</code></td></tr>
+<tr><th scope="row">不能把别人的写入算成已同步</th><td><code translate="no">_open</code> 先重建过期索引；<code translate="no">_mark_own_write</code> 只吸收本进程自己的追加</td></tr>
+</tbody>
+</table>
+
+<h2 id="alternatives">为什么用标记</h2>
+<details>
+<summary>为什么不用位置游标</summary>
+<p>每会话一个序号，和分支展平后的行位置比较。序号描述的是展平结果，不是消息：同一消息在两条线上有两个号，同深度的不同消息共用一个号，<code translate="no">rewind</code> 或压缩还会让后面的行全部移位。它也数记忆跳过的行，所以下表是实测。</p>
+<table class="stack">
+<thead><tr><th scope="col">从 m3 分叉，存储序号 9</th><th scope="col">行数（共享 + 自有）</th><th scope="col">游标交出</th><th scope="col">标记交出</th></tr></thead>
+<tbody>
+<tr><th scope="row">短</th><td>5（3 + 2）</td><td>0</td><td>自有 2 轮全部</td></tr>
+<tr><th scope="row">长</th><td>11（3 + 8）</td><td>最后 2 轮，并把全部记为已写</td><td>自有 8 轮全部</td></tr>
+</tbody>
+</table>
+<p>长分支更糟：写入一段从对话中间开始的碎片，还报成功。单调计数器退不回分叉点，它和分叉对话本来就是两种形状。</p>
+</details>
+<details>
+<summary>为什么不在记忆旁存 id 集合</summary>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">节点上的标记</th><th scope="col">id 集合</th></tr></thead>
+<tbody>
+<tr><th scope="row">找未写入</th><td>从尖端走到第一个标记</td><td>走完整条分支再减集合</td></tr>
+<tr><th scope="row">分叉时</th><td>共享前缀已标记，回走停止</td><td>前缀 id 被跳过</td></tr>
+<tr><th scope="row">存储</th><td>现有节点上一个字段</td><td>每线程一个文件，存所有写过的 id</td></tr>
+<tr><th scope="row">增长</th><td>无</td><td>每条消息一项，保留到会话结束</td></tr>
+<tr><th scope="row">一次读取</th><td>从尖端走几步</td><td>该线程的整张表</td></tr>
+<tr><th scope="row">迁移</th><td>无：整段重交一次</td><td>无：集合从空开始</td></tr>
+<tr><th scope="row">丢一项</th><td>回走提前停，更早的轮次被搁浅</td><td>该轮次重新交出</td></tr>
+<tr><th scope="row">耦合</th><td>记忆往会话存储写一个字段</td><td>记忆自己记账</td></tr>
+</tbody>
+</table>
+<ul>
+<li>集合更精确：回走假设标记构成前缀，批次从旧到新使其成立，但没有校验。</li>
+<li>决定选择的是集合的代价：会话本来就按节点记录轮次来源和是否被 <code translate="no">rewind</code> 退役。</li>
+<li>指向轮次的标记节点（pi-mono 的形状）则会每批往图里加一个节点，所有读者都得跳过。</li>
+</ul>
+</details>
+<details>
+<summary>其他 agent 框架的做法</summary>
+<p><code translate="no">references/</code> 下七个框架有答案；<code translate="no">claude-code/</code> 只有一个工具，没有会话代码。</p>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">形状</th><th scope="col">记忆</th><th scope="col">记录</th><th scope="col">分叉时</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td>每 rollout 一条线；分叉即新线程</td><td>按 rollout 抽取，再整合</td><td><code translate="no">memories_1.sqlite</code> 按 <code translate="no">thread_id</code> 存 <code translate="no">jobs.input_watermark</code>、<code translate="no">last_success_watermark</code> 和租约</td><td>新线程无记录：前缀抽取两次</td></tr>
+<tr><th scope="row">openclaw</th><td>DAG，<code translate="no">id</code>/<code translate="no">parentId</code>，一份 JSONL</td><td><code translate="no">dreaming-phases</code>、<code translate="no">short-term-promotion</code></td><td><code translate="no">session-ingestion.json</code> 的 <code translate="no">lastContentLine</code> 和 <code translate="no">seenMessages</code>；派生候选上的 <code translate="no">promotedAt</code></td><td>新文件从第 0 行：前缀摄入两次。重试改哈希并重扫</td></tr>
+<tr><th scope="row">hermes-agent</th><td>每会话一条线，存 SQLite；<code translate="no">/branch</code> 复制行</td><td><code translate="no">MEMORY.md</code>/<code translate="no">USER.md</code>，八个 provider</td><td>记忆没有：每轮 <code translate="no">sync_all</code>。SQLite 用 <code translate="no">_last_flushed_db_idx</code></td><td>各分叉点手工重置基线；八个 provider 有七个没实现 <code translate="no">on_session_switch</code></td></tr>
+<tr><th scope="row">pi-mono</th><td>DAG，只追加；<code translate="no">label</code>、<code translate="no">leaf</code> 条目</td><td>无</td><td>分支摘要在导航时走树</td><td>没有可过期的东西</td></tr>
+<tr><th scope="row">opencode</th><td>线，SQLite <code translate="no">seq</code></td><td>无</td><td>—</td><td><code translate="no">revert</code> 后下一次提问删除之后的消息</td></tr>
+<tr><th scope="row">pi-ai</th><td>无状态客户端</td><td>无</td><td>—</td><td>无分支</td></tr>
+<tr><th scope="row">weclaw</th><td>缓存下游 id；HTTP 保留 20 轮</td><td>无</td><td>—</td><td>无分叉</td></tr>
+</tbody>
+</table>
+<ul>
+<li>没有人把记录放在轮次上。openclaw 的 <code translate="no">promotedAt</code> 最接近，但在派生记录上。</li>
+<li>实际只有两种形状：把单位放粗到分叉无所谓（codex-cli、openclaw、hermes-agent），或从树上算增量（pi-mono）。放粗就放弃了从活会话写入。</li>
+<li>它们分叉时的故障是重复，夜间整理能合并。位置游标的故障是遗漏，没有东西能补回。</li>
+<li>借鉴：宁可重做，不可沉默。位置丢失时全部重数，因为数出零会让后续抽取永久停止。</li>
+</ul>
+</details>
+
+<h2 id="open-boundaries">未解决的边界</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">现状</th></tr></thead>
+<tbody>
+<tr><th scope="row">前缀假设</th><td>在线写入保持批次从旧到新；没有校验更早的轮次都已标记</td></tr>
+<tr><th scope="row">被放弃的分支</th><td>只在会话边界写。head 有五处写入，它们共用的函数丢弃旧值，也没有事件通知移动</td></tr>
+<tr><th scope="row">两条分支，一套主题文件</th><td>主题格式无法表达两个说法互为替代；检索两个都返回</td></tr>
+<tr><th scope="row">跨会话派生</th><td>两半各在自己的会话下写一次；没有链接说明子 agent 延续调用者</td></tr>
+<tr><th scope="row">压缩摘要</th><td>摘要是 head 所在线的兄弟节点，所以写的是原始轮次。head 移到摘要线上时，摘要成为一条复述记忆的未写入 assistant 轮次</td></tr>
+<tr><th scope="row">标记的含义</th><td>交给了写入器，不代表被引用：一批折成一条引用，所有轮次都被标记</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现：标记、分支回走、基于证据的标记、边界写入。测试：<code translate="no">tests/component/memory/test_memory_written_marker.py</code>。</p>
+<details>
+<summary>未实现，也未排期</summary>
+<table class="stack">
+<thead><tr><th scope="col">形状</th><th scope="col">好处</th><th scope="col">阻碍</th></tr></thead>
+<tbody>
+<tr><th scope="row">记忆自身的引用就是记录：可达且未被引用即未写入</th><td>不会与记忆不一致，不需要 workspace id，没有丢标记的情况</td><td>被引用不等于被读过：问候或并入的更正没有引用，每次都会返回。脚注索引也会变成正确性依赖</td></tr>
+<tr><th scope="row">记录知道自己的分支</th><td>检索优先读者所在分支；矛盾显示为分叉</td><td>主题格式、<code translate="no">retrieval/</code> 过滤、整理提示都缺；只有分支确实矛盾时才错</td></tr>
+<tr><th scope="row">记忆被通知而不是轮询</th><td>被放弃的分支能及时写入</td><td>五条写 head 的路径；等待不丢东西</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="overview.zh.html">记忆概览</a></p>

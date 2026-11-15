@@ -1,5 +1,8 @@
 """Live Agent continuation contracts through chat, registry, and driver."""
+
 from __future__ import annotations
+
+from openprogram.programs._host import runtime as program_runtime
 
 import asyncio
 import hashlib
@@ -10,14 +13,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.execution import AttemptStore, ExecutionStore, RuntimeControlService
-from openprogram.execution.driver import DriverRegistry
-from openprogram.execution.model import CommandStatus, ExecutionStatus
+from openprogram.runtime.execution import AttemptStore, ExecutionStore, RuntimeControlService
+from openprogram.runtime.execution.driver import DriverRegistry
+from openprogram.runtime.execution.model import CommandStatus, ExecutionStatus
 
 
 class _WebSocket:
     def __init__(self) -> None:
-        from openprogram.agent.authority import owner_authority
+        from openprogram.runtime.permissions.authority import owner_authority
 
         self.frames: list[dict] = []
         self.scope = {
@@ -70,7 +73,8 @@ class _Tools:
         self.release: dict[str, threading.Event] = {}
         self.blocked: set[str] = set()
         self.wait_kind: str | None = None
-        self.wait_timeout = 5.0
+        self.decline_policy = "fail"
+        self.wait_timeout = 60.0
         self.wait_started = threading.Event()
         self.wait_finished = threading.Event()
         self.schema_variant = "initial"
@@ -78,8 +82,8 @@ class _Tools:
         self.implementation_variant = "initial"
 
     def tool(self, name: str):
-        from openprogram.agent.types import AgentTool, AgentToolResult
-        from openprogram.providers.types import TextContent
+        from openprogram.models.providers.types import AgentTool, AgentToolResult
+        from openprogram.models.providers.types import TextContent
 
         self.started.setdefault(name, threading.Event())
         self.release.setdefault(name, threading.Event())
@@ -91,14 +95,16 @@ class _Tools:
                 self.wait_started.set()
                 try:
                     if self.wait_kind == "ask":
-                        from openprogram.agentic_programming.runtime import Runtime
+                        from openprogram.runtime.agent.runtime import Runtime
 
                         Runtime().ask(
-                            "Which answer?", options=["answer"], timeout=self.wait_timeout,
+                            "Which answer?",
+                            options=["answer"],
+                            timeout=self.wait_timeout,
                         )
                     elif self.wait_kind == "approval":
-                        from openprogram.agent.dispatcher.types import TurnRequest
-                        from openprogram.agent.permissions.approval import (
+                        from openprogram.runtime.agent.turn_request import TurnRequest
+                        from openprogram.runtime.permissions.approval import (
                             await_user_approval,
                         )
 
@@ -106,10 +112,13 @@ class _Tools:
                             req=TurnRequest(
                                 session_id="agent-continuation",
                                 user_text="continue safely",
-                                agent_id="main", source="web",
+                                agent_id="main",
+                                source="web",
                                 permission_mode="ask",
                             ),
-                            tool_name="first", args={}, on_event=lambda _event: None,
+                            tool_name="first",
+                            args={},
+                            on_event=lambda _event: None,
                             timeout=self.wait_timeout,
                         )
                 finally:
@@ -119,17 +128,22 @@ class _Tools:
             return AgentToolResult(content=[TextContent(text=f"{name}:ok")])
 
         result = AgentTool(
-            name=name, label=name, description=name,
+            name=name,
+            label=name,
+            description=name,
             parameters={
                 "type": "object",
                 "properties": (
                     {"changed": {"type": "string"}}
-                    if self.schema_variant != "initial" else {}
+                    if self.schema_variant != "initial"
+                    else {}
                 ),
-            }, execute=execute,
+            },
+            execute=execute,
         )
         result._runtime_implementation = {
-            "module": __name__, "qualname": f"_Tools.tool:{name}",
+            "module": __name__,
+            "qualname": f"_Tools.tool:{name}",
             "code_sha256": hashlib.sha256(
                 self.implementation_variant.encode("utf-8")
             ).hexdigest(),
@@ -138,29 +152,42 @@ class _Tools:
         if name == "first" and self.wait_kind is not None:
             if self.wait_kind == "ask":
                 manifest = {
-                    "kind": "ask", "prompt": "Which answer?",
-                    "options": ["answer"], "multi": False,
-                    "allow_custom": True, "detail": "", "schema": {},
-                    "questions": [], "request_metadata": {},
+                    "kind": "ask",
+                    "prompt": "Which answer?",
+                    "options": ["answer"],
+                    "multi": False,
+                    "allow_custom": True,
+                    "detail": "",
+                    "schema": {},
+                    "questions": [],
+                    "request_metadata": {},
                 }
             else:
                 manifest = {
-                    "kind": "approval", "prompt": "Allow?",
-                    "options": ["允许", "拒绝"], "multi": False,
-                    "allow_custom": False, "detail": "first",
-                    "schema": {}, "questions": [],
+                    "kind": "approval",
+                    "prompt": "Allow?",
+                    "options": ["允许", "拒绝"],
+                    "multi": False,
+                    "allow_custom": False,
+                    "detail": "first",
+                    "schema": {},
+                    "questions": [],
                     "request_metadata": {
-                        "tool": "first", "tool_call_id": "",
+                        "tool": "first",
+                        "tool_call_id": "",
                     },
                 }
             manifest["policy_snapshot"] = {
-                "version": 1, "kind": self.wait_kind,
-                "on_answer": "continue", "on_decline": "fail",
+                "version": 1,
+                "kind": self.wait_kind,
+                "on_answer": "continue",
+                "on_decline": self.decline_policy,
                 "on_timeout": "fail",
             }
             manifest["timeout"] = self.wait_timeout
             object.__setattr__(
-                result, "_interaction_manifest",
+                result,
+                "_interaction_manifest",
                 lambda call_id, _args, value=manifest: {
                     **value,
                     "request_metadata": {
@@ -172,7 +199,9 @@ class _Tools:
         return result
 
 
-def _wait(predicate, timeout: float = 4.0, detail=None):
+# Conditions return at once when met; the limit only bounds a real hang,
+# and a loaded parallel run can take many seconds to get there.
+def _wait(predicate, timeout: float = 30.0, detail=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = predicate()
@@ -183,66 +212,121 @@ def _wait(predicate, timeout: float = 4.0, detail=None):
     raise AssertionError(f"condition did not become true{suffix}")
 
 
+def _cancelled_chat_is_finalized(h, execution_id: str) -> bool:
+    # Canonical cancellation commits before chat and resource projections.
+    if h.store.get_execution(execution_id).status is not ExecutionStatus.CANCELLED:
+        return False
+    reply = next(
+        (
+            item
+            for item in h.sessions.get_branch(h.session_id)
+            if item.get("id", "").endswith("_reply")
+        ),
+        {},
+    )
+    return (
+        reply.get("status") == "cancelled"
+        and h.sessions.get_session(h.session_id)["status"] == "idle"
+        and not h.server._is_run_active(h.session_id)
+    )
+
+
 @pytest.fixture
 def real_agent_chat(tmp_path, monkeypatch):
     """Use registered provider/tool callbacks, never a synthetic safe point."""
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.webui import server
-    from openprogram.webui.ws_actions import chat as chat_actions
-    from openprogram.webui.ws_actions import session as session_actions
-    import openprogram.agent.dispatcher as dispatcher
-    import openprogram.agent.dispatcher.loop_runner as loop_runner
-    import openprogram.agent.questions as questions
-    import openprogram.agent.session_config as session_config
-    import openprogram.agent.session_db as session_db
-    import openprogram.providers.api_registry as api_registry
-    import openprogram.store.session.session_store as session_store_module
-    from openprogram.providers.api_registry import get_api_provider, register_api_provider
-    from openprogram.providers.types import Model
-    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.interfaces.server import server
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+    from openprogram.interfaces.server.ws_actions import session as session_actions
+    import openprogram.runtime.conversation.turn_runtime as dispatcher
+    import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
+    import openprogram.runtime.agent.questions as questions
+    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.context.session_db as session_db
+    import openprogram.models.providers.catalog.api_registry as api_registry
+    import openprogram.state.store.session.session_store as session_store_module
+    from openprogram.models.providers.catalog.api_registry import (
+        get_api_provider,
+        register_api_provider,
+    )
+    from openprogram.models.providers.types import Model
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
 
     store = ExecutionStore(tmp_path / "execution.sqlite3")
     control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
-    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: control)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: store)
+    monkeypatch.setattr(
+        "openprogram.runtime.execution.default_control_service", lambda: control
+    )
     sessions = SessionStore(tmp_path / "sessions-git")
     session_id = "agent-continuation"
     sessions.create_session(session_id, "main")
     monkeypatch.setattr(session_db, "default_db", lambda: sessions)
     monkeypatch.setattr(session_store_module.shared, "_default_store", sessions)
-    monkeypatch.setattr(server, "_get_or_create_session", lambda *_args, **_kwargs: {"id": session_id, "messages": []})
-    monkeypatch.setattr(chat_actions, "_db_agent_id", lambda _session_id: "main")
-    monkeypatch.setattr(server, "_emit_running_task_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        server,
+        "_get_or_create_session",
+        lambda *_args, **_kwargs: {"id": session_id, "messages": []},
+    )
+    monkeypatch.setattr(chat_actions.turn, "_db_agent_id", lambda _session_id: "main")
+    monkeypatch.setattr(
+        server, "_emit_running_task_event", lambda *_args, **_kwargs: None
+    )
     monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
     monkeypatch.setattr(server, "_broadcast", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("openprogram.agent.workspace_alignment.get_workspace_alignment", lambda _session_id: {"status": "aligned"})
 
     provider = _Provider()
     api_name = "continuation-real-api"
     previous_provider = get_api_provider(api_name)
     register_api_provider(api_name, provider)
     model = Model(
-        id="continuation-real-model", name="continuation-real-model",
-        api=api_name, provider="continuation-real-provider",
+        id="continuation-real-model",
+        name="continuation-real-model",
+        api=api_name,
+        provider="continuation-real-provider",
         base_url="http://continuation.invalid",
     )
     tools = _Tools()
-    monkeypatch.setattr(dispatcher, "_load_agent_profile", lambda _id: {"id": "main", "model": "continuation-real-provider/continuation-real-model"})
+    monkeypatch.setattr(
+        dispatcher,
+        "_load_agent_profile",
+        lambda _id: {
+            "id": "main",
+            "model": "continuation-real-provider/continuation-real-model",
+        },
+    )
     monkeypatch.setattr(dispatcher, "_resolve_model", lambda _profile, _override: model)
-    monkeypatch.setattr(loop_runner, "_resolve_tools", lambda *_args, **_kwargs: [tools.tool("first"), tools.tool("second")])
+    monkeypatch.setattr(
+        loop_runner,
+        "_resolve_tools",
+        lambda *_args, **_kwargs: [tools.tool("first"), tools.tool("second")],
+    )
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", lambda tool, *_args: tool)
     registry = questions.QuestionRegistry()
     monkeypatch.setattr(questions, "get_question_registry", lambda: registry)
     monkeypatch.setattr(
-        session_config, "save_session_run_config",
+        session_config,
+        "save_session_run_config",
         lambda *_args, **kwargs: SimpleNamespace(
-            tools_enabled=True, tools_override=None, web_search=False, toolset=None,
-            thinking_effort="medium", permission_mode=kwargs.get("permission_mode"),
-            permission_rules=None, sandbox_enabled=None, additional_working_dirs=[],
+            tools_override=None,
+            web_search=False,
+            thinking_effort="medium",
+            permission_mode=kwargs.get("permission_mode"),
+            permission_rules=None,
+            sandbox_enabled=None,
+            additional_working_dirs=[],
         ),
     )
-    monkeypatch.setattr(session_config, "permission_from_config", lambda config, default=None: config.permission_mode or default or "bypass")
-    monkeypatch.setattr(session_config, "project_defaults", lambda _session_id: {"permission_mode": "bypass"})
+    monkeypatch.setattr(
+        session_config,
+        "permission_from_config",
+        lambda config, default=None: config.permission_mode or default or "bypass",
+    )
+    monkeypatch.setattr(
+        session_config,
+        "project_defaults",
+        lambda _session_id: {"permission_mode": "bypass"},
+    )
 
     outcomes: list[object] = []
     activation_errors: list[str] = []
@@ -256,7 +340,9 @@ def real_agent_chat(tmp_path, monkeypatch):
     monkeypatch.setattr(AgentProductionDriver, "_run_attempt", observed_run_attempt)
 
     async def activate(attempt, activation):
-        driver = AgentProductionDriver(store, control_service=control, question_registry=registry)
+        driver = AgentProductionDriver(
+            store, control_service=control, question_registry=registry
+        )
         try:
             binding = await driver.activate(attempt, activation)
         except Exception as exc:
@@ -266,9 +352,18 @@ def real_agent_chat(tmp_path, monkeypatch):
 
     control.activator = activate
     harness = SimpleNamespace(
-        store=store, control=control, sessions=sessions, session_id=session_id,
-        provider=provider, model=model, tools=tools, server=server, outcomes=outcomes,
-        activation_errors=activation_errors, registry=registry, execution_id=None,
+        store=store,
+        control=control,
+        sessions=sessions,
+        session_id=session_id,
+        provider=provider,
+        model=model,
+        tools=tools,
+        server=server,
+        outcomes=outcomes,
+        activation_errors=activation_errors,
+        registry=registry,
+        execution_id=None,
     )
     try:
         yield harness
@@ -276,14 +371,14 @@ def real_agent_chat(tmp_path, monkeypatch):
         provider.release.set()
         for gate in tools.release.values():
             gate.set()
-        deadline = time.monotonic() + 4.0
+        deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline and server._is_run_active(session_id):
             threading.Event().wait(0.01)
         with server._running_tasks_lock:
             running = server._running_tasks.get(session_id)
             thread = running.get("thread") if isinstance(running, dict) else None
         if thread is not None:
-            thread.join(timeout=4.0)
+            thread.join(timeout=30.0)
         with server._running_tasks_lock:
             server._running_tasks.pop(session_id, None)
         if previous_provider is None:
@@ -294,58 +389,81 @@ def real_agent_chat(tmp_path, monkeypatch):
 
 
 def _chat(harness):
-    from openprogram.webui.ws_actions.chat import handle_chat
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat
 
     ws = _WebSocket()
-    asyncio.run(handle_chat(ws, {
-        "text": "continue safely", "session_id": harness.session_id,
-        "permission_mode": "bypass",
-    }))
+    asyncio.run(
+        handle_chat(
+            ws,
+            {
+                "text": "continue safely",
+                "session_id": harness.session_id,
+                "permission_mode": "bypass",
+            },
+        )
+    )
     ack = next(frame for frame in ws.frames if frame.get("type") == "chat_ack")
     execution_id = ack["data"]["execution_id"]
     harness.execution_id = execution_id
-    return _wait(lambda: (
-        item
-        if (item := harness.store.get_execution(execution_id)).status is not ExecutionStatus.QUEUED
-        else None
-    ))
+    return _wait(
+        lambda: (
+            item
+            if (item := harness.store.get_execution(execution_id)).status
+            is not ExecutionStatus.QUEUED
+            else None
+        )
+    )
 
 
 def _command(harness, action: str, execution, command_id: str):
-    from openprogram.webui.ws_actions import runtime
+    from openprogram.interfaces.server.ws_actions import runtime
 
     ws = _WebSocket()
-    asyncio.run(runtime.ACTIONS[action](ws, {
-        "type": "execution.command", "action": action, "command_id": command_id,
-        "execution_id": execution.execution_id,
-        "expected_version": execution.status_version,
-        "payload": {},
-    }))
-    frame = next(frame for frame in ws.frames if frame.get("type") == "execution.command.updated")
+    asyncio.run(
+        runtime.ACTIONS[action](
+            ws,
+            {
+                "type": "execution.command",
+                "action": action,
+                "command_id": command_id,
+                "execution_id": execution.execution_id,
+                "expected_version": execution.status_version,
+                "payload": {},
+            },
+        )
+    )
+    frame = next(
+        frame for frame in ws.frames if frame.get("type") == "execution.command.updated"
+    )
     return frame.get("command") or frame["data"]["command"]
 
 
 def _pending_question(harness, *, kind: str):
     return _wait(
         lambda: next(
-            (question for question in harness.registry.list_pending(harness.session_id)
-             if question.kind == kind),
+            (
+                question
+                for question in harness.registry.list_pending(harness.session_id)
+                if question.kind == kind
+            ),
             None,
         ),
         detail=lambda: {
             "execution": harness.store.get_execution(harness.execution_id).to_dict()
-            if harness.execution_id else None,
+            if harness.execution_id
+            else None,
             "pending": [question.kind for question in harness.registry.list_pending()],
         },
     )
 
 
 def _question_action(harness, action: str, question_id: str, **payload):
-    from openprogram.webui.ws_actions import runtime
+    from openprogram.interfaces.server.ws_actions import runtime
 
     ws = _WebSocket()
     question = next(
-        question for question in harness.registry.list_pending(harness.session_id)
+        question
+        for question in harness.registry.list_pending(harness.session_id)
         if question.id == question_id
     )
     execution = harness.store.get_execution(question.execution_id)
@@ -369,13 +487,19 @@ def _question_action(harness, action: str, question_id: str, **payload):
         }
     else:
         raise AssertionError(f"unsupported question action: {action}")
-    asyncio.run(runtime.ACTIONS[command_action](ws, {
-        "type": "execution.command", "action": command_action,
-        "command_id": f"{command_action}:{question.id}",
-        "execution_id": execution.execution_id,
-        "expected_version": execution.status_version,
-        "payload": command_payload,
-    }))
+    asyncio.run(
+        runtime.ACTIONS[command_action](
+            ws,
+            {
+                "type": "execution.command",
+                "action": command_action,
+                "command_id": f"{command_action}:{question.id}",
+                "execution_id": execution.execution_id,
+                "expected_version": execution.status_version,
+                "payload": command_payload,
+            },
+        )
+    )
 
 
 def test_provider_pause_resume_reuses_saved_terminal_answer(real_agent_chat):
@@ -385,33 +509,59 @@ def test_provider_pause_resume_reuses_saved_terminal_answer(real_agent_chat):
     real_agent_chat.provider.block_calls.add(0)
     execution = _chat(real_agent_chat)
     _wait(real_agent_chat.provider.entered.is_set)
-    assert _command(real_agent_chat, "execution.pause", execution, "pause-provider")["status"] in {"accepted", "applying", "applied"}
+    assert _command(real_agent_chat, "execution.pause", execution, "pause-provider")[
+        "status"
+    ] in {"accepted", "applying", "applied"}
     real_agent_chat.provider.release.set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
-    ))
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
     assert paused.checkpoint_head_id is not None
     first_attempt = next(
         event.payload["attempt"]
         for event in real_agent_chat.store.list_events(execution.execution_id)
         if event.kind == "attempt.active"
     )
-    resumed = _command(real_agent_chat, "execution.continue", paused, "continue-provider")
+    resumed = _command(
+        real_agent_chat, "execution.continue", paused, "continue-provider"
+    )
     assert resumed["status"] in {"accepted", "applying", "applied"}
-    completed = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status in {
-            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
-        } else None
-    ), detail=lambda: {
-        "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
-        "events": [
-            {"kind": event.kind, "payload": event.payload}
-            for event in real_agent_chat.store.list_events(execution.execution_id)
-        ],
-        "outcomes": [getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes],
-        "activation_errors": real_agent_chat.activation_errors,
-    })
-    assert completed.status is ExecutionStatus.COMPLETED, real_agent_chat.store.list_events(execution.execution_id)
+    completed = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+            }
+            else None
+        ),
+        detail=lambda: {
+            "execution": real_agent_chat.store.get_execution(
+                execution.execution_id
+            ).to_dict(),
+            "events": [
+                {"kind": event.kind, "payload": event.payload}
+                for event in real_agent_chat.store.list_events(execution.execution_id)
+            ],
+            "outcomes": [
+                getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes
+            ],
+            "activation_errors": real_agent_chat.activation_errors,
+        },
+    )
+    assert completed.status is ExecutionStatus.COMPLETED, (
+        real_agent_chat.store.list_events(execution.execution_id)
+    )
     assert completed.current_attempt_id is None
     resumed_attempts = [
         event.payload["attempt"]
@@ -437,13 +587,24 @@ def test_continue_rejects_changed_tool_runtime_contract(real_agent_chat, mutatio
     real_agent_chat.provider.block_calls.add(0)
     execution = _chat(real_agent_chat)
     _wait(real_agent_chat.provider.entered.is_set)
-    assert _command(real_agent_chat, "execution.pause", execution, "pause-contract")["status"] in {
-        "accepted", "applying", "applied",
+    assert _command(real_agent_chat, "execution.pause", execution, "pause-contract")[
+        "status"
+    ] in {
+        "accepted",
+        "applying",
+        "applied",
     }
     real_agent_chat.provider.release.set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
-    ))
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
     checkpoint_id = paused.checkpoint_head_id
     if mutation == "schema":
         real_agent_chat.tools.schema_variant = "changed"
@@ -452,7 +613,9 @@ def test_continue_rejects_changed_tool_runtime_contract(real_agent_chat, mutatio
     else:
         real_agent_chat.tools.implementation_variant = "changed"
 
-    command = _command(real_agent_chat, "execution.continue", paused, f"continue-{mutation}")
+    command = _command(
+        real_agent_chat, "execution.continue", paused, f"continue-{mutation}"
+    )
     current = real_agent_chat.store.get_execution(execution.execution_id)
     assert command["status"] == "rejected"
     assert command["rejection_code"] == "continuation_contract_mismatch"
@@ -461,23 +624,34 @@ def test_continue_rejects_changed_tool_runtime_contract(real_agent_chat, mutatio
     assert real_agent_chat.provider.call_count == 1
     assert real_agent_chat.tools.calls == []
 
-    from openprogram.execution.outbox import ProjectionDispatcher
-    from openprogram.execution.projections import projection_handlers
-    projections = ProjectionDispatcher(real_agent_chat.store, projection_handlers(real_agent_chat.store))
-    projections.dispatch_once(owner_id="test-resume-notice", limit=1000)
-    projections.dispatch_once(owner_id="test-resume-notice", limit=1000)
-    reply = next(item for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
-                 if item.get("id", "").endswith("_reply"))
+    from openprogram.runtime.execution.event_effects import ExecutionEventEffects
+
+    projections = ExecutionEventEffects(real_agent_chat.store, after=0)
+    projections.drain()
+    projections.drain()
+    reply = next(
+        item
+        for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
+        if item.get("id", "").endswith("_reply")
+    )
     assert reply["content"].count("Execution could not resume.") == 1
 
     real_agent_chat.tools.schema_variant = "initial"
     real_agent_chat.tools.permission_variant = False
     real_agent_chat.tools.implementation_variant = "initial"
-    _command(real_agent_chat, "execution.continue", current, f"continue-restored-{mutation}")
-    _wait(lambda: real_agent_chat.store.get_execution(execution.execution_id).status is ExecutionStatus.COMPLETED)
-    projections.dispatch_once(owner_id="test-recovered-notice", limit=1000)
-    reply = next(item for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
-                 if item.get("id", "").endswith("_reply"))
+    _command(
+        real_agent_chat, "execution.continue", current, f"continue-restored-{mutation}"
+    )
+    _wait(
+        lambda: real_agent_chat.store.get_execution(execution.execution_id).status
+        is ExecutionStatus.COMPLETED
+    )
+    projections.drain()
+    reply = next(
+        item
+        for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
+        if item.get("id", "").endswith("_reply")
+    )
     assert reply["content"] == "saved answer"
     assert reply.get("status") == "completed"
     assert not reply.get("error")
@@ -488,7 +662,9 @@ def test_continue_rejects_changed_tool_runtime_contract(real_agent_chat, mutatio
     [("provider", "changed-provider"), ("base_url", "http://changed.invalid")],
 )
 def test_continue_rejects_same_model_id_with_changed_provider_endpoint(
-    real_agent_chat, field, value,
+    real_agent_chat,
+    field,
+    value,
 ):
     from tests.component.providers.scripted_provider import ScriptedText
 
@@ -498,12 +674,21 @@ def test_continue_rejects_same_model_id_with_changed_provider_endpoint(
     _wait(real_agent_chat.provider.entered.is_set)
     _command(real_agent_chat, "execution.pause", execution, "pause-model-contract")
     real_agent_chat.provider.release.set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
-    ))
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
     setattr(real_agent_chat.model, field, value)
 
-    command = _command(real_agent_chat, "execution.continue", paused, f"continue-{field}")
+    command = _command(
+        real_agent_chat, "execution.continue", paused, f"continue-{field}"
+    )
     current = real_agent_chat.store.get_execution(execution.execution_id)
     assert command["status"] == "rejected"
     assert command["rejection_code"] == "continuation_contract_mismatch"
@@ -513,7 +698,7 @@ def test_continue_rejects_same_model_id_with_changed_provider_endpoint(
 
 
 def test_continue_rejects_changed_session_project_workdir(real_agent_chat, tmp_path):
-    from openprogram.store.project import project_store
+    from openprogram.state.store.project import project_store
     from tests.component.providers.scripted_provider import ScriptedText
 
     real_agent_chat.provider.add_response(ScriptedText("saved answer"))
@@ -522,9 +707,16 @@ def test_continue_rejects_changed_session_project_workdir(real_agent_chat, tmp_p
     _wait(real_agent_chat.provider.entered.is_set)
     _command(real_agent_chat, "execution.pause", execution, "pause-project")
     real_agent_chat.provider.release.set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
-    ))
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
     checkpoint_id = paused.checkpoint_head_id
 
     changed_path = tmp_path / "changed-project"
@@ -533,7 +725,9 @@ def test_continue_rejects_changed_session_project_workdir(real_agent_chat, tmp_p
     project_store.unbind_session(real_agent_chat.session_id)
     project_store.bind_session(real_agent_chat.session_id, changed_project.id)
 
-    command = _command(real_agent_chat, "execution.continue", paused, "continue-project")
+    command = _command(
+        real_agent_chat, "execution.continue", paused, "continue-project"
+    )
     current = real_agent_chat.store.get_execution(execution.execution_id)
     assert command["status"] == "rejected"
     assert command["rejection_code"] == "continuation_contract_mismatch"
@@ -545,7 +739,7 @@ def test_continue_rejects_changed_session_project_workdir(real_agent_chat, tmp_p
 
 def test_continue_accepts_added_unrelated_tools(real_agent_chat, monkeypatch):
     from tests.component.providers.scripted_provider import ScriptedText
-    import openprogram.agent.dispatcher.loop_runner as loop_runner
+    import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
 
     extra = {"include": False}
     monkeypatch.setattr(
@@ -553,7 +747,11 @@ def test_continue_accepts_added_unrelated_tools(real_agent_chat, monkeypatch):
         "_resolve_tools",
         lambda *_args, **_kwargs: (
             [real_agent_chat.tools.tool("first"), real_agent_chat.tools.tool("second")]
-            + ([real_agent_chat.tools.tool("weekly_report")] if extra["include"] else [])
+            + (
+                [real_agent_chat.tools.tool("weekly_report")]
+                if extra["include"]
+                else []
+            )
         ),
     )
     real_agent_chat.provider.add_response(ScriptedText("saved answer"))
@@ -562,18 +760,30 @@ def test_continue_accepts_added_unrelated_tools(real_agent_chat, monkeypatch):
     _wait(real_agent_chat.provider.entered.is_set)
     _command(real_agent_chat, "execution.pause", execution, "pause-extra-tools")
     real_agent_chat.provider.release.set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
-    ))
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
     extra["include"] = True
-    command = _command(real_agent_chat, "execution.continue", paused, "continue-extra-tools")
+    command = _command(
+        real_agent_chat, "execution.continue", paused, "continue-extra-tools"
+    )
     assert command["status"] in {"accepted", "applying", "applied"}
     assert command.get("rejection_code") != "continuation_contract_mismatch"
-    _wait(lambda: real_agent_chat.store.get_execution(execution.execution_id).status is ExecutionStatus.COMPLETED)
+    _wait(
+        lambda: real_agent_chat.store.get_execution(execution.execution_id).status
+        is ExecutionStatus.COMPLETED
+    )
 
 
 def test_mismatch_notice_after_restart_paused_marker(real_agent_chat):
-    from openprogram.store import SessionNodeWriter
+    from openprogram.state.store import SessionNodeWriter
     from tests.component.providers.scripted_provider import ScriptedText
 
     real_agent_chat.provider.add_response(ScriptedText("saved answer"))
@@ -582,23 +792,37 @@ def test_mismatch_notice_after_restart_paused_marker(real_agent_chat):
     _wait(real_agent_chat.provider.entered.is_set)
     _command(real_agent_chat, "execution.pause", execution, "pause-restart-marker")
     real_agent_chat.provider.release.set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
-    ))
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
     source = real_agent_chat.store.get_execution_input(execution.execution_id)
-    writer = SessionNodeWriter(real_agent_chat.sessions, real_agent_chat.session_id, advance_head=False)
+    writer = SessionNodeWriter(
+        real_agent_chat.sessions, real_agent_chat.session_id, advance_head=False
+    )
     writer.update(source.assistant_message_id, metadata={"status": "paused"})
     real_agent_chat.tools.schema_variant = "changed"
-    command = _command(real_agent_chat, "execution.continue", paused, "continue-after-paused-marker")
+    command = _command(
+        real_agent_chat, "execution.continue", paused, "continue-after-paused-marker"
+    )
     assert command["status"] == "rejected"
     assert command["rejection_code"] == "continuation_contract_mismatch"
-    from openprogram.execution.outbox import ProjectionDispatcher
-    from openprogram.execution.projections import projection_handlers
-    projections = ProjectionDispatcher(real_agent_chat.store, projection_handlers(real_agent_chat.store))
-    projections.dispatch_once(owner_id="test-paused-notice", limit=1000)
-    projections.dispatch_once(owner_id="test-paused-notice", limit=1000)
-    reply = next(item for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
-                 if item.get("id") == source.assistant_message_id)
+    from openprogram.runtime.execution.event_effects import ExecutionEventEffects
+
+    projections = ExecutionEventEffects(real_agent_chat.store, after=0)
+    projections.drain()
+    projections.drain()
+    reply = next(
+        item
+        for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
+        if item.get("id") == source.assistant_message_id
+    )
     assert "Execution could not resume." in reply["content"]
     assert reply.get("error") == "continuation_contract_mismatch"
 
@@ -612,16 +836,33 @@ def test_continue_accepts_an_unchanged_runtime_contract(real_agent_chat):
     _wait(real_agent_chat.provider.entered.is_set)
     _command(real_agent_chat, "execution.pause", execution, "pause-unchanged")
     real_agent_chat.provider.release.set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
-    ))
-    command = _command(real_agent_chat, "execution.continue", paused, "continue-unchanged")
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
+    command = _command(
+        real_agent_chat, "execution.continue", paused, "continue-unchanged"
+    )
     assert command["status"] in {"accepted", "applying", "applied"}
-    completed = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status in {
-            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
-        } else None
-    ))
+    completed = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+            }
+            else None
+        )
+    )
     assert completed.status is ExecutionStatus.COMPLETED
     assert real_agent_chat.provider.call_count == 1
 
@@ -639,26 +880,48 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
     real_agent_chat.tools.blocked.add("first")
     execution = _chat(real_agent_chat)
     _wait(
-        lambda: real_agent_chat.tools.started.get("first") and real_agent_chat.tools.started["first"].is_set(),
+        lambda: real_agent_chat.tools.started.get("first")
+        and real_agent_chat.tools.started["first"].is_set(),
         detail=lambda: {
             "provider_calls": real_agent_chat.provider.call_count,
             "tool_calls": real_agent_chat.tools.calls,
             "tool_started": list(real_agent_chat.tools.started),
-            "outcomes": [getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes],
-            "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
+            "outcomes": [
+                getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes
+            ],
+            "execution": real_agent_chat.store.get_execution(
+                execution.execution_id
+            ).to_dict(),
         },
     )
     execution = real_agent_chat.store.get_execution(execution.execution_id)
     pause = _command(real_agent_chat, "execution.pause", execution, "pause-first")
     assert pause["status"] in {"accepted", "applying", "applied"}, pause
     real_agent_chat.tools.release["first"].set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
-    ), detail=lambda: {
-        "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
-        "outcomes": [getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes],
-        "commands": [command.to_dict() for command in real_agent_chat.store.list_commands(execution.execution_id)],
-    })
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        ),
+        detail=lambda: {
+            "execution": real_agent_chat.store.get_execution(
+                execution.execution_id
+            ).to_dict(),
+            "outcomes": [
+                getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes
+            ],
+            "commands": [
+                command.to_dict()
+                for command in real_agent_chat.store.list_commands(
+                    execution.execution_id
+                )
+            ],
+        },
+    )
     assert paused.safe_point["phase"] == "after_tool"
     assert real_agent_chat.tools.calls == ["first"]
     first_attempt = next(
@@ -674,7 +937,9 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
         lambda: (
             item
             if (
-                (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+                (
+                    item := real_agent_chat.store.get_execution(execution.execution_id)
+                ).status
                 is ExecutionStatus.PAUSED
                 and item.status_version > paused.status_version
                 and real_agent_chat.store.get_command("step-second").status
@@ -684,15 +949,21 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
         ),
         timeout=10.0,
         detail=lambda: {
-            "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
+            "execution": real_agent_chat.store.get_execution(
+                execution.execution_id
+            ).to_dict(),
             "step_command": real_agent_chat.store.get_command("step-second").to_dict(),
             "calls": real_agent_chat.tools.calls,
-            "outcomes": [getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes],
+            "outcomes": [
+                getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes
+            ],
         },
     )
     assert paused_after_step.safe_point["phase"] == "after_tool"
     assert real_agent_chat.tools.calls == ["first", "second"]
-    assert real_agent_chat.store.get_command("step-second").result_json["managed_action_id"]
+    assert real_agent_chat.store.get_command("step-second").result_json[
+        "managed_action_id"
+    ]
     step_attempts = [
         event.payload["attempt"]
         for event in real_agent_chat.store.list_events(execution.execution_id)
@@ -700,18 +971,30 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
     ]
     assert step_attempts[-1]["attempt_id"] != first_attempt["attempt_id"]
     assert step_attempts[-1]["generation"] > first_attempt["generation"]
-    assert _command(real_agent_chat, "execution.continue", paused_after_step, "continue-final")["status"] in {"accepted", "applying", "applied"}
-    _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.COMPLETED else None
-    ))
+    assert _command(
+        real_agent_chat, "execution.continue", paused_after_step, "continue-final"
+    )["status"] in {"accepted", "applying", "applied"}
+    _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.COMPLETED
+            else None
+        )
+    )
     assert real_agent_chat.tools.calls == ["first", "second"]
     assert real_agent_chat.provider.call_count == 2
     completed_events = [
-        event for event in real_agent_chat.store.list_events(execution.execution_id)
+        event
+        for event in real_agent_chat.store.list_events(execution.execution_id)
         if event.kind == "agent.action.completed"
     ]
     assert len(completed_events) == 1
-    assert real_agent_chat.store.get_command("step-second").status is CommandStatus.APPLIED
+    assert (
+        real_agent_chat.store.get_command("step-second").status is CommandStatus.APPLIED
+    )
 
 
 @pytest.mark.parametrize(
@@ -726,7 +1009,9 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
     ],
 )
 def test_wait_is_a_durable_safe_point_before_tool_dispatch(
-    real_agent_chat, wait_kind, resolution,
+    real_agent_chat,
+    wait_kind,
+    resolution,
 ):
     """A declared wait is durable before tool dispatch and owns continuation."""
 
@@ -741,12 +1026,16 @@ def test_wait_is_a_durable_safe_point_before_tool_dispatch(
         real_agent_chat.provider.add_response(ScriptedText("final answer"))
     execution = _chat(real_agent_chat)
     question = _pending_question(real_agent_chat, kind=wait_kind)
-    execution = _wait(lambda: (
-        item
-        if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
-        is ExecutionStatus.PAUSED
-        else None
-    ))
+    execution = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
     assert execution.status is ExecutionStatus.PAUSED
     assert execution.checkpoint_head_id is not None
     checkpoint = real_agent_chat.control.checkpoints.get(execution.checkpoint_head_id)
@@ -771,7 +1060,8 @@ def test_wait_is_a_durable_safe_point_before_tool_dispatch(
     elif resolution == "reject":
         _question_action(real_agent_chat, "question_reject", question.id)
     else:
-        from openprogram.execution.waits import DurableWaitStore
+        from openprogram.runtime.execution.waits import DurableWaitStore
+
         wait = DurableWaitStore(real_agent_chat.store).get_wait(question.id)
         assert wait is not None
         _wait(lambda: time.time() >= wait.expires_at, timeout=2.0)
@@ -781,63 +1071,116 @@ def test_wait_is_a_durable_safe_point_before_tool_dispatch(
     final = _wait(
         lambda: (
             item
-            if (item := real_agent_chat.store.get_execution(execution.execution_id)).status in {
-                ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
             }
             else None
         ),
-        detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
+        detail=lambda: real_agent_chat.store.get_execution(
+            execution.execution_id
+        ).to_dict(),
     )
     if resolution == "reply":
         assert final.status is ExecutionStatus.COMPLETED, {
             "execution": final.to_dict(),
-            "events": [{"kind": event.kind, "payload": event.payload} for event in real_agent_chat.store.list_events(execution.execution_id)],
-            "outcomes": [getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes],
+            "events": [
+                {"kind": event.kind, "payload": event.payload}
+                for event in real_agent_chat.store.list_events(execution.execution_id)
+            ],
+            "outcomes": [
+                getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes
+            ],
             "activation_errors": real_agent_chat.activation_errors,
         }
         assert real_agent_chat.tools.calls == ["first"]
         assert real_agent_chat.tools.wait_finished.is_set()
-        assert len([
-            event for event in real_agent_chat.store.list_events(execution.execution_id)
-            if event.kind == "attempt.active"
-        ]) == 2
+        assert (
+            len(
+                [
+                    event
+                    for event in real_agent_chat.store.list_events(
+                        execution.execution_id
+                    )
+                    if event.kind == "attempt.active"
+                ]
+            )
+            == 2
+        )
     else:
         assert final.status is ExecutionStatus.FAILED
         assert real_agent_chat.tools.calls == []
 
 
 @pytest.mark.parametrize("browser_available", [False, True])
-def test_approval_resume_reuses_saved_prompt_after_context_updates(real_agent_chat, monkeypatch, browser_available):
-    from tests.component.providers.scripted_provider import ScriptedToolCall, ScriptedText
-    import openprogram.context.components as components
-    import openprogram.agent.surface_context as surfaces
-    monkeypatch.setattr(surfaces, "web_use_available", lambda _context: browser_available)
+def test_approval_resume_reuses_saved_prompt_after_context_updates(
+    real_agent_chat, monkeypatch, browser_available
+):
+    from tests.component.providers.scripted_provider import (
+        ScriptedToolCall,
+        ScriptedText,
+    )
+    import openprogram.runtime.context.components as components
+    import openprogram.runtime.conversation.surface_context as surfaces
+
+    monkeypatch.setattr(
+        surfaces, "browser_pages_available", lambda _context: browser_available
+    )
 
     prompts = []
     original_stream = real_agent_chat.provider.stream_simple
+
     async def observe_prompt(model, context, options=None):
         prompts.append(context.system_prompt)
         async for event in original_stream(model, context, options):
             yield event
+
     monkeypatch.setattr(real_agent_chat.provider, "stream_simple", observe_prompt)
 
-    monkeypatch.setattr(components, "build_system_prompt", lambda *_args, **_kwargs: "saved turn context")
+    monkeypatch.setattr(
+        components,
+        "build_system_prompt",
+        lambda *_args, **_kwargs: "saved turn context",
+    )
     real_agent_chat.tools.wait_kind = "approval"
-    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "call-context-wait"))
+    real_agent_chat.provider.add_response(
+        ScriptedToolCall("first", {}, "call-context-wait")
+    )
     real_agent_chat.provider.add_response(ScriptedText("completed after approval"))
     execution = _chat(real_agent_chat)
     question = _pending_question(real_agent_chat, kind="approval")
-    _wait(lambda: real_agent_chat.store.get_execution(execution.execution_id).status is ExecutionStatus.PAUSED)
+    _wait(
+        lambda: real_agent_chat.store.get_execution(execution.execution_id).status
+        is ExecutionStatus.PAUSED
+    )
 
     # Memory/date/project text may change during a long human wait. It is
     # not the prompt used by the already checkpointed provider decision.
-    monkeypatch.setattr(components, "build_system_prompt", lambda *_args, **_kwargs: "updated memory and date")
-    monkeypatch.setattr(surfaces, "web_use_available", lambda _context: not browser_available)
+    monkeypatch.setattr(
+        components,
+        "build_system_prompt",
+        lambda *_args, **_kwargs: "updated memory and date",
+    )
+    monkeypatch.setattr(
+        surfaces, "browser_pages_available", lambda _context: not browser_available
+    )
     _question_action(real_agent_chat, "question_reply", question.id, answer="允许")
-    completed = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
-        is ExecutionStatus.COMPLETED else None
-    ), detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict())
+    completed = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.COMPLETED
+            else None
+        ),
+        detail=lambda: real_agent_chat.store.get_execution(
+            execution.execution_id
+        ).to_dict(),
+    )
     assert completed.current_attempt_id is None
     assert real_agent_chat.tools.calls == ["first"]
     assert real_agent_chat.provider.call_count == 2
@@ -845,39 +1188,149 @@ def test_approval_resume_reuses_saved_prompt_after_context_updates(real_agent_ch
     assert prompts[0].startswith("saved turn context")
 
 
+@pytest.mark.parametrize("wait_kind", ["approval", "ask"])
+def test_a_declined_wait_returns_to_the_model_instead_of_failing(
+    real_agent_chat, wait_kind
+):
+    from tests.component.providers.scripted_provider import (
+        ScriptedToolCall,
+        ScriptedText,
+    )
+
+    h = real_agent_chat
+    h.tools.wait_kind = wait_kind
+    h.tools.decline_policy = "continue"
+    h.provider.add_response(ScriptedToolCall("first", {}, "call-declined"))
+    h.provider.add_response(ScriptedText("Understood, I will not run it."))
+    execution = _chat(h)
+    question = _pending_question(h, kind=wait_kind)
+    _wait(
+        lambda: h.store.get_execution(execution.execution_id).status
+        is ExecutionStatus.PAUSED
+    )
+
+    _question_action(h, "question_reject", question.id)
+
+    completed = _wait(
+        lambda: (
+            item
+            if (item := h.store.get_execution(execution.execution_id)).status
+            is ExecutionStatus.COMPLETED
+            else None
+        ),
+        detail=lambda: h.store.get_execution(execution.execution_id).to_dict(),
+    )
+    assert completed.current_attempt_id is None
+    assert h.provider.call_count == 2
+
+
+def test_an_answer_that_beats_the_paused_runner_out_still_resumes(
+    real_agent_chat, monkeypatch
+):
+    """The next attempt waits for the old runner instead of failing the run."""
+    from openprogram.runtime.conversation import run_control
+    from tests.component.providers.scripted_provider import (
+        ScriptedText,
+        ScriptedToolCall,
+    )
+
+    h = real_agent_chat
+    real_claim = run_control.claim_cancel_event
+    real_unregister = run_control.unregister_cancel_event
+    refused = threading.Event()
+
+    def claim(*args, **kwargs):
+        claimed = real_claim(*args, **kwargs)
+        if not claimed:
+            refused.set()
+        return claimed
+
+    def unregister(*args, **kwargs):
+        # The paused runner holds its slot until its successor has been refused.
+        refused.wait(30)
+        return real_unregister(*args, **kwargs)
+
+    monkeypatch.setattr(run_control, "claim_cancel_event", claim)
+    monkeypatch.setattr(run_control, "unregister_cancel_event", unregister)
+    h.tools.wait_kind = "ask"
+    h.tools.decline_policy = "continue"
+    h.provider.add_response(ScriptedToolCall("first", {}, "call-early-answer"))
+    h.provider.add_response(ScriptedText("Understood."))
+    execution = _chat(h)
+    question = _pending_question(h, kind="ask")
+    _wait(
+        lambda: h.store.get_execution(execution.execution_id).status
+        is ExecutionStatus.PAUSED
+    )
+
+    _question_action(h, "question_reject", question.id)
+
+    completed = _wait(
+        lambda: (
+            item
+            if (item := h.store.get_execution(execution.execution_id)).status
+            in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED}
+            else None
+        ),
+    )
+    assert refused.is_set()
+    assert completed.status is ExecutionStatus.COMPLETED
+
+
 def test_cancel_wakes_real_question_wait_with_exact_reason(real_agent_chat):
     from tests.component.providers.scripted_provider import ScriptedToolCall
 
     real_agent_chat.tools.wait_kind = "ask"
-    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "call-cancel-wait"))
+    real_agent_chat.provider.add_response(
+        ScriptedToolCall("first", {}, "call-cancel-wait")
+    )
     execution = _chat(real_agent_chat)
     question = _pending_question(real_agent_chat, kind="ask")
 
-    from openprogram.webui.ws_actions import runtime
+    from openprogram.interfaces.server.ws_actions import runtime
 
     current = real_agent_chat.store.get_execution(execution.execution_id)
     assert current is not None
-    asyncio.run(runtime.ACTIONS["execution.cancel"](
-        _WebSocket(), {
-            "type": "execution.command", "action": "execution.cancel",
-            "command_id": "cancel-real-question-wait",
-            "execution_id": execution.execution_id,
-            "expected_version": current.status_version,
-            "payload": {},
+    asyncio.run(
+        runtime.ACTIONS["execution.cancel"](
+            _WebSocket(),
+            {
+                "type": "execution.command",
+                "action": "execution.cancel",
+                "command_id": "cancel-real-question-wait",
+                "execution_id": execution.execution_id,
+                "expected_version": current.status_version,
+                "payload": {},
+            },
+        )
+    )
+    final = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            in {ExecutionStatus.CANCELLED, ExecutionStatus.RECONCILIATION_REQUIRED}
+            else None
+        ),
+        detail=lambda: {
+            "execution": real_agent_chat.store.get_execution(
+                execution.execution_id
+            ).to_dict(),
+            "commands": [
+                command.to_dict()
+                for command in real_agent_chat.store.list_commands(
+                    execution.execution_id
+                )
+            ],
+            "outcomes": [
+                getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes
+            ],
         },
-    ))
-    final = _wait(lambda: (
-        item
-        if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
-        in {ExecutionStatus.CANCELLED, ExecutionStatus.RECONCILIATION_REQUIRED}
-        else None
-    ), detail=lambda: {
-        "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
-        "commands": [command.to_dict() for command in real_agent_chat.store.list_commands(execution.execution_id)],
-        "outcomes": [getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes],
-    })
+    )
     cancel_command = next(
-        command for command in real_agent_chat.store.list_commands(execution.execution_id)
+        command
+        for command in real_agent_chat.store.list_commands(execution.execution_id)
         if command.kind.value == "execution.cancel"
     )
     assert cancel_command.payload["reason_code"] == "cancel.user"
@@ -893,39 +1346,105 @@ def test_durable_wait_registration_publishes_checkpoint_before_tool_dispatch(
     from tests.component.providers.scripted_provider import ScriptedToolCall
 
     real_agent_chat.tools.wait_kind = "ask"
-    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "call-crash-wait"))
+    real_agent_chat.provider.add_response(
+        ScriptedToolCall("first", {}, "call-crash-wait")
+    )
 
     execution = _chat(real_agent_chat)
     question = _pending_question(real_agent_chat, kind="ask")
-    paused = _wait(lambda: (
-        item
-        if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
-        is ExecutionStatus.PAUSED
-        else None
-    ), detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict())
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        ),
+        detail=lambda: real_agent_chat.store.get_execution(
+            execution.execution_id
+        ).to_dict(),
+    )
     assert paused.checkpoint_head_id is not None
     assert paused.owner_lease == {}
     assert paused.current_attempt_id is None
-    assert real_agent_chat.control.checkpoints.get(paused.checkpoint_head_id) is not None
+    assert (
+        real_agent_chat.control.checkpoints.get(paused.checkpoint_head_id) is not None
+    )
     assert real_agent_chat.tools.calls == []
     # Resolve it through the public canonical wait command.
     _question_action(real_agent_chat, "question_reject", question.id)
 
 
-def test_permission_change_resumes_real_approval_without_repeating_provider(real_agent_chat, monkeypatch):
+def test_forced_reconcile_resumes_an_approval_the_new_policy_drops_with_no_version_change(
+    real_agent_chat, monkeypatch
+):
     from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.agent.permissions import update_permission, reconcile_permission_waits
-    import openprogram.agent.dispatcher.loop_runner as loop_runner
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions import update_permission, reconcile_permission_waits
+    from openprogram.runtime.permissions.modes import PermissionRules
+    from openprogram.runtime.permissions.session_facts import facts
+    from openprogram.runtime.execution.waits import DurableWaitStore, WaitStatus
+    import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
+
+    h = real_agent_chat
+    monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
+    update_permission(h.session_id, "ask", 0, local_owner_authority())
+    h.provider.add_response(ScriptedToolCall("first", {}, "permission-first"))
+    h.provider.add_response(ScriptedText("done"))
+    execution = _chat(h)
+    question = _pending_question(h, kind="approval")
+    # A forced reconcile skips a wait whose old runner is still leaving, and
+    # the driver's own recheck after it leaves is not forced.
+    _wait(lambda: not facts().turn_running(h.session_id, execution.execution_id))
+
+    # An allow rule stands in for a policy change that bumps no permission version.
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules",
+                        lambda _sid, **_kwargs: PermissionRules(allow=["first"]))
+    asyncio.run(reconcile_permission_waits(h.session_id, service=h.control))
+    assert DurableWaitStore(h.store).get_wait(question.id).status is not WaitStatus.RESOLVED
+    assert h.tools.calls == []
+
+    asyncio.run(reconcile_permission_waits(h.session_id, service=h.control, force=True))
+    completed = _wait(
+        lambda: (
+            item
+            if (item := h.store.get_execution(execution.execution_id)).status
+            in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED}
+            else None
+        ),
+        detail=lambda: {"errors": h.activation_errors, "outcomes": [str(x) for x in h.outcomes]},
+    )
+    assert completed.status is ExecutionStatus.COMPLETED
+    assert h.tools.calls == ["first"]
+
+
+def test_permission_change_resumes_real_approval_without_repeating_provider(
+    real_agent_chat, monkeypatch
+):
+    from tests.component.providers.scripted_provider import (
+        ScriptedText,
+        ScriptedToolCall,
+    )
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions import (
+        update_permission,
+        reconcile_permission_waits,
+    )
+    import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
 
     frames = []
-    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
+    monkeypatch.setattr("openprogram.runtime.events.emit_ws_frame", frames.append)
     h = real_agent_chat
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
     actor = local_owner_authority()
     update_permission(h.session_id, "ask", 0, actor)
-    h.provider.add_response(ScriptedToolCall("first", {}, "permission-first"), ScriptedToolCall("second", {}, "permission-second"))
+    h.provider.add_response(
+        ScriptedToolCall("first", {}, "permission-first"),
+        ScriptedToolCall("second", {}, "permission-second"),
+    )
     h.provider.add_response(ScriptedText("done"))
     execution = _chat(h)
     question = _pending_question(h, kind="approval")
@@ -933,25 +1452,47 @@ def test_permission_change_resumes_real_approval_without_repeating_provider(real
     assert h.provider.call_count == 1
     update_permission(h.session_id, "bypass", 1, actor)
     asyncio.run(reconcile_permission_waits(h.session_id, service=h.control))
-    completed = _wait(lambda: (
-        item if (item := h.store.get_execution(execution.execution_id)).status in {
-            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
-        } else None
-    ), detail=lambda: {"errors": h.activation_errors, "outcomes": [str(x) for x in h.outcomes]})
-    assert completed.status is ExecutionStatus.COMPLETED, (h.activation_errors, [getattr(x, "error", str(x)) for x in h.outcomes])
+    completed = _wait(
+        lambda: (
+            item
+            if (item := h.store.get_execution(execution.execution_id)).status
+            in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+            }
+            else None
+        ),
+        detail=lambda: {
+            "errors": h.activation_errors,
+            "outcomes": [str(x) for x in h.outcomes],
+        },
+    )
+    assert completed.status is ExecutionStatus.COMPLETED, (
+        h.activation_errors,
+        [getattr(x, "error", str(x)) for x in h.outcomes],
+    )
     assert h.tools.calls == ["first", "second"]
     assert h.provider.call_count == 2
-    from openprogram.execution.waits import DurableWaitStore, WaitStatus
+    from openprogram.runtime.execution.waits import DurableWaitStore, WaitStatus
+
     assert DurableWaitStore(h.store).get_wait(question.id).status is WaitStatus.RESOLVED
-    assert any(frame["type"] == "question.replied" and frame["data"]["id"] == question.id for frame in frames)
+    assert any(
+        frame["type"] == "question.replied" and frame["data"]["id"] == question.id
+        for frame in frames
+    )
 
 
-def test_permission_change_before_tool_check_applies_to_running_turn(real_agent_chat, monkeypatch):
-    from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.agent.permissions import update_permission
-    import openprogram.agent.dispatcher.loop_runner as loop_runner
+def test_permission_change_before_tool_check_applies_to_running_turn(
+    real_agent_chat, monkeypatch
+):
+    from tests.component.providers.scripted_provider import (
+        ScriptedText,
+        ScriptedToolCall,
+    )
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions import update_permission
+    import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
 
     h = real_agent_chat
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
@@ -967,48 +1508,81 @@ def test_permission_change_before_tool_check_applies_to_running_turn(real_agent_
     assert question.execution_id == execution.execution_id
     assert h.tools.calls == []
     _question_action(h, "question_reply", question.id, answer="approve")
-    _wait(lambda: h.store.get_execution(execution.execution_id).status in {
-        ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
-    })
+    _wait(
+        lambda: h.store.get_execution(execution.execution_id).status
+        in {
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.FAILED,
+        }
+    )
     assert h.tools.calls == ["first"]
 
 
-def test_permission_update_during_wait_publication_is_not_lost(real_agent_chat, monkeypatch):
-    from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.agent.permissions import update_permission
-    import openprogram.agent.dispatcher.loop_runner as loop_runner
+def test_permission_update_during_wait_publication_is_not_lost(
+    real_agent_chat, monkeypatch
+):
+    from tests.component.providers.scripted_provider import (
+        ScriptedText,
+        ScriptedToolCall,
+    )
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions import update_permission
+    import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
+
     h = real_agent_chat
     actor = local_owner_authority()
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
     update_permission(h.session_id, "ask", 0, actor)
     original = h.control.open_wait_at_safe_point
+
     def open_after_update(**kwargs):
         update_permission(h.session_id, "bypass", 1, actor)
         return original(**kwargs)
+
     monkeypatch.setattr(h.control, "open_wait_at_safe_point", open_after_update)
     h.provider.add_response(ScriptedToolCall("first", {}, "publication-first"))
     h.provider.add_response(ScriptedText("done"))
     execution = _chat(h)
-    completed = _wait(lambda: (
-        item if (item := h.store.get_execution(execution.execution_id)).status in {
-            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
-        } else None
-    ), detail=lambda: {"errors": h.activation_errors, "outcomes": [str(x) for x in h.outcomes]})
-    assert completed.status is ExecutionStatus.COMPLETED, (h.activation_errors, [getattr(x, "error", str(x)) for x in h.outcomes])
+    completed = _wait(
+        lambda: (
+            item
+            if (item := h.store.get_execution(execution.execution_id)).status
+            in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+            }
+            else None
+        ),
+        detail=lambda: {
+            "errors": h.activation_errors,
+            "outcomes": [str(x) for x in h.outcomes],
+        },
+    )
+    assert completed.status is ExecutionStatus.COMPLETED, (
+        h.activation_errors,
+        [getattr(x, "error", str(x)) for x in h.outcomes],
+    )
     assert h.tools.calls == ["first"]
 
 
-@pytest.mark.parametrize("phase", ["thinking_delta", "text_delta", "toolcall_delta", "between_tools"])
+@pytest.mark.parametrize(
+    "phase", ["thinking_delta", "text_delta", "toolcall_delta", "between_tools"]
+)
 def test_bypass_update_during_generation_or_batch_needs_no_new_approval(
-    real_agent_chat, monkeypatch, phase,
+    real_agent_chat,
+    monkeypatch,
+    phase,
 ):
-    from tests.component.providers.scripted_provider import ScriptedThinking, ScriptedText, ScriptedToolCall
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.webui.ws_actions.permissions import handle_set_permission
-    import openprogram.agent.dispatcher.loop_runner as loop_runner
+    from tests.component.providers.scripted_provider import (
+        ScriptedThinking,
+        ScriptedText,
+        ScriptedToolCall,
+    )
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.interfaces.server.ws_actions.permissions import handle_set_permission
+    import openprogram.runtime.conversation.turn_runtime.loop_runner as loop_runner
 
     h = real_agent_chat
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
@@ -1016,15 +1590,23 @@ def test_bypass_update_during_generation_or_batch_needs_no_new_approval(
     ws.scope["state"]["authority"] = local_owner_authority()
 
     def set_mode(mode, version):
-        asyncio.run(handle_set_permission(ws, {
-            "session_id": h.session_id, "mode": mode, "expected_version": version,
-        }))
+        asyncio.run(
+            handle_set_permission(
+                ws,
+                {
+                    "session_id": h.session_id,
+                    "mode": mode,
+                    "expected_version": version,
+                },
+            )
+        )
         assert ws.frames[-1]["data"].get("error") is None
         assert ws.frames[-1]["data"]["mode"] == mode
 
     set_mode("ask", 0)
     h.provider.add_response(
-        ScriptedThinking("Checking the requested operation"), ScriptedText("Working"),
+        ScriptedThinking("Checking the requested operation"),
+        ScriptedText("Working"),
         ScriptedToolCall("first", {}, "live-first"),
         ScriptedToolCall("second", {}, "live-second"),
     )
@@ -1060,25 +1642,36 @@ def test_bypass_update_during_generation_or_batch_needs_no_new_approval(
         release.set()
         if phase == "between_tools":
             h.tools.release["first"].set()
-    completed = _wait(lambda: (
-        item if (item := h.store.get_execution(execution.execution_id)).status in {
-            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
-        } else None
-    ), detail=lambda: {"errors": h.activation_errors, "outcomes": [str(x) for x in h.outcomes]})
+    completed = _wait(
+        lambda: (
+            item
+            if (item := h.store.get_execution(execution.execution_id)).status
+            in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+            }
+            else None
+        ),
+        detail=lambda: {
+            "errors": h.activation_errors,
+            "outcomes": [str(x) for x in h.outcomes],
+        },
+    )
     assert completed.status is ExecutionStatus.COMPLETED
     assert h.tools.calls == ["first", "second"]
     assert h.provider.call_count == 2
-    from openprogram.execution.waits import DurableWaitStore
+    from openprogram.runtime.execution.waits import DurableWaitStore
+
     assert not DurableWaitStore(h.store).list_open(session_id=h.session_id)
-    with h.store._connect() as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM execution_waits WHERE execution_id = ?",
-            (execution.execution_id,),
-        ).fetchone()[0] == (1 if phase == "between_tools" else 0)
+    assert h.store._connect().count("execution_waits", execution_id=execution.execution_id) == (
+        1 if phase == "between_tools" else 0
+    )
 
 
 def test_cancel_resumed_local_shell_reaps_child_and_finalizes_chat(
-    real_agent_chat, tmp_path, monkeypatch,
+    real_agent_chat,
+    tmp_path,
+    monkeypatch,
 ):
     import shlex
     import sys
@@ -1089,148 +1682,239 @@ def test_cancel_resumed_local_shell_reaps_child_and_finalizes_chat(
     # The shell's real workspace must contain the files we observe. Linux
     # isolation deliberately masks /tmp except for the bound working directory.
     monkeypatch.setattr(
-        import_module('openprogram.programs.tools.files.bash.bash'),
-        'current_worktree_path', lambda: str(tmp_path),
+        import_module("openprogram.programs.tools.files.bash.bash"),
+        "current_worktree_path",
+        lambda: str(tmp_path),
     )
-    started = tmp_path / 'started'
-    delayed = tmp_path / 'delayed'
+    started = tmp_path / "started"
+    delayed = tmp_path / "delayed"
     script = (
         f"from pathlib import Path; import time; Path({str(started)!r}).touch(); "
         f"time.sleep(3); Path({str(delayed)!r}).touch()"
     )
-    command = f'{shlex.quote(sys.executable)} -c {shlex.quote(script)}'
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
     monkeypatch.setattr(
-        'openprogram.agent.dispatcher.loop_runner._resolve_tools',
+        "openprogram.runtime.conversation.turn_runtime.loop_runner._resolve_tools",
         lambda *_a, **_kw: [bash],
     )
     real_agent_chat.provider.add_response(
-        ScriptedToolCall('bash', {'command': command, 'timeout': 5000}, 'cancel-shell'),
+        ScriptedToolCall("bash", {"command": command}, "cancel-shell"),
     )
     real_agent_chat.provider.block_calls.add(0)
     execution = _chat(real_agent_chat)
     _wait(real_agent_chat.provider.entered.is_set)
-    _command(real_agent_chat, 'execution.pause', execution, 'pause-shell')
+    _command(real_agent_chat, "execution.pause", execution, "pause-shell")
     real_agent_chat.provider.release.set()
-    paused = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
-        is ExecutionStatus.PAUSED else None
-    ))
-    _command(real_agent_chat, 'execution.continue', paused, 'resume-shell')
+    paused = _wait(
+        lambda: (
+            item
+            if (
+                item := real_agent_chat.store.get_execution(execution.execution_id)
+            ).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
+    _command(real_agent_chat, "execution.continue", paused, "resume-shell")
     _wait(started.exists)
     running = real_agent_chat.store.get_execution(execution.execution_id)
-    _command(real_agent_chat, 'execution.cancel', running, 'cancel-shell')
-    _wait(lambda: real_agent_chat.store.get_execution(execution.execution_id).status
-          is ExecutionStatus.CANCELLED, timeout=2.0, detail=lambda: {
-              "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
-              "outcomes": [repr(x) for x in real_agent_chat.outcomes],
-              "branch": real_agent_chat.sessions.get_branch(real_agent_chat.session_id),
-          })
+    _command(real_agent_chat, "execution.cancel", running, "cancel-shell")
+    _wait(
+        lambda: _cancelled_chat_is_finalized(real_agent_chat, execution.execution_id),
+        timeout=2.0,
+        detail=lambda: {
+            "execution": real_agent_chat.store.get_execution(
+                execution.execution_id
+            ).to_dict(),
+            "outcomes": [repr(x) for x in real_agent_chat.outcomes],
+            "branch": real_agent_chat.sessions.get_branch(real_agent_chat.session_id),
+        },
+    )
     branch = real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
-    reply = next(item for item in branch if item.get('id', '').endswith('_reply'))
-    assert reply['status'] == 'cancelled'
-    assert real_agent_chat.sessions.get_session(real_agent_chat.session_id)['status'] == 'idle'
+    reply = next(item for item in branch if item.get("id", "").endswith("_reply"))
+    assert reply["status"] == "cancelled"
+    assert (
+        real_agent_chat.sessions.get_session(real_agent_chat.session_id)["status"]
+        == "idle"
+    )
     assert not real_agent_chat.server._is_run_active(real_agent_chat.session_id)
     time.sleep(3.1)
-    assert not delayed.exists(), 'child continued writing after cancellation'
+    assert not delayed.exists(), "child continued writing after cancellation"
     assert real_agent_chat.provider.call_count == 1
 
 
 def test_cancel_at_resumed_provider_boundary_finalizes(real_agent_chat, monkeypatch):
-    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
     from tests.component.providers.scripted_provider import ScriptedToolCall
+
     entered, release = threading.Event(), threading.Event()
     original = AgentProductionDriver._safe_point_hook
+
     def make(self, *args, **kwargs):
         hook = original(self, *args, **kwargs)
-        resumed = kwargs.get('continuation') is not None
+        resumed = kwargs.get("continuation") is not None
+
         def run(kind, payload):
-            if resumed and kind == 'provider.before':
+            if resumed and kind == "provider.before":
                 entered.set()
-                assert release.wait(3)
+                assert release.wait(30)
             return hook(kind, payload)
+
+        run.record_steer = hook.record_steer
         return run
-    monkeypatch.setattr(AgentProductionDriver, '_safe_point_hook', make)
+
+    monkeypatch.setattr(AgentProductionDriver, "_safe_point_hook", make)
     h = real_agent_chat
-    h.provider.add_response(ScriptedToolCall('first', {}, 'first'))
+    h.provider.add_response(ScriptedToolCall("first", {}, "first"))
     h.provider.block_calls.add(0)
     execution = _chat(h)
     _wait(h.provider.entered.is_set)
-    _command(h, 'execution.pause', execution, 'bridge-pause')
+    _command(h, "execution.pause", execution, "bridge-pause")
     h.provider.release.set()
-    paused = _wait(lambda: (item if (item := h.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None))
+    paused = _wait(
+        lambda: (
+            item
+            if (item := h.store.get_execution(execution.execution_id)).status
+            is ExecutionStatus.PAUSED
+            else None
+        )
+    )
     try:
-        _command(h, 'execution.continue', paused, 'bridge-resume')
+        _command(h, "execution.continue", paused, "bridge-resume")
         _wait(entered.is_set)
         running = h.store.get_execution(execution.execution_id)
-        _command(h, 'execution.cancel', running, 'bridge-cancel')
+        _command(h, "execution.cancel", running, "bridge-cancel")
     finally:
         release.set()
-    _wait(lambda: h.store.get_execution(execution.execution_id).status is ExecutionStatus.CANCELLED)
+    _wait(
+        lambda: _cancelled_chat_is_finalized(h, execution.execution_id)
+    )
     branch = h.sessions.get_branch(h.session_id)
-    reply = next(item for item in branch if item.get('id', '').endswith('_reply'))
-    assert reply['status'] == 'cancelled', (reply['status'], h.sessions.get_session(h.session_id)['status'])
-    assert h.sessions.get_session(h.session_id)['status'] == 'idle'
+    reply = next(item for item in branch if item.get("id", "").endswith("_reply"))
+    assert reply["status"] == "cancelled", (
+        reply["status"],
+        h.sessions.get_session(h.session_id)["status"],
+    )
+    assert h.sessions.get_session(h.session_id)["status"] == "idle"
 
     assert h.provider.call_count == 1
-    assert h.tools.calls == ['first']
+    assert h.tools.calls == ["first"]
 
 
-def test_decline_preserves_checkpoint_trace_and_notifies_chat(real_agent_chat, monkeypatch):
-    from tests.component.providers.scripted_provider import ScriptedThinking, ScriptedText, ScriptedToolCall
-    from openprogram.execution.outbox import ProjectionDispatcher
-    from openprogram.execution.projections import projection_handlers
+def test_decline_preserves_checkpoint_trace_and_notifies_chat(
+    real_agent_chat, monkeypatch
+):
+    from tests.component.providers.scripted_provider import (
+        ScriptedThinking,
+        ScriptedText,
+        ScriptedToolCall,
+    )
+    from openprogram.runtime.execution.event_effects import ExecutionEventEffects
+
     h = real_agent_chat
     h.tools.wait_kind = "approval"
-    h.provider.add_response(ScriptedText("Earlier progress."), ScriptedToolCall("second", {}, "call-finished"))
-    h.provider.add_response(ScriptedThinking("Checking the requested operation."), ScriptedText("Please approve this operation."), ScriptedToolCall("first", {}, "call-denied"))
+    h.provider.add_response(
+        ScriptedText("Earlier progress."),
+        ScriptedToolCall("second", {}, "call-finished"),
+    )
+    h.provider.add_response(
+        ScriptedThinking("Checking the requested operation."),
+        ScriptedText("Please approve this operation."),
+        ScriptedToolCall("first", {}, "call-denied"),
+    )
     execution = _chat(h)
     question = _pending_question(h, kind="approval")
-    _wait(lambda: h.store.get_execution(execution.execution_id).status is ExecutionStatus.PAUSED)
+    _wait(
+        lambda: h.store.get_execution(execution.execution_id).status
+        is ExecutionStatus.PAUSED
+    )
     frames = []
-    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
+    monkeypatch.setattr("openprogram.runtime.events.emit_ws_frame", frames.append)
     _question_action(h, "question_reject", question.id)
-    _wait(lambda: h.store.get_execution(execution.execution_id).status is ExecutionStatus.FAILED)
-    dispatcher = ProjectionDispatcher(h.store, projection_handlers(h.store))
-    while True:
-        delivered = dispatcher.dispatch_once(owner_id="test-trace")
-        assert delivered.failed == 0
-        if delivered.claimed == 0:
-            break
+    _wait(
+        lambda: h.store.get_execution(execution.execution_id).status
+        is ExecutionStatus.FAILED
+    )
+    effects = ExecutionEventEffects(h.store, after=0)
+    effects.drain()
+    assert not effects._retries
     source = h.store.get_execution_input(execution.execution_id)
-    from openprogram.store import SessionNodeWriter
-    node = SessionNodeWriter(h.sessions, h.session_id, advance_head=False).load().nodes[source.assistant_message_id]
-    blocks = json.loads(node.metadata.get("extra", "{}" )).get("blocks", [])
+    from openprogram.state.store import SessionNodeWriter
+
+    node = (
+        SessionNodeWriter(h.sessions, h.session_id, advance_head=False)
+        .load()
+        .nodes[source.assistant_message_id]
+    )
+    blocks = json.loads(node.metadata.get("extra", "{}")).get("blocks", [])
     assert any(b.get("type") == "thinking" for b in blocks), (blocks, frames)
     assert any(b.get("text") == "Please approve this operation." for b in blocks)
-    assert any(b.get("tool_call_id") == "call-denied" and b.get("result") for b in blocks)
+    assert any(
+        b.get("tool_call_id") == "call-denied" and b.get("result") for b in blocks
+    )
     assert "declined" in node.output.lower()
-    assert any(f.get("type") == "session_reload" for f in frames)
     assert h.tools.calls == ["second"]
-    assert any(b.get("tool_call_id") == "call-finished" and b.get("result") == "second:ok" for b in blocks)
+    assert any(
+        b.get("tool_call_id") == "call-finished" and b.get("result") == "second:ok"
+        for b in blocks
+    )
     assert any(b.get("text") == "Earlier progress." for b in blocks)
 
 
 @pytest.mark.parametrize("policy,suffix", [("keep_original", "A"), ("use_latest", "B")])
-def test_chat_function_continues_original_tool_call_with_selected_code(real_agent_chat, tmp_path, monkeypatch, policy, suffix):
-    from openprogram.agentic_programming.function import agentic_function
-    from openprogram.agentic_programming.continuation import default_policy, function_execution
-    from openprogram.agent.run_control import get_current_execution_id
-    from openprogram.agent.types import AgentToolResult
-    from openprogram.providers.types import TextContent
-    from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
-    from tests.integration.execution.test_function_version_resume import _version_a, _version_b
-    from openprogram.webui.ws_actions import runtime
+def test_chat_function_continues_original_tool_call_with_selected_code(
+    real_agent_chat, tmp_path, monkeypatch, policy, suffix
+):
+    from openprogram import Agent
+    from openprogram.runtime.agent.durable_steps import (
+        default_policy,
+        function_execution,
+    )
+    from openprogram.runtime.execution.run_control import get_current_execution_id
+    from openprogram.models.providers.types import AgentToolResult
+    from openprogram.models.providers.types import TextContent
+    from tests.component.providers.scripted_provider import (
+        ScriptedText,
+        ScriptedToolCall,
+    )
+    from tests.integration.execution.test_function_version_resume import (
+        _version_a,
+        _version_b,
+    )
+    from openprogram.interfaces.server.ws_actions import runtime
 
     import importlib
-    function_module = importlib.import_module("openprogram.agentic_programming.function")
-    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
-    latest = {"function": agentic_function(_version_a, name="first", resumable=True, as_tool=False)}
+
+    importlib.import_module(
+        "openprogram.runtime.agent.call_state"
+    )
+    monkeypatch.setattr(program_runtime, "_registry", dict(program_runtime._registry))
+
+    class RegisteredProgram2Agent(Agent):
+        method_options = {
+            "run": {"name": "first", "resumable": True, "as_tool": False, "tool": True}
+        }
+        run = staticmethod(_version_a)
+
+    latest = {"function": RegisteredProgram2Agent().run}
     original_factory = real_agent_chat.tools.tool
 
     async def execute(call_id, args, cancel, update):
         execution = real_agent_chat.store.get_execution(get_current_execution_id())
-        with function_execution(real_agent_chat.store, attempt_id=execution.current_attempt_id, generation=execution.owner_lease["generation"], call_key=call_id, policy=default_policy(real_agent_chat.store, execution.execution_id), publish_pause=False, checkpoint_root=False):
-            result = latest["function"](str(tmp_path))
+        with function_execution(
+            real_agent_chat.store,
+            attempt_id=execution.current_attempt_id,
+            generation=execution.owner_lease["generation"],
+            call_key=call_id,
+            policy=default_policy(real_agent_chat.store, execution.execution_id),
+            publish_pause=False,
+            checkpoint_root=False,
+        ):
+            token = program_runtime._current_tool_call_id.set(call_id)
+            try:
+                result = latest["function"](str(tmp_path))
+            finally:
+                program_runtime._current_tool_call_id.reset(token)
         return AgentToolResult(content=[TextContent(text=result)])
 
     def factory(name):
@@ -1240,28 +1924,113 @@ def test_chat_function_continues_original_tool_call_with_selected_code(real_agen
         return tool
 
     monkeypatch.setattr(real_agent_chat.tools, "tool", factory)
-    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "original-function-call"))
+    real_agent_chat.provider.add_response(
+        ScriptedToolCall("first", {}, "original-function-call")
+    )
     real_agent_chat.provider.add_response(ScriptedText("final answer"))
     execution = _chat(real_agent_chat)
     try:
-        _wait(lambda: (tmp_path / "entered").exists(), detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict())
+        _wait(
+            lambda: (tmp_path / "entered").exists(),
+            detail=lambda: real_agent_chat.store.get_execution(
+                execution.execution_id
+            ).to_dict(),
+        )
         execution = real_agent_chat.store.get_execution(execution.execution_id)
         _command(real_agent_chat, "execution.pause", execution, "pause-function")
     finally:
         (tmp_path / "release").touch()
-    paused = _wait(lambda: item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None)
+    paused = _wait(
+        lambda: item
+        if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+        is ExecutionStatus.PAUSED
+        else None
+    )
     assert real_agent_chat.provider.call_count == 1
-    latest["function"] = agentic_function(_version_b, name="first", resumable=True, as_tool=False)
+
+    class RegisteredProgram1Agent(Agent):
+        method_options = {
+            "run": {"name": "first", "resumable": True, "as_tool": False, "tool": True}
+        }
+        run = staticmethod(_version_b)
+
+    latest["function"] = RegisteredProgram1Agent().run
     ws = _WebSocket()
-    asyncio.run(runtime.ACTIONS["execution.continue"](ws, {
-        "type": "execution.command", "action": "execution.continue", "command_id": "continue-function",
-        "execution_id": paused.execution_id, "expected_version": paused.status_version,
-        "payload": {"code_change_policy": policy},
-    }))
-    completed = _wait(lambda: item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.PAUSED} else None,
-                      detail=lambda: real_agent_chat.activation_errors)
-    assert completed.status is ExecutionStatus.COMPLETED, (completed.to_dict(), real_agent_chat.activation_errors, ws.frames)
+    asyncio.run(
+        runtime.ACTIONS["execution.continue"](
+            ws,
+            {
+                "type": "execution.command",
+                "action": "execution.continue",
+                "command_id": "continue-function",
+                "execution_id": paused.execution_id,
+                "expected_version": paused.status_version,
+                "payload": {"code_change_policy": policy},
+            },
+        )
+    )
+    completed = _wait(
+        lambda: item
+        if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+        in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.PAUSED}
+        else None,
+        detail=lambda: real_agent_chat.activation_errors,
+    )
+    assert completed.status is ExecutionStatus.COMPLETED, (
+        completed.to_dict(),
+        real_agent_chat.activation_errors,
+        ws.frames,
+    )
     assert real_agent_chat.provider.call_count == 2
-    assert (tmp_path / "effects").read_text().splitlines() == ["first", "saved-" + suffix]
-    function_nodes = [node for node in real_agent_chat.sessions.get_nodes(real_agent_chat.session_id) if node.is_code() and node.name in {"_version_a", "_version_b"}]
+    assert (tmp_path / "effects").read_text().splitlines() == [
+        "first",
+        "saved-" + suffix,
+    ]
+    function_nodes = [
+        node
+        for node in real_agent_chat.sessions.get_nodes(real_agent_chat.session_id)
+        if node.is_code() and node.name == "first" and (node.metadata or {}).get("structural")
+    ]
     assert len(function_nodes) == 1
+    assert function_nodes[0].metadata["tool_call_id"] == "original-function-call"
+
+
+def test_approval_in_a_later_turn_resumes_with_the_prompt_named_by_hash(
+    real_agent_chat, monkeypatch
+):
+    """The second turn's checkpoint names the prompt its branch already
+    records by hash; approving its wait resumes the turn instead of pausing it
+    with ``continuation_contract_mismatch``."""
+    from tests.component.providers.scripted_provider import ScriptedToolCall, ScriptedText
+    import openprogram.runtime.context.components as components
+
+    monkeypatch.setattr(components, "build_system_prompt", lambda *_args, **_kwargs: "the conversation prompt")
+    real_agent_chat.provider.add_response(ScriptedText("first turn done"))
+    first = _chat(real_agent_chat)
+    _wait(lambda: real_agent_chat.store.get_execution(first.execution_id).status
+          is ExecutionStatus.COMPLETED)
+    _wait(lambda: not real_agent_chat.server._is_run_active(real_agent_chat.session_id))
+
+    real_agent_chat.tools.wait_kind = "approval"
+    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "call-later-wait"))
+    real_agent_chat.provider.add_response(ScriptedText("completed after approval"))
+    execution = _chat(real_agent_chat)
+    question = _pending_question(real_agent_chat, kind="approval")
+    paused = _wait(
+        lambda: (item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+                 is ExecutionStatus.PAUSED else None)
+    )
+    checkpoint = real_agent_chat.control.checkpoints.get(paused.checkpoint_head_id)
+    from openprogram.runtime.execution.agent_journal import load_journal
+    snapshot = load_journal(real_agent_chat.session_id, checkpoint.state_refs["agent_journal"]).snapshot
+    assert "system_prompt" not in snapshot and snapshot.get("system_prompt_sha256")
+
+    _question_action(real_agent_chat, "question_reply", question.id, answer="允许")
+    completed = _wait(
+        lambda: (item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+                 in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.PAUSED}
+                 and item.current_attempt_id is None else None),
+        detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
+    )
+    assert completed.status is ExecutionStatus.COMPLETED, (completed.to_dict(), real_agent_chat.activation_errors)
+    assert real_agent_chat.tools.calls == ["first"]

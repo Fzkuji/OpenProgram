@@ -1,0 +1,26 @@
+<title>Web frontend subprocess creation</title>
+<meta name="description" content="How the worker spawns and respawns the Next.js frontend, and what happens when a spawn fails.">
+<h1>Web frontend subprocess creation</h1>
+
+<p>The worker starts Next.js through <code translate="no">start_web_frontend</code> in <code translate="no">openprogram/operations/worker/web.py</code> and restarts it when <code translate="no">.next/BUILD_ID</code> changes. Both spawn sites pass <code translate="no">no_window_creation_flags()</code> from <code translate="no">openprogram.host._platform.process_ownership</code>, and each imports it in its own function scope.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">POSIX flags</th><td>Zero</td></tr>
+<tr><th scope="row">Windows flags</th><td>Background window</td></tr>
+<tr><th scope="row">Initial spawn raises <code translate="no">OSError</code></th><td>Reported; returns <code translate="no">None</code></td></tr>
+<tr><th scope="row">Rebuild spawn raises <code translate="no">OSError</code></th><td>Reported; the watcher still sees the next build</td></tr>
+<tr><th scope="row">Shutdown</th><td>Stops the latest successfully spawned child</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Acceptance and boundaries</summary>
+<ul>
+<li>Component tests call the public startup entry with fake subprocesses and capture the production watcher callback without starting an unbounded thread. A temporary <code translate="no">BUILD_ID</code> file drives successive rebuilds.</li>
+<li>They check helper flags at initial and repeated spawns, latest-child shutdown and recovery after a spawn error. Process creation and port reclamation are isolated, so the running App is unaffected.</li>
+<li>Command construction, environment propagation, port reclamation and manifest patching are unrelated to the flags. Watcher scheduling, shutdown cancellation and other platform behaviour are out of scope.</li>
+<li>No dependency, API, configuration or security-boundary change.</li>
+</ul>
+</details>

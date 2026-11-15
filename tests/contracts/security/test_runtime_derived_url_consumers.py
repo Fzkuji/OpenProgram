@@ -16,13 +16,13 @@ import httpcore
 import httpx
 import pytest
 
-from openprogram.channels import _attachments, _transport
-from openprogram.channels._message import Attachment
+from openprogram.interfaces.channels import _attachments, _transport
+from openprogram.interfaces.channels._message import Attachment
 from openprogram.programs.tools.web.image_analyze.providers import gemini
 from openprogram.programs.tools.web.image_generate import image_generate
 from openprogram.programs.tools.web.image_generate.registry import GeneratedImage
-from openprogram.security import safe_http
-from openprogram.security.safe_http import OutboundSecurityConfig
+from openprogram.host.security import safe_http
+from openprogram.host.security.safe_http import OutboundSecurityConfig
 
 
 _REAL_DECISION_BACKEND = safe_http.DecisionNetworkBackend
@@ -316,7 +316,7 @@ def test_channel_attachment_download_uses_managed_public_fetch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     saved = _attachments.download_inbound(
         "discord",
         "a1",
@@ -348,7 +348,7 @@ def test_attachment_malformed_status_hides_peer_echoed_signed_url(
     managed_clients,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     registry = dict(safe_http.CONSUMER_REGISTRY)
     spec = registry["channel.attachment.download"]
@@ -356,7 +356,7 @@ def test_attachment_malformed_status_hides_peer_echoed_signed_url(
         spec, allowed_ports=frozenset({malformed_server.port})
     )
     monkeypatch.setattr(safe_http, "CONSUMER_REGISTRY", registry)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
 
     saved = _attachments.download_inbound(
         "discord",
@@ -372,11 +372,11 @@ def test_attachment_malformed_status_hides_peer_echoed_signed_url(
         ],
     )
 
-    output = capsys.readouterr().out
+    output = caplog.text
     assert saved == []
-    assert output.endswith(
+    assert caplog.records[-1].getMessage().endswith(
         "download failed: RemoteProtocolError for "
-        f"http://public.test:{malformed_server.port}\n"
+        f"http://public.test:{malformed_server.port}"
     )
     assert "TOKEN-PATH" not in output
     assert "QUERY-SECRET" not in output
@@ -390,7 +390,7 @@ def test_channel_attachment_private_dns_is_denied_before_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     saved = _attachments.download_inbound(
         "discord",
         "a1",
@@ -651,7 +651,7 @@ def test_derived_download_checks_4xx_before_consuming_body_and_closes(
     consumer: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     stream = _CountingStream()
     response = httpx.Response(
@@ -665,7 +665,7 @@ def test_derived_download_checks_4xx_before_consuming_body_and_closes(
     if consumer == "attachment":
         monkeypatch.setattr(_attachments, "safe_client", factory)
         monkeypatch.setattr(
-            "openprogram.paths.get_state_dir", lambda: tmp_path / "state"
+            "openprogram.state.paths.get_state_dir", lambda: tmp_path / "state"
         )
         result = _attachments.download_inbound(
             "discord",
@@ -673,7 +673,7 @@ def test_derived_download_checks_4xx_before_consuming_body_and_closes(
             [Attachment(name="private.png", url="https://public.test/private.png")],
         )
         assert result == []
-        assert "download HTTP 403" in capsys.readouterr().out
+        assert "download HTTP 403" in caplog.text
     else:
         monkeypatch.setattr(gemini, "safe_client", factory)
         with pytest.raises(RuntimeError, match="HTTP 403"):
@@ -918,7 +918,7 @@ def test_slack_private_attachment_keeps_bearer_only_on_fixed_origin(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     saved = _attachments.download_inbound(
         "slack",
         "a1",
@@ -942,7 +942,7 @@ def test_slack_private_attachment_does_not_redirect_bearer_cross_origin(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     saved = _attachments.download_inbound(
         "slack",
         "a1",
@@ -968,7 +968,7 @@ def test_telegram_fixed_attachment_accepts_image_without_leaking_token_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     saved = _attachments.download_inbound(
         "telegram",
         "a1",
@@ -991,9 +991,9 @@ def test_telegram_token_path_is_not_exposed_by_fixed_origin_denial(
     managed_clients,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     saved = _attachments.download_inbound(
         "telegram",
         "a1",
@@ -1007,7 +1007,7 @@ def test_telegram_token_path_is_not_exposed_by_fixed_origin_denial(
     )
 
     assert saved == []
-    output = capsys.readouterr().out
+    output = caplog.text
     assert "FIXED_ORIGIN_MISMATCH" in output
     assert "SECRET" not in output
     assert server.requests == []
@@ -1019,7 +1019,7 @@ def test_attachment_disk_failure_removes_partial_destination(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     real_fdopen = _attachments.os.fdopen
 
     class _PartialFile:
@@ -1064,7 +1064,7 @@ def test_attachment_fdopen_failure_closes_descriptor_and_removes_temp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     descriptors: list[int] = []
     real_mkstemp = _attachments.tempfile.mkstemp
 
@@ -1104,7 +1104,7 @@ def test_attachment_atomic_write_fsyncs_before_replace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     synced: list[int] = []
     real_replace = _attachments.os.replace
     monkeypatch.setattr(_attachments.os, "fsync", lambda fd: synced.append(fd))

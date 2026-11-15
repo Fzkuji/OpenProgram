@@ -1,0 +1,113 @@
+<title>会议</title>
+<meta name="description" content="在这台电脑上录制通话，得到带说话人的转写稿，并在新对话中生成摘要。">
+<h1>会议</h1>
+<p>录制你参加的通话（Zoom、Teams、浏览器或其他应用），得到转写稿和包含决定、行动项、待解决问题的摘要。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 -10 680 174" role="img" aria-label="麦克风录为“我”，电脑声音录为“其他人”，各按 30 秒分段，在通话中转写。停止后，电脑声音按声音分组为说话人 1、说话人 2 等，合并转写稿，并在新对话中写摘要。">
+  <defs><marker id="mt-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">麦克风</text>
+  <text class="t-soft" x="0" y="62">“我”</text>
+  <text class="t-big" x="0" y="118">电脑声音</text>
+  <text class="t-soft" x="0" y="140">“其他人”</text>
+  <line class="ln" x1="130" y1="34" x2="196" y2="34" marker-end="url(#mt-a)"/>
+  <line class="ln" x1="150" y1="112" x2="196" y2="112" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="208" y="40">实时</text>
+  <text class="t-soft" x="208" y="62">30 秒分段</text>
+  <text class="t-big" x="208" y="118">实时</text>
+  <text class="t-soft" x="208" y="140">30 秒分段</text>
+  <line class="ln-faint" x1="346" y1="10" x2="346" y2="156"/>
+  <text class="t-soft mid" x="346" y="8">停止</text>
+  <line class="ln" x1="332" y1="112" x2="370" y2="112" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="382" y="118">说话人</text>
+  <text class="t-soft" x="382" y="140">按声音分组</text>
+  <path class="ln" d="M332 34H530V92" marker-end="url(#mt-a)"/>
+  <line class="ln" x1="496" y1="112" x2="518" y2="112" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="530" y="118">转写稿</text>
+  <text class="t-soft" x="530" y="140">新对话中的摘要</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>麦克风、电脑声音</strong><small>“我”和“其他人”，30 秒分段实时转写</small></li>
+  <li class="via">停止</li>
+  <li><strong>说话人</strong><small>电脑声音按声音分组</small></li>
+  <li class="flow-end"><strong>转写稿</strong><small>新对话中的摘要</small></li>
+</ol>
+</figure>
+<h2 id="before-the-first-meeting">第一次开会之前</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">需要</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS 13 或更高版本上的 OpenProgram</th><td>通过 ScreenCaptureKit 录制电脑声音。其他系统只录麦克风。</td></tr>
+<tr><th scope="row"><code translate="no">ffmpeg</code></th><td>转换音频用于识别。<code translate="no">brew install ffmpeg</code> 或用包管理器，然后重启。缺失时窗口会提示。</td></tr>
+<tr><th scope="row">语音引擎</th><td>在<strong>设置 → 语音</strong>中选择，与<a href="../interfaces/voice-input.zh.html">语音输入</a>共用：OpenAI 或 Groq（需 API key），或本地 whisper.cpp</td></tr>
+<tr><th scope="row">聊天模型</th><td>默认 Agent 写摘要，使用新对话的模型</td></tr>
+<tr><th scope="row">可选：<code translate="no">meetings</code> extra</th><td>区分其他说话人，见<a href="#who-said-what">谁说了什么</a></td></tr>
+</tbody>
+</table>
+<h2 id="record-a-meeting">录一场会议</h2>
+<ol>
+<li>从新标签页磁贴打开<strong>会议</strong>，或在<strong>应用</strong>页点<strong>打开</strong>。</li>
+<li>可选：填写名称并选择语言（默认<strong>自动识别</strong>，记住上次选择）。按<strong>开始录制</strong>。</li>
+<li>首次：允许窗口请求的<strong>麦克风</strong>，以及 macOS 为 OpenProgram App 请求的<strong>录屏与系统录音</strong>。不录制屏幕内容。</li>
+<li>窗口显示已录时长和已上传、已转写的分段数。可以切到其他标签页或窗口。</li>
+<li>按<strong>停止录制</strong>。转写最后的分段、写摘要，会议出现在<strong>过往会议</strong>。</li>
+</ol>
+<p class="note">录制不会自行开始。不戴耳机时麦克风会听到对方；重复电脑声音的行会被丢弃，但耳机的转写最干净。<strong>设置 → 语音</strong>的语言只影响语音输入。未选语言时每段单独识别，录制卡片和<strong>过往会议</strong>显示所选语言或“检测”。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">如果</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">拒绝了麦克风</th><td><strong>隐私与安全性 → 麦克风</strong>：允许 OpenProgram，重新开始</td></tr>
+<tr><th scope="row">无法录制电脑声音</th><td>只录麦克风并提示。若缺权限，在<strong>隐私与安全性 → 录屏与系统录音</strong>中允许 OpenProgram 并重新打开 App。没录到的历史会议在转写稿下注明。</td></tr>
+</tbody>
+</table>
+<h2 id="read-a-meeting">查看会议</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">过往会议中</th><th scope="col">显示或操作</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>摘要</strong></th><td>摘要、决定、行动项（说到时含负责人和截止日期）、待解决问题</td></tr>
+<tr><th scope="row"><strong>转写稿</strong></th><td>每行的时间和说话人</td></tr>
+<tr><th scope="row"><strong>打开对话</strong></th><td>写摘要的会话，可继续追问，如“起草跟进邮件”</td></tr>
+<tr><th scope="row"><strong>重新总结</strong></th><td>重写摘要，例如模型失败后或标记为<strong>已中断</strong>的会议</td></tr>
+<tr><th scope="row">删除按钮</th><td>删除音频、转写稿和摘要；对话保留</td></tr>
+</tbody>
+</table>
+<p class="note">摘要轮次没有工具，把转写稿当作人们说的话，绝不当指令。</p>
+<h2 id="who-said-what">谁说了什么</h2>
+<details>
+<summary>说话人分组</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">标签</th></tr></thead>
+<tbody>
+<tr><th scope="row">麦克风</th><td>始终是“我”</td></tr>
+<tr><th scope="row">电脑声音</th><td>停止后，在这台电脑上用 <a href="https://github.com/k2-fsa/sherpa-onnx">sherpa-onnx</a> 按声音分组。按首次发言顺序标为“说话人 1”“说话人 2”；人数自动推断。</td></tr>
+<tr><th scope="row">只出现片刻的声音，或没检测到声音的行</th><td>保持“其他人”</td></tr>
+<tr><th scope="row">名字</th><td>编号代表声音；会议中能明确身份时，摘要使用名字</td></tr>
+</tbody>
+</table>
+</details>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">配置</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">桌面 App</th><td>已包含</td></tr>
+<tr><th scope="row">源码检出</th><td><code translate="no">uv sync --locked --extra dev --extra meetings</code></td></tr>
+<tr><th scope="row">首次使用</th><td>下载两个模型，约 34 MB，到状态目录下的 <code translate="no">models/diarization/</code></td></tr>
+<tr><th scope="row">耗时</th><td>约为会议时长的十分之一，在摘要之前</td></tr>
+<tr><th scope="row">没有 extra 或模型</th><td>其他人都是“其他人”，其余正常</td></tr>
+</tbody>
+</table>
+<h2 id="where-meetings-are-stored">存储</h2>
+<pre translate="no" tabindex="0"><code>~/.openprogram/meetings/&lt;id&gt;/
+  meta.json          名称、开始时间、时长、进度、摘要会话、
+                     是否录到电脑声音、是否区分了说话人
+  tracks/mic/…       麦克风，30 秒 WebM 分段
+  tracks/system/…    电脑声音，30 秒 WAV 分段
+  transcript.json    合并后的转写稿
+  summary.md         摘要，末尾附完整转写稿</code></pre>
+<p class="note">位于状态目录下，默认 <code translate="no">~/.openprogram</code>。OpenAI 或 Groq：每段发送给该服务。whisper.cpp：音频留在本机。区分说话人始终在本机进行。</p>
+<h2 id="limits">限制</h2>
+<ul>
+<li>同时只能录一场，最长 4 小时，到时自动停止。</li>
+<li>只在停止后区分说话人。声音相近的人可能共用编号；同一人声音变化大时可能有两个编号。</li>
+<li>静音分段跳过。无法转换或转写的分段在转写稿下报告，其余继续。</li>
+</ul>
+<h2 id="turn-meetings-off">关闭会议</h2>
+<p><strong>应用</strong>页的开关，或 <code translate="no">openprogram programs disable meeting</code>，会停止正在进行的录制。<code translate="no">openprogram programs enable meeting</code> 重新开启。见<a href="applications.zh.html">应用</a>。</p>

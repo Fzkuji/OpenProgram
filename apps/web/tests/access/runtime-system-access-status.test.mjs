@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { convToChatMsgs } from "../../lib/chat/conv-mapper.ts";
-import { runtimeAnswer, runtimeSummaryLabel } from "../../components/chat/messages/runtime-summary.ts";
+import { runtimeAnswer, runtimeSummaryLabel } from "../../components/chat/messages/runtime/runtime-summary.ts";
 
 test("system access wait is displayed as paused without elapsed runtime", () => {
   const label = runtimeSummaryLabel({
@@ -21,22 +20,22 @@ test("system access wait is displayed as paused without elapsed runtime", () => 
   assert.doesNotMatch(label, /Waiting|Running|02:00/);
 });
 
+// Rows as the server projects a stored runtime placeholder (transcript/rows.py).
 test("persisted paused gui wait does not become Error/null", () => {
-  const [msg] = convToChatMsgs([{
+  const msg = {
     id: "b2d52ad91d86",
     role: "assistant",
-    type: "status",
+    rowKind: "function_run",
     display: "runtime",
     function: "gui_agent",
     status: "paused",
-    context_tree: {
+    contextTree: {
       path: "b2d52ad91d86",
       name: "gui_agent",
       status: "paused",
       output: "null",
     },
-  }]);
-  assert.equal(msg.status, "paused");
+  };
   const label = runtimeSummaryLabel({
     fnName: msg.function || "",
     status: msg.status,
@@ -58,24 +57,11 @@ test("failed and cancelled results stay visible while paused null stays hidden",
     status: "error",
     output: "null",
   };
-  const [failed] = convToChatMsgs([{
-    id: "failed-node",
-    role: "assistant",
-    type: "status",
-    display: "runtime",
-    function: "gui_agent",
-    status: "error",
-    context_tree: tree,
-  }]);
-  const [cancelled] = convToChatMsgs([{
-    id: "cancelled-node",
-    role: "assistant",
-    type: "status",
-    display: "runtime",
-    function: "gui_agent",
-    status: "cancelled",
-    context_tree: { ...tree, status: "cancelled" },
-  }]);
+  const failed = { id: "failed-node", role: "assistant", rowKind: "function_run", function: "gui_agent", status: "error", contextTree: tree };
+  const cancelled = {
+    id: "cancelled-node", role: "assistant", rowKind: "function_run", function: "gui_agent",
+    status: "cancelled", contextTree: { ...tree, status: "cancelled" },
+  };
   const failedLabel = runtimeSummaryLabel({
     fnName: "gui_agent", status: failed.status, tree: failed.contextTree,
   });

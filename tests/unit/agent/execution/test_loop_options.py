@@ -12,9 +12,9 @@ from __future__ import annotations
 import asyncio
 import time
 
-from openprogram.agent import AgentSession
-from openprogram.agent.types import AgentToolResult
-from openprogram.providers.types import (
+from openprogram.runtime.agent.loop.session import AgentSession
+from openprogram.models.providers.types import AgentToolResult
+from openprogram.models.providers.types import (
     AssistantMessage,
     Model,
     EventDone,
@@ -23,14 +23,14 @@ from openprogram.providers.types import (
     ToolCall,
     ToolResultMessage,
 )
-from openprogram.programs._runtime import (
+from openprogram.programs._host.runtime import (
     ToolReturn,
     function,
     restore_registry,
     snapshot_registry,
 )
-from openprogram.providers.structured_output import normalize_response_format
-from openprogram.agentic_programming.runtime import (
+from openprogram.models.providers.structured_output import normalize_response_format
+from openprogram.runtime.agent.runtime import (
     Runtime,
     _current_loop_opts,
 )
@@ -84,7 +84,7 @@ async def _echo_execute(call_id, args, cancel, on_update):
 
 
 def _echo_tool():
-    from openprogram.agent.types import AgentTool
+    from openprogram.models.providers.types import AgentTool
 
     return AgentTool(
         name="echo",
@@ -132,7 +132,7 @@ def test_default_cap_does_not_kick_in_early():
 
 
 def test_chat_turns_have_no_hard_cap():
-    from openprogram.agent.agent_loop import MAX_INNER_ITERATIONS, iteration_cap_for
+    from openprogram.runtime.agent.loop import MAX_INNER_ITERATIONS, iteration_cap_for
 
     assert MAX_INNER_ITERATIONS is None
     assert iteration_cap_for(None) is None
@@ -286,9 +286,88 @@ def test_exec_defaults_publish_only_the_20_round_cap():
 
 
 def test_default_chat_completes_after_more_than_two_hundred_tool_rounds():
+    # Each round asks for a different step: work that moves has no round
+    # cap (identical rounds are the tool-loop guard's, test_tool_loop_guard).
     stream_fn, state = _make_stream_fn(
-        [_tool_call_msg(i) for i in range(205)] + [_text_msg()]
+        [
+            _assistant([ToolCall(id=f"call_{i}", name="echo", arguments={"step": i})])
+            for i in range(205)
+        ] + [_text_msg()]
     )
     session = _session(stream_fn)
     asyncio.run(session.run('Complete the whole task'))
     assert state['calls'] == 206
+
+
+def test_completed_tool_round_returns_receipt_without_followup_generation():
+    stream, state = _make_stream_fn([_tool_call_msg()])
+    session = _session(stream, max_iterations=1, stop_after_tool_round=True)
+    try:
+        final = asyncio.run(session.run('Perform one step'))
+        assert final.stop_reason == 'toolUse'
+        assert not session.agent.state.error
+        assert state['calls'] == 1
+        receipts = [m for m in session.messages if isinstance(m, ToolResultMessage)]
+        assert len(receipts) == 1 and not receipts[0].is_error
+    finally:
+        session.close()
+
+
+def test_iteration_exhaustion_does_not_retry_completed_tool_effects():
+    import pytest
+    stream, state = _make_stream_fn([_tool_call_msg()])
+    runtime = Runtime(call=lambda *_a, **_k: 'unused', max_retries=3)
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.runtime.agent.turn_request import (
+        set_turn_request,
+        reset_turn_request,
+    )
+    effects = []
+    tool = _echo_tool()
+    async def execute(*args):
+        effects.append('echo')
+        return await _echo_execute(*args)
+    tool.execute = execute
+    token = set_turn_request(TurnRequest(session_id='single-step', agent_id='main',
+        user_text='Echo once', permission_mode='bypass', source='web', **local_owner_authority()))
+    try:
+        with pytest.raises(Exception, match='iteration limit') as caught:
+            runtime.exec([{'type':'text','text':'step'}], tools=[tool],
+                         stream_fn=stream, max_iterations=1)
+        assert caught.value.retryable is False
+        assert state['calls'] == 1
+        assert effects == ['echo']
+    finally:
+        reset_turn_request(token)
+        runtime.close()
+
+
+def test_async_exec_publishes_explicit_single_tool_round():
+    captured = {}
+    class AsyncProbe(_ProbeRuntime):
+        async def _async_call(self, content, model='default', response_format=None):
+            captured['opts'] = _current_loop_opts.get()
+            return 'ok'
+    runtime = AsyncProbe(captured)
+    try:
+        asyncio.run(runtime.async_exec([{'type':'text','text':'step'}],
+            max_iterations=1, stop_after_tool_round=True))
+        assert captured['opts'] == {'max_iterations':1, 'stop_after_tool_round':True}
+        assert _current_loop_opts.get() is None
+    finally:
+        runtime.close()
+
+
+def test_single_round_rejects_final_output_contract_before_calling_provider():
+    import pytest
+    runtime = Runtime(call=lambda *_a, **_k: (_ for _ in ()).throw(AssertionError('provider called')))
+    options = dict(content=[{'type':'text','text':'step'}], stop_after_tool_round=True,
+                   response_format={'type':'object','properties':{},'additionalProperties':False})
+    try:
+        with pytest.raises(ValueError, match='cannot be combined'):
+            runtime.exec(**options)
+        with pytest.raises(ValueError, match='cannot be combined'):
+            asyncio.run(runtime.async_exec(**options))
+    finally:
+        runtime.close()

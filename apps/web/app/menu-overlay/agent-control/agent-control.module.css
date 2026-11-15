@@ -1,0 +1,85 @@
+/* The control overlay over a desktop app window an Agent operates. */
+.stage {
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  opacity: 1;
+  animation: agent-control-in 320ms ease-out;
+  transition: opacity var(--motion-slow) ease-in;
+}
+
+.stage[data-ending="true"] {
+  opacity: 0;
+}
+
+@keyframes agent-control-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+/* Inside the window: a glow that fades inward from the edge, breathing
+   while the Agent works. */
+.breathe {
+  animation: agent-control-breathe 2.6s ease-in-out infinite;
+}
+
+.glow {
+  fill: none;
+  stroke: var(--agent-accent);
+  stroke-width: 18;
+  opacity: 0.55;
+}
+
+@keyframes agent-control-breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* The close, minimize and zoom lights take the accent and pulse in turn:
+   the window is not the user's to drive now. */
+.light {
+  fill: var(--agent-accent);
+}
+
+.lightPulse {
+  fill: var(--agent-light-pulse);
+  opacity: 0;
+  animation: agent-control-light 1.4s ease-in-out infinite;
+}
+
+@keyframes agent-control-light {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.4; }
+}
+
+.cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  transition: opacity var(--motion-slow) var(--ease-standard);
+  will-change: transform;
+}
+
+.stage[data-reduced-motion="true"],
+.stage[data-reduced-motion="true"] .breathe,
+.stage[data-reduced-motion="true"] .lightPulse {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage,
+  .breathe,
+  .lightPulse {
+    animation: none;
+  }
+}

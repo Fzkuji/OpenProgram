@@ -1,0 +1,139 @@
+<title>Nested LLM node content</title>
+<meta name="description" content="How an expanded LLM node shows its text, reasoning, function references, parallel groups and retries in execution order.">
+<meta name="covers" content="apps/web/components/chat/dag/">
+<h1>Nested LLM node content</h1>
+
+<p>An expanded LLM node shows everything displayable in execution order. No fixed Reply or Reasoning sections. The stream itself: <a href="../execution/agentic-llm-streaming.html">agentic LLM streaming</a>.</p>
+
+<figure>
+<table class="stack fixed">
+<thead><tr><th scope="col">Block, in order</th><th scope="col">Shown as</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">reasoning_summary</code></th><td>Folded row, where it occurred; only when the model returned one, never generated</td></tr>
+<tr><th scope="row"><code translate="no">text</code></th><td>Markdown, no heading</td></tr>
+<tr><th scope="row"><code translate="no">parallel_group</code></th><td><code translate="no">read_config</code> Completed, <code translate="no">run_tests</code> Running: one group, invocation order</td></tr>
+<tr><th scope="row"><code translate="no">text</code></th><td>Continues after the group as a new block</td></tr>
+<tr><th scope="row"><code translate="no">tool_ref</code></th><td><code translate="no">analyze_repository</code>; expands to its own inner LLM content</td></tr>
+<tr><th scope="row"><code translate="no">text</code></th><td>The final text</td></tr>
+</tbody>
+</table>
+</figure>
+
+<h2 id="views">Tree and content</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">View</th><th scope="col">Answers</th></tr></thead>
+<tbody>
+<tr><th scope="row">Execution tree</th><td>Call relationships, parallel branches, status, duration, failure location</td></tr>
+<tr><th scope="row">Node content</th><td>Ordered text, reasoning and function references inside one LLM node</td></tr>
+<tr><th scope="row">Collapsed card</th><td>Name, status, duration, short preview</td></tr>
+<tr><th scope="row">Expanded card, right-side details</th><td>One component, <code translate="no">LlmNodeContent</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>A function row appears at invocation and reads arguments, progress, results and errors from its DAG node. Clicking it finds that node in the tree. An early finish never moves a row.</li>
+<li>Internal signatures are not content.</li>
+<li>All displayable content stays reachable. Large results may fold or load on demand, but a truncated preview is never the only copy.</li>
+</ul>
+
+<h2 id="recursion">Model calls inside functions</h2>
+<dl class="pairs">
+<dt>Default</dt><dd>The selected LLM open; its functions as summary rows</dd>
+<dt>Limit</dt><dd>Eight inline levels (<code translate="no">MAX_LLM_CONTENT_DEPTH</code>), then an explicit boundary with an action that opens the node as a new content root in details. The tree, tool state and history do not change</dd>
+<dt>Expansion state</dt><dd>Kept by node, attempt and block, so streaming and remounts do not reset it</dd>
+<dt>Code functions</dt><dd>Arguments, status, logs, return value; model content only if they called a model</dd>
+</dl>
+
+<h2 id="protocol">Block protocol</h2>
+<p>Each LLM node keeps ordered <code translate="no">blocks</code> per attempt on <code translate="no">execution_stream.v1</code>. Execution sets the order through <code translate="no">block_id</code> and <code translate="no">block_index</code>; WebSocket arrival time does not.</p>
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">Fields</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">text</code></th><td><code translate="no">block_id</code>, content, status</td><td>Streaming Markdown</td></tr>
+<tr><th scope="row"><code translate="no">reasoning_summary</code></th><td>As <code translate="no">text</code>, plus retention</td><td>Policy may omit it from persistence</td></tr>
+<tr><th scope="row"><code translate="no">tool_ref</code></th><td><code translate="no">block_id</code>, <code translate="no">tool_call_id</code>, <code translate="no">occurrence_id</code>, <code translate="no">ref_node_id</code>, optional <code translate="no">group_id</code></td><td>A pointer to a DAG node; no inline result</td></tr>
+<tr><th scope="row"><code translate="no">tool_arguments</code></th><td>Argument delta</td><td>Preview while arguments generate; terminal display uses the tree</td></tr>
+<tr><th scope="row"><code translate="no">parallel_group</code></th><td><code translate="no">group_id</code>, ordered <code translate="no">tool_ref</code> ids</td><td>Explicit concurrent batch only</td></tr>
+<tr><th scope="row"><code translate="no">refusal</code>, <code translate="no">unsupported</code></th><td>Existing</td><td>Shown as themselves</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Example event</summary>
+<pre translate="no" tabindex="0">{
+  "type": "execution_stream",
+  "schema_version": 1,
+  "op": "block_started",
+  "node_id": "call_9f3e",
+  "attempt_id": "att_2",
+  "block_id": "blk_tool_7",
+  "block_index": 4,
+  "kind": "tool_ref",
+  "tool_call_id": "call_abc",
+  "occurrence_id": "occ_7e4c",
+  "ref_node_id": "exec_read_file_01",
+  "group_id": "par_1"
+}</pre>
+</details>
+
+<h3 id="tool-identity">Tool identity</h3>
+<ul>
+<li>One qualified <code translate="no">occurrence_id</code> is exactly one row. A raw <code translate="no">tool_call_id</code> may repeat across provider rounds; a duplicate event adds no row. A missing occurrence is accepted only for old records.</li>
+<li>A DAG tool node stores both ids; the stream publishes <code translate="no">occurrence_id → ref_node_id</code>. If the node is not visible yet, a placeholder with a stable id comes first and the same <code translate="no">block_id</code> is filled in later. No second row, no fabricated completion.</li>
+</ul>
+
+<h3 id="attempts">Attempts</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Event</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Model request after normal tool results</th><td>Same attempt, more blocks. <code translate="no">turn_end</code> ends one provider round only</td></tr>
+<tr><th scope="row">Transport or structured-output failure</th><td><code translate="no">start_attempt(reason=...)</code>: a visible boundary; earlier attempts stay folded; new output never joins the incomplete Markdown</td></tr>
+</tbody>
+</table>
+
+<h3 id="parallel">Parallel calls</h3>
+<ul>
+<li>A group needs a real concurrent batch with known members. The Python dispatcher runs calls one by one, so it publishes no <code translate="no">group_id</code>; the frontend never infers a group from adjacent rows.</li>
+<li>Every member carries the id from its first event; an id created late is re-published for earlier members.</li>
+<li>Order is invocation order. Completion changes status only.</li>
+</ul>
+
+<h2 id="streaming">Streaming and scrolling</h2>
+<ul>
+<li>Reuse the chat's <code translate="no">renderMarkdown</code>, ThinkingStep and FunctionStep presentation and safety policy.</li>
+<li>Update the active block only. Unclosed fences, tables or links never blank the region.</li>
+<li>Virtualize or load large content by block.</li>
+<li>Follow at the bottom; scrolling up stops it. Expansion and highlighting keep the reading position.</li>
+<li>Copy text is not Copy full execution record, which may include reasoning and tool arguments.</li>
+</ul>
+
+<h2 id="recovery">Refresh and failure</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Refresh, owner gone, worker restart</th><td>Same order, references and terminal states, from checkpoint, <code translate="no">metadata.stream</code> and snapshots. Never a model call</td></tr>
+<tr><th scope="row">Incomplete text</th><td>Kept and marked interrupted, cancelled or failed</td></tr>
+<tr><th scope="row">Reasoning not saved</th><td>“This content was not saved”, not an empty success</td></tr>
+<tr><th scope="row">Old records</th><td>One legacy attempt from <code translate="no">metadata.blocks</code>; an unresolved reference shows as unresolved and keeps <code translate="no">tool_call_id</code></td></tr>
+</tbody>
+</table>
+<p class="note">Live and durable snapshots hold complete block content; only compatibility preview fields may be cut.</p>
+
+<details>
+<summary>Acceptance scenario</summary>
+<p>The model emits Markdown, calls two functions in parallel, one calls an inner model with <code translate="no">read_file</code>, the outer model continues. Disconnect and refresh during it. Afterwards:</p>
+<ul>
+<li>Block order, function states and hierarchy match the live view; tool state comes from persistent DAG nodes.</li>
+<li>No Reply or Reasoning header bars.</li>
+<li>Parallel members are not reordered by completion.</li>
+<li>Retries show boundaries without joining incomplete Markdown.</li>
+<li><code translate="no">tool_ref</code> and tree nodes match one to one, with no duplicated results.</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Ordered blocks, <code translate="no">tool_ref</code>, attempts and version recovery (<code translate="no">CallStreamState</code>, the reducer); <code translate="no">LlmNodeContent</code> for cards and details; authority filtering before projection, so <code translate="no">io/llm</code> shows permitted descendants only; expansion state and the depth limit; persistent recovery</td></tr>
+<tr><th scope="row">Not yet</th><td>The acceptance scenario with a real model in the default App. Concurrent dispatch, so <code translate="no">parallel_group</code> has no producer</td></tr>
+</tbody>
+</table>

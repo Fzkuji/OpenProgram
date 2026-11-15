@@ -1,69 +1,21 @@
-import { readDesktopBridgeSource } from "../testing/feature-source.mjs";
+// Rule: every --terminal-* colour the terminal page reads is defined by the
+// global theme styles, the xterm stylesheet is loaded by the root layout,
+// and the preload's terminal resize goes over the terminal:resize channel.
+// The page's behaviour is tested in tests/desktop/terminal-page.test.mjs.
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
 
-const root = path.resolve(import.meta.dirname, "../..");
-const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
+const root = new URL("../../", import.meta.url);
+const read = (path) => readFileSync(new URL(path, root), "utf8");
+const cssIn = (dir) => readdirSync(new URL(dir, root)).filter((name) => name.endsWith(".css")).map((name) => read(`${dir}${name}`));
 
-const ids = read("lib/tabs/center-tab-ids.ts");
-const launcher = read("components/center-tabs/new-tab-page.tsx");
-const shell = read("components/app-shell.tsx");
-const page = read("components/center-tabs/terminal-page.tsx");
-const bridge = readDesktopBridgeSource();
-const bridgeTypes = read("lib/desktop/desktop-bridge-types.ts");
-const preload = read("../desktop/preload.js");
-const layout = read("app/layout.tsx");
-const css = read("components/center-tabs/center-tabs.module.css");
-const base = read("app/styles/base.css");
-const pkg = JSON.parse(read("package.json"));
+const page = read("components/center-tabs/pages/terminal-page.tsx");
+const styles = [...cssIn("app/styles/design/"), ...cssIn("app/styles/themes/"), ...cssIn("app/styles/base/")].join("\n");
+const tokens = [...new Set([...page.matchAll(/"(--terminal-[a-z-]+)"/g)].map((match) => match[1]))];
+assert.ok(tokens.length >= 20, "the terminal theme reads its colours from --terminal-* tokens");
+for (const token of tokens) {
+  assert.match(styles, new RegExp(`${token}\\s*:`), `${token} is defined in the global styles`);
+}
 
-assert.match(ids, /"terminal"/);
-assert.match(ids, /"claude"/);
-assert.match(launcher, /openBuiltinTab\("terminal"\)/);
-assert.match(shell, /<TerminalPage preset="shell"/);
-assert.match(shell, /<TerminalPage preset="claude"/);
-assert.match(page, /import\("@xterm\/xterm"\)/);
-assert.match(page, /import\("@xterm\/addon-fit"\)/);
-assert.match(page, /new ResizeObserver/);
-assert.match(page, /api\.resize/);
-assert.match(page, /dataset\.processId/);
-assert.match(page, /PROJECT_RESOLVE_GRACE_MS/);
-assert.match(page, /setStartCwd\(\(current\) => current === undefined \? null : current\)/);
-assert.match(page, /cwd: startCwd \?\? undefined/);
-assert.match(page, /readTerminalTheme/);
-for (const color of [
-  "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
-  "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue",
-  "brightMagenta", "brightCyan", "brightWhite",
-]) assert.match(page, new RegExp(`\\b${color}:`));
-assert.match(page, /attachCustomKeyEventHandler/);
-assert.match(page, /api\.write\(id, "\\x03"\)/);
-assert.match(page, /navigator\.clipboard\.writeText/);
-assert.match(page, /navigator\.clipboard\.readText/);
-assert.match(page, /terminal\.clear\(\)/);
-assert.match(page, /\\x1b\[2J\\x1b\[3J\\x1b\[H/);
-assert.match(page, /restartTerminal/);
-assert.match(page, /stopTerminal/);
-assert.match(page, /api\.stop\(id\)/);
-assert.match(page, /status === "running"/);
-assert.match(page, /payload\.done/);
-assert.match(page, /options\.disableStdin = true/);
-assert.doesNotMatch(page, /<input|terminalInputRow/);
-assert.doesNotMatch(page, /background:\s*"#[0-9a-f]{3,8}"/i);
-assert.match(css, /\.terminalActions/);
-assert.match(css, /\.terminalAction/);
-assert.match(css, /background:\s*var\(--terminal-bg\)/);
-assert.match(base, /--terminal-bg:/);
-assert.match(base, /--terminal-bright-white:/);
-assert.match(bridge, /export function destroyStaleTerminals/);
-assert.match(bridge, /destroyStaleTerminals\(bridge, tabs\)/);
-assert.match(bridge, /useCenterTabs\.subscribe\(reconcileNativeResources\)/);
-assert.match(bridge, /reconcileNativeResources\(\)/);
-assert.match(bridgeTypes, /resize\(id: string, cols: number, rows: number\): void/);
-assert.match(preload, /terminal:resize/);
-assert.match(layout, /@xterm\/xterm\/css\/xterm\.css/);
-assert.equal(typeof pkg.dependencies?.["@xterm/xterm"], "string");
-assert.equal(typeof pkg.dependencies?.["@xterm/addon-fit"], "string");
-
-console.log("integrated terminal web checks passed");
+assert.match(read("app/layout.tsx"), /@xterm\/xterm\/css\/xterm\.css/, "the root layout loads xterm's stylesheet");
+assert.match(read("../desktop/main/preload.js"), /resize: \(id, cols, rows\) => ipcRenderer\.send\("terminal:resize", id, cols, rows\)/);

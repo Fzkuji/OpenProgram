@@ -7,15 +7,14 @@ import threading
 from collections import deque
 
 import httpcore
-import httpx
 import pytest
 
-from openprogram.security.safe_http import (
+from openprogram.host.security.safe_http import (
     OutboundSecurityConfig,
     safe_async_client,
     safe_client,
 )
-from openprogram.security.url_policy import OwnerURLException, URLPolicyError
+from openprogram.host.security.url_policy import OwnerURLException, URLPolicyError
 
 
 class _ScriptedPool:

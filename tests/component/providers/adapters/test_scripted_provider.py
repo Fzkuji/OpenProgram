@@ -12,10 +12,11 @@ from collections.abc import Iterator
 
 import pytest
 
-from openprogram.agent.agent_loop import agent_loop
-from openprogram.agent.types import AgentContext, AgentLoopConfig, AgentTool, AgentToolResult
-from openprogram.providers.api_registry import get_api_provider, register_api_provider
-from openprogram.providers.types import (
+from openprogram.runtime.agent.loop import agent_loop
+from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.models.providers.catalog.api_registry import get_api_provider, register_api_provider
+from openprogram.models.providers.types import (
     Context,
     EventError,
     Model,
@@ -60,7 +61,7 @@ def registered_provider(registry_state) -> Iterator:
         yield provider
     finally:
         if previous is None:
-            from openprogram.providers import api_registry
+            from openprogram.models.providers.catalog import api_registry
             api_registry._registry.pop(_API, None)
         else:
             register_api_provider(_API, previous)
@@ -71,7 +72,7 @@ def test_registered_provider_streams_text_and_thinking_via_public_facade(
 ) -> None:
     """Removing facade dispatch or thinking event construction breaks this."""
     from tests.component.providers.scripted_provider import ScriptedText, ScriptedThinking
-    from openprogram.providers import stream_simple
+    from openprogram.models.providers import stream_simple
 
     registered_provider.add_response(
         ScriptedThinking("inspect inputs"), ScriptedText("answer")
@@ -106,7 +107,7 @@ def test_registered_provider_streams_text_and_thinking_via_public_facade(
 def test_registered_provider_streams_via_public_stream(registered_provider) -> None:
     """The non-simple public stream must use the same registry provider."""
     from tests.component.providers.scripted_provider import ScriptedText
-    from openprogram.providers import stream
+    from openprogram.models.providers import stream
 
     registered_provider.add_response(ScriptedText("ordinary stream"))
 
@@ -132,7 +133,7 @@ def test_registered_provider_uses_ordered_responses_and_surfaces_terminal_error(
         ScriptedText,
         ScriptedToolCall,
     )
-    from openprogram.providers import stream_simple
+    from openprogram.models.providers import stream_simple
 
     registered_provider.add_response(
         ScriptedText("checking"),
@@ -180,7 +181,7 @@ def test_registered_provider_uses_ordered_responses_and_surfaces_terminal_error(
 def test_registered_provider_preserves_aborted_stop_reason(registered_provider) -> None:
     """Hard-coding an error stop reason loses a terminal abort's meaning."""
     from tests.component.providers.scripted_provider import ScriptedError
-    from openprogram.providers import stream_simple
+    from openprogram.models.providers import stream_simple
 
     registered_provider.add_response(ScriptedError("cancelled", event_reason="aborted"))
 
@@ -205,13 +206,13 @@ def test_agent_loop_executes_tool_through_registered_scripted_provider(
     from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
 
     monkeypatch.delenv("OPENPROGRAM_FALLBACK_MODELS", raising=False)
-    stream_module = importlib.import_module("openprogram.providers.stream")
+    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(stream_module, "resolve_provider_key", lambda provider: None)
     class EmptyMemory:
         def search(self, query: str) -> str:
             return ""
 
-    monkeypatch.setattr("openprogram.memory.get_backend", EmptyMemory)
+    monkeypatch.setattr("openprogram.state.memory.get_backend", EmptyMemory)
     registered_provider.add_response(ScriptedToolCall("echo", {"value": "hi"}, "call-1"))
     registered_provider.add_response(ScriptedText("tool completed"))
     executed: list[tuple[str, dict]] = []

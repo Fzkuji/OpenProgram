@@ -11,16 +11,8 @@ tests/unit/programs/dag/test_render_context.py.
 
 from __future__ import annotations
 
-from openprogram.context.nodes import (
-    Call,
-    Graph,
-    ROLE_USER,
-    ROLE_LLM,
-    ROLE_CODE,
-    render_context,
-    render_path,
-    render_spine,
-)
+from openprogram.state.store.session.nodes import Call, Graph, ROLE_USER, ROLE_LLM, ROLE_CODE
+from openprogram.runtime.context.nodes import render_context, render_path, render_spine
 
 
 def _add(g: Graph, role: str, *, pred=None, caller: str = "",

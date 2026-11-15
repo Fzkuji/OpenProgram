@@ -1,0 +1,98 @@
+<title>桌面窗口状态</title>
+<meta name="description" content="桌面主窗口如何把普通尺寸和最大化、全屏分开保存，保证打开后总能缩放。">
+<h1>桌面窗口状态</h1>
+
+<p>主窗口把上次的普通尺寸和最大化、全屏分开保存。普通窗口绝不贴齐菜单栏、Dock 或屏幕边缘打开，否则没有边可抓。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">失败</th><th scope="col">防护</th></tr></thead>
+<tbody>
+<tr><th scope="row">Zoom 或拖满工作区后退出</th><td>先创建较小的普通窗口，再恢复最大化</td></tr>
+<tr><th scope="row">旧的贴边 <code translate="no">{{x,y,width,height}}</code> 文件</th><td>迁移为最大化加内缩默认</td></tr>
+<tr><th scope="row">保存的显示器已拔掉</th><td>主屏工作区居中默认</td></tr>
+<tr><th scope="row">文件损坏或尺寸过小</th><td>最小尺寸加居中默认</td></tr>
+<tr><th scope="row">标签行吞掉上沿</th><td>5px <code translate="no">no-drag</code> 条</td></tr>
+<tr><th scope="row">关闭撕下的窗口</th><td>撕下的窗口不保存</td></tr>
+</tbody>
+</table>
+<p class="note">代码：<code translate="no">apps/desktop/main/windows/window-state.js</code>、<code translate="no">apps/desktop/main.js</code>、<code translate="no">apps/web/app/styles/base/desktop-chrome.css</code>、<code translate="no">apps/web/components/app-shell.tsx</code>。有几个窗口、谁创建：<a href="window-lifecycle.zh.html">窗口生命周期</a>。</p>
+
+<h2 id="persisted-schema">持久化结构</h2>
+<p>桌面 userData 目录（<code translate="no">app.getPath("userData")</code>，桌面名 <code translate="no">openprogram-desktop</code>）下的 <code translate="no">window-state.json</code>。</p>
+<pre translate="no" tabindex="0">{
+  "version": 2,
+  "x": 160, "y": 90, "width": 1280, "height": 800,
+  "isMaximized": false,
+  "isFullScreen": false,
+  "displayId": 1,
+  "displayWorkArea": { "x": 0, "y": 38, "width": 1512, "height": 851 }
+}</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">x,y,width,height</code></th><td>上次普通尺寸；绝不是铺满工作区的矩形</td></tr>
+<tr><th scope="row"><code translate="no">isMaximized</code></th><td>上次 Zoom 或最大化</td></tr>
+<tr><th scope="row"><code translate="no">isFullScreen</code></th><td>上次 macOS 原生全屏</td></tr>
+<tr><th scope="row"><code translate="no">displayId</code></th><td>Electron 显示器 id，屏幕仍连接时优先用</td></tr>
+<tr><th scope="row"><code translate="no">displayWorkArea</code></th><td>重连后 id 变了也能对上</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">限制</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row">最小</th><td><code translate="no">800×500</code>；不设最大</td></tr>
+<tr><th scope="row">首次启动</th><td><code translate="no">1440×900</code>，在主屏工作区居中</td></tr>
+<tr><th scope="row">内缩默认</th><td><code translate="no">1440×900</code> 会铺满工作区时，四边各内缩 24px</td></tr>
+<tr><th scope="row">铺满</th><td>与工作区相差不超过 8 CSS 像素；保存和恢复都检查</td></tr>
+<tr><th scope="row">版本 1</th><td>旧的 <code translate="no">{{x,y,width,height}}</code> 对象；加载时迁移</td></tr>
+</tbody>
+</table>
+
+<h2 id="restore-algorithm">恢复</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">动作</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. 读取并迁移</th><td>JSON 损坏、缺宽高、<code translate="no">NaN</code> 或尺寸过小：居中默认</td></tr>
+<tr><th scope="row">2. 找显示器</th><td><code translate="no">displayId</code>，再工作区（2px 容差），再与某块工作区重叠的尺寸。都没有：主屏工作区、居中默认，丢掉最大化和全屏</td></tr>
+<tr><th scope="row">3. 检查是否铺满工作区</th><td>保存的矩形铺满已连接的工作区：按最大化处理，普通尺寸改为内缩默认。<code translate="no">BrowserWindow</code> 从不按工作区大小构造</td></tr>
+<tr><th scope="row">4. 钳制</th><td>把普通矩形钳到工作区内</td></tr>
+<tr><th scope="row">5. 隐藏创建</th><td>按普通尺寸，并设 <code translate="no">minWidth</code>、<code translate="no">minHeight</code>。要最大化时先 <code translate="no">setBounds</code> 到工作区，再 <code translate="no">maximize()</code> 或 <code translate="no">setFullScreen(true)</code>，仍保持隐藏</td></tr>
+<tr><th scope="row">6. 显示</th><td><code translate="no">ready-to-show</code> 时显示，macOS 不会从小框做放大动画</td></tr>
+</tbody>
+</table>
+<p class="note">因此绿灯 Zoom 回到记住的普通尺寸。</p>
+
+<h2 id="maximize-versus-a-filled-work-area">没用 Zoom、拖满工作区</h2>
+<p>按最大化保存。保留的普通尺寸取第一个未铺满的：<code translate="no">getNormalBounds()</code>、内存里上次可用的矩形、内缩默认。</p>
+
+<h2 id="save-timing">保存时机</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事件</th><th scope="col">写入</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">resize</code>、<code translate="no">move</code></th><td>防抖 300ms</td></tr>
+<tr><th scope="row"><code translate="no">maximize</code>、<code translate="no">unmaximize</code>、<code translate="no">enter-full-screen</code>、<code translate="no">leave-full-screen</code>、<code translate="no">close</code></th><td>立即写入</td></tr>
+<tr><th scope="row">最大化、全屏或铺满时</th><td>只更新标记和显示器身份，普通矩形不动</td></tr>
+</tbody>
+</table>
+
+<h2 id="detached-windows">撕下的窗口</h2>
+<p>尺寸 <code translate="no">min(1100, 普通宽)</code> × <code translate="no">min(720, 普通高)</code>，不带父窗口 <code translate="no">x/y</code>，不继承最大化或全屏。由 <code translate="no">centerHiddenWindowOnCursor</code> 放到落点。</p>
+
+<h2 id="titlebar-hit-testing">标题栏命中</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">区域</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">40px 标签行</th><td><code translate="no">-webkit-app-region: drag</code>，空白处可拖窗口</td></tr>
+<tr><th scope="row">上、左、右边缘</th><td>5px <code translate="no">no-drag</code> 条（<code translate="no">.desktop-resize-edge</code>），含四角，供原生缩放</td></tr>
+<tr><th scope="row">macOS 红绿灯</th><td><code translate="no">trafficLightPosition</code> 居中于标签行：缩放为 1 时 <code translate="no">{{x:13,y:12}}</code></td></tr>
+<tr><th scope="row">标签页</th><td>距顶 6px；边条不盖住标签、红绿灯、<code translate="no">+</code> 和主菜单</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>贴边的普通窗口为什么拖不动</summary>
+<p>Electron 窗口仍可缩放，但在 1512 宽的显示器上 <code translate="no">{x:0,y:38,width:1512,height:851}</code> 没有边可抓，Zoom 也没有可回退的尺寸。通到边缘的拖动区域还会占掉上沿和四角的缩放命中。再设 <code translate="no">resizable: true</code> 或删文件都不解决问题；存储模型必须把普通尺寸和最大化分开。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现，由 <code translate="no">apps/desktop/tests/check-window-state.js</code> 检查。窗口底色跟随 Web 主题（<code translate="no">theme-chrome.js</code>，见<a href="../visual-system/unification-work.zh.html">统一工作</a>）；窗口几何不保存背景色。</p>

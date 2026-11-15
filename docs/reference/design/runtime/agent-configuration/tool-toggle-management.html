@@ -1,0 +1,142 @@
+<title>Tool toggles and toolsets</title>
+<meta name="description" content="How a turn's toolset is decided: Agent configuration, branch intent, and deferred loading.">
+<h1>Tool toggles and toolsets</h1>
+<p>The selected Agent decides which tools a branch may call. Each branch stores only intent, never an expanded list, so new tools remain available through the Agent template. Branches inherit intent once and then change independently.</p>
+
+<h2 id="who-chooses">Who chooses</h2>
+<table class="stack">
+<thead><tr><th scope="col">Where</th><th scope="col">Sets</th><th scope="col">Stored in</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agents → Capabilities → Programs</th><td>Scope: all, selected, named Access preset, or none. Plus disabled names and a <code translate="no">web_search</code> default.</td><td>Agent profile, <code translate="no">tools: {mode, allowed, preset, disabled, web_search}</code></td></tr>
+<tr><th scope="row">Composer Web Search switch</th><td>Layers <code translate="no">web_search</code> on or off over the Agent's set</td><td>Branch configuration, <code translate="no">web_search</code></td></tr>
+<tr><th scope="row"><code translate="no">/skill &lt;name&gt;</code> with <code translate="no">allowed-tools</code></th><td>Narrows the turn to the skill's allowlist</td><td>Branch configuration, <code translate="no">tools_override</code> (<code translate="no">list[str]</code>)</td></tr>
+</tbody>
+</table>
+<p class="note">No composer Tools switch or per-chat preset. A chat without tools uses an Agent with Programs set to none. The chat action reads only <code translate="no">web_search</code> from a message, never <code translate="no">tools</code> or <code translate="no">tools_profile</code>. A message without <code translate="no">web_search</code> (the CLI, the TUI) leaves the stored intent as it is.</p>
+
+<h2 id="priority-chain">Priority chain</h2>
+<p><code translate="no">resolve_tools(agent_profile, override, source)</code> in <code translate="no">runtime/conversation/model_tools.py</code>; <code translate="no">tools_override_from_config(cfg)</code> in <code translate="no">session_config.py</code> produces the override.</p>
+<table class="stack">
+<thead><tr><th scope="col">Session intent</th><th scope="col">Override</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Nothing set</th><td><code translate="no">None</code></td><td>Agent profile's <code translate="no">tools</code></td></tr>
+<tr><th scope="row"><code translate="no">web_search</code> set</th><td><code translate="no">{"inherit": True, "web_search": &lt;bool&gt;}</code></td><td>Profile expanded live, then web_search added or removed, unless the Agent's <code translate="no">disabled</code> patterns exclude it</td></tr>
+<tr><th scope="row"><code translate="no">/skill</code> allowlist</th><td><code translate="no">list[str]</code> plus the web_search overlay</td><td><code translate="no">agent_tools(names=[...])</code></td></tr>
+</tbody>
+</table>
+<p class="note">Callers: Web chat (<code translate="no">ws_actions/chat/turn.py</code>, <code translate="no">routes/chat_branches.py</code>), channels (<code translate="no">channels/_conversation.py</code>), goal chat (<code translate="no">programs/tools/planning/goal/chat.py</code>).</p>
+
+<h2 id="deferred-loading">Available is not resident</h2>
+<table class="stack">
+<thead><tr><th scope="col">State</th><th scope="col">Provider tools array</th><th scope="col">Name in catalog</th><th scope="col">Callable</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resident</th><td>Full schema, every turn</td><td>No</td><td>Yes</td></tr>
+<tr><th scope="row">Deferred, loaded</th><td>Full schema</td><td>No</td><td>Yes</td></tr>
+<tr><th scope="row">Deferred, not loaded</th><td>No</td><td>Yes</td><td>After <code translate="no">tool_search</code></td></tr>
+<tr><th scope="row">Disabled or hidden</th><td>No</td><td>No</td><td>No</td></tr>
+</tbody>
+</table>
+<p class="note">The catalog names built-in deferred tools one by one and gives an MCP server or application one namespace line, within 4 KiB and then a count, so it stays small however many tools are deferred (<a href="../../function/deferred-tools.html#catalog">Deferred tools</a>).</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Group</th><th scope="col">Members</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resident</th><td><code translate="no">DEFAULT_TOOLS</code> minus <code translate="no">DEFERRED_DEFAULT_TOOLS</code>, plus <code translate="no">read_conversation</code>. <code translate="no">DEFAULT_TOOLS</code> holds <code translate="no">tool_search</code>, which never defers: it is the only loader, so a set that names deferred tools carries it.</td></tr>
+<tr><th scope="row"><code translate="no">DEFERRED_DEFAULT_TOOLS</code></th><td>Memory tools, <code translate="no">scheduler</code>, <code translate="no">exit_plan_mode</code> (the plan-mode prompt names it), <code translate="no">send_message</code>, <code translate="no">skill</code>, <code translate="no">save_routine</code>. Available by default, large and rarely called.</td></tr>
+<tr><th scope="row">Other exposed tools</th><td>Everything in <code translate="no">full</code> outside <code translate="no">DEFAULT_TOOLS</code></td></tr>
+<tr><th scope="row">Application entries</th><td>Deferred, also while their application is open in a window: opening it loads nothing</td></tr>
+<tr><th scope="row">Explicit web search</th><td>A copy promoted to resident, so it ships without <code translate="no">tool_search</code>. The shared registry is untouched.</td></tr>
+<tr><th scope="row">Tool list by name</th><td>Without <code translate="no">tool_search</code> in it, every tool ships resident</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Mechanics in <code translate="no">programs/_host/runtime.py</code></summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apply_default_deferral()</code></th><td>Runs once at import in <code translate="no">programs/__init__.py</code> and gives every entry its default tier. Idempotent. Entries registered later get theirs at registration.</td></tr>
+<tr><th scope="row"><code translate="no">split_tools_for_dispatch(tools, loaded)</code></th><td>Partitions into <code translate="no">(provider_tools, catalog)</code> by tier and the request's loaded set</td></tr>
+<tr><th scope="row">Loaded set</th><td>Not stored anywhere. Each request reads it from its own messages (<code translate="no">loaded_tools(messages)</code> in <code translate="no">shared/tool_loads.py</code>): the load records of its tool results (<code translate="no">details.loads</code>) and the names a compaction summary among them carries (<code translate="no">carried_tool_names</code>). A nested run reads its own messages, a branch its own history, an edited-and-resent turn the history before the edit.</td></tr>
+<tr><th scope="row">Discovery</th><td><code translate="no">tool_search</code> writes a load record on its result (<code translate="no">record_loads</code>), so the next provider request carries real schemas. A guide or an opened application names the tools and how to load them; it loads nothing. Schema as tool-result text alone is not enough for providers that accept only tools in the request array.</td></tr>
+<tr><th scope="row">Execution</th><td>Uses the turn's resolved, permission-wrapped tools, not a new registry lookup. Without discovery the array is stable; discovery may change the cached prefix.</td></tr>
+<tr><th scope="row">Checkpoints</th><td>A continuation needs no loaded names: the resumed request reads them from the messages it resumes with. The journal's old <code translate="no">loaded_deferred_tools</code> field is no longer written or read for loading. Tool-result text is never read as authorization or loading state.</td></tr>
+<tr><th scope="row">Catalog</th><td>A conversation's own turn sends it as the <code translate="no">turn_context</code> section <code translate="no">deferred_catalog</code> beside the user message: in full with no baseline, then only what was added or removed. A call with its own system prompt (an Agent method, <code translate="no">runtime.exec</code>) keeps it inline there (<code translate="no">_build_deferred_catalog</code> in <code translate="no">runtime/context/components.py</code>). Empty when nothing is deferred.</td></tr>
+<tr><th scope="row"><code translate="no">_estimate_one_tool</code></th><td>In <code translate="no">runtime/context/budget.py</code>. Resident: description, parameters and a small wrapper. Deferred: bare name plus a newline. The two errors point in opposite directions, so <code translate="no">test_budget.py</code> checks each half against a real tokenized payload, within 15%.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="do-not-break">Do not break</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Expansion is deterministic</th><td>The tool array is the root of the prompt cache prefix (<code translate="no">models/providers/settings/cache_policy.py</code>; first breakpoint at the last tool, Anthropic and Bedrock explicit mode). Any wobble misses the whole cache silently. No <code translate="no">set()</code> iteration or dict churn in <code translate="no">agent_tools</code> and <code translate="no">_filter_agent_tools</code>.</td></tr>
+<tr><th scope="row">Never store the Agent's tools on a session</th><td>The list would freeze: tools added to <code translate="no">DEFAULT_TOOLS</code> later would never arrive. <code translate="no">list[str]</code> means only a <code translate="no">/skill</code> allowlist.</td></tr>
+<tr><th scope="row">Never filter history</th><td>Historical <code translate="no">tool_use</code> and <code translate="no">tool_result</code> render from messages regardless of <code translate="no">context.tools</code>. Breaking the pairing causes a provider 400.</td></tr>
+<tr><th scope="row">Mid-turn array growth only through discovery</th><td>Anything else discards the cached prefix for the rest of the turn</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Cost, cache and replay</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Question</th><th scope="col">Answer</th></tr></thead>
+<tbody>
+<tr><th scope="row">Do tools count as tokens?</th><td><code translate="no">ContextCommit.total_tokens</code> excludes the array (<code translate="no">state/store/session/context_commit/types.py</code>); the provider bills it. Invisible to the compaction budget, visible in input cost.</td></tr>
+<tr><th scope="row">Cache?</th><td>Any addition, removal or reorder misses the entire prompt cache.</td></tr>
+<tr><th scope="row">Calls absent from the current array?</th><td>They replay fine; the model just cannot issue that call this turn.</td></tr>
+<tr><th scope="row">Commit replay?</th><td>Unaffected: commits store no tool array.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>How other projects do it</summary>
+<table class="stack">
+<thead><tr><th scope="col">Project</th><th scope="col">Stores</th><th scope="col">Avoids staleness by</th></tr></thead>
+<tbody>
+<tr><th scope="row">opencode</th><td>Per-session <code translate="no">tools: Record&lt;name, boolean&gt;</code></td><td>Builds the table fresh each turn, then filters by intent</td></tr>
+<tr><th scope="row">claude-code</th><td><code translate="no">--tools</code> (<code translate="no">""</code> none, <code translate="no">"default"</code> all), <code translate="no">--allowedTools</code>, <code translate="no">--disallowedTools</code></td><td>Constant builtin set; intersection at run time</td></tr>
+<tr><th scope="row">pi-ai</th><td>Builtin toggles and extension tools separately</td><td>Boolean intent; live extension loading unaffected</td></tr>
+<tr><th scope="row">hermes</th><td>A preset name</td><td>Expands at run time (<code translate="no">TOOLSETS</code> is ported from it)</td></tr>
+</tbody>
+</table>
+<p class="note">All store intent; none freezes an expanded list.</p>
+</details>
+
+<details>
+<summary>Carrying files, properties and tests</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Carries</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime/conversation/session_config.py</code></th><td><code translate="no">web_search</code> and <code translate="no">tools_override</code> on <code translate="no">SessionRunConfig</code>, save and load in git session meta (no schema change)</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/ws_actions/chat/turn.py</code></th><td><code translate="no">tools_flag</code> starts <code translate="no">None</code>; a <code translate="no">/skill</code> sets it; a new Agent conversation clears both. Nothing expands here.</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/model_tools.py</code></th><td><code translate="no">_overlay_web_search</code> in the dict branch of <code translate="no">resolve_tools</code> (web_search is not in <code translate="no">DEFAULT_TOOLS</code>)</td></tr>
+<tr><th scope="row"><code translate="no">programs/_host/runtime.py</code></th><td>Deferred machinery above, <code translate="no">tool_search</code>, <code translate="no">deferred_catalog_text</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/agent/loop/</code></th><td>Reads each request's loaded set from its messages (<code translate="no">streaming.py</code>); resolves calls by name against the full list, so a mid-turn load dispatches</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Test</th><th scope="col">Locks</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tests/unit/programs/tools/test_tool_expansion_deterministic.py</code></th><td>Same intent expands element-wise equal</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/test_session_config_tools_intent.py</code></th><td>No intent follows the Agent; web_search overlay added, removed, respecting <code translate="no">disabled</code>; <code translate="no">/skill</code> lists; cold-provider path</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/test_session_config.py</code></th><td>Round-trip: True reads True, a missing field reads None; enabling web_search leaves <code translate="no">tools_override</code> absent</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/test_tool_defer.py</code></th><td>Deferred tools out of the array and in the catalog and prompt; <code translate="no">tool_search</code> moves them and returns full schema; execution stays on permission-wrapped tools; checkpoint restore; never defers itself; idempotent</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/test_budget.py</code></th><td>Each half of tool pricing</td></tr>
+</tbody>
+</table>
+<p class="note">Also expected: new tools appear in automatic scope; two turns with unchanged intent show a cache hit; no client sends <code translate="no">tools</code> or <code translate="no">tools_profile</code>.</p>
+</details>
+
+<h2 id="boundaries">Boundaries and extension</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Provider builtin web_search</th><td>Codex and OpenAI Responses use builtin <code translate="no">opts["web_search"]</code>; others are unconfirmed, so the tool-name path stays. Switch at <code translate="no">_overlay_web_search</code> once confirmed.</td></tr>
+<tr><th scope="row"><code translate="no">allowed</code> without a mode</th><td>Filters <code translate="no">DEFAULT_TOOLS</code>; <code translate="no">selected</code> and presets expand by name over all tools</td></tr>
+<tr><th scope="row">Exact array tokens</th><td>A server-side figure, not statically measurable here</td></tr>
+<tr><th scope="row">New intent dimensions</th><td>Add scope to the Agent profile or a key to the dict intent. Never revert to a stored list.</td></tr>
+</tbody>
+</table>

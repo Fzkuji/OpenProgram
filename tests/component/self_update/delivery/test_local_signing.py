@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from openprogram.self_update.delivery import local_signing
+from openprogram.operations.self_update.delivery import local_signing
 
 
 @pytest.mark.parametrize("failure", ["timeout", "exit"])

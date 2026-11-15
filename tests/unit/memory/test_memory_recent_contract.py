@@ -13,13 +13,13 @@ import json
 import pathlib
 import re
 
-from openprogram.memory.markdown import EvidenceAnnotation, MemoryUnit
-from openprogram.memory.runtime.derived_views import rebuild_derived_views
+from openprogram.state.memory.markdown import EvidenceAnnotation, MemoryUnit
+from openprogram.state.memory.runtime.derived_views import rebuild_derived_views
 
 
 TYPES_TS = (
     pathlib.Path(__file__).resolve().parents[3]
-    / "apps" / "web" / "components" / "memory" / "types.ts"
+    / "apps" / "web" / "components" / "memory" / "data" / "types.ts"
 )
 
 
@@ -42,7 +42,7 @@ def _frontend_fields() -> set[str]:
     body = re.search(
         r"export interface RecentEvent \{(.*?)\n\}", TYPES_TS.read_text("utf-8"), re.S
     )
-    assert body, "RecentEvent interface not found in apps/web/components/memory/types.ts"
+    assert body, "RecentEvent interface not found in apps/web/components/memory/data/types.ts"
     fields = set(re.findall(r"^\s*(\w+)\??\s*:", body.group(1), re.M))
     assert fields, "RecentEvent declares no fields"
     return fields

@@ -57,11 +57,11 @@ window.setInterval = callback => { timers.add(callback); return callback; };
 window.clearInterval = callback => timers.delete(callback);
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { SystemAccessWaits } = await import("../../components/chat/messages/system-access-waits.tsx");
+const { SystemAccessWaits } = await import("../../components/chat/messages/runtime/system-access-waits.tsx");
 const { rememberSystemAccessWait, rememberedSystemAccessWaits } = await import("../../lib/access/system-access-wait-state.ts");
 const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution",required_capabilities:["screen_recording"]};
 
- test("durable waiting UI opens native setup once, restores without prompting, and never retries", async () => {
+ test("durable waiting UI shows explicit setup without prompting or retries", async () => {
   let waits = [], granted = false, failRead = false;
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
@@ -78,21 +78,21 @@ const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution"
     waits = [waiting];
     await act(async () => window.dispatchEvent(new CustomEvent("op:system-access", {detail:{type:"system_access.waiting",data:{...waiting,live:true}}})));
     assert.match(host.textContent,/Waiting for system authorization/);
-    assert.equal(calls.filter(([,method])=>method==="POST").length,1);
+    assert.equal(calls.filter(([,method])=>method==="POST").length,0);
     const second = {...waiting, wait_id:"second-wait",execution_id:"second-execution"};
     waits = [waiting, second];
     await act(async () => window.dispatchEvent(new CustomEvent("op:system-access", {detail:{type:"system_access.waiting",data:second}})));
     await act(async () => window.dispatchEvent(new Event("focus")));
     assert.equal(host.querySelectorAll('[role="status"]').length,1);
-    assert.equal(calls.filter(([,method])=>method==="POST").length,1);
+    assert.equal(calls.filter(([,method])=>method==="POST").length,0);
     await act(async () => root.unmount());
     assert.equal(timers.size,0);
     root = createRoot(host);
     await act(async () => root.render(createElement(SystemAccessWaits,{sessionId:"session"})));
     assert.match(host.textContent,/Waiting for system authorization/);
-    assert.equal(calls.filter(([,method])=>method==="POST").length,1);
+    assert.equal(calls.filter(([,method])=>method==="POST").length,0);
     await act(async () => window.dispatchEvent(new CustomEvent("op:system-access", {detail:{type:"system_access.waiting",data:{...waiting,live:true}}})));
-    assert.equal(calls.filter(([,method])=>method==="POST").length,1, "duplicate live wait after remount must not prompt again");
+    assert.equal(calls.filter(([,method])=>method==="POST").length,0, "duplicate live wait after remount must not prompt again");
     failRead = true;
     await act(async () => window.dispatchEvent(new Event("focus")));
     assert.match(host.textContent,/Waiting for system authorization/);
@@ -101,7 +101,7 @@ const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution"
     await act(async () => window.dispatchEvent(new Event("focus")));
     assert.equal(host.textContent, "");
     assert.equal(calls.every(([url])=>url.startsWith("/api/system/access")),true);
-    assert.equal(calls.filter(([,method])=>method==="POST").length,1);
+    assert.equal(calls.filter(([,method])=>method==="POST").length,0);
  } finally { await act(async () => root.unmount()); host.remove(); }
  });
 
@@ -121,9 +121,9 @@ test("a live wait received before the session pane mounts is adopted once", asyn
   try {
     await act(async () => root.render(createElement(SystemAccessWaits, {sessionId: sid})));
     assert.match(host.textContent, /Waiting for system authorization/);
-    assert.equal(calls.filter(([, method]) => method === "POST").length, 1);
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
     await act(async () => root.unmount());
-    assert.equal(calls.filter(([, method]) => method === "POST").length, 1);
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
   } finally { host.remove(); }
 });
 

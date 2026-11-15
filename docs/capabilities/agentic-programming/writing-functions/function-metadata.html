@@ -1,0 +1,149 @@
+<title>Function metadata</title>
+<meta name="description" content="What metadata a function carries, where it lives and which components read it.">
+<h1>Function metadata</h1>
+<p>Each fact has one home. What the signature can say is not repeated in <code translate="no">input</code>; what <code translate="no">input</code> can say is not repeated in the docstring. Below, <code translate="no">input.x</code> means <code translate="no">method_options[method]["input"]["x"]</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Field</th><th scope="col">Lives in</th><th scope="col">Read as</th></tr></thead>
+<tbody>
+<tr><th scope="row">Function name</th><td><code translate="no">def name(...)</code></td><td><code translate="no">fn.__name__</code></td></tr>
+<tr><th scope="row">Parameter names, types, defaults</th><td>Signature</td><td><code translate="no">inspect.signature(fn).parameters</code></td></tr>
+<tr><th scope="row">One-line summary: what, when to pick</th><td>Docstring, first paragraph</td><td><code translate="no">inspect.getdoc(fn)</code></td></tr>
+<tr><th scope="row">Instructions for one call</th><td>The prompt passed to that <code translate="no">llm()</code></td><td>At call time</td></tr>
+<tr><th scope="row">Parameter description</th><td><code translate="no">input.x.description</code></td><td><code translate="no">fn.input_meta["x"]["description"]</code></td></tr>
+<tr><th scope="row">Enum</th><td><code translate="no">input.x.options</code></td><td><code translate="no">fn.input_meta["x"]["options"]</code></td></tr>
+<tr><th scope="row">Hidden from the LLM</th><td><code translate="no">input.x.hidden</code></td><td><code translate="no">fn.input_meta["x"]["hidden"]</code></td></tr>
+<tr><th scope="row">WebUI placeholder, multiline</th><td><code translate="no">input.x.placeholder</code>, <code translate="no">input.x.multiline</code></td><td><code translate="no">fn.input_meta["x"]</code></td></tr>
+<tr><th scope="row">Dynamic options</th><td><code translate="no">input.x.options_from: "functions"</code></td><td><code translate="no">fn.input_meta["x"]["options_from"]</code></td></tr>
+<tr><th scope="row">Override the ambient system prompt</th><td><code translate="no">system</code></td><td><code translate="no">fn.system</code></td></tr>
+<tr><th scope="row">What callers see in their DAG render: <code translate="no">"io"</code>, <code translate="no">"llm"</code>, <code translate="no">"full"</code>, <code translate="no">"hidden"</code></th><td><code translate="no">expose</code></td><td><code translate="no">fn.expose</code></td></tr>
+<tr><th scope="row">How much history this function's <code translate="no">llm()</code> calls read</th><td><code translate="no">render_range</code></td><td><code translate="no">fn.render_range</code></td></tr>
+<tr><th scope="row">Skill trigger words, agent discovery</th><td>Sibling <code translate="no">SKILL.md</code> frontmatter</td><td>Skill loader</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class ExampleAgent(Agent):
+    method_options = {
+        'review_essay': {'tool': True, 'input': {
+            'essay': {'description': 'Essay to review.', 'placeholder': 'Paste the essay text here...', 'multiline': True},
+            'rubric_id': {'description': 'Which rubric to apply.', 'options': ['ielts_writing', 'toefl_writing', 'gre_argument']},
+            'max_score': {'description': 'Upper bound for the numeric score.'},
+            'show_rubric_internals': {'description': 'Include rubric breakdown in the output.'},
+            'session_id': {'hidden': True},   # filled by Python via context, not the LLM
+        }},
+    }
+
+    def review_essay(self, essay: str, rubric_id: str, max_score: int,
+                     show_rubric_internals: bool, session_id: str) -&gt; dict:
+        """Score an essay against a named rubric and return a structured report."""
+        ...
+
+_example_agent = ExampleAgent()
+review_essay = _example_agent.review_essay</code></pre>
+<p class="note">The docstring keeps only the summary: no <code translate="no">Args:</code> or <code translate="no">Returns:</code>. Field meanings that matter downstream go in a <code translate="no">TypedDict</code> or dataclass return type.</p>
+
+<h2>Defaults</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Default</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">expose</code></th><td><code translate="no">"full"</code> for ordinary methods; <code translate="no">"io"</code> for explicit tools (name, input and output; internal <code translate="no">llm()</code> calls hidden)</td></tr>
+<tr><th scope="row"><code translate="no">render_range.callers</code></th><td><code translate="no">None</code>: nodes before this frame uncapped. <code translate="no">0</code> walls off all prior context. <code translate="no">N</code>: the most recent N.</td></tr>
+<tr><th scope="row"><code translate="no">render_range.subcalls</code></th><td><code translate="no">-1</code>: the frame sees all its own progress. Child internals are hidden by the child's <code translate="no">expose</code>. <code translate="no">N</code> caps prompt size in a long loop; <code translate="no">0</code> walls off in-frame nodes.</td></tr>
+<tr><th scope="row">Top-level chat turn</th><td><code translate="no">frame_entry_seq=-1</code>: all nodes are in-frame, same code path as any frame</td></tr>
+<tr><th scope="row">Tools</th><td>Bare <code translate="no">runtime.exec</code>: full registry. <code translate="no">tools=[...]</code>: a menu. <code translate="no">toolset="none"</code> or <code translate="no">tools=[]</code>: none. Nested <code translate="no">exec</code> inherits (<code translate="no">_current_tools</code>).</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td><code translate="no">None</code>: the runtime's existing system prompt</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">render_range</code> counts nodes by <code translate="no">seq</code>.</p>
+
+<h2>Docstring and prompt</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">docstring</th><th scope="col"><code translate="no">llm(prompt)</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope</th><td>The whole function</td><td>One model call; a function may make several</td></tr>
+<tr><th scope="row">Read by</th><td>Humans, decision menus, tool specs, meta tooling. Carried as <code translate="no">metadata.doc</code> and rendered as descriptive context.</td><td>The model, as authoritative instruction</td></tr>
+<tr><th scope="row">Must hold</th><td>A one-line summary, stated directly. More detail is welcome. No filler such as "You are a helpful assistant", no role-play or metaphor.</td><td>Instruction, data and the exact output format, even if the docstring says it too</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>llm([{"type": "text", "text": (
+    f"Classify the sentiment of the following text. Reply with exactly one "
+    f"word: positive, negative, or neutral.\n\nText:\n{text}"
+)}])</code></pre>
+<p class="note">Items are dicts such as <code translate="no">{"type": "text", "text": ...}</code> or <code translate="no">{"type": "image", "path": ...}</code>. The default system prompt comes from the ambient runtime and the skills block, not the docstring.</p>
+
+<h2>Who reads what</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Consumer</th><th scope="col">Needs</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime.exec(tools=[fn])</code></th><td>Name, description, parameter JSON schema</td></tr>
+<tr><th scope="row"><code translate="no">render_options(options)</code></th><td>Name, when to pick, parameter name, type, description, enum, whether system-filled</td></tr>
+<tr><th scope="row"><code translate="no">parse_args(reply, options, ...)</code></th><td>Parameter names, types, enum, hidden flag, auto-inject list</td></tr>
+<tr><th scope="row">WebUI form</th><td><code translate="no">description</code>, <code translate="no">placeholder</code>, <code translate="no">multiline</code>, <code translate="no">options</code>, <code translate="no">hidden</code></td></tr>
+<tr><th scope="row"><code translate="no">render_context</code></th><td><code translate="no">expose</code>, <code translate="no">render_range</code></td></tr>
+<tr><th scope="row">Trace and persistence</th><td>Identity, arguments, return value, timing</td></tr>
+</tbody>
+</table>
+<p class="note">Tool spec description falls back: <code translate="no">description</code>, then <code translate="no">placeholder</code> as "e.g. …", then name and type only. <code translate="no">render_options</code> reads only <code translate="no">description</code> and <code translate="no">options</code>. Neither reads a docstring <code translate="no">Args:</code> section, so legacy <code translate="no">Args:</code> runs but is dead text there.</p>
+
+<h2>Plain callables</h2>
+<p>Accepted by <code translate="no">render_options</code>, <code translate="no">decision.make</code> and <code translate="no">choices=</code>. <code translate="no">runtime.exec(tools=[...])</code> takes only an <code translate="no">Agent</code> method, a <code translate="no">{"spec", "execute"}</code> dict or an object with <code translate="no">.spec</code> and <code translate="no">.execute</code>; anything else raises <code translate="no">TypeError</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">Agent</code> method</th><th scope="col">Plain callable</th></tr></thead>
+<tbody>
+<tr><th scope="row">Parameter description</th><td><code translate="no">input</code></td><td>Empty</td></tr>
+<tr><th scope="row">Enum</th><td><code translate="no">input.x.options</code></td><td>None</td></tr>
+<tr><th scope="row">Hidden</th><td><code translate="no">input.x.hidden</code></td><td>Auto-injected names only</td></tr>
+<tr><th scope="row">Session DAG</th><td>Recorded when it starts an execution</td><td>Not recorded</td></tr>
+</tbody>
+</table>
+<p class="note">Fine for simple branches with few parameters and no WebUI surface.</p>
+
+<h2>Auto-injected parameters</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Name</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime</code></th><td>The current Runtime</td></tr>
+<tr><th scope="row"><code translate="no">exec_runtime</code></th><td>Execution Runtime in multi-runtime setups</td></tr>
+<tr><th scope="row"><code translate="no">review_runtime</code></th><td>Review Runtime in multi-runtime setups</td></tr>
+</tbody>
+</table>
+<p class="note">Hidden from the LLM. New methods do not declare them: a method runs on its Agent's or the caller's Runtime; injection stays for existing functions. To add a name, edit both <code translate="no">_RUNTIME_PARAMS</code> in <code translate="no">openprogram/runtime/agent/call_state.py</code> and <code translate="no">_AUTO_PARAMS</code> in <code translate="no">decision.py</code>; do not use <code translate="no">hidden</code> per call site.</p>
+
+<h2>WebUI form controls</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Parameter</th><th scope="col">Control</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">bool</code></th><td>Yes and No buttons</td></tr>
+<tr><th scope="row"><code translate="no">str</code>, <code translate="no">multiline</code> unset</th><td>Textarea</td></tr>
+<tr><th scope="row"><code translate="no">str</code>, <code translate="no">multiline: False</code></th><td>Single-line input</td></tr>
+<tr><th scope="row">Other types, <code translate="no">multiline</code> unset</th><td>Single-line input</td></tr>
+<tr><th scope="row"><code translate="no">options</code></th><td>Chips plus free text</td></tr>
+<tr><th scope="row"><code translate="no">options_from: "functions"</code></th><td>Dropdown of registered non-builtin, non-meta functions</td></tr>
+<tr><th scope="row"><code translate="no">hidden: True</code></th><td>Omitted</td></tr>
+<tr><th scope="row">Python default, no <code translate="no">placeholder</code></th><td>Default as ghost text; Tab in the empty field fills it. <code translate="no">None</code> and values starting with <code translate="no">_</code> are suppressed.</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">description</code> is a small label by the name, with the type on that row and an "optional" marker when not required. For a registered function the form uses its live <code translate="no">input_meta</code>; otherwise <code translate="no">function_catalog.py</code> parses the source, so only a literal <code translate="no">input</code> dict shows.</p>
+
+<details>
+<summary>Tool registration and gating options</summary>
+<p><code translate="no">name</code>, <code translate="no">description</code>, <code translate="no">toolset</code>, <code translate="no">unsafe_in</code>, <code translate="no">requires_approval</code>, <code translate="no">check_fn</code>, <code translate="no">available_if</code>, <code translate="no">defer</code>: see <a href="../../../reference/design/function/calling-unification.html">function-calling design</a>. <code translate="no">cache</code> and <code translate="no">cache_ttl</code> memoize on name and arguments. <code translate="no">timeout</code> stops the body after N seconds with an error result.</p>
+</details>
+<details>
+<summary>Fields that do not exist yet</summary>
+<p><code translate="no">effects</code>, <code translate="no">permissions</code>, <code translate="no">idempotent</code>, <code translate="no">latency_hint</code> and <code translate="no">cost_hint</code> are not implemented: no consumer exists. Gating already has its own options above.</p>
+</details>
+
+<h2>Checklist for a new method</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Function name</th><td>Clear: the LLM sees it as the action name</td></tr>
+<tr><th scope="row">Docstring</th><td>Opens with a one-line summary; no <code translate="no">Args:</code> or <code translate="no">Returns:</code></td></tr>
+<tr><th scope="row">LLM-visible parameters</th><td>Each has <code translate="no">description</code></td></tr>
+<tr><th scope="row">Enums</th><td>Use <code translate="no">options</code>, not description text</td></tr>
+<tr><th scope="row">System-filled parameters</th><td><code translate="no">hidden: True</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime</code> parameter</th><td>None</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="agent.html">Agent calls and methods</a> · <a href="../choosing-the-next-step/tool-calling.html">Tool calling</a> · <a href="../choosing-the-next-step/next-step-decision.html">Next-step decision</a></p>

@@ -1,0 +1,88 @@
+<title>Transcript reads and client rules</title>
+<meta name="description" content="How the browser applies numbered changes and text frames, how reads park live frames, and what each read trigger returns.">
+<h1 id="title">Transcript reads and client rules</h1>
+<p class="note">Part of the <a href="transcript-model.html">transcript model</a> record. Built so far: <a href="transcript-model.html#status">implementation status</a>.</p>
+<h2 id="client-rules">The client rules</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Cursor</th><td>Each view has a cursor. A <code translate="no">transcript_update</code> with <code translate="no">revision &lt;= cursor</code> is ignored. <code translate="no">previous == cursor</code> is applied. Anything else causes one coalesced read at the reader's anchor. A frame for a view with no window is dropped with no read. A full window replacement sets the cursor to its revision unconditionally. A page or one-turn reply never moves the cursor.</td></tr>
+<tr><th scope="row">Revisions</th><td>Revisions come from one process-wide counter, so they only rise. A view rebuilt from the store starts at a fresh number, so its next frame's <code translate="no">previous</code> matches no cursor and the holder does one read. A view the publisher rebuilds while publishing keeps its revision. A worker restart kills the socket, and the new socket reads.</td></tr>
+<tr><th scope="row">Item or patch miss</th><td><code translate="no">item_upsert</code> and <code translate="no">row_patch</code> carry <code translate="no">turnId</code>. Row not held and turn not in the window: drop silently. Row not held and turn in the window: at most one in-flight read per turn, and if it returns without that row, stop. No row is ever created from a miss.</td></tr>
+<tr><th scope="row">Upsert on an open row</th><td><code translate="no">turn_upsert</code> and <code translate="no">row_upsert</code> never replace a held text or thinking block of an open row with a shorter one. A terminal row replaces the whole row.</td></tr>
+<tr><th scope="row">Non-latest window</th><td>A <code translate="no">turn_upsert</code> is appended only when <code translate="no">after</code> is null. Otherwise only <code translate="no">total</code> advances.</td></tr>
+<tr><th scope="row">Immediate flush</th><td>The reducer flushes a row's pending text before applying any item or status change to that row.</td></tr>
+<tr><th scope="row">Read owner</th><td><code translate="no">createSessionLoads</code> is the only read owner, keyed by view, with one in flight and one pending. A finished reply is applied, then the pending read is sent, so a stream of invalidations cannot starve it. Repair and page reads go through <code translate="no">exclusive</code>: a newer one replaces the waiting one, which resolves as skipped, and a repair that finds a read already in flight folds into it.</td></tr>
+</tbody>
+</table>
+<p><strong>Text frame.</strong> Given <code translate="no">row_id</code>, <code translate="no">item_id</code>, <code translate="no">item_index</code>, <code translate="no">offset</code>:</p>
+<ul>
+<li>Row not held: drop, no read. Row creation is a numbered change, so a missing row is found by the cursor.</li>
+<li>Row status settled, or a Stop overlay on the row: drop.</li>
+<li>Item absent and <code translate="no">offset == 0</code>: create it at <code translate="no">item_index</code>. A frame for an index past the row's last block waits beside the row until the publisher's next change brings the blocks before it.</li>
+<li><code translate="no">offset == length</code>: apply. <code translate="no">offset &lt; length</code>: trim the overlap and apply the rest.</li>
+<li><code translate="no">offset &gt; length</code>: one read at the view's anchor, none while a read of that view is in flight. Frames arriving meanwhile are dropped, because they are at or behind the read.</li>
+</ul>
+<p>Lengths are in UTF-16 units and include the row's pending rAF text.</p>
+<h2 id="parking">Parking</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope</th><td>Every read that returns rows (first open, page, one-turn, reconnect, chat ack with a window) parks that session's row-writing frames on that socket from before capture until the last fragment of the reply is queued. Row-writing frames are <code translate="no">transcript_update</code>, <code translate="no">transcript_gap</code> and <code translate="no">stream_event</code>.</td></tr>
+<tr><th scope="row">Terminal frames</th><td>Terminal <code translate="no">chat_response</code> frames (<code translate="no">result</code>, <code translate="no">error</code>, <code translate="no">cancelled</code>) carry only run-level effects and write no row, so they do not park.</td></tr>
+<tr><th scope="row">Start and merge</th><td>Parking starts synchronously on the event loop, before the read's first thread hop. Parked contiguous text merges, so a normal stream does not fill the buffer.</td></tr>
+<tr><th scope="row">Limits</th><td>Over 256 parked frames, the buffer is dropped and one <code translate="no">transcript_gap</code> is sent after the reply. Nested reads of one session count depth and flush at zero. Disconnect clears it.</td></tr>
+<tr><th scope="row">Why it is enough</th><td>Persist-before-emit means every frame sent before capture is reflected in the read. Parking means every frame numbered or emitted after capture arrives after the reply. Text therefore always arrives at or behind the read, and the offset rule trims it.</td></tr>
+</tbody>
+</table>
+<h2 id="first-open">First open</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Request and capture</th><td><code translate="no">load_session</code> with <code translate="no">history_version: 3</code>. <code translate="no">handle_load_session</code> runs <code translate="no">reconcile_session_projection</code> as it does now, joins the view on the socket and starts parking, gets or builds the <code translate="no">TranscriptView</code> outside any publish lock, then under the view lock captures revision R and projects the newest 6 turns, stopping at 128 KiB of actual bytes.</td></tr>
+<tr><th scope="row">Ordering</th><td>Projection and capture share the lock, so frames numbered <code translate="no">&lt;= R</code> were built before the read and frames <code translate="no">&gt; R</code> after it.</td></tr>
+<tr><th scope="row">Reply</th><td><code translate="no">session_loaded</code> carries <code translate="no">turns</code>, <code translate="no">window</code> and the existing metadata with <code translate="no">graph: []</code>. Parked frames follow the last fragment.</td></tr>
+</tbody>
+</table>
+<h2 id="brand-new-chat">Brand-new chat</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Join and ack</th><td>No <code translate="no">load_session</code> is sent, because the session id is first known at ack. The chat action joins the view on the sending socket and parks. For a protocol 3 socket that does not hold the view, <code translate="no">chat_ack</code> carries <code translate="no">first_read: { turns, window }</code>, captured the same way as a first open, then parked frames follow.</td></tr>
+<tr><th scope="row">Contents</th><td>The turn is persisted before the ack, so <code translate="no">first_read</code> holds the user row. The reply placeholder and everything after arrive as numbered updates.</td></tr>
+<tr><th scope="row">Call sites</th><td>Applies to <code translate="no">_send_chat_ack</code>, <code translate="no">retry.py</code> and <code translate="no">turn_local_command.py</code>. A pending local row is replaced by <code translate="no">clientRequestId</code>.</td></tr>
+</tbody>
+</table>
+<h2 id="paging">Page older or newer</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Request and reply</th><td>Same <code translate="no">load_session</code> with <code translate="no">history_before</code>, <code translate="no">history_after</code>, <code translate="no">history_around</code> or <code translate="no">history_latest</code>, values being any row id. 25 turns or 512 KiB. Bodies come fresh from the store. Reply <code translate="no">session_history_page { id, turns, window, request_id, action }</code>.</td></tr>
+<tr><th scope="row">Cursor</th><td>A cursor no longer on the branch returns <code translate="no">cursor_not_on_branch</code> and the client does one first read. A saved reading position on that row is forgotten, so the first read does not ask for it again. A head that only advanced is not a mismatch.</td></tr>
+<tr><th scope="row">Placement</th><td>The client places a page by <code translate="no">window.start</code>, never at the tail: a page that is neither adjacent to nor overlapping the held span is dropped. Restore by message id before paint. Evict whole pages.</td></tr>
+<tr><th scope="row">Anchors</th><td>Anchors are saved only from server rows, never local ones.</td></tr>
+</tbody>
+</table>
+<h2 id="reconnect">Reconnect</h2>
+<p>Transcript read at the anchor, then execution recovery, snapshot-only. Local rows and overlays survive.</p>
+<h2 id="split-pane">Split pane</h2>
+<p>Frames are delivered to every socket holding the view and applied regardless of focus. A pane reads when its view has no window. Both panes draw through one <code translate="no">TranscriptRows</code> and take session scope from the row list, not the focused session.</p>
+<h2 id="view-lifecycle">View lifecycle</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Closing</th><td>The browser sends <code translate="no">close_view { session_id, view }</code> when it evicts a conversation or closes a pane or an expanded sub-agent.</td></tr>
+<tr><th scope="row">Cap</th><td>A socket holds at most 16 views. Over the cap the server drops the socket's least recently read view and sends <code translate="no">view_closed</code>; the client removes that window, and a pane still showing it reads again.</td></tr>
+<tr><th scope="row">Release</th><td>Socket stop releases all its views. The four-conversation browser limit is enforced by <code translate="no">trimHistoryWindows</code> and is what keeps a socket under the cap.</td></tr>
+</tbody>
+</table>
+<h2 id="non-web">Non-web consumers</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Consumer</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Event path</th><td>CLI, ACP, channels, <code translate="no">worker_turn</code> and <code translate="no">bound_reply</code> keep <code translate="no">on_event</code> and <code translate="no">stream_event</code> untouched.</td></tr>
+<tr><th scope="row">CLI and rehearsal</th><td>The CLI (<code translate="no">history_version</code> absent) and <code translate="no">rehearsal</code> read <code translate="no">session_loaded.messages</code> built by <code translate="no">flat_rows.py</code>: <code translate="no">id</code>, <code translate="no">role</code>, <code translate="no">content</code>, the whole branch, no paging.</td></tr>
+<tr><th scope="row">HTTP route</th><td>The HTTP command route (<code translate="no">CommandReply</code>, protocol 1) gets the same fields capped to the newest 6 turns or 128 KiB, with <code translate="no">history_before</code> and <code translate="no">history_after</code> still accepted, because <code translate="no">CommandReply</code> refuses replies over 4 MiB.</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="transcript-model-live.html">Live updates</a></p>

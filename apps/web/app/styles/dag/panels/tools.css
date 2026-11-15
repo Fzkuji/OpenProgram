@@ -1,0 +1,296 @@
+/* DAG 画布控件：左侧竖条、右侧缩放竖列、左上选择操作条、选中虚线框、框选框、快捷键面板、小地图。
+   对应来源：components/chat/dag/dag-tools.tsx、components/chat/dag/dag-view.tsx、lib/runtime-bridge/dag/interaction/selection/selection.ts */
+
+/* Rail and action bar are the app's raised material: the input box's
+   fill and the composer's shadow, no edge (components/ui/button.tsx
+   ``elevated``). */
+.dag-tool-rail,
+.dag-select-bar {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  padding: 4px;
+  gap: 2px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-input);
+  box-shadow: var(--shadow-raised);
+  transition: box-shadow var(--motion-medium) var(--ease-standard);
+}
+/* Under the pointer the shadow deepens, as the composer's buttons do
+   (``elevated``: shadow-raised → shadow-raised-hover). */
+.dag-tool-rail:hover,
+.dag-select-bar:hover,
+.dag-minimap:hover { box-shadow: var(--shadow-raised-hover); }
+.dag-select-bar { padding: 3px; border-radius: var(--radius-lg); }
+
+.dag-tool-rail { flex-direction: column; }
+
+/* The zoom column (dag-view.tsx DagZoomColumn): the same strips stacked
+   in the canvas's top-right corner, right under the pane's perspective
+   strip (chat/center-pane.css .chat-view-controls: 16px from the top,
+   then a 16px gap, as between every floating box on the canvas and from
+   its edges). That strip is 66px tall with its two buttons — view
+   toggle and full screen — and 96px once a saved session adds the `…`
+   menu. Every view control lives in that one column; the minimap and
+   the legend open to its left, from the top. */
+.dag-zoom-column {
+  position: absolute;
+  z-index: 3;
+  right: 16px;
+  top: 98px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.center-pane-chat:has(> .chat-view-controls > .chat-view-control-btn:nth-of-type(3)) .dag-zoom-column {
+  top: 128px;
+}
+.dag-zoom-column > .dag-tool-rail { position: static; }
+/* Entering the graph view, the column's strips come in top to bottom the
+   way the panels beside them do (dag-key-sheet.tsx PANEL_MOTION: a fade
+   and an 8px slide from the right), 150ms each, 40ms apart. The column
+   mounts with the view, so this plays on every entry; leaving is
+   instant, as the switch is. */
+@keyframes dag-strip-in {
+  from { opacity: 0; transform: translateX(8px); }
+}
+.dag-zoom-column > .dag-tool-rail {
+  animation: dag-strip-in 0.15s ease-out backwards;
+}
+.dag-zoom-column > .dag-tool-rail:nth-child(2) { animation-delay: 40ms; }
+.dag-zoom-column > .dag-tool-rail:nth-child(3) { animation-delay: 80ms; }
+@media (prefers-reduced-motion: reduce) {
+  .dag-zoom-column > .dag-tool-rail { animation: none; }
+}
+.dag-tool-btn.dag-zoom-readout {
+  height: var(--ui-button-h-xs);
+  font: inherit;
+  font-size: var(--fs-2xs);
+  letter-spacing: -0.01em;
+}
+.dag-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The send button's size and corner (composer sendBtn: size-7,
+     8px), so the canvas's controls and the composer's match. */
+  width: var(--ui-button-h-sm);
+  height: var(--ui-button-h-sm);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+.dag-tool-btn:hover {
+  background: var(--bg-hover);
+  color: var(--foreground);
+}
+/* A toggle that is on (legend, minimap, controls sheet): the hover
+   block held, in the same greys — no accent colour on the canvas. */
+.dag-tool-btn[aria-pressed="true"],
+.dag-tool-btn[aria-pressed="true"]:hover {
+  background: var(--bg-hover);
+  color: var(--foreground);
+}
+.dag-tool-sep {
+  height: 1px;
+  margin: 3px 6px;
+  background: var(--border-light);
+}
+
+/* The selection action bar — top left. The
+   top right is the pane's perspective controls
+   (chat/center-pane.css .chat-view-controls). */
+.dag-select-bar {
+  top: 16px;
+  left: 16px;
+  align-items: center;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.dag-select-count {
+  padding: 0 6px 0 7px;
+  color: var(--foreground);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.dag-select-sep {
+  width: 0.5px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--border-popover, var(--border-light));
+}
+.dag-select-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--ui-button-h-sm);
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dag-select-act:hover:not(:disabled) {
+  color: var(--foreground);
+  background: var(--bg-hover);
+}
+.dag-select-act:disabled { opacity: 0.5; cursor: default; }
+.dag-select-act.dag-select-icon { width: 26px; padding: 0; justify-content: center; }
+.dag-select-danger { color: var(--destructive); }
+.dag-select-danger:hover:not(:disabled) {
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+}
+
+
+
+/* A selected node lights up in place (dag/graph/nodes.css ``is-selected``). */
+
+/* The selection box while left-dragging — screen space, over the
+   graph, never in the way of the pointer. */
+.dag-select-band {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 2;
+}
+.dag-select-band rect {
+  fill: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+  stroke: var(--accent-blue);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+/* The minimap (interaction/view/minimap.ts): the column's raised material,
+   first in the side column (below), left of the zoom column (16px edge +
+   36px column + 16px gap), 16px from the top. The corner
+   placement here is for a graph with no side column. The column's map
+   button and M show and hide it. */
+.dag-minimap {
+  position: absolute;
+  z-index: 3;
+  right: 68px;
+  top: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-input);
+  box-shadow: var(--shadow-raised);
+  cursor: pointer;
+  /* Comes and goes like the panels under it and the app's popovers
+     (dag-key-sheet.tsx PANEL_MOTION): fade, 95% scale, an 8px slide from
+     the zoom column's side, 100ms. */
+  transform-origin: top right;
+  transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard), box-shadow var(--motion-medium) var(--ease-standard);
+}
+.dag-minimap.is-hidden {
+  opacity: 0;
+  transform: translateX(8px) scale(0.95);
+  pointer-events: none;
+}
+
+/* The side column, like the macOS widgets sidebar: the minimap
+   (minimap.ts puts its canvas in .dag-minimap-slot), the docked web
+   preview (components/center-tabs/pip/pip-dock-slot.tsx holds its place;
+   the preview floats over it), then the guides — the legend (dag-view.tsx
+   DagLegend) and the controls sheet (components/chat/dag/dag-key-sheet.tsx),
+   which can be open together. All are the minimap's width, 16px apart,
+   each at its full height, and the column scrolls as a whole — a wheel
+   over any of them scrolls it. It sits left of the zoom column from the
+   top and ends 16px above the composer, which floats over the canvas's
+   foot (dag-view.tsx sets --dag-bottom-inset). It is placed against the
+   canvas host, not against the zoom column, whose top moves with the
+   strip above it. Its empty part lets the canvas under it take the
+   pointer. An 8px margin inside the scroll box keeps the panels'
+   shadows from being cut at its edges. */
+.dag-side-column {
+  position: absolute;
+  z-index: 4;
+  right: 60px; /* 16px edge + 36px zoom column + 16px gap, less the 8px margin */
+  top: 8px; /* 16px from the top, less the 8px margin */
+  box-sizing: border-box;
+  width: calc(280px + 16px); /* the minimap's width (minimap.ts W) */
+  padding: 8px;
+  max-height: calc(100% - 16px - var(--dag-bottom-inset, 16px) + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+.dag-side-column > * { pointer-events: auto; flex: 0 0 auto; }
+/* Scrolled, the column's edges fade instead of cutting the boxes off: the
+   top once it has left the start, the bottom while more waits below, each
+   growing over the first or last 24px of the scroll. A column that fits
+   has no scroll timeline, so it shows no fade; neither does a browser
+   without scroll timelines. */
+@property --dag-column-fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --dag-column-fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes dag-column-fade-top {
+  from { --dag-column-fade-top: 0px; }
+  to { --dag-column-fade-top: 24px; }
+}
+@keyframes dag-column-fade-bottom {
+  from { --dag-column-fade-bottom: 24px; }
+  to { --dag-column-fade-bottom: 0px; }
+}
+@supports (animation-timeline: scroll()) {
+  .dag-side-column {
+    mask-image: linear-gradient(to bottom,
+      transparent 0,
+      black var(--dag-column-fade-top),
+      black calc(100% - var(--dag-column-fade-bottom)),
+      transparent 100%);
+    animation: dag-column-fade-top linear both, dag-column-fade-bottom linear both;
+    animation-timeline: scroll(self), scroll(self);
+    animation-range: 0px 24px, calc(100% - 24px) 100%;
+  }
+}
+/* The map in the column: in its flow, not pinned to the corner. While it
+   is off its place folds away, so the panels under it move up as it
+   fades. */
+.dag-side-column .dag-minimap { position: static; display: block; }
+.dag-minimap-slot {
+  height: 160px; /* minimap.ts H */
+  transition: height var(--motion-fast) var(--ease-standard), margin var(--motion-fast) var(--ease-standard);
+}
+.dag-minimap-slot:not(:has(> canvas.dag-minimap:not(.is-hidden))) {
+  height: 0;
+  margin-bottom: -16px; /* the column's gap */
+  pointer-events: none;
+}
+/* The legend above the controls sheet, as their buttons are ordered. */
+.dag-side-column > .dag-key-sheet { order: 1; }
+/* They wear the map's frame — fill and raised shadow, the zoom column's
+   strips' too — not the menu panel's: its 1px outer ring drew them a
+   pixel wider than the map on each side. Same 10px corners. Each is as
+   tall as its rows: the column scrolls, not the panel. */
+.dag-side-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: none;
+  overflow: visible;
+  background: var(--bg-input);
+  box-shadow: var(--shadow-raised);
+  border-radius: var(--radius-lg);
+}
+/* The preview's place takes no pointer: the preview over it does. */
+.dag-pip-dock { pointer-events: none !important; }

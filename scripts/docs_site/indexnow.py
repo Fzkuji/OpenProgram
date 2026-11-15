@@ -9,9 +9,13 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.parse import urlparse
 
-HOST = "openprogram.io"
+from openprogram.operations import project_site
+
+HOST = project_site.SITE_HOST
 KEY = "7c5062acbc32b8a88d2e6b627d65cbfa"
-KEY_LOCATION = f"https://{HOST}/{KEY}.txt"
+# The key file sits at the site root, which IndexNow lets vouch for every URL
+# below it.
+KEY_LOCATION = project_site.site_url(f"{KEY}.txt")
 MAX_URLS = 10_000
 ENDPOINT = "https://api.indexnow.org/indexnow"
 LOC_TAG = "{http://www.sitemaps.org/schemas/sitemap/0.9}loc"
@@ -27,6 +31,7 @@ def payloads(sitemap: Path) -> list[dict[str, object]]:
         raise ValueError("sitemap contains no URLs")
     if any(
         urlparse(url).scheme != "https" or urlparse(url).netloc != HOST
+        or not url.startswith(project_site.SITE_URL)
         for url in urls
     ):
         raise ValueError("sitemap contains a non-canonical URL")
@@ -50,7 +55,7 @@ def write_payloads(sitemap: Path, output: Path) -> list[Path]:
     paths = []
     for index, payload in enumerate(batches, start=1):
         path = output / f"batch-{index}.json"
-        path.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
+        path.write_text(json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8")
         paths.append(path)
     return paths
 

@@ -1,0 +1,128 @@
+<title>Moving tabs between windows</title>
+<meta name="description" content="The transaction that moves a desktop tab to another window: what travels, how it commits, and how it recovers or rolls back.">
+<h1>Moving tabs between windows</h1>
+
+<p>A desktop tab can move to another OpenProgram window, or to a new window at the release point. When the move ends the tab exists in exactly one window; any failure leaves the source as it was.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 396" role="img" aria-label="Sequence between source renderer, main process and destination renderer. The source prepares a payload and receives a token. The destination inspects and accepts it; the main process locks and reparents the views. The destination inserts the tab and reports ready. Only then does the source remove its copy, after which the main process persists the committed decision and reveals the window.">
+  <defs><marker id="tt-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big mid" x="90" y="22">Source renderer</text><text class="t-big mid" x="340" y="22">Main process</text><text class="t-big mid" x="584" y="22">Destination renderer</text>
+  <path class="ln-faint" d="M90 36V394M340 36V394M590 36V394"/>
+  <line class="ln" x1="90" y1="70" x2="332" y2="70" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="215" y="61">prepare(payload)</text>
+  <text class="t-soft" x="352" y="75">validate, issue token: prepared</text>
+  <line class="ln" x1="590" y1="112" x2="348" y2="112" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="465" y="103">inspect(token)</text>
+  <line class="ln" x1="590" y1="154" x2="348" y2="154" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="465" y="145">accept(placement)</text>
+  <text class="t-soft mid" x="215" y="159">lock views, reparent</text>
+  <line class="ln" x1="340" y1="196" x2="582" y2="196" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="465" y="187">insert tab, journal</text>
+  <text class="t-soft mid" x="215" y="201">destination-staged</text>
+  <line class="ln" x1="590" y1="238" x2="348" y2="238" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="465" y="229">destination-ready</text>
+  <text class="t-soft mid" x="215" y="243">awaiting-source</text>
+  <line class="ln" x1="340" y1="280" x2="98" y2="280" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="215" y="271">remove-source</text>
+  <line class="ln" x1="90" y1="322" x2="332" y2="322" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="215" y="313">source-removed</text>
+  <text class="t-soft" x="352" y="327">persist committed decision</text>
+  <text class="t-soft" x="352" y="369">reveal window: committed</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>Source</strong><small><code translate="no">prepare(payload)</code></small></li>
+<li><strong>Main process</strong><small>validate, issue token: <code translate="no">prepared</code></small></li>
+<li><strong>Destination</strong><small><code translate="no">inspect(token)</code>, <code translate="no">accept(placement)</code></small></li>
+<li><strong>Main process</strong><small>lock views, reparent: <code translate="no">destination-staged</code></small></li>
+<li><strong>Destination</strong><small>insert tab, journal, <code translate="no">destination-ready</code></small></li>
+<li><strong>Main process</strong><small><code translate="no">awaiting-source</code>, then <code translate="no">remove-source</code></small></li>
+<li><strong>Source</strong><small>remove tab, journal, <code translate="no">source-removed</code></small></li>
+<li class="flow-end"><strong>Main process</strong><small>persist decision, reveal window: <code translate="no">committed</code></small></li>
+</ol>
+</figure>
+<p class="note">The destination inserts before the source removes, so a live tab always exists.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Token</th><td>Opaque, single use; expires after 15 seconds unless the move completes</td></tr>
+<tr><th scope="row">Prepare</th><td>Requested synchronously when the drag leaves the strip</td></tr>
+<tr><th scope="row">Inspect</th><td>Only the window under the pointer; not the source, not a second window</td></tr>
+<tr><th scope="row">Reject</th><td><code translate="no">duplicate</code> (the destination focuses its own copy) or <code translate="no">group-full</code>: the source is told, nothing changes. A payload the destination cannot validate is not accepted; its token expires.</td></tr>
+<tr><th scope="row">Commit</th><td><code translate="no">committed</code> is written to <code translate="no">tab-transfers.json</code> in the app data directory by atomic replace before success is reported. Uncertain durability: same decision rewritten, backoff 100 ms to 5 s. Write fails: roll back.</td></tr>
+<tr><th scope="row">New window</th><td>Release outside every window creates a hidden torn-off window at that point. It claims the token, accepts like any destination, and fades in only once the tab is staged. Concurrent detaches share one window boot.</td></tr>
+<tr><th scope="row">Empty source</th><td>Closes after its journal is finalized</td></tr>
+<tr><th scope="row">Hover</th><td>The window under the pointer gets enter and leave events and shows the drop position only then</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-moves">What moves</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Source kind</th><th scope="col">Contents</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tab</code></th><td>One ungrouped tab</td></tr>
+<tr><th scope="row"><code translate="no">segment</code></th><td>One member of a compound group; the rest stay</td></tr>
+<tr><th scope="row"><code translate="no">group</code></th><td>A whole compound group with members, visible members and focused member</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tab kinds</th><td>Session, file, web, new-tab page, application, built-in page</td></tr>
+<tr><th scope="row">Position</th><td>Group id, member index and order, visible members, focused member, canvas layout</td></tr>
+<tr><th scope="row">Also carried</th><td>Unsaved file drafts; per chat: composer draft and settings, pending project, channel choice, whether active; each tab's page history</td></tr>
+<tr><th scope="row">Limits</th><td>Payload 20 MiB; file drafts 3 per transfer, 2 MiB each, 6 MiB total; strings and nested values bounded. A malformed payload gets no token.</td></tr>
+</tbody>
+</table>
+
+<h2 id="web-pages-keep-their-state">Web pages keep their state</h2>
+<p>A web tab is an Electron <code translate="no">WebContentsView</code>. The coordinator moves that same object between windows and never calls <code translate="no">loadURL</code>, so redirects, sign-in, form values, scroll position, page memory and the DevTools target survive. It stays hidden until the destination reports new bounds.</p>
+<p>Before reparenting: clear the agent action cue and control overlay, record each view's bounds and visibility, check the source still owns every view. A view in an active transfer is locked against a second transfer or an agent command.</p>
+
+<h2 id="journals-and-recovery">Journals and recovery</h2>
+<ol>
+<li>Before changing its tab store, each renderer writes a journal to window-keyed local storage (<code translate="no" data-claim="example">openprogram.tabTransferJournal:&lt;windowId&gt;</code>): before and after layout, session state, file drafts, native-view bookkeeping.</li>
+<li>The main process records which roles opened a journal; the durable decision lists them as required.</li>
+<li>After a reload a renderer asks for pending decisions, applies <code translate="no">committed</code> or <code translate="no">rolled-back</code>, and finalizes its role.</li>
+<li>A window gone: another live window adopts the orphaned role.</li>
+<li>All required roles finalized: the decision is deleted.</li>
+</ol>
+
+<h2 id="rollback">Rollback</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Trigger</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Expiry, or destination or source failure</th><td>Roll back</td></tr>
+<tr><th scope="row">Escape, or a drag ending without a target</th><td>Roll back</td></tr>
+<tr><th scope="row">A participating window destroyed or closing</th><td>Roll back</td></tr>
+<tr><th scope="row">Commit decision cannot be written</th><td>Roll back</td></tr>
+<tr><th scope="row">Already committed</th><td>Never rolls back</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Stage</th><th scope="col">Rollback does</th></tr></thead>
+<tbody>
+<tr><th scope="row">No journal opened yet</th><td>Discard the token, tell the source</td></tr>
+<tr><th scope="row">Journal opened</th><td>Write <code translate="no">rolled-back</code>; destination undoes its insertion (2-second limit); every view returns to the source with original bounds and visibility; a torn-off window made for this move closes and its state is discarded</td></tr>
+<tr><th scope="row">Source window gone</th><td>The moved views are closed, never left ownerless</td></tr>
+</tbody>
+</table>
+<p class="note">Ordinary close rules do not apply: removing the source copy creates no close record, deletes no draft, and opens no fallback new tab before the destination acknowledges.</p>
+
+<h2 id="routing-after-a-move">Routing after a move</h2>
+<p>Menu commands and agent web-tab commands go to the focused window only. Native-view messages are accepted only from the renderer whose window owns the view.</p>
+
+<details>
+<summary>Code and related pages</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/desktop/main/web-views/transfers.js</code></th><td>Main-process coordinator</td></tr>
+<tr><th scope="row"><code translate="no">tab-transfer-validation.js</code>, <code translate="no">tab-transfer-store.js</code></th><td>Desktop validation and durable decisions</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/tabs/transfer/</code></th><td>Renderer drag coordinator and journal</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/tabs/store/transfers.ts</code></th><td>Tab-store insertion and removal</td></tr>
+</tbody>
+</table>
+<p><a href="../workspace/center-tabs-and-split-layout.html">Tab strip, groups and split layout</a> in one window; <a href="window-lifecycle.html">main and torn-off windows</a>.</p>
+</details>

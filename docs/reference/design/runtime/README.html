@@ -1,0 +1,175 @@
+<title>Runtime</title>
+<meta name="description" content="How the agent runtime is organised and why its main contracts are the way they are.">
+<h1>Runtime</h1>
+
+<p class="note">For API usage, see <a href="../../api/runtime.html">Runtime API</a>.</p>
+
+<h2 id="package-layout">Package layout</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">openprogram/runtime/</code></th><th scope="col">Is</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent/</code></th><td>One model call: the <code translate="no">Agent</code> class and its use of a <code translate="no">Context</code>, <code translate="no">agent()</code> and <code translate="no">llm()</code>, the tool loop (<code translate="no">loop/</code>: <code translate="no">loop.py</code>, <code translate="no">LoopDriver</code> in <code translate="no">driver.py</code>, <code translate="no">AgentSession</code>, tool and event types, retry), and <code translate="no">Runtime</code>. The code of Agentic Programming.</td></tr>
+<tr><th scope="row"><code translate="no">conversation/</code></th><td>Chats and turns on <code translate="no">Agent</code>: <code translate="no">turn_runtime/</code> runs one turn, <code translate="no">chat.py</code> is <code translate="no">ChatAgent</code>, <code translate="no">production_driver/</code> drives a turn as a canonical execution, <code translate="no">run_control/</code> tracks the running turn; session settings, inbox, open work, rewind, always-on agents.</td></tr>
+<tr><th scope="row"><code translate="no">jobs/</code></th><td>Background runs: job store, runner pool, <code translate="no">resource_governance/</code> (admission and limits).</td></tr>
+<tr><th scope="row"><code translate="no">agent_registry/</code></th><td>Saved Agent configurations: which exist, their model, tools and workspace.</td></tr>
+<tr><th scope="row"><code translate="no">permissions/</code></th><td>What a tool call may do: <code translate="no">policy</code> (the one decision), <code translate="no">identity</code> (limits for non-owners), <code translate="no">refusal</code> (the one source of refusal text), approval, audit, <code translate="no">authority</code> (who is asking), <code translate="no">attended</code> mode (no questions when nobody is watching).</td></tr>
+<tr><th scope="row"><code translate="no">context/</code></th><td>The <code translate="no">Context</code> class (<code translate="no">model.py</code>) and what the model sees: rendering, compaction, system prompt, <code translate="no">session_db.py</code>.</td></tr>
+<tr><th scope="row"><code translate="no">execution/</code></th><td>Control plane for pause, cancel and recovery: execution store, revisions, waits, checkpoints.</td></tr>
+<tr><th scope="row"><code translate="no">events/</code></th><td>The event bus.</td></tr>
+<tr><th scope="row"><code translate="no">scheduler/</code>, <code translate="no">proactive/</code>, <code translate="no">commands/</code></th><td>Timed runs, proactive policies, slash commands.</td></tr>
+</tbody>
+</table>
+
+<figure>
+<img src="execution/agent-code-structure.svg" alt="Runtime packages by concept">
+</figure>
+
+<h3 id="dependency-direction">Dependency direction</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Features</th><td><code translate="no">conversation</code>, <code translate="no">jobs</code>, <code translate="no">agent_registry</code>, <code translate="no">scheduler</code>, <code translate="no">proactive</code>, <code translate="no">commands</code> build on <code translate="no">agent</code></td></tr>
+<tr><th scope="row">Call core</th><td><code translate="no">agent</code> builds on the lower packages and never imports a feature</td></tr>
+<tr><th scope="row">Lower</th><td><code translate="no">execution</code>, <code translate="no">context</code>, <code translate="no">permissions</code>, <code translate="no">events</code> do not import <code translate="no">agent</code></td></tr>
+<tr><th scope="row">Checked by</th><td><code translate="no">tests/contracts/repository/test_runtime_layering.py</code>; imports that break the directions are a frozen list that may only shrink. <code translate="no">context</code> and <code translate="no">permissions</code> keep them in full.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>How lower packages reach higher ones</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Registration</th><th scope="col">Supplies</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">conversation/context_registration.py</code></th><td>The <code translate="no">open_work</code> system-prompt section and the Agent profile loader for context breakdowns</td></tr>
+<tr><th scope="row"><code translate="no">conversation/permission_registration.py</code></th><td>Session and turn facts read by <code translate="no">permissions/session_facts.py</code></td></tr>
+<tr><th scope="row"><code translate="no">context/scope.py</code></th><td>Task-local call state <code translate="no">Context</code> reads (<code translate="no">_call_id</code>, workflow call site); the call core imports it from there</td></tr>
+<tr><th scope="row"><code translate="no">runtime/agent/engine_link.py</code></th><td>The one port for what the call core needs from the engine: running a persistent turn or saved continuation (<code translate="no">Agent.run_turn</code> / <code translate="no">resume_turn</code>) and its Agent profile, a saved Agent's tools, binding a resumed tool call's pre-approved question wait, whether the worker is stopping, the running job's activity and operation timeout, the runtime contract a resumable tool loop checkpoints</td></tr>
+<tr><th scope="row"><code translate="no">conversation/engine_registration.py</code></th><td>Implements that port when <code translate="no">openprogram.runtime.conversation</code> is imported; the worker and Server import it at start. The same import brings in <code translate="no">conversation/run_control</code>, which claims the core's cancellation check.</td></tr>
+</tbody>
+</table>
+<ul>
+<li>With nothing registered the core is a plain library: the worker is not stopping, no background job runs, <code translate="no">Agent.run_turn</code> raises <code translate="no">EngineUnavailable</code>.</li>
+<li>Imported directly, with or without an engine: bound session and execution, nested-call admission and terminal marking (<code translate="no">execution/run_control/</code>), approval gating (<code translate="no">permissions.approval.wrap_with_approval</code>), the pre-approved wait id (<code translate="no">permissions.session_facts</code>).</li>
+<li><code translate="no">TurnRequest</code> and the request in force (<code translate="no">agent/turn_request.py</code>) are call-core types the engine builds and binds.</li>
+<li>A module exports only the names it owns: execution binding from <code translate="no">openprogram.runtime.execution.run_control</code>, permission vocabulary from <code translate="no">permissions/modes.py</code>, tool contract (<code translate="no">AgentTool</code>, <code translate="no">AgentToolResult</code>) from <code translate="no">openprogram.models.providers.types</code>, call-scope ContextVars from <code translate="no">context/scope.py</code>. <code translate="no">tests/contracts/repository/test_no_transitional_reexports.py</code> keeps moved names from returning.</li>
+<li><code translate="no">process_runner.py</code>, which runs a turn's Agent method tools in a subprocess, is engine code in <code translate="no">conversation/</code>.</li>
+</ul>
+</details>
+
+<h2 id="runtime-design-rationale">One runtime, one session</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Call</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">create_runtime()</code></th><td>Open session</td></tr>
+<tr><th scope="row"><code translate="no">runtime.exec()</code></th><td>Send one request in it</td></tr>
+<tr><th scope="row"><code translate="no">runtime.close()</code></th><td>Close session</td></tr>
+</tbody>
+</table>
+<p>No <code translate="no">reset()</code> or <code translate="no">new_session()</code>; a new session is a new <code translate="no">create_runtime()</code>. Two independent conversations need two runtime objects, which is rare.</p>
+<details>
+<summary>Why one Runtime does not reuse sessions</summary>
+<ul>
+<li>CLI providers keep session state in the subprocess; reuse would hang a mutable current session id on the Runtime and invite concurrency races.</li>
+<li>API providers are stateless; multiple sessions would be an upper-layer dict, no new capability.</li>
+<li>ContextVar injection relies on a runtime bound to the current function tree.</li>
+</ul>
+</details>
+
+<h2 id="contextvar-injection">The runtime is injected through a ContextVar</h2>
+<p>An Agent method without <code translate="no">runtime=</code> reads the <code translate="no">_current_runtime</code> ContextVar. An entry function with neither calls <code translate="no">create_runtime()</code>, and closes it at exit. A child inherits its parent's runtime.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Rejected</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Explicit <code translate="no">runtime: Runtime</code> in every signature</th><td>Plumbing unrelated to the function's logic, repeated at every nested call</td></tr>
+<tr><th scope="row">Module-level singleton</th><td>Shared across threads and coroutines, so concurrent agents step on each other. A ContextVar is isolated per thread and coroutine.</td></tr>
+</tbody>
+</table>
+
+<h2 id="provider-abstraction">One abstraction for session and API providers</h2>
+<p>Authors see <code translate="no">llm(...)</code> / <code translate="no">agent(...)</code>, both ending in <code translate="no">runtime.exec</code>. <code translate="no">has_session</code> picks the internal path.</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Session provider (CLI)</th><th scope="col">API provider</th></tr></thead>
+<tbody>
+<tr><th scope="row">Conversation memory</th><td>Kept by the subprocess</td><td>None; each exec is independent</td></tr>
+<tr><th scope="row">Context injection</th><td>Skips DAG render; sends docstring and current content</td><td>History from the DAG via <code translate="no">render_context</code> + <code translate="no">render_dag_messages</code></td></tr>
+<tr><th scope="row"><code translate="no">render_range.subcalls</code></th><td>No effect</td><td>Bounds the injected history</td></tr>
+</tbody>
+</table>
+<p class="note">Two Runtime classes would need two implementations per function, breaking “functions describe the task, providers describe the channel”. One conditional is the cost.</p>
+
+<h2 id="retry">Retry lives in the runtime</h2>
+<p><code translate="no">exec()</code> / <code translate="no">async_exec()</code> have <code translate="no">max_retries</code>, default 3 (<code translate="no">OPENPROGRAM_MAX_RETRIES</code>), for every provider. Providers only send and receive; retry, throttling and caching are runtime concerns.</p>
+<ul>
+<li>One policy for network timeouts, rate limits and 5xx.</li>
+<li>One failure format: <code translate="no">Attempt N: ErrorType: msg</code>.</li>
+<li><code translate="no">TypeError</code>, <code translate="no">NotImplementedError</code> and <code translate="no">ImportError</code> are not retried: a provider bug or missing subsystem does not go away, and burning the backoff schedule only delays the failure.</li>
+</ul>
+
+<h2 id="dag-writes">DAG writes</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Moment</th><th scope="col">Write</th></tr></thead>
+<tbody>
+<tr><th scope="row">Enter Agent method</th><td>Code node, <code translate="no">status=running</code>; <code translate="no">_call_id</code> points at it</td></tr>
+<tr><th scope="row"><code translate="no">runtime.exec()</code> in the body</th><td>LLM node under <code translate="no">_call_id</code>, <code translate="no">caller = _call_id</code></td></tr>
+<tr><th scope="row">Exit (return or except)</th><td>Backfill the same code node's output and status</td></tr>
+<tr><th scope="row"><code translate="no">expose="hidden"</code></th><td>No code node; a phantom <code translate="no">_call_id</code> still gives inner LLM calls a frame</td></tr>
+</tbody>
+</table>
+<p class="note">Two writes rather than one on completion: the visualizer shows a running call at once, and an exceptional exit still has a node for the error.</p>
+
+<h2 id="embedding-seams">Embedding seams</h2>
+<p>The core runs inside hosts that are not OpenProgram (<a href="../../../capabilities/agentic-programming/embedding-in-your-own-stack.html">Embedding in your own stack</a>). <code translate="no">tests/component/runtime/test_standalone_embed.py</code> executes the contract:</p>
+<ul>
+<li><code translate="no">import openprogram</code> and a full <code translate="no">Runtime(call=...).exec()</code> round trip do not pull in <code translate="no">webui</code>, FastAPI, Uvicorn or Textual.</li>
+<li>With <code translate="no">SessionStore(root_path=...)</code> + <code translate="no">session_scope(store, session_id)</code> the run never consults <code translate="no">openprogram.state.paths</code>; with no store it persists nothing.</li>
+<li>A standalone run starts with a principal drawn once per process and never stored, with the <code translate="no">owner</code> tier. It becomes the profile's owner when it is handed a profile runtime or sends a request to the profile's model. A run on a host-supplied <code translate="no">call=</code>, wherever the host creates it, reads no <code translate="no">owner.json</code>.</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">Seam</th><th scope="col">Core default</th><th scope="col">Platform registration</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">set_cancellation_check</code> (<code translate="no">openprogram.host.cancellation</code>)</th><td>No-op</td><td><code translate="no">openprogram.runtime.conversation.run_control</code> registers the exact execution check at import</td></tr>
+<tr><th scope="row"><code translate="no">set_session_id_provider</code></th><td><code translate="no">None</code>; <code translate="no">runtime.can_ask()</code> is <code translate="no">False</code></td><td><code translate="no">run_control</code> provides the active session id</td></tr>
+<tr><th scope="row"><code translate="no">session_scope(store, id)</code></th><td>Unset; no persistence</td><td>The dispatcher binds the per-turn store</td></tr>
+</tbody>
+</table>
+<p class="note">Hooks mirror <code translate="no">add_pre_invocation_hook</code> and keep the dependency one-way while <code translate="no">run_control</code> checks the exact execution token.</p>
+
+<details>
+<summary>Implementation files</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/</code></th><td>Runtime base class, <code translate="no">exec</code> / <code translate="no">_call</code> protocol, retry loop</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/call_state.py</code></th><td>Decorator, <code translate="no">_inject_runtime</code>, <code translate="no">_current_runtime</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/models/providers/catalog/registry.py</code></th><td><code translate="no">detect_provider</code>, built-in <code translate="no">PROVIDERS</code> table</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/factory.py</code></th><td><code translate="no">create_runtime</code>, built from that detection</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/provider_runtimes/</code></th><td>Runtime subclasses of subscription and CLI-credential providers (<code translate="no">openai_codex.py</code>, <code translate="no">google_gemini_cli.py</code>), <code translate="no">PROVIDER_RUNTIMES</code>. Others run on the base Runtime; <code translate="no">openprogram/models/providers/adapters/&lt;vendor&gt;/</code> holds only model, auth and wire code.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/nodes.py</code></th><td><code translate="no">render_context</code>: DAG to reads (the semantics of <code translate="no">render_range</code>)</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/render.py</code></th><td><code translate="no">render_dag_messages</code>: reads to provider messages</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="related-designs">Related designs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Page</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="dag/overview.html">Execution record</a></th><td>Authoritative data model: one graph, node roles user, llm, code, caller and predecessor edges, <code translate="no">render_context</code></td></tr>
+<tr><th scope="row"><a href="dag/rendering.html">DAG rendering</a></th><td>Authoritative: layout, edges, legend, default visibility, 12 scenarios</td></tr>
+<tr><th scope="row"><a href="dag/branch-collaboration.html">Branch collaboration</a></th><td>Communication, dispatch, merge</td></tr>
+<tr><th scope="row"><a href="dag/nested-llm-node-content.html">Nested LLM node content</a></th><td>Ordered chat blocks</td></tr>
+<tr><th scope="row"><a href="execution/agent-call-flow.html">Call flow</a></th><td>Turn and loop skeleton, orthogonal to the node model</td></tr>
+<tr><th scope="row"><a href="execution/agent-worktree.html">Agent worktree</a></th><td>Worktrees</td></tr>
+<tr><th scope="row"><a href="execution/async-job-lifecycle.html">Async job lifecycle</a></th><td>Background jobs</td></tr>
+<tr><th scope="row"><a href="execution/control.html">Execution control</a></th><td>Authoritative: pause, continue, step, steering, cancellation, checkpoint, revision, recovery</td></tr>
+<tr><th scope="row"><a href="execution/dispatcher-split.html">Dispatcher split</a></th><td>One module per responsibility in <code translate="no">conversation/turn_runtime/</code></td></tr>
+<tr><th scope="row"><a href="execution/agentic-llm-streaming.html">Nested <code translate="no">llm()</code> streaming</a></th><td>Per-node tokens: protocol, buffer, persistence, cancel and reconnect, in process and subprocess</td></tr>
+<tr><th scope="row"><a href="operations/file-management.html">File management</a></th><td>Authoritative: attribution, Review, Undo, Restore, branch alignment, multi-agent ownership</td></tr>
+<tr><th scope="row"><a href="operations/streaming-resume.html">Streaming resume</a></th><td>Reconnecting to a running stream</td></tr>
+<tr><th scope="row"><a href="operations/user-input-requests.html">User input requests</a></th><td><code translate="no">runtime.ask</code> / <code translate="no">confirm</code>, question registry, WS/REST protocol, subprocess bridge</td></tr>
+<tr><th scope="row"><a href="session/README.html">Session</a></th><td>Data model, storage, naming, listing, lifecycle, broadcast</td></tr>
+<tr><th scope="row"><a href="collaboration/agent-collaboration.html">Agent collaboration</a></th><td>Authoritative: one cross-branch primitive, four domains, tool surface, three budgets; <a href="collaboration/agent-collab-architecture.html">tool surface</a>, <a href="collaboration/agent-collab-comparison.html">eight references compared</a></td></tr>
+<tr><th scope="row"><a href="security/permission-decision.html">Permission decision</a></th><td>The one decision path, modes, refusal contract</td></tr>
+<tr><th scope="row"><a href="security/sandbox-architecture.html">Sandbox architecture</a></th><td>Authority tiers, permission modes and approval, enforcement, comparison, evidence</td></tr>
+</tbody>
+</table>

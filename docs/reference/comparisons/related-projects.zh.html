@@ -1,0 +1,30 @@
+<title>相关项目</title>
+<meta name="description" content="共享类型化 Python Agent 思路的项目、各自的差异，以及 OpenProgram 的来源。">
+<h1>相关项目</h1>
+<p>多个团队独立得出同一思路——用类型化 Python 写 agent：<strong>docstring 就是提示，签名就是契约</strong>。</p>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">共同点</th><th scope="col">差异</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents"><strong>NVIDIA NOOA</strong></a> (Apache-2.0)</th><td>Agent 是 Python 对象；<code translate="no">...</code> 方法体由 LLM 实现；docstring 是提示，类型注解是契约</td><td>状态在 <code translate="no">self</code> 上；模型<strong>把 Python 写进 Jupyter 式 REPL</strong>（CodeAct）。OpenProgram 让模型<strong>在已注册函数中选择</strong>：动作空间更窄，更易沙箱化和回放。</td></tr>
+<tr><th scope="row"><a href="https://github.com/stanfordnlp/dspy"><strong>DSPy</strong></a> (MIT)</th><td>类型化 <strong>Signature</strong> 取代手写提示</td><td>按指标优化提示。我们保持提示固定可读，把精力放在执行结构：DAG、重试、上下文作用域。两者互补。</td></tr>
+<tr><th scope="row"><a href="https://github.com/PrefectHQ/marvin"><strong>Marvin</strong></a> (Apache-2.0), <a href="https://github.com/Mirascope/mirascope"><strong>Mirascope</strong></a> (MIT)</th><td>装饰函数的 docstring 和返回注解驱动结构化调用</td><td>专注单次类型化调用。OpenProgram 增加<strong>跨</strong>调用的部分：共享 DAG、<code translate="no">spawn</code>、分叉、单次上下文预算。</td></tr>
+<tr><th scope="row"><a href="https://github.com/langchain-ai/langgraph"><strong>LangGraph</strong></a> (MIT)</th><td>运行应是可检查、有检查点的图</td><td>图要预先声明。我们的图<strong>从调用栈记录</strong>：写普通 Python，DAG 就是实际运行的轨迹。见<a href="ai-agent-frameworks.zh.html">对比</a>。</td></tr>
+<tr><th scope="row"><a href="https://github.com/huggingface/smolagents"><strong>smolagents</strong></a> (Apache-2.0)</th><td>通过代码而不是死板的工具 JSON 行动</td><td>在沙箱中写代码的 agent。我们在<strong>编写</strong>时通过 <code translate="no">Agent</code> 方法绑定代码，确定性部分在运行前可审查。</td></tr>
+<tr><th scope="row"><strong>Scriptorium</strong></th><td>可读的 agent 记忆；Markdown 笔记；事实引用来源消息；为 Claude Code 提供 MCP</td><td>模型把记忆写成普通文件：可打开、diff，把每条事实追溯到消息</td></tr>
+</tbody>
+</table>
+<p class="note">描述有误或有遗漏？请提 PR 或 issue。</p>
+<h2 id="acknowledgements">致谢</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">移植或改编</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/openclaw/openclaw"><strong>OpenClaw</strong></a> (MIT)</th><td>工具注册表结构（<code translate="no">name / description / parameters / execute</code>）、带 <code translate="no">check_fn</code> + <code translate="no">requires_env</code> 的 provider 抽象、<code translate="no">TOOLSETS</code> 预设、通过 SKILL.md frontmatter 和延迟绑定 <code translate="no">read</code> 加载 skill。克隆位于 <code translate="no">references/openclaw/</code>（已 gitignore）。</td></tr>
+<tr><th scope="row"><a href="https://github.com/himanshuishere/hermes-agent"><strong>hermes-agent</strong></a> (MIT)</th><td><code translate="no">execute_code</code>（去掉 Docker 和 Modal 层）、<code translate="no">mixture_of_agents</code> 的起点，多 provider <code translate="no">web_search</code>、<code translate="no">image_generate</code>、<code translate="no">image_analyze</code> 的结构</td></tr>
+<tr><th scope="row"><a href="https://github.com/mariozechner/pi-coding-agent"><strong>pi-coding-agent</strong></a> (MIT)</th><td>经 OpenClaw：AgentSkill 形式（<code translate="no">&lt;available_skills&gt;</code> XML、name、description、location）</td></tr>
+<tr><th scope="row"><a href="https://www.anthropic.com/claude-code"><strong>Claude Code</strong></a></th><td><code translate="no">DEFAULT_TOOLS</code> 的使用体验（bash、read、write、edit、glob、grep、list、apply_patch、todo 面板）和 todo 工具的 JSON schema</td></tr>
+<tr><th scope="row"><strong>Anthropic、OpenAI、Google SDK</strong></th><td>线路契约和第一方 provider 使用的流式客户端；基础依赖。CLI 和 OAuth provider 直接走 HTTP。</td></tr>
+</tbody>
+</table>
+<p class="note">工具文件在文件级 docstring 中注明更具体的来源。MIT 组件保留 MIT 条款；合并作品按 AGPL-3.0 分发。</p>
+<h2 id="contributing">参与贡献</h2>
+<p>这是一个带参考实现的<strong>范式提案</strong>。欢迎讨论、其他语言的实现、验证或挑战它的用例，以及 bug 报告。环境、测试和 PR 要求见 <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">CONTRIBUTING.md</a>。</p>

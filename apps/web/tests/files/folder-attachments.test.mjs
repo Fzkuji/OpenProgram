@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { captureDropEntries, firstDirectoryLevel } from '../../components/chat/composer/attach/folder-drop.ts';
-import { buildAttachmentEnvelope } from '../../lib/chat/attachment-marker.ts';
+import { buildAttachmentEnvelope, extractAttachmentMentions } from '../../lib/chat/send/attachment-marker.ts';
 
 function directory(batches) {
   return { name: 'project', isDirectory: true, createReader: () => ({readEntries(resolve) { resolve(batches.shift() || []); }}) };
@@ -23,6 +23,18 @@ test('native documents and folders send paths without any byte payload or body',
   assert.match(envelope.mentions.join('\n'), /\/home\/report.pdf/);
   assert.match(envelope.mentions.join('\n'), /First-level directory listing/);
   assert.doesNotMatch(envelope.mentions.join('\n'), /legacy-cached-bytes/);
+});
+test('folder listing stays out of the bubble text but rides with the chip marker', () => {
+  const envelope = buildAttachmentEnvelope([], [
+    {filename:'Projects',ext:'folder',sizeBytes:1024,sourcePath:'/home/Projects',directoryListing:'"a/"\n"b c.md"\n… (first level truncated)'},
+    {filename:'empty',ext:'folder',sizeBytes:0,sourcePath:'/home/empty',directoryListing:'(empty folder)'},
+  ]);
+  const content = `${envelope.mentions.join('\n')}\n\n"quoted" first line\nsecond`;
+  const shown = extractAttachmentMentions(content);
+  assert.equal(shown.mentions.length, 2);
+  assert.equal(shown.text.trim(), '"quoted" first line\nsecond');
+  const raw = extractAttachmentMentions(content, true);
+  assert.equal(raw.mentions.map((item) => item.raw).join('\n'), envelope.mentions.join('\n'));
 });
 test('empty browser file is an upload, not a silently missing attachment', () => {
   const envelope = buildAttachmentEnvelope([], [{filename:'empty.txt',ext:'txt',sizeBytes:0,dataB64:''}]);

@@ -1,0 +1,235 @@
+<title>录制与回放提供商调用</title>
+<meta name="description" content="把真实提供商调用录到文件，离线回放，并报告后续运行分歧的确切字段。">
+<h1>录制与回放提供商调用</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 186" role="img" aria-label="录制：get_api_provider 返回 RecordingProvider，它委托给厂商提供商和网络，并先把每个事件写入 recording.jsonl。回放：get_api_provider 返回 ReplayProvider，它读取 recording.jsonl，没有厂商提供商、HTTP 客户端和凭据。">
+  <defs><marker id="rr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="18">录制</text>
+  <text class="t-cmd" x="0" y="48">get_api_provider</text>
+  <line class="ln" x1="140" y1="43" x2="180" y2="43" marker-end="url(#rr-a)"/>
+  <text class="t-cmd" x="190" y="48">RecordingProvider</text>
+  <line class="ln" x1="340" y1="43" x2="384" y2="43" marker-end="url(#rr-a)"/>
+  <text class="t-cmd" x="396" y="48">厂商提供商</text>
+  <line class="ln" x1="490" y1="43" x2="534" y2="43" marker-end="url(#rr-a)"/>
+  <text class="t-soft" x="546" y="48">网络</text>
+  <text class="t-soft" x="190" y="72">先把每个事件写入 recording.jsonl</text>
+  <text class="t-soft" x="0" y="118">回放</text>
+  <text class="t-cmd" x="0" y="148">get_api_provider</text>
+  <line class="ln" x1="140" y1="143" x2="180" y2="143" marker-end="url(#rr-a)"/>
+  <text class="t-cmd" x="190" y="148">ReplayProvider</text>
+  <line class="ln" x1="392" y1="143" x2="320" y2="143" marker-end="url(#rr-a)"/>
+  <text class="t-cmd" x="400" y="148">recording.jsonl</text>
+  <text class="t-soft" x="190" y="172">没有厂商提供商、HTTP 客户端和凭据</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong translate="no">get_api_provider</strong><small>每次模型调用都经过的唯一位置</small></li>
+  <li><strong translate="no">RecordingProvider</strong><small>先把每个事件写入文件，再原样传出；委托给厂商提供商</small></li>
+  <li class="flow-end"><strong translate="no">ReplayProvider</strong><small>改读文件；没有厂商提供商、HTTP 客户端和凭据</small></li>
+</ol>
+</figure>
+<p class="note">厂商模块对两者都不知情。<code translate="no">call_index</code> 把所有 API 的调用排成一个顺序，因为所有包装共用一个 sink 和一个 <code translate="no">ReplayProvider</code>。</p>
+
+<h2 id="scope">范围</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">边界</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">覆盖</th><td>LLM 提供商的请求和事件流，跨 API，一个文件</td></tr>
+<tr><th scope="row">照常真实运行</th><td>Agent 循环、Runtime 重试、工具、Session、DAG</td></tr>
+<tr><th scope="row">不做</th><td>恢复 Session、重放工具副作用、回滚文件、定义任务步骤；录制工具、MCP、浏览器或任意 HTTP</td></tr>
+<tr><th scope="row">绝不</th><td>模糊匹配模型或提示词、回退到真实调用、上传或提交文件、运行中切换</td></tr>
+<tr><th scope="row">严格离线</th><td>只在提供商层成立。工具保留各自权限；整个进程离线要用沙箱或网络策略。</td></tr>
+<tr><th scope="row">Web 界面</th><td>没有；用 CLI 和设置</td></tr>
+<tr><th scope="row">格式</th><td>JSONL 不是稳定的公开交换格式</td></tr>
+<tr><th scope="row">内容</th><td>凭据脱敏不等于匿名：提示词、回复、工具结果、文件片段和个人数据都还在</td></tr>
+</tbody>
+</table>
+
+<h2 id="entry">命令和设置</h2>
+<table class="stack">
+<thead><tr><th scope="col">命令</th><th scope="col">作用</th><th scope="col">退出码</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram recordings status [--json]</code></th><td>模式、文件、来源、可用性、是否需重启；不读内容</td><td>有效 0，无效 1</td></tr>
+<tr><th scope="row"><code translate="no">record [--name NAME]</code></th><td>创建只有 header 的 0600 文件，再原子写入 <code translate="no">mode=record</code> 和选择器；失败则删文件、保留设置。未命名时用 UTC 时间戳加随机后缀</td><td>两者都成功才为 0</td></tr>
+<tr><th scope="row"><code translate="no">replay &lt;selector&gt;</code></th><td>先严格解析，再写入 <code translate="no">mode=replay</code> 和选择器</td><td>无效 1，设置不变</td></tr>
+<tr><th scope="row"><code translate="no">off</code></th><td>只改模式，选择器保留</td><td>0</td></tr>
+<tr><th scope="row"><code translate="no">list [--json]</code></th><td>ID、创建时间、版本、计数、完整性、字节、是否活跃；新的在前。损坏文件显示 <code translate="no">invalid</code></td><td>参数错 2，操作错 1</td></tr>
+<tr><th scope="row"><code translate="no">show &lt;selector&gt; [--json] [--content]</code></th><td>header、统计、每次调用的模型和状态。<code translate="no">--content</code> 输出脱敏后的 JSONL，风险提示写到 stderr</td><td>同上</td></tr>
+<tr><th scope="row"><code translate="no">delete &lt;id&gt; [--yes]</code></th><td>一个托管 ID。TTY：输入完整 ID；无 TTY 且无 <code translate="no">--yes</code>：退出 2。拒绝活跃文件、外部路径、目录、符号链接</td><td>同上</td></tr>
+<tr><th scope="row"><code translate="no">prune --older-than-days N [--dry-run] [--yes]</code></th><td>按文件 mtime。跳过活跃文件、无效符号链接、被锁文件；失败后继续</td><td>同上</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">设置</th><th scope="col">取值</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">record_replay.mode</code></th><td><code translate="no">off</code>、<code translate="no">record</code>、<code translate="no">replay</code>；默认 <code translate="no">off</code></td><td>下次启动生效</td></tr>
+<tr><th scope="row"><code translate="no">record_replay.file</code></th><td>托管 ID 或路径；默认空</td><td>只有 off 时可空。录制只接受 ID；回放需要能严格读取的文件</td></tr>
+</tbody>
+</table>
+<p class="note">设置只在运行时离开 NEW 时读一次。缺少该子树即 off；没有环境变量能打开它，也不会自动挑最新的录制。不含路径分隔符的选择器是 <code translate="no">get_recordings_dir()</code> 下的托管 ID。回放和 show 可读显式路径；delete 和 prune 只在托管根内操作。</p>
+
+<h2 id="registry">运行时生命周期</h2>
+<table class="stack">
+<thead><tr><th scope="col">接口</th><th scope="col">作用</th><th scope="col">绝不</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">import openprogram.models.providers</code></th><td>定义并导出 API</td><td>注册厂商、读设置、打开文件、安装变换</td></tr>
+<tr><th scope="row"><code translate="no">register_builtins()</code></th><td>线程安全，一批发布 API 提供商，加载认证适配器</td><td>碰录制或回放</td></tr>
+<tr><th scope="row"><code translate="no">initialize_provider_runtime()</code></th><td>串行完成注册、设置快照、包装构造、变换发布</td><td>解析凭据、建厂商客户端、联网</td></tr>
+<tr><th scope="row"><code translate="no">get_api_provider(api)</code></th><td>确保 READY，返回最终提供商</td><td>FAILED 时返回原提供商</td></tr>
+<tr><th scope="row"><code translate="no">create_runtime(...)</code></th><td>确保 READY。回放用显式或不含凭据的默认值（<code translate="no">AGENTIC_PROVIDER</code>、<code translate="no">AGENTIC_MODEL</code>、<code translate="no">default_provider</code>、<code translate="no">default_model</code>）建基础 Runtime；都没有就是回放错误</td><td>回放时探测 CLI 或 AuthStore、建订阅运行时</td></tr>
+<tr><th scope="row"><code translate="no">openprogram recordings ...</code></th><td>读文件，更新下次启动的设置</td><td>初始化运行时，所以回放损坏时 <code translate="no">status</code> 和 <code translate="no">off</code> 仍可用</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">状态或失败</th><th scope="col">结果</th><th scope="col">恢复</th></tr></thead>
+<tbody>
+<tr><th scope="row">NEW → INITIALIZING</th><td>一个线程初始化，其余在同一个 <code translate="no">threading.Condition</code> 上等待</td><td>–</td></tr>
+<tr><th scope="row">READY</th><td>不再读设置</td><td>重启才生效</td></tr>
+<tr><th scope="row">内置注册失败</th><td>FAILED；每个调用方得到新的 <code translate="no">ProviderRuntimeInitializationError</code>，阶段、类型和脱敏消息相同</td><td>重启；管理命令可用</td></tr>
+<tr><th scope="row">录制或回放激活失败：未知模式、空文件、外部录制路径、回放文件缺失或损坏</th><td>READY，<code translate="no">snapshot.mode == "blocked"</code>；<code translate="no">_BlockedRecordReplayProvider</code> 对每次调用抛同一诊断，不碰凭据和网络</td><td><code translate="no">recordings status</code>、<code translate="no">recordings off</code></td></tr>
+<tr><th scope="row">初始化时 <code translate="no">KeyboardInterrupt</code>、<code translate="no">SystemExit</code></th><td>FAILED，记为 <code translate="no">initialization_interrupted</code>；初始化线程重新抛原异常</td><td>重启</td></tr>
+</tbody>
+</table>
+<p class="note">Web 和 worker 在启动线程前初始化，所以坏的回放在单线程启动阶段就报告。包装在发布变换前构造并校验。</p>
+
+<details>
+<summary>变换</summary>
+<pre translate="no"><code>configure_provider_transform(transform)
+  once per process; same value no-op, conflict RuntimeError
+  keeps the original, never double-wraps, replaces all entries atomically
+  later register_api_provider(api, original) stores transform(api, original)
+
+record:  transform(api, original) -&gt; RecordingProvider(original, shared_sink)
+replay:  transform(api, original) -&gt; shared_replay</code></pre>
+<p>回放时 <code translate="no">original</code> 只用来确认 API 已注册。<code translate="no">stream.py</code> 先取提供商，<code translate="no">requires_credentials</code> 为假时跳过凭据。测试仍可直接构造：<code translate="no">RecordingProvider(real_provider, path)</code>、<code translate="no">ReplayProvider(path)</code>。绕过 <code translate="no">get_api_provider()</code> 的调用必须回到它；不加厂商特例。</p>
+</details>
+
+<h2 id="format">文件格式</h2>
+<pre translate="no"><code>{"type":"header","format_version":2,"recording_id":"…","created_at":"…","redaction_version":1}
+{"type":"request","call_index":0,"model":{…},"context":{…},"options":{…}}
+{"type":"event","call_index":0,"event_index":0,"event":{…}}
+{"type":"call_end","call_index":0,"event_count":1,"outcome":"complete"}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">版本</th><td><code translate="no">RECORDING_FORMAT_VERSION</code> 为 2。回放接受 1 和 2，拒绝其他。版本 1 不能回放结构化 <code translate="no">response_format</code>；它存成 null 的请求级选项字段会被丢弃。</td></tr>
+<tr><th scope="row">何时升版本</th><td>必需的 request、event、<code translate="no">call_end</code> 字段或语义变化时。可选 header 字段不升版本，读取方忽略未知字段。</td></tr>
+<tr><th scope="row"><code translate="no">call_end.outcome</code></th><td><code translate="no">complete</code>、<code translate="no">error</code>、<code translate="no">cancelled</code> 或 <code translate="no">abandoned</code>；缺失视为 complete</td></tr>
+<tr><th scope="row">旧文件</th><td>只有 type 和 version 的 header 仍有效；元数据取自 stat 和内容。后续格式用独立解析器，绝不原地改写文件。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>严格读取</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层级</th><th scope="col">必须满足</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件</th><td>首个非空行是唯一 header；每行是 JSON 对象；版本已知；只有四种行；不空、不截断</td></tr>
+<tr><th scope="row">调用</th><td>每个 request 的 <code translate="no">call_index</code> 唯一且从 0 连续；事件指向未结束的调用；<code translate="no">event_index</code> 从 0 连续；恰好一个 <code translate="no">call_end</code></td></tr>
+<tr><th scope="row">完成</th><td><code translate="no">event_count</code> 相符；<code translate="no">call_end</code> 后没有事件；未知事件类型在构造时失败，不在中途</td></tr>
+<tr><th scope="row">请求</th><td>传入请求同样脱敏，按 model、context、options 比较；超出录制的调用被拒绝</td></tr>
+</tbody>
+</table>
+<p>错误为 <code translate="no">RecordingFileError(path, line, call_index, reason)</code>。<code translate="no">list</code>、<code translate="no">show</code> 和激活共用这个解析器。</p>
+</details>
+
+<details>
+<summary>并发写入</summary>
+<ol>
+<li><code translate="no">RecordingSink</code> 在进程内 <code translate="no">threading.RLock</code> 下序列化并追加每一行。</li>
+<li>每次追加用 <code translate="no">O_WRONLY | O_CREAT | O_APPEND</code>、0600 打开，并取跨进程的排他 <code translate="no">flock</code>。</li>
+<li>header 和下一个 <code translate="no">call_index</code> 在文件锁内分配：最大 request 序号加一。sink 记住读到哪里，每次只读之后追加的行，不论哪个进程写的；文件比读过的短时从头再读。</li>
+<li>完整的 UTF-8 行加换行用 <code translate="no">os.write</code> 循环写出。</li>
+<li>只在 <code translate="no">call_end</code> 后 <code translate="no">fsync</code>；崩溃留下的未完成调用由严格解析器发现。</li>
+<li>事件可以交错；<code translate="no">call_index</code> 和 <code translate="no">event_index</code> 把它们归组。</li>
+</ol>
+<p>录制保证文件完整，不保证调度顺序。需要确定性的测试应串行发起提供商调用。</p>
+</details>
+
+<h2 id="security">权限和脱敏</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">托管根</th><td><code translate="no">get_state_dir() / "recordings"</code>，收紧到 0700</td></tr>
+<tr><th scope="row">录制目标</th><td>只限托管 ID。0600，新文件用 <code translate="no">O_EXCL</code>，支持时用 <code translate="no">O_NOFOLLOW</code>，否则用目录 fd 打开并比较 <code translate="no">lstat</code>/<code translate="no">fstat</code>。绝不截断；重名失败。</td></tr>
+<tr><th scope="row">回放</th><td>托管文件可收紧到 0600。外部文件必须已是普通 0600 文件，否则拒绝，不 chmod。</td></tr>
+<tr><th scope="row">锁文件</th><td>0600</td></tr>
+<tr><th scope="row">list、show、delete、prune</th><td><code translate="no">lstat</code> 拒绝符号链接；delete 和 prune 只动普通 <code translate="no">.jsonl</code> 文件，不递归</td></tr>
+<tr><th scope="row">脱敏</th><td><code translate="no">remove_secret_values()</code> 在序列化前运行，无开关；值换成 <code translate="no">[secret removed]</code></td></tr>
+<tr><th scope="row">按字段名</th><td><code translate="no">SECRET_FIELD_NAMES</code>，不分大小写，含嵌套：<code translate="no">authorization</code>、<code translate="no">proxy-authorization</code>、<code translate="no">api_key</code>、<code translate="no">apikey</code>、<code translate="no">api-key</code>、<code translate="no">x-api-key</code>、<code translate="no">x-goog-api-key</code>、<code translate="no">token</code>、<code translate="no">access_token</code>、<code translate="no">refresh_token</code>、<code translate="no">id_token</code>、<code translate="no">cookie</code>、<code translate="no">set-cookie</code>、<code translate="no">secret</code>、<code translate="no">client_secret</code>、<code translate="no">password</code>、<code translate="no">session_key</code>；以及以 <code translate="no">-</code> 或 <code translate="no">_</code> 接 token、key、secret、password 结尾的名字。<code translate="no">token_count</code> 保留。</td></tr>
+<tr><th scope="row">按值</th><td>Bearer、Basic、Bot、token、Key 方案；<code translate="no">sk-…</code>；URL userinfo；<code translate="no">api_key</code>、<code translate="no">apikey</code>、<code translate="no">access_token</code>、<code translate="no">token</code> 查询值</td></tr>
+<tr><th scope="row">不用</th><td>高熵规则：会改变普通提示词，破坏匹配</td></tr>
+<tr><th scope="row">匹配</th><td>回放先脱敏传入请求；录制和回放使用同一 <code translate="no">redaction_version</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="offline">差异和失败</h2>
+<pre translate="no"><code>replay mismatch at call 1, field context.messages[2].content[0].text:
+recorded 'echo:hi', incoming 'echo:bye'</code></pre>
+<p class="note"><code translate="no">find_first_difference()</code> 按排序后的键遍历字典，按下标遍历列表，同一对值总报告同一路径。<code translate="no">NON_DETERMINISTIC_FIELD_NAMES</code>（<code translate="no">timestamp</code>、<code translate="no">first_token_ms</code>、<code translate="no">first_text_ms</code>）跳过。</p>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">条件</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">创建</th><td>重名、符号链接、目录不可写、权限</td><td><code translate="no">RecordingFileError</code>；不覆盖</td></tr>
+<tr><th scope="row">写入</th><td>取锁失败、磁盘满、序列化失败</td><td>停止本次提供商调用，保留已写内容</td></tr>
+<tr><th scope="row">真实提供商</th><td>失败、取消、提前关闭</td><td>在 <code translate="no">finally</code> 写带 outcome 的 <code translate="no">call_end</code>，关闭来源，保留原异常</td></tr>
+<tr><th scope="row">解析</th><td>JSON、版本、顺序、计数或事件类型错误</td><td><code translate="no">RecordingFileError</code></td></tr>
+<tr><th scope="row">匹配</th><td>传入不同</td><td><code translate="no">ReplayMismatch</code>，带 <code translate="no">call_index</code>、<code translate="no">field_path</code>、<code translate="no">recorded</code>、<code translate="no">incoming</code>，位置分歧时带 <code translate="no">event_index</code>；不消耗该调用</td></tr>
+<tr><th scope="row">耗尽</th><td>调用多于录制</td><td><code translate="no">ReplayMismatch(field_path="call_index")</code></td></tr>
+<tr><th scope="row">录到中断的调用</th><td>匹配后消耗一次</td><td>报告录下的中断</td></tr>
+<tr><th scope="row">未用完</th><td>还有录制的调用</td><td><code translate="no">assert_consumed()</code>；产品入口没有调用它</td></tr>
+<tr><th scope="row">prune</th><td>部分删除失败</td><td>逐个报告，继续，退出 1</td></tr>
+</tbody>
+</table>
+
+<details id="tests">
+<summary>验收矩阵</summary>
+<table class="stack">
+<thead><tr><th scope="col">维度</th><th scope="col">用例</th><th scope="col">断言</th></tr></thead>
+<tbody>
+<tr><th scope="row">导入</th><td>子进程只导入包</td><td>不读配置、不开录制、不导入厂商、不改注册表</td></tr>
+<tr><th scope="row">初始化</th><td>无设置、off、record、replay；多线程</td><td>只一次；一个初始化者；不死锁</td></tr>
+<tr><th scope="row">失败原子性</th><td>各阶段注入异常</td><td>不返回原提供商、不查凭据、无半发布的变换</td></tr>
+<tr><th scope="row">入口</th><td>Web、worker、stream、库、认证加载</td><td>使用前 READY；认证注册不激活回放</td></tr>
+<tr><th scope="row">注册表</th><td>包装前后、两个 API</td><td>已有和后来的都被包装；冲突被拒绝</td></tr>
+<tr><th scope="row">并发</th><td>两个线程、两到三个进程</td><td>一个 header、JSON 有效、序号连续、计数正确</td></tr>
+<tr><th scope="row">错误</th><td>异常、取消、<code translate="no">aclose()</code>、同步失败</td><td>控制流不变、来源关闭、outcome 写入</td></tr>
+<tr><th scope="row">激活失败</th><td>文件缺失或损坏、未知模式</td><td>READY、blocked，不碰凭据和网络；可恢复</td></tr>
+<tr><th scope="row">回放计数</th><td>不匹配后修正</td><td>仍比较同一录制调用</td></tr>
+<tr><th scope="row">权限、路径</th><td>过宽权限、<code translate="no">../</code>、符号链接、外部删除</td><td>0700/0600；越界被拒绝</td></tr>
+<tr><th scope="row">脱敏</th><td>大小写、嵌套、后缀、方案、URL</td><td>凭据字节不出现；<code translate="no">token_count</code> 保留</td></tr>
+<tr><th scope="row">严格离线</th><td>成功、不匹配、耗尽、损坏</td><td>socket、HTTP 客户端、凭据哨兵都未触发</td></tr>
+<tr><th scope="row">运行时工厂</th><td>显式、默认、无；普通、订阅</td><td>回放用 <code translate="no">model_namespace</code>，不用专用 Runtime</td></tr>
+<tr><th scope="row">CLI</th><td>全部动词、并发写</td><td>原子；提示重启；profile 隔离；不初始化</td></tr>
+<tr><th scope="row">恢复</th><td>文件损坏时 <code translate="no">status</code>、<code translate="no">off</code></td><td>真实子进程；诊断稳定</td></tr>
+<tr><th scope="row">循环</th><td>多轮工具循环录制再回放</td><td>事件、工具执行、最终消息相同</td></tr>
+</tbody>
+</table>
+<p>测试：<code translate="no">tests/component/providers/registry/test_provider_initialization.py</code>、<code translate="no">test_record_replay.py</code>、<code translate="no">test_record_replay_registry.py</code>、<code translate="no">test_record_replay_cli.py</code>。</p>
+</details>
+
+<details id="files">
+<summary>文件和备选方案</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/recording/recording.py</code></th><td>格式、<code translate="no">RecordingSink</code>、脱敏、管理、激活</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/recording/replay.py</code></th><td>严格解析、<code translate="no">ReplayProvider</code>、差异</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/initialization.py</code></th><td>生命周期状态和失败</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/register.py</code></th><td><code translate="no">register_builtins()</code></td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/api_registry.py</code></th><td>查找、变换</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/registry.py</code>、<code translate="no">runtime/agent/runtime/factory.py</code></th><td><code translate="no">model_namespace</code>、回放运行时</td></tr>
+<tr><th scope="row"><code translate="no">models/auth/credential_provider.py</code></th><td>显式 <code translate="no">register_builtins()</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/server.py</code>、<code translate="no">operations/worker/runner.py</code></th><td>启动时初始化</td></tr>
+</tbody>
+</table>
+<p>放弃的方案：按厂商写录制器、抓原始 HTTP、用测试 mock 代替产品入口。它们重复实现、暴露未脱敏数据或覆盖不到 worker 配置。<code translate="no">references/pi-ai</code> 只有一个注册表分发点、没有录制；这里采用了该分发点。</p>
+</details>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>严格的带版本录制和回放、共享变换、下次启动设置、recordings CLI、显式生命周期、blocked 提供商恢复</td></tr>
+<tr><th scope="row">未实现</th><td>Web 界面、进程级 HTTP 录制、工具或 MCP 录制、模糊匹配、Windows 专项验证、可复现的并发调度</td></tr>
+</tbody>
+</table>

@@ -8,7 +8,7 @@ volume).
 Pulled into OpenProgram because every other search backend skips
 papers — Tavily / Brave / Google PSE all index ArXiv pages but
 return citation snippets rather than abstract + author / metadata.
-For ``research_agent`` and any literature-search workflow, hitting
+For any literature-search workflow, hitting
 ArXiv directly is the higher-signal source.
 
 Borrowed concept from xynehq/websearch's Rust implementation.
@@ -46,6 +46,9 @@ class ArxivProvider:
     # No key required. Empty tuple keeps the catalog UI's "requires
     # env" chip from rendering a misleading row.
     requires_env: tuple = ()
+    # A paper index, not a web index: an unpinned search does not fall
+    # back to it (web_search._fallback_order); provider="arxiv" still works.
+    specialized: bool = True
 
     def is_available(self) -> bool:
         return True

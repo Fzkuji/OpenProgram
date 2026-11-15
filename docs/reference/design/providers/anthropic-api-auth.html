@@ -1,0 +1,22 @@
+<title>Anthropic API authentication</title>
+<meta name="description" content="Anthropic requests use the official Messages API with API keys and API-account billing.">
+<meta name="covers" content="openprogram/models/providers/adapters/anthropic/">
+<h1>Anthropic API authentication</h1>
+
+<p>The official Anthropic Messages API, with API keys and API-account billing. All use complies with applicable service terms and usage policies.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Login</th><td>Stores the API key in the credential store</td></tr>
+<tr><th scope="row">Requests</th><td>The resolver supplies the key to the Anthropic SDK; API-key authentication</td></tr>
+<tr><th scope="row">Discovery, validation</th><td>Same credential requirements as inference</td></tr>
+<tr><th scope="row">Compatible third-party APIs</th><td>Keep their own endpoints and credentials</td></tr>
+<tr><th scope="row">Unsupported credential types and providers</th><td>Rejected before network access</td></tr>
+<tr><th scope="row">UI</th><td>Credentials stay masked</td></tr>
+<tr><th scope="row">Entry points</th><td>Provider, account, login and model list all enforce API-key authentication and agree on what is supported</td></tr>
+<tr><th scope="row">Tests</th><td>Synthetic credentials, no real provider requests</td></tr>
+</tbody>
+</table>
+
+<p class="note"><a href="https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use">Anthropic authentication and credential requirements</a>. External CLI account management is outside this integration.</p>

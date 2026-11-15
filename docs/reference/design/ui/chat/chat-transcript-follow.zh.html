@@ -1,0 +1,317 @@
+<title>会话记录跟随</title>
+<meta name="description" content="网页会话记录的统一跟随策略：什么叫最新，哪些手势移动视口，发送、跳到最新、恢复和历史窗口如何互不干扰。">
+<h1 id="title">会话记录跟随</h1>
+<p>App 和浏览器共用一套由 React 持有的策略：发送就是跳到最新，模型输出不是。</p>
+
+<h2 id="bottom-definition">什么叫最新</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 320" role="img" aria-label="滚动区处于内边距边缘。最后一条内容在底部留白之上，浮动输入框盖住留白的下部。留白露出的部分再加 8 像素是容差：向上滚动不超过它仍算在最新处。">
+  <rect class="tile" x="90" y="16" width="230" height="288" rx="8"/>
+  <rect class="tile" x="110" y="76" width="190" height="44" rx="6"/>
+  <text class="mid" x="205" y="103">最后的内容</text>
+  <line class="ln-faint" x1="90" y1="120" x2="320" y2="120"/>
+  <rect class="tile" x="106" y="216" width="198" height="76" rx="8"/>
+  <text class="mid" x="205" y="259">输入框浮层</text>
+  <path class="ln" d="M76 120H66V304H76"/>
+  <text class="t-big" x="0" y="206">留白</text>
+  <path class="ln" d="M334 120H344V216H334"/>
+  <text class="t-big" x="360" y="150">容差</text>
+  <text class="t-cmd notranslate" translate="no" x="360" y="174">max(0, pad - overlay) + 8</text>
+  <text class="t-soft" x="360" y="196">向上滚动不超过它，仍算在最新处</text>
+  <path class="ln" d="M334 216H344V304H334"/>
+  <text class="t-big" x="360" y="252">浮层</text>
+  <text class="t-soft" x="360" y="276">浮在留白之上</text>
+  <line class="ln-acc" x1="90" y1="304" x2="680" y2="304"/>
+  <text class="t-cmd notranslate" translate="no" x="360" y="296">latestScrollTop 落在这里</text>
+  <text class="t-soft" x="360" y="84">用户气泡、等待指示、</text>
+  <text class="t-soft" x="360" y="104">流式回复、排队行</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>最后的内容</strong><small>用户气泡、等待指示、流式回复、排队行</small></li>
+  <li><strong>容差</strong><small><code translate="no">max(0, pad - overlay) + 8</code>：向上滚动不超过它，仍算在最新处</small></li>
+  <li><strong>浮层</strong><small>浮在留白之上</small></li>
+  <li class="flow-end"><strong>内边距边缘</strong><small><code translate="no">latestScrollTop</code> 落在这里</small></li>
+</ol>
+</figure>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">主会话</th><th scope="col">并排会话</th></tr></thead>
+<tbody>
+<tr><th scope="row">留白</th><td><code translate="no">max(25vh, overlay + 24)</code></td><td><code translate="no">--peer-composer-h</code> = overlay + 24</td></tr>
+<tr><th scope="row">浮层</th><td><code translate="no">--main-composer-height</code></td><td>输入框根节点的 <code translate="no">offsetHeight</code>；不用 <code translate="no">--peer-composer-h</code></td></tr>
+<tr><th scope="row">容差</th><td>留白 − 浮层 + 8</td><td>24 + 8</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">latestScrollTop = max(0, scrollHeight - clientHeight)</code>。<code translate="no">isChatAtBottom</code>：剩余滚动量 ≤ 容差。</p>
+
+<h2 id="architecture">谁写滚动位置</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">负责方</th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">useChatAreaStick</code></th><td>唯一的跟随写入方：主会话和并排会话的定位、发送、跳到最新、贴底状态、每个视口待完成的最新页加载</td></tr>
+<tr><th scope="row"><code translate="no">chat-scroll.ts</code></th><td>几何计算、take-latest 标记、保存的位置、跳转动画。<code translate="no">resolveChatScrollTop</code> 决定切换 key 时的位置</td></tr>
+<tr><th scope="row"><code translate="no">history-viewport.ts</code></th><td>历史窗口替换时恢复锚点；唯一的另一个滚动写入方，不是跟随策略</td></tr>
+<tr><th scope="row"><code translate="no">useHistoryWindow</code>、<code translate="no">history-autoload.ts</code></th><td>有界分页和预取；不写滚动</td></tr>
+<tr><th scope="row"><code translate="no">loadSessionHistoryWindow</code></th><td>发布消息行和窗口元数据；不定位到最新</td></tr>
+<tr><th scope="row">WebSocket 处理函数</th><td>不滚动，也不写标记</td></tr>
+</tbody>
+</table>
+
+<h2 id="follow-triggers">什么会移动视口</h2>
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">贴底</th><th scope="col">动作</th></tr></thead>
+<tbody>
+<tr><th scope="row">发送：输入框提交、欢迎页首条、真正调用 <code translate="no">sendChatMessage</code> 的队列出队、被接受的排队或转向、斜杠或内置命令提交</th><td>在最新窗口上立即为真。在旧窗口上保持假，跳转按钮保留，最新页加载后为真</td><td>瞬时定位，<a href="#send-latch">锁定</a>。定位时才隐藏跳转按钮，等待时不隐藏</td></tr>
+<tr><th scope="row">跳到最新（主会话：挂在 <code translate="no">#chatView</code> 上；并排会话：头部按钮，无挂载、无实时条）</th><td>确认最新已在屏幕上后为真</td><td>等最新页，再原生平滑滚动，不预先定位；减少动态时瞬时。<a href="#jump-completion">完成判定</a></td></tr>
+<tr><th scope="row">滚轮、指针、滚动键</th><td><code translate="no">isChatAtBottom</code> 且在最新窗口。向上脱离，回到容差内重新贴底</td><td>无。取消<a href="#lifecycle">待完成的工作</a></td></tr>
+<tr><th scope="row">增长：流式、工具、KaTeX、行回收、留白或输入框尺寸变化</th><td>不变。滚动事件只有在顶部上移时才算离开最新</td><td>仅在贴底、最新窗口、无跳转进行中，且距真实指针、滚轮或滚动键输入超过 600 ms 时贴到最新</td></tr>
+<tr><th scope="row">切换会话（<code translate="no">chatKey</code> 变化）</th><td>见<a href="#bottom-restoration">恢复</a></td><td>不算发送。待处理标记只转给这份草稿采用的会话</td></tr>
+<tr><th scope="row">非发送或跳转引起的历史窗口加载</th><td>设有 <code translate="no">after</code> 时为假，否则按几何判断</td><td><a href="#history-ownership">按区域恢复锚点</a>；较旧和较新的页不当作最新来贴</td></tr>
+<tr><th scope="row">远端 <code translate="no">local_command</code>、压缩、状态、跟进、<code translate="no">chat_response</code></th><td>不变</td><td>只通过贴底时的增长</td></tr>
+</tbody>
+</table>
+<p class="note">把行放进队列不算发送。附件加载中或失败时，在创建队列项、清空草稿和发布标记之前就被拒绝；已有标记及其代数不变。</p>
+
+<h2 id="send-latch">发送锁定</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时机</th><th scope="col">发生什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">提交</th><td>提交路径追加本地轮次，然后调用 <code translate="no">noteTakeLatest({sessionId, scrollerKey, turnSeed})</code>。key 来自捕获的会话和 <code translate="no">background</code>，不读实时的 <code translate="no">activeChatKey</code>；<code translate="no">send-queue.ts</code> 不感知它</td></tr>
+<tr><th scope="row">通知 hook</th><td><code translate="no">chatKey</code> 等于 <code translate="no">scrollerKey</code> 的 hook 看到比已应用代数更新的标记。即使没有行变化，发布也会通知它</td></tr>
+<tr><th scope="row">设有 <code translate="no">after</code> 或 <code translate="no">loading</code></th><td>保持脱离，保留跳转按钮，不动旧页，在布局 effect 之外等待已确认的最新窗口</td></tr>
+<tr><th scope="row">到达最新后</th><td>无视 600 ms 窗口和当前几何，直接贴底，再 <code translate="no">snapToLatest</code></td></tr>
+<tr><th scope="row">本操作的下一次列尺寸变化</th><td>再定位一次，兜住晚到的行高。之后走普通增长规则</td></tr>
+<tr><th scope="row">欢迎页溢出锁解除（仅主会话）</th><td>重试一次</td></tr>
+<tr><th scope="row">ack 追加助手占位行</th><td>不会造成脱离</td></tr>
+</tbody>
+</table>
+
+<h2 id="lifecycle">跟随操作的生命周期</h2>
+<p>标记标识一次发送，不是永久的滚动许可。每个异步完成、尺寸定位、欢迎页重试和动画回调都先检查会话、滚动区 key、代数和交互 epoch。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事件</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">更新的发送</th><td>替换该滚动区的旧操作</td></tr>
+<tr><th scope="row">发送等待中点跳转</th><td>替换它</td></tr>
+<tr><th scope="row">跳转中发送</th><td>停止原生动画，再瞬时定位</td></tr>
+<tr><th scope="row">滚轮、触摸或指针滚动、滚动键</th><td>让待完成工作和重试失效；由几何决定贴底。延迟增长绝不重新贴底。程序触发的滚动事件不算取消</td></tr>
+<tr><th scope="row">key 变化或真正卸载</th><td>让离开方的操作失效；已完成或已取消的标记不重放</td></tr>
+<tr><th scope="row">Strict Mode 清理</th><td>取消该 effect 的资源；setup 恢复仍有效的操作，不重复发送，不丢重试，不留孤儿请求</td></tr>
+<tr><th scope="row">请求进行中，<code translate="no">after</code> 尚未设置</th><td><code translate="no">after || loading</code> 进入等待。被取消或失败的请求不留重试，也不能隐藏跳转按钮；旧的完成不能清掉新手势</td></tr>
+<tr><th scope="row">会话显示前的欢迎页首条</th><td>待处理交接保留到它的视图，重试一次，并在临时会话绑定为真实会话时保持身份：只限这份草稿采用的会话，不是任意 <code translate="no">local_*</code> key</td></tr>
+<tr><th scope="row">删除会话、丢弃草稿</th><td>清除该会话的标记</td></tr>
+</tbody>
+</table>
+<details>
+<summary>标记的存储</summary>
+<ul>
+<li>按 <code translate="no">(sessionId, scrollerKey)</code> 存，同一会话的主会话和并排会话互相独立。</li>
+<li>读取不删除。完成和取消单独记录，每个视图有已应用代数；开始加载最新页不算完成。</li>
+<li>没有视口的空闲已完成标记上限 32 个；等待中的保留。释放视口后在本轮结束时清理，同一 tick 内重新挂载可以留住。</li>
+<li><code translate="no">turnSeed</code> 是被接受的乐观轮次，不是 ack 后的最后一行。</li>
+<li>没人请求的最新页（续期、重试）会给每个没有跟随锁的视口写一个标记。</li>
+</ul>
+</details>
+
+<h2 id="jump-completion">跳转完成</h2>
+<ul>
+<li>跳转进行中，尺寸变化只记录新目标，不贴底。</li>
+<li>动画结束或 700 ms 看门狗到时，重算当前目标并做一次瞬时修正，误差 2 px 内；这里不用重新贴底的容差。</li>
+<li>之后操作仍有效才隐藏按钮。减少动态时做同样检查。</li>
+<li>取消会停止浏览器动画和回调；被取消的操作不修正。</li>
+</ul>
+
+<h2 id="bottom-restoration">回到一个会话</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">打开位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">新的 App 或网页文档</th><td>最新；忽略其他运行实例的保存状态</td></tr>
+<tr><th scope="row">首次打开或没有保存位置</th><td>最新，并跟随延迟布局和文件卡片增长</td></tr>
+<tr><th scope="row">离开不足一小时，当时在跟随</th><td>最新，并跟随延迟布局</td></tr>
+<tr><th scope="row">离开不足一小时，当时在看历史</th><td>保存的偏移和历史锚点</td></tr>
+<tr><th scope="row">离开满一小时</th><td>最新</td></tr>
+<tr><th scope="row">应用失焦一小时后回来</th><td>最新。没有定时器移动正在看的会话</td></tr>
+<tr><th scope="row">缺少新鲜度信息的旧记录</th><td>最新</td></tr>
+<tr><th scope="row">首次打开已加载的旧窗口</th><td>保持脱离、不定位，直到发布已确认的最新响应</td></tr>
+</tbody>
+</table>
+<p class="note">按视口保存在 <code translate="no">sessionStorage</code> 的 <code translate="no">chatScrollByKey</code>：偏移、贴底意图、时间戳、运行实例标识。离开、隐藏或卸载时记录离开时间。带 <code translate="no">data-self-update-verification</code> 时跳过。阈值是 <code translate="no">CHAT_READING_POSITION_TTL_MS</code>。</p>
+<details>
+<summary>细节</summary>
+<ul>
+<li>恢复到最新时清除历史锚点，并使用可取消的最新窗口加载。用户手势取消待跟随；保存的像素偏移不是最新锚点。</li>
+<li>空会话也保留最新意图：在 ResizeObserver 回调前提交的行保持跟随状态。高度增长不算阅读手势。</li>
+<li>加载器不用旧像素覆盖最新定位，重载也不安排第二次像素恢复：缓存的偏移可能超过较短的最新页。</li>
+<li>位置未变时，重载保留跟随状态。欢迎页发送在激活期间保留，直到视图就绪。</li>
+</ul>
+</details>
+<details id="switch-loading">
+<summary>旧版文件改动摘要</summary>
+<ul>
+<li>只在接近视口时加载，然后存在会话消息存储中。卡片重新挂载时立即显示结果，包括确认为空的结果。</li>
+<li>错误可重试。已中止或过期的响应不会更新别的会话。</li>
+<li>历史预检保持新鲜，撤销授权仍在服务端；摘要只是描述，不是撤销许可。</li>
+</ul>
+</details>
+
+<h2 id="history-ownership">历史窗口</h2>
+<ul>
+<li>较旧、较新和定位窗口替换：每个已注册区域在更新前捕获自己的锚点、顶部和高度，<code translate="no">flushSync</code> 后仅在仍为同一会话和 <code translate="no">chatKey</code> 注册时恢复。行高缓存用该区域自己的 key。</li>
+<li>失去注册的区域不恢复。未注册的 <code translate="no">#chatArea</code> 回退只在捕获时没有任何注册、且节点仍是活的主滚动区时适用；仅仍在文档中不够。</li>
+<li>持有跟随锁的视口跳过恢复。</li>
+<li>主会话和并排会话共用行：未发起请求的窗格保持自己的锚点。锚点被淘汰时，保持到留存一端的距离。结果为负（过期快照续成最新页）时显示新窗口的末端，而不是顶部。</li>
+</ul>
+<h3 id="history-prefetch">预取</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row">最小距离</th><td>每个方向 <code translate="no">max(1600px, 2 × 视口高度)</code></td></tr>
+<tr><th scope="row">上限</th><td><code translate="no">12000px</code></td></tr>
+<tr><th scope="row">速度</th><td>只有朝该方向的运动会延长距离，用延迟估计 × 1.5。零速度保持最小值，短内容仍能填满</td></tr>
+<tr><th scope="row"><code translate="no">scrollHeight</code> 变化</th><td>速度归零：布局位移（包括最新处的虚拟化收缩）不算读者运动</td></tr>
+<tr><th scope="row">两端都满足</th><td>沿用现有方向选择</td></tr>
+</tbody>
+</table>
+<p class="note">只决定何时请求，不写 <code translate="no">scrollTop</code>。请求串行化、游标和代数校验、重试退避、快照续期、隐藏视图抑制、恢复和销毁各自独立。</p>
+
+<h2 id="trust">失败与边界</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">最新页加载失败或已过期</th><td>脱离，跳转按钮可见，不动旧页；失败时结算标记</td></tr>
+<tr><th scope="row">存储写入失败</th><td>吞掉</td></tr>
+<tr><th scope="row">虚拟化</th><td>回收保留已测量的占位，使 <code translate="no">scrollHeight</code> 准确；回收后贴底。不用虚拟列表库</td></tr>
+<tr><th scope="row">宽度变化</th><td>已测高度保留为估计值，整个列表不重渲染。变化期间区域带 <code translate="no">data-width-settling</code>，屏外行用 <code translate="no">content-visibility: auto</code>。静止 120 ms 后第一条可见行保持位置，贴底时除外</td></tr>
+<tr><th scope="row">KaTeX</th><td>在被观察的列上 <code translate="no">typesetMath</code>，位于贴底路径内；不扫描整个文档</td></tr>
+</tbody>
+</table>
+<p class="note">不跟随：DAG 条展开、压缩折叠 <code translate="no">easeScrollBy</code> / <code translate="no">pinWhile</code>、返回父节点 <code translate="no">scrollIntoView</code>、消息导轨定位、分支切换 <code translate="no">_postCheckoutScrollTo</code>。CLI 的 <code translate="no">ScrollBox</code> 是另一套。后端协议不变，占用、队列准入和 ack 配对不受影响。</p>
+
+<details id="api">
+<summary>接口</summary>
+<pre translate="no" tabindex="0"><code>latestScrollTop(area: ScrollMetrics): number
+snapToLatest(area: HTMLElement): void
+animateJumpToLatest(area, onDone?, {getTarget?, reducedMotion?}): () =&gt; void
+readComposerOverlay(area, composerRoot?): number
+
+type TakeLatestNote = {
+  sessionId: string
+  scrollerKey: string  // background ? `peer:${sessionId}` : sessionId
+  turnSeed: string
+  generation: number   // monotonic
+}
+noteTakeLatest(note: Omit&lt;TakeLatestNote, "generation"&gt;): TakeLatestNote
+peekTakeLatest(sessionId, scrollerKey): TakeLatestNote | null
+settleTakeLatest(sessionId, scrollerKey, generation): void
+relocateTakeLatest(fromSession, fromKey, toSession, toKey): TakeLatestNote | null
+subscribeTakeLatest(listener): () =&gt; void</code></pre>
+<ul>
+<li><code translate="no">useChatAreaStick</code> 返回 <code translate="no">{ detached, jumpToLatest }</code>。</li>
+<li>主会话的 <code translate="no">chatKey</code> 是会话 id，并排会话用 <code translate="no">peer:</code> 前缀。不同会话的窗格不共享锁定；同一会话的并排窗格共用 <code translate="no">peer:${sessionId}</code>，可能响应同一标记，这是设计如此：没有窗格实例 id。</li>
+</ul>
+</details>
+
+<details id="corpus">
+<summary>与其他 Agent 对比</summary>
+<p>比产品规则，不比像素。三个产品都把发送当作隐式跳到最新，模型 token 则不算。</p>
+<table class="stack">
+<thead><tr><th scope="col">产品</th><th scope="col">向上滚动时发送</th><th scope="col">增长</th><th scope="col">重新贴底</th><th scope="col">会话</th></tr></thead>
+<tbody>
+<tr><th scope="row">ChatGPT 网页</th><td>新轮次出现在实时区</td><td>在实时边缘跟随；向上脱离，靠近边缘重新贴底</td><td>向下箭头，有实时样式</td><td>定位到最新</td></tr>
+<tr><th scope="row">Claude.ai、Claude Code 网页</th><td>轮次落入视野</td><td>在实时边缘跟随；手动向上保持</td><td>离开时显示跳转</td><td>恢复该会话</td></tr>
+<tr><th scope="row">Cursor Composer</th><td>提示在输入框附近</td><td>贴住时跟随</td><td>显式跳转</td><td>按线程</td></tr>
+<tr><th scope="row">CLI <code translate="no">ScrollBox</code></th><td><code translate="no">scrollToBottom()</code> 设 sticky</td><td>sticky 时；<code translate="no">scrollTo</code> 和 <code translate="no">scrollBy</code> 清除</td><td><code translate="no">scrollToBottom</code></td><td>仅 TUI</td></tr>
+<tr><th scope="row">shadcn MessageScroller</th><td>可把轮次锚在顶部附近</td><td>在底部时 <code translate="no">autoScroll</code></td><td><code translate="no">MessageScrollerButton</code></td><td>—</td></tr>
+</tbody>
+</table>
+<p class="note">本仓库没有 Codex 和 Atlas 的会话跟随资料，相关笔记只涉及<a href="../turn-lifecycle/send-queue-reliability.zh.html">排队和转向</a>。</p>
+</details>
+
+<details id="choices">
+<summary>放弃的方案</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方案</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">以最后一条消息 + 16 px 为目标</th><td>相对被浮层盖住的可视底部测量，且忽略留白</td></tr>
+<tr><th scope="row">内边距边缘不留容差</th><td>读者要再滚约 25vh 才出现跳转按钮</td></tr>
+<tr><th scope="row">一次性布尔值或 <code translate="no">lastRole</code></th><td>Strict Mode 和两个 hook 实例下会丢失；ack 后判断错误</td></tr>
+<tr><th scope="row">发送用平滑动画</th><td>发送是 0 ms 反馈</td></tr>
+<tr><th scope="row"><code translate="no">--peer-composer-h</code> 当浮层</th><td>它已包含 24 px 留白</td></tr>
+<tr><th scope="row">处理函数调用滚动区、全局贴底标志</th><td>帧类型不是滚动信号</td></tr>
+<tr><th scope="row">跟随状态活过文档</th><td>运行实例标识把它限定在一个文档内</td></tr>
+<tr><th scope="row">虚拟列表或消息滚动库、把 CLI <code translate="no">ScrollBox</code> 放进网页包</th><td>不需要；只借鉴贴底标志的思路</td></tr>
+<tr><th scope="row">把上一条回复锚在顶部作为第二种模式</th><td>留白已在输入框上方留出空间</td></tr>
+<tr><th scope="row">每次 DAG 展开都跟随；重写发送和 ack 协议</th><td>不在范围内</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="acceptance">
+<summary>验收</summary>
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">前提</th><th scope="col">观察结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入框提交</th><td>在最新窗口上远离底部</td><td>追加后 0 ms，用户气泡（和等待指示）在输入框上方；瞬时；贴底；定位时隐藏跳转按钮</td></tr>
+<tr><th scope="row">输入框提交</th><td>已贴底</td><td>相同；流式保持贴住</td></tr>
+<tr><th scope="row">欢迎页首条</th><td>溢出已锁</td><td>0 ms 隐藏欢迎页；解锁后首行在实时区</td></tr>
+<tr><th scope="row">队列出队</th><td>聚焦在别的会话</td><td>同发送，key 来自捕获的会话；只入队不移动</td></tr>
+<tr><th scope="row">跳转</th><td>旧窗口上已脱离</td><td>等最新页，平滑；稳定前按钮可见；指针或滚轮取消</td></tr>
+<tr><th scope="row">滚动</th><td>最后气泡被输入框盖住</td><td>脱离，按钮可见，后续增量不改 <code translate="no">scrollTop</code></td></tr>
+<tr><th scope="row">滚动</th><td>回到容差内</td><td>重新贴底，按钮隐藏，增长贴底</td></tr>
+<tr><th scope="row">流式增量</th><td>贴底，KaTeX 或回收</td><td>贴住</td></tr>
+<tr><th scope="row">无标记的 Agent 行</th><td>已脱离</td><td><code translate="no">scrollTop</code> 不变</td></tr>
+<tr><th scope="row">切换会话</th><td>有保存位置或首次打开</td><td>恢复或跟随最新，不产生消息</td></tr>
+<tr><th scope="row">旧窗口上发送</th><td>设有 <code translate="no">after</code></td><td>不定位，按钮保留，加载后贴底；失败保持脱离</td></tr>
+<tr><th scope="row">并排会话发送</th><td>并排 Y，窗格 X 打开</td><td>只有 Y 移动；容差 24 + 8；不动聚焦外壳的标志</td></tr>
+<tr><th scope="row">Ack</th><td>占位行在最后</td><td>保持贴底</td></tr>
+<tr><th scope="row">滚动后 600 ms 内发送</th><td>指针在区域内</td><td>仍定位并贴住</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="test-matrix">
+<summary>测试矩阵</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">编号</th><th scope="col">需要观察</th></tr></thead>
+<tbody>
+<tr><th scope="row">F01</th><td>空、短、溢出几何；主会话容差，并排 h+24 对 h = 32 px</td></tr>
+<tr><th scope="row">F02</th><td>同一会话主、并排标记独立；代数递增；无行更新时订阅也触发</td></tr>
+<tr><th scope="row">F03</th><td>远离底部按 Enter 或发送：ack 前用户行在浮层上方；占位和流式继续跟随</td></tr>
+<tr><th scope="row">F04</th><td>滚动后 600 ms 内发送；延迟增长跟随一次。发送后向上滚：不弹回</td></tr>
+<tr><th scope="row">F05</th><td>脱离时增长不改顶部；容差内重新贴底；展开执行行保持抑制</td></tr>
+<tr><th scope="row">F06</th><td><code translate="no">after</code> 时发送：不写旧页，按钮可见，成功定位；失败和取消保持脱离</td></tr>
+<tr><th scope="row">F07</th><td>加载较旧或定位窗口时发送且无 <code translate="no">after</code>：结束后取最新；旧响应不胜过新手势</td></tr>
+<tr><th scope="row">F08</th><td>Strict Mode 下发送和最新清理：不丢意图、不重复发送、不留等待状态</td></tr>
+<tr><th scope="row">F09</th><td>发送、脱离、切走再回；卸载后恢复且不重放；请求中切换不移动新会话</td></tr>
+<tr><th scope="row">F10</th><td>就绪前的欢迎页发送和临时绑定；一次有效重试；已取消的重试不写入</td></tr>
+<tr><th scope="row">F11</th><td>并排 Y 发送、X 脱离：只有 Y 移动；同会话标记独立；共用 peer key 影响匹配窗格</td></tr>
+<tr><th scope="row">F12</th><td>入队不移动；出队用捕获的会话；socket 关闭、抛错或重复首发不写标记</td></tr>
+<tr><th scope="row">F13</th><td>斜杠提交无新行也跟随；脱离时远端帧不跟随</td></tr>
+<tr><th scope="row">F14</th><td>旧窗口跳转先加载再平滑滚动，不预定位；确认前按钮保留</td></tr>
+<tr><th scope="row">F15</th><td>跳转中增长：最终在最新 2 px 内，然后隐藏按钮；无 <code translate="no">scrollend</code> 时靠看门狗</td></tr>
+<tr><th scope="row">F16</th><td>指针、滚轮或按键取消且无后续修正；跳转中发送优先；减少动态时瞬时</td></tr>
+<tr><th scope="row">F17</th><td>两个区域恢复各自锚点和回退差值；最新无加载器贴底</td></tr>
+<tr><th scope="row">F18</th><td>没有全局跟随监听；显式定位和自更新持久化保护正常</td></tr>
+</tbody>
+</table>
+<ul>
+<li>F03–F17 在浏览器里用真实 React hook、真实提交和队列入口、受控 WebSocket 响应，断言几何、按钮可见性、请求顺序和清理。显式运行 Strict Mode。使用隔离测试状态，没有真实消息或模型调用。这些不构成已安装 App 的验收。</li>
+<li>夹具：首次激活用例提供最新响应；手动阅读旧窗口用例建立保存的视口；被拒绝的准入比较前后完全相同的标记。</li>
+<li>预取：通过真实控制器测试反向运动、最新处虚拟收缩、两个阈值、短内容填充。自动历史：无初始旧页请求、滚动触发加载、前插后进行中的移动保持在 3 px 内、回收、无重复。</li>
+<li>摘要和打开：重新挂载无第二次请求、延迟增长到最新、返回恢复、手动取消、首次打开旧窗口忽略过期完成。</li>
+</ul>
+<pre id="gates" translate="no" tabindex="0"><code>node --no-warnings --experimental-strip-types --test \
+  apps/web/tests/chat/messages/chat-scroll-follow.test.mjs \
+  apps/web/tests/chat/messages/jump-latest.test.mjs \
+  apps/web/tests/chat/composer/send-chat-message-latency.test.mjs \
+  apps/web/tests/desktop/self-update-scroll.test.mjs
+node apps/web/scripts/chat/check-chat-ui.mjs
+uv run --locked --extra dev --extra browser python -m pytest -q -m browser \
+  tests/e2e/web/test_chat_transcript_follow.py \
+  tests/e2e/web/test_chat_history_interactions.py \
+  tests/e2e/web/test_automatic_chat_history.py \
+  tests/e2e/web/test_scalable_chat_history.py</code></pre>
+</details>
+
+<h2 id="status">实现状态</h2>
+<p>已在网页渲染层实现，没有功能开关；撤销靠回退代码，不涉及协议。未完成：几何感知预取的已安装 App 验收。</p>
+<p class="next"><a href="../turn-lifecycle/send-queue-reliability.zh.html">发送队列可靠性</a></p>

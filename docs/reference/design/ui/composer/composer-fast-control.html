@@ -1,0 +1,69 @@
+<title>Composer speed control</title>
+<meta name="description" content="The Fast toggle in the thinking panel: capability by route, request mapping, requested and actual tier.">
+<h1>Fast inside the thinking panel</h1>
+
+<p>The open thinking panel's header carries the effort heading, then, right-aligned, a Gauge button and the <a href="effort-picker.html">help tip</a>. There is no separate speed pill or menu item, and the closed effort control shows only the effort label. Thinking effort stays independent.</p>
+
+<h2>Connections</h2>
+<table class="stack">
+<thead><tr><th scope="col">Connection</th><th scope="col">Capability</th><th scope="col">Request</th></tr></thead>
+<tbody>
+<tr><th scope="row">xAI API, Grok 4.6</th><td>Supported only for <code translate="no">grok-4.6</code> on <code translate="no">https://api.x.ai/v1</code>, never by name prefix</td><td>Fast: <code translate="no">service_tier: priority</code>. Standard: <code translate="no">default</code>.</td></tr>
+<tr><th scope="row">Grok subscription, Grok 4.6</th><td>The CLI chat proxy accepts the same values. Other subscription models stay unknown.</td><td>Same</td></tr>
+<tr><th scope="row">Custom gateway</th><td>Nothing inherited from the model name. Route configuration can declare support; explicit <code translate="no">false</code> wins.</td><td>Configured adapter mapping, only when supported</td></tr>
+<tr><th scope="row">Codex, Claude</th><td>Existing evidence sources; UI consumes the capability dispatch uses</td><td>Existing priority, or speed and beta, mapping</td></tr>
+</tbody>
+</table>
+<p class="note">Resolved by <code translate="no">fast_capability()</code> in <code translate="no">openprogram/models/providers/settings/fast.py</code>: supported, unsupported or unknown, with a source. <code translate="no">chat.fast</code> is a compatibility projection. Official account data, then route configuration, then static declarations, then catalogue; a network failure keeps a valid cached declaration.</p>
+
+<h2>Behaviour</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Default</th><td>Standard. Saved per conversation branch, on each toggle and each send, and per route/model. An unseen route starts at Standard, so a model change never enables a paid tier.</td></tr>
+<tr><th scope="row">Off</th><td>Standard is sent explicitly, overriding an agent's priority default. Omitting the field would inherit it.</td></tr>
+<tr><th scope="row">Applies to</th><td>The next submitted turn. Queued messages keep their setting; a running request is unchanged.</td></tr>
+<tr><th scope="row">Authorization</th><td>Backend resolves for the actual turn provider and model, and again before dispatch. Another execution model resolves its own capability.</td></tr>
+<tr><th scope="row">Unverified route</th><td>A visible, focusable, unavailable control with an explanation. Unsupported and unknown are distinct; never described as a model that lacks Fast.</td></tr>
+<tr><th scope="row">No effort slider</th><td>Same popover with the speed control and no slider</td></tr>
+<tr><th scope="row">Open panel</th><td>Hides the Jump to latest chip so the two do not stack. Toggling keeps it open and does not move the slider.</td></tr>
+</tbody>
+</table>
+
+<h2>Requested and actual speed</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Response tier</th><th scope="col">Shown as</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">priority</code></th><td>Fast served</td></tr>
+<tr><th scope="row"><code translate="no">default</code></th><td>Standard served, even for a priority request</td></tr>
+<tr><th scope="row">Absent</th><td>Unconfirmed, not acceleration</td></tr>
+<tr><th scope="row">Priority fails</th><td>Existing error handling; no automatic second billable request</td></tr>
+</tbody>
+</table>
+<p class="note">xAI documents a 2× <a href="https://docs.x.ai/developers/pricing">priority premium</a>; the provider-specific note shows before use. Billing follows the returned tier and reported usage. No blanket multiplier for other vendors and no latency guarantee.</p>
+
+<h2>Gauge</h2>
+<dl class="pairs">
+<dt>Icon</dt><dd>Outlined <code translate="no">GaugeIcon</code>, spring stiffness 160, damping 17, mass 1. Idle needle: off. Advanced needle: on.</dd>
+<dt>On</dt><dd><code translate="no">--accent-red</code>. No border, glow or flame.</dd>
+<dt>Hover</dt><dd>Animates the needle, tints a 24px target</dd>
+<dt>Focus</dt><dd>Ring for keyboard focus only; exposes the state and usage note</dd>
+</dl>
+
+<details>
+<summary>References and rejected options</summary>
+<p>Adopted: xAI's <a href="https://docs.x.ai/developers/advanced-api-usage/priority-processing">request and actual-tier separation</a>, through OpenProgram's OpenAI-compatible xAI adapter. Rejected: a global Grok name-prefix override, reduced reasoning as a substitute for Fast, a fixed speed multiplier.</p>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Capability: xAI API and Grok 4.6 subscription are separate from unknown subscription models; switching routes updates the reason; catalogue failure preserves known support.</li>
+<li>Composer: keyboard and pointer select speed, reload preserves it, a different model starts at Standard, narrow layouts work.</li>
+<li>Dispatch: priority only for the selected supported route; queued settings stable; reasoning unchanged.</li>
+<li>Response: synthetic priority, default, absent, error and cancelled responses keep accurate status, with no duplicate request or invented price.</li>
+</ul>
+</details>
+
+<h2>Implementation status</h2>
+<p>Gauge, capability, request preference, saved response tier and actual xAI cost are implemented. Live paid calls are not part of automated verification.</p>

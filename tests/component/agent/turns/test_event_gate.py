@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.events import (
+from openprogram.runtime.events import (
     EVENTS,
     EventSpec,
     GateOutcome,
@@ -28,7 +28,7 @@ from openprogram.events import (
     make_shell_gate,
     make_shell_notifier,
 )
-from openprogram.events import bus as eb
+from openprogram.runtime.events import bus as eb
 
 
 def _python_command(source: str, *args: object) -> str:
@@ -48,7 +48,8 @@ def test_registry_lists_the_wired_events_with_kinds():
     kinds = {name: spec.kind for name, spec in EVENTS.items()}
     assert kinds["tool.before"] == "gate"
     assert kinds["turn.stop"] == "gate"
-    notify_only = set(kinds) - {"tool.before", "turn.stop"}
+    assert kinds["tool.result"] == "transform"
+    notify_only = set(kinds) - {"tool.before", "turn.stop", "tool.result"}
     assert all(kinds[n] == "notify" for n in notify_only)
     for spec in EVENTS.values():
         assert isinstance(spec, EventSpec) and spec.payload_doc
@@ -69,7 +70,7 @@ def test_every_emitted_type_is_registered():
 def test_emit_of_unregistered_type_warns_once(caplog):
     bus = create_event_bus()
     eb._warned_unregistered.discard("not.registered")
-    with caplog.at_level("WARNING", logger="openprogram.events.bus"):
+    with caplog.at_level("WARNING", logger="openprogram.runtime.events.bus"):
         bus.emit(make_event("not.registered", "system"))
         bus.emit(make_event("not.registered", "system"))
     hits = [r for r in caplog.records if "not.registered" in r.getMessage()]
@@ -232,8 +233,9 @@ def test_event_log_falls_back_when_session_dir_missing(_home):
 
 
 def test_event_log_routes_to_existing_session_dir(_home):
-    sess = _home / ".openprogram" / "sessions" / "s1"
+    sess = _home / ".openprogram" / "projects" / "default" / "chats" / "s1"
     sess.mkdir(parents=True)
+    (sess / "main.jsonl").touch()  # a session, not a bare folder
     bus = create_event_bus()
     bus.log_events = True
     bus.emit(make_event("turn.end", "system", {}, {"session": "s1"}))
@@ -241,8 +243,9 @@ def test_event_log_routes_to_existing_session_dir(_home):
 
 
 def test_observed_gate_event_logs_once_after_verdict(_home):
-    session = _home / ".openprogram" / "sessions" / "s1"
+    session = _home / ".openprogram" / "projects" / "default" / "chats" / "s1"
     session.mkdir(parents=True)
+    (session / "main.jsonl").touch()
     bus = create_event_bus()
     bus.log_events = True
     observed = []
@@ -317,14 +320,14 @@ class _Result:
 
 
 def _stop_req():
-    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.runtime.agent.turn_request import TurnRequest
     return TurnRequest(session_id="sess-stop-hook", user_text="hi",
                        agent_id="default", source="web")
 
 
 @pytest.fixture()
 def _singleton_gates_clean():
-    from openprogram.events import get_event_bus
+    from openprogram.runtime.events import get_event_bus
     bus = get_event_bus()
     with bus._lock:
         before = {t: list(fns) for t, fns in bus._gates.items()}
@@ -335,7 +338,7 @@ def _singleton_gates_clean():
 
 
 def test_stop_hook_allowed_returns_result_without_turns(_singleton_gates_clean):
-    from openprogram.agent.dispatcher.stop_hook import continue_stop_hook_turns
+    from openprogram.runtime.conversation.turn_runtime.stop_hook import continue_stop_hook_turns
 
     calls = []
     result = _Result()
@@ -346,7 +349,7 @@ def test_stop_hook_allowed_returns_result_without_turns(_singleton_gates_clean):
 
 
 def test_stop_hook_denial_runs_continuation_then_allows(_singleton_gates_clean):
-    from openprogram.agent.dispatcher.stop_hook import continue_stop_hook_turns
+    from openprogram.runtime.conversation.turn_runtime.stop_hook import continue_stop_hook_turns
 
     bus = _singleton_gates_clean
     seen_payloads = []
@@ -378,7 +381,7 @@ def test_stop_hook_no_numeric_cap(_singleton_gates_clean):
     """No runaway number — the stop_hook_active flag protocol replaces
     the old cap: the hook keeps seeing stop_hook_active=True and is the
     one expected to allow the stop. 15 denials → 15 continuations."""
-    from openprogram.agent.dispatcher.stop_hook import (
+    from openprogram.runtime.conversation.turn_runtime.stop_hook import (
         continue_stop_hook_turns,
     )
 
@@ -401,7 +404,7 @@ def test_stop_hook_no_numeric_cap(_singleton_gates_clean):
 
 
 def test_stop_hook_failed_turn_skips_gate(_singleton_gates_clean):
-    from openprogram.agent.dispatcher.stop_hook import continue_stop_hook_turns
+    from openprogram.runtime.conversation.turn_runtime.stop_hook import continue_stop_hook_turns
 
     bus = _singleton_gates_clean
     asked = []

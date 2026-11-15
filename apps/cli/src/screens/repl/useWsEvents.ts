@@ -18,7 +18,9 @@ import {
 import { Turn } from '../../components/Turn.js';
 import { trimHistoryFile } from '../../utils/history.js';
 import { randomLocalId, renderModel, stripProviderPrefix } from './helpers.js';
-import { handleChatResponse } from './wsHandlers/handleChatResponse.js';
+import { handleChatResponse, offSelectedBranch, selectBranch } from './wsHandlers/handleChatResponse.js';
+import { branchDeletedOutcome, type BranchDeletedData } from './wsHandlers/branchDeleted.js';
+import { attachTodoBoard, todoBoard } from './wsHandlers/streamingHelpers.js';
 import { handleChannelTurn } from './wsHandlers/handleChannelTurn.js';
 import { decisionFromFrame, enqueueDecision } from './questionDecision.js';
 import type { SettingRow } from '../../components/SettingsPanel.js';
@@ -86,7 +88,6 @@ export interface WsEventsCtx {
   setBranchesList: React.Dispatch<React.SetStateAction<BranchRow[]>>;
   setConversationTitle: React.Dispatch<React.SetStateAction<string | undefined>>;
   setConnState: React.Dispatch<React.SetStateAction<ConnectionState>>;
-  setToolsOn: React.Dispatch<React.SetStateAction<boolean>>;
   setThinkingEffort: React.Dispatch<React.SetStateAction<ThinkingEffort>>;
   setPermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
   setSearchResults: React.Dispatch<React.SetStateAction<SearchResultRow[]>>;
@@ -260,6 +261,20 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         if (!convId) return;
         c.setSessionLiveByConv((m) => ({ ...m, [convId]: true }));
       };
+      if (ev.type === 'execution.command.updated') {
+        // A refusal carries the execution's current version; keep it, so
+        // the next command goes out at it. The jobs view reads the frame too.
+        const command = ev.command ?? ev.data?.command;
+        const snapshot = command?.latest_snapshot;
+        if (
+          command?.status === 'rejected'
+          && snapshot
+          && snapshot?.execution_id === c.executionIdRef.current
+          && typeof snapshot.status_version === 'number'
+        ) {
+          c.executionVersionRef.current = snapshot.status_version;
+        }
+      }
       if (handleJobEnvelope(ev, c)) {
         return;
       } else if (handleOperationErrorEnvelope(ev, c)) {
@@ -292,17 +307,6 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           ) {
             c.finishTurn();
           }
-        }
-      } else if (ev.type === 'execution.command.updated') {
-        const command = ev.command ?? ev.data?.command;
-        const snapshot = command?.latest_snapshot;
-        if (
-          command?.status === 'rejected'
-          && snapshot
-          && snapshot?.execution_id === c.executionIdRef.current
-          && typeof snapshot.status_version === 'number'
-        ) {
-          c.executionVersionRef.current = snapshot.status_version;
         }
       } else if (ev.type === 'chat_response') {
         handleChatResponse(ev.data, c, markSessionLive);
@@ -337,9 +341,6 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         const d = (ev as { data: { attended?: boolean } }).data;
         c.pushSystem(`[mode] ${d.attended ? 'attended — the agent may ask you questions'
           : 'unattended — questions are withheld'}`);
-      } else if (ev.type === 'browser_result') {
-        const data = (ev as { data: { verb: string; result: string } }).data;
-        c.pushSystem(`[browser ${data.verb}] ${data.result}`);
       } else if (ev.type === 'channel_accounts') {
         c.setChannelAccounts((ev.data ?? []) as ChannelAccountRow[]);
       } else if (ev.type === 'branches_list') {
@@ -350,6 +351,21 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         // Any structural change re-fetches the list so the picker /
         // any UI reading branchesList stays consistent.
         const sid = (ev as { data?: { session_id?: string } }).data?.session_id;
+        const switched = (ev as { data?: { ok?: boolean; active_branch_id?: string } }).data;
+        if (ev.type === 'branch_deleted' && sid && sid === c.conversationId) {
+          const outcome = branchDeletedOutcome((ev as { data: BranchDeletedData }).data);
+          c.pushSystem(outcome.text);
+          if (outcome.reload) client.send({ action: 'load_session', session_id: sid });
+        }
+        if (ev.type === 'branch_checked_out' && sid && switched?.ok) {
+          // The turn on the branch left runs on out of view; the reload
+          // that follows shows the branch entered and its run.
+          selectBranch(sid, switched.active_branch_id);
+          if (sid === c.conversationId) {
+            c.setStreaming(null);
+            c.finishTurn();
+          }
+        }
         if (sid) client.send({ action: 'list_branches', session_id: sid });
       } else if (ev.type === 'channel_account_added') {
         const data = (ev as { data: { ok?: boolean; channel?: string; account_id?: string; error?: string } }).data;
@@ -496,20 +512,26 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           messages?: Array<{ role?: string; content?: string }>;
           provider_info?: { model?: string };
           settings?: {
-            tools_enabled?: boolean | null;
             thinking_effort?: ThinkingEffort | null;
             permission_mode?: PermissionMode | null;
           };
+          active_branch_id?: string | null;
+          run_task?: { execution_id?: string; status_version?: number } | null;
         };
         if (data.id) c.setConversationId(data.id);
+        if (data.id) selectBranch(data.id, data.active_branch_id);
+        // The selected branch's running turn, so Esc stops that one.
+        if (data.run_task?.execution_id) {
+          c.executionIdRef.current = data.run_task.execution_id;
+          if (typeof data.run_task.status_version === 'number') {
+            c.executionVersionRef.current = data.run_task.status_version;
+          }
+        }
         if (data.title) c.setConversationTitle(data.title);
         if (data.id) {
           c.setSessionLiveByConv((m) => ({ ...m, [data.id!]: false }));
         }
         if (data.provider_info?.model) c.setModel(stripProviderPrefix(data.provider_info.model));
-        if (typeof data.settings?.tools_enabled === 'boolean') {
-          c.setToolsOn(data.settings.tools_enabled);
-        }
         const effort = data.settings?.thinking_effort;
         if (
           effort === 'off'
@@ -568,6 +590,13 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         }
       } else if (ev.type === 'channel_turn') {
         handleChannelTurn(ev.data, c, markSessionLive);
+      } else if ((ev as { type: string }).type === 'todos_update') {
+        // The saved board: the newest todo call of the shown turn draws it.
+        const d = (ev as unknown as { data?: { session_id?: string; branch_id?: string; todos?: unknown } }).data ?? {};
+        if ((!d.session_id || d.session_id === c.conversationId) && !offSelectedBranch(d, c.conversationId)) {
+          const board = todoBoard(d.todos);
+          c.setStreaming((s) => (s ? { ...s, blocks: attachTodoBoard(s.blocks ?? [], board) } : s));
+        }
       } else if (ev.type === 'question.asked') {
         // runtime.ask / confirm / approval — backend paused a function
         // and needs the user to decide. Enqueue (dedupe by id, so a

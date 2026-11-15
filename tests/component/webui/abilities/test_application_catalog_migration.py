@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 
 def test_legacy_application_moves_out_of_program_sources(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram.webui.routes.catalog import applications
-    from openprogram.programs import _programs
-    from openprogram.programs._applications import catalog
+    from openprogram.interfaces.server.routes.catalog import applications
+    from openprogram.programs._host import sources as program_sources
+    from openprogram.programs._host.ui import catalog
     source = tmp_path / 'app'
     source.mkdir()
     (source / 'index.html').write_text('<!doctype html><title>Notes</title>')
@@ -24,17 +24,17 @@ def test_legacy_application_moves_out_of_program_sources(tmp_path, monkeypatch):
         state_url = '/api/application-instances/' + opened['instance_id'] + '/state'
         assert client.put(state_url, json={'value': {'note': 'retained'}, 'version': 0}).status_code == 200
         # Recreate the released legacy layout, retaining real immutable content/data.
-        new_file = catalog.home() / 'catalog.json'
+        new_file = catalog.catalog_store.path()
         new_file.unlink(missing_ok=True)
-        package = {'kind': 'git', 'path': str(tmp_path / 'legacy/packages/gui_harness'), 'source': 'fixture'}
+        package = {'kind': 'git', 'path': str(tmp_path / 'legacy/packages/some_harness'), 'source': 'fixture'}
         legacy = {'kind': 'application', 'path': str(catalog.home() / 'versions' / definition['digest']),
                   'source': str(source), 'application': {**definition, 'hidden': True}}
-        _programs._write_program_sources([package, legacy])
+        program_sources._write_program_sources([package, legacy])
         response = client.get('/api/applications')
         assert response.status_code == 200
         assert response.json()['applications'][0]['hidden'] is True
         assert new_file.is_file()
-        assert _programs._read_program_sources() == [package]
+        assert program_sources._read_program_sources() == [package]
         assert client.get(state_url).json()['value'] == {'note': 'retained'}
         assert client.get('/api/applications').json() == response.json()
         assert client.post('/api/applications/test.migrate/open', json={}).json()['instance_id'] == opened['instance_id']
@@ -42,47 +42,47 @@ def test_legacy_application_moves_out_of_program_sources(tmp_path, monkeypatch):
 
 def test_migration_retries_after_legacy_cleanup_failure(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram.programs import _programs
-    from openprogram.programs._applications import catalog_store
+    from openprogram.programs._host import sources as program_sources
+    from openprogram.programs._host.ui import catalog_store
     import pytest
     row = {'kind': 'application', 'uninstalled': True, 'application': {'id': 'test.deleted', 'enabled': False}}
-    _programs._write_program_sources([row])
-    original = _programs._write_program_sources
+    program_sources._write_program_sources([row])
+    original = program_sources._write_program_sources
     with monkeypatch.context() as patch:
-        patch.setattr(_programs, '_write_program_sources', lambda rows: (_ for _ in ()).throw(OSError('disk failure')))
+        patch.setattr(program_sources, '_write_program_sources', lambda rows: (_ for _ in ()).throw(OSError('disk failure')))
         with pytest.raises(OSError, match='disk failure'):
             catalog_store.read()
     assert json.loads(catalog_store.path().read_text())['applications'] == [row]
-    assert _programs._read_program_sources() == [row]
+    assert program_sources._read_program_sources() == [row]
     assert catalog_store.read() == [row]
-    assert _programs._read_program_sources() == []
+    assert program_sources._read_program_sources() == []
     original([])
 
 
 def test_migration_conflict_preserves_both_catalogs(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram.programs import _programs
-    from openprogram.programs._applications import catalog_store
+    from openprogram.programs._host import sources as program_sources
+    from openprogram.programs._host.ui import catalog_store
     import pytest
     legacy = {'kind': 'application', 'application': {'id': 'test.conflict', 'enabled': True}}
     current = {'kind': 'application', 'application': {'id': 'test.conflict', 'enabled': False}}
-    _programs._write_program_sources([legacy])
+    program_sources._write_program_sources([legacy])
     catalog_store.write([current])
     with pytest.raises(ValueError, match='migration conflict'):
         catalog_store.read()
-    assert _programs._read_program_sources() == [legacy]
+    assert program_sources._read_program_sources() == [legacy]
     assert json.loads(catalog_store.path().read_text())['applications'] == [current]
 
 
 def test_new_catalog_write_failure_preserves_legacy(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram.programs import _programs
-    from openprogram.programs._applications import catalog_store
+    from openprogram.programs._host import sources as program_sources
+    from openprogram.programs._host.ui import catalog_store
     import pytest
     row = {'kind': 'application', 'application': {'id': 'test.retained'}}
-    _programs._write_program_sources([row])
+    program_sources._write_program_sources([row])
     monkeypatch.setattr(catalog_store, 'write', lambda rows: (_ for _ in ()).throw(OSError('disk full')))
     with pytest.raises(OSError, match='disk full'):
         catalog_store.read()
-    assert _programs._read_program_sources() == [row]
+    assert program_sources._read_program_sources() == [row]
     assert not catalog_store.path().exists()

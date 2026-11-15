@@ -7,20 +7,21 @@ import openprogram
 
 EXPECTED_SOURCES = {
     "files": {
-        "apply_patch", "bash", "edit", "glob", "grep", "list", "process",
-        "read", "terminal_use", "worktree", "write",
+        "apply_patch", "bash", "edit", "glob", "grep", "list",
+        "read", "terminal_use", "worktree", "write", "write_stdin",
     },
     "web": {
-        "agent_browser", "browser", "image_analyze", "image_generate", "pdf",
+        "image_analyze", "image_generate", "pdf",
         "web_fetch", "web_search",
     },
     "knowledge": {"memory", "read_conversation"},
-    "planning": {"plan_mode", "todo"},
+    "planning": {"goal", "open_work", "plan_mode", "todo"},
     "agents": {"agent", "mixture_of_agents", "send_message"},
-    "jobs": {"cron"},
+    "jobs": {"cron", "routine"},
     "code": {"execute_code", "lsp", "semble"},
-    "interaction": {"canvas", "clarify", "send_file"},
-    "runtime": {"framework", "mcp_meta", "program", "resource", "skill"},
+    "interaction": {"always_on_preference", "always_on_report", "always_on_schedule", "ask_user", "canvas", "chat_send", "clarify", "send_file"},
+    "runtime": {"framework", "help", "mcp_meta", "plugin", "program", "resource", "skill"},
+    "computer_use": {"computer_use_agent"},
     "system": {"self_update"},
 }
 
@@ -45,8 +46,8 @@ def test_shipped_vanilla_sources_use_physical_purpose_directories() -> None:
         }
         assert sources == expected
 
-    assert (root / "web/browser").is_dir()
-    assert (root / "web/agent_browser.py").is_file()
+    assert not (root / "web/browser").exists()
+    assert not (root / "web/agent_browser.py").exists()
     assert not (root / "browser").exists()
 
 
@@ -55,5 +56,7 @@ def test_single_file_tools_are_modules_and_multi_file_tools_are_packages() -> No
 
     assert (root / "files/read.py").is_file()
     assert not (root / "files/read").exists()
-    assert (root / "web/browser/browser.py").is_file()
-    assert (root / "web/browser/_actions").is_dir()
+    application = root.parent / "applications/browser"
+    assert (application / "tabs.py").is_file()
+    assert not (application / "engine").exists()
+    assert not (application / "web_use").exists()

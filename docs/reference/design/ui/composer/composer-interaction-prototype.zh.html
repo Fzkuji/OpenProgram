@@ -1,0 +1,124 @@
+<title>输入框交互布局</title>
+<meta name="description" content="工具审批、问题面板、函数表单、讨论、历史回溯和文件提及的布局与行为。">
+<h1>输入框交互布局</h1>
+
+<p class="note">职责与送达见<a href="composer-interaction-modes.zh.html">输入框与用户决策输出</a>。不引入新主题或依赖；沿用中性配色、12px 间距和 28px 决策控件。</p>
+
+<h2>界面</h2>
+<table class="stack">
+<thead><tr><th scope="col">界面</th><th scope="col">显示</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具审批</th><td>“需要你的输入”、1/1、“允许这条命令吗？”、<code translate="no">OperationCode</code> 中的操作</td><td>拒绝和允许一次同在底部一行，直接提交。没有选择、讨论或发送步骤。</td></tr>
+<tr><th scope="row">问题面板</th><td>进度徽标、当前问题、全宽选项行（标题、可选说明、数字）、输入框可见的“其他”</td><td>左侧上一步；右侧跳过和下一步或提交</td></tr>
+<tr><th scope="row">函数表单</th><td>只有任务输入，四周 12px 内边距</td><td>沿用标题栏：运行、关闭</td></tr>
+</tbody>
+</table>
+
+<h2>问题面板</h2>
+<p>与输入框同宽；字体、字号和颜色沿用应用。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">下一步</th><td>校验当前答案，显示下一题，不发送</td></tr>
+<tr><th scope="row">上一步</th><td>保留所有选择</td></tr>
+<tr><th scope="row">提交</th><td>通过带确认的执行命令发送一份有序答案</td></tr>
+<tr><th scope="row">跳过</th><td>拒绝整个请求。后端要求每题都有有效答案，所以没有部分或空答案。</td></tr>
+<tr><th scope="row">折叠、关闭</th><td>缩成标题栏。重新打开保留答案，不发命令。</td></tr>
+<tr><th scope="row">数字键</th><td>选择选项，仅在可编辑文本之外</td></tr>
+<tr><th scope="row">Ctrl/Cmd+Enter</th><td>前进或提交。IME 输入和多行讨论保持编辑语义。</td></tr>
+<tr><th scope="row">问题到达</th><td>不移动焦点</td></tr>
+<tr><th scope="row">矮屏幕</th><td>内容滚动，标题栏和操作保持可见</td></tr>
+</tbody>
+</table>
+<p class="note">可选的 <code translate="no">question_title</code> 和 <code translate="no">option_descriptions</code> 提供行布局。只渲染显式字符串条目；继承的对象属性不算元数据，也不限制选项标签。纯答案和完整提示留给其他客户端。多个待处理请求是各自带 key 的面板。</p>
+
+<h2>讨论</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">入口</th><td>普通问题：讨论这个问题。审批只有允许一次和拒绝。</td></tr>
+<tr><th scope="row">输入区</th><td>卡片内联；标题表明是讨论；最小 96px；共用 <code translate="no">Textarea</code>。原问题只读，没有重复的答案控件。隐藏进度。</td></tr>
+<tr><th scope="row">打开、取消</th><td>不发送；等待保持未决</td></tr>
+<tr><th scope="row">发送</th><td>把问题、工具详情和反馈绑定到确切的规范等待，作为同一轮的拒绝原因</td></tr>
+<tr><th scope="row">拒绝</th><td>拒绝操作，不产生讨论轮次</td></tr>
+<tr><th scope="row">提交中</th><td>阻止其他审批控件。结果未知时保留命令和反馈用于重试。切换会话不会改变目标。</td></tr>
+<tr><th scope="row">身份</th><td>session 与 wait 共同标识请求；反馈、命令 id 和送达状态在组件重挂后保留</td></tr>
+</tbody>
+</table>
+<p class="note">与 <a href="https://code.claude.com/docs/en/agent-sdk/user-input">Claude Agent SDK</a>、<a href="https://opencode.ai/v2/docs/permissions">OpenCode</a> 一样，反馈绑定原调用。OpenProgram 不合成第一人称拒绝话术，也不把问题当工具权限。</p>
+
+<h2>字体与对齐</h2>
+<dl class="pairs">
+<dt>文字</dt><dd>应用无衬线字体、基础字号、行高 1.5，桌面断点不缩小。提示和字段标题 600；值、提示和占位符 400。</dd>
+<dt>代码</dt><dd>命令和 JSON 用共享 <code translate="no">OperationCode</code>：等宽字体，语言标签与首行同规格，次级背景，内嵌 1px 主题边框，复制图标对齐首行。没有单独工具栏。</dd>
+<dt>复制</dt><dd>剪贴板确认后才显示成功；失败会播报</dd>
+<dt>边缘</dt><dd>标题、正文、编辑器边框同一左边缘，距容器 12px。没有负外边距。</dd>
+<dt>操作区</dt><dd>滚动内容的不收缩兄弟节点，高度过渡和溢出时都固定在底部</dd>
+<dt>命令详情</dt><dd>原生折叠，间距 12px；工作目录只出现在 JSON 参数里。沙箱提权说明保持可见。</dd>
+</dl>
+
+<h2>函数表单</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入</th><td>Programs 使用、收藏和重新打开的表单都只有任务输入。限制、超时、后端和会话句柄是内部项，有可用默认值，没有折叠或提示。</td></tr>
+<tr><th scope="row">专用表单</th><td>浏览器 Workflow：任务和可选 URL。文本润色按文本选风格。页码范围、输出位置和修订目标仍是输入。</td></tr>
+<tr><th scope="row">待处理的使用请求</th><td>待处理的使用请求在聊天初始化后才消费，初始化不会清掉表单。</td></tr>
+<tr><th scope="row">高度</th><td>高度测量释放 textarea 的 flex 增长，并计入原生行高和边框，最后一个字段保留内边距。</td></tr>
+<tr><th scope="row">Goal 详情</th><td>Goal 详情保留进度和任务控件，没有 Agent 或预算编辑。新 Goal 用一次无工具模型请求选择思考深度，失败回退默认；恢复的 Goal 保留已存角色。</td></tr>
+</tbody>
+</table>
+
+<h2>键盘归属</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">功能</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">历史回溯</th><td>保留确切草稿；在最新一条之后按 Down 恢复。编辑回溯文本开始新一轮。状态按输入框所有者隔离，其他分栏不会重置。选择、修饰键方向、IME、文件和斜杠菜单优先。</td></tr>
+<tr><th scope="row">文件提及结果</th><td>绑定 token 位置和查询。查询变化即失效；Escape、替换或卸载后迟到的响应不能恢复。Escape 关闭直到 token 变化。</td></tr>
+<tr><th scope="row">提及查询中</th><td>Enter 和 Tab 保留草稿，不选择也不发送。Escape 可用。IME 和 Shift+Enter 保持编辑。没有超时或重试。</td></tr>
+<tr><th scope="row">提及为空或失败</th><td>Enter 发送；Tab 移动焦点</td></tr>
+<tr><th scope="row">发送意图被拒</th><td>所有者预留保留未发送正文，即使只有附件或设置不同，聚焦和绑定输入框都一样。已接受的帧保留载荷；成功只清除匹配文本。预留 token 在 <code translate="no">finally</code> 中释放。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>长期审批</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">过期</th><td>人工工具审批默认不过期。持久等待保留确切操作和文件指纹；safe-point 交接结束本次尝试并释放执行槽。显式期限仍用于其他等待。</td></tr>
+<tr><th scope="row">恢复</th><td>恢复时加载检查点，复用保存的系统提示和浏览器工具选择。校验模型、工具实现、权限和位置；Page 访问在每次调用时检查。不兼容的续接报告未恢复执行。</td></tr>
+<tr><th scope="row">清除错误</th><td>恢复到达运行或完成后，清除之前的续接错误元数据。重放修复已完成消息，不重新执行。</td></tr>
+<tr><th scope="row">取消</th><td>取消和终态事件移除待处理决策，重连后也一样。已过期的保持过期。Job 恢复只处理 Job 准入。再次暂停的操作不会凭旧答案重试。</td></tr>
+<tr><th scope="row">文件审批</th><td>文件编辑、写入和补丁审批绑定路径和内容，派发前和变更前都检查。目标变化或缺失时不写入；Agent 得到未执行结果，必须重读。不透明的 shell 命令不能声称有此保证。</td></tr>
+<tr><th scope="row">拒绝或过期</th><td>终态的拒绝或过期等待通过持久 DAG outbox 把结果投影到它的 assistant 节点，不执行也不开新轮；重放不重复。</td></tr>
+<tr><th scope="row">终态释放</th><td>执行到达终态时释放活动会话的输入框，除非有更新的执行；回复的终态行以转录更新到达，不重新加载。续接打开新审批时发布到共享 WebSocket 事件流。</td></tr>
+<tr><th scope="row">同类</th><td>Claude Agent SDK 的无限期 <code translate="no">canUseTool</code> 等待、OpenCode <code translate="no">permission/next.ts</code>、Codex <code translate="no">tools/approvals.rs</code>。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>项目规则管理</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">请求</th><td>带关联的权限规则请求，是不合并的 WebSocket 帧</td></tr>
+<tr><th scope="row">广播</th><td>只在同一项目内合并，并更新其他打开的视图</td></tr>
+<tr><th scope="row">写入</th><td>成功后先读回再确认；失败或未知时保留草稿。持久审批授权写入后校验</td></tr>
+<tr><th scope="row">授权</th><td>所有者操作在下一个边界读取合并规则；已授权调用和已准入子任务保留捕获的授权</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>讨论：空输入区带上下文；取消保留请求；发送后拒绝并在本轮返回反馈，无额外消息；单独拒绝不产生消息；提交中不能批准；重试仍是一条命令。</li>
+<li>问题，在真实 Composer 和 QuestionMode 上：上一步、下一步、提交顺序，数字键，自定义和多选，重挂，窄屏和矮屏，折叠，会话隔离，不确定重试，回执。</li>
+<li>提及，在真实 hook 和菜单上：查询变化后 Enter 不选旧结果；Escape 在迟到响应后仍有效；失败和空结果回退；查询中和 IME 不提交；卸载抑制迟到工作。</li>
+</ul>
+</details>
+
+<h2>实现状态</h2>
+<p>已实现。文件提及生命周期和被拒意图正文的已安装 App 验证待完成。</p>

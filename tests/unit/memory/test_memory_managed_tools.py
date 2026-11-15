@@ -7,8 +7,8 @@ import pytest
 
 @pytest.fixture
 def managed(tmp_path):
-    from openprogram.memory.management.tools import management_tools
-    from openprogram.memory.management.workspace import MemoryWorkspace
+    from openprogram.state.memory.management.tools import management_tools
+    from openprogram.state.memory.management.workspace import MemoryWorkspace
 
     workspace = MemoryWorkspace(tmp_path / "memory")
     audit = []
@@ -41,33 +41,36 @@ def test_nested_agent_receives_managed_file_replacements(managed):
     assert not read["is_error"] and "beta" in read["content"][0]["text"]
 
 
-def test_managed_file_tools_reject_escape_and_source_mutation(managed, tmp_path):
-    workspace, _, handlers = managed
+def test_managed_file_tools_reject_escape(managed, tmp_path):
+    _workspace, _, handlers = managed
     outside = tmp_path / "outside.txt"
     escaped = _call(handlers["Write"], file_path=str(outside), content="x")
     assert escaped["is_error"]
     assert not outside.exists()
 
-    source = workspace.stage_dir / "sources" / "evidence.txt"
-    source.parent.mkdir(exist_ok=True)
-    source.write_text("evidence")
-    denied = _call(handlers["Write"], file_path=str(source), content="changed")
-    assert denied["is_error"]
-    assert source.read_text() == "evidence"
 
-    case_variant = workspace.stage_dir / "Sources" / "forged.txt"
-    denied = _call(
-        handlers["Write"], file_path=str(case_variant), content="changed",
-    )
-    assert denied["is_error"]
-    assert not case_variant.exists()
-
-
-def test_managed_shell_requires_the_os_sandbox(managed, monkeypatch):
-    from openprogram import sandbox
+def test_the_owners_batch_runs_without_a_sandbox_where_there_is_none(managed, monkeypatch):
+    from openprogram.host import sandbox
 
     _, _, handlers = managed
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "missing sandbox")
     result = _call(handlers["shell"], command="true")
-    assert result["is_error"]
-    assert "missing sandbox" in result["content"][0]["text"]
+    assert not result["is_error"]
+
+
+def test_someone_elses_words_get_no_shell_without_a_sandbox(tmp_path, monkeypatch):
+    from openprogram.host import sandbox
+    from openprogram.state.memory.management.tools import management_tools
+    from openprogram.state.memory.management.workspace import MemoryWorkspace, foreign_source
+
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "missing sandbox")
+    with foreign_source(True):
+        workspace = MemoryWorkspace(tmp_path / "memory")
+    try:
+        handlers = {tool.name: tool.handler for tool in management_tools(workspace, [])}
+        marker = tmp_path / "ran"
+        result = _call(handlers["shell"], command=f"touch {marker}")
+    finally:
+        workspace.close()
+    assert result["is_error"] and "missing sandbox" in result["content"][0]["text"]
+    assert not marker.exists()

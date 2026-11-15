@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram import _compat
+from openprogram.host._platform import filesystem
 
 
 @pytest.mark.parametrize('attributes', [0, 0x401])
@@ -30,8 +30,17 @@ def test_remove_tree_preserves_other_permission_failures(tmp_path, monkeypatch, 
 
     monkeypatch.setattr(os, 'unlink', denied_unlink)
     monkeypatch.setattr(os, 'lstat', metadata)
-    monkeypatch.setattr(os, 'chmod', lambda *args, **kwargs: pytest.fail('unexpected chmod'))
+    original_chmod = os.chmod
+
+    def chmod(path, *args, **kwargs):
+        # Only this tree is under test: another test's background writer
+        # may still restrict its own files while this one runs.
+        if os.fspath(path).startswith(os.fspath(root)):
+            pytest.fail('unexpected chmod')
+        return original_chmod(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, 'chmod', chmod)
     with pytest.raises(PermissionError, match='denied'):
-        _compat.remove_tree(root)
-    _compat.remove_tree(root, ignore_errors=True)
+        filesystem.remove_tree(root)
+    filesystem.remove_tree(root, ignore_errors=True)
     assert file.read_bytes() == b'keep'

@@ -9,22 +9,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from openprogram.security.runtime_http_audit import scan_runtime_http
+from openprogram.host.security.runtime_http_audit import scan_runtime_http
 
 
 def main() -> int:
     root = ROOT / "openprogram"
-    result = scan_runtime_http(
-        root,
-        additional_roots={
-            "apps/server/openprogram_server": (
-                ROOT / "apps/server/openprogram_server"
-            ),
-            "apps/cli/python/openprogram_cli": (
-                ROOT / "apps/cli/python/openprogram_cli"
-            ),
-        },
-    )
+    result = scan_runtime_http(root)
     print(
         "runtime-http inventory: "
         f"unregistered={len(result.unregistered)} "

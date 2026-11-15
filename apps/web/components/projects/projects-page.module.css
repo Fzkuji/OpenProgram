@@ -1,145 +1,109 @@
-/* 壳/分栏（view/topbar/title/body/profilesNav/profileItem/content/empty）复用
-   Programs 页的 module.css（import fx），保证高度/间距完全一致。这里只放
-   Projects 特有的类。 */
-
-.badge {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.detailHead {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+.detailIcon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-title);
 }
 
 .detailTitle {
-  font-size: 18px;
+  margin: 0;
+  font-size: var(--fs-title);
   font-weight: 600;
+  line-height: 1.3;
   color: var(--text-bright);
-}
-
-.detailPath {
-  flex: 1;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.detailPath {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detailNote {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Every tab has one layout: head and tabs stay put, the panel fills what
+   is left below the tabs edge to edge, and each tab scrolls inside it. */
+.contentFill {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.panelFill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0 -24px;
+}
+
+/* Section tabs: same metrics as the Agents configuration tabs. */
 .tabs {
   display: flex;
-  gap: 4px;
+  align-items: stretch;
+  gap: 18px;
+  height: 46px;
+  margin: 8px -24px 0;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
 }
 
 .tab {
+  position: relative;
   border: none;
-  border-bottom: 2px solid transparent;
   background: none;
-  padding: 8px 12px;
-  font-size: 14px;
-  color: var(--text-muted);
+  padding: 0 2px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .tab:hover {
-  color: var(--text-bright);
+  color: var(--text-primary);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -4px;
+  border-radius: var(--radius-xs);
 }
 
 .tabActive {
   color: var(--text-bright);
-  border-bottom-color: var(--primary, var(--text-bright));
 }
 
-.tabBody {
-  padding-top: 4px;
-}
-
-.sectionTitle {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-bright);
-  margin: 0 0 8px;
-}
-
-.sessionList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* 会话行照 Chats 页的行样式：avatar + body + 相对时间，卡片带 border/hover。 */
-.sessionRow {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 14px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.sessionRow:hover {
-  border-color: var(--border-hover, var(--text-muted));
-  background: var(--bg-tertiary);
-}
-
-.sessionAvatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 14px;
-}
-
-.sessionBody {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.sessionTitle {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-bright);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sessionMeta {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
-.sessionTime {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
+.tabActive::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--radius-2xs) var(--radius-2xs) 0 0;
+  background: var(--accent-blue);
 }
 
 .statusSlot {
@@ -149,7 +113,22 @@
   color: var(--accent-orange);
 }
 
-.statusSlotPad {
-  width: 14px;
-  flex-shrink: 0;
+/* Narrow widths: the rail collapses to its icon column (SecondaryRail);
+   the detail tightens its padding. */
+@media (max-width: 760px) {
+  .content {
+    padding: 14px 16px 16px;
+  }
+  .content.contentFill {
+    padding-bottom: 0;
+  }
+  .panelFill {
+    margin: 0 -16px;
+  }
+  .tabs {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding: 0 16px;
+    overflow-x: auto;
+  }
 }

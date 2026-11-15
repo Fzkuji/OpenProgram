@@ -8,9 +8,9 @@ import types
 
 import pytest
 
-from openprogram.agent.authority import owner_authority
-from openprogram.store.project import project_store
-from openprogram.webui.ws_actions import project as ws_project
+from openprogram.runtime.permissions.authority import owner_authority
+from openprogram.state.store.project import project_store
+from openprogram.interfaces.server.ws_actions import project as ws_project
 
 
 class _FakeWS:
@@ -76,7 +76,7 @@ def test_projects_list_registry_error_is_not_authoritative_empty(monkeypatch):
 def test_remove_project_action_hides_entry_and_preserves_registry(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.webui import server
+    from openprogram.interfaces.server import server
 
     registry_path = tmp_path / "projects.json"
     before = {

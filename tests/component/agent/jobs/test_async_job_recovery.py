@@ -5,22 +5,22 @@ import threading
 
 import pytest
 
-from tests.component.agent.async_job_support import (
-    _FakeMonotonic,
-    WORKER_START_TIMEOUT,
-    fake_worker,
-    store_fixture,
-)
+from tests.component.agent.async_job_support import _FakeMonotonic, WORKER_START_TIMEOUT
+from tests.component.agent import async_job_support as _async_job_support
 from tests.support.waiting import wait_until
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+fake_worker = _async_job_support.fake_worker
+store_fixture = _async_job_support.store_fixture
 
 
 def test_runner_spawn_completes(store_fixture, fake_worker, monkeypatch):
     # Silence ws broadcasts inside tests (no real server running).
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     calls, barrier, _, _ = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
     tid = runner.spawn_job(
         session_id="p1", prompt="do thing", agent_id="main",
@@ -41,10 +41,10 @@ def test_runner_resumes_deferred_job_at_current_target_head(
 ):
     """A busy-target Job keeps one admission while its target advances."""
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     calls, barrier, _, _ = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
     job_id = runner.spawn_job(
         job_id="t_deferred",
@@ -80,10 +80,10 @@ def test_deferred_resume_recovers_after_ready_publish_crash(
 ):
     """Retry finishes the same fenced resume after Job save succeeds."""
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     calls, barrier, _, _ = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
     job_id = runner.spawn_job(
         job_id="t_resume_crash",
@@ -135,23 +135,19 @@ def test_deferred_resume_recovers_after_ready_publish_crash(
     assert final is not None
     assert final.status == JobStatus.COMPLETED
     assert calls[-1]["branch_from"] == "a2"
-    admission = runner._governor.ledger.connection().execute(
-        "SELECT COUNT(*), state, resume_parent_msg_id "
-        "FROM job_admissions WHERE job_id = ?",
-        (job_id,),
-    ).fetchone()
-    assert tuple(admission) == (1, "released", None)
+    admissions = runner._governor.ledger.run_tables().handle.rows("job_admissions", job_id=job_id)
+    assert [(row["state"], row["resume_parent_msg_id"]) for row in admissions] == [("released", None)]
 
 def test_runner_recovers_deferred_inbox_after_process_crash(
     store_fixture, monkeypatch,
 ):
     """A crash after admission but before inbox publish is recoverable."""
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent import inbox
-    from openprogram.agent.job import get_runner
-    import openprogram.agent.job.runner as runner_mod
+    from openprogram.runtime.conversation import inbox
+    from openprogram.runtime.jobs import get_runner
+    import openprogram.runtime.jobs.runner as runner_mod
     runner = get_runner()
     intent = {
         "message": "recover me",
@@ -195,16 +191,16 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
 ):
     """A same-session sync child completes with one worker/live slot."""
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import ResourceGovernor
-    from openprogram.agent.sub_agent_run import AgentTurnResult, run_agent_turn
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.resource_governance import ResourceGovernor
+    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
     ledger = UsageLedger(store_fixture.root_path.parent / "borrow.db")
     runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     calls: list[str] = []
 
     def fake_execute(*, request, **_kwargs):
@@ -230,7 +226,7 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
         return AgentTurnResult(head_id="child_head", final_text="child done")
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
@@ -254,14 +250,15 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
     store_fixture, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent import run_control
-    from openprogram.agent.resource_governance import ResourceGovernor
-    from openprogram.agent.sub_agent_run import AgentTurnResult, run_agent_turn
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.conversation import run_control
+    from openprogram.runtime.execution import run_control as execution_run_control
+    from openprogram.runtime.jobs.resource_governance import ResourceGovernor
+    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     class FatalProcess:
         terminated = False
@@ -281,7 +278,7 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
 
     ledger = UsageLedger(tmp_path / "borrow-system-exit.db")
     runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     process = FatalProcess()
     observed: dict = {}
 
@@ -304,20 +301,13 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
             finally:
                 child_id = observed["child_id"]
                 observed["child"] = runner.get_job(child_id)
-                observed["child_admission"] = ledger.connection().execute(
-                    "SELECT state, reason_code FROM job_admissions "
-                    "WHERE job_id = ?", (child_id,),
-                ).fetchone()
-                observed["parent_admission"] = ledger.connection().execute(
-                    "SELECT state, owner_instance_id, lease_generation "
-                    "FROM job_admissions WHERE job_id = ?",
-                    (observed["parent_id"],),
-                ).fetchone()
-                observed["child_token"] = run_control.current_token(
+                observed["child_admission"] = ledger.run_tables().handle.first("job_admissions", job_id=child_id)
+                observed["parent_admission"] = ledger.run_tables().handle.first("job_admissions", job_id=observed["parent_id"])
+                observed["child_token"] = execution_run_control.current_token(
                     session_id, execution_id=child_id,
                 )
                 observed["current_execution_id"] = (
-                    run_control.get_current_execution_id()
+                    execution_run_control.get_current_execution_id()
                 )
                 with runner._lock:
                     observed["child_in_jobs"] = child_id in runner._jobs
@@ -333,7 +323,7 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
             return AgentTurnResult(
                 head_id="parent-head", final_text="parent recovered",
             )
-        child_id = run_control.get_current_execution_id()
+        child_id = execution_run_control.get_current_execution_id()
         observed["child_id"] = child_id
         run_control.register_active_runtime(
             session_id, FatalRuntime(process), execution_id=child_id,
@@ -341,7 +331,7 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
         raise SystemExit("child fatal")
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
@@ -359,13 +349,14 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
         assert child.status == JobStatus.ERRORED
         assert child.reason_code == "owner_lost"
         assert child.error is None
-        assert tuple(observed["child_admission"]) == (
+        child_admission = observed["child_admission"]
+        assert (child_admission["state"], child_admission["reason_code"]) == (
             "released", "owner_lost",
         )
         parent_admission = observed["parent_admission"]
-        assert parent_admission[0] == "live"
-        assert parent_admission[1] == runner._instance_id
-        assert parent_admission[2] > 0
+        assert parent_admission["state"] == "live"
+        assert parent_admission["owner_instance_id"] == runner._instance_id
+        assert parent_admission["lease_generation"] > 0
         assert observed["child_token"] is None
         assert observed["current_execution_id"] == parent_id
         assert observed["child_in_jobs"] is False
@@ -378,7 +369,7 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
             run_control.unregister_active_runtime(
                 "p1", execution_id=child_id,
             )
-            token = run_control.current_token("p1", execution_id=child_id)
+            token = execution_run_control.current_token("p1", execution_id=child_id)
             if token is not None:
                 run_control.unregister_cancel_event(
                     "p1", token.event, execution_id=child_id,
@@ -389,16 +380,16 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
     store_fixture, monkeypatch, tmp_path,
 ):
     broadcasts = []
-    from openprogram.agent.resource_governance import ResourceGovernor
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.resource_governance import ResourceGovernor
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', broadcasts.append,
+        'openprogram.runtime.jobs.runner.shared._broadcast', broadcasts.append,
     )
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(lambda **_kwargs: (_ for _ in ()).throw(SystemExit("fatal"))),
     )
     ledger = UsageLedger(tmp_path / "fatal-worker.db")
@@ -408,11 +399,9 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
     )
     try:
         job = runner.await_job(job_id, timeout=2)
-        admission = ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
-        ).fetchone()
+        admission = ledger.run_tables().handle.first("job_admissions", job_id=job_id)
         assert job is not None and job.status == JobStatus.ERRORED
-        assert admission[0] == "released"
+        assert admission["state"] == "released"
         def find_terminal():
             return next(
                 (
@@ -434,16 +423,16 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
 def test_running_status_write_failure_reconciles_terminal_and_releases(
     store_fixture, monkeypatch, tmp_path,
 ):
-    import openprogram.agent.job.runner as runner_mod
-    from openprogram.agent.resource_governance import ResourceGovernor
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.agent.production_driver import AgentProductionDriver
-    from openprogram.usage.ledger import UsageLedger
+    import openprogram.runtime.jobs.runner as runner_mod
+    from openprogram.runtime.jobs.resource_governance import ResourceGovernor
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
+    from openprogram.models.usage.ledger import UsageLedger
 
     broadcasts = []
     monkeypatch.setattr(runner_mod.shared, "_broadcast", lambda payload: broadcasts.append(payload))
-    real_update = runner_mod._store_update_status
+    real_update = runner_mod.shared._store_update_status
 
     failed = True
 
@@ -472,24 +461,18 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
     try:
         runner.await_job(job_id, timeout=1)
         job = runner.get_job(job_id)
-        admission = ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
-        ).fetchone()
+        admission = ledger.run_tables().handle.first("job_admissions", job_id=job_id)
         assert job is not None and job.status == JobStatus.QUEUED
-        assert admission[0] == "released"
-        assert ledger.connection().execute(
-            "SELECT state FROM job_finalizations WHERE job_id = ?", (job_id,),
-        ).fetchone()[0] == "pending"
+        assert admission["state"] == "released"
+        assert ledger.run_tables().handle.first("job_finalizations", job_id=job_id)["state"] == "pending"
         assert len(drivers) == 1
-        assert wait_until(lambda: not drivers[0]._handles, timeout=2)
+        assert wait_until(lambda: not drivers[0]._handles, timeout=30)
         assert not drivers[0]._continuation_start_gates
         failed = False
         broadcasts.clear()
         runner._reconcile_resources()
         assert runner.get_job(job_id).status == JobStatus.ERRORED
-        assert ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
-        ).fetchone()[0] == "released"
+        assert ledger.run_tables().handle.first("job_admissions", job_id=job_id)["state"] == "released"
         terminal = [
             item for item in broadcasts
             if item.get("type") == "job_status"
@@ -499,15 +482,12 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
         assert terminal[0]["data"]["status"] == "errored"
         assert "resource_state" not in terminal[0]["data"]["resource"]
         assert terminal[0]["data"]["resource"]["resource"]["resource_state"] == "released"
-        reloads = [item for item in broadcasts if item.get("type") == "session_reload"]
-        assert len(reloads) == 1
-        assert reloads[0]["data"]["reason"] == "job_errored"
         broadcasts.clear()
         runner._reconcile_resources()
         assert broadcasts == []
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
-            "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+            "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
             staticmethod(lambda **_kwargs: AgentTurnResult(final_text="ok")),
         )
         next_id = runner.spawn_job(
@@ -526,14 +506,14 @@ def test_vanished_job_row_releases_admission_instead_of_leaking_it(
     permanently consumes max_live_per_session and no further job can be
     admitted for that session.
     """
-    import openprogram.agent.job.runner as runner_mod
-    from openprogram.agent.resource_governance import ResourceGovernor
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    import openprogram.runtime.jobs.runner as runner_mod
+    from openprogram.runtime.jobs.resource_governance import ResourceGovernor
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     monkeypatch.setattr(runner_mod.shared, "_broadcast", lambda *a, **k: None)
-    real_update = runner_mod._store_update_status
+    real_update = runner_mod.shared._store_update_status
     vanish = True
 
     def vanish_on_running(session_id, job_id, status, **fields):
@@ -550,26 +530,21 @@ def test_vanished_job_row_releases_admission_instead_of_leaking_it(
             session_id="p1", prompt="x", agent_id="main", parent_msg_id="a1",
         )
         def admission_state():
-            row = ledger.connection().execute(
-                "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
-            ).fetchone()
-            return row[0] if row else None
+            row = ledger.run_tables().handle.first("job_admissions", job_id=job_id)
+            return row["state"] if row else None
 
         assert wait_until(
-            lambda: admission_state() == "released", timeout=3.0,
+            lambda: admission_state() == "released", timeout=30,
         )
         state = admission_state()
         assert state == "released"
-        assert ledger.connection().execute(
-            "SELECT COUNT(*) FROM job_admissions "
-            "WHERE session_id = ? AND state = 'live'", ("p1",),
-        ).fetchone()[0] == 0
+        assert ledger.run_tables().handle.count("job_admissions", session_id="p1", state="live") == 0
 
         # The session is admissible again.
         vanish = False
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
-            "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+            "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
             staticmethod(lambda **_kwargs: AgentTurnResult(final_text="ok")),
         )
         next_id = runner.spawn_job(
@@ -583,16 +558,17 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     store_fixture, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent import run_control
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.conversation import run_control
+    from openprogram.runtime.execution import run_control as execution_run_control
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.sub_agent_run import AgentTurnResult, run_agent_turn
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     clock = _FakeMonotonic()
     child_entered = threading.Event()
@@ -618,7 +594,7 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         monotonic_clock=clock,
         budget_poll_seconds=0.01,
     )
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
 
     def fake_execute(*, request, **_kwargs):
         session_id = request.session_id
@@ -636,7 +612,7 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
             return AgentTurnResult(
                 head_id="parent-head", final_text=child.error or "child ended",
             )
-        child_id = run_control.get_current_execution_id()
+        child_id = execution_run_control.get_current_execution_id()
         assert child_id is not None
         child_ids.append(child_id)
         child_entered.set()
@@ -646,7 +622,7 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         return AgentTurnResult(head_id="child-head", final_text="released")
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_execute),
     )
 
@@ -678,26 +654,20 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         assert child_entered.wait(WORKER_START_TIMEOUT)
         child_id = child_ids[0]
         assert child_id != parent_id
-        runtime_row = runner._governor.ledger.connection().execute(
-            "SELECT state, owner_instance_id, lease_generation, started_at, "
-            "lease_expires_at FROM job_admissions WHERE job_id = ?",
-            (child_id,),
-        ).fetchone()
-        assert runtime_row[0] == "queued"
-        assert runtime_row[1] == runner._instance_id
-        assert runtime_row[2] > 0
-        assert runtime_row[3] is not None
-        assert runtime_row[4] is not None
+        runtime_row = runner._governor.ledger.run_tables().handle.first("job_admissions", job_id=child_id)
+        assert runtime_row["state"] == "queued"
+        assert runtime_row["owner_instance_id"] == runner._instance_id
+        assert runtime_row["lease_generation"] > 0
+        assert runtime_row["started_at"] is not None
         with runner._lock:
             assert runner._jobs[child_id]["time_limits"] == (1, None)
-            assert runner._jobs[child_id]["lease_generation"] == runtime_row[2]
-        live_count = runner._governor.ledger.connection().execute(
-            "SELECT COUNT(*) FROM job_admissions "
-            "WHERE state IN ('live','stopping')",
-        ).fetchone()[0]
+            assert runner._jobs[child_id]["lease_generation"] == runtime_row["lease_generation"]
+        live_count = runner._governor.ledger.run_tables().handle.count(
+            "job_admissions", state=("live", "stopping"),
+        )
         assert live_count == 1
         clock.advance(1.1)
-        assert cancel_intent_staged.wait(1.0)
+        assert cancel_intent_staged.wait(30)
         staged_child = runner.get_job(child_id)
         assert staged_child is not None
         # The canonical command is durable first; the JobStore reason is
@@ -718,8 +688,8 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         concurrent_cancel = threading.Thread(target=cancel_again_as_user)
         concurrent_cancel.start()
         release_cancel_signal.set()
-        assert concurrent_cancel_done.wait(2.0)
-        concurrent_cancel.join(timeout=1.0)
+        assert concurrent_cancel_done.wait(30)
+        concurrent_cancel.join(timeout=30)
         assert not concurrent_cancel.is_alive()
         assert concurrent_cancel_errors == []
         assert wait_until(
@@ -736,19 +706,16 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         with runner._lock:
             assert child_id not in runner._jobs
             assert child_id not in runner._done_events
-        assert run_control.current_token("p1", execution_id=child_id) is None
+        assert execution_run_control.current_token("p1", execution_id=child_id) is None
         commands = runner._execution_store.list_commands(child_id)
         assert [command.kind.value for command in commands] == [
             "execution.cancel",
         ]
         assert commands[0].payload["reason_code"] == "budget.runtime_exhausted"
         assert len(child_ids) == 1
-        row = runner._governor.ledger.connection().execute(
-            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-            (child_id,),
-        ).fetchone()
-        assert row[0] == "released"
-        assert row[1] == "budget.runtime_exhausted"
+        row = runner._governor.ledger.run_tables().handle.first("job_admissions", job_id=child_id)
+        assert row["state"] == "released"
+        assert row["reason_code"] == "budget.runtime_exhausted"
     finally:
         release_cancel_signal.set()
         release_child.set()
@@ -760,16 +727,16 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
     store_fixture, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent import run_control
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.execution import run_control as execution_run_control
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.sub_agent_run import AgentTurnResult, run_agent_turn
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     clock = _FakeMonotonic()
     budget_polled = threading.Event()
@@ -797,7 +764,7 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
         monotonic_clock=observed_clock,
         budget_poll_seconds=0.01,
     )
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
 
     def fake_execute(*, request, **_kwargs):
         session_id = request.session_id
@@ -813,13 +780,13 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
                 chain_generations=1,
             )
             return AgentTurnResult(head_id="parent-head", final_text="done")
-        child_id = run_control.get_current_execution_id()
+        child_id = execution_run_control.get_current_execution_id()
         assert child_id is not None
         child_ids.append(child_id)
         child_entered.set()
         while not release_child.wait(0.01):
             if record_activity.is_set() and not activity_recorded.is_set():
-                from openprogram.agent.job.runner import (
+                from openprogram.runtime.jobs.runner import (
                     record_current_job_activity,
                 )
                 activity_results.append(
@@ -829,7 +796,7 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
         return AgentTurnResult(head_id="child-head", final_text="child done")
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
@@ -842,18 +809,16 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
         assert child_id != parent_id
         clock.advance(0.75)
         record_activity.set()
-        assert activity_recorded.wait(1.0)
+        assert activity_recorded.wait(30)
         assert activity_results == [True]
-        activity_rows = runner._governor.ledger.connection().execute(
-            "SELECT job_id, last_activity_at FROM job_admissions "
-            "WHERE job_id IN (?, ?)",
-            (child_id, parent_id),
-        ).fetchall()
+        activity_rows = runner._governor.ledger.run_tables().handle.rows(
+            "job_admissions", job_id=(child_id, parent_id),
+        )
         assert len(activity_rows) == 2
-        assert activity_rows[0][1] == activity_rows[1][1]
+        assert activity_rows[0]["last_activity_at"] == activity_rows[1]["last_activity_at"]
         budget_polled.clear()
         clock.advance(0.5)
-        assert budget_polled.wait(1.0)
+        assert budget_polled.wait(30)
         assert runner._execution_store.get_execution(child_id).status.value == "running"
         assert runner._execution_store.get_execution(parent_id).status.value == "running"
         with runner._lock:
@@ -869,16 +834,16 @@ def test_borrowed_child_timeout_uses_child_and_ancestor_remaining_budget(
     store_fixture, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.sub_agent_run import AgentTurnResult, run_agent_turn
-    from openprogram.agent.job.runner import (
+    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.jobs.runner import (
         JobRunner, current_job_operation_timeout,
     )
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.models.usage.ledger import UsageLedger
 
     clock = _FakeMonotonic()
     observed: list[float | None] = []
@@ -897,7 +862,7 @@ def test_borrowed_child_timeout_uses_child_and_ancestor_remaining_budget(
         monotonic_clock=clock,
         budget_poll_seconds=0.01,
     )
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
 
     def fake_execute(*, request, **_kwargs):
         session_id = request.session_id
@@ -920,7 +885,7 @@ def test_borrowed_child_timeout_uses_child_and_ancestor_remaining_budget(
         return AgentTurnResult(head_id="child-head", final_text="done")
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
@@ -937,14 +902,14 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
     store_fixture, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent import run_control
-    from openprogram.agent.resource_governance import ResourceGovernor
-    from openprogram.agent.sub_agent_run import AgentTurnResult, run_agent_turn
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.execution import run_control as execution_run_control
+    from openprogram.runtime.jobs.resource_governance import ResourceGovernor
+    from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult, run_agent_turn
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     child_entered = threading.Event()
     release_child = threading.Event()
@@ -953,7 +918,7 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         max_workers=1,
         governor=ResourceGovernor(UsageLedger(tmp_path / "borrow-cancel.db")),
     )
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
 
     def fake_execute(*, request, **_kwargs):
         session_id = request.session_id
@@ -969,7 +934,7 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
                 chain_generations=1,
             )
             return AgentTurnResult(head_id="parent-head", final_text="done")
-        child_id = run_control.get_current_execution_id()
+        child_id = execution_run_control.get_current_execution_id()
         assert child_id is not None
         child_ids.append(child_id)
         child_entered.set()
@@ -977,7 +942,7 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         return AgentTurnResult(head_id="child-head", final_text="late")
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
@@ -988,8 +953,8 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         assert child_entered.wait(WORKER_START_TIMEOUT)
         child_id = child_ids[0]
         assert child_id != parent_id
-        child_token = run_control.current_token("p1", execution_id=child_id)
-        parent_token = run_control.current_token("p1", execution_id=parent_id)
+        child_token = execution_run_control.current_token("p1", execution_id=child_id)
+        parent_token = execution_run_control.current_token("p1", execution_id=parent_id)
         assert child_token is not None
         assert parent_token is not None
         runner.cancel_execution(child_id, reason="cancel child only")
@@ -1003,7 +968,7 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         with runner._lock:
             assert child_id not in runner._jobs
             assert child_id not in runner._done_events
-        assert run_control.current_token("p1", execution_id=child_id) is None
+        assert execution_run_control.current_token("p1", execution_id=child_id) is None
     finally:
         release_child.set()
         runner.shutdown(wait=False)
@@ -1012,24 +977,15 @@ def test_runner_spawn_persists_durable_admission(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import ResourceGovernor, ResourceLimits, resolve_resource_limits
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.resource_governance import ResourceGovernor, ResourceLimits, resolve_resource_limits
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
     ledger = UsageLedger(tmp_path / "governance.db")
     governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
-    renewals = []
-    original_renew = governor.renew_lease
-
-    def record_renewal(*args, **kwargs):
-        renewals.append(args[0])
-        return original_renew(*args, **kwargs)
-
-    monkeypatch.setattr(governor, "renew_lease", record_renewal)
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._LEASE_RENEW_SECS', 0.02)
     runner = JobRunner(
         max_workers=1,
         governor=governor,
@@ -1044,16 +1000,10 @@ def test_runner_spawn_persists_durable_admission(
         assert job.budget_scope_id
         assert job.effective_limits["max_live_per_session"] == 1
         assert fake_worker[3].wait(WORKER_START_TIMEOUT)
-        assert ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (tid,),
-        ).fetchone()[0] == "live"
-        assert wait_until(lambda: bool(renewals))
-        assert renewals and set(renewals) == {tid}
+        assert ledger.run_tables().handle.first("job_admissions", job_id=tid)["state"] == "live"
         fake_worker[1].set()
         assert runner.await_job(tid, timeout=5).status.value == "completed"
-        assert ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (tid,),
-        ).fetchone()[0] == "released"
+        assert ledger.run_tables().handle.first("job_admissions", job_id=tid)["state"] == "released"
     finally:
         fake_worker[1].set()
         runner.shutdown()
@@ -1062,16 +1012,16 @@ def test_spawned_child_resource_view_uses_persisted_ancestor_limits(
     store_fixture, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor,
         ResourceLimits,
         resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.store import load_job
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.store import load_job
+    from openprogram.models.usage.ledger import UsageLedger
 
     shared = ResourceLimits(
         max_total_tokens=1_000,

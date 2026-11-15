@@ -9,9 +9,9 @@ import threading
 
 import pytest
 
-from openprogram import sandbox
-from openprogram.backend.base import RunResult
-from openprogram.worktree.context import current_worktree_path, reset_worktree, set_worktree
+from openprogram.host import sandbox
+from openprogram.host.backend.base import RunResult
+from openprogram.state.worktree.context import current_worktree_path, reset_worktree, set_worktree
 
 
 def _text(result):
@@ -59,7 +59,7 @@ def test_parallel_agent_contexts_keep_independent_workdirs(tmp_path, monkeypatch
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="native bubblewrap regression")
 @pytest.mark.parametrize("swap_after_validation", [False, True], ids=["stable-directory", "symlink-swap"])
 def test_native_sandbox_preserves_original_root(tmp_path, monkeypatch, swap_after_validation):
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host.backend.local import LocalBackend
 
     reason = sandbox.unavailable_reason()
     if reason:
@@ -89,7 +89,7 @@ def test_native_sandbox_preserves_original_root(tmp_path, monkeypatch, swap_afte
     try:
         command = "printf escaped > escaped.txt" if swap_after_validation else "printf kept > ../at-root.txt"
         result = asyncio.run(module.bash.execute(
-            "sandbox-workdir", {"command": command, "workdir": "child", "timeout": 10_000}, None, None,
+            "sandbox-workdir", {"command": command, "workdir": "child"}, None, None,
         ))
         if swap_after_validation:
             assert result.is_error, _text(result)

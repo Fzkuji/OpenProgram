@@ -1,0 +1,297 @@
+<title>内置浏览器</title>
+<meta name="description" content="桌面 App 的内置浏览器：工具栏、窗格、数据导入、信任边界，以及 Agent 如何使用其中的网页。">
+<h1>内置浏览器</h1>
+
+<p>网页渲染在 Electron <code translate="no">WebContentsView</code> 中，使用独立的 <code translate="no">persist:webtabs</code> 配置，不与 App 共享 Cookie 或存储。Agent 通过 <code translate="no">computer_use_agent</code> 的浏览器目标操作同样的网页：用户能看到并随时接管，会话打开的网页显示在该会话的资源里。</p>
+
+<h2 id="toolbar">工具栏和菜单</h2>
+<table class="stack">
+<thead><tr><th scope="col">窗格宽度</th><th scope="col">720 px 及以上</th><th scope="col">560–719</th><th scope="col">520–559</th><th scope="col">小于 520</th></tr></thead>
+<tbody>
+<tr><th scope="row">后退、刷新/停止、星标、浏览器 <code translate="no">⋯</code></th><td>显示</td><td>显示</td><td>显示</td><td>显示</td></tr>
+<tr><th scope="row">地址栏</th><td>占满剩余</td><td>占满剩余</td><td>占满剩余</td><td>占满剩余，至少 160 px</td></tr>
+<tr><th scope="row">前进</th><td>显示</td><td>显示</td><td>显示</td><td>在 <code translate="no">⋯</code> 中</td></tr>
+<tr><th scope="row">主页、书签、外部打开</th><td>显示</td><td>在 <code translate="no">⋯</code> 中</td><td>在 <code translate="no">⋯</code> 中</td><td>在 <code translate="no">⋯</code> 中</td></tr>
+<tr><th scope="row">书签栏</th><td>显示</td><td>显示</td><td>隐藏</td><td>隐藏</td></tr>
+</tbody>
+</table>
+<p class="note">工具栏 40 px，书签栏 30 px，不换行。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">层级</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具栏</th><td>常用的当前页操作。星标只保存或移除当前页，书签打开管理器。没有分屏控件，没有设置齿轮。</td></tr>
+<tr><th scope="row">浏览器 <code translate="no">⋯</code></th><td>新建浏览器标签页、收起到悬浮窗、查找、评论页面元素和区域截图（可用时）、缩放、打印、书签、历史、下载内容、显示书签栏、导入浏览器资料、清除浏览数据、浏览器设置</td></tr>
+<tr><th scope="row">窗口菜单</th><td>新建窗格或窗口、窗格布局、OpenProgram 设置、帮助、关于</td></tr>
+<tr><th scope="row">标签或窗格控件</th><td>分屏和排列，对文件、对话、浏览器、终端一视同仁</td></tr>
+</tbody>
+</table>
+<p class="note">两个设置入口打开同一页面、同一存储；浏览器 <code translate="no">⋯</code> 直达 <code translate="no">/settings/browser</code>。</p>
+
+<details>
+<summary>菜单规则</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">定位</th><td>每个菜单用自己触发按钮的屏幕矩形：右边缘对齐，间距 4 px</td></tr>
+<tr><th scope="row">缩放</th><td>渲染进程的 CSS px 按发送方缩放换算成 DIP，80、100、125% 下菜单都贴着触发按钮</td></tr>
+<tr><th scope="row">尺寸</th><td>桌面 popover 用 <code translate="no">scrollWidth/scrollHeight</code> 上报固有尺寸，不会递归缩到被裁剪的高度</td></tr>
+<tr><th scope="row">浏览器 <code translate="no">⋯</code> 图标</th><td>Solar Bold Duotone，由 <code translate="no">glyph</code> 命名、浮层里的 <code translate="no">MenuIcon</code> 绘制；Web 回退菜单用同一个 <code translate="no">MenuRow</code></td></tr>
+<tr><th scope="row">图标位</th><td>行里确实有字形、文件夹或站点图标时才有。没有图标的行，文字从行默认的 <code translate="no">10px</code> 内边距开始。</td></tr>
+<tr><th scope="row">勾选</th><td>在行尾、按键标签之后；未勾选的行留空这一列</td></tr>
+<tr><th scope="row">工具栏提示</th><td>总在控件上方，一行，长标签截断：下方的原生网页会盖住它</td></tr>
+<tr><th scope="row">网页旁的 popover</th><td>可见 popover 与原生网页相交时才挂起网页，见<a href="web-tab-native-bounds.zh.html">原生页面边界</a></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="surfaces">页面</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">新窗格</th><td>只选内容的启动台：文件、新建对话、浏览器、终端，然后是已启用的应用。没有地址栏、快捷站点、书签或历史。</td></tr>
+<tr><th scope="row">浏览器主页</th><td>原位打开，地址栏和书签栏与网页相同。后退、前进、刷新、主页、星标、外部打开可见但禁用；地址输入、书签、导入和 <code translate="no">⋯</code> 可用。只显示用户维护的快捷站点和导入入口。</td></tr>
+<tr><th scope="row">历史</th><td>按本地日期分组。行：时间、站点图标、标题、域名、操作，38 px。最多 5000 条，搜索在主进程。</td></tr>
+<tr><th scope="row">书签管理器</th><td>顶部标题、搜索、页面菜单；左侧文件夹树，右侧当前文件夹的直接子项。行：图标、标题、单个 <code translate="no">⋮</code>。文件夹可进入。窄窗格时树在列表上方。</td></tr>
+<tr><th scope="row">下载</th><td>存到系统下载文件夹。实时进度和最终状态；打开、在访达中显示、取消、清除记录。</td></tr>
+</tbody>
+</table>
+<p class="note">管理器尺寸：头部 52 px，行 36，搜索框 30，图标按钮 28，右侧列表内边距 16。</p>
+
+<h3 id="bookmarks">书签栏和菜单</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">默认</th><td>主页和网页都显示；关闭后保持关闭（浏览器 <code translate="no">⋯</code> 或设置）</td></tr>
+<tr><th scope="row">内容</th><td>Chromium <code translate="no">Bookmarks bar</code> 的直接子项，保持顺序，加上普通根书签。之后是 <code translate="no">»</code> 溢出菜单、分隔线和“所有书签”，后者打开含 <code translate="no">Other bookmarks</code>、<code translate="no">Mobile bookmarks</code> 的管理器。</td></tr>
+<tr><th scope="row">溢出</th><td>单行，无滚动条。隐藏项不留下被裁剪的按钮；最后一个可见按钮保持完整背景和圆角。</td></tr>
+<tr><th scope="row">菜单</th><td>280 px，标题省略，逐级嵌套（文件夹图标和箭头），受窗口高度限制，支持鼠标、触控板和键盘</td></tr>
+<tr><th scope="row">桌面悬停</th><td>立即打开；移到相邻文件夹时在同一视图内替换数据，无延迟切换。从触发按钮移入面板时保持打开，离开全部后 120 ms 内关闭。浮层从书签栏下沿开始，不挡按钮。</td></tr>
+<tr><th scope="row">图标</th><td>已保存的图，然后是站点的 <code translate="no">/favicon.ico</code>，再回退到书签或 Lucide 浏览器图标，绝不留空。只接受 HTTP(S) 和图片 data，不带 referrer，不用第三方服务。新书签保留页面图标；再次访问完全相同的 URL 时刷新，加载中不抹掉。</td></tr>
+</tbody>
+</table>
+
+<h2 id="decisions">页面行为</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">行为</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">加载</th><td>刷新变成强调色的 Lucide X，名称为“停止加载”，工具栏下方有不确定进度细条，不显示百分比，不改变高度。减少动态效果时静止。完成、失败、取消后恢复刷新。</td></tr>
+<tr><th scope="row">未保存的网页</th><td>被阻止的刷新或导航（<code translate="no">will-prevent-unload</code>）在所属窗口弹原生对话框。“留在此页”是默认和取消项；“离开此页”只放行这一次操作。没有所属窗口、已销毁或对话框失败时保留网页。不在聚焦窗口里显示的网页直接离开，不弹对话框：没有人在场回答，对话框还会挡到用户正在做的事前面。关闭标签和退出 App 不在此列。</td></tr>
+<tr><th scope="row">标签图标</th><td>解码出可见像素时用站点图标，否则用带动画的 Lucide 浏览器图标。主进程经页面 session 读取：HTTP(S) 和图片 data，256 KiB，五秒，以 data URL 返回，以便渲染进程识别全透明图标。导航和销毁取消读取，过期结果不生效。快照带站点图标；历史保留原 URL。</td></tr>
+<tr><th scope="row">查找、缩放、打印</th><td>只作用于发起窗口所拥有的那个 WebTab。查找有上一个、下一个、计数和关闭，关闭时清除选区。<code translate="no">⌘/Ctrl+F</code>、<code translate="no">⌘/Ctrl++/-/0</code>、<code translate="no">⌘/Ctrl+P</code> 与菜单一致。旧外壳缺 IPC 时禁用对应操作。</td></tr>
+<tr><th scope="row">打印</th><td>先走系统打印；失败或没有打印机时，弹所属窗口的存为 PDF 对话框。取消不写文件；打印成功不再生成 PDF。PDF 先写唯一临时文件再替换目标，失败时保留原文件。</td></tr>
+</tbody>
+</table>
+
+<h3 id="navigation">导航、弹窗和右键菜单</h3>
+<table class="stack">
+<thead><tr><th scope="col">页面意图</th><th scope="col">主进程</th><th scope="col">渲染进程</th></tr></thead>
+<tbody>
+<tr><th scope="row">链接、表单、脚本赋值、同文档导航</th><td><code translate="no">did-navigate</code> / <code translate="no">did-navigate-in-page</code> 上报状态，不发弹窗事件</td><td><code translate="no">updateWebTab</code> 原位更新 URL、标题和站点图标；id 和激活标签不变；写入历史</td></tr>
+<tr><th scope="row"><code translate="no">target="_blank"</code>、<code translate="no">window.open</code></th><td><code translate="no">setWindowOpenHandler</code> 拒绝子窗口，只把有效的 HTTP(S) URL 和 opener id 发给所属窗口</td><td><code translate="no">openPopupWebTab</code> 创建唯一 id 并激活。已在 <code translate="no">/chat</code> 或 <code translate="no">/s/&lt;id&gt;</code> 时不再 push <code translate="no">/chat</code>，路由同步不会覆盖激活。Agent 持有用户自己的网页时，它弹出的页面在旁边打开，不激活，也不改路由。</td></tr>
+<tr><th scope="row">右键“在新标签页打开链接”</th><td><code translate="no">context-menu</code> 校验所属关系和 URL，再复用弹窗事件</td><td>与网页弹窗相同；菜单消失后或所属已过期时不执行</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">命中</th><th scope="col">原生菜单</th></tr></thead>
+<tbody>
+<tr><th scope="row">HTTP(S) 链接</th><td>在新标签页打开链接、复制链接地址</td></tr>
+<tr><th scope="row">可编辑内容</th><td>撤销、重做、剪切、复制、粘贴、全选</td></tr>
+<tr><th scope="row">普通页面</th><td>后退、前进、刷新</td></tr>
+<tr><th scope="row">不提供</th><td>保存网页、保存图片、下载链接文件、查看源代码、检查元素、扩展条目：它们需要各自的下载、文件授权和开发者模式边界</td></tr>
+</tbody>
+</table>
+
+<h3 id="floating-preview">悬浮预览的归属</h3>
+<table class="stack">
+<thead><tr><th scope="col">当前内容</th><th scope="col">预览</th><th scope="col">原生 WebTab</th></tr></thead>
+<tbody>
+<tr><th scope="row">创建它的对话</th><td>可见，回到之前的位置和大小</td><td>画中画边界和布局缩放；同一个 <code translate="no">WebContentsView</code>、URL、滚动和表单状态，不重新加载</td></tr>
+<tr><th scope="row">其他对话或非对话页面</th><td>隐藏，无恢复入口</td><td>移出 <code translate="no">syncVisible</code> 集合，恢复用户缩放</td></tr>
+<tr><th scope="row">普通浏览器标签，或分屏中的同一网页</th><td>隐藏</td><td>窗格独占其边界；画中画缩放不保留</td></tr>
+<tr><th scope="row">用户在所属对话里关闭</th><td>隐藏；只有该对话显示恢复入口</td><td>留在后台，不暴露给其他会话</td></tr>
+</tbody>
+</table>
+
+<h2 id="architecture">导入</h2>
+<p>来源可为 Chrome、Brave、Edge 或 Chromium，来源、配置和数据类型分别确认。仅桌面端。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 16 680 180" role="img" aria-label="只读来源配置的文件被复制到临时目录。History SQLite 和 Bookmarks JSON 经有界解析器合并进历史存储和书签树。Cookie 由临时来源浏览器进程通过 CDP 解密，再用 Electron cookies.set 写入 persist:webtabs。">
+  <defs><marker id="imp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="90">来源配置</text>
+  <text class="t-soft" x="0" y="114">只读，真实路径</text>
+  <text class="t-soft" x="0" y="134">在发现的根目录内</text>
+  <line class="ln" x1="138" y1="83" x2="168" y2="83" marker-end="url(#imp-a)"/>
+  <text class="t-big" x="178" y="90">临时副本</text>
+  <text class="t-soft" x="178" y="114">目录 0700，文件 0600</text>
+  <text class="t-soft" x="178" y="134">总会删除</text>
+  <path class="ln" d="M326 83H338V33H356" marker-end="url(#imp-a)"/>
+  <path class="ln" d="M338 83V133H356" marker-end="url(#imp-a)"/>
+  <text class="t-big" x="366" y="40">有界解析器</text>
+  <text class="t-soft" x="366" y="64">History SQLite</text>
+  <text class="t-soft" x="366" y="84">Bookmarks JSON</text>
+  <line class="ln" x1="512" y1="33" x2="546" y2="33" marker-end="url(#imp-a)"/>
+  <text class="t-big" x="556" y="40">合并</text>
+  <text class="t-soft" x="556" y="64">历史存储</text>
+  <text class="t-soft" x="556" y="84">书签树</text>
+  <text class="t-big" x="366" y="140">来源浏览器</text>
+  <text class="t-soft" x="366" y="164">临时进程</text>
+  <text class="t-soft" x="366" y="184">经 CDP 解密</text>
+  <line class="ln" x1="500" y1="133" x2="546" y2="133" marker-end="url(#imp-a)"/>
+  <text class="t-big" x="556" y="140">Cookie</text>
+  <text class="t-cmd notranslate" translate="no" x="553" y="164">persist:webtabs</text>
+  <text class="t-soft" x="556" y="184">逐条写入</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>来源配置</strong><small>只读，真实路径在发现的根目录内</small></li>
+  <li><strong>临时副本</strong><small>目录 0700，文件 0600，总会删除</small></li>
+  <li><strong>有界解析器</strong><small>History SQLite 和 Bookmarks JSON，合并进历史存储和书签树</small></li>
+  <li class="flow-end"><strong>临时来源浏览器</strong><small>经 CDP 解密 Cookie，逐条写入 <code translate="no">persist:webtabs</code></small></li>
+</ol>
+</figure>
+
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">读取</th><th scope="col">合并</th></tr></thead>
+<tbody>
+<tr><th scope="row">历史</th><td>SQLite 文件的副本；只收 http 和 https；最多 5000 条</td><td>按 URL 和 <code translate="no">visitedAt</code> 去重；出错时保留现有记录</td></tr>
+<tr><th scope="row">书签</th><td>根、最多 64 层文件夹、同级顺序；过滤无效 URL</td><td>重复导入不产生重复 URL 或空文件夹；保留层级</td></tr>
+<tr><th scope="row">Cookie</th><td>在临时浏览器里解密；绝不直接复制 Cookie 数据库</td><td>逐条校验后 <code translate="no">cookies.set</code>。值不进入 IPC、日志、历史或渲染进程。</td></tr>
+</tbody>
+</table>
+<p class="note">导入 Cookie 能减少重复登录；设备绑定、过期、二次验证或服务端撤销仍可能要求登录。</p>
+
+<h3 id="boundaries">信任边界</h3>
+<table class="stack">
+<thead><tr><th scope="col">边界</th><th scope="col">约束</th><th scope="col">失败结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">渲染进程到主进程</th><td>来源和配置用主进程发放的不透明 id；数据类型走白名单；不传文件或可执行路径，不传 Cookie 值</td><td>拒绝请求</td></tr>
+<tr><th scope="row">网页内容到主进程</th><td>只收解析后的 HTTP(S) URL；操作绑定到确切的 WebTab 所属者。<code translate="no">file:</code>、<code translate="no">javascript:</code>、已转移或关闭的记录、伪造的 opener 都不会创建任何东西。</td><td>拒绝，无操作</td></tr>
+<tr><th scope="row">来源配置</th><td>只读发现；拒绝符号链接逃逸</td><td><code translate="no">source_invalid</code></td></tr>
+<tr><th scope="row">临时数据</th><td>成功、失败或超时后删除。日志只含来源标签、类型、数量和错误码。</td><td>清理，稳定错误</td></tr>
+<tr><th scope="row">目标配置</th><td>合并历史和书签；绝不替换目标数据库</td><td>保留导入前数据</td></tr>
+<tr><th scope="row">并发</th><td>全 App 同时一个导入。只有发起的渲染进程能用其有界 request id 取消。在解析阶段边界、浏览器启动和 CDP 等待中、每次写 Cookie 前后检查取消。</td><td><code translate="no">import_busy</code>、<code translate="no">import_cancelled</code></td></tr>
+<tr><th scope="row">取消之后</th><td>不合并历史和书签；停止浏览器，删除临时文件。此前已写的 Cookie 保留（Cookie API 没有事务），之后不再写。</td><td>协作式停止</td></tr>
+</tbody>
+</table>
+<p class="note">运行时“导入”变成“取消”，并禁止关闭。开始前关闭不改变任何东西。损坏的来源、缺失的浏览器、超时和部分 Cookie 失败都返回稳定错误码并保留原数据。</p>
+<details>
+<summary>不导入或不提供</summary>
+<ul>
+<li>密码、支付信息、地址、扩展、下载、缓存、localStorage、Service Worker</li>
+<li>密码管理器、系统凭据存储、自动填充、远程调试正在运行的来源浏览器</li>
+<li>扩展：Chrome 网上应用店和 Edge 加载项只作普通网页打开，见<a href="browser-extensions.zh.html">浏览器扩展支持</a></li>
+<li>纯 Web 模式：不提供导入</li>
+</ul>
+</details>
+
+<h2 id="task-execution-control">Agent 在这些网页上</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row" id="session-pages">会话网页</th><td>按会话分组，在会话资源面板中默认折叠（<a href="../resources/session-resources.zh.html">会话资源</a>）。记录保留会话归属和置顶状态；手动打开的网页和明确分屏留在顶层。</td></tr>
+<tr><th scope="row">暂停</th><td>点击、滚动、按键、导航和关闭网页都不会暂停 Agent，无论来自用户还是自动化，包括对 OpenProgram 自身的自动化。只有对话的执行控制能暂停或取消。浏览器资源没有单独的写入禁令；分发守卫、所属检查和当前帧校验保留。</td></tr>
+<tr><th scope="row">目标丢失</th><td>丢弃会话，工具返回带最后 URL 的恢复信息。恢复时观察在该 URL 新打开的网页，绝不重放变更操作或挑选无关标签。缺少认证或未保存的状态如实报告。</td></tr>
+<tr><th scope="row">关闭</th><td>截图保留 ToolReturn 图片和结构化错误。运行中的服务不会向已关闭的默认执行器提交任务；恢复尊重取消和未决的外部效果。</td></tr>
+</tbody>
+</table>
+
+<details id="browser-step-execution">
+<summary>浏览器步骤执行和调用方上下文</summary>
+<ul>
+<li>工作流负责观察、操作、验证循环。每个规划请求设置 <code translate="no">stop_after_tool_round</code>：共享 Agent 循环执行一轮经校验和授权的工具调用，保留回执后返回，不再请求模型。默认 Agent 调用仍持续到最终输出。</li>
+<li>与安全上限 <code translate="no">max_iterations</code> 无关。耗尽上限不可重试，已完成的操作不会重放。结构化最终输出契约不能与这种提前返回同用。</li>
+<li>每次向 Playwright 所属线程提交 <code translate="no">BrowserPageController</code> 任务（含清理和最终验证）都携带当前 ContextVars，按次复制。Page 隔离、绑定校验、权限和操作租约仍是最终依据。</li>
+<li>旧式浏览器任务使用明确绑定的当前 Page，不因 URL 提示而重新加载。明确绑定已过期时失败，不打开替代 Page。没有明确 Page 时，URL 和打开行为不变。</li>
+</ul>
+</details>
+
+<details id="browser-file-inputs">
+<summary>文件选择和规划失败</summary>
+<ul>
+<li>规划器用已批准的本地路径和新鲜的 file-input ref 上传，受沙箱读取、审批、Page 所属、取消和步数限制。MCP 规划器用同一个控制器。</li>
+<li>文件输入暴露类型和所选文件名，绝不暴露字节或本地路径。选择文件不等于服务器接受：<code translate="no">file_selected</code> 检查确切的当前输入，最终证据重新核对。</li>
+<li>验证用 <code translate="no">value</code>，不用输入文字。无效调用返回可操作的错误；同一帧连续失败三次后停止并保留具体错误。规划器可以带阻塞原因停止，这不算成功。操作计数算 Page 变更，不算模型请求。</li>
+</ul>
+</details>
+
+<h2 id="favicon-lifetime">图标和菜单的生命周期</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">书签菜单</th><td>每个桌面窗口在两次打开之间保留一个分离的级联视图；重新打开时附加并更新数据，不加载新文档。窗口清理销毁可见和分离的视图；分离的发送方不能派发操作。</td></tr>
+<tr><th scope="row">站点图标缓存</th><td>由渲染进程持有，合并并发加载。解码后的 32 px 表面保留 30 分钟，失败 5 分钟，最多 256 个来源，加载 5 秒，没有持久图标数据库。</td></tr>
+<tr><th scope="row">绘制</th><td>组件绘制缓存表面，不再发请求；来源变化选用另一条目。跨源图片不读像素也能绘制。当前来源的重复原生事件不重新加载；导航使所属失效。</td></tr>
+<tr><th scope="row">分工</th><td><code translate="no">bookmark-bar.tsx</code> 布局和菜单，<code translate="no">browser-controls.tsx</code> 命令，<code translate="no">favicon-cache.ts</code> 加载和复用，<code translate="no">tab-favicon.tsx</code> 呈现</td></tr>
+</tbody>
+</table>
+
+<h2 id="web-tab-identity">网页标签的身份</h2>
+<p>在请求头和脚本里一致地表现为当前的 Chromium 浏览器，不冒充其他浏览器。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">User-Agent</th><td><code translate="no">webtab-user-agent.js</code> 只去掉 App 自己的标记，保留 <code translate="no">Electron/x</code> 和完整 Chrome 版本：自称纯 Chrome 而 <code translate="no">navigator.userAgentData</code> 没有 Google Chrome 会被视为伪造，卡在 Cloudflare 质询</td></tr>
+<tr><th scope="row">通行 Cookie</th><td><code translate="no">cf_clearance</code>、<code translate="no">__cf_bm</code>、<code translate="no">cf_chl_*</code> 只对获得它们的 User-Agent 有效。与 <code translate="no">webtab-user-agent.json</code> 不同时，App 在任何标签加载前移除它们，其他 Cookie 保留。</td></tr>
+<tr><th scope="row">Client Hints</th><td>Electron 不发 <code translate="no">Sec-CH-UA</code>。<code translate="no">webtab-client-hints.js</code> 从回环页读一次 <code translate="no">getHighEntropyValues()</code>，然后向安全源发送 <code translate="no">Sec-CH-UA</code>、<code translate="no">-Mobile</code>、<code translate="no">-Platform</code>，以及源在 <code translate="no">Accept-CH</code> 中点名的高熵提示</td></tr>
+<tr><th scope="row">权限</th><td><code translate="no">webtab-permissions.js</code> 放行 Chrome 静默允许的（全屏、指针锁定、写剪贴板、外部协议），对摄像头、麦克风、定位、通知等在标签所在窗口弹原生对话框，其余拒绝。回答按源存在 <code translate="no">webtab-permissions.json</code>；清除网页标签 Cookie 时一并忘记。未决权限读作 <code translate="no">denied</code>，因为 Electron 的检查处理器只有是或否。</td></tr>
+<tr><th scope="row">无人查看的网页请求权限</th><td>不在聚焦窗口里显示的网页发出的请求只拒绝这一次，不保存，用户打开该网页时再询问。</td></tr>
+<tr><th scope="row">引擎</th><td><code translate="no">apps/desktop/package.json</code> 固定的 Electron 跟随 Chrome 稳定版（Electron 45 是 Chromium 156）；安装版按<a href="../../distribution/dev-instance.zh.html">稳定版和开发版实例</a>获取</td></tr>
+<tr><th scope="row">不修补</th><td><code translate="no">window.chrome</code> 为空，没有 Widevine。需要完整 Chrome 的网页是另一套设计：Agent 在用户自己的 Chrome 里工作。</td></tr>
+</tbody>
+</table>
+
+<h2 id="homepage-shortcut-editor">主页快捷方式编辑器</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">形态</th><td>“添加”磁贴切换一个紧凑的非模态 popover，用共享的 Popover、Input、Button，界面字体和主题。上下两个带标签的字段，名称可选。</td></tr>
+<tr><th scope="row">关闭</th><td>取消、关闭、Escape、外部交互或再按“添加”都会清空草稿。键盘关闭时焦点回到“添加”。锚点分离或隐藏时面板隐藏。每个主页持有自己的编辑器，没有全局监听或 App 状态。</td></tr>
+<tr><th scope="row">提交</th><td>两个字段都可按 Enter，输入法组字时除外。地址为空不能提交。保存沿用现有规范化、持久化和去重，然后清空并关闭。</td></tr>
+</tbody>
+</table>
+
+<details id="references">
+<summary>参考行为</summary>
+<table class="stack">
+<thead><tr><th scope="col">来源</th><th scope="col">行为</th><th scope="col">这里</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex 窗格入口</th><td>文件、新建对话、浏览器、终端是顶层；浏览器控件只在浏览器内</td><td>采用</td></tr>
+<tr><th scope="row"><a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">OpenAI 内置浏览器</a></th><td>独立状态，在 App 设置中清除 Cookie 和历史</td><td>采用，并增加浏览器 <code translate="no">⋯</code> 直达和明确导入</td></tr>
+<tr><th scope="row"><a href="https://support.google.com/chrome/answer/188842">Chrome 书签</a></th><td>星标、可切换的书签栏、独立管理器；导航与弹窗之分</td><td>采用，分屏折叠更严格，弹窗转为 WebTab</td></tr>
+<tr><th scope="row"><a href="https://support.google.com/chrome/answer/96816">Chrome 导入</a></th><td>数据类型选择和 Imported Bookmarks 合并</td><td>用于对话框设计</td></tr>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/menu">Electron Menu</a>、<a href="https://www.electronjs.org/docs/latest/api/web-contents">webContents</a>、<a href="https://www.electronjs.org/docs/latest/api/window-open">window.open</a></th><td>链接、选区、编辑和帧命中；原生弹出菜单；解析后的弹窗 URL</td><td>有限操作集；不开放 DevTools 或任意协议</td></tr>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/session">Electron session</a>、<a href="https://www.electronjs.org/docs/latest/api/cookies">Cookies</a>、<a href="https://www.electronjs.org/docs/latest/api/web-contents-view">WebContentsView</a></th><td>持久分区，逐条写 Cookie</td><td>使用</td></tr>
+<tr><th scope="row"><a href="https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md">Chromium 用户数据</a>、<a href="https://chromium.googlesource.com/chromium/src/+/refs/tags/145.0.7573.1/components/user_data_importer/">user_data_importer</a></th><td>配置文件位置；C++ 导入器不暴露给 Electron，也没有通用 Cookie 导入</td><td>不重复实现</td></tr>
+<tr><th scope="row"><a href="https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/drawImage">Canvas drawImage</a></th><td>不读像素也能绘制</td><td>站点图标缓存使用</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="verification">
+<summary>代码与验证</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">范围</th><th scope="col">代码和检查</th></tr></thead>
+<tbody>
+<tr><th scope="row">页面</th><td><code translate="no">new-tab-page.tsx</code>、<code translate="no">browser-home-page.tsx</code>、<code translate="no">builtin-tab-pane.tsx</code>、<code translate="no">web-history.css</code>；<code translate="no">apps/web/tests/browser/</code></td></tr>
+<tr><th scope="row">工具栏、菜单</th><td><code translate="no">web-tab-pane.tsx</code>、<code translate="no">browser-controls.tsx</code>、<code translate="no">main-menu.tsx</code>、<code translate="no">menu-overlay/context-menu/page.tsx</code>；<code translate="no">check-web-split.mjs</code>、<code translate="no">check-center-tabs.mjs</code>、<code translate="no">check-webtab-zoom-bounds.js</code></td></tr>
+<tr><th scope="row">导航、查找、打印、下载</th><td><code translate="no">apps/desktop/main.js</code>、<code translate="no">desktop-bridge.ts</code>；<code translate="no">check-webtab-navigation.js</code>（所属关系、系统打印和保存取消、写入失败、渲染中失去所属）</td></tr>
+<tr><th scope="row">预览归属</th><td><code translate="no">web-tab-pip-store.ts</code>、<code translate="no">web-tab-pip.tsx</code>；<code translate="no">check-web-split.mjs</code>（所属对话、清单、无 pointer-up 的切换）、<code translate="no">check-webtab-navigation.js</code>（首次提交、转移后的缩放）</td></tr>
+<tr><th scope="row">导入</th><td><code translate="no">browser-profile-import.js</code>、<code translate="no">browsing-history-store.js</code> 自检；<code translate="no">apps/web/lib/tabs/browser/bookmarks.ts</code>、<code translate="no">bookmarks-store.test.mjs</code>；<code translate="no">check-no-browser-extensions.js</code></td></tr>
+<tr><th scope="row">图标</th><td><code translate="no">favicon-cache.test.mjs</code>（合并、过期、超时、淘汰）；<code translate="no">check-bookmark-menu-cache.cjs</code>（复用、隐藏发送方、销毁）；<code translate="no">test_tab_favicons.py</code>、<code translate="no">bookmark-favicons.test.mjs</code>（渲染、重新挂载，<code translate="no">Cache-Control: no-store</code> 下重新打开文件夹不发第二次请求）</td></tr>
+<tr><th scope="row">Agent 任务</th><td>真实 Runtime 配假 provider：一次操作后验证，不重放，关闭时对话身份不变，拒绝过期绑定。自有无头 Chromium 文件输入夹具：纠正重试、拒绝、过期 ref、沙箱读取、取消后零传输。</td></tr>
+<tr><th scope="row">安装版 App</th><td>可见检查用 <code translate="no">/Applications/OpenProgram.app</code>、端口 18100 和 <code translate="no">~/.openprogram</code>。覆盖：弹窗保持激活且路由不变；发现 3 个 Chrome 配置；取消导入后释放租约；5000 条历史中 1000 行，38 px；下载、取消、打开、显示；查找、缩放和存为 PDF 回退。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="acceptance">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>以上全部</td></tr>
+<tr><th scope="row">尚未</th><td>主页快捷方式编辑器的安装版验收（无头检查已覆盖）；默认 App 中书签图标、溢出和管理器入口的可视验收</td></tr>
+<tr><th scope="row">限制</th><td>依赖 PTY 的全屏终端程序</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="web-tab-native-bounds.zh.html">原生页面边界</a></p>

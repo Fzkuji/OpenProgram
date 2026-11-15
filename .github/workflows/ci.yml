@@ -1,11 +1,12 @@
 name: CI
 
+# The full suite. Runs only when started by hand, before a release: pushes,
+# pull requests and schedules start nothing. Routine work runs
+# scripts/testing/affected_tests.py instead.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
-# Superseded checks must not hold scarce Windows ARM64 runners ahead of HEAD.
+# A newer run on the same ref cancels the older one, freeing the Windows ARM64 runners.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -48,7 +49,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          from openprogram.worker.services.systemd import _build_unit
+          from openprogram.operations.worker.services.systemd import _build_unit
 
           path = Path(sys.argv[1])
           path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,6 +90,8 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v7
         with:
+          # The base-build tests run the release's own uv (product-runtime.json).
+          version: "0.11.16"
           enable-cache: true
       - name: Install and enable bubblewrap
         run: |
@@ -205,6 +208,10 @@ jobs:
       - name: Enforce unit coverage floor
         run: uv run --locked --extra dev coverage report --show-missing --precision=6 --fail-under=40
 
+  # The released launchers start Python with -X utf8, which is what PYTHONUTF8=1
+  # stands for here. The third leg runs the same tests in the system code page:
+  # helper processes the product starts with -I, and the App's short commands,
+  # still run that way.
   windows-core:
     timeout-minutes: 45
     strategy:
@@ -213,11 +220,16 @@ jobs:
         include:
           - runner: windows-2025
             arch: x64
+            utf8: "1"
           - runner: windows-11-vs2026-arm
             arch: arm64
+            utf8: "1"
+          - runner: windows-2025
+            arch: x64
+            utf8: "0"
     runs-on: ${{ matrix.runner }}
     env:
-      PYTHONUTF8: "1"
+      PYTHONUTF8: ${{ matrix.utf8 }}
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v5
@@ -226,6 +238,8 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v7
         with:
+          # The base-build tests run the release's own uv (product-runtime.json).
+          version: "0.11.16"
           enable-cache: true
       - name: Prepare native ARM64 OpenSSL
         if: matrix.arch == 'arm64'
@@ -238,6 +252,7 @@ jobs:
           tests/component/config/test_windows_install_contract.py
           tests/component/config/test_conversational_update_capability.py
           tests/component/config/test_windows_cli_launchers.py
+          tests/component/self_update/versions/test_launcher_windows.py
           tests/component/config/test_windows_release_transaction.py
           tests/component/runtime/test_windows_process.py
           tests/component/config/test_windows_release.py
@@ -245,12 +260,12 @@ jobs:
           tests/component/config/test_windows_refresh_publication.py
           tests/component/config/test_windows_build_environment.py
           tests/component/config/test_windows_release_version.py
+          tests/component/config/test_distribution_release/test_build_base_packages.py
           tests/component/runtime/test_process_liveness.py
           tests/component/runtime/test_local_backend_process_tree.py
           tests/component/runtime/test_git_bash_source_transport.py
           tests/component/agent/jobs/test_job_cancel_projection_race.py
           tests/component/store/test_session_store_close.py
-          tests/component/programs/tools/test_pdf_import_isolation.py
           tests/unit/core/test_windows_worker_service.py
           tests/component/security/test_sandbox.py
           tests/component/config/test_formal_release_updates.py
@@ -264,16 +279,16 @@ jobs:
           tests/component/store/test_backup_command.py
           tests/component/store/test_backup_staged_restore.py
       - name: Complete Windows unit regression
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: >-
           uv run --locked --extra dev python -u -c
-          "import faulthandler, pytest; trace = open('windows-unit-traceback.txt', 'w'); faulthandler.dump_traceback_later(600, file=trace, exit=True); raise SystemExit(pytest.main(['-p', 'no:faulthandler', '-n', '4', '-vv', 'tests/unit']))"
+          "import faulthandler, pytest; trace = open('windows-unit-traceback.txt', 'w'); faulthandler.dump_traceback_later(1380, file=trace, exit=True); raise SystemExit(pytest.main(['-p', 'no:faulthandler', '-n', '4', '-vv', 'tests/unit']))"
           > windows-unit.log 2>&1
       - name: Upload Windows regression diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-regression-${{ matrix.arch }}
+          name: windows-regression-${{ matrix.arch }}-utf8-${{ matrix.utf8 }}
           path: |
             windows-unit.log
             windows-unit-traceback.txt

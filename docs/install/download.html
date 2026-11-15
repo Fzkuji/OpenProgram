@@ -1,0 +1,29 @@
+<title>Download</title>
+<meta name="description" content="Every OpenProgram file for each computer: App packages, terminal archives, one-click links to the newest release, and where each checksum is.">
+<meta name="covers" content=".github/workflows/release.yml">
+<h1>Download</h1>
+<p>Every file, by computer. Most people need only the DMG or command on <a href="install.html">Install</a>.</p>
+
+<h2 id="latest">Newest release</h2>
+<table class="stack">
+<thead><tr><th scope="col">Computer</th><th scope="col">App file</th><th scope="col">Newest</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS Apple Silicon</th><td data-label="App file"><code translate="no">OpenProgram-X.Y.Z-mac-arm64.dmg</code>, <code translate="no">.zip</code></td><td data-label="Newest"><a href="../latest.html?OpenProgram-mac-arm64.dmg">DMG</a></td></tr>
+<tr><th scope="row">macOS Intel</th><td data-label="App file"><code translate="no">OpenProgram-X.Y.Z-mac-x64.dmg</code>, <code translate="no">.zip</code></td><td data-label="Newest"><a href="../latest.html?OpenProgram-mac-x64.dmg">DMG</a></td></tr>
+<tr><th scope="row">Linux x86_64</th><td data-label="App file"><code translate="no">OpenProgram-X.Y.Z-linux-amd64.deb</code><br><code translate="no">OpenProgram-X.Y.Z-linux-x86_64.AppImage</code></td><td data-label="Newest"><a href="../latest.html?OpenProgram-linux-amd64.deb">deb</a> · <a href="../latest.html?OpenProgram-linux-x86_64.AppImage">AppImage</a></td></tr>
+<tr><th scope="row">Linux arm64</th><td data-label="App file"><code translate="no">OpenProgram-X.Y.Z-linux-arm64.deb</code><br><code translate="no">OpenProgram-X.Y.Z-linux-arm64.AppImage</code></td><td data-label="Newest"><a href="../latest.html?OpenProgram-linux-arm64.deb">deb</a> · <a href="../latest.html?OpenProgram-linux-arm64.AppImage">AppImage</a></td></tr>
+<tr><th scope="row">Windows x64</th><td data-label="App file"><code translate="no">OpenProgram-X.Y.Z-win-x64.exe</code></td><td data-label="Newest"><a href="../latest.html?OpenProgram-win-x64.exe">Installer</a></td></tr>
+</tbody>
+</table>
+<p class="note">A release holds each file once, under its versioned name. These links download that file from the newest release, and open its release page when they cannot. A macOS or Windows build with no publisher signature adds <code translate="no">-unsigned</code> to the name. The terminal archives, <code translate="no">OpenProgram-X.Y.Z-runtime-…</code>, are on <a href="https://github.com/FuzzyKuji/OpenProgram/releases/latest">the newest release page</a>; the terminal install downloads the right one for you.</p>
+
+<h2 id="checksum-files">Checksums</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Files</th><th scope="col">Where the SHA-256 is</th></tr></thead>
+<tbody>
+<tr><th scope="row">Every file</th><td>Beside the file on its release page, and in that release's <code translate="no">release-manifest.json</code></td></tr>
+<tr><th scope="row">Terminal archive</th><td>Also <code translate="no">OpenProgram-X.Y.Z-runtime-&lt;macos|linux&gt;-&lt;x86_64|arm64&gt;.tar.gz.sha256</code><br><code translate="no">OpenProgram-X.Y.Z-runtime-windows-x86_64.zip.sha256</code></td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="install.html#checksums">Verify a download</a> · <a href="https://github.com/FuzzyKuji/OpenProgram/releases">All releases</a></p>

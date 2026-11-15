@@ -3,20 +3,23 @@ from dataclasses import replace
 
 import pytest
 
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
+from tests.component.agent import async_job_support as _async_job_support
 from tests.unit.self_update.test_store import _request
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
 
 
 def test_runner_delivers_terminal_result_without_verifier(store_fixture, tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.self_update import SelfUpdateStore, UpdatePhase
-    from openprogram.store import SessionStore
+    from openprogram.state import paths
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+    from openprogram.state.store import SessionStore
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     calls = []
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", lambda *a, **k: calls.append(a))
     updates = SelfUpdateStore()
     request = replace(_request(), session_id="p1", origin_assistant_id="a1")
     updates.create(request)
@@ -43,18 +46,18 @@ def test_runner_delivers_terminal_result_without_verifier(store_fixture, tmp_pat
 
 @pytest.mark.parametrize("failure", ["history", "receipt"])
 def test_runner_retries_interrupted_delivery_once(store_fixture, tmp_path, monkeypatch, failure):
-    from openprogram import paths
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.self_update import SelfUpdateStore, UpdatePhase
-    from openprogram.store import SessionStore
-    from openprogram.store.session.git_session import GitSession
+    from openprogram.state import paths
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+    from openprogram.state.store import SessionStore
+    from openprogram.state.store.session.session_log import SessionLog
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     updates = SelfUpdateStore()
     updates.create(replace(_request(), session_id="p1", origin_assistant_id="a1"))
     updates.transition("su_test", UpdatePhase.ABORTED)
-    original_write = GitSession.write_history if failure == "history" else SelfUpdateStore._write_json
+    original_write = SessionLog.write_history if failure == "history" else SelfUpdateStore._write_json
     failures = []
 
     def interrupted_write(self, *args, **kwargs):
@@ -65,7 +68,7 @@ def test_runner_retries_interrupted_delivery_once(store_fixture, tmp_path, monke
             raise OSError("interrupted result persistence")
         return original_write(self, *args, **kwargs)
 
-    monkeypatch.setattr(GitSession if failure == "history" else SelfUpdateStore,
+    monkeypatch.setattr(SessionLog if failure == "history" else SelfUpdateStore,
                         "write_history" if failure == "history" else "_write_json", interrupted_write)
     runner = JobRunner(max_workers=1)
     try:
@@ -86,9 +89,9 @@ def test_runner_retries_interrupted_delivery_once(store_fixture, tmp_path, monke
 
 @pytest.mark.parametrize("missing", ["session", "origin"])
 def test_missing_session_or_origin_remains_undelivered(store_fixture, tmp_path, monkeypatch, missing):
-    from openprogram import paths
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.self_update import SelfUpdateStore, UpdatePhase
+    from openprogram.state import paths
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
     updates = SelfUpdateStore()
@@ -111,3 +114,23 @@ def test_missing_session_or_origin_remains_undelivered(store_fixture, tmp_path, 
         assert runner.list_jobs("p1") == []
     finally:
         runner.shutdown()
+
+
+def test_one_unreadable_update_does_not_block_other_results(store_fixture, tmp_path, monkeypatch):
+    from openprogram.state import paths
+    from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+    from openprogram.operations.self_update.delivery.delivery import deliver_pending
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
+    updates = SelfUpdateStore()
+    for update_id in ("su_broken", "su_test"):
+        updates.create(replace(_request(), update_id=update_id, session_id="p1", origin_assistant_id="a1"))
+        updates.transition(update_id, UpdatePhase.ABORTED)
+    (updates.root / "su_broken" / "delivery.json").write_text('{"schema": 1}')
+
+    assert deliver_pending() == 1
+    index = store_fixture._open("p1")[1]
+    delivered = [n.metadata["self_update"]["update_id"] for n in index.nodes_by_seq
+                 if n.metadata.get("source") == "self_update_result"]
+    assert delivered == ["su_test"]

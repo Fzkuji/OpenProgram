@@ -1,0 +1,42 @@
+<title>固定顺序调用</title>
+<meta name="description" content="按源码顺序调用子函数的 Agent 方法。">
+<h1>固定顺序调用</h1>
+<p>Agent 方法按源码写定的顺序调用子方法：调研、找 gap、生成想法；写初稿、审稿、修改；采集、清洗、分析。</p>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+from openprogram.runtime.agent import llm
+
+class ExampleAgent(Agent):
+    method_options = {'survey_pipeline': {'tool': True}}
+
+    def survey_pipeline(self, task: str) -> str:
+        survey = survey_topic(topic=task)
+        if not survey or "error" in survey.lower():
+            return "Survey failed"                     # 步骤之间的检查
+
+        key_points = extract_key_points(survey)        # 步骤之间的普通 Python
+        filtered = [p for p in key_points if p["relevance"] > 0.5]
+
+        gaps = identify_gaps(survey="\n".join(filtered))  # 数据由 Python 变量传递
+        ideas = generate_ideas(gaps=gaps)
+
+        return llm(f"Gaps:\n{gaps}\n\nIdeas:\n{ideas}")  # 可选的模型调用
+
+_example_agent = ExampleAgent()
+survey_pipeline = _example_agent.survey_pipeline</code></pre>
+<pre translate="no" tabindex="0"><code>survey_pipeline
+├── survey_topic       ← 第 1 步
+├── identify_gaps      ← 第 2 步
+└── generate_ideas     ← 第 3 步</code></pre>
+<dl class="pairs">
+<dt>模型调用</dt><dd>不调用（删掉 <code translate="no">llm</code> 那行，返回 dict），或调用任意次 <code translate="no">llm()</code>，每次一个子节点</dd>
+<dt>Runtime</dt><dd>子方法跑在调用方的 Runtime 上，无需逐层传递</dd>
+</dl>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">固定顺序</th><th scope="col">LLM 选择</th></tr></thead>
+<tbody>
+<tr><th scope="row">谁决定顺序</th><td>Python 代码</td><td>LLM</td></tr>
+<tr><th scope="row">运行哪些子函数</th><td>全部</td><td>被选中的一个</td></tr>
+<tr><th scope="row">函数注册表</th><td>不需要</td><td>需要</td></tr>
+<tr><th scope="row">灵活度</th><td>流程固定</td><td>随任务变化</td></tr>
+</tbody>
+</table>

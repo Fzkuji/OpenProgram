@@ -1,0 +1,25 @@
+/* Icon size tiers. Components pass one of these numbers as `size`
+   (SolarIcon, lucide) or use the matching size-3 / size-3.5 / size-4 /
+   size-5 / size-6 utility; CSS uses the variables.
+
+     12  inside xs (24px) controls and 11–12px text
+     14  inside sm (28px) controls, menu rows, chips
+     16  default controls, sidebar rows, toolbars
+     20  empty states, tiles, page-header glyphs
+     24  hero glyphs on empty pages
+   Anything 32 and up is an illustration (avatar, logo), not an icon. */
+:root {
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+  --icon-xl: 24px;
+}
+
+/* A character avatar is an illustration at the size its host asks for. The
+   controls it sits in (toggles, menu rows, buttons) size the svgs inside
+   them as icons; that does not apply to it. */
+[data-bot-body] > svg {
+  width: 100%;
+  height: 100%;
+}

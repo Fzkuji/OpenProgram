@@ -3,7 +3,7 @@ import { Box, Text, useInput } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
 import { usePanelWidth, useTerminalHeight } from '../utils/useTerminalWidth.js';
 
-/** One resolved setting, matching `openprogram.config_schema.get_settings()`. */
+/** One resolved setting, matching `openprogram.state.settings.get_settings()`. */
 export interface SettingRow {
   key: string;
   group: string;

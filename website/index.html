@@ -5,21 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenProgram: Self-Programming AI Agent Framework</title>
 <meta name="description" content="Build self-programming AI agents that create and refine their own workflows with an open-source runtime for models, tools, memory, context, and multi-agent collaboration.">
-<meta name="theme-color" content="#07080a">
-<link rel="canonical" href="https://openprogram.io/">
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" type="image/svg+xml" href="/docs/assets/mark.svg">
-<link rel="alternate" type="application/atom+xml" title="OpenProgram releases" href="https://github.com/Fzkuji/OpenProgram/releases.atom">
-<link rel="preload" href="/docs/assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<meta name="theme-color" content="#f8f9fc" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0f17" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="dark light">
+<link rel="canonical" href="https://fuzzykuji.github.io/openprogram-site/">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="docs/assets/mark.svg">
+<link rel="alternate" type="application/atom+xml" title="OpenProgram releases" href="https://github.com/FuzzyKuji/OpenProgram/releases.atom">
+<link rel="preload" href="docs/assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script src="docs/assets/theme.js"></script>
 
 <meta property="og:type" content="website">
 <meta property="og:locale" content="en_US">
 <meta property="og:site_name" content="OpenProgram">
-<meta property="og:url" content="https://openprogram.io/">
+<meta property="og:url" content="https://fuzzykuji.github.io/openprogram-site/">
 <meta property="og:title" content="OpenProgram: Self-Programming AI Agent Framework">
 <meta property="og:description" content="Build self-programming AI agents that create and refine their own workflows with an open-source runtime for models, tools, memory, context, and multi-agent collaboration.">
-<meta property="og:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
-<meta property="og:image:secure_url" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta property="og:image" content="https://fuzzykuji.github.io/openprogram-site/docs/images/openprogram-social-card.png">
+<meta property="og:image:secure_url" content="https://fuzzykuji.github.io/openprogram-site/docs/images/openprogram-social-card.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -27,7 +30,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="OpenProgram: Self-Programming AI Agent Framework">
 <meta name="twitter:description" content="Build self-programming AI agents that create and refine their own workflows with an open-source runtime for models, tools, memory, context, and multi-agent collaboration.">
-<meta name="twitter:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta name="twitter:image" content="https://fuzzykuji.github.io/openprogram-site/docs/images/openprogram-social-card.png">
 <meta name="twitter:image:alt" content="OpenProgram: Self-Programming AI Agent Framework">
 
 <script type="application/ld+json">
@@ -36,13 +39,13 @@
   "@type": "SoftwareSourceCode",
   "name": "OpenProgram",
   "description": "Build self-programming AI agents that create and refine their own workflows with an open-source runtime for models, tools, memory, context, and multi-agent collaboration.",
-  "url": "https://openprogram.io/",
-  "codeRepository": "https://github.com/Fzkuji/OpenProgram",
-  "license": "https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE",
+  "url": "https://fuzzykuji.github.io/openprogram-site/",
+  "codeRepository": "https://github.com/FuzzyKuji/OpenProgram",
+  "license": "https://github.com/FuzzyKuji/OpenProgram/blob/main/LICENSE",
   "programmingLanguage": "Python",
   "runtimePlatform": "Python 3.11 or later",
   "sameAs": [
-    "https://github.com/Fzkuji/OpenProgram",
+    "https://github.com/FuzzyKuji/OpenProgram",
     "https://arxiv.org/abs/2606.15874",
     "https://arxiv.org/abs/2608.03270"
   ]
@@ -51,300 +54,303 @@
 <style>
 @font-face{
   font-family:Inter;
-  src:url("/docs/assets/fonts/inter-latin-wght-normal.woff2") format("woff2");
+  src:url("docs/assets/fonts/inter-latin-wght-normal.woff2") format("woff2");
   font-style:normal;
   font-weight:100 900;
   font-display:swap;
 }
+/* Indigo and violet palettes from the logo (docs/images/logo.svg).
+   Dark is the base; theme.js sets data-theme from the saved choice or the system. */
 :root{
-  --bg:#07080a;
-  --surface:#0d1014;
-  --surface-2:#11151b;
-  --border:#20262f;
-  --border-hi:#343d49;
-  --text:#f0f2f5;
-  --muted:#9ca6b5;
-  --faint:#748194;
-  --teal:#5eead4;
-  --teal-strong:#2dd4bf;
-  --teal-ink:#05231e;
-  --violet:#a78bfa;
-  --green:#9be28f;
-  --shadow:0 24px 80px rgba(0,0,0,.38);
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --bg:#0e0f17;
+  --surface:#141622;
+  --card:#1a1c2b;
+  --border:rgba(196,200,240,.13);
+  --border-soft:rgba(196,200,240,.07);
+  --strong:#eef0fa;
+  --text:#c3c7da;
+  --muted:#9ea3bb;
+  --faint:#9196b0;
+  --accent:#8b93ff;
+  --accent-2:#b197fc;
+  --accent-ink:#0e0f17;
+  --accent-soft:rgba(129,140,248,.16);
+  --code-bg:#121420;
+  --shot-shadow:0 30px 90px rgba(0,0,0,.5),0 0 0 1px rgba(196,200,240,.09);
+  --mono:"JetBrains Mono","SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  --kw:#c4a7ff;--fn:#7cc4fa;--str:#9fd8a8;--cm:#7d829c;
+  color-scheme:dark;
 }
+html[data-theme="light"]{
+  --bg:#f8f9fc;
+  --surface:#f1f3f9;
+  --card:#ffffff;
+  --border:rgba(24,28,60,.11);
+  --border-soft:rgba(24,28,60,.06);
+  --strong:#13152b;
+  --text:#33374f;
+  --muted:#545a73;
+  --faint:#60667f;
+  --accent:#4f46e5;
+  --accent-2:#7c3aed;
+  --accent-ink:#ffffff;
+  --accent-soft:rgba(79,70,229,.09);
+  --code-bg:#f3f4fb;
+  --shot-shadow:0 24px 70px rgba(30,35,90,.14),0 0 0 1px rgba(24,28,60,.09);
+  --kw:#7c3aed;--fn:#1d5fc4;--str:#2f7a45;--cm:#6b7088;
+  color-scheme:light;
+}
+html[data-theme="light"] .when-dark,html:not([data-theme="light"]) .when-light{display:none!important}
+
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth;background:var(--bg)}
 body{
-  background:var(--bg);
-  color:var(--text);
+  background:var(--bg);color:var(--text);
   font:16px/1.65 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  -webkit-font-smoothing:antialiased;
-  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
 }
 a{color:inherit;text-decoration:none}
-button{font:inherit}
+button{font:inherit;color:inherit}
 code,pre{font-family:var(--mono)}
-img{display:block;max-width:100%}
-.wrap{width:min(1160px,calc(100% - 48px));margin:0 auto}
-.skip{
-  position:absolute;left:16px;top:-60px;z-index:100;
-  background:var(--teal);color:var(--teal-ink);padding:9px 14px;border-radius:7px;
-}
+img{display:block;max-width:100%;height:auto}
+.wrap{width:min(1180px,calc(100% - 48px));margin:0 auto}
+.skip{position:absolute;left:16px;top:-60px;z-index:100;background:var(--accent);color:var(--accent-ink);padding:9px 14px;border-radius:8px}
 .skip:focus{top:12px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.reveal{opacity:1;transform:none}
 
-nav{
-  position:sticky;top:0;z-index:50;
-  border-bottom:1px solid rgba(32,38,47,.82);
-  background:rgba(7,8,10,.82);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-}
-.navin{min-height:64px;display:flex;align-items:center;gap:28px}
-.brand{display:block;width:190px;line-height:0}
-.brand img{width:100%;height:auto}
-.navlinks{display:flex;align-items:center;gap:26px;margin-left:auto;color:var(--muted);font-size:14px}
-.navlinks a:hover{color:var(--text)}
-.nav-install{
-  border:1px solid rgba(94,234,212,.45);border-radius:7px;
-  padding:7px 13px;color:var(--teal)!important;background:rgba(94,234,212,.06);
-}
+/* nav */
+nav{position:sticky;top:0;z-index:50;border-bottom:1px solid var(--border-soft);background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.navin{min-height:64px;display:flex;align-items:center;gap:24px}
+.brand{display:block;width:172px;line-height:0}
+.navlinks{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:14px}
+.navlinks a{padding:7px 11px;border-radius:8px;color:var(--muted)}
+.navlinks a:hover{color:var(--strong);background:var(--border-soft)}
+.navlinks .nav-install{margin-left:6px;background:var(--accent);color:var(--accent-ink);font-weight:650}
+.navlinks .nav-install:hover{background:var(--accent);color:var(--accent-ink);filter:brightness(1.06)}
+.theme-wrap{position:relative}
+#theme-toggle{width:36px;height:36px;border-radius:9px;border:1px solid var(--border);background:none;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+#theme-toggle:hover{color:var(--strong);background:var(--border-soft)}
+#theme-toggle svg{display:none}
+html[data-theme-mode="system"] #theme-toggle .ic-system,
+html[data-theme-mode="light"] #theme-toggle .ic-sun,
+html[data-theme-mode="dark"] #theme-toggle .ic-moon{display:block}
+html:not([data-theme-mode]) #theme-toggle .ic-system{display:block}
+.theme-menu{position:absolute;top:calc(100% + 8px);right:0;min-width:168px;background:var(--card);border:1px solid var(--border);border-radius:11px;box-shadow:0 12px 32px rgba(0,0,0,.22);padding:5px;display:none;z-index:60}
+.theme-wrap.open .theme-menu{display:block}
+.theme-opt{display:flex;width:100%;align-items:center;justify-content:space-between;gap:18px;padding:7px 10px;border:0;background:none;cursor:pointer;color:var(--text);font:600 13.5px Inter,sans-serif;border-radius:7px;text-align:left}
+.theme-opt:hover{background:var(--border-soft)}
+.theme-opt .check{visibility:hidden;color:var(--accent);flex:none}
+.theme-opt.active{color:var(--accent)}
+.theme-opt.active .check{visibility:visible}
 
-.hero{position:relative;padding:104px 0 82px;overflow:hidden}
-.hero::before{
-  content:"";position:absolute;inset:-30% -15% auto;height:110%;pointer-events:none;
-  background:
-    radial-gradient(640px 420px at 74% 21%,rgba(94,234,212,.10),transparent 70%),
-    radial-gradient(560px 380px at 18% 12%,rgba(167,139,250,.08),transparent 72%);
-  animation:drift 15s ease-in-out infinite alternate;
-}
-@keyframes drift{from{transform:translateX(-1.5%)}to{transform:translateX(1.5%)}}
-.hero-grid{position:relative;display:grid;grid-template-columns:.92fr 1.08fr;gap:62px;align-items:center}
-.hero-grid>*{min-width:0}
-.eyebrow{
-  display:inline-flex;align-items:center;gap:9px;margin-bottom:24px;
-  border:1px solid var(--border-hi);border-radius:999px;background:rgba(13,16,20,.78);
-  padding:5px 13px;color:var(--teal);font:700 12px/1.4 var(--mono);
-  letter-spacing:.055em;text-transform:uppercase;
-}
-.eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 14px var(--teal)}
-h1{max-width:720px;font-size:clamp(42px,5.2vw,68px);line-height:1.02;letter-spacing:-.052em;font-weight:780}
-.gradient{
-  background:linear-gradient(100deg,var(--teal) 8%,#79dbe8 48%,var(--violet));
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-}
-.program-word{color:#fbbf24;-webkit-text-fill-color:#fbbf24}
-.hero-copy{max-width:650px;margin:24px 0 30px;color:var(--muted);font-size:18px;line-height:1.7}
-.actions{display:flex;align-items:center;gap:13px;flex-wrap:wrap}
-.btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:8px;
-  min-height:44px;padding:10px 19px;border:1px solid transparent;border-radius:8px;
-  font-size:14px;font-weight:680;transition:transform .15s,border-color .15s,background .15s;
-}
+/* type */
+h1,h2,h3{color:var(--strong);font-weight:720}
+h1{font-size:clamp(44px,6.4vw,80px);line-height:1.02;letter-spacing:-.045em}
+h2{font-size:clamp(30px,3.8vw,46px);line-height:1.08;letter-spacing:-.035em}
+h3{letter-spacing:-.02em}
+.program-word{color:var(--accent);background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.kicker{display:inline-block;margin-bottom:14px;color:var(--accent);font:650 12.5px/1.4 Inter,sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.lead{color:var(--muted);font-size:18px;line-height:1.65;max-width:620px}
+.section-head{max-width:760px;margin-bottom:48px}
+.section-head .lead{margin-top:16px}
+.section-head.center{margin-left:auto;margin-right:auto;text-align:center}
+.section-head.center .lead{margin-left:auto;margin-right:auto}
+section{padding:112px 0;scroll-margin-top:64px}
+.band{background:var(--surface);border-top:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft)}
+.link{color:var(--accent);font-size:14px;font-weight:600}
+.link:hover{text-decoration:underline;text-underline-offset:3px}
+
+/* buttons and commands */
+.actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:11px 20px;border-radius:10px;border:1px solid transparent;font-size:15px;font-weight:650;transition:transform .15s,background .15s,border-color .15s}
 .btn:hover{transform:translateY(-1px)}
-.btn-primary{background:var(--teal);color:var(--teal-ink)}
-.btn-secondary{border-color:var(--border-hi);color:var(--muted);background:rgba(13,16,20,.58)}
-.btn-secondary:hover{border-color:var(--teal-strong);color:var(--text)}
-.install-mini{
-  display:flex;align-items:flex-start;gap:10px;width:min(100%,560px);margin-top:24px;
-  border:1px solid var(--border);border-radius:9px;background:var(--surface);
-  padding:11px 13px;color:var(--muted);font:12px/1.55 var(--mono);text-align:left;
-  cursor:pointer;transition:border-color .15s;
-}
-.install-mini:hover{border-color:var(--border-hi)}
-.install-mini .prompt{color:var(--teal);user-select:none}
-.install-mini .command{overflow-wrap:anywhere}
-.install-mini .copy{margin-left:auto;color:var(--faint);white-space:nowrap}
-.install-mini.copied .copy{color:var(--teal)}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-secondary{border-color:var(--border);color:var(--strong);background:var(--card)}
+.btn-secondary:hover{border-color:var(--accent)}
+.command-card{display:block;width:100%;text-align:left;cursor:pointer;border:1px solid var(--border);border-radius:12px;background:var(--card);overflow:hidden;transition:border-color .15s}
+.command-card:hover{border-color:var(--accent)}
+.command-head{display:flex;justify-content:space-between;gap:12px;padding:10px 15px;border-bottom:1px solid var(--border-soft);color:var(--faint);font-size:12.5px;font-weight:600}
+.command-body{display:block;padding:15px 16px;color:var(--strong);font:13px/1.6 var(--mono);white-space:nowrap;overflow-x:auto;overflow-wrap:normal}
+.prompt{color:var(--accent);user-select:none}
+.copy{color:var(--faint);font-weight:600}
+.copied .copy{color:var(--accent)}
+.install-pill{display:inline-flex;align-items:center;gap:14px;max-width:100%;margin-top:26px;padding:10px 12px 10px 16px;border:1px solid var(--border);border-radius:999px;background:var(--card);cursor:pointer;font:13px/1.5 var(--mono);color:var(--strong);transition:border-color .15s}
+.install-pill:hover{border-color:var(--accent)}
+.install-pill .command{white-space:nowrap;overflow-x:auto}
+.install-pill .copy{font:600 12px Inter,sans-serif;padding:3px 10px;border-radius:999px;background:var(--border-soft)}
 
-.terminal,.hero-product{
-  border:1px solid var(--border);border-radius:13px;background:var(--surface-2);
-  box-shadow:var(--shadow),0 0 88px rgba(94,234,212,.045);overflow:hidden;
-}
-.hero-product img{width:100%;height:clamp(250px,32vw,360px);object-fit:cover;object-position:center top}
-.hero-product figcaption{padding:13px 15px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
-.terminal-bar{display:flex;align-items:center;gap:7px;padding:12px 15px;border-bottom:1px solid var(--border);background:var(--surface)}
-.dot{width:10px;height:10px;border-radius:50%;background:#303846}
-.terminal-title{margin-left:auto;color:var(--faint);font:11px/1 var(--mono)}
-pre{padding:21px 22px;overflow-x:auto;color:#c8d0dc;font-size:12.5px;line-height:1.72}
-.kw{color:#c792ea}.dec{color:var(--violet)}.fn{color:#82aaff}.str{color:#c3e88d}
-.doc,.cm{color:#748094;font-style:italic}.op{color:#89ddff}
-.agent-call{color:var(--teal);font-weight:700;background:rgba(94,234,212,.12);border-radius:4px;padding:1px 4px;box-shadow:inset 0 0 0 1px rgba(94,234,212,.24)}
+/* hero */
+.hero{position:relative;padding:96px 0 0;text-align:center;overflow:hidden}
+.hero::before{content:"";position:absolute;left:50%;top:-180px;width:1100px;height:700px;transform:translateX(-50%);pointer-events:none;background:radial-gradient(closest-side,var(--accent-soft),transparent 72%)}
+.hero .wrap{position:relative}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;margin-bottom:26px;padding:6px 14px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--muted);font-size:13.5px;font-weight:600}
+.eyebrow::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.hero h1{max-width:900px;margin:0 auto}
+.hero-copy{max-width:680px;margin:24px auto 32px;color:var(--muted);font-size:19px;line-height:1.65}
+.hero-shot{margin:64px auto 0;max-width:1120px}
+.window{border-radius:14px;overflow:hidden;background:var(--surface);box-shadow:var(--shot-shadow)}
+.window img{width:100%}
+.hero-shot figcaption{margin-top:16px;color:var(--faint);font-size:14px}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);margin-top:72px;border-top:1px solid var(--border-soft);text-align:left}
+.fact{padding:24px 22px;border-right:1px solid var(--border-soft)}
+.fact:last-child{border-right:0}
+.fact-label{display:block;color:var(--faint);font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.fact-value{display:block;margin-top:6px;color:var(--strong);font-size:15px;font-weight:600}
 
-.proof{border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface)}
-.proof-grid{display:grid;grid-template-columns:repeat(4,1fr)}
-.proof-item{padding:23px 22px;border-right:1px solid var(--border)}
-.proof-item:last-child{border-right:0}
-.proof-label{display:block;color:var(--faint);font:11px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase}
-.proof-value{display:block;margin-top:7px;font-size:14px;color:#d8dde5}
+/* how it works */
+.how{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:start}
+.code-card{border:1px solid var(--border);border-radius:14px;background:var(--code-bg);overflow:hidden}
+.code-title{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border-soft);color:var(--faint);font:12.5px var(--mono)}
+.code-title i{width:10px;height:10px;border-radius:50%;background:var(--border)}
+.code-title span{margin-left:8px}
+pre{padding:22px 22px 24px;overflow-x:auto;color:var(--text);font-size:13.5px;line-height:1.75}
+.kw{color:var(--kw)}.fn{color:var(--fn)}.str{color:var(--str)}.cm{color:var(--cm);font-style:italic}
+.call{color:var(--accent);font-weight:700}
+.code-note{padding:14px 18px;border-top:1px solid var(--border-soft);color:var(--muted);font-size:14px}
+.code-note code{color:var(--accent)}
+.points{list-style:none;display:grid;gap:8px}
+.point{display:grid;grid-template-columns:40px 1fr;gap:14px;padding:18px 18px 18px 14px;border-radius:12px;transition:background .2s}
+.point:hover{background:var(--surface)}
+.point-num{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:14px}
+.point h3{font-size:18px;margin-bottom:5px}
+.point p{color:var(--muted);font-size:15px}
+.point a{display:inline-block;margin-top:8px}
 
-section{padding:94px 0;scroll-margin-top:62px}
-.section-head{display:grid;grid-template-columns:.72fr 1.28fr;gap:56px;align-items:end;margin-bottom:44px}
-.kicker{color:var(--teal);font:700 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px}
-h2{font-size:clamp(30px,3.6vw,46px);line-height:1.09;letter-spacing:-.04em;font-weight:750}
-.lead{color:var(--muted);font-size:17px;max-width:640px}
+/* showcase */
+.tabs{display:inline-flex;gap:4px;padding:4px;margin-bottom:28px;border:1px solid var(--border);border-radius:12px;background:var(--card)}
+.tab{border:0;background:none;padding:9px 16px;border-radius:9px;cursor:pointer;color:var(--muted);font-size:14.5px;font-weight:600}
+.tab:hover{color:var(--strong)}
+.tab[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.showcase{text-align:center}
+.panel{max-width:1120px;margin:0 auto}
+.panel[hidden]{display:none}
+.panel figcaption{margin-top:18px;color:var(--muted);font-size:15px}
+.surface-list{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:40px}
+.surface-list a{padding:7px 14px;border:1px solid var(--border);border-radius:999px;color:var(--muted);font-size:13.5px;font-weight:600}
+.surface-list a:hover{color:var(--strong);border-color:var(--accent)}
 
-.use-showcase{display:grid;gap:18px}
-.use-featured{
-  display:grid;grid-template-columns:.4fr 1.2fr;gap:36px;align-items:center;
-  padding:32px 34px;border:1px solid var(--border);border-radius:13px;background:var(--surface);
-}
-.use-stat{min-width:0;padding:22px 24px;border:1px solid var(--border);border-radius:11px;background:var(--bg)}
-.use-stat .use-tag{margin-bottom:14px}
-.use-stat-num{display:block;font-size:clamp(64px,8.4vw,92px);line-height:.92;letter-spacing:-.06em;font-weight:780;color:var(--teal)}
-.use-stat-label{display:block;margin-top:10px;color:var(--muted);font-size:14px}
-.use-stat-link{display:inline-block;margin-top:12px;color:var(--teal);font-size:13px}
-.use-featured h3{font-size:28px;letter-spacing:-.03em;margin-bottom:14px}
-.use-results{margin:0;padding:0;list-style:none;color:var(--muted);font-size:14.5px}
-.use-results li{position:relative;padding:7px 0 7px 16px}
-.use-results li::before{content:"";position:absolute;left:0;top:15px;width:6px;height:6px;border-radius:50%;background:var(--teal)}
-.use-featured-links{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:22px}
-.use-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-.use-card{
-  display:flex;flex-direction:column;min-height:270px;padding:27px;
-  border:1px solid var(--border);border-radius:13px;background:var(--surface);
-  transition:border-color .2s,transform .2s;
-}
-.use-card:hover{border-color:var(--border-hi);transform:translateY(-2px)}
-.use-tag{color:var(--teal);font:12px/1.4 var(--mono);margin-bottom:28px}
-.use-card h3{font-size:24px;letter-spacing:-.03em;margin-bottom:12px}
-.use-card p{color:var(--muted);font-size:14.5px;max-width:540px}
-.use-link{color:var(--teal);font-size:13px}
-.use-card > .use-link,.use-links{margin-top:auto;padding-top:26px}
-.use-links{display:flex;flex-wrap:wrap;align-items:center;gap:16px}
-.use-source{color:var(--faint);font-size:13px}
-.use-source:hover{color:var(--text)}
-.use-card pre{margin-top:18px;padding:16px;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:11px}
+/* agents */
+.agents{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+/* Grid items default to min-width:auto, so a long command would widen the track. */
+.agents>*,.agent-featured>*,.how>*,.install>*{min-width:0}
+.agent{display:flex;flex-direction:column;padding:30px;border:1px solid var(--border);border-radius:16px;background:var(--card)}
+.agent-featured{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:44px;align-items:start}
+.tag{display:block;margin-bottom:12px;color:var(--faint);font-size:13px;font-weight:600}
+.agent h3{font-size:24px;margin-bottom:10px}
+.agent p,.agent li{color:var(--muted);font-size:15px}
+.agent ul{list-style:none;display:grid;gap:8px;margin-top:4px}
+.agent li{position:relative;padding-left:18px}
+.agent li::before{content:"";position:absolute;left:0;top:.68em;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.agent-links{display:flex;flex-wrap:wrap;gap:18px;margin-top:auto;padding-top:22px}
+.agent-featured .agent-links{margin-top:0}
+.source{color:var(--faint);font-size:14px;font-weight:600}
+.source:hover{color:var(--strong)}
+.agent .command-card{margin-top:18px}
+.agent-span{grid-column:1/-1}
 
-.quick-start{background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
-.quick-panel{display:grid;grid-template-columns:.78fr 1.22fr;gap:48px;align-items:center}
-.quick-copy p{margin-top:15px;color:var(--muted);max-width:500px}
-.quick-copy a{display:inline-block;margin-top:20px;color:var(--teal);font-size:13px}
-.command-stack{display:grid;gap:12px}
-.command-card{width:100%;text-align:left;cursor:pointer;transition:border-color .15s}
-.command-card:hover{border-color:var(--border-hi)}
-.command-card.copied .copy{color:var(--teal)}
+/* capabilities */
+.cap-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;border:1px solid var(--border-soft);border-radius:16px;overflow:hidden;background:var(--border-soft)}
+.capability{display:block;padding:26px 24px;background:var(--bg);transition:background .2s}
+.capability:hover{background:var(--card)}
+.capability svg{color:var(--accent);margin-bottom:16px}
+.capability h3{font-size:16.5px;margin-bottom:6px}
+.capability p{color:var(--muted);font-size:14px}
+.capability code{color:var(--strong);font-size:.92em}
 
-.capabilities{background:linear-gradient(180deg,var(--bg),var(--surface))}
-.capability-grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);border-radius:13px;overflow:hidden;background:var(--surface)}
-.capability{padding:25px 23px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:190px}
-.capability:nth-child(4n){border-right:0}.capability:nth-last-child(-n+4){border-bottom:0}
-.capability code{display:block;color:var(--teal);font-size:11px;margin-bottom:18px}
-.capability h3{font-size:17px;margin-bottom:9px}
-.capability p{color:var(--muted);font-size:13.5px}
+/* install */
+.install{display:grid;grid-template-columns:.85fr 1.15fr;gap:56px;align-items:start}
+.install-copy p{margin-top:16px;color:var(--muted)}
+.install-copy code{color:var(--strong);font-size:.92em}
+.install-copy p a{color:var(--accent)}
+.install-copy .link{display:inline-block;margin-top:22px}
+.steps{list-style:none;display:grid;gap:14px;counter-reset:step}
+.step{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+.step-num{width:30px;height:30px;margin-top:9px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:700}
+.step-body{display:grid;gap:10px;min-width:0}
 
-.mechanisms{background:linear-gradient(180deg,var(--surface),var(--bg));border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
-.mechanism-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-.mechanism{
-  display:flex;flex-direction:column;min-height:300px;padding:27px;
-  border:1px solid var(--border);border-radius:13px;background:rgba(17,21,27,.86);
-  transition:border-color .2s,transform .2s;
-}
-.mechanism:hover{border-color:var(--border-hi);transform:translateY(-2px)}
-.mechanism-tag{color:var(--teal);font:12px/1.4 var(--mono);margin-bottom:28px}
-.mechanism h3{font-size:21px;letter-spacing:-.025em;margin-bottom:12px}
-.mechanism p{color:var(--muted);font-size:14.5px}
-.mechanism a{margin-top:auto;padding-top:24px;color:var(--teal);font-size:13px}
-.mechanism .note{display:block;margin-top:12px;color:var(--faint);font-size:12px;border-left:2px solid var(--border-hi);padding-left:11px}
-
-.interface-grid{display:grid;grid-template-columns:1.3fr .7fr;gap:20px}
-.shot{
-  position:relative;border:1px solid var(--border);border-radius:14px;background:var(--surface);
-  overflow:hidden;box-shadow:0 18px 54px rgba(0,0,0,.24);
-}
-.shot-main{grid-row:span 2}
-.shot img{width:100%;height:100%;object-fit:cover;object-position:top left}
-.shot-caption{
-  position:absolute;left:14px;bottom:14px;max-width:calc(100% - 28px);
-  padding:9px 12px;border:1px solid rgba(52,61,73,.92);border-radius:8px;
-  background:rgba(7,8,10,.86);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
-}
-.shot-caption strong{display:block;font-size:13px}
-.shot-caption span{display:block;color:var(--muted);font-size:11px;margin-top:2px}
-.surface-list{display:flex;flex-wrap:wrap;gap:9px;margin-top:25px}
-.surface-list span{border:1px solid var(--border);border-radius:999px;padding:6px 11px;color:var(--muted);font-size:12px}
-
-.papers{border-top:1px solid var(--border);background:var(--surface)}
+/* papers */
 .paper-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
-.paper{
-  display:flex;flex-direction:column;min-height:210px;padding:27px;
-  border:1px solid var(--border);border-radius:13px;background:var(--bg);
-  transition:border-color .2s,transform .2s;
-}
-.paper:hover{border-color:var(--border-hi);transform:translateY(-2px)}
-.paper-id{color:var(--teal);font:12px/1.4 var(--mono);margin-bottom:24px}
-.paper h3{font-size:21px;line-height:1.35;letter-spacing:-.025em}
-.paper-link-label{margin-top:auto;padding-top:24px;color:var(--teal);font-size:13px}
+.paper{display:flex;flex-direction:column;padding:28px;border:1px solid var(--border);border-radius:16px;background:var(--card);transition:border-color .2s,transform .2s}
+.paper:hover{border-color:var(--accent);transform:translateY(-2px)}
+.paper-id{color:var(--faint);font:13px var(--mono);margin-bottom:14px}
+.paper h3{font-size:20px;line-height:1.35}
+.paper p{margin-top:10px;color:var(--muted);font-size:15px}
+.paper .link{margin-top:auto;padding-top:22px}
 
-.start{border-top:1px solid var(--border);background:var(--surface)}
-.start-panel{
-  display:grid;grid-template-columns:.8fr 1.2fr;gap:50px;align-items:center;
-  padding:42px;border:1px solid var(--border);border-radius:15px;background:var(--bg);
-  box-shadow:var(--shadow);
-}
-.start-panel h2{font-size:clamp(29px,3.2vw,42px)}
-.start-panel p{color:var(--muted);margin-top:14px}
-.command-card{border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface-2)}
-.command-head{display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);color:var(--faint);font:11px/1.4 var(--mono)}
-.command-body{display:block;padding:18px 19px;color:#d8dee9;font:11px/1.65 var(--mono);white-space:nowrap;overflow-x:auto;overflow-wrap:normal}
-.command-body .prompt{color:var(--teal);user-select:none}
-.start-actions{margin-top:20px}
+/* closing */
+.cta{text-align:center}
+.cta h2{max-width:760px;margin:0 auto}
+.cta .lead{margin:18px auto 32px}
 
-footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font-size:13px}
+footer{border-top:1px solid var(--border-soft);padding:36px 0;color:var(--faint);font-size:14px}
 .footer-in{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap}
 .footer-links{display:flex;gap:22px;flex-wrap:wrap}
-.footer-links a:hover{color:var(--text)}
+.footer-links a:hover{color:var(--strong)}
 
-.reveal{opacity:1;transform:none}
-:focus-visible{outline:2px solid var(--teal);outline-offset:3px}
-
-@media(max-width:920px){
-  .hero-grid,.section-head,.start-panel,.quick-panel{grid-template-columns:1fr}
-  .hero-grid{gap:42px}.hero{padding-top:74px}
-  .proof-grid{grid-template-columns:repeat(2,1fr)}
-  .proof-item:nth-child(2){border-right:0}.proof-item:nth-child(-n+2){border-bottom:1px solid var(--border)}
-  .use-featured{grid-template-columns:1fr;gap:22px}
-  .use-grid{grid-template-columns:1fr}
-  .capability-grid{grid-template-columns:repeat(2,1fr)}
-  .capability:nth-child(odd){border-right:1px solid var(--border)}.capability:nth-child(even){border-right:0}
-  .capability:nth-last-child(-n+4){border-bottom:1px solid var(--border)}.capability:nth-last-child(-n+2){border-bottom:0}
-  .mechanism-grid{grid-template-columns:1fr}
-  .mechanism{min-height:240px}
+@media(max-width:960px){
+  .how,.install{grid-template-columns:1fr;gap:40px}
+  .agents{grid-template-columns:1fr}
+  .agent-featured{grid-template-columns:1fr;gap:20px}
+  .agent-span{grid-column:auto}
+  .cap-grid{grid-template-columns:repeat(2,1fr)}
+  .facts{grid-template-columns:repeat(2,1fr)}
+  .fact:nth-child(2){border-right:0}
+  .fact:nth-child(-n+2){border-bottom:1px solid var(--border-soft)}
   .paper-grid{grid-template-columns:1fr}
 }
 @media(max-width:680px){
-  .wrap{width:min(100% - 30px,1160px)}
-  .navin{gap:12px}
-  .navlinks{gap:14px}.navlinks a[href="#capabilities"],.navlinks .paper-link,.navlinks a[href="https://github.com/Fzkuji/OpenProgram"]{display:none}.nav-install{padding:5px 9px}
-  .hero{padding:62px 0 58px}.hero-grid{gap:34px}
-  h1{font-size:46px}.gradient{display:block}.hero-copy{font-size:16px}
-  pre{font-size:11px;padding:17px 16px}
-  section{padding:68px 0}.section-head{gap:18px;margin-bottom:30px}
-  .proof-grid,.capability-grid{grid-template-columns:1fr}
-  .proof-item,.proof-item:nth-child(2),.capability,.capability:nth-child(odd),.capability:nth-child(even),.capability:nth-last-child(-n+2){border-right:0;border-bottom:1px solid var(--border)}
-  .proof-item:last-child,.capability:last-child{border-bottom:0}
-  .interface-grid{grid-template-columns:1fr}.shot-main{grid-row:auto}.shot{min-height:230px}
-  .start-panel{padding:27px 22px;gap:28px}.btn{width:100%}.actions{align-items:stretch}
+  .wrap{width:calc(100% - 32px)}
+  .navin{gap:10px}
+  .brand{width:140px}
+  .navlinks a:not(.nav-install){display:none}
+  section{padding:76px 0}
+  .hero{padding-top:64px}
+  .hero-copy{font-size:17px}
+  .lead{font-size:16.5px}
+  .btn{width:100%}
+  .install-pill{width:100%;justify-content:space-between}
+  .facts,.cap-grid{grid-template-columns:1fr}
+  .fact{border-right:0;border-bottom:1px solid var(--border-soft)}
+  .fact:last-child{border-bottom:0}
+  .tabs{display:flex;width:100%}
+  .tab{flex:1;padding:9px 6px;font-size:13.5px}
+  .agent{padding:24px}
+  pre{font-size:12px;padding:18px 16px}
 }
 @media(prefers-reduced-motion:reduce){
-  html{scroll-behavior:auto}.hero::before{animation:none}
-  .btn,.mechanism,.use-card{transition:none}
+  html{scroll-behavior:auto}
+  .btn,.paper,.point,.capability{transition:none}
 }
 </style>
+<link rel="describedby" href="https://fuzzykuji.github.io/openprogram-site/llms.txt">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
 <nav aria-label="Primary navigation">
   <div class="wrap navin">
-    <a class="brand" href="/" aria-label="OpenProgram home">
-      <img src="/docs/images/logo-lockup-dark.svg" alt="OpenProgram" width="776" height="174">
+    <a class="brand" href="./" aria-label="OpenProgram home">
+      <img class="when-dark" src="docs/images/logo-lockup-dark.svg" alt="OpenProgram" width="776" height="174">
+      <img class="when-light" src="docs/images/logo-lockup-light.svg" alt="OpenProgram" width="776" height="174">
     </a>
     <div class="navlinks">
+      <a href="#mechanisms">How it works</a>
       <a href="#use-cases">Agents</a>
-      <a href="#capabilities">Framework</a>
-      <a href="/docs/">Docs</a>
-      <a class="paper-link" href="#papers">Papers</a>
-      <a href="https://github.com/Fzkuji/OpenProgram">GitHub</a>
+      <a href="docs/">Docs</a>
+      <a href="https://github.com/FuzzyKuji/OpenProgram">GitHub</a>
+      <div class="theme-wrap">
+        <button type="button" id="theme-toggle" aria-label="Theme" aria-haspopup="menu" aria-controls="theme-menu" aria-expanded="false">
+          <svg class="ic-system" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M8 11.5V14M5.5 14h5"/></svg>
+          <svg class="ic-moon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.5A6 6 0 1 1 6.5 2.5a5 5 0 0 0 7 7z"/></svg>
+          <svg class="ic-sun" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3"/></svg>
+        </button>
+        <div class="theme-menu" id="theme-menu" role="menu" aria-labelledby="theme-toggle">
+          <button type="button" class="theme-opt" data-theme-choice="system" role="menuitemradio" aria-checked="true"><span>Follow system</span><svg class="check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 5"/></svg></button>
+          <button type="button" class="theme-opt" data-theme-choice="light" role="menuitemradio" aria-checked="false"><span>Light</span><svg class="check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 5"/></svg></button>
+          <button type="button" class="theme-opt" data-theme-choice="dark" role="menuitemradio" aria-checked="false"><span>Dark</span><svg class="check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 5"/></svg></button>
+        </div>
+      </div>
       <a class="nav-install" href="#quick-start">Install</a>
     </div>
   </div>
@@ -352,242 +358,278 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
 
 <main id="main">
   <header class="hero">
-    <div class="wrap hero-grid">
-      <div>
-        <span class="eyebrow">Self-programming AI agent framework</span>
-        <h1>Build agents that<br><span class="gradient"><span class="program-word">program</span> their own workflows.</span></h1>
-        <p class="hero-copy">OpenProgram lets agents create, run, and refine agentic functions while its runtime manages models, tools, memory, context, and multi-agent collaboration.</p>
-        <div class="actions">
-          <a class="btn btn-primary" href="#quick-start">Install OpenProgram</a>
-          <a class="btn btn-secondary" href="/docs/">Explore documentation</a>
-        </div>
+    <div class="wrap">
+      <span class="eyebrow">Self-programming AI agent framework</span>
+      <h1>Build agents that <span class="program-word">program</span> their own workflows.</h1>
+      <p class="hero-copy">OpenProgram agents are Python classes that can write new methods into their own code. Python owns the control flow and checks, and the model is called only where judgment is needed. Run them in one workspace with chat, files, a terminal, and a browser side by side.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="#quick-start">Install OpenProgram</a>
+        <a class="btn btn-secondary" href="docs/">Read the docs</a>
       </div>
+      <button class="install-pill" type="button" data-copy="curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh">
+        <span class="command"><span class="prompt">$ </span>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</span>
+        <span class="copy">copy</span>
+      </button>
 
-      <figure class="hero-product">
-        <div class="terminal-bar">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="terminal-title">OpenProgram Web UI</span>
+      <figure class="hero-shot">
+        <div class="window">
+          <picture class="when-dark">
+            <source srcset="docs/images/chat_hero-home.avif" type="image/avif" width="1600" height="1000">
+            <img src="docs/images/chat_hero.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890" fetchpriority="high">
+          </picture>
+          <picture class="when-light">
+            <source srcset="docs/images/chat_hero-home-light.avif" type="image/avif" width="1600" height="1000">
+            <img src="docs/images/chat_hero_light.png" alt="OpenProgram workspace showing an agent session that ran two sub-agents" width="3024" height="1890">
+          </picture>
         </div>
-        <picture>
-          <source srcset="/docs/images/chat_hero-home.avif" type="image/avif" width="800" height="500">
-          <img src="/docs/images/chat_hero.png" alt="OpenProgram Web UI showing an agent session with a conversation summary" width="3024" height="1890" fetchpriority="high">
-        </picture>
-        <figcaption>Run agents, inspect sessions, and review every call from one interface.</figcaption>
+        <figcaption>Hand parts of a task to sub-agents and get back only their results.</figcaption>
       </figure>
+
+      <aside class="facts" aria-label="Project facts">
+        <div class="fact"><span class="fact-label">Runtime</span><span class="fact-value">Python 3.11+</span></div>
+        <div class="fact"><span class="fact-label">Platforms</span><span class="fact-value">macOS · Linux · Windows</span></div>
+        <div class="fact"><span class="fact-label">Interfaces</span><span class="fact-value">Desktop · Web · TUI · CLI · ACP</span></div>
+        <div class="fact"><span class="fact-label">License</span><span class="fact-value">Open source · AGPL-3.0</span></div>
+      </aside>
     </div>
   </header>
 
-  <aside class="proof" aria-label="Project facts">
-    <div class="wrap proof-grid">
-      <div class="proof-item"><span class="proof-label">Runtime</span><span class="proof-value">Python 3.11+</span></div>
-      <div class="proof-item"><span class="proof-label">Platforms</span><span class="proof-value">macOS · Linux</span></div>
-      <div class="proof-item"><span class="proof-label">Interfaces</span><span class="proof-value">Web UI</span></div>
-      <div class="proof-item"><span class="proof-label">License</span><span class="proof-value">Open source · AGPL-3.0</span></div>
-    </div>
-  </aside>
-
-  <section id="use-cases">
+  <section class="band" id="mechanisms">
     <div class="wrap">
       <div class="section-head reveal">
-        <div><p class="kicker">Start where you need</p><h2>Use an agent or build your own.</h2></div>
-        <p class="lead">Start from a shipped agent, or use the same OpenProgram runtime to create one in ordinary Python.</p>
+        <p class="kicker">How it works</p>
+        <h2>Every call recorded. Every decision checked.</h2>
+        <p class="lead">Python runs the program and the model makes the calls. Every call is recorded, every model decision is checked before it runs, and an agent can change its own code between turns.</p>
       </div>
-      <div class="use-showcase reveal">
-        <article class="use-featured">
-          <div class="use-stat">
-            <span class="use-tag">Included in the release</span>
-            <span class="use-stat-num">79.8%</span>
-            <span class="use-stat-label">OSWorld Multi-Apps</span>
-            <a class="use-stat-link" href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/benchmarks/osworld/multi_apps.md">See the results →</a>
-          </div>
-          <div>
-            <h3>GUI Agent</h3>
-            <ul class="use-results">
-              <li>Give it a natural-language task. It screenshots, clicks, types, and checks the result until the work is done.</li>
-              <li>Same loop on the local desktop or a remote VM.</li>
-              <li>Ships in every supported release.</li>
-            </ul>
-            <div class="use-featured-links">
-              <a class="use-link" href="/docs/capabilities/workflows/gui-agent.html">Read the GUI Agent docs →</a>
-              <a class="use-source" href="https://github.com/Fzkuji/GUI-Agent-Harness">Source →</a>
-            </div>
-          </div>
-        </article>
-        <div class="use-grid">
-          <article class="use-card">
-            <span class="use-tag">~89 functions · 10 stages</span>
-            <h3>Research Agent</h3>
-            <p>Literature → experiment → paper in one pipeline. Citations are checked against four indexes. Numbers in the paper have to match a run_record.</p>
-            <div class="use-links">
-              <a class="use-link" href="/docs/capabilities/workflows/research-agent.html">Read the Research Agent docs →</a>
-              <a class="use-source" href="https://github.com/Fzkuji/Research-Agent-Harness">Source →</a>
-            </div>
-          </article>
-          <article class="use-card">
-            <span class="use-tag">Template-driven HTML wiki</span>
-            <h3>Wiki Agent</h3>
-            <p>Pour sessions and notes into statically hostable HTML pages. Named slots accumulate; full-text search is built in.</p>
-            <div class="use-links">
-              <a class="use-link" href="/docs/capabilities/workflows/wiki-agent.html">Read the Wiki Agent docs →</a>
-              <a class="use-source" href="https://github.com/Fzkuji/Wiki-Agent-Harness">Source →</a>
-            </div>
-          </article>
-          <a class="use-card" href="/docs/capabilities/installing-harnesses.html">
-            <span class="use-tag">Build your own</span>
-            <h3>Your agent, ordinary Python</h3>
-            <p>Use a decorated function for the task contract and call the model only where the workflow needs judgement.</p>
-<pre><code><span class="dec">@agentic_function</span>
-<span class="kw">def</span> <span class="fn">triage</span>(ticket: <span class="fn">str</span>, runtime=<span class="kw">None</span>):
-    kind = <span class="agent-call">runtime.exec</span>(ticket,
-        choices=[<span class="str">"bug"</span>, <span class="str">"feature"</span>])
-    <span class="kw">return</span> handle(ticket, kind)</code></pre>
-            <span class="use-link">Read the harness guide →</span>
-          </a>
-        </div>
-      </div>
-    </div>
-  </section>
+      <div class="how reveal">
+        <div class="code-card">
+          <div class="code-title"><i></i><i></i><i></i><span>support.py</span></div>
+<pre><code><span class="kw">from</span> openprogram <span class="kw">import</span> Agent
 
-  <section class="quick-start" id="quick-start">
-    <div class="wrap">
-      <div class="quick-panel reveal">
-        <div class="quick-copy">
-          <p class="kicker">Quick Start</p>
-          <h2>Install, then run.</h2>
-          <p>Start the Web UI at http://localhost:18100. The first run guides you through connecting a model provider.</p>
-          <a href="/docs/install/install.html">Platform and developer installation →</a>
+<span class="kw">class</span> <span class="fn">Support</span>(Agent):
+    <span class="kw">def</span> <span class="fn">triage</span>(self, ticket: <span class="fn">str</span>) -> <span class="fn">str</span>:
+        <span class="cm">"""Classify the ticket, then draft a reply."""</span>
+        kind = <span class="call">self</span>(ticket, choices=[<span class="str">"bug"</span>, <span class="str">"question"</span>])
+        <span class="kw">if</span> kind == <span class="str">"bug"</span>:
+            logs = search_logs(ticket)  <span class="cm"># your own helper</span>
+            <span class="kw">return</span> <span class="call">self</span>(<span class="str">f"Reply using:\n{logs}"</span>)
+        <span class="kw">return</span> <span class="call">self</span>(<span class="str">"Draft a short reply."</span>)</code></pre>
+          <p class="code-note">Branches and checks are plain Python. <code>self(...)</code> is a model call, and <code>choices</code> makes the model pick from a fixed menu.</p>
         </div>
-        <div class="command-stack">
-          <button class="command-card" type="button" data-copy="curl -fsSL https://openprogram.io/install | sh">
-            <span class="command-head"><span>1 · Install on macOS / Linux</span><span class="copy">copy</span></span>
-            <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://openprogram.io/install | sh</span>
-          </button>
-          <button class="command-card" type="button" data-copy="irm https://openprogram.io/install.ps1 | iex">
-            <span class="command-head"><span>1 · Install on Windows x86_64</span><span class="copy">copy</span></span>
-            <span class="command-body"><span class="prompt">PS&gt; </span>irm https://openprogram.io/install.ps1 | iex</span>
-          </button>
-          <button class="command-card" type="button" data-copy="openprogram web">
-            <span class="command-head"><span>2 · Start the Web UI</span><span class="copy">copy</span></span>
-            <span class="command-body"><span class="prompt">$ </span>openprogram web</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="capabilities" id="capabilities">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <div><p class="kicker">Included framework</p><h2>Everything you need to run agents.</h2></div>
-        <p class="lead">Use the complete runtime or adopt only the components required by your workflow. Configuration and execution remain available from Python, the Web UI, and the terminal.</p>
-      </div>
-      <div class="capability-grid reveal">
-        <article class="capability"><code>providers</code><h3>Model providers</h3><p>Connect Anthropic, OpenAI, Gemini, and compatible backends with account and model configuration.</p></article>
-        <article class="capability"><code>tools + mcp</code><h3>Tools and MCP</h3><p>Give agents local tools, browser actions, external services, and MCP server capabilities.</p></article>
-        <article class="capability"><code>skills + memory</code><h3>Skills and memory</h3><p>Load reusable instructions and retain task knowledge across longer-running work.</p></article>
-        <article class="capability"><code>multi-agent</code><h3>Agent collaboration</h3><p>Spawn agents, exchange messages, and isolate file-changing work in separate branches.</p></article>
-        <article class="capability"><code>sessions</code><h3>Sessions and branches</h3><p>Keep conversations, calls, context, forks, and execution history inspectable.</p></article>
-        <article class="capability"><code>web · tui · cli</code><h3>Three interfaces</h3><p>Run the same agents from the browser, terminal UI, or headless command line.</p></article>
-        <article class="capability"><code>channels</code><h3>Channel integrations</h3><p>Connect agent workers to supported messaging channels without replacing the runtime.</p></article>
-        <article class="capability"><code>programs</code><h3>Installable harnesses</h3><p>Install, manage, run, and publish Python harnesses through one package contract.</p></article>
+        <ol class="points">
+          <li class="point">
+            <span class="point-num">1</span>
+            <div><h3>A graph, not a transcript</h3><p>User turns, model calls, and function calls are nodes in one graph. Each call reads a selection of earlier nodes, so a sub-agent works on its own branch and hands back only its result.</p><a class="link" href="docs/capabilities/agentic-programming/README.html">Context documentation →</a></div>
+          </li>
+          <li class="point">
+            <span class="point-num">2</span>
+            <div><h3>Agents that program themselves</h3><p>An agent writes and revises the methods of its own class with ordinary file tools. A watcher reloads the change, and the new method is a tool from the next turn.</p><a class="link" href="docs/capabilities/workflows/README.html#self-programming-workflows">Workflows →</a></div>
+          </li>
+          <li class="point">
+            <span class="point-num">3</span>
+            <div><h3>Checked decisions</h3><p>When the model picks a step, code checks the pick before anything runs and sends a bad one back for another try.</p><a class="link" href="docs/capabilities/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decisions →</a></div>
+          </li>
+          <li class="point">
+            <span class="point-num">4</span>
+            <div><h3>Events</h3><p>One process-wide bus carries typed events from the agent loop, context, files, channels, and memory. Plugins can gate a tool call before it runs.</p><a class="link" href="docs/reference/design/proactive/overview.html">Event design →</a></div>
+          </li>
+        </ol>
       </div>
     </div>
   </section>
 
   <section id="interfaces">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <div><p class="kicker">One runtime, several surfaces</p><h2>Use the interface that fits the task.</h2></div>
-        <div>
-          <p class="lead">The Web UI and built-in Browser share sessions, providers, tools, skills, memory, and the same execution DAG.</p>
-          <div class="surface-list" aria-label="Supported runtime capabilities">
-            <span>Web UI</span><span>Browser</span><span>CLI</span><span>Providers</span><span>MCP</span><span>Skills</span><span>Memory</span><span>Channels</span>
-          </div>
+    <div class="wrap showcase">
+      <div class="section-head center reveal">
+        <p class="kicker">One workspace</p>
+        <h2>Use the interface that fits the task.</h2>
+        <p class="lead">The Desktop App and the web UI are one workspace: split chats, files, terminals, and web pages into panes. The terminal UI, CLI, and ACP reach the same sessions, models, and tools.</p>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Workspace views">
+        <button class="tab" type="button" role="tab" id="tab-graph" aria-controls="panel-graph" aria-selected="true">Context graph</button>
+        <button class="tab" type="button" role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="false" tabindex="-1">Chat</button>
+        <button class="tab" type="button" role="tab" id="tab-browser" aria-controls="panel-browser" aria-selected="false" tabindex="-1">Built-in browser</button>
+      </div>
+      <figure class="panel reveal" role="tabpanel" id="panel-graph" aria-labelledby="tab-graph">
+        <div class="window">
+          <img class="when-dark" src="docs/images/code_hero.png" alt="OpenProgram context graph of a session with two user turns and their model calls" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/code_hero_light.png" alt="OpenProgram context graph of a session with two user turns and their model calls" loading="lazy" width="3024" height="1890">
         </div>
-      </div>
-      <div class="interface-grid reveal">
-        <figure class="shot shot-main">
-          <img src="/docs/images/code_hero.png" alt="OpenProgram execution DAG showing the session call graph" loading="lazy" width="3024" height="1890">
-          <figcaption class="shot-caption"><strong>Execution DAG</strong><span>Inspect the call graph.</span></figcaption>
-        </figure>
-        <figure class="shot">
-          <img src="/docs/images/chat_hero.png" alt="OpenProgram Web UI showing a conversation and execution DAG" loading="lazy" width="3024" height="1890">
-          <figcaption class="shot-caption"><strong>Web UI</strong><span>Inspect sessions, branches, calls, and context.</span></figcaption>
-        </figure>
-        <figure class="shot">
-          <img src="/docs/images/tui_hero.png" alt="OpenProgram built-in browser showing the bookmark bar and multiple pages" loading="lazy" width="3024" height="1890">
-          <figcaption class="shot-caption"><strong>Built-in Browser</strong><span>Bookmark bar and multiple pages.</span></figcaption>
-        </figure>
-      </div>
-    </div>
-  </section>
-
-  <section class="mechanisms" id="mechanisms">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <div><p class="kicker">Framework internals</p><h2>Inspectable context, control, and events.</h2></div>
-        <p class="lead">OpenProgram keeps agent execution inside Python while recording model calls, context dependencies, validation, and runtime events.</p>
-      </div>
-      <div class="mechanism-grid">
-        <article class="mechanism reveal">
-          <span class="mechanism-tag">caller + reads</span>
-          <h3>DAG Context</h3>
-          <p>Every user turn, model call, and function call is a node. Dependency edges select the context used by branches, sub-agents, and cross-session messages.</p>
-          <a href="/docs/capabilities/agentic-programming/README.html">Read the context documentation →</a>
-        </article>
-        <article class="mechanism reveal">
-          <span class="mechanism-tag">Python gates</span>
-          <h3>Agentic Workflow</h3>
-          <p>Python fixes required execution order, validates model decisions, retries failed checks, and combines agentic functions with ordinary tools.</p>
-          <a href="/docs/start/features.html">Explore runtime features →</a>
-        </article>
-        <article class="mechanism reveal">
-          <span class="mechanism-tag">Event(type, payload, ts)</span>
-          <h3>Event Infrastructure</h3>
-          <p>A process-wide event bus carries typed activity from the agent loop, authentication, context, channels, and memory.</p>
-          <a href="/docs/reference/design/proactive/overview.html">Inspect the event design →</a>
-        </article>
+        <figcaption>Every user turn, model call, and function call is a node you can open, branch from, or retry.</figcaption>
+      </figure>
+      <figure class="panel" role="tabpanel" id="panel-chat" aria-labelledby="tab-chat" hidden>
+        <div class="window">
+          <img class="when-dark" src="docs/images/chat_edit.png" alt="OpenProgram chat where the agent updates a dashboard page in the project" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/chat_edit_light.png" alt="OpenProgram chat where the agent updates a dashboard page in the project" loading="lazy" width="3024" height="1890">
+        </div>
+        <figcaption>The agent edits files in the project folder and reports what changed.</figcaption>
+      </figure>
+      <figure class="panel" role="tabpanel" id="panel-browser" aria-labelledby="tab-browser" hidden>
+        <div class="window">
+          <img class="when-dark" src="docs/images/browser_hero.png" alt="OpenProgram built-in browser showing the dashboard page the agent built" loading="lazy" width="3024" height="1890">
+          <img class="when-light" src="docs/images/browser_hero_light.png" alt="OpenProgram built-in browser showing the dashboard page the agent built" loading="lazy" width="3024" height="1890">
+        </div>
+        <figcaption>Open what the agent built, or let it read and operate pages while you watch.</figcaption>
+      </figure>
+      <div class="surface-list" aria-label="Interfaces">
+        <a href="docs/interfaces/desktop.html">Desktop App</a><a href="docs/interfaces/web.html">Web UI</a><a href="docs/interfaces/tui.html">Terminal UI</a><a href="docs/interfaces/cli.html">CLI</a><a href="docs/interfaces/acp.html">ACP</a>
       </div>
     </div>
   </section>
 
-  <section class="papers" id="papers">
+  <section class="band" id="use-cases">
     <div class="wrap">
       <div class="section-head reveal">
-        <div><p class="kicker">Research</p><h2>Related papers.</h2></div>
-        <p class="lead">Research related to OpenProgram and its agent runtime.</p>
+        <p class="kicker">Agents</p>
+        <h2>Use an agent or build your own.</h2>
+        <p class="lead">Start from an agent that ships with OpenProgram, install one with a single command, or write your own in ordinary Python on the same runtime.</p>
+      </div>
+      <div class="agents reveal">
+        <article class="agent agent-featured">
+          <div>
+            <span class="tag">Built-in tool</span>
+            <h3>Computer use</h3>
+            <p>Operates desktop apps, web pages, and remote VMs from what is on screen.</p>
+          </div>
+          <div>
+            <ul>
+              <li>The model sees a screenshot with numbered elements, acts on an element index or ref, and gets back only what changed.</li>
+              <li>One tool drives desktop apps, the built-in browser or your own Chrome or Edge, and a remote VM, step by step or as a task handed to a new agent.</li>
+            </ul>
+            <div class="agent-links">
+              <a class="link" href="docs/capabilities/computer-use.html">Computer use docs →</a>
+            </div>
+          </div>
+        </article>
+        <article class="agent agent-span">
+          <span class="tag">Installable programs</span>
+          <h3>Your agent, packaged</h3>
+          <p>An agent is a Python class, so it can live in its own repository. Install any packaged agent from GitHub and it shows up next to the built-in ones. Applications and tools are Programs too.</p>
+          <button class="command-card" type="button" data-copy="openprogram programs install owner/repo">
+            <span class="command-head"><span>Install a program from GitHub</span><span class="copy">copy</span></span>
+            <span class="command-body"><span class="prompt">$ </span>openprogram programs install owner/repo</span>
+          </button>
+          <div class="agent-links">
+            <a class="link" href="docs/capabilities/installing-programs.html">Program guide →</a>
+            <a class="source" href="docs/capabilities/agentic-programming/writing-functions/agent.html">Writing agents →</a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="capabilities">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <p class="kicker">Included</p>
+        <h2>Everything you need to run agents.</h2>
+        <p class="lead">Use the whole runtime or only the parts your workflow needs. Everything is configurable from Python, the workspace, and the command line.</p>
+      </div>
+      <div class="cap-grid reveal">
+        <a class="capability" href="docs/models/providers.html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>
+          <h3>Any model</h3><p>Anthropic, OpenAI, Gemini, and local inference servers, with several accounts per provider.</p></a>
+        <a class="capability" href="docs/capabilities/tools.html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>
+          <h3>Tools and MCP</h3><p>Built-in file, shell, and browser tools, plus MCP servers and plugins for everything else.</p></a>
+        <a class="capability" href="docs/capabilities/permissions.html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>
+          <h3>Approvals</h3><p>Approve or deny a tool call before it runs. A denial can carry a note, and the model adjusts to it.</p></a>
+        <a class="capability" href="docs/capabilities/memory.html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6M4.5 11.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/></svg>
+          <h3>Memory</h3><p>Stored evidence, retrieval, and background writing that carry knowledge across conversations.</p></a>
+        <a class="capability" href="docs/capabilities/skills.html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H20v-3M8 7h8M8 11h5"/></svg>
+          <h3>Skills and saved agents</h3><p>Reusable instructions, and Agents that save a model, instructions, tools, and memory access together.</p></a>
+        <a class="capability" href="docs/capabilities/goal.html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7.2l7.4 3.6M8.3 16.8l7.4-3.6"/></svg>
+          <h3>Long-running work</h3><p>Keep a goal alive across conversations and hand parts of it to sub-agents, each in its own Git worktree.</p></a>
+        <a class="capability" href="docs/integrations/channels.html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/></svg>
+          <h3>Chat channels</h3><p>Talk to your agents from Telegram, Discord, Slack, and WeChat.</p></a>
+        <a class="capability" href="docs/capabilities/installing-programs.html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l8.5 4.5v10L12 21.5 3.5 17V7z"/><path d="M3.5 7L12 11.5 20.5 7M12 11.5v10"/></svg>
+          <h3>Installable programs</h3><p>Install a packaged agent from GitHub with <code>openprogram programs install</code>.</p></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="quick-start">
+    <div class="wrap install">
+      <div class="install-copy reveal">
+        <p class="kicker">Quick start</p>
+        <h2>Install, then run.</h2>
+        <p>The installer brings its own Python. The first <code>openprogram</code> run walks you through connecting a model provider, either by importing a signed-in Claude Code, Codex, or Gemini CLI or by pasting an API key. <code>openprogram web</code> then opens the workspace at http://localhost:18100.</p>
+        <p>Prefer an app? The macOS App is a <a href="docs/install/download.html">DMG download</a>; the Linux App is a deb or AppImage there too, and the Windows App arrives in v1.1.1.</p>
+        <a class="link" href="docs/install/install.html">Platform and developer installation →</a>
+      </div>
+      <ol class="steps reveal">
+        <li class="step">
+          <span class="step-num">1</span>
+          <div class="step-body">
+            <button class="command-card" type="button" data-copy="curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh">
+              <span class="command-head"><span>Install on macOS or Linux</span><span class="copy">copy</span></span>
+              <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</span>
+            </button>
+            <button class="command-card" type="button" data-copy="irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex">
+              <span class="command-head"><span>Or on Windows from v1.2.0, in PowerShell</span><span class="copy">copy</span></span>
+              <span class="command-body"><span class="prompt">PS&gt; </span>irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</span>
+            </button>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-num">2</span>
+          <div class="step-body">
+            <button class="command-card" type="button" data-copy="openprogram">
+              <span class="command-head"><span>Connect a provider and chat in the terminal</span><span class="copy">copy</span></span>
+              <span class="command-body"><span class="prompt">$ </span>openprogram</span>
+            </button>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-num">3</span>
+          <div class="step-body">
+            <button class="command-card" type="button" data-copy="openprogram web">
+              <span class="command-head"><span>Open the workspace in your browser</span><span class="copy">copy</span></span>
+              <span class="command-body"><span class="prompt">$ </span>openprogram web</span>
+            </button>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="papers">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <p class="kicker">Research</p>
+        <h2>Related papers.</h2>
+        <p class="lead">The design behind OpenProgram and the GUI grounding research around its computer-use agent.</p>
       </div>
       <div class="paper-grid reveal">
         <a class="paper" href="https://arxiv.org/abs/2606.15874">
           <span class="paper-id">arXiv:2606.15874</span>
           <h3>LLM-as-Code: Agentic Programming for Agent Harness</h3>
-          <span class="paper-link-label">Read on arXiv →</span>
+          <p>Agents as programs: Python owns control flow, and the model is called where judgment is needed.</p>
+          <span class="link">Read on arXiv →</span>
         </a>
         <a class="paper" href="https://arxiv.org/abs/2608.03270">
           <span class="paper-id">arXiv:2608.03270</span>
           <h3>GUI-Lens: Coarse-to-Fine Cropping for GUI Grounding with General-Purpose VLMs</h3>
-          <span class="paper-link-label">Read on arXiv →</span>
+          <p>Locating the right element on screen with general-purpose vision-language models.</p>
+          <span class="link">Read on arXiv →</span>
         </a>
       </div>
     </div>
   </section>
 
-  <section class="start" id="start">
-    <div class="wrap">
-      <div class="start-panel reveal">
-        <div>
-          <p class="kicker">Install</p>
-          <h2>Build your next agent with OpenProgram.</h2>
-          <p>Install the framework, connect a model provider, and start from an existing harness or your own Python workflow.</p>
-          <div class="actions start-actions">
-            <a class="btn btn-primary" href="/docs/start/GETTING_STARTED.html">Installation guide</a>
-            <a class="btn btn-secondary" href="/docs/">Browse documentation</a>
-          </div>
-        </div>
-        <button class="command-card" type="button" data-copy="curl -fsSL https://openprogram.io/install | sh">
-          <span class="command-head"><span>macOS / Linux · Windows command in guide</span><span class="copy">copy</span></span>
-          <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://openprogram.io/install | sh</span>
-        </button>
+  <section class="band cta" id="start">
+    <div class="wrap reveal">
+      <h2>Build your next agent with OpenProgram.</h2>
+      <p class="lead">Install it, connect a model, and start from a shipped agent or your own Python class.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="docs/start/GETTING_STARTED.html">Getting started</a>
+        <a class="btn btn-secondary" href="https://github.com/FuzzyKuji/OpenProgram">View on GitHub</a>
       </div>
     </div>
   </section>
@@ -597,12 +639,13 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
   <div class="wrap footer-in">
     <span>OpenProgram · AGPL-3.0</span>
     <div class="footer-links">
-      <a href="https://github.com/Fzkuji/OpenProgram">GitHub</a>
-      <a href="https://github.com/Fzkuji/OpenProgram/discussions">Discussions</a>
-      <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">Contribute</a>
+      <a href="docs/">Documentation</a>
+      <a href="https://github.com/FuzzyKuji/OpenProgram">GitHub</a>
+      <a href="https://github.com/FuzzyKuji/OpenProgram/releases">Releases</a>
+      <a href="https://github.com/FuzzyKuji/OpenProgram/discussions">Discussions</a>
+      <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">Contribute</a>
       <a href="#papers">Related papers</a>
-      <a href="/docs/">Documentation</a>
-      <a href="/sitemap.xml">Sitemap</a>
+      <a href="sitemap.xml">Sitemap</a>
     </div>
   </div>
 </footer>
@@ -611,13 +654,11 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
 (function(){
   function copyText(button){
     var value=button.getAttribute("data-copy");
+    var label=button.querySelector(".copy");
     var done=function(){
       button.classList.add("copied");
-      button.querySelector(".copy").textContent="copied";
-      window.setTimeout(function(){
-        button.classList.remove("copied");
-        button.querySelector(".copy").textContent="copy";
-      },1600);
+      label.textContent="copied";
+      window.setTimeout(function(){button.classList.remove("copied");label.textContent="copy";},1600);
     };
     var fallback=function(){
       var input=document.createElement("textarea");
@@ -634,6 +675,25 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
     button.addEventListener("click",function(){copyText(button)});
   });
 
+  var tabs=[].slice.call(document.querySelectorAll('[role="tab"]'));
+  function select(tab,focus){
+    tabs.forEach(function(other){
+      var on=other===tab;
+      other.setAttribute("aria-selected",String(on));
+      other.tabIndex=on?0:-1;
+      document.getElementById(other.getAttribute("aria-controls")).hidden=!on;
+    });
+    if(focus)tab.focus();
+  }
+  tabs.forEach(function(tab,index){
+    tab.addEventListener("click",function(){select(tab,false)});
+    tab.addEventListener("keydown",function(event){
+      var next=null;
+      if(event.key==="ArrowRight")next=tabs[(index+1)%tabs.length];
+      else if(event.key==="ArrowLeft")next=tabs[(index+tabs.length-1)%tabs.length];
+      if(next){event.preventDefault();select(next,true);}
+    });
+  });
 })();
 </script>
 </body>

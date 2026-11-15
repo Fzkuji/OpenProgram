@@ -1,4 +1,4 @@
-/* React Sidebar — companion module to global sidebar styles in base.css.
+/* React Sidebar — companion module to global sidebar styles in app/styles/base/sidebar.css.
 
    This module only adds:
      - tiny extras for the React-only "no conversations / favorites"
@@ -6,21 +6,21 @@
      - the `clearAll` row hover (mirrors the legacy `.conv-clear-all`).
 
    The conversation-row running indicator (.convRunning / .convFinishing)
-   lives in app/styles/base.css as plain (non-module) CSS. Reason: Turbopack's
+   lives in app/styles/base/motion.css as plain (non-module) CSS. Reason: Turbopack's
    CSS-module pass mangles BOTH @keyframes declarations AND the animation:
    value references inside *.module.css. The earlier fn-form fix
-   (commit b6fff9a) moved keyframes into base.css to keep their names
+   (commit b6fff9a) moved keyframes into the global styles to keep their names
    stable — but that workaround broke later when Turbopack started
    mangling animation: references too, leaving sidebar.module.css
    pointing at hashed keyframe names that no @keyframes block matched.
    Solution: keep the whole running-indicator rule (selector + animation
    references) outside any *.module.css so nothing is mangled. The
    classes ``convRunning`` / ``convFinishing`` are applied via plain
-   string literals in sessions-list.tsx, not via styles.*. */
+   string literals in sessions/*.tsx, not via styles.*. */
 
 .clearAll {
   padding: 6px 16px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   cursor: pointer;
   text-align: center;
@@ -31,44 +31,95 @@
    The rows inside are plain ConvItems (ui-list-item: 8px padding +
    16px marker slot + 12px gap → text left edge lands at 36px, the
    exact x where the header's label starts); this wrapper only steps
-   keep them the same 30px row as the project header, 13px text — and draws the 1px
-   vertical guide through the icon/dot optical center. */
+   keep them the same 30px row as the project header, 13px text. */
 .projectKids {
   position: relative;
   overflow: visible;
 }
-.projectKids::before {
+/* The 1px vertical guide joins the markers instead of running behind
+   them: each row's marker slot draws the piece above and below its mark
+   and stops --gap-r short of the centre, so the line never passes
+   through a spinning arc. The slot is centred in the --ui-list-h row,
+   so (row - slot) / 2 is the distance from the slot to the row's edge;
+   the piece above reaches 1px further, across the gap between rows, to
+   meet the piece below the row above. Its centre x = 1 + 8 + 8 = 17px,
+   the folder icon's axis. */
+/* Marks are even-sized (8px dots, a 12px arc, a 12px pin) so they centre
+   on whole pixels in the 16px slot, on the same axis as the 1px guide;
+   an odd 7px dot landed half a pixel off and rounded to one side. */
+.convMarker { --gap-r: 4px; }
+.convMarker[data-marker="pinned"] { --gap-r: 7px; }
+.convMarker[data-marker="working"] { --gap-r: 8px; }
+.projectKids .convMarker::before,
+.projectKids .convMarker::after {
   content: "";
   position: absolute;
-  /* ui-list-item is border-box with a 1px transparent border + padding
-     6px 8px + a 16px marker slot, so dot/folder optical center x =
-     1 + 8 + 8 = 17px (not 16). translateX(-50%) keeps the 1px line
-     on that axis. Child rows match --ui-list-h (30px), so last-dot center is 15px
-     from the bottom (bottom: 15px — no stub past the last circle).
-     Header is --ui-list-h (30px) with a 20px FoldersIcon + 1px gap;
-     top: -4px leaves a short breath under the folder instead of leaving
-     the folder icon. */
-  left: 17px;
+  left: 50%;
   transform: translateX(-50%);
-  top: -4px;
-  bottom: 15px;
   width: 1px;
   background: var(--border);
   pointer-events: none;
 }
+.projectKids .convMarker::before { top: calc((100% - var(--ui-list-h)) / 2 - 1px); bottom: calc(50% + var(--gap-r)); }
+.projectKids .convMarker::after { top: calc(50% + var(--gap-r)); bottom: calc((100% - var(--ui-list-h)) / 2); }
+/* The first piece starts 4px above the block, a short breath under the
+   folder icon; the last row ends at its mark. */
+.projectKids > :first-child .convMarker::before { top: calc((100% - var(--ui-list-h)) / 2 - 4px); }
+.projectKids > :last-child .convMarker::after { display: none; }
+/* Rows clip their content (overflow-hidden, for the marquee and the
+   running sweep), which cut the pieces at the padding edge. Clip 2px
+   further out — the 1px border plus the 1px gap — so they meet. */
+.projectKids > :global(.ui-list-item) {
+  overflow: clip;
+  overflow-clip-margin: 2px;
+}
 .projectKids :global(.ui-list-item) {
   height: var(--ui-list-h);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 /* The row label carries its own `text-fs-base` (14px) utility —
    out-specificity it so level-2 text really is 13px. */
 .projectKids :global(.ui-list-item .truncate) {
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 
 .projectGroup { position: relative; }
+/* A chat carried over this project: a frame round the whole project,
+   header and chats, stretched by --drop-grow-top/-bottom to take in the
+   gap its rows opened (they move by transform, so the box itself does
+   not grow). */
+.projectGroup[data-drop-target]::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: calc(-1 * var(--drop-grow-top, 0px)) 0 calc(-1 * var(--drop-grow-bottom, 0px)) 0;
+  border-radius: var(--ui-list-radius);
+  box-shadow: inset 0 0 0 1.5px var(--accent-orange);
+  background: color-mix(in srgb, var(--accent-orange) 6%, transparent);
+  pointer-events: none;
+}
+/* Chat rows and project headers ease aside for a carried chat, and
+   ease back when it is dropped; keeps .ui-list-item's colour
+   transitions. */
+.reflow {
+  transition: background-color var(--motion-medium) var(--ease-standard), color var(--motion-medium) var(--ease-standard), border-color var(--motion-medium) var(--ease-standard),
+    transform var(--motion-slow) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* The carried row is under the pointer the whole time, so it must beat
+   .ui-list-item:hover's translucent tint, or the row it passes over
+   shows through. */
+.reflow.chatDragging,
+.reflow.chatDragging:hover {
+  transition: none;
+  background: var(--color-sidebar);
+  box-shadow: var(--shadow);
+  scale: 1.02;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reflow { transition: background-color var(--motion-medium) var(--ease-standard), color var(--motion-medium) var(--ease-standard), border-color var(--motion-medium) var(--ease-standard); }
+}
 .projectGroup[data-dragging] {
-  background: var(--bg-sidebar, var(--bg-secondary));
+  background: var(--color-sidebar);
   border-radius: var(--ui-list-radius);
   box-shadow: var(--shadow);
 }

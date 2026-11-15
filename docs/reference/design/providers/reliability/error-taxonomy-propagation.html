@@ -1,0 +1,45 @@
+<title>Error reasons up to the UI</title>
+<meta name="description" content="How reason, retryable and retry_after_s travel from a provider failure to the chat error.">
+<h1>Error reasons up to the UI</h1>
+<p>Flattened to a string, a rate limit, a rejected key and an overlong conversation look alike and offer nothing to do. Scope: the main chat-turn streaming error. Retry and compact-failure strings stay plain.</p>
+
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">reason</code></th><th scope="col">Enum</th><th scope="col">Retryable</th><th scope="col">Chat headline</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">rate_limit</code></th><td><code translate="no">RATE_LIMIT</code></td><td>yes</td><td>Rate limited — try again in {retry_after_s}s</td></tr>
+<tr><th scope="row"><code translate="no">auth</code></th><td><code translate="no">AUTHENTICATION</code></td><td>no</td><td>Your API key was rejected — check it in Settings → Providers</td></tr>
+<tr><th scope="row"><code translate="no">authz</code></th><td><code translate="no">AUTHORIZATION</code></td><td>no</td><td>Not authorized — check your plan / access for this model</td></tr>
+<tr><th scope="row"><code translate="no">blocked</code></th><td><code translate="no">NETWORK_BLOCK</code></td><td>no</td><td>The provider's network refused the address you connect from — switch your proxy node or turn off the VPN, then try again</td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td><code translate="no">CONTEXT_LENGTH</code></td><td>no</td><td>This conversation is too long — compact it or start a new chat</td></tr>
+<tr><th scope="row"><code translate="no">policy</code></th><td><code translate="no">CONTENT_POLICY</code></td><td>no</td><td>The provider blocked this request (content policy)</td></tr>
+<tr><th scope="row"><code translate="no">provider</code></th><td><code translate="no">PROVIDER_INTERNAL</code></td><td>yes</td><td>Temporary provider / network error — try again</td></tr>
+<tr><th scope="row"><code translate="no">transport</code></th><td><code translate="no">TRANSPORT</code></td><td>yes</td><td>Temporary provider / network error — try again</td></tr>
+<tr><th scope="row"><code translate="no">timeout</code></th><td><code translate="no">TIMEOUT</code></td><td>no</td><td>The request timed out — try again</td></tr>
+<tr><th scope="row"><code translate="no">invalid</code></th><td><code translate="no">INVALID_REQUEST</code></td><td>no</td><td>raw message only</td></tr>
+<tr><th scope="row"><code translate="no">unknown</code></th><td><code translate="no">UNKNOWN</code></td><td>no</td><td>raw message only</td></tr>
+</tbody>
+</table>
+<p class="note">A memory policy error is <code translate="no">unknown</code> and not retryable; <code translate="no">error_kind: memory_unavailable</code> names it, so the reason stays inside the set.</p>
+
+<h2 id="event-shape">Event</h2>
+<pre translate="no"><code>{"type": "error", "content": "&lt;text&gt;", "reason": "&lt;reason&gt;",
+ "retryable": true, "retry_after_s": 30.0}</code></pre>
+
+<h2 id="where-classified">Where it happens</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Place</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/utils/errors.py</code></th><td><code translate="no">ErrorReason</code>, <code translate="no">LLMError</code>, <code translate="no">classify_error</code>, <code translate="no">taxonomy_fields</code>; <code translate="no">stream_retry</code> drives backoff from them. <code translate="no">error_kind</code> gives a narrower stable name (<code translate="no">stream_idle</code>, <code translate="no">stream_total</code>, <code translate="no">model_unavailable</code>, <code translate="no">auth</code>…) found through wrapped causes</td></tr>
+<tr><th scope="row"><code translate="no">runtime/agent/loop/driver.py</code></th><td>Agent boundary; sets <code translate="no">error_reason</code>, <code translate="no">error_retryable</code>, <code translate="no">error_retry_after_s</code> on the message. A refusal the provider states outright (no credit or quota, a rejected or expired sign-in, a plan or region it does not serve) is logged as one warning line with the provider and the reason; any other failure keeps its traceback on stderr</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/turn_runtime/error_path.py</code></th><td>Chat turn; classifies, stores <code translate="no">error_metadata</code>, fills <code translate="no">TurnResult</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/chat/messages/bubbles/assistant-bubble.tsx</code></th><td>Headline by <code translate="no">errorReason</code>, raw message below</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/transcript/rows.py</code></th><td>Projects the fields from a stored message, so a reload keeps the headline</td></tr>
+</tbody>
+</table>
+<p class="note">API consumers, logs and other channels read the reason too. No change to auto-retry policy; this only exposes the fields. A wider audit of <code translate="no">except Exception</code> sites is separate.</p>
+
+<details>
+<summary>Verifying</summary>
+<p>A rejected key gives <code translate="no">auth</code>, fatal. A 429 gives <code translate="no">rate_limit</code>, retryable, with the hint. An oversized context gives <code translate="no">context</code>, fatal. Unit tests cover the mapping and that the Agent boundary keeps an <code translate="no">LLMError</code>'s reason.</p>
+<p>End to end needs a repeatable failure on the model the frontend selected, since it sends its own choice: an expired key for <code translate="no">auth</code>, or an OpenRouter <code translate="no">:free</code> model that returns 503 for <code translate="no">provider</code>.</p>
+</details>

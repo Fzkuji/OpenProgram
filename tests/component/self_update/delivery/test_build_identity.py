@@ -35,7 +35,7 @@ def test_real_editable_wheel_still_builds(tmp_path):
 
 def test_packaged_revision_is_frozen_before_first_request(tmp_path, monkeypatch):
     import openprogram
-    from openprogram.webui.routes.settings import misc
+    from openprogram.interfaces.server.routes.settings import misc
     package = tmp_path / "site-packages/openprogram"
     package.mkdir(parents=True)
     marker = package / "_build_revision.txt"
@@ -50,16 +50,16 @@ def test_packaged_revision_is_frozen_before_first_request(tmp_path, monkeypatch)
 def test_authenticated_diagnostics_identify_pid_and_owner(monkeypatch):
     import os
     from types import SimpleNamespace
-    from openprogram.webui.routes.settings import misc
-    from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.interfaces.server.routes.settings import misc
+    from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
     owner = "owner/install/0123456789abcdef"
     state = OwnerAuthState.from_raw_token(bytes(range(32)), owner_principal_id=owner, bind_host="127.0.0.1", port=18100, allowed_origins=())
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: SimpleNamespace(list_sessions=lambda **_: [], count_recent_nodes=lambda _: 0))
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: SimpleNamespace(list_sessions=lambda **_: [], count_recent_nodes=lambda _: 0))
     app = FastAPI()
     misc.register(app)
     with TestClient(OwnerAuthMiddleware(app, auth_state=state), base_url="http://127.0.0.1:18100") as client:
         assert client.get("/api/diagnostics").status_code == 401
-        assert client.get("/healthz").json() == {"status": "ok"}
+        assert client.get("/healthz").json()["status"] == "ok"
         data = client.get("/api/diagnostics", headers={"Authorization": f"Bearer {state.token}"}).json()
         assert data["worker_pid"] == os.getpid()
         assert data["principal_id"] == owner
@@ -82,7 +82,7 @@ def test_source_archive_does_not_inherit_a_parent_repository_revision(tmp_path):
 
 
 def test_doctor_exposes_stable_check_ids(monkeypatch):
-    from openprogram.cli.commands import doctor
+    from openprogram.operations.diagnostics import checks as doctor
     def healthy():
         return True, "Healthy", "checked"
     system_access_rows = (
@@ -93,11 +93,16 @@ def test_doctor_exposes_stable_check_ids(monkeypatch):
     )
     monkeypatch.setattr(doctor, "CHECKS", (healthy,))
     monkeypatch.setattr(doctor, "runtime_http_checks", lambda: [(True, "runtime-http-registry", "checked")])
-    monkeypatch.setattr("openprogram._compat.platform_environment_advisories", lambda _: [(True, "platform-check", "checked")])
-    monkeypatch.setattr("openprogram.system_access.doctor_rows", lambda: list(system_access_rows))
+    monkeypatch.setattr("openprogram.host._platform.environment.platform_environment_advisories", lambda _: [(True, "platform-check", "checked")])
+    monkeypatch.setattr("openprogram.host.system_access.doctor_rows", lambda: list(system_access_rows))
+    # The command shell row is advice: it comes last, so the ids before it
+    # keep their order, and a failed round trip only changes its status.
+    monkeypatch.setattr(doctor, "_check_command_shell", lambda: (False, "command shell", "round trip failed"))
     assert doctor.run_checks() == [
         {"id": "healthy", "ok": True, "label": "Healthy", "detail": "checked"},
         {"id": "runtime_http:runtime-http-registry", "ok": True, "label": "runtime-http-registry", "detail": "checked"},
         {"id": "platform:platform-check", "ok": True, "label": "platform-check", "detail": "checked"},
         *system_access_rows,
+        {"id": "command_shell", "ok": True, "label": "command shell", "detail": "round trip failed",
+         "optional": True, "status": "failed"},
     ]

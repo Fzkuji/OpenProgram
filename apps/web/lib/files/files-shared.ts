@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { wsRequest } from "@/lib/net/ws-request";
+import { wsRequest } from "@/lib/net/ws/ws-request";
 import { useSessionStore } from "@/lib/session-store";
 import {
   fileScopeKey,
@@ -14,7 +14,7 @@ import {
   subscribeDraftPersistenceErrors,
   type FileReadResult,
   type Project,
-} from "./file-state-shared";
+} from "./drafts/file-state-shared";
 
 export {
   DRAFT_MAX_BYTES,
@@ -26,8 +26,8 @@ export {
   notifyDraftErrorListeners,
   reportDraftPersistenceError,
   subscribeDraftPersistenceErrors,
-} from "./file-state-shared";
-export type { FileReadResult, Project } from "./file-state-shared";
+} from "./drafts/file-state-shared";
+export type { FileReadResult, Project } from "./drafts/file-state-shared";
 
 interface ProjectListResponse {
   projects: Project[] | null;
@@ -54,12 +54,14 @@ export function useDraftPersistenceError(scope: string): string | null {
  * (retried until the socket answers), re-resolved on session change
  * and on the ``project-changed`` event the project menu fires.
  */
-export function useCurrentProject(): Project | null | undefined {
-  const sessionId = useSessionStore((s) => s.currentSessionId);
+export function useCurrentProject(scope?: { sessionId: string | null; chatKey: string | null }): Project | null | undefined {
+  const sessionId = useSessionStore((s) => scope ? scope.sessionId : s.currentSessionId);
   const pendingProjectId = useSessionStore((s) =>
-    s.activeChatKey ? s.pendingProjectsByChat[s.activeChatKey] ?? null : null,
+    (scope ? scope.chatKey : s.activeChatKey)
+      ? s.pendingProjectsByChat[(scope ? scope.chatKey : s.activeChatKey)!] ?? null : null,
   );
-  const [project, setProject] = useState<Project | null | undefined>(undefined);
+  const [result, setResult] = useState<{ owner: string; project: Project | null } | null>(null);
+  const owner = `${sessionId ?? ""}:${pendingProjectId ?? ""}`;
   const resolveGeneration = useRef(0);
   const resolveController = useRef<AbortController | null>(null);
 
@@ -68,7 +70,7 @@ export function useCurrentProject(): Project | null | undefined {
     resolveController.current?.abort();
     const controller = new AbortController();
     resolveController.current = controller;
-    setProject(undefined);
+    setResult(null);
     const data = await wsRequest<ProjectListResponse>(
       "list_projects",
       { session_id: sessionId ?? "" },
@@ -95,9 +97,9 @@ export function useCurrentProject(): Project | null | undefined {
       null;
     // The default ad-hoc project may have no real folder — treat a
     // pathless project as "nothing bound".
-    setProject(cur && cur.path ? cur : null);
+    setResult({ owner, project: cur && cur.path ? cur : null });
     return true;
-  }, [pendingProjectId, sessionId]);
+  }, [pendingProjectId, sessionId, owner]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,7 +122,7 @@ export function useCurrentProject(): Project | null | undefined {
     };
   }, [resolve]);
 
-  return project;
+  return result?.owner === owner ? result.project : undefined;
 }
 
 /** Last mtime seen per project-relative file path (fed by the tree
@@ -263,14 +265,14 @@ export {
   setDraftStoreAdapterForTests,
   snapshotFileDrafts,
   applyFileDraftSnapshot,
-} from "./file-drafts";
+} from "./drafts/file-drafts";
 export type {
   DraftPersistenceErrorCode,
   DraftPersistenceResult,
   FileDraft,
   FileDraftSnapshotEntry,
   ServerRenameResult,
-} from "./file-drafts";
+} from "./drafts/file-drafts";
 
 /* ---- Unsaved editor drafts ---------------------------------------- */
 

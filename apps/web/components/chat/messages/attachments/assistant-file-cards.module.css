@@ -1,0 +1,79 @@
+/* A reply file: the turn file-change card's material (raised input
+   surface, deeper shadow on hover) with the preview on the inset well
+   colour above, and the name row with its two actions below. */
+.card { container-type:inline-size; position:relative; display:grid; width:100%; min-width:0; margin:0; overflow:hidden; border-radius:var(--radius-2xl); background:var(--bg-input); box-shadow:var(--composer-shadow); transition:box-shadow var(--motion-medium); }
+.card:hover { box-shadow:var(--composer-shadow-focus); }
+/* Sent media takes about half the text column (320–560px, never wider
+   than the column); the player's own full-screen button gives the large
+   view. Documents, pages and archives use the whole column. */
+.card[data-media], .shown[data-media] { width:clamp(320px, 50%, 560px); max-width:100%; }
+
+.preview { display:block; width:100%; min-width:0; padding:0; border:0; border-bottom:1px solid var(--border); background:var(--bg-input); color:inherit; font:inherit; text-align:left; }
+button.preview { cursor:pointer; }
+/* Media and page images sit on the inset well; lists and text stay on the card. */
+.card[data-kind="image"] .preview, .card[data-kind="video"] .preview, .shown[data-kind="image"] .preview, .shown[data-kind="video"] .preview { border-bottom:0; background:var(--bg-primary); }
+button.preview:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+.card[data-kind="image"] button.preview, .shown[data-kind="image"] button.preview { display:flex; justify-content:center; cursor:zoom-in; }
+/* Never upscale: a small image keeps its own size, centred on the well. */
+.preview img { display:block; max-width:100%; max-height:360px; width:auto; height:auto; }
+/* A landscape video fills the card at its own aspect ratio; only a tall
+   one is capped, so the card shows no side bars. */
+.preview video { display:block; width:100%; height:auto; max-height:360px; background:var(--bg-primary); }
+/* An audio file shows only its player bar, inset from the card's edges. */
+.card[data-kind="audio"] .preview { padding:8px 8px 0; box-sizing:border-box; }
+.card[data-kind="audio"] .preview { border-bottom:0; }
+
+/* A document or a page shows in a 16:9 frame, a screen's shape: the
+   first page spans the card's width and is cut at the frame's foot. */
+.pdfPage { display:flex; justify-content:center; align-items:flex-start; aspect-ratio:16 / 9; overflow:hidden; }
+.pdfPage canvas { display:block; background:var(--document-paper); }
+/* A page drawn at desktop width, scaled to the card from its top left. */
+.pageThumb { position:relative; aspect-ratio:16 / 9; overflow:hidden; }
+.pageThumb iframe { position:absolute; top:0; left:0; border:0; transform-origin:0 0; pointer-events:none; background:var(--document-paper); }
+
+.archiveRow { display:flex; align-items:center; gap:8px; min-width:0; padding:4px 0; color:var(--text-primary); font-size:var(--fs-sm); }
+.archiveName { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.archiveMeta { flex-shrink:0; color:var(--text-muted); font-size:var(--fs-xs); }
+.folderIcon { flex-shrink:0; color:var(--text-secondary); }
+.archiveMore { justify-self:start; margin-top:2px; padding:2px 0; border:0; background:none; color:var(--text-secondary); font:inherit; font-size:var(--fs-xs); cursor:pointer; }
+.archiveMore:hover { color:var(--text-primary); text-decoration:underline; }
+.textHead { margin:0; max-height:200px; min-height:48px; overflow:hidden; padding:10px 14px; color:var(--text-secondary); font-family:var(--font-mono); font-size:var(--fs-xs); line-height:1.55; white-space:pre; }
+.previewHint { display:flex; align-items:center; justify-content:center; min-height:96px; width:100%; color:var(--text-muted); font-size:var(--fs-xs); }
+
+.footer { display:flex; align-items:center; gap:12px; min-width:0; padding:10px 10px 10px 14px; color:var(--text-secondary); }
+.icon { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:34px; height:34px; border-radius:var(--radius-md); background:var(--bg-primary); }
+.label strong { color:var(--text-primary); font-size:var(--fs-sm); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.label small { font-size:var(--fs-xs); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* The same two actions in the same place on every card. */
+/* A narrow card (half-width media, a narrow chat column) has no room for
+   two labelled buttons beside the name: they move under it, aligned
+   with the name. */
+@container (max-width: 460px) {
+  .footer .actions { width:100%; padding-left:46px; }
+}
+
+
+/* A card with a preview: the card is the preview alone, its name one
+   quiet line beneath it, and the two actions float on its top right
+   while the pointer is on it (always on a touch screen). */
+.frame { container-type:inline-size; position:relative; min-width:0; border-radius:var(--radius-2xl); box-shadow:var(--composer-shadow); transition:box-shadow var(--motion-medium); }
+.shown:hover .frame { box-shadow:var(--composer-shadow-focus); }
+/* One clip path cuts the well and what it holds along the same curve.
+   With overflow:hidden the well and a video or canvas layer are each
+   rounded on their own, and the well's lighter edge shows round the
+   corners as a pale rim. */
+.frame .preview { border-bottom:0; border-radius:var(--radius-2xl); clip-path:inset(0 round var(--radius-2xl)); }
+/* The video's picture is drawn snapped to whole device pixels while its
+   box (and the well behind it) may end mid-pixel, so a hairline of the
+   well showed under the picture. The well is a pixel shorter than the
+   video at each edge; the clip cuts the overhang, and the well never
+   shows past the picture. */
+.shown[data-kind="video"] .preview { display:flow-root; }
+.shown[data-kind="video"] .preview video { margin:-1px 0; }
+.floating { position:absolute; top:8px; right:8px; display:flex; opacity:0; pointer-events:none; transition:opacity var(--motion-fast); }
+.shown:hover .floating, .shown:focus-within .floating { opacity:1; pointer-events:auto; }
+@media (hover: none) { .floating { opacity:1; pointer-events:auto; } }
+/* The icon and the name sit together, centred as one under the card. */
+.caption { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; padding:0 4px; color:var(--text-muted); font-size:var(--fs-sm); }
+.captionName { min-width:0; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-secondary); }
+.captionMeta { flex-shrink:0; white-space:nowrap; }

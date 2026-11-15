@@ -1,0 +1,28 @@
+<title>多实例与 Profile</title>
+<meta name="description" content="在同一台机器上运行多个互不干扰的 OpenProgram 实例，各有自己的状态目录、端口和 worker。">
+<h1>多实例与 Profile</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">默认</th><th scope="col">Profile <code translate="no">dev</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">状态：配置、会话、日志、记忆</th><td><code translate="no">~/.openprogram/</code></td><td><code translate="no">~/.openprogram-dev/</code><br>任意名称：<code translate="no">~/.openprogram-&lt;name&gt;/</code></td></tr>
+<tr><th scope="row">端口：API、WebSocket 和 Web UI</th><td><code translate="no">18100</code><br><code translate="no">http://localhost:18100</code></td><td><code translate="no">openprogram --profile dev ports --port 18200</code><br><code translate="no">http://localhost:18200</code></td></tr>
+<tr><th scope="row">启动</th><td><code translate="no">openprogram web</code></td><td><code translate="no">openprogram --profile dev web</code></td></tr>
+<tr><th scope="row">查看</th><td><code translate="no">openprogram status</code></td><td><code translate="no">openprogram --profile dev status</code></td></tr>
+<tr><th scope="row">登录服务</th><td><code translate="no">openprogram worker install</code></td><td><code translate="no">openprogram --profile dev worker install</code></td></tr>
+</tbody>
+</table>
+<p class="note">实例之间不共享数据。每个 profile 有自己的登录服务，<code translate="no">worker start</code>、<code translate="no">stop</code>、<code translate="no">restart</code>、<code translate="no">status</code>、<code translate="no">uninstall</code> 只作用于当前 profile，停止或升级 <code translate="no">dev</code> 不影响默认 worker。</p>
+
+<details>
+<summary>选择 profile 或端口的其他方式</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方式</th><th scope="col">示例</th></tr></thead>
+<tbody>
+<tr><th scope="row">全局参数，放在子命令前；优先于环境变量</th><td><code translate="no">openprogram --profile dev sessions list</code><br><code translate="no">openprogram --profile dev worker restart</code></td></tr>
+<tr><th scope="row">用环境变量选 profile</th><td><code translate="no">OPENPROGRAM_PROFILE=dev openprogram</code></td></tr>
+<tr><th scope="row">本次运行的端口</th><td><code translate="no">OPENPROGRAM_WEB_PORT=18200 openprogram web</code></td></tr>
+<tr><th scope="row">仅这一次 <code translate="no">openprogram web</code> 的端口</th><td><code translate="no">openprogram web --web-port 18200</code></td></tr>
+</tbody>
+</table>
+</details>

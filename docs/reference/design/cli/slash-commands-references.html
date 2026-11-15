@@ -1,0 +1,119 @@
+<title>Slash-command references</title>
+<meta name="description" content="How five other projects implement slash commands, compared feature by feature.">
+<meta name="covers" content="openprogram/runtime/commands/">
+<h1>Slash-command references</h1>
+
+<p>Checkouts live in <code translate="no">references/</code>. OpenProgram's own design: <a href="slash-commands.html">Slash commands</a>.</p>
+
+<h2 id="feature-matrix">Feature matrix</h2>
+<table class="stack">
+<thead><tr><th scope="col">Feature</th><th scope="col">claude-code</th><th scope="col">opencode</th><th scope="col">openclaw</th><th scope="col">hermes</th><th scope="col">pi-mono</th></tr></thead>
+<tbody>
+<tr><th scope="row">Filesystem scan</th><td>recursive, symlink-safe</td><td>glob</td><td>none</td><td>single directory</td><td>none</td></tr>
+<tr><th scope="row">Frontmatter fields</th><td>15+</td><td>5</td><td>n/a</td><td>about 6</td><td>0</td></tr>
+<tr><th scope="row"><code translate="no">$ARGUMENTS</code></th><td>yes</td><td>yes</td><td>no</td><td>yes</td><td>no</td></tr>
+<tr><th scope="row"><code translate="no">$0..$9</code></th><td>yes</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">Named <code translate="no">$name</code></th><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row"><code translate="no">${ENV_VAR}</code></th><td>yes</td><td>no</td><td>no</td><td>yes</td><td>no</td></tr>
+<tr><th scope="row"><code translate="no">!&#96;shell&#96;</code></th><td>yes</td><td>no</td><td>no</td><td>yes, timeout</td><td>no</td></tr>
+<tr><th scope="row"><code translate="no">@file</code></th><td>no</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">Conditional <code translate="no">paths</code></th><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row"><code translate="no">context: fork</code></th><td>yes</td><td><code translate="no">subtask</code></td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row"><code translate="no">effort</code></th><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">MCP auto-slash</th><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">Embedded hooks</th><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">Multi-directory override</th><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">realpath dedup</th><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">i18n</th><td>no</td><td>no</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">Provider routing</th><td>no</td><td>no</td><td>yes</td><td>no</td><td>no</td></tr>
+<tr><th scope="row">Platform filter</th><td>no</td><td>no</td><td>no</td><td>yes</td><td>no</td></tr>
+<tr><th scope="row">Dependency check</th><td>no</td><td>no</td><td><code translate="no">requires</code>, <code translate="no">install</code></td><td>no</td><td>no</td></tr>
+<tr><th scope="row">Hot reload</th><td>yes</td><td>no</td><td>no</td><td>no</td><td>no</td></tr>
+</tbody>
+</table>
+<p class="note">All five have a description field. Three or more have name, description and body template, frontmatter parsing, and distinct execution modes.</p>
+
+<h2 id="choices">What OpenProgram takes</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Project</th><th scope="col">Taken</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>Design wholesale: <code translate="no">context: fork</code>, <code translate="no">paths</code>, <code translate="no">hooks</code>, <code translate="no">effort</code>, realpath dedup, MCP auto-slash</td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">$0-9</code> and <code translate="no">arguments[]</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">requires</code> as its own field, install hints; descriptions i18n noted as borrowable</td></tr>
+<tr><th scope="row">hermes</th><td>Timeout on <code translate="no">!</code> shell blocks, platform filter idea</td></tr>
+<tr><th scope="row">pi-mono</th><td>Hardcoding only for <code translate="no">type: local</code> builtins; otherwise a counterexample</td></tr>
+</tbody>
+</table>
+
+<h2 id="projects">Per project</h2>
+<details>
+<summary>claude-code</summary>
+<p class="note"><a href="https://code.claude.com/docs/en/skills">Public skills documentation</a></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Locations</th><td>Enterprise, personal <code translate="no">~/.claude/skills/</code>, project <code translate="no">.claude/skills/</code>, nested, <code translate="no">--add-dir</code>, plugin</td></tr>
+<tr><th scope="row">On a name clash</th><td>Enterprise beats personal, personal beats project; <code translate="no">.claude/commands/</code> loses to a skill</td></tr>
+<tr><th scope="row">Symlinks, reload</th><td>Several locations pointing at one target load once. Skill directories are watched; changes apply in the running session</td></tr>
+<tr><th scope="row">Body</th><td><code translate="no">$ARGUMENTS</code>, <code translate="no">$N</code>, <code translate="no">$name</code>, <code translate="no">${CLAUDE_SKILL_DIR}</code>, <code translate="no">${CLAUDE_SESSION_ID}</code>, <code translate="no">${CLAUDE_PROJECT_DIR}</code>, <code translate="no">${CLAUDE_EFFORT}</code>, <code translate="no">!&#96;cmd&#96;</code> and <code translate="no">&#96;&#96;&#96;!</code> blocks. A failing command aborts the invocation</td></tr>
+<tr><th scope="row">Arguments</th><td>Quotes keep a multi-word argument whole. Arguments no placeholder receives are appended as <code translate="no">ARGUMENTS: &lt;value&gt;</code></td></tr>
+<tr><th scope="row">Modes</th><td>Inline; <code translate="no">context: fork</code> runs in a subagent</td></tr>
+<tr><th scope="row">Frontmatter</th><td><code translate="no">name</code>, <code translate="no">description</code>, <code translate="no">when_to_use</code>, <code translate="no">argument-hint</code>, <code translate="no">arguments</code>, <code translate="no">disable-model-invocation</code>, <code translate="no">user-invocable</code>, <code translate="no">allowed-tools</code>, <code translate="no">disallowed-tools</code>, <code translate="no">model</code>, <code translate="no">effort</code>, <code translate="no">context</code>, <code translate="no">agent</code>, <code translate="no">background</code>, <code translate="no">hooks</code>, <code translate="no">paths</code>, <code translate="no">shell</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>opencode</summary>
+<p class="note"><code translate="no">references/opencode/packages/opencode/src/config/command.ts</code></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td>Glob <code translate="no">{command,commands}/**/*.md</code>, absolute paths. Effect Schema validates and merges with content. No dedup, watch or conditional activation</td></tr>
+<tr><th scope="row">Frontmatter</th><td><code translate="no">template</code> (required), <code translate="no">description</code>, <code translate="no">agent</code>, <code translate="no">model</code> (ConfigModelID), <code translate="no">subtask</code> (boolean)</td></tr>
+<tr><th scope="row">Templates</th><td>Plain expansion, <code translate="no">$ARGUMENTS</code>, <code translate="no">$0-9</code>; <code translate="no">arguments:</code> declares the list</td></tr>
+<tr><th scope="row">Distinctive</th><td>Strongest type safety of the five; <code translate="no">subtask: true</code> is a simplified fork; MCP skills return a lazy Promise</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>openclaw</summary>
+<p class="note"><code translate="no">references/openclaw/src/auto-reply/commands-registry.*</code></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td>Data-driven hardcoded registry, no filesystem scan, provider-specific mapping (Slack, Mattermost)</td></tr>
+<tr><th scope="row"><code translate="no">ChatCommandDefinition</code></th><td><code translate="no">key</code>, <code translate="no">nativeName</code>, <code translate="no">nativeAliases?</code>, <code translate="no">description</code>, <code translate="no">descriptionLocalizations?</code>, <code translate="no">scope</code> (<code translate="no">text</code> or <code translate="no">native</code>), <code translate="no">args?</code>, <code translate="no">acceptsArgs</code></td></tr>
+<tr><th scope="row">Distinctive</th><td><code translate="no">resolveNativeName</code> and the pluginProvider hook; i18n; argument choice menus (<code translate="no">CommandArgChoiceContext</code>), like a Discord dropdown</td></tr>
+<tr><th scope="row">Skills</th><td><code translate="no">SKILL.md</code> frontmatter with <code translate="no">emoji</code>, <code translate="no">requires.anyBins</code>, <code translate="no">requires.config</code>, <code translate="no">install[]</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>hermes-agent</summary>
+<p class="note"><code translate="no">references/hermes-agent/tools/skills_tool.py</code>, <code translate="no">agent/skill_commands.py</code>, <code translate="no">agent/skill_preprocessing.py</code></p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td>Single <code translate="no">~/.hermes/skills/</code>: bundled, hub-installed and edited entries coexist; <code translate="no">get_external_skills_dirs()</code> extends. trusted_roots with traversal protection</td></tr>
+<tr><th scope="row">Frontmatter</th><td><code translate="no">metadata.hermes.config</code> (variables), <code translate="no">platforms</code>; <code translate="no">metadata.hermes.*</code> beats top-level fields</td></tr>
+<tr><th scope="row">Body</th><td><code translate="no">_substitute_template_vars</code>, <code translate="no">_expand_inline_shell</code> (timeout), <code translate="no">[Skill config: ...]</code> injection</td></tr>
+<tr><th scope="row">Distinctive</th><td>Platform filter, 134 prompt-injection patterns, <code translate="no">_secret_capture_callback</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>pi-mono</summary>
+<p class="note"><code translate="no">references/pi-ai/packages/coding-agent/src/core/slash-commands.ts</code></p>
+<p>Hardcoded builtins (settings, model, export, import, fork, clone), no scan. <code translate="no">SlashCommandSource</code> has extension, prompt and skill, but only builtin is used. The trade-off of no extension mechanism at all.</p>
+</details>
+
+<h2 id="sync-procedure">Syncing</h2>
+<ol>
+<li><code translate="no">cd references &amp;&amp; git pull</code>, for example each quarter.</li>
+<li>Diff each project against the tables above. Decide on new fields, template syntax, modes and security constraints for <a href="slash-commands.html">Slash commands</a>.</li>
+<li>Update this page.</li>
+</ol>

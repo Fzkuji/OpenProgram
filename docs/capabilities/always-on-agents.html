@@ -1,0 +1,158 @@
+<title>Always-on Agents</title>
+<meta name="description" content="Keep an Agent&#x27;s conversations working while you are away: wakes, check-ins, reports, handoffs and limits.">
+<h1>Always-on Agents</h1>
+<p>Each conversation with an always-on Agent wakes when something it watches is due, works on a standing goal, checks for news with read-only tools when idle, and contacts you only when something deserves it.</p>
+<p>Always-on is part of an <a href="agents.html">Agent</a>'s configuration. Every conversation with that Agent is its own always-on assistant, with its own Goal, check-ins and reports. For two separate assistants, start two conversations.</p>
+<h2 id="turn-it-on">Turn it on</h2>
+<span id="built-in-agents"></span>
+<p><strong>Butler</strong> and the built-in job Agents have it on: start a conversation with one, from the Agent chip in a composer or its card on the Agents page, and say what to watch or continue. For your own Agent:</p>
+<ol>
+<li>Open <strong>Agents</strong> in the sidebar and select it.</li>
+<li>In the <strong>Always-on</strong> tab check <strong>Keep conversations with this Agent always on</strong>.</li>
+<li>Optional: a <strong>Standing goal</strong>, a fixed wake interval, and under <strong>When it wakes</strong> the wake days and <strong>Quiet hours</strong>.</li>
+<li><strong>Save changes</strong>.</li>
+<li>Talk to it: <strong>New conversation</strong> on the Agents page, or the Agent chip.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Standing goal</strong></th><td>Something to achieve ("Get the docs site free of broken links"), not a routine ("Check the links every hour"). The Goal ends once its requirements hold; looking again later is what check-ins do.</td></tr>
+<tr><th scope="row">Fixed wake interval</th><td>5 to 10080 minutes. Empty: the agent schedules its own wakes. With check-ins off, it cannot schedule a check-in. <strong>Try</strong> chats of a draft never wake.</td></tr>
+<tr><th scope="row"><strong>Wake on</strong></th><td>Weekdays scheduled wakes happen on. At least one stays on.</td></tr>
+<tr><th scope="row"><strong>Quiet hours</strong></th><td>Daily <strong>From</strong> and <strong>Until</strong>, such as 22:00 to 08:00. An end before the start runs past midnight.</td></tr>
+</tbody>
+</table>
+<p class="note">Wake days and quiet hours use this computer's clock and time zone. By default a conversation may wake at any time. <strong>Wake now</strong>, messages from your other conversations and a running Goal still run during quiet time.</p>
+<h2 id="when-it-wakes">When it wakes</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Next wake</th></tr></thead>
+<tbody>
+<tr><th scope="row">The agent knows when something is due</th><td>It schedules that check-in, with a short reason shown next to the next wake</td></tr>
+<tr><th scope="row">Nothing scheduled</th><td>1 hour after you last wrote, then 2, 5, 10, 20, 50 and 100 hours between check-ins, then every 100 hours. Writing starts over at 1 hour.</td></tr>
+<tr><th scope="row">Fixed interval set</th><td>Every interval</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Conversation</th><th scope="col">Wakes?</th></tr></thead>
+<tbody>
+<tr><th scope="row">New chat, an older one you send a message in, or one switched to the Agent with its chip</th><td>Yes. First wake one interval later (an hour without an interval), so a chat you just opened is not interrupted.</td></tr>
+<tr><th scope="row">Not used since always-on was turned on</th><td>No</td></tr>
+<tr><th scope="row">Sub-agent or imported</th><td>Never</td></tr>
+<tr><th scope="row">Archived</th><td>Stops, along with any Goal the Agent started there: the turn already running finishes and no next one starts. Unarchiving continues the Goal. A Goal you started yourself is not touched.</td></tr>
+<tr><th scope="row">Agent's always-on turned off</th><td>All stop, along with any Goal the Agent started. When turned on again, those Goals continue and each conversation that took part counts its interval from that moment.</td></tr>
+</tbody>
+</table>
+<h3>Each wake does at most one thing</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">Situation</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scheduled wake in quiet hours or on a non-wake day</th><td>Nothing; next wake moves to the end of the quiet time</td></tr>
+<tr><th scope="row">A turn or check-in is running</th><td>Nothing; tries again in five minutes</td></tr>
+<tr><th scope="row">A standing goal not yet started</th><td>Starts it as a <a href="goal.html">Goal</a> in the conversation</td></tr>
+<tr><th scope="row">A Goal is in progress or you paused it</th><td>Nothing; the Goal continues on its own and your pause stays</td></tr>
+<tr><th scope="row">A Goal the Agent started failed or was cut off by a restart</th><td>Restarts it, up to three times in a row; a completed turn starts the count over</td></tr>
+<tr><th scope="row">A Goal the Agent started had its turn stopped by someone, stopped for any other reason, or ran out of restarts</th><td>One report asks for your decision, and check-ins go on</td></tr>
+<tr><th scope="row">A Goal you started failed, stalled or ran out of budget</th><td>Never restarted and no report; check-ins go on</td></tr>
+<tr><th scope="row">No Goal, check-ins on</th><td>Checks in, unless there is nothing to check</td></tr>
+<tr><th scope="row">Otherwise</th><td>Nothing</td></tr>
+</tbody>
+</table>
+<p class="note">A scheduled check-in is skipped without a model call when there is no standing goal, no unfinished open work or todos, and no new message since the last check-in. A check-in that failed or was cut off by a restart before it reported does not count as the last one.</p>
+<p class="note">A conversation you have not written in is never checked. Self-scheduled check-ins and <strong>Wake now</strong> always run. A goal changed while another is unfinished starts when that one ends; <code translate="no">/goal clear</code> switches at once.</p>
+<p>For a fixed schedule ("every day at 9, summarize my inbox"), ask for a scheduled task instead.</p>
+<details>
+<summary>Scheduled tasks</summary>
+<ul>
+<li>Run in the background, outside your branch list. Each run starts clean: it sees the task and its last result, not the conversation. Nothing new: you hear nothing. Something changed: an ordinary message in the conversation, with a notification.</li>
+<li>Three failures in a row: it tells you once.</li>
+<li>The Activity panel shows each task's last result and last 20 runs; each opens in place to show what it did. The Agent can see the task and read its results.</li>
+</ul>
+</details>
+<h2 id="check-ins">Check-ins</h2>
+<p>A check-in reviews memory, the conversation's <a href="agents.html#open-work">open work</a> and the conversation for open threads, and looks for anything new. Nothing of it appears in the conversation: you can keep typing, and its place in the sidebar does not change. However long the conversation is, a check-in reads its summary and latest part, looks further back only when it needs to, and never compacts it.</p>
+<p>Each check-in sees earlier reports and repeats them only if something changed; an Agent with picked channels also sees report titles from its other conversations. Pages, files and earlier reports are data: it never follows instructions in them.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tools</th><td>Read-only: file reading and search, web search and fetch, conversation and memory reading, and the todo, open work and Goal readers. Web search is left out when you turned it off for the conversation or the Agent. No commands, edits or MCP servers. Credentials and settings such as <code translate="no">~/.ssh</code> and <code translate="no">.env</code>, and private network addresses, are refused.</td></tr>
+<tr><th scope="row"><strong>Report findings</strong> (default)</th><td>Proposes work in its report; you decide</td></tr>
+<tr><th scope="row"><strong>Start goals on its own</strong></th><td>May turn a finding into a Goal, or hand it to the conversation that owns that work. The Goal runs as a normal turn of the conversation with normal tools and permissions, except that page scripts and destructive deletes are refused there and in handoff turns; it says so, so you can do them yourself. A check-in cannot wait for approval: where the permission mode would ask, it proposes the work in a report instead</td></tr>
+<tr><th scope="row"><strong>Check in when there is no goal to work on</strong></th><td>Off: wakes only for the standing goal</td></tr>
+<tr><th scope="row">Permissions</th><td>The conversation's mode and rules, but nobody can approve: a step needing approval is refused and requested in a report. A Goal it starts waits for you like any other.</td></tr>
+<tr><th scope="row">A check-in that fails</th><td>Does not count as a look: the next one still covers everything since the last that finished, at the same pace. After three failures in a row, or at once if the model account is refused, one report tells you; then, without a fixed wake interval, it tries less and less often. A check-in cut by a restart or stopped by someone is not counted.</td></tr>
+<tr><th scope="row">Check-in model</th><td>Optional cheaper model in the Always-on tab. Default: the conversation's model.</td></tr>
+<tr><th scope="row">Daily budget</th><td>US dollars per Agent. Once spent, scheduled check-ins wait for the next day; <strong>Wake now</strong> still runs. A Goal started by a check-in, a handoff or a scheduled task may spend only what is left today, its cost joins the day's total, and none starts once the budget is gone. The Activity panel shows each check-in's tokens and cost and today's total.</td></tr>
+<tr><th scope="row">With a budget</th><td>One scheduled check-in of the Agent runs at a time; the others, and any Goal an automatic turn left waiting, retry five minutes later. A model with no known price cannot reach the limit, and its check-ins say so in the Activity panel.</td></tr>
+</tbody>
+</table>
+<h2 id="reports-and-notifications">Reports</h2>
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">Means</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>finding</strong></th><td>Something you may want to know</td></tr>
+<tr><th scope="row"><strong>approval</strong></th><td>You need to decide something</td></tr>
+<tr><th scope="row"><strong>done</strong></th><td>A piece of work finished</td></tr>
+</tbody>
+</table>
+<p>A report has a title, a body of one to three sentences and optional links, and arrives as a message from the Agent, so your next message can answer it. If a turn is running, it follows that turn. A check-in with nothing to report leaves no trace in the conversation; the Activity panel still shows its result.</p>
+<p>In the App the message is the body and links, with web links shown by site name; the title stays in lists and notifications. In the chat view, a time line above it says why it came: noticed while checking in, finished in the background, asks for your decision, or the name of a scheduled task.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Conversation and unread dot</th><td>Always, unless it is on screen (no dot). A minimized or background window does not count</td></tr>
+<tr><th scope="row">Desktop App notification</th><td>While no App window has focus; clicking opens the conversation. With no App open, your computer shows it anyway, unless the conversation is on screen in a browser. Per kind, default on.</td></tr>
+<tr><th scope="row">Channels</th><td>Per kind, default on</td></tr>
+<tr><th scope="row"><strong>Pending</strong> in the sidebar</th><td>With a count. <strong>Waiting for your decision</strong>: approvals, until you write in that conversation; a handoff, a reminder or a Goal carrying on does not count, and turning always-on off keeps them. <strong>New</strong>: findings and finished work, until you open it. Also at the top of every Activity panel as <strong>Waiting for you</strong>. <strong>Open</strong> goes to the conversation. Older than seven days drops off.</td></tr>
+</tbody>
+</table>
+<p><strong>Tell it what to report</strong> in the conversation ("don't tell me about passing builds"). Each rule becomes a report preference of the Agent, followed by every later check-in and scheduled run. Only your own turns can add one, never a check-in or scheduled run. The Activity panel lists them for deletion, and each report offers to stop reports like it.</p>
+<details>
+<summary>Send reports to channels</summary>
+<ul>
+<li>Under <strong>Also send reports to</strong>, check up to 10 conversations on a <a href="../integrations/channels.html">chat channel</a>: Telegram, Slack, Discord or WeChat. They apply to reports from every conversation with this Agent. A chat bound to a channel gets its own reports there without being checked, once; the <strong>Channels</strong> setting turns both off.</li>
+<li>The list holds the Agent's existing channel conversations plus people and groups bound with a peer binding: <code translate="no">openprogram channels bindings add &lt;agent&gt; --channel telegram --account &lt;id&gt; --peer &lt;id&gt;</code>. An Agent bound to a whole channel or account lists only people who have talked to it.</li>
+<li>Each report is sent once per picked conversation, after it is saved in the App. The Activity panel shows the outcome under each report; a failed send, such as a signed-out account, is shown there and the report is kept.</li>
+<li>When that person or group already has its own conversation, the report also appears there as a message, so a reply on the phone has its context, and it answers a report waiting for a decision.</li>
+</ul>
+</details>
+<h2 id="hand-work-to-another-conversation">Hand work to another conversation</h2>
+<p>Conversations can work as a team, one owner per job. An agent uses <code translate="no">send_message</code> to message another of your conversations by title or ID, or an Agent by name when that Agent has one conversation; the other may use any Agent. Give each conversation a clear title and job, and tell the planning one which does what.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Delivery</th><td>Arrives as the next turn, marked as a message from the sender's conversation rather than from you. Waits for a running turn to end; it never interrupts it.</td></tr>
+<tr><th scope="row">Reply</th><td>When that turn ends its answer returns to the sender as an automated notice, with how long it took and what it cost. If the turn failed or was stopped, the sender is told that instead, with the reason.</td></tr>
+<tr><th scope="row">Passed on</th><td>If the receiver messages a third conversation, each answer returns to whoever sent that message: the receiver gets the third's answer and can follow up.</td></tr>
+<tr><th scope="row">Address</th><td>A conversation's title or ID, an Agent's name, or a branch address from <code translate="no">list_agents</code>. An empty conversation takes the message as its first turn.</td></tr>
+<tr><th scope="row">Permissions</th><td>Each turn runs under its own conversation's Agent, mode and rules.</td></tr>
+<tr><th scope="row">Refused</th><td>Messaging its own running turn; more than four hops in a chain; more than 20 messages an hour from one conversation; archived conversations or branches as receiver</td></tr>
+<tr><th scope="row">Restart</th><td>A message is a tracked Job: one waiting for a busy conversation is delivered once after a service restart, and its answer still comes back</td></tr>
+</tbody>
+</table>
+<h2 id="in-the-conversations-activity-panel">In the Activity panel</h2>
+<details>
+<summary>Activity panel line</summary>
+<p>In the conversation's <a href="../interfaces/web.html#conversation-activity">Activity panel</a> the main agent's row gets an <strong>Always-on</strong> line: whether a check-in is running and the next wake after quiet hours, with the agent's reason when it chose that wake.</p>
+<p>Its page has an <strong>Always-on</strong> row above the runs: standing goal, current Goal, wake schedule, whether it is alive (when it last woke, wakes and failures in 24 hours, or a wake long overdue), last wake with result and cost, today's check-in spending and report preferences. Reports are rows among the runs.</p>
+<p><strong>Wake now</strong> runs a wake now, or in five minutes if a turn is running, and retries a check-in that failed or was interrupted by a restart. A later check-in the Agent set for itself stays as it was.</p>
+</details>
+<p>A new, empty chat with an always-on Agent offers three things to say to it. Clicking one only fills the box; it disappears once the box has text.</p>
+<p>A conversation with an always-on Agent reads like a chat with a bot: short paragraphs as separate bubbles (at most four, and code, tables and lists stay with the text around them), the time shown again after 30 minutes and on a new day. Thinking, tool steps and message buttons are not drawn; three dots show while the Agent works after its last words.</p>
+<p>A reply that fails or stops short says so in a line under it, a reply cut by a restart continues as the one reply, and web sources sit once under the last bubble. Nothing is removed; this also applies to older conversations, and turning always-on off brings the full view back.</p>
+<p>In Telegram, Discord, Slack and WeChat the Agent writes shorter, offers choices as a numbered list, and a table arrives as one line per row, sent only once it is complete.</p>
+<h2 id="limits">Limits</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Limit</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where it runs</th><td>Work runs on this computer, in the conversation's folder and sandbox. The worker must be running.</td></tr>
+<tr><th scope="row">Stopping</th><td>Turning always-on off or archiving a conversation stops its wakes. Conversations, reports, memory and the settings stay.</td></tr>
+<tr><th scope="row">What it sends</th><td>Outgoing messages through connected services follow the conversation's permission mode. To review each first, turn on <a href="permissions.html#messages-an-agent-sends-for-you"><strong>Hold what it sends for my approval</strong></a> at the end of the <strong>Always-on</strong> tab. A check-in has no one to ask, so a held message comes back as a draft in its report.</td></tr>
+<tr><th scope="row">A copy of the Agent</th><td>A duplicated Agent starts with always-on off.</td></tr>
+<tr><th scope="row">Time limit</th><td>A check-in stops after 15 minutes, and the last wake says so. <strong>Wake now</strong> is the retry.</td></tr>
+<tr><th scope="row">Reports and restarts</th><td>A report waiting for a running turn is added after that turn. After a service restart, reports under an hour old are still added and their chat-app sends resumed, so a chat app may rarely get one twice; older ones stay in the Activity panel, and an unfinished send shows as cut off by a restart.</td></tr>
+<tr><th scope="row">Your browser</th><td>A check-in, scheduled run, automatic Goal turn, handoff or chat-app message, and anything it starts, never takes the browser page you have in front. It opens its own tab behind your work, or uses a page it names from the page list. With the App closed, its page opens in a background browser with no window: nothing appears on screen, and none of the App's sign-ins are there.</td></tr>
+<tr><th scope="row">Pages it opens</th><td>Pages a scheduled run or check-in opens close when it ends. A conversation keeps at most 8 pages its agents opened; opening another closes the one used longest ago.</td></tr>
+<tr><th scope="row">Learning</th><td>It learns through memory: set <strong>Read and write</strong> in the Agent's <strong>Memory</strong> tab so corrections are saved and used. The Always-on tab reminds you otherwise. Your replies to a report count; the report itself does not. A scheduled run counts only if you continue its branch.</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../reference/design/runtime/always-on-agents.html">Engineering design</a></p>

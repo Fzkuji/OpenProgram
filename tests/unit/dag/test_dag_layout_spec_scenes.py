@@ -1,6 +1,6 @@
 """DAG layout ↔ dag-layout-spec.html 13 个场景的逐场景核对。
 
-权威是 docs/reference/design/runtime/dag/dag-layout-spec.html 里的 SVG 坐标：
+权威是 docs/reference/design/runtime/dag/layout.html 里的 SVG 坐标：
 每个节点画在 (PADX + x*COL, PADY + y*ROW)，所以 SVG 的 x = 后端的
 ``_lane + _tier``（列号），SVG 的 y = 后端的 ``_depth``（行号）。本文件把
 每张图的 (x, y) 逐个抄成断言。
@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from openprogram.webui.graph_layout import annotate_graph
+from openprogram.state.store.session.graph.layout import annotate_graph
 
 
 def _annotate(nodes):

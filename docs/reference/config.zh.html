@@ -1,0 +1,132 @@
+<title>配置参考</title>
+<meta name="description" content="config.json 的键、openprogram config 能修改的内容，以及环境变量。">
+<span id="configuration"></span>
+<h1>配置参考</h1>
+<pre translate="no"><code>openprogram config list              # value, group, apply mode
+openprogram config get ui.web_port
+openprogram config set ui.web_port 8101</code></pre>
+<p class="note">唯一注册表 <code translate="no">openprogram/state/settings.py</code> 驱动 setup 向导、TUI 和 Web 设置。由它生成的全部设置：<a href="config-keys.zh.md">设置键</a>。日常使用：<a href="../server/configuration.zh.html">配置与数据目录</a>。</p>
+<h2 id="what-openprogram-config-can-read-and-write">常用设置</h2>
+<h3>端口</h3>
+<table class="stack">
+<thead><tr><th scope="col">键</th><th scope="col">含义</th><th scope="col">默认</th><th scope="col">生效</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ui.web_port</code></th><td>API、WebSocket 和 Web UI 共用的唯一 worker 端口</td><td>18100</td><td>下次启动</td></tr>
+<tr><th scope="row"><code translate="no">ui.open_browser</code></th><td><code translate="no">openprogram web</code> 自动打开浏览器</td><td>true</td><td>下次启动</td></tr>
+</tbody>
+</table>
+<h3>搜索、记忆、工具、Agent</h3>
+<table class="stack">
+<thead><tr><th scope="col">键</th><th scope="col">含义</th><th scope="col">默认</th><th scope="col">生效</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">search.default_provider</code></th><td><code translate="no">auto</code> 选优先级最高的已配置项</td><td>auto</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">memory.backend</code></th><td><code translate="no">local</code>，或 <code translate="no">none</code>：无提示记忆、回忆、自动写入、整理器和记忆线程</td><td>local</td><td>下次启动</td></tr>
+<tr><th scope="row"><code translate="no">memory.writer.model</code></th><td>后台写入可选 <code translate="no">provider/model</code>；空则用默认聊天 agent 的</td><td>空</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">tools.disabled.&lt;name&gt;</code></th><td>单个工具开关；写入 <code translate="no">tools.disabled</code> 列表</td><td>全部启用</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">agent.output_style</code></th><td>回复风格，追加到系统提示。<a href="output-styles.zh.html">输出风格</a></td><td>default</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">providers.&lt;name&gt;</code></th><td>只读状态行。用 <code translate="no">openprogram providers login</code> 或 Web UI 配置。</td><td>—</td><td>—</td></tr>
+</tbody>
+</table>
+<h3 id="sandbox">沙箱</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">sandbox.mode</code></th><th scope="col">本地模型驱动的命令</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">off</code></th><td>默认。除非对话在输入框菜单开启，否则不用沙箱。</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td>后端可用时所有对话都用沙箱；否则不用沙箱继续运行</td></tr>
+<tr><th scope="row"><code translate="no">workspace-write</code></th><td>写入限于工作目录和配置的根目录，屏蔽 deny-read 路径，禁用网络</td></tr>
+<tr><th scope="row"><code translate="no">danger-full-access</code></th><td>完整用户权限</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">键</th><th scope="col">含义</th><th scope="col">默认</th><th scope="col">生效</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">sandbox.writable_roots</code></th><td>额外可写目录，JSON 列表</td><td>[]</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.deny_read</code></th><td>不可读 glob，默认含凭据路径。Linux 无法执行 <code translate="no">**/.env</code> 这类中间通配符：请用确切路径或目录规则，如 <code translate="no">/absolute/path/to/secrets/**</code>。</td><td><code translate="no">openprogram config get sandbox.deny_read</code></td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.deny_write</code></th><td>不可写 glob，另加始终屏蔽的函数监视目录和受保护启动文件</td><td>[]</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.network</code></th><td>网络访问</td><td>false</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.pass_env</code></th><td>内置白名单之外传入的环境变量名</td><td>[]</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.unavailable_policy</code></th><td><code translate="no">refuse</code>：后端缺失或无法隔离时命令失败；<code translate="no">warn</code>：不用沙箱运行</td><td>refuse；Windows 上为 warn</td><td>立即</td></tr>
+</tbody>
+</table>
+<p class="note">后端：macOS Seatbelt，Linux bubblewrap，Windows 通过默认 WSL2 发行版的 bubblewrap。Docker 不是自动回退。</p>
+<h2 id="top-level-keys-in-configjson">config.json 顶层键</h2>
+<p class="note">不要手工编辑：用 <code translate="no">openprogram config set</code>、setup 向导或 Web UI。</p>
+<table class="stack">
+<thead><tr><th scope="col">键</th><th scope="col">内容</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ui</code></th><td><code translate="no">{web_port, open_browser}</code></td><td><code translate="no">openprogram/state/settings.py</code></td></tr>
+<tr><th scope="row"><code translate="no">search</code></th><td><code translate="no">{default_provider}</code></td><td><code translate="no">openprogram/state/preferences.py</code></td></tr>
+<tr><th scope="row"><code translate="no">memory</code></th><td><code translate="no">{backend, writer: {model}}</code></td><td><code translate="no">openprogram/state/settings.py</code>, <code translate="no">openprogram/state/memory/</code></td></tr>
+<tr><th scope="row"><code translate="no">tools</code></th><td><code translate="no">{disabled: [工具名, ...]}</code></td><td><code translate="no">openprogram/operations/setup.py</code>, <code translate="no">openprogram/state/settings.py</code></td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td><code translate="no">{mode, writable_roots, deny_read, deny_write, network, pass_env, unavailable_policy}</code></td><td><code translate="no">openprogram/host/sandbox/__init__.py</code>, <code translate="no">openprogram/state/settings.py</code></td></tr>
+<tr><th scope="row"><code translate="no">last_used_model</code></th><td>新对话起始的 <code translate="no">{provider, model}</code>。全新安装时为空。</td><td><code translate="no">openprogram/models/providers/catalog/last_used.py</code></td></tr>
+<tr><th scope="row"><code translate="no">default_workdir</code></th><td>agent 默认工作目录</td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>按 provider 的子树（启用和自定义模型），由 Web UI 模型列表管理</td><td><code translate="no">openprogram/models/providers/settings/config_read.py</code>, <code translate="no">storage.py</code></td></tr>
+<tr><th scope="row"><code translate="no">api_keys</code></th><td>环境变量名 → key，由 setup 向导写入，worker 启动时导出。用于网络搜索和 TTS；LLM key 在凭据库。</td><td><code translate="no">openprogram/interfaces/cli/setup_sections/sections.py</code>, <code translate="no">openprogram/interfaces/server/server.py</code></td></tr>
+<tr><th scope="row"><code translate="no">spec_migration_version</code></th><td>模型规格迁移的一次性标记</td><td><code translate="no">openprogram/models/providers/settings/storage.py</code></td></tr>
+</tbody>
+</table>
+<h2 id="environment-variables">环境变量</h2>
+<p class="note">在启动 <code translate="no">openprogram</code> 或 worker 的 shell 中设置。</p>
+<h3>路径与实例</h3>
+<table class="stack">
+<thead><tr><th scope="col">变量</th><th scope="col">用途</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROFILE</code></th><td>等同 <code translate="no">--profile</code>；<code translate="no">~/.openprogram-&lt;name&gt;/</code></td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_HOME</code></th><td>认证账号的替代基础目录</td><td><code translate="no">openprogram/models/auth/account/accounts.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_WORKDIR</code></th><td>agent 默认工作目录，优先于 <code translate="no">default_workdir</code></td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
+</tbody>
+</table>
+<h3>端口与网页</h3>
+<table class="stack">
+<thead><tr><th scope="col">变量</th><th scope="col">用途</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_WEB_PORT</code></th><td>唯一 worker 端口（默认 18100）；低于命令行参数，高于已存偏好</td><td><code translate="no">openprogram/operations/worker/lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_WEB</code></th><td><code translate="no">1</code>：worker 跳过前端构建检查，不提供 web UI</td><td><code translate="no">openprogram/operations/worker/runner.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DOCS_BASE</code></th><td>文档挂载路径（默认 <code translate="no">/docs/</code>；须以 <code translate="no">/</code> 开头和结尾）。发布工作流把它设成网站地址里的路径</td><td><code translate="no">scripts/docs_site/build.py</code></td></tr>
+</tbody>
+</table>
+<h3>行为开关</h3>
+<table class="stack">
+<thead><tr><th scope="col">变量</th><th scope="col">用途</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_AUTO_WORKER</code></th><td><code translate="no">1</code>：TUI 只连接现有 worker</td><td><code translate="no">openprogram/interfaces/cli/ink.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_SLEEP</code></th><td><code translate="no">1</code>：关闭记忆睡眠整理调度</td><td><code translate="no">openprogram/state/memory/scheduler.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_PROGRAMS_WATCH</code></th><td><code translate="no">1</code>：关闭 programs 目录文件监视</td><td><code translate="no">openprogram/programs/_host/watcher.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROJECT_AUTOCOMMIT</code></th><td><code translate="no">0</code>：关闭项目自动提交</td><td><code translate="no">openprogram/state/store/project/project_commit.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_WEBSEARCH_DISABLE</code></th><td>按名称禁用搜索 provider，如 <code translate="no">ollama</code></td><td><code translate="no">openprogram/programs/tools/web/web_search/providers/ollama.py</code></td></tr>
+</tbody>
+</table>
+<h3>LLM 调用</h3>
+<table class="stack">
+<thead><tr><th scope="col">变量</th><th scope="col">用途</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">AGENTIC_PROVIDER</code>, <code translate="no">AGENTIC_MODEL</code></th><td><code translate="no">detect_provider()</code> 最先选用</td><td><code translate="no">openprogram/models/providers/catalog/registry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_MAX_RETRIES</code></th><td>瞬态失败重试次数（默认 6）</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_BACKOFF_BASE</code></th><td>退避基数秒（默认 1.5）</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></th><td><code translate="no">runtime.exec</code> 默认墙钟预算（未设或 <code translate="no">0</code>：不限）</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FALLBACK_MODELS</code></th><td>覆盖 <code translate="no">model_fallback</code> 设置。未设：按该设置（默认关闭）。<code translate="no">same-provider</code>：该 provider 其他已启用模型，最多两个。<code translate="no">off</code> 或 <code translate="no">none</code>：关闭。逗号分隔的 <code translate="no">provider/model</code> 列表：按顺序，可跨 provider。</td><td><code translate="no">openprogram/models/providers/utils/failover.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></th><td>每个流式请求的尝试次数，含第一次（默认 5）。连接重试有独立额度，为此值减一。</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>重试用尽后等待不可达端点，每 5 至 30 秒检查（默认 1800；<code translate="no">0</code> 立即失败）。取消回合会结束等待。</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code></th><td>重试愿意等待的最长 <code translate="no">Retry-After</code>（默认 300）。更长则立即失败，让回退模型、其他账号或用户接手。<code translate="no">0</code> 取消上限。</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_WEBSOCKET</code></th><td><code translate="no">0</code>：ChatGPT 登录的 Codex 回合用 HTTP 而不是 WebSocket。WebSocket 默认开启，接续的回合只发送新输入</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/websocket_transport.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_ZSTD</code></th><td><code translate="no">0</code>：Codex HTTP 回合不压缩（默认 zstd）</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/request_compression.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_STRICT_TOOLS</code></th><td><code translate="no">0</code>：关闭严格工具 schema（默认开启）</td><td><code translate="no">openprogram/models/providers/schema/__init__.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td><code translate="no">1</code>：强制 IPv4 源地址</td><td><code translate="no">openprogram/models/providers/utils/http_client.py</code></td></tr>
+</tbody>
+</table>
+<h3>调试</h3>
+<table class="stack">
+<thead><tr><th scope="col">变量</th><th scope="col">用途</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_LOG_LEVEL</code></th><td><code translate="no">DEBUG</code>、<code translate="no">INFO</code>、<code translate="no">WARNING</code>、<code translate="no">ERROR</code>，不分大小写。worker、调度器和前台 Server 默认 <code translate="no">INFO</code>，CLI 默认 <code translate="no">WARNING</code>。无效值被忽略。</td><td><code translate="no">openprogram/host/process_logging.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_RUNTIME</code></th><td><code translate="no">1</code>：把 runtime 日志镜像到 stderr</td><td><code translate="no">openprogram/interfaces/server/runtime_management.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_REGISTRY</code></th><td><code translate="no">1</code>：函数注册表导入失败时附 traceback</td><td><code translate="no">openprogram/programs/_host/registry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_DISPATCHER</code></th><td><code translate="no">1</code>：分发器日志（<code translate="no">INFO</code>，写入 worker 日志）</td><td><code translate="no">openprogram/runtime/conversation/turn_runtime/runtime_attach.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_PROVIDER</code></th><td><code translate="no">1</code>：provider 层日志（<code translate="no">INFO</code>，写入 worker 日志）</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/openai_codex.py</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>内部变量</summary>
+<p>HTTP 和 SSE 超时 <code translate="no">OPENPROGRAM_HTTPX_*</code>、<code translate="no">OPENPROGRAM_SSE_*</code>；TCP keepalive <code translate="no">OPENPROGRAM_TCP_*</code>；按 provider 的重试 <code translate="no">OPENPROGRAM_&lt;PROVIDER&gt;_MAX_RETRIES</code>；<code translate="no">OPENPROGRAM_JOB_WORKERS</code>；<code translate="no">OPENPROGRAM_IMAGE_DIR</code>。完整列表：<code translate="no">grep -rn "OPENPROGRAM_" openprogram/</code>。</p>
+</details>

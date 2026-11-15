@@ -6,16 +6,15 @@ import sqlite3
 
 import pytest
 
-from openprogram.execution import (
+from openprogram.runtime.execution import (
     AttemptStore,
     CapabilitySet,
     CheckpointFragment,
     DriverRegistry,
-    ExecutionStatus,
     RevisionControlService,
     RuntimeControlService,
 )
-from openprogram.execution.store import ExecutionConflict, ExecutionStore
+from openprogram.runtime.execution.store import ExecutionConflict, ExecutionStore
 
 
 def _hash(value: str) -> str:
@@ -62,7 +61,7 @@ def _source(tmp_path):
     attempts = AttemptStore(store)
     leased, reserved = attempts.lease(
         source.execution_id, expected_version=source.status_version,
-        owner_id="owner", ttl_seconds=30,
+        owner_id="owner",
     )
     active, running = attempts.activate(
         leased.attempt_id, generation=1,
@@ -253,26 +252,3 @@ def test_draft_revision_invalidates_old_validation_and_authorizes_mutation(tmp_p
         )
     assert stale.value.code == "validation_stale"
 
-
-@pytest.mark.parametrize("partial_version", [11, 12, 13])
-def test_partial_runtime_store_migrates_all_control_authorities(
-    tmp_path, partial_version,
-):
-    path = tmp_path / "executions.db"
-    ExecutionStore(path)
-    with sqlite3.connect(path) as connection:
-        for table in (
-            "execution_waits", "execution_audit_events",
-            "revision_manifests", "revision_approvals", "revision_validations",
-            "revision_drafts", "revision_artifacts",
-        ):
-            connection.execute(f"DROP TABLE {table}")
-        connection.execute(f"PRAGMA user_version = {partial_version}")
-    ExecutionStore(path)
-    with sqlite3.connect(path) as connection:
-        names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    assert {
-        "revision_artifacts", "revision_drafts", "revision_validations",
-        "revision_approvals", "revision_manifests", "execution_waits",
-        "execution_audit_events",
-    } <= names

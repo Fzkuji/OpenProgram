@@ -1,0 +1,594 @@
+<title>Web UI</title>
+<meta name="description" content="Chat, branches, attachments, Activity, files, projects and every page of the OpenProgram browser interface.">
+<h1>Web UI</h1>
+<pre translate="no"><code>openprogram web</code></pre>
+<dl class="pairs">
+<dt>Address</dt><dd><code translate="no">http://localhost:18100</code>: static UI, <code translate="no">/api</code> and <code translate="no">/ws</code> on one port</dd>
+<dt>Change port</dt><dd><code translate="no">openprogram ports --port</code></dd>
+<dt>Shared with</dt><dd>TUI and CLI sessions: <a href="README.html">interfaces overview</a></dd>
+<dt>What tools may do</dt><dd><a href="../capabilities/permissions.html">Permissions</a></dd>
+</dl>
+<figure><img src="../images/chat_hero.png" alt="The OpenProgram chat page"></figure>
+
+<h2>Pages</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Route</th><th scope="col">Purpose</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/chat</code>, <code translate="no">/s/&lt;session-id&gt;</code></th><td>Chat; direct link to one session. Switching sessions keeps the page and WebSocket.</td></tr>
+<tr><th scope="row"><code translate="no">/pending</code></th><td>Always-on Agent reports from all conversations: awaiting your decision, then new</td></tr>
+<tr><th scope="row"><code translate="no">/agents</code></th><td>Create, configure, start conversations: model, abilities, memory, context</td></tr>
+<tr><th scope="row"><code translate="no">/applications</code></th><td>Install from a local folder; open, enable, hide from the new tab page, update, uninstall</td></tr>
+<tr><th scope="row"><code translate="no">/scheduler</code></th><td>One-time, recurring and monitor tasks and <a href="../capabilities/reminders.html">reminders</a>, filtered by type, as a list or <a href="../capabilities/reminders.html#calendar-view">calendar</a>; pause, resume, delete</td></tr>
+<tr><th scope="row"><code translate="no">/chats</code>, <code translate="no">/history</code></th><td>Projects, home project first; each with Chats, Memory, Settings, Info tabs</td></tr>
+<tr><th scope="row"><code translate="no">/memory</code></th><td>History on Memory: wiki, journal, core memories</td></tr>
+<tr><th scope="row"><code translate="no">/projects</code></th><td>History on Chats; Settings holds per-project permission rules and defaults</td></tr>
+<tr><th scope="row"><code translate="no">/programs</code></th><td>Abilities hub: Programs catalog with Tools and Applications roots (call tree, graph)</td></tr>
+<tr><th scope="row"><code translate="no">/skills</code></th><td>Installed SKILL.md files, discover, create; detail pages</td></tr>
+<tr><th scope="row"><code translate="no">/plugins</code></th><td>Installed, Discover (marketplace), Issues</td></tr>
+<tr><th scope="row"><code translate="no">/mcp</code></th><td>Add from the directory, edit configs, per-server status</td></tr>
+<tr><th scope="row"><code translate="no">/settings</code></th><td>Lands on <code translate="no">/settings/general</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Settings tab</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">General</th><td>Language, suggestions, user, notifications, runtime version, Desktop update status</td></tr>
+<tr><th scope="row">Providers</th><td><a href="../models/README.html">Models</a>, credentials, auth</td></tr>
+<tr><th scope="row">Other tabs</th><td>Appearance, Memory, Search, Browser, Voice, Environments, Channels, Import, Usage, System, Versions</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Narrow windows</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Width</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Up to 900px</th><td>Left sidebar starts as an icon rail and closes after navigating. The list column of History, Agents and Settings collapses to a rail.</td></tr>
+<tr><th scope="row">Below 760px</th><td>Those columns start as rails and collapse on resize</td></tr>
+</tbody>
+</table>
+<p class="note">A choice you make yourself is kept.</p>
+</details>
+
+<h3 id="settings-versions">Settings → Versions</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Lists</th><td>Running version, the one OpenProgram returns to if that stops starting, versions kept here. Only on an install that updates itself in place; a fixed App or source checkout says it keeps none.</td></tr>
+<tr><th scope="row"><strong>Go back</strong></th><td>Returns to exactly that version, removing everything after it</td></tr>
+<tr><th scope="row"><strong>Undo change</strong></th><td>Removes only that change</td></tr>
+<tr><th scope="row"><strong>Edits saved but not in use</strong></th><td>Files changed by hand inside a running version. <strong>Apply edits</strong> asks the Agent to bring them into a new version.</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Each button</dt><dd>Opens a conversation in which the Agent calls <code translate="no">self_update</code>, with no confirmation</dd>
+<dt>Its output</dt><dd>Building, testing on a separate copy, waiting for another update, switching, held messages</dd>
+<dt>Windows</dt><dd>The output adds that the test has no system-level isolation</dd>
+<dt>Toast, once</dt><dd>OpenProgram went back to the last good version or set direct edits aside</dd>
+</dl>
+
+<h2 id="command-palette">Command palette</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open</th><td><strong>⌘K</strong> (<strong>Ctrl+K</strong>) anywhere except a terminal, which keeps it; again or Escape closes</td></tr>
+<tr><th scope="row"><strong>Actions</strong></th><td>New chat; Agents, Skills, Applications, Projects, History, Memory, Scheduler, Settings</td></tr>
+<tr><th scope="row"><strong>Sessions</strong></th><td>Up to 300 unarchived, most recent first, with last activity or <strong>Running</strong>. Selects an open tab if there is one. Matches title, latest message preview and project name, not message contents.</td></tr>
+</tbody>
+</table>
+
+<h2>Shortcuts</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Key (Ctrl for Cmd on Windows, Linux)</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row">Cmd+N</th><td>New chat</td></tr>
+<tr><th scope="row">Cmd+T, Cmd+W</th><td>New tab, close tab</td></tr>
+<tr><th scope="row">Cmd+Shift+T</th><td>Reopen the last closed tab</td></tr>
+<tr><th scope="row">Cmd+Shift+] Cmd+Shift+[</th><td>Next, previous tab</td></tr>
+<tr><th scope="row">Cmd+1 … Cmd+8, Cmd+9</th><td>That tab, last tab</td></tr>
+<tr><th scope="row">Cmd+F, Cmd+G, Shift+Cmd+G</th><td>Find, next, previous; in find also Enter, Shift+Enter</td></tr>
+<tr><th scope="row">↑ on the first line, ↓ past newest</th><td>Recall a message, restore your draft. Editing recalled text starts a new cycle; modified arrows and selections edit normally.</td></tr>
+</tbody>
+</table>
+<p class="note">In the App these work wherever focus is. A browser keeps its reserved shortcuts.</p>
+
+<h2>Messages during a turn</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="A message sent during a turn goes one of two ways. Enter steers: it interrupts the response, keeps text and reasoning, and continues the same turn. Cmd+Enter queues: each message starts after the previous turn, and its line can be dragged, or moved with Alt+Up and Alt+Down.">
+  <defs><marker id="st-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="92">Message</text>
+  <path class="ln" d="M84 85H130V40H236" marker-end="url(#st-a)"/>
+  <path class="ln" d="M130 85V130H236" marker-end="url(#st-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="146" y="30">Enter</text>
+  <text class="t-cmd notranslate" translate="no" x="146" y="120">Cmd+Enter</text>
+  <text class="t-big" x="248" y="46">Steer</text>
+  <text class="t-soft" x="248" y="70">interrupts the response, keeps text and reasoning,</text>
+  <text class="t-soft" x="248" y="90">continues the same turn</text>
+  <text class="t-big" x="248" y="136">Queue</text>
+  <text class="t-soft" x="248" y="160">each starts after the previous turn</text>
+  <text class="t-soft" x="248" y="180">drag its line, or Alt+↑ Alt+↓, to reorder</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Message</strong></li>
+  <li class="via"><dl class="pairs">
+    <dt><code translate="no">Enter</code></dt><dd>Steer: interrupts the response, keeps text and reasoning, continues the same turn</dd>
+    <dt><code translate="no">Cmd+Enter</code></dt><dd>Queue: each starts after the previous turn; drag its line, or Alt+↑ Alt+↓, to reorder</dd>
+  </dl></li>
+</ol>
+</figure>
+<details>
+<summary>Steering rules</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Steering</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool call being written</th><td>Dropped</td></tr>
+<tr><th scope="row">Started tools, structured output</th><td>Get it at the next safe point; a started tool is not cancelled</td></tr>
+<tr><th scope="row">Unchanged</th><td>Model, tools, permissions</td></tr>
+<tr><th scope="row"><strong>Steer interrupts the current response</strong> off</th><td><code translate="no">execution.instant_steer</code>: instructions wait for the response to end</td></tr>
+<tr><th scope="row">Action button</th><td>Stop while running, whatever the draft holds; the draft is kept</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Queue tags and actions</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Queue item</th><th scope="col">Meaning or effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Next turn</strong></th><td>Waiting</td></tr>
+<tr><th scope="row"><strong>Waiting for connection</strong></th><td>Goes out when the connection returns</td></tr>
+<tr><th scope="row"><strong>Not sent</strong>, <strong>Unconfirmed</strong></th><td>After a failure. Does not hold back later messages. Same command retried, never resent as a new turn.</td></tr>
+<tr><th scope="row">Hover a line</th><td>Time and actions</td></tr>
+<tr><th scope="row">Click its text</th><td>Full message and attachments; click an attachment to preview</td></tr>
+<tr><th scope="row">Edit</th><td>Text and files; Save keeps its place, Cancel its content. Holds the message until done.</td></tr>
+<tr><th scope="row"><strong>Add to this turn</strong></th><td>Same as steering; shown as pending at the end of the running reply, then cannot be edited or removed</td></tr>
+<tr><th scope="row">Remove, <strong>Clear all</strong></th><td>One, or all except one being edited</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Slash commands, limits and restoring</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Slash commands</th><td>Run as commands during a turn or waiting request. <code translate="no">/compact</code>, <code translate="no">/rewind</code> ask you to wait or stop first; <code translate="no">/task</code>, <code translate="no">/merge</code>, <code translate="no">/skill</code> queue for the next turn.</td></tr>
+<tr><th scope="row">Steer size</th><td>Up to 4,096 characters, counting each attachment's name line; longer stays queued</td></tr>
+<tr><th scope="row">Steer attachments</th><td>Saved like a sent message's, read by path, shown to models that take images</td></tr>
+<tr><th scope="row">Queued text</th><td>Survives reload, closed windows and restart; the next window sends it in order when idle; two windows never send the same message</td></tr>
+<tr><th scope="row">Queued attachments</th><td>Live only in that window's memory</td></tr>
+<tr><th scope="row">Pending steers, unconfirmed deliveries</th><td>Restore the same way, reusing the original command. Retries stay bound to the original execution; if replaced, the instruction stays unsent.</td></tr>
+<tr><th scope="row">After Stop</th><td>The queue waits for release, then goes in order. An instruction cancelled by Stop stays as an unsent draft.</td></tr>
+<tr><th scope="row">Consumed supplement</th><td>Between the earlier and later reply; before the reply in older history without a boundary</td></tr>
+<tr><th scope="row">Deleting a running conversation</th><td>Stops its turn, closes pending questions and approvals, discards its queue</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Stopping and reconnecting</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stop</th><td><strong>Cancel execution</strong>, or <strong>Esc</strong> in the composer</td></tr>
+<tr><th scope="row">Kept after Stop, refresh or failure</th><td>Thinking, partial replies, tool steps; saved as they run</td></tr>
+<tr><th scope="row">Failure</th><td>A notice ends the reply; <strong>Error details</strong> has the original message</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Sending, recovery and history reads</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sent message</th><td>Appears at once, pending until confirmed. A placeholder follows (double-ring mark, static with reduced motion); text, thinking and tool blocks stream in order. Replies from a non-default agent carry its name.</td></tr>
+<tr><th scope="row">Disconnected</th><td>A sent message queues. If the connection drops before confirmation, nothing is resent automatically.</td></tr>
+<tr><th scope="row">Refresh</th><td>Restores the active execution and its controls, including after an approval wait. Silence does not end one; an obsolete worker registration cannot keep one active.</td></tr>
+<tr><th scope="row">Failed history read</th><td>Shows retry, keeps cached messages. Reads expire after 15 seconds; retrying does not resubmit; late responses cannot replace newer ones.</td></tr>
+<tr><th scope="row">Expired snapshot</th><td><strong>Retry history</strong> rereads the position, <strong>Go to latest history</strong> opens the latest</td></tr>
+<tr><th scope="row">After reconnecting</th><td>Selected conversation loads first; recovery uses compact snapshots one at a time. Viewing history never resumes a task.</td></tr>
+<tr><th scope="row">Cancelling</th><td>Local shell commands stop their process group before reporting. Resumed conversations persist the assistant as cancelled. Browser actions waiting on the page lock recheck cancellation; one already sent is not undone.</td></tr>
+<tr><th scope="row">Long conversations</th><td>Open with a small recent page. Activity reads a run's events only when its row opens. Brief refresh failures retry quietly.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Reading a conversation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Feature</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row">Thinking</th><td>Collapsed block; latest line while streaming</td></tr>
+<tr><th scope="row"><strong>Conversation view</strong>, ⋯ menu</th><td><strong>Normal</strong> folds tools to one line, <strong>Thinking</strong> opens them with thinking expanded, <strong>Verbose</strong> opens every step. <strong>Use this view by default</strong>, or Settings → Appearance. Saved per conversation in this browser.</td></tr>
+<tr><th scope="row"><strong>Chat width</strong></th><td><strong>Narrow</strong> at most 900px, or <strong>Full width</strong>. Settings → Appearance, per browser.</td></tr>
+<tr><th scope="row">Focus mode</th><td>Full-screen button at the top right: hides sidebars, strip and other panes, including their webpages. Button or <strong>Esc</strong> returns. Survives switching to the graph.</td></tr>
+<tr><th scope="row">Function timeline</th><td>One expandable row per step: arguments, output, errors, duration. Nested calls recurse; sub-agents are steps. A step opens details in the right sidebar. <code translate="no">/programs</code> runs use it too.</td></tr>
+<tr><th scope="row">Find</th><td>Your and agent text on the current branch, including unloaded history, case-insensitive; not tool output or thinking. Starts nearest your position. A focused page, terminal or editor keeps ⌘F.</td></tr>
+<tr><th scope="row">Reading position</th><td>After restart or refresh: latest. Same run, back within an hour: where you were; at bottom keeps following. Scrolling up cancels following. Same rule after losing focus.</td></tr>
+<tr><th scope="row">Sidebar dot</th><td>Blue: a turn ended while you were away. Red: it failed. Amber: waiting for input. Opening clears blue and red in every window. Running: three pulsing dots, plus a sweep on the selected row.</td></tr>
+<tr><th scope="row">File-change summaries</th><td>Loaded ones stay when you return; history actions still check current state</td></tr>
+</tbody>
+</table>
+
+<h3 id="task-list">Task list</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Shown</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td><code translate="no">todo_create</code>, <code translate="no">todo_update</code>; under the reply of the turn that changed it</td></tr>
+<tr><th scope="row">While running</th><td>Open: done, in progress, to do</td></tr>
+<tr><th scope="row">Turn ends</th><td>Goes away</td></tr>
+<tr><th scope="row">Sub-agents still running</th><td>Stays, with their count on the waiting task</td></tr>
+<tr><th scope="row">Stopped or failed with work left</th><td>Stays until your next message</td></tr>
+<tr><th scope="row">New turn with no plan</th><td>The unfinished list, labelled <strong>Plan from before your last message</strong></td></tr>
+<tr><th scope="row">Long plan</th><td>Twelve tasks, counts of the rest</td></tr>
+</tbody>
+</table>
+
+<h3 id="message-navigation-and-chapters">Message navigation and chapters</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ticks on the left edge</th><td>One per message, with two or more of yours. Point for a preview card; click to scroll.</td></tr>
+<tr><th scope="row"><strong>Pin as chapter</strong>, reply action row</th><td>Thicker purple tick, filled bookmark, shown action row; on every branch containing that message and in every window</td></tr>
+<tr><th scope="row"><strong>Unpin chapter</strong></th><td>Removes it</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Suggested next message</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Looks like</th><td>Grey text in the empty composer; Tab makes it an editable draft, never sent for you</td></tr>
+<tr><th scope="row">Dropped by</th><td>Typing, a new turn, switching</td></tr>
+<tr><th scope="row">Cost</th><td>One short call to your last model per reply. Off in <strong>Settings → General</strong>.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Pictures in replies</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">visual</code> blocks</th><td>HTML or SVG from the model when a picture says it better, unless you ask for plain text</td></tr>
+<tr><th scope="row">Where</th><td>Web and desktop. Channel-bound chats do not draw; channels receive just the text around a view.</td></tr>
+<tr><th scope="row">Sandbox</th><td>Separate frame. Cannot read the App, sign-in or other chats. Libraries only from cdnjs, jsDelivr, unpkg, esm.sh; no other network.</td></tr>
+<tr><th scope="row">Theme</th><td>App colours, switches with it</td></tr>
+<tr><th scope="row">Buttons</th><td>Send text as your next message, waiting if a reply runs. Links open in your browser.</td></tr>
+<tr><th scope="row">Streaming, copy</th><td>Placeholder until complete; copy gets the original text</td></tr>
+<tr><th scope="row"><code translate="no">a2ui</code> blocks</th><td>Older <a href="https://a2ui.org">A2UI</a> v0.9 replies still render as cards</td></tr>
+<tr><th scope="row"><code translate="no">mermaid</code> blocks</th><td><a href="https://mermaid.js.org">Mermaid</a> in strict mode, themed. <strong>Code</strong> and <strong>Diagram</strong> switch; unparsable stays code. Library loads on first use.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Composer</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Feature</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tuck rows</th><td>Click the box outside its text (pointer becomes a hand): rows slide behind it. Again restores. Per browser; ignored by the function form.</td></tr>
+<tr><th scope="row">Markdown</th><td>Styled as you type; markers hidden away from the cursor. Sends the original.</td></tr>
+<tr><th scope="row">Long paste</th><td>Over 2,000 characters becomes <strong>Pasted · N lines</strong>: hover to preview, Backspace removes. Fully sent; the message shows a chip you can expand. <strong>lost</strong> means re-paste.</td></tr>
+<tr><th scope="row"><code translate="no">@path</code></th><td>Searched in the working directory: worktree or project folder, else the default project; a new chat uses its chosen project. Becomes a chip.</td></tr>
+<tr><th scope="row"><code translate="no">@</code> tabs and apps</th><td>Above files: open tabs and running apps matching title, address, name or bundle id. <code translate="no">/</code> in the query searches only files. Apps the agent may never operate are hidden.</td></tr>
+<tr><th scope="row">Secrets</th><td>Tokens and keys display masked with an eye toggle: GitHub, OpenAI and Anthropic <code translate="no">sk-</code>, AWS <code translate="no">AKIA</code>, Slack, Stripe, Google, Hugging Face, npm, GitLab, JWTs, PEM. Display only: the model gets the full text.</td></tr>
+<tr><th scope="row">Quote</th><td>Select text, <strong>Add to chat</strong>: into that pane's draft</td></tr>
+<tr><th scope="row"><strong>Edit message</strong></th><td>Text, URLs, attachments, <code translate="no">@</code> mentions. Cmd/Ctrl+Enter saves, Escape cancels; failures keep your edits.</td></tr>
+<tr><th scope="row"><strong>Copy link</strong>, conversation menus</th><td>Notifies only on success</td></tr>
+</tbody>
+</table>
+<details>
+<summary><code translate="no">@</code> search keys, revealed secrets and double sends</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Search pending</th><td>Enter and Tab keep editing. Escape dismisses that query even if a response is late.</td></tr>
+<tr><th scope="row">Empty or failed results</th><td>Enter sends, Tab moves focus. Shift+Enter and IME confirmation are unaffected.</td></tr>
+<tr><th scope="row">Revealed secret</th><td>Hides again when the text changes. Collapsed previews mask first. Copy and edit keep the original.</td></tr>
+<tr><th scope="row">Preparing mentions</th><td>Repeating the same draft does not double-send. A changed draft is not sent, with a notice, and stays.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary><strong>Auto rename</strong>, ⋯ menu</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Names from</th><td>The current branch with your last model, ignoring greetings; no message or tools</td></tr>
+<tr><th scope="row">Typed name</th><td>Never replaced</td></tr>
+<tr><th scope="row">Generated name</th><td>Refreshed after turns 1, 6, 16 and 40; after 2 and 3 too when the conversation opened with small talk</td></tr>
+<tr><th scope="row">Failure</th><td>Keeps the old name</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3>Attachments</h3>
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">Handling</th></tr></thead>
+<tbody>
+<tr><th scope="row">Images</th><td>Sent to models with image input; original saved. Up to 32 MiB, reduced to at most 5 MiB to send. Unsupported models reject rather than drop.</td></tr>
+<tr><th scope="row">Text, code, data, PDF, Office, in the App</th><td>Referenced by path, read by tools when needed, not added to the prompt</td></tr>
+<tr><th scope="row">Browser files with no path</th><td>Saved by the backend and referenced there</td></tr>
+<tr><th scope="row">Folder</th><td>Immediate listing only, up to 200 entries or 8 KiB</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Add</th><td>Paste, drop or composer menu. Each shows name, format, size; click to preview, × to remove.</td></tr>
+<tr><th scope="row">Pencil</th><td>Marks up an image: pen, rectangle, arrow, text, seven colours, ⌘Z. <strong>Done</strong> replaces it.</td></tr>
+<tr><th scope="row">Drafts</th><td>Persist once read. Sending clears only submitted items after acknowledgement. Errors keep them.</td></tr>
+<tr><th scope="row">Agent files</th><td>Under the reply: images in place, video and audio with controls, others as preview cards</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Git in the composer</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Needs or does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Git half</th><td>On a folder inside a Git checkout: branch and line counts. Crowded rows shorten names, hide branches, then show a half-coloured dot.</td></tr>
+<tr><th scope="row">Menu</th><td>Opens Review, switches or creates branches, moves onto a worktree; a started chat adds it as an additional folder</td></tr>
+<tr><th scope="row"><strong>Create pull request</strong></th><td><code translate="no">gh</code> signed in, non-default branch. Pushes and runs <code translate="no">gh pr create --fill</code>.</td></tr>
+<tr><th scope="row"><strong>Commit &amp; open PR with the agent</strong></th><td>With uncommitted changes; fills the composer, unsent</td></tr>
+<tr><th scope="row"><strong>View pull request</strong></th><td>Shows failed, running and passed CI counts, read on open</td></tr>
+<tr><th scope="row"><strong>Fix failing checks with the agent</strong></th><td>Fills the composer, unsent</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Branches and the DAG</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="Rewind to here rewinds at once when no file would change. Otherwise a dialog shows the file count and lines changed and offers Code and conversation, Conversation only, or Code only.">
+  <defs><marker id="rw-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Rewind to here</text>
+  <path class="ln" d="M136 33H196" marker-end="url(#rw-a)"/>
+  <path class="ln" d="M160 33V120H196" marker-end="url(#rw-a)"/>
+  <text class="t-big" x="208" y="40">Rewinds at once</text>
+  <text class="t-soft" x="208" y="62">no file would change</text>
+  <text class="t-big" x="208" y="127">Dialog</text>
+  <text class="t-soft" x="208" y="149">file count, lines changed</text>
+  <line class="ln" x1="290" y1="120" x2="418" y2="120" marker-end="url(#rw-a)"/>
+  <text x="430" y="101">Code and conversation</text>
+  <text x="430" y="126">Conversation only</text>
+  <text x="430" y="151">Code only</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Rewind to here</strong></li>
+  <li class="via"><dl class="pairs">
+    <dt>No file would change</dt><dd>Rewinds at once</dd>
+    <dt>Otherwise</dt><dd>Dialog with file count and lines changed</dd>
+  </dl></li>
+  <li class="flow-end"><strong>Choose</strong><small>Code and conversation</small><small>Conversation only</small><small>Code only</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">During a turn</th><td>Regenerate, Save &amp; resend and Rewind on the running branch wait until it ends; other branches act freely, and switching branches is never refused. A rewind that changes files is refused while another branch runs, with a button to stop that branch first.</td></tr>
+<tr><th scope="row"><strong>Copy</strong></th><td>On every message</td></tr>
+<tr><th scope="row"><strong>Regenerate</strong></th><td>Reruns the user turn as a sibling</td></tr>
+<tr><th scope="row"><strong>Save &amp; resend</strong>, after Edit message</th><td>Forks the turn. Files stay as they are.</td></tr>
+<tr><th scope="row"><strong>Rewind to here</strong> availability</th><td>Every sent user message; disabled, with the reason in its tip, while its branch runs or files upload. Message and attachments return above any draft.</td></tr>
+<tr><th scope="row">What it restores</th><td>Edit-tool changes only. Files changed only by shell commands, and commits, stay. Files another conversation changed later are left alone and listed.</td></tr>
+<tr><th scope="row"><strong>Rewound here</strong>, <strong>Undo rewind</strong>, <strong>Redo rewind</strong></th><td>Rewound turns are kept and the row marks the spot. Sending again adds a version beside them. Undo and redo move the conversation only.</td></tr>
+<tr><th scope="row"><strong>Fork from here</strong></th><td>New conversation with the history through this message and its reply; this one stays. Also, with Rewind, in the right-click menu.</td></tr>
+<tr><th scope="row">‹ N / M ›</th><td>Switches version; never deletes</td></tr>
+<tr><th scope="row"><strong>Copy conversation</strong>, ⋯ menu</th><td>A separate conversation to HEAD, or the last finished turn while running; same project, environment, Agent, model and settings. Titled "(copy)" with a <strong>Copied from</strong> banner.</td></tr>
+<tr><th scope="row"><code translate="no">/branch &lt;name&gt;</code></th><td>Names the branch; without a name, from its content</td></tr>
+<tr><th scope="row"><code translate="no">/rewind</code></th><td>Pick a message, oldest at the top, newest selected; then as <strong>Rewind to here</strong>. <strong>Conversation only</strong> marks a message with no saved files.</td></tr>
+<tr><th scope="row">Error card</th><td>Conversation too long or prompt rejected: <strong>Rewind</strong>. Rejected prompt also: <strong>Rewind and retry</strong>, which puts it back in the input box.</td></tr>
+<tr><th scope="row"><code translate="no">/doctor</code></th><td>Report in the conversation, not sent to the model</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Graph tools</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Graph</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row">Canvas</th><td>One node per turn, coloured by branch, pannable</td></tr>
+<tr><th scope="row">Browse (H)</th><td>Click folds calls; double-click a non-user node checks out, a user turn forks and edits; right-click for its card</td></tr>
+<tr><th scope="row">Select (V), Lasso (L)</th><td>Box or lasso takes every node touched; Shift adds; Space pans. Delete removes (followers join the previous node, a reply's tools go with it); ⌘Z or Undo restores. Not the root, compaction summaries or during a turn.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Review changes</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Lists</th><td>Files changed by a turn, the branch or the folder, with diffs</td></tr>
+<tr><th scope="row"><strong>Revert</strong> on a block</th><td>Restores those lines on disk if they still read as shown; otherwise refreshes. File History can undo it. Waits during a turn.</td></tr>
+<tr><th scope="row"><strong>Revert</strong> refuses</th><td>Outside the project, staged changes, blocks split across pages, end-of-file blocks without a newline, whole added or deleted files</td></tr>
+<tr><th scope="row">Comment button on a line</th><td><strong>Add to message</strong> adds file, line, quote and comment to the draft. ⌘Enter adds, Escape cancels.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="conversation-activity">Activity</h2>
+<table class="stack">
+<thead><tr><th scope="col">Section</th><th scope="col">Lists</th><th scope="col">Its page</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Waiting for you</strong>, when any</th><td>Always-on reports left for you</td><td>Opens the conversation</td></tr>
+<tr><th scope="row"><strong>Agents</strong></th><td><strong>Main agent</strong> with state and sub-agent count; a red badge counts waiting items. One row per branch, <strong>Current</strong> marked. Always-on status line when <a href="../capabilities/always-on-agents.html">on</a>.</td><td>Its runs, newest first, with what each did inside it; the <strong>Always-on</strong> row when on; a branch offers <strong>Switch to this branch</strong></td></tr>
+<tr><th scope="row"><strong>Programs and commands</strong></th><td>Running commands, <strong>Interrupted</strong> ones, all background programs, running first</td><td>Progress, command, terminal output, <strong>Stop program</strong>, directory and environment under <strong>Technical details</strong>; a command shows its output once it returned</td></tr>
+<tr><th scope="row"><strong>Open work</strong>, when any</th><td><a href="../capabilities/agents.html#open-work">What the agent still owes you</a></td><td>Note, <strong>Mark done</strong> or <strong>Reopen</strong>, <strong>Remove</strong></td></tr>
+<tr><th scope="row"><strong>Scheduled tasks</strong></th><td>Scheduler tasks, <a href="../capabilities/reminders.html">reminders</a>, <a href="../capabilities/event-triggers.html">event triggers</a> from this conversation</td><td><strong>Open in Scheduler</strong>; a <strong>Task</strong> row with its prompt or command, and for webhooks the address and key with <strong>Copy</strong>; its last 20 runs</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Follows</dt><dd>The selected conversation, only when its tab, route and chat state agree; drafts and other pages show an empty prompt</dd>
+<dt>Sections</dt><dd>Empty ones are hidden</dd>
+<dt>Rows</dt><dd>Open one page; rows on it open in place. <strong>Activity</strong> at the top, Esc, or Activity in the rail returns</dd>
+<dt>Width</dt><dd>Drag the panel's edge, or focus it and press Left or Right; saved per browser. Wider, runs and their timeline sit side by side; narrower, <strong>Timeline</strong> switches between them</dd>
+<dt>Headings</dt><dd>Fold, per browser</dd>
+<dt>Program drafts</dt><dd>Opening a Program from Abilities starts a draft tab with no execution history</dd>
+<dt>Grouping</dt><dd>Agents and runs, by branch</dd>
+</dl>
+<details>
+<summary>Sub-agents</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where</th><td>Inside the run that started them, one level further in per generation. Running, or how long it took; <strong>Failed · never started</strong> with error and task.</td></tr>
+<tr><th scope="row">Opened</th><td>What it was asked, its reply or error, what it started in turn, a waiting question (<strong>Answer in chat</strong>, <strong>Review in chat</strong>), <strong>Open its conversation</strong>, its controls, <strong>Technical details</strong></td></tr>
+<tr><th scope="row">Conversation</th><td>Never listed as a branch</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Runs and programs</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">A run</th><td>A row with its start, length and a bar on a time axis, 20 at a time (<strong>Show earlier</strong>). Opens in place to what was asked, each step with input and result, attempts with the error, sub-agents and the reply. The newest opens by itself if it failed or is still going.</td></tr>
+<tr><th scope="row">Run actions</th><td>Pause, Continue, Retry, <strong>Add instruction</strong>, Cancel where supported; a waiting question ends the list. <strong>Technical details</strong>: Step, <strong>Create branch</strong>, code policy, IDs, revisions, checkpoints, raw events. A fetched snapshot does not prove an Agent is running.</td></tr>
+<tr><th scope="row">Calls, long values</th><td>Calls titled by their request. Long values show eight lines until <strong>Show all</strong>.</td></tr>
+<tr><th scope="row">Progress sources</th><td><code translate="no">##progress 45/100 samples</code>, OSC 9;4, tqdm and pip bars, counters such as <code translate="no">Epoch 3/10</code>. Otherwise elapsed time and the last line.</td></tr>
+<tr><th scope="row">Output</th><td>Renders like a terminal, bounded, truncation stated. <strong>Stop program</strong> targets only that process group.</td></tr>
+<tr><th scope="row"><code translate="no">bash</code> still running after its wait</th><td>Becomes a program. Its supervisor survives worker restarts. Processes detached into another session or started outside management are not claimed.</td></tr>
+<tr><th scope="row">Updates</th><td>On events, panel opening and recovery; no refresh button. Fallback: snapshots 30 seconds, programs 3, an open program 1. Failures keep the last data with a notice. Ended attempts missing only model responses show as ended.</td></tr>
+<tr><th scope="row">Always-on row</th><td>Above the runs of the checked-out branch. Opens to <strong>Wake now</strong>, goal, current Goal, cadence, whether it is alive, last and next wake, spending, and what it was told about reports. Reports are rows among the runs, with destinations and <strong>Don't report things like this</strong>. Archive the conversation to stop; schedule in Agents → Always-on.</td></tr>
+<tr><th scope="row"><strong>Branch with new instructions</strong></th><td>From a saved point: prepare, check, confirm, publish. Editing makes a new draft and voids validation. Sensitive changes need independent approval.</td></tr>
+<tr><th scope="row"><strong>Create branch</strong></th><td>A separate paused child; <strong>Continue</strong> starts it</td></tr>
+<tr><th scope="row"><strong>Retry</strong></th><td>An independent paused execution at the point, with the original revision</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Tabs and sidebar</h2>
+<details>
+<summary>Tab behavior</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Back and Forward</th><td>Per tab, saved with it; a new destination replaces only forward steps</td></tr>
+<tr><th scope="row">Conversation already open here</th><td>Its tab is selected, including from Back and Forward. Uniqueness is by ID. Reloading older duplicates keeps the active or first.</td></tr>
+<tr><th scope="row">During a running turn</th><td>Clicking another chat opens it in a new tab. Middle-click always does.</td></tr>
+<tr><th scope="row">Deleting a conversation</th><td>Leaves every history; the tab goes back or closes, focus moving right or left. The last tab leaves a new chat.</td></tr>
+<tr><th scope="row"><strong>New chat</strong></th><td>Reuses an empty open chat</td></tr>
+<tr><th scope="row">Tab press and drag</th><td>Release without dragging switches. Dropping outside uses the new-window transfer.</td></tr>
+<tr><th scope="row">Pane handle drag</th><td>Shows a full label with icon and title</td></tr>
+<tr><th scope="row">Split canvas</th><td>Clicking a conversation switches Files, Activity and Resources; responses stay scoped</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Sidebar</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Sidebar</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shows</th><td>Projects with non-archived chats; others stay in the selector</td></tr>
+<tr><th scope="row">Group</th><td><strong>Group by → Project</strong>; drag a header, or Alt+Up, Alt+Down. Saved here.</td></tr>
+<tr><th scope="row">Sort projects</th><td>Newest, oldest, name, manual. Chat direction and A–Z are separate. Pins stay on top.</td></tr>
+<tr><th scope="row">Move chats</th><td>Drag, or <strong>Move to project</strong>. Records move; later turns use the new folder and memory; old memory stays. Not while running.</td></tr>
+<tr><th scope="row">Place in project</th><td>Dropping sets a place until new activity. Chats otherwise list by activity.</td></tr>
+<tr><th scope="row">Select several</th><td>⌘-click, Shift-click; right-click to move or archive. Click or Escape clears.</td></tr>
+<tr><th scope="row">Project menu</th><td>Settings, new chat, pin, edit (name, icon, description, source folders), custom section; reveal folder, create worktree, archive chats, remove from sidebar</td></tr>
+<tr><th scope="row">Remove a project</th><td>Keeps files and chats; not the home project</td></tr>
+<tr><th scope="row">Worktree</th><td>New branch and outside folder; uncommitted changes stay. <strong>Stop</strong> during checkout removes the partial folder and branch.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="manage-project-files">Files</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Columns</th><td>Name, Size, Date Modified, Kind; narrow shows the first two. Click a header to sort; search keeps relevance.</td></tr>
+<tr><th scope="row">Toolbar</th><td>Search, New File, New Folder, Refresh, Sort and display (hidden, Git-ignored, folders first), Get Info. Settings persist per project.</td></tr>
+<tr><th scope="row">Move</th><td>Drag onto a folder or empty space. <strong>Move to…</strong> (⇧⌘M, Ctrl+Shift+M): type a name or path, Tab steps in, <strong>Create … and move here</strong> makes it. Each has <strong>Undo</strong>; refused moves revert.</td></tr>
+<tr><th scope="row">Select</th><td>⌘-click, Shift-click</td></tr>
+<tr><th scope="row">Keys</th><td>⌘C ⌘X ⌘V, ⌘Backspace or Delete with confirmation, F2 renames</td></tr>
+<tr><th scope="row">New, Rename</th><td>Inline; Enter or clicking away keeps, Escape or empty cancels</td></tr>
+<tr><th scope="row">Add from the OS</th><td>Drag onto the tree, up to 1 GiB each; existing files are left and counted</td></tr>
+<tr><th scope="row">Delete</th><td>Recoverable: <code translate="no">openprogram trash list</code>, <code translate="no">openprogram trash restore &lt;entry_id&gt;</code>. Restore never overwrites. Deleting or renaming a symlink acts on the link, not its target.</td></tr>
+<tr><th scope="row">Unsaved file</th><td>Delete asks to save, export or discard. Export keeps the draft; reopen after restoring.</td></tr>
+<tr><th scope="row">Copy, Cut</th><td>Keep the source project; paste only there</td></tr>
+<tr><th scope="row">Navigation</th><td>Coming back to the window re-reads open folders. Back and Forward walk locations, restoring tree and scroll. The path's copy button gives the full path; hover a size for bytes.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Get Info and folder sizes</summary>
+<dl class="pairs">
+<dt>Get Info</dt><dd>Paths, bytes, timestamps, read-only permissions</dd>
+<dt>Scan</dt><dd>Visible folders, in a bounded queue. Samples persist, not rescanned until <strong>Refresh</strong> or <strong>Recalculate</strong>; not atomic snapshots.</dd>
+<dt><code translate="no">≥</code></dt><dd>Partial</dd>
+<dt>Counts</dt><dd>Logical bytes, hidden files included; symlinks and unreadable entries skipped</dd>
+<dt>Sorting</dt><dd>Complete samples join; unknown ones go last</dd>
+</dl>
+</details>
+
+<h3>Previews</h3>
+<table class="stack">
+<thead><tr><th scope="col">Type</th><th scope="col">Opens as</th></tr></thead>
+<tbody>
+<tr><th scope="row">Markdown</th><td>Rendered like Obsidian's reading view: title, <strong>Properties</strong> table. Relative images and links work. Raw HTML shows as text.</td></tr>
+<tr><th scope="row">Obsidian syntax</th><td>Callouts <code translate="no">&gt; [!note]</code>, folded <code translate="no">-</code>, open <code translate="no">+</code>; <code translate="no">==mark==</code>; <code translate="no">#tag</code>; <code translate="no">[[Note]]</code>, <code translate="no">[[Note#Heading]]</code>, <code translate="no">[[Note|label]]</code>; <code translate="no">![[image.png|300]]</code>. Same folder or a written path, no global search or outline.</td></tr>
+<tr><th scope="row">HTML, in the App</th><td>Web page in a browser tab through <code translate="no">file://</code>; <strong>View page</strong> and <strong>View source</strong> switch. In a browser or from a remote worker: source.</td></tr>
+<tr><th scope="row">PDF</th><td>Continuous reader with thumbnails, outline, fit, search, download. Project files take highlights and notes as standard annotations. Local decoder, up to 64 MiB. Copy removes layout line breaks by default.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">New reply</th><td>Opens its first supported output beside the chat; history and background replies do not</td></tr>
+<tr><th scope="row"><strong>File changed</strong></th><td>Shown on a visible preview. <strong>Refresh</strong> keeps the old view on failure and keeps unsaved edits.</td></tr>
+<tr><th scope="row">Several tabs on one file</th><td>Share its editor and draft; <strong>Show here</strong> moves the editor</td></tr>
+<tr><th scope="row">Completed Goals</th><td>Status and duration under the reply</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Markdown preview links and anchors</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Heading anchors</th><td>Lowercase visible text; Unicode letters and numbers kept; spaces become hyphens; duplicates get numeric suffixes</td></tr>
+<tr><th scope="row"><code translate="no">#fragment</code>, <code translate="no">file.md#fragment</code></th><td>Scrolls within the document; opens the target file and scrolls once it loads. Not restored on reopening.</td></tr>
+<tr><th scope="row">Link schemes</th><td>Local files, fragments, HTTP(S), mailto. Protocol-relative links use HTTPS.</td></tr>
+<tr><th scope="row">Not loaded</th><td>Data image URLs, executable or unsupported schemes</td></tr>
+<tr><th scope="row">Math</th><td>Text until typeset; inline and fenced code keep literal delimiters</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Projects and moved folders</summary>
+<dl class="pairs">
+<dt>Folder paths</dt><dd>On the worker's machine. Linux with no display gets a manual path dialog; the worker checks the directory.</dd>
+<dt>Identity</dt><dd><code translate="no">&lt;project&gt;/.openprogram/project.json</code>; keep it when moving. A damaged file is an error, never a silent change.</dd>
+</dl>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Moved within known parents</th><td>Found on startup, three levels and 4,000 entries</td></tr>
+<tr><th scope="row">Moved elsewhere</th><td>Open its new location once; neighbours moved with it reconnect too</td></tr>
+<tr><th scope="row">Copy while the original exists</th><td>A separate project</td></tr>
+<tr><th scope="row">Several copies</th><td><strong>Locate folder</strong></td></tr>
+<tr><th scope="row">Unverifiable identity</th><td><strong>Use the folder at this location</strong></td></tr>
+<tr><th scope="row">Located folder is another project, missing one empty</th><td>Missing entry removed</td></tr>
+<tr><th scope="row">Unavailable</th><td>History readable; new tasks wait</td></tr>
+<tr><th scope="row">Different folder at the path</th><td>Does not inherit</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Webpage preview</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Floating preview</th><td>The same live page, docked at the conversation's top right, draggable; click, scroll and type in it. Keeps its distance when sidebars change. Scrollbar tracks hidden.</td></tr>
+<tr><th scope="row">Viewport</th><td>1920 × 1080 CSS pixels; resizing changes only scale</td></tr>
+<tr><th scope="row"><strong>Open page</strong></th><td>Moves it to a full tab with normal sizing</td></tr>
+<tr><th scope="row">Hide</th><td>Keeps it in Resources</td></tr>
+<tr><th scope="row">Regular browser</th><td>Sandboxed iframe, which sites may block and which shares no state</td></tr>
+<tr><th scope="row"><strong>Operation history</strong></th><td>Keyboard-accessible menu; stays until the page closes</td></tr>
+</tbody>
+</table>
+
+<h2>Appearance</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Theme</strong></th><td>Standard (default), Code rain, or Gradient (indigo, violet and teal behind the new tab). Per browser.</td></tr>
+<tr><th scope="row">Code rain</th><td>Empty chats rain behind the input; new messages decode through it; running labels, spinners and bars show as code. History, selection, copy and find use real text. Reduced motion: a still frame and no rain.</td></tr>
+<tr><th scope="row"><strong>Code rain density</strong></th><td>10–100%, default 40%</td></tr>
+<tr><th scope="row"><strong>Tab drag appearance</strong></th><td>Transparency 0–100% (20), Background blur 0–40px (16), Shadow strength 0–100% (25). At once, per browser, tabs and split titles only. <strong>Restore defaults</strong> resets these.</td></tr>
+</tbody>
+</table>

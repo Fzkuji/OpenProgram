@@ -63,13 +63,13 @@ export function NewSkillDialog({ open, onClose }: { open: boolean; onClose: () =
             <Label htmlFor="skill-body">{text("Body (markdown)", "正文（Markdown）")}</Label>
             <textarea id="skill-body" value={body} onChange={(e) => setBody(e.target.value)}
               rows={10}
-              className="ui-text-input mt-1 w-full rounded-[var(--ui-button-radius)] border border-[color:var(--accent-blue)] bg-[var(--bg-input)] p-2 font-mono text-xs outline-none focus:outline-none"
+              className="ui-text-input mt-1 w-full rounded-md border border-[color:var(--accent-blue)] bg-bg-input p-2 font-mono text-fs-xs outline-none focus:outline-none"
               placeholder={text("# My Skill\n\nWhat this skill does...", "# 我的技能\n\n这个技能的用途...")} />
           </div>
-          {err && <div className="text-xs text-destructive">{err}</div>}
+          {err && <div className="text-fs-xs text-destructive">{err}</div>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onClose(); }}>{t("sidebar.cancel")}</Button>
+          <Button variant="elevated" onClick={() => { reset(); onClose(); }}>{t("sidebar.cancel")}</Button>
           <Button onClick={submit} disabled={busy}>{busy ? text("Creating...", "创建中...") : text("Create", "创建")}</Button>
         </DialogFooter>
       </DialogContent>

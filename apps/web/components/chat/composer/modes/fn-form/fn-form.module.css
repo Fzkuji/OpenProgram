@@ -190,9 +190,9 @@
 .input {
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0 12px;
-  height: 32px;
+  height: var(--ui-button-h-lg);
   line-height: 30px;
   color: var(--text-bright);
   font-size: var(--fs-base);
@@ -225,11 +225,11 @@
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 22px;
-  height: 22px;
+  width: var(--ui-button-h-xs);
+  height: var(--ui-button-h-xs);
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
   color: var(--text-secondary);
   display: inline-flex;
@@ -257,15 +257,6 @@
   border-color: var(--accent-red) !important;
 }
 
-.select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23636d83'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 30px;
-  cursor: pointer;
-}
-
 /* Bool toggle */
 .toggle {
   display: flex;
@@ -277,9 +268,9 @@
    bumps it a notch, active flips to the accent-blue tint. */
 .toggleBtn {
   padding: 0 12px;
-  height: 28px;
+  height: var(--ui-button-h-sm);
   line-height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: none;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-secondary);
@@ -310,9 +301,9 @@
 }
 .chip {
   padding: 0 12px;
-  height: 28px;
+  height: var(--ui-button-h-sm);
   line-height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: none;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-secondary);
@@ -341,9 +332,9 @@
    `bg-primary` background + a 1px `text-secondary` border. */
 .chipCustom {
   padding: 0 12px;
-  height: 28px;
+  height: var(--ui-button-h-sm);
   line-height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-primary);

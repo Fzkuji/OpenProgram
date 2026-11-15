@@ -22,10 +22,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import Credential, CredentialData, CredentialPool
-from openprogram.webui.routes.identity import accounts, providers
-from openprogram.webui.routes.settings import config
+from openprogram.models.auth.store import AuthStore, set_store_for_testing
+from openprogram.models.auth.types import Credential, CredentialData, CredentialPool
+from openprogram.interfaces.server.routes.identity import accounts, providers
+from openprogram.interfaces.server.routes.settings import config
 
 
 _STORED_SECRET = "sk-stored-secret-abc4"
@@ -42,7 +42,7 @@ def _normalize_in_browser_code(cases: list[tuple[str, str]]) -> list[str | None]
     )
     script.write_text(
         "import { normalizeSecretReplacement } from "
-        '"../lib/net/secret-replacement.ts";\n'
+        '"../lib/net/auth/secret-replacement.ts";\n'
         "const cases = JSON.parse(process.argv[2]);\n"
         "console.log(JSON.stringify(cases.map(([input, mask]) =>\n"
         "  normalizeSecretReplacement(input, mask))));\n",
@@ -72,17 +72,17 @@ def _normalize_in_browser_code(cases: list[tuple[str, str]]) -> list[str | None]
 @pytest.fixture
 def secret_flow(tmp_path, monkeypatch):
     """Live route app whose credential probe always accepts."""
-    from openprogram import setup
-    from openprogram.auth.account import account_priority
-    from openprogram.auth.account import account_selection
-    from openprogram.auth import rotation
-    from openprogram.webui._model_listing import credentials
+    from openprogram.state import config as user_config
+    from openprogram.models.auth.account import account_priority
+    from openprogram.models.auth.account import account_selection
+    from openprogram.models.auth import rotation
+    from openprogram.models.listing import credentials
 
-    monkeypatch.setattr(setup, "get_config_path", lambda: tmp_path / "config.json")
+    monkeypatch.setattr(user_config, "get_config_path", lambda: tmp_path / "config.json")
 
     sidecar_root = tmp_path / "sidecars"
     for module in (account_priority, account_selection, rotation):
-        monkeypatch.setattr(module, "DEFAULT_ROOT", sidecar_root)
+        monkeypatch.setattr(module, "default_root", lambda: sidecar_root)
 
     for name in ("OPENAI_API_KEY", "TAVILY_API_KEY"):
         monkeypatch.delenv(name, raising=False)
@@ -119,7 +119,7 @@ def secret_flow(tmp_path, monkeypatch):
     accounts.register(app)
     config.register(app)
     with TestClient(app, raise_server_exceptions=False) as client:
-        yield SimpleNamespace(client=client, store=store, setup=setup)
+        yield SimpleNamespace(client=client, store=store, user_config=user_config)
 
     set_store_for_testing(None)
 
@@ -164,7 +164,7 @@ def test_every_mask_form_is_structurally_unsubmittable(secret):
     future mask became plain ASCII this fails, which is the point: it would
     silently become submittable.
     """
-    from openprogram.webui.routes.identity._credential_secrets import is_nonempty_printable_ascii, mask_credential
+    from openprogram.interfaces.server.routes.identity.credential_secrets import is_nonempty_printable_ascii, mask_credential
 
     mask = mask_credential(secret)
 
@@ -228,7 +228,7 @@ def test_valid_replacement_rotates_and_retires_the_old_secret(secret_flow):
 def test_no_read_path_returns_either_secret_in_plaintext(secret_flow, monkeypatch):
     """Sweep every credential-adjacent GET for the live plaintext."""
     monkeypatch.setenv("OPENAI_API_KEY", _STORED_SECRET)
-    secret_flow.setup._write_config({"api_keys": {"OPENAI_API_KEY": _STORED_SECRET}})
+    secret_flow.user_config.write_config({"api_keys": {"OPENAI_API_KEY": _STORED_SECRET}})
 
     paths = [
         "/api/config",

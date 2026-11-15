@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from openprogram.agent.management import session_aliases as A
+from openprogram.runtime.agent_registry import session_aliases as A
 
 
 def test_lookup_uses_catch_all_after_exact_miss(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
 
     A.attach(
         channel="wechat",
@@ -29,7 +29,7 @@ def test_lookup_prefers_exact_alias_over_catch_all(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
 
     A.attach(
         channel="wechat",

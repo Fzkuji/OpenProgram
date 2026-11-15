@@ -2,57 +2,44 @@
 
 /**
  * Composer controls cluster — permission / plus menu / active tool chips on
- * the left; chat+exec model chips, thinking-effort pill and context ring on
- * the right.
+ * the left; the model chip, thinking-effort pill, the Agent chip and
+ * context ring on the right.
  *
  * Always rendered in the detached `.controlsRow` below the wrapper —
  * every composer mode shares the same row, this component only knows
  * the cluster's contents.
  */
-import React, { useRef, useState } from "react";
-import { Menu } from "@base-ui-components/react/menu";
-import { CornerDownRight, Paperclip, Settings } from "lucide-react";
+import React, { useRef } from "react";
+
+import { type AnimatedNavIconHandle } from "@/components/animated-icons";
+import { SolarIcon } from "@/components/solar-icons";
 
 import {
-  type AnimatedNavIconHandle,
-  BicepsFlexedIcon,
-  GaugeIcon,
-} from "@/components/animated-icons";
-
-import { HoverTip } from "@/components/ui/tooltip";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { HoverTip, TipBody } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
-import { effortLevelColor, formatEffortLabel } from "@/lib/effort-color";
-import { GROUP_LABEL } from "../../top-bar/menu-styles";
-import { AgentBadge, PermissionBadge } from "../../top-bar";
-import { ContextBadge } from "../../context-badge";
+import { effortLevelColor, formatEffortLabel } from "@/lib/effort/effort-color";
+import { MENU_PANEL, MENU_SEPARATOR } from "@/components/ui/menu/menu-styles";
+import { AgentBadge, AgentConfigBadge, PermissionBadge } from "../../top-bar";
+import { ContextBadge } from "../../badges/context-badge";
 import {
+  AttachIcon,
   OptionsIcon,
-  ToolsIcon,
+  RecordIcon,
   SandboxIcon,
   UnattendedIcon,
   WebSearchIcon,
 } from "../icons";
-import { PlusMenuItem, ToolChip } from "./menu-pieces";
-import { ThinkingEffortPill } from "./thinking-effort-pill";
-import type { ThinkingOption } from "./use-thinking-effort";
+import { PlusMenuRow, ToolChip } from "./menu-pieces";
+import { ThinkingEffortPill } from "./effort/thinking-effort-pill";
+import type { ThinkingOption } from "./effort/use-thinking-effort";
 import styles from "../composer.module.css";
-
-const noop = () => {};
-
-// `.plusMenu` was written for the old hand-rolled portal — it carries
-// `position:absolute; bottom:100%; left:0; margin-bottom:4px` to sit
-// above the trigger. base-ui's Menu positions the *Positioner* wrapper
-// and we apply `.plusMenu` to the inner Popup panel, so those absolute
-// props would fight the Positioner's transform. Neutralize them here
-// (visuals — bg/border/radius/shadow/padding — stay untouched) so the
-// menu reads identically while base-ui's Positioner owns placement,
-// flip, and alignment (including the submenus' side="top").
-const POPUP_STATIC_RESET: React.CSSProperties = {
-  position: "static",
-  bottom: "auto",
-  left: "auto",
-  marginBottom: 0,
-};
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export interface ControlsClusterProps {
   /** Split-pane composers pass their bound session id so the agent badges
@@ -61,29 +48,27 @@ export interface ControlsClusterProps {
   plusMenuOpen: boolean;
   setPlusMenuOpen(open: boolean): void;
   onPickImages(): void;
+  /** Present where a demonstration can be recorded (desktop App on macOS). */
+  onRecord?(): void;
+  recordingActive?: boolean;
   pendingImagesCount: number;
   pendingDocsCount: number;
-  toolsEnabled: boolean;
-  toggleTools(): void;
   webSearchEnabled: boolean;
+  /** Whether web search follows the Agent or was set on this branch (and
+   *  the Agent's default); unknown leaves the tooltip without that line. */
+  webSearchOrigin?: { follows: boolean; inherited: unknown } | null;
   toggleWebSearch(): void;
   fastEnabled: boolean;
   fastSupported: boolean;
   fastHint: string;
   toggleFast(): void;
-  runningMessageMode: "queue" | "steer";
-  toggleRunningMessageMode(): void;
   unattended: boolean;
   toggleUnattended(): void;
   sandboxEnabled: boolean;
   sandboxAvailable: boolean;
   sandboxReason: string | null;
   toggleSandbox(): void;
-  toolProfiles: Record<string, string[]>;
-  activeProfile: string;
-  switchProfile(name: string): void;
   chatAgent: { locked?: boolean; provider?: string; model?: string };
-  execAgent: { provider?: string; model?: string };
   chatModel: string | undefined;
   noEnabledModels: boolean;
   thinking: string;
@@ -99,29 +84,24 @@ export function ControlsCluster({
   plusMenuOpen,
   setPlusMenuOpen,
   onPickImages,
+  onRecord,
+  recordingActive = false,
   pendingImagesCount,
   pendingDocsCount,
-  toolsEnabled,
-  toggleTools,
   webSearchEnabled,
+  webSearchOrigin = null,
   toggleWebSearch,
   fastEnabled,
   fastSupported,
   fastHint,
   toggleFast,
-  runningMessageMode,
-  toggleRunningMessageMode,
   unattended,
   toggleUnattended,
   sandboxEnabled,
   sandboxAvailable,
   sandboxReason,
   toggleSandbox,
-  toolProfiles,
-  activeProfile,
-  switchProfile,
   chatAgent,
-  execAgent,
   chatModel,
   noEnabledModels,
   thinking,
@@ -134,10 +114,8 @@ export function ControlsCluster({
   const { text } = useTranslation();
   const plusIconRef = useRef<AnimatedNavIconHandle>(null);
   const effortIconRef = useRef<AnimatedNavIconHandle>(null);
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const anyToolActive =
-    toolsEnabled || webSearchEnabled || unattended
-    || (sandboxEnabled && sandboxAvailable);
+    webSearchEnabled || unattended || (sandboxEnabled && sandboxAvailable);
   const effortColor = effortLevelColor(thinkingOptions, thinking);
 
   return (
@@ -147,215 +125,100 @@ export function ControlsCluster({
                 the wrapper CSS into Claude's borderless "Accept edits ⌄"
                 text form (no border / bg; popover + id untouched). */}
             <PermissionBadge />
-            <Menu.Root
+            <DropdownMenu
               open={plusMenuOpen}
               onOpenChange={(o) => {
                 setPlusMenuOpen(o);
-                if (!o) setProfileMenuOpen(false);
                 // Opening the plus menu collapses the effort pill (they
                 // shared the bottom row and shouldn't be open at once).
                 if (o) setThinkingMenuOpen(false);
               }}
             >
-              <Menu.Trigger
-                render={
+              <HoverTip
+                label={
+                  <TipBody
+                    title={text("Options", "选项")}
+                    detail={text("Attach files, and turn web search or sandbox on and off", "添加文件，开关网页搜索或沙箱")}
+                  />
+                }
+              >
+                <DropdownMenuTrigger asChild>
                   <button
-                    className={`${styles.plusBtn} ${anyToolActive ? styles.hasActive : ""}`}
+                    className={`${cn(buttonVariants({ variant: "elevated", size: "icon-sm" }))} ${styles.plusBtn} ${anyToolActive ? styles.hasActive : ""}`}
                     onMouseEnter={() => plusIconRef.current?.startAnimation?.()}
                     onMouseLeave={() => plusIconRef.current?.stopAnimation?.()}
-                    title={text("Add tools, files, and more", "添加工具、文件等")}
                     aria-label={text("More options", "更多选项")}
                     type="button"
                   >
                     <OptionsIcon ref={plusIconRef} />
                   </button>
-                }
-              />
+                </DropdownMenuTrigger>
+              </HoverTip>
 
-              <Menu.Portal>
-                {/* Positioner owns placement (side/align/offset + flip);
-                    Popup is the actual panel that wears `.plusMenu`. The
-                    static reset stops the old absolute props from fighting
-                    the Positioner. */}
-                {/* 9 = 10px band gap − 1px 输入框外扩 ring（底部弹层统一）。 */}
-                <Menu.Positioner side="top" align="start" sideOffset={9} style={{ zIndex: 200 }}>
-                  <Menu.Popup
-                    className={styles.plusMenu}
-                    style={POPUP_STATIC_RESET}
-                  >
-                    {/* Attach file — a plain action; clicking it closes the
-                        menu (default Menu.Item closeOnClick behaviour).
-                        Grammar B row: 16px line icon + label. No shortcut
-                        hint — the app registers none for attach. */}
-                    <Menu.Item className={styles.plusMenuRow} onClick={() => onPickImages()}>
-                      <PlusMenuItem
-                        active={pendingImagesCount > 0 || pendingDocsCount > 0}
-                        onClick={noop}
-                        icon={<Paperclip size={16} />}
-                        label={text("Add files or photos", "添加文件或照片")}
-                      />
-                    </Menu.Item>
+              {/* The same radix wrapper and MENU_PANEL frame as every other
+                  dropdown; radix owns placement, flip, roving focus and
+                  dismissal. 9 = 10px band gap − 1px 输入框外扩 ring（底部
+                  弹层统一）。z-[200] keeps the stacking the menu always had
+                  (above the composer's own layers). */}
+              <DropdownMenuContent
+                side="top"
+                align="start"
+                sideOffset={9}
+                className={cn(MENU_PANEL, "z-[200] max-w-[320px]")}
+              >
+                {/* Attach file — a plain action; selecting it closes the
+                    menu. No shortcut hint — the app registers none. */}
+                <PlusMenuRow
+                  active={pendingImagesCount > 0 || pendingDocsCount > 0}
+                  icon={<AttachIcon size={16} />}
+                  label={text("Add files or photos", "添加文件或照片")}
+                  onSelect={() => onPickImages()}
+                />
+                {onRecord ? (
+                  <PlusMenuRow
+                    active={recordingActive}
+                    icon={<RecordIcon size={16} />}
+                    label={text("Record a workflow", "录制 Workflow")}
+                    onSelect={() => onRecord()}
+                  />
+                ) : null}
 
-                    <Menu.Separator className={styles.plusMenuDivider} />
+                <DropdownMenuSeparator className={MENU_SEPARATOR} />
 
-                    {/* Tools — row click toggles tools; the gear opens a
-                        click-controlled submenu that stays open when the
-                        pointer leaves and closes on outside interaction. */}
-                    <div
-                      className={styles.plusMenuSplitRow}
-                      role="none"
-                      data-tools-active={toolsEnabled || undefined}
-                    >
-                      <Menu.Item
-                        className={`${styles.plusMenuRow} ${styles.plusMenuPrimary}`}
-                        closeOnClick={false}
-                        onClick={() => {
-                          toggleTools();
-                          setProfileMenuOpen(false);
-                        }}
-                      >
-                        <PlusMenuItem
-                          active={toolsEnabled}
-                          onClick={noop}
-                          icon={<ToolsIcon size={16} />}
-                          label={text("Tools", "工具")}
-                        />
-                      </Menu.Item>
-                      <Menu.SubmenuRoot
-                        open={profileMenuOpen}
-                        onOpenChange={(open, { reason }) => {
-                          // Base UI closes submenus when a sibling parent-menu
-                          // item receives mousemove. Pointer movement is not a
-                          // dismissal action for this click-only submenu.
-                          if (open || reason !== "sibling-open") {
-                            setProfileMenuOpen(open);
-                          }
-                        }}
-                      >
-                        <Menu.SubmenuTrigger
-                          className={`${styles.plusMenuRow} ${styles.plusMenuGear}`}
-                          openOnHover={false}
-                          label={text("Tool profile", "工具配置")}
-                          aria-label={text("Tool profile", "工具配置")}
-                        >
-                          <Settings size={14} />
-                        </Menu.SubmenuTrigger>
-                        <Menu.Portal>
-                          <Menu.Positioner
-                            side="right"
-                            align="end"
-                            sideOffset={6}
-                            style={{ zIndex: 201 }}
-                          >
-                            <Menu.Popup
-                              className={styles.plusMenu}
-                              style={POPUP_STATIC_RESET}
-                            >
-                              <div className={GROUP_LABEL}>
-                                {text("Access preset", "Access preset")}
-                              </div>
-                              <Menu.Item
-                                className={styles.plusMenuRow}
-                                onClick={() => switchProfile("__agent__")}
-                              >
-                                <PlusMenuItem
-                                  active={activeProfile === "__agent__"}
-                                  onClick={noop}
-                                  icon={null}
-                                  label={text("Use Agent configuration", "使用 Agent 配置")}
-                                />
-                              </Menu.Item>
-                              {Object.keys(toolProfiles).sort().map((pName) => (
-                                <Menu.Item
-                                  key={pName}
-                                  className={styles.plusMenuRow}
-                                  onClick={() => switchProfile(pName)}
-                                >
-                                  <PlusMenuItem
-                                    active={activeProfile === pName}
-                                    onClick={noop}
-                                    icon={null}
-                                    label={pName === "full"
-                                      ? text("All Tools", "全部工具")
-                                      : pName}
-                                  />
-                                </Menu.Item>
-                              ))}
-                            </Menu.Popup>
-                          </Menu.Positioner>
-                        </Menu.Portal>
-                      </Menu.SubmenuRoot>
-                    </div>
+                {/* Toggles keep the menu open (keepOpen). */}
+                <PlusMenuRow
+                  active={webSearchEnabled}
+                  keepOpen
+                  icon={<WebSearchIcon size={16} />}
+                  label={text("Web Search", "网页搜索")}
+                  onSelect={() => toggleWebSearch()}
+                />
 
-                    {/* Web Search / Fast — toggles that must NOT close the
-                        menu, so closeOnClick={false}. */}
-                    <Menu.Item
-                      className={styles.plusMenuRow}
-                      closeOnClick={false}
-                      onClick={() => toggleWebSearch()}
-                    >
-                      <PlusMenuItem
-                        active={webSearchEnabled}
-                        onClick={noop}
-                        icon={<WebSearchIcon size={16} />}
-                        label={text("Web Search", "网页搜索")}
-                      />
-                    </Menu.Item>
+                <PlusMenuRow
+                  active={sandboxEnabled && sandboxAvailable}
+                  keepOpen
+                  disabled={!sandboxAvailable}
+                  title={sandboxReason || undefined}
+                  icon={<SandboxIcon size={16} />}
+                  label={
+                    sandboxAvailable
+                      ? text("Sandbox", "沙箱")
+                      : text("Sandbox · Unavailable", "Sandbox · Unavailable")
+                  }
+                  onSelect={() => toggleSandbox()}
+                />
 
+                <DropdownMenuSeparator className={MENU_SEPARATOR} />
 
-                    <Menu.Item
-                      className={styles.plusMenuRow}
-                      closeOnClick={false}
-                      disabled={!sandboxAvailable}
-                      title={sandboxReason || undefined}
-                      onClick={() => toggleSandbox()}
-                    >
-                      <PlusMenuItem
-                        active={sandboxEnabled && sandboxAvailable}
-                        onClick={noop}
-                        icon={<SandboxIcon size={16} />}
-                        label={
-                          sandboxAvailable
-                            ? text("Sandbox", "沙箱")
-                            : text("Sandbox · Unavailable", "Sandbox · Unavailable")
-                        }
-                      />
-                    </Menu.Item>
-
-                    <Menu.Separator className={styles.plusMenuDivider} />
-
-                    <Menu.Item
-                      className={styles.plusMenuRow}
-                      closeOnClick={false}
-                      onClick={() => toggleRunningMessageMode()}
-                    >
-                      <PlusMenuItem
-                        active={runningMessageMode === "steer"}
-                        onClick={noop}
-                        icon={<CornerDownRight size={16} />}
-                        label={runningMessageMode === "steer"
-                          ? text("While running: Steer", "运行中：注入当前轮次")
-                          : text("While running: Queue", "运行中：排队到下一轮")}
-                      />
-                    </Menu.Item>
-
-                    {/* Unattended — a toggle; keep the menu open. */}
-                    <Menu.Item
-                      className={styles.plusMenuRow}
-                      closeOnClick={false}
-                      onClick={() => toggleUnattended()}
-                    >
-                      <PlusMenuItem
-                        active={unattended}
-                        onClick={noop}
-                        icon={<UnattendedIcon size={16} />}
-                        label={text("Unattended", "无人值守")}
-                      />
-                    </Menu.Item>
-                  </Menu.Popup>
-                </Menu.Positioner>
-              </Menu.Portal>
-            </Menu.Root>
+                <PlusMenuRow
+                  active={unattended}
+                  keepOpen
+                  icon={<UnattendedIcon size={16} on={unattended} />}
+                  label={text("Unattended", "无人值守")}
+                  onSelect={() => toggleUnattended()}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <div className={styles.activeToolChips}>
               {/* Only ENABLED tools show as a chip here. The off ones are
@@ -365,18 +228,14 @@ export function ControlsCluster({
                   display:none, so all-off shows nothing.) HoverTip is a
                   real top-layer tooltip; a CSS ::after would be cropped by
                   the chip's overflow:hidden. */}
-              {toolsEnabled && (
-                <HoverTip label={text("Tools", "工具")}>
-                  <ToolChip
-                    icon={<ToolsIcon size={16} />}
-                    label={text("Tools", "工具")}
-                    on
-                    onToggle={toggleTools}
-                  />
-                </HoverTip>
-              )}
               {webSearchEnabled && (
-                <HoverTip label={text("Web Search", "网页搜索")}>
+                <HoverTip label={<TipBody title={text("Web search on", "网页搜索已开启")} detail={text(
+                  "With a provider that has its own web search (ChatGPT, OpenAI, Claude, Gemini), the model searches through the provider; otherwise it uses the local web_search tool and the search backend set in Settings. Click to turn off.",
+                  "模型的提供商自带网页搜索时（ChatGPT、OpenAI、Claude、Gemini）由提供商搜索；否则使用本地 web_search 工具和设置里配置的搜索后端。点击关闭。",
+                ) + (webSearchOrigin ? " " + (webSearchOrigin.follows
+                  ? text("Follows the Agent.", "跟随 Agent。")
+                  : text(`Set on this branch · Agent default: ${webSearchOrigin.inherited ? "on" : "off"}.`,
+                         `本分支已设置 · Agent 默认：${webSearchOrigin.inherited ? "开" : "关"}。`)) : "")} />}>
                   <ToolChip
                     icon={<WebSearchIcon size={16} />}
                     label={text("Web Search", "网页搜索")}
@@ -386,7 +245,7 @@ export function ControlsCluster({
                 </HoverTip>
               )}
               {sandboxEnabled && sandboxAvailable && (
-                <HoverTip label={text("Sandbox", "沙箱")}>
+                <HoverTip label={<TipBody title={text("Sandbox on", "沙箱已开启")} detail={text("Commands run in an isolated sandbox. Click to turn off.", "命令在隔离的沙箱里运行。点击关闭。")} />}>
                   <ToolChip
                     icon={<SandboxIcon size={16} />}
                     label={text("Sandbox", "沙箱")}
@@ -396,9 +255,9 @@ export function ControlsCluster({
                 </HoverTip>
               )}
               {unattended && (
-                <HoverTip label={text("Unattended", "无人值守")}>
+                <HoverTip label={<TipBody title={text("Unattended on", "无人值守已开启")} detail={text("The agent won't stop to ask you questions. Click to turn off.", "agent 不会停下来向你提问。点击关闭。")} />}>
                   <ToolChip
-                    icon={<UnattendedIcon size={16} />}
+                    icon={<UnattendedIcon size={16} on />}
                     label={text("Unattended", "无人值守")}
                     on
                     onToggle={toggleUnattended}
@@ -410,24 +269,16 @@ export function ControlsCluster({
           </div>
           <div className={styles.inputBottomRight}>
             {/* Claude-style right cluster before the send affordance:
-                chat + exec models as quiet borderless text ("Opus 4.8"
-                form, restyled via .agentChips overrides — components
-                and their popovers untouched), effort pill, context
-                ring last. */}
+                the chat model as quiet borderless text ("Opus 4.8"
+                form, restyled via .agentChips overrides — component
+                and popover untouched), effort pill, the conversation's
+                Agent, context ring last. */}
             <div className={styles.agentChips}>
               <AgentBadge
                 id={bound ? `chatAgentBadge-${bound}` : "chatAgentBadge"}
-                kind="chat"
                 locked={!!chatAgent.locked}
                 provider={chatAgent.provider}
                 model={chatAgent.model}
-              />
-              <AgentBadge
-                id={bound ? `execAgentBadge-${bound}` : "execAgentBadge"}
-                kind="exec"
-                locked={false}
-                provider={execAgent.provider}
-                model={execAgent.model}
               />
             </div>
             {/* Effort picker only when a chat model is selected. No
@@ -436,7 +287,16 @@ export function ControlsCluster({
                 (see ``promptNeedModel``). The `thinking` value still
                 flows to submit (uses the model default) when hidden. */}
             {chatModel && !noEnabledModels ? (
-              <HoverTip label={text("Thinking effort", "思考力度")}>
+              <HoverTip
+                label={
+                  <TipBody
+                    title={thinking
+                      ? text(`Thinking effort: ${formatEffortLabel(thinking)}`, `思考力度：${formatEffortLabel(thinking)}`)
+                      : text("Thinking effort", "思考力度")}
+                    detail={text("How long the model thinks before answering. Click to adjust.", "模型回答前思考多久。点击调整。")}
+                  />
+                }
+              >
                 {/* Wrapper is the outside-click boundary AND the anchor
                     for the pill's floating slider (detached row). The
                     text trigger only shows in the detached row (CSS);
@@ -452,7 +312,8 @@ export function ControlsCluster({
                   {(
                     <button
                       type="button"
-                      className={styles.effortText}
+                      className={`${cn(buttonVariants({ variant: "elevated", size: "sm" }))} ${styles.effortText}`}
+                      aria-expanded={thinkingMenuOpen}
                       onMouseEnter={() => effortIconRef.current?.startAnimation?.()}
                       onMouseLeave={() => effortIconRef.current?.stopAnimation?.()}
                       onClick={() => {
@@ -462,17 +323,20 @@ export function ControlsCluster({
                       // 常规宽度保持原有文字配色；最高档仍用紫色标识。
                       style={thinking === "max" ? { color: "#8E6BD9" } : undefined}
                     >
-                      <BicepsFlexedIcon
+                      <SolarIcon
+                        name="fire"
                         ref={effortIconRef}
-                        size={14}
-                        className={styles.compactEffortIcon}
-                        // 图标只在窄态显示，因此逐级颜色不会改变常规宽度文字。
-                        style={{ color: thinking === "max" ? "#8E6BD9" : effortColor }}
+                        size={16}
+                        fit="fill"
+                        className={styles.effortIcon}
+                        // Fast 开着时火苗变红；否则逐级颜色只在窄态（文字隐藏时）
+                        // 显示，常规宽度跟随文字颜色。
+                        style={{
+                          "--effort-color": thinking === "max" ? "#8E6BD9" : effortColor,
+                          ...(fastEnabled && fastSupported ? { color: "var(--accent-red)" } : {}),
+                        } as React.CSSProperties}
                         aria-hidden="true"
                       />
-                      <span className={styles.fastIndicator} data-active={fastEnabled && fastSupported} aria-hidden="true">
-                        <GaugeIcon size={14} active className="shrink-0" />
-                      </span>
                       <span className={styles.effortValue}>
                         {thinking ? formatEffortLabel(thinking) : text("Model settings", "模型设置")}
                       </span>
@@ -495,6 +359,7 @@ export function ControlsCluster({
                 </div>
               </HoverTip>
             ) : null}
+            <AgentConfigBadge id={bound ? `agentConfigBadge-${bound}` : "agentConfigBadge"} />
             <ContextBadge sessionId={bound ?? undefined} />
           </div>
 

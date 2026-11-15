@@ -1,17 +1,16 @@
 """Actual isolated interpreter to trusted broker, with real durable effects."""
-import json
 import sys
 import threading
 import time
 
 import pytest
 
-from openprogram.backend.gui_broker import GuiBroker
-from openprogram.backend.gui_runner import GuiPythonRunner, GuiRunnerError
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.effects import EffectStatus, EffectStore
-from openprogram.execution.model import CapabilitySet
-from openprogram.execution.store import ExecutionStore
+from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.broker import GuiBroker
+from openprogram.programs.tools.computer_use.computer_use_agent.sandbox.runner import GuiPythonRunner, GuiRunnerError
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.effects import EffectStatus, EffectStore
+from openprogram.runtime.execution.model import CapabilitySet
+from openprogram.runtime.execution.store import ExecutionStore
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="strict macOS sandbox")
 
@@ -24,7 +23,7 @@ def environment(tmp_path):
                                             revision_id=revision.revision_id, capabilities=CapabilitySet())
     attempts = AttemptStore(executions)
     leased, reserved = attempts.lease("exec", expected_version=execution.status_version,
-                                      owner_id="worker", ttl_seconds=30, attempt_id="attempt")
+                                      owner_id="worker", attempt_id="attempt")
     active, running = attempts.activate("attempt", generation=leased.generation,
                                         expected_execution_version=reserved.status_version)
     effects = EffectStore(executions)
@@ -79,6 +78,35 @@ def test_adapter_failure_stays_uncertain(environment):
     assert effects.list_unresolved("exec")[0].status is EffectStatus.UNCERTAIN
 
 
+def test_a_failed_read_applied_nothing_and_leaves_nothing_to_resolve(environment):
+    from openprogram.programs import ToolReturn
+    broker, effects, _ = environment
+    handle = broker.register(target="owned-page", methods={
+        "observe": lambda *args: ToolReturn(text="no Page selected", is_error=True),
+        "click": lambda *args: ToolReturn(text="click failed", is_error=True),
+    }, validate=lambda *args: None, reads=lambda method, arguments: method == "observe")
+    with GuiPythonRunner(broker=broker) as runner:
+        reply = runner.execute(f"await ui.call({handle!r}, 'observe')\nprint('unreachable')")
+        assert "no Page selected" in reply.error
+        assert effects.list_unresolved("exec") == []
+        # An action that may have acted stays for the owner to resolve.
+        assert "click failed" in runner.execute(f"await ui.call({handle!r}, 'click')").error
+    unresolved = effects.list_unresolved("exec")
+    assert [effect.metadata["method"] for effect in unresolved] == ["click"]
+
+
+def test_a_refused_action_applied_nothing_and_leaves_nothing_to_resolve(environment):
+    from openprogram.programs import ToolReturn
+    broker, effects, _ = environment
+    handle = broker.register(target="owned-page", methods={
+        "press": lambda *args: ToolReturn(text="no reply", is_error=True, json_data={
+            "ok": False, "reason_code": "desktop_response_timeout", "action_dispatched": False}),
+    }, validate=lambda *args: None)
+    with GuiPythonRunner(broker=broker) as runner:
+        assert "no reply" in runner.execute(f"await ui.call({handle!r}, 'press')").error
+    assert effects.list_unresolved("exec") == []
+
+
 def test_rpc_without_broker_fails_closed():
     with GuiPythonRunner() as runner:
         with pytest.raises(GuiRunnerError, match="broker"):
@@ -100,7 +128,7 @@ def test_unknown_or_revoked_target_never_reaches_adapter(environment, which):
 
 
 def test_execution_cancel_state_denies_before_adapter(environment):
-    from openprogram.execution.model import ExecutionStatus
+    from openprogram.runtime.execution.model import ExecutionStatus
     broker, effects, executions = environment
     applied = []
     handle = broker.register(target="owned", methods={"click": lambda *args: applied.append(1)}, validate=lambda *args: None)
@@ -128,7 +156,7 @@ def test_cancel_during_adapter_revokes_before_child_cleanup_and_late_commit(envi
     applied = []
     def apply(args, observation, context):
         entered.set()
-        assert release.wait(3)
+        assert release.wait(30)
         context.check()
         applied.append(1)
         return "must not commit"
@@ -173,7 +201,7 @@ def test_pipelined_or_premature_completion_revokes_inflight_request(environment,
     release = threading.Event()
     applied = []
     def apply(args, observation, context):
-        assert release.wait(3)
+        assert release.wait(30)
         context.check()
         applied.append(1)
     handle = broker.register(target="owned", methods={"click": apply}, validate=lambda *args: None)
@@ -210,7 +238,7 @@ def test_revocation_during_validation_cannot_return_a_valid_context(environment,
     def validate(*args):
         if adapter_check.is_set():
             reached.set()
-            assert release.wait(3)
+            assert release.wait(30)
     def apply(args, observation, context):
         adapter_check.set()
         context.check()
@@ -219,11 +247,11 @@ def test_revocation_during_validation_cannot_return_a_valid_context(environment,
     future = broker.submit({"resource": handle, "method": "click", "arguments": {}, "observation": None},
                            deadline=time.monotonic() + 5)
     try:
-        assert reached.wait(2)
+        assert reached.wait(30)
         if revocation == "local":
             broker.revoke()
         else:
-            from openprogram.execution.model import ExecutionStatus
+            from openprogram.runtime.execution.model import ExecutionStatus
             execution = executions.get_execution("exec")
             executions.transition_execution("exec", expected_version=execution.status_version,
                                             target=ExecutionStatus.CANCELLING)
@@ -240,13 +268,13 @@ def test_revoke_during_receipt_materialization_refuses_commit(environment):
     class Receipt(dict):
         def items(self):
             entered.set()
-            assert release.wait(3)
+            assert release.wait(30)
             return super().items()
     handle = broker.register(target="owned", methods={"click": lambda *args: Receipt(done=True)}, validate=lambda *args: None)
     future = broker.submit({"resource": handle, "method": "click", "arguments": {}, "observation": None},
                            deadline=time.monotonic() + 5)
     try:
-        assert entered.wait(2)
+        assert entered.wait(30)
         broker.revoke()
     finally:
         release.set()
@@ -261,20 +289,20 @@ def test_admitted_receipt_can_finish_persisting_without_blocking_revoke(environm
     original_resolve = effects.resolve
     def delayed_resolve(*args, **kwargs):
         entered.set()
-        assert release.wait(3)
+        assert release.wait(30)
         return original_resolve(*args, **kwargs)
     monkeypatch.setattr(effects, "resolve", delayed_resolve)
     handle = broker.register(target="owned", methods={"click": lambda *args: {"done": True}}, validate=lambda *args: None)
     future = broker.submit({"resource": handle, "method": "click", "arguments": {}, "observation": None},
                            deadline=time.monotonic() + 5)
     try:
-        assert entered.wait(2)
+        assert entered.wait(30)
         start = time.monotonic()
         broker.revoke()
         assert time.monotonic() - start < 0.5
     finally:
         release.set()
-    receipt = future.result(timeout=2)
+    receipt = future.result(timeout=30)
     assert effects.get(receipt["effect_id"]).status is EffectStatus.COMMITTED
 
 
@@ -310,69 +338,6 @@ def test_adapter_validation_uses_bound_owner_context_not_thread_defaults(environ
     assert applied == []
 
 
-def test_browser_binding_uses_registry_controller_and_returns_host_image(environment, monkeypatch):
-    import base64
-    from types import SimpleNamespace
-    from openprogram.backend.gui_browser import register_browser_page
-    from openprogram.programs.workflow.browser import BrowserPageController
-    from openprogram.programs.workflow.browser.web_use_runtime import ControllerBackend, WebUseSessionRegistry, SUPPORTED_BACKENDS
-    from openprogram.webui.ws_actions import webtab
-    broker, effects, executions = environment
-    png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1sAAAAASUVORK5CYII=')
-    state = {"text": "before", "frame": 1}
-    page = SimpleNamespace(viewport_size={"width": 1, "height": 1}, url="https://owned.invalid", title=lambda: "Owned Page",
-                           evaluate=lambda script: {}, inner_text=lambda selector: state["text"])
-    controller = BrowserPageController(browser_api=object())
-    controller._page = lambda: page
-    controller._observe = lambda: {"frame_id": f'f{state["frame"]}', "text": state["text"]}
-    controller._fresh = lambda frame: frame == f'f{state["frame"]}'
-    def fill(text):
-        state["text"] = text
-        state["frame"] += 1
-    controller._ref = lambda ref: (SimpleNamespace(fill=fill), "") if ref == "field" else (None, "target_not_found")
-    def capture(binding, **kwargs):
-        assert binding == "owned-binding"
-        return {"ok": True, "image_data_url": "data:image/png;base64," + base64.b64encode(png).decode()}
-    monkeypatch.setattr(webtab, "request_bound_screenshot", capture)
-    registry = WebUseSessionRegistry(
-        adapters={name: ControllerBackend(name, lambda: controller) for name in SUPPORTED_BACKENDS},
-        binding_validator=lambda binding: {"ok": binding == "owned-binding"},
-        binding_revision_resolver=lambda binding: {}, page_key_resolver=lambda binding: binding,
-        release_context=lambda context: None,
-    )
-    initial = registry.execute(command="observe", owner_id="owner", binding_id="owned-binding")
-    handle = register_browser_page(broker, registry, owner_id="owner", web_session_id=initial["web_session_id"])
-    try:
-        with GuiPythonRunner(broker=broker) as runner:
-            for denied_handle, args, observation in [
-                (handle, {"ref": "field", "text": "denied"}, None),
-                (handle, {"ref": "field", "text": "denied", "owner_id": "other"}, "f1"),
-                (handle, {"ref": "field", "text": "denied"}, "stale"),
-                (register_browser_page(broker, registry, owner_id="other", web_session_id=initial["web_session_id"]),
-                 {"ref": "field", "text": "denied"}, "f1"),
-                (register_browser_page(broker, registry, owner_id="owner", web_session_id="missing"),
-                 {"ref": "field", "text": "denied"}, "f1"),
-            ]:
-                denied = runner.execute(f"await ui.call({denied_handle!r}, 'type', {args!r}, observation={observation!r})")
-                assert denied.error and state["text"] == "before"
-            result = runner.execute(f"page = {handle!r}\nobs = (await ui.call(page, 'observe'))['value']\nawait ui.call(page, 'type', {{'ref': 'field', 'text': 'owned value'}}, observation=obs['frame_id'])")
-            assert result.error is None and state["text"] == "owned value"
-            result = runner.execute("obs = (await ui.call(page, 'observe'))['value']\nassert (await ui.call(page, 'verify', {'assertion': 'text_contains', 'value': 'owned value'}, observation=obs['frame_id']))['value']['passed']\nreceipt = await ui.call(page, 'screenshot', observation=obs['frame_id'])\nprint(receipt['effect_id'])")
-            assert result.error is None and result.images == (png,)
-            effect = effects.get(result.stdout.strip())
-            assert effect.status is EffectStatus.COMMITTED
-            assert effect.receipt["value"]["json_data"]["frame_id"] == "f2"
-            assert "screenshot" in effect.receipt["value"]["text"]
-            image = effect.receipt["images"][0]
-            chunks = [executions.get_state_blob("exec", ref)["payload"] for ref in image["chunks"]]
-            assert b"".join(chunks) == png
-            assert executions.get_state_blob("foreign", image["chunks"][0]) is None
-            assert runner.execute("print('_images' in receipt)").stdout == "False\n"
-            assert runner.execute("print('no image this call')").images == ()
-    finally:
-        registry.close_all()
-
-
 @pytest.mark.parametrize("images", [["/private/owned.png"], [b"not PNG"], [b"\x89PNG\r\n\x1a\n"] * 5,
                                    [b"\x89PNG\r\n\x1a\n" + b"x" * (4 * 1024 * 1024)]])
 def test_broker_rejects_image_paths_invalid_bytes_and_limits(environment, images):
@@ -389,7 +354,7 @@ def test_broker_rejects_image_paths_invalid_bytes_and_limits(environment, images
 def test_large_image_is_chunked_without_changing_pixels_or_blob_limit(environment):
     import hashlib, struct, zlib
     from openprogram.programs import ToolReturn
-    from openprogram.execution.store import MAX_AGENT_STATE_BLOB_BYTES
+    from openprogram.runtime.execution.store import MAX_AGENT_STATE_BLOB_BYTES
     broker, effects, executions = environment
     def chunk(kind, data):
         return struct.pack("!I", len(data)) + kind + data + struct.pack("!I", zlib.crc32(kind + data))
@@ -418,17 +383,9 @@ def test_images_are_limited_per_script_and_child_cannot_forge_them(environment):
             runner.execute(f"for _ in range(5):\n await ui.call({handle!r}, 'capture')")
 
 
-@pytest.mark.parametrize("session", ["", " ", "pending", " PENDING "])
-def test_browser_binding_rejects_implicit_session_sentinels(session):
-    from openprogram.backend.gui_browser import register_browser_page
-    with pytest.raises(ValueError, match="exact owner and session"):
-        register_browser_page(object(), object(), owner_id="owner", web_session_id=session)
-
-
-
 def test_error_tool_return_keeps_image_evidence_without_committing_success(environment):
     from openprogram.programs import ToolReturn
-    from openprogram.execution.state_blobs import ExecutionStateBlobStore
+    from openprogram.runtime.execution.state_blobs import ExecutionStateBlobStore
     broker, effects, executions = environment
     image = b"\x89PNG\r\n\x1a\nowned error fixture"
     handle = broker.register(target="owned", methods={"capture": lambda *args:

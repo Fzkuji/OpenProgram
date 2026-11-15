@@ -1,0 +1,61 @@
+<title>浏览器扩展支持决定</title>
+<meta name="description" content="内置浏览器不安装 Chrome 或 Edge 扩展：保留什么、为什么、代码保证什么。">
+<h1>内置浏览器不安装扩展</h1>
+
+<h2 id="user-impact">用户能做什么</h2>
+<table class="grid">
+<thead><tr><th scope="col">能力</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">浏览普通页面和商店页面，不注入安装控件</th><td class="run">保留</td></tr>
+<tr><th scope="row">书签、历史、下载、主页、数据导入</th><td class="run">保留</td></tr>
+<tr><th scope="row">Agent 观察和操作绑定的 WebTab，遵守 Web Use 和 Computer Use 边界</th><td class="run">保留</td></tr>
+<tr><th scope="row">从 Chrome 或 Edge 导入 Cookie、书签和历史（与扩展代码无关）</th><td class="run">保留</td></tr>
+<tr><th scope="row">从 Chrome 网上应用店或 Edge 加载项安装、下载 CRX</th><td class="deny">移除</td></tr>
+<tr><th scope="row">加载解压扩展；目录选择器、preload IPC</th><td class="deny">移除</td></tr>
+<tr><th scope="row">启用、禁用、重载、更新、恢复；注册表、包目录、启动恢复</th><td class="deny">移除</td></tr>
+</tbody>
+</table>
+<p class="note">0.7.0 移除。不更换浏览器引擎，也不依赖 Chrome 或 Edge 远程控制。</p>
+
+<h2 id="reasoning">原因</h2>
+<p id="decision">Electron 只实现部分扩展 API，补齐其余部分超出可靠浏览和 Agent 网页操作的目标。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">原因</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">缺失 API</th><td>许多商店扩展依赖 Manifest V3 service worker、<code translate="no">chrome.action</code>、账号同步或浏览器专有行为</td></tr>
+<tr><th scope="row">部分失败</th><td>下载和加载可以成功，而登录、后台任务、弹窗或页面注入失败</td></tr>
+<tr><th scope="row">预检局限</th><td>标签覆盖不了运行时 API、后台生命周期、工具栏交互或厂商的浏览器检测</td></tr>
+<tr><th scope="row">维护成本</th><td>商店协议、CRX 校验、权限说明、API 兼容、更新和诊断</td></tr>
+</tbody>
+</table>
+
+<h2 id="architecture">架构</h2>
+<p><code translate="no">persist:webtabs</code> 会话只处理页面状态、Cookie、下载和 DevTools 或 Agent 控制，启动前不加载第三方代码。没有管理器、注册表、CRX 安装 IPC 或扩展页。</p>
+<p class="note">将来针对 <code translate="no">browser-extensions/</code> 数据的清理入口必须列出目标并由用户发起。</p>
+
+<h2 id="implementation">实现</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">领域</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">桌面</th><td>没有扩展管理器、启动恢复、IPC、preload API 或打包文件。打包时移除旧归档里残留的管理器及其依赖。</td></tr>
+<tr><th scope="row">Web</th><td>没有扩展页、浏览器菜单项、商店详情安装按钮、类型、图标或 URL 识别</td></tr>
+<tr><th scope="row">状态</th><td>恢复窗口状态时丢弃历史扩展标签页</td></tr>
+<tr><th scope="row">契约</th><td><code translate="no">apps/desktop/tests/check-no-browser-extensions.js</code> 固定桌面、preload、Web 菜单、内置页面、bridge 和打包清单的否定边界</td></tr>
+<tr><th scope="row">文档</th><td>更新日志、发布说明、桌面文档和 FAQ 说明不支持扩展，并列出保留内容</td></tr>
+</tbody>
+</table>
+
+<h2 id="evidence">验收</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">项目</th><th scope="col">检查</th></tr></thead>
+<tbody>
+<tr><th scope="row">没有安装或管理入口</th><td><code translate="no">check:no-browser-extensions</code>、Web <code translate="no">npm run check</code>、Web TypeScript</td></tr>
+<tr><th scope="row">桌面不加载第三方扩展</th><td>main、preload 和包的否定契约</td></tr>
+<tr><th scope="row">旧数据不读取、不执行也不删除</th><td>旧标签页迁移检查；生产代码没有删除 <code translate="no">browser-extensions/</code> 的路径</td></tr>
+<tr><th scope="row">保留的能力</th><td><code translate="no">check:webtabs</code>、<code translate="no">check:webtab-zoom-bounds</code>、Web <code translate="no">npm run check</code></td></tr>
+</tbody>
+</table>
+<p class="note">这证明 OpenProgram 不暴露也不执行扩展功能。不对 Electron 中的 Chrome 扩展兼容性作任何声明。</p>
+
+<h2>实现状态</h2>
+<p>已实现。</p>

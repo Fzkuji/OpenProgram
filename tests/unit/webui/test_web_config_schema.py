@@ -1,4 +1,4 @@
-from openprogram.config_schema import set_setting
+from openprogram.state.settings import set_setting
 
 
 def test_allowed_origins_are_stored_as_a_validated_json_list(monkeypatch):
@@ -9,7 +9,7 @@ def test_allowed_origins_are_stored_as_a_validated_json_list(monkeypatch):
         mutator(config)
         saved.append(config)
 
-    monkeypatch.setattr("openprogram.setup.update_config", capture_update)
+    monkeypatch.setattr("openprogram.state.config.update_config", capture_update)
 
     result = set_setting(
         "web.allowed_origins",
@@ -26,7 +26,7 @@ def test_allowed_origins_are_stored_as_a_validated_json_list(monkeypatch):
 def test_allowed_origins_reject_paths_before_persistence(monkeypatch):
     saved = []
     monkeypatch.setattr(
-        "openprogram.setup.update_config",
+        "openprogram.state.config.update_config",
         lambda mutator: saved.append(mutator),
     )
 
@@ -47,7 +47,7 @@ def test_resource_limit_settings_accept_positive_or_null(monkeypatch):
         mutator(config)
         saved.append(config)
 
-    monkeypatch.setattr("openprogram.setup.update_config", capture_update)
+    monkeypatch.setattr("openprogram.state.config.update_config", capture_update)
 
     assert set_setting("agent.resource_limits.max_total_tokens", "12")["value"] == 12
     assert set_setting("agent.resource_limits.max_cost_usd", "2.50")["value"] == "2.50"
@@ -62,7 +62,7 @@ def test_resource_limit_settings_accept_positive_or_null(monkeypatch):
 def test_resource_limit_settings_reject_zero(monkeypatch):
     saved = []
     monkeypatch.setattr(
-        "openprogram.setup.update_config", lambda mutator: saved.append(mutator),
+        "openprogram.state.config.update_config", lambda mutator: saved.append(mutator),
     )
 
     assert "error" in set_setting("agent.resource_limits.max_live_per_session", 0)
@@ -78,7 +78,7 @@ def test_outbound_url_security_is_normalized_before_atomic_persistence(monkeypat
         mutator(config)
         saved.append(config)
 
-    monkeypatch.setattr("openprogram.setup.update_config", capture_update)
+    monkeypatch.setattr("openprogram.state.config.update_config", capture_update)
     result = set_setting(
         "security.outbound_url",
         {
@@ -104,6 +104,7 @@ def test_outbound_url_security_is_normalized_before_atomic_persistence(monkeypat
                     "origin": "https://catalog.corp.example:8443",
                 }
             ],
+            "model_tools": "open",
             "policy_proxy": {
                 "url": "http://127.0.0.1:3128",
                 "enforces_target_policy": True,
@@ -120,7 +121,7 @@ def test_outbound_url_security_is_normalized_before_atomic_persistence(monkeypat
 
 def test_outbound_url_security_rejection_is_sanitized_and_does_not_write(monkeypatch):
     writes = []
-    monkeypatch.setattr("openprogram.setup.update_config", writes.append)
+    monkeypatch.setattr("openprogram.state.config.update_config", writes.append)
 
     result = set_setting(
         "security.outbound_url",
@@ -144,7 +145,7 @@ def test_outbound_url_security_rejection_is_sanitized_and_does_not_write(monkeyp
 
 def test_outbound_url_malformed_json_error_does_not_reflect_input(monkeypatch):
     writes = []
-    monkeypatch.setattr("openprogram.setup.update_config", writes.append)
+    monkeypatch.setattr("openprogram.state.config.update_config", writes.append)
 
     result = set_setting(
         "security.outbound_url",

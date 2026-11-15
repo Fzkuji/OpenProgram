@@ -1,0 +1,43 @@
+<title>Context</title>
+<meta name="description" content="session_context 管理器：接口、session 边界和各入口的使用情况。">
+<h1 id="session-context">Context</h1>
+<p><code translate="no">session_context</code>（<code translate="no">openprogram/runtime/conversation/session_context.py</code>）安装每轮的 ContextVar，退出时按相反顺序重置。</p>
+<pre translate="no" tabindex="0"><code>@contextmanager
+def session_context(
+    session_id=None, *,
+    agent_id="main", turn_id=None, runtime=None,
+    create_runtime_if_none=True,
+    id_prefix="session", source="cli",
+) -&gt; Iterator[SessionHandle]  # db, session_id, runtime, turn_id, created</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_store</code></th><td><code translate="no">SessionNodeWriter(db, sid)</code></td></tr>
+<tr><th scope="row"><code translate="no">_current_turn_id</code></th><td><code translate="no">turn_id</code>，或新生成的 <code translate="no">turn_…</code></td></tr>
+<tr><th scope="row"><code translate="no">_current_runtime</code></th><td>传入的 runtime 或新建的。没有可用 provider 时不设置，store 仍然安装。</td></tr>
+</tbody>
+</table>
+<p class="note">session 不存在时在这里创建，是<a href="operations.zh.html#creating-a-session">三个创建入口</a>之一。<code translate="no">_call_id</code> 由 Agent 方法包装器设置。</p>
+
+<h2 id="session-boundaries">Session 边界</h2>
+<table class="stack">
+<thead><tr><th scope="col">调用意图</th><th scope="col">传入</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行新任务</th><td>不传 <code translate="no">session_id</code></td><td>新建 <code translate="no">&lt;id_prefix&gt;_…</code> session，id 在 handle 上</td></tr>
+<tr><th scope="row">继续同一任务</th><td>上次返回的 id</td><td>复用，历史延续</td></tr>
+<tr><th scope="row">开始无关的事</th><td>不传，或传另一个 id</td><td>独立的 session</td></tr>
+</tbody>
+</table>
+<p class="note">调用次数不决定边界。session 没有关闭动作：退出只重置 ContextVar，之后用同一 id 继续写。</p>
+
+<h2 id="entry-points">各入口</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">建立上下文的方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness</th><td>用 <code translate="no">with session_context(session_id="research_" + uuid, runtime=rt)</code> 包住 <code translate="no">paper_agent</code></td></tr>
+<tr><th scope="row">Dispatcher</th><td><code translate="no">TurnBindings.bind</code>，自己的每轮绑定</td></tr>
+<tr><th scope="row"><code translate="no">process_runner</code></th><td>自己 set 和 reset</td></tr>
+<tr><th scope="row">测试</th><td><code translate="no">test_session_context.py</code> 等用管理器；部分 fixture 直接设置变量</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="unified-session-context.zh.html">为什么只要一个管理器</a></p>

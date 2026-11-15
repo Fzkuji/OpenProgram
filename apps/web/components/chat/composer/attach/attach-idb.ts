@@ -15,8 +15,8 @@
  * payload is, and the preview is rebuilt from it on load.
  */
 
-import { originalImageBytes, type PendingImage } from "./image-attach";
-import type { PendingDoc } from "./file-tiles";
+import { originalImageBytes, type PendingImage } from "./image/image-attach";
+import type { PendingDoc } from "./strip/file-tiles";
 
 const DB_NAME = "openprogram-composer";
 const STORE = "attachments";
@@ -95,14 +95,11 @@ function serialize(a: StoredAttachments): StoredAttachments {
   };
 }
 
-export async function saveAttachments(
-  sessionId: string,
-  data: StoredAttachments,
-): Promise<void> {
-  if (attachmentOwnerIsClosed(sessionId)) return;
+async function putRecord(key: string, data: StoredAttachments, skip: () => boolean): Promise<void> {
+  if (skip()) return;
   const db = await openDb();
   if (!db) return;
-  if (attachmentOwnerIsClosed(sessionId)) {
+  if (skip()) {
     db.close();
     return;
   }
@@ -111,9 +108,9 @@ export async function saveAttachments(
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
     if (!payload.images.length && !payload.docs.length) {
-      store.delete(sessionId);
+      store.delete(key);
     } else {
-      store.put(payload, sessionId);
+      store.put(payload, key);
     }
     await waitForTransaction(tx);
   } catch {
@@ -123,25 +120,24 @@ export async function saveAttachments(
   }
 }
 
-export async function loadAttachments(
-  sessionId: string,
-): Promise<StoredAttachments> {
-  if (attachmentOwnerIsClosed(sessionId)) return { images: [], docs: [] };
+/** Read one record; null when it is missing or the store is unavailable. */
+async function getRecord(key: string, skip: () => boolean): Promise<StoredAttachments | null> {
+  if (skip()) return null;
   const db = await openDb();
-  if (!db) return { images: [], docs: [] };
-  if (attachmentOwnerIsClosed(sessionId)) {
+  if (!db) return null;
+  if (skip()) {
     db.close();
-    return { images: [], docs: [] };
+    return null;
   }
   return new Promise((resolve) => {
     try {
       const tx = db.transaction(STORE, "readonly");
-      const req = tx.objectStore(STORE).get(sessionId);
+      const req = tx.objectStore(STORE).get(key);
       req.onsuccess = () => {
         const v = req.result as StoredAttachments | undefined;
         db.close();
-        if (!v || attachmentOwnerIsClosed(sessionId)) {
-          resolve({ images: [], docs: [] });
+        if (!v || skip()) {
+          resolve(null);
           return;
         }
         // Rebuild preview object URLs from the persisted base64 so chips
@@ -167,26 +163,64 @@ export async function loadAttachments(
       };
       req.onerror = () => {
         db.close();
-        resolve({ images: [], docs: [] });
+        resolve(null);
       };
     } catch {
       db.close();
-      resolve({ images: [], docs: [] });
+      resolve(null);
     }
   });
 }
 
-export async function deleteAttachments(sessionId: string): Promise<void> {
-  markAttachmentOwnerClosed(sessionId);
+async function deleteRecord(key: string): Promise<void> {
   const db = await openDb();
   if (!db) return;
   try {
     const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).delete(sessionId);
+    tx.objectStore(STORE).delete(key);
     await waitForTransaction(tx);
   } catch {
     /* ignore */
   } finally {
     db.close();
   }
+}
+
+export async function saveAttachments(
+  sessionId: string,
+  data: StoredAttachments,
+): Promise<void> {
+  return putRecord(sessionId, data, () => attachmentOwnerIsClosed(sessionId));
+}
+
+export async function loadAttachments(
+  sessionId: string,
+): Promise<StoredAttachments> {
+  return await getRecord(sessionId, () => attachmentOwnerIsClosed(sessionId))
+    ?? { images: [], docs: [] };
+}
+
+export async function deleteAttachments(sessionId: string): Promise<void> {
+  markAttachmentOwnerClosed(sessionId);
+  return deleteRecord(sessionId);
+}
+
+/* ===== Queued-message attachments ================================= */
+
+// A queued row's files live beside the composer drafts, under their own key,
+// until the row is sent or removed. A row can leave the queue and come back
+// (a failed send restores it), so these keys carry no closed-owner tombstone.
+const queuedKey = (rowId: string) => `queue:${rowId}`;
+const never = () => false;
+
+export function saveQueuedAttachments(rowId: string, data: StoredAttachments): Promise<void> {
+  return putRecord(queuedKey(rowId), data, never);
+}
+
+export function loadQueuedAttachments(rowId: string): Promise<StoredAttachments | null> {
+  return getRecord(queuedKey(rowId), never);
+}
+
+export function deleteQueuedAttachments(rowId: string): Promise<void> {
+  return deleteRecord(queuedKey(rowId));
 }

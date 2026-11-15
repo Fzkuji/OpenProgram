@@ -1,0 +1,301 @@
+<title>压缩</title>
+<meta name="description" content="压缩如何按链存储摘要、改变模型读到的内容、从超长中恢复、恢复工作状态并保护 HEAD。">
+<h1 id="context-compaction">压缩</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="存储的链不变：根，被覆盖的轮次 A、B、C，保留的轮次 K1、K2。摘要节点 S 的前驱是根，covers_ids 列出 A、B、C。发给模型的请求是：系统提示、作为用户消息的 S、原样保留的尾部、新用户消息。">
+  <defs><marker id="cp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="34">存储</text>
+  <text class="t-big" x="84" y="34">ROOT</text>
+  <line class="ln" x1="132" y1="28" x2="166" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="176" y="34">A</text>
+  <line class="ln" x1="196" y1="28" x2="238" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="248" y="34">B</text>
+  <line class="ln" x1="268" y1="28" x2="310" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="320" y="34">C</text>
+  <line class="ln" x1="340" y1="28" x2="392" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="402" y="34">K1</text>
+  <line class="ln" x1="430" y1="28" x2="472" y2="28" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="482" y="34">K2</text>
+  <text class="t-soft" x="524" y="34">HEAD 留在这里</text>
+  <path class="ln-faint" d="M172 46V54H332V46"/>
+  <text class="t-cmd notranslate" translate="no" x="184" y="74">covers_ids</text>
+  <path class="ln" d="M104 42V104H238" marker-end="url(#cp-a)"/>
+  <text class="t-big" x="248" y="110">S</text>
+  <text class="t-soft" x="272" y="110">一个摘要节点；前驱就是拼接点</text>
+  <text class="t-soft" x="0" y="168">发送</text>
+  <text x="84" y="168">系统提示</text>
+  <text class="t-big" x="196" y="168">S</text>
+  <text x="222" y="168">保留的尾部，原样</text>
+  <text x="372" y="168">新用户消息</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>存储</dt><dd>ROOT、A、B、C、K1、K2；HEAD 留在 K2</dd>
+<dt>摘要</dt><dd>S：前驱 ROOT，<code translate="no">covers_ids</code> 为 A、B、C</dd>
+<dt>发送</dt><dd>系统提示、作为用户输入的 S、原样保留的尾部、新用户消息</dd>
+</dl>
+</figure>
+
+<p>摘要在包含它覆盖的全部轮次的每条链上代替这些轮次，每条链读自己的那份。一条规则 <code translate="no">active_summary_for_chain</code>（<code translate="no">state/store/session/summaries.py</code>）同时服务渲染、压缩输入和图构建器，所以它们从不分歧。摘要的胶囊画法：<a href="../runtime/dag/rendering.zh.html">DAG 渲染第九节</a>。</p>
+
+<h2 id="data-model">摘要节点</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code></th><td><code translate="no">summary_&lt;hex&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">role</code></th><td><code translate="no">llm</code>，<code translate="no">name = "context/summary"</code></td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td><code translate="no">The earlier part of this conversation was compacted into this summary:\n&lt;text&gt;</code>。此前缀之前写入的节点保留 <code translate="no">[Previous conversation summary]\n</code>，按原样渲染</td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>第一个被覆盖节点的前驱</td></tr>
+<tr><th scope="row"><code translate="no">metadata.covers_ids</code></th><td>被替换链节点的有序 id</td></tr>
+<tr><th scope="row"><code translate="no">metadata.render_role</code></th><td>新节点都是 <code translate="no">user</code>；没有该字段的节点是 assistant 消息</td></tr>
+<tr><th scope="row"><code translate="no">metadata.restored_state</code>、<code translate="no">restored_files</code></th><td>写在摘要后的工作状态，以及下一次压缩在其上追加的路径列表（<a href="#restores">压缩恢复什么</a>）</td></tr>
+<tr><th scope="row"><code translate="no">metadata.carried_tool_names</code></th><td>被覆盖轮次加载过的延迟工具</td></tr>
+<tr><th scope="row">事实</th><td><code translate="no">trigger</code>（<code translate="no">manual</code>、<code translate="no">auto</code>、<code translate="no">reactive</code>、<code translate="no">mid_turn</code>、<code translate="no">model_downshift</code>）、<code translate="no">model</code>、<code translate="no">tokens_before</code>、<code translate="no">tokens_after</code>、<code translate="no">summarised_count</code>、<code translate="no">compacted_at</code>；随节点一起写入</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>只追加。</strong>一次写入一个完整的节点：不克隆尾部，不改边，不动 HEAD，事后不补写元数据，也没有会话字段指向它。忽略摘要即可重建原视图。</li>
+<li><strong>用 id，不用 seq 区间。</strong>兄弟分支的 seq 交错，区间会卷入死分叉，还会随 HEAD 变化。</li>
+<li><strong><code translate="no">covers_ids</code> 是真实轮次的连续段。</strong>绝不包含摘要：再次压缩时在旧段上延伸新轮次。</li>
+</ul>
+
+<h2 id="which-summary">用哪份摘要</h2>
+<p>在覆盖轮次全部位于某条链上的摘要中，这条链读覆盖范围沿链延伸最远的那份；相同时按 <code translate="no">seq</code> 决定。滚动摘要覆盖前一份加更新的轮次，所以在它的链上胜出，旧的那份只服务更早分出的链。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">链读到</th></tr></thead>
+<tbody>
+<tr><th scope="row">两个分支先后压缩</th><td>各读自己的摘要。在它们之间切换，各自按自己的摘要渲染，不写任何东西</td></tr>
+<tr><th scope="row">分叉点之前写的摘要</th><td>两个分支都读</td></tr>
+<tr><th scope="row">回退原地撤回轮次</th><td>被撤回的消息不在链上，被撤回的摘要不存在；所以回退进摘要范围时，退回到仍完整位于链上的更早摘要，或原始轮次</td></tr>
+<tr><th scope="row">在被覆盖段内编辑、重试或分叉</th><td>新分支缺少该段的一部分：读一份合适的更早摘要，或原样</td></tr>
+<tr><th scope="row">两个分支加载了不同工具</th><td>每份摘要带自己的 <code translate="no">carried_tool_names</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>每条链一份摘要</dt><dd>沿用 Pi：取从叶子出发路径上的最后一次压缩。对比过：每个会话只有最新一份摘要（Claude Code、Codex，只有一条线性历史），其他分支都原样渲染、要再压缩。这里分支并行运行，所以摘要属于链。</dd>
+<dt>回退时退回</dt><dd>Codex 在回滚越过压缩时丢弃那次压缩；这里同一规则让被撤回的摘要不再指向链上已没有的轮次。</dd>
+</dl>
+</details>
+
+<h2 id="rendering-rule">渲染规则</h2>
+<p><code translate="no">context/nodes.py</code> 的 <code translate="no">render_context</code> 决定模型读什么。设 S 为这条链的摘要，L 为其 <code translate="no">covers_ids</code>：去掉 L，在其位置放入 S，作为一条用户消息（摘要，然后是恢复的状态）；在 Anthropic 上它和下一条用户消息合并。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">已压缩的分支</th><td><code translate="no">[ROOT, S, kept tail…]</code></td></tr>
+<tr><th scope="row">被覆盖的轮次加载过延迟工具</th><td>随这些轮次一起省去。S 带上工具名（<code translate="no">carried_tool_names</code>，随 S 写入：最近加载或调用的在前，定义超过窗口 5% 处截断），所以每个请求仍会加载它们</td></tr>
+<tr><th scope="row">携带的工具，在 openai-codex 上</th><td>S 之前放一对 <code translate="no">tool_search_call</code> / <code translate="no">tool_search_output</code>，带对话最初发送的定义；tools 数组保持不变。其他 provider 在 tools 数组里提供，请求从 S 开始。有上限的后台尾部只保留被覆盖部分的 S</td></tr>
+<tr><th scope="row">任意检出、任意时间</th><td>由数据确定；与 HEAD 曾在哪里无关</td></tr>
+<tr><th scope="row">没有链读的摘要</th><td>不省略任何内容</td></tr>
+</tbody>
+</table>
+<p class="note">DAG 胶囊按同一规则、同一 <code translate="no">covers_ids</code> 折叠。</p>
+
+<h2 id="pipeline">流水线</h2>
+<p><code translate="no">/compact</code>（<code translate="no">trigger_compaction</code>）、自动压缩（预算达到 <code translate="no">context.auto_compact_percent</code>，默认 80%，在轮次开始前和轮次的步骤之间）和超长恢复都在调用方用链尾指定的链上运行 <code translate="no">engine.compact</code>：<code translate="no">/compact</code> 用它读到的会话 head，其余用该轮自己的分支。除 <code translate="no">/compact</code> 外都传入该轮的停止信号。</p>
+<ol>
+<li><strong>冻结这条链的渲染输入。</strong><code translate="no">compaction.view.load_compaction_view</code> 使用 <code translate="no">render_context</code> 和 <code translate="no">render_dag_messages</code>，包含工具结果、expose 和 spill 引用。顶层轮次决定覆盖范围；可见的子调用计入输入和预算。</li>
+<li><strong>选整轮。</strong>保留窗口的 10%，限定在 8,000–40,000 token（显式覆盖优先）。优先在用户边界处保留至少四条对话消息；已发布的报告也算边界。低于目标：不操作。若最后两轮超过目标，切点可前移到最近的用户边界。除非其后只有报告，最近一轮保持完整。</li>
+<li><strong>用摘要提示词总结整个被覆盖前缀</strong>（<a href="#summary-prompt">摘要提示词与角色</a>）：每个被替换的轮次、最初的请求、这条链之前的摘要、渲染出的子调用。非文本媒体变为引用说明。</li>
+<li><strong>写入前校验。</strong>拒绝空的、失败的、被取消的、缺段的、碰到上限的或没有缩小的摘要；按同样方式在内存中渲染的候选必须严格更小。模型调用后重新检查这条链的渲染节点；有变化就作为可重试的空操作，其他分支和移到别处的 head 不算。provider 失败时保留历史，没有有损的结构化兜底。</li>
+<li><strong>持久化并报告。</strong>连同恢复的状态一次写入；<code translate="no">covers_ids</code> 把之前的摘要展开成真实轮次 id。之前的数字是上下文面板对这条链的读数；之后的数字是该读数减去候选节省的部分。空操作不写入、不计数。</li>
+</ol>
+<p class="note">上下文显示使用 provider 的输入用量。每个请求还记录同样消息的本地估算，所以之后编辑图时按实测比例缩放估算，在下次报告前标为估算。没有匹配估算的旧用量不参与校准。</p>
+<p><code translate="no">/compact</code> 是这个分支的前台操作（<code translate="no">op_kind: compact</code>，<code translate="no">compaction_started</code> 上带 <code translate="no">op_id</code>）。页面的停止按钮和终端的 Ctrl-C 都用这个 id 发送 <code translate="no">operation.cancel</code>；摘要请求结束，不写任何东西，那一行显示"已停止"。自动压缩失败时不提示，下一个请求会再试。</p>
+<p class="note">原因：Claude Code、Codex 和 Kimi Code 都用停止一轮的那个键取消手动压缩；照 Claude Code 做，它的终端同样基于 Ink。</p>
+
+<details id="repeated-failures">
+<summary>自动压缩反复失败</summary>
+<p>每次失败的尝试仍要为整个对话付费。同一分支在同一模型上连续失败 <code translate="no">FAILS_MOST</code>（3）次、每次距上一次在 <code translate="no">HELD_FOR_S</code>（5 分钟）内后，这个分支的自动压缩从最后一次失败起等待五分钟，再尝试一次（<code translate="no">runtime/context/compaction/hold.py</code>，按会话、模型和分支计，由 <code translate="no">DefaultContextEngine.compact</code> 查询）。其他分支照常压缩。</p>
+<ul>
+<li>算失败：摘要器出错（例如 429）、提醒后仍缺段、碰到输出上限、带错误的空摘要、没有缩小。</li>
+<li>不算失败：取消、源已变化。</li>
+<li>摘要成功写入后清零计数。<code translate="no">/compact</code> 总会执行。</li>
+<li>沿用 magpie 的压缩保护（yetone/magpie，MIT）。</li>
+</ul>
+</details>
+
+<h2 id="overflow-recovery">超长恢复</h2>
+<p>agent 循环（<code translate="no">runtime/agent/loop/loop.py</code>）在两处压缩该轮的链；该轮自己的步骤保持原样。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时机</th><th scope="col">做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">provider 以过长拒绝请求</th><td>丢掉被拒的回复，压缩（<code translate="no">reactive</code>），重新渲染，再发送同一个请求。每个请求一次压缩，每轮两次；第二次超长或没有释放空间，该轮以 provider 的错误失败。该轮从不从头重跑，所以工具不会再被调用</td></tr>
+<tr><th scope="row">一轮工具结果超过自动压缩阈值</th><td>每轮压缩一次（<code translate="no">mid_turn</code>），在重新渲染的请求上继续</td></tr>
+<tr><th scope="row">期间停止</th><td>该轮以已停止结束</td></tr>
+<tr><th scope="row">不能持久压缩的调用</th><td>切换到更小窗口的备用模型、<code translate="no">Runtime.exec</code>、后台和 clean 运行、覆盖历史：使用下面的请求检查点</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>只重试那个请求</dt><dd>沿用 Claude Code 和 Codex：两者遇到上下文长度错误时压缩，再重发失败的请求，并限制次数。对比过：重跑整轮循环，那会重复所有已完成的步骤，包括有副作用的工具调用。</dd>
+<dt>步骤之间压缩</dt><dd>Codex 在一次采样后用量超过上限时于轮次中途压缩；Claude Code 在每个请求前检查。否则一条消息里的长工具循环只会一直增长，直到 provider 拒绝。</dd>
+</dl>
+</details>
+
+<h2 id="summary-prompt">摘要提示词与角色</h2>
+<p>一份提示词（<code translate="no">compaction/prompts.py</code>）写每一份摘要，无论首次还是滚动，要求这些 <code translate="no">## </code> 段：User intent、All user messages、Decisions and constraints、Completed work、Current work、Next step、Relevant files。它省略每个请求本来就会发送的内容（系统提示、AGENTS.md、指南、记忆），标明被取消的请求，并注明说法的出处。</p>
+<ul>
+<li>缺段的回复带提醒（<code translate="no">NUDGE</code>）再问一次；仍不完整，压缩失败，不写入，计入 hold。</li>
+<li>输出上限 20,000 token，窗口较小时为窗口的四分之一。碰到上限的摘要算失败，不保留截断的结果。</li>
+<li>摘要是用户输入，带一个说明其身份的前缀。</li>
+</ul>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>分段和提醒</dt><dd>沿用 Claude Code 的分段摘要，保留用户自己的消息，并检查摘要是否漏掉它们。对比过：两份提示词（首次和更新）加五个松散部分，滚动摘要会丢掉用户早先的指示。</dd>
+<dt>用户角色，带前缀</dt><dd>沿用 Codex 和 Pi，它们把摘要作为说明自身身份的用户输入交回。assistant 角色的摘要读起来像模型自己说过的话，会被当成它自己的结论。</dd>
+<dt>碰到上限算失败</dt><dd>Claude Code 把不完整的摘要当作失败；被截断的摘要丢掉 Next step 和 Relevant files，正是继续工作最需要的部分。</dd>
+</dl>
+</details>
+
+<h2 id="restores">压缩恢复什么</h2>
+<p>摘要正文之后、在同一条消息里，节点带一个 <code translate="no">&lt;restored-state&gt;</code> 块（<code translate="no">compaction/restore.py</code>），在 10,000 token 以内，每个请求字节相同：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">段</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">Approved plan</th><td>链上用户批准的最后一个 <code translate="no">exit_plan_mode</code>，之后又进入计划模式则不算；超过 6,000 token 截断并注明</td></tr>
+<tr><th scope="row">Todo list</th><td>对话的待办板，带每项状态</td></tr>
+<tr><th scope="row">Background jobs still running</th><td>尚未结束的任务</td></tr>
+<tr><th scope="row">Files read、Files changed</th><td>被覆盖调用读、写或编辑过的路径，追加到上一份摘要的列表上，各保留最近 30 个。存下来的调用把参数保存为模型发来的 JSON 文本，路径（和计划）从这段文本里读</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>写状态，不重读内容</dt><dd>沿用 Claude Code：压缩后重新附上计划、待办、运行中的任务和读过的文件。对比过：重读文件内容，字节最多，文件一变就过期；有路径，模型可以再读。状态存在节点里，保持在缓存中。</dd>
+</dl>
+</details>
+
+<h2 id="summary-request">摘要请求</h2>
+<p>摘要把上一个请求再发一次，多加一条摘要提示词作为用户消息（<code translate="no">compaction/fork.py</code>）：系统提示、工具和缓存键都相同，provider 从缓存读前缀。回复里的工具调用不执行；再问一次摘要。</p>
+<p>这条消息开头先说明它来自系统而不是用户（<code translate="no">FORK_SUMMARY_PROMPT</code>）：每一节都不列它，Next step 引用的最近请求是它之前的那条用户消息。摘要覆盖到它为止的整段对话，保留的轮次也在内；保留的轮次仍在摘要后按原文渲染。</p>
+<p>以下情况改为读被覆盖的文本：模型不同、请求加摘要放不下、请求不在这条链上、或这次压缩是在从超长中恢复。</p>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>分叉已缓存的前缀</dt><dd>沿用 Claude Code 的分叉摘要和 OpenCode 在同一消息列表上的压缩：对话已在缓存里，摘要按缓存读计费而不是全新输入。对比过：把被覆盖轮次渲染成文本放进新请求，每个 token 都按全价；它保留为兜底。</dd>
+<dt>提示词先说明自己</dt><dd>沿用 Codex（压缩提示词以“上下文检查点”开头）和 Claude Code（要求总结“到目前为止的对话”）。不加说明时，提示词就是请求里最新的用户消息，模型曾把它当作用户的最近请求列出并引用。对比过：只覆盖保留尾部之前的轮次，这会改变前缀、丢掉缓存。</dd>
+</dl>
+</details>
+
+<h2 id="model-downshift">模型降级</h2>
+<p>跟随其 Agent 换到更小窗口模型的分支，在下一轮前用写这段历史的模型压缩（<code translate="no">trigger: model_downshift</code>）。该模型失败时，由该轮自己的模型总结一次。窗口不更大的模型不参与。</p>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>由更大的模型总结</dt><dd>沿用 Codex 的模型降级压缩。小模型可能装不下要它总结的历史；读过这段历史的模型仍装得下。</dd>
+</dl>
+</details>
+
+<h2 id="head-integrity">HEAD 完整性</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">写入者</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SessionStore.set_head</code></th><td>用于显式移动：发送轮次前进、重试或编辑分叉、检出、回退、删除分支。压缩、加载会话、worker 重启、切换模型和保存元数据都不调用</td></tr>
+<tr><th scope="row"><code translate="no">append_message</code></th><td>只有节点前驱等于当前 HEAD 时才移动。摘要拼接、侧分支写入和遗迹都不动 HEAD</td></tr>
+<tr><th scope="row">派生轮次</th><td>同会话子 agent 轮次以 <code translate="no">TurnRequest.advance_head=False</code> 运行；内部写入都不动 head，用户窗口不会中途被切走。跨会话发送仍推进目标会话的 head</td></tr>
+<tr><th scope="row">不算移动的写入</th><td>attach 卡片、inbox 和子 agent 路径通过 store 追加后恢复 <code translate="no">head_before</code></td></tr>
+<tr><th scope="row"><code translate="no">TurnWriter</code>（<code translate="no">turn_runtime/turn_writer.py</code>）</th><td>执行一轮的链写入，只有它应用 <code translate="no">advance_head</code>。该包内只有这个文件移动 HEAD，另有 <code translate="no">forced_tool.py</code> 中用户发起的函数运行路径和 <code translate="no">slash_actions.py</code> 的恢复</td></tr>
+<tr><th scope="row">镜像</th><td>webui 的 <code translate="no">conv</code> 镜像和一次性 <code translate="no">load_session</code> 快照只读。React 会话 store 是唯一的实时转录。<code translate="no">save_meta</code> 去掉 <code translate="no">head_id</code>；镜像行不会变成存储</td></tr>
+<tr><th scope="row">存储的 HEAD 落在调用上</th><td>旧会话可能有；调用没有前驱，下一请求将没有历史。<code translate="no">store/session/memory_index.py</code> 的 <code translate="no">_conversation_head</code> 把它读成产生该调用的回复</td></tr>
+</tbody>
+</table>
+
+<h2 id="graph-contract">图契约</h2>
+<ul>
+<li>对每个分支尾，它的链读的那份摘要带 <code translate="no">covers_ids</code>：<code translate="no">metadata.covers_ids</code>，加上被覆盖轮次的调用子树，去掉已不存在的 id。</li>
+<li>没有分支读的摘要带 <code translate="no">superseded_summary: true</code>，没有 <code translate="no">covers_ids</code>。</li>
+<li>构建器不做 seq 运算，也不按 head 过滤。</li>
+</ul>
+
+<details id="inside-one-message">
+<summary>请求检查点</summary>
+<p>每个 AgentLoop provider 请求，包括工具续写和函数内的 <code translate="no">llm()</code>、<code translate="no">agent()</code>，都会做预算（<code translate="no">compaction/request.py</code>）。超过限额时请求得到一个检查点；消息和 DAG 保持不变。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">输出上限</th><td>未指定时：取模型能力、16,384 和窗口四分之一中的最小值，预算和发送都用它。显式上限从不降低</td></tr>
+<tr><th scope="row">检查点</th><td>较早的完整纯文本历史变成一份任务摘要。所有用户消息和最近的 assistant 段保持原样。不完整的工具组、多模态输入和当前轮的签名推理不参与；已完成轮次的推理按其摘要文本总结，不含加密载荷和 id</td></tr>
+<tr><th scope="row">复用</th><td>在同一次调用内，模型相同且源前缀未变</td></tr>
+<tr><th scope="row">摘要调用</th><td>分块且有上限，超长时缩小重试；最多 32 个请求；绕过 AgentLoop。每个请求在流持续产出时运行，60 秒无事件则失败；停止会立即关闭它。失败时历史不变</td></tr>
+<tr><th scope="row">超预算</th><td>只用本地估算。放不下的受保护内容明确失败；估算超预算的请求不发送</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么这样设计</summary>
+<dl>
+<dt>不逐个总结结果</dt><dd>Codex、OpenCode、Pi 和 Kimi Code 都没有，Hermes 也把自己的关掉了：逐个替换工具结果会改写请求中段，之后每个请求都错过提示缓存，而且下一轮什么也没留下。改由步骤之间的持久压缩承担。</dd>
+<dt>不用缓存编辑清除</dt><dd>Anthropic 的 <code translate="no">clear_tool_uses</code> 上下文编辑在 provider 端清除旧结果，对缓存的影响相同，且只适用于一家 provider；不再发送。</dd>
+</dl>
+</details>
+</details>
+
+<details id="tuning">
+<summary>按用户自己的调用选择比例</summary>
+<p>压缩得早，每次调用读得少，但要为更多摘要和返工付费。<code translate="no">context.auto_compact_percent</code>（设置 → 系统 → 模型 → 长对话在多满时总结，50–95，每次决策时读取）由 <code translate="no">GET /api/usage/tuning?days=30</code>（<code translate="no">runtime/context/tuning.py</code>）给出建议：按模型在该时段的 chat、exec、subagent 调用上回放 50% 到 95% 的每个比例。沿用 magpie 的 tune（yetone/magpie，MIT）。</p>
+<ul>
+<li>按顺序回放，每个 prompt 按实际增长，去掉记录到的压缩（降到至少 20K prompt 的 60% 以下）。</li>
+<li>超过阈值（窗口比例减回复预留）时，压缩读完整 prompt，写一份和所见摘要一样长的摘要（没有时比对话开头多 10K）。下一次调用把它写入缓存，之后读回记录的压缩后的内容（见到五次前至少 10K）。</li>
+<li>token 按目录价格或厂商常见比例换算成普通输入。</li>
+<li>余量不足半份摘要或二十次调用增长的比例不尝试。与最便宜相差 1% 内的取最大，且比当前至少省 3% 才建议。少于 50 次调用：不建议。</li>
+<li>同一端点为 Anthropic API 和 Bedrock 调用建议 <code translate="no">models.prompt_cache_ttl</code>（<code translate="no">5m</code> 或 <code translate="no">1h</code>）：一小时写入价格是输入的两倍，过期后的调用重写整个 prompt。该设置只延长普通缓存（<code translate="no">providers/settings/cache_spec.py</code> 的 <code translate="no">with_lifetime_setting</code>）。</li>
+</ul>
+</details>
+
+<details id="extension-points">
+<summary>其他压缩方案</summary>
+<p>每条链一份滚动摘要让缓存前缀稳定。这是策略，不是存储：各方案只在哪些摘要现役、渲染器如何替换上不同，切换不用迁移数据。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方案</th><th scope="col">改动</th></tr></thead>
+<tbody>
+<tr><th scope="row">分段（一条链上多份现役）</th><td>N 个节点覆盖不相交的段；规则对每条链返回一个集合</td></tr>
+<tr><th scope="row">嵌套</th><td><code translate="no">covers_ids</code> 允许摘要 id；替换递归</td></tr>
+<tr><th scope="row">外部记忆</th><td>节点相同；渲染器不再内联</td></tr>
+</tbody>
+</table>
+<p>任何方案都保留两条契约：上下文是只追加节点上的确定性视图，进入 prompt 的 id 以 <code translate="no">reads</code> 记在调用上。</p>
+</details>
+
+<h2 id="invariants">不变量</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">不变量</th><th scope="col">测试位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">压缩后，活动分支渲染为 <code translate="no">[ROOT, S, kept tail…]</code></th><td><code translate="no">tests/unit/context/test_compaction_covers.py</code>；场景套件</td></tr>
+<tr><th scope="row">每条链读自己的摘要；切换不写入；回退时退回；构建器一致</th><td><code translate="no">tests/unit/context/test_summary_per_chain.py</code></td></tr>
+<tr><th scope="row">超长只重试那个请求，每轮最多两次；停止时以已停止结束</th><td><code translate="no">tests/component/context/test_reactive_retry.py</code></td></tr>
+<tr><th scope="row">新摘要是带前缀的用户输入；缺段或碰到上限的失败并计入 hold</th><td><code translate="no">tests/unit/context/test_summary_prompt_and_role.py</code></td></tr>
+<tr><th scope="row">恢复的状态跟在摘要后，在预算内，每个请求字节相同</th><td><code translate="no">tests/unit/context/test_compaction_restore.py</code></td></tr>
+<tr><th scope="row">摘要请求复用上一个请求的前缀；超长恢复从不分叉</th><td><code translate="no">tests/unit/context/test_compaction_fork.py</code></td></tr>
+<tr><th scope="row">降级由更大的模型总结，再由该轮的模型</th><td><code translate="no">tests/unit/agent/test_downshift_compaction.py</code></td></tr>
+<tr><th scope="row">窗口内一轮的请求只在末尾增长；超过时只有一个检查点，不逐个总结结果</th><td><code translate="no">tests/component/context/test_request_checkpoint_only.py</code></td></tr>
+<tr><th scope="row">S 带上其轮次加载的工具，按顺序并按窗口截断；在 openai-codex 上，S 前的一对让 tools 数组在压缩前后不变；其他 provider 先读 S</th><td><code translate="no">tests/unit/context/test_compaction_keeps_loaded_tools.py</code></td></tr>
+<tr><th scope="row">压缩从不移动 HEAD</th><td>场景套件</td></tr>
+<tr><th scope="row"><code translate="no">covers_ids</code> 绝不指向被总结链之外的节点</th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
+<tr><th scope="row">HEAD 经得起重启、加载会话、切换模型、保存元数据</th><td><code translate="no">tests/integration/dag/test_dag_mutation_scenarios.py</code></td></tr>
+<tr><th scope="row">镜像行和 head 不会写回 store</th><td>Web UI 持久化测试</td></tr>
+</tbody>
+</table>
+<p class="note">场景套件在真实 <code translate="no">SessionStore</code> 上依次运行聊天、分叉、检出、压缩、聊天、压缩、聊天、重启加载，每步后检查 head 和渲染。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row">节点形状和流水线</th><td><code translate="no">runtime/context/persistence.py</code>（<code translate="no">insert_summary_node</code>、<code translate="no">covered_chain_ids</code>、<code translate="no">rendered_history</code>），<code translate="no">runtime/context/engine.py</code></td></tr>
+<tr><th scope="row">用哪份摘要</th><td><code translate="no">state/store/session/summaries.py</code>；<code translate="no">runtime/context/nodes.py</code>（<code translate="no">render_context</code>）；<code translate="no">state/store/session/graph/builder.py</code></td></tr>
+<tr><th scope="row">超长恢复、轮次中途压缩</th><td><code translate="no">runtime/agent/loop/loop.py</code>，<code translate="no">turn_runtime/turn_compaction.py</code></td></tr>
+<tr><th scope="row">提示词、恢复、分叉</th><td><code translate="no">compaction/prompts.py</code>、<code translate="no">summarize.py</code>、<code translate="no">bounded_summary.py</code>、<code translate="no">restore.py</code>、<code translate="no">fork.py</code></td></tr>
+<tr><th scope="row">模型降级</th><td><code translate="no">turn_runtime/loop_runner.py</code>（<code translate="no">_auto_compact_new_turn</code>）</td></tr>
+<tr><th scope="row"><code translate="no">/compact</code> 作为操作</th><td><code translate="no">server_runtime/run_slots.py</code>、<code translate="no">ws_actions/chat/commands.py</code>；终端 Ctrl-C 在 <code translate="no">apps/cli/src/screens/REPL.tsx</code></td></tr>
+<tr><th scope="row">HEAD 完整性</th><td><code translate="no">state/store/session/session_store/messages.py</code>；<code translate="no">interfaces/server/persistence.py</code> 去掉 <code translate="no">head_id</code></td></tr>
+<tr><th scope="row">未实现：在当前轮内部切分</th><td>轮次中途和超长压缩只覆盖该轮用户消息之前的历史；自身步骤超出窗口的轮次仍依赖请求检查点。覆盖该轮已完成的步骤需要每一步结束时就存储，并把转录标记放在轮次中间</td></tr>
+<tr><th scope="row">未实现：进程内终端经由服务器</th><td>旧的 Python REPL 的 <code translate="no">/compact</code> 在自己的进程里运行，不经过分支的前台槽位</td></tr>
+<tr><th scope="row">未实现：未读的任务结果</th><td>恢复的状态列出运行中的任务；结果从未被读过的已结束任务还没有跟踪</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="compaction-diagram.zh.html">压缩层级</a></p>

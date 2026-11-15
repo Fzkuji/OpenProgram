@@ -1,0 +1,51 @@
+<title>Unified session context</title>
+<meta name="description" content="Why every entry point should build its session context through one manager, what fails without it, and the migration state.">
+<h1>Unified session context</h1>
+<p>Installed from the command line or the Web, a function should behave the same. Several capabilities read a per-turn session context, and a caller that builds none loses them without an error.</p>
+
+<h2 id="silent-failures">Without a session (<code translate="no">_store=None</code>)</h2>
+<table class="stack">
+<thead><tr><th scope="col">Capability</th><th scope="col">Failure point</th><th scope="col">Symptom</th></tr></thead>
+<tbody>
+<tr><th scope="row">Docstring into prompt</th><td>Never reached in <code translate="no">render.py</code></td><td>Function instructions never reach the model; the Agent degrades into “What would you like to do”</td></tr>
+<tr><th scope="row">DAG persistence</th><td>Node append is a no-op</td><td>The run is not in session history</td></tr>
+<tr><th scope="row">History from the DAG</th><td><code translate="no">_render_history_messages</code> returns None</td><td>Each exec cannot see earlier steps</td></tr>
+<tr><th scope="row"><code translate="no">ask_user</code> tracking</th><td>Placeholder and finish nodes not written</td><td>Questions are not in history</td></tr>
+<tr><th scope="row">Nested <code translate="no">called_by</code></th><td><code translate="no">_call_id=None</code></td><td>Node attribution is lost</td></tr>
+</tbody>
+</table>
+<p class="note">All follow the pattern <code translate="no">store=_store.get(); if store is None: return</code>.</p>
+
+<h2 id="what-it-is-made-of">What the context is made of</h2>
+<pre translate="no" tabindex="0"><code>SessionDB (default_db / SessionStore)
+  └─ ~/.openprogram/projects/&lt;project-id&gt;/chats/&lt;session_id&gt;/
+SessionNodeWriter(db, session_id)      append / update / load DAG nodes
+ContextVars, set and reset in pairs:
+  _store            SessionNodeWriter  deep code writes the DAG, renders docs
+  _current_turn_id                     which message a file backup belongs to
+  _current_runtime  create_runtime()   Agent method auto-injection
+  _call_id          Agent wrapper      called_by attribution</code></pre>
+<p class="note">A work directory (research output such as literature review, ideas, paper) and a session (the conversation DAG) are independent. Building a session does not touch the work directory.</p>
+
+<h2 id="design">Design</h2>
+<p>One context manager, <a href="context.html"><code translate="no">session_context</code></a>, guarantees paired set and reset. A caller passing nothing still gets a real session, with its id exposed.</p>
+<pre translate="no" tabindex="0"><code>r1 = run_research("survey agent reliability")        # None: new session
+r2 = run_research("now turn it into a paper",
+                  session_id=r1.session_id)           # same session, history carries over
+r3 = run_research("unrelated: GUI agent benchmark")   # independent session</code></pre>
+<ul>
+<li>One call is not one session: continuity is the caller passing the id, as with <code translate="no">openprogram --resume &lt;id&gt;</code> and the Web client.</li>
+<li>Cleanup belongs to session management (list, delete), not to each call.</li>
+<li>Stage instructions live in the docstring. With the context installed, a command-line run no longer needs them moved into <code translate="no">content</code>, so no stage function changes.</li>
+</ul>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack">
+<thead><tr><th scope="col">Step</th><th scope="col">Verified by</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Add the manager</th><td>Variables set inside, reset after</td><td>Done</td></tr>
+<tr><th scope="row">A harness <code translate="no">main.py</code> wraps <code translate="no">paper_agent</code></th><td>Captured command-line prompt contains the docstring</td><td>Done</td></tr>
+<tr><th scope="row">Dispatcher switches over</th><td>Existing dispatcher tests pass</td><td>Not done: <code translate="no">TurnBindings.bind</code> still binds its own</td></tr>
+<tr><th scope="row"><code translate="no">process_runner</code> and tests converge</th><td>Subprocess DAG tracking and fixtures still work</td><td>Not done: <code translate="no">process_runner</code> still sets its own</td></tr>
+</tbody>
+</table>

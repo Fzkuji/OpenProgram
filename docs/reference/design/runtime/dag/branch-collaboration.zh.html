@@ -1,0 +1,92 @@
+<title>分支协作</title>
+<meta name="description" content="DAG 分支协作的三种方式：消息、派发和合并，以及各自写入图中的内容。">
+<h1>分支协作</h1>
+
+<p>分支是一个 <code translate="no">(session_id, head_id)</code> 对，会话内和跨会话相同。分支本身不是特殊操作：checkout 移动 HEAD，下一个用户轮次自然成为兄弟节点。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">方式</th><th scope="col">入口</th><th scope="col">写入内容</th><th scope="col">DAG 中</th></tr></thead>
+<tbody>
+<tr><th scope="row">消息：A 投递给 B</th><td><code translate="no">send_message(message, to)</code></td><td>在 B 的末端运行一轮；目标忙时进入收件箱排队</td><td>点线 <code translate="no">1 5</code>，目标分支颜色，悬停显示；不影响泳道和深度</td></tr>
+<tr><th scope="row">派发：B 替 A 做事并汇报</th><td><code translate="no">agent(prompt, ...)</code></td><td>子分支 B，以及 A 在发起节点处的 attach 指针</td><td>spawn 边从任务节点到 B 的根；B 独立成道，从 A 最右列再右一列开始</td></tr>
+<tr><th scope="row">合并：多条分支汇合</th><td><code translate="no">/merge</code> 或 WebSocket 动作 <code translate="no">merge_branches</code></td><td>每个 peer 一个 attach 指针、一个合并 assistant 节点、一个多父提交</td><td>双环，图中唯一的汇合形状，落在 base 分支泳道；画汇合线，不画 attach 指针</td></tr>
+</tbody>
+</table>
+<p class="note">线型、颜色和形状见 <a href="rendering.zh.html">DAG 渲染</a>第 3 节；场景 8（合并）、9（消息）、10（派发）。寻址、投递和限额见 <a href="../collaboration/agent-collaboration.zh.html">Agent 协作</a>。</p>
+
+<h2 id="merge">合并</h2>
+<dl class="pairs">
+<dt>语法</dt><dd><code translate="no">/merge sid_a sid_b:head_b: message</code>；peer 前加 <code translate="no">*</code> 表示 base</dd>
+<dt>无 base</dt><dd>各 peer 平等，合并产生新末端</dd>
+<dt>有 base</dt><dd>其余 peer 作为补充上下文，回复延续 base；相当于多 peer 的派发</dd>
+<dt>省略 <code translate="no">head_id</code></dt><dd>取该会话当前 HEAD</dd>
+</dl>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">节点</th><th scope="col">字段</th></tr></thead>
+<tbody>
+<tr><th scope="row">合并节点</th><td><code translate="no">role=assistant</code>，综合各分支输出</td></tr>
+<tr><th scope="row">attach 指针，每个 peer 一个</th><td><code translate="no">function=attach</code>、<code translate="no">predecessor=target_head</code>、<code translate="no">attach.session_id</code>、<code translate="no">attach.head_id=peer 末端</code>、<code translate="no">attach.is_base</code>、<code translate="no">attach.merge_temp</code></td></tr>
+<tr><th scope="row">提交</th><td><code translate="no">commit_parents = [目标上一提交, *peer 提交 id]</code></td></tr>
+</tbody>
+</table>
+<p class="note">attach 是嵌入原语：一条分支的内容以指针形式进入另一处。worktree 合并无关：由 <code translate="no">worktree_merge</code> 对文件做 git 快进。</p>
+
+<details>
+<summary>代码</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">合并引擎</th><td><code translate="no">openprogram/runtime/conversation/merge.py</code> <code translate="no">process_merge_turn</code></td></tr>
+<tr><th scope="row">WebSocket 动作</th><td><code translate="no">openprogram/interfaces/server/ws_actions/merge.py</code></td></tr>
+<tr><th scope="row">斜杠命令</th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/slash_actions.py</code></td></tr>
+<tr><th scope="row">attach 解析</th><td><code translate="no">openprogram/state/store/session/graph/branches.py</code> <code translate="no">_attach_info</code></td></tr>
+<tr><th scope="row">DAG 边和形状</th><td><code translate="no">apps/web/lib/runtime-bridge/dag/render/edges.ts</code>、<code translate="no">shapes.ts</code></td></tr>
+<tr><th scope="row">合并节点泳道</th><td><code translate="no">openprogram/state/store/session/graph/layout/lane.py</code></td></tr>
+<tr><th scope="row">检查图</th><td><code translate="no">scripts/dag_dump.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="three-operations">切换、重新开始、回退</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">操作</th><th scope="col">新建什么</th><th scope="col">有分支在运行时</th></tr></thead>
+<tbody>
+<tr><th scope="row">切换到已有分支</th><td>什么都不建；视图和 head 移到那条分支的末端</td><td>总是允许</td></tr>
+<tr><th scope="row">从旧位置重新开始：编辑后重发、重试、在图里选中一条消息后发送</th><td>在原分支旁新建一条分支，有自己的记录（新消息的 <code translate="no">branch_identity</code>）。两条都保留，都能运行。重试一条从没得到回复的提问时，改为重跑那条提问</td><td>其他分支运行时可从任意位置开始；选中分支自己的轮次在跑时等待</td></tr>
+<tr><th scope="row">回退</th><td>什么都不建。就地撤回当前分支的尾部：分支 id、名字、设置和用量不变；末端退到所选提问之前，那条提问回到输入框</td><td>那条分支在运行时拒绝；改动文件的回退在任一分支运行时拒绝</td></tr>
+</tbody>
+</table>
+
+<p>DAG 只追加，所以回退不删任何东西。它把撤回的节点列进会话元数据（<code translate="no">rewind_hidden_nodes</code>；旧末端在 <code translate="no">rewind_hidden_heads</code>），由 <code translate="no">rewind_view.view_update</code> 和 head 在同一次 compare-and-set 里写入。每个读取方都跳过它们：</p>
+<ul>
+<li>对话记录、消息读取和搜索；</li>
+<li>分支列表和版本计数，所以回退后发的消息延续这条分支，不多出一个版本；</li>
+<li>请求的上下文，它从末端往回走；</li>
+<li>压缩：总结了撤回轮次的摘要一起撤回，它之前的摘要重新生效（<code translate="no">active_summary_for_chain</code> 跳过图的 <code translate="no">retracted</code> 集合）；</li>
+<li>上下文提交时间线。</li>
+</ul>
+<p>回退的撤销和重做把这些节点移出、移回列表。切换到被撤回的末端会被拒绝，并提示用撤销。以前的回退留下了额外分支的会话保持原样，不做迁移。文件恢复见 <a href="../operations/file-management.zh.html#shared-workspace-contract">文件管理</a>。</p>
+
+<p class="note">同类产品都把回退当成从当前这条线上去掉最近的轮次，而不是开一条新线。Claude Code 的 <code translate="no">/rewind</code> 就地截断对话，会话不变，提问还给输入框；分叉是另一个复制会话的命令。Codex 记一条带轮数的 <code translate="no">ThreadRolledBack</code>；这些轮次留在 rollout 文件里，离开历史，也不能作为分叉锚点。</p>
+<p class="note">撤回列表相当于 Codex 的回滚标记，另外保留了会话内的撤销，两家都没有。重新开始仍是单独的操作，所以回退不会让人丢掉原来的内容，撤回也不会多出一个版本。</p>
+
+<h2 id="branch-owned-work">属于某条分支的工作</h2>
+
+<p>在一条分支上开始的工作，在用户选中别的分支后仍作用于原分支：</p>
+<ul>
+<li>Goal 记下它开始时所在的分支（<code translate="no">branch_id</code>）。它的签到和验证继续并读取那条分支；其他分支上的轮次既拿不到它的说明，也不计入它。此前保存的 Goal 跟随选中分支。</li>
+<li><code translate="no">/merge</code> 和 <code translate="no">merge_branches</code> 把回复写到开始时的分支（<code translate="no">target_branch_id</code>），只有那条分支仍被选中时才移动 head。</li>
+<li>为忙碌会话排队的 <code translate="no">send_message</code> 从它指向的那条分支的末端继续。</li>
+</ul>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>分支与 checkout；合并后端和 <code translate="no">/merge</code>；attach；spawn 与 attach 边；<code translate="no">send_message</code>；<code translate="no">agent</code> 派发和回报；worktree 合并</td></tr>
+<tr><th scope="row">尚未实现</th><td>消息线：<code translate="no">send_message</code> 不写渲染所需的来源分支元数据。图形合并对话框：Web 端只上报 <code translate="no">merge_branches</code> 失败。</td></tr>
+<tr><th scope="row">待定</th><td>是否需要“多次发送后合并”的组合流程；自动合并是否需要确认</td></tr>
+</tbody>
+</table>

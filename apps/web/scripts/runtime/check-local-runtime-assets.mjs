@@ -7,12 +7,12 @@ const read = (path) => readFileSync(new URL(path, root), "utf8");
 
 const runtimeFiles = [
   "components/app-shell.tsx",
-  "components/chat/messages/markdown.ts",
-  "components/settings/provider-icon.tsx",
+  "components/chat/messages/bubbles/markdown.ts",
+  "components/settings/providers/icons/provider-icon.tsx",
   "lib/format-utils/markdown.tsx",
-  "lib/net/use-ws.ts",
-  "lib/runtime-bridge/conversations.ts",
-  "lib/runtime-bridge/markdown-render.ts",
+  "lib/net/ws/use-ws.ts",
+  "lib/runtime-bridge/session/conversations.ts",
+  "lib/runtime-bridge/dom/markdown-render.ts",
   "public/html/index.html",
 ];
 const runtimeSource = runtimeFiles.map((path) => read(path)).join("\n");
@@ -33,12 +33,12 @@ assert.equal(
   "the runtime CDN loader must be removed",
 );
 assert.match(
-  read("lib/runtime-bridge/markdown-render.ts"),
+  read("lib/runtime-bridge/dom/markdown-render.ts"),
   /from ["']marked["']/,
   "chat markdown must use the bundled marked dependency",
 );
 assert.match(
-  read("lib/runtime-bridge/markdown-render.ts"),
+  read("lib/runtime-bridge/dom/markdown-render.ts"),
   /from ["']katex\/contrib\/auto-render["']/,
   "chat math rendering must use bundled KaTeX auto-render",
 );
@@ -56,3 +56,14 @@ assert.equal(
 );
 
 console.log("local runtime assets contract: ok");
+
+const providerIcons = JSON.parse(read("components/settings/providers/icons/provider-icons.json"));
+for (const [provider, icon] of Object.entries(providerIcons)) {
+  assert.match(icon.file, /^[a-z0-9-]+\.svg$/, `${provider}: local SVG filename`);
+  const svg = read(`public/images/providers/${icon.file}`);
+  assert.match(svg, /<svg\b/, `${provider}: valid SVG asset`);
+  assert.doesNotMatch(svg, /<script\b|<foreignObject\b|\bon\w+=|(?:href|src)=["']https?:/i);
+}
+for (const provider of ["openai", "openai-codex", "anthropic", "google", "deepseek", "openrouter"]) {
+  assert.ok(providerIcons[provider], `${provider}: brand logo must be bundled`);
+}

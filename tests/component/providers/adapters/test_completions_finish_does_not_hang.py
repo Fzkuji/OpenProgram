@@ -12,8 +12,8 @@ import asyncio
 import time
 from types import SimpleNamespace
 
-from openprogram.providers.openai_completions import openai_completions
-from openprogram.providers.types import (
+from openprogram.models.providers.adapters.openai_completions import openai_completions
+from openprogram.models.providers.types import (
     Context,
     EventDone,
     Model,

@@ -1,0 +1,24 @@
+<title>历史渲染与会话链接</title>
+<meta name="description" content="哪些历史行会渲染、什么会发给 provider，以及复制链接如何写入剪贴板。">
+<h1>历史渲染与会话链接</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">历史项</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">图的 ROOT 节点、空白用户行</th><td>在权威渲染前排除</td></tr>
+<tr><th scope="row">空的用户字符串和文本块</th><td>由 Chat Completions 适配器省略；只含图片的消息保留</td></tr>
+<tr><th scope="row">已存历史</th><td>不变；不自动重放或删除</td></tr>
+</tbody>
+</table>
+
+<h2>复制链接</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">顺序</th><td>可信桌面 IPC、浏览器剪贴板、选区回退，由侧栏和面板菜单共用一个 helper</td></tr>
+<tr><th scope="row">原生 IPC</th><td>要求 UI 来源和所属主框架，只接受有长度上限的字符串，不提供剪贴板读取</td></tr>
+<tr><th scope="row">结果</th><td>写入成功后才显示成功；失败明确报告</td></tr>
+<tr><th scope="row">侧栏右键菜单</th><td>使用渲染层弹层，操作不依赖原生弹窗关闭顺序或已过期的浏览器剪贴板激活</td></tr>
+</tbody>
+</table>

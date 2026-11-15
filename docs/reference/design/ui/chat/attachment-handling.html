@@ -1,0 +1,134 @@
+<title>Attachment handling</title>
+<meta name="description" content="What the composer shows, what the model receives and what remains for each kind of attachment, plus the attachment strip and queued messages.">
+<h1>Attachment handling</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Added</th><th scope="col">Composer</th><th scope="col">Model receives</th><th scope="col">Reopening later</th></tr></thead>
+<tbody>
+<tr id="case-1"><th scope="row">Pasted screenshot</th><td>Image, saved with chat</td><td>Image content, plus its path</td><td>The same screenshot</td></tr>
+<tr id="case-2"><th scope="row">Dragged image</th><td>Image, chat copy saved</td><td>Image content immediately</td><td>The sent version, even if the original changes or disappears</td></tr>
+<tr id="case-3"><th scope="row">Text, code, data</th><td>Reference to the original</td><td>Path, read for the task. No upload, copy or text inclusion</td><td>The original's current contents; a missing file is reported</td></tr>
+<tr id="case-4"><th scope="row">PDF, Word, Excel</th><td>Reference to the original</td><td>Path. The assistant picks pages, paragraph extraction or spreadsheet analysis. Nothing is parsed on attach; missing tools and unreadable scans are explained</td><td>No copy by default</td></tr>
+<tr id="case-5"><th scope="row">Folder</th><td><code translate="no">project/</code> · Folder</td><td>First-level listing (at most 200 entries, 8 KB), then opens files as needed</td><td>The listing text, not a copy of the folder</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Limit or exception</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Image size</th><td>Original kept up to 32 MiB. The model gets a send version up to 5 MiB; larger images are resized proportionally. These are application limits, not discovered model limits</td></tr>
+<tr><th scope="row">Model without image input</th><td>The turn stops with “The selected model does not support image input. Choose a model that supports images.”</td></tr>
+<tr><th scope="row">Browser-selected file with no native path</th><td>Saved by the backend: 32 MB per file, 64 MB per turn</td></tr>
+</tbody>
+</table>
+<p class="note">How files appear in chat and how agents return them: <a href="chat-attachments.html">Chat attachments</a>. No remote connection feature is involved.</p>
+
+<h2 id="shared">Rules for every attachment</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Failure</th><td>Text and attachments stay until the send is confirmed. Upload, read and send failures are explained. After a disconnect the previous result is checked first, so nothing is sent twice</td></tr>
+<tr><th scope="row">Version</th><td>References follow edits, moves and deletion. A saved copy fixes the version. Listings and excerpts are not copies of the file</td></tr>
+<tr><th scope="row">Attachment text</th><td>Supplied material, not new user instructions</td></tr>
+<tr><th scope="row">Dropped file</th><td>Goes to the composer of the pane it is dropped over, and the drop overlay covers that pane only. Outside every pane of a split view it goes to the focused pane. An editor of a queued or sent message keeps what is dropped on it</td></tr>
+<tr><th scope="row">Separate concerns</th><td>Chat persistence, image delivery and file reading are handled separately. Shrinking every image to the execution-input limit is not enough, and copying every local file is not the fix</td></tr>
+</tbody>
+</table>
+
+<h2 id="attachment-style">Composer attachment strip</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 118" role="img" aria-label="One row of equal attachment items in insertion order. An image with a thumbnail, name and PNG 1.3 MB. An Excel file with a format icon and Reading after its size. A PDF with Read failed. Each has a remove button.">
+  <rect class="tile" x="1" y="10" width="212" height="46" rx="8"/>
+  <rect class="tile" x="8" y="17" width="32" height="32" rx="4"/>
+  <text x="48" y="30">Screenshot 3.43.png</text>
+  <text class="t-soft" x="48" y="48">PNG · 1.3 MB</text>
+  <text class="t-soft" x="196" y="30">×</text>
+  <rect class="tile" x="225" y="10" width="212" height="46" rx="8"/>
+  <text class="t-soft mid" x="248" y="38">XLSX</text>
+  <text x="272" y="30">Annual Report.xlsx</text>
+  <text class="t-soft" x="272" y="48">126 KB · Reading…</text>
+  <text class="t-soft" x="420" y="30">×</text>
+  <rect class="tile" x="449" y="10" width="212" height="46" rx="8"/>
+  <text class="t-soft mid" x="472" y="38">PDF</text>
+  <text x="496" y="30">report.pdf</text>
+  <text class="t-no" x="496" y="48">842 KB · Read failed</text>
+  <text class="t-soft" x="644" y="30">×</text>
+  <text class="t-no" x="449" y="74">Cannot read report.pdf.</text><text class="t-no" x="449" y="94">Add it again or remove it.</text>
+  <text class="t-soft" x="1" y="82">Insertion order, no grouping by type</text>
+  <text class="t-soft" x="1" y="106">212 × 46, 32 px thumbnail or format icon</text>
+</svg>
+<dl class="pairs fig-narrow">
+  <dt>Screenshot 3.43.png</dt><dd>PNG · 1.3 MB</dd>
+  <dt>Annual Report.xlsx</dt><dd>126 KB · Reading…</dd>
+  <dt>report.pdf</dt><dd>842 KB · Read failed. Add it again or remove it.</dd>
+</dl>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Name</th><td>One truncated line; format and size stay visible beside it</td></tr>
+<tr><th scope="row">Second line</th><td>A confirmed format, or “File” when unknown. Folders say “Folder” with no invented size</td></tr>
+<tr><th scope="row">Thumbnail</th><td>Images proportional, no heavy rounding. Other files use format-labelled icons; colour is never the only distinction</td></tr>
+<tr><th scope="row">Item body</th><td>Opens a preview or details: full name, location, size, copy status. Removal stays visible and is its own keyboard-accessible action</td></tr>
+<tr><th scope="row">Many items</th><td>Wraps uniformly, at most two rows (112 px), then scrolls, so the text area stays available</td></tr>
+<tr><th scope="row">Reading or failed</th><td>Shown on that item with height unchanged. The reason sending is unavailable is explained; the failed item is re-added or removed without touching the others</td></tr>
+</tbody>
+</table>
+
+<h2 id="queued-composer">Queued messages</h2>
+<p>Messages typed during a run sit in one raised card above the composer, outside the scrolling transcript. Each message keeps its own identity, order, attachments and settings.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Row</th><td>One line: tag (“Next turn”, or why it was not sent), text, hover actions (add to this turn, retry, edit, remove). Clicking the text expands the message and attachments</td></tr>
+<tr><th scope="row">Card</th><td>Bounded height. The heading collapses it; <strong>Clear all</strong> removes rows not being edited. Drag or Alt+↑/↓ changes the send order</td></tr>
+<tr><th scope="row">Captured</th><td>Text, expanded paste content, attachment bytes or original paths, send settings. Attachments can be queued without starting another execution</td></tr>
+<tr><th scope="row">Edit</th><td>Text, file picking, file drop, previews, removing one attachment. Holds that row until <strong>Save</strong> (keeps position and original settings) or <strong>Cancel</strong> (keeps the previous payload), and blocks its drain</td></tr>
+<tr><th scope="row">Added to this turn</th><td>Attachments travel too: saved to the session and named by path, images kept for the model at the next safe point. Editing or removing a row with unconfirmed delivery first takes the message back; one the turn already has stays</td></tr>
+<tr><th scope="row">Drain</th><td>Ordinary chat sender and attachment envelope, in order, with the exact edited payload. Failure or rejection keeps the whole message; acceptance releases it</td></tr>
+<tr><th scope="row">Survives</th><td>Reload, closed window, App restart. Rows live in <code translate="no">localStorage</code>, bytes in IndexedDB; a window adopts unlocked rows under one exclusive lock. A drain removes its row before the socket write: a crash can lose that send, never repeat it</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Previews and limits of queued attachments</summary>
+<ul>
+<li>Unsent previews use captured local content, including native paths outside the session workdir: images and text render directly, bounded PDFs use a local Blob URL.</li>
+<li>Native documents remain path references when sent; preview bytes do not widen backend file access.</li>
+<li>Persisted attachments keep the read-only <code translate="no">DocumentWindow</code>. Missing or unsupported previews report the limitation and keep the attachment.</li>
+<li>User messages in the transcript keep their own controls and bubbles with reduced vertical spacing. History editing keeps its fork-and-resend semantics.</li>
+<li>The queue does not delete history, change model behaviour, combine instructions or modify approval decisions.</li>
+<li>Layout reference: the user's description of Codex, retained messages near the input with a small footprint. No undocumented Codex storage or editing behaviour is assumed.</li>
+</ul>
+</details>
+
+<details>
+<summary>Options not used</summary>
+<table class="stack">
+<thead><tr><th scope="col">Case</th><th scope="col">Option</th><th scope="col">Trade-off</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pasted screenshot</th><td>Save it for on-demand tool reading</td><td>Defers reading but needs a tool step; without a tool there is no analysis</td></tr>
+<tr><th scope="row">Dragged image</th><td>Reference the original, copy on request</td><td>Saves storage, but moving or deleting the original can prevent reopening, and later reads reflect edits</td></tr>
+<tr><th scope="row">Text, code, data</th><td>Include the text directly</td><td>Avoids a first read and suits short files; long input needs a limit</td></tr>
+<tr><th scope="row">PDF, Word, Excel</th><td>Prepare a preview, then read further</td><td>Convenient but adds processing time; partial reads and failures must be shown; not every format works</td></tr>
+<tr><th scope="row">Folder</th><td>Add only the path</td><td>No recursive copy, but costs a first listing call</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="sources">
+<summary>Other implementations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Project</th><th scope="col">Observed</th></tr></thead>
+<tbody>
+<tr id="ref-codex"><th scope="row">Codex public terminal, not the desktop UI</th><td>File selection inserts a path; decodable images become image input; clipboard images become temporary PNGs. Long-term copying in the desktop app is not established. Several image-processing modes, chosen by capability and configuration; a utility's default dimension is not every model's limit. <a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/bottom_pane/chat_composer.rs">File selection</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/clipboard_paste.rs">Clipboard</a> · <a href="https://learn.chatgpt.com/docs/image-inputs">Image guide</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/image_preparation.rs">Image preparation</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs">Image input</a></td></tr>
+<tr id="ref-opencode"><th scope="row">OpenCode V2</th><td>Supported text attachments include their text; directories include a non-recursive listing; PNG, JPEG, GIF, WebP become image media. SVG is text; PDF, audio, video and other binaries do not enter model requests directly. Server-accessible files can be referenced. Configurable resizing does not guarantee every model's limits. <a href="https://opencode.ai/v2/docs/attachments">Attachment guide</a></td></tr>
+<tr id="ref-openclaw"><th scope="row">OpenClaw</th><td>Channel media is downloaded to the runtime. Vision models can receive images; other configurations generate descriptions. Documents can yield text, with configured page-image fallback for scans. Tool handoff needs an accessible saved path. Channel reception limits are not universal model limits and are not equal to local drag and drop. <a href="https://docs.openclaw.ai/nodes/images">Media</a> · <a href="https://docs.openclaw.ai/nodes/media-understanding">Understanding</a></td></tr>
+</tbody>
+</table>
+<p class="note">Temporary storage, upload to a runtime and long-term chat retention are different promises; retention periods the sources do not state are not inferred.</p>
+</details>
+
+<h2 id="status">Implementation status</h2>
+<p>The five behaviours, the strip and queued messages are implemented. Installed-App checks confirm mixed ordering, format and size labels, full-image preview, draft recovery, folder listing, original-image retention and direct model image recognition. End-to-end document reading is unverified because live executions wait after requesting a read.</p>
+<p class="note">Code: <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/chat/composer/attach/use-composer-attachments.ts">adding files</a> · <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/interfaces/server/ws_actions/chat/attachments.py">storage</a> · <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts">submission</a></p>

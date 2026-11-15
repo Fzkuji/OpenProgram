@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+<title>OpenProgram</title>
+<link rel="stylesheet" href="shell.css">
+</head>
+<body class="centered">
+<main class="shell">
+  <div class="shell-inner shell-center">
+    <h2 id="title">Setting up OpenProgram...</h2>
+    <p class="shell-copy" id="copy">Unpacking the files it needs to run. This happens once, takes about a minute, and needs nothing from you.</p>
+    <div class="progress" id="bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Setup progress"><span id="fill"></span></div>
+    <p class="progress-text" id="percent">0%</p>
+    <div class="retry" id="retry-row" hidden><button class="btn btn-default" type="button" id="retry">Try again</button></div>
+  </div>
+</main>
+<script src="setup-page.js"></script>
+</body>
+</html>

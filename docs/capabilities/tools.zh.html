@@ -1,0 +1,230 @@
+<title>内置工具</title>
+<meta name="description" content="模型在聊天里能调用的每个工具：做什么、需要什么。">
+<h1>内置工具</h1>
+<p>除非行内写明，否则都不需要配置。审批和运行中修改：<a href="permissions.zh.html">工具权限</a>。</p>
+<h2 id="files-and-code">文件和代码</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">read</code></th><td>读取文件内容</td></tr>
+<tr><th scope="row"><code translate="no">write</code></th><td>新建文件或整体覆盖</td></tr>
+<tr><th scope="row"><code translate="no">edit</code></th><td>文件内字符串替换</td></tr>
+<tr><th scope="row"><code translate="no">apply_patch</code></th><td>Codex 或 OpenClaw 格式的多文件结构化补丁</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>列出目录内容</td></tr>
+<tr><th scope="row"><code translate="no">glob</code></th><td>按文件名模式查找</td></tr>
+<tr><th scope="row"><code translate="no">grep</code></th><td>内容搜索：有 ripgrep 就用（更快），否则用 Python <code translate="no">re</code></td></tr>
+<tr><th scope="row"><code translate="no">semble_search</code>、<code translate="no">semble_find_related</code></th><td>语义加词法代码搜索，返回排序后的代码块。所有支持的发行版都包含；源码开发者通过锁定环境安装 <code translate="no">search</code> extra。</td></tr>
+<tr><th scope="row"><code translate="no">lsp_diagnostics</code>、<code translate="no">lsp_references</code>、<code translate="no">lsp_definition</code></th><td>类型错误、真实调用点、真实定义：<a href="lsp.zh.html">语言服务器工具</a>。需要 <code translate="no">pyright</code>（Python）或 <code translate="no">typescript-language-server</code>（TypeScript）；缺失时工具会给出安装命令。</td></tr>
+</tbody></table>
+<h3 id="document-versions">文件、预览和版本</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">格式</th><th scope="col">文件窗口里</th></tr></thead>
+<tbody>
+<tr><th scope="row">支持的 UTF-8 文本</th><td>预览，然后编辑。自动保存；<code translate="no">Ctrl/Cmd+S</code> 立即写入。切换保留撤销历史。</td></tr>
+<tr><th scope="row">PDF</th><td>翻页、缩放、文本搜索（前 500 页，更长的文档会说明）。只读。</td></tr>
+<tr><th scope="row">PSD</th><td>8 位 RGB 的合成图和图层名。只读。</td></tr>
+<tr><th scope="row">TIFF</th><td>第一页。只读。</td></tr>
+<tr><th scope="row">常见图片</th><td>默认预览。</td></tr>
+<tr><th scope="row">PNG、JPEG、WebP（静态）</th><td>编辑：裁剪、旋转、绘制、形状、文字。自动保存；<strong>转换为 PNG</strong> 生成单独文件，目标已存在时拒绝。</td></tr>
+<tr><th scope="row">动画 PNG/WebP、16 位 PNG</th><td>只读</td></tr>
+<tr><th scope="row">音频、视频</th><td>浏览器控件；编解码器取决于浏览器</td></tr>
+<tr><th scope="row">DOCX、PPTX、XLSX、ODT、ODP、ODS</th><td><strong>ONLYOFFICE</strong> 应用，打开即可编辑，没有预览切换</td></tr>
+<tr><th scope="row">DOC、PPT、XLS</th><td>转换到新的 DOCX、PPTX 或 XLSX 路径；原文件保留，目标已存在时拒绝</td></tr>
+</tbody></table>
+<p class="note">损坏或不支持的文件保留原文件下载。聊天附件和历史预览只读。</p>
+<details>
+<summary>由模型发布生成的文档</summary>
+<ul>
+<li><code translate="no">write(file_path="/absolute/final.docx", source_path="/absolute/staged.docx")</code> 发布单独的临时结果，用于 Word、PowerPoint、PDF、图片等二进制文件。<code translate="no">source_path</code> 和 <code translate="no">content</code> 互斥；来源是不超过 64 MiB 的普通本地文件。已存在的目标要先读取；二进制读取返回元数据并建立同样的新鲜度检查。</li>
+<li>在该轮文件历史里记录完整的前后字节，重新打开和重启后仍在。撤销和重做拒绝覆盖之后的冲突修改。新文件也能撤销。不需要 Git 仓库。本地生成器用同一接口。</li>
+<li>之后的历史提交失败时保留之前发布的版本。写入中断时报告结果未确认并阻止精确恢复。历史损坏时阻止继续记录，不用空记录替换。首次失败后先重新读取再试。版本遵循该轮的保留策略。</li>
+<li>二进制版本保留格式和媒体；Review 不比较版式，也不显示 Word 修订。Shell 直接覆盖最终文件不被记录，未记录的版本无法从卡片或输出重建：写单独结果再发布。</li>
+</ul>
+</details>
+<details>
+<summary>手动编辑和历史</summary>
+<ul>
+<li>项目文件的编辑独立于对话保留前后字节。每次成功写入立即发布。同一编辑器的修改最多合并五分钟；关闭合并或中间有外部修改就开始新版本。</li>
+<li>History 列出保留的版本，可恢复所选版本，检查当前修订后创建新条目。</li>
+<li>保存失败或外部修改时，草稿保留用于重试、导出或明确放弃。关闭文件等待未完成的修改；保存失败时标签保持打开。</li>
+<li>History 合并项目相对路径文件的手动编辑和已确认的模型修改。模型条目从原会话检查点读取保留的字节，不另存归档。恢复只改动这个文件。</li>
+<li>归档会话保留文件历史；永久删除后其模型版本不可用；手动历史独立。</li>
+<li>较早的历史分批索引：<strong>继续加载历史</strong>。不完整或无法验证的会明确标注。旧路径只有能确定项目归属时才列入。</li>
+<li>项目移动后历史跟随，磁盘断开时仍可读；写入和恢复需要可用位置。</li>
+<li>文档 API 接受最多 64 MiB 的二进制内容，这本身不提供各种格式的编辑器。</li>
+<li>PDF、PSD、TIFF 解码器最多接受 64 MiB，限制渲染尺寸，都在本地，打开对应格式时才加载。预览历史版本用其保留的字节。</li>
+</ul>
+</details>
+<details>
+<summary>Office 编辑（ONLYOFFICE）</summary>
+<ul>
+<li>内置应用 <code translate="no">office_editor</code>，所有 Office 格式共用的可选本地安装，不随默认 App 和 runtime。在<strong>应用</strong>页禁用时，文件只提供下载，什么都不安装。</li>
+<li>没有组件时显示<strong>安装</strong>或<strong>取消</strong>，选择前不下载。约 699 MiB，含资源、字体、许可和源材料，从你所用版本的 GitHub release 下载。文件在本地处理。</li>
+<li>1.3.0 之前的版本不带它：这些版本会直接说明，并请你先更新 OpenProgram，而不是让你重试。</li>
+<li>选择完整版本前验证固定的压缩包和所有资源。失败可重试，已有安装保留。成功后无需重启即打开文档。<strong>取消</strong>保留下载，<strong>安装选项</strong>可重新选择。</li>
+<li>远程应用访问下不可用。查看 PDF 不需要它。</li>
+<li>居中状态显示准备和打开进度。启动时关闭会取消；失败提供<strong>重试</strong>。</li>
+<li>原生编辑器可写后开始编辑，自动保存。标签、分栏和 History 保留编辑器及撤销历史。关闭等待未完成的输入；写入失败时保留文档以便重试。</li>
+<li>历史预览只读，恢复创建新版本。没有语义化 Office 修订。编辑器无法加载时仍可下载。</li>
+</ul>
+</details>
+<details>
+<summary>图片编辑限制</summary>
+<p>最多 64 MiB、1600 万像素、每边 16,384 像素。通过文档历史控制器保存；预览、History、标签和路由保留撤销重做。发布失败保留草稿；关闭等待导出。导出的是渲染像素，嵌入的元数据可能不保留。</p>
+</details>
+<h2 id="execution">执行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">bash</code></th><td>运行 shell 命令，返回输出和退出码。等待结束后仍在运行就作为会话继续。</td></tr>
+<tr><th scope="row"><code translate="no">write_stdin</code></th><td>等待该会话的更多输出、中断它或向它输入</td></tr>
+<tr><th scope="row"><code translate="no">execute_code</code></th><td>在全新的隔离子进程运行 Python。返回 stdout、stderr、退出码。退出码 0 才算成功；非零或超时是错误，部分输出保留。</td></tr>
+</tbody></table>
+<h3 id="commands-that-keep-running">持续运行的命令</h3>
+<p><code translate="no">bash</code> 最多等 <code translate="no">yield_time_ms</code>（最小 250，默认和最大 30000），然后返回 <code translate="no">Process exited with code N</code> 或 <code translate="no">Process running with session ID &lt;id&gt;</code> 和已有输出。不需要单独的启动步骤。</p>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">write_stdin</code> 的 <code translate="no">chars</code></th><th scope="col">效果</th><th scope="col"><code translate="no">yield_time_ms</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">空</th><td>返回新输出，结束后返回退出码</td><td>5000–300000，默认 5000</td></tr>
+<tr><th scope="row"><code translate="no">"\u0003"</code></th><td>中断，相当于 Ctrl-C</td><td>默认 250</td></tr>
+<tr><th scope="row">其他</th><td>原样输入；用 <code translate="no">"\n"</code> 结束一行</td><td>250–30000，默认 250</td></tr>
+</tbody></table>
+<details>
+<summary>限制、通知和审批</summary>
+<ul>
+<li>输入需要 <code translate="no">bash(..., tty=true)</code>（伪终端，macOS 或 Linux 本地后端）。否则 stdin 关闭，等输入的命令会结束，只接受中断。</li>
+<li>每次调用最多保留 1 MiB 输出：过长时保留首尾各一半。</li>
+<li>后台命令结束而没人看到时，对话收到一个通知轮次，含命令、退出码和最后输出，排在进行中的轮次之后。你自己停止的不通知。</li>
+<li>显示在资源的 Terminal 下的 <strong>Background terminal</strong>，可查看输出和停止，也在 Activity 里。记录和输出在结束或状态变未知一天后删除。</li>
+<li>每个对话最多 64 个。再启动会停掉最久未用的，绝不停最近用的八个，结果会点名。取消轮次会停掉第一次等待中的命令，已在后台的继续运行。</li>
+<li>轮询和中断从不询问。输入和 <code translate="no">bash</code> 一样遵循权限模式。</li>
+</ul>
+</details>
+<h3 id="one-shot-command-directories"><code translate="no">workdir</code></h3>
+<p>每次 <code translate="no">bash</code> 调用是新 shell：<code translate="no">bash(command="npm test", workdir="apps/web")</code>。<code translate="no">cd</code> 和 <code translate="no">export</code> 不延续。它不改变 worktree 绑定或文件工具的基准，也不是桌面终端（那是 <code translate="no">terminal_use</code>）。</p>
+<details>
+<summary>路径规则</summary>
+<ul>
+<li>相对路径从绑定的 worktree 解析，没有绑定时从宿主进程目录。绝对路径可用。按字面处理：不展开 <code translate="no">~</code>、变量或表达式。省略时用原默认值。</li>
+<li>不存在、不是目录或被拒绝时不运行，不创建也不回退。</li>
+<li>选择目录不授予访问。本地沙箱策略下必须满足工作区策略，包括符号链接和额外授权根，执行仍在原边界内。配置了却不可用的沙箱不会被绕过。</li>
+<li>SSH 和 Docker 按后端的 POSIX 路径解释。相对远程路径需要绝对 POSIX worktree 绑定。受保护的切换在目录不可用时阻止命令列表运行；Docker 不通过 <code translate="no">-w</code> 创建目录。宿主有沙箱策略时，显式远程 workdir 被拒绝，直到有后端原生授权。</li>
+<li>结果包含本地起始 <code translate="no">cwd</code>，远程路径是 <code translate="no">requested_cwd</code>。不代表结束目录或持久状态。</li>
+<li>这是工具调用写法；Python 导出是 AgentTool，不是 shell 函数。</li>
+</ul>
+</details>
+<h2 id="web">网络</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">web_search</code></th><td>关键词到相关 URL，多后端</td></tr>
+<tr><th scope="row"><code translate="no">web_fetch</code></th><td>URL 转可读文本；<code translate="no">trafilatura</code> 提取更干净</td></tr>
+</tbody></table>
+<table class="stack fixed">
+<thead><tr><th scope="col">后端</th><th scope="col">密钥</th></tr></thead>
+<tbody>
+<tr><th scope="row">DuckDuckGo、arXiv</th><td>无，始终可用</td></tr>
+<tr><th scope="row">Brave</th><td><code translate="no">BRAVE_API_KEY</code></td></tr>
+<tr><th scope="row">Exa</th><td><code translate="no">EXA_API_KEY</code></td></tr>
+<tr><th scope="row">Firecrawl</th><td><code translate="no">FIRECRAWL_API_KEY</code></td></tr>
+<tr><th scope="row">Google PSE</th><td><code translate="no">GOOGLE_PSE_API_KEY</code> 和 <code translate="no">GOOGLE_PSE_CX</code></td></tr>
+<tr><th scope="row">Jina</th><td><code translate="no">JINA_API_KEY</code></td></tr>
+<tr><th scope="row">Kagi</th><td><code translate="no">KAGI_API_KEY</code></td></tr>
+<tr><th scope="row">MiniMax</th><td><code translate="no">MINIMAX_CODE_PLAN_KEY</code>、<code translate="no">MINIMAX_CODING_API_KEY</code> 或 <code translate="no">MINIMAX_API_KEY</code></td></tr>
+<tr><th scope="row">Moonshot (Kimi)</th><td><code translate="no">KIMI_API_KEY</code> 或 <code translate="no">MOONSHOT_API_KEY</code></td></tr>
+<tr><th scope="row">Perplexity</th><td><code translate="no">PERPLEXITY_API_KEY</code></td></tr>
+<tr><th scope="row">SearXNG</th><td><code translate="no">SEARXNG_URL</code>，自托管实例</td></tr>
+<tr><th scope="row">Serper</th><td><code translate="no">SERPER_API_KEY</code></td></tr>
+<tr><th scope="row">Tavily</th><td><code translate="no">TAVILY_API_KEY</code></td></tr>
+<tr><th scope="row">You.com</th><td><code translate="no">YDC_API_KEY</code> 或 <code translate="no">YOU_API_KEY</code></td></tr>
+<tr><th scope="row">Ollama</th><td>本地 Ollama（<code translate="no">ollama signin</code>），或 Ollama Cloud 的 <code translate="no">OLLAMA_API_KEY</code></td></tr>
+</tbody></table>
+<details>
+<summary>网络搜索开关和后端选择</summary>
+<ul>
+<li>按消息生效。自带搜索的服务商（ChatGPT 订阅、OpenAI Responses API、Anthropic）通过服务商搜索：每次搜索一个“Searched the web”步骤和来源，回答带来源行，不提供本地 <code translate="no">web_search</code>。</li>
+<li>其他服务商，包括 Gemini（其 grounding 不能与函数工具同用），使用本地工具。</li>
+<li>关闭时两者都排除，自动工具模式也一样。打开后 schema 立即可用，包括 Tools 关闭时，并仍遵守禁用工具和权限。工具配置属于每个对话，切标签和刷新后保留。</li>
+<li>密钥在下次调用生效，无需重启。保存的默认不可用时回退；点名的不可用服务商给出原因并列出可用的。</li>
+<li>未指定时先试保存的默认，再试其他可用的网络后端（arXiv 只在点名时）。全部失败且没有配置密钥时，错误指向 <strong>Settings > Search</strong>。</li>
+<li>DuckDuckGo 读取无 JavaScript 页面，返回第一页约十条；机器人验证或无法读取时是错误，不是空结果。</li>
+<li><code translate="no">combine="race"</code> 返回第一个非空成功结果；不能运行的 <code translate="no">providers</code> 被跳过，全部不能运行时列出原因。<code translate="no">combine="rrf"</code> 保留截止时间前完成的结果。全部失败是错误，和空结果不同。已发出的请求按传输超时结束。</li>
+</ul>
+</details>
+<h2 id="desktop">桌面</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">computer_use_agent</code></th><td>在后台操作应用窗口（截图和辅助功能树）、内置浏览器 Page 或配置的虚拟机。单步、批量、Python 代码或按简报的新 agent。每个应用一次审批。需要 macOS 给 runtime 的辅助功能和屏幕录制、Linux X11 加 AT-SPI 和 xdotool、Windows UI Automation，或 <code translate="no">computer_use.vm_url</code>。<a href="computer-use.zh.html">Computer use</a></td></tr>
+<tr><th scope="row"><code translate="no">terminal_use</code></th><td>内置桌面终端，包括你已打开的</td></tr>
+</tbody></table>
+<h2 id="images-and-pdf">图片和 PDF</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">image_generate</code></th><td>提示词生成并保存 PNG。OpenAI（<code translate="no">OPENAI_API_KEY</code>）、Gemini（<code translate="no">GEMINI_API_KEY</code> 或 <code translate="no">GOOGLE_API_KEY</code>）、fal（<code translate="no">FAL_KEY</code>）任一</td></tr>
+<tr><th scope="row"><code translate="no">image_analyze</code></th><td>描述图片或回答问题，本地路径或 URL。任一已配置的 OpenAI、Anthropic 或 Gemini 视觉密钥。</td></tr>
+<tr><th scope="row"><code translate="no">pdf</code></th><td>提取文本，支持 offset 和 limit 分页。<code translate="no">pypdf</code>，完整发行版自带。</td></tr>
+</tbody></table>
+<p class="note">服务商不可用、请求失败或图片无法保存时，图片工具返回错误。</p>
+<h2 id="session-and-collaboration">会话和协作</h2>
+<table class="stack">
+<thead><tr><th scope="col">领域</th><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">未完成工作</th><td><code translate="no">open_work</code></td><td>Agent 在这个对话里还欠你什么，每轮都在指令里：<a href="agents.zh.html#未完成事项">Open work</a></td></tr>
+<tr><th scope="row">规划</th><td><code translate="no">todo_create</code>、<code translate="no">todo_update</code>、<code translate="no">todo_list</code></td><td>会话的书面清单：条目、状态、负责人、依赖，按状态列出。写入不启动任何事。Web 在改动它的回复下显示为<a href="../interfaces/web.zh.html#task-list">任务列表</a>。</td></tr>
+<tr><th scope="row">执行</th><td><code translate="no">list_jobs</code>、<code translate="no">job_output</code></td><td>列出本会话的后台任务；等待或查看结果。访问时检查派发会话和祖先。</td></tr>
+<tr><th scope="row">实体</th><td><code translate="no">agent</code></td><td>创建 agent 并收回回复，或用 <code translate="no">to=</code> 把跟踪任务交给已有 agent。<code translate="no">run_in_background=true</code> 返回任务 id。<code translate="no">start_from</code>：<code translate="no">clean</code>、<code translate="no">inherit</code> 或 <code translate="no">SID:MSG_ID</code>。<code translate="no">archive_when_done=true</code> 在结果返回后归档。</td></tr>
+<tr><th scope="row">实体</th><td><code translate="no">list_agents</code></td><td>名字、地址、大小、忙闲；<code translate="no">scope="archived"</code> 看归档的</td></tr>
+<tr><th scope="row">实体</th><td><code translate="no">archive_agent</code></td><td>从 <code translate="no">list_agents</code> 消失，拒绝 <code translate="no">send_message</code> 和 <code translate="no">agent(to=)</code>；<code translate="no">read_conversation</code> 和 <code translate="no">agent(start_from="SID:MSG_ID")</code> 仍可用。任何会话可归档任何 agent。单向。</td></tr>
+<tr><th scope="row">通信</th><td><code translate="no">send_message</code></td><td>发给已有 agent，用 <code translate="no">"SID:HEAD"</code> 或名字。没有任务和 id，所以谁都能写给谁。空 <code translate="no">message</code> 加 <code translate="no">notify_when_idle=true</code> 在它空闲时收到一次最新回复。</td></tr>
+<tr><th scope="row">通信</th><td><code translate="no">read_conversation</code></td><td>任意 agent 历史的纯文本，含工具调用，支持轮次范围和字符预算</td></tr>
+</tbody></table>
+<p class="note">四个领域：<a href="../reference/design/runtime/collaboration/agent-collaboration.zh.html">agent 协作</a>。</p>
+<details>
+<summary>后台 agent 结束时</summary>
+<ul>
+<li>发送方收到标记为自动的通知轮次，排在进行中的轮次之后；期间结束的 agent 在同一条通知里。</li>
+<li>已用 <code translate="no">job_output</code> 读取（它也按 <code translate="no">delivery_id</code> 等 <code translate="no">send_message</code> 的回复）、由 <code translate="no">notify_when_idle</code> 带回或被取消的，不通知。</li>
+<li>通知带任务和最终回复，不带完整记录；要步骤用 <code translate="no">read_conversation</code>。</li>
+<li>发给忙碌 agent 的消息排队，空闲后运行。</li>
+<li>协作消息额度用完时 <code translate="no">job_output</code> 仍可用，也不消耗额度。新投递仍受限制。</li>
+<li>取消通过执行控件：API 用 <code translate="no">execution.command</code>、<code translate="no">action="execution.cancel"</code> 和当前版本。没有 <code translate="no">job_stop</code>。</li>
+</ul>
+</details>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">program</code></th><td>调用任何已注册的 <code translate="no">Agent</code> 方法</td></tr>
+<tr><th scope="row"><code translate="no">mixture_of_agents</code></th><td>并行询问 N 个模型再综合；默认从模型注册表每个服务商取一个，至少 2 个。未知引用、全部失败或综合失败时报错；部分失败或文本含 Error 仍算成功。</td></tr>
+<tr><th scope="row"><code translate="no">ask_user_question</code></th><td>问 1 到 N 个带选项的问题。需要交互前端；缺少输入设施、数组无效和非交互环境返回工具错误。</td></tr>
+<tr><th scope="row"><code translate="no">chat_send</code></th><td>发到来源聊天渠道；其他地方隐藏。在<a href="../integrations/channels.zh.html#群聊行为">旁听群</a>里是唯一的发言方式；其他地方是长任务前的短消息。每轮最多 5 次。</td></tr>
+<tr><th scope="row"><code translate="no">send_file</code></th><td>附上文件给对方；轮次结束时由各界面投递</td></tr>
+<tr><th scope="row"><code translate="no">exit_plan_mode</code></th><td>离开计划模式，恢复之前的模式。计划模式从选择器进入，模型不能进入。</td></tr>
+<tr><th scope="row"><code translate="no">canvas</code></th><td>写入 markdown 文件的命名块。<code translate="no">set</code> 配 <code translate="no">content=""</code> 清空；省略 content 是错误。明确的校验和进程失败是错误；以 <code translate="no">Error:</code> 开头的内容仍算成功。</td></tr>
+<tr><th scope="row"><code translate="no">memory_search</code>、<code translate="no">memory_get</code>、<code translate="no">memory_update</code></th><td>按语义或精确字符串搜索；取现有内容、单个文件、段落、块或脚注引用的聊天消息；添加或更正记录。对话记录在后台进行。每个实例一个工作区，所有 agent 和对话共享，包括聊天渠道：<a href="../integrations/channels.zh.html#谁能和你的机器人说话">谁能和你的机器人说话</a>。</td></tr>
+<tr><th scope="row"><code translate="no">worktree_create</code>、<code translate="no">worktree_merge</code>、<code translate="no">worktree_discard</code>、<code translate="no">worktree_list</code>、<code translate="no">worktree_keep</code></th><td>Git worktree。<code translate="no">worktree_create</code> 也能打开 PR：<code translate="no">pr="123"</code>、<code translate="no">"#123"</code> 或 URL，通过 <code translate="no">gh</code>。需要 git。</td></tr>
+<tr><th scope="row"><code translate="no">remind</code></th><td>定时通知或唤醒 agent：<a href="reminders.zh.html">提醒</a></td></tr>
+<tr><th scope="row"><code translate="no">scheduler</code>（别名 <code translate="no">cron</code>）</th><td>注册、列出、删除重复的 agent 任务</td></tr>
+<tr><th scope="row"><code translate="no">save_routine</code></th><td>把这次工作存成技能：<a href="skills.zh.html#把做过的事存成-routine">routine</a></td></tr>
+<tr><th scope="row"><code translate="no">skill</code></th><td>把技能指令加载到本轮：<a href="skills.zh.html">技能</a></td></tr>
+<tr><th scope="row"><code translate="no">plugin</code></th><td>指南、安装、重载插件：<a href="plugins.zh.html">插件</a></td></tr>
+<tr><th scope="row"><code translate="no">create_goal</code>、<code translate="no">get_goal</code>、<code translate="no">update_goal</code></th><td>本聊天的持久目标，只在明确要求时：<a href="goal.zh.html">Goal</a></td></tr>
+<tr><th scope="row"><code translate="no">handoff</code>、<code translate="no">always_on_schedule</code>、<code translate="no">always_on_report</code>、<code translate="no">always_on_preference</code></th><td>常驻对话：把工作交给另一对话、设下次检查、报告发现、记住偏好：<a href="always-on-agents.zh.html">常驻 Agent</a></td></tr>
+<tr><th scope="row"><code translate="no">list_mcp_resources</code>、<code translate="no">read_mcp_resource</code>、<code translate="no">list_mcp_prompts</code>、<code translate="no">get_mcp_prompt</code></th><td>MCP 资源和提示（<code translate="no">mcp_meta</code> 目录）。需要已配置的 <a href="mcp.zh.html">MCP</a> 服务器。</td></tr>
+<tr><th scope="row"><code translate="no">tool_search</code></th><td>加载延迟工具，schema 进入下一次请求</td></tr>
+<tr><th scope="row"><code translate="no">help</code></th><td>按名字读工具指南（<code translate="no">help("self_update.prepare")</code>）或工具概览</td></tr>
+<tr><th scope="row"><code translate="no">self_update</code></th><td>从隔离 worktree 修改 OpenProgram 自身，经过构建、试运行、切换、回退和修正。<code translate="no">status</code>（默认）、<code translate="no">begin</code>、<code translate="no">prepare</code>、<code translate="no">retry</code>、<code translate="no">cancel</code>、<code translate="no">versions</code>、<code translate="no">undo</code>；每个动作都遵循权限模式。需要从封存版本安装，或带 <code translate="no">stable</code> 分支的检出。<a href="self-update.zh.html">自我更新</a></td></tr>
+</tbody></table>
+<details>
+<summary>工具指南</summary>
+<p>规则多的工具保持 schema 简短，其余内容作为指南提供。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时机</th><th scope="col">指南</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">computer_use_agent</code> 对某目标的第一次结果，或 <code translate="no">self_update</code> 的第一次结果</th><td>以指南开头并列出更多</td></tr>
+<tr><th scope="row">需要未见过的指南的调用：第一次 <code translate="no">self_update(action="prepare")</code>，或第一次带 <code translate="no">code</code> 的 <code translate="no">computer_use_agent</code></th><td>被拒绝一次并带上指南，下一次运行</td></tr>
+<tr><th scope="row">压缩后</th><td>需要时重新提供</td></tr>
+</tbody></table>
+</details>
+<p class="note">普通 Python <code translate="no">execute(...)</code> 调用保留字符串返回值。</p>

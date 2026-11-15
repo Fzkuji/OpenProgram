@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style id="op-theme"></style>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:transparent}
+body{color:var(--text-primary);font-family:var(--font-sans);font-size:14px;line-height:1.6;overflow:hidden;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{color:var(--text-bright);font-weight:500;line-height:1.3;margin:0 0 8px}
+h1{font-size:22px}h2{font-size:18px}h3{font-size:16px}h4{font-size:14px}
+p{margin:0 0 8px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+code,pre{font-family:var(--font-mono);font-size:12.5px}
+svg text{fill:currentColor}
+button{font:inherit;font-size:13px;color:var(--text-bright);background:var(--bg-primary);border:1px solid var(--border-light);border-radius:8px;padding:6px 12px;cursor:pointer;line-height:1.4}
+button:hover{background:var(--bg-hover)}
+button:active{transform:scale(.98)}
+button:disabled{opacity:.5;cursor:default;transform:none}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover{filter:brightness(1.08);background:var(--accent)}
+input,select,textarea{font:inherit;font-size:13px;color:var(--text-bright);background:var(--bg-input,var(--bg-primary));border:1px solid var(--border-light);border-radius:8px;padding:6px 10px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+input[type=range],input[type=checkbox],input[type=radio]{accent-color:var(--accent);padding:0}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font-weight:500;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:6px 8px}
+td{border-bottom:1px solid var(--border);padding:6px 8px}
+.card{background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.metric{background:var(--bg-secondary);border-radius:10px;padding:10px 12px;min-width:0}
+.metric .value{display:block;font-size:22px;font-weight:500;color:var(--text-bright);line-height:1.25}
+.metric .label{display:block;font-size:12px;color:var(--text-secondary)}
+.muted{color:var(--text-secondary)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style>
+<script>
+(() => {
+  "use strict";
+  const post = (message) => parent.postMessage(Object.assign({ opVisual: 1 }, message), "*");
+  let rendered = false;
+  let lastHeight = -1;
+
+  function reportSize() {
+    const height = Math.ceil(document.documentElement.getBoundingClientRect().height);
+    if (height !== lastHeight) {
+      lastHeight = height;
+      post({ type: "size", height });
+    }
+  }
+
+  window.themeColor = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  // A click inside the view sends text as the user's next message.
+  window.sendPrompt = (text) => {
+    if (typeof text !== "string" || !text.trim()) return false;
+    const activation = navigator.userActivation;
+    if (activation && !activation.isActive) return false;
+    post({ type: "prompt", text: text.slice(0, 4000) });
+    return true;
+  };
+
+  window.openLink = (url) => {
+    let href;
+    try { href = new URL(String(url)).href; } catch { return false; }
+    if (!/^https?:/i.test(href)) return false;
+    post({ type: "open-link", url: href });
+    return true;
+  };
+
+  document.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!link) return;
+    event.preventDefault();
+    window.openLink(link.getAttribute("href") || "");
+  });
+
+  function applyTheme(css, scheme) {
+    document.getElementById("op-theme").textContent = css || "";
+    document.documentElement.style.colorScheme = scheme === "dark" ? "dark" : "light";
+  }
+
+  // Scripts inserted with innerHTML do not run: each is recreated in
+  // order, and one that loads a file is waited for before the next.
+  async function runScripts(root) {
+    for (const old of Array.from(root.querySelectorAll("script"))) {
+      const script = document.createElement("script");
+      for (const attr of Array.from(old.attributes)) script.setAttribute(attr.name, attr.value);
+      script.textContent = old.textContent;
+      const loaded = script.src && script.type !== "module"
+        ? new Promise((resolve) => { script.onload = script.onerror = resolve; })
+        : null;
+      old.replaceWith(script);
+      if (loaded) await loaded;
+    }
+  }
+
+  async function render(html) {
+    if (rendered) return;
+    rendered = true;
+    document.body.innerHTML = html;
+    reportSize();
+    await runScripts(document.body);
+    reportSize();
+    post({ type: "rendered" });
+  }
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== parent) return;
+    const message = event.data;
+    if (!message || message.opVisual !== 1) return;
+    if (message.type === "theme") {
+      applyTheme(message.css, message.scheme);
+      window.dispatchEvent(new Event("themechange"));
+    } else if (message.type === "render") {
+      applyTheme(message.css, message.scheme);
+      void render(String(message.html || ""));
+    }
+  });
+
+  window.addEventListener("error", (event) => {
+    post({ type: "error", message: String(event.message || "script error").slice(0, 300) });
+  });
+
+  new ResizeObserver(reportSize).observe(document.documentElement);
+  document.addEventListener("load", reportSize, true);
+  post({ type: "ready" });
+})();
+</script>
+</head>
+<body></body>
+</html>

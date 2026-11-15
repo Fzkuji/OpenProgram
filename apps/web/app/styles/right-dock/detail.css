@@ -30,10 +30,10 @@
 .detail-section { margin-bottom: 16px; }
 
 .detail-section-title {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: var(--right-panel-text-size, var(--fs-xs));
+  font-weight: var(--right-panel-font-weight, 600);
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--text-muted);
   margin-bottom: 6px;
 }
@@ -45,25 +45,24 @@
    is still emitted (path + expose rows), so its rule stays. */
 
 .detail-field-value {
-  font-size: 14px;
+  font-size: var(--right-panel-text-size, var(--fs-base));
   color: var(--text-primary);
-  font-family: var(--font-mono);
   word-break: break-all;
 }
 
 .detail-code {
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   padding: 10px;
-  font-size: 12px;
+  font-size: var(--right-panel-meta-size, var(--fs-xs));
   font-family: var(--font-mono);
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 300px;
   overflow-y: auto;
-  line-height: 1.5;
+  line-height: var(--right-panel-line-height, 1.5);
 }
 
 .detail-badge {
@@ -71,8 +70,8 @@
   align-items: center;
   gap: 4px;
   padding: 3px 10px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-xs);
+  font-size: var(--right-panel-meta-size, var(--fs-xs));
   font-weight: 500;
 }
 
@@ -80,3 +79,5 @@
 .detail-badge.paused { background: color-mix(in srgb, var(--accent-yellow) 12%, transparent); color: var(--accent-yellow); }
 .detail-badge.success { background: color-mix(in srgb, var(--accent-green) 12%, transparent); color: var(--accent-green); }
 .detail-badge.error { background: color-mix(in srgb, var(--accent-red) 12%, transparent); color: var(--accent-red); }
+
+.right-sidebar .detail-code.chat-text { font-size: var(--right-panel-text-size); }

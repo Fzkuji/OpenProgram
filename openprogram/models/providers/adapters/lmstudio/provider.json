@@ -1,0 +1,9 @@
+{
+  "id": "lmstudio",
+  "endpoints": {
+    "default": {
+      "api": "openai-completions",
+      "base_url": "http://localhost:1234/v1"
+    }
+  }
+}

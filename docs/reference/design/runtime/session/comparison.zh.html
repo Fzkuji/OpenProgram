@@ -1,0 +1,237 @@
+<title>管理方案对比</title>
+<meta name="description" content="Claude Code、OpenCode、OpenClaw 与 OpenProgram 的 session 管理机制对比。">
+<span id="session-管理方案对比"></span>
+<h1 id="session-management-comparison">管理方案对比</h1>
+
+<table class="stack even">
+<thead><tr><th scope="col">维度</th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">设计哲学</th><td>文件即数据，append-only</td><td>关系数据库，结构化查询</td><td>注册表 + transcript</td><td>只追加的 session 日志 + DAG + 注册表</td></tr>
+<tr><th scope="row">列举性能</th><td>最慢（扫目录 + 读文件）</td><td>最快（数据库索引）</td><td>快（读一个 JSON 文件）</td><td>快（内存常驻注册表）</td></tr>
+<tr><th scope="row">元数据丰富度</th><td>少（标题 + 几个状态标记）</td><td>中等（10 个字段）</td><td>最多（约 70 个字段）</td><td>中等（约 20 个字段）</td></tr>
+<tr><th scope="row">维护能力</th><td>无</td><td>无</td><td>最完善（过期/容量/轮转/预算）</td><td>启动修复和隔离；无过期和容量上限</td></tr>
+<tr><th scope="row">并发能力</th><td>弱（单进程写）</td><td>强（SQLite WAL）</td><td>中等（文件锁 + 队列）</td><td>中等（按 session 加锁，每个日志一个写者，单 worker）</td></tr>
+<tr><th scope="row">分支能力</th><td>有（DAG，UI 不暴露）</td><td>无</td><td>无</td><td>有（DAG，UI 可切换）</td></tr>
+<tr><th scope="row">渠道支持</th><td>无</td><td>无</td><td>有（完整路由字段）</td><td>有（channel/account_id/peer）</td></tr>
+<tr><th scope="row">归档/置顶</th><td>无</td><td>无</td><td>无</td><td>有（pinned/archived/group）</td></tr>
+<tr><th scope="row">崩溃恢复</th><td>无自动恢复</td><td>不需要（单进程）</td><td>无自动恢复</td><td>启动修复状态，按 journal 继续运行，从日志重建注册表</td></tr>
+<tr><th scope="row">空壳防护</th><td>不需要（文件即内容）</td><td>不需要（INSERT 即有数据）</td><td>不需要</td><td>立即追加首条消息 + 启动隔离</td></tr>
+</tbody>
+</table>
+
+<details id="section-1">
+<summary>存储格式</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">存储介质</th><td>文件系统（每 session 一个 JSONL）</td><td>SQLite 数据库（单文件 <code translate="no">opencode.db</code>）</td><td>JSON 注册表（<code translate="no">sessions.json</code>）+ 每 session 一个 JSONL</td><td>每个 session 一个目录，内含只追加的 JSONL 日志 + JSON 注册表（<code translate="no">.chats-index.json</code>）</td></tr>
+<tr><th scope="row">元数据位置</th><td>混在 JSONL 里（<code translate="no">ai-title</code>、<code translate="no">custom-title</code>、<code translate="no">mode</code> 等条目）</td><td><code translate="no">sessions</code> 表（10 个字段）</td><td><code translate="no">sessions.json</code> 里的 SessionEntry（约 70 个字段）</td><td>session 日志中的 <code translate="no">meta.patch</code> 行；<code translate="no">.chats-index.json</code> 缓存摘要</td></tr>
+<tr><th scope="row">消息位置</th><td>同一个 JSONL 文件（<code translate="no">user</code>、<code translate="no">assistant</code> 条目）</td><td>独立的 <code translate="no">messages</code> 表 + <code translate="no">parts</code> 列（JSON 数组）</td><td>独立的 <code translate="no">&lt;id&gt;.jsonl</code> transcript 文件</td><td>session 日志中的 <code translate="no">node.*</code> 行（DAG）</td></tr>
+<tr><th scope="row">文件快照</th><td>JSONL 里的 <code translate="no">file-history-snapshot</code> 条目</td><td>独立的 <code translate="no">files</code> 表（path, content, version）</td><td>无</td><td><code translate="no">.file-recovery/&lt;session_id&gt;/&lt;turn&gt;/</code> 按轮撤销恢复；session 也可在 Git worktree 中工作</td></tr>
+<tr><th scope="row">存储路径</th><td><code translate="no">~/.claude/projects/&lt;slug&gt;/&lt;uuid&gt;.jsonl</code></td><td><code translate="no">&lt;data_dir&gt;/opencode.db</code></td><td><code translate="no">&lt;state&gt;/agents/&lt;id&gt;/sessions/sessions.json</code> + <code translate="no">&lt;id&gt;.jsonl</code></td><td><code translate="no">&lt;state&gt;/projects/&lt;project_id&gt;/chats/&lt;id&gt;/</code>（<code translate="no">main.jsonl</code>、<code translate="no">agents/</code> 等）+ <code translate="no">&lt;state&gt;/projects/.chats-index.json</code></td></tr>
+<tr><th scope="row">元数据与消息分离</th><td>不分离，全在一个文件</td><td>分离（不同表）</td><td>分离（不同文件）</td><td>同一日志，行类型不同；注册表存摘要</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-2">
+<summary>Session 元数据字段</summary>
+<table class="stack even">
+<thead><tr><th scope="col">字段类别</th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">id</th><td>JSONL 文件名（UUID）</td><td><code translate="no">sessions.id</code>（UUID）</td><td><code translate="no">sessionId</code></td><td><code translate="no">id</code>（UUID）</td></tr>
+<tr><th scope="row">标题</th><td><code translate="no">aiTitle</code> + <code translate="no">customTitle</code> 两个独立条目</td><td><code translate="no">sessions.title</code> 单字段</td><td><code translate="no">displayName</code> + <code translate="no">label</code></td><td><code translate="no">title</code> 单字段</td></tr>
+<tr><th scope="row">标题优先级</th><td><code translate="no">customTitle &gt; aiTitle &gt; summaryHint &gt; firstPrompt &gt; id</code></td><td>最后写入的值</td><td><code translate="no">displayName &gt; label</code></td><td>最后写入的值；用户输入的标题会锁定（<code translate="no">_user_titled</code>）</td></tr>
+<tr><th scope="row">创建时间</th><td>JSONL 首条消息的 timestamp</td><td><code translate="no">sessions.created_at</code></td><td><code translate="no">startedAt</code></td><td><code translate="no">created_at</code></td></tr>
+<tr><th scope="row">更新时间</th><td>文件 mtime 或 sidecar</td><td><code translate="no">sessions.updated_at</code>（trigger 自动）</td><td><code translate="no">updatedAt</code>（应用层写入）</td><td><code translate="no">updated_at</code>（应用层写入）</td></tr>
+<tr><th scope="row">消息计数</th><td>无</td><td><code translate="no">sessions.message_count</code>（trigger 自动 +1/-1）</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">token 统计</th><td>无（在 <code translate="no">usage</code> 里但不汇总）</td><td><code translate="no">prompt_tokens</code> / <code translate="no">completion_tokens</code> / <code translate="no">cost</code></td><td><code translate="no">inputTokens</code> / <code translate="no">outputTokens</code> / <code translate="no">totalTokens</code> / <code translate="no">estimatedCostUsd</code> / <code translate="no">cacheRead</code> / <code translate="no">cacheWrite</code> / <code translate="no">contextTokens</code></td><td>无（由 <code translate="no">usage.db</code> 记账）</td></tr>
+<tr><th scope="row">运行状态</th><td><code translate="no">~/.claude/sessions/&lt;pid&gt;.json</code> 里的 <code translate="no">status</code>（idle/busy）</td><td>无</td><td><code translate="no">status</code>（running/done/failed/killed/timeout）</td><td><code translate="no">status</code> 枚举（idle/running/needs_input/done/failed/interrupted/cancelled），启动时修复</td></tr>
+<tr><th scope="row">父子关系</th><td>无</td><td><code translate="no">parent_session_id</code>（title 生成和 task 用子 session）</td><td><code translate="no">spawnedBy</code> / <code translate="no">parentSessionKey</code> / <code translate="no">spawnDepth</code>（0=主, 1=子agent, 2=子子agent）</td><td>session 无此字段；Job 记录 <code translate="no">parent_session_id</code></td></tr>
+<tr><th scope="row">渠道/来源</th><td>无</td><td>无</td><td><code translate="no">channel</code> / <code translate="no">groupId</code> / <code translate="no">origin</code>（含 label/provider/surface/chatType/from/to/nativeChannelId/accountId/threadId） + <code translate="no">lastChannel</code> / <code translate="no">lastTo</code> / <code translate="no">lastAccountId</code> / <code translate="no">lastThreadId</code></td><td><code translate="no">source</code> / <code translate="no">channel</code> / <code translate="no">account_id</code> / <code translate="no">peer_display</code> / <code translate="no">peer_id</code></td></tr>
+<tr><th scope="row">模型/配置</th><td>JSONL 里的 <code translate="no">mode</code>、<code translate="no">permission-mode</code> 条目</td><td>无（运行时状态）</td><td><code translate="no">providerOverride</code> / <code translate="no">modelOverride</code> / <code translate="no">modelOverrideSource</code> / <code translate="no">authProfileOverride</code> / <code translate="no">thinkingLevel</code> / <code translate="no">fastMode</code> / <code translate="no">verboseLevel</code> 等</td><td>session 元数据中每个对话分支一份设置记录（Agent、模型、思考强度、权限模式）；附加工作目录按会话保存</td></tr>
+<tr><th scope="row">Compaction</th><td><code translate="no">system:compact_boundary</code> 条目（preTokens/postTokens/preservedSegment）</td><td><code translate="no">summary_message_id</code> 指向摘要消息</td><td><code translate="no">compactionCount</code> / <code translate="no">compactionCheckpoints</code> 数组（每个含 tokensBefore/tokensAfter/summary）</td><td>compactionSummary 消息节点（DAG 中的特殊节点，source="compaction"）</td></tr>
+<tr><th scope="row">项目绑定</th><td>通过目录路径隐式绑定（<code translate="no">projects/&lt;slug&gt;/</code>）</td><td>无</td><td>无（通过 agent 目录隐式）</td><td><code translate="no">project_id</code> 字段 + 存放在 <code translate="no">projects/&lt;project_id&gt;/chats/</code></td></tr>
+<tr><th scope="row">Git 分支</th><td>JSONL 里的 <code translate="no">gitBranch</code> 字段</td><td>无</td><td>无</td><td>DAG 分支（<code translate="no">head_id</code> + branches map）</td></tr>
+<tr><th scope="row">Preview</th><td>无独立字段（列举时从尾部提取 firstPrompt）</td><td>无</td><td>无</td><td><code translate="no">preview</code>（注册表字段，<code translate="no">append_message</code> 时更新）</td></tr>
+<tr><th scope="row">归档/置顶/分组</th><td>无</td><td>无</td><td>无</td><td><code translate="no">pinned</code> / <code translate="no">archived</code> / <code translate="no">group</code></td></tr>
+<tr><th scope="row">未读标记</th><td>无</td><td>无</td><td>无</td><td><code translate="no">unread</code>（background run 完成时标记，打开时清除）</td></tr>
+<tr><th scope="row">队列策略</th><td>无</td><td>无</td><td><code translate="no">queueMode</code>（steer/followup/collect/interrupt 等 7 种）/ <code translate="no">queueDebounceMs</code> / <code translate="no">queueCap</code> / <code translate="no">queueDrop</code></td><td>无</td></tr>
+<tr><th scope="row">子 agent 角色</th><td>无</td><td>无</td><td><code translate="no">subagentRole</code>（orchestrator/leaf）/ <code translate="no">subagentControlScope</code></td><td>无</td></tr>
+<tr><th scope="row">Heartbeat</th><td>无</td><td>无</td><td><code translate="no">lastHeartbeatText</code> / <code translate="no">lastHeartbeatSentAt</code> / <code translate="no">heartbeatTaskState</code></td><td>无</td></tr>
+<tr><th scope="row">Memory flush</th><td>无</td><td>无</td><td><code translate="no">memoryFlushAt</code> / <code translate="no">memoryFlushCompactionCount</code> / <code translate="no">memoryFlushContextHash</code></td><td>无</td></tr>
+<tr><th scope="row">CLI 绑定</th><td>无</td><td>无</td><td><code translate="no">cliSessionIds</code> / <code translate="no">cliSessionBindings</code> / <code translate="no">claudeCliSessionId</code></td><td>无</td></tr>
+<tr><th scope="row">自动命名标记</th><td>无（靠 <code translate="no">customTitle</code> 条目是否存在判断）</td><td>无（靠 <code translate="no">isDefaultTitle</code> 正则判断）</td><td>无</td><td><code translate="no">_auto_titled</code>（不再截断）、<code translate="no">_user_titled</code>（锁定）、<code translate="no">_title_gen_count</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-3">
+<summary>Session 列举</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">机制</th><td>扫目录 + 读文件尾部</td><td>SQL 查询</td><td>读 sessions.json</td><td>读 <code translate="no">.chats-index.json</code> 注册表</td></tr>
+<tr><th scope="row">索引</th><td>无</td><td>数据库索引</td><td>注册表本身</td><td>注册表（<code translate="no">.chats-index.json</code>）</td></tr>
+<tr><th scope="row">具体流程</th><td><code translate="no">readdir</code> → <code translate="no">stat</code> 取 mtime → 按 mtime 降序 → 批量（每批 32 个）读尾部内容 → 字符串搜索提取标题等字段</td><td><code translate="no">SELECT * FROM sessions WHERE parent_session_id IS NULL ORDER BY created_at DESC</code></td><td><code translate="no">fs.readFileSync</code> → <code translate="no">JSON.parse</code> → 返回整个 <code translate="no">Record&lt;string, SessionEntry&gt;</code></td><td>启动时把 <code translate="no">.chats-index.json</code> 读入内存 → <code translate="no">list_sessions()</code> 是纯内存遍历</td></tr>
+<tr><th scope="row">读取量</th><td>每个文件读尾部内容（字符串搜索，不做 JSON.parse）</td><td>一条 SQL</td><td>一个文件</td><td>一个文件（启动时），之后纯内存</td></tr>
+<tr><th scope="row">过滤</th><td>只扫当前项目目录（隐式按项目过滤）</td><td><code translate="no">WHERE parent_session_id IS NULL</code>（过滤子 session）</td><td>无</td><td>默认隐藏归档行；可按字段过滤</td></tr>
+<tr><th scope="row">排序</th><td>按文件 mtime 降序</td><td><code translate="no">ORDER BY created_at DESC</code></td><td>调用方自行排序</td><td>内存中按 <code translate="no">updated_at</code> 降序</td></tr>
+<tr><th scope="row">分页</th><td>无</td><td>无</td><td>无</td><td><code translate="no">limit</code> + <code translate="no">offset</code></td></tr>
+<tr><th scope="row">搜索</th><td>无</td><td>无</td><td>无</td><td>无</td></tr>
+<tr><th scope="row">缓存</th><td>可选 sidecar <code translate="no">.ccr-tip.json</code>（存最后事件 ID + 更新时间，避免读文件内容）</td><td>SQLite 页缓存（8MB）</td><td>mtime + fileSize 判断是否重读（TTL 45 秒）</td><td>内存常驻（写操作同步更新内存 + 磁盘）</td></tr>
+<tr><th scope="row">超时保护</th><td>有（列举超时兜底）</td><td>不需要</td><td>不需要</td><td>不需要</td></tr>
+<tr><th scope="row">复杂度</th><td>O(n) 文件 I/O</td><td>O(log n) 数据库查询</td><td>O(1) 文件读 + O(n) 内存遍历</td><td>O(n) 内存遍历（不碰磁盘）</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-4">
+<summary>Session 创建</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">入口</th><td>1 个：创建 JSONL 文件</td><td>3 个：<code translate="no">Create</code>（普通）/ <code translate="no">CreateTitleSession</code>（标题子 session）/ <code translate="no">CreateTaskSession</code>（task 子 session）</td><td>1 个：<code translate="no">updateSessionStore</code> 里往 store 加 key</td><td>3 个：<code translate="no">dispatcher.process_user_turn</code> / channel handler / <code translate="no">session_context</code></td></tr>
+<tr><th scope="row">ID 生成</th><td>UUID 文件名</td><td>UUID / <code translate="no">"title-" + parentId</code> / toolCallID</td><td>sessionKey</td><td><code translate="no">"local_" + uuid</code>；<code translate="no">session_context</code> 生成 <code translate="no">session_&lt;id&gt;</code></td></tr>
+<tr><th scope="row">注册</th><td>无需注册（扫目录发现）</td><td>数据库 INSERT 后自动可查</td><td>写入 sessions.json</td><td>写入 <code translate="no">.chats-index.json</code> 注册表</td></tr>
+<tr><th scope="row">事件通知</th><td>无</td><td>pubsub <code translate="no">CreatedEvent</code></td><td>无</td><td>无（创建不广播，前端通过 <code translate="no">list_sessions</code> 发现）</td></tr>
+<tr><th scope="row">原子性</th><td>文件创建本身原子</td><td><code translate="no">INSERT ... RETURNING</code> 数据库事务</td><td>文件锁内 read-modify-write</td><td>dispatcher 和 channel 创建后立即追加首条消息；<code translate="no">session_context</code> 进入时创建</td></tr>
+<tr><th scope="row">空壳防护</th><td>无（session = 文件，创建即有内容）</td><td>无（INSERT 时必须有 title）</td><td>无</td><td>部分：立即追加首条消息；启动时隔离没有日志的空壳</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-5">
+<summary>Session 删除</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">方式</th><td>删除 JSONL 文件</td><td><code translate="no">DELETE FROM sessions WHERE id = ?</code></td><td>从 sessions.json 删 key</td><td><code translate="no">delete_session</code> 记录删除意图，删除目录，移除注册表行</td></tr>
+<tr><th scope="row">级联清理</th><td>只删一个文件（元数据和消息在同一文件）</td><td><code translate="no">ON DELETE CASCADE</code> 自动清 messages 和 files</td><td>手动归档 transcript 文件（<code translate="no">archiveSessionTranscripts</code>，不直接删）</td><td>session 目录 + <code translate="no">.file-recovery/&lt;id&gt;</code> + 运行表</td></tr>
+<tr><th scope="row">事件通知</th><td>无</td><td>pubsub <code translate="no">DeletedEvent</code></td><td>无</td><td>WebSocket <code translate="no">session_deleted</code> 广播</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-6">
+<summary>Session Resume</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">方式</th><td>读整个 JSONL，通过 <code translate="no">uuid</code>/<code translate="no">parentUuid</code> 重建消息链，恢复 mode/permissionMode/title 等状态</td><td>SQL 查询 session + messages，按 created_at 排序</td><td>读 transcript JSONL，恢复消息序列</td><td><code translate="no">get_branch(session_id, head_id)</code> 从 DAG 中沿 parent_id 链回溯，返回线性消息序列</td></tr>
+<tr><th scope="row">Compaction 处理</th><td>从 <code translate="no">compact_boundary</code> 条目的 <code translate="no">preservedSegment</code> 确定保留范围</td><td>如果 <code translate="no">summary_message_id != ""</code>，跳过该消息之前的所有消息</td><td>从 <code translate="no">compactionCheckpoints</code> 恢复</td><td>compactionSummary 节点作为新的分支起点，旧消息在 DAG 中保留但不在活跃分支上</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-7">
+<summary>Compaction（上下文压缩）</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">触发</th><td>手动 + 自动</td><td>手动</td><td>自动（按 token 阈值）</td><td>手动（<code translate="no">/compact</code>）+ 自动（<code translate="no">context.auto_compact_percent</code>）</td></tr>
+<tr><th scope="row">实现</th><td>append <code translate="no">system:compact_boundary</code> 条目到 JSONL</td><td>用专用 <code translate="no">summarizeProvider</code> 生成摘要，写入新 message，<code translate="no">summary_message_id</code> 指向它</td><td>生成摘要，记录 checkpoint（tokensBefore/tokensAfter/summary），更新 <code translate="no">compactionCount</code></td><td>LLM 生成摘要 → 写入 compactionSummary 节点（source="compaction"）→ 保留尾部消息重新挂到摘要节点下 → 移动 head_id</td></tr>
+<tr><th scope="row">记录的信息</th><td>trigger/preTokens/postTokens/preservedSegment/durationMs</td><td>summary_message_id</td><td>compactionCount + compactionCheckpoints 数组</td><td>摘要内容在节点 content 里，tokens_before/tokens_after 在摘要节点上</td></tr>
+<tr><th scope="row">旧消息</th><td>保留在 JSONL 里，通过 preservedSegment 标记哪些活跃</td><td>保留在数据库，加载时跳过 summary 之前的</td><td>保留在 transcript 里</td><td>保留在 DAG 中（append-only），但不在活跃分支上</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-8">
+<summary>活跃进程跟踪</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">机制</th><td><code translate="no">~/.claude/sessions/&lt;pid&gt;.json</code> 独立文件</td><td>无（单进程 TUI）</td><td>SessionEntry 的 <code translate="no">status</code> 字段</td><td><code translate="no">status</code> 字段（session 元数据 + 注册表）</td></tr>
+<tr><th scope="row">字段</th><td>pid, sessionId, cwd, startedAt, version, kind（interactive）, entrypoint（cli）, status（idle/busy）, updatedAt, name, bridgeSessionId</td><td>—</td><td>status（running/done/failed/killed/timeout）, runtimeMs, abortedLastRun</td><td><code translate="no">status</code>（idle/running/needs_input/done/failed/interrupted/cancelled）</td></tr>
+<tr><th scope="row">崩溃恢复</th><td>进程退出后文件残留（需外部清理）</td><td>—</td><td>status 可能卡在 running（无自动恢复）</td><td>加载注册表时 <code translate="no">running</code> → <code translate="no">idle</code>；运行对账把仍为 running 的行标为 <code translate="no">interrupted</code></td></tr>
+<tr><th scope="row">与 session 列举的关系</th><td>不参与列举</td><td>—</td><td>参与列举（status 是 SessionEntry 的一部分）</td><td>参与列举（<code translate="no">status</code> 在注册表中）</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-9">
+<summary>并发控制</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">机制</th><td>文件级（单进程写，多进程通过 pid 文件协调）</td><td>SQLite WAL 模式 + 8MB 页缓存</td><td>文件锁（lockfile）+ 进程内 FIFO 队列</td><td>Python 锁 + 跨进程 session 锁 + 每个日志文件一个写者</td></tr>
+<tr><th scope="row">锁粒度</th><td>每个 JSONL 文件</td><td>数据库级</td><td>每个 sessions.json 文件</td><td>按 session；注册表状态锁和写锁分开</td></tr>
+<tr><th scope="row">进程内</th><td>单线程</td><td>SQLite 处理</td><td>FIFO 队列串行化同一 storePath 的写操作</td><td>每 session 一个 <code translate="no">RLock</code>；<code translate="no">SessionStore._lock</code> 只保护映射和 LRU 缓存</td></tr>
+<tr><th scope="row">跨进程</th><td>pid 文件标记（<code translate="no">sessions/&lt;pid&gt;.json</code>）</td><td>SQLite 内置</td><td>lockfile 排他锁（stale 检测 30 分钟 + PID 存活检查）</td><td><code translate="no">worker.lock</code> 持有运行；跨进程 session 锁；每个进程有自己的日志文件</td></tr>
+<tr><th scope="row">锁超时/看门狗</th><td>无</td><td>无（SQLite busy timeout）</td><td>看门狗每 60 秒巡检，持有超时 5 分钟</td><td>无</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-10">
+<summary>数据维护</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">过期清理</th><td>无</td><td>无</td><td><code translate="no">pruneStaleEntries</code>：30 天未更新的条目</td><td>无；归档 session 保留到被删除</td></tr>
+<tr><th scope="row">容量限制</th><td>无</td><td>无</td><td><code translate="no">capEntryCount</code>：最多 500 个条目，超出删最旧</td><td>无</td></tr>
+<tr><th scope="row">文件轮转</th><td>无</td><td>无</td><td><code translate="no">rotateSessionFile</code>：sessions.json 超 10MB 轮转，保留最近 3 个备份</td><td>无</td></tr>
+<tr><th scope="row">磁盘预算</th><td>无</td><td>无</td><td><code translate="no">enforceSessionDiskBudget</code>：可选，按总磁盘占用清理</td><td>无</td></tr>
+<tr><th scope="row">删除时归档</th><td>无（直接删文件）</td><td>无（CASCADE 直接删）</td><td>有（transcript 文件归档而非直接删）</td><td>无（直接删目录）</td></tr>
+<tr><th scope="row">维护模式</th><td>—</td><td>—</td><td>"warn"（默认只警告）/ "enforce"（真正执行）</td><td>—</td></tr>
+<tr><th scope="row">updated_at 维护</th><td>隐式（文件 mtime）</td><td>SQLite trigger 自动</td><td>应用层写入</td><td>应用层在追加消息时写入；只改元数据不会推进 recency</td></tr>
+<tr><th scope="row">message_count 维护</th><td>不跟踪</td><td>SQLite trigger 自动 +1/-1</td><td>不跟踪</td><td>不跟踪</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-11">
+<summary>标题（命名）</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">自动命名</th><td>第一轮后异步 LLM 生成</td><td>第一轮后 fork 异步 LLM 生成（专用 title agent）</td><td>无（手动设 displayName）</td><td>第 1、6、16、40 次回复（寒暄开场再加 2、3）：首次先截断首行，每次由后台 LLM 生成标题</td></tr>
+<tr><th scope="row">手动命名</th><td><code translate="no">custom-title</code> 条目覆盖</td><td>无（没有 rename 功能）</td><td>设置 <code translate="no">displayName</code> / <code translate="no">label</code></td><td>UI rename / <code translate="no">/rename</code> / agent rename 工具</td></tr>
+<tr><th scope="row">LLM 重新生成</th><td>无</td><td>无</td><td>无</td><td><strong>Auto rename</strong> 或不带参数的 <code translate="no">/rename</code></td></tr>
+<tr><th scope="row">防注入</th><td><code translate="no">&lt;session&gt;</code> 标签包裹 + "treat as data" 指令</td><td>无（title agent 的 prompt 直接拼接）</td><td>—</td><td><code translate="no">&lt;session&gt;</code> 标签包裹 + "treat as data" 指令</td></tr>
+<tr><th scope="row">语言跟随</th><td>prompt 要求用对话语言</td><td>prompt 要求用对话语言</td><td>—</td><td>prompt 要求用对话语言</td></tr>
+<tr><th scope="row">后处理</th><td>JSON schema structured output</td><td>去 <code translate="no">&lt;think&gt;</code> 标签、取首非空行、截断 100 字符</td><td>—</td><td>JSON schema 结构化输出；Unicode 修剪；80 码点上限</td></tr>
+<tr><th scope="row">幂等标记</th><td>无（靠是否已有 <code translate="no">ai-title</code> 条目判断）</td><td>靠 <code translate="no">isDefaultTitle</code> 正则判断</td><td>—</td><td><code translate="no">_auto_titled</code> 布尔值；<code translate="no">_user_titled</code> 锁</td></tr>
+<tr><th scope="row">竞态保护</th><td>无</td><td>无</td><td>—</td><td>后台线程写入前检查 title 是否仍是截取值</td></tr>
+<tr><th scope="row">标题广播</th><td>无（前端重读 JSONL）</td><td>无（TUI 直接读数据库）</td><td>—</td><td>WebSocket <code translate="no">session_updated {id, title}</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-12">
+<summary>消息存储模型</summary>
+<table class="stack even">
+<thead><tr><th scope="col"></th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">结构</th><td>线性 JSONL（通过 uuid/parentUuid 可构建树）</td><td>扁平表（session_id + created_at 排序）</td><td>线性 JSONL</td><td>DAG（每消息有 parent_id，支持分支）</td></tr>
+<tr><th scope="row">分支</th><td>有（parentUuid 支持树结构，但 UI 不暴露）</td><td>无</td><td>无</td><td>有（head_id + branches map，UI 可切换分支）</td></tr>
+<tr><th scope="row">消息 ID</th><td>uuid（每条消息）</td><td>id（每条消息）</td><td>无显式 ID（按行序）</td><td>id（每条消息）</td></tr>
+<tr><th scope="row">消息格式</th><td><code translate="no">{type, message: {role, content}, uuid, parentUuid, timestamp, ...}</code></td><td><code translate="no">{id, session_id, role, parts, model, created_at, ...}</code></td><td><code translate="no">{role, content, ...}</code></td><td><code translate="no">{id, role, content, parent_id, timestamp, ...}</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="section-13">
+<summary>JSONL 条目类型（Claude Code 独有）</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">类型</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">user</code></th><td>用户消息（含 uuid, parentUuid, timestamp, cwd, gitBranch）</td></tr>
+<tr><th scope="row"><code translate="no">assistant</code></th><td>助手回复（含 usage, model, requestId）</td></tr>
+<tr><th scope="row"><code translate="no">attachment</code></th><td>附件（文件、图片）</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td>系统事件（子类型：turn_duration / away_summary / compact_boundary / api_error / local_command / informational / bridge_status / scheduled_task_fire）</td></tr>
+<tr><th scope="row"><code translate="no">ai-title</code></th><td>LLM 自动生成的标题</td></tr>
+<tr><th scope="row"><code translate="no">custom-title</code></th><td>用户手动设置的标题</td></tr>
+<tr><th scope="row"><code translate="no">agent-name</code></th><td>agent 名称</td></tr>
+<tr><th scope="row"><code translate="no">last-prompt</code></th><td>最后提示位置（leafUuid）</td></tr>
+<tr><th scope="row"><code translate="no">mode</code></th><td>对话模式（normal/plan/...）</td></tr>
+<tr><th scope="row"><code translate="no">permission-mode</code></th><td>权限模式</td></tr>
+<tr><th scope="row"><code translate="no">file-history-snapshot</code></th><td>文件快照（用于 revert）</td></tr>
+<tr><th scope="row"><code translate="no">bridge-session</code></th><td>Bridge 会话 ID</td></tr>
+<tr><th scope="row"><code translate="no">queue-operation</code></th><td>队列操作</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="storage.zh.html">数据模型</a></p>

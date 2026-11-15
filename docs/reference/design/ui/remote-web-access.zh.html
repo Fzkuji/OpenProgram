@@ -1,0 +1,438 @@
+<title>远程 Web 访问</title>
+<meta name="description" content="唯一所有者如何从其他设备进入 Web UI：实例令牌、浏览器引导、Host 与 Origin 校验、反向代理和密钥处理。">
+<h1>远程 Web 访问</h1>
+
+<p>每个 HTTP、SSE 和 WebSocket 请求都要带本次启动的实例令牌，回环地址也不例外。令牌有效即当前 profile 的唯一所有者。没有中继，没有账号。</p>
+
+<h2 id="method">访问方式</h2>
+<table class="stack">
+<thead><tr><th scope="col">方式</th><th scope="col">监听</th><th scope="col">浏览器访问</th><th scope="col">令牌之外的保护</th></tr></thead>
+<tbody>
+<tr><th scope="row">同一台机器</th><td><code translate="no">127.0.0.1</code></td><td>回环 URL</td><td>Host 和 Origin 校验</td></tr>
+<tr><th scope="row">可信局域网或加密 VPN</th><td>显式 <code translate="no">web.host</code>，通常是 <code translate="no">0.0.0.0</code></td><td>直连地址</td><td>非空的精确 origin、Host 校验、HTTPS 或加密网络</td></tr>
+<tr><th scope="row">SSH 隧道</th><td><code translate="no">127.0.0.1</code></td><td>本地转发端口</td><td>SSH 加密传输</td></tr>
+<tr><th scope="row">所有者的公网域名</th><td>同机代理后的 <code translate="no">127.0.0.1</code></td><td>所有者管理的 HTTPS URL</td><td>精确 origin 和 Host、受信回环代理、HTTPS</td></tr>
+</tbody>
+</table>
+
+<h3 id="authority">有效令牌代表谁</h3>
+<dl class="pairs">
+<dt>主体</dt><dd><code translate="no">openprogram/runtime/permissions/authority.py</code> 中的 <code translate="no">owner/install/&lt;16hex&gt;</code>，带 owner 层固定能力</dd>
+<dt>范围</dt><dd>当前 profile 或状态目录：<code translate="no">owner.json</code> 存在那里，所以每个 profile 有自己的所有者</dd>
+<dt>证明</dt><dd>以所有者身份获得授权，不证明浏览器前是哪个人</dd>
+<dt>渠道发言者</dt><dd>Telegram、Discord 等渠道保留发言者归属和受限的 <code translate="no">paired</code> 层；渠道回合不会让任何人变成 Web 所有者</dd>
+<dt>不存储</dt><dd>Web 用户表、密码、成员关系、角色、按项目的 ACL</dd>
+</dl>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">不做</th><th scope="col">替代</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web 账号、注册、邀请、用户会话</th><td>每个 profile 或状态实例一个所有者主体</td></tr>
+<tr><th scope="row">RBAC、用户组、租户或工作区角色、项目权限</th><td>Web UI 是一个全能力的管理界面</td></tr>
+<tr><th scope="row">OAuth、OIDC、SSO、身份感知代理、Tailscale 身份</th><td>可以多加一道控制，不能替代令牌</td></tr>
+<tr><th scope="row">内置 TLS、ACME、证书存储与续期</th><td>所有者自己运行 nginx、Caddy、VPN 或 SSH</td></tr>
+<tr><th scope="row">公共中继、托管隧道、汇合服务、配对、分享 URL</th><td>不为可达性做任何外发注册</td></tr>
+<tr><th scope="row">关闭认证、<code translate="no">--insecure</code></th><td>始终开启，回环也一样</td></tr>
+<tr><th scope="row">查询参数、<code translate="no">localStorage</code> 或公开 HTML 里的长期令牌</th><td>只有 fragment 引导和 HttpOnly cookie</td></tr>
+<tr><th scope="row">明文读取已存的 provider 凭据</th><td>只能替换</td></tr>
+</tbody>
+</table>
+
+<h2 id="current">回环地址上的威胁</h2>
+<table class="stack">
+<thead><tr><th scope="col">调用方</th><th scope="col">能做什么</th><th scope="col">控制</th></tr></thead>
+<tbody>
+<tr><th scope="row">任意网页</th><td>向 localhost 发部分 HTTP；WebSocket 不受同源读取规则保护</td><td>任何动作前先过令牌和精确的 Origin、Host</td></tr>
+<tr><th scope="row">DNS 重绑定页面</th><td>把恶意域名解析到回环并带上外来 Host</td><td>Host 校验失败即拒绝</td></tr>
+<tr><th scope="row">本地进程、其他系统账号</th><td>省略 <code translate="no">Origin</code>，<code translate="no">curl</code> 和原生客户端就是这样</td><td>Bearer 令牌；缺少 Origin 不代表可信</td></tr>
+<tr><th scope="row">外部监听后的局域网对端</th><td>连接所有路由和 <code translate="no">/ws</code></td><td>强制令牌、精确 origin、Host 校验、受保护的传输</td></tr>
+<tr><th scope="row">反向代理的客户端</th><td>带公网 Host，后端仍在回环</td><td>显式公网 origin、严格受限的回环代理信任</td></tr>
+</tbody>
+</table>
+
+<h3 id="invariants">不变量</h3>
+<ul>
+<li>认证之前：受保护状态、会话数据、文件字节、密钥元数据、SSE 事件、WebSocket 帧都不外发，也不执行任何动作。</li>
+<li>缺少 <code translate="no">Origin</code> 绝不建立信任。只在 Bearer 认证通过后，或安全方法的 cookie 请求上允许。</li>
+<li>令牌是 Host 和 Origin 校验的补充；cookie 保留 CSRF 控制。</li>
+<li>origin 配置不完整的非回环监听，在开始监听前就失败。</li>
+<li>没有路由返回已存密钥；首次进入之后也没有路由返回令牌。</li>
+</ul>
+
+<h2 id="design">令牌与凭据</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">取值</th><td><code translate="no">secrets.token_bytes(32)</code>，外部形式是 43 个字符的无填充 base64url；每次 Web 进程启动都换新</td></tr>
+<tr><th scope="row">单进程</th><td>独占且仅所有者可用的锁 <code translate="no">&lt;state-dir&gt;/web.lock</code>；第二个进程失败，不碰第一个进程的令牌</td></tr>
+<tr><th scope="row">文件</th><td><code translate="no">web/token</code> 在监听就绪前原子写入；<code translate="no">web/access.json</code> 只含 <code translate="no">version</code>、<code translate="no">bind_host</code>、<code translate="no">port</code>、<code translate="no">effective_origins</code>、<code translate="no">token_fingerprint</code>；两者都仅所有者可读，并经 <code translate="no">restrict_to_user()</code> 加固</td></tr>
+<tr><th scope="row">绝不来自</th><td>配置、命令行参数、环境变量</td></tr>
+<tr><th scope="row">绝不出现在</th><td>服务器日志、异常信息、访问日志、遥测、Web 响应。日志只写 <code translate="no">sha256:&lt;sha256(原始字节) 前 12 位十六进制&gt;</code></td></tr>
+<tr><th scope="row">比较</th><td>解码为恰好 32 字节，再用 <code translate="no">hmac.compare_digest</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>启动失败与清理</summary>
+<ul>
+<li>写入沿用 <code translate="no">openprogram/extensions/mcp/token_storage.py</code> 的临时文件、<code translate="no">os.replace</code> 和权限做法。</li>
+<li>拿不到锁，或无法安全创建并读回令牌文件，启动失败。</li>
+<li><code translate="no">read_active_web_access()</code> 只在快照有效且指纹与实时令牌文件一致时返回 <code translate="no">ActiveWebAccess</code>。</li>
+<li>绑定失败或关闭时，进程只在持锁且文件里是自己的令牌时删除令牌，只在指纹是自己的时删除 <code translate="no">access.json</code>。</li>
+<li>未加锁的陈旧文件由下一个进程原子替换。</li>
+</ul>
+</details>
+
+<h3 id="credential-forms">凭据形式</h3>
+<table class="stack">
+<thead><tr><th scope="col">客户端</th><th scope="col">凭据</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">浏览器 HTTP、SSE、WebSocket</th><td>Cookie <code translate="no">openprogram_owner_&lt;16hex&gt;</code> = <code translate="no">base64url(HMAC-SHA256(raw_token, "openprogram-web-cookie-v1"))</code></td><td><code translate="no">HttpOnly</code>、<code translate="no">SameSite=Strict</code>、<code translate="no">Path=/</code>、无 <code translate="no">Domain</code>、会话生命周期；有效 scheme 为 HTTPS 时加 <code translate="no">Secure</code></td></tr>
+<tr><th scope="row">原生 HTTP、SSE、WebSocket</th><td><code translate="no">Authorization: Bearer &lt;token&gt;</code></td><td>只认请求头；查询参数里的令牌不被读取</td></tr>
+</tbody>
+</table>
+<ul>
+<li>cookie 不按端口隔离，按 profile 命名才能让同时运行的 profile 服务器互不覆盖。</li>
+<li>cookie 没有数据库记录，由令牌重新算出，所以重启即失效。</li>
+<li>除引导接口外，只要有 <code translate="no">Authorization</code> 头就走 Bearer：错误的头返回 <code translate="no">401</code>，绝不回退到有效 cookie。</li>
+</ul>
+
+<h3 id="fragment-bootstrap">浏览器登录</h3>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 318" role="img" aria-label="CLI、浏览器和 Web 服务器之间的时序。CLI 打开带 fragment 令牌的根 URL。浏览器请求页面时不带 fragment，得到公开的静态外壳。浏览器把令牌读入内存并用 history.replaceState 清除地址。然后把令牌放在请求体里发给引导接口，得到 204 和 HttpOnly cookie。之后的 HTTP、SSE、WebSocket 都使用 cookie。">
+  <defs><marker id="rw-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big mid" x="60" y="24">CLI</text>
+  <text class="t-big mid" x="330" y="24">浏览器</text>
+  <text class="t-big mid" x="610" y="24">Web 服务器</text>
+  <line class="ln-faint" x1="60" y1="36" x2="60" y2="308"/>
+  <line class="ln-faint" x1="330" y1="36" x2="330" y2="308"/>
+  <line class="ln-faint" x1="610" y1="36" x2="610" y2="308"/>
+  <text class="t-cmd mid" x="195" y="60">open /#token=…</text>
+  <line class="ln" x1="60" y1="70" x2="330" y2="70" marker-end="url(#rw-a)"/>
+  <text class="t-cmd mid" x="470" y="98">GET /（不带 fragment）</text>
+  <line class="ln" x1="330" y1="108" x2="610" y2="108" marker-end="url(#rw-a)"/>
+  <text class="t-soft mid" x="470" y="134">公开静态外壳</text>
+  <line class="ln" x1="610" y1="144" x2="330" y2="144" marker-end="url(#rw-a)"/>
+  <text class="t-soft" x="20" y="168">令牌读入内存</text>
+  <text class="t-cmd" x="20" y="190">history.replaceState()</text>
+  <line class="ln-faint" x1="240" y1="178" x2="326" y2="178" marker-end="url(#rw-a)"/>
+  <text class="t-cmd mid" x="470" y="212">POST /api/auth/bootstrap</text>
+  <line class="ln-acc" x1="330" y1="222" x2="610" y2="222" marker-end="url(#rw-a)"/>
+  <text class="t-cmd mid" x="470" y="248">204 Set-Cookie: HttpOnly</text>
+  <line class="ln-acc" x1="610" y1="258" x2="330" y2="258" marker-end="url(#rw-a)"/>
+  <text class="t-soft mid" x="470" y="284">带 cookie 的 HTTP、SSE、WebSocket</text>
+  <line class="ln" x1="330" y1="294" x2="610" y2="294" marker-end="url(#rw-a)"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>CLI</strong><small><code translate="no">open /#token=…</code></small></li>
+  <li><strong>浏览器</strong><small><code translate="no">GET /</code> 不带 fragment，得到公开外壳</small></li>
+  <li><strong>浏览器</strong><small>令牌读入内存，<code translate="no">history.replaceState()</code></small></li>
+  <li><strong>浏览器</strong><small><code translate="no">POST /api/auth/bootstrap</code></small></li>
+  <li><strong>Web 服务器</strong><small><code translate="no">204</code>、<code translate="no">Set-Cookie: HttpOnly</code></small></li>
+  <li class="flow-end"><strong>浏览器</strong><small>带 cookie 的 HTTP、SSE、WebSocket</small></li>
+</ol>
+</figure>
+<p class="note">fragment 不会出现在 HTTP 请求、代理日志、Referer 或路由中。<code translate="no">apps/web/lib/net/auth/owner-auth-bootstrap.ts</code> 在交换完成后才挂载应用，且不用 Web Storage。</p>
+
+<details>
+<summary><code translate="no">POST /api/auth/bootstrap</code> 约定</summary>
+<ul>
+<li>只接受 <code translate="no">POST</code>，需要有效的精确 Origin 和有效 Host。</li>
+<li><code translate="no">Content-Type: application/json</code>，请求体不超过 256 字节，恰好是 <code translate="no">{"token":"&lt;43 字符 base64url&gt;"}</code>。未知键、重复键、非法 base64url、其他长度都拒绝。</li>
+<li>带任何 <code translate="no">Authorization</code> 头、缺令牌、令牌错误：同一个 <code translate="no">401</code>。</li>
+<li>成功：<code translate="no">204</code> 加 cookie。始终 <code translate="no">Cache-Control: no-store</code>；响应里绝无令牌。</li>
+</ul>
+</details>
+
+<h3 id="auth-url">给其他设备的登录链接</h3>
+<pre translate="no" tabindex="0">openprogram web auth-url --base-url https://agent.example.com</pre>
+<ol>
+<li>核对 worker 的 PID 和端口文件、<code translate="no">access.json</code> 与监听进程：向 <code translate="no">GET /api/auth/challenge</code> 发新鲜 nonce，在本地校验 HMAC 证明。令牌绝不发往被探测的端口。</li>
+<li>读取实时令牌文件，把一条 fragment URL 打印到终端，绝不写入应用日志。</li>
+</ol>
+<p class="note"><code translate="no">--base-url</code> 必须是 <code translate="no">access.json</code> 中冻结的有效 origin，不含路径、查询、fragment 或用户信息。HTTP 只放行回环监听上的 <code translate="no">localhost</code>，或<a href="#http-ranges">明文 HTTP</a> 列出的网段内的 IP。</p>
+
+<h2 id="routes">请求处理</h2>
+<p>同一个 ASGI 中间件 <code translate="no">OwnerAuthMiddleware</code> 在路由分发前处理 HTTP 和 WebSocket。应用路由不自行解释认证。</p>
+<table class="stack">
+<thead><tr><th scope="col">顺序</th><th scope="col">检查</th><th scope="col">失败时</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>直接对端、有效 scheme、一个合法 <code translate="no">Host</code>；<code translate="no">request_origin</code> 必须有效。存在时检查 <code translate="no">Origin</code> 和 <code translate="no">Sec-Fetch-Site</code>。</td><td><code translate="no">403 request_origin_rejected</code></td></tr>
+<tr><th scope="row">2</th><td>公开路由、challenge、bootstrap 在此应答</td><td>各自的规则，见下</td></tr>
+<tr><th scope="row">3</th><td>有 <code translate="no">Authorization</code> 头走 Bearer，否则走 cookie</td><td><code translate="no">401 authentication_required</code>，<code translate="no">WWW-Authenticate: Bearer realm="OpenProgram"</code></td></tr>
+<tr><th scope="row">4</th><td>不安全方法或 WebSocket 上的 cookie 必须带 <code translate="no">Origin</code></td><td><code translate="no">403 request_origin_rejected</code></td></tr>
+<tr><th scope="row">5</th><td>附加 <code translate="no">owner_authority(principal)</code>，然后进入路由、SSE 生成器或 <code translate="no">websocket.accept</code></td><td></td></tr>
+</tbody>
+</table>
+<p class="note">WebSocket 失败是 HTTP 升级被拒，不会先接受再发关闭帧。challenge 格式错误或版本不符：<code translate="no">400 invalid_challenge</code>。带 <code translate="no">x-openprogram-ui-check</code> 的 HTTP：<code translate="no">409 ui_verification_active</code>。非回环启动配置无效：不监听。</p>
+
+<h3 id="public-routes">无需所有者凭据可达</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">路由</th><th scope="col">防护或内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">应用外壳、静态资源</th><td><code translate="no">GET</code> 和 <code translate="no">HEAD</code>；HTML 中没有令牌、密钥、会话 ID 或用户数据</td></tr>
+<tr><th scope="row"><code translate="no">GET</code>/<code translate="no">HEAD /docs</code>、<code translate="no">/docs/**</code></th><td>只读预构建站点：源码检出用 <code translate="no">docs/_site</code>，安装包用 <code translate="no">openprogram/interfaces/server/_frontend/docs</code>（wheel 必须包含其 <code translate="no">index.html</code>）。请求时不扫描源码、不构建；过期检查只在源码 worker 注册路由时运行。</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/auth/bootstrap</code></th><td>自己校验请求体令牌</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/auth/challenge</code></th><td>监听者证明，见下；不授予任何权限</td></tr>
+<tr><th scope="row"><code translate="no">GET /healthz</code></th><td>只有 <code translate="no">{"status":"ok"}</code>；详情在需认证的 <code translate="no">/api/diagnostics</code></td></tr>
+<tr><th scope="row"><code translate="no">POST /hooks/&lt;id&gt;</code></th><td>Scheduler webhook，由任务自己的密钥保护</td></tr>
+<tr><th scope="row"><code translate="no">GET /application-assets/…</code></th><td>沙箱模块导入，<code translate="no">Origin: null</code>；只读一棵不可变 UI 树；仍校验 Host</td></tr>
+<tr><th scope="row">Office 主机</th><td>启用时由 <code translate="no">office_editor</code> 应用提供；拒绝 WebSocket</td></tr>
+</tbody>
+</table>
+<p class="note">除 Office 主机由 <code translate="no">office_editor</code> 自己检查外，都要通过第 1 步。其余一切都需要凭据：路由、原始文件、provider、诊断、SSE、WebSocket。</p>
+
+<details>
+<summary>监听者 challenge 与会话检查</summary>
+<ul>
+<li>输入：32 字节 <code translate="no">nonce</code>，43 字符 base64url；可选 <code translate="no">revision</code>，40 位小写十六进制，必须等于当前服务的版本。</li>
+<li>输出：恰好 <code translate="no">200 {"proof":"&lt;43 字符 base64url&gt;"}</code>，证明为 <code translate="no">HMAC-SHA256(raw_token, "openprogram-web-challenge-v1\0" + nonce + "\0" + revision)</code>。</li>
+<li>不发送凭据，也不返回令牌或诊断信息。</li>
+<li>登录后 <code translate="no">GET /api/auth/session</code>：<code translate="no">204</code> 表示 cookie 与实时 worker 一致。<code translate="no">401</code> 时桌面外壳换取内存中的新令牌并重新引导，不用旧 cookie 重连。</li>
+</ul>
+</details>
+
+<details>
+<summary>响应头</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">响应</th><th scope="col">响应头</th></tr></thead>
+<tbody>
+<tr><th scope="row">静态外壳</th><td><code translate="no">Content-Security-Policy</code> 含 <code translate="no">object-src 'none'</code>、<code translate="no">base-uri 'none'</code>、<code translate="no">frame-ancestors 'none'</code>，脚本限同源加构建生成的哈希（无第三方脚本，无 <code translate="no">unsafe-eval</code>）；<code translate="no">X-Frame-Options: DENY</code>；<code translate="no">Referrer-Policy: no-referrer</code>；<code translate="no">X-Content-Type-Options: nosniff</code></td></tr>
+<tr><th scope="row"><code translate="no">/docs/*.raw.html</code></th><td>同上，但允许同源嵌入：<code translate="no">SAMEORIGIN</code>、<code translate="no">frame-ancestors 'self'</code></td></tr>
+<tr><th scope="row">bootstrap、challenge、失败响应、受保护 API、凭据状态、SSE</th><td><code translate="no">Cache-Control: no-store</code></td></tr>
+<tr><th scope="row">内容寻址的静态资源</th><td>长期缓存</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="origin-matrix">各请求形式的 Origin</h3>
+<table class="stack">
+<thead><tr><th scope="col">请求</th><th scope="col">凭据</th><th scope="col"><code translate="no">Origin</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Cookie，不安全 HTTP</th><td>必需</td><td>必须等于 <code translate="no">request_origin</code>；缺失则拒绝</td></tr>
+<tr><th scope="row">Cookie，WebSocket</th><td>accept 前必需</td><td>必须等于 <code translate="no">request_origin</code>；缺失则拒绝</td></tr>
+<tr><th scope="row">Cookie，安全 HTTP 或 SSE</th><td>必需</td><td>存在时必须等于 <code translate="no">request_origin</code>；导航可省略</td></tr>
+<tr><th scope="row">Bearer HTTP、SSE、WebSocket</th><td>必需（WebSocket 在 accept 前）</td><td>可省略；存在时必须是 <code translate="no">request_origin</code>，或在令牌有效时是另一个有效 origin</td></tr>
+<tr><th scope="row">监听者 challenge</th><td>无；受限的 nonce 和 revision</td><td>可省略；存在时必须等于 <code translate="no">request_origin</code></td></tr>
+<tr><th scope="row">引导</th><td>令牌在请求体</td><td>必须等于 <code translate="no">request_origin</code></td></tr>
+</tbody>
+</table>
+<p class="note">Bearer 的放宽是因为 Node TUI 用 IP 连回环，却出示规范 origin。安全方法是 <code translate="no">GET</code>、<code translate="no">HEAD</code>、<code translate="no">OPTIONS</code>，不改变状态。<code translate="no">Sec-Fetch-Site: cross-site</code> 一律拒绝。CORS 头只控制响应能否被读取，不是认证。</p>
+
+<details>
+<summary>origin 如何计算</summary>
+<ul>
+<li><code translate="no">web.host</code> 和 <code translate="no">web.allowed_origins</code> 来自当前 profile 的 <code translate="no">&lt;state-dir&gt;/config.json</code>。<code translate="no">web.host</code> 默认 <code translate="no">127.0.0.1</code>，只有局域网或 VPN 直连才需要。</li>
+<li>条目只能是 <code translate="no">scheme://host[:port]</code>，<code translate="no">http</code> 或 <code translate="no">https</code>。无效：通配符、路径、查询、fragment、用户信息、不透明 origin、非法 IPv6、未指定和组播地址（所以 <code translate="no">0.0.0.0</code>、<code translate="no">::</code> 都不行）。</li>
+<li>DNS 名做 IDNA 和大小写规范化，IPv6 加方括号，默认端口去掉。</li>
+<li><code translate="no">effective_origins</code> = 配置的 origin，回环监听再加 <code translate="no">http://localhost:&lt;port&gt;</code> 和实际绑定的字面量。非回环监听没有隐式 origin。请求的 <code translate="no">Host</code> 永远不会加入集合。</li>
+<li><code translate="no">Host</code> 必须是一个合法 authority：重复、逗号拼接、带用户信息、未指定和组播形式都拒绝。</li>
+<li><code translate="no">request_origin</code> = scheme + 解析后的 <code translate="no">Host</code>，<code translate="no">ws</code> 视同 <code translate="no">http</code>，<code translate="no">wss</code> 视同 <code translate="no">https</code>。这一次比较同时覆盖精确 origin 和 DNS 重绑定。</li>
+</ul>
+</details>
+
+<h3 id="http-ranges">明文 HTTP</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">接受</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">DNS</th><td>只有回环监听上的 <code translate="no">localhost</code></td></tr>
+<tr><th scope="row">IPv4</th><td><code translate="no">127.0.0.0/8</code>、<code translate="no">10.0.0.0/8</code>、<code translate="no">172.16.0.0/12</code>、<code translate="no">192.168.0.0/16</code>、<code translate="no">169.254.0.0/16</code>、<code translate="no">100.64.0.0/10</code></td></tr>
+<tr><th scope="row">IPv6</th><td><code translate="no">::1/128</code>、<code translate="no">fc00::/7</code>、<code translate="no">fe80::/10</code>；不接受 zone 标识</td></tr>
+</tbody>
+</table>
+<p class="note">其余都要 HTTPS。用显式列表而非 <code translate="no">is_private</code>：后者包含保留地址，却排除 RFC 6598。每个非回环 HTTP origin 启动时都告警，因为网络观察者能读到凭据。<code translate="no">100.64.0.0/10</code> 用于 Tailscale 这类加密覆盖网络；地址本身不证明加密，由所有者负责。</p>
+
+<h2 id="deployment">部署示例</h2>
+<h3 id="ssh-tunnel">SSH 隧道</h3>
+<pre translate="no" tabindex="0">ssh -N -L 18100:127.0.0.1:18100 owner@remote-host
+# 隧道建立后，在远端主机上运行
+openprogram web auth-url --base-url http://127.0.0.1:18100</pre>
+<p class="note">本地端口不同时，先把对应的 <code translate="no">http://localhost:&lt;port&gt;</code> 或回环字面量 origin 加入 <code translate="no">allowed_origins</code>。</p>
+
+<h3 id="direct-lan">局域网或 VPN 直连</h3>
+<pre translate="no" tabindex="0">{
+  "web": {
+    "host": "0.0.0.0",
+    "allowed_origins": ["http://192.168.1.20:18100"]
+  }
+}</pre>
+
+<h3 id="reverse-proxy">同机 HTTPS 代理</h3>
+<pre translate="no" tabindex="0">{
+  "web": {
+    "host": "127.0.0.1",
+    "allowed_origins": ["https://agent.example.com"]
+  }
+}</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">一方</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram</th><td>以 <code translate="no">proxy_headers=False</code> 启动 Uvicorn。绝不信任 <code translate="no">X-Forwarded-For</code>。只信任原始回环对端的 <code translate="no">X-Forwarded-Proto</code>，单值，<code translate="no">http</code> 或 <code translate="no">https</code>；其他值拒绝，其他对端的头被忽略。</td></tr>
+<tr><th scope="row">代理</th><td>保留公网 Host，覆盖 scheme，支持 WebSocket Upgrade，关闭 SSE 缓冲</td></tr>
+<tr><th scope="row">缺少 scheme 头</th><td>DNS 或公网 IP origin 仍是 HTTP，被 <code translate="no">403</code> 拒绝，因此不会设置不安全的所有者 cookie</td></tr>
+</tbody>
+</table>
+<details>
+<summary>nginx</summary>
+<pre translate="no" tabindex="0">map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name agent.example.com;
+
+    # ssl_certificate and ssl_certificate_key are owner-managed.
+
+    location / {
+        proxy_pass http://127.0.0.1:18100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Forwarded "";
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+}</pre>
+</details>
+<details>
+<summary>Caddy</summary>
+<pre translate="no" tabindex="0">agent.example.com {
+    reverse_proxy 127.0.0.1:18100
+}</pre>
+<p class="note">证书由 Caddy 管理，是因为所有者选了 Caddy；OpenProgram 不调用它的 API。</p>
+</details>
+
+<h2 id="secrets">已存密钥</h2>
+<p>所有者认证授权的是替换和使用密钥，不是读取。</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">配置或环境变量密钥</th><th scope="col">API-key 账号</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取</th><td><code translate="no">GET /api/config/key/{env_var}</code>：<code translate="no">{"has_value":false,"masked":""}</code> 或 <code translate="no">{"has_value":true,"masked":"sk-…abc4"}</code>；未声明的名称 <code translate="no">404</code></td><td><code translate="no">GET /api/providers/{provider}/accounts</code>：元数据加 <code translate="no">has_value</code> 和 <code translate="no">masked_key</code>；没有 <code translate="no">identity</code>、<code translate="no">can_reveal</code>、<code translate="no">value</code> 或完整密钥</td></tr>
+<tr><th scope="row">保留</th><td>在 <code translate="no">api_keys</code> 中省略该名称</td><td>使用、改名、排序、轮换都不接收也不改变 <code translate="no">api_key</code></td></tr>
+<tr><th scope="row">替换</th><td><code translate="no">POST /api/config</code> <code translate="no">{"api_keys":{"ENV_VAR":"new"}}</code>，一个或多个键；<code translate="no">200 {"saved":true}</code></td><td><code translate="no">POST /api/providers/{provider}/accounts/{name}/update</code> <code translate="no">{"api_key":"new","validate":true}</code>；<code translate="no">validate</code> 可选，默认 true；<code translate="no">200 {"ok":true}</code>；不存在或不是 API-key 账号 <code translate="no">404</code></td></tr>
+<tr><th scope="row">删除</th><td><code translate="no">DELETE /api/config/key/{env_var}</code>，无请求体，幂等；删除保存项和当前进程环境值；<code translate="no">204</code>。父环境再次提供的值只有重启后才会回来。</td><td><code translate="no">POST /api/providers/{provider}/accounts/remove</code> <code translate="no">{"id":"name"}</code> 删除整个凭据池；<code translate="no">200 {"removed":true,"name":"name","cleared_active":&lt;bool&gt;}</code>；id 缺失或未知 <code translate="no">404</code></td></tr>
+<tr><th scope="row">明文查看</th><td>带 <code translate="no">reveal</code> 查询：<code translate="no">404</code></td><td><code translate="no">…/accounts/{name}/reveal</code>：<code translate="no">410</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">400</code>，不做改动</th><td>未知字段、未知名称、<code translate="no">null</code>、空值、不可打印或非 ASCII 值、任何显示出来的掩码。校验明确拒绝的密钥也是；临时或离线的 <code translate="no">unknown</code> 结果仍会保存。</td></tr>
+<tr><th scope="row">掩码</th><td>12 个字符以上且可见部分为 ASCII：前 3 位、<code translate="no">…</code>、后 4 位，至少隐藏 5 位。否则固定 <code translate="no">••••••••</code>，短值长度不泄露。</td></tr>
+<tr><th scope="row">前端</th><td>provider 详情、API-key 设置、账号管理器中没有查看按钮、请求或明文响应字段</td></tr>
+<tr><th scope="row">MCP 服务器</th><td><code translate="no">MCPServerConfig.to_storage_dict()</code> 为文件保留完整值；<code translate="no">to_response_dict()</code> 把每个 <code translate="no">env</code>、<code translate="no">headers</code> 值、bearer 令牌和 OAuth client secret 掩码为 <code translate="no">{has_value, masked}</code>，用于 <code translate="no">/api/mcp/servers</code>、<code translate="no">/api/mcp/servers/{name}</code>、<code translate="no">/api/mcp/catalog</code>、<code translate="no">/api/mcp/catalog/diff</code>。<code translate="no">PATCH /api/mcp/servers/{name}</code>：省略即保留，新值即替换，显式空值即删除；重启成功后才落盘。<code translate="no">mcp_servers.json</code> 权限 <code translate="no">0600</code>，经临时文件、<code translate="no">fsync</code>、<code translate="no">os.replace</code> 写入。</td></tr>
+<tr><th scope="row">项目文件 reveal</th><td>无关的文件导航动作，受普通认证约束；不是凭据路径</td></tr>
+</tbody>
+</table>
+
+<h2 id="startup">启动</h2>
+<p>校验配置，生成并保护令牌，写入并检查 <code translate="no">access.json</code>，计算指纹，然后才监听。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">写入日志</th><th scope="col">启动错误</th></tr></thead>
+<tbody>
+<tr><th scope="row">绑定地址及是否回环</th><td>origin 格式错误</td></tr>
+<tr><th scope="row">有效 origin</th><td>非回环监听没有 origin</td></tr>
+<tr><th scope="row">回环代理 scheme 处理是否生效</th><td>不安全的公网 HTTP origin</td></tr>
+<tr><th scope="row">令牌指纹，绝不写令牌</th><td>不安全的令牌文件</td></tr>
+<tr><th scope="row">非回环 HTTP 告警</th><td>Web 进程锁被占用</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>以上全部，除下面两项</td></tr>
+<tr><th scope="row">部分实现</th><td>浏览器驱动的审计，证明导出资源和导航路径都不嵌入动态数据；服务端测试已覆盖响应和渲染后的 HTML</td></tr>
+<tr><th scope="row">部分实现</th><td>nginx 和 Caddy 的 HTTPS、WebSocket、SSE 冒烟部署；真实监听的 origin 矩阵已覆盖 <code translate="no">X-Forwarded-Proto</code> 和 <code translate="no">X-Forwarded-Host</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>各部分的代码与测试</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">代码与测试</th></tr></thead>
+<tbody>
+<tr><th scope="row">默认绑定、lifespan</th><td><code translate="no">openprogram/interfaces/server/server.py</code> 的 <code translate="no">_web_config()</code> 和 <code translate="no">create_app()</code></td></tr>
+<tr><th scope="row">所有者主体、权限层</th><td><code translate="no">openprogram/runtime/permissions/authority.py</code>；<code translate="no">tests/unit/providers/auth/test_authority_scope.py</code></td></tr>
+<tr><th scope="row">令牌、锁、cookie</th><td><code translate="no">openprogram/interfaces/server/owner_auth.py</code> 的 <code translate="no">OwnerAuthState</code>；<code translate="no">test_process_token_is_owner_only_locked_and_replaced_after_release</code></td></tr>
+<tr><th scope="row">origin</th><td><code translate="no">openprogram/host/security/backend_endpoint.py</code> 的 <code translate="no">canonicalize_origin()</code>、<code translate="no">resolve_effective_origins()</code>；参数化 owner-auth 测试</td></tr>
+<tr><th scope="row">中间件</th><td><code translate="no">OwnerAuthMiddleware</code>；HTTP 变更和 accept 前 WebSocket 的 owner-auth 测试</td></tr>
+<tr><th scope="row">引导</th><td><code translate="no">apps/web/lib/net/auth/owner-auth-bootstrap.ts</code>、<code translate="no">OwnerAuthBoundary</code>；<code translate="no">apps/web/scripts/settings/check-owner-auth-bootstrap.mjs</code>、TypeScript 检查、生产构建</td></tr>
+<tr><th scope="row"><code translate="no">auth-url</code></th><td><code translate="no">openprogram/interfaces/cli/commands/web.py</code>、<code translate="no">build_owner_auth_url()</code>；<code translate="no">tests/unit/providers/adapters/test_web_auth_url.py</code></td></tr>
+<tr><th scope="row">密钥</th><td><code translate="no">openprogram/host/security/credential_mask.py</code>、<code translate="no">credential_secrets</code>；<code translate="no">tests/component/programs/mcp/test_mcp_secret_non_retrievability.py</code>、<code translate="no">apps/web/scripts/settings/check-secret-non-retrieval.mjs</code></td></tr>
+<tr><th scope="row">内部客户端</th><td><code translate="no">resolve_backend_endpoint()</code> 返回通过 challenge 校验的 <code translate="no">BackendEndpoint</code>，令牌在证明之后才读取；用于 <code translate="no">openprogram/interfaces/cli/ink.py</code> 和 <code translate="no">openprogram/interfaces/cli/commands/mcp.py</code>。Node 客户端只向后端 URL 发 Bearer：<code translate="no">apps/cli/src/utils/backend.ts</code>、<code translate="no">apps/cli/tests/backendAuth.test.ts</code></td></tr>
+<tr><th scope="row">启动报告</th><td><code translate="no">start_server()</code>；<code translate="no">test_startup_logs_warn_about_plaintext_http_for_remote_origins</code></td></tr>
+<tr><th scope="row">真实监听</th><td><code translate="no">tests/component/providers/adapters/test_web_owner_auth_listener.py</code>：真实 Uvicorn 套接字、HTTP、SSE、accept 前拒绝 WebSocket、绑定失败清理、线上令牌轮换、双 profile cookie、反向代理 origin、对响应体、响应头、日志和渲染页的令牌泄漏扫描</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="contract">
+<summary>验收行为</summary>
+<ol>
+<li>回环上无凭据的 HTTP、SSE、WebSocket 都失败。</li>
+<li>正确的 Bearer 不带 <code translate="no">Origin</code> 也成功；错误的得到同样的 <code translate="no">401</code>，不执行任何动作。</li>
+<li>引导在其他 fetch 前清除 fragment，只接受受限 JSON，URL、查询、Referer 中没有令牌，派生指定 cookie，拒绝同时带 <code translate="no">Authorization</code> 的请求体令牌，之后能打开 HTTP、SSE、WebSocket。</li>
+<li>cookie 的不安全 HTTP 和 WebSocket 在动作或 accept 前拒绝缺失、不透明、跨站和未列出的 origin。</li>
+<li>回环、直连和代理都拒绝外来、重复、逗号拼接、未指定和组播 Host；HTTP/WS 与 HTTPS/WSS 得到相同的 origin 配对。</li>
+<li>默认回环只接受隐式 origin；其他 SSH 本地端口在配置前被拒绝。</li>
+<li>无有效 origin 的非回环监听拒绝启动；列出的 HTTP 网段放行并告警；未指定、组播、文档、基准测试、保留和全局地址的 HTTP 被拒绝。</li>
+<li>Uvicorn 代理改写关闭；转发 scheme 只认原始回环对端；伪造的 <code translate="no">X-Forwarded-For</code> 不改变信任；公网无 HTTPS 的引导失败；直连 WS 和 Caddy WSS 得到预期 origin。</li>
+<li>同一状态目录的第二个进程改不了实时令牌或快照；绑定失败只删除失败进程自己的文件。</li>
+<li>重启轮换令牌，旧 Bearer 和 cookie 失效。</li>
+<li>格式错误的 <code translate="no">Authorization</code> 不回退到 cookie。</li>
+<li>静态资源和 <code translate="no">/healthz</code> 不含令牌、会话、文件系统、凭据数据或诊断。</li>
+<li>响应头拒绝嵌入；受保护响应 <code translate="no">no-store</code>；<code translate="no">401</code> 声明 Bearer realm。</li>
+<li>文档无需认证即可从源码检出和安装包的预构建文件读取，不扫描不构建；Host 校验仍生效；不安全方法和私有 API 除外。</li>
+<li>查看明文返回 <code translate="no">410</code> 和 <code translate="no">404</code>；替换、保留、删除遵循精确模式；8–11 字符用固定掩码；掩码永不被接受；前端类型没有查看或完整密钥字段。</li>
+<li>nginx 和 Caddy 经 HTTPS 承载已认证的 HTTP、SSE、WebSocket，后端留在回环。</li>
+<li>渠道消息保持 <code translate="no">paired</code>，不获得所有者权限。</li>
+<li>同一主机名、不同端口的两个 profile 服务器 cookie 不同，各自认证。</li>
+<li>所有权探测检查 PID、端口和快照，只发新鲜 nonce，校验带版本的证明，可选绑定 revision，禁用环境 HTTP 代理，绝不发送或记录令牌。外来监听者以及快照、端口、证明、revision 陈旧或不符的，都不算所有者服务器。</li>
+</ol>
+</details>
+
+<details id="survey">
+<summary>开源调研</summary>
+<p>覆盖 OpenProgram 设计资料中已有的系统，以及在 Web 部署、认证、代理或密钥处理上相关的其他系统。并非穷举。</p>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">设计</th><th scope="col">采用</th><th scope="col">拒绝或不适用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/openclaw/openclaw">OpenClaw</a></th><td>回环优先的网关，非回环需认证，显式 origin，SSH 与代理指南，Host 和受信代理控制（<a href="https://github.com/openclaw/openclaw/blob/main/docs/gateway/remote.md">远程</a>、<a href="https://github.com/openclaw/openclaw/blob/main/docs/gateway/security/index.md">安全</a>、<a href="https://github.com/openclaw/openclaw/blob/main/docs/web/control-ui.md">Control UI</a>）</td><td>精确 origin、fragment 引导、SSH 与代理模式、代理信任边界</td><td>用外部身份替代令牌</td></tr>
+<tr><th scope="row"><a href="https://github.com/jupyter-server/jupyter_server">Jupyter Server</a></th><td>Notebook 4.3 起默认生成令牌并交给自动打开的浏览器；现在是令牌或 cookie，公网要 HTTPS，有 XSRF 和 WebSocket Origin 校验（<a href="https://github.com/jupyter/notebook/blob/4.x/docs/source/changelog.rst">更新日志</a>、<a href="https://github.com/jupyter-server/jupyter_server/blob/main/docs/source/operators/security.rst">安全</a>、<a href="https://github.com/jupyter-server/jupyter_server/blob/main/docs/source/operators/public-server.rst">公网服务</a>）。最接近的单所有者体验；是体验上的先例，威胁并不完全相同。</td><td>自动令牌入口、转 cookie</td><td>查询令牌（改用 fragment）、密码模式</td></tr>
+<tr><th scope="row"><a href="https://github.com/NousResearch/Hermes-Agent">Hermes Agent</a></th><td>默认回环；非回环需密码或 OAuth provider，否则启动失败；<code translate="no">--insecure</code> 已弃用；一次性 <a href="https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/dashboard_auth/ws_tickets.py">WS 票据</a>；列表脱敏，但保留已认证的 <a href="https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/web_server.py#L7663-L7696">reveal 路由</a>（<a href="https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/web-dashboard.md#when-the-gate-engages">仪表盘</a>）</td><td>外部绑定失败即拒绝、密钥脱敏</td><td>provider 账号、第二套 WS 票据、reveal</td></tr>
+<tr><th scope="row"><a href="https://github.com/agent0ai/agent-zero">Agent Zero</a></th><td>可选单一登录、会话 cookie、CSRF 和 WS Origin 校验、反向代理、内置隧道、掩码<a href="https://github.com/agent0ai/agent-zero/blob/main/helpers/settings.py">设置</a>（<a href="https://github.com/agent0ai/agent-zero/blob/main/docs/setup/installation.md">安装</a>、<a href="https://github.com/agent0ai/agent-zero/blob/main/docs/setup/vps-deployment.md">VPS</a>）</td><td>cookie、CSRF、Origin、WS 组合校验；只用掩码的更新</td><td>可选认证、内置公网隧道</td></tr>
+<tr><th scope="row"><a href="https://github.com/OpenHands/OpenHands">OpenHands</a></th><td>HTTP 和 WS 共用会话 API key；SSH 和 nginx <a href="https://github.com/OpenHands/OpenHands/blob/main/docs/SELF_HOSTING.md">自托管</a>；其他版本增加账号</td><td>通用 HTTP/WS 密钥、回环后端</td><td>公开 HTML 或浏览器存储中的令牌、明文取回密钥</td></tr>
+<tr><th scope="row"><a href="https://github.com/sst/opencode">opencode</a></th><td>默认回环，可选 Basic 认证，CORS origin，短期 <a href="https://github.com/sst/opencode/blob/dev/packages/core/src/pty/ticket.ts">PTY 票据</a>（<a href="https://github.com/sst/opencode/blob/dev/packages/web/src/content/docs/server.mdx">服务器</a>、<a href="https://github.com/sst/opencode/blob/dev/packages/opencode/src/cli/network.ts">网络</a>）</td><td>默认回环</td><td>可选认证；第二套票据（HttpOnly cookie 已避免 WS 查询凭据）</td></tr>
+<tr><th scope="row"><a href="https://github.com/open-webui/open-webui">Open WebUI</a></th><td>多用户角色；<a href="https://github.com/open-webui/docs/blob/main/docs/reference/https/nginx.md">nginx</a> 和 <a href="https://github.com/open-webui/docs/blob/main/docs/reference/https/caddy.md">Caddy</a> 的 HTTPS、Upgrade、SSE 缓冲指南</td><td>代理机制</td><td>注册、账号、JWT 会话、用户组、RBAC</td></tr>
+<tr><th scope="row"><a href="https://github.com/langgenius/dify">Dify</a></th><td>工作区和账号角色；<a href="https://github.com/langgenius/dify/blob/main/api/core/entities/provider_configuration.py">凭据响应</a>混淆，隐藏值更新</td><td>只返回掩码、显式替换</td><td>租户和角色层</td></tr>
+<tr><th scope="row"><a href="https://github.com/danny-avila/LibreChat">LibreChat</a></th><td>注册、管理员、角色访问、JWT（<a href="https://github.com/LibreChat-AI/librechat.ai/blob/main/content/docs/features/authentication.mdx">认证</a>、<a href="https://github.com/LibreChat-AI/librechat.ai/blob/main/content/docs/remote/nginx.mdx">nginx</a>）。说明真正的多用户设计需要什么。</td><td>代理细节</td><td>身份数据模型</td></tr>
+<tr><th scope="row"><a href="https://github.com/Mintplex-Labs/anything-llm">AnythingLLM</a></th><td>单用户和多用户模式分开；单用户无密码时<a href="https://github.com/Mintplex-Labs/anything-llm/blob/master/server/utils/middleware/validatedRequest.js">跳过认证</a>；多用户增加<a href="https://github.com/Mintplex-Labs/anything-llm/blob/master/server/utils/middleware/multiUserProtected.js">角色检查</a></td><td>单所有者概念</td><td>可选认证</td></tr>
+<tr><th scope="row"><a href="https://github.com/microsoft/autogen/tree/main/python/packages/autogen-studio">AutoGen Studio</a></th><td>默认回环；<a href="https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/auth/manager.py">默认认证</a>为无；可选 OAuth 或 JWT；研究原型</td><td>默认回环</td><td>查询或 <code translate="no">localStorage</code> 凭据、accept 后认证、可选认证</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex">Codex CLI</a></th><td><code translate="no">codex app-server</code> 走 stdio 和实验性 WebSocket；注册与配对（<a href="https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md">app-server</a>）；没有所有者托管的浏览器 UI</td><td>无</td><td>服务中转的远程控制：OpenProgram 不运行中继</td></tr>
+<tr><th scope="row"><a href="https://github.com/fastclaw-ai/weclaw/blob/main/README.md">WeClaw</a></th><td>HTTP API 默认 <code translate="no">127.0.0.1:18011</code>，监听地址可改；没有所有者浏览器 UI 约定</td><td>无</td><td>不作为远程 Web 先例</td></tr>
+<tr><th scope="row"><a href="https://github.com/SWE-agent/SWE-agent">SWE-agent</a></th><td>命令行 Agent；<a href="https://github.com/SWE-agent/SWE-agent/tree/main/docs">文档</a>中没有所有者 Web UI</td><td>无</td><td>不适用</td></tr>
+<tr><th scope="row"><a href="https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent">pi-mono</a></th><td>TUI、<a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/sdk.md">SDK</a>、<a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/rpc.md">RPC 模式</a>；没有远程 Web 服务器约定</td><td>无</td><td>不适用</td></tr>
+<tr><th scope="row"><a href="https://github.com/badlogic/pi-mono/tree/main/packages/ai">pi-ai</a></th><td>provider 传输库</td><td>无</td><td>不适用</td></tr>
+</tbody>
+</table>
+
+<h3 id="synthesis">三类远程身份</h3>
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">例子</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">实例凭据</th><td>Jupyter、OpenClaw、OpenHands</td><td>采用：一个根密钥、两种传输形式、一次引导、一套校验；没有 WebSocket 票据、会话数据库或 OAuth 流程</td></tr>
+<tr><th scope="row">应用账号</th><td>Open WebUI、Dify、LibreChat、多用户 AnythingLLM</td><td>拒绝：产品不需要这些状态和策略</td></tr>
+<tr><th scope="row">托管远程控制</th><td>配对、托管隧道、中继</td><td>拒绝：需要 OpenProgram 不运行的服务</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="../runtime/security/sandbox-architecture.html">权限模型</a> · <a href="../memory/speaker-identity.html">发言者身份</a> · <a href="../integrations/mcp-server.html">MCP 服务器</a></p>

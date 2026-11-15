@@ -1,8 +1,7 @@
-from pathlib import Path
 
 import pytest
 
-from openprogram.agent.permissions import file_state
+from openprogram.runtime.permissions import file_state
 
 
 def test_deleted_approved_file_is_not_recreated(tmp_path, monkeypatch):

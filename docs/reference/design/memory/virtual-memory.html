@@ -1,0 +1,127 @@
+<title>Virtual memory</title>
+<meta name="description" content="A planned provenance-linked index over the concrete memory layer: timeline, knowledge graph and a minimal injected snapshot.">
+<h1>Virtual memory</h1>
+
+<p>A compact index distilled from the concrete layer (session DAG and project git), not a replacement for it. Every memory points back to its source, records <code translate="no">event_time</code> and <code translate="no">ingestion_time</code>, and is never deleted: a conflict tags the old record <code translate="no">superseded_by</code>. Designed, not built; see <a href="#implementation-status">status</a>.</p>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Timeline</th><th scope="col">Knowledge graph</th><th scope="col">Core.md</th></tr></thead>
+<tbody>
+<tr><th scope="row">Answers</th><td>What happened, and when</td><td>How things relate</td><td>The minimum read on every model call (2 KB or less)</td></tr>
+<tr><th scope="row">Stored in <code translate="no">memory/</code></th><td><code translate="no">timeline/YYYY-MM.jsonl</code></td><td><code translate="no">graph/entities.jsonl</code>, <code translate="no">graph/edges.jsonl</code>, <code translate="no">graph/views/entity/&lt;slug&gt;.md</code></td><td><code translate="no">core.md</code></td></tr>
+<tr><th scope="row">Created</th><td>Idle session (30 minutes or more) through the watcher, daily 03:00 consolidation; extraction with a <code translate="no">Provenance</code> pointer, appended to the month's file</td><td>Same triggers; entities and relations from extraction, aliases resolved, contradictions tagged, appended</td><td>Regenerated at 03:00 from top-N events (recency × importance) and high-frequency, high-confidence graph facts; every line carries <code translate="no">↪ session:&lt;id&gt;</code></td></tr>
+<tr><th scope="row">Read</th><td><code translate="no">memory_timeline(since, until)</code>, <code translate="no">memory_timeline(entity=…)</code>; recent high-signal events reach Core.md</td><td><code translate="no">memory_graph_neighbors(entity, hops=2)</code>, <code translate="no">memory_search(query)</code>, filtered to <code translate="no">global</code> plus <code translate="no">project:&lt;current&gt;</code></td><td>Injected into every system prompt</td></tr>
+<tr><th scope="row">Updated</th><td>Re-distilled fact tags the old record</td><td>Aliases merge into one node; a conflicting edge tags the old one; views re-projected</td><td>Whole file replaced</td></tr>
+<tr><th scope="row">Deleted</th><td>Never: an event is a historical fact</td><td>Never: full history stays</td><td>Overwritten</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Record formats</summary>
+<p>Timeline event. <code translate="no">kind</code>: <code translate="no">work</code>, <code translate="no">decision</code>, <code translate="no">learning</code>, <code translate="no">event</code>.</p>
+<pre translate="no" tabindex="0">{
+  "id": "ev_abc",
+  "summary": "Fixed the Windows cp1252 encoding bug in OpenProgram, touching 38 files",
+  "kind": "work",
+  "provenance": {
+    "project_id": "proj_openprogram",
+    "session_id": "local_13d5",
+    "commit": "&lt;sha&gt;",
+    "event_time": 1779900000,
+    "ingestion_time": 1779986400
+  },
+  "entities": ["project.openprogram", "issue.cp1252"]
+}</pre>
+<p>Entity.</p>
+<pre translate="no" tabindex="0">{
+  "id": "project.openprogram",
+  "type": "project",
+  "name": "OpenProgram",
+  "attrs": {"path": "~/OpenProgram", "lang": "python"},
+  "scope": "global"
+}</pre>
+<p>Edge.</p>
+<pre translate="no" tabindex="0">{
+  "from": "issue.cp1252",
+  "to": "commit.&lt;sha&gt;",
+  "relation": "fixed-by",
+  "event_time": 1779900000,
+  "ingestion_time": 1779986400,
+  "provenance": {"project_id": "proj_openprogram", "session_id": "local_13d5"},
+  "confidence": 0.95,
+  "superseded_by": null
+}</pre>
+<table class="stack fixed">
+<thead><tr><th scope="col">Scope on an entity or edge</th><th scope="col">Visible</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">global</code></th><td>Across projects, such as a language preference</td></tr>
+<tr><th scope="row"><code translate="no">project:openprogram</code></th><td>This project</td></tr>
+<tr><th scope="row"><code translate="no">agent:research</code></th><td>This agent</td></tr>
+</tbody>
+</table>
+<p class="note">Files live under <code translate="no">~/.openprogram/projects/default/memory/</code>.</p>
+</details>
+
+<h2 id="core">What the model sees</h2>
+<pre translate="no" tabindex="0">OpenProgram Memory — project: OpenProgram, last consolidated &lt;date&gt;
+[Timeline · recent]
+· &lt;date&gt; Refactored the Programs page into a three-tab layout   ↪ session:local_fc03
+· &lt;date&gt; Fixed the CLI attended-mode issue                       ↪ session:local_d125
+
+[Graph · current project]
+· OpenProgram at ~/OpenProgram (python, next.js)
+· worker ──listens-on──► :18100
+
+For details: memory_open_session(&lt;id&gt;) / memory_git_log(&lt;project&gt;)</pre>
+<p class="note">Core.md; timeline or graph results are optional, per query. No raw chat is injected.</p>
+
+<h2 id="navigation">Navigation tools</h2>
+<table class="stack">
+<thead><tr><th scope="col">Tool</th><th scope="col">Returns</th><th scope="col">From</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">memory_open_session(session_id, turn)</code></th><td>Raw messages</td><td>Session git history</td></tr>
+<tr><th scope="row"><code translate="no">memory_git_log(project_id, since)</code></th><td>Commit history</td><td>Project git</td></tr>
+<tr><th scope="row"><code translate="no">memory_git_show(project_id, commit)</code></th><td>What one commit changed</td><td>Project git</td></tr>
+<tr><th scope="row"><code translate="no">memory_timeline(entity|since|until)</code></th><td>Timeline slice</td><td>Timeline</td></tr>
+<tr><th scope="row"><code translate="no">memory_graph_neighbors(entity, hops)</code></th><td>Neighbors</td><td>Graph</td></tr>
+<tr><th scope="row"><code translate="no">memory_search(query)</code></th><td>Hybrid search</td><td>Full text and optional vectors</td></tr>
+</tbody>
+</table>
+
+<h2 id="pipeline">Distillation</h2>
+<table class="stack">
+<thead><tr><th scope="col">Trigger</th><th scope="col">When</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Session end</th><td>Idle 30 minutes or more</td><td>Distills new turns</td></tr>
+<tr><th scope="row">Daily</th><td>03:00</td><td>Consolidation, disambiguation, contradiction detection, Core.md rebuild</td></tr>
+<tr><th scope="row">Pre-compress</th><td>Context near its limit</td><td>Flushes key information to the concrete layer</td></tr>
+</tbody>
+</table>
+<ol>
+<li><strong>Collect</strong>: commits since the last pass from session git and project git; every DAG node (user, llm, code, plus <code translate="no">reads</code> edges).</li>
+<li><strong>Extract</strong>: one model pass for events, entities and relations, each with provenance. The costliest stage; a rules-based version can come first.</li>
+<li><strong>Link</strong>: resolve aliases against the graph (worker, backend, daemon become one node).</li>
+<li><strong>Reconcile</strong>: detect contradictions, tag old edges.</li>
+<li><strong>Project</strong>: <code translate="no">core.md</code>, entity views, timeline shards.</li>
+</ol>
+
+<h2 id="today">Compared with today's memory</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Built today</th><th scope="col">This design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reads</th><td>User and assistant text from the session branch</td><td>The <code translate="no">Call</code> DAG, <code translate="no">code</code> nodes and <code translate="no">reads</code> edges, project commits</td></tr>
+<tr><th scope="row">Keeps</th><td><code translate="no">topics/</code>, rewritten at 03:00; derived <code translate="no">timeline/</code>, <code translate="no">recent_events.jsonl</code>, <code translate="no">relations.json</code></td><td>Append-only timeline and graph with two timestamps</td></tr>
+<tr><th scope="row">Always-on block</th><td>Core section of <code translate="no">MEMORY.md</code>, from <code translate="no">topics/core.md</code></td><td><code translate="no">core.md</code> projected from timeline and graph</td></tr>
+<tr><th scope="row">Tool calls, decision inputs, project history</th><td>Absent</td><td>Present</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Read layer <code translate="no">openprogram/state/store/session/provenance.py</code>: <code translate="no">iter_nodes_since()</code>, <code translate="no">node_provenance()</code>, <code translate="no">project_commits()</code>, <code translate="no">session_project_id()</code>. Tool <code translate="no">memory_search</code>.</td></tr>
+<tr><th scope="row">Not yet</th><td>Timeline and graph stores, this <code translate="no">core.md</code>, the distillation stages, every other navigation tool, a per-session commit reader</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="overview.html">Memory overview</a></p>

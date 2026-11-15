@@ -1,0 +1,95 @@
+<title>Providers</title>
+<meta name="description" content="Construct a Runtime for any LLM provider with create_runtime, and what each provider needs.">
+<h1>Providers</h1>
+<pre translate="no"><code>from openprogram.runtime.agent.runtime.factory import create_runtime
+
+rt = create_runtime()                                   # auto-detect
+rt = create_runtime(provider="anthropic")               # its default model
+rt = create_runtime(provider="openai-codex", model="gpt-5.5")</code></pre>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">provider</code></th><th scope="col">Builds</th><th scope="col">Default model</th><th scope="col">Credential</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anthropic</code></th><td><code translate="no">Runtime("anthropic:&lt;id&gt;")</code></td><td><code translate="no">claude-sonnet-4-6</code></td><td>Anthropic API key</td></tr>
+<tr><th scope="row"><code translate="no">openai</code></th><td><code translate="no">Runtime("openai:&lt;id&gt;")</code></td><td><code translate="no">gpt-4.1</code></td><td>OpenAI API key</td></tr>
+<tr><th scope="row"><code translate="no">gemini</code></th><td><code translate="no">Runtime("google:&lt;id&gt;")</code></td><td><code translate="no">gemini-2.5-flash</code></td><td>Google API key</td></tr>
+<tr><th scope="row"><code translate="no">openai-codex</code></th><td><code translate="no">OpenAICodexRuntime</code></td><td><code translate="no">gpt-5.5</code></td><td>ChatGPT subscription OAuth, <code translate="no">~/.codex/auth.json</code></td></tr>
+<tr><th scope="row"><code translate="no">gemini-cli</code></th><td><code translate="no">GeminiCLIRuntime</code></td><td><code translate="no">gemini-2.5-flash</code></td><td>Google account OAuth, <code translate="no">~/.gemini/oauth_creds.json</code></td></tr>
+<tr><th scope="row">any other</th><td><code translate="no">Runtime("provider:model")</code></td><td>first enabled model</td><td>Provider's key</td></tr>
+</tbody>
+</table>
+<p class="note">API keys live in the credential store: <strong>Settings → Providers</strong>, or <code translate="no">openprogram providers login &lt;provider&gt; --api-key</code>. The Anthropic, OpenAI and Google SDKs ship as base dependencies; the OAuth providers talk raw HTTP.</p>
+<h2 id="create_runtime-detect_provider">Functions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Function</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">create_runtime(provider=None, model=None, **kwargs)</code></th><td>Returns a ready <code translate="no">Runtime</code>. <code translate="no">None</code> or <code translate="no">"auto"</code> runs <code translate="no">detect_provider()</code>. <code translate="no">**kwargs</code> go to the constructor. Every runtime has an authoritative <code translate="no">provider_id</code>.</td></tr>
+<tr><th scope="row"><code translate="no">detect_provider() -&gt; (name, default_model)</code></th><td>Order below. Raises <code translate="no">RuntimeError</code> with setup guidance when nothing is found.</td></tr>
+<tr><th scope="row"><code translate="no">check_providers() -&gt; dict</code></th><td><code translate="no">{name: {"available": bool, "method": "CLI"|"API", "model": default}}</code> for the five dedicated providers; <code translate="no">"default": True</code> marks the one detection would pick</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>from openprogram.models.providers.catalog.registry import detect_provider, check_providers</code></pre>
+<h3>Detection order</h3>
+<ol>
+<li>Environment: <code translate="no">AGENTIC_PROVIDER</code> / <code translate="no">AGENTIC_MODEL</code></li>
+<li><code translate="no">~/.openprogram/config.json</code> → <code translate="no">last_used_model</code></li>
+<li>Caller environment: inside Codex CLI, use it</li>
+<li>CLI binaries: <code translate="no">codex</code> → <code translate="no">openai-codex</code>, <code translate="no">gemini</code> → <code translate="no">gemini-cli</code></li>
+<li>Stored API keys: anthropic → openai → google</li>
+</ol>
+<h2 id="anthropic">API-key providers</h2>
+<pre translate="no"><code>rt = create_runtime(provider="anthropic", api_key="sk-ant-...", model="claude-sonnet-4-6")
+rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4.1")
+rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">Parameter</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">api_key</code></th><td><code translate="no">None</code></td><td><code translate="no">str | None</code>; <code translate="no">None</code> resolves from the credential store. <code translate="no">anthropic</code> raises <code translate="no">ValueError</code> when none resolves.</td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>see table above</td><td>Id under the provider's namespace (<code translate="no">anthropic</code>, <code translate="no">openai</code>, <code translate="no">google</code>)</td></tr>
+<tr><th scope="row"><code translate="no">max_retries</code></th><td><code translate="no">OPENPROGRAM_MAX_RETRIES</code>, else 6</td><td>Retry budget forwarded to the base <code translate="no">Runtime</code></td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">provider</code></th><th scope="col">Wire API</th><th scope="col">Notes</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anthropic</code></th><td>Anthropic Messages</td><td><code translate="no">list_models()</code> returns the enabled model ids</td></tr>
+<tr><th scope="row"><code translate="no">openai</code></th><td>OpenAI Responses</td><td>Azure or a local OpenAI-compatible server: add a custom provider</td></tr>
+<tr><th scope="row"><code translate="no">gemini</code></th><td>Google Generative Language</td><td>Env names accepted when adding a key: <code translate="no">GEMINI_API_KEY</code>, <code translate="no">GOOGLE_API_KEY</code>, <code translate="no">GOOGLE_GENERATIVE_AI_API_KEY</code></td></tr>
+</tbody>
+</table>
+<p class="note">All include streaming, the tool loop and DAG recording. Custom provider: <strong>Settings → Providers → Add custom provider</strong> (name and base URL), then <code translate="no">Runtime(model="&lt;provider&gt;:&lt;model&gt;")</code> or <code translate="no">create_runtime(provider="&lt;provider&gt;")</code>. A host-only base URL resolves to <code translate="no">/v1</code>; an explicit API path is preserved.</p>
+<span id="openai"></span>
+<span id="gemini"></span>
+<h2 id="openai-codex">Subscription providers</h2>
+<span id="gemini-cli"></span>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">openai-codex</code></th><th scope="col"><code translate="no">gemini-cli</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Setup</th><td><code translate="no">npm install -g @openai/codex</code><br><code translate="no">codex login</code></td><td><code translate="no">npm install -g @google/gemini-cli</code><br><code translate="no">gemini</code></td></tr>
+<tr><th scope="row">Login</th><td>OAuth; do not pick the API-key option</td><td>First run performs OAuth</td></tr>
+<tr><th scope="row">Backend</th><td>ChatGPT Responses. Refreshed tokens are mirrored back so the Codex CLI stays in sync.</td><td>Cloud Code Assist over HTTP, no subprocess</td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>Default <code translate="no">gpt-5.5</code>; an <code translate="no">openai-codex:</code> prefix is stripped</td><td>Default <code translate="no">gemini-2.5-flash</code>; must match a <code translate="no">gemini-subscription/&lt;id&gt;</code> registry entry</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td><code translate="no">str | None</code>, optional system prompt</td><td><code translate="no">str | None</code>, optional system prompt</td></tr>
+<tr><th scope="row"><code translate="no">profile</code></th><td>Auth profile, keyword-only; default active</td><td>Auth profile, keyword-only; default active</td></tr>
+<tr><th scope="row">Wrong credential</th><td>A bare OpenAI API key raises <code translate="no">AuthConfigError</code>; use <code translate="no">openai</code></td><td>With only a Google API key, use <code translate="no">gemini</code></td></tr>
+</tbody>
+</table>
+<p class="note">Extra keyword arguments are accepted and ignored.</p>
+<h2 id="every-other-provider">Every other provider</h2>
+<pre translate="no"><code>from openprogram.runtime.agent.runtime import Runtime
+rt = Runtime(model="deepseek:deepseek-chat")
+# or
+rt = create_runtime(provider="deepseek", model="deepseek-chat")</code></pre>
+<p class="note">deepseek, groq, openrouter, minimax, kimi and the rest of the catalogue go through the model registry, the path the chat dispatcher uses. With no model and none registered, <code translate="no">ValueError</code>: enable some in <strong>Settings → Providers</strong> or see <code translate="no">openprogram providers available &lt;provider&gt;</code>.</p>
+<h2 id="custom-providers">Custom providers</h2>
+<pre translate="no"><code>from openprogram.runtime.agent.runtime import Runtime
+
+class MyRuntime(Runtime):
+    def __init__(self, api_key, model="my-model"):
+        super().__init__(model=model)
+        self.api_key = api_key
+
+    def _call(self, content, model="default", response_format=None):
+        texts = [b["text"] for b in content if b["type"] == "text"]
+        return my_api_call("\n".join(texts), model=model)</code></pre>
+<p class="note"><code translate="no">_call()</code> takes <code translate="no">content: list[dict]</code> and returns <code translate="no">str</code>. <code translate="no">Runtime(call=fn)</code> does the same without a subclass.</p>
+<p class="next"><a href="runtime.html">Runtime</a></p>

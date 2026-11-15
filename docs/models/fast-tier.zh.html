@@ -1,0 +1,26 @@
+<title>Fast 模式</title>
+<meta name="description" content="按会话和模型请求更快的服务层级，以及哪些连接支持。">
+<h1>Fast 模式</h1>
+<p>模型旁思考强度选择器右上角的仪表图标。开启时指针处于前进位置，悬停时有动画。它不改变强度滑块。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">保存</th><td>按会话分支保存；检查所选 Provider/模型是否支持</td></tr>
+<tr><th scope="row">新选模型</th><td>从 Standard 开始</td></tr>
+<tr><th scope="row">Standard</th><td>明确覆盖 Agent 的 priority 默认值</td></tr>
+<tr><th scope="row">生效</th><td>下一次提交的轮次，不影响已在运行的请求</td></tr>
+</tbody>
+</table>
+<h2>连接</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">连接</th><th scope="col">支持情况</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>账户的模型目录</td></tr>
+<tr><th scope="row">Claude</th><td>其支持的 Fast 模型和原生速度参数</td></tr>
+<tr><th scope="row">xAI API</th><td>Grok 4.6 Priority Processing：<code translate="no">service_tier: "priority"</code>，Standard 发送 <code translate="no">"default"</code></td></tr>
+<tr><th scope="row">Grok 订阅</th><td>CLI 聊天代理上的 Grok 4.6，取值相同</td></tr>
+<tr><th scope="row">其他 Grok 订阅模型、未知网关</th><td>除非路由声明支持，否则视为未验证。仪表仍显示，并附说明。</td></tr>
+</tbody>
+</table>
+<p class="note">模型配置可设 <code translate="no">fast: false</code> 关闭，或 <code translate="no">fast: true</code> 声明路由支持。绝不根据模型名推断；调用按自身路由校验。</p>
+<p>Fast 可能增加用量或费用；xAI priority 的 token 价格为 2 倍（<a href="https://docs.x.ai/developers/pricing">xAI 定价</a>）。仪表表示请求的模式，不保证速度。Completions 和 Responses 在 usage 里保留实际返回的层级；没有元数据时保持未确认。xAI 报告的请求费用在可用时单独保留。</p>

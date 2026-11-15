@@ -1,0 +1,60 @@
+<title>扩展门控</title>
+<meta name="description" content="Agent 配置如何控制模型可使用的工具、技能和 MCP 服务。">
+<h1>扩展门控</h1>
+
+<pre translate="no"><code>// agent.json
+{
+  "tools":  {"mode": "automatic", "disabled": ["bash", "*_dangerous"]},
+  "skills": {"disabled": ["devops/*"], "allowed": [], "categories": ["research", "writing"]},
+  "mcp":    {"disabled": ["slack"], "allowed": [], "required": ["drawio*"]}
+}</code></pre>
+
+<h2 id="the-unified-model">字段</h2>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col"><code translate="no">tools</code></th><th scope="col"><code translate="no">skills</code></th><th scope="col"><code translate="no">mcp</code></th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">disabled</code></th><td>有</td><td>有</td><td>有</td><td>匹配的名称被拒绝</td></tr>
+<tr><th scope="row"><code translate="no">allowed</code></th><td>有</td><td>有</td><td>有</td><td>非空时只有匹配项通过</td></tr>
+<tr><th scope="row"><code translate="no">categories</code></th><td>无</td><td>有</td><td>无</td><td>非空时，声明了分类的技能必须匹配</td></tr>
+<tr><th scope="row"><code translate="no">required</code></th><td>无</td><td>无</td><td>有</td><td>任一模式匹配不到剩余服务时，本轮停止</td></tr>
+<tr><th scope="row"><code translate="no">mode</code></th><td>有</td><td>无</td><td>无</td><td><code translate="no">automatic</code>（默认）、<code translate="no">selected</code>、<code translate="no">none</code></td></tr>
+</tbody>
+</table>
+<p class="note">模式使用 <code translate="no">fnmatch.fnmatchcase</code>：<code translate="no">*</code>、<code translate="no">?</code>、<code translate="no">[abc]</code>；精确名称是最简单的情况。<code translate="no">mcp</code> 模式匹配服务名，即 <code translate="no">&lt;server&gt;__&lt;tool&gt;</code> 中 <code translate="no">__</code> 之前的部分。<code translate="no">mode: selected</code> 时 <code translate="no">tools.allowed</code> 写精确名称。插件本身不受门控：插件是宿主级贡献者，门控作用于它贡献的技能、工具和 MCP。</p>
+
+<h3 id="resolution-order-per-gate-call">判定顺序</h3>
+<ol>
+<li><code translate="no">disabled</code>：匹配则拒绝。</li>
+<li><code translate="no">allowed</code> 非空时：不匹配则拒绝。</li>
+<li><code translate="no">categories</code>：非空列表拒绝不在其中的已分类技能。</li>
+<li><code translate="no">required</code>，仅 MCP，在过滤之后检查：有未匹配的模式则整轮失败。</li>
+</ol>
+
+<h2 id="why-this-shape">为什么是这个形状</h2>
+<p>Claude Code 的按类型字段，加上 opencode 的通配表达力。每个字段说明它管什么；一个模式代替五个名称；新扩展类型就是同样形状的新块。对比见<a href="reference-comparison.zh.html">参考实现对比</a>。</p>
+
+<h2 id="worked-examples">示例</h2>
+<table class="stack">
+<thead><tr><th scope="col">Agent</th><th scope="col">配置</th><th scope="col">模型看到</th></tr></thead>
+<tbody>
+<tr><th scope="row">客服</th><td><pre translate="no"><code>tools:  {disabled: [write, edit, execute_*, apply_patch]}
+skills: {categories: [customer-service, writing]}
+mcp:    {disabled: ["*"]}</code></pre></td><td>没有编辑工具，只有这些技能分类，没有 MCP</td></tr>
+<tr><th scope="row">DevOps</th><td><pre translate="no"><code>skills: {disabled: [prod-deploy, drop-database]}
+mcp:    {required: ["github*", "k8s*"]}</code></pre></td><td>除两个技能外全部可用。缺少 GitHub 和 k8s MCP 时，本轮在调用供应商前失败</td></tr>
+<tr><th scope="row">研究</th><td><pre translate="no"><code>tools:  {allowed: [read, grep, glob, web_fetch], web_search: true}
+skills: {categories: [research]}
+mcp:    {allowed: ["arxiv*", "scholar*"]}</code></pre></td><td>这些工具加网页搜索、研究技能、这些 MCP 服务</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">web_search</code> 不在默认工具列表中，只写 <code translate="no">allowed</code> 不会加入它。</p>
+
+<h2 id="when-not-to-use-gating">何时不用门控</h2>
+<p>默认：全局安装技能，不配门控，让模型根据每个技能的 <code translate="no">description</code> 选择。观察到具体的不良行为后再加门控，适用于：</p>
+<ul>
+<li>某技能需要硬隔离（<code translate="no">prod-deploy</code> 绝不出现在客服中）；</li>
+<li>列出允许集比调整描述更简单；</li>
+<li>没有某个 MCP 服务时该 Agent 没有意义。</li>
+</ul>
+
+<p class="next"><a href="implementation.zh.html">实现位置</a> · <a href="future-work.zh.html">未构建项</a> · <a href="../function/calling-unification.zh.html">调用统一</a>（函数调用的六层门控）· <a href="../integrations/skills-and-plugins.zh.html">技能与插件</a>（目录、发现、热加载）</p>

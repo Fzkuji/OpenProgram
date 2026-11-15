@@ -3,19 +3,29 @@ import test from "node:test";
 
 import {
   clampFloatPosition,
+  controlButtonVisible,
   controlSurfaceVisible,
   cueTravelDurationMs,
   isStaleCueIdentity,
   lerpCuePoint,
   nextCueTravel,
-} from "../../lib/browser/browser-action-cue.ts";
+} from "../../lib/browser/control/browser-action-cue.ts";
 
-test("idle and closed hide the floating control", () => {
+test("idle and closed hide the control surface", () => {
   assert.equal(controlSurfaceVisible("idle"), false);
   assert.equal(controlSurfaceVisible("closed"), false);
   assert.equal(controlSurfaceVisible("active"), true);
   assert.equal(controlSurfaceVisible("paused"), true);
   assert.equal(controlSurfaceVisible("waiting"), true);
+});
+
+test("the floating button stays on an idle page and leaves with a closed one", () => {
+  assert.equal(controlButtonVisible("idle"), true);
+  assert.equal(controlButtonVisible("active"), true);
+  assert.equal(controlButtonVisible("waiting"), true);
+  assert.equal(controlButtonVisible("closed"), false);
+  assert.equal(controlButtonVisible(undefined), false);
+  assert.equal(controlButtonVisible(""), false);
 });
 
 test("first cue appears at the target; later cues travel then click", () => {

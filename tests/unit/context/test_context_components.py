@@ -10,8 +10,8 @@ docs/design/context/composition.md §三).
 We verify the assembler's layer+order logic directly with stub components, so
 the test doesn't depend on real workspace files / skills / memory on disk.
 """
-import openprogram.context.components as comp
-from openprogram.context.components import (
+import openprogram.runtime.context.components as comp
+from openprogram.runtime.context.components import (
     ContextComponent, register, assemble, build_system_prompt,
 )
 
@@ -39,106 +39,74 @@ def test_assemble_orders_by_layer_then_order():
         comp._REGISTRY = saved
 
 
-def test_real_registry_has_expected_layers():
-    # identity/inline/skills/memory in L0; workspace_files in L1.
-    l0 = {c.name for c in comp._REGISTRY["L0"]}
-    l1 = {c.name for c in comp._REGISTRY["L1"]}
-    assert {"identity", "inline_prompt", "skills_index", "memory_global"} <= l0
-    assert "workspace_files" in l1
+def test_the_system_prompt_runs_in_this_order():
+    import openprogram.runtime.conversation  # noqa: F401  (registers "open_work")
+    ordered = [c.name for layer in ("L0", "L1")
+               for c in sorted(comp._REGISTRY[layer], key=lambda c: c.order)]
+    assert ordered == [
+        "base", "output_style", "messaging", "inline_prompt",
+        "environment", "chat_surface", "agents_md", "memory", "open_work", "capabilities",
+        "plan_mode",
+    ]
 
 
-def test_build_system_prompt_fence_and_identity_first():
-    # identity is always present and first; no outer fence (XML tags are delimiters).
+def test_base_prompt_comes_first_and_names_the_agent():
     out = build_system_prompt({"id": "main", "name": "bot"})
-    assert "You are bot (agent_id=main)." in out
-    # No ASCII fence wrapper — XML tags delimit each component.
-    assert "── Agent prompt ──" not in out
+    assert out.startswith("You are bot (agent_id=main)")
+    assert "# How you work" in out and "# What to trust" in out
+    assert "disregard that part" in out
 
 
-def test_environment_and_date_components_present():
+def test_base_prompt_lists_mention_patterns():
+    out = build_system_prompt({"id": "main", "name": "bot",
+                               "identity": {"name": "Bot", "mention_patterns": ["@bot"]}})
+    assert "Users may address you via: @bot." in out
+
+
+def test_environment_block_carries_cwd_and_repository(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    monkeypatch.setenv("OPENPROGRAM_WORKDIR", str(repo))
     out = build_system_prompt({"id": "main", "name": "bot"})
-    # environment block + day-granularity date are new L0 components.
-    assert "<environment>" in out and "</environment>" in out
-    assert "OS:" in out
-    assert "Today is " in out
-    # they sit at the L0 tail: after identity, before the closing fence.
+    env = out[out.index("<environment>"):out.index("</environment>")]
+    assert "OS:" in env
+    assert f"Working directory: {repo}" in env
+    assert f"Git repository: {repo.resolve()}" in env
+    assert "Today is " not in out
     assert out.index("You are bot") < out.index("<environment>")
 
 
-def test_tool_enforcement_always_present():
+def test_environment_omits_the_repository_outside_git(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENPROGRAM_WORKDIR", str(tmp_path))
     out = build_system_prompt({"id": "main", "name": "bot"})
-    assert "<tool_use>" in out
+    assert "Git repository:" not in out
 
 
-def test_git_repo_flag_present_in_git_repo():
-    """We're running inside a git repo, so the flag should appear."""
-    out = build_system_prompt({"id": "main", "name": "bot"})
-    assert "<git_repo>true</git_repo>" in out
+def test_channel_rules_join_the_environment():
+    for channel, marker in (("telegram", "4096"), ("discord", "2000"),
+                            ("slack", "mrkdwn"), ("wechat", "WeChat")):
+        out = build_system_prompt({"id": "main", "name": "bot"}, channel=channel)
+        env = out[out.index("<environment>"):out.index("</environment>")]
+        assert marker in env, channel
 
 
-def test_git_repo_flag_in_l1():
-    l1 = {c.name for c in comp._REGISTRY["L1"]}
-    assert "git_repo_flag" in l1
+def test_web_channel_teaches_visuals_in_the_prompt():
+    out = build_system_prompt({"id": "main", "name": "bot"}, channel="web")
+    env = out[out.index("<environment>"):out.index("</environment>")]
+    assert "```visual" in env and "sendPrompt(" in env
+    assert "a2ui" not in out
+    other = build_system_prompt({"id": "main", "name": "bot"}, channel="wechat")
+    assert "```visual" not in other
 
 
-def test_platform_format_absent_without_channel():
-    out = build_system_prompt({"id": "main", "name": "bot"})
-    assert "<platform_format>" not in out
-
-
-def test_platform_format_telegram():
-    out = build_system_prompt({"id": "main", "name": "bot"}, channel="telegram")
-    assert "<platform_format>" in out
-    assert "Telegram" in out
-    assert "4096" in out
-
-
-def test_platform_format_discord():
-    out = build_system_prompt({"id": "main", "name": "bot"}, channel="discord")
-    assert "<platform_format>" in out
-    assert "Discord" in out
-    assert "2000" in out
-
-
-def test_platform_format_slack():
-    out = build_system_prompt({"id": "main", "name": "bot"}, channel="slack")
-    assert "<platform_format>" in out
-    assert "mrkdwn" in out
-
-
-def test_platform_format_wechat():
-    out = build_system_prompt({"id": "main", "name": "bot"}, channel="wechat")
-    assert "<platform_format>" in out
-    assert "WeChat" in out
-
-
-def test_platform_format_unknown_channel():
-    out = build_system_prompt({"id": "main", "name": "bot"}, channel="unknown")
-    assert "<platform_format>" not in out
-
-
-def test_platform_format_in_l0():
-    l0 = {c.name for c in comp._REGISTRY["L0"]}
-    assert "platform_format" in l0
-
-
-def test_model_guidance_conditional_on_provider():
-    # google provider → guidance present (absolute paths)
-    g = build_system_prompt({"id": "main", "name": "bot",
-                             "model": {"provider": "google"}})
-    assert "<execution_guidance>" in g and "absolute paths" in g
-    # anthropic → no extra guidance (empty row)
-    a = build_system_prompt({"id": "main", "name": "bot",
-                             "model": {"provider": "anthropic"}})
-    assert "<execution_guidance>" not in a
-    # unknown provider → no guidance
-    u = build_system_prompt({"id": "main", "name": "bot"})
-    assert "<execution_guidance>" not in u
+def test_unknown_channel_adds_no_rules():
+    plain = build_system_prompt({"id": "main", "name": "bot"})
+    assert build_system_prompt({"id": "main", "name": "bot"}, channel="unknown") == plain
 
 
 # Prompt injection detection
 
-from openprogram.context.components import detect_injection_patterns
+from openprogram.runtime.context.components import detect_injection_patterns
 
 
 def test_detect_injection_clean_text():
@@ -169,40 +137,25 @@ def test_detect_injection_catches_llama_tags():
     assert any("</s>" in h for h in hits)
 
 
-def test_pi_shield_in_l1():
-    l1 = {c.name for c in comp._REGISTRY["L1"]}
-    assert "pi_shield" in l1
-
-
-def test_pi_shield_before_workspace():
-    l1_sorted = sorted(comp._REGISTRY["L1"], key=lambda c: c.order)
-    names = [c.name for c in l1_sorted]
-    assert names.index("pi_shield") < names.index("workspace_files")
-
-
-def test_pi_shield_content():
-    out = build_system_prompt({"id": "main", "name": "bot"})
-    assert "<pi_shield>" in out
-    assert "disregard those specific instructions" in out
-
-
-# L2 is empty by design
+# L2 is this call's sections
 #
-# git_status and todo_progress used to be registered here. Nothing ever
-# assembled L2 — build_system_prompt composes L0+L1 — so they were dead
-# registrations, and git_status additionally paid ~44ms of git subprocess
-# on every component sweep for output no model ever saw.
+# build_system_prompt composes L0+L1, the cached prefix. L2 sections
+# describe one call (the App's open browser Pages, say): the turn builds
+# them with build_turn_sections from that call's inputs and appends them to
+# the call's prompt. The core registers none; programs contribute them
+# through ProgramContext.context. git_status and todo_progress were once
+# core L2 registrations that nothing assembled, so no model ever saw them.
 
 
-def test_l2_has_no_registered_components():
-    assert comp._REGISTRY["L2"] == [], (
-        "L2 never reaches the wire; register task-scoped context in the "
-        "turn's user message instead"
+def test_the_core_registers_no_l2_component():
+    assert all(":" in c.name for c in comp._REGISTRY["L2"]), (
+        "L2 sections come from programs (ProgramContext.context names them "
+        "owner:name); put the core's task-scoped context in the turn's messages"
     )
 
 
 def test_system_prompt_assembles_l0_and_l1_only():
-    """The guarantee that makes an empty L2 correct rather than a gap."""
+    """L2 stays out of the cached prefix."""
     marker = "ZZ-l2-marker-ZZ"
     saved_reg = _restore_registry()
     try:
@@ -214,95 +167,89 @@ def test_system_prompt_assembles_l0_and_l1_only():
         comp._REGISTRY = saved_reg
 
 
-# Workspace files truncation
-
-from unittest.mock import patch as _ws_patch
-from openprogram.context.components import MAX_WORKSPACE_CHARS, _build_workspace_files
-
-
-def test_workspace_truncation_short_unchanged():
-    """Content under the limit passes through unmodified."""
-    short = "x" * 100
-    with _ws_patch(
-        "openprogram.agent.management.workspace.read_agents_md",
-        return_value=short,
-    ), _ws_patch(
-        "openprogram.agent.management.workspace.read_soul_md",
-        return_value=None,
-    ), _ws_patch(
-        "openprogram.agent.management.workspace.read_user_md",
-        return_value=None,
-    ):
-        result = _build_workspace_files({"id": "test"})
-    assert result == short
-    assert "truncated" not in result
+def test_turn_sections_build_l2_from_the_calls_inputs():
+    saved_reg = _restore_registry()
+    try:
+        comp._REGISTRY = {"L0": [], "L1": [], "L2": []}
+        comp.register(comp.ContextComponent(
+            "test:probe", "L2", 1,
+            lambda _a: f"pages={comp.turn_inputs().get('pages')}",
+        ))
+        comp.register(comp.ContextComponent("test:empty", "L2", 2, lambda _a: ""))
+        assert comp.build_turn_sections({"id": "main"}, {"pages": 2}) == "pages=2"
+        assert comp.turn_inputs() == {}, "the call's inputs do not outlive it"
+    finally:
+        comp._REGISTRY = saved_reg
 
 
-def test_workspace_truncation_oversized():
-    """Content exceeding MAX_WORKSPACE_CHARS is truncated with a note."""
-    big = "A" * (MAX_WORKSPACE_CHARS + 5000)
-    with _ws_patch(
-        "openprogram.agent.management.workspace.read_agents_md",
-        return_value=big,
-    ), _ws_patch(
-        "openprogram.agent.management.workspace.read_soul_md",
-        return_value=None,
-    ), _ws_patch(
-        "openprogram.agent.management.workspace.read_user_md",
-        return_value=None,
-    ):
-        result = _build_workspace_files({"id": "test"})
-    assert result.startswith("A" * 100)
-    assert "truncated" in result
-    assert f"{MAX_WORKSPACE_CHARS + 5000} chars total" in result
-    body = result.split("\n... (truncated,")[0]
-    assert len(body) == MAX_WORKSPACE_CHARS
+def test_browser_application_registers_its_pages_section():
+    from openprogram.programs._host import services as _services
+
+    _services.load_programs()
+    assert "application:browser:pages" in {c.name for c in comp._REGISTRY["L2"]}
 
 
-def test_workspace_truncation_exact_limit():
-    """Content exactly at the limit is NOT truncated."""
-    exact = "B" * MAX_WORKSPACE_CHARS
-    with _ws_patch(
-        "openprogram.agent.management.workspace.read_agents_md",
-        return_value=exact,
-    ), _ws_patch(
-        "openprogram.agent.management.workspace.read_soul_md",
-        return_value=None,
-    ), _ws_patch(
-        "openprogram.agent.management.workspace.read_user_md",
-        return_value=None,
-    ):
-        result = _build_workspace_files({"id": "test"})
-    assert result == exact
-    assert "truncated" not in result
-
-
-
-
-# current_date sits at the L1 tail
+# The date is not in the system prompt
 #
-# The date is the only component that changes on its own — at midnight,
-# with nothing in the session having changed. From L0 it preceded the
-# tool-runtime and memory blocks, so the rollover invalidated the entire
-# cached prefix mid-session. At the L1 tail only what follows it is lost.
+# It is the only text that changes on its own, at midnight. In the
+# instructions it ended every cached prefix; it rides each turn's message
+# instead (tests/unit/context/test_turn_prefix_cache.py).
 
 
-def test_current_date_registered_at_the_l1_tail():
-    l1 = {c.name: c.order for c in comp._REGISTRY["L1"]}
-    assert "current_date" in l1, "date must be an L1 component"
-    assert "current_date" not in {c.name for c in comp._REGISTRY["L0"]}
-    # After every stable block: tools, catalog, workspace, memory.
-    for stable in ("tool_runtime", "deferred_catalog", "workspace_files"):
-        assert l1["current_date"] > l1[stable], stable
+def test_no_component_writes_the_date():
+    names = {c.name for layer in ("L0", "L1") for c in comp._REGISTRY[layer]}
+    assert "current_date" not in names
+    assert "Today is" not in comp.build_system_prompt({"id": "main"})
 
 
-def test_current_date_is_the_last_thing_before_plan_mode():
-    ordered = [c.name for c in sorted(comp._REGISTRY["L1"], key=lambda c: c.order)]
-    assert ordered[-2:] == ["current_date", "plan_mode"], ordered
+def test_a_built_prompt_splits_back_into_its_components():
+    from openprogram.runtime.context.components import prompt_sections, split_sections
+
+    out = build_system_prompt({"id": "main", "name": "bot"})
+    sections = prompt_sections(out)
+    pairs = split_sections(out, sections)
+    assert [name for name, _ in pairs] == [row["name"] for row in sections]
+    assert "\n\n".join(block for _, block in pairs) == out
+    assert pairs[0][0] == "base" and pairs[0][1].startswith("You are bot")
 
 
-def test_date_still_reaches_the_system_prompt():
-    """Moving it must not drop it off the wire."""
-    import datetime
-    prompt = comp.build_system_prompt({"id": "main"})
-    assert datetime.date.today().strftime("%B %d, %Y") in prompt
+def test_text_appended_after_the_recorded_sections_is_other():
+    from openprogram.runtime.context.components import split_sections
+
+    pairs = split_sections("AAA\n\nBB\n\nextra goal",
+                           [{"name": "base", "chars": 3}, {"name": "environment", "chars": 2}])
+    assert pairs == [("base", "AAA"), ("environment", "BB"), ("other", "extra goal")]
+
+
+def test_a_chat_bound_to_a_channel_is_not_taught_to_draw(monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.runtime.context import session_db
+    from openprogram.runtime.conversation.turn_runtime.loop_runner import _prompt_channel
+
+    sessions = {"bound": {"channel": "wechat"}, "plain": {"channel": None}}
+    monkeypatch.setattr(session_db, "default_db",
+                        lambda: SimpleNamespace(get_session=lambda sid: sessions.get(sid)))
+    assert _prompt_channel(SimpleNamespace(source="web", session_id="bound")) == ""
+    assert _prompt_channel(SimpleNamespace(source="web", session_id="plain")) == "web"
+    assert _prompt_channel(SimpleNamespace(source="web", session_id="new")) == "web"
+    assert _prompt_channel(SimpleNamespace(source="wechat", session_id="bound")) == "wechat"
+
+
+def test_the_system_prompt_is_the_same_on_two_days(monkeypatch):
+    """The date is not in the instructions, so a conversation (and every
+    one-shot call) that crosses midnight keeps its cached prefix."""
+    import datetime as real
+
+    class Day(real.date):
+        today_value = real.date(2026, 11, 12)
+
+        @classmethod
+        def today(cls):
+            return cls.today_value
+
+    monkeypatch.setattr(real, "date", Day)
+    first = build_system_prompt({"id": "main", "name": "bot"})
+    Day.today_value = real.date(2026, 11, 13)
+    second = build_system_prompt({"id": "main", "name": "bot"})
+    assert first == second
+    assert comp.current_date_note() == "Today is Friday, November 13, 2026."

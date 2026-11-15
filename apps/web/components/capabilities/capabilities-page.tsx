@@ -15,9 +15,9 @@ import { PluginsPage } from "@/components/plugins/plugins-page";
 import { ProgramsPage } from "@/components/programs/programs-page";
 import { SkillsPage } from "@/components/skills/skills-page";
 import { SearchInput } from "@/components/ui/search-input";
-import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManagePage, ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
-import { pushPath } from "@/lib/shallow-nav";
+import { pushPath } from "@/lib/nav/shallow-nav";
 import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useSkills } from "@/lib/abilities/skills-store";
 
@@ -88,11 +88,10 @@ export function CapabilitiesPage() {
       return [refresh(() => { void fetchSkills(); })];
     }
     return [refresh(() => setMcpReloadNonce((n) => n + 1))];
-  }, [kind, t, text, refreshPlugins, fetchSkills]);
+  }, [kind, t, refreshPlugins, fetchSkills]);
 
   return (
-    <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-      <div className={shared.view}>
+    <ManagePage>
         <ManagePageHeader
           title={t("nav.ability")}
           tabs={[
@@ -107,10 +106,11 @@ export function CapabilitiesPage() {
           panelId="ability-panel"
           toolbar={(
             <SearchInput
-              className="min-w-[96px] flex-1 sm:flex-none sm:min-w-[140px] sm:w-[clamp(150px,24vw,280px)]"
+              className="min-w-[96px] flex-1 min-[761px]:flex-none min-[761px]:min-w-[140px] min-[761px]:w-[clamp(150px,24vw,280px)]"
               value={query}
               onChange={setQuery}
-              placeholder={text("Search Programs, Plugins, Skills, MCP servers...", "搜索程序、插件、技能、MCP 服务器...")}
+              placeholder={text("Search abilities…", "搜索能力…")}
+              aria-label={text("Search Programs, Plugins, Skills and MCP servers", "搜索程序、插件、技能和 MCP 服务器")}
             />
           )}
           actions={actions}
@@ -148,7 +148,6 @@ export function CapabilitiesPage() {
           />
         )}
         </div>
-      </div>
-    </div>
+    </ManagePage>
   );
 }

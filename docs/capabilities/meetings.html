@@ -1,0 +1,113 @@
+<title>Meetings</title>
+<meta name="description" content="Record a call on this computer, get a transcript with speakers and a summary in a new chat.">
+<h1>Meetings</h1>
+<p>Record a call you are in, in Zoom, Teams, a browser or any app, and get a transcript and a summary with decisions, action items and open questions.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 -10 680 174" role="img" aria-label="Your microphone is recorded as Me and the computer's sound as Others, each in 30-second pieces transcribed during the call. After you stop, the computer's sound is grouped by voice into Speaker 1, Speaker 2 and so on, the transcript is merged, and a summary is written in a new chat.">
+  <defs><marker id="mt-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Microphone</text>
+  <text class="t-soft" x="0" y="62">"Me"</text>
+  <text class="t-big" x="0" y="118">Computer's sound</text>
+  <text class="t-soft" x="0" y="140">"Others"</text>
+  <line class="ln" x1="130" y1="34" x2="196" y2="34" marker-end="url(#mt-a)"/>
+  <line class="ln" x1="150" y1="112" x2="196" y2="112" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="208" y="40">Live</text>
+  <text class="t-soft" x="208" y="62">30-second pieces</text>
+  <text class="t-big" x="208" y="118">Live</text>
+  <text class="t-soft" x="208" y="140">30-second pieces</text>
+  <line class="ln-faint" x1="346" y1="10" x2="346" y2="156"/>
+  <text class="t-soft mid" x="346" y="8">Stop</text>
+  <line class="ln" x1="332" y1="112" x2="370" y2="112" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="382" y="118">Speakers</text>
+  <text class="t-soft" x="382" y="140">grouped by voice</text>
+  <path class="ln" d="M332 34H530V92" marker-end="url(#mt-a)"/>
+  <line class="ln" x1="496" y1="112" x2="518" y2="112" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="530" y="118">Transcript</text>
+  <text class="t-soft" x="530" y="140">summary in a new chat</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Microphone, computer's sound</strong><small>"Me" and "Others", 30-second pieces transcribed live</small></li>
+  <li class="via">Stop</li>
+  <li><strong>Speakers</strong><small>computer's sound grouped by voice</small></li>
+  <li class="flow-end"><strong>Transcript</strong><small>summary in a new chat</small></li>
+</ol>
+</figure>
+<h2 id="before-the-first-meeting">Before the first meeting</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">You need</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram on macOS 13 or later</th><td>Records the computer's sound through ScreenCaptureKit. Other systems record only the microphone.</td></tr>
+<tr><th scope="row"><code translate="no">ffmpeg</code></th><td>Converts audio for recognition. <code translate="no">brew install ffmpeg</code> or your package manager, then restart. The window says so while it is missing.</td></tr>
+<tr><th scope="row">A speech engine</th><td>Chosen in <strong>Settings → Voice</strong>, shared with <a href="../interfaces/voice-input.html">voice input</a>: OpenAI or Groq with a key, or local whisper.cpp</td></tr>
+<tr><th scope="row">A chat model</th><td>The default Agent writes the summary, with the model a new chat starts on</td></tr>
+<tr><th scope="row">Optional: <code translate="no">meetings</code> extra</th><td>Tells other speakers apart; see <a href="#who-said-what">Who said what</a></td></tr>
+</tbody>
+</table>
+<h2 id="record-a-meeting">Record a meeting</h2>
+<ol>
+<li>Open <strong>Meetings</strong> from its new tab tile, or <strong>Open</strong> on the <strong>Applications</strong> page.</li>
+<li>Optional: name the meeting and pick the spoken language (<strong>Detect automatically</strong> by default, last choice remembered). Press <strong>Start recording</strong>.</li>
+<li>First time: approve <strong>Microphone</strong>, asked by the window, and <strong>Screen &amp; System Audio Recording</strong>, asked by macOS for the OpenProgram App. Nothing on the screen is recorded.</li>
+<li>The window shows elapsed time and pieces uploaded and transcribed. Other tabs and windows are fine.</li>
+<li>Press <strong>Stop recording</strong>. The last pieces are transcribed, the summary is written, and it appears under <strong>Past meetings</strong>.</li>
+</ol>
+<p class="note">Recording never starts on its own. Without headphones your microphone hears the other side; lines repeating the computer's sound are dropped, but headphones give the cleanest transcript. The <strong>Settings → Voice</strong> language applies to voice input only. Without a chosen language each piece is detected on its own, and the card and <strong>Past meetings</strong> show the choice, or "detected".</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">If</th><th scope="col">Do this</th></tr></thead>
+<tbody>
+<tr><th scope="row">Microphone declined</th><td><strong>Privacy &amp; Security → Microphone</strong>: allow OpenProgram, start again</td></tr>
+<tr><th scope="row">Computer's sound unavailable</th><td>The meeting records the microphone only and says so. For a missing permission, allow OpenProgram in <strong>Privacy &amp; Security → Screen &amp; System Audio Recording</strong> and reopen the App. A past meeting without it says so under its transcript.</td></tr>
+</tbody>
+</table>
+<h2 id="read-a-meeting">Read a meeting</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Under Past meetings</th><th scope="col">Shows or does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Summary</strong></th><td>Summary, decisions, action items with owner and due date when said, open questions</td></tr>
+<tr><th scope="row"><strong>Transcript</strong></th><td>Lines with time and speaker</td></tr>
+<tr><th scope="row"><strong>Open chat</strong></th><td>The conversation that wrote the summary, for follow-ups such as "draft the follow-up email"</td></tr>
+<tr><th scope="row"><strong>Summarize again</strong></th><td>Rewrites it, for example after a model failure or a meeting marked <strong>Interrupted</strong></td></tr>
+<tr><th scope="row">Delete button</th><td>Deletes audio, transcript and summary; the chat stays</td></tr>
+</tbody>
+</table>
+<p class="note">The summary turn has no tools and treats the transcript as speech, never instructions.</p>
+<h2 id="who-said-what">Who said what</h2>
+<details>
+<summary>Speaker grouping</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">Label</th></tr></thead>
+<tbody>
+<tr><th scope="row">Your microphone</th><td>Always "Me"</td></tr>
+<tr><th scope="row">Computer's sound</th><td>After you stop, grouped by voice with <a href="https://github.com/k2-fsa/sherpa-onnx">sherpa-onnx</a> on this computer. "Speaker 1", "Speaker 2" in order of first speech; the number of people is inferred.</td></tr>
+<tr><th scope="row">A voice heard only for a moment, or a line with no voice found</th><td>Stays "Others"</td></tr>
+<tr><th scope="row">Names</th><td>Numbers are voices; the summary uses a name where the meeting makes it clear</td></tr>
+</tbody>
+</table>
+</details>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setup</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Desktop App</th><td>Included</td></tr>
+<tr><th scope="row">Source checkout</th><td><code translate="no">uv sync --locked --extra dev --extra meetings</code></td></tr>
+<tr><th scope="row">First use</th><td>Downloads two models, about 34 MB, into <code translate="no">models/diarization/</code> under the state directory</td></tr>
+<tr><th scope="row">Time</th><td>Roughly a tenth of the meeting's length, before the summary</td></tr>
+<tr><th scope="row">Without the extra or models</th><td>Everyone else stays "Others"; the rest works</td></tr>
+</tbody>
+</table>
+<h2 id="where-meetings-are-stored">Storage</h2>
+<pre translate="no" tabindex="0"><code>~/.openprogram/meetings/&lt;id&gt;/
+  meta.json          name, start, length, progress, summary chat, whether
+                     computer sound was recorded and speakers told apart
+  tracks/mic/…       microphone, 30-second WebM pieces
+  tracks/system/…    computer's sound, 30-second WAV pieces
+  transcript.json    merged transcript
+  summary.md         summary, full transcript at the end</code></pre>
+<p class="note">Under the state directory, <code translate="no">~/.openprogram</code> by default. OpenAI or Groq: each piece goes to that service. whisper.cpp: audio stays here. Telling speakers apart always runs here.</p>
+<h2 id="limits">Limits</h2>
+<ul>
+<li>One meeting at a time, at most 4 hours; it stops itself at the limit.</li>
+<li>Speakers are separated only after stopping. Similar voices can share a number; one person can get two when their sound changes a lot.</li>
+<li>Silent pieces are skipped. A piece that cannot be converted or transcribed is reported under the transcript; the rest goes on.</li>
+</ul>
+<h2 id="turn-meetings-off">Turn Meetings off</h2>
+<p>Its switch on the <strong>Applications</strong> page, or <code translate="no">openprogram programs disable meeting</code>, which stops a recording in progress. <code translate="no">openprogram programs enable meeting</code> turns it back on. See <a href="applications.html">Applications</a>.</p>

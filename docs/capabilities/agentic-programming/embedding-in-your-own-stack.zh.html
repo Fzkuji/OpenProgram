@@ -1,0 +1,62 @@
+<title>嵌入你自己的技术栈</title>
+<meta name="description" content="在现有应用中把 Agent 和 Runtime 当作 Python 库使用。">
+<h1>嵌入你自己的技术栈</h1>
+<p>库调用不会启动 Web UI 或终端 UI，也不能代替完整安装的产品。</p>
+<h2>宿主 Runtime</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, Runtime
+
+
+def model_call(content, model="host-model", response_format=None):
+    # Replace this offline response with the host's model client.
+    return "Host model response"
+
+runtime = Runtime(call=model_call, model="host-model")
+
+class ReviewAgent(Agent):
+    tools = []
+
+    def classify(self, review: str) -&gt; str:
+        """Classify review sentiment."""
+        return self(f"Classify review sentiment:\n{review}")
+
+    def summarize(self, review: str) -&gt; str:
+        """Summarize a review."""
+        sentiment = self.classify(review)
+        return self(f"Summarize this {sentiment} review:\n{review}")
+
+reviewer = ReviewAgent(runtime=runtime)
+try:
+    summary = reviewer.summarize("The service was fast.")
+finally:
+    runtime.close()</code></pre>
+<p class="note">回调收到内容块、模型名和可选的响应格式；这个示例返回固定响应，无需联网。构造 Runtime 不发模型请求。宿主负责关闭自己提供的 Runtime。Agent 方法自动继承它；Context 和函数作用域是自动的。</p>
+<h2>显式会话</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, Context
+from openprogram.state.store import SessionStore, SessionNodeWriter
+
+store = SessionStore(root_path="/var/lib/myapp/sessions")
+store.create_session("research", agent_id="main")
+writer = SessionNodeWriter(store, "research")
+researcher = Agent(context=Context(store=writer), tools=[])
+try:
+    first = researcher("List the project requirements.")
+    second = researcher("Review the requirements from the previous call.")
+finally:
+    store.close()</code></pre>
+<p class="note">默认的 Agent 调用彼此独立；<code translate="no">Context(store=writer)</code> 延续这个会话。<code translate="no">head_id</code> 可选择已有分支末端。store 和 Runtime 归宿主所有。</p>
+<h2>查看调用</h2>
+<pre translate="no" tabindex="0"><code>from openprogram.state.store import SessionNodeWriter
+
+for node in SessionNodeWriter(store, "review-42").load():
+    print(node.name, node.caller, node.output)</code></pre>
+<p class="note">要把方法暴露为模型工具，在 <code translate="no">method_options</code> 里设 <code translate="no">tool=True</code>，它提供 <code translate="no">.spec</code> 和 <code translate="no">.execute</code>。仅被记录不授予工具权限。</p>
+<h2>宿主钩子</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">钩子</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">set_cancellation_check</code>、<code translate="no">CancelledError</code>、<code translate="no">check_cancelled</code></th><td><code translate="no">openprogram.host.cancellation</code></td></tr>
+<tr><th scope="row"><code translate="no">set_session_id_provider</code>（问题路由）</th><td><code translate="no">openprogram.runtime.agent.call_state</code></td></tr>
+</tbody>
+</table>
+<p class="note">导入检查：<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/tests/component/runtime/test_standalone_embed.py"><code translate="no">test_standalone_embed.py</code></a>。</p>
+<p class="next"><a href="../../reference/api/runtime.zh.html">Runtime</a> · <a href="../../reference/api/agent.zh.html">Agent 与 Context API</a> · <a href="writing-functions/agent.zh.html">Agent 调用与方法</a></p>

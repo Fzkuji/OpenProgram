@@ -1,0 +1,28 @@
+<title>CLI 与 TUI</title>
+<meta name="description" content="终端前端如何共用一个后端、设置 schema 和斜杠命令注册表，以及各 CLI 设计文档的位置。">
+<h1>CLI 与 TUI</h1>
+<p><code translate="no">openprogram</code> 运行与桌面应用和 Web UI 相同的 agent。其他能力都有子命令，遵循同一命名规则，能从已知命令猜出新命令。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">各只有一份</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">后端</th><td>一个常驻 Python worker 在一个端口服务所有前端。Ink 终端界面（<code translate="no">apps/cli/</code>）由 <code translate="no">openprogram/interfaces/cli/ink.py</code> 启动，通过 <code translate="no">worker.pid</code> 和 <code translate="no">worker.port</code> 找到它并走 WebSocket，所以终端对话就是 Web UI 显示的会话。</td></tr>
+<tr><th scope="row">设置 schema</th><td>每个设置只声明一次；<code translate="no">openprogram config</code>、TUI 面板和 Web UI 共用。每次写 <code translate="no">config.json</code> 都走同一个原子加锁入口。</td></tr>
+<tr><th scope="row">斜杠命令注册表</th><td>内置命令、插件命令、MCP prompt 和 skill 合并成一种格式，<code translate="no">/</code> 在 TUI 和 Web 输入框中列出相同内容。</td></tr>
+</tbody>
+</table>
+<p class="note">在终端里，工具调用折叠成一行，<code translate="no">ctrl+o</code> 打开完整记录，文件编辑显示为 diff，运行时的输入会排队。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文档</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="naming.zh.html">naming</a></th><td>子命令命名规则</td></tr>
+<tr><th scope="row"><a href="redesign.zh.html">redesign</a></th><td>命令语法、设置 schema、TUI 面板、传输</td></tr>
+<tr><th scope="row"><a href="config-write-safety.zh.html">config-write-safety</a></th><td><code translate="no">config.json</code> 的原子写入入口</td></tr>
+<tr><th scope="row"><a href="headless-print.zh.html">headless-print</a></th><td><code translate="no">--print</code> 运行：共用的请求构造、按 execution 树统计、运行怎么结束</td></tr>
+<tr><th scope="row"><a href="drop-run-command.zh.html">drop-run-command</a></th><td><code translate="no">Agent</code> 方法的单一执行路径，无论用户或模型调用</td></tr>
+<tr><th scope="row"><a href="single-port.zh.html">single-port</a></th><td>一个进程、一个端口，Python worker 是唯一源</td></tr>
+<tr><th scope="row"><a href="ports.zh.html">ports</a></th><td>选择、配置和保护 Web UI 端口</td></tr>
+<tr><th scope="row"><a href="slash-commands.zh.html">slash-commands</a></th><td>统一注册表</td></tr>
+<tr><th scope="row"><a href="slash-commands-references.zh.html">slash-commands-references</a></th><td>其他五个项目的实现</td></tr>
+<tr><th scope="row"><a href="tui-upgrade.zh.html">tui-upgrade</a></th><td>折叠、<code translate="no">ctrl+o</code> 记录、diff、排队输入、快捷键</td></tr>
+</tbody>
+</table>

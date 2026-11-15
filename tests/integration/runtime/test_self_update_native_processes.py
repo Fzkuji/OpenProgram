@@ -10,10 +10,26 @@ pytestmark = [
     pytest.mark.skipif(sys.platform != "darwin", reason="native candidate verifier uses macOS sandbox-exec"),
 ]
 
-from tests.component.self_update.verification.test_candidate_checks import _test_plan, live
-from tests.component.self_update.verification.test_native_checks import installed_cli, native_verifier
-from tests.component.self_update.verification.test_system_probe import live as http_live
-from tests.component.self_update.verification.test_verification_channel import consume, store_fixture, verifier
+from tests.component.self_update.verification.test_candidate_checks import _test_plan
+from tests.component.self_update.verification import test_candidate_checks as _test_candidate_checks
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+live = _test_candidate_checks.live
+from tests.component.self_update.verification import test_native_checks as _test_native_checks
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+installed_cli = _test_native_checks.installed_cli
+native_verifier = _test_native_checks.native_verifier
+from tests.component.self_update.verification import test_system_probe as _test_system_probe
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+http_live = _test_system_probe.live
+from tests.component.self_update.verification.test_verification_channel import consume
+from tests.component.self_update.verification import test_verification_channel as _test_verification_channel
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _test_verification_channel.store_fixture
+verifier = _test_verification_channel.verifier
 
 
 _SCRIPTS = {

@@ -1,0 +1,45 @@
+<title>Language server tools</title>
+<meta name="description" content="Three tools ask a language server for live diagnostics, references and definitions.">
+<h1>Language server tools</h1>
+<p>Three tools ask a language server what a type checker knows about the working tree as it stands, without running tests.</p>
+<table class="stack">
+<thead><tr><th scope="col">Tool</th><th scope="col">Arguments</th><th scope="col">Answers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">lsp_diagnostics</code></th><td><code translate="no">file</code></td><td>Errors and warnings for that file</td></tr>
+<tr><th scope="row"><code translate="no">lsp_references</code></th><td><code translate="no">file</code>, <code translate="no">line</code>, <code translate="no">column</code></td><td>Every use of the symbol at that position</td></tr>
+<tr><th scope="row"><code translate="no">lsp_definition</code></th><td><code translate="no">file</code>, <code translate="no">line</code>, <code translate="no">column</code></td><td>Where that symbol is declared</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">file</code> is absolute. <code translate="no">line</code> and <code translate="no">column</code> are 1-based, as <code translate="no">read</code> and tracebacks show, and must point at the symbol itself. Long results stop at 50 entries with a count of the rest; narrow the question.</p>
+<pre translate="no" tabindex="0"><code>runner.py: 2 diagnostics
+14:5 warning: "requests" is not accessed [pyright]
+27:12 error: "widget" is not defined [pyright]</code></pre>
+<pre translate="no" tabindex="0"><code data-claim="example">3 references
+openprogram/runtime/agent/loop/loop.py:88:9   result = dispatch(call)
+openprogram/runtime/agent/loop/loop.py:140:5  dispatch(retry)
+tests/unit/test_loop.py:31:11    monkeypatch.setattr(loop, "dispatch", fake)</code></pre>
+<p class="note"><code translate="no">lsp_definition</code> has the same <code translate="no">path:line:column</code> form. Paths are relative to the workspace root.</p>
+<h2 id="install-a-server">Install a server</h2>
+<table class="stack">
+<thead><tr><th scope="col">Language</th><th scope="col">Extensions</th><th scope="col">Binary</th><th scope="col">Install</th></tr></thead>
+<tbody>
+<tr><th scope="row">Python</th><td><code translate="no">.py</code>, <code translate="no">.pyi</code></td><td><code translate="no">pyright-langserver</code></td><td><code translate="no">npm install -g pyright</code></td></tr>
+<tr><th scope="row">TypeScript / JavaScript</th><td><code translate="no">.ts</code>, <code translate="no">.tsx</code>, <code translate="no">.js</code>, <code translate="no">.jsx</code>, <code translate="no">.mts</code>, <code translate="no">.cts</code></td><td><code translate="no">typescript-language-server</code></td><td><code translate="no">npm install -g typescript-language-server typescript</code></td></tr>
+</tbody>
+</table>
+<p class="note">The tools are always registered. Without a server they answer <code translate="no">unavailable: install …</code> with the command. Other extensions get a result saying so.</p>
+<h2 id="how-servers-run">How servers run</h2>
+<ul>
+<li>One server per language per workspace. The workspace is the nearest ancestor holding <code translate="no">pyproject.toml</code>, <code translate="no">setup.py</code>, <code translate="no">package.json</code>, <code translate="no">tsconfig.json</code> or <code translate="no">.git</code>.</li>
+<li>Starts on first use, stays cached for the process, shuts down when OpenProgram exits.</li>
+<li>The configured <a href="../reference/design/runtime/security/sandbox-architecture.html">sandbox</a> applies. <code translate="no">sandbox.mode</code> defaults to <code translate="no">off</code>, so a server is unconfined unless a conversation turns Sandbox on. Under <code translate="no">workspace-write</code>, it reads the workspace and writes nothing outside it.</li>
+</ul>
+<h2 id="compared-to-grep-and-codegraph">Compared to grep and CodeGraph</h2>
+<table class="stack">
+<thead><tr><th scope="col">Tool</th><th scope="col">Finds</th><th scope="col">Misses or adds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">grep</code></th><td>Text</td><td>Reports same-named strings in comments; misses calls through an alias</td></tr>
+<tr><th scope="row"><code translate="no">lsp_references</code></th><td>Resolved symbols</td><td>Neither mistake</td></tr>
+<tr><th scope="row">CodeGraph</th><td>Pre-built index of a whole codebase, best for reading unfamiliar code top down</td><td>Language servers add live diagnostics against the file on disk</td></tr>
+</tbody>
+</table>

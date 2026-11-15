@@ -1,0 +1,55 @@
+<title>界面</title>
+<meta name="description" content="同一个本地服务上的四种客户端：打开哪个，以及它们如何共享会话。">
+<h1>界面</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 240" role="img" aria-label="桌面 App、Web UI、终端 TUI 和 CLI 单次调用都连接同一个后台服务 worker，端口 18100。worker 托管后端、Web UI 和聊天渠道适配器，所有会话都在 projects 目录下的同一存储里。">
+  <defs><marker id="if-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="26">桌面 App</text>
+  <text class="t-big" x="176" y="26">Web UI</text>
+  <text class="t-big" x="344" y="26">终端 TUI</text>
+  <text class="t-big" x="526" y="26">CLI 单次调用</text>
+  <line class="ln" x1="36" y1="38" x2="36" y2="76" marker-end="url(#if-a)"/>
+  <line class="ln" x1="204" y1="38" x2="204" y2="76" marker-end="url(#if-a)"/>
+  <line class="ln" x1="384" y1="38" x2="384" y2="76" marker-end="url(#if-a)"/>
+  <line class="ln" x1="572" y1="38" x2="572" y2="76" marker-end="url(#if-a)"/>
+  <rect class="tile" x="0" y="80" width="680" height="64" rx="8"/>
+  <text class="t-big" x="16" y="108">Worker，端口 18100</text>
+  <text class="t-soft" x="16" y="130">FastAPI 和 WebSocket 后端、Web UI、可选的聊天渠道适配器</text>
+  <line class="ln" x1="340" y1="144" x2="340" y2="182" marker-end="url(#if-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="340" y="206">~/.openprogram/projects/&lt;project&gt;/chats/</text>
+  <text class="t-soft mid" x="340" y="230">每个会话一个 git 仓库；没有项目的属于主项目 default</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>桌面 App、Web UI、终端 TUI、CLI 单次调用</strong></li>
+<li><strong>Worker，端口 18100</strong><small>FastAPI 和 WebSocket 后端、Web UI、可选的聊天渠道适配器</small></li>
+<li class="flow-end"><strong><code translate="no">~/.openprogram/projects/&lt;project&gt;/chats/</code></strong><small>每个会话一个 git 仓库；没有项目的属于主项目 default</small></li>
+</ol>
+</figure>
+<p class="note">桌面 App 内嵌 Web UI，并增加原生的浏览器和终端面板。没有 worker 时，桌面 App 或 TUI 会启动一个。</p>
+<h2 id="the-four-interfaces">选哪个</h2>
+<table class="stack">
+<thead><tr><th scope="col">界面</th><th scope="col">打开方式</th><th scope="col">适合</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="desktop.zh.html">macOS 桌面</a></th><td><code translate="no">/Applications/OpenProgram.app</code></td><td>多面板聊天、Files、内置浏览器、终端、Agent 控制可见的内部网页</td></tr>
+<tr><th scope="row"><a href="web.zh.html">Web UI</a></th><td><code translate="no">openprogram web</code>，然后 <code translate="no">http://localhost:18100</code></td><td>聊天、DAG 分支视图、函数/技能/MCP/记忆管理、设置</td></tr>
+<tr><th scope="row"><a href="tui.zh.html">终端 TUI</a></th><td><code translate="no">openprogram tui</code>；只输入 <code translate="no">openprogram</code> 会先问终端还是网页</td><td>在终端聊天：斜杠命令、权限配置、可滚动历史</td></tr>
+<tr><th scope="row"><a href="cli.zh.html">CLI 单次调用</a></th><td><code translate="no">openprogram --print "..."</code></td><td>脚本、被其他程序调用、快速提问</td></tr>
+</tbody></table>
+<h2 id="four-clients-one-service">换个界面继续会话</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">从</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">终端到 Web</th><td>在侧栏里，点击即可</td></tr>
+<tr><th scope="row">Web 到终端</th><td>TUI 里 <code translate="no">/resume</code>，或 <code translate="no">openprogram --resume &lt;session-id&gt; --print "..."</code></td></tr>
+<tr><th scope="row">单次调用</th><td>也会保存，任何界面都能打开</td></tr>
+</tbody></table>
+<p class="note">启动交互式 TUI 时 <code translate="no">--resume</code> 暂时不会选中会话，用 <code translate="no">/resume</code>。</p>
+<h2 id="worker">Worker</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram status</code>、<code translate="no">stop</code>、<code translate="no">restart</code></th><td>管理后台服务</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker install</code></th><td>登录时启动</td></tr>
+</tbody></table>
+<h2 id="isolated-workspaces">隔离的工作区</h2>
+<p><code translate="no">--profile &lt;name&gt;</code> 或 <code translate="no">OPENPROGRAM_PROFILE</code> 把状态从 <code translate="no">~/.openprogram/</code> 移到 <code translate="no">~/.openprogram-&lt;name&gt;/</code>：配置、会话、日志和凭证都分开，每个 profile 有自己的 worker。</p>

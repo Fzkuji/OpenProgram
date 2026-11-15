@@ -6,23 +6,20 @@ import time
 
 import pytest
 
-from openprogram.agent.agent import Agent, AgentOptions
-from openprogram.agent.agent_loop import agent_loop
-from openprogram.agent.types import (
-    AgentContext,
-    AgentLoopConfig,
-    AgentTool,
-    AgentToolResult,
-)
-from openprogram.providers import register_api_provider
-from openprogram.providers import api_registry
-from openprogram.providers.structured_output import (
+from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+from openprogram.runtime.agent.loop.driver import LoopDriver, LoopDriverOptions
+from openprogram.runtime.agent.loop import agent_loop
+from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.models.providers import register_api_provider
+from openprogram.models.providers.catalog import api_registry
+from openprogram.models.providers.structured_output import (
     HIDDEN_SUBMIT_TOOL_NAME,
     StructuredOutputCapabilities,
     StructuredOutputValidationError,
     normalize_response_format,
 )
-from openprogram.providers.types import (
+from openprogram.models.providers.types import (
     AssistantMessage,
     EventDone,
     EventStart,
@@ -40,6 +37,47 @@ SCHEMA = {
     "required": ["answer"],
     "additionalProperties": False,
 }
+
+
+def _primary_unavailable():
+    """A failure that moves to the fallback model at once.
+
+    An overloaded provider is failover-worthy and not a transport failure,
+    so the request is not sent again to the same model first.
+    """
+    return ProviderStreamError("HTTP 503: primary unavailable", http_status=503, retryable=True)
+
+
+class _UnusedProvider:
+    """The loop streams through the test's ``stream_fn``; the adapter is never called."""
+
+    requires_credentials = False
+
+    def stream_simple(self, model, context, options):
+        raise AssertionError("the registered adapter must not be called")
+
+
+@pytest.fixture(autouse=True)
+def _codex_contract(monkeypatch):
+    """Each test sees the openai-codex contract (strict tools only) in its own registry.
+
+    Without this the tests depended on an earlier test in the same process
+    having loaded the built-in providers, which xdist does not guarantee.
+    Tests that need a different registry replace it again.
+    """
+    from openprogram.models.providers.catalog import register
+
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+    monkeypatch.setattr(register, "_registered", register._registered)
+    register_api_provider(
+        "openai-codex",
+        _UnusedProvider(),
+        StructuredOutputCapabilities(strict_tool=True, schema_profile="openai_strict"),
+    )
 
 
 def _assistant(content) -> AssistantMessage:
@@ -118,11 +156,11 @@ async def _run_loop(replies, tools, **config_overrides):
 def test_hidden_submit_tool_is_terminal_and_is_not_executed(monkeypatch):
     executed = []
     approval_checks = []
-    from openprogram.programs._runtime import _registry
-    loop_module = importlib.import_module("openprogram.agent.agent_loop")
+    from openprogram.programs._host.runtime import _registry
+    loop_module = importlib.import_module("openprogram.runtime.agent.loop")
 
     monkeypatch.setattr(
-        loop_module,
+        loop_module.tool_dispatch,
         "decide_tool_gate",
         lambda event: approval_checks.append(event),
     )
@@ -284,10 +322,12 @@ def test_iteration_cap_without_hidden_submission_is_missing_submission():
 
 
 def test_cross_provider_unknown_fallback_never_receives_native_options(monkeypatch):
-    import openprogram.providers.utils.failover as failover_module
+    import openprogram.models.providers.utils.failover as failover_module
 
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
 
     primary_api = "cross-provider-primary-api"
@@ -321,7 +361,7 @@ def test_cross_provider_unknown_fallback_never_receives_native_options(monkeypat
             calls.append((self.name, options.response_format))
 
             async def events():
-                raise ConnectionError("primary unavailable")
+                raise _primary_unavailable()
                 yield
 
             return events()
@@ -346,7 +386,7 @@ def test_cross_provider_unknown_fallback_never_receives_native_options(monkeypat
         )
         return await stream.result()
 
-    with pytest.raises(ConnectionError):
+    with pytest.raises(ProviderStreamError, match="primary unavailable"):
         asyncio.run(run())
 
     assert [provider for provider, _options in calls] == ["primary-native"]
@@ -355,6 +395,8 @@ def test_cross_provider_unknown_fallback_never_receives_native_options(monkeypat
 def test_registry_replacement_cannot_split_negotiation_from_dispatch(monkeypatch):
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
     monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
     calls = []
@@ -419,6 +461,8 @@ def test_registry_replacement_cannot_split_negotiation_from_dispatch(monkeypatch
 def test_default_agent_dispatch_uses_the_negotiated_registry_snapshot(monkeypatch):
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
     monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
     calls = []
@@ -465,8 +509,8 @@ def test_default_agent_dispatch_uses_the_negotiated_registry_snapshot(monkeypatc
         base_url="https://example.invalid",
         structured_output=True,
     )
-    agent = Agent(
-        AgentOptions(
+    agent = LoopDriver(
+        LoopDriverOptions(
             initial_state={"model": model},
             transform_context=replace_after_negotiation,
             response_format=normalize_response_format(SCHEMA),
@@ -479,10 +523,12 @@ def test_default_agent_dispatch_uses_the_negotiated_registry_snapshot(monkeypatc
 
 
 def test_failover_candidate_dispatch_uses_its_negotiated_registry_snapshot(monkeypatch):
-    import openprogram.providers.utils.failover as failover_module
+    import openprogram.models.providers.utils.failover as failover_module
 
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
     calls = []
 
@@ -503,7 +549,7 @@ def test_failover_candidate_dispatch_uses_its_negotiated_registry_snapshot(monke
 
             async def events():
                 if self.name == "primary-native":
-                    raise ConnectionError("primary unavailable")
+                    raise _primary_unavailable()
                 message = AssistantMessage(
                     content=[TextContent(text='{"answer": 4}')],
                     api=model.api,

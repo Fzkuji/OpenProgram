@@ -1,18 +1,54 @@
-import { normalizeCenterTabLayout } from "@/lib/tabs/center-tab-groups";
+import { filePreviewLayout, filePreviewId, type FilePreviewTarget, type PagePreviewTarget } from "../panes/file-preview-layout";
+import { findCenterTabGroup, normalizeCenterTabLayout } from "@/lib/tabs/center-tab-groups";
+import { documentControllers } from "@/lib/files/document/document-controller-registry";
 import { builtinTabId, fileTabId, nextBrowserHomeId, nextNtpId } from "@/lib/tabs/center-tab-ids";
 import { replaceGroupTabId } from "@/lib/tabs/center-tabs-persistence";
-import { openReviewTabLayout } from "@/lib/tabs/review-tab-layout";
+import { openReviewTabLayout } from "@/lib/tabs/panes/review-tab-layout";
 import type { StoreApi } from "zustand";
-import { topLevelTabs } from "../../browser/web-page-management";
+import { webTabSessionIds } from "../../browser/web-tab/web-page-management";
 import { mapTabPages } from "../navigation/page-history";
 import { sessionHistory } from "../navigation/session-history";
-import { commitCenterTabsState, focusOrCreate, independentTab } from "./core";
+import { commitCenterTabsState, focusAfterClose, focusOrCreate, independentTab } from "./core";
+import { requestFileSection } from "../panes/file-section-requests";
 import type { CenterTab, CenterTabsState } from "./types";
+import { closedTabSessionIds, rememberClosedTab } from "./closed-tabs";
 
-export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>): Pick<CenterTabsState, "openFileTab" | "openBuiltinTab" | "openApplicationTab" | "openReviewTab" | "setTabDirty" | "setTabDagView" | "retargetFileTab" | "openNewTabPage" | "closeTab"> {
+export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: StoreApi<CenterTabsState>["getState"], closedSessionAckTombstones: Set<string>): Pick<CenterTabsState, "openFilePreview" | "openPagePreview" | "openFileTab" | "openBuiltinTab" | "openApplicationTab" | "openReviewTab" | "setTabDirty" | "setTabDagView" | "retargetFileTab" | "openNewTabPage" | "closeTab" | "reopenClosedTab"> {
+  // Shared by file and page previews: both open beside their chat.
+  const openPreview = (sessionId: string, target: FilePreviewTarget | PagePreviewTarget, automatic: boolean, section?: string) => {
+    let opened = false;
+    set(state => {
+      if (automatic) {
+        const chat = state.tabs.find(tab => tab.kind === "session" && tab.sessionId === sessionId);
+        const group = chat && findCenterTabGroup(state.groups, chat.id);
+        if (group?.memberIds.some(id => {
+          const tab = state.tabs.find(item => item.id === id);
+          if (tab?.kind !== "file" || !tab.path) return false;
+          const key = tab.readOnly ? `attachment:${tab.fileSessionId}:${tab.path}` : `project:${tab.projectId}:${tab.path}`;
+          return documentControllers.get(key)?.canReplacePreview() === false;
+        })) return {};
+      }
+      const next = filePreviewLayout(state, sessionId, target, automatic);
+      if (!next) return {};
+      opened = true;
+      const committed = commitCenterTabsState(state, next);
+      if ("url" in target) return committed;
+      const destination = committed.tabs.find(tab => tab.id === filePreviewId(sessionId, target))!;
+      const sequence = (state.fileSectionSequence ?? 0) + 1;
+      return { ...committed, fileSectionSequence: sequence,
+        fileSectionRequests: requestFileSection(state.fileSectionRequests, destination, section, sequence) };
+    });
+    return opened;
+  };
   return {
+    openFilePreview: (sessionId, target, automatic = false) => {
+      const { section, ...fileTarget } = target;
+      return openPreview(sessionId, fileTarget, automatic, section);
+    },
+    openPagePreview: (sessionId, target, automatic = false) => openPreview(sessionId, target, automatic),
     openFileTab: (projectId, path, options) =>
       set((s) => {
+        const { section, ...fileOptions } = options ?? {};
         const id = fileTabId(projectId, path);
         const opened = focusOrCreate(
           s,
@@ -23,7 +59,7 @@ export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: St
             title: path.split("/").pop() || path,
             projectId,
             path,
-            ...options,
+            ...fileOptions,
           }),
           s.tabs.filter(tab => tab.id === s.activeId && (tab.kind === "file" || (tab.kind === "builtin" && tab.page === "files"))).map(tab => tab.id),
         );
@@ -31,8 +67,12 @@ export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: St
         // context: overwrite it (undefined options clear it) so the
         // tab always reflects the LATEST open.
         const tabs = opened.tabs ?? s.tabs;
+        const destination = tabs.find(tab => tab.id === opened.activeId)!;
+        const sequence = (s.fileSectionSequence ?? 0) + 1;
         return {
           ...opened,
+          fileSectionSequence: sequence,
+          fileSectionRequests: requestFileSection(s.fileSectionRequests, destination, section, sequence),
           tabs: tabs.map((t) =>
             t.id === opened.activeId
               ? {
@@ -58,9 +98,9 @@ export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: St
         );
       }),
 
-    openApplicationTab: (appId, instanceId, title) => set((s) => focusOrCreate(
+    openApplicationTab: (appId, instanceId, title, sessionId) => set((s) => focusOrCreate(
       s, `app:${instanceId}`,
-      () => ({ id: `app:${instanceId}`, kind: "application", title, applicationId: appId, applicationInstanceId: instanceId }), [],
+      () => ({ id: `app:${instanceId}`, kind: "application", title, applicationId: appId, applicationInstanceId: instanceId, applicationSessionId: sessionId || undefined }), [],
     )),
 
     openReviewTab: (sessionId, assistantMsgId, scope = "turn", path) =>
@@ -128,7 +168,7 @@ export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: St
         });
       }),
 
-    closeTab: (id) =>
+    closeTab: (id, options) =>
       set((s) => {
         const idx = s.tabs.findIndex((t) => t.id === id);
         if (idx < 0) return {};
@@ -138,18 +178,48 @@ export function pagesActions(set: StoreApi<CenterTabsState>["setState"], get: St
           for (const entry of sessionHistory(page).entries)
             if (entry.sessionId) closedSessionAckTombstones.add(entry.sessionId);
         }
-        const tabs = s.tabs.filter((t) => t.id !== id);
+        const retain = options?.retainSessionResources && webTabSessionIds(closingTab).length > 0;
+        const tabs = retain
+          ? s.tabs.map(tab => tab.id === id ? { ...tab, webPinned: false } : tab)
+          : s.tabs.filter(tab => tab.id !== id);
         const groups = normalizeCenterTabLayout({
-          tabIds: tabs.map((tab) => tab.id), groups: s.groups,
+          tabIds: tabs.filter(tab => tab.id !== id).map(tab => tab.id), groups: s.groups,
         }).groups;
-        const visibleTabs = topLevelTabs(tabs, groups);
-        let activeId = s.activeId;
-        if (!visibleTabs.some((tab) => tab.id === activeId)) {
-          const visibleIndex = topLevelTabs(s.tabs, s.groups).findIndex((tab) => tab.id === id);
-          activeId = (visibleTabs[Math.max(0, visibleIndex)] ?? visibleTabs.at(-1))?.id ?? null;
-        }
+        // Closing one pane of a split leaves focus on the pane beside it,
+        // wherever the closed tab happened to sit in the tab list.
+        const activeId = focusAfterClose(s, id, tabs, groups);
         const splitWebTabId = s.splitWebTabId === id ? null : s.splitWebTabId;
-        return commitCenterTabsState(s, { tabs, groups, activeId, splitWebTabId });
-      })
+        // A tab kept for its session's resources is hidden, not closed.
+        const closedTabs = retain ? s.closedTabs : rememberClosedTab(s.closedTabs, closingTab, idx);
+        return { ...commitCenterTabsState(s, { tabs, groups, activeId, splitWebTabId }), closedTabs };
+      }),
+
+    reopenClosedTab: (sessionGone) => {
+      let reopened: string | null = null;
+      set((s) => {
+        const closedTabs = [...s.closedTabs];
+        for (let entry = closedTabs.pop(); entry; entry = closedTabs.pop()) {
+          const { tab, index } = entry;
+          if (tab.kind === "session" && tab.sessionId && sessionGone?.(tab.sessionId)) continue;
+          for (const sessionId of closedTabSessionIds(tab)) closedSessionAckTombstones.delete(sessionId);
+          // Already open again (the sidebar reopened that session): focus it.
+          const existing = s.tabs.find(item => item.id === tab.id
+            || (tab.kind === "session" && item.kind === "session" && item.sessionId === tab.sessionId));
+          if (existing) {
+            reopened = existing.id;
+            return { ...commitCenterTabsState(s, { activeId: existing.id }), closedTabs };
+          }
+          const next = independentTab(tab, s.tabs);
+          const at = Math.min(Math.max(0, index), s.tabs.length);
+          reopened = next.id;
+          return {
+            ...commitCenterTabsState(s, { tabs: [...s.tabs.slice(0, at), next, ...s.tabs.slice(at)], activeId: next.id }),
+            closedTabs,
+          };
+        }
+        return closedTabs.length === s.closedTabs.length ? {} : { closedTabs };
+      });
+      return reopened;
+    }
   };
 }

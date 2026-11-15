@@ -1,0 +1,118 @@
+<title>内置浏览器的原生页面边界</title>
+<meta name="description" content="原生网页视图如何在任意外壳缩放下、在浮层下方和窗格移动时与 DOM 保持相同的页面边界。">
+<h1>内置浏览器的原生页面边界</h1>
+
+<p>Electron 外壳的 DOM 和每个原生 <code translate="no">WebContentsView</code> 在任意外壳缩放下保持相同的页面边界。<code translate="no">setBounds</code> 用 DIP，渲染进程量的是 CSS px。</p>
+
+<h2 id="unit-conversion">单位换算</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">渲染进程</th><td>发送 <code translate="no">getBoundingClientRect()</code> 量得的带小数 CSS px</td></tr>
+<tr><th scope="row">IPC 边界</th><td>主进程每次调用都读 <code translate="no">event.sender.getZoomFactor()</code>，换算成 DIP，再取整并保证尺寸非负。无效或非正的缩放按 <code translate="no">1</code> 处理。</td></tr>
+<tr><th scope="row">入口</th><td><code translate="no">webtab:sync-visible</code> 和兼容入口 <code translate="no">webtab:set-bounds</code> 同样换算。内部的显示、隐藏、转移路径本来就用 DIP，不再缩放。</td></tr>
+<tr><th scope="row">缩放变化</th><td>渲染进程的 <code translate="no">resize</code> 监听重新测量并发送当前边界</td></tr>
+<tr><th scope="row">例子，缩放约 1.095</th><td><code translate="no">x=812.63, width=518.64</code> CSS px 变为约 <code translate="no">x=890, width=568</code> DIP。不换算时，网页盖住聊天窗格，右侧留白。</td></tr>
+<tr><th scope="row">不动</th><td>用户缩放、分屏比例、DOM 布局、preload API、站点缩放、Browser Agent、依赖、配置</td></tr>
+</tbody>
+</table>
+
+<h2 id="unified-overlay-rules">浮层</h2>
+<p>DOM 浮层的可见矩形与网页 body 相交时才隐藏该原生网页。每个 <code translate="no">WebTabPane</code> 用自己的 body 对比当前浮层，没有全局可见标记。</p>
+<table class="stack">
+<thead><tr><th scope="col">浮层</th><th scope="col">识别方式</th><th scope="col">原生网页</th></tr></thead>
+<tbody>
+<tr><th scope="row">Popover、下拉、listbox、标签和分屏菜单</th><td><code translate="no">role=dialog/menu/listbox</code></td><td>只隐藏相交的窗格。聊天窗格内的工作目录、项目、权限菜单不影响相邻网页。</td></tr>
+<tr><th scope="row">全屏模态、确认背板、附件预览</th><td><code translate="no">data-native-view-occluder=true</code> 或合并背板</td><td>隐藏所有被盖住的窗格</td></tr>
+<tr><th scope="row">Tooltip、toast、拖拽提示、普通 portal 内容</th><td>不在选择器内</td><td>保持可见</td></tr>
+<tr><th scope="row">桌面主菜单、右键、书签原生菜单</th><td>主进程单独的浮层持有者</td><td>走原生菜单生命周期，不经渲染进程 DOM</td></tr>
+</tbody>
+</table>
+<p class="note">零面积或仅边缘接触不隐藏。MutationObserver、ResizeObserver 和滚动、缩放监听在浮层关闭、移动或改变大小后重新发布边界；全局 flush 在同一 tick 内合并微任务。</p>
+
+<h2 id="floating-preview">悬浮预览</h2>
+<p>Agent 的画中画预览走同一条 <code translate="no">registerVisibleWebTabBounds</code> / <code translate="no">syncVisible</code> 路径，只发布小窗 body，工具栏按钮和右下角缩放把手留在原生视图之外。预览有两层：下面是静态画面，上面是实时原生网页。没有 hold 时才显示网页（<code translate="no">PipHoldReason</code>，<code translate="no">apps/web/components/center-tabs/pip/web-tab-pip-surface.tsx</code>）。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Hold</th><th scope="col">何时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">gesture</code></th><td>拖动或缩放</td></tr>
+<tr><th scope="row"><code translate="no">clip</code></th><td>滚动的停靠栏遮住一部分</td></tr>
+<tr><th scope="row"><code translate="no">cover</code></th><td>菜单、对话框或 popover 与它重叠；网页立即落到最后一张画面之下</td></tr>
+<tr><th scope="row"><code translate="no">motion</code></th><td>折叠进或展开出输入框的网页标签</td></tr>
+</tbody>
+</table>
+<details>
+<summary>时序与布局</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">第一个 hold</th><td>截一帧并显示。截图超过 150 ms（<code translate="no">PIP_PICTURE_WAIT_MS</code>）时先显示缓存的上一张，到了再替换。无论哪种情况，原生边界都在这 150 ms 内撤走。</td></tr>
+<tr><th scope="row">最后一个释放</th><td>发布最终边界；网页在那里绘制后画面才消失</td></tr>
+<tr><th scope="row">布局</th><td><code translate="no">setPipZoom</code> 让网页按 1920 宽、高度随预览形状排版，缩放后铺满预览</td></tr>
+<tr><th scope="row">首次显示或尺寸变化</th><td>先在不可见处按该尺寸排版，等一次绘制，再等 250 ms（<code translate="no">PIP_RELAYOUT_MS</code>）和一次绘制，照顾靠脚本排版的页面。不会先露出标准尺寸或半成品布局。</td></tr>
+<tr><th scope="row">折叠时</th><td>保持该布局，展开时原样回来。显示该网页的窗格把缩放恢复为用户值。</td></tr>
+<tr><th scope="row">画面</th><td>按标签缓存，下次展开从它开始</td></tr>
+<tr><th scope="row">动画</th><td>从标签或 ✕ 关闭时折叠 240 ms，再显示时展开 280 ms（<code translate="no">apps/web/lib/browser/web-tab/web-tab-pip-motion.ts</code>）。减少动态效果时直接出现和消失。</td></tr>
+<tr><th scope="row">后台网页</th><td>不受影响：原生视图一直存活，只是不给边界</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="residual">残留：分屏网页跑在框架前面</h2>
+<p>原生网页和 App 的 DOM 是两个合成器客户端，窗格移动时分屏网页可能偏离框架。悬浮预览用 hold 遮住了这一点，分屏窗格没有 hold。</p>
+<dl class="pairs">
+<dt>实测</dt><dd>开发版 App，负载 4.6 到 6.2 下 24 次分屏侧栏移动：979 次绘制中 112 次偏离，最多 13 px</dd>
+</dl>
+<details>
+<summary>为什么逐帧上报修不了</summary>
+<p>渲染进程在排版一帧时测量，并在微任务里发送边界；主进程立刻移动视图，其帧约 1 ms 后到达显示合成器。App 自己的帧还要走完主帧、提交和光栅化。</p>
+<p>只有 App 的帧赶上截止时间时两者才同帧：120 Hz 下好的轮次毫无余量，坏的轮次晚 0.3 到 0.7 ms。</p>
+<p>一次移动的每帧开销相近，所以一旦晚一帧，整次移动网页都在前面（16 到 18 次绘制，最多 14 px）；负载 4 到 8 时，每十二次到每四次移动发生一次。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">尝试</th><th scope="col">为何不行</th></tr></thead>
+<tbody>
+<tr><th scope="row">渲染进程</th><td>无法预知自己的帧会晚</td></tr>
+<tr><th scope="row">主进程按自己的节奏播放移动</th><td>同样赶不上晚到的 DOM 帧</td></tr>
+<tr><th scope="row"><code translate="no">beginFrameSubscription</code></th><td>在绘制之后才到，网页每次都落后一帧</td></tr>
+</tbody>
+</table>
+<p>只有一个合成帧嵌入另一个时，显示合成器才让各表面同步，<code translate="no">&lt;webview&gt;</code> guest 和跨进程 iframe 就是这样绘制的。</p>
+</details>
+
+<h2 id="guests">为什么网页不作为 App 帧的 guest</h2>
+<p><code translate="no">&lt;webview&gt;</code> guest 随 DOM 移动、裁剪、折叠，不需要边界。在开发版 App 和 Electron 45 上，负载 6 到 12 下 48 次分屏面板移动没有一次绘制偏离框架，移动帧也略省（中位数 3.2 到 3.4 ms，对比 3.7 到 3.9）。决定因素是 Agent 的输入：</p>
+<table class="stack">
+<thead><tr><th scope="col">Agent 输入</th><th scope="col">Guest</th><th scope="col">原生视图</th></tr></thead>
+<tbody>
+<tr><th scope="row">CDP 发送的文字和按键</th><td>进入 App 窗口的焦点帧，也就是输入框，Enter 可能发出用户的消息</td><td>到达网页，不碰 App 焦点</td></tr>
+<tr><th scope="row"><code translate="no">webContents.insertText</code></th><td>到达焦点元素，不碰 App 焦点</td><td>不需要</td></tr>
+<tr><th scope="row"><code translate="no">sendInputEvent</code> 按键</th><td>widget 获得过一次焦点后才到达；没有编辑命令，Command+A 无效</td><td>快捷键命令可经 CDP 执行</td></tr>
+<tr><th scope="row">点击</th><td>每次都把 App 的键盘焦点移进 guest。交还焦点要走渲染线程；线程忙 150 ms 时，用户紧接着的按键落进了网页。</td><td>不碰 App 焦点</td></tr>
+</tbody>
+</table>
+<p class="note">用户在输入框打字时，Agent 的网页正显示在悬浮预览里，所以 guest 在那里同样不安全。网页在原生和 guest 之间切换还要重新加载：历史、滚动位置和表单值可恢复（<code translate="no">navigationHistory.restore</code>），脚本状态、连接、<code translate="no">sessionStorage</code> 和表单外的编辑器不能。</p>
+
+<details>
+<summary>代码与验证</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">代码</th><td><code translate="no">apps/desktop/main.js</code>、<code translate="no">apps/web/components/center-tabs/browser/web-tab-pane.tsx</code>、<code translate="no">apps/web/lib/browser/web-tab/web-tab-bounds.ts</code></td></tr>
+<tr><th scope="row"><code translate="no">apps/desktop/tests/check-webtab-zoom-bounds.js</code></th><td>100% 和约 109.5% 缩放、无效缩放、两个 IPC 入口、桌面回归</td></tr>
+<tr><th scope="row"><code translate="no">check:web-split</code></th><td>按网页 body 做矩形相交：左侧菜单不影响右侧网页；对话框、菜单、listbox 和全屏背板逐窗格判断；零面积和边缘接触不隐藏。通用 <code translate="no">DialogOverlay</code>、权限确认、右键点击捕获层和局部拖放浮层经 <code translate="no">data-native-view-occluder</code> 进入同一检查。</td></tr>
+<tr><th scope="row">安装版 App，缩放约 109.5%</th><td>DOM body 与原生视口都是 <code translate="no">568×763</code> DIP；窗口改为 <code translate="no">1350×800</code> 后都是 <code translate="no">526×712</code> DIP。还要检查分屏和分屏比例变化。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>单位换算、浮层规则、预览 hold、自动门禁</td></tr>
+<tr><th scope="row">未构建</th><td>Guest：没有开关、<code translate="no">&lt;webview&gt;</code> 接线、接管、预览表面或 Agent 转发</td></tr>
+<tr><th scope="row">已知残留</th><td>分屏窗格的网页可能跑在框架前面</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="built-in-browser.zh.html">内置浏览器</a></p>

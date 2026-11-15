@@ -1,0 +1,40 @@
+<title>本地模型 Provider</title>
+<meta name="description" content="Ollama、LM Studio、vLLM 和 llama.cpp 预设，走共用的 OpenAI Chat Completions 传输。">
+<h1>本地模型 Provider</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">预设</th><th scope="col">默认</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://docs.ollama.com/api/openai-compatibility">Ollama</a></th><td><code translate="no">localhost:11434/v1</code></td><td>已安装的模型标识。不使用原生管理 API。</td></tr>
+<tr><th scope="row"><a href="https://lmstudio.ai/docs/developer/openai-compat">LM Studio</a></th><td><code translate="no">localhost:1234/v1</code></td><td>模型和流式聊天</td></tr>
+<tr><th scope="row"><a href="https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/">vLLM</a></th><td><code translate="no">localhost:8000/v1</code></td><td>可选的服务器 API key</td></tr>
+<tr><th scope="row">llama.cpp、通用端点</th><td>配置的地址</td><td>离线解析</td></tr>
+</tbody>
+</table>
+
+<p class="note">全部走云端 provider 使用的 Chat Completions 传输：流式、工具调用、取消、重试和结构化输出。服务器由用户启动；OpenProgram 不安装模型、不分配 GPU、不启动推理服务器。</p>
+
+<h2>约定</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">地址</th><td>只写主机的 URL 在发现、校验和推理中一致解析到 <code translate="no">/v1</code>。修改对之后的调用生效，包括已保存的模型。</td></tr>
+<tr><th scope="row">发现</th><td>来自配置的服务器，绝不用云端目录</td></tr>
+<tr><th scope="row">凭据</th><td>可选。绝不继承无关的 OpenAI key。只发送给配置的端点。</td></tr>
+<tr><th scope="row">URL 安全</th><td>沿用现有的配置 URL 检查</td></tr>
+<tr><th scope="row">启用状态</th><td>通过现有的 provider 和模型注册表持久化</td></tr>
+<tr><th scope="row">设置</th><td>地址、可选账户、连通性、发现、手动模型 ID 和上限</td></tr>
+<tr><th scope="row">错误</th><td>无效 URL、服务器不存在、HTTP 失败和非 JSON 回复都作为可操作的失败报告</td></tr>
+<tr><th scope="row">兼容性</th><td>保守的 OpenAI 兼容设置</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>请求认证</summary>
+<p>没有 key：显式的 SDK 占位符防止回退到环境变量，每个 Chat Completions 请求都省略 Authorization 头。必须按请求省略，因为 SDK 认证校验器不认只移除默认头的做法。有 key：使用配置的服务器 key。云端请求仍需各自的凭据。</p>
+</details>
+
+<h2 id="status">实现状态</h2>
+
+<p>尚未对真实本地部署的模型做端到端推理；这需要运维方提供服务器。</p>

@@ -6,33 +6,40 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.self_update.verification.test_system_probe import live
-from openprogram.self_update import SelfUpdateStore, UpdatePhase
-from openprogram.self_update.verification import verification_channel as channel
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.self_update.verification import test_system_probe as _test_system_probe
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+from openprogram.operations.self_update.verification import verification_channel as channel
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+live = _test_system_probe.live
 
 
 @pytest.fixture
 def verifier(store_fixture, live, monkeypatch, request):
-    from openprogram.agent import authority
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.turn_request_context import set_turn_request, reset_turn_request
+    from openprogram.runtime.permissions import authority
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.agent.turn_request import (
+        set_turn_request,
+        reset_turn_request,
+    )
     from openprogram.programs import get_agent_tool
-    from openprogram.self_update.verification.system_probe import probe_system
-    from openprogram.self_update.verification.verifier_config import freeze_verifier_config
-    from openprogram.self_update.verification.verifier_config import config_evidence
-    from openprogram.self_update.control.recovery import recover_pending_updates
+    from openprogram.operations.self_update.verification.system_probe import probe_system
+    from openprogram.operations.self_update.verification.verifier_config import freeze_verifier_config
+    from openprogram.operations.self_update.verification.verifier_config import config_evidence
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
 
-    monkeypatch.setattr("openprogram.self_update.delivery.launcher.launch_supervisor", lambda *_a, **_k: None)
+    monkeypatch.setattr("openprogram.operations.self_update.delivery.launcher.launch_supervisor", lambda *_a, **_k: None)
 
     plan = getattr(request, "param", None)
     original, flags, _ = live
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store_fixture)
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "verify"})
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", lambda *a: SimpleNamespace(
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store_fixture)
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "verify"})
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model", lambda *a: SimpleNamespace(
         provider="fake", id="fixed", input=["text", "image"] if plan and any(c["entry"] == "ui:main" for c in plan["checks"]) else ["text"]))
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     store = SelfUpdateStore()
     store.transition(original.request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
     request = replace(original.request, update_id="su_channel", session_id="p1", origin_turn_id="u1", origin_assistant_id="a1",
@@ -44,13 +51,13 @@ def verifier(store_fixture, live, monkeypatch, request):
     repair_config = None
     if plan and any(check["entry"] == "test:python" for check in plan["checks"]):
         from openprogram.programs.tools.system import self_update as tool
-        from openprogram.self_update.repair.source_repair import freeze_config as freeze_repair
-        from openprogram.self_update.repair.source_repair import config_evidence as repair_evidence
+        from openprogram.operations.self_update.repair.source_repair import freeze_config as freeze_repair
+        from openprogram.operations.self_update.repair.source_repair import config_evidence as repair_evidence
         worktree = tool.get_manager().get_worktree(request.worktree_id)
         repair_config = freeze_repair(request, config, candidate_path=worktree.worktree_path, branch_name=worktree.branch_name)
         request = replace(request, pre_update_evidence=(*request.pre_update_evidence, repair_evidence(repair_config)))
     store.create(request, verifier_config=config, source_repair_config=repair_config)
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(request.update_id, phase)
     gate = probe_system(store.load(request.update_id))
     grant = channel.issue_grant(store, request.update_id, gate)
@@ -83,15 +90,16 @@ def verifier(store_fixture, live, monkeypatch, request):
                 assert json.loads(observed["body"])["database_ok"] is True
             row = dict(id="acceptance-1", status=control["status"], entry=observed["entry"],
                        observation="The authenticated response reports database_ok=true",
-                       evidence_refs=[control.get("reference", observed["evidence_ref"])], observed_at=observed["observed_at"])
+                       evidence_refs=[control.get("reference", observed["evidence_ref"]), *control.get("extra_refs", ())],
+                       observed_at=observed["observed_at"])
             row.update(control.get("row_changes", {}))
             return TurnResult(json.dumps(dict(schema=1, update_id=request.update_id, candidate_sha=request.candidate_sha,
                                              attempt=1, verdict=control["status"], assertions=[row])), "verify_u", "verify_a")
         finally:
             reset_turn_request(token)
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", dispatch)
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", dispatch)
     runner = JobRunner(max_workers=1)
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     def run():
         assert recover_pending_updates() is True
         job = runner.await_job(grant["job_id"], timeout=10)
@@ -107,9 +115,9 @@ def consume(v, token=None):
 
 def tamper_job(job_id, **fields):
     """Modify persisted bytes to exercise verifier corruption detection."""
-    from openprogram.store import default_store
+    from openprogram.state.store import default_store
 
-    path = default_store()._session_dir("p1") / "jobs.json"  # noqa: SLF001
+    path = default_store().state_file("p1", "jobs.json")
     body = json.loads(path.read_text(encoding="utf-8"))
     body["jobs"][job_id].update(fields)
     path.write_text(json.dumps(body), encoding="utf-8")
@@ -127,7 +135,7 @@ def test_registered_observer_and_durable_job_result_are_bound(verifier, verdict)
     assert v.grant["token"] not in job.result_text
     assert v.grant["token"] not in json.dumps(v.control["observed"])
     assert v.grant["token"] not in json.dumps(receipt)
-    from openprogram.self_update.control.projection import read_status
+    from openprogram.operations.self_update.control.projection import read_status
     projected = read_status(v.store, session_id=v.request.session_id, update_id=v.request.update_id)
     assert projected["verifier_verdict"] == verdict
     assert projected["verifier"]["assertions"][0]["evidence_refs"] == [v.control["observed"]["evidence_ref"]]
@@ -137,10 +145,10 @@ def test_registered_observer_and_durable_job_result_are_bound(verifier, verdict)
 def test_public_evidence_read_is_bound_to_owner_session_and_signed_receipt(verifier, monkeypatch):
     from fastapi import FastAPI
     from starlette.testclient import TestClient
-    from openprogram.agent.authority import owner_principal_id
-    from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
-    from openprogram.webui.routes import self_updates
-    from openprogram.self_update.control.projection import read_status
+    from openprogram.runtime.permissions.authority import owner_principal_id
+    from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.interfaces.server.routes import self_updates
+    from openprogram.operations.self_update.control.projection import read_status
 
     # The live fixture fixes the owner function; keep the tool module's
     # already-imported alias on that same identity without bypassing checks.
@@ -229,8 +237,8 @@ def test_observer_does_not_accept_unreviewed_entries(verifier, entry):
 
 
 def test_rollback_during_network_observation_cannot_publish_evidence(verifier, monkeypatch):
-    from openprogram.self_update.verification import system_probe
-    from openprogram.self_update.control.rollback_intent import begin_rollback
+    from openprogram.operations.self_update.verification import system_probe
+    from openprogram.operations.self_update.control.rollback_intent import begin_rollback
     v = verifier
     original = system_probe.observe_system
     def observe_then_restore(*args):
@@ -269,7 +277,7 @@ def test_observer_never_follows_redirects(verifier, entry):
 @pytest.mark.parametrize("credential", ["owner", "grant"])
 @pytest.mark.parametrize("field", ["body", "header"])
 def test_echoed_credentials_never_reach_model_or_evidence(verifier, credential, field):
-    from openprogram.backend_endpoint import read_web_token
+    from openprogram.host.security.backend_endpoint import read_web_token
     v = verifier
     secret = read_web_token() if credential == "owner" else v.grant["token"]
     v.flags.update(echo_secret="owner" if credential == "owner" else secret, echo_field=field)
@@ -333,7 +341,7 @@ def test_symlink_evidence_cannot_pass(verifier, tmp_path):
 
 def test_supervisor_times_out_a_missing_job_without_accepting_it(verifier, monkeypatch):
     import time
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
     v = verifier
     calls = []
     def rollback(store, update_id, digest, error, *, verdict=None):
@@ -353,8 +361,8 @@ def test_generic_read_cannot_expose_verifier_authorization_even_without_sandbox(
     v = verifier
     v.control["read_grant"] = True
     v.control["read_tool"] = name
-    monkeypatch.setattr("openprogram.sandbox.resolve_policy", lambda: None)
+    monkeypatch.setattr("openprogram.host.sandbox.resolve_policy", lambda: None)
     v.run()
     output = v.control["read_result"].content[0].text
-    assert "sandbox policy" in output
+    assert output.startswith("[blocked by sandbox]")
     assert v.grant["token"] not in output

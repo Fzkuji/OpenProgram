@@ -1,8 +1,11 @@
 .preview { height: 100%; min-height: 0; color: var(--text-primary); background: var(--bg-primary); }
-.preview button { border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--bg-primary); color: var(--text-secondary); padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; }
-.preview button:hover:not(:disabled) { background: var(--bg-tertiary); color: var(--text-primary); }
-.preview button:disabled { opacity: .45; cursor: default; }
-.preview input { border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--bg-primary); color: var(--text-primary); padding: 4px 8px; font: inherit; font-size: 12px; min-width: 80px; }
-.preview :is(button, input, a):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
-.preview a { color: var(--text-primary); font-size: 12px; }
+/* The preview's own plain buttons. shadcn controls (a Checkbox, a Select
+   trigger: every one carries data-slot) bring their own chrome and must not
+   be repainted as toolbar buttons. */
+.preview button:not([data-slot]) { border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); background: var(--bg-primary); color: var(--text-secondary); padding: 4px 8px; font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.preview button:not([data-slot]):hover:not(:disabled) { background: var(--bg-tertiary); color: var(--text-primary); }
+.preview button:not([data-slot]):disabled { opacity: .45; cursor: default; }
+.preview input { border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); background: var(--bg-primary); color: var(--text-primary); padding: 4px 8px; font: inherit; font-size: var(--fs-xs); min-width: 80px; }
+.preview :is(button:not([data-slot]), input, a):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.preview a { color: var(--text-primary); font-size: var(--fs-xs); }
 .preview [role="alert"] { color: var(--status-error); }

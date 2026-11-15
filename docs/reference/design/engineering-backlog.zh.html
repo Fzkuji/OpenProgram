@@ -1,0 +1,49 @@
+<title>工程待办</title>
+<meta name="description" content="等待决定的工程提案和回归检查清单。">
+<h1>工程待办</h1>
+<p>等待决定的提案。交付状态见<a href="implementation-status.zh.html">实现状态与交接</a>。动手前先对照当前源码验证；决定写入规范设计后删除对应条目。</p>
+
+<h2 id="frontend-state-consolidation">前端状态整合</h2>
+<p>store 之外还有两条状态路径：无类型的 <code translate="no">window.dispatchEvent</code> 事件，以及 <code translate="no">apps/web/lib/net/ws/use-ws.ts</code> 把 store 帧重新广播为 CustomEvent（<code translate="no">op:dag-nodes</code>、<code translate="no">op:execution-update</code>、<code translate="no">op:job-status</code> 等）。连同模块级 <code translate="no">runtimeState</code> 一起审查。</p>
+
+<h2 id="repository-structure">仓库结构</h2>
+<p>目标分层：核心（<code translate="no">openprogram/</code>）在底层；Server（<code translate="no">openprogram/interfaces/server</code>）和 CLI（<code translate="no">openprogram/interfaces/cli</code>）依赖它，绝不反向。</p>
+<p>待决：<code translate="no">site-*</code> 和 <code translate="no">repository-*</code> 页面散放在 <code translate="no">docs/reference/design/</code>。提案：按领域建子目录，保持 <code translate="no">nav.py</code> 路由。</p>
+
+<h2 id="modules-with-multiple-responsibilities">职责过多的模块</h2>
+<p>排期时重新测量。<code translate="no">apps/cli/src/runtime/</code> 下内置的 yoga-layout 和 ink 不在范围内。</p>
+<ul>
+<li><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/macos.py</code>、<code translate="no">windows.py</code></li>
+<li><code translate="no">openprogram/state/store/snapshot/checkpoint/store.py</code></li>
+<li><code translate="no">openprogram/host/security/safe_http.py</code></li>
+<li><code translate="no">apps/desktop/main.js</code></li>
+<li><code translate="no">openprogram/runtime/conversation/process_runner.py</code></li>
+<li><code translate="no">openprogram/programs/applications/browser/pages.py</code></li>
+<li><code translate="no">openprogram/interfaces/server/routes/catalog/programs.py</code></li>
+<li><code translate="no">openprogram/programs/_host/runtime.py</code></li>
+</ul>
+
+<h2 id="regression-review-checklist">回归检查清单</h2>
+<p>用于验证，不表示这些都已损坏。开任务前先对照当前源码和公开界面复现；完成情况记入规范设计。</p>
+<table class="stack">
+<thead><tr><th scope="col">范围</th><th scope="col">待验证行为</th><th scope="col">来源或入口</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令投递</th><td>WebSocket 已关闭时不算成功，也不清空草稿</td><td><code translate="no">wsSend</code>、输入框提交</td></tr>
+<tr><th scope="row">斜杠命令</th><td>打开 <code translate="no">/</code> 不会执行 compact；缺少 <code translate="no">/skill</code> 名称和 <code translate="no">/task</code> 提示词时拒绝并反馈</td><td><code translate="no">slash-commands.ts</code></td></tr>
+<tr><th scope="row">命令菜单</th><td>关闭动画不吞 Return、不阻塞历史上下键；必填参数仍可编辑</td><td><code translate="no">selectSlashCommand</code>、输入框按键处理</td></tr>
+<tr><th scope="row">需要会话</th><td>无会话时命令给出反馈，不清空输入</td><td>输入框、斜杠命令</td></tr>
+<tr><th scope="row">压缩</th><td>忙碌、建议、完成、失败、无操作均可见；反应式事件有界面反馈</td><td><code translate="no">loop_runner.py</code>、<code translate="no">reactive.py</code>、<code translate="no">chat-handlers.ts</code></td></tr>
+<tr><th scope="row">上下文历史</th><td>压缩保留旧轮次和 DAG head；摘要展开需目视验证</td><td>Context 详情、对话记录</td></tr>
+<tr><th scope="row">Help 和 doctor</th><td>Help 展示并聚焦命令菜单；doctor 在有无会话时都呈现结果</td><td><code translate="no">/help</code>、<code translate="no">/doctor</code></td></tr>
+<tr><th scope="row">控件重叠</th><td>回到最新和斜杠菜单在实际位置可用；需观察，不从 z-index 推断</td><td>聊天界面</td></tr>
+<tr><th scope="row">附件</th><td>不支持或过大的文件给出明确反馈</td><td><code translate="no">image-attach.ts</code></td></tr>
+<tr><th scope="row">桌面启动</th><td>窗口以既定布局出现，不从角落缩放</td><td>已安装的桌面 App</td></tr>
+<tr><th scope="row">CLI 恢复</th><td>参数以目标会话到达 Ink 运行时</td><td><code translate="no">openprogram/interfaces/cli/ink.py</code>、<code translate="no">apps/cli/src/index.tsx</code></td></tr>
+<tr><th scope="row">SSO、语音、插件隔离</th><td>文档区分已实现和未实现的方法与供应商；社区插件执行符合隔离契约</td><td><code translate="no">models/auth/methods/sso.py</code>、<code translate="no">interfaces/speech/tts.py</code>、插件加载器</td></tr>
+<tr><th scope="row">函数恢复</th><td>同帧恢复与新建同级重试有区别；间接循环遵循递归策略</td><td><code translate="no">ws_actions/chat/retry.py</code>、<code translate="no">agent/call_state.py</code></td></tr>
+<tr><th scope="row">函数元数据</th><td>动态元数据和源码字面声明遵循表单契约</td><td>函数表单、元数据文档</td></tr>
+<tr><th scope="row">分发</th><td>Linux 桌面产物、升级失败恢复、手动工作流发布和沙箱门禁与安装文档一致</td><td>安装、源码升级、工作流发布</td></tr>
+<tr><th scope="row">命令注册表</th><td>重名有明确的查找顺序，菜单无歧义</td><td><code translate="no">runCommand</code>、命令菜单</td></tr>
+</tbody>
+</table>
+<p class="note">空闲自动压缩是产品决定，不是默认的缺陷。环境变量发现不能替代 AuthStore 边界。外部 issue 数量和旧快照都不是证据。</p>

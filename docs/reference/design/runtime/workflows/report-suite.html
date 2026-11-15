@@ -1,0 +1,107 @@
+<title>Weekly report workflows</title>
+<meta name="description" content="The weekly_report router, its four reports, source weeks, Tencent content rules, WeChat reading and structured Agent behaviour.">
+<h1>Weekly report workflows</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Report</th><th scope="col">Produces</th><th scope="col">Writes externally</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">personal</code></th><td>The Feishu personal form</td><td>Feishu, under its existing gates</td></tr>
+<tr><th scope="row"><code translate="no">personal_chat</code></th><td>The owner's three-section copy for the WeChat group</td><td>Never</td></tr>
+<tr><th scope="row"><code translate="no">group</code></th><td>Summary of other members' reports read from WeChat</td><td>Never</td></tr>
+<tr><th scope="row"><code translate="no">tencent</code></th><td>About 100 Chinese characters of progress, on Friday afternoons</td><td>Never</td></tr>
+</tbody>
+</table>
+
+<h2 id="layout">Package</h2>
+<pre translate="no" tabindex="0"><code>weekly_report/
+  workflow.py             the one public entry, weekly_report(task)
+  steps/routing.py        Agent prompt text only
+  reports/&lt;report&gt;/       roles, steps and README of each report
+  tests/&lt;report&gt;/
+openprogram/programs/_authoring/reports/   shared sourcing, output, checkpoint, WeChat modules</code></pre>
+<p class="note">Only the root <code translate="no">PROGRAM_ENTRIES</code> registers a tool, so Abilities shows one entry. Internal modules are excluded. Discovery allows one category-directory level, rejects symlinks and duplicates, and still needs source authorization. Functions in authorized external directories derive their UI path from their owning directory.</p>
+
+<h2 id="routing">Routing</h2>
+<p><code translate="no">weekly_report</code> calls an Agent to choose reports from the complete meaning, negation and context, never by keywords or colons. Code validates only the target enum and forwards the request verbatim: no summary, truncation or added draft-only limits.</p>
+<table class="stack">
+<thead><tr><th scope="col">Request</th><th scope="col">Runs</th><th scope="col">Each child gets</th></tr></thead>
+<tbody>
+<tr><th scope="row">Write my personal report; Tencent is only a reference, no group report</th><td>Only the personal report</td><td>The full request</td></tr>
+<tr><th scope="row">Do personal and Tencent, not group</th><td>Those two</td><td>The same full request</td></tr>
+<tr><th scope="row">Do all of them</th><td>All, with no shared period or recovery state</td><td>The same full request</td></tr>
+<tr><th scope="row">Audience unclear</th><td><code translate="no">personal_chat</code>, an unsent discovery draft; never a clarification</td><td>The full request</td></tr>
+</tbody>
+</table>
+<ul>
+<li>The owner's report for the group is <code translate="no">personal_chat</code>. <code translate="no">group</code> means collecting other members' reports.</li>
+<li>One result returns verbatim; several get audience labels. A failed child's section reads as unfinished with its error, and the others still run; only when all fail is the first exception raised. Cancellation stops at once and attaches completed results.</li>
+<li>No shared week, checkpoint or completion state; each child owns its materials, output and recovery. Old router checkpoints do not resume: pass the child's resume request through <code translate="no">requests</code>.</li>
+<li>JSON <code translate="no">{"requests": {"tencent": …}}</code> addresses children directly; <code translate="no">result_format: "structured"</code> returns a <code translate="no">results</code> mapping without claiming aggregate completion.</li>
+<li>Each report interprets only its own part. Tencent stores the original in <code translate="no">user_request</code> for later model context; materials allow original excerpts only. Group extraction keeps the complete request for source selection.</li>
+</ul>
+
+<h2 id="source-weeks">Source weeks and old drafts</h2>
+<ul>
+<li>The execution week is not necessarily the source week. Memory candidates keep speaker type and source dates. Import time never labels old chat as this week.</li>
+<li>Trusted original owner records come first; equivalent sources are ordered by date descending within the week.</li>
+<li>Later factual revisions replace only what conflicts; independent progress stays.</li>
+<li>Automatic sourcing never reads Workflow checkpoints or a report's <code translate="no">sources.json</code> as evidence. Exported sources with citation chains are for audit.</li>
+<li>Recovery rejects invalidated checkpoints. A wrong week in an old draft keeps its files and audit records, invalidates that execution and retrieves real evidence. Missing material returns a waiting state, not the old draft.</li>
+</ul>
+
+<h2 id="tencent">Tencent content</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Include</th><td>This week's actions, findings, results and current problems; methods, subjects and observations from same-week records; literature reviews and reproductions actually performed</td></tr>
+<tr><th scope="row">Exclude</th><td>Direction discussion, meeting agendas, administration, future plans. Cite decisions or findings, not the meeting. No repeated topic lists</td></tr>
+<tr><th scope="row">Do not invent</th><td>States such as completed, validated, improved. Actions without results stay actions. Related external material does not show the user did the work; paper results and personal reproduction are kept apart</td></tr>
+<tr><th scope="row">Format</th><td>Always starts with the fixed Chinese prefix for “This week's progress:”, then numbered action sentences. No “model not provided” metadata, metaphors or slogans; unrecorded metrics do not mean no data</td></tr>
+<tr><th scope="row">Enough material</th><td>Recorded optimization, submission and validation suffice; model lists and metrics are optional</td></tr>
+<tr><th scope="row">Ask only when</th><td>No usable action exists, or core facts conflict irreconcilably</td></tr>
+<tr><th scope="row">Supplementary search</th><td>After brief progress, up to three topic terms, same-week memory only, merged and deduplicated, then a second selection. At most two selection model calls. Results and budget go in the checkpoint, so recovery does not repeat. Each context at most 30 entries and 18 KB</td></tr>
+<tr><th scope="row">Verification</th><td>Independent check of source support and reporting scope</td></tr>
+</tbody>
+</table>
+
+<h2 id="wechat">WeChat window reading</h2>
+<p>Binds the unique main window, PID and process-start identity, through GUI Harness <code translate="no">MacWindow</code> / <code translate="no">window_session</code>. Never opens, activates or raises a window, uses fullscreen screenshots or the clipboard, or delivers process-targeted keyboard or mouse events. Every operation revalidates window and control ownership.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Operation</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Enter a group name</th><td>Native <code translate="no">AXSearchField</code> only</td></tr>
+<tr><th scope="row">Select a group</th><td><code translate="no">AXPress</code> on a control matching the exact name and OCR location</td></tr>
+<tr><th scope="row">Page</th><td>Only controls in the message region with accessibility paging; at most twelve pages per attempt, no claim of complete history</td></tr>
+<tr><th scope="row">Screenshot</th><td>ScreenCaptureKit desktop-independent window. Nothing persists before the title in the image is verified</td></tr>
+<tr><th scope="row">Message</th><td>Needs an in-page date and a designated member</td></tr>
+<tr><th scope="row">Unsupported operation</th><td>Recoverable state; no switch to foreground</td></tr>
+<tr><th scope="row">No Accessibility window (screenshot-only binding)</th><td><code translate="no">SEARCH_UNAVAILABLE</code>; the visual reader reads only the conversation shown, never searches, selects or pages</td></tr>
+<tr><th scope="row">Header verifies the group</th><td><code translate="no">READY</code>, <code translate="no">window_controls</code> unavailable, coverage limited to one visible page</td></tr>
+<tr><th scope="row">Header does not verify</th><td><code translate="no">CAPTURE_ONLY_GROUP_NOT_SHOWN</code> with a reason; nothing persists</td></tr>
+<tr><th scope="row">A refused background action</th><td><code translate="no">BACKGROUND_ACTION_UNAVAILABLE</code>, never treated as applied</td></tr>
+<tr><th scope="row">Transparent image, missing controls, changed window, concurrent use</th><td>Distinct reasons and recovery parameters. Never asks the user to raise the window or calls an empty capture missing permission</td></tr>
+</tbody>
+</table>
+<p class="note">Temporary screenshots are returned even on cancellation or failed validation. Apple marks <code translate="no">NSWindow.SharingType.none</code> legacy; it is not used to infer capture capability.</p>
+
+<h2 id="agent-behaviour">Agent execution</h2>
+<details>
+<summary>Session tools, structured output and timeouts</summary>
+<ul>
+<li>New turns restore tool schemas from discovery state on the current branch, intersected with allowed tools. Other sessions and sibling branches do not inherit. Approval recovery uses existing checkpoints and never expands permissions. The ContextVar is released with the turn.</li>
+<li>A read-only Agent interprets group requests through memory search, directory lookup and file reads to find the group and ordered members. User-provided values win. No sending, writing, Shell, browser or recursive report tools. Unresolved fields stay missing.</li>
+<li>Structured stages use <code translate="no">response_format</code> with prompt fallback: Runtime validates JSON and allows one correction within its request budget and timeout. A format error is a model failure with verbatim retry parameters, not missing user information.</li>
+<li>Tool turns are governed by <code translate="no">max_iterations</code>; a successful tool turn does not consume the failure budget, and normal calls do not replenish it. Every turn checks cancellation and the deadline.</li>
+<li>Personal fields: a read-only retrieval Agent returns six named fields, validated by JSON Schema. Complete reports need non-empty current-week work and next-week plans; partial edits return only the requested fields. Source verification still decides what structured input is saved. Uncertain external writes are not replayed.</li>
+<li>Memory search, grep, get and browse are read-only safe tools; they keep <code translate="no">memory.read</code> and explicit deny or ask rules.</li>
+<li>Timeouts: model requests inherit the Runtime deployment timeout (<code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code>), with no 90-second limit. Later Tencent model stages keep 180 seconds. Browser deadlines and the no-retry rule for uncertain submissions stay.</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li>Router, partial completion and recovery are verified in the installed App.</li>
+<li>Real WeChat message reading is unfinished: calls against the local main window return fully transparent images.</li>
+<li>Session tool recovery, structured correction and timeout repairs are in verification; earlier acceptance exposed group-model format failures and missing chat invocation, so the full flow is not yet called healthy.</li>
+<li>Acceptance needs public-entry request-fidelity tests, child context tests, call-graph tests and local App runs through ordinary chat. A direct-function test cannot stand in for a failed chat call, and stage tests cannot replace real source reading or external submission.</li>
+</ul>

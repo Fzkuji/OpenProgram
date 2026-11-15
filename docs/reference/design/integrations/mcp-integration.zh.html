@@ -1,0 +1,186 @@
+<title>MCP 客户端集成</title>
+<meta name="description" content="外部 MCP 服务如何成为 Agent 工具：配置、凭据、调用路径、启动和内容转换。">
+<h1>MCP 客户端集成</h1>
+
+<p>OpenProgram 作为 MCP 客户端：<code translate="no">mcp_servers.json</code> 中服务的每个工具都成为普通的 <code translate="no">AgentTool</code>，名为 <code translate="no">{server}__{tool}</code>。把 OpenProgram 自己的工具暴露出去是相反方向：<a href="mcp-server.zh.html">MCP 服务端</a>。</p>
+
+<h2 id="call-path">调用路径</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="模型发出工具调用。agent_loop 在注册表中找到 AgentTool 并等待 execute。adapter.register_remote_tool 生成的闭包用原始工具名调用 MCPClient.call_tool。MCPClient 经 stdio JSON-RPC 或 HTTP 发给服务。CallToolResult 经 adapter.convert_call_result 转成 AgentToolResult，写入聊天历史，再次调用模型。">
+  <defs><marker id="mcp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">模型</text>
+  <text class="t-soft" x="0" y="64">tool_call</text>
+  <line class="ln" x1="66" y1="34" x2="110" y2="34" marker-end="url(#mcp-a)"/>
+  <text class="t-big" x="122" y="40">agent_loop</text>
+  <text class="t-soft" x="122" y="64">查注册表</text>
+  <line class="ln" x1="224" y1="34" x2="268" y2="34" marker-end="url(#mcp-a)"/>
+  <text class="t-big" x="280" y="40">闭包</text>
+  <text class="t-soft" x="280" y="64">原始工具名</text>
+  <line class="ln" x1="372" y1="34" x2="416" y2="34" marker-end="url(#mcp-a)"/>
+  <text class="t-big" x="428" y="40">MCPClient</text>
+  <line class="ln" x1="524" y1="34" x2="568" y2="34" marker-end="url(#mcp-a)"/>
+  <text class="t-big" x="580" y="40">服务</text>
+  <line class="ln-faint" x1="610" y1="52" x2="610" y2="112"/>
+  <line class="ln-faint" x1="610" y1="112" x2="30" y2="112" marker-end="url(#mcp-a)"/>
+  <text class="t-soft" x="110" y="138">CallToolResult → convert_call_result → AgentToolResult → 聊天历史 → 下一次模型调用</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>模型</strong><small>tool_call</small></li>
+  <li><strong>agent_loop</strong><small>查注册表</small></li>
+  <li><strong>闭包</strong><small>原始工具名</small></li>
+  <li><strong>MCPClient</strong></li>
+  <li><strong>服务</strong></li>
+  <li class="flow-end"><strong>结果</strong><small>convert_call_result、聊天历史、下一次模型调用</small></li>
+</ol>
+</figure>
+<ul>
+<li>在 worker 的事件循环上等待完成。会话过期的调用重连后重试一次。</li>
+<li>只有模型发起这些调用。<code translate="no">programs run</code> 和 <code translate="no">/programs</code> 页面用于本地函数。</li>
+</ul>
+
+<h2 id="configuration">配置</h2>
+<p><code translate="no">&lt;state_dir&gt;/mcp_servers.json</code>，经 <code translate="no">paths.get_state_dir</code> 跟随 profile。文件缺失或解析失败时记录一条警告，worker 以零个服务启动。</p>
+<pre translate="no" tabindex="0"><code>{
+  "servers": {
+    "drawio": {
+      "type": "local",
+      "command": ["npx", "-y", "@drawio/mcp"],
+      "env": {},
+      "enabled": true,
+      "timeout_seconds": 60
+    }
+  }
+}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">type</code></th><td><code translate="no">local</code>（stdio 子进程）、<code translate="no">http</code>（Streamable HTTP）、<code translate="no">sse</code>（旧版 SSE）。远程类型带 <code translate="no">url</code>、<code translate="no">headers</code>、<code translate="no">auth</code>（<code translate="no">none</code>、<code translate="no">bearer</code>、<code translate="no">oauth</code>）</td></tr>
+<tr><th scope="row"><code translate="no">command</code></th><td>子进程命令和参数</td></tr>
+<tr><th scope="row"><code translate="no">env</code></th><td>对继承环境的覆盖和追加</td></tr>
+<tr><th scope="row"><code translate="no">enabled</code></th><td><code translate="no">false</code> 停用但不删除</td></tr>
+<tr><th scope="row"><code translate="no">timeout_seconds</code></th><td>启动等待和单次调用的读取超时</td></tr>
+</tbody>
+</table>
+
+<h3 id="credentials">凭据</h3>
+<p><code translate="no">env</code> 和 <code translate="no">headers</code> 的每个值都算密钥，因为任何一项都可能是，bearer token 和 OAuth client secret 同样。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">PATCH /api/mcp/servers/{name}</code></th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">名字或整个字段缺失</th><td>保留</td></tr>
+<tr><th scope="row">名字带值</th><td>替换</td></tr>
+<tr><th scope="row">名字带空字符串</th><td>删除</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">auth.token</code> 和 <code translate="no">auth.client_secret</code> 同样规则。改 <code translate="no">auth.kind</code> 会丢弃另一种的密钥。Web UI 打开时密钥输入框为空，只列出已存名字。</p>
+<details>
+<summary>序列化与存储</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">to_storage_dict()</code></th><td>完整值，只用于写 <code translate="no">mcp_servers.json</code></td></tr>
+<tr><th scope="row"><code translate="no">to_response_dict()</code></th><td>每个值变成 <code translate="no">{"has_value": bool, "masked": str}</code>；认证密钥变成 <code translate="no">has_token</code> / <code translate="no">has_client_secret</code> 和掩码。<code translate="no">/api/mcp/servers</code>、<code translate="no">/api/mcp/servers/{name}</code>、<code translate="no">/api/mcp/catalog</code>、<code translate="no">/api/mcp/catalog/diff</code> 都返回它。</td></tr>
+<tr><th scope="row"><code translate="no">save_configs()</code></th><td>仅所有者可读：临时文件以 <code translate="no">0600</code> 创建，<code translate="no">fsync</code>，<code translate="no">os.replace</code>。旧的 <code translate="no">0644</code> 文件下次保存时收紧。</td></tr>
+<tr><th scope="row">编辑失败</th><td>重启成功后才持久化，已存凭据不受影响</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="code-structure">代码</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">openprogram/extensions/mcp/</code></th><th scope="col">职责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">__init__.py</code></th><td>重新导出 <code translate="no">load_mcp_servers</code>、<code translate="no">shutdown_mcp_servers</code>、<code translate="no">server_status</code></td></tr>
+<tr><th scope="row"><code translate="no">config.py</code></th><td><code translate="no">MCPServerConfig</code>、<code translate="no">load_configs</code>、<code translate="no">save_configs</code></td></tr>
+<tr><th scope="row"><code translate="no">client.py</code></th><td><code translate="no">MCPClient</code>：单个服务的传输、<code translate="no">ClientSession</code>、supervisor 任务</td></tr>
+<tr><th scope="row"><code translate="no">adapter.py</code></th><td>MCP 类型与 <code translate="no">AgentTool</code> 的无状态转换</td></tr>
+<tr><th scope="row"><code translate="no">registry.py</code></th><td>全局管理器</td></tr>
+<tr><th scope="row"><code translate="no">oauth_flow.py</code></th><td>OAuth 2.1 PKCE 授权和回环回调</td></tr>
+<tr><th scope="row"><code translate="no">token_storage.py</code></th><td><code translate="no">PersistentOAuthProvider</code>：token、客户端注册、服务元数据</td></tr>
+<tr><th scope="row"><code translate="no">sampling.py</code></th><td>基于已配置宿主模型的采样回调</td></tr>
+<tr><th scope="row"><code translate="no">server/</code></th><td>独立的服务端方向，不复用客户端模块</td></tr>
+</tbody>
+</table>
+<p class="note">属于 extensions 组的核心包，与 <code translate="no">plugins/</code>、<code translate="no">skills/</code> 同级，不在 <code translate="no">openprogram/programs/</code> 下：它适配外部协议，就像 <code translate="no">openprogram/interfaces/channels/</code> 适配消息。opencode（<code translate="no">src/mcp/</code>）也把 MCP 单独放；这一层基本是 opencode 的 Python 翻译。</p>
+
+<h2 id="startup">启动与就绪</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">情形</th><th scope="col">可观察结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">App lifespan 和 <code translate="no">/healthz</code></th><td>MCP 传输、npm 下载或 OAuth 未完成时也就绪；标准执行恢复仍是就绪门槛</td></tr>
+<tr><th scope="row">状态和工具注册表</th><td>启动中和失败的客户端显示真实的就绪、错误、认证字段，密钥已掩码，不提前出现工具</td></tr>
+<tr><th scope="row">连接成功</th><td>带命名空间的工具和 prompt 变为可用</td></tr>
+<tr><th scope="row">启动中关闭</th><td>启动被取消并排空；客户端、supervisor、回调资源和注册都释放；不会迟到注册</td></tr>
+<tr><th scope="row">所有者删除或停用排队中的服务</th><td>保持缺失或停用；没有新进程或工具；管理操作的替换优先于启动快照</td></tr>
+<tr><th scope="row">自有 OAuth 回调被取消</th><td>释放 socket、线程和等待者，不伪造 code；正常的 code 和 state 校验不变</td></tr>
+</tbody>
+</table>
+<details>
+<summary>背后的规则</summary>
+<ul>
+<li>服务器 lifespan 把 <code translate="no">load_mcp_servers()</code> 作为受管后台任务运行；服务按顺序连接，使用各自配置的超时。</li>
+<li>每个客户端在等待连接前就发布到注册表：<code translate="no">ready=false</code>，没有工具。掩码管理 API 保持可用。</li>
+<li>排队的服务轮到时读取当前持久化的配置。</li>
+<li>不在首次用工具时才连接。不等待所有连接，因为认证可能超过健康检查期限。也不另起 worker、改所有者超时、压制认证错误或把未完成的客户端标为就绪。</li>
+</ul>
+</details>
+
+<h2 id="decisions">机制</h2>
+<h3 id="tool-namespace">工具名</h3>
+<p><code translate="no">adapter.namespace_tool_name(server, tool)</code> 把 <code translate="no">[A-Za-z0-9_-]</code> 之外的字符换成 <code translate="no">_</code>，截断到 OpenAI 上限 64，保留工具后缀。用双下划线是因为 OpenAI 的名称规则拒绝 opencode 的冒号。重名时后注册的生效。</p>
+
+<h3 id="content-conversion">内容转换</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">MCP 类型</th><th scope="col">转成</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">TextContent</code></th><td><code translate="no">providers.types.TextContent</code></td></tr>
+<tr><th scope="row"><code translate="no">ImageContent</code></th><td><code translate="no">providers.types.ImageContent</code></td></tr>
+<tr><th scope="row"><code translate="no">EmbeddedResource</code></th><td>文本 <code translate="no">[resource: &lt;uri&gt;]</code>；原始字节不进聊天</td></tr>
+<tr><th scope="row">未知类型</th><td><code translate="no">repr(block)</code> 文本</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">isError=True</code> 写入 <code translate="no">details["is_error"]</code>；模型看到结果文本，与本地工具一致。</p>
+
+<details>
+<summary>持久连接与 supervisor 任务</summary>
+<p>MCP 是长连接双向协议，SDK 用嵌套的上下文管理器暴露。一个 supervisor <code translate="no">asyncio.Task</code> 保持它们打开。</p>
+<pre translate="no" tabindex="0"><code>async def _supervisor(self):
+    async with stdio_client(params) as (r, w):
+        async with ClientSession(r, w) as session:
+            await session.initialize()
+            result = await session.list_tools()
+            self._session = session
+            self.tools = list(result.tools)
+            self._ready.set()
+            await self._shutdown.wait()</code></pre>
+<ul>
+<li><code translate="no">start()</code> 创建任务并等待 <code translate="no">_ready</code>；<code translate="no">call_tool()</code> 复用 <code translate="no">_session</code>；<code translate="no">stop()</code> 设置 <code translate="no">_shutdown</code>，子进程随之关闭。</li>
+<li>启动失败同样设置 <code translate="no">_ready</code> 并记录 <code translate="no">error</code>；管理器跳过注册，记一行日志。</li>
+</ul>
+</details>
+<details>
+<summary>OAuth</summary>
+<ul>
+<li>经 <code translate="no">PersistentOAuthProvider</code> 委托给 SDK 的 <code translate="no">OAuthClientProvider</code>。</li>
+<li>跨重启持久化：带绝对 <code translate="no">expires_at</code> 的 token；动态客户端注册，复用回环端口，重新认证时提供已注册的 <code translate="no">redirect_uri</code>；发现的服务元数据，冷启动刷新能到达真实 token 端点。</li>
+<li>过期 token 后台续期。浏览器授权只在首次认证或刷新被拒时运行，表现为 <code translate="no">error_kind="needs_reauth"</code>。</li>
+<li>只有在有人从 App 或 CLI 连接该服务器时才打开浏览器授权。工作进程自行连接服务器时（启动时或自己重连，<code translate="no">oauth_flow.unattended</code>），链接留在 <code translate="no">/api/mcp/auth/pending</code>，不会有浏览器挡到用户正在做的事前面。</li>
+</ul>
+</details>
+<details>
+<summary>测试隔离</summary>
+<p><code translate="no">config.py</code> 用 <code translate="no">from openprogram.state import paths as _paths</code>，每次实时调用 <code translate="no">_paths.get_state_dir()</code>。<code translate="no">from … import get_state_dir</code> 会绑定 <code translate="no">tests/integration/store/test_attach_lazy_session.py</code> 打补丁的 lambda，因为该测试经 <code translate="no">_start_mcp_servers</code> 触发首次导入，补丁会泄漏。新增 paths 补丁时仍要走模块引用。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">传输</th><td>stdio、Streamable HTTP、SSE。远程认证：静态 bearer、OAuth 2.1 PKCE。</td></tr>
+<tr><th scope="row">工具、资源、prompt、采样</th><td>已实现。资源和 prompt 元工具复用持久客户端；MCP prompt 与斜杠命令注册表同步。没有配置宿主模型时采样返回结构化错误。</td></tr>
+<tr><th scope="row">管理</th><td>添加、移除、重启作用于选中的客户端，不必重启 worker。<code translate="no">server_status()</code> 和服务详情给出就绪、错误、认证状态、工具数和掩码凭据。</td></tr>
+<tr><th scope="row">并发限制</th><td><code translate="no">MCPClient._call_lock</code> 把同一服务的调用串行化；一个慢工具会阻塞同服务的其他调用。</td></tr>
+<tr><th scope="row">工具列表限制</th><td>启动时读一次，不处理 <code translate="no">tools/list_changed</code>。</td></tr>
+<tr><th scope="row"><code translate="no">_loaded</code></th><td>模块全局变量；测试通过 <code translate="no">tests/integration/programs/test_mcp_client.py::_reset_mcp_loader_flag</code> 重置。</td></tr>
+</tbody>
+</table>

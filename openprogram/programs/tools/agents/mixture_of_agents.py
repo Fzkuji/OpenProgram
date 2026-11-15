@@ -2,7 +2,7 @@
 
 Ports hermes-agent's MoA into OpenProgram's provider layer. hermes routes
 everything through OpenRouter with a hardcoded frontier lineup; we instead
-pick defaults from the local model registry (``openprogram.providers.
+pick defaults from the local model registry (``openprogram.models.providers.
 get_models()``) — whatever subscription/API providers this install actually
 has — so the default call path always targets reachable models.
 
@@ -32,8 +32,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from openprogram.programs._helpers import read_string_param
-from openprogram.programs._runtime import function
+from openprogram.programs._authoring.helpers import read_string_param
+from openprogram.programs._host.runtime import ToolReturn, function
 
 
 NAME = "mixture_of_agents"
@@ -129,7 +129,7 @@ def _strength_rank(model_id: str) -> int:
 
 def _registry_specs() -> list[str]:
     """All registry models as sorted ``provider:model_id`` strings."""
-    from openprogram.providers import get_models
+    from openprogram.models.providers import get_models
     return sorted(f"{m.provider}:{m.id}" for m in get_models())
 
 
@@ -142,8 +142,8 @@ def _usable_providers() -> set[str]:
     OAuth file, env key) so the default lineup never burns one of its three
     reference slots on a guaranteed failure.
     """
-    from openprogram.providers import get_models
-    from openprogram.providers.metadata import is_configured
+    from openprogram.models.providers import get_models
+    from openprogram.models.providers.catalog.metadata import is_configured
     return {p for p in {m.provider for m in get_models()} if is_configured(p)}
 
 
@@ -155,7 +155,7 @@ def _pick_defaults() -> tuple[list[str], str | None]:
     first ``MAX_DEFAULT_REFERENCES`` providers; the aggregator takes the next
     unused provider's pick, falling back to the first reference.
     """
-    from openprogram.providers import get_models
+    from openprogram.models.providers import get_models
 
     usable = _usable_providers()
     best_per_provider: dict[str, Any] = {}  # provider -> Model, registry order
@@ -205,7 +205,7 @@ async def _call_model(
 ) -> tuple[str, bool]:
     """Call one registry model. Returns (text_or_error, success)."""
     try:
-        from openprogram.providers import (
+        from openprogram.models.providers import (
             Context, SimpleStreamOptions, TextContent, UserMessage,
             complete_simple, get_model,
         )
@@ -237,7 +237,7 @@ async def _call_model(
         if attempt > 0:
             await asyncio.sleep(RETRY_BACKOFF_SECONDS)
         try:
-            from openprogram.usage import usage_scope
+            from openprogram.models.usage import usage_scope
             with usage_scope(call_kind="tool", call_label=label):
                 resp = await complete_simple(model, ctx, opts)
         except Exception as e:
@@ -263,7 +263,7 @@ async def _aggregate(
     aggregator_spec: str,
     user_prompt: str,
     reference_answers: list[tuple[str, str]],
-) -> str:
+) -> tuple[str, bool]:
     """Call the aggregator with the references stitched into the system prompt."""
     enumerated = "\n\n".join(
         f"### Model {i + 1} ({spec})\n{answer}"
@@ -275,8 +275,8 @@ async def _aggregate(
         label="moa:aggregator",
     )
     if not ok:
-        return f"Error: aggregator call failed: {text}"
-    return text
+        return f"Error: aggregator call failed: {text}", False
+    return text, True
 
 
 def _unknown_spec_error(bad: list[str]) -> str:
@@ -287,18 +287,18 @@ def _unknown_spec_error(bad: list[str]) -> str:
     )
 
 
-async def execute(
+async def _execute_result(
     user_prompt: str | None = None,
     references: list[str] | None = None,
     aggregator: str | None = None,
     **kw: Any,
-) -> str:
+) -> ToolReturn:
     user_prompt = user_prompt or read_string_param(kw, "user_prompt", "prompt", "query")
     aggregator = aggregator or read_string_param(kw, "aggregator", "aggregator_model")
     if not user_prompt:
-        return "Error: `user_prompt` is required."
+        return ToolReturn(text="Error: `user_prompt` is required.", is_error=True)
 
-    from openprogram.providers import get_model
+    from openprogram.models.providers import get_model
 
     explicit_refs = references or kw.get("reference_models")
     if explicit_refs:
@@ -306,21 +306,21 @@ async def execute(
         bad = [s for s in refs
                if not (p := _split(s)) or get_model(*p) is None]
         if bad:
-            return _unknown_spec_error(bad)
+            return ToolReturn(text=_unknown_spec_error(bad), is_error=True)
         agg_spec = aggregator
     else:
         refs, default_agg = _pick_defaults()
         if not refs:
-            return (
+            return ToolReturn(text=(
                 "Error: the model registry is empty — configure at least one "
                 "provider, or pass `references=[...]`."
-            )
+            ), is_error=True)
         agg_spec = aggregator or default_agg
 
     if aggregator:
         parts = _split(aggregator)
         if not parts or get_model(*parts) is None:
-            return _unknown_spec_error([aggregator])
+            return ToolReturn(text=_unknown_spec_error([aggregator]), is_error=True)
     if not agg_spec:
         agg_spec = refs[0]
 
@@ -334,11 +334,11 @@ async def execute(
     if len(successful) < MIN_SUCCESSFUL_REFERENCES:
         fail_detail = "\n".join(f"- {s}: {reason}" for s, reason in failed)
         available = "\n".join(f"- {s}" for s in _registry_specs())
-        return (
+        return ToolReturn(text=(
             f"Error: too few successful references "
             f"({len(successful)}/{len(refs)}).\n\nFailures:\n{fail_detail}\n\n"
             f"Available `provider:model` specs:\n{available}"
-        )
+        ), is_error=True)
 
     # Why the lineup shrank — reported on BOTH paths, so "I only got one
     # answer" always comes with the reason the others dropped out.
@@ -354,17 +354,30 @@ async def execute(
             f"**Model**: {spec}",
             *skipped,
         ]
-        return "\n".join(header_lines) + "\n\n" + text
+        return ToolReturn(text="\n".join(header_lines) + "\n\n" + text)
 
-    final = await _aggregate(agg_spec, user_prompt, successful)
+    final, ok = await _aggregate(agg_spec, user_prompt, successful)
 
     header_lines = [
-        f"# mixture_of_agents",
+        "# mixture_of_agents",
         f"**References**: {', '.join(s for s, _ in successful)}",
         f"**Aggregator**: {agg_spec}",
         *skipped,
     ]
-    return "\n".join(header_lines) + "\n\n" + final
+    return ToolReturn(text="\n".join(header_lines) + "\n\n" + final, is_error=not ok)
+
+
+async def execute(
+    user_prompt: str | None = None,
+    references: list[str] | None = None,
+    aggregator: str | None = None,
+    **kw: Any,
+) -> str:
+    """Retain the plain-call string contract; registered tools use typed outcomes."""
+    result = await _execute_result(
+        user_prompt=user_prompt, references=references, aggregator=aggregator, **kw,
+    )
+    return result.text or ""
 
 
 
@@ -377,6 +390,6 @@ function(
     parameters=SPEC["parameters"],
     toolset=['research'],
     check_fn=_tool_check_fn,
-)(execute)
+)(_execute_result)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION", "_tool_check_fn"]

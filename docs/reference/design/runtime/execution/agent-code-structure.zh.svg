@@ -1,0 +1,68 @@
+<svg width="1240" height="560" viewBox="0 0 1240 560" fill="none" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+    </marker>
+    <style>
+      svg {
+        --canvas:#0d1117; --card:#161b22; --border:#30363d;
+        --ink:#e6edf3; --muted:#8b949e; --fname:#d2a8ff;
+        --blue:#58a6ff; --blue-fill:#0f2030; --purple:#bc8cf2; --purple-fill:#1d1530;
+        --green:#3fb950; --green-fill:#10231a;
+      }
+      @media (prefers-color-scheme: light) {
+        svg {
+          --canvas:#ffffff; --card:#f6f8fa; --border:#d0d7de;
+          --ink:#1f2328; --muted:#636c76; --fname:#8250df;
+          --blue:#0969da; --blue-fill:#ddf4ff; --purple:#8250df; --purple-fill:#faf3ff;
+          --green:#1a7f37; --green-fill:#e9f8ee;
+        }
+      }
+      .t { fill:var(--ink); } .s { fill:var(--muted); } .fn { fill:var(--fname); }
+      .sans { font-family:-apple-system,'Segoe UI',sans-serif; }
+    </style>
+  </defs>
+  <rect x="1" y="1" width="1238" height="558" rx="16" fill="var(--canvas)" stroke="var(--border)"/>
+  <text x="620" y="38" text-anchor="middle" font-size="19" font-weight="700" class="t sans">openprogram/runtime/ —— 按概念划分的包</text>
+  <text x="620" y="60" text-anchor="middle" font-size="12" class="s sans">箭头指向一个包可以导入的包。蓝 = 功能 · 紫 = 调用核心 · 绿 = 基础</text>
+  <text x="40" y="96" font-size="13" font-weight="600" class="s sans">建立在 Agent 之上的功能</text>
+  <rect x="40" y="106" width="278" height="96" rx="10" fill="var(--blue-fill)" stroke="var(--blue)" stroke-width="1.3"/>
+  <text x="54" y="132" font-size="15" font-weight="700" class="fn">conversation/</text>
+  <text x="54" y="154" font-size="12" class="s sans">聊天会话与轮次：turn_runtime、</text>
+  <text x="54" y="171" font-size="12" class="s sans">ChatAgent、production_driver、</text>
+  <text x="54" y="188" font-size="12" class="s sans">run_control</text>
+  <rect x="334" y="106" width="278" height="96" rx="10" fill="var(--blue-fill)" stroke="var(--blue)" stroke-width="1.3"/>
+  <text x="348" y="132" font-size="15" font-weight="700" class="fn">jobs/</text>
+  <text x="348" y="154" font-size="12" class="s sans">后台运行及其资源治理</text>
+  <rect x="628" y="106" width="278" height="96" rx="10" fill="var(--blue-fill)" stroke="var(--blue)" stroke-width="1.3"/>
+  <text x="642" y="132" font-size="15" font-weight="700" class="fn">agent_registry/</text>
+  <text x="642" y="154" font-size="12" class="s sans">保存的 Agent 配置</text>
+  <rect x="922" y="106" width="278" height="96" rx="10" fill="var(--blue-fill)" stroke="var(--blue)" stroke-width="1.3"/>
+  <text x="936" y="132" font-size="13.0" font-weight="700" class="fn">scheduler/ proactive/ commands/</text>
+  <text x="936" y="154" font-size="12" class="s sans">定时运行、主动策略、斜杠命令</text>
+  <text x="40" y="240" font-size="13" font-weight="600" class="s sans">调用核心</text>
+  <rect x="40" y="250" width="1160" height="66" rx="10" fill="var(--purple-fill)" stroke="var(--purple)" stroke-width="1.3"/>
+  <text x="54" y="276" font-size="15" font-weight="700" class="fn">agent/</text>
+  <text x="54" y="298" font-size="12" class="s sans">一次模型调用：Agent 类、agent()、llm()、工具循环（loop/）、Runtime</text>
+  <text x="40" y="370" font-size="13" font-weight="600" class="s sans">基础</text>
+  <rect x="40" y="380" width="278" height="96" rx="10" fill="var(--green-fill)" stroke="var(--green)" stroke-width="1.3"/>
+  <text x="54" y="406" font-size="15" font-weight="700" class="fn">context/</text>
+  <text x="54" y="428" font-size="12" class="s sans">Context 类与模型看到的内容</text>
+  <rect x="334" y="380" width="278" height="96" rx="10" fill="var(--green-fill)" stroke="var(--green)" stroke-width="1.3"/>
+  <text x="348" y="406" font-size="15" font-weight="700" class="fn">permissions/</text>
+  <text x="348" y="428" font-size="12" class="s sans">工具调用能做什么：策略、审批、身份、值守</text>
+  <text x="348" y="445" font-size="12" class="s sans">模式</text>
+  <rect x="628" y="380" width="278" height="96" rx="10" fill="var(--green-fill)" stroke="var(--green)" stroke-width="1.3"/>
+  <text x="642" y="406" font-size="15" font-weight="700" class="fn">events/</text>
+  <text x="642" y="428" font-size="12" class="s sans">事件总线</text>
+  <rect x="922" y="380" width="278" height="96" rx="10" fill="var(--green-fill)" stroke="var(--green)" stroke-width="1.3"/>
+  <text x="936" y="406" font-size="15" font-weight="700" class="fn">execution/</text>
+  <text x="936" y="428" font-size="12" class="s sans">暂停、取消与恢复的控制平面</text>
+  <line x1="179" y1="204" x2="179" y2="246" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="473" y1="204" x2="473" y2="246" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="767" y1="204" x2="767" y2="246" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="1061" y1="204" x2="1061" y2="246" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="620" y1="318" x2="620" y2="376" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <text x="640" y="352" font-size="12" class="s sans">execution、context、permissions、events 不导入调用核心。</text>
+  <text x="620" y="520" text-anchor="middle" font-size="12" class="s sans">tests/contracts/repository/test_runtime_layering.py 检查这些方向；现有例外是一份只减不增的冻结清单。</text>
+</svg>

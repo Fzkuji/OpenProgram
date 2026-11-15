@@ -1,20 +1,22 @@
 """The ``read_conversation`` tool implementation."""
 from __future__ import annotations
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 
 _DESC = (
     "Read an agent's conversation (a session branch) as a plain-text transcript: every turn's "
     "user / assistant content plus the tool and function calls that turn "
     "made (name, arguments, result, success or failure). Use it to learn "
-    "what was actually done in earlier work — distilling a session into a "
-    "reusable skill, reviewing how a task was solved, or recovering a "
+    "what was actually done in earlier work — reviewing how a task was "
+    "solved, or recovering a "
     "procedure from a conversation that is no longer in context. "
     "Defaults to the current session's active branch. Find session ids "
     "and branch tips with `list_agents`. Read a turn range with "
     "start_turn/end_turn (1-based, inclusive; negatives count from the "
     "end — start_turn=-10 reads the last 10 turns, handy for the "
-    "conclusion of a long session)."
+    "conclusion of a long session). session_id may also be an execution_id "
+    "from the agent tool or send_message: that reads the agent's result, or "
+    "its status while it still runs."
 )
 
 
@@ -22,7 +24,6 @@ _DESC = (
     name="read_conversation",
     description=_DESC,
     toolset=["core"],
-    max_result_chars=80_000,
 )
 def read_conversation(
     session_id: str = "",
@@ -35,7 +36,8 @@ def read_conversation(
     """Render a session branch as readable text.
 
     Args:
-        session_id: Session to read. Empty means the current session.
+        session_id: Session to read, or an execution_id to read that
+            agent's result. Empty means the current session.
         head_id: Branch tip to walk back from (the HEAD half of a
             `list_agents` `SID:HEAD` target). Empty means the
             session's active branch.
@@ -63,10 +65,20 @@ def read_conversation(
     head = (head_id or "").strip()
     if ":" in sid and not head:
         sid, _, head = sid.partition(":")
+    if not head:
+        result = _execution_result(sid)
+        if result is not None:
+            return result
 
-    from openprogram.store.session.transcript import render_session_transcript
+    from openprogram.state.store.session.transcript import render_session_transcript, session_read_violation
 
+    from openprogram.state.memory.policy import consume_sources
     try:
+        from openprogram.runtime.context.session_db import default_db
+        store = default_db()
+        violation = session_read_violation(store, sid)
+        if violation:
+            return "[read_conversation error] " + violation
         return render_session_transcript(
             sid,
             head_id=head or None,
@@ -74,14 +86,37 @@ def read_conversation(
             end_turn=int(end_turn),
             include_function_calls=bool(include_function_calls),
             max_chars=max(1_000, int(max_chars)),
+            on_consumed=consume_sources,
+            store=store,
         )
     except Exception as e:  # noqa: BLE001 — tool results report, never raise
         return f"[read_conversation error] {type(e).__name__}: {e}"
 
 
+def _execution_result(ident: str) -> str | None:
+    """An execution id's result, as job_output gave it (which this replaced
+    for the model); None when ``ident`` is not an execution."""
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        if default_db().get_session(ident) is not None:
+            return None
+        from openprogram.runtime.jobs import get_runner
+        if get_runner().get_job(ident) is None:
+            return None
+        from openprogram.programs.tools.agents.agent.job_output.job_output import _job_output_impl
+        out = _job_output_impl(ident, block=False)
+    except Exception:
+        return None
+    if isinstance(out, str):
+        return out
+    return "\n".join(getattr(part, "text", "") for part in out.content)
+
+
 def _current_session() -> str | None:
     try:
-        from openprogram.agent.run_control import _current_session_id
+        from openprogram.runtime.execution.run_control.binding import (
+            _current_session_id,
+        )
         return _current_session_id.get(None)
     except Exception:
         return None

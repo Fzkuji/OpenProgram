@@ -1,0 +1,109 @@
+<title>Goals in chat</title>
+<meta name="description" content="A Goal keeps an objective active across chat turns until an independent verification accepts it.">
+<meta name="covers" content="openprogram/programs/tools/planning/goal/ openprogram/interfaces/server/routes/execution/goal.py">
+<h1>Goals in chat</h1>
+<p>A Goal keeps an objective active across ordinary turns of the current agent, with the conversation's tools, model, permissions and history. There is no nested working agent.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="A successful working turn leads to another automatic turn while the Goal is active. When the agent submits a completion candidate with update_goal status complete, or the todo plan is fully complete, a separate read-only verification turn runs. Accepted evidence, rechecked by the runtime, ends the Goal as achieved. Missing evidence returns to working turns.">
+  <defs><marker id="gl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="56">Working turn</text>
+  <text class="t-soft" x="0" y="82">repeats while active</text>
+  <line class="ln" x1="128" y1="49" x2="222" y2="49" marker-end="url(#gl-a)"/>
+  <text class="t-soft mid" x="175" y="38">candidate</text>
+  <text class="t-big" x="234" y="56">Verifying</text>
+  <text class="t-soft" x="234" y="82">separate read-only turn</text>
+  <line class="ln" x1="400" y1="49" x2="494" y2="49" marker-end="url(#gl-a)"/>
+  <text class="t-soft mid" x="447" y="38">rechecked</text>
+  <text class="t-big" x="506" y="56">Achieved</text>
+  <text class="t-soft" x="506" y="82">one card in the transcript</text>
+  <path class="ln" d="M280 96V136H60V96" marker-end="url(#gl-a)"/>
+  <text class="t-soft" x="104" y="160">missing evidence goes back to work</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Working turn</strong><small>repeats while active</small></li>
+  <li><strong>Verifying</strong><small>separate read-only turn on a candidate</small><small>missing evidence goes back to work</small></li>
+  <li class="flow-end"><strong>Achieved</strong><small>rechecked; one card in the transcript</small></li>
+</ol>
+</figure>
+<h2 id="start-and-plan">Start and plan</h2>
+<p>Enter <code translate="no">/goal &lt;objective&gt;</code>, use <strong>Abilities → Programs → Tools → planning → goal → Use</strong>, or ask the agent. The objective shows as your message, labelled Goal. In the Rich REPL <code translate="no">/goal</code> starts a canonical chat execution and prints its ID.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Plan</th><td><code translate="no">todo_create</code>, <code translate="no">todo_update</code>, <code translate="no">todo_list</code> for multi-step work; a simple objective needs none. New items attach to the Goal and revision. Progress refreshes after each todo change and when a turn ends; a failed progress notice does not undo todos.</td></tr>
+<tr><th scope="row">Candidate</th><td>The agent checks evidence against every requirement, then <code translate="no">update_goal(status="complete")</code>. This only submits. Unfinished associated todos prevent it. A fully completed plan also triggers verification, once per changed plan.</td></tr>
+<tr><th scope="row">Verifying</th><td>Assesses the original objective and each todo requirement, with trusted built-in inspection tools under normal permissions. No shell, writes or Goal mutation; needed tests go back to the working agent as missing evidence.</td></tr>
+<tr><th scope="row">Achieved</th><td>Needs a per-requirement assessment with evidence references. The runtime rechecks requirements, user controls, todos, unfinished executions, unknown effects and evidence. Pause, edit, cancellation, new instructions or changed evidence prevent stale success. A failed execution stays recoverable.</td></tr>
+</tbody>
+</table>
+<p class="note">Semantic verification is an independent model judgment, not a guarantee. Completion describes the time of verification and starts no monitoring. Checking every todo does not prove the objective.</p>
+<p class="note">A Goal belongs to the branch it was set on: its automatic turns continue that branch, and a turn on another branch leaves it alone.</p>
+<h2 id="control-execution">Commands</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/goal</code> or <code translate="no">/goal status</code></th><td>Reads the current state</td></tr>
+<tr><th scope="row"><code translate="no">/goal pause</code></th><td>Saves a pause and requests cancellation of the current execution</td></tr>
+<tr><th scope="row"><code translate="no">/goal resume</code></th><td>Continues with cumulative usage</td></tr>
+<tr><th scope="row"><code translate="no">/goal verify</code></th><td>Independently verifies the latest finished work, without marking it achieved</td></tr>
+<tr><th scope="row"><code translate="no">/goal edit &lt;objective&gt;</code></th><td>Saves a new revision and pauses</td></tr>
+<tr><th scope="row"><code translate="no">/goal clear</code></th><td>Cancels the Goal</td></tr>
+<tr><th scope="row"><code translate="no">/goal budget max_tokens=10000 max_elapsed_s=3600 max_cost_usd=2</code></th><td>Token, active-seconds and cost limits; zero removes one</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">create_goal</code>, <code translate="no">get_goal</code>, <code translate="no">update_goal</code></th><td>Short state operations; they do not do the task</td></tr>
+<tr><th scope="row"><code translate="no">blocked</code> status</th><td>Only after the same verified blocker recurs for at least three consecutive Goal turns with no independent work left. The runtime enforces the count; the agent verifies it is the same blocker.</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Stops or pauses</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Budget depleted</th><td>Raise or remove with <code translate="no">/goal budget</code>, then resume. Waiting time is not active time.</td></tr>
+<tr><th scope="row">Failed execution</th><td>After a passing failure (a provider error, a lost connection, a short rate limit) the Goal waits a few seconds, then longer, and continues by itself, at most three failures in a row. A failure that would repeat at once (a rejected key, no credit, a spent quota or budget) keeps the pause and its reason until you continue.</td></tr>
+<tr><th scope="row">Cancelled execution</th><td>Automatic continuation stops; a turn you stopped is never restarted. An <a href="always-on-agents.html">always-on</a> wake may restart a Goal the Agent itself started after a failed turn.</td></tr>
+<tr><th scope="row">Two idle automatic turns in a row (no tool call)</th><td><strong>Stalled</strong>. The first is warned. Any tool call or user turn resets; Resume starts over.</td></tr>
+<tr><th scope="row">Paused</th><td>Shows why: failed turn, Plan mode, unmet verification prerequisite, restart limit</td></tr>
+</tbody>
+</table>
+<p class="note">Goals have no round limit. The badge shows todo completion and omits it when there are no todos; status stays visible. Limits are optional and use cumulative usage. Automatic continuation does not expand tool permissions.</p>
+<details>
+<summary>In the transcript and details</summary>
+<ul>
+<li>Verification turns are not rendered as replies. Starting, running, pausing and verifying add no transcript cards. An ended Goal leaves one compact card; clicking opens its saved result, progress and usage, read-only and still tied to that Goal after a new one starts.</li>
+<li>Details keep objective, status, usage and progress across reloads, and show each limit next to its usage. They do not edit the budget.</li>
+<li>Add instructions in the normal input, with its queue or steering mode. A queued message goes before the next automatic turn, which waits up to 15 seconds for it.</li>
+<li>Details use the backend's current action eligibility. Disabled Resume or Verify explains the prerequisite. Refresh status retries a failed read without losing your draft. End always stops the Goal intent. Unresolved operations show identifiers, tool names, timestamps and status. Inspect execution opens that exact execution, with pending approvals and questions.</li>
+</ul>
+</details>
+<details>
+<summary>Restart and recovery</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Worker restart</th><td>Does not pause a chat Goal: compatible checkpoints resume under the automatic restart policy, and a turn completed during shutdown keeps a durable continuation notification</td></tr>
+<tr><th scope="row">Automatic work prevented by</th><td>User pause, cancellation, exhausted budgets, explicit restart limits. Legacy recoverable pauses and Goals with no saved continuation provenance need explicit Resume. External-event wakeups remain a recovery limitation. A wait or unresolved execution is not evidence of completion.</td></tr>
+<tr><th scope="row">Verify needs</th><td>Finished work, completed associated todos, available budget and no unresolved relevant work. Goal-owned background processes running or of unknown outcome prevent it; unrelated resources do not. Pause, cancellation, changed versions and duplicate requests cannot bypass this.</td></tr>
+<tr><th scope="row">Resume of an ordinary chat with no owner or active descendants</th><td>Can close its interrupted frame and start a restricted inspection turn, without replaying old tool calls. Unknown effects stay unknown; nothing claims an external operation was cancelled.</td></tr>
+<tr><th scope="row">New admission</th><td>Has a durable identity, so a crash before saving the Goal cannot duplicate turns. Incompatible checkpoints use a new chat turn; temporary activation or credential errors do not authorize that. Provider-only interrupted background Jobs keep their input and resource admission. Child executions with unresolved effects need inspection.</td></tr>
+<tr><th scope="row">Incomplete tool-call history in provider requests</th><td>Repaired without rewriting saved records: missing outputs get an unknown-outcome placeholder, real outputs win, duplicates collapse, interrupted text stays labelled, unpaired results are omitted from the request but stay saved. This does not prove failure or authorize a retry.</td></tr>
+<tr><th scope="row">Ownerless interrupted execution, unknown outcome</th><td>The next non-inspection tool result is prefixed with a notice, once per execution. Nothing is held back or replayed. Real built-in <code translate="no">read</code>, <code translate="no">grep</code>, <code translate="no">glob</code> and <code translate="no">list</code> get no notice; custom tools with those names do. Restarted chat turns included.</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Metering</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Active time</th><td>Keeps observed work across restart and excludes offline time. After abrupt worker loss the last durable heartbeat is a lower bound and the final interval is shown as unknown. Late receipts do not restart a paused timer. An explicit active-time ceiling blocks work if that unknown prevents checking; removing it allows continuation. No default time or round ceiling exists.</td></tr>
+<tr><th scope="row">Chat requests</th><td>Capture Goal identity, revision and price before dispatch. Receipts update that Goal even after pause or edit; replacing the Goal moves no charges. Duplicates do not add. A started request without a receipt is unknown, not free; details show known subtotals beside unknown request counts. Receipts rebuild from the ledger after restart without repeating the request.</td></tr>
+<tr><th scope="row">Older totals and failures</th><td>Cursor-based totals stay as a legacy subtotal on the next attributed request. Metering failures show unknown. Partial streaming counters are cumulative lower bounds; a final receipt replaces them.</td></tr>
+<tr><th scope="row">Background Jobs</th><td>Those admitted by an active Goal inherit its identity, including descendants and cross-session calls; an unrelated Goal in the destination gets no charges. Jobs without saved attribution stay unassigned. Goal and Job reservations start and settle in one accounting transaction. Missing token or price information keeps the reserved exposure.</td></tr>
+<tr><th scope="row">Token or cost limits</th><td>Reserve conservative exposure before credentials or provider calls, count parallel requests, and recheck at dispatch. Token limits can reduce the output cap. An unsupported bound, unknown price or unpriced tier cannot bypass a hard limit: the Goal pauses or reports exhaustion. An expired reservation that never started cannot dispatch; a started request never becomes free by time. These bounds need audited provider adapters.</td></tr>
+</tbody>
+</table>
+</details>
+<p class="next"><a href="../reference/design/runtime/reliability/goal-and-recovery.html">Engineering design</a></p>

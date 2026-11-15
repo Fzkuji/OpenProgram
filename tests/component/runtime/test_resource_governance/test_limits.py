@@ -1,17 +1,19 @@
 """governance limits tests."""
 from __future__ import annotations
+from decimal import Decimal
+from openprogram.runtime.jobs.resource_governance import (
+    ResourceLimitError,
+    save_session_resource_limits,
+)
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.models.usage.event import UsageEvent
 from ._support import (
-    Decimal,
     Job,
     ResourceGovernor,
-    ResourceLimitError,
     ResourceLimits,
-    SessionDB,
-    UsageEvent,
     UsageLedger,
     pytest,
     resolve_resource_limits,
-    save_session_resource_limits,
 )
 
 
@@ -76,8 +78,8 @@ def test_only_owner_can_save_session_resource_limits(
 ) -> None:
     db = SessionDB(tmp_path / "sessions")
     db.create_session("s1", "main")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    monkeypatch.setattr("openprogram.agent.authority.owner_principal_id", lambda: "owner/install/1234567890abcdef")
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.permissions.authority.owner_principal_id", lambda: "owner/install/1234567890abcdef")
 
     with pytest.raises(PermissionError):
         save_session_resource_limits(
@@ -149,7 +151,7 @@ def test_invalid_limits_rejection_fails_closed_when_usage_read_fails(
         ),
     )
     monkeypatch.setattr(
-        ledger, "read",
+        ledger, "open_accounting_reader",
         lambda: (_ for _ in ()).throw(OSError("ledger unavailable")),
     )
 
@@ -161,3 +163,20 @@ def test_invalid_limits_rejection_fails_closed_when_usage_read_fails(
     assert denied.reason_code == "quota.accounting_unavailable"
     assert denied.retryable is True
 
+
+
+def test_default_pool_runs_the_default_number_of_agents(monkeypatch) -> None:
+    """With nothing configured, one conversation runs agent.max_running_agents
+    helpers at once: the default pool must not cut that default down."""
+    from openprogram.runtime.jobs.resource_governance.limits import (
+        MAX_RUNNING_AGENTS,
+        scheduler_capacity,
+    )
+
+    monkeypatch.delenv("OPENPROGRAM_JOB_WORKERS", raising=False)
+    assert scheduler_capacity() > MAX_RUNNING_AGENTS
+    resolved = resolve_resource_limits(
+        ResourceLimits(), default_live_limit=MAX_RUNNING_AGENTS,
+    )
+    live = resolved.fields["max_live_per_session"]
+    assert (live.effective, live.source) == (MAX_RUNNING_AGENTS, "default")

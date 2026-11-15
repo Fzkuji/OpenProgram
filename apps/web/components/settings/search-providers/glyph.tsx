@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "../settings-page.module.css";
+import styles from "../providers/provider-pane.module.css";
 
 /* Small monogram circle for search providers — same shape as the LLM
    provider icons but using letters instead of brand SVGs. */
@@ -26,10 +26,10 @@ export function SearchProviderGlyph({ id, size = 20 }: { id: string; size?: numb
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        borderRadius: 6,
+        borderRadius: "var(--radius-sm)",
         flexShrink: 0,
         fontWeight: 600,
-        fontSize: size >= 32 ? 16 : 12,
+        fontSize: size >= 32 ? 16 : 12, // glyph: the letter scales with the icon
       }}
     >
       {letter}

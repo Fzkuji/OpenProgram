@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.execution.model import CommandKind, ExecutionStatus
-from openprogram.execution.state_machine import (
+from openprogram.runtime.execution.model import CommandKind, ExecutionStatus
+from openprogram.runtime.execution.state_machine import (
     InvalidCommand,
     InvalidTransition,
     validate_command,

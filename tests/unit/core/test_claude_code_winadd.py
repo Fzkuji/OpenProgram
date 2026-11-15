@@ -14,21 +14,21 @@ import pytest
 
 
 def test_interactive_pty_available():
-    from openprogram._compat import interactive_pty_available
+    from openprogram.host._platform.terminal import interactive_pty_available
     # POSIX always has pty; Windows has it iff pywinpty imported. Either way the
     # probe must return a bool without raising.
     assert isinstance(interactive_pty_available(), bool)
 
 
 @pytest.mark.skipif(
-    not __import__("openprogram._compat", fromlist=["interactive_pty_available"]).interactive_pty_available(),
+    not __import__("openprogram.host._platform.terminal", fromlist=["interactive_pty_available"]).interactive_pty_available(),
     reason="no pseudo-terminal backend on this host",
 )
 def test_interactive_pty_roundtrip(tmp_path):
     """Spawn a child that prints a URL then reads a line — assert we capture the
     URL, deliver a typed line (with the plain "\\n" callers use), and collect
     the exit code. Mirrors a browser-OAuth login's read-URL / write-code dance."""
-    from openprogram._compat import InteractivePty
+    from openprogram.host._platform.terminal import InteractivePty
 
     child = tmp_path / "child.py"
     child.write_text(

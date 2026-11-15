@@ -1,0 +1,230 @@
+<title>Transcript delivery steps</title>
+<meta name="description" content="The approval gate, each delivery step with its changes, fixes, proof, rollback and size, and which step closes each finding.">
+<h1 id="title">Transcript delivery steps</h1>
+<p class="note">Part of the <a href="transcript-model.html">transcript model</a> record. Built so far: <a href="transcript-model.html#status">implementation status</a>.</p>
+<h2 id="delivery">Delivery</h2>
+<h3>Approval gate, before step 1</h3>
+<p>An old-versus-new comparison, drawn in the user's theme, covers every visible change below and needs a yes before step 1. Any later step that adds a new visible difference needs its own comparison and yes before it lands.</p>
+<ol>
+<li>A sub-agent drawn as a separate AttachCard at a page edge or when started by <code translate="no">/task</code> draws as the normal SubAgentStep at the same position. Manual and cross-session attaches keep AttachCard.</li>
+<li>A sub-agent, including a synchronous one, appears when it starts, shows running, opens into a live view and settles.</li>
+<li>Phantom empty rows, permanent Running steps and a user row marked running no longer appear.</li>
+<li>The user's own <code translate="no">/spawn</code> and <code translate="no">/merge</code> line stays visible.</li>
+<li>Steers and restart continuations are no longer drawn twice or lost at page boundaries.</li>
+<li>In the bot view, a steer sits before the reply it redirected instead of after it.</li>
+<li>A reader scrolled up stays put during background activity, and older pages stop landing after the newest rows.</li>
+<li>Nested call trees under a tool step survive a reload.</li>
+<li>Citations show while streaming.</li>
+<li>Open steps stay open and in place while a reply updates.</li>
+<li>A split pane shows the same rows as the main view and updates without focus.</li>
+<li>The expanded sub-agent view shows tools, thinking, terminal state and later turns.</li>
+<li>Copy and files on a restart-joined reply cover the whole reply; always-on sent files appear.</li>
+<li>A person's text starting with <code translate="no">[task from</code> stays their own message.</li>
+<li>Version arrows no longer count a compaction summary and cannot land on an attach row.</li>
+<li>A failed read shows a retry instead of a differently shaped transcript.</li>
+<li>Expanding a truncated tool result in a block works; late tool results appear on rows that had none.</li>
+<li>A reply whose final write failed settles when its execution ends.</li>
+<li>Text of a conversation holds briefly while that conversation is being read, then catches up.</li>
+<li>History loads in whole turns, so one load can bring a slightly different row count.</li>
+<li>A message the server refuses before accepting it shows the reason on its "Not sent" line, and no separate red reply appears under it.</li>
+</ol>
+<p>Everything else keeps its position and look.</p>
+<h3>Step 0. Harness and baselines (tests only)</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes</th><td>Python fixture builder on a real <code translate="no">SessionStore</code> covering every old shape. Recorded frames from the real emit functions. Runner feeding frames through production reducers and components, comparing live with cold; known failures start as todo. New real server benchmark at 300,000 nodes (first open, page read, evicted session, foreign-write rebuild, memory per view). <code translate="no">test_scalable_chat_history.py</code> is browser-only with a fake socket and proves none of these.</td></tr>
+<tr><th scope="row">Fixes</th><td>None.</td></tr>
+<tr><th scope="row">Proof</th><td>Harness runs on current code with known failures listed as todo and everything else passing. Benchmark records baselines.</td></tr>
+<tr><th scope="row">Rollback</th><td>Remove the test files.</td></tr>
+<tr><th scope="row">Size</th><td>About 700 lines, 2 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 1. Server data repairs, no wire change</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes</th><td><code translate="no">_is_chat_lane</code> rejects <code translate="no">covers_ids</code>. <code translate="no">deepest_leaf</code> and <code translate="no">latest_child</code> skip <code translate="no">_is_side_row</code> only, so top-level runs and <code translate="no">display=runtime</code> prompts stay walkable, and no rejection is added to checkout or <code translate="no">set_head</code>. <code translate="no">active_branch_chain</code> in branch order. <code translate="no">_execution_rows</code> from raw rows, for clients that fold them: roots with descendants plus same-named calls of that reply, each reply&#39;s tree under one byte budget. <code translate="no">tool_output.py</code> matches <code translate="no">&lt;message_id&gt;_t_&lt;node_id&gt;</code>. <code translate="no">aggregate_tool_messages</code> copies lists and applies the late-call merge to rows with no <code translate="no">extra</code>. A failed read returns a retryable error instead of <code translate="no">conv_snapshot</code>; the broken-chain walk stays, logged, over the same input. Separate small commits.</td></tr>
+<tr><th scope="row">Fixes</th><td>F17 (cold), F19, F22, F23, F24, F41, F42.</td></tr>
+<tr><th scope="row">Proof</th><td>One test per fix in <code translate="no">tests/unit/webui</code> and <code translate="no">tests/component/webui/chat/test_session_tool_output_transport.py</code>, each failing before its commit. The version arrow lands past a run row and a <code translate="no">job_followup</code> row and never on an attach row. A row with no <code translate="no">extra</code> carries its late call and does not grow on repeat loads.</td></tr>
+<tr><th scope="row">Rollback</th><td>Revert the individual commit.</td></tr>
+<tr><th scope="row">Size</th><td>About 240 lines, 2 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 2. Whole-turn pages, no wire change</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes</th><td><code translate="no">HistorySnapshot</code> keys groups by turn, walking display order before the cut with the membership rule, compaction rows at their exact position. Every row id goes in <code translate="no">_positions</code>. Search returns row ids. Limits become 6 turns or 128 KiB and 25 turns or 512 KiB. Remove the dead <code translate="no">history_page</code>. The client is untouched. Rewrite the paging unit in <code translate="no">chat-turn-visual-spec</code> and the page limits in <code translate="no">runtime/reliability/web-runtime-reliability</code>, English before Chinese.</td></tr>
+<tr><th scope="row">Fixes</th><td>F1, F5 (page boundary), F40 (ids on the branch).</td></tr>
+<tr><th scope="row">Proof</th><td><code translate="no" data-claim="example">test_session_history_pages.py</code>: no attach, placeholder, steer or restart row heads a group; a sweep at every boundary equals the unpaged read; a compaction row inside a restart-continued turn keeps its position; long always-on chains stay one row per turn; server benchmark within baseline.</td></tr>
+<tr><th scope="row">Rollback</th><td>Revert; no client or data change.</td></tr>
+<tr><th scope="row">Size</th><td>About 250 lines, 2 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 3. Writers record ownership</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes: sub-agent card</th><td>Sync spawns write the placeholder from <code translate="no">on_accepted</code> with <code translate="no">job.id</code>, <code translate="no">tool_call_id</code>, <code translate="no">delivery=tool_result</code>; <code translate="no">run_agent_turn</code> passes <code translate="no">attach_pointer_id</code>; the end write is a patch; a result with no head and failure paths patch to errored; a failed placeholder falls back to appending at the end. Startup reconcile: see <a href="transcript-model-live.html#sub-agent">Sub-agent</a>. Attach writers stamp <code translate="no">tool_call_id</code>.</td></tr>
+<tr><th scope="row">Changes: ids and metadata</th><td><code translate="no">append_message(advance_head=False)</code>, and the head restores go, keeping the mirror refresh at <code translate="no">branch.py:562-565</code>. Delivered messages write <code translate="no">origin=agent_delivery</code>, typed ones <code translate="no">origin=person</code>. <code translate="no">metadata.client_request_id</code> is written on the user node and on pre-created function-run nodes, through <code translate="no">_build_user_msg</code>, <code translate="no">run_agent_method_call</code>, <code translate="no">retry.py</code> and <code translate="no">POST /api/function/{name}</code>.</td></tr>
+<tr><th scope="row">Changes: streaming</th><td><code translate="no">stream_tap</code> persists before emitting through the quiet <code translate="no">durable=False</code> path and adds <code translate="no">row_id</code>, <code translate="no">item_id</code>, <code translate="no">item_index</code>, <code translate="no">offset</code>. <code translate="no">ws_delivery</code> merges only contiguous offsets. <code translate="no">memory_index.rebuild</code> swaps atomically. Final blocks are <code translate="no">tap.blocks</code> when cancelled, otherwise <code translate="no">_ordered_blocks or tap.blocks</code>, so a terminal write keeps the received trace and a Stop keeps partial text.</td></tr>
+<tr><th scope="row">Changes: status and records</th><td><code translate="no">event_effects</code> settles an open anchor row at terminal execution status and writes <code translate="no">paused</code> and the return to <code translate="no">running</code> (<a href="transcript-model-live.html#run-end">Run-end status</a>). Update <code translate="no">sub-agent-row</code> and <code translate="no">unify-parent-called-by</code>, English before Chinese.</td></tr>
+<tr><th scope="row">Fixes</th><td>F18 and F36 writes, F33 (store repair), F39 (offsets); prerequisite of F2.</td></tr>
+<tr><th scope="row">Proof</th><td>Writer tests on real rows. A tap test that the persisted row is at or ahead of each emit. <code translate="no">render_context</code> byte-equal on the fixture session with a running placeholder. No head movement during an attach write. A sync spawn's card has a job id, opens during the run, and settles on success, failure and worker death. A web user node, a function-run node from each entry point and a retry carry <code translate="no">client_request_id</code>. A Stop after a completed message keeps the partial text. A paused execution writes <code translate="no">paused</code> to its row, a resumed one writes <code translate="no">running</code>, and an old event replayed by catch-up writes neither. CLI and ACP stream tests unchanged. Delta latency and fsync count measured here against step 0, on a busy machine.</td></tr>
+<tr><th scope="row">Rollback</th><td>Revert; extra metadata and frame fields are ignored by old readers, except that a delivered message still queued as a job names its origin and the old job reader rejects it. A placeholder left by a run spanning the revert is closed by job recovery through <code translate="no">attach_pointer_id</code>.</td></tr>
+<tr><th scope="row">Size</th><td>About 230 lines, 2-3 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 4. Bubble owns data by id, old transport</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes</th><td><code translate="no">owned-children.ts</code> pairs by <code translate="no">tool_call_id</code> with the old order as fallback, and the bubble draws from it. Stable block keys and a per-view expansion map. <code translate="no">row-status.ts</code> replaces the 15 hand lists. The hard-coded Running branch in <code translate="no">runtime-block.tsx:343-352</code> goes; the step draws from row status. Same-session <code translate="no">/task</code> draws as SubAgentStep at its position, AttachCard only for manual or cross-session. Bot view reads file markers from content. <code translate="no">joinedReply</code> includes content and turn files.</td></tr>
+<tr><th scope="row">Fixes</th><td>F6, F18 (pairing), F33 (table), F34, F35 (tool blocks), F37, F38.</td></tr>
+<tr><th scope="row">Proof</th><td>Two same-named agent calls in reversed order pair correctly. An open step stays open across a block rebuild. A finished runtime row with no tree shows no spinner. Status table test covers every wire value. A <code translate="no">/task</code> and a tool-started agent render the same component. <code translate="no">restart-continuation.test.mjs</code> covers content.</td></tr>
+<tr><th scope="row">Rollback</th><td>Revert individually; no data change.</td></tr>
+<tr><th scope="row">Size</th><td>About 450 lines, 3 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 5. Projection, turn index and read flip</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes: projection and read</th><td>Add the transcript package. Golden parity runs the current mapper against the projection on every fixture, and any later TypeScript mapper change fails it. Projected rows carry <code translate="no">rowKind</code> beside the unchanged <code translate="no">kind</code> and <code translate="no">slot</code>, so compaction cards, system event rows and covering keep working on the old dispatch. Run <code translate="no" data-claim="example">compare_transcript_projection.py</code> on the dev profile and clear mismatches. Wire version 3 reads, including <code translate="no">_bounded_history</code> and the fragmentation and paging gates. Turns and window go straight to the store; pages hold turn ids.</td></tr>
+<tr><th scope="row">Changes: page replies</th><td>Page replies keep an open row from regressing under old frames with the rule full loads use, scoped to the page: <code translate="no">session-history-loader.ts</code> captures the view's rows when it sends the page request, and on reply calls <code translate="no">retainChangedRows</code> with the baseline and current rows both restricted to the row ids in the reply. It can then only choose between the page's row and the live row of that id, and it can append nothing. Held rows outside the page stay where they are, and the page is placed by <code translate="no">window.start</code>. The wire-level call at <code translate="no">session-load.ts:65</code> has no wire rows to compare on version 3 and is skipped; the row-level call at <code translate="no">:32</code> stays for full loads.</td></tr>
+<tr><th scope="row">Changes: client</th><td>Client changes the flip needs: window-present tests replace <code translate="no">snapshot</code> tests at <code translate="no">use-history-window.ts:42</code>, <code translate="no">session-history-loader.ts:58,127,136,178</code>, <code translate="no">history-window.ts:20</code>; <code translate="no">page-shell.tsx:288-303</code> tests for held turns; <code translate="no">use-ws.ts:726</code> takes head status from turns; <code translate="no">conversation-find.tsx:36</code> drops the token; <code translate="no">search.py</code> moves onto <code translate="no">reader.search</code>. <code translate="no">createSessionLoads.accept</code> applies a finished reply, then sends the pending read.</td></tr>
+<tr><th scope="row">Changes: tests</th><td>Tests that drive the web client against a fake socket answer in <code translate="no">turns</code> and <code translate="no">window</code>: <code translate="no">tests/e2e/web/test_scalable_chat_history.py</code> (the 300,000-row case, restated as 300,000 one-row turns), <code translate="no">test_automatic_chat_history.py</code>, <code translate="no">test_chat_history_interactions.py</code>, <code translate="no">test_chat_transcript_follow.py</code>, <code translate="no">apps/web/tests/chat/history/history-window.test.mjs</code>, <code translate="no">session-history.test.mjs</code> and <code translate="no">apps/web/tests/chat/messages/chat-activation.test.mjs</code>; their version 2 cases stay beside them while the rollback path exists.</td></tr>
+<tr><th scope="row">Changes: landing and records</th><td>Land package and flip within days. Update <code translate="no">chat-turn-visual-spec</code> and <code translate="no">unify-parent-called-by</code>; fix the comments at <code translate="no">history-window.ts:9</code> and <code translate="no">load.py:231-232</code>. English before Chinese.</td></tr>
+<tr><th scope="row">Fixes</th><td>F4, F9, F11 (reply dropping), F27, F35 (block ids), F40 (unknown cursors), F42 (broken-chain walk named in <code translate="no">legacy.py</code>), F43.</td></tr>
+<tr><th scope="row">Proof</th><td>Golden parity with intended differences listed. Page-edge sweep on projected output. A row changed after open reads fresh. A pane with leftover rows reads. Compaction cards, snip rows and covering draw as before the flip. A page reply keeps an open row and adds no row at the tail. Anchor restore, Find and switching to a cached chat work on version 3. A graph-free reply. Split-pane focus stays focus bookkeeping. Server benchmark on first open, page read and evicted session against step 0.</td></tr>
+<tr><th scope="row">Rollback</th><td>Set the client protocol constant back to 2; the server still serves it and the version 2 client path is intact.</td></tr>
+<tr><th scope="row">Size</th><td>About 1600 lines added, 200 removed, 5-6 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 6. Per-view rows and sub-agent reads</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes: row storage</th><td><code translate="no">rowsByView</code> becomes the row storage behind <code translate="no">selectRow</code>, applied by a script run at landing time, because these paths take dozens of commits a week. The existing writers keep their names and route by the view key they are given: <code translate="no">updateMessage</code> stops ignoring its first argument, and <code translate="no">setMessages</code> replaces only that view. A writer naming a view that does not hold the row falls back to the one view that does, because callers could pass anything until now; with more than one holder it writes nothing and logs.</td></tr>
+<tr><th scope="row">Changes: index</th><td><code translate="no">messagesById</code> stays until step 8 as a read-only index for the old readers, among them <code translate="no">chat-stream.ts:619</code> and the <code translate="no">Object.entries</code> scan at <code translate="no">:653</code>. The store refreshes the entry of each row it writes, a main-view row wins over a sub-agent row with the same id, and an id leaves only when no view holds it.</td></tr>
+<tr><th scope="row">Changes: readers and records</th><td>Components and the sub-agent view read through <code translate="no">selectRow(viewKey, id)</code>. The sub-agent view reads through <code translate="no">reader.py</code> under its view key. <code translate="no">handleSubAgentResponse</code>, its <code translate="no">finalize</code> path and the writers at <code translate="no">sub-agent-transcripts.ts:81,126</code> stay until step 8. The job-status re-read stays until step 8. Update <code translate="no">sub-agent-row</code> and the row storage in <code translate="no">ui/state-layer</code>, English before Chinese.</td></tr>
+<tr><th scope="row">Fixes</th><td>F31, F30 (reads).</td></tr>
+<tr><th scope="row">Proof</th><td>The same row id in main and sub-agent views stays separate, and replacing one view leaves the other's row and the index entry in place. <code translate="no">test_sub_agent_transcript.py</code>: tools, thinking and terminal states appear in the expanded view after open; job text never enters the parent.</td></tr>
+<tr><th scope="row">Rollback</th><td>Revert; the selector makes this one commit.</td></tr>
+<tr><th scope="row">Size</th><td>About 350 lines, mostly generated, 2 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 7. Observer, publisher, non-reply updates</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes: what is published</th><td><code translate="no">SessionLog</code> observer, publisher, numbered <code translate="no">transcript_update</code>, the reducer for the changes this step publishes, parking of <code translate="no">transcript_update</code>, <code translate="no">stream_event</code> and terminal <code translate="no">chat_response</code>, <code translate="no">transcript_gap</code>, the <code translate="no">transcript</code> frame kind, <code translate="no">branches_changed</code>, <code translate="no">close_view</code> with the view cap. <code translate="no">PUBLISH_CHAT_ROWS = False</code>: user rows, reply rows, steers and restart prompts stay with old frames. Published: attach items into <code translate="no">attachCards</code> on held rows; system rows; always-on report openers; the default row case for rows that are not open; <code translate="no">window_stale</code>; sub-agent view extension for non-reply rows.</td></tr>
+<tr><th scope="row">Changes: old writers</th><td><code translate="no">callRoots</code> and <code translate="no">runtimeChildren</code> keep their old writers (<code translate="no">tree_update</code>, <code translate="no">handleRuntimeRow</code>) and are published from step 8. <code translate="no">attachCards</code> has one old writer, the <code translate="no">sub_agent</code> stream event, which keys on <code translate="no">card_id</code>. <code translate="no">card_id</code> is the attach row's id, so both upsert one entry, and the publisher's frame, read from the store after the write, carries the final state.</td></tr>
+<tr><th scope="row">Changes: reloads and records</th><td>For version 3 sockets <code translate="no">_enqueue</code> drops <code translate="no">session_reload</code> only for the reasons this step fully delivers, and only on a socket holding a view of that session. A brand-new chat sends no <code translate="no">load_session</code>, so its socket holds no view: it keeps these reloads, and the first one runs the <code translate="no">load_session</code> that joins the view. The chat-action join and <code translate="no">first_read</code> stay in step 8, because <code translate="no">first_read</code> replaces a pending row by <code translate="no">clientRequestId</code>, which local rows carry only from there. Update <code translate="no">chat-progress-recovery</code>, <code translate="no">always-on-agents</code>, <code translate="no">dag/rendering</code> and <code translate="no">event-reference</code>, English before Chinese.</td></tr>
+<tr><th scope="row">Fixes</th><td>F2, F3, F10 (spawn, attach, report and notice reloads), F26 (reload delivery).</td></tr>
+<tr><th scope="row">Proof</th><td>Contract test on the real emit path with no injected id: a sync spawn's card appears and settles during the run and survives a reload at the same position. In a chat started in this tab, which never sent <code translate="no">load_session</code>, a spawned card appears through the kept reload and later changes arrive as <code translate="no">item_upsert</code>. A terminal error frame during a read parks behind its text frames and the row stays in error. A reader in older history keeps window and anchor through 100 background updates. A spawn produces no <code translate="no">window_stale</code>. A forked child does not fire the observer. Overflow yields exactly one gap. The DAG panel refreshes after attach. A held view's updates reach a rebuilt view's holders by one read. A recovered continuation error still clears, through its kept reload.</td></tr>
+<tr><th scope="row">Rollback</th><td>Revert; version 3 sockets again honour every <code translate="no">session_reload</code>.</td></tr>
+<tr><th scope="row">Size</th><td>About 750 lines, 4 days.</td></tr>
+</tbody>
+</table>
+<h4 id="reload-reasons"><code translate="no">session_reload</code> reasons on version 3 sockets</h4>
+<table class="stack">
+<thead><tr><th scope="col">Reason</th><th scope="col">Delivered by</th><th scope="col">Dropped at</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">job_attach</code>, <code translate="no">task_tool_spawn</code>, <code translate="no">spawn</code>, <code translate="no">spawn_async</code>, <code translate="no">attach</code></th><td><code translate="no">item_upsert</code> on the attach row</td><td>7</td></tr>
+<tr><th scope="row"><code translate="no">always_on_report</code></th><td><code translate="no">turn_upsert</code></td><td>7</td></tr>
+<tr><th scope="row"><code translate="no">self_update_result</code>, <code translate="no">SOURCE</code> of <code translate="no">owner_notice</code></th><td>default row case or <code translate="no">turn_upsert</code></td><td>7</td></tr>
+<tr><th scope="row"><code translate="no">merge</code>, <code translate="no">delete_nodes</code></th><td><code translate="no">window_stale</code></td><td>7</td></tr>
+<tr><th scope="row"><code translate="no">execution_cancelled</code>, <code translate="no">execution.cancelled</code>, <code translate="no">continuation_recovered</code>, <code translate="no">continuation_contract_mismatch</code>, <code translate="no">wait_declined</code>, <code translate="no">wait_timeout</code>, <code translate="no">job_&lt;status&gt;</code>, <code translate="no">job_errored</code>, <code translate="no">job_cancelled</code>, <code translate="no">self_update_held</code></th><td>terminal reply rows</td><td>8</td></tr>
+</tbody>
+</table>
+<h3>Step 8. Live through one path</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes: flag and publishing</th><td><code translate="no">PUBLISH_CHAT_ROWS = True</code>. The flag gates this step's whole server side: publishing of reply rows, <code translate="no">callRoots</code> and <code translate="no">runtimeChildren</code>, <code translate="no">notice_tree</code>, the version 3 frame filter, the chat-action view join and <code translate="no">first_read</code>, and in reverse the parking of terminal <code translate="no">chat_response</code>. Reply rows, steers and restart prompts through the publisher, with derived-field recompute and the Stop rule. Offset gap rule. <code translate="no">text_end</code> citations. <code translate="no">notice_tree</code> with its three targets.</td></tr>
+<tr><th scope="row">Changes: local rows and overlays</th><td>Local rows with <code translate="no">clientRequestId</code> and anchors, every local row typed with its <code translate="no">rowKind</code>; <code translate="no">use-function-dispatch.ts</code> and the Retry action send a <code translate="no">client_request_id</code>. The chat action joins the view and acks carry <code translate="no">first_read</code>. Typed overlays, including the Stop rejection path; every call site in <a href="transcript-model-live.html#optimistic-writes">Optimistic writes</a> classified. The pre-ack error path draws on the local row.</td></tr>
+<tr><th scope="row">Changes: filter and removals</th><td>The version 3 frame filter, including the remaining <code translate="no">session_reload</code> reasons. Focus-gated paths at <code translate="no">use-ws.ts:406</code>, <code translate="no">chat-handlers.ts:288,960</code> and <code translate="no" data-claim="example">transcript-hydration.ts:22</code> go. Sub-agent live path on the same protocol. Everything marked step 8 in <a href="transcript-model-wire.html#deleted">What is deleted</a>. <code translate="no">createSessionLoads</code> owns repair and page reads.</td></tr>
+<tr><th scope="row">Changes: tests</th><td>Tests move with the removals: <code translate="no">apps/web/tests/chat/session/session-load.test.mjs</code>, <code translate="no">chat/session/running-task-stand-in.test.mjs</code>, <code translate="no">chat/transcript/stream-delta-raf.test.mjs</code>, <code translate="no">chat/transcript/stream-turn-settle.test.mjs</code>, <code translate="no">abilities/function-invocation.test.mjs</code>, <code translate="no">chat/rewind-actions.test.mjs</code>, <code translate="no">chat/messages/message-action-row.test.mjs</code>, <code translate="no">desktop/self-update-reopen.test.mjs</code> and the <code translate="no">preserveSessionReadRows</code> case in <code translate="no">tests/e2e/web/test_chat_history_interactions.py</code>. A test of a removed behaviour is deleted and its live-equals-cold scenario stands in. The 43 test files that reference the store writers or <code translate="no">messagesById</code> write rows through <code translate="no">apps/web/tests/_support/transcript-rows.mjs</code>, which feeds <code translate="no">apply-transcript-update.ts</code> one <code translate="no">turn_upsert</code> or typed local change per row, and read them with <code translate="no">selectRow(viewKey, id)</code>, so the only-writer contract holds in tests too.</td></tr>
+<tr><th scope="row">Changes: records</th><td>Rewrite <code translate="no">turn-occupancy</code>, <code translate="no">conversation-lifecycle</code>, <code translate="no">streaming-resume</code>, the update-ownership part of <code translate="no">chat-turn-visual-spec</code>, the fast-confirm and streaming-backfill rows of <code translate="no">ui/interaction-feedback</code>, and the <code translate="no">messagesById</code> and <code translate="no">messageOrder</code> rows of <code translate="no">ui/state-layer</code>, English before Chinese. Steps 5 to 8 land close together, to shorten the time merge layers and new reads coexist.</td></tr>
+<tr><th scope="row">Fixes</th><td>F5 (live), F7, F8, F10 (rest), F11 (rest), F12, F13, F14, F15, F16, F17 (live), F20 (partial), F21, F25 (partial), F26 (rest), F30 (live), F32 (partial), F33 (rest), F35 (live), F39.</td></tr>
+<tr><th scope="row">Proof: convergence</th><td>Live equals cold through production reducers and components on every listed scenario, on the dev instance as well as fixtures, logging only mismatches. Same frames delivered twice change nothing. A dropped text frame repairs with one read; a read during a stream causes no loop and no shrink. A <code translate="no">/spawn</code> line survives. An unknown row creates nothing. A fresh chat streams from its first frame.</td></tr>
+<tr><th scope="row">Proof: server rows</th><td>A steer appears at its position and its pending bubble clears. A restart hides the cut reply live. A chapter pin, a revert and an execution-effect rewrite arrive as one <code translate="no">row_upsert</code>. A second message to a running expanded agent appears. Text stops after Stop and the terminal row goes out with no later write. Citations appear from the real frame.</td></tr>
+<tr><th scope="row">Proof: sends, Stop and trees</th><td>A <code translate="no">turn_upsert</code> that beats the ack replaces the local row, and a reconnect after a lost ack leaves one user row. A rejected Stop clears its overlay, the row returns to running and later text appears. A run paused for system access and then resumed draws paused and then running, and a read during the pause agrees. A rejected send shows its reason on the Not sent line, with no <code translate="no">_reply</code> before or after reload. A model-issued function's tree updates its <code translate="no">callRoots</code> live, and a function card settles on its terminal tree while the store write is foreign. Delta latency against step 0.</td></tr>
+<tr><th scope="row">Rollback</th><td>Set <code translate="no">PUBLISH_CHAT_ROWS = False</code> and revert this step's client commits. Version 3 sockets then get step 7's filter and the old frames the reverted client reads, the reload kept for a socket with no view applies again, and step 7 stands.</td></tr>
+<tr><th scope="row">Size</th><td>About 800 lines added, 1600 removed, 5-6 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 9. Draw only what the server sent</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes</th><td>Dispatch on <code translate="no">rowKind</code> with no default branch, local rows included; <code translate="no">kind</code> and <code translate="no">slot</code> stay as the sub-kind <code translate="no">SystemEventRow</code> reads; <code translate="no">coveredBy</code> replaces <code translate="no">coversIds</code>; shared <code translate="no">TranscriptRows</code> in both panes; session scope from the row list. Update <code translate="no">ui/invariants</code>, English before Chinese.</td></tr>
+<tr><th scope="row">Fixes</th><td>F28, F29 (partial), F36.</td></tr>
+<tr><th scope="row">Proof</th><td>The same turn renders identically in <code translate="no">MessageList</code>, <code translate="no">PeerSessionPane</code> and the embedded sub-agent view. A typed <code translate="no">[task from</code> line stays a user row. An old delivered message still shows as received. Real-screen comparison on the dev instance.</td></tr>
+<tr><th scope="row">Rollback</th><td>Revert the component commits.</td></tr>
+<tr><th scope="row">Size</th><td>About 350 lines added, 400 removed, 3 days.</td></tr>
+</tbody>
+</table>
+<h3>Step 10. Remove old paths and finish the records</h3>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Changes</th><td>Everything marked step 10 in <a href="transcript-model-wire.html#deleted">What is deleted</a>. CLI, <code translate="no">worker_turn</code>, <code translate="no">rehearsal</code> and the HTTP route read <code translate="no">flat_rows</code>. Before the mapper goes, golden parity's expected output is frozen to JSON beside the step 0 fixtures, and the parity test then compares the projection with those files. Tests move with the removal: the version 2 cases of the tests moved at step 5; <code translate="no">_broadcast_session_reload</code> monkeypatches in <code translate="no">tests/component/self_update/versions/test_direct_edit_capture.py:205</code> and <code translate="no">tests/component/scheduler/test_scheduled_run_endings.py:365</code>; assertions in <code translate="no">tests/unit/agent/test_always_on.py:306</code>, <code translate="no">tests/component/agent/execution/test_agent_continuation_real.py:1801</code>, <code translate="no">tests/component/agent/jobs/test_job_attach_integration.py:252</code>, <code translate="no">tests/component/agent/jobs/test_async_job_recovery.py:485</code>, <code translate="no">tests/component/webui/execution/test_execution_cancellation.py:131,264,301,642</code>, and the references in <code translate="no">test_webui_head_mirror_and_run_guard.py</code>, <code translate="no">test_chat_transcript_follow.py</code>, <code translate="no">test_sub_agent_run.py</code>, <code translate="no">test_session_branch_consistency.py</code>; <code translate="no">HistorySnapshot</code> and <code translate="no">close_snapshots</code> users in <code translate="no" data-claim="example">tests/unit/webui/test_session_history_pages.py</code>, <code translate="no">tests/component/webui/chat/</code> (five files), <code translate="no">tests/component/webui/runtime/</code> (two files), <code translate="no">tests/e2e/web/test_chat_history_interactions.py</code>, <code translate="no">apps/web/tests/chat/history/session-history.test.mjs</code>. Remove <code translate="no" data-claim="example">conv-mapper</code> mentions from <code translate="no">error-taxonomy-propagation</code>, <code translate="no">agent-collab-architecture</code>, <code translate="no">agent-call-flow</code>. <code translate="no">runtime/reliability/web-runtime-reliability</code> names <code translate="no">transcript/reader.py</code> in place of <code translate="no" data-claim="example">session_history.py</code>. Close the "Implementation status" appendix of <code translate="no">transcript-model</code>. English before Chinese. Allowlists reach empty.</td></tr>
+<tr><th scope="row">Fixes</th><td>None new.</td></tr>
+<tr><th scope="row">Proof</th><td>Empty-allowlist contract tests. CLI tests for <code translate="no">session_loaded</code> and streaming. <code translate="no">worker_turn</code> recovery finds a reply by id. <code translate="no">rehearsal</code> reads a conversation. HTTP <code translate="no">load_session</code> test. <code translate="no">python -m scripts.docs_site.checklinks</code> reports 0 dead links.</td></tr>
+<tr><th scope="row">Rollback</th><td>Revert the removal commit; earlier steps stand.</td></tr>
+<tr><th scope="row">Size</th><td>About 3000 lines removed, 2-3 days.</td></tr>
+</tbody>
+</table>
+<h3>Finding to step</h3>
+<table class="stack">
+<thead><tr><th scope="col">Finding</th><th scope="col">Defect</th><th scope="col">Step</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">F1</th><td>An attach row becomes its own display group, so paging separates it from its parent reply</td><td>2</td><td>Closed</td></tr>
+<tr><th scope="row">F2</th><td>The live <code translate="no">sub_agent</code> frame never reaches the reducer</td><td>3, 7</td><td>Closed</td></tr>
+<tr><th scope="row">F3</th><td>The reload sent to deliver a sub-agent card loses to the row that is still streaming</td><td>7</td><td>Closed</td></tr>
+<tr><th scope="row">F4</th><td>Paging keeps the store copy of a parent and throws away the newly folded one</td><td>5</td><td>Closed</td></tr>
+<tr><th scope="row">F5</th><td>Steers and restart continuations are drawn twice or lost at a page boundary</td><td>2, 8</td><td>Closed</td></tr>
+<tr><th scope="row">F6</th><td>A finished runtime row with no tree draws a permanent Running step</td><td>4</td><td>Closed</td></tr>
+<tr><th scope="row">F7</th><td>An older page that lands during a full load is appended after the newest rows</td><td>8</td><td>Closed</td></tr>
+<tr><th scope="row">F8</th><td><code translate="no">setMessages</code> churn makes unchanged rows look edited, so a stale row beats a terminal load</td><td>8</td><td>Closed</td></tr>
+<tr><th scope="row">F9</th><td>Re-fetched pages come from a frozen snapshot</td><td>5</td><td>Closed</td></tr>
+<tr><th scope="row">F10</th><td>Every background reload resets a reader's window to the newest page</td><td>7, 8</td><td>Closed</td></tr>
+<tr><th scope="row">F11</th><td>Reloads that arrive faster than a load round trip discard every reply</td><td>5, 8</td><td>Closed</td></tr>
+<tr><th scope="row">F12</th><td><code translate="no">/spawn</code> and <code translate="no">/merge</code> results overwrite the user's own message row, which then draws nothing</td><td>8</td><td>Closed</td></tr>
+<tr><th scope="row">F13</th><td>Two writers apply the terminal result with different rules</td><td>8</td><td>Closed</td></tr>
+<tr><th scope="row">F14</th><td>A <code translate="no">tree_update</code> for an unknown row creates a phantom <code translate="no">&lt;id&gt;_reply</code> runtime row that loads keep</td><td>8</td><td>Closed</td></tr>
+<tr><th scope="row">F15</th><td>The optimistic function placeholder has no remover on success</td><td>8</td><td>Closed</td></tr>
+<tr><th scope="row">F16</th><td><code translate="no">running_task</code> can mark the user row as running, and loads keep it</td><td>8</td><td>Closed</td></tr>
+<tr><th scope="row">F17</th><td>Nested call trees under a tool step exist only in live memory</td><td>1, 8</td><td>Closed</td></tr>
+<tr><th scope="row">F18</th><td>Cards and call trees are paired to tool calls by order and name, not by id</td><td>3, 4</td><td>Closed for new rows; old rows heuristic</td></tr>
+<tr><th scope="row">F19</th><td>Expanding a truncated tool result in a block fails</td><td>1</td><td>Closed; length limit in <a href="transcript-model-limits.html#limits">Limits that remain</a></td></tr>
+<tr><th scope="row">F20</th><td>One tool result has three different lengths with different load-more behaviour</td><td>8</td><td>Partial</td></tr>
+<tr><th scope="row">F21</th><td>Provider citations are missing during streaming</td><td>8</td><td>Closed</td></tr>
+<tr><th scope="row">F22</th><td>A compaction summary counts as a version of the first covered message</td><td>1</td><td>Closed</td></tr>
+<tr><th scope="row">F23</th><td>Switching versions can put HEAD on an attach pointer row</td><td>1</td><td>Closed</td></tr>
+<tr><th scope="row">F24</th><td>A sub-agent branch can show its reply above its prompt when checked out</td><td>1, 8</td><td>Closed</td></tr>
+<tr><th scope="row">F25</th><td>Live row retention and paging disagree about client-only and unpersisted rows</td><td>8</td><td>Partial</td></tr>
+<tr><th scope="row">F26</th><td>Split panes do not receive reload signals</td><td>7, 8</td><td>Closed</td></tr>
+<tr><th scope="row">F27</th><td>A pane opens on a fragment when the store already holds partial rows</td><td>5</td><td>Closed</td></tr>
+<tr><th scope="row">F28</th><td>Cards in a split pane judge themselves against the focused session</td><td>9</td><td>Closed</td></tr>
+<tr><th scope="row">F29</th><td>The same conversation has a reduced transcript in a split pane</td><td>9</td><td>Partial: the message rail and find stay main-view only (<a href="transcript-model-limits.html#limits">Limits that remain</a>)</td></tr>
+<tr><th scope="row">F30</th><td>The inline sub-agent view keeps only text streams and terminal frames</td><td>6, 8</td><td>Closed</td></tr>
+<tr><th scope="row">F31</th><td><code translate="no">messagesById</code> is global, but <code translate="no">setMessages</code> deletes per chat key</td><td>6</td><td>Closed</td></tr>
+<tr><th scope="row">F32</th><td>A live reply lacks fields a reload supplies</td><td>8</td><td>Partial</td></tr>
+<tr><th scope="row">F33</th><td>Status is decided separately in each place and the lists disagree</td><td>3, 4, 8</td><td>Closed</td></tr>
+<tr><th scope="row">F34</th><td>A sub-agent's component depends on how it was started</td><td>4</td><td>Closed</td></tr>
+<tr><th scope="row">F35</th><td>Open steps collapse or move when blocks are rebuilt</td><td>4, 5, 8</td><td>Closed, one edge in <a href="transcript-model-limits.html#limits">Limits that remain</a></td></tr>
+<tr><th scope="row">F36</th><td>Text a user types can change what kind of row it is</td><td>3, 9</td><td>Closed</td></tr>
+<tr><th scope="row">F37</th><td>Files sent from an always-on chat can be missing</td><td>4</td><td>Closed</td></tr>
+<tr><th scope="row">F38</th><td>A restart-joined reply copies and files only its last part</td><td>4</td><td>Closed</td></tr>
+<tr><th scope="row">F39</th><td>Dropped text frames are not detected until the turn ends</td><td>3, 8</td><td>Closed; last frame healed by the terminal row</td></tr>
+<tr><th scope="row">F40</th><td>A restored reading anchor can name a row the server cannot page to</td><td>2, 5</td><td>Closed</td></tr>
+<tr><th scope="row">F41</th><td>Rows written through the fallback store path change shape and grow tool calls on each load</td><td>1</td><td>Closed</td></tr>
+<tr><th scope="row">F42</th><td>A failed read silently substitutes a differently shaped transcript</td><td>1, 5</td><td>Closed; broken-chain walk named in <code translate="no">legacy.py</code></td></tr>
+<tr><th scope="row">F43</th><td>Pasted elements are lost on reload: the store flattens <code translate="no">extra</code> onto the row and the mapper reads only <code translate="no">extra</code></td><td>5</td><td>Closed</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="transcript-model-limits.html">Limits and enforcement</a></p>

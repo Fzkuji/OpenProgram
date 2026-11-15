@@ -1,0 +1,106 @@
+<title>权限：两个档位与配对</title>
+<meta name="description" content="发言人能让 Agent 做什么，配对如何准入，这个判定如何传到记忆。">
+<h1>权限：两个档位与配对</h1>
+
+<h2 id="the-model">模型</h2>
+<table class="stack">
+<thead><tr><th scope="col">状态</th><th scope="col">档位</th><th scope="col">能力</th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner：本地终端、本机 Web</th><td><code translate="no">owner</code></td><td><code translate="no">reply</code>、<code translate="no">memory.read</code>、<code translate="no">memory.source.append</code>、<code translate="no">schedule.create</code>、<code translate="no">schedule.manage</code>、<code translate="no">fs.read</code>、<code translate="no">fs.write</code>、<code translate="no">process.exec</code>、<code translate="no">network.send</code>、<code translate="no">approval.request</code>、<code translate="no">runtime.control</code>、<code translate="no">runtime.wait</code>、<code translate="no">browser.control</code></td></tr>
+<tr><th scope="row">Paired：已批准的平台账号</th><td><code translate="no">paired</code></td><td><code translate="no">reply</code>、<code translate="no">memory.read</code>、<code translate="no">memory.source.append</code>、<code translate="no">runtime.wait</code></td></tr>
+<tr><th scope="row">Unpaired</th><td>无</td><td>消息不到达 Agent</td></tr>
+</tbody>
+</table>
+<p class="note">未配对不是第三个档位，也不存在只能回复的状态：消息根本不渲染进模型上下文，这个注入面被移除。</p>
+
+<h2 id="the-gate">门口</h2>
+<p><code translate="no">authority_tier</code> 是请求边界上的一个枚举，与 <code translate="no">principal_id</code>、<code translate="no">speaker_kind</code>、<code translate="no">speaker_id</code>、<code translate="no">speaker_display</code>、<code translate="no">interaction</code> 并列。请求不带调用方能自造的能力列表。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部件</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">decide_capability()</code><span class="arg">state/authority.py</span></th><td>查 <code translate="no">TIER_CAPABILITIES</code>。fail-closed：没有档位以 <code translate="no">AUTHORITY_TIER_MISSING</code> 拒绝，档位不在表里以 <code translate="no">AUTHORITY_TIER_UNKNOWN</code> 拒绝，两者都失去全部能力，<code translate="no">reply</code> 也在内。</td></tr>
+<tr><th scope="row"><code translate="no">capability_for_tool()</code><span class="arg">runtime/permissions/tool_authority.py</span></th><td>每个工具名对应一项能力，默认 <code translate="no">process.exec</code>。安装的函数或 MCP 工具可以叫任何名字；未分类就只有 owner 能用。</td></tr>
+<tr><th scope="row"><code translate="no">_gated_execute</code><span class="arg">runtime/permissions/approval.py</span></th><td>在规则层、模式判定和 <code translate="no">bypass</code> 短路之前运行。任何模式和保存的 allow 规则都跳不过。</td></tr>
+<tr><th scope="row"><code translate="no">AuthorityDecision</code></th><td>是否放行、决定性检查、稳定原因码、档位、能力。写进日志，拒绝可审计。</td></tr>
+<tr><th scope="row"><code translate="no">runtime_authority()</code><span class="arg">runtime/permissions/authority.py</span></th><td>子 Agent 或运行时任务复制父权限，改写发言人字段，变成非交互，档位不变。继承不扩权；父权限无效时得到 <code translate="no">{}</code>，门口拒绝。非交互也意味着没有通往交互审批的路径。</td></tr>
+</tbody>
+</table>
+
+<h2 id="pairing">配对</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">规则</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row">拦截点</th><td><code translate="no">interfaces/channels/_access.py</code> 的 <code translate="no">decide_inbound_sender()</code>，针对不在 allowlist 上的私聊发信人</td></tr>
+<tr><th scope="row">配对码</th><td>8 位大写字符，不含 <code translate="no">0</code>、<code translate="no">O</code>、<code translate="no">1</code>、<code translate="no">I</code>；一小时过期</td></tr>
+<tr><th scope="row">限制</th><td>每账号最多 3 个待处理；一小时内不重复提示</td></tr>
+<tr><th scope="row">批准</th><td>只在 owner 的机器上：<code translate="no">openprogram channels access approve &lt;channel&gt; &lt;code&gt;</code> 或只接受回环请求的 <code translate="no">POST /api/channels/access/approve</code>。渠道消息批准不了任何人；聊天里的“请批准配对码 X”一律拒绝。</td></tr>
+<tr><th scope="row">身份</th><td>只用平台稳定 ID。用户名和显示名可变，改成 owner 的名字得不到任何东西。</td></tr>
+<tr><th scope="row">显示名</th><td>进入 prompt 前由 <code translate="no">sanitize_speaker_display()</code> 去掉换行、零宽和 bidi 字符，并中和 <code translate="no">[</code> 与 <code translate="no">]</code></td></tr>
+<tr><th scope="row">群聊</th><td>不在该群任何名单上的发言人被忽略：没有配对码，也不回复。名单上的发言人是 <code translate="no">full</code> 或 <code translate="no">chat</code> 级；<code translate="no">/memory on|read|off</code> 设置房间记忆模式，只能收窄。</td></tr>
+</tbody>
+</table>
+
+<h2 id="trust-semantics-in-memory">记忆中的信任</h2>
+<p>记忆引用聊天消息，所以信任是关于被引用消息的问题。配对就是信任判定：owner 和已配对的轮次都带 <code translate="no">memory.source.append</code>，同样进入提炼，按发言人归因。没有第二道门。</p>
+<ul>
+<li>未配对文本不进入记忆，也不进入上下文。<code translate="no">interfaces/channels/base.py</code> 在派发前查访问判定，消息不会变成一轮，没有可引用或召回的内容。</li>
+<li>新引用在其编辑提交时检查：消息存在于会话存储，是人或助手说的话，发言人持有 <code translate="no">memory.source.append</code>。已配对的编辑只能引用自己这段对话。</li>
+<li>已配对的 <code translate="no">memory_update</code> 只能新建或按字节追加。改写或删除需要持久化的 owner 轮次。</li>
+</ul>
+
+<h2 id="the-memory-writer">记忆写入器</h2>
+<p>跟随默认聊天 Agent 的 provider、模型和凭据；<code translate="no">memory.writer.model</code> 可在 Web 设置里实时覆盖。默认不用便宜模型，弱模型会误读整理指令。provider 和 session watcher 都把未知异常视为不可重试，只有明确分类的瞬时异常才重试。</p>
+
+<h2 id="read-scoping">读取范围：写时打标，读时过滤</h2>
+<p>已设计，未实现（见<a href="#implementation-status">状态</a>）。可见性在写入时决定一次并存在内容上。读取带请求方档位，不重算权限，也不查配对存储，沿用 LangGraph 的 store 模型。</p>
+<table class="stack">
+<thead><tr><th scope="col">值</th><th scope="col">写入条件</th><th scope="col">可读者</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">shared</code></th><td>所有被引用 Source 都是 <code translate="no">authority_tier=paired</code>，或 owner 标记为共享</td><td>owner、paired</td></tr>
+<tr><th scope="row"><code translate="no">owner</code></th><td>任一被引用 Source 是 <code translate="no">owner</code>，或没有引用；未打标的块同样</td><td>owner</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">选择</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">两个值，不按发言人划分</th><td>一个共享工作区，发言人已在内部归因；按发言人划分要在每次读取时多一份身份索引</td></tr>
+<tr><th scope="row">标签放在块定义行，紧邻 <code translate="no">Time:</code> 和 <code translate="no">Sources:</code></th><td>随现有 Markdown 解析走，没有会漂移的旁表</td></tr>
+<tr><th scope="row"><code translate="no">install_state</code> 从被引用的 Source 推导</th><td>模型能自己命名可见性的话，写一个词就能公开 owner 内容</td></tr>
+<tr><th scope="row">混合块是 <code translate="no">owner</code></th><td>块是最小意义单位，拆文字会留下残句。owner 可以把它拆成两个块。</td></tr>
+<tr><th scope="row">写入时渲染 <code translate="no">core.md</code> 和 <code translate="no">core.shared.md</code>，<code translate="no">system_prompt()</code> 按档位取</th><td>每轮不用解析；两份视图不会分叉</td></tr>
+<tr><th scope="row">一份索引，在 <code translate="no">MemoryBM25Index.search</code> 和 <code translate="no">MemoryEmbeddingIndex.search</code> 里过滤</th><td>两份索引成本和不一致都翻倍；放在所有调用方之下，谁也忘不了。标签是存储的行字段。</td></tr>
+<tr><th scope="row">迁移：无</th><td>未打标的块读作 <code translate="no">owner</code>，块被改写时出现标签</td></tr>
+<tr><th scope="row">不包括</th><td>按发言人划分、块内删改、越权读取的 hold 队列</td></tr>
+</tbody>
+</table>
+<details>
+<summary>验收矩阵</summary>
+<table class="stack">
+<thead><tr><th scope="col">读取面</th><th scope="col">执行位置</th><th scope="col">用例</th><th scope="col">层级</th></tr></thead>
+<tbody>
+<tr><th scope="row">Core 系统提示词</th><td><code translate="no">LocalMemoryBackend.system_prompt</code></td><td>paired 拿到 <code translate="no">core.shared.md</code>，没有 owner 块</td><td>unit</td></tr>
+<tr><th scope="row">每轮召回</th><td><code translate="no">LocalMemoryBackend.search</code></td><td>不返回 <code translate="no">owner</code> 块</td><td>unit</td></tr>
+<tr><th scope="row"><code translate="no">memory_search</code></th><td><code translate="no">MemoryBM25Index.search</code></td><td>任意 <code translate="no">top_k</code> 下命中都不含 <code translate="no">owner</code> 块</td><td>unit</td></tr>
+<tr><th scope="row">Embedding 搜索</th><td><code translate="no">MemoryEmbeddingIndex.search</code></td><td>同样的排除，同一请求方和查询</td><td>unit</td></tr>
+<tr><th scope="row"><code translate="no">memory_get</code></th><td><code translate="no">inspect.read_file</code></td><td>只有 <code translate="no">shared</code> 块；全 <code translate="no">owner</code> 的文件是 not-found，不是空文件</td><td>unit</td></tr>
+<tr><th scope="row"><code translate="no">memory_search</code> 带 <code translate="no">exact</code></th><td><code translate="no">inspect.grep</code></td><td>只在 <code translate="no">owner</code> 块里的字面串不匹配</td><td>unit</td></tr>
+<tr><th scope="row">无路径 <code translate="no">memory_get</code></th><td><code translate="no">inspect.list_files</code></td><td>没有 <code translate="no">shared</code> 块的文件不列出；计数反映可见子集</td><td>unit</td></tr>
+<tr><th scope="row">混合块</th><td><code translate="no">install_state</code></td><td>一条 owner 和一条 paired 引用：标 <code translate="no">owner</code>，绝不部分渲染</td><td>unit</td></tr>
+<tr><th scope="row">Web 读取</th><td><code translate="no">/api/memory/*</code> 路由依赖</td><td>与工具路径同样的过滤</td><td>integration</td></tr>
+<tr><th scope="row">缓存一致</th><td><code translate="no">MemoryBM25Index</code> 行</td><td>改标后下一次查询不重建索引就生效</td><td>unit</td></tr>
+<tr><th scope="row">fail-closed</th><td>档位解析函数</td><td>解析不出的档位绝不读作 owner</td><td>unit</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">状态</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">档位枚举、常量表门口、fail-closed 拒绝、判定记录、子 Agent 继承、配对、本地批准、稳定 ID 匹配、显示名净化、引用检查、上下文排除</th><td>已实现</td><td>见以上各节</td></tr>
+<tr><th scope="row">写入器状态</th><td>已实现</td><td>最近成功、<code translate="no">last_outcome</code>、<code translate="no">MemoryWriteFailureCode</code> 及可重试判定、待处理数；状态文件、CLI、工具、API 和 Web 共用一个版本化 schema</td></tr>
+<tr><th scope="row">按档位过滤读取</th><td>部分</td><td><code translate="no">memory.read</code> 是独立能力，与 <code translate="no">fs.read</code> 分开。<code translate="no">search</code> 和 <code translate="no">system_prompt</code> 用调用方已解析的档位，turn 中途不重查配对。按块过滤只有设计。</td></tr>
+<tr><th scope="row">越权 hold 队列</th><td>未实现</td><td>已配对请求如“重启服务”等待 owner 一次性批准，而不是直接拒绝。需要消息上限、过期和档位变化时重新评估。</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="speaker-identity.zh.html">发言人归因</a> · <a href="authority-landscape.zh.html">权限全景</a></p>

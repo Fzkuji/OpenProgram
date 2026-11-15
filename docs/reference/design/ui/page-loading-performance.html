@@ -1,0 +1,49 @@
+<title>Page loading performance</title>
+<meta name="description" content="What the shared shell loads, the measured gains in startup code and catalog work, and the behaviour those optimizations must keep.">
+<meta name="covers" content="apps/web/lib/prefs/settings-cache.ts apps/web/components/page-shell.tsx">
+<h1>Page loading performance</h1>
+
+<p>The shared shell loads on every application page. Startup code, repeated catalog work and provider selection rendering are optimized without changing authentication, route history or model capabilities.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Measure</th><th scope="col">Baseline</th><th scope="col">Now</th></tr></thead>
+<tbody>
+<tr><th scope="row">Initial JavaScript, gzip</th><td>832419 bytes in 33 files</td><td>496156 bytes</td></tr>
+<tr><th scope="row">Warm catalog, five-sample median, same machine</th><td>1248.779 ms</td><td>267.607 ms</td></tr>
+<tr><th scope="row">Credential enumerations per catalog request</th><td>234</td><td>1</td></tr>
+<tr><th scope="row">Rows redrawn on a provider selection</th><td>239</td><td>2</td></tr>
+</tbody>
+</table>
+<p class="note">Not end-to-end click timings. In the baseline all fourteen DiceBear styles entered the initial graph (two avatar chunks, about 270 KB gzip), the native Provider list request took 1138 ms, and a Python profile counted 1.318 s of cumulative enumeration. Session-long resource counts include three-second polling and are not cold-start timings.</p>
+
+<h2 id="design">Design</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Avatars</th><td>Optional styles load by explicit <a href="https://nextjs.org/docs/app/guides/lazy-loading">dynamic import</a> (<a href="https://react.dev/reference/react/lazy">React lazy loading</a>); the default <code translate="no">shapes</code> style stays synchronous. In-flight loads are shared; a failed import can retry. Results arriving after unmount or a configuration change are ignored.</td></tr>
+<tr><th scope="row">SVG cache</th><td>Module-level reuse, bounded (128 entries, 512K characters). Upload and letter modes generate no DiceBear SVG.</td></tr>
+<tr><th scope="row">Provider rows</th><td><a href="https://react.dev/reference/react/memo">React memo</a> with stable callbacks; a selection change does not regenerate unchanged icons.</td></tr>
+<tr><th scope="row">Catalog</th><td>One credential-presence snapshot per request. It never crosses requests or becomes an authentication decision cache.</td></tr>
+<tr><th scope="row">Settings reads</th><td>A successful read seeds the first Provider catalog view only while fresh. Mutations invalidate it.</td></tr>
+</tbody>
+</table>
+
+<h2 id="data-and-compatibility">Must stay true</h2>
+<ul>
+<li>Unsupported providers stay unsupported. Local provider identity, aliases, account presence, CLI fallbacks and env or cloud credential semantics do not change.</li>
+<li>Metrics never expose credential values.</li>
+<li>Cache expiry, failed requests and loading placeholders never show another provider as the selected route.</li>
+<li>Upload, letter, all generated styles, Thumbs background and SVG ID isolation remain.</li>
+</ul>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Public Avatar import loads only the default style; chosen styles load once; all fourteen stay selectable.</li>
+<li>Identical avatars reuse markup within the bounded cache.</li>
+<li>Catalog list tests prove one enumeration per request and immediate changes on the next request.</li>
+<li>Selection updates render only affected rows; warm catalog revisits show cached rows at once.</li>
+<li>Production entry bytes and same-machine catalog timings are compared with the baseline.</li>
+<li>Chat, Agents, Abilities, General and Provider navigation are checked in the installed default App.</li>
+</ul>
+</details>

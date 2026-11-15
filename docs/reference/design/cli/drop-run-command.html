@@ -1,0 +1,58 @@
+<title>Unified Agent method execution</title>
+<meta name="description" content="UI-triggered and model-selected Agent method calls share one execution path.">
+<h1>Unified <code translate="no">Agent</code> method execution</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="A Web UI call goes through POST /api/function/{name} and dispatch_forced_tool_call. A model-selected tool call skips the REST endpoint and enters dispatcher tool execution. Both reach the same runtime-block wrapper, then the Agent method wrapper and runtime.exec.">
+  <defs><marker id="dr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">Web UI</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="52">POST /api/function/{name}</text>
+  <text class="t-big" x="0" y="116">Model tool call</text>
+  <text class="t-soft" x="0" y="138">no REST endpoint</text>
+  <line class="ln" x1="222" y1="46" x2="254" y2="46" marker-end="url(#dr-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="264" y="52">dispatch_forced_tool_call</text>
+  <path class="ln" d="M490 46H496V68H512" marker-end="url(#dr-a)"/>
+  <path class="ln" d="M140 110H496V84H512" marker-end="url(#dr-a)"/>
+  <text class="t-big" x="522" y="58">Runtime-block</text>
+  <text class="t-big" x="522" y="78">wrapper</text>
+  <text class="t-soft" x="522" y="100">Agent method wrapper</text>
+  <text class="t-cmd notranslate" translate="no" x="522" y="122">runtime.exec(...)</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Web UI</strong><small><code translate="no">POST /api/function/{name}</code>, then <code translate="no">dispatch_forced_tool_call</code></small></li>
+  <li><strong>Model tool call</strong><small>no REST endpoint, dispatcher tool execution</small></li>
+  <li class="flow-end"><strong>Runtime-block wrapper</strong><small>both land here: Agent method wrapper, <code translate="no">runtime.exec(...)</code></small></li>
+</ol>
+</figure>
+<p class="note">Code: <code translate="no">routes/chat.py</code> <code translate="no">post_function</code>; <code translate="no">turn_runtime/forced_tool.py</code>; <code translate="no">turn_runtime/runtime_attach.py</code> <code translate="no">_wrap_agentic_runtime_block</code>.</p>
+
+<h2 id="rest-endpoint">REST endpoint</h2>
+<pre translate="no" tabindex="0">POST /api/function/{name}
+{"session_id": "...", "project_id": "...", "kwargs": {"task": "..."}}
+
+{"session_id": "...", "msg_id": "..."}</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_id</code></th><td>Optional. Omitted: the server creates a session.</td></tr>
+<tr><th scope="row"><code translate="no">project_id</code></th><td>Optional for an existing session; required when a pending Project selection must be bound before the first call. Execution uses the selected Project directory, else the configured default Project.</td></tr>
+<tr><th scope="row">Flat parameters</th><td>Older callers may post function parameters at the top level. The server moves them into <code translate="no">kwargs</code> and ignores control keys such as <code translate="no">session_id</code> and <code translate="no">project_id</code>.</td></tr>
+</tbody>
+</table>
+
+<h2 id="run-is-not-an-execution-api">No <code translate="no">/run</code> API</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Name</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Typed <code translate="no">/run ...</code></th><td>Stays plain user text; never becomes <code translate="no">action="run"</code></td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">/api/run/{name}</code>, WebSocket <code translate="no">action="run"</code></th><td>Do not exist</td></tr>
+<tr><th scope="row">React function calls and the retry UI</th><td>Call <code translate="no">POST /api/function/{name}</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Leftover wording</summary>
+<p>Some comments and type names still say <code translate="no">/run</code> or <code translate="no">runtime block</code> because a UI component name predates the endpoint. They do not define a second path. To find them:</p>
+<pre translate="no" tabindex="0">rg "/run|api/run|action=run|action=\"run\"" openprogram apps/web
+rg "runtime block|RuntimeBlock" apps/web openprogram</pre>
+</details>

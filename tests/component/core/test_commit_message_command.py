@@ -5,9 +5,9 @@ import subprocess
 import pytest
 from rich.console import Console
 
-from openprogram.cli.repl import handlers
-from openprogram.commands import registry
-from openprogram.commands.dispatch import invoke
+from openprogram.interfaces.cli.repl import handlers
+from openprogram.runtime.commands import registry
+from openprogram.runtime.commands.dispatch import invoke
 
 
 @pytest.fixture()
@@ -25,8 +25,8 @@ def isolated_commands(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(registry, "_loaded", False)
     monkeypatch.setattr(registry, "load_user", lambda: [])
     monkeypatch.setattr(registry, "load_project", lambda cwd=None: [])
-    import openprogram.commands._plugin_adapter as plugin_adapter
-    import openprogram.commands._skill_adapter as skill_adapter
+    import openprogram.runtime.commands._plugin_adapter as plugin_adapter
+    import openprogram.runtime.commands._skill_adapter as skill_adapter
 
     monkeypatch.setattr(plugin_adapter, "sync_into_registry", lambda: None)
     monkeypatch.setattr(skill_adapter, "sync_into_registry", lambda: None)
@@ -68,10 +68,10 @@ def test_commit_message_reads_diff_without_changing_repository(
         return "Add project settings"
 
     monkeypatch.setattr(
-        "openprogram.providers.default_llm.build_default_llm",
-        lambda: fake_llm,
+        "openprogram.models.providers.streaming.background_llm.build_background_llm",
+        lambda call_kind=None: fake_llm,
     )
-    import openprogram.commands.commit_message as commit_message
+    import openprogram.runtime.commands.commit_message as commit_message
 
     real_run = commit_message.subprocess.run
     git_envs: list[dict[str, str] | None] = []
@@ -122,7 +122,7 @@ def test_commit_message_bounds_combined_status_and_diff_context(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    import openprogram.commands.commit_message as commit_message
+    import openprogram.runtime.commands.commit_message as commit_message
 
     seen: dict[str, str] = {}
 
@@ -138,8 +138,8 @@ def test_commit_message_bounds_combined_status_and_diff_context(
 
     monkeypatch.setattr(commit_message, "_git", fake_git)
     monkeypatch.setattr(
-        "openprogram.providers.default_llm.build_default_llm",
-        lambda: fake_llm,
+        "openprogram.models.providers.streaming.background_llm.build_background_llm",
+        lambda call_kind=None: fake_llm,
     )
 
     result = commit_message.commit_message_builtin_handler(

@@ -1,0 +1,60 @@
+<title>输入框与用户决策输出</title>
+<meta name="description" content="输入框如何与待处理的提问、确认、表单和审批保持独立。">
+<h1>输入框与用户决策输出</h1>
+
+<p>输入框编辑普通消息和用户打开的函数表单。待处理的决策是输入框上方独立的会话面板，回执显示在对话里。待处理决策不会替换输入框、清空草稿、关闭函数表单、改变发送动作或抢走焦点。</p>
+
+<h2>输入框输入</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">模式</th><td><code translate="no">idle</code>、<code translate="no">fn-form</code></td></tr>
+<tr><th scope="row">函数表单</th><td>选择已注册函数打开 <code translate="no">FunctionForm</code>。字段、校验、过渡、关闭和发出动画都留在其中。</td></tr>
+<tr><th scope="row"><code translate="no">name(parameter=literal, ...)</code></th><td>完整的已注册表达式与表单共用派发器和 schema 校验。说明文字、不完整表达式和代码块仍是聊天文本。</td></tr>
+<tr><th scope="row">运行中</th><td>Enter 和发送把消息加入当前轮次（steer）。Cmd/Ctrl+Enter 排到下一轮。空输入保留停止。</td></tr>
+</tbody>
+</table>
+
+<h2>职责</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">名称</th><th scope="col">负责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">question.asked</code>、重连快照</th><td>规范目标</td></tr>
+<tr><th scope="row"><code translate="no">useWaitAnswer</code></th><td>执行命令和确认状态</td></tr>
+<tr><th scope="row"><code translate="no">QuestionMode</code></th><td>答案字段、导航、按请求隔离的内存草稿。<code translate="no">ask</code>、<code translate="no">confirm</code>、<code translate="no">ask_many</code>、<code translate="no">form</code>、<code translate="no">approval</code> 各一张带 key 的卡片。</td></tr>
+<tr><th scope="row"><code translate="no">PendingDecisionPanels</code></th><td>在每个输入框上方放置待处理项，含分栏</td></tr>
+<tr><th scope="row"><code translate="no">DecisionOutputs</code></th><td>消息流里的终态回执</td></tr>
+</tbody>
+</table>
+<p class="note">新问题不自动聚焦。多个问题按稳定顺序独立作答。布局见<a href="composer-interaction-prototype.zh.html">输入框交互布局</a>。</p>
+
+<h2>送达</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">卡片显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">提交中</th><td>立即显示实际答案和发送中状态</td></tr>
+<tr><th scope="row">匹配的已应用命令</th><td>已送达。唯一的确认；事件到达本身不是回执。</td></tr>
+<tr><th scope="row">结果未知</th><td>保留原命令 id 和载荷用于重试，显示可用的错误码，不暗示成功</td></tr>
+<tr><th scope="row">明确拒绝</th><td>先核对当前请求，再允许作答</td></tr>
+<tr><th scope="row">已关闭的请求</th><td>不显示为已接受的答案</td></tr>
+<tr><th scope="row">已确认的答案或拒绝</th><td>作为会话 UI 回执保留</td></tr>
+</tbody>
+</table>
+<p>提交后的回执保留问答布局，用字段标题，显示可读的值而不是 JSON。表单提交字段对象。审批卡保留可用范围、操作详情和明确的允许或拒绝；提问不授权任何操作。</p>
+<p>子 Agent 发出的审批在标题行用一枚徽章写出它的名字；对话自己的 Agent 发出的没有。Worker 对工具审批只有一种写法，卡片按界面语言显示：英文界面下 shell 命令是“Run this command?”，其他工具是“Run <em>tool</em>?”。</p>
+<p>回执是内存中的展示状态，不是 Workflow 检查点：刷新后重新加载规范的待处理问题。切换标签时，请求仍绑定原 session、execution、generation 和 version。后端 Workflow 问题在原进程继续，预声明的 Agent 等待保持其续接约定。</p>
+
+<h2>讨论与事件</h2>
+<p>讨论操作有自己的反馈输入，把文字作为 reason 放在确切的规范 decline 命令上。模型在同一轮收到，不排队聊天消息。只有匹配的已应用回执才算送达；未确认的拒绝绝不授权执行。普通输入框消息既不拒绝问题，也不作为答案。</p>
+<dl class="pairs">
+<dt>仅 UI 设置</dt><dd>直接更新 store。搜索和思考强度等执行设置还通过关联请求立即保存到当前分支。</dd>
+<dt>一次性用户操作</dt><dd>带关联的请求与响应</dd>
+<dt>运行时问题</dt><dd>广播事件投影进待处理决策 store</dd>
+</dl>
+
+<details>
+<summary>验收</summary>
+<p>输入框有内容时出现待处理问题：问题在输入框外，草稿和焦点保留，发送仍是普通消息。点卡片提交：立即反馈、匹配确认、保留回执、草稿不变、会话隔离、重试身份不变、原生 App 行为正常。</p>
+</details>
+
+<p class="next"><a href="../../runtime/operations/user-input-requests.zh.html">用户输入请求</a> · <a href="../../runtime/execution/control.zh.html#decision-output">执行控制</a></p>

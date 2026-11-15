@@ -1,0 +1,37 @@
+/* A background program's progress bar and output (program-progress.tsx). */
+.bar { position: relative; display: block; height: 3px; border-radius: var(--radius-full); overflow: hidden; background: color-mix(in srgb, var(--text-primary) 9%, transparent); }
+.bar[data-size="md"] { height: 6px; }
+.withNote { display: flex; align-items: center; gap: 8px; }
+.withNote .bar { flex: 1; min-width: 0; }
+.note { flex: none; color: var(--text-muted); font-size: var(--fs-2xs); line-height: 1; }
+.fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: var(--accent-blue); transition: width .6s var(--ease-standard); }
+.bar[data-tone="ok"] .fill { background: var(--accent-green); }
+.bar[data-tone="err"] .fill { background: var(--accent-red); }
+.bar[data-tone="muted"] .fill { background: var(--text-muted); }
+/* No amount: a short segment sweeps across. */
+.bar[data-indeterminate] .fill { width: 32%; animation: sweep 1.4s ease-in-out infinite; }
+@keyframes sweep { from { left: -32%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .bar[data-indeterminate] .fill { animation: none; left: 0; width: 100%; opacity: .35; }
+  .fill { transition: none; }
+}
+
+/* Output reads like a terminal: a recessed block, monospace, colours kept. */
+.terminal { margin: 0 8px; padding: 10px 12px; max-height: 360px; overflow: auto; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--text-primary) 4.5%, transparent); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); font-size: var(--fs-2xs); line-height: 1.55; font-family: var(--font-mono); }
+.placeholder { color: var(--text-muted); }
+.cursor { display: inline-block; width: 6px; height: 1.1em; margin-left: 1px; vertical-align: -0.2em; background: var(--text-secondary); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+.bold { font-weight: 600; }
+.dim { opacity: .65; }
+.italic { font-style: italic; }
+.underline { text-decoration: underline; }
+/* ANSI colours, readable on either theme. */
+.c30, .c90 { color: var(--text-muted); }
+.c31, .c91 { color: var(--ansi-red); }
+.c32, .c92 { color: var(--ansi-green); }
+.c33, .c93 { color: var(--ansi-yellow); }
+.c34, .c94 { color: var(--ansi-blue); }
+.c35, .c95 { color: var(--ansi-magenta); }
+.c36, .c96 { color: var(--ansi-cyan); }
+.c37, .c97 { color: var(--text-bright); }

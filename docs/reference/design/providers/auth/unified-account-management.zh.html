@@ -1,0 +1,54 @@
+<title>账号与轮询</title>
+<meta name="description" content="账号就是 profile，CLI、网页、TUI 用同样的方式管理，轮询可选。">
+<h1>账号与轮询</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">概念</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">账号</th><td>一个 profile：<code translate="no">~/.openprogram/auth/&lt;provider&gt;/&lt;profile&gt;.json</code> 一个凭据池。OAuth 刷新轮换要求每个池最多一个 OAuth 凭据，所以只有这个模型能覆盖所有供应商。</td></tr>
+<tr><th scope="row"><code translate="no">account_id</code></th><td>运行时分配的稳定 ASCII 键（<code translate="no">default</code>、<code translate="no">account-2</code>……），永不改变</td></tr>
+<tr><th scope="row"><code translate="no">label</code></th><td>Unicode 显示文字；可随意改名；允许重复</td></tr>
+</tbody>
+</table>
+<p class="note">新登录的 label：手填、OAuth 邮箱、供应商显示名、稳定 id，依次取。身份来自凭据 metadata、嵌套 OAuth 数据或 <code translate="no">id_token</code> claims。旧凭据读取时推导。</p>
+<h2>请求路径</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">机制</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">当前账号</th><td><code translate="no">auth/account/account_selection.py</code>：<code translate="no">get_active_account</code>、<code translate="no">set_active_account</code>、<code translate="no">get_active_pin</code>。<code translate="no">acquire</code> 和解析器默认用它；聊天和执行进入 <code translate="no">auth_scope</code>。默认仍是 <code translate="no">default</code>。</td></tr>
+<tr><th scope="row">结果上报</th><td><code translate="no">auth/usage.py</code> 和 <code translate="no">openai_completions.stream_simple</code> 每次请求获取并上报；429 冷却这个 key，外层重试换下一个。没有真实 AuthStore 池时不起作用。</td></tr>
+<tr><th scope="row">对话亲和</th><td>流式调用运行在 <code translate="no">conversation_affinity(session_id)</code> 里；<code translate="no">pool.pick</code> 让对话继续用上次的健康凭据，前提是 1 小时内活跃（<code translate="no">AFFINITY_IDLE_MS</code>），这样供应商缓存不用重复付费。凭据冷却或吊销后对话换走，不再回来。每进程最多 4096 个（<code translate="no">AFFINITY_MAX</code>）。沿用 magpie（yetone/magpie，MIT）。</td></tr>
+<tr><th scope="row">策略</th><td><code translate="no">fixed</code>、<code translate="no">fill_first</code>、<code translate="no">round_robin</code>、<code translate="no">random</code>、<code translate="no">least_used</code>；<code translate="no">auth/pool.py</code> 跳过冷却；<code translate="no">auth/credential_provider.py</code> 处理 fallback</td></tr>
+</tbody>
+</table>
+<h2>REST</h2>
+<p>位于 <code translate="no">/api/providers/{provider}/accounts</code>：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路由</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET</code></th><td><code translate="no">{active, accounts:[{id,label,name,email?,status,kind,is_active,is_fallback}]}</code>、策略、<code translate="no">add_mode</code>（<code translate="no">code_paste</code> 或 <code translate="no">login</code>）。<code translate="no">name</code> 是 <code translate="no">label</code> 的别名。</td></tr>
+<tr><th scope="row"><code translate="no">POST /use {id}</code></th><td>固定账号；<code translate="no">""</code> 交还 fallback（<code translate="no">default</code>），它的开关不能单独关闭</td></tr>
+<tr><th scope="row"><code translate="no">POST /rename {id,name}</code></th><td>只改显示文字</td></tr>
+<tr><th scope="row"><code translate="no">POST /remove {id}</code></th><td>移除</td></tr>
+<tr><th scope="row"><code translate="no">POST /add</code>、<code translate="no">/keys {api_key,name?,validate?}</code></th><td>新账号；名字留空自动取</td></tr>
+<tr><th scope="row"><code translate="no">GET /{name}/reveal</code>、<code translate="no">POST /{name}/update</code></th><td>完整 key；替换</td></tr>
+<tr><th scope="row"><code translate="no">POST /{name}/validate</code>、<code translate="no">/validate-all</code></th><td>校验一个或全部</td></tr>
+<tr><th scope="row"><code translate="no">POST /rotation {enabled,strategy?}</code></th><td>关：只用当前账号。开：冷却、跳过、换下一个。默认关。</td></tr>
+<tr><th scope="row"><code translate="no">POST /reorder {order}</code></th><td>轮询优先级</td></tr>
+<tr><th scope="row"><code translate="no">POST /enabled</code></th><td>加入或移出轮询</td></tr>
+<tr><th scope="row"><code translate="no">POST /{name}/retry</code></th><td>清除冷却</td></tr>
+</tbody>
+</table>
+<p class="note">登录添加复用 <code translate="no">/api/providers/{id}/login/{start,poll,submit,cancel}</code>，可带 <code translate="no">label</code>；id 由运行时分配。多 profile 和诊断：<code translate="no">routes/identity/credentials.py</code>（<code translate="no">/profiles</code>、<code translate="no">/pools</code>、<code translate="no">/doctor</code>、SSE <code translate="no">/events</code>）。</p>
+<h2>各界面</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">界面</th><th scope="col">组件</th></tr></thead>
+<tbody>
+<tr><th scope="row">网页</th><td>所有供应商共用一个密钥面板（<code translate="no">detail/keys-panel.tsx</code>）。后端只在怎么添加、身份长什么样上不同。</td></tr>
+<tr><th scope="row">TUI</th><td><code translate="no">providerAccounts.tsx</code>、<code translate="no">providerLoginFlow.tsx</code>，基于 <code translate="no">/login/*</code>；<code translate="no">/login &lt;provider&gt;</code> 对任何供应商可用</td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">providers use &lt;provider&gt; [profile]</code>；<code translate="no">providers list</code> 里的 <code translate="no">← active</code></td></tr>
+</tbody>
+</table>
+<details><summary>实现状态</summary>
+<p>尚未实现：UI 上的 <code translate="no">fallback_chain</code> 开关、TUI 凭据池控制、原生 <code translate="no">providers pool …</code> 命令；账号等于 profile 之后退役 <code translate="no">fixed</code> 策略。</p>
+</details>
+<p class="next"><a href="unified-auth-storage.zh.html">认证存储</a></p>

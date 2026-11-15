@@ -1,0 +1,98 @@
+<title>Outbound network proxy</title>
+<meta name="description" content="How managed HTTP follows the user's proxy while keeping URL, credential, redirect and TLS policy.">
+<h1>Outbound network proxy</h1>
+<p>A direct, peer-pinned connection cannot reach services available only through the user's proxy. Fake-IP proxies such as Clash also answer local DNS from <code translate="no">198.18.0.0/15</code>, which a local-resolver policy refuses as <code translate="no">NON_GLOBAL_ADDRESS</code> though the real resolution happens in the proxy.</p>
+
+<h2 id="routing-boundaries">Who follows the proxy</h2>
+<table class="stack">
+<thead><tr><th scope="col">Consumer</th><th scope="col">Examples</th><th scope="col">Route</th></tr></thead>
+<tbody>
+<tr><th scope="row">Arbitrary public URLs</th><td><code translate="no">tool.web_fetch</code>, <code translate="no">tool.image_result.download</code>, channel attachments and assets</td><td>ordinary proxy</td></tr>
+<tr><th scope="row">Fixed audited HTTPS services</th><td>search APIs including DuckDuckGo, image APIs, updater, skills catalog, office assets, channel APIs, TTS</td><td>ordinary proxy</td></tr>
+<tr><th scope="row">Providers</th><td><code translate="no">provider.*</code>, <code translate="no">webui.model_listing.*</code></td><td>ordinary proxy only when the exact origin is in the provider API or OAuth inventory</td></tr>
+<tr><th scope="row">Configured custom origins, loopback callbacks</th><td>private services an owner exception allows</td><td>direct, peer-pinned</td></tr>
+</tbody>
+</table>
+<p class="note">The route is chosen before the target policy, for every request and redirect hop. A <code translate="no">NO_PROXY</code> match, or no route, connects directly with the full local address check.</p>
+
+<h2 id="proxy-resolved-targets">Targets the proxy resolves</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Target</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">IP literal</th><td>Checked directly; private, loopback, reserved, fake-IP and metadata refused</td></tr>
+<tr><th scope="row">Single-label, <code translate="no">localhost</code>, or <code translate="no">.localhost .local .lan .home.arpa .internal .intranet .corp .home</code></th><td>Refused before any lookup</td></tr>
+<tr><th scope="row">Metadata hostname</th><td><code translate="no">METADATA_ADDRESS</code></td></tr>
+<tr><th scope="row">Local answer is a real private, loopback, link-local, reserved or metadata address</th><td>Refused</td></tr>
+<tr><th scope="row">Local answer is fake-IP (<code translate="no">198.18.0.0/15</code>), or the lookup fails</th><td>Left to the proxy</td></tr>
+<tr><th scope="row">Malformed answer</th><td>Refused</td></tr>
+</tbody>
+</table>
+<p class="note">The decision carries <code translate="no">requires_proxy</code>; building a direct pool or socket for it raises <code translate="no">PROXY_ROUTE_REQUIRED</code>. Fixed audited services also accept fake-IP on direct connections, since TLS verifies a hostname the caller cannot choose. Untrusted public URLs never do.</p>
+
+<h2 id="resolution-and-transport">Which proxy</h2>
+<ol>
+<li>Explicit <code translate="no">security.outbound_url.policy_proxy</code>, with its enforcement requirement; ordinary routing is then unused.</li>
+<li><code translate="no">OPENPROGRAM_PROXY_URL</code>, keeping <code translate="no">NO_PROXY</code>.</li>
+<li>Standard variables through HTTPX, with Python's macOS and Windows system settings as fallback. Loopback is always bypassed.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pools</th><td>httpcore proxy pools with a decision-aware backend, for HTTP, HTTPS and SOCKS5</td></tr>
+<tr><th scope="row">Forwarding</th><td>HTTPS targets tunnelled by hostname with CONNECT; plain HTTP in absolute form</td></tr>
+<tr><th scope="row">Proxy address</th><td>Owner-selected; metadata and link-local forbidden</td></tr>
+<tr><th scope="row">Credentials</th><td>Proxy authentication goes only to the handshake; redirects do not forward credentials across origins</td></tr>
+<tr><th scope="row">Verification</th><td>TLS checks the original hostname; Host comes from the validated origin</td></tr>
+<tr><th scope="row">Failure</th><td>Never falls back to direct</td></tr>
+<tr><th scope="row">Client cache</th><td>Routing map is immutable within a client and part of its cache identity; a new call after a change retires stale clients</td></tr>
+<tr><th scope="row">Explicit transport-security objects</th><td>Do not inherit ambient routing</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Choices and residual risk</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Choice</th><th scope="col">Decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">Environment parsing</th><td>HTTPX's parsing and URLPattern precedence are reused; no second <code translate="no">NO_PROXY</code> matcher</td></tr>
+<tr><th scope="row"><code translate="no">PolicyProxyConfig</code></th><td>Stays apart from ordinary routing: a normal Clash proxy does not enforce URL policy, so local checks still run in front of it</td></tr>
+<tr><th scope="row">Left out</th><td>New profile, disabling URL protection, OAuth change, routing of custom services</td></tr>
+<tr><th scope="row">CA bundles</th><td>Stay under outbound security configuration</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Risk</th><th scope="col">Position</th></tr></thead>
+<tbody>
+<tr><th scope="row">Final resolution</th><td>Behind a proxy, it is the proxy's</td></tr>
+<tr><th scope="row">Public hostname with a private real answer</th><td>Caught only when the local resolver returns that answer; behind a fake-IP resolver, or with DNS rebinding between the check and the proxy's lookup, the proxy's rules decide</td></tr>
+<tr><th scope="row">Still applied</th><td>Read-only methods, the 80/443 limit for untrusted URLs, credential stripping</td></tr>
+<tr><th scope="row">For a strict guarantee</th><td>An enforcing policy proxy, or hosts in <code translate="no">NO_PROXY</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Sync and async public entries use HTTP, HTTPS and SOCKS5 routes.</li>
+<li><code translate="no">web_fetch</code> behind a fake-IP resolver reaches the target by hostname.</li>
+<li>IP literals, local names and real private answers stay refused when proxied; <code translate="no">NO_PROXY</code> hosts keep the direct check.</li>
+<li>A proxy-resolved decision never opens a direct socket.</li>
+<li><code translate="no">NO_PROXY</code> and override precedence hold; shared clients are replaced when routes change.</li>
+<li>Unauthorized target and proxy addresses are rejected before network activity; service and proxy credentials stay apart; policy-proxy behaviour and cleanup are retained.</li>
+</ul>
+</details>
+
+<details>
+<summary>How OpenClaw does it</summary>
+<p>Sources: <code translate="no">references/openclaw/src/infra/net/proxy-env.ts</code>, <code translate="no">proxy-fetch.ts</code>, <code translate="no">src/infra/net/proxy/</code>, <a href="https://docs.openclaw.ai/cli/proxy/">its proxy docs</a>.</p>
+<ul>
+<li>One environment resolver mirroring undici's <code translate="no">EnvHttpProxyAgent</code>: lowercase first; HTTPS prefers <code translate="no">https_proxy</code>, then <code translate="no">http_proxy</code>; <code translate="no">ALL_PROXY</code> as fallback. A full reimplemented <code translate="no">NO_PROXY</code> matcher with IPv4 CIDR gates every decision.</li>
+<li>One override: <code translate="no">--proxy-url</code>, <code translate="no">proxy.proxyUrl</code>, <code translate="no">OPENCLAW_PROXY_URL</code>, optional <code translate="no">--proxy-ca-file</code>, over undici <code translate="no">ProxyAgent</code>, with a managed proxy lifecycle.</li>
+<li>Provider helpers route through these; the SSRF guard uses the same <code translate="no">matchesNoProxy</code>.</li>
+</ul>
+<p>OpenProgram borrows one documented reading of the standard variables and adds a separate policy-proxy boundary. OpenClaw's proxy lifecycle validation is not needed here.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>In <code translate="no">openprogram/host/security/url_policy.py</code> (<code translate="no">proxy_resolves</code>, <code translate="no">requires_proxy</code>), <code translate="no">safe_http.py</code> (<code translate="no">uses_ambient_proxy</code>, route before policy) and <code translate="no">load_outbound_security_config</code>. Not yet: the sandbox command proxy (<code translate="no">openprogram/host/sandbox/network_policy.py</code>) keeps its own direct public-address rule and does not recognise fake-IP answers.</p>

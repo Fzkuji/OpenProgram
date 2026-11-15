@@ -1,17 +1,21 @@
 "use client";
 
+import { jsonFetch } from "@/lib/net/fetch-client";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import styles from "../settings-page.module.css";
+import styles from "../providers/provider-pane.module.css";
 import { useTranslation } from "@/lib/i18n";
 
 export function SearchConnectivity({
   providerId,
   disabled,
+  needsKey = true,
 }: {
   providerId: string;
   disabled: boolean;
+  /** False for keyless backends, so the copy does not mention an API key. */
+  needsKey?: boolean;
 }) {
   const { text } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -31,15 +35,10 @@ export function SearchConnectivity({
     setBusy(true);
     setResult({ kind: "ok", text: "…" });
     try {
-      const r = await fetch(
+      const d = await jsonFetch<{ ok?: boolean; latency_ms?: number; result_count?: number; error?: string }>(
         `/api/search-providers/${encodeURIComponent(providerId)}/test`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
+        { method: "POST", body: JSON.stringify({}) },
       );
-      const d = await r.json();
       if (d.ok) {
         setResult({
           kind: "ok",
@@ -63,13 +62,19 @@ export function SearchConnectivity({
   }
 
   return (
-    <div className={styles.detailSection}>
+    <div className="flex flex-col gap-[10px]">
       <div className={styles.detailSectionTitle}>
         <span>{text("Connectivity check", "连接检查")}</span>
       </div>
-      <div className={styles.detailRow}>
+      <div className={`${styles.detailRow} flex gap-[10px] items-center`}>
         <span className={styles.modelCountSummary} style={{ flex: 1 }}>
-          {text("Runs a tiny live query to validate the API key.", "运行一个小型实时查询来验证 API key。")}
+          {disabled
+            ? needsKey
+              ? text("Add an API key above first.", "请先在上方添加 API key。")
+              : text("This backend is not available yet.", "这个后端暂不可用。")
+            : needsKey
+            ? text("Runs a tiny live query to validate the API key.", "运行一个小型实时查询来验证 API key。")
+            : text("Runs a tiny live query to confirm this backend responds.", "运行一个小型实时查询，确认该后端可用。")}
         </span>
         {result && (
           <span
@@ -78,16 +83,14 @@ export function SearchConnectivity({
               " " +
               (result.kind === "ok" ? styles.ok : styles.err)
             }
-            title={result.title}
+            data-tip={result.title}
           >
             {result.text}
           </span>
         )}
         <Button
-          size="sm"
           onClick={test}
           disabled={busy || disabled}
-          title={disabled ? text("Configure the API key first", "请先配置 API key") : undefined}
         >
           {text("Check", "检查")}
         </Button>

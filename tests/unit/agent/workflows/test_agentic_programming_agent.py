@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import inspect
+
 
 
 def test_agent_forwards_bounded_tool_loop_controls_and_can_return_raw_result():
-    from openprogram.agentic_programming.agent import agent
+    from openprogram.runtime.agent.agent_function import agent
 
     calls = []
 
@@ -41,7 +41,7 @@ def test_agent_forwards_bounded_tool_loop_controls_and_can_return_raw_result():
 
 
 def test_agent_keeps_text_return_contract_by_default():
-    from openprogram.agentic_programming.agent import agent
+    from openprogram.runtime.agent.agent_function import agent
 
     class Runtime:
         def exec(self, **_kwargs):
@@ -50,76 +50,53 @@ def test_agent_keeps_text_return_contract_by_default():
     assert agent("work", runtime=Runtime()) == "finished"
 
 
-def test_browser_task_uses_high_level_agent_wrapper(monkeypatch):
-    from types import SimpleNamespace
-
-    from openprogram.programs.workflow import browser as browser_module
-
-    class Controller:
-        initial_url = ""
-        binding_id = ""
-        max_steps = 0
-        _action_seq = 0
-        _planner_screenshot_result = None
-        _frame = {"frame_id": "frame-1", "url": "http://localhost/"}
-        _last_result = None
-        _last_action = ""
-
-        def execute(self, **_kwargs):
-            return {"frame_id": "frame-1", "url": "http://localhost/"}
-
-        def tool_for_actions(self, _actions):
-            return SimpleNamespace(name="browser_page")
-
-        def revoke_screenshot(self):
-            return None
-
-        def final_result(self, *, summary: str, reason_code: str | None = None):
-            return {
-                "status": "failed",
-                "reason_code": reason_code or "verification_missing",
-                "summary": summary,
-            }
-
-        def close(self):
-            return None
+def test_agent_choices_return_the_resolved_pick_after_the_tool_loop():
+    from openprogram.runtime.agent.agent_function import agent
 
     calls = []
-
-    def high_level_agent(prompt, **kwargs):
-        calls.append((prompt, kwargs))
-        return "no tool call"
+    choices = {"close": {"status": "closed"}}
 
     class Runtime:
-        def exec(self, **_kwargs):
-            raise AssertionError("browser task must use agent(), not Runtime.exec()")
+        def exec(self, **kwargs):
+            calls.append(kwargs)
+            return {"status": "closed"}
 
-    monkeypatch.setattr(browser_module, "_new_controller", Controller)
-    monkeypatch.setattr(browser_module, "agent", high_level_agent)
-
-    result = browser_module._run_browser_task(
-        task="inspect the page",
-        url="",
-        max_steps=1,
-        max_seconds=30,
-        runtime=Runtime(),
-    )
-
-    assert result["status"] == "failed"
-    assert len(calls) == 6
-    assert calls[0][1]["tools"][0].name == "browser_page"
-    assert calls[0][1]["tool_choice"] == {
-        "type": "function", "name": "browser_page",
-    }
-    assert calls[0][1]["runtime"].__class__ is Runtime
+    assert agent("handle the ticket", toolset="default", choices=choices,
+                 runtime=Runtime()) == {"status": "closed"}
+    assert calls[0]["choices"] is choices
+    assert calls[0]["toolset"] == "default"
 
 
-def test_browser_gui_loops_do_not_call_runtime_exec_directly():
-    from openprogram.programs.workflow import browser as browser_module
+def test_standalone_agent_async_selects_explicit_provider_before_construction(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from openprogram.runtime.agent import agent_async
+    from openprogram.runtime.agent.call_state import _current_runtime
+    from openprogram.state.store import _store
 
-    source = "\n".join([
-        inspect.getsource(browser_module._run_browser_task_commands),
-        inspect.getsource(browser_module._run_browser_task),
-    ])
+    selections = []
+    closed = []
 
-    assert "runtime.exec(" not in source
+    class FakeRuntime:
+        async def async_exec(self, **kwargs):
+            assert kwargs['model'] == 'chosen:model-id'
+            return {'text': 'selected'}
+
+        def close(self):
+            closed.append(True)
+
+    def create(**kwargs):
+        selections.append(kwargs)
+        return FakeRuntime()
+
+    monkeypatch.setattr('openprogram.runtime.agent.runtime.factory.create_runtime', create)
+    runtime_token = _current_runtime.set(None)
+    store_token = _store.set(SimpleNamespace(session_id='selection-test'))
+    try:
+        assert asyncio.run(agent_async('hello', model='chosen:model-id')) == 'selected'
+        assert selections == [{'provider': 'chosen', 'model': 'model-id'}]
+        assert closed == [True]
+        assert _current_runtime.get() is None
+    finally:
+        _store.reset(store_token)
+        _current_runtime.reset(runtime_token)

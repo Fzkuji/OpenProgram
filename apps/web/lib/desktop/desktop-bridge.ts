@@ -34,35 +34,35 @@ export {
   type DesktopReopenState,
   type DesktopBridge,
   desktopBridge,
-} from "./bridge-api";
+} from "./bridge/bridge-api";
 export {
   registerVisibleWebTabBounds,
   removeVisibleWebTabBounds,
+  setFloatingWebTab,
   setWebTabReady,
   isWebTabReady,
   waitForWebTabReady,
   setDesktopSplitLayoutAvailable,
   isDesktopSplitLayoutAvailable,
   ensureWebView,
-} from "./bridge-state";
+} from "./bridge/bridge-state";
 export {
   displayPathOf,
   reconcileRestoredWebUrl,
   restoreRetainedWebViews,
   retryRestoreWebTab,
   destroyStaleWebViews,
-} from "./bridge-restoration";
+} from "./bridge/bridge-restoration";
 export {
   desktopTerminalId,
   destroyStaleTerminals,
-} from "./bridge-terminals";
+} from "./bridge/bridge-terminals";
 export {
   installDesktopMenuHandlers,
-} from "./bridge-menu";
+} from "./bridge/bridge-menu";
 export {
   subscribeWebTabPopups,
-  subscribeBrowserHumanInput,
-} from "./bridge-events";
+} from "./bridge/bridge-events";
 export {
   visibleWebTab,
   finalizeWebTabPreview,
@@ -77,7 +77,7 @@ export {
   surfaceOriginForChat,
   restorePriorActiveTabAfterFailedWebOpen,
   closeAgentWebTabResult,
-} from "./bridge-surfaces";
+} from "./bridge/bridge-surfaces";
 export {
   type AcceptedTransfer,
   acceptedTransfers,
@@ -97,4 +97,4 @@ export {
   installTabTransferHandlers,
   finalizeOrphanTransferJournal,
   recoverPendingTabTransfers,
-} from "./bridge-transfer";
+} from "./bridge/bridge-transfer";

@@ -1,0 +1,34 @@
+<title>Local models</title>
+<meta name="description" content="Connect Ollama, LM Studio, vLLM, llama.cpp or another OpenAI-compatible local server.">
+<meta name="covers" content="openprogram/models/providers/adapters/ollama/ openprogram/models/providers/adapters/lmstudio/ openprogram/models/providers/adapters/vllm/">
+<h1>Local models</h1>
+<p>OpenProgram connects to a server you run. Downloads, GPU allocation and server lifecycle stay with that server.</p>
+<table class="stack">
+<thead><tr><th scope="col">Preset in Settings → Providers</th><th scope="col">Default API Base URL</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ollama</th><td><code translate="no">http://localhost:11434/v1</code></td></tr>
+<tr><th scope="row">LM Studio</th><td><code translate="no">http://localhost:1234/v1</code></td></tr>
+<tr><th scope="row">vLLM</th><td><code translate="no">http://localhost:8000/v1</code></td></tr>
+<tr><th scope="row">llama.cpp</th><td><code translate="no">http://localhost:8080/v1</code></td></tr>
+<tr><th scope="row">Local OpenAI-compatible server</th><td><code translate="no">http://localhost:8000/v1</code></td></tr>
+</tbody>
+</table>
+<ol>
+<li>Start the server and load a model with its own tools.</li>
+<li>Enable the provider and save its API Base URL.</li>
+<li>Click <strong>Fetch models</strong> and enable one.</li>
+<li>Select it in the chat composer.</li>
+</ol>
+<p class="note"><code translate="no">localhost</code> is the machine running the worker; for a remote worker, use an address reachable from it. A host and port alone get <code translate="no">/v1</code>; an explicit path is kept. Saving a new URL changes later discovery and inference for already enabled models.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">What to do or expect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Server requires a key</th><td>Add it in the provider account panel. Without one, discovery, checks and inference omit Authorization; a cloud OpenAI key is never sent.</td></tr>
+<tr><th scope="row">Several servers</th><td><strong>Add custom provider</strong>: name, URL, <strong>Local server (API key optional)</strong>. Ordinary custom cloud providers keep their credential requirements.</td></tr>
+<tr><th scope="row">Check the server</th><td><strong>Connectivity</strong>: a model listing confirms the endpoint; testing a named model also checks inference. Unavailable server, rejected key or invalid response report as failures.</td></tr>
+<tr><th scope="row">No discovery</th><td><strong>Add model by id</strong>, with the exact identifier. It also updates an existing model's limits.</td></tr>
+<tr><th scope="row">Token limits</th><td>Enter limits matching the deployment and its configured context size. Unknown limits default to 4,096 context and 1,024 output. A model's advertised training context does not count.</td></tr>
+</tbody>
+</table>
+<p>Local models use OpenAI Chat Completions, on the same streaming, cancellation and tool-call transport as other compatible providers. Tools, images, reasoning and strict JSON depend on the model and server. Enablement and limits persist in the standard configuration.</p>
+<p class="next">Server docs: <a href="https://docs.ollama.com/api/openai-compatibility">Ollama</a>, <a href="https://lmstudio.ai/docs/developer/core/server">LM Studio</a>, <a href="https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/">vLLM</a></p>

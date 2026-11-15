@@ -1,0 +1,171 @@
+<title>Stable and development instances</title>
+<meta name="description" content="How one source checkout drives a stable and a development instance, and how commits move between them.">
+<h1>Stable and development instances</h1>
+
+<p>Commits run on the development instance first and reach stable only by promotion. Stable does not restart for a deploy, so a stable conversation can deploy, open <code translate="no">http://127.0.0.1:18200</code> or call its API, and look at the result.</p>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Stable</th><th scope="col">Development</th></tr></thead>
+<tbody>
+<tr><th scope="row">Code</th><td><code translate="no">stable</code> branch</td><td>the commit deployed last, <code translate="no">dev</code> by default</td></tr>
+<tr><th scope="row">Runs as</th><td><code translate="no">/Applications/OpenProgram.app</code></td><td><code translate="no">/Applications/OpenProgram Dev.app</code> (macOS) or a browser; runtime in <code translate="no">~/.openprogram-dev/runtime</code></td></tr>
+<tr><th scope="row">Port</th><td><code translate="no">18100</code></td><td><code translate="no">18200</code></td></tr>
+<tr><th scope="row">Browser debugging port</th><td><code translate="no">9223</code></td><td><code translate="no">9224</code></td></tr>
+<tr><th scope="row">State</th><td><code translate="no">~/.openprogram</code> (default profile)</td><td><code translate="no">~/.openprogram-dev</code> (<code translate="no">dev</code> profile)</td></tr>
+<tr><th scope="row">Updated by</th><td><code translate="no">openprogram dev promote</code>, then <code translate="no">scripts/refresh-local-app.sh</code></td><td><code translate="no">openprogram dev deploy</code>, then <code translate="no">scripts/refresh-dev-instance.sh</code></td></tr>
+</tbody>
+</table>
+
+<p class="note">Rules: <code translate="no">openprogram/operations/worker/dev_instance.py</code>. <code translate="no">openprogram dev status</code> shows both instances and the commits promotion would bring.</p>
+
+<h2 id="deploying-to-the-development-instance">Deploying to the development instance</h2>
+
+<p><code translate="no">openprogram dev deploy [ref]</code> (default <code translate="no">dev</code>) checks the commit out into the detached worktree <code translate="no">~/.openprogram-dev/source</code> and runs <code translate="no">scripts/refresh-dev-instance.sh</code> there. Nothing of stable is stopped or written.</p>
+
+<ol>
+<li>Refuse uncommitted or untracked files. One deploy runs at a time; a second waits.</li>
+<li>Sync the Git hooks and report docs findings since the last deploy, without stopping. Build the Web assets and the OpenProgram wheel; a page that breaks the format becomes a visible error page.</li>
+<li>Install a full CPython 3.12 into the runtime once (<code translate="no">uv python install --install-dir</code>), sync the locked dependency set a release installs, reinstall the wheel.</li>
+<li>macOS: build the helper <code translate="no">OpenProgram Dev.app</code> (<code translate="no">ai.openprogram.runtime.dev</code>) and point <code translate="no">runtime-manifest.json</code> at it. The worker gets its own identity, so Screen Recording, Accessibility and similar grants are separate from stable.</li>
+<li>Set the <code translate="no">dev</code> profile's port and bind the Program catalog.</li>
+<li>Install or restart only the <code translate="no">dev</code> worker as a login service (launchd or systemd; a plain stop and start elsewhere). Wait up to 120 seconds for <code translate="no">/healthz</code>, then record the commit in <code translate="no">runtime/source-revision</code>.</li>
+<li>Keep the wheel and TUI bundle in <code translate="no">~/.openprogram-dev/artifacts</code> for promotion.</li>
+<li>macOS: run <code translate="no">scripts/install-dev-app.sh</code>.</li>
+</ol>
+
+<details>
+<summary>The development App</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Identity</th><td><code translate="no">/Applications/OpenProgram Dev.app</code>, bundle id <code translate="no">ai.openprogram.desktop.dev</code>; macOS only</td></tr>
+<tr><th scope="row">Contents</th><td>The deployed commit's Desktop shell, no runtime. <code translate="no">Contents/Resources/instance.json</code> names the <code translate="no">dev</code> profile, port, debugging port and runtime; <code translate="no">apps/desktop/main/instance.js</code> reads it.</td></tr>
+<tr><th scope="row">Worker</th><td>Started and authenticated through the development runtime under <code translate="no">OPENPROGRAM_PROFILE=dev</code></td></tr>
+<tr><th scope="row">Electron data</th><td><code translate="no">~/Library/Application Support/OpenProgram Dev</code></td></tr>
+<tr><th scope="row">Ignores</th><td>The stable installers' lock and release updates</td></tr>
+<tr><th scope="row">Build</th><td><code translate="no">scripts/release/build-desktop-shell.sh</code>: electron-builder with the release configuration minus the runtime, so the Electron pinned in <code translate="no">apps/desktop/package.json</code> runs here first</td></tr>
+<tr><th scope="row">Signing</th><td><code translate="no">local-macos-signing.py sign --development</code>, the local identity; signs the outer App alone</td></tr>
+<tr><th scope="row">Install</th><td>Built next to the stable App, never into it. The bundle is swapped while the App is closed and reopened if it was open, in front only when the user was in it.</td></tr>
+<tr><th scope="row">Browser tool</th><td><code translate="no">programs/applications/browser/app_endpoint.py</code> picks the debugging port by profile, so the development agent never drives the stable App's tabs</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="signing-in">Signing in</h3>
+<p>The worker mints a new owner token on every start, so a deploy signs out browsers. The development App fetches its new token itself.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram dev open</code></th><td>Opens the default browser, signed in; the sign-out message names this command</td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev auth-url</code></th><td>Prints a sign-in link for another browser</td></tr>
+</tbody>
+</table>
+
+<h3 id="state-and-models">State and models</h3>
+<p>The credential store's root is the active profile's state directory, so the <code translate="no">dev</code> profile never reads or refreshes default-profile logins. <code translate="no">openprogram dev copy-models</code> brings over the model setup:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Copied</th><th scope="col">Not copied</th></tr></thead>
+<tbody>
+<tr><th scope="row">Config keys <code translate="no">providers</code>, <code translate="no">api_keys</code>, <code translate="no">last_used_model</code></th><td>OAuth logins: their refresh tokens rotate, so two instances would sign each other out. Sign in again if needed.</td></tr>
+<tr><th scope="row">API-key and CLI-delegated credentials (read another tool's login by reference)</th><td>Conversations, Agents, memory</td></tr>
+</tbody>
+</table>
+<p>The ChatGPT login is shared: the development instance reads the Codex CLI's <code translate="no">~/.codex/auth.json</code>, and the stable instance mirrors its login of the same account into that file. Each adopts the newer login the other wrote instead of spending a used refresh token (<a href="../providers/auth/unified-auth-storage.html#codex-shared-login">One ChatGPT login per machine</a>).</p>
+
+<h3 id="from-a-conversation">From a conversation</h3>
+<p>With a <code translate="no">stable</code> branch, <code translate="no">self_update(action="prepare")</code> uses the <code translate="no">dev_stable</code> backend: the development instance is the trial, promotion the switch. The call saves the request and starts a detached controller; the rest runs after the calling turn is saved.</p>
+<table class="stack">
+<thead><tr><th scope="col">Step</th><th scope="col">What happens</th><th scope="col">Phase</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>Rebase the candidate onto <code translate="no">dev</code> in its worktree</td><td><code translate="no">staging</code></td></tr>
+<tr><th scope="row">2</th><td><code translate="no">git merge --ff-only</code> in the primary checkout. A moved <code translate="no">dev</code> or a held <code translate="no">index.lock</code> retries up to 10 times with backoff</td><td><code translate="no">staging</code></td></tr>
+<tr><th scope="row">3</th><td><code translate="no">openprogram dev deploy &lt;sha&gt;</code></td><td><code translate="no">staging</code></td></tr>
+<tr><th scope="row">4</th><td>System probe against port 18200 and the <code translate="no">dev</code> state directory, then a browser probe: open the signed-in Web app until the message box appears</td><td><code translate="no">staging</code></td></tr>
+<tr><th scope="row">5</th><td>Wait until stable runs no task, up to 30 minutes. Turns stay admitted</td><td><code translate="no">ready</code></td></tr>
+<tr><th scope="row">6</th><td>If <code translate="no">stable</code> already contains the commit, nothing is promoted. Otherwise <code translate="no">openprogram dev promote &lt;sha&gt;</code>, always with the explicit commit, so the wait cannot ship another session's deploy. If another deploy took development over: redeploy, probe once, promote again</td><td><code translate="no">activating</code></td></tr>
+<tr><th scope="row">7</th><td>System probe against port 18100</td><td><code translate="no">verifying</code></td></tr>
+<tr><th scope="row">8</th><td>The result reaches the origin conversation through the ordinary delivery and follow-up turn, once the stable worker is back</td><td><code translate="no">succeeded</code></td></tr>
+</tbody>
+</table>
+<p class="note">Each probe compares the doctor rows with the same instance's before the change, so a row already failing, such as a login development lacks, blocks nothing.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Ends as</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">aborted</code></th><td>A rebase conflict or a dirty file in the way (lists the files); step 3 or 4 fails (the commit stays on <code translate="no">dev</code>, and the result says so); a second promotion refusal</td></tr>
+<tr><th scope="row"><code translate="no">rolled_back</code></th><td>The refresh fails, which leaves <code translate="no">stable</code> and the App on the previous version, or stable does not come up healthy. <code translate="no">stable</code> never moves backward: one revert commit lands on <code translate="no">dev</code>, so it stays promotable, and is deployed and promoted; the result names it</td></tr>
+<tr><th scope="row"><code translate="no">needs_manual_recovery</code></th><td>The repair fails too (both reasons given), or a later promotion already carries the commit, which is never reverted</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Controller</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Backend</th><td>Picked by <code translate="no">openprogram/operations/self_update/control/backend.py</code>; this one is <code translate="no">control/dev_stable.py</code></td></tr>
+<tr><th scope="row">Location</th><td>A private copy of the runtime under <code translate="no">&lt;state&gt;/self-updates/&lt;id&gt;/controller</code>, outside the App and the development runtime: its steps replace both, and the code imports lazily</td></tr>
+<tr><th scope="row">Runs as</th><td>A launchd job on macOS, a detached session elsewhere. A worker start restarts one that died</td></tr>
+<tr><th scope="row">Environment</th><td>No <code translate="no">OPENPROGRAM_SESSION_ID</code>: with it, <code translate="no">scripts/refresh-local-app.sh</code> detaches and reports success at once</td></tr>
+<tr><th scope="row">Restart</th><td>Steps are idempotent. A journal in the update's directory records the landed commit and its rebase base, so a restart continues from its phase</td></tr>
+<tr><th scope="row">Another session's promotion</th><td>It moves <code translate="no">stable</code> once its new worker is healthy; the controller keeps waiting for the App to serve the commit</td></tr>
+<tr><th scope="row">Undo</th><td><code translate="no">self_update(action="undo", target=&lt;commit&gt;)</code> makes a <code translate="no">git revert</code> in a worktree of <code translate="no">dev</code> and submits it as a normal <code translate="no">prepare</code></td></tr>
+<tr><th scope="row">Retry</th><td><code translate="no">self_update(action="retry")</code> does not apply; a fix is a new <code translate="no">prepare</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="promoting-to-stable">Promoting to stable</h2>
+
+<p><code translate="no">openprogram dev promote [revision]</code> is a command on purpose, with no Settings button: a development step run by the owner or an Agent the owner asked.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Required</th><th scope="col">Refusal</th></tr></thead>
+<tbody>
+<tr><th scope="row">The commit is the one in <code translate="no">~/.openprogram-dev/runtime/source-revision</code>, not a dirty build</th><td><code translate="no">serves no clean commit</code> or <code translate="no">only the commit the development instance serves can be promoted</code></td></tr>
+<tr><th scope="row">Development answers <code translate="no">/healthz</code></th><td><code translate="no">the development instance is not healthy</code></td></tr>
+<tr><th scope="row">The commit contains the current <code translate="no">stable</code></th><td><code translate="no">promotion only fast-forwards</code></td></tr>
+<tr><th scope="row">Stable has no running work within 10 minutes, by the rule the self-update controller waits on. Called from a shell inside the stable worker, a few seconds, since that turn cannot end while it waits. With no live stable worker there is nothing to interrupt, so the wait is skipped; afterwards the conditions above are checked again</th><td><code translate="no">the stable instance is still busy</code>, naming the work</td></tr>
+</tbody>
+</table>
+
+<ol>
+<li>Back up the stable profile (<code translate="no">openprogram backup</code>, label <code translate="no">pre-promote</code>; the newest 5 are kept) while the old worker still serves.</li>
+<li>Check the commit out into <code translate="no">~/.openprogram/release-source</code>.</li>
+<li>Run <code translate="no">scripts/refresh-local-app.sh</code> with <code translate="no">OPENPROGRAM_PROMOTE_FROM</code> set to the <code translate="no">stable</code> tip read above, and wait for it, even from inside a conversation. It reuses the development build of the same commit and installs it as a transaction (below).</li>
+<li>Once the new worker is healthy, the script moves <code translate="no">refs/heads/stable</code> to the commit by compare-and-swap from that tip: two promotions cannot overwrite each other, and <code translate="no">stable</code> only fast-forwards.</li>
+</ol>
+
+<p>A failed refresh is not run again: it leaves stable running what it ran before, so a second run would only repeat the failure and the outage. The error is one line: why the commit was not promoted, where <code translate="no">stable</code> points, which commit the App runs and whether it answers, and the refresh log.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Refresh step</th><th scope="col">Old App and worker</th><th scope="col">On failure</th></tr></thead>
+<tbody>
+<tr><th scope="row">Copy the installed App into <code translate="no">.openprogram-refresh.*</code> beside it; install the packages into that runtime, assemble it, verify it with <code translate="no">verify-product-runtime.py --write</code>, add the App files, sign; then the command-line package</th><td>Serving</td><td>The copy is deleted. Nothing was stopped or replaced</td></tr>
+<tr><th scope="row">Quit the App, stop the worker, swap the two Apps by rename, start the new worker, wait for <code translate="no">/healthz</code>, check its interpreter, move <code translate="no">stable</code></th><td>Stopped; the old App waits as <code translate="no">previous.app</code></td><td>The previous App is renamed back, its worker started and checked the same way, and the App reopened. The script exits non-zero naming the failed step and saying the previous version runs again; if that also fails, it names both steps and keeps the files. The restore reads how far the switch got from the files, not from flags a signal could outrun, and a signal cannot land between moving <code translate="no">stable</code> and recording it</td></tr>
+<tr><th scope="row">Reopen the App</th><td>The old App is deleted</td><td>The new version stays; the script says so and exits non-zero. <code translate="no">stable</code> has moved, so promotion reports the commit promoted with a warning and the self-update controller does not revert it</td></tr>
+</tbody>
+</table>
+
+<p>This is how the App installer (<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><code translate="no">install-app.sh</code></a>) replaces an App: the whole bundle is staged on the same volume and switched by rename, so the outage covers only the switch and the worker start, and no step that can fail on the new version runs on the installed one.</p>
+
+<p>Promotion only reads the stable stores, to see what is running. Only the process holding <code translate="no">worker.lock</code> writes run state, so the restarted worker takes over on the new code (see <a href="../runtime/execution/control.html#store-schema-ownership">Who owns run state</a>).</p>
+
+<details>
+<summary>Refresh gate and Electron upgrades</summary>
+<p><code translate="no">scripts/refresh-local-app.sh</code> installs only <code translate="no">refs/heads/stable</code> once that branch exists; from any other commit it refuses and points to the development instance. During a promotion it installs the commit being promoted instead, and refuses unless <code translate="no">stable</code> is still the tip the promotion read and the commit contains it, both before building and again right before the App stops.</p>
+<p>A stable refresh replaces <code translate="no">app.asar</code> and keeps the App's Electron. When <code translate="no">apps/desktop/package.json</code> pins another Electron or carries a newer version, the script builds the same shell and moves its frameworks, executable, <code translate="no">Info.plist</code> and locales into the staged App, so promotion brings the Electron the development App already ran.</p>
+</details>
+
+<h2 id="publishing">Publishing</h2>
+<p>Neither instance pushes anything. See <a href="github-publishing.html">Publishing source to GitHub</a>.</p>
+
+<h2 id="source-checkout">Source checkout</h2>
+<p>Both commands find the repository through <code translate="no">OPENPROGRAM_SOURCE_REPO</code>, else <code translate="no">~/.openprogram/source-repo</code>, which both refresh scripts write with the main checkout, not the build worktree.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Both refresh scripts, the <code translate="no">stable</code> gate, <code translate="no">openprogram dev status|deploy|open|auth-url|copy-models|promote</code>, promotion checks and backup, the development runtime's macOS identity and login service, per-profile credentials, in-chat self-update through the <code translate="no">dev_stable</code> controller</td></tr>
+<tr><th scope="row">Not yet</th><td>The development instance is reachable only from this machine</td></tr>
+</tbody>
+</table>

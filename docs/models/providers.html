@@ -1,0 +1,89 @@
+<title>Providers</title>
+<meta name="description" content="Built-in providers and their access methods, custom endpoints, the model usage map, fallback, redaction and library use.">
+<h1>Providers</h1>
+<p><code translate="no">openprogram providers available</code> also lists hundreds of OpenAI-compatible community entries, configured the same way.</p>
+<table class="stack">
+<thead><tr><th scope="col">Provider</th><th scope="col">Protocol</th><th scope="col">Access</th><th scope="col">Notes</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">anthropic</code></th><td>Anthropic Messages</td><td><code translate="no">ANTHROPIC_API_KEY</code></td><td>Explicit caching, <code translate="no">cache_control</code>, 1h TTL supported</td></tr>
+<tr><th scope="row"><code translate="no">openai</code></th><td>OpenAI Responses</td><td><code translate="no">OPENAI_API_KEY</code></td><td>Automatic caching, <code translate="no">prompt_cache_key</code></td></tr>
+<tr><th scope="row"><code translate="no">openai_responses</code> <code translate="no">openai_completions</code></th><td>Responses, Chat Completions</td><td>Shared implementations</td><td>Reused by many providers</td></tr>
+<tr><th scope="row"><code translate="no">openai_codex</code></th><td>ChatGPT backend</td><td>OAuth (ChatGPT subscription), or import a <code translate="no">codex</code> login</td><td>Live model list</td></tr>
+<tr><th scope="row"><code translate="no">azure_openai_responses</code></th><td>Azure OpenAI Responses</td><td><code translate="no">AZURE_OPENAI_API_KEY</code> and your base URL</td><td></td></tr>
+<tr><th scope="row"><code translate="no">google</code></th><td>Google Generative AI</td><td><code translate="no">GEMINI_API_KEY</code>, <code translate="no">GOOGLE_API_KEY</code></td><td>Thinking by token budget</td></tr>
+<tr><th scope="row"><code translate="no">google_gemini_cli</code></th><td>Cloud Code Assist</td><td>CLI credentials: reads <code translate="no">~/.gemini/oauth_creds.json</code>; the Gemini CLI refreshes</td><td></td></tr>
+<tr><th scope="row"><code translate="no">gemini_subscription</code></th><td>Cloud Code Assist</td><td>CLI credentials: imports the same file</td><td>Aliases <code translate="no">gemini</code>, <code translate="no">gemini-cli</code></td></tr>
+<tr><th scope="row"><code translate="no">amazon_bedrock</code></th><td>Bedrock Converse Stream</td><td>Cloud credential chain, detected at runtime</td><td>Explicit caching, <code translate="no">cachePoint</code></td></tr>
+<tr><th scope="row"><code translate="no">github_copilot</code></th><td>OpenAI Responses and others</td><td><a href="auth.html">GitHub device code or token import</a></td><td>No thinking effort</td></tr>
+<tr><th scope="row"><code translate="no">deepseek</code></th><td>OpenAI Completions</td><td><code translate="no">DEEPSEEK_API_KEY</code></td><td>Reasoner effort not adjustable</td></tr>
+<tr><th scope="row"><code translate="no">openrouter</code></th><td>OpenAI Completions</td><td><code translate="no">OPENROUTER_API_KEY</code></td><td>Gateway</td></tr>
+<tr><th scope="row"><code translate="no">vercel_ai_gateway</code></th><td>Anthropic Messages</td><td><code translate="no">AI_GATEWAY_API_KEY</code></td><td>Gateway</td></tr>
+<tr><th scope="row"><code translate="no">groq</code></th><td>OpenAI Completions</td><td><code translate="no">GROQ_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">cerebras</code></th><td>OpenAI Completions</td><td><code translate="no">CEREBRAS_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">mistral</code></th><td>OpenAI Completions</td><td><code translate="no">MISTRAL_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">xai</code></th><td>OpenAI Completions</td><td><code translate="no">XAI_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">xai_subscription</code></th><td>OpenAI Responses</td><td>OAuth (SuperGrok, X Premium+), browser PKCE</td><td>Same models as <code translate="no">xai</code>, via <code translate="no">cli-chat-proxy.grok.com</code>. Keeps the selected model ID: <code translate="no">grok-4.6</code> is not replaced by <code translate="no">grok-build</code>.</td></tr>
+<tr><th scope="row"><code translate="no">zai</code></th><td>OpenAI Completions</td><td><code translate="no">ZAI_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">huggingface</code></th><td>OpenAI Completions</td><td><code translate="no">HF_TOKEN</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">minimax</code> <code translate="no">minimax_cn</code></th><td>Anthropic Messages</td><td><code translate="no">MINIMAX_API_KEY</code>, <code translate="no">MINIMAX_CN_API_KEY</code></td><td>International, China</td></tr>
+<tr><th scope="row"><code translate="no">minimax_cn_coding_plan</code></th><td>Anthropic Messages</td><td><code translate="no">MINIMAX_CN_API_KEY</code>, <code translate="no">MINIMAX_API_KEY</code></td><td>MiniMax Token Plan (CN), same account as <code translate="no">minimax_cn</code></td></tr>
+<tr><th scope="row"><code translate="no">kimi_coding</code></th><td>Anthropic Messages</td><td><code translate="no">KIMI_API_KEY</code>, <code translate="no">MOONSHOT_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">alibaba_token_plan_cn</code></th><td>OpenAI Completions</td><td>Plan API key</td><td>Alias <code translate="no">bailian</code></td></tr>
+<tr><th scope="row"><code translate="no">opencode</code></th><td>OpenAI Completions and others</td><td><code translate="no">OPENCODE_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">opencode_go</code></th><td>OpenAI Completions</td><td><code translate="no">OPENCODE_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">atlascloud</code></th><td>OpenAI Completions</td><td><code translate="no">ATLASCLOUD_API_KEY</code></td><td></td></tr>
+<tr><th scope="row"><code translate="no">ollama</code> <code translate="no">lmstudio</code> <code translate="no">vllm</code> <code translate="no">llamacpp</code> <code translate="no">local</code></th><td>OpenAI Completions</td><td>Optional key</td><td><a href="local-models.html">Local models</a></td></tr>
+</tbody>
+</table>
+<p class="note">API keys are imported into the credential store: <a href="auth.html">Authentication</a>. Every provider streams. Multimodal input is per model; trust the UI. Prompt caching is verified in code only where noted.</p>
+<h2>Custom providers</h2>
+<p>Settings → Providers: a display name and base URL are required; an id is derived from the name if omitted. <code translate="no">https://api.example.com</code> resolves to <code translate="no">/v1</code>; an explicit path such as <code translate="no">/compatible-mode/v1</code> is kept. <strong>Fetch models</strong> browses the endpoint's <code translate="no">/models</code>. Stored as <code translate="no">providers.&lt;id&gt;</code> with <code translate="no">source: "custom"</code>.</p>
+<h2>Which session uses which model</h2>
+<p>Settings → Providers opens on <strong>Overview</strong>, a map for now, 24 hours or 7 days.</p>
+<table class="stack">
+<thead><tr><th scope="col">Left</th><th scope="col">Right</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sessions answering or calling a model in the window; under each, branches, sub-agents and child sessions from program runs. Session-less calls such as titling sit under <strong>Background calls</strong>.</th><td>Models in use, by provider</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mark</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Blue line, moving dot</th><td>Request in flight</td></tr>
+<tr><th scope="row">Orange dashed line</th><td>Model that failed and was switched away from</td></tr>
+<tr><th scope="row">Note beside a provider</th><td>Key cooling down, or needs fixing</td></tr>
+</tbody>
+</table>
+<p class="note">Hover a row to pick out its lines. Click a session to open it, a provider for its settings. <strong>Recent model switches</strong> below lists each with its reason. Sessions with no call in the window are only counted. The map needs a wide pane.</p>
+<h2 id="fallback-models">Fallback models</h2>
+<p>For a model that is rate limited, overloaded, down or unreachable. Set under Settings → System → Models, or:</p>
+<pre translate="no"><code>openprogram config set model_fallback.mode same-provider
+openprogram config set model_fallback.models '["anthropic/claude-sonnet-5-5", "openai/gpt-5.5"]'</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">model_fallback.mode</code></th><th scope="col">On such a failure</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">off</code> (default)</th><td>The error is shown</td></tr>
+<tr><th scope="row"><code translate="no">same-provider</code></th><td>Up to two other enabled models from that provider, in settings order. No other provider is contacted.</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td><code translate="no">model_fallback.models</code> in order; other providers allowed</td></tr>
+</tbody>
+</table>
+<p class="note">A switch happens only before any reply text. Authentication errors, invalid requests, a full context window and content-policy refusals are not retried. <code translate="no">OPENPROGRAM_FALLBACK_MODELS</code> overrides the setting.</p>
+<h2 id="redacting-secrets-in-requests">Redacting secrets in requests</h2>
+<p>Off by default. <strong>Redact secrets in requests</strong> under Settings → System → Models, or <code translate="no">openprogram config set privacy.redact_requests true</code>. Before each request these become placeholders such as <code translate="no">[[SECRET_1]]</code>, <code translate="no">[[EMAIL_2]]</code>:</p>
+<ul>
+<li>API keys and tokens with a recognizable shape: Anthropic, OpenAI, GitHub, AWS, Google, Slack, JWTs</li>
+<li>Private key blocks</li>
+<li>The value in <code translate="no">password=…</code>, <code translate="no">api_key: …</code>, <code translate="no">Authorization: Bearer …</code> and similar</li>
+<li>Email addresses</li>
+</ul>
+<p class="note">The reply and its tool calls get real values back first, so a command written with <code translate="no">[[SECRET_1]]</code> runs with the key. The mapping lives in memory for one request. A password in free text with no assignment is sent as is.</p>
+<h2>Library use</h2>
+<pre translate="no"><code>from openprogram.runtime.agent.runtime.factory import create_runtime
+
+runtime = create_runtime()                                        # first available provider
+runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")  # Anthropic API key
+runtime = create_runtime(provider="openai", model="gpt-4.1")               # OpenAI Responses
+runtime = create_runtime(provider="gemini", model="gemini-2.5-flash")      # Google Generative AI
+runtime = create_runtime(provider="openai-codex")                          # ChatGPT subscription
+runtime = create_runtime(provider="gemini-cli")                            # Gemini CLI login</code></pre>
+<p class="note">Those five have bespoke behavior. Every other provider routes by the model's protocol, as in chat.</p>

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_execution_branch_commands_have_strict_cli_arguments() -> None:
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     steer = build_parser().parse_args([
         "execution", "steer", "exec-1", "--expected-version", "3",

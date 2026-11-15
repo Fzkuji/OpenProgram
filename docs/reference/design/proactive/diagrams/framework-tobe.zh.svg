@@ -1,0 +1,104 @@
+<svg viewBox="0 0 1240 700" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+<style>
+.mono{font-family:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace}
+.box{fill:#101d31;stroke:rgba(154,178,204,.45);stroke-width:1.2}
+.bt{fill:#d9e5f1;font-size:14.5px;font-weight:600}
+.bs{fill:#8aa0b8;font-size:11.5px}
+.faint{fill:#5f7a90}
+.cy{fill:#56d9e9}.am{fill:#f2b544}.vi{fill:#b79bf5}.gn{fill:#6fd98f}
+.lbl{fill:#8aa0b8;font-size:10.5px}
+.fA{fill:none;stroke:#56d9e9;stroke-width:1.6;stroke-dasharray:7 9;animation:f 1.6s linear infinite;opacity:.85}
+.fB{fill:none;stroke:#b79bf5;stroke-width:1.6;stroke-dasharray:7 9;animation:f 1.9s linear infinite;opacity:.8}
+.fI{fill:none;stroke:#f2b544;stroke-width:2;stroke-dasharray:4 6;animation:f .9s linear infinite}
+@keyframes f{to{stroke-dashoffset:-16}}
+.up{fill:#6fd98f;font-size:11px;font-weight:700}
+.down{fill:#f2b544;font-size:11px;font-weight:700}
+</style>
+<rect x="0" y="0" width="1240" height="700" rx="16" fill="#0d1828"/>
+<g stroke="rgba(154,178,204,.05)"><path d="M0 70H1240M0 140H1240M0 210H1240M0 280H1240M0 350H1240M0 420H1240M0 490H1240M0 560H1240M0 630H1240"/><path d="M70 0V700M140 0V700M210 0V700M280 0V700M350 0V700M420 0V700M490 0V700M560 0V700M630 0V700M700 0V700M770 0V700M840 0V700M910 0V700M980 0V700M1050 0V700M1120 0V700M1190 0V700"/></g>
+
+<text class="bs mono gn" x="44" y="44" style="letter-spacing:.2em">目标 · 一条总线当中枢，统一格式 · 统一订阅 · 一处可拦</text>
+
+<!-- ── 左列：源（与现状图同位） ── -->
+<rect class="box" x="48" y="84" width="200" height="58" rx="8"/>
+<text class="bt" x="68" y="108">agent loop</text>
+<text class="bs gn" x="68" y="128">emit + tool.before 可拦 ✓</text>
+
+<rect class="box" x="48" y="184" width="200" height="52" rx="8"/>
+<text class="bt" x="68" y="206">task runner</text>
+<text class="bs faint" x="68" y="226">emit subagent.*</text>
+
+<rect class="box" x="48" y="262" width="200" height="52" rx="8"/>
+<text class="bt" x="68" y="284">channels</text>
+<text class="bs faint" x="68" y="304">emit channel.*</text>
+
+<rect class="box" x="48" y="340" width="200" height="52" rx="8"/>
+<text class="bt" x="68" y="362">skills watcher</text>
+<text class="bs faint" x="68" y="382">emit skills.*</text>
+
+<rect class="box" x="48" y="418" width="200" height="52" rx="8"/>
+<text class="bt" x="68" y="440">auth</text>
+<text class="bs gn" x="68" y="460">桥接进总线 · 自身不动 ✓</text>
+
+<rect class="box" x="48" y="496" width="200" height="52" rx="8"/>
+<text class="bt" x="68" y="518">memory</text>
+<text class="bs gn" x="68" y="538">起止 emit · 有信号了 ✓</text>
+
+<rect class="box" x="48" y="574" width="200" height="52" rx="8"/>
+<text class="bt" x="68" y="596">文件改动</text>
+<text class="bs gn" x="68" y="616">emit file.changed ✓</text>
+
+<!-- 汇入 -->
+<path class="fA" d="M248 113 C 360 113, 400 220, 470 268"/>
+<path class="fA" d="M248 210 C 360 210, 400 255, 470 292"/>
+<path class="fB" d="M248 288 C 360 288, 400 300, 470 316"/>
+<path class="fB" d="M248 366 C 360 366, 400 350, 470 340"/>
+<path class="fB" d="M248 444 C 360 444, 400 390, 470 364"/>
+<path class="fB" d="M248 522 C 360 522, 400 430, 470 388"/>
+<path class="fA" d="M248 600 C 360 600, 400 470, 470 412"/>
+<text class="lbl mono" x="330" y="96">emit(Event) · 统一格式</text>
+
+<!-- ── 中央：EventBus 上位 ── -->
+<rect x="474" y="240" width="210" height="220" rx="16" fill="none" stroke="rgba(86,217,233,.25)" stroke-width="7" opacity=".6"/>
+<rect x="474" y="240" width="210" height="220" rx="16" fill="rgba(86,217,233,.05)" stroke="#56d9e9" stroke-width="1.6"/>
+<text class="mono cy" x="579" y="296" text-anchor="middle" font-size="20" font-weight="600">EventBus</text>
+<text class="bs" x="579" y="322" text-anchor="middle">进程级单例 · 唯一中枢</text>
+<text class="bs mono" x="579" y="348" text-anchor="middle">emit / subscribe(types=)</text>
+<text class="up" x="579" y="390" text-anchor="middle">↑ 从闲置升为中枢</text>
+<text class="bs faint" x="579" y="420" text-anchor="middle">源和消费者互不认识</text>
+
+<!-- ── 右列：消费者 ── -->
+<path class="fA" d="M684 290 C 760 270, 790 220, 838 200"/>
+<rect class="box" x="842" y="166" width="210" height="68" rx="8"/>
+<text class="bt" x="862" y="192">webui server</text>
+<text class="down" x="862" y="212">↓ 从中枢降级为订阅者</text>
+<text class="bs faint" x="862" y="228">订阅 → 转发前端 WS</text>
+
+<path class="fA" d="M684 330 C 760 330, 790 320, 838 318"/>
+<rect class="box" x="842" y="286" width="210" height="60" rx="8" stroke="rgba(86,217,233,.55)"/>
+<text class="bt" x="862" y="312">proactive <tspan class="gn">＋ 新进场</tspan></text>
+<text class="bs faint" x="862" y="332">规则层 · 只是又一个订阅者</text>
+
+<path class="fA" d="M684 370 C 760 380, 790 410, 838 426"/>
+<rect class="box" x="842" y="398" width="210" height="56" rx="8" stroke-dasharray="4 5"/>
+<text class="bt faint" x="862" y="422">未来任何功能</text>
+<text class="bs faint" x="862" y="442">审计 / 统计 / 回放…接上就有</text>
+
+<!-- 拦截 -->
+<path class="fI" d="M660 460 C 700 500, 740 520, 800 534"/>
+<path class="fI" d="M800 558 C 740 566, 690 548, 640 472"/>
+<rect class="box" x="804" y="508" width="248" height="64" rx="8" stroke="rgba(242,181,68,.6)"/>
+<text class="bt" x="824" y="534">tool.before 同步问询点</text>
+<text class="bs faint" x="824" y="554">唯一拦截位 · 复用 _approval · 管 subagent</text>
+<text class="lbl mono am" x="700" y="498">拦截 · 同步</text>
+
+<!-- 前端 -->
+<path class="fA" d="M1052 200 L 1100 200"/>
+<rect class="box" x="1104" y="170" width="110" height="60" rx="8" stroke-dasharray="4 5"/>
+<text class="bt" x="1122" y="196" font-size="13">前端/TUI</text>
+<text class="bs faint" x="1122" y="216" font-size="10.5">WS</text>
+
+<!-- 底注 -->
+<line x1="44" y1="652" x2="1196" y2="652" stroke="rgba(154,178,204,.18)"/>
+<text class="bs" x="44" y="680">加新消费者 = 一行 <tspan class="mono cy">subscribe(types=…)</tspan>；加新事件 = 在源处一行 <tspan class="mono cy">emit(…)</tspan>。组件位置与现状图一一对应，变的只是连线和角色。</text>
+</svg>

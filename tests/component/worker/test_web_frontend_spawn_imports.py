@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
-from openprogram import _compat
-from openprogram.worker import web
+from openprogram.host._platform import process_ownership
+from openprogram.operations.worker import web
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def frontend(monkeypatch, tmp_path):
     monkeypatch.setattr(web, "_patch_manifest_ports", Mock(return_value=True))
     monkeypatch.setattr(web, "_live_proc", None)
     thread = Mock()
-    monkeypatch.setattr(web, "_threading", SimpleNamespace(Thread=thread))
+    monkeypatch.setattr(web, "threading", SimpleNamespace(Thread=thread))
     popen = Mock()
     monkeypatch.setattr(web.subprocess, "Popen", popen)
     return SimpleNamespace(build_id=build_id, thread=thread, popen=popen)
@@ -33,7 +34,14 @@ def frontend(monkeypatch, tmp_path):
 def run_rebuilds(frontend, monkeypatch):
     builds = iter(["second", "third"])
 
-    def tick(_seconds):
+    test_thread = threading.get_ident()
+    real_sleep = time.sleep
+
+    def tick(seconds):
+        # Only the watcher callback below runs on this thread; other threads
+        # in the process keep sleeping for real instead of draining builds.
+        if threading.get_ident() != test_thread:
+            return real_sleep(seconds)
         frontend.build_id.write_text(next(builds), encoding="utf-8")
 
     monkeypatch.setattr(time, "sleep", tick)
@@ -46,7 +54,7 @@ def run_rebuilds(frontend, monkeypatch):
 @pytest.mark.parametrize("respawn_fails", [False, True])
 def test_start_and_rebuilds_use_platform_flags(frontend, monkeypatch, flags, respawn_fails):
     helper = Mock(return_value=flags)
-    monkeypatch.setattr(_compat, "no_window_creation_flags", helper)
+    monkeypatch.setattr(process_ownership, "no_window_creation_flags", helper)
     initial, second, third = (Mock(pid=pid) for pid in (101, 102, 103))
     frontend.popen.side_effect = [
         initial, OSError("spawn failed") if respawn_fails else second, third,
@@ -72,7 +80,7 @@ def test_start_and_rebuilds_use_platform_flags(frontend, monkeypatch, flags, res
 
 
 def test_initial_spawn_error_returns_none(frontend, monkeypatch, capsys):
-    monkeypatch.setattr(_compat, "no_window_creation_flags", lambda: 0)
+    monkeypatch.setattr(process_ownership, "no_window_creation_flags", lambda: 0)
     frontend.popen.side_effect = OSError("spawn failed")
 
     assert web.start_web_frontend(backend_port=18099, web_port=18100) is None

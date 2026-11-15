@@ -1,0 +1,107 @@
+<title>周报 Workflow</title>
+<meta name="description" content="weekly_report 路由、四种周报、来源周、腾讯内容规则、微信读取和结构化 Agent 行为。">
+<h1>周报 Workflow</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">周报</th><th scope="col">产出</th><th scope="col">外部写入</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">personal</code></th><td>飞书个人表单</td><td>飞书，受现有闸门约束</td></tr>
+<tr><th scope="row"><code translate="no">personal_chat</code></th><td>所有者发到微信群的三段式文本</td><td>从不</td></tr>
+<tr><th scope="row"><code translate="no">group</code></th><td>从微信读取其他成员周报并汇总</td><td>从不</td></tr>
+<tr><th scope="row"><code translate="no">tencent</code></th><td>每周五下午约 100 字的进展</td><td>从不</td></tr>
+</tbody>
+</table>
+
+<h2 id="layout">包结构</h2>
+<pre translate="no" tabindex="0"><code>weekly_report/
+  workflow.py             唯一公共入口 weekly_report(task)
+  steps/routing.py        只放 Agent 提示词
+  reports/&lt;report&gt;/       各周报的角色、步骤和 README
+  tests/&lt;report&gt;/
+openprogram/programs/_authoring/reports/   共享的来源、输出、检查点、微信模块</code></pre>
+<p class="note">只有根目录的 <code translate="no">PROGRAM_ENTRIES</code> 注册工具，Abilities 只显示一个入口。内部模块不列出。发现只支持一层分类目录，拒绝符号链接和重复项，仍需来源授权。授权的外部目录中的函数按所属目录得出 UI 路径。</p>
+
+<h2 id="routing">路由</h2>
+<p><code translate="no">weekly_report</code> 调用 Agent，根据完整语义、否定和上下文选择周报，绝不按关键词或冒号拆分。代码只校验目标枚举并原样转发请求：不摘要、不截断、不追加只出草稿的限制。</p>
+<table class="stack">
+<thead><tr><th scope="col">请求</th><th scope="col">运行</th><th scope="col">子流程收到</th></tr></thead>
+<tbody>
+<tr><th scope="row">写我的个人周报，腾讯只是参考，不用小组周报</th><td>只有个人周报</td><td>完整请求</td></tr>
+<tr><th scope="row">个人和腾讯都做，小组不用</th><td>这两个</td><td>同样的完整请求</td></tr>
+<tr><th scope="row">全部都做</th><td>全部，没有共同周期或恢复状态</td><td>同样的完整请求</td></tr>
+<tr><th scope="row">受众不明确</th><td><code translate="no">personal_chat</code>，不发送的发现草稿；绝不澄清</td><td>完整请求</td></tr>
+</tbody>
+</table>
+<ul>
+<li>“组里的周报”是 <code translate="no">personal_chat</code>。<code translate="no">group</code> 指收集其他成员的周报。</li>
+<li>单个结果原样返回；多个结果加受众标签。失败的子流程显示 <code translate="no">未完成：&lt;error&gt;</code>，其余继续；全部失败时才抛出第一个异常。取消立即停止并附上已完成的结果。</li>
+<li>没有共同的周、检查点或完成状态；各子流程管自己的材料、输出和恢复。旧路由检查点不能恢复：通过 <code translate="no">requests</code> 传入子流程的恢复请求。</li>
+<li>JSON <code translate="no">{"requests": {"tencent": …}}</code> 直接指定子流程；<code translate="no">result_format: "structured"</code> 返回 <code translate="no">results</code> 映射，不声称整体完成。</li>
+<li>各周报只解读自己的部分。腾讯把原文存入 <code translate="no">user_request</code> 供后续模型使用，材料只允许原文摘录。小组提取保留完整请求用于来源选择。</li>
+</ul>
+
+<h2 id="source-weeks">来源周和旧草稿</h2>
+<ul>
+<li>执行周不一定是来源周。记忆候选保留说话者类型和来源日期。导入时间绝不把旧聊天标成本周。</li>
+<li>可信的所有者原始记录优先；同等来源在本周内按日期降序。</li>
+<li>后来的事实修正只替换冲突部分，独立进展保留。</li>
+<li>自动取材绝不把 Workflow 检查点或周报的 <code translate="no">sources.json</code> 当证据。带引用链的导出来源只用于审计。</li>
+<li>恢复拒绝已失效的检查点。旧草稿周次错误时保留文件和审计记录，使该次执行失效并检索真实证据。材料缺失时返回等待状态，不重发旧草稿。</li>
+</ul>
+
+<h2 id="tencent">腾讯内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">包含</th><td>本周的动作、发现、结果和当前问题；同周记录中的方法、对象和观察；实际做过的文献综述和复现</td></tr>
+<tr><th scope="row">排除</th><td>方向讨论、会议议程、行政事务、未来计划。引用决定或发现，不引用会议本身。不重复话题列表</td></tr>
+<tr><th scope="row">不编造</th><td>已完成、已验证、已提升等状态。有动作没结果就只写动作。相关外部材料不代表用户做过；论文结果和个人复现分开</td></tr>
+<tr><th scope="row">格式</th><td>始终以 <code translate="no">本周进展：</code> 开头，用编号的动作句。不写“未提供模型”之类的元信息、比喻或口号；未记录指标不等于没有数据</td></tr>
+<tr><th scope="row">材料够用</th><td>有记录的优化、提交和验证就够；模型列表和指标是可选细节</td></tr>
+<tr><th scope="row">只在此时询问</th><td>没有可用动作，或核心事实无法调和</td></tr>
+<tr><th scope="row">补充搜索</th><td>进展过于简略时，最多三个话题词，只搜同周记忆，合并去重后第二次选择。选择至多两次模型调用。结果和预算进检查点，恢复时不重复。每个上下文至多 30 条、18 KB</td></tr>
+<tr><th scope="row">验证</th><td>独立检查来源支撑和汇报范围</td></tr>
+</tbody>
+</table>
+
+<h2 id="wechat">微信窗口读取</h2>
+<p>绑定唯一主窗口、PID 和进程启动身份，经 GUI Harness <code translate="no">MacWindow</code> / <code translate="no">window_session</code>。绝不打开、激活或置前窗口，不用全屏截图或剪贴板，不投递进程定向的键鼠事件。每次操作重新验证窗口和控件归属。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入群名</th><td>只用原生 <code translate="no">AXSearchField</code></td></tr>
+<tr><th scope="row">选择群</th><td>对匹配确切群名和 OCR 位置的控件 <code translate="no">AXPress</code></td></tr>
+<tr><th scope="row">翻页</th><td>只用消息区内支持辅助功能翻页的控件；每次至多十二页，不声称历史完整</td></tr>
+<tr><th scope="row">截图</th><td>ScreenCaptureKit 的桌面无关窗口。图中标题验证前不持久化</td></tr>
+<tr><th scope="row">消息</th><td>需要页内日期和指定成员</td></tr>
+<tr><th scope="row">不支持的操作</th><td>可恢复状态；不切换到前台</td></tr>
+<tr><th scope="row">没有辅助功能窗口（仅截图绑定）</th><td><code translate="no">SEARCH_UNAVAILABLE</code>；视觉读取器只读当前显示的对话，不搜索、不选择、不翻页</td></tr>
+<tr><th scope="row">标题验证通过</th><td><code translate="no">READY</code>，<code translate="no">window_controls</code> 不可用，覆盖限于一个可见页</td></tr>
+<tr><th scope="row">标题未验证</th><td><code translate="no">CAPTURE_ONLY_GROUP_NOT_SHOWN</code> 并说明原因；不持久化</td></tr>
+<tr><th scope="row">后台动作被拒绝</th><td><code translate="no">BACKGROUND_ACTION_UNAVAILABLE</code>，绝不当作已执行</td></tr>
+<tr><th scope="row">透明图、缺控件、窗口变化、并发使用</th><td>各有原因和恢复参数。绝不让用户把窗口置前，也不把空捕获说成缺权限</td></tr>
+</tbody>
+</table>
+<p class="note">取消或验证失败时也会归还临时截图。Apple 把 <code translate="no">NSWindow.SharingType.none</code> 标为旧常量，不用它推断捕获能力。</p>
+
+<h2 id="agent-behaviour">Agent 执行</h2>
+<details>
+<summary>Session 工具、结构化输出和超时</summary>
+<ul>
+<li>新轮次从当前分支的发现状态恢复工具 schema，并与允许的工具取交集。其他 session 和兄弟分支不继承。审批恢复用现有检查点，不扩大权限。ContextVar 随轮次释放。</li>
+<li>只读 Agent 通过记忆搜索、目录查找和读文件解读小组请求，找到群和有序成员。用户提供的值优先。没有发送、写入、Shell、浏览器或递归周报工具。无法确定的字段保持缺失。</li>
+<li>结构化阶段用 <code translate="no">response_format</code> 加 prompt 回退：Runtime 校验 JSON，并在请求预算和超时内允许一次修正。格式错误是模型失败，保留原样重试参数，不算用户缺信息。</li>
+<li>工具轮由 <code translate="no">max_iterations</code> 约束；成功的工具轮不消耗失败预算，普通调用也不补充它。每轮检查取消和截止时间。</li>
+<li>个人字段：只读检索 Agent 返回六个具名字段，由 JSON Schema 校验。完整周报需要非空的本周工作和下周计划；部分编辑只返回请求的字段。来源验证仍决定哪些结构化输入可保存。结果不确定的外部写入不重放。</li>
+<li>记忆的 search、grep、get、browse 是只读安全工具，保留 <code translate="no">memory.read</code> 和显式的 deny、ask 规则。</li>
+<li>超时：模型请求继承 Runtime 部署超时（<code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code>），没有 90 秒限制。腾讯后续模型阶段保持 180 秒。浏览器截止时间和结果不确定时不重试的规则不变。</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<ul>
+<li>路由、部分完成和恢复已在已安装的 App 中验证。</li>
+<li>真实微信消息读取未完成：对本机主窗口的调用返回全透明图。</li>
+<li>Session 工具恢复、结构化修正和超时修复在验证中；早先验收暴露了小组模型格式失败和聊天调用缺失，整条流程还不能算正常。</li>
+<li>验收需要公共入口的请求保真测试、子流程上下文测试、调用图测试，以及通过普通聊天的本地 App 运行。直接调用函数的测试不能替代失败的聊天调用，阶段测试不能替代真实取材或外部提交。</li>
+</ul>

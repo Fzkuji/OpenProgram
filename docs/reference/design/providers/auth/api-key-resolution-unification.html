@@ -1,0 +1,56 @@
+<title>API key resolution</title>
+<meta name="description" content="Where an LLM provider's credential comes from: the AuthStore, the cloud credential chains, and what the environment variable names are still for.">
+<h1>API key resolution</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Provider</th><th scope="col">Credential source</th></tr></thead>
+<tbody>
+<tr><th scope="row">LLM provider with a key</th><td>AuthStore under <code translate="no">~/.openprogram</code>, written by Settings or <code translate="no">openprogram providers login &lt;provider&gt; --api-key</code></td></tr>
+<tr><th scope="row">Amazon Bedrock</th><td>AWS credential chain; sentinel <code translate="no">"&lt;authenticated&gt;"</code>, no bearer key</td></tr>
+<tr><th scope="row">Google Vertex</th><td>GCP ADC plus project and location; same sentinel</td></tr>
+<tr><th scope="row">Environment variables, <code translate="no">config.json</code></th><td>Never read for LLM keys. <code translate="no">config.json</code> <code translate="no">api_keys</code> serves only web search and TTS.</td></tr>
+</tbody>
+</table>
+<p class="note">One source means the runtime, catalog and status surfaces cannot disagree, and a key saved in Settings survives a worker restart.</p>
+
+<h2>Calls</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Function</th><th scope="col">Answers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">resolve_provider_key(provider)</code></th><td>Runtime path: an API-key-shaped credential or the sentinel, else <code translate="no">None</code>. OAuth tokens are excluded, since these wires send <code translate="no">x-api-key</code> or Bearer and an access token would 401.</td></tr>
+<tr><th scope="row"><code translate="no">is_configured(provider_id)</code></th><td>A key, or a satisfied cloud chain</td></tr>
+<tr><th scope="row"><code translate="no">resolve_api_key_with_auth_store(provider_id)</code></th><td>Model listing and probes: any bearer the AuthStore can yield, through <code translate="no">resolve_api_key_sync</code></td></tr>
+<tr><th scope="row"><code translate="no">env_vars_for(provider_id)</code></th><td>Key names as labels and identifiers; falls back to models.dev</td></tr>
+<tr><th scope="row"><code translate="no">provider_id_for_env_var(env_var)</code></th><td>Reverse, first match in table order; <code translate="no">None</code> for non-LLM keys</td></tr>
+</tbody>
+</table>
+<p class="note">In <code translate="no">openprogram/models/providers/settings/env_api_keys.py</code>, so runtime and server import it without a cycle. <code translate="no">credentials.provider_id_for_env_var</code> re-exports the reverse map.</p>
+
+<details>
+<summary>Order inside <code translate="no">resolve_api_key_sync</code></summary>
+<ol>
+<li><code translate="no">get_credential_override</code>, for tests or middleware</li>
+<li><code translate="no">CredentialProvider.acquire_sync</code>: refreshed token or key from the pool</li>
+<li><code translate="no">resolve_provider_key</code>: the cloud sentinels</li>
+</ol>
+<p><code translate="no">None</code> lets the caller show a login prompt or go keyless for local endpoints. <code translate="no">AuthCredentialProcessError</code> always propagates: a broken helper is shown by name, not replaced by a stale key.</p>
+</details>
+
+<details>
+<summary>Two name tables</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Table</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_PROVIDER_ENV_VARS</code></th><td>Per provider, all accepted names: labels in Settings, and <code translate="no">add_mode</code> classification. Examples: google has three; <code translate="no">anthropic</code> lists <code translate="no">ANTHROPIC_OAUTH_TOKEN</code> first; <code translate="no">github-copilot</code> has three token names.</td></tr>
+<tr><th scope="row"><code translate="no">PROVIDER_ENV_VARS</code></th><td>Flat, one name per provider, used by <code translate="no">models/auth/adoption.py</code> and the <code translate="no">openprogram providers</code> commands as the “providers with a key name” list. Excludes anthropic and copilot on purpose, so deriving it from the table above would change login flow.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>Verification</h2>
+<p><code translate="no">tests/unit/providers/auth/test_api_key_resolution.py</code> pins that environment names are inert, the cloud sentinels, the reverse map and key labels.</p>
+
+<h2>Implementation status</h2>
+<p>All of the above is in place. Not built: a <code translate="no">Provider</code> metadata dataclass (id, env_vars, kind, base_url, default_api) folding this table together with <a href="credential-validation-unification.html">credential validation</a>'s KIND table and <code translate="no">_PROVIDER_DEFAULT_API</code>.</p>
+
+<p class="next"><a href="credential-validation-unification.html">Credential validation</a></p>

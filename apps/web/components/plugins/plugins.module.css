@@ -1,94 +1,42 @@
-.btn {
-  display: inline-flex;
-  align-items: center;
-  height: var(--ui-button-h);
-  padding: 0 12px;
-  font-size: 13px;
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-radius: var(--ui-button-radius);
-  cursor: pointer;
-}
-
-.btn:hover {
-  border-color: var(--text-dim);
-}
-
-.btnPrimary {
-  composes: btn;
-  background: var(--accent-orange);
-  color: var(--primary-foreground);
-  border-color: transparent;
-}
-
 .empty {
   padding: 48px;
   text-align: center;
-  color: var(--text-dim);
-  font-size: 14px;
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
 }
 
 .rowMeta {
-  font-size: 12px;
-  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 
 .errorBox {
   padding: 12px 16px;
   border: 1px solid color-mix(in srgb, var(--accent-red) 27%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--accent-red) 7%, transparent);
   color: var(--accent-red);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 8px;
   white-space: pre-wrap;
-  font-family: ui-monospace, monospace;
-}
-
-.dialogBackdrop {
-  position: fixed;
-  inset: 0;
-  background: var(--scrim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
 }
 
 .dialog {
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--ui-button-radius);
-  padding: 20px;
   width: min(600px, 90vw);
+  max-width: none;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.dialogTitle {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-bright);
 }
 
 .dialogBody {
   flex: 1;
   overflow: auto;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-primary);
 }
 
-.dialogActions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.input,
 .textarea {
   width: 100%;
   padding: 8px 10px;
@@ -96,42 +44,24 @@
   border: 1px solid var(--border);
   border-radius: var(--ui-button-radius);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   box-sizing: border-box;
 }
-.input:focus,
-.textarea:focus,
-.select:focus {
+.textarea:focus {
   outline: none;
   border-color: var(--accent-blue);
 }
-.input {
-  height: var(--ui-button-h);
-  padding: 0 10px;
-}
-
 .textarea {
   min-height: 200px;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   resize: vertical;
-}
-
-.select {
-  height: var(--ui-button-h);
-  padding: 0 10px;
-  box-sizing: border-box;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--ui-button-radius);
-  color: var(--text-primary);
-  font-size: 13px;
 }
 
 .checkRow {
   display: flex;
   gap: 8px;
   padding: 4px 0;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 
 .checkOk {

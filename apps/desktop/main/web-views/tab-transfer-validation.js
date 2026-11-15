@@ -1,0 +1,347 @@
+const { copyNavigationFields, copyPageHistory } = require("./tab-transfer/page-history.js");
+const { Buffer } = require("buffer");
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function boundedString(value, field, maxBytes, required = false) {
+  if (value === undefined || value === null) {
+    if (required) throw new TypeError(`${field} is required`);
+    return;
+  }
+  if (
+    typeof value !== "string"
+    || (required && !value)
+    || Buffer.byteLength(value, "utf8") > maxBytes
+  ) {
+    throw new TypeError(`${field} is invalid or too large`);
+  }
+}
+
+function serializedBytes(value, field) {
+  let encoded;
+  try {
+    encoded = JSON.stringify(value);
+  } catch (_error) {
+    throw new TypeError(`${field} must be serializable`);
+  }
+  if (encoded === undefined) throw new TypeError(`${field} must be serializable`);
+  return Buffer.byteLength(encoded, "utf8");
+}
+
+const TRANSFER_PAYLOAD_MAX_BYTES = 20 * 1024 * 1024;
+const FILE_DRAFT_MAX_COUNT = 3;
+const FILE_DRAFT_MAX_BYTES = 2 * 1024 * 1024;
+const FILE_DRAFTS_MAX_TOTAL_BYTES = 6 * 1024 * 1024;
+
+function optionalBoolean(value, field) {
+  if (value === undefined) return;
+  if (typeof value !== "boolean") throw new TypeError(`${field} must be boolean`);
+  return value;
+}
+
+function normalizedComposerSettings(value, field) {
+  if (value === undefined) return;
+  if (!isPlainObject(value)) throw new TypeError(`${field} must be an object`);
+  const normalized = {};
+  for (const key of ["thinking", "permission_mode"]) {
+    boundedString(value[key], `${field}.${key}`, 16 * 1024);
+    if (value[key] !== undefined && value[key] !== null) normalized[key] = value[key];
+  }
+  for (const key of ["tools", "webSearch", "fast", "unattended"]) {
+    const item = optionalBoolean(value[key], `${field}.${key}`);
+    if (item !== undefined) normalized[key] = item;
+  }
+  return normalized;
+}
+
+function normalizedDraftChannelChoice(value, field) {
+  if (value === undefined) return;
+  if (!isPlainObject(value)) throw new TypeError(`${field} must be an object`);
+  const normalized = {};
+  for (const key of ["channel", "account_id"]) {
+    boundedString(value[key], `${field}.${key}`, 16 * 1024);
+    if (value[key] !== undefined) normalized[key] = value[key];
+  }
+  return normalized;
+}
+
+function uniqueBoundedIds(value, field, { min = 0, max = 3 } = {}) {
+  if (!Array.isArray(value) || value.length < min || value.length > max) {
+    throw new TypeError(`${field} must contain ${min}-${max} ids`);
+  }
+  const ids = [];
+  const seen = new Set();
+  for (const id of value) {
+    boundedString(id, field, 4 * 1024, true);
+    if (seen.has(id)) throw new TypeError(`${field} contains duplicate ids`);
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+function validateTransferPayload(ctx, value) {
+  if (!ctx || !isPlainObject(value)) {
+    throw new TypeError("Transfer payload must be an object");
+  }
+  if (serializedBytes(value, "Transfer payload") > TRANSFER_PAYLOAD_MAX_BYTES) {
+    throw new TypeError("Transfer payload is too large");
+  }
+  if (!Array.isArray(value.tabs) || value.tabs.length < 1 || value.tabs.length > 256) {
+    throw new TypeError("Transfer payload requires one to 256 tabs");
+  }
+
+  const validKinds = new Set(["session", "file", "web", "ntp", "application", "builtin"]);
+  const tabs = [];
+  const ids = [];
+  const seen = new Set();
+  for (const tab of value.tabs) {
+    if (!isPlainObject(tab) || !validKinds.has(tab.kind)) {
+      throw new TypeError("Transfer payload contains an invalid tab");
+    }
+    boundedString(tab.id, "tab.id", 4 * 1024, true);
+    boundedString(tab.title, "tab.title", 4 * 1024);
+    for (const field of ["url", "path", "projectId", "sessionId", "applicationId", "applicationInstanceId"]) {
+      boundedString(tab[field], `tab.${field}`, 16 * 1024);
+    }
+    if (tab.kind === "application" && (!/^[a-z][a-z0-9._-]{0,95}$/.test(tab.applicationId ?? "")
+      || !/^[a-f0-9]{64}$/.test(tab.applicationInstanceId ?? "") || (tab.id !== `app:${tab.applicationInstanceId}` && !new RegExp(`^app:${tab.applicationInstanceId}:tab:[a-f0-9-]{36}$`).test(tab.id)))) {
+      throw new TypeError("Invalid application identity");
+    }
+    if (seen.has(tab.id)) throw new TypeError("Transfer tab ids must be unique");
+    seen.add(tab.id);
+    ids.push(tab.id);
+    const normalized = { id: tab.id, kind: tab.kind };
+    if (tab.title !== undefined && tab.title !== null) normalized.title = tab.title;
+    for (const field of ["url", "path", "projectId", "sessionId", "applicationId", "applicationInstanceId"]) {
+      if (tab[field] !== undefined && tab[field] !== null) normalized[field] = tab[field];
+    }
+    for (const field of ["draft", "dirty", "canvasAnchor"]) {
+      const item = optionalBoolean(tab[field], `tab.${field}`);
+      if (item !== undefined) normalized[field] = item;
+    }
+    if (tab.kind === "session" && tab.sessionHistory !== undefined) {
+      const history = tab.sessionHistory;
+      if (!isPlainObject(history) || !Array.isArray(history.entries)
+        || !history.entries.length || !Number.isInteger(history.index)
+        || history.index < 0 || history.index >= history.entries.length) {
+        throw new TypeError("Invalid session history");
+      }
+      const entries = history.entries.map(entry => {
+        if (!isPlainObject(entry)) throw new TypeError("Invalid session history entry");
+        boundedString(entry.sessionId, "history.sessionId", 16 * 1024, true);
+        boundedString(entry.title, "history.title", 4 * 1024);
+        const draft = optionalBoolean(entry.draft, "history.draft");
+        return { sessionId: entry.sessionId, title: entry.title ?? "", draft: !!draft };
+      });
+      if (entries[history.index].sessionId !== tab.sessionId
+        || entries[history.index].title !== (tab.title ?? "")
+        || entries[history.index].draft !== !!tab.draft) {
+        throw new TypeError("Session history does not match current session");
+      }
+      normalized.sessionHistory = { entries, index: history.index };
+    }
+    if (tab.kind === "builtin") {
+      if (!["files", "browser", "bookmarks", "history", "downloads", "terminal", "claude", "review"].includes(tab.page)) throw new TypeError("Invalid builtin page");
+      normalized.page = tab.page;
+      for (const field of ["reviewSessionId", "reviewMsgId", "reviewScope", "reviewPath"]) {
+        boundedString(tab[field], `tab.${field}`, 16 * 1024);
+        if (tab[field] !== undefined) normalized[field] = tab[field];
+      }
+    }
+    copyNavigationFields(tab, normalized, boundedString);
+    copyPageHistory(tab, normalized, page => {
+      if (page.kind === "builtin") {
+        boundedString(page.id, "page.id", 4 * 1024, true);
+        boundedString(page.title, "page.title", 4 * 1024);
+        if (!["files", "browser", "bookmarks", "history", "downloads", "terminal", "claude", "review"].includes(page.page)) {
+          throw new TypeError("Invalid builtin history page");
+        }
+        const result = { id: page.id, kind: page.kind, title: page.title ?? "", page: page.page };
+        copyNavigationFields(page, result, boundedString);
+        return result;
+      }
+      return validateTransferPayload(ctx, { tabs: [page], source: { kind: "tab" }, chats: [] }).payload.tabs[0];
+    });
+    tabs.push(normalized);
+  }
+
+  if (!isPlainObject(value.source)) {
+    throw new TypeError("Transfer payload requires source metadata");
+  }
+  const sourceKind = value.source.kind;
+  if (!new Set(["tab", "segment", "group"]).has(sourceKind)) {
+    throw new TypeError("Transfer source kind is invalid");
+  }
+  const source = { windowId: ctx.id, kind: sourceKind };
+  if (sourceKind === "tab" && ids.length !== 1) {
+    throw new TypeError("A normal tab transfer contains exactly one tab");
+  }
+  if (sourceKind === "segment") {
+    if (ids.length !== 1) {
+      throw new TypeError("A segment transfer contains exactly one tab");
+    }
+    boundedString(value.source.groupId, "source.groupId", 4 * 1024, true);
+    if (!Number.isInteger(value.source.memberIndex) || value.source.memberIndex < 0) {
+      throw new TypeError("Segment memberIndex is invalid");
+    }
+  }
+  if (sourceKind === "group") {
+    boundedString(value.source.groupId, "source.groupId", 4 * 1024, true);
+  }
+  if (sourceKind === "segment" || sourceKind === "group") {
+    const memberIds = uniqueBoundedIds(value.source.memberIds, "source.memberIds", {
+      min: 1,
+      max: 256,
+    });
+    const visibleIds = uniqueBoundedIds(value.source.visibleIds, "source.visibleIds", {
+      min: 1,
+      max: 256,
+    });
+    boundedString(value.source.focusedId, "source.focusedId", 4 * 1024, true);
+    if (visibleIds.some((id) => !memberIds.includes(id))) {
+      throw new TypeError("Visible group ids must be members");
+    }
+    if (!visibleIds.includes(value.source.focusedId)) {
+      throw new TypeError("Focused group id must be visible");
+    }
+    if (sourceKind === "group") {
+      if (
+        memberIds.length !== ids.length
+        || memberIds.some((id, index) => id !== ids[index])
+      ) {
+        throw new TypeError("Group metadata must match transferred tabs");
+      }
+    } else if (
+      value.source.memberIndex >= memberIds.length
+      || memberIds[value.source.memberIndex] !== ids[0]
+    ) {
+      throw new TypeError("Segment metadata must identify the transferred tab");
+    }
+    source.groupId = value.source.groupId;
+    source.memberIds = memberIds;
+    source.visibleIds = visibleIds;
+    source.focusedId = value.source.focusedId;
+    if (sourceKind === "group" && value.source.canvas !== undefined) {
+      const canvas = value.source.canvas;
+      const nodeIds = new Set(), contents = new Set(); let count = 0;
+      function node(n, depth = 0) {
+        if (!isPlainObject(n) || depth > 64 || ++count > 4096) throw new TypeError("Invalid canvas tree");
+        boundedString(n.id, "canvas node id", 4096, true);
+        if (nodeIds.has(n.id)) throw new TypeError("Duplicate canvas node id");
+        nodeIds.add(n.id);
+        if (n.kind === "pane") {
+          if (n.content !== null && (!memberIds.includes(n.content) || contents.has(n.content))) throw new TypeError("Invalid canvas content");
+          if (n.content) contents.add(n.content);
+          return { kind: "pane", id: n.id, content: n.content };
+        }
+        if (n.kind !== "split" || !["row", "col"].includes(n.dir) || !Array.isArray(n.children) || !n.children.length || !Array.isArray(n.sizes) || n.sizes.length !== n.children.length || n.sizes.some(s => !Number.isFinite(s) || s <= 0)) throw new TypeError("Invalid canvas split");
+        const sum = n.sizes.reduce((a,b) => a+b,0);
+        return { kind: "split",id:n.id,dir:n.dir,children:n.children.map(c => node(c,depth+1)),sizes:n.sizes.map(s => s/sum) };
+      }
+      const root = node(canvas.root);
+      if (!nodeIds.has(canvas.focusedPaneId) || (canvas.zoomedPaneId && !nodeIds.has(canvas.zoomedPaneId))) throw new TypeError("Invalid canvas focus");
+      source.canvas = { root, focusedPaneId:canvas.focusedPaneId, zoomedPaneId:canvas.zoomedPaneId };
+    }
+
+    if (sourceKind === "segment") source.memberIndex = value.source.memberIndex;
+  }
+
+  const rawFileDrafts = value.fileDrafts ?? [];
+  const historicalFileCount = new Set(tabs.flatMap(tab => (tab.pageHistory?.entries ?? [tab])
+    .filter(page => page.kind === "file" && page.projectId && page.path)
+    .map(page => JSON.stringify([page.projectId, page.path])))).size;
+  if (!Array.isArray(rawFileDrafts) || rawFileDrafts.length > Math.max(FILE_DRAFT_MAX_COUNT, historicalFileCount)) {
+    throw new TypeError("fileDrafts exceed the transferred file history");
+  }
+  const fileDrafts = [];
+  const fileDraftKeys = new Set();
+  let fileDraftBytes = 0;
+  for (const draft of rawFileDrafts) {
+    if (!isPlainObject(draft)) throw new TypeError("Invalid file draft");
+    boundedString(draft.key, "fileDraft.key", 16 * 1024, true);
+    if (fileDraftKeys.has(draft.key)) throw new TypeError("Duplicate file draft key");
+    fileDraftKeys.add(draft.key);
+    let normalizedValue;
+    if (typeof draft.value === "string") {
+      normalizedValue = draft.value;
+    } else if (isPlainObject(draft.value)) {
+      if (
+        typeof draft.value.draft !== "string"
+        || typeof draft.value.baselineContent !== "string"
+        || !Number.isFinite(draft.value.baselineMtime)
+      ) {
+        throw new TypeError("Invalid fileDraft.value");
+      }
+      normalizedValue = {
+        draft: draft.value.draft,
+        baselineContent: draft.value.baselineContent,
+        baselineMtime: draft.value.baselineMtime,
+      };
+    } else {
+      throw new TypeError("Invalid fileDraft.value");
+    }
+    const draftBytes = typeof normalizedValue === "string"
+      ? Buffer.byteLength(normalizedValue, "utf8")
+      : serializedBytes(normalizedValue, "fileDraft.value");
+    if (draftBytes > FILE_DRAFT_MAX_BYTES) {
+      throw new TypeError("fileDraft.value is too large");
+    }
+    fileDraftBytes += serializedBytes(normalizedValue, "fileDraft.value");
+    if (fileDraftBytes > FILE_DRAFTS_MAX_TOTAL_BYTES) {
+      throw new TypeError("fileDrafts are too large");
+    }
+    fileDrafts.push({ key: draft.key, value: normalizedValue });
+  }
+
+  const rawChats = value.chats ?? [];
+  const chatLimit = Math.max(3, new Set(tabs.flatMap(tab =>
+    [...(tab.sessionHistory?.entries ?? []), ...(tab.pageHistory?.entries ?? [tab])].flatMap(entry => entry.sessionId ? [entry.sessionId] : []),
+  )).size);
+  if (!Array.isArray(rawChats) || rawChats.length > chatLimit) {
+    throw new TypeError("chats exceed the transferred session history");
+  }
+  const chats = [];
+  for (const chat of rawChats) {
+    if (!isPlainObject(chat)) throw new TypeError("Invalid chat transfer state");
+    boundedString(chat.chatKey, "chat.chatKey", 16 * 1024, true);
+    boundedString(chat.pendingProjectId, "chat.pendingProjectId", 16 * 1024);
+    for (const field of ["composerDraft", "activeComposerInput"]) {
+      boundedString(chat[field], `chat.${field}`, 2 * 1024 * 1024);
+    }
+    const normalized = { chatKey: chat.chatKey };
+    for (const field of ["composerDraft", "activeComposerInput", "pendingProjectId"]) {
+      if (chat[field] !== undefined && chat[field] !== null) normalized[field] = chat[field];
+    }
+    for (const field of ["composerSettings", "activeComposerSettings"]) {
+      const item = normalizedComposerSettings(chat[field], `chat.${field}`);
+      if (item !== undefined) normalized[field] = item;
+    }
+    const choice = normalizedDraftChannelChoice(
+      chat.draftChannelChoice,
+      "chat.draftChannelChoice",
+    );
+    if (choice !== undefined) normalized.draftChannelChoice = choice;
+    const wasActive = optionalBoolean(chat.wasActive, "chat.wasActive");
+    if (wasActive !== undefined) normalized.wasActive = wasActive;
+    chats.push(normalized);
+  }
+
+  const records = [];
+  for (const tab of tabs) {
+    if (tab.kind !== "web") continue;
+    const record = ctx.views.get(tab.id);
+    if (!record) continue;
+    if (record.ownerId !== ctx.id) {
+      throw new TypeError("Native web view is owned by another window");
+    }
+    records.push(record);
+  }
+
+  const payload = { tabs, source, fileDrafts, chats };
+  return { payload, records };
+}
+
+module.exports = { validateTransferPayload };

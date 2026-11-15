@@ -1,10 +1,20 @@
 "use client";
 
 import { create } from "zustand";
+import { followAppTarget, TERMINAL_TARGET } from "../chat/resources/session-resources.ts";
 
+// Advisory shell reports; command exit never proves an external effect or task success.
+export type TerminalShellIntegration = {
+  status: "starting" | "ready" | "unavailable" | "ended";
+  mode: "zsh-hooks" | "bash-debug" | null; reason: string | null;
+  event_sequence: number;
+  cwd: { value: string; event_sequence: number } | null;
+  cycle: { id: number; phase: "running" | "finished" | "unknown"; exit_code: number | null } | null;
+};
 export type TerminalResource = {
   terminal_id: string; generation: string; preset: string; status: string;
   start_cwd: string; pid: number | null; exit_code: number | null;
+  shell_integration?: TerminalShellIntegration;
   output_end: number; shared: boolean; session_ids: string[];
   input_revision: number; human_input_pending: boolean; in_use: boolean;
 };
@@ -29,7 +39,16 @@ export const useTerminalResources = create<{
 function ingest(resource: TerminalResource): void {
   if (!resource || typeof resource.terminal_id !== "string" || typeof resource.generation !== "string"
     || !Array.isArray(resource.session_ids)) return;
+  const previous = useTerminalResources.getState().rows[resource.terminal_id];
   useTerminalResources.setState(state => ({ rows: { ...state.rows, [resource.terminal_id]: resource } }));
+  // The Agent took the terminal or typed into it: its conversations' chat
+  // previews follow it, the way they follow Pages and app windows.
+  if (resource.in_use && resource.status === "running"
+      && (!previous?.in_use || previous.input_revision !== resource.input_revision)) {
+    for (const sessionId of resource.session_ids) {
+      followAppTarget(sessionId, `${TERMINAL_TARGET}${resource.terminal_id}`);
+    }
+  }
 }
 let installed: TerminalResourceApi | undefined;
 export function installTerminalResourceBridge(): void {

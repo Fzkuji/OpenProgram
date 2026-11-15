@@ -5,17 +5,17 @@ from fastapi import FastAPI, WebSocket
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram import config_schema
-from openprogram.security.safe_http import (
+from openprogram.state import settings as setting_registry
+from openprogram.host.security.safe_http import (
     OutboundSecurityConfig,
     PolicyProxyConfig,
     configured_safe_client,
     safe_client,
 )
-from openprogram.security.url_policy import OwnerURLException
-from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
-from openprogram.webui.routes.settings import config as config_routes
-from openprogram.webui.ws_actions.settings import handle_set_setting
+from openprogram.host.security.url_policy import OwnerURLException
+from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+from openprogram.interfaces.server.routes.settings import config as config_routes
+from openprogram.interfaces.server.ws_actions.settings import handle_set_setting
 
 
 VALID_SETTINGS = {
@@ -37,7 +37,7 @@ VALID_SETTINGS = {
 
 
 def test_owner_outbound_url_settings_are_strict_normalized_and_immutable():
-    settings = config_schema.parse_outbound_url_settings(VALID_SETTINGS)
+    settings = setting_registry.parse_outbound_url_settings(VALID_SETTINGS)
 
     assert settings.model_dump(mode="json", exclude_none=True) == {
         "exceptions": [
@@ -54,6 +54,7 @@ def test_owner_outbound_url_settings_are_strict_normalized_and_immutable():
             "url": "http://127.0.0.1:3128",
             "enforces_target_policy": True,
         },
+        "model_tools": "open",
     }
     with pytest.raises(Exception):
         settings.exceptions = ()
@@ -61,7 +62,7 @@ def test_owner_outbound_url_settings_are_strict_normalized_and_immutable():
 
 def test_owner_outbound_url_settings_reject_ipv4_mapped_link_local_origin():
     with pytest.raises(ValueError, match="invalid outbound URL security"):
-        config_schema.parse_outbound_url_settings(
+        setting_registry.parse_outbound_url_settings(
             {
                 "exceptions": [
                     {
@@ -74,7 +75,7 @@ def test_owner_outbound_url_settings_reject_ipv4_mapped_link_local_origin():
 
 
 def test_owner_outbound_url_settings_build_consumer_scoped_security():
-    settings = config_schema.parse_outbound_url_settings(VALID_SETTINGS)
+    settings = setting_registry.parse_outbound_url_settings(VALID_SETTINGS)
 
     skills = settings.security_for("skills.configured.catalog")
     assert skills.owner_exceptions == (
@@ -225,7 +226,7 @@ def test_owner_outbound_url_settings_build_consumer_scoped_security():
 )
 def test_owner_outbound_url_settings_reject_invalid_or_broad_authority(value):
     with pytest.raises(ValueError) as exc_info:
-        config_schema.parse_outbound_url_settings(value)
+        setting_registry.parse_outbound_url_settings(value)
 
     message = str(exc_info.value)
     assert "QUERY-SECRET" not in message
@@ -247,12 +248,12 @@ def test_loaded_owner_settings_default_fail_closed_on_invalid_persisted_config()
     }
 
     with pytest.raises(ValueError, match="invalid outbound URL security configuration"):
-        config_schema.load_outbound_security_config(
+        setting_registry.load_outbound_security_config(
             "skills.configured.catalog", config=config
         )
 
     with pytest.raises(ValueError, match="invalid outbound URL security configuration"):
-        config_schema.load_outbound_security_config(
+        setting_registry.load_outbound_security_config(
             "skills.configured.catalog", config={"security": []}
         )
 
@@ -281,16 +282,16 @@ def test_owner_exception_batch_is_bounded_and_duplicate_free():
     }
 
     with pytest.raises(ValueError, match="invalid outbound URL security"):
-        config_schema.parse_outbound_url_settings(too_many)
+        setting_registry.parse_outbound_url_settings(too_many)
     with pytest.raises(ValueError, match="invalid outbound URL security"):
-        config_schema.parse_outbound_url_settings(duplicate)
+        setting_registry.parse_outbound_url_settings(duplicate)
 
 
 def test_managed_factories_load_owner_policy_without_minting_callsite_authority(
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {
             "security": {
                 "outbound_url": {
@@ -332,7 +333,7 @@ def test_managed_factories_load_owner_policy_without_minting_callsite_authority(
 
 def test_explicit_test_security_does_not_read_owner_config(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: (_ for _ in ()).throw(AssertionError("owner config read")),
     )
 
@@ -343,7 +344,7 @@ def test_explicit_test_security_does_not_read_owner_config(monkeypatch):
 def test_existing_web_config_write_path_requires_owner_authentication(monkeypatch):
     writes = []
     monkeypatch.setattr(
-        "openprogram.setup.update_config",
+        "openprogram.state.config.update_config",
         lambda mutator: writes.append(mutator),
     )
     app = FastAPI()
@@ -377,7 +378,7 @@ def test_existing_web_config_write_path_requires_owner_authentication(monkeypatc
 def test_existing_websocket_setting_path_requires_owner_authentication(monkeypatch):
     writes = []
     monkeypatch.setattr(
-        "openprogram.setup.update_config",
+        "openprogram.state.config.update_config",
         lambda mutator: writes.append(mutator),
     )
     app = FastAPI()

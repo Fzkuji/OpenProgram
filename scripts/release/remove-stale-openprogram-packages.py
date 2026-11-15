@@ -8,6 +8,10 @@ import sysconfig
 from pathlib import Path
 
 
+# The Server and CLI now install inside ``openprogram`` as
+# openprogram/interfaces/{server,cli}; releases before that shipped them as the
+# top-level ``openprogram_server`` and ``openprogram_cli`` packages, which a
+# reinstall over such a runtime must still remove.
 PACKAGE_NAMES = ("openprogram", "openprogram_server", "openprogram_cli")
 
 
@@ -25,6 +29,12 @@ def validated_package_targets(site_packages: Path) -> list[Path]:
             raise RuntimeError(f"package path is not a directory: {package}")
         if package.is_dir():
             targets.append(package)
+    # Uninstalling an older version can leave its dist-info holding only a
+    # LICENSE that RECORD did not list. pip then reads it as "openprogram None"
+    # and refuses the next install, so a record without METADATA goes too.
+    for record in sorted(site_packages.glob("openprogram-*.dist-info")):
+        if record.is_dir() and not record.is_symlink() and not (record / "METADATA").exists():
+            targets.append(record)
     return targets
 
 

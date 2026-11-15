@@ -21,10 +21,10 @@ def test_mcp_server_lives_inside_the_mcp_domain() -> None:
     tracked = set(_tracked_paths())
 
     assert {
-        "openprogram/mcp/server/__init__.py",
-        "openprogram/mcp/server/contracts.py",
-        "openprogram/mcp/server/server.py",
-        "openprogram/mcp/server/service.py",
+        "openprogram/extensions/mcp/server/__init__.py",
+        "openprogram/extensions/mcp/server/contracts.py",
+        "openprogram/extensions/mcp/server/server.py",
+        "openprogram/extensions/mcp/server/service.py",
     } <= tracked
     assert not any(path.startswith("openprogram/mcp_server/") for path in tracked)
 

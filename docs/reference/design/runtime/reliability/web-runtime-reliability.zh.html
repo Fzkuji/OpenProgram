@@ -1,0 +1,316 @@
+<title>Web 运行时可靠性</title>
+<meta name="description" content="Web 运行时关于错误可见、会话有界加载、WebSocket 投递、EventBus 执行、静态资源和容量的契约。">
+<h1>Web 运行时可靠性</h1>
+
+<p class="note">不在范围内：Agent 推理、DAG 存储语义、提供商协议、权限模型、多用户身份。各专题页保留各自细节；本页是共享契约。</p>
+
+<figure id="current-flow">
+<svg class="fig-wide" viewBox="0 0 680 232" role="img" aria-label="来源先持久化关键状态：聊天结果、Job 终态、用户可见错误、提问或权限请求。然后把帧放入每连接队列，最多 256 帧或 4 MiB，并为关键帧保留余量。每个连接只有一个发送者向浏览器写入。关键帧仍无空间时，连接以 state_recovery_required 关闭，浏览器重连后从会话清单、UserErrorStore、待答提问、Job 存储和请求结果恢复，而不是从未发送的帧恢复。">
+  <defs><marker id="wr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+  <marker id="wr-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">先持久化</text>
+  <text class="t-soft" x="0" y="62">聊天结果、Job 终态、</text>
+  <text class="t-soft" x="0" y="82">错误、提问、权限</text>
+  <line class="ln" x1="170" y1="28" x2="210" y2="28" marker-end="url(#wr-a)"/>
+  <text class="t-big" x="222" y="34">连接队列</text>
+  <text class="t-soft" x="222" y="62">256 帧或 4 MiB</text>
+  <text class="t-soft" x="222" y="82">保留 64 帧、1 MiB</text>
+  <line class="ln" x1="392" y1="28" x2="432" y2="28" marker-end="url(#wr-a)"/>
+  <text class="t-big" x="444" y="34">单一发送者</text>
+  <text class="t-soft" x="444" y="62">唯一调用</text>
+  <text class="t-cmd notranslate" translate="no" x="444" y="82">ws.send_text</text>
+  <line class="ln" x1="552" y1="28" x2="592" y2="28" marker-end="url(#wr-a)"/>
+  <text class="t-big" x="604" y="34">浏览器</text>
+  <path class="ln-no" d="M280 96V134"/>
+  <text class="t-no" x="222" y="156">关键帧无空间：关闭连接，state_recovery_required</text>
+  <path class="ln-faint" d="M630 44V196H420" marker-end="url(#wr-a)"/>
+  <text class="t-soft" x="0" y="192">重连后从清单、UserErrorStore、</text>
+  <text class="t-soft" x="0" y="212">待答提问、Job 存储和请求结果恢复</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>先持久化</strong><small>聊天结果、Job 终态、错误、提问、权限</small></li>
+  <li><strong>连接队列</strong><small>256 帧或 4 MiB；保留 64 帧、1 MiB</small><p class="refused">关键帧无空间：关闭连接，state_recovery_required</p></li>
+  <li><strong>单一发送者</strong><small>唯一调用 ws.send_text</small></li>
+  <li class="flow-end"><strong>浏览器</strong><small>重连后从清单、UserErrorStore、待答提问、Job 存储和请求结果恢复</small></li>
+</ol>
+</figure>
+
+<h2 id="errors">错误契约</h2>
+<p>影响请求、持久状态、后台任务或可恢复操作的失败都产生可观察的记录。内部重试不一定是 Toast，traceback、文件内容和凭据不进浏览器。</p>
+<pre translate="no" tabindex="0">{
+  "type": "operation_error",
+  "data": {
+    "error_id": "err_opaque_unique_id",
+    "request_id": "client_request_id_or_null",
+    "scope": "session | job | settings | channel | agent | transport | system",
+    "code": "stable_machine_code",
+    "message": "safe user-facing summary",
+    "action": "safe_action_or_null",
+    "session_id": "session_id_or_null",
+    "operation_id": "action_job_execution_id_or_null",
+    "retryable": false,
+    "severity": "info | warning | error | fatal",
+    "correlation_id": "opaque log lookup id",
+    "occurred_at": "ISO-8601 UTC"
+  }
+}</pre>
+<p class="note">可空字段写 <code translate="no">null</code>，不省略。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">request_id</code></th><td>客户端生成的关联值，不是授权或幂等凭据。成功和失败都回显并结束 pending。只回显非空、无控制字符、不超过 128 字符的值，否则 <code translate="no">null</code>。同一 <code translate="no">action</code> 的 <code translate="no">session_id</code> 同理。</td></tr>
+<tr><th scope="row"><code translate="no">error_id</code></th><td>每次失败唯一。Toast 键为 <code translate="no">scope + code + session_id + operation_id</code>：5 秒内同键一次；每条记录都保留。</td></tr>
+<tr><th scope="row"><code translate="no">code</code></th><td><code translate="no">unknown_action</code>：协议或版本不匹配，不可重试。<code translate="no">handler_error</code>：命令失败，保守地不可重试。后续操作用已注册代码。未知代码显示通用文字，绝不显示线上的 <code translate="no">message</code> 或 <code translate="no">error</code>。</td></tr>
+<tr><th scope="row"><code translate="no">UserErrorStore</code></th><td>当前 profile 下按键存储的追加式记录日志（<code translate="no">user_errors.py</code>），按认证主体隔离：7 天，每主体 1,000 条。按 <code translate="no">occurred_at</code>、<code translate="no">error_id</code> 严格从新到旧分页。确认按主体和精确 ID 幂等关闭。提交后才发送；持久化失败不发送虚假的持久帧，以 <code translate="no">state_recovery_required</code> 关闭。</td></tr>
+<tr><th scope="row"><code translate="no">severity</code></th><td><code translate="no">info</code>：只进诊断。<code translate="no">warning</code>：局部降级状态。<code translate="no">error</code>：卡片和一次 Toast。<code translate="no">fatal</code>：持久阻塞状态，停止自动重试。</td></tr>
+<tr><th scope="row">生命周期</th><td><code translate="no">acknowledge_user_error</code> 在请求连接上用同一 <code translate="no">request_id</code> 回复：先 <code translate="no">user_error_acknowledged</code>，再带显式 <code translate="no">error_ids</code>、<code translate="no">scope</code>、<code translate="no">operation_id</code>、<code translate="no">occurred_at</code> 的 <code translate="no">operation_recovered</code>。同主体的其他窗口收到同样的恢复；跨连接无顺序保证，请求连接失败不阻塞他人。重复确认会重发精确 ID 恢复。只有确认或实体删除才关闭；之后无关的成功不会关闭。</td></tr>
+<tr><th scope="row">Job 失败</th><td><code translate="no">job_status(status=errored)</code> 是唯一线上事件，不再发 <code translate="no">operation_error</code>。那种帧只用于 Job 操作请求本身失败。</td></tr>
+<tr><th scope="row">兼容</th><td>新客户端读 <code translate="no">operation_error</code> 和旧的 <code translate="no">action_error</code>；服务器不重复发送。Web 资源和 Worker 是一个发布单元。<code translate="no">actionErrorNotice</code> 和 <code translate="no">consumeActionError</code> 别名统一成一条提示。</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">失败</th><th scope="col">显示</th><th scope="col">保存在</th><th scope="col">不含</th></tr></thead>
+<tbody>
+<tr><th scope="row">当前会话请求</th><td>相关卡片或控件旁；一次 Toast</td><td>会话错误记录，刷新后可见</td><td>traceback、环境、未过滤的提供商响应</td></tr>
+<tr><th scope="row">后台 Job</th><td>会话列表标记；AttachCard 和 Jobs 显示摘要和可重试性</td><td>Job</td><td>完整子进程输出、文件内容</td></tr>
+<tr><th scope="row">设置或管理</th><td>保留最后已知状态并显示失败；绝不显示为空列表</td><td>错误中心，直到确认</td><td>凭据、令牌、机密路径</td></tr>
+<tr><th scope="row">可恢复的降级</th><td>无 Toast；相应界面显示降级状态</td><td>结构化日志和指标</td><td>重复提示</td></tr>
+<tr><th scope="row">断线</th><td>连接状态，恢复期间不重复报错</td><td>恢复预算耗尽或有未确认操作时进错误中心</td><td>每次重连一个 Toast</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>服务端</dt><dd>一个安全载荷构建器；WS 操作、频道和系统包装它，JobRunner 嵌入 <code translate="no">job_status</code></dd>
+<dt>前端</dt><dd><code translate="no">use-ws</code> 只转发给一个错误存储；卡片、标记、Toast 从同一记录派生。每个后端路径迁移后删除兼容分支。</dd>
+<dt>请求</dt><dd>成功和失败都结束 pending，按钮不会一直转</dd>
+</dl>
+
+<h2 id="session-load">会话加载</h2>
+<p>初始成本取决于可见内容，而非历史长度。SessionDB 和 DAG 是唯一持久权威，线上传的是投影。</p>
+
+<h3 id="bounded-session-history">有界会话历史</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">页</th><td>完整的轮次：一条提示和它拥有的全部内容，包括调用后代。第一页 6 轮、目标 128 KiB；之后每页 25 轮、512 KiB（<code translate="no">transcript/reader.py</code>）。单个更大的轮次单独发送。</td></tr>
+<tr><th scope="row">游标</th><td>捕获的分支头加稳定的游标，分支上任何消息 id 都能找到它所在的轮次。游标不可用时返回明确的可重试错误，不进入重连循环。</td></tr>
+<tr><th scope="row">副作用</th><td>无：分页不修改历史或模型上下文，也不改变焦点、实时头、执行状态或提问重放</td></tr>
+<tr><th scope="row">分片</th><td>超过帧预算的历史和图响应按序分片、等待发送，分发前重组，并与之后的实时通知保持顺序。每连接：64 Mi UTF-16 码元、8 个未完成传输、1,024 个逻辑响应（<code translate="no">history-fragments.ts</code>）。缓冲随连接释放。</td></tr>
+<tr><th scope="row">线上大小</th><td>从 <code translate="no">extra</code> 去掉重复的提升字段。工具预览保留已授权的完整输出展开。</td></tr>
+<tr><th scope="row">客户端</th><td>按标识在前面插入旧行，不替换较新内容。请求捕获加载代次，重新加载、切换分支或更换 socket 后被忽略。滚动位置保持锚定。</td></tr>
+<tr><th scope="row">重连</th><td>加载最新一页；继续现有执行恢复</td></tr>
+<tr><th scope="row" id="long-session-layout">长会话</th><td>图深度：带记忆的父链分类，然后迭代前序遍历；不用 Python 递归。父路径进入环的节点保持为独立根。分叉、重试、派生分支和调用子节点保持顺序和偏移。追问规范化只索引一次回复；泳道放置维护每泳道宽度和最大列，不再重扫。</td></tr>
+<tr><th scope="row">线程</th><td>消息聚合、分页准备和建图在事件循环外运行；等待发送留在循环上。快照和事件顺序不变。内存会话索引仍为权威；没有持久缓存或迁移。</td></tr>
+<tr><th scope="row">限制</th><td>完整 Graph 保留给分支和压缩控件。投影扫描捕获的会话；初始 Graph 和存储内存随会话增长。存储索引和懒加载图渲染是单独工作。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>验收与对比</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">必须成立</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开</th><td>原先失败的会话打开时队列不溢出</td></tr>
+<tr><th scope="row">分页</th><td>内容和调用归属精确；游标耗尽无丢失无重复</td></tr>
+<tr><th scope="row">帧</th><td>有界，含 Unicode 和单个超大行</td></tr>
+<tr><th scope="row">并发</th><td>过期响应不能覆盖较新状态；断线释放缓冲</td></tr>
+<tr><th scope="row">功能</th><td>分支、压缩、工具展开和执行恢复正常</td></tr>
+<tr><th scope="row">大对话</th><td>10,000 节点能加载有界最新页，无递归失败</td></tr>
+<tr><th scope="row">布局</th><td>小图输出符合现有布局契约；长链、宽分叉和非法环都有覆盖</td></tr>
+</tbody>
+</table>
+<p><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server/src/request_processors/thread_processor.rs">Codex</a> 通过分页历史 API 分离线程元数据、轮次和条目。<a href="https://github.com/deepseek-ai/deepseek-harness/blob/main/packages/api/session-controller/src/history.ts">DeepSeek Harness</a> 提供按消息对齐的分页和序列游标。采用：稳定分支快照、向后分页、增量实时更新。保留：我们的分支图和执行恢复；不增加会话存储；模型压缩不变。</p>
+</details>
+
+<h3 id="projection">目标投影</h3>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">返回</th><th scope="col">触发</th><th scope="col">缓存键</th></tr></thead>
+<tbody>
+<tr><th scope="row">清单</th><td>标题、状态、头、revision、当前链 ID、计数、功能状态、未关闭错误 ID</td><td>切换会话，无有效清单</td><td><code translate="no">session_id + revision</code></td></tr>
+<tr><th scope="row">Graph 摘要</th><td>节点 ID、边、角色、状态、最少标签；无正文</td><td>打开 DAG 或分支面板</td><td><code translate="no">session_id + graph_revision</code></td></tr>
+<tr><th scope="row">节点详情</th><td>节点上下文、完整工具输出、运行时树、附件详情</td><td>展开或导航</td><td><code translate="no">session_id + node_id + content_revision</code></td></tr>
+<tr><th scope="row">重连增量</th><td>已知 revision 之后的提交；各已知 seq 之后的事件</td><td>重连且增量连续</td><td><code translate="no">known_session_revision</code>、<code translate="no">known_stream_seqs: {entity_id: seq}</code></td></tr>
+<tr><th scope="row">完全恢复</th><td>新清单和有界页，绝非完整历史</td><td>revision 不兼容、增量已淘汰、客户端状态非法</td><td>重置本地投影</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">量</th><th scope="col">定义</th><th scope="col">保留与回退</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_revision</code></th><td>每会话单调递增，每次原子提交 +1；出现在清单、消息头、Graph 摘要、持久错误上</td><td>永久。客户端值高于服务器或 schema 不兼容时返回新清单。</td></tr>
+<tr><th scope="row"><code translate="no">stream_seq</code></th><td>每个运行中的消息或 job 单调递增；只描述未提交变更</td><td>Worker 内每实体 256 条增量或 15 分钟。重启把未完成实体持久化为 error 或 aborted，然后清单恢复。</td></tr>
+<tr><th scope="row">增量日志</th><td><code translate="no">from_revision → to_revision</code> 投影变更，不含正文副本</td><td>内存中 512 次提交或 15 分钟。更大的缺口：清单和有界页。</td></tr>
+<tr><th scope="row">详情游标</th><td>每次读取最多 1 MiB 未压缩；按 UTF-8 边界分块</td><td>每次读取重新授权；不能跨节点或会话</td></tr>
+</tbody>
+</table>
+<ul>
+<li>线程读取不可变快照并返回普通对象。异步处理器发送前复查 revision；并发写入时返回清单加增量或新快照。线程绝不碰 WebSocket。</li>
+<li>预建 <code translate="no">id → insertion_index</code>，按前驱一次分组兄弟，每个请求读一次会话行，Graph 摘要与正文分开序列化。</li>
+<li>按需读取扩展到上下文树、运行时块、Graph 节点内容和附件元数据。旧客户端由载荷上限得到升级提示，而不是无界帧。</li>
+<li>先捕获现有帧顺序，再逐层替换；绝不把整个异步处理器放进 <code translate="no">to_thread</code>。</li>
+</ul>
+
+<h2 id="websocket">WebSocket 投递</h2>
+<p><code translate="no">openprogram/interfaces/server/ws_delivery.py</code>。浏览器 WebSocket 没有自动背压（<a href="https://developer.mozilla.org/en-US/docs/Web/API/WebSocket">MDN</a>），客户端 <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/bufferedAmount"><code translate="no">bufferedAmount</code></a> 不能替代服务端队列。生产线程只入队，通过事件循环安全调度（<a href="https://docs.python.org/3/library/asyncio-queue.html">asyncio.Queue</a>）。</p>
+<table class="stack">
+<thead><tr><th scope="col">帧</th><th scope="col">示例</th><th scope="col">队列规则</th><th scope="col">溢出</th></tr></thead>
+<tbody>
+<tr><th scope="row">终态，绝不丢弃</th><td>error、提问、聊天结果、Job 终态、ack、权限结果</td><td>保序；不覆盖不合并</td><td>关闭并要求状态恢复</td></tr>
+<tr><th scope="row">可合并增量</th><td>文本和思考增量、树更新、进度、上下文统计</td><td>按 <code translate="no">session + entity + type</code>：保留最新状态或合并相邻文本</td><td>移除被取代的增量并计数</td></tr>
+<tr><th scope="row">快照</th><td>会话列表、分支、设置、Graph 摘要</td><td>每键只留最新未发送的</td><td>替换；不影响终态帧</td></tr>
+<tr><th scope="row">控制</th><td>pong、认证、状态、需重新加载</td><td>单独的小预算，大消息饿不死它</td><td>认证和协议错误立即关闭；过期 pong 可丢弃</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>容量</dt><dd>排队加在途。关键帧入队前先移除可合并增量。</dd>
+<dt>断开</dt><dd>取消发送者、释放队列、注销焦点；其他线程不持有 WebSocket Future</dd>
+<dt>聊天 ack</dt><dd>在用户消息持久存储之后；其他 ack 可按 <code translate="no">request_id</code> 幂等查询或重放</dd>
+<dt>客户端关闭</dt><dd>从 close 或超时推导传输状态，不依赖服务器帧</dd>
+<dt>指标</dt><dd><code translate="no">queue_frames</code>、<code translate="no">queue_bytes</code>、<code translate="no">oldest_age</code>、<code translate="no">coalesced</code>、<code translate="no">send_failures</code>、<code translate="no">disconnect_reason</code>、<code translate="no">recovery_mode</code>；不含帧内容</dd>
+<dt>目标重连</dt><dd>带抖动的退避；页面可见或显式重试可提前；先恢复协议状态再恢复会话投影</dd>
+</dl>
+
+<h2 id="event-bus">EventBus</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Gate</th><th scope="col">Notify（目标）</th></tr></thead>
+<tbody>
+<tr><th scope="row">用途</th><td>动作前允许或拒绝</td><td>记录、更新界面、触发非阻塞工作</td></tr>
+<tr><th scope="row">运行于</th><td>发送线程；目标总预算 <code translate="no">events.gate_timeout_ms=50</code></td><td>EventBus 自有循环；同步消费者走线程池</td></tr>
+<tr><th scope="row">失败</th><td>放行，带结构化警告和结果</td><td>消费者隔离；重试归消费者策略；不静默跳过</td></tr>
+<tr><th scope="row">顺序</th><td>注册顺序</td><td>按 <code translate="no">session_id + entity_id</code> 严格 FIFO，其次会话，再次 <code translate="no">type + origin</code>；不同键并发</td></tr>
+<tr><th scope="row">背压</th><td>无队列；预算耗尽跳过其余并记录</td><td>普通 4,096 个事件；关键 512 个（operation error 和 recovered、提问、Job 终态、轮次结束、关键 <code translate="no">ws.frame</code>）</td></tr>
+<tr><th scope="row">队列满</th><td></td><td>合并或丢弃带键遥测并计数。关键队列满：持久状态仍是权威；写丢失标记并通知 Web 连接恢复。只打 stderr 不算投递。</td></tr>
+<tr><th scope="row">关闭</th><td></td><td>最多排空 2 秒，然后写关闭丢失标记。关键状态在 emit 前持久化，重启后扫描存储恢复；EventBus 不是持久队列。</td></tr>
+<tr><th scope="row">日志</th><td>事件和判决一条记录</td><td>异步批量；大载荷记大小、摘要、受控预览</td></tr>
+</tbody>
+</table>
+<ul>
+<li>权限、认证、沙箱和凭据检查不走 EventBus gate，gate 只承载插件和工作流决定。</li>
+<li>按有无会话选择会话或全局日志，不写两处；每文件每事件 ID 一行。<code translate="no">tool.after.result_text</code> 记字节数、错误状态、哈希和有界预览；完整结果留在 SessionDB 和工具结果存储。</li>
+<li>测试解析 <code translate="no">emit_safe</code> 和 <code translate="no">make_event</code> 的 AST，包括多行调用。动态名称需要显式例外和消费者。</li>
+<li>EventBus 到 Web 的适配器只转发已注册的、与用户相关的封包。</li>
+<li>插件 hook 签名保持公开不变。</li>
+</ul>
+
+<h2 id="frontend">前端与静态资源</h2>
+<table class="stack">
+<thead><tr><th scope="col">方面</th><th scope="col">规则</th><th scope="col">验证</th></tr></thead>
+<tbody>
+<tr><th scope="row">流式</th><td>按动画帧合并，按消息选择器。目标：终态前冲刷匹配增量；原子更新错误记录和回复状态。</td><td>每帧至多一次存储更新；终态内容完整</td></tr>
+<tr><th scope="row">长列表</th><td><code translate="no">MessageRow</code> memo、行回收、稳定 ID 数组。目标：Graph 面板不再把完整 Graph 正文塞进聊天存储。</td><td>1,000+ 节点时 DOM 和提交不线性增长</td></tr>
+<tr><th scope="row">错误界面</th><td>现有 Toast 和未读状态。目标：错误存储、持久卡片、后台标记、去重。</td><td>当前会话、后台会话、刷新后</td></tr>
+<tr><th scope="row">marked、KaTeX</th><td>本地打包；无 CDN 加载器和 WS 等待（<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/script-src"><code translate="no">script-src 'self'</code></a>，不用 <code translate="no">unsafe-inline</code> 或 <code translate="no">unsafe-eval</code>）</td><td>CSP 违规为零；可离线</td></tr>
+<tr><th scope="row">静态响应</th><td>同源导出、缓存头、<a href="https://starlette.dev/middleware/">Starlette gzip</a>，按 MIME 排除，大小写不敏感的 q 权重，显式 gzip 优先于 <code translate="no">*</code>。不重复压缩；不压缩 SSE；小响应不压缩。</td><td>协商、MIME 和已有编码回归</td></tr>
+<tr><th scope="row">代码拆分</th><td>非初始的中央标签面按需导入并显示等待状态</td><td><code translate="no">apps/web/scripts/runtime/check-static-resource-budget.mjs</code>：传输 2 MiB、初始脚本 650 KiB、每块 350 KiB，预构建按需库有各自上限</td></tr>
+<tr><th scope="row">浏览器主页</th><td>本地文字图标；不自动请求 favicon</td><td><code translate="no">check-local-runtime-assets.mjs</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="operations">指标与容量</h2>
+<p>只记录计数、时长、字节和关联 ID；不含提示、回复、工具输出或凭据。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">记录</th></tr></thead>
+<tbody>
+<tr><th scope="row">WebSocket</th><td>连接数、队列字节、发送延迟和失败、合并计数、重连、恢复模式、完全恢复原因</td></tr>
+<tr><th scope="row">会话加载</th><td>清单、消息和图的字节；DB 读取、投影、序列化、发送时长；视口命中、详情获取、增量回退</td></tr>
+<tr><th scope="row">EventBus</th><td>入队和处理时长、深度、失败、重试、丢弃原因、gate 时间、预算超支</td></tr>
+<tr><th scope="row">存储</th><td>会话、日志、Chrome 缓存、模型、IndexedDB。用户清理前显示目标和影响。</td></tr>
+</tbody>
+</table>
+<p class="note">浏览器配置文件是用户状态，绝不由定时器或启动钩子删除。可重建的缓存和模型与身份、扩展、IndexedDB 分开列出，并按类别显式确认。</p>
+
+<h2 id="plan">剩余工作</h2>
+<table class="stack">
+<thead><tr><th scope="col">任务</th><th scope="col">依赖</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">前端错误状态和其余错误路径</th><td>无</td><td>只做通用操作错误，不含 Job 状态</td></tr>
+<tr><th scope="row">Job 错误显示</th><td>错误存储</td><td>终态只由 <code translate="no">job_status</code> 承载；安全摘要，traceback 留在日志。<code translate="no">openprogram/runtime/jobs/runner/</code>、<code translate="no">ws-events.ts</code>、<code translate="no">attach-card.tsx</code>。</td></tr>
+<tr><th scope="row">会话投影和增量恢复</th><td>WebSocket 投递</td><td>只用 SessionDB 和 DAG；先测载荷、定协议契约。<code translate="no">session/load.py</code>、<code translate="no">messages.py</code>、<code translate="no">use-ws.ts</code>。</td></tr>
+<tr><th scope="row">EventBus notify 和日志</th><td>错误封包、投递</td><td>独占 <code translate="no">events/bus.py</code>、<code translate="no">registry.py</code>、<code translate="no">event_log.py</code></td></tr>
+<tr><th scope="row">容量诊断</th><td>无</td><td>先只读；删除需要单独设计和确认</td></tr>
+</tbody>
+</table>
+
+<h2 id="acceptance">验收</h2>
+<table class="stack">
+<thead><tr><th scope="col">入口和场景</th><th scope="col">标准</th><th scope="col">依据</th></tr></thead>
+<tbody>
+<tr><th scope="row">任一已注册 WS 操作抛异常</th><td>同一 socket 收到安全的 <code translate="no">operation_error</code>；连接存活；250 ms 内显示；关联 ID 能查日志</td><td>接收循环测试、reducer 和界面测试</td></tr>
+<tr><th scope="row">list、delete、settings、channel 存储失败</th><td>没有正常空结果或静默成功</td><td>逐操作契约测试</td></tr>
+<tr><th scope="row">JobRunner，失败后刷新</th><td>Job、AttachCard 和标记显示同一安全原因；<code translate="no">retryable</code> 一致</td><td>持久化、WS、React 集成</td></tr>
+<tr><th scope="row">已知最大会话，无缓存</th><td>首次未压缩投影 ≤ 1 MiB；事件循环占用 ≤ 50 ms</td><td>固定会话夹具</td></tr>
+<tr><th scope="row">重连，缺失增量 ≤ 64</th><td>无完整历史；恢复 ≤ 256 KiB；保留终态、错误、提问</td><td>断线和恢复协议测试</td></tr>
+<tr><th scope="row">慢客户端，持续流</th><td>队列在限制内；终态不丢；不可恢复的溢出关闭连接</td><td>受控慢发送测试</td></tr>
+<tr><th scope="row">Notify，慢插件和异步订阅者</th><td>入队 p99 ≤ 1 ms；异步订阅者不被跳过；失败不阻塞同伴</td><td>并发基准、行为测试</td></tr>
+<tr><th scope="row">一次带 gate 的 <code translate="no">tool.before</code></th><td>一个目标日志，一行带判决，无大正文</td><td>事件文件断言</td></tr>
+<tr><th scope="row">首次加载，无缓存，gzip</th><td>CSP 违规和 CDN 请求为零；≤ 2 MiB；最大 JS ≤ 350 KiB</td><td>默认 App 跟踪、HTTP 头</td></tr>
+<tr><th scope="row">Profile 超过警告大小</th><td>分类正确；未确认不删除；报告列出可恢复性</td><td>临时 profile 测试</td></tr>
+</tbody>
+</table>
+<details>
+<summary>测量定义</summary>
+<table class="stack">
+<thead><tr><th scope="col">指标</th><th scope="col">定义</th><th scope="col">样本</th><th scope="col">阈值理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话线上字节</th><td>后端 <code translate="no">json.dumps</code> 的 UTF-8；固定匿名夹具，关闭冷统计</td><td>5 次；中位、最大、分项</td><td>1 MiB 是从 11.66 MB 起的第一阶段上限</td></tr>
+<tr><th scope="row">事件循环占用</th><td>处理器入口到首个等待发送，只算循环线程</td><td>20 次；p50、p95、最大</td><td>50 ms 约束交互，不是页面完成</td></tr>
+<tr><th scope="row">错误界面延迟</th><td>收到帧到卡片进 DOM</td><td>20 次；p95</td><td>250 ms，远低于 2 秒重连间隔</td></tr>
+<tr><th scope="row">Notify 入队</th><td><code translate="no">emit</code> 入口到入队</td><td>10,000 次，1 和 8 线程</td><td>p99 ≤ 1 ms 使 notify 不拉长工具和轮次</td></tr>
+<tr><th scope="row">静态传输</th><td>默认 App，无缓存无扩展；累加 <code translate="no">encodedBodySize</code></td><td>5 次冷加载</td><td>2 MiB 来自 3.42 MB；350 KiB 把懒加载面挡在首包外</td></tr>
+<tr><th scope="row">CSP</th><td>只算本站来源的违规</td><td>冷加载、数学消息、设置、DAG</td><td>零违规是安全契约</td></tr>
+<tr><th scope="row">容量分类</th><td>已分配和逻辑字节；符号链接不出状态根</td><td>固定树和真实只读运行</td><td>总和与根相差不超过 1% 或 1 MiB</td></tr>
+</tbody>
+</table>
+</details>
+<details id="baseline">
+<summary>测量基线</summary>
+<p class="note">这项工作之前的一次审计，没有提交夹具，仅作观察。正式对比使用上面的夹具。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">度量</th><th scope="col">数值</th></tr></thead>
+<tbody>
+<tr><th scope="row">最大 <code translate="no">session_loaded</code></th><td>11.66 MB：消息约 9.75 MB，Graph 1.91 MB；1,790 个图行中可见 112</td></tr>
+<tr><th scope="row">水合</th><td><code translate="no">handle_load_session</code> 约 313 ms</td></tr>
+<tr><th scope="row">冷静态传输</th><td>3.42 MB，66 个资源，43 个脚本，未压缩。本地资源和 gzip 后：约 1.22 MB，最大脚本约 187 KiB，65 个本地请求。</td></tr>
+<tr><th scope="row">冷导航</th><td>约 123 ms；DOMContentLoaded 约 39 ms</td></tr>
+<tr><th scope="row">Worker 内存</th><td>约 437 MB；短时 CPU 采样 4.1% 降到 0.3%</td></tr>
+<tr><th scope="row">状态目录</th><td>6.3 GB：<code translate="no">chrome-profile</code> 约 6.1 GB（设备端模型、Default 配置、模型存储），会话约 8.5 MB</td></tr>
+<tr><th scope="row">慢客户端</th><td>并发 <code translate="no">send_text</code> 峰值：单一发送者前 400，之后 1</td></tr>
+<tr><th scope="row">带 gate 的 <code translate="no">tool.before</code> ×1,000</th><td>日志行 2,000 降到 1,000；同步日志中位 105 ms 降到 58 ms</td></tr>
+<tr><th scope="row">兄弟导航</th><td>2,000 条消息、100 可见：134 ms 降到 1.4 ms</td></tr>
+<tr><th scope="row">观察到的最大历史帧</th><td>51,564 字节</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="risks">选择</h2>
+<table class="stack">
+<thead><tr><th scope="col">选择</th><th scope="col"></th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">标准 WebSocket 加有界队列</th><td>采用</td><td>浏览器稳定；队列、合并和恢复仍归服务端</td></tr>
+<tr><th scope="row">统一 <code translate="no">operation_error</code></th><td>采用</td><td>稳定代码和安全文字；旧帧有临时适配</td></tr>
+<tr><th scope="row">专用 notify 执行</th><td>采用</td><td>非阻塞观察；gate 保持同步</td></tr>
+<tr><th scope="row">本地打包 marked 和 KaTeX</th><td>采用</td><td>严格 CSP、离线、可复现构建</td></tr>
+<tr><th scope="row">为 CDN 放宽 CSP</th><td>拒绝</td><td>增加远程信任，且不解决首连等待</td></tr>
+<tr><th scope="row">WebSocketStream 或 WebTransport</th><td>拒绝</td><td>浏览器支持和范围；替代不了恢复和错误契约</td></tr>
+<tr><th scope="row">全局 React 存储重写</th><td>拒绝</td><td>现有合并和回收未被证明是瓶颈</td></tr>
+<tr><th scope="row">自动删除 Chrome 配置</th><td>拒绝</td><td>可能删掉登录、IndexedDB、扩展</td></tr>
+</tbody>
+</table>
+<p class="note">会话协议变更会影响刷新顺序、分支切换、运行中的卡片、提问重放和发送队列。</p>
+
+<h2 id="status">实现状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">能力</th><th scope="col">状态</th><th scope="col">剩余</th></tr></thead>
+<tbody>
+<tr><th scope="row">公共分派器、Agent、频道、设置的失败</th><td>服务端完成：<code translate="no">operation_error</code>，发送前持久化，列表、确认、恢复</td><td>校验错误码；runtime、session、project 和频道二维码路径</td></tr>
+<tr><th scope="row">前端错误存储</th><td>未完成。Web 和 TUI 把 <code translate="no">operation_error</code> 和 <code translate="no">action_error</code> 统一成一条低敏感提示；Web 不调用 <code translate="no">list_user_errors</code>。</td><td>当前会话卡片、后台标记、Toast 去重、重连水合</td></tr>
+<tr><th scope="row">Job 错误</th><td>未完成。<code translate="no">job_status</code> 带 <code translate="no">error</code>；<code translate="no">attach-card.tsx</code> 和分支视图只显示 <code translate="no">errored</code>。</td><td>存在 Job 上的安全摘要、可重试性、关联 ID；刷新后可见</td></tr>
+<tr><th scope="row">会话分页</th><td>完成。见<a href="#bounded-session-history">有界会话历史</a>。</td><td>清单、Graph 摘要、节点详情、重连增量。<code translate="no">session_loaded</code> 仍发送完整 Graph。</td></tr>
+<tr><th scope="row">离开事件循环的会话工作</th><td>部分完成。读取、分页和建图在线程中运行；兄弟导航用请求内索引。</td><td>单一会话行快照；事件循环预算</td></tr>
+<tr><th scope="row">WebSocket 背压</th><td>完成。<code translate="no">ws_delivery.py</code>，每连接一个发送者。</td><td></td></tr>
+<tr><th scope="row">重连时机</th><td>未完成。<code translate="no">use-ws.ts</code> 固定 2 秒重试，然后加载最新一页。</td><td>带抖动的指数退避；已知 revision 和 seq</td></tr>
+<tr><th scope="row">EventBus notify</th><td>未完成。<code translate="no">_call</code> 在发送线程运行处理器；没有运行中事件循环时跳过异步处理器。</td><td>专用队列</td></tr>
+<tr><th scope="row">事件日志</th><td>部分完成。每个 gate 事件一条记录；重复的 <code translate="no">tool.before</code> 行已消除。</td><td>异步批量写、大字段摘要、能识别多行 emit 的 AST 注册检查</td></tr>
+<tr><th scope="row">本地资源和压缩</th><td>完成。无产品 CDN 资源，不自动请求 Google 图标，CSP 仅 self。</td><td>远程部署的浏览器跟踪</td></tr>
+<tr><th scope="row">容量诊断</th><td>未完成。只能查看文件系统。</td><td>只读分类，然后是显式清理</td></tr>
+<tr><th scope="row">已有并保留</th><td>聊天回复错误气泡；32 KiB 工具结果标记和 <code translate="no">get_full_tool_output</code>；rAF 流式合并；<code translate="no">MessageRow</code> 订阅和行回收</td><td>聊天错误接入错误中心且不重复 Toast；按需读取扩展到其他大字段</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../../error-handling.zh.html">错误处理</a> · <a href="../../proactive/event-layer.zh.html">事件层</a> · <a href="../../proactive/framework-evolution.zh.html">框架信号路由</a> · <a href="../../ui/invariants.zh.html">UI 不变量</a> · <a href="../../ui/interaction-feedback.zh.html">交互反馈</a> · <a href="../../ui/turn-lifecycle/websocket-command-lifecycle.zh.html">WebSocket 命令生命周期</a> · <a href="../operations/streaming-resume.zh.html">流式恢复</a> · <a href="../execution/async-job-lifecycle.zh.html">异步任务生命周期</a> · <a href="../session/README.zh.html">会话子系统</a></p>

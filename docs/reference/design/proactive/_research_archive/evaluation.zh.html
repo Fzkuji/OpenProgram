@@ -1,0 +1,74 @@
+<title>主动层评估</title>
+<meta name="description" content="主动层面向论文的评估方案：贡献、相关工作、实验、基线、指标和数据集。">
+<h1>评估主动层</h1>
+
+<p>面向未来论文的研究方案，未实现。</p>
+
+<h2 id="contributions">贡献</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">贡献</th><th scope="col">已有工作缺什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">C1</th><td>git 即真相的事件溯源和<a href="replay.zh.html">把回放当策略测试</a>：决策是事件流上的纯折叠</td><td>Claude Code hooks、AgentSpec 即时拦截，没有事件溯源和离线回放</td></tr>
+<tr><th scope="row">C2</th><td>框架强制的打断预算和由驳回触发的熔断（<a href="../execution-model.zh.html">执行模型</a> §5）</td><td>hooks 是开环的：没有反馈和自我静音</td></tr>
+<tr><th scope="row">C3</th><td>惰性 L2 推断写回为派生事件（<a href="../events-and-state.zh.html">事件与状态</a> §4）</td><td>让推断成为可复现结果的记录数据</td></tr>
+</tbody>
+</table>
+<ul>
+<li>双通道（同步闸门、异步旁观）不是贡献：它沿用 admission webhook 与 controller 的模式。作为设计决策呈现，配 agent 特有的证据：实测 10 ms p99、失败关闭事故分析、闸门穿透子 agent 绕过。</li>
+<li>PRL 是未发表的内部设计，只作附录动机，绝不作基线：评审无法核对，也从未实现。</li>
+</ul>
+
+<h2 id="related-work">必须回应的相关工作</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工作</th><th scope="col">关系</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code hooks <code translate="no">PreToolUse</code>（allow、ask、deny）</th><td>闸门通道看起来像重新实现；gate-only 基线必须对比</td></tr>
+<tr><th scope="row">AgentSpec（arXiv 2503.18666）与运行时强制</th><td>有闸门语义，无 C1、C2</td></tr>
+<tr><th scope="row">Horvitz 1999 及打断代价文献</th><td>预算和反馈的前身；把熔断阈值与期望效用对比</td></tr>
+<tr><th scope="row">ProactiveBench（arXiv 2410.12361）</th><td>带标注的主动评估：使用、扩展或说明为何不适用</td></tr>
+<tr><th scope="row">自动化等级文献</th><td>说明为什么自治等级不在贡献内</td></tr>
+</tbody>
+</table>
+
+<h2 id="experiments">实验</h2>
+<p>作者本人用两周只是个例：规则自己写、霍桑效应、20–50 个事件。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">实验</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">大规模回放</th><td>把数千条公开轨迹（SWE-bench、SWE-agent、OpenHands）映射到 Event schema。would-have-fired 至少两名标注者；报告精确率和 Cohen's kappa</td></tr>
+<tr><th scope="row">召回</th><td>独立标注的 should-have-fired 集；<a href="replay.zh.html#recall">回放看不到漏报</a></td></tr>
+<tr><th scope="row">真人部署</th><td>8–12 名开发者，每人 1–2 周。按预期事件率推算达到统计功效所需会话数</td></tr>
+</tbody>
+</table>
+
+<h2 id="baselines">基线</h2>
+<table class="stack">
+<thead><tr><th scope="col">基线</th><th scope="col">描述</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">prompt-only</th><td>把三条规则意图写进系统提示，零运行时成本</td><td>最关键：接受率相近则运行时层没有存在理由</td></tr>
+<tr><th scope="row">no-proactive</th><td>关闭这一层</td><td>下限</td></tr>
+<tr><th scope="row">gate-only</th><td>只留闸门通道，约等于 Claude Code hooks</td><td>隔离旁观和反馈的贡献</td></tr>
+</tbody>
+</table>
+
+<h2 id="metrics">指标</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">指标</th><th scope="col">衡量</th></tr></thead>
+<tbody>
+<tr><th scope="row">TestGapWatcher（主要）</th><td>被触发的模块真正补上测试的比例及其后续 bug 率</td></tr>
+<tr><th scope="row">UnvalidatedCompletionNudge（主要）</th><td>被接受的建议真正发现回归的比例</td></tr>
+<tr><th scope="row">接受或驳回（辅助）</th><td>混杂建议错误、时机、已知、习惯性关闭</td></tr>
+<tr><th scope="row">熔断敏感性</th><td>N∈{2,3,5} 的静音与漏介入曲线。说明为何用计数器而非期望效用：没有校准好的冷启动数据</td></tr>
+</tbody>
+</table>
+
+<h2 id="supporting">配套评估</h2>
+<ul>
+<li>L1、L2 推断单独评估：路径前缀 → <code translate="no">touched_modules</code>（monorepo 易错）、<code translate="no">claimed_completion</code> 等各标注 100–200 例，分别报告准确率。</li>
+<li>规则精确率差时，区分状态错误和决策错误。</li>
+<li>消融：去掉熔断；全同步或全异步；只留 L1。测量精确率损失和增加的延迟。旁观放进同步路径增加的轮次延迟支持双通道。</li>
+<li>L2 成本：每轮最多两次推断的金额和延迟，与 prompt-only 对比。</li>
+</ul>
+
+<h2 id="dataset">数据集发布</h2>
+<p>回放和标注作为数据集：机会分类、两名标注者、触发与不触发案例、should-have-fired 集。发布前应用脱敏 schema（<a href="threat-model.zh.html">威胁模型</a> §5：事件含密钥和私有代码）。发布 augmented 模式的 L2 缓存和模型指纹，复现的是标注集，不是推断过程。</p>

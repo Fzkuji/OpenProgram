@@ -6,40 +6,47 @@ import sys
 
 import pytest
 
-from openprogram.agent.session_db import SessionDB
+from openprogram.runtime.context.session_db import SessionDB
 
 
 def test_ownership_is_shared_across_processes_and_released(tmp_path):
-    from openprogram.programs.workflow.goal.ownership import goal_owner
+    from openprogram.programs.tools.planning.goal.ownership import goal_owner
 
     db = SessionDB(tmp_path / "sessions")
     script = (
-        "import sys; from openprogram.agent.session_db import SessionDB; "
-        "from openprogram.programs.workflow.goal.ownership import goal_owner\n"
+        "import sys; from openprogram.runtime.context.session_db import SessionDB; "
+        "from openprogram.programs.tools.planning.goal.ownership import goal_owner\n"
         "with goal_owner(SessionDB(sys.argv[1]), 's') as owned: print(owned)\n"
     )
+
     def probe():
         return subprocess.run(
             [sys.executable, "-c", script, str(db.root_path)],
-            text=True, capture_output=True, timeout=10, check=True,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=True,
         ).stdout.strip()
+
     with goal_owner(db, "s"):
         assert probe() == "False"
-    assert probe() == "True"
+    # A store that opens clears idle lock files off-thread and holds each one
+    # for an instant while it does, so the released lock is asked for again.
+    assert "True" in {probe() for _ in range(5)}
 
 
 def test_live_goal_owner_survives_sibling_startup(tmp_path, monkeypatch):
-    import openprogram.programs.workflow.goal as goal_pkg
-    from openprogram.webui._exec_dag import reconcile_interrupted_runs
+    import openprogram.programs.tools.planning.goal as goal_pkg
+    from openprogram.runtime.execution.dag import reconcile_interrupted_runs
 
     db = SessionDB(tmp_path / "sessions")
     db.create_session("s", "main")
     monkeypatch.setattr(goal_pkg, "_db", lambda: db)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     monkeypatch.setattr(goal_pkg, "_emit_goal_update", lambda *_a, **_k: None)
     goal_pkg.save_goal("s", {"text": "task", "status": "running", "version": 0})
     db.update_session("s", status="running")
-    ownership = importlib.import_module("openprogram.programs.workflow.goal.ownership")
+    ownership = importlib.import_module("openprogram.programs.tools.planning.goal.ownership")
     with ownership.goal_owner(db, "s") as acquired:
         assert acquired
         assert reconcile_interrupted_runs() == 0
@@ -53,19 +60,21 @@ def test_live_goal_owner_survives_sibling_startup(tmp_path, monkeypatch):
 
 @pytest.mark.timeout(15)
 def test_abrupt_owner_exit_releases_lock(tmp_path):
-    from openprogram.programs.workflow.goal.ownership import goal_owner
+    from openprogram.programs.tools.planning.goal.ownership import goal_owner
 
     db = SessionDB(tmp_path / "sessions")
     script = (
-        "import sys; from openprogram.agent.session_db import SessionDB; "
-        "from openprogram.programs.workflow.goal.ownership import goal_owner\n"
+        "import sys; from openprogram.runtime.context.session_db import SessionDB; "
+        "from openprogram.programs.tools.planning.goal.ownership import goal_owner\n"
         "with goal_owner(SessionDB(sys.argv[1]), 's') as owned:\n"
         " print(owned, flush=True)\n"
         " sys.stdin.read()\n"
     )
     process = subprocess.Popen(
         [sys.executable, "-c", script, str(db.root_path)],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
     )
     try:
         assert process.stdout.readline().strip() == "True"
@@ -82,15 +91,3 @@ def test_abrupt_owner_exit_releases_lock(tmp_path):
         process.stdin.close()
         process.stdout.close()
 
-
-def test_public_goal_rejects_a_second_owner_before_model_work(tmp_path, monkeypatch):
-    import openprogram.programs.workflow.goal as goal_pkg
-    module = importlib.import_module("openprogram.programs.workflow.goal.goal")
-    ownership = importlib.import_module("openprogram.programs.workflow.goal.ownership")
-    db = SessionDB(tmp_path / "sessions")
-    db.create_session("s", "main")
-    monkeypatch.setattr(goal_pkg, "_db", lambda: db)
-    monkeypatch.setattr("openprogram.agentic_programming.function.current_session_id", lambda: "s")
-    with ownership.goal_owner(db, "s"):
-        with pytest.raises(ValueError, match="already executing"):
-            module.goal("do not start a duplicate")

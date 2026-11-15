@@ -4,14 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSkills, type Skill } from "@/lib/abilities/skills-store";
 import { Switch } from "@/components/ui/switch";
 import { SearchInput } from "@/components/ui/search-input";
-import { ManageRow, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManageEmptyState, ManageIconButton, ManageRow, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown, TextSearch } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
-import { pushPath } from "@/lib/shallow-nav";
+import { pushPath } from "@/lib/nav/shallow-nav";
 import {
   type AnimatedNavIconHandle,
   FileTextIcon,
   FolderCodeIcon,
   FolderOpenIcon,
+  GraduationCapIcon,
+  SearchIcon,
 } from "@/components/animated-icons";
 
 // --- tree node model -----------------------------------------------------
@@ -70,7 +73,6 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
         icon={<FileTextIcon size={16} />}
         name={skill.leaf || skill.name}
         description={skill.description}
-        title={`${skill.description || skill.name}\n— ${skill.source}`}
         onClick={() =>
           pushPath(`/skills/${skill.name.split("/").map(encodeURIComponent).join("/")}`)
         }
@@ -135,14 +137,14 @@ function TreeBranch({
           <FolderOpenIcon
             ref={folderIconRef}
             size={16}
-            className="text-[var(--text-tertiary)] shrink-0"
+            className="text-text-secondary shrink-0"
             aria-hidden
           />
         ) : (
           <FolderCodeIcon
             ref={folderIconRef}
             size={16}
-            className="text-[var(--text-tertiary)] shrink-0"
+            className="text-text-secondary shrink-0"
             aria-hidden
           />
         )}
@@ -277,6 +279,7 @@ export function SkillsList({ externalFilter }: { externalFilter?: string } = {})
 
   return (
     <div>
+      {skills.length > 0 && (
       <div className="mb-3 flex items-center gap-1">
         {externalFilter === undefined && (
         <SearchInput
@@ -287,24 +290,24 @@ export function SkillsList({ externalFilter }: { externalFilter?: string } = {})
         />
         )}
         <button
+          type="button"
           onClick={() => setSearchBody((v) => !v)}
+          aria-pressed={searchBody}
           title={searchBody
             ? text("Searching name + description + body", "正在搜索名称、描述和正文")
             : text("Click to also search SKILL.md body", "点击后同时搜索 SKILL.md 正文")}
           className={
-            "shrink-0 inline-flex items-center h-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] px-2 text-[13px] leading-none " +
+            "shrink-0 inline-flex items-center gap-1.5 h-[var(--ui-button-h)] rounded-md border px-2.5 text-fs-xs leading-none transition-colors " +
             (searchBody
-              ? "bg-bg-hover text-nav-color-hover"
-              : "text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover")
+              ? "border-border bg-bg-input text-text-bright"
+              : "border-transparent text-text-secondary hover:bg-bg-hover hover:text-nav-color-hover")
           }
-        >body</button>
-        <button onClick={expandAll}
-          title={text("Expand all", "全部展开")}
-          className="shrink-0 inline-flex items-center justify-center h-[var(--ui-button-h)] min-w-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] px-2 text-[13px] leading-none text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊕</button>
-        <button onClick={collapseAll}
-          title={text("Collapse all", "全部折叠")}
-          className="shrink-0 inline-flex items-center justify-center h-[var(--ui-button-h)] min-w-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] px-2 text-[13px] leading-none text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊖</button>
+        ><TextSearch size={14} aria-hidden />{text("Search SKILL.md", "搜索 SKILL.md")}</button>
+        <span className="ml-auto" />
+        <ManageIconButton label={text("Expand all", "全部展开")} onClick={expandAll}><ChevronsUpDown /></ManageIconButton>
+        <ManageIconButton label={text("Collapse all", "全部折叠")} onClick={collapseAll}><ChevronsDownUp /></ManageIconButton>
       </div>
+      )}
       <div className="space-y-1">
         {rootChildren.map((c) =>
           c.skill && c.children.size === 0 ? (
@@ -322,12 +325,14 @@ export function SkillsList({ externalFilter }: { externalFilter?: string } = {})
         )}
       </div>
       {optionalSkills.length > 0 && (
-        <div className="mt-6 border-t border-[var(--border)] pt-3">
+        <div className="mt-5 border-t border-border pt-3">
           <button
+            type="button"
+            aria-expanded={showOptional}
             onClick={() => setShowOptional((v) => !v)}
-            className="flex w-full items-center gap-2 text-xs text-[var(--text-secondary)] hover:text-nav-color-hover select-none"
+            className="flex w-full items-center gap-2 text-fs-2xs text-text-secondary hover:text-nav-color-hover select-none"
           >
-            <span className="w-3 text-center">{showOptional ? "▾" : "▸"}</span>
+            <ChevronRight size={14} aria-hidden className={"shrink-0 transition-transform " + (showOptional ? "rotate-90" : "")} />
             <span>{text("Optional", "可选")} ({optionalSkills.length})</span>
           </button>
           {showOptional && (
@@ -350,8 +355,23 @@ export function SkillsList({ externalFilter }: { externalFilter?: string } = {})
           )}
         </div>
       )}
+      {skills.length > 0 && filtered.length === 0 && (
+        <ManageEmptyState
+          compact
+          icon={<SearchIcon size={20} />}
+          title={text("No matching skills", "没有匹配的技能")}
+          description={searchBody
+            ? text("Try a different search.", "换个关键词试试。")
+            : text("Try a different search, or turn on Search SKILL.md.", "换个关键词，或开启“搜索 SKILL.md”。")}
+        />
+      )}
       {skills.length === 0 && (
-        <div className={shared.empty}>{text("No skills found.", "没有找到技能。")}</div>
+        <ManageEmptyState
+          compact
+          icon={<GraduationCapIcon size={20} />}
+          title={text("No skills yet", "还没有技能")}
+          description={text("Skills teach agents reusable procedures. Add one, or install from Discover.", "技能为 Agent 提供可复用的做法。可以添加技能，或在“发现”中安装。")}
+        />
       )}
     </div>
   );

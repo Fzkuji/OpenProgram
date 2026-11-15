@@ -1,9 +1,9 @@
-"""Tests for Tier 5 Reactive compaction (context/reactive.py)."""
+"""Tests for Tier 5 Reactive compaction (context/compaction/reactive.py)."""
 from __future__ import annotations
 
 import pytest
 
-from openprogram.context.reactive import is_overflow_error
+from openprogram.runtime.context.compaction.reactive import is_overflow_error
 
 
 class _FakeExc(Exception):

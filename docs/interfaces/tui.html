@@ -1,0 +1,101 @@
+<title>Terminal TUI</title>
+<meta name="description" content="Start and leave the terminal chat, its keys, slash commands and context compaction.">
+<h1>Terminal TUI</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram tui</code></th><td>Terminal chat. Alias: <code translate="no">openprogram chat</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>Asks first: terminal UI or web UI</td></tr>
+<tr><th scope="row"><code translate="no">openprogram tui --no-alt-screen</code></th><td>Inline; keeps terminal scrollback</td></tr>
+<tr><th scope="row"><code translate="no">openprogram tui --screen-reader</code></th><td>Inline, no mouse tracking</td></tr>
+<tr><th scope="row"><code translate="no">openprogram --resume &lt;id&gt;</code></th><td>Opens a past session; ids from <code translate="no">openprogram sessions list</code></td></tr>
+</tbody>
+</table>
+<p class="note">Exit: <code translate="no">/quit</code>, or <code translate="no">Ctrl-C</code> twice quickly while idle. <a href="../capabilities/permissions.html">Tool permissions and live changes</a>.</p>
+<h2>Keys</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Key</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Enter</code></th><td>Send</td></tr>
+<tr><th scope="row"><code translate="no">Enter</code> while generating</th><td>Queue the message above the input; queued messages are sent one per turn when the turn ends or is stopped</td></tr>
+<tr><th scope="row"><code translate="no">↑</code> on an empty prompt with messages queued</th><td>Select one: <code translate="no">Enter</code> or <code translate="no">e</code> edits it, <code translate="no">x</code> removes it, <code translate="no">Esc</code> goes back</td></tr>
+<tr><th scope="row"><code translate="no">Alt+Enter</code></th><td>Newline</td></tr>
+<tr><th scope="row"><code translate="no">?</code> on an empty prompt</th><td>Keyboard shortcut reference</td></tr>
+<tr><th scope="row"><code translate="no">Esc</code></th><td>Clear the input; while generating, abort the turn</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl-C</code> while generating</th><td>First warns, second stops gracefully, third forces</td></tr>
+<tr><th scope="row"><code translate="no">↑</code> <code translate="no">↓</code></th><td>Input history; moves within an open completion menu</td></tr>
+<tr><th scope="row"><code translate="no">Tab</code></th><td>Accept file or slash-command completion</td></tr>
+<tr><th scope="row"><code translate="no">→</code> at end of line, <code translate="no">Ctrl+E</code></th><td>Accept the autocomplete suggestion</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+A</code> <code translate="no">Ctrl+E</code></th><td>Start or end of input, when no suggestion is being accepted</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+W</code></th><td>Delete the previous word</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+R</code></th><td>Search saved contexts</td></tr>
+<tr><th scope="row"><code translate="no">Shift+Tab</code></th><td>Cycle permission modes: Bypass permissions, Auto, Manual, Plan</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+K</code></th><td>Command palette, all slash commands</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+O</code></th><td>Show tool output whole, or fold it again</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+V</code> (<code translate="no">Alt+V</code> on Windows)</th><td>Attach the image on the clipboard. Pasting or dragging the path of an image or PDF, or sending <code translate="no">@path</code> to one, attaches the file; delete its <code translate="no">[Image #1]</code> placeholder to drop it</td></tr>
+<tr><th scope="row"><code translate="no">PageUp</code> <code translate="no">PageDown</code>, <code translate="no">Ctrl+U</code> <code translate="no">Ctrl+D</code></th><td>Scroll by page, half page</td></tr>
+<tr><th scope="row"><code translate="no">Home</code> <code translate="no">End</code></th><td>Top, bottom</td></tr>
+</tbody>
+</table>
+<p class="note">Change keys in <code translate="no">~/.openprogram/keybindings.json</code>, for example <code translate="no">{"app.toolsExpand": "ctrl+t", "app.commandPalette": "none"}</code>; action names and the keys in force are listed under <code translate="no">?</code>. A mistake in the file is reported in the transcript at start and the rest still applies.</p>
+<h2>Slash commands</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/help</code> <code translate="no">/keybindings</code></th><td>Command list, shortcut reference</td></tr>
+<tr><th scope="row"><code translate="no">/model</code> <code translate="no">/fetch-models</code></th><td>Switch model, re-fetch the model list</td></tr>
+<tr><th scope="row"><code translate="no">/effort</code></th><td><a href="../models/thinking-effort.html">Thinking effort</a></td></tr>
+<tr><th scope="row"><code translate="no">/style</code></th><td>Output style</td></tr>
+<tr><th scope="row"><code translate="no">/new</code> <code translate="no">/resume</code> <code translate="no">/sessions</code> <code translate="no">/session</code></th><td>New, resume, list, current session</td></tr>
+<tr><th scope="row"><code translate="no">/compact</code> <code translate="no">/context</code> <code translate="no">/clear</code></th><td>Compact context, view context, clear screen</td></tr>
+<tr><th scope="row"><code translate="no">/permissions</code> <code translate="no">/sandbox</code></th><td>Permission profiles, sandbox</td></tr>
+<tr><th scope="row"><code translate="no">/login &lt;provider&gt;</code> <code translate="no">/logout</code></th><td><a href="../models/auth.html">Provider login and logout</a></td></tr>
+<tr><th scope="row"><code translate="no">/agents</code> <code translate="no">/agent</code></th><td>Manage, switch agents</td></tr>
+<tr><th scope="row"><code translate="no">/jobs</code></th><td>Background job state</td></tr>
+<tr><th scope="row"><code translate="no">/steer</code></th><td>Give the current execution an instruction at its next safe point</td></tr>
+<tr><th scope="row"><code translate="no">/fork</code> <code translate="no">/retry</code></th><td>Branch or retry an execution from a checkpoint</td></tr>
+<tr><th scope="row"><code translate="no">/mcp</code> <code translate="no">/memory</code></th><td>Same data as the Web UI pages</td></tr>
+<tr><th scope="row"><code translate="no">/cost</code></th><td>Token usage for this session</td></tr>
+<tr><th scope="row"><code translate="no">/export</code> <code translate="no">/copy</code></th><td>Export the session, copy a reply</td></tr>
+<tr><th scope="row"><code translate="no">/config</code> <code translate="no">/theme</code> <code translate="no">/bell</code></th><td>Settings, theme, notification sound</td></tr>
+<tr><th scope="row"><code translate="no">/doctor</code></th><td>Health check</td></tr>
+<tr><th scope="row"><code translate="no">/channel</code> <code translate="no">/attach</code> <code translate="no">/detach</code> <code translate="no">/connections</code></th><td>Chat-channel hookup and session routing</td></tr>
+<tr><th scope="row"><code translate="no">/search</code> <code translate="no">/review</code> <code translate="no">/diff</code> <code translate="no">/init</code> <code translate="no">/welcome</code></th><td>Also available</td></tr>
+<tr><th scope="row"><code translate="no">/quit</code></th><td>Exit</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">/help</code> is the authoritative list. Completion also lists the shared command registry, as in the Web composer: skills, MCP prompts, plugin commands and Markdown files (optional YAML frontmatter) in <code translate="no">~/.openprogram/commands/</code> or <code translate="no">&lt;project&gt;/.openprogram/commands/</code>. Running one sends its expanded body as the message.</p>
+<details>
+<summary>Clipboard for <code translate="no">/copy</code></summary>
+<table class="stack">
+<thead><tr><th scope="col">Session</th><th scope="col">Uses</th></tr></thead>
+<tbody>
+<tr><th scope="row">Wayland</th><td><code translate="no">wl-copy</code></td></tr>
+<tr><th scope="row">X11</th><td><code translate="no">xclip</code> or <code translate="no">xsel</code></td></tr>
+<tr><th scope="row">WSL</th><td><code translate="no">clip.exe</code></td></tr>
+<tr><th scope="row">SSH</th><td>OSC 52, with tmux passthrough and its paste buffer when available</td></tr>
+</tbody>
+</table>
+<p class="note">Native helpers have a bounded timeout, so a stale display cannot freeze the TUI.</p>
+</details>
+<details>
+<summary>Which interface you get</summary>
+<ul>
+<li>Releases include a self-contained Node.js Ink interface on Windows, macOS and Linux. No separate Node.js install.</li>
+<li>The check is real raw-input capability, not an OS list. Windows Terminal, PowerShell under ConPTY and modern integrated terminals get full screen. Without raw input: the Python Rich interface, with a message. Git Bash in MinTTY may land here; PowerShell in Windows Terminal, the recommended Windows setup, does not.</li>
+<li>Full screen needs stdin and stdout to be terminals. Redirected or piped runs skip Ink before any ANSI frame and use line output; for automation use <code translate="no">openprogram --print</code>.</li>
+<li>Both implementations connect to the local worker over WebSocket and share sessions with the Web UI.</li>
+<li>The alternate screen restores the shell's contents on exit. Cursor and deletion work on whole Unicode grapheme clusters.</li>
+<li>With <code translate="no">--profile &lt;name&gt;</code>, startup diagnostics go to <code translate="no">~/.openprogram-&lt;name&gt;/logs/ink-startup.log</code>.</li>
+</ul>
+</details>
+<details>
+<summary>Compaction</summary>
+<ul>
+<li><code translate="no">/compact</code> summarizes older complete turns with their visible tool results and keeps recent turns. It changes the next model context; original messages stay in the session. Token counts before and after are local estimates. A short history, failed summary or summary that saves nothing leaves the context unchanged.</li>
+<li>Tool continuations can compact completed text results within one user message, with no command. Execution records are retained.</li>
+<li>If that is not enough, older complete text-only execution history can be replaced in the next request by a task summary. All user messages and the latest assistant segment stay verbatim. Not eligible: incomplete tool groups, multimodal input, signed reasoning. Reused only within the current invocation, same model and unchanged prefix; the DAG stays the durable record.</li>
+<li>Summary requests handle long text in bounded chunks, retry overflow with smaller chunks, and share a finite call and time budget. Failure leaves the history intact. If protected content alone exceeds the window, the request fails explicitly.</li>
+</ul>
+</details>
+<p class="note">Channel messages whose user or assistant text is not a string are ignored for that field; existing background-session text is kept.</p>

@@ -1,0 +1,22 @@
+<title>Channels</title>
+<meta name="description" content="How messages travel between chat platforms and agents, and where each channel design lives.">
+<h1>Channels</h1>
+<p>A message to the bot on Telegram, Discord, Slack or personal WeChat starts a turn for the bound agent; the reply returns to the same chat. Channels run inside the background worker. No public webhook: every adapter connects outward (Telegram long-poll, Discord Gateway, Slack Socket Mode, WeChat iLink long-poll).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Parse</th><td>An adapter in <code translate="no">openprogram/interfaces/channels/implementations/</code> parses the native event into one <code translate="no">ChannelMessage</code>: text, attachment metadata, quoted text.</td></tr>
+<tr><th scope="row">Gate</th><td><code translate="no">base.Channel.handle_inbound</code> runs the pairing gate (unknown senders get a one-hour code only the owner can approve, from the CLI or loopback Web UI), attachment download and the quoted block.</td></tr>
+<tr><th scope="row">Dispatch</th><td><code translate="no">dispatch_inbound</code> picks the agent from bindings, computes the session key, runs the turn under a per-session lock, and broadcasts it to the Web UI and TUI.</td></tr>
+<tr><th scope="row">Send</th><td>One transport module owns chunking, per-platform formatting (Telegram HTML, Slack mrkdwn, plain text for WeChat), rate-limit retry and file upload. Where edits are allowed, progress streams into one placeholder.</td></tr>
+</tbody>
+</table>
+<p class="note">Scripts, jobs and agent methods can send one-shot with <code translate="no">outbound.send(...)</code> without a worker. Accounts, pairing and routing: <code translate="no">openprogram channels setup</code>, <code translate="no">accounts</code>, <code translate="no">access</code>, <code translate="no">bindings</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Document</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="design.html">Design</a></th><td>Structure and message flow: two send paths, <code translate="no">dispatch_inbound</code>, transport, platforms, user entry points</td></tr>
+<tr><th scope="row"><a href="audit.html">Requirements and invariants</a></th><td>What the layer holds to, compared with OpenClaw and Hermes</td></tr>
+<tr><th scope="row"><a href="chat-bots.html">Chat-bot behaviour</a></th><td>When an agent answers in a room, how it shows progress, what groups ask of it</td></tr>
+</tbody>
+</table>

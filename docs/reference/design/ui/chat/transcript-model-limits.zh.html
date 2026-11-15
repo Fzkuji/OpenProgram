@@ -1,0 +1,113 @@
+<title>会话记录的限制与约束</title>
+<meta name="description" content="旧的存储形状如何继续工作、约束会话记录模型的测试、仍然受限的部分，以及未采用的提议。">
+<h1 id="title">会话记录的限制与约束</h1>
+<p class="note">属于<a href="transcript-model.zh.html">会话记录模型</a>工程记录。目前已完成的内容：<a href="transcript-model.zh.html#status">实现状态</a>。</p>
+<h2 id="old-data">旧数据</h2>
+<p>已存内容不改写、不重放、不迁移。每种形状都是 <code translate="no">legacy.py</code> 中带测试夹具的具名情况。</p>
+<ul>
+<li>仅由 predecessor 或由两条边连接的 attach 行；锚定在 user 行上（<code translate="no">sub_agent_step</code>）；手动或跨会话（<code translate="no">external_reference</code>，仍是 AttachCard）。</li>
+<li>没有块（从 <code translate="no">tool_calls</code> 回填）、没有状态、错误存在 content 中、没有 id（由时间戳和角色生成的稳定 key 代替 <code translate="no">hist_&lt;i&gt;</code>）、<code translate="no">extra</code> 为对象或 JSON 字符串、<code translate="no">readSpeaker</code>、<code translate="no">readNotice</code>、粘贴元素、章节固定、<code translate="no">gui_agent</code> 名称的行。</li>
+<li>没有 <code translate="no">tool_call_id</code> 的 attach 行：把 <code translate="no">attach.prompt</code> 与 agent 或 task 工具输入匹配，然后按该回复中 agent 和 task 块的顺序。<code translate="no">send_message</code> 只有在有证据时才消耗卡片。仍未匹配的：<code translate="no">blockId</code> 为 null，画成未配对卡片。</li>
+<li>没有 <code translate="no">tool_call_id</code> 的代码节点：同样的规则，经 caller 边。</li>
+<li>没有 <code translate="no">origin</code> 的行上的回执：沿用现有的头部模式，且被点名的发送方会话必须存在于存储中，所以旧的已送达消息保持原样，而一行没有点名真实会话的手打文字仍是 user 行。</li>
+<li>旧插话行、重启提示和兜底块照现在的方式折叠；已在块中的插话不会重复。</li>
+<li>带 <code translate="no">covers_ids</code> 的摘要仍是压缩行，不再算作版本。</li>
+<li>通过 provider id 到达的旧工具行由 <code translate="no">tool_output.py</code> 的第二次匹配提供。</li>
+<li>被聚合折叠掉的 head（<code translate="no">_resolve_head</code>）和断裂的 predecessor 链（predecessor 遍历兜底，记录日志）。</li>
+<li>越过 attach 行或其他旁路行继续下去的分支，由曾经停在这种行上的版本箭头留下：走向某版本末端的遍历会穿过它。</li>
+<li>没有作业 id 的运行中 attach 行。</li>
+</ul>
+<p>轮次分组在读取时计算，所以无需写入即可用于每个旧对话。保存的锚点保持有效，因为行 id 不变，且任何行 id 都能解析。新元数据（attach 上的 <code translate="no">tool_call_id</code>、<code translate="no">origin</code>、<code translate="no">client_request_id</code>）会被旧读取方忽略。</p>
+<h2 id="enforcement">约束手段</h2>
+<p><strong>类型。</strong> <code translate="no">schema.py</code> 生成 <code translate="no">wire-types.generated.ts</code>，两者不一致时新鲜度测试失败。<code translate="no">TranscriptChange</code> 是带穷尽 <code translate="no">never</code> 检查的封闭联合。<code translate="no">Row.rowKind</code> 是联合类型，所以分发没有默认分支。存储写入函数不在公开的 store 类型上。</p>
+<p><strong>契约测试。</strong> <code translate="no">tests/unit/webui/test_transcript_contracts.py</code> 和 <code translate="no">apps/web/tests/chat/transcript/transcript-contract.test.mjs</code>。没有任何扫描带允许列表。扫描只读源码，从不读构建产物（<code translate="no">openprogram/interfaces/server/_frontend/</code>、<code translate="no">docs/_site/</code>）。</p>
+<ul>
+<li>只有 <code translate="no">apply-transcript-update.ts</code> 写行。</li>
+<li>客户端代码不构建 <code translate="no">_reply</code>，也不从一个 id 推导另一个 id。</li>
+<li><code translate="no">openprogram</code> 或 <code translate="no">apps</code> 中没有 <code translate="no">session_reload</code> 字符串。</li>
+<li><code translate="no">apps/web</code> 中没有代码读取 <code translate="no">display</code>、<code translate="no">function</code> 或 <code translate="no">content</code> 来决定行的类型。</li>
+<li>会话记录包之外没有文件折叠 attach、插话或重启行。一个具名例外：<code translate="no">restart-continuation.ts</code> 中的 <code translate="no">joinedReply</code>，它拼接的正是 <code translate="no">row.continues</code> 指明的行，且都属于自己的轮次。</li>
+<li><code translate="no">components/chat/messages</code> 中没有基于移位的配对。</li>
+<li><code translate="no">status.py</code> 和 <code translate="no">row-status.ts</code> 之外没有会话记录行状态字面量列表。扫描覆盖 <code translate="no">interfaces/server/transcript/</code>、<code translate="no">ws_actions/session/</code>、<code translate="no">apps/web/components/chat/</code>、<code translate="no">apps/web/lib/chat/</code>、<code translate="no">apps/web/lib/session-store/</code> 和 <code translate="no">apps/web/lib/runtime-bridge/session/</code>。执行生命周期列表是另一套词表，不在范围内：<code translate="no">use-ws.ts</code>、<code translate="no">event_effects.py</code>、<code translate="no">execution/dag.py</code>。</li>
+<li><code translate="no">legacy.py</code> 是唯一读取旧记录形状的模块。两个具名例外：<code translate="no">tool_output.py</code> 的第二次匹配，按 provider id 提供旧工具行（<a href="#old-data">旧数据</a>）；<code translate="no">stripLegacySpeakerLabel</code>，从显示文本中去掉旧频道标签，不决定行类型（<a href="#limits">仍然存在的限制</a>）。</li>
+<li><code translate="no">runtime</code> 或 <code translate="no">state</code> 中没有来自 <code translate="no">interfaces/server</code> 的导入。<code translate="no">tests/contracts/repository/test_runtime_layering.py</code> 不扫描这个方向，所以由会话记录契约扫描。</li>
+<li>观察者不做投影或 I/O。</li>
+</ul>
+<p><strong>行为测试。</strong></p>
+<ul>
+<li>页边界扫描：每种切分都等于不分页的读取。</li>
+<li>实时等于冷读，经生产 reducer 和组件，覆盖流式、部分历史、页边界、完成、迟到的树更新、错误、取消、重新加载、重连和全新对话。</li>
+<li>帧来自真实的服务端发送路径，绝不手写，也绝不注入 id。</li>
+<li>重复交付不改变任何内容。</li>
+<li>交错属性测试：写入、外部写入、读取、页读取、视图淘汰、丢帧和重连的任何顺序，最终都等于一次全新读取。</li>
+<li>真实发布器上交错的文本、工具、文本和插话保持已存块顺序。</li>
+<li>未知行和未知条目不创建任何内容。</li>
+<li>后台更新下读取器的窗口不变。</li>
+<li>终态状态表。</li>
+<li>标志清除后没有写入的 Stop 仍能落定该行。</li>
+<li>展开时发给运行中代理的第二条消息能到达该视图。</li>
+<li>四个缓存对话：第五个在服务端关闭一个视图。</li>
+<li>300,000 节点真实服务端基准：首次打开、页读取、被淘汰的会话、外部写入重建、每视图内存。</li>
+</ul>
+<p><strong>流程。</strong> 每一步在自己的 worktree 中构建，rebase 后合入一次。提交只带自己的路径。只跑受影响的测试和这些契约测试。每次读取或实时切换都曾用比较工具在 dev 实例的真实形状上核对，不匹配项在切换落地前清除。</p>
+<h2 id="limits">仍然存在的限制</h2>
+<h3>收窄但未关闭</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">方面</th><th scope="col">仍然存在的部分</th></tr></thead>
+<tbody>
+<tr><th scope="row">跟随和滚动</th><td><code translate="no">use-chat-area-stick.ts</code> 不重写。喂给它的重新加载和窗口重置没有了，但它自身的复杂度（662 行，22 个定位调用）还在，所以滚动类缺陷只是收窄。</td></tr>
+<tr><th scope="row">推断显示</th><td><code translate="no">isGuiToolCall</code>（<code translate="no">gui-tool-view.ts</code>）仍按参数区分两个都叫 <code translate="no">computer_use</code> 的工具，因为没有写入方记录这个差别。<code translate="no">stripLegacySpeakerLabel</code> 仍从旧行中去掉频道发言者标签。</td></tr>
+<tr><th scope="row">错误的对话</th><td>会话记录帧按视图限定，但 <code translate="no">responseSessionId</code> 回退到活动对话的逻辑为剩余的运行级帧保留。</td></tr>
+<tr><th scope="row">运行槽</th><td>24 个 <code translate="no">setRunningTaskFor</code> 点保留。它们不再写行，但运行槽保持自己的生命周期。</td></tr>
+<tr><th scope="row">旧行启发式</th><td>F18：没有 prompt 匹配的旧 attach 行在服务端按回复内的顺序配对。F36：在旧行上，点名真实存在会话的文字仍被读作回执。</td></tr>
+<tr><th scope="row">工具结果长度（F19、F20）</th><td>实时、最终和重新加载显示同一个值和同一个截断标志。工具结果在存储前被截到 4000 字符（<code translate="no">event_parsing.shorten</code>），存更多会改变喂给模型上下文的内容，所以截断之后的文本不存在，无从加载。</td></tr>
+<tr><th scope="row">本地提示（F25）</th><td><code translate="no">local_command</code> 和无操作提示保持为临时的客户端行，页面重新加载后消失，因为没有写入记录。</td></tr>
+<tr><th scope="row">分屏（F29）</th><td>行、折叠、机器人视图、待办计划、目标记录和回退标记是共享的。消息导轨和查找仍只在主视图，因为控件不移动也不新增。</td></tr>
+<tr><th scope="row">回复字段（F32）</th><td>时间戳、用量、同级导航和发言者随行到达。provider 重试提示在重连约定下保持只在实时。</td></tr>
+</tbody>
+</table>
+<h3>接受的行为</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">接受的结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">占位写入失败</th><td>不显示实时文本；轮次结束时终态行出现。</td></tr>
+<tr><th scope="row">最后的文本帧丢失</th><td>由终态行修复，不运行读取。</td></tr>
+<tr><th scope="row">两个同类型块之间的空 provider 块</th><td>段编号可能在最终写入时移动；只有一个打开的步骤关闭。</td></tr>
+<tr><th scope="row">安静路径上断电</th><td>进行中回复的末尾可能丢失。</td></tr>
+<tr><th scope="row">cron 子进程的写入</th><td>在下一次读取该会话时出现。</td></tr>
+<tr><th scope="row">对话正在一个 socket 上被读取</th><td>它的文本在该 socket 上保持，直到读取结束。</td></tr>
+<tr><th scope="row">页在视图锁下投影</th><td>该会话的非文本更新等待。</td></tr>
+<tr><th scope="row">折叠的子代理行</th><td>显示运行状态，没有文本预览。</td></tr>
+</tbody>
+</table>
+<h3>已测量但未消除的风险</h3>
+<ul>
+<li>长时间的自主轮次不可分割，可能有许多兆字节。工具正文保持 32 KiB 内联上限。步骤 0 和 5 测量它，步骤 5 在切换前证明没有退化。</li>
+<li>300,000 节点时归属表的内存是每视图几十 MB，靠共享字符串和 LRU。在步骤 0 测量。</li>
+<li>黄金夹具覆盖具名的旧形状，比较工具当时只覆盖 dev profile，所以只存在于 stable 数据中的形状可能之后才暴露。未知形状画成普通行。</li>
+<li>偏移在 Python 和 JS 之间用 UTF-16 单位。计算错误会变成一次修复读取，而不是损坏；代理对夹具覆盖这一点。</li>
+<li>在其他会话持续提交的情况下，在最高流量的聊天文件中工作约六到七周。</li>
+</ul>
+<h2 id="alternatives">未采用的方案</h2>
+<details>
+<summary>为本设计考察过的提议，以及每项未被采纳的原因</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">提议</th><th scope="col">未被采纳的原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">为同步作业启用进度预览</th><td><code translate="no">_poll_progress</code> 原先在仓库中没有调用方，所以没有作业有预览；同步卡片获得作业 id 和实时视图，无用的轮询器已删除。</td></tr>
+<tr><th scope="row">对同步作业避开 <code translate="no">_update_attach_card</code> 的 <code translate="no">notices.queue</code> 路径</th><td><code translate="no">job.wait</code> 为 true 时 <code translate="no">notices.queue</code> 已返回 False，同步作业的 <code translate="no">wait=True</code>。</td></tr>
+<tr><th scope="row"><code translate="no">job_progress</code> 是步骤 7 交付的原因</th><td>它唯一的发送者原先在未被调用的轮询器内；实际的作业原因是 <code translate="no">job_attach</code>。</td></tr>
+<tr><th scope="row">在文本帧上放 <code translate="no">turn_id</code></th><td>运行时 tap 无法知道起始行（重启和插话行加入别的行的轮次），所以文本未命中时丢弃且不读取，由带编号的流找到缺失的行。</td></tr>
+<tr><th scope="row">暂存该会话的每一帧</th><td>运行级帧（<code translate="no">running_task</code>、<code translate="no">execution.updated</code>）按 <code translate="no">run_seq</code> 排序，现在就跟在读取之后，所以只暂存写行帧。旧 reducer 运行期间终态 <code translate="no">chat_response</code> 会写行，只在这段时间暂存。</td></tr>
+<tr><th scope="row">让 <code translate="no">client_request_id</code> 穿过 <code translate="no">TurnRequest</code></th><td>Web 聊天动作自己写 user 节点（<code translate="no">_build_user_msg</code>，带 <code translate="no">user_already_persisted=True</code>），所以运行时在 <code translate="no">prep.py:130</code> 的 user 写入对它不运行，这个 id 不需要进入运行时。</td></tr>
+<tr><th scope="row">把聊天动作的加入和 <code translate="no">first_read</code> 移到步骤 7</th><td><code translate="no">first_read</code> 按 <code translate="no">clientRequestId</code> 替换待发送的行，而本地行从步骤 8 起才带它，所以步骤 7 为无视图的 socket 保留 attach 重新加载。</td></tr>
+<tr><th scope="row">把 <code translate="no">settleDeliveredSteer</code> 留在 <code translate="no">handleUserMessage</code> 中</th><td>落定由插话行的 <code translate="no">clientRequestId</code> 触发，这也覆盖没有帧的读取。</td></tr>
+<tr><th scope="row">Stop 时从令牌退役处唤醒发布器</th><td>终态行绝不被扣留，所以没有东西在等标志清除。</td></tr>
+<tr><th scope="row">HTTP 路由取整条分支</th><td><code translate="no">CommandReply</code> 拒绝超过 4 MiB，所以该路由保持有界，而 CLI、<code translate="no">worker_turn</code> 和 <code translate="no">rehearsal</code> 取整条分支。</td></tr>
+<tr><th scope="row">checkout 使用 <code translate="no">is_checkout_target</code></th><td><code translate="no">/api/chat/checkout</code> 已经应用它（<code translate="no">chat_branches.py:595</code>）；attach 行符合该规则，所以 F23 靠箭头不再指向它们来关闭。</td></tr>
+<tr><th scope="row"><code translate="no">linear_history</code> 兜底让 F42 仍未关闭</th><td>断裂的旧链仍必须显示，而这个遍历喂给同一投影，形状不会不同；<code translate="no">session_persistence.py:108</code> 和 <code translate="no">routes/chat.py:81</code> 只填服务端镜像，版本 3 的会话记录从不读取它。</td></tr>
+<tr><th scope="row">基于一个客户端会话记录折叠构建</th><td>它保留客户端合并决策，正是本设计要消除的缺陷类别；它提供的交付顺序由服务端优先的步骤满足。</td></tr>
+</tbody>
+</table>
+</details>
+<p class="next"><a href="chat-transcript-follow.zh.html">会话记录跟随</a></p>

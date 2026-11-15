@@ -1,0 +1,44 @@
+<title>Proactive layer</title>
+<meta name="description" content="The event foundation and the proactive rules built on it, with a reading order for the design documents.">
+<h1>Proactive layer</h1>
+
+<p>While the agent works the framework watches and steps in: blocks dangerous commands, reminds about missing tests, notices a stuck model. Everything that happens becomes an event; rules subscribe to events and decide.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">What</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Event foundation</th><td>One unified stream anyone can subscribe to. Proactive is its first consumer</td><td>Running: bus on, both source classes emit, <code translate="no">tool.before</code> has the synchronous query point, Web UI is an ordinary subscriber</td></tr>
+<tr><th scope="row">Proactive rules</th><td>Policies subscribe and step in. Decoupled from the foundation</td><td>Code in <code translate="no">openprogram/runtime/proactive/</code>, not installed at worker start</td></tr>
+</tbody>
+</table>
+
+<h2 id="event-foundation">Event foundation</h2>
+<ol>
+<li><a href="event-reference.html">Event reference</a>: every event type with payload, timing and source; the API and its three usages (observe, intercept, ask). Check it first when looking up an event.</li>
+<li><a href="event-layer.html">Event layer</a>: the Event model, the two source classes, where the bus sits. <a href="event-layer.html">Diagram</a>.</li>
+<li><a href="framework-evolution.html">Framework evolution</a>: why routing through the Web UI leaves gaps, what the bus gives each role, what stays untouched. <a href="framework-evolution.html">Diagram</a>.</li>
+</ol>
+
+<h2 id="proactive-rules">Proactive rules</h2>
+<ol>
+<li><a href="overview.html">Overview</a>: one <code translate="no">rm -rf</code> blocked end to end, with rules, interventions and state explained in place.</li>
+<li><a href="events-and-state.html">Events and state</a>: state folded from events, which lets rules remember.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Page</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="execution-model.html">Execution model</a></th><td>Writing a Policy; blocking and observing kinds</td></tr>
+<tr><th scope="row"><a href="policies-mvp.html">MVP policies</a></th><td>Three rules to copy</td></tr>
+<tr><th scope="row"><a href="invariants.html">Invariants</a></th><td>What the framework must hold, chiefly no self-triggered loops</td></tr>
+</tbody>
+</table>
+
+<h2 id="questions">Short answers</h2>
+<dl class="pairs">
+<dt>New framework or patch?</dt><dd>A standalone layer reusing the event bus, tool approval and background tasks.</dd>
+<dt>Rules are written in?</dt><dd>Plain Python classes. No config file or DSL.</dd>
+<dt>How heavy?</dt><dd>Events, state, rules, stepping in. Tamper resistance, offline replay verification and adversarial safety are in <code translate="no">_research_archive/</code>.</dd>
+<dt>Where is the log?</dt><dd>Always on. <code translate="no">~/.openprogram/projects/&lt;project-id&gt;/chats/&lt;sid&gt;/events.jsonl</code>, or <code translate="no">~/.openprogram/logs/events.jsonl</code> outside a session.</dd>
+</dl>
+
+<p class="next"><a href="event-reference.html">Event reference</a></p>

@@ -1,0 +1,27 @@
+<title>Instructions with AGENTS.md</title>
+<meta name="description" content="Where AGENTS.md files go, how they combine and which apply.">
+<h1>Instructions with AGENTS.md</h1>
+<p>Every Agent reads them. For one Agent only, use <strong>System prompt</strong> on its <strong>Advanced</strong> tab (<a href="agents.html">Configure an Agent</a>).</p>
+<table class="stack">
+<thead><tr><th scope="col">File</th><th scope="col">Applies to</th><th scope="col">Read</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">~/.openprogram/AGENTS.md</code></th><td>Every project</td><td>First, each turn</td></tr>
+<tr><th scope="row"><code translate="no">AGENTS.md</code> at a project root (the folder holding <code translate="no">.git</code>)</th><td>That project</td><td>Next, each turn</td></tr>
+<tr><th scope="row"><code translate="no">AGENTS.md</code> in a folder from the root down to the working directory</th><td>That folder and below</td><td>In order, each turn</td></tr>
+<tr><th scope="row"><code translate="no">AGENTS.md</code> deeper than the working directory, or in another project</th><td>That folder and below</td><td>First read, write or edit there; attached to that tool result once per conversation</td></tr>
+</tbody>
+</table>
+<p class="note">Later files are closer to the work and win a conflict. Folders above the root are never read. Without <code translate="no">.git</code>, only the working directory's file. The working directory is the conversation's project folder or worktree, else <code translate="no">OPENPROGRAM_WORKDIR</code> or <code translate="no">default_workdir</code> in <code translate="no">~/.openprogram/config.json</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Limit</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">32 KB per turn, global and project files together</th><td>Over it, the deepest files are cut and the cut is marked in the prompt</td></tr>
+<tr><th scope="row">Text that looks like prompt injection</th><td>Still included, with a warning in front</td></tr>
+</tbody>
+</table>
+<h2>See which files apply</h2>
+<p><strong>Agents → Advanced → AGENTS.md</strong> lists the working directory, the global path (even before it exists) and every project file the next turn reads. <strong>Copy path</strong> to open one in your editor.</p>
+<details>
+<summary>Earlier per-Agent workspace files</summary>
+<p><code translate="no">AGENTS.md</code>, <code translate="no">SOUL.md</code>, <code translate="no">USER.md</code> and <code translate="no">TOOLS.md</code> under <code translate="no">~/.openprogram/agents/&lt;id&gt;/workspace/</code> are no longer read. At worker start an unedited template is deleted; an edited file is appended to the Agent's system prompt under <code translate="no">## From workspace &lt;file&gt;</code> and moved to <code translate="no">workspace/.retired/</code>.</p>
+</details>

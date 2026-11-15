@@ -1,0 +1,82 @@
+<title>Slash commands and context compaction</title>
+<meta name="description" content="How the composer dispatches slash commands and how /compact and automatic compaction work.">
+<h1>Slash commands and context compaction</h1>
+
+<h2>Slash commands</h2>
+<p>When input starts with <code translate="no">/</code> and has no space, the menu expands upward; a space closes it over 380ms. Enter runs a registered first word, otherwise sends chat. A menu that is closing does not intercept Enter. Skills, plugins and user commands come from <code translate="no">/api/commands</code>; built-ins win dispatch.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Command</th><th scope="col">Selection or Enter</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/compact [keep_recent_tokens]</code></th><td>Compacts at once</td></tr>
+<tr><th scope="row"><code translate="no">/rewind</code></th><td>Web: opens a picker of earlier messages and takes no arguments. The default TUI has no such command. Rich fallback only: lists points; <code translate="no">/rewind N</code> previews one; <code translate="no">/rewind N confirm &lt;plan_hash&gt; &lt;idempotency_key&gt;</code>, as printed by the preview, rewinds</td></tr>
+<tr><th scope="row"><code translate="no">/branch [name]</code></th><td>Runs at once</td></tr>
+<tr><th scope="row"><code translate="no">/context</code></th><td>Opens the ring panel</td></tr>
+<tr><th scope="row"><code translate="no">/clear</code>, <code translate="no">/new</code></th><td>New conversation</td></tr>
+<tr><th scope="row"><code translate="no">/task</code>, <code translate="no">/skill</code>, <code translate="no">/merge</code></th><td>Fill the prefix and wait for required arguments</td></tr>
+<tr><th scope="row"><code translate="no">/help</code></th><td>Sets input to <code translate="no">/</code>, showing the menu again; no separate page</td></tr>
+<tr><th scope="row"><code translate="no">/sandbox</code></th><td>Toggles the system sandbox</td></tr>
+<tr><th scope="row"><code translate="no">/memory</code></th><td>Opens the memory page</td></tr>
+<tr><th scope="row"><code translate="no">/doctor</code></th><td>Runs health checks and shows the report locally, never to the model</td></tr>
+</tbody>
+</table>
+<p class="note">Optional arguments (only <code translate="no">[…]</code>) run at once. Without a session, session commands keep the input and warn "Start a conversation first".</p>
+<p>A command the server runs (<code translate="no">type: "local"</code> in <code translate="no">/api/commands</code>: <code translate="no">/goal</code>, <code translate="no">/rename</code> …) leaves as the composer's own message, through <code translate="no">sendChatMessage</code>:</p>
+<ul>
+<li>From a New chat draft it carries the draft's <code translate="no">local_*</code> id, permission mode, Agent, project and folders: it runs in the draft, and the tab becomes that conversation.</li>
+<li>It draws no bubble of its own. One that goes on as a turn (<code translate="no">/goal &lt;objective&gt;</code>) gets its message from <code translate="no">chat_ack</code>, before the reply starts; one that only answers (<code translate="no">/goal status</code>, <code translate="no">/goal pause</code>) leaves just its reply line.</li>
+<li>During a run or a waiting request it goes at once beside the turn, with no bubble.</li>
+</ul>
+<details>
+<summary>Known small issues</summary>
+<ul>
+<li>A registry item also named compact shows twice in the menu; dispatch still picks the built-in.</li>
+<li>Jump to latest may overlap the menu position.</li>
+</ul>
+</details>
+
+<h2>What compaction sends</h2>
+<p>One rolling summary. Further compaction combines the old summary and more turns into a new one.</p>
+<pre translate="no" tabindex="0">[System prompt] [Current summary] [Recent uncompacted turns] [New user message]</pre>
+
+<h2>Triggers</h2>
+<table class="stack">
+<thead><tr><th scope="col">Trigger</th><th scope="col">Condition</th><th scope="col">Path</th></tr></thead>
+<tbody>
+<tr><th scope="row">Manual <code translate="no">/compact</code></th><td>From the composer, optionally keeping the latest N tokens. The selected branch's foreground operation (<code translate="no">op_kind: compact</code>): every client shows "Compacting context…" in the run indicator with Stop, a reload too, and Stop sends <code translate="no">operation.cancel</code> with its <code translate="no">op_id</code>. Refused, naming what runs, while that branch is busy; other branches keep running. The ending frame goes out after the slot is free, and its release sends <code translate="no">running_task_clear</code>. The terminal UI shows the progress and the result line.</td><td><code translate="no">action: compact</code>, <code translate="no">handle_compact</code></td></tr>
+<tr><th scope="row">Automatic, before a turn</th><td>Budget at or above <code translate="no">context.auto_compact_percent</code> (default 80). Compact the chain the turn runs on, on any branch; the head stays. Skipped for a background turn.</td><td><code translate="no">loop_runner.py</code></td></tr>
+<tr><th scope="row">Automatic, within a turn</th><td>A round of tool results passes the same threshold: once per turn (<code translate="no">mid_turn</code>), then the turn goes on. A branch moving to a model with a smaller window is compacted before its next turn by the larger model (<code translate="no">model_downshift</code>)</td><td><code translate="no">loop_runner.py</code></td></tr>
+<tr><th scope="row">Overflow recovery</th><td>Model returns 413 or <code translate="no">prompt_too_long</code>: inside the agent loop, compact and send the same request again; once per request, twice per turn, and the turn never reruns from its start</td><td><code translate="no">reactive.py</code></td></tr>
+</tbody>
+</table>
+<p class="note">All of them use <code translate="no">compaction_started</code>, <code translate="no">compaction_finished</code> and <code translate="no">compaction_failed</code>. The start shows in the run indicator. A <code translate="no">/compact</code> adds a system message when it ends; a stopped one reads “Compaction stopped; context unchanged.” A turn's own compaction that fails says nothing: the history is as it was and a later request tries again.</p>
+
+<h2>Steps</h2>
+<ol>
+<li><strong>Read</strong> rendered history from SessionDB: the summary and remaining turns. Text already covered is not reread.</li>
+<li><strong>Threshold.</strong> Fewer than four messages: stop; the manual path explains. Already summary plus tail with no valid cut: nothing to compact, no model call.</li>
+<li><strong>Summarize</strong> with a separate model call. Default tail: 10% of the window, clamped to 8k–40k tokens, at least four non-empty messages. <code translate="no">/compact 2000</code> overrides.</li>
+<li><strong>Persist</strong> a <code translate="no">summary_*</code> node (<code translate="no">role=llm</code>, <code translate="no">name=context/summary</code>, sent as a user message that says it is a summary); <code translate="no">covers_ids</code> marks the range. Old turns stay and HEAD does not move.</li>
+<li><strong>Graph.</strong> The DAG shows a capsule. A chain has one summary in effect, the one covering furthest; an older one is superseded and stops rendering (<a href="../../context/compaction.html">Compaction</a>).</li>
+</ol>
+
+<h2>Ring</h2>
+<p>Lower right: occupancy over window size, from the compacted view. Green below 50%, yellow 50–80%, red at 80% and above. Measurement, running state, nothing-to-compact and Compact now: <a href="../../context/occupancy-status.html">occupancy and compaction</a>.</p>
+
+<details>
+<summary>Key files</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Responsibility</th><th scope="col">Path</th></tr></thead>
+<tbody>
+<tr><th scope="row">Registry, menu</th><td><code translate="no">apps/web/components/chat/composer/slash/slash-commands.ts</code>, <code translate="no">use-slash-menu.ts</code></td></tr>
+<tr><th scope="row">Selection</th><td><code translate="no">apps/web/components/chat/composer/index.tsx</code> (<code translate="no">selectSlashCommand</code>)</td></tr>
+<tr><th scope="row">Keyboard</th><td><code translate="no">composer/input/use-composer-keydown.ts</code></td></tr>
+<tr><th scope="row">Enter</th><td><code translate="no">composer/submit/use-chat-submit.ts</code></td></tr>
+<tr><th scope="row">Manual over WS</th><td><code translate="no">openprogram/interfaces/server/ws_actions/chat/commands.py</code></td></tr>
+<tr><th scope="row">Pipeline</th><td><code translate="no">openprogram/runtime/context/engine.py</code>, <code translate="no">compaction/summarize.py</code></td></tr>
+<tr><th scope="row">Automatic</th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/loop_runner.py</code></td></tr>
+<tr><th scope="row">Overflow</th><td><code translate="no">openprogram/runtime/context/compaction/reactive.py</code></td></tr>
+<tr><th scope="row">Frontend events</th><td><code translate="no">apps/web/lib/runtime-bridge/session/chat-handlers.ts</code></td></tr>
+<tr><th scope="row">Ring, panel</th><td><code translate="no">apps/web/components/chat/badges/context-badge.tsx</code>, <code translate="no">context-breakdown-panel.tsx</code></td></tr>
+</tbody>
+</table>
+</details>

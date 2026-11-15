@@ -1,0 +1,20 @@
+<title>Session design</title>
+<meta name="description" content="Where each part of the session design is recorded.">
+<meta name="covers" content="none">
+<h1 id="session-subsystem">Session design</h1>
+<p>A session is one conversation between a user and an Agent.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Page</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="storage.html">Data model</a></th><td>Layout on disk, log lines, fields, status values, interface</td></tr>
+<tr><th scope="row"><a href="operations.html">Operations</a></th><td>Startup, create, write, update, name, list, delete, archive</td></tr>
+<tr><th scope="row"><a href="name.html">LLM title generation</a></th><td>Input, prompt, model, output contract</td></tr>
+<tr><th scope="row"><a href="context.html">Context</a></th><td><code translate="no">session_context</code> manager</td></tr>
+<tr><th scope="row"><a href="unified-session-context.html">Unified session context</a></th><td>Why one manager exists, and how far entry points have moved to it</td></tr>
+<tr><th scope="row"><a href="additional-working-directories.html">Additional working directories</a></th><td>Widening the fence for one session</td></tr>
+<tr><th scope="row"><a href="environments.html">Environments</a></th><td>Local, SSH and Docker execution</td></tr>
+<tr><th scope="row"><a href="storage-consistency.html">Storage consistency</a></th><td>Timestamp, snapshot and lock contracts</td></tr>
+<tr><th scope="row"><a href="external-import.html">Importing other agents</a></th><td>Claude Code and Codex transcripts as native sessions</td></tr>
+<tr><th scope="row"><a href="comparison.html">Management comparison</a></th><td>Claude Code, OpenCode, OpenClaw, OpenProgram</td></tr>
+</tbody>
+</table>

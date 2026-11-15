@@ -1,0 +1,53 @@
+<title>请求修复</title>
+<meta name="description" content="修复被提供商因形态拒绝的请求，并记住拒绝教会的东西。">
+<h1>请求修复</h1>
+<p>每条提供商流都经过它：<code translate="no">streaming.stream._metered</code> 在调用提供商前调用 <code translate="no">request_repair.prepared</code>，并通过 <code translate="no">request_repair.repairing</code> 读事件。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">钩子</th><th scope="col">时机</th><th scope="col">返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">before_sending(model, context)</code></th><td>每次请求前</td><td>应用了已知教训的上下文</td></tr>
+<tr><th scope="row"><code translate="no">after_refusal(model, context, refusal)</code></th><td>一次尝试还没说话就报错</td><td>修复后的上下文，不认识则 <code translate="no">None</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">REPAIRS</code>：先 <code translate="no">prefill</code>，后 <code translate="no">body_cap</code>。第一个修好的请求重发，最多 <code translate="no">MAX_RESENDS</code>（3）次。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">流规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">事件</th><td>不扣留；消费方只看到回复开始一次</td></tr>
+<tr><th scope="row">重发</th><td>去掉第一个 <code translate="no">start</code>；拒绝本身不传出</td></tr>
+<tr><th scope="row">已有 <code translate="no">start</code> 之外的内容</th><td>事件直接透传，不再重发</td></tr>
+<tr><th scope="row">取消</th><td><code translate="no">RepairingStream.cancel_producer</code> 关闭当前提供商流，等待上限相同</td></tr>
+<tr><th scope="row">没有修复认识的拒绝</th><td>继续交给<a href="llm-fault-tolerance.zh.html">重试和故障转移</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="repairs">两种修复</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">请求体上限</th><th scope="col">Prefill</th></tr></thead>
+<tbody>
+<tr><th scope="row">拒绝</th><td>状态 413，或 body、request、payload、entity too large；不是上下文溢出（<code translate="no">utils/overflow.py</code>）</td><td>“does not support assistant message prefill”、“Requests ending with a model turn are not supported”、“last message cannot be from the assistant”</td></tr>
+<tr><th scope="row">见于</th><td>Anthropic 的 32 MB <code translate="no">request_too_large</code>、中转</td><td>部分网关后的 Anthropic 模型、火山引擎 Agent Plan、Vertex AI 上的 Gemini</td></tr>
+<tr><th scope="row">学到</th><td>比已发送小的最小声明值，否则已发送的 ¾</td><td>该模型拒绝</td></tr>
+<tr><th scope="row">记忆键</th><td>提供商和 base URL</td><td>提供商、API 和模型</td></tr>
+<tr><th scope="row">修复</th><td>调整到上限的 ¾：最早的历史图片逐张换成一条说明</td><td>加一条用户消息 <code translate="no">Continue.</code></td></tr>
+<tr><th scope="row">不动</th><td>最新用户消息的图片、所有文字、工具结果的文字</td><td>以工具调用结尾的对话</td></tr>
+<tr><th scope="row">放弃</th><td>所有更早的图片都去掉仍太大：拒绝继续传出</td><td>–</td></tr>
+</tbody>
+</table>
+<p class="note">说明文字：<code translate="no">[An earlier image was left out: the request was over the provider's size limit.]</code> 留 ¾ 的余量，让对话再长几轮才去更多图片，不至于每轮破坏提示缓存。</p>
+
+<details>
+<summary>文件</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/utils/request_repair.py</code></th><td><code translate="no">prepared</code>、<code translate="no">repairing</code>、顺序</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/utils/body_cap.py</code></th><td>大小拒绝、上限、裁剪</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/utils/prefill.py</code></th><td>prefill 拒绝、按模型的记忆</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/streaming/stream.py</code></th><td><code translate="no">_metered</code></td></tr>
+</tbody>
+</table>
+<p>两种记忆都随进程存在；<code translate="no">tests/conftest.py</code> 在每个测试后清空。两种修复来自 magpie 的请求体上限和 prefill 记忆（yetone/magpie，MIT）。</p>
+</details>

@@ -4,7 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { SimpleSelect } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Props {
   name: string;
@@ -168,26 +172,15 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
     }
   };
 
-  // Escape / Tab-trap / focus restore for this hand-rolled panel.
-  const modal = useModalA11y(onClose, text(`${name} options`, `${name} 选项`));
-
   return (
-    <div className={styles.dialogBackdrop} onClick={onClose}>
-      <div
-        {...modal}
-        className={styles.dialog}
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: "min(560px, 90vw)" }}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className={styles.dialogTitle}>{text(`${name} options`, `${name} 选项`)}</div>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className={styles.dialog} aria-describedby={undefined}>
+        <div className="flex items-center justify-between gap-3 pr-8">
+          <DialogHeader><DialogTitle>{text(`${name} options`, `${name} 选项`)}</DialogTitle></DialogHeader>
           {hasSchema && (
-            <button
-              onClick={() => setRawMode((v) => !v)}
-              className="text-xs text-[var(--text-secondary)] hover:text-nav-color-hover"
-            >
+            <Button variant="ghost" onClick={() => setRawMode((v) => !v)}>
               {rawMode ? text("Form", "表单") : "Raw JSON"}
-            </button>
+            </Button>
           )}
         </div>
         <div className={styles.dialogBody}>
@@ -202,55 +195,50 @@ export function PluginOptionsDialog({ name, onClose }: Props) {
             <div className="space-y-3">
               {Object.entries(schema).map(([k, f]) => (
                 <div key={k}>
-                  <label className="block text-xs font-semibold text-[var(--text-bright)] mb-1">
+                  <label className="block text-fs-xs font-semibold text-text-bright mb-1">
                     {f.title || k}
-                    {f.required && <span className="ml-1 text-[var(--accent-red,#ef4444)]">*</span>}
-                    {f.sensitive && <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-400">{text("sensitive", "敏感")}</span>}
+                    {f.required && <span className="ml-1 text-accent-red">*</span>}
+                    {f.sensitive && <span className="ml-2 text-fs-2xs uppercase tracking-wide text-amber-400">{text("sensitive", "敏感")}</span>}
                   </label>
                   {f.description && (
-                    <div className="text-[11px] text-[var(--text-tertiary)] mb-1">{f.description}</div>
+                    <div className="text-fs-2xs text-text-secondary mb-1">{f.description}</div>
                   )}
                   {f.type === "boolean" ? (
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
+                    <label className="flex items-center gap-2 text-fs-base">
+                      <Checkbox
                         checked={Boolean(values[k])}
-                        onChange={(e) => update(k, e.target.checked)}
+                        onCheckedChange={(value) => update(k, value === true)}
                       />
-                      <span className="text-[var(--text-secondary)]">{text("enabled", "已启用")}</span>
+                      <span className="text-text-secondary">{text("enabled", "已启用")}</span>
                     </label>
                   ) : f.enum && f.enum.length > 0 ? (
-                    <select
+                    <SimpleSelect label={f.title || k}
                       value={String(values[k] ?? "")}
-                      onChange={(e) => update(k, e.target.value)}
-                      className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-sm"
-                    >
-                      {f.enum.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
+                      onValueChange={(v) => update(k, v)}
+                      className="w-full"
+                      options={f.enum.map((opt) => ({ value: String(opt), label: String(opt) }))}
+                    />
                   ) : (
-                    <input
+                    <Input
                       type={f.sensitive ? "password" : f.type === "number" ? "number" : "text"}
                       value={String(values[k] ?? "")}
                       onChange={(e) => update(k, e.target.value)}
                       placeholder={f.sensitive ? text("(unchanged)", "（不变）") : f.default !== undefined ? String(f.default) : ""}
-                      className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-sm"
                     />
                   )}
                 </div>
               ))}
             </div>
           )}
-          {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 10 }}>{err}</div>}
+          {err && <div style={{ color: "var(--error-form)", fontSize: "var(--fs-xs)", marginTop: 10 }}>{err}</div>}
         </div>
-        <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onClose} disabled={busy}>{t("sidebar.cancel")}</button>
-          <button className={styles.btnPrimary} onClick={save} disabled={busy}>
+        <DialogFooter>
+          <Button variant="elevated" onClick={onClose} disabled={busy}>{t("sidebar.cancel")}</Button>
+          <Button onClick={save} disabled={busy}>
             {busy ? text("Saving...", "保存中...") : text("Save", "保存")}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

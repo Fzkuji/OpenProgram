@@ -20,17 +20,18 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.agent.session_db import SessionDB
-from openprogram.context import components as C
-from openprogram.context.system_prompt_node import (
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.runtime.context import components as C
+from openprogram.runtime.context.system_prompt_node import (
     NODE_NAME,
     is_context_node,
     latest_recorded_prompt,
     prompt_hash,
     record_system_prompt,
 )
-from openprogram.providers.types import (
+from openprogram.models.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
     EventDone,
@@ -82,7 +83,7 @@ def _capturing_stream(sink: list):
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     return db
 
 
@@ -99,7 +100,7 @@ def no_memory_prefetch(monkeypatch: pytest.MonkeyPatch):
     class _Provider:
         def search(self, _text, **_kw): return ""
         def system_prompt(self): return ""
-    monkeypatch.setattr("openprogram.memory.get_backend", lambda: _Provider())
+    monkeypatch.setattr("openprogram.state.memory.get_backend", lambda: _Provider())
 
 
 class _Tool:
@@ -119,7 +120,7 @@ def _run_turn(text: str, sink: list, *, session_id="s1", tools=None):
                     cancel_event=cancel_event, stream_fn=stream)
 
     with patch.object(D, "_run_loop_blocking", _wrapped):
-        res = D.process_user_turn(D.TurnRequest(
+        res = D.process_user_turn(agent_turn_request.TurnRequest(
             session_id=session_id, user_text=text, agent_id="main",
             source="tui", tools_override=tools,
         ))
@@ -139,13 +140,13 @@ def test_assembler_is_deterministic_for_the_same_inputs():
     assert C.build_system_prompt(agent) == C.build_system_prompt(agent)
 
 
-def test_assembler_absorbs_the_tool_runtime_block():
-    """The block the dispatcher used to append by hand is a component now."""
-    out = C.build_system_prompt({"id": "main"}, tools=[_Tool("bash")])
-    assert "Runtime tool context:" in out
-    assert "Available tools for this turn: bash" in out
-    # ...and it is absent when there are no tools.
-    assert "Runtime tool context:" not in C.build_system_prompt({"id": "main"})
+def test_the_working_directory_rides_the_environment_block():
+    """The tool-runtime block the dispatcher used to append is part of the
+    environment component; the tool list itself travels as schemas."""
+    with_tools = C.build_system_prompt({"id": "main"}, tools=[_Tool("bash")])
+    without = C.build_system_prompt({"id": "main"})
+    assert "Working directory:" in with_tools and "Working directory:" in without
+    assert "Available tools for this turn" not in with_tools
 
 
 def test_assembler_absorbs_the_plan_mode_block():
@@ -158,8 +159,8 @@ def test_assembler_absorbs_the_plan_mode_block():
 def test_skills_index_is_in_the_assembled_prompt():
     """The skill system needs its index in the prompt to trigger on-demand
     loading — the dispatcher's hand-rolled prompt never had it."""
-    l0 = {c.name for c in C._REGISTRY["L0"]}
-    assert "skills_index" in l0
+    l1 = {c.name for c in C._REGISTRY["L1"]}
+    assert "capabilities" in l1
 
 
 def test_dispatcher_sends_exactly_what_the_assembler_produced(
@@ -169,10 +170,14 @@ def test_dispatcher_sends_exactly_what_the_assembler_produced(
     == the string the budget counted."""
     profile = {"id": "main", "system_prompt": "INLINE", "tools": []}
     monkeypatch.setattr(D, "_load_agent_profile", lambda agent_id: dict(profile))
+    # The turn binds the session's project directory; AGENTS.md read there
+    # would differ from the test process's cwd.
+    monkeypatch.setattr("openprogram.runtime.context.agents_md.chain", lambda cwd=None: [])
+    monkeypatch.setattr(C, "environment_block", lambda *a, **k: "<environment/>")
 
     budgeted: list[str] = []
-    from openprogram.context.engine import ContextEngine  # noqa: F401
-    import openprogram.context.budget as _budget
+    from openprogram.runtime.context.engine import ContextEngine  # noqa: F401
+    import openprogram.runtime.context.budget as _budget
     orig_allocate = _budget.BudgetAllocator.allocate
 
     def _spy(self, *, context_window, system_prompt, history, tools=None, **kw):
@@ -182,6 +187,18 @@ def test_dispatcher_sends_exactly_what_the_assembler_produced(
                              tools=tools, **kw)
 
     monkeypatch.setattr(_budget.BudgetAllocator, "allocate", _spy)
+    # The conversation's own turn keeps tools its profile does not list
+    # (the browser screen tool, refused without a Page), so the assembler
+    # is checked against the inputs this turn handed it.
+    assembled: list = []
+    orig_build = C.build_system_prompt
+
+    def _build_spy(*args, **kwargs):
+        out = orig_build(*args, **kwargs)
+        assembled.append((args, kwargs, out))
+        return out
+
+    monkeypatch.setattr(C, "build_system_prompt", _build_spy)
 
     sink: list = []
     _run_turn("hi", sink)
@@ -191,13 +208,17 @@ def test_dispatcher_sends_exactly_what_the_assembler_produced(
     assert budgeted, "budget never ran"
     # The engine budgeted the exact string that shipped.
     assert budgeted[0] == wire
-    # And that string is the assembler's own output for this turn.
-    assert wire == C.build_system_prompt(profile, tools=None)
+    # And that string is the assembler's own output for this turn, the same
+    # again when assembled from the same inputs.
+    assert assembled, "the assembler never ran"
+    args, kwargs, out = assembled[0]
+    assert args[0] == profile
+    assert wire == out == orig_build(*args, **kwargs)
 
 
 def test_engine_budgets_the_prompt_it_was_handed():
     """prepare(system_prompt=...) must not re-assemble a second string."""
-    from openprogram.context import resolve_engine_for
+    from openprogram.runtime.context import resolve_engine_for
     engine = resolve_engine_for({"id": "main"})
     prep = engine.prepare(agent={"id": "main"}, session={"id": "nope"},
                           history=[], model=_stub_model(),
@@ -207,12 +228,12 @@ def test_engine_budgets_the_prompt_it_was_handed():
 
 def test_exec_runtime_uses_the_same_assembler():
     """A model call inside a function body gets the project background too."""
-    from openprogram.agentic_programming.runtime import _exec_system_prompt
+    from openprogram.runtime.agent.runtime import _exec_system_prompt
     out = _exec_system_prompt("FN INLINE", [_Tool("read")])
     assert "FN INLINE" in out
-    assert "Runtime tool context:" in out
+    assert "<environment>" in out
     # ...and it is the assembler that produced it, not a bespoke concat.
-    assert "<tool_use>" in out
+    assert "# How you work" in out
 
 
 # B. The prompt is recorded as a node
@@ -254,7 +275,7 @@ def test_recording_never_moves_the_branch_head(tmp_db: SessionDB):
     assert (tmp_db.get_session("rec3") or {}).get("head_id") == head_before
 
 
-def test_toolset_change_appends_a_new_prompt_node(
+def test_toolset_change_keeps_the_recorded_prompt(
     tmp_db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setattr(D, "_load_agent_profile",
@@ -270,11 +291,11 @@ def test_toolset_change_appends_a_new_prompt_node(
     assert len([n for n in tmp_db.get_nodes("tc1")
                 if n.name == NODE_NAME]) == 1
 
-    # Different toolset → the tool-runtime block changes → new node.
+    # A different loaded toolset changes the schemas, not the prompt: the
+    # tool list is no longer repeated in the text, so the cached prefix holds.
     _run_turn("three", sink, session_id="tc1", tools=["read", "glob"])
     after_change = [n for n in tmp_db.get_nodes("tc1") if n.name == NODE_NAME]
-    assert len(after_change) == 2
-    assert "glob" in after_change[-1].output
+    assert len(after_change) == 1
 
 
 def test_context_nodes_are_hidden_from_the_chat_views(tmp_db: SessionDB):
@@ -308,7 +329,19 @@ def fake_prefetch(monkeypatch: pytest.MonkeyPatch):
             return f"<memory-context>\nrecalled for: {text}\n</memory-context>"
         def system_prompt(self, *, tier=None): return ""
         def write(self, *a, **kw): return None
-    monkeypatch.setattr("openprogram.memory.get_backend", lambda: _Provider())
+    monkeypatch.setattr("openprogram.state.memory.get_backend", lambda: _Provider())
+    # The execution wrapper and the streaming read check consult the saved
+    # Agent independently of D._load_agent_profile. Keep their real policy
+    # checks enabled, but give this fake backend a matching, isolated policy.
+    from openprogram.runtime.agent_registry import manager
+    main = manager.AgentSpec(
+        id="main", memory_policy_epoch=0,
+        memory={"mode": "read_write", "read_spaces": ["legacy_global"],
+                "write_space": "legacy_global"},
+    )
+    original_get = manager.get
+    monkeypatch.setattr(manager, "get", lambda agent_id: main if agent_id == "main" else original_get(agent_id))
+    monkeypatch.setattr("openprogram.state.memory.is_enabled", lambda: True)
 
 
 def test_prefetch_renders_in_the_user_message_not_the_system_prompt(
@@ -329,6 +362,32 @@ def test_prefetch_renders_in_the_user_message_not_the_system_prompt(
     assert "recalled for: what did we decide" in text
     # The block is a PREFIX — the user's own words follow it.
     assert text.index("<memory-context>") < text.index("what did we decide")
+
+
+@pytest.mark.parametrize("query, recalled", [("the standing goal", "recalled for: the standing goal"), ("", None)])
+def test_a_turn_with_its_own_recall_query_recalls_by_it(
+    tmp_db: SessionDB, monkeypatch: pytest.MonkeyPatch, fake_prefetch, query, recalled,
+):
+    """A check-in's prompt is fixed instructions: recall follows ``recall_query``."""
+    monkeypatch.setattr(D, "_load_agent_profile",
+                        lambda agent_id: {"id": agent_id, "system_prompt": "", "tools": []})
+    orig = D._run_loop_blocking
+    stream = _capturing_stream([])
+
+    def _wrapped(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):
+        return orig(req=req, history=history, on_event=on_event,
+                    cancel_event=cancel_event, stream_fn=stream)
+
+    with patch.object(D, "_run_loop_blocking", _wrapped):
+        D.process_user_turn(agent_turn_request.TurnRequest(
+            session_id="recall1", user_text="fixed instructions", agent_id="main",
+            source="tui", recall_query=query,
+        ))
+    written = next(row for row in tmp_db.get_messages("recall1") if row.get("role") == "user")
+    assert "fixed instructions" not in str(written.get("memory_prefetch"))
+    from openprogram.runtime.context import turn_context
+    prefetch = turn_context.entry_text(turn_context.entries(written), "memory_prefetch")
+    assert (recalled in prefetch) if recalled else prefetch == ""
 
 
 def test_system_prompt_is_byte_identical_across_turns(
@@ -373,7 +432,7 @@ def test_prefetch_is_stamped_on_the_user_node_for_replay(
 
 
 def test_inject_prefetch_prefixes_the_last_user_message():
-    from openprogram.agent.agent_loop import _inject_memory_prefetch
+    from openprogram.runtime.agent.loop import _inject_memory_prefetch
     msgs = [{"role": "user", "content": "old"},
             {"role": "assistant", "content": "reply"},
             {"role": "user", "content": "new"}]
@@ -384,7 +443,7 @@ def test_inject_prefetch_prefixes_the_last_user_message():
 
 
 def test_inject_prefetch_handles_block_content():
-    from openprogram.agent.agent_loop import _inject_memory_prefetch
+    from openprogram.runtime.agent.loop import _inject_memory_prefetch
     msgs = [{"role": "user",
              "content": [{"type": "image"}, {"type": "text", "text": "hi"}]}]
     assert _inject_memory_prefetch(msgs, "<memory-context>M</memory-context>")
@@ -393,10 +452,27 @@ def test_inject_prefetch_handles_block_content():
 
 
 def test_inject_prefetch_is_a_noop_without_a_user_message():
-    from openprogram.agent.agent_loop import _inject_memory_prefetch
+    from openprogram.runtime.agent.loop import _inject_memory_prefetch
     msgs = [{"role": "assistant", "content": "only me"}]
     assert _inject_memory_prefetch(msgs, "M") is False
     assert msgs[0]["content"] == "only me"
+
+
+def test_inject_prefetch_never_edits_the_shared_message():
+    # The default converter hands the stored messages through unchanged; a
+    # block written into them would be stored and added again every round.
+    from openprogram.models.providers.types import TextContent, UserMessage
+    from openprogram.runtime.agent.loop import _inject_memory_prefetch
+    stored = [UserMessage(content=[TextContent(text="hi")], timestamp=0),
+              {"role": "user", "content": [{"type": "text", "text": "yo"}]}]
+    for original in stored:
+        request = [original]
+        assert _inject_memory_prefetch(request, "NOTE")
+        assert request[0] is not original
+        again = [original]
+        assert _inject_memory_prefetch(again, "NOTE")
+        assert _text_of(again[0]).count("NOTE") == 1
+        assert _text_of(original) in ("hi", "yo")
 
 
 def _text_of(msg) -> str:
@@ -413,3 +489,22 @@ def _text_of(msg) -> str:
         if t:
             parts.append(str(t))
     return "\n".join(parts)
+
+
+def test_the_block_stays_on_the_turns_message_when_the_loop_adds_a_note():
+    # A progress note or a "continue" instruction is a user-role message added
+    # after the turn's own; the block must not move onto it, or the prefix the
+    # provider cached up to the turn's message stops matching.
+    from openprogram.runtime.agent.loop import _inject_memory_prefetch
+    first = [{"role": "user", "content": "do the task"}]
+    assert _inject_memory_prefetch(first, "NOTE", "do the task")
+    later = [{"role": "user", "content": "do the task"},
+             {"role": "assistant", "content": "working"},
+             {"role": "user", "content": "say where things stand"}]
+    assert _inject_memory_prefetch(later, "NOTE", "do the task")
+    assert later[0] == first[0]
+    assert later[2]["content"] == "say where things stand"
+    # A request that no longer holds the turn's message falls back to the last one.
+    gone = [{"role": "user", "content": "summary of earlier work"}]
+    assert _inject_memory_prefetch(gone, "NOTE", "do the task")
+    assert gone[0]["content"].startswith("NOTE")

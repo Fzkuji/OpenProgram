@@ -1,0 +1,228 @@
+<title>中心 Tab 与分屏</title>
+<meta name="description" content="中心区的 Tab 条、分屏组、网页预览、单 Tab 历史和拖动规则。">
+<h1>中心 Tab、分屏与网页 Tab 呈现</h1>
+<p class="note">只讲 apps/web 渲染层的呈现与绑定。跨窗口转移和主进程 View 几何见各自记录。</p>
+
+<h2 id="model">模型</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">概念</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tab</th><td>聊天、文件或文件夹、终端、网页或应用页。各有自己的前进后退历史。</td></tr>
+<tr><th scope="row">组</th><td>多个 Tab 并排，在条上算一项，由画布布局。<code translate="no">MAX_CENTER_TAB_GROUP_MEMBERS</code> 不设上限。由 <code translate="no">groupTab</code> 创建；预览展开成分屏走 <code translate="no">setSplitWebTab</code>。</td></tr>
+<tr><th scope="row">叶子</th><td>center-tabs store 里的 <code translate="no">kind:"web"</code> 条目。id 为 <code translate="no">w:&lt;url&gt;</code>；由 <code translate="no">nextPopupWebTabId</code> 分叉出的是 <code translate="no">w:&lt;url&gt;:popup:…</code>。悬浮不会移除它。</td></tr>
+<tr><th scope="row">配对</th><td>唯一的一等会话-页面关系（<code translate="no">pairedOwnerByTabId</code>）。一个会话可配多个页面，关闭任一方即解除。Agent 在会话里打开、用户拖进会话的分屏或用户收起时建立。独立页面没有配对，也没有收起操作。</td></tr>
+<tr><th scope="row">绑定</th><td><code translate="no">useWebTabPip</code> 单例里至多一个活动的 <code translate="no">(tabId, ownerTabId)</code>，另有按会话的 <code translate="no">previews</code>。不持久化。换绑不清旧配对。</td></tr>
+<tr><th scope="row">宿主</th><td>页面此刻在哪渲染：窗格、聊天预览或无。由 <code translate="no">pipCoversCenter</code> 推导，组件不另存可见状态。</td></tr>
+</tbody>
+</table>
+<p class="note">一个叶子同一时刻只有一个原生 <code translate="no">WebContentsView</code>。预览就是真实页面，不是遮罩或截图；页面 Tab 和预览不同时出现。</p>
+
+<h2 id="fsm">一个叶子显示在哪</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 270" role="img" aria-label="叶子在 Tab、预览、分屏和后台之间移动。Tab 收起成预览，预览打开成 Tab。预览展开成分屏，分屏先解组再收起成预览。预览关闭进后台，后台经 chip 恢复。">
+  <defs><marker id="ct-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="50" width="110" height="64" rx="8"/><text class="t-big mid" x="55" y="88">Tab</text>
+  <rect class="tile" x="285" y="50" width="110" height="64" rx="8"/><text class="t-big mid" x="340" y="88">预览</text>
+  <rect class="tile" x="570" y="50" width="110" height="64" rx="8"/><text class="t-big mid" x="625" y="88">分屏</text>
+  <rect class="tile" x="285" y="200" width="110" height="64" rx="8"/><text class="t-big mid" x="340" y="238">后台</text>
+  <line class="ln" x1="116" y1="70" x2="279" y2="70" marker-end="url(#ct-a)"/><text class="t-cmd mid" translate="no" x="197" y="58">collapseWebTabToPip</text>
+  <line class="ln" x1="279" y1="96" x2="116" y2="96" marker-end="url(#ct-a)"/><text class="t-soft mid" x="197" y="122">end + setActive</text>
+  <line class="ln" x1="401" y1="70" x2="564" y2="70" marker-end="url(#ct-a)"/><text class="t-cmd mid" translate="no" x="482" y="58">end + setSplitWebTab</text>
+  <line class="ln" x1="564" y1="96" x2="401" y2="96" marker-end="url(#ct-a)"/><text class="t-soft mid" x="482" y="122">先解组再收起</text>
+  <line class="ln" x1="325" y1="120" x2="325" y2="194" marker-end="url(#ct-a)"/><text class="t-cmd" translate="no" x="256" y="162">hide()</text>
+  <line class="ln" x1="355" y1="194" x2="355" y2="120" marker-end="url(#ct-a)"/><text class="t-soft" x="366" y="162">输入框 chip：show</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>Tab</strong><small>收起成预览：<code translate="no">collapseWebTabToPip</code></small></li>
+<li><strong>预览</strong><small>回 Tab：<code translate="no">end</code> + <code translate="no">setActive</code></small><small>展开分屏：<code translate="no">end</code> + <code translate="no">setSplitWebTab</code></small><small>进后台：<code translate="no">hide()</code></small></li>
+<li><strong>分屏</strong><small>回预览：先解组再收起</small></li>
+<li class="flow-end"><strong>后台</strong><small>回预览：输入框 chip 调 <code translate="no">show</code></small></li>
+</ol>
+</figure>
+<p class="note"><code translate="no">end()</code> 只清绑定，叶子留到 <code translate="no">closeTab</code>。owner 或叶子关闭时调用。切换会话不是状态转移。</p>
+
+<details>
+<summary>预览 store 字段</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tabId</code> <code translate="no">ownerTabId</code></th><td>活动绑定，同时有值或同时为空。</td></tr>
+<tr><th scope="row"><code translate="no">backgroundTabId</code> <code translate="no">backgroundOwnerTabId</code></th><td><code translate="no">hide()</code> 留下的恢复记录。</td></tr>
+<tr><th scope="row"><code translate="no">rect</code></th><td>只在内存，<code translate="no">hide</code>/<code translate="no">end</code> 不清。<code translate="no">clampPipRect</code> 限在窗格内，最小 240×160。默认右上、会话控件下方，拖动后以拖动为准。</td></tr>
+<tr><th scope="row"><code translate="no">show(tabId, ownerTabId)</code></th><td>登记配对、建立绑定、清后台记录。替换旧绑定。</td></tr>
+<tr><th scope="row"><code translate="no">hide()</code></th><td>清绑定、写后台，一步可恢复。</td></tr>
+<tr><th scope="row"><code translate="no">end()</code></th><td>清绑定和记录：不再是预览。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="scenes">预览何时渲染</h2>
+<p>绑定 <code translate="no">ex.dev</code>，owner 为会话 A，按当前中心 Tab：</p>
+<table class="grid">
+<thead><tr><th scope="col">情形</th><th scope="col">叶子是网页</th><th scope="col">页面不在前台</th><th scope="col">owner 在画布上</th><th scope="col">会话一致</th><th scope="col">宿主</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话 A 在前台</th><td class="run">是</td><td class="run">是</td><td class="run">是</td><td class="run">是</td><td class="run">预览</td></tr>
+<tr><th scope="row">会话 B 在前台</th><td class="run">是</td><td class="run">是</td><td class="deny">否</td><td class="ask">未判断</td><td class="ask">无</td></tr>
+<tr><th scope="row">页面 Tab 在前台</th><td class="run">是</td><td class="deny">否</td><td class="ask">未判断</td><td class="ask">未判断</td><td class="review">页面占满内容区</td></tr>
+<tr><th scope="row">文件或终端在前台，A 不在旁</th><td class="run">是</td><td class="run">是</td><td class="deny">否</td><td class="ask">未判断</td><td class="ask">无</td></tr>
+<tr><th scope="row">焦点在其他窗格，A 在分屏中可见</th><td class="run">是</td><td class="run">是</td><td class="run">是</td><td class="run">是</td><td class="run">预览</td></tr>
+<tr><th scope="row">A 换到另一会话</th><td class="run">是</td><td class="run">是</td><td class="run">是</td><td class="deny">否</td><td class="ask">无</td></tr>
+</tbody>
+</table>
+<p class="note">每行绑定都还在，只是 <code translate="no">pipCoversCenter</code> 的结果不同。窗口总览也会隐藏预览。✕ 之后，chip 用同一函数检查后台记录。图视图里预览停靠在小地图下方的侧栏，拖出才自由。</p>
+
+<h2 id="rules">预览行为</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">回到会话</th><td><code translate="no">applyFollowPreview</code> 显示该会话自己的预览。没有时，仍在画布上的窗格的预览保留，或换旁边窗格的预览；否则隐藏。</td></tr>
+<tr><th scope="row">点 ✕ 后</th><td>回来不会自动打开，由 chip 恢复。chip 显示 <code translate="no">surfaceRefForChat</code> 报告的页面，只有它是本聊天的预览页时才提供关闭或显示。分屏里只是标签。预览折叠进显示同一页面的 chip（<code translate="no">data-web-surface-chip</code>），优先本窗格；没有则原地淡出，从“在对话中预览”重开。</td></tr>
+<tr><th scope="row">打开已绑定页面</th><td>绑定和跟随偏好保留。<code translate="no">.webFrame</code> 测量原生边界并占满内容区，不留空位。</td></tr>
+<tr><th scope="row">收起目标</th><td>原 owner 还在就用它，否则组内的会话，否则配对表。都没有则不出按钮和菜单。之后：退出分屏或组、<code translate="no">setActive(owner)</code>、<code translate="no">show</code>，不重载。</td></tr>
+</tbody>
+</table>
+
+<details id="interactive-floating-page">
+<summary>可交互悬浮页</summary>
+<ul>
+<li>复用 Electron <code translate="no">WebContentsView</code> 接收点击、滚动和输入，不建第二个 Page，不转发坐标。每帧更新宿主变换和原生边界，松手才保存几何。</li>
+<li>普通浏览器：HTTP(S) 用沙箱 iframe，是独立文档，登录和 frame-ancestor 限制遵循浏览器策略。受限 URL 显示不可用并保留“打开页面”。</li>
+<li>没有可见视图能力的旧桥接保留带标注的图片回退（<code translate="no">usePipSnapshots</code>）。当前 Desktop 桥接不截图。</li>
+<li>隐藏、切换或卸载的预览释放边界和观察器，不关闭 Page。菜单和对话框遮挡原生内容。</li>
+</ul>
+</details>
+
+<h2 id="agent">Agent 交互</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">op=open</code></th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">带 <code translate="no">session_id</code> 或 <code translate="no">background</code></th><td>后台：<code translate="no">ensureExclusiveWebTab</code>，标为 agent 所有，进 Resources。不抢焦点，不出预览。</td></tr>
+<tr><th scope="row">否则，会话在前台、桌面够宽、组内有网页、无 owner 冲突</th><td>分屏：<code translate="no">openWebTabInSplit</code>，再 <code translate="no">registerPipPair</code>。</td></tr>
+<tr><th scope="row">否则，会话在前台</th><td>预览：<code translate="no">show</code>。owner 冲突或 <code translate="no">pipOpenMustFork</code> 时用 <code translate="no">ensureExclusiveWebTab</code> 分叉，否则复用规范叶子。</td></tr>
+<tr><th scope="row">其余</th><td>前台 Tab。</td></tr>
+</tbody>
+</table>
+<p class="note">前台路径等 <code translate="no">waitForWebTabReady</code>（2 秒），再激活并回 <code translate="no">webtab_result</code>。非分屏失败时 <code translate="no">restorePriorActiveTabAfterFailedWebOpen</code> 恢复焦点。分屏需要宽度 360+480+6（<code translate="no">split-layout.ts</code>），由 <code translate="no">app-shell.tsx</code> 发布。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">op=close</code></th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">叶子不存在或不是网页</th><td><code translate="no">tab_not_found</code></td></tr>
+<tr><th scope="row">在任一组的 <code translate="no">memberIds</code> 中</th><td><code translate="no">tab_in_user_layout</code></td></tr>
+<tr><th scope="row">其余</th><td><code translate="no">{ok:true}</code>，再 <code translate="no">closeTab</code>；store 订阅结束相应预览。</td></tr>
+</tbody>
+</table>
+<ul>
+<li>属于其他会话的私有页面回 <code translate="no">page_not_accessible</code>（<code translate="no">agentCanAccessWebTab</code>）。</li>
+<li><code translate="no">surfaceRefForChat</code> 的顺序：会话组内可见网页窗格，会话在前台时的 <code translate="no">splitWebTabId</code>，会话拥有的预览叶子。都没有或无边界则不带 surface。</li>
+<li><code translate="no">op=preview/activate</code> 作用于 <code translate="no">visibleWebTabById</code>，隐藏页面回“不可见”；后台 <code translate="no">preview</code> 读取选中的镜像，不露出 Page。</li>
+</ul>
+
+<h2 id="issues">与产品语义的已知差异</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">差异</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">分叉不看已隐藏的预览</th><td><code translate="no">pipOpenMustFork</code> 只看活动绑定；B 的 <code translate="no">show</code> 清掉 A 的恢复 chip。</td></tr>
+<tr><th scope="row">分叉只认规范叶子</th><td>条件是 <code translate="no">webTabId(url) === boundTabId</code>。每次分叉可能留下孤儿叶子，靠 <code translate="no">op=close</code> 或用户关闭。</td></tr>
+<tr><th scope="row">关闭不记打开者</th><td>只查组成员：Agent 打开后被拖进组的页面关不掉，可访问的用户独立页面能关。</td></tr>
+<tr><th scope="row">分屏路径不调 <code translate="no">pipOpenMustFork</code></th><td>只检查 agent 所有权，并改写组内网页窗格的 URL。</td></tr>
+<tr><th scope="row"><code translate="no">show</code> 不解组</th><td>别组里的叶子绑定成预览时仍是组成员。</td></tr>
+<tr><th scope="row">区域定义不一致</th><td><code translate="no">surfaceRefForChat</code> 把未分组页面标为 <code translate="no">right</code>，<code translate="no">browserPageInventory</code> 标为 <code translate="no">center</code>。</td></tr>
+<tr><th scope="row">绑定不持久化</th><td>刷新丢失绑定、后台记录和位置，叶子回到普通 Tab，Resources 预览重新应用。</td></tr>
+</tbody>
+</table>
+
+<h2 id="session-navigation">Tab 内导航</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开会话</th><td>在当前会话 Tab 或新标签页原地打开；从其他页面类型则选中已有会话 Tab 或新建。重开当前会话不加历史。</td></tr>
+<tr><th scope="row">前进 / 后退</th><td>只走当前 Tab 的历史，位于条最左；后退后另选会丢弃前进项。目标会话已在别的 Tab 打开时选中那个 Tab，来源历史不变。</td></tr>
+<tr><th scope="row">默认入口页</th><td>被替换的新标签页留在历史最前，后退回到它，不新增 Tab。</td></tr>
+<tr><th scope="row">应用页</th><td>每个路由（设置、Agents、Abilities、Applications、History、Scheduler）都是所选 Tab 的一次访问，标签随之变化。未知路由显示路径。</td></tr>
+<tr><th scope="row">一页一 Tab</th><td>访问别的 Tab 已显示的页面时聚焦那个 Tab 并移到该路由（<code translate="no">recordRouteNavigation</code>）。Programs、Skills、MCP、Plugins 算 Abilities；Chats、Projects、Memory 算 History；各设置分区算 Settings。</td></tr>
+<tr><th scope="row">从分屏内</th><td>页面在分屏后新建顶层 Tab。恢复时带页面路由的成员离开分屏。</td></tr>
+<tr><th scope="row">草稿与标题</th><td>历史保留草稿 id，输入按会话 id 存。后台 ACK 和标题更新修改匹配记录，不激活、不追加。</td></tr>
+<tr><th scope="row">刷新与删除</th><td>历史随 version-2 Tab 持久化，旧 Tab 变单条。确认删除的会话从所有历史移除，未加载记录不算删除。</td></tr>
+</tbody>
+</table>
+<p class="note">同一窗口内一个会话一个 Tab：见<a href="session-tab-identity.html">会话 Tab 身份</a>。</p>
+
+<details id="window-navigation">
+<summary>历史如何存储</summary>
+<ul>
+<li><code translate="no">pageHistory</code> 是唯一存储：页面身份、会话元数据、内容路由和文件视图，无嵌套历史，不含输入和消息。旧会话历史在首次导航时转换。</li>
+<li>Tab id 是实例，<code translate="no">sessionId</code> 是当前会话。冲突时加唯一后缀；目标已属另一 Tab 时当前槽位得到唯一身份。</li>
+<li>路由同步只响应 pathname；<code translate="no">markSessionReady</code> 处理会话 ACK；导航响应当前 Tab 的 <code translate="no">sessionId</code> 和草稿变化。</li>
+<li>原生浏览器 URL 历史留在浏览器控件，网页保留自己的控件。会话历史是应用状态，与浏览器 History 分开。</li>
+<li>窗口转移在异步 ACK 前后检查已准备的会话历史；导航变化取消过期转移，回滚不覆盖更新的导航。</li>
+<li>恢复详情路由先加载导出的宿主路由，再替换 URL，然后记录访问。重复激活共享一次导航；迟到的宿主提交恢复最新目标且不计访问。切 Tab 时详情路由不重载文档。</li>
+<li>Provider 选择来自路由参数。迟到的列表响应只能在未指定页面选回退；切换详情不重载目录。</li>
+<li><code translate="no">center-tabs-store.ts</code> 组合 <code translate="no">store/</code>（状态、提交工具、动作）和 <code translate="no">navigation/</code>（纯函数、选择器）。没有动作模块持有第二份历史。</li>
+</ul>
+</details>
+<span id="page-navigation"></span><span id="global-settings"></span>
+
+<h2 id="new-tab-placement">Tab 条</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">新 Tab 位置</th><td>从某 Tab 打开（链接、弹窗、会话、文件或页面预览）：在其右侧，按打开顺序（<code translate="no">insertNextTo</code>）。加号、新聊天、Agent 后台页：放最后。</td></tr>
+<tr id="tab-controls"><th scope="row">控件</th><td>后退、前进、新建：宽 28px，间距 8px。空 Tab 列表不占位。新建左侧无分隔线。</td></tr>
+<tr id="last-tab"><th scope="row">关闭最后一个 Tab</th><td>允许。窗口和条保留，内容空白，跨路由和刷新保持，不自动建草稿。会话所有的隐藏页留在 Resources，不作回退。关闭在规整分屏组后选可见邻居。</td></tr>
+<tr id="tab-release-resources"><th scope="row">按下与松开</th><td>按下用拖动的背景和模糊，不换页面。未拖动松开走普通点击；拖动、Esc、取消或失焦吞掉点击。焦点环保留。</td></tr>
+<tr><th scope="row">拖动外观</th><td>Tab 和窗格标签的拖动预览共用背景、backdrop-filter 和阴影变量。设置 → 通用：透明度 0–100%、模糊 0–40px、阴影 0–100%，实时预览，可恢复默认。默认 20%、16px、饱和度 1.2、原阴影透明度的 25%。文字和图标保持不透明。</td></tr>
+<tr><th scope="row">新窗口提示</th><td>留在条内、原生页面边界之上：渲染层内容无法盖在 Electron 子视图上。</td></tr>
+<tr><th scope="row">把网页拖到 Resources</th><td>单个网页 Tab 松手时把这个 Page 附到当前可见会话。目标：Resources 导航行，展开时还有其正文，绝不合并成一个矩形。一道与目标外框等大的边框，不模糊内容。组、草稿和其他类型不能作来源或目标。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>网页附加与拖动设置细节</summary>
+<ul>
+<li>服务端校验 owner 授权、会话，以及注册桌面连接上的窗口/Tab/原生目标身份，再复用 <code translate="no">BrowserResourceStore</code>，不做 URL 副本。</li>
+<li>失败报错，不导航、不解绑、不伪造绑定。连接变化拒绝过期结果。取消不发送。成功时打开 Resources，保留会话、页面身份、顶层 Tab 和关联，不打断其他执行的操作。</li>
+<li>偏好存本地存储并规整；预绘制主题脚本在 hydrate 前应用；storage 事件同步同源窗口。换主题保留。无效字段用默认，数值夹紧，零表示关闭。普通按钮和 Resources 轮廓不受影响。条内拖动排序，条外沿用窗口转移。</li>
+</ul>
+</details>
+
+<h2 id="conversation-file-preview">会话文件预览</h2>
+<p>聊天在左、文档在右，复用 Tab 组和 <code translate="no">DocumentWindow</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">输出行</th><td>已完成的实时回复把本地 Markdown 链接和 <code translate="no">send_file</code> 附件显示为紧凑行。</td></tr>
+<tr><th scope="row">自动打开</th><td>首个支持的输出，开在其聚焦的会话旁。历史、失败或取消的回复、后台会话都不打开。手动分屏或有改动的预览保留。同一授权文件复用 Tab。</td></tr>
+<tr><th scope="row">归属</th><td>项目内文件：项目文档 owner。其他绝对路径：经会话校验的只读附件 owner。内容不执行、不作原始 HTML 嵌入，也不靠模型写的路径授权。</td></tr>
+<tr><th scope="row">刷新</th><td>可见文档检查已授权的元数据，变化时显示“文件已更改”和刷新。刷新始终可用，绕过缓存读磁盘，成功才更新，绝不丢本地编辑、待发布内容或富文本改动。隐藏窗格停止轮询；失败保留旧显示并可重试。</td></tr>
+<tr><th scope="row">一文档一编辑器</th><td>同一项目文档的文件 Tab 共用一个持久编辑器，随草稿移入当前布局。没有 Tab 引用时才关闭。同时可见的重复项提供“在此显示”。</td></tr>
+</tbody>
+</table>
+
+<h2 id="native-window-controls">原生窗口控件</h2>
+<dl class="pairs">
+<dt>行高</dt><dd>40 CSS 像素，与箭头和 Tab 控件共用垂直中心</dd>
+<dt>macOS 顶部内边距</dt><dd><code translate="no">round((40 × zoom − 16) / 2)</code>，下限为零；按钮框 16 DIP</dd>
+<dt>水平内边距</dt><dd>顶部内边距 + 1 DIP：红灯在框内低一个 DIP</dd>
+<dt>刷新时机</dt><dd>窗口创建、文档加载、渲染层调整大小、退出全屏。不轮询、不持久化。</dd>
+<dt>信任</dt><dd>preload 发送无负载的 resize；主进程只接受所属窗口的主文档</dd>
+<dt>其他平台</dt><dd>Windows 保留 Window Controls Overlay，Linux 保留原生装饰</dd>
+</dl>
+<p class="note">使用 <a href="https://www.electronjs.org/docs/latest/api/base-window#winsetwindowbuttonpositionposition-macos">setWindowButtonPosition</a> 和 <a href="https://www.electronjs.org/docs/latest/api/web-contents#contentsgetzoomfactor">getZoomFactor</a>。<code translate="no">zoom-changed</code> 只覆盖滚轮缩放，菜单和键盘缩放靠渲染层 resize 传递。</p>
+
+<h2 id="impl">代码位置</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">内容</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">配对、绑定、覆盖、分叉、收起</th><td><code translate="no">apps/web/lib/browser/web-tab/web-tab-pip-store.ts</code></td></tr>
+<tr><th scope="row">预览跟随、恢复</th><td><code translate="no">apps/web/lib/browser/browser-resource-projection.ts</code></td></tr>
+<tr><th scope="row">预览组件</th><td><code translate="no">apps/web/components/center-tabs/pip/web-tab-pip.tsx</code>，挂载在 <code translate="no">app-shell.tsx</code></td></tr>
+<tr><th scope="row">Agent 操作、surface、清单</th><td><code translate="no">apps/web/lib/desktop/bridge/bridge-menu.ts</code>, <code translate="no">bridge-surfaces.ts</code>, <code translate="no">bridge-state.ts</code></td></tr>
+<tr><th scope="row">Tab 和组</th><td><code translate="no">apps/web/lib/tabs/center-tabs-store.ts</code>, <code translate="no">store/</code>, <code translate="no">center-tab-groups.ts</code>, <code translate="no">center-tab-ids.ts</code>, <code translate="no">center-tabs-persistence.ts</code></td></tr>
+<tr><th scope="row">恢复 chip</th><td><code translate="no">apps/web/components/chat/composer/environment-row/chips/web-surface-chip.tsx</code></td></tr>
+<tr><th scope="row">行为测试</th><td><code translate="no">apps/web/tests/tabs/web-split/</code></td></tr>
+</tbody>
+</table>
+
+<details id="implementation-status">
+<summary>实现状态</summary>
+<p>以上全部已实现。仍需在已安装 App 上验收：可交互悬浮页（变化的计数、点击、输入、滚动、拖动）、拖入 Resources、常规缩放下原生控件 1 DIP 内对齐、会话文件预览。</p>
+</details>

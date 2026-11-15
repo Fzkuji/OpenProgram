@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import pytest
 
-import openprogram.providers._config_read as cr
-import openprogram.providers.models as pm
-import openprogram.providers.enabled_models as mg
-from openprogram.providers import metadata as cat
-from openprogram.webui._model_listing.credentials import _kind_for, _provider_api
+import openprogram.models.providers.settings.config_read as cr
+import openprogram.models.providers.catalog.models as pm
+import openprogram.models.providers.catalog.enabled_models as mg
+from openprogram.models.providers.catalog import metadata as cat
+from openprogram.models.listing.credentials import _kind_for, _provider_api
 
 
 # A config covering every wire in the matrix, one enabled row per provider,
@@ -66,7 +66,7 @@ def _wire_matrix_registry(monkeypatch):
     the invariants run over a controlled, wire-complete set of rows instead
     of the (now enabled-only) runtime registry. Patched at every binding so
     ``get_providers()`` and the test-module import both see the same dict."""
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     # The wire matrix uses shipped metadata, not the external catalogue.
     monkeypatch.setattr(cat, "_models_dev_info", lambda _pid: {})
@@ -137,20 +137,8 @@ def test_credential_and_chat_agree_on_wire():
     assert not bad, f"credential/chat wire mismatch: {bad}"
 
 
-def test_claude_code_rides_the_anthropic_wire():
-    """``claude-code`` ships no provider dir of its own — the Claude
-    subscription connects direct to api.anthropic.com over the Anthropic
-    Messages wire, using the ``anthropic`` credential pool. Without that
-    mapping its model rows are stamped ``openai-completions`` with an EMPTY
-    base_url, and every stream_simple/complete_simple call dies with
-    ``ValueError: unknown url type: '/chat/completions'`` instead of
-    reaching Anthropic (or failing with an honest auth error)."""
-    assert cat.default_api_for("claude-code") == "anthropic-messages"
-    assert cat.provider_base_url("claude-code") == "https://api.anthropic.com"
-    assert cat.provider_endpoints("claude-code")["default"] == {
-        "api": "anthropic-messages",
-        "base_url": "https://api.anthropic.com",
-    }
+def test_unsupported_provider_is_not_configured():
+    assert not cat.is_configured("claude-code")
 
 
 def test_override_table_stays_empty():

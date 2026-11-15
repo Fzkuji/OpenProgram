@@ -6,7 +6,7 @@ same exact execution envelope.
 """
 from __future__ import annotations
 
-from openprogram.webui.ws_actions import runtime
+from openprogram.interfaces.server.ws_actions import runtime
 
 
 def test_branch_controls_have_only_canonical_execution_actions() -> None:

@@ -2,42 +2,44 @@
    主题文件即数据：每个文件把整套 token 契约填满一遍。
    新增主题就照抄一份改值，不需要动任何组件。 */
 [data-theme="beige-dark"] {
-  --bg-primary: #262624;
-  --bg-secondary: #1f1e1b;
-  --bg-tertiary: #30302e;
+  --bg-primary: #191918;
+  --bg-secondary: #141413;
+  --bg-tertiary: #252523;
   --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-hover-contrast: #141413;
-  --bg-input: #333331;
+  --bg-hover-contrast: #0f0f0e;
+  --bg-input: #262624;
   --border: rgba(255, 255, 255, 0.06);       /* subtle hairline */
   --border-light: rgba(255, 255, 255, 0.10); /* strong hairline */
   --text-primary: #b8b5ad;
-  --text-secondary: #94928b; /* 4.87:1 on --bg-primary (#84827c was 3.95) */
+  --text-secondary: #94928b; /* 5.65:1 on --bg-primary */
   --text-bright: #f0efea;
-  --text-muted: #757370; /* 3.21:1 on --bg-primary (#6a6864 was 2.73) */
+  --text-muted: #757370; /* 3.72:1 on --bg-primary */
   --nav-color: #b8b5ad;       /* nav default — same as text-primary in dark */
   --nav-color-hover: #f0efea; /* nav hover — same as text-bright */
   --bg-selected: rgba(255, 255, 255, 0.10); /* selected row, one step above hover */
-  /* Claude chat surfaces: user bubble is a raised warm grey; the
-     assistant message sits flat on the page (no bubble tint). */
-  --user-msg-bg: #30302e;
-  --assistant-msg-bg: #262624;
+  /* Chat surfaces: the sent user bubble is the same raised surface as
+     the composer (--bg-input + --composer-shadow); the assistant
+     message sits flat on the page (no bubble tint). */
+  --user-msg-bg: var(--bg-input);
+  --assistant-msg-bg: #191918;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
   /* Popover / menu surface — the ONE elevated card every floating menu
-     uses (see components/chat/top-bar/menu-styles.ts MENU_PANEL). The
+     uses (see components/ui/menu/menu-styles.ts MENU_PANEL). The
      shadow carries its own 1px ring, so panels need no border. */
-  --surface-popover: #30302e;
+  --surface-popover: #252523;
   --border-popover: rgba(255, 255, 255, 0.12);
-  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-popover: var(--glass-shadow);
   --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
   --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
   --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
   /* Collapsed `off` effort-pill chip. Solid, a step above --bg-input
      so it reads as a distinct chip on the dark composer. */
-  --effort-off-bg: #3a3a38;
+  --effort-off-bg: #2d2d2b;
   --accent-orange: #d97757;
   --accent-fill: #d97757;
   --accent-orange-hover: #c86a4a;
+  --tabrow-tint: 0%; /* plain tab strip; vivid themes tint it with the accent */
   --accent-green: #6e9b76;
   --accent-red: #c24e42;
   --accent-yellow: #d4a346;
@@ -64,16 +66,18 @@
   /* 全屏/图片遮罩。深色主题下就是黑纱。 */
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-strong: rgba(0, 0, 0, 0.75);
-  /* Tooltip 与页面反色：深色主题下用比表面更亮的一块灰。 */
-  --surface-tooltip: #4a4a47;
-  --text-on-tooltip: #ffffff;
+  /* Tooltips are Nova's inverted badge (components/ui/tooltip.tsx). */
+  --surface-tooltip: var(--foreground);
+  --text-on-tooltip: var(--background);
   /* 输入框（composer）外圈发丝线，常态 / 聚焦。 */
   --composer-ring: rgba(255, 255, 255, 0.08);
   --composer-ring-focus: rgba(255, 255, 255, 0.14);
+  /* Input box = shadcn Luma Card surface with no border: shadow-sm
+     at rest, shadow-md on hover / focus. */
   --composer-surface: var(--bg-input);
   --composer-backdrop-filter: none;
-  --composer-shadow: 0 0 0 1px var(--composer-ring);
-  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus);
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.25), 0 1px 2px -1px rgb(0 0 0 / 0.25);
+  --composer-shadow-focus: 0 4px 6px -1px rgb(0 0 0 / 0.35), 0 2px 4px -2px rgb(0 0 0 / 0.35);
   /* 环境 pill 芯片底 + 描边。 */
   --chip-bg: var(--bg-tertiary);
   --chip-ring: var(--border-light);

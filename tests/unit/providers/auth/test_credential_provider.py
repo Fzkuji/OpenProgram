@@ -4,11 +4,10 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Awaitable
 
 import pytest
 
-from openprogram.auth import (
+from openprogram.models.auth import (
     AuthConfigError,
     AuthEventType,
     AuthNeedsReauthError,
@@ -18,11 +17,10 @@ from openprogram.auth import (
     Credential,
     CredentialData,
 )
-from openprogram.auth.credential_provider import (
+from openprogram.models.auth.credential_provider import (
     CredentialProvider,
     ProviderAuthConfig,
     register_provider_config,
-    get_provider_config,
 )
 
 

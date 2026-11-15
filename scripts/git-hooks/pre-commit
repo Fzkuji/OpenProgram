@@ -1,0 +1,39 @@
+#!/bin/sh
+# Installed into .git/hooks by scripts/git-hooks/install.sh, on every deploy and publish.
+# Local main is the slow line GitHub carries; it only takes squashed versions
+# from scripts/publish-github.sh. Everyday commits go to dev.
+if test "$(git symbolic-ref -q HEAD)" = "refs/heads/main"; then
+  echo "committing on main is refused: commit on dev; main only takes versions from scripts/publish-github.sh" >&2
+  exit 1
+fi
+
+# Staged docs must pass the docs check. It reads the index, so another
+# session's unsaved page cannot stop this commit. The baseline and the policy
+# are gated with them: both decide what the check lets through. Only a real
+# finding blocks: no venv, or the tool itself failing, lets the commit through.
+if git diff --cached --quiet -- docs scripts/docs_site/governance/baseline.json scripts/docs_site/governance/policy.py; then
+  exit 0
+fi
+common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+python="$(dirname "$common_dir")/.venv/bin/python"
+if ! test -x "$python" || ! test -f scripts/docs_site/check.py; then
+  echo "docs check skipped: no $python or no scripts/docs_site/check.py here" >&2
+  exit 0
+fi
+if ! "$python" -B -c 'import scripts.docs_site.check' 2>/dev/null; then
+  echo "docs check skipped: it could not be loaded" >&2
+  exit 0
+fi
+"$python" -B -m scripts.docs_site.check --staged
+status=$?
+case "$status" in
+  0) exit 0 ;;
+  1)
+    echo "commit refused: fix the docs errors above; python -m scripts.docs_site.check --staged repeats them" >&2
+    exit 1
+    ;;
+  *)
+    echo "docs check failed to run (exit $status); not blocking this commit" >&2
+    exit 0
+    ;;
+esac

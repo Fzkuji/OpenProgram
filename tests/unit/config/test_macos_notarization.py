@@ -283,3 +283,57 @@ def test_resign_tar_gz_signs_packed_dylib_and_updates_manifest(monkeypatch, tmp_
     digest = hashlib.sha256(extracted).hexdigest()
     assert manifest['languages']['python']['sha256'] == digest
     assert digest != original
+
+
+def test_standalone_executables_get_the_app_entitlements(tmp_path):
+    # Hardened executables without allow-jit crash on start: the bundled node
+    # exited 133 after signing, failing the packaged-runtime smoke.
+    helper = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
+    app = tmp_path / 'OpenProgram.app'
+    app.mkdir()
+    executable = tmp_path / 'node'
+    executable.write_bytes(bytes.fromhex('cffaedfe') + bytes(8) + (2).to_bytes(4, 'little') + bytes(16))
+    library = tmp_path / 'libthing.dylib'
+    library.write_bytes(bytes.fromhex('cffaedfe') + bytes(8) + (6).to_bytes(4, 'little') + bytes(16))
+    assert helper['uses_app_entitlements'](executable, app)
+    assert not helper['uses_app_entitlements'](library, app)
+    assert helper['uses_app_entitlements'](app, app)
+
+
+def test_sign_turns_library_validation_off_only_for_the_worker_interpreters(monkeypatch, tmp_path):
+    """A signed full App's Worker loads Program dependencies and torch installed later."""
+    import json
+    import plistlib
+
+    ns = runpy.run_path(str(ROOT / 'scripts/release/sign-macos-release.py'))
+    app, main_binary, _extras = _staged_app(tmp_path)
+    executable = bytes.fromhex('cffaedfe') + b'\0' * 8 + (2).to_bytes(4, 'little') + b'\0' * 16
+    runtime = app / 'Contents' / 'Resources' / 'runtime'
+    python = runtime / 'python' / 'cpython-3.12-macos' / 'bin' / 'python3.12'
+    helper = runtime / 'OpenProgram.app' / 'Contents' / 'MacOS' / 'OpenProgram'
+    node = runtime / 'bin' / 'node'
+    for path in (python, helper, node):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(executable)
+    (python.parent / 'python3').symlink_to('python3.12')
+    (runtime / 'runtime-manifest.json').write_text(json.dumps({
+        'python': 'python/cpython-3.12-macos/bin/python3',
+        'worker_python': 'OpenProgram.app/Contents/MacOS/OpenProgram',
+    }), encoding='utf-8')
+    calls = []
+    monkeypatch.setitem(ns['sign'].__globals__, 'run', lambda *args: calls.append(args) or '')
+    entitlements = ROOT / 'apps' / 'desktop' / 'build' / 'entitlements.mac.plist'
+    ns['sign'](app, 'Developer ID Application: Example', entitlements)
+
+    def granted(target):
+        call = next(call for call in _sign_calls(calls) if call[-1] == str(target))
+        with Path(call[call.index('--entitlements') + 1]).open('rb') as stream:
+            return plistlib.load(stream)
+
+    for worker in (python, helper, runtime / 'OpenProgram.app'):
+        assert granted(worker).get('com.apple.security.cs.disable-library-validation') is True, worker
+        # The Worker records meetings and drives other apps, so it keeps those grants.
+        assert granted(worker)['com.apple.security.device.audio-input'] is True
+        assert granted(worker)['com.apple.security.automation.apple-events'] is True
+    for other in (app, node):
+        assert 'com.apple.security.cs.disable-library-validation' not in granted(other), other

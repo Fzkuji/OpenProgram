@@ -1,12 +1,15 @@
 {
   "id": "example.calculator",
   "title": "Calculator",
-  "version": "1.0.0",
+  "description": "A desktop-style calculator with history. Expressions stay on this machine.",
+  "icon": "calculator",
+  "version": "2.0.0",
+  "scope": "global",
+  "dataSchema": 1,
   "ui": {
-    "root": ".",
+    "root": "ui",
     "entry": "index.html"
   },
-  "scope": "global",
-  "capabilities": [],
+  "capabilities": ["storage.app"],
   "operations": {}
 }

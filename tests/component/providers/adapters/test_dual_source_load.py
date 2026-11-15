@@ -2,7 +2,7 @@
 
 Post-Task-3 ``enabled_models._load`` builds ENABLED_MODELS from the
 user's enabled models in config (``providers.<p>.models`` spec rows), not
-the git-tracked ``providers/<p>/models.json`` catalogue. These tests pin:
+the git-tracked ``providers/adapters/<p>/models.json`` catalogue. These tests pin:
 
   * ``_load`` reads the config source and populates the registry from it;
   * the registry is one MUTABLE dict object — dynamic writers
@@ -10,7 +10,7 @@ the git-tracked ``providers/<p>/models.json`` catalogue. These tests pin:
     helper) do ``ENABLED_MODELS[k] = m`` in place and must land in the same
     dict.
 """
-from openprogram.providers.models import get_model
+from openprogram.models.providers.catalog.models import get_model
 
 from .._registry_fixture import install_registry
 
@@ -44,8 +44,8 @@ def test_registry_is_mutable_same_object(monkeypatch):
 def test_load_reads_config_source(monkeypatch):
     # _load must read read_providers_config; inject a sentinel provider row
     # and assert _load surfaces it as a registry key.
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(cr, "read_providers_config",
                         lambda: {"openai": {"models": [{"id": "__probe__",
                                                         "name": "P",

@@ -1,0 +1,59 @@
+<title>模型调用的重试决策</title>
+<meta name="description" content="一次模型调用的每一层何时重试、放弃或报告永久错误。">
+<h1>模型调用的重试决策</h1>
+<p>错误在两处成形，都变成 <code translate="no">stop_reason="error"</code>、<code translate="no">error_message</code> 可能为空的消息：<code translate="no">runtime/agent/loop/driver.py</code> 捕获的异常，或提供商流发出的 <code translate="no">error</code> 事件。</p>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">AgentSession</code></th><th scope="col"><code translate="no">Runtime.exec</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">代码</th><td><code translate="no">runtime/agent/loop/session.py</code>、<code translate="no">retry.py</code></td><td><code translate="no">runtime/agent/runtime/execution.py</code>、<code translate="no">shared.py</code></td></tr>
+<tr><th scope="row">看到的</th><td>最后一条 assistant 消息</td><td><code translate="no">_call</code> 抛出的异常</td></tr>
+<tr><th scope="row">预算</th><td>本次调用的 <code translate="no">transport_limit</code>（默认 4）；没有恢复状态时 <code translate="no">max_retries=3</code></td><td><code translate="no">max_retries=3</code>，<code translate="no">OPENPROGRAM_MAX_RETRIES</code></td></tr>
+<tr><th scope="row">退避</th><td><code translate="no">2000·2^(attempt-1)</code> 毫秒</td><td><code translate="no">1.5·2^attempt</code> 秒，±25%；<code translate="no">OPENPROGRAM_RETRY_BACKOFF_BASE</code></td></tr>
+<tr><th scope="row">有 Retry-After</th><td>–</td><td>作为下限，只加正向抖动</td></tr>
+<tr><th scope="row">重试前</th><td>弹出失败的 assistant 消息</td><td>–</td></tr>
+</tbody>
+</table>
+
+<h2 id="session-decision">AgentSession：<code translate="no">is_retryable_error</code></h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">依次检查</th><th scope="col">重试</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">stop_reason</code> 不是 <code translate="no">error</code></th><td>否</td></tr>
+<tr><th scope="row">上下文溢出</th><td>否，交给压缩</td></tr>
+<tr><th scope="row"><code translate="no">error_transport_exhausted</code></th><td>否</td></tr>
+<tr><th scope="row">提供商设置了 <code translate="no">error_retryable</code></th><td>以它为准</td></tr>
+<tr><th scope="row"><code translate="no">error_message</code> 为空</th><td>是</td></tr>
+<tr><th scope="row">其余情况</th><td>匹配 <code translate="no">_RETRY_PATTERN</code> 则是</td></tr>
+</tbody>
+</table>
+<p class="note">空消息算可重试，因为流断开时往往还没收到错误体。<code translate="no">_RETRY_PATTERN</code>：overloaded、rate limit、too many requests、429、500、502、503、504、service unavailable、server error、internal error、connection error、connection refused、other side closed、fetch failed、upstream connect、reset before headers、terminated、retry delay。</p>
+
+<h2 id="exec-decision">Runtime.exec</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">异常</th><th scope="col">动作</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ExecInterrupt</code>、<code translate="no">TypeError</code>、<code translate="no">NotImplementedError</code>、<code translate="no">ImportError</code>、<code translate="no">StructuredOutputError</code></th><td>直接抛出</td></tr>
+<tr><th scope="row"><code translate="no">retryable=False</code>，或命中 <code translate="no">_PERMANENT_ERROR_MARKERS</code></th><td>放弃，“failed permanently”</td></tr>
+<tr><th scope="row"><code translate="no">transport_exhausted</code>、已过期限、次数用尽、Retry-After 超上限</th><td>放弃</td></tr>
+<tr><th scope="row">等待会越过期限</th><td>按 <code translate="no">TIMEOUT</code> 放弃</td></tr>
+<tr><th scope="row">其他</th><td>等待后重试</td></tr>
+</tbody>
+</table>
+<p class="note">标记：not a valid image、invalid image、image data is not、login expired、login failed、re-auth、unauthorized、invalid api key、invalid_api_key。</p>
+
+<h2 id="layers-together">各层合起来</h2>
+<p>传输重试只算一次：<code translate="no">AgentSession</code> 和提供商流共用一个 <code translate="no">RecoveryState</code>。用尽时消息被标记 <code translate="no">error_transport_exhausted</code>，exec 不会用新的工具上下文重启本次调用。</p>
+
+<h2 id="retry-cannot-solve">重试解决不了的</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">失败</th><th scope="col">去向</th></tr></thead>
+<tbody>
+<tr><th scope="row">网关认证失效（<code translate="no">openai-codex</code> 登录过期或失败）</th><td>永久错误；批量运行前先登录</td></tr>
+<tr><th scope="row">上下文溢出</th><td>压缩</td></tr>
+<tr><th scope="row"><code translate="no">TypeError</code>、<code translate="no">NotImplementedError</code></th><td>改代码</td></tr>
+</tbody>
+</table>
+
+<h2 id="diagnostics">错误消息</h2>
+<p>捕获的异常变成 <code translate="no">type_name: text</code>，文本为空时只留类型，traceback 打到 stderr。最终错误列出每次尝试的 <code translate="no">type_name: text</code>，以及是永久失败还是 N 次后失败。</p>

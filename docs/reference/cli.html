@@ -1,0 +1,230 @@
+<title>CLI command reference</title>
+<meta name="description" content="Every openprogram subcommand at a glance, grouped by task.">
+<span id="cli"></span>
+<h1>CLI command reference</h1>
+<p class="note">Full flags: <code translate="no">openprogram &lt;command&gt; -h</code>, <code translate="no">openprogram logs tail -h</code>, or one <a href="cli/README.md">generated page per command</a>.</p>
+<h2 id="global-usage">Global</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>Opens the chat. A bare run first asks terminal UI or web UI, and launches a worker if none is running.</td></tr>
+<tr><th scope="row"><code translate="no">--print PROMPT</code></th><td>One-shot prompt; prints the reply and exits. Works in the current directory and runs until the model answers; a failure prints to stderr and exits non-zero. Run in its own process, it makes no model request beside the turn and leaves memory to the next worker: the conversation keeps the title cut from the prompt</td></tr>
+<tr><th scope="row"><code translate="no">--print</code>, stopped</th><td>Ctrl-C or SIGTERM stops the run, waits up to 30 seconds for it to stop (2 seconds once a second signal comes), writes the usage and transcript files and exits 128 plus the first signal's number (130 for Ctrl-C, 143 for SIGTERM, 129 for SIGHUP), whatever signal follows; a turn still busy then has its commands stopped</td></tr>
+<tr><th scope="row"><code translate="no">-p</code>, <code translate="no">--print -</code></th><td><code translate="no">-p</code> is <code translate="no">--print</code>. With no prompt or <code translate="no">-</code> the prompt comes from stdin; a prompt plus piped stdin adds the input as a <code translate="no">&lt;stdin&gt;</code> block. An empty prompt exits 2</td></tr>
+<tr><th scope="row"><code translate="no">--output-format FORMAT</code></th><td>What <code translate="no">--print</code> writes on stdout: <code translate="no">text</code> (the reply), <code translate="no">json</code> (one record of how the run ended) or <code translate="no">stream-json</code> (one event per line, init first, result last); <code translate="no">--include-partial-messages</code> adds text and reasoning deltas to the stream</td></tr>
+<tr><th scope="row"><code translate="no">--permission-mode MODE</code></th><td>Permission mode for this <code translate="no">--print</code> turn only: <code translate="no">ask</code>, <code translate="no">acceptEdits</code>, <code translate="no">plan</code>, <code translate="no">auto</code>, <code translate="no">bypass</code>. A call that would ask is refused, since nobody can answer; it shows on stderr and the run still exits 0</td></tr>
+<tr><th scope="row"><code translate="no">--continue</code>, <code translate="no">--session-id ID</code>, <code translate="no">--at REF</code></th><td><code translate="no">--continue</code> (<code translate="no">-c</code>) runs on this folder's latest conversation; <code translate="no">--session-id</code> starts a new one with that id and fails if it exists; <code translate="no">--at</code> with <code translate="no">--resume</code> or <code translate="no">--continue</code> picks a branch or a message to run after</td></tr>
+<tr><th scope="row"><code translate="no">--standalone</code>, <code translate="no">--no-project-binding</code>, <code translate="no">--no-web</code></th><td>Run in this process instead of the App's Worker; keep a new conversation in the profile and write nothing in the folder; run the turn without web tools or the provider's own search</td></tr>
+<tr><th scope="row"><code translate="no">--json-schema PATH</code></th><td>Requires JSON Schema output for <code translate="no">--print</code>; <code translate="no">-</code> reads stdin</td></tr>
+<tr><th scope="row"><code translate="no">--model PROVIDER/MODEL</code></th><td>Model for a <code translate="no">--print</code> run in a new conversation; the provider needs a key from <code translate="no">providers login &lt;provider&gt; --api-key-stdin</code></td></tr>
+<tr><th scope="row"><code translate="no">--effort LEVEL</code></th><td>Reasoning effort for one <code translate="no">--print</code> run: <code translate="no">off</code> (or <code translate="no">none</code>), <code translate="no">minimal</code>, <code translate="no">low</code>, <code translate="no">medium</code>, <code translate="no">high</code>, <code translate="no">xhigh</code>, <code translate="no">max</code>. Not saved; without it the Agent's effort applies</td></tr>
+<tr><th scope="row"><code translate="no">--usage-file PATH</code></th><td>After <code translate="no">--print</code>, writes tokens, cost, model, rounds and how the run ended to <code translate="no">PATH</code> as JSON</td></tr>
+<tr><th scope="row"><code translate="no">--transcript-file PATH</code></th><td>After <code translate="no">--print</code>, writes the turn to <code translate="no">PATH</code> as JSON lines: each model request with its tokens, the reply text, every tool call with its arguments and its result, in order, with times</td></tr>
+<tr><th scope="row"><code translate="no">--resume SESSION_ID</code></th><td>Resumes a session; ids from <code translate="no">openprogram sessions list</code> or the Web UI sidebar. With <code translate="no">--print</code>, an unknown id exits 1</td></tr>
+<tr><th scope="row"><code translate="no">--profile PROFILE</code></th><td>State directory <code translate="no">~/.openprogram-&lt;name&gt;/</code>; same as <code translate="no">OPENPROGRAM_PROFILE</code></td></tr>
+<tr><th scope="row"><code translate="no">--no-alt-screen</code></th><td>Inline TUI, keeps terminal scrollback</td></tr>
+<tr><th scope="row"><code translate="no">--screen-reader</code></th><td>Inline assistive-technology mode, no mouse tracking</td></tr>
+<tr><th scope="row"><code translate="no">--version</code></th><td>Prints the version</td></tr>
+</tbody>
+</table>
+<h2 id="chat-and-running">Chat and running</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tui</code> (alias <code translate="no">chat</code>)</th><td>Launches the Ink terminal UI directly on Windows, macOS or Linux; terminals without raw input fall back to Rich. Takes <code translate="no">--print</code>, <code translate="no">--json-schema</code>, <code translate="no">--model</code>, <code translate="no">--effort</code>, <code translate="no">--usage-file</code>, <code translate="no">--transcript-file</code>, <code translate="no">--resume</code>, <code translate="no">--no-alt-screen</code>, <code translate="no">--screen-reader</code>.</td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td>Starts the service and opens <code translate="no">http://localhost:18100</code>. <code translate="no">--web-port</code> (this run; default stored preference, then 18100), <code translate="no">--no-browser</code>. <code translate="no">web auth-url</code> prints an authenticated link.</td></tr>
+<tr><th scope="row"><code translate="no">acp</code></th><td>Agent Client Protocol server. <code translate="no">--agent</code>, <code translate="no">--permission</code>.</td></tr>
+</tbody>
+</table>
+<h2 id="background-service">Background service</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">status</code></th><td>Running or not: PID, port, uptime</td></tr>
+<tr><th scope="row"><code translate="no">stop</code></th><td>Stops it</td></tr>
+<tr><th scope="row"><code translate="no">restart</code></th><td>After code or config changes</td></tr>
+<tr><th scope="row"><code translate="no">upgrade</code></th><td>Updates the code, restarts only if it works. <code translate="no">--check</code>, <code translate="no">--dry-run</code>, <code translate="no">--channel</code>, <code translate="no">--no-restart</code>, <code translate="no">--yes</code>, <code translate="no">--json</code>; <code translate="no">upgrade status</code>.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">worker run</code></th><td>Foreground, for debugging; Ctrl-C stops</td></tr>
+<tr><th scope="row"><code translate="no">worker start</code></th><td>Starts in the background and returns</td></tr>
+<tr><th scope="row"><code translate="no">worker stop</code></th><td>An installed service stays stopped until the next start or login</td></tr>
+<tr><th scope="row"><code translate="no">worker restart</code></th><td>Stops and starts a fresh one</td></tr>
+<tr><th scope="row"><code translate="no">worker status</code></th><td>Running or not, PID, port, uptime</td></tr>
+<tr><th scope="row"><code translate="no">worker install</code></th><td>Login service: launchd on macOS, systemd --user on Linux, Task Scheduler on Windows. Starts at login, restarts after a crash.</td></tr>
+<tr><th scope="row"><code translate="no">worker uninstall</code></th><td>Removes the service</td></tr>
+</tbody>
+</table>
+<h2 id="setup-and-configuration">Setup and configuration</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">setup</code></th><td>First-run wizard. <code translate="no">menu</code> opens the picker; a section name jumps there: model, tools, agent, skills, ui, memory, profile, search, tts, channels, backend.</td></tr>
+<tr><th scope="row"><code translate="no">config</code></th><td><code translate="no">list</code> (value, group, apply mode), <code translate="no">get &lt;key&gt;</code>, <code translate="no">set &lt;key&gt; &lt;value&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">ports</code></th><td>Shows or persists the single Web UI port. <code translate="no">--port PORT</code>, default 18100.</td></tr>
+<tr><th scope="row"><code translate="no">completion</code></th><td>Prints a shell script: <code translate="no">bash</code>, <code translate="no">zsh</code>, <code translate="no">powershell</code>, <code translate="no">pwsh</code></td></tr>
+<tr><th scope="row"><code translate="no">recordings</code></th><td>Records and replays provider calls: <code translate="no">status</code>, <code translate="no">record</code>, <code translate="no">replay</code>, <code translate="no">off</code>, <code translate="no">list</code>, <code translate="no">show</code>, <code translate="no">delete</code>, <code translate="no">prune</code></td></tr>
+<tr><th scope="row"><code translate="no">environments</code></th><td>Where conversations run (this computer, SSH, Docker): <code translate="no">list</code>, <code translate="no">add</code>, <code translate="no">rm</code>, <code translate="no">default</code>, <code translate="no">test</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">check</code> explains one operation, <code translate="no">test</code> validates expected rule decisions</td></tr>
+</tbody>
+</table>
+<h3 id="providers">providers</h3>
+<p class="note">Alias <code translate="no">secrets</code>. With no verb: the status table for all credentials.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">login &lt;provider&gt;</code></th><td><code translate="no">--api-key</code>, <code translate="no">--api-key-stdin</code> for non-interactive keys; <code translate="no">--account</code>; <code translate="no">--method</code> forces a login method</td></tr>
+<tr><th scope="row"><code translate="no">logout</code></th><td>Removes a provider's credentials</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>Credential pools by account</td></tr>
+<tr><th scope="row"><code translate="no">available</code> (<code translate="no">search</code>, <code translate="no">catalog</code>)</th><td>Every configurable provider; optional QUERY</td></tr>
+<tr><th scope="row"><code translate="no">status</code></th><td>A provider's current credentials</td></tr>
+<tr><th scope="row"><code translate="no">use</code></th><td>Which account a provider uses</td></tr>
+<tr><th scope="row"><code translate="no">discover</code>, <code translate="no">adopt</code></th><td>Scan external credential sources, import them</td></tr>
+<tr><th scope="row"><code translate="no">doctor</code></th><td>Expiry, refresh, cooldown, conflicts</td></tr>
+<tr><th scope="row"><code translate="no">setup</code></th><td>Interactive first-time setup</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code></th><td>Provider short names</td></tr>
+<tr><th scope="row"><code translate="no">accounts</code></th><td><code translate="no">list</code>, <code translate="no">create</code>, <code translate="no">delete</code></td></tr>
+<tr><th scope="row"><code translate="no">migrate</code></th><td>Stored credentials to the current format</td></tr>
+</tbody>
+</table>
+<h3 id="mcp">mcp</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">token create</code></th><td>Creates and prints a token for the local stdio server</td></tr>
+<tr><th scope="row"><code translate="no">serve</code></th><td>Authenticated MCP over local stdio; needs an exact <code translate="no">OPENPROGRAM_MCP_TOKEN</code></td></tr>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">show</code></th><td>Servers and status; one server's tools and schemas</td></tr>
+<tr><th scope="row"><code translate="no">add</code></th><td>Stdio command server; writes <code translate="no">mcp_servers.json</code> and starts it</td></tr>
+<tr><th scope="row"><code translate="no">rm</code></th><td>Stops and deletes the config</td></tr>
+<tr><th scope="row"><code translate="no">restart</code>, <code translate="no">enable</code>, <code translate="no">disable</code></th><td><code translate="no">disable</code> stops it and keeps the config</td></tr>
+<tr><th scope="row"><code translate="no">edit</code></th><td>Removed; reports to use <code translate="no">add</code>/<code translate="no">rm</code> or the MCP settings page</td></tr>
+<tr><th scope="row"><code translate="no">test</code></th><td>Starts a config temporarily to check its tool list; writes nothing</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>openprogram mcp token create
+export OPENPROGRAM_MCP_TOKEN="&lt;paste the token printed above&gt;"
+openprogram mcp serve</code></pre>
+<p class="note"><code translate="no">token create</code> prints the raw token once and does not set the variable. If one exists, reuse the saved token.</p>
+<h2 id="content-management">Content</h2>
+<h3 id="agents">agents</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">show</code>, <code translate="no">add</code></th><td>List, view, create</td></tr>
+<tr><th scope="row"><code translate="no">rm</code></th><td>Deletes the agent and all its sessions</td></tr>
+<tr><th scope="row"><code translate="no">set-default</code></th><td>Default agent</td></tr>
+</tbody>
+</table>
+<h3 id="sessions">sessions</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>Every session across agents</td></tr>
+<tr><th scope="row"><code translate="no">archive</code>, <code translate="no">unarchive</code></th><td>Hide from or return to the default list; deletes nothing</td></tr>
+<tr><th scope="row"><code translate="no">resume</code></th><td>Answers a waiting session</td></tr>
+<tr><th scope="row"><code translate="no">attach</code>, <code translate="no">detach</code></th><td>Route a channel user into a session, remove it. <code translate="no">--channel</code>, <code translate="no">--peer</code> required; <code translate="no">--account</code>, <code translate="no">--peer-kind</code>.</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code></th><td>All session-to-channel-user aliases</td></tr>
+<tr><th scope="row"><code translate="no">export</code></th><td>Markdown or HTML file: <code translate="no">--format</code>, <code translate="no">--output</code></td></tr>
+<tr><th scope="row"><code translate="no">import</code></th><td>Claude Code and Codex conversations; rerunning adds only what is new</td></tr>
+</tbody>
+</table>
+<h3 id="subagent">subagent</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">spawn</code></th><td>New branch in a session. <code translate="no">--session</code>, <code translate="no">--prompt</code> required; <code translate="no">--parent-msg</code>, <code translate="no">--label</code>, <code translate="no">--agent</code> (default <code translate="no">main</code>), <code translate="no">--context inherit|clean</code> or <code translate="no">--clean</code>, <code translate="no">--no-json</code>.</td></tr>
+<tr><th scope="row"><code translate="no">merge</code></th><td>Merges into a target with a new turn. <code translate="no">--target</code>, repeatable <code translate="no">--branch SID</code> required; <code translate="no">--message</code>, <code translate="no">--agent</code>, <code translate="no">--base N</code>, <code translate="no">--no-json</code>.</td></tr>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">show</code></th><td>Job resource views in a session</td></tr>
+</tbody>
+</table>
+<h3 id="programs">programs</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>Kind, owner, load state, directory, exposure tiers</td></tr>
+<tr><th scope="row"><code translate="no">run &lt;name&gt; [operation]</code></th><td>Entry in this process, or an application operation in the service. <code translate="no">--arg key=value</code>, <code translate="no">--input</code>, <code translate="no">--project</code>, <code translate="no">--request-key</code>, <code translate="no">--provider</code>, <code translate="no">--model</code>.</td></tr>
+<tr><th scope="row"><code translate="no">status</code>, <code translate="no">cancel</code></th><td>An application operation run</td></tr>
+<tr><th scope="row"><code translate="no">check</code></th><td>Validates; tests and commits a package so it can be called</td></tr>
+<tr><th scope="row"><code translate="no">install</code>, <code translate="no">uninstall</code></th><td>Directory, git URL or owner/repo. <code translate="no">--upgrade</code>, <code translate="no">--replace</code>, <code translate="no">--trust</code>.</td></tr>
+<tr><th scope="row"><code translate="no">enable</code>, <code translate="no">disable</code></th><td>An application's UI, resource, services and entries. Tools cannot be disabled.</td></tr>
+</tbody>
+</table>
+<h3 id="skills">skills</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>Discovered skills</td></tr>
+<tr><th scope="row"><code translate="no">search</code>, <code translate="no">install</code></th><td>From a discovery source, ClawHub by default</td></tr>
+<tr><th scope="row"><code translate="no">update</code></th><td>Re-pulls stale skills, comparing SKILL.md hashes</td></tr>
+<tr><th scope="row"><code translate="no">remove</code></th><td>Project, user or remote-cache skills only</td></tr>
+<tr><th scope="row"><code translate="no">doctor</code></th><td>Scans skill directories</td></tr>
+</tbody>
+</table>
+<h3 id="plugins">plugins</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code>, <code translate="no">search</code></th><td>Installed plugins; configured marketplaces</td></tr>
+<tr><th scope="row"><code translate="no">install</code></th><td>Declarative plugin from npm, git or a path; a manifest that names code is refused</td></tr>
+<tr><th scope="row"><code translate="no">uninstall</code>, <code translate="no">update</code></th><td>Remove; re-install from npm</td></tr>
+<tr><th scope="row"><code translate="no">enable</code>, <code translate="no">disable</code>, <code translate="no">reload</code></th><td><code translate="no">reload</code> re-reads manifest and files</td></tr>
+<tr><th scope="row"><code translate="no">inspect</code></th><td>What a plugin may contain, what is refused, each entry's exposure tier</td></tr>
+</tbody>
+</table>
+<h3 id="channels">channels</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>Enable and configuration status per platform</td></tr>
+<tr><th scope="row"><code translate="no">setup</code></th><td>Wizard: pick a channel, log in (QR or token), bind an agent</td></tr>
+<tr><th scope="row"><code translate="no">accounts</code></th><td>Bot accounts: <code translate="no">list</code>, <code translate="no">add</code>, <code translate="no">rm</code>, <code translate="no">login</code>, <code translate="no">set</code>, <code translate="no">group-users</code></td></tr>
+<tr><th scope="row"><code translate="no">bindings</code></th><td>Routes inbound messages to agents</td></tr>
+<tr><th scope="row"><code translate="no">access</code></th><td><code translate="no">list</code>, <code translate="no">approve &lt;code&gt;</code>, <code translate="no">allow &lt;user_id&gt;</code>, <code translate="no">revoke &lt;user_id&gt;</code>. Unknown senders follow pairing; <code translate="no">allow</code> adds a known user directly. See <a href="../integrations/channels.html#who-can-talk-to-your-bot">Chat Channels</a>.</td></tr>
+</tbody>
+</table>
+<h3 id="memory">memory</h3>
+<p class="note">One workspace per instance, shared by every agent and conversation, including channels.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Verb</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">status</code></th><td>Contents, revision, writer health, pending turns</td></tr>
+<tr><th scope="row"><code translate="no">recall QUERY...</code></th><td>Prints matching paragraphs</td></tr>
+<tr><th scope="row"><code translate="no">show PATH</code>, <code translate="no">edit PATH</code></th><td>One file; <code translate="no">edit</code> uses <code translate="no">$EDITOR</code> and lands only if valid</td></tr>
+<tr><th scope="row"><code translate="no">sleep</code></th><td>Reorganises topic files now. <code translate="no">--model MODEL</code>.</td></tr>
+<tr><th scope="row"><code translate="no">export</code></th><td>tar+gzip the directory. <code translate="no">--out PATH</code>, default <code translate="no">./openprogram-memory-&lt;date&gt;.tar.gz</code>.</td></tr>
+</tbody>
+</table>
+<h3 id="trash-backup">Recovery of content</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">trash</code></th><td><code translate="no">list</code>, <code translate="no">restore</code>: recoverable local deletions, no overwriting</td></tr>
+<tr><th scope="row"><code translate="no">backup</code></th><td><code translate="no">create</code>, <code translate="no">list</code>, <code translate="no">restore</code>, <code translate="no">prune</code>: tar.gz snapshots in <code translate="no">&lt;state&gt;/backups/</code></td></tr>
+</tbody>
+</table>
+<h2 id="execution">Execution</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">pause</code>, <code translate="no">continue</code>, <code translate="no">step</code>, <code translate="no">steer</code>, <code translate="no">cancel</code>, <code translate="no">fork</code>, <code translate="no">retry</code>, <code translate="no">wait-answer</code>, <code translate="no">wait-decline</code></td></tr>
+<tr><th scope="row"><code translate="no">jobs</code></th><td><code translate="no">list</code>, <code translate="no">get</code>: job resource views</td></tr>
+<tr><th scope="row"><code translate="no">transcript</code></th><td>Rebuilds a <code translate="no">--print</code> run's transcript from its stored state, as <code translate="no">--transcript-file</code> writes it, for a run killed before it wrote one. <code translate="no">--state DIR</code>, <code translate="no">--session ID</code>, <code translate="no">--output PATH</code></td></tr>
+<tr><th scope="row"><code translate="no">scheduler-worker</code> (<code translate="no">cron-worker</code>)</th><td>Foreground loop for one-time, recurring and monitor tasks. A failed daemon tick logs a warning and traceback to stderr, then evaluation continues at the next minute without replaying a failed initial <code translate="no">@reboot</code> tick. <code translate="no">--once</code> runs one tick and propagates failures; <code translate="no">--list</code> shows match state.</td></tr>
+</tbody>
+</table>
+<h2 id="maintenance">Maintenance</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">doctor</code></th><td>End-to-end health check. <code translate="no">--json</code>, <code translate="no">--repair</code>, <code translate="no">credentials</code>.</td></tr>
+<tr><th scope="row"><code translate="no">rescue</code></th><td>Diagnoses problems, prints fix commands</td></tr>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td>Redacted support zip. <code translate="no">--output PATH</code>, default <code translate="no">./openprogram-diagnostics-&lt;date&gt;.zip</code>. See <a href="diagnostics.html">Diagnostics bundle</a>.</td></tr>
+<tr><th scope="row"><code translate="no">logs</code></th><td><code translate="no">list</code>; <code translate="no">tail [name]</code> with <code translate="no">-n</code>, <code translate="no">-f</code>; <code translate="no">path [name]</code>. Names: worker (default), runtime, ink.</td></tr>
+<tr><th scope="row"><code translate="no">self-update</code></th><td><code translate="no">status</code>, <code translate="no">repair</code>: inspects or recovers an in-chat App update. See <a href="../install/upgrade.html#conversational-self-update">Upgrade</a>.</td></tr>
+<tr><th scope="row"><code translate="no">dev</code></th><td><code translate="no">status</code>, <code translate="no">deploy</code>, <code translate="no">open</code>, <code translate="no">copy-models</code>, <code translate="no">auth-url</code>, <code translate="no">promote</code>. See <a href="../install/upgrade.html#development-checkout">Upgrade</a>.</td></tr>
+<tr><th scope="row"><code translate="no">update</code></th><td>Leftover that currently raises <code translate="no">ImportError</code>. Use <code translate="no">upgrade</code>.</td></tr>
+</tbody>
+</table>

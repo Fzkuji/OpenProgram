@@ -171,7 +171,9 @@ export function QuestionPicker({
     : 'Your input needed';
 
   const lines: string[] = [];
-  lines.push(q.kind === 'approval' ? cWarn(badge) : cPB(badge));
+  // A sub-agent's request names it beside the heading.
+  const heading = q.askedBy ? `${badge} · ${q.askedBy}` : badge;
+  lines.push(q.kind === 'approval' ? cWarn(heading) : cPB(heading));
   lines.push(cPB(q.prompt));
   if (q.detail) lines.push(cM(q.detail));
   // approval danger summary: tool + args.

@@ -1,163 +1,80 @@
 /**
  * Composer tool / plus-menu icons.
  *
- * Tools / Web Search / Fast / Plus are the ANIMATED line glyphs from
- * pqoqubbw/icons (the app-wide set in ``@/components/animated-icons``),
- * wrapped as ``forwardRef`` so a parent button / row / chip can drive
- * the hover animation imperatively (start / stop) — see
- * ./controls/menu-pieces. The + trigger button is icon-sized, so its
- * own hover suffices (uncontrolled). Per project rule we never
- * hand-author icon SVGs.
+ * The composer area uses the filled Solar set (``@/components/solar-icons``,
+ * Bold Duotone) rather than the app-wide pqoqubbw line icons. Each glyph
+ * is wrapped as ``forwardRef`` so a parent button / row / chip can drive
+ * the hover micro-motion imperatively (start / stop) — see
+ * ./controls/menu-pieces. The + trigger button is icon-sized, so its own
+ * hover suffices (uncontrolled). Per project rule we never hand-author
+ * icon SVGs.
  *
- * Send / Stop stay local: they're the send-button glyphs (filled /
- * CSS-coloured), not part of the animated line-icon family. The chip ×
- * and the effort caret use the animated XIcon / ChevronRightIcon
- * directly from ``@/components/animated-icons``.
+ * Icons that reflect a toggle take the state and switch glyphs:
+ * Unattended shows a closed eye once nobody is watching, the
+ * while-running mode shows a forward arrow for Steer and a queue list
+ * for Queue.
+ *
+ * Send is the Solar paper plane; Stop stays a local
+ * filled square (the send button's stop glyph, not an icon).
+ *
+ * Every glyph here fills its 16 px box (SolarIcon fit="fill") and grows to
+ * exactly 18 px on hover, the paper plane like the rest. The stop
+ * square keeps its 8 px square in the 16 px box.
  */
 "use client";
 
-import { forwardRef, useImperativeHandle } from "react";
-import { motion, useAnimation, type Variants } from "framer-motion";
+import { forwardRef } from "react";
 
-import {
-  type AnimatedNavIconHandle,
-  ChromeIcon,
-  EyeIcon,
-  SlidersHorizontalIcon,
-  WrenchIcon,
-  ZapIcon,
-} from "@/components/animated-icons";
+import type { AnimatedNavIconHandle } from "@/components/animated-icons";
+import { SolarIcon } from "@/components/solar-icons";
+
+type IconProps = { size?: number };
 
 // The composer's "+" trigger opens the tools/options menu; it's a
-// sliders-horizontal ("adjust options") glyph rather than a plus.
-export const OptionsIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
+// tuning-sliders ("adjust options") glyph rather than a plus.
+export const OptionsIcon = forwardRef<AnimatedNavIconHandle, IconProps>(
   function OptionsIcon({ size = 16 }, ref) {
-    return <SlidersHorizontalIcon ref={ref} size={size} />;
+    return <SolarIcon ref={ref} fit="fill" name="tuning-2" size={size} />;
   },
 );
 
-export const ToolsIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
-  function ToolsIcon({ size = 20 }, ref) {
-    return <WrenchIcon ref={ref} size={size} />;
+export const AttachIcon = forwardRef<AnimatedNavIconHandle, IconProps>(
+  function AttachIcon({ size = 16 }, ref) {
+    return <SolarIcon ref={ref} fit="fill" name="paperclip" size={size} />;
   },
 );
 
-export const WebSearchIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
-  function WebSearchIcon({ size = 20 }, ref) {
-    return <ChromeIcon ref={ref} size={size} />;
+export const RecordIcon = forwardRef<AnimatedNavIconHandle, IconProps>(
+  function RecordIcon({ size = 16 }, ref) {
+    return <SolarIcon ref={ref} fit="fill" name="record" size={size} />;
   },
 );
 
-export const FastIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
-  function FastIcon({ size = 20 }, ref) {
-    return <ZapIcon ref={ref} size={size} />;
+export const WebSearchIcon = forwardRef<AnimatedNavIconHandle, IconProps>(
+  function WebSearchIcon({ size = 16 }, ref) {
+    return <SolarIcon ref={ref} fit="fill" name="global" size={size} />;
   },
 );
 
-// Unattended (no-one watching → agent won't ask questions). Eye glyph reads
-// as "watching"; the menu label/active state convey the off sense.
-export const UnattendedIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
-  function UnattendedIcon({ size = 20 }, ref) {
-    return <EyeIcon ref={ref} size={size} />;
+export const SandboxIcon = forwardRef<AnimatedNavIconHandle, IconProps>(
+  function SandboxIcon({ size = 16 }, ref) {
+    return <SolarIcon ref={ref} fit="fill" name="box-minimalistic" size={size} />;
   },
 );
 
-// Lucide archive — lid lifts, box and handle drop. Same
-// framer-motion + AnimatedNavIconHandle drive as SendIcon.
-const SANDBOX_LID_VARIANTS: Variants = {
-  normal: { translateY: 0 },
-  animate: { translateY: -1.5 },
-};
-const SANDBOX_BOX_VARIANTS: Variants = {
-  normal: { d: "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" },
-  animate: { d: "M4 11v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V11" },
-};
-const SANDBOX_HANDLE_VARIANTS: Variants = {
-  normal: { d: "M10 12h4" },
-  animate: { d: "M10 15h4" },
-};
-
-export const SandboxIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
-  function SandboxIcon({ size = 20 }, ref) {
-    const controls = useAnimation();
-    useImperativeHandle(ref, () => ({
-      startAnimation: () => controls.start("animate"),
-      stopAnimation: () => controls.start("normal"),
-    }));
-    return (
-      <svg
-        fill="none"
-        height={size}
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-        viewBox="0 0 24 24"
-        width={size}
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <motion.rect
-          animate={controls}
-          height="5"
-          initial="normal"
-          rx="1"
-          variants={SANDBOX_LID_VARIANTS}
-          width="20"
-          x="2"
-          y="3"
-        />
-        <motion.path
-          animate={controls}
-          d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"
-          initial="normal"
-          variants={SANDBOX_BOX_VARIANTS}
-        />
-        <motion.path
-          animate={controls}
-          d="M10 12h4"
-          initial="normal"
-          variants={SANDBOX_HANDLE_VARIANTS}
-        />
-      </svg>
-    );
+// Unattended (no-one watching → agent won't ask questions): open eye
+// while someone is attending, closed eye once the mode is on.
+export const UnattendedIcon = forwardRef<AnimatedNavIconHandle, IconProps & { on?: boolean }>(
+  function UnattendedIcon({ size = 16, on = false }, ref) {
+    return <SolarIcon ref={ref} fit="fill" name={on ? "eye-closed" : "eye"} size={size} />;
   },
 );
 
-// Send glyph — claude.ai-style up-arrow (pqoqubbw arrow-up). Driven by
-// the send button's hover via ref (controlled). Rendered as a bare
-// <svg> (no wrapper div) so the existing `.actionBtn svg` sizing still
-// applies; `.sendBtn svg { fill: none }` keeps it stroked, not filled.
-const SEND_ARROW_VARIANTS: Variants = {
-  normal: { d: "m5 12 7-7 7 7", translateY: 0 },
-  animate: { d: "m5 12 7-7 7 7", translateY: [0, 3, 0], transition: { duration: 0.4 } },
-};
-const SEND_SHAFT_VARIANTS: Variants = {
-  normal: { d: "M12 19V5" },
-  animate: { d: ["M12 19V5", "M12 19V10", "M12 19V5"], transition: { duration: 0.4 } },
-};
-
-export const SendIcon = forwardRef<AnimatedNavIconHandle>((_props, ref) => {
-  const controls = useAnimation();
-  useImperativeHandle(ref, () => ({
-    startAnimation: () => controls.start("animate"),
-    stopAnimation: () => controls.start("normal"),
-  }));
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <motion.path animate={controls} initial="normal" d="m5 12 7-7 7 7" variants={SEND_ARROW_VARIANTS} />
-      <motion.path animate={controls} initial="normal" d="M12 19V5" variants={SEND_SHAFT_VARIANTS} />
-    </svg>
-  );
+// Send glyph — paper plane, grown on the send button's hover via ref like the
+// row's other glyphs (controlled): it does not glide. `.actionBtn svg` keeps it filled with currentColor.
+export const SendIcon = forwardRef<AnimatedNavIconHandle>(function SendIcon(_props, ref) {
+  return <SolarIcon ref={ref} fit="fill" name="plain-2" size={16} />;
 });
-SendIcon.displayName = "SendIcon";
 
 export function StopIcon() {
   return (
@@ -166,4 +83,3 @@ export function StopIcon() {
     </svg>
   );
 }
-

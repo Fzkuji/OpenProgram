@@ -1,652 +1,438 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenProgram 远程 Web 访问设计</title>
-<style>
-  :root{
-    --bg:#0f171c;
-    --panel:#15232a;
-    --panel-2:#192c34;
-    --ink:#e7eee9;
-    --text:#b7c5c3;
-    --muted:#7f9595;
-    --line:#294049;
-    --cyan:#67c9c7;
-    --blue:#70a7e8;
-    --amber:#e8ad67;
-    --green:#8bcf9a;
-    --red:#ef7772;
-    --violet:#b89ae8;
-    --code:#0b1216;
+<title>Remote Web access</title>
+<meta name="description" content="How the single owner reaches the Web UI from another device: instance token, browser bootstrap, Host and Origin checks, reverse proxies and secret handling.">
+<h1>Remote Web access</h1>
+
+<p>Every HTTP, SSE and WebSocket request carries the per-start instance token, even on loopback. A valid token means the active profile's one owner. No relay, no accounts.</p>
+
+<h2 id="method">Access modes</h2>
+<table class="stack">
+<thead><tr><th scope="col">Mode</th><th scope="col">Bind</th><th scope="col">Browser reaches</th><th scope="col">Protection besides the token</th></tr></thead>
+<tbody>
+<tr><th scope="row">Same machine</th><td><code translate="no">127.0.0.1</code></td><td>Loopback URL</td><td>Host and Origin checks</td></tr>
+<tr><th scope="row">Trusted LAN or encrypted VPN</th><td>Explicit <code translate="no">web.host</code>, often <code translate="no">0.0.0.0</code></td><td>Direct address</td><td>Non-empty exact origins, Host checks, HTTPS or an encrypted network</td></tr>
+<tr><th scope="row">SSH tunnel</th><td><code translate="no">127.0.0.1</code></td><td>Local forwarded port</td><td>SSH encrypts transport</td></tr>
+<tr><th scope="row">Public owner domain</th><td><code translate="no">127.0.0.1</code> behind a same-host proxy</td><td>Owner-managed HTTPS URL</td><td>Exact origin and Host, trusted loopback proxy, HTTPS</td></tr>
+</tbody>
+</table>
+
+<h3 id="authority">Who a valid token is</h3>
+<dl class="pairs">
+<dt>Principal</dt><dd><code translate="no">owner/install/&lt;16hex&gt;</code> from <code translate="no">openprogram/runtime/permissions/authority.py</code>, with the owner tier's fixed capabilities</dd>
+<dt>Scope</dt><dd>The active profile or state directory: <code translate="no">owner.json</code> lives there, so each profile has its own owner</dd>
+<dt>Proves</dt><dd>Authorization as the owner, not which person is at the browser</dd>
+<dt>Channel speakers</dt><dd>Telegram, Discord and other channels keep speaker attribution and the restricted <code translate="no">paired</code> tier; a channel turn never makes someone the Web owner</dd>
+<dt>Stored</dt><dd>No Web user table, passwords, memberships, roles or per-project ACL</dd>
+</dl>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Excluded</th><th scope="col">Instead</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web accounts, signup, invitations, user sessions</th><td>One owner principal per profile or state instance</td></tr>
+<tr><th scope="row">RBAC, groups, tenant or workspace roles, project permissions</th><td>The Web UI is one full-capability administrative interface</td></tr>
+<tr><th scope="row">OAuth, OIDC, SSO, identity-aware proxy, Tailscale identity</th><td>May add a control; never replace the token</td></tr>
+<tr><th scope="row">Built-in TLS, ACME, certificate storage and renewal</th><td>The owner runs nginx, Caddy, a VPN or SSH</td></tr>
+<tr><th scope="row">Public relay, hosted tunnel, rendezvous, pairing, share URL</th><td>No outbound registration for reachability</td></tr>
+<tr><th scope="row">Authentication off, <code translate="no">--insecure</code></th><td>Always on, including loopback</td></tr>
+<tr><th scope="row">Long-lived token in a query, <code translate="no">localStorage</code> or public HTML</th><td>Fragment bootstrap and HttpOnly cookie only</td></tr>
+<tr><th scope="row">Reading stored provider credentials as plaintext</th><td>Replace only</td></tr>
+</tbody>
+</table>
+
+<h2 id="current">Threats on loopback</h2>
+<table class="stack">
+<thead><tr><th scope="col">Caller</th><th scope="col">What it can do</th><th scope="col">Control</th></tr></thead>
+<tbody>
+<tr><th scope="row">Arbitrary Web page</th><td>Send some HTTP to localhost; WebSocket escapes the same-origin read rule</td><td>Token plus exact Origin and Host before any action</td></tr>
+<tr><th scope="row">DNS-rebinding page</th><td>Resolve a hostile name to loopback and present a foreign Host</td><td>Fail-closed Host validation</td></tr>
+<tr><th scope="row">Local process, other OS account</th><td>Omit <code translate="no">Origin</code>, as <code translate="no">curl</code> and native clients do</td><td>Bearer token; missing Origin conveys no trust</td></tr>
+<tr><th scope="row">LAN peer after external bind</th><td>Connect to every route and <code translate="no">/ws</code></td><td>Mandatory token, exact origins, Host validation, protected transport</td></tr>
+<tr><th scope="row">Reverse-proxy client</th><td>Present a public Host while the backend stays loopback</td><td>Explicit public origin, narrowly trusted loopback proxy</td></tr>
+</tbody>
+</table>
+
+<h3 id="invariants">Invariants</h3>
+<ul>
+<li>Before authentication: no protected state, session data, file bytes, secret metadata, SSE event or WebSocket frame leaves, and no action runs.</li>
+<li>A missing <code translate="no">Origin</code> never establishes trust. It is allowed only after valid Bearer authentication, or on a safe cookie request.</li>
+<li>The token complements Host and Origin checks; cookies keep CSRF controls.</li>
+<li>A non-loopback bind with incomplete origins fails before listening.</li>
+<li>No route returns a stored secret, or the token after initial entry.</li>
+</ul>
+
+<h2 id="design">Token and credentials</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Value</th><td><code translate="no">secrets.token_bytes(32)</code>, shown as 43 characters of unpadded base64url; new on every Web process start</td></tr>
+<tr><th scope="row">One process</th><td>Exclusive owner-only lock <code translate="no">&lt;state-dir&gt;/web.lock</code>; a second process fails without touching the first's token</td></tr>
+<tr><th scope="row">Files</th><td><code translate="no">web/token</code> written atomically before the listener is ready; <code translate="no">web/access.json</code> holds exactly <code translate="no">version</code>, <code translate="no">bind_host</code>, <code translate="no">port</code>, <code translate="no">effective_origins</code>, <code translate="no">token_fingerprint</code>; both owner-only, hardened by <code translate="no">restrict_to_user()</code></td></tr>
+<tr><th scope="row">Never from</th><td>Configuration, a command-line argument, an environment variable</td></tr>
+<tr><th scope="row">Never in</th><td>Server logs, exception messages, access logs, telemetry, Web responses. Logs carry only <code translate="no">sha256:&lt;first 12 hex of sha256(raw bytes)&gt;</code></td></tr>
+<tr><th scope="row">Compare</th><td>Decode to exactly 32 bytes, then <code translate="no">hmac.compare_digest</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Startup failure and cleanup</summary>
+<ul>
+<li>The write follows the temp-file, <code translate="no">os.replace</code> and permission pattern of <code translate="no">openprogram/extensions/mcp/token_storage.py</code>.</li>
+<li>Startup fails if the lock cannot be taken or the token file cannot be created and read back safely.</li>
+<li><code translate="no">read_active_web_access()</code> returns <code translate="no">ActiveWebAccess</code> only for a valid snapshot whose fingerprint matches the live token file.</li>
+<li>On bind failure or shutdown, the process removes the token only while holding the lock with its own token in the file, and <code translate="no">access.json</code> only when the fingerprint is its own.</li>
+<li>Stale unlocked files are replaced atomically by the next process.</li>
+</ul>
+</details>
+
+<h3 id="credential-forms">Credential forms</h3>
+<table class="stack">
+<thead><tr><th scope="col">Client</th><th scope="col">Credential</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Browser HTTP, SSE, WebSocket</th><td>Cookie <code translate="no">openprogram_owner_&lt;16hex&gt;</code> = <code translate="no">base64url(HMAC-SHA256(raw_token, "openprogram-web-cookie-v1"))</code></td><td><code translate="no">HttpOnly</code>, <code translate="no">SameSite=Strict</code>, <code translate="no">Path=/</code>, no <code translate="no">Domain</code>, session lifetime; <code translate="no">Secure</code> when the effective scheme is HTTPS</td></tr>
+<tr><th scope="row">Native HTTP, SSE, WebSocket</th><td><code translate="no">Authorization: Bearer &lt;token&gt;</code></td><td>Header only; a token in a query is ignored</td></tr>
+</tbody>
+</table>
+<ul>
+<li>The profile-specific name keeps simultaneous profile servers from overwriting each other's cookie: cookies are not port-scoped.</li>
+<li>The cookie has no database row. It is recomputed from the token, so a restart invalidates it.</li>
+<li>Except on bootstrap, any <code translate="no">Authorization</code> header selects the Bearer path: a bad one returns <code translate="no">401</code> and never falls back to a valid cookie.</li>
+</ul>
+
+<h3 id="fragment-bootstrap">Browser sign-in</h3>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 318" role="img" aria-label="Sequence between CLI, browser and Web server. The CLI opens the root URL with the token in the fragment. The browser requests the page without the fragment and gets the public static shell. It reads the token into memory and clears the address with history.replaceState. It posts the token to the bootstrap endpoint in the body and receives 204 with an HttpOnly cookie. All later HTTP, SSE and WebSocket traffic uses the cookie.">
+  <defs><marker id="rw-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big mid" x="60" y="24">CLI</text>
+  <text class="t-big mid" x="330" y="24">Browser</text>
+  <text class="t-big mid" x="610" y="24">Web server</text>
+  <line class="ln-faint" x1="60" y1="36" x2="60" y2="308"/>
+  <line class="ln-faint" x1="330" y1="36" x2="330" y2="308"/>
+  <line class="ln-faint" x1="610" y1="36" x2="610" y2="308"/>
+  <text class="t-cmd mid" x="195" y="60">open /#token=…</text>
+  <line class="ln" x1="60" y1="70" x2="330" y2="70" marker-end="url(#rw-a)"/>
+  <text class="t-cmd mid" x="470" y="98">GET / (no fragment)</text>
+  <line class="ln" x1="330" y1="108" x2="610" y2="108" marker-end="url(#rw-a)"/>
+  <text class="t-soft mid" x="470" y="134">public static shell</text>
+  <line class="ln" x1="610" y1="144" x2="330" y2="144" marker-end="url(#rw-a)"/>
+  <text class="t-cmd" x="20" y="168">token into memory</text>
+  <text class="t-cmd" x="20" y="190">history.replaceState()</text>
+  <line class="ln-faint" x1="240" y1="178" x2="326" y2="178" marker-end="url(#rw-a)"/>
+  <text class="t-cmd mid" x="470" y="212">POST /api/auth/bootstrap</text>
+  <line class="ln-acc" x1="330" y1="222" x2="610" y2="222" marker-end="url(#rw-a)"/>
+  <text class="t-cmd mid" x="470" y="248">204 Set-Cookie: HttpOnly</text>
+  <line class="ln-acc" x1="610" y1="258" x2="330" y2="258" marker-end="url(#rw-a)"/>
+  <text class="t-soft mid" x="470" y="284">HTTP, SSE, WebSocket with the cookie</text>
+  <line class="ln" x1="330" y1="294" x2="610" y2="294" marker-end="url(#rw-a)"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>CLI</strong><small><code translate="no">open /#token=…</code></small></li>
+  <li><strong>Browser</strong><small><code translate="no">GET /</code> without the fragment; gets the public shell</small></li>
+  <li><strong>Browser</strong><small>token into memory, <code translate="no">history.replaceState()</code></small></li>
+  <li><strong>Browser</strong><small><code translate="no">POST /api/auth/bootstrap</code></small></li>
+  <li><strong>Web server</strong><small><code translate="no">204</code>, <code translate="no">Set-Cookie: HttpOnly</code></small></li>
+  <li class="flow-end"><strong>Browser</strong><small>HTTP, SSE, WebSocket with the cookie</small></li>
+</ol>
+</figure>
+<p class="note">The fragment never appears in an HTTP request, proxy log, Referer or route. <code translate="no">apps/web/lib/net/auth/owner-auth-bootstrap.ts</code> mounts the application only after the exchange and uses no Web Storage.</p>
+
+<details>
+<summary><code translate="no">POST /api/auth/bootstrap</code> contract</summary>
+<ul>
+<li><code translate="no">POST</code> only, with a valid exact Origin and valid Host.</li>
+<li><code translate="no">Content-Type: application/json</code>, body at most 256 bytes, exactly <code translate="no">{"token":"&lt;43-character base64url&gt;"}</code>. Unknown keys, duplicate keys, bad base64url and other lengths are rejected.</li>
+<li>Any <code translate="no">Authorization</code> header, a missing token or a wrong token: the same <code translate="no">401</code>.</li>
+<li>Success: <code translate="no">204</code> and the cookie. Always <code translate="no">Cache-Control: no-store</code>; the token is never in a response.</li>
+</ul>
+</details>
+
+<h3 id="auth-url">Sign-in link for another device</h3>
+<pre translate="no" tabindex="0">openprogram web auth-url --base-url https://agent.example.com</pre>
+<ol>
+<li>Compare worker PID and port files, <code translate="no">access.json</code> and the listening process: send a fresh nonce to <code translate="no">GET /api/auth/challenge</code> and check the HMAC proof locally. The token is never sent to the probed port.</li>
+<li>Read the live token file and print one fragment URL to the terminal, never to application logs.</li>
+</ol>
+<p class="note"><code translate="no">--base-url</code> must be an effective origin frozen in <code translate="no">access.json</code>, with no path, query, fragment or user information. HTTP passes only for exact <code translate="no">localhost</code> on a loopback listener or an IP in the ranges under <a href="#http-ranges">Plaintext HTTP</a>.</p>
+
+<h2 id="routes">Request handling</h2>
+<p>One ASGI middleware, <code translate="no">OwnerAuthMiddleware</code>, runs before route dispatch for HTTP and WebSocket. No application route interprets authentication itself.</p>
+<table class="stack">
+<thead><tr><th scope="col">Order</th><th scope="col">Check</th><th scope="col">On failure</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>Immediate peer, effective scheme, one valid <code translate="no">Host</code>; <code translate="no">request_origin</code> must be effective. <code translate="no">Origin</code> and <code translate="no">Sec-Fetch-Site</code> when present.</td><td><code translate="no">403 request_origin_rejected</code></td></tr>
+<tr><th scope="row">2</th><td>Public, challenge and bootstrap routes answer here</td><td>Their own rule, below</td></tr>
+<tr><th scope="row">3</th><td>Bearer if an <code translate="no">Authorization</code> header exists, else cookie</td><td><code translate="no">401 authentication_required</code>, <code translate="no">WWW-Authenticate: Bearer realm="OpenProgram"</code></td></tr>
+<tr><th scope="row">4</th><td>Cookie on an unsafe method or WebSocket must have <code translate="no">Origin</code></td><td><code translate="no">403 request_origin_rejected</code></td></tr>
+<tr><th scope="row">5</th><td>Attach <code translate="no">owner_authority(principal)</code>, then route, SSE generator or <code translate="no">websocket.accept</code></td><td></td></tr>
+</tbody>
+</table>
+<p class="note">WebSocket failures are HTTP upgrade denials, never an accepted socket then a close frame. Malformed or revision-mismatched challenge: <code translate="no">400 invalid_challenge</code>. HTTP carrying <code translate="no">x-openprogram-ui-check</code>: <code translate="no">409 ui_verification_active</code>. Invalid non-loopback startup configuration: no listener.</p>
+
+<h3 id="public-routes">Reachable without the owner credential</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">Route</th><th scope="col">Guard or content</th></tr></thead>
+<tbody>
+<tr><th scope="row">Application shell, static assets</th><td><code translate="no">GET</code> and <code translate="no">HEAD</code>; no token, secret, session id or user data in the HTML</td></tr>
+<tr><th scope="row"><code translate="no">GET</code>/<code translate="no">HEAD /docs</code>, <code translate="no">/docs/**</code></th><td>Prebuilt site only: <code translate="no">docs/_site</code> in a checkout, <code translate="no">openprogram/interfaces/server/_frontend/docs</code> in a package (the wheel must include its <code translate="no">index.html</code>). No source scan or build on a request; staleness checks run only when a source worker registers routes.</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/auth/bootstrap</code></th><td>Its own body-token check</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/auth/challenge</code></th><td>Listener proof, below; grants nothing</td></tr>
+<tr><th scope="row"><code translate="no">GET /healthz</code></th><td>Only <code translate="no">{"status":"ok"}</code>; details are behind authentication at <code translate="no">/api/diagnostics</code></td></tr>
+<tr><th scope="row"><code translate="no">POST /hooks/&lt;id&gt;</code></th><td>Scheduler webhook, guarded by the task's own key</td></tr>
+<tr><th scope="row"><code translate="no">GET /application-assets/…</code></th><td>Sandboxed module imports with <code translate="no">Origin: null</code>; reads one immutable UI tree; Host still checked</td></tr>
+<tr><th scope="row">Office host</th><td>Served by the <code translate="no">office_editor</code> application while enabled; WebSocket refused</td></tr>
+</tbody>
+</table>
+<p class="note">All pass step 1, except the Office host, which <code translate="no">office_editor</code> checks. Everything else needs a credential: routes, raw files, providers, diagnostics, SSE, WebSocket.</p>
+
+<details>
+<summary>Listener challenge and session check</summary>
+<ul>
+<li>Input: <code translate="no">nonce</code> of 32 bytes as 43-character base64url, optional <code translate="no">revision</code> of 40 lowercase hex that must equal the served revision.</li>
+<li>Output: exactly <code translate="no">200 {"proof":"&lt;43-character base64url&gt;"}</code>, where the proof is <code translate="no">HMAC-SHA256(raw_token, "openprogram-web-challenge-v1\0" + nonce + "\0" + revision)</code>.</li>
+<li>No credential is sent, and no token or diagnostics are returned.</li>
+<li><code translate="no">GET /api/auth/session</code> after sign-in: <code translate="no">204</code> means the cookie matches the live worker. On <code translate="no">401</code> the desktop shell exchanges a fresh in-memory token and repeats bootstrap instead of reconnecting with a stale cookie.</li>
+</ul>
+</details>
+
+<details>
+<summary>Response headers</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Response</th><th scope="col">Headers</th></tr></thead>
+<tbody>
+<tr><th scope="row">Static shell</th><td><code translate="no">Content-Security-Policy</code> with <code translate="no">object-src 'none'</code>, <code translate="no">base-uri 'none'</code>, <code translate="no">frame-ancestors 'none'</code>, scripts from same origin plus generated hashes (no third-party scripts, no <code translate="no">unsafe-eval</code>); <code translate="no">X-Frame-Options: DENY</code>; <code translate="no">Referrer-Policy: no-referrer</code>; <code translate="no">X-Content-Type-Options: nosniff</code></td></tr>
+<tr><th scope="row"><code translate="no">/docs/*.raw.html</code></th><td>Same, but frameable by the same origin: <code translate="no">SAMEORIGIN</code>, <code translate="no">frame-ancestors 'self'</code></td></tr>
+<tr><th scope="row">Bootstrap, challenge, failures, protected API, credential status, SSE</th><td><code translate="no">Cache-Control: no-store</code></td></tr>
+<tr><th scope="row">Content-addressed static assets</th><td>Long-lived cache</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="origin-matrix">Origin by request form</h3>
+<table class="stack">
+<thead><tr><th scope="col">Request</th><th scope="col">Credential</th><th scope="col"><code translate="no">Origin</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Cookie, unsafe HTTP</th><td>Required</td><td>Must equal <code translate="no">request_origin</code>; missing rejected</td></tr>
+<tr><th scope="row">Cookie, WebSocket</th><td>Required before accept</td><td>Must equal <code translate="no">request_origin</code>; missing rejected</td></tr>
+<tr><th scope="row">Cookie, safe HTTP or SSE</th><td>Required</td><td>If present, must equal <code translate="no">request_origin</code>; navigation may omit it</td></tr>
+<tr><th scope="row">Bearer HTTP, SSE, WebSocket</th><td>Required (before accept on WebSocket)</td><td>May be omitted; if present, must be <code translate="no">request_origin</code> or, with a valid token, another effective origin</td></tr>
+<tr><th scope="row">Listener challenge</th><td>None; bounded nonce and revision</td><td>May be omitted; if present, must equal <code translate="no">request_origin</code></td></tr>
+<tr><th scope="row">Bootstrap</th><td>Token in the body</td><td>Must equal <code translate="no">request_origin</code></td></tr>
+</tbody>
+</table>
+<p class="note">The Bearer allowance exists because the Node TUI reaches loopback by IP while presenting the canonical origin. Safe methods are <code translate="no">GET</code>, <code translate="no">HEAD</code> and <code translate="no">OPTIONS</code>, and change no state. <code translate="no">Sec-Fetch-Site: cross-site</code> is always rejected. CORS headers control reading a response and are not authentication.</p>
+
+<details>
+<summary>How origins are computed</summary>
+<ul>
+<li><code translate="no">web.host</code> and <code translate="no">web.allowed_origins</code> come from the active profile's <code translate="no">&lt;state-dir&gt;/config.json</code>. <code translate="no">web.host</code> defaults to <code translate="no">127.0.0.1</code> and is needed only for direct LAN or VPN access.</li>
+<li>An entry is only <code translate="no">scheme://host[:port]</code>, <code translate="no">http</code> or <code translate="no">https</code>. Invalid: wildcards, paths, queries, fragments, user information, opaque origins, malformed IPv6, unspecified and multicast literals (so <code translate="no">0.0.0.0</code> and <code translate="no">::</code>).</li>
+<li>DNS names are IDNA- and case-normalized, IPv6 is bracketed, default ports are removed.</li>
+<li><code translate="no">effective_origins</code> = configured origins + on a loopback listener, <code translate="no">http://localhost:&lt;port&gt;</code> and the literal actually bound. A non-loopback listener gets no implicit origin. A request's <code translate="no">Host</code> is never promoted into the set.</li>
+<li><code translate="no">Host</code> must be one valid authority: duplicate, comma-joined, user-information, unspecified and multicast forms are rejected.</li>
+<li><code translate="no">request_origin</code> = scheme + parsed <code translate="no">Host</code>, with <code translate="no">ws</code> as <code translate="no">http</code> and <code translate="no">wss</code> as <code translate="no">https</code>. This one comparison covers exact origin and DNS rebinding.</li>
+</ul>
+</details>
+
+<h3 id="http-ranges">Plaintext HTTP</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">Accepted</th><th scope="col">Range</th></tr></thead>
+<tbody>
+<tr><th scope="row">DNS</th><td>Only exact <code translate="no">localhost</code> on a loopback listener</td></tr>
+<tr><th scope="row">IPv4</th><td><code translate="no">127.0.0.0/8</code>, <code translate="no">10.0.0.0/8</code>, <code translate="no">172.16.0.0/12</code>, <code translate="no">192.168.0.0/16</code>, <code translate="no">169.254.0.0/16</code>, <code translate="no">100.64.0.0/10</code></td></tr>
+<tr><th scope="row">IPv6</th><td><code translate="no">::1/128</code>, <code translate="no">fc00::/7</code>, <code translate="no">fe80::/10</code>; no zone identifiers</td></tr>
+</tbody>
+</table>
+<p class="note">Everything else needs HTTPS. An explicit list, not <code translate="no">is_private</code>: that property includes reserved addresses and excludes RFC 6598. Every non-loopback HTTP origin logs a startup warning, because an observer can read the credential. <code translate="no">100.64.0.0/10</code> is for encrypted overlays such as Tailscale; the address alone does not prove encryption, so the owner is responsible for that.</p>
+
+<h2 id="deployment">Deployment recipes</h2>
+<h3 id="ssh-tunnel">SSH tunnel</h3>
+<pre translate="no" tabindex="0">ssh -N -L 18100:127.0.0.1:18100 owner@remote-host
+# on the remote host, once the tunnel is up
+openprogram web auth-url --base-url http://127.0.0.1:18100</pre>
+<p class="note">A different local port needs that exact <code translate="no">http://localhost:&lt;port&gt;</code> or loopback-literal origin in <code translate="no">allowed_origins</code> first.</p>
+
+<h3 id="direct-lan">Direct LAN or VPN</h3>
+<pre translate="no" tabindex="0">{
+  "web": {
+    "host": "0.0.0.0",
+    "allowed_origins": ["http://192.168.1.20:18100"]
   }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{
-    margin:0;
-    padding:38px 24px 90px;
-    overflow-x:hidden;
-    color:var(--text);
-    background:
-      linear-gradient(rgba(103,201,199,.035) 1px,transparent 1px),
-      linear-gradient(90deg,rgba(103,201,199,.035) 1px,transparent 1px),
-      var(--bg);
-    background-size:32px 32px;
-    font:14px/1.72 "Avenir Next","Segoe UI","PingFang SC",sans-serif;
-  }
-  .wrap{max-width:1180px;margin:0 auto}
-  a{color:var(--cyan);text-underline-offset:3px}
-  a:hover{color:var(--ink)}
-  a:focus-visible{outline:2px solid var(--amber);outline-offset:4px;border-radius:3px}
-  code,pre,.mono,.tag,.eyebrow,.num{
-    font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace;
-  }
-  code{padding:1px 5px;border-radius:4px;background:var(--code);color:var(--amber);font-size:.9em}
-  pre{
-    margin:10px 0 0;padding:15px 17px;overflow:auto;border:1px solid var(--line);
-    border-radius:8px;background:var(--code);color:#c8d8d5;font-size:12px;line-height:1.65;
-  }
-  h1,h2,h3,h4{color:var(--ink);font-weight:650}
-  h1{font:600 clamp(31px,5.2vw,66px)/1.02 "Iowan Old Style","Palatino Linotype",serif;letter-spacing:-.035em;margin:7px 0 18px;max-width:850px}
-  h2{font-size:22px;margin:0 0 7px;letter-spacing:-.015em}
-  h3{font-size:16px;margin:0 0 6px}
-  h4{font-size:14px;margin:0 0 5px}
-  p{margin:0 0 12px}
-  .hero{position:relative;padding:30px 0 26px;border-bottom:1px solid var(--line)}
-  .hero-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:52px;align-items:end}
-  .hero-grid > *, .grid2 > *, .grid3 > *, .grid4 > *, .steps > *, .status-grid > *{min-width:0}
-  .eyebrow{font-size:10px;letter-spacing:.22em;color:var(--cyan);text-transform:uppercase}
-  .hero .lead{font-size:16px;line-height:1.78;max-width:760px;color:#bfcfcb}
-  .owner-card{border:1px solid var(--line);border-left:4px solid var(--cyan);background:rgba(21,35,42,.92);padding:18px 19px;border-radius:5px;overflow-wrap:anywhere}
-  .owner-card .label{font:10px/1.2 "IBM Plex Mono",Menlo,monospace;letter-spacing:.18em;color:var(--muted);margin-bottom:10px}
-  .owner-card .principal{font:14px/1.4 "IBM Plex Mono",Menlo,monospace;color:var(--ink);word-break:break-all}
-  .owner-card .scope{margin-top:12px;padding-top:11px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
-  .protocol{
-    display:grid;grid-template-columns:repeat(6,1fr);margin-top:27px;border:1px solid var(--line);
-    border-radius:7px;overflow:hidden;background:var(--panel);
-  }
-  .protocol div{position:relative;padding:11px 13px;border-right:1px solid var(--line)}
-  .protocol div:last-child{border-right:0}
-  .protocol b{display:block;color:var(--ink);font:11px/1.25 "IBM Plex Mono",Menlo,monospace;letter-spacing:.08em}
-  .protocol span{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
-  .protocol div:not(:last-child)::after{content:"›";position:absolute;right:-7px;top:15px;z-index:2;color:var(--cyan);background:var(--panel);padding:0 2px}
-  .toc{display:flex;flex-wrap:wrap;gap:7px;padding:17px 0 2px}
-  .toc a{color:var(--text);text-decoration:none;border:1px solid var(--line);background:var(--panel);padding:5px 10px;border-radius:5px;font-size:11px}
-  .toc a:hover{border-color:var(--cyan);color:var(--ink)}
-  .section{padding:52px 0 0;scroll-margin-top:18px}
-  .section-head{display:grid;grid-template-columns:58px minmax(0,1fr);gap:14px;margin-bottom:18px}
-  .num{font-size:12px;color:var(--cyan);border-top:2px solid var(--cyan);padding-top:7px}
-  .section-head p{color:var(--muted);max-width:820px;margin:0}
-  .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-  .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-  .grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-  .card{background:rgba(21,35,42,.94);border:1px solid var(--line);border-radius:8px;padding:16px}
-  .card p:last-child{margin-bottom:0}
-  .card .k{font:9.5px/1.3 "IBM Plex Mono",Menlo,monospace;letter-spacing:.17em;color:var(--muted);margin-bottom:7px;text-transform:uppercase}
-  .card.current{border-top:3px solid var(--red)}
-  .card.target{border-top:3px solid var(--green)}
-  .card.cyan{border-top:3px solid var(--cyan)}
-  .card.blue{border-top:3px solid var(--blue)}
-  .card.amber{border-top:3px solid var(--amber)}
-  .card.violet{border-top:3px solid var(--violet)}
-  .note{border-left:3px solid var(--cyan);padding:4px 0 4px 13px;margin:14px 0;color:var(--muted);max-width:900px}
-  .note.warn{border-color:var(--red)}
-  .note b{color:var(--ink)}
-  .diagram{margin:14px 0;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:8px;overflow:auto}
-  svg{display:block;width:100%;height:auto;min-width:720px}
-  svg text{font-family:"Avenir Next","Segoe UI","PingFang SC",sans-serif}
-  svg .m{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,monospace}
-  .legend{display:flex;gap:17px;flex-wrap:wrap;padding:4px 7px 8px;font-size:11px;color:var(--muted)}
-  .legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:var(--swatch);vertical-align:-1px}
-  .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel);margin:13px 0}
-  .table-wrap:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
-  table{width:100%;border-collapse:collapse;min-width:780px;font-size:12px}
-  caption{text-align:left;padding:10px 12px;color:var(--muted);font:10px/1.35 "IBM Plex Mono",Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;background:#122027;border-bottom:1px solid var(--line)}
-  th{text-align:left;color:var(--muted);font:10px/1.35 "IBM Plex Mono",Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;padding:10px 12px;border-bottom:1px solid var(--line);background:#122027}
-  td{padding:10px 12px;vertical-align:top;border-bottom:1px solid #223741;line-height:1.62}
-  tr:last-child td{border-bottom:0}
-  td:first-child{color:var(--ink);font-weight:600}
-  .yes{color:var(--green)}
-  .partial{color:var(--amber)}
-  .no{color:var(--red)}
-  .out{color:var(--violet)}
-  .tag{display:inline-block;padding:2px 7px;border:1px solid var(--line);border-radius:4px;font-size:9.5px;letter-spacing:.08em;color:var(--muted)}
-  .decision{display:grid;grid-template-columns:120px 1fr;gap:9px 13px;padding:13px 0;border-top:1px solid var(--line)}
-  .decision:first-child{border-top:0}
-  .decision .status{font:10px/1.4 "IBM Plex Mono",Menlo,monospace;letter-spacing:.13em}
-  .decision .status.adopt{color:var(--green)}
-  .decision .status.modify{color:var(--amber)}
-  .decision .status.reject{color:var(--red)}
-  .mode{min-height:205px;display:flex;flex-direction:column}
-  .mode .bind{font:12px/1.5 "IBM Plex Mono",Menlo,monospace;color:var(--cyan);margin:7px 0}
-  .mode .rule{margin-top:auto;border-top:1px solid var(--line);padding-top:10px;color:var(--muted);font-size:12px}
-  .steps{counter-reset:step;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-  .step{counter-increment:step;background:var(--panel);border:1px solid var(--line);padding:14px;border-radius:7px}
-  .step::before{content:counter(step,decimal-leading-zero);display:block;color:var(--cyan);font:10px/1 "IBM Plex Mono",Menlo,monospace;margin-bottom:9px}
-  .step b{color:var(--ink);display:block;margin-bottom:5px}
-  .checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 24px;margin:12px 0 0;padding:0;counter-reset:test}
-  .checklist li{counter-increment:test;list-style:none;position:relative;padding:8px 0 8px 34px;border-top:1px solid var(--line)}
-  .checklist li::before{content:counter(test,decimal-leading-zero);position:absolute;left:0;top:9px;color:var(--cyan);font:10px/1.4 "IBM Plex Mono",Menlo,monospace}
-  .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:13px 0}
-  .status-card{border:1px solid var(--line);border-top:4px solid var(--state);background:var(--panel);padding:15px;border-radius:7px;min-height:185px}
-  .status-card .state{color:var(--state);font:10px/1.4 "IBM Plex Mono",Menlo,monospace;letter-spacing:.14em;margin-bottom:10px}
-  .status-card ul{margin:0;padding-left:16px;font-size:12px}
-  .status-card li{margin:4px 0}
-  .foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
-  .foot code{font-size:10px}
-  @media(max-width:900px){
-    body{padding:22px 15px 70px}
-    .hero-grid,.grid2,.grid3,.grid4,.status-grid{grid-template-columns:1fr}
-    .protocol{grid-template-columns:1fr}
-    .protocol div{border-right:0;border-bottom:1px solid var(--line)}
-    .protocol div:last-child{border-bottom:0}
-    .protocol div::after{display:none}
-    .section-head{grid-template-columns:42px 1fr}
-    .steps{grid-template-columns:1fr 1fr}
-    .checklist{grid-template-columns:1fr}
-  }
-  @media(max-width:560px){.steps{grid-template-columns:1fr}.hero .lead{font-size:14px}}
-  @media(prefers-reduced-motion:no-preference){
-    .protocol{animation:reveal .45s ease-out both}
-    @keyframes reveal{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-  }
-</style>
-</head>
-<body>
-<main class="wrap">
-  <header class="hero">
-    <div class="hero-grid">
-      <div>
-        <div class="eyebrow">Remote Web Access / Owner only / Self-hosted</div>
-        <h1>四种访问方式，一套所有者认证</h1>
-        <p class="lead">同机、局域网或 VPN、SSH 隧道、所有者域名与 HTTPS 反向代理全部支持。
-          每次 Web 启动生成实例 token；HTTP、SSE、WebSocket 使用同一认证规则；
-          OpenProgram 不运营公网中转，不增加账号、RBAC 或项目权限。</p>
-      </div>
-      <aside class="owner-card" aria-label="单一所有者 authority 摘要">
-        <div class="label">AUTHORITY RESULT</div>
-        <div class="principal">owner/install/&lt;16hex&gt;</div>
-        <div class="scope">当前 profile/state 实例 · token possession → <b style="color:var(--ink)">owner tier · fixed capability set</b><br>
-          paired channel speaker → paired tier · fixed capability set</div>
-      </aside>
-    </div>
-    <div class="protocol" aria-label="请求认证处理顺序摘要">
-      <div><b>HOST</b><span>解析 authority</span></div>
-      <div><b>CLASSIFY</b><span>route / method / source</span></div>
-      <div><b>ORIGIN</b><span>浏览器与 CSRF</span></div>
-      <div><b>TOKEN</b><span>cookie 或 Bearer</span></div>
-      <div><b>AUTHORITY</b><span>映射 owner tier</span></div>
-      <div><b>ACTION</b><span>HTTP / SSE / WS</span></div>
-    </div>
-  </header>
+}</pre>
 
-  <nav class="toc" aria-label="页内目录">
-    <a href="#method">01 方法与边界</a>
-    <a href="#current">02 当前实现</a>
-    <a href="#survey">03 框架对比</a>
-    <a href="#synthesis">04 采用与拒绝</a>
-    <a href="#design">05 最终设计</a>
-    <a href="#contract">06 验收契约</a>
-    <a href="#status">07 实现进度</a>
-  </nav>
-
-  <section class="section" id="method">
-    <div class="section-head">
-      <div class="num">01</div>
-      <div><h2>方法与产品边界</h2><p>Web UI 是一个完整的所有者管理权限边界。多人协作继续使用 channel speaker 归因与受限 capability，不转化为 Web 账号。</p></div>
-    </div>
-
-    <div class="grid4">
-      <article class="card mode cyan">
-        <div class="k">Same machine</div><h3>同机访问</h3>
-        <div class="bind">127.0.0.1</div>
-        <p>CLI 自动打开带 fragment token 的 loopback URL。</p>
-        <div class="rule">token 始终开启；Host 与 Origin 仍校验。</div>
-      </article>
-      <article class="card mode blue">
-        <div class="k">LAN / VPN</div><h3>直接网络访问</h3>
-        <div class="bind">web.host = 0.0.0.0</div>
-        <p>必须显式配置完整、精确的 <code>allowed_origins</code>。</p>
-        <div class="rule">HTTP 仅限显式本地/overlay 地址范围并警告；其他情况使用 HTTPS。</div>
-      </article>
-      <article class="card mode amber">
-        <div class="k">SSH tunnel</div><h3>SSH 端口转发</h3>
-        <div class="bind">127.0.0.1</div>
-        <p>浏览器连接本地转发端口，SSH 提供传输加密。</p>
-        <div class="rule">不修改 <code>web.host</code>，实例 token 继续认证。</div>
-      </article>
-      <article class="card mode violet">
-        <div class="k">Public domain</div><h3>HTTPS 反向代理</h3>
-        <div class="bind">proxy → 127.0.0.1</div>
-        <p>nginx 或 Caddy 在同机终结 HTTPS，保留公网 Host。</p>
-        <div class="rule">只信任 loopback proxy；OpenProgram 不管理证书。</div>
-      </article>
-    </div>
-
-    <div class="diagram" tabindex="0" role="region" aria-label="四种远程 Web 访问部署拓扑图">
-      <svg viewBox="0 0 1120 390" role="img" aria-label="四种远程 Web 访问部署拓扑">
-        <rect x="18" y="18" width="1084" height="354" rx="9" fill="#0b1216" stroke="#294049"/>
-        <text x="42" y="51" fill="#7f9595" font-size="11" class="m" letter-spacing="1.6">FOUR SUPPORTED DEPLOYMENTS · ONE APPLICATION CREDENTIAL</text>
-
-        <g transform="translate(42,78)">
-          <rect width="238" height="236" rx="7" fill="#15232a" stroke="#67c9c7"/>
-          <text x="18" y="29" fill="#67c9c7" font-size="11" class="m">LOCAL</text>
-          <rect x="28" y="59" width="70" height="48" rx="5" fill="#192c34" stroke="#70a7e8"/>
-          <text x="63" y="88" fill="#e7eee9" font-size="12" text-anchor="middle">Browser</text>
-          <path d="M103 83 H137" stroke="#67c9c7" stroke-width="2"/>
-          <path d="M132 78 L139 83 L132 88" fill="none" stroke="#67c9c7" stroke-width="2"/>
-          <rect x="143" y="51" width="68" height="64" rx="5" fill="#192c34" stroke="#8bcf9a"/>
-          <text x="177" y="77" fill="#e7eee9" font-size="11" text-anchor="middle">Open-</text>
-          <text x="177" y="92" fill="#e7eee9" font-size="11" text-anchor="middle">Program</text>
-          <text x="119" y="138" fill="#7f9595" font-size="10" text-anchor="middle" class="m">127.0.0.1</text>
-          <rect x="22" y="163" width="194" height="45" rx="4" fill="#0b1216" stroke="#294049"/>
-          <text x="119" y="182" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">TOKEN + HOST + ORIGIN</text>
-          <text x="119" y="198" fill="#7f9595" font-size="10" text-anchor="middle">本机也不豁免认证</text>
-        </g>
-
-        <g transform="translate(306,78)">
-          <rect width="238" height="236" rx="7" fill="#15232a" stroke="#70a7e8"/>
-          <text x="18" y="29" fill="#70a7e8" font-size="11" class="m">LAN / VPN</text>
-          <rect x="20" y="56" width="70" height="54" rx="5" fill="#192c34" stroke="#70a7e8"/>
-          <text x="55" y="88" fill="#e7eee9" font-size="12" text-anchor="middle">Device</text>
-          <path d="M95 83 H137" stroke="#70a7e8" stroke-width="2"/>
-          <path d="M132 78 L139 83 L132 88" fill="none" stroke="#70a7e8" stroke-width="2"/>
-          <rect x="143" y="51" width="68" height="64" rx="5" fill="#192c34" stroke="#8bcf9a"/>
-          <text x="177" y="77" fill="#e7eee9" font-size="11" text-anchor="middle">Open-</text>
-          <text x="177" y="92" fill="#e7eee9" font-size="11" text-anchor="middle">Program</text>
-          <text x="119" y="138" fill="#7f9595" font-size="10" text-anchor="middle" class="m">EXPLICIT web.host</text>
-          <rect x="22" y="163" width="194" height="45" rx="4" fill="#0b1216" stroke="#294049"/>
-          <text x="119" y="182" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">NONEMPTY EXACT ORIGINS</text>
-          <text x="119" y="198" fill="#7f9595" font-size="10" text-anchor="middle">缺少配置时拒绝启动</text>
-        </g>
-
-        <g transform="translate(570,78)">
-          <rect width="238" height="236" rx="7" fill="#15232a" stroke="#e8ad67"/>
-          <text x="18" y="29" fill="#e8ad67" font-size="11" class="m">SSH TUNNEL</text>
-          <rect x="17" y="56" width="63" height="54" rx="5" fill="#192c34" stroke="#70a7e8"/>
-          <text x="49" y="88" fill="#e7eee9" font-size="11" text-anchor="middle">Browser</text>
-          <rect x="93" y="56" width="52" height="54" rx="5" fill="#192c34" stroke="#e8ad67"/>
-          <text x="119" y="88" fill="#e7eee9" font-size="11" text-anchor="middle">SSH</text>
-          <rect x="158" y="51" width="63" height="64" rx="5" fill="#192c34" stroke="#8bcf9a"/>
-          <text x="190" y="77" fill="#e7eee9" font-size="10" text-anchor="middle">Open-</text>
-          <text x="190" y="92" fill="#e7eee9" font-size="10" text-anchor="middle">Program</text>
-          <path d="M80 83 H92 M145 83 H157" stroke="#e8ad67" stroke-width="2"/>
-          <text x="119" y="138" fill="#7f9595" font-size="10" text-anchor="middle" class="m">BACKEND LOOPBACK</text>
-          <rect x="22" y="163" width="194" height="45" rx="4" fill="#0b1216" stroke="#294049"/>
-          <text x="119" y="182" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">SSH ENCRYPTION + TOKEN</text>
-          <text x="119" y="198" fill="#7f9595" font-size="10" text-anchor="middle">不修改 web.host</text>
-        </g>
-
-        <g transform="translate(834,78)">
-          <rect width="238" height="236" rx="7" fill="#15232a" stroke="#b89ae8"/>
-          <text x="18" y="29" fill="#b89ae8" font-size="11" class="m">PUBLIC HTTPS</text>
-          <rect x="12" y="56" width="60" height="54" rx="5" fill="#192c34" stroke="#70a7e8"/>
-          <text x="42" y="88" fill="#e7eee9" font-size="11" text-anchor="middle">Browser</text>
-          <rect x="88" y="56" width="58" height="54" rx="5" fill="#192c34" stroke="#b89ae8"/>
-          <text x="117" y="79" fill="#e7eee9" font-size="10" text-anchor="middle">nginx /</text>
-          <text x="117" y="94" fill="#e7eee9" font-size="10" text-anchor="middle">Caddy</text>
-          <rect x="162" y="51" width="63" height="64" rx="5" fill="#192c34" stroke="#8bcf9a"/>
-          <text x="194" y="77" fill="#e7eee9" font-size="10" text-anchor="middle">Open-</text>
-          <text x="194" y="92" fill="#e7eee9" font-size="10" text-anchor="middle">Program</text>
-          <path d="M72 83 H87 M146 83 H161" stroke="#b89ae8" stroke-width="2"/>
-          <text x="119" y="138" fill="#7f9595" font-size="10" text-anchor="middle" class="m">HTTPS → LOOPBACK</text>
-          <rect x="22" y="163" width="194" height="45" rx="4" fill="#0b1216" stroke="#294049"/>
-          <text x="119" y="182" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">OWNER DOMAIN + TOKEN</text>
-          <text x="119" y="198" fill="#7f9595" font-size="10" text-anchor="middle">无 OpenProgram relay</text>
-        </g>
-      </svg>
-      <div class="legend">
-        <span style="--swatch:var(--cyan)">本机</span><span style="--swatch:var(--blue)">直接网络</span>
-        <span style="--swatch:var(--amber)">SSH</span><span style="--swatch:var(--violet)">公网 HTTPS</span>
-      </div>
-    </div>
-
-    <div class="note"><b>边界：</b>不做 Web 账号、RBAC、项目权限、OAuth/SSO、内置 TLS、证书生命周期、公网中转、托管隧道、公共分享 URL 或关闭认证模式。</div>
-  </section>
-
-  <section class="section" id="current">
-    <div class="section-head">
-      <div class="num">02</div>
-      <div><h2>当前实现与待补控制</h2><p>Owner process token、canonical Origin、fragment bootstrap、共同 HTTP/WS 认证边界、auth-url、最小 health 与 secret 不可取回已进入生产路径；完整部署验收仍未完成。</p></div>
-    </div>
-    <div class="grid2">
-      <article class="card cyan">
-        <div class="k">Current behavior</div><h3>OwnerAuthMiddleware 先认证</h3>
-        <p><code>OwnerAuthState</code> 生成 32 字节 token、持有 per-state lock、写 owner-only token file 与不含 token 的 <code>access.json</code>，并派生 profile-specific cookie。<code>OwnerAuthMiddleware</code> 在 route dispatch 前验证 Host/request origin 与 cookie 或 Bearer。</p>
-        <p>认证成功后才附加当前 profile 的 owner authority；WebSocket 校验发生在 <code>accept()</code> 前。Uvicorn 使用 <code>proxy_headers=False</code>。</p>
-      </article>
-      <article class="card amber">
-        <div class="k">Remaining work</div><h3>收敛 secret 与验收范围</h3>
-        <p>两条 plaintext reveal 路径已删除；legacy account route 返回 410，config-key reveal query 返回 404，credential response 只保留掩码；replace/preserve/delete schema 已实现。</p>
-        <p>还缺少直接 HTTP startup warning、独立 SSE、真实 browser bootstrap/WS、restart、bind-failure、multi-profile 与 nginx/Caddy smoke 验收。</p>
-      </article>
-    </div>
-    <div class="table-wrap" tabindex="0" role="region" aria-label="当前实现与缺失控制表">
-      <table>
-        <caption>当前实现与缺失控制</caption>
-        <thead><tr><th>当前对象</th><th>已实现</th><th>缺失或风险</th></tr></thead>
-        <tbody>
-          <tr><td><code>OwnerAuthState</code></td><td class="yes">token、lock、owner-only files、access snapshot、cookie、常数时间比较</td><td>真实 bind-failure、restart 与 multi-profile 验收缺失</td></tr>
-          <tr><td>Canonical Origin</td><td class="yes">effective Origin、非 loopback fail-closed、本地 HTTP 网段</td><td>startup 输出尚缺完整字段与直接 HTTP 警告</td></tr>
-          <tr><td><code>OwnerAuthMiddleware</code></td><td class="yes">HTTP/WS、cookie/Bearer、Host/Origin/CSRF、owner authority</td><td>缺少独立 SSE 与真实 browser WS 验收</td></tr>
-          <tr><td>Fragment bootstrap</td><td class="yes">backend、frontend gate、同步清除、无 Web Storage、auth-url</td><td>缺少 browser-level end-to-end 验收</td></tr>
-          <tr><td>Reverse proxy</td><td class="partial"><code>proxy_headers=False</code> 与 loopback-only forwarded scheme</td><td>nginx/Caddy HTTPS、WS、SSE smoke 未测试</td></tr>
-          <tr><td>Provider secret</td><td class="partial">部分响应默认掩码</td><td>两个 reveal 路径返回明文</td></tr>
-          <tr><td><code>/healthz</code></td><td class="yes">只返回 status=ok；详细字段位于受保护的 <code>/api/diagnostics</code></td><td>完整 response-class cache audit 尚未完成</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="note warn"><b>Loopback 不是认证。</b>任意网页可以向 localhost 发送请求；WebSocket 不受 HTTP 同源读取规则保护；本机进程可以省略 Origin；DNS rebinding 可以提供外部 Host。因此 token 在本机也强制开启。</div>
-  </section>
-
-  <section class="section" id="survey">
-    <div class="section-head">
-      <div class="num">03</div>
-      <div><h2>开源实现调查</h2><p>范围包括现有参考语料与具备远程 Web、认证、反向代理或 secret 处理能力的补充系统；目标能力不存在时明确标为不适用。</p></div>
-    </div>
-    <div class="table-wrap" tabindex="0" role="region" aria-label="开源框架远程访问设计对比表">
-      <table style="min-width:1080px">
-        <caption>开源框架远程访问设计对比</caption>
-        <thead><tr><th>系统</th><th>默认与认证</th><th>远程方式</th><th>采用</th><th>拒绝或不适用</th></tr></thead>
-        <tbody>
-          <tr><td><a href="https://github.com/openclaw/openclaw/blob/main/docs/gateway/remote.md">OpenClaw</a></td><td>loopback；外部需要认证；显式 Origin</td><td>SSH、反向代理、其他外部网络方式</td><td>fragment、Host/Origin、proxy trust</td><td>tokenless identity 替代</td></tr>
-          <tr><td><a href="https://github.com/jupyter/notebook/blob/4.x/docs/source/changelog.rst">Jupyter Server</a></td><td>Notebook 4.3 默认 token；首次访问转 cookie</td><td>SSH、HTTPS public server</td><td>自动 token → cookie 体验</td><td>query token、密码模式</td></tr>
-          <tr><td><a href="https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/web-dashboard.md#when-the-gate-engages">Hermes Agent</a></td><td>loopback；外部 bind 强制 auth provider 并 fail closed</td><td>session cookie；单次 WS ticket</td><td>外部 fail-closed、secret redaction</td><td>auth-provider 账号、第二套 ticket、reveal</td></tr>
-          <tr><td><a href="https://github.com/agent0ai/agent-zero/blob/main/helpers/settings.py">Agent Zero</a></td><td>本地；可选单组登录；cookie + CSRF</td><td>反向代理、VPS、内置 tunnel</td><td>cookie/CSRF/Origin/WS、secret mask</td><td>可关闭认证、内置公网 tunnel</td></tr>
-          <tr><td><a href="https://github.com/OpenHands/OpenHands/blob/main/docs/SELF_HOSTING.md">OpenHands</a></td><td>session API key；HTTP/WS</td><td>SSH、nginx/HTTPS</td><td>实例 key、loopback backend</td><td>公共 HTML/browser storage 暴露 token、明文 secret retrieval</td></tr>
-          <tr><td><a href="https://github.com/sst/opencode/blob/dev/packages/web/src/content/docs/server.mdx">opencode</a></td><td>loopback；未设置密码时无认证</td><td>外部 host、CORS origins；另有 WS ticket</td><td>loopback default</td><td>可选认证、第二套 WS ticket</td></tr>
-          <tr><td><a href="https://github.com/open-webui/docs/blob/main/docs/reference/https/nginx.md">Open WebUI</a></td><td>账号、角色、JWT/cookie</td><td>nginx/Caddy、WS、SSE</td><td>proxy、Upgrade、SSE buffering 配置</td><td>账号、group、RBAC</td></tr>
-          <tr><td><a href="https://github.com/langgenius/dify/blob/main/api/core/entities/provider_configuration.py">Dify</a></td><td>account/workspace/role</td><td>反向代理</td><td>credential obfuscation 与替换语义</td><td>tenant 与 role 层</td></tr>
-          <tr><td><a href="https://github.com/LibreChat-AI/librechat.ai/blob/main/content/docs/features/authentication.mdx">LibreChat</a></td><td>注册、JWT、角色与 ACL</td><td>nginx HTTPS/WS</td><td>proxy 细节</td><td>用户身份数据模型</td></tr>
-          <tr><td><a href="https://github.com/Mintplex-Labs/anything-llm/blob/master/server/utils/middleware/validatedRequest.js">AnythingLLM</a></td><td>单用户或多用户；单用户密码可选</td><td>Docker port</td><td>单一 owner credential 概念</td><td>可选认证、role system</td></tr>
-          <tr><td><a href="https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/auth/manager.py">AutoGen Studio</a></td><td>loopback；默认无认证；可选 OAuth/JWT</td><td>research prototype</td><td>loopback default</td><td>query/localStorage token、post-accept auth</td></tr>
-          <tr><td><a href="https://github.com/SWE-agent/SWE-agent/tree/main/docs">SWE-agent</a></td><td>当前仓库提供命令行 agent</td><td>无 owner Web control UI</td><td>记录能力缺失</td><td class="out">远程安全设计不适用</td></tr>
-          <tr><td><a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/rpc.md">pi-mono / pi-ai</a></td><td>TUI、SDK、RPC/provider transport</td><td>无 packaged owner Web server</td><td>记录能力缺失</td><td class="out">远程 Web ownership 不适用</td></tr>
-          <tr><td><a href="https://github.com/fastclaw-ai/weclaw/blob/main/README.md">WeClaw</a></td><td>WeChat gateway + HTTP API</td><td>listen address 可配</td><td>记录外部 HTTP 与 Web UI 的区别</td><td class="out">浏览器 owner UI 不存在</td></tr>
-          <tr><td><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md">Codex CLI</a></td><td>app-server 与实验性 WS</td><td>service-mediated pairing/remote control</td><td>记录协议差异</td><td>不采用 relay 型 remote control</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="table-wrap" tabindex="0" role="region" aria-label="三类远程身份设计对比表">
-      <table>
-        <caption>三类远程身份设计</caption>
-        <thead><tr><th>类型</th><th>框架或能力</th><th>OpenProgram 处理</th></tr></thead>
-        <tbody>
-          <tr><td>实例 credential</td><td>Jupyter、OpenClaw、OpenHands</td><td class="yes">采用：一个 owner，一个根密钥，两种传输凭证形式</td></tr>
-          <tr><td>应用账号</td><td>Open WebUI、Dify、LibreChat、AnythingLLM</td><td class="no">不采用：不需要注册、role、resource ACL</td></tr>
-          <tr><td>托管远程控制</td><td>pairing、hosted tunnel、relay service</td><td class="no">不采用：OpenProgram 不运营外部服务</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="section" id="synthesis">
-    <div class="section-head">
-      <div class="num">04</div>
-      <div><h2>采用、修改与拒绝</h2><p>最终设计只保留完成当前需求所需的一个根密钥（实例 token）、两种传输凭证形式（Bearer header 与 profile 作用域 HttpOnly cookie）、一套浏览器 bootstrap 和一组 HTTP/WS/SSE 认证规则。</p></div>
-    </div>
-    <div class="card">
-      <div class="decision"><div class="status adopt">采用</div><div><b>OpenClaw</b> 的精确 Origin、Host/DNS rebinding 控制、SSH 与 proxy trust 限制。</div></div>
-      <div class="decision"><div class="status modify">修改</div><div><b>Jupyter</b> 的自动 launch-token 体验：query 改为 fragment，随后换取 HttpOnly cookie。</div></div>
-      <div class="decision"><div class="status adopt">采用</div><div>标准库生成 32 个随机字节，并对解码后的 credential 使用常数时间比较；该构造属于 OpenProgram 自身的实例 token 设计。</div></div>
-      <div class="decision"><div class="status adopt">采用</div><div><b>Agent Zero</b> 的 cookie、CSRF、Origin、WebSocket 组合校验，以及仅掩码 secret 更新。</div></div>
-      <div class="decision"><div class="status modify">修改</div><div>外部 proxy 或 VPN 可以增加传输与访问控制，但不能替代 OpenProgram token。</div></div>
-      <div class="decision"><div class="status reject">拒绝</div><div>认证关闭、query/localStorage token、明文 secret reveal、多用户账号、RBAC、内置 tunnel 和公网 relay。</div></div>
-    </div>
-  </section>
-
-  <section class="section" id="design">
-    <div class="section-head">
-      <div class="num">05</div>
-      <div><h2>最终认证与部署设计</h2><p>每个 profile/state 实例只运行一个 Web 进程。Token 每次启动更换；浏览器用 fragment 单次引导后转派生的 HttpOnly cookie，原生客户端使用 Bearer header。</p></div>
-    </div>
-
-    <div class="steps">
-      <div class="step"><b>生成</b>32 个随机字节，编码为 43 字符 unpadded base64url。</div>
-      <div class="step"><b>锁定并保存</b>先持有 <code>&lt;state&gt;/web.lock</code>，再原子写 owner-only token 与无 token 的 <code>access.json</code>。</div>
-      <div class="step"><b>派生并比较</b><code>openprogram_owner_&lt;owner16&gt;</code> 使用固定 HMAC domain；解码后只用 <code>compare_digest</code>。</div>
-      <div class="step"><b>失效</b>进程重启更换 token，原 Bearer 与 cookie 同时失效。</div>
-    </div>
-
-    <h3 style="margin-top:25px">统一请求处理顺序</h3>
-    <div class="diagram" tabindex="0" role="region" aria-label="统一认证请求处理顺序图">
-      <svg viewBox="0 0 1120 350" role="img" aria-label="HTTP SSE WebSocket 统一认证处理顺序">
-        <defs>
-          <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#67c9c7" stroke-width="1.5"/></marker>
-          <marker id="redarr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#ef7772" stroke-width="1.5"/></marker>
-        </defs>
-        <rect x="18" y="18" width="1084" height="314" rx="9" fill="#0b1216" stroke="#294049"/>
-        <text x="42" y="49" fill="#7f9595" font-size="11" class="m" letter-spacing="1.5">COMMON ASGI ORDER · NO ACTION BEFORE AUTHENTICATION</text>
-        <g transform="translate(36,81)">
-          <rect width="116" height="86" rx="6" fill="#15232a" stroke="#70a7e8"/>
-          <text x="58" y="35" fill="#e7eee9" font-size="13" text-anchor="middle">Request</text>
-          <text x="58" y="57" fill="#7f9595" font-size="9" text-anchor="middle" class="m">HTTP · SSE · WS</text>
-        </g>
-        <g transform="translate(176,81)">
-          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#67c9c7"/>
-          <text x="63" y="31" fill="#e7eee9" font-size="12" text-anchor="middle">Host + scheme</text>
-          <text x="63" y="53" fill="#7f9595" font-size="9" text-anchor="middle">canonical parse</text>
-          <text x="63" y="68" fill="#7f9595" font-size="9" text-anchor="middle" class="m">request_origin</text>
-        </g>
-        <g transform="translate(326,81)">
-          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#67c9c7"/>
-          <text x="63" y="31" fill="#e7eee9" font-size="12" text-anchor="middle">Classify</text>
-          <text x="63" y="53" fill="#7f9595" font-size="9" text-anchor="middle">route · method</text>
-          <text x="63" y="68" fill="#7f9595" font-size="9" text-anchor="middle">credential source</text>
-        </g>
-        <g transform="translate(476,81)">
-          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#67c9c7"/>
-          <text x="63" y="31" fill="#e7eee9" font-size="12" text-anchor="middle">Origin / CSRF</text>
-          <text x="63" y="53" fill="#7f9595" font-size="9" text-anchor="middle">Sec-Fetch-Site</text>
-          <text x="63" y="68" fill="#7f9595" font-size="9" text-anchor="middle">safe / unsafe rules</text>
-        </g>
-        <g transform="translate(626,81)">
-          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#e8ad67"/>
-          <text x="63" y="31" fill="#e7eee9" font-size="12" text-anchor="middle">Authentication</text>
-          <text x="63" y="53" fill="#7f9595" font-size="9" text-anchor="middle">cookie · Bearer</text>
-          <text x="63" y="68" fill="#7f9595" font-size="9" text-anchor="middle">bootstrap body</text>
-        </g>
-        <g transform="translate(776,81)">
-          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#8bcf9a"/>
-          <text x="63" y="32" fill="#e7eee9" font-size="12" text-anchor="middle">Owner scope</text>
-          <text x="63" y="55" fill="#7f9595" font-size="9" text-anchor="middle" class="m">owner_authority(</text>
-          <text x="63" y="69" fill="#7f9595" font-size="9" text-anchor="middle" class="m">principal_id)</text>
-        </g>
-        <g transform="translate(926,81)">
-          <rect width="150" height="86" rx="6" fill="#192c34" stroke="#8bcf9a"/>
-          <text x="75" y="32" fill="#e7eee9" font-size="12" text-anchor="middle">Route / stream</text>
-          <text x="75" y="54" fill="#7f9595" font-size="9" text-anchor="middle">WS accept occurs</text>
-          <text x="75" y="69" fill="#7f9595" font-size="9" text-anchor="middle">only here</text>
-        </g>
-        <path d="M152 124 H174 M302 124 H324 M452 124 H474 M602 124 H624 M752 124 H774 M902 124 H924" stroke="#67c9c7" stroke-width="2" marker-end="url(#arr)"/>
-
-        <path d="M239 168 V216 M539 168 V216 M689 168 V216" stroke="#ef7772" stroke-width="1.6" marker-end="url(#redarr)"/>
-        <rect x="169" y="220" width="140" height="53" rx="5" fill="#211d20" stroke="#ef7772"/>
-        <text x="239" y="242" fill="#ef7772" font-size="11" text-anchor="middle" class="m">403</text><text x="239" y="260" fill="#9f8584" font-size="10" text-anchor="middle">Host / scheme</text>
-        <rect x="469" y="220" width="140" height="53" rx="5" fill="#211d20" stroke="#ef7772"/>
-        <text x="539" y="242" fill="#ef7772" font-size="11" text-anchor="middle" class="m">403</text><text x="539" y="260" fill="#9f8584" font-size="10" text-anchor="middle">Origin / CSRF</text>
-        <rect x="619" y="220" width="140" height="53" rx="5" fill="#211d20" stroke="#ef7772"/>
-        <text x="689" y="242" fill="#ef7772" font-size="11" text-anchor="middle" class="m">401</text><text x="689" y="260" fill="#9f8584" font-size="10" text-anchor="middle">authentication</text>
-        <text x="42" y="305" fill="#7f9595" font-size="10">公共 static shell、ownership challenge、bootstrap 和最小 health 仍执行 Host 校验；只有 credential check 按 route policy 省略或内置。</text>
-      </svg>
-    </div>
-
-    <h3 style="margin-top:25px">Fragment 转 HttpOnly cookie</h3>
-    <div class="diagram" tabindex="0" role="region" aria-label="Fragment bootstrap 交互时序图">
-      <svg viewBox="0 0 1120 480" role="img" aria-label="浏览器 fragment token bootstrap 时序">
-        <defs><marker id="seqarr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#67c9c7" stroke-width="1.5"/></marker></defs>
-        <rect x="18" y="18" width="1084" height="444" rx="9" fill="#0b1216" stroke="#294049"/>
-        <text x="42" y="49" fill="#7f9595" font-size="11" class="m" letter-spacing="1.5">FRAGMENT BOOTSTRAP · TOKEN DOES NOT ENTER THE INITIAL HTTP REQUEST</text>
-        <g>
-          <rect x="92" y="72" width="210" height="43" rx="5" fill="#15232a" stroke="#70a7e8"/>
-          <text x="197" y="98" fill="#e7eee9" font-size="13" text-anchor="middle">CLI</text>
-          <rect x="455" y="72" width="210" height="43" rx="5" fill="#15232a" stroke="#e8ad67"/>
-          <text x="560" y="98" fill="#e7eee9" font-size="13" text-anchor="middle">Browser</text>
-          <rect x="818" y="72" width="210" height="43" rx="5" fill="#15232a" stroke="#8bcf9a"/>
-          <text x="923" y="98" fill="#e7eee9" font-size="13" text-anchor="middle">Web server</text>
-          <path d="M197 115 V430 M560 115 V430 M923 115 V430" stroke="#294049" stroke-dasharray="5 6"/>
-        </g>
-        <text x="215" y="150" fill="#7f9595" font-size="10" class="m">01</text>
-        <path d="M225 156 H548" stroke="#67c9c7" stroke-width="2" marker-end="url(#seqarr)"/>
-        <text x="387" y="147" fill="#e7eee9" font-size="11" text-anchor="middle" class="m">open /#token=&lt;token&gt;</text>
-
-        <text x="578" y="200" fill="#7f9595" font-size="10" class="m">02</text>
-        <path d="M585 206 H911" stroke="#67c9c7" stroke-width="2" marker-end="url(#seqarr)"/>
-        <text x="748" y="197" fill="#e7eee9" font-size="11" text-anchor="middle" class="m">GET /  · fragment absent</text>
-        <path d="M911 239 H573" stroke="#8bcf9a" stroke-width="2" marker-end="url(#seqarr)"/>
-        <text x="742" y="231" fill="#8bcf9a" font-size="11" text-anchor="middle">public static shell</text>
-
-        <text x="578" y="282" fill="#7f9595" font-size="10" class="m">03</text>
-        <rect x="596" y="259" width="245" height="47" rx="5" fill="#192c34" stroke="#e8ad67"/>
-        <text x="718" y="279" fill="#e7eee9" font-size="11" text-anchor="middle">read token into memory</text>
-        <text x="718" y="296" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">history.replaceState()</text>
-
-        <text x="578" y="337" fill="#7f9595" font-size="10" class="m">04</text>
-        <path d="M585 343 H911" stroke="#67c9c7" stroke-width="2" marker-end="url(#seqarr)"/>
-        <text x="748" y="334" fill="#e7eee9" font-size="11" text-anchor="middle" class="m">POST /api/auth/bootstrap · exact JSON ≤ 256 B</text>
-        <path d="M911 378 H573" stroke="#8bcf9a" stroke-width="2" marker-end="url(#seqarr)"/>
-        <text x="742" y="369" fill="#8bcf9a" font-size="11" text-anchor="middle" class="m">204 · Set-Cookie derived HMAC; HttpOnly; SameSite=Strict</text>
-
-        <rect x="455" y="404" width="573" height="33" rx="5" fill="#15232a" stroke="#8bcf9a"/>
-        <text x="742" y="425" fill="#e7eee9" font-size="11" text-anchor="middle">后续 HTTP / SSE / WebSocket 使用 cookie；server restart 后 cookie 失效</text>
-      </svg>
-    </div>
-
-    <div class="grid3">
-      <article class="card cyan"><div class="k">Public allowlist</div><h3>仅四个公共类别</h3><p>静态 shell/asset（包括只读取预构建文件的 <code>GET/HEAD /docs</code> 文档站）、ownership challenge、bootstrap、最小 health。源码 checkout 读取 <code>docs/_site</code>，安装包读取发布阶段放入 <code>openprogram_server/_webui/_frontend/docs</code> 的同一份预构建站点。文档过期检查只在源码 worker 注册路由时运行，不由 HTTP 请求触发。Shell 使用 CSP <code>frame-ancestors 'none'</code> 与 <code>X-Frame-Options: DENY</code>。</p></article>
-      <article class="card amber"><div class="k">Browser cookie</div><h3>CSRF 校验保留</h3><p><code>GET/HEAD/OPTIONS</code> 必须无副作用。Unsafe method 与 WS 要求 Origin 等于 <code>request_origin</code>；safe 请求只允许省略 Origin。</p></article>
-      <article class="card violet"><div class="k">Native client</div><h3>Header-only Bearer</h3><p>HTTP、SSE 和原生 WS 使用 Bearer。不接受 query token；除 bootstrap 外，一旦存在 Authorization，错误 Bearer 不能回退 cookie。Bootstrap 出现 Authorization 时直接返回同一 401。</p></article>
-    </div>
-
-    <div class="note"><b>Listener ownership：</b><code>&lt;state&gt;/web/access.json</code> 冻结 bind、port、effective Origin 与 token fingerprint，但不包含 token。CLI 核对 worker PID/port 后，只向 <code>GET /api/auth/challenge</code> 发送新的 32 字节 nonce，并在本机验证 <code>HMAC-SHA256(raw_token, "openprogram-web-challenge-v1\0" || nonce || "\0" || revision)</code>；token 不发送到被探测端口。</div>
-
-    <h3 style="margin-top:25px">认证矩阵</h3>
-    <div class="table-wrap" tabindex="0" role="region" aria-label="HTTP SSE WebSocket 认证矩阵表">
-      <table>
-        <caption>HTTP、SSE 与 WebSocket 认证矩阵</caption>
-        <thead><tr><th>请求形式</th><th>Credential</th><th>Origin</th><th>失败结果</th></tr></thead>
-        <tbody>
-          <tr><td>Cookie + unsafe HTTP</td><td>必须</td><td>等于 <code>request_origin</code>；missing 拒绝</td><td><code>401</code> 或 <code>403</code></td></tr>
-          <tr><td>Cookie + WebSocket</td><td>accept 前必须</td><td>等于 <code>request_origin</code>；missing 拒绝</td><td>Upgrade HTTP <code>401/403</code></td></tr>
-          <tr><td>Cookie + safe HTTP/SSE</td><td>必须</td><td>存在时必须相等；同源 navigation 可省略</td><td><code>401</code> 或 <code>403</code></td></tr>
-          <tr><td>Bearer HTTP/SSE</td><td>必须</td><td>可省略；存在时必须相等</td><td><code>401</code> 或 <code>403</code></td></tr>
-          <tr><td>Bearer WebSocket</td><td>accept 前必须</td><td>原生客户端可省略；存在时必须相等</td><td>Upgrade HTTP <code>401/403</code></td></tr>
-          <tr><td>Listener ownership challenge</td><td>无 credential；nonce + 可选 revision</td><td>可省略；存在时必须相等</td><td><code>400</code> 或 <code>403</code></td></tr>
-          <tr><td>Fragment bootstrap</td><td>仅 body token；Authorization 拒绝</td><td>等于 <code>request_origin</code></td><td><code>401</code> 或 <code>403</code></td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="grid2" style="margin-top:22px">
-      <article class="card">
-        <div class="k">SSH</div><h3>后端保持 loopback</h3>
-        <pre>ssh -N -L 18100:127.0.0.1:18100 owner@remote-host
-
-openprogram web auth-url \
-  --base-url http://127.0.0.1:18100</pre>
-      </article>
-      <article class="card">
-        <div class="k">Reverse proxy</div><h3>公网域名使用 HTTPS</h3>
-        <pre>{
+<h3 id="reverse-proxy">Same-host HTTPS proxy</h3>
+<pre translate="no" tabindex="0">{
   "web": {
     "host": "127.0.0.1",
     "allowed_origins": ["https://agent.example.com"]
   }
+}</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Party</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram</th><td>Starts Uvicorn with <code translate="no">proxy_headers=False</code>. Never trusts <code translate="no">X-Forwarded-For</code>. Trusts <code translate="no">X-Forwarded-Proto</code> only from a raw loopback peer, one value, <code translate="no">http</code> or <code translate="no">https</code>; any other value is rejected, and it is ignored from other peers.</td></tr>
+<tr><th scope="row">Proxy</th><td>Preserves the public Host, overwrites the scheme, supports WebSocket Upgrade, disables SSE buffering</td></tr>
+<tr><th scope="row">Missing scheme header</th><td>A DNS or public-IP origin stays HTTP and is refused with <code translate="no">403</code>, so no insecure owner cookie can be set</td></tr>
+</tbody>
+</table>
+<details>
+<summary>nginx</summary>
+<pre translate="no" tabindex="0">map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
 }
 
-# proxy preserves Host and Upgrade,
-# overwrites X-Forwarded-Proto, clears unused forwarded headers,
-# and disables SSE buffering</pre>
-      </article>
-    </div>
+server {
+    listen 443 ssl;
+    server_name agent.example.com;
 
-    <div class="note"><b>Origin 与 proxy trust：</b>默认 loopback 自动加入当前端口的精确 <code>localhost</code> 与实际监听 literal；其他 Origin 必须在 <code>config.json</code> 显式配置。HTTP 只允许该 localhost、loopback、RFC 1918、IPv4/IPv6 link-local、IPv6 ULA 与 RFC 6598；其他地址和 DNS name 要求 HTTPS。每个请求只接受一个合法 Host；<code>http/ws</code> 与 <code>https/wss</code> 分别映射为相同浏览器 Origin。Uvicorn 使用 <code>proxy_headers=False</code>；OpenProgram 不信任 <code>X-Forwarded-For</code>，只接受原始 loopback peer 的单一 <code>X-Forwarded-Proto</code>。由 scheme + Host 构造的 <code>request_origin</code> 必须有效。</div>
+    # ssl_certificate and ssl_certificate_key are owner-managed.
 
-    <h3 style="margin-top:25px">Secret 不可取回</h3>
-    <div class="grid3">
-      <article class="card current"><div class="k">Remove</div><h3>删除两条 reveal</h3><p>Account reveal route 返回 410；config-key status 保留掩码，但出现 <code>reveal</code> query 时返回 404。</p></article>
-      <article class="card target"><div class="k">Return</div><h3>响应只含掩码</h3><p>返回 <code>has_value</code> 与 <code>masked</code>/<code>masked_key</code>。长度至少 12 时格式为 <code>sk-…abc4</code>，保证隐藏至少五位；短值固定八个圆点。</p></article>
-      <article class="card target"><div class="k">Replace / delete</div><h3>两类动作分别定义</h3><p>Config key 用 <code>POST /api/config</code> 替换、<code>DELETE /api/config/key/{env}</code> 删除；API-key account 用专用 update 替换、<code>accounts/remove</code> 删除整个 account。空值和 mask 都无效。</p></article>
-    </div>
-  </section>
+    location / {
+        proxy_pass http://127.0.0.1:18100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Forwarded "";
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+}</pre>
+</details>
+<details>
+<summary>Caddy</summary>
+<pre translate="no" tabindex="0">agent.example.com {
+    reverse_proxy 127.0.0.1:18100
+}</pre>
+<p class="note">Certificates are Caddy's job because the owner chose Caddy; OpenProgram does not call its APIs.</p>
+</details>
 
-  <section class="section" id="contract">
-    <div class="section-head">
-      <div class="num">06</div>
-      <div><h2>实现契约与验收</h2><p>配置验证、token 安全保存和 fingerprint 计算完成后才接受连接。设计完成的判断依据是可执行行为测试，不是文档描述。</p></div>
-    </div>
-    <ol class="checklist">
-      <li>Loopback HTTP、SSE、WS 无 credential 时失败。</li>
-      <li>正确 Bearer 在无 Origin 时成功；错误 token 无动作且返回相同 401。</li>
-      <li>Fragment 在其他 fetch 前清除；bootstrap 只接受精确有界 JSON，拒绝混合 Authorization，并派生规定 HMAC cookie。</li>
-      <li>未认证的 <code>GET/HEAD /docs</code> 与 <code>/docs/**</code> 在源码 checkout 和安装包中都可以读取预构建静态文档，且请求不会扫描源码或触发构建；安装包的 wheel 必须包含 <code>openprogram_server/_webui/_frontend/docs/index.html</code>。Host 校验继续生效，非安全方法和所有私有 API 不进入该例外。</li>
-      <li>Cookie unsafe HTTP 与 WS 拒绝 missing、opaque、cross-site Origin。</li>
-      <li>Loopback、direct bind、proxy 都拒绝外部、重复、unspecified 与 multicast Host，并验证 HTTP/WS scheme 映射。</li>
-      <li>默认 loopback 只接受隐式 Origin；其他 SSH 本地端口必须显式配置。</li>
-      <li>非 loopback bind 缺少有效 Origin list 时拒绝启动；显式本地/overlay HTTP 范围带警告接受，其他地址拒绝。</li>
-      <li>关闭 Uvicorn proxy-header 改写；scheme 只信任原始 loopback peer，X-Forwarded-For 不改变信任，direct WS 与 Caddy WSS 校验 scheme 映射。</li>
-      <li>同 state directory 的第二进程不能修改 live token；失败清理验证 ownership。</li>
-      <li>重启更换 token，旧 Bearer 与 cookie 失效。</li>
-      <li>Malformed Authorization 不能回退到有效 cookie。</li>
-      <li>静态 asset 与最小 health 不含 session、filesystem、credential metadata。</li>
-      <li>CSP/X-Frame-Options 阻止 framing；认证与敏感 response 使用 no-store。</li>
-      <li>Legacy account reveal 请求为 410，config-key reveal query 为 404；config key 与 account 各自执行精确 replace/preserve/delete schema，8–11 字符使用固定 mask，frontend type 无明文 field。</li>
-      <li>nginx/Caddy HTTPS 下 HTTP、SSE、WS 均能认证，backend 保持 loopback。</li>
-      <li>Channel turn 保留 paired authority tier，不取得 Web owner authority。</li>
-      <li>同 hostname、不同端口的 profile server 使用不同 cookie 名称并独立认证。</li>
-      <li>Listener ownership probe 核对 worker PID/port 与 access snapshot，只发送随机 nonce，验证 versioned token-HMAC proof，并拒绝 foreign listener、stale snapshot 及 port/fingerprint/proof/revision mismatch。</li>
-    </ol>
-  </section>
+<h2 id="secrets">Stored secrets</h2>
+<p>Owner authentication authorizes replacing and using a secret, never reading it.</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Config or environment key</th><th scope="col">API-key account</th></tr></thead>
+<tbody>
+<tr><th scope="row">Read</th><td><code translate="no">GET /api/config/key/{env_var}</code>: <code translate="no">{"has_value":false,"masked":""}</code> or <code translate="no">{"has_value":true,"masked":"sk-…abc4"}</code>; undeclared name <code translate="no">404</code></td><td><code translate="no">GET /api/providers/{provider}/accounts</code>: metadata with <code translate="no">has_value</code> and <code translate="no">masked_key</code>; no <code translate="no">identity</code>, <code translate="no">can_reveal</code>, <code translate="no">value</code> or full key</td></tr>
+<tr><th scope="row">Preserve</th><td>Omit the name from <code translate="no">api_keys</code></td><td>Use, rename, reorder and rotate neither take nor change <code translate="no">api_key</code></td></tr>
+<tr><th scope="row">Replace</th><td><code translate="no">POST /api/config</code> <code translate="no">{"api_keys":{"ENV_VAR":"new"}}</code>, one or more keys; <code translate="no">200 {"saved":true}</code></td><td><code translate="no">POST /api/providers/{provider}/accounts/{name}/update</code> <code translate="no">{"api_key":"new","validate":true}</code>; <code translate="no">validate</code> optional, default true; <code translate="no">200 {"ok":true}</code>; <code translate="no">404</code> if absent or not an API-key account</td></tr>
+<tr><th scope="row">Delete</th><td><code translate="no">DELETE /api/config/key/{env_var}</code>, no body, idempotent; removes the saved entry and live environment value; <code translate="no">204</code>. The parent environment can bring it back only after a restart.</td><td><code translate="no">POST /api/providers/{provider}/accounts/remove</code> <code translate="no">{"id":"name"}</code> deletes the whole credential pool; <code translate="no">200 {"removed":true,"name":"name","cleared_active":&lt;bool&gt;}</code>; <code translate="no">404</code> for a missing or unknown id</td></tr>
+<tr><th scope="row">Reveal</th><td>A <code translate="no">reveal</code> query: <code translate="no">404</code></td><td><code translate="no">…/accounts/{name}/reveal</code>: <code translate="no">410</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">400</code>, nothing changed</th><td>Unknown fields, unknown names, <code translate="no">null</code>, empty, non-printable or non-ASCII values, any displayed mask. Also a key validation definitively rejects; a transient or offline <code translate="no">unknown</code> result still saves.</td></tr>
+<tr><th scope="row">Mask</th><td>Values of 12 or more characters with ASCII visible parts: first 3, <code translate="no">…</code>, last 4, hiding at least 5. Otherwise a fixed <code translate="no">••••••••</code>, so short lengths stay hidden.</td></tr>
+<tr><th scope="row">Frontend</th><td>No reveal button, request or plaintext response field in provider detail, API-key settings or account manager</td></tr>
+<tr><th scope="row">MCP servers</th><td><code translate="no">MCPServerConfig.to_storage_dict()</code> keeps full values for the file; <code translate="no">to_response_dict()</code> masks every <code translate="no">env</code> and <code translate="no">headers</code> value, bearer token and OAuth client secret as <code translate="no">{has_value, masked}</code> on <code translate="no">/api/mcp/servers</code>, <code translate="no">/api/mcp/servers/{name}</code>, <code translate="no">/api/mcp/catalog</code>, <code translate="no">/api/mcp/catalog/diff</code>. <code translate="no">PATCH /api/mcp/servers/{name}</code>: omitted preserves, new value replaces, explicit empty deletes; persisted after the restart succeeds. <code translate="no">mcp_servers.json</code> is <code translate="no">0600</code> through temp file, <code translate="no">fsync</code> and <code translate="no">os.replace</code>.</td></tr>
+<tr><th scope="row">Project-file reveal</th><td>Unrelated file-navigation action under normal authentication; not a credential path</td></tr>
+</tbody>
+</table>
 
-  <section class="section" id="status">
-    <div class="section-head">
-      <div class="num">07</div>
-      <div><h2>实现进度</h2><p>三档严格分开。设计正文不是实现证据；只有当前生产代码与测试用于归类。</p></div>
-    </div>
+<h2 id="startup">Startup</h2>
+<p>Validate configuration, generate and secure the token, write and check <code translate="no">access.json</code>, compute the fingerprint, then listen.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Logged</th><th scope="col">Startup error</th></tr></thead>
+<tbody>
+<tr><th scope="row">Bind address and whether it is loopback</th><td>Malformed origin</td></tr>
+<tr><th scope="row">Effective origins</th><td>Non-loopback bind without an origin</td></tr>
+<tr><th scope="row">Whether loopback-proxy scheme handling is active</th><td>Unsafe public HTTP origin</td></tr>
+<tr><th scope="row">Token fingerprint, never the token</th><td>Unsafe token file</td></tr>
+<tr><th scope="row">Warning for non-loopback HTTP</th><td>Occupied Web-process lock</td></tr>
+</tbody>
+</table>
 
-    <div class="diagram" tabindex="0" role="region" aria-label="实现状态分层图">
-      <svg viewBox="0 0 1120 270" role="img" aria-label="远程 Web 访问三档实现状态">
-        <rect x="18" y="18" width="1084" height="234" rx="9" fill="#0b1216" stroke="#294049"/>
-        <g transform="translate(42,47)">
-          <rect width="330" height="172" rx="7" fill="#15232a" stroke="#8bcf9a"/>
-          <rect width="330" height="34" rx="7" fill="#183027"/>
-          <text x="16" y="22" fill="#8bcf9a" font-size="11" class="m">IMPLEMENTED</text>
-          <text x="16" y="63" fill="#e7eee9" font-size="12">process token / cookie / middleware</text>
-          <text x="16" y="87" fill="#e7eee9" font-size="12">fragment bootstrap / auth-url / health</text>
-          <text x="16" y="111" fill="#e7eee9" font-size="12">secret 不可取回 / BackendEndpoint</text>
-          <text x="16" y="135" fill="#e7eee9" font-size="12">真实 listener HTTP / SSE / WS 验收</text>
-          <text x="16" y="157" fill="#7f9595" font-size="10">当前代码与测试有证据</text>
-        </g>
-        <g transform="translate(392,47)">
-          <rect width="330" height="172" rx="7" fill="#15232a" stroke="#e8ad67"/>
-          <rect width="330" height="34" rx="7" fill="#322819"/>
-          <text x="16" y="22" fill="#e8ad67" font-size="11" class="m">PARTIAL</text>
-          <text x="16" y="63" fill="#e7eee9" font-size="12">browser 驱动的 asset / navigation audit</text>
-          <text x="16" y="87" fill="#e7eee9" font-size="12">nginx 与 Caddy smoke deployment</text>
-          <text x="16" y="157" fill="#7f9595" font-size="10">生产路径存在，验收范围未完成</text>
-        </g>
-        <g transform="translate(742,47)">
-          <rect width="330" height="172" rx="7" fill="#15232a" stroke="#b89ae8"/>
-          <rect width="330" height="34" rx="7" fill="#28213a"/>
-          <text x="16" y="22" fill="#b89ae8" font-size="11" class="m">EXPLICITLY OUT OF SCOPE</text>
-          <text x="16" y="63" fill="#e7eee9" font-size="12">账号 / RBAC / project ACL</text>
-          <text x="16" y="87" fill="#e7eee9" font-size="12">OAuth 代替 token</text>
-          <text x="16" y="111" fill="#e7eee9" font-size="12">内置 TLS / certificate</text>
-          <text x="16" y="135" fill="#e7eee9" font-size="12">relay / tunnel / insecure</text>
-          <text x="16" y="157" fill="#7f9595" font-size="10">产品边界明确排除</text>
-        </g>
-      </svg>
-    </div>
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Everything above, except the two items below</td></tr>
+<tr><th scope="row">Partial</th><td>Browser-driven audit that no exported asset or navigation path embeds dynamic data; server-side tests cover responses and rendered HTML</td></tr>
+<tr><th scope="row">Partial</th><td>nginx and Caddy HTTPS, WebSocket and SSE smoke deployments; a real-listener origin matrix covers <code translate="no">X-Forwarded-Proto</code> and <code translate="no">X-Forwarded-Host</code></td></tr>
+</tbody>
+</table>
 
-    <div class="status-grid">
-      <article class="status-card" style="--state:var(--green)"><div class="state">已实现</div><ul><li>默认 loopback、lifespan 与 per-profile owner</li><li><code>OwnerAuthState</code> token、lock、cookie</li><li>canonical Origin 与共同 middleware</li><li>fragment bootstrap、auth-url、最小 health</li><li><code>proxy_headers=False</code> 与 loopback-only forwarded scheme</li><li>两条 plaintext reveal 已删除、严格 secret schema 与统一掩码</li><li>MCP 服务器凭证：存盘与响应序列化分离，<code>env</code>/<code>headers</code>/bearer/client secret 全掩码，编辑走 preserve/replace/delete，配置文件 <code>0600</code> 原子写</li><li><code>BackendEndpoint</code> 驱动 TUI 与 MCP CLI 的 Bearer 认证</li><li>startup 报告 bind、Origin、fingerprint 与明文 HTTP 告警</li><li>真实 Uvicorn listener 上的 HTTP/SSE/WS、bind-failure、轮换、双 profile 与泄露扫描验收</li></ul></article>
-      <article class="status-card" style="--state:var(--amber)"><div class="state">部分实现</div><ul><li>browser 驱动的 asset/navigation audit</li><li>nginx 与 Caddy smoke deployment</li></ul></article>
-      <article class="status-card" style="--state:var(--violet)"><div class="state">明确不做</div><ul><li>账号、RBAC、项目权限</li><li>OAuth/SSO 替代 token</li><li>内置 TLS 与证书管理</li><li>公网 relay、托管 tunnel、pairing</li><li>认证关闭与 plaintext reveal</li></ul></article>
-    </div>
-  </section>
+<details>
+<summary>Where each part lives and what tests it</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Part</th><th scope="col">Code and tests</th></tr></thead>
+<tbody>
+<tr><th scope="row">Default bind, lifespan</th><td><code translate="no">_web_config()</code> and <code translate="no">create_app()</code> in <code translate="no">openprogram/interfaces/server/server.py</code></td></tr>
+<tr><th scope="row">Owner principal, tiers</th><td><code translate="no">openprogram/runtime/permissions/authority.py</code>; <code translate="no">tests/unit/providers/auth/test_authority_scope.py</code></td></tr>
+<tr><th scope="row">Token, lock, cookie</th><td><code translate="no">OwnerAuthState</code> in <code translate="no">openprogram/interfaces/server/owner_auth.py</code>; <code translate="no">test_process_token_is_owner_only_locked_and_replaced_after_release</code></td></tr>
+<tr><th scope="row">Origins</th><td><code translate="no">canonicalize_origin()</code>, <code translate="no">resolve_effective_origins()</code> in <code translate="no">openprogram/host/security/backend_endpoint.py</code>; parameterized owner-auth tests</td></tr>
+<tr><th scope="row">Middleware</th><td><code translate="no">OwnerAuthMiddleware</code>; owner-auth tests for HTTP mutation and pre-accept WebSocket</td></tr>
+<tr><th scope="row">Bootstrap</th><td><code translate="no">apps/web/lib/net/auth/owner-auth-bootstrap.ts</code>, <code translate="no">OwnerAuthBoundary</code>; <code translate="no">apps/web/scripts/settings/check-owner-auth-bootstrap.mjs</code>, TypeScript check, production build</td></tr>
+<tr><th scope="row"><code translate="no">auth-url</code></th><td><code translate="no">openprogram/interfaces/cli/commands/web.py</code>, <code translate="no">build_owner_auth_url()</code>; <code translate="no">tests/unit/providers/adapters/test_web_auth_url.py</code></td></tr>
+<tr><th scope="row">Secrets</th><td><code translate="no">openprogram/host/security/credential_mask.py</code>, <code translate="no">credential_secrets</code>; <code translate="no">tests/component/programs/mcp/test_mcp_secret_non_retrievability.py</code>, <code translate="no">apps/web/scripts/settings/check-secret-non-retrieval.mjs</code></td></tr>
+<tr><th scope="row">Internal clients</th><td><code translate="no">resolve_backend_endpoint()</code> returns a challenge-verified <code translate="no">BackendEndpoint</code>, so the token is read only after proof; used by <code translate="no">openprogram/interfaces/cli/ink.py</code> and <code translate="no">openprogram/interfaces/cli/commands/mcp.py</code>. The Node client sends Bearer only to backend URLs: <code translate="no">apps/cli/src/utils/backend.ts</code>, <code translate="no">apps/cli/tests/backendAuth.test.ts</code></td></tr>
+<tr><th scope="row">Startup report</th><td><code translate="no">start_server()</code>; <code translate="no">test_startup_logs_warn_about_plaintext_http_for_remote_origins</code></td></tr>
+<tr><th scope="row">Real listener</th><td><code translate="no">tests/component/providers/adapters/test_web_owner_auth_listener.py</code>: real Uvicorn socket, HTTP, SSE, pre-accept WebSocket denial, bind-failure cleanup, wire-level rotation, two-profile cookies, reverse-proxy origins, token-leak sweep over bodies, headers, logs and rendered pages</td></tr>
+</tbody>
+</table>
+</details>
 
-  <footer class="foot">规范源：<code>remote-web-access.md</code> · 中文：<code>remote-web-access.zh.md</code> · 可视化源：<code>remote-web-access.html</code></footer>
-</main>
-</body>
-</html>
+<details id="contract">
+<summary>Acceptance behaviours</summary>
+<ol>
+<li>Loopback HTTP, SSE and WebSocket without a credential fail.</li>
+<li>A correct Bearer token works without <code translate="no">Origin</code>; a wrong one gets the same <code translate="no">401</code> and does nothing.</li>
+<li>Bootstrap clears the fragment before other fetches, accepts only the bounded JSON, sends no token in URL, query or Referer, derives the specified cookie, rejects a body token with <code translate="no">Authorization</code>, then opens HTTP, SSE and WebSocket.</li>
+<li>Cookie unsafe HTTP and WebSocket reject missing, opaque, cross-site and unlisted origins before action or accept.</li>
+<li>Foreign, duplicate, comma-joined, unspecified and multicast Hosts are rejected on loopback, direct bind and proxy; HTTP/WS and HTTPS/WSS give the same origin pairs.</li>
+<li>Default loopback accepts only its implicit origins; another SSH local port is rejected until configured.</li>
+<li>A non-loopback bind without valid origins refuses startup; the listed HTTP ranges pass with warnings; unspecified, multicast, documentation, benchmarking, reserved and global literals are rejected for HTTP.</li>
+<li>Uvicorn proxy rewriting is off; forwarded scheme is honoured only from a raw loopback peer; forged <code translate="no">X-Forwarded-For</code> changes nothing; public bootstrap without HTTPS fails; direct WS and Caddy WSS give the expected origin.</li>
+<li>A second process for one state directory cannot change the live token or snapshot; bind failure removes only the failing process's files.</li>
+<li>Restart rotates the token and invalidates the old Bearer and cookie.</li>
+<li>A malformed <code translate="no">Authorization</code> header never falls back to a cookie.</li>
+<li>Static assets and <code translate="no">/healthz</code> contain no token, session, filesystem or credential data or diagnostics.</li>
+<li>Headers reject framing; protected responses are <code translate="no">no-store</code>; <code translate="no">401</code> advertises the Bearer realm.</li>
+<li>Docs read without authentication from prebuilt files in checkouts and packages, with no scan or build; Host still applies; unsafe methods and private APIs are excluded.</li>
+<li>Reveal returns <code translate="no">410</code> and <code translate="no">404</code>; replace, preserve and delete follow the exact schemas; 8–11-character values use the fixed mask; masks are never accepted; frontend types have no reveal or full-secret field.</li>
+<li>nginx and Caddy carry authenticated HTTP, SSE and WebSocket over HTTPS with a loopback backend.</li>
+<li>Channel messages keep <code translate="no">paired</code> and gain no owner authority.</li>
+<li>Two profile servers on one hostname and different ports have distinct cookies and authenticate independently.</li>
+<li>The ownership probe checks PID, port and snapshot, sends only a fresh nonce, validates the versioned proof, optionally binds the revision, disables ambient HTTP proxies and never sends or logs the token. Foreign listeners and stale or mismatched snapshot, port, proof or revision are not the owner server.</li>
+</ol>
+</details>
+
+<details id="survey">
+<summary>Open-source survey</summary>
+<p>Systems in OpenProgram's design corpus plus others with relevant Web deployment, authentication, proxy or secret handling. Not exhaustive.</p>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Design</th><th scope="col">Taken</th><th scope="col">Rejected or not applicable</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/openclaw/openclaw">OpenClaw</a></th><td>Loopback-first gateway, authenticated non-loopback, explicit origins, SSH and proxy guidance, Host and trusted-proxy controls (<a href="https://github.com/openclaw/openclaw/blob/main/docs/gateway/remote.md">remote</a>, <a href="https://github.com/openclaw/openclaw/blob/main/docs/gateway/security/index.md">security</a>, <a href="https://github.com/openclaw/openclaw/blob/main/docs/web/control-ui.md">Control UI</a>)</td><td>Exact origins, fragment bootstrap, SSH and proxy patterns, proxy trust limits</td><td>External identity replacing the token</td></tr>
+<tr><th scope="row"><a href="https://github.com/jupyter-server/jupyter_server">Jupyter Server</a></th><td>Notebook 4.3 made generated tokens the default and handed them to the opened browser; now token or cookie, HTTPS for public use, XSRF and WebSocket Origin checks (<a href="https://github.com/jupyter/notebook/blob/4.x/docs/source/changelog.rst">changelog</a>, <a href="https://github.com/jupyter-server/jupyter_server/blob/main/docs/source/operators/security.rst">security</a>, <a href="https://github.com/jupyter-server/jupyter_server/blob/main/docs/source/operators/public-server.rst">public server</a>). The closest single-owner experience; a precedent for the experience, not identical threats.</td><td>Automatic token entry, cookie transition</td><td>Query tokens (fragment instead), password mode</td></tr>
+<tr><th scope="row"><a href="https://github.com/NousResearch/Hermes-Agent">Hermes Agent</a></th><td>Loopback default; non-loopback needs a password or OAuth provider and fails without one; <code translate="no">--insecure</code> deprecated; single-use <a href="https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/dashboard_auth/ws_tickets.py">WS ticket</a>; redacted listings with an authenticated <a href="https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/web_server.py#L7663-L7696">reveal route</a> (<a href="https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/web-dashboard.md#when-the-gate-engages">dashboard</a>)</td><td>External fail-closed behaviour, redacted secret views</td><td>Provider accounts, second WS ticket, reveal</td></tr>
+<tr><th scope="row"><a href="https://github.com/agent0ai/agent-zero">Agent Zero</a></th><td>Optional single login, session cookie, CSRF and WS Origin checks, reverse proxies, built-in tunnels, masked <a href="https://github.com/agent0ai/agent-zero/blob/main/helpers/settings.py">settings</a> (<a href="https://github.com/agent0ai/agent-zero/blob/main/docs/setup/installation.md">install</a>, <a href="https://github.com/agent0ai/agent-zero/blob/main/docs/setup/vps-deployment.md">VPS</a>)</td><td>Cookie, CSRF, Origin and WS checks together; masked-only updates</td><td>Optional authentication, built-in public tunnels</td></tr>
+<tr><th scope="row"><a href="https://github.com/OpenHands/OpenHands">OpenHands</a></th><td>Session API key across HTTP and WS; SSH and nginx <a href="https://github.com/OpenHands/OpenHands/blob/main/docs/SELF_HOSTING.md">self-hosting</a>; other editions add accounts</td><td>Common HTTP and WS key, loopback backend</td><td>Token in public HTML or browser storage, plaintext secret retrieval</td></tr>
+<tr><th scope="row"><a href="https://github.com/sst/opencode">opencode</a></th><td>Loopback default, optional Basic auth, CORS origins, short-lived <a href="https://github.com/sst/opencode/blob/dev/packages/core/src/pty/ticket.ts">PTY ticket</a> (<a href="https://github.com/sst/opencode/blob/dev/packages/web/src/content/docs/server.mdx">server</a>, <a href="https://github.com/sst/opencode/blob/dev/packages/opencode/src/cli/network.ts">network</a>)</td><td>Loopback default</td><td>Optional authentication; second ticket, since the HttpOnly cookie already avoids WS query credentials</td></tr>
+<tr><th scope="row"><a href="https://github.com/open-webui/open-webui">Open WebUI</a></th><td>Multi-user roles; <a href="https://github.com/open-webui/docs/blob/main/docs/reference/https/nginx.md">nginx</a> and <a href="https://github.com/open-webui/docs/blob/main/docs/reference/https/caddy.md">Caddy</a> guidance for HTTPS, Upgrade, SSE buffering</td><td>Proxy mechanics</td><td>Signup, accounts, JWT sessions, groups, RBAC</td></tr>
+<tr><th scope="row"><a href="https://github.com/langgenius/dify">Dify</a></th><td>Workspace and account roles; <a href="https://github.com/langgenius/dify/blob/main/api/core/entities/provider_configuration.py">credential responses</a> obfuscated with hidden-value updates</td><td>Masked-only responses, explicit replacement</td><td>Tenant and role layers</td></tr>
+<tr><th scope="row"><a href="https://github.com/danny-avila/LibreChat">LibreChat</a></th><td>Registration, admins, role access, JWT (<a href="https://github.com/LibreChat-AI/librechat.ai/blob/main/content/docs/features/authentication.mdx">authentication</a>, <a href="https://github.com/LibreChat-AI/librechat.ai/blob/main/content/docs/remote/nginx.mdx">nginx</a>). Shows what real multi-user design needs.</td><td>Proxy details</td><td>Identity data model</td></tr>
+<tr><th scope="row"><a href="https://github.com/Mintplex-Labs/anything-llm">AnythingLLM</a></th><td>Separate single- and multi-user modes; single-user <a href="https://github.com/Mintplex-Labs/anything-llm/blob/master/server/utils/middleware/validatedRequest.js">bypasses auth</a> without a password; multi-user adds <a href="https://github.com/Mintplex-Labs/anything-llm/blob/master/server/utils/middleware/multiUserProtected.js">role checks</a></td><td>Single-owner concept</td><td>Optional authentication</td></tr>
+<tr><th scope="row"><a href="https://github.com/microsoft/autogen/tree/main/python/packages/autogen-studio">AutoGen Studio</a></th><td>Loopback default; <a href="https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/auth/manager.py">default auth</a> is none; optional OAuth or JWT; research prototype</td><td>Loopback default</td><td>Query or <code translate="no">localStorage</code> credentials, post-accept WS auth, optional auth</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex">Codex CLI</a></th><td><code translate="no">codex app-server</code> over stdio and experimental WebSocket; enrollment and pairing (<a href="https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md">app-server</a>); no owner-hosted browser UI</td><td>None</td><td>Service-mediated remote control: OpenProgram runs no relay</td></tr>
+<tr><th scope="row"><a href="https://github.com/fastclaw-ai/weclaw/blob/main/README.md">WeClaw</a></th><td>HTTP API on <code translate="no">127.0.0.1:18011</code> by default, listen address changeable; no owner browser UI contract</td><td>None</td><td>Not a remote-Web precedent</td></tr>
+<tr><th scope="row"><a href="https://github.com/SWE-agent/SWE-agent">SWE-agent</a></th><td>Command-line agent; <a href="https://github.com/SWE-agent/SWE-agent/tree/main/docs">documentation</a> shows no owner Web UI</td><td>None</td><td>Not applicable</td></tr>
+<tr><th scope="row"><a href="https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent">pi-mono</a></th><td>TUI, <a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/sdk.md">SDK</a>, <a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/rpc.md">RPC mode</a>; no remote Web server contract</td><td>None</td><td>Not applicable</td></tr>
+<tr><th scope="row"><a href="https://github.com/badlogic/pi-mono/tree/main/packages/ai">pi-ai</a></th><td>Provider transport library</td><td>None</td><td>Not applicable</td></tr>
+</tbody>
+</table>
+
+<h3 id="synthesis">Three kinds of remote identity</h3>
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">Examples</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Instance credential</th><td>Jupyter, OpenClaw, OpenHands</td><td>Used: one root secret in two transport forms, one bootstrap, one set of checks; no WebSocket ticket, session database or OAuth flow</td></tr>
+<tr><th scope="row">Application accounts</th><td>Open WebUI, Dify, LibreChat, multi-user AnythingLLM</td><td>Rejected: state and policy the product does not need</td></tr>
+<tr><th scope="row">Managed remote control</th><td>Pairing, hosted tunnels, relays</td><td>Rejected: needs a service OpenProgram does not run</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="../runtime/security/sandbox-architecture.html">Permission model</a> · <a href="../memory/speaker-identity.html">Speaker identity</a> · <a href="../integrations/mcp-server.html">MCP server</a></p>

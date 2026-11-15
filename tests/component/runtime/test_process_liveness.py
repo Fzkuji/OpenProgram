@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 
-from openprogram._compat import process_alive, process_start_token
+from openprogram.host._platform.processes import process_alive, process_start_token
 
 
 def test_current_process_is_alive():

@@ -8,9 +8,9 @@ import os
 
 import pytest
 
-from openprogram.self_update import SelfUpdateStore, UpdateRequest
-from openprogram.self_update.delivery.launcher import LaunchError
-from openprogram.self_update.delivery.launcher import launch_supervisor
+from openprogram.operations.self_update import SelfUpdateStore, UpdateRequest
+from openprogram.operations.self_update.delivery.launcher import LaunchError
+from openprogram.operations.self_update.delivery.launcher import launch_supervisor
 
 
 def _request(profile: Path, update_id: str = "su_launch") -> SelfUpdateStore:
@@ -36,7 +36,7 @@ def _request(profile: Path, update_id: str = "su_launch") -> SelfUpdateStore:
 
 
 def _trusted_installer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str]:
-    from openprogram.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update.delivery import controller_bundle
 
     resources = tmp_path / "resources"
     (resources / "update").mkdir(parents=True)
@@ -67,8 +67,8 @@ def _ready(update_id: str, installer_sha256: str) -> str:
 def test_launch_writes_private_fixed_controller_and_submits_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram.self_update.delivery import launcher
-    from openprogram import paths
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.state import paths
 
     profile = tmp_path / "profile"
     root = profile / "self-updates"
@@ -101,7 +101,7 @@ def test_launch_writes_private_fixed_controller_and_submits_once(
     body = script.read_text(encoding="utf-8")
     assert str(root / "su_launch/controller/runtime/python") in body
     assert "/usr/bin/env -i" in body
-    assert "openprogram.self_update.control.supervisor" in body
+    assert "openprogram.operations.self_update.control.supervisor" in body
     assert "su_launch" in body
     assert installer_sha256 in body
     assert calls[0][:2] == ("print", f"gui/{launcher.os.getuid()}/{result.label}")
@@ -110,8 +110,8 @@ def test_launch_writes_private_fixed_controller_and_submits_once(
 
 
 def test_duplicate_launch_is_idempotent(tmp_path: Path, monkeypatch) -> None:
-    from openprogram.self_update.delivery import launcher
-    from openprogram import paths
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.state import paths
 
     profile = tmp_path / "profile"
     _request(profile)
@@ -139,8 +139,8 @@ def test_duplicate_launch_is_idempotent(tmp_path: Path, monkeypatch) -> None:
 def test_launch_removes_job_when_controller_never_becomes_ready(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     _request(profile)
@@ -166,8 +166,8 @@ def test_launch_removes_job_when_controller_never_becomes_ready(
 def test_launch_failure_is_explicit_and_preserves_request(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from openprogram.self_update.delivery import launcher
-    from openprogram import paths
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.state import paths
 
     profile = tmp_path / "profile"
     store = _request(profile)
@@ -188,8 +188,8 @@ def test_launch_failure_is_explicit_and_preserves_request(
 def test_launch_does_not_submit_after_ambiguous_status_failure(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     _request(profile)
@@ -210,8 +210,8 @@ def test_launch_does_not_submit_after_ambiguous_status_failure(
 
 
 def test_loaded_job_rejects_stale_ready_marker(tmp_path: Path, monkeypatch) -> None:
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     _request(profile)
@@ -226,8 +226,8 @@ def test_loaded_job_rejects_stale_ready_marker(tmp_path: Path, monkeypatch) -> N
 
 
 def test_launch_rejects_log_symlink(tmp_path: Path, monkeypatch) -> None:
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     root = profile / "self-updates"
@@ -253,8 +253,8 @@ def test_launch_rejects_log_symlink(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_concurrent_launch_submits_only_once(tmp_path: Path, monkeypatch) -> None:
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     _request(profile)
@@ -285,8 +285,8 @@ def test_concurrent_launch_submits_only_once(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_launch_resubmits_after_controller_and_service_exit(tmp_path, monkeypatch) -> None:
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     _request(profile)
@@ -318,9 +318,9 @@ def test_launch_resubmits_after_controller_and_service_exit(tmp_path, monkeypatc
 
 
 def test_runtime_snapshot_failure_never_submits_launchd(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
-    from openprogram.self_update.delivery import controller_bundle
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.operations.self_update.delivery import controller_bundle
 
     profile = tmp_path / "profile"
     store = _request(profile)
@@ -337,8 +337,8 @@ def test_runtime_snapshot_failure_never_submits_launchd(tmp_path, monkeypatch):
 
 
 def test_loaded_stopped_controller_is_started_without_killing_it(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     profile = tmp_path / "profile"
     _request(profile)
@@ -364,8 +364,8 @@ def test_loaded_stopped_controller_is_started_without_killing_it(tmp_path, monke
 
 
 def test_ready_marker_for_unrelated_live_process_is_rejected(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
     profile = tmp_path / "profile"
     _request(profile)
     _, digest = _trusted_installer(tmp_path, monkeypatch)
@@ -382,8 +382,8 @@ def test_native_launchd_reuses_running_process_and_restarts_after_death(tmp_path
     import sys
     import time
     import uuid
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
 
     if sys.platform != "darwin" or not Path("/bin/launchctl").is_file():
         pytest.skip("requires native macOS launchd")
@@ -433,10 +433,10 @@ def test_native_launchd_reuses_running_process_and_restarts_after_death(tmp_path
 @pytest.mark.parametrize("outcome", ["aborted", "succeeded", "rolled_back", "needs_manual_recovery"])
 def test_terminal_maintenance_uses_only_saved_controller(tmp_path, monkeypatch, outcome):
     import time
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
-    from openprogram.self_update.delivery import controller_bundle
-    from openprogram.self_update import UpdatePhase
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
+    from openprogram.operations.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update import UpdatePhase
     profile = tmp_path / "profile"
     store = _request(profile)
     _, digest = _trusted_installer(tmp_path, monkeypatch)
@@ -451,7 +451,7 @@ def test_terminal_maintenance_uses_only_saved_controller(tmp_path, monkeypatch, 
         return 0, "loaded"
     monkeypatch.setattr(launcher, "_launchctl", launchctl)
     launch_supervisor("su_launch")
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY):
         store.transition("su_launch", phase)
     store._write_json(store.root / "maintenance.json", dict(schema=1, update_id="su_launch", entered_at=time.time()))
     if outcome != "aborted":

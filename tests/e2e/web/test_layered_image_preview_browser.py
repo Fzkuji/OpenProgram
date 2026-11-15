@@ -29,9 +29,9 @@ def layered_page(layered_bundle):
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.route("**/*", lambda request: request.fulfill(
-            content_type="text/html", body='<div id="root"></div><script src="/bundle.js"></script>'
+            content_type="text/html; charset=utf-8", body='<div id="root"></div><script src="/bundle.js"></script>'
         ) if request.request.url.endswith("/") else request.fulfill(
-            content_type="text/javascript", body=layered_bundle
+            content_type="text/javascript; charset=utf-8", body=layered_bundle
         ) if request.request.url.endswith("/bundle.js") else request.fulfill(status=404))
         page.goto("https://document.test/")
         try:

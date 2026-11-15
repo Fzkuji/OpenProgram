@@ -1,0 +1,195 @@
+<title>面板录制</title>
+<meta name="description" content="Agent 把 App 的一个面板录成视频：调用哪些动作、怎么指定面板、返回什么、怎么采集画面、得到什么文件。">
+<meta name="covers" content="openprogram/programs/applications/browser/video.py">
+<h1>面板录制</h1>
+
+<p>Agent 用 <code translate="no">computer_use_agent</code> 的动作，把一个面板录成画面正好是该面板矩形的视频。没有给人用的菜单、按钮或快捷键。App 采集的是自己的页面，所以 macOS 不会来要“屏幕录制”权限，也不新增任何批准步骤。</p>
+
+<h2 id="actions">Agent 调用什么</h2>
+<p>三个动作，挂在 <code translate="no">browser</code> 目标上：它已经连着 App，<code translate="no">screenshot</code> 也在这里。命名和限制跟 <code translate="no">app</code> 目标的 <code translate="no">start_audio_recording</code>、<code translate="no">stop_audio_recording</code> 一致。</p>
+<pre translate="no" tabindex="0">computer_use_agent(target="browser", action="start_video_recording", args={"pane": "conversation"})
+…
+computer_use_agent(target="browser", action="stop_video_recording")
+
+Recorded 12.4 seconds of tk3fa, 1600×1200 at up to 60 fps, saved to
+~/.openprogram/computer-use/video/20261110-101500-conversation.mp4.</pre>
+<table class="stack">
+<thead><tr><th scope="col">动作</th><th scope="col">参数</th><th scope="col">返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">start_video_recording</code></th><td><code translate="no">pane</code>：录什么，见下表。<code translate="no">max_duration</code>：秒数，默认 60，最多 600。</td><td>立即返回：面板、像素尺寸和时长上限。Agent 接着操作，录制同时进行。</td></tr>
+<tr><th scope="row"><code translate="no">stop_video_recording</code></th><td><code translate="no">discard</code>：不保存，直接删除</td><td><code translate="no">path</code>、<code translate="no">seconds</code>、<code translate="no">width</code>、<code translate="no">height</code>、<code translate="no">fps</code>、<code translate="no">bytes</code>，以及 <code translate="no">ended</code>：不是这次调用结束时的原因</td></tr>
+<tr><th scope="row"><code translate="no">panes</code></th><td>无</td><td>应答窗口里当前可见的面板：id、类型、标题、尺寸</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">pane</code></th><th scope="col">录的是</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">conversation</code></th><td>本会话自己的面板（需在屏幕上可见）</td></tr>
+<tr><th scope="row"><code translate="no">panes</code> 给出的 id</th><td>屏幕上任何中间标签页或画布格子：会话、文件、应用、设置这类内置页面</td></tr>
+<tr><th scope="row"><code translate="no">window</code></th><td>整个窗口。网页视图的位置是空白。</td></tr>
+<tr><th scope="row">网页标签</th><td>暂时拒绝</td></tr>
+</tbody>
+</table>
+
+<h2 id="rules">规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">批准</th><td>不新增</td></tr>
+<tr><th scope="row">哪个窗口</th><td>显示本会话的那个窗口；没有窗口显示时是主窗口</td></tr>
+<tr><th scope="row">同时只有一个</th><td>每个窗口同时一个录制。再次开始会被拒绝，并指出正在录的那个。</td></tr>
+<tr><th scope="row">谁能停止</th><td>开始它的那个会话</td></tr>
+<tr><th scope="row">到达上限</th><td>自动停止并保留文件；之后的停止调用返回它和原因</td></tr>
+<tr><th scope="row">面板被关闭或隐藏</th><td>同上：停止并保留文件</td></tr>
+<tr><th scope="row">面板被调整大小</th><td>视频保持开始时的尺寸，画面缩放以适应</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">失败</th><th scope="col">Agent 读到什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">没有 App 窗口应答</th><td>视频录制需要打开着窗口的 OpenProgram 桌面 App；打开后再调用。</td></tr>
+<tr><th scope="row">会话不在屏幕上</th><td>说明这一点，并列出在屏幕上的面板</td></tr>
+<tr><th scope="row">面板不存在或没写</th><td>错误里列出屏幕上的面板，和 <code translate="no">panes</code> 的结果一样</td></tr>
+<tr><th scope="row">已经在录</th><td>已在录制 tk3fa；先调用 stop_video_recording。</td></tr>
+<tr><th scope="row">没有可停止的</th><td>当前没有录制；先调用 start_video_recording。</td></tr>
+<tr><th scope="row"><code translate="no">max_duration</code> 超出范围</th><td>max_duration 必须在 0 到 600 秒之间</td></tr>
+<tr><th scope="row">App 版本早于此功能</th><td>提示更新桌面 App</td></tr>
+<tr><th scope="row">采集、编码或写文件失败</th><td>哪一步失败；不完整的文件被删除</td></tr>
+<tr><th scope="row">文件不在 worker 所在的电脑上</th><td>给出 App 报告的路径</td></tr>
+</tbody>
+</table>
+<p class="note">worker 通过桌面链路发送 <code translate="no">record_panes</code>、<code translate="no">record_start</code> 和 <code translate="no">record_stop</code>；录制和写文件都在 App 里完成。代码：<code translate="no">openprogram/programs/applications/browser/video.py</code>、<code translate="no">apps/web/lib/desktop/recording/pane-recorder.ts</code>、<code translate="no">apps/desktop/main/windows/pane-recording.js</code>。</p>
+
+<h2 id="recording">人看到什么</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="一个面板正在录制时的窗口：该面板外沿有一圈强调色描边，其他都不变。">
+  <rect class="tile" x="0" y="0" width="680" height="150" rx="8"/>
+  <text class="t-soft" x="16" y="23">会话</text>
+  <text class="t-soft" x="70" y="23">模型服务</text>
+  <path class="ln-faint" d="M0 38H680M170 38V150M490 38V150"/>
+  <text class="t-soft mid" x="85" y="98">其他格子</text>
+  <rect class="ln-acc" x="180" y="48" width="300" height="92" rx="6"/>
+  <text class="t-big mid" x="330" y="92">被录制的面板</text>
+  <text class="t-soft mid" x="330" y="114">描边在画面之外</text>
+  <text class="t-soft mid" x="585" y="98">右侧栏</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li class="flow-end"><strong>被录制的面板</strong><small>强调色描边紧贴在画面外，所以不会进视频</small></li>
+</ol>
+</figure>
+<p>人只看到这圈描边：没有胶囊、计时或按钮。保留它是因为录制不经询问就开始，必须看得出来。录整个窗口时没有描边。</p>
+
+<h2 id="surfaces">哪些算面板</h2>
+<table class="stack">
+<thead><tr><th scope="col">界面</th><th scope="col">由谁绘制</th><th scope="col">怎么录</th></tr></thead>
+<tbody>
+<tr><th scope="row">中间标签页：会话、文件、终端、审阅、应用，以及设置这类内置页面</th><td>窗口的页面</td><td>一路画面，裁到标签页内容</td></tr>
+<tr><th scope="row">画布格子</th><td>窗口的页面</td><td>同上；裁剪范围跟着格子走</td></tr>
+<tr><th scope="row">右侧栏：文件、活动、资源、详情面板</th><td>窗口的页面</td><td>同上</td></tr>
+<tr><th scope="row">左侧栏、二级列表栏、设置页的一列</th><td>窗口的页面</td><td>同上</td></tr>
+<tr><th scope="row">网页标签</th><td>工具栏由窗口的页面绘制，网站由它自己的原生视图绘制</td><td>之后：网站自己的 frame 作为一路画面</td></tr>
+<tr><th scope="row">悬浮预览</th><td>同网页标签</td><td>同网页标签</td></tr>
+<tr><th scope="row">整个窗口</th><td>以上全部</td><td>不裁剪的画面，把可见的网页视图贴进去</td></tr>
+<tr><th scope="row">在网页上方展开的菜单；原生右键菜单</th><td>各自的顶层视图；系统</td><td>第一版不录</td></tr>
+<tr><th scope="row">网页上的 Agent 光晕和指针</th><td>每个页面一个透明窗口</td><td>不采集</td></tr>
+</tbody>
+</table>
+<p class="note">布局：<a href="center-canvas-layout.zh.html">中间画布</a>、<a href="../browser/web-tab-native-bounds.zh.html">网页标签边界</a>、<a href="../browser/agent-control-overlay.zh.html">Agent 控制覆盖层</a>。</p>
+
+<h2 id="capture">采集路线</h2>
+<table class="stack">
+<thead><tr><th scope="col">路线</th><th scope="col">实测帧率</th><th scope="col">指针</th><th scope="col">macOS 权限</th><th scope="col">编码</th></tr></thead>
+<tbody>
+<tr><th scope="row">推荐。自身画面流：用窗口自己的 frame 应答 <code translate="no" data-claim="example">getDisplayMedia</code>，再 <code translate="no" data-claim="example">cropTo</code> 面板</th><td>完整和裁剪后都是 60 帧；网页标签的 frame 也是 60 帧</td><td>由 Chromium 画进画面（轨道报告 <code translate="no" data-claim="example">cursor: motion</code>）</td><td>不需要</td><td>内置：60 帧 H.264 MP4，带真实帧时间</td></tr>
+<tr><th scope="row">循环调用 <code translate="no">capturePage</code></th><td>640×400 的面板约 115 帧；整窗并做 JPEG 编码时 59 帧</td><td>没有</td><td>不需要</td><td>自己写编码；帧时间只能按循环估计</td></tr>
+<tr><th scope="row">CDP <code translate="no" data-claim="example">Page.startScreencast</code></th><td>约 93 帧，只能抓整个视口</td><td>没有</td><td>不需要</td><td>自己写编码；要占用页面的调试器，Agent 控制也在用它</td></tr>
+<tr><th scope="row">窗口采集：<code translate="no" data-claim="example">desktopCapturer</code>，按矩形裁剪</th><td>未测，因为一请求就会弹出系统提示</td><td>真实指针</td><td>屏幕录制，授予 App</td><td>内置；原生菜单和网页视图也在同一幅画面里</td></tr>
+</tbody>
+</table>
+<p class="note">在 Electron 45.2.1（Chromium 156）、2× 显示器、1280×800 窗口和一个小的移动元素上测得；真实页面在每条路线上都会更慢。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 104" role="img" aria-label="面板元素从 App 自己的 frame 采集成每秒 60 帧的画面流，裁到面板，编码为 H.264 MP4，写入影片文件夹。">
+  <defs><marker id="pr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="56" y="48">面板</text>
+  <text class="t-soft mid" x="56" y="68">元素</text>
+  <line class="ln" x1="112" y1="52" x2="140" y2="52" marker-end="url(#pr-a)"/>
+  <rect class="tile" x="142" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="198" y="48">App 画面</text>
+  <text class="t-soft mid" x="198" y="68">60 帧画面流</text>
+  <line class="ln" x1="254" y1="52" x2="282" y2="52" marker-end="url(#pr-a)"/>
+  <rect class="tile" x="284" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="340" y="48">裁剪</text>
+  <text class="t-soft mid" x="340" y="68">到面板</text>
+  <line class="ln" x1="396" y1="52" x2="424" y2="52" marker-end="url(#pr-a)"/>
+  <rect class="tile" x="426" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="482" y="48">编码</text>
+  <text class="t-soft mid" x="482" y="68">H.264 MP4</text>
+  <line class="ln" x1="538" y1="52" x2="566" y2="52" marker-end="url(#pr-a)"/>
+  <rect class="tile" x="568" y="20" width="112" height="64" rx="8"/>
+  <text class="t-note mid" x="624" y="48">文件</text>
+  <text class="t-soft mid" x="624" y="68">影片文件夹</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>面板元素</strong></li>
+  <li><strong>App 画面</strong><small>60 帧画面流</small></li>
+  <li><strong>裁剪</strong><small>到面板</small></li>
+  <li><strong>编码</strong><small>H.264 MP4</small></li>
+  <li class="flow-end"><strong>文件</strong><small>影片文件夹</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">谁能采集</th><td>只有窗口的主页面，只能采集自己窗口的 frame，只在 worker 请求的录制进行期间。网页标签里的网站和现在一样被拒绝。</td></tr>
+<tr><th scope="row">尺寸</th><td>面板的 CSS 尺寸乘以显示缩放，取偶数。不设置的话画面流会按屏幕尺寸输出，所以要明确指定。</td></tr>
+<tr><th scope="row">网页标签</th><td>网站自己的 frame，交给窗口的页面；不需要拼接</td></tr>
+<tr><th scope="row">为什么不用窗口采集</th><td>它多一项系统权限，而且为工作流录制持有“屏幕录制”权限的身份并不是 App。它留给以后解决原生菜单。</td></tr>
+<tr><th scope="row">为什么不用另外两条</th><td>够快，但没有指针、没有帧时间，还要自己写编码。<code translate="no">capturePage</code> 继续做它现在做的事：静态截图。</td></tr>
+</tbody>
+</table>
+
+<h2 id="output">文件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row">格式</th><td>MP4，H.264，8 Mbit/s，最高 60 帧，无声音。面板有变化才出帧，静止的面板帧很少。</td></tr>
+<tr><th scope="row">GIF, WebM</th><td>不直接录。需要时 Agent 用自己的工具从 MP4 转。</td></tr>
+<tr><th scope="row">保存到</th><td>状态目录下的 <code translate="no">computer-use/video/</code>，和音频录制并列；只留最新的 20 个</td></tr>
+<tr><th scope="row">文件名</th><td>日期、时间和调用时写的面板名</td></tr>
+<tr><th scope="row">交给用户</th><td>Agent 把它复制到工作目录，再调用 <code translate="no">send_file</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="effects">效果</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">效果</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">指针和点击标记</th><td>Agent 的操作不会移动真实指针，它平时的指针画在另一个窗口里。用同一批动作事件把同样的指针画在被录的画面里。</td></tr>
+<tr><th scope="row">自动放大到点击处</th><td>导出时按文件旁保存的点击列表裁剪并缓动到每次点击</td></tr>
+<tr><th scope="row">留白、背景、圆角边框</th><td>导出时把视频放到一张底图上</td></tr>
+</tbody>
+</table>
+<p class="note">这些都还没做。导出另写一个文件；原始录像不会被改动。</p>
+
+<h2 id="browser">没有桌面 App 时</h2>
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">结果</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">在浏览器标签页里打开的 OpenProgram</th><td>拒绝：需要桌面 App</td><td>浏览器只有在人点击并回答它自己的提示后才共享标签页，且仅限 Chromium；Firefox、Safari 和手机根本不能裁到元素</td></tr>
+<tr><th scope="row">通过扩展操作的用户自己的 Chrome 或 Edge</th><td>第一版不做</td><td>之后用 CDP screencast（实测约 93 帧），由 worker 编码</td></tr>
+<tr><th scope="row">没有窗口的服务器</th><td>拒绝：需要桌面 App</td><td>没有东西在绘制这些面板</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">事项</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>三个动作；中间标签页、画布格子和整个窗口；描边；时长上限和面板监视；拒绝一切不是 App 自己发起的画面采集</td></tr>
+<tr><th scope="row">未实现</th><td>网页标签；侧栏作为面板；运行结束时自动停止；把首帧和末帧作为图片返回；工作目录内的 <code translate="no" data-claim="example">path</code> 参数；画面内的指针；导出步骤及其效果；用户自己的 Chrome 或 Edge</td></tr>
+<tr><th scope="row">还要核实</th><td>QuickTime、X 和微信是否接受录制器直接写出的 MP4；长会话上的帧率</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="../browser/built-in-browser.zh.html">内置浏览器</a></p>

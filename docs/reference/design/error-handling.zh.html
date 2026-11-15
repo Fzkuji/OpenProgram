@@ -1,0 +1,118 @@
+<title>错误处理</title>
+<meta name="description" content="哪些异常可以捕获、如何记录，以及强制这些规则的 ruff 门禁。">
+<h1>错误处理</h1>
+<p><strong>捕获你能处理的，并为吞掉的异常留下记录。</strong>没有日志、注释或兜底的处理器，看起来和尚未发现的 bug 完全一样。</p>
+
+<h2 id="1-the-rule">规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">义务</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">精确捕获</th><td>写全操作会抛出的异常：文件 IO 是 <code translate="no">OSError</code>；JSON 是 <code translate="no">ValueError</code>；<code translate="no">ContextVar.reset</code> 对外来 token 抛 <code translate="no">ValueError</code>，对已用 token 抛 <code translate="no">RuntimeError</code>。只写一部分会让被吞的失败变成逃逸的失败。</td></tr>
+<tr><th scope="row">不吞程序错误</th><td><code translate="no">AttributeError</code>、<code translate="no">TypeError</code>、<code translate="no">NameError</code> 是缺陷。宽到能隐藏它们的处理器要收窄，或者记录日志。</td></tr>
+<tr><th scope="row">说明原因</th><td>每处保留的吞异常都带有上下文日志，或说明为何可以忽略的注释；不明显时两者都要。</td></tr>
+<tr><th scope="row">删除无意义的处理器</th><td>包裹本身已吞错的操作，或捕获不可能抛出的异常。</td></tr>
+</tbody>
+</table>
+
+<h2 id="2-boundaries">边界</h2>
+<p>当异常传播会拖垮比失败操作更大的范围时，宽泛的 <code translate="no">except Exception</code> 是合理的。它仍要记录足以定位会话或操作的日志。</p>
+<ul>
+<li>WebSocket 处理器和 HTTP 路由：否则连接会断开</li>
+<li>线程和 worker 入口：否则无声死亡</li>
+<li>回调调用：调用方代码运行在我们的循环内</li>
+<li>可选子系统（记忆、项目 git、用量计量）：缺失只降级功能</li>
+<li>下一轮会重新推导的尽力记账</li>
+</ul>
+
+<h2 id="3-choosing-the-log-level">日志级别</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">级别</th><th scope="col">何时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">error</code></th><td>用户会察觉且必须处理：渠道消息重试后仍未送达、MCP 服务未启动、适配器永久停止</td></tr>
+<tr><th scope="row"><code translate="no">warning</code></th><td>丢失了用户可能察觉的东西：写入未落盘、状态陈旧、记录缺失</td></tr>
+<tr><th scope="row"><code translate="no">info</code></th><td>运行中预期的降级路径：网络等待、重试、模型故障转移、重连</td></tr>
+<tr><th scope="row"><code translate="no">debug</code></th><td>可选路径按设计降级：子系统缺失、尽力缓存、兜底生效；开发者追踪</td></tr>
+</tbody>
+</table>
+<p class="note">使用 <code translate="no">exc_info=True</code>，并包含会话 id 或等价标识。</p>
+
+<details id="4-what-good-handlers-look-like">
+<summary>好的处理器</summary>
+<pre translate="no"><code># A lost durable write, made visible
+except OSError:
+    _log.warning(
+        "index.json not saved for session %s", session_id, exc_info=True)
+
+# Narrow where a broad catch hid defects
+except (ValueError, RuntimeError):
+    # ContextVar.reset raises ValueError for a token minted in another
+    # context and RuntimeError for one already spent. Narrowing to only
+    # the first lets a cancelled turn's spent token escape and replace
+    # the CancelledError.
+    _log.debug("context var token already spent or foreign", exc_info=True)
+
+# Optional subsystem, reason stated
+except Exception:
+    # Memory is optional: an unavailable provider degrades to no memory
+    # block, never a failed turn.
+    _log.debug("memory system prompt block unavailable", exc_info=True)</code></pre>
+</details>
+
+<h2 id="5-the-gate">门禁</h2>
+<pre translate="no"><code>.venv/bin/ruff check .</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">捕获</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">E722</code></th><td>裸 <code translate="no">except:</code>，它也会吞掉 <code translate="no">KeyboardInterrupt</code> 和 <code translate="no">SystemExit</code></td></tr>
+<tr><th scope="row"><code translate="no">S110</code></th><td><code translate="no">try</code> / <code translate="no">except</code> / <code translate="no">pass</code></td></tr>
+<tr><th scope="row"><code translate="no">T201</code></th><td>库代码中的 <code translate="no">print</code></td></tr>
+</tbody>
+</table>
+<h3 id="scope">范围</h3>
+<ul>
+<li>覆盖整个 <code translate="no">openprogram/</code>。<code translate="no">tests/</code> 和 <code translate="no">scripts/</code> 静默：测试故意吞异常以断言后续行为；脚本手动运行。</li>
+<li><code translate="no">per-file-ignores</code> 的 <code translate="no">*</code> 跨越 <code translate="no">/</code>，所以 <code translate="no">openprogram/*.py</code> 会静默每个模块。新模式要对照嵌套文件检查。</li>
+<li><code translate="no">BLE001</code> 关闭：记录日志并降级的边界处理器是正确设计，按“边界”一节评审。</li>
+<li>Ruff 只做这一门禁；格式和导入顺序不管。</li>
+</ul>
+
+<h2 id="6-logging-not-print">用 logging，不用 print</h2>
+<p>每模块一个 logger：<code translate="no">_log = logging.getLogger(__name__)</code>。不加 <code translate="no">[module]</code> 前缀；方括号标签只在携带数据时保留，如 <code translate="no">[wechat:&lt;account&gt;]</code>。参数用 <code translate="no">%s</code>，不用 f-string。</p>
+<p><code translate="no">print</code> 只用于下列情况；静默路径之外的每处调用用 <code translate="no"># noqa: T201 - &lt;reason&gt;</code> 说明属于哪种。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">用途</th><th scope="col">示例</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令输出</th><td><code translate="no">openprogram cron-worker --list</code>、沙箱模拟的 shell 命令、<code translate="no">assets.py</code> 子命令</td></tr>
+<tr><th scope="row">stdout 协议</th><td>另一进程读取的 JSON 行或哨兵</td></tr>
+<tr><th scope="row">终端提示或状态</th><td>二维码登录、OAuth 网址、前台运行告知已上线及如何停止</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">T201</code> 静默范围：<code translate="no">openprogram/interfaces/cli/**</code>、worker 命令（<code translate="no">operations/worker/lifecycle.py</code>、<code translate="no">runner.py</code>、<code translate="no">startup_log.py</code>、<code translate="no">services/**</code>）、<code translate="no">operations/self_update/**</code>、<code translate="no">models/providers/recording/**</code>、<code translate="no">**/probe_thinking.py</code>。</p>
+
+<h3 id="process-logging">进程日志</h3>
+<p>库代码不配置 logging。每个入口调用一次 <code translate="no">openprogram/host/process_logging.py</code> 的 <code translate="no">configure_process_logging()</code>：根 logger 上一个 stderr 处理器，格式 <code translate="no">%(asctime)s %(levelname)s %(name)s: %(message)s</code>，<code translate="no">httpx</code>、<code translate="no">httpcore</code>、<code translate="no">websockets</code>、<code translate="no">asyncio</code>、<code translate="no">mcp</code> 保持 <code translate="no">WARNING</code>（<code translate="no">DEBUG</code> 时全量输出）。</p>
+<table class="stack">
+<thead><tr><th scope="col">进程</th><th scope="col">默认</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">Worker（<code translate="no">run_foreground</code>）</th><td><code translate="no">INFO</code></td><td>stdout 和 stderr 就是 worker 日志，与 <code translate="no">[worker +12.3s]</code> 行并列</td></tr>
+<tr><th scope="row">独立调度器（<code translate="no">run_forever</code>）</th><td><code translate="no">INFO</code></td><td>终端就是它的日志</td></tr>
+<tr><th scope="row">前台 Server（<code translate="no">python -m openprogram.interfaces.server</code>）</th><td><code translate="no">INFO</code></td><td>同上</td></tr>
+<tr><th scope="row">CLI（<code translate="no">interfaces/cli/application.py</code> <code translate="no">main</code>）</th><td><code translate="no">WARNING</code></td><td>交互式聊天共用终端</td></tr>
+</tbody>
+</table>
+<ul>
+<li>同一进程内再次调用只调整级别、不加处理器，所以经 CLI 启动的 worker 以 <code translate="no">INFO</code> 记录。CLI 内的 ACP 服务用 <code translate="no">OPENPROGRAM_ACP_LOG</code> 做同样的事。</li>
+<li>他人已配置的根 logger（嵌入宿主、pytest）保留其处理器。</li>
+<li><code translate="no">OPENPROGRAM_LOG_LEVEL</code>（级别名，大小写不限）覆盖所有进程；无效值被忽略。</li>
+</ul>
+
+<details id="appendix-implementation-status">
+<summary>实现状态</summary>
+<ul>
+<li>已实现。整个包通过 <code translate="no">E722</code>、<code translate="no">S110</code> 和 <code translate="no">T201</code>。<code translate="no">ruff</code> 在 <code translate="no">dev</code> extra 中，配置于 <code translate="no">[tool.ruff]</code>；CI 对 <code translate="no">openprogram</code>、<code translate="no">tests</code>、<code translate="no">scripts</code> 运行。</li>
+<li>包裹不可能抛出或自行吞错调用（<code translate="no">emit_safe</code>、<code translate="no">emit_ws_frame</code>）的处理器已移除。</li>
+<li>Server 运行日志函数（<code translate="no">interfaces/server/runtime_management.py</code>、<code translate="no">server_runtime/broadcasts.py</code>）中同时写 <code translate="no">runtime.log</code> 的 <code translate="no">print</code> 保留并已标注。</li>
+</ul>
+</details>
+
+<p class="next"><a href="runtime/execution/control.zh.html">统一执行控制</a>：<code translate="no">CancelledError</code> 为何是 <code translate="no">BaseException</code>。<a href="runtime/dag/overview.zh.html">DAG 概览</a>：error 作为终态节点状态。</p>

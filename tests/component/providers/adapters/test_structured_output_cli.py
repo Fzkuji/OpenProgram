@@ -14,9 +14,9 @@ if sys.platform != "win32":
 
 import pytest
 
-from openprogram._compat import InteractivePty
-from openprogram import cli
-from openprogram.providers.structured_output import (
+from openprogram.host._platform.terminal import InteractivePty
+from openprogram.interfaces.cli import application as cli
+from openprogram.models.providers.structured_output import (
     StructuredOutputUnsupportedError,
     StructuredOutputValidationError,
 )
@@ -94,7 +94,7 @@ def test_cli_deep_stdin_schema_is_bounded_usage_error():
         [
             sys.executable,
             "-m",
-            "openprogram.cli",
+            "openprogram.interfaces.cli",
             "--print",
             "answer",
             "--json-schema",
@@ -138,21 +138,57 @@ def test_cli_maps_typed_errors_without_candidate_text(
     assert "secret candidate" not in stderr
 
 
+def _resumable(monkeypatch):
+    """``--resume`` names a conversation that exists (``print_session``)."""
+    from openprogram.interfaces.cli import print_session
+
+    monkeypatch.setattr(print_session, "_exists", lambda session_id: True)
+
+
 def test_one_shot_structured_result_is_json_only(monkeypatch, capsys):
-    from openprogram.cli import chat as cli_chat
+    from openprogram.interfaces.cli import chat as cli_chat
+    from openprogram.interfaces.cli import print_turn, worker_turn
+    from openprogram.runtime.agent_registry import builtin_agents
 
     class Agent:
         id = "main"
 
-    monkeypatch.setattr(cli_chat, "_get_chat_runtime", lambda: ("test", object()))
-    monkeypatch.setattr("openprogram.agent.management.manager.get_default", lambda: Agent())
-    monkeypatch.setattr(
-        cli_chat,
-        "_run_turn_with_history",
-        lambda *args, **kwargs: {"answer": 3},
-    )
-    cli_chat.run_cli_chat(oneshot="answer", tui=False, response_format=SCHEMA)
+    def finished(session_id, text, *, agent_id, model=None, response_format=None, run, **_kw):
+        run.ended = print_turn.ENDED_COMPLETED
+        run.structured_output = {"answer": 3}
+        return run
+
+    monkeypatch.setattr(worker_turn, "resolve_worker", lambda: None)
+    monkeypatch.setattr(builtin_agents, "ensure_default_agent", lambda: Agent())
+    monkeypatch.setattr(print_turn, "chosen_model", lambda agent_id, model: "test/m")
+    monkeypatch.setattr(print_turn, "run_in_process", finished)
+    _resumable(monkeypatch)
+    cli_chat.run_cli_chat(oneshot="answer", resume="local_x", tui=False, response_format=SCHEMA)
     assert capsys.readouterr().out == '{"answer":3}\n'
+
+
+def test_one_shot_structured_failure_raises_its_code(monkeypatch):
+    from types import SimpleNamespace
+
+    from openprogram.interfaces.cli import chat as cli_chat
+    from openprogram.interfaces.cli import print_turn, worker_turn
+    from openprogram.models.providers.structured_output import StructuredOutputSchemaError
+    from openprogram.runtime.agent_registry import builtin_agents
+
+    def failed(session_id, text, *, agent_id, model=None, response_format=None, run, **_kw):
+        run.ended = print_turn.ENDED_FAILED
+        run.error = "schema rejected"
+        run.result = SimpleNamespace(structured_error_code="invalid_schema",
+                                     structured_output_issues=[])
+        return run
+
+    monkeypatch.setattr(worker_turn, "resolve_worker", lambda: None)
+    monkeypatch.setattr(builtin_agents, "ensure_default_agent", lambda: SimpleNamespace(id="main"))
+    monkeypatch.setattr(print_turn, "chosen_model", lambda agent_id, model: "test/m")
+    monkeypatch.setattr(print_turn, "run_in_process", failed)
+    _resumable(monkeypatch)
+    with pytest.raises(StructuredOutputSchemaError):
+        cli_chat.run_cli_chat(oneshot="answer", resume="local_x", tui=False, response_format=SCHEMA)
 
 
 def _run_one_shot_in_pty(*, response_format, reply):
@@ -160,21 +196,33 @@ def _run_one_shot_in_pty(*, response_format, reply):
         f"""
         import time
 
-        from openprogram.cli import chat as cli_chat
-        from openprogram.agent.management import manager
+        from openprogram.interfaces.cli import chat as cli_chat
+        from openprogram.interfaces.cli import print_turn, worker_turn
+        from openprogram.runtime.agent_registry import builtin_agents
 
         class Agent:
             id = "main"
 
-        def delayed_runtime():
-            time.sleep(0.5)
-            return "test", object()
+        reply = {reply!r}
 
-        cli_chat._get_chat_runtime = delayed_runtime
-        cli_chat._run_turn_with_history = lambda *args, **kwargs: {reply!r}
-        manager.get_default = lambda: Agent()
+        def delayed_run(session_id, text, *, agent_id, model=None, response_format=None, run, **_kw):
+            time.sleep(0.5)
+            run.ended = print_turn.ENDED_COMPLETED
+            if isinstance(reply, str):
+                run.reply = reply
+            else:
+                run.structured_output = reply
+            return run
+
+        from openprogram.interfaces.cli import print_session
+        print_session._exists = lambda session_id: True
+        worker_turn.resolve_worker = lambda: None
+        builtin_agents.ensure_default_agent = lambda: Agent()
+        print_turn.chosen_model = lambda agent_id, model: "test/m"
+        print_turn.run_in_process = delayed_run
         cli_chat.run_cli_chat(
             oneshot="answer",
+            resume="local_pty",
             tui=False,
             response_format={response_format!r},
         )
@@ -254,11 +302,10 @@ def test_one_shot_structured_result_is_json_only_on_tty():
     assert json.loads(stdout) == {"answer": 3}
 
 
-def test_one_shot_text_keeps_provider_detection_status_on_tty():
+def test_one_shot_text_is_only_the_reply_on_tty():
     stdout, stderr, returncode = _run_one_shot_in_pty(
         response_format=None,
         reply="plain answer",
     )
     assert returncode == 0, stderr
-    assert "Detecting providers" in stdout
-    assert stdout.endswith("plain answer\n")
+    assert stdout == "plain answer\n"

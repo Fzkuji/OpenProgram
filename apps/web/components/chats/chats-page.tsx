@@ -4,7 +4,7 @@
  * /chats — list of past conversations.
  *
  * Shell mirrors /programs and /memory: sticky topbar with title +
- * toolbar (search, New chat), 287px nav rail on the left with quick
+ * toolbar (search, New chat), a SecondaryRail on the left with quick
  * date / channel filters, content column on the right showing chats
  * grouped by recency.
  *
@@ -15,12 +15,20 @@
  * (dropped `archived` / `updated_at`, so the status filter was dead and
  * recency was computed off creation time).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import styles from "./chats-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
+import { RailCount, RailGroupLabel, RailItem, SecondaryRail } from "@/components/ui/secondary-rail";
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ChevronUp } from "lucide-react";
+import { ManageEmptyState, ManageIconButton } from "@/components/ui/manage-page";
+import { cn } from "@/lib/utils";
+import { ChannelLogo } from "@/components/channels/channel-logo";
+import { channelBrand } from "@/lib/channels/channel-brands";
+import { Card, CardContent } from "@/components/ui/card";
 import { useTranslation, type Locale } from "@/lib/i18n";
+import { parseAttachments } from "@/components/chat/messages/attachments/user-attachments";
 import { formatRelativeTime } from "@/lib/format-utils/format";
-import { pushPath } from "@/lib/shallow-nav";
+import { pushPath } from "@/lib/nav/shallow-nav";
 import { useSessionStore, type ConvSummary } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import {
@@ -30,25 +38,51 @@ import {
   bucketKey,
   bucketLabel,
   bucketSortKey,
+  displayTitle,
   labelFor,
-} from "@/components/sidebar/sessions-list/helpers";
+} from "@/components/sidebar/sessions/helpers";
 import {
-  type AnimatedNavIconHandle,
   ClockIcon,
   MessageCircleIcon,
 } from "@/components/animated-icons";
+import { SimpleSelect } from "@/components/ui/select";
 
 type SortKey = "recent" | "oldest" | "title";
 type StatusFilter = "all" | "active" | "archived";
 
 type FilterId = "all" | "today" | "past7" | "older";
 
+/** An open group lists this many chats, then "Show all N". */
+const GROUP_PREVIEW = 8;
+const GROUP_CHOICE_KEY = "chatsGroupsOpen";
+
+function readGroupChoice(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(GROUP_CHOICE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeGroupChoice(choice: Record<string, boolean>) {
+  try { window.localStorage.setItem(GROUP_CHOICE_KEY, JSON.stringify(choice)); } catch { /* per-viewer convenience only */ }
+}
+
 export function ChatsPage({
   embedded,
   query: queryProp,
+  include,
+  rail = true,
 }: {
   embedded?: boolean;
   query?: string;
+  /** Keep only these chats, e.g. one project's. */
+  include?: (conv: ConvSummary) => boolean;
+  /** The left rail of recency filters; off inside a project, where the
+   *  list stays grouped by recency instead. */
+  rail?: boolean;
 } = {}) {
   const { t, text, locale } = useTranslation();
   // Same store the sidebar Recents list reads — one pipeline, no second
@@ -79,11 +113,13 @@ export function ChatsPage({
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
     let arr = Object.values(conversations) as ConvSummary[];
+    if (include) arr = arr.filter(include);
     if (q) {
-      // Match the label the row actually renders (channel brand +
-      // preview fallback), not just the raw title — otherwise searching
-      // for text you can see on screen returns nothing.
-      arr = arr.filter((c) => labelFor(c, untitled).toLowerCase().includes(q));
+      // Match what the row shows (the title with its preview fallback,
+      // and the channel the logo stands for), not just the raw title —
+      // otherwise searching for what you can see returns nothing.
+      arr = arr.filter((c) =>
+        `${channelBrand(c.channel)} ${labelFor(c, untitled)}`.toLowerCase().includes(q));
     }
     if (statusFilter === "active") {
       arr = arr.filter((c) => !c.archived);
@@ -99,7 +135,7 @@ export function ChatsPage({
       return labelFor(a, untitled).localeCompare(labelFor(b, untitled));
     });
     return arr;
-  }, [conversations, query, statusFilter, sort, untitled]);
+  }, [conversations, include, query, statusFilter, sort, untitled]);
 
   const counts = useMemo(() => {
     const c: Record<FilterId, number> = { all: searched.length, today: 0, past7: 0, older: 0 };
@@ -133,6 +169,23 @@ export function ChatsPage({
       bucketSortKey(a[0]).localeCompare(bucketSortKey(b[0])),
     );
   }, [items, filter, nowTs]);
+
+  // Which recency groups are open. The viewer's own choices are kept per
+  // bucket; a group with no choice opens when it is this week's (Today,
+  // Last 7 days) or the newest one, so a long history starts folded.
+  const [groupChoice, setGroupChoice] = useState<Record<string, boolean>>(readGroupChoice);
+  const [showAll, setShowAll] = useState<Set<string>>(() => new Set());
+  const searching = query.trim() !== "";
+  const isGroupOpen = (b: BucketKey, index: number) =>
+    searching || (groupChoice[b] ?? (b === "today" || b === "past7" || index === 0));
+  const setGroupsOpen = (keys: BucketKey[], open: boolean) => setGroupChoice((current) => {
+    const next = { ...current };
+    for (const key of keys) next[key] = open;
+    writeGroupChoice(next);
+    return next;
+  });
+  const visibleGroups = grouped?.filter(([, rows]) => rows.length) ?? [];
+  const anyGroupClosed = visibleGroups.some(([b], index) => !isGroupOpen(b, index));
 
   // Same open path as the sidebar's switchTo: focus-or-create the
   // session's center tab, THEN navigate. Navigating alone left the chat
@@ -168,38 +221,40 @@ export function ChatsPage({
 
   const selects = (
     <>
-      <CustomSelect
+      <SimpleSelect
+        aria-label={text("Sort", "排序")}
         value={sort}
-        onChange={setSort}
+        onValueChange={setSort}
         options={[
           { value: "recent", label: text("Sort: Recent", "排序：最近") },
           { value: "oldest", label: text("Sort: Oldest", "排序：最早") },
           { value: "title", label: text("Sort: Title", "排序：标题") },
         ]}
       />
-      <CustomSelect
+      <SimpleSelect
+        aria-label={text("Status", "状态")}
         value={statusFilter}
-        onChange={setStatusFilter}
+        onValueChange={setStatusFilter}
         options={[
-          // Wording matches the sidebar's Recents → Status filter;
-          // these drive the same `archived` flag.
-          { value: "all", label: t("sidebar.status_all") },
-          { value: "active", label: t("sidebar.status_active") },
-          { value: "archived", label: t("sidebar.status_archived") },
+          // Same `archived` flag as the sidebar's Recents → Status filter;
+          // prefixed like the sort select so the trigger says what it filters.
+          { value: "all", label: text(`Status: ${t("sidebar.status_all")}`, `状态：${t("sidebar.status_all")}`) },
+          { value: "active", label: text(`Status: ${t("sidebar.status_active")}`, `状态：${t("sidebar.status_active")}`) },
+          { value: "archived", label: text(`Status: ${t("sidebar.status_archived")}`, `状态：${t("sidebar.status_archived")}`) },
         ]}
       />
     </>
   );
 
   const view = (
-      <div className={styles.view} style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
+      <div className="h-full flex flex-col overflow-visible" style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
         {/* Embedded: the hub header already owns title + search, so the
             64px topbar would render as an empty band — the selects move
             to the top of the content column instead. */}
         {!embedded && (
           <div className={styles.topbar}>
             <span className={styles.title}>{t("nav.chats")}</span>
-            <div className={styles.toolbar}>
+            <div className="flex items-center gap-[10px] ml-[auto]">
               {queryProp === undefined && (
                 <SearchInput
                   className="flex-1 max-w-[320px]"
@@ -213,11 +268,12 @@ export function ChatsPage({
           </div>
         )}
 
-        <div className={styles.body}>
-          <div className={styles.nav}>
+        <div className={rail ? styles.body : `${styles.body} ${styles.bodyNoRail}`}>
+          {rail && (
+          <SecondaryRail label={text("Chat filters", "会话筛选")}>
             {navGroups.map((group) => (
               <div key={group.label}>
-                <div className={styles.navGroupLabel}>{group.label}</div>
+                <RailGroupLabel>{group.label}</RailGroupLabel>
                 {group.items.map((it) => (
                   <ChatsNavRow
                     key={it.id}
@@ -230,52 +286,108 @@ export function ChatsPage({
                 ))}
               </div>
             ))}
-          </div>
+          </SecondaryRail>
+          )}
 
-          <div className={styles.content}>
+          <div className={`${styles.content} min-w-0 overflow-y-auto flex flex-col gap-[24px] p-[20px_24px_32px]`}>
             {embedded && (
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginBottom: 12 }}>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="mr-auto flex min-w-0 items-baseline gap-2 text-fs-md font-medium text-text-primary">
+                  {navGroups.flatMap((group) => group.items).find((it) => it.id === filter)?.name}
+                  <span className="text-fs-base font-normal text-text-muted">{items.length}</span>
+                </h3>
+                {visibleGroups.length > 1 && !searching && (
+                  <ManageIconButton
+                    label={anyGroupClosed ? text("Expand all groups", "展开全部分组") : text("Collapse all groups", "折叠全部分组")}
+                    onClick={() => setGroupsOpen(visibleGroups.map(([b]) => b), anyGroupClosed)}
+                  >
+                    {anyGroupClosed ? <ChevronsUpDown /> : <ChevronsDownUp />}
+                  </ManageIconButton>
+                )}
                 {selects}
               </div>
             )}
             {items.length === 0 ? (
-              <div className={styles.empty}>
-                <div className={styles.emptyIcon}>
-                  <MessageCircleIcon size={40} />
-                </div>
-                <div className={styles.emptyText}>
-                  {query
-                    ? text("No chats match your search", "没有匹配的会话")
-                    : filter === "all"
-                      ? text("No conversations yet. Start one above.", "暂无会话。可以从上方开始。")
-                      : text("Nothing in this range", "这个时间范围内没有内容")}
-                </div>
-              </div>
+              <ManageEmptyState
+                compact
+                icon={<MessageCircleIcon size={20} />}
+                title={query
+                  ? text("No chats match your search", "没有匹配的会话")
+                  : filter === "all"
+                    ? include
+                      ? text("No chats in this project yet", "这个项目还没有会话")
+                      : text("No conversations yet", "还没有会话")
+                    : text("Nothing in this range", "这个时间范围内没有内容")}
+                description={query
+                  ? text("Try a different search term or status filter.", "换个关键词或状态筛选试试。")
+                  : filter === "all"
+                    ? include
+                      ? text("Chats started in this project appear here, grouped by recency.", "在这个项目里开始的会话会按时间分组显示在这里。")
+                      : text(`Use ${t("nav.new_chat")} in the sidebar; conversations appear here grouped by recency.`, `使用侧栏的“${t("nav.new_chat")}”开始；会话会按时间分组显示在这里。`)
+                    : text("Pick another range on the left.", "在左侧选择其他时间范围。")}
+              />
             ) : grouped ? (
               <>
-                {grouped
-                  .filter(([, rows]) => rows.length)
-                  .map(([b, rows]) => (
-                    <div className={styles.section} key={b}>
-                      <div className={styles.sectionHeader}>
-                        {bucketLabel(b, locale, fixedLabels)} ({rows.length})
-                      </div>
-                      <div>
-                        {rows.map((c) => (
-                          <ChatRow
-                            key={c.id}
-                            conv={c}
-                            locale={locale}
-                            untitled={untitled}
-                            onClick={() => openChat(c)}
+                {visibleGroups.map(([b, rows], index) => {
+                  const open = isGroupOpen(b, index);
+                  const all = showAll.has(b) || rows.length <= GROUP_PREVIEW + 2;
+                  const shown = all ? rows : rows.slice(0, GROUP_PREVIEW);
+                  const panelId = `chat-group-${b}`;
+                  return (
+                    <section className="flex flex-col gap-3" key={b}>
+                      <h4 className="flex">
+                        <button
+                          type="button"
+                          aria-expanded={open}
+                          aria-controls={panelId}
+                          onClick={() => setGroupsOpen([b], !open)}
+                          className="group/head -mx-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-fs-base font-medium text-text-primary outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50"
+                        >
+                          <ChevronRight
+                            aria-hidden="true"
+                            className={cn("size-4 text-text-muted transition-transform duration-150", open && "rotate-90")}
                           />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                          {bucketLabel(b, locale, fixedLabels)}
+                          <span className="font-normal text-text-muted">{rows.length}</span>
+                        </button>
+                      </h4>
+                      {open && (
+                        <ChatCard id={panelId}>
+                          {shown.map((c) => (
+                            <ChatRow
+                              key={c.id}
+                              conv={c}
+                              locale={locale}
+                              untitled={untitled}
+                              onClick={() => openChat(c)}
+                            />
+                          ))}
+                          {rows.length > GROUP_PREVIEW + 2 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAll((current) => {
+                                const next = new Set(current);
+                                if (next.has(b)) next.delete(b); else next.add(b);
+                                return next;
+                              })}
+                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-fs-base text-text-muted outline-none hover:bg-muted/60 hover:text-text-primary focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+                            >
+                              <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+                                {all ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                              </span>
+                              {all
+                                ? text("Show fewer", "收起")
+                                : text(`Show all ${rows.length}`, `显示全部 ${rows.length} 个`)}
+                            </button>
+                          )}
+                        </ChatCard>
+                      )}
+                    </section>
+                  );
+                })}
               </>
             ) : (
-              <div>
+              <ChatCard>
                 {items.map((c) => (
                   <ChatRow
                     key={c.id}
@@ -285,7 +397,7 @@ export function ChatsPage({
                     onClick={() => openChat(c)}
                   />
                 ))}
-              </div>
+              </ChatCard>
             )}
           </div>
         </div>
@@ -307,100 +419,49 @@ function ChatRow({
   untitled: string;
   onClick: () => void;
 }) {
-  // Same label the sidebar renders: channel brand prefix, placeholder
-  // titles resolved to the preview, "[attached: …]" markers stripped.
+  // Same label the sidebar renders: placeholder titles resolved to the
+  // preview, "[attached: …]" markers stripped. A channel chat shows its
+  // app's logo in the icon slot instead of the chat bubble.
   const title = labelFor(conv, untitled);
-  const initial = title.replace(/^[\s[]+/, "").slice(0, 1).toUpperCase() || "?";
+  // The second line is the latest question asked, so a row says what the
+  // chat is about now. An untitled chat already shows it as its name.
+  const latest = displayTitle(conv) && conv.preview ? parseAttachments(String(conv.preview)) : null;
+  const asked = latest ? latest.text.trim() || latest.attachments[0]?.filename || "" : "";
+  // A real <button> to open; the time is last activity, the same timestamp
+  // the list sorts and buckets by, so a row can't contradict its section.
   return (
-    <div className={styles.row} onClick={onClick}>
-      <div className={styles.rowAvatar}>{initial}</div>
-      <div className={styles.rowBody}>
-        <div className={styles.rowTitle}>{title}</div>
-        <div className={styles.rowMeta}>
-          <span title={String(conv.id)}>{conv.id.slice(0, 12)}</span>
-        </div>
-      </div>
-      {/* Last activity — the same timestamp the list sorts and buckets
-          by, so the row's own time can't contradict its date section. */}
-      <div className={styles.rowTime}>{formatRelativeTime(activityTs(conv), locale)}</div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+    >
+      <span className="flex shrink-0 text-text-muted" aria-hidden="true">
+        {conv.channel ? <ChannelLogo channel={conv.channel} size={16} /> : <MessageCircleIcon size={16} />}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-fs-base font-medium text-text-primary">
+          {conv.channel ? <span className="sr-only">{channelBrand(conv.channel)}: </span> : null}
+          {title}
+        </span>
+        {asked ? <span className="truncate text-fs-base text-text-muted">{asked}</span> : null}
+      </span>
+      <span className="shrink-0 text-fs-xs text-text-muted">{formatRelativeTime(activityTs(conv), locale)}</span>
+    </button>
   );
 }
 
-/* Themed dropdown — same shape as the Programs page CustomSelect so
-   chats / programs / settings selects look identical. */
-function CustomSelect<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
-
-  const current = options.find((o) => o.value === value);
-
+/** One recency group's chats on a Card, rows divided by hairlines, as on
+ *  the Settings page (SettingsSection). */
+function ChatCard({ id, children }: { id?: string; children: React.ReactNode }) {
   return (
-    <div ref={ref} className={styles.selectWrap}>
-      <button
-        type="button"
-        className={styles.select}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span>{current?.label}</span>
-        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden>
-          <path
-            d="M2 4l4 4 4-4"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-      {open && (
-        <div className={styles.selectMenu} role="listbox">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              className={
-                styles.selectOption +
-                (o.value === value ? " " + styles.selectOptionActive : "")
-              }
-              onClick={() => {
-                onChange(o.value);
-                setOpen(false);
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <Card id={id} className="gap-0 py-0">
+      <CardContent className="divide-y divide-border px-0">{children}</CardContent>
+    </Card>
   );
 }
-
 
 /** One left-rail filter row. "All chats" shows the chat-bubble glyph; the
- *  "by recency" buckets share the clock. The animated icon is driven from
- *  the whole row's hover (controlled mode), like the sidebar nav. */
+ *  "by recency" buckets share the clock. */
 function ChatsNavRow({
   id,
   name,
@@ -414,20 +475,14 @@ function ChatsNavRow({
   active: boolean;
   onSelect: () => void;
 }) {
-  const iconRef = useRef<AnimatedNavIconHandle>(null);
   const Icon = id === "all" ? MessageCircleIcon : ClockIcon;
   return (
-    <div
-      className={styles.navItem + (active ? " " + styles.active : "")}
+    <RailItem
+      icon={<Icon size={16} />}
+      label={name}
+      trailing={<RailCount>{count}</RailCount>}
+      active={active}
       onClick={onSelect}
-      onMouseEnter={() => iconRef.current?.startAnimation?.()}
-      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-    >
-      <span className={styles.navIcon}>
-        <Icon ref={iconRef} size={16} />
-      </span>
-      <span className={styles.navName}>{name}</span>
-      <span className={styles.navCount}>{count}</span>
-    </div>
+    />
   );
 }

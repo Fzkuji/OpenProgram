@@ -1,0 +1,50 @@
+<title>请求构建</title>
+<meta name="description" content="把现成的 Context 翻译成各提供商的线上请求，并应用其提示缓存。">
+<h1>请求构建</h1>
+<p><code translate="no">Context</code> 怎么组装归<a href="../context/README.zh.html">上游</a>。新增提供商只动这一层和它的 <code translate="no">provider.json</code>。</p>
+<pre translate="no"><code>Context { system_prompt, messages, tools }  --model.api--&gt;  provider translation  --&gt;  wire request</code></pre>
+
+<h2 id="translation">翻译</h2>
+<table class="stack">
+<thead><tr><th scope="col">风格</th><th scope="col">system</th><th scope="col">对话</th><th scope="col">工具</th></tr></thead>
+<tbody>
+<tr><th scope="row">anthropic-messages</th><td>独立的 <code translate="no">system</code></td><td><code translate="no">messages</code></td><td><code translate="no">tools</code>，strict 在工具对象内</td></tr>
+<tr><th scope="row">openai-completions</th><td>system 或 developer 消息放在 <code translate="no">messages[0]</code></td><td><code translate="no">messages</code></td><td><code translate="no">tools</code>，strict 是布尔值</td></tr>
+<tr><th scope="row">openai-responses、codex</th><td><code translate="no">instructions</code></td><td><code translate="no">input</code></td><td><code translate="no">tools</code></td></tr>
+<tr><th scope="row">google（gemini）</th><td><code translate="no">systemInstruction</code>；assistant 变 model</td><td><code translate="no">contents</code>，内容叫 parts</td><td><code translate="no">tools</code></td></tr>
+<tr><th scope="row">bedrock</th><td>独立 system</td><td><code translate="no">messages</code></td><td><code translate="no">tools</code></td></tr>
+</tbody>
+</table>
+<p class="note">翻译还处理思考块签名、工具参数是对象还是字符串，以及工具 schema 方言（strict、<code translate="no">additionalProperties</code>）。</p>
+
+<h2 id="caching">缓存</h2>
+<table class="stack">
+<thead><tr><th scope="col">模式</th><th scope="col">机制</th><th scope="col">声明者</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">explicit</code></th><td>请求里放断点（<code translate="no">cache_control</code>、<code translate="no">cachePoint</code>）</td><td>anthropic、amazon_bedrock</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td>自动前缀缓存，可选 <code translate="no">prompt_cache_key</code></td><td>openai_responses</td></tr>
+<tr><th scope="row"><code translate="no">out_of_band</code></th><td>用单独 API 存缓存；只读命中统计</td><td>代码认识此模式，目前没有提供商声明</td></tr>
+<tr><th scope="row"><code translate="no">none</code></th><td>不做</td><td>其余提供商，默认</td></tr>
+</tbody>
+</table>
+
+<p>各提供商在 <code translate="no">provider.json</code> 的 <code translate="no">cache</code> 键下声明；独立的 <code translate="no">cache.json</code> 仍能加载，但有弃用警告。<code translate="no">settings/cache_spec.py</code>：<code translate="no">get_cache_spec</code>、<code translate="no">cache_mode</code>、<code translate="no">ttl_for_retention</code>、<code translate="no">cache_key_param</code>、<code translate="no">with_lifetime_setting</code>。</p>
+<pre translate="no"><code>{ "mode": "explicit", "breakpoint_format": "cache_control",
+  "retention_ttl_map": {"short": null, "long": "1h"},
+  "long_ttl_endpoints": ["api.anthropic.com"], "max_breakpoints": 4 }
+{ "mode": "auto", "cache_key_param": "prompt_cache_key" }</code></pre>
+
+<h3 id="breakpoints">断点</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">调用方标记</th><td>内容块上的 <code translate="no">cache_control</code> 原样透传；<code translate="no">Tool.cache_control</code> 同样（<a href="../plans/cache-control-passthrough.html">透传方案</a>）</td></tr>
+<tr><th scope="row">未标记</th><td><code translate="no">apply_cache_policy</code>（<code translate="no">settings/cache_policy.py</code>）标记最后一个不带 <code translate="no">defer_loading</code> 的工具和最新用户消息的最后文本块，否则其最后一块；调用方的标记保留</td></tr>
+<tr><th scope="row">预算</th><td><code translate="no">max_breakpoints</code>（4），先给工具，再给消息</td></tr>
+<tr><th scope="row">TTL</th><td><code translate="no">≥ 3600 秒</code> 为 <code translate="no">1h</code>，否则提供商默认 5 分钟；<code translate="no">models.prompt_cache_ttl</code> 设为 <code translate="no">1h</code> 时普通缓存活一小时</td></tr>
+<tr><th scope="row">system</th><td>单个字符串，由各提供商的 <code translate="no">_build_system</code> 标记整块；策略只管工具和消息</td></tr>
+<tr><th scope="row">Anthropic</th><td><code translate="no">stream_simple</code> 构建前应用策略；<code translate="no">_get_cache_control</code> 读 TTL 映射和 <code translate="no">long_ttl_endpoints</code></td></tr>
+<tr><th scope="row">Bedrock</th><td><code translate="no">explicit</code>，但有自己的 <code translate="no">cachePoint</code> 块和最后消息逻辑，不走 <code translate="no">apply_cache_policy</code></td></tr>
+</tbody>
+</table>
+<p class="note">策略来自 opencode 的 <code translate="no">cache-policy.ts</code> 和 <code translate="no">protocols/utils/cache.ts</code>。opencode 的 system 是数组，还能标记最后一段。这里不新增 Context 级结构。</p>

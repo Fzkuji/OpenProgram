@@ -22,7 +22,8 @@ def _installed_app_version(app_path: Path) -> str:
     # isolated interpreter, never from this checkout or the caller's PATH.
     sys.path.insert(0, str(ROOT))
     try:
-        from openprogram._compat import desktop_bundle_metadata, no_window_creation_flags
+        from openprogram.host._platform.terminal import desktop_bundle_metadata
+        from openprogram.host._platform.process_ownership import no_window_creation_flags
     finally:
         sys.path.pop(0)
     try:
@@ -65,7 +66,7 @@ def _installed_app_version(app_path: Path) -> str:
             check=True,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=60,  # A cold interpreter on a busy machine can take many seconds.
             encoding="utf-8",
             creationflags=no_window_creation_flags(),
             env={"PATH": os.defpath, "HOME": os.devnull,
@@ -113,6 +114,9 @@ def main() -> int:
     parser.add_argument("--tag")
     parser.add_argument("--installed-app", type=Path)
     parser.add_argument("--require-source-match", action="store_true")
+    # A local refresh may move the App to a newer source version; it rebuilds
+    # the shell so the bundle carries the new one.
+    parser.add_argument("--allow-upgrade", action="store_true")
     parser.add_argument("--wheel", type=Path)
     args = parser.parse_args()
     if args.require_source_match and args.installed_app is None:
@@ -151,7 +155,10 @@ def main() -> int:
         )
     if args.installed_app is not None:
         installed_version = _installed_app_version(args.installed_app)
-        if args.require_source_match and installed_version != python_version:
+        older = args.allow_upgrade and tuple(map(int, installed_version.split("."))) < tuple(
+            map(int, python_version.split("."))
+        )
+        if args.require_source_match and installed_version != python_version and not older:
             errors.append(
                 f"source version {python_version} != installed App version "
                 f"{installed_version}"

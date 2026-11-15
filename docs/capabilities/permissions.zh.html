@@ -1,0 +1,215 @@
+<title>工具权限</title>
+<meta name="description" content="工具调用的模式、规则、身份限制、审批、Sandbox、macOS 权限和拒绝信息。">
+<h1>工具权限</h1>
+<p>默认情况下，你发起的工作里每个格式正确的工具调用都直接执行，有人看着与否都一样。</p>
+<h2 id="modes">模式</h2>
+<table class="grid">
+<thead><tr><th scope="col">模式</th><th scope="col">不需要判定</th><th scope="col">其他调用</th><th scope="col">会改动内容的工具</th></tr></thead>
+<tbody>
+<tr><th scope="row">Bypass permissions（默认）</th><td class="run">执行</td><td class="run">执行</td><td class="run">执行</td></tr>
+<tr><th scope="row">Auto</th><td class="run">执行</td><td class="review">模型审查</td><td class="review">模型审查</td></tr>
+<tr><th scope="row">Manual</th><td class="run">执行</td><td class="ask">询问你</td><td class="ask">询问你</td></tr>
+<tr><th scope="row">Plan</th><td class="run">执行</td><td class="ask">询问你</td><td class="deny">拒绝</td></tr>
+</tbody></table>
+<p class="note">不需要判定：安全的读取工具，以及少数只查看状态的调用。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">选择</th><td>Web、App：输入框底部。终端：<code translate="no">/permissions</code>；<code translate="no">Shift+Tab</code> 按此顺序循环四个模式。</td></tr>
+<tr><th scope="row">生效顺序</th><td>当前分支自己的模式，其次项目默认模式（项目设置），最后 Bypass permissions。每一轮都用它，有人看着与否都一样。</td></tr>
+<tr><th scope="row">Bypass permissions</th><td>存储值是 <code translate="no">bypass</code>，<code translate="no">--permission</code> 和项目设置文件写的就是这个词。不覆盖显式 deny 或 ask 规则、<a href="#agent-替你发出的消息">暂存的消息</a>、插件限制和身份限制。</td></tr>
+<tr><th scope="row">Auto</th><td>审查无法进行时拒绝该调用。</td></tr>
+<tr><th scope="row">Manual</th><td>首次操作某个应用时询问，可以在本对话内允许。</td></tr>
+<tr><th scope="row">Plan</th><td>会改动内容的工具同时对模型隐藏，允许和询问规则也放不过去。批准 <code translate="no">exit_plan_mode</code> 后回到之前选择的模式。</td></tr>
+<tr><th scope="row">接受编辑</th><td>旧模式。保存为它的对话继续使用，只在它是当前模式时作为第五行出现。</td></tr>
+</tbody></table>
+<h2 id="how-a-call-is-decided">一次调用如何判定</h2>
+<ol>
+<li><strong>谁在说话。</strong> 除所有者之外的人不论什么模式都<a href="#what-identity-limits">受限</a>。对你本人永远不触发。</li>
+<li><strong>你的规则。</strong> 默认为空。全局、项目和对话规则合并，<code translate="no">deny</code> 优先于 <code translate="no">ask</code>，再优先于 <code translate="no">allow</code>。deny 在所有模式下生效。Plan 的检查在 deny 之后、ask 和 allow 之前。</li>
+<li><strong>模式。</strong></li>
+</ol>
+<p class="note">调用需要询问却没有人能回答时（定时任务、子 Agent、常驻轮次）会被拒绝，拒绝信息写明怎么放行。只有 Manual、Plan、Auto 回退或 ask 规则才会这样。</p>
+<h2 id="what-identity-limits">身份限制什么</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">谁</th><th scope="col">能做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">所有者：App、Web、终端；绑定联系人的私聊；群聊里这些联系人和有完全访问的人；你发起的工作</th><td>上面全部。账号把 <code translate="no">sender_access</code> 设为 <code translate="no">paired</code> 时，账号上所有人都不再是所有者。</td></tr>
+<tr><th scope="row">群里只能聊天的人</th><td>回复和记忆；不能运行命令、改文件或操作屏幕。<a href="../integrations/channels.zh.html#群聊">群聊</a></td></tr>
+<tr><th scope="row">没列进群名单的人</th><td>没有任何反应</td></tr>
+<tr><th scope="row">外部 MCP 客户端</th><td>只能用 MCP 服务器暴露的工具</td></tr>
+<tr><th scope="row">别人发起的工作</th><td>不能运行命令、不能改 worktree、不能写工作目录之外。页面脚本只在你发起的工作里运行。</td></tr>
+</tbody></table>
+<h2 id="approvals-and-questions">审批与提问</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具审批卡片</th><td>只显示当前操作，没有变更历史。<strong>同意</strong>和<strong>拒绝</strong>点击即提交。</td></tr>
+<tr><th scope="row"><strong>拒绝并说明</strong></th><td>“拒绝”旁的说明按钮；按 <code translate="no">Ctrl+Enter</code> 发送。模型收到你的说明并照做。</td></tr>
+<tr><th scope="row">拒绝</th><td>任务继续：拒绝作为该工具的结果，操作不执行，模型被要求停下来问你。</td></tr>
+<tr><th scope="row">提问卡片</th><td>每个问题在控件上方。多问题和表单字段一起用<strong>提交回答</strong>提交，答案继续对应问题显示。跳过会告诉模型该问题没有回答。</td></tr>
+<tr><th scope="row">先讨论</th><td>写的话代替回答交给模型，模型在同一轮回应，卡片保留你写的内容。</td></tr>
+<tr><th scope="row">主输入框</th><td>仍用于普通消息。</td></tr>
+<tr><th scope="row"><strong>允许此对话</strong></th><td>规则只保存到当前会话。目前 <a href="computer-use.zh.html#approval"><code translate="no">computer_use_agent</code></a> 提供；规则按应用、虚拟机或你的浏览器命名，覆盖在里面做的一切，包括页面脚本。</td></tr>
+<tr><th scope="row"><strong>始终允许</strong></th><td>提供时，把支持的确切操作规则保存到当前项目。只允许单次的请求不提供持久授权。</td></tr>
+</tbody></table>
+<details>
+<summary>投递、等待和文件新鲜度</summary>
+<ul>
+<li>服务端确认后才关闭；未确认时可重试同一答复。卡片显示已提交的答案、提交进度以及确认或重试状态。确认回执保留至刷新，待回答的请求重连后恢复。审批确认后卡片移除，工具行显示结果。</li>
+<li>人工审批默认没有时间限制。等待时保存进度并释放当前执行实例，重新打开 App 后恢复请求。</li>
+<li>恢复使用本轮保存的上下文，之后的记忆或日期更新不会使审批失效。工具、权限和工作目录仍重新检查。无法恢复时，对话说明操作没有运行。取消任务撤销审批。已过期的旧请求不会重新生效。</li>
+<li><code translate="no">edit</code>、<code translate="no">write</code>、<code translate="no">apply_patch</code> 记录审批时的文件状态，在执行前和写入前检查。已删除的文件不重建，内容变化时要先重新读取。任意命令不声明目标，所以这项检查不覆盖其副作用。</li>
+<li>同意和拒绝只答复当前请求，不创建项目规则。</li>
+</ul>
+</details>
+<h2 id="agent-替你发出的消息">Agent 替你发出的消息</h2>
+<p>默认关闭。在 Agent 的<strong>常驻</strong>标签页末尾勾选<strong>发送前等我批准</strong>；无论是否开启常驻都生效。不开启时按平常的模式发送。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">开启暂存后</th></tr></thead>
+<tbody>
+<tr><th scope="row">询问</th><td>任何模式都询问，包括 Bypass permissions，有允许规则点名也一样。每条单独审批，不会变成允许规则。</td></tr>
+<tr><th scope="row">卡片</th><td>显示完整消息。允许一次即发出；拒绝并说明会带回你的修改，Agent 重写草稿。</td></tr>
+<tr><th scope="row">后台运行</th><td>没人可问，不能发送。</td></tr>
+<tr><th scope="row">算作发送</th><td>已连接服务的工具，名字以 send、reply、post、publish、forward、invite、share、comment 开头或包含它们，或创建 message、email、comment、post，且服务器没有标成只读。例：<code translate="no">send_email</code>、<code translate="no">chat.postMessage</code>、<code translate="no">create_comment</code>。</td></tr>
+<tr><th scope="row">不询问</th><td>读取（<code translate="no">list_messages</code>、<code translate="no">get_posts</code>）和草稿（<code translate="no">create_draft</code>）</td></tr>
+</tbody></table>
+<h2 id="change-permissions-during-a-task">任务运行中修改权限</h2>
+<p>修改对运行中的任务直接生效，无需停止；后端确认 Bypass permissions 后，同一条回复里的后续工具不再询问。</p>
+<details>
+<summary>实时修改影响什么</summary>
+<ul>
+<li>界面已知确认版本时立即发送，确认后才显示为有效。模型正在推理、输出或生成参数时同样生效。</li>
+<li>新模式进入后续模型请求，已在生成的文字不改写。已授权的工具保留授权。切到Plan阻止尚未获准的写入。</li>
+<li>不再需要的普通审批通过 execution 的持久等待自动处理，任务继续。显式 ask、提问、表单和 Sandbox 升级不因切换模式而回答。重复回答、取消、超时和恢复不会重复执行已完成的调用。</li>
+<li>只影响当前分支。显示该分支的其他窗口接收已确认的模式，分支或版本已过期的修改被拒绝。失败或断线的修改保持未确认：重新连接、检查模式后再试。未发送的草稿把模式存在本地，随首条消息发送。</li>
+</ul>
+</details>
+<table class="stack fixed">
+<thead><tr><th scope="col">工作</th><th scope="col">使用的模式</th></tr></thead>
+<tbody>
+<tr><th scope="row">认证 owner Agent 创建的子 Agent</th><td>创建时继承父 Agent 有效的模式和显式规则，Manual 一路贯彻。保留自己的身份和非交互限制；显式 ask 仍阻止需要审批者的操作。之后的修改不改写已接纳的子 Agent。</td></tr>
+<tr><th scope="row">没有父轮次的 owner 工作</th><td>默认模式</td></tr>
+<tr><th scope="row">定时任务</th><td>所在对话的模式和 Sandbox 设置，以触发时为准。需要询问的调用被拒绝，所以要它自己完成就用 Bypass permissions 或允许规则。</td></tr>
+<tr><th scope="row">绑定的聊天联系人、群里有完全访问的人</th><td>聊天会话自己的模式和规则；审批发到聊天里，用 <code translate="no">/answer</code> 回答。<a href="../integrations/channels.zh.html">聊天渠道</a></td></tr>
+</tbody></table>
+<h2 id="manage-project-rules-in-history">项目规则</h2>
+<p><strong>History → Projects →</strong> 项目 <strong>→ Settings → Permission Rules</strong> 里有拒绝、询问、允许三个列表。添加 <code translate="no">ToolName</code> 或 <code translate="no">ToolName(pattern)</code>；删除即撤销；修改就是先删后加。列表为空时，会话和全局规则仍可能生效。</p>
+<details>
+<summary>保存与生效时机</summary>
+<ul>
+<li>收到匹配当前项目的服务端确认后才清空输入。失败或未确认时保留输入并显示状态。成功后同步到该项目其他打开的视图。</li>
+<li>经认证的交互式 owner 会话在下一次操作时读取最新规则，包括运行中的修改。已获准的操作保留授权；审批等待仍需答复；已接纳的子 Agent 保留原策略。</li>
+<li>删除规则影响后续授权，不改变已执行的操作。</li>
+<li>Windows 路径用正斜杠可避免转义歧义，如 <code translate="no">read(C:/Users/me/project/**)</code>。盘符路径里的普通反斜杠会保留。规则语法用 <code translate="no">\\</code>、<code translate="no">\(</code>、<code translate="no">\)</code> 转义自身字符。JSON 配置还要遵守 JSON 的反斜杠转义。</li>
+<li>同一个文件不管怎么写，路径规则都能匹配：正反斜杠、短文件名、指向该文件夹的链接。拒绝和询问规则不分大小写，也能匹配从工作目录出发的相对路径；允许规则按完整路径和磁盘上保存的大小写比较。网络共享写成 <code translate="no">//server/share/**</code>，或者粘贴时全程用反斜杠。</li>
+<li>命令在 PowerShell 里运行时，含 <code translate="no">{</code>、<code translate="no">}</code> 或 <code translate="no">,</code> 的命令只按原文精确匹配允许规则，也就是<strong>始终允许</strong>保存的那条。拒绝和询问规则照常读取。</li>
+</ul>
+</details>
+<h2 id="understand-a-refusal">拒绝信息</h2>
+<pre translate="no" tabindex="0"><code>[blocked by &lt;layer&gt;] &lt;what&gt; did not run: &lt;why&gt;. To change this: &lt;change&gt;.</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">&lt;layer&gt;</code></th><td><code translate="no">identity</code>、<code translate="no">rule</code>、<code translate="no">mode</code>、<code translate="no">sandbox</code>、<code translate="no">hook</code> 或 <code translate="no">setting</code></td></tr>
+<tr><th scope="row">工具结果</th><td>还带 <code translate="no">denied</code>、<code translate="no">reason_code</code>、<code translate="no">layer</code>、<code translate="no">rule</code>、<code translate="no">mode</code>，<code translate="no">outcome</code> 为 <code translate="no">not_started</code></td></tr>
+<tr><th scope="row"><code translate="no">AUTHORITY_TIER_MISSING</code></th><td>请求缺少认证权限级别，Bypass permissions 解决不了。旧的已接纳执行要通过认证界面重新提交；新的聊天提交带身份。</td></tr>
+</tbody></table>
+<p class="note">缺参数或参数格式不对不算拒绝，作为普通工具错误返回给模型。</p>
+<h2 id="sandbox">Sandbox</h2>
+<p>默认关闭，在输入框 Plus 菜单里按分支打开。修改影响后续轮次。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置或情况</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">sandbox.mode</code></th><td><code translate="no">auto</code>：后端可用的地方都打开。<code translate="no">workspace-write</code>：强制使用。</td></tr>
+<tr><th scope="row">网络</th><td><code translate="no">sandbox.network</code> 打开才有</td></tr>
+<tr><th scope="row">写入</th><td>只能写工作区；没有项目文件夹时工作区是 home 目录</td></tr>
+<tr><th scope="row">始终只读</th><td>shell 启动文件、<code translate="no">.git/hooks</code>、<code translate="no">.git/config</code>、编辑器任务目录、OpenProgram 状态目录；所以 <code translate="no">~/.zshrc</code>、<code translate="no">~/.ssh</code> 和登录项碰不到</td></tr>
+<tr><th scope="row">需要更多（<code translate="no">git push</code>、<code translate="no">gh</code>、装依赖、写工作区外）</th><td>Agent 用 <code translate="no">sandbox_permissions="require_escalated"</code> 和一句理由调用 <code translate="no">bash</code>，卡片显示命令和理由。</td></tr>
+<tr><th scope="row"><strong>允许</strong></th><td>在沙箱外运行一次，凭证过滤仍有效</td></tr>
+<tr><th scope="row"><strong>允许此对话</strong></th><td>同一条命令在本对话里再出沙箱不询问</td></tr>
+<tr><th scope="row">运行后被拦（包括域名解析失败）</th><td>说明返回给 Agent，让它这样申请，而不是重试</td></tr>
+<tr><th scope="row">Bypass permissions 下</th><td>不弹卡片直接离开。其他模式下普通审批不能授权它。</td></tr>
+</tbody></table>
+<details>
+<summary>将沙箱命令限制到公网域名</summary>
+<p>macOS：<code translate="no">sandbox.network</code> 设为 <code translate="no">true</code>，<code translate="no">sandbox.network_domains</code> 设为映射。</p>
+<pre translate="no" tabindex="0"><code>{"example.com":"allow","*.example.org":"allow","blocked.example.org":"deny"}</code></pre>
+<ul>
+<li>精确域名和 <code translate="no">*.example.org</code>（任意深度子域，不含根域）。deny 优先。空映射拒绝全部，<code translate="no">null</code> 保留原网络开关。</li>
+<li>私有、本地、组播和保留 IP 始终拒绝，即使域名被允许。检查全部 DNS 答案，并直接连接已检查的地址。</li>
+<li>每条命令用带认证的本地代理，沙箱阻止直连，包括忽略代理设置的客户端。支持 80 端口 HTTP 和 443 端口 HTTPS CONNECT；客户端需支持常规 HTTP 代理设置。</li>
+<li>规则授权目标，不检查加密 HTTPS 的方法或内容。不支持 TLS 拦截、SOCKS/UDP、任意端口、本地网络或上游代理串联。不支持 chunked HTTP 上传和明文 HTTP Upgrade；HTTPS 隧道承载 HTTPS 和 WSS。</li>
+<li>命令结束或取消时关闭代理和连接。</li>
+<li>Linux、Windows/WSL 拒绝已配置的域名策略，不会改成无限制。沙箱不可用时也拒绝，即使不可用策略是 <code translate="no">warn</code>。关闭 Sandbox 就关闭其限制。</li>
+<li>只作用于沙箱命令，不限制宿主的模型请求或其他工具传输。</li>
+</ul>
+</details>
+<h2 id="auto">Auto 审查</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入</th><td>完整操作，包括 Shell 命令，上限 64 KiB。超限或分类器不可用时拒绝，不依据截断内容批准。</td></tr>
+<tr><th scope="row">超时</th><td>每个候选模型 30 秒</td></tr>
+<tr><th scope="row">失效</th><td>参数或实时权限策略变化。显式 deny 仍优先。</td></tr>
+<tr><th scope="row">反复风险拒绝</th><td>连续 3 次或累计 20 次，向认证的交互式 owner 提供对该确切操作的审批：只限一次，绑定原参数、工作目录、权限版本和文件状态。deny 规则和硬性限制仍有效。</td></tr>
+<tr><th scope="row">计数</th><td>按会话和权限版本。允许或批准重置连续次数；累计阈值后的批准也重置累计。分类器故障、无效回复和取消不计。持久身份避免恢复后重复计数，并发更新用执行数据库事务。</td></tr>
+<tr><th scope="row">非交互任务</th><td>收到拒绝，可继续其他允许的工作</td></tr>
+<tr><th scope="row">失败上限</th><td>风险拒绝不计入重复执行失败上限。宿主记录的结果在检查点恢复后保留。</td></tr>
+</tbody></table>
+<h2 id="interrupted-operations">中断的操作</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件或情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">停止</th><td>中断等待中的模型和异步工具。执行程序退出后轮次结束，即使外部结果未知；未知结果留在 Activity。</td></tr>
+<tr><th scope="row">暂停</th><td>等当前操作到达可恢复的位置，并显示待处理的请求</td></tr>
+<tr><th scope="row">新 owner 轮次，Bypass permissions 或 Auto</th><td>不继承中断轮次的审批要求。旧结果保留为未知，不重放。显式 deny、ask 仍生效。</td></tr>
+<tr><th scope="row">之前某步结果未知</th><td>第一个非核查类工具结果的开头点名那一步，每次执行一次。不拦截，由模型决定核对什么。</td></tr>
+<tr><th scope="row">恢复同一执行</th><td>仍需核对结果或批准确切操作</td></tr>
+<tr><th scope="row">屏幕步骤</th><td>中断的 <a href="computer-use.zh.html"><code translate="no">computer_use_agent</code></a> 步骤告诉 agent 结果未知，它看一眼再继续，步骤留在 Activity。没到达应用就停下的（元素隐藏或消失）算未开始。</td></tr>
+</tbody></table>
+<p class="note">这些都不改变 macOS 权限，也不会让只读卷变成可写。</p>
+<h2 id="host-capabilities-use-one-setup-path">系统权限</h2>
+<p>macOS 权限和模式无关，模式不能授予它们。一个注册表包含屏幕录制、辅助功能、自动化、日历、提醒事项、文件读写、麦克风和摄像头。设置页、CLI/TUI doctor、GUI 前置检查、持久的系统权限等待和 HTTP 接口都读它。每行记录状态、被检查的身份、需要它的操作、平台能否申请。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">状态</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">granted</code></th><td>当前具名执行程序刚检查通过</td></tr>
+<tr><th scope="row"><code translate="no">not_granted</code></th><td>确认缺少</td></tr>
+<tr><th scope="row"><code translate="no">unknown</code></th><td>主机无法确认；不算拒绝</td></tr>
+<tr><th scope="row"><code translate="no">unavailable</code></th><td>原生依赖缺失；不算拒绝</td></tr>
+<tr><th scope="row"><code translate="no">unsupported</code></th><td>当前后端没有实现</td></tr>
+</tbody></table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/system/access</code></th><td>只做不弹窗的检查</td></tr>
+<tr><th scope="row"><strong>设置 → 系统权限</strong></th><td>分组显示。<strong>初始化全部 OpenProgram 权限</strong>是首次设置的统一入口，返回一份报告；<strong>请求授权</strong>和<strong>打开系统设置</strong>按行使用。都要本机用户点击。</td></tr>
+<tr><th scope="row">绝不弹窗</th><td>重连、轮询、历史回放、模型输出、启动检查、普通重试</td></tr>
+<tr><th scope="row">缺少权限</th><td>只暂停声明它的操作；浏览器、虚拟机、无桌面和普通聊天不受影响</td></tr>
+</tbody></table>
+<details>
+<summary>macOS 在更新后再次询问权限</summary>
+<ul>
+<li>App 和具名后台是签名应用，macOS 可能分别记录。同名条目（<code translate="no">python3</code>、<code translate="no">node</code>、缓存应用）不说明什么：已安装产品都通过签名 runtime bundle <code translate="no">ai.openprogram.runtime</code> 检查和申请，外层 App 不是第二个执行身份。</li>
+<li>自动化按目标应用，文件访问按所选路径。日历、提醒事项、麦克风、摄像头可能各需确认。未指定的应用或路径不能预先授权。</li>
+<li>App 刷新、本地打包和对话自更新复用 <code translate="no">~/Library/Application Support/OpenProgram/local-signing</code> 里的私有身份。清理时保留，其中是签名钥匙串。缺失或损坏时构建停止，不创建替代身份。</li>
+<li>首次从旧临时签名迁移可能要重新确认；旧开关可能显示开启但系统拒绝新签名。用<strong>请求授权</strong>。辅助功能和之前被拒绝的权限可能要去系统设置。</li>
+<li>记录的授权属于旧的已验证身份时，显式设置对这一项更新一次。启动和普通检查绝不重置 TCC、接受弹窗或修改其他应用。</li>
+<li>本地签名只用于本机开发构建；公开发布需要 Developer ID 签名和公证。</li>
+</ul>
+</details>
+<h2 id="explain-and-test-permission-rules">测试规则</h2>
+<pre translate="no" tabindex="0"><code>openprogram permissions check --rules rules.json --tool bash --args '{"command":"git status"}' --expect allow
+openprogram permissions test --rules rules.json --cases cases.json</code></pre>
+<pre translate="no" tabindex="0"><code>{"allow":["bash(git:*)"],"ask":[],"deny":["bash(rm:*)"]}</code></pre>
+<pre translate="no" tabindex="0"><code>[{"tool":"bash","args":{"command":"git status"},"expected":"allow"}]</code></pre>
+<p class="note">依次是规则文件和样例文件。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">输出</th><td>JSON 按实际顺序 deny、ask、allow 列出命中规则。<code translate="no">unmatched</code>：均未命中。</td></tr>
+<tr><th scope="row">退出码</th><td>0 匹配，1 不匹配，2 输入无效。<code translate="no">check</code> 不带 <code translate="no">--expect</code> 时任何有效判断都返回 0。</td></tr>
+<tr><th scope="row">范围</th><td>只看传入的规则。不合并实时配置，不运行风险分类器，不批准，也不绕过硬性限制和系统沙箱。不执行任何工具。</td></tr>
+</tbody></table>
+<p class="next"><a href="tools.zh.html">工具</a> · <a href="../interfaces/web.zh.html">Web</a> · <a href="../interfaces/tui.zh.html">终端</a> · <a href="../reference/design/runtime/security/sandbox-architecture.zh.html">沙箱架构</a></p>

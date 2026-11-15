@@ -40,7 +40,7 @@ def _server_config() -> dict:
 
 @pytest.fixture
 def temp_state_dir(monkeypatch):
-    """Point ``openprogram.paths.get_state_dir`` at a fresh tmp dir
+    """Point ``openprogram.state.paths.get_state_dir`` at a fresh tmp dir
     with its own ``~/.agentic`` so the test never touches the real one.
     """
     d = Path(tempfile.mkdtemp(prefix="mcp_test_"))
@@ -58,7 +58,7 @@ def _reset_mcp_loader_flag():
     startup hook and leave it set, which would make every load call
     here short-circuit. Force a clean slate at the start of each test.
     """
-    from openprogram.mcp import registry as _mcp_registry
+    from openprogram.extensions.mcp import registry as _mcp_registry
     _mcp_registry._loaded = False
     _mcp_registry._clients.clear()
     _mcp_registry._registered_tool_names.clear()
@@ -70,8 +70,8 @@ def _reset_mcp_loader_flag():
 
 def test_client_round_trip():
     async def _run():
-        from openprogram.mcp.client import MCPClient
-        from openprogram.mcp.config import MCPServerConfig
+        from openprogram.extensions.mcp.client import MCPClient
+        from openprogram.extensions.mcp.config import MCPServerConfig
 
         cfg = MCPServerConfig(
             name="fake",
@@ -110,12 +110,12 @@ def test_registry_registers_namespaced_tools(temp_state_dir):
     cfg_path = temp_state_dir / "mcp_servers.json"
     cfg_path.write_text(json.dumps(_server_config()))
 
-    from openprogram.mcp import (
+    from openprogram.extensions.mcp import (
         load_mcp_servers,
         shutdown_mcp_servers,
         server_status,
     )
-    from openprogram.programs._runtime import _registry
+    from openprogram.programs._host.runtime import _registry
 
     before = set(_registry.keys())
 
@@ -153,7 +153,7 @@ def test_unconfigured_loader_is_noop(monkeypatch):
     (d / ".agentic").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(d))
 
-    from openprogram.mcp import (
+    from openprogram.extensions.mcp import (
         load_mcp_servers,
         server_status,
         shutdown_mcp_servers,
@@ -191,7 +191,7 @@ def test_bad_command_records_error(monkeypatch):
     }))
     monkeypatch.setenv("HOME", str(d))
 
-    from openprogram.mcp import (
+    from openprogram.extensions.mcp import (
         load_mcp_servers,
         server_status,
         shutdown_mcp_servers,

@@ -1,0 +1,37 @@
+<title>Windows CI 完成</title>
+<meta name="description" content="让原生 Windows 测试运行能结束并报告失败的规则。">
+<h1>Windows CI 完成</h1>
+
+<p>原生 x64 和 ARM64 作业用四个 worker 运行平台契约和完整单元测试。被阻塞的诊断进程和普通失败的测试都必须输出详情并以失败退出。</p>
+
+<p>这两条腿设置 <code translate="no">PYTHONUTF8=1</code>，也就是发布的 launcher 启动 Python 的模式。第三条 x64 腿设置 <code translate="no">PYTHONUTF8=0</code>，对应产品仍按系统代码页启动的进程。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">关注点</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">过长的测试 ID</th><td>大型参数化载荷使用显式的短 ID：pytest 把节点 ID 写入 <code translate="no">PYTEST_CURRENT_TEST</code>，Windows 环境变量值上限低于 32767 字符。载荷字节不变。</td></tr>
+<tr><th scope="row">POSIX 断言</th><td>权限位检查只在 POSIX 上运行；目录往返测试在 Windows 上照常运行</td></tr>
+<tr><th scope="row">输出</th><td>Python 不缓冲；单元测试结果带测试名；成功和失败都上传完整输出和 traceback 文件</td></tr>
+<tr><th scope="row">挂起</th><td>进程级 traceback 截止时间取代 pytest faulthandler 插件，并覆盖报告和退出；步骤和作业都有时限</td></tr>
+<tr><th scope="row">失败的测试</th><td>保持非零退出码；不删除测试，也不当作通过</td></tr>
+<tr><th scope="row">截止时间</th><td>同步截止时间是看门狗，不是性能断言</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Fixture 归属和文档读取</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">范围</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">文档发布</th><td>打开时按设备和 inode 绑定文件身份，并在描述符和路径两套 stat API 内分别比较元数据稳定性，因为 Windows 的时间戳表示可能不同。任一 API 内发生变化或内容版本不匹配，都拒绝发布并保留原始字节。</td></tr>
+<tr><th scope="row">文档路由 fixture</th><td>隔离 <code translate="no">HOME</code> 和 <code translate="no">USERPROFILE</code>，用原始路径函数解析状态，使惰性导入跟随当前环境</td></tr>
+<tr><th scope="row">历史归属 fixture</th><td>构造后立即注册 <code translate="no">SessionStore.close</code>；关闭时在生产线程收尾守卫运行前取消并合并延迟的索引写入线程</td></tr>
+<tr><th scope="row">跟踪派发 fixture</th><td>保留 <code translate="no">JobRunner</code>，获取后立即注册清理；先请求不等待的单例关闭，再合并 dispatcher、reconciler 和 budget 线程，最后关闭 <code translate="no">SessionStore</code></td></tr>
+<tr><th scope="row">子进程事件清理</th><td>断言回调阻塞时结果已返回，然后释放并合并回调线程；准备和主机调度时间不算延迟</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="status">实现状态</h2>
+
+<p>最终的 x64 和 ARM64 原生回归确认尚未完成。<code translate="no">PYTHONUTF8=0</code> 这条腿，以及安装冒烟工作流里的 App 步骤（<code translate="no">scripts/release/smoke-windows-desktop.ps1</code>）、在 Arm 运行器上装 x64 文件和经 worker 的那次工具调用（<code translate="no">scripts/release/smoke-tool-call.py</code>），都还没有运行过。</p>

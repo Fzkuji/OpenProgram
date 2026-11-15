@@ -13,39 +13,27 @@ still indexed and still searchable, so trimming costs visibility alone.
 """
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
-from openprogram.memory.management import MemoryConfig, MemoryWorkspace
-from openprogram.memory.runtime.derived_views import (
+from openprogram.state.memory.management import MemoryConfig, MemoryWorkspace
+from openprogram.state.memory.runtime.derived_views import (
     promote_legacy_core,
     render_core_block,
 )
+from openprogram.state.memory.runtime.memory_guide import split as _split_guide
 
-REF = "openprogram/thread-1/msg-1"
-ANCHOR = "source-" + hashlib.sha256(REF.encode()).hexdigest()[:16]
-SOURCE = (
-    f'# thread-1\n\n<a id="{ANCHOR}"></a>\n'
-    f"<!-- source-id:{REF} -->\n"
-    "[2026-01-01] user: remember this\n"
-)
+LINK = "/s/thread-1#msg-1"
 
 
-def _paragraph(index: int, text: str, *, up: str = "../") -> str:
-    """One topic paragraph. ``up`` is how far the file sits below the root."""
+def _paragraph(index: int, text: str) -> str:
     return (
         f"\n{text}[^e-1f4c7a2b{index:02d}] ^blockid{index:03d}\n\n"
-        f"[^e-1f4c7a2b{index:02d}]: Time: `2026-01-01`; Sources: [{REF}]"
-        f"({up}sources/openprogram/thread-1.md#{ANCHOR})\n"
+        f"[^e-1f4c7a2b{index:02d}]: Time: `2026-01-01`; Sources: [chat]({LINK})\n"
     )
 
 
 def _workspace(tmp_path: Path, *, limit: int) -> MemoryWorkspace:
     root = tmp_path / "memory"
-    (root / "sources" / "openprogram").mkdir(parents=True)
-    (root / "sources" / "openprogram" / "thread-1.md").write_text(
-        SOURCE, encoding="utf-8"
-    )
     (root / "topics").mkdir(parents=True)
     return MemoryWorkspace(root, config=MemoryConfig(core_max_tokens=limit))
 
@@ -60,13 +48,18 @@ def _master(space: MemoryWorkspace, paragraphs: int) -> None:
     )
 
 
+def _rendered(root: Path) -> str:
+    """The core section ``MEMORY.md`` carries."""
+    return _split_guide((root / "MEMORY.md").read_text(encoding="utf-8"))[1]
+
+
 def test_a_block_within_budget_is_rendered_whole(tmp_path: Path):
     space = _workspace(tmp_path, limit=2_000)
     _master(space, 3)
 
     block = render_core_block(space.stage_dir, budget_tokens=2_000)
 
-    rendered = (space.stage_dir / "core.md").read_text(encoding="utf-8")
+    rendered = _rendered(space.stage_dir)
     assert block.dropped == ()
     assert "Stable fact number 2." in rendered
     assert 0 < block.tokens <= 2_000
@@ -78,7 +71,7 @@ def test_what_does_not_fit_stays_in_the_master(tmp_path: Path):
 
     block = render_core_block(space.stage_dir, budget_tokens=200)
 
-    rendered = (space.stage_dir / "core.md").read_text(encoding="utf-8")
+    rendered = _rendered(space.stage_dir)
     master = (space.stage_dir / "topics" / "core.md").read_text(encoding="utf-8")
     assert block.dropped, "a 200-token budget cannot hold eight paragraphs"
     assert block.tokens <= 200
@@ -94,21 +87,20 @@ def test_a_footnote_follows_the_paragraph_it_belongs_to(tmp_path: Path):
 
     render_core_block(space.stage_dir, budget_tokens=200)
 
-    rendered = (space.stage_dir / "core.md").read_text(encoding="utf-8")
+    rendered = _rendered(space.stage_dir)
     for index in range(8):
         citation = f"[^e-1f4c7a2b{index:02d}]"
         assert (citation in rendered) == (f"{citation}:" in rendered), (
             "a rendered paragraph keeps its definition, and a dropped one "
             "does not leave its definition behind"
         )
-    assert f"](sources/openprogram/thread-1.md#{ANCHOR})" in rendered, (
-        "the master cites ../sources from topics/; the render sits at the root"
-    )
+    assert f"]({LINK})" in rendered, "a chat link reads the same from the root"
 
 
-def test_an_oversized_block_no_longer_refuses_a_transaction(tmp_path: Path):
+def test_an_oversized_block_no_longer_refuses_a_transaction(tmp_path: Path, chats):
     """The failure this replaces: a big ``core.md`` and an edit that does
     not touch it, refused together."""
+    chats.say("thread-1", "msg-1", "remember this")
     space = _workspace(tmp_path, limit=120)
     _master(space, 12)
     (space.stage_dir / "topics" / "note.md").write_text(
@@ -124,7 +116,7 @@ def test_an_oversized_block_no_longer_refuses_a_transaction(tmp_path: Path):
 def test_a_hand_written_root_block_moves_into_topics(tmp_path: Path):
     space = _workspace(tmp_path, limit=2_000)
     (space.stage_dir / "core.md").write_text(
-        "# Core\n" + _paragraph(0, "Written before the block was derived.", up=""),
+        "# Core\n" + _paragraph(0, "Written before the block was derived."),
         encoding="utf-8",
     )
 
@@ -132,9 +124,7 @@ def test_a_hand_written_root_block_moves_into_topics(tmp_path: Path):
 
     master = (space.stage_dir / "topics" / "core.md").read_text(encoding="utf-8")
     assert "Written before the block was derived." in master
-    assert f"](../sources/openprogram/thread-1.md#{ANCHOR})" in master, (
-        "moving into topics/ moves the links with it"
-    )
+    assert f"]({LINK})" in master, "a chat link survives the move"
     assert promote_legacy_core(space.stage_dir) is False, "it moves once"
 
 
@@ -153,3 +143,21 @@ def test_a_root_block_the_topic_format_cannot_parse_is_left_alone(tmp_path: Path
     assert "A bare sentence" in (
         space.stage_dir / "core.md"
     ).read_text(encoding="utf-8")
+
+
+def test_a_heading_cut_off_from_its_paragraphs_is_not_rendered(tmp_path: Path):
+    space = _workspace(tmp_path, limit=2_000)
+    _master(space, 1)
+    master = space.stage_dir / "topics" / "core.md"
+    master.write_text(
+        master.read_text(encoding="utf-8")
+        + "\n## Tools\n\n" + "A long tools paragraph. " * 400 + "^toolsblock\n",
+        encoding="utf-8",
+    )
+
+    block = render_core_block(space.stage_dir, budget_tokens=200)
+
+    rendered = _rendered(space.stage_dir)
+    assert "toolsblock" in block.dropped
+    assert "## Tools" not in rendered
+    assert "Stable fact number 0." in rendered

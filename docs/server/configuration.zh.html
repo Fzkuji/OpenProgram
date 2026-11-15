@@ -1,0 +1,118 @@
+<title>服务器配置</title>
+<meta name="description" content="OpenProgram 状态目录、openprogram config、谁能访问服务器、网络代理和 profile。">
+<span id="configuration"></span>
+<h1>服务器配置</h1>
+
+<h2 id="state-directory">状态目录：<code translate="no">~/.openprogram/</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">config.json</code></th><td>端口、上次使用的模型、provider、禁用的工具。<a href="../reference/config.zh.html">配置参考</a></td></tr>
+<tr><th scope="row"><code translate="no">projects/&lt;id&gt;/chats/</code>、<code translate="no">projects/&lt;id&gt;/memory/</code></th><td>对话和记忆。<code translate="no">projects/default/</code> 是主项目</td></tr>
+<tr><th scope="row"><code translate="no">agents/</code>、<code translate="no">agents.json</code></th><td>Agent 定义（人设、模型、skill）</td></tr>
+<tr><th scope="row"><code translate="no">auth/</code></th><td>Provider 凭据存储</td></tr>
+<tr><th scope="row"><code translate="no">skills/</code>、<code translate="no">plugins/</code>、<code translate="no">mcp_servers.json</code></th><td>已安装的 skill 和插件、MCP 服务器</td></tr>
+<tr><th scope="row"><code translate="no">channels/</code></th><td>聊天 channel 状态（Telegram、Discord、微信等）</td></tr>
+<tr><th scope="row"><code translate="no">browser-states/</code>、<code translate="no">chrome-profile/</code></th><td>早期版本留下的目录，现在没有功能读取，可以删除</td></tr>
+<tr><th scope="row"><code translate="no">worktrees/</code>、<code translate="no">shadow-git/</code></th><td>Git worktree 状态</td></tr>
+<tr><th scope="row"><code translate="no">logs/</code>、<code translate="no">worker.log</code>、<code translate="no">worker.pid</code>、<code translate="no">worker.port</code>、<code translate="no">worker.lock</code></th><td>日志和 worker 运行文件</td></tr>
+<tr><th scope="row"><code translate="no">models/</code>、<code translate="no">cache/</code>、<code translate="no">tool_results/</code>、<code translate="no">usage.db</code></th><td>模型目录缓存、通用缓存、工具结果、用量数据库</td></tr>
+</tbody>
+</table>
+
+<h2 id="openprogram-config"><code translate="no">openprogram config</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram config list</code></th><td>所有设置：值、分组、生效时机</td></tr>
+<tr><th scope="row"><code translate="no">openprogram config get &lt;key&gt;</code></th><td>读取一项</td></tr>
+<tr><th scope="row"><code translate="no">openprogram config set &lt;key&gt; &lt;value&gt;</code></th><td>修改一项</td></tr>
+<tr><th scope="row"><code translate="no">openprogram ports</code>、<code translate="no">openprogram ports --port 8101</code></th><td>查看或持久化端口</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">键</th><th scope="col">含义</th><th scope="col">默认</th><th scope="col">生效</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ui.web_port</code></th><td>worker 唯一端口</td><td>不设：第一次启动时选定的 18100 或下一个空闲端口</td><td>下次启动</td></tr>
+<tr><th scope="row"><code translate="no">ui.open_browser</code></th><td><code translate="no">openprogram web</code> 是否打开浏览器</td><td>true</td><td>下次启动</td></tr>
+<tr><th scope="row"><code translate="no">search.default_provider</code></th><td>网页搜索 provider；<code translate="no">auto</code> 选已配置中优先级最高的</td><td>auto</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">memory.backend</code></th><td><code translate="no">local</code>，或 <code translate="no">none</code>：无提示词记忆、召回、自动写入、整理和记忆线索</td><td>local</td><td>下次启动</td></tr>
+<tr><th scope="row"><code translate="no">memory.writer.model</code></th><td>后台写入用的 <code translate="no">provider/model</code>；为空跟随默认聊天 agent</td><td>空</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">tools.disabled.&lt;name&gt;</code></th><td>单个工具开关</td><td>全部启用</td><td>立即</td></tr>
+<tr><th scope="row"><code translate="no">execution.prevent_idle_sleep</code></th><td>agent 执行期间阻止系统空闲睡眠；Linux 需要 <code translate="no">systemd-inhibit</code></td><td>false</td><td>立即</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">config list</code> 还显示只读的 <code translate="no">providers.&lt;name&gt;</code> 行；用 <code translate="no">openprogram providers login</code> 或 Providers 页配置。</p>
+
+<details>
+<summary>阻止空闲睡眠的行为</summary>
+<ul>
+<li>每次执行在 agent 循环开始时读取设置，并持有原生电源断言直到循环结束、失败或取消，审批等待也算在内。正在运行的执行不受改动影响。</li>
+<li>显示器睡眠和用户主动睡眠仍可用；不改变任何永久电源设置。</li>
+<li>不支持的平台或断言失败时记录警告并继续。</li>
+<li>不覆盖独立的后台服务和循环结束后的命令。</li>
+</ul>
+</details>
+
+<h2 id="who-can-reach-the-server">谁能访问服务器</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">绑定地址 <code translate="no">web.host</code></th><td>默认 <code translate="no">127.0.0.1</code>，仅本机。<code translate="no">0.0.0.0</code> 把需要登录的 UI 暴露给其他接口，且至少需要一个 <code translate="no">web.allowed_origins</code> 条目。不可信网络优先用同机反向代理加 HTTPS</td></tr>
+<tr><th scope="row">登录</th><td>每个 API 和 WebSocket 请求都需要登录链接设置的 owner cookie 或 bearer token，否则 401。公开的只有 <code translate="no">/healthz</code>、页面外壳、<code translate="no">/docs</code>，以及 <code translate="no">/hooks/</code> 下由任务自身密钥保护的 Scheduler webhook</td></tr>
+<tr><th scope="row">Host</th><td>必须是有效 origin：绑定回环时为回环地址，加上 <code translate="no">web.allowed_origins</code>。否则 403</td></tr>
+<tr><th scope="row"><code translate="no">Sec-Fetch-Site</code></th><td><code translate="no">cross-site</code> 得到 403</td></tr>
+<tr><th scope="row"><code translate="no">Origin</code>，存在时</th><td>必须与请求自身的 origin 一致，否则 403</td></tr>
+</tbody>
+</table>
+<p class="note">后三项防止你访问的网页向 <code translate="no">127.0.0.1</code> 打开 WebSocket 驱动 agent，或把自己的域名重新解析到回环地址。已存储的 API key 无法读回：旧的 reveal 路由返回 410。</p>
+<pre translate="no"><code>openprogram config set web.allowed_origins '["https://agent.example.com"]'   # 你自己的反向代理；下次启动生效</code></pre>
+
+<h2 id="network-proxy">网络代理</h2>
+<table class="stack">
+<thead><tr><th scope="col">目标</th><th scope="col">路由</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">web_fetch</code>、图片和附件下载、内置搜索（含 DuckDuckGo）、更新检查等固定公共服务、已审计清单内的 provider</th><td>普通代理</td></tr>
+<tr><th scope="row">自定义 origin：配置的 provider base URL、SearXNG、skill 或插件目录</th><td>直连并做地址检查，或显式的强制策略代理</td></tr>
+<tr><th scope="row">CLI provider</th><td>外部 CLI 自己路由；继承 worker 环境</td></tr>
+<tr><th scope="row">回环地址</th><td>从不走代理</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">优先级</th><th scope="col">普通代理来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td><code translate="no">security.outbound_url.policy_proxy</code>，需要 owner 声明它会强制目标策略</td></tr>
+<tr><th scope="row">2</th><td><code translate="no">OPENPROGRAM_PROXY_URL</code>：<code translate="no">http://</code>、<code translate="no">https://</code>、<code translate="no">socks5://</code></td></tr>
+<tr><th scope="row">3</th><td><code translate="no">http_proxy</code>、<code translate="no">https_proxy</code>、<code translate="no">all_proxy</code> 及大写形式，按 HTTPX 规则；适用时使用 macOS 和 Windows 系统代理</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">NO_PROXY</code> 绕过仍然有效，并做完整地址检查。<code translate="no">openprogram rescue</code> 报告解析出的代理和缺失的 SOCKS 包。</p>
+
+<details>
+<summary>代理路径检查什么</summary>
+<ul>
+<li>客户端先校验目标，并检查代理 socket 地址。TLS 仍验证服务主机名。代理认证只留在代理连接上。代理请求失败不回退直连。</li>
+<li>走代理时由代理解析主机名，Clash 这类 fake-IP 代理因此可用：它们的本地应答来自 <code translate="no">198.18.0.0/15</code>，直连会以 <code translate="no">NON_GLOBAL_ADDRESS</code> 拒绝。</li>
+<li>仍被拒绝：私有、回环和元数据 IP；本地名称（<code translate="no">localhost</code>、单标签主机、<code translate="no">.local</code>、<code translate="no">.lan</code>、<code translate="no">.internal</code> 等）；本地 DNS 应答为真实私有地址的主机名。</li>
+<li>要保证最终解析也被检查，配置强制策略代理。</li>
+</ul>
+</details>
+
+<h2 id="what-the-agents-tools-can-reach">Agent 工具能访问什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">security.outbound_url.model_tools</code></th><td><code translate="no">open</code>（默认）：你自己的轮次里 <code translate="no">web_fetch</code> 和图片下载可访问任意地址、端口和 HTTP 方法。<code translate="no">strict</code>：应用地址检查。他人的轮次和服务器自身调用始终严格</td></tr>
+<tr><th scope="row"><code translate="no">computer_use.refused_apps</code></th><td><code translate="no">computer_use_agent</code> 不操作的应用名或 bundle id 的 JSON 列表，默认空</td></tr>
+<tr><th scope="row"><code translate="no">computer_use.refuse_password_fields</code></th><td>不向密码框输入，默认关</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.mode</code></th><td>用于没有对话的定时任务；否则用触发时其对话的 Sandbox 设置</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.deny_write</code></th><td>与<a href="../capabilities/permissions.zh.html">权限</a>中列出的启动、Git 和状态路径一起，是沙箱唯一限制的路径</td></tr>
+</tbody>
+</table>
+
+<h2 id="multiple-instances">多实例</h2>
+<p><code translate="no">--profile &lt;name&gt;</code> 或 <code translate="no">OPENPROGRAM_PROFILE</code> 把配置、会话和日志移到 <code translate="no">~/.openprogram-&lt;name&gt;/</code>。再配不同的 <code translate="no">OPENPROGRAM_WEB_PORT</code> 可同时运行多个。</p>
+<pre translate="no"><code>openprogram --profile dev
+OPENPROGRAM_PROFILE=dev openprogram status</code></pre>
+<p class="next"><a href="../install/profiles.zh.html">Profile</a></p>
+

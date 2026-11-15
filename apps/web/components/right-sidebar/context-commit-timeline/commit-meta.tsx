@@ -21,9 +21,9 @@ export function CommitMetaContent(props: {
           {meta.id.slice(0, 12)}
           {switcher}
         </span>
-        <span style={{ color: "var(--text-muted)" }}>{fmtRelTime(meta.created_at)}</span>
+        <span style={{ color: "var(--text-muted)", fontSize: "var(--right-panel-meta-size, var(--fs-sm))" }}>{fmtRelTime(meta.created_at)}</span>
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", fontSize: "var(--right-panel-meta-size, var(--fs-sm))" }}>
         <span>{meta.total_tokens.toLocaleString()} tok · {meta.item_count} items</span>
         <span>{meta.rules_version || ""}</span>
       </div>

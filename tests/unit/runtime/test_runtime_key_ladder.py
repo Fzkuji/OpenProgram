@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.providers.registry import create_runtime
+from openprogram.runtime.agent.runtime.factory import create_runtime
 
 
 _ENV_VARS = [
@@ -38,9 +38,9 @@ def _enable_default_models(monkeypatch):
     # enabled-only) registry at construction. Enable each provider's default
     # so these AuthStore-key tests build all three runtimes regardless of
     # the machine's real config.
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.models as pm
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.models as pm
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(cr, "read_providers_config", lambda: {
         "google": {"models": [
             {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
@@ -63,7 +63,7 @@ def _store_returns(monkeypatch, value):
     # includes subscription OAuth — the anthropic pool, so a Claude plan
     # login builds the runtime too). Stub both so every parametrized
     # provider sees the same "store has / hasn't a credential" outcome.
-    import openprogram.auth.resolver as _resolver
+    import openprogram.models.auth.resolver as _resolver
     monkeypatch.setattr(
         _resolver, "resolve_store_api_key_sync", lambda *a, **k: value
     )

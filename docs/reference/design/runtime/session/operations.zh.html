@@ -1,0 +1,233 @@
+<title>操作流程</title>
+<meta name="description" content="session 各操作从触发到磁盘再到前端的过程：启动、创建、项目绑定、写入、命名、列举、删除和归档。">
+<h1 id="session-operations">操作流程</h1>
+
+<dl class="pairs">
+<dt>Session 目录</dt><dd><code translate="no">&lt;state&gt;/projects/&lt;project_id&gt;/chats/&lt;session_id&gt;/</code>（未绑定时项目为 <code translate="no">default</code>）</dd>
+<dt>元数据</dt><dd><code translate="no">id</code>、<code translate="no">agent_id</code>、<code translate="no">title</code>、<code translate="no">created_at</code>、<code translate="no">updated_at</code>、<code translate="no">source</code>、<code translate="no">status="idle"</code> 等</dd>
+</dl>
+
+<table class="stack">
+<thead><tr><th scope="col">调用</th><th scope="col">磁盘上的 session</th><th scope="col">注册表 <code translate="no">_index</code></th><th scope="col">帧</th></tr></thead>
+<tbody>
+<tr id="creating-a-session"><th scope="row"><code translate="no">create_session</code></th><td>建目录，写元数据</td><td>新增一行，立即写入</td><td>无；通过 <code translate="no">list_sessions</code> 发现</td></tr>
+<tr id="writing-a-message"><th scope="row"><code translate="no">append_message</code></th><td>日志追加节点行；元数据，对话链前进时包括 head</td><td><code translate="no">updated_at</code>。用户消息：<code translate="no">preview</code>，超过 80 字符时取 77 字符 + "…"。5 秒内落盘。</td><td>无；内容走单独的流式通道</td></tr>
+<tr id="updating-fields"><th scope="row"><code translate="no">update_session</code></th><td>只写传入字段</td><td>相同字段，不动 <code translate="no">updated_at</code>，立即写入</td><td><code translate="no">session_updated</code>，只含变化字段，前端增量更新</td></tr>
+<tr id="listing"><th scope="row"><code translate="no">list_sessions</code></th><td>不读</td><td>复制行，去掉归档，过滤，按 <code translate="no">updated_at</code> 降序，按 offset 和 limit 分页</td><td><code translate="no">sessions_list</code>：注册表字段、<code translate="no">preview</code>、项目目录给的 <code translate="no">project</code></td></tr>
+<tr id="deleting"><th scope="row"><code translate="no">delete_session</code></th><td>持 session 锁销毁</td><td>移除行并立即写入；清除位置，解绑项目</td><td><code translate="no">session_deleted</code></td></tr>
+<tr id="archiving"><th scope="row"><code translate="no">set_archived</code></th><td>元数据上的布尔值</td><td>同一布尔值</td><td><code translate="no">session_updated</code>；未知 id 返回 <code translate="no">False</code></td></tr>
+</tbody>
+</table>
+<p class="note">注册表写入都经临时文件加 rename，退出时刷新。SIGKILL 后从日志重建，最多丢 5 秒的预览。<code translate="no">commit_turn</code> 在轮次边界保证字段持久。帧由 WebSocket handler 发出。</p>
+<p class="note">归档不删除、不移动、不追加，<code translate="no">updated_at</code> 不变，取消归档后回到原位（<a href="storage-consistency.zh.html">存储一致性</a>）；<code translate="no">get_messages</code> 继续可用。</p>
+
+<details>
+<summary>入口和过滤</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">dispatcher.process_user_turn</code>、channel handler</th><td>为未知 session 创建，随即 <code translate="no">append_message</code>：不出现空壳</td></tr>
+<tr><th scope="row"><code translate="no">session_context</code></th><td>CLI 或 harness 以未知 id 进入时创建。写消息前退出留下空对话，直到被删除；启动时因有日志而保留。</td></tr>
+<tr><th scope="row"><code translate="no">include_archived=True</code></th><td>两者都返回。遍历全部的流程传入：记忆扫描、运行状态修复、“clear all”、channel 绑定查找、Agent 寻址。</td></tr>
+<tr><th scope="row"><code translate="no">archived=True</code></th><td>只返回归档的</td></tr>
+<tr><th scope="row">侧栏数据</th><td>每一行都发：客户端切换活动、归档、全部视图不需往返</td></tr>
+<tr><th scope="row">归档，WebSocket</th><td><code translate="no">{"action": "update_session_flags", "session_id": ..., "archived": true}</code></td></tr>
+<tr><th scope="row">归档，REST</th><td><code translate="no">POST /api/sessions/archive</code>、<code translate="no">POST /api/sessions/unarchive</code>，请求体 <code translate="no">{"session_id": ...}</code></td></tr>
+<tr><th scope="row">归档，CLI</th><td><code translate="no">openprogram sessions archive &lt;id&gt;</code>、<code translate="no">openprogram sessions unarchive &lt;id&gt;</code></td></tr>
+<tr><th scope="row">删除的落盘步骤</th><td>在 <code translate="no">.deleted/</code> 记录删除意图；销毁 session 目录和记录的其他位置；清除运行表；移除 <code translate="no">.file-recovery/&lt;id&gt;</code>；释放文件历史；移除锁文件。见<a href="#after-delete">删除之后</a></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="startup">启动</h2>
+<ol>
+<li>把 <code translate="no">.chats-index.json</code> 读入 <code translate="no">_index</code>。缺失或解析失败：扫描项目布局和持久位置，从各日志的元数据重建并写入。</li>
+<li>把 <code translate="no">running</code> 行重置为 <code translate="no">idle</code>；执行恢复是另一条路径。</li>
+<li>清理未归档且超过一小时的行：</li>
+</ol>
+<table class="stack fixed">
+<thead><tr><th scope="col">Session 目录</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">有 <code translate="no">main.jsonl</code></th><td>保留</td></tr>
+<tr><th scope="row">默认位置不存在，任何布局都没有</th><td>丢弃摘要行；项目绑定和位置保留</td></tr>
+<tr><th scope="row">有 <code translate="no">agents</code> 或 <code translate="no">events.jsonl</code>，没有主日志</th><td>保留并警告</td></tr>
+<tr><th scope="row">其他（空壳）</th><td>持 session 锁移到 <code translate="no">.quarantine/&lt;id&gt;-&lt;time&gt;/session/</code>，附 <code translate="no">reason.json</code>，丢弃行。存储根之外绝不移动。</td></tr>
+</tbody>
+</table>
+<p class="note">不确定就保留：没有 <code translate="no">created_at</code>、已归档或有墓碑、不可达的非默认位置、迁移行不在 <code translate="no">done</code> 或 <code translate="no">deleted</code>、journal 不可读（整轮跳过）、锁被占用、文件系统错误。不删除文件；<code translate="no">.quarantine</code> 保留到手动移除。没有过期和数量上限。</p>
+
+<h2 id="after-delete">删除之后</h2>
+<p>删除不可撤销，没有回收站文件夹。只留下一个小文件。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">对话留下的东西</th><th scope="col">删除之后</th></tr></thead>
+<tbody>
+<tr><th scope="row">删除标记 <code translate="no">.deleted/&lt;id&gt;</code></th><td>永久保留：约 80 字节，按名字读取，从不列目录。迟到的写入、迁移、渠道路由或残留副本想让这个 id 复活时，靠它拒绝</td></tr>
+<tr><th scope="row">锁文件：<code translate="no">.locks/&lt;id&gt;.lock</code>、<code translate="no">.locks/.operations-&lt;id&gt;.lock</code>、<code translate="no">.locks/.migration-&lt;id&gt;.lock</code>、<code translate="no">.goal-locks/&lt;hash&gt;.lock</code></th><td>删除时在对话锁内移除，先写标记再移除</td></tr>
+<tr><th scope="row">文件历史 <code translate="no">shadow-git/&lt;hash&gt;/</code></th><td>仓库属于一个目录。它在 <code translate="no">.git/openprogram-sessions/</code> 里列出向它提交过的对话，列表里最后一个对话被删除时，仓库一起移除。移除清空后的列表目录就是认领：列表里还有对话时它会失败，所以恰好在这时登记的对话保住仓库</td></tr>
+<tr><th scope="row">对该 id 的 REST 读取</th><td><code translate="no">/context</code>、<code translate="no">/tokens</code>、<code translate="no">/branches/tokens</code>、<code translate="no">/context-range</code> 和 <code translate="no">/dag</code> 返回 <code translate="no">404 session_not_found</code>，和从未创建的 id 一样。服务端内存里已有的对话算存在，所以草稿第一次发送后的读取有回答</td></tr>
+</tbody>
+</table>
+<p>存储打开时，移除没有对应对话的空闲锁文件，并释放中途停下的删除留下的文件历史。被持有的锁文件保留。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">清扫</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">在哪里运行</th><td>打开时只读 <code translate="no">.locks/</code> 和 <code translate="no">.goal-locks/</code> 里的文件名。移除在单独的线程里做，在服务端事件循环上打开存储也不用等它</td></tr>
+<tr><th scope="row">索引漏掉的对话</th><td>什么都不丢。能被移除的只有空闲锁文件，它不保存状态，下一次给这个 id 加锁时会重新建出来</td></tr>
+<tr><th scope="row">文件历史</th><td>只有列表里每个对话在本存储都有删除标记时才移除。没有列表的仓库、列着别的存储的 id 的仓库都保留</td></tr>
+<tr><th scope="row">范围</th><td>存储自己的根目录，以及所在状态目录的 <code translate="no">shadow-git/</code>，两者在存储打开时就确定。绝不读取其他 profile 的状态目录</td></tr>
+</tbody>
+</table>
+<details><summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">决定</th><th scope="col">依据</th></tr></thead>
+<tbody>
+<tr><th scope="row">标记不过期</th><td>锁文件之所以能安全移除，是因为下一个拿到锁的人会看到标记并停下。标记过期后，等待者或残留副本就能把这个 id 再写出来。Claude Code 和 OpenCode 就地删除、不留标记，一个对话只在一处有一份；这里另一个进程、渠道路由和移动过的存放位置都可能把同一个 id 再写出来</td></tr>
+<tr><th scope="row">锁文件可以移除</th><td>每次加锁成功后都检查路径指向的是否仍是刚锁住的文件，不是就重新打开路径。没有这项检查时，移除锁文件会出现两个持有者，所以以前锁文件一直留着</td></tr>
+<tr><th scope="row">文件历史和写它的对话同寿</th><td>Claude Code 按对话保存文件历史，随对话记录一起删除。OpenCode 每个项目一个快照仓库，按时间修剪。一个目录共用的仓库无法只去掉某个对话的提交，其他对话的 diff 读的是同一段历史，所以随最后一个写入者移除</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="main-project-binding">主项目绑定</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 96" role="img" aria-label="草稿选择的项目保存在 pendingProjectsByChat。首个 chat 帧携带 project_id，handle_chat 用该项目创建 session，chat_ack 发送幂等的 set_session_project 写标签和反向索引。之后绑定冻结。">
+  <defs><marker id="ops-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">草稿</text>
+  <text class="t-soft" x="0" y="66">输入框胶囊</text>
+  <text class="t-soft" x="0" y="86">还没发送</text>
+  <line class="ln" x1="120" y1="33" x2="160" y2="33" marker-end="url(#ops-a)"/>
+  <text class="t-big" x="172" y="40">首帧</text>
+  <text class="t-soft" x="172" y="66">携带 project_id</text>
+  <line class="ln" x1="308" y1="33" x2="348" y2="33" marker-end="url(#ops-a)"/>
+  <text class="t-big" x="360" y="40">handle_chat</text>
+  <text class="t-soft" x="360" y="66">用该项目创建</text>
+  <line class="ln" x1="500" y1="33" x2="540" y2="33" marker-end="url(#ops-a)"/>
+  <text class="t-big" x="552" y="40">冻结</text>
+  <text class="t-soft" x="552" y="66">chat_ack 写标签</text>
+  <text class="t-soft" x="552" y="86">和绑定索引</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>草稿</strong><small>输入框胶囊，还没发送</small></li>
+  <li><strong>首帧</strong><small>携带 project_id</small></li>
+  <li><strong>handle_chat</strong><small>用该项目创建</small></li>
+  <li class="flow-end"><strong>冻结</strong><small>chat_ack 写标签和绑定索引</small></li>
+</ol>
+</figure>
+<dl class="pairs">
+<dt>主目录</dt><dd>项目的路径。对话放在应用状态目录下，按稳定的项目 id 组织，路径变化不影响绑定和仓库。<a href="additional-working-directories.zh.html">附加目录</a>始终可编辑。</dd>
+<dt>草稿状态</dt><dd>保存在 <code translate="no">pendingProjectsByChat[chatKey]</code>，直到 <code translate="no">chat_ack</code>；这次发送 <code translate="no">set_session_project</code> 是幂等的</dd>
+<dt>只含设置的仓库</dt><dd>创建前可能已存在且没有 <code translate="no">id</code>。<code translate="no">handle_chat</code> 判断 <code translate="no">is_created</code>（元数据 <code translate="no">id</code> 或历史）；<code translate="no">create_session</code> 把它移到项目位置并保留设置。</dd>
+<dt>首轮之后</dt><dd><code translate="no">set_session_project</code> 只接受当前项目，否则 <code translate="no">project is frozen after the first turn</code>（<code translate="no">FROZEN_ERROR</code>）。有 session id 时胶囊只读。</dd>
+</dl>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col" id="moving-a-conversation">移到另一个项目</th><th scope="col" id="repairing-a-missing-directory">修复缺失的目录</th></tr></thead>
+<tbody>
+<tr><th scope="row">用户</th><td>把聊天行拖到项目上，或用 <strong>Move to project</strong></td><td>文件夹在磁盘上被移动或改名后重新选择</td></tr>
+<tr><th scope="row">动作</th><td><code translate="no">move_session_to_project {session_id, project_id}</code></td><td><code translate="no">relocate_project {session_id, project_id, path}</code></td></tr>
+<tr><th scope="row">改变</th><td>session 的项目。<code translate="no">SessionStore.move_session</code>，持 session 锁：丢弃缓存的仓库；把 <code translate="no">projects/&lt;old&gt;/chats/&lt;id&gt;</code> 和 <code translate="no">.file-recovery/&lt;id&gt;</code> 重命名到 <code translate="no">projects/&lt;new&gt;/chats/</code>；记录位置，重新绑定注册表，设置 <code translate="no">meta.project_id</code>；旧项目追加到 <code translate="no">meta.project_history</code></td><td>项目路径，不是绑定，所以冻结后仍合法。<code translate="no">project_store.relocate_project</code> 校验，改写路径，保留 id。</td></tr>
+<tr><th scope="row">拒绝</th><td>轮次运行中（<code translate="no">RUNNING_ERROR</code>）；目标已存在；文件夹<a href="#held-folder">被其他程序占用</a>。同一项目：不变，不写节点。</td><td>默认项目：每次 <code translate="no">get_default_project</code> 读取都把显示路径恢复为主目录，也没有项目 Git 仓库</td></tr>
+<tr><th scope="row">回复</th><td>先给所有客户端发 <code translate="no">projects_changed</code>，再给请求方发 <code translate="no">session_moved {ok, from_project_id, project_id, node_id}</code> 和新的 <code translate="no">projects_list</code></td><td>先给所有客户端发 <code translate="no">projects_changed</code>，再给请求方发 <code translate="no">project_relocated {ok, old_path, path, node_id}</code> 和新的 <code translate="no">projects_list</code></td></tr>
+<tr id="relocate-node"><th scope="row">节点 <code translate="no">name</code></th><td><code translate="no">project/move</code>，由 <code translate="no">record_move</code> 写</td><td><code translate="no">project/relocate</code>，由 <code translate="no">record_relocate</code> 写</td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td>旧项目名 → 新项目名</td><td>旧路径 → 新路径</td></tr>
+<tr><th scope="row"><code translate="no">metadata</code></th><td><code translate="no">old_project_id</code>、<code translate="no">new_project_id</code></td><td><code translate="no">display: "runtime"</code>、<code translate="no">project_id</code>、<code translate="no">old_path</code>、<code translate="no">new_path</code></td></tr>
+</tbody>
+</table>
+<p class="note">两种节点：<code translate="no">role</code> 为 <code translate="no">code</code>，<code translate="no">caller</code> 为 <code translate="no">ROOT</code>，<code translate="no">predecessor</code> 为 <code translate="no">None</code>；形状沿用 <code translate="no">context/system_prompt</code>；代码在 <code translate="no">state/store/project/relocate_node.py</code>。<code translate="no">caller</code> 让 head 不动。不放在对转录隐藏的 <code translate="no">context/</code> 下：这是值得看到的用户动作。</p>
+<h3 id="held-folder">被占用的对话文件夹</h3>
+<p>文件夹里有任何文件开着时，Windows 拒绝重命名这个文件夹。Worker 在两次写入之间不保留打开的文件，所以占用者是另一个进程里的读取者、索引器、杀毒扫描，或在工作文件夹里运行的命令。<code translate="no">move_session_folder</code> 重试一秒，然后抛出 <code translate="no">SessionFolderBusy</code>。不会改用复制文件夹。</p>
+<table class="stack">
+<thead><tr><th scope="col">重命名</th><th scope="col">文件夹一直被占用时</th></tr></thead>
+<tbody>
+<tr><th scope="row">移到另一个项目</th><td><code translate="no">session_moved</code> 带 <code translate="no">ok: false</code> 和错误；文件夹、恢复树、绑定和轮次都不变。如果被占用的是恢复树，先把对话重命名回去</td></tr>
+<tr><th scope="row">绑定草稿</th><td><code translate="no">set_session_project</code>：绑定改变，文件夹留在原处，记入位置映射。第一条消息：创建失败，草稿保留它的设置</td></tr>
+<tr><th scope="row">启动时隔离</th><td>空壳留在原处，空的隔离条目被移除</td></tr>
+<tr><th scope="row">发布迁移副本</th><td>journal 行为 <code translate="no">failed</code> 并带错误；源不动，下次运行发布已校验的副本</td></tr>
+</tbody>
+</table>
+<p class="note">如果对话也无法重命名回去，位置映射记下它的新文件夹，对话仍可读取，错误写明两个文件夹。再次把它移到同一项目会完成这次移动：恢复目录移到对话旁边，然后绑定改变。</p>
+<p class="note">归档只设置一个字段，删除是就地删除文件；两者都不重命名文件夹。对话 id 从不改变。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">之后</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">移动后的下一轮</th><td>新项目的路径：<code translate="no">project_workdir_for</code> 每次重新解析</td></tr>
+<tr><th scope="row">移动后的记忆</th><td><code translate="no">project_layer.left_workspace_ids</code> 把 <code translate="no">project_history</code> 映射为工作区，<code translate="no">write_target</code> 计入它们标记过的轮次，新项目的记忆只收之后的内容。主目录项目同理，目标是个人工作区。</td></tr>
+<tr><th scope="row">移动后的设置</th><td>每个分支的 Agent、模型和权限模式随元数据移动；项目默认设置（<code translate="no">settings.json</code>）来自新项目</td></tr>
+<tr><th scope="row">目录缺失</th><td><code translate="no">project_workdir_for</code> 返回 <code translate="no">None</code>，绝不换成默认项目的主目录。项目缺失、被替换、等待中、迁移中或不可用时阻止新的绑定工作。session 仍可读，UI 收到位置状态和缺失路径。</td></tr>
+</tbody>
+</table>
+
+<details id="following-a-move">
+<summary>自动跟随文件夹移动</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">机制</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">身份</th><td>稳定 id；路径只是属性。Codex 把记录的 cwd 和最近轮次上下文匹配，DeepSeek 按不可变的 session 头 cwd 校验，都不跟踪任意文件夹移动。</td></tr>
+<tr><th scope="row">原生身份</th><td>启动、访问、卷重新连接、目录或祖先事件时，解析保存的书签或 inode，匹配则更新路径。不遍历 HOME。</td></tr>
+<tr><th scope="row">应用拥有存放位置</th><td><code translate="no">projects/&lt;project-id&gt;/chats/&lt;session-id&gt;/</code>：重定位不移动聊天文件。旧副本经 journal 迁移。撤销恢复留在同级 <code translate="no">.file-recovery/&lt;session_id&gt;/&lt;turn&gt;/</code>。</td></tr>
+<tr><th scope="row">不自动接管</th><td>名称、Git remote、内容和遗留的 <code translate="no">.openprogram/sessions</code> 都不算证据</td></tr>
+<tr><th scope="row"><strong>Locate folder</strong></th><td>展示预期旧路径和版本后可替换身份。目标已属于其他项目时拒绝，除非被定位的项目已缺失且没有对话：此时并入所有者，由选择器选中。</td></tr>
+<tr><th scope="row">界面</th><td>草稿选择器列出 <code translate="no">path_missing</code> 项目（点击进入定位流程）；<code translate="no">/projects</code> 显示警告和“Locate folder…”</td></tr>
+<tr><th scope="row">不算空壳</th><td>位置不可达或 journal 未结束的绑定 session</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="attachments-and-recovery">
+<summary>附件和迁移</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">浏览器上传</th><td>分发前解码保存到 <code translate="no">&lt;session 目录&gt;/workdir/attachments/</code>，路径写入用户消息标记</td></tr>
+<tr><th scope="row">IndexedDB</th><td>只存未发送的草稿，发布后清除</td></tr>
+<tr><th scope="row">旧数据迁移</th><td>盘点外部恢复树，把 session 和恢复数据复制到 <code translate="no">&lt;state&gt;/projects/.migration/staging/</code> 并校验，发布到 <code translate="no">projects/&lt;project_id&gt;/chats/&lt;session_id&gt;/</code> 和同级 <code translate="no">.file-recovery</code>，再更新位置权威。发布失败时项目保持不可用。</td></tr>
+<tr><th scope="row">旧标记</th><td><a href="storage.zh.html#cache-and-attachments">存储规则</a></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="place-in-project-list">项目列表中的位置</h2>
+<dl class="pairs">
+<dt>写入</dt><dd><code translate="no">update_session_flags</code> 带 <code translate="no">sort_at</code>（秒），同时存 <code translate="no">sort_since</code>（当时的 <code translate="no">updated_at</code>）。<code translate="no">sort_at</code> 为 0 时清除两者。</dd>
+<dt>客户端取值</dt><dd>相邻两项之间的时间，放在顶部则取当前时间</dd>
+<dt>保持到</dt><dd><code translate="no">updated_at</code> 超过 <code translate="no">sort_since</code>：它自己的下一轮。其他对话的活动仍可越过它。</dd>
+</dl>
+
+<h2 id="status-writes">何时写状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时机</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row">轮次开始</th><td><code translate="no">running</code></td></tr>
+<tr><th scope="row">轮次结束</th><td><code translate="no">done</code>；不在屏幕上时 <code translate="no">unread</code>（静默轮次不动圆点）</td></tr>
+<tr><th scope="row">轮次失败</th><td><code translate="no">failed</code>；不在屏幕上时 <code translate="no">unread</code></td></tr>
+<tr><th scope="row">已取消，没有其他运行中</th><td><code translate="no">idle</code></td></tr>
+<tr><th scope="row">后台轮次</th><td>不写</td></tr>
+</tbody>
+</table>
+<p class="note">客户端也接受 <code translate="no">needs_input</code>（琥珀色圆点）；服务器不把它写入 session。</p>
+
+<h2 id="naming">命名</h2>
+<p class="note">只有一份实现 <code translate="no">turn_runtime/titles.py</code>：WS、函数形式、channel、CLI、spawn 都走 <code translate="no">finalize_turn end → _maybe_auto_title</code>。Channel 只多一个品牌 logo，显示在侧栏、聊天页和命令面板。</p>
+<table class="stack">
+<thead><tr><th scope="col">标记</th><th scope="col">含义</th><th scope="col">设置者</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_user_titled</code></th><td>用户输入的标题：永久锁定</td><td>只有 rename：输入名称时设置，生成名称时清除</td></tr>
+<tr><th scope="row"><code translate="no">_auto_titled</code></th><td>已有自动标题：不再截断。与锁分开，因为截断本来就要被取代。</td><td><code translate="no">_maybe_auto_title</code>，以及生成名称的 rename</td></tr>
+<tr><th scope="row"><code translate="no">_title_gen_count</code></th><td>命中了 <code translate="no">_RETITLE_AT_TURNS</code> 的第几项</td><td><code translate="no">_maybe_auto_title</code> 内部</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">时机</th><td>第 1、6、16、40 次回复；首条用户消息是寒暄时再加 2、3。有 <code translate="no">_user_titled</code> 时不做。</td></tr>
+<tr><th scope="row">第 1 次回复，立即</th><td><code translate="no">_title_from_text(首条用户消息)</code>：去标记，取首行，50 字符 + "…"；<code translate="no">_auto_titled=True</code>、<code translate="no">_title_gen_count=1</code></td></tr>
+<tr><th scope="row">然后，后台</th><td>LLM 标题替换记下的标题，<code translate="no">_title_gen_count=N+1</code>，广播 <code translate="no">session_updated</code>。期间出现 <code translate="no">_user_titled</code> 或标题变化则放弃。</td></tr>
+<tr><th scope="row">摘录</th><td><code translate="no">build_title_context(get_branch(id))</code>，1,000 字符内（<code translate="no">2 × _MAX_INPUT_CHARS</code>）。用户文本和每轮最终回复；不含工具记录、附件标记和 <code translate="no">&lt;think&gt;</code>。</td></tr>
+<tr><th scope="row">寒暄</th><td>问候、感谢、确认，或一两个字符如 <code translate="no">hl</code>。开场寒暄连同回复丢弃；之后的低内容消息丢弃，回复保留。全是寒暄时全部保留。</td></tr>
+<tr><th scope="row">一定包含</th><td>第一个实质轮次和最新轮次。其余由新到旧填充，<code translate="no">…</code> 标记缺口。</td></tr>
+<tr><th scope="row">输入名称</th><td><code translate="no">update_session(title, _user_titled=True)</code></td></tr>
+<tr><th scope="row"><strong>Auto rename</strong>（标题为空）</th><td><code translate="no">_llm_rename()</code> → <code translate="no">_user_titled=False</code>、<code translate="no">_auto_titled=True</code>、<code translate="no">_title_gen_count=max(1, N)</code>。期间标题或锁变化：<code translate="no">superseded</code>，不写入。</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="name.zh.html">LLM 标题生成</a></p>

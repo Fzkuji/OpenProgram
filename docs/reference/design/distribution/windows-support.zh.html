@@ -1,0 +1,278 @@
+<title>Windows 支持</title>
+<meta name="description" content="Windows 支持等级、各自的承诺和实现位置。">
+<h1>Windows 支持</h1>
+<table class="stack" id="levels">
+<caption>各等级可独立使用</caption>
+<thead><tr><th scope="col">等级</th><th scope="col">承诺</th></tr></thead>
+<tbody>
+<tr><th scope="row">W0</th><td>接受社区修复，记录已知缺口，不支持的入口报错退出。不做承诺</td></tr>
+<tr><th scope="row">W1</th><td>原生 CLI 和服务器、Ink 和浏览器 UI、MCP token、Windows CI 契约。没有原始输入时回退到 Rich。沙箱执行和 Desktop 不在 W1 内</td></tr>
+<tr><th scope="row">W2</th><td>发布归档、PowerShell 和命令提示符安装器、Windows <code translate="no">doctor</code> 检查。不依赖证书，也是智能应用控制拒绝 App 安装包时的路径</td></tr>
+<tr><th scope="row">W3</th><td>带更新的 Electron Desktop。有证书时签名。否则发布 <code translate="no">-unsigned.exe</code> 安装包，并事先告诉用户它的限制：SmartScreen 需要<strong>更多信息 → 仍要运行</strong>，智能应用控制没有单个应用的例外</td></tr>
+<tr><th scope="row">W4</th><td>可选的 WSL2 和 bubblewrap 隔离。原生 CLI 从不依赖 WSL</td></tr>
+<tr><th scope="row">薄壳</th><td>外壳、seed、<code translate="no">openprogram-launcher.exe</code>、Shift 检查、<code translate="no">install-release.ps1</code> 的 seed 分支</td></tr>
+<tr><th scope="row">本地刷新</th><td>带补偿回滚的原生发布</td></tr>
+</tbody>
+</table>
+
+<h2>工程规则</h2>
+<ul>
+<li>平台行为放在 <code translate="no">openprogram/host/_platform/</code>（文件系统、锁、进程、进程归属、命令 Shell、终端、环境）或它选择的适配器里。</li>
+<li>优先能力检测。不支持的功能在入口失败，不在后期抛 <code translate="no">NotImplementedError</code>。</li>
+<li>对 POSIX 安全属性的弱化替代必须是明确记录的决定。</li>
+<li>Windows CI 契约覆盖之前，修复不算完成。</li>
+<li>POSIX <code translate="no">0600</code>、<code translate="no">0700</code> 不是 Windows 要求：保留配置文件继承的 ACL，任何步骤都不移除继承或改写条目。原子替换和跨进程锁仍然必需。</li>
+</ul>
+
+<h2 id="w1">W1：原生 CLI 和服务端</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">领域</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">源码安装器</th><td>检出内 <code translate="no">.venv</code>、npm 锁文件、Web 和 Ink 构建、所选 extras、用户 PATH 上的 <code translate="no">openprogram.cmd</code>。<code translate="no">-Minimal</code>：只装 Python CLI 和服务端</td></tr>
+<tr><th scope="row">启动器</th><td>只有一个 <code translate="no">openprogram.cmd</code>：PowerShell 优先选同名 <code translate="no">.ps1</code>，而默认的 Restricted 策略会拒绝它，所以安装器会删除旧文件。PowerShell 脚本：带 BOM 的 UTF-8。批处理：不带 BOM 的 UTF-8，带 ASCII 代码页前导，关闭延迟展开，转义百分号，恢复调用方代码页，保留退出状态。安装器只对自身进程使用 <code translate="no">powershell.exe -ExecutionPolicy Bypass -File</code>；不改机器的执行策略或区域设置</td></tr>
+<tr><th scope="row">唯一的批处理写入</th><td>发布安装器写的每个 <code translate="no">.cmd</code> 都经过 <code translate="no">Write-CmdLauncher</code>；版本库的 <code translate="no">bin-openprogram.cmd</code> 和源码安装器用同样的前导，由测试保证三者一致。版本库前面那个在 PATH 上的启动器先切换控制台，再读版本库的路径，然后不经 <code translate="no">call</code> 启动版本库的启动器，免得带引号参数里的脱字符被加倍，并通过 <code translate="no">_OPENPROGRAM_CALLER_CODEPAGE</code> 把调用方代码页交给它恢复</td></tr>
+<tr><th scope="row">Ink</th><td>各系统都按能力判断。Windows Terminal 和 ConPTY 全屏运行；MinTTY 等恢复 stdio 后回退 Rich。分词器把控制字节和可打印片段分开；括号粘贴保持一个事件</td></tr>
+<tr><th scope="row">MCP 令牌</th><td>唯一临时文件加原子硬链接。读取时重新校验文件和祖先目录</td></tr>
+<tr><th scope="row">进程</th><td>PowerShell CIM，不用 WMIC。存活和创建时间来自只读原生查询；绝不用信号 0。信号到不了另一个进程，所以 <code translate="no">worker stop</code> 把 worker 的 PID 写进 <code translate="no">worker.stop</code>，worker 轮询到后按顺序关停；五秒没有回应就结束整棵进程树。<code translate="no">--print</code> 对 Ctrl-Break 和对 Ctrl-C 一样处理。那里阻塞的等待不会被信号唤醒，所以运行按最多半秒一次轮询等待，读 Worker 连接也一样</td></tr>
+<tr><th scope="row">识别 Worker</th><td>命令和 App 要从 Worker 外面认出它。msvcrt 拒绝读取被别的句柄锁住的字节，所以文件锁锁在远离数据的一个字节上，<code translate="no">worker.lock</code> 仍然可读，和 POSIX 一样写着持有者。锁是唯一的凭据：<code translate="no">worker.pid</code> 里写的进程即使还活着，也不当作 Worker。<code translate="no">web auth-url</code>、<code translate="no">worker status</code> 和 <code translate="no">worker stop</code> 都靠它</td></tr>
+<tr><th scope="row">登录时启动 worker</th><td>最小权限的按用户计划任务，每个 profile 一个，运行失败后重试。启动脚本自己设置 profile 和状态目录，因为任务不继承安装时那个 shell 的环境。装上后 worker 归它管：start 和 restart 按当前运行时重写启动脚本并启动任务；stop 先请求 worker 关停，再结束任务的这次运行，重试就不会把它带回来</td></tr>
+<tr><th scope="row">文件日志</th><td>共用跨进程锁。应用和回滚用不同的 guard 文件</td></tr>
+<tr><th scope="row">文本与字节</th><td>文本打开都写明 UTF-8，仓库契约计数的六处除外；<code translate="no">openprogram/state</code> 下每个文本模式的子进程也是。应用环境的 <code translate="no">.pth</code> 文件按区域编码写入，Python 的 <code translate="no">site</code> 模块在每个受支持的版本上都读这种编码。用 <code translate="no">os.write</code> 写入的描述符是二进制的，所以行尾是 LF，字节偏移保持准确</td></tr>
+<tr><th scope="row">UTF-8 模式</th><td>每个 launcher 和安装器都用 <code translate="no">-X utf8</code> 启动 Python：<code translate="no">openprogram-launcher.exe</code>、每个 <code translate="no">openprogram.cmd</code>、seed 安装器、命令行安装器的校验脚本，以及从这样的 Python 重启的 Worker。发布工作流不设 <code translate="no">PYTHONUTF8</code>。<code translate="no">-I</code> 会丢掉 <code translate="no">PYTHONUTF8</code>，所以模式作为参数传递。<code translate="no">.pth</code> 文件在这个模式下仍用区域编码。<code translate="no">netstat</code>、<code translate="no">schtasks</code> 和任务服务用的 PowerShell 按 OEM 代码页输出，所以它们的输出按字节读取，再用这个代码页解码</td></tr>
+<tr><th scope="row">状态文件替换</th><td><code translate="no">filesystem.replace_file</code> 发布每个先写临时文件再重命名的文件：配置、凭据、定时任务、Agent 注册表、项目、检查点、更新记录。目标被另一个句柄、索引器或杀毒扫描占用时，它重试一秒。不加锁的配置读取以同样方式重试。有七处重命名保持直接调用，仓库契约逐一写明原因</td></tr>
+<tr><th scope="row">对话文件夹重命名</th><td>文件夹里有文件开着时，Windows 拒绝重命名这个文件夹。<code translate="no">move_session_folder</code> 重试一秒，然后抛出 <code translate="no">SessionFolderBusy</code>，文件夹留在原处。不会改用复制。见<a href="../runtime/session/operations.zh.html#held-folder">被占用的对话文件夹</a></td></tr>
+<tr><th scope="row">影子仓库</th><td>每条 Git 命令固定自己的设置：不转换行尾、文件名不加引号转义、开启长路径、不做提交签名。用户的 Git 配置影响不到它。恢复出的文件就是提交时的字节</td></tr>
+<tr><th scope="row">检查点、备份、恢复</th><td>没有基于描述符的操作时走路径回退：拒绝符号链接和联接点，重新校验父目录，二进制原子写</td></tr>
+<tr><th scope="row">工作区审查</th><td>分批读取 Git 元数据和对象；Git 调用次数不随变更文件增长</td></tr>
+<tr><th scope="row">Shell 工具</th><td>装了 Git Bash 就用它，否则先用 PowerShell 7，再用 Windows PowerShell；绝不用 <code translate="no">cmd.exe</code>。由一个函数决定：见<a href="#command-shell">命令 shell</a>。系统提示写明正在用的那个和它的语法，不取 <code translate="no">COMSPEC</code>；沙箱开着时写的是 WSL 的 bash 和 Linux 路径，本机 shell 只用于获准离开沙箱的命令。每条命令是一个 Job Object，停止会结束整棵进程树。无窗口进程。Git Bash 的源码经临时环境变量传递；Python 子进程默认 UTF-8</td></tr>
+<tr><th scope="row">PowerShell 命令</th><td>UTF-16 源码放在一个 base64 参数里，不经过任何引号层。不加载 profile、非交互、文本输出，执行策略只对这个进程设为 <code translate="no">Bypass</code>：<code translate="no">npm</code>、<code translate="no">pnpm</code> 会解析到 <code translate="no">.ps1</code> 垫片，默认策略拒绝运行它；组策略仍然优先。输入、输出和管道都是 UTF-8；关闭进度记录。最后一个程序的退出码原样传出，PowerShell 自己只报 0 或 1</td></tr>
+<tr><th scope="row">钩子</th><td><code translate="no">config.json</code> 里的钩子和命令工具用同一个 shell，不用 <code translate="no">cmd.exe</code>；事件以 UTF-8 从标准输入送入，不弹控制台窗口。程序以 2 退出仍然算拒绝</td></tr>
+<tr><th scope="row">权限规则里的路径</th><td>规则和调用按同一个解析后的名字比较：正反斜杠都行，去掉 <code translate="no">\\?\</code> 和 <code translate="no">\\.\</code> 前缀，短文件名展开，去掉结尾的点、空格和 <code translate="no">::$DATA</code>。拒绝和询问规则不分大小写，覆盖文件的命名流，并按对话的工作目录解析相对路径；允许规则按完整路径和磁盘上保存的大小写比较。网络共享写成全程反斜杠的 <code translate="no">\\server\share</code> 或 <code translate="no">//server/share</code>；拒绝和询问规则也覆盖混用斜杠的写法</td></tr>
+<tr><th scope="row">允许规则里的命令</th><td>规则按 POSIX shell 读命令。命令可能在 PowerShell 里运行时，含 <code translate="no">{</code>、<code translate="no">}</code> 或 <code translate="no">,</code> 的命令不会被前缀或通配的允许规则放行，因为这些符号在 PowerShell 里的含义这种读法看不到。对这样的命令选“始终允许”，存下的是命令原文，只放行一字不差的同一条命令。拒绝和询问规则照常命中</td></tr>
+<tr><th scope="row">SSH 环境</th><td>Windows 的 OpenSSH 客户端不支持连接复用，每次调用各开一条连接。远端文本按 UTF-8 读取；客户端不弹控制台窗口</td></tr>
+<tr><th scope="row">复制进工作树的链接</th><td><code translate="no">.worktreeinclude</code> 点名的链接指向目录时，重建为目录链接。没有创建链接的权限时，这个文件记为未复制</td></tr>
+<tr><th scope="row">Program 发现</th><td>直接查元数据，不为每次连接重建完整的导入到发行包映射</td></tr>
+<tr><th scope="row">会话存储关闭</th><td>取消定时器，在锁外等待进行中的写入，刷出最新快照。失败的写入保持脏状态。没有线程时同步保存</td></tr>
+<tr><th scope="row">LF 编辑</th><td>可匹配 CRLF 文件并保留行尾；重复匹配拒绝；混合行尾需要精确文本</td></tr>
+</tbody>
+</table>
+<details>
+<summary>自更新和 CI</summary>
+<p>日志读取可移植，但对话内控制器只有 macOS 版。对话的 prepare 和 retry 在创建状态前检查 <code translate="no">host/_platform/environment.py</code> 里的能力，并指向 CLI 和 Desktop 更新器。status 和 cancel 不受限。原生候选测试和激活尚未实现。</p>
+<p>push 和 PR 检查会取代同分支的旧运行。安装验收和定时冒烟使用唯一分组。每个矩阵都包含两种架构。core 任务覆盖兼容层、检查点、备份、升级、安装器契约和计划任务；smoke 任务完成 PowerShell 完整安装，启动 worker，运行 <code translate="no">doctor</code> 后停止。</p>
+</details>
+
+<h2 id="w2">W2：发布安装器</h2>
+<p>原生 runner 构建 <code translate="no">OpenProgram-&lt;version&gt;-runtime-windows-x86_64.zip</code> 及其 SHA-256 文件；<code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code> 打开时构建 arm64。只有一个 <code translate="no">runtime/</code> 根目录。Ink 启动探测成功后才记录 <code translate="no">tui.ink</code>。</p>
+<ol>
+<li><code translate="no">install.ps1</code>（或取用它的 <code translate="no">install.cmd</code>）解析稳定版本，release manifest 没有本平台安装包时停止并说明，然后交给该不可变 tag 上的安装器。在 Windows 11 on Arm 上，没有 Arm 安装包的版本改装 x64 安装包，靠模拟运行，并说明这一点。</li>
+<li>走这项回退时，先确认 tag 上的安装器自己能选 x64 安装包；做不到就在下载之前按名称拒绝这个版本。</li>
+<li>检查磁盘空间，支持续传下载，校验 checksum 和每个 ZIP 条目；拒绝链接和重解析点。</li>
+<li>在每运行时一把的排他锁下，校验能力，并在隔离暂存状态下冷启动 worker。</li>
+<li>把通过校验的候选移入版本目录。</li>
+<li>原子替换 <code translate="no">.cmd</code> 启动器，保留 <code translate="no">openprogram.previous.cmd</code>。</li>
+</ol>
+<p>托管升级通过兼容层选择 Windows ZIP 和 tag 上的 PowerShell 安装器。经 <code translate="no">iex</code> 管道运行时失败只设置退出码并抛错，窗口不会关闭。</p>
+<details>
+<summary>激活和解压细节</summary>
+<ul>
+<li>各版本留在各自目录，保留上一份启动器。缓存的版本会重新校验。</li>
+<li>启动器先准备并做快照。替换失败时恢复；恢复也失败时，把原文件保留在报告的路径。</li>
+<li>写入前校验 ZIP 名称；文件经扩展长度路径流式写入，检查展开字节数和长度。检查和清理用同样的 API。不改长路径注册表值。</li>
+<li>.NET 替换时传 <code translate="no">NullString</code>，否则 PowerShell 5 把 <code translate="no">$null</code> 绑定成无效的空路径。</li>
+<li>构建辅助脚本恢复工作区、工具链、下载和浏览器缓存环境，失败时也恢复。</li>
+<li><code translate="no">doctor</code> 以只读建议报告长路径和 Defender 状态。</li>
+</ul>
+</details>
+
+<h2 id="w3">W3：Desktop</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">领域</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">构建</th><td>x64 按用户、assisted 的 NSIS，由薄壳和解包进 App 的 seed 组成（arm64 跟随 W2 的开关）。Release 任务要求 seed 在 App 内</td></tr>
+<tr><th scope="row">发布门禁</th><td>Windows 这一路先跑 Windows 契约测试（<code translate="no">scripts/release/windows-contracts.txt</code>），再安装刚构建的 App，启动到 Worker 健康，经它发一轮对话，然后卸载。这轮对话发给本机回环上的替身模型，它唯一的回复是调用命令工具执行 <code translate="no">echo 你好; exit 3</code>；文字和退出码都要回来。失败只把这个 App 留在发布之外，和 macOS、Linux 一样。Windows ZIP 安装在记 <code translate="no">cli-verified</code> 前跑同一轮</td></tr>
+<tr><th scope="row">签名</th><td>有 <code translate="no">WINDOWS_CSC_LINK</code> 和 <code translate="no">WINDOWS_CSC_KEY_PASSWORD</code> 时：<code translate="no">OpenProgram.exe</code> 和安装包 Authenticode 为 Valid，否则任务失败。没有时：两者都必须是 NotSigned，安装包改名为 <code translate="no">-unsigned.exe</code></td></tr>
+<tr><th scope="row">证书</th><td><code translate="no">WINDOWS_CSC_LINK</code> 是 PFX，可以是 base64 或 HTTPS 链接；<code translate="no">WINDOWS_CSC_KEY_PASSWORD</code> 是它的密码。两者都有时这一项改为签名构建。公共证书机构把代码签名密钥放在硬件或云服务里，可导出的 PFX 很少见；用云签名服务需要另写签名步骤</td></tr>
+<tr><th scope="row">未签名安装包的提示</th><td>浏览器可能提示该文件不常被下载。运行时出现<strong>Windows 已保护你的电脑</strong>，发布者未知；点<strong>更多信息 → 仍要运行</strong>继续，不会要求管理员权限。智能应用控制会直接阻止，无法放行。用新证书签名的文件在积累信誉前也可能遇到同样的警告</td></tr>
+<tr><th scope="row">运行</th><td>封存版本位于 <code translate="no">%USERPROFILE%\.openprogram\runtime</code>，首次启动时在进度页后从 seed 解包。seed 里的链接，文件夹变成 junction，文件变成第二个名字，因为符号链接需要特权。终端：Windows PowerShell，否则 <code translate="no">COMSPEC</code>，经 <code translate="no">node-pty</code> ConPTY。从常规路径导入浏览器</td></tr>
+<tr><th scope="row">Worker 进程</th><td>App 通过 <code translate="no">openprogram-launcher.exe</code> 以分离方式启动 Worker。没有控制台的 launcher 启动 Python 时不开控制台窗口，并把自己的输出句柄交给它，所以 Worker 写入 <code translate="no">worker.log</code>；从终端运行时共用该终端。参数从宽字符命令行按 UTF-8 读取</td></tr>
+<tr><th scope="row">继承的句柄</th><td>Node 启动 launcher 时打开了句柄继承，所以它先关掉除标准句柄以外所有继承来的句柄。否则 App 的 DevTools 监听 socket 会在 Worker 的整个生命里一直开着，重新打开的 App 拿不到这个端口</td></tr>
+<tr><th scope="row">从终端安装种子</th><td>Windows 的 <code translate="no">tar.exe</code> 按 ANSI 代码页读参数，所以安装程序在目标目录里运行它，只给它一条到压缩包的 ASCII 相对路径；profile 文件夹含代码页之外的字符（英文 Windows 上的中文用户名）也能正常解包，装好后留在 PATH 上的 <code translate="no">openprogram</code> 命令在这样的文件夹里、任何控制台代码页下都能运行。<code translate="no">tar.exe</code> 按 <code translate="no">System32</code> 路径调用</td></tr>
+<tr><th scope="row">安装钩子</th><td>全新安装在安装前不运行 PowerShell。覆盖一个有 <code translate="no">OpenProgram.exe</code> 和 <code translate="no">resources\app.asar</code> 的安装时，先停掉其下的进程，只有它们一直不退才中止安装。每个钩子把脚本文本交给 <code translate="no">powershell.exe -Command</code>，路径放在环境变量里：执行策略只管脚本文件，而组策略设的执行策略 <code translate="no">-ExecutionPolicy Bypass</code> 也绕不过。发布门禁在只允许签名脚本的组策略下安装</td></tr>
+<tr><th scope="row">卸载</th><td>卸载 App 时先请 Worker 停止，再移除它的登录任务；升级和重装两样都不做。状态文件夹原样保留：对话、设置和版本库。Worker 停不下来也不阻止卸载，原地运行的卸载程序自身不在被结束的进程之内</td></tr>
+<tr><th scope="row">应用标识</th><td>外壳在打开任何窗口前设置应用 ID <code translate="no">ai.openprogram.desktop</code>，即安装器写在开始菜单快捷方式上的那个。通知、任务栏按钮及其固定项都归属这个 ID</td></tr>
+<tr><th scope="row">更新器</th><td>通过 <code translate="no">openprogram upgrade --json</code> 接收封存版本。只有发行版需要更新的外壳时，才提供文件 <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code> 或 <code translate="no">-unsigned.exe</code>。运行中 App 自身的签名决定更新线：只有未签名构建的 App 才接受 NotSigned，并且要先通过大小和 SHA-256；已签名的 App 要求 Valid 且发布者相同。失败时删除候选。可见的用户交接：<a href="automatic-updates.zh.html">自动更新</a></td></tr>
+<tr><th scope="row">CI</th><td>x64 和 arm64 安装依赖和原生 PTY，运行 Desktop 契约和 Web 测试</td></tr>
+</tbody>
+</table>
+<details>
+<summary>运行时准备和版本预检</summary>
+<p>本地用完整运行时打包 <code translate="no">dist:win</code>：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">构建</th><td>独占锁下的唯一暂存目录</td></tr>
+<tr><th scope="row">旧 payload</th><td>保留到替换品就绪且与 Desktop 版本一致</td></tr>
+<tr><th scope="row">失败时</th><td>恢复旧 payload，或把备份留在报告的路径</td></tr>
+<tr><th scope="row">深层或只读文件</th><td>走扩展路径</td></tr>
+<tr><th scope="row">目录链接</th><td>不跟随直接删除</td></tr>
+<tr><th scope="row">已安装的 App</th><td>不替换</td></tr>
+</tbody>
+</table>
+<p><code translate="no">verify-release-version.py --installed-app</code> 接受安装目录或 EXE，不启动就读取 PE 版本元数据，要求与运行时清单和内嵌 Python 包元数据一致。第四段为零时规范化；非零不丢弃。</p>
+</details>
+
+<h2 id="local-refresh">本地刷新发布</h2>
+<p><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/scripts/release/windows-refresh-transaction.ps1"><code translate="no">windows-refresh-transaction.ps1</code></a> 按顺序发布已校验的同级源和目标对，覆盖 App、CLI 运行时和启动器。加载脚本没有副作用。</p>
+<details>
+<summary>事务契约</summary>
+<ul>
+<li>路径不得重叠；拒绝驱动器相对路径和被重定向的祖先。使用扩展路径，不改 ACL 或机器设置。</li>
+<li>第一个目标的父目录里一把排他 OS 锁。载荷检查在锁内进行。</li>
+<li>四个回调：静默旧安装、校验已发布、静默失败的替换、恢复旧服务。每个都必须恰好返回布尔 true。</li>
+<li>刷盘的 JSON 日志记录每个源、目标和备份。按序发布，反序补偿。</li>
+<li>成功保留原件和回执，不删除运行时目录。关闭或回滚失败时保留日志并拒绝后续尝试。</li>
+<li>这是补偿式发布，不是崩溃原子的：恢复必须检查记录的路径，不能相信最后的标志。</li>
+<li>仍需构建：冻结检出、App 和 CLI 共用一个 wheel、停 worker 前校验、在默认 profile 和端口验证、与 CLI 和 Desktop 安装锁协调。</li>
+</ul>
+</details>
+
+<h2 id="w4">W4：命令沙箱</h2>
+<p>兼容层找到真实的 WSL2 发行版，校验 Bash 和 bubblewrap，探测命名空间，用 <code translate="no">wslpath</code> 转换路径。bubblewrap 提供与 Linux 相同的边界：只读根、可写工作区根、拒绝路径、PID/IPC/UTS 命名空间、私有临时目录，除非策略允许否则加网络命名空间。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">sandbox.mode</code></th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">off</code>（默认）</th><td>只在打开沙箱开关的对话中启用</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td>探测成功后所有对话都启用；否则原生、无沙箱</td></tr>
+<tr><th scope="row"><code translate="no">workspace-write</code></th><td>在入口报告缺少 WSL2 或 bubblewrap；只有 <code translate="no">sandbox.unavailable_policy=refuse</code> 时拒绝执行，否则在主机 shell 里运行</td></tr>
+</tbody>
+</table>
+<p class="note">探测不改 ACL、所有权、权限、Defender 或 WSL 设置。AppContainer 需要按应用做能力和 ACL 工作。Job Object 能限 CPU 和进程，但没有文件系统和网络边界。</p>
+<p>没有 WSL2 时，沙箱开关不可用，它的提示写 <strong>Sandbox unavailable: needs WSL2</strong>、缺什么和 <code translate="no">wsl --install</code>；<code translate="no">doctor</code> 也这样写。<code translate="no">sandbox.unavailable_policy</code> 在 Windows 上默认 <code translate="no">warn</code>，其他平台默认 <code translate="no">refuse</code>，所以命令在主机 shell 里运行，不会全部失败。</p>
+<details>
+<summary>为什么这样设计</summary>
+<p>Claude Code（srt-win 加 WFP sublayer）和 Codex（<code translate="no">windows-sandbox-rs</code>，RestrictedToken 和 Elevated 两级）都做原生沙箱，MiniMax Code 内置了 srt-win。原生沙箱是 ACL、令牌和过滤规则组成的 Rust 或 C 子系统，所以暂时保留 WSL2，原生沙箱以后照 Codex 的 RestrictedToken 级别做。</p>
+<p>大多数 Windows 机器没有 WSL2，默认 <code translate="no">refuse</code> 让这个开关等于“所有命令都失败”。原因写在开关上，它只和这个控件有关。</p>
+</details>
+
+<h2 id="command-shell">命令 shell</h2>
+<p>命令和钩子在哪个 shell 里运行、模型被告知什么、权限规则怎么读 PowerShell：<a href="windows-command-shell.zh.html">Windows 命令 shell</a>。</p>
+
+<h2 id="shortcut-keys">Windows 和 Linux 浏览器里的快捷键</h2>
+<p>提示和按键处理都问 <code translate="no">lib/shortcut-keys.ts</code>：macOS 是 ⌘，其他系统是 Ctrl。在桌面 App 里，下面这些键归菜单管。在浏览器标签页里，浏览器或系统先处理它们。</p>
+<table class="stack fixed" id="shortcut-collisions">
+<thead><tr><th scope="col">按键</th><th scope="col">页面里的作用</th><th scope="col">浏览器或系统的动作</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ctrl+N</th><td>新对话</td><td>打开一个浏览器窗口</td></tr>
+<tr><th scope="row">Ctrl+W</th><td>关闭当前窗格</td><td>关闭浏览器标签页</td></tr>
+<tr><th scope="row">Ctrl+Shift+T</th><td>重新打开刚关的标签</td><td>重新打开浏览器刚关的标签页</td></tr>
+<tr><th scope="row">Alt+空格</th><td>按住说话</td><td>Windows 打开窗口菜单；有些 Linux 桌面打开启动器</td></tr>
+<tr><th scope="row">Ctrl+Alt+方向键</th><td>没有绑定：平铺快捷键只有 macOS 有，其他系统的菜单不显示按键</td><td>有些 Linux 桌面切换工作区</td></tr>
+<tr><th scope="row">终端里的 Ctrl+K</th><td>没有绑定：这个键留给 shell，所以清空视图没有快捷键</td><td>无</td></tr>
+</tbody>
+</table>
+
+<h2 id="host-features">依赖操作系统的功能</h2>
+<p>每项功能要么可用，要么用一句话说明这台电脑缺什么并拒绝。<code translate="no">GET /api/system/features</code> 按功能返回 Worker 所在电脑的情况：<code translate="no">available</code>、<code translate="no">reason</code>，以及对应开关写入的 <code translate="no">setting</code> 键。权限授予是另一份报告：<a href="../runtime/security/system-access.zh.html">系统访问</a>。</p>
+<table class="stack fixed" id="host-feature-table">
+<thead><tr><th scope="col">功能</th><th scope="col">macOS</th><th scope="col">Windows</th><th scope="col">Linux</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令沙箱</th><td>Seatbelt</td><td>默认 WSL2 发行版里的 bubblewrap；没有时各模式的行为见 <a href="#w4">W4</a></td><td>bubblewrap；用户命名空间被禁用时说明原因并拒绝</td></tr>
+<tr><th scope="row">沙箱按域名的网络规则</th><td>可用</td><td>拒绝：需要 macOS</td><td>拒绝：需要 macOS</td></tr>
+<tr><th scope="row">电脑操作：应用窗口</th><td>辅助功能与 ScreenCaptureKit</td><td>UI Automation 与 <code translate="no">PrintWindow</code>；需要 <code translate="no">comtypes</code></td><td>X11 下的 AT-SPI 与 <code translate="no">xdotool</code>。Wayland 和无桌面会话拒绝</td></tr>
+<tr><th scope="row">电脑操作：<code translate="no">code</code></th><td>可用</td><td>不提供</td><td>不提供</td></tr>
+<tr><th scope="row">录制某个应用的声音</th><td>ScreenCaptureKit</td><td>WASAPI 进程回环</td><td><code translate="no">parec</code> 与 <code translate="no">pactl</code>；没有则拒绝</td></tr>
+<tr><th scope="row">从截图读文字</th><td>Vision</td><td>装了 tesseract 就用，否则没有</td><td>装了 tesseract 就用，否则没有</td></tr>
+<tr><th scope="row">工作流录制</th><td>可用</td><td>拒绝：仅 macOS</td><td>拒绝：仅 macOS</td></tr>
+<tr><th scope="row">会议</th><td>麦克风和电脑声音；区分说话人</td><td>只有麦克风；会议状态里写明电脑声音不支持</td><td>只有麦克风；同样写明</td></tr>
+<tr><th scope="row">没有 App 窗口时的通知</th><td>运行时应用包，否则 <code translate="no">osascript</code></td><td>通过 Windows PowerShell 发出的 toast，显示它的名字</td><td><code translate="no">notify-send</code>；没有就不发</td></tr>
+<tr><th scope="row">凭据</th><td>profile 里的 JSON 文件，权限 <code translate="no">0600</code>；不用钥匙串</td><td>同样的文件，沿用 profile 继承的 ACL；不用凭据管理器</td><td>同样的文件，权限 <code translate="no">0600</code>；不用 libsecret</td></tr>
+<tr><th scope="row">后台浏览器</th><td>Playwright 的 Chromium，否则 <code translate="no">/Applications</code> 里的 Chrome 或 Edge</td><td>Playwright 的 Chromium，否则 Program Files 或 <code translate="no">LOCALAPPDATA</code> 下的 Chrome 或 Edge</td><td>Playwright 的 Chromium，否则 PATH 上的 <code translate="no">google-chrome</code> 或 <code translate="no">microsoft-edge</code></td></tr>
+<tr><th scope="row">你自己的 Chrome 或 Edge</th><td>在 <code translate="no">~/Library/Application Support</code> 找扩展</td><td>在 <code translate="no">LOCALAPPDATA</code> 下找扩展</td><td>在 <code translate="no">~/.config</code> 找扩展</td></tr>
+<tr><th scope="row">操作之后按截图坐标点击</th><td>用 Core Graphics 比较像素</td><td>用驱动自带的 PNG 读取器比较像素</td><td>同一个读取器</td></tr>
+<tr><th scope="row">阻止空闲睡眠</th><td>IOKit 断言</td><td>system-required 电源请求</td><td><code translate="no">systemd-inhibit</code> 对空闲和睡眠加锁；没有时只警告一次</td></tr>
+<tr><th scope="row">在文件管理器中显示</th><td><code translate="no">open -R</code></td><td><code translate="no">explorer.exe /select</code></td><td>用 <code translate="no">xdg-open</code> 打开所在文件夹；没有桌面会话则拒绝</td></tr>
+<tr><th scope="row">Rich REPL 的 <code translate="no">/copy</code></th><td><code translate="no">pbcopy</code></td><td><code translate="no">clip.exe</code>，UTF-16</td><td><code translate="no">wl-copy</code>、<code translate="no">xclip</code> 或 <code translate="no">xsel</code>；都没有就把文字打印出来</td></tr>
+<tr><th scope="row">语音播放</th><td><code translate="no">afplay</code></td><td>PATH 上的播放器，否则 PowerShell 的媒体播放器</td><td><code translate="no">mpg123</code>、<code translate="no">ffplay</code> 或 <code translate="no">mpv</code>；都没有就保留文件并记警告</td></tr>
+<tr><th scope="row">对话内更新</th><td>可用</td><td>版本库里的运行时可用，控制器以计划任务运行；版本库之外的安装拒绝，并指向 CLI 和 Desktop 更新器</td><td>同 Windows</td></tr>
+<tr><th scope="row">本地时间</th><td colspan="3">通过 Python 读系统本地时区；不需要时区数据库，也不查 locale</td></tr>
+</tbody>
+</table>
+<p class="note">不能运行电脑操作的电脑上，工具列表里没有它，它的参数里也没有 <code translate="no">code</code>。沙箱模式和原因通过对话的沙箱状态到达输入框。</p>
+
+<h2 id="background-tray">托盘里的后台 Worker</h2>
+<p>Assistant 和 Butler 让 Worker 在所有窗口关闭后继续运行，所以 App 把它显示在菜单栏（macOS）或通知区域（Windows、Linux），用系统原生菜单：</p>
+<ul>
+<li>一行状态，来自健康检查，每 10 秒刷新。</li>
+<li><strong>Open OpenProgram</strong>。</li>
+<li><strong>Stop background</strong>：像切换版本时那样停止 Worker，然后退出，因为 App 的窗口会再把它启动起来。</li>
+</ul>
+<p>关闭窗口和 Quit 的行为不变，也不多问。图标是单色的 App 图标 <code translate="no" data-claim="example">apps/desktop/main/worker/tray/trayTemplate.png</code>；没有这个文件就不创建托盘。</p>
+<details>
+<summary>为什么这样设计</summary>
+<p>Claude Code 和 Codex 没有常驻进程，OpenCode 的 server 跟随 CLI。常驻的桌面助手 Alma 靠菜单栏或托盘常驻，OpenProgram 的常驻 Agent 也需要这样。每次退出都询问，会给日常动作加一个弹窗。原生菜单不是新面板，唯一的提示放在 Stop 这一项上。</p>
+</details>
+
+<h2 id="uninstall-store">卸载与版本库</h2>
+<p><code translate="no">&lt;state&gt;\runtime\users.json</code> 记录哪些安装在使用版本库（<code translate="no">versions/users.py</code>）：<code translate="no">{install_id, kind: app|cli, path}</code>。每次 Worker 启动都登记它的安装，所以较早的安装在首次启动时登记。</p>
+<p>App 的安装程序只在版本库里已经有版本时登记自己：首次启动把种子解包进空的 <code translate="no">&lt;state&gt;\runtime</code>，里面有别的文件就拒绝。写入时加锁，用 <code translate="no">replace_file</code> 发布。</p>
+<p>卸载时从列表里去掉自己那一条；一条都不剩时，询问是否一并删除下载的运行时版本，写明大小；默认回答是“否”，静默卸载保留它们。对话、设置和凭据永远不删。</p>
+<details>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">对比</th><th scope="col">卸载时</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>版本和用户数据分开放，不碰数据</td></tr>
+<tr><th scope="row">Codex</th><td>脚本只删自己的二进制</td></tr>
+<tr><th scope="row">OpenCode</th><td>交给包管理器</td></tr>
+</tbody>
+</table>
+<p>只有最后一个使用者才提供删除，是我们自己的做法：CLI、App 和 <code translate="no">dev</code> profile 可能共用一个版本库。这几 GB 能重新下载，所以可以提供删除；它是破坏性的，所以默认“否”。</p>
+</details>
+
+<h2 id="release-decisions">发布方面的决定</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事项</th><th scope="col">决定</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows 包失败</th><td>发布里只缺这个包，<strong>Check every planned package</strong> 写明它，和 macOS、Linux 一样。Codex 以“构建并签名成功”为门禁，全有或全无；这里一个平台失败不挡住其他平台的修复版本</td></tr>
+<tr><th scope="row">发布冒烟</th><td>每个 Windows 分支安装自己的包，先把提示用管道传给 <code translate="no">openprogram --print</code>，再经替身模型跑一次工具调用（<code translate="no">scripts/release/smoke-tool-call.py</code>）；Windows 契约包括 PowerShell 规则测试和 <code translate="no">--print</code> 的 Ctrl-Break 停止</td></tr>
+<tr><th scope="row">签名</th><td>Azure Trusted Signing，和 Codex 一样：不用保管硬件证书，按月付费，SmartScreen 不再挡首次安装</td></tr>
+<tr><th scope="row">Windows on Arm</th><td>五个锁定的依赖有 arm64 wheel 之前，发 x64 包在模拟下运行；之后照 Codex 的安装器出原生包。模拟下 <code translate="no">platform.machine()</code> 对 x64 Python 也回答 ARM64，所以凡是挑 wheel、内置 Git、发布资产或按需安装包目录的地方，都问解释器自己的构建（<code translate="no">openprogram/host/_platform/architecture.py</code>），从不问机器</td></tr>
+<tr><th scope="row">对话内更新</th><td>版本库的控制器：构建新版本、移动指针、保留上一版用于回滚，Windows 和其他平台一样。要退役的版本有文件被进程占用时留在原处，之后的一轮再移进 <code translate="no">trash</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么这样设计</summary>
+<p>Claude Code 把运行中的可执行文件改名为 <code translate="no">.old.&lt;时间戳&gt;</code>，下次启动时删除，因为它就地替换自己的二进制。</p>
+<p>版本库从不这样做：每个版本有自己的文件夹，只移动指针。Windows 上含有打开文件的文件夹既不能移动也不能改名，所以保留策略把它留下、下一轮再试，效果正是改名给 Claude Code 带来的效果。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">等级</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">W1</th><td>已有；Windows 任务是合并门禁。worker 的停止请求、计划任务的 start、stop、restart 和 Ctrl-Break 处理用注入的平台名测试；停止请求还在 Windows 单元测试任务里对真实子进程运行。没有任务会安装计划任务，所以启动脚本（包括它设置的 profile）只按生成的文本检查</td></tr>
+<tr><th scope="row">W2</th><td>已实现。Release 任务在 Windows runner 上构建 x64 ZIP，并在 Windows PowerShell 5.1 下用 <code translate="no">install-release.ps1</code> 安装；v1.1.0 发布了它。公开的 <code translate="no">install.ps1</code> 引导脚本和从已发布 ZIP 启动 worker 只由 Windows install smoke 工作流检查，该工作流还没有运行过</td></tr>
+<tr><th scope="row">W3</th><td>已实现。Release 任务在 Windows runner 上构建未签名的 x64 安装包；v1.1.0 因 Windows 更新文件构建失败而没有带上它，v1.2.0 是第一个按带上它来构建的版本。App 从未在 Windows 上启动。安装、启动并跑一次工具调用的门禁还没有运行过；在 <code translate="no">main</code> 上的一次演练是它的第一次验证。比较版本时去掉 electron-builder 加上的为零的第四段（1.2.0.0）</td></tr>
+<tr><th scope="row">W4</th><td>已实现；原生 AppContainer 和配额是未来工作</td></tr>
+<tr><th scope="row">签名</th><td>从未实际运行：仓库没有 Windows 证书，至今所有安装包都未签名。已决定用 Azure Trusted Signing，等账号开通；要加的是 <code translate="no">release.yml</code> Windows 分支里的 <code translate="no">azure/trusted-signing-action</code>，凭据放 secrets</td></tr>
+<tr><th scope="row">Windows on Arm</th><td>默认关闭，从未在 Release 运行中构建。锁定的依赖里有五个包没有 arm64 Windows wheel（<code translate="no">claude-agent-sdk</code>、<code translate="no">cryptography</code>、<code translate="no">httptools</code>、<code translate="no">tiktoken</code>、<code translate="no">torch</code>），构建要靠编译它们。runner 标签 <code translate="no">windows-11-vs2026-arm</code> 存在。命令行安装器在 Windows 11 on Arm 上回退到 x64 安装包，从安装器带有这项回退的第一个版本起生效；这个包和 x64 App 安装包在那里靠模拟能否运行，没有测过</td></tr>
+<tr><th scope="row">Arm 上的 x64</th><td>Windows install smoke 工作流也在 Arm runner 上安装 x64 文件；它还没有运行过</td></tr>
+<tr><th scope="row">薄壳</th><td>已实现。launcher 可交叉编译到 x64 和 arm64；它的控制台、Unicode 和 UTF-8 模式测试只在 Windows core 任务里运行。Release 的 Windows 任务和安装冒烟工作流把 App 装到中文名的用户文件夹下并启动，检查 Worker 的控制台、日志、UTF-8 模式、快捷方式 id 和路径长度，做一次工具调用，然后卸载</td></tr>
+<tr><th scope="row">冒烟里的 App 窗口</th><td>Worker 健康还不够：冒烟要等到 <code translate="no">web auth-url</code> 给出已登录的地址、并且经 DevTools 端口读到的 App 窗口显示 <code translate="no">/chat</code>。然后关掉 App、留着 Worker、重新打开 App，确认 DevTools 端口属于新的 App</td></tr>
+<tr><th scope="row">App 冒烟首次运行</th><td>1.2.0 演练，x64：安装、首次启动到健康的 Worker、版本库（没有链接，最长路径 239 个字符）和工具调用都通过。冒烟脚本自己有三项检查出错，已修好：Worker 带引号的命令行、开始菜单位置（现在向 shell 询问，并写出在别处找到的位置）、用 cp1252 输出。快捷方式是否存在、卸载、校验和与上传步骤以及 Arm 上的运行都尚未证实</td></tr>
+<tr><th scope="row">卸载</th><td>使用者列表、安装程序的登记和最后一个卸载程序的询问已经做好；询问是默认“否”的是/否对话框，不是自定义页面上的复选框。命令行安装只在它的 Worker 启动时登记，也没有卸载程序来移除自己，所以两者都装过的电脑上，CLI 那一条不去掉，版本库就一直保留。两种回答都没有在 Windows 上运行过。命名 profile 的 Worker 和任务不会被停止</td></tr>
+<tr><th scope="row">长路径</th><td>壳和 launcher 自己能打开长路径；Python 需要系统开关。最深的文件在用户文件夹下约 218 个字符，文件夹名不超过 32 个字符时在 260 的限制内。冒烟工作流会测量它</td></tr>
+<tr><th scope="row">文本与文件</th><td>编码、替换和二进制描述符这几条规则由仓库契约和注入平台名的测试守住；都没有在 Windows 上运行过。<code translate="no">openprogram/state</code> 之外还有 94 处文本模式的子进程调用在发布的模式下按 UTF-8 解码，遇到按 OEM 代码页输出的工具会失败。用 <code translate="no">-I</code> 启动的辅助进程和 App 的短命令仍按系统代码页运行。<code translate="no">OPENPROGRAM_STATE_DIR</code> 只移动安装的运行时：配置、会话和凭据仍在用户主目录下</td></tr>
+<tr><th scope="row">文件替换</th><td>发布和对话文件夹重命名都会等过共享冲突；测试注入这种拒绝，都没有在 Windows 上运行过。等待只有一秒，所以文件夹被仍在其中运行的命令占用时会被拒绝。删除对话是就地删除文件，Windows 占用的文件会留下。Provider 录制通过文本模式的描述符写入</td></tr>
+<tr><th scope="row">系统相关功能</th><td>Windows 的电源请求、toast、剪贴板和资源管理器命令，Linux 的睡眠锁，以及 PNG 读取器，都在平台边界用替身测试；没有在 Windows 或 Linux 上运行过。还没有客户端读取 <code translate="no">/api/system/features</code>，所以录制按钮、会议页和空闲睡眠开关仍在使用时才知道功能缺失。macOS 之外，会议不录电脑声音，工作流录制没有后端</td></tr>
+<tr><th scope="row">本地刷新</th><td>只有底层能力：编排、崩溃恢复、已安装 App 验收待完成</td></tr>
+<tr><th scope="row">命令 shell</th><td>见 <a href="windows-command-shell.zh.html#implementation-status">Windows 命令 shell</a></td></tr>
+<tr><th scope="row">托盘</th><td>已做好，缺图标：图标等用户看过前后对比稿并批准，加上之前不出现托盘。状态行只说在不在运行；正在跑的任务数需要带认证的读取，没有显示</td></tr>
+<tr><th scope="row">没有 WSL2 时的沙箱</th><td><code translate="no">warn</code> 默认值和 WSL2 原因用注入的平台测试；都没有在 Windows 上运行过。原生沙箱照 Codex 的 RestrictedToken 级别做，是未来工作</td></tr>
+<tr><th scope="row">浏览器里的快捷键</th><td>被浏览器留用的键在 Windows 和 Linux 上没有第二套绑定，语音输入也没有一个 Windows 不占用的键。尚未决定</td></tr>
+<tr><th scope="row">权限规则里的路径</th><td>用 Windows 路径规则和模拟的磁盘测试，没有在 Windows 上运行过。macOS 上允许规则按写下的大小写比较，大小写不同的规则会再次询问</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="installation-packaging.zh.html">安装与打包</a></p>

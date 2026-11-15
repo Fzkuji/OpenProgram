@@ -1,3 +1,7 @@
+# -NodeModules DIR is a local build from a verified toolchain: node_modules is
+# copied from DIR, `npm ci` is skipped, and the docs build uses
+# OPENPROGRAM_DOCS_PYTHON, whose environment already has the dependencies.
+param([string]$NodeModules = "")
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
@@ -15,7 +19,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $WebDir = Join-Path $RepoRoot "apps\web"
 $SourceDir = Join-Path $WebDir "out"
 $NextBuildDir = Join-Path $WebDir ".next"
-$TargetDir = Join-Path $RepoRoot "apps\server\openprogram_server\_webui\_frontend"
+$TargetDir = Join-Path $RepoRoot "openprogram\interfaces\server\_frontend"
 $LegacyTargetDir = Join-Path $RepoRoot "openprogram\webui\_frontend"
 $DocsSourceDir = Join-Path $RepoRoot "docs\_site"
 $DocsTargetDir = Join-Path $TargetDir "docs"
@@ -56,7 +60,17 @@ try {
     # workspace-scoped `npm ci` prunes Desktop devDependencies from the shared
     # root node_modules tree, which makes the following electron-builder step
     # disappear during `dist:win`.
-    Invoke-Native $Npm ci --ignore-scripts --no-audit --no-fund
+    if ($NodeModules) {
+        foreach ($Found in Get-ChildItem -LiteralPath $NodeModules -Recurse -Directory -Filter "node_modules" |
+            Where-Object { $_.FullName -notmatch 'node_modules.*node_modules' }) {
+            $Relative = $Found.FullName.Substring((Resolve-Path $NodeModules).Path.Length).TrimStart("\")
+            $Target = Join-Path $RepoRoot $Relative
+            Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
+            Copy-Item -LiteralPath $Found.FullName -Destination $Target -Recurse
+        }
+    } else {
+        Invoke-Native $Npm ci --ignore-scripts --no-audit --no-fund
+    }
     Remove-Item -LiteralPath $SourceDir, $NextBuildDir -Recurse -Force -ErrorAction SilentlyContinue
     $env:NEXT_IGNORE_INCORRECT_LOCKFILE = "1"
     try {
@@ -66,6 +80,10 @@ try {
         Remove-Item Env:NEXT_IGNORE_INCORRECT_LOCKFILE -ErrorAction SilentlyContinue
     }
 
+    if ($NodeModules) {
+        if (-not $env:OPENPROGRAM_DOCS_PYTHON) { throw "-NodeModules needs OPENPROGRAM_DOCS_PYTHON" }
+        Invoke-Native $env:OPENPROGRAM_DOCS_PYTHON -m scripts.docs_site.build
+    } else {
     $DocsPythonRoot = Join-Path ([IO.Path]::GetTempPath()) (
         "openprogram-docs-python-" + [guid]::NewGuid().ToString("N")
     )
@@ -82,6 +100,7 @@ try {
             $env:UV_PYTHON_INSTALL_DIR = $PreviousPythonInstallDir
         }
         Remove-Item -LiteralPath $DocsPythonRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
     }
 } finally {
     Pop-Location
@@ -110,6 +129,12 @@ Get-ChildItem -LiteralPath $SourceDir -Force |
 New-Item -ItemType Directory -Path $DocsTargetDir -Force | Out-Null
 Get-ChildItem -LiteralPath $DocsSourceDir -Force |
     Copy-Item -Destination $DocsTargetDir -Recurse -Force
+
+if ($NodeModules) {
+    # A version carries its terminal UI inside the bundle it is staged with.
+    New-Item -ItemType Directory -Path (Join-Path $TargetDir "tui") -Force | Out-Null
+    Copy-Item -LiteralPath $TuiBundle -Destination (Join-Path $TargetDir "tui\index.cjs")
+}
 
 $ChatPath = Join-Path $TargetDir "chat.html"
 Invoke-Native $Python (Join-Path $PSScriptRoot "verify-staged-web.py") $ChatPath

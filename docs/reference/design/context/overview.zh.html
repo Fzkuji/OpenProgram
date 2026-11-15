@@ -1,0 +1,265 @@
+<title>概览</title>
+<meta name="description" content="上下文层如何决定每次调用模型读到什么：组装流程、DAG、工具输出、压缩、附着与合并、占用。">
+<span id="context-上下文层"></span>
+<h1>概览</h1>
+<p>每次调用把会话执行 DAG 的一部分渲染成 <code translate="no">Context</code>（system、messages、tools）：它延续的那条分支，每个工具结果按它那一轮发出的样子，窗口快满时最早的若干轮换成一段摘要。本层决定喂什么；<a href="../providers/README.html">模型服务层</a>决定怎么发。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="process_user_turn 调用 engine.prepare，从 DAG 渲染历史并计算令牌预算。达到预算的 80% 时，engine.compact 就地写摘要。随后智能体循环把 Context 发给模型服务。模型服务报告上下文溢出时，运行响应式压缩并重试一次。">
+  <defs>
+    <marker id="ov-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="ov-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <text class="t-big" x="0" y="40">准备</text>
+  <text class="t-soft" x="0" y="66">从 DAG 渲染历史，</text>
+  <text class="t-soft" x="0" y="86">计算令牌预算</text>
+  <line class="ln" x1="80" y1="33" x2="164" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="176" y="40">压缩</text>
+  <text class="t-soft" x="176" y="66">预算达 80% 时，</text>
+  <text class="t-soft" x="176" y="86">就地写摘要</text>
+  <line class="ln" x1="262" y1="33" x2="344" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="356" y="40">智能体循环</text>
+  <text class="t-soft" x="356" y="66">system、messages、</text>
+  <text class="t-soft" x="356" y="86">tools</text>
+  <line class="ln" x1="460" y1="33" x2="544" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="556" y="40">模型服务</text>
+  <path class="ln-no" d="M600 52V126H220V102" marker-end="url(#ov-n)"/>
+  <text class="t-no" x="240" y="150">上下文溢出：响应式压缩，重试一次</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>准备</strong><small>从 DAG 渲染历史，计算令牌预算</small></li>
+  <li><strong>压缩</strong><small>预算达 80% 时，就地写摘要</small></li>
+  <li><strong>智能体循环</strong><small>system、messages、tools</small></li>
+  <li class="flow-end"><strong>模型服务</strong><p class="refused">上下文溢出：响应式压缩，重试一次</p></li>
+</ol>
+</figure>
+<p class="note">DAG 渲染是唯一流程，渲染失败时本轮明确失败。辅助调用（摘要、记忆整理、分支摘要、mixture-of-agents）绕过 <code translate="no">engine.prepare</code>，自建最小 <code translate="no">Context</code>：一段系统提示和一条用户消息，不带工具。</p>
+
+<details>
+<summary><code translate="no">engine.prepare</code> 做什么</summary>
+<p><code translate="no">process_user_turn</code>（<code translate="no">openprogram/runtime/conversation/turn_runtime/</code>）调用 <code translate="no">openprogram/runtime/context/engine.py</code>：</p>
+<ol>
+<li>扫描引用：后文引用的 <code translate="no">tool_use</code> id。</li>
+<li>解析 head，然后 <code translate="no">render_context</code>，再 <code translate="no">render_dag_messages</code>。</li>
+<li>取调用方组装的系统提示（身份、<code translate="no">AGENTS.md</code> 链、技能、工具）。</li>
+<li>计算令牌预算：系统、历史、工具、输出预留。</li>
+<li>对账用量：上次模型服务实测，加上此后新增内容的本地估算。</li>
+<li>返回 <code translate="no">TurnPrep</code>。</li>
+</ol>
+</details>
+
+<h2 id="storage-model-dag">存储：DAG</h2>
+<p>基于 git、只追加的会话存储（<code translate="no">openprogram/state/store/session/</code>）。没有规则会改写节点。每轮是一个提交，<code translate="no">predecessor</code> 指向它回应的对象。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">发新消息</th><td>在 HEAD 下追加节点，HEAD 前进</td></tr>
+<tr><th scope="row">重试</th><td>内容相同的兄弟节点</td></tr>
+<tr><th scope="row">编辑</th><td>内容不同的兄弟节点</td></tr>
+<tr><th scope="row">切换版本 <code translate="no">&lt; N/M &gt;</code></th><td>检出到兄弟节点，只重新渲染</td></tr>
+<tr><th scope="row">复制对话</th><td>新会话，持有到 HEAD 为止的历史</td></tr>
+</tbody>
+</table>
+<p class="note">智能体运行时拒绝编辑、重试和检出，避免活动执行树挂在将失效的节点上。检出不回滚工作目录。</p>
+
+<details>
+<summary><code translate="no">Call</code> 节点字段</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code>、<code translate="no">created_at</code>、<code translate="no">metadata</code></th><td>标识、墙钟时间、附加信息</td></tr>
+<tr><th scope="row"><code translate="no">seq</code></th><td>会话内递增，唯一排序键</td></tr>
+<tr><th scope="row"><code translate="no">role</code></th><td><code translate="no">user</code>、<code translate="no">llm</code> 或 <code translate="no">code</code></td></tr>
+<tr><th scope="row"><code translate="no">name</code></th><td>模型 id、函数名或用户名；<code translate="no">context/*</code> 是流程节点</td></tr>
+<tr><th scope="row"><code translate="no">input</code></th><td>提示块或参数</td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td>回复、返回值或用户内容。永久保留，压缩不碰</td></tr>
+<tr><th scope="row"><code translate="no">caller</code></th><td>调用边；顶层轮次为 <code translate="no">ROOT</code></td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>对话边：本轮延续的那一轮</td></tr>
+<tr><th scope="row"><code translate="no">reads</code></th><td>进入本次提示的节点</td></tr>
+</tbody>
+</table>
+<p class="note">流程节点同样入链：<code translate="no">context/system_prompt</code> 在系统提示变化时记录原文；<code translate="no">context/summary</code> 代替被压缩的轮次。</p>
+</details>
+
+<h2 id="rendering-aging-and-compaction">渲染与压缩</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">选取</th><td><code translate="no">render_context</code> 从 head 沿 predecessor 链回溯，按帧和 <code translate="no">expose</code> 规则纳入每轮的调用子树，不写任何东西。<code translate="no">render_dag_messages</code> 把选中的节点变成发给模型服务的消息；直接函数调用变成文本对。</td></tr>
+<tr><th scope="row">已结束的轮次</th><td>按这一轮的请求当时发出的样子渲染：存下的轮次块（召回的记忆、运行说明）放在用户消息上，然后每次模型服务的响应是一条助手消息，用回复自己的 provider、api、model，后接这些调用的结果。这条消息含这次响应的推理、用模型服务给的消息 id 的文字，以及调用。</td></tr>
+<tr><th scope="row">推理</th><td>已结束轮次的推理项整个发回给写这条回复的模型（有摘要时才显示）。换了模型就一项都不发：它用不了这些推理项，还会把摘要当成助手说过的话。</td></tr>
+<tr><th scope="row">响应标记</th><td>回复的有序块标出每次响应从哪里开始（<code translate="no">round_start</code>）；从检查点恢复的轮次从日志里取这些标记，每个决策一个。没有这些标记的回复（更早记录的、文字被转存的）每个调用单独一条消息，文字放最后。</td></tr>
+<tr><th scope="row">旧工具结果</th><td>不管后面跟了多少轮，都按它那一轮发出的样子完整发送。没有老化；只有压缩会替换旧轮次。旧版本记下的 <code translate="no">render_manifest</code> 不再读取，那样的轮次也完整渲染。</td></tr>
+<tr><th scope="row">压缩</th><td>达到 <code translate="no">context.auto_compact_percent</code>（默认 80）、执行 <code translate="no">/compact</code> 或模型服务拒绝过长请求时，<code translate="no">engine.compact</code> 把最早的完整轮次总结成一个 <code translate="no">context/summary</code>，其 <code translate="no">covers_ids</code> 列出被替代的轮次。每个分支读完整位于自己链上、覆盖最远的那份摘要加保留尾部；没有的分支渲染原文。摘要必须非空且严格更小；被总结的内容里不带图片。<a href="compaction.html">压缩</a></td></tr>
+</tbody>
+</table>
+
+<h3 id="cross-turn-tool-context">工具输出</h3>
+<p>一条规则贯穿始终：之后的请求发出的字节和这一轮发出的一样。结果只在产生的地方截一次，历史存的就是截过的样子。代码：<code translate="no">runtime/agent/loop/tool_dispatch.py</code>（<code translate="no">_as_stored</code>）、<code translate="no">state/store/session/spill.py</code>、<code translate="no">models/providers/shared/tool_attachments.py</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">结果形式</th><td>本轮把结果作为一个文本块发出，拼法与节点存的一致，图片留在原位，所以之后每个请求在任何提供商上发出的字节都一样</td></tr>
+<tr><th scope="row">结果大小</th><td>按权重计（<code translate="no">state/store/session/weight.py</code>：中日韩字符和全角字符算 1，其余算 0.25，约等于一个 token）。上限是模型的 <code translate="no">tool_output_weight</code>，默认 10,000（Codex 的 <code translate="no">truncation_policy</code>），不超过窗口的 30%；工具自己声明的 <code translate="no">max_result_weight</code> 更小时取它（<code translate="no">spill.result_cap</code>）。放得下 10,000 个汉字或 40,000 个英文字符；8,000 token 的窗口上限是 2,400</td></tr>
+<tr><th scope="row">只截一次</th><td>工具从不自己截断：<code translate="no">@function(max_result_weight=…)</code> 把上限记在 <code translate="no">details["cap"]</code>，由循环来截。截断在换行处保留开头（60%）和结尾，再写出完整文字的路径和要读的行，形如 <code translate="no">read("…", offset, limit)</code>。先量好说明的长度再定结尾，所以结果从不超过上限，行号范围也准确</td></tr>
+<tr><th scope="row">完整文字</th><td>按内容只存一份，在 <code translate="no">&lt;对话&gt;/tool_results/&lt;sha256&gt;.txt</code>，随对话删除和备份。不在对话里时存到 profile 的 <code translate="no">tool_results/</code>，Worker 每天清理一次：超过 24 小时、没有任何对话记录提到的文件被删除；只要有一份记录读不了，就一个都不删（<code translate="no">tool_output_gc.py</code>）</td></tr>
+<tr><th scope="row">空结果</th><td>既没有文字也没有媒体的结果写成 <code translate="no">(name completed with no output)</code> 或 <code translate="no">failed</code>；只有媒体时不带空文本块</td></tr>
+<tr><th scope="row">引导和 AGENTS.md</th><td>记在结果的 <code translate="no">details["attachment"]</code>（<code translate="no">{text, paths, guides}</code>）上，单独截断，每组结果之后作为一条消息发出：Anthropic 和 Bedrock 上是同一条用户消息里的文本块，其他提供商是一条用户消息。已经附过的 AGENTS.md 从请求自己的消息里读出，所以分支、压缩、重启后的 Worker 各看各的</td></tr>
+<tr><th scope="row">读取大小</th><td><code translate="no">read</code> 自己按上限分页：一次放不下的范围给出连续的一页，停在完整的一行（PDF 停在完整的一页），并给出接着读的 offset。附件不再占这一页的地方</td></tr>
+<tr><th scope="row">媒体</th><td>一轮发出的图片、音频、视频块按内容存在 <code translate="no">&lt;对话&gt;/media/&lt;sha256&gt;.&lt;ext&gt;</code>；节点记下 <code translate="no">metadata.media = [{sha, mime, index, path}]</code>，渲染时把每块放回原来的位置。用户粘贴的图片也一样</td></tr>
+<tr><th scope="row">图片预算</th><td>构建请求的最后一步（<code translate="no">media_budget.bound_images</code>）：图片超过 25 MiB 时，最早的换成一句说明，直到剩 15 MiB，所以截断点每 10 MiB 才动一次，不是每个请求都动。发给不收图片的模型时，用户的图片换成一句说明</td></tr>
+<tr><th scope="row">用户的消息</th><td>从不截断：本轮和之后每轮都完整发送。超过 1,048,576 个字符时拒绝发送（<code translate="no">input_too_large</code>），文字留在输入框里；<code translate="no">--print</code> 以 2 退出</td></tr>
+<tr><th scope="row">卡片</th><td>显示工具自己输出的开头（<code translate="no">details["preview"]</code>，4,000 字符），不显示写给模型的说明，并标出"共 N 行，全文已保存"；打开时读保存的文件（<code translate="no">details["output"]</code>）</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">不老化</th><td>把旧结果换成占位，边界每动一次就改写一次缓存前缀；成批前进只是缓解，每隔几轮还是要整段重读不走缓存。Codex、Claude Code、Pi 和 OpenCode 1.19 都把结果留到压缩为止；旧输出是压缩的问题，不是渲染的问题</td></tr>
+<tr><th scope="row">只截一次，按权重</th><td>两道上限（工具按字符，再加循环）会把一些结果截两次，中文结果的 token 还是英文的四倍。Codex 在记录结果时按 token 截一次；权重就是不用分词器的这个计数，同一个上限在每个模型上都成立</td></tr>
+<tr><th scope="row">附件放在结果旁边</th><td>把引导和 AGENTS.md 拼进结果，<code translate="no">read</code> 就得预测它们的长度，过长的 AGENTS.md 还会剪掉一页。Claude Code 把它们作为结果之后单独的消息发出。它们存在结果上而不是新节点里，所以留在分支历史中，不需要新的节点类型，每个适配器放的位置都一样</td></tr>
+<tr><th scope="row">历史里的媒体</th><td>不存的话，之后的请求会丢掉这一轮发过的截图，字节变了，模型看过的东西也没了。Codex 和 Claude Code 都把图片留在历史里；预算沿用 OpenCode <code translate="no">boundImages</code> 的滞回，两次截断之间缓存不失效</td></tr>
+<tr><th scope="row">长消息</th><td>渲染时剪掉用户的粘贴，发出的文字就和这一轮不同，还藏掉了一部分。Codex、Claude Code、OpenCode 和 Pi 都完整发送输入；Codex 超过 1 MiB 字符就拒绝，这里也一样</td></tr>
+<tr><th scope="row">清理共享目录</th><td>结果的文字里写着它的文件名，之后每个请求都会再发这个名字，所以文件是记录，不是缓存。Hermes 按引用清理持久化的结果，读不全就不删；一天的宽限覆盖已经写了文件、还没写节点的运行</td></tr>
+<tr><th scope="row">卡片</th><td>人看工具做了什么，模型看有界的版本；混在一起时，人会看到一句写给模型的“去读某个文件”。Claude Code 和 Pi 都显示工具原文、剥掉这句说明。</td></tr>
+<tr><th scope="row">空结果</th><td>有的提供方拒绝空的工具结果，有的模型会当作调用没有返回；Claude Code、Pi 和 OpenCode 都补一句，我们用 Claude Code 的写法。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="pictures-and-pastes">图片和长消息</h3>
+<p>图片进入会话的每条路都写同一种记录，所以下一个请求带着本轮带过的图片，每个适配器都一样。代码：<code translate="no">state/store/session/media.py</code>、<code translate="no">runtime/conversation/branch_fork.py</code>、<code translate="no">models/providers/shared/google.py</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">保留什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">发出的消息</th><td>网页、桌面 App 和 TUI 用 <code translate="no">chat</code> 发图片；频道、ACP 和 <code translate="no">--print</code> 走本轮的准备步骤。两处都按本轮给每张图的位置记录：在文字之后，消息只有图片时从 0 开始。只有图片的消息渲染时没有文字块</td></tr>
+<tr><th scope="row">重试和编辑</th><td>重试把消息的 <code translate="no">media</code> 复制到新分支，并从保存的文件里读出同样的图片再发一次。编辑只发送、只保留这次编辑带的附件</td></tr>
+<tr><th scope="row">插话</th><td>运行中发出的消息先送文字，再送图片；节点按这些位置记录</td></tr>
+<tr><th scope="row">适配器</th><td>每种内置线路格式都带上保留的图片，不论是人发的还是工具返回的：Anthropic、OpenAI chat 和 Responses、Codex、Azure、Bedrock、Gemini 和 Gemini 订阅。Gemini API 适配器通过共享的 Gemini 转换生成内容，所以也有图片体积上限、工具结果之后的说明和工具结果里的图片</td></tr>
+<tr><th scope="row">旧会话</th><td>在保留图片之前存下的消息没有 <code translate="no">media</code>，照旧只发文字。它的文字写着上传文件保存的路径，模型可以再读</td></tr>
+<tr><th scope="row">长粘贴</th><td>完整保存，每个请求都完整发送；只有 1,048,576 字符的上限会拒绝发送</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">话题</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">按内容存在历史旁边</th><td>Codex（<code translate="no">ImageReference::Inline</code>）、Pi 的会话文件和 OpenCode 的 <code translate="no">file</code> 片段都把 base64 内联在历史里。这里一个节点是一行历史，搜索索引也读它，内联字节会让两者都膨胀；文件按 sha256 命名，和 Claude Code 的粘贴存储给粘贴文字命名一样，所以同一张截图在几个分支上发过或被重试，也只有一个文件</td></tr>
+<tr><th scope="row">什么时候去掉图片</th><td>压缩时不放进摘要的输入，同 Claude Code；超过 25 MiB 时最旧的换成一句说明（OpenCode 的滞回）；模型不收图片时换成说明（Codex）。别的情况都不去掉，所以前缀在这几处之间不动</td></tr>
+<tr><th scope="row">重试再发图片</th><td>重试的新分支就是同一条消息再发一次。不带图片，重试的那轮回答的是另一个问题，而且它之后的请求会带着第一次请求没带的图片</td></tr>
+<tr><th scope="row">不回填</th><td>旧消息保存的上传是原文件，不是发给模型的那份，后者可能缩小过；发原文件就是发本轮从没发过的东西。这些会话之后本来就只重发文字，不动它们就不改变任何字节</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="attach-merge">附着与合并</h2>
+<p>同一机制：附着指针，一个 <code translate="no">function="attach"</code> 的节点，作为旁支子节点挂在用户轮下。渲染为 <code translate="no">[Attached from "label"]</code> 和 <code translate="no">[End of attached content]</code> 之间的文本。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">用途</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">附着</th><td>被动：暂存，下次模型调用时读取</td></tr>
+<tr><th scope="row">子智能体汇报</th><td>指针含任务、最终回复和完整记录的 <code translate="no">read_conversation(session_id, head_id)</code> 地址。同步派生在 <code translate="no">agent</code> 工具结果里返回回复。</td></tr>
+<tr><th scope="row">合并</th><td><code translate="no">process_merge_turn()</code> 在目标 head 后为每个对等分支写一个指针，加一条合并指令，运行普通轮次。基准分支保持原文，其他可摘要。被合并的 head 打标，一个多父上下文提交记录来源。</td></tr>
+</tbody>
+</table>
+
+<h2 id="invariants">不变量</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">不变量</th></tr></thead>
+<tbody>
+<tr><th scope="row">DAG</th><td>只追加；压缩不改节点内容</td></tr>
+<tr><th scope="row">渲染</th><td>不写任何东西；转存发生在写入时。只读存下的节点：循环截过的工具结果、用户的消息和回复完整渲染；其他节点按转存标记里记下的上限截断（没有标记的按 32,000），不读当前上限或环境变量；工具结果带着存下的失败标记和媒体渲染</td></tr>
+<tr><th scope="row">已结束的轮次</th><td>模型不变时，下一轮的第一个请求以上一轮的最后一个请求开头，推理项和文字 id 也在内；只有模型服务自己执行的搜索除外，这一轮不存它。工具结果按模型读到的样子存下，以后照存下的样子再发，失败标记、附件和媒体也在内；只有旧版本打过标记的节点按标记里的截断发送。没有响应标记的回复重新渲染时顺序不同。</td></tr>
+<tr><th scope="row">历史调用</th><td>按存下的节点逐字节重渲染；没有随时间变化的策略参与</td></tr>
+<tr><th scope="row">摘要</th><td>一个会话最多一个活动摘要，下次压缩吸收它。不移动 HEAD，不改边</td></tr>
+<tr><th scope="row">分支</th><td>不读兄弟分支或派生子智能体的内部；它们只经附着指针进入</td></tr>
+<tr><th scope="row">检出</th><td>不重跑，不回滚工作目录</td></tr>
+</tbody></table>
+
+<h2 id="ui">界面</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">视图</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">历史</th><td>完整 DAG，每种角色一种节点形状：工具调用、重试分支、合并</td></tr>
+<tr><th scope="row">上下文时间线</th><td>已记录的上下文提交，同一分叉的兄弟分组；条目、状态徽标、令牌数。<code translate="no">apps/web/components/right-sidebar/context-commit-timeline/</code>、<code translate="no">ws_actions/context_commits.py</code></td></tr>
+<tr><th scope="row">圆环</th><td><code translate="no">apps/web/components/chat/badges/context-badge.tsx</code>：<code translate="no">total_used / window</code></td></tr>
+<tr><th scope="row"><code translate="no">/context</code> 面板</th><td><code translate="no">context-breakdown-panel.tsx</code>：相同字段，并算出 Free space</td></tr>
+</tbody>
+</table>
+
+<h3 id="occupancy">占用：一条记录，两个读者</h3>
+<pre translate="no" tabindex="0"><code>{"window": int, "total_used": int, "basis": "measured" | "estimated",
+ "estimated": int, "calibration": float}   # calibration 仅 measured 时有</code></pre>
+<p class="note"><code translate="no">openprogram/runtime/context/session_stats.py</code> 构建；<code translate="no">server.session_context_stats</code> 供给 <code translate="no">/context</code>；<code translate="no">server._broadcast_context_stats</code> 推送 <code translate="no">context_stats</code> 帧。<a href="occupancy-status.html">占用与压缩</a></p>
+<table class="stack">
+<thead><tr><th scope="col">依据</th><th scope="col">何时</th><th scope="col"><code translate="no">total_used</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">measured</code></th><td>真实请求刚完成</td><td>模型服务为该提示计费的量：<code translate="no">input_tokens + cache_read</code>。<code translate="no">calibration</code> 是同一图上的实测 ÷ 估算</td></tr>
+<tr><th scope="row"><code translate="no">estimated</code></th><td>此后图变了</td><td>用本地分词器按当前分支重算</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>什么触发重估，以及窗口</summary>
+<p>下一次请求的内容会变时，<code translate="no">server.refresh_context_stats</code> 重估并广播：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">变化</th><th scope="col">位置，在 <code translate="no">openprogram/interfaces/server/</code> 下</th></tr></thead>
+<tbody>
+<tr><th scope="row">轮中压缩</th><td><code translate="no">ws_actions/chat/context_usage.py</code></td></tr>
+<tr><th scope="row">切换模型</th><td><code translate="no">routes/execution/runtime.py</code>、<code translate="no">ws_actions/runtime.py</code></td></tr>
+<tr><th scope="row">分支检出、删除</th><td><code translate="no">ws_actions/branch.py</code></td></tr>
+<tr><th scope="row">兄弟检出</th><td><code translate="no">routes/chat_branches.py</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>实测值属于测量时的分支，换 head 就重估。</li>
+<li>占用取最后一次实测请求，从不累加一轮内的请求。空的终止事件保留上次实测；没有实测时界面用本地估算。旧累计格式的用量和校准失效，累计计费总额不变。</li>
+<li>窗口：请求所用 Model 的窗口，每次现场解析，不从保存的记录里读回；解析不到的模型没有窗口，界面只显示 token 数、不显示上限（<a href="occupancy-status.zh.html#window">窗口</a>）。</li>
+<li>WebSocket 聊天运行器在每个请求结束时记录提示大小，圆环和面板在工具调用之间更新。轮次结束时刷新分支 head 并持久化最终实测。</li>
+<li>加载会话时，可从未广播过的旧轮次恢复较新的用量记录，除非之后的会话编辑已覆盖它。</li>
+</ul>
+</details>
+
+<details>
+<summary><code translate="no">/context</code> 面板层级</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">详情</th></tr></thead>
+<tbody>
+<tr><th scope="row">系统提示</th><td>主提示词、输出风格、智能体自身提示、环境、<code translate="no">AGENTS.md</code>、技能索引、工作流和工具说明、计划模式，附原文</td></tr>
+<tr><th scope="row">工具</th><td>已加载、按需、MCP</td></tr>
+<tr><th scope="row">记忆</th><td>各层的 <code translate="no">MEMORY.md</code></td></tr>
+<tr><th scope="row">对话</th><td>按类型（<code translate="no">messages_detail.groups</code>）和最大消息（<code translate="no">messages_detail.top</code>），各链接到对话行</td></tr>
+</tbody>
+</table>
+<ul>
+<li>详情行按所属类别缩放，加起来等于类别总量。</li>
+<li>还没有会话的聊天读 <code translate="no">GET /api/context/draft?provider=&amp;model=</code>（<code translate="no">session_stats.compute_draft_breakdown</code>）。</li>
+<li><code translate="no">context/system_prompt</code> 元数据带 <code translate="no">sections: [{name, chars}]</code>，可把文本精确切回各成分。旧节点靠定位新构建的块来切分，定位不到的显示为 Other。</li>
+</ul>
+</details>
+
+<h2 id="three-layer-composition">三层的内容来源</h2>
+<table class="stack">
+<thead><tr><th scope="col">层</th><th scope="col">内容</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">L0</th><td>主提示词、输出风格、智能体指令、工具列表</td><td>系统提示组装</td></tr>
+<tr><th scope="row">L1</th><td>项目块和历史</td><td>系统提示组装；DAG 渲染、压缩</td></tr>
+<tr><th scope="row">L2</th><td>本次调用的输入和片段</td><td>当前轮次</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">权威实现</th><td><code translate="no">openprogram/runtime/context/engine.py</code>、<code translate="no">nodes.py</code>、<code translate="no">render.py</code>、<code translate="no">compaction/view.py</code>、<code translate="no">state/store/session/spill.py</code>、<code translate="no">media.py</code></td></tr>
+<tr><th scope="row">部分</th><td>上下文提交在轮次收尾和合并轮写入，不在渲染路径上；时间线不显示普通轮次的渲染视图</td></tr>
+<tr><th scope="row">尚未</th><td>摘要和分支摘要用固定提示（<code translate="no">compaction/prompts.py</code>），不跟随智能体的 <code translate="no">AGENTS.md</code>、身份或技能。没有手动固定或取消固定上下文条目。目录里还没有模型声明 <code translate="no">tool_output_weight</code>，所以每个模型都用默认值。输入框对 <code translate="no">input_too_large</code> 没有自己的提示（拒绝显示为"未发送"）；卡片上"全文已保存"那一行的样式还等确认。</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="composition.html">组成：每次调用如何分层</a></p>

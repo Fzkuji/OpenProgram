@@ -1,0 +1,81 @@
+<title>OpenAI 兼容接口</title>
+<meta name="description" content="在任何支持 OpenAI Chat Completions API 的工具里，把 OpenProgram 的 Agent 当作模型来用。">
+<meta name="covers" content="openprogram/interfaces/server/routes/openai_compatible.py">
+<h1>OpenAI 兼容接口</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 200" role="img" aria-label="另一个工具以 Web 令牌作 API key，向 18100 端口上的 Worker 发送 POST /v1/chat/completions。Worker 让作为模型名的那个 Agent 运行一轮，存为一个可在 App 里打开的对话，并按 OpenAI 的格式整段或流式回答。">
+  <defs><marker id="oa-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="20" width="190" height="70" rx="8"/>
+  <text class="t-big" x="16" y="48">你的工具</text>
+  <text class="t-soft" x="16" y="72">任意 OpenAI 客户端</text>
+  <line class="ln" x1="190" y1="55" x2="246" y2="55" marker-end="url(#oa-a)"/>
+  <rect class="tile" x="250" y="20" width="190" height="70" rx="8"/>
+  <text class="t-big" x="266" y="48">Worker</text>
+  <text class="t-cmd notranslate" translate="no" x="266" y="72">:18100/v1</text>
+  <line class="ln" x1="440" y1="55" x2="486" y2="55" marker-end="url(#oa-a)"/>
+  <rect class="tile" x="490" y="20" width="190" height="70" rx="8"/>
+  <text class="t-big" x="506" y="48">Agent 的一轮</text>
+  <text class="t-soft" x="506" y="72">工具、记忆、模型</text>
+  <text class="t-soft" x="0" y="130">API key：Web 令牌</text>
+  <text class="t-soft" x="250" y="130">model：Agent 的 id</text>
+  <text class="t-soft" x="490" y="130">存为一个对话</text>
+  <text class="t-soft" x="0" y="170">回答是 chat.completion，或一串以 [DONE] 结尾的分块。</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>你的工具</strong><small>任意 OpenAI 客户端，以 Web 令牌作 API key</small></li>
+<li><strong>Worker</strong><small><code translate="no">http://127.0.0.1:18100/v1</code>，model：Agent 的 id</small></li>
+<li class="flow-end"><strong>Agent 的一轮</strong><small>存为一个对话；整段或流式回答</small></li>
+</ol>
+</figure>
+<h2 id="connect-a-tool">接入工具</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row">Base URL</th><td><code translate="no">http://127.0.0.1:18100/v1</code>，或 <code translate="no">localhost</code>；改过端口就用 Worker 自己的端口</td></tr>
+<tr><th scope="row">API key</th><td><code translate="no">~/.openprogram/web/token</code> 里的 Web 令牌（profile 用 <code translate="no">~/.openprogram-&lt;profile&gt;/web/token</code>）。Worker 每次启动都换一个新的，所以在调用时读这个文件。</td></tr>
+<tr><th scope="row">Model</th><td>Agent 的 id，即 <code translate="no">GET /v1/models</code> 列出的那些，默认 Agent 在最前</td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>curl http://127.0.0.1:18100/v1/chat/completions \
+  -H "Authorization: Bearer $(cat ~/.openprogram/web/token)" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "main", "messages": [{"role": "user", "content": "Summarise README.md"}]}'</code></pre>
+<pre translate="no" tabindex="0"><code>from pathlib import Path
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:18100/v1",
+                api_key=(Path.home() / ".openprogram/web/token").read_text())
+for chunk in client.chat.completions.create(
+        model="main", stream=True,
+        messages=[{"role": "user", "content": "What changed today?"}]):
+    print(chunk.choices[0].delta.content or "", end="")</code></pre>
+<h2 id="what-a-request-does">一个请求做什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">一轮</th><td>Agent 的一轮，和在 App 里输入一样：用它的模型、工具、记忆和权限模式。运行时在 App 里可见，之后作为对话留着。</td></tr>
+<tr><th scope="row">消息</th><td>最后一条必须是用户的，它就是这一轮的消息。之前的消息，包括 <code translate="no">system</code>，作为调用方的上下文一起带上。内容是文本，或文本片段的列表。</td></tr>
+<tr><th scope="row">对话</th><td>每个请求新开一个对话。要接着之前的对话再跑一轮，把它的 id 放进 <code translate="no">conversation_id</code>；这时只发送最后一条消息。每个回答都在 <code translate="no">conversation_id</code> 和 <code translate="no">X-OpenProgram-Conversation-Id</code> 头里写明所属对话。</td></tr>
+<tr><th scope="row">流式</th><td><code translate="no">"stream": true</code> 把回复文字作为 <code translate="no">chat.completion.chunk</code> 事件发出，然后是带 <code translate="no">finish_reason</code> 的一块，最后是 <code translate="no">data: [DONE]</code>。<code translate="no">stream_options.include_usage</code> 会多发一块用量。</td></tr>
+<tr><th scope="row">审批</th><td>没有人在场作答，所以需要审批或要问你的步骤会立刻被拒绝，和 <code translate="no">openprogram --print</code> 一样。</td></tr>
+<tr><th scope="row">停止</th><td>关闭流式请求会停止它的这一轮。</td></tr>
+<tr><th scope="row">忽略</th><td><code translate="no">temperature</code>、<code translate="no">max_tokens</code>、<code translate="no">tools</code> 等采样和函数调用字段：用的是 Agent 自己的设置和工具。<code translate="no">n</code> 不是 1 会被拒绝。</td></tr>
+</tbody></table>
+<h2 id="errors">错误</h2>
+<p>每个拒绝都是 OpenAI 的格式：<code translate="no">{"error": {"message", "type", "param", "code"}}</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">何时</th></tr></thead>
+<tbody>
+<tr><th scope="row">401 <code translate="no">invalid_api_key</code></th><td>没有令牌，或用的是之前某个 Worker 的令牌：重新读令牌文件</td></tr>
+<tr><th scope="row">400</th><td>请求格式不对；<code translate="no">param</code> 指出是哪个字段</td></tr>
+<tr><th scope="row">404 <code translate="no">model_not_found</code></th><td>没有这个 id 的 Agent</td></tr>
+<tr><th scope="row">404 <code translate="no">unknown_url</code></th><td>本服务不提供的 <code translate="no">/v1</code> 端点，例如 <code translate="no">/v1/responses</code></td></tr>
+<tr><th scope="row">409 <code translate="no">conversation_busy</code></th><td>指定的对话正在跑一轮；等它结束再发</td></tr>
+<tr><th scope="row">429、502</th><td>Agent 的模型出错；<code translate="no">code</code> 是原因。流式时错误是 <code translate="no">[DONE]</code> 前的最后一个事件。</td></tr>
+</tbody></table>
+<h2 id="scope">范围</h2>
+<ul>
+<li>令牌就是主人的身份：拿到它的人就是以你的身份操作。除非配置了<a href="../server/configuration.zh.html#who-can-reach-the-server">从其他机器访问</a>，否则让 Worker 只监听本机。</li>
+<li>只给浏览器之外的调用方用。来自其他源的网页会被拒绝。</li>
+<li>只有 Chat Completions；没有 <code translate="no">/v1/responses</code>、embeddings 或图片。</li>
+</ul>
+<p class="next"><a href="acp.zh.html">编辑器（ACP）</a></p>

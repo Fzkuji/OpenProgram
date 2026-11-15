@@ -1,0 +1,224 @@
+<title>Meetings</title>
+<meta name="description" content="How OpenProgram records a call on this computer, transcribes both sides, tells the other voices apart and writes a summary in a new conversation.">
+<h1>Meetings</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 310" role="img" aria-label="Two tracks are captured: the microphone on the page and the computer's sound on the server, in 30-second chunks. Each chunk is converted, skipped if silent, transcribed and merged into the transcript. At Stop the queue drains, the system track is diarized once, one tool-less turn writes the summary, and the meeting is done.">
+  <defs><marker id="mt-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="18">Capture</text><text class="t-soft" x="232" y="18">Each chunk, one worker</text><text class="t-soft" x="470" y="18">At Stop</text>
+  <text class="t-big" x="0" y="56">Microphone</text><text class="t-soft" x="0" y="78">page, WebM, 30 s</text>
+  <text class="t-big" x="0" y="126">Computer sound</text><text class="t-soft" x="0" y="148">server, WAV, 30 s</text>
+  <line class="ln" x1="150" y1="49" x2="222" y2="49" marker-end="url(#mt-a)"/>
+  <path class="ln" d="M170 119H190V49"/>
+  <text class="t-big" x="232" y="56">Convert</text>
+  <text class="t-soft" x="232" y="78">16 kHz mono WAV</text>
+  <line class="ln" x1="238" y1="88" x2="238" y2="108" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="232" y="126">Skip silence</text>
+  <text class="t-soft" x="232" y="148">peak below 300/32767</text>
+  <line class="ln" x1="238" y1="158" x2="238" y2="178" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="232" y="196">Transcribe</text>
+  <text class="t-soft" x="232" y="218">in the meeting's language</text>
+  <line class="ln" x1="238" y1="228" x2="238" y2="248" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="232" y="266">Merge</text>
+  <text class="t-soft" x="232" y="288">rewrites transcript.json</text>
+  <text class="t-big" x="470" y="56">transcribing</text>
+  <text class="t-soft" x="470" y="78">queue drains</text>
+  <line class="ln" x1="476" y1="88" x2="476" y2="108" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="470" y="126">Diarize</text>
+  <text class="t-soft" x="470" y="148">system track, once</text>
+  <line class="ln" x1="476" y1="158" x2="476" y2="178" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="470" y="196">summarizing</text>
+  <text class="t-soft" x="470" y="218">one tool-less turn</text>
+  <line class="ln" x1="476" y1="228" x2="476" y2="248" marker-end="url(#mt-a)"/>
+  <text class="t-big" x="470" y="266">done</text>
+  <text class="t-soft" x="470" y="288">summary.md</text>
+  <path class="ln" d="M380 259H430V49H460" marker-end="url(#mt-a)"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Microphone</strong><small>page, WebM, 30 s</small></li><li><strong>Computer sound</strong><small>server, WAV, 30 s</small></li><li><strong>Convert</strong><small>16 kHz mono WAV</small></li><li><strong>Skip silence</strong><small>peak below 300/32767</small></li><li><strong>Transcribe</strong><small>in the meeting's language</small></li><li><strong>Merge</strong><small>rewrites transcript.json</small></li><li><strong>transcribing</strong><small>queue drains</small></li><li><strong>Diarize</strong><small>system track, once</small></li><li><strong>summarizing</strong><small>one tool-less turn</small></li>
+  <li class="flow-end"><strong>done</strong><small>summary.md</small></li>
+</ol>
+</figure>
+<p class="note">Built from what exists: voice-input speech engines, the long-running session shape of workflow recording, the owner turn of reminders and check-ins, the browser microphone API and computer use's ScreenCaptureKit stream. No new infrastructure.</p>
+
+<h2 id="shape">Parts</h2>
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Where</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Microphone</th><td><code translate="no">apps/web/lib/meetings/meeting-recorder.ts</code></td><td><code translate="no">getUserMedia</code>, one <code translate="no">MediaRecorder</code>, chunks uploaded in order</td></tr>
+<tr><th scope="row">Computer sound</th><td><code translate="no">meeting/system_audio.py</code> on <code translate="no">openprogram/host/_platform/screen_capture_audio.py</code></td><td>Display-wide, audio-only stream started with the meeting</td></tr>
+<tr><th scope="row">Routes</th><td><code translate="no">openprogram/interfaces/server/routes/execution/meetings.py</code></td><td><code translate="no">/api/meetings</code>: list, start, audio, stop, status, transcript, summary, summarize again, delete</td></tr>
+<tr><th scope="row">Application</th><td><code translate="no">openprogram/programs/applications/meeting/</code></td><td>The <code translate="no">meeting</code> service: storage, conversion, transcription queue, merge, summary</td></tr>
+<tr><th scope="row">Speech</th><td><code translate="no">openprogram/runtime/speech_link.py</code> → <code translate="no">openprogram/interfaces/speech/stt.py</code></td><td><code translate="no">transcribe_segments</code>: timed segments with the engine from Settings → Voice</td></tr>
+<tr><th scope="row">Speakers</th><td><code translate="no">meeting/diarize.py</code>, optional <code translate="no">sherpa-onnx</code></td><td>Labels system segments <code translate="no">others:&lt;n&gt;</code></td></tr>
+<tr><th scope="row">Summary</th><td><code translate="no">openprogram/runtime/conversation/owner_turn.py</code></td><td>One owner turn in a new conversation</td></tr>
+<tr><th scope="row">Window</th><td><code translate="no">apps/web/components/applications/windows/meeting-window.tsx</code></td><td>Start and Stop, live progress, past meetings with summary and transcript</td></tr>
+</tbody>
+</table>
+<p class="note">The core never imports the application. Routes look the service up by name and answer 404 (<code translate="no">meeting_not_enabled</code>) while it is disabled; disposing its context stops a recording in progress.</p>
+
+<h2 id="capture">Capture</h2>
+<table class="stack">
+<thead><tr><th scope="col">Track</th><th scope="col">Source</th><th scope="col">Speaker</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">mic</code></th><td>Page, <code translate="no">getUserMedia({audio})</code> with echo cancellation, noise suppression, automatic gain</td><td>"Me": from where the sound was recorded, not a model</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td>Server, ScreenCaptureKit: the computer's sound output</td><td>"Others", then numbered by <a href="#speaker-diarization">diarization</a></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>The computer's sound, on the server</summary>
+<ul>
+<li><code translate="no">POST /api/meetings</code> starts capture in <code translate="no">Meeting.begin</code>. <code translate="no">ScreenCaptureSource</code> reads the shareable content and builds <code translate="no">SCContentFilter.initWithDisplay_excludingWindows_(display, [])</code> for the first display, no window excluded.</li>
+<li><code translate="no">screen_capture_audio.open_audio</code> opens the stream: <code translate="no">capturesAudio</code>, 16 kHz, one channel, <code translate="no">excludesCurrentProcessAudio</code>, a 2×2 frame once a second, no screen output attached. Computer use's per-application recording (<code translate="no">desktop/audio.py</code>) shares this module and differs only in its filter.</li>
+<li>macOS asks for Screen &amp; System Audio Recording the first time. The worker runs inside the App's runtime bundle (<code translate="no">screen_recording</code> capability in <code translate="no">openprogram/host/system_access</code>), so the prompt and the System Settings row name the App. ScreenCaptureKit audio needs no other declaration.</li>
+<li><code translate="no">SystemAudio</code> is independent of ScreenCaptureKit. A source pushes float32 buffers; it cuts 30-second chunks by sample count. A chunk's <code translate="no">t_ms</code> is the meeting clock at its first sample: the arrival of the buffer that starts it, less that buffer's remaining length.</li>
+<li>Its own thread converts each chunk to 16-bit WAV and calls <code translate="no">Meeting.append("system", seq, t_ms, wav, "wav")</code>, the intake the audio route feeds.</li>
+<li><code translate="no">Meeting.finish</code> stops the stream and flushes the last partial chunk while still <code translate="no">recording</code>. Deleting a meeting cancels capture without a flush.</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">system_audio_reason</code></th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">unsupported</code></th><td>Not macOS, or PyObjC's ScreenCaptureKit does not import</td></tr>
+<tr><th scope="row"><code translate="no">permission</code></th><td>ScreenCaptureKit refusal (error -3801 "declined TCCs") or <code translate="no">CGPreflightScreenCaptureAccess</code> reporting no grant</td></tr>
+<tr><th scope="row"><code translate="no">error</code></th><td>Anything else; text in <code translate="no">system_audio_message</code></td></tr>
+</tbody>
+</table>
+<p class="note">If the source cannot start, the meeting is microphone only and status and <code translate="no">meta.json</code> say <code translate="no">system_audio: "unavailable"</code>. A working capture reports <code translate="no">recording</code>. Older meetings have no such field.</p>
+</details>
+
+<details>
+<summary>The microphone, on the page</summary>
+<ul>
+<li>The page asks for the microphone, then starts the meeting, and counts chunk offsets from the <code translate="no">elapsed_ms</code> in the start response, so both tracks share one clock.</li>
+<li><code translate="no">MediaRecorder</code> is stopped and restarted every 30 seconds. A timeslice recorder emits later chunks without a WebM header; restarting makes each a complete file, at a cost of a few milliseconds' gap per chunk.</li>
+<li>A chunk carries track, sequence number and offset (<code translate="no">t_ms</code>), so out-of-order uploads land in place. One stopped under 100 ms after it started has only a header and is not uploaded.</li>
+<li>Uploads are serialized and tried three times on network or 5xx errors.</li>
+<li>The recorder lives in a module-level store: leaving the window does not stop it, only Stop does.</li>
+<li>A refused microphone arrives as <code translate="no">NotAllowedError</code>; the window names the System Settings pane.</li>
+<li>The recording card says whether the computer's sound is recorded. If not, it says microphone only and, for <code translate="no">permission</code>, names Privacy &amp; Security → Screen &amp; System Audio Recording and asks to reopen the App.</li>
+</ul>
+</details>
+
+<h2 id="server">Store and transcribe</h2>
+<pre translate="no" tabindex="0">&lt;state&gt;/meetings/&lt;id&gt;/
+  meta.json                   title, language, times, state, chunk counts, errors, engine,
+                              session_id, system_audio, diarization, speakers
+  tracks/&lt;track&gt;/&lt;seq&gt;.webm   the chunk as uploaded (system chunks are .wav)
+  tracks/&lt;track&gt;/&lt;seq&gt;.json   timed segments (or silent / error); system segments gain speaker
+  transcript.json             the merged transcript
+  summary.md                  the summary with the transcript in a &lt;details&gt; block</pre>
+<p class="note">One meeting at a time, at most 4 hours. Each chunk (up to 16 MiB) is written first, then queued for the meeting's single worker thread, so memory holds one chunk. A repeated <code translate="no">(track, seq)</code> is ignored. A chunk that fails is recorded and counted; the meeting goes on.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Convert</th><td><code translate="no">ffmpeg</code>, found on <code translate="no">PATH</code>, then <code translate="no">/opt/homebrew/bin</code>, <code translate="no">/usr/local/bin</code>, <code translate="no">/usr/bin</code>; it reads the format from the data. A WAV already in form is used as is. Without ffmpeg, start is refused with <code translate="no">ffmpeg_missing</code> and an install hint.</td></tr>
+<tr><th scope="row">Skip silence</th><td>Whisper invents text for silent audio.</td></tr>
+<tr><th scope="row">Transcribe</th><td><code translate="no">speech_link.transcribe_segments(wav, duration_ms, language)</code>. A link without the method falls back to <code translate="no">transcribe</code> as one segment.</td></tr>
+<tr><th scope="row">Language</th><td>The meeting's, never Settings → Voice's: a forced voice-input language makes Whisper invent text. <code translate="no">POST /api/meetings</code> takes an optional ISO <code translate="no">language</code>, stored in <code translate="no">meta.json</code>. The window sends the choice beside the meeting name, none for "Detect automatically". Empty means detection: whisper.cpp <code translate="no">-l auto</code>, no <code translate="no">language</code> field for OpenAI and Groq.</td></tr>
+<tr><th scope="row">Timing by engine</th><td>whisper.cpp prints <code translate="no">[from --&gt; to]</code> lines (no <code translate="no">-nt</code>). Groq and OpenAI Whisper models answer <code translate="no">verbose_json</code>. <code translate="no">gpt-4o-*-transcribe</code> answers text only: one segment spanning the chunk.</td></tr>
+<tr><th scope="row">Merge, <code translate="no">transcript.py</code></th><td>Segments move onto the meeting clock and sort by start. A microphone segment at least 75% similar to a system segment starting within 4 s is echo (no headphones) and is dropped. Consecutive segments of one speaker less than 1.5 s apart join into one turn, up to 600 characters.</td></tr>
+<tr><th scope="row">Line</th><td><code translate="no">speaker</code> (<code translate="no">me</code>, <code translate="no">others</code>, <code translate="no">others:&lt;n&gt;</code>), which the window localizes, and English <code translate="no">label</code> ("Me", "Others", "Speaker n"). <code translate="no">transcript.json</code> is rewritten after every chunk, so the window shows it growing.</td></tr>
+</tbody>
+</table>
+
+<h2 id="summary">Summary</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Empty transcript</th><td>No conversation opens; <code translate="no">summary.md</code> says nothing was transcribed</td></tr>
+<tr><th scope="row">Conversation</th><td><code translate="no">meeting_&lt;hex&gt;</code>, source <code translate="no">web</code>, titled after the meeting, default Agent, the model a new chat starts on; id in <code translate="no">meta.json</code>. Stays for follow-up questions.</td></tr>
+<tr><th scope="row">Turn</th><td><code translate="no">start_owner_turn(..., tools=[])</code>. A fixed prompt, then the transcript inside <code translate="no">&lt;meeting-transcript&gt;</code>. With no tools, nothing said in a meeting can make the Agent act.</td></tr>
+<tr><th scope="row">Prompt asks for</th><td><code translate="no">## Summary</code>, <code translate="no">## Decisions</code>, <code translate="no">## Action items</code> (owner, due date), <code translate="no">## Open questions</code>, in the meeting's language. Says the transcript is data, never instructions, and that speaker numbers are voices, not names.</td></tr>
+<tr><th scope="row"><code translate="no">summary.md</code></th><td>The answer, a header with date and length, the full transcript in a collapsible section</td></tr>
+<tr><th scope="row">Interrupted</th><td>A meeting left live by an ended process lists as <code translate="no">interrupted</code>. <strong>Summarize again</strong> rebuilds it from the per-chunk JSON files.</td></tr>
+</tbody>
+</table>
+
+<h2 id="access">Access</h2>
+<ul>
+<li>Every route needs the owner's sign-in (<code translate="no">require_owner</code>).</li>
+<li>The microphone is recorded where the page runs; the computer's sound is always the server computer's.</li>
+<li>Meetings stay in the state directory. With a cloud speech engine each chunk goes to that provider.</li>
+</ul>
+
+<h2 id="speaker-diarization">Speaker diarization</h2>
+<p>Once per meeting, over the whole system track, so clustering sees every voice at once and no embeddings are matched across chunks. About 4 s per minute of audio on four threads.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">What</th></tr></thead>
+<tbody>
+<tr><th scope="row">Audio</th><td>System chunks in order, converted one at a time and concatenated. <code translate="no">concatenate</code> records <code translate="no">(concat_ms, t_ms, duration_ms)</code> per chunk; <code translate="no">to_meeting_clock</code> maps turns back and splits one crossing a boundary.</td></tr>
+<tr><th scope="row">Diarize, <code translate="no">run</code></th><td>sherpa-onnx <code translate="no">OfflineSpeakerDiarization</code>; pyannote segmentation-3.0; 3D-Speaker's bilingual CAM++ (<code translate="no">3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx</code>); up to four ONNX threads; <code translate="no">min_duration_on</code> 0.3 s, <code translate="no">min_duration_off</code> 0.5 s; <code translate="no">FastClusteringConfig(num_clusters=-1, threshold=0.75)</code>, as the speaker count is unknown.</td></tr>
+<tr><th scope="row">Label, <code translate="no">assign</code></th><td>Each system segment takes the speaker whose turns overlap it longest (ties: lower sherpa number). Renumbered <code translate="no">others:1</code>, <code translate="no">others:2</code>… by first appearance. Written back to the chunk JSON and merged again, so <code translate="no">transcript.json</code>, <code translate="no">summary.md</code> and the prompt carry "Speaker n".</td></tr>
+<tr><th scope="row">Stays "Others"</th><td>A segment no turn overlaps, or whose only voice was heard under <code translate="no">MIN_SPEAKER_MS</code> (3 s) in the whole meeting. Clustering leaves one- or two-second strays that would become "Speaker 5" to "Speaker 7".</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">diarization</code></th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">running</code></th><td>In progress</td></tr>
+<tr><th scope="row"><code translate="no">done</code></th><td><code translate="no">speakers</code> is the count of numbered speakers</td></tr>
+<tr><th scope="row"><code translate="no">unavailable</code></th><td><code translate="no">diarization_reason</code>: <code translate="no">not_installed</code> (no <code translate="no">sherpa_onnx</code>) or <code translate="no">no_model</code> (download or model files failed)</td></tr>
+<tr><th scope="row"><code translate="no">failed</code></th><td><code translate="no">diarization_reason</code> <code translate="no">error</code>, text in <code translate="no">diarization_message</code></td></tr>
+<tr><th scope="row">Empty</th><td>No computer sound recorded, or nothing transcribed from it: step skipped</td></tr>
+</tbody>
+</table>
+<p class="note">Except for <code translate="no">done</code>, the transcript is unchanged.</p>
+
+<details>
+<summary>Why this model and threshold</summary>
+<p>Tried on four recordings with known speakers: pyannote's AMI excerpt (two people talking over each other, scored against its labels), sherpa-onnx's four-speaker test, a two-voice recording and four synthesized voices.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">CAM++, 0.6–0.75</th><td>Right speakers on all four; 91% of AMI speech labelled right</td></tr>
+<tr><th scope="row">CAM++, 0.8</th><td>Merges two of the four Chinese speakers</td></tr>
+<tr><th scope="row">Top of the range, 0.75</th><td>On a four-person AMI meeting through a conference call and plain playback, splits one person into two numbers least often: five numbered voices, against seven at 0.65</td></tr>
+<tr><th scope="row">ERes2Net zh-cn (sherpa-onnx's example)</th><td>Needed a different threshold per recording; merged the AMI pair at every value that kept the four-speaker recording at four</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Dependency and model download</summary>
+<ul>
+<li><code translate="no">sherpa-onnx</code> is the optional <code translate="no">meetings</code> extra (with <code translate="no">numpy</code>), also in <code translate="no">all</code> so the packaged App carries it. Imported only inside <code translate="no">run</code>.</li>
+<li>Models download on first use from sherpa-onnx's GitHub releases into <code translate="no">&lt;state&gt;/models/diarization/</code>: <code translate="no">speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2</code> (only <code translate="no">model.onnx</code> extracted) and <code translate="no">speaker-recongition-models/…_16k.onnx</code>.</li>
+<li>Each goes through a temporary file and an atomic rename under one lock, as voice input downloads Whisper models.</li>
+</ul>
+</details>
+
+<h2 id="alternatives">Compared with</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Product</th><th scope="col">Meetings</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude (desktop)</th><td>No meeting feature</td></tr>
+<tr><th scope="row">Codex / ChatGPT (desktop)</th><td>ChatGPT's record mode: a companion joins through the meeting application, lists upcoming meetings, transcribes and summarizes. Codex has none.</td></tr>
+<tr><th scope="row">DeepSeek Harness</th><td>Experimental voice-input plugin only</td></tr>
+<tr><th scope="row">OpenProgram</th><td>Records microphone and any application's sound, transcribes both, tells voices apart on this computer, writes the summary in a chat. No calendar list of upcoming meetings.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Open-source recorders</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Project</th><th scope="col">Shape</th></tr></thead>
+<tbody>
+<tr><th scope="row">meetscribe-offline</th><td>Python, pyannote diarization, Ollama or cloud summaries; needs a HuggingFace token, prefers an NVIDIA GPU</td></tr>
+<tr><th scope="row">HushScribe</th><td>macOS 26, Apple Silicon, WhisperKit and Parakeet on device; speaker labels only after the session</td></tr>
+<tr><th scope="row">AI-Meeting-Bot</th><td>Developer pipeline around a local Whisper</td></tr>
+</tbody>
+</table>
+<p>None is reused whole: each brings its own capture, models and storage. Reused is the component choice: Whisper for speech, pyannote segmentation with a speaker-embedding model for who spoke, through sherpa-onnx so no PyTorch or token is needed.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Everything above is built. Open: a check of the Screen &amp; System Audio Recording prompt and permission classification in a freshly installed App.</p>
+<details>
+<summary>How it is verified</summary>
+<ul>
+<li>Tests with a faked sample source, ffmpeg, speech, diarizer and summary turn.</li>
+<li>The stable App recorded recordings played through the computer's sound output: sherpa-onnx's four-speaker test, an AMI two-speaker excerpt (both found), an AMI four-speaker excerpt (all four found, every line's number consistent with the reference).</li>
+<li>A real call: two participants in a Jitsi Meet room, the second speaking the AMI four-person excerpt, the first playing it on this computer. Exactly four numbered speakers, every line consistent. Call audio reaches the recorder through the same path as Zoom or any other application.</li>
+<li>Microphone track, from the Meetings window in a browser whose microphone was the AMI excerpt: seven chunks uploaded, six lines labelled "Me", summary written. The header-only last chunk was the one failure; the page now skips it.</li>
+</ul>
+</details>

@@ -1,0 +1,59 @@
+<title>UI unification work</title>
+<meta name="description" content="Where OpenProgram's interfaces differ visually, and what remains to align them.">
+<h1>UI unification work</h1>
+
+<p>Web App (<code translate="no">apps/web/</code>), CLI and TUI (<code translate="no">apps/cli/</code>), docs site (<code translate="no">scripts/docs_site/</code>), marketing page (<code translate="no">website/index.html</code>) and Desktop chrome (<code translate="no">apps/desktop/main.js</code>) grew separately.</p>
+
+<h2 id="open-work">Open work</h2>
+<table class="stack">
+<thead><tr><th scope="col">Item, priority</th><th scope="col">Now</th><th scope="col">Next</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web token fallback<br>high</th><td><code translate="no">:root</code> fallback in <code translate="no">themes/fallback.css</code> has beige-dark surfaces; <code translate="no">design/color.css</code> gives <code translate="no">--accent-orange: #6ea8fe</code>, neutral blue</td><td>Pick beige or neutral and reconcile</td></tr>
+<tr><th scope="row">CLI and TUI<br>medium</th><td>TUI primary is <code translate="no">#d97757</code> whatever the Web theme (<code translate="no">apps/cli/src/theme/themes.ts</code>). The Rich banner uses <code translate="no">bright_blue</code> (<code translate="no">openprogram/interfaces/cli/repl/banner.py</code>).</td><td>Read the Web preference, or document a separate brand</td></tr>
+<tr><th scope="row">Marketing page<br>low</th><td>Its own palette: <code translate="no">--bg: #0e0f17</code>, <code translate="no">--accent: #8b93ff</code> dark; <code translate="no">#f8f9fc</code>, <code translate="no">#4f46e5</code> light</td><td>Align or stay independent</td></tr>
+<tr><th scope="row">Buttons<br>low</th><td><code translate="no">button.tsx</code> is the official radix-nova Button; manage-page tabs still size themselves from <code translate="no">--ui-button-h</code> and <code translate="no">--ui-button-radius</code></td><td>Move hand-sized tabs onto Button sizes</td></tr>
+<tr><th scope="row">Naming<br>low</th><td><code translate="no">--accent-orange</code> also carries blue and teal; shadcn <code translate="no">--accent</code> is the ink at 9%, not the primary colour</td><td>Rename, for example <code translate="no">--accent-primary</code></td></tr>
+<tr><th scope="row">Kits and hard-coded colours<br>low</th><td><code translate="no">@base-ui-components/react</code> is still a dependency though no source imports it. <code translate="no">lib/effort/effort-color.ts</code> computes its own HSL. <code translate="no">--browser-glyph-secondary</code> is <code translate="no">#8b5cf6</code>.</td><td>Remove the dependency; bring these onto theme tokens. Tailwind is v4 only, themed in <code translate="no">@theme</code>.</td></tr>
+</tbody>
+</table>
+<p class="note">Order: Web fallback, CLI and TUI, marketing page, buttons and naming, kits. The docs site is independent: blue on white (<code translate="no">--acc: #2f5fd0</code>, dark <code translate="no">#86a8f5</code>), own key <code translate="no">op-docs-theme</code>, light and dark only.</p>
+
+<h2 id="appearance">Settings Appearance</h2>
+<p>Settings opens on General. Everything about the look is on Appearance (<code translate="no">appearance-section.tsx</code>): colours and theme, text, conversation view and width, tab drag effects, the browser's bookmarks bar, custom CSS. Pack, accent and overlay contract: <a href="theme-system.html">Theme system</a>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Mode</th><td>Auto follows the system; it is a mode, not a theme</td></tr>
+<tr><th scope="row">Vivid strip colour</th><td>Every Vivid surface, text tier and default accent is an <code translate="no">oklch(from var(--tabrow-seed) …)</code> tone, like Chrome's colour themes</td></tr>
+<tr><th scope="row">Accent</th><td>Colour input, presets from each pack's default <code translate="no">--accent-orange</code>, Reset to theme default</td></tr>
+<tr><th scope="row">Overlay</th><td>Enable custom CSS; Insert template writes a starter for <code translate="no">html</code> and the current <code translate="no">data-theme</code>; Clear empties it</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary id="migration">Migration of the combined <code translate="no">agentic_theme</code></summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stored</th><th scope="col">Becomes</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">auto</code></th><td>beige + auto</td></tr>
+<tr><th scope="row"><code translate="no">beige-dark</code> <code translate="no">beige-light</code></th><td>beige + dark or light</td></tr>
+<tr><th scope="row"><code translate="no">dark</code> <code translate="no">light</code> (schema 2)</th><td>neutral + dark or light</td></tr>
+<tr><th scope="row"><code translate="no">aurora</code> <code translate="no">aurora-light</code></th><td>aurora + dark or light</td></tr>
+<tr><th scope="row"><code translate="no">vivid</code> <code translate="no">vivid-light</code></th><td>vivid + dark or light</td></tr>
+<tr><th scope="row"><code translate="no">custom</code> <code translate="no">custom-light</code></th><td>beige + the saved mode; overlay on when custom CSS is saved</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="desktop-chrome">Desktop chrome</h2>
+<p>The Electron window's first pixel matches the resolved web theme: <code translate="no">BrowserWindow</code> starts with that theme's <code translate="no">--bg-primary</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resolution</th><td>Schema-3 keys plus legacy <code translate="no">agentic_theme</code>. See <a href="theme-system.html#diagnostics">which source wins</a>. <code translate="no">auto</code> follows <code translate="no">nativeTheme.shouldUseDarkColors</code>.</td></tr>
+<tr><th scope="row">Colour map</th><td><code translate="no">apps/desktop/main/windows/theme-chrome.js</code> copies the values from the theme CSS. <code translate="no">custom</code> ids resolve to the beige pair.</td></tr>
+<tr><th scope="row">Error and listing pages</th><td>Same chrome tokens</td></tr>
+<tr><th scope="row">Theme change</th><td>The renderer calls <code translate="no">theme.setChrome</code>, updating every <code translate="no">BrowserWindow</code> background so the next show or reload does not flash</td></tr>
+<tr><th scope="row">Window state</th><td>Unaffected; see <a href="../desktop/window-state.html">window state</a></td></tr>
+</tbody>
+</table>

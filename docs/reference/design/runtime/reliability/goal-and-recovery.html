@@ -1,0 +1,490 @@
+<title>Goals and restart recovery</title>
+<meta name="description" content="How sessions and Goals continue after an App or worker restart without repeating unknown writes or resuming stopped work, and how other harnesses implement Goals.">
+<span id="chat-goal-contract"></span><span id="goal-workflow-design"></span>
+<h1>Goals and restart recovery</h1>
+
+<p>Resuming a session does not mean retrying its tools: an old turn may end <code translate="no">interrupted</code> while its operations stay <code translate="no">outcome_unknown</code>, and a new turn checks actual state first. Behaviour: <a href="../../../../capabilities/goal.html">Goals in chat</a>.</p>
+<ul>
+<li>Web, TUI, ACP, background Jobs and authorized subtasks share one chat execution layer.</li>
+<li>No second engine, no general scheduler, no exactly-once promise for external operations.</li>
+</ul>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Goal step</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Save the objective</th><td>Original objective, completion conditions, permission scope, explicit budget</td></tr>
+<tr><th scope="row">Work through chat</th><td>The agent keeps a Todo and uses existing tools and approvals</td></tr>
+<tr><th scope="row">Check at turn end</th><td>Settle usage; continue, wait, pause or verify</td></tr>
+<tr><th scope="row">Accept</th><td>Independent read-only turn confirms every condition; otherwise back to work</td></tr>
+</tbody>
+</table>
+<p class="note">No default round cap: round count is diagnostic. <code translate="no">create_goal</code>, <code translate="no">get_goal</code> and <code translate="no">update_goal</code> only read and write objectives.</p>
+<p>In the chat, <code translate="no">/goal &lt;objective&gt;</code> leaves one message: the objective, with a Goal label (target icon, “Goal” in the accent ink, medium weight) opening its first line.</p>
+<ul>
+<li>The label comes from <code translate="no">starts_goal</code> on that user row, never from the text; only the message that creates the Goal has it.</li>
+<li>The label and the opening paragraph are one paragraph, so the objective starts on the label's line and wraps under it; later paragraphs, lists and code follow as in any message. An objective that opens with a list or code puts the label on its own line above it.</li>
+<li>The sender's bubble takes the label from <code translate="no">starts_goal</code> on <code translate="no">chat_ack</code>, before the transcript row arrives. A <code translate="no">/goal</code> from a New chat draft runs in that draft. <code translate="no">/goal status</code> and the other subcommands that only answer leave no user message, only their reply line.</li>
+<li>No reply line follows. Copy, edit and retry see the objective alone.</li>
+<li>A creation that fails answers in text. The Rich REPL draws no messages, so it prints “Goal saved; working in this conversation.”</li>
+</ul>
+
+<h2 id="restart-contract">Automatic recovery</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="Recovery runs six stages in order. Load facts from run intent, controls, messages, checkpoints, effects and waits. Confirm ownership by reconnecting live executors and fencing dead ones by generation. Repair context by merging real results and filling missing tool outputs. Decide, with user stops first, then approval, permission, budget, resources and unknown effects. Admit once through fair scheduling and a stable continuation key. Restore the interface from canonical snapshots and ordered events.">
+  <defs><marker id="rr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">Load facts</text>
+  <text class="t-soft" x="0" y="56">run intent, controls, messages,</text>
+  <text class="t-soft" x="0" y="76">checkpoints, effects, waits</text>
+  <line class="ln" x1="100" y1="23" x2="224" y2="23" marker-end="url(#rr-a)"/>
+  <text class="t-big" x="236" y="30">Confirm ownership</text>
+  <text class="t-soft" x="236" y="56">reconnect live executors,</text>
+  <text class="t-soft" x="236" y="76">fence dead ones by generation</text>
+  <line class="ln" x1="412" y1="23" x2="464" y2="23" marker-end="url(#rr-a)"/>
+  <text class="t-big" x="476" y="30">Repair context</text>
+  <text class="t-soft" x="476" y="56">merge real results,</text>
+  <text class="t-soft" x="476" y="76">fill missing tool outputs</text>
+  <path class="ln-faint" d="M560 92V110H40V124" marker-end="url(#rr-a)"/>
+  <text class="t-big" x="0" y="150">Decide</text>
+  <text class="t-soft" x="0" y="176">user stops first, then approval,</text>
+  <text class="t-soft" x="0" y="196">permission, budget,</text>
+  <text class="t-soft" x="0" y="216">resources, unknowns</text>
+  <line class="ln" x1="76" y1="143" x2="224" y2="143" marker-end="url(#rr-a)"/>
+  <text class="t-big" x="236" y="150">Admit once</text>
+  <text class="t-soft" x="236" y="176">fair scheduling, quotas,</text>
+  <text class="t-soft" x="236" y="196">stable continuation key</text>
+  <line class="ln" x1="340" y1="143" x2="464" y2="143" marker-end="url(#rr-a)"/>
+  <text class="t-big" x="476" y="150">Restore interface</text>
+  <text class="t-soft" x="476" y="176">canonical snapshots,</text>
+  <text class="t-soft" x="476" y="196">ordered events</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Load facts</strong><small>run intent, controls, messages, checkpoints, effects, waits</small></li>
+  <li><strong>Confirm ownership</strong><small>reconnect live executors, fence dead ones by generation</small></li>
+  <li><strong>Repair context</strong><small>merge real results, fill missing tool outputs</small></li>
+  <li><strong>Decide</strong><small>user stops first, then approval, permission, budget, resources, unknowns</small></li>
+  <li><strong>Admit once</strong><small>fair scheduling, quotas, stable continuation key</small></li>
+  <li class="flow-end"><strong>Restore interface</strong><small>canonical snapshots, ordered events</small></li>
+</ol>
+</figure>
+
+<details>
+<summary>Run intent and shutdown</summary>
+<ul>
+<li>Durable <code translate="no">run_intent</code> builds on existing admission, command and restart intent. Clients are acknowledged only after the request is saved.</li>
+<li><code translate="no">run_intent</code> records <code translate="no">work_id</code>, original input and unconsumed messages, <code translate="no">desired_state</code> (run, paused, cancelled, done), latest control version, permission scope, objective revision, execution host, parent and child links, last committed progress and recovery policy.</li>
+<li>By default, authorized work still in <code translate="no">run</code> resumes without reopening the session. Ordinary requests continue only until they finish. Background work keeps its authorization and concurrency quota; restart authorizes no new subtasks.</li>
+<li>Closing a window or reloading only disconnects. "Quit and stop all tasks" persists a stop intent.</li>
+<li>App exit, upgrades, worker crashes and machine restarts are not Pause. Graceful shutdown stops admission and saves controls and checkpoints; forced shutdown recovers from the last commit.</li>
+<li>Unacknowledged client drafts are not submitted requests.</li>
+<li><code translate="no">execution.auto_resume_window_seconds</code>: <code translate="no">-1</code> by default (no expiry), <code translate="no">0</code> opts out; existing finite deadlines are not extended.</li>
+<li>Continuation rechecks directory, host, model and tool availability, credentials, permissions and budget. Missing resources show a precise waiting reason and never switch project, account or model or widen permissions.</li>
+<li>Old paused records with unknown reasons stay paused with an explanation.</li>
+</ul>
+</details>
+
+<details>
+<summary>Stage rules</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Load</th><td>Also usage and projection cursors. Read or migration failure shows recovery failure and clears nothing.</td></tr>
+<tr><th scope="row">Ownership</th><td>One host per work item; single-host recovery never becomes cross-host takeover</td></tr>
+<tr><th scope="row">Repair</th><td>Resume from a complete safe checkpoint; otherwise a new turn with the same <code translate="no">work_id</code>, without re-appending user input</td></tr>
+<tr><th scope="row">Decide</th><td>Runnable becomes queued; dependency waits become waiting; faults expose retryable reasons. All persisted in one control service.</td></tr>
+<tr><th scope="row">Admit</th><td>Key from <code translate="no">work_id</code>, control version and predecessor commit. No duplication window between admission and consuming intent; cross-database steps converge through a retryable outbox.</td></tr>
+<tr><th scope="row">Interface</th><td>Shows recovering, queued, working, waiting or failure; never a second control implementation</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Coordination belongs to execution control. The server and JobRunner may call the same idempotent entry but decide nothing independently. UI orphan cleanup repairs only derived projections. <code translate="no">Goal.after_terminal</code> submits continuation only for the current version.</li>
+<li>A message in the client's send queue goes first: the client reports it and the continuation yields for up to 15 seconds, during which the user turn's admission supersedes it under the Goal lock.</li>
+<li>Temporary faults use durable retry times and bounded backoff, not idle model calls. Persistent faults keep pending-recovery records and show the error with Retry, Pause and End.</li>
+</ul>
+</details>
+
+<h2 id="recovery-matrix">State after restart</h2>
+<table class="stack">
+<thead><tr><th scope="col">Before restart</th><th scope="col">After restart</th><th scope="col">Must hold</th></tr></thead>
+<tbody>
+<tr><th scope="row">Accepted request, unscheduled</th><td>Requeue in input order, admit once</td><td>Deduplicate by client request id; late retries cannot override Stop</td></tr>
+<tr><th scope="row">Interrupted model stream</th><td>Keep committed text and tool results, label incomplete output, request the rest</td><td>No fabricated whole response; a new attempt can cost more</td></tr>
+<tr><th scope="row">Active Goal, working or between turns</th><td>Load objective, Todo, evidence, budget, run intent; continue work or acceptance</td><td>Idle active Goals are not skipped; 5/5 only triggers acceptance</td></tr>
+<tr><th scope="row">User Pause, End or Stop</th><td>Stays paused or ended</td><td>Persisted when accepted; notifications cannot release it; "still stopping" is separate from intent</td></tr>
+<tr><th scope="row">Pending approval or answer</th><td>Restore question, summary and scope; consume a committed answer once</td><td>Restart is not approval; changed implementation, arguments or permissions void old approval</td></tr>
+<tr><th scope="row">Parent waiting for subtasks</th><td>Restore identities, outputs, inbox cursors, waits; parent continues on terminal state</td><td>Reconnect live children, never recreate finished ones; user pause reaches children in scope, not independent tasks</td></tr>
+<tr><th scope="row">External process, terminal, remote job</th><td>Query by host, process-start identity or handle; keep observing if alive</td><td>PID alone is insufficient; uncertain stays unknown; no resubmission</td></tr>
+<tr><th scope="row">Browser, MCP, temporary resource</th><td>Verify identity on reconnection; report invalidation; create new only if authorized</td><td>Forms, logins, JS memory and REPL variables are not guaranteed; a new tab cannot impersonate the old one</td></tr>
+<tr><th scope="row">Compaction or message write in progress</th><td>Use last committed history and summary</td><td>Partial tool arguments never run; current permissions apply; unavailable dependencies shown</td></tr>
+<tr><th scope="row">Result written, notification undelivered</th><td>Replay projections and inbox delivery, no rerun</td><td>Versions prevent UI rollback; no double charge in parent aggregation</td></tr>
+<tr><th scope="row">Usage receipt absent or stream-only</th><td>Reconcile by provider attempt, deduplicate</td><td>Unobtainable usage stays unknown; downtime is not active time</td></tr>
+</tbody>
+</table>
+<p class="note">Recovery promises saved state, run intent and reconstructable execution, not process memory. Unpersisted fragments, a dead shell's memory and lost receipts are reported, never hidden.</p>
+
+<h2 id="recovery-design">Interrupted tools</h2>
+<table class="stack">
+<thead><tr><th scope="col">Before interruption</th><th scope="col">Fact after recovery</th><th scope="col">Next</th></tr></thead>
+<tbody>
+<tr><th scope="row">Intent saved, dispatch unrecorded</th><td><code translate="no">not_started</code>; holds only because every dispatch is recorded first</td><td>Call again under current permissions if still needed</td></tr>
+<tr><th scope="row">Dispatch recorded, no result</th><td><code translate="no">outcome_unknown</code></td><td>Trusted read-only tools may reread; use the original idempotency key where deduplicated; reconcile other writes first</td></tr>
+<tr><th scope="row">Result persisted</th><td><code translate="no">completed</code> or <code translate="no">error</code>, actual value kept</td><td>Reuse; no rerun</td></tr>
+<tr><th scope="row">External task alive</th><td><code translate="no">running_external</code> with a verifiable handle</td><td>Reconnect, wait or cancel; no resubmission</td></tr>
+<tr><th scope="row">Non-idempotent write, not queryable</th><td><code translate="no">outcome_unknown</code> with operation details</td><td>Reads and investigation allowed; retry or abandon only after the user confirms the risk</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">read_only</code>, <code translate="no">idempotent</code> and <code translate="no">state_probe</code> come from trusted registration and the implementation identity saved at execution, never from model claims or a tool name. General shell, third-party MCP and custom tools default to unknown.</p>
+
+<details>
+<summary>Choosing a recovery mode</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Mode</th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner alive</th><td>Reconnect only</td></tr>
+<tr><th scope="row">Death confirmed, verifiable checkpoint</th><td>New attempt under the same execution</td></tr>
+<tr><th scope="row">No reliable checkpoint</th><td>Take exclusive recovery ownership, fill missing outputs with a stable repair key, end the old turn <code translate="no">interrupted</code>, admit a new turn</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Mutually exclusive, bound to one durable decision, control version and continuation key. Checkpoints must cover committed effects and satisfy permission, wait and safe-point contracts.</li>
+<li>Old executors are confirmed by lease and generation: no repairs when the lease is uncertain or storage unreadable; a dropped connection does not prove death; later writes from the old generation are rejected. Trackable live processes are reconnected, waited for or explicitly cancelled.</li>
+<li>Repairs are repeatable with no side effects. Real results take priority; no usage is fabricated. Late verifiable receipts append as reconciliation events that replace placeholders in later context.</li>
+<li>Only permission, budget, resource or unknown-operation issues need a person; restart alone is no reason for manual Resume. Old unknowns do not block investigation or independent work; related writes keep their restrictions, and recovery turns related to unknown writes start with trusted reads only.</li>
+<li>An old effect audit may stay unresolved while its turn ends <code translate="no">interrupted</code>. Ordinary chat and Goals share this entry.</li>
+</ul>
+</details>
+
+<details>
+<summary>Request-history repair</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pairing</th><td>Matches the nearest call by original call id, then converts provider ids. Real outputs win; duplicates use the last saved real record; missing results get deterministic unknown placeholders.</td></tr>
+<tr><th scope="row">Order</th><td>Calls and results are adjacent in the request projection, user order intact, original history unchanged. Results without calls are not sent as tool items.</td></tr>
+<tr><th scope="row">Interruption</th><td>Interrupted responses keep partial text and a marker, without reusing incomplete reasoning signatures. Ambiguous duplicate call ids in one response are an explicit error.</td></tr>
+<tr><th scope="row">Permission</th><td>This conversion grants no permission and cannot replace recovery decisions.</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Permission scope for uncertain effects</summary>
+<ul>
+<li>Conversation provenance scopes old executions and invoked Jobs, not every execution in an invoked session.</li>
+<li>Only the actual built-in read, grep, glob and list functions count as read-only investigation; names, <code translate="no">acceptEdits</code> and plugin declarations do not.</li>
+<li>Within scope, everything else needs one-time approval, which bypass, automatic classification and allow rules cannot waive. Approval binds to the new call and the unknown-effect set; a changed set needs fresh approval and erases nothing. Unreadable or corrupt recovery state fails closed.</li>
+<li>A new interactive owner turn in Auto or bypass evaluates uncertain effects only in its own execution subtree.</li>
+<li>A nested Runtime uses that boundary only when immutable admission proves an owner chat: stored actor is the interactive owner, the integrity-checked payload has the same source, and execution, session and principal match.</li>
+<li>Executor-thread submission carries the ContextVars so scope capture checks the same execution. Runtime stays non-interactive and cannot grant approval.</li>
+<li>Mismatched evidence keeps the restriction. Old receipts are never resolved or replayed by this filter. Explicit ask or deny, source constraints, plan mode and exact Page binding still apply.</li>
+</ul>
+</details>
+
+<h2 id="ownership-design">State ownership</h2>
+<table class="stack">
+<thead><tr><th scope="col">Owner</th><th scope="col">Holds</th><th scope="col">Does not</th></tr></thead>
+<tbody>
+<tr><th scope="row">Goal state service</th><td><code translate="no">goal_id</code>, revision, objective, acceptance conditions, status, explicit budget, blocking reasons</td><td>Hold provider streams or call stacks</td></tr>
+<tr><th scope="row">Plan store (Todo)</th><td>Stable <code translate="no">item_id</code>, <code translate="no">goal_id</code>, revision, status, evidence references</td><td>Shrink the objective by deleting items; prove progress by edits</td></tr>
+<tr><th scope="row">Canonical execution</th><td>Input origin, permissions, objective attribution, owner generation, turn state, subtasks</td><td>Treat <code translate="no">interrupted</code> as Goal failure or stopped processes</td></tr>
+<tr><th scope="row">Effect store</th><td>Call and implementation identity, input summary, start record, real or synthetic provenance, certainty</td><td>Let unknown pass as success or never-run; trust a tool name</td></tr>
+<tr><th scope="row">Usage ledger</th><td>Request and attempt identity, attribution, model, tokens, price snapshot, amount, trust status</td><td>Infer Goal cost from session totals; present estimates as settled</td></tr>
+</tbody>
+</table>
+<p class="note">Existing stores; no second event platform. Cross-database updates use retryable notifications and unique operation keys, not assumed atomicity. Derived UI and statistics are rebuildable and never overwrite records.</p>
+
+<table class="stack fixed" id="goal-statuses">
+<thead><tr><th scope="col">Goal status group</th><th scope="col">Values</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running</th><td><code translate="no">refining</code>, <code translate="no">active</code>, <code translate="no">running</code>, <code translate="no">evaluating</code></td></tr>
+<tr><th scope="row">Waiting</th><td><code translate="no">paused</code>, <code translate="no">paused_recoverable</code>, <code translate="no">waiting_user</code>, <code translate="no">waiting_external</code></td></tr>
+<tr><th scope="row">Stopped, resumable</th><td><code translate="no">blocked</code>, <code translate="no">stalled</code>, <code translate="no">budget_exhausted</code>, <code translate="no">capped</code>, <code translate="no">error</code>, and all waiting values</td></tr>
+<tr><th scope="row">Terminal</th><td><code translate="no">achieved</code>, <code translate="no">impossible</code>, <code translate="no">failed</code>, <code translate="no">cancelled</code>, <code translate="no">cleared</code></td></tr>
+</tbody>
+</table>
+<p class="note">Defined in <code translate="no">programs/tools/planning/goal/state.py</code>. <code translate="no">failed</code> is terminal yet resumable. Execution and acceptance live in <code translate="no">phase</code> or wait records. A revision or permission change voids old acceptance and continuation reservations; old usage keeps its attribution.</p>
+
+<h2 id="completion-design">Acceptance</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">At creation</th><td>Keep the objective, extract verifiable requirements, ask only if ambiguity changes scope. Each requirement has an evidence checkpoint. Simple tasks may skip Todo; Todo edits never remove requirements.</td></tr>
+<tr><th scope="row">Entering <code translate="no">verifying</code></th><td>The worker submits a candidate, or required Todos finish unverified. Ordinary turns run no judge. Revision, required Todos, subtasks and related unknown effects are checked first. Completion text is not a fact.</td></tr>
+<tr><th scope="row">Review</th><td>Independent read-only turn returns met, unmet or unknown with evidence per requirement. Deterministic requirements read test receipts, file versions and runtime state; semantic ones use model review. Tests keep normal approval and budget. Missing evidence returns to work.</td></tr>
+<tr><th scope="row">Commit</th><td>Only the current <code translate="no">goal_id</code>, revision and verified result version. Evidence and control versions are rechecked. Controlled artifacts use versions or digests; external facts keep time and receipts.</td></tr>
+<tr><th scope="row">After</th><td>Holds as of verification. No monitoring or reopening. Human waivers are explicit revisions with reasons. Acceptance can err.</td></tr>
+<tr><th scope="row">No progress</th><td>Judged by results and evidence, not tool count. An automatic turn with no tool call warns the next prompt; a second in a row stops as <code translate="no">stalled</code> (<code translate="no">IDLE_ROUND_LIMIT</code> 2).</td></tr>
+<tr><th scope="row"><code translate="no">blocked</code></th><td>Same real blocker recurs across at least three Goal turns with no independent work</td></tr>
+<tr><th scope="row">Waiting</th><td>A live handle waits with no idle model turns. Durable waits store <code translate="no">work_id</code>, revision, handle, observed version and consumption key. Notifications admit once if intent is run, versions match and no execution is current. Reconciliation polls with backoff. Pause, cancel or revision voids wakeups but keeps results. A query timeout does not mean the operation stopped.</td></tr>
+</tbody>
+</table>
+
+<h2 id="usage-design">Usage and cost</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Attribution</th><td><code translate="no">goal_id</code>, revision, <code translate="no">turn_id</code> and <code translate="no">request_id</code> fixed before dispatch. Chat after a pause has no old attribution. Subagent and acceptance requests inherit it; each receipt counts once. Retries are new attempts.</td></tr>
+<tr><th scope="row">Streams</th><td>Cumulative usage moves a per-attempt watermark. Projections update only after durable writes. Temporary failures retry with the same key. Late receipts stay with the original Goal.</td></tr>
+<tr><th scope="row">Display</th><td>Tokens and prices stored separately; price changes do not rewrite history. Estimates, known values and unknowns are separate: "Known $0.42; usage unknown for 1 additional request."</td></tr>
+<tr><th scope="row">Active time</th><td>From durable start and stop records, excluding pauses and downtime. A lost executor keeps its last heartbeat and shows a lower bound with an unknown interval. Late usage restarts no timer. An unverifiable explicit time limit stops admission.</td></tr>
+<tr><th scope="row">Budgets</th><td>Unlimited by default. With a hard cost budget, unknown prices or usage pause paid admission with a reason. Maximum amount reserved when calculable; otherwise no promise against overspend. Rechecked after ledger reload, before recovery and acceptance.</td></tr>
+<tr><th scope="row">Background Jobs</th><td>Goal identity saved at the real caller's admission, restored at start. Cross-session calls keep caller provenance without a cross-session parent. Goal and Job share start and settlement transactions in <code translate="no">usage.db</code>; receipts save the Job reservation, so metering rebuilds after restart. Unknown tokens and costs reserve separately; partial data records lower bounds. Expired unstarted reservations cannot dispatch; started requests are not released. Hard budgets accept only audited limits, explicit prices and service tiers.</td></tr>
+<tr><th scope="row">A turn that paused</th><td>A reply that paused for an answer or an approval and went on is one reply. Its row counts every provider request and token of the turn, before the pause and after. Cost and the Goal's total come from each request's ledger receipt, written when that request ended, so nothing is charged twice.</td></tr>
+</tbody>
+</table>
+
+<h2 id="controls-design">Controls</h2>
+<table class="stack">
+<thead><tr><th scope="col">Transition</th><th scope="col">User sees</th><th scope="col">Execution</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running → restart → recovering or queued</th><td>No Resume click; obstacles show reason, action and Retry. Resume is for user-paused work.</td><td>One turn per work item; no blind resend</td></tr>
+<tr><th scope="row">Todo 5/5 → verifying</th><td>"5/5 · Verifying", not "Complete"</td><td>"Goal completed" only after acceptance</td></tr>
+<tr><th scope="row"><code translate="no">active</code> → Pause</th><td>Automatic continuation stops; "still stopping" shown separately</td><td>Blocks admission, cancels current run, undoes nothing</td></tr>
+<tr><th scope="row">Unfinished → End → <code translate="no">cancelled</code></th><td>"Goal ended", with leftover processes or unknowns</td><td>Needs no reconciliation; old runs trigger nothing</td></tr>
+<tr><th scope="row">Pending operation → inspect, query, confirm</th><td>Exact call, input summary, time, available checks</td><td>Risky retries need the current user; models and page content cannot answer</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Backend <code translate="no">can_resume</code>, <code translate="no">can_verify</code>, <code translate="no">can_end</code> and reason codes set buttons; the frontend infers nothing from status. Read failure shows "State temporarily unavailable" with refresh. An empty Todo shows no placeholder.</li>
+<li>User input outranks continuation through steer and queue. Keys bind <code translate="no">goal_id</code>, revision and previous committed turn; durable state and generation block stale actions when pause, edit, cancel and admission race.</li>
+</ul>
+
+<h3 id="goal-lock">Goal lock</h3>
+<p>One lock per conversation orders every change to its Goal: admission, a provider request's budget check, usage refresh, a finished turn's accounting, controls. Two turns of one conversation can run at once (a Goal on one branch, a message on another), so writers meet often.</p>
+<table class="stack">
+<thead><tr><th scope="col">Rule</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Wait in line</th><td>A writer queues behind the holder, up to 30 seconds, then gets <code translate="no">GoalBusy</code>. Trying once failed a reply whenever two writers met.</td></tr>
+<tr><th scope="row">Nothing slow under the lock</th><td>The holder reads and writes Goal state only. The conversation's log is folded before waiting; a turn's tool-call scan and evidence file hashes are taken before the lock. On a 731 MB log a read under the lock took 6 s; the hold is now about 10 ms.</td></tr>
+<tr><th scope="row">A running turn never fails on the lock</th><td>If the lock stays held, the turn's request check, elapsed-time steps and verifier reads run without it. Each Goal write is a compare-and-set on its version; one that meets a newer version reads again and is redone, a budget refusal and the conversion of old usage included. Nothing unseen is overwritten and the turn does not fail.</td></tr>
+<tr><th scope="row">A usage refresh never holds a stream</th><td>Every usage event of the conversation asks for a refresh, on its provider stream's thread. One refresh per conversation waits in line and covers the ones asked for meanwhile; it reads the ledger after it holds the lock, and gives up after 2 seconds.</td></tr>
+<tr><th scope="row">A Goal's turn is checked against its own branch</th><td>Admission refuses a Goal turn only while a foreground turn runs on the Goal's branch. A turn on another branch, selected or not, neither holds the Goal back nor is held by it. A turn continued after a worker restart is checked against its own branch the same way.</td></tr>
+<tr><th scope="row">A finished turn's accounting is not dropped</th><td>It is retried at once, then off-thread for about two minutes. A lock that stayed held for a whole wait is not waited for again on the thread that still has the turn to close. The continuation is admitted only after that accounting released the lock. A stopped turn's cancelled reply and resource release never wait for it.</td></tr>
+<tr><th scope="row">A Goal left on an ended turn recovers</th><td>Reading an active Goal whose turn is over and unaccounted settles it, in this worker or a later one. A failed turn becomes a resumable pause.</td></tr>
+</tbody>
+</table>
+<p class="note">Codex keeps the Goal in SQLite and starts a continuation only when the thread is idle; DeepSeek harness repairs after taking exclusive access. Taken from both: short exclusive sections over Goal state, and the next turn waits for the previous one's bookkeeping. The lock is an OS file lock, released when its process ends, so no stale owner needs guessing.</p>
+<p class="note">Codex keeps one goal per thread and continues it when that thread is idle. A branch is this product's thread, so only the Goal's own branch gates its turns.</p>
+
+<h3 id="failed-turn">A turn that failed</h3>
+<p>A failure the next turn would not meet again is continued without a click; one it would meet at once waits for a person.</p>
+<table class="stack">
+<thead><tr><th scope="col">Case</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Transient failure</th><td>A provider error, a lost connection, a timeout, a rate limit that asks for at most five minutes, the worker's own fault. The Goal goes on by itself after a wait, at most three failures in a row; a completed turn starts the count over.</td></tr>
+<tr><th scope="row">Failure that repeats at once</th><td>A rejected key or missing permission, no credit or a spent quota, a model the plan or region does not serve, a refused address or request, a context that does not fit, a content refusal, a budget refusal, a retry-after over five minutes. The pause and its reason stay; Continue is the person's.</td></tr>
+<tr><th scope="row">Never continued here</th><td>A turn the user stopped stays stopped. A turn a restart cut follows <a href="#restart-contract">automatic recovery</a>. A spent Goal budget waits for a higher limit. A Goal nobody typed (always-on, check-in, scheduled, handoff) is restarted by its Agent's wake, under that Agent's daily budget.</td></tr>
+<tr><th scope="row">The wait</th><td>5 seconds, then 30, then 2 minutes, or the provider's retry-after when that is longer. It is held in process memory: after a restart the next read of the Goal starts it again. The count of failures is saved with the Goal.</td></tr>
+<tr><th scope="row">The next turn</th><td>The turn that would have followed a completed one: the failed turn's envelope and branch, the continuation prompt, a queued user message first. If the Goal was continued, edited or ended during the wait, nothing starts.</td></tr>
+<tr><th scope="row">Failed verification turn</th><td>The same completion candidate is submitted again from the failed turn, so the next turn verifies instead of doing the work over. When it cannot be verified yet (work still running, an operation with an unknown result), that reason pauses the Goal. A repeated notice of the failed turn judges nothing.</td></tr>
+</tbody>
+</table>
+<p class="note">Codex continues an active goal whenever its thread is idle and stops once the control plane sets <code translate="no">usage_limited</code> or <code translate="no">budget_limited</code>. Claude Code keeps the Goal after a transient error and clears it on unrecoverable auth, balance, uncompactable overflow or model errors.</p>
+<p class="note">Taken from both: a transient failure costs no click, an account or limit failure stops. Added here: the growing wait and the cap of three, because a turn can fail before doing any work.</p>
+
+<h3 id="conversation-file-preview">Goal in the transcript</h3>
+<ul>
+<li>Only an explicitly activated Goal produces UI. Starting, running, pausing and verifying add no cards; the composer shows the current Goal only.</li>
+<li>At termination one compact, clickable status row stays at the ending anchor and opens the read-only historical details. Each row carries its own snapshot; a later Goal cannot replace it. Saved with Goal state under optimistic concurrency.</li>
+<li>Success: animated Lucide check and "Goal achieved in 9m 42s", from active elapsed time. Missing time is not zero; interrupted time keeps its lower-bound label. Other endings show their status. Nothing is inferred from assistant text or Todo counts.</li>
+<li>Canonically identified verifier messages are internal; no assessment text, evidence id or raw report enters chat.</li>
+</ul>
+
+<h2 id="projection-claim-identity">Projection delivery</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">Consumers</th><td>DAG, job, workflow and UI consumers get derived events from a durable outbox.</td></tr>
+<tr><th scope="row">Order</th><td>Before each consumer, the dispatcher validates persisted owner, lease and claim attempt; acknowledgement and failure use the same attempt.</td></tr>
+<tr><th scope="row">Owner</th><td>A reused owner id cannot settle a newer claim. Expired work stays recoverable.</td></tr>
+</tbody>
+</table>
+<p class="note">No exactly-once external effects, and a callback already running at lease expiry is not stopped: consumers stay idempotent and version-aware.</p>
+
+<h2 id="restart-inventory">Where recovery lives</h2>
+<table class="stack">
+<thead><tr><th scope="col">Under <code translate="no">openprogram/</code></th><th scope="col">Behaviour</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime/execution/startup.py</code>, <code translate="no">control/recovery.py</code></th><td>Owner checks, canonical and wait-receipt recovery, projection redelivery</td><td>Unconfirmed effects can put an execution in <code translate="no">reconciliation_required</code>; operation reconciliation is separate from whether the session continues</td></tr>
+<tr><th scope="row"><code translate="no">runtime/execution/restart.py</code></th><td>Pause intent, deduplicated commands, resource admission. Only a live turn of the same conversation holds continuation back. A later turn supersedes it, except a scheduled task's run, which is on its own branch: intent settles <code translate="no">superseded</code>, execution stays paused for explicit Continue.</td><td>No expiry does not authorize replaying unresolved effects</td></tr>
+<tr><th scope="row"><code translate="no">programs/tools/planning/goal/chat.py</code>, <code translate="no">runtime/execution/dag.py</code></th><td>Goals do not pause for downtime or projection repair. Completion notifications persist before execution finishes.</td><td>Old records without provenance keep explicit Resume</td></tr>
+<tr><th scope="row"><code translate="no">runtime/jobs/runner/recovery.py</code>, <code translate="no">execution/control/waits.py</code></th><td>Job recovery, deferred inbox, durable answers, deduplicated continue</td><td>A saved Job is not a recovered child agent; some chat restart paths exclude spawn and merge</td></tr>
+<tr><th scope="row"><code translate="no">runtime/execution/waits.py</code></th><td>Durable waits; live waits cancel when their producer disappears</td><td>Expired questions are kept and reconfirmed</td></tr>
+<tr><th scope="row"><code translate="no">models/usage/context.py</code>, <code translate="no">event.py</code></th><td>Attribution and ledger</td><td>Attribution and keys fixed before requests; missing is not zero</td></tr>
+<tr><th scope="row"><code translate="no">programs/applications/browser/pages.py</code>, <code translate="no">host/resources/terminal.py</code>, Web session store</th><td>Resource identity, recovery state, projections</td><td>Reconnection, invalidation and new identity accepted per resource; frontend reconnect cannot cause execution</td></tr>
+</tbody>
+</table>
+<p class="note">A paused UI does not prove history was deleted; existing records do not prove continuation is possible.</p>
+
+<h2 id="harness-decisions">What other harnesses taught</h2>
+<table class="stack">
+<thead><tr><th scope="col">Reference</th><th scope="col">Verified behaviour</th><th scope="col">Here</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/4d160ea71dddc8e3b7e780b1aa159e79baaa535f/codex-rs/core/src/context_manager/normalize.rs#L21">Codex repair</a>, <a href="https://github.com/openai/codex/blob/4d160ea71dddc8e3b7e780b1aa159e79baaa535f/codex-rs/ext/goal/src/runtime.rs#L425">idle continuation</a></th><td>Missing outputs become <code translate="no">aborted</code>; Goals continue through thread-idle admission</td><td>Adopt chat continuation, pairing repair, state verification. <code translate="no">aborted</code> does not reverse effects.</td></tr>
+<tr><th scope="row">Claude Code <a href="https://code.claude.com/docs/en/sessions#what-a-resumed-session-restores">recovery</a>, <a href="https://code.claude.com/docs/en/goal#how-evaluation-works">evaluation</a></th><td>No automatic rerun; a small model evaluates from conversation. Official contracts only.</td><td>Adopt no blind reruns and independent review, without evaluating every turn</td></tr>
+<tr><th scope="row">OpenCode <a href="https://github.com/anomalyco/opencode/blob/70a24697ea0028e19f22712fd63059538cb4bee7/packages/opencode/src/session/message-v2.ts#L353">history</a>, <a href="https://github.com/anomalyco/opencode/blob/70a24697ea0028e19f22712fd63059538cb4bee7/packages/opencode/src/session/processor.ts#L452">usage</a></th><td>Pending calls become interruption errors; usage recorded at step end</td><td>Adopt continuable history and per-request usage; Todo does not decide completion</td></tr>
+<tr><th scope="row"><a href="https://github.com/openclaw/openclaw/blob/bc0b24713dc8814a598e0a588c967837c18f6660/src/agents/session-transcript-repair.ts#L368">OpenClaw repair</a></th><td>Matches results, synthesizes missing, handles duplicates</td><td>Adopt projection repair without overwriting records; heartbeat is not Goal</td></tr>
+<tr><th scope="row">DeepSeek harness <a href="https://github.com/deepseek-ai/deepseek-harness/blob/ddefc45fbc7f8e46dd73185e68295696d1297887/packages/core/session/src/repair.ts#L14">closure</a>, <a href="https://github.com/deepseek-ai/deepseek-harness/blob/ddefc45fbc7f8e46dd73185e68295696d1297887/packages/goal/goal-round-driver/README.md">continuation</a></th><td>Repairs after exclusive access; separates not-started from unknown; manual reactivation</td><td>Adopt layered state and idempotent repair; not its round cap or manual reactivation</td></tr>
+</tbody>
+</table>
+<p class="note">Reference source is pinned to inspected versions; their tests were not run. These are choices here, not claims of equal guarantees.</p>
+<p class="note">Codex's <a href="https://developers.openai.com/zh-Hans/docs/app-server">App Server docs</a> and <a href="https://github.com/openai/codex/blob/4d160ea71dddc8e3b7e780b1aa159e79baaa535f/codex-rs/ext/goal/src/extension.rs#L164">extension source</a> load active Goals on resume and continue while idle. That does not establish recovery from arbitrary exits or tool-process deaths, so continuation here is its own contract.</p>
+
+<details id="acceptance-design">
+<summary>Required acceptance</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Must demonstrate</th></tr></thead>
+<tbody>
+<tr><th scope="row">Unified decisions: startup, restart, control recovery, JobRunner, DAG projections</th><td>Requests, active Goals and subtasks recover; user-paused work does not. No hidden window or projection-layer state rewrites; unique admission and current permissions preserved.</td></tr>
+<tr><th scope="row">Execution: <code translate="no">runtime/conversation/production_driver</code>, context, effects, waits, resources</th><td>Kill real child processes before dispatch, after start and after result persistence. Repair once, keep real results, continue chat. Late old-owner writes, live shells and unknown writes are not wrongly retried.</td></tr>
+<tr><th scope="row">Goal continuation: <code translate="no">programs/tools/planning/goal</code>, HTTP, WS, TUI, ACP</th><td>Resume replays no tools. Double clicks, repeated events and edit-pause races make no duplicates. Old revisions cannot complete new objectives.</td></tr>
+<tr><th scope="row">Evidence</th><td>Reject unfinished items, missing evidence, failing tests, stale results and related unknowns; commit <code translate="no">achieved</code> once. Verification cannot raise permissions.</td></tr>
+<tr><th scope="row">Attribution: <code translate="no">models/usage</code>, Goal projections</th><td>Duplicate and out-of-order usage, concurrent subtasks, cumulative streams, retries, ledger faults, late receipts. Unknown is not zero; exceeded budgets stop paid requests.</td></tr>
+<tr><th scope="row">Compatibility</th><td>Old Goals readable; unknown effects migrate without guessing; controls, restart and cost verified in the App</td></tr>
+</tbody>
+</table>
+<p class="note">Each stage starts with a public-entry failure reproduction. Source, automated tests, local App and remote release are distinct evidence.</p>
+<h3 id="restart-tests">Restart failure matrix</h3>
+<p>Work is created through public chat, Goal, Job, approval and control entries, with real termination on isolated storage. Never terminate the user's current work.</p>
+<dl class="pairs">
+<dt>Events</dt><dd>Frontend reload, App exit, graceful and forced worker stop, long downtime, crash during recovery. Host restart through process-identity change; an actual OS reboot is unverified.</dd>
+<dt>Interruption points</dt><dd>Around input acceptance, provider requests, tool dispatch, result commit, parent-child delivery, all Todos done, completion commit, usage persistence</dd>
+<dt>Concurrency</dt><dd>Several sessions recover together: fair queueing, shared quotas, one owner, no duplicates. Pause, End, permission changes and new input win.</dd>
+<dt>Live and unknown</dt><dd>Live children only reconnect; unknown writes only get investigation. Approvals consumed once. Late results keep identity.</dd>
+<dt>Faults</dt><dd>Unavailable databases, broken migrations, missing credentials or directories, changed tool versions, lost projection events: explicit states and recoverable actions</dd>
+</dl>
+<h3>Nested-scope acceptance</h3>
+<p>An old interrupted effect followed by a new owner activation through <code translate="no">permission_decision</code> and real nested Runtime gates: Auto and bypass, exact current and descendant uncertainty, mismatched provenance, rules, real subprocess Page access.</p>
+</details>
+
+<h2 id="taxonomy">Goal implementations compared</h2>
+<p id="scope">A native Goal stores objective state and uses it after ordinary turns to decide whether to start another. Todo, Plan, Task and Cron alone are not Goals. General-framework baselines: OpenAI Agents SDK, LangGraph, AutoGen, CrewAI.</p>
+<table class="stack">
+<thead><tr><th scope="col">Level</th><th scope="col">Input</th><th scope="col">Progress</th><th scope="col">Termination</th><th scope="col">Across turns</th><th scope="col">Example</th></tr></thead>
+<tbody>
+<tr><th scope="row">Task input</th><td>User message</td><td>None required</td><td>Model stops</td><td>No</td><td>Ordinary turn</td></tr>
+<tr><th scope="row">Progress ledger</th><td>Task and items</td><td>Todo, for prompting and UI</td><td>Not decided by it</td><td>No</td><td>OpenCode Todo</td></tr>
+<tr><th scope="row">Graph termination</th><td>Graph state</td><td>Application</td><td>Edge or condition</td><td>Application</td><td>LangGraph, AutoGen</td></tr>
+<tr><th scope="row">Persisted controller</th><td>Objective</td><td>Usage, status</td><td>Agent declares</td><td>When idle</td><td>Codex</td></tr>
+<tr><th scope="row">Evaluator loop</th><td>Goal spec</td><td>Evidence</td><td>Independent evaluator</td><td>If incomplete</td><td>OpenProgram, Claude Code, Hermes</td></tr>
+</tbody>
+</table>
+
+<table class="stack" id="native-map">
+<thead><tr><th scope="col">Native Goal</th><th scope="col">State</th><th scope="col">Work and judgment</th><th scope="col">Continuation and waiting</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram</th><td>Versioned snapshot, goal and run id, compare-and-set</td><td>Worker, then independent read-only judge</td><td>Controller and waits, restart recovery</td></tr>
+<tr><th scope="row">Codex</th><td>SQLite <code translate="no">ThreadGoal</code>, typed status, usage</td><td>Worker self-reports with <code translate="no">update_goal</code></td><td>Idle controller, pause, resume, limits</td></tr>
+<tr><th scope="row">Claude Code</th><td>Session prompt, kept on resume</td><td>Stop-hook small model, no tools</td><td>Prevent stop or clear; defers for background tasks</td></tr>
+<tr><th scope="row">Hermes Agent</th><td><code translate="no">GoalState</code> and contract, gates, waits</td><td>Mechanical gates, then judge</td><td>Queue, wait barrier, event wakeup</td></tr>
+</tbody>
+</table>
+
+<details id="matrix">
+<summary>Comparison matrix</summary>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Goal</th><th scope="col">Next turn</th><th scope="col">Completion</th><th scope="col">Budget</th><th scope="col">Waiting</th><th scope="col">Persistence</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>SQLite <code translate="no">ThreadGoal</code> with <code translate="no">goal_id</code></td><td>Thread-idle lifecycle starts one</td><td><code translate="no">update_goal(complete|blocked)</code>, no judge</td><td>Optional tokens; tokens and time tracked</td><td>Controls pause, resume, usage limit; blocked needs a three-turn audit</td><td>Resume restores the controller</td></tr>
+<tr><th scope="row">Claude Code</th><td>One condition per session</td><td>Prompt Stop hook supplies the reason</td><td>Small model: not met, met, impossible; no tools</td><td>None structured; outer turns and USD</td><td>Defers for background tasks; idle check-ins with backoff</td><td>Resume restores the condition, resets baselines</td></tr>
+<tr><th scope="row">Hermes Agent</th><td><code translate="no">GoalState</code>, contract, subgoals, gates, barrier</td><td>Queues a user-role continuation</td><td>Gates, then done, blocked, continue or wait</td><td>20 turns; per-gate timeout and retry</td><td>PID, process session or duration; users first</td><td><code translate="no">SessionDB.state_meta</code>; compression migration</td></tr>
+<tr><th scope="row">OpenCode</th><td>User task and SQLite Todo</td><td>Same turn, by finish reason</td><td>Model stops calling tools</td><td><code translate="no">steps</code>, unlimited by default</td><td>Question and permission in turn; no pause</td><td>Sessions, messages, todos; no controller</td></tr>
+<tr><th scope="row">OpenClaw</th><td>Separate jobs, heartbeat scratch, commitments, background tasks</td><td>Scheduler, event or completion</td><td>Per-run result, exit code or stop</td><td>Per-run timeout and tools</td><td>Scheduled waits, event wakeup, delivery, backoff</td><td>Definitions, state and history survive gateway restarts</td></tr>
+</tbody>
+</table>
+<p class="note">Key property. Codex: most complete control plane. Claude Code: smallest surface, reuses hooks. Hermes: contracts, gates and waits. OpenCode: a progress ledger, not a Goal. OpenClaw: long-term scheduling.</p>
+</details>
+
+<h3 id="hard-tasks">When a task cannot finish</h3>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Outcome</th><th scope="col">Hard stop</th><th scope="col">Can still loop</th><th scope="col">Gap</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td><code translate="no">blocked</code>; control plane may set <code translate="no">paused</code>, <code translate="no">usage_limited</code>, <code translate="no">budget_limited</code>, <code translate="no">complete</code></td><td>Optional tokens; three-turn blocker audit</td><td>Yes, without a budget or declaration</td><td>Self-report only</td></tr>
+<tr><th scope="row">Claude Code</th><td><code translate="no">impossible</code> clears; no tool progress stops but keeps the Goal</td><td>8 consecutive Stop preventions; 3 idle check-ins; outer turns, USD</td><td>Yes, if tools continue and verdict is not met</td><td>Evaluator cannot inspect files, tests or state</td></tr>
+<tr><th scope="row">Hermes Agent</th><td><code translate="no">blocked</code> or <code translate="no">wait</code>; turn limit</td><td>20 turns; unchanged workspace skips failed gates; waits use no turns</td><td>Bounded; low-value repeats possible</td><td>No total token or cost budget confirmed</td></tr>
+<tr><th scope="row">OpenCode</th><td>Turn ends when tools stop; Todo starts nothing</td><td><code translate="no">steps</code></td><td>Within one turn</td><td>No cross-turn contract</td></tr>
+<tr><th scope="row">OpenClaw</th><td>Run succeeds, fails or times out</td><td>Timeout, tool budget, backoff</td><td>Only as Cron is configured</td><td>No objective evaluator</td></tr>
+</tbody>
+</table>
+<p class="note">Semantic evaluators alone guarantee no convergence. Reliable controllers need hard budgets, evidence-based stall detection, explicit blocked, impossible and waiting categories, and waits released only by events. A tool call proves action, not progress: compare new evidence, passed gates, unfinished items and external state. Waits consume no turns.</p>
+
+<details id="native-goals">
+<summary>Codex</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">State</th><td><code translate="no">ThreadGoal</code>: <code translate="no">thread_id</code>, <code translate="no">goal_id</code>, objective, status, token budget, tokens and time used, timestamps. Status is active or an outcome above. One unfinished Goal per thread.</td></tr>
+<tr><th scope="row">Control</th><td>Model tools create, read, or set complete or blocked. User and system control pause, resume and limits. App server: <code translate="no">thread/goal/set|get|clear</code> and notifications.</td></tr>
+<tr><th scope="row">Concurrency</th><td>Mutation and idle continuation share a semaphore; <code translate="no">expected_goal_id</code> stops an old turn updating a new Goal. Usage accumulates against a baseline at turn end. Resume re-registers only when active.</td></tr>
+<tr><th scope="row">Limits</th><td>The worker runs the completion audit. Tracks elapsed time, but has no time budget or external-process wait state.</td></tr>
+</tbody>
+</table>
+<p>Sources: <a href="https://github.com/openai/codex/blob/main/codex-rs/state/src/model/thread_goal.rs">thread_goal.rs</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/spec.rs">spec.rs</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/runtime.rs">runtime.rs</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/templates/goals/continuation.md">continuation.md</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md">app-server README</a></p>
+</details>
+
+<details>
+<summary>Claude Code</summary>
+<p class="note">Source is not public; only official contracts are recorded.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry</th><td><code translate="no">/goal &lt;condition&gt;</code>: one per session, a new value replaces and starts a turn; permission mode unchanged. Specializes a session-scoped prompt Stop hook.</td></tr>
+<tr><th scope="row">Stop hook</th><td>A Stop hook may return <code translate="no">decision:"block"</code> and <code translate="no">reason</code>; a prompt hook returns <code translate="no">ok</code>, <code translate="no">reason</code>, <code translate="no">impossible</code>. <code translate="no">stop_hook_active</code> prevents recursion.</td></tr>
+<tr><th scope="row">Evaluation</th><td>No evaluation while background shells or subagents run. Consecutive turns without tool progress stop looping but keep the Goal for the next prompt.</td></tr>
+<tr><th scope="row">Errors and limits</th><td>Unrecoverable auth, balance, uncompactable overflow or model errors clear the Goal; transient ones keep it. Turn and time terms can go in the condition; print mode has <code translate="no">--max-turns</code> and <code translate="no">--max-budget-usd</code>.</td></tr>
+<tr><th scope="row">Evidence</th><td>The evaluator relies on the worker placing evidence in the transcript.</td></tr>
+</tbody>
+</table>
+<p>Sources: <a href="https://code.claude.com/docs/en/goal">/goal</a>, <a href="https://code.claude.com/docs/en/hooks#stop">Stop hook</a>, <a href="https://code.claude.com/docs/en/cli-reference">CLI</a>, <a href="https://code.claude.com/docs/en/tools-reference">task tools</a></p>
+</details>
+
+<details>
+<summary>Hermes Agent</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry and state</th><td>Entry <code translate="no">/goal</code>, <code translate="no">/subgoal</code>; persisted on each transition in <code translate="no">state_meta[goal:session]</code>. <code translate="no">GoalState</code> stores status, turn budget, judge-failure counters, subgoals, barrier, contract, gates.</td></tr>
+<tr><th scope="row"><code translate="no">GoalContract</code></th><td><code translate="no">GoalContract</code>: outcome, verification, constraints, boundaries, <code translate="no">stop_when</code>, injected into worker and judge.</td></tr>
+<tr><th scope="row"><code translate="no">GoalGate</code></th><td><code translate="no">GoalGate</code> runs shell checks before the judge; failures skip it and provide bounded output. Records attempts, exit code, output tail and workspace fingerprint.</td></tr>
+<tr><th scope="row">Subgoals and sessions</th><td>A subgoal is an added condition; it does not restart the main Goal. CLI and gateway share <code translate="no">GoalManager</code>, without changing prompts or toolsets. Compression moves the Goal to the new session id.</td></tr>
+<tr><th scope="row">Evidence base</th><td>The local snapshot lacks contracts, gates and barriers, so those rest on public upstream source.</td></tr>
+</tbody>
+</table>
+<p>Sources: <a href="https://github.com/NousResearch/Hermes-Agent/blob/main/hermes_cli/goals.py">goals.py</a>, <a href="https://github.com/NousResearch/Hermes-Agent/blob/main/website/docs/user-guide/features/goals.md">guide</a>, <a href="https://github.com/NousResearch/Hermes-Agent/blob/main/agent/conversation_loop.py">conversation_loop.py</a>, <a href="https://github.com/NousResearch/Hermes-Agent/blob/main/tools/todo_tool.py">todo_tool.py</a></p>
+</details>
+
+<details id="adjacent">
+<summary>OpenCode and OpenClaw</summary>
+<h3>OpenCode</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Loop</th><td><code translate="no">SessionPrompt.run</code> exits on a non-tool-call finish with no unhandled calls. Each round resolves profile and tools and handles compaction and subtasks. The last step injects a max-steps hint.</td></tr>
+<tr><th scope="row">Plan</th><td>Plan is an agent profile restricting edits, not Goal state.</td></tr>
+<tr><th scope="row">Todo</th><td>Todo: content, status, priority, in SQLite by session, publishes <code translate="no">todo.updated</code>. <code translate="no">todowrite</code> replaces the list; disabled for subagents by default. Usable as a progress projection only.</td></tr>
+</tbody>
+</table>
+<p>Sources: <a href="https://github.com/sst/opencode/blob/dev/packages/opencode/src/session/prompt.ts">prompt.ts</a>, <a href="https://github.com/sst/opencode/blob/dev/packages/opencode/src/session/todo.ts">todo.ts</a>, <a href="https://github.com/sst/opencode/blob/dev/packages/opencode/src/agent/agent.ts">agent.ts</a>, <a href="https://opencode.ai/docs/tools/#todowrite">todowrite</a>, <a href="https://opencode.ai/docs/agents/">agents</a></p>
+<h3>OpenClaw</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Automation jobs</th><td>id, name, enabled, schedule, session target, wake mode, typed payload, delivery, failure alert, run state. Payloads: system event, agent turn, command, script. Targets: main, current, isolated, named. Execution and delivery results are separate.</td></tr>
+<tr><th scope="row">Heartbeat</th><td>a system monitor that reads scratch or <code translate="no">HEARTBEAT.md</code> and skips the model when nothing is due. Structured tasks: name, interval, prompt.</td></tr>
+<tr><th scope="row">Commitments</th><td>inferred promises with due window, confidence, status, attempts, delivery scope.</td></tr>
+<tr><th scope="row">Use here</th><td>Best as a reference for external waiting: a Goal controller could bind automation for a future time or event, then resume on it.</td></tr>
+</tbody>
+</table>
+<p>Sources: <a href="https://github.com/openclaw/openclaw/blob/main/src/cron/types.ts">types.ts</a>, <a href="https://github.com/openclaw/openclaw/blob/main/src/infra/heartbeat-runner.ts">heartbeat-runner.ts</a>, <a href="https://github.com/openclaw/openclaw/blob/main/src/commitments/types.ts">commitments</a>, <a href="https://docs.openclaw.ai/cron-jobs">automation</a>, <a href="https://docs.openclaw.ai/gateway/heartbeat">heartbeat</a>, <a href="https://docs.openclaw.ai/automation/tasks">tasks</a></p>
+</details>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Chat Goal continuation; no default round or recovery-expiry limit; history pairing; unknown-effect approval; deduplicated new turns; restricted Resume; incompatible-checkpoint handling; Job continuation with original authorization; independent acceptance; request attribution; late and partly unknown usage; hard-budget reservations; joint settlement; backend action conditions; explicit Verify; automatic continuation after a transient failed turn; crash-time lower bounds; projection claim validation; transcript row; nested-scope correction</td></tr>
+<tr><th scope="row">Process evidence</th><td>Interruption matrices for chat and Goals; macOS live-background-process reconnection</td></tr>
+<tr><th scope="row">Not established</th><td>Windows process survival, OS restart, cross-host takeover, general external-event scheduling. Skipped tests prove no capability.</td></tr>
+<tr><th scope="row">Outside this design</th><td>Cross-host leases, a general workflow engine, an independent audit repository, bulk rewrite of historical costs or effects, exactly-once external operations, a judge on every turn</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../../../../capabilities/goal.html">Goals in chat</a></p>

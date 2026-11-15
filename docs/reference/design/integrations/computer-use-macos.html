@@ -1,0 +1,133 @@
+<title>macOS delivery</title>
+<meta name="description" content="How the macOS backend delivers input in the background, handles file dialogs and Spaces, waits for busy apps and refuses.">
+<h1>macOS delivery</h1>
+<p>If a previously observed control disappears and cannot be safely rebound, the tool reads a fresh full state and returns <code translate="no">observation_required</code>. The Agent chooses its next action from that state. The missing-control step and later batch steps are not dispatched; earlier completed steps are retained and never replayed. A refresh that itself fails remains an error.</p>
+
+
+<h2 id="background-delivery">Background delivery</h2>
+<p>How this fits with everything else that can take the screen: <a href="working-behind-the-user.html">Working behind the user</a>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Element actions</th><td>Element actions go through Accessibility: <code translate="no">AXPress</code> / <code translate="no">AXConfirm</code> / <code translate="no">AXPick</code>, then <code translate="no">AXSelected</code>, then focus, then a pointer click at the element's centre as the last resort; <code translate="no">AXShowMenu</code> for right clicks; <code translate="no">AXValue</code> for <code translate="no">set_value</code>; <code translate="no">AXSelectedTextRange</code> (UTF-16 offsets) for <code translate="no">select_text</code>; page scrolling actions, then the scrollbar's value, then wheel events for <code translate="no">scroll</code>.</td></tr>
+<tr><th scope="row">Rows of a list</th><td>A click on a row, or on a cell up to three levels inside one, sets <code translate="no">AXSelected</code> on the row, which is what a click on it does. A press that returns an error counts when the row is selected afterwards. Measured on Outlook: a message cell lists <code translate="no">AXPress</code> and answers it with -25205, and its row takes <code translate="no">AXSelected</code> in 0.2 s with the reading pane following. No mouse-down is sent, so the application has nothing to activate itself on.</td></tr>
+<tr><th scope="row">Pointer reach</th><td>A pointer click or hover on an element first checks that its centre lies inside the window cut by its scroll and web areas (<code translate="no">_reachable_center</code>); if not, it runs <code translate="no">AXScrollToVisible</code>, and where the element lacks it (native lists and tables) sets each enclosing scroll area's scroll bars to centre it, then reads the frame again once two reads agree.</td></tr>
+<tr><th scope="row">Out of view</th><td>An element still out of view, or with no frame, is refused with <code translate="no">NotDispatched</code>.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Real pointer events</th><td>Pointer events that have to be real (coordinate clicks, drags, wheel) are posted with the recipe the open-source cua-driver established:
+<ol>
+<li>A focus-without-raise record posted to the target process serial number.</li>
+<li>A <code translate="no">mouseMoved</code> primer.</li>
+<li>The event, stamped with click state, button, subtype 3, target pid, window id and a click group.</li>
+<li><code translate="no">CGEventSetWindowLocation</code> with the point relative to the window's top left (<code translate="no">window_location</code>: the screen point minus the window's origin, in points, as KWWK computer-use-core and cua-driver set it).</li>
+<li><code translate="no">SLEventPostToPid</code> for delivery.</li>
+</ol>
+</td></tr>
+<tr><th scope="row">Window location</th><td>AppKit places the click in the window from the event's screen location; a probe window took a click at the same point whether <code translate="no">window_location</code> held the window-relative or the screen point.</td></tr>
+<tr><th scope="row">Keyboard</th><td>Keyboard events carry an <code translate="no">SLSEventAuthenticationMessage</code> so the receiving process accepts them; without SkyLight the code falls back to <code translate="no">CGEventPostToPid</code>.</td></tr>
+<tr><th scope="row">Result</th><td>The result is a click the application handles as if the user clicked, while the real cursor stays where it is and the front application does not change.</td></tr>
+</tbody>
+</table>
+<p>AppKit still orders the clicked window to the front of its level when the application handles the mouse-down, so a coordinate click or drag first lists the other applications' windows stacked over the target and overlapping it (the front application's own windows excluded), and afterwards raises them again with <code translate="no">AXRaise</code>, deepest first, which puts the stack back as it was.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Choosing a window</th><td>A window is chosen by <code translate="no">window</code> (title substring or index) or <code translate="no">window_id</code>; without either, the window the model read last stays selected while it is open, then the focused or main window.</td></tr>
+<tr><th scope="row">Following</th><td>Each state records the app's windows (window id, or title without one); when the focused or main window is one that was not there at the last read, the read follows it and says which window it opened over, so a dialog or document a step brought up is what the next steps act on.</td></tr>
+<tr><th scope="row">Dialogs</th><td>A new window with a dialog subrole (<code translate="no">AXDialog</code>, <code translate="no">AXSystemDialog</code>) or a new file dialog is followed even when the focus stays on the window under it, as it does when a background app opens its out-of-process file dialog.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Identifier</th><td>The system Open and Save dialogs carry <code translate="no">AXIdentifier</code> <code translate="no">open-panel</code> or <code translate="no">save-panel</code>, as a window, an <code translate="no">AXSheet</code> or a child window of the window under them.</td></tr>
+<tr><th scope="row">Sandboxed app</th><td>A sandboxed app's dialog is drawn by <code translate="no">com.apple.appkit.xpc.openAndSavePanelService</code>, and the window server lists it twice with the same bounds: as the service's off-screen layer-0 window, which holds the Accessibility tree, and as the app's on-screen window that shows it (<code translate="no">panel_hosts</code>).</td></tr>
+<tr><th scope="row">Same bounds</th><td>A window of the app with those bounds is a file dialog whatever its identifier, and the service's window reports the app window's id, so captures, <code translate="no">list_windows</code> and <code translate="no">window_id</code> all name the window on screen.</td></tr>
+<tr><th scope="row">Listing</th><td>The app lists the dialog among its windows while the dialog's link to it holds; when it stops listing a dialog that is still on screen, the dialog's window is taken from the service's <code translate="no">AXWindows</code> by window id, so <code translate="no">list_windows</code>, <code translate="no">window=&lt;title&gt;</code> and the states keep reaching it.</td></tr>
+<tr><th scope="row">What works</th><td>Its Accessibility elements are reachable and <code translate="no">AXPress</code> and <code translate="no">AXValue</code> work, SkyLight-routed clicks land, but key events posted to the app pid, to the service pid, or after a focus-without-raise never arrive, and setting the search field's <code translate="no">AXValue</code> does not run the search.</td></tr>
+<tr><th scope="row">Keys refused</th><td>While a file dialog is the focused window or in it, stands as a window of its own, or is on screen without Accessibility reaching it, <code translate="no">press_key</code>, <code translate="no">type_text</code> and <code translate="no">paste</code> fail with that explanation and point at <code translate="no">open_file</code> instead of sending keys to the window under it; a sheet on another document window leaves keys to the focused one alone.</td></tr>
+<tr><th scope="row">State of a dialog</th><td>A state of the dialog says it is the file dialog, points at <code translate="no">open_file</code> and always adds the OCR text, since the file browser exposes no rows; a state of another window of the app says a file dialog is open.</td></tr>
+</tbody>
+</table>
+<p><code translate="no">open_file</code> replaces the dialog:</p>
+<ol>
+<li>A modal dialog holds back the request to open a document, so it first presses an open dialog's Cancel button (<code translate="no">AXCancelButton</code>, else a button titled Cancel) and waits for the dialog to close. It fails with what to click when Accessibility does not reach it.</li>
+<li><code translate="no">NSWorkspace openURLs:withApplicationAtURL:configuration:</code> with <code translate="no">activates</code> off opens the document in the app, launching it in the background if needed. The front app and its windows stay where they are.</li>
+<li>It waits for a window whose <code translate="no">AXDocument</code> is the file's URL or whose title names it.</li>
+</ol>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Refused paths</th><td>It refuses relative or missing paths, bundles and launchers (<code translate="no">.app</code>, <code translate="no">.command</code>, shell scripts, <code translate="no">.workflow</code>, installer packages, location files), files with an execute bit, and terminal apps, which run what they open.</td></tr>
+<tr><th scope="row">Minimized</th><td>A minimized window or a hidden app still gives its tree; the screenshot is unavailable until <code translate="no">show_window</code> un-minimizes it (<code translate="no">AXMinimized</code>) or unhides the app, neither of which activates it.</td></tr>
+<tr><th scope="row">Other Space</th><td>A window on another Space is read and operated where it is.</td></tr>
+<tr><th scope="row">Lookup</th><td><code translate="no">AXWindows</code> lists only the current Space's windows, so the app's off-screen ordinary windows (layer 0, at least 80×60) that no listed window covers are looked up by SkyLight's remote token: <code translate="no">_AXUIElementCreateWithRemoteToken</code> with the pid, <code translate="no">0</code>, <code translate="no">'coco'</code> and an element id, trying ids from zero (at most 4000) until each window id has its element, as AltTab does; the result is kept per app until that set of ids changes.</td></tr>
+<tr><th scope="row">Delivery there</th><td>ScreenCaptureKit captures such a window and SkyLight's pointer route reaches it, but the window server drops key events for it whatever their route, so <code translate="no">type_text</code> and <code translate="no">paste</code> there set the focused element's <code translate="no">AXSelectedText</code> instead, <code translate="no">press_key</code> reports that keys do not arrive, and <code translate="no">show_window</code> says the window stays on its Space.</td></tr>
+<tr><th scope="row">Moving</th><td>Moving it is not possible: since macOS 14.5 only the Dock may (<code translate="no">SLSMoveWindowsToManagedSpace</code> from any other process needs System Integrity Protection relaxed, as yabai documents).</td></tr>
+</tbody>
+</table>
+<p><code translate="no">paste</code> writes the pasteboard (plain text, or HTML rendered from Markdown with <code translate="no">markdown-it</code>), sends Cmd+V to the target process, and restores the previous pasteboard contents when the change count shows nothing else wrote in between.</p>
+
+<h2 id="a-busy-application">A busy application</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Serial handling</th><td>A macOS app handles one Accessibility request at a time, in order, and answers when it is done.</td></tr>
+<tr><th scope="row">Timeout error</th><td>A request whose handler outlasts the messaging timeout returns <code translate="no">kAXErrorCannotComplete</code> although the app received it once and is carrying it out: a button that saves for seconds, a command that runs a modal dialog, a menu that stays open.</td></tr>
+<tr><th scope="row">Measured</th><td>Measured on macOS 15, a press handled within the timeout returns 0, a longer one returns the error after the timeout (1.5 s by default) and is delivered exactly once, and while the handler blocks the app every read fails the same way, <code translate="no">AXWindows</code> included, so the app reads as having no windows.</td></tr>
+<tr><th scope="row">Timeout scope</th><td>A timeout set on an element applies to that element only.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Sending</th><td><code translate="no">MacComputer._taken</code> sends every request that changes the app (<code translate="no">_perform</code>, <code translate="no">_set</code>) with <code translate="no">ACTION_TIMEOUT</code> (1 s) set on the element.</td></tr>
+<tr><th scope="row">Counted as taken</th><td><code translate="no">kAXErrorCannotComplete</code> after that whole wait counts as taken, so the step is reported as made and nothing falls back to a pointer click or to typed keys, which would do it twice; the same code at once is a request that could not be made and stays a failure.</td></tr>
+<tr><th scope="row">Probe</th><td><code translate="no">_answers</code> asks the app element for its role with <code translate="no">ANSWER_TIMEOUT</code> (0.5 s) and is false only when that went unanswered.</td></tr>
+<tr><th scope="row">Waiting</th><td><code translate="no">_await_answer</code> repeats it for up to <code translate="no">UNANSWERED_MAX</code> (10 s) and then raises <code translate="no">NotAnswering</code>, a <code translate="no">NotDispatched</code>.</td></tr>
+<tr><th scope="row">Order</th><td>Requests are answered in order, so the answer comes after the app has finished the step it was sent before, or while it runs the dialog or menu that step opened.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Waits</th><td><code translate="no">get_state</code>, <code translate="no">list_windows</code> and <code translate="no">act</code> wait that way before they ask the app anything, outside the backend's lock, and <code translate="no">settle</code> waits before it reads the window; <code translate="no">wait</code> never does, so the model can let the app finish.</td></tr>
+<tr><th scope="row">Silent step</th><td><code translate="no">targets/app.py</code> returns a step whose app stayed silent as done, without state and with the instruction not to repeat it.</td></tr>
+<tr><th scope="row">Refused step</th><td>A step refused because the app is silent sent nothing (<code translate="no">action_dispatched: false</code>), and among several steps the ones before it stay made without a second wait.</td></tr>
+<tr><th scope="row">Other failure</th><td>Any other failure to read the state after a step that was sent (the app quit, the screen locked) is reported after the step's <code translate="no">Done</code>, never as a step that did not happen.</td></tr>
+</tbody>
+</table>
+
+<h2 id="refusals">Refusals</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Refused targets</th><td>The tool never types into <code translate="no">AXSecureTextField</code> elements or while macOS reports secure keyboard input (<code translate="no">kCGSSessionSecureInputPID</code>), and refuses to target Keychain Access, Passwords, loginwindow, SecurityAgent and OpenProgram's own bundles.</td></tr>
+<tr><th scope="row">Refusal</th><td>The refusal is returned as an error that asks the user to do the step; no approval scope overrides it.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Locked screen</th><td>A locked screen stops reads and steps too. macOS answers no Accessibility query about a window while the session is locked, so every application would read as having no windows.</td></tr>
+<tr><th scope="row">Checks</th><td><code translate="no">get_state</code>, <code translate="no">act</code>, <code translate="no">list_windows</code> and <code translate="no">zoom</code> check <code translate="no">CGSSessionScreenIsLocked</code> first (<code translate="no">_unlocked</code>) and fail as not dispatched with a message that the screen is locked and the windows are still open; <code translate="no">list_apps</code> and <code translate="no">find</code>, which ask nothing of a window, still answer.</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>windows on other Spaces, tested from Desktop 1 against Calculator on Desktop 2 (listing, screenshot, element presses computing 7×6, a coordinate click, a scroll, the key errors), with the pointer and the front app unchanged and the window left on its Space; inserting text there is not covered, since Calculator has no text field.</td></tr>
+<tr><th scope="row">Implemented on macOS</th><td>following a newly opened window, file-dialog detection with the key refusal, and <code translate="no">open_file</code>, tested against Preview and PDF Expert (Open dialog followed, keys refused, Cancel pressed, a PDF opened and its text read) with the front app unchanged throughout, plus unit tests.</td></tr>
+<tr><th scope="row">Implemented on macOS</th><td>following a dialog that leaves the focus where it was, telling the out-of-process dialog by the window list, reading it from the service process, refusing keys while it is open beside the focused window, and cancelling it from <code translate="no">open_file</code> have unit tests; of these only the window-list detection has run live, against PDF Expert's Open dialog. Not implemented on Linux and Windows.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.html">Computer and browser use</a></p>

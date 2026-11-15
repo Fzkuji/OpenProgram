@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from openprogram.agentic_programming.runtime import _build_pi_context
-from openprogram.providers.anthropic.anthropic import _build_messages
-from openprogram.providers.types import ImageContent, UserMessage
+from openprogram.runtime.agent.runtime import _build_pi_context
+from openprogram.models.providers.adapters.anthropic.anthropic import _build_messages
+from openprogram.models.providers.types import ImageContent, UserMessage
 
 
 # runtime carries it, anthropic preserves it (the full chain)

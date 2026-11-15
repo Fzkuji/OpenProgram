@@ -1,0 +1,88 @@
+/* Code rain style (Settings → General → Code rain style): the Matrix look
+   in one place. <html data-code-rain="on"> while it is on
+   (lib/prefs/appearance/welcome-backdrop-pref.ts). Pieces:
+   - the empty-chat backdrop (components/chat/welcome/welcome-backdrop.tsx);
+   - new messages raining in (components/chat/welcome/code-rain-arrivals.tsx);
+   - anything in progress shown as code (components/chat/welcome/code-rain-style.tsx):
+     the thinking status, a running tool group's label, running steps'
+     icons and titles, and the cursor of a streaming sub-call. */
+:root { --code-rain-ink: #118a3a; }
+:root[data-theme-mode="dark"] { --code-rain-ink: #22e35b; }
+
+/* ---- In progress ---- */
+.code-rain-icon { display: inline-flex; flex: none; }
+.code-rain-icon canvas { width: 100%; height: 100%; }
+.code-rain-text {
+  color: var(--code-rain-ink);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-style: normal;
+  letter-spacing: 0.3px;
+}
+:root[data-theme-mode="dark"] .code-rain-text {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--code-rain-ink) 55%, transparent);
+}
+.code-rain-text:is(.tl-label, .tl-step-title) {
+  color: var(--code-rain-ink);
+  font-size: var(--fs-xs);
+  font-style: normal;
+  opacity: 1;
+}
+/* A green label's › is green too. The thinking row keeps no time of its
+   own: like a tool group's row, its time shows under the finished reply. */
+.tl-toggle:has(> .code-rain-text) .tl-chev { color: var(--code-rain-ink); }
+/* The failure note keeps its red but takes the green label's type. */
+.tl-toggle:has(> .code-rain-text) .tl-fail {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.3px;
+}
+.pending-body > .tl-toggle ~ .message-timestamp { display: none; }
+/* A running step's tile turns green and shows falling glyphs. */
+:root[data-code-rain="on"] .tl-step-icon.is-running { --tone: var(--code-rain-ink); }
+/* A streaming sub-call ends in a blinking block cursor. */
+:root[data-code-rain="on"] .llm-nc-md.is-running::after {
+  width: 7px;
+  height: 14px;
+  border-radius: var(--radius-2xs);
+  background: var(--code-rain-ink);
+  animation: codeRainCursor 1s steps(1) infinite;
+}
+@keyframes codeRainCursor { 50% { opacity: 0; } }
+
+/* ---- New messages ---- */
+/* The canvas over the chat area that drops and code glyphs are drawn on,
+   and the highlights that hide characters until they decode and then
+   fade them from green to their own colour. */
+/* The colour the green fades into: each message's body text colour. */
+.user-md { --code-rain-text: var(--text-bright); }
+.chat-text { --code-rain-text: var(--text-primary); }
+.code-rain-arrivals {
+  position: fixed;
+  pointer-events: none;
+  z-index: 30;
+  /* Streams pass behind the text: the darker (lighter in dark mode) of
+     the stream and what is under it wins, so text stays on top. */
+  mix-blend-mode: darken;
+}
+:root[data-theme-mode="dark"] .code-rain-arrivals { mix-blend-mode: lighten; }
+::highlight(code-rain-hidden) { color: transparent; }
+::highlight(code-rain-fade-0) { color: var(--code-rain-ink); }
+::highlight(code-rain-fade-1) { color: color-mix(in srgb, var(--code-rain-ink) 80%, var(--code-rain-text, var(--text-primary))); }
+::highlight(code-rain-fade-2) { color: color-mix(in srgb, var(--code-rain-ink) 60%, var(--code-rain-text, var(--text-primary))); }
+::highlight(code-rain-fade-3) { color: color-mix(in srgb, var(--code-rain-ink) 40%, var(--code-rain-text, var(--text-primary))); }
+::highlight(code-rain-fade-4) { color: color-mix(in srgb, var(--code-rain-ink) 22%, var(--code-rain-text, var(--text-primary))); }
+::highlight(code-rain-fade-5) { color: color-mix(in srgb, var(--code-rain-ink) 8%, var(--code-rain-text, var(--text-primary))); }
+
+/* ---- Programs in Activity (components/right-sidebar/running/program-progress.tsx) ---- */
+/* A running program's bar fills with green blocks, and its output reads
+   as a green terminal. Errors keep their red. */
+:root[data-code-rain="on"] [data-program-bar][data-tone="run"] > span {
+  background: repeating-linear-gradient(90deg, var(--code-rain-ink) 0 5px, transparent 5px 7px);
+}
+:root[data-code-rain="on"] [data-program-output] {
+  color: var(--code-rain-ink);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+:root[data-theme-mode="dark"][data-code-rain="on"] [data-program-output] {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--code-rain-ink) 35%, transparent);
+}

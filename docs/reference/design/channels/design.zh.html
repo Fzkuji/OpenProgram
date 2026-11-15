@@ -1,0 +1,201 @@
+<title>渠道子系统设计</title>
+<meta name="description" content="渠道子系统的结构、消息流、平台和入口。">
+<h1>渠道子系统设计</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 430" role="img" aria-label="入站：平台用户的消息进入平台适配器，再到 handle_inbound 和 dispatch_inbound。一次性出站：脚本调用 outbound.py。两条路径都经 _transport.py 发送，它是唯一向平台 API 发送字节的地方。">
+  <defs><marker id="ch-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="24">平台用户</text>
+  <line class="ln" x1="30" y1="36" x2="30" y2="62" marker-end="url(#ch-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="0" y="84">implementations/*.py</text>
+  <text class="t-soft" x="0" y="106">长轮询或事件循环；</text>
+  <text class="t-soft" x="0" y="126">解析成 ChannelMessage</text>
+  <line class="ln" x1="30" y1="136" x2="30" y2="162" marker-end="url(#ch-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="0" y="184">handle_inbound</text>
+  <text class="t-soft" x="0" y="206">每条消息一个线程、访问门禁、</text>
+  <text class="t-soft" x="0" y="226">附件、引用块</text>
+  <line class="ln" x1="30" y1="236" x2="30" y2="262" marker-end="url(#ch-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="0" y="284">dispatch_inbound</text>
+  <text class="t-soft" x="0" y="306">路由、会话 key、按会话加锁、</text>
+  <text class="t-soft" x="0" y="326">运行回合、进度、广播</text>
+  <line class="ln" x1="30" y1="336" x2="30" y2="350" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="420" y="24">脚本、定时任务、notebook</text>
+  <line class="ln" x1="450" y1="36" x2="450" y2="62" marker-end="url(#ch-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="420" y="84">outbound.py</text>
+  <text class="t-soft" x="420" y="106">一次性发送，无需 worker</text>
+  <line class="ln" x1="450" y1="118" x2="450" y2="350" marker-end="url(#ch-a)"/>
+  <rect class="tile" x="0" y="352" width="680" height="50" rx="8"/>
+  <text class="t-cmd notranslate" translate="no" x="14" y="373">_transport.py</text>
+  <text class="t-soft" x="14" y="393">唯一发送字节的地方：分块、渲染、硬上限拆分、限流重试</text>
+  <text class="t-soft" x="0" y="424">Telegram、Discord、Slack、微信 iLink</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>平台用户</strong></li>
+  <li><code translate="no">implementations/*.py</code><small>长轮询或事件循环； 解析成 ChannelMessage</small></li>
+  <li><code translate="no">handle_inbound</code><small>每条消息一个线程、访问门禁、 附件、引用块</small></li>
+  <li><code translate="no">dispatch_inbound</code><small>路由、会话 key、按会话加锁、 运行回合、进度、广播</small></li>
+  <li class="via">脚本、定时任务、notebook: <code translate="no">outbound.py</code></li>
+  <li><code translate="no">_transport.py</code><small>唯一发送字节的地方：分块、渲染、硬上限拆分、限流重试</small></li>
+  <li class="flow-end"><strong>Telegram、Discord、Slack、微信 iLink</strong></li>
+</ol>
+</figure>
+<p class="note">要求、约束以及与 OpenClaw、Hermes 的对比：<a href="audit.zh.html">要求与约束</a>。协议细节：各适配器顶部的 docstring。</p>
+<h2 id="end-to-end">一条消息的全过程</h2>
+<p>你给 Telegram 机器人发送“这里有哪些 Python 文件？”</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">阶段</th><th scope="col">发生什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">telegram.py</code></th><td><code translate="no">_handle_update</code> 收到 update，构造 <code translate="no">ChannelMessage{text, chat_id="123", user_id="456", chat_type="direct", attachments=()}</code>。@ 机器人或回复机器人时 <code translate="no">mentioned=True</code>，并去掉提及。</td></tr>
+<tr><th scope="row"><code translate="no">handle_inbound</code></th><td>每条消息一个守护线程，<code translate="no">runtime.ask</code> 暂停的回合不会阻塞轮询。<code translate="no">decide_inbound_sender</code>、<code translate="no">download_inbound</code>、引用块，然后 <code translate="no">dispatch_inbound(channel="telegram", account_id="default", peer_kind="direct", peer_id="123", progress_stream=True, ...)</code>。同一 peer 的消息到达时排队，按这个顺序开启轮次；命令不排队。</td></tr>
+<tr><th scope="row"><code translate="no">dispatch_inbound</code></th><td>绑定决定 agent。<code translate="no">session_key = "default_direct_123"</code>。获取按会话的锁：同会话回合排队，不同会话并行；<code translate="no">/answer</code> 和 <code translate="no">/decline</code> 在锁之前处理；<code translate="no">/stop</code> 和 <code translate="no">/help</code> 不经过这里。加载会话。发送 <code translate="no">⏳ working...</code>，保留 <code translate="no">MessageHandle{message_id="9001"}</code>。运行 <code translate="no">process_user_turn</code>。</td></tr>
+<tr><th scope="row">工具运行</th><td><code translate="no">tool_use</code> 在距上次编辑超过 1 秒时把占位改成 <code translate="no">⚙ bash</code>；<code translate="no">tool_result</code> 改成 <code translate="no">✓ bash</code>。</td></tr>
+<tr><th scope="row">回复</th><td>强制编辑绕过节流，把消息 9001 改成回复。持久化、广播，返回 <code translate="no">None</code>，<code translate="no">handle_inbound</code> 不再发送。</td></tr>
+<tr><th scope="row">降级路径</th><td>占位发送失败、平台不能编辑或微信：<code translate="no">dispatch_inbound</code> 返回回复，<code translate="no">handle_inbound</code> 经 <code translate="no">Channel.send_text</code> 按 <code translate="no">MAX_CHARS</code> 分块发送。</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">peer_id</code> 来自 <code translate="no">Channel.peer_id_for</code>：Telegram 和微信为 <code translate="no">chat_id</code>；Telegram 群组 <code translate="no">group_sessions=per-user</code> 时为 <code translate="no">{chat_id}_{user_id}</code>；Discord 和 Slack 为 <code translate="no">{chat_id}_{user_id}</code>。</p>
+<h3 id="proactive-send">从代码发送</h3>
+<pre translate="no"><code>from openprogram.interfaces.channels.outbound import send
+
+send("telegram", "default", "1234", "Good morning")</code></pre>
+<p class="note">取凭据、HTTPS POST、<code translate="no">SendResult</code> 转为 <code translate="no">True</code>/<code translate="no">False</code>。没有适配器、worker、会话、agent 调用或广播。</p>
+<h2 id="principles">设计原则</h2>
+<h3 id="two-entry-points">两个入口，一个实现</h3>
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">用途</th><th scope="col">状态</th><th scope="col">调用方</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">outbound.send</code></th><td>一次性，无需常驻进程</td><td>无状态</td><td>定时任务、notebook、Agent 方法、Web UI 回复</td></tr>
+<tr><th scope="row"><code translate="no">Channel.send_text</code> + <code translate="no">edit_text</code></th><td>持有 <code translate="no">message_id</code> 用于编辑</td><td>有状态</td><td><code translate="no">dispatch_inbound</code> 进度</td></tr>
+</tbody>
+</table>
+<p class="note">两者都用 <code translate="no">_transport.post_message</code> / <code translate="no">patch_message</code>：HTTP、凭据和分块只有一份。</p>
+<h3 id="traffic-hub">流量枢纽</h3>
+<p><code translate="no">_conversation.py</code> 只保留流程：路由、会话 key 和重置策略，然后在按会话的锁内加载会话、流式时发占位、运行 agent、持久化和广播。路由、存储和广播各在自己的模块。</p>
+<h3 id="platform-differences">平台差异封在底层</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层</th><th scope="col">负责</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_transport.py</code></th><td>所有对外 HTTP：<code translate="no">editMessageText</code>、<code translate="no">PATCH /messages/{id}</code>、<code translate="no">chat.update</code>、iLink，各平台 <code translate="no">post_file</code>（sendPhoto/sendDocument、multipart、external-upload、iLink CDN）。<code translate="no">MAX_CHARS</code>、分块、<code translate="no">HARD_CAPS</code> 再拆分、限流重试。</td></tr>
+<tr><th scope="row"><code translate="no">_format.py</code></th><td>Markdown 转 Telegram HTML（全部转义；实体被拒时回退为去标签文本）、Slack mrkdwn、Discord 直通、微信纯文本。代码用占位保护。</td></tr>
+<tr><th scope="row">适配器</th><td>只负责事件循环和解析成 <code translate="no">ChannelMessage</code>。<strong>它们不发送</strong>；解析之后的一切在 <code translate="no">handle_inbound</code>。</td></tr>
+<tr><th scope="row"><code translate="no">run_forever(stop)</code></th><td><code translate="no">run()</code> 抛异常时重连：5 秒起翻倍，上限 300 秒，存活 60 秒后重置。正常返回表示永久停止，如微信 token 失效。</td></tr>
+</tbody>
+</table>
+<h3 id="structured-errors">结构化错误</h3>
+<pre translate="no"><code>@dataclass(frozen=True)
+class SendResult:
+    ok: bool
+    message_id: str = ""
+    error_kind: str = ""     # auth, rate_limit, bad_target, network,
+                             # not_supported, format, unknown
+    error_detail: str = ""   # one human-readable line
+    retryable: bool = False
+    retry_after: float = 0.0 # platform-stated wait; 0 = unstated
+    connect_failed: bool = False   # connection never opened; safe to resend</code></pre>
+<p class="note"><code translate="no">rate_limit</code> 在 <code translate="no">_transport</code> 内重试：优先 <code translate="no">Retry-After</code>，否则 1 秒、3 秒，等待上限 30 秒，共 3 次。</p>
+<p class="note">连接没建立（<code translate="no">connect_failed</code>）时隔 1、2、4 秒重试，共 4 次；请求发出后的失败不重试，重发可能送达两次。</p>
+<p class="note"><code translate="no">outbound.send</code>、<code translate="no">send_text</code>、<code translate="no">edit_text</code> 返回 bool 或句柄；<code translate="no">_full</code> 变体和两个 <code translate="no">send_file</code> 返回 <code translate="no">SendResult</code>。</p>
+<h3 id="inbound-access">入站访问控制</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件</th><td>每个（渠道、账号）一个 <code translate="no">access.json</code>：按稳定平台用户 id 的 <code translate="no">allowlist</code>，最多三个 <code translate="no">pending</code>。准入始终是配对；旧的 <code translate="no">policy: "open"</code> 被忽略。</td></tr>
+<tr><th scope="row">配对码</th><td>8 位大写字符，不含 <code translate="no">0O1I</code>，有效 1 小时。这一小时内不再提示同一发送者；超额请求静默忽略。</td></tr>
+<tr><th scope="row">门禁</th><td>在路由前运行；未配对发送者到不了 <code translate="no">dispatch_inbound</code>。</td></tr>
+<tr><th scope="row">修改</th><td><code translate="no">approve</code>、<code translate="no">approve_user</code>、<code translate="no">revoke</code> 只能在本地 CLI 和回环 Web UI 中使用。入站路径只读取和生成配对码，渠道消息无法批准任何人。</td></tr>
+</tbody>
+</table>
+<h3 id="plugin-extension-point">新增平台</h3>
+<pre translate="no"><code data-claim="example"># pyproject.toml, scanned at startup
+[project.entry-points."openprogram.channels"]
+whatsapp = "my_pkg.whatsapp:WhatsAppChannel"
+
+# or, for notebooks and plugin hooks
+from openprogram.interfaces.channels import register_channel
+register_channel("whatsapp", WhatsAppChannel)</code></pre>
+<p class="note">内置平台优先，同名插件被忽略。</p>
+<h2 id="module-inventory">模块清单</h2>
+<p>位于 <code translate="no">openprogram/interfaces/channels/</code>。每个模块只面向声明的调用方，没有循环依赖。</p>
+<table class="stack">
+<thead><tr><th scope="col">模块</th><th scope="col">职责</th><th scope="col">调用方</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">base.py</code></th><td><code translate="no">Channel</code> ABC、<code translate="no">MessageHandle</code>、<code translate="no">handle_inbound</code>、<code translate="no">run_forever</code>、<code translate="no">send_text</code>/<code translate="no">edit_text</code>（<code translate="no">_full</code>）、<code translate="no">send_file</code></td><td>适配器、worker、<code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_transport.py</code></th><td><code translate="no">SendResult</code>、分块 → 渲染 → 上限拆分 → 重试，4 个平台的文本、编辑和文件 HTTP</td><td><code translate="no">outbound</code>、<code translate="no">base.send_text</code>/<code translate="no">send_file</code></td></tr>
+<tr><th scope="row"><code translate="no">_format.py</code></th><td>Markdown 转平台格式</td><td><code translate="no">_transport</code></td></tr>
+<tr><th scope="row"><code translate="no">_access.py</code></th><td>白名单和配对门禁，<code translate="no">access.json</code></td><td><code translate="no">handle_inbound</code>（检查）；CLI、回环 Web UI（修改）</td></tr>
+<tr><th scope="row"><code translate="no">_room.py</code></th><td>激活和记忆模式（<code translate="no">rooms.json</code>）、待处理历史、洪泛限制、重复投递</td><td><code translate="no">handle_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_active_turns.py</code></th><td>每个会话运行中的回合：会话、发言者、ambient 标记</td><td><code translate="no">_conversation</code>、<code translate="no">chat_send</code>、<code translate="no">/answer</code> 门禁</td></tr>
+<tr><th scope="row"><code translate="no">_attachments.py</code></th><td>入站下载；图片块和 <code translate="no">[attachment: path]</code> 说明</td><td><code translate="no">handle_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_message.py</code></th><td><code translate="no">ChannelMessage</code>、<code translate="no">Attachment</code></td><td>适配器</td></tr>
+<tr><th scope="row"><code translate="no">_wechat_media.py</code></th><td>iLink 媒体项、CDN key、AES-128-ECB、出站媒体项</td><td>微信适配器、<code translate="no">_attachments</code>、<code translate="no">_transport</code></td></tr>
+<tr><th scope="row"><code translate="no">outbound.py</code></th><td><code translate="no">send</code>、<code translate="no">send_full</code>、<code translate="no">send_file</code></td><td>定时任务、notebook、Agent 方法</td></tr>
+<tr><th scope="row"><code translate="no">_conversation.py</code></th><td><code translate="no">dispatch_inbound</code>、按会话的锁、进度流</td><td><code translate="no">handle_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_session_store.py</code></th><td>会话路径、创建、加载、保存</td><td><code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_session_routing.py</code></th><td><code translate="no">session_key</code>、重置策略</td><td><code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_broadcast.py</code></th><td>事件总线上的 WS 帧（<code translate="no">emit_ws_frame</code> → <code translate="no">ws.frame</code>）；渠道从不导入 webui</td><td><code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">_question_bridge.py</code></th><td>把待回答的 <code translate="no">runtime.ask</code> 推送到聊天</td><td>问题路径</td></tr>
+<tr><th scope="row"><code translate="no">_question_commands.py</code></th><td><code translate="no">/answer</code>、<code translate="no">/decline</code></td><td><code translate="no">_conversation</code></td></tr>
+<tr><th scope="row"><code translate="no">_heartbeats.py</code></th><td>适配器心跳注册表</td><td>状态 API</td></tr>
+<tr><th scope="row"><code translate="no">bound_reply.py</code></th><td>把绑定聊天的助手回复发到渠道，用于不是从渠道发起的回合</td><td><code translate="no">openprogram.runtime.conversation.bound_reply</code></td></tr>
+<tr><th scope="row"><code translate="no">link_registration.py</code></th><td>实现 <code translate="no">openprogram.runtime.channel_link</code>，核心代码无需导入本接口即可访问渠道</td><td>核心，导入时注册</td></tr>
+<tr><th scope="row"><code translate="no">__init__.py</code></th><td><code translate="no">CHANNEL_CLASSES</code>、<code translate="no">register_channel</code>、entry points</td><td>Web UI 状态、worker</td></tr>
+<tr><th scope="row"><code translate="no">accounts.py</code></th><td>凭据和 <code translate="no">ACCOUNT_SETTINGS</code></td><td><code translate="no">_transport</code>、适配器</td></tr>
+<tr><th scope="row"><code translate="no">bindings.py</code></th><td>（渠道、账号、peer）→ agent</td><td><code translate="no">dispatch_inbound</code></td></tr>
+<tr><th scope="row"><code translate="no">implementations/*.py</code></th><td>入站循环和解析；Telegram 群设置和提及检测；微信二维码登录</td><td>worker 经 <code translate="no">run_forever</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">openprogram channels setup</code> 向导位于 <code translate="no">openprogram/interfaces/cli/setup_sections/channels.py</code>。</p>
+<h2 id="supported-platforms">支持的平台</h2>
+<table class="stack">
+<thead><tr><th scope="col">平台</th><th scope="col">入站</th><th scope="col">出站</th><th scope="col">进度</th><th scope="col">入站附件</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">Telegram</th><td><code translate="no">getUpdates</code> 长轮询，无 webhook</td><td><code translate="no">sendMessage</code> (HTML), <code translate="no">editMessageText</code>, <code translate="no">sendPhoto</code>, <code translate="no">sendDocument</code></td><td>支持</td><td>照片、文档、语音（转文字）、音频、视频、动图（file_id → getFile）</td><td>Bot token，公开 Bot API；<code translate="no">group_sessions</code>、<code translate="no">require_mention</code></td></tr>
+<tr><th scope="row">Discord</th><td>discord.py Gateway</td><td><code translate="no">POST /messages</code>, <code translate="no">PATCH /messages/{id}</code>, multipart</td><td>支持</td><td>CDN URL</td><td>Bot token，<code translate="no">intents.message_content</code></td></tr>
+<tr><th scope="row">Slack</th><td>Socket Mode (slack_sdk)</td><td><code translate="no">chat.postMessage</code> (mrkdwn), <code translate="no">chat.update</code>, external-upload</td><td>支持</td><td><code translate="no">url_private</code> 带 bearer</td><td><code translate="no">bot_token</code> (xoxb-), <code translate="no">app_token</code> (xapp-)</td></tr>
+<tr><th scope="row">微信</th><td>iLink <code translate="no">getupdates</code> 长轮询</td><td>iLink <code translate="no">sendmessage</code>（纯文本）；<code translate="no">getuploadurl</code> 加密 CDN 上传</td><td>不支持：iLink 不能编辑</td><td>图片、语音、文件、视频，从 CDN 解密</td><td>个人微信二维码登录，无需企业认证</td></tr>
+</tbody>
+</table>
+<p class="note">四个平台都支持发送文件。</p>
+<h2 id="user-entry-points">用户入口</h2>
+<h3 id="cli">CLI</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">openprogram channels</code></th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list</code></th><td>各平台和账号的状态</td></tr>
+<tr><th scope="row"><code translate="no">setup</code></th><td>交互向导</td></tr>
+<tr><th scope="row"><code translate="no">accounts list</code></th><td>所有账号</td></tr>
+<tr><th scope="row"><code translate="no">accounts add &lt;channel&gt; --id &lt;name&gt;</code></th><td>新建账号槽</td></tr>
+<tr><th scope="row"><code translate="no">accounts login &lt;channel&gt; --id &lt;name&gt;</code></th><td>Telegram、Discord、Slack：粘贴 token。微信：iLink 二维码。</td></tr>
+<tr><th scope="row"><code translate="no">accounts set &lt;channel&gt; &lt;key&gt; &lt;value&gt; --id &lt;name&gt;</code></th><td>Telegram、Discord、Slack：<code translate="no">require_mention=on|off</code>、<code translate="no">ack_reaction=on|off</code>。Telegram：<code translate="no">group_sessions=shared|per-user</code>。全部：<code translate="no">sender_access=owner|paired</code>。</td></tr>
+<tr><th scope="row"><code translate="no">accounts group-users list|add|remove|reset &lt;channel&gt;</code></th><td>agent 在群里回答谁</td></tr>
+<tr><th scope="row"><code translate="no">accounts rm &lt;channel&gt; &lt;account_id&gt;</code></th><td>删除账号及其绑定</td></tr>
+<tr><th scope="row"><code translate="no">access list [&lt;channel&gt;]</code></th><td>白名单和待处理配对码</td></tr>
+<tr><th scope="row"><code translate="no">access approve &lt;channel&gt; &lt;code&gt; --id &lt;name&gt;</code></th><td>按配对码批准</td></tr>
+<tr><th scope="row"><code translate="no">access allow &lt;channel&gt; &lt;user_id&gt; --id &lt;name&gt;</code></th><td>直接加入用户 id</td></tr>
+<tr><th scope="row"><code translate="no">access revoke &lt;channel&gt; &lt;user_id&gt; --id &lt;name&gt;</code></th><td>移除发送者</td></tr>
+<tr><th scope="row"><code translate="no">bindings list</code></th><td>所有路由规则</td></tr>
+<tr><th scope="row"><code translate="no">bindings add &lt;agent_id&gt; --channel &lt;ch&gt; [--account &lt;acct&gt;] [--peer &lt;peer&gt; --peer-kind &lt;kind&gt;]</code></th><td>路由到 agent</td></tr>
+<tr><th scope="row"><code translate="no">bindings rm &lt;binding_id&gt;</code></th><td>删除一条路由</td></tr>
+</tbody>
+</table>
+<h3 id="tui-web">TUI 与 Web UI</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">实现</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/channel</code>：选渠道、账号，再用 <code translate="no">/attach</code> 把对话绑定到 peer</th><td><code translate="no">apps/cli/src/commands/handler.ts</code>, <code translate="no">apps/cli/src/screens/repl/pickers/channel.tsx</code></td></tr>
+<tr><th scope="row">TUI 活动流</th><td><code translate="no">apps/cli/src/components/ChannelActivityFeed.tsx</code></td></tr>
+<tr><th scope="row">TUI 渠道回合</th><td><code translate="no">apps/cli/src/screens/repl/wsHandlers/handleChannelTurn.ts</code></td></tr>
+<tr><th scope="row">输入框渠道 chip，始终显示</th><td><code translate="no">apps/web/components/chat/composer/environment-row/chips/channel-chip.tsx</code>, <code translate="no">apps/web/components/chat/top-bar/menus/channel-choices.ts</code></td></tr>
+<tr><th scope="row">健康徽标</th><td><code translate="no">/api/channels/{platform}/{account_id}/status</code>：alive、stale、unknown</td></tr>
+<tr><th scope="row">本地访问管理</th><td><code translate="no">apps/web/components/settings/channels/access-list.tsx</code>，仅回环的 <code translate="no">/api/channels/access</code></td></tr>
+</tbody>
+</table>
+<h2 id="extension-points">扩展点</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">扩展</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">新平台</th><td><code translate="no">Channel</code> 子类加 entry point；解析成 <code translate="no">ChannelMessage</code> 后基础管线即可适用</td></tr>
+<tr><th scope="row">按 thread 隔离会话</th><td><code translate="no">thread_id</code> 已解析并用于回到原 thread；要做的是把它并入会话 key</td></tr>
+<tr><th scope="row">表情审批</th><td>适配器侧监听，加上到审批路径的桥接</td></tr>
+<tr><th scope="row">按 token 流式</th><td>目前在工具边界编辑；按回复增量编辑要权衡限流</td></tr>
+</tbody>
+</table>

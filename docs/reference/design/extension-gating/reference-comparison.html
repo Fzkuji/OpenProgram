@@ -1,0 +1,43 @@
+<title>Gating comparison</title>
+<meta name="description" content="How Claude Code, opencode and hermes control which extensions an agent can use, compared with OpenProgram.">
+<h1>Gating comparison</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Aspect</th><th scope="col">Claude Code</th><th scope="col">opencode</th><th scope="col">hermes</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Per-agent gating</th><td>Yes</td><td>Yes</td><td>Partial, channel level</td><td>Yes</td></tr>
+<tr><th scope="row">Mechanism</th><td>Per-type explicit lists</td><td>Single <code translate="no">permission</code> ruleset</td><td>YAML adapter config</td><td>Per-type lists with fnmatch</td></tr>
+<tr><th scope="row">Wildcards</th><td>No, exact names</td><td>Glob</td><td>No</td><td>fnmatch</td></tr>
+<tr><th scope="row">Gated types</th><td>Tools, skills, MCP servers, hooks</td><td>One pattern space (<code translate="no">tools:*</code>, <code translate="no">mcp:*</code>, …)</td><td>Platform adapters</td><td>Tools, skills, MCP</td></tr>
+<tr><th scope="row">Required dependencies</th><td>None documented</td><td>Via deny by default</td><td>None</td><td><code translate="no">mcp.required</code></td></tr>
+<tr><th scope="row">Plugin gating</th><td>Trust level</td><td>Trust and ruleset</td><td>Manifest permissions</td><td>Trust level, host-wide</td></tr>
+</tbody>
+</table>
+
+<h2 id="claude-code">Claude Code</h2>
+<p>Each type has its own list field, of exact names: easy to read, verbose for broad cases.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Agent field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools</code></th><td>Allowlist</td></tr>
+<tr><th scope="row"><code translate="no">disallowedTools</code></th><td>Denylist</td></tr>
+<tr><th scope="row"><code translate="no">skills</code></th><td>Preloaded</td></tr>
+<tr><th scope="row"><code translate="no">mcpServers</code></th><td>A reference or an inline definition, so an agent can bring its own MCP config</td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>Session-scoped per agent. OpenProgram's plugin hooks in <code translate="no">openprogram/extensions/plugins/hooks.py</code> have no per-agent scope</td></tr>
+<tr><th scope="row"><code translate="no">permissionMode</code></th><td>The agent's permission mode</td></tr>
+</tbody>
+</table>
+
+<h2 id="opencode">opencode</h2>
+<p>One <code translate="no">permission</code> ruleset per agent: <code translate="no">{pattern, action: allow | deny}</code> rules glob-matched against keys such as <code translate="no">tools:bash</code>, <code translate="no">mcp:slack/*</code>. First match wins.</p>
+<ul>
+<li>A new type is a namespace prefix with no schema change.</li>
+<li>One rule can do the work of several (<code translate="no">{pattern: "mcp:*", action: "deny"}</code>).</li>
+<li>Trade-off: users learn a pattern grammar.</li>
+</ul>
+
+<h2 id="hermes">hermes</h2>
+<p>Platform-adapter focused (Discord, Slack, ntfy, …). Each adapter's <code translate="no">plugin.yaml</code> sets what it may do on the network, at channel level, with no agent-profile equivalent. Nothing adopted here.</p>
+
+<h2 id="design-rationale">Design rationale</h2>
+<p>A Claude Code skeleton with opencode wildcards. Per-type fields read as what they do, and <code translate="no">allowed</code>, <code translate="no">categories</code> and <code translate="no">required</code> extend the existing struct mechanically. fnmatch removes pure-list verbosity with one helper, and exact names keep working. A single ruleset would be a pure refactor (<a href="future-work.html#5-single-ruleset-migration-opencode-style">not built</a>). A meaningfully different model in a future framework reopens this.</p>

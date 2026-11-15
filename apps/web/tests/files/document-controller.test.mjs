@@ -13,9 +13,9 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   }
   return nextResolve(specifier, context);
 } });
-const { DocumentController } = await import("../../lib/files/document-controller.ts");
-const { setDraftStoreAdapterForTests } = await import("../../lib/files/file-drafts.ts");
-const { MemoryDraftStore } = await import("../../lib/files/file-draft-store.ts");
+const { DocumentController } = await import("../../lib/files/document/document-controller.ts");
+const { setDraftStoreAdapterForTests } = await import("../../lib/files/drafts/file-drafts.ts");
+const { MemoryDraftStore } = await import("../../lib/files/drafts/file-draft-store.ts");
 setDraftStoreAdapterForTests(new MemoryDraftStore());
 const a="a".repeat(64), b="b".repeat(64), c="c".repeat(64);
 const committed = revision => new Response(JSON.stringify({ok:true,status:"committed",revision}));
@@ -104,7 +104,7 @@ test("discard waits for an in-flight write before reading the disk version",asyn
 
 test("rich editor dirty notification requests an export and stages durable bytes",async()=>{
   const records=new Records(); let saves=0;
-  const value=controller(async(_url,init)=>committed(b),records,"office.docx");
+  const value=controller(async()=>committed(b),records,"office.docx");
   await value.hydrate({bytes:"old",revision:a});
   const editor={getState:()=>({dirty:false}),setReadonly(){},flushPendingSaves:async()=>{},destroy:async()=>{},
     save:async()=>{saves++;await value.stageRichExport(new Blob(["office draft"]));return new File(["office draft"],"office.docx");}};
@@ -187,4 +187,36 @@ test("conversion publishes a new path with absent CAS and preserves source state
   assert.equal(await value.getState().snapshot.bytes.text(),"legacy");
   await assert.rejects(value.publishNewDocument("legacy.doc",new Blob(),"id"),/different file/);
   await value.close();
+});
+
+test('disk change notification is metadata only; refresh coalesces and reads uncached latest bytes',async()=>{
+  let body='old',version='v1';const calls=[];
+  const value=controller(async(url,init)=>{calls.push({url,init});return url.includes('/stat?')?new Response(JSON.stringify({version})):new Response(body,{headers:{'x-document-revision':body==='old'?a:b,'x-document-version':version}});},new Records(),'refresh.txt');
+  await value.load();body='new';version='v2';await value.checkForUpdates();
+  assert.equal(value.getState().externalChanged,true);assert.equal(await value.getState().snapshot.bytes.text(),'old');
+  const refresh=value.refresh();assert.equal(value.refresh(),refresh);await refresh;
+  assert.equal(await value.getState().snapshot.bytes.text(),'new');assert.equal(value.getState().externalChanged,false);
+  assert.ok(calls.every(call=>call.init.cache==='no-store'));await value.close();
+});
+test('refresh failure and local drafts retain the displayed bytes',async()=>{
+  let failed=false;const value=controller(async()=>failed?new Response('',{status:503}):new Response('old',{headers:{'x-document-revision':a,'x-document-version':'v1'}}),new Records(),'refresh-draft.txt');
+  await value.load();failed=true;await assert.rejects(value.refresh(),/Unable to read/);
+  assert.equal(await value.getState().snapshot.bytes.text(),'old');assert.equal(value.getState().restoring,false);
+  value.update('local');await assert.rejects(value.refresh(),/draft was retained/);
+  assert.equal(await value.currentDraft().text(),'local');await value.discard();
+});
+test('confirmed autosave reacquires metadata without hiding a later external edit',async()=>{
+  let disk='new';const value=controller(async(url,init)=>init?.method==='PUT'?committed(b):new Response(disk,{headers:{'x-document-revision':disk==='new'?b:c,'x-document-version':disk}}),new Records(),'save-refresh.txt');
+  await value.hydrate({bytes:'old',revision:a});value.update('new');await value.flush();
+  await value.checkForUpdates();assert.equal(value.getState().snapshot.diskVersion,'new');
+  disk='external';await value.refresh();assert.equal(await value.getState().snapshot.bytes.text(),'external');await value.close();
+});
+test('refresh commits pending native input before replacing its engine',async()=>{
+  let disk='old';const value=controller(async(_url,init)=>{
+    if(init?.method==='PUT'){disk=await init.body.text();return committed(b);}
+    return new Response(disk,{headers:{'x-document-revision':disk==='old'?a:b}});
+  },new Records(),'refresh-cell.xlsx');await value.load();
+  let destroyed=false;value.attachRichEditor({getState:()=>({dirty:false,readonly:false}),setInputEnabled(){},setReadonly(){},flushPendingSaves:async()=>{},
+    save:async()=>{await value.stageRichExport('pending cell');},destroy(){destroyed=true;}});
+  await value.refresh();assert.equal(destroyed,true);assert.equal(await value.getState().snapshot.bytes.text(),'pending cell');await value.close();
 });

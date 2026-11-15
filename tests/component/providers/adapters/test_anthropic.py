@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.providers.registry import create_runtime
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.runtime.agent.runtime.factory import create_runtime
 
 from .._registry_fixture import install_registry
 
@@ -39,7 +39,7 @@ class TestAnthropicProviderWiring:
         # what's stored on the dev machine running the suite.
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setattr(
-            "openprogram.auth.resolver.resolve_api_key_sync",
+            "openprogram.models.auth.resolver.resolve_api_key_sync",
             lambda *a, **k: None,
         )
         with pytest.raises(ValueError, match="(?i)credential"):

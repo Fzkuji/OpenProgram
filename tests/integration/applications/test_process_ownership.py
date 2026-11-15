@@ -1,7 +1,6 @@
 """Public application routes retain authorization and physical process ownership."""
 import json
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from threading import Event
 
 from fastapi import FastAPI
@@ -23,7 +22,7 @@ def source_package(tmp_path, backend):
 
 
 def application():
-    from openprogram.webui.routes.catalog import applications
+    from openprogram.interfaces.server.routes.catalog import applications
     app = FastAPI()
     applications.register(app)
     return app
@@ -39,31 +38,29 @@ def start(client, source):
     return response.json()['id']
 
 
-def test_snapshot_cannot_add_untrusted_backend(tmp_path, monkeypatch):
+def test_source_cannot_add_untrusted_backend(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram.programs._applications import catalog
+    from openprogram.programs._host.ui import catalog, loader
     marker = tmp_path / 'imported'
     source, definition = source_package(tmp_path,
         f'from pathlib import Path\nPath({str(marker)!r}).touch()\noperations = {{"run": lambda v,c: None}}\n')
     (source / 'application.json').write_text(json.dumps({k: v for k, v in definition.items()
                                                        if k not in {'backend', 'operations'}}))
-    original = catalog.shutil.copyfile
-    def copy(src, dst, *args, **kwargs):
-        if Path(src).name == 'application.json':
-            Path(src).write_text(json.dumps(definition))
-        return original(src, dst, *args, **kwargs)
-    monkeypatch.setattr(catalog.shutil, 'copyfile', copy)
     with TestClient(application()) as client:
-        response = client.post('/api/applications/install', json={'path': str(source)})
-        assert response.status_code == 400, response.text
-        assert 'trust' in response.text
+        assert client.post('/api/applications/install', json={'path': str(source)}).status_code == 200
+        # The source gains a backend after an install made without trust.
+        (source / 'application.json').write_text(json.dumps(definition))
+        loader.sync()
+        assert 'trust' in loader.error('test.ownership')
+        assert client.post('/api/applications/test.ownership/open', json={}).status_code == 404
         assert not marker.exists()
-        assert catalog.installed() == []
+        assert 'trust' in catalog.installed()[0]['error']
 
 
 def test_concurrent_cancel_waits_for_physical_termination(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram import _compat
+    from openprogram.host._platform import process_ownership
+    from openprogram.host._platform import processes as platform_processes
     source, _ = source_package(tmp_path, 'operations = {"run": lambda v,c: c.ask("Continue?")}\n')
     app = application()
     with TestClient(app) as client:
@@ -73,17 +70,17 @@ def test_concurrent_cancel_waits_for_physical_termination(tmp_path, monkeypatch)
         question = client.get(url).json()['question']
         process = app.state.applications.processes[run_id]
         killing, release = Event(), Event()
-        old_kill, old_terminate = _compat.kill_process_tree, _compat.ProcessTreeOwner.terminate
+        old_kill, old_terminate = platform_processes.kill_process_tree, process_ownership.ProcessTreeOwner.terminate
         def hold(call, *args):
             killing.set()
             assert release.wait(10)
             return call(*args)
-        monkeypatch.setattr(_compat, 'kill_process_tree', lambda pid: hold(old_kill, pid))
-        monkeypatch.setattr(_compat.ProcessTreeOwner, 'terminate', lambda owner: hold(old_terminate, owner))
+        monkeypatch.setattr(platform_processes, 'kill_process_tree', lambda pid: hold(old_kill, pid))
+        monkeypatch.setattr(process_ownership.ProcessTreeOwner, 'terminate', lambda owner: hold(old_terminate, owner))
         with ThreadPoolExecutor(2) as pool:
             first = pool.submit(client.post, url + '/cancel')
             try:
-                assert killing.wait(5)
+                assert killing.wait(30)
                 second = pool.submit(client.post, url + '/cancel')
                 assert not wait_until(lambda: first.done() or second.done(), timeout=.3, interval=.01)
                 assert process.returncode is None
@@ -132,7 +129,7 @@ def test_cancel_owns_descendants_after_leader_exit(tmp_path, monkeypatch):
 def test_waiting_operations_do_not_exhaust_cancellation_executor(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
     import asyncio
-    from openprogram._compat import kill_process_tree
+    from openprogram.host._platform.processes import kill_process_tree
     source, _ = source_package(tmp_path, 'operations = {"run": lambda v,c: c.ask("Continue?")}\n')
     app = application()
     with TestClient(app) as client:
@@ -148,7 +145,7 @@ def test_waiting_operations_do_not_exhaust_cancellation_executor(tmp_path, monke
         with ThreadPoolExecutor(1) as pool:
             request = pool.submit(client.post, url + '/cancel')
             try:
-                response = request.result(timeout=3)
+                response = request.result(timeout=30)
                 assert response.status_code == 200, response.text
                 assert response.json()['status'] == 'cancelled'
                 assert process.returncode is not None

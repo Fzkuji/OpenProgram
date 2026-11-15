@@ -1,0 +1,667 @@
+"""Memory routes — topics, timeline, recent, references, and core.
+
+Four surfaces plus a stable read-only reference API:
+
+  topics/   the editable semantic memory, one file per subject
+  timeline/ the derived time axis
+  recent    the last units written, derived
+  MEMORY.md the entry point: the map, then the core rendered from topics/core.md
+
+Footnotes cite chat messages as ``/s/<session>#<message>``; the chat
+history is the evidence, and ``/api/memory/source`` reads the cited
+message with the turns around it.
+
+Reads are plain filesystem. Writes go through the workspace so a hand
+edit that drops a block ID or strands a footnote is refused rather than
+silently breaking the views that reach through them.
+
+Every route serves the personal memory (the home project's) unless the
+request names another project with ``?project=<id>``; then it serves that
+project's workspace, created on first use.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Callable
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
+
+# How long a save waits for the background writer to finish its transaction
+# before giving up. Long enough to cover one write, short enough that a
+# click does not look hung.
+WRITE_LOCK_TIMEOUT_S = 5.0
+
+
+async def _project_scope(request: Request):
+    """Serve ``?project=<id>``'s memory workspace for this request."""
+    project_id = (request.query_params.get("project") or "").strip()
+    from openprogram.state.store.project.layout import DEFAULT_PROJECT_ID
+
+    if not project_id or project_id == DEFAULT_PROJECT_ID:
+        yield
+        return
+    from openprogram.state.memory import project_layer
+    from openprogram.state.store.project.project_store import get_project
+
+    project = get_project(project_id)
+    if project is None or project.is_default:
+        raise HTTPException(status_code=404, detail="unknown project")
+    with project_layer.use(project_layer.project_memory_root(project.id)):
+        yield
+
+
+def _require_memory_enabled(request: Request) -> None:
+    from openprogram.state.memory import DISABLED_MESSAGE, is_enabled
+
+    if not is_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "MEMORY_DISABLED", "message": DISABLED_MESSAGE},
+        )
+    if (
+        request.method == "GET"
+        and request.url.path == "/api/memory/status"
+        and request.query_params.get("settings") == "true"
+    ):
+        return
+    from openprogram.state.memory import store
+    from openprogram.state.memory.management.transaction import TransactionError
+
+    try:
+        store.ensure()
+    except TransactionError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+def _title_of(text: str, fallback: str) -> str:
+    """The first Markdown heading, which is how topic files name themselves."""
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip() or fallback
+    return fallback
+
+
+def _within(root: Path, relative: str) -> Path | None:
+    """Resolve inside root, or None if the path climbs out of it."""
+    from openprogram.state.memory.workspace_layout import resolve_within
+    return resolve_within(root, relative)
+
+
+def topic_origins(memory_dir: Path, target: Path) -> dict:
+    """Where a Topic file and each of its paragraphs came from, for the
+    editor's marks: ``origin`` of the file (``outside`` when another tool
+    wrote it, else ``runtime``) and, per paragraph, its ID, first line and origin (``cited``, ``person`` or ``outside``)."""
+    from openprogram.state.memory.management import ownership
+    from openprogram.state.memory.markdown.parser import read_topic_file
+
+    topics = Path(memory_dir) / "topics"
+    try:
+        relative = target.resolve().relative_to(topics.resolve()).as_posix()
+        outside = ownership.contains(ownership.outside_paths(Path(memory_dir)), relative)
+        units, _problem = read_topic_file(target, topics.resolve(), outside=outside)
+    except (OSError, ValueError):
+        return {}
+    seen: set[tuple[str, int]] = set()
+    paragraphs = []
+    for unit in units:
+        if (unit.content, unit.line) in seen:
+            continue
+        seen.add((unit.content, unit.line))
+        paragraphs.append({
+            "memory_id": unit.memory_id,
+            "line": unit.line,
+            "derived": unit.derived_id,
+            "origin": unit.origin,
+        })
+    return {
+        "origin": ownership.OUTSIDE if outside else ownership.RUNTIME,
+        "paragraphs": paragraphs,
+    }
+
+
+def _staged_edit(
+    root: Path,
+    write: Callable[[Path], None],
+    *,
+    deleting: str = "",
+    commit_message: str = "memory: edit topics",
+    record_history: bool = True,
+    allow_removed: bool = False,
+    before_install: Callable[[], None] | None = None,
+) -> tuple[bool, str]:
+    """Bind this module's lock timeout to the shared staged edit.
+
+    The same transaction serves ``openprogram memory edit``; see
+    ``management.transaction.staged_edit`` for why the baseline is read
+    before anything is staged.
+    """
+    from openprogram.state.memory.management.transaction import staged_edit
+    return staged_edit(
+        root,
+        write,
+        deleting=deleting,
+        timeout_s=WRITE_LOCK_TIMEOUT_S,
+        commit_message=commit_message,
+        record_history=record_history,
+        allow_removed=allow_removed,
+        before_install=before_install,
+    )
+
+
+def register(app):
+    router = APIRouter(dependencies=[
+        Depends(_project_scope), Depends(_require_memory_enabled),
+    ])
+
+    @router.get("/api/memory/status")
+    def get_status(settings: bool = False):
+        from openprogram.state.memory import store
+
+        if settings:
+            from openprogram.state.memory.retrieval import inspect
+            from openprogram.state.memory.retrieval.embedding_model import (
+                packages_available,
+            )
+
+            root = store.root()
+            return JSONResponse(content={
+                "workspace_path": str(root.resolve()),
+                "embedding_available": inspect.embedding_is_available(),
+                # Without the packages, installing also fetches torch,
+                # which is the size the Install button has to state.
+                "embedding_packages": packages_available(),
+            })
+
+        from openprogram.state.memory.retrieval import inspect
+
+        root = store.ensure()
+        # Owner-only surface (the whole memory router is), so the on-disk
+        # location is shown; the model-facing tool omits it.
+        return JSONResponse(
+            content=inspect.status(root, include_path=True)
+        )
+
+    @router.post("/api/memory/embedding/install")
+    async def install_embedding_model():
+        from openprogram.state.memory.retrieval.embedding_model import (
+            install_default_model,
+            install_packages,
+            platform_unavailable_reason,
+            semantic_available,
+        )
+
+        reason = platform_unavailable_reason()
+        if reason is not None:
+            return JSONResponse(content={
+                "embedding_available": False,
+                "error": reason,
+            }, status_code=502)
+
+        def install_and_verify() -> bool:
+            install_packages()
+            install_default_model()
+            return semantic_available()
+
+        try:
+            installed = await asyncio.to_thread(install_and_verify)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(content={
+                "embedding_available": False,
+                "error": str(exc),
+            }, status_code=502)
+        if not installed:
+            return JSONResponse(content={
+                "embedding_available": False,
+                "error": "Embedding model download could not be verified",
+            }, status_code=502)
+        return JSONResponse(content={
+            "embedding_available": True,
+        })
+
+    @router.get("/api/memory/refs")
+    def list_memory_refs(q: str = "", limit: int = 100):
+        from openprogram.state.memory.references import list_refs
+
+        try:
+            return JSONResponse(content=list_refs(q, limit=limit))
+        except ValueError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=400)
+
+    @router.post("/api/memory/changes")
+    async def apply_memory_changes(request: Request):
+        """Apply the owner API's structured changes through MemoryWorkspace."""
+        try:
+            payload = await request.json()
+        except (UnicodeDecodeError, ValueError):
+            payload = None
+        if not isinstance(payload, dict):
+            return JSONResponse(
+                content={"ok": False, "error": {
+                    "code": "INVALID_ARGUMENT",
+                    "message": "request body must be a JSON object",
+                }},
+                status_code=400,
+            )
+
+        from openprogram.state.memory import store
+        from openprogram.state.memory.management import MemoryWorkspace
+        from openprogram.state.memory.management.config import load_memory_config
+        from openprogram.state.memory.management.transaction import TransactionError
+
+        from openprogram.state.memory.policy import owner_edit
+
+        try:
+            from contextlib import closing
+
+            with owner_edit(), closing(MemoryWorkspace(
+                store.ensure(), config=load_memory_config(),
+            )) as workspace:
+                result = workspace.update(
+                    memory_changes=payload.get("memory_changes"),
+                    commit_message=payload.get("commit_message"),
+                )
+        except TransactionError as exc:
+            error = {
+                "code": exc.code,
+                "message": exc.message,
+                "path": exc.path,
+            }
+            if exc.details:
+                error["details"] = exc.details
+            status = 409 if exc.code == "CONCURRENT_UPDATE" else 400
+            if exc.code == "MEMORY_NOT_FOUND":
+                status = 404
+            if exc.code == "GIT_UNAVAILABLE":
+                status = 503
+            if exc.code == "GIT_COMMIT_FAILED":
+                status = 500
+            return JSONResponse(
+                content={"ok": False, "error": error}, status_code=status
+            )
+        return JSONResponse(content={
+            "ok": True,
+            "revision": result.revision,
+            "block_ids": result.block_ids,
+            "evidence_ids": result.evidence_ids,
+            "changed_files": result.changed_files,
+            "memory_committed": result.memory_committed,
+            "git_committed": result.git_committed,
+            "git_commit": result.git_commit,
+        })
+
+    @router.post("/api/memory/diff")
+    async def memory_diff(request: Request):
+        import difflib
+        payload = await request.json()
+        if not isinstance(payload, dict) or any(
+            not isinstance(payload.get(key), str) or len(payload[key]) > 1_000_000
+            for key in ("before", "after")
+        ):
+            return JSONResponse(content={"error": "invalid diff content"}, status_code=400)
+        patch = "\n".join(difflib.unified_diff(
+            payload["before"].splitlines(),
+            payload["after"].splitlines(),
+            fromfile="Before", tofile="After", lineterm="",
+        ))
+        return JSONResponse(content={"diff": patch})
+
+    @router.get("/api/memory/history")
+    def memory_history(path: str, revision: str = "", offset: int = 0):
+        import re
+        import subprocess
+        from openprogram.state.memory import store
+
+        root = store.ensure()
+        target = _within(store.topics_dir(), path)
+        if target is None or not path.endswith(".md") or ".." in Path(path).parts:
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        relative = target.relative_to(root.resolve()).as_posix()
+        if offset < 0 or offset > 100000 or (
+            revision and not re.fullmatch(r"[0-9a-f]{40,64}", revision)
+        ):
+            return JSONResponse(content={"error": "invalid history query"}, status_code=400)
+
+        def git(*args):
+            return subprocess.run(
+                ["git", "--literal-pathspecs", *args], cwd=root, check=True,
+                capture_output=True, text=True, timeout=15,
+            ).stdout
+        try:
+            if revision:
+                # Commit IDs only; never accept arbitrary Git expressions or options.
+                patch = git("show", "--format=", "--no-ext-diff", "--no-textconv",
+                            "--first-parent", "--root", revision, "--", relative)
+                return JSONResponse(content={"diff": patch})
+            rows = git("log", "--format=%H%x09%aI%x09%s", "--max-count=51",
+                       f"--skip={offset}", "--", relative).splitlines()
+            entries = []
+            for row in rows[:50]:
+                commit, timestamp, message = row.split("\t", 2)
+                entries.append({"revision": commit, "timestamp": timestamp, "message": message})
+            return JSONResponse(content={"entries": entries, "has_more": len(rows) > 50})
+        except (subprocess.SubprocessError, OSError) as exc:
+            return JSONResponse(content={"error": f"Could not read Git history: {exc}"}, status_code=503)
+
+    def save_document(root, relative, payload, *, fallback=None, restoring=False):
+        from openprogram.state.memory.management.transaction import workspace_write_lock, TransactionError
+        if not isinstance(payload, dict) or not isinstance(payload.get("content"), str):
+            return JSONResponse(content={"error": "content must be a string"}, status_code=400)
+        try:
+            with workspace_write_lock(root, timeout_s=WRITE_LOCK_TIMEOUT_S):
+                target = root / "topics" / relative
+                current = target if target.is_file() else fallback
+                current_text = current.read_text(encoding="utf-8") if current and current.is_file() else ""
+                from openprogram.state.memory.management.topic_normalization import holds_no_paragraph
+                # A Topic left with headings only was removed by its save
+                # (``removed`` below); the editor's base is still those
+                # headings, and they and no file are the same state.
+                missing_base = (
+                    current is None or not current.is_file()
+                ) and isinstance(payload.get("base_content"), str) and holds_no_paragraph(payload["base_content"])
+                if "base_content" in payload and payload["base_content"] != current_text and not missing_base:
+                    return JSONResponse(content={"error": "This memory changed elsewhere. Your draft is retained; review the latest version before retrying."}, status_code=409)
+
+                def write(stage):
+                    staged = stage / "topics" / relative
+                    staged.parent.mkdir(parents=True, exist_ok=True)
+                    staged.write_text(payload["content"], encoding="utf-8")
+
+                autosave = payload.get("autosave") is True and not restoring
+                before_install = None
+                if autosave:
+                    from openprogram.state.memory.checkpoints import mark_pending
+                    before_install = lambda: mark_pending(root)
+                elif restoring:
+                    from openprogram.state.memory.management.transaction import git_commit_state
+                    before_install = lambda: git_commit_state(root, "memory: before restore")
+                ok, message = _staged_edit(
+                    root, write,
+                    commit_message=f"memory: {'restore' if restoring else 'edit'} topics/{relative}",
+                    record_history=not autosave, allow_removed=autosave or restoring,
+                    before_install=before_install,
+                )
+                if not ok:
+                    return JSONResponse(content={"error": message}, status_code=400)
+                # What a person saves stays, a Topic with headings only
+                # included: memory keeps a person's file as a file.
+                result = {"ok": True, "content": target.read_text(encoding="utf-8")}
+                if message:
+                    result["warning"] = message
+                return JSONResponse(content=result)
+        except TransactionError as exc:
+            return JSONResponse(content={"error": exc.message}, status_code=400)
+
+    @router.post("/api/memory/restore")
+    def restore_memory(payload: dict):
+        import re
+        import subprocess
+        from openprogram.state.memory import store
+        from openprogram.state.memory.management.transaction import workspace_write_lock
+        path = payload.get("path", "")
+        revision = payload.get("revision", "")
+        if not isinstance(path, str) or not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40,64}", revision):
+            return JSONResponse(content={"error": "invalid revision"}, status_code=400)
+        root = store.ensure()
+        target = _within(store.topics_dir(), path)
+        if target is None or not path.endswith(".md") or ".." in Path(path).parts:
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        if not isinstance(payload.get("base_content"), str):
+            return JSONResponse(content={"error": "base_content is required"}, status_code=400)
+        relative = target.relative_to(root.resolve()).as_posix()
+        try:
+            content = subprocess.run(
+                ["git", "show", f"{revision}:{relative}"], cwd=root,
+                capture_output=True, text=True, check=True, timeout=15,
+            ).stdout
+        except (subprocess.SubprocessError, OSError):
+            return JSONResponse(content={"error": "This version has no readable document"}, status_code=404)
+        with workspace_write_lock(root, timeout_s=WRITE_LOCK_TIMEOUT_S):
+            return save_document(root, target.relative_to(store.topics_dir().resolve()), {
+                "content": content, "base_content": payload["base_content"],
+            }, restoring=True)
+
+    @router.get("/api/memory/source")
+    def memory_source(ref: str):
+        """The chat message a footnote cites, with the turns around it."""
+        from openprogram.state.memory import chat_refs
+        cited = chat_refs.from_target(ref)
+        if cited is None:
+            return JSONResponse(content={"error": "not a chat citation"}, status_code=400)
+        excerpt = chat_refs.ChatLookup().excerpt(cited)
+        if excerpt.get("deleted"):
+            return JSONResponse(content={
+                "error": "Original session deleted", "deleted": True,
+                "session_id": excerpt["session_id"],
+            }, status_code=410)
+        return JSONResponse(content=excerpt)
+
+    # -- topics ------------------------------------------------------------
+
+    @router.get("/api/memory/topics")
+    async def list_topics():
+        from openprogram.state.memory import store
+        root = store.topics_dir()
+        pages = []
+        for path in sorted(root.rglob("*.md")):
+            relative = path.relative_to(root)
+            if relative == Path("core.md"):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            stat = path.stat()
+            pages.append({
+                "path": str(relative),
+                "title": _title_of(text, path.stem),
+                # The subject grouping is the directory: topics/people/…
+                "type": relative.parts[0] if len(relative.parts) > 1 else "",
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+            })
+        return JSONResponse(content=pages)
+
+    @router.get("/api/memory/topics/{path:path}")
+    async def get_topic(path: str):
+        from openprogram.state.memory import store
+        target = _within(store.topics_dir(), path)
+        if target is None:
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        if not target.is_file():
+            return JSONResponse(content={"error": "not found"}, status_code=404)
+        content = {
+            "path": path,
+            "content": target.read_text(encoding="utf-8", errors="replace"),
+            **topic_origins(store.topics_dir().parent, target),
+        }
+        return JSONResponse(content=content)
+
+    @router.put("/api/memory/topics/{path:path}")
+    async def save_topic(path: str, request: Request):
+        from openprogram.state.memory import store
+        root = store.ensure()
+        topics = store.topics_dir()
+        target = _within(topics, path)
+        if target is None or target == topics.resolve():
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        relative = target.relative_to(topics.resolve())
+        return await asyncio.to_thread(save_document, root, relative, await request.json())
+
+    @router.delete("/api/memory/topics/{path:path}")
+    async def delete_topic(path: str):
+        from openprogram.state.memory import store
+        root = store.ensure()
+        topics = store.topics_dir()
+        target = _within(topics, path)
+        if target is None:
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        if not target.is_file():
+            return JSONResponse(content={"error": "not found"}, status_code=404)
+        relative = target.relative_to(topics.resolve())
+
+        def write(stage: Path) -> None:
+            (stage / "topics" / relative).unlink(missing_ok=True)
+
+        # Dropping this topic's own blocks is the point of the request. A
+        # block another topic still links to is a different matter, and the
+        # install refuses it.
+        ok, message = _staged_edit(
+            root,
+            write,
+            deleting=relative.as_posix(),
+            commit_message=f"memory: delete topics/{relative.as_posix()}",
+        )
+        if not ok:
+            return JSONResponse(content={"error": message}, status_code=400)
+        content = {"ok": True}
+        if message:
+            content["warning"] = message
+        return JSONResponse(content=content)
+
+    # -- timeline ----------------------------------------------------------
+
+    @router.get("/api/memory/timeline")
+    async def list_timeline_days():
+        """The dates the timeline covers, newest first.
+
+        ``timeline/`` nests by year and month, so the day files are found
+        by glob rather than by listing one directory.
+        """
+        from openprogram.state.memory import store
+        root = store.timeline_dir()
+        if not root.is_dir():
+            return JSONResponse(content=[])
+        days = []
+        for path in root.rglob("*.md"):
+            stat = path.stat()
+            days.append({
+                "date": "-".join(path.relative_to(root).with_suffix("").parts),
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+            })
+        days.sort(key=lambda day: day["date"], reverse=True)
+        return JSONResponse(content=days)
+
+    @router.get("/api/memory/timeline/{date}")
+    async def get_timeline_day(date: str):
+        from openprogram.state.memory import store
+        from openprogram.state.memory.markdown.models import (
+            is_valid_temporal_value,
+        )
+        # The date becomes a path, so it is checked as a date first:
+        # ``..`` split on "-" is a single part and has no suffix to replace.
+        if not is_valid_temporal_value(date):
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        root = store.timeline_dir()
+        target = _within(root, str(Path(*date.split("-")).with_suffix(".md")))
+        if target is None:
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        if not target.is_file():
+            return JSONResponse(content={"date": date, "content": ""})
+        return JSONResponse(content={
+            "date": date,
+            "content": target.read_text(encoding="utf-8"),
+        })
+
+    # -- recent ------------------------------------------------------------
+
+    @router.get("/api/memory/recent")
+    async def list_recent():
+        """The last units written, newest first.
+
+        Rebuilt from topics after every write, so this is a view of what
+        memory learned lately rather than a store of its own.
+        """
+        from openprogram.state.memory import store
+        from openprogram.state.memory.management.config import load_memory_config
+
+        headers = {
+            "X-Memory-Recent-Limit": str(load_memory_config().recent_limit),
+        }
+        path = store.root() / "recent_events.jsonl"
+        if not path.is_file():
+            return JSONResponse(content=[], headers=headers)
+        events = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        events.reverse()
+        return JSONResponse(content=events, headers=headers)
+
+    # -- core --------------------------------------------------------------
+
+    def _core_master() -> Path:
+        """The file the always-on block is rendered from.
+
+        Reading and editing both land on ``topics/core.md``. The core
+        section of ``MEMORY.md`` is the render, cut to a token budget, so
+        editing that would hand back a truncated file and save it as the
+        whole thing. A workspace from before the core moved into
+        ``MEMORY.md`` may still have it in a root ``core.md``.
+        """
+        from openprogram.state.memory import store
+        master = store.topics_dir() / "core.md"
+        return master if master.is_file() else store.core()
+
+    @router.get("/api/memory/core")
+    def get_core():
+        import tiktoken
+
+        from openprogram.state.memory import store
+        from openprogram.state.memory.management.config import load_memory_config
+        from openprogram.state.memory.management.transaction import workspace_write_lock
+
+        config = load_memory_config()
+        with workspace_write_lock(store.root(), timeout_s=WRITE_LOCK_TIMEOUT_S):
+            from openprogram.state.memory.runtime.memory_guide import prompt_text
+
+            master = _core_master()
+            rendered = store.guide()
+            master_text = (
+                master.read_text(encoding="utf-8") if master.is_file() else ""
+            )
+            # What every session reads: MEMORY.md's map, then its core.
+            rendered_text = prompt_text(store.root())
+            master_stat = master.stat() if master.is_file() else None
+            rendered_stat = rendered.stat() if rendered.is_file() else None
+        injected_text = rendered_text if config.core_inject else ""
+        encoding = tiktoken.get_encoding("o200k_base")
+        return JSONResponse(content={
+            # Compatibility: the editable master remains in the original fields.
+            "content": master_text,
+            "size": master_stat.st_size if master_stat else 0,
+            "mtime": master_stat.st_mtime if master_stat else 0,
+            "rendered_content": rendered_text,
+            "rendered_size": rendered_stat.st_size if rendered_stat else 0,
+            "rendered_mtime": rendered_stat.st_mtime if rendered_stat else 0,
+            "rendered_tokens": len(
+                encoding.encode(rendered_text, disallowed_special=())
+            ),
+            "injection_enabled": config.core_inject,
+            "injected_content": injected_text,
+            "injected_tokens": len(
+                encoding.encode(injected_text, disallowed_special=())
+            ),
+            "budget_tokens": config.core_max_tokens,
+        })
+
+    @router.put("/api/memory/core")
+    async def save_core(request: Request):
+        from openprogram.state.memory import store
+        root = store.ensure()
+        return await asyncio.to_thread(
+            save_document, root, Path("core.md"), await request.json(), fallback=store.core(),
+        )
+
+    app.include_router(router)

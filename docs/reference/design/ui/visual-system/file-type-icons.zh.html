@@ -1,0 +1,50 @@
+<title>共享文件类型图标</title>
+<meta name="description" content="同一文件名在文件树、标签、分栏选择器、审查列表和文件建议中显示同一图标。">
+<h1>共享文件类型图标</h1>
+
+<p><code translate="no">FileTypeIcon</code>（<code translate="no">apps/web/components/files/file-type-icon.tsx</code>）绘制 <a href="https://github.com/pierrecomputer/pierre/tree/main/packages/trees">Pierre Trees</a>（<code translate="no">@pierre/trees</code>，Apache 2.0，保留 NOTICE）的完整彩色图标集，上游 SVG 路径和文件名映射不改。图标是可见文件名旁的装饰，对辅助功能 API 隐藏。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">界面</th><td>侧栏和中央文件页（共用 <code translate="no">FileTree</code>，Pierre 的 React 渲染器）、文件标签、分栏选择器、审查列表、输入框文件建议</td></tr>
+<tr><th scope="row">尺寸</th><td>文件行 16px，标签 14px；行高、缩进和文件夹控件不变</td></tr>
+<tr><th scope="row">匹配</th><td>统一路径分隔符和大小写后取 basename。精确文件名优先于扩展名；带点的父目录不计。</td></tr>
+<tr><th scope="row">特殊名称</th><td><code translate="no">AGENTS.md</code> 用 Markdown，<code translate="no">CLAUDE.md</code> 用 Claude，Git 元数据用 Git</td></tr>
+<tr><th scope="row">未知文件</th><td>中性文档图标</td></tr>
+<tr><th scope="row"><code translate="no">constructor</code> 这类名称</th><td>与继承对象属性同名的文件名和扩展名，进入解析器前就取默认图标</td></tr>
+<tr><th scope="row">颜色</th><td>浅色和深色主题下都能辨认</td></tr>
+<tr><th scope="row">文件夹、控件</th><td>Lucide，不变</td></tr>
+</tbody>
+</table>
+
+<p class="note">文件名或路径 → basename → <code translate="no">FileTypeIcon</code> → SVG。不读文件内容，不联网，不加状态、持久化、权限或修改 API。不影响附件上传状态、文件缓存、草稿、审查状态，以及文件夹展开、辅助线、搜索和打开；以现有标签和焦点行为为准。</p>
+
+<details>
+<summary>对比过的来源</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">结论</th></tr></thead>
+<tbody>
+<tr><th scope="row">已安装的 Codex</th><td>默认文件、Markdown 和 Python 的文件树资源与 Pierre 的 SVG 一致。OpenProgram 用公开上游图标集，不从 Codex 分发包提取任何资源。</td></tr>
+<tr><th scope="row"><a href="https://github.com/pheralb/react-symbols">React Symbols</a></th><td>MIT 的 React SVG 库，支持文件和扩展名解析；未采用</td></tr>
+<tr><th scope="row"><a href="https://github.com/material-extensions/vscode-material-icon-theme">Material Icon Theme</a></th><td>带 manifest 的文件与文件夹 SVG；需要资源集成，不能直接用 React 渲染</td></tr>
+<tr><th scope="row">只用 Lucide</th><td>通用轮廓分不出语言类型</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="acceptance">验收</h2>
+<ul>
+<li>Python、TypeScript、shell、JSON、Markdown 和 Git 示例解析为各自不同的 SVG。</li>
+<li><code translate="no">CLAUDE.md</code>、<code translate="no">AGENTS.md</code>、大写扩展名、Windows 路径和未知类型渲染正确。</li>
+<li>上述界面都用共享渲染器；展开文件夹和打开文件的行为不变。</li>
+</ul>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>上述全部界面。默认深色 App 中：通用文件为填充图标，Markdown 绿色，JSON 橙色，数据库紫色，Lucide 文件夹不变。</td></tr>
+<tr><th scope="row">未完成</th><td>浅色及其他主题的 App 手动验收；浅色配色目前只对照过上游调色板</td></tr>
+</tbody>
+</table>

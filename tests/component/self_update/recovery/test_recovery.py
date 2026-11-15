@@ -7,34 +7,37 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from openprogram.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
-from openprogram.self_update.control.recovery import recover_pending_updates
-from openprogram.self_update.control.recovery import SYSTEM_CHECKS
-from openprogram.self_update.verification.verifier_config import freeze_verifier_config
-from openprogram.self_update.verification.verifier_config import config_evidence
+from tests.component.agent import async_job_support as _async_job_support
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
+from openprogram.operations.self_update.control.recovery import recover_pending_updates
+from openprogram.operations.self_update.control.recovery import SYSTEM_CHECKS
+from openprogram.operations.self_update.verification.verifier_config import freeze_verifier_config
+from openprogram.operations.self_update.verification.verifier_config import config_evidence
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
 
 
 @pytest.fixture
 def environment(tmp_path, monkeypatch, store_fixture):
-    from openprogram.agent import authority
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.dispatcher import TurnResult
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "profile")
+    from openprogram.runtime.permissions import authority
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "profile")
     # These tests exercise verifier admission; launcher integration is covered
     # separately by test_startup_redispatch, without this launch boundary stub.
-    monkeypatch.setattr("openprogram.self_update.delivery.launcher.launch_supervisor", lambda *_a, **_k: None)
+    monkeypatch.setattr("openprogram.operations.self_update.delivery.launcher.launch_supervisor", lambda *_a, **_k: None)
     authority._reset_owner_cache_for_tests()
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "frozen"})
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", lambda *a: SimpleNamespace(provider="fake", id="fixed"))
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "frozen"})
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model", lambda *a: SimpleNamespace(provider="fake", id="fixed"))
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     calls = []
     def execute(req):
         calls.append(vars(req))
         return TurnResult("inconclusive", "verify_u", "verify_a")
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", execute)
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", execute)
     runner = JobRunner(max_workers=1)
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     request = UpdateRequest(
         update_id="su_recover", session_id="p1", origin_turn_id="u1", origin_assistant_id="a1",
         agent_id="main", repo=str(tmp_path), worktree_id="wt", base_sha="1" * 40, candidate_sha="2" * 40,
@@ -46,7 +49,7 @@ def environment(tmp_path, monkeypatch, store_fixture):
     request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(config)))
     store = SelfUpdateStore()
     store.create(request, verifier_config=config)
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(request.update_id, phase)
     def release(**changes):
         gate = dict(schema=1, candidate_sha=request.candidate_sha, attempt=1,
@@ -63,7 +66,7 @@ def environment(tmp_path, monkeypatch, store_fixture):
 def test_startup_dispatch_is_stable_and_uses_frozen_inputs(environment, monkeypatch):
     store, runner, calls, request, release = environment
     release()
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: pytest.fail("mutable profile reloaded"))
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.load_agent_profile", lambda _: pytest.fail("mutable profile reloaded"))
     assert recover_pending_updates() is True
     job_id = f"self-update:{request.update_id}:verify:1"
     assert runner.await_job(job_id, timeout=5) is not None
@@ -78,7 +81,7 @@ def test_startup_dispatch_is_stable_and_uses_frozen_inputs(environment, monkeypa
 
 
 def test_startup_redispatches_terminal_maintenance_owner(environment, monkeypatch):
-    from openprogram.self_update.delivery import launcher
+    from openprogram.operations.self_update.delivery import launcher
     store, runner, calls, request, release = environment
     release()
     store._write_json(store.root / "maintenance.json", {
@@ -117,7 +120,7 @@ def test_invalid_or_manual_maintenance_never_admits_startup(environment, monkeyp
         elif damage == "future":
             marker["entered_at"] += 3600
         store._write_json(path, marker)
-    monkeypatch.setattr("openprogram.self_update.delivery.launcher.launch_supervisor", lambda *_a, **_k: pytest.fail("must not launch"))
+    monkeypatch.setattr("openprogram.operations.self_update.delivery.launcher.launch_supervisor", lambda *_a, **_k: pytest.fail("must not launch"))
     assert recover_pending_updates() is False
     assert path.exists() or path.is_symlink()
     assert runner.list_jobs("p1") == [] and calls == []
@@ -167,8 +170,8 @@ def test_expired_claim_recovers_same_job_id(environment):
 
 
 def test_terminal_orphan_job_is_not_reexecuted(environment):
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job, JobStatus
+    from openprogram.runtime.jobs.store import save_job
+    from openprogram.runtime.jobs.types import Job, JobStatus
     store, runner, calls, request, release = environment
     release()
     job_id = f"self-update:{request.update_id}:verify:1"
@@ -181,10 +184,10 @@ def test_terminal_orphan_job_is_not_reexecuted(environment):
 
 @pytest.mark.parametrize("gate", ["missing", "old_worker", "rolled_back", "rolling_back", "committing", "valid"])
 def test_persisted_queue_checks_gate_before_model_execution(environment, monkeypatch, gate):
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.self_update.verification.verifier_config import load_verifier_config
-    from openprogram.self_update.verification.verifier_config import verifier_prompt
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.operations.self_update.verification.verifier_config import load_verifier_config
+    from openprogram.operations.self_update.verification.verifier_config import verifier_prompt
 
     store, runner, calls, request, release = environment
     if gate == "missing":
@@ -204,17 +207,17 @@ def test_persisted_queue_checks_gate_before_model_execution(environment, monkeyp
     )
     runner.shutdown()
     # Simulate process loss after durable ready publication, before pickup.
-    with runner._governor.ledger.immediate() as conn:
-        conn.execute("UPDATE job_admissions SET dispatch_ready = 1 WHERE job_id = ?", (claim.job_id,))
+    with runner._governor.ledger.run_tables().transaction() as conn:
+        conn.update("job_admissions", {"dispatch_ready": 1}, job_id=claim.job_id)
     if gate == "rolled_back":
         store.transition(request.update_id, UpdatePhase.ROLLED_BACK)
     if gate == "rolling_back":
-        from openprogram.self_update.control.rollback_intent import begin_rollback
+        from openprogram.operations.self_update.control.rollback_intent import begin_rollback
         begin_rollback(store, request.update_id, "failure")
     if gate == "committing":
         store._write_json(store.root / request.update_id / "commit-1.json", {"schema": 1})
     recovered = JobRunner(max_workers=1, governor=runner._governor)
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: recovered)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: recovered)
     try:
         # No startup hook has run: JobRunner alone recovers persisted work.
         result = recovered.await_job(claim.job_id, timeout=5)
@@ -243,7 +246,7 @@ def test_tampered_snapshot_fails_before_claim(environment):
 
 
 def test_activation_wait_does_not_dispatch_before_supervisor_release(environment, monkeypatch):
-    from openprogram.self_update.control import recovery
+    from openprogram.operations.self_update.control import recovery
     store, runner, calls, request, release = environment
     waits = []
     def pause(_seconds):
@@ -270,7 +273,7 @@ def test_concurrent_startup_submits_only_one_job(environment):
 def test_owner_change_prevents_startup(environment, monkeypatch):
     store, runner, calls, request, release = environment
     release()
-    monkeypatch.setattr("openprogram.agent.authority.owner_principal_id", lambda: "different-owner")
+    monkeypatch.setattr("openprogram.runtime.permissions.authority.owner_principal_id", lambda: "different-owner")
     assert recover_pending_updates() is False
     assert calls == []
 
@@ -280,18 +283,18 @@ def test_model_unavailable_is_a_durable_failure(environment, monkeypatch):
     release()
     def unavailable(*_):
         raise ValueError("requested model unavailable")
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", unavailable)
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model", unavailable)
     assert recover_pending_updates() is False
     assert store.load(request.update_id).state.dispatch is None
     assert calls == []
     # A retry must not conceal the failure already reported to the supervisor.
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", lambda *_: None)
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model", lambda *_: None)
     assert recover_pending_updates() is False
     assert calls == []
 
 
 def test_activation_timeout_never_creates_a_job(environment, monkeypatch):
-    from openprogram.self_update.control import recovery
+    from openprogram.operations.self_update.control import recovery
     store, runner, calls, request, _ = environment
     clock = [0.0]
     def pause(_seconds):
@@ -316,13 +319,13 @@ def test_rollback_after_claim_prevents_late_admission(environment, monkeypatch):
 
 
 def test_expired_update_and_candidate_error_do_not_block_restored_startup(environment, monkeypatch):
-    from openprogram.self_update.control import recovery
-    from openprogram.self_update.control.rollback_intent import begin_rollback
+    from openprogram.operations.self_update.control import recovery
+    from openprogram.operations.self_update.control.rollback_intent import begin_rollback
     store, runner, calls, original, _ = environment
     store.transition(original.update_id, UpdatePhase.ROLLED_BACK)
     request = replace(original, update_id="su_expired", created_at=time.time() - 3600, timeout_seconds=1)
     store.create(request)
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING):
         store.transition(request.update_id, phase, detail={"previous_system_gate": {"candidate_sha": "3" * 40}})
     intent = begin_rollback(store, request.update_id, "update timed out")
     assert begin_rollback(store, request.update_id, "retry") == intent
@@ -338,8 +341,8 @@ def test_expired_update_and_candidate_error_do_not_block_restored_startup(enviro
 
 
 def test_rollback_intent_after_claim_prevents_late_admission(environment, monkeypatch):
-    from openprogram.self_update.control import recovery
-    from openprogram.self_update.control.rollback_intent import begin_rollback
+    from openprogram.operations.self_update.control import recovery
+    from openprogram.operations.self_update.control.rollback_intent import begin_rollback
     store, runner, calls, request, release = environment
     release()
     original = SelfUpdateStore.claim_verifier
@@ -363,7 +366,7 @@ def test_invalid_rollback_intent_cannot_dispatch(environment):
 
 
 def test_commit_reconciliation_waits_before_stale_gate_and_error_checks(environment, monkeypatch):
-    from openprogram.self_update.control import recovery
+    from openprogram.operations.self_update.control import recovery
     store, runner, calls, request, release = environment
     release(worker_pid=-1)
     store._write_json(store.root / request.update_id / "commit-1.json", {"schema": 1})
@@ -379,7 +382,7 @@ def test_commit_reconciliation_waits_before_stale_gate_and_error_checks(environm
 
 
 def test_commit_reconciliation_startup_wait_is_bounded(environment, monkeypatch):
-    from openprogram.self_update.control import recovery
+    from openprogram.operations.self_update.control import recovery
     store, runner, calls, request, release = environment
     release()
     store._write_json(store.root / request.update_id / "commit-1.json", {"schema": 1})

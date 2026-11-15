@@ -1,0 +1,936 @@
+"""Execution-DAG: reconstruction, live streaming, run-state repair.
+
+Three concerns, all over the flat DAG that ``Agent method`` and
+the runtime write into SessionDB as a ``/run`` executes:
+
+  ``build_exec_dag()`` — turn a run's DAG subtree into the TNode dict
+      the inline Execution DAG renders (``web/.../execution-dag.tsx``).
+  ``live_progress()``  — context manager: while a run executes, poll
+      the DAG and push ``tree_update`` + ``branches_list`` envelopes so
+      the UI fills in node by node instead of only after the run ends.
+  ``reconcile_interrupted_runs()`` — on worker startup, flip nodes left
+      frozen at ``status="running"`` (their executing process died) to
+      ``error``, so the UI shows a failed run, not an eternal spinner.
+
+This replaces the retired tree-Context event
+pipeline (commit "cut over to DAG, drop tree-Context event pipeline").
+That pipeline forwarded partial trees live; dropping it left a run
+showing nothing but a spinner until completion. The poller restores
+the live view by reading the DAG — the single source of truth — rather
+than re-introducing an event system. Frames reach the clients through
+:mod:`openprogram.runtime.interface_link`, or through ``on_event`` in an
+agentic subprocess.
+"""
+from __future__ import annotations
+
+import json
+import threading
+import time
+from contextlib import contextmanager
+from typing import Optional
+
+from . import hooks
+import logging
+
+_log = logging.getLogger(__name__)
+
+
+def _without_control_subtrees(nodes: list) -> list:
+    hidden_ids = {
+        n.id for n in nodes
+        if (n.metadata or {}).get("execution_control")
+    }
+    changed = True
+    while changed:
+        before = len(hidden_ids)
+        hidden_ids.update(n.id for n in nodes if n.caller in hidden_ids)
+        changed = len(hidden_ids) != before
+    return [n for n in nodes if n.id not in hidden_ids]
+
+
+# Tree reconstruction
+
+def _exec_tnode(n, kids: dict[str, list]) -> dict | None:
+    """Turn one DAG node into the TNode dict the Execution DAG renders,
+    recursing into its ``kids`` (children grouped by ``caller`` —
+    the sub-call edge, which is what nesting means here).
+
+    Shared by :func:`build_exec_dag` (locate by ``(name, caller)``)
+    and :func:`build_exec_dag_by_id` (locate by the node's own id) so
+    both produce byte-identical tree shapes.
+    """
+    meta = n.metadata or {}
+    expose = str(meta.get("expose") or "full")
+    # Older records can contain a hidden node even though current writers do
+    # not create one. Suppress it at the projection boundary as a second
+    # protection against exposing its name or lifecycle state.
+    if expose == "hidden":
+        return None
+    status = meta.get("status") or "completed"
+    tn: dict = {
+        "path": n.id,
+        "name": n.name or (n.role or "node"),
+        "status": status,
+        "expose": expose,
+    }
+    dur = meta.get("duration_seconds")
+    if dur is not None:
+        try:
+            tn["duration_ms"] = int(float(dur) * 1000)
+        except (TypeError, ValueError):
+            pass
+    if status == "error":
+        tn["error"] = str(n.output or meta.get("error") or "")
+    elif status == "interrupted":
+        tn["error"] = str(meta.get("error") or n.output or "")
+    if n.is_llm():
+        # Runtime stores the prompt preview separately from system input.
+        # Both tree summaries and details consume output; keep raw_reply for
+        # older clients and preserve structured content with JSON encoding.
+        tn["node_type"] = "exec"
+        inp = n.input
+        params = dict(inp) if isinstance(inp, dict) else {}
+        content = meta.get("prompt_text")
+        if content is None:
+            content = (
+                json.dumps(inp, default=str, ensure_ascii=False)
+                if isinstance(inp, (list, dict)) else str(inp or "")
+            )
+        if content:
+            params["_content"] = content
+        tn["params"] = params
+        out = n.output
+        tn["output"] = (
+            "" if out is None else out if isinstance(out, str)
+            else json.dumps(out, default=str, ensure_ascii=False)
+        )
+        tn["raw_reply"] = tn["output"]
+        # execution_stream.v1 preview (not authoritative final output).
+        stream = meta.get("stream")
+        if isinstance(stream, dict):
+            tn["stream_revision"] = stream.get("revision")
+            tn["stream_generation"] = stream.get("generation")
+            tn["stream_phase"] = stream.get("phase")
+            tn["stream_preview"] = stream.get("preview_text") or ""
+            tn["stream_reasoning"] = stream.get("preview_reasoning") or ""
+            snapshot = stream.get("snapshot")
+            if isinstance(snapshot, dict):
+                attempts = snapshot.get("attempts")
+                if isinstance(attempts, list):
+                    tn["stream_attempts"] = attempts
+                tn["stream_snapshot"] = snapshot
+            elif isinstance(stream.get("attempts"), list):
+                # Older checkpoints only had attempt summaries. Keep them so
+                # the UI can label the fallback rather than inventing blocks.
+                tn["stream_attempts"] = stream.get("attempts")
+            if (
+                status == "running"
+                and not (tn.get("output") or "").strip()
+                and tn["stream_preview"]
+            ):
+                # Placeholder for clients that have not subscribed to
+                # execution_stream yet — full fidelity still via reducer.
+                tn["raw_reply"] = tn["stream_preview"]
+        # Before execution_stream.v1, exec nodes persisted an ordered block
+        # projection directly on metadata. Preserve it as a legacy fallback;
+        # the frontend normalizes it into one attempt and keeps tool refs.
+        if isinstance(meta.get("blocks"), list):
+            tn["stream_blocks"] = meta["blocks"]
+    else:
+        if isinstance(n.input, dict):
+            tn["params"] = {k: v for k, v in n.input.items()
+                            if k not in ("runtime", "callback")}
+        out = n.output
+        tn["output"] = (out if isinstance(out, str)
+                        else json.dumps(out, default=str,
+                                        ensure_ascii=False))
+    child_nodes = sorted(kids.get(n.id, []), key=lambda x: x.seq)
+    if n.is_code():
+        if expose == "io":
+            child_nodes = []
+        elif expose == "llm":
+            child_nodes = [c for c in child_nodes if c.is_llm()]
+    children = []
+    for child in child_nodes:
+        projected = _exec_tnode(child, kids)
+        if projected is not None:
+            children.append(projected)
+    if children:
+        tn["children"] = children
+    return tn
+
+
+def build_exec_dag_by_id(session_id: str,
+                          root_node_id: str) -> Optional[dict]:
+    """Reconstruct a single call's execution DAG, rooted at the node
+    whose id is ``root_node_id`` (not by ``(name, predecessor)``).
+
+    Used by the refresh-rebuild path: a manually-invoked
+    Agent method persists as a top-level code node with
+    ``caller="ROOT"``. Calling the same function twice in one session
+    yields two such nodes — both ``ROOT``-anchored, so the name-based
+    :func:`build_exec_dag` ("last match wins") would resolve both cards
+    to the most recent invocation's subtree. Anchoring on the node's own
+    id gives each card its own subtree. Returns None if the id is unknown.
+    """
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        nodes_list = _without_control_subtrees(
+            default_db().get_nodes(session_id),
+        )
+    except Exception:
+        return None
+    nodes = sorted(nodes_list, key=lambda n: n.seq)
+    by_id = {n.id: n for n in nodes}
+    root = by_id.get(root_node_id)
+    if root is None:
+        return None
+    kids: dict[str, list] = {}
+    for n in nodes:
+        if n.caller:
+            kids.setdefault(n.caller, []).append(n)
+    return _exec_tnode(root, kids)
+
+
+def build_exec_dags_by_id(session_id: str, root_node_ids: list[str]) -> dict[str, dict]:
+    """:func:`build_exec_dag_by_id` for several roots, over one pass of the session."""
+    if not root_node_ids:
+        return {}
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        nodes_list = _without_control_subtrees(default_db().get_nodes(session_id))
+    except Exception:
+        return {}
+    nodes = sorted(nodes_list, key=lambda n: n.seq)
+    by_id = {n.id: n for n in nodes}
+    kids: dict[str, list] = {}
+    for n in nodes:
+        if n.caller:
+            kids.setdefault(n.caller, []).append(n)
+    return {root: _exec_tnode(by_id[root], kids) for root in root_node_ids if root in by_id}
+
+
+def build_exec_dag(session_id: str, func_name: str,
+                    user_turn_id: str) -> Optional[dict]:
+    """Reconstruct a run's execution DAG from its DAG nodes.
+
+    Returns a TNode dict rooted at the ``func_name`` call this run
+    triggered, with its nested function / LLM calls as children.
+
+    Works both *after* a run (the top ``func_name`` node is persisted)
+    and *mid-run*: the ``Agent method`` wrapper persists a node
+    only on return, so while the top function is still looping its node
+    does not exist yet — but its nested calls (``gui_step`` etc.) are
+    already persisted, pointing at the top node's allocated-but-
+    unwritten id. In that case a synthetic ``running`` root is returned.
+    None if the run left no nodes at all.
+    """
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        nodes_list = _without_control_subtrees(
+            default_db().get_nodes(session_id),
+        )
+    except Exception:
+        return None
+    nodes = sorted(nodes_list, key=lambda n: n.seq)
+    by_id = {n.id: n for n in nodes}
+    kids: dict[str, list] = {}
+    for n in nodes:
+        if n.caller:
+            kids.setdefault(n.caller, []).append(n)
+
+    # Root: the func_name code call this run's user turn triggered.
+    # Last match wins so a re-run picks the most recent invocation.
+    root = None
+    for n in nodes:
+        if n.is_code() and n.name == func_name and n.caller == user_turn_id:
+            root = n
+
+    if root is not None:
+        return _exec_tnode(root, kids)
+
+    # Mid-run: the top func_name node isn't persisted yet. Its direct
+    # children already carry its allocated id in ``caller`` — so they
+    # look like orphans (caller → an id not in the graph). Collect
+    # them, but only ones created at/after this run's user turn, so
+    # stale orphans from old deleted branches aren't swept in.
+    turn = by_id.get(user_turn_id)
+    floor = (turn.created_at or 0.0) if turn else 0.0
+    orphan_children = [
+        n for n in nodes
+        if n.caller and n.caller not in by_id
+        and not n.is_user()
+        and (n.created_at or 0.0) >= floor
+    ]
+    if not orphan_children:
+        return None
+    children = []
+    for child in sorted(orphan_children, key=lambda x: x.seq):
+        projected = _exec_tnode(child, kids)
+        if projected is not None:
+            children.append(projected)
+    return {
+        "path": user_turn_id + "_run",
+        "name": func_name,
+        "status": "running",
+        "children": children,
+    }
+
+
+# Live progress streaming
+
+def _graph_push_val(n: dict, key: str):
+    v = n.get(key)
+    return "" if v is None else v
+
+
+def _graph_push_signature(graph, head=None) -> str:
+    """Cheap ``branches_list`` fingerprint.
+
+    Matches the frontend ``graphInputSignature`` structural fields
+    (paint-gate.ts). preview / content / output are omitted — glyphs
+    don't read them, so a token-only change must not push the whole graph.
+    """
+    if not isinstance(graph, list) or not graph:
+        return f"0|{head or ''}"
+    tail = [n.get("id") for n in graph[-8:] if isinstance(n, dict)]
+    rows = []
+    for n in graph:
+        if not isinstance(n, dict):
+            continue
+        covers = n.get("covers_ids")
+        spawned = n.get("spawned_from")
+        rows.append((
+            _graph_push_val(n, "id"),
+            _graph_push_val(n, "predecessor"),
+            _graph_push_val(n, "role"),
+            _graph_push_val(n, "display"),
+            _graph_push_val(n, "status"),
+            _graph_push_val(n, "function"),
+            _graph_push_val(n, "caller"),
+            _graph_push_val(n, "source"),
+            _graph_push_val(n, "name"),
+            "+".join(map(str, covers)) if isinstance(covers, (list, tuple)) else "",
+            _graph_push_val(n, "created_at"),
+            _graph_push_val(n, "_tier"),
+            _graph_push_val(n, "_lane"),
+            bool(n.get("_runNode")),
+            bool(n.get("is_error")),
+            bool(n.get("is_named")),
+            _graph_push_val(n, "branch_name"),
+            bool(n.get("superseded_summary")),
+            _graph_push_val(n, "attach_ref"),
+            _graph_push_val(n, "attach_label"),
+            (spawned.get("label") or "") if isinstance(spawned, dict) else "",
+            bool(n.get("spawn_remote")),
+            _graph_push_val(n, "spawn_remote_session"),
+            _graph_push_val(n, "spawn_remote_id"),
+            bool(n.get("spawn_out")),
+            _graph_push_val(n, "spawn_out_session"),
+            _graph_push_val(n, "spawn_out_head"),
+        ))
+    return json.dumps(
+        (len(graph), tail, rows, head or ""),
+        default=str, separators=(",", ":"),
+    )
+
+
+def _poll(session_id: str, msg_id: str, func_name: str,
+          stop: threading.Event,
+          on_event=None) -> None:
+    """Poll the DAG every ~1.2s and push two live streams until
+    ``stop`` is set: ``tree_update`` (inline Execution DAG) and
+    ``branches_list`` (right-rail History graph). Both are
+    signature-deduped so an idle tick sends nothing.
+
+    ``on_event`` (optional) routes envelopes through a caller-provided
+    callback instead of importing the worker's ``_broadcast_*``. This
+    is what lets the Agent method subprocess push live progress
+    to clients: the parent worker registers ``on_event`` to drain the
+    subprocess's mp.Queue and re-broadcast, so the subprocess just
+    drops envelopes onto the queue and the parent does the actual
+    fanout. In-process callers (no subprocess) leave ``on_event`` None
+    and we broadcast directly — same UX, no extra hop.
+    """
+    from openprogram.runtime import interface_link
+    from openprogram.state.store.session.graph.branches import build_branches_payload
+
+    state = {"last_tree": None, "last_graph": None, "shim": None}
+    # streaming-resume: also patch the persisted placeholder reply with
+    # the latest tree so a mid-run page refresh sees the in-progress
+    # Execution DAG, not an empty ``paper_agent()`` shell. The reply
+    # placeholder lives at ``msg_id + "_reply"`` (see ws_actions/chat/turn.py).
+    _placeholder_id = msg_id + "_reply"
+
+    def _tick(force: bool) -> None:
+        """One poll: build the DAG + branches and push whatever changed.
+
+        ``force`` bypasses the signature dedup so the final flush always
+        emits — the loop stops the instant the function returns, so the
+        last in-loop tick usually predates the terminal node write that
+        flips the run's root to ``completed``. Without a forced flush at
+        ``__exit__`` the card never receives the completed tree and spins
+        forever (Bug 6). With it, the SAME ``tree_update`` channel that
+        filled the card live delivers the terminal tree, so the card
+        flips to done in place — no second envelope, no duplicate row.
+        """
+        try:
+            # On the final flush the terminal code node was just written
+            # by the Agent method subprocess straight to git; the
+            # parent worker's cached SessionMemoryIndex hasn't observed
+            # it, so a plain build would re-read the stale running tree.
+            # Drop the cache first so the forced flush reflects the
+            # on-disk completed state.
+            if force:
+                try:
+                    from openprogram.runtime.context.session_db import default_db
+                    default_db().invalidate_cache(session_id)
+                except Exception:
+                    # Build anyway; the tree may still show the stale running state.
+                    _log.warning("session cache not invalidated for %s", session_id, exc_info=True)
+            tree = build_exec_dag(session_id, func_name, msg_id)
+            if tree is not None:
+                sig = json.dumps(tree, default=str, sort_keys=True)
+                if force or sig != state["last_tree"]:
+                    state["last_tree"] = sig
+                    # Standalone function calls have no assistant caller.
+                    # Address their existing code node instead of sending an
+                    # empty message id that the transcript reducer discards.
+                    frame_msg_id = msg_id or tree["path"]
+                    if on_event is not None:
+                        try:
+                            on_event({
+                                "type": "chat_response",
+                                "data": {
+                                    "type": "tree_update",
+                                    "session_id": session_id,
+                                    "msg_id": frame_msg_id,
+                                    "tree": tree,
+                                    "function": func_name,
+                                },
+                            })
+                        except Exception:
+                            # Caller-supplied callback: a failing consumer must not stop the poller.
+                            _log.warning("tree update not delivered for session %s", session_id, exc_info=True)
+                    else:
+                        interface_link.broadcast_chat_response(session_id, frame_msg_id, {
+                            "type": "tree_update",
+                            "tree": tree,
+                            "function": func_name,
+                        })
+                    # Throttled persist: write the latest tree onto the
+                    # placeholder so a refresh-after-crash also recovers
+                    # the partial view. Cheap — the index is in memory,
+                    # write touches one JSON file + git add (commit
+                    # happens at turn end). On the forced final flush the
+                    # tree's root already carries ``status=completed``,
+                    # so a refresh after the run also shows it done.
+                    try:
+                        if state["shim"] is None:
+                            from openprogram.state.store import SessionNodeWriter
+                            from openprogram.runtime.context.session_db import default_db
+                            state["shim"] = SessionNodeWriter(
+                                default_db(), session_id)
+                        _root_status = (tree.get("status")
+                                        if isinstance(tree, dict) else None)
+                        state["shim"].update(
+                            _placeholder_id,
+                            metadata={
+                                "status": _root_status or "running",
+                                "context_tree": tree,
+                                "last_update_at": time.time(),
+                            },
+                        )
+                    except Exception:
+                        # The live push already went out; only refresh recovery is affected.
+                        _log.warning("tree not persisted on placeholder %s", _placeholder_id, exc_info=True)
+        except Exception:
+            # Poller thread: the next tick retries.
+            _log.warning("execution tree push failed for session %s", session_id, exc_info=True)
+        try:
+            payload = build_branches_payload(session_id)
+            gsig = _graph_push_signature(
+                payload.get("graph"), payload.get("active"))
+            if force or gsig != state["last_graph"]:
+                state["last_graph"] = gsig
+                if on_event is not None:
+                    try:
+                        on_event({"type": "branches_list", "data": payload})
+                    except Exception:
+                        # Caller-supplied callback: a failing consumer must not stop the poller.
+                        _log.warning("branches list not delivered for session %s", session_id, exc_info=True)
+                else:
+                    interface_link.broadcast({"type": "branches_list", "data": payload})
+        except Exception:
+            # Poller thread: the next tick retries.
+            _log.warning("branches push failed for session %s", session_id, exc_info=True)
+
+    # Fast warmup: the run's code node lands on disk a few hundred ms
+    # after dispatch, but a fixed 1.2s first tick made the UI wait up to
+    # 1.2s extra before the pending card could hydrate. Poll quickly
+    # (0.15s, doubling) until the FIRST tree goes out, then settle into
+    # the steady 1.2s cadence.
+    interval = 0.15
+    while not stop.wait(interval):
+        _tick(force=False)
+        if state["last_tree"] is not None:
+            interval = 1.2
+        else:
+            interval = min(interval * 2, 1.2)
+    # Final flush after stop: emit the terminal tree (root flipped to
+    # completed) through the same channel so the card finalizes.
+    _tick(force=True)
+
+
+@contextmanager
+def live_progress(session_id: str, msg_id: str, func_name: str, on_event=None):
+    """Stream a run's progress to the UI for the duration of the block.
+
+    Usage::
+
+        with live_progress(session_id, msg_id, func_name):
+            result = loaded_func(**call_kwargs)
+
+    A daemon poller thread starts on enter and stops on exit (success
+    or exception), so a long ``Agent method`` run shows its
+    Execution DAG + History graph filling in live.
+    """
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=_poll, args=(session_id, msg_id, func_name, stop, on_event),
+        daemon=True, name=f"live-progress-{session_id}")
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        # Wait (bounded) for the poller's forced final flush to emit the
+        # terminal tree before we return. In the Agent method
+        # subprocess the process exits right after this block; without
+        # the join the daemon poller is killed mid-flush and the
+        # completed tree never reaches the queue, so the card stays
+        # running (Bug 6). The flush is one DAG build + one envelope —
+        # fast — but cap the wait so a wedged build can't hang turn end.
+        thread.join(timeout=5.0)
+
+
+# Interrupted-run repair
+
+_RESTART_ERROR = "Worker restarted before this turn finished"
+_RESTART_OUTPUT = "[interrupted] worker restarted mid-turn"
+_ACTIVE_CANONICAL_STATUSES = {
+    "queued", "running", "pausing", "paused", "cancelling",
+    "reconciliation_required",
+}
+_CURRENT_CANONICAL_STATUSES = {
+    "queued", "running", "pausing", "cancelling",
+}
+
+
+def _canonical_anchors(executions, session_id: str) -> dict[str, object]:
+    """Map persisted assistant anchors to their newest canonical execution."""
+    anchors: dict[str, object] = {}
+    try:
+        records = executions.list_for_session(session_id)
+        records = sorted(
+            records,
+            key=lambda item: (item.updated_at, item.created_at, item.status_version),
+            reverse=True,
+        )
+        for execution in records:
+            source = executions.get_execution_input(execution.execution_id)
+            assistant_id = source.assistant_message_id if source else None
+            if execution.parent_execution_id:
+                parent = executions.get_execution_input(execution.parent_execution_id)
+                if parent is not None and parent.assistant_message_id == assistant_id:
+                    continue
+            if assistant_id and assistant_id not in anchors:
+                anchors[assistant_id] = execution
+    except Exception:
+        return {}
+    return anchors
+
+
+def _repair_canonical_node(node, execution, shim) -> bool:
+    """Project canonical lifecycle state over an obsolete restart marker."""
+    canonical = getattr(getattr(execution, "status", None), "value", None)
+    meta = node.metadata or {}
+    synthetic_error = meta.get("error") == _RESTART_ERROR
+    synthetic_output = node.output == _RESTART_OUTPUT
+    synthetic_marker = synthetic_error or synthetic_output
+    target = {
+        "queued": "running",
+        "running": "running",
+        "pausing": "running",
+        "paused": "paused",
+        "cancelling": "cancelling",
+        "reconciliation_required": "paused",
+        "completed": "completed",
+        "failed": "error",
+        "cancelled": "cancelled",
+    }.get(canonical)
+    if target is None:
+        # A real canonical interruption remains an interruption. It does not
+        # authorize deleting the evidence written by the interruption path.
+        return False
+    if canonical in _ACTIVE_CANONICAL_STATUSES:
+        if meta.get("status") == "interrupted" and not synthetic_marker:
+            return False
+        if meta.get("status") in {"completed", "error", "cancelled"}:
+            return False
+    elif not synthetic_marker and not (
+        canonical == "cancelled" and meta.get("status") in {
+            "pending", "running", "paused", "cancelling",
+        }
+    ):
+        # Preserve real terminal results; a cancelled owner's unfinished
+        # node still needs its final status even without a restart marker.
+        return False
+    patch = {}
+    if meta.get("status") != target:
+        patch["status"] = target
+    if synthetic_error:
+        patch.update(error=None, error_type=None, interrupted_at=None)
+    reason = getattr(execution, "reason_code", None)
+    if target == "paused" and isinstance(reason, str) and reason and meta.get("pause_reason") != reason:
+        patch["pause_reason"] = reason
+    elif target != "paused" and meta.get("pause_reason"):
+        patch["pause_reason"] = None
+    if not patch and not synthetic_output:
+        return False
+    fields = {"metadata": patch} if patch else {}
+    if synthetic_output:
+        fields["output"] = ""
+    try:
+        shim.update(node.id, **fields)
+    except Exception:
+        return False
+    return True
+
+
+def _close_stale_attach(node, session_id: str, shim) -> bool:
+    """Close a running attach row whose job can no longer end it."""
+    meta = node.metadata or {}
+    attach = meta.get("attach")
+    if (meta.get("function") != "attach" or not isinstance(attach, dict)
+            or attach.get("status") not in {"pending", "queued", "running"}):
+        return False
+    job_id = attach.get("job_id")
+    records = hooks.job_records()
+    job = records.load(attach.get("session_id") or session_id, job_id) if job_id else None
+    if job is not None and not records.is_terminal(job):
+        return False
+    status = job.status.value if job is not None else "errored"
+    closed = {**attach, "status": status}
+    if job is not None and job.head_id:
+        closed["head_id"] = job.head_id
+    fields = {"metadata": {"attach": closed, "is_error": status != "completed"}}
+    if node.output == "(running)":
+        fields["output"] = (job.result_text or job.error if job is not None else None) or _RESTART_OUTPUT
+    try:
+        shim.update(node.id, **fields)
+    except Exception:
+        return False
+    return True
+
+
+def reconcile_session_projection(session_id: str) -> int:
+    """Repair one session's stale restart projection during hydration."""
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.runtime.execution import default_store as execution_store
+    from openprogram.state.store import SessionNodeWriter
+
+    store = default_db()
+    with hooks.session_goals().owner(store, session_id) as acquired:
+        if not acquired:
+            return 0
+        executions = execution_store()
+        anchors = _canonical_anchors(executions, session_id)
+        if not anchors:
+            return 0
+        shim = SessionNodeWriter(store, session_id)
+        fixed = 0
+        for node in store.get_nodes(session_id):
+            execution = anchors.get(node.id)
+            if execution is not None:
+                fixed += int(_repair_canonical_node(node, execution, shim))
+        canonical_paused = any(
+            getattr(getattr(item, "status", None), "value", None)
+            in {"paused", "reconciliation_required"}
+            for item in anchors.values()
+        ) and not any(
+            getattr(getattr(item, "status", None), "value", None)
+            in _CURRENT_CANONICAL_STATUSES
+            for item in anchors.values()
+        )
+        session = store.get_session(session_id) or {}
+        if canonical_paused and session.get("status") in {
+            "running", "cancelling", "interrupted",
+        }:
+            store.update_session(session_id, status="idle")
+            fixed += 1
+        return fixed
+
+def reconcile_interrupted_runs() -> int:
+    """Finish durable cancellations and mark abandoned runs interrupted.
+
+    Two writers stamp ``status="running"``:
+      * ``Agent method`` on entry (FunctionCall sub-call nodes),
+        flipping to ``success`` / ``error`` in its ``finally``.
+      * The chat dispatcher on assistant placeholder insert (step 3b),
+        flipping to ``completed`` / ``error`` / ``cancelled`` at turn
+        end.
+    If the worker process dies before either path's terminal flip runs
+    (SIGKILL, crash, restart), the node is frozen at ``running`` and
+    the UI spins forever waiting on a terminal event nobody will fire.
+
+    Call once on worker startup: a fresh worker has nothing running,
+    so any ``running`` node is a zombie from a dead process. We tag
+    these as ``interrupted`` rather than ``error`` so the UI can
+    distinguish "the model / network blew up" (red) from "the worker
+    got restarted mid-turn" (amber). We also stuff a short marker
+    into ``output`` so an otherwise-empty assistant bubble doesn't
+    render as a silent ghost — the user sees explicitly what
+    happened.
+
+    Returns the count fixed.
+    """
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.state.store import SessionNodeWriter
+
+    store = default_db()
+    session_goals = hooks.session_goals()
+    fixed = 0
+    # Walk every session's nodes; the in-memory index already knows
+    # them. For any node whose metadata.status == "running", flip to
+    # "interrupted" via SessionNodeWriter.update which rewrites the
+    # on-disk JSON.
+    for sess in store.list_sessions(limit=10**9, include_archived=True):
+        with session_goals.owner(store, sess["id"]) as acquired:
+            if not acquired:
+                continue
+            sid = sess["id"]
+            shim = SessionNodeWriter(store, sid)
+            # A durable approval has ended its process intentionally. Restart
+            # must not turn its resumable assistant node into an interruption.
+            from openprogram.runtime.execution import default_store as execution_store
+            from openprogram.runtime.execution.waits import DurableWaitStore
+            executions = execution_store()
+            canonical_anchors = _canonical_anchors(executions, sid)
+            waiting_nodes = set()
+            for wait in DurableWaitStore(executions).list_open(session_id=sid):
+                source = executions.get_execution_input(wait.execution_id)
+                if source and source.assistant_message_id:
+                    waiting_nodes.add(source.assistant_message_id)
+            for node in store.get_nodes(sid):
+                meta = node.metadata or {}
+                status = meta.get("status")
+                try:
+                    fixed += int(_close_stale_attach(node, sid, shim))
+                except Exception:
+                    # The job store could not answer; the next start retries.
+                    _log.warning("attach row %s not reconciled", node.id, exc_info=True)
+                canonical = canonical_anchors.get(node.id)
+                if canonical is not None:
+                    repaired = _repair_canonical_node(node, canonical, shim)
+                    fixed += int(repaired)
+                    canonical_status = getattr(
+                        getattr(canonical, "status", None), "value", None,
+                    )
+                    if canonical_status in _ACTIVE_CANONICAL_STATUSES:
+                        continue
+                    if repaired and canonical_status in {
+                        "completed", "failed", "cancelled",
+                    }:
+                        continue
+                if node.id in waiting_nodes:
+                    continue
+                if status not in {"running", "cancelling"}:
+                    continue
+                if status == "cancelling":
+                    try:
+                        from .run_control.owners import owner_is_alive, resume_cancel
+                        if owner_is_alive(node.id):
+                            resume_cancel(node.id)
+                            continue
+                    except Exception:
+                        # Without a live owner check the node is reconciled as cancelled.
+                        _log.warning("owner check failed for cancelling node %s", node.id, exc_info=True)
+                    new_meta = dict(meta)
+                    new_meta["status"] = "cancelled"
+                    new_meta.setdefault("finished_at", time.time())
+                    output = node.output
+                    try:
+                        shim.update(node.id, output=output, metadata=new_meta)
+                        fixed += 1
+                    except Exception:
+                        continue
+                    continue
+                new_meta = dict(meta)
+                new_meta["status"] = "interrupted"
+                new_meta.setdefault("error", _RESTART_ERROR)
+                new_meta["interrupted_at"] = time.time()
+                output = node.output
+                if not output:
+                    output = _RESTART_OUTPUT
+                try:
+                    shim.update(node.id, output=output, metadata=new_meta)
+                    fixed += 1
+                except Exception:
+                    continue
+            # The SESSION ROW carries its own status, stamped "running" by
+            # the dispatcher (dispatcher/__init__.py step 3b) and cleared at
+            # turn end. A killed worker never runs that clear, so the row
+            # stays "running" forever and session_loaded.data.status pins
+            # the chat container at data-run-active="true" — the composer
+            # stays locked with no way back short of editing state on disk.
+            # Reset it independently of the node loop: a worker killed
+            # between the status write and the placeholder insert leaves a
+            # running ROW with no running NODE.
+            # Session work that cannot continue in a new worker (a Workflow
+            # Goal whose lease belonged to the previous one) gets an explicit
+            # recoverable pause from its engine. The session owner lock above
+            # excludes a live sibling controller throughout reconciliation,
+            # including node/row writes.
+            try:
+                fixed += int(session_goals.pause_for_restart(store, sid))
+            except Exception:
+                # Reconciliation of the remaining rows continues.
+                _log.warning("session goals not paused for restart in %s", sid, exc_info=True)
+            session_status = sess.get("status") or ""
+            canonical_active = any(
+                getattr(getattr(item, "status", None), "value", None)
+                in _ACTIVE_CANONICAL_STATUSES
+                for item in canonical_anchors.values()
+            )
+            canonical_paused = any(
+                getattr(getattr(item, "status", None), "value", None)
+                in {"paused", "reconciliation_required"}
+                for item in canonical_anchors.values()
+            ) and not any(
+                getattr(getattr(item, "status", None), "value", None)
+                in _CURRENT_CANONICAL_STATUSES
+                for item in canonical_anchors.values()
+            )
+            if canonical_paused and session_status in {
+                "running", "cancelling", "interrupted",
+            }:
+                # The legacy session row has no paused state.  Keep it out of
+                # the running spinner while the canonical wait projection is
+                # paused and the system-access card is authoritative.
+                try:
+                    store.update_session(sid, status="idle")
+                    fixed += 1
+                except Exception:
+                    # Reconciliation continues; the row is retried on the next start.
+                    _log.warning("session %s status not reset to idle", sid, exc_info=True)
+            elif session_status in {"running", "cancelling"} and not canonical_active:
+                try:
+                    store.update_session(
+                        sid,
+                        status=(
+                            "cancelled"
+                            if session_status == "cancelling"
+                            else "interrupted"
+                        ),
+                    )
+                    fixed += 1
+                except Exception:
+                    # Reconciliation continues; the row is retried on the next start.
+                    _log.warning("session %s running status not cleared", sid, exc_info=True)
+    return fixed
+
+
+# Session-level DAG (dag/overview.md step 8)
+
+def build_session_dag(session_id: str) -> Optional[dict]:
+    """Build a TNode tree of the entire session's session DAG.
+
+    ROOT
+      ├─ user  "hello"
+      ├─ llm   "hi, let me search"
+      │   └─ code  search(...)
+      ├─ user  "thanks"
+      └─ llm   "you're welcome"
+
+    Returns a ROOT TNode with user/llm/code nodes as children.
+    Tool calls (code nodes whose ``caller`` points at an llm node)
+    are nested under their parent llm node.
+    """
+    try:
+        from openprogram.runtime.context.session_db import default_db
+        db = default_db()
+        nodes_list = db.get_nodes(session_id)
+    except Exception:
+        return None
+    if not nodes_list:
+        return None
+
+    nodes = sorted(nodes_list, key=lambda n: n.seq)
+    by_id = {n.id: n for n in nodes}
+
+    def _to_tnode(n) -> dict:
+        meta = n.metadata or {}
+        status = meta.get("status") or "completed"
+        tn: dict = {
+            "path": n.id,
+            "name": n.name or n.role or "node",
+            "status": status,
+            "node_type": n.role,
+        }
+        if n.is_user():
+            tn["output"] = str(n.output or "")[:200]
+        elif n.is_llm():
+            tn["output"] = str(n.output or "")[:200]
+            usage = meta.get("usage")
+            if usage:
+                tn["usage"] = usage
+        elif n.is_code():
+            if isinstance(n.input, dict):
+                tn["params"] = {k: v for k, v in n.input.items()
+                                if k not in ("runtime", "callback")}
+            out = n.output
+            tn["output"] = (out if isinstance(out, str)
+                            else json.dumps(out, default=str,
+                                            ensure_ascii=False)
+                            if out is not None else "")[:200]
+        dur = meta.get("duration_seconds")
+        if dur is not None:
+            try:
+                tn["duration_ms"] = int(float(dur) * 1000)
+            except (TypeError, ValueError):
+                pass
+        st = meta.get("started_at")
+        if st:
+            tn["start_time"] = st
+        et = meta.get("completed_at") or meta.get("ended_at")
+        if et:
+            tn["end_time"] = et
+        if status == "error":
+            tn["error"] = str(n.output or meta.get("error") or "")[:300]
+        return tn
+
+    # Group code nodes under their parent llm node
+    code_by_caller: dict[str, list] = {}
+    for n in nodes:
+        if n.is_code() and n.caller and n.caller in by_id:
+            code_by_caller.setdefault(n.caller, []).append(n)
+
+    children = []
+    for n in nodes:
+        if n.is_code() and n.caller and n.caller in by_id:
+            continue  # nested under parent
+        tn = _to_tnode(n)
+        sub = code_by_caller.get(n.id, [])
+        if sub:
+            tn["children"] = [_to_tnode(c) for c in
+                              sorted(sub, key=lambda x: x.seq)]
+        children.append(tn)
+
+    return {
+        "path": "ROOT",
+        "name": session_id,
+        "status": "completed",
+        "node_type": "root",
+        "children": children,
+    }

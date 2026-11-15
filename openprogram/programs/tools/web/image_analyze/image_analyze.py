@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from openprogram.programs._helpers import read_string_param
-from openprogram.programs._runtime import function
+from openprogram.programs._authoring.helpers import read_string_param
+from openprogram.programs._host.runtime import ToolReturn, function
 from . import providers as _  # registers builtins  # noqa: F401
 from .registry import ImageInput, registry
 
@@ -78,6 +78,50 @@ def _coerce_list(v: Any) -> list[str]:
     return []
 
 
+def _execute_result(
+    prompt: str | None = None,
+    image_paths: list[str] | str | None = None,
+    image_urls: list[str] | str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    **kw: Any,
+) -> ToolReturn:
+    prompt = prompt or read_string_param(kw, "prompt", "question", "text")
+    provider = provider or read_string_param(kw, "provider", "backend")
+    model = model or read_string_param(kw, "model")
+    paths = _coerce_list(image_paths) + _coerce_list(kw.get("imagePaths") or kw.get("imagepaths"))
+    urls = _coerce_list(image_urls) + _coerce_list(kw.get("imageUrls") or kw.get("imageurls"))
+
+    if not prompt:
+        return ToolReturn(text="Error: `prompt` is required.", is_error=True)
+    if not paths and not urls:
+        return ToolReturn(text="Error: at least one of `image_paths` / `image_urls` must be provided.", is_error=True)
+
+    from openprogram.host.sandbox import validate_read_path
+    from openprogram.runtime.permissions import refusal
+    for p in paths:
+        violation = validate_read_path(p)
+        if violation:
+            raise refusal.sandbox("image_analyze", violation)
+
+    images: list[ImageInput] = [ImageInput(path=p) for p in paths] + [ImageInput(url=u) for u in urls]
+
+    try:
+        backend = registry.select(prefer=provider)
+    except LookupError as e:
+        return ToolReturn(text=f"Error: {e}", is_error=True)
+
+    try:
+        answer = backend.analyze(images, prompt, model=model)
+    except refusal.Refused:
+        raise
+    except Exception as e:
+        return ToolReturn(text=f"Error: {backend.name} vision failed: {type(e).__name__}: {e}", is_error=True)
+
+    header = f"# image_analyze (via {backend.name}, {len(images)} image{'s' if len(images) != 1 else ''})\n\n"
+    return ToolReturn(text=header + (answer or "(empty response)"))
+
+
 def execute(
     prompt: str | None = None,
     image_paths: list[str] | str | None = None,
@@ -86,37 +130,11 @@ def execute(
     model: str | None = None,
     **kw: Any,
 ) -> str:
-    prompt = prompt or read_string_param(kw, "prompt", "question", "text")
-    provider = provider or read_string_param(kw, "provider", "backend")
-    model = model or read_string_param(kw, "model")
-    paths = _coerce_list(image_paths) + _coerce_list(kw.get("imagePaths") or kw.get("imagepaths"))
-    urls = _coerce_list(image_urls) + _coerce_list(kw.get("imageUrls") or kw.get("imageurls"))
-
-    if not prompt:
-        return "Error: `prompt` is required."
-    if not paths and not urls:
-        return "Error: at least one of `image_paths` / `image_urls` must be provided."
-
-    from openprogram.sandbox import validate_read_path
-    for p in paths:
-        violation = validate_read_path(p)
-        if violation:
-            return f"Error: sandbox policy: {violation}"
-
-    images: list[ImageInput] = [ImageInput(path=p) for p in paths] + [ImageInput(url=u) for u in urls]
-
-    try:
-        backend = registry.select(prefer=provider)
-    except LookupError as e:
-        return f"Error: {e}"
-
-    try:
-        answer = backend.analyze(images, prompt, model=model)
-    except Exception as e:
-        return f"Error: {backend.name} vision failed: {type(e).__name__}: {e}"
-
-    header = f"# image_analyze (via {backend.name}, {len(images)} image{'s' if len(images) != 1 else ''})\n\n"
-    return header + (answer or "(empty response)")
+    """Retain the plain-call string contract; registered tools use typed outcomes."""
+    return _execute_result(
+        prompt=prompt, image_paths=image_paths, image_urls=image_urls,
+        provider=provider, model=model, **kw,
+    ).text or ""
 
 
 
@@ -131,6 +149,6 @@ function(
     check_fn=_tool_check_fn,
     path_params={"image_paths": "read"},
     url_params=["image_urls"],
-)(execute)
+)(_execute_result)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION", "_tool_check_fn"]

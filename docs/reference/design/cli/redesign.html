@@ -1,0 +1,76 @@
+<title>CLI and TUI configuration surface</title>
+<meta name="description" content="One settings schema drives the CLI, setup wizard, TUI panel and web pages.">
+<h1>CLI and TUI configuration surface</h1>
+
+<p>One schema describes every setting; every surface renders it. A new setting is one <code translate="no">SettingSpec</code> and appears everywhere, with no per-surface code. No setting is web-only.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Reaches the schema through</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram config list</code>, <code translate="no">get KEY</code>, <code translate="no">set KEY VALUE</code></th><td><code translate="no">get_settings</code>, <code translate="no">set_setting</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram setup</code> wizard, <code translate="no">openprogram ports</code></th><td><code translate="no">get_settings</code>, <code translate="no">set_setting</code></td></tr>
+<tr><th scope="row">TUI <code translate="no">/config</code> panel</th><td>WebSocket <code translate="no">get_settings</code>, <code translate="no">set_setting</code> on the existing <code translate="no">BackendClient</code></td></tr>
+<tr><th scope="row">Web pages</th><td>REST <code translate="no">/api/settings</code></td></tr>
+</tbody>
+</table>
+<p class="note">Code: <code translate="no">openprogram/state/settings.py</code>, <code translate="no">interfaces/server/ws_actions/settings.py</code>, <code translate="no">apps/cli/src/components/SettingsPanel.tsx</code>. Command grammar: <a href="naming.html">CLI naming convention</a>. No new transport or process.</p>
+
+<h2 id="command-model">Commands</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Modes are verbs</th><td><code translate="no">openprogram web</code> launches the web UI, bare <code translate="no">openprogram</code> launches chat. No <code translate="no">--tui</code>, <code translate="no">--web</code> or <code translate="no">--cli</code>.</td></tr>
+<tr><th scope="row">Container verbs (<code translate="no">programs</code>, <code translate="no">skills</code>, <code translate="no">plugins</code>, <code translate="no">sessions</code>, <code translate="no">channels</code>, <code translate="no">memory</code>, <code translate="no">worker</code>, <code translate="no">mcp</code>, <code translate="no">subagent</code>)</th><td>Invoked bare: print the subcommand list and exit non-zero, all through <code translate="no">_need_subcommand(parser)</code>, because per-dispatcher <code translate="no">print_help()</code> calls drift</td></tr>
+<tr><th scope="row">Verbs with a real default</th><td><code translate="no">providers</code> lists pools, <code translate="no">ports</code> shows the port, <code translate="no">config</code> lists settings</td></tr>
+<tr><th scope="row">Self-documenting</th><td>Every <code translate="no">add_argument</code> and <code translate="no">add_parser</code> has <code translate="no">help=</code>; top-level <code translate="no">--help</code> has a common-commands epilog</td></tr>
+<tr><th scope="row"><code translate="no">setup</code></th><td>First-run walk; <code translate="no">setup &lt;section&gt;</code> jumps to one section, <code translate="no">setup menu</code> opens the picker</td></tr>
+<tr><th scope="row"><code translate="no">config get</code>, <code translate="no">config set</code></th><td>Scriptable, the stable target for documentation; same validated path as a panel edit</td></tr>
+</tbody>
+</table>
+
+<h2 id="settings-schema">Schema</h2>
+<pre translate="no" tabindex="0">@dataclass(frozen=True)
+class SettingSpec:
+    key: str             # stable id, e.g. "ui.web_port"
+    path: tuple[str, ...]  # dot-path into config.json
+    group: str           # "Ports", "Memory", ...
+    label: str
+    widget: str          # "number", "toggle", "enum", "text", "json"
+    apply: str           # "live" or "next_start"
+    default: Any = None
+    choices: Callable[[], list[str]] | None = None
+    validate: Callable[[Any], str | None] | None = None  # error or None
+    help: str = ""
+    secret: bool = False
+    minimum: int | None = None</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SETTINGS</code></th><td>The ordered list; source of truth</td></tr>
+<tr><th scope="row"><code translate="no">get_settings()</code></th><td>Reads <code translate="no">config.json</code> once, resolves values, computes <code translate="no">choices()</code> lazily, masks secrets</td></tr>
+<tr><th scope="row"><code translate="no">set_setting(key, value)</code></th><td>Validates, then writes through the key's typed helper when one exists (<code translate="no">set_ui_ports</code> for <code translate="no">ui.*</code>), else a generic dot-path write. Returns <code translate="no">{applied, value}</code> or <code translate="no">{error}</code></td></tr>
+<tr><th scope="row">Blocked keys</th><td>The dot-path write refuses <code translate="no">__proto__</code>, <code translate="no">constructor</code>, <code translate="no">prototype</code> at every level</td></tr>
+<tr><th scope="row">Location</th><td><code translate="no">~/.openprogram/config.json</code>, through the profile-aware <code translate="no">get_config_path()</code></td></tr>
+<tr><th scope="row">Dynamic keys</th><td><code translate="no">tools.disabled.&lt;name&gt;</code> toggles a tool, live. <code translate="no">providers.*</code> status rows are read-only</td></tr>
+<tr><th scope="row">Apply</th><td><code translate="no">live</code>: re-read per use. <code translate="no">next_start</code>: read once at bind time (<code translate="no">ui.web_port</code>, <code translate="no">memory.backend</code>). The surface says so at the moment of the edit</td></tr>
+</tbody>
+</table>
+<p class="note">Per-agent model, effort and skills stay in the agent record, reached through the action rows below.</p>
+
+<h2 id="tui-panel">TUI panel</h2>
+<p><code translate="no">/config</code>, also from the Ctrl+K palette: a persistent editor over live state, built on <code translate="no">Picker</code> with group, field and editor levels. Enum fields reuse <code translate="no">Picker</code>; number and text use <code translate="no">LineInput</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Schema groups</th><td>Ports, Models, Memory, Search, Tools, Execution, Security, Voice and the rest of <code translate="no">SETTINGS</code>, in registry order</td></tr>
+<tr><th scope="row">Action rows</th><td>Model, thinking effort, permission mode, theme and Claude accounts launch <code translate="no">/model</code>, <code translate="no">/effort</code>, <code translate="no">/permissions</code>, <code translate="no">/theme</code>, <code translate="no">/login</code> instead of duplicating them</td></tr>
+<tr><th scope="row">Ports</th><td><code translate="no">config set</code> adds the holder from <code translate="no">with_port_owner_note</code>. The panel reports rather than seizes</td></tr>
+<tr><th scope="row">Theme</th><td>Previews on cursor move, rolls back on ESC; no Apply step</td></tr>
+<tr><th scope="row">Providers, channels</th><td>Status and an action, never inline secret entry; OAuth is not reimplemented in a text box</td></tr>
+<tr><th scope="row">Keybinds</th><td>No settings group: the TUI has no keybind config file</td></tr>
+</tbody>
+</table>
+<p class="note">Ctrl+K renders the slash-command registry (name and description) through the same <code translate="no">Picker</code>, with keybind hints; <code translate="no">/config</code>, <code translate="no">/model</code> and <code translate="no">/theme</code> surface there uniformly. It changes no grammar.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Schema, renderers and transport are implemented.</p>

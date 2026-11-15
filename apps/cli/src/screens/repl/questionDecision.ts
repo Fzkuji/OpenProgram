@@ -27,6 +27,7 @@ export function decisionFromFrame(
     detail: data.detail ? String(data.detail) : undefined,
     tool: data.tool ? String(data.tool) : undefined,
     args: (data.args as Record<string, unknown>) || undefined,
+    askedBy: typeof data.asked_by === 'string' && data.asked_by ? data.asked_by : undefined,
     schema:
       data.schema && typeof data.schema === 'object' && Object.keys(data.schema).length
         ? (data.schema as PendingDecision['schema'])
@@ -47,7 +48,7 @@ export function enqueueDecision(
 
 /** The WS reply for an answered question. For approvals, scope='always'
  *  also persists a project-level allow rule for the tool server-side
- *  (mirrors the web's 总是允许; permission-model.md §6.3). */
+ *  (mirrors the web's 总是允许; docs/reference/design/runtime/security/permission-decision.html). */
 export function replyAction(
   decision: PendingDecision, answer: unknown,
 ): WsRequest {

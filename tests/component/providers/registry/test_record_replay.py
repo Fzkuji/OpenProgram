@@ -24,30 +24,26 @@ _POSIX_PERMISSION_AND_SYMLINK = pytest.mark.skipif(
     reason="POSIX mode and symlink contract; Windows preserves inherited ACLs",
 )
 
-from openprogram.agent.agent_loop import agent_loop
-from openprogram.agent.types import (
-    AgentContext,
-    AgentLoopConfig,
-    AgentTool,
-    AgentToolResult,
-)
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.providers.api_registry import get_api_provider, register_api_provider
-from openprogram.providers.recording import (
+from openprogram.runtime.agent.loop import agent_loop
+from openprogram.runtime.agent.loop.types import AgentContext, AgentLoopConfig
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.models.providers.catalog.api_registry import get_api_provider, register_api_provider
+from openprogram.models.providers.recording.recording import (
     PLACEHOLDER,
     RECORDING_FORMAT_VERSION,
     RecordingProvider,
     remove_secret_values,
 )
-from openprogram.providers.replay import (
+from openprogram.models.providers.recording.replay import (
     ReplayMismatch,
     ReplayProvider,
     RecordingFileError,
     read_recording_file,
 )
-from openprogram.providers.structured_output import StructuredOutputCapabilities
-from openprogram.providers.utils.errors import LLMError
-from openprogram.providers.types import (
+from openprogram.models.providers.structured_output import StructuredOutputCapabilities
+from openprogram.models.providers.utils.errors import LLMError
+from openprogram.models.providers.types import (
     AssistantMessageEvent,
     Context,
     Model,
@@ -91,7 +87,7 @@ def _options() -> SimpleStreamOptions:
 def restore_api_registry() -> Iterator[None]:
     previous = get_api_provider(_API)
     yield
-    from openprogram.providers import api_registry
+    from openprogram.models.providers.catalog import api_registry
 
     if previous is None:
         api_registry._registry.pop(_API, None)
@@ -100,28 +96,46 @@ def restore_api_registry() -> Iterator[None]:
         register_api_provider(_API, previous)
 
 
-@pytest.fixture
-def offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail loudly if anything under test opens a socket."""
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
+def _is_local_address(address) -> bool:
+    """Loopback and Unix-socket addresses never leave the machine.
+
+    The patches below are process-wide, so other threads in the worker (the
+    Windows Proactor loop's wakeup socketpair, another test's local server)
+    still connect locally while a replay runs; only real network access is
+    forbidden.
+    """
+    if isinstance(address, (str, bytes)):
+        return True
+    return isinstance(address, tuple) and bool(address) and address[0] in _LOOPBACK_HOSTS
+
+
+def _forbid_network(monkeypatch: pytest.MonkeyPatch, message: str) -> None:
     import socket
 
     real_connect = socket.socket.connect
+    real_create_connection = socket.create_connection
 
-    def refuse(sock, address, *args, **kwargs):
-        # The Windows Proactor event loop implements its wakeup socketpair
-        # with an internal loopback TCP connection. Allow only that runtime
-        # plumbing; provider network access remains forbidden.
-        if (
-            os.name == "nt"
-            and isinstance(address, tuple)
-            and address
-            and address[0] in {"127.0.0.1", "::1"}
-        ):
+    def connect(sock, address, *args, **kwargs):
+        if _is_local_address(address):
             return real_connect(sock, address, *args, **kwargs)
-        raise AssertionError("replay must not open a network connection")
+        pytest.fail(message)
 
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket, "create_connection", refuse)
+    def create_connection(address, *args, **kwargs):
+        if _is_local_address(address):
+            return real_create_connection(address, *args, **kwargs)
+        pytest.fail(message)
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket, "create_connection", create_connection)
+
+
+@pytest.fixture
+def offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail loudly if anything under test opens a network connection."""
+    _forbid_network(monkeypatch, "replay must not open a network connection")
 
 
 def _scripted_with(*responses) -> object:
@@ -214,7 +228,7 @@ class _TerminalCloseFailureProvider:
 
 
 def _drain_stream(model: Model, options: SimpleStreamOptions | None = None) -> list:
-    from openprogram.providers import stream_simple
+    from openprogram.models.providers import stream_simple
 
     async def run():
         return [
@@ -282,7 +296,7 @@ def _runtime_for_registered_model(
     monkeypatch: pytest.MonkeyPatch, *, max_retries: int = 1
 ) -> Runtime:
     monkeypatch.setattr(
-        "openprogram.providers.get_model", lambda provider, model_id: _model()
+        "openprogram.models.providers.get_model", lambda provider, model_id: _model()
     )
     runtime = Runtime(
         model="record-replay-provider:record-replay-model", max_retries=max_retries
@@ -321,7 +335,7 @@ def test_structured_retry_records_v2_calls_and_replays_same_typed_result(
 
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay, capabilities)
-    stream_module = importlib.import_module("openprogram.providers.stream")
+    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
         stream_module,
         "resolve_provider_key",
@@ -349,7 +363,7 @@ def test_structured_retry_records_v2_calls_and_replays_same_typed_result(
         "description": None,
         "strict": True,
         "fallback": "auto",
-        "max_validation_retries": 1,
+        "max_validation_retries": 2,
         "type": "json_schema",
     }
     assert not any(
@@ -386,13 +400,13 @@ def test_replay_rejects_structured_schema_mismatch_at_exact_path_before_events(
 
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay, capabilities)
-    stream_module = importlib.import_module("openprogram.providers.stream")
+    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
         stream_module,
         "resolve_provider_key",
         lambda provider: pytest.fail("schema mismatch resolved credentials"),
     )
-    failover_module = importlib.import_module("openprogram.providers.utils.failover")
+    failover_module = importlib.import_module("openprogram.models.providers.utils.failover")
     monkeypatch.setattr(
         failover_module,
         "failover_stream_fn",
@@ -565,14 +579,14 @@ def test_remove_secret_values_covers_compound_secret_field_suffixes() -> None:
 
 def _run_tool_loop(monkeypatch: pytest.MonkeyPatch) -> tuple[list, list]:
     monkeypatch.delenv("OPENPROGRAM_FALLBACK_MODELS", raising=False)
-    stream_module = importlib.import_module("openprogram.providers.stream")
+    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(stream_module, "resolve_provider_key", lambda provider: None)
 
     class EmptyMemory:
         def search(self, query: str) -> str:
             return ""
 
-    monkeypatch.setattr("openprogram.memory.get_backend", EmptyMemory)
+    monkeypatch.setattr("openprogram.state.memory.get_backend", EmptyMemory)
 
     executed: list[tuple[str, dict]] = []
 
@@ -628,30 +642,7 @@ def test_replay_reruns_a_multi_turn_tool_loop_without_network(
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay)
 
-    import socket
-
-    real_connect = socket.socket.connect
-
-    def refuse_non_loopback(sock, address, *args, **kwargs):
-        if (
-            os.name == "nt"
-            and isinstance(address, tuple)
-            and address
-            and address[0] in {"127.0.0.1", "::1"}
-        ):
-            return real_connect(sock, address, *args, **kwargs)
-        pytest.fail("replay opened a network connection")
-
-    monkeypatch.setattr(
-        socket.socket,
-        "connect",
-        refuse_non_loopback,
-    )
-    monkeypatch.setattr(
-        socket,
-        "create_connection",
-        lambda *args, **kwargs: pytest.fail("replay opened a network connection"),
-    )
+    _forbid_network(monkeypatch, "replay opened a network connection")
     replayed_events, replayed_executions = _run_tool_loop(monkeypatch)
 
     assert replay.call_count == 2
@@ -1001,7 +992,7 @@ def test_recording_tightens_preexisting_parent_directory(
     parent = tmp_path / "recordings"
     parent.mkdir(mode=0o755)
     parent.chmod(0o755)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     RecordingProvider(_scripted_with((ScriptedText("done"),)), parent / "private.jsonl")
 
     assert stat.S_IMODE(parent.stat().st_mode) == 0o700
@@ -1041,7 +1032,7 @@ def test_recording_rejects_symlinked_managed_root(
     target.mkdir(mode=0o755)
     target.chmod(0o755)
     (state / "recordings").symlink_to(target, target_is_directory=True)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
     with pytest.raises(PermissionError, match="must not be a symlink"):
         RecordingProvider(
@@ -1065,7 +1056,7 @@ def test_symlinked_managed_root_does_not_block_external_recording(
     external = tmp_path / "external"
     external.mkdir(mode=0o755)
     external.chmod(0o755)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
     RecordingProvider(
         _scripted_with((ScriptedText("done"),)), external / "private.jsonl"
@@ -1086,7 +1077,7 @@ def test_dotdot_cannot_bypass_symlinked_managed_root_rejection(
     target.mkdir(mode=0o755)
     target.chmod(0o755)
     (state / "recordings").symlink_to(target, target_is_directory=True)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
     disguised = state / "x" / ".." / "recordings" / "private.jsonl"
 
     with pytest.raises(PermissionError, match="must not be a symlink"):
@@ -1109,7 +1100,7 @@ def test_case_alias_cannot_bypass_symlinked_managed_root_rejection(
     alias = state / "RECORDINGS"
     if not alias.exists():
         pytest.skip("filesystem is case-sensitive")
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
     with pytest.raises(PermissionError, match="must not be a symlink"):
         RecordingProvider(
@@ -1130,7 +1121,7 @@ def test_direct_managed_symlink_target_remains_external(
     target.mkdir(mode=0o755)
     target.chmod(0o755)
     (state / "recordings").symlink_to(target, target_is_directory=True)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
     RecordingProvider(_scripted_with((ScriptedText("done"),)), target / "direct.jsonl")
 
@@ -1149,7 +1140,7 @@ def test_recording_rejects_intermediate_symlink_inside_managed_root(
     target.mkdir(mode=0o755)
     target.chmod(0o755)
     (managed_root / "nested").symlink_to(target, target_is_directory=True)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
     with pytest.raises(PermissionError, match="must not contain a symlink"):
         RecordingProvider(
@@ -1172,7 +1163,7 @@ def test_replay_rejects_intermediate_symlink_without_chmod(
     recording_file = _record_one_call(external)
     recording_file.chmod(0o644)
     (managed_root / "nested").symlink_to(external, target_is_directory=True)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
     with pytest.raises(RecordingFileError, match="must not contain a symlink"):
         ReplayProvider(managed_root / "nested" / recording_file.name)
@@ -1198,7 +1189,7 @@ def test_managed_replay_repairs_wide_permissions(
     managed_root = tmp_path / "recordings"
     recording_file = _record_one_call(managed_root)
     recording_file.chmod(0o644)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
 
     ReplayProvider(recording_file)
 
@@ -1224,7 +1215,7 @@ def test_replay_stream_skips_credential_resolution(
     asyncio.run(record())
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay)
-    stream_module = importlib.import_module("openprogram.providers.stream")
+    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
         stream_module,
         "resolve_provider_key",

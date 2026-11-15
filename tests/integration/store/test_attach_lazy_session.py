@@ -14,20 +14,20 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.agent.session_db import SessionDB
-from openprogram.webui.server import create_app
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.interfaces.server.server import create_app
 
 
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db",
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db",
                         lambda: db)
     # The handler also probes the channel worker — short-circuit so
     # tests don't accidentally spawn the long-poll loop in tmp.
-    monkeypatch.setattr("openprogram.worker.current_worker_pid",
+    monkeypatch.setattr("openprogram.operations.worker.current_worker_pid",
                         lambda: 1)   # pretend worker already up
-    monkeypatch.setattr("openprogram.worker.spawn_detached",
+    monkeypatch.setattr("openprogram.operations.worker.spawn_detached",
                         lambda: 0)
     # session_aliases reads/writes ~/.agentic/session_aliases.json by
     # default — without this redirect, attach_session would clobber
@@ -35,7 +35,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # ``get_state_dir`` on every call, so a top-level patch is enough.
     state_root = tmp_path / "state"
     state_root.mkdir(exist_ok=True)
-    monkeypatch.setattr("openprogram.paths.get_state_dir",
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir",
                         lambda: state_root)
     app = create_app()
     with TestClient(
@@ -86,7 +86,7 @@ def test_attach_creates_missing_session(env) -> None:
     assert sess["source"] == "tui"
 
     # session_aliases got the row too
-    from openprogram.agent.management import session_aliases as _sa
+    from openprogram.runtime.agent_registry import session_aliases as _sa
     aliases = _sa.list_for_session(NEW_ID)
     assert len(aliases) == 1
     assert aliases[0]["channel"] == "wechat"

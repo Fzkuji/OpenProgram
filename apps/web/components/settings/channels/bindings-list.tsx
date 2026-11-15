@@ -1,12 +1,17 @@
 "use client";
 
+import { settingsSend } from "@/lib/settings/settings-request";
 import { useState } from "react";
 
 import styles from "./channels.module.css";
+import { Button } from "@/components/ui/button";
+import { PlusIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
+import { AgentAvatarById } from "@/components/agents/agent-avatar";
 import { AddBindingDialog } from "./add-binding-dialog";
 import { PLATFORM_LABEL } from "./types";
 import type { ChannelAccount, ChannelBinding } from "./types";
+import { confirmAction } from "@/components/ui/confirm-dialog";
 
 interface Props {
   bindings: ChannelBinding[];
@@ -20,19 +25,18 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handleDelete = async (binding_id: string) => {
-    if (!confirm(text("Delete this dispatch rule?", "删除这条分发规则？"))) return;
+    if (!(await confirmAction({
+      title: text("Delete this dispatch rule?", "删除这条分发规则？"),
+      confirmLabel: text("Delete", "删除"),
+      destructive: true,
+    }))) return;
     setBusyId(binding_id);
     try {
-      const r = await fetch(
-        `/api/channels/bindings/${encodeURIComponent(binding_id)}`,
-        { method: "DELETE" },
-      );
-      if (!r.ok) {
-        const d = await r.json().catch(() => null);
-        alert(d?.detail || text("Delete failed", "删除失败"));
-      } else {
-        await onChange();
-      }
+      const deleted = await settingsSend(`/api/channels/bindings/${encodeURIComponent(binding_id)}`, {
+        method: "DELETE",
+        failure: text("Delete failed", "删除失败"),
+      });
+      if (deleted !== null) await onChange();
     } finally {
       setBusyId(null);
     }
@@ -56,9 +60,9 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
 
   return (
     <>
-      <div className={styles.sectionHeader}>
+      <div className="flex items-start justify-between gap-[16px]">
         <div>
-          <div className={styles.sectionTitle}>{text("Step 3 - Dispatch rules", "步骤 3 - 分发规则")}</div>
+          <div className={styles.sectionTitle}>{text("Step 4 - Dispatch rules", "步骤 4 - 分发规则")}</div>
           <div className={styles.sectionSub}>
             {text(
               "Decide which agent handles which incoming messages. Without any rule, every message goes to the default agent. Add a rule to route a specific platform / group / sender to a chosen agent. Most-specific rule wins.",
@@ -66,20 +70,20 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
             )}
           </div>
         </div>
-        <button
-          className={styles.primaryBtn}
+        <Button
+          variant="default"
           onClick={() => setAddOpen(true)}
           type="button"
         >
-          + {text("Add rule", "添加规则")}
-        </button>
+          <PlusIcon size={16} aria-hidden />{text("Add rule", "添加规则")}
+        </Button>
       </div>
 
       {bindings.length === 0 ? (
         <div className={styles.emptyHint}>
           {text(
-            "No rules yet. Every incoming message goes to the default agent. To route specific groups / users to a different agent, click \"+ Add rule\".",
-            "还没有规则。所有入站消息都会进入默认 Agent。要把特定群组 / 用户路由到不同 Agent，请点击“+ 添加规则”。",
+            "No rules yet. Every incoming message goes to the default agent. To route specific groups / users to a different agent, click \"Add rule\".",
+            "还没有规则。所有入站消息都会进入默认 Agent。要把特定群组 / 用户路由到不同 Agent，请点击“添加规则”。",
           )}
         </div>
       ) : (
@@ -95,16 +99,16 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
             {bindings.map((b) => (
               <tr key={b.id}>
                 <td>{describeMatch(b.match)}</td>
-                <td><code>{b.agent_id}</code></td>
+                <td><span className="inline-flex items-center gap-[6px]"><AgentAvatarById agentId={b.agent_id} size={16} /><code>{b.agent_id}</code></span></td>
                 <td>
-                  <button
-                    className={styles.dangerBtn}
+                  <Button
+                    variant="destructive" size="xs"
                     onClick={() => handleDelete(b.id)}
                     disabled={busyId === b.id}
                     type="button"
                   >
                     {busyId === b.id ? text("Removing...", "移除中...") : text("Remove", "移除")}
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}

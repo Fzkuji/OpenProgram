@@ -5,7 +5,7 @@ from __future__ import annotations
 import glob as _glob
 import os
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 
 
 _DESCRIPTION = (
@@ -52,14 +52,13 @@ def glob_tool(pattern: str, path: str | None = None) -> str:
         pattern: Glob pattern, e.g. "**/*.py" or "src/*.ts".
         path: Directory to search in. Absolute path. Defaults to cwd.
     """
-    if path:
-        root = path
-    else:
-        try:
-            from openprogram.paths import get_default_workdir
-            root = get_default_workdir()
-        except Exception:
-            root = os.getcwd()
+    from ._remote import remote_target
+    _remote_fs = remote_target()
+    if _remote_fs is not None:
+        from . import _remote
+        return _remote.glob(_remote_fs, pattern, path)
+    from openprogram.state.worktree.path_resolve import resolve_root
+    root, outside_warning = resolve_root(path)
     if not os.path.isabs(root):
         return f"Error: path must be absolute, got {root!r}"
     if not os.path.isdir(root):
@@ -78,10 +77,12 @@ def glob_tool(pattern: str, path: str | None = None) -> str:
             "$HOME or `/`."
         )
 
-    from openprogram.sandbox import validate_read_path, read_denier
+    from openprogram.host.sandbox import validate_read_path
+    from .file_safety import read_denier
     violation = validate_read_path(root)
     if violation:
-        return f"Error: sandbox policy: {violation}"
+        from openprogram.runtime.permissions import refusal
+        raise refusal.sandbox("glob", violation)
     # os.path.join discards root when pattern is absolute; `..` walks out.
     if os.path.isabs(pattern) or any(
         part == ".." for part in pattern.replace("\\", "/").split("/")
@@ -108,8 +109,9 @@ def glob_tool(pattern: str, path: str | None = None) -> str:
         matches = [m for m in matches if not denied(m)]
     matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
 
+    lead = f"{outside_warning}\n" if outside_warning else ""
     if not matches:
-        return f"No matches for {pattern!r} under {root}"
+        return f"{lead}No matches for {pattern!r} under {root}"
     if len(matches) > 500:
-        return f"# {len(matches)} matches (showing 500 newest)\n" + "\n".join(matches[:500])
-    return f"# {len(matches)} matches\n" + "\n".join(matches)
+        return f"{lead}# {len(matches)} matches (showing 500 newest)\n" + "\n".join(matches[:500])
+    return f"{lead}# {len(matches)} matches\n" + "\n".join(matches)

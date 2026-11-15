@@ -20,16 +20,16 @@ import copy
 
 import pytest
 
-from openprogram.webui._model_listing import listing
-from openprogram.webui._model_listing import fetchers as F
-from openprogram.providers import storage as st
-from openprogram.webui._model_listing import provider_models as pm
-from openprogram.providers import metadata as cat
+from openprogram.models.listing import listing
+from openprogram.models.listing import fetchers as F
+from openprogram.models.providers.settings import storage as st
+from openprogram.models.listing import provider_models as pm
+from openprogram.models.providers.catalog import metadata as cat
 
 
 @pytest.fixture(autouse=True)
 def _clear_browse_cache(monkeypatch):
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
 
     monkeypatch.setattr(cat, "_models_dev_info", lambda _provider_id: {})
     monkeypatch.setattr(
@@ -54,7 +54,7 @@ def mem_cfg(monkeypatch):
         current = copy.deepcopy(store)
         result = mutator(current)
         _write(current)
-        from openprogram.providers import enabled_models as mg
+        from openprogram.models.providers.catalog import enabled_models as mg
 
         mg.reload()
         return result
@@ -166,8 +166,8 @@ def test_browse_cache_ttl_and_force_refresh(monkeypatch, mem_cfg):
 # ---------------------------------------------------------------------------
 
 def test_enabled_models_reads_registry(monkeypatch):
-    import openprogram.providers.enabled_models as mg
-    from openprogram.providers.types import Model
+    import openprogram.models.providers.catalog.enabled_models as mg
+    from openprogram.models.providers.types import Model
     monkeypatch.setattr(cat, "label_for", lambda pid: pid.upper())
     monkeypatch.setattr(mg, "ENABLED_MODELS", {
         "openai/gpt-x": Model.model_validate({
@@ -191,9 +191,9 @@ def test_list_providers_hides_alias_provider_row(monkeypatch):
     # openai-codex) must not surface as its own sidebar row. Even if it leaks
     # into get_providers() (both config keys built rows), list_providers folds
     # it away; the canonical openai-codex row stays.
-    import openprogram.providers as P
-    from openprogram.providers.types import Model
-    from openprogram.providers import sources as S
+    import openprogram.models.providers as P
+    from openprogram.models.providers.types import Model
+    from openprogram.models.providers.catalog import sources as S
 
     def _mk(pid):
         return Model.model_validate({
@@ -241,8 +241,8 @@ def test_refresh_overwrites_enabled_specs(monkeypatch, mem_cfg):
     # so the healed spec must land in the live registry. The registry reads
     # config via read_providers_config — point that at the same in-memory store
     # this test's mem_cfg fixture writes.
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(cr, "read_providers_config",
                         lambda: st._read_providers_cfg())
 
@@ -272,7 +272,7 @@ def test_offline_legacy_migration_yields_resolvable_registry(monkeypatch, mem_cf
                             "enabled_models": ["claude-opus-4-8"]}
     mem_cfg["openai"] = {"enabled": True, "enabled_models": ["gpt-4o"]}
     # Offline: models.dev unreachable — no row resolves, not even from cache.
-    from openprogram.providers.sources import models_dev
+    from openprogram.models.providers.catalog.sources import models_dev
     monkeypatch.setattr(models_dev, "lookup", lambda pid, mid: None)
     st._reset_spec_migration()
 
@@ -293,9 +293,9 @@ def test_offline_legacy_migration_yields_resolvable_registry(monkeypatch, mem_cf
 
     # And the runtime registry resolves each id after a real reload — the
     # regression that used to hand get_model → None offline.
-    import openprogram.providers._config_read as cr
-    import openprogram.providers.enabled_models as mg
-    from openprogram.providers import models as PM
+    import openprogram.models.providers.settings.config_read as cr
+    import openprogram.models.providers.catalog.enabled_models as mg
+    from openprogram.models.providers.catalog import models as PM
     monkeypatch.setattr(cr, "read_providers_config",
                         lambda: st._read_providers_cfg())
     mg.reload()
@@ -317,7 +317,7 @@ def test_refresh_keeps_enabled_model_absent_upstream(monkeypatch, mem_cfg):
     monkeypatch.setattr(F, "fetch_and_normalize", lambda pid, timeout=15.0: {
         "models": [{"id": "other", "name": "Other"}],
     })
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(mg, "reload", lambda: None)
 
     res = F.fetch_models_remote("acme")
@@ -344,7 +344,7 @@ def test_subscription_refresh_auto_syncs_catalog_and_respects_disables(
             {"id": "future-grok", "name": "Future Grok"},
         ], None),
     )
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(mg, "reload", lambda: None)
 
     result = F.fetch_models_remote("xai-subscription")
@@ -363,10 +363,10 @@ def test_subscription_refresh_broadcasts_only_when_catalogue_changes(
         listing, "_browse_models_with_error",
         lambda *_a, **_k: ([{"id": "grok-4.6", "name": "Grok 4.6"}], None),
     )
-    import openprogram.providers.enabled_models as mg
+    import openprogram.models.providers.catalog.enabled_models as mg
     monkeypatch.setattr(mg, "reload", lambda: None)
     frames = []
-    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
+    monkeypatch.setattr("openprogram.runtime.events.emit_ws_frame", frames.append)
 
     F.fetch_models_remote("xai-subscription")
     F.fetch_models_remote("xai-subscription")
@@ -390,6 +390,60 @@ def test_unconfigured_subscription_fallback_does_not_retire_models(monkeypatch, 
     mem_cfg["xai-subscription"] = copy.deepcopy(saved)
     monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {"fallback": {"name": "Fallback"}})
-    monkeypatch.setattr("openprogram.providers.subscription_catalog.load_catalog", lambda pid: ([], None))
+    monkeypatch.setattr("openprogram.models.providers.catalog.subscription_catalog.load_catalog", lambda pid: ([], None))
     F.fetch_models_remote("xai-subscription")
     assert mem_cfg["xai-subscription"] == saved
+
+
+def test_settings_snapshot_skips_remote_and_preserves_selection(monkeypatch, mem_cfg):
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
+    monkeypatch.setattr(F, "fetch_and_normalize", lambda *a, **k: pytest.fail("remote request"))
+    monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {"catalog": {"name": "Catalog"}})
+    mem_cfg["acme"] = {"models": [{"id": "manual", "source": "manual"}]}
+    rows = {row["id"]: row for row in listing.list_models_for_provider("acme", cached_only=True)}
+    assert set(rows) == {"catalog", "manual"}
+    assert rows["manual"]["enabled"] is True
+    assert rows["catalog"]["enabled"] is False
+
+
+def test_settings_snapshot_uses_remote_cache_without_fetch(monkeypatch, mem_cfg):
+    monkeypatch.setattr(F, "fetch_and_normalize", lambda *a, **k: pytest.fail("remote request"))
+    monkeypatch.setattr(pm, "_models_dev_for", lambda pid: pytest.fail("unneeded catalogue read"))
+    listing._browse_cache["acme"] = (0, [{"id": "remote"}])
+    rows = listing.list_models_for_provider("acme", cached_only=True)
+    assert [row["id"] for row in rows] == ["remote"]
+
+
+def test_settings_models_route_uses_snapshot(monkeypatch, mem_cfg):
+    import inspect
+    import json
+    from fastapi import FastAPI
+    from openprogram.interfaces.server.routes.identity.providers import register
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
+    monkeypatch.setattr(F, "fetch_and_normalize", lambda *a, **k: pytest.fail("remote request"))
+    monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {"local": {"name": "Local"}})
+    app = FastAPI()
+    register(app)
+    endpoints = {route.path: route.endpoint for route in app.routes}
+    for path in ("/api/providers/list", "/api/providers/{name}/models", "/api/providers/{name}/fetch-models"):
+        assert not inspect.iscoroutinefunction(endpoints[path])
+    response = endpoints["/api/providers/{name}/models"]("acme")
+    assert json.loads(response.body)["models"][0]["id"] == "local"
+
+
+def test_provider_list_route_says_why_it_failed(monkeypatch):
+    # The settings page shows this instead of an empty provider list.
+    import json
+    from fastapi import FastAPI
+    from openprogram.interfaces.server.routes.identity.providers import register
+
+    def broken():
+        raise OSError("catalogue unreadable")
+
+    monkeypatch.setattr("openprogram.models.listing.list_providers", broken)
+    app = FastAPI()
+    register(app)
+    endpoint = {route.path: route.endpoint for route in app.routes}["/api/providers/list"]
+    response = endpoint()
+    assert response.status_code == 500
+    assert json.loads(response.body) == {"error": "OSError: catalogue unreadable"}

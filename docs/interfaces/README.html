@@ -1,0 +1,55 @@
+<title>Interfaces</title>
+<meta name="description" content="Four clients on one local service: which to open and how they share sessions.">
+<h1>Interfaces</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 240" role="img" aria-label="Desktop App, Web UI, terminal TUI and CLI one-shot all connect to one background service, the worker, on port 18100. The worker hosts the backend, the Web UI and chat-channel adapters, and all sessions live in one store under the projects folder.">
+  <defs><marker id="if-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="26">Desktop</text>
+  <text class="t-big" x="176" y="26">Web UI</text>
+  <text class="t-big" x="344" y="26">Terminal TUI</text>
+  <text class="t-big" x="526" y="26">CLI one-shot</text>
+  <line class="ln" x1="36" y1="38" x2="36" y2="76" marker-end="url(#if-a)"/>
+  <line class="ln" x1="204" y1="38" x2="204" y2="76" marker-end="url(#if-a)"/>
+  <line class="ln" x1="390" y1="38" x2="390" y2="76" marker-end="url(#if-a)"/>
+  <line class="ln" x1="572" y1="38" x2="572" y2="76" marker-end="url(#if-a)"/>
+  <rect class="tile" x="0" y="80" width="680" height="64" rx="8"/>
+  <text class="t-big" x="16" y="108">Worker, port 18100</text>
+  <text class="t-soft" x="16" y="130">FastAPI and WebSocket backend, the Web UI, optional chat-channel adapters</text>
+  <line class="ln" x1="340" y1="144" x2="340" y2="182" marker-end="url(#if-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="340" y="206">~/.openprogram/projects/&lt;project&gt;/chats/</text>
+  <text class="t-soft mid" x="340" y="230">one git repository per session; no project means the home project, default</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>Desktop, Web UI, Terminal TUI, CLI one-shot</strong></li>
+<li><strong>Worker, port 18100</strong><small>FastAPI and WebSocket backend, the Web UI, optional chat-channel adapters</small></li>
+<li class="flow-end"><strong><code translate="no">~/.openprogram/projects/&lt;project&gt;/chats/</code></strong><small>one git repository per session; no project means the home project, default</small></li>
+</ol>
+</figure>
+<p class="note">Desktop embeds the Web UI and adds native Browser and Terminal panes. With no worker running, Desktop or the TUI starts one.</p>
+<h2 id="the-four-interfaces">Which one</h2>
+<table class="stack">
+<thead><tr><th scope="col">Interface</th><th scope="col">Open with</th><th scope="col">Best for</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="desktop.html">macOS Desktop</a></th><td><code translate="no">/Applications/OpenProgram.app</code></td><td>Multi-pane chat, Files, built-in Browser, Terminal, Agent control of visible internal webpages</td></tr>
+<tr><th scope="row"><a href="web.html">Web UI</a></th><td><code translate="no">openprogram web</code>, then <code translate="no">http://localhost:18100</code></td><td>Chat, DAG branch view, function, skill, MCP and memory management, settings</td></tr>
+<tr><th scope="row"><a href="tui.html">Terminal TUI</a></th><td><code translate="no">openprogram tui</code>; bare <code translate="no">openprogram</code> first asks terminal or web</td><td>Chat in the terminal: slash commands, permission profiles, scrollable history</td></tr>
+<tr><th scope="row"><a href="cli.html">CLI one-shot</a></th><td><code translate="no">openprogram --print "..."</code></td><td>Scripts, other programs, quick questions</td></tr>
+</tbody></table>
+<h2 id="four-clients-one-service">Continue a session elsewhere</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">From</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Terminal to Web</th><td>It is in the sidebar; click it</td></tr>
+<tr><th scope="row">Web to terminal</th><td><code translate="no">/resume</code> inside the TUI, or <code translate="no">openprogram --resume &lt;session-id&gt; --print "..."</code></td></tr>
+<tr><th scope="row">One-shot</th><td>Stored too; revisit in any interface</td></tr>
+</tbody></table>
+<p class="note"><code translate="no">--resume</code> does not yet select the session when launching the interactive TUI: use <code translate="no">/resume</code>.</p>
+<h2 id="worker">Worker</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram status</code>, <code translate="no">stop</code>, <code translate="no">restart</code></th><td>Manage the background service</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker install</code></th><td>Launch it at login</td></tr>
+</tbody></table>
+<h2 id="isolated-workspaces">Isolated workspaces</h2>
+<p><code translate="no">--profile &lt;name&gt;</code> or <code translate="no">OPENPROGRAM_PROFILE</code> moves state from <code translate="no">~/.openprogram/</code> to <code translate="no">~/.openprogram-&lt;name&gt;/</code>: config, sessions, logs and credentials are separate, and each profile has its own worker.</p>

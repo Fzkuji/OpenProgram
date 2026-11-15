@@ -1,0 +1,101 @@
+<title>终端 TUI</title>
+<meta name="description" content="进入和退出终端聊天、按键、斜杠命令和上下文压缩。">
+<h1>终端 TUI</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram tui</code></th><td>终端聊天。别名：<code translate="no">openprogram chat</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>先问用终端界面还是 Web 界面</td></tr>
+<tr><th scope="row"><code translate="no">openprogram tui --no-alt-screen</code></th><td>内联模式，保留终端滚动记录</td></tr>
+<tr><th scope="row"><code translate="no">openprogram tui --screen-reader</code></th><td>内联模式，无鼠标跟踪</td></tr>
+<tr><th scope="row"><code translate="no">openprogram --resume &lt;id&gt;</code></th><td>打开过去的会话；id 来自 <code translate="no">openprogram sessions list</code></td></tr>
+</tbody>
+</table>
+<p class="note">退出：<code translate="no">/quit</code>，或空闲时快速按两次 <code translate="no">Ctrl-C</code>。<a href="../capabilities/permissions.html">工具权限模式与运行中修改</a>。</p>
+<h2>按键</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">按键</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Enter</code></th><td>发送</td></tr>
+<tr><th scope="row">生成中按 <code translate="no">Enter</code></th><td>消息排在输入框上方；本轮结束或被停止后，排队的消息逐轮发出</td></tr>
+<tr><th scope="row">有排队消息时在空提示符下按 <code translate="no">↑</code></th><td>选中一条：<code translate="no">Enter</code> 或 <code translate="no">e</code> 编辑，<code translate="no">x</code> 删除，<code translate="no">Esc</code> 返回</td></tr>
+<tr><th scope="row"><code translate="no">Alt+Enter</code></th><td>换行</td></tr>
+<tr><th scope="row">空提示符下按 <code translate="no">?</code></th><td>快捷键参考</td></tr>
+<tr><th scope="row"><code translate="no">Esc</code></th><td>清空输入；生成中则中止本轮</td></tr>
+<tr><th scope="row">生成中按 <code translate="no">Ctrl-C</code></th><td>第一次提醒，第二次优雅停止，第三次强制</td></tr>
+<tr><th scope="row"><code translate="no">↑</code> <code translate="no">↓</code></th><td>输入历史；补全菜单打开时在其中移动</td></tr>
+<tr><th scope="row"><code translate="no">Tab</code></th><td>接受文件或斜杠命令补全</td></tr>
+<tr><th scope="row">行尾按 <code translate="no">→</code>、<code translate="no">Ctrl+E</code></th><td>接受自动补全建议</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+A</code> <code translate="no">Ctrl+E</code></th><td>没有建议可接受时，移到输入开头或结尾</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+W</code></th><td>删除前一个词</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+R</code></th><td>搜索已保存的上下文</td></tr>
+<tr><th scope="row"><code translate="no">Shift+Tab</code></th><td>循环权限模式：Bypass permissions、Auto、Manual、Plan</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+K</code></th><td>命令面板，含全部斜杠命令</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+O</code></th><td>完整显示工具输出，再按一次折叠</td></tr>
+<tr><th scope="row"><code translate="no">Ctrl+V</code>（Windows 上 <code translate="no">Alt+V</code>）</th><td>附加剪贴板里的图片。粘贴或拖入图片、PDF 的路径，或发送指向它们的 <code translate="no">@path</code>，也会附加文件；删掉 <code translate="no">[Image #1]</code> 占位符即取消</td></tr>
+<tr><th scope="row"><code translate="no">PageUp</code> <code translate="no">PageDown</code>、<code translate="no">Ctrl+U</code> <code translate="no">Ctrl+D</code></th><td>按页、按半页滚动</td></tr>
+<tr><th scope="row"><code translate="no">Home</code> <code translate="no">End</code></th><td>顶部、底部</td></tr>
+</tbody>
+</table>
+<p class="note">在 <code translate="no">~/.openprogram/keybindings.json</code> 里改键，例如 <code translate="no">{"app.toolsExpand": "ctrl+t", "app.commandPalette": "none"}</code>；动作名和当前生效的键在 <code translate="no">?</code> 里列出。文件里的错误在启动时于转录中提示，其余部分照常生效。</p>
+<h2>斜杠命令</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/help</code> <code translate="no">/keybindings</code></th><td>命令列表、快捷键参考</td></tr>
+<tr><th scope="row"><code translate="no">/model</code> <code translate="no">/fetch-models</code></th><td>切换模型、重新拉取模型列表</td></tr>
+<tr><th scope="row"><code translate="no">/effort</code></th><td><a href="../models/thinking-effort.html">思考强度</a></td></tr>
+<tr><th scope="row"><code translate="no">/style</code></th><td>输出风格</td></tr>
+<tr><th scope="row"><code translate="no">/new</code> <code translate="no">/resume</code> <code translate="no">/sessions</code> <code translate="no">/session</code></th><td>新建、恢复、列表、当前会话</td></tr>
+<tr><th scope="row"><code translate="no">/compact</code> <code translate="no">/context</code> <code translate="no">/clear</code></th><td>压缩上下文、查看上下文、清屏</td></tr>
+<tr><th scope="row"><code translate="no">/permissions</code> <code translate="no">/sandbox</code></th><td>权限配置、沙箱</td></tr>
+<tr><th scope="row"><code translate="no">/login &lt;provider&gt;</code> <code translate="no">/logout</code></th><td><a href="../models/auth.html">Provider 登录与登出</a></td></tr>
+<tr><th scope="row"><code translate="no">/agents</code> <code translate="no">/agent</code></th><td>管理、切换 Agent</td></tr>
+<tr><th scope="row"><code translate="no">/jobs</code></th><td>后台 Job 状态</td></tr>
+<tr><th scope="row"><code translate="no">/steer</code></th><td>给当前执行一条指令，在下一个安全点生效</td></tr>
+<tr><th scope="row"><code translate="no">/fork</code> <code translate="no">/retry</code></th><td>从检查点分支或重试执行</td></tr>
+<tr><th scope="row"><code translate="no">/mcp</code> <code translate="no">/memory</code></th><td>与 Web UI 对应页面相同的数据</td></tr>
+<tr><th scope="row"><code translate="no">/cost</code></th><td>本会话的 token 用量</td></tr>
+<tr><th scope="row"><code translate="no">/export</code> <code translate="no">/copy</code></th><td>导出会话、复制回复</td></tr>
+<tr><th scope="row"><code translate="no">/config</code> <code translate="no">/theme</code> <code translate="no">/bell</code></th><td>设置、主题、提示音</td></tr>
+<tr><th scope="row"><code translate="no">/doctor</code></th><td>健康检查</td></tr>
+<tr><th scope="row"><code translate="no">/channel</code> <code translate="no">/attach</code> <code translate="no">/detach</code> <code translate="no">/connections</code></th><td>聊天频道接入和会话路由</td></tr>
+<tr><th scope="row"><code translate="no">/search</code> <code translate="no">/review</code> <code translate="no">/diff</code> <code translate="no">/init</code> <code translate="no">/welcome</code></th><td>也可使用</td></tr>
+<tr><th scope="row"><code translate="no">/quit</code></th><td>退出</td></tr>
+</tbody>
+</table>
+<p class="note">完整列表以 <code translate="no">/help</code> 为准。补全菜单还列出统一命令注册表，和 Web 输入框一样：Skill、MCP prompt、插件命令，以及 <code translate="no">~/.openprogram/commands/</code> 或 <code translate="no">&lt;project&gt;/.openprogram/commands/</code> 下的 Markdown 文件（YAML frontmatter 可选）。运行时把展开后的正文作为消息发送。</p>
+<details>
+<summary><code translate="no">/copy</code> 用的剪贴板</summary>
+<table class="stack">
+<thead><tr><th scope="col">环境</th><th scope="col">使用</th></tr></thead>
+<tbody>
+<tr><th scope="row">Wayland</th><td><code translate="no">wl-copy</code></td></tr>
+<tr><th scope="row">X11</th><td><code translate="no">xclip</code> 或 <code translate="no">xsel</code></td></tr>
+<tr><th scope="row">WSL</th><td><code translate="no">clip.exe</code></td></tr>
+<tr><th scope="row">SSH</th><td>OSC 52，可用时走 tmux 透传及其粘贴缓冲区</td></tr>
+</tbody>
+</table>
+<p class="note">本机剪贴板工具有超时上限，失效的显示不会卡死 TUI。</p>
+</details>
+<details>
+<summary>会进入哪个界面</summary>
+<ul>
+<li>发行版在 Windows、macOS、Linux 上都带自包含的 Node.js Ink 界面，无需另装 Node.js。</li>
+<li>判断依据是终端实际的原始输入能力，不是操作系统白名单。Windows Terminal、ConPTY 下的 PowerShell 和现代集成终端得到全屏界面。没有原始输入时回退到 Python Rich 界面，并给出提示。MinTTY 里的 Git Bash 可能回退；Windows 上推荐的 Windows Terminal 里运行 PowerShell 不会。</li>
+<li>全屏要求 stdin 和 stdout 都是终端。重定向或管道调用在写出任何 ANSI 帧之前跳过 Ink，使用逐行输出；自动化用 <code translate="no">openprogram --print</code>。</li>
+<li>两种实现都通过 WebSocket 连接本地 Worker，并与 Web UI 共享会话。</li>
+<li>备用屏幕在退出时恢复 shell 内容。光标和删除按完整的 Unicode 字素簇处理。</li>
+<li>使用 <code translate="no">--profile &lt;name&gt;</code> 时，启动诊断写到 <code translate="no">~/.openprogram-&lt;name&gt;/logs/ink-startup.log</code>。</li>
+</ul>
+</details>
+<details>
+<summary>压缩</summary>
+<ul>
+<li><code translate="no">/compact</code> 总结较早的完整轮次及其可见工具结果，保留最近轮次。它改变下一次的模型上下文；原始消息仍在会话里。前后 token 数是本地估算。历史太短、总结失败或总结没省空间时，上下文不变。</li>
+<li>工具续跑可在同一条用户消息内压缩已完成的文本结果，无需命令。执行记录保留。</li>
+<li>仍不够时，较早的完整纯文本执行历史可在下一次请求中换成任务摘要。所有用户消息和最新的助手片段保持原文。不适用：未完成的工具组、多模态输入、带签名的推理。只在当前调用内、同一模型且前缀不变时复用；DAG 仍是持久记录。</li>
+<li>摘要请求按有界分块处理长文本，上下文溢出时用更小的分块重试，并共用有限的调用和时间预算。失败时历史不变。受保护内容本身就超出窗口时，请求明确失败。</li>
+</ul>
+</details>
+<p class="note">频道消息的用户或助手文本不是字符串时，该字段被忽略；已有的后台会话文本保留。</p>

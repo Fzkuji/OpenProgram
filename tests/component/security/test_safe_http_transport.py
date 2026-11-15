@@ -10,7 +10,7 @@ import httpcore
 import httpx
 import pytest
 
-from openprogram.security.safe_http import (
+from openprogram.host.security.safe_http import (
     AsyncDecisionNetworkBackend,
     AsyncManagedHTTPTransport,
     ManagedHTTPTransport,
@@ -24,7 +24,7 @@ from openprogram.security.safe_http import (
     safe_async_client,
     safe_client,
 )
-from openprogram.security.url_policy import (
+from openprogram.host.security.url_policy import (
     OwnerURLException,
     URLDecision,
     URLPolicyError,
@@ -42,7 +42,11 @@ class _RecordingHTTPServer(socketserver.ThreadingTCPServer):
         self.closed_connections = 0
         self._closed_condition = threading.Condition()
         super().__init__(("127.0.0.1", 0), _HTTPHandler)
-        self.thread = threading.Thread(target=self.serve_forever, daemon=True)
+        # shutdown() waits for the serve loop's next poll; the default
+        # half-second poll would add that to every test's teardown.
+        self.thread = threading.Thread(
+            target=self.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True,
+        )
         self.thread.start()
 
     @property
@@ -465,10 +469,13 @@ def test_retries_stay_with_the_decision_and_a_new_request_gets_a_new_decision(
         return ("127.0.0.1",)
 
     url = f"http://safe.test:{http_server.port}/resource"
+    # 127.0.0.2 is unrouted on macOS, so its connect only ends at the
+    # connect timeout; a short one keeps the retry onto 127.0.0.1 prompt.
     with safe_client(
         "runtime.local_probe",
         configured_origin=url,
         security=_security(resolver, retries=1),
+        timeout=httpx.Timeout(10.0, connect=1.0),
     ) as client:
         first = client.get(url)
         second = client.get(url)

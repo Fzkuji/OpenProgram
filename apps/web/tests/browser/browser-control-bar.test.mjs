@@ -1,32 +1,32 @@
 import assert from "node:assert/strict";
-import test, { after } from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import test from "node:test";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { parseHTML } from "linkedom";
 
+import { scratchDir } from "../scratch-dir.mjs";
+
 const webPath = dirname(fileURLToPath(new URL("../../package.json", import.meta.url)));
-const dir = await mkdtemp(join(webPath, ".control-bar-test-"));
-after(() => rm(dir, { recursive: true, force: true }));
+const dir = scratchDir(webPath, "control-bar-test");
 const bundle = join(dir, "control-bar.mjs");
 await build({
   absWorkingDir: webPath,
   stdin: { contents: `
-    export { BrowserControlBar } from "./components/center-tabs/browser-control-bar";
+    export { BrowserControlBar } from "./components/center-tabs/browser/toolbar/browser-control-bar";
     export {
       resetBrowserControl,
       recordOperationCue,
       revealPendingApproval,
       showActionsEnabled,
-    } from "./lib/browser/browser-control";
+    } from "./lib/browser/control/browser-control";
     export { useCenterTabs } from "./lib/tabs/center-tabs-store";
     export { useSessionStore } from "./lib/session-store";
     export {
       ingestBrowserResource,
       resetBrowserResources,
       setBrowserConnection,
-    } from "./lib/chat/session-resources";
+    } from "./lib/chat/resources/session-resources";
   `, resolveDir: webPath },
   bundle: true, format: "esm", jsx: "automatic", outfile: bundle,
   packages: "external", platform: "node", tsconfig: join(webPath, "tsconfig.json"),
@@ -96,7 +96,7 @@ window.HTMLElement.prototype.focus = function focus() {
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const {
-  BrowserControlBar, resetBrowserControl, recordOperationCue, revealPendingApproval,
+  BrowserControlBar, resetBrowserControl,
   showActionsEnabled, ingestBrowserResource, resetBrowserResources, setBrowserConnection,
   useCenterTabs, useSessionStore,
 } = await import(pathToFileURL(bundle));
@@ -140,16 +140,6 @@ function tap(el) {
   el.dispatchEvent(up);
 }
 
-function clickButton(button, { detail = 0, clientX = 0, clientY = 0 } = {}) {
-  const event = new window.Event("click", { bubbles: true, cancelable: true });
-  Object.defineProperties(event, {
-    detail: { value: detail },
-    clientX: { value: clientX },
-    clientY: { value: clientY },
-  });
-  button.dispatchEvent(event);
-}
-
 function labeledButton(host, label) {
   return [...host.querySelectorAll("button")].find(button =>
     button.getAttribute("aria-label") === label || button.getAttribute("title") === label);
@@ -163,37 +153,6 @@ function assertIconButton(button, label) {
   for (const longLabel of LONG_LABELS) {
     assert.equal(button.textContent.includes(longLabel), false, `${label} must not wrap ${JSON.stringify(longLabel)} as button text`);
   }
-}
-
-function cueClick() {
-  recordOperationCue({
-    resourceId: "page-a",
-    generation: 1,
-    operation: {
-      id: "op-1",
-      action: "click",
-      phase: "acknowledged",
-      frame_id: "frame-1",
-      geometry_revision: 3,
-      point: { x: 10, y: 20, width: 100, height: 80 },
-    },
-  });
-}
-
-function installNativeMenu() {
-  const popups = [];
-  const closed = [];
-  const resolvers = [];
-  window.openprogramDesktop = {
-    contextMenu: {
-      popup(request) {
-        popups.push(request);
-        return new Promise(resolve => { resolvers.push(resolve); });
-      },
-      close(id) { closed.push(id); },
-    },
-  };
-  return { popups, closed, resolvers };
 }
 
 async function mounted(check, { controlState = "active", connected = true } = {}) {
@@ -319,78 +278,27 @@ test("review request reuses the existing owner session tab", async () => {
   }, { controlState: "waiting" });
 });
 
-test("idle and closed do not render an enabled Pause", async () => {
+test("an idle page keeps the control without a Pause; a closed page has none", async () => {
+  // The Agent let the page go: the button stays so Show actions and the
+  // Operation history are still at hand, but nothing offers a takeover.
   await mounted(host => {
-    assert.equal(host.querySelector("[data-browser-control]"), null);
+    assert.ok(host.querySelector("[data-browser-control]"));
+    assert.ok(labeledButton(host, "Show actions"));
+    assert.ok(labeledButton(host, "Operation history"));
     assert.equal(labeledButton(host, "I will operate"), undefined);
     assert.equal(labeledButton(host, "Continue Agent"), undefined);
     assert.equal(labeledButton(host, "Retry pause"), undefined);
   }, { controlState: "idle" });
 
   await mounted(host => {
+    assert.equal(host.querySelector("[data-browser-control]"), null);
     assert.equal(labeledButton(host, "I will operate"), undefined);
     assert.equal(labeledButton(host, "Continue Agent"), undefined);
   }, { controlState: "closed" });
 });
 
-test("native history uses context menu popup and does not occlude the page", async () => {
-  const menu = installNativeMenu();
-  await mounted(async host => {
-    await act(async () => { cueClick(); });
-    const history = labeledButton(host, "Operation history");
-    await act(async () => clickButton(history, { detail: 1, clientX: 12, clientY: 34 }));
-    assert.equal(menu.popups.length, 1);
-    assert.equal(menu.popups[0].x, 12);
-    assert.equal(menu.popups[0].y, 34);
-    assert.equal(history.getAttribute("aria-expanded"), "true");
-    assert.deepEqual(menu.popups[0].items.map(item => ({ id: item.id, label: item.label, disabled: item.disabled })), [
-      { id: "op-1", label: "click · acknowledged", disabled: true },
-    ]);
-    assert.equal(document.querySelector("[data-native-view-occluder]"), null);
-    assert.equal(document.querySelector('[role="menu"]'), null);
-    assert.equal(document.querySelector('[role="dialog"]'), null);
-    assert.equal(document.body.textContent.includes("click · acknowledged"), false);
-  });
-  assert.equal(menu.closed.length, 1);
-  assert.equal(menu.closed[0], menu.popups[0].requestId);
-});
-
-test("native history ignores a stale dismissal from an earlier popup", async () => {
-  const menu = installNativeMenu();
-  await mounted(async host => {
-    await act(async () => { cueClick(); });
-    const history = labeledButton(host, "Operation history");
-    await act(async () => history.click());
-    const first = menu.popups[0];
-    await act(async () => history.click());
-    assert.deepEqual(menu.closed, [first.requestId]);
-    await act(async () => history.click());
-    const second = menu.popups[1];
-    assert.ok(second);
-    assert.notEqual(second.requestId, first.requestId);
-    await act(async () => { menu.resolvers[0](null); });
-    assert.equal(history.getAttribute("aria-expanded"), "true");
-    assert.equal(document.querySelector('[role="menu"]'), null);
-    await act(async () => { menu.resolvers[1](null); });
-    assert.equal(history.getAttribute("aria-expanded"), "false");
-    assert.equal(window.__focused, history);
-  });
-});
-
-test("history keyboard activation opens the same native menu", async () => {
-  const menu = installNativeMenu();
-  await mounted(async host => {
-    await act(async () => { cueClick(); });
-    const history = labeledButton(host, "Operation history");
-    await act(async () => clickButton(history, { detail: 0 }));
-    assert.equal(menu.popups.length, 1);
-    assert.equal(menu.popups[0].x, 8);
-    assert.equal(menu.popups[0].y, 42);
-    assert.equal(menu.popups[0].items[0].label, "click · acknowledged");
-    assert.equal(menu.popups[0].items[0].disabled, true);
-    assert.equal(document.querySelector('[role="menu"]'), null);
-  });
-});
+// Pointer, keyboard, dismissal and focus behavior for the real renderer menu
+// live in tests/e2e/web/test_browser_control_menu.py (Web and desktop bridge).
 
 test("child pointer and keyboard do not fold; cancel does not toggle; expanded role is group", async () => {
   await mounted(async host => {
@@ -426,5 +334,192 @@ test("child pointer and keyboard do not fold; cancel does not toggle; expanded r
     });
     assert.equal(float.getAttribute("data-collapsed"), "false");
     assert.equal(labeledButton(host, "I will operate"), undefined);
+  });
+});
+
+// ---- The browser's ⋮ menu (browser-controls.tsx BrowserMenu) -----------
+// Built separately: its radix dropdown is swapped for one that renders every
+// row, its router and tab store record what a row does, and CSS-module
+// classes keep their names so the menu can find its pane.
+const menuBundle = join(dir, "browser-menu.mjs");
+await build({
+  absWorkingDir: webPath,
+  stdin: { contents: `
+    export { BrowserMenu } from "./components/center-tabs/browser/toolbar/browser-controls";
+    export { showBookmarksBar, setShowBookmarksBar, consumeBrowserImportRequest } from "./lib/browser/browser-prefs";
+  `, resolveDir: webPath },
+  bundle: true, format: "esm", jsx: "automatic", outfile: menuBundle,
+  packages: "external", platform: "node", tsconfig: join(webPath, "tsconfig.json"),
+  loader: { ".css": "empty" },
+  plugins: [{ name: "browser-menu-services", setup(b) {
+    const stub = (filter, path) => b.onResolve({ filter }, () => ({ path, namespace: "menu-stubs" }));
+    stub(/\.module\.css$/, "css-module");
+    stub(/^@\/components\/ui\/dropdown-menu$/, "dropdown");
+    stub(/^next\/navigation$/, "next-nav");
+    stub(/^@\/lib\/tabs\/center-tabs-store$/, "tabs");
+    stub(/^@\/components\/solar-icons$/, "solar");
+    stub(/^@\/lib\/desktop\/desktop-bridge$/, "bridge");
+    const sources = {
+      "css-module": "export default new Proxy({}, { get: (_, key) => typeof key === 'string' ? key : undefined });",
+      dropdown: `
+        import { createElement as h } from "react";
+        const pass = ({ children }) => h("div", null, children);
+        export const DropdownMenu = pass;
+        export const DropdownMenuTrigger = ({ children }) => children;
+        export const DropdownMenuContent = ({ children }) => h("div", { role: "menu" }, children);
+        export const DropdownMenuItem = ({ children, onSelect, disabled }) =>
+          h("div", { role: "menuitem", "aria-disabled": disabled ? "true" : undefined, onClick: () => { if (!disabled) onSelect?.(); } }, children);
+        export const DropdownMenuSeparator = () => h("hr");
+        export const DropdownMenuSub = pass;
+        export const DropdownMenuSubTrigger = pass;
+        export const DropdownMenuSubContent = pass;`,
+      "next-nav": "export const useRouter = () => ({ push: (href) => globalThis.menuCalls.push(['push', href]), replace() {} }); export const usePathname = () => '/chat';",
+      tabs: "const state = { openBuiltinTab: (page) => globalThis.menuCalls.push(['builtin', page]) }; export const useCenterTabs = Object.assign((selector) => selector(state), { getState: () => state });",
+      bridge: "export const desktopBridge = () => globalThis.window?.openprogramDesktop ?? null;",
+      solar: "import { createElement as h } from 'react'; export const SolarIcon = ({ name }) => h('i', { 'data-glyph': name });",
+    };
+    b.onLoad({ filter: /.*/, namespace: "menu-stubs" }, (args) => ({ contents: sources[args.path], resolveDir: webPath }));
+  }}],
+});
+const { BrowserMenu, showBookmarksBar, setShowBookmarksBar, consumeBrowserImportRequest } = await import(pathToFileURL(menuBundle));
+
+function browserMenuActions() {
+  const used = [];
+  const record = (name) => () => used.push(name);
+  return {
+    used,
+    actions: {
+      home: record("home"), forward: record("forward"), openExternal: record("openExternal"),
+      find: record("find"), zoomIn: record("zoomIn"), zoomOut: record("zoomOut"), resetZoom: record("resetZoom"),
+      print: record("print"), collapseToPip: record("collapseToPip"),
+    },
+  };
+}
+
+/** Render the menu inside a (26px wide, so narrow) browser pane. */
+async function mountedMenu(props, check) {
+  globalThis.menuCalls = [];
+  const sessionValues = new Map();
+  const local = new Map();
+  globalThis.localStorage = window.localStorage = {
+    getItem: (key) => key === "agentic_locale" ? "en" : local.get(key) ?? null,
+    setItem: (key, value) => local.set(key, String(value)),
+    removeItem: (key) => local.delete(key),
+  };
+  globalThis.sessionStorage = window.sessionStorage = {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  };
+  window.innerWidth = globalThis.innerWidth = 1280;
+  window.innerHeight = globalThis.innerHeight = 800;
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement("div", { className: "webPane" }, createElement(BrowserMenu, props))));
+    await check(host);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    delete window.openprogramDesktop;
+  }
+}
+
+function desktopMenu() {
+  const menu = { opened: [], listeners: new Set() };
+  window.openprogramDesktop = {
+    mainMenu: {
+      open: (payload) => menu.opened.push(payload),
+      onAction: (cb) => { menu.listeners.add(cb); return () => menu.listeners.delete(cb); },
+      onClosed: () => () => {},
+      close() {},
+    },
+  };
+  menu.fire = (id) => act(async () => { for (const cb of menu.listeners) cb(id); });
+  return menu;
+}
+
+test("browser menu: in the desktop app it opens the overlay below the trigger, right-aligned, every row with its icon", async () => {
+  const menu = desktopMenu();
+  const { actions } = browserMenuActions();
+  await mountedMenu({ ownerId: "pane-a", actions }, async (host) => {
+    await act(async () => labeledButton(host, "Browser menu").click());
+    const [payload] = menu.opened;
+    assert.deepEqual(
+      { right: payload.anchor.right, y: payload.anchor.y, align: payload.anchor.align },
+      { right: 34, y: 46, align: "end" },
+    );
+    assert.ok(payload.items.every((item) => item.id.startsWith("browsermenu:pane-a:")), "rows are owned by this pane");
+    assert.ok(payload.items.every((item) => typeof item.glyph === "string" && item.glyph), "every row names a glyph");
+    const ids = payload.items.map((item) => item.id.slice("browsermenu:pane-a:".length));
+    assert.deepEqual(ids, [
+      "new-tab", "collapse-to-pip", "home", "forward", "open-external",
+      "find", "zoom-in", "zoom-out", "reset-zoom", "print",
+      "bookmarks", "history", "downloads", "toggle-bookmarks-bar",
+      "import", "clear-data", "settings",
+    ]);
+    const byId = Object.fromEntries(payload.items.map((item, index) => [ids[index], item]));
+    for (const id of ["find", "bookmarks", "import", "settings"]) assert.equal(byId[id].separatorBefore, true, `${id} starts a group`);
+    assert.equal(byId.import.disabled, true, "import needs the desktop import bridge");
+    assert.equal(byId["toggle-bookmarks-bar"].checked, true);
+    assert.equal(byId.find.disabled, false);
+  });
+});
+
+test("browser menu: page actions the pane cannot do are disabled, and Home or Open in browser follow their flags", async () => {
+  const menu = desktopMenu();
+  await mountedMenu({ ownerId: "pane-a", actions: { home() {}, openExternal() {}, forward() {} }, canGoHome: false, canOpenExternal: false, canGoForward: false }, async (host) => {
+    await act(async () => labeledButton(host, "Browser menu").click());
+    const byId = Object.fromEntries(menu.opened[0].items.map((item) => [item.id.split(":").at(-1), item]));
+    for (const id of ["home", "forward", "open-external", "find", "zoom-in", "zoom-out", "reset-zoom", "print"]) {
+      assert.equal(byId[id].disabled, true, `${id} is disabled`);
+    }
+    assert.equal(byId["collapse-to-pip"], undefined, "no floating window without the action");
+  });
+});
+
+test("browser menu: an overlay row runs its action only for the pane that owns the menu", async () => {
+  const menu = desktopMenu();
+  const { actions, used } = browserMenuActions();
+  await mountedMenu({ ownerId: "pane-a", actions }, async () => {
+    for (const id of ["find", "zoom-in", "zoom-out", "reset-zoom", "print", "collapse-to-pip", "home", "forward", "open-external"]) {
+      await menu.fire(`browsermenu:pane-a:${id}`);
+    }
+    assert.deepEqual(used, ["find", "zoomIn", "zoomOut", "resetZoom", "print", "collapseToPip", "home", "forward", "openExternal"]);
+    await menu.fire("browsermenu:pane-b:find");
+    assert.equal(used.length, 9, "another pane's action is ignored");
+
+    for (const id of ["new-tab", "bookmarks", "history", "downloads", "settings", "clear-data"]) await menu.fire(`browsermenu:pane-a:${id}`);
+    assert.deepEqual(globalThis.menuCalls, [
+      ["builtin", "browser"], ["builtin", "bookmarks"], ["builtin", "history"], ["builtin", "downloads"],
+      ["push", "/settings/browser"], ["push", "/settings/browser#clear-data"],
+    ]);
+
+    assert.equal(showBookmarksBar(), true);
+    await menu.fire("browsermenu:pane-a:toggle-bookmarks-bar");
+    assert.equal(showBookmarksBar(), false);
+
+    globalThis.menuCalls = [];
+    await menu.fire("browsermenu:pane-a:import");
+    assert.deepEqual(globalThis.menuCalls, [["builtin", "browser"]], "import opens the browser home");
+    assert.equal(consumeBrowserImportRequest(), true, "and asks it to show the import prompt");
+  });
+});
+
+test("browser menu: in the Web build the rows are menu items with icons, the bookmarks bar row carries its check", async () => {
+  const { actions, used } = browserMenuActions();
+  await mountedMenu({ ownerId: "pane-a", actions }, async (host) => {
+    setShowBookmarksBar(true);
+    const rows = [...host.querySelectorAll("[role=menuitem]")];
+    assert.equal(rows.length, 16, "every row but Import, which needs the desktop app");
+    assert.ok(rows.every((row) => row.querySelector("[data-glyph]")), "every row has its icon");
+    const row = (label) => rows.find((item) => item.textContent === label);
+    assert.equal(row("Import browser data"), undefined);
+    assert.equal(row("Show bookmarks bar").querySelector("svg") !== null, true, "the visible bar is checked");
+    await act(async () => row("Find in page").click());
+    await act(async () => row("History").click());
+    assert.deepEqual(used, ["find"]);
+    assert.deepEqual(globalThis.menuCalls, [["builtin", "history"]]);
   });
 });

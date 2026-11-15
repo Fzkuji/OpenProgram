@@ -11,7 +11,7 @@ import importlib
 
 import pytest
 
-from openprogram.auth.provider_contract import (
+from openprogram.models.auth.provider_contract import (
     AdapterConformanceError,
     validate_provider_auth_module,
 )
@@ -22,10 +22,10 @@ from openprogram.auth.provider_contract import (
 # import helper is mandatory. Anthropic exposes PKCE-based login and
 # env-key routes, so the file-import helper is optional there.
 _ADAPTER_MODULES = [
-    ("openprogram.providers.openai_codex.auth_adapter", True),
-    ("openprogram.providers.google_gemini_cli.auth_adapter", True),
-    ("openprogram.providers.github_copilot.auth_adapter", True),
-    ("openprogram.providers.anthropic.auth_adapter", False),
+    ("openprogram.models.providers.adapters.openai_codex.auth_adapter", True),
+    ("openprogram.models.providers.adapters.google_gemini_cli.auth_adapter", True),
+    ("openprogram.models.providers.adapters.github_copilot.auth_adapter", True),
+    ("openprogram.models.providers.adapters.anthropic.auth_adapter", False),
 ]
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.auth import (
+from openprogram.models.auth import (
     AuthConfigError,
     AuthCorruptCredentialError,
     AuthEvent,
@@ -107,8 +107,8 @@ def test_delete_pool_unlinks_symlink_without_deleting_target(tmp_path: Path):
 def test_delete_pool_does_not_report_success_when_unlink_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    from openprogram.auth.credentials import PrivateAtomicWriteError
-    from openprogram.auth.credentials import io
+    from openprogram.models.auth.credentials import PrivateAtomicWriteError
+    from openprogram.models.auth.credentials import io
 
     store = AuthStore(root=tmp_path)
     store.add_credential(_oauth_cred())
@@ -305,7 +305,7 @@ def test_async_lock_serializes(tmp_path: Path):
 def test_set_store_for_testing_override(tmp_path: Path):
     custom = AuthStore(root=tmp_path)
     set_store_for_testing(custom)
-    from openprogram.auth import get_store
+    from openprogram.models.auth import get_store
     assert get_store() is custom
     set_store_for_testing(None)
 

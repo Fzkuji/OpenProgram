@@ -1,4 +1,4 @@
-"""Provider-settings invariants: default-model gating, stale-default
+"""Provider-settings invariants: last-used-model gating, stale-model
 clearing, toggle broadcasts, custom-provider add_mode.
 
 These nail the cross-module rules from commits 66cb7f73 / cb78dde1 /
@@ -21,15 +21,20 @@ from fastapi.testclient import TestClient
 def settings_client(monkeypatch):
     """Minimal app with just the runtime routes; server side effects
     stubbed so we exercise only the enabled-set gating."""
-    from openprogram.webui import server as _s
-    from openprogram.webui.routes.execution import runtime as _runtime
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.routes.execution import runtime as _runtime
 
     monkeypatch.setattr(_s, "_init_providers", lambda: None)
     monkeypatch.setattr(_s, "_get_thinking_config_for_model",
                         lambda p, m: None)
-    _rm = _s._runtime_management
+    _rm = _s.runtime_management
     monkeypatch.setattr(_rm, "_chat_provider", "openai")
     monkeypatch.setattr(_rm, "_chat_model", "gpt-5.5")
+    # A new chat shows the last used model.
+    monkeypatch.setattr(
+        "openprogram.models.providers.catalog.last_used.read_last_used_model",
+        lambda: ("openai", "gpt-5.5"),
+    )
     monkeypatch.setattr(_rm, "_exec_provider", "openai")
     monkeypatch.setattr(_rm, "_exec_model", "gpt-5.5")
 
@@ -72,7 +77,7 @@ def test_agent_settings_initializes_providers_off_event_loop(
         seen["route"] = threading.get_ident()
         return None
 
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
 
     monkeypatch.setattr(_s, "_init_providers", initialize)
     monkeypatch.setattr(_s, "_get_thinking_config_for_model", thinking)
@@ -90,37 +95,42 @@ def test_agent_settings_initializes_providers_off_event_loop(
 def providers_client(monkeypatch):
     """App with the providers routes; model-listing + event bus + agent
     manager all stubbed so toggles run without real state."""
-    from openprogram.webui import server as _s
-    from openprogram.webui.routes.identity import providers as _providers
-    from openprogram.webui import _model_listing as _mc
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.routes.identity import providers as _providers
+    from openprogram.models import listing as _mc
 
     # toggle_model / toggle_provider / delete_custom_provider return ok.
     monkeypatch.setattr(_mc, "toggle_model", lambda *a, **k: {"ok": True})
     monkeypatch.setattr(_mc, "toggle_provider", lambda *a, **k: {"ok": True})
-    from openprogram.providers import storage as provider_storage
+    from openprogram.models.providers.settings import storage as provider_storage
     monkeypatch.setattr(provider_storage, "delete_custom_provider",
                         lambda *a, **k: {"ok": True})
 
     frames = []
     monkeypatch.setattr(
-        "openprogram.events.emit_ws_frame",
+        "openprogram.runtime.events.emit_ws_frame",
         lambda frame: frames.append(frame),
     )
 
     updates = []
-    from openprogram.agent.management import manager as _agents
+    from openprogram.runtime.agent_registry import manager as _agents
     monkeypatch.setattr(_agents, "update",
                         lambda aid, patch: updates.append((aid, patch)))
 
     app = FastAPI()
     _providers.register(app)
-    return TestClient(app), _s._runtime_management, frames, updates
+    return TestClient(app), _s.runtime_management, frames, updates
 
 
 def test_clear_stale_defaults_clears_disabled_default(providers_client, monkeypatch):
     c, _rm, frames, updates = providers_client
     monkeypatch.setattr(_rm, "_chat_provider", "openai")
     monkeypatch.setattr(_rm, "_chat_model", "gpt-5.5")
+    # A new chat shows the last used model.
+    monkeypatch.setattr(
+        "openprogram.models.providers.catalog.last_used.read_last_used_model",
+        lambda: ("openai", "gpt-5.5"),
+    )
     monkeypatch.setattr(_rm, "_exec_provider", "openai")
     monkeypatch.setattr(_rm, "_exec_model", "gpt-5.5")
     # Disabling made the current default fall out of the enabled set.
@@ -133,7 +143,7 @@ def test_clear_stale_defaults_clears_disabled_default(providers_client, monkeypa
     assert _rm._chat_provider is None and _rm._chat_model is None
     assert _rm._exec_provider is None and _rm._exec_model is None
     # Default agent's agent.json model blanked.
-    from openprogram.agent.management import manager as _agents
+    from openprogram.runtime.agent_registry import manager as _agents
     assert (_agents.DEFAULT_AGENT_ID,
             {"model": {"provider": "", "id": ""}}) in updates
 
@@ -142,6 +152,11 @@ def test_clear_stale_defaults_leaves_unrelated_default(providers_client, monkeyp
     c, _rm, frames, updates = providers_client
     monkeypatch.setattr(_rm, "_chat_provider", "openai")
     monkeypatch.setattr(_rm, "_chat_model", "gpt-5.5")
+    # A new chat shows the last used model.
+    monkeypatch.setattr(
+        "openprogram.models.providers.catalog.last_used.read_last_used_model",
+        lambda: ("openai", "gpt-5.5"),
+    )
     monkeypatch.setattr(_rm, "_exec_provider", "openai")
     monkeypatch.setattr(_rm, "_exec_model", "gpt-5.5")
     # The current default is still enabled — toggling an unrelated model
@@ -179,7 +194,7 @@ def test_toggle_routes_broadcast_settings_changed(providers_client, monkeypatch,
 
 def test_delete_custom_provider_no_broadcast_on_failure(providers_client, monkeypatch):
     c, _rm, frames, updates = providers_client
-    from openprogram.providers import storage as provider_storage
+    from openprogram.models.providers.settings import storage as provider_storage
     monkeypatch.setattr(provider_storage, "delete_custom_provider",
                         lambda *a, **k: {"ok": False, "error": "not custom"})
     monkeypatch.setattr(_rm, "_default_is_enabled", lambda p, m: True)
@@ -195,16 +210,16 @@ def test_custom_provider_api_key_env_synthesized(monkeypatch):
     """_api_key_env returns a non-empty synthesized env for a custom
     provider (env_vars_for gives nothing), so _generic_summary flips
     add_mode to api_key and the web form shows the key-paste box."""
-    from openprogram.webui.routes.identity import accounts as _acc
+    from openprogram.interfaces.server.routes.identity import accounts as _acc
 
-    monkeypatch.setattr("openprogram.providers.env_api_keys.env_vars_for",
+    monkeypatch.setattr("openprogram.models.providers.settings.env_api_keys.env_vars_for",
                         lambda p: [])
     monkeypatch.setattr(
-        "openprogram.providers.storage._is_custom_provider",
+        "openprogram.models.providers.settings.storage._is_custom_provider",
         lambda p: True,
     )
     monkeypatch.setattr(
-        "openprogram.providers.metadata.synthesized_env_var",
+        "openprogram.models.providers.catalog.metadata.synthesized_env_var",
         lambda p: "OPENPROGRAM_CUSTOM_MINE_KEY",
     )
     env = _acc._api_key_env("mine")
@@ -213,11 +228,11 @@ def test_custom_provider_api_key_env_synthesized(monkeypatch):
 
 
 def test_non_custom_provider_no_synthesized_env(monkeypatch):
-    from openprogram.webui.routes.identity import accounts as _acc
-    monkeypatch.setattr("openprogram.providers.env_api_keys.env_vars_for",
+    from openprogram.interfaces.server.routes.identity import accounts as _acc
+    monkeypatch.setattr("openprogram.models.providers.settings.env_api_keys.env_vars_for",
                         lambda p: [])
     monkeypatch.setattr(
-        "openprogram.providers.storage._is_custom_provider",
+        "openprogram.models.providers.settings.storage._is_custom_provider",
         lambda p: False,
     )
     assert _acc._api_key_env("some-builtin") == ""

@@ -4,15 +4,19 @@ from dataclasses import replace
 
 import pytest
 
-from tests.component.agent.async_job_support import store_fixture, fake_worker  # noqa: F401
+from tests.component.agent import async_job_support as _async_job_support
 from tests.unit.self_update.test_store import _request
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+fake_worker = _async_job_support.fake_worker
 
 
 def _prepared(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.agent.authority import owner_authority, owner_principal_id
-    from openprogram.self_update import SelfUpdateStore, UpdatePhase
-    from openprogram.self_update.control.continuation import config_evidence
+    from openprogram.state import paths
+    from openprogram.runtime.permissions.authority import owner_authority, owner_principal_id
+    from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
+    from openprogram.operations.self_update.control.continuation import config_evidence
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority = owner_authority(owner_principal_id())
@@ -42,9 +46,9 @@ def _prepared(tmp_path, monkeypatch):
 def test_origin_continuation_dispatches_once_across_reconciliation(
     tmp_path, monkeypatch, store_fixture, fake_worker
 ):
-    from openprogram.self_update.control.continuation import reconcile
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.store import load_job
+    from openprogram.operations.self_update.control.continuation import reconcile
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.store import load_job
 
     updates = _prepared(tmp_path, monkeypatch)
     runner = JobRunner(max_workers=1)
@@ -73,13 +77,13 @@ def test_origin_continuation_dispatches_once_across_reconciliation(
 def test_continuation_rejects_changed_owner(
     tmp_path, monkeypatch, store_fixture, fake_worker
 ):
-    from openprogram.self_update.control.continuation import reconcile
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.operations.self_update.control.continuation import reconcile
+    from openprogram.runtime.jobs.runner import JobRunner
 
     _prepared(tmp_path, monkeypatch)
     runner = JobRunner(max_workers=1)
     monkeypatch.setattr(
-        "openprogram.agent.authority.owner_principal_id",
+        "openprogram.runtime.permissions.authority.owner_principal_id",
         lambda: "owner/install/ffffffffffffffff",
     )
     try:
@@ -93,9 +97,11 @@ def test_continuation_rejects_changed_owner(
 
 @pytest.mark.parametrize("elapsed,enabled", [(7201, True), (60, False)])
 def test_origin_followup_obeys_restart_window(tmp_path, monkeypatch, store_fixture, fake_worker, elapsed, enabled):
-    from openprogram.execution import restart as policy
-    from openprogram.self_update.control.continuation import reconcile
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.runtime.execution import restart as policy
+    from openprogram.operations.self_update.control.continuation import reconcile
+    from openprogram.runtime.jobs.runner import JobRunner
+
+    monkeypatch.setattr(policy, "window_seconds", lambda: 7200)
 
     updates = _prepared(tmp_path, monkeypatch)
     stopped = updates.load("su_test").state.updated_at

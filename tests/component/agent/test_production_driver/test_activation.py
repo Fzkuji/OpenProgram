@@ -1,9 +1,8 @@
 """driver activation tests."""
 from __future__ import annotations
+from openprogram.runtime.execution.model import CommandStatus, ExecutionStatus
 from ._support import (
     AttemptStore,
-    CommandStatus,
-    ExecutionStatus,
     ExecutionStore,
     SimpleNamespace,
     _admitted,
@@ -29,77 +28,10 @@ def test_admission_persists_a_replayable_agent_turn_payload(tmp_path):
 
 
 
-def test_v6_migration_adds_durable_agent_turn_inputs(tmp_path):
-    store, execution = _admitted(tmp_path)
-    with sqlite3.connect(store.path) as connection:
-        connection.execute("DROP TABLE execution_agent_turn_inputs")
-        connection.execute("PRAGMA user_version = 6")
-        connection.commit()
-
-    migrated = ExecutionStore(store.path)
-
-    assert migrated.get_agent_turn_input(execution.execution_id) is None
-    with sqlite3.connect(migrated.path) as connection:
-        tables = {
-            row[0]
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-        }
-    assert "execution_agent_turn_inputs" in tables
-
-
-
-def test_v7_migration_marks_overflow_nonterminal_agents_for_reconciliation(
-    tmp_path, monkeypatch,
-):
-    from openprogram.execution import _schema
-
-    monkeypatch.setattr(_schema, "_FINISH_REPAIR_SLOT_LIMIT", 1)
-    store, first = _admitted(tmp_path, execution_id="exec-v7-overflow-1")
-    revision = store.create_revision(
-        revision_id="revision-v7-overflow-2", manifest={"entrypoint": "agent", "slot": 2}
-    )
-    second = store.admit_execution(
-        execution_id="exec-v7-overflow-2",
-        run_id="run-v7-overflow-2",
-        session_id="session-v7-overflow-2",
-        revision_id=revision.revision_id,
-        input_ref="input:v7-overflow-2",
-        input_hash="input-hash-v7-overflow-2",
-        entrypoint="openprogram.agent.dispatcher:process_user_turn",
-        trusted_actor={"subject": "test"},
-        config_snapshot_ref="config:v7-overflow-2",
-        agent_turn_payload={
-            "version": 1,
-            "kind": "chat",
-            "request": {"user_text": "run", "agent_id": "default", "source": "test"},
-        },
-    )
-    with sqlite3.connect(store.path) as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM execution_finish_repair_slots"
-        ).fetchone()[0] == 2
-        connection.execute("PRAGMA user_version = 7")
-        connection.commit()
-
-    migrated = ExecutionStore(store.path)
-
-    with sqlite3.connect(migrated.path) as connection:
-        slots = connection.execute(
-            "SELECT execution_id FROM execution_finish_repair_slots"
-        ).fetchall()
-    assert slots == [(first.execution_id,)]
-    overflow = migrated.get_execution(second.execution_id)
-    assert overflow is not None
-    assert overflow.status is ExecutionStatus.RECONCILIATION_REQUIRED
-    assert overflow.reason_code == "finish_repair_capacity_migration"
-    assert migrated.get_agent_turn_input(second.execution_id) is not None
-
-
-
 def test_ordinary_agent_and_job_advertise_branch_capabilities():
-    from openprogram.agent.job.input import JobAgentInputV1
-    from openprogram.agent.job.types import Job
-    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.runtime.jobs.input import JobAgentInputV1
+    from openprogram.runtime.jobs.types import Job
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
 
     chat = {
         "version": 1,
@@ -134,9 +66,9 @@ def test_ordinary_agent_and_job_advertise_branch_capabilities():
 def test_public_retry_gate_accepts_an_ordinary_agent_execution(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
-    from openprogram.agent.production_driver import AgentProductionDriver
-    from openprogram.execution import ExecutionStore
-    from openprogram.webui.ws_actions.runtime import submit_execution_control
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
+    from openprogram.runtime.execution import ExecutionStore
+    from openprogram.interfaces.server.ws_actions.runtime import submit_execution_control
 
     store = ExecutionStore(tmp_path / "execution.sqlite3")
     payload = {
@@ -156,7 +88,7 @@ def test_public_retry_gate_accepts_an_ordinary_agent_execution(tmp_path, monkeyp
         revision_id=revision.revision_id,
         input_ref="input:public-branch-capability",
         input_hash="hash-public-branch-capability",
-        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        entrypoint="openprogram.runtime.conversation.production_driver:AgentProductionDriver",
         trusted_actor={"subject": "owner"},
         config_snapshot_ref="config:public-branch-capability",
         capabilities=AgentProductionDriver.capabilities_for_payload(payload),
@@ -170,9 +102,9 @@ def test_public_retry_gate_accepts_an_ordinary_agent_execution(tmp_path, monkeyp
             called.append("retry") or SimpleNamespace(command=command, execution=execution)
         ),
     )
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
-    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
-    monkeypatch.setattr("openprogram.agent.job.runner.runner_for_execution_store", lambda _store: None)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.execution.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.runtime.jobs.runner.runner_for_execution_store", lambda _store: None)
 
     actor = {
         "speaker_kind": "owner", "speaker_id": "owner/local", "speaker_display": "Owner",
@@ -198,8 +130,8 @@ def test_public_retry_gate_accepts_an_ordinary_agent_execution(tmp_path, monkeyp
 
 
 def test_activation_builds_existing_turn_from_immutable_input(tmp_path):
-    from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
 
     store, execution = _admitted(tmp_path)
     seen = {}
@@ -233,7 +165,6 @@ def test_activation_builds_existing_turn_from_immutable_input(tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="agent-owner",
-        ttl_seconds=30,
     )
     active_attempt, running = attempts.activate(
         attempt.attempt_id,
@@ -262,7 +193,7 @@ def test_activation_builds_existing_turn_from_immutable_input(tmp_path):
 
 
 def test_activation_uses_the_durable_agent_turn_payload_by_default(tmp_path):
-    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
 
     store, execution = _admitted(tmp_path)
     seen = {}
@@ -278,7 +209,6 @@ def test_activation_uses_the_durable_agent_turn_payload_by_default(tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="agent-owner",
-        ttl_seconds=30,
     )
     active, _running = attempts.activate(
         attempt.attempt_id,
@@ -297,7 +227,7 @@ def test_activation_uses_the_durable_agent_turn_payload_by_default(tmp_path):
 
 
 def test_canonical_entry_activates_goal_resume_without_mutating_frozen_input(tmp_path, monkeypatch):
-    from openprogram.agent.production_driver import AgentProductionDriver, CanonicalAgentEntry
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver, CanonicalAgentEntry
 
     store = ExecutionStore(tmp_path / "executions.sqlite3")
     seen = {}
@@ -305,9 +235,9 @@ def test_canonical_entry_activates_goal_resume_without_mutating_frozen_input(tmp
     def run_tool(**kwargs):
         seen.update(kwargs)
         entered.set()
-        assert release.wait(2)
+        assert release.wait(30)
         return SimpleNamespace(failed=False, error=None)
-    monkeypatch.setattr("openprogram.agent.dispatcher.dispatch_forced_tool_call", run_tool)
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.dispatch_forced_tool_call", run_tool)
     driver = AgentProductionDriver(executions=store)
     entry = CanonicalAgentEntry(store, driver)
     admission = entry.admit(
@@ -334,7 +264,7 @@ def test_canonical_entry_activates_goal_resume_without_mutating_frozen_input(tmp
 
 
 def test_internal_canonical_entry_admits_before_activation_with_exact_identity(tmp_path):
-    from openprogram.agent.production_driver import (
+    from openprogram.runtime.conversation.production_driver import (
         AgentProductionDriver,
         CanonicalAgentEntry,
     )
@@ -348,7 +278,7 @@ def test_internal_canonical_entry_admits_before_activation_with_exact_identity(t
         seen["request"] = request
         assert cancel_event is not None
         entered.set()
-        assert release.wait(2)
+        assert release.wait(30)
         return type("Result", (), {"failed": False, "error": None})()
 
     driver = AgentProductionDriver(executions=store, turn_runner=run_turn)

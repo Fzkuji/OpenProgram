@@ -52,14 +52,14 @@ def _rmtree_retry(p: Path, tries: int = 5) -> None:
 
 
 def main() -> int:
-    from openprogram.paths import get_state_dir
+    from openprogram.state.paths import get_state_dir
     state = get_state_dir()
     assert "rbetest" in state.name, f"refusing to run against {state}"
     if state.exists():
         _rmtree_retry(state)
     print(f"# state dir = {state}")
 
-    from openprogram.store.snapshot import read_tracking as rt
+    from openprogram.state.store.snapshot import read_tracking as rt
     work = Path(tempfile.mkdtemp(prefix="op_rbe_"))
     try:
         # ── A. module logic, explicit session_id ──────────────────
@@ -94,8 +94,8 @@ def main() -> int:
 
         # ── B. real tools end-to-end via _store ContextVar ────────
         import asyncio
-        from openprogram.store.session.session_store import SessionStore
-        from openprogram.store import SessionNodeWriter, _store, _current_turn_id
+        from openprogram.state.store.session.session_store import SessionStore
+        from openprogram.state.store import SessionNodeWriter, _store, _current_turn_id
         from openprogram.programs.tools.files.read import read as read_tool
         from openprogram.programs.tools.files.edit import edit as edit_tool
         from openprogram.programs.tools.files.write import write as write_tool

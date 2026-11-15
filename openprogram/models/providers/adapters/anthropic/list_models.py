@@ -1,0 +1,174 @@
+"""Anthropic model list — ``/v1/models`` (``x-api-key`` header).
+
+Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
+
+Differs from the generic OpenAI-compatible fetcher in two ways: auth header
+(``x-api-key``, not ``Authorization: Bearer``) and the mandatory
+``anthropic-version`` header. Works for any provider that speaks the Anthropic
+Messages wire format, not just native Anthropic: native uses
+``api.anthropic.com``, everyone else (minimax, minimax-cn, …) hits
+``<their base_url>/v1/models``. The dispatcher routes anthropic-wire providers
+here even without an explicit entry, via the ``anthropic-messages`` api route.
+
+Contract: success → ``list[dict]``, failure → ``{"error": ...}``.
+"""
+from __future__ import annotations
+
+from typing import Any
+import logging
+
+_log = logging.getLogger(__name__)
+
+
+def fetch(provider_id: str, timeout: float) -> Any:
+    import httpx
+
+    from openprogram.models.providers.settings.env_api_keys import resolve_api_key_with_auth_store
+    from openprogram.models.providers.settings.storage import _resolve_base_url
+    from openprogram.host.security.safe_http import configured_safe_client, safe_client
+    from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
+
+    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS, API_KEY_REQUIRED
+    if provider_id in UNSUPPORTED_PROVIDERS:
+        return {"error": API_KEY_REQUIRED}
+    api_key = resolve_api_key_with_auth_store(provider_id)
+    if provider_id == "anthropic":
+        url = "https://api.anthropic.com/v1/models"
+    else:
+        base = _resolve_base_url(provider_id)
+        if not base:
+            return {"error": f"No base URL resolvable for {provider_id}."}
+        url = base.rstrip("/") + "/v1/models"
+    if not api_key:
+        from openprogram.models.providers.catalog.metadata import env_var_for
+        env = env_var_for(provider_id)
+        return {"error": f"No API key set ({env})." if env else "No credential — sign in first."}
+    if "sk-ant-oat" in api_key:
+        return {"error": API_KEY_REQUIRED}
+    headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    import time as _time
+    # Total budget for the whole fetch: the list call plus every per-model
+    # detail call draw from this one deadline, instead of each detail
+    # request getting the full ``timeout`` (N+1 requests × timeout).
+    deadline = _time.monotonic() + timeout
+    if provider_id == "anthropic":
+        client_context = safe_client("provider.fixed_api")
+    else:
+        origin = normalize_origin(url)
+        client_context = configured_safe_client(
+            "provider.configured_api",
+            origin,
+            owner_exception=OwnerURLException(
+                consumer="provider.configured_api", origin=origin
+            ),
+        )
+    try:
+        with client_context as client:
+            r = client.get(url, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            data = r.json()
+            details = {}
+            if provider_id == "anthropic":
+                for item in data.get("data") or []:
+                    mid = item.get("id")
+                    remaining = deadline - _time.monotonic()
+                    if not mid or remaining <= 0:
+                        continue
+                    try:
+                        details[mid] = client.get(
+                            url.rstrip("/") + "/" + mid,
+                            headers=headers,
+                            timeout=max(0.5, remaining),
+                        )
+                    except Exception:
+                        # Per-model details are optional enrichment of the list.
+                        _log.debug("model detail fetch failed for %s/%s", provider_id, mid, exc_info=True)
+    except httpx.HTTPStatusError as e:
+        return {"error": f"HTTP {e.response.status_code}"}
+    except Exception as e:
+        return {"error": type(e).__name__}
+    out = []
+    for it in (data.get("data") or []):
+        mid = it.get("id")
+        if not mid:
+            continue
+        entry = {
+            "id": mid,
+            "name": it.get("display_name") or mid,
+        }
+        # The per-model detail endpoint (/v1/models/<id>) returns the
+        # AUTHORITATIVE context window (max_input_tokens) and output cap
+        # (max_tokens) — a plain GET, no inference, no billing. This is how
+        # we know 1M models (4.6/4.7/4.8, sonnet-4.5/4.6, fable = 1,000,000)
+        # apart from 200K ones (opus-4.5/4.1, haiku) without probing.
+        # Only native Anthropic expose this detail shape;
+        # third-party anthropic-wire hosts (minimax, …) don't, so skip them.
+        # Use the SAME base as the list call (``url`` ends in /v1/models).
+        # Budget spent → skip further detail probes; remaining models keep
+        # their list-level fields instead of being dropped.
+        det = details.get(mid)
+        if det is not None and det.status_code == 200:
+            dj = det.json()
+            if dj.get("max_input_tokens"):
+                entry["context_window"] = int(dj["max_input_tokens"])
+            if dj.get("max_tokens"):
+                entry["max_tokens"] = int(dj["max_tokens"])
+            caps = dj.get("capabilities") or {}
+            _extract_thinking_caps(entry, caps)
+        out.append(entry)
+    return out
+
+
+def _extract_thinking_caps(entry: dict, caps: dict) -> None:
+    """Extract thinking/effort capabilities from Anthropic /v1/models response.
+
+    Sets ``reasoning``, ``thinking_levels``, and ``default_thinking_level``
+    on ``entry`` based on the API's authoritative capability data.
+    """
+    # Effort capabilities
+    effort = caps.get("effort") or {}
+    # effort can be a dict or an object with attributes — normalize
+    if hasattr(effort, "supported"):
+        effort_supported = getattr(effort, "supported", False)
+    elif isinstance(effort, dict):
+        effort_supported = effort.get("supported", False)
+    else:
+        effort_supported = False
+
+    if effort_supported:
+        levels = []
+        for lvl in ("minimal", "low", "medium", "high", "xhigh", "max"):
+            val = getattr(effort, lvl, None) if hasattr(effort, lvl) else (
+                effort.get(lvl) if isinstance(effort, dict) else None
+            )
+            if val is None:
+                continue
+            sup = getattr(val, "supported", None) if hasattr(val, "supported") else (
+                val.get("supported") if isinstance(val, dict) else False
+            )
+            if sup:
+                levels.append(lvl)
+        if levels:
+            entry["reasoning"] = True
+            entry["thinking_levels"] = levels
+            # Default: xhigh if available, else medium, else first
+            if "xhigh" in levels:
+                entry["default_thinking_level"] = "xhigh"
+            elif "medium" in levels:
+                entry["default_thinking_level"] = "medium"
+            else:
+                entry["default_thinking_level"] = levels[0]
+
+    # Thinking type (adaptive vs budget)
+    thinking = caps.get("thinking") or {}
+    if hasattr(thinking, "types"):
+        types = thinking.types
+        adaptive = getattr(types, "adaptive", None)
+        if adaptive and getattr(adaptive, "supported", False):
+            entry["supports_adaptive"] = True
+    elif isinstance(thinking, dict):
+        types = thinking.get("types") or {}
+        adaptive = types.get("adaptive") or {}
+        if isinstance(adaptive, dict) and adaptive.get("supported"):
+            entry["supports_adaptive"] = True

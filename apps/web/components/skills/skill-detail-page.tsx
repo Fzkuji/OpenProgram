@@ -5,11 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Markdown } from "@/lib/format-utils/markdown";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { SkillDetail } from "@/lib/abilities/skills-store";
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import styles from "./skills-page.module.css";
-import { pushPath } from "@/lib/shallow-nav";
+import { pushPath } from "@/lib/nav/shallow-nav";
+import { confirmAction } from "@/components/ui/confirm-dialog";
+import { showToast } from "@/lib/format-utils/toast";
 
 type Tab = "skill" | "files" | "versions";
 
@@ -140,23 +143,23 @@ export function SkillDetailPage({ name }: { name: string }) {
 
   if (error) {
     return (
-      <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-        <div className={styles.view}>
+      <div className="main min-w-0 overflow-hidden">
+        <div className={`${styles.view} h-full flex flex-col overflow-visible`}>
           <div className={styles.topbar}>
-            <Link href="/skills" className={styles.tabBtn}>← {t("nav.skills")}</Link>
+            <Button asChild variant="ghost"><Link href="/skills">← {t("nav.skills")}</Link></Button>
             <span className={styles.title}>{name}</span>
           </div>
-          <div className="p-6 text-sm text-[var(--accent-red,#ef4444)]">{error}</div>
+          <div className="p-5 text-fs-xs text-accent-red">{error}</div>
         </div>
       </div>
     );
   }
   if (!detail) {
     return (
-      <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-        <div className={styles.view}>
+      <div className="main min-w-0 overflow-hidden">
+        <div className={`${styles.view} h-full flex flex-col overflow-visible`}>
           <div className={styles.topbar}>
-            <Link href="/skills" className={styles.tabBtn}>← {t("nav.skills")}</Link>
+            <Button asChild variant="ghost"><Link href="/skills">← {t("nav.skills")}</Link></Button>
             <span className={styles.title}>{text("Loading...", "加载中...")}</span>
           </div>
         </div>
@@ -178,7 +181,11 @@ export function SkillDetailPage({ name }: { name: string }) {
   };
 
   const doDelete = async () => {
-    if (!confirm(text(`Delete skill "${detail.name}"?`, `删除技能“${detail.name}”？`))) return;
+    if (!(await confirmAction({
+      title: text(`Delete skill "${detail.name}"?`, `删除技能“${detail.name}”？`),
+      confirmLabel: text("Delete", "删除"),
+      destructive: true,
+    }))) return;
     await fetch(`/api/skills/${encodePath(detail.name)}`, { method: "DELETE" });
     router.push("/skills");
   };
@@ -218,29 +225,29 @@ export function SkillDetailPage({ name }: { name: string }) {
       if (fresh.ok) setDetail(await fresh.json());
       setEditing(false);
     } catch (e) {
-      alert(text(`Save failed: ${e}`, `保存失败：${e}`));
+      showToast(text(`Save failed: ${e}`, `保存失败：${e}`), { tone: "error" });
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-      <div className={styles.view}>
+    <div className="main min-w-0 overflow-hidden">
+      <div className={`${styles.view} h-full flex flex-col overflow-visible`}>
         <div className={styles.topbar}>
-          <Link href="/skills" className={styles.tabBtn}>← {t("nav.skills")}</Link>
+          <Button asChild variant="ghost"><Link href="/skills">← {t("nav.skills")}</Link></Button>
           <span className={styles.title}>{detail.name}</span>
           {detail.version && (
-            <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
+            <span className="rounded-xs border border-border bg-bg-tertiary px-2 py-[1px] text-fs-2xs uppercase tracking-wide text-text-secondary">
               v{detail.version}
             </span>
           )}
-          <span className="rounded border border-[var(--border)] bg-[var(--bg-tertiary)] px-2 py-[1px] text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
+          <span className="rounded-xs border border-border bg-bg-tertiary px-2 py-[1px] text-fs-2xs uppercase tracking-wide text-text-secondary">
             {detail.source}
           </span>
-          <div className={styles.toolbar}>
+          <div className="flex items-center gap-[10px] ml-[auto] pb-[2px]">
             {!editing && (
-              <Button size="sm" onClick={() => {
+              <Button size="xs" onClick={() => {
                 // Preload the composer with the slash command — the
                 // backend expands `/skill X ...` into the SKILL.md
                 // preamble at send time. Land on the current chat
@@ -250,57 +257,54 @@ export function SkillDetailPage({ name }: { name: string }) {
               }}>{text("Use in chat", "在对话中使用")} →</Button>
             )}
             {canEdit && !editing && (
-              <Button size="sm" onClick={startEdit}>{text("Edit", "编辑")}</Button>
+              <Button size="xs" onClick={startEdit}>{text("Edit", "编辑")}</Button>
             )}
             {editing && (
               <>
-                <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>{t("sidebar.cancel")}</Button>
-                <Button size="sm" onClick={saveEdit} disabled={saving}>{saving ? text("Saving...", "保存中...") : text("Save", "保存")}</Button>
+                <Button variant="elevated" size="xs" onClick={() => setEditing(false)} disabled={saving}>{t("sidebar.cancel")}</Button>
+                <Button size="xs" onClick={saveEdit} disabled={saving}>{saving ? text("Saving...", "保存中...") : text("Save", "保存")}</Button>
               </>
             )}
             {canDelete && !editing && (
-              <Button variant="destructive" size="sm" onClick={doDelete}>{t("sidebar.delete")}</Button>
+              <Button variant="destructive" size="xs" onClick={doDelete}>{t("sidebar.delete")}</Button>
             )}
           </div>
         </div>
 
-        <div
-          className={styles.body}
-          style={{ gridTemplateColumns: "1fr 320px" }}
-        >
+        <div className={`${styles.body} ${styles.bodyDetail}`}>
           {/* main column */}
-          <div className={styles.content}>
+          <div className="min-w-0 overflow-y-auto p-[16px_24px_24px]">
             {detail.description && (
-              <p className="text-sm text-[var(--text-secondary)] mb-4">{detail.description}</p>
+              <p className="text-fs-xs text-text-secondary mb-4">{detail.description}</p>
             )}
 
             {/* install command card */}
-            <div className="mb-5 rounded-md border border-[var(--border)]">
-              <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 bg-[var(--bg-secondary)]">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-dim)]">{text("Install", "安装")}</span>
+            <div className="mb-4 rounded-md border border-border">
+              <div className="flex items-center justify-between border-b border-border px-3 py-2 bg-bg-secondary">
+                <span className="text-fs-2xs font-semibold uppercase tracking-wide text-text-secondary">{text("Install", "安装")}</span>
                 <button
                   onClick={doCopy}
-                  className="text-xs text-[var(--text-secondary)] hover:text-nav-color-hover"
+                  className="text-fs-2xs text-text-secondary hover:text-nav-color-hover"
                 >
                   {copied ? text("Copied", "已复制") : text("Copy", "复制")}
                 </button>
               </div>
-              <pre className="px-3 py-2 text-xs font-mono text-[var(--text-bright)] overflow-x-auto">
+              <pre className="px-3 py-2 text-fs-2xs font-mono text-text-bright overflow-x-auto">
                 {installCmd}
               </pre>
             </div>
 
             {/* tabs: SKILL.md / Files / Versions */}
-            <div className="mb-3 flex gap-1 border-b border-[var(--border)]">
+            <div className="mb-3 flex gap-1 border-b border-border">
               {(["skill", "files", "versions"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={
-                    "border-b-2 px-3 py-2 text-sm " +
+                    "border-b-2 px-3 py-2 text-fs-xs " +
                     (t === tab
                       ? "border-primary text-nav-color-hover"
-                      : "border-transparent text-[var(--text-secondary)] hover:text-nav-color-hover")
+                      : "border-transparent text-text-secondary hover:text-nav-color-hover")
                   }
                 >
                   {t === "skill"
@@ -318,67 +322,44 @@ export function SkillDetailPage({ name }: { name: string }) {
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
                   spellCheck={false}
-                  className="w-full min-h-[60vh] rounded-md border border-[var(--border)] bg-[var(--bg-input)] p-3 text-xs font-mono text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20"
+                  className="w-full min-h-[60vh] rounded-md border border-border bg-bg-input p-3 text-fs-2xs font-mono text-text-primary outline-none focus:border-accent-blue"
                 />
               ) : (
-                <div className="prose prose-invert max-w-none text-sm">
-                  <Markdown source={detail.body} />
+                <div className="prose prose-invert max-w-none text-fs-xs">
+                  <Markdown source={detail.body} escapeRawHtml />
                 </div>
               )
             )}
             {tab === "files" && (
               <div className="flex gap-4 min-h-[40vh]">
-                <ul className="w-[260px] shrink-0 space-y-1 text-xs font-mono">
-                  <li>
-                    <button
-                      onClick={() => setOpenFile("SKILL.md")}
-                      className={
-                        "block w-full text-left rounded px-2 py-1 truncate " +
-                        (openFile === "SKILL.md"
-                          ? "bg-[var(--bg-hover)] text-nav-color-hover"
-                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-nav-color-hover")
-                      }
-                    >
-                      SKILL.md
-                    </button>
-                  </li>
-                  {detail.resources.map((r) => (
-                    <li key={r}>
-                      <button
-                        onClick={() => setOpenFile(r)}
-                        className={
-                          "block w-full text-left rounded px-2 py-1 truncate " +
-                          (openFile === r
-                            ? "bg-[var(--bg-hover)] text-nav-color-hover"
-                            : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-nav-color-hover")
-                        }
-                      >
-                        {r}
-                      </button>
+                <ul className="w-[260px] shrink-0 space-y-1 text-fs-2xs">
+                  {["SKILL.md", ...detail.resources].map((file) => (
+                    <li key={file}>
+                      <FileButton name={file} active={openFile === file} onOpen={setOpenFile} />
                     </li>
                   ))}
                   {detail.resources.length === 0 && (
-                    <li className="text-[var(--text-tertiary)] px-2 py-1">{text("(no companion files)", "（没有附属文件）")}</li>
+                    <li className="text-text-secondary px-2 py-1">{text("(no companion files)", "（没有附属文件）")}</li>
                   )}
                 </ul>
-                <div className="flex-1 min-w-0 rounded-md border border-[var(--border)] bg-[var(--bg-input)] p-3 overflow-auto">
+                <div className="flex-1 min-w-0 rounded-md border border-border bg-bg-input p-3 overflow-auto">
                   {!openFile && (
-                    <div className="text-xs text-[var(--text-tertiary)]">{text("Select a file to preview.", "选择一个文件进行预览。")}</div>
+                    <div className="text-fs-2xs text-text-secondary">{text("Select a file to preview.", "选择一个文件进行预览。")}</div>
                   )}
                   {openFile && fileError && (
-                    <div className="text-xs text-[var(--accent-red,#ef4444)]">{fileError}</div>
+                    <div className="text-fs-2xs text-accent-red">{fileError}</div>
                   )}
                   {openFile && fileContent === null && !fileError && (
-                    <div className="text-xs text-[var(--text-tertiary)]">{text("Loading...", "加载中...")}</div>
+                    <div className="text-fs-2xs text-text-secondary">{text("Loading...", "加载中...")}</div>
                   )}
                   {openFile && fileContent !== null && (
-                    <pre className="whitespace-pre-wrap text-xs font-mono text-[var(--text-primary)]">{fileContent}</pre>
+                    <pre className="whitespace-pre-wrap text-fs-2xs font-mono text-text-primary">{fileContent}</pre>
                   )}
                 </div>
               </div>
             )}
             {tab === "versions" && (
-              <div className="text-xs text-[var(--text-tertiary)]">
+              <div className="text-fs-2xs text-text-secondary">
                 {detail.version
                   ? text(
                       `Current: v${detail.version}. Version history requires the registry to be a ClawHub source.`,
@@ -393,9 +374,9 @@ export function SkillDetailPage({ name }: { name: string }) {
           </div>
 
           {/* right sidebar with metadata */}
-          <aside className="border-l border-[var(--border)] bg-[var(--bg-secondary)]/40 overflow-y-auto p-4 text-sm">
+          <aside className="border-l border-border bg-bg-secondary/40 overflow-y-auto p-4 text-fs-xs">
             <SideField label={text("Source", "来源")}>
-              <span className="font-mono">{detail.source}</span>
+              <span>{detail.source}</span>
             </SideField>
 
             {detail.category && (
@@ -404,7 +385,7 @@ export function SkillDetailPage({ name }: { name: string }) {
 
             {namespace && (
               <SideField label={text("Namespace", "命名空间")}>
-                <span className="font-mono">{namespace}/</span>
+                <span>{namespace}/</span>
               </SideField>
             )}
 
@@ -413,19 +394,19 @@ export function SkillDetailPage({ name }: { name: string }) {
             )}
 
             <SideField label={text("Path", "路径")}>
-              <span className="font-mono text-xs break-all">{detail.path}</span>
+              <span className="text-fs-2xs break-all">{detail.path}</span>
             </SideField>
 
             <SideField label={text("Aliases", "别名")}>
               {detail.aliases && detail.aliases.length > 0
                 ? detail.aliases.join(", ")
-                : <span className="text-[var(--text-tertiary)]">{text("none", "无")}</span>}
+                : <span className="text-text-secondary">{text("none", "无")}</span>}
             </SideField>
 
             <SideField label={text("Allowed tools", "允许的工具")}>
               {detail.allowed_tools && detail.allowed_tools.length > 0
                 ? detail.allowed_tools.join(", ")
-                : <span className="text-[var(--text-tertiary)]">{text("unrestricted", "不限制")}</span>}
+                : <span className="text-text-secondary">{text("unrestricted", "不限制")}</span>}
             </SideField>
 
             <SideField label={text("Resources", "资源")}>
@@ -434,7 +415,7 @@ export function SkillDetailPage({ name }: { name: string }) {
                     `${detail.resources.length} file${detail.resources.length === 1 ? "" : "s"}`,
                     `${detail.resources.length} 个文件`,
                   )
-                : <span className="text-[var(--text-tertiary)]">{text("SKILL.md only", "仅 SKILL.md")}</span>}
+                : <span className="text-text-secondary">{text("SKILL.md only", "仅 SKILL.md")}</span>}
             </SideField>
 
             <SideField label={text("Enabled", "已启用")}>
@@ -443,14 +424,14 @@ export function SkillDetailPage({ name }: { name: string }) {
 
             <SideField label={text("Invocations", "调用次数")}>
               {trace.length === 0 ? (
-                <span className="text-[var(--text-tertiary)]">{text("never invoked", "从未调用")}</span>
+                <span className="text-text-secondary">{text("never invoked", "从未调用")}</span>
               ) : (
                 <>
-                  <div className="text-sm">
+                  <div className="text-fs-xs">
                     {trace.length}
                     {trace.length === 100 ? "+" : ""} {text(trace.length === 1 ? "call" : "calls", "次调用")}
                   </div>
-                  <div className="mt-1 text-xs text-[var(--text-tertiary)]">
+                  <div className="mt-1 text-fs-2xs text-text-secondary">
                     {text("last", "最近")}: {relTime(trace[0].ts * 1000, locale)}
                   </div>
                 </>
@@ -463,13 +444,28 @@ export function SkillDetailPage({ name }: { name: string }) {
   );
 }
 
+function FileButton({ name, active, onOpen }: { name: string; active: boolean; onOpen: (name: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(name)}
+      className={cn(
+        "block w-full truncate rounded-xs px-2 py-1 text-left",
+        active ? "bg-bg-hover text-nav-color-hover" : "text-text-secondary hover:bg-bg-hover hover:text-nav-color-hover",
+      )}
+    >
+      {name}
+    </button>
+  );
+}
+
 function SideField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-4">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
+      <div className="text-fs-2xs font-semibold uppercase tracking-wide text-text-secondary mb-1">
         {label}
       </div>
-      <div className="text-sm text-nav-color">{children}</div>
+      <div className="text-fs-xs text-nav-color">{children}</div>
     </div>
   );
 }

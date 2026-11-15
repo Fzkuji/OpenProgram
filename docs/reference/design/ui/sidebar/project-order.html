@@ -1,0 +1,99 @@
+<title>Sidebar projects</title>
+<meta name="description" content="Project ordering, visibility, menus and metadata in the sidebar.">
+<h1>Sidebar projects and conversations</h1>
+
+<p>The registry owns project membership. The <code translate="no">projectGroups</code> join applies the selected sort and pins; session ownership never changes.</p>
+
+<h2>Lists and order</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pinned</th><td>A separate top-level list above Projects, same header typography and indentation, independent collapse. Each project appears once. Omitted when empty.</td></tr>
+<tr><th scope="row">Projects</th><td>Header stays for filtering even when empty. Custom sections are peer lists and stay manageable when empty.</td></tr>
+<tr><th scope="row">Project sort</th><td>Recent activity (newest conversation), oldest activity, alphabetical, or manual once dragged. Independent of conversation order.</td></tr>
+<tr><th scope="row">Conversation sort</th><td>Explicit ascending or descending</td></tr>
+<tr><th scope="row">Visibility</th><td>Only projects with visible, non-archived conversations, pinned ones included. Archiving the last conversation hides the project; restoring one brings it back. Registration, selection, management, archive and stored order are untouched.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Stored order</summary>
+<p>A project ID array in the recents view preference, per browser, synchronized between windows by storage events. Unknown IDs are ignored, new projects follow the fallback sort, hidden projects keep their place when another moves. Invalid arrays fall back to the default. Storage failures keep the visible order for this window and announce that saving failed.</p>
+</details>
+
+<h2>Dragging</h2>
+<dl class="pairs">
+<dt>Start</dt><dd>Pointer capture and a 6px movement threshold, no dependency</dd>
+<dt>Motion</dt><dd>The group follows the pointer vertically, neighbours shift with the Favorite Programs spring (stiffness 600, damping 40). No insertion line or name preview. Reduced motion removes the spring.</dd>
+<dt>Drop</dt><dd>Saves order and manual sort; section and pinned placement follow the destination. Sessions move with their project.</dd>
+<dt>Cancel</dt><dd>Escape or a drop outside the list changes nothing</dd>
+<dt>Keyboard</dt><dd><code translate="no">Alt+ArrowUp</code> and <code translate="no">Alt+ArrowDown</code> keep focus and announce the result</dd>
+</dl>
+
+<h2>Project menu</h2>
+<p>Right-click and the options button open the same menu.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pin, Unpin</th><td>Only here; rows have no pin button</td></tr>
+<tr><th scope="row">Edit</th><td>Name, plain-text icon or emoji, description, source folders. One editor shared with project settings.</td></tr>
+<tr><th scope="row">Section</th><td>Local view preference. Removing a section returns its projects to the default section.</td></tr>
+<tr><th scope="row">Reveal folder</th><td>The platform file-manager action</td></tr>
+<tr><th scope="row">New worktree</th><td>From source HEAD on a new user-named branch, at an absolute path outside the source checkout; Git validates both. A repeat registers the exact existing worktree. Source and uncommitted files stay unchanged.</td></tr>
+<tr><th scope="row">Archive all chats</th><td>Persists each chat before broadcasting; failures report the completed IDs</td></tr>
+<tr><th scope="row">Remove</th><td>Sets a hidden registry flag only. Ownership, files and content stay, and history remains under date or flat grouping. The Projects page or reopening the folder restores it. The default home project cannot be removed.</td></tr>
+<tr><th scope="row">Also</th><td>Project settings, new project conversation</td></tr>
+</tbody>
+</table>
+
+<h2>Metadata</h2>
+<ul>
+<li>Updates validate supported fields, lengths and absolute existing directories, then replace the registry atomically under its lock, and notify all windows.</li>
+<li>Editing never changes the main folder or membership; relocation is a project-settings operation. Moved folders: <a href="../workspace/project-location.html">Project location</a>.</li>
+<li>Source folders are defaults when a chat has no explicit folder list; a deliberately empty list stays empty.</li>
+<li>Filters use registry IDs, so renames do not break them.</li>
+<li>Save failures keep the form and show the error.</li>
+</ul>
+
+<details>
+<summary>Row controls and feedback</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">New chat, options</th><td>One class (<code translate="no">sidebarProjectActionClass</code>): 24px square, no padding, 15px icon, one step stronger hover than the row; 2px gap between them, ending 4px inside the row, level with a chat row's options. Pinned to pixels against the 14px root font.</td></tr>
+<tr><th scope="row">Folder icon</th><td>Opens and closes with the group, the only expand cue. A custom icon stays as set.</td></tr>
+<tr><th scope="row">Project row</th><td>Neutral hover only while pointed at or its menu is open. Clicks, keyboard activation, drafts and conversation changes persist no selection.</td></tr>
+<tr><th scope="row">Conversation row</th><td>Keeps its hover background and options button while its menu is open, including with the pointer in the menu. A selected row keeps its normal background. No glow or shadow.</td></tr>
+<tr><th scope="row">Options trigger</th><td>Stays visible while its menu or editor is open</td></tr>
+<tr><th scope="row">Pin item</th><td>Animated on hover and keyboard focus, at rest on leave or blur; static under reduced motion</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Context menus</summary>
+<ul>
+<li>Desktop project and conversation menus use <a href="https://www.electronjs.org/docs/latest/api/menu">Electron <code translate="no">Menu.popup</code></a>. Coordinates are the invocation point in CSS pixels, scaled by renderer zoom; keyboard uses the focused control.</li>
+<li>The Web fallback uses the same point with viewport collision handling, and also takes over when a native menu fails.</li>
+<li>The bridge accepts bounded plain menu descriptions from the owning shell frame and returns only a selected action ID.</li>
+<li>Cancellation, renderer navigation, unmount and window destruction close the request and clear transient feedback.</li>
+</ul>
+</details>
+<details>
+<summary>Project settings editor</summary>
+<ul>
+<li>Uses the application's Input and Textarea, with theme tokens and system font. Focused fields have a thin accent border and soft glow; the dialog has a restrained accent edge.</li>
+<li>Icon choices show a persistent selected state and the header previews the choice.</li>
+<li>Labels are 13px, fields use the shared 10px corner scale, content is left-aligned, and the body scrolls on narrow screens. Folder paths wrap without displacing remove controls.</li>
+<li>Dialogs and overlays sit above narrow-screen sidebars, so the editor and its folder picker stay visible.</li>
+<li>Reduced motion disables added transitions.</li>
+</ul>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Dragging either way changes order only on drop, and reload keeps it.</li>
+<li>Collapse, new-session buttons, membership and filters are unaffected.</li>
+<li>Real menu entry, computed focus and selected styles, light and dark, reduced motion, cancellation and unchanged save payloads.</li>
+</ul>
+</details>
+<p class="note">Implemented in full. Sources: <code translate="no">apps/web/lib/projects/project-groups.ts</code>, <code translate="no">apps/web/components/sidebar/sessions/use-project-drag.ts</code>, <code translate="no">apps/web/components/sidebar/projects/project-menu.tsx</code>, <code translate="no">apps/web/lib/prefs/recents-view.ts</code>, <code translate="no">openprogram/state/store/project/project_store.py</code>.</p>

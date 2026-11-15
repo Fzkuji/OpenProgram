@@ -1,0 +1,243 @@
+<title>Agent 工作树</title>
+<meta name="description" content="Agent 如何在用户仓库的隔离 git worktree 中做高风险修改，然后合并、丢弃或交接。">
+<h1>Agent 工作树</h1>
+<p>Agent 在隔离目录中修改用户的真实仓库，底层是 <code translate="no">git worktree add</code> 和 <code translate="no">remove</code>。一个工作树属于一条会话分支，或一次子代理运行；其他分支仍在工作目录里工作。</p>
+
+<h2 id="tools">工具</h2>
+<table class="stack">
+<thead><tr><th scope="col">工具</th><th scope="col">参数</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">worktree_create</code></th><td><code translate="no">source_repo</code>、<code translate="no">branch_name</code>、<code translate="no">base_ref</code> = <code translate="no">HEAD</code>、<code translate="no">label</code>、<code translate="no">pr</code></td><td>创建并绑定为本轮所在分支的活动工作树</td></tr>
+<tr><th scope="row"><code translate="no">worktree_merge</code></th><td><code translate="no">worktree_id</code>、<code translate="no">strategy</code> = <code translate="no">ff-only</code>（或 <code translate="no">squash</code>、<code translate="no">no-ff</code>、<code translate="no">auto</code>）、<code translate="no">delete_branch</code> = false</td><td>合并到 <code translate="no">source_repo</code>，删除目录，保留分支</td></tr>
+<tr><th scope="row"><code translate="no">worktree_discard</code></th><td><code translate="no">worktree_id</code>、<code translate="no">force</code> = false、<code translate="no">delete_branch</code> = true</td><td>不合并直接移除，记录保留</td></tr>
+<tr><th scope="row"><code translate="no">worktree_keep</code></th><td><code translate="no">worktree_id</code></td><td>解除绑定，目录和分支留给用户</td></tr>
+<tr><th scope="row"><code translate="no">worktree_list</code></th><td><code translate="no">status_filter</code>、<code translate="no">scope</code> = <code translate="no">session</code></td><td>列出记录</td></tr>
+<tr><th scope="row"><code translate="no">agent</code></th><td><code translate="no">isolation</code> = <code translate="no">"worktree"</code></td><td>派生的子代理在自己的工作树中运行（见<a href="#branches">分支与子代理</a>）</td></tr>
+</tbody>
+</table>
+
+<p class="note">其中只有丢弃需要审批。工具返回一行文本，或 <code translate="no">[tool error] code: detail</code>。WebSocket 提供 <code translate="no">session_worktrees</code>、<code translate="no">create_branch_worktree</code>、list、get、merge、discard、keep（<code translate="no">ws_actions/worktree.py</code>）。没有切换工具：每条分支一个活动工作树，更多只能通过子代理和 Job。</p>
+
+<h2 id="states">状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">从</th><th scope="col">事件</th><th scope="col">到</th><th scope="col">磁盘</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">active</code></th><td>开始合并（运行 <code translate="no">git merge</code>，阻止并发合并）</td><td><code translate="no">committing</code></td><td>不变</td></tr>
+<tr><th scope="row"><code translate="no">committing</code></th><td>成功</td><td><code translate="no">merged</code></td><td>删除目录，默认保留分支</td></tr>
+<tr><th scope="row"><code translate="no">committing</code></th><td><code translate="no">merge_conflict</code>、<code translate="no">not_fast_forward</code>、<code translate="no">merge_failed</code></td><td><code translate="no">active</code>，带 <code translate="no">error</code></td><td>保留目录供检查；冲突的合并会在 <code translate="no">source_repo</code> 中中止，工作目录不会停在合并中途</td></tr>
+<tr><th scope="row"><code translate="no">active</code>、<code translate="no">errored</code></th><td>丢弃</td><td><code translate="no">discarded</code></td><td>删除目录，默认删除分支</td></tr>
+<tr><th scope="row"><code translate="no">active</code>、<code translate="no">errored</code></th><td>保留</td><td><code translate="no">kept</code></td><td>不动，由用户接手</td></tr>
+<tr><th scope="row"><code translate="no">active</code>、<code translate="no">committing</code></th><td>预留：状态机允许，当前没有路径写入</td><td><code translate="no">errored</code></td><td>不变，可回到 <code translate="no">active</code></td></tr>
+</tbody>
+</table>
+
+<p class="note">merged、discarded、kept 是终态。非法转换会抛错。工作区不干净时合并和丢弃都拒绝并报 <code translate="no">worktree_dirty</code>，除非丢弃带 <code translate="no">force</code>，或合并带 <code translate="no">commit_pending</code>（先提交工作树里的全部内容）。Agent 的工具从不设 <code translate="no">commit_pending</code>；合并按钮会设，因为用户要合并的就是工作树里现有的内容。丢弃没有备份。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">合并</th><th scope="col">Git</th><th scope="col">适用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ff-only</code></th><td><code translate="no">merge --ff-only</code></td><td>默认，否则 <code translate="no">not_fast_forward</code></td></tr>
+<tr><th scope="row"><code translate="no">squash</code></th><td><code translate="no">merge --squash</code>，再做一次通用提交</td><td>探索性小提交很多时</td></tr>
+<tr><th scope="row"><code translate="no">no-ff</code></th><td>总是创建合并提交</td><td>保留历史</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td><code translate="no">source_repo</code> 的 HEAD 是分支祖先时用 <code translate="no">ff-only</code>，否则 <code translate="no">no-ff</code></td><td>合并按钮：分支工作期间工作目录可能已有新提交</td></tr>
+</tbody>
+</table>
+
+<h2 id="record">记录</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code></th><td><code translate="no">wt_</code> 加 12 位十六进制</td></tr>
+<tr><th scope="row"><code translate="no">source_repo</code>、<code translate="no">worktree_path</code>、<code translate="no">branch_name</code>、<code translate="no">base_ref</code></th><td><code translate="no">worktree_path</code> 为 <code translate="no">&lt;state&gt;/worktrees/&lt;id&gt;-&lt;slug&gt;</code>；分支默认 <code translate="no">op/wt/&lt;slug&gt;-&lt;id6&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">status</code>、<code translate="no">created_at</code>、<code translate="no">completed_at</code></th><td>时间戳为 unix</td></tr>
+<tr><th scope="row"><code translate="no">parent_session</code>、<code translate="no">parent_job</code></th><td>所属会话和绑定的 Job</td></tr>
+<tr><th scope="row"><code translate="no">parent_branch</code></th><td>在这里运行的会话分支；为空表示整个会话共用。子代理的工作树在 <code translate="no">parent_job</code> 之外记下派生它的分支</td></tr>
+<tr><th scope="row"><code translate="no">base_sha</code></th><td>工作树起始的提交；工作目录前进后，“改了什么”仍从它算起</td></tr>
+<tr><th scope="row"><code translate="no">ephemeral</code></th><td>为一次隔离的子代理运行而建；运行结束时没有任何改动就删除</td></tr>
+<tr><th scope="row"><code translate="no">merge_strategy</code>、<code translate="no">merge_sha</code>、<code translate="no">files_changed</code>、<code translate="no">error</code></th><td>结果</td></tr>
+<tr><th scope="row"><code translate="no">pr_number</code></th><td>PR 工作树才有</td></tr>
+<tr><th scope="row"><code translate="no">include_synced</code>、<code translate="no">include_failed</code></th><td><code translate="no">.worktreeinclude</code> 的结果</td></tr>
+</tbody>
+</table>
+
+<p class="note">存于 <code translate="no">&lt;state&gt;/worktrees.json</code>。会话关闭时不清理。</p>
+
+<h2 id="binding">工具在哪里运行</h2>
+<p>上下文变量 <code translate="no">_current_worktree_path</code>（<code translate="no">state/worktree/context.py</code>）携带路径，工具没有 cwd 参数。<code translate="no">worktree_create</code> 为本轮余下部分绑定。每轮按顺序绑定第一个存在的（<code translate="no">turn_context.py</code>、<code translate="no">runtime_location_for</code>）：</p>
+<ol>
+<li>本轮所属 Job 的工作树。</li>
+<li>本轮所在分支的工作树（<code translate="no">req.branch_id</code>；没有时用选中的分支，<code translate="no">store.current_branch_for</code>）。</li>
+<li>整个会话共用的工作树。</li>
+<li>项目目录。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">bash</th><td>每次在新子进程中从工作树开始。<code translate="no">cd ..</code> 可以离开：这是默认位置，不是沙箱。硬隔离用 docker 后端</td></tr>
+<tr><th scope="row">read、write、edit、list、apply_patch（<code translate="no">path_resolve.py</code>）</th><td>相对路径按工作树解析。工作树外的绝对路径得到 <code translate="no">[outside worktree]</code> 警告，不阻止</td></tr>
+<tr><th scope="row">glob、grep</th><td>不传 <code translate="no">path</code> 时搜索工作树；相对路径在工作树内解析（<code translate="no">resolve_root</code>）</td></tr>
+<tr><th scope="row">分发时的路径检查（<code translate="no">_host/execution.py</code>）</th><td>读写路径先锚定到工作树再做沙箱检查，检查的就是工具要打开的文件</td></tr>
+<tr><th scope="row">terminal_use</th><td><code translate="no">workdir</code> 相对于工作树</td></tr>
+<tr><th scope="row">Runtime 子进程（<code translate="no">--cd</code>）</th><td>优先使用工作树，其次会话工作目录</td></tr>
+<tr><th scope="row">系统提示（<code translate="no">environment_block</code>）</th><td>写明工作树、它的源工作目录和分支，并说明之前的路径按相对路径对应这里的同一文件，编辑前先重新读取</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">所有工具读同一个绑定</th><td>Claude Code 的工具都读 <code translate="no">EnterWorktreeTool</code> 移动后的会话 cwd，没有工具带目录参数。之前 glob 和 grep 搜默认工作目录，list 和 apply_patch 拒绝相对路径，分支在工作树里写了文件却找不回来</td></tr>
+<tr><th scope="row">重新读取提示</th><td>沿用 Claude Code 的 <code translate="no">buildWorktreeNotice</code>：继承的上下文指向工作目录里的文件，而从提交创建的工作树没有工作目录里未提交的修改</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branches">分支与子代理</h2>
+<table class="stack">
+<thead><tr><th scope="col">谁</th><th scope="col">怎么开始</th><th scope="col">怎么结束</th></tr></thead>
+<tbody>
+<tr><th scope="row">一条会话分支</th><td>输入框的 worktree 标签选“独立 worktree”（<code translate="no">create_branch_worktree</code>），或在该分支上调用 <code translate="no">worktree_create</code>。分支的下一轮在那里运行</td><td>在标签上合并、压成一个提交、保留为 git 分支或丢弃；也可由 Agent 自己的合并、丢弃工具完成</td></tr>
+<tr><th scope="row">一个子代理</th><td><code translate="no">agent(isolation="worktree")</code>：从调用方本轮所在目录的仓库创建工作树，带 <code translate="no">parent_job</code>、调用方分支和 <code translate="no">ephemeral</code></td><td>没有改动：运行结束时删除（同步结果，或 Job 的终态投影）。有改动：结果里写明工作树，供 <code translate="no">worktree_merge</code> 使用；标签在“子代理的 worktree”下列出它</td></tr>
+</tbody>
+</table>
+<p class="note">从隔离分支经编辑、重试或 fork 产生的新分支从工作目录开始：一个工作树只服务一条分支，并行的两条分支不会共用工作区。在工作树里运行的分支派生的子代理，从这个工作树再建工作树，并合并回它。Job 取消时仍以 <code translate="no">force</code> 丢弃其工作树。</p>
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">可选，按分支或子代理</th><td>沿用 Claude Code：默认在工作目录，隔离按代理选择（<code translate="no">isolation: "worktree"</code>），未改动的工作树在代理结束时删除。这里按分支划分，因为分支并行运行。工具能写入的后台子代理在 git 仓库里默认得到一个，因为两个写入者共用一个文件夹会互相破坏修改；前台或只读的子代理共用工作目录（<a href="../collaboration/agent-collaboration.zh.html#agent-settings">Agent 设置</a>）</td></tr>
+<tr><th scope="row">从下一轮开始生效</th><td>Codex 的 <code translate="no">--worktree</code> 只用于新会话或 fork，不用于恢复的会话。分支就是 fork，所以工作树从它的下一轮开始生效，不在运行中途切换</td></tr>
+<tr><th scope="row">git 分支而不是补丁</th><td>Maka 为每个子会话租用工作树，结束时交回补丁产物；补丁丢掉了提交，还要单独应用。由 git 合并的 git 分支两者都保留</td></tr>
+<tr><th scope="row">从提交开始</th><td>Grok Build 把工作目录里未提交的文件复制进新工作树。把半成品复制进并行分支会让两边合并都冲突，所以工作树从提交开始，由本轮重新读取</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="app">在应用里</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入框的环境行（<code translate="no">worktree-chip.tsx</code>）</th><td>环境标签旁的一个标签：工作目录，或工作树的分支及改动文件数。菜单可选工作目录或独立 worktree；工作树打开时提供合并到工作目录、压成一个提交合并、保留为 git 分支和丢弃。丢弃会弹出确认框。会话目录在 git 仓库里，或分支有打开的工作树时才显示。分支运行时合并、保留和丢弃要等它停下</td></tr>
+<tr><th scope="row">对话记录（<code translate="no">worktree-branch-marker.tsx</code>）</th><td>分支顶部一行：在哪里运行、改了几个文件，或工作树已合并、保留、丢弃</td></tr>
+<tr><th scope="row">Activity（<code translate="no">running-panel.tsx</code>）</th><td>分支代理行上的 Worktree 标记，状态行上的改动文件数</td></tr>
+</tbody>
+</table>
+<p class="note">三处读同一份会话工作树（<code translate="no">lib/worktrees/session-worktrees.ts</code>），每次 <code translate="no">worktree_status</code> 广播后重新读取。</p>
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">放在输入框</th><td>Codex 把本地 / 工作树的选择放在决定下一轮在哪运行的地方。标签沿用环境标签的控件和菜单，不另做面板</td></tr>
+<tr><th scope="row">合并放在同一个标签</th><td>标签写着工作树的名字，操作就放在那里。只有丢弃会先确认：它会删除工作</td></tr>
+<tr><th scope="row">标记在分支上</th><td>对话记录里的这一行沿用子代理分支横幅的样式，分支在哪里被阅读都能看到它在哪运行</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="source">选择仓库</h2>
+<ol>
+<li><code translate="no">source_repo</code> 参数。</li>
+<li>对话的项目文件夹（选中的 Project）。</li>
+<li>配置的默认文件夹：<code translate="no">OPENPROGRAM_WORKDIR</code>，然后 <code translate="no">default_workdir</code>。</li>
+</ol>
+<p class="note">从不用 worker 自己的 cwd：那只是 worker 启动的位置，测试运行时是 OpenProgram 自己的检出，安装版则根本没有检出。<code translate="no">isolation="worktree"</code> 的子 Agent 在本轮自己的 worktree 之后走同一条链。</p>
+<p class="note">都找不到：<code translate="no">source_repo_not_resolved</code>。OpenProgram 不会替用户 <code translate="no">git init</code>。源仓库有未提交修改也没关系：工作树从 <code translate="no">base_ref</code> 创建。函数表单只含参数，Project 仍是源。</p>
+
+<h2 id="isolation">隔离与提交</h2>
+<ul>
+<li><code translate="no">source_repo</code> 和工作树都不能位于会话存储 <code translate="no">&lt;state&gt;/projects</code> 下：<code translate="no">worktree_in_sessions_dir</code>。</li>
+<li>丢弃不影响 <code translate="no">source_repo</code> 的 HEAD 和工作区。</li>
+<li>kept 的分支绝不删除。</li>
+<li>Agent 通过 bash 提交，提交信息由它决定。只有用户点合并时，才用通用提交信息提交未提交的内容。</li>
+<li>文件差异归 git 管，工具结果照常进入上下文。</li>
+</ul>
+
+<h2 id="jobs">Job 与会话</h2>
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">流程</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">一次修改</th><td>创建、编辑、测试、提交、合并</td><td><code translate="no">merged</code></td></tr>
+<tr><th scope="row">失败的尝试</th><td>创建、丢弃（<code translate="no">force</code>）、创建、合并</td><td>一个 <code translate="no">discarded</code>，一个 <code translate="no">merged</code>；每条分支同时只有一个活动</td></tr>
+<tr><th scope="row">计划 Agent，三个 Job</th><td>每个 Job 一个工作树；计划 Agent 自己不激活，列出后合并其一</td><td>其余丢弃；若 HEAD 已移动，之后的合并可能需要换策略</td></tr>
+<tr><th scope="row">用户接手</th><td><code translate="no">worktree_keep</code>；之后的轮次回到源仓库</td><td><code translate="no">kept</code></td></tr>
+</tbody>
+</table>
+
+<p class="note">Job 取消时以 <code translate="no">force=True</code> 丢弃其工作树（<code translate="no">jobs/runner/projection.py</code>）；其他方式结束时，没有内容的 ephemeral 工作树会被删除。Job 完成不会自动合并。轻量 Job 不需要工作树。工作树工具是同步 git 调用，并发创建由 git 自身的锁串行化。</p>
+
+<h2 id="pull-requests">从 Pull Request 打开</h2>
+<p><code translate="no">pr</code> 接受 <code translate="no">123</code>、<code translate="no">#123</code> 或 GitHub PR URL（<code translate="no">state/worktree/pr_ref.py</code>），并忽略 <code translate="no">branch_name</code> 和 <code translate="no">base_ref</code>。</p>
+<ol>
+<li><code translate="no">gh pr view &lt;n&gt; --json headRefName,headRepositoryOwner,isCrossRepository</code>。</li>
+<li>获取：同仓库 <code translate="no">git fetch origin &lt;headRefName&gt;:&lt;ref&gt;</code>；fork 用 <code translate="no">git fetch origin pull/&lt;n&gt;/head:&lt;ref&gt;</code>，无需注册远端。</li>
+<li>在分支 <code translate="no">op/wt/pr-&lt;n&gt;-&lt;id6&gt;</code> 上普通 <code translate="no">git worktree add</code>，临时引用随后删除。</li>
+</ol>
+
+<h2 id="worktreeinclude">.worktreeinclude</h2>
+<p><code translate="no">git worktree add</code> 只检出已跟踪文件，<code translate="no">.env</code> 和本地覆盖配置会缺失。<code translate="no">source_repo/.worktreeinclude</code> 中的模式指定要复制的未跟踪文件，在 add 之后由 <code translate="no">create_worktree</code> 执行（<code translate="no">include_sync.py</code>），这是所有创建路径的唯一交汇点。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">模式</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">#…</code>、空行</th><td>忽略</td></tr>
+<tr><th scope="row"><code translate="no">*</code>、<code translate="no">?</code>、<code translate="no">[...]</code></th><td>通配</td></tr>
+<tr><th scope="row">不含 <code translate="no">/</code></th><td>任意位置的文件名</td></tr>
+<tr><th scope="row">含 <code translate="no">/</code></th><td>锚定到仓库根</td></tr>
+<tr><th scope="row">结尾 <code translate="no">/</code></th><td>目录及其内容</td></tr>
+<tr><th scope="row"><code translate="no">!</code>、<code translate="no">**</code></th><td>不支持</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>复制语义</summary>
+<ul>
+<li>候选：<code translate="no">git ls-files --others</code>，不带 <code translate="no">--exclude-standard</code>，所以被忽略的文件也在内。</li>
+<li>目标已存在则不动。符号链接保持为链接。权限保留（<code translate="no">shutil.copy2</code>）。</li>
+<li>单个失败不影响其余；两份列表写入记录和工具返回值。</li>
+<li>没有该文件：不调用 git。</li>
+<li>匹配用 <code translate="no">fnmatch</code> 和 <code translate="no">pathlib</code>：git 没有包含过滤的底层命令，这里拒绝注入 <code translate="no">core.excludesFile</code>，<code translate="no">pathspec</code> 也不是基础依赖。</li>
+</ul>
+</details>
+
+<h2 id="errors">错误</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">代码</th><th scope="col">发生了什么，怎么办</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">not_a_git_repo</code></th><td>不是仓库；先 <code translate="no">git init</code></td></tr>
+<tr><th scope="row"><code translate="no">source_repo_not_resolved</code></th><td>传绝对路径或设置工作目录</td></tr>
+<tr><th scope="row"><code translate="no">already_active</code></th><td>先合并、丢弃或保留当前活动的</td></tr>
+<tr><th scope="row"><code translate="no">worktree_dirty</code></th><td>提交或暂存，或用 <code translate="no">force</code> 丢弃</td></tr>
+<tr><th scope="row"><code translate="no">not_fast_forward</code></th><td>rebase 或换策略</td></tr>
+<tr><th scope="row"><code translate="no">merge_conflict</code>、<code translate="no">merge_failed</code></th><td>在工作树中用 edit 和 bash 解决后重试</td></tr>
+<tr><th scope="row"><code translate="no">worktree_in_sessions_dir</code></th><td>选择会话存储之外的仓库</td></tr>
+<tr><th scope="row"><code translate="no">worktree_exists</code></th><td>路径或分支已占用；换 label 或 <code translate="no">branch_name</code></td></tr>
+<tr><th scope="row"><code translate="no">invalid_branch_name</code>、<code translate="no">invalid_base_ref</code></th><td>为空、含 NUL 或以 <code translate="no">-</code> 开头</td></tr>
+<tr><th scope="row"><code translate="no">pr_ref_error</code></th><td><code translate="no">pr</code> 无法解析；<code translate="no">gh_not_found</code>、<code translate="no">gh_not_authenticated</code> 或 <code translate="no">gh</code> 失败。绝不回退到 <code translate="no">base_ref</code></td></tr>
+<tr><th scope="row"><code translate="no">pr_worktree_exists</code></th><td>指出此 PR 已打开的工作树</td></tr>
+</tbody>
+</table>
+
+<p class="note"><code translate="no">base_ref</code> 不存在时透传 git 的 stderr。</p>
+
+<h2>不在范围内</h2>
+<p>远程推送（用 bash）、工作树间 cherry-pick 或 rebase、冲突解决 UI、跨仓库工作树、丢弃前备份、chroot 或命名空间沙箱。</p>
+
+<h2>实现状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">已设计未实现</th><th scope="col">预期</th></tr></thead>
+<tbody>
+<tr><th scope="row">保留之后</th><td>为保留的工作树提供“在编辑器中打开”</td></tr>
+<tr><th scope="row">DAG 标记和工具项的 <code translate="no">worktree_id</code></th><td>创建、合并、丢弃、保留作为上下文提交中的标记节点；工具调用带徽标。目前由对话记录里的一行和 Activity 标记来标出分支</td></tr>
+<tr><th scope="row">按分支的运行状态</th><td>标签只在会话当前显示的分支运行时暂停合并和丢弃；其他分支运行不影响，合并也不检查子代理是否还在写它的工作树</td></tr>
+<tr><th scope="row">把未提交的修改带进新工作树</th><td>不复制（Grok Build 会复制）；由本轮重新读取</td></tr>
+<tr><th scope="row"><code translate="no">outside_worktree</code> 元数据</th><td>目前只有工具警告</td></tr>
+<tr><th scope="row">目录丢失检测</th><td><code translate="no">worktree_list</code> 把消失的路径标为 <code translate="no">discarded</code>；重启后仍活动的变为 <code translate="no">kept</code></td></tr>
+</tbody>
+</table>
+
+<p class="note">管理器、存储、工具、分支和 Job 绑定、全部文件工具、标签、对话记录里的一行、Activity 标记和子代理隔离已在代码中。<code translate="no">tests/component/core/test_worktree_branch_e2e.py</code> 在真实的临时仓库上把它们串起来测试。</p>
+
+<p class="next"><a href="async-job-lifecycle.zh.html">异步 Job 生命周期</a></p>

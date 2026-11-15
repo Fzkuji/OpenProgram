@@ -1,0 +1,22 @@
+/* Tool tones: the colour family of each kind of step, shared by the
+   execution timeline's icon tiles (chat/execution-strip.css) and the
+   DAG's node tiles (dag/graph/nodes.css), so one call reads the same colour in
+   the transcript and on the graph. Per-tool tones are picked in
+   components/chat/messages/execution/tool-presentation.ts. */
+:root {
+  --timeline-thinking: light-dark(#7c3aed, #b78cff);
+  --timeline-function: light-dark(#d14a1f, #ff9a66);
+  --timeline-llm: light-dark(#00849a, #45d7e8);
+  --timeline-subagent: light-dark(#0b8a4b, #4bd58a);
+  --tool-tone-shell: light-dark(#15803d, #4ade80);
+  --tool-tone-edit: light-dark(#b45309, #fbbf24);
+  --tool-tone-read: light-dark(#1d4ed8, #60a5fa);
+  --tool-tone-search: light-dark(#0e7490, #22d3ee);
+  --tool-tone-web: light-dark(#4338ca, #818cf8);
+  --tool-tone-agent: var(--timeline-subagent);
+  --tool-tone-memory: light-dark(#a21caf, #e879f9);
+  --tool-tone-plan: light-dark(#475569, #a5b4c8);
+  --tool-tone-media: light-dark(#be123c, #fb7185);
+  --tool-tone-system: light-dark(#57534e, #c4bfb8);
+  --tool-tone-function: var(--timeline-function);
+}

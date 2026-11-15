@@ -1,0 +1,254 @@
+<title>Chat channels</title>
+<meta name="description" content="Connect Telegram, Discord, Slack and WeChat to your agents: setup, access, groups, routing, replies and errors.">
+<h1>Chat channels</h1>
+<p>A message to your bot runs an agent turn and the reply comes back in the same chat. Channels run inside the background service, so the conversation is live in Web and the TUI too.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 180" role="img" aria-label="An incoming message passes an access check, then a binding picks the agent, then a session key picks the conversation, then the turn runs and replies in the same chat. An unknown sender gets a pairing code in a direct message and no reaction in a group. A message with no binding gets the reply no agent configured.">
+  <defs><marker id="ch-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Message</text>
+  <line class="ln" x1="84" y1="33" x2="128" y2="33" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="140" y="40">Access</text>
+  <text class="t-soft" x="140" y="66">allowlist or</text>
+  <text class="t-soft" x="140" y="86">group lists</text>
+  <line class="ln" x1="212" y1="33" x2="264" y2="33" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="276" y="40">Binding</text>
+  <text class="t-soft" x="276" y="66">picks the agent</text>
+  <line class="ln" x1="354" y1="33" x2="404" y2="33" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="416" y="40">Session</text>
+  <text class="t-soft" x="416" y="66">key picks the</text>
+  <text class="t-soft" x="416" y="86">conversation</text>
+  <line class="ln" x1="494" y1="33" x2="552" y2="33" marker-end="url(#ch-a)"/>
+  <text class="t-big" x="564" y="40">Turn</text>
+  <text class="t-soft" x="564" y="66">reply in the</text>
+  <text class="t-soft" x="564" y="86">same chat</text>
+  <path class="ln-no" d="M300 74V116"/>
+  <text class="t-no" x="300" y="136">No binding: [no agent configured]</text>
+  <path class="ln-no" d="M160 94V156"/>
+  <text class="t-no" x="160" y="174">Not allowed: pairing code in a direct message, no reaction in a group</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>Message</strong></li>
+<li><strong>Access</strong><small>allowlist or group lists</small><p class="refused">Not allowed: pairing code in a direct message, no reaction in a group</p></li>
+<li><strong>Binding</strong><small>picks the agent</small><p class="refused">No binding: [no agent configured]</p></li>
+<li><strong>Session</strong><small>key picks the conversation</small></li>
+<li class="flow-end"><strong>Turn</strong><small>reply in the same chat</small></li>
+</ol>
+</figure>
+<table class="stack">
+<thead><tr><th scope="col">Platform</th><th scope="col">Arrives via</th><th scope="col">Login</th><th scope="col">Live progress</th><th scope="col">Attachments in</th><th scope="col">Files out</th></tr></thead>
+<tbody>
+<tr><th scope="row">Telegram</th><td>Bot API long-polling</td><td>Bot token from BotFather</td><td>Yes</td><td>Photos, documents, voice, audio, video, GIFs</td><td>Photo, document</td></tr>
+<tr><th scope="row">Discord</th><td>discord.py Gateway</td><td>Bot token</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><th scope="row">Slack</th><td>Socket Mode (<code translate="no">slack_sdk</code>)</td><td>Bot token <code translate="no">xoxb-</code> and app token <code translate="no">xapp-</code></td><td>Yes</td><td>Yes, <code translate="no">files:read</code></td><td>Yes, <code translate="no">files:write</code></td></tr>
+<tr><th scope="row">WeChat</th><td>iLink long-polling</td><td>QR scan with personal WeChat</td><td>No: cannot edit sent messages</td><td>Images, voice, files, video</td><td>Image, video, file</td></tr>
+</tbody></table>
+<p class="note">Releases and the complete source-development install include the Discord and Slack dependencies.</p>
+<h2 id="quick-start">Quick start</h2>
+<p>You need an agent (<code translate="no">openprogram agents add main</code>) and a working model provider. The wizard picks a platform, logs in, binds an agent and starts the worker.</p>
+<ol>
+<li><code translate="no">openprogram channels setup</code></li>
+<li>Message your bot. The first reply is a pairing code.</li>
+<li><code translate="no">openprogram channels access approve &lt;channel&gt; &lt;code&gt;</code></li>
+</ol>
+<p class="note">The conversation then appears in the session list.</p>
+<h2 id="per-platform-prerequisites">Platform setup</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Platform</th><th scope="col">Before running the wizard</th></tr></thead>
+<tbody>
+<tr><th scope="row">Telegram</th><td><a href="https://t.me/BotFather">@BotFather</a>, <code translate="no">/newbot</code>, copy the token. No webhook or public IP.</td></tr>
+<tr><th scope="row">Discord</th><td>Create an app and bot at the <a href="https://discord.com/developers/applications">Developer Portal</a>. On <strong>Bot</strong>, enable <strong>Message Content Intent</strong>, or the gateway rejects the connection. Invite the bot to your server.</td></tr>
+<tr><th scope="row">Slack</th><td>Create and install an app at <a href="https://api.slack.com/apps">api.slack.com/apps</a>. Enable <strong>Socket Mode</strong>. Bot token scopes: <code translate="no">chat:write</code>, <code translate="no">app_mentions:read</code> and the history scopes for your events, such as <code translate="no">im:history</code>. App token under <strong>Basic Information → App-Level Tokens</strong> with <code translate="no">connections:write</code>. Subscribe to <code translate="no">message</code> and <code translate="no">app_mention</code>, the two the adapter handles. Both tokens are required.</td></tr>
+<tr><th scope="row">WeChat</th><td>Personal WeChat, no Official Account. Scan the terminal QR and confirm. The scanner is let in with no pairing code. Credentials persist until <code translate="no">bot token invalid — relogin required</code>. Uses Tencent's iLink backend; its terms are personal-use only.</td></tr>
+</tbody></table>
+<h2 id="two-ways-to-configure">Commands</h2>
+<p>Each <code translate="no">--id</code> is one bot login with its own credentials and bindings.</p>
+<pre translate="no" tabindex="0"><code>openprogram channels list                              # status of every account
+openprogram channels accounts add telegram --id work   # create an account slot
+openprogram channels accounts login telegram --id work # enter credentials (QR for wechat)
+openprogram channels accounts rm telegram work         # delete account + its bindings
+
+openprogram channels bindings add main --channel telegram            # catch-all → agent "main"
+openprogram channels bindings add main --channel telegram \
+    --account work --peer 123456 --peer-kind direct                  # one peer only
+openprogram channels bindings list
+openprogram channels bindings rm &lt;binding_id&gt;</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">TUI command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/login &lt;channel&gt;</code></th><td>Enroll and wire to the current agent</td></tr>
+<tr><th scope="row"><code translate="no">/attach &lt;channel&gt; &lt;peer&gt;</code></th><td>Route one peer into the current session</td></tr>
+<tr><th scope="row"><code translate="no">/detach</code>, <code translate="no">/connections</code></th><td>Undo, list</td></tr>
+</tbody></table>
+<h2 id="who-can-talk-to-your-bot">Who can talk to your bot</h2>
+<p>Direct messages use pairing. An unlisted sender's message is dropped before any agent and the sender receives an eight-character code. Approval exists only as a local CLI or API call, so nothing typed in chat can approve anyone. There is no setting that turns the gate off.</p>
+<pre translate="no" tabindex="0"><code>openprogram channels access list                       # policy + allowlist + pending codes
+openprogram channels access approve telegram K7XQ2MVR  # approve by pairing code
+openprogram channels access allow telegram 123456789   # allowlist a user id directly
+openprogram channels access revoke telegram 123456789  # remove a sender</code></pre>
+<ul>
+<li>Codes expire after one hour; a blocked sender gets the same code again, at most once a minute.</li>
+<li><code translate="no">access allow</code> adds a known platform ID without a code.</li>
+<li>Everyone on the allowlist reaches the same agent and acts as you, and memory is one workspace for the instance. Keep it to people you would hand this machine to.</li>
+</ul>
+<h3 id="what-approved-senders-may-do">What approved senders may do</h3>
+<p>A direct-message turn has the same tools as the Web UI under that chat session's mode and rules, so in default Bypass permissions it can run commands here without a prompt. Approvals arrive as chat questions, answered with <code translate="no">/answer</code>.</p>
+<pre translate="no" tabindex="0"><code>openprogram channels accounts set wechat sender_access paired    # or: owner, the default (all channels)</code></pre>
+<p class="note"><code translate="no">paired</code> limits everyone on the account to replies and memory, in direct messages and groups. For separate memory, someone runs their own instance:</p>
+<pre translate="no" tabindex="0"><code>openprogram --profile alice</code></pre>
+<p class="note"><a href="../install/profiles.html">Profiles</a></p>
+<h3 id="group-chats">Group chats</h3>
+<p>Telegram, Discord and Slack. WeChat bots receive direct messages only.</p>
+<table class="grid">
+<thead><tr><th scope="col">Sender</th><th scope="col">Replies</th><th scope="col">Memory</th><th scope="col">Every tool, as you</th></tr></thead>
+<tbody>
+<tr><th scope="row">Bound contact, or <code translate="no">full</code> access</th><td class="run">Yes</td><td class="run">Yes</td><td class="run">Yes</td></tr>
+<tr><th scope="row"><code translate="no">chat</code> access</th><td class="run">Yes</td><td class="run">Yes</td><td class="deny">No</td></tr>
+<tr><th scope="row">Anyone else</th><td class="deny">No reaction</td><td class="deny">No</td><td class="deny">No</td></tr>
+</tbody></table>
+<p class="note">Anyone else gets no reply, pairing code or error, and no conversation is created. A new group lists nobody.</p>
+<pre translate="no" tabindex="0"><code>openprogram channels accounts group-users add telegram 123456789 --access chat   # replies and memory only
+openprogram channels accounts group-users add discord 80351110224678912 --access full  # runs as you
+openprogram channels accounts group-users remove telegram 123456789
+openprogram channels accounts group-users list telegram</code></pre>
+<pre translate="no" tabindex="0"><code>openprogram channels accounts group-users add telegram 123456789 --access full --group -1001234567890
+openprogram channels accounts group-users remove telegram 123456789 --group -1001234567890   # the group keeps its lists, even when empty
+openprogram channels accounts group-users reset telegram --group -1001234567890              # use the account's lists again</code></pre>
+<ul>
+<li>First block: account-wide lists. Second: one group's lists, which replace the account's for that group; <code translate="no">remove</code> keeps the group's lists even when empty, and <code translate="no">reset</code> returns to the account's. Bound contacts keep full access. A Discord thread uses its parent's lists unless it has its own.</li>
+<li>IDs are stable platform user IDs: numeric on Telegram and Discord (Developer Mode, Copy User ID), <code translate="no">U…</code> on Slack. The worker log names every ignored sender. Changes apply to the next message.</li>
+<li><strong>Settings > Channels</strong> holds the account-level lists; per-group lists are command-line only.</li>
+<li><code translate="no">require_mention</code> still applies: an unmentioned message from a listed person waits as context.</li>
+<li><code translate="no">chat</code> users cannot use <code translate="no">/new</code>, <code translate="no">/reset</code>, <code translate="no">/activation</code>, <code translate="no">/memory</code>, <code translate="no">/stop</code> or <code translate="no">/help</code>. What they write is context for later turns that run as you.</li>
+<li><code translate="no">access revoke</code> only touches the allowlist; use <code translate="no">group-users remove</code> for these lists. A bound contact cannot be <code translate="no">chat</code>: revoke first, which also ends their direct messages. Binding someone listed as <code translate="no">chat</code> takes them off the lists.</li>
+<li>Nothing a sender types can change these lists.</li>
+</ul>
+<details>
+<summary>Upgrading from a version with group_access</summary>
+<p>That setting is gone and a stored value is ignored. Teammates approved by pairing code from a group had replies and memory only; on the allowlist they now run as you in groups. Before upgrading, run <code translate="no">openprogram channels access list</code>, then for each teammate <code translate="no">access revoke</code> and <code translate="no">group-users add &lt;channel&gt; &lt;user id&gt; --access chat</code>.</p>
+</details>
+<h2 id="channels-and-environments">Channels and environments</h2>
+<p>A channel decides where messages are mirrored; the conversation's <a href="../capabilities/environments.html">environment</a> decides where tools run. A conversation arriving from a channel uses the default environment.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Channel chip</th><td>Above the message box in Web and App, beside the environment chip: logo and account, or <strong>No channel</strong>. Dot: yellow degraded, red unreachable. Opens one row per app; pick an account to bind or switch, <strong>Disconnect</strong> to stop, <strong>Manage channels</strong> to add.</td></tr>
+<tr><th scope="row">Bound WeChat account</th><td>Your WeChat's messages to the bot arrive here instead of a separate conversation. One conversation holds each person's chat on an account; picking the same person elsewhere moves it, and conversations with other people on that account stay. A pick with no known person takes the whole account. Disconnecting or switching returns messages to their usual conversation.</td></tr>
+<tr><th scope="row">Replies in a bound conversation</th><td>Every assistant reply goes out, whatever started the turn: typing in the App, a Goal turn or a reminder. Only the reply: your typed message, tool progress and thinking stay in the App. An always-on check-in or a scheduled task sends its report instead, unless the Agent's <strong>Channels</strong> setting is off.</td></tr>
+<tr><th scope="row">Approval pause</th><td>Sends what was written before; after approval, only what follows</td></tr>
+<tr><th scope="row">No recipient</th><td>A Telegram, Discord or Slack account picked without a specific chat keeps replies in the App</td></tr>
+<tr><th scope="row">Delivery failure</th><td>The App shows a notice with channel and error kind; the reply stays saved</td></tr>
+<tr><th scope="row">Account status</th><td>Settings, Channels, one line per bot: <strong>Running</strong>, <strong>Turned off</strong>, <strong>Not signed in</strong>, <strong>Signed out</strong> (the token or login stopped working), <strong>Stopped by an error</strong>, <strong>Reconnecting</strong>, <strong>Not responding</strong> or <strong>Not started yet</strong>. A bad state says what to do, and the bot starts by itself after you sign in again.</td></tr>
+</tbody></table>
+<h2 id="how-chats-map-to-sessions">Chats and sessions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Platform</th><th scope="col">One session per</th></tr></thead>
+<tbody>
+<tr><th scope="row">Telegram</th><td>Chat; group behaviour is per account (below)</td></tr>
+<tr><th scope="row">Discord, Slack</th><td>(channel, user): two senders in one channel get separate conversations and cannot see or answer each other's questions. Memory stays one workspace.</td></tr>
+<tr><th scope="row">WeChat</th><td>Peer</td></tr>
+</tbody></table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_scope</code></th><td>Default <code translate="no">per-account-channel-peer</code>. Also <code translate="no">per-channel-peer</code>, <code translate="no">per-peer</code>, or <code translate="no">main</code>; each agent keeps its own sessions, so two agents on <code translate="no">main</code> never share one</td></tr>
+<tr><th scope="row"><code translate="no">session_daily_reset: "HH:MM"</code>, <code translate="no">session_idle_minutes</code></th><td>Rotate daily or after idle time</td></tr>
+<tr><th scope="row"><code translate="no">/new</code>, <code translate="no">/reset</code></th><td>Fresh conversation now; the previous stays in the sidebar</td></tr>
+<tr><th scope="row">Deleting in the Web UI</th><td>Same: the next message starts a new one</td></tr>
+</tbody></table>
+<h3 id="who-said-it">Who said it</h3>
+<p>Every channel message carries its sender, direct messages included (<code translate="no">main</code> puts peers together). Web, CLI and TUI turns have none.</p>
+<pre translate="no" tabindex="0"><code>{"speaker_kind":"human","speaker_id":"7391","speaker_display":"Ada","content":"the budget is 50k"}
+{"speaker_kind":"human","speaker_id":"8022","speaker_display":"Bo","content":"make it 80k"}</code></pre>
+<ul>
+<li>The ID stays when someone renames and separates people with the same name; memory records each fact under who said it.</li>
+<li>A display name is put on one line, capped at 64 characters, square brackets made round. Message text is kept exactly; typing a name in brackets does not impersonate.</li>
+<li>The web transcript shows a small line above the bubble, such as <code translate="no">WeChat · Ada</code>; a WeChat sender has no nickname, so the ID is shortened to its first and last four characters.</li>
+</ul>
+<h3 id="group-behavior">Group behaviour</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Mode</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">always</code></th><td>Every message starts a turn</td></tr>
+<tr><th scope="row"><code translate="no">mention</code></th><td>Only an @mention or reply to the bot; the mention is stripped. The next turn gets the latest 50 other messages with senders, behind an "earlier messages in the chat" toggle in the web transcript.</td></tr>
+<tr><th scope="row"><code translate="no">ambient</code></th><td>Every message starts a turn and the agent decides whether to speak with <code translate="no">chat_send</code>. Replies to unaddressed messages stay in the web transcript as "overheard". No typing or ack reaction. Addressed messages are answered normally. Costs a model call per message.</td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>openprogram channels accounts set telegram require_mention on       # or: off (also discord, slack)
+openprogram channels accounts set telegram group_sessions per-user  # or: shared (telegram only)</code></pre>
+<ul>
+<li><code translate="no">require_mention</code> sets the default: <code translate="no">on</code> is <code translate="no">mention</code>, <code translate="no">off</code> (default) is <code translate="no">always</code>.</li>
+<li>Someone with full access uses <code translate="no">/activation mention|always|ambient</code>; alone it shows the mode. Direct messages are never gated.</li>
+<li><code translate="no">group_sessions</code> (Telegram; restart the worker): <code translate="no">shared</code> (default) or <code translate="no">per-user</code>.</li>
+<li>Group members reach the agent's memory. <code translate="no">/memory read</code> stops writes, <code translate="no">/memory off</code> removes it, <code translate="no">/memory on</code> (default) follows the agent's setting. Direct messages always follow the agent.</li>
+<li>Other bots' messages are ignored and duplicate deliveries start one turn. At most 10 turns a minute per group; the rest wait as earlier messages.</li>
+</ul>
+<h3 id="chat-commands">Chat commands</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/new</code>, <code translate="no">/reset</code></th><td>Fresh conversation</td></tr>
+<tr><th scope="row"><code translate="no">/stop</code></th><td>Stop the work running in this conversation at once. Where each person in a group has their own (Discord, Slack, Telegram <code translate="no">per-user</code>), only yours. Messages already waiting still run</td></tr>
+<tr><th scope="row"><code translate="no">/help</code></th><td>List these commands</td></tr>
+<tr><th scope="row"><code translate="no">/activation [mention|always|ambient]</code></th><td>Show or switch the group's mode</td></tr>
+<tr><th scope="row"><code translate="no">/memory [on|read|off]</code></th><td>Show or narrow the group's memory access</td></tr>
+<tr><th scope="row"><code translate="no">/answer &lt;question_id&gt; &lt;choice&gt;</code></th><td>Answer a function's question (<code translate="no">runtime.ask</code>) or tool approval; free text allowed</td></tr>
+<tr><th scope="row"><code translate="no">/decline &lt;question_id&gt;</code></th><td>Decline it</td></tr>
+</tbody></table>
+<p class="note">Work in a group without a mention; <code translate="no">/new@yourbot</code> works on Telegram. Only that chat's session questions can be answered; in a group, only by the person whose message started the turn.</p>
+<h2 id="replies-progress-and-long-messages">Replies and progress</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Telegram</th><th scope="col">Discord</th><th scope="col">Slack</th><th scope="col">WeChat</th></tr></thead>
+<tbody>
+<tr><th scope="row">Typing shown</th><td>Yes</td><td>Yes</td><td>No</td><td>Yes</td></tr>
+<tr><th scope="row">Progress</th><td><code translate="no">⏳ working...</code> edited live (<code translate="no">⚙ bash</code> → <code translate="no">✓ bash</code>), then replaced by the reply</td><td>Same</td><td>Same</td><td>Paragraph by paragraph, about 200 characters each; text before a tool goes first</td></tr>
+<tr><th scope="row">Format</th><td>HTML</td><td>Markdown</td><td>mrkdwn</td><td>Plain text</td></tr>
+<tr><th scope="row">Split at</th><td>4,000</td><td>1,800</td><td>39,000</td><td>1,800</td></tr>
+</tbody></table>
+<details>
+<summary>Delivery details</summary>
+<ul>
+<li>A long reply fills the placeholder then continues in new messages. A placeholder that cannot be edited falls back to a new message.</li>
+<li>Slack threads and Telegram forum topics keep placeholder, reply, files and the agent's own notes and questions in place; a Telegram topic also shows typing there. A Slack thread reply also sent to the channel counts as a message.</li>
+<li>Editing a Telegram message sent before the service started does nothing.</li>
+<li><code translate="no">ack_reaction on</code> (not WeChat) adds 👀 on pickup; Slack needs <code translate="no">reactions:write</code>.</li>
+<li>A long code block stays closed in each message and reopens in the next. Discord replies never ping anyone, <code translate="no">@everyone</code> included. A photo Telegram refuses is sent as a file instead.</li>
+<li>Rate-limited sends retry with <code translate="no">Retry-After</code> when given, up to three attempts, then log a structured error. A connection that could not be opened is retried up to four attempts; nothing reached the platform, so nothing arrives twice.</li>
+<li>Crashed connection loops reconnect with backoff, 5 s doubling to 5 min. Invalid credentials stay down until you log in again; a Telegram token the API rejects counts. WeChat server errors wait and retry, 3 s doubling to 48 s.</li>
+<li>The service checks accounts every few seconds: linking, logging in, enabling or disabling needs no restart.</li>
+</ul>
+</details>
+<p>A conversation runs one turn at a time, App turns included. While another turn runs or waits for an answer:</p>
+<ul>
+<li>A chat message waits up to 30 seconds, then the bot says it is busy. Send it again later.</li>
+<li>An unaddressed group message in <code translate="no">ambient</code> mode gets no reply and joins the group's next turn.</li>
+<li>Typing in the App is refused, as during any other turn.</li>
+<li><code translate="no">/new</code> and <code translate="no">/reset</code> wait up to 30 seconds for a chat app turn, then the bot says it is busy.</li>
+</ul>
+<p>Messages from one chat start turns in the order they arrived, even when an earlier one has a slow attachment. Commands do not queue.</p>
+<h2 id="attachments">Attachments</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Direction</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Incoming</th><td>Saved to <code translate="no">&lt;state&gt;/channels/&lt;channel&gt;/accounts/&lt;account&gt;/attachments/</code>, 20 MB per file, listed as <code translate="no">[attachment: &lt;path&gt; (&lt;type&gt;, &lt;size&gt;)]</code>. Images up to 4 MB also reach the model. A file that could not be fetched leaves a line saying so.</td></tr>
+<tr><th scope="row">Telegram voice</th><td>Turned into text with the engine in Settings → Voice and added to the message, caption kept. Needs <code translate="no">ffmpeg</code>; if transcription fails, the turn says why and the audio file is still attached.</td></tr>
+<tr><th scope="row">WeChat media</th><td>Encrypted from Tencent's CDN, decrypted on download. Voice arrives as WeChat's transcription when present, otherwise a <code translate="no">.silk</code> file the model cannot hear.</td></tr>
+<tr><th scope="row">Replies to messages</th><td>Quoted text appears above as a <code translate="no">&gt; quoted</code> block (Telegram, Discord reply; Slack thread)</td></tr>
+<tr><th scope="row">Outgoing</th><td>Telegram: photos or documents. Discord: upload with the caption. Slack: external upload, <code translate="no">files:write</code>. WeChat: encrypted, uploaded, sent by type, 100 MB, caption as a separate message. Only files the agent handed over with <code translate="no">send_file</code> upload; a marker it writes in its reply sends nothing and becomes a short note.</td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>from openprogram.interfaces.channels.outbound import send_file
+send_file("telegram", "default", "123456", "/path/to/report.pdf", caption="Weekly report")</code></pre>
+<h2 id="common-errors">Errors</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">What happened</th><th scope="col">What to do</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pairing code instead of an answer</th><td><code translate="no">access approve &lt;channel&gt; &lt;code&gt;</code> or <code translate="no">access allow &lt;channel&gt; &lt;user-id&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">[no agent configured]</code></th><td><code translate="no">openprogram agents add main</code>, then <code translate="no">channels setup</code> or <code translate="no">channels bindings add</code></td></tr>
+<tr><th scope="row"><code translate="no">account … has no bot_token</code></th><td><code translate="no">openprogram channels accounts login &lt;channel&gt; --id &lt;account&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">Slack account … needs both bot_token (xoxb-...) and app_token (xapp-...)</code></th><td>Log in again and paste both</td></tr>
+<tr><th scope="row"><code translate="no">Discord channel requires discord.py</code>, <code translate="no">Slack channel requires slack_sdk</code></th><td>Incomplete runtime: reinstall the release, or rerun the complete source-development installer</td></tr>
+<tr><th scope="row">Discord connects but sees nothing</th><td>Enable Message Content Intent</td></tr>
+<tr><th scope="row"><code translate="no">bot token invalid — relogin required</code></th><td><code translate="no">openprogram channels accounts login wechat --id &lt;account&gt;</code> and rescan</td></tr>
+<tr><th scope="row"><code translate="no">adapter crashed … reconnecting in Ns</code></th><td>Reconnects itself. Only <code translate="no">adapter exited on its own</code> needs action, usually a login.</td></tr>
+<tr><th scope="row">"The reply was not delivered to WeChat (…)"</th><td><code translate="no">auth</code>: log in again. <code translate="no">network</code>, <code translate="no">rate_limit</code>: unreachable or throttled after retries. <code translate="no">channels_unavailable</code>: the process running the turn has no channels loaded. The reply is saved.</td></tr>
+<tr><th scope="row"><code translate="no">auth</code>, <code translate="no">rate_limit</code>, <code translate="no">bad_target</code> in the log</th><td>Token revoked or expired, rate limit (already retried), or wrong chat or channel ID</td></tr>
+</tbody></table>
+<p class="next"><a href="../reference/design/channels/design.html">Channel design</a> · <a href="../interfaces/README.html">Interfaces</a> · <a href="../capabilities/always-on-agents.html">Always-on Agents</a></p>

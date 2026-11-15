@@ -1,0 +1,135 @@
+<title>MCP 服务端实现</title>
+<meta name="description" content="经认证的 stdio MCP 服务端的模块、接口和验收矩阵。">
+<h1>MCP 服务端实现</h1>
+
+<p><code translate="no">openprogram mcp serve</code> 的构造。行为、关卡和同类对比见 <a href="../integrations/mcp-server.zh.html">MCP 服务端</a>。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">模块</th><th scope="col">负责</th><th scope="col">测试</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">extensions/mcp/server/contracts.py</code></th><td>包装工具 schema、<code translate="no">validate_tool_call</code>、<code translate="no">get_mcp_tools</code></td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_contracts.py</code></td></tr>
+<tr><th scope="row"><code translate="no">auth.py</code></th><td>令牌文件、<code translate="no">authenticate_from_environment</code></td><td><code translate="no">tests/component/providers/adapters/test_mcp_server_auth.py</code>、<code translate="no">test_mcp_server_cli.py</code></td></tr>
+<tr><th scope="row"><code translate="no">service.py</code>、<code translate="no">tools.py</code></th><td>会话、Runtime 工具暴露、<code translate="no">tool_call</code>、提示生命周期、内容转换</td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_tools.py</code>、<code translate="no">tests/component/programs/mcp/test_mcp_server_turns.py</code></td></tr>
+<tr><th scope="row"><code translate="no">server.py</code></th><td><code translate="no">build_server</code>、<code translate="no">serve_stdio</code>、<code translate="no">serve</code></td><td><code translate="no">tests/integration/programs/test_mcp_server.py</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/permissions/authority.py</code>、<code translate="no">state/settings.py</code></th><td><code translate="no">mcp_client_authority</code>、<code translate="no">mcp_server.exposed_tools</code></td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_security.py</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/cli/commands/mcp.py</code>、<code translate="no">parser.py</code>、<code translate="no">application.py</code></th><td><code translate="no">mcp serve</code>、<code translate="no">mcp token create</code>、本地分发</td><td><code translate="no">test_mcp_server_cli.py</code></td></tr>
+</tbody>
+</table>
+<p class="note">与 MCP 客户端包并列，与 Web owner 控制面分离。依赖 <code translate="no">mcp&gt;=1.0.0,&lt;2.0.0</code>，锁定 1.30.0；协议基线 2025-11-25。</p>
+
+<h2 id="fixed-limits">固定限制</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">限制</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row">传输</th><td>只有 stdio。没有 HTTP、SSE、Streamable HTTP、OAuth、Web 路由、socket 或监听</td></tr>
+<tr><th scope="row">身份</th><td>由凭据派生。<code translate="no">initialize.clientInfo</code> 只用于诊断</td></tr>
+<tr><th scope="row">每个请求</th><td><code translate="no">source="mcp"</code>、<code translate="no">permission_mode="ask"</code>、<code translate="no">authority_tier="paired"</code>、<code translate="no">interaction="non-interactive"</code>，调用方都不能配置</td></tr>
+<tr><th scope="row">权限身份</th><td><code translate="no">speaker_kind="client"</code>、<code translate="no">speaker_id=f"mcp/{client_id}"</code>、<code translate="no">speaker_display="MCP client"</code>、<code translate="no">principal_id=owner_principal_id()</code>。格式错误的 client id 被拒绝</td></tr>
+<tr><th scope="row">凭据</th><td>绝不用 <code translate="no">interfaces.server.owner_auth</code>、<code translate="no">backend_endpoint</code>、Web owner 令牌、cookie 或 owner bearer 头</td></tr>
+<tr><th scope="row">Runtime 工具暴露</th><td><code translate="no">mcp_server.exposed_tools</code>（默认 <code translate="no">[]</code>）∩ 实时注册表 ∩ paired 能力，发现和执行相同</td></tr>
+<tr><th scope="row">提问</th><td>绝不等待。审批关卡立即拒绝；活动 MCP 会话的其他 <code translate="no">question.asked</code> 解析为 <code translate="no">declined</code>。<code translate="no">source="mcp"</code> 算无人值守；硬约束先于规则和所有绕过</td></tr>
+<tr><th scope="row">ACP 服务端</th><td>不变</td></tr>
+</tbody>
+</table>
+
+<h2 id="wrapper-tools">包装工具</h2>
+<p>MCP <code translate="no">tools/list</code> 返回这些包装工具。名为 <code translate="no">tools_list</code> 的包装工具返回过滤后的 Runtime 工具。两份契约，分开断言。</p>
+<table class="stack">
+<thead><tr><th scope="col">工具</th><th scope="col">输入</th><th scope="col">成功载荷</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">sessions_list</code></th><td>无</td><td>最多 100 条最近的 <code translate="no">{id,title,updated_at}</code>，按会话存储顺序</td></tr>
+<tr><th scope="row"><code translate="no">session_get</code></th><td><code translate="no">session_id</code></td><td>活动分支的 <code translate="no">{id,role,content,timestamp}</code></td></tr>
+<tr><th scope="row"><code translate="no">prompt_send</code></th><td><code translate="no">prompt</code>，可选 <code translate="no">session_id</code></td><td><code translate="no">{session_id,text,assistant_msg_id,failed}</code>。无 id 时用 agent <code translate="no">main</code> 新建 <code translate="no">mcp_&lt;uuid&gt;</code>；未知 id 无效</td></tr>
+<tr><th scope="row"><code translate="no">prompt_cancel</code></th><td><code translate="no">session_id</code></td><td><code translate="no">{session_id,cancelled}</code>；只有同连接的活动 MCP 轮次为 true</td></tr>
+<tr><th scope="row"><code translate="no">tools_list</code></th><td>无</td><td><code translate="no">{name,description,inputSchema}</code>，按配置顺序去重</td></tr>
+<tr><th scope="row"><code translate="no">tool_call</code></th><td><code translate="no">name</code>，可选对象 <code translate="no">arguments</code>（默认 <code translate="no">{}</code>）</td><td>转换后的 <code translate="no">AgentToolResult</code> 内容和错误状态</td></tr>
+</tbody>
+</table>
+<p class="note">字符串不能为空白。schema 设 <code translate="no">additionalProperties: false</code>，用 <code translate="no">Draft202012Validator</code> 校验；输入被复制，不被修改。结构化载荷是一个 UTF-8 JSON <code translate="no">TextContent</code>。文本、图片映射为 MCP 文本、图片；其他内容按执行错误失败关闭。</p>
+
+<h2 id="errors">错误</h2>
+<table class="stack">
+<thead><tr><th scope="col">情形</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">包装工具名不在列表内</th><td><code translate="no">McpError</code> <code translate="no">METHOD_NOT_FOUND</code></td></tr>
+<tr><th scope="row">schema 失败、底层参数无效、传入未知 <code translate="no">session_id</code></th><td><code translate="no">McpError</code> <code translate="no">INVALID_PARAMS</code></td></tr>
+<tr><th scope="row">底层工具未知或未暴露</th><td>相同的方法级错误，不泄露是否注册</td></tr>
+<tr><th scope="row">已配置但缺 paired 权限；硬约束或审批拒绝；工具执行失败</th><td><code translate="no">CallToolResult(isError=True)</code></td></tr>
+<tr><th scope="row"><code translate="no">prompt_send</code> 被取消</th><td>SDK 标准的 JSON-RPC 取消错误，绝不是工具结果</td></tr>
+</tbody>
+</table>
+<p class="note">失败来自 <code translate="no">AgentToolResult.is_error</code>，由规范化、MCP 客户端适配、审批 <code translate="no">_denied</code>、超时和异常设置，绝不从文本推断。<code translate="no">details</code> 保留 <code translate="no">denied</code>、<code translate="no">timeout</code>、<code translate="no">reason_code</code> 等诊断。</p>
+
+<h2 id="token">令牌</h2>
+<ul>
+<li>文件 <code translate="no">&lt;state&gt;/mcp_server_token</code>，POSIX <code translate="no">0600</code>；<code translate="no">serve</code> 从不生成。启动 stdio 上下文前用 <code translate="no">hmac.compare_digest</code> 比较 <code translate="no">OPENPROGRAM_MCP_TOKEN</code>。</li>
+<li>client id：<code translate="no">sha256(stored_token)</code> 前 16 个十六进制字符，绝不含令牌文本。</li>
+<li><code translate="no">create_token</code>：<code translate="no">secrets.token_urlsafe(32)</code>，目标已存在则拒绝，独占 <code translate="no">0600</code> 临时文件，<code translate="no">fsync</code>，再不覆盖地安装（POSIX 用 <code translate="no">os.link</code>，绝不覆盖并发写入者）。</li>
+<li>认证失败：非零退出，stdout 为空，stderr 已清洗，不读 stdin。</li>
+</ul>
+
+<h2 id="turns">提示生命周期</h2>
+<dl class="pairs">
+<dt>运行</dt><dd>同步轮次放到工作线程，<code translate="no">abandon_on_cancel</code>；<code translate="no">finally</code> 里注销该取消事件。被放弃的工作线程不能发布迟到结果。</dd>
+<dt><code translate="no">prompt_cancel</code></dt><dd>普通工具：只限同客户端、同连接的活动轮次；别人的或已结束的轮次失败关闭。</dd>
+<dt>取消</dt><dd>设置线程和工具取消事件，标记会话已取消，杀掉子进程和运行时，取消会话提问，注销事件，移除活动记录，审计 <code translate="no">mcp.request.cancelled</code>（含请求、会话、客户端指纹，无提示和令牌）。幂等。重新抛出，由 SDK 产生错误。</dd>
+<dt>进度</dt><dd>服务层上报有序消息；请求带 <code translate="no">progressToken</code> 时，线路层才转成单调 MCP 进度。</dd>
+<dt>线路</dt><dd>显式 <code translate="no">CallToolRequest</code> 处理器让包装名和参数错误保持为 MCP 错误。stdout 只有 JSON-RPC。</dd>
+</dl>
+
+<details>
+<summary>接口</summary>
+<pre translate="no" tabindex="0"><code># contracts.py
+def get_mcp_tools() -&gt; tuple[mcp.types.Tool, ...]
+def validate_tool_call(name, arguments) -&gt; dict[str, Any]
+
+# auth.py
+MCP_TOKEN_ENV = "OPENPROGRAM_MCP_TOKEN"
+def token_path() -&gt; Path
+def create_token(path=None) -&gt; str
+def authenticate_from_environment(environ=os.environ, path=None) -&gt; str
+
+# service.py
+@dataclass(frozen=True)
+class MCPClientContext: client_id; authority
+
+class MCPService:
+    def sessions_list() -&gt; AgentToolResult
+    def session_get(session_id) -&gt; AgentToolResult
+    def tools_list() -&gt; AgentToolResult
+    def exposed_runtime_tools() -&gt; tuple[AgentTool, ...]
+    async def tool_call(name, arguments, *, call_id, cancel_event, on_progress)
+    async def prompt_send(prompt, *, session_id, request_id)
+    async def prompt_cancel(session_id)
+    async def cancel_request(request_id, *, reason) -&gt; bool
+    async def aclose(); def close()
+
+# tools.py
+def json_result(payload, *, is_error=False) -&gt; AgentToolResult
+def to_mcp_content(result) -&gt; list[mcp.types.ContentBlock]
+
+# server.py
+def build_server(context) -&gt; Server
+async def serve_stdio(context) -&gt; None
+def serve() -&gt; int</code></pre>
+</details>
+
+<details>
+<summary>端到端验收（用 SDK 客户端）</summary>
+<ol>
+<li>令牌文件缺失、权限错误、环境变量缺失或不匹配，都在 initialize 前退出。</li>
+<li>有效令牌在 2025-11-25 完成初始化；改 <code translate="no">clientInfo</code> 不改变身份、列表或结果。</li>
+<li><code translate="no">tools/list</code> 按序返回包装工具；<code translate="no">tools_list</code> 只返回交集。</li>
+<li>每个包装工具返回固定形状；未知包装工具和无效参数是 MCP 错误。</li>
+<li>未知与未暴露的底层名不可区分；权限、硬约束、审批失败是 <code translate="no">isError</code>；被拒工具不执行。</li>
+<li>审批或提问都不阻塞 MCP 调用。</li>
+<li>当且仅当请求带 <code translate="no">progressToken</code>，进度单调到达。</li>
+<li>取消 <code translate="no">prompt_send</code> 得到 SDK 错误；后续副作用停止，状态清空，审计存在。</li>
+<li><code translate="no">prompt_cancel</code> 取消不了别人的或已结束的轮次。</li>
+<li>stdout 只有 JSON-RPC。</li>
+</ol>
+<p class="note">一起审查：先看 schema；身份与令牌看是否复用 owner 凭据、空列表是否回退；拒绝与取消看失败关闭的顺序。用 SDK 客户端，不用手写帧。Runtime 共享类型变化时回归：权限身份、权限规则、派生硬约束、提问、ACP 服务端、工具运行时。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>当前源码已实现。完成证据见 <a href="../integrations/mcp-server.zh.html">MCP 服务端</a>。</p>

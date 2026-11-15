@@ -1,0 +1,170 @@
+<title>Agent configuration implementation plan</title>
+<meta name="description" content="Stages, migration, failure scenarios and evidence for implementing Agent configuration.">
+<h1>Agent configuration implementation plan</h1>
+
+<h2 id="stages">Stages</h2>
+<table class="stack">
+<thead><tr><th scope="col">Stage, needs</th><th scope="col">Change</th><th scope="col">Exit evidence</th></tr></thead>
+<tbody>
+<tr><th scope="row">P0</th><td>Typed AgentConfig projection; schema 2 migration; whole-config revision/CAS; recoverable multi-file lifecycle writes</td><td>A01 A02 A11: same-revision clients cannot both win; restart sees old or complete new config; migration semantic diff empty</td></tr>
+<tr><th scope="row">P1, needs P0</th><td>One pure resolver, read-only preview, canonical capability semantics, errors and provenance</td><td>A03 A07: equivalent inputs resolve identically, selected empty stays empty, explicit denied call fails</td></tr>
+<tr><th scope="row">P2, needs P1</th><td>Per-execution memory policy, namespace binding, eligibility lineage, policy-epoch revalidation</td><td>A05: reads, writes, delayed extraction, compaction and queued commits obey policy; optional outage visibly degrades</td></tr>
+<tr><th scope="row">P3, needs P1 P2</th><td><code translate="no">agent()</code>/<code translate="no">llm()</code>, chat, CLI, dispatch and scheduler adapters; immutable execution snapshot, history filtering</td><td>A03 A04 A06 A08 A12: entry parity; concurrent, failing or cancelled calls do not leak config; resumes keep intent</td></tr>
+<tr><th scope="row">P4, needs P0 P1, finishes after P2 P3</th><td>Eight-section UI, whole draft, registry model picker, capability selectors, effective preview</td><td>A01 A02 A07 A10: real page actions, conflict recovery, unavailable references, responsive and keyboard</td></tr>
+<tr><th scope="row">P5, needs P0–P4</th><td>Portable import/export, duplicate/delete previews, compatibility preflight, product docs, release gate</td><td>A09 A11 A12: owned resources only; legacy callable behaviour kept; final candidate verified</td></tr>
+<tr><th scope="row">P6, optional after P5</th><td>Opt-in Agent/model selection policy over eligible candidates</td><td>Selection tests pass; manual paths unchanged without a policy</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Schema and compatibility land before consumers.</li>
+<li>UI layout may use fixtures after P1; a mock does not satisfy P4.</li>
+<li>Memory controls ship only when every P2 ingress and egress is covered.</li>
+<li>One bounded stage is finished and reviewed before dependent work counts as complete.</li>
+</ul>
+
+<h2 id="scope">Fixed choices</h2>
+<ul>
+<li>The first production release covers saved and inline configurations, atomic persistence, shared resolution, optional memory and the editor. Manual per-call model selection does not need automatic selection.</li>
+<li>AgentSpec is the only saved registry; AgentConfig is a typed value. Reuse <code translate="no">Runtime.exec</code>, MemoryBackend, Context Engine, capability catalogs and resource governance.</li>
+<li>New saved and anonymous configurations default to memory off. Legacy profiles keep effective behaviour through explicit migration; no history or memory store moves silently.</li>
+<li>Model selection occurs at invocation admission. Changing model mid-response or replaying side effects under a fallback is out of scope.</li>
+<li>Single-base resolution; no named-Agent inheritance tree, mandatory role, autonomous creation of saved Agents, new worker or orchestration engine.</li>
+</ul>
+
+<h2 id="files">Source ownership</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Area and existing boundary</th><th scope="col">Responsibility</th></tr></thead>
+<tbody>
+<tr><th scope="row">Persistence: <code translate="no">runtime/agent_registry/manager.py</code>, <code translate="no">workspace.py</code></th><td>Keep AgentSpec and storage owner; proposed colocated <code translate="no">configuration.py</code> / <code translate="no">resolution.py</code> for typed values and pure logic</td></tr>
+<tr><th scope="row">API: <code translate="no">interfaces/server/routes/catalog/agents.py</code></th><td>One atomic manager operation; typed preview, revision and readiness responses; no route-local merge or second tools write</td></tr>
+<tr><th scope="row">Function calls: <code translate="no">runtime/agent/agent_function.py</code>, <code translate="no">llm.py</code>, <code translate="no">runtime/execution.py</code></th><td>Normalize old and new arguments once; immutable scoped configuration; keep return and validation, no Program/MCP tool loop, explicit authorized native search</td></tr>
+<tr><th scope="row">Durable dispatch: <code translate="no">programs/tools/agents/agent/agent/agent.py</code>, <code translate="no">runtime/conversation/sub_agent_run.py</code></th><td>Reuse dispatch and task lifecycle; persist snapshot and lineage through actual run and DAG stores</td></tr>
+<tr><th scope="row">Memory: <code translate="no">state/memory/backend.py</code>, <code translate="no">state/memory/management/config.py</code></th><td>Policy enforcement above the backend; namespace and commit contracts within it; trace every caller before signoff</td></tr>
+<tr><th scope="row">UI: <code translate="no">apps/web/components/agents/agents-page.tsx</code></th><td>Reuse components; typed draft, atomic save; extend the API and type layer at its actual import path</td></tr>
+<tr><th scope="row">Docs</th><td><a href="agent-configuration-ui.html">Configuration contract</a>, <a href="agent-core-configuration-ui.html">Editor</a>, <a href="agent-capability-configuration-ui.html">Capabilities</a>, <a href="agent-tool-configuration-ui.html">Programs</a>, both languages; product pages change only with real implementation</td></tr>
+</tbody>
+</table>
+<p class="note">Python paths are under <code translate="no">openprogram/</code>. Before each brief, find actual chat, scheduler and CLI consumers and persistence schemas in the call graph and record their paths. No unrelated frontend, provider or memory-engine refactors.</p>
+
+<h2 id="migration">Migration, old clients and rollback</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Preflight</th><td>Under the writer lock, read all saved records, the default pointer and effective legacy globals. Dry-run report of IDs, schema versions, unresolved references and semantic differences, without secrets or memory contents. Unknown schemas and corrupt records block that profile; never replaced with main.</td></tr>
+<tr><th scope="row">Normalize</th><td>No version means schema 1; becomes schema 2, revision 1. Unknown extension data goes to a migration backup; unsupported executable fields are rejected until understood. Old memory binding and behaviour stay; no switch to empty self spaces. Legacy global inheritance stays a named compatibility source until the user picks a mode.</td></tr>
+<tr><th scope="row">Write</th><td>Back up the exact owned files and index with restrictive permissions first. Journal and restart-safe reconciliation for multi-file work. Commit a profile only after validation; an interrupted migration resumes idempotently. No external workspace, credential, session, DAG or learned-memory content changes.</td></tr>
+<tr><th scope="row">Preconditions</th><td>New writes require <code translate="no">expected_revision</code>. A temporary adapter compares a client's <code translate="no">updated_at</code> under the same lock, derives the revision and writes once. Neither given: 428; the UI keeps drafts and asks for reload. No last-write-wins.</td></tr>
+<tr><th scope="row">Python calls</th><td>No-selector calls keep model, history, memory and output type. New keywords are keyword-only. Explicit <code translate="no">agent_id</code>/<code translate="no">config</code> defaults to clean history; explicit inherit obeys visibility rules. Conflicting aliases are validation errors. Durable <code translate="no">start_from</code> and <code translate="no">to</code> keep their meaning.</td></tr>
+<tr><th scope="row">Rollback</th><td>Only with a reader that understands schema 2, or an explicit verified downgrade with writers stopped. Unsupported new fields prevent lossless downgrade. Restore a backup only before post-migration edits or after reconciling them. A legacy binary must not silently rewrite schema 2.</td></tr>
+<tr><th scope="row">Rollout</th><td>Backend dual-reader, updated clients, migration enablement, legacy-adapter retirement. Retirement needs updated first-party clients and a documented deprecation period.</td></tr>
+</tbody>
+</table>
+
+<h2 id="scenarios">Failure scenarios</h2>
+<table class="stack">
+<thead><tr><th scope="col">ID</th><th scope="col">Action</th><th scope="col">Must hold</th></tr></thead>
+<tbody>
+<tr><th scope="row">A01 A03</th><td>Create name-only config; call agent and llm with saved versus equivalent inline fields</td><td>No role needed; no anonymous persistence; equal effective fields except identity and provenance; llm has no Program/MCP loop; <code translate="no">web_search=False</code> emits no native search, explicit authorized True keeps it</td></tr>
+<tr><th scope="row">A02</th><td>Two processes PATCH model and tools from one revision; failure injected before replace</td><td>Exactly one 200, one 409; complete old or new file; no mixed fields; draft survives</td></tr>
+<tr><th scope="row">A04</th><td>Two nested parallel calls with different model and memory; one cancelled during await</td><td>Requests use their own fields; finally restores the caller; cancellation propagates</td></tr>
+<tr><th scope="row">A05</th><td>Distinct sentinels in memory and off/read-only outputs; force recall, compaction, session-end writer</td><td>No forbidden sentinel enters a request or store; derived summaries keep write restrictions</td></tr>
+<tr><th scope="row">A05 A08</th><td>Pause queued recall or write, revoke access, release, restart worker</td><td>Late recall discarded; write denied at commit; retry cannot broaden the grant</td></tr>
+<tr><th scope="row">A06</th><td>Switch saved Agent with clean, inherit and selected history; request an inaccessible node</td><td>Only authorized chosen context; no implicit transfer; fails before inference</td></tr>
+<tr><th scope="row">A07</th><td><code translate="no">selected=[]</code>; denied explicit tool; missing required MCP; llm native search with and without Agent selection</td><td>Discovery and invocation agree; no side effect before preflight succeeds</td></tr>
+<tr><th scope="row">A08 A12</th><td>Queue a run, edit Agent, resume; fire the next schedule</td><td>Resume uses pinned config plus current revocations; new firing resolves latest revision</td></tr>
+<tr><th scope="row">A09</th><td>Duplicate, export, import, delete with self and shared memory, active run, external cwd</td><td>No copied memory, history, credentials or schedules; shared and external resources stay; active deletion rejected</td></tr>
+<tr><th scope="row">A10</th><td>All editor sections, desktop and mobile, keyboard; two-client save conflict</td><td>No draft loss, fake success, overflow or unreachable tabs; conflict offers reload or explicit reapplication</td></tr>
+<tr><th scope="row">A11</th><td>Migrate fixtures: global-memory inheritance, empty allows, names plus categories, uncategorized items, default Agent</td><td>Effective model, capabilities, memory and default match; rerun is a no-op</td></tr>
+</tbody>
+</table>
+<p class="note">P3 also owns C1–C10 in the <a href="../collaboration/agent-collaboration.html">collaboration design</a>: actual <code translate="no">execution_id</code>/<code translate="no">job_id</code> interfaces, completion follow-up and async archive, authorized output reads after message exhaustion, unified history visibility, result limits, exact attach navigation. A helper or a test calling it directly is not public-entry evidence.</p>
+
+<h2 id="brief">First brief: P0</h2>
+<dl class="pairs">
+<dt>Touch</dt><dd>Agent management types and storage, Agent routes, their tests, relevant bilingual docs; the minimum value/schema module if it keeps the manager readable. Not function execution, memory behaviour or UI layout.</dd>
+<dt>RED</dt><dd>Concurrent same-precondition PATCH of model and tools, then read: must demonstrate a reproducible lost-update or mixed-write gap, not inspect method names. Add to <code translate="no">tests/component/webui/abilities/test_agent_tools_routes.py</code>; migration fixtures beside the agent-management tests prove legacy semantics before serialization changes.</dd>
+<dt>GREEN</dt><dd>One validated manager transaction compares revision under a cross-process writer lock and atomically replaces the full canonical file; routes cannot save tools separately. Read compatibility, typed errors and timestamp adapter stay.</dd>
+<dt>Done</dt><dd>Public-entry command, failure and pass evidence, changed files recorded; independent specification review, then fresh quality review.</dd>
+</dl>
+<pre translate="no" tabindex="0">uv run --locked --extra dev python -m pytest -q tests/component/webui/abilities/test_agent_tools_routes.py</pre>
+
+<h2 id="gates">Verification</h2>
+<p>Choose focused RED/GREEN tests at each brief and extend existing ownership. These are starting points, not evidence the scenarios exist:</p>
+<pre translate="no" tabindex="0">tests/component/webui/abilities/test_agent_tools_routes.py
+tests/unit/agent/workflows/test_agentic_programming_agent.py
+tests/component/webui/settings/test_memory_settings_routes.py
+tests/unit/memory/test_memory_runtime_config.py
+tests/unit/config/test_docs_information_architecture.py
+tests/e2e/web/test_agents_configuration.py</pre>
+<details>
+<summary>Commands</summary>
+<pre translate="no" tabindex="0"># Documentation
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
+python -m scripts.docs_site.checklang
+python -m scripts.docs_site.check_landing
+uv run --locked --extra dev python -m pytest -q tests/unit/config/test_docs_information_architecture.py
+
+# Final candidate
+uv run --locked --extra dev python -m scripts.testing.affected_tests --base dev --run
+npm --prefix apps/web run check
+npm --prefix apps/web run build
+uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web</pre>
+</details>
+<ul>
+<li>Reconcile with <code translate="no">tests/README.md</code> and <code translate="no">.github/CONTRIBUTING.md</code> when implementing.</li>
+<li>Browser artifacts exercise the built production page.</li>
+<li>App acceptance: deploy to the development instance, then promote; see <a href="../../distribution/dev-instance.html">Stable and development instances</a>.</li>
+<li>Source, tests, local commit, installed App and live deployment are separate evidence. A documentation build satisfies neither runtime nor App acceptance.</li>
+</ul>
+
+<h2 id="routing">P6: optional selection policy</h2>
+<p>Opt-in, runs before the resolver. A caller supplies a policy reference instead of <code translate="no">agent_id</code>/<code translate="no">config</code> (mutually exclusive). Candidates are saved Agent IDs or provider-qualified model references, never generated executable configuration. The policy declares its kind: a model choice keeps the caller's non-model fields; an Agent choice changes the base and follows normal history rules.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">Eligibility</th><td>Filter unavailable provider, account or model, required modality, structured output or tool support, context limit, authority and remaining resource cap before ranking</td></tr>
+<tr><th scope="row">Ranking</th><td>Versioned ordered deterministic rules over task tags, required capabilities and caller preferences; model-assisted ranking is a separately enabled later mode</td></tr>
+<tr><th scope="row">No match</th><td>Typed no-eligible-candidate error, or an explicitly configured eligible fallback before inference; never broaden authority</td></tr>
+<tr><th scope="row">Trace</th><td>Policy version, eligible IDs, exclusions, chosen ID, rule identifier; no raw user content or unsupported cost and latency claims</td></tr>
+<tr><th scope="row">Stability</th><td>Pinned for retries and resume; a new invocation may select again; an active tool loop never switches</td></tr>
+<tr><th scope="row">Evaluation</th><td>Fixtures for correctness, no-match, denied candidate, unknown price metadata and deterministic replay; measured quality, cost and latency on an approved corpus before claims</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Example Agent-kind policy</summary>
+<ul>
+<li>Tag <code translate="no">classify</code> and structured output required: first eligible saved Agent with a selected small model.</li>
+<li>Tag <code translate="no">code-edit</code> and tools required: a selected saved coding Agent.</li>
+<li>Otherwise: a specified saved default Agent.</li>
+</ul>
+<p>A model-kind policy returns only model references. Candidate IDs and thresholds are user-configured, not hardcoded rankings. Missing price or latency means unknown, not free or fast.</p>
+</details>
+
+<h2 id="risks">Known risks</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Risk</th><th scope="col">Treatment</th></tr></thead>
+<tbody>
+<tr><th scope="row">Memory content appears in derived history</th><td>Propagate write restrictions through context dependencies and summaries; test cross-Agent transfer</td></tr>
+<tr><th scope="row">A plugin cannot enforce namespace isolation</th><td>Expose unsupported readiness; block scoped binding; no prompt-only isolation claim</td></tr>
+<tr><th scope="row">Concurrent files and default index lifecycle</th><td>Journal with recovery and idempotence; mutation authority in one manager</td></tr>
+<tr><th scope="row">Old clients overwrite newly typed fields</th><td>Dual-reader, conditional write, explicit errors; no silent downgrade</td></tr>
+<tr><th scope="row">Snapshots contain personal instructions</th><td>Existing execution storage ACLs and retention; diagnostics show hashes and references, not prompt text</td></tr>
+<tr><th scope="row">UI ahead of runtime</th><td>Feature readiness follows verified backend support; prototype status stays explicit</td></tr>
+</tbody>
+</table>
+<p class="note">No product decision blocks P0. Exact consumer paths and backend revocation support are found during implementation, with the fail-closed behaviour above; a backend that cannot meet it stays unsupported.</p>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack">
+<thead><tr><th scope="col">Stage</th><th scope="col">Implemented</th><th scope="col">Planned</th></tr></thead>
+<tbody>
+<tr><th scope="row">P0</th><td>Revision/CAS, compatible reads</td><td>Schema 2 migration, transactional lifecycle</td></tr>
+<tr><th scope="row">P1</th><td>Existing runtime resolution and capability policies reused</td><td>Unified resolver, effective preview</td></tr>
+<tr><th scope="row">P2</th><td>Execution, background extraction, derived eligibility and recovery policy for <code translate="no">self</code> and <code translate="no">legacy_global</code></td><td></td></tr>
+<tr><th scope="row">P3</th><td>Saved Web configurations and trial snapshots</td><td>Full Python, CLI and scheduler entry parity</td></tr>
+<tr><th scope="row">P4</th><td>Eight sections, shared drafts, model selection, conflict comparison</td><td>Embedded trial, effective preview</td></tr>
+<tr><th scope="row">P5</th><td>Duplication, deletion, product docs</td><td>Portable import/export</td></tr>
+<tr><th scope="row">P6</th><td></td><td>All</td></tr>
+</tbody>
+</table>

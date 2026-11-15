@@ -1,0 +1,65 @@
+<title>查看和编辑 Memory</title>
+<meta name="description" content="编辑 Memory 文档、查看历史，以及自动写入或格式检查失败时的情况。">
+<h1>查看和编辑 Memory</h1>
+<p>打开 <strong>History → Memory</strong>，选择主题。文档和 Core 来源记录在预览中打开，<strong>Edit</strong> 修改 Markdown。没有保存按钮。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">保存</th><td>每次编辑进入此浏览器的草稿存储，并排队写入文件。写入串行，较早的响应不会覆盖更新的输入。</td></tr>
+<tr><th scope="row">撤销</th><td>Cmd+Z 或 Ctrl+Z。重做：Cmd+Shift+Z、Ctrl+Shift+Z 或 Ctrl+Y。App 保持打开时，自动保存不清除撤销历史。</td></tr>
+<tr><th scope="row">冲突或拒绝</th><td>草稿保留并显示错误。<strong>Review latest</strong> 在 History 中比较已保存文本和草稿；<strong>Replace latest with this draft</strong> 基于该版本重试。再次发生并发修改仍会被拒绝。</td></tr>
+</tbody>
+</table>
+<h2 id="history">历史</h2>
+<table class="stack">
+<thead><tr><th scope="col">变更</th><th scope="col">Git 提交</th></tr></thead>
+<tbody>
+<tr><th scope="row">手动编辑</th><td>服务端按五分钟合并检查点，容差 15 秒。截止时间跨重启保留，不依赖编辑器开着。保留每段编辑之前的状态。</td></tr>
+<tr><th scope="row">后台写入</th><td>单独提交，以来源会话命名</td></tr>
+<tr><th scope="row">写入触发的重新整理</th><td>单独提交</td></tr>
+<tr><th scope="row">夜间整理</th><td>每拆分一个文件一次提交</td></tr>
+<tr><th scope="row">agent 的 <code translate="no">memory_update</code></th><td>单独提交，以会话命名</td></tr>
+<tr><th scope="row">OpenProgram 之外的编辑</th><td>在下次写入前单独提交，恢复某次写入不会带上它们</td></tr>
+</tbody>
+</table>
+<p class="note">未通过检查的写入既不改文件，也不改历史。</p>
+<p><strong>History</strong> 从新到旧列出版本并显示本地时间，选中查看增删行。<strong>Restore this version</strong> 先记录当前状态，再把恢复作为新提交，因此可以反悔。恢复保留有效的来源引用，并拒绝破坏其他 Memory 文档的链接。</p>
+<h2 id="when-automatic-writing-stops">自动写入停了的时候</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">问题</th><th scope="col">自动修复</th></tr></thead>
+<tbody>
+<tr><th scope="row">写入模型不可用（登录被拒、套餐无权限、模型不存在、额度用尽）</th><td>切换到默认 agent 的模型，再到最近使用的模型</td></tr>
+<tr><th scope="row">编辑未通过格式检查</th><td>退回就地修复最多三次，然后整轮重做一次</td></tr>
+<tr><th scope="row">你或别的工具写的 Topic 文件</th><td>按原样记住：能被搜到，也能被召回，标“added by person”或“outside file”代替来源。记忆从不改写别的工具写的文件；不是文本的文件在记忆页列一次，其余记忆照常</td></tr>
+<tr><th scope="row">手写引用一条消息</th><td>段落末尾加脚注，来源写 <code translate="no">[关键词](/s/&lt;会话&gt;#&lt;消息&gt;)</code>：会话 ID 在<strong>复制链接</strong>得到的链接末尾（只保留 <code translate="no">/s/…</code> 部分），消息 ID 是在上下文图里选中这条消息的节点后<strong>复制 ID</strong> 得到的内容。关闭记忆的对话不能引用。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>记忆写入失败时</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">上次运行仍失败</th><td>Memory 顶部红条：原因、上次写入时间、等待的轮次数</td></tr>
+<tr><th scope="row">会自动重试</th><td>只留在红条。服务中断和用量上限从 5 分钟等到最长 6 小时，不会放弃。对话本身的失败试三次，间隔一小时，之后等对话变化。登录失效或写入器无法从这份记忆开始时只停一次，直到登录、配置或这份记忆变化</td></tr>
+<tr><th scope="row">不会重试</th><td>红条加一次通知，原因变化才再弹</td></tr>
+<tr><th scope="row">未写入的轮次</th><td>重试</td></tr>
+<tr><th scope="row">没有值得保留的内容</th><td>算已写入</td></tr>
+</tbody></table>
+</details>
+<h2 id="format-checks">格式检查</h2>
+<p>每个 Topic 段落以脚注结束，引用来源聊天消息：<code translate="no">[keyword](/s/&lt;session&gt;#&lt;message&gt;)</code>。Memory 不保存对话副本。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">脚注</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">实质段落缺少脚注</th><td>写入前报 <code translate="no">INVALID_TOPIC_FORMAT</code>；被拒绝的批次什么都不提交</td></tr>
+<tr><th scope="row">新引用的消息在聊天中不存在，或不是人或助手的话（如工具结果）</th><td>同上</td></tr>
+<tr><th scope="row">定义重复，或段落移动、删除后遗留</th><td>删除，不拒绝</td></tr>
+</tbody>
+</table>
+<p class="note">后台写入在每改一个文件后运行同样的检查，并在本轮结束前修好。</p>
+<p>点击脚注显示该消息及前后轮次，<strong>打开原会话</strong>跳转过去。会话已删除时显示 <strong>Original session deleted</strong>，记忆保留。归档隐藏会话，保留内容和链接，不会按时间或容量自动删除。</p>
+<details>
+<summary>含 sources 文件夹的工作区</summary>
+<p>旧工作区首次使用时，<code translate="no">sources/</code> 脚注改写为聊天链接并移除该文件夹，在一次提交 <code translate="no">memory: cite chats directly</code> 中完成。Git 历史保留旧副本。</p>
+</details>
+<p class="next">Agent 专属的记忆模式和空间：<a href="agents.zh.html">Agents</a></p>

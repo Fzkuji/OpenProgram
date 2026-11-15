@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from openprogram.plugins.manifest import parse_manifest_dir
+from openprogram.extensions.plugins.manifest import parse_manifest_dir
 
 
 def test_claude_code_nested_plugin_json(tmp_path: Path):

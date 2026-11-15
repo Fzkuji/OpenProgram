@@ -1,0 +1,58 @@
+<title>统一的 Agent method 执行</title>
+<meta name="description" content="UI 触发和模型选择的 Agent method 调用共用一条执行路径。">
+<h1>统一的 <code translate="no">Agent</code> method 执行</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="Web UI 调用经 POST /api/function/{name} 和 dispatch_forced_tool_call。模型选择的工具调用不走 REST 端点，进入 dispatcher 的工具执行。两者到达同一个 runtime-block 包装，再到 Agent method 包装和 runtime.exec。">
+  <defs><marker id="dr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">Web UI</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="52">POST /api/function/{name}</text>
+  <text class="t-big" x="0" y="116">模型工具调用</text>
+  <text class="t-soft" x="0" y="138">不走 REST 端点</text>
+  <line class="ln" x1="222" y1="46" x2="254" y2="46" marker-end="url(#dr-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="264" y="52">dispatch_forced_tool_call</text>
+  <path class="ln" d="M490 46H496V68H512" marker-end="url(#dr-a)"/>
+  <path class="ln" d="M140 110H496V84H512" marker-end="url(#dr-a)"/>
+  <text class="t-big" x="522" y="58">runtime-block</text>
+  <text class="t-big" x="522" y="78">包装</text>
+  <text class="t-soft" x="522" y="100">Agent method 包装</text>
+  <text class="t-cmd notranslate" translate="no" x="522" y="122">runtime.exec(...)</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Web UI</strong><small><code translate="no">POST /api/function/{name}</code>，再到 <code translate="no">dispatch_forced_tool_call</code></small></li>
+  <li><strong>模型工具调用</strong><small>不走 REST 端点，进入 dispatcher 的工具执行</small></li>
+  <li class="flow-end"><strong>runtime-block 包装</strong><small>两条都落在这里：Agent method 包装，<code translate="no">runtime.exec(...)</code></small></li>
+</ol>
+</figure>
+<p class="note">代码：<code translate="no">routes/chat.py</code> 的 <code translate="no">post_function</code>；<code translate="no">turn_runtime/forced_tool.py</code>；<code translate="no">turn_runtime/runtime_attach.py</code> 的 <code translate="no">_wrap_agentic_runtime_block</code>。</p>
+
+<h2 id="rest-endpoint">REST 端点</h2>
+<pre translate="no" tabindex="0">POST /api/function/{name}
+{"session_id": "...", "project_id": "...", "kwargs": {"task": "..."}}
+
+{"session_id": "...", "msg_id": "..."}</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_id</code></th><td>可选。省略时服务端创建会话。</td></tr>
+<tr><th scope="row"><code translate="no">project_id</code></th><td>已有会话可选；待定的 Project 选择需要在首次调用前绑定时必填。执行使用所选 Project 目录，否则用配置的默认 Project。</td></tr>
+<tr><th scope="row">扁平参数</th><td>旧调用方可能把函数参数放在顶层。服务端把它们移入 <code translate="no">kwargs</code>，并忽略 <code translate="no">session_id</code>、<code translate="no">project_id</code> 这类控制键。</td></tr>
+</tbody>
+</table>
+
+<h2 id="run-is-not-an-execution-api">没有 <code translate="no">/run</code> API</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">名称</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入的 <code translate="no">/run ...</code></th><td>保持普通用户文本，不会变成 <code translate="no">action="run"</code></td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">/api/run/{name}</code>、WebSocket <code translate="no">action="run"</code></th><td>不存在</td></tr>
+<tr><th scope="row">React 函数调用和重试 UI</th><td>调用 <code translate="no">POST /api/function/{name}</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>遗留措辞</summary>
+<p>有些注释和类型名还写着 <code translate="no">/run</code> 或 <code translate="no">runtime block</code>，因为 UI 组件名早于这个端点。它们不定义第二条路径。查找：</p>
+<pre translate="no" tabindex="0">rg "/run|api/run|action=run|action=\"run\"" openprogram apps/web
+rg "runtime block|RuntimeBlock" apps/web openprogram</pre>
+</details>

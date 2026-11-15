@@ -1,0 +1,191 @@
+<title>数据模型</title>
+<meta name="description" content="session 的磁盘布局、日志行、运行状态、字段、状态值和 SessionStore 接口。">
+<h1 id="session-data-model">数据模型</h1>
+
+<h2 id="on-disk-layout">磁盘布局</h2>
+<pre translate="no" tabindex="0"><code>&lt;state&gt;/projects/
+├── projects.json                       项目注册表
+├── &lt;project_id&gt;/                       `default` 是主目录项目
+│   ├── settings.json                   项目默认设置
+│   ├── memory/                         项目的记忆工作区
+│   └── chats/
+│       ├── &lt;session_id&gt;/
+│       │   ├── main.jsonl              session 日志，由 Worker 写
+│       │   ├── agents/&lt;pid&gt;-&lt;id&gt;.jsonl 其他写入进程的日志
+│       │   ├── functions/&lt;id&gt;.jsonl    一个持久函数已完成的步骤
+│       │   ├── large_nodes/            放不进日志行的大内容
+│       │   ├── context/                持久化的上下文产物
+│       │   └── workdir/attachments/    上传的文件
+│       └── .file-recovery/&lt;session_id&gt;/&lt;turn&gt;/   按轮文件撤销
+├── .chats-index.json                   注册表（摘要缓存）
+├── .chats-locations.json               持久的 session-id → 目录映射
+├── .migration/                         迁移 journal 和暂存
+├── .deleted/                           持久的删除意图
+├── .quarantine/                        启动时移走的无日志空壳
+└── .locks/ .session-locks/             进程间协调</code></pre>
+<ul>
+<li>没有项目的 session 放在 <code translate="no">default/chats/</code>。在其他根目录打开的 store（应用运行、嵌入宿主）用同样的结构。</li>
+<li><a href="operations.zh.html#moving-a-conversation">移动</a>会重命名目录并记录到 <code translate="no">.chats-locations.json</code>，它在迁移或重定位期间是持久的权威来源。</li>
+<li>工作文件夹永远不是对话目录。<code translate="no">&lt;project&gt;/.openprogram/sessions/&lt;id&gt;/</code> 只作为旧数据迁移来源读取。</li>
+<li><code translate="no">projects.json</code> 整份以重命名发布。修改在“读-改-写”期间持有注册表锁；查询不加锁，同一份已发布的文件只解析一次。</li>
+</ul>
+
+<h2 id="session-log">Session 日志</h2>
+<p>每行是 <code translate="no">{"ts", "type", "data", "crc"}</code>：纳秒时间戳和该行的 CRC。只追加。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">行类型</th><th scope="col">记录</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">node.put</code>、<code translate="no">node.patch</code>、<code translate="no">node.delete</code></th><td>写入、修改或移除 DAG 节点</td></tr>
+<tr><th scope="row"><code translate="no">node.stream</code></th><td>流式回复自上一行以来新增的部分：打开中那个块的新文字，或从第一个变动的块起的各块，以及输出的新尾部</td></tr>
+<tr><th scope="row"><code translate="no">meta.patch</code></th><td>标题、设置和其他 session 元数据</td></tr>
+<tr><th scope="row"><code translate="no">file.put</code></th><td>一个完整的小文档：<code translate="no">jobs.json</code>、<code translate="no">notices.json</code>、<code translate="no">inbox.json</code>、<code translate="no">todos.json</code>、<code translate="no">open_work.json</code>、<code translate="no">always_on.json</code>、<code translate="no">always_on_reports.jsonl</code></td></tr>
+<tr><th scope="row"><code translate="no">turn.*</code></th><td>Agent journal：快照、模型决策、启动的工具及其结果</td></tr>
+<tr><th scope="row"><code translate="no">turn.rows</code></th><td>运行表的变更</td></tr>
+<tr><th scope="row"><code translate="no">function.*</code></th><td>在 <code translate="no">functions/</code> 中：持久函数的步骤、请求和保存的状态</td></tr>
+</tbody>
+</table>
+<ul>
+<li>每个文件一个写者：Worker 写 <code translate="no">main.jsonl</code>，其他进程写 <code translate="no">agents/</code> 下自己的文件。</li>
+<li>读取时按时间戳折叠所有文件，跳过 <code translate="no">crc</code> 失败的行，这只可能是已停止写者的最后一行。</li>
+<li>进程保留折叠结果，只读新增内容。已知文件被替换或变短，或新行排在已折叠内容之前时，从头重新折叠。</li>
+<li>回复的轨迹（<code translate="no">metadata.extra</code>）在折叠结果交出时才算一次：从最后一次整份存它的那行（大的会压缩）加上之后的 <code translate="no">node.stream</code> 行算出。被后面的行替换掉的版本从不解压或解析。</li>
+<li><code translate="no">node.stream</code> 行给某个块或输出追加的文字先按片段留着，到这时才拼一次。折叠一条回复的开销只看它的长度，与它分多少行流出无关。</li>
+<li>一次折叠读了至少 4 MB、且不少于上一个检查点的大小时，写 <code translate="no">checkpoint/fold.json</code>（折叠出的节点、元数据、状态文件、运行行）和 <code translate="no">checkpoint/records.json</code>（状态文件和运行行）。每份按文件记下覆盖到的偏移和那里结尾的字节。检查点的开销不超过它覆盖的日志的两倍。</li>
+<li>冷打开读检查点，再只读它之后的行。某个文件的 inode、长度或覆盖段结尾对不上，就从头读。</li>
+<li>状态文件和运行行一起读，从记录检查点开始，只扫这两类行，一遍完成。</li>
+<li>只有实时推送片段不保留。</li>
+</ul>
+<p>以前流式输出每来一个 delta 就重写回复的整条轨迹：有个日志涨到 731 MB，其中 675 MB 是重写，冷打开要 8 秒。现在一行只记新增部分。pi-mono、Claude Code 和 Codex 一条完成的条目写一行，opencode 原地更新 part，没有一家每个 delta 重写整条消息。</p>
+
+<h3 id="turn-weight">一轮除回复外还写什么</h3>
+<p>一行只记算不出来的东西，只记一次。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">行</th><th scope="col">记录</th><th scope="col">不记什么，从哪里来</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">turn.snapshot</code></th><td>每轮一次：模型、请求设置、提示词或其哈希，以及每个工具的名字和两个摘要：<code translate="no">declaration_sha256</code>（描述、参数、缓存控制、权限、审批）和 <code translate="no">implementation_sha256</code>（实际运行的代码）</td><td>工具的描述和参数结构。恢复时重新解析当前的工具并比较摘要；对不上时指出是哪个工具、两项里哪一项变了</td></tr>
+<tr><th scope="row"><code translate="no">meta.patch</code> 的 <code translate="no">_last_context_stats</code></th><td>每次模型请求之后：实测总量、依据、估算值和校准系数</td><td>按类别的明细及其中的工具行和提示词行。明细由对话的节点、提示词和工具数出来；首次打开会重新数，面板自己取</td></tr>
+</tbody>
+</table>
+<p>在一轮六次模型请求、81 个工具的对话上实测：回复和 journal 之外多写 27 KB，其中快照 18 KB、上下文统计 4 KB。如果把工具结构和明细也抄进这些行，同一轮要写 224 KB（127 KB 和 97 KB）。</p>
+<p>Codex 每轮写一行很小的 <code translate="no">turn_context</code>（模型、工作目录、策略），指令每个 session 只写一次；Claude Code 的 transcript 每行是一条消息和它的用量，<code translate="no">/context</code> 在询问时才数。两家都不按请求记录工具结构或上下文明细，这份日志也不记。</p>
+<p>摘要按工具保留而不是整个目录一个，因为拒绝恢复时要说出是哪个工具变了，而且持久函数的代码可以变、声明不可以。</p>
+
+<h2 id="run-state">运行状态</h2>
+<p>执行、尝试、副作用、等待和命令从同样的日志折叠成 Worker 内存中的普通 Python 表，有自己的事务、撤销和唯一性规则。不用数据库。已提交的变更是一条 <code translate="no">turn.rows</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">~/.openprogram/active/&lt;session&gt;</code></th><td>标记有未完成运行，启动时折叠。其他 session 首次用到时折叠：启动时不读任何对话，对话在第一次打开时才读。删除对话时移除它的标记，启动时丢弃指向已删除对话的标记</td></tr>
+<tr><th scope="row"><code translate="no">run_index.jsonl</code></th><td>执行 → session</td></tr>
+<tr><th scope="row"><code translate="no">revisions.jsonl</code></th><td>Workflow 版本和审批，以及全局预算</td></tr>
+<tr><th scope="row">空闲 session</th><td>最后变更一小时后离开内存，需要时从日志恢复</td></tr>
+<tr><th scope="row">函数子进程</th><td>只读表。步骤写到 <code translate="no">functions/</code> 下自己的日志；运行状态变更（启动子 Agent、Auto 审查结论、暂停、提问）经 <code translate="no">runtime/execution/worker_calls.py</code> 交给父进程</td></tr>
+<tr><th scope="row">定时运行</th><td>任务的那一轮在自己的进程里跑，这一轮的行写到 <code translate="no">agents/</code> 下自己的文件。它启动的子 Agent 经 <code translate="no">worker_calls.py</code> 交给 Worker，由 Worker 运行。进程结束时 Worker 重新读取这一轮的行</td></tr>
+<tr><th scope="row"><code translate="no">worker.lock</code></th><td>持有者拥有所有运行，租约写明属于别的进程的那一轮除外（定时运行、ACP、MCP）。没有心跳，进程退出时操作系统释放</td></tr>
+<tr><th scope="row">Job 准入、预留</th><td>运行表，在 session 日志中</td></tr>
+<tr><th scope="row"><code translate="no">usage.db</code> 结算</th><td>事件先提交，预留后结算。启动时结算事件已存在的预留，不重复计数</td></tr>
+</tbody>
+</table>
+
+<h3 id="database-or-file">仍是数据库的存储</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">存储</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">usage.db</code></th><td>只存记账（事件、请求、路由、探测），按时间、模型和范围分组</td></tr>
+<tr><th scope="row"><code translate="no">memory/index.sqlite</code></th><td>全文搜索；可从记忆文件重建</td></tr>
+<tr><th scope="row"><code translate="no">processes.db</code></th><td>分离的 supervisor 比 Worker 活得久，写同一条记录</td></tr>
+<tr><th scope="row"><code translate="no">session-resources.db</code></th><td>工具进程上报资源；Page 状态跨进程共享</td></tr>
+<tr><th scope="row"><code translate="no">programs/.runtime/</code></th><td>应用子进程和宿主共享状态</td></tr>
+<tr><th scope="row"><code translate="no">project-file-history/history.sqlite3</code></th><td>版本和它的分组一起提交</td></tr>
+</tbody>
+</table>
+<p class="note">按键读取的小存储（<code translate="no">user_errors.jsonl</code>、<code translate="no">file_operations.jsonl</code>）是经 <code translate="no">state/store/record_log.py</code> 的键控只追加日志。</p>
+
+<h3 id="after-the-worker-stops">Worker 停止之后</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">进行中的事</th><th scope="col">新 Worker</th></tr></thead>
+<tbody>
+<tr><th scope="row">模型调用</th><td>重新发送</td></tr>
+<tr><th scope="row">只读工具</th><td>重新运行</td></tr>
+<tr><th scope="row">文件编辑</th><td>对比文件哈希和记录的前后哈希</td></tr>
+<tr><th scope="row">其他工具</th><td>告诉模型工具被中断、不确定是否完成，由模型检查</td></tr>
+</tbody>
+</table>
+<p class="note">中断不是存储的状态，而是日志里某轮没有最后一行。计划内升级先等运行结束。</p>
+
+<h2 id="fields">Session 字段</h2>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">进注册表</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code></th><td>str</td><td>是</td><td>唯一标识</td></tr>
+<tr><th scope="row"><code translate="no">agent_id</code></th><td>str</td><td>是</td><td>绑定的 Agent</td></tr>
+<tr><th scope="row"><code translate="no">title</code></th><td>str</td><td>是</td><td>显示名称</td></tr>
+<tr><th scope="row"><code translate="no">created_at</code></th><td>float</td><td>是</td><td>创建时间</td></tr>
+<tr><th scope="row"><code translate="no">updated_at</code></th><td>float</td><td>是</td><td>最后活动</td></tr>
+<tr><th scope="row"><code translate="no">project_id</code></th><td>str?</td><td>否</td><td>绑定的项目；列举时补上 <code translate="no">project</code></td></tr>
+<tr><th scope="row"><code translate="no">project_history</code></th><td>list</td><td>否</td><td>对话移出过的项目</td></tr>
+<tr><th scope="row"><code translate="no">source</code></th><td>str?</td><td>是</td><td>来源：tui、web、wechat 等</td></tr>
+<tr><th scope="row"><code translate="no">channel</code></th><td>str?</td><td>是</td><td>Channel 类型</td></tr>
+<tr><th scope="row"><code translate="no">account_id</code></th><td>str?</td><td>是</td><td>Channel 账号</td></tr>
+<tr><th scope="row"><code translate="no">peer_display</code></th><td>str?</td><td>是</td><td>对端显示名</td></tr>
+<tr><th scope="row"><code translate="no">peer_id</code></th><td>str?</td><td>是</td><td>对端 ID</td></tr>
+<tr><th scope="row"><code translate="no">pinned</code>、<code translate="no">archived</code></th><td>bool</td><td>是</td><td>标记</td></tr>
+<tr><th scope="row"><code translate="no">group</code></th><td>str?</td><td>是</td><td>分组标签</td></tr>
+<tr><th scope="row"><code translate="no">status</code></th><td>str</td><td>是</td><td>见下</td></tr>
+<tr><th scope="row"><code translate="no">unread</code></th><td>bool</td><td>是</td><td>未读标记</td></tr>
+<tr><th scope="row"><code translate="no">environment_id</code></th><td>str?</td><td>是</td><td><a href="environments.zh.html#conversation-binding">运行环境</a></td></tr>
+<tr><th scope="row"><code translate="no">sort_at</code></th><td>float</td><td>是</td><td><a href="operations.zh.html#place-in-project-list">项目列表中的位置</a>；0 表示没有</td></tr>
+<tr><th scope="row"><code translate="no">sort_since</code></th><td>float</td><td>是</td><td>放置时的 <code translate="no">updated_at</code>；之后有活动即失效</td></tr>
+<tr><th scope="row"><code translate="no">_auto_titled</code></th><td>bool</td><td>否</td><td>内部标记，不返回前端</td></tr>
+<tr><th scope="row"><code translate="no">preview</code></th><td>str</td><td>只在注册表</td><td>最后一条用户消息，至多 80 字符</td></tr>
+</tbody>
+</table>
+
+<h3 id="status">状态</h3>
+<table class="stack">
+<thead><tr><th scope="col">值</th><th scope="col">含义</th><th scope="col">侧栏</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">idle</code></th><td>没有轮次在执行</td><td>灰点</td></tr>
+<tr><th scope="row"><code translate="no">running</code></th><td>轮次正在执行</td><td>绿色旋转弧</td></tr>
+<tr><th scope="row"><code translate="no">needs_input</code></th><td>Agent 在等用户</td><td>琥珀点</td></tr>
+<tr><th scope="row"><code translate="no">done</code></th><td>后台任务完成</td><td>蓝点，配合 <code translate="no">unread</code></td></tr>
+<tr><th scope="row"><code translate="no">failed</code></th><td>轮次失败</td><td>红点，配合 <code translate="no">unread</code>；打开后变灰</td></tr>
+<tr><th scope="row"><code translate="no">interrupted</code></th><td>Worker 在轮次中途退出</td><td>灰点，不算运行中</td></tr>
+<tr><th scope="row"><code translate="no">cancelling</code>、<code translate="no">cancelled</code></th><td>取消进行中，或跨重启完成取消</td><td></td></tr>
+</tbody>
+</table>
+<p class="note">被杀死的 Worker 不会清除 <code translate="no">running</code>，聊天会卡在 <code translate="no">data-run-active="true"</code>。加载注册表时 <code translate="no">running</code> 重置为 <code translate="no">idle</code>；<code translate="no">reconcile_interrupted_runs()</code> 再把仍为 <code translate="no">running</code> 的行改成 <code translate="no">interrupted</code>、<code translate="no">cancelling</code> 改成 <code translate="no">cancelled</code>，它独立于节点清扫，因为在写状态和插入占位之间被杀的 Worker 会留下运行中的行，却没有运行中的节点。</p>
+
+<h2 id="moving-head">移动 HEAD</h2>
+<p><code translate="no">_set_active_head</code>（<code translate="no">interfaces/server/server_runtime/session_persistence.py</code>）协调显式切换。SessionStore 拥有 HEAD；<code translate="no">_save_session</code> 不会把镜像的消息位置或消息列表写回。</p>
+<ol>
+<li>原子比较来源消息位置、分支身份及设置，保存来源配置并选择目标分支。预期设置按磁盘上的存储形式读取，所以还没有 <code translate="no">agent_id</code> 的记录（最先由模型固定写入的记录）也能比较相等。</li>
+<li>在镜像锁内重新读取当前分支的配置、消息位置和消息列表。同一消息位置的不同分支引用仍保留独立设置。</li>
+<li>丢弃消息缓存。</li>
+</ol>
+<ul>
+<li>用于 retry、edit、兄弟切换、跳到最深叶子、分支切换、分支删除、attach、rewind。</li>
+<li>运行中拒绝（<code translate="no">_is_run_active</code>）：<code translate="no">RUN_ACTIVE_ERROR</code>，<code translate="no">code: "run_active"</code>。否则回复会落到用户离开的分支，或正被删除的末端。</li>
+</ul>
+
+<h2 id="cache-and-attachments">缓存和附件</h2>
+<ul>
+<li><code translate="no">SessionStore</code> 在有界 LRU 缓存里惰性持有 <code translate="no">(SessionLog, SessionMemoryIndex)</code>。<code translate="no">SessionLog</code> 管文件，索引持有折叠后的节点、边和活动 head。</li>
+<li>浏览器上传在分发前复制到 <code translate="no">workdir/attachments/</code>，标记保留保存的绝对路径。</li>
+<li>Channel 文件留在 <code translate="no">&lt;state&gt;/channels/*/accounts/*/attachments</code>，由附件路径策略单独允许读取。</li>
+<li>只有 <code translate="no">&lt;project&gt;/.openprogram/sessions/&lt;session_id&gt;/workdir/attachments/&lt;relative&gt;</code> 这一确切形式可重定到该 session 的当前目录（附件 UI、文件读取、<code translate="no">send_file</code>）。结果必须在允许的根内，不能经 <code translate="no">..</code> 或符号链接逃逸。其他旧路径不重映射。</li>
+</ul>
+
+<h2 id="interface">接口</h2>
+<pre translate="no" tabindex="0"><code>class SessionStore:
+    def create_session(session_id, agent_id, *, title="", source=None, **meta) -&gt; None
+    def get_session(session_id) -&gt; dict | None
+    def update_session(session_id, **fields) -&gt; None
+    def delete_session(session_id) -&gt; None
+    def list_sessions(*, limit=100, offset=0, include_archived=False, **filters) -&gt; list[dict]
+    def get_branch(session_id, head_id=None) -&gt; list[dict]
+    def append_message(session_id, msg) -&gt; None
+    def latest_user_text(session_id) -&gt; str | None
+    def move_session(session_id, project_id) -&gt; dict
+    def set_archived(session_id, archived) -&gt; bool</code></pre>
+<p class="next"><a href="operations.zh.html">操作流程</a></p>

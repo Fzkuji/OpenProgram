@@ -1,0 +1,85 @@
+<title>Worker overview</title>
+<meta name="description" content="Start, stop and inspect the local OpenProgram worker, and find its port and logs.">
+<h1>Worker overview</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 120" role="img" aria-label="Terminal UI, Web UI and CLI all connect to one local worker. A single port, default 18100, serves the API, the WebSocket and the Web UI.">
+  <defs><marker id="wk-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="30">Terminal UI</text>
+  <text class="t-big" x="0" y="66">Web UI</text>
+  <text class="t-big" x="0" y="102">CLI</text>
+  <path class="ln" d="M110 24H180V54H250M110 60H250M110 96H180V66H250" marker-end="url(#wk-a)"/>
+  <rect class="tile" x="262" y="14" width="196" height="92" rx="8"/>
+  <text class="t-big" x="282" y="52">Worker</text>
+  <text class="t-soft" x="282" y="78">one per profile</text>
+  <text class="t-soft" x="490" y="40">port 18100:</text>
+  <text class="t-soft" x="490" y="62">API, WebSocket,</text>
+  <text class="t-soft" x="490" y="84">Web UI</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Terminal UI, Web UI, CLI</strong></li>
+  <li class="flow-end"><strong>Worker</strong><small>port 18100: API, WebSocket, Web UI</small></li>
+</ol>
+</figure>
+
+<h2>Control</h2>
+<p>Running <code translate="no">openprogram</code> starts a background worker if none is up. <code translate="no">OPENPROGRAM_NO_AUTO_WORKER=1</code> makes the terminal UI only connect to an existing one.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram worker start</code></th><td>Start in the background and return</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker run</code></th><td>Foreground, for debugging; Ctrl-C stops</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker status</code>, <code translate="no">openprogram status</code></th><td>Running or not, PID, port, uptime; the top-level form also shows the log path and whether a service is installed</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker stop</code>, <code translate="no">openprogram stop</code></th><td>Stop. An installed service stays stopped until the next start or login</td></tr>
+<tr><th scope="row"><code translate="no">openprogram worker restart</code>, <code translate="no">openprogram restart</code></th><td>Stop and start fresh, after code or config changes</td></tr>
+<tr><th scope="row"><code translate="no">openprogram web</code></th><td>Start in this terminal and open <code translate="no">http://localhost:18100</code></td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>$ openprogram status
+openprogram: running (PID 82472, port 18100, up 48m)
+  logs: ~/.openprogram/worker.log</code></pre>
+
+<h2 id="port">Port</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Precedence</th><th scope="col">Set with</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td><code translate="no">openprogram web --web-port &lt;p&gt;</code></td></tr>
+<tr><th scope="row">2</th><td><code translate="no">OPENPROGRAM_WEB_PORT</code></td></tr>
+<tr><th scope="row">3</th><td><code translate="no">openprogram ports --port 8101</code>, persisted</td></tr>
+<tr><th scope="row">4</th><td>Chosen at this account's first start: 18100, or the next free port when something else holds it</td></tr>
+</tbody>
+</table>
+
+<h2 id="logs">Logs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram logs list</code></th><td>Every log, size, last updated</td></tr>
+<tr><th scope="row"><code translate="no">openprogram logs tail [name]</code><span class="arg"><code translate="no">-n LINES</code>, default 50</span><span class="arg"><code translate="no">-f</code> follow</span></th><td>Last lines</td></tr>
+<tr><th scope="row"><code translate="no">openprogram logs path [name]</code></th><td>Absolute path</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Name</th><th scope="col">File</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">worker</code> (default)</th><td><code translate="no">~/.openprogram/worker.log</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td><code translate="no">~/.openprogram/logs/runtime.log</code></td></tr>
+<tr><th scope="row"><code translate="no">ink-startup</code></th><td><code translate="no">~/.openprogram/logs/ink-startup.log</code>, terminal UI startup</td></tr>
+</tbody>
+</table>
+<p class="note">Prefixes match: <code translate="no">logs tail ink</code>. Past 16 MB the worker log rotates at startup to <code translate="no">worker.log.1</code>, up to <code translate="no">.3</code>.</p>
+
+<h2 id="running-as-a-login-service">Login service</h2>
+<p><code translate="no">openprogram worker install</code> starts the worker at login and restarts it after a crash; <code translate="no">uninstall</code> removes it.</p>
+<table class="stack">
+<thead><tr><th scope="col">Platform</th><th scope="col">Service</th><th scope="col">Note</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td>launchd, <code translate="no">~/Library/LaunchAgents/ai.openprogram.worker.plist</code></td><td><code translate="no">stop</code> unloads the job, so a crash restart does not bring it back</td></tr>
+<tr><th scope="row">Linux</th><td>systemd <code translate="no">--user</code></td><td>Each named <a href="../install/profiles.html">profile</a> gets its own unit</td></tr>
+<tr><th scope="row">Windows source checkout</th><td>Least-privilege per-user Task Scheduler entry</td><td><code translate="no">OpenProgram Worker</code>; each named profile gets its own task. <code translate="no">stop</code> also ends the task run, so its retry does not bring the worker back</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">start</code>, <code translate="no">stop</code> and <code translate="no">restart</code> go through the service rather than creating a detached replacement. <code translate="no">start</code> and <code translate="no">restart</code> regenerate its plist, unit or task launcher from the active CLI runtime, so an upgrade does not keep launching the old one.</p>
+
+<p class="next"><a href="configuration.html">Configuration</a> · <a href="backup.html">Backup</a> · <a href="troubleshooting.html">Troubleshooting</a></p>
+

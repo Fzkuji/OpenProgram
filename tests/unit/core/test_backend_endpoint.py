@@ -8,14 +8,14 @@ from urllib.parse import urlencode, urlsplit
 
 import pytest
 
-from openprogram.backend_endpoint import (
+from openprogram.host.security.backend_endpoint import (
     ActiveWebAccess,
     OwnerAuthError,
     resolve_backend_endpoint,
     select_connect_host,
     select_request_origin,
 )
-from openprogram.webui.owner_auth import OwnerAuthState
+from openprogram.interfaces.server.owner_auth import OwnerAuthState
 
 
 RAW_TOKEN = bytes(range(32))
@@ -73,11 +73,11 @@ def test_resolve_backend_endpoint_requires_a_verified_challenge(
     monkeypatch,
     tmp_path: Path,
 ):
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     auth_state = _start_auth_state(tmp_path, allowed_origins=())
     try:
         monkeypatch.setattr(
-            "openprogram._ports.backend_accepts_owner_challenge",
+            "openprogram.operations.worker.ports.backend_accepts_owner_challenge",
             lambda port, **_kwargs: False,
         )
         with pytest.raises(OwnerAuthError, match="not owned by this profile"):
@@ -90,7 +90,7 @@ def test_resolve_backend_endpoint_requires_a_verified_challenge(
             return True
 
         monkeypatch.setattr(
-            "openprogram._ports.backend_accepts_owner_challenge", accept
+            "openprogram.operations.worker.ports.backend_accepts_owner_challenge", accept
         )
         endpoint = resolve_backend_endpoint(tmp_path)
     finally:
@@ -125,7 +125,7 @@ def test_resolve_backend_endpoint_never_transmits_the_token(
     random nonce and no credential; nothing else goes on the wire before the
     listener has proven it holds the same token.
     """
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     auth_state = _start_auth_state(tmp_path, allowed_origins=())
     sent: list[str] = []
     try:
@@ -151,10 +151,10 @@ def test_resolve_backend_endpoint_never_transmits_the_token(
             return RejectingClient()
 
         monkeypatch.setattr(
-            "openprogram.security.safe_http.configured_safe_client", configured
+            "openprogram.host.security.safe_http.configured_safe_client", configured
         )
         monkeypatch.setattr(
-            "openprogram.worker.lifecycle.current_worker_pid", lambda: 12345
+            "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: 12345
         )
         with pytest.raises(OwnerAuthError, match="not owned by this profile"):
             resolve_backend_endpoint(tmp_path)
@@ -167,15 +167,15 @@ def test_resolve_backend_endpoint_never_transmits_the_token(
 
 def test_mcp_cli_sends_bearer_only_to_the_verified_endpoint(monkeypatch):
     """``openprogram mcp`` authenticates instead of assuming 127.0.0.1."""
-    from openprogram.cli.commands import mcp as mcp_cli
-    from openprogram.backend_endpoint import BackendEndpoint
+    from openprogram.interfaces.cli.commands import mcp as mcp_cli
+    from openprogram.host.security.backend_endpoint import BackendEndpoint
 
     endpoint = BackendEndpoint(
         origin=f"http://localhost:{EPHEMERAL_PORT}",
         token=TOKEN,
     )
     monkeypatch.setattr(
-        "openprogram.backend_endpoint.resolve_backend_endpoint",
+        "openprogram.host.security.backend_endpoint.resolve_backend_endpoint",
         lambda *_args, **_kwargs: endpoint,
     )
 
@@ -218,13 +218,13 @@ def test_mcp_cli_sends_bearer_only_to_the_verified_endpoint(monkeypatch):
 
 
 def test_mcp_cli_exits_when_no_verified_endpoint(monkeypatch, capsys):
-    from openprogram.cli.commands import mcp as mcp_cli
+    from openprogram.interfaces.cli.commands import mcp as mcp_cli
 
     def refuse(*_args, **_kwargs):
         raise OwnerAuthError("no active Web access snapshot")
 
     monkeypatch.setattr(
-        "openprogram.backend_endpoint.resolve_backend_endpoint", refuse
+        "openprogram.host.security.backend_endpoint.resolve_backend_endpoint", refuse
     )
     with pytest.raises(SystemExit) as exit_info:
         mcp_cli._request("GET", "/api/mcp/servers")
@@ -239,7 +239,7 @@ def test_endpoint_urls_are_all_one_origin_for_every_bind():
     against a localhost Origin. Deriving all of them means no bind shape
     can reintroduce it.
     """
-    from openprogram.backend_endpoint import BackendEndpoint
+    from openprogram.host.security.backend_endpoint import BackendEndpoint
 
     for origin, ws in (
         (f"http://localhost:{EPHEMERAL_PORT}", f"ws://localhost:{EPHEMERAL_PORT}/ws"),
@@ -274,16 +274,16 @@ def test_resolve_backend_endpoint_fails_when_state_rotates_mid_read(
     Otherwise the caller pairs the previous policy with the new token (or
     vice versa) and silently talks to the listener with a mismatched set.
     """
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     auth_state = _start_auth_state(tmp_path, allowed_origins=())
     monkeypatch.setattr(
-        "openprogram._ports.backend_accepts_owner_challenge",
+        "openprogram.operations.worker.ports.backend_accepts_owner_challenge",
         lambda port, **_kwargs: True,
     )
     try:
         # Rotate the on-disk state at the moment the token is read, the
         # window a concurrent `openprogram web` restart would occupy.
-        import openprogram.backend_endpoint as be
+        import openprogram.host.security.backend_endpoint as be
 
         real_read_token = be.read_web_token
 
@@ -335,9 +335,9 @@ def test_browser_url_follows_the_bind_instead_of_assuming_localhost(
     explicit allowed origin, so printing it sends the user to a dead page
     and minting a token URL for it raises outright.
     """
-    from openprogram.cli.commands import web as web_cli
+    from openprogram.interfaces.cli.commands import web as web_cli
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     lan_origin = f"http://192.168.1.20:{EPHEMERAL_PORT}"
     auth_state = _start_auth_state(
         tmp_path, bind_host="0.0.0.0", allowed_origins=(lan_origin,)
@@ -365,9 +365,9 @@ def test_token_url_requires_the_target_origin_to_prove_itself(
     configured DNS/proxy Origin, so that exact URL must pass its own
     challenge before a token is minted for it.
     """
-    from openprogram.cli.commands import web as web_cli
+    from openprogram.interfaces.cli.commands import web as web_cli
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     external = "https://agent.example.com"
     auth_state = _start_auth_state(
         tmp_path, bind_host="0.0.0.0", allowed_origins=(external,)
@@ -381,7 +381,7 @@ def test_token_url_requires_the_target_origin_to_prove_itself(
             return False
 
         monkeypatch.setattr(
-            "openprogram._ports.backend_accepts_owner_challenge", refuse
+            "openprogram.operations.worker.ports.backend_accepts_owner_challenge", refuse
         )
         with pytest.raises(OwnerAuthError, match="did not prove it is"):
             web_cli._active_owner_auth_url(external, EPHEMERAL_PORT)
@@ -389,7 +389,7 @@ def test_token_url_requires_the_target_origin_to_prove_itself(
         assert challenged == [external]
 
         monkeypatch.setattr(
-            "openprogram._ports.backend_accepts_owner_challenge",
+            "openprogram.operations.worker.ports.backend_accepts_owner_challenge",
             lambda port, **_kwargs: True,
         )
         url = web_cli._active_owner_auth_url(external, EPHEMERAL_PORT)
@@ -404,7 +404,7 @@ def test_mcp_detail_never_prints_env_values():
     A server's env is where credentials live; the rendered detail keeps
     the key names (which the user needs) and masks the values.
     """
-    from openprogram.cli.commands import mcp as mcp_cli
+    from openprogram.interfaces.cli.commands import mcp as mcp_cli
 
     secret = "sk-live-01234567890123456789"
     rendered = mcp_cli._render_detail({

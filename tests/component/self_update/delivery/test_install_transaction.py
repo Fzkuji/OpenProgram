@@ -65,7 +65,7 @@ def test_reopen_identity_is_frozen_before_activation_and_survives_rollback(insta
 
 
 def test_reopen_arguments_cannot_supply_url_or_override_an_existing_transaction(installation):
-    from openprogram.self_update.control.supervisor import _tree_digest
+    from openprogram.operations.self_update.control.supervisor import _tree_digest
 
     run, candidate, target, _ = installation
     tx = prepare(run, candidate)
@@ -86,7 +86,7 @@ def test_reopen_arguments_cannot_supply_url_or_override_an_existing_transaction(
 
 @pytest.mark.parametrize("invalid", [None, True, "", "https://example.com", "su_a/../b"])
 def test_reopen_journal_rejects_invalid_identity_without_activation(installation, invalid):
-    from openprogram.self_update.control.supervisor import _tree_digest
+    from openprogram.operations.self_update.control.supervisor import _tree_digest
 
     run, candidate, target, _ = installation
     tx = prepare(run, candidate)
@@ -241,7 +241,7 @@ def test_live_installer_lock_is_not_removed(installation):
 @pytest.mark.parametrize("terminal", ["prepared", "committed", "rolled_back"])
 @pytest.mark.parametrize("mode", ["--verify-terminal:", "--restart-terminal:"])
 def test_terminal_identity_check_is_read_only_and_phase_bound(installation, terminal, mode):
-    from openprogram.self_update.control.supervisor import _tree_digest
+    from openprogram.operations.self_update.control.supervisor import _tree_digest
     run, candidate, target, _ = installation
     tx = prepare(run, candidate)
     if terminal != "prepared":
@@ -257,3 +257,66 @@ def test_terminal_identity_check_is_read_only_and_phase_bound(installation, term
     (target / "drift").write_text("changed")
     assert run(mode + terminal, tx, check=False).returncode != 0
     assert _tree_digest(tx) == before[1]
+
+
+@pytest.mark.parametrize("restart", ["hot", "worker"])
+def test_restart_mode_is_journaled_and_survives_activation_and_rollback(installation, restart):
+    from openprogram.operations.self_update.control.commit_intent import read_journal
+
+    run, candidate, target, _ = installation
+    result = run("--reopen-update=su_fixture", f"--restart={restart}", "--prepare", candidate)
+    tx = Path(next(line.partition("=")[2] for line in result.stdout.splitlines()
+                   if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")))
+    assert read_journal(tx)["restart"] == restart
+    run("--activate", tx)
+    assert version(target) == "0.6.2" and read_journal(tx)["restart"] == restart
+    run("--rollback", tx)
+    assert version(target) == "0.6.1" and phase(tx) == "rolled_back"
+
+
+def test_default_restart_mode_keeps_the_journal_unchanged(installation):
+    run, candidate, _, _ = installation
+    tx = prepare(run, candidate)
+    assert "restart" not in json.loads((tx / "transaction.json").read_text())
+
+
+@pytest.mark.parametrize("args", [
+    ("--restart=reboot", "--prepare"),
+    ("--restart=", "--prepare"),
+    ("--restart=hot", "--activate"),
+    ("--restart=hot", "--restart=app", "--prepare"),
+])
+def test_restart_mode_rejects_invalid_values_and_actions(installation, args):
+    run, candidate, _, _ = installation
+    assert run(*args, candidate, check=False).returncode == 2
+
+
+def test_journal_rejects_an_unknown_restart_mode(installation):
+    run, candidate, _, _ = installation
+    tx = prepare(run, candidate)
+    journal = tx / "transaction.json"
+    journal.write_text(json.dumps({**json.loads(journal.read_text()), "restart": "reboot"}))
+    assert run("--activate", tx, check=False).returncode != 0
+    assert phase(tx) == "prepared"
+
+
+def test_hot_mode_neither_stops_nor_reopens_anything(tmp_path):
+    # Run the production stop/resume functions with every process control
+    # command shadowed; hot mode must reach none of them.
+    source = INSTALLER.read_text()
+    start = source.index("stop_active_runtime() {")
+    end = source.index("finish_prepared_transaction() {", start)
+    target = tmp_path / "OpenProgram.app"
+    target.mkdir()
+    script = source[start:end] + '''
+target_app="$1"; transaction_dir="$1/tx"; restart_mode=hot
+app_was_running=1; worker_was_running=1; launchd_was_installed=1
+for command in pgrep osascript open app_runtime_python wait_for_worker_health; do
+  eval "$command() { printf 'called %s\\n' $command; }"
+done
+stop_active_runtime && resume_previous_runtime
+'''
+    result = subprocess.run(["bash", "-c", script, "fixture", str(target)],
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""

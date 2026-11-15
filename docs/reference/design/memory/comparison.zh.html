@@ -1,0 +1,353 @@
+<title>写入策略对比</title>
+<meta name="description" content="八个框架如何把对话变成长期记忆，以及 OpenProgram 的选择处在什么位置。">
+<h1>写入策略对比</h1>
+<p class="note">机制见 <a href="architecture.zh.html">Memory 子系统图解</a>，权威描述见 <a href="overview.zh.html">概览</a>。没实现的功能也列出，因为不做也是一种选择。</p>
+<details><summary>结论的来源</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td><a href="https://code.claude.com/docs/en/memory">公开文档</a>，文档没写的标“未公开”</td></tr>
+<tr><th scope="row">其他第三方</th><td><code translate="no">references/</code> 里的代码快照，记有行号</td></tr>
+<tr><th scope="row">codex-cli</th><td>快照是内部构建，比公开版大，部分能力公开版没有</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="plan">我们的设计处在什么位置</h2>
+<table class="stack">
+<thead><tr><th scope="col">维度</th><th scope="col">OpenProgram</th><th scope="col">相同</th><th scope="col">不同</th></tr></thead>
+<tbody>
+<tr><th scope="row">存储</th><td>只用文件</td><td>claude-code</td><td>openclaw 加索引，hermes 加外部服务</td></tr>
+<tr><th scope="row">谁来写</th><td>对话之外的 Agent</td><td>codex、openclaw</td><td>hermes 靠主模型记得去写</td></tr>
+<tr><th scope="row">写什么</th><td>原文和蒸馏事实</td><td>claude-code、codex、pi-mono</td><td>只有我们给每条陈述加指向原文的脚注</td></tr>
+<tr><th scope="row">检索</th><td>默认 BM25</td><td>hermes、codex</td><td>—</td></tr>
+<tr><th scope="row">常驻块</th><td><code translate="no">topics/core.md</code> 在 2000 token 内渲染进 <code translate="no">MEMORY.md</code></td><td>规范内容与预算分离，同 claude-code、codex、openclaw</td><td>什么都不删</td></tr>
+<tr><th scope="row">夜间整理</th><td>有</td><td>codex、openclaw</td><td>只写不整理，文件会无限增长</td></tr>
+<tr><th scope="row">会话结构</th><td>单会话内的 DAG</td><td>pi-mono</td><td>其余是线性，或分叉成新文件</td></tr>
+<tr><th scope="row">游标</th><td>每个节点上的工作区标记</td><td>无</td><td>由会话结构决定，见 <a href="#branch">分支</a></td></tr>
+</tbody>
+</table>
+<p class="note">标记位置、分叉遍历和恢复见 <a href="written-marker.zh.html">已写入标记</a>，图见 <a href="architecture.zh.html">架构第 04 节</a>。</p>
+
+<h2 id="have">有没有长期记忆</h2>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">记忆</th><th scope="col">形式</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>有</td><td>只用文件：<code translate="no">MEMORY.md</code> 索引、主题文件</td></tr>
+<tr><th scope="row">codex-cli</th><td>有，默认关闭</td><td><code translate="no">~/.codex/memories/</code>：<code translate="no">MEMORY.md</code>、摘要页、技能目录、会话摘要；SQLite 只调度两阶段蒸馏</td></tr>
+<tr><th scope="row">openclaw</th><td>有</td><td><code translate="no">MEMORY.md</code> 为准；SQLite 是可重建索引，结合向量近邻和全文排序</td></tr>
+<tr><th scope="row">hermes-agent</th><td>有</td><td><code translate="no">MEMORY.md</code> 和 <code translate="no">USER.md</code>；八个可选托管服务，同时只开一个</td></tr>
+<tr><th scope="row">OpenProgram</th><td>有</td><td>Markdown 工作区：<code translate="no">topics/</code> 和 <code translate="no">MEMORY.md</code>；脚注链接聊天消息</td></tr>
+<tr><th scope="row">opencode</th><td>无</td><td>用户手写 <code translate="no">AGENTS.md</code> 或 <code translate="no">CLAUDE.md</code>；没有记忆工具</td></tr>
+<tr><th scope="row">pi-mono</th><td>无</td><td>JSONL 会话树用于回放和分支；跨会话只有 <code translate="no">AGENTS.md</code></td></tr>
+<tr><th scope="row">pi-ai</th><td>无</td><td>模型提供方 SDK，12 个文件，没有会话概念；调用方自己管消息数组</td></tr>
+<tr><th scope="row">weclaw</th><td>无</td><td>微信桥接，只存不透明的会话 id；启动的进程自己管记忆</td></tr>
+</tbody>
+</table>
+<p class="note">按内容是否回到上下文来分类。weclaw 把粘贴的 URL 存成 Markdown，但没有提示词读回。codex、opencode、pi-mono 保留完整记录，却没人蒸馏或跨会话读取：存原文不等于记忆。</p>
+<details>
+<summary>核验位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">memories/write/src/lib.rs:116-118</code><br><code translate="no">state/memory_migrations/0001_memories.sql:1-35</code><br>默认关闭: <code translate="no">features/src/lib.rs:996-999</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/memory/root-memory-files.ts:4,8</code><br><code translate="no">extensions/memory-core/src/memory/manager-db.ts:10</code><br><code translate="no">.../manager-search.ts:148</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/instruction.ts:60-68</code><br>已列出整个 tool/ 目录</td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/memory_tool.py:56-60,138-173</code><br><code translate="no">agent/memory_manager.py:258-280</code></td></tr>
+<tr><th scope="row">pi-ai</th><td>全仓 grep 无匹配；只持久化 OAuth 凭据</td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/coding-agent/src/core/session-manager.ts:428-436</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">agent/cli_agent.go:25,226-231</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/store.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="when">何时写入</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">框架</th><th scope="col">时机</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>Claude 在会话中自己写；写入时机未公开</td></tr>
+<tr><th scope="row">codex-cli</th><td>轮开始时发后不管；额度不足就退出，只处理闲置超过六小时的会话，用数据库租约去重，完成后记录水位</td></tr>
+<tr><th scope="row">openclaw</th><td>Cron，默认每天 03:00；短期条目按六项加权标准晋升；会话内不写</td></tr>
+<tr><th scope="row">hermes-agent</th><td>模型自选时机调用工具；后台 Agent 每十轮提醒</td></tr>
+<tr><th scope="row">OpenProgram</th><td>每轮检查；到 16k token 写入（可设 8k、16k、32k），闲置 30 分钟后写完剩余，03:00 整理</td></tr>
+<tr><th scope="row">pi-mono</th><td>不写记忆；原始事件同步持久化</td></tr>
+<tr><th scope="row">opencode、pi-ai、weclaw</th><td>不写</td></tr>
+</tbody>
+</table>
+<p class="note">四个写入者里有三个在对话之外写，因为改记忆文件多一次调用，还分散模型对任务的注意力。</p>
+<details>
+<summary>核验位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">app-server/src/request_processors/turn_processor.rs:578-591</code><br><code translate="no">memories/write/src/start.rs:23-81</code><br><code translate="no">memories/write/src/phase1.rs:149-187</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/memory-host-sdk/dreaming.ts:17,36-39</code><br><code translate="no">extensions/memory-core/src/dreaming.ts:163-187</code></td></tr>
+<tr><th scope="row">opencode</th><td>tool/ 下没有记忆工具</td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/memory_tool.py:619-686</code><br><code translate="no">agent/conversation_loop.py:429-439</code><br><code translate="no">agent/background_review.py:34-43</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/coding-agent/src/core/agent-session.ts:515</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/local_backend.py</code><br><code translate="no">openprogram/state/memory/session_watcher.py</code><br><code translate="no">openprogram/state/memory/scheduler.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="what">写什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">存储</th><th scope="col">谁</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">只存原文</th><td>opencode、weclaw</td><td>只为恢复对话。新对话里等于不存在。</td></tr>
+<tr><th scope="row">只存蒸馏事实</th><td>hermes-agent</td><td>小而快。工具说明要求不要存日志，要找就搜历史会话。事实错了没有来源可查。</td></tr>
+<tr><th scope="row">两者都存</th><td>claude-code、codex-cli、pi-mono、OpenProgram</td><td>原文只追加，事实可重写。只有我们给每条陈述加指向 <code translate="no">/s/&lt;session&gt;#&lt;msg&gt;</code> 的脚注。</td></tr>
+</tbody>
+</table>
+<p class="note">codex 蒸馏两次：先按会话压成原始记忆和摘要，再由一个没有网络和审批提示的 Agent，依据这些产物和工作区差异重写 <code translate="no">MEMORY.md</code>、摘要页和技能目录。写和整理是两个角色，和我们一样，只是按流水线阶段而非时间分开。</p>
+
+<h2 id="cursor">如何识别未写入内容</h2>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">形式</th><th scope="col">存放</th></tr></thead>
+<tbody>
+<tr><th scope="row">hermes-agent</th><td>没有；模型自选时机。持久化用整数索引，压缩扫描正文标记。</td><td>—</td></tr>
+<tr><th scope="row">weclaw、pi-ai</th><td>没有；weclaw 只有硬性的消息数截断</td><td>—</td></tr>
+<tr><th scope="row">codex-cli</th><td>按会话文件的整数时间戳水位</td><td>带租约和重试计数的 SQLite 任务表</td></tr>
+<tr><th scope="row">claude-code</th><td>未公开</td><td>—</td></tr>
+<tr><th scope="row">pi-mono</th><td>一个条目 id，<code translate="no">firstKeptEntryId</code>，向后扫描</td><td>记录里的压缩条目</td></tr>
+<tr><th scope="row">opencode</th><td>消息级 <code translate="no">summary: true</code> 和 <code translate="no">tail_start_id</code></td><td>消息上</td></tr>
+<tr><th scope="row">openclaw</th><td>条目的 <code translate="no">promotedAt</code> 时间戳加 HTML 去重注释，互相校验</td><td>条目上和 <code translate="no">MEMORY.md</code> 正文</td></tr>
+<tr><th scope="row">OpenProgram</th><td>每个节点上的工作区标记 <code translate="no">memory_written_scriptorium</code>；从分支尖向回看到第一个已标记节点</td><td>会话节点元数据</td></tr>
+</tbody>
+</table>
+<details>
+<summary>核验位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">state/memory_migrations/0001_memories.sql:3,7,17-31</code><br><code translate="no">memories/write/src/phase1.rs:149-187</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">extensions/memory-core/src/short-term-promotion.ts:84,1602-1612,1666-1669,1737</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/message-v2.ts:535-586</code><br><code translate="no">.../compaction.ts:386,437-442</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">agent/agent_init.py:1026</code><br><code translate="no">agent/context_compressor.py:37-51,1215-1226</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/coding-agent/src/core/session-manager.ts:67-77,315-422</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">agent/http_agent.go:151-154</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/writing.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branch">分支与重启</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="主分支上的消息 m1 到 m6 已写入。新分支从 m3 分出，含 b4、b5、b6，待写入。两者在同一会话 id 下共享 m1 到 m3。">
+<defs><marker id="br-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+<rect class="tile" x="0" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="28" y="43">m1</text>
+<line class="ln" x1="56" y1="38" x2="76" y2="38"/>
+<rect class="tile" x="76" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="104" y="43">m2</text>
+<line class="ln" x1="132" y1="38" x2="152" y2="38"/>
+<rect class="tile" x="152" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="180" y="43">m3</text>
+<line class="ln" x1="208" y1="38" x2="228" y2="38"/>
+<rect class="tile" x="228" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="256" y="43">m4</text>
+<line class="ln" x1="284" y1="38" x2="304" y2="38"/>
+<rect class="tile" x="304" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="332" y="43">m5</text>
+<line class="ln" x1="360" y1="38" x2="380" y2="38"/>
+<rect class="tile" x="380" y="20" width="56" height="36"/><text class="mid t-cmd" translate="no" x="408" y="43">m6</text>
+<text class="t-big" x="456" y="44">主分支，已写入</text>
+<line class="ln-acc" x1="180" y1="56" x2="180" y2="111"/>
+<line class="ln-acc" x1="180" y1="111" x2="226" y2="111" marker-end="url(#br-a)"/>
+<rect class="gate" x="228" y="93" width="56" height="36"/><text class="mid t-cmd" translate="no" x="256" y="116">b4</text>
+<line class="ln-acc" x1="284" y1="111" x2="304" y2="111"/>
+<rect class="gate" x="304" y="93" width="56" height="36"/><text class="mid t-cmd" translate="no" x="332" y="116">b5</text>
+<line class="ln-acc" x1="360" y1="111" x2="380" y2="111"/>
+<rect class="gate" x="380" y="93" width="56" height="36"/><text class="mid t-cmd" translate="no" x="408" y="116">b6</text>
+<text class="t-big" x="456" y="117">新分支，待写入</text>
+<text class="t-soft" x="0" y="90">共享前缀，</text>
+<text class="t-soft" x="0" y="110">同一会话 id</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>共享前缀</strong><small>m1 m2 m3，同一会话 id</small></li>
+<li><strong>主分支，已写入</strong><small>m4 m5 m6</small></li>
+<li class="flow-end"><strong>从 m3 分出的新分支，待写入</strong><small>b4 b5 b6</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead><tr><th scope="col">这个 DAG 上的游标</th><th scope="col">新分支的结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置：写到第 6 条</th><td>b4、b5、b6 的下标是 4、5、6，全被跳过</td></tr>
+<tr><th scope="row">单个 id：写到 m6</th><td>m6 不在这条分支上</td></tr>
+<tr><th scope="row">每节点标记</th><td>b4、b5、b6 没有标记：待写入。m1 到 m3 有标记，检查到此为止。</td></tr>
+</tbody>
+</table>
+
+<h3 id="branch-support">会话结构</h3>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">分支</th><th scope="col">实现</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>有，最完整</td><td><code translate="no">/branch</code> 复制会话；<code translate="no">/rewind</code> 可回退对话、文件或两者；子 Agent 写各自的文件</td></tr>
+<tr><th scope="row">codex-cli</th><td>有</td><td><code translate="no">codex fork</code> 和 TUI 编辑旧提示词都创建新线程，来源不变</td></tr>
+<tr><th scope="row">openclaw</th><td>仅子 Agent</td><td>派发时可继承父记录或全新开始；未发现旧消息编辑</td></tr>
+<tr><th scope="row">opencode</th><td>可复制；回退即删除</td><td><code translate="no">fork</code> 深拷贝。<code translate="no">revert</code> 只设标记，下一次提示才永久删除其后的消息，所以编辑旧消息不可逆，除非先分叉。</td></tr>
+<tr><th scope="row">hermes-agent</th><td>有</td><td><code translate="no">/branch</code> 复制到以父 id 关联的新会话；压缩也产生子会话，<code translate="no">/resume</code> 沿链到最新</td></tr>
+<tr><th scope="row">pi-mono</th><td>树</td><td>编辑旧消息产生兄弟分支；离开时可保留生成的摘要</td></tr>
+<tr><th scope="row">OpenProgram</th><td>DAG</td><td>重问、重试和派生 Agent 从中间点分支；同一会话 id 下的分支共享前缀</td></tr>
+<tr><th scope="row">weclaw</th><td>无</td><td>每个微信联系人一个会话；<code translate="no">/new</code> 删除旧会话</td></tr>
+<tr><th scope="row">pi-ai</th><td>没有会话</td><td>—</td></tr>
+</tbody>
+</table>
+<details>
+<summary>核验位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">thread-store/src/types.rs:183-190</code><br><code translate="no">tui/src/app_backtrack.rs:7-8</code><br><code translate="no">rollout/src/recorder.rs:97-98</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/agents/tools/sessions-spawn-tool.ts:190,307,343-344</code><br>消息编辑：grep 无匹配</td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/session.ts:733-774</code><br><code translate="no">.../revert.ts:100-134</code><br><code translate="no">.../prompt.ts:1155-1159</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">cli.py:6682-6809</code><br><code translate="no">agent/conversation_compression.py:381-397</code><br><code translate="no">hermes_state.py:1851-1869</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/agent/src/harness/agent-harness.ts:788-812</code><br><code translate="no">.../branch-summarization.ts:200-262</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">messaging/handler.go:340-345</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/store/session/session_store/branches.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="fork-cursor">分叉之后的游标</h3>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">分叉后的游标范围</th><th scope="col">前缀重新提取</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td>新的 <code translate="no">thread_id</code>，即游标表主键</td><td>是，全部；只有第二阶段整理做语义合并</td></tr>
+<tr><th scope="row">claude-code</th><td>未公开</td><td>—</td></tr>
+<tr><th scope="row">openclaw</th><td>新会话，有意清除 flush 标记</td><td>是；注释说宁可重复，也不因哈希相同而遗漏</td></tr>
+<tr><th scope="row">opencode</th><td>新 id；<code translate="no">tail_start_id</code> 经查找表转换</td><td>否</td></tr>
+<tr><th scope="row">hermes-agent</th><td>新会话；手动把索引推进到复制长度</td><td>否。压缩产生的会话归零，因为确实从空开始。</td></tr>
+<tr><th scope="row">pi-mono</th><td>不需要游标：从叶走到最近公共祖先</td><td>否；遍历已排除</td></tr>
+<tr><th scope="row">OpenProgram</th><td>不变；从当前分支尖向回读标记</td><td>否</td></tr>
+<tr><th scope="row">pi-ai、weclaw</th><td>没有分叉；weclaw 的 <code translate="no">/new</code> 清空会话</td><td>—</td></tr>
+</tbody>
+</table>
+<p>索引和时间戳游标要求每个范围内只有一条线，所以在分叉时换范围；这之所以可行，是因为它们的分叉会复制内容。我们的分叉不复制，所以记录身份。pi-mono 的办法每次遍历都要一条比较分支；而记忆问的是会话里还有什么没写，没有第二条分支可比。</p>
+<details>
+<summary>核验位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">thread-store/src/types.rs:78-79,97</code><br><code translate="no">state/memory_migrations/0001_memories.sql:1-12</code><br><code translate="no">state/src/runtime/memories.rs:104-108</code><br><code translate="no">memories/write/src/phase1.rs:290</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/auto-reply/reply/session.ts:756-767,793-799</code><br><code translate="no">src/config/sessions/types.ts:370-371</code><br><code translate="no">src/auto-reply/reply/memory-flush.ts:117-123</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/session.ts:748-758,767-769</code><br><code translate="no">.../compaction.ts:244-248</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">cli.py:6701-6705,6744-6756,6776-6777</code><br><code translate="no">agent/agent_init.py:1026</code><br><code translate="no">agent/conversation_compression.py:379-380,407-408</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/agent/src/harness/compaction/branch-summarization.ts:87-97</code><br><code translate="no">packages/agent/src/harness/agent-harness.ts:737-834</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">agent/http_agent.go:76-78</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/writing.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="recall">检索</h2>
+<table class="stack">
+<thead><tr><th scope="col">路径</th><th scope="col">谁</th><th scope="col">做法</th><th scope="col">代价</th></tr></thead>
+<tbody>
+<tr><th scope="row">全部注入</th><td>opencode、pi-mono</td><td>整个 <code translate="no">AGENTS.md</code> 进系统提示词；细节由模型自己 grep</td><td>零基础设施；大文件耗尽预算</td></tr>
+<tr><th scope="row">关键词</th><td>OpenProgram、hermes、codex</td><td>我们：BM25，每轮五条，不调模型（可设 1 到 10；embedding、hybrid、agent 可选）。hermes：SQLite 全文搜索会话。codex：逐行子串匹配。</td><td>快、可解释；换种说法可能搜不到</td></tr>
+<tr><th scope="row">向量</th><td>openclaw</td><td>近邻结合全文排序；子 Agent 还在用户轮前搜索并插入结论</td><td>嵌入、索引、重建：两万多行里占一半以上</td></tr>
+</tbody>
+</table>
+
+<h2 id="core">常驻内容写满时</h2>
+<table class="stack">
+<thead><tr><th scope="col">块</th><th scope="col">上限</th><th scope="col">写满时</th><th scope="col">告知</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code <code translate="no">MEMORY.md</code></th><td>200 行或 25KB</td><td>超出部分在会话开始时不加载</td><td>报错，要求 Claude 重写索引</td></tr>
+<tr><th scope="row">claude-code <code translate="no">CLAUDE.md</code></th><td>4 MiB；建议少于 200 行</td><td>超过 4 MiB 的文件被跳过</td><td>—</td></tr>
+<tr><th scope="row">codex-cli</th><td>项目 <code translate="no">AGENTS.md</code> 共享 32 KiB；摘要 2500 token；全局不限</td><td>在剩余字节边界截断</td><td>只记日志</td></tr>
+<tr><th scope="row">openclaw <code translate="no">MEMORY.md</code></th><td>10000 字符</td><td>只移除自动晋升的段落，最旧的先删；手写内容不动</td><td>返回移除的日期</td></tr>
+<tr><th scope="row">openclaw 启动注入层</th><td>每文件 12000，共 60000 字符</td><td>头 75%、尾 25%。<code translate="no">AGENTS.md</code>：头 45%、正则选出的关键行 35%、尾 15%。</td><td>系统提示词警告，默认每次都加</td></tr>
+<tr><th scope="row">hermes-agent</th><td>2200 和 1375 字符</td><td>拒绝写入；模型用 replace 或 remove 腾空间</td><td>向模型返回用量和上限</td></tr>
+<tr><th scope="row">OpenProgram</th><td>2000 token，用 tiktoken 计数</td><td>按文件顺序渲染段落，放不下下一段就停。<code translate="no">topics/core.md</code> 不变。</td><td>报告被略去的内容；仍可检索</td></tr>
+<tr><th scope="row">opencode、pi-mono</th><td><code translate="no">AGENTS.md</code> 不限，已确认</td><td>—</td><td>—</td></tr>
+<tr><th scope="row">pi-ai、weclaw</th><td>没有块；weclaw 是配置好的固定提示词</td><td>—</td><td>—</td></tr>
+</tbody>
+</table>
+<details>
+<summary>核验位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">core/src/config/mod.rs:211</code><br><code translate="no">core/src/agents_md.rs:94,116-124</code><br><code translate="no">ext/memories/src/lib.rs:16</code></td></tr>
+<tr><th scope="row">openclaw MEMORY.md</th><td><code translate="no">extensions/memory-core/src/memory-budget.ts:25,100-164</code><br><code translate="no">short-term-promotion.ts:1719,1762</code></td></tr>
+<tr><th scope="row">openclaw 启动注入层</th><td><code translate="no">src/agents/pi-embedded-helpers/bootstrap.ts:88-89,96-102,158-165</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">packages/opencode/src/session/instruction.ts:91-93,155-169</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/memory_tool.py:149,295-306,359-366</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no">packages/coding-agent/src/core/system-prompt.ts:61-68</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">config/config.go:28</code></td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">openprogram/state/memory/management/config.py</code><br><code translate="no">openprogram/state/memory/runtime/derived_views.py</code><br><code translate="no">openprogram/state/memory/management/block_views.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="core-maintenance">维护，以及写满后新事实能否进入</h3>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">规范来源</th><th scope="col">维护</th><th scope="col">写满后</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code</th><td>主题文件；<code translate="no">MEMORY.md</code> 只是索引</td><td>接近上限时提醒 Claude 精简索引</td><td>写入照常成功，并要求 Claude 重写索引</td></tr>
+<tr><th scope="row">codex-cli</th><td>SQLite，再到原始记忆文件，再到 <code translate="no">memory_summary.md</code></td><td>会话开始时全量重写，冷却六小时；清理 30 天未用的条目</td><td>每轮重写；注入时截到 2500 token</td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">MEMORY.md</code>，所以要按归属裁剪</td><td>每天 03:00 cron，在 dream 流水线之后</td><td>先裁最旧的自动内容；继续写入</td></tr>
+<tr><th scope="row">hermes-agent</th><td>文件本身</td><td>没有，唯一一个</td><td>主模型必须先腾空间</td></tr>
+<tr><th scope="row">OpenProgram</th><td><code translate="no">topics/core.md</code>；<code translate="no">MEMORY.md</code> 里的块是派生的</td><td>每次事务落地后与其他派生视图一起重建；夜间整理只改 Topic</td><td>Topic 仍可写入；超预算内容仍可检索</td></tr>
+<tr><th scope="row">opencode、pi-mono</th><td>手写文件</td><td>不适用</td><td>不限</td></tr>
+</tbody>
+</table>
+<details>
+<summary>裁剪的经验</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">经验</th><th scope="col">对我们</th></tr></thead>
+<tbody>
+<tr><th scope="row">行数限不住长行</th><td>不采用：写入路径再加闸门仍会挡住稳定事实。我们在渲染时按 token 计。</td></tr>
+<tr><th scope="row">按归属裁剪，而非按时间</th><td>不采用：文件是唯一副本时才重要。我们的块是派生的，略去不破坏任何东西。</td></tr>
+<tr><th scope="row">限制要覆盖所有相关内容</th><td>codex 漏了全局 <code translate="no">AGENTS.md</code>；claude-code 对 <code translate="no">CLAUDE.md</code> 只在 4 MiB 处拦住</td></tr>
+<tr><th scope="row">告知截断</th><td>codex 只记日志，用户和模型都不知道。我们会报告。</td></tr>
+</tbody>
+</table>
+<p>决策和理由见 <a href="adoption.zh.html">对比后采纳什么</a> 第 02 节。</p>
+</details>
+<details>
+<summary>核验位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">框架</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td><code translate="no">state/src/runtime/memories.rs:21</code><br><code translate="no">memories/write/src/phase2.rs:139-166</code><br><code translate="no">memories/write/src/phase1.rs:110-133</code><br><code translate="no">ext/memories/src/lib.rs:16</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">src/memory-host-sdk/dreaming.ts:17</code><br><code translate="no">extensions/memory-core/src/memory-budget.ts:25,100-164</code><br><code translate="no">.../short-term-promotion.ts:1706-1727</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/memory_tool.py:149,295-306</code><br>无匹配：consolidate、distill、prune、compact、dream</td></tr>
+<tr><th scope="row">opencode, pi-mono</th><td><code translate="no">packages/opencode/src/session/instruction.ts:60-93</code><br><code translate="no">packages/coding-agent/src/core/resource-loader.ts:57-100</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="size">实现规模</h2>
+<table class="stack">
+<thead><tr><th scope="col">框架</th><th scope="col">行数，不含测试</th><th scope="col">涵盖</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw</th><td>34,000</td><td>向量、全文、dream 流水线、晋升排序。另有两个备选后端 12,000 行，未计入。</td></tr>
+<tr><th scope="row">OpenProgram</th><td>11,600</td><td>整个 <code translate="no">openprogram/state/memory/</code>：写入、事务、检索、主题格式、夜间整理。没有压缩。</td></tr>
+<tr><th scope="row">codex-cli</th><td>8,900 + 3,700</td><td>两阶段蒸馏和读路径。另约 60,000 行记录和分叉代码不算记忆。</td></tr>
+<tr><th scope="row">hermes-agent</th><td>2,800 + 2,400</td><td>八个可选服务插件共 11,600 行，默认全关</td></tr>
+<tr><th scope="row">pi-mono</th><td>5,000</td><td>会话树和压缩，同一逻辑实现两遍；长期记忆 0 行</td></tr>
+<tr><th scope="row">opencode</th><td>1,550</td><td>压缩和存储；长期记忆 0 行</td></tr>
+<tr><th scope="row">weclaw</th><td>200</td><td>会话 id 记录</td></tr>
+<tr><th scope="row">pi-ai</th><td>0</td><td>—</td></tr>
+</tbody>
+</table>
+<p class="note">向量、嵌入缓存、索引重建和混合排序占了 openclaw 的大头。分界线是维护索引，而不是有没有记忆。</p>
+
+<h2 id="practices">值得借鉴的做法</h2>
+<table class="stack">
+<thead><tr><th scope="col">来自</th><th scope="col">做法</th><th scope="col">我们</th></tr></thead>
+<tbody>
+<tr><th scope="row">codex-cli</th><td>写入者从带重试计数和上次水位的 SQLite 表取租约，先查额度</td><td>跨进程写锁，一秒超时；空闲监视器按原因的范围（对话、记忆库、登录）把失败记在 <code translate="no">ingest-state.json</code>；失败进入写入者状态和 <code translate="no">memory_writer_failed</code> 帧</td></tr>
+<tr><th scope="row">codex-cli</th><td>模型在回复中嵌入隐藏标记，指明用了哪条记忆；服务端计数后去掉。计数用于整理时排序。</td><td>未实现；夜间整理只按内容合并</td></tr>
+<tr><th scope="row">openclaw</th><td>去重记录两份，互相校验</td><td>只有节点标记；Topic 脚注也指向这些消息，但不互相校验</td></tr>
+<tr><th scope="row">pi-mono</th><td>离开分支时生成摘要</td><td>未实现</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td><code translate="no">topics/core.md</code> 作为常驻规范来源、每节点工作区标记、会话边界的活分支枚举、保留 Source 引用的 Topic 脚注</td></tr>
+<tr><th scope="row">未实现</th><td>基于 Topic 自述的无索引选择、把检索使用情况作为整理输入、head 变化时直接通知写入者（而不是轮后阈值或闲置监视）</td></tr>
+</tbody>
+</table>

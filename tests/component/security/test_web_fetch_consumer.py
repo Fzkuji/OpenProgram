@@ -11,8 +11,9 @@ import httpcore
 import pytest
 
 from openprogram.programs.tools.web import web_fetch
-from openprogram.security import safe_http
-from openprogram.security.safe_http import OutboundSecurityConfig
+from openprogram.runtime.permissions import refusal
+from openprogram.host.security import safe_http
+from openprogram.host.security.safe_http import OutboundSecurityConfig
 
 
 _REAL_DECISION_BACKEND = safe_http.DecisionNetworkBackend
@@ -255,20 +256,23 @@ def test_web_fetch_malformed_status_hides_peer_echoed_signed_url(
 def test_web_fetch_rejects_private_and_metadata_dns_before_connecting(
     server: _Server, managed_web_fetch, hostname: str, reason: str
 ) -> None:
-    result = web_fetch.execute(f"http://{hostname}:{server.port}/private")
+    with pytest.raises(refusal.Refused) as refused:
+        web_fetch.execute(f"http://{hostname}:{server.port}/private")
 
-    assert result.startswith("Error: failed to fetch")
-    assert reason in result
+    assert refused.value.refusal.layer == "setting"
+    assert refused.value.refusal.why == web_fetch._ADDRESS_BLOCKS[reason]
+    assert "security.outbound_url.model_tools" in refused.value.text
+    assert "only reads public sites" not in refused.value.text
     assert server.requests == []
 
 
 def test_web_fetch_rejects_private_redirect_before_second_request(
     server: _Server, managed_web_fetch
 ) -> None:
-    result = web_fetch.execute(f"http://public.test:{server.port}/redirect-private")
+    with pytest.raises(refusal.Refused) as refused:
+        web_fetch.execute(f"http://public.test:{server.port}/redirect-private")
 
-    assert result.startswith("Error: failed to fetch")
-    assert "NON_GLOBAL_ADDRESS" in result
+    assert refused.value.refusal.code == "OUTBOUND_URL_BLOCKED"
     assert server.requests == ["/redirect-private"]
 
 

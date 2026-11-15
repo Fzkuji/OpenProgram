@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.auth.types import AuthReference
+from openprogram.models.auth.types import AuthReference
 
 
 def test_external_file_reference():

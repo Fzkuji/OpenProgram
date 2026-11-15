@@ -1,0 +1,128 @@
+<title>能力差异</title>
+<meta name="description" content="参考框架有而 OpenProgram 没有的能力，以及 OpenProgram 独有的机制。">
+<h1>能力差异</h1>
+<p class="note">属于<a href="framework-comparison.zh.html">框架对比</a>。列入不等于批准实现。</p>
+
+<h2 id="blind">缺失能力</h2>
+
+<h3>挑战现有方法</h3>
+<table class="stack">
+<thead><tr><th scope="col">能力</th><th scope="col">机制</th><th scope="col">OpenProgram 现状</th><th scope="col">判断</th></tr></thead>
+<tbody>
+<tr><th scope="row">code mode · codex</th><td>模型写 JavaScript，不发工具调用；细节见<a href="framework-comparison.zh.html#three">结论</a></td><td>流程事先固化成 Python。模型当场写代码调工具没有探索过，这是同一方法的另一种形式</td><td><b>值得单独对比。</b>也是一种不同的工具裁剪：整个工具面放进一个 exec 入口</td></tr>
+<tr><th scope="row">harness 产出训练数据 · hermes</th><td>批量跑数据集；按概率分布采样每条样本可见的 toolset；轨迹压到 token 预算内，接入 Atropos 强化学习环境。<code translate="no">batch_runner.py</code> · <code translate="no">toolset_distributions.py</code> · <code translate="no">trajectory_compressor.py</code> · <code translate="no">environments/</code></td><td>工具裁剪是权限问题，不是采样样本的观测空间</td><td>训练管线不在范围内。完整版本化轨迹格式仍是候选</td></tr>
+</tbody>
+</table>
+
+<h3>让别人用得上</h3>
+<table class="stack">
+<thead><tr><th scope="col">能力</th><th scope="col">机制</th><th scope="col">OpenProgram 现状</th><th scope="col">判断</th></tr></thead>
+<tbody>
+<tr><th scope="row">从别的 agent 导入 · codex, openclaw</th><td>Codex：约 1.6 万行的 <code translate="no">external-agent-migration</code> crate，导入会话、配置和 skills（含 claude-code 的），并保留 <code translate="no">external_agent_session_imports.json</code>。OpenClaw：两个扩展</td><td>关注过功能完整，没关注把几个月的积累从别的工具搬过来</td><td><b>未实现。</b>读取外部 skills 格式不等于迁移</td></tr>
+<tr><th scope="row">105 条功能台账 · codex</th><td><code translate="no">features/src/lib.rs</code> 给每项能力标阶段（Stable、UnderDevelopment、Experimental、Removed、Deprecated）和 <code translate="no">default_enabled</code>。三分之一的已发布能力默认关闭</td><td>能力散在代码里，看不出每版带什么、哪些受实验开关控制</td><td><b>未实现</b></td></tr>
+<tr><th scope="row">提示词与工具授权是数据 · codebuddy</th><td>按部署替换 <code translate="no">product.json</code>，见 <a href="#codebuddy">codebuddy-code</a></td><td>提示词组件是 Python 函数，工具授权在 <code translate="no">agent.json</code>；没有装完整配置的可替换档</td><td>部分适用：组件注册表是骨架，取值还没有外置</td></tr>
+<tr><th scope="row">迁移与分享会话 · opencode</th><td><code translate="no">control-plane/move-session.ts</code> 把会话和 Git 改动移到项目内另一目录或 worktree，不能换机器，也不接管活动轮次。<code translate="no">share/share-next.ts</code> 把会话发布成公开 URL，增量流进 Durable Object 和对象存储，也可自托管</td><td>会话是本机资产。worker、WebSocket 客户端和每会话日志可以支撑，但没有产品入口</td><td><b>可评估本机迁移和公开分享。</b>跨 worker 迁移需要版本化协议、目标放置、认证、活动轮语义和失败恢复</td></tr>
+</tbody>
+</table>
+
+<h3>让 agent 可信</h3>
+<table class="stack">
+<thead><tr><th scope="col">能力</th><th scope="col">机制</th><th scope="col">OpenProgram 现状</th><th scope="col">判断</th></tr></thead>
+<tbody>
+<tr><th scope="row">在工具层之下拦截删除 · codebuddy</th><td>PATH 里放 <code translate="no">rm</code>、<code translate="no">rmdir</code>、<code translate="no">unlink</code> 替身，经 PYTHONPATH 加载 <code translate="no">sitecustomize.py</code>，把删除改道回收站二进制，子进程同样覆盖</td><td>覆盖绑定会话或轮次的本地 agent 子进程里常见的 shell、Python、Node 删除。不覆盖：未绑定的 cron 与后台任务、Docker、SSH、绝对路径命令、直接 syscall、禁用注入</td><td><b>部分实现。</b>不是完整安全边界</td></tr>
+<tr><th scope="row">execpolicy · codex</th><td>命令允许清单用一门小语言，规则在 <code translate="no">~/.codex/rules/default.rules</code>，与操作系统沙箱分层。<b>guardian</b>：LLM 复核审批提示</td><td>字符串匹配加 fnmatch 表达不了"第三个参数不能是绝对路径"。复核审批没有探索过</td><td>DSL 暂缓。评估 guardian：它针对 <code translate="no">Gate.ask</code> 里悬而未决的状态</td></tr>
+<tr><th scope="row">沙箱能力与默认行为分开 · openclaw</th><td>Docker、Podman、SSH、OpenShell 后端。<code translate="no">mode</code>：<code translate="no">off</code>（默认）、<code translate="no">non-main</code>、<code translate="no">all</code>。Docker 默认：无网络、只读根、非 root、丢弃 capabilities。官方文档说明它不是完美边界</td><td>有 Docker 后端不等于默认隔离。后端、启用范围、默认值和保证要分开比</td><td>借鉴收紧的默认值；容器不是完整信任边界。验收同时看默认模式和实际启动参数</td></tr>
+<tr><th scope="row">市场与公网 Gateway · openclaw</th><td>任何人都能在 ClawHub 发布，已出现恶意指令注入。Gateway 有 <code translate="no">CVE-2026-25253</code></td><td>skills 与 owner 认证的 Gateway 都按单个本地用户设计</td><td>市场需要发布者身份、权限说明、扫描、下架、安装确认。公网暴露需要认证、绑定默认值、补丁响应、版本升级</td></tr>
+<tr><th scope="row">度量 AI 写的代码 · codebuddy</th><td>Git HEAD watcher 按文件归因并上报 agent 与人的改动</td><td>记录 token 和成本，不记产出归属，企业可能要后者</td><td>先记录，后上报。每轮影子 Git 和项目提交已有数据</td></tr>
+<tr><th scope="row">轨迹导出 · openclaw</th><td><code translate="no">src/trajectory/</code>：系统提示、工具定义和每个事件，脱敏后成版本化格式，上限 10 MB / 50 MB / 256 KB</td><td>面向人读的 Markdown 或 HTML，截断工具参数和结果。没有打包提示、完整工具定义、运行时事件、provider artifacts、用量与缓存、运行时设置的版本化格式</td><td><b>部分实现。</b>完整轨迹是待确认候选</td></tr>
+</tbody>
+</table>
+
+<h3>主动性与测试</h3>
+<table class="stack">
+<thead><tr><th scope="col">能力</th><th scope="col">机制</th><th scope="col">OpenProgram 现状</th><th scope="col">判断</th></tr></thead>
+<tbody>
+<tr><th scope="row">Automations 与 Heartbeat · openclaw</th><td>cron、固定间隔、一次性任务，结果投递到聊天渠道或 webhook。Heartbeat：默认每 30 分钟主动跑一轮主会话，只上报值得注意的事</td><td>Scheduler 持久登记一次性、周期和监控任务，签名执行、重试、恢复；运行 agent prompt 或受控命令。不投递到渠道或 webhook，没有默认 heartbeat</td><td><b>两个独立范围：</b>结果投递协议，以及带频率、静默、筛选规则的 heartbeat</td></tr>
+<tr><th scope="row">承诺追踪 · openclaw</th><td><code translate="no">src/commitments/</code>：从聊天抽取有类型的条目（约定、截止、关心、未了事），置信度阈值 0.86，每天最多三条主动消息。Heartbeat 和开机一次性动作是独立路径</td><td>只执行已登记的外部事件或 Scheduler 任务；对话不会创建未来动作</td><td>需要阈值、每日上限、撤销和误触发处置。未批准</td></tr>
+<tr><th scope="row">Dreaming · openclaw</th><td>后台把 <code translate="no">memory/YYYY-MM-DD.md</code> 中高于阈值的条目提升到 <code translate="no">MEMORY.md</code>。压缩前另有自动 flush 保存长期信息</td><td>每晚 <code translate="no">reorganize()</code>；没有从每日笔记到核心记忆的评分晋升</td><td>继续比较。阈值、写入归属和压缩前失败语义一起定义</td></tr>
+<tr><th scope="row">远端设备节点 · openclaw</th><td>macOS、iOS、watchOS、Android 原生节点。手机：传感器、日历、通知；Android 经无障碍服务控制；macOS <code translate="no">computer.act</code></td><td>渠道只收发消息。节点协议和原生 App 是两个选择</td><td>节点协议值得设计。设备能力按权限、可撤销授权和平台成本选择</td></tr>
+<tr><th scope="row">脚本化 provider 与录制回放 · pi-mono</th><td>已注册的模拟模型按脚本输出文本、思考和工具调用，chunk 可配。HTTP 和 WebSocket 录制存在测试夹具里</td><td>测试专用脚本化 provider，走正常注册：文本、思考、工具调用、错误、多轮，真实 <code translate="no">agent_loop</code> 工具结果回填</td><td><b>部分实现。</b>正式发布需要设计批准</td></tr>
+<tr><th scope="row">会话中途换供应商 · pi-mono</th><td>归一化思考块签名和工具调用 ID，历史得以继续。另有扩展用生成的交接提示开新会话</td><td>Web 和 TUI 可在同一会话切换模型；<code translate="no">models/providers/shared/transform_messages.py</code> 归一化消息、思考块和工具调用 ID，测试覆盖跨供应商历史</td><td><b>同会话已实现。</b>新会话交接不是必需项</td></tr>
+</tbody>
+</table>
+
+<h2 id="ours">独特机制</h2>
+<p class="note">两个带来额外能力。四域工具的差别主要在命名。</p>
+<table class="stack">
+<thead><tr><th scope="col">机制</th><th scope="col">定义</th><th scope="col">最接近的对应物</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话 DAG：分支是 head 指针</th><td>创建节点、补写 output 或 metadata、删除节点，以及 head、分支、标题和归档，各是日志里的一行。每份日志一个写入者，状态在内存里折叠得到</td><td><b>OpenClaw</b>：Control UI 的 transcript fork、rewind、branch。<b>pi-mono</b>：<code translate="no">parentId</code>；<code translate="no">/tree</code> 还能摘要废弃分支。<b>opencode</b>：fork 建新会话。<b>codex</b>：agent graph 记录 agent 关系</td><td>已确认的差异：transcript 分支、统一 DAG、每会话日志三者合一。单有 transcript 分支并不独特</td></tr>
+<tr><th scope="row">Agent method：流程写成代码</th><td>调用按<a href="framework-comparison.zh.html#three">结论里的条件</a>成为 code 节点</td><td>没有直接对应。<b>pi-mono</b> 扩展、<b>opencode</b> <code translate="no">tool/*.ts</code>、<b>hermes</b> skills 能注册工具，但历史里只有入参和返回值。互补方向：Codex code mode</td><td>持久化的内部步骤可随对话回看。顶层手动函数可经 Retry/Edit 分支。恢复或重放嵌套步骤未实现</td></tr>
+<tr><th scope="row">四域工具：todo、task、agent、message</th><td>todo 管计划，task 管运行中的工作，agent 管执行者，message 管通讯；每个工具只操作自己的名词</td><td><b>opencode</b>：<code translate="no">task</code>、<code translate="no">todowrite</code>。<b>hermes</b>：<code translate="no">delegate</code>、看板。<b>claude-code</b>：Agent、TaskCreate、TaskStop、SendMessage。<b>codebuddy</b>：TaskCreate/Get/Update/List/Stop/Output，不分域</td><td>差别<b>在命名</b>。实质差异见 <a href="runtime/collaboration/agent-collab-comparison.zh.html">Agent 协作</a>：八家里只有 OpenProgram 按剩余消息预算限制子 agent 工具；防环机制与 OpenClaw 相当</td></tr>
+</tbody>
+</table>
+
+<h2 id="cn">国产四家 CLI</h2>
+<p class="note"><code translate="no">~/.npm-global/lib/node_modules/</code> 下的包，读 <code translate="no">dist/</code> 打包产物。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">项目</th><th scope="col">版本</th><th scope="col">规模</th><th scope="col">形态</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="#claude"><code translate="no">claude-code-internal</code></a></th><td>1.1.9</td><td>388 行，133 KB</td><td>启动器包装，依赖原封不动的 <code translate="no">@anthropic-ai/claude-code@2.1.154</code></td></tr>
+<tr><th scope="row"><a href="#codex"><code translate="no">codex-internal</code></a></th><td>0.0.8</td><td>502 行，572 KB</td><td>包装上游 <code translate="no">@openai/codex@0.118.0</code></td></tr>
+<tr><th scope="row"><a href="#gemini"><code translate="no">gemini-cli-internal</code></a></th><td>1.9.0</td><td>576,579 行，25 MB</td><td>三个改造版里唯一的源码分支</td></tr>
+<tr><th scope="row"><a href="#codebuddy"><code translate="no">codebuddy-code</code></a></th><td>2.109.3</td><td>2,629 行打包，21.7 MB，另有 16 MB headless</td><td>腾讯自研，内部代号 genie，建在 IoC 容器上</td></tr>
+</tbody>
+</table>
+
+<h3 id="claude"><code translate="no">claude-code-internal</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">改动</th></tr></thead>
+<tbody>
+<tr><th scope="row">端点与代理</th><td>内网网关；本机 MITM 代理守护进程固定 12639 端口</td></tr>
+<tr><th scope="row">模型</th><td>白名单从网关拉取；Opus 和 Sonnet 都映射到 GLM-5.1</td></tr>
+<tr><th scope="row">配置</th><td>目录改到 <code translate="no">~/.claude-internal</code>；扫描设置文件删掉所有 <code translate="no">ANTHROPIC_*</code> 键，用户改不回去</td></tr>
+<tr><th scope="row">遥测</th><td>关掉上游；内网上报带 Git 仓库与 commit</td></tr>
+<tr><th scope="row">认证</th><td>三种，含供 CI 用的设备码流程</td></tr>
+<tr><th scope="row">公告</th><td>服务器下发的启动公告，需要确认</td></tr>
+</tbody>
+</table>
+
+<h3 id="codex"><code translate="no">codex-internal</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">改动</th></tr></thead>
+<tbody>
+<tr><th scope="row">Provider</th><td>重写 <code translate="no">config.toml</code>，注入并强制选中内网 provider</td></tr>
+<tr><th scope="row">上游服务</th><td>关掉更新检查与反馈上报</td></tr>
+<tr><th scope="row">上报</th><td>注入请求头，把打开的仓库、YOLO 模式和会话 ID 发给网关</td></tr>
+<tr><th scope="row">受限命令</th><td><code translate="no">codex mcp add</code> 拒绝修改管理员托管的设置；<code translate="no">codex app-server</code> 立即退出</td></tr>
+<tr><th scope="row">环境</th><td>清掉继承的 <code translate="no">OPENAI_*</code> 与 <code translate="no">CODEX_HOME</code>；把用户 ID 和邮箱绑进子进程</td></tr>
+</tbody>
+</table>
+
+<h3 id="gemini"><code translate="no">gemini-cli-internal</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">改动</th></tr></thead>
+<tbody>
+<tr><th scope="row">后端</th><td>新增 <code translate="no">codebuddy/</code> 核心模块，作为与 Google 并列的第四个 ContentGenerator</td></tr>
+<tr><th scope="row">认证</th><td>新增内网 GitLab OAuth 和内网 API key。Google 方式保留，同一个二进制内外网都能用</td></tr>
+<tr><th scope="row">上报</th><td>仓库远端与 submodule 路径发给网关</td></tr>
+<tr><th scope="row">沙箱</th><td>API key 透传进容器环境</td></tr>
+</tbody>
+</table>
+
+<h3 id="codebuddy"><code translate="no">codebuddy-code</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具</th><td>44 个，不少与 claude-code 同名（Agent、Skill、ToolSearch、EnterWorktree、SendMessage、TeamCreate），另有 LSP、ComputerUse、CronCreate、Workflow、WeChatReply/WeComReply</td></tr>
+<tr><th scope="row">提示词与授权</th><td>是数据不是代码：326 KB 的 <code translate="no">product.json</code> 装着 109 个 Nunjucks 模板、每个 agent 的工具白名单、模型白名单和命令表</td></tr>
+<tr><th scope="row">部署</th><td>SaaS、内网、零信任、自托管、云托管共用一份代码，只换这个文件</td></tr>
+<tr><th scope="row">会话</th><td><code translate="no">~/.codebuddy/projects/&lt;cwd-slot&gt;/&lt;uuid&gt;.jsonl</code></td></tr>
+<tr><th scope="row">沙箱</th><td>原生二进制，bubblewrap 和 seatbelt 兜底</td></tr>
+<tr><th scope="row">远程控制</th><td>名为 "CodeBuddy Code Remote Control" 的 PWA，用手机浏览器遥控本机会话</td></tr>
+<tr><th scope="row">Headless</th><td>独立的 webpack 产物，不是命令行开关</td></tr>
+<tr><th scope="row">企业策略</th><td>组织服务端决定用户能否添加自定义模型、上传 skill；决定缓存在本地，失败时放行</td></tr>
+<tr><th scope="row">合规</th><td>内容策略放在系统提示开头，模型执行前有客户端拦截</td></tr>
+</tbody>
+</table>

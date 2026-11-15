@@ -1,0 +1,53 @@
+<title>Run conversations on another machine</title>
+<meta name="description" content="Local, SSH and Docker environments: where a conversation runs commands and touches files.">
+<h1>Run conversations on another machine</h1>
+<table class="stack">
+<thead><tr><th scope="col">Environment</th><th scope="col">Commands run</th><th scope="col">Files read and written</th></tr></thead>
+<tbody>
+<tr><th scope="row">Local (always exists)</th><td>This computer</td><td>This computer</td></tr>
+<tr><th scope="row">SSH</th><td>Remote host, starting in its remote folder</td><td>Remote host</td></tr>
+<tr><th scope="row">Docker</th><td>A container for this conversation</td><td>This computer; the conversation's folders are mounted at the same paths</td></tr>
+</tbody>
+</table>
+<p class="note">A <a href="../integrations/channels.html">channel</a> only decides where messages are mirrored. Binding one never moves where tools run.</p>
+<h2 id="pick-an-environment-for-a-new-chat">Pick one for a new chat</h2>
+<p>The first chip above the message box. The choice is pinned by the first message; to work elsewhere, start a new chat. New chats and conversations older than environments use the default.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Chip icon</th><th scope="col">Connection to the worker</th></tr></thead>
+<tbody>
+<tr><th scope="row">Yellow</th><td>Connecting or paused</td></tr>
+<tr><th scope="row">Red</th><td>Disconnected</td></tr>
+</tbody>
+</table>
+<h2 id="add-an-environment">Add one</h2>
+<p>In <strong>Settings → Environments</strong>, or from the terminal. The page also has <strong>Test</strong>, <strong>Make default</strong> and <strong>Remove</strong>. <code translate="no">openprogram setup</code> has a <strong>Default environment</strong> step.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram environments add ssh devbox --target me@devbox --workdir ~/work</code></th><td><code translate="no">--target</code> is <code translate="no">user@host</code> or a host from <code translate="no">~/.ssh/config</code>. <code translate="no">--workdir</code> is an absolute or <code translate="no">~</code> path; blank is the remote home.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments add docker sandbox --image python:3.12 --default</code></th><td>Default image <code translate="no">ubuntu:24.04</code>. <code translate="no">--default</code> also makes it the default.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments list</code></th><td>All, with the default marked</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments test devbox</code></th><td>Checks it can run a command</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments default &lt;id&gt;</code></th><td>Sets the default</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments rm &lt;id&gt;</code></th><td>Removes it</td></tr>
+</tbody>
+</table>
+<p class="note">IDs are lowercase letters, digits, <code translate="no">-</code> or <code translate="no">_</code>. <code translate="no">--name</code> sets a display name.</p>
+<h2 id="ssh-requirements">Requirements</h2>
+<span id="docker-requirements"></span>
+<table class="stack fixed">
+<thead><tr><th scope="col"></th><th scope="col">Needs and behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">SSH sign-in</th><td>System <code translate="no">ssh</code> with <code translate="no">BatchMode=yes</code>: nothing may prompt. Use a key your SSH agent or <code translate="no">~/.ssh/config</code> provides. New host keys are accepted once, then checked. Connections are shared for five minutes.</td></tr>
+<tr><th scope="row">SSH host</th><td>A POSIX shell, <code translate="no">find</code> and <code translate="no">grep</code>; <code translate="no">rg</code> when installed</td></tr>
+<tr><th scope="row">Docker</th><td><code translate="no">docker</code> on the PATH and the daemon running</td></tr>
+<tr><th scope="row">Docker container</th><td>One per conversation, <code translate="no">openprogram-&lt;environment&gt;-&lt;conversation&gt;</code>. The first command starts it, later ones reuse it, so installed packages persist. Recreated if the conversation's folders change. Removed with the conversation.</td></tr>
+</tbody>
+</table>
+<h2 id="limits">Limits</h2>
+<ul>
+<li>A turn's undo does not cover files changed on an SSH host; files on this computer are still restored.</li>
+<li>In SSH a file must be read before it is edited, and an edit is refused if it changed since that read.</li>
+<li>The local sandbox applies only to Local. SSH and Docker have the permissions of the remote account or container.</li>
+<li>If the environment is removed its tools stop with an error, never falling back to this computer. Add it back with the same ID, or start a new chat.</li>
+</ul>

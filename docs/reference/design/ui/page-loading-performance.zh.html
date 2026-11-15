@@ -1,0 +1,48 @@
+<title>页面加载性能</title>
+<meta name="description" content="共享界面加载什么，首屏代码与目录计算的实测改善，以及这些优化必须保持的行为。">
+<h1>页面加载性能</h1>
+
+<p>每个应用页面都加载共享界面。优化首屏代码、重复目录计算和 Provider 选择渲染，不改变认证、路由历史和模型能力。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">指标</th><th scope="col">基准</th><th scope="col">现在</th></tr></thead>
+<tbody>
+<tr><th scope="row">首屏 JavaScript，gzip</th><td>832419 字节，33 个文件</td><td>496156 字节</td></tr>
+<tr><th scope="row">预热目录，五次中位数，同机</th><td>1248.779 ms</td><td>267.607 ms</td></tr>
+<tr><th scope="row">每次目录请求的凭据枚举</th><td>234</td><td>1</td></tr>
+<tr><th scope="row">Provider 选择重绘行数</th><td>239</td><td>2</td></tr>
+</tbody>
+</table>
+<p class="note">不是端到端点击耗时。基准中十四种 DiceBear 样式全部进入首屏依赖（两个头像文件，gzip 约 270 KB），原生 Provider 列表请求耗时 1138 ms，Python profile 记录累计枚举 1.318 s。会话期间的资源计数包含三秒轮询，不是冷启动耗时。</p>
+
+<h2 id="design">设计</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">头像</th><td>可选样式用显式<a href="https://nextjs.org/docs/app/guides/lazy-loading">动态导入</a>（<a href="https://react.dev/reference/react/lazy">React lazy</a>）；默认 <code translate="no">shapes</code> 样式保持同步。合并进行中的加载，失败后可重试。卸载或配置变化后到达的结果被忽略。</td></tr>
+<tr><th scope="row">SVG 缓存</th><td>模块级重用，有上限（128 项，51.2 万字符）。上传和字母模式不生成 DiceBear SVG。</td></tr>
+<tr><th scope="row">Provider 行</th><td><a href="https://react.dev/reference/react/memo">React memo</a> 配稳定回调；选择变化不重新生成未变的图标。</td></tr>
+<tr><th scope="row">目录</th><td>每次请求一份凭据存在快照，不跨请求，也不作为认证判断缓存。</td></tr>
+<tr><th scope="row">设置读取</th><td>成功的读取只在有效期内初始化 Provider 目录的首屏；配置操作使其失效。</td></tr>
+</tbody>
+</table>
+
+<h2 id="data-and-compatibility">必须保持</h2>
+<ul>
+<li>不支持的 Provider 保持不支持。本地 Provider 身份、别名、账号存在性、CLI 回退、环境变量和云认证语义不变。</li>
+<li>指标不暴露凭据值。</li>
+<li>缓存过期、请求失败和加载占位都不把另一个 Provider 显示为已选路由。</li>
+<li>上传、字母、全部生成样式、Thumbs 背景和 SVG ID 隔离保留。</li>
+</ul>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>公共头像入口只加载默认样式；所选样式只加载一次；十四种都可选。</li>
+<li>相同头像在有界缓存内重用标记。</li>
+<li>目录列表测试证明每次请求枚举一次，下次请求立即反映变更。</li>
+<li>选择更新只渲染受影响行；预热后再次访问立即显示缓存行。</li>
+<li>对比生产入口字节和同机目录耗时与基准。</li>
+<li>在已安装的默认 App 中检查聊天、Agents、能力、通用和 Provider 导航。</li>
+</ul>
+</details>

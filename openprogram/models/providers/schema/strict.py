@@ -1,0 +1,231 @@
+"""Rewrite arbitrary JSON Schema for OpenAI strict mode compatibility.
+
+OpenAI's structured-outputs / strict-mode validation is a constrained
+subset of JSON Schema:
+
+  * Every ``object`` schema MUST set ``additionalProperties: false``.
+  * Every property declared under an object MUST appear in the
+    ``required`` list. Optional fields are expressed by making the
+    type a union with ``"null"`` instead of omitting from ``required``.
+  * A handful of JSON Schema keywords are not supported and silently
+    rejected on the server: ``pattern``, ``format``, ``minLength``,
+    ``maxLength``, ``minimum``, ``maximum``, ``multipleOf``, ``minItems``,
+    ``maxItems``, ``uniqueItems``, ``default``, ``contentEncoding``,
+    ``contentMediaType``, ``examples``, ``$ref`` (in the function-tool
+    flavour). Leaving them in a tool definition gets the whole
+    completion rejected with 400.
+
+  * Optional ``enum`` works fine and is honoured by constrained decoding
+    — the LLM literally cannot emit a value outside the enum.
+
+  * Top-level schema MUST be an ``object``.
+
+This module's ``fixup_for_strict()`` takes a copy of any schema and
+applies the rewrites in-place on the copy so the original tool
+definition (used by other providers + the docs / catalog) is untouched.
+
+References:
+  * https://platform.openai.com/docs/guides/structured-outputs
+  * https://openai.com/index/introducing-structured-outputs-in-the-api/
+"""
+
+from __future__ import annotations
+
+import copy
+from typing import Any
+
+
+# JSON Schema keywords OpenAI's strict mode doesn't accept. Some are
+# numeric/string facet validators (pattern, minimum, …); some are
+# documentation-only sugar (default, examples) we'd just lose.
+# Stripping them is safe because the LLM constrained-decoding contract
+# is "match the schema as declared" — anything we'd express via these
+# keywords gets enforced via type / enum / properties instead.
+_UNSUPPORTED_KEYWORDS: frozenset[str] = frozenset({
+    "pattern",
+    "format",
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "default",
+    "examples",
+    "contentEncoding",
+    "contentMediaType",
+    "$ref",
+    "$defs",
+    "definitions",
+    # OpenAI's strict function-tool dialect rejects ``allOf`` outright
+    # (including at the root of an otherwise valid object schema).  Our
+    # canonical tools use it only for conditional validation such as
+    # ``if action == verify, then require ...``; the runtime validates those
+    # arguments again, so dropping the unsupported provider-side constraint
+    # preserves functionality instead of making every request fail with 400.
+    "allOf",
+})
+
+
+def contains_open_mapping(schema: Any) -> bool:
+    """Whether a schema contains dynamic object keys that strict cannot preserve.
+
+    Only schema-bearing children are inspected; examples and enum values are data.
+    A top-level declared object without additionalProperties keeps the existing
+    fixed-field strict conversion, while explicit open keys remain mappings.
+    """
+    if not isinstance(schema, dict):
+        return False
+    types = schema.get("type")
+    is_object = types == "object" or isinstance(types, list) and "object" in types
+    if is_object:
+        additional = schema.get("additionalProperties")
+        if additional is True or isinstance(additional, dict):
+            return True
+        if "properties" not in schema and "additionalProperties" not in schema:
+            return True
+        if schema.get("patternProperties"):
+            return True
+    for key in ("properties", "patternProperties", "$defs", "definitions"):
+        values = schema.get(key)
+        if isinstance(values, dict) and any(contains_open_mapping(v) for v in values.values()):
+            return True
+    for key in ("items", "additionalProperties", "additionalItems", "not", "if", "then", "else"):
+        value = schema.get(key)
+        if contains_open_mapping(value) or isinstance(value, list) and any(contains_open_mapping(v) for v in value):
+            return True
+    return any(
+        any(contains_open_mapping(v) for v in schema.get(key, []))
+        for key in ("anyOf", "oneOf", "allOf")
+        if isinstance(schema.get(key), list)
+    )
+
+
+def fixup_for_strict(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a deep copy of ``schema`` rewritten for OpenAI strict mode.
+
+    Three rewrites applied recursively to every nested ``object``:
+
+      1. Force ``additionalProperties: false``.
+      2. Make every property that isn't already required appear as
+         "required + nullable" (``type: [<old>, "null"]``). Strict
+         doesn't allow partial-required; we preserve "this field is
+         optional" semantics by letting the LLM emit null.
+      3. Strip unsupported JSON Schema keywords from the property
+         descriptors.
+
+    Top-level non-object schemas (e.g. a tool that takes a string
+    argument directly — unusual, but seen in some hand-rolled specs)
+    are wrapped in a ``{ type: object, properties: {...} }`` envelope
+    so OpenAI's "top-level must be object" rule is met. We don't ship
+    any tools that need this today, but the wrap keeps us safe.
+
+    Behaviour is idempotent: calling ``fixup_for_strict`` on an
+    already-strict schema is a no-op modulo deep-copy cost.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    if contains_open_mapping(schema):
+        raise ValueError("strict tool schema cannot preserve dynamic mapping keys")
+    out = copy.deepcopy(schema)
+    _rewrite_in_place(out)
+    if out.get("type") != "object":
+        # Strict requires a top-level object schema. Wrap whatever we
+        # got into a single-property object so the LLM still has a
+        # path to express the original payload.
+        return {
+            "type": "object",
+            "properties": {"value": out},
+            "required": ["value"],
+            "additionalProperties": False,
+        }
+    return out
+
+
+def _rewrite_in_place(node: Any) -> None:
+    if isinstance(node, dict):
+        # Strip unsupported keywords first (so we don't recurse into
+        # them needlessly).
+        for kw in list(node.keys()):
+            if kw in _UNSUPPORTED_KEYWORDS:
+                node.pop(kw, None)
+
+        if node.get("type") == "object":
+            props = node.get("properties")
+            if isinstance(props, dict):
+                existing_required = set(node.get("required") or [])
+                for name, prop in props.items():
+                    _rewrite_in_place(prop)
+                    if name not in existing_required:
+                        _make_nullable(prop)
+                        existing_required.add(name)
+                node["required"] = sorted(existing_required)
+            # additionalProperties: false is non-negotiable for strict.
+            node["additionalProperties"] = False
+
+        elif node.get("type") == "array":
+            items = node.get("items")
+            if isinstance(items, dict):
+                _rewrite_in_place(items)
+            elif isinstance(items, list):
+                for it in items:
+                    _rewrite_in_place(it)
+
+        # Recurse into the combinators that remain valid in strict. ``allOf``
+        # was removed above because the function-tool endpoint rejects it.
+        for combinator in ("anyOf", "oneOf"):
+            if combinator in node and isinstance(node[combinator], list):
+                for sub in node[combinator]:
+                    _rewrite_in_place(sub)
+
+    elif isinstance(node, list):
+        for item in node:
+            _rewrite_in_place(item)
+
+
+def _make_nullable(prop: dict[str, Any]) -> None:
+    """Add ``"null"`` to a property's type so strict mode accepts the
+    LLM omitting it (by emitting null instead).
+
+    Handles three input shapes:
+      * ``{"type": "string"}``      → ``{"type": ["string", "null"]}``
+      * ``{"type": ["string","integer"]}`` adds ``"null"`` to the list.
+      * ``{"enum": [...]}`` without a type — no type to widen; strict
+        accepts bare-enum properties (the enum still gains ``None``).
+      * ``{"anyOf": [...]}`` — append ``{"type": "null"}`` to the union.
+
+    An ``enum`` also gains ``None``: the enum constrains the value on top
+    of the type, so a nullable type with a null-free enum still forces the
+    model to pick a member (memory tools' optional ``space`` was always
+    sent as ``"self"`` and denied).
+    """
+    # Every widening builds a new list: a tool spec may share one list
+    # between several schemas (web_search's provider enum is also its
+    # providers items enum, and deepcopy keeps that sharing), and an
+    # in-place append would widen those too. A string-typed item enum
+    # holding null is a schema the Codex backend rejects with an empty
+    # error event on every attempt.
+    enum = prop.get("enum")
+    if isinstance(enum, list) and None not in enum:
+        prop["enum"] = [*enum, None]
+    t = prop.get("type")
+    if isinstance(t, str):
+        if t == "null":
+            return
+        prop["type"] = [t, "null"]
+        return
+    if isinstance(t, list):
+        if "null" not in t:
+            prop["type"] = [*t, "null"]
+        return
+    # Type omitted but anyOf-style union present.
+    if isinstance(prop.get("anyOf"), list):
+        if not any(isinstance(b, dict) and b.get("type") == "null" for b in prop["anyOf"]):
+            prop["anyOf"] = [*prop["anyOf"], {"type": "null"}]
+        return
+    # Pure-enum property (no type) — strict accepts this as-is; we'd
+    # mangle it by adding {"type": "null"}. Leave alone.

@@ -1,0 +1,83 @@
+<title>自主小组周报</title>
+<meta name="description" content="小组周报如何不询问用户，生成未发送、有证据支撑的草稿。">
+<h1>自主小组周报</h1>
+<p><code translate="no">weekly_report</code> 的小组角色生成未发送、有证据支撑的草稿，从不提问：信息缺失就去检索。没有 <code translate="no">ask_user</code>，也没有 <code translate="no">WAITING_USER</code>。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">输入或来源</th><th scope="col">用途</th><th scope="col">限制</th></tr></thead>
+<tbody>
+<tr><th scope="row">请求正文、明确的群或周</th><td>原样保留，优先</td><td><code translate="no">source=supplied</code> 关闭全部发现</td></tr>
+<tr><th scope="row">记忆、相关本地笔记</th><td>确定范围</td><td>旧文档不算本周进展</td></tr>
+<tr><th scope="row">未说明周期</th><td>当前 ISO 周，并显示出来</td><td></td></tr>
+<tr><th scope="row">微信群，现有只读适配器</th><td>范围确定后补充已提供的材料</td><td>只读</td></tr>
+<tr><th scope="row">微信不可用</th><td>搜索本地来源，报告确切的限制</td><td></td></tr>
+<tr><th scope="row">仓库 fixture、workflow 源码、诊断数据</th><td>绝不作为业务证据</td><td></td></tr>
+</tbody>
+</table>
+<p class="note">检索到的内容是数据，不是指令。只用只读工具：不发消息、不任意执行、不改权限、不发布。</p>
+
+<h2 id="incomplete-evidence">证据不完整</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">匿名正文</th><td>只匹配唯一、有来源支撑的作者。提及、顺序和话题都不算证据</td></tr>
+<tr><th scope="row">无法确定的作者</th><td>明显的未验证标签</td></tr>
+<tr><th scope="row">范围未知、渠道不可访问、没有本周记录</th><td>作为限制写入草稿</td></tr>
+<tr><th scope="row">日期未知</th><td>保持未验证</td></tr>
+<tr><th scope="row">搜索为空</th><td>部分草稿加来源搜索诊断，不编造进展</td></tr>
+<tr><th scope="row">模型或 provider 错误、取消</th><td>保留实际结果</td></tr>
+</tbody>
+</table>
+
+<h2 id="delivery">校验和交付</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">校验</th><td>发现之后校验记录形状和引用；只缺业务元数据不会阻止草稿</td></tr>
+<tr><th scope="row">复用</th><td>来源校验、合成和本地草稿写入，以及 Agent 工具、结构化输出校验、记忆和文件工具、原生微信适配器。这不代表 Codex 或 Claude 有小组周报功能。</td></tr>
+<tr><th scope="row">预算</th><td>没有总的模型调用、token 或时长预算。有界原生读取和单次调用的上下文处理保留；覆盖范围明确标为部分。</td></tr>
+<tr><th scope="row">结果</th><td>草稿文本和问题</td></tr>
+<tr><th scope="row">已否决</th><td>必填字段问卷、提供材料和原生采集互斥、不受限的 shell、猜测身份</td></tr>
+</tbody>
+</table>
+
+<h2 id="member-render-recovery">成员渲染和可恢复合成</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">成员行</th><td>保持微信格式，并用方括号带上已校验的来源标识，指向同一来源表</td></tr>
+<tr><th scope="row">检查点</th><td>每个完成的成员行在下一次成员调用前写入，不再减去固定的标题数</td></tr>
+<tr><th scope="row">恢复</th><td>只重试中断的成员，保留已有内容以及模型状态、调用次数和位置语义</td></tr>
+<tr><th scope="row">不变</th><td>检查点读取、精确摘录拒绝、原文回退、sidecar、取消和不发送的交付</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>验收</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">预期</th></tr></thead>
+<tbody>
+<tr><th scope="row">没有元数据的一行请求</th><td>检索到范围和当前材料</td></tr>
+<tr><th scope="row">匿名文本</th><td>被保留并唯一匹配；有歧义的作者保持未验证</td></tr>
+<tr><th scope="row">微信失败</th><td>回退到本地证据</td></tr>
+<tr><th scope="row">没有证据</th><td>不提问，返回部分结果</td></tr>
+<tr><th scope="row">仅提供材料</th><td>不检索</td></tr>
+<tr><th scope="row">过期或编造的引用</th><td>进不了本周进展</td></tr>
+<tr><th scope="row">取消</th><td>向上传播</td></tr>
+<tr><th scope="row">模糊的小组请求</th><td>直接转发，没有澄清分支</td></tr>
+<tr><th scope="row">完成成员 A，B 失败，恢复 B</th><td>两人的正文和来源标识都在保存的总结中</td></tr>
+<tr><th scope="row">测试隔离</th><td>隔离 provider、记忆和 HOME；真实微信在已安装的 App 中单独检查</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现，有包测试</th><td>发现、不提问路由、成员渲染、检查点修复</td></tr>
+<tr><th scope="row">真实模型运行</th><td>未澄清即检索到范围和本地文件；因没有验证到本周材料而返回部分草稿</td></tr>
+<tr><th scope="row">尚未确认</th><td>原生微信的真实采集</td></tr>
+<tr><th scope="row">单独跟踪</th><td>已安装 App 的验收</td></tr>
+</tbody>
+</table>

@@ -7,9 +7,9 @@ import subprocess
 
 import pytest
 
-from openprogram.self_update.delivery.package_protocol import validate_reopen_package
-from openprogram.self_update.control.supervisor import Artifact
-from openprogram.self_update.control.supervisor import _tree_digest
+from openprogram.operations.self_update.delivery.package_protocol import validate_reopen_package
+from openprogram.operations.self_update.control.supervisor import Artifact
+from openprogram.operations.self_update.control.supervisor import _tree_digest
 from tests.component.config.test_distribution_release._support import _fake_desktop_app
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -24,33 +24,34 @@ def package_factory(tmp_path):
         resources = app / "Contents/Resources"
         unpacked = tmp_path / f"{name}-asar"
         unpacked.mkdir()
-        for filename in ("main.js", "preload.js", "self-update-reopen.js"):
-            shutil.copyfile(ROOT / "apps/desktop" / filename, unpacked / filename)
+        # The packaged layout: main.js at the root, its modules under main/.
+        packaged = ["main.js", "main/preload.js", "main/self-update/self-update-reopen.js"]
         if ui:
-            shutil.copyfile(ROOT / "apps/desktop/self-update-ui.js", unpacked / "self-update-ui.js")
-            shutil.copyfile(ROOT / "apps/desktop/self-update-ui-guard.js", unpacked / "self-update-ui-guard.js")
-            shutil.copyfile(ROOT / "apps/desktop/self-update-ui-scroll.js", unpacked / "self-update-ui-scroll.js")
+            packaged += ["main/self-update/self-update-ui.js", "main/self-update/self-update-ui-guard.js", "main/self-update/self-update-ui-scroll.js"]
+        for relative in packaged:
+            (unpacked / relative).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / "apps/desktop" / relative, unpacked / relative)
         subprocess.run(["node", "-e", "require('@electron/asar').createPackage(process.argv[1],process.argv[2]).catch(e=>{console.error(e);process.exit(1)})",
                         str(unpacked), str(resources / "app.asar")], cwd=ROOT, check=True, capture_output=True, timeout=15)
         site = resources / "runtime/python/lib/python3.12/site-packages"
         for target, source in (
-            (site / "openprogram/self_update/control/reopen.py", ROOT / "openprogram/self_update/control/reopen.py"),
-            (site / "openprogram_server/_webui/routes/self_updates.py", ROOT / "apps/server/openprogram_server/_webui/routes/self_updates.py"),
+            (site / "openprogram/operations/self_update/control/reopen.py", ROOT / "openprogram/operations/self_update/control/reopen.py"),
+            (site / "openprogram/interfaces/server/routes/self_updates.py", ROOT / "openprogram/interfaces/server/routes/self_updates.py"),
             (resources / "update/install-app.sh", ROOT / "apps/desktop/scripts/install-app.sh"),
         ):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
-        chunk = site / "openprogram_server/_webui/_frontend/_next/static/chunks/client.js"
+        chunk = site / "openprogram/interfaces/server/_frontend/_next/static/chunks/client.js"
         chunk.parent.mkdir(parents=True, exist_ok=True)
         chunk.write_text('window.openprogramDesktop.selfUpdateReopen.sessionLoaded("p1");')
         if ui:
-            (site / "openprogram/self_update/verification").mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / "openprogram/self_update/verification/ui_checks.py", site / "openprogram/self_update/verification/ui_checks.py")
+            (site / "openprogram/operations/self_update/verification").mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / "openprogram/operations/self_update/verification/ui_checks.py", site / "openprogram/operations/self_update/verification/ui_checks.py")
             chunk.write_text(chunk.read_text() + '\nwindow.openprogramDesktop.selfUpdateCapture("nonce");')
         if interaction:
-            for relative in ("_webui/server_runtime/websocket_dispatch.py", "_webui/owner_auth.py"):
-                (site / "openprogram_server" / relative).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(ROOT / "apps/server/openprogram_server" / relative, site / "openprogram_server" / relative)
+            for relative in ("server_runtime/websocket_dispatch.py", "owner_auth.py"):
+                (site / "openprogram" / "interfaces" / "server" / relative).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / "openprogram/interfaces/server" / relative, site / "openprogram" / "interfaces" / "server" / relative)
             chunk.write_text(chunk.read_text() + '\nconst marker = "data-self-update-verification";')
         if view:
             chunk.write_text(chunk.read_text() + '\nconst toggle = "sessionPerspectiveToggle", lease = "data-self-update-view";')
@@ -118,7 +119,7 @@ def test_malformed_protocol_cannot_expand_reads(package_factory, tmp_path, chang
 
 @pytest.mark.parametrize("side", ["candidate", "installed", "frozen_installer"])
 def test_prepare_rejects_incompatible_side_before_invoking_installer(package_factory, tmp_path, monkeypatch, side):
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     installed, candidate = package_factory("old"), package_factory("new")
     update = tmp_path / "su_protocol"
@@ -151,7 +152,7 @@ def test_writer_cli_rejects_missing_compiled_reopen_entry(package_factory):
 
 
 def test_view_protocol_binds_the_separately_bundled_control(package_factory):
-    from openprogram.self_update.delivery.package_protocol import validate_ui_package
+    from openprogram.operations.self_update.delivery.package_protocol import validate_ui_package
 
     app = package_factory(ui=True, interaction=True, view=True)
     descriptor = validate_ui_package(app)
@@ -166,7 +167,7 @@ def test_view_protocol_binds_the_separately_bundled_control(package_factory):
 
 def test_validator_accepts_legacy_protocol_four_for_rollback(package_factory):
     """Old installed Apps remain readable while new packages advertise protocol 3."""
-    from openprogram.self_update.delivery.package_protocol import validate_ui_package
+    from openprogram.operations.self_update.delivery.package_protocol import validate_ui_package
 
     app = package_factory(ui=True, interaction=True, view=True)
     resources = app / "Contents/Resources"
@@ -174,9 +175,9 @@ def test_validator_accepts_legacy_protocol_four_for_rollback(package_factory):
     descriptor = json.loads(descriptor_path.read_text())
     site = resources / "runtime/python/lib/python3.12/site-packages"
     legacy = {
-        "test_object_frontend": site / "openprogram_server/_webui/_frontend/_next/static/chunks/test-object.js",
-        "rename_frontend": site / "openprogram_server/_webui/_frontend/_next/static/chunks/rename-dialog.js",
-        "test_object_ws": site / "openprogram_server/_webui/ws_actions/self_update.py",
+        "test_object_frontend": site / "openprogram/interfaces/server/_frontend/_next/static/chunks/test-object.js",
+        "rename_frontend": site / "openprogram/interfaces/server/_frontend/_next/static/chunks/rename-dialog.js",
+        "test_object_ws": site / "openprogram/interfaces/server/ws_actions/self_update.py",
     }
     for path in legacy.values():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,17 +202,24 @@ def test_refresh_copies_installer_and_regenerates_packaged_protocol(package_fact
     # Execute the real archive/resource replacement statements over fixture files;
     # deliberately exclude worker stop/start and OS App opening from this check.
     source = (ROOT / "scripts/refresh-local-app.sh").read_text()
-    block = source[source.index('cp "$desktop_asar" "$installed_asar"'):source.index('revision="$build_revision"')]
-    setup = 'app_path="$1"; installed_asar="$1/Contents/Resources/app.asar"; desktop_asar="$2"; installer_stage="$3"; repo_root="$4";\n'
-    result = subprocess.run(["bash", "-euc", setup + block, "fixture", str(app), str(archive), str(staged_installer), str(ROOT)],
+    block = source[source.index('cp "$desktop_asar" "$staged_app/Contents/Resources/app.asar"'):source.index('revision="$build_revision"')]
+    assets = tmp_path / "runtime-assets"
+    assets.mkdir()
+    (assets / "icon.icns").write_bytes(b"staged App icon")
+    setup = ('staged_app="$1"; desktop_asar="$2"; '
+             'installer_stage="$3"; repo_root="$4"; runtime_assets_stage="$5";\n')
+    result = subprocess.run(["bash", "-euc", setup + block, "fixture", str(app), str(archive),
+                             str(staged_installer), str(ROOT), str(assets)],
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
+    assert (resources / "app.asar").read_bytes() == archive.read_bytes()
     assert installer.read_bytes() == staged_installer.read_bytes()
+    assert (resources / "icon.icns").read_bytes() == b"staged App icon"
     validate_reopen_package(app)
 
 
 def test_validator_accepts_previous_flat_package_layout_for_rollback(package_factory):
-    from openprogram.self_update.delivery.package_protocol import validate_ui_package
+    from openprogram.operations.self_update.delivery.package_protocol import validate_ui_package
     app = package_factory("flat-layout", ui=True)
     resources = app / "Contents/Resources"
     for declaration, role, old, new in (

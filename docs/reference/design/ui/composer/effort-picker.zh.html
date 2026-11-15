@@ -1,0 +1,43 @@
+<title>思考深度选择器</title>
+<meta name="description" content="输入框的思考深度弹层：选项、滑块动效、最高档动画及其生命周期。">
+<h1>思考深度选择器</h1>
+
+<p>布局和时序参照观察到的 Claude desktop 2.31226.0，独立实现。Claude 的 Ultracode 工作流模式没有对应物：OpenProgram 保留提供商的深度 id。选项和“推荐”来自所选模型；Radix 负责指针和键盘选择；状态走输入框设置。<a href="composer-fast-control.zh.html">Fast</a> 和帮助相互独立。</p>
+
+<h2>动效</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">轨道</th><td>中性填充、离散刻度，裁剪填充内反向平移的全宽动画场</td></tr>
+<tr><th scope="row">手柄</th><td>白色；拖动时放大 12%；弹性的子级反馈；120ms 吸附</td></tr>
+<tr><th scope="row">选择</th><td>拖动时预览，松手提交。指针取消时清除拖动反馈。</td></tr>
+<tr><th scope="row">标签</th><td>四层过渡：垂直移动，200ms 内从模糊变清晰</td></tr>
+</tbody>
+</table>
+
+<h2>最高档动画场</h2>
+<p>在多个选项中的最高档运行（<code translate="no">xhigh</code>、<code translate="no">max</code> 或 <code translate="no">high</code>）。只有一个或没有选项时不动。</p>
+<dl class="pairs">
+<dt>单元</dt><dd>4px 网格上的 3px 圆角方块，淡紫色</dd>
+<dt>图案</dt><dd>WebGL2 八脉冲场从右侧传播，五级亮度，单元亮度漂移，按主题的预乘颜色</dd>
+<dt>时序</dt><dd>700ms 进入；离开时 850ms 淡出，画布保持轨道全宽</dd>
+<dt>分辨率</dt><dd>跟随设备像素比，上限 4,147,200 像素</dd>
+</dl>
+
+<h2>生命周期</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">动画</th><td>一个动画回调，在关闭、卸载、文档隐藏或减少动态时取消。</td></tr>
+<tr><th scope="row">失败</th><td>减少动态时关闭动画场。Canvas 失败时滑块仍可用。</td></tr>
+<tr><th scope="row">无障碍</th><td>主题色来自 CSS token。具名值、键盘焦点和推荐刻度保持无障碍。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>验收</summary>
+<p>在真实 <code translate="no">ThinkingEffortPill</code> 上：指针和键盘选择的深度 id 不变；<code translate="no">xhigh</code> 有动画；离开后淡出为空；重新打开和换模型正常；Fast 保持独立；减少动态时画面稳定；深色、浅色和窄布局清晰。</p>
+</details>
+
+<h2>实现状态</h2>
+<p>已实现。不声称与参考像素一致。</p>

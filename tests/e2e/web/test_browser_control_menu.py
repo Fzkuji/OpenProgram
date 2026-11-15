@@ -27,9 +27,10 @@ esbuild.build({
     contents: [
       'export { createElement } from "react";',
       'export { createRoot } from "react-dom/client";',
-      'export { BrowserControlBar } from "./components/center-tabs/browser-control-bar.tsx";',
-      'export { recordOperationCue, resetBrowserControl } from "./lib/browser/browser-control.ts";',
-      'export { ingestBrowserResource, resetBrowserResources, setBrowserConnection } from "./lib/chat/session-resources.ts";',
+      'export { BrowserControlBar } from "./components/center-tabs/browser/toolbar/browser-control-bar.tsx";',
+      'export { FileBreadcrumb } from "./components/files/file-management.tsx";',
+      'export { recordOperationCue, resetBrowserControl } from "./lib/browser/control/browser-control.ts";',
+      'export { ingestBrowserResource, resetBrowserResources, setBrowserConnection } from "./lib/chat/resources/session-resources.ts";',
     ].join("\n"),
     resolveDir: web,
     loader: "tsx",
@@ -124,7 +125,11 @@ def _html() -> str:
         point: { x: 10, y: 20, width: 100, height: 80 },
       },
     });
-    createRoot(document.getElementById("root")).render(createElement(BrowserControlBar, {
+    const appRoot = createRoot(document.getElementById("root"));
+    window.showBreadcrumb = () => appRoot.render(createElement(ControlBarBundle.FileBreadcrumb, {
+      root: "Project", path: "src/file.txt", absolutePath: "/project/src/file.txt", onLocate() {},
+    }));
+    appRoot.render(createElement(BrowserControlBar, {
       resource: {
         id: "assoc-a", resourceId: "page-a", tabId: "w:a",
         conversationSessionId: "a", generation: 1, controlState: "active",
@@ -137,7 +142,12 @@ def _html() -> str:
 """
 
 
-def test_web_operation_history_menu_opens_and_dismisses_in_the_same_page() -> None:
+@pytest.mark.parametrize("view,desktop_bridge", [
+    ("history", False), ("history", True), ("breadcrumb", True),
+])
+def test_renderer_menus_open_dismiss_and_execute_without_native_popups(
+    view: str, desktop_bridge: bool,
+) -> None:
     from playwright.sync_api import expect, sync_playwright
 
     with tempfile.TemporaryDirectory(prefix="openprogram-control-menu-") as directory:
@@ -172,7 +182,38 @@ def test_web_operation_history_menu_opens_and_dismisses_in_the_same_page() -> No
                     context = browser.new_context()
                     page = context.new_page()
                     page.set_viewport_size({"width": 800, "height": 600})
+                    page.add_init_script("""
+                        window.nativeMenus = [];
+                        window.clipboardWrites = [];
+                        Object.defineProperty(navigator, 'clipboard', { value: {
+                            writeText: async text => { window.clipboardWrites.push(text); },
+                        }});
+                    """)
+                    if desktop_bridge:
+                        page.add_init_script("""
+                            window.openprogramDesktop = { contextMenu: {
+                                popup: request => { window.nativeMenus.push(request); return Promise.resolve(null); },
+                                close() {},
+                            }};
+                        """)
                     page.goto(f"http://127.0.0.1:{server.server_port}/")
+                    if view == "breadcrumb":
+                        page.evaluate("window.showBreadcrumb()")
+                        ancestor = page.locator('button[data-path="src"]')
+                        ancestor.click(button="right")
+                        expect(page.get_by_role("menuitem")).to_have_text([
+                            "Copy relative path", "Copy absolute path", "Copy name",
+                        ])
+                        page.get_by_role("menuitem", name="Copy absolute path").click()
+                        expect(page.get_by_role("menu")).to_have_count(0)
+                        assert page.evaluate("window.clipboardWrites") == ["/project/src"]
+                        ancestor.click(button="right")
+                        page.get_by_role("menuitem", name="Copy relative path").click()
+                        expect(page.get_by_role("menu")).to_have_count(0)
+                        assert page.evaluate("window.clipboardWrites") == ["/project/src", "src"]
+                        assert page.evaluate("window.nativeMenus") == []
+                        assert context.pages == [page]
+                        return
                     history = page.get_by_role("button", name="Operation history")
                     expect(history).to_have_count(0)
                     page.get_by_role(
@@ -213,6 +254,7 @@ def test_web_operation_history_menu_opens_and_dismisses_in_the_same_page() -> No
                     assert page.get_by_role("menu").count() == 0
                     expect(history).to_be_focused()
                     assert context.pages == [page]
+                    assert page.evaluate("window.nativeMenus") == []
                 finally:
                     if browser is not None:
                         browser.close()

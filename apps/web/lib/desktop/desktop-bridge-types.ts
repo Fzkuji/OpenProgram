@@ -1,4 +1,7 @@
-import type { ThemeId, ThemeMode, ThemeStyle } from "@/lib/prefs/theme-pref";
+import type { ThemeId, ThemeMode, ThemeStyle } from "@/lib/prefs/appearance/theme-pref";
+import type { PickedElement } from "@/lib/browser/capture/page-comment";
+import type { PickedRegion } from "@/lib/browser/capture/region-shot";
+import type { MenuGlyph, MenuKeys } from "@/components/ui/menu/menu-parts";
 
 export interface DesktopThemeChrome {
   theme: ThemeId;
@@ -15,6 +18,10 @@ export interface DesktopThemeApi {
   /** Bounded local diagnostic metadata; never includes messages or page URLs. */
   trace?(payload: { source: string; theme?: string | null; previousTheme?: string | null;
     style?: string; mode?: string; storedMode?: string | null; systemDark?: boolean }): void;
+  /** The OS appearance as the main process reads it; what Auto follows in the App. */
+  systemDark?(): boolean | undefined;
+  /** Fires when the OS appearance changes; returns the unsubscribe function. */
+  onSystemChange?(listener: (dark: boolean) => void): () => void;
 }
 
 /** Public WebTab contracts exposed by the Electron preload bridge. */
@@ -34,15 +41,6 @@ export interface DesktopWebTabFindResult {
   activeMatchOrdinal: number;
   matches: number;
   finalUpdate: boolean;
-}
-
-export type DesktopWebTabHumanInputKind = "pointer" | "key" | "scroll" | "navigate";
-
-export interface DesktopWebTabHumanInput {
-  id: string;
-  windowId: string;
-  sequence: number;
-  kind: DesktopWebTabHumanInputKind;
 }
 
 export interface DesktopBrowserControlOverlay {
@@ -85,6 +83,8 @@ export interface DesktopWebTabActionMarker {
   generation?: number;
   /** Host-provided reduced-motion preference for this click replay. */
   reducedMotion?: boolean;
+  /** The operation's action name: a press plays where the cursor lands. */
+  action?: string;
   /**
    * Backend resource_id for this receipt (`page:<instance>:<revision>`).
    * A new id on the same native Page is a worker incarnation; generation
@@ -100,9 +100,21 @@ export interface DesktopWebTabBounds {
   height: number;
 }
 
+/** The rounded card edge a web tab's page meets at its bottom corners, in
+ *  renderer CSS px: the App paints what lies outside that arc above the
+ *  native view, which no DOM clip reaches. */
+export interface DesktopWebTabCorners {
+  radius: number;
+  /** The colour behind the card. */
+  outside: string;
+  /** The card's computed box-shadow, or "". */
+  shadow: string;
+}
+
 export interface DesktopVisibleWebView {
   id: string;
   bounds: DesktopWebTabBounds;
+  corners?: DesktopWebTabCorners | null;
 }
 
 export interface DesktopWebTabApi {
@@ -121,6 +133,7 @@ export interface DesktopWebTabApi {
   /** Read the exact native Page target and live metadata without revealing it. */
   inspect?(id: string): Promise<{
     target_id: string;
+    input_scale?: number;
     url: string;
     title: string;
   } | null>;
@@ -147,7 +160,7 @@ export interface DesktopWebTabApi {
   destroy(id: string): void;
   /** Destroy and report whether the native view was actually closed. */
   destroyConfirmed?(id: string): Promise<boolean>;
-  reload(id: string): void;
+  reload(id: string, options?: { hard?: boolean }): void;
   stop(id: string): void;
   goBack(id: string): void;
   goForward(id: string): void;
@@ -157,15 +170,23 @@ export interface DesktopWebTabApi {
     options?: { forward?: boolean; findNext?: boolean },
   ): void;
   stopFind?(id: string, action: "clearSelection" | "keepSelection" | "activateSelection"): void;
+  /** Let the user click one element on the page. null when cancelled. */
+  pickElement?(id: string): Promise<PickedElement | null>;
+  /** Let the user drag a rectangle over the page; its pixels, or null when cancelled. */
+  pickRegion?(id: string): Promise<PickedRegion | null>;
+  cancelPick?(id: string): void;
   zoom?(id: string, action: "in" | "out" | "reset"): Promise<number | null>;
   print?(id: string): Promise<boolean>;
   /** Snapshot of the native page as a data URL, for PiP drag placeholders. */
-  capture?(id: string): Promise<string | null>;
+  capture?(id: string, mode?: "presentation"): Promise<string | null>;
   /** Host-owned action location on the exact native view. null clears. */
   showAction?(
     id: string,
     marker: DesktopWebTabActionMarker | null,
   ): Promise<boolean>;
+  /** The page's edge glows, and the agent cursor shows, while the Agent
+   *  holds it (desktop main/windows/action-cues.js). */
+  setControlGlow?(id: string, held: boolean): void;
   /** App-owned floating Agent control over the native page. null hides. */
   setControlOverlay?(
     id: string,
@@ -175,16 +196,15 @@ export interface DesktopWebTabApi {
     cb: (event: DesktopBrowserControlOverlayEvent) => void,
   ): () => void;
   /** PiP-only layout scale. Pass the content width, or null to restore user zoom. */
-  setPipZoom?(id: string, width: number | null): void;
+  setPipZoom?(id: string, width: number | null, height?: number): void;
   /** Navigation/title/loading events pushed from main; returns the
    *  unsubscribe function. */
   onState(cb: (state: DesktopWebTabState) => void): () => void;
   /** Valid http(s) page popup delegated by the owning native web view. */
-  onPopup?(cb: (popup: { openerId: string; url: string }) => void): () => void;
+  /** ``id`` is set when the desktop already made the popup's Page (it keeps window.opener). */
+  onPopup?(cb: (popup: { openerId: string; url: string; id?: string }) => void): () => void;
   onFindResult?(cb: (result: DesktopWebTabFindResult) => void): () => void;
-  onCommand?(cb: (command: { id: string; command: "find" }) => void): () => void;
-  /** Native human input on an owned Page. Payload has no typed text, keys, coords, or URLs. */
-  onHumanInput?(cb: (input: DesktopWebTabHumanInput) => void): () => void;
+  onCommand?(cb: (command: { id: string; command: "find" | "focus-address" | "overview" | "palette" }) => void): () => void;
 }
 /** One recorded page visit from the desktop browsing history. */
 export interface DesktopHistoryEntry {
@@ -241,6 +261,26 @@ export interface DesktopUpdateState {
   release: DesktopUpdateRelease | null;
   progress: { downloaded: number; total: number } | null;
   error: string | null;
+}
+
+export interface DesktopAttentionPrefs {
+  notifications: boolean;
+  keepAwake: boolean;
+  /** "default", "none", or "system:<name>" for a sound macOS ships. */
+  sound: string;
+}
+
+/** Desktop notifications and keep-awake (desktop/main/windows/attention-service.js). */
+export interface DesktopAttentionApi {
+  getPrefs(): Promise<DesktopAttentionPrefs>;
+  setPrefs(patch: Partial<DesktopAttentionPrefs>): Promise<DesktopAttentionPrefs>;
+  /** Sound names offered besides Default and None; empty off macOS. Older shells lack it. */
+  sounds?(): Promise<string[]>;
+  previewSound?(sound: string): Promise<boolean>;
+  onPrefs(cb: (prefs: DesktopAttentionPrefs) => void): () => void;
+  notify(request: { key: string; title: string; body: string; sessionId: string; urgent?: boolean }): void;
+  reportBusy(busy: boolean): void;
+  onOpenSession(cb: (sessionId: string) => void): () => void;
 }
 
 export interface DesktopUpdateApi {
@@ -319,8 +359,17 @@ export interface DesktopTerminalApi {
 export interface DesktopContextMenuItem {
   id: string;
   label: string;
+  /** Separate explanatory text in application HTML menus. */
+  description?: string;
+  /** Checkbox selections may update without dismissing the HTML menu. */
+  keepOpen?: boolean;
   iconUrl?: string;
+  iconFallbackUrl?: string;
   icon?: "folder";
+  /** The row's Solar icon (components/ui/menu/menu-parts.tsx), drawn by the overlay. */
+  glyph?: MenuGlyph;
+  /** The row's key badge: a menu-local letter or a system shortcut. */
+  keys?: MenuKeys;
   disabled?: boolean;
   checked?: boolean;
   separatorBefore?: boolean;
@@ -344,13 +393,14 @@ export interface DesktopMainMenuApi {
     width?: number;
     height?: number;
   }): void;
+  updateItems?(items: DesktopContextMenuItem[]): void;
   close(): void;
   scheduleClose?(delay?: number): void;
   cancelClose?(): void;
   onUpdate?(cb: (state: {
     items: DesktopContextMenuItem[];
-    x: number;
-    y: number;
+    x?: number;
+    y?: number;
     theme?: ThemeId;
     width?: number;
   }) => void): () => void;

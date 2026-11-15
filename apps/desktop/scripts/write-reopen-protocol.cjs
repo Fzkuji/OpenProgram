@@ -41,9 +41,9 @@ async function writeProtocol(resources) {
     }
     return asar.extractFile(archive, name, false).toString("utf8");
   }
-  if (!/^const REOPEN_PROTOCOL = 1;$/m.test(archiveText("self-update-reopen.js")) ||
+  if (!/^const REOPEN_PROTOCOL = 1;$/m.test(archiveText("main/self-update/self-update-reopen.js")) ||
       !archiveText("main.js").includes("selfUpdateReopen.resolveStartUrl") ||
-      !archiveText("preload.js").includes('"self-update:session-loaded"')) {
+      !archiveText("main/preload.js").includes('"self-update:session-loaded"')) {
     throw new Error("Desktop reopen protocol is unavailable");
   }
   const manifest = JSON.parse(text(resources, "runtime/runtime-manifest.json"));
@@ -53,15 +53,15 @@ async function writeProtocol(resources) {
   const candidates = fs.readdirSync(path.join(resources, prefix, "lib"))
     .filter(name => /^python\d+\.\d+$/.test(name))
     .map(name => `${prefix}/lib/${name}/site-packages/`)
-    .filter(site => fs.existsSync(path.join(resources, site, "openprogram/self_update/control/reopen.py")));
+    .filter(site => fs.existsSync(path.join(resources, site, "openprogram/operations/self_update/control/reopen.py")));
   if (candidates.length !== 1) throw new Error("ambiguous backend reopen package");
   const site = candidates[0];
-  const backend = `${site}openprogram/self_update/control/reopen.py`;
-  const routes = `${site}openprogram_server/_webui/routes/self_updates.py`;
+  const backend = `${site}openprogram/operations/self_update/control/reopen.py`;
+  const routes = `${site}openprogram/interfaces/server/routes/self_updates.py`;
   if (!/^REOPEN_PROTOCOL = 1$/m.test(text(resources, backend)) ||
       !text(resources, routes).includes('/desktop-reopen/ack"')) throw new Error("backend reopen protocol is unavailable");
   if (!text(resources, "update/install-app.sh").includes("--reopen-update=")) throw new Error("installer reopen protocol is unavailable");
-  const chunkRoot = `${site}openprogram_server/_webui/_frontend/_next/static/chunks/`;
+  const chunkRoot = `${site}openprogram/interfaces/server/_frontend/_next/static/chunks/`;
   const chunks = fs.readdirSync(path.join(resources, chunkRoot)).sort().filter(name => /^[A-Za-z0-9._-]+\.js$/.test(name));
   const frontend = chunks.map(name => chunkRoot + name).find(relative => {
     const source = text(resources, relative);
@@ -80,25 +80,25 @@ async function writeProtocol(resources) {
   fs.renameSync(temporary, target);
   // Older complete packages keep their reopen-only protocol. Capture capability
   // is advertised only when all three actual packaged consumers are present.
-  const uiBackend = `${site}openprogram/self_update/verification/ui_checks.py`;
+  const uiBackend = `${site}openprogram/operations/self_update/verification/ui_checks.py`;
   const uiFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("selfUpdateCapture"));
   const uiTarget = path.join(resources, "update/ui-verification-protocol.json");
-  const hasCapture = ["/self-update-ui.js", "/self-update-ui-guard.js", "/self-update-ui-scroll.js"]
+  const hasCapture = ["/main/self-update/self-update-ui.js", "/main/self-update/self-update-ui-guard.js", "/main/self-update/self-update-ui-scroll.js"]
     .every(name => asar.listPackage(archive).includes(name));
   if (hasCapture && fs.existsSync(path.join(resources, uiBackend)) && uiFrontend &&
       /^UI_PROTOCOL = 1$/m.test(text(resources, uiBackend)) &&
       archiveText("main.js").includes("registerUiVerificationIpc") &&
       archiveText("main.js").includes("guard: uiVerificationGuard") &&
-      archiveText("self-update-ui.js").includes("guard.acquire(wc, nonce)") &&
-      archiveText("preload.js").includes('"self-update:ui-capture"') &&
+      archiveText("main/self-update/self-update-ui.js").includes("guard.acquire(wc, nonce)") &&
+      archiveText("main/preload.js").includes('"self-update:ui-capture"') &&
       text(resources, routes).includes("/desktop-verification/{nonce}")) {
     const uiBindings = { desktop: bindings.desktop, routes: bindings.routes, runtime_manifest: bindings.runtime_manifest,
       backend: await binding(resources, uiBackend), frontend: await binding(resources, uiFrontend) };
     let protocol = 1;
-    const server = `${site}openprogram_server/_webui/server_runtime/websocket_dispatch.py`;
-    const ownerAuth = `${site}openprogram_server/_webui/owner_auth.py`;
+    const server = `${site}openprogram/interfaces/server/server_runtime/websocket_dispatch.py`;
+    const ownerAuth = `${site}openprogram/interfaces/server/owner_auth.py`;
     const scrollFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("data-self-update-verification"));
-    if (asar.listPackage(archive).includes("/self-update-ui-scroll.js") && scrollFrontend &&
+    if (asar.listPackage(archive).includes("/main/self-update/self-update-ui-scroll.js") && scrollFrontend &&
         /^UI_INTERACTION_PROTOCOL = 1$/m.test(text(resources, uiBackend)) &&
         fs.existsSync(path.join(resources, server)) && text(resources, server).includes("permits_ws_command") &&
         fs.existsSync(path.join(resources, ownerAuth)) && text(resources, ownerAuth).includes("x-openprogram-ui-check")) {
@@ -114,7 +114,7 @@ async function writeProtocol(resources) {
         return source.includes("sessionPerspectiveToggle") && source.includes("data-tab-id") && source.includes("aria-pressed");
       });
       if (/^UI_VIEW_PROTOCOL = 1$/m.test(text(resources, uiBackend)) && viewFrontend && viewControls &&
-          archiveText("self-update-ui-scroll.js").includes("view_restore_failed")) {
+          archiveText("main/self-update/self-update-ui-scroll.js").includes("view_restore_failed")) {
         protocol = 3;
         uiBindings.view_frontend = await binding(resources, viewFrontend);
         uiBindings.view_controls = await binding(resources, viewControls);

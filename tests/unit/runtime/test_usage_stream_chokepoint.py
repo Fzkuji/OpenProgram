@@ -9,7 +9,7 @@ import asyncio
 
 import pytest
 
-from openprogram.providers.types import (
+from openprogram.models.providers.types import (
     AssistantMessage,
     Context,
     EventDone,
@@ -18,11 +18,11 @@ from openprogram.providers.types import (
     Model,
     Usage,
 )
-from openprogram.usage import usage_scope
-from openprogram.usage.context import UsageContext
-from openprogram.usage import context as _ctx_mod
-from openprogram.usage.ledger import UsageLedger
-from openprogram.usage import recorder as _recorder
+from openprogram.models.usage import usage_scope
+from openprogram.models.usage.context import UsageContext
+from openprogram.models.usage import context as _ctx_mod
+from openprogram.models.usage.ledger import UsageLedger
+from openprogram.models.usage import recorder as _recorder
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +52,7 @@ class _FakeProvider:
         self.deadline = None
 
     async def stream_simple(self, model, context, opts):
-        from openprogram.providers.utils.deadline import get_deadline
+        from openprogram.models.providers.utils.deadline import get_deadline
         self.deadline = get_deadline()
         partial = AssistantMessage(role="assistant", content=[], api=model.api,
                                    provider=model.provider, model=model.id, timestamp=0)
@@ -74,7 +74,7 @@ class _FakeProvider:
 def fake_api(monkeypatch):
     api = "fake-metering-api"
     import importlib
-    stream_mod = importlib.import_module("openprogram.providers.stream")
+    stream_mod = importlib.import_module("openprogram.models.providers.streaming.stream")
     model = Model(id="fake-model-1", provider="fakeprov", api=api,
                   name="fake", base_url="http://fake.local", context_window=200000)
     # Patch the names as bound INSIDE stream.py's namespace (it imported
@@ -88,7 +88,7 @@ def fake_api(monkeypatch):
 def test_records_when_consumer_returns_at_done(ledger, fake_api):
     """Consumer reads up to and including the done event, then stops —
     exactly agent_loop's behaviour. Usage must still be recorded."""
-    from openprogram.providers import stream_simple
+    from openprogram.models.providers import stream_simple
 
     async def consume_until_done():
         opts_seen = 0
@@ -112,7 +112,7 @@ def test_records_when_consumer_returns_at_done(ledger, fake_api):
 def test_records_once_not_per_event(ledger, fake_api):
     """Full drain must still record exactly one event (the recorded flag
     guards against double counting)."""
-    from openprogram.providers import stream_simple
+    from openprogram.models.providers import stream_simple
 
     async def drain():
         async for _ in stream_simple(fake_api, Context(system_prompt="x", messages=[], tools=[]),
@@ -124,7 +124,7 @@ def test_records_once_not_per_event(ledger, fake_api):
 
 
 def test_session_id_flows_from_options(ledger, fake_api):
-    from openprogram.providers import stream_simple
+    from openprogram.models.providers import stream_simple
 
     async def drain():
         async for _ in stream_simple(fake_api, Context(system_prompt="x", messages=[], tools=[]),
@@ -141,15 +141,15 @@ def test_provider_data_is_activity_and_uses_task_deadline(
 ):
     """Provider callbacks must run under the claimed task's bounded deadline."""
     import importlib
-    stream_mod = importlib.import_module("openprogram.providers.stream")
+    stream_mod = importlib.import_module("openprogram.models.providers.streaming.stream")
 
     activity: list[str] = []
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_operation_timeout",
+        "openprogram.runtime.jobs.runner.current_job_operation_timeout",
         lambda declared, *, preemptibility: 0.1,
     )
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.record_current_job_activity",
+        "openprogram.runtime.jobs.runner.record_current_job_activity",
         lambda kind: activity.append(kind) or True,
     )
     provider = stream_mod.get_api_provider(fake_api.api)
@@ -168,5 +168,5 @@ def test_provider_data_is_activity_and_uses_task_deadline(
 
 
 def _opts(**kw):
-    from openprogram.providers.types import SimpleStreamOptions
+    from openprogram.models.providers.types import SimpleStreamOptions
     return SimpleStreamOptions(api_key="fake-key", **kw)

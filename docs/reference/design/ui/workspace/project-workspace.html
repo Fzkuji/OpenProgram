@@ -1,0 +1,88 @@
+<title>Project Workspace</title>
+<meta name="description" content="The App as a browser: tabs in the center, sessions by project on the left, a file tree on the right.">
+<h1>Project workspace: files, tabs and sessions</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 220" role="img" aria-label="Three columns. Left: sessions grouped by project. Center: one tab strip for session and file tabs, a toolbar for the active tab, then its content. Right: a file tree.">
+  <rect class="tile" x="0" y="4" width="160" height="212" rx="8"/>
+  <text class="t-big" x="14" y="34">Sessions</text>
+  <text class="t-soft" x="14" y="62">Grouped by project</text>
+  <text class="t-soft" x="14" y="84">name, path, new session</text>
+  <text class="t-soft" x="14" y="106">Last group: No project</text>
+  <rect class="tile" x="172" y="4" width="336" height="212" rx="8"/>
+  <text class="t-big" x="188" y="34">Tab strip  ·  + new tab</text>
+  <line class="ln-faint" x1="172" y1="48" x2="508" y2="48"/>
+  <text class="t-soft" x="188" y="72">Toolbar of the active tab</text>
+  <line class="ln-faint" x1="172" y1="86" x2="508" y2="86"/>
+  <text class="t-soft" x="188" y="120">Chat, file viewer or other tab content</text>
+  <rect class="tile" x="520" y="4" width="160" height="212" rx="8"/>
+  <text class="t-big" x="534" y="34">File tree</text>
+  <text class="t-soft" x="534" y="62">One level per request</text>
+  <text class="t-soft" x="534" y="84">Click: open a tab</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>Sessions</strong><small>grouped by project</small></li>
+<li><strong>Tabs</strong><small>strip, active tab's toolbar, content</small></li>
+<li class="flow-end"><strong>File tree</strong><small>one level per request</small></li>
+</ol>
+</figure>
+<p class="note">One layout, no workspace mode and no separate route: anything new becomes a tab, not a pane. The panes live in the persistent AppShell. Interactive sketch: <a href="project-workspace-prototype.html">prototype</a>.</p>
+
+<h2>Tab model</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tab</th><th scope="col">Toolbar and content</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session</code></th><td>Project, model, thinking and permission settings travel with the tab. Bookmark over the single chat surface: switching a tab uses the session-switch path.</td></tr>
+<tr><th scope="row"><code translate="no">file</code></th><td>Breadcrumb and view controls. Code and text with line numbers and highlight, Markdown rendered or source, images, PDF inline via <code translate="no">/files/raw</code>, anything else a download.</td></tr>
+<tr><th scope="row"><code translate="no">run</code> (planned)</th><td>Live graph of a program or workflow derived from recorded events (<code translate="no">openprogram/runtime/execution/dag.py</code>, <code translate="no">openprogram/state/store/session/graph/builder.py</code>). Workflows stay plain Python: no graph DSL, no instrumentation; click a node for inputs and outputs.</td></tr>
+</tbody>
+</table>
+<ul>
+<li>+ opens a new-tab page: new session, run agent, project settings.</li>
+<li>Tabs persist in <code translate="no">localStorage</code>.</li>
+<li>File paths in transcript tool calls open in center tabs.</li>
+<li>History, Context and Executions live in an overlay opened from the session toolbar; legacy DOM mounts and <code translate="no">window.rightDock</code> shims stay underneath.</li>
+</ul>
+
+<h2 id="file-api">Project file API</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Request and reply</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">project_file_tree</code></th><td><code translate="no">project_id</code>, <code translate="no">path</code> (relative, <code translate="no">""</code> for root). One directory level.</td></tr>
+<tr><th scope="row"><code translate="no">project_file_search</code></th><td>Names and relative paths, paged by opaque cursor over immutable snapshots; skips ignored build directories, follows no symlinks.</td></tr>
+<tr><th scope="row"><code translate="no">project_file_read</code></th><td><code translate="no">{content, size, mtime, truncated}</code>, or <code translate="no">binary</code> / <code translate="no">too_large</code></td></tr>
+<tr><th scope="row"><code translate="no">project_file_write</code></th><td>UTF-8 text, 5 MB cap, parent must exist. <code translate="no">expected_mtime</code> mismatch answers <code translate="no">conflict</code>.</td></tr>
+<tr><th scope="row"><code translate="no">project_file_create</code> <code translate="no">rename</code> <code translate="no">copy</code> <code translate="no">delete</code> <code translate="no">reveal</code></th><td>File management; also <code translate="no">project_file_info</code>, <code translate="no">project_folder_size</code>, <code translate="no">project_file_operation_status</code>.</td></tr>
+<tr><th scope="row"><code translate="no">GET /files/raw</code></th><td><code translate="no">?project_id=&amp;path=</code> Images, PDF inline, everything else a download. <code translate="no">nosniff</code>; <code translate="no">CSP: sandbox</code> except PDF.</td></tr>
+</tbody>
+</table>
+<p class="note">Every path passes <code translate="no">_resolve</code>: known project, location check, no absolute paths, <code translate="no">realpath</code> inside the project root. Reads cap at 1 MB. Binary: NUL in the first 8 KiB. Dotfiles are listed; <code translate="no">.git/</code>, <code translate="no">node_modules/</code>, <code translate="no">.venv/</code>, <code translate="no">__pycache__/</code> are not prefetched. Code: <code translate="no">openprogram/interfaces/server/ws_actions/files/</code>.</p>
+
+<h2>Reused pieces</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Piece</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Project store, settings.json</th><td><code translate="no">openprogram/state/store/project/project_store.py</code></td></tr>
+<tr><th scope="row">Project actions, including <code translate="no">list_project_sessions</code>, <code translate="no">set_session_project</code></th><td><code translate="no">openprogram/interfaces/server/ws_actions/project.py</code></td></tr>
+<tr><th scope="row">Projects page</th><td><code translate="no">apps/web/components/projects/projects-page.tsx</code></td></tr>
+<tr><th scope="row">Chat, right sidebar</th><td><code translate="no">apps/web/components/chat/</code>, <code translate="no">apps/web/components/right-sidebar/</code></td></tr>
+<tr><th scope="row"><code translate="no">wsRequest</code></th><td><code translate="no">apps/web/lib/net/ws/ws-request.ts</code></td></tr>
+<tr><th scope="row"><code translate="no">/api/pick-folder</code></th><td><code translate="no">openprogram/interfaces/server/routes/files/workdir.py</code></td></tr>
+</tbody>
+</table>
+
+<h2>Non-goals</h2>
+<ul>
+<li>No git panel: the agent does that through chat.</li>
+<li>No fs-events tree watching; open folders re-list on window focus (see <a href="project-location.html">project location</a>).</li>
+</ul>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">File API, tree, viewers, file tabs, write path</th><td>Implemented</td></tr>
+<tr><th scope="row">Session Overview panel</th><td>Planned. Right sidebar view from <code translate="no">session_artifacts</code> plus live events: Outputs (files touched by <code translate="no">write</code>/<code translate="no">edit</code>, deduped, newest first, click to open), Subagents (label, status, click to focus branch), Sources (files read, URLs from <code translate="no">web_search</code>/<code translate="no">fetch</code>, deduped). Derived from persisted tool calls, no new storage.</td></tr>
+<tr><th scope="row">Projects list as a table</th><td>Planned. Name, Sources, Updated; a row expands to its sessions; actions open, new session, ⋯ (rename, settings, remove). Needs <code translate="no">updated_at</code> (max of session timestamps, else registry ctime) and <code translate="no">rename_project</code>. Pinning later.</td></tr>
+<tr><th scope="row"><code translate="no">run</code> tabs</th><td>Planned</td></tr>
+</tbody>
+</table>

@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram_server._webui.routes.files import workdir
+from openprogram.interfaces.server.routes.files import workdir
 
 
 def _linux(monkeypatch) -> None:

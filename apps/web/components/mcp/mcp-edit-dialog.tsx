@@ -17,11 +17,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { SimpleSelect } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
 
-import styles from "./mcp-page.module.css";
 
 export interface EditTarget {
   mode: "add" | "edit";
@@ -67,7 +67,7 @@ function StoredNames({ names }: { names: string[] }) {
   const { text } = useTranslation();
   if (names.length === 0) return null;
   return (
-    <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+    <div className="text-fs-xs text-text-muted">
       {text("Stored (values hidden): ", "已保存（值不显示）：")}
       <code>{names.join(", ")}</code>
       {text(
@@ -239,23 +239,23 @@ export function EditDialog({
               disabled={!isAdd}
               onChange={(e) => setState({ ...state, name: e.target.value })}
               placeholder="drawio"
-              className="font-mono"
+              
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="mcp-transport">{text("Transport", "传输")}</Label>
-            <select
+            <SimpleSelect label={text("Transport", "传输")}
               id="mcp-transport"
+              className="w-full"
               value={state.transport}
-              onChange={(e) =>
-                setState({ ...state, transport: e.target.value as EditTarget["transport"] })}
-              className="ui-text-input flex h-[var(--ui-button-h)] w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] px-3 font-mono text-sm focus:outline-none focus:border-[color:var(--accent-blue)]"
-            >
-              <option value="local">local (stdio subprocess)</option>
-              <option value="http">http (Streamable HTTP)</option>
-              <option value="sse">sse (legacy Server-Sent Events)</option>
-            </select>
+              onValueChange={(value) => setState({ ...state, transport: value })}
+              options={[
+                { value: "local" as EditTarget["transport"], label: text("local (stdio subprocess)", "local（stdio 子进程）") },
+                { value: "http" as EditTarget["transport"], label: text("http (Streamable HTTP)", "http（可流式 HTTP）") },
+                { value: "sse" as EditTarget["transport"], label: text("sse (legacy Server-Sent Events)", "sse（旧版 Server-Sent Events）") },
+              ]}
+            />
           </div>
 
           {state.transport === "local" ? (
@@ -278,7 +278,7 @@ export function EditDialog({
                   value={state.env}
                   onChange={(e) => setState({ ...state, env: e.target.value })}
                   placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_..."
-                  className="min-h-[100px] font-mono text-sm"
+                  className="min-h-[100px] font-mono text-fs-base"
                 />
                 <StoredNames names={state.storedEnvNames} />
               </div>
@@ -303,29 +303,29 @@ export function EditDialog({
                   value={state.headers}
                   onChange={(e) => setState({ ...state, headers: e.target.value })}
                   placeholder="X-Tenant: acme"
-                  className="min-h-[60px] font-mono text-sm"
+                  className="min-h-[60px] font-mono text-fs-base"
                 />
                 <StoredNames names={state.storedHeaderNames} />
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="mcp-auth">{text("Authentication", "认证")}</Label>
-                <select
+                <SimpleSelect label={text("Authentication", "认证")}
                   id="mcp-auth"
+                  className="w-full font-mono"
                   value={state.authKind}
-                  onChange={(e) =>
-                    setState({ ...state, authKind: e.target.value as EditTarget["authKind"] })}
-                  className="ui-text-input flex h-[var(--ui-button-h)] w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] px-3 font-mono text-sm focus:outline-none focus:border-[color:var(--accent-blue)]"
-                >
-                  <option value="none">{text("none", "无")}</option>
-                  <option value="bearer">{text("bearer token (static)", "Bearer token（静态）")}</option>
-                  <option value="oauth">{text("OAuth 2.1 (browser flow)", "OAuth 2.1（浏览器流程）")}</option>
-                </select>
+                  onValueChange={(value) => setState({ ...state, authKind: value })}
+                  options={[
+                    { value: "none" as EditTarget["authKind"], label: text("none", "无") },
+                    { value: "bearer" as EditTarget["authKind"], label: text("bearer token (static)", "Bearer token（静态）") },
+                    { value: "oauth" as EditTarget["authKind"], label: text("OAuth 2.1 (browser flow)", "OAuth 2.1（浏览器流程）") },
+                  ]}
+                />
               </div>
 
               {state.authKind === "bearer" && (
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="mcp-bearer">Bearer token</Label>
+                  <Label htmlFor="mcp-bearer">{text("Bearer token", "Bearer 令牌")}</Label>
                   <Input
                     id="mcp-bearer"
                     type="password"
@@ -440,7 +440,7 @@ export function EditDialog({
               <Label htmlFor="mcp-always-load" className="cursor-pointer">
                 {text("Always load tool schemas (skip deferred-loading)", "始终加载工具 schema（跳过延迟加载）")}
               </Label>
-              <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
+              <div className="mt-0.5 text-fs-xs text-text-muted">
                 {text(
                   "Off (default): tools appear by name in a system-prompt catalog; the model loads schemas on demand via",
                   "关闭（默认）：工具只以名称出现在系统提示词目录中；模型按需通过",
@@ -455,13 +455,13 @@ export function EditDialog({
           </div>
 
           {err && (
-            <div className="rounded-md border p-2 font-mono text-xs"
+            <div className="rounded-md border p-2 text-fs-xs"
                  style={{ borderColor: "var(--accent-red)", color: "var(--accent-red)" }}>
               {err}
             </div>
           )}
           {note && (
-            <div className="rounded-md border p-2 font-mono text-xs"
+            <div className="rounded-md border p-2 text-fs-xs"
                  style={{ borderColor: "var(--accent-green)", color: "var(--accent-green)" }}>
               {note}
             </div>
@@ -469,23 +469,15 @@ export function EditDialog({
         </div>
 
         <DialogFooter>
-          <button
-            className={styles.actionBtn}
-            onClick={() => void testRun()}
-            disabled={saving}
-          >
+          <Button variant="elevated" className="sm:mr-auto" onClick={() => void testRun()} disabled={saving}>
             {busy === "test" ? text("Testing...", "测试中...") : text("Test", "测试")}
-          </button>
-          <button className={styles.actionBtn} onClick={onClose} disabled={saving}>
+          </Button>
+          <Button variant="elevated" onClick={onClose} disabled={saving}>
             {t("sidebar.cancel")}
-          </button>
-          <button
-            className={cn(styles.actionBtn, styles.actionBtnPrimary)}
-            onClick={() => void save()}
-            disabled={saving}
-          >
+          </Button>
+          <Button onClick={() => void save()} disabled={saving}>
             {busy === "save" ? text("Saving...", "保存中...") : isAdd ? text("Add", "添加") : text("Save", "保存")}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,28 +1,27 @@
-.panel { display: flex; flex-direction: column; min-height: 0; height: 100%; min-width: 0; padding: 10px; gap: 12px; }
-.list { flex: 1; overflow-y: auto; min-height: 0; }
-.groupBlock { min-width: 0; }
-.groupMeta { display: flex; align-items: center; gap: 8px; }
-.groupCurrent, .groupCount { color: var(--text-muted); font-size: 11px; }
-.groupCount { font-variant-numeric: tabular-nums; }
-.row { display: flex; align-items: center; border-radius: 7px; gap: 2px; padding: 3px; min-height: 44px; }
+.panel { display: flex; flex-direction: column; min-height: 0; height: 100%; min-width: 0; padding: 0 8px 16px; gap: 12px; font-size: var(--right-panel-text-size, var(--fs-base)); line-height: var(--right-panel-line-height, 1.5); font-family: var(--font-sans); }
+.groupCurrent, .groupCount { color: var(--text-muted); font-size: var(--right-panel-meta-size, var(--fs-2xs)); }
+.row { display: flex; align-items: center; border-radius: var(--radius-sm); gap: 2px; padding: 0; min-height: 44px; }
 .row:hover { background: var(--bg-hover); }
 .row[data-active="true"] { background: var(--bg-selected); }
-.page { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 8px 3px; text-align: left; background: transparent; border: 0; color: var(--text-primary); cursor: pointer; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent, #5b8cff); flex-shrink: 0; }
+.page { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 6px 8px; font: inherit; text-align: left; background: transparent; border: 0; color: var(--text-primary); cursor: pointer; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .page > svg { flex-shrink: 0; }
+/* A web row's page snapshot, in place of the page icon. */
+.thumbnailSlot { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 56px; height: 36px; border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--text-secondary); }
+.thumbnail { flex-shrink: 0; width: 56px; height: 36px; object-fit: cover; object-position: top; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-secondary); }
 .page span { min-width: 0; }
 .page strong, .page small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.page strong { font-size: 12px; font-weight: 500; }
-.page small { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
-.action { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; min-width: 24px; padding: 0; background: transparent; border: 0; border-radius: 6px; color: var(--text-dim); cursor: pointer; }
-.action svg { width: 14px; height: 14px; }
-.action:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-bright); }
-.action:disabled { opacity: 0.35; cursor: default; }
-.page:focus-visible, .action:focus-visible { background: var(--bg-hover); color: var(--text-bright); }
-.empty { font-size: 12px; color: var(--text-muted); padding: 8px; line-height: 1.6; }
+.page strong { font-size: var(--right-panel-text-size, var(--fs-xs)); font-weight: var(--right-panel-font-weight, 500); }
+.page small { font-size: var(--right-panel-meta-size, var(--fs-2xs)); color: var(--text-muted); margin-top: 2px; }
+.page:focus-visible { background: var(--bg-hover); color: var(--text-bright); }
+.empty { font-size: var(--right-panel-meta-size, var(--fs-xs)); color: var(--text-muted); padding: 8px; line-height: var(--right-panel-line-height, 1.6); }
 
-.notice { margin: 0; font-size: 12px; color: var(--text-secondary); }
-.detail { flex-shrink: 0; padding: 10px; background: var(--bg-secondary); border-radius: 7px; max-height: 220px; overflow: auto; overflow-wrap: anywhere; font-size: 12px; }
-.detail > button { float: right; }
+.notice { margin: 0; font-size: var(--right-panel-meta-size, var(--fs-xs)); color: var(--text-secondary); }
+.detail { flex-shrink: 0; padding: 10px; background: var(--bg-secondary); border-radius: var(--radius-sm); max-height: 220px; overflow: auto; overflow-wrap: anywhere; font-size: var(--right-panel-text-size, var(--fs-xs)); }
 .detail p { margin: 5px 0; color: var(--text-secondary); }
-.detail pre { white-space: pre-wrap; font-size: 11px; }
+.detail pre { font-family: var(--font-mono); white-space: pre-wrap; font-size: var(--right-panel-meta-size, var(--fs-2xs)); }
+
+/* The view host already leaves 12px under the nav; the first label adds
+   4px so it sits 16px below the nav like every other section label. */
+.list > .groupBlock:first-child > .sectionHeader { padding-top: 4px; }
+.detail > strong { font-weight: var(--right-panel-font-weight, 700); }

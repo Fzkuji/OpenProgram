@@ -8,16 +8,19 @@ import time
 
 import pytest
 
-import openprogram.agent.questions as Q
-import openprogram.execution as execution_module
-from openprogram.agent.questions import PendingQuestion, QuestionRegistry, QueueTransport, ask_blocking
-from openprogram.agent.run_control import reset_current_execution_id, set_current_execution_id
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.control import RuntimeControlService
-from openprogram.execution.driver import DriverRegistry
-from openprogram.execution.model import CapabilitySet
-from openprogram.execution.store import ExecutionStore
-from openprogram.execution.waits import DurableWaitStore
+import openprogram.runtime.agent.questions as Q
+import openprogram.runtime.execution as execution_module
+from openprogram.runtime.agent.questions import PendingQuestion, QuestionRegistry, QueueTransport, ask_blocking
+from openprogram.runtime.execution.run_control import (
+    reset_current_execution_id,
+    set_current_execution_id,
+)
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.control import RuntimeControlService
+from openprogram.runtime.execution.driver import DriverRegistry
+from openprogram.runtime.execution.model import CapabilitySet
+from openprogram.runtime.execution.store import ExecutionStore
+from openprogram.runtime.execution.waits import DurableWaitStore
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +34,7 @@ def _durable_execution(monkeypatch, tmp_path):
     attempts = AttemptStore(store)
     leased, reserved = attempts.lease(
         execution.execution_id, expected_version=execution.status_version,
-        owner_id="bridge-worker", ttl_seconds=30,
+        owner_id="bridge-worker",
     )
     _attempt, running = attempts.activate(
         leased.attempt_id, generation=leased.generation,
@@ -84,50 +87,79 @@ def test_registry_wake_does_not_write_lifecycle(_durable_execution) -> None:
     assert DurableWaitStore(store).get_wait(wait.wait_id).status.value == "open"
 
 
-def test_parent_projects_durable_request_and_forwards_canonical_answer(
-    _durable_execution, monkeypatch,
-) -> None:
-    from openprogram.agent.process_runner import _bridge_question_to_parent
+def _live_question(execution, **fields):
+    return {
+        "id": "wait_bridge", "kind": "ask", "session_id": execution.session_id,
+        "expires_at": time.time() + 60,
+        "request": {"prompt": "Choose library", "options": ["dayjs", "luxon"], "allow_custom": True},
+        **fields,
+    }
+
+
+def _owner(execution):
+    return {"execution_id": execution.execution_id, "attempt_id": execution.current_attempt_id,
+            "generation": execution.owner_lease["generation"], "producer_id": "process:1"}
+
+
+def test_parent_opens_the_wait_and_forwards_the_answer(_durable_execution, monkeypatch) -> None:
+    from openprogram.runtime.conversation.process_runner import _bridge_question_to_parent
 
     store, attempts, execution = _durable_execution
-    wait = _open_wait(
-        store, execution, wait_id="wait_bridge", prompt="Choose library",
-        options=["dayjs", "luxon"], allow_custom=True,
-    )
     frames = []
     monkeypatch.setattr(Q, "emit_question_asked", lambda data: frames.append(data))
     answer_queue: mp.Queue = mp.get_context("spawn").Queue()
     pending, lock = set(), threading.Lock()
 
     _bridge_question_to_parent(
-        {"id": wait.wait_id, "prompt": "forged"}, answer_queue, pending, lock,
-        parent_session_id=execution.session_id, execution_id=execution.execution_id,
+        _live_question(execution), answer_queue, pending, lock,
+        parent_session_id=execution.session_id, **_owner(execution),
     )
     assert frames[0]["prompt"] == "Choose library"
     assert frames[0]["execution_id"] == execution.execution_id
     assert frames[0]["wait_generation"] == 0
-    _answer(store, attempts, execution, wait, "luxon")
+    wait = DurableWaitStore(store).get_wait("wait_bridge")
+    assert wait.policy_snapshot["mode"] == "live"
+    _answer(store, attempts, store.get_execution(execution.execution_id), wait, "luxon")
     assert answer_queue.get(timeout=2) == {
-        "id": wait.wait_id, "outcome": "answered", "value": "luxon",
+        "id": "wait_bridge", "outcome": "answered", "value": "luxon",
     }
 
 
-def test_parent_rejects_forged_wait_owner(_durable_execution, monkeypatch) -> None:
-    from openprogram.agent.process_runner import _bridge_question_to_parent
+def test_parent_refuses_a_question_for_another_session(_durable_execution, monkeypatch) -> None:
+    from openprogram.runtime.conversation.process_runner import _bridge_question_to_parent
 
     store, _attempts, execution = _durable_execution
-    wait = _open_wait(store, execution, wait_id="wait_owner")
     frames = []
     monkeypatch.setattr(Q, "emit_question_asked", lambda data: frames.append(data))
     answer_queue: mp.Queue = mp.get_context("spawn").Queue()
     pending, lock = set(), threading.Lock()
     _bridge_question_to_parent(
-        {"id": wait.wait_id}, answer_queue, pending, lock,
-        parent_session_id=execution.session_id, execution_id="exec_forged",
+        _live_question(execution, session_id="another"), answer_queue, pending, lock,
+        parent_session_id=execution.session_id, **_owner(execution),
     )
-    assert frames == []
-    assert pending == set()
-    assert DurableWaitStore(store).get_wait(wait.wait_id).status.value == "open"
+    assert frames == [] and pending == set()
+    assert DurableWaitStore(store).get_wait("wait_bridge") is None
+    assert answer_queue.get(timeout=2)["outcome"] == "cancelled"
+
+
+def test_a_subprocess_question_gets_its_outcome_from_the_parent(monkeypatch) -> None:
+    sent = []
+    registry = QuestionRegistry()
+    monkeypatch.setattr(Q, "_registry", registry)
+    monkeypatch.setattr(Q, "_send_live_question_to_parent", sent.append)
+    monkeypatch.setattr(Q, "get_question_registry", lambda: registry)
+
+    def answer_when_asked():
+        while not sent:
+            time.sleep(0.01)
+        registry.deliver(sent[0]["id"], "answered", "luxon")
+
+    threading.Thread(target=answer_when_asked, daemon=True).start()
+    with Q.live_workflow_questions(execution_id="e", attempt_id="a", generation=1, producer_id="p"):
+        outcome = Q.ask_blocking(session_id="s", kind="ask", prompt="Which?", timeout=30,
+                                 on_asked=lambda q: None)
+    assert outcome == ("answered", "luxon")
+    assert sent[0]["attempt_id"] == "a" and sent[0]["request"]["prompt"] == "Which?"
 
 
 def test_child_blocking_wait_requires_declared_safe_point(_durable_execution) -> None:

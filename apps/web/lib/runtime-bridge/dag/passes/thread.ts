@@ -4,11 +4,14 @@
  * One triangle = everything the model did from one reply until the next
  * user message. Three consequences, all computed here:
  *
- *   * A ``job_followup`` reply — the turn an agent's return triggers —
- *     is not a chain node. A function's return does not get a new node
- *     when the model keeps talking, and an agent's return is the same
- *     event at a different scale. The reply merges into its ANCHOR: the
- *     turn found by climbing ``predecessor`` past every followup.
+ *   * A runtime-notice reply — the turn an agent's return
+ *     (``job_followup``) or a background command ending
+ *     (``process_exit``) triggers — is not a chain node. A function's
+ *     return does not get a new node when the model keeps talking, and
+ *     these returns are the same event at a different scale. The reply merges into its ANCHOR: the
+ *     turn found by climbing ``predecessor`` past every followup. A
+ *     ``resumed`` reply — the rest of a reply a restart cut off — merges
+ *     the same way.
  *
  *   * A spawned agent's internal turns are not chain nodes either. The
  *     spawn root IS the agent: one glyph on the caller's thread, its
@@ -317,6 +320,17 @@ export function buildThreadModel(
     const a = anchorOf(n.id);
     if (a !== n.id && byId[a] && isSpawnRoot(byId[a])) {
       return { ...n, _agentTurn: true } as GNode;
+    }
+    // The turn after a merged followup / resumed reply chains to the
+    // glyph that stands for it, or the layout finds no parent, starts
+    // the turn as a fresh lane root at its raw depth and leaves empty
+    // rows where the merged reply used to sit.
+    const p = n.predecessor ? byId[n.predecessor] : undefined;
+    if (p && isFollowup(p)) {
+      const pa = anchorOf(p.id);
+      if (pa !== p.id && byId[pa] && !isSpawnRoot(byId[pa])) {
+        return { ...n, predecessor: pa } as GNode;
+      }
     }
     return n;
   });

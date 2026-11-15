@@ -1,0 +1,133 @@
+<title>macOS 投递</title>
+<meta name="description" content="macOS 后端如何在后台投递输入、处理文件对话框和桌面空间、等待忙碌的应用以及拒绝操作。">
+<h1>macOS 投递</h1>
+<p>已观察的控件消失且无法安全重新匹配时，工具自动读取完整的新状态，返回 <code translate="no">observation_required</code>，由 Agent 按新状态选择下一步。该控件对应的步骤及后续批量步骤均不发送；此前完成的步骤保留，不会重放。刷新本身失败时仍如实报告错误。</p>
+
+
+<h2 id="后台投递">后台投递</h2>
+<p>它与其他会占用屏幕的情况如何配合：<a href="working-behind-the-user.zh.html">不打扰用户</a>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">元素动作</th><td>元素动作走 Accessibility：<code translate="no">AXPress</code> / <code translate="no">AXConfirm</code> / <code translate="no">AXPick</code>，然后 <code translate="no">AXSelected</code>，然后聚焦，最后才在元素中心做一次指针点击；右键用 <code translate="no">AXShowMenu</code>；<code translate="no">set_value</code> 用 <code translate="no">AXValue</code>；<code translate="no">select_text</code> 用 <code translate="no">AXSelectedTextRange</code>（UTF-16 偏移）；<code translate="no">scroll</code> 先用翻页动作，再用滚动条的值，再用滚轮事件。</td></tr>
+<tr><th scope="row">列表里的行</th><td>点击一行，或行内最多三层的单元格，就是在这一行上设置 <code translate="no">AXSelected</code>，效果与点击相同。按压返回错误、但行随后已选中，也算成功。在 Outlook 上实测：邮件单元格列出 <code translate="no">AXPress</code> 却以 -25205 回应，它所在的行在 0.2 秒内接受 <code translate="no">AXSelected</code>，阅读窗格随之切换。全程不发送鼠标按下，应用没有可借以激活自己的事件。</td></tr>
+<tr><th scope="row">指针可达</th><td>对元素做指针点击或悬停前，先检查它的中心是否落在被滚动区域和网页区域裁剪后的窗口之内（<code translate="no">_reachable_center</code>）；不在时执行 <code translate="no">AXScrollToVisible</code>，元素没有这个动作时（原生列表和表格）把外层每个滚动区域的滚动条设到让它居中的位置，等两次读取一致后再读一次位置。</td></tr>
+<tr><th scope="row">视野之外</th><td>仍然不在视野内或没有位置的元素以 <code translate="no">NotDispatched</code> 拒绝。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">真实指针事件</th><td>必须真实的指针事件（坐标点击、拖动、滚轮）按开源 cua-driver 确立的做法发送：
+<ol>
+<li>向目标进程序列号发送一条聚焦但不置顶的记录。</li>
+<li>一个 <code translate="no">mouseMoved</code> 预备事件。</li>
+<li>事件本身，带点击状态、按钮、subtype 3、目标 pid、窗口 id 和点击组。</li>
+<li><code translate="no">CGEventSetWindowLocation</code>，点相对窗口左上角（<code translate="no">window_location</code>：屏幕点减窗口原点，单位为点，与 KWWK computer-use-core 和 cua-driver 相同）。</li>
+<li><code translate="no">SLEventPostToPid</code> 投递。</li>
+</ol>
+</td></tr>
+<tr><th scope="row">窗口坐标</th><td>AppKit 根据事件的屏幕位置确定窗口内的点击点；探测窗口中，<code translate="no">window_location</code> 无论填窗口相对点还是屏幕点，点击都落在同一点。</td></tr>
+<tr><th scope="row">键盘</th><td>键盘事件附带 <code translate="no">SLSEventAuthenticationMessage</code> 以便接收进程接受；没有 SkyLight 时回退到 <code translate="no">CGEventPostToPid</code>。</td></tr>
+<tr><th scope="row">效果</th><td>结果是应用把这次点击当成用户点击来处理，而真实光标留在原地、前台应用不变。</td></tr>
+</tbody>
+</table>
+<p>应用处理 mouse-down 时 AppKit 仍会把被点的窗口排到同层最前，所以坐标点击和拖拽之前先记下压在目标上方且与之重叠的其他应用窗口（前台应用自己的窗口除外），结束后按从深到浅的顺序对它们 <code translate="no">AXRaise</code>，窗口叠放顺序因此还原。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">选择窗口</th><td>窗口由 <code translate="no">window</code>（标题子串或序号）或 <code translate="no">window_id</code> 选定；两者都不给时，模型上次读过的窗口只要还开着就保持选中，否则取焦点窗口或主窗口。</td></tr>
+<tr><th scope="row">跟随</th><td>每次状态都记下应用的窗口（窗口 id，没有 id 时用标题）；如果焦点窗口或主窗口是上次读取时还没有的，就改读它，并说明它盖在哪个窗口上，这样某一步弹出的对话框或文档就是后面步骤的操作对象。</td></tr>
+<tr><th scope="row">对话框</th><td>新出现的对话框类窗口（子角色 <code translate="no">AXDialog</code>、<code translate="no">AXSystemDialog</code>）或新的文件对话框，即使焦点仍留在它下面的窗口上也会被跟随；后台应用打开进程外的文件对话框时就是这样。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">标识</th><td>系统的打开/存储对话框带 <code translate="no">AXIdentifier</code> <code translate="no">open-panel</code> 或 <code translate="no">save-panel</code>，可能是窗口、<code translate="no">AXSheet</code>，或它下面那个窗口的子窗口。</td></tr>
+<tr><th scope="row">沙盒应用</th><td>沙盒应用的对话框由 <code translate="no">com.apple.appkit.xpc.openAndSavePanelService</code> 绘制，窗口服务器把它列两次、边界相同：一次是服务进程在屏幕外的第 0 层窗口，辅助功能树在它那里；一次是应用在屏幕上显示它的窗口（<code translate="no">panel_hosts</code>）。</td></tr>
+<tr><th scope="row">相同边界</th><td>应用里边界与之相同的窗口不论标识符如何都算文件对话框，服务那边的窗口报告应用窗口的 id，所以截图、<code translate="no">list_windows</code> 和 <code translate="no">window_id</code> 指的都是屏幕上的那个窗口。</td></tr>
+<tr><th scope="row">列出</th><td>对话框和应用的连接还在时，应用把它列在自己的窗口里；应用不再列出一个仍在屏幕上的对话框时，按窗口 id 从服务进程的 <code translate="no">AXWindows</code> 取它的窗口，所以 <code translate="no">list_windows</code>、<code translate="no">window=&lt;标题&gt;</code> 和状态仍然能读到它。</td></tr>
+<tr><th scope="row">可用的操作</th><td>它的辅助功能元素可以访问，<code translate="no">AXPress</code> 和 <code translate="no">AXValue</code> 有效，SkyLight 路由的点击能送达，但发给应用 pid、发给服务 pid、或先无提升聚焦再发的按键事件都送不到，设置搜索框的 <code translate="no">AXValue</code> 也不会触发搜索。</td></tr>
+<tr><th scope="row">拒绝按键</th><td>文件对话框是焦点窗口或在焦点窗口里、作为独立窗口存在、或在屏幕上而辅助功能够不到它时，<code translate="no">press_key</code>、<code translate="no">type_text</code> 和 <code translate="no">paste</code> 带着这个说明报错并指向 <code translate="no">open_file</code>，而不是把按键发给它下面的窗口；挂在另一个文档窗口上的 sheet 不影响发给焦点窗口的按键。</td></tr>
+<tr><th scope="row">对话框状态</th><td>读到对话框的状态会写明它是文件对话框、指向 <code translate="no">open_file</code>，并且总是附上 OCR 文字，因为文件浏览区不暴露行；读应用的其他窗口时，状态会说明有文件对话框开着。</td></tr>
+</tbody>
+</table>
+<p><code translate="no">open_file</code> 取代对话框：</p>
+<ol>
+<li>模态对话框会阻塞打开文档的请求，所以先按打开对话框的 Cancel 按钮（<code translate="no">AXCancelButton</code>，否则找标题为 Cancel 的按钮）并等待对话框关闭。辅助功能够不到时失败并说明要点击什么。</li>
+<li><code translate="no">NSWorkspace openURLs:withApplicationAtURL:configuration:</code> 在 <code translate="no">activates</code> 关闭时于 App 中打开文档，必要时后台启动。前台 App 及其窗口保持原位。</li>
+<li>等待 <code translate="no">AXDocument</code> 为该文件 URL 或标题含其名称的窗口。</li>
+</ol>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">拒绝的路径</th><td>相对路径、不存在的路径、程序包和启动器（<code translate="no">.app</code>、<code translate="no">.command</code>、shell 脚本、<code translate="no">.workflow</code>、安装包、位置文件）、带可执行位的文件，以及终端应用（它们会运行打开的东西）都会被拒绝。</td></tr>
+<tr><th scope="row">最小化</th><td>最小化的窗口或被隐藏的应用仍然给出树；截图要等 <code translate="no">show_window</code> 取消最小化（<code translate="no">AXMinimized</code>）或取消隐藏应用后才有，这两者都不会激活应用。</td></tr>
+<tr><th scope="row">其他桌面空间</th><td>在另一个桌面空间的窗口就地读取和操作。</td></tr>
+<tr><th scope="row">查找</th><td><code translate="no">AXWindows</code> 只列当前桌面空间的窗口，所以应用里不在屏幕上、又没有被已列出窗口对应上的普通窗口（第 0 层，至少 80×60），用 SkyLight 的远程令牌查找：以 pid、<code translate="no">0</code>、<code translate="no">'coco'</code> 和元素 id 调用 <code translate="no">_AXUIElementCreateWithRemoteToken</code>，元素 id 从零开始试（最多 4000），直到每个窗口 id 都找到元素，做法同 AltTab；结果按应用缓存，直到这组窗口 id 变化。</td></tr>
+<tr><th scope="row">那里的投递</th><td>ScreenCaptureKit 能截这样的窗口，SkyLight 的指针通道也能送达，但不论走哪条通道，窗口服务器都会丢掉发给它的按键，所以在那里 <code translate="no">type_text</code> 和 <code translate="no">paste</code> 改为设置焦点元素的 <code translate="no">AXSelectedText</code>，<code translate="no">press_key</code> 报告按键送不到，<code translate="no">show_window</code> 说明窗口留在原桌面空间。</td></tr>
+<tr><th scope="row">移动</th><td>窗口无法移动：macOS 14.5 起只有 Dock 能移动窗口（其他进程调用 <code translate="no">SLSMoveWindowsToManagedSpace</code> 需要放宽系统完整性保护，yabai 的文档写明了这一点）。</td></tr>
+</tbody>
+</table>
+<p><code translate="no">paste</code> 写入粘贴板（纯文本，或用 <code translate="no">markdown-it</code> 从 Markdown 渲染出的 HTML），向目标进程发 Cmd+V，并在 change count 表明期间没有别人写入时恢复先前的粘贴板内容。</p>
+
+<h2 id="应用正忙">应用正忙</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">串行处理</th><td>macOS 应用一次处理一个辅助功能请求，按顺序处理，做完才回应。</td></tr>
+<tr><th scope="row">超时错误</th><td>处理时间超过消息超时的请求会返回 <code translate="no">kAXErrorCannotComplete</code>，而应用其实已经收到一次并且正在执行：保存要几秒的按钮、运行模态对话框的命令、保持打开的菜单都是这样。</td></tr>
+<tr><th scope="row">实测</th><td>在 macOS 15 上实测：在超时内处理完的按压返回 0；更久的在超时（默认 1.5 秒）后返回这个错误，并且恰好送达一次；处理期间应用被占住，所有读取也同样失败，包括 <code translate="no">AXWindows</code>，于是应用读起来像没有窗口。</td></tr>
+<tr><th scope="row">超时作用域</th><td>设在某个元素上的超时只对那个元素生效。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">发送</th><td><code translate="no">MacComputer._taken</code> 发送每个会改变应用的请求（<code translate="no">_perform</code>、<code translate="no">_set</code>），并在元素上设置 <code translate="no">ACTION_TIMEOUT</code>（1 秒）。</td></tr>
+<tr><th scope="row">算作已接收</th><td>等满这段时间后的 <code translate="no">kAXErrorCannotComplete</code> 算作已被接收，所以这一步按已执行汇报，不会再退回去用指针点击或键入按键，否则会做两次；立刻返回的同一个错误码表示请求根本没能发出，仍算失败。</td></tr>
+<tr><th scope="row">探测</th><td><code translate="no">_answers</code> 用 <code translate="no">ANSWER_TIMEOUT</code>（0.5 秒）向应用元素询问它的角色，只有这次询问没有得到回应时才为假。</td></tr>
+<tr><th scope="row">等待</th><td><code translate="no">_await_answer</code> 重复询问，最多 <code translate="no">UNANSWERED_MAX</code>（10 秒），之后抛出 <code translate="no">NotAnswering</code>（属于 <code translate="no">NotDispatched</code>）。</td></tr>
+<tr><th scope="row">顺序</th><td>请求按顺序得到回应，所以回应到来时，应用已经做完之前发给它的步骤，或者正在运行那一步打开的对话框或菜单。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">等待时机</th><td><code translate="no">get_state</code>、<code translate="no">list_windows</code> 和 <code translate="no">act</code> 在向应用询问任何东西之前都这样等待，等待在后端的锁之外；<code translate="no">settle</code> 在读取窗口之前等待；<code translate="no">wait</code> 从不等待，模型可以用它让应用做完。</td></tr>
+<tr><th scope="row">沉默的步骤</th><td><code translate="no">targets/app.py</code> 把应用一直没有回应的步骤按已完成返回，不带状态，并写明不要重复。</td></tr>
+<tr><th scope="row">被拒绝的步骤</th><td>因为应用没有回应而被拒绝的步骤什么都没有发出（<code translate="no">action_dispatched: false</code>）；一串步骤里，它之前的步骤保持已执行，不再等第二次。</td></tr>
+<tr><th scope="row">其他失败</th><td>步骤已发出之后读取状态的其他失败（应用退出、屏幕锁定）写在这一步的 <code translate="no">Done</code> 之后，绝不会被报成没有发生。</td></tr>
+</tbody>
+</table>
+
+<h2 id="拒绝">拒绝</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">拒绝的目标</th><td>工具从不向 <code translate="no">AXSecureTextField</code> 元素输入，macOS 报告安全键盘输入（<code translate="no">kCGSSessionSecureInputPID</code>）期间也不输入，并拒绝以钥匙串访问、密码、loginwindow、SecurityAgent 和 OpenProgram 自身的 bundle 为目标。</td></tr>
+<tr><th scope="row">拒绝方式</th><td>拒绝以错误返回并请用户来做这一步；任何审批范围都不能覆盖它。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">锁屏</th><td>锁屏同样会让读取和操作停下。会话锁定期间，macOS 不回答任何关于窗口的辅助功能查询，于是每个应用读出来都像没有窗口。</td></tr>
+<tr><th scope="row">检查</th><td><code translate="no">get_state</code>、<code translate="no">act</code>、<code translate="no">list_windows</code> 和 <code translate="no">zoom</code> 先检查 <code translate="no">CGSSessionScreenIsLocked</code>（<code translate="no">_unlocked</code>），以“未发出”的错误返回，说明屏幕已锁、窗口仍然开着；<code translate="no">list_apps</code> 和 <code translate="no">find</code> 不向窗口询问任何东西，照常回答。</td></tr>
+</tbody>
+</table>
+
+<h2 id="实现状态">实现状态</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>另一个桌面空间里的窗口。测试时从桌面 1 操作桌面 2 上的计算器（列出窗口、截图、按元素算出 7×6、坐标点击、滚动、按键报错），鼠标指针和前台应用都没变，窗口留在原桌面空间；向那里的输入框插入文字没有测到，因为计算器没有输入框。</td></tr>
+<tr><th scope="row">macOS 上已实现</th><td>跟随新打开的窗口、识别文件对话框并拒绝按键、<code translate="no">open_file</code>，在预览和 PDF Expert 上实测（跟随打开对话框、拒绝按键、按下取消、打开一个 PDF 并读出文字），全程前台应用不变，另有单元测试。</td></tr>
+<tr><th scope="row">macOS 上已实现</th><td>跟随不夺焦点的对话框、凭窗口列表识别进程外对话框、从服务进程读取它、它开在焦点窗口旁边时拒绝按键、<code translate="no">open_file</code> 先取消它，这些有单元测试；其中只有窗口列表识别实际运行过，对象是 PDF Expert 的打开对话框。Linux 和 Windows 未实现。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.zh.html">操控电脑与浏览器</a></p>

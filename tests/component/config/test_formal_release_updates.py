@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import html
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +13,7 @@ from fastapi.testclient import TestClient
 
 
 def test_immutable_runtime_takes_precedence_over_checkout(monkeypatch):
-    from openprogram.updater import detect
+    from openprogram.operations.self_update.github_release import detect
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
     monkeypatch.setattr(detect, "repo_root", lambda: object())
@@ -21,7 +23,7 @@ def test_immutable_runtime_takes_precedence_over_checkout(monkeypatch):
 
 
 def test_source_checkout_is_not_a_managed_release(monkeypatch):
-    from openprogram.updater import detect
+    from openprogram.operations.self_update.github_release import detect
 
     monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
     monkeypatch.setattr(detect, "managed_runtime_root", lambda: None)
@@ -34,7 +36,7 @@ def test_source_checkout_is_not_a_managed_release(monkeypatch):
 def test_wheel_inside_another_git_repo_is_not_a_source_checkout(
     monkeypatch, tmp_path
 ):
-    from openprogram.updater import detect
+    from openprogram.operations.self_update.github_release import detect
 
     foreign_repo = tmp_path / "foreign"
     package = foreign_repo / ".venv" / "site-packages" / "openprogram"
@@ -52,7 +54,7 @@ def test_wheel_inside_another_git_repo_is_not_a_source_checkout(
 def test_bundled_python_is_a_managed_release_without_environment_marker(
     monkeypatch, tmp_path
 ):
-    from openprogram.updater import detect
+    from openprogram.operations.self_update.github_release import detect
 
     runtime = tmp_path / "runtime"
     python = runtime / "python" / "cpython" / "python.exe"
@@ -81,7 +83,7 @@ def test_bundled_python_is_a_managed_release_without_environment_marker(
 def test_unrelated_runtime_manifest_does_not_mark_a_wheel_managed(
     monkeypatch, tmp_path
 ):
-    from openprogram.updater import detect
+    from openprogram.operations.self_update.github_release import detect
 
     runtime = tmp_path / "runtime"
     python = runtime / "python" / "python.exe"
@@ -101,7 +103,7 @@ def test_unrelated_runtime_manifest_does_not_mark_a_wheel_managed(
 
 def test_worker_start_does_not_apply_product_updates():
     from pathlib import Path
-    import openprogram.worker.runner as runner
+    import openprogram.operations.worker.runner as runner
 
     source = Path(runner.__file__).read_text(encoding="utf-8")
     assert "background_check_and_apply" not in source
@@ -113,26 +115,56 @@ def test_release_wheel_probe_runs_outside_the_checkout():
     assert 'probe_dir="$(mktemp -d)"' in workflow
     assert '(cd "$probe_dir"' in workflow
     assert "python -P -c" in workflow
-    assert "assert canonical is legacy" in workflow
-    assert "openprogram_server/_webui/_frontend/index.html" in workflow
-    assert "openprogram_server/_webui/routes/files/tree.py" in workflow
-    assert "openprogram_server/_webui/ws_actions/webtab.py" in workflow
-    assert "openprogram_cli/_impl/application.py" in workflow
-    assert "assert openprogram_cli.main is legacy_cli.main" in workflow
-    assert 'openprogram_cli.build_parser().prog == "openprogram"' in workflow
+    assert "import openprogram.interfaces.server.frontend as frontend" in workflow
+    assert "openprogram/interfaces/server/_frontend/index.html" in workflow
+    assert "openprogram/interfaces/server/routes/files/tree.py" in workflow
+    assert "openprogram/interfaces/server/ws_actions/webtab.py" in workflow
+    assert "openprogram/interfaces/cli/application.py" in workflow
+    assert 'openprogram.interfaces.cli.build_parser().prog == "openprogram"' in workflow
     assert "is_relative_to(checkout)" in workflow
     assert 'uv run --with "$wheel_path" --no-project -- openprogram --version' in workflow
     assert 'python -P -m openprogram --version' in workflow
-    assert 'python -P -m openprogram.cli --version' in workflow
-    assert 'python -P -m openprogram_cli --version' in workflow
+    assert 'python -P -m openprogram.interfaces.cli --version' in workflow
+
+
+def test_release_workflow_builds_and_signs_official_update_assets():
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert "create-update-assets.py platform" in workflow
+    assert "--previous" not in workflow, "every release carries its base, for machines that skipped some"
+    trust = workflow[workflow.index("id: update-key") : workflow.index("name: Select release platforms")]
+    assert "official/assets.py" in trust and "self-update/update-service.js" in trust
+    assert "name: update-assets-${{ matrix.platform }}-${{ matrix.arch }}" in workflow
+    assert "create-update-assets.py finalize" in workflow
+    assert "secrets.OPENPROGRAM_UPDATE_SIGNING_KEY" in workflow
+    sign = workflow.index("name: Sign official update assets")
+    publish = workflow.index("name: Publish GitHub Release")
+    manifest = workflow.index("name: Create release manifest")
+    assert sign < manifest < publish
+    move = workflow.index('mv "$directory"/* "$RUNNER_TEMP/official-update/"')
+    guard = workflow.index('if [ -z "$UPDATE_SIGNING_KEY" ]; then')
+    assert move < guard, "unsigned update assets must leave release-artifacts before the guard"
+
+
+def test_upgrade_docs_describe_replay_of_own_commits():
+    for name, phrase in (
+        ("docs/install/upgrade.html", "unreplayable/<release>/<commit>.patch"),
+        ("docs/install/upgrade.zh.html", "unreplayable/<release>/<commit>.patch"),
+    ):
+        assert phrase in html.unescape(Path(name).read_text(encoding="utf-8"))
+    for name in (
+        "docs/reference/design/distribution/automatic-updates.html",
+        "docs/reference/design/distribution/automatic-updates.zh.html",
+    ):
+        assert 'id="official-replay"' in Path(name).read_text(encoding="utf-8")
 
 
 def test_system_version_reports_managed_release(monkeypatch):
-    from openprogram.updater.detect import InstallMethod
-    from openprogram.webui.routes.settings.config import register
+    from openprogram.operations.self_update.github_release.detect import InstallMethod
+    from openprogram.interfaces.server.routes.settings.config import register
 
     monkeypatch.setattr(
-        "openprogram.updater.detect.detect_install_method",
+        "openprogram.operations.self_update.github_release.detect.detect_install_method",
         lambda: InstallMethod.MANAGED_RELEASE,
     )
     monkeypatch.setattr(
@@ -148,31 +180,29 @@ def test_system_version_reports_managed_release(monkeypatch):
     assert response.json() == {
         "currentVersion": "0.6.7",
         "installType": "managed_release",
+        "updateRoute": "command_line_release",
+        "latestVersion": None,
+        "updateAvailable": False,
+        "latestCheckedAt": None,
     }
 
 
 def test_automatic_update_design_is_one_accessible_review_page():
+    from scripts.docs_site.nav import build_tabs, discover
+
     design = Path(
         "docs/reference/design/distribution/automatic-updates.html"
     ).read_text(encoding="utf-8")
 
     for contract in (
-        'data-document="automatic-updates"',
-        'id="question"',
-        'id="audience"',
-        'id="scope"',
-        'id="exclusions"',
         'id="architecture"',
+        '<title>Stable release automatic updates</title>',
+        'role="img"',
         'id="desktop-states"',
         'id="trust-boundaries"',
         'id="implementation-evidence"',
-        '<title>Automatic update architecture</title>',
-        '<desc>',
-        'data-update-state="available"',
-        'data-update-state="error"',
-        'prefers-reduced-motion',
-        'https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/update-service.js',
-        'https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/python/openprogram_cli/_impl/commands/upgrade.py',
+        'https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/main/self-update/update-service.js',
+        'https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/interfaces/cli/commands/upgrade.py',
     ):
         assert contract in design
 
@@ -181,44 +211,57 @@ def test_automatic_update_design_is_one_accessible_review_page():
     ).exists()
 
     source_design = Path(
-        "docs/server/upgrading.md"
+        "docs/server/upgrading.html"
     ).read_text(encoding="utf-8")
-    source_contract = " ".join(source_design.split())
-    faq = Path("docs/start/faq.md").read_text(encoding="utf-8")
-    assert "Upgrading a release installation" in source_contract
-    assert "`stable` follows `origin/main`" in source_contract
-    assert (
-        "Managed releases use the stable GitHub Release path; source checkouts "
-        "use the gated Git pipeline"
-    ) in source_contract
-    assert "first updater-enabled release" in faq
-    assert "managed CLI/server and source-checkout users both run" in faq
-    assert (
-        "an explicit `--channel`, that source-channel choice is still persisted"
-    ) in source_contract
-    assert "Automatic rollback is not implemented yet" in source_contract
-    assert "command prints the manual escape hatch" in source_contract
+    source_contract = " ".join(re.sub(r"<[^>]+>", "", source_design).split())
+    faq = " ".join(re.sub(r"<[^>]+>", "", Path("docs/start/faq.html").read_text(encoding="utf-8")).split())
+    assert '<a href="../install/upgrade.html">Upgrade</a>' in source_design
+    assert "stable, which here tracks origin/main" in source_contract
+    assert "It is not the stable GitHub Release" in source_contract
+    assert "For Desktop and managed releases" in source_contract
+    assert "Stable installations move only to a published version" in faq
+    assert "openprogram upgrade, which picks the path from the installation type" in faq
+    assert "An explicit --channel is still persisted" in source_contract
+    assert "No automatic rollback; run the printed command" in source_contract
     assert 'class="diagram-mobile" aria-hidden' not in design
 
-    design_index = Path("docs/reference/design/README.md").read_text(encoding="utf-8")
-    design_index_zh = Path("docs/reference/design/README.zh.md").read_text(
+    design_index = Path("docs/reference/design/README.html").read_text(encoding="utf-8")
+    design_index_zh = Path("docs/reference/design/README.zh.html").read_text(
         encoding="utf-8"
     )
-    assert "distribution/automatic-updates.html" in design_index
-    assert "distribution/automatic-updates.html" in design_index_zh
-    assert "Conversational self-update" in design_index
-    assert "对话内自主更新" in design_index_zh
+    assert 'href="distribution/automatic-updates.html"' in design_index
+    assert 'href="distribution/automatic-updates.zh.html"' in design_index_zh
+
+    docs_root = Path("docs")
+    design_tab = next(
+        tab for tab in build_tabs(docs_root, discover(docs_root))
+        if tab.key == "design"
+    )
+    assert design_tab.landing == Path("reference/design/README.html")
+    for section_title, relative_path in (
+        ("Distribution", "reference/design/distribution/automatic-updates.html"),
+        ("Programs and workflows", "reference/design/runtime/self-update.html"),
+    ):
+        section = next(
+            section for section in design_tab.sections
+            if section.title == section_title
+        )
+        page = next(page for page in section.pages if page.rel == Path(relative_path))
+        assert page.src.is_file()
+        assert page.out == Path(relative_path)
+        assert page.zh_src is not None and page.zh_src.is_file()
+        assert page.zh_out == Path(relative_path).with_suffix(".zh.html")
 
 
 def test_upgrade_help_discloses_channel_persistence_during_read_only_actions():
     result = subprocess.run(
-        [sys.executable, "-m", "openprogram.cli", "upgrade", "--help"],
+        [sys.executable, "-m", "openprogram.interfaces.cli", "upgrade", "--help"],
         check=True,
         capture_output=True,
         text=True,
     )
     status_result = subprocess.run(
-        [sys.executable, "-m", "openprogram.cli", "upgrade", "status", "--help"],
+        [sys.executable, "-m", "openprogram.interfaces.cli", "upgrade", "status", "--help"],
         check=True,
         capture_output=True,
         text=True,
@@ -257,15 +300,15 @@ def _release_manifest(version="0.6.7"):
 
 
 def test_managed_release_check_is_read_only(monkeypatch, capsys):
-    from openprogram.cli.commands import upgrade as up
+    from openprogram.interfaces.cli.commands import upgrade as up
 
     monkeypatch.setattr(up, "_installed_version", lambda: "0.6.6")
     monkeypatch.setattr(up, "_platform_runtime_names", lambda version: (
         f"OpenProgram-{version}-runtime-linux-x86_64.tar.gz",
         f"OpenProgram-{version}-runtime-linux-x86_64.tar.gz.sha256",
     ))
-    monkeypatch.setattr("openprogram.updater.github.latest_release", _latest_release)
-    monkeypatch.setattr("openprogram.updater.github.release_manifest", _release_manifest)
+    monkeypatch.setattr("openprogram.operations.self_update.github_release.github.latest_release", _latest_release)
+    monkeypatch.setattr("openprogram.operations.self_update.github_release.github.release_manifest", _release_manifest)
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("check must not install")))
 
     assert up.run_managed_release_upgrade(check_only=True, as_json=True) == 0
@@ -276,7 +319,7 @@ def test_managed_release_check_is_read_only(monkeypatch, capsys):
 
 
 def test_managed_release_dry_run_never_reads_or_executes_installer(monkeypatch, capsys):
-    from openprogram.cli.commands import upgrade as up
+    from openprogram.interfaces.cli.commands import upgrade as up
 
     monkeypatch.setattr(up, "_managed_release_status", lambda: {
         "current_version": "0.6.6",
@@ -285,7 +328,7 @@ def test_managed_release_dry_run_never_reads_or_executes_installer(monkeypatch, 
         "archive": "OpenProgram-0.6.7-runtime-linux-x86_64.tar.gz",
     })
     monkeypatch.setattr(
-        "openprogram.updater.github.release_installer",
+        "openprogram.operations.self_update.github_release.github.release_installer",
         lambda *_args: (_ for _ in ()).throw(AssertionError("dry-run must not read installer")),
     )
     monkeypatch.setattr(
@@ -305,7 +348,7 @@ def test_managed_release_dry_run_never_reads_or_executes_installer(monkeypatch, 
 
 
 def test_managed_release_upgrade_sanitizes_installer_environment(monkeypatch, capsys):
-    from openprogram.cli.commands import upgrade as up
+    from openprogram.interfaces.cli.commands import upgrade as up
 
     monkeypatch.setenv("OPENPROGRAM_REPOSITORY", "attacker/repo")
     monkeypatch.setenv("OPENPROGRAM_RUNTIME_ARCHIVE", "/tmp/untrusted.tar.gz")
@@ -316,10 +359,10 @@ def test_managed_release_upgrade_sanitizes_installer_environment(monkeypatch, ca
         f"OpenProgram-{version}-runtime-linux-x86_64.tar.gz",
         f"OpenProgram-{version}-runtime-linux-x86_64.tar.gz.sha256",
     ))
-    monkeypatch.setattr("openprogram.updater.github.latest_release", _latest_release)
-    monkeypatch.setattr("openprogram.updater.github.release_manifest", _release_manifest)
+    monkeypatch.setattr("openprogram.operations.self_update.github_release.github.latest_release", _latest_release)
+    monkeypatch.setattr("openprogram.operations.self_update.github_release.github.release_manifest", _release_manifest)
     monkeypatch.setattr(
-        "openprogram.updater.github.release_installer",
+        "openprogram.operations.self_update.github_release.github.release_installer",
         lambda version: b"#!/bin/sh\nexit 0\n",
     )
     calls = []
@@ -330,7 +373,7 @@ def test_managed_release_upgrade_sanitizes_installer_environment(monkeypatch, ca
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(
-        "openprogram.worker.restart_worker",
+        "openprogram.operations.worker.restart_worker",
         lambda: (_ for _ in ()).throw(AssertionError("managed upgrade must not restart worker")),
         raising=False,
     )
@@ -339,7 +382,7 @@ def test_managed_release_upgrade_sanitizes_installer_environment(monkeypatch, ca
     assert len(calls) == 1
     command, kwargs = calls[0]
     assert command[0] == "sh"
-    assert kwargs["env"]["OPENPROGRAM_REPOSITORY"] == "Fzkuji/OpenProgram"
+    assert kwargs["env"]["OPENPROGRAM_REPOSITORY"] == "FuzzyKuji/OpenProgram"
     assert kwargs["env"]["OPENPROGRAM_VERSION"] == "0.6.7"
     assert "OPENPROGRAM_RUNTIME_ARCHIVE" not in kwargs["env"]
     assert "OPENPROGRAM_RUNTIME_SHA256" not in kwargs["env"]
@@ -348,7 +391,7 @@ def test_managed_release_upgrade_sanitizes_installer_environment(monkeypatch, ca
 
 
 def test_managed_release_rejects_missing_manifest_asset(monkeypatch):
-    from openprogram.cli.commands import upgrade as up
+    from openprogram.interfaces.cli.commands import upgrade as up
 
     release = _latest_release()
     release["assets"] = release["assets"][1:]
@@ -357,13 +400,13 @@ def test_managed_release_rejects_missing_manifest_asset(monkeypatch):
         f"OpenProgram-{version}-runtime-linux-x86_64.tar.gz",
         f"OpenProgram-{version}-runtime-linux-x86_64.tar.gz.sha256",
     ))
-    monkeypatch.setattr("openprogram.updater.github.latest_release", lambda: release)
+    monkeypatch.setattr("openprogram.operations.self_update.github_release.github.latest_release", lambda: release)
 
     assert up.run_managed_release_upgrade(check_only=True, as_json=True) == 1
 
 
 def test_managed_release_rejects_duplicate_assets(monkeypatch):
-    from openprogram.cli.commands import upgrade as up
+    from openprogram.interfaces.cli.commands import upgrade as up
 
     release = _latest_release()
     release["assets"].append(dict(release["assets"][1]))
@@ -372,14 +415,14 @@ def test_managed_release_rejects_duplicate_assets(monkeypatch):
         f"OpenProgram-{version}-runtime-linux-x86_64.tar.gz",
         f"OpenProgram-{version}-runtime-linux-x86_64.tar.gz.sha256",
     ))
-    monkeypatch.setattr("openprogram.updater.github.latest_release", lambda: release)
+    monkeypatch.setattr("openprogram.operations.self_update.github_release.github.latest_release", lambda: release)
 
     assert up.run_managed_release_upgrade(check_only=True, as_json=True) == 1
 
 
 def test_cmd_managed_dry_run_is_forwarded(monkeypatch):
-    from openprogram.cli.commands import upgrade as up
-    from openprogram.updater import detect
+    from openprogram.interfaces.cli.commands import upgrade as up
+    from openprogram.operations.self_update.github_release import detect
 
     monkeypatch.setattr(
         detect,
@@ -404,8 +447,8 @@ def test_cmd_managed_dry_run_is_forwarded(monkeypatch):
 
 
 def test_cmd_managed_errors_remain_json(monkeypatch, capsys):
-    from openprogram.cli.commands import upgrade as up
-    from openprogram.updater import detect
+    from openprogram.interfaces.cli.commands import upgrade as up
+    from openprogram.operations.self_update.github_release import detect
 
     monkeypatch.setattr(
         detect,
@@ -423,8 +466,8 @@ def test_cmd_managed_errors_remain_json(monkeypatch, capsys):
 
 
 def test_cmd_unknown_install_error_remains_json(monkeypatch, capsys):
-    from openprogram.cli.commands import upgrade as up
-    from openprogram.updater import detect
+    from openprogram.interfaces.cli.commands import upgrade as up
+    from openprogram.operations.self_update.github_release import detect
 
     monkeypatch.setattr(
         detect,
@@ -442,7 +485,7 @@ def test_cmd_unknown_install_error_remains_json(monkeypatch, capsys):
 
 
 def test_managed_release_json_is_a_single_document(monkeypatch, capsys):
-    from openprogram.cli.commands import upgrade as up
+    from openprogram.interfaces.cli.commands import upgrade as up
 
     monkeypatch.setattr(up, "_managed_release_status", lambda: {
         "current_version": "0.6.6",
@@ -451,7 +494,7 @@ def test_managed_release_json_is_a_single_document(monkeypatch, capsys):
         "archive": "OpenProgram-0.6.7-runtime-linux-x86_64.tar.gz",
     })
     monkeypatch.setattr(
-        "openprogram.updater.github.release_installer",
+        "openprogram.operations.self_update.github_release.github.release_installer",
         lambda _version: b"#!/usr/bin/env sh\nprintf 'installer output\\n'\n",
     )
 
@@ -461,7 +504,7 @@ def test_managed_release_json_is_a_single_document(monkeypatch, capsys):
 
 
 def test_managed_release_execution_error_remains_json(monkeypatch, capsys):
-    from openprogram.cli.commands import upgrade as up
+    from openprogram.interfaces.cli.commands import upgrade as up
 
     monkeypatch.setattr(up, "_managed_release_status", lambda: {
         "current_version": "0.6.6",
@@ -470,7 +513,7 @@ def test_managed_release_execution_error_remains_json(monkeypatch, capsys):
         "archive": "OpenProgram-0.6.7-runtime-linux-x86_64.tar.gz",
     })
     monkeypatch.setattr(
-        "openprogram.updater.github.release_installer",
+        "openprogram.operations.self_update.github_release.github.release_installer",
         lambda _version: b"#!/usr/bin/env sh\nexit 0\n",
     )
     monkeypatch.setattr(
@@ -484,8 +527,8 @@ def test_managed_release_execution_error_remains_json(monkeypatch, capsys):
 
 
 def test_source_unknown_channel_error_remains_json(monkeypatch, capsys):
-    from openprogram.cli.commands import upgrade as up
-    from openprogram.updater import detect
+    from openprogram.interfaces.cli.commands import upgrade as up
+    from openprogram.operations.self_update.github_release import detect
 
     monkeypatch.setattr(
         detect,
@@ -504,7 +547,7 @@ def test_source_unknown_channel_error_remains_json(monkeypatch, capsys):
 
 
 def test_release_installer_reads_only_the_immutable_tag(monkeypatch):
-    from openprogram.updater import github
+    from openprogram.operations.self_update.github_release import github
 
     installer = b"#!/usr/bin/env sh\nset -eu\n"
     seen = []
@@ -516,12 +559,12 @@ def test_release_installer_reads_only_the_immutable_tag(monkeypatch):
 
     assert github.release_installer("0.6.7") == installer
     assert seen == [
-        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.7/scripts/install-release.sh"
+        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/v0.6.7/scripts/install-release.sh"
     ]
 
 
 def test_release_download_validates_each_redirect_before_request(monkeypatch):
-    from openprogram.updater import github
+    from openprogram.operations.self_update.github_release import github
 
     calls = []
 
@@ -539,7 +582,7 @@ def test_release_download_validates_each_redirect_before_request(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert github._curl_release_bytes(
-        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.7/scripts/install-release.sh"
+        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/v0.6.7/scripts/install-release.sh"
     ) is None
     assert len(calls) == 1
     assert calls[0][1] == "--disable"
@@ -547,7 +590,7 @@ def test_release_download_validates_each_redirect_before_request(monkeypatch):
 
 
 def test_release_download_accepts_only_allowed_redirect_chain(monkeypatch):
-    from openprogram.updater import github
+    from openprogram.operations.self_update.github_release import github
 
     calls = []
 
@@ -568,6 +611,6 @@ def test_release_download_accepts_only_allowed_redirect_chain(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert github._curl_release_bytes(
-        "https://github.com/Fzkuji/OpenProgram/releases/download/v0.6.7/release-manifest.json"
+        "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.7/release-manifest.json"
     ) == b'{"schema": 1}'
     assert len(calls) == 2

@@ -17,11 +17,14 @@ export function usePermissionSetting(
   reportRef.current = report;
   const version = useRef<number | undefined>(undefined);
   const draft = useRef(false);
+  // A draft sends a mode only once the owner picks one; otherwise it inherits.
+  const chosen = useRef(false);
   const pending = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
   useEffect(() => {
     version.current = undefined;
     draft.current = false;
-    if (!sessionId) return;
+    chosen.current = false;
+    if (!sessionId) { setMode('bypass'); return; }
     const read = () => client.send({ action: 'set_permission', session_id: sessionId });
     const unsubscribe = client.on((event) => {
       if (event.type === 'chat_ack' && event.data.session_id === sessionId) read();
@@ -48,7 +51,7 @@ export function usePermissionSetting(
   }, [client, sessionId, setMode]);
   const setPermissionMode = useCallback((value: SetStateAction<PermissionMode>) => {
     const next = typeof value === 'function' ? value(current.current) : value;
-    if (!sessionId || draft.current) { setMode(next); return; }
+    if (!sessionId || draft.current) { chosen.current = true; setMode(next); return; }
     if (pending.current) return;
     if (client.getState() !== 'connected' || version.current === undefined) {
       reportRef.current('Permission settings are unavailable. Reconnect or wait for session loading.');
@@ -66,6 +69,6 @@ export function usePermissionSetting(
   }, [client, sessionId, setMode]);
   return {
     setPermissionMode,
-    permissionForSubmit: () => !sessionId || draft.current ? current.current : 'inherit',
+    permissionForSubmit: () => (!sessionId || draft.current) && chosen.current ? current.current : 'inherit',
   };
 }

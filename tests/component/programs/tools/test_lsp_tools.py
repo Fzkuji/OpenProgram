@@ -33,8 +33,8 @@ from openprogram.programs.tools.code.lsp.lsp_diagnostics.lsp_diagnostics import 
 from openprogram.programs.tools.code.lsp.lsp_references.lsp_references import (
     _references_impl as lsp_references,
 )
-from openprogram.lsp import client as lsp_client
-from openprogram.lsp.client import LanguageServer, ServerSpec, ServerUnavailable
+from openprogram.host.lsp import client as lsp_client
+from openprogram.host.lsp.client import LanguageServer, ServerSpec, ServerUnavailable
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +468,7 @@ def test_diagnostics_truncate_beyond_the_cap(stub):
 # ---------------------------------------------------------------------------
 
 def test_tools_are_registered():
-    from openprogram.programs._runtime import get
+    from openprogram.programs._host.runtime import get
     for name in ("lsp_diagnostics", "lsp_references", "lsp_definition"):
         tool = get(name)
         assert tool is not None, f"{name} not registered"

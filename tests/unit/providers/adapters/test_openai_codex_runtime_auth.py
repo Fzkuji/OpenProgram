@@ -2,8 +2,8 @@
 
 These tests don't construct a real Runtime (that needs the openai-codex
 provider registry + HTTP client setup); instead they exercise the
-narrow auth-acquisition helpers in ``runtime.py`` that were the point
-of the v2 migration. If _ensure_credential / _account_id_for work,
+narrow auth-acquisition helpers in ``credentials.py`` that were the point
+of the v2 migration. If ensure_credential / account_id_for work,
 Runtime.__init__ and Runtime.exec are mechanical plumbing over them.
 """
 from __future__ import annotations
@@ -11,26 +11,26 @@ from __future__ import annotations
 import base64
 import json
 import time
-from pathlib import Path
 
 import pytest
 
-from openprogram.auth.credential_provider import (
+from openprogram.models.auth.credential_provider import (
     CredentialProvider,
     ProviderAuthConfig,
     register_provider_config,
 )
-from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import (
+from openprogram.models.auth.store import AuthStore, set_store_for_testing
+from openprogram.models.auth.types import (
     AuthConfigError,
     Credential,
     CredentialData,
     CredentialPool,
 )
-from openprogram.providers.openai_codex import auth_adapter
-from openprogram.providers.openai_codex.runtime import (
-    _account_id_for,
-    _ensure_credential,
+from openprogram.models.providers.adapters.openai_codex import auth_adapter
+from openprogram.models.providers.adapters.openai_codex.credentials import (
+    account_id_for,
+    ensure_credential,
+    oauth_view,
 )
 
 
@@ -75,13 +75,13 @@ def test_ensure_credential_imports_from_codex_file_when_pool_absent(isolated):
     }))
     mgr = CredentialProvider(store=store)
 
-    cred = _ensure_credential(mgr, "default")
+    cred = ensure_credential(mgr, "default")
     assert cred.payload.auth_value == access
     assert cred.metadata["account_id"] == "acc_fromfile"
     # The import should have created a pool, so a second call returns
     # the same thing without re-importing.
     assert store.find_pool(auth_adapter.PROVIDER_ID, "default") is not None
-    cred2 = _ensure_credential(mgr, "default")
+    cred2 = ensure_credential(mgr, "default")
     assert cred2.credential_id == cred.credential_id
 
 
@@ -89,9 +89,9 @@ def test_ensure_credential_raises_when_no_pool_and_no_file(isolated):
     store, tmp = isolated
     mgr = CredentialProvider(store=store)
     # ~/.codex/auth.json does not exist — import path returns None,
-    # _ensure_credential should surface a config error.
+    # ensure_credential should surface a config error.
     with pytest.raises(AuthConfigError, match="codex login"):
-        _ensure_credential(mgr, "default")
+        ensure_credential(mgr, "default")
 
 
 def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
@@ -144,7 +144,7 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
     ))
 
     mgr = CredentialProvider(store=store)
-    result = _ensure_credential(mgr, "default")
+    result = ensure_credential(mgr, "default")
     assert result.payload.auth_value == new_access
 
 
@@ -163,7 +163,7 @@ def test_account_id_prefers_metadata_over_jwt():
         ),
         metadata={"account_id": "acc_from_metadata"},
     )
-    assert _account_id_for(cred) == "acc_from_metadata"
+    assert account_id_for(cred) == "acc_from_metadata"
 
 
 def test_account_id_falls_back_to_jwt():
@@ -180,7 +180,7 @@ def test_account_id_falls_back_to_jwt():
             },
         ),
     )
-    assert _account_id_for(cred) == "acc_jwt_only"
+    assert account_id_for(cred) == "acc_jwt_only"
 
 
 def test_profile_isolation(isolated):
@@ -210,7 +210,48 @@ def test_profile_isolation(isolated):
     seed("work", _jwt(int(time.time()) + 3600, account_id="acc_work"))
 
     mgr = CredentialProvider(store=store)
-    c_personal = _ensure_credential(mgr, "personal")
-    c_work = _ensure_credential(mgr, "work")
-    assert _account_id_for(c_personal) == "acc_personal"
-    assert _account_id_for(c_work) == "acc_work"
+    c_personal = ensure_credential(mgr, "personal")
+    c_work = ensure_credential(mgr, "work")
+    assert account_id_for(c_personal) == "acc_personal"
+    assert account_id_for(c_work) == "acc_work"
+
+
+def test_a_delegated_codex_login_is_read_from_the_cli_file_on_every_call(isolated):
+    store, tmp = isolated
+    auth_path = tmp / ".codex" / "auth.json"
+    auth_path.parent.mkdir()
+
+    def login(access):
+        auth_path.write_text(json.dumps({
+            "auth_mode": "chatgpt",
+            "tokens": {"access_token": access, "refresh_token": "R", "account_id": "acc_cli"},
+        }))
+
+    first = _jwt(int(time.time()) + 3600, account_id="acc_cli")
+    login(first)
+    store.put_pool(CredentialPool(
+        provider_id=auth_adapter.PROVIDER_ID,
+        account_id="default",
+        credentials=[Credential(
+            provider_id=auth_adapter.PROVIDER_ID,
+            account_id="default",
+            kind="cli_delegated",
+            payload=CredentialData(kind="cli_delegated", data={
+                "store_path": str(auth_path), "access_key_path": ["tokens", "access_token"],
+            }),
+        )],
+    ))
+    mgr = CredentialProvider(store=store)
+
+    viewed = oauth_view(ensure_credential(mgr, "default"))
+    assert viewed.kind == "oauth"
+    assert viewed.payload.auth_value == first
+    assert account_id_for(viewed) == "acc_cli"
+
+    refreshed = _jwt(int(time.time()) + 7200, account_id="acc_cli")
+    login(refreshed)
+    assert oauth_view(ensure_credential(mgr, "default")).payload.auth_value == refreshed
+
+    auth_path.write_text(json.dumps({"auth_mode": "apikey", "OPENAI_API_KEY": "sk-x"}))
+    with pytest.raises(AuthConfigError, match="codex login"):
+        oauth_view(ensure_credential(mgr, "default"))

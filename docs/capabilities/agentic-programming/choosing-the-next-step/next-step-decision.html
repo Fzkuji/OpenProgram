@@ -1,0 +1,103 @@
+<title>Next-step decision</title>
+<meta name="description" content="Give the model a set of options; its pick resolves directly into the result of the next step.">
+<h1>Next-step decision</h1>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, decision
+
+class ExampleAgent(Agent):
+    method_options = {'route_message': {'tool': True}}
+
+    def route_message(self, msg: str) -&gt; str:
+        return decision.make("Pick one way to handle this message.", {
+            "analyze":  analyze_sentiment,        # a function
+            "fallback": fallback_reply,           # a function
+            "done":     "CONVERSATION_OVER",      # a value
+        })</code></pre>
+<p class="note">The model picks a function: it runs with parsed and injected arguments and its return value comes back. The model picks a value: that value comes back. The decision is the branch; there is no <code translate="no">if</code>.</p>
+<h2>Work first, decide last</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, agent
+
+class ExampleAgent(Agent):
+    method_options = {'handle_ticket': {'tool': True}}
+
+    def handle_ticket(self, ticket: str) -&gt; dict:
+        """Read the ticket, look things up, then decide which flow to route to."""
+        return agent(
+            f"Handle this ticket: {ticket}",
+            toolset="default",          # before: research with tools, run commands
+            choices={                   # closing: the return must be one of these
+                "refund":    issue_refund,
+                "escalate":  escalate_to_human,
+                "close":     {"status": "closed"},
+            },
+        )</code></pre>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">decision.make(prompt, options)</code></th><th scope="col"><code translate="no">agent(prompt, choices=options)</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Model does</th><td>Only picks</td><td>A full turn with reasoning and tools from <code translate="no">tools</code> or <code translate="no">toolset</code>; its final reply must be one <code translate="no">{"call": ...}</code> JSON</td></tr>
+<tr><th scope="row">Prompt</th><td>Your prompt and the menu; your prompt must ask for a pick</td><td>Menu and <code translate="no">DECISION_FINISH_INSTRUCTION</code> spliced in</td></tr>
+<tr><th scope="row">Retries</th><td><code translate="no">max_retries</code>, default 1, 0 disables</td><td>Fixed at one</td></tr>
+</tbody>
+</table>
+<p class="note">Without <code translate="no">choices</code>, <code translate="no">agent</code> returns the reply text. Inside an <code translate="no">Agent</code> method both use the enclosing call's Runtime. Outside any Agent call pass <code translate="no">runtime=</code>; <code translate="no">decision.make</code> otherwise raises <code translate="no">RuntimeError</code>. Code: <code translate="no">openprogram/runtime/agent/decision.py</code>.</p>
+<h2>Versus native tool calls</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><a href="tool-calling.html">Native tool call</a></th><th scope="col">Next-step decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">Options reach the model by</th><td>The protocol's <code translate="no">tools</code> field</td><td>Text menu in the prompt</td></tr>
+<tr><th scope="row">Pick expressed as</th><td>Structured <code translate="no">ToolCall</code></td><td>JSON in the reply body</td></tr>
+<tr><th scope="row">Parsed by</th><td>Provider and agent loop</td><td><code translate="no">decision.py</code></td></tr>
+<tr><th scope="row">An option can be a value</th><td>No</td><td>Yes, typically <code translate="no">done</code> or <code translate="no">escalate</code></td></tr>
+<tr><th scope="row">Needs</th><td>Provider tool use</td><td>Plain text</td></tr>
+</tbody>
+</table>
+<p class="note">One <code translate="no">Agent</code> method can serve both as a native tool and as an option. Also weigh whether every decision and retry should be a traceable DAG node.</p>
+<h2 id="option-containers">Options</h2>
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">When picked</th><th scope="col">Schema from</th></tr></thead>
+<tbody>
+<tr><th scope="row">Function</th><td>Runs it, returns its return value</td><td>Function signature</td></tr>
+<tr><th scope="row">Value</th><td>Returns the fixed value</td><td>None</td></tr>
+<tr><th scope="row">Schema</th><td>Model fills the schema; returns <code translate="no">{"decision": name, **fields}</code></td><td>The schema you declare</td></tr>
+</tbody>
+</table><pre translate="no" tabindex="0"><code>decision.make("...", {
+    "retry":     retry_fn,                            # function option
+    "skip":      "SKIPPED",                           # value option
+    "abort":     (AbortSignal(), "pick when stuck"),  # value option + description
+    "emit_plan": ("Produce a plan.", {                # schema option: ("description", schema)
+        "steps": [{"action": str, "target": str}],
+        "rationale": str,
+    }),
+})</code></pre>
+<p class="note">Dict form: <code translate="no">{name: handler}</code>. List form: a callable, <code translate="no">(callable, "description")</code>, <code translate="no">"name"</code>, <code translate="no">("name", "description")</code> or <code translate="no">("name", "description", schema)</code>; a function's name is its <code translate="no">__name__</code>.</p>
+<h3>Schema notation</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Written as</th><th scope="col">Means</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">field: str</code> (any Python type)</th><td>Scalar of that type</td></tr>
+<tr><th scope="row"><code translate="no">field: "description"</code></th><td>Described <code translate="no">str</code> scalar</td></tr>
+<tr><th scope="row"><code translate="no">field: [subschema]</code></th><td>List of exactly one item template; <code translate="no">[str, int]</code> raises <code translate="no">TypeError</code></td></tr>
+<tr><th scope="row"><code translate="no">field: {subfield: ...}</code></th><td>Nested object, needing at least one key outside the meta-spec set</td></tr>
+<tr><th scope="row"><code translate="no">field: {"type": T, "description": ..., "options": [...]}</code></th><td>Meta-spec. A dict whose keys all fall in <code translate="no">{type, description, options, fields, items}</code> is read this way.</td></tr>
+</tbody>
+</table>
+<p class="note">Tuples are reserved in handler position: a literal 2-tuple value is misread as <code translate="no">(value, "description")</code>. To always return one structure, use a single-option <code translate="no">decision.make</code> or <code translate="no">exec(response_format=...)</code>.</p>
+<details>
+<summary>Internal steps</summary>
+<ol>
+<li><strong><code translate="no">render_options</code></strong> emits each option's signature <code translate="no">name(param: type, ...)</code>, description, per-parameter detail with <code translate="no">options</code>, and a one-line <code translate="no">Call:</code> JSON example with native placeholders (<code translate="no">0</code>, <code translate="no">false</code>, <code translate="no">[]</code>, <code translate="no">{}</code>, <code translate="no">"&lt;str&gt;"</code>) and nested shape. Only <code translate="no">source="llm"</code> parameters show.</li>
+<li><strong>Model call.</strong> <code translate="no">decision.make</code> sends <code translate="no">runtime.exec(prompt + menu)</code>; <code translate="no">exec(choices=)</code> splices the menu into its turn.</li>
+<li><strong><code translate="no">parse_args</code></strong> checks the reply as in the table below and returns <code translate="no">(chosen, kwargs)</code>: the function, or the name string.</li>
+<li><strong>Retry</strong> on <code translate="no">_ParseError</code>: the previous reply, the reason and the re-rendered menu go back through <code translate="no">runtime.exec</code>, recorded in the DAG like any model call. When exhausted: <code translate="no">DecisionError</code>, with the last error kind, message and head of the reply. It subclasses <code translate="no">ValueError</code>; there is no built-in fallback.</li>
+<li><strong><code translate="no">resolve_decision</code></strong> runs <code translate="no">chosen(**kwargs)</code>, or looks up the value; a value option with a schema returns <code translate="no">{"decision": name, **kwargs}</code>.</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">parse_args step</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">extract_action</code></th><td>Finds the JSON with a <code translate="no">call</code> key (aliases <code translate="no">action</code>, <code translate="no">function</code>, <code translate="no">tool</code>) in a JSON code block or bare text</td></tr>
+<tr><th scope="row">Unknown name</th><td><code translate="no">_ParseError("unknown_call")</code></td></tr>
+<tr><th scope="row"><code translate="no">_validate_field</code></th><td>Checks type (<code translate="no">str/int/float/bool/list/dict</code>; <code translate="no">bool</code> is not <code translate="no">int</code>, <code translate="no">float</code> accepts <code translate="no">int</code>), enum and nesting</td></tr>
+<tr><th scope="row">Function options</th><td><code translate="no">source="context"</code> parameters come from the <code translate="no">context</code> dict, <code translate="no">runtime</code>-class parameters are injected, unknown fields dropped, required ones checked</td></tr>
+<tr><th scope="row">Value and schema options</th><td>Every declared field required, others dropped</td></tr>
+</tbody>
+</table>
+</details>

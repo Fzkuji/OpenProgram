@@ -109,7 +109,7 @@ export function FunctionForm({
       >
         <div
           className={styles.title}
-          title={
+          data-tip={
             fn.description
               ? `function ${fn.name} – ${fn.description}`
               : `function ${fn.name}`

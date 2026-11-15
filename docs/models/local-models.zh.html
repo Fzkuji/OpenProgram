@@ -1,0 +1,33 @@
+<title>本地模型</title>
+<meta name="description" content="连接 Ollama、LM Studio、vLLM、llama.cpp 或其他 OpenAI 兼容的本地服务。">
+<h1>本地模型</h1>
+<p>OpenProgram 连接你运行的服务。模型下载、GPU 分配和服务生命周期由该服务管理。</p>
+<table class="stack">
+<thead><tr><th scope="col">设置 → Provider 里的预设</th><th scope="col">默认 API Base URL</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ollama</th><td><code translate="no">http://localhost:11434/v1</code></td></tr>
+<tr><th scope="row">LM Studio</th><td><code translate="no">http://localhost:1234/v1</code></td></tr>
+<tr><th scope="row">vLLM</th><td><code translate="no">http://localhost:8000/v1</code></td></tr>
+<tr><th scope="row">llama.cpp</th><td><code translate="no">http://localhost:8080/v1</code></td></tr>
+<tr><th scope="row">本地 OpenAI 兼容服务</th><td><code translate="no">http://localhost:8000/v1</code></td></tr>
+</tbody>
+</table>
+<ol>
+<li>用服务自己的工具启动并加载模型。</li>
+<li>启用该 Provider，保存 API Base URL。</li>
+<li>点 <strong>Fetch models</strong>，启用一个模型。</li>
+<li>在聊天输入框选择它。</li>
+</ol>
+<p class="note"><code translate="no">localhost</code> 指运行 Worker 的机器；远程 Worker 要填它能访问的地址。只有主机和端口时补 <code translate="no">/v1</code>；明确的路径保留。保存新 URL 会改变已启用模型后续的发现和推理。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">做法或结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">服务需要密钥</th><td>在 Provider 账户面板添加。没有密钥时，发现、检查和推理都不带 Authorization；云端 OpenAI 密钥绝不会发送。</td></tr>
+<tr><th scope="row">多个服务</th><td><strong>Add custom provider</strong>：名称、URL、<strong>Local server (API key optional)</strong>。普通自定义云 Provider 的凭据要求不变。</td></tr>
+<tr><th scope="row">检查服务</th><td><strong>Connectivity</strong>：能列出模型说明接口有响应；测试具体模型还会检查推理。服务不可用、密钥被拒或响应无效都报失败。</td></tr>
+<tr><th scope="row">无法发现</th><td><strong>Add model by id</strong>，填准确的标识符。也可更新已有模型的限制。</td></tr>
+<tr><th scope="row">Token 限制</th><td>填与部署及其配置的上下文大小一致的值。未知时默认上下文 4,096、输出 1,024。模型宣称的训练上下文不算数。</td></tr>
+</tbody>
+</table>
+<p>本地模型使用 OpenAI Chat Completions，流式、取消和工具调用走与其他兼容 Provider 相同的传输。工具、图片、推理和严格 JSON 取决于模型和服务。启用状态和限制保存在标准配置里。</p>
+<p class="next">服务文档：<a href="https://docs.ollama.com/api/openai-compatibility">Ollama</a>、<a href="https://lmstudio.ai/docs/developer/core/server">LM Studio</a>、<a href="https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/">vLLM</a></p>

@@ -1,0 +1,44 @@
+<title>Editor (ACP)</title>
+<meta name="description" content="Run OpenProgram as a chat agent inside Zed or another ACP editor.">
+<h1>Editor (ACP)</h1>
+<p><code translate="no">openprogram acp</code> is the agent side of <a href="https://agentclientprotocol.com">ACP</a>, the Agent Client Protocol. Zed speaks it natively, so no extension is needed. The editor launches the command; it speaks JSON-RPC on stdin and stdout and exits when the editor disconnects.</p>
+<h2 id="configuring-zed">Zed</h2>
+<p>Add this under <code translate="no">agent_servers</code> in <code translate="no">settings.json</code> (<code translate="no">cmd-shift-p</code> → <code translate="no">zed: open settings file</code>), then pick <strong>OpenProgram</strong> from the Agent Panel's new-thread menu. If <code translate="no">openprogram</code> is not on Zed's <code translate="no">PATH</code>, use <code translate="no">which openprogram</code> as <code translate="no">command</code>.</p>
+<pre translate="no" tabindex="0"><code>{
+  "agent_servers": {
+    "OpenProgram": {
+      "type": "custom",
+      "command": "openprogram",
+      "args": ["acp"],
+      "env": {}
+    }
+  }
+}</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Flag</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--agent &lt;id&gt;</code></th><td>Run sessions as this agent instead of <code translate="no">main</code>, with its own system prompt and tools</td></tr>
+<tr><th scope="row"><code translate="no">--permission &lt;mode&gt;</code></th><td><code translate="no">bypass</code> (Bypass permissions, default), <code translate="no">auto</code>, <code translate="no">ask</code>, <code translate="no">plan</code> or <code translate="no">acceptEdits</code>: <a href="../capabilities/permissions.html">Permissions</a></td></tr>
+</tbody></table>
+<pre translate="no" tabindex="0"><code>"args": ["acp", "--agent", "coding", "--permission", "acceptEdits"]</code></pre>
+<h2 id="what-works-in-the-editor">What works</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Feature</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Working directory</th><td>Tools start in the folder the editor opens the thread in, which becomes the conversation's project, as with <code translate="no">openprogram --print</code>. A folder that cannot be opened as a project runs in the home folder, with a warning on stderr.</td></tr>
+<tr><th scope="row">Project marker</th><td>The first prompt registers the folder as a project, shows it again in the App if you had hidden it, and writes its marker, <code translate="no">.openprogram/project.json</code>, into the folder; add <code translate="no">.openprogram/</code> to <code translate="no">.gitignore</code> to keep it out of a repository. A thread you never prompt leaves nothing behind.</td></tr>
+<tr><th scope="row">Streaming</th><td>Token by token; reasoning as a separate thought stream when the model produces one</td></tr>
+<tr><th scope="row">Tool calls</th><td>Reported at start and finish with arguments and result; file tools report the path so Zed can follow</td></tr>
+<tr><th scope="row">Editor context</th><td>An attached selection or file goes into the prompt under its path; the model can read more</td></tr>
+<tr><th scope="row">Permission prompts</th><td><strong>Allow</strong>, <strong>Always allow</strong>, <strong>Reject</strong>. Always allow writes a persistent rule for that tool to the project's settings, as in the Web UI. The turn goes on after the answer within the same prompt. An editor that answers the request with an error, or not within 10 minutes, rejects it. Questions the agent asks you have no ACP form and are declined.</td></tr>
+<tr><th scope="row">System access</th><td>A step that needs system access, such as Accessibility, cannot be granted from an editor: the turn stops and the prompt fails with an error naming the access.</td></tr>
+<tr><th scope="row">Cancellation</th><td>Stopping a thread stops the model request in flight, starts no other, and withdraws any open prompt</td></tr>
+<tr><th scope="row">Errors</th><td>A turn that fails, such as on a provider error, answers the prompt with a JSON-RPC error carrying the reason, also when it fails after a permission answer. A turn that stops where the editor cannot move it on, paused from the App or needing reconciliation, ends the prompt with an error too; continue it in OpenProgram.</td></tr>
+<tr><th scope="row">Resuming</th><td>Reopened threads replay from the session store. Sessions are ordinary ones, visible in <a href="web.html">Web</a> and the <a href="tui.html">TUI</a> and continuable from either.</td></tr>
+</tbody></table>
+<h2 id="scope">Scope</h2>
+<ul>
+<li>Sessions run with local owner authority, which is what allows approval prompts. Do not expose the command over a network transport.</li>
+<li>MCP servers passed in <code translate="no">session/new</code> are ignored; OpenProgram uses its own <a href="../capabilities/mcp.html">MCP configuration</a>. Audio prompts are not supported.</li>
+<li>Protocol version 1: <code translate="no">initialize</code>, <code translate="no">session/new</code>, <code translate="no">session/load</code>, <code translate="no">session/prompt</code>, <code translate="no">session/cancel</code> from the editor; <code translate="no">session/update</code>, <code translate="no">session/request_permission</code> back.</li>
+</ul>

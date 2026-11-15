@@ -3,20 +3,23 @@ import asyncio
 
 import pytest
 
-from openprogram.agent.authority import local_owner_authority
-from openprogram.agent.dispatcher.types import TurnRequest
-from openprogram.agent.permissions.approval import wrap_with_approval
-from openprogram.agent.run_control import set_current_execution_id, reset_current_execution_id
-from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.execution import ExecutionStore
+from openprogram.runtime.permissions.authority import local_owner_authority
+from openprogram.runtime.agent.turn_request import TurnRequest
+from openprogram.runtime.permissions.approval import wrap_with_approval
+from openprogram.runtime.execution.run_control import (
+    set_current_execution_id,
+    reset_current_execution_id,
+)
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.runtime.execution import ExecutionStore
 from tests.component.agent.test_production_driver._support import _admitted
 
 
 @pytest.fixture
 def automatic(tmp_path, monkeypatch):
     store, execution = _admitted(tmp_path)
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
-    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: None)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _: None)
     request = TurnRequest(session_id=execution.session_id, user_text="inspect project", agent_id="main",
         source="web", permission_mode="auto", **local_owner_authority())
     token = set_current_execution_id(execution.execution_id)
@@ -37,7 +40,7 @@ def test_third_refusal_uses_existing_approval_manifest(automatic, monkeypatch):
         calls.append(args)
         return AgentToolResult(content=[], details={})
 
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), request, lambda _: None)
 
     async def run():
@@ -57,7 +60,7 @@ def test_third_refusal_uses_existing_approval_manifest(automatic, monkeypatch):
 
 
 def _tool(request, monkeypatch, classify):
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     async def execute(*_):
         return AgentToolResult(content=[], details={})
     return wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), request, lambda _: None)
@@ -77,7 +80,7 @@ def test_review_reuses_durable_verdict_after_store_reopen(automatic, monkeypatch
         tool = _tool(request, monkeypatch, classify)
         for i in range(3):
             await tool._permission_preflight(str(i), {"command": str(i)})
-        monkeypatch.setattr("openprogram.execution.default_store", lambda: ExecutionStore(store.path))
+        monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: ExecutionStore(store.path))
         restored = _tool(request, monkeypatch, classify)
         await restored._permission_preflight("2", {"command": "2"})
         assert restored._interaction_manifest("2", {"command": "2"})["kind"] == "approval"
@@ -105,7 +108,7 @@ def test_allowed_resets_consecutive_but_twenty_total_still_falls_back(automatic,
 
 
 def test_no_verdict_is_not_a_risk_refusal(automatic, monkeypatch):
-    from openprogram.agent.permissions.classifier import ReviewResult
+    from openprogram.runtime.permissions.classifier import ReviewResult
     store, execution, request = automatic
     async def classify(*args, **kwargs):
         return ReviewResult(True, "provider unavailable", "AUTO_CLASSIFIER_UNAVAILABLE")
@@ -124,7 +127,7 @@ def test_no_verdict_is_not_a_risk_refusal(automatic, monkeypatch):
 
 @pytest.mark.parametrize("restriction", ["noninteractive", "explicit_deny"])
 def test_fallback_never_overrides_authority_or_explicit_denial(automatic, monkeypatch, restriction):
-    from openprogram.agent.session_config import PermissionRules
+    from openprogram.runtime.permissions.modes import PermissionRules
     _, _, request = automatic
     async def classify(*args, **kwargs):
         return True, "risky"
@@ -136,7 +139,7 @@ def test_fallback_never_overrides_authority_or_explicit_denial(automatic, monkey
             request.source = "agent_spawn"
             request.interaction = "noninteractive"
         else:
-            monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: PermissionRules(deny=["bash"]))
+            monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _: PermissionRules(deny=["bash"]))
         restored = _tool(request, monkeypatch, classify)
         args = {"command": "2"}
         await restored._permission_preflight("2", args)
@@ -146,11 +149,11 @@ def test_fallback_never_overrides_authority_or_explicit_denial(automatic, monkey
 
 
 def test_real_driver_publishes_fallback_before_tool_dispatch(tmp_path, monkeypatch):
-    from openprogram.agent.agent_loop import _execute_tool_calls
-    from openprogram.execution.effects import EffectStore
-    from openprogram.execution.waits import DurableWaitStore
-    from openprogram.providers.types import AssistantMessage, ToolCall
-    from openprogram.providers.utils.event_stream import EventStream
+    from openprogram.runtime.agent.loop import _execute_tool_calls
+    from openprogram.runtime.execution.effects import EffectStore
+    from openprogram.runtime.execution.waits import DurableWaitStore
+    from openprogram.models.providers.types import AssistantMessage, ToolCall
+    from openprogram.models.providers.utils.event_stream import EventStream
     from tests.component.agent.test_production_driver._support import _prepare_long_turn, _long_turn_snapshot
     store, _, _, _, request, _, execution, _, hook = _prepare_long_turn(tmp_path, "fallback-wait")
     request.permission_mode = "auto"
@@ -158,15 +161,15 @@ def test_real_driver_publishes_fallback_before_tool_dispatch(tmp_path, monkeypat
     for key, value in local_owner_authority().items():
         setattr(request, key, value)
     snapshot = _long_turn_snapshot(request)
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
-    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: None)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _: None)
     calls = []
     async def classify(*args, **kwargs):
         return True, "risky"
     async def executor(*args):
         calls.append(args)
         return AgentToolResult(content=[], details={})
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=executor), request, lambda _: None)
     async def safe_point(kind, payload):
         return hook(kind, payload)
@@ -194,7 +197,7 @@ def test_real_driver_publishes_fallback_before_tool_dispatch(tmp_path, monkeypat
 
 def test_parallel_review_updates_are_deduplicated(automatic):
     from concurrent.futures import ThreadPoolExecutor
-    from openprogram.agent.permissions.auto_history import AutoHistory
+    from openprogram.runtime.permissions.auto_history import AutoHistory
     store, execution, _ = automatic
     def record(i):
         history = AutoHistory(store, execution.execution_id, execution.session_id, "epoch", str(i % 5))
@@ -208,11 +211,11 @@ def test_parallel_review_updates_are_deduplicated(automatic):
 
 def test_fallback_consumes_durable_exact_owner_answer(automatic, monkeypatch):
     import time
-    from openprogram.execution import AttemptStore
-    from openprogram.execution.control import RuntimeControlService
-    from openprogram.execution.driver import DriverRegistry
-    from openprogram.execution.waits import DurableWaitStore
-    from openprogram.agent.run_control import set_preapproved_wait_id, reset_preapproved_wait_id
+    from openprogram.runtime.execution import AttemptStore
+    from openprogram.runtime.execution.control import RuntimeControlService
+    from openprogram.runtime.execution.driver import DriverRegistry
+    from openprogram.runtime.execution.waits import DurableWaitStore
+    from openprogram.runtime.conversation.run_control import set_preapproved_wait_id, reset_preapproved_wait_id
     store, execution, request = automatic
     calls = []
     async def classify(*args, **kwargs):
@@ -220,7 +223,7 @@ def test_fallback_consumes_durable_exact_owner_answer(automatic, monkeypatch):
     async def execute(*args):
         calls.append(args)
         return AgentToolResult(content=[], details={})
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     raw = AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute)
     tool = wrap_with_approval(raw, request, lambda _: None)
     async def prepare():
@@ -230,7 +233,7 @@ def test_fallback_consumes_durable_exact_owner_answer(automatic, monkeypatch):
     manifest = asyncio.run(prepare())
     attempts = AttemptStore(store)
     leased, reserved = attempts.lease(execution.execution_id, expected_version=execution.status_version,
-        owner_id="test", ttl_seconds=30)
+        owner_id="test")
     active, running = attempts.activate(leased.attempt_id, generation=leased.generation,
         expected_execution_version=reserved.status_version)
     wait = DurableWaitStore(store).open_wait(wait_id="auto-approval", execution_id=execution.execution_id,
@@ -242,7 +245,7 @@ def test_fallback_consumes_durable_exact_owner_answer(automatic, monkeypatch):
     asyncio.run(service.request_wait_answer(command_id="answer-auto", execution_id=execution.execution_id,
         expected_version=store.get_execution(execution.execution_id).status_version, actor=local_owner_authority(),
         wait_id=wait.wait_id, generation=wait.claim_generation, answer={"answer": "approve", "scope": "once"}))
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: ExecutionStore(store.path))
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: ExecutionStore(store.path))
     restored = wrap_with_approval(raw, request, lambda _: None)
     token = set_preapproved_wait_id(wait.wait_id)
     try:
@@ -266,7 +269,7 @@ def test_changed_file_during_review_does_not_execute_or_count(automatic, monkeyp
     async def execute(*args):
         calls.append(args)
         return AgentToolResult(content=[], details={})
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     tool = wrap_with_approval(AgentTool(name="write", label="write", description="file", parameters={}, execute=execute), request, lambda _: None)
     result = asyncio.run(tool.execute("file", {"file_path": str(target), "content": "overwrite"}, None, None))
     assert result.details["reason_code"] == "PERMISSION_REVIEW_STALE"
@@ -286,7 +289,7 @@ def test_cancelled_review_has_no_durable_verdict(automatic, monkeypatch):
 
 
 def test_changed_working_directory_invalidates_review(automatic, monkeypatch, tmp_path):
-    from openprogram.worktree.context import set_worktree, reset_worktree
+    from openprogram.state.worktree.context import set_worktree, reset_worktree
     store, execution, request = automatic
     calls = []
     async def classify(*args, **kwargs):
@@ -296,7 +299,7 @@ def test_changed_working_directory_invalidates_review(automatic, monkeypatch, tm
     async def execute(*args):
         calls.append(args)
         return AgentToolResult(content=[], details={})
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), request, lambda _: None)
     async def run():
         token = set_worktree(str(tmp_path / "first"))
@@ -311,9 +314,9 @@ def test_changed_working_directory_invalidates_review(automatic, monkeypatch, tm
 
 
 def test_identical_auto_refusals_reach_approval_through_real_loop(automatic, monkeypatch):
-    from openprogram.agent.agent_loop import _execute_tool_calls
-    from openprogram.providers.types import AssistantMessage, ToolCall
-    from openprogram.providers.utils.event_stream import EventStream
+    from openprogram.runtime.agent.loop import _execute_tool_calls
+    from openprogram.models.providers.types import AssistantMessage, ToolCall
+    from openprogram.models.providers.utils.event_stream import EventStream
     store, execution, request = automatic
     async def classify(*args, **kwargs):
         return True, "risky"
@@ -338,7 +341,7 @@ def test_identical_auto_refusals_reach_approval_through_real_loop(automatic, mon
 
 
 def test_total_threshold_approval_resets_total(automatic):
-    from openprogram.agent.permissions.auto_history import AutoHistory
+    from openprogram.runtime.permissions.auto_history import AutoHistory
     store, execution, _ = automatic
     for index in range(20):
         history = AutoHistory(store, execution.execution_id, execution.session_id, "epoch", str(index))

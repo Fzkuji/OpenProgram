@@ -7,7 +7,7 @@ from pathlib import Path
 def test_windows_tui_invocation_is_not_disabled_by_platform(
     monkeypatch,
 ) -> None:
-    from openprogram.cli import _looks_like_tui_invocation
+    from openprogram.interfaces.cli.application import _looks_like_tui_invocation
 
     monkeypatch.setattr(sys, "platform", "win32")
     assert _looks_like_tui_invocation([])
@@ -17,7 +17,7 @@ def test_windows_tui_invocation_is_not_disabled_by_platform(
 
 
 def test_tui_detection_does_not_treat_profile_values_as_subcommands() -> None:
-    from openprogram.cli import _looks_like_tui_invocation
+    from openprogram.interfaces.cli.application import _looks_like_tui_invocation
 
     assert _looks_like_tui_invocation(["--profile", "web", "tui"])
     assert _looks_like_tui_invocation(["--profile=doctor", "tui"])
@@ -28,8 +28,8 @@ def test_tui_startup_log_uses_cli_profile_from_argv(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from openprogram.cli import application
-    from openprogram import paths
+    from openprogram.interfaces.cli import application
+    from openprogram.state import paths
 
     # Seed the default-profile value through monkeypatch so teardown records
     # and removes the profile that _tui_startup_log_path() sets directly.
@@ -48,7 +48,7 @@ def test_argparse_errors_are_visible_before_tui_redirect(
 ) -> None:
     import pytest
 
-    from openprogram.cli import application
+    from openprogram.interfaces.cli import application
 
     redirects: list[bool] = []
     monkeypatch.setattr(
@@ -73,7 +73,7 @@ def test_argparse_errors_are_visible_before_tui_redirect(
 def test_windows_tui_keeps_native_console_stdio(
     monkeypatch,
 ) -> None:
-    from openprogram.cli import application
+    from openprogram.interfaces.cli import application
 
     monkeypatch.setattr(
         application,
@@ -101,7 +101,7 @@ def test_windows_tui_keeps_native_console_stdio(
 def test_ink_tui_does_not_eagerly_initialise_provider_runtime(
     monkeypatch,
 ) -> None:
-    from openprogram.cli import chat, ink
+    from openprogram.interfaces.cli import chat, ink
 
     launched: list[dict[str, object]] = []
     monkeypatch.setattr(
@@ -126,7 +126,7 @@ def test_ink_tui_does_not_eagerly_initialise_provider_runtime(
 
 
 def test_tui_accessibility_options_reach_ink_launcher(monkeypatch) -> None:
-    from openprogram.cli import chat, ink
+    from openprogram.interfaces.cli import chat, ink
 
     launched: list[dict[str, object]] = []
     monkeypatch.setattr(ink, "run_ink_tui", lambda **kwargs: launched.append(kwargs))
@@ -138,8 +138,8 @@ def test_tui_accessibility_options_reach_ink_launcher(monkeypatch) -> None:
 
 
 def test_chat_command_forwards_tui_display_options(monkeypatch) -> None:
-    from openprogram.cli import chat
-    from openprogram.cli.commands import chat as command_chat
+    from openprogram.interfaces.cli import chat
+    from openprogram.interfaces.cli.commands import chat as command_chat
 
     launched: list[dict[str, object]] = []
     monkeypatch.setattr(chat, "run_cli_chat", lambda **kwargs: launched.append(kwargs))
@@ -151,19 +151,19 @@ def test_chat_command_forwards_tui_display_options(monkeypatch) -> None:
 
 
 def test_worker_cold_start_timeout_is_platform_specific(monkeypatch) -> None:
-    from openprogram import _compat
+    from openprogram.host._platform import environment
 
-    monkeypatch.setattr(_compat._sys, "platform", "win32")
-    assert _compat.tui_worker_ready_timeout_seconds() >= 120.0
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert environment.tui_worker_ready_timeout_seconds() >= 120.0
 
-    monkeypatch.setattr(_compat._sys, "platform", "linux")
-    assert _compat.tui_worker_ready_timeout_seconds() == 30.0
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert environment.tui_worker_ready_timeout_seconds() == 30.0
 
 
 def test_worker_wait_stops_when_observed_pid_disappears(monkeypatch) -> None:
-    from openprogram import worker
-    from openprogram.cli import ink
-    from openprogram.worker import lifecycle
+    from openprogram.operations import worker
+    from openprogram.interfaces.cli import ink
+    from openprogram.operations.worker import lifecycle
 
     pids = iter([4321, None])
     monkeypatch.setattr(worker, "spawn_detached", lambda: 0)
@@ -180,8 +180,8 @@ def test_worker_wait_stops_when_observed_pid_disappears(monkeypatch) -> None:
 
 
 def test_tui_requires_terminal_input_and_output(monkeypatch) -> None:
-    from openprogram import cli as cli_module
-    from openprogram.cli import ink
+    from openprogram.interfaces.cli import application as cli_module
+    from openprogram.interfaces.cli import ink
 
     monkeypatch.setattr(ink.sys.stdin, "isatty", lambda: False)
     monkeypatch.setattr(ink.sys.stdout, "isatty", lambda: True)
@@ -196,7 +196,7 @@ def test_tui_requires_terminal_input_and_output(monkeypatch) -> None:
 def test_non_tty_tui_falls_back_before_runtime_or_worker_start(monkeypatch) -> None:
     import pytest
 
-    from openprogram.cli import ink
+    from openprogram.interfaces.cli import ink
 
     monkeypatch.setattr(ink, "_has_interactive_tui_stdio", lambda: False)
     monkeypatch.setattr(
@@ -210,8 +210,8 @@ def test_non_tty_tui_falls_back_before_runtime_or_worker_start(monkeypatch) -> N
 
 
 def test_posix_saved_terminal_stdout_satisfies_tui_preflight(monkeypatch) -> None:
-    from openprogram import cli as cli_module
-    from openprogram.cli import ink
+    from openprogram.interfaces.cli import application as cli_module
+    from openprogram.interfaces.cli import ink
 
     monkeypatch.setattr(ink.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(ink.sys.stdout, "isatty", lambda: False)
@@ -222,7 +222,7 @@ def test_posix_saved_terminal_stdout_satisfies_tui_preflight(monkeypatch) -> Non
 
 
 def test_first_frame_handshake_classifies_startup_failure_without_timing() -> None:
-    from openprogram.cli import ink
+    from openprogram.interfaces.cli import ink
 
     assert ink._is_tui_startup_failure(
         first_frame_ready=False,
@@ -239,7 +239,7 @@ def test_first_frame_handshake_classifies_startup_failure_without_timing() -> No
 
 
 def test_first_frame_handshake_requires_exact_marker(tmp_path: Path) -> None:
-    from openprogram.cli import ink
+    from openprogram.interfaces.cli import ink
 
     marker = tmp_path / "first-frame"
     assert not ink._tui_first_frame_ready(marker)
@@ -252,7 +252,7 @@ def test_first_frame_handshake_requires_exact_marker(tmp_path: Path) -> None:
 
 
 def test_tui_child_environment_drops_inherited_handshake_path(monkeypatch) -> None:
-    from openprogram.cli import ink
+    from openprogram.interfaces.cli import ink
 
     monkeypatch.setenv(ink._TUI_READY_ENV, "caller-controlled")
 
@@ -263,8 +263,8 @@ def test_tui_child_receives_authoritative_profile_state_dir(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from openprogram.cli import ink
-    from openprogram import paths
+    from openprogram.interfaces.cli import ink
+    from openprogram.state import paths
 
     profile = tmp_path / ".openprogram-linux-check"
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
@@ -278,10 +278,10 @@ def test_launcher_closes_owned_tty_fds_when_child_start_raises(
 ) -> None:
     import pytest
 
-    from openprogram import cli as cli_module
-    from openprogram import paths
-    from openprogram.cli import ink
-    from openprogram.worker import lifecycle
+    from openprogram.interfaces.cli import application as cli_module
+    from openprogram.state import paths
+    from openprogram.interfaces.cli import ink
+    from openprogram.operations.worker import lifecycle
 
     monkeypatch.setattr(ink, "_has_interactive_tui_stdio", lambda: True)
     monkeypatch.setattr(ink, "_resolve_node", lambda: "node")
@@ -327,9 +327,9 @@ def test_launcher_never_closes_cli_owned_tty_fds_on_child_error(
 ) -> None:
     import pytest
 
-    from openprogram import cli as cli_module
-    from openprogram.cli import ink
-    from openprogram.worker import lifecycle
+    from openprogram.interfaces.cli import application as cli_module
+    from openprogram.interfaces.cli import ink
+    from openprogram.operations.worker import lifecycle
 
     monkeypatch.setattr(ink, "_has_interactive_tui_stdio", lambda: True)
     monkeypatch.setattr(ink, "_resolve_node", lambda: "node")
@@ -367,10 +367,10 @@ def test_partial_tty_dup_failure_does_not_close_cli_owned_descriptor(
 ) -> None:
     import pytest
 
-    from openprogram import cli as cli_module
-    from openprogram import paths
-    from openprogram.cli import ink
-    from openprogram.worker import lifecycle
+    from openprogram.interfaces.cli import application as cli_module
+    from openprogram.state import paths
+    from openprogram.interfaces.cli import ink
+    from openprogram.operations.worker import lifecycle
 
     monkeypatch.setattr(ink, "_has_interactive_tui_stdio", lambda: True)
     monkeypatch.setattr(ink, "_resolve_node", lambda: "node")
@@ -414,7 +414,7 @@ def test_packaged_tui_resolves_its_own_node_and_bundle(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from openprogram.cli import ink
+    from openprogram.interfaces.cli import ink
 
     runtime = tmp_path / "runtime"
     python = runtime / "py" / "python.exe"
@@ -440,7 +440,7 @@ def test_incomplete_packaged_tui_requests_complete_reinstall(
 ) -> None:
     import pytest
 
-    from openprogram.cli import ink
+    from openprogram.interfaces.cli import ink
 
     runtime = tmp_path / "runtime"
     python = runtime / "py" / "python.exe"

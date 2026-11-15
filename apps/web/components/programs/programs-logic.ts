@@ -1,10 +1,10 @@
-export type ProgramKind = "vanilla_function" | "agentic_function" | "workflow" | "runtime_primitive";
+export type ProgramKind = "tool" | "application" | "runtime_primitive";
 
 export type LogicNode = {
   id: string;
   name: string;
   path: string;
-  entity_kind?: "package";
+  entity_kind?: "harness";
   source_path?: string;
   management_commands?: string[];
   program_kind: ProgramKind | null;
@@ -18,6 +18,8 @@ export type LogicResponse = {
   analysis_kind?: string;
   analysis_complete?: boolean;
   analysis_warnings?: string[];
+  /** Applications: the entries the logic is the union of. */
+  entries?: string[];
 };
 
 export type CallTreeRow = {
@@ -170,7 +172,6 @@ export function buildGraphLayout(logic: LogicResponse): GraphLayout {
   }
 
   const depth = longestPathDepth(logic.root, logic.nodes, logic.edges);
-  const byId = new Map(logic.nodes.map((node) => [node.id, node]));
   const layerIds = new Map<number, string[]>();
   for (const node of logic.nodes) {
     const level = depth.get(node.id) ?? 0;
@@ -214,7 +215,7 @@ export function buildGraphLayout(logic: LogicResponse): GraphLayout {
   for (let pass = 0; pass < 2; pass += 1) {
     for (let index = 1; index < layers.length; index += 1) {
       const layer = layers[index];
-      const desired = layer.map((id, position) => {
+      const desired = layer.map((id) => {
         const related = (parents.get(id) ?? [])
           .map((parent) => coordinates.get(parent)?.y)
           .filter((value): value is number => value !== undefined);

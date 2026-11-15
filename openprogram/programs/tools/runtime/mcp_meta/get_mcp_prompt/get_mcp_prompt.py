@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.runtime.mcp_meta.shared import ready_client
 
 

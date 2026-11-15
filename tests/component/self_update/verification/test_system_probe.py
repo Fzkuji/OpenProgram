@@ -9,31 +9,37 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from starlette.middleware.gzip import GZipMiddleware
 
-from openprogram.self_update import SelfUpdateStore, UpdateRequest, UpdatePhase
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.self_update.delivery.test_install_transaction import installation, INSTALLER, version, phase
+from openprogram.operations.self_update import SelfUpdateStore, UpdateRequest, UpdatePhase
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.self_update.delivery.test_install_transaction import INSTALLER, version, phase
+from tests.component.self_update.delivery import test_install_transaction as _test_install_transaction
 from tests.component.config.test_distribution_release._support import MACOS_DESKTOP_INSTALL
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+installation = _test_install_transaction.installation
 
 
 @pytest.fixture
 def live(tmp_path, monkeypatch):
-    from openprogram.self_update.verification import system_probe
-    from openprogram.webui.routes.settings import misc
-    from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
-    from openprogram.cli.commands import doctor
+    from openprogram.operations.self_update.verification import system_probe
+    from openprogram.interfaces.server.routes.settings import misc
+    from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.operations.diagnostics import checks as doctor
     from tests.component.providers.adapters import test_web_owner_auth_listener as listener
 
     profile = tmp_path / "profile"
     port = listener._free_port()
     owner = "owner/install/0123456789abcdef"
     flags = {"doctor": True, "web": True, "ws": True, "pid": os.getpid()}
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: profile)
-    monkeypatch.setattr("openprogram.agent.authority.owner_principal_id", lambda: owner)
-    monkeypatch.setattr("openprogram.worker.lifecycle.current_worker_pid", lambda: flags["pid"])
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: profile)
+    monkeypatch.setattr("openprogram.runtime.permissions.authority.owner_principal_id", lambda: owner)
+    monkeypatch.setattr("openprogram.operations.worker.lifecycle.current_worker_pid", lambda: flags["pid"])
     monkeypatch.setattr(system_probe, "_PORT", port)
     monkeypatch.setattr(misc, "_HEAD_SHA", "2" * 40)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: SimpleNamespace(list_sessions=lambda **_: [], count_recent_nodes=lambda _: 0))
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: SimpleNamespace(list_sessions=lambda **_: [], count_recent_nodes=lambda _: 0))
     monkeypatch.setattr(doctor, "run_checks", lambda: [
         {"id": fn.__name__, "ok": flags["doctor"], "label": fn.__name__, "detail": "test"} for fn in doctor.CHECKS
     ])
@@ -59,6 +65,8 @@ def live(tmp_path, monkeypatch):
         assert await ws.receive_text() == "ping"
         await ws.send_text(json.dumps({"type": "pong" if flags["ws"] else "failure"}))
         await ws.close()
+    # Like the served App: the managed client asks for gzip, so every body is compressed.
+    app.add_middleware(GZipMiddleware, minimum_size=1)
     state = OwnerAuthState.start(state_dir=profile, bind_host="127.0.0.1", port=port, allowed_origins=(), raw_token=bytes(range(32)), owner_principal_id=owner)
     authenticated_app = OwnerAuthMiddleware(app, auth_state=state)
     async def controlled_redirect(scope, receive, send):
@@ -73,7 +81,7 @@ def live(tmp_path, monkeypatch):
                             repo=str(tmp_path), worktree_id="wt", base_sha="1" * 40, candidate_sha="2" * 40,
                             changed_paths=("feature.py",), pre_update_evidence=("tests:pass",), goal="Fix feature", assertions=("Feature works",))
     store.create(request)
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(request.update_id, phase)
     try:
         with listener._listener(state, port):
@@ -83,8 +91,8 @@ def live(tmp_path, monkeypatch):
 
 
 def test_real_probes_produce_a_gate_accepted_by_startup(live):
-    from openprogram.self_update.verification.system_probe import probe_system
-    from openprogram.self_update.control.recovery import _check_gate
+    from openprogram.operations.self_update.verification.system_probe import probe_system
+    from openprogram.operations.self_update.control.recovery import _check_gate
     record, _, state = live
     gate = probe_system(record)
     _check_gate(replace(record, state=replace(record.state, detail={"system_gate": gate})))
@@ -94,8 +102,8 @@ def test_real_probes_produce_a_gate_accepted_by_startup(live):
 
 @pytest.mark.parametrize("failed", ["doctor", "web", "ws"])
 def test_failed_observation_never_produces_a_pass(live, failed):
-    from openprogram.self_update.verification.system_probe import probe_system
-    from openprogram.self_update.verification.system_probe import SystemProbeError
+    from openprogram.operations.self_update.verification.system_probe import probe_system
+    from openprogram.operations.self_update.verification.system_probe import SystemProbeError
     record, flags, state = live
     flags[failed] = False
     with pytest.raises(SystemProbeError) as error:
@@ -103,9 +111,91 @@ def test_failed_observation_never_produces_a_pass(live, failed):
     assert state.token not in str(error.value)
 
 
+def _other_instance(tmp_path, monkeypatch, state, **extra):
+    """The same live listener, reached as another instance's port and state directory.
+
+    The other instance's directory is its own, as it is for a real one: this
+    process's state directory stays the listener's, so nothing running here
+    (a turn, a job dispatcher left by an earlier test) can write the owner
+    or worker lock the probe compares against.
+    """
+    import shutil
+    from openprogram.operations.self_update.verification import system_probe
+    profile = tmp_path / "other-instance"
+    profile.mkdir(mode=0o700)
+    shutil.copytree(tmp_path / "profile" / "web", profile / "web")
+    (profile / "owner.json").write_text(json.dumps({"version": 1, "principal_id": "owner/install/0123456789abcdef"}))
+    (profile / "worker.lock").write_text(str(os.getpid()))
+    port = system_probe._PORT
+    monkeypatch.setattr(system_probe, "_PORT", 1)
+    monkeypatch.setattr("openprogram.operations.worker.lifecycle.current_worker_pid", lambda: None)
+    monkeypatch.setattr("openprogram.runtime.permissions.authority.owner_principal_id", lambda: "someone-else")
+    return system_probe.ProbeTarget(port=port, state_dir=profile, **extra)
+
+
+def test_another_instance_is_probed_by_its_port_and_state_directory(live, tmp_path, monkeypatch):
+    from openprogram.operations.self_update.verification.system_probe import probe_instance
+    record, _, state = live
+    target = _other_instance(tmp_path, monkeypatch, state)
+    gate = probe_instance(record, target, revision="2" * 40, require_loaded=False)
+    assert gate["candidate_sha"] == "2" * 40 and gate["worker_pid"] == os.getpid()
+
+
+def test_the_token_can_be_supplied(live, tmp_path, monkeypatch):
+    from openprogram.operations.self_update.verification.system_probe import probe_instance
+    from openprogram.operations.self_update.verification.system_probe import SystemProbeError
+    record, _, state = live
+    target = _other_instance(tmp_path, monkeypatch, state, token="A" * 43)
+    with pytest.raises(SystemProbeError, match="owner_auth"):
+        probe_instance(record, target, require_loaded=False)
+
+
+def test_regression_rule_a_row_that_was_ok_must_stay_ok(live, tmp_path, monkeypatch):
+    from openprogram.operations.self_update.verification import system_probe
+    record, flags, state = live
+    flags["doctor"] = False
+    target = _other_instance(tmp_path, monkeypatch, state, doctor_baseline={"check_python": True})
+    from openprogram.operations.diagnostics import checks as doctor
+    monkeypatch.setattr(doctor, "run_checks", lambda: [
+        {"id": "check_python", "ok": False, "label": "x", "detail": "x"},
+        {"id": "check_login", "ok": False, "label": "x", "detail": "x"}])
+    with pytest.raises(system_probe.SystemProbeError, match="doctor"):
+        system_probe.probe_instance(record, target, require_loaded=False)
+
+
+def test_regression_rule_a_row_already_failing_does_not_block(live, tmp_path, monkeypatch):
+    from openprogram.operations.self_update.verification import system_probe
+    from openprogram.operations.diagnostics import checks as doctor
+    record, _, state = live
+    baseline = {"check_python": True, "check_login": False}
+    target = _other_instance(tmp_path, monkeypatch, state, doctor_baseline=baseline)
+    monkeypatch.setattr(doctor, "run_checks", lambda: [
+        {"id": "check_python", "ok": True, "label": "x", "detail": "x"},
+        {"id": "check_login", "ok": False, "label": "x", "detail": "x"}])
+    assert system_probe.probe_instance(record, target, require_loaded=False)["checks"]
+
+
+def test_doctor_baseline_records_each_row(live, tmp_path, monkeypatch):
+    from openprogram.operations.self_update.verification import system_probe
+    from openprogram.operations.diagnostics import checks as doctor
+    record, _, state = live
+    target = _other_instance(tmp_path, monkeypatch, state)
+    monkeypatch.setattr(doctor, "run_checks", lambda: [
+        {"id": "check_python", "ok": True, "label": "x", "detail": "x"},
+        {"id": "check_login", "ok": False, "label": "x", "detail": "x"}])
+    assert system_probe.doctor_baseline(record, target) == {"check_python": True, "check_login": False}
+
+
+def test_an_instance_that_cannot_be_observed_gives_no_baseline(live, tmp_path):
+    from openprogram.operations.self_update.verification import system_probe
+    record, _, _ = live
+    target = system_probe.ProbeTarget(port=9, state_dir=tmp_path / "nowhere")
+    assert system_probe.doctor_baseline(record, target, timeout=2) == {}
+
+
 def test_wrong_candidate_is_rejected_by_real_hmac_challenge(live):
-    from openprogram.self_update.verification.system_probe import probe_system
-    from openprogram.self_update.verification.system_probe import SystemProbeError
+    from openprogram.operations.self_update.verification.system_probe import probe_system
+    from openprogram.operations.self_update.verification.system_probe import SystemProbeError
     record, _, _ = live
     with pytest.raises(SystemProbeError, match="owner_auth"):
         probe_system(replace(record, request=replace(record.request, candidate_sha="3" * 40)))
@@ -113,11 +203,11 @@ def test_wrong_candidate_is_rejected_by_real_hmac_challenge(live):
 
 @pytest.mark.parametrize("revision", ["3" * 40, "3" * 40 + "-dirty"])
 def test_current_and_restored_probes_use_observed_revision_even_after_timeout(live, monkeypatch, revision):
-    from openprogram.self_update.verification.system_probe import probe_current_system
-    from openprogram.self_update.verification.system_probe import probe_restored_system
-    from openprogram.self_update.verification.system_probe import probe_system
-    from openprogram.self_update.verification.system_probe import SystemProbeError
-    from openprogram.webui.routes.settings import misc
+    from openprogram.operations.self_update.verification.system_probe import probe_current_system
+    from openprogram.operations.self_update.verification.system_probe import probe_restored_system
+    from openprogram.operations.self_update.verification.system_probe import probe_system
+    from openprogram.operations.self_update.verification.system_probe import SystemProbeError
+    from openprogram.interfaces.server.routes.settings import misc
     record, _, _ = live
     monkeypatch.setattr(misc, "_HEAD_SHA", revision)
     assert probe_current_system(record)["candidate_sha"] == revision != record.request.base_sha
@@ -130,9 +220,9 @@ def test_current_and_restored_probes_use_observed_revision_even_after_timeout(li
 
 
 def test_old_worker_with_unknown_revision_cannot_pass_preflight(live, monkeypatch):
-    from openprogram.self_update.verification.system_probe import probe_current_system
-    from openprogram.self_update.verification.system_probe import SystemProbeError
-    from openprogram.webui.routes.settings import misc
+    from openprogram.operations.self_update.verification.system_probe import probe_current_system
+    from openprogram.operations.self_update.verification.system_probe import SystemProbeError
+    from openprogram.interfaces.server.routes.settings import misc
     record, _, _ = live
     monkeypatch.setattr(misc, "_HEAD_SHA", "unknown")
     with pytest.raises(SystemProbeError, match="identity"):
@@ -140,9 +230,9 @@ def test_old_worker_with_unknown_revision_cannot_pass_preflight(live, monkeypatc
 
 
 def test_instance_switch_during_doctor_is_rejected(live, monkeypatch):
-    from openprogram.self_update.verification.system_probe import probe_system
-    from openprogram.self_update.verification.system_probe import SystemProbeError
-    from openprogram.cli.commands import doctor
+    from openprogram.operations.self_update.verification.system_probe import probe_system
+    from openprogram.operations.self_update.verification.system_probe import SystemProbeError
+    from openprogram.operations.diagnostics import checks as doctor
     record, flags, _ = live
     original = doctor.run_checks
     def switch():
@@ -155,9 +245,9 @@ def test_instance_switch_during_doctor_is_rejected(live, monkeypatch):
 
 @pytest.mark.parametrize("empty", [True, False])
 def test_empty_or_incomplete_doctor_is_not_success(live, monkeypatch, empty):
-    from openprogram.self_update.verification.system_probe import probe_system
-    from openprogram.self_update.verification.system_probe import SystemProbeError
-    from openprogram.cli.commands import doctor
+    from openprogram.operations.self_update.verification.system_probe import probe_system
+    from openprogram.operations.self_update.verification.system_probe import SystemProbeError
+    from openprogram.operations.diagnostics import checks as doctor
     record, _, _ = live
     rows = doctor.run_checks()
     monkeypatch.setattr(doctor, "run_checks", lambda: [] if empty else rows[:-1])
@@ -172,19 +262,19 @@ def test_empty_or_incomplete_doctor_is_not_success(live, monkeypatch, empty):
 def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypatch, scenario, native_install, request):
     """Actual controller -> HTTP/WS -> durable receipt -> startup -> real Job."""
     import hashlib
-    from openprogram.agent import authority
-    from openprogram.agent.dispatcher import TurnResult
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.self_update.control import supervisor
-    from openprogram.self_update.control import recovery
-    from openprogram.self_update.verification.verifier_config import freeze_verifier_config
-    from openprogram.self_update.verification.verifier_config import config_evidence
-    from openprogram.webui.routes.settings import misc
+    from openprogram.runtime.permissions import authority
+    from openprogram.runtime.conversation.turn_runtime import TurnResult
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.operations.self_update.control import supervisor
+    from openprogram.operations.self_update.control import recovery
+    from openprogram.operations.self_update.verification.verifier_config import freeze_verifier_config
+    from openprogram.operations.self_update.verification.verifier_config import config_evidence
+    from openprogram.interfaces.server.routes.settings import misc
 
     # This fixture drives the controller directly; do not also launch a native
     # service. Startup-to-launcher integration has its own public-entry tests.
-    monkeypatch.setattr("openprogram.self_update.delivery.launcher.launch_supervisor", lambda *_a, **_k: None)
+    monkeypatch.setattr("openprogram.operations.self_update.delivery.launcher.launch_supervisor", lambda *_a, **_k: None)
     fixtures = request
     resume = scenario.removeprefix("resume_") if scenario.startswith("resume_") else None
     committed_resumes = {"committed", "expired_commit", "new_worker"}
@@ -192,24 +282,24 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     doctor_ok = scenario == "success" or goal_case
     record, flags, _ = live
     monkeypatch.setattr(misc, "_HEAD_SHA", "3" * 40)  # Old live SHA differs from source base.
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store_fixture)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store_fixture)
     store = SelfUpdateStore()
     # The listener fixture has no worker or session side effects. Replace its
-    # example update with a fully frozen request at the public STAGING entry.
+    # example update with a fully frozen request at the public building entry.
     store.transition(record.request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
     request = replace(record.request, update_id="su_handoff", session_id="p1",
                       origin_turn_id="u1", origin_assistant_id="a1")
     if goal_case:
         request = replace(request, goal="Diagnostics reports a working database", assertions=("database_ok is true",))
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.load_agent_profile",
                         lambda _: {"id": "main", "system_prompt": "frozen"})
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed"))
     turn = SimpleNamespace(agent_id="main", **authority.local_owner_authority())
     config = freeze_verifier_config(request, turn)
     request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(config)))
     store.create(request, verifier_config=config)
-    store.transition(request.update_id, UpdatePhase.STAGING)
+    store.transition(request.update_id, UpdatePhase.BUILDING)
     update_dir = store.root / request.update_id
     installer = update_dir / "controller/install-app.sh"
     installer.parent.mkdir()
@@ -256,14 +346,17 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_: True)
     if not goal_case:
         monkeypatch.setattr(supervisor, "_finish_verification", lambda *_: 0)  # System-gate tests only.
-    monkeypatch.setattr('openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+    monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     calls = []
     def execute(req):
         calls.append(req)
         if goal_case:
             import asyncio
             from openprogram.programs import get_agent_tool
-            from openprogram.agent.turn_request_context import set_turn_request, reset_turn_request
+            from openprogram.runtime.agent.turn_request import (
+                set_turn_request,
+                reset_turn_request,
+            )
             token = set_turn_request(req)
             try:
                 output = asyncio.run(get_agent_tool("self_update_observe").execute("observe-live", {"entry": "/api/diagnostics"}, None, None))
@@ -278,9 +371,9 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
             finally:
                 reset_turn_request(token)
         return TurnResult("inconclusive", "verify_u", "verify_a")
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", execute)
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn", execute)
     runner = JobRunner(max_workers=1)
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     startup_result = []
     thread = threading.Thread(target=lambda: startup_result.append(recovery.recover_pending_updates()))
     old_startup_result = []
@@ -412,10 +505,33 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
                 assert runner.list_jobs("p1") == [] and calls == []
     finally:
         if thread.is_alive() or old_thread.is_alive():
-            from openprogram.self_update.types import TERMINAL_PHASES
+            from openprogram.operations.self_update.types import TERMINAL_PHASES
             if store.load(request.update_id).state.phase not in TERMINAL_PHASES:
                 store.transition(request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
             for started in (thread, old_thread):
                 if started.ident is not None:
                     started.join(timeout=5)
         runner.shutdown()
+
+
+@pytest.mark.parametrize("restart", ["hot", "worker", None])
+def test_hot_swap_identity_is_the_installed_revision(live, monkeypatch, restart):
+    from openprogram.operations.self_update.verification.system_probe import probe_current_system
+    from openprogram.operations.self_update.verification.system_probe import probe_system
+    from openprogram.operations.self_update.verification.system_probe import SystemProbeError
+    from openprogram.interfaces.server.routes.settings import misc
+    record, _, _ = live
+    if restart is not None:
+        plan = {"schema": 1, "scope": "incremental", "restart": restart, "components": ["web"],
+                "installed_revision": "1" * 40, "reason": "fixture"}
+        (SelfUpdateStore().root / record.request.update_id / "activation.json").write_text(json.dumps(plan))
+    # The kept worker still reports the revision it started with.
+    monkeypatch.setattr(misc, "_HEAD_SHA", "1" * 40)
+    monkeypatch.setattr(misc, "_installed_revision", lambda: record.request.candidate_sha)
+    assert probe_current_system(record)["candidate_sha"] == record.request.candidate_sha
+    if restart == "hot":
+        assert probe_system(record)["candidate_sha"] == record.request.candidate_sha
+    else:
+        with pytest.raises(SystemProbeError):
+            probe_system(record)
+

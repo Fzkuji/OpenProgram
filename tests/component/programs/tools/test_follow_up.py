@@ -15,15 +15,15 @@ import time
 
 import pytest
 
-import openprogram.agentic_programming.session as session_module
-from openprogram.programs.workflow.ask_user import (
+import openprogram.runtime.agent.follow_up_session as session_module
+from openprogram.programs.tools.interaction.ask_user import (
     FollowUp,
     ask_user,
     run_with_follow_up,
     set_ask_user,
 )
-from openprogram.agentic_programming.function import agentic_function
-from openprogram.agentic_programming.session import (
+from openprogram import Agent
+from openprogram.runtime.agent.follow_up_session import (
     Session,
     SESSIONS_DIR,
     list_sessions,
@@ -34,6 +34,7 @@ from openprogram.agentic_programming.session import (
 # ---------------------------------------------------------------------------
 # Test fixtures — simple functions that call ask_user()
 # ---------------------------------------------------------------------------
+
 
 def _simple_ask():
     """A plain function that asks one question."""
@@ -68,24 +69,39 @@ def _ask_then_fail():
     raise ValueError("something broke")
 
 
-@agentic_function
-def _agentic_ask(task):
-    """An @agentic_function that calls ask_user."""
-    answer = ask_user(f"Clarify: {task}")
-    return f"Resolved: {answer}"
+class AgenticAskAgent(Agent):
+    method_options = {
+        "_agentic_ask": {"name": "_agentic_ask", "tool": True},
+    }
+
+    def _agentic_ask(self, task):
+        """An Agent method that calls ask_user."""
+        answer = ask_user(f"Clarify: {task}")
+        return f"Resolved: {answer}"
 
 
-@agentic_function
-def _parent_calls_child(task):
-    """An @agentic_function that calls another function with ask_user."""
-    # Simulates an agent calling a sub-function
-    result = _agentic_ask(task=task)
-    return f"Parent got: {result}"
+_agentic_ask = AgenticAskAgent()._agentic_ask
+
+
+class ParentCallsChildAgent(Agent):
+    method_options = {
+        "_parent_calls_child": {"name": "_parent_calls_child", "tool": True},
+    }
+
+    def _parent_calls_child(self, task):
+        """An Agent method that calls another function with ask_user."""
+        # Simulates an agent calling a sub-function
+        result = _agentic_ask(task=task)
+        return f"Parent got: {result}"
+
+
+_parent_calls_child = ParentCallsChildAgent()._parent_calls_child
 
 
 # ===========================================================================
 # Scenario 1: Direct call via run_with_follow_up()
 # ===========================================================================
+
 
 class TestRunWithFollowUp:
     """Test the programmatic follow-up interface."""
@@ -140,7 +156,7 @@ class TestRunWithFollowUp:
         assert "What is your name?" in repr(result)
         result.answer("test")  # clean up
 
-    def test_agentic_function_with_follow_up(self):
+    def test_agent_method_with_follow_up(self):
         result = run_with_follow_up(_agentic_ask, task="ambiguous task")
         assert isinstance(result, FollowUp)
         assert "ambiguous task" in result.question
@@ -159,6 +175,7 @@ class TestRunWithFollowUp:
 # ===========================================================================
 # Scenario 2: Session-based resume (file IPC)
 # ===========================================================================
+
 
 class TestSessionResume:
     """Test the file-based session IPC for CLI resume."""
@@ -234,7 +251,7 @@ class TestSessionResume:
 
     def test_list_sessions_ignores_root_metadata_files(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "openprogram.agentic_programming.session._sessions_dir",
+            "openprogram.runtime.agent.follow_up_session._sessions_dir",
             lambda: str(tmp_path),
         )
         (tmp_path / "locations.json").write_text("{}", encoding="utf-8")
@@ -265,6 +282,7 @@ class TestSessionResume:
             captured = capsys.readouterr()
             output_lines.append(captured.out)
             import json
+
             for line in captured.out.strip().split("\n"):
                 try:
                     msg = json.loads(line)
@@ -286,6 +304,7 @@ class TestSessionResume:
 # ===========================================================================
 # Scenario 3: Web UI handler (simulates _web_follow_up)
 # ===========================================================================
+
 
 class TestWebFollowUp:
     """Test the global handler pattern used by the web server."""
@@ -313,7 +332,7 @@ class TestWebFollowUp:
     def test_queue_based_handler(self):
         """Simulates the web server's queue-based follow-up mechanism."""
         q_out = queue.Queue()  # questions go here
-        q_in = queue.Queue()   # answers come from here
+        q_in = queue.Queue()  # answers come from here
 
         def handler(question):
             q_out.put(question)
@@ -323,6 +342,7 @@ class TestWebFollowUp:
 
         # Run function in background thread (like server does)
         result_holder = [None]
+
         def _run():
             result_holder[0] = _multi_ask()
 
@@ -348,20 +368,22 @@ class TestWebFollowUp:
         set_ask_user(None)
         # In test environment, stdin may not be a TTY
         import sys
+
         if not (sys.stdin and sys.stdin.isatty()):
             result = ask_user("question")
             assert result is None
 
 
 # ===========================================================================
-# Integration: agentic_function + follow-up in all modes
+# Integration: agent_method + follow-up in all modes
 # ===========================================================================
 
+
 class TestAgenticFunctionFollowUp:
-    """Test that @agentic_function works with follow-up in all modes."""
+    """Test that Agent method works with follow-up in all modes."""
 
     def test_agentic_fn_global_handler(self):
-        """@agentic_function + global handler."""
+        """Agent method + global handler."""
         set_ask_user(lambda q: "handled")
         try:
             result = _agentic_ask(task="test")
@@ -370,14 +392,14 @@ class TestAgenticFunctionFollowUp:
             set_ask_user(None)
 
     def test_agentic_fn_run_with_follow_up(self):
-        """@agentic_function + run_with_follow_up."""
+        """Agent method + run_with_follow_up."""
         result = run_with_follow_up(_agentic_ask, task="test")
         assert isinstance(result, FollowUp)
         final = result.answer("clarified")
         assert final == "Resolved: clarified"
 
     def test_nested_fn_follow_up_bubbles(self):
-        """Child @agentic_function follow-up bubbles through parent."""
+        """Child Agent method follow-up bubbles through parent."""
         set_ask_user(lambda q: "bubbled answer")
         try:
             result = _parent_calls_child(task="nested test")

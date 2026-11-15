@@ -1,7 +1,22 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><title>Responses reasoning replay</title><body>
+<title>Responses reasoning replay</title>
+<meta name="description" content="How stored reasoning signatures are cleaned before same-model history is sent again.">
+<meta name="covers" content="openprogram/models/providers/shared/openai_responses.py openprogram/models/providers/adapters/openai_responses/">
 <h1>Responses reasoning replay</h1>
-<p>The shared Responses converter reuses stored reasoning signatures for same-model history. SDK output objects can serialize absent optional fields as null. A compatible endpoint rejects reasoning content:null with HTTP 422 when that output is reused as input.</p>
-<h2>Contract</h2><p>At the outgoing message conversion boundary, omit null optional content, encrypted_content and status fields from reasoning items. Preserve non-null values, summary arrays and opaque encrypted content. Retain the existing removal of server-assigned IDs and existing cross-model signature handling. Do not rewrite stored history, decrypt payloads, change permissions, or retry a failed external action.</p>
-<h2>Reference and scope</h2><p>The installed OpenAI SDK ResponseReasoningItem declares optional content, encrypted_content and status. Its output serialization is distinct from input requirements. All Responses adapters share convert_responses_messages; normalization belongs there rather than in an individual relay adapter. No new queue, provider fallback or retry policy is introduced.</p>
-<h2>Acceptance</h2><p>Convert an SDK-shaped stored reasoning signature through the shared public message converter. Null optional values are absent in input; valid content and encrypted payload survive; source history remains byte-for-byte unchanged. Existing cross-provider tool-call and streaming reasoning tests pass.</p>
-<h2>Implementation status</h2><p>Implemented in convert_responses_messages. Four regression cases verify null omission, non-null preservation and unchanged stored signatures. Independent specification and quality reviews pass; packaging requires the combined verification gates.</p></body></html>
+
+<p>SDK output objects can serialize absent optional fields as null, and a compatible endpoint answers HTTP 422 to <code translate="no">content: null</code> on reuse. <code translate="no">convert_responses_messages</code>, shared by all Responses adapters, handles it at the outgoing boundary.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">At conversion</th></tr></thead>
+<tbody>
+<tr><th scope="row">Null <code translate="no">content</code>, <code translate="no">encrypted_content</code>, <code translate="no">status</code></th><td>Omitted from reasoning items</td></tr>
+<tr><th scope="row">Non-null values, summary arrays, opaque encrypted content</th><td>Preserved</td></tr>
+<tr><th scope="row">Server-assigned IDs, cross-model signatures</th><td>Existing handling unchanged</td></tr>
+<tr><th scope="row">Stored history</th><td>Never rewritten; byte-for-byte unchanged</td></tr>
+<tr><th scope="row">Later turns</th><td>The reply stores each reasoning item whole, summary or not, as its thinking block's signature, and text under the message id the provider gave it; the next turn, a retry and a turn resumed from its journal send them again to the same model, so the next request starts with the bytes of the last one; another model gets no earlier reasoning (<a href="../context/overview.html#rendering-aging-and-compaction">Rendering</a>)</td></tr>
+<tr><th scope="row">Asking for it</th><td>Every request of a reasoning model sends <code translate="no">include: ["reasoning.encrypted_content"]</code>, whatever the effort (not on <code translate="no">xai-subscription</code>; on Azure, whose requests are stored, only with a reasoning field). With <code translate="no">store: false</code> nothing else brings the reasoning back to the next round; Codex asks the same way</td></tr>
+<tr><th scope="row">Payloads</th><td>Never decrypted</td></tr>
+<tr><th scope="row">Permissions, failed external actions</th><td>Not changed, not retried</td></tr>
+</tbody>
+</table>
+
+<p class="note">No new queue, provider fallback or retry policy. The installed OpenAI SDK <code translate="no">ResponseReasoningItem</code> declares these fields optional; its output serialization differs from input requirements.</p>

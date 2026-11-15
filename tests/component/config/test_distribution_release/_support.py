@@ -1,28 +1,22 @@
 from __future__ import annotations
 
 
-import importlib
 
 
 import json
 
 
-import os
 
 
-import platform
 
 
 import plistlib
 
 
-import re
 
 
-import runpy
 
 
-import signal
 
 
 import subprocess
@@ -31,16 +25,13 @@ import subprocess
 import sys
 
 
-import time
 
 
-import zipfile
 
 
 from pathlib import Path
 
 
-from types import SimpleNamespace
 
 
 import pytest

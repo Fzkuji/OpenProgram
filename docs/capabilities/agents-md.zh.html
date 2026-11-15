@@ -1,0 +1,27 @@
+<title>用 AGENTS.md 写指令</title>
+<meta name="description" content="AGENTS.md 放在哪里、如何组合、哪些生效。">
+<h1>用 AGENTS.md 写指令</h1>
+<p>每个 Agent 都会读取。只给某个 Agent 用的指令，写在其<strong>高级</strong>页的<strong>系统提示词</strong>（<a href="agents.zh.html">配置 Agent</a>）。</p>
+<table class="stack">
+<thead><tr><th scope="col">文件</th><th scope="col">作用范围</th><th scope="col">读取时机</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">~/.openprogram/AGENTS.md</code></th><td>所有项目</td><td>每轮最先</td></tr>
+<tr><th scope="row">项目根（包含 <code translate="no">.git</code> 的文件夹）的 <code translate="no">AGENTS.md</code></th><td>这个项目</td><td>每轮其次</td></tr>
+<tr><th scope="row">从项目根到工作目录各级的 <code translate="no">AGENTS.md</code></th><td>该文件夹及其下</td><td>每轮按序</td></tr>
+<tr><th scope="row">比工作目录更深或在另一个项目里的 <code translate="no">AGENTS.md</code></th><td>该文件夹及其下</td><td>首次在那里读、写或编辑时；附在那次工具结果后，每个对话一次</td></tr>
+</tbody>
+</table>
+<p class="note">后面的文件离工作更近，冲突时以它为准。项目根以上的文件夹不读。没有 <code translate="no">.git</code> 时只读工作目录自身的文件。工作目录是对话的项目文件夹或 worktree，否则是 <code translate="no">OPENPROGRAM_WORKDIR</code> 或 <code translate="no">~/.openprogram/config.json</code> 的 <code translate="no">default_workdir</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">限制</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">全局和项目文件每轮共 32 KB</th><td>超出时最深的文件被截断，提示词里标出截断处</td></tr>
+<tr><th scope="row">看起来像提示词注入的内容</th><td>仍会加入，前面带警告</td></tr>
+</tbody>
+</table>
+<h2>查看哪些文件生效</h2>
+<p><strong>Agents → 高级 → AGENTS.md</strong> 列出工作目录、全局文件路径（尚未创建时也显示）和下一轮读取的每个项目文件。用<strong>复制路径</strong>在编辑器里打开。</p>
+<details>
+<summary>以前每个 Agent 的工作区文件</summary>
+<p><code translate="no">~/.openprogram/agents/&lt;id&gt;/workspace/</code> 下的 <code translate="no">AGENTS.md</code>、<code translate="no">SOUL.md</code>、<code translate="no">USER.md</code> 和 <code translate="no">TOOLS.md</code> 不再读取。worker 启动时，未改过的模板被删除；改过的文件追加到该 Agent 的系统提示词（标题 <code translate="no">## From workspace &lt;file&gt;</code>），并移到 <code translate="no">workspace/.retired/</code>。</p>
+</details>

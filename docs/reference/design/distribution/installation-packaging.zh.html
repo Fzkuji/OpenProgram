@@ -1,0 +1,341 @@
+<title>安装、打包、发布与升级</title>
+<meta name="description" content="谁用什么方式安装 OpenProgram，每个发行版包含什么，以及如何校验、升级和卸载。">
+<h1>安装、打包、发布与升级</h1>
+<p><strong>正式版本</strong>：v1.3.0 是这棵代码树构建的版本；v1.2.0 是最新打了标签的版本。每个平台和架构一份完整产品运行时。macOS App 只多 Electron 外壳，CLI 只多启动器；Windows 和 Linux App 是<a href="#thin-shell">薄壳</a>加 seed。检查、下载和平台交接见<a href="automatic-updates.zh.html">自动更新</a>。</p>
+
+<h2>谁拿到什么</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Desktop</th><th scope="col">CLI / 服务端</th><th scope="col">开发</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源</th><td>GitHub Release</td><td>同一 Release</td><td>Git 检出</td></tr>
+<tr><th scope="row">产品运行时</th><td>macOS：平台归档 + Electron。Windows、Linux：薄壳 + seed</td><td>平台归档</td><td>相同能力 + 开发覆盖层</td></tr>
+<tr><th scope="row">系统 Python、Node.js</th><td>不需要</td><td>不需要</td><td>需要工具链</td></tr>
+<tr><th scope="row">Git</th><td>内置、固定版本，排在 <code translate="no">PATH</code> 最前</td><td>相同</td><td>需要系统 Git</td></tr>
+<tr><th scope="row">升级目标</th><td>已发布的运行时</td><td>同左</td><td>明确的 Git ref</td></tr>
+<tr><th scope="row">渠道</th><td><code translate="no">stable</code></td><td><code translate="no">stable</code></td><td><code translate="no">dev</code></td></tr>
+</tbody>
+</table>
+
+<table class="stack" id="platforms">
+<caption>平台</caption>
+<thead><tr><th scope="col"></th><th scope="col">Desktop</th><th scope="col">CLI / 服务端</th><th scope="col">开发</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS arm64、x64</th><td>DMG 和 ZIP。有 Apple 凭据时签名并公证，否则以 ad-hoc 签名发布 <code translate="no">-unsigned</code></td><td>支持</td><td>支持</td></tr>
+<tr><th scope="row">Linux x86_64</th><td>deb 和 AppImage，薄壳</td><td>完整运行时</td><td>支持</td></tr>
+<tr><th scope="row">Linux arm64</th><td>deb 和 AppImage，薄壳</td><td>完整运行时</td><td>Python 和 Linux 门禁</td></tr>
+<tr><th scope="row">Windows x86_64；arm64 由开关控制</th><td>按用户 NSIS，薄壳。没有证书时为 <code translate="no">-unsigned.exe</code></td><td>ZIP + PowerShell 安装器</td><td>沙箱单独说明：<a href="windows-support.zh.html">Windows 支持</a></td></tr>
+<tr><th scope="row">iOS、Android、iPadOS</th><td>无</td><td>不适用</td><td>不适用</td></tr>
+</tbody>
+</table>
+<p class="note">任何设备都能通过浏览器访问受支持的本地或远程主机，但这不等于客户端系统受支持，也不承诺移动端布局。只有通过浏览器和响应式验收的组合才能标为官方支持。</p>
+
+<h2>产品里有什么</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">包含</th><td>固定的 CPython（3.12.10）、固定的 <code translate="no">uv</code>（0.11.16）、固定的 Git、OpenProgram、预构建 Web、带 Node.js 的独立 Ink 包。能力列在 <code translate="no">scripts/release/product-runtime.json</code>：<code translate="no">web providers mcp memory channels search tui.ink browser.playwright</code></td></tr>
+<tr><th scope="row">不含</th><td>Program、PyTorch、torchvision、OpenCV、EasyOCR、sentence-transformers、triton、NVIDIA/CUDA。Computer use 是内置工具，不带权重</td></tr>
+<tr><th scope="row">Office 编辑器</th><td>在清单里固定版本并标为可选；用户同意后才安装</td></tr>
+<tr><th scope="row">可变数据</th><td><code translate="no">~/.openprogram</code>：配置、会话、缓存、用户添加的 Program。运行时保持只读</td></tr>
+<tr><th scope="row">开发覆盖层</th><td>可编辑源码、调试、本地 Web 和 Ink 构建、测试、显式配置的感知、OCR 或 Browser 后端。绝不是产品依赖，基础能力清单仍须通过</td></tr>
+<tr><th scope="row">不是产品入口</th><td><code translate="no">pip install openprogram</code>、<code translate="no">pipx</code>、<code translate="no">uv tool install</code>。wheel 只用于组装、开发和测试。文档和运行时错误只指向官方安装器</td></tr>
+<tr><th scope="row">缺依赖</th><td>重装完整产品。首次使用不会隐式下载</td></tr>
+</tbody>
+</table>
+
+<h2>一个版本，一组产物</h2>
+<p><code translate="no">pyproject.toml</code> 是版本来源，Electron 元数据、两个 lock 文件和安装器的默认版本保留副本，都由 <code translate="no">scripts/release/release-version.py set</code> 一起写（<a href="github-publishing.zh.html#version-places">版本位置</a>）。标签、运行时清单、发布清单和健康端点必须与之相等，标签必须指向被构建的提交。标签不可变，修复用更高的补丁版本。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">产物</th><th scope="col">平台</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行时归档 + 校验和</th><td>macOS arm64、x64；Linux x86_64、arm64；Windows x86_64（ZIP），arm64 由开关控制</td></tr>
+<tr><th scope="row">桌面</th><td>macOS DMG 和 ZIP；Windows NSIS EXE；Linux deb 和 AppImage；各一份，文件名带版本号</td></tr>
+<tr><th scope="row">更新资产</th><td><code translate="no">version-</code>、<code translate="no">base-</code> 和 <code translate="no">toolchain-&lt;platform&gt;.tar.zst</code>、<code translate="no">repo.bundle</code>、<code translate="no">SHA256SUMS</code>、已签名的 <code translate="no">update-manifest.json</code></td></tr>
+<tr><th scope="row">开发者</th><td>wheel 和 sdist，不是用户入口</td></tr>
+<tr><th scope="row"><code translate="no">release-manifest.json</code></th><td>Schema 1：版本，以及每个文件的路径、字节数、SHA-256</td></tr>
+</tbody>
+</table>
+<p class="note">arm64 和 x64 分开构建，没有 universal2。失败的平台任务不产出文件，并列在 "Not in this release" 下；只有 wheel 或全部 macOS 和 Linux 运行时缺失时才停止发布。薄壳 App 需要受信任的更新签名密钥，否则永远无法更新。</p>
+<p class="note">产物里没有安装包或归档的平台任务按失败处理，什么都不发布。计划内的包或某个平台的更新文件缺失时，publish 任务在发行版公开之后变红，并逐个列出。开关或缺少密钥而略去的不算。</p>
+<details id="one-copy-per-file">
+<summary>每个文件一份，文件名带版本号</summary>
+<p>每个发行版的每个文件只上传一次。v1.2.0 及以前还为每个 App 安装包另传一份不带版本号的副本（<code translate="no">OpenProgram-mac-arm64.dmg</code> 等七个），每个 App 任务另传一个 <code translate="no">SHA256SUMS-&lt;os&gt;-&lt;arch&gt;</code>；从 v1.3.0 起两者都不再上传，少 12 个文件。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">问题</th><th scope="col">答案</th></tr></thead>
+<tbody>
+<tr><th scope="row">为什么用带版本号的名字</th><td>已安装的 v1.2.0 App 在最新发行版里按名字找 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code>（或 <code translate="no">-unsigned</code>），这个名字必须存在。Codex、OpenCode 和 Goose 只发布不带版本号的名字，同样是一个文件一个名字；我们去掉的是同一份内容的第二个名字</td></tr>
+<tr><th scope="row">最新版下载链接</th><td><code translate="no">latest.html?OpenProgram-mac-arm64.dmg</code>（由 <code translate="no">docs/_static_root/latest.html</code> 发布在文档旁，用相对链接指向） 从 GitHub API 读最新发行版的文件列表，打开对应文件；拿不到答复就打开最新发行版页面。安装页和下载页上的 App 链接都经过它，所以没有哪个安装页写死某个版本，发新版时也不会过时。Claude Code 也是这样解析"最新"：靠指针和清单，而不是重复文件</td></tr>
+<tr><th scope="row">校验值</th><td>GitHub 在发布页上显示每个文件的 SHA-256，<code translate="no">release-manifest.json</code> 列出每个文件的路径、大小和 SHA-256。App 更新器按这份清单校验，发布说明的 App 表格在校验值一栏链接到它</td></tr>
+<tr><th scope="row">仍然上传</th><td>运行时归档的 <code translate="no">.sha256</code>：v1.2.0 的 <code translate="no">openprogram upgrade</code> 更新前要求按名字找到它。更新用的 <code translate="no">SHA256SUMS</code>，签名的更新清单记着它的哈希。种子的 <code translate="no">.sha256</code>，命令行安装器会读</td></tr>
+</tbody>
+</table>
+</details>
+<table class="stack fixed">
+<thead><tr><th scope="col">仓库变量</th><th scope="col">任务</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_RUNTIME</code>, <code translate="no">OPENPROGRAM_RELEASE_DESKTOP_MAC</code>, <code translate="no">_WINDOWS</code>, <code translate="no">_LINUX</code></th><td>默认开启，设为 <code translate="no">false</code> 才关闭</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code>, <code translate="no">_MAC_THIN</code>, <code translate="no">_CLI_SEEDS</code></th><td>默认关闭，设为 <code translate="no">true</code> 才开启</td></tr>
+</tbody>
+</table>
+<details>
+<summary>发布工作流规则</summary>
+<ul>
+<li>推送标签 <code translate="no">v*</code>，或手动重跑已有标签；每个检出都固定在该标签。</li>
+<li>先构建运行时归档；Desktop 和 CLI 安装器任务下载同名归档。</li>
+<li>有对应 Secret 时才签名。macOS：Apple Secret（<a href="developer-id.zh.html">Developer ID</a>）。Windows：<code translate="no">WINDOWS_CSC_LINK</code>、<code translate="no">WINDOWS_CSC_KEY_PASSWORD</code>。没有时 macOS 用 ad-hoc 签名，Windows 必须验证为 NotSigned，两者都使用 <code translate="no">-unsigned</code> 文件名。不需要 PyPI 凭据。</li>
+<li>Release 用仓库提供的短期令牌。不集成 Keychain、keyring 或凭据管理器。</li>
+<li>说明来自 <code translate="no">.github/release-notes/vX.Y.Z.md</code>，必须是英文（拒绝中日韩字符），先写用户可见的变化并带下载表。只改文档的修正更新说明，不移动标签。</li>
+<li>公开发行版绝不覆盖，只能完成草稿。之后检查公开的 <code translate="no">latest</code> 入口。</li>
+<li><code translate="no">smoke-packaged-runtime.sh</code> 支持系统 Bash 3.2；延后浏览器的标志必须显式传入，正常验证运行完整浏览器检查。</li>
+</ul>
+</details>
+
+<h2>安装</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS 桌面</th><td>架构匹配的 DMG，把 <code translate="no">OpenProgram.app</code> 复制到 Applications，没有管理员权限时复制到 <code translate="no">~/Applications</code>。<code translate="no">-unsigned</code> 资产需要隐私与安全性 → 仍要打开</td></tr>
+<tr><th scope="row">Windows 桌面</th><td>按用户 NSIS 向导。<code translate="no">-unsigned.exe</code>：SmartScreen <strong>更多信息 → 仍要运行</strong>；智能应用控制下用 CLI</td></tr>
+<tr><th scope="row">Linux 桌面</th><td>通过 <code translate="no">apt</code> 安装 deb，或用 FUSE 2 或 <code translate="no">APPIMAGE_EXTRACT_AND_RUN=1</code> 运行 AppImage</td></tr>
+<tr><th scope="row">macOS、Linux CLI</th><td><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></td></tr>
+<tr><th scope="row">Windows CLI</th><td><code translate="no">irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex</code>，或在命令提示符用 <code translate="no">install.cmd</code></td></tr>
+<tr><th scope="row">开发</th><td>仓库检出、<code translate="no">uv sync</code>、Web 和 Ink 构建，与发行版相同的能力探测</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">版本</th><td>默认最新稳定版，除非设置了 <code translate="no">OPENPROGRAM_VERSION</code>；只接受三段数字版本</td></tr>
+<tr><th scope="row">本平台没有安装包</th><td>停止并说明平台</td></tr>
+<tr><th scope="row">安装器来源</th><td>该不可变 tag；绝不回退到 checkout</td></tr>
+<tr><th scope="row">解包</th><td>确切的归档和 checksum，解包到状态目录下的 <code translate="no">runtime/cli/releases/X.Y.Z</code></td></tr>
+<tr><th scope="row">切换</th><td>用绝对路径探测，然后原子切换 <code translate="no">current</code> 符号链接（Windows：替换启动器并保留上一份）</td></tr>
+<tr><th scope="row">失败</th><td>保留旧版本</td></tr>
+<tr><th scope="row">下载</th><td>说明大小并先检查磁盘空间，在所需和可用之外写明还差多少（两个数可能四舍五入成同一个），通过部分文件续传，网络失败时提示 <code translate="no">HTTPS_PROXY</code></td></tr>
+<tr><th scope="row">macOS，下载前</th><td>比 <code translate="no">macosMinimum</code>（13.5）旧的 Mac 被拒绝，并说明它运行的版本和去哪里更新 macOS；与 App 的 <code translate="no">LSMinimumSystemVersion</code> 是同一个下限</td></tr>
+<tr><th scope="row">Linux，下载前</th><td>拒绝 musl。缺少 Chromium 的库从不阻止安装：用一行说明浏览器工具要等这些库并给出 <code translate="no">apt</code> 命令，运行时检查把启动 Chromium 留给浏览器工具</td></tr>
+<tr><th scope="row"><code translate="no">PATH</code>（macOS、Linux）</th><td>加一行带标记的内容，除非设置了 <code translate="no">OPENPROGRAM_NO_MODIFY_PATH</code> 或 <code translate="no">OPENPROGRAM_BIN_DIR</code></td></tr>
+</tbody>
+</table>
+
+<h2>升级与卸载</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">安装</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">桌面</th><td>macOS：设置页下载并校验，用户在安装程序里确认。Windows、Linux：在版本库上运行 <code translate="no">openprogram upgrade</code>，只有发行版需要更新的外壳时才取 App 文件</td></tr>
+<tr><th scope="row">CLI、服务端</th><td><code translate="no">openprogram upgrade</code>。任何默认资产校验失败都阻止激活。运行中的 worker 自己重启</td></tr>
+<tr><th scope="row">开发</th><td>同一命令对明确的 ref 拉取、构建、探测和重启</td></tr>
+<tr><th scope="row">Program</th><td>在独立环境迁移；失败只禁用该 Program</td></tr>
+<tr><th scope="row">移除桌面</th><td>删除 <code translate="no">OpenProgram.app</code>；Windows 上在已安装的应用中卸载；<code translate="no">apt remove openprogram-desktop</code>；删除 AppImage</td></tr>
+<tr><th scope="row">卸载 CLI</th><td>macOS、Linux：<code translate="no">~/.local/bin/openprogram</code> 和 <code translate="no">~/.openprogram/runtime/cli</code>。Windows：<code translate="no">%LOCALAPPDATA%\OpenProgram\bin</code> 和 <code translate="no">%USERPROFILE%\.openprogram\runtime\cli</code></td></tr>
+<tr><th scope="row">删除数据</th><td>只有明确清除 <code translate="no">~/.openprogram</code></td></tr>
+</tbody>
+</table>
+<p class="note">worker 启动时绝不应用产品更新。</p>
+
+<h2>Desktop 包</h2>
+<pre translate="no" tabindex="0">OpenProgram.app/Contents/
+├── MacOS/OpenProgram         # Electron launcher
+├── Frameworks/               # Electron Framework and helpers
+└── Resources/
+    ├── app.asar              # Electron main, preload
+    └── runtime/
+        ├── python/           # portable CPython + dependencies
+        ├── bin/uv
+        ├── wheel/            # build evidence
+        ├── assets/playwright/
+        └── runtime-manifest.json</pre>
+<p class="note">CPython 来自固定 <code translate="no">uv</code> 索引的 python-build-standalone，绝不取自构建机。运行时清单（schema 2）记录 OpenProgram、Python、uv、能力结果、资产路径和产品清单哈希。</p>
+<ol>
+<li>Electron 读取包内运行时清单，校验能力和必需文件。</li>
+<li>按绝对路径启动包内 Python worker，带 <code translate="no">-I -B</code>，忽略 <code translate="no">PYTHONPATH</code>、用户 site 和系统配置。</li>
+<li>启动器设置内置 Playwright 路径。</li>
+<li>worker 在 <code translate="no">/healthz</code> 报告状态和能力哈希。</li>
+<li>Electron 从内置 Python 取认证 URL 并加载 Web UI。失败时显示类别、日志位置和修复动作。</li>
+</ol>
+<details>
+<summary>运行时禁止</summary>
+<ul>
+<li>从 PATH 查找 <code translate="no">openprogram</code>、<code translate="no">python</code>、<code translate="no">node</code>、<code translate="no">git</code>。</li>
+<li>App 或更新器改写自身 bundle。AppImage 更新在校验后替换它旁边的文件。</li>
+<li>首次使用时下载 Python、Web、Browser、OCR 或检测器权重。</li>
+<li>从仓库读取 <code translate="no">apps/web/out</code>、Program 检出或开发配置。</li>
+<li>在用户机器上运行 <code translate="no">npm build</code>、pip 依赖解析或 <code translate="no">git clone</code>。</li>
+</ul>
+</details>
+<details>
+<summary>图标</summary>
+<ul>
+<li><code translate="no">apps/desktop/build/AppIcon.icon</code> 是 Apple 分层源：1024×1024 无遮罩画布上的 SVG 图层，不预画系统外框。</li>
+<li><code translate="no">icon.icns</code> 是提交在库的 Electron 输入，保留已验收的可见范围、轮廓、透明角和阴影。</li>
+<li>淡紫色单元和三个圆片居中，没有文字或位图。构建机没有 <code translate="no">actool</code>，所以不编译 <code translate="no">.icon</code>。</li>
+<li>关卡检查图层结构、ICNS 尺寸、256 px 轮廓、透明角和往返。Dock、Finder、Launchpad 只在已安装的 App 上检查。</li>
+</ul>
+</details>
+<details>
+<summary>Windows 包</summary>
+<ul>
+<li>按用户 NSIS，可选目录，<code translate="no">asInvoker</code>。薄壳：外壳加 seed；默认 x64。</li>
+<li>有证书时，<code translate="no">OpenProgram.exe</code> 和安装包必须 Authenticode Valid。没有证书时两者必须 NotSigned，安装包使用 <code translate="no">-unsigned.exe</code> 文件名。</li>
+<li>终端用 Windows PowerShell 和 ConPTY。在常规路径发现 Chrome、Edge、Brave 和 Chromium 配置。不改 ACL。</li>
+</ul>
+</details>
+<details>
+<summary>Linux 安装包</summary>
+<ul>
+<li><code translate="no">executableName</code> 是 <code translate="no">openprogram-desktop</code>，安装到 <code translate="no">/opt/OpenProgram</code>。deb 列出依赖库，包括 <code translate="no">t64</code> 备选，并推荐 <code translate="no">bubblewrap</code>；其桌面项带 Recovery 动作。</li>
+<li>electron-builder 的 deb post-install 会在支持的系统上添加 AppArmor 规则，使 Chromium 沙箱能在 Ubuntu 24.04 上工作；AppImage 没有这一步。</li>
+<li>在 Ubuntu 22.04 上构建。内置 Git 需要 glibc 2.34；支持下限仍是 Ubuntu 22.04（glibc 2.35）。</li>
+<li>AppImage 记录 <code translate="no">$APPIMAGE</code>，每次重新启动和更新都使用同一个文件。</li>
+</ul>
+</details>
+
+<h2>Program</h2>
+<pre translate="no" tabindex="0">~/.openprogram/programs/
+├── src/&lt;program-id&gt;/
+├── manifests/&lt;program-id&gt;.json
+└── environments/&lt;runtime-id&gt;/
+    ├── releases/&lt;generation&gt;/
+    └── current -&gt; releases/&lt;generation&gt;</pre>
+<p><code translate="no">runtime-id</code> 至少包含 CPython 次版本、架构和依赖锁；同一平台的 Desktop 和 CLI 共用。安装、升级、移除是同一事务：</p>
+<ol>
+<li>解析来源和声明，写入临时目录。</li>
+<li>用包内 <code translate="no">uv</code> 和 CPython 创建暂存环境。</li>
+<li>按所有已启用清单安装依赖，记录确切版本和哈希。</li>
+<li>导入探测、注册检查、worker 冷启动。</li>
+<li>原子切换 <code translate="no">current</code>。失败删除暂存。</li>
+</ol>
+<p class="note">Program 不在发行版完整性范围内，使用独立环境，绝不覆盖 <code translate="no">openprogram</code>，也不由向导安装。</p>
+
+<h2>失败</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">发生了什么</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行时文件或清单不符</th><td>不启动 worker，给出重装说明</td></tr>
+<tr><th scope="row">缺能力或资产</th><td>阻止整个平台产物；没有缩减安装</td></tr>
+<tr><th scope="row">旧检出或旧 App 覆盖当前 App</th><td>在构建、停服务或写入前失败</td></tr>
+<tr><th scope="row">旧的未签名 macOS 文件</th><td>按文件名手动批准并核对 SHA-256</td></tr>
+<tr><th scope="row">系统注入 Python 路径</th><td>隔离启动时忽略</td></tr>
+<tr><th scope="row">Program 依赖覆盖核心包</th><td>拒绝激活环境</td></tr>
+<tr><th scope="row">新运行时探测失败</th><td><code translate="no">current</code> 不变；不发布 Desktop 产物</td></tr>
+<tr><th scope="row">版本不一致</th><td>阻止构建或发布</td></tr>
+</tbody>
+</table>
+
+<h2 id="local-app">本地固定 App</h2>
+<p>稳定版本地 App 只有 <code translate="no">/Applications/OpenProgram.app</code>，旁边是开发版 App（见<a href="dev-instance.zh.html">开发实例</a>）。App 名不含版本、提交或任务。构建中的 App 既不启动也不保留。</p>
+<details>
+<summary>完整安装：<code translate="no">npm --prefix apps/desktop run dist</code></summary>
+<ul>
+<li>在随机临时目录构建；校验 bundle ID、版本、主程序、内嵌运行时。</li>
+<li>候选版本低于当前 App 时，在动 App、worker 或 Launch Services 之前拒绝。版本段按任意精度整数比较；现有 App 无法校验时失败并保留。</li>
+<li>用户级锁加 Applications 里的原子锁：并发运行在任何变更前失败，清理只删当前 PID 持有的锁。</li>
+<li>卸载 launchd KeepAlive 服务，停掉持锁 worker，先在 Applications 卷上暂存，再把旧 App 移入事务目录并激活新 App。</li>
+<li>用新的内嵌 Python 和 <code translate="no">-I -B</code> 重装服务，等待 <code translate="no">/healthz</code>，打开 App。服务参数不得残留 conda、检出或已删 App 的路径。</li>
+<li>失败恢复旧 App、launchd 服务和运行状态。成功后删除旧 App、wheel 缓存、暂存、构建和事务目录。</li>
+<li>只向 Launch Services 注册固定路径；恢复时尽力重新注册，并保留原失败状态。</li>
+<li>electron-builder ad-hoc 签组件；固定本地证书签 App 和 helper；随后严格递归校验。</li>
+</ul>
+</details>
+<details>
+<summary>本地 App 刷新：<code translate="no">scripts/refresh-local-app.sh</code></summary>
+<ul>
+<li>只安装 <code translate="no">refs/heads/stable</code>，晋升时安装要晋升的它的快进提交，健康后再移动 <code translate="no">stable</code>（<a href="dev-instance.zh.html#promoting-to-stable">晋升到稳定版</a>）。没有 <code translate="no">stable</code> 分支时，检出必须包含本地 <code translate="no">main</code> 和已拉取的 <code translate="no">origin/main</code>。</li>
+<li>先解析路径，斜杠、点路径和符号链接别名共用检查和锁。真正的自定义 App 保留自己的源码检查。</li>
+<li>已跟踪修改、已暂存改动或未忽略的新文件，在打包前、打包后和持锁时都会拒绝。打包期间 HEAD 变化则重建；载荷冻结后变化则中止。</li>
+<li>检出、bundle、运行时清单和内置 Python 元数据版本必须相同，只有源码可以比已安装 App 新，此时同时升级其 Electron 和 bundle 元数据。降级被拒绝。</li>
+<li>同步 main、preload、更新器和运行时依赖，不生成覆盖旧模块的 <code translate="no">app.asar</code>。在共用锁内复查源码、wheel 和 App。</li>
+<li>解压会丢失未打包 <code translate="no">node-pty</code> 文件的执行位，暂存时恢复已安装的权限，并强制 <code translate="no">spawn-helper</code> 可执行。不跟随符号链接。</li>
+<li>旧 worker 照常服务时，在已安装 App 旁边的 <code translate="no">.openprogram-refresh.*</code> 里组装、校验并签名新 App，再以改名互换两者。</li>
+<li>只启动一次内嵌 worker；轮询 <code translate="no">:18100/healthz</code> 最多 300 秒，不重复启动。超时报告端点和日志。</li>
+<li>互换后失败则把之前的 App 改名放回，用同样的步骤启动并检查它的 worker。新版本或恢复的版本起来后重开一次 App，并保留主要状态；App 退出前失败则不启动。清理错误绝不报告成功。</li>
+</ul>
+</details>
+
+<h2 id="thin-shell">签名薄壳</h2>
+<p>薄壳 App 只有 <code translate="no">apps/desktop/shell/</code> 里的外壳，加上 <code translate="no">Resources/seed</code> 下的 seed。Windows 和 Linux App 是薄壳。macOS App 保持内嵌，除非打开 <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code>。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">模式</th><th scope="col">启动时的依据</th></tr></thead>
+<tbody>
+<tr><th scope="row">开发者</th><td><code translate="no">&lt;root&gt;/developer.json</code></td></tr>
+<tr><th scope="row">内嵌</th><td><code translate="no">Resources/instance.json</code>、<code translate="no">Resources/runtime</code> 或未打包的 App。原来的路径，没有变化</td></tr>
+<tr><th scope="row">托管</th><td>其余情况：壳读取 <code translate="no">current</code>，通过 <code translate="no">start(context)</code> 加载对应封存版本的 <code translate="no">desktop/main.js</code></td></tr>
+</tbody>
+</table>
+<h3>首次启动</h3>
+<ol>
+<li>先检查：<code translate="no">&lt;root&gt;</code> 里只有旧的 <code translate="no">cli/</code>、seed 的残留和壳自己记录失败设置的 <code translate="no">recovery.log</code>，并且磁盘空间够。</li>
+<li>拒绝时说出挡路的文件，或者需要多少空间、还剩多少、还差多少。设置页显示原因，<code translate="no">recovery.log</code> 记下来，点<strong>重试</strong>或下次启动会重新检查。</li>
+<li>写 <code translate="no">.seeding</code>，带进度解包。</li>
+<li>用 base 的 Python 运行 <code translate="no">install_seed.py</code>：替换版本里的构建根路径，重写封存文件表，安装身份和工具，创建 <code translate="no">repo/</code>，写指针。</li>
+<li>最后删除 <code translate="no">.seeding</code>，中断的安装会从头开始。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">seed</th><td><code translate="no">base.tar.zst</code>、<code translate="no">version.tar.zst</code>、<code translate="no">repo.bundle</code>、launcher（macOS 上是签名的 helper bundle，隐私授权绑定的唯一身份）、<code translate="no">shell-compat.json</code>、只用标准库的 <code translate="no">bootstrap/</code> 工具。命令行安装脚本用同一份 seed 的 <code translate="no">.tar.gz</code> 形式，<code translate="no">scripts/release/build-release-seed.sh</code> 构建两种形式</td></tr>
+<tr><th scope="row">启动计数</th><td>worker 经 launcher 启动，守护计数覆盖每一次启动；短促的认证命令用版本自己的 Python，不计数</td></tr>
+<tr><th scope="row">桌面加载</th><td>失败按壳版本记入 <code translate="no">boot/&lt;id&gt;.desktop-failed</code>，App 重新启动并回退。成功写 <code translate="no">boot/&lt;id&gt;.desktop-ready</code></td></tr>
+<tr><th scope="row">恢复页</th><td>没有版本能加载；fallback 上 <code translate="no">/healthz</code> 失败 120 秒；App 菜单（Windows 和 Linux 上是 <strong>File</strong>）；macOS 和 Windows 启动时按住 Shift；Linux 上用 <code translate="no">--recovery</code> 和 deb 启动器动作</td></tr>
+<tr><th scope="row">Git</th><td>base 在 macOS、Windows 和 Linux 上带固定版本的 Git，排在 <code translate="no">PATH</code> 最前</td></tr>
+<tr><th scope="row">外壳变化</th><td>外壳版本变化时，刷新 <code translate="no">shell-compat</code>、Python 次版本和启动器；被占用的 Windows 启动器先改名移开</td></tr>
+<tr><th scope="row">运行中的 worker</th><td>worker 版本与 App 不同时重启，每次启动最多一次</td></tr>
+<tr><th scope="row">macOS 位置</th><td>从磁盘映像或下载文件夹打开的 App 会提示移到 Applications；共享文件夹不可写时移到 <code translate="no">~/Applications</code></td></tr>
+</tbody>
+</table>
+
+<h2>验收</h2>
+<details>
+<summary>运行时和 macOS</summary>
+<ul>
+<li>原生 runner、固定提交和锁。<code translate="no">--version</code>、冷启动、<code translate="no">/healthz</code>、<code translate="no">/chat</code>、带哈希的 Web 资产。导入和资产探测；排除的发行包不存在。</li>
+<li>在只有系统 Git 的干净 arm64 和 x64 上验收 DMG。离线完成首次启动、worker、Web 和 Chromium 探测。Python 路径和能力哈希来自内嵌运行时。</li>
+<li>连续两次构建后只有一个 App。并发安装只有一个进入。损坏的候选或激活失败保留旧 App。</li>
+<li>bundle、运行时清单、<code translate="no">--version</code> 和 Python 元数据一致。</li>
+</ul>
+</details>
+<details>
+<summary>Windows、CLI、发布</summary>
+<ul>
+<li>Windows：与 CLI 相同的 ZIP；从解包的 App 校验清单、Python、worker 健康和 Web chat；ConPTY 预设；浏览器路径。更新器只选确切的 EXE。打包前运行 <code translate="no">scripts/release/windows-contracts.txt</code> 列出的测试；打包后 <code translate="no">smoke-windows-desktop.ps1</code> 安装、启动到 worker 健康、做一次工具调用，再卸载并保留数据。安装好的 CLI 也做一次工具调用（<code translate="no">smoke-tool-call.py</code>）。</li>
+<li>CLI：两种引导脚本的最新版和固定版；不访问 PyPI 或克隆；哈希一致；升级失败后旧版本仍能启动。</li>
+<li>Release：所有位置同一版本；每个发布资产都通过了各自的任务；没有发布者签名的构建在文件名中带 <code translate="no">-unsigned</code>。</li>
+<li>Linux 桌面：在干净的 Ubuntu 22.04 和 24.04 上、移除 Git 后，用 Xvfb 运行 <code translate="no">scripts/release/smoke-linux-desktop.sh</code>：deb 安装、桌面项、<code translate="no">node-pty</code>、首次运行 seed、解包后重启、worker 健康、<code translate="no">/chat</code>、启动器，以及 <code translate="no">APPIMAGE_EXTRACT_AND_RUN=1</code> 的 AppImage。</li>
+<li>文档、索引和运行时错误里没有 <code translate="no">pip install openprogram</code> 或组件安装步骤。</li>
+</ul>
+</details>
+<details>
+<summary>参考</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参考</th><th scope="col">用法</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/tutorial/distribution-overview">Electron</a>、electron-builder（<a href="https://www.electron.build/docs/features/code-signing/code-signing-mac/">签名</a>、<a href="https://www.electron.build/docs/linux/">Linux 目标</a>）</th><td>Desktop 外壳；读取与 CLI 相同的运行时归档</td></tr>
+<tr><th scope="row"><a href="https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution">Apple 分发</a></th><td><a href="developer-id.zh.html">Developer ID</a></td></tr>
+<tr><th scope="row">Apple <a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">图标指南</a>、<a href="https://developer.apple.com/documentation/Xcode/creating-your-app-icon-using-icon-composer">Icon Composer</a></th><td>分层源加兼容 ICNS</td></tr>
+<tr><th scope="row"><a href="https://www.electron.build/appimage/">AppImage</a>、deb、rpm、Snap、Flatpak</th><td>Linux App 使用 deb 和 AppImage。不发布 rpm、Snap、Flatpak。这些格式都不决定 glibc 基线，基线来自 Ubuntu 22.04 构建</td></tr>
+<tr><th scope="row"><a href="https://briefcase.beeware.org/en/latest/reference/platforms/macOS/index.html">Briefcase</a></th><td>只取原则：Python 属于 app bundle</td></tr>
+<tr><th scope="row"><a href="https://pyinstaller.org/en/stable/">PyInstaller</a></th><td>拒绝：不适合动态 Program 发现和扩展依赖</td></tr>
+<tr><th scope="row"><a href="https://py2app.readthedocs.io/en/stable/">py2app</a></th><td>Python.framework 和 Mach-O 布局参考</td></tr>
+<tr><th scope="row">uv（<a href="https://docs.astral.sh/uv/pip/environments/">环境</a>、<a href="https://docs.astral.sh/uv/concepts/tools/">工具</a>）</th><td>用于 CLI 安装和 Program 环境；<code translate="no">uv tool install openprogram</code> 不是入口</td></tr>
+<tr><th scope="row"><a href="https://packaging.python.org/en/latest/tutorials/packaging-projects/">PyPA</a>、<a href="https://docs.pypi.org/trusted-publishers/using-a-publisher/">Trusted Publishing</a></th><td>wheel 只是开发者产物</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">单端口 worker、健康与恢复、运行时内的 Web、能力清单、共用运行时归档、固定 App 安装、图标、CLI 安装器、标签驱动的 Release</th><td>已实现</td></tr>
+<tr><th scope="row">macOS 已签名 DMG 和 ZIP</th><td>已实现；Apple 关卡属于<a href="developer-id.zh.html">外部</a></td></tr>
+<tr><th scope="row">Windows 桌面</th><td>已实现，v1.2.0 首次发布；未在真实 Windows 上运行过。<a href="windows-support.zh.html#implementation-status">Windows 支持</a></td></tr>
+<tr><th scope="row">薄壳和 seed</th><td>已实现，Linux App 从 v1.1.0 起使用，Windows App 从 v1.2.0 起使用。打包后的外壳通过 macOS 冒烟；Linux deb 和 AppImage 在 arm64 的 Xvfb 下通过。待完成：x86_64 Linux 安装包、真实 Windows 运行，以及 macOS App 转为薄壳前的隐私授权门禁（<a href="developer-id.zh.html">Developer ID</a>）。supervisor 中仍有 <code translate="no">legacy_app</code> 和对 App 的依赖</td></tr>
+<tr><th scope="row">Linux 桌面</th><td>已实现，v1.1.0 首次发布。Linux 上的更新激活和回退还需要再跑一次端到端验证</td></tr>
+<tr><th scope="row">Release 工作流</th><td>独立任务和未签名形态已实现并作为脚本测试；工作流本身还没有在 GitHub 上运行过</td></tr>
+<tr><th scope="row">每个文件一份</th><td>已实现；第一个不再带无版本号副本和各任务校验文件的发行版是 v1.3.0。等受支持的版本里没有哪个 <code translate="no">openprogram upgrade</code> 还要运行时 <code translate="no">.sha256</code>，它们也可以去掉</td></tr>
+<tr><th scope="row">本地刷新收尾</th><td>回归用例通过；已安装 App 的验收未完成</td></tr>
+<tr><th scope="row"><code translate="no">openprogram update</code></th><td>遗留命令：处理函数导入的辅助函数已不存在，会抛 <code translate="no">ImportError</code>。更新命令是 <code translate="no">upgrade</code></td></tr>
+</tbody>
+</table>
+<p class="note">范围之外：App Store、凭据存储集成、替换 Python 或 Electron、按 Program 的进程隔离、自动安装第三方 Program。</p>
+<p class="next"><a href="../cli/single-port.zh.html">单端口 worker</a></p>

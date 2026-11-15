@@ -1,0 +1,148 @@
+<title>安装与分发实施计划</title>
+<meta name="description" content="每条安装路径包含什么，发布流水线和本地 App 安装器强制什么，改动如何验证。">
+<h1>安装与分发实施计划</h1>
+
+<p>实现需要遵守的约定。设计见<a href="installation-packaging.zh.html">安装与打包</a>，更新架构见<a href="automatic-updates.zh.html">自动更新</a>，Windows 见 <a href="windows-support.zh.html">Windows 支持</a>。</p>
+
+<h2 id="product-boundary">产品边界</h2>
+<table class="stack">
+<thead><tr><th scope="col">谁</th><th scope="col">得到</th><th scope="col">绝不</th></tr></thead>
+<tbody>
+<tr><th scope="row">普通用户</th><td>完整的 GitHub Release 产物；同一平台和架构能力一致</td><td>把 <code translate="no">pip install openprogram</code>、<code translate="no">pipx</code>、<code translate="no">uv tool install</code> 或 PyPI 页面当作产品入口；安装时解析 PyPI、克隆仓库、npm 构建或首次使用才下载 Chromium</td></tr>
+<tr><th scope="row">开发者</th><td>完整产品，加上可编辑源码、测试、诊断、本地前端构建，以及显式配置的感知、OCR 或浏览器叠加层（模型资源由叠加层负责）</td><td>隐式安装被排除的依赖</td></tr>
+<tr><th scope="row">发布组装、源码 checkout、第三方扩展环境</th><td>可以构建或安装 wheel</td><td>作为用户路径展示</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>修复提示指向哪里</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">指向</th></tr></thead>
+<tbody>
+<tr><th scope="row">站点首页、入门、故障排查、示例和运行时依赖错误</th><td>正式安装器或完整重装</td></tr>
+<tr><th scope="row">缺少 PDF 依赖</th><td>完整重装</td></tr>
+<tr><th scope="row">故障排查</th><td>把托管的私有运行时与 <code translate="no">uv run</code> 或 <code translate="no">.venv</code> 源码开发分开</td></tr>
+<tr><th scope="row">OpenClaw 技能</th><td>通过 <code translate="no">uv run --project</code> 在克隆的 checkout 中运行</td></tr>
+</tbody>
+</table>
+<p class="note">不做：去 Python 重写、移除 <code translate="no">pyproject.toml</code>、改变插件或第三方 Program 格式。</p>
+</details>
+
+<h2 id="artifacts">各平台产物</h2>
+<table class="stack">
+<thead><tr><th scope="col">平台</th><th scope="col">CLI 和服务端</th><th scope="col">桌面</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS arm64、x86_64</th><td>运行时归档</td><td>DMG 和 ZIP；有 Apple 凭据时签名并公证，否则为 <code translate="no">-unsigned</code></td></tr>
+<tr><th scope="row">Linux x86_64、arm64</th><td>运行时归档，带 Web UI 和 TUI</td><td>薄壳 deb 和 AppImage</td></tr>
+<tr><th scope="row">Windows x64；arm64 由开关控制</th><td>运行时归档</td><td>薄壳 NSIS 安装包；没有证书时为 <code translate="no">-unsigned.exe</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS App</th><td>逐字节相同的运行时归档，只多一层 Electron 外壳</td></tr>
+<tr><th scope="row">Windows 和 Linux App</th><td>带由同一 lock 构建的 seed</td></tr>
+<tr><th scope="row">发布还包含</th><td>校验和、开发者 wheel 和 sdist、<code translate="no">release-manifest.json</code></td></tr>
+<tr><th scope="row">完整入口没通过</th><td>产物直接缺席，绝不缩减</td></tr>
+<tr><th scope="row">本地刷新、自更新</th><td>用本地开发证书重新签名，不保留生产签名</td></tr>
+</tbody>
+</table>
+
+<h2 id="runtime-contents">运行时内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row">能力</th><td><code translate="no">web</code>、<code translate="no">providers</code>、<code translate="no">mcp</code>、<code translate="no">memory</code>、<code translate="no">channels</code>、<code translate="no">search</code>、<code translate="no">tui.ink</code>、<code translate="no">browser.playwright</code></td></tr>
+<tr><th scope="row">锁定版本</th><td><code translate="no">scripts/release/product-runtime.json</code> 中的 CPython 3.12.10 和 uv 0.11.16</td></tr>
+<tr><th scope="row">Program</th><td>不捆绑。电脑操作是内置工具，无需捆绑模型。</td></tr>
+<tr><th scope="row">拒绝的发行包</th><td>PyTorch、torchvision、OpenCV、EasyOCR、sentence-transformers、triton、<code translate="no">nvidia-*</code>、<code translate="no">cuda-*</code></td></tr>
+<tr><th scope="row">宿主要求</th><td>Session 和 Memory 历史需要系统 Git；启动器都不捆绑 Git</td></tr>
+<tr><th scope="row">排除</th><td>操作系统凭据库集成；Chrome 或 Edge 扩展安装；发行版原生 deb 或 rpm 包</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary><code translate="no">verify-product-runtime.py</code> 检查什么</summary>
+<ul>
+<li>启动无头 Chromium 页面；产物只有在 <code translate="no">--allow-deferred-browser</code> 下才能把 <code translate="no">browser_probe</code> 记为 deferred。终端安装在缺少 Chromium 系统库的 Linux 上传这个参数，启动 Chromium 留到浏览器工具首次使用。</li>
+<li>构建时（<code translate="no">--write</code>、<code translate="no">--probe-only</code>）读取每个 Mach-O 和 ELF 文件的加载命令：从运行时和系统之外加载的库（例如 runner 上 Homebrew 的 OpenSSL），或要求比 <code translate="no">macosMinimum</code> 更新的 macOS 的文件，都让构建失败。它自己解析文件，不需要 <code translate="no">otool</code>。</li>
+<li>导入 channel 和 search 依赖，检查 Web 资源。</li>
+<li>对生成的 PDF 运行两条内置提取路径，探测 Rich 渲染。</li>
+<li>要求已安装的 OpenProgram 元数据版本等于运行时 manifest 版本。</li>
+<li>Manifest schema 2 记录每项能力的 <code translate="no">present</code> 和 <code translate="no">verified</code>、产品 manifest 和锁文件哈希、确切的发行包、平台和架构。</li>
+</ul>
+</details>
+
+<h2 id="release-acceptance">发布验收</h2>
+<p>每个目标在原生 runner 上构建，由推送 <code translate="no">v*</code> 标签或对现有标签手动触发。</p>
+<ol>
+<li>源码、锁文件、桌面和安装器版本一致。</li>
+<li>按平台和架构组装、归档并校验运行时。</li>
+<li>桌面任务嵌入同一运行时、签名，并在上传前校验。</li>
+<li>CLI 安装器任务校验校验和、解压、能力、worker 冷启动、原子切换 <code translate="no">current</code> 和启动器版本。</li>
+<li>发布任务写入发布 manifest，要求 <code translate="no">.github/release-notes/&lt;tag&gt;.md</code> 为英文且标题正确，绝不覆盖已公开的发布。</li>
+</ol>
+<details>
+<summary>流水线依赖的打包事实</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事实</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">semble</code></th><td><code translate="no">&gt;=0.5.3</code>，其 <code translate="no">semble-grammars</code> 为每个目标发布所需的原生 wheel</td></tr>
+<tr><th scope="row">Wheel 目标</th><td><code translate="no">build-base.sh</code> 和 <code translate="no">.ps1</code> 用 <code translate="no">--only-binary :all:</code> 和 <code translate="no">--python-platform</code> 按最旧的受支持系统安装（<code translate="no">macosMinimum</code> 13.5 经 <code translate="no">MACOSX_DEPLOYMENT_TARGET</code>，<code translate="no">glibcMinimum</code> 2.35），从不按 runner 的系统。<code translate="no">runtime-wheels.py check</code> 在构建前从 <code translate="no">uv.lock</code> 证明每个目标都有全部 wheel。目标取打包所用 Python 自己的构建，不取 runner 的机器：Windows on Arm 上的 x64 Python 和 Rosetta 下的 x86_64 构建都装 x86_64 wheel，内置 Git 也按同一个答案选（<code translate="no">runtime-wheels.py target</code>）</td></tr>
+<tr><th scope="row">复用的 base</th><td>Python 版本没变的 base 直接复制，再用 <code translate="no">uv pip sync</code> 对齐新的锁文件；它把依赖文件当位置参数，固定版本的 uv 在这里拒绝 <code translate="no">--requirements</code>，而 <code translate="no">uv pip install</code> 必须用它。组件测试用这个 uv 离线把两个脚本的装包步骤装进临时环境，CI 也安装这个 uv</td></tr>
+<tr><th scope="row">构建用的 profile</th><td>自更新构建有自己的 <code translate="no">HOME</code>、<code translate="no">USERPROFILE</code>、<code translate="no">LOCALAPPDATA</code> 和 <code translate="no">APPDATA</code>；缺了后两个，PowerShell 会把模块缓存写进工作树，下一次构建就以有未提交改动拒绝</td></tr>
+<tr><th scope="row">源码构建</th><td>只有 <code translate="no">product-runtime.json</code> 里 <code translate="no">sourceBuilds</code> 列出的包，各自链接所在构建线准备的静态库：Intel macOS 上的 cryptography（没有 x86_64 wheel；<code translate="no">prepare-macos-native-deps.sh</code> 用 vcpkg 为 macOS 13.5 构建静态 OpenSSL），以及 Windows on Arm 上的四个包。列出的包一旦有了 wheel，检查就失败</td></tr>
+<tr><th scope="row">最旧的 macOS</th><td>13.5，因为 Playwright 自带的 Node 需要它；App 的 <code translate="no">LSMinimumSystemVersion</code>（electron-builder 的 <code translate="no">minimumSystemVersion</code>）和安装页写的一样，终端安装程序拒绝更旧的 Mac 并说明去哪里更新。本地 App 刷新用这台机器自己的包就地组装运行时，所以传 <code translate="no">--this-machine</code>，原生文件按这台 Mac 的 macOS 检查；发布构建从不传它</td></tr>
+<tr><th scope="row">Intel macOS 与 torch</th><td>没有打过补丁的 torch wheel，所以 <code translate="no">embedding</code> extra 排除该平台</td></tr>
+<tr><th scope="row">架构命名</th><td>运行时归档用 <code translate="no">x86_64</code>，electron-builder 用 <code translate="no">x64</code>（<code translate="no">release-matrix.py</code>）</td></tr>
+<tr><th scope="row">运行时 manifest</th><td>格式化 JSON，shell 解析容忍空白</td></tr>
+<tr><th scope="row"><code translate="no">pypdf</code>、<code translate="no">rich</code></th><td>锁定的基础依赖；Ink 启动失败时进入捆绑的 Rich REPL</td></tr>
+<tr><th scope="row">打包版 Electron</th><td>只从 <code translate="no">process.resourcesPath</code> 解析 Python，运行 <code translate="no">-I -B -m openprogram worker start</code>；不回退到 <code translate="no">PATH</code>，不往已签名的 App 写字节码</td></tr>
+<tr><th scope="row">Wheel</th><td>资源暂存后构建，含 <code translate="no">openprogram/interfaces/server/_frontend</code>，无需 Node.js 即可提供 <code translate="no">/chat</code></td></tr>
+<tr><th scope="row">Linux 冒烟</th><td><code translate="no">linux-release-smoke.yml</code> 只能手动运行，不需要签名或 PyPI 凭据，产物留在 CI</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="public-installer">公开安装器</h2>
+<pre><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row">根脚本</th><td>解析最新稳定发布，校验三段数字版本，下载不可变的带标签安装器并转发版本。没有第二个安装器；校验和、能力和冷启动检查不变。</td></tr>
+<tr><th scope="row">指定版本</th><td>在 <code translate="no">sh</code> 进程上设 <code translate="no">OPENPROGRAM_VERSION=X.Y.Z</code></td></tr>
+<tr><th scope="row">脚本</th><td><code translate="no">scripts/install-release.sh</code> 是已发布的兼容 URL，从同一标签下载 <code translate="no">scripts/release/install-release.sh</code></td></tr>
+<tr><th scope="row">发布</th><td><code translate="no">docs/_static_root/install.sh</code> 重命名到站点根的 <code translate="no">/install</code>；<code translate="no">/docs/install/</code> 仍是文档目录</td></tr>
+</tbody>
+</table>
+
+<h2 id="local-app">本地 App</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">约定</th></tr></thead>
+<tbody>
+<tr><th scope="row">入口</th><td><code translate="no">npm --prefix apps/desktop run dist</code> 构建一个完整的临时 App，用打包运行时冒烟验证，只替换 <code translate="no">/Applications/OpenProgram.app</code></td></tr>
+<tr><th scope="row">刷新版本</th><td><code translate="no">scripts/refresh-local-app.sh</code> 要求 bundle、运行时 manifest、Python 元数据、Python 源码和桌面源码版本一致，升级到更新的源码除外</td></tr>
+<tr><th scope="row">降级</th><td><code translate="no">install-app.sh</code> 在加锁前和对暂存副本各拒绝一次更旧的候选，都在停 worker 和改文件之前。数字段按任意精度十进制比较；没有覆盖开关，没有预发布排序。</td></tr>
+<tr><th scope="row">路径上是无效 App</th><td>保留并拒绝，绝不当作不存在</td></tr>
+<tr><th scope="row">激活失败</th><td>保留旧 App 的唯一副本；Launch Services 注册后失败时恢复并重新注册，保留原始错误</td></tr>
+<tr><th scope="row">launchd</th><td>真正的 unload 失败在改 App 前停止；过期的 plist 可以替换</td></tr>
+<tr><th scope="row">并发</th><td>跨 worktree 的每用户打包锁（<code translate="no">~/Library/Caches/OpenProgram/app-package.lock</code>）；目标 Applications 目录里的原子安装锁。竞争者在任何改动前失败。</td></tr>
+<tr><th scope="row">清理</th><td>移除随机 App 目录、暂存运行时、wheel 构建、Web 输出、复制的前端和锁；保留 App 数据、源码、依赖和用户状态</td></tr>
+<tr><th scope="row">图标</th><td><code translate="no">apps/desktop/build/AppIcon.icon</code> 是分层源：四个 1024 x 1024 透明画布矢量 SVG，一个 cell 和三个扁平圆，不画外轮廓。<code translate="no">icon.icns</code> 入库作为 Electron 输入。两者由 <code translate="no">check-icon.sh</code> 强制。</td></tr>
+</tbody>
+</table>
+
+<h2 id="verification">验证</h2>
+<p>在<a href="../testing/test-system.zh.html#full-run">受影响测试</a>之外：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">改动</th><th scope="col">运行</th></tr></thead>
+<tbody>
+<tr><th scope="row">发布、安装、刷新</th><td><code translate="no">python -m pytest tests/component/config/test_distribution_release</code></td></tr>
+<tr><th scope="row">桌面打包</th><td><code translate="no">python -m pytest tests/unit/webui/test_desktop_packaged_files.py</code>；<code translate="no">npm --prefix apps/desktop run check</code></td></tr>
+<tr><th scope="row">Web 前端服务</th><td><code translate="no">python -m pytest tests/component/webui/runtime/test_webui_frontend.py</code>；<code translate="no">npm --prefix apps/web run check</code></td></tr>
+<tr><th scope="row">文档</th><td><code translate="no">python -m scripts.docs_site.build</code>；<code translate="no">python -m scripts.docs_site.checklinks</code></td></tr>
+<tr><th scope="row">Shell 脚本</th><td>对改动的脚本运行 <code translate="no">bash -n</code></td></tr>
+<tr><th scope="row">每次改动</th><td><code translate="no">git diff --check</code></td></tr>
+<tr><th scope="row">平台产物</th><td>只在原生发布 runner 上：一台主机无法验证其他平台的运行时</td></tr>
+</tbody>
+</table>

@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.providers.utils.errors import ErrorReason, classify_error
-from openprogram.providers.utils.stream_retry import is_retryable_status
+from openprogram.models.providers.utils.errors import ErrorReason, classify_error
+from openprogram.models.providers.utils.stream_retry import is_retryable_status
 
 
 # Verbatim from a real codex 429 (the body that prompted this).
@@ -82,3 +82,29 @@ def test_5xx_unaffected_by_quota_check():
     """A quota phrase can't appear in a 500, but the guard runs before the
     status check — make sure an ordinary 500 still retries."""
     assert is_retryable_status(500, "internal server error") is True
+
+
+_BLOCK_PAGE = ('<html>\n  <head>\n    <meta name="viewport" content="width=device-width" />\n'
+               "    <style global>body{font-family:Arial}</style>\n  </head>\n  <body><h1>Unable to load site</h1>"
+               "<p>If you are using a VPN, try turning it off. [IP:203.0.113.7 | Ray ID:abc]</p></body></html>")
+
+
+def test_a_web_page_for_403_is_a_network_block_not_the_account():
+    """The API answers in JSON; a page comes from the network edge in front of it."""
+    from openprogram.models.providers.utils.errors import ErrorReason, classify_error, web_page_text
+    from openprogram.models.providers.utils.stream_retry import ProviderStreamError
+
+    error = ProviderStreamError(f"HTTP 403: {_BLOCK_PAGE}", http_status=403, error_text=_BLOCK_PAGE)
+    assert str(error) == ("HTTP 403: Unable to load site If you are using a VPN, try turning it off. "
+                          "[IP:203.0.113.7 | Ray ID:abc]")
+    assert error.error_text == _BLOCK_PAGE
+    assert classify_error(error, http_status=403, error_text=_BLOCK_PAGE) == (ErrorReason.NETWORK_BLOCK, False)
+    assert classify_error(error, http_status=403) == (ErrorReason.NETWORK_BLOCK, False)
+    assert classify_error(RuntimeError(f"HTTP 403: {_BLOCK_PAGE}"), http_status=403) == (
+        ErrorReason.NETWORK_BLOCK, False)
+
+    plain = ProviderStreamError('HTTP 403: {"error": "no access to this model"}', http_status=403,
+                                error_text='{"error": "no access to this model"}')
+    assert classify_error(plain, http_status=403) == (ErrorReason.AUTHORIZATION, False)
+    assert web_page_text("plain words") is None and web_page_text("") is None
+    assert len(web_page_text("<html><body>" + "word " * 500 + "</body></html>")) == 400

@@ -4,6 +4,8 @@ export interface Model {
   id: string;
   name: string;
   provider: string;
+  /** The provider's display name, as Settings shows it (enabled list). */
+  providerLabel?: string;
   enabled: boolean;
   capabilities: Capability[];
   context?: number;
@@ -72,7 +74,7 @@ export interface FunctionsMeta {
 }
 
 // ---------------------------------------------------------------------------
-// Auth v2 — mirrors openprogram/auth/types.py
+// Auth v2 — mirrors openprogram/models/auth/types.py
 // ---------------------------------------------------------------------------
 
 export interface AuthAccount {

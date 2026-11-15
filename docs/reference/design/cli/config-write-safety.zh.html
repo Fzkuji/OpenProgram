@@ -1,0 +1,34 @@
+<title>配置写入安全</title>
+<meta name="description" content="修改 config.json 的唯一原子入口、背后的两把锁，以及使用它的写入方。">
+<h1>配置写入安全</h1>
+<p><code translate="no">config.json</code> 是一个文件，被多个界面和进程修改。没有覆盖整个读改写的锁，后写入者会丢掉先写入者的改动。</p>
+<pre translate="no"><code>from openprogram.state.config import update_config
+
+def mutate(cfg):
+    cfg["ui"]["web_port"] = 8101
+
+result = update_config(mutate)          # returns the resulting config
+update_config(mutate, expected_revision=revision)  # with a revision check</code></pre>
+<p class="note"><code translate="no">openprogram.state.config.update_config</code> 是修改部分配置的唯一正确方式。以 <code translate="no">0o600</code> 写回。调用方不会跨锁边界持有配置字典。<code translate="no">read_config</code> 和 <code translate="no">write_config</code> 保留用于只读和整体替换；两者配对使用会产生竞争。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">锁</th><th scope="col">覆盖</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_config_write_lock</code> (<code translate="no">threading.Lock</code>)</th><td>worker 线程：TUI 工具开关和网页保存 key</td></tr>
+<tr><th scope="row"><code translate="no">config.json.lock</code>，经 <code translate="no">_private_atomic_update</code></th><td>其他进程：<code translate="no">openprogram config</code> 和 <code translate="no">openprogram setup</code> 与 worker 并发</td></tr>
+</tbody>
+</table>
+<p class="note">两把锁都不可少。模块私有锁不能替代：<code translate="no">storage.py</code> 的 <code translate="no">_cache_lock</code> 只保护该模块的缓存。</p>
+<p class="note">范围仅限写入原子性。schema 和校验属于 <code translate="no">state.settings</code>（<a href="redesign.zh.html">redesign</a>），格式仍是 JSON。</p>
+<h2 id="appendix-implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">写入方</th><th scope="col">路径</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">settings.set_setting</code></th><td>TUI <code translate="no">/config</code>、网页 System 标签、<code translate="no">openprogram config</code>；<code translate="no">_set_at</code> 和 <code translate="no">tools.disabled</code> 分支</td></tr>
+<tr><th scope="row"><code translate="no">routes/settings/config.py</code></th><td>网页 API key 合并和删除</td></tr>
+<tr><th scope="row"><code translate="no">state/preferences.py</code></th><td><code translate="no">set_ui_ports</code>, <code translate="no">write_search_default_provider</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/cli/setup_sections/sections.py</code></th><td><code translate="no">openprogram setup</code> 向导</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/settings/storage.py</code></th><td>providers 部分</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/last_used.py</code>, <code translate="no">host/environments</code>, <code translate="no">models/providers/recording</code></th><td>最近模型、环境、录制</td></tr>
+</tbody>
+</table>
+<p class="note">所有配置写入方都经过 <code translate="no">update_config</code>。单元测试断言两个并发 mutator 串行执行，结果同时反映两者。</p>

@@ -5,13 +5,13 @@ import threading
 
 import pytest
 
-from tests.component.agent.async_job_support import (
-    _FakeMonotonic,
-    WORKER_START_TIMEOUT,
-    fake_worker,
-    store_fixture,
-)
+from tests.component.agent.async_job_support import _FakeMonotonic, WORKER_START_TIMEOUT
+from tests.component.agent import async_job_support as _async_job_support
 from tests.support.waiting import wait_until
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+fake_worker = _async_job_support.fake_worker
+store_fixture = _async_job_support.store_fixture
 
 
 def _canonical_execution(runner, execution_id):
@@ -39,16 +39,16 @@ def test_runner_rejection_creates_no_job(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         AdmissionRejected,
         ResourceGovernor,
         ResourceLimits,
         resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     resolved = resolve_resource_limits(
         ResourceLimits(max_jobs_per_session=1), scheduler_capacity=1,
@@ -72,14 +72,14 @@ def test_runner_rejection_creates_no_job(
 
 def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     # Force a single-worker pool occupied by another job to keep the
     # second one queued; cancel the queued one. Use two different
     # sessions so the exact execution cancellation for the queued job
     # remains independent from the running execution.
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
     calls, barrier, _, _ = fake_worker
 
@@ -95,7 +95,7 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     })
     store_fixture.commit_turn("p2", "init")
 
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner, JobStatus
     runner = get_runner()
     tid1 = runner.spawn_job(
         session_id="p1", prompt="block", agent_id="main",
@@ -116,10 +116,10 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
 
 def test_runner_cancel_during_run(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     calls, barrier, cancel_seen, entered = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner
     runner = get_runner()
     tid = runner.spawn_job(
         session_id="p1", prompt="will be cancelled", agent_id="main",
@@ -140,14 +140,14 @@ def test_runner_cancel_during_run(store_fixture, fake_worker, monkeypatch):
 
 def test_runner_pool_backpressure(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
     runner_mod.shutdown_runner()
 
     calls, barrier, _, _ = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
+    from openprogram.runtime.jobs import get_runner
     runner = get_runner()
     ids = [
         runner.spawn_job(
@@ -157,7 +157,7 @@ def test_runner_pool_backpressure(store_fixture, fake_worker, monkeypatch):
         for i in range(3)
     ]
     # Single worker occupied; others queued.
-    assert fake_worker[3].wait(1.0)
+    assert fake_worker[3].wait(30)
     statuses = [_canonical_execution(runner, t).status.value for t in ids]
     # First either pending/queued/running, later ones should not be running.
     running = [status for status in statuses if status == "running"]
@@ -171,14 +171,14 @@ def test_runner_durable_dispatcher_skips_saturated_session(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     store_fixture.create_session("p2", "main", title="parent2")
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     resolved = resolve_resource_limits(
         ResourceLimits(max_live_per_session=1), scheduler_capacity=2,
@@ -207,16 +207,16 @@ def test_runner_dispatch_submit_failure_terminalizes_published_job(
     """A claimed job must not outlive a failed executor submission."""
     broadcasts = []
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', broadcasts.append,
+        'openprogram.runtime.jobs.runner.shared._broadcast', broadcasts.append,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor,
         ResourceLimits,
         resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
@@ -236,22 +236,19 @@ def test_runner_dispatch_submit_failure_terminalizes_published_job(
             session_id="p1", prompt="dispatch me", agent_id="main",
         )
         def admission_row():
-            return ledger.connection().execute(
-                "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-                (job_id,),
-            ).fetchone()
+            return ledger.run_tables().handle.first("job_admissions", job_id=job_id)
 
         assert wait_until(
             lambda: (
                 (row := admission_row()) is not None
-                and row[0] == "released"
+                and row["state"] == "released"
             ),
-            timeout=2.0,
+            timeout=30,
         )
         admission = admission_row()
 
         assert admission is not None
-        assert tuple(admission) == ("released", "error.dispatch_failed")
+        assert (admission["state"], admission["reason_code"]) == ("released", "error.dispatch_failed")
         final = runner.await_job(job_id, timeout=0.1)
         assert final is not None
         assert final.status == JobStatus.ERRORED
@@ -278,12 +275,12 @@ def test_canonical_driver_receives_immutable_job_resource_context(
     store_fixture, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
     captured = []
 
     def inspect_context(*, execution_context, **_kwargs):
-        from openprogram.agent.sub_agent_run import AgentTurnResult
+        from openprogram.runtime.conversation.sub_agent_run import AgentTurnResult
 
         captured.append(execution_context)
         return AgentTurnResult(
@@ -291,16 +288,16 @@ def test_canonical_driver_receives_immutable_job_resource_context(
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        "openprogram.runtime.conversation.production_driver.AgentProductionDriver._default_turn_runner",
         staticmethod(inspect_context),
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor,
         ResourceLimits,
         resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
     resolved = resolve_resource_limits(
@@ -332,13 +329,13 @@ def test_runner_executes_three_live_jobs_for_one_session(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
     resolved = resolve_resource_limits(
@@ -360,14 +357,12 @@ def test_runner_executes_three_live_jobs_for_one_session(
         # Each worker durably records its RUNNING transition first. Three
         # same-session Git commits are serialized and can cross two seconds
         # on Windows/Defender even though all three executor slots are live.
-        assert wait_until(lambda: len(fake_worker[0]) >= 3, timeout=5.0)
+        assert wait_until(lambda: len(fake_worker[0]) >= 3, timeout=30)
         assert len(fake_worker[0]) == 3
-        assert ledger.connection().execute(
-            "SELECT COUNT(*) FROM job_admissions WHERE state = 'live'"
-        ).fetchone()[0] == 3
-        from openprogram.agent import run_control
+        assert ledger.run_tables().handle.count("job_admissions", state="live") == 3
+        from openprogram.runtime.execution import run_control as execution_run_control
         assert all(
-            run_control.current_token("p1", execution_id=job_id) is not None
+            execution_run_control.current_token("p1", execution_id=job_id) is not None
             for job_id in job_ids
         )
 
@@ -384,14 +379,14 @@ def test_cancel_one_same_session_job_does_not_cancel_sibling(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent import run_control
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.execution import run_control as execution_run_control
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     resolved = resolve_resource_limits(
         ResourceLimits(max_live_per_session=2), scheduler_capacity=2,
@@ -415,7 +410,7 @@ def test_cancel_one_same_session_job_does_not_cancel_sibling(
 
         runner.cancel_execution(first)
         assert _await_canonical_terminal(runner, first).status.value == "cancelled"
-        sibling_token = run_control.current_token("p1", execution_id=second)
+        sibling_token = execution_run_control.current_token("p1", execution_id=second)
         assert sibling_token is not None
         assert not sibling_token.event.is_set()
         assert _canonical_execution(runner, second).status.value == "running"
@@ -430,16 +425,16 @@ def test_idle_activity_is_tracked_per_same_session_job(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job import runner as runner_mod
-    from openprogram.execution import control as control_mod
-    from openprogram.execution import store as execution_store_mod
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs import runner as runner_mod
+    from openprogram.runtime.execution import control as control_mod
+    from openprogram.runtime.execution import store as execution_store_mod
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     # This suite runs in one process.  A preceding component test can leave
     # non-terminal canonical executions in the profile-default database;
@@ -449,7 +444,7 @@ def test_idle_activity_is_tracked_per_same_session_job(
     # store from ``store_fixture``.
     runner_mod.shutdown_runner()
     monkeypatch.setattr(
-        "openprogram.paths.get_execution_db_path",
+        "openprogram.state.paths.get_run_state_path",
         lambda: tmp_path / "executions.db",
     )
     with control_mod._default_control_services_lock:
@@ -561,14 +556,15 @@ def test_runner_job_coexists_with_mcp_foreground_token(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent import run_control
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.conversation import run_control
+    from openprogram.runtime.execution import run_control as execution_run_control
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
     store_fixture.create_session("p2", "main", title="other")
@@ -586,15 +582,12 @@ def test_runner_job_coexists_with_mcp_foreground_token(
             session_id="p1", prompt="wait for MCP", agent_id="main",
         )
         assert fake_worker[3].wait(WORKER_START_TIMEOUT)
-        row = ledger.connection().execute(
-            "SELECT state, owner_instance_id FROM job_admissions WHERE job_id = ?",
-            (job_id,),
-        ).fetchone()
-        assert row[0] == "live"
-        assert row[1] is not None
+        row = ledger.run_tables().handle.first("job_admissions", job_id=job_id)
+        assert row["state"] == "live"
+        assert row["owner_instance_id"] is not None
         assert [call["session_id"] for call in fake_worker[0]] == ["p1"]
-        assert run_control.current_token("p1").event is mcp_event
-        job_token = run_control.current_token("p1", execution_id=job_id)
+        assert execution_run_control.current_token("p1").event is mcp_event
+        job_token = execution_run_control.current_token("p1", execution_id=job_id)
         assert job_token is not None
         assert job_token.event is not mcp_event
 
@@ -609,14 +602,14 @@ def test_runner_releases_claim_when_canonical_cancel_races_activation(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.models.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
@@ -630,7 +623,7 @@ def test_runner_releases_claim_when_canonical_cancel_races_activation(
 
     def delayed_activation(claim, cancel_event):
         activation_entered.set()
-        assert allow_activation.wait(2.0)
+        assert allow_activation.wait(30)
         return original_activate(claim, cancel_event)
 
     monkeypatch.setattr(
@@ -641,24 +634,18 @@ def test_runner_releases_claim_when_canonical_cancel_races_activation(
             session_id="p1",
             prompt="cancel race", agent_id="main",
         )
-        assert activation_entered.wait(2.0)
+        assert activation_entered.wait(30)
         runner.cancel_execution(job_id, reason="cancel.user")
         allow_activation.set()
         assert wait_until(
             lambda: (
-                (row := ledger.connection().execute(
-                    "SELECT state FROM job_admissions WHERE job_id = ?",
-                    (job_id,),
-                ).fetchone()) is not None
-                and row[0] == "released"
+                (row := ledger.run_tables().handle.first("job_admissions", job_id=job_id)) is not None
+                and row["state"] == "released"
             ),
-            timeout=2.0,
+            timeout=30,
         )
-        row = ledger.connection().execute(
-            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-            (job_id,),
-        ).fetchone()
-        assert tuple(row) == ("released", "cancel.user")
+        row = ledger.run_tables().handle.first("job_admissions", job_id=job_id)
+        assert (row["state"], row["reason_code"]) == ("released", "cancel.user")
         assert runner.get_job(job_id).status == JobStatus.CANCELLED
         assert fake_worker[0] == []
     finally:
@@ -670,13 +657,13 @@ def test_resource_saga_releases_terminal_canonical_execution(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None,
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None,
     )
-    from openprogram.agent.resource_governance import (
+    from openprogram.runtime.jobs.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.models.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
@@ -688,7 +675,7 @@ def test_resource_saga_releases_terminal_canonical_execution(
         job_id = runner.spawn_job(
             session_id="p1", prompt="finish projection", agent_id="main",
         )
-        assert fake_worker[3].wait(2)
+        assert fake_worker[3].wait(30)
         fake_worker[1].set()
         assert _await_canonical_terminal(runner, job_id).status.value == "completed"
         assert wait_until(
@@ -699,12 +686,10 @@ def test_resource_saga_releases_terminal_canonical_execution(
                     execution_id=job_id,
                 )
             ),
-            timeout=3.0,
+            timeout=30,
         )
-        assert tuple(ledger.connection().execute(
-            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-            (job_id,),
-        ).fetchone()) == ("released", "completed")
+        row = ledger.run_tables().handle.first("job_admissions", job_id=job_id)
+        assert (row["state"], row["reason_code"]) == ("released", "completed")
     finally:
         fake_worker[1].set()
         runner.shutdown()

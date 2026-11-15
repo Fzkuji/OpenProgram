@@ -1,0 +1,467 @@
+<title>Chat turn visual specification</title>
+<meta name="description" content="Message surfaces, the execution timeline, manual function runs, sub-agent navigation, file-change cards, message navigation and transcript behaviour.">
+<h1>Chat turn visual specification</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row">Components</th><td><code translate="no">apps/web/components/chat/messages/</code></td></tr>
+<tr><th scope="row">Styles</th><td><code translate="no">apps/web/app/styles/chat/</code>; step colours in <code translate="no">apps/web/app/styles/tool-tones.css</code></td></tr>
+<tr><th scope="row">Summary sentence</th><td><a href="tool-group-summary.html">Tool group summary</a></td></tr>
+<tr><th scope="row">File attribution, Undo, recovery</th><td><a href="../../runtime/operations/file-management.html">File changes, Review and recovery</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="message-surfaces">Message surfaces</h2>
+<p>No avatars and no speaker line. The text column lines up with the composer's edges.</p>
+<table class="stack">
+<thead><tr><th scope="col">Surface</th><th scope="col">Look</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">User bubble</th><td>Right-aligned, content width up to 75% (88% narrow and in split panes). 16px corners, 10px 16px padding, no border. Fill <code translate="no">--user-msg-bg</code> (= <code translate="no">--bg-input</code>), <code translate="no">--composer-shadow</code>.</td><td>Hover deepens to <code translate="no">--composer-shadow-focus</code>. Code blocks and collapsed pastes inside use a <code translate="no">--bg-primary</code> inset. The message that set a Goal (<code translate="no">startsGoal</code>) opens with the target icon (16) and “Goal” in <code translate="no">--accent-blue</code>, weight 500, on the first line of its text.</td></tr>
+<tr><th scope="row">Assistant reply</th><td>Flat on the page. Blocks are separated by one <code translate="no">--reply-gap</code> of 22px; a heading gets half a gap more above and a third less below.</td><td>No token or service-tier footer.</td></tr>
+<tr><th scope="row">Queued row</th><td>Bubble surface, 10px corners, above the composer</td><td>A user message not yet sent</td></tr>
+<tr><th scope="row">Pending send</th><td>Bubble at 60% opacity</td><td>A send that never reached the server says so on a line under the bubble.</td></tr>
+<tr><th scope="row">Edit box</th><td>Full column, <code translate="no">--bg-input</code>, 23px corners, composer shadow, deeper on hover and focus</td><td>Kept attachments (each removable), new-attachment strip, composer input row with @ file mentions. Bottom row: paperclip (ghost round <code translate="no">icon-sm</code>, “Add images or files”), then Cancel (elevated sm) and Save &amp; resend (primary sm). Esc cancels, ⌘/Ctrl+Enter saves, files can be dropped. Action row hidden.</td></tr>
+</tbody>
+</table>
+<p class="note">Two marks are not avatars: a compact 18px identity line above a reply from a named non-main agent in multi-agent sessions, and the ƒ marker of a manual function run.</p>
+
+<h3 id="action-row">Action row</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Place</th><td>Under every message: right under a user bubble, left under a reply at <code translate="no">--reply-gap</code> − 3px. Height stays 24px.</td></tr>
+<tr><th scope="row">Order</th><td>Timestamp, Copy, Regenerate and Pin as chapter (assistant), Edit (user), Rewind to here (user, when later replies changed files), ‹ N / M › for sibling versions</td></tr>
+<tr><th scope="row">Buttons</th><td>Ghost round <code translate="no">icon-xs</code> (24px), 16px animated line icon, muted ink at rest, primary ink and round muted fill on hover. Hover and keyboard focus drive the icon.</td></tr>
+<tr><th scope="row">Labels</th><td><code translate="no">HoverTip</code> + <code translate="no">TipBody</code> after 1.5s, never a native title; same text as <code translate="no">aria-label</code></td></tr>
+<tr><th scope="row">Visibility</th><td>Transparent until the message is hovered or holds focus. Always visible on touch and on a pinned chapter.</td></tr>
+<tr><th scope="row">Busy, copied</th><td>Disabled at 40% opacity. Copy shows a green check for 1.2s.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Time contract</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Records</th></tr></thead>
+<tbody>
+<tr><th scope="row">User message</th><td>Local time on successful send</td></tr>
+<tr><th scope="row">Agent reply, independent function or runtime message</th><td>Start time, when its first visible state is created</td></tr>
+<tr><th scope="row">Thinking and tool steps inside an Agent</th><td>That Agent message's start time. Independent runtime and sub-agent messages keep their own.</td></tr>
+<tr><th scope="row">Later updates</th><td>Streaming, terminal updates and hierarchy moves preserve the time; after reload persisted time wins.</td></tr>
+<tr><th scope="row">Before the first reply content</th><td>One temporary row, start time right after the status text, no normal footer</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="execution-timeline">Execution timeline</h2>
+
+<h3 id="collapsed-row">Summary row</h3>
+<ul>
+<li>One plain-text row plus ›, no outer frame or button background, aligned to the body column. 28px tall; hover only brightens the text.</li>
+<li>Sentence, then any live retry state, red “· N failed”, Stopped or Interrupted tag, and the +N −M pill. The sentence truncates to one line.</li>
+<li>Reply text is always visible.</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">Transcript view</th><th scope="col">Tool groups</th><th scope="col">Steps</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">normal</code> (default)</th><td>Collapsed</td><td>Collapsed</td></tr>
+<tr><th scope="row"><code translate="no">thinking</code></th><td>Open</td><td>Thinking steps open</td></tr>
+<tr><th scope="row"><code translate="no">verbose</code></th><td>Open</td><td>All open</td></tr>
+</tbody>
+</table>
+<p class="note">Per-browser preference, one default plus one choice per conversation. A manual click wins over the view and over later streaming and terminal updates.</p>
+
+<h3 id="step-rows">Step rows</h3>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Main row</th><th scope="col">Nested row</th></tr></thead>
+<tbody>
+<tr><th scope="row">Minimum height</th><td>30px</td><td>26px</td></tr>
+<tr><th scope="row">Left padding</th><td>34px</td><td>30px, indented 6px</td></tr>
+<tr><th scope="row">Icon box</th><td>24px</td><td>20px</td></tr>
+<tr><th scope="row">Rail, 1px</th><td>At 11.5px, fades over first and last 12px</td><td>At 9.5px</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Text: verb title (Ran, Edited, Searched the web…) at weight 500, identifying argument as a chip, first result line in muted text. No raw JSON; the side panel keeps full parameters and output.</li>
+<li>The icon is the Solar Bold Duotone glyph alone, in the step's tone, on the page colour so the rail stops behind it.</li>
+<li>Nesting recurses with no depth limit.</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">Tone</th><th scope="col">Steps</th></tr></thead>
+<tbody>
+<tr><th scope="row">Green</th><td>Commands, sub-agents</td></tr>
+<tr><th scope="row">Amber</th><td>File edits</td></tr>
+<tr><th scope="row">Blue</th><td>Reads</td></tr>
+<tr><th scope="row">Cyan</th><td>Searches, LLM</td></tr>
+<tr><th scope="row">Indigo</th><td>Web and browser</td></tr>
+<tr><th scope="row">Purple, fuchsia</th><td>Thinking; memory</td></tr>
+<tr><th scope="row">Slate, rose, stone</th><td>Planning; media; system</td></tr>
+<tr><th scope="row">Orange</th><td>Other functions</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State or target</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running</th><td>Normal glyph, conic sweep orbiting it (1.1s); thinking notes show the latest line</td></tr>
+<tr><th scope="row">Failed</th><td>Red warning triangle, red title</td></tr>
+<tr><th scope="row">Underlined title</th><td>Opens details in the right panel</td></tr>
+<tr><th scope="row">Icon, summary, row whitespace</th><td>Only expands or collapses; a chevron marks expandable rows. Leaf rows do nothing.</td></tr>
+<tr><th scope="row">Inline body</th><td>Thinking text and a sub-agent's own transcript open in the row, aligned to the title, one light fill</td></tr>
+<tr><th scope="row">Actions</th><td>Copy on every row, Open and Cancel execution on sub-agents. Only on the hovered row (<code translate="no">:hover</code> on the head, so a child never reveals its ancestors) or <code translate="no">:focus-visible</code>; always on touch.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Motion</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Transition</th></tr></thead>
+<tbody>
+<tr><th scope="row">Whole strip</th><td>Grid 0fr↔1fr, 160ms, expanding downward only. Children unmount 220ms after collapse.</td></tr>
+<tr><th scope="row">Step body and child timeline</th><td>Height and −3px→0 over 240ms, opacity 160ms</td></tr>
+<tr><th scope="row">New step</th><td>0.22s fade and slide</td></tr>
+<tr><th scope="row">Chevrons</th><td>Rotate 90° over 160ms</td></tr>
+<tr><th scope="row">Running summary</th><td>Text shimmer, 1.8s</td></tr>
+<tr><th scope="row">Viewport</th><td>Must not jump: scroll anchoring is off in chat, and bottom following pauses 600ms after a click</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="lifecycle">Lifecycle and ownership</h3>
+<ul>
+<li>Streaming, completed and restored messages use the same <code translate="no">ExecutionStrip</code>, <code translate="no">ThinkingStep</code> and <code translate="no">FunctionStep</code>; completion never switches to a boxed table.</li>
+<li>Without ordered blocks, stored thinking and tool records are shown in stored order. Missing interleaving is not reconstructed and no tool record is invented. Results, errors, identifiers and full-output references stay.</li>
+<li>Functions started by an Agent reply belong only to that reply's timeline. Only user-invoked functions are independent runtime messages.</li>
+</ul>
+
+<h2 id="manual-function-runs">Manual function runs</h2>
+<p>The form and an exact function expression are two editors for one <code translate="no">FunctionInvocation { name, kwargs }</code>, sharing one converter and one HTTP submitter. Neither creates a user bubble or Agent text turn.</p>
+<table class="stack">
+<thead><tr><th scope="col">Input</th><th scope="col">Classified as</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">gui_agent(task="…", surface="browser")</code></th><td>Exact whole input, registered function, named literals</td><td><code translate="no">POST /api/function/gui_agent</code>, one ProgramRun</td></tr>
+<tr><th scope="row">Function form</th><td>Schema produces the same typed kwargs</td><td>Same</td></tr>
+<tr><th scope="row"><code translate="no">Please explain gui_agent(...)</code>, <code translate="no">`gui_agent(...)`</code></th><td>Not a complete expression</td><td>Ordinary user message to the Agent</td></tr>
+<tr><th scope="row">Missing or mistyped required argument</th><td>Recognized, invalid</td><td>Draft kept, form opens with errors; no fallback to chat</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Recognizer</th><td>Runs no JavaScript or Python. Strings, numbers, booleans, null and flat named arguments only; no positional arguments, attributes, variables or expressions.</td></tr>
+<tr><th scope="row">Submission</th><td>Recognition does not call <code translate="no">sendChatMessage</code> or write pending user text. Attachments, queuing and system decisions never become parameters. Placeholders, Project, channel, navigation and rollback stay in the shared submitter.</td></tr>
+<tr><th scope="row">Layout</th><td>28px ƒ marker, unframed timeline. Collapsed title, Conclusion and footer share one left edge. Footer 14px below, left-aligned, same buttons as chat, version navigation by <code translate="no">.message-nav</code> (◀ N/M ▶).</td></tr>
+<tr><th scope="row">Expanded</th><td>Direct root children only; deeper levels open one at a time</td></tr>
+<tr><th scope="row">Copy</th><td>The root call's result (error ?? output), not the argument JSON</td></tr>
+<tr><th scope="row">Retry</th><td>Sibling branch with the same arguments</td></tr>
+<tr><th scope="row">Edit</th><td>Prefills the form; sibling branch with edited arguments (<code translate="no">fork_of_node</code> anchors to the original call's predecessor)</td></tr>
+<tr><th scope="row">Branches</th><td>Replace the displayed run in place; never appended at the end of the conversation</td></tr>
+<tr><th scope="row">Running, nested</th><td>One breathing-dot row. Nested runs have no footer.</td></tr>
+</tbody>
+</table>
+
+<h2 id="sub-agents">Sub-agents</h2>
+<h3 id="sub-agent-live">Live display</h3>
+<table class="stack">
+<thead><tr><th scope="col">Moment</th><th scope="col">Timeline</th></tr></thead>
+<tbody>
+<tr><th scope="row">Parent running</th><td>Execution follows the transcript view; streaming does not decide it</td></tr>
+<tr><th scope="row">Sub-agent starts</th><td>A running record is added; an open timeline shows the new row</td></tr>
+<tr><th scope="row">Sub-agent finishes</th><td>The row with the same stable <code translate="no">card_id</code> updates in place, never duplicated or deleted</td></tr>
+<tr><th scope="row">Parent terminal</th><td>The manual choice stands; only the activity indicator and step status change</td></tr>
+<tr><th scope="row">Expanded later</th><td>Still the same timeline row, with Open on hover or focus</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Call path</th><th scope="col">Live data</th><th scope="col">Row</th></tr></thead>
+<tbody>
+<tr><th scope="row">In chat, <code translate="no">agent()</code></th><td><code translate="no">sub_agent</code> events by <code translate="no">card_id</code> into <code translate="no">attachCards</code></td><td><code translate="no">SubAgentStep</code></td></tr>
+<tr><th scope="row"><code translate="no">report_workflow</code> role call</th><td><code translate="no">tree_update</code> into <code translate="no">contextTree</code></td><td><code translate="no">TreeStep</code> child</td></tr>
+</tbody>
+</table>
+
+<h3 id="sub-agent-navigation">Parent and child navigation</h3>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="Open on the parent's sub-agent row goes to the sub-agent branch. On that branch, the Switch button of the Spawned from card returns to the parent's original call site, callerId, and the Back to main conversation banner returns to the parent's latest position, backTarget.">
+  <defs><marker id="ct-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="60">Call site</text>
+  <text class="t-soft" x="0" y="86">parent branch</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="108">callerId</text>
+  <rect class="tile" x="252" y="30" width="176" height="96" rx="8"/>
+  <text class="t-big" x="268" y="60">Sub-agent</text>
+  <text class="t-soft" x="268" y="86">child branch</text>
+  <text class="t-cmd notranslate" translate="no" x="268" y="108">attach.head_id</text>
+  <text class="t-big" x="536" y="60">Latest position</text>
+  <text class="t-soft" x="536" y="86">parent branch</text>
+  <text class="t-cmd notranslate" translate="no" x="536" y="108">backTarget</text>
+  <line class="ln" x1="112" y1="52" x2="244" y2="52" marker-end="url(#ct-a)"/>
+  <text class="mid" x="178" y="42">Open</text>
+  <line class="ln" x1="244" y1="96" x2="112" y2="96" marker-end="url(#ct-a)"/>
+  <text class="mid" x="178" y="118">Switch</text>
+  <line class="ln" x1="436" y1="76" x2="528" y2="76" marker-end="url(#ct-a)"/>
+  <text class="mid" x="482" y="148">Back to main</text>
+  <text class="mid" x="482" y="168">conversation</text>
+  <line class="ln-faint" x1="482" y1="82" x2="482" y2="130"/>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Call site</strong><small>parent branch, <code translate="no">callerId</code></small></li>
+  <li class="via">Open</li>
+  <li><strong>Sub-agent</strong><small>child branch, <code translate="no">attach.head_id</code></small><small>Switch returns to the call site</small></li>
+  <li class="via">Back to main conversation</li>
+  <li class="flow-end"><strong>Latest position</strong><small>parent branch, <code translate="no">backTarget</code></small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Lands</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open, on the row</th><td>The sub-agent's newest reply. While the conversation runs its head cannot move, so the agent opens in the row instead.</td></tr>
+<tr><th scope="row">Back to main conversation, top banner</th><td>Parent's latest position; after reload, the originating turn with its execution expanded and the row highlighted</td></tr>
+<tr><th scope="row">Switch, on the “Spawned from” card before the first message</th><td><code translate="no">callerId</code>; later parent messages are hidden</td></tr>
+</tbody>
+</table>
+<p class="note">All three switch the active HEAD in one session and reload the transcript; no new tab. The backend refuses HEAD moves during execution. A legacy cross-session AttachCard only opens the target session. A <code translate="no">report_workflow</code> <code translate="no">TreeStep</code> without an attach pointer opens right-panel details only.</p>
+
+<h2 id="message-navigation">Message navigation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Marks</th><td>One per user message, 9px at rest, 10px apart, the visible one brighter. The rail scrolls internally when long.</td></tr>
+<tr><th scope="row">Position</th><td>Left edge of the chat area beside the sidebar divider, using <code translate="no">100cqw</code> of the inline-size container</td></tr>
+<tr><th scope="row">Pointer</th><td>Y maps to the nearest mark, which grows up to 36px; a preview card (truncated text, attachment chips) opens beside it. Never a full list.</td></tr>
+<tr><th scope="row">Click, Enter</th><td>Smooth scroll to the message and a brief highlight</td></tr>
+<tr><th scope="row">Preview content</th><td>User text and assistant summaries are untrusted Markdown: raw HTML and HTML-like math stay literal, links follow the document URL policy, attachment extraction and secret masking run first</td></tr>
+</tbody>
+</table>
+
+<h3 id="chapters">Chapters</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Control</th><td>Pin as chapter or Unpin chapter on a reply. While pinned the bookmark is filled purple on the pressed fill and that action row stays shown.</td></tr>
+<tr><th scope="row">Stored</th><td><code translate="no">metadata.chapter = {"pinned_at": &lt;epoch seconds&gt;}</code> on the turn's user node; <code translate="no">None</code> or missing means unpinned. Follows the node through every branch and returns from <code translate="no">load_session</code> as <code translate="no">chapter</code>.</td></tr>
+<tr><th scope="row">Protocol</th><td><code translate="no">set_message_chapter {session_id, message_id, pinned}</code> accepts only a user message of that session and broadcasts <code translate="no">message_chapter_updated {session_id, message_id, chapter}</code>. The server patches its mirror; a read takes the pin from the stored row.</td></tr>
+<tr><th scope="row">Mark</th><td><code translate="no">--accent-purple</code>, 4px thick instead of 2.5px, 18px at rest (<code translate="no">CHAPTER_W</code>), never shorter on hover, full purple while the rail dims</td></tr>
+<tr><th scope="row">Selector</th><td>One more scalar in <code translate="no">packRailRow</code>, so rows still compare as flat strings</td></tr>
+</tbody>
+</table>
+
+<h2 id="file-changes">File-change card</h2>
+<p class="note">Reports only exact changes from this turn. How a change is attributed: <a href="../../runtime/operations/file-management.html">the file-management page</a>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Surface</th><td><code translate="no">--bg-input</code>, 2xl corners, 6px padding, <code translate="no">--composer-shadow</code>, deeper on hover. Product sans throughout.</td></tr>
+<tr><th scope="row">Header</th><td>30px minimum, 20px pen icon, “N files changed” at weight 600, tinted +N −M pill (— when unknown), then actions pushed right. At card width ≤420px: “N files”, gaps 6px and 5px.</td></tr>
+<tr><th scope="row">Actions</th><td>Elevated xs buttons. The one executable action of Undo, Revert, Redo, Reapply, then Review. Redo reverses Undo, Reapply reverses Revert.</td></tr>
+<tr><th scope="row">Unavailable</th><td>The action stays focusable with <code translate="no">aria-disabled</code> at 50%; its hover tip says why (edited afterwards, not recoverable, inactive branch, agent or run active, already in progress)</td></tr>
+<tr><th scope="row">File list</th><td>Inset well: <code translate="no">--bg-primary</code>, lg corners, 3px padding</td></tr>
+<tr><th scope="row">Rows</th><td>30px, 10px side padding. <code translate="no">FileTypeIcon</code> (16px box, light and dark palettes), muted folder, bright name, bare green and red counts, or “renamed” / “deleted”. Hover adds <code translate="no">--bg-hover</code>; the whole row opens Review at that file.</td></tr>
+<tr><th scope="row">Overflow</th><td>Three rows, then “Show N more files” up to 20 loaded, then Collapse. Counted but unlisted files end in one “and N more files — open Review” row. The header count is <code translate="no">file_count</code>. A summary counting more than it lists loads the full list through <code translate="no">review_scope</code>.</td></tr>
+<tr><th scope="row">Reverted</th><td>List at 55% opacity, names struck through, “Historical original diff. These changes are no longer active.”</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Turn</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Persisted file records, or a direct file-writing tool</th><td>Card mounts</td></tr>
+<tr><th scope="row">No records</th><td>No card, no Review</td></tr>
+<tr><th scope="row">Older turn, loading on entering the viewport</th><td>Invisible probe; empty results stay hidden</td></tr>
+<tr><th scope="row">Load failed</th><td>“Could not load file changes.” and Retry</td></tr>
+<tr><th scope="row">All writes failed</th><td>“File changes in this turn did not go through.”</td></tr>
+</tbody>
+</table>
+
+<h3 id="review-tab">Review tab</h3>
+<table class="stack">
+<thead><tr><th scope="col">Scope</th><th scope="col">Source</th><th scope="col">Contains</th><th scope="col">Undo</th></tr></thead>
+<tbody>
+<tr><th scope="row">This turn</th><td>Mutation journal of the turn</td><td>Primary change set; linked child sets grouped by actual producer</td><td>When every record is recoverable and unchanged since</td></tr>
+<tr><th scope="row">Current branch</th><td>Mutation projection of the active lineage</td><td>Completed turns and explicit reverts, restores and reapplies; no sibling branches, ordinary Bash or external writes</td><td>From a specific turn or checkpoint only</td></tr>
+<tr><th scope="row">Workspace</th><td>Git tracked diff and <code translate="no">ls-files --others --exclude-standard</code></td><td>Uncommitted files, respecting <code translate="no">.gitignore</code>; non-Git shows unavailable</td><td>None</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Action or state</th><th scope="col">Result</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">Review, file row</th><td>Opens one deterministic <code translate="no">r:&lt;sessionId&gt;:&lt;assistantMsgId&gt;</code> center tab; a row also selects its path</td><td>No inline chat diff; repeated clicks only focus or update selection</td></tr>
+<tr><th scope="row">Placement</th><td>Without a split, to the chat's right in the existing group; with a full split, a normal active tab</td><td>No replaced peers, third pane or second tab store</td></tr>
+<tr><th scope="row">Header</th><td>Title, source and totals; then scope switch and type menu (All types, Code, Tests, Docs, Large)</td><td>Page colour, hairline separators</td></tr>
+<tr><th scope="row">Below 900px pane width</th><td>File list folds into the selected file's header: full name, folder, actor, producing turn, line counts, <em>n / N</em> menu</td><td>From 900px: a 260px list, name over folder</td></tr>
+<tr><th scope="row">Diff</th><td>No file headers; hunks labelled by line range; long lines wrap; added or deleted files show one number column; paging below</td><td>One bounded diff mounted at a time</td></tr>
+<tr><th scope="row">Preview</th><td>Rendered current Markdown, image or PDF</td><td>Reads the file as it is now; none for deleted files</td></tr>
+<tr><th scope="row">Line comments</th><td>Click lines; several go with structured locations in the next prompt</td><td>Never edit files or claim a review</td></tr>
+<tr><th scope="row">Large, binary</th><td>Statistics, reason, Open file</td><td>No full rendering</td></tr>
+<tr><th scope="row">Undo conflict</th><td>Review locates conflicting files</td><td>No force shortcut</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Where this comes from: peer systems</summary>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Turn or checkpoint</th><th scope="col">Review</th><th scope="col">Undo or rewind</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex</a></th><td><code translate="no">TurnDiffTracker</code> uses only committed <code translate="no">apply_patch</code> deltas; inexact deltas clear the turn diff</td><td><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/get_git_diff.rs"><code translate="no">/diff</code></a> uses Git: <code translate="no">git diff</code> and <code translate="no">git ls-files --others --exclude-standard</code></td><td><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs"><code translate="no">thread/revert</code></a> restores conversation history only; App file Undo is not in the open-source repository</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/checkpointing">Claude Code</a></th><td>A checkpoint per prompt, direct edit tools only, latest 100 kept</td><td><a href="https://code.claude.com/docs/en/desktop">Desktop</a> and <a href="https://code.claude.com/docs/en/web-quickstart">Web</a>: session totals, file navigation, single-file diff, line comments</td><td>Code and conversation restore separately. Bash, background sub-agents, external changes and links are not guaranteed.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">Exact attribution</th><td>As Codex: turn statistics come only from committed mutations</td></tr>
+<tr><th scope="row">Separate review surface</th><td>As both: chat holds summaries, Review holds navigation, content and comments</td></tr>
+<tr><th scope="row">Session and repository diffs</th><td>Three scopes in one tab</td></tr>
+<tr><th scope="row">Checkpoint recovery</th><td>Turn-level Undo with full preflight, recorded as a new journal transaction</td></tr>
+<tr><th scope="row">Not done</th><td>No directory-scan attribution around Bash, no approximate turn diffs, no silent partial recovery</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Implementation map</summary>
+<table class="stack">
+<thead><tr><th scope="col">Scope</th><th scope="col">Location</th><th scope="col">Excluded</th></tr></thead>
+<tbody>
+<tr><th scope="row">Mutations and recovery</th><td><code translate="no">programs/tools/files/</code>, <code translate="no">state/store/snapshot/checkpoint/</code>, turn finalize, <code translate="no">runtime/conversation/revert.py</code></td><td>Bash directory watchers, changing user Git, inferring a turn from disk</td></tr>
+<tr><th scope="row">Review protocol</th><td><code translate="no">interfaces/server/ws_actions/turn_files/</code>, message metadata, Git helpers</td><td>Unbounded strings, approximate fallback</td></tr>
+<tr><th scope="row">Review tab</th><td><code translate="no">center-tab-ids.ts</code>, <code translate="no">center-tabs-store.ts</code>, <code translate="no">center-tab-groups.ts</code>, <code translate="no">components/center-tabs/review/</code></td><td>New windows, modals, a third pane</td></tr>
+<tr><th scope="row">Chat card</th><td><code translate="no">turn-files-chips.tsx</code>, <code translate="no">turn-files-card.css</code></td><td>Inline diff, file-row arrows, hover action groups</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="chat-math">Chat math</h2>
+<ul>
+<li>Complete <code translate="no">$$</code>, <code translate="no">$</code>, <code translate="no">\[</code> and <code translate="no">\(</code> blocks are stashed before <code translate="no">marked</code> and restored as escaped text after sanitizing. <code translate="no">MarkdownText</code> typesets after paint; the chat-area pin path calls <code translate="no">typesetMath</code> on the observed column.</li>
+<li>Unclosed streaming math waits for the next paint with a closer. Prose without math and incomplete openers do not typeset. Invalid math does not throw.</li>
+</ul>
+
+<h2 id="generation-motion">Waiting for a reply</h2>
+<p>An empty reply shows one static “Thinking…” row with the summary row's shimmer, no › (a green raining label in the code rain style). The spinning activity mark lives on the sidebar row. Approval and terminal states suppress it; timeline, footers and pane titles add no mark.</p>
+
+<h2 id="chat-retries">Automatic retries</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Place</th><td>After the sentence of the reply's last tool group, joined like “· N failed”. A reply ending in text or with no group gets its own collapsed row, no leading dot.</td></tr>
+<tr><th scope="row">Text</th><td>“Server busy, retrying in 3s · 2/5”, “Offline, checking again in 20s”, “Reply came back incomplete, retrying 2/3”</td></tr>
+<tr><th scope="row">Cause</th><td>429: Rate limited. 5xx or overload: Server busy. Timeout: Timed out. Otherwise: Connection lost.</td></tr>
+<tr><th scope="row">Colour</th><td>Orange while answering a failure. “Hit the output limit, continuing” keeps the row's colour. Shimmer stops while waiting.</td></tr>
+<tr><th scope="row">Seconds</th><td>Count down from the notice, tabular figures</td></tr>
+<tr><th scope="row">Opened</th><td>Timeline ends with a retry row (plug glyph, system tone, running), same sentence as title, failure in one line such as <code translate="no">ReadTimeout: …</code></td></tr>
+<tr><th scope="row">Event</th><td><code translate="no">attempt</code>, <code translate="no">max_attempts</code>, <code translate="no">reason</code>, <code translate="no">delay_ms</code>, <code translate="no">error</code> (<code translate="no">retry_error_text</code>, at most 300 characters). Sent by the OpenAI-compatible and Codex adapters; shown by <code translate="no">retry-status.tsx</code>.</td></tr>
+<tr><th scope="row">Lifetime</th><td>Live only. The next streamed content clears it, so a recovered reply looks like one that never failed.</td></tr>
+</tbody>
+</table>
+
+<h2 id="chat-failures">Failed replies</h2>
+<ul>
+<li>The partial answer and ordered trace stay. One terminal notice follows them, before message actions: a localized headline, technical details on request as plain text. No automatic retry is added.</li>
+<li>Partial blocks and failure detail are separate fields. Node output keeps the error text for model context and non-Web consumers; the Web mapper restores the answer from ordered text blocks.</li>
+<li>The node persists detail, reason, retryability and retry delay before the final failure event, so history restores the same notice. Older error output is recognized without rewriting history and does not repeat the answer.</li>
+<li>Cancellation, approval, nested details, retry and branch semantics and Goal reports are unchanged. Provider taxonomy stays authoritative; no second error store.</li>
+</ul>
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>A public turn emits text and tools, then fails: live and cold history show answer, trace and one notice.</li>
+<li>Empty and older failed replies stay visible. Successful and cancelled replies gain no notice. Details work narrow and dark.</li>
+<li>Regression also covers browser permission inheritance and high-level delegation. Bound-page tests supply an explicit binding and expect the stop after three failed attempts on one observation, with the concrete reason.</li>
+</ul>
+</details>
+
+<h2 id="transcript-consistency">Transcript update ownership</h2>
+<ul>
+<li>The server owns every row. A read draws a window, numbered <code translate="no">transcript_update</code> changes keep it current, and text frames add text to a block by offset. One reducer, <code translate="no">apply-transcript-update.ts</code>, applies all three, so a row drawn live is the row a reload draws.</li>
+<li>The browser adds only what the server has not named yet. A pending send, a function placeholder or a notice is a typed local row, and goes when a read or update names its <code translate="no">clientRequestId</code>.</li>
+<li>A field shown ahead of the server (Stop, a version switch, a chapter pin, a file undo, a goal result) is an overlay that ends on a stated event and never changes the row under it.</li>
+<li>Execution trees supplement the owning reply: a model-issued function's tree is an item of the reply's <code translate="no">callRoots</code>, a function run's tree a field of its row. A tree or frame for a row the view does not hold creates nothing.</li>
+<li>A missed update or a lost text frame makes the view read once at its anchor. A read during a stream neither loops nor shortens the reply, because the server parks that view's frames until the read's reply has gone. A branch move or structural change reads again.</li>
+<li>Each execution root keeps its persisted path. Repeated calls stay distinct; a root is consumed once across text-separated groups. A completed function stays in its summary; direct runs stay standalone.</li>
+</ul>
+<p class="note">Acceptance replays recorded chats through production reducers and components and requires live to equal cold at every checkpoint: stream, partial history, completion, late trees, steers, errors, cancellation, reconnect and reload.</p>
+
+<h2 id="queue-steer">Queue and current-turn input</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Send preparation</th><td>Reserved per draft owner across composers. A repeat with the same pending signature is ignored; a changed draft stays editable with a not-sent notice; another conversation prepares independently.</td></tr>
+<tr><th scope="row">Signature</th><td>Draft text, attachment id, order and <code translate="no">sourcePath</code>, and <code translate="no">thinking</code>, <code translate="no">toolsEnabled</code>, <code translate="no">toolsProfile</code>, <code translate="no">webSearchEnabled</code>, <code translate="no">fastEnabled</code>, <code translate="no">fastSupported</code>. Not attachment base64 or focused/bound presentation. Permission, model, project and channel still bind late in <code translate="no">sendChatMessage</code>.</td></tr>
+<tr><th scope="row">File mentions</th><td>One 15-second batch deadline including response bodies; unresolved mentions keep their text</td></tr>
+<tr><th scope="row">Release</th><td>After transport handoff or failure. Completion clears only an unchanged captured draft.</td></tr>
+<tr><th scope="row">Queued</th><td>Dispatched in order after the current turn. Session queues and editing order are independent; attachments use ordinary queue delivery.</td></tr>
+<tr><th scope="row">Consumed steering</th><td>Shown between the reply content around it. Its user node stays independent; the reply stores an ordered boundary shared by streaming, cancellation and history. Older records use predecessor edges, never a guessed offset.</td></tr>
+<tr><th scope="row">Delivery</th><td>Receipt polling confirms the same command without changing the waiting label, bounded, and works while the provider is silent. Pending or uncertain items cannot be resent, edited or removed. Definitive rejection keeps the queued draft; transport failure stays uncertain and is never resent.</td></tr>
+<tr><th scope="row">Streaming steer</th><td>Accepted text interrupts active text or reasoning, keeps emitted content, closes the request and applies the durable command before the next model request. Tool-call arguments, running tools and structured output wait for their safe point; no tool is replayed or cancelled.</td></tr>
+<tr><th scope="row">Stop during pending steer</th><td>Keeps the partial reply and its history position. A command rejected by cancellation stays an unsent draft with Send, never a new turn automatically. Projection may advance only the exact top-level turn from its user node to its assistant node by compare-and-set.</td></tr>
+</tbody>
+</table>
+
+<h2 id="secret-display-state">Sensitive text in previews</h2>
+<ul>
+<li>Known token formats and complete private-key blocks are masked in passive display; pasted previews mask before truncating.</li>
+<li>Reveal is scoped to the source message, conversation and rendered prose, and never moves to another value. Explicit edit, copy and model payloads keep the original.</li>
+<li>Display masking only: not password recognition or data removal.</li>
+</ul>
+<p class="note">Acceptance uses the real <code translate="no">UserBubble</code> with synthetic secrets: long key preview, paste expansion after reveal, content and session changes, show and hide, unchanged source.</p>
+
+<h2 id="automatic-history">Bounded transcript history</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Bound</th></tr></thead>
+<tbody>
+<tr><th scope="row">Server</th><td>One branch view per session, shared by every connection, at most 16 in the process, rebuilt when the store says the branch moved. A view holds row ids grouped by turn, not bodies. A page projects only its selected whole turns from the store, so a row that changed after open reads fresh: a prompt and everything it owns, with tool descendants and compaction rows in place. A cursor off the branch answers <code translate="no">cursor_not_on_branch</code> and the client reads the chat again. Read version 2 keeps its per-connection snapshots as the rollback.</td></tr>
+<tr><th scope="row">Browser cache</th><td>Four conversations; displayed panes and in-flight requests may exceed it briefly</td></tr>
+<tr><th scope="row">One transcript</th><td>Six ordinary pages, 8 MiB, with one indivisible page allowed for a large turn</td></tr>
+<tr><th scope="row">Eviction</th><td>Opposite the reading position, never persisted records; active updates stay; scrolling back refetches</td></tr>
+<tr><th scope="row">Rows</th><td>Measured rows outside the viewport unmount and keep their height; evicted rows lose it</td></tr>
+<tr><th scope="row">Requests</th><td>One at a time; prefetch distance follows scroll direction and speed, bounded; exponential backoff; hidden panes stop; stale responses cannot overwrite a newer generation</td></tr>
+<tr><th scope="row">Anchor</th><td>Insertion and eviction restore the visible message and offset before paint, by message ID. Jump to latest fetches the latest window directly.</td></tr>
+<tr><th scope="row">Markdown cache</th><td>256-entry LRU, 8 MiB from UTF-16 source and sanitized output; an oversized entry renders but is not kept. Never bypasses sanitizing.</td></tr>
+<tr><th scope="row">Graph</th><td>A version 3 read sends no graph: covering and spawn origins arrive on the rows. Ordinary branch metadata omits bodies. Opening the DAG requests its layout.</td></tr>
+<tr><th scope="row">Cold load</th><td>Building a view reads and enriches the branch once, linear in stored nodes; page reads fetch only their turns' rows</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Interaction contract</summary>
+<ul>
+<li>The bottom of an intermediate window is not the latest position. Main and split panes share following, adaptive rendering and jump.</li>
+<li>Jump stays available while newer history exists and after a failed request; repeated clicks share one pending intent.</li>
+<li>Wheel, pointer and keyboard cancel a pending jump or restoration before the window changes. Ordinary paging still compensates for inserted rows.</li>
+<li>Pane teardown saves the final anchor. Reconnecting resumes loading without an old retry delay.</li>
+</ul>
+</details>
+
+<details>
+<summary>Modules</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Module</th><th scope="col">Responsibility</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">message-list.tsx</code></th><td>Composition and measured rows</td></tr>
+<tr><th scope="row"><code translate="no">use-chat-area-stick</code>, <code translate="no">use-message-viewport</code>, <code translate="no">use-history-window</code></th><td>Following, viewport measurement, history lifecycle</td></tr>
+<tr><th scope="row"><code translate="no">history-window</code>, <code translate="no">history-viewport</code></th><td>Bounded pages and anchors</td></tr>
+<tr><th scope="row"><code translate="no">session-history-loader</code></th><td>Requests, generation checks, state</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/transcript/</code></th><td>Projection, turn index, bounded reads and Find</td></tr>
+<tr><th scope="row"><code translate="no">transcript/reader.py</code></th><td>Page limits and the reads by turn</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>A synthetic source of 300,000 one-row turns: repeated bidirectional paging keeps pages, rows and measurements bounded; rapid reversals under latency keep a visible message; stale replies, reconnect, branch changes and live updates cannot corrupt the window.</li>
+<li>Backend page reads do not scan or parse the whole branch once the view is built.</li>
+<li>Browser tests cover an intermediate-window bottom, failed and repeated jumps, interrupted restoration, independent split panes, unmount and remount, and the saved anchor across queued animation frames.</li>
+<li>Regression asserts skipped work, semantic equivalence, cache eviction and bounded retention, not timing. Timing and heap figures are synthetic and do not establish latency for large real attachments or tool output.</li>
+</ul>
+</details>
+
+<h2 id="send-preparation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Open</th></tr></thead>
+<tbody>
+<tr><th scope="row">Transcript update ownership</th><td>Verification pending</td></tr>
+<tr><th scope="row">Sensitive text in previews</th><td>Installed-App acceptance pending</td></tr>
+<tr><th scope="row">Send preparation</th><td>Installed-App acceptance pending</td></tr>
+</tbody>
+</table>
+<p class="note">Everything else on this page is implemented.</p>

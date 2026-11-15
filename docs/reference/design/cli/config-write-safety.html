@@ -1,0 +1,34 @@
+<title>Config write safety</title>
+<meta name="description" content="The single atomic entry point for changing config.json, the two locks behind it, and who uses it.">
+<h1>Config write safety</h1>
+<p><code translate="no">config.json</code> is one file mutated from several surfaces and processes. Without a lock over the whole read-modify-write, the later writer discards the earlier one.</p>
+<pre translate="no"><code>from openprogram.state.config import update_config
+
+def mutate(cfg):
+    cfg["ui"]["web_port"] = 8101
+
+result = update_config(mutate)          # returns the resulting config
+update_config(mutate, expected_revision=revision)  # with a revision check</code></pre>
+<p class="note"><code translate="no">openprogram.state.config.update_config</code> is the only correct way to change part of the config. Writes back with mode <code translate="no">0o600</code>. The caller never holds a config dict across the lock boundary. <code translate="no">read_config</code> and <code translate="no">write_config</code> stay for read-only access and full replacement; a bare pair of them races.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Lock</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_config_write_lock</code> (<code translate="no">threading.Lock</code>)</th><td>Worker threads: a TUI tool toggle and a web key save</td></tr>
+<tr><th scope="row"><code translate="no">config.json.lock</code>, via <code translate="no">_private_atomic_update</code></th><td>Other processes: <code translate="no">openprogram config</code> and <code translate="no">openprogram setup</code> against the worker</td></tr>
+</tbody>
+</table>
+<p class="note">Neither is redundant. A private module lock cannot substitute: <code translate="no">storage.py</code>'s <code translate="no">_cache_lock</code> protects only that module's cache.</p>
+<p class="note">Scope is write atomicity alone. Schema and validation belong to <code translate="no">state.settings</code> (<a href="redesign.html">redesign</a>); the format stays JSON.</p>
+<h2 id="appendix-implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Writer</th><th scope="col">Path</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">settings.set_setting</code></th><td>TUI <code translate="no">/config</code>, web System tab, <code translate="no">openprogram config</code>; <code translate="no">_set_at</code> and <code translate="no">tools.disabled</code> branches</td></tr>
+<tr><th scope="row"><code translate="no">routes/settings/config.py</code></th><td>Web API-key merge and delete</td></tr>
+<tr><th scope="row"><code translate="no">state/preferences.py</code></th><td><code translate="no">set_ui_ports</code>, <code translate="no">write_search_default_provider</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/cli/setup_sections/sections.py</code></th><td><code translate="no">openprogram setup</code> wizard</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/settings/storage.py</code></th><td>Providers section</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/last_used.py</code>, <code translate="no">host/environments</code>, <code translate="no">models/providers/recording</code></th><td>Last model, environments, recordings</td></tr>
+</tbody>
+</table>
+<p class="note">All config writers route through <code translate="no">update_config</code>. A unit test asserts two concurrent mutators serialise and the result reflects both.</p>

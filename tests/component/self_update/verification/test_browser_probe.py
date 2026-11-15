@@ -39,7 +39,7 @@ def _probe_tree(tmp_path: Path):
 
 @pytest.fixture
 def package_validators(monkeypatch):
-    from openprogram.self_update.delivery import package_protocol
+    from openprogram.operations.self_update.delivery import package_protocol
 
     calls = []
     monkeypatch.setattr(
@@ -72,8 +72,8 @@ class _Process:
 def test_trusted_browser_probe_binds_assets_and_finalizes_manifest(
     tmp_path, monkeypatch, package_validators
 ):
-    from openprogram.self_update.delivery import controller_bundle
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update.control import supervisor
 
     update, base, artifact, manifest, _candidate = _probe_tree(tmp_path)
     processes = []
@@ -121,8 +121,8 @@ def test_trusted_browser_probe_binds_assets_and_finalizes_manifest(
 def test_trusted_browser_probe_rejects_unbound_input_before_launch(
     tmp_path, monkeypatch, package_validators, tamper
 ):
-    from openprogram.self_update.delivery import controller_bundle
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update.control import supervisor
 
     update, base, artifact, manifest, candidate = _probe_tree(tmp_path)
     monkeypatch.setattr(
@@ -149,8 +149,8 @@ def test_trusted_browser_probe_rejects_unbound_input_before_launch(
 def test_trusted_browser_probe_rejects_tampered_controller_before_launch(
     tmp_path, monkeypatch, package_validators
 ):
-    from openprogram.self_update.delivery import controller_bundle
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update.control import supervisor
 
     update, _base, artifact, _manifest, _candidate = _probe_tree(tmp_path)
     monkeypatch.setattr(
@@ -171,8 +171,8 @@ def test_trusted_browser_probe_rejects_tampered_controller_before_launch(
 def test_trusted_browser_probe_timeout_kills_its_process_group(
     tmp_path, monkeypatch, package_validators
 ):
-    from openprogram.self_update.delivery import controller_bundle
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update.control import supervisor
 
     update, base, artifact, _manifest, _candidate = _probe_tree(tmp_path)
     process = _Process([], env={})
@@ -197,7 +197,7 @@ def test_trusted_browser_probe_timeout_kills_its_process_group(
 
 
 def test_manifest_rebind_rejects_a_protocol_with_the_wrong_prior_hash(tmp_path):
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     update, _base, artifact, manifest, _candidate = _probe_tree(tmp_path)
     manifest.write_text(manifest.read_text() + "\n")
@@ -209,16 +209,16 @@ def test_manifest_rebind_rejects_a_protocol_with_the_wrong_prior_hash(tmp_path):
 
 
 def test_trusted_icon_probe_uses_fixed_sources_and_records_hashes(tmp_path, monkeypatch):
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
 
     candidate = tmp_path / "candidate"
     assets = candidate / "apps/desktop/build/AppIcon.icon/Assets"
     assets.mkdir(parents=True)
     names = (
-        "01-orbit.svg",
-        "02-node-blue.svg",
-        "03-node-purple.svg",
-        "04-node-indigo.svg",
+        "01-cell.svg",
+        "02-disc-indigo.svg",
+        "03-disc-violet.svg",
+        "04-disc-sky.svg",
     )
     for name in names:
         (assets / name).write_text(f"<svg>{name}</svg>")

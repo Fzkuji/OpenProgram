@@ -5,7 +5,7 @@ import {
   DraftStoreQuotaError,
   MemoryDraftStore,
   rebuildDraftIndexes,
-} from "../../lib/files/file-draft-store.ts";
+} from "../../lib/files/drafts/file-draft-store.ts";
 
 const encoder = new TextEncoder();
 const draftBytes = (key, draft, baseline) =>
@@ -116,4 +116,10 @@ test("adapter mutation serializes concurrent contexts and repair failure is atom
   store.failNextWrite = true;
   await assert.rejects(store.repair(), DraftStoreQuotaError);
   assert.deepEqual(await store.load(), before);
+});
+
+test("a store quota failure carries the browser's QuotaExceededError name", () => {
+  const error = new DraftStoreQuotaError();
+  assert.equal(error.name, "QuotaExceededError");
+  assert.ok(error instanceof Error);
 });

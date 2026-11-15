@@ -25,8 +25,8 @@
   display: grid;
   grid-template-rows: 0fr;
   margin: 0 8px;
-  transition: grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1),
-              margin-bottom 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: grid-template-rows var(--motion-slow) cubic-bezier(0.22, 1, 0.36, 1),
+              margin-bottom var(--motion-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 .popoutWrap.open {
   grid-template-rows: 1fr;
@@ -35,11 +35,11 @@
 .popoutClip {
   overflow: hidden;
   min-height: 0;
-  border-radius: 0 0 14px 14px;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
 }
 .popout {
   background: var(--bg-tertiary);
-  border-radius: 0 0 14px 14px;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
   padding: 8px;
 }
 
@@ -57,10 +57,10 @@
 .item {
   display: block;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s;
+  transition: background var(--motion-fast);
 }
 .item:hover {
   background: var(--bg-hover);
@@ -69,16 +69,9 @@
   background: var(--bg-hover);
 }
 
-.itemHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
 .itemLabel {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
   color: var(--text-bright);
-  font-size: 12px;
+  font-size: var(--right-panel-meta-size, var(--fs-xs));
   flex-shrink: 0;
 }
 .itemPreview {
@@ -88,30 +81,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--right-panel-meta-size, var(--fs-xs));
 }
 .itemTokens {
   flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--right-panel-meta-size, var(--fs-2xs));
 }
 
 .itemBody {
+  line-height: var(--right-panel-line-height, normal);
   margin-top: 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
-}
-.itemChips {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
+  font-size: var(--right-panel-meta-size, var(--fs-xs));
 }
 .itemText {
+  font-size: var(--right-panel-text-size, var(--fs-xs));
   color: var(--text-bright);
-  line-height: 1.45;
+  line-height: var(--right-panel-line-height, 1.45);
   word-break: break-word;
   white-space: pre-wrap;
 }
@@ -119,5 +108,5 @@
 .empty {
   padding: 10px 12px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--right-panel-meta-size, var(--fs-xs));
 }

@@ -1,0 +1,52 @@
+<title>通过后端工具操作 OpenProgram</title>
+<meta name="description" content="framework 和 resource 工具：不点界面，直接调用 OpenProgram 的认证后端。">
+<h1>通过后端工具操作 OpenProgram</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">framework</code></th><td>会话、项目、配置、文件、应用和执行，通过认证后端，无需点击界面</td></tr>
+<tr><th scope="row"><code translate="no">resource</code></th><td>持久环境：网页、终端和已安装的应用</td></tr>
+</tbody>
+</table>
+<h2 id="discover-a-business-operation">HTTP 操作</h2>
+<pre translate="no" tabindex="0"><code>framework(action="describe", operation="settings")
+framework(action="invoke", operation="GET /api/settings")</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参数</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">path</code></th><td>具名路径参数</td></tr>
+<tr><th scope="row"><code translate="no">query</code></th><td>查询参数</td></tr>
+<tr><th scope="row"><code translate="no">body</code></th><td>JSON</td></tr>
+<tr><th scope="row"><code translate="no">content_base64</code>、<code translate="no">content_type</code></th><td>二进制端点</td></tr>
+<tr><th scope="row"><code translate="no">arguments={"offset": 50}</code></th><td>发现结果分页；结果给出 <code translate="no">next_offset</code></td></tr>
+</tbody>
+</table>
+<p class="note">使用发现返回的准确 operation ID。结果包含 HTTP 状态；失败不代表修改操作可以安全重试。</p>
+<h2 id="websocket-commands">WebSocket 命令</h2>
+<pre translate="no" tabindex="0"><code>framework(action="commands")
+framework(action="command", operation="rename_session",
+          arguments={"session_id": "EXACT_SESSION_ID", "title": "Research"})</code></pre>
+<p class="note">经过命令自身校验后，结果包含响应帧。长时间工作仍归 worker，进度和完成情况读取其执行或会话状态。文件操作保留原有的 request ID、幂等键和版本检查。</p>
+<h2 id="operate-a-window-without-screen-automation">不用屏幕自动化操作窗口</h2>
+<pre translate="no" tabindex="0"><code>framework(action="interface")
+framework(action="interface", operation="tabs.list",
+          arguments={"window_id": "EXACT_WINDOW_ID", "arguments": []})</code></pre>
+<p>目录声明了标签页、分组、分栏、侧栏、资源视图、外观、书签和 Desktop 原生命令及其参数 schema。</p>
+<ul>
+<li>命令指向一个已认证并连接的窗口。窗口缺失或不明确时明确失败，丢失的响应不自动重试。</li>
+<li>原生历史、下载、浏览器导入和更新控制沿用现有 Desktop 功能。浏览器窗口把仅原生能力报告为不可用。</li>
+<li>窗口呈现需要已连接的视图；后端业务操作和已安装应用的操作不需要渲染前端。</li>
+<li>未保存的文件标签页须先保存或丢弃，才能自动关闭。</li>
+<li>网页用 <code translate="no">computer_use_agent(target="browser")</code> 或 <code translate="no">tabs.openWebTab</code> 打开和关闭。原生 Page 呈现命令用 <code translate="no">arguments.tab</code> 指明标签页，即该目标的 <code translate="no">tabs</code> 列出的 id；它需要 <code translate="no">computer_use_agent</code> 所需的权限。</li>
+</ul>
+<h2 id="authority">权限</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">边界</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">审批</th><td>适用常规工具审批，并要求 owner 权限。</td></tr>
+<tr><th scope="row">沙箱</th><td>没有活动沙箱之外的不受限宿主回退。</td></tr>
+<tr><th scope="row">不在目录中</th><td>不在目录中：认证引导、传输回执、Agent 审批答复。Agent 不能批准自己的待审操作，也不能改审批模式或规则。</td></tr>
+<tr><th scope="row">Python 应用</th><td>已安装的 Python 应用仍需明确信任，只有 manifest 中 <code translate="no">agent: true</code> 的操作出现在资源动作 schema 里。</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="applications.zh.html">应用包</a> · <a href="../interfaces/desktop.zh.html">Desktop 资源</a></p>

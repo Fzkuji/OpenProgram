@@ -1,0 +1,22 @@
+<title>自定义 OpenAI 兼容供应商</title>
+<meta name="description" content="自定义供应商的 Base URL 如何解析，以及哪些失败要分开报告。">
+<h1>自定义 OpenAI 兼容供应商</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">配置值</th><th scope="col">解析结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">https://host</code></th><td><code translate="no">https://host/v1</code></td></tr>
+<tr><th scope="row"><code translate="no">https://host/</code></th><td><code translate="no">https://host/v1</code></td></tr>
+<tr><th scope="row"><code translate="no">https://host/v1</code></th><td><code translate="no">https://host/v1</code></td></tr>
+<tr><th scope="row"><code translate="no">https://host/compatible-mode/v1</code></th><td>不变</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">providers/settings/storage.py</code> 的 <code translate="no">_resolve_base_url</code>。存储值保持用户输入，旧行读取时解析，不用迁移。内置供应商规则不变。协议由供应商类型决定，与模型名无关。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">请求</th></tr></thead>
+<tbody>
+<tr><th scope="row">校验和列表</th><td><code translate="no">GET {base}/models</code>；成功响应必须是 JSON</td></tr>
+<tr><th scope="row">模型行，拉取或手填</th><td><code translate="no">api=openai-completions</code>，解析后的 Base URL</td></tr>
+<tr><th scope="row">推理</th><td><code translate="no">POST {base}/chat/completions</code></td></tr>
+</tbody>
+</table>
+<p class="note">分开报告：认证拒绝、余额错误、限流、传输失败、非 JSON 成功页、格式错误的响应、空列表。错误文本不含 API key 或响应体。</p>

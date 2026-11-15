@@ -20,7 +20,7 @@ const ICON_BTN: React.CSSProperties = {
   height: 28,
   padding: 0,
   border: 0,
-  borderRadius: 8,
+  borderRadius: "var(--radius-md)",
   background: "transparent",
   color: "inherit",
   display: "inline-flex",
@@ -145,9 +145,9 @@ function BrowserControlOverlayPage() {
           width: 36,
           height: 36,
           boxSizing: "border-box",
-          borderRadius: 12,
-          background: "rgba(32,33,36,.55)",
-          color: "#f4f5f8",
+          borderRadius: "var(--radius-xl)",
+          background: "var(--browser-control-surface)",
+          color: "var(--browser-control-ink)",
           display: "grid",
           placeItems: "center",
           touchAction: "none",
@@ -176,7 +176,6 @@ function BrowserControlOverlayPage() {
       data-collapsed="false"
       role="group"
       aria-label={payload.expandLabel}
-      title={payload.dragLabel}
       style={{
         display: "inline-flex",
         flexWrap: "nowrap",
@@ -186,9 +185,9 @@ function BrowserControlOverlayPage() {
         gap: 6,
         alignItems: "center",
         padding: "8px 10px",
-        borderRadius: 12,
-        background: "rgba(32,33,36,.55)",
-        color: "#f4f5f8",
+        borderRadius: "var(--radius-xl)",
+        background: "var(--browser-control-surface)",
+        color: "var(--browser-control-ink)",
         whiteSpace: "nowrap",
         touchAction: "none",
       }}
@@ -197,7 +196,7 @@ function BrowserControlOverlayPage() {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <span title={payload.status}>{payload.status}</span>
+      <span>{payload.status}</span>
       {noticeOpen && payload.notice ? (
         <span role="status">
           {payload.notice}

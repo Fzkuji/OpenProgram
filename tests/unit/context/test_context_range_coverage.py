@@ -1,12 +1,12 @@
 """``/context-range`` coverage flags.
 
 The DAG's coverage mode (dag/rendering.md §8) paints the graph from
-this payload: a node is bright when it is in the covered set, its
-stroke dims when the context pipeline aged its result to a stub, and it
+this payload: a node is bright when it is in the covered set, and it
 takes a ▤ corner mark when the result was spilled to a file. The
-frontend must not derive any of those — they are pipeline facts, so the
-endpoint reads them from the very functions the render pass calls
-(``render.py::_aged_code_ids``, ``metadata.spilled``).
+frontend must not derive either — they are pipeline facts, so the
+endpoint reads them from what the render pass reads (``metadata.spilled``).
+``aged`` stays in the payload and is always false: the render never
+shortens an old result; only compaction replaces it.
 """
 
 from __future__ import annotations
@@ -15,17 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.context import aging
-from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
-from openprogram.store import SessionNodeWriter, SessionStore
-from openprogram.webui.routes.files.tree import _coverage_nodes
-
-
-@pytest.fixture(autouse=True)
-def _clean_boundary_cache():
-    aging.reset_boundary_cache()
-    yield
-    aging.reset_boundary_cache()
+from openprogram.state.store.session.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
+from openprogram.state.store import SessionNodeWriter, SessionStore
+from openprogram.interfaces.server.routes.files.tree import _coverage_nodes
 
 
 @pytest.fixture
@@ -62,15 +54,11 @@ def test_every_covered_node_is_in_context(store):
     assert all(r["in_context"] for r in rows)
 
 
-def test_old_code_nodes_report_aged(store):
-    # TAIL_TURNS keeps the last few turns at full fidelity; six turns
-    # pushes the earliest code nodes past the boundary.
+def test_old_code_nodes_are_never_aged(store):
+    # The render sends an old result as its turn did; nothing is stubbed.
     ids = _turns(store, 6)
     rows = {r["node_id"]: r for r in _coverage_nodes(store, "s1", ids)}
-    assert rows["c0"]["aged"], "the oldest tool result should age to a stub"
-    assert not rows["c5"]["aged"], "the newest tool result stays whole"
-    # Aging is a code-node policy — conversation turns are never stubbed.
-    assert not rows["u0"]["aged"] and not rows["a0"]["aged"]
+    assert not any(row["aged"] for row in rows.values())
 
 
 def test_spilled_metadata_surfaces(store):
@@ -95,3 +83,18 @@ def test_empty_and_unloadable_stay_quiet(store):
     assert rows == [
         {"node_id": "ghost", "in_context": True, "aged": False, "spilled": False},
     ]
+
+
+def test_context_range_lists_the_calls_under_each_turn(store):
+    # The predecessor walk only sees turns; the calls a reply made hang
+    # off it by caller. The next request reads them, so the range must
+    # list them — right after their reply — or every opened call draws
+    # as out of context.
+    from openprogram.interfaces.server.routes.files.tree import _with_code_nodes
+
+    _turns(store, 2)
+    assert _with_code_nodes(store, "s1", None, ["u0", "a0", "u1", "a1"]) == [
+        "u0", "a0", "c0", "u1", "a1", "c1",
+    ]
+    # A turn the compaction view left out keeps its calls out with it.
+    assert _with_code_nodes(store, "s1", "a1", ["u1", "a1"]) == ["u1", "a1", "c1"]

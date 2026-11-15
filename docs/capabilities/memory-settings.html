@@ -1,0 +1,52 @@
+<title>Tune Memory</title>
+<meta name="description" content="Every Memory setting: background writing, recall, project memory and context.">
+<h1>Tune Memory</h1>
+<p><strong>Settings → Memory</strong>. Changes save at once and apply on the next turn; only <strong>Enable Memory</strong> needs a restart. Config keys: <code translate="no">memory.*</code> in <a href="../reference/config-keys.md">Configuration keys</a>.</p>
+<h2 id="background-writing">Background writing</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Writer model</strong></th><td>Writes and organizes Memory. <strong>Automatic</strong>: the default Agent's model, or the last used model when it has none.</td></tr>
+<tr><th scope="row"><strong>Automatic writing</strong></th><td>Turns finished conversation into Topic records</td></tr>
+<tr><th scope="row"><strong>Write frequency</strong></th><td>About 8K, 16K or 32K tokens gather before a write</td></tr>
+<tr><th scope="row"><strong>Verify after writing</strong></th><td>Asks about one fact just recorded, looks it up in a copy of Memory, repairs Topics if not found. Off by default: at least three more model calls per write, three more per repair.</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">openprogram memory status</code> reports these under <code translate="no">verification</code>: passed, repaired, unrepaired, errors and the latest.</p>
+<h2 id="recall">Recall</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Recall method</strong></th><td><strong>Agent</strong>: adds nothing automatically, the model reads with its tools. <strong>Keyword</strong>: BM25. <strong>Semantic</strong>: embeddings. <strong>Hybrid</strong>: both, merged.</td></tr>
+<tr><th scope="row"><strong>Hybrid weighting</strong></th><td><strong>Keyword first</strong> 70/30, <strong>Balanced</strong> 50/50, <strong>Semantic first</strong> 30/70. <strong>Automatic</strong> leans on keywords when a message has a date, quoted phrase or name, otherwise balances. Hybrid only.</td></tr>
+<tr><th scope="row"><strong>Favour well-matched Topics</strong></th><td>Ranks a Topic higher when several paragraphs match. On by default. Hybrid only.</td></tr>
+<tr><th scope="row"><strong>Recall depth</strong></th><td>Most records added to a turn: 3, 5, 8 or 10</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Embedding model for Semantic and Hybrid</summary>
+<p>They need the model plus sentence-transformers and PyTorch, which the App does not include. <strong>Install</strong> next to <strong>Embedding model</strong> downloads all of them: about 1 GB of packages and a 90 MB model. Packages go to <code translate="no">~/.openprogram/extras/embedding/</code>, so an App update keeps them.</p>
+</details>
+<h2 id="project-memory">Project memory</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Project memory</strong></th><td>A project conversation also reads <code translate="no">~/.openprogram/projects/&lt;project&gt;/memory</code>. Recall, Memory tools and Core Memory cover both, project first. On by default.</td></tr>
+<tr><th scope="row"><strong>Write to project memory</strong></th><td>Writes a project's conversations there instead of your personal Memory. Needs Project memory. On by default.</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Conversations outside a project read your personal Memory only: the home project's, at <code translate="no">~/.openprogram/projects/default/memory</code>.</li>
+<li>A project's Memory counts once something is written. Nothing goes into the project's own folder. History shows it under its Memory tab.</li>
+<li>With both layers, Memory tools name the layer in paths: <code translate="no">project:topics/api.md</code>.</li>
+<li>A turn is written to one layer, so switching writes never copies a conversation across. A chat moved to another project writes only later turns there; earlier records stay.</li>
+</ul>
+<h2 id="context-and-history">Context and history</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Core Memory in every chat</strong></th><td>Adds the compact Core view to every system prompt</td></tr>
+<tr><th scope="row"><strong>Recent view size</strong></th><td>How many latest records the Recent view keeps</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="memory.html">Read and edit Memory</a></p>

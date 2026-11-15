@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 
 function entry(bridge, getSocket) {
-  const source = readFileSync(new URL("../../lib/desktop/bridge-menu.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../lib/desktop/bridge/bridge-menu.ts", import.meta.url), "utf8");
   const file = ts.createSourceFile("desktop-bridge.ts", source, ts.ScriptTarget.Latest, true);
   let callback;
   function visit(node) {

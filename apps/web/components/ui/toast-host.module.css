@@ -1,8 +1,10 @@
 .host {
   position: fixed;
+  /* The window's centre until ToastHost sets `left` to the centre of the
+     area the user is working in (toast-anchor.ts). */
   left: 50%;
   top: 56px; /* just below the 48px top bar */
-  z-index: 300;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -17,18 +19,32 @@
   gap: 6px;
   max-width: min(520px, 80vw);
   padding: 8px 14px;
-  border-radius: 10px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1.3;
-  white-space: nowrap;
+  /* A long message (an error with a path or a server reply) wraps inside
+     the bubble instead of running past its edge. */
+  white-space: normal;
   color: var(--text-bright);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-popover);
   animation: toastIn 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* Glass popover recipe (app/styles/themes/fallback.css --glass-*). */
+  background: var(--glass-surface);
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  backdrop-filter: var(--glass-backdrop);
+  border: 0.5px solid var(--glass-ring);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-shadow);
+}
+
+.message {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .link {
+  padding: 0;
+  font: inherit;
+  background: none;
+  border: 0;
   /* The host is pointer-events:none; re-enable just the link so the
      toast doesn't block clicks underneath but the link is clickable. */
   pointer-events: auto;

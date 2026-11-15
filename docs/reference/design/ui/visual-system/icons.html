@@ -1,0 +1,161 @@
+<title>Icon system</title>
+<meta name="description" content="The three icon families, the composer's fill rule, brand marks and the shared motion contract.">
+<h1>Icon system</h1>
+
+<p>Each family has a territory, so a screen never mixes filled and line glyphs by accident. Nobody hand-writes icon SVGs.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Family</th><th scope="col">Territory</th><th scope="col">Source, license</th></tr></thead>
+<tbody>
+<tr><th scope="row">Solar Bold Duotone</th><td>Composer area (chips, control row, plus menu, model and permission badges, effort pill, send), question and approval panel, timeline row tiles, action menus, DAG view controls and perspective strip</td><td><code translate="no">apps/web/components/solar-icons</code>, CC BY 4.0</td></tr>
+<tr><th scope="row">pqoqubbw animated line</th><td>App chrome: left rail, center tabs, sidebar, settings nav, function cards. No migration planned.</td><td><code translate="no">apps/web/components/animated-icons</code>, MIT</td></tr>
+<tr><th scope="row">lucide-react</th><td>Everything static elsewhere: settings bodies, dialogs, timeline chevron</td><td><code translate="no">lucide-react</code>, ISC</td></tr>
+</tbody>
+</table>
+<p class="note">Solar bodies are vendored from Iconify into <code translate="no">bodies.ts</code> by <code translate="no">apps/web/scripts/icons/fetch-solar.mjs</code>: extend <code translate="no">ICONS</code>, rerun, commit, so builds stay offline. Filled glyph plus a 50% lighter layer, chosen because line sets looked generic at 14 to 16px. The user's avatar comes from DiceBear; an Agent's is a character (<a href="agent-avatars.html">Agent avatars</a>).</p>
+
+<details>
+<summary>Composer glyphs</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Role</th><th scope="col">Glyph</th></tr></thead>
+<tbody>
+<tr><th scope="row">Options trigger <code translate="no">+</code></th><td><code translate="no">tuning-2</code></td></tr>
+<tr><th scope="row">Add files</th><td><code translate="no">paperclip</code></td></tr>
+<tr><th scope="row">Tools, tool profile</th><td><code translate="no">case-minimalistic</code>, <code translate="no">settings-minimalistic</code></td></tr>
+<tr><th scope="row">Web search, sandbox</th><td><code translate="no">global</code>, <code translate="no">box-minimalistic</code></td></tr>
+<tr><th scope="row">Unattended off, on</th><td><code translate="no">eye</code>, <code translate="no">eye-closed</code></td></tr>
+<tr><th scope="row">Thinking effort; Fast mode</th><td><code translate="no">fire</code>; Fast turns it red</td></tr>
+<tr><th scope="row">Chat model badge</th><td>Provider logo (<a href="#brand-marks">brand mark</a>), <code translate="no">cpu</code> without one</td></tr>
+<tr><th scope="row">Channel chip</th><td>Channel logo in brand colour (<a href="#brand-marks">brand mark</a>)</td></tr>
+<tr><th scope="row">Agent badge</th><td>The Agent's avatar, by the <a href="#the-composers-fill-rule">fill rule</a></td></tr>
+<tr><th scope="row">Permission badge</th><td><code translate="no">shield-check</code></td></tr>
+<tr><th scope="row">Local, web tab, goal, picture-in-picture chips</th><td><code translate="no">monitor</code>, <code translate="no">earth</code>, <code translate="no">target</code>, <code translate="no">pip-2</code></td></tr>
+<tr><th scope="row">Working folder, add folder</th><td><code translate="no">folder-with-files</code>, <code translate="no">add-folder</code></td></tr>
+<tr><th scope="row">Project, missing project</th><td><code translate="no">folder-open</code>, <code translate="no">danger-triangle</code></td></tr>
+<tr><th scope="row">Menu check, close, carets</th><td><code translate="no">check-circle</code>, <code translate="no">close-circle</code>, <code translate="no">alt-arrow-right</code>, <code translate="no">alt-arrow-down</code></td></tr>
+<tr><th scope="row">Send, copy</th><td><code translate="no">plain-2</code>, <code translate="no">copy</code></td></tr>
+<tr><th scope="row">Model vision, video, tools, reasoning</th><td><code translate="no">eye</code>, <code translate="no">videocamera</code>, <code translate="no">case-minimalistic</code> (12px, its art fills the box), <code translate="no">lightbulb-bolt</code></td></tr>
+<tr><th scope="row">Git pill; new branch or worktree, worktree, PR, view PR</th><td><code translate="no">git-branch</code>; <code translate="no">add-circle</code>, <code translate="no">folder-path-connect</code>, <code translate="no">git-pull-request</code>, <code translate="no">square-arrow-right-up</code></td></tr>
+<tr><th scope="row">File-change card title, rows</th><td><code translate="no">pen-new-square</code>, <code translate="no">file-text</code></td></tr>
+<tr><th scope="row">File-change undo, Review</th><td>Font Awesome solid <code translate="no">rotate-left</code>, <code translate="no">eye</code>, with text. Solar's undo is a hairline at button size. Same script and table; viewBox in <code translate="no">SOLAR_VIEWBOXES</code>.</td></tr>
+</tbody>
+</table>
+<p class="note">Toggles change glyph, not only colour: Unattended closes the eye, while-running shows a forward arrow for Steer and a queue list for Queue, a project with no folder shows the warning triangle.</p>
+<p class="note">Not Solar: Fast in the effort card keeps the animated gauge, needle rotated by <code translate="no">active</code>; <code translate="no">?</code> in the effort card (<a href="../composer/effort-picker.html">effort picker</a>) is static lucide <code translate="no">CircleHelp</code> at 14px.</p>
+</details>
+
+<h2 id="the-composers-fill-rule">The composer's fill rule</h2>
+<p>Applies inside the composer and its popups: chips, control row, menus, effort capsule, context-usage card, Goal dialog. Question and approval cards sit under the reply and keep their sizes.</p>
+<dl class="pairs">
+<dt>Box</dt><dd>16 × 16px</dd>
+<dt>Measure</dt><dd>The painted ink, not the view box</dd>
+<dt>Scale</dt><dd><code translate="no">s = 16 / max(inkWidth, inkHeight)</code></dd>
+<dt>Place</dt><dd>Ink centre on box centre</dd>
+<dt>Hover</dt><dd>18 × 18px on the control's hover (<code translate="no">HOVER_POP_FILL</code>, 1.125)</dd>
+</dl>
+<p class="note">A wide glyph is 16px wide (WeChat 16 × 13.1px), a tall one 16px high.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Drawing</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Solar</th><td><code translate="no">SolarIcon fit="fill"</code> crops the view box to a square round the ink. Bounds in <code translate="no">solar-icons/ink-bounds.ts</code>, generated by rasterising <code translate="no">bodies.ts</code> (the 50% layer counts): <code translate="no">npm run generate:solar-ink-bounds --workspace apps/web</code>.</td></tr>
+<tr><th scope="row">Brand logos</th><td><code translate="no">BrandMark fit="fill"</code>, through <code translate="no">ModelMark</code> and <code translate="no">ChannelLogo fit="fill"</code>, from <code translate="no">brand-mark/ink-bounds.generated.ts</code></td></tr>
+<tr><th scope="row">Agent characters</th><td><code translate="no">fit="mark"</code>, <code translate="no">botMarkFit</code> in <code translate="no">components/avatar/bot/catalog.ts</code>; body as ink. Uploaded picture, letter tile or DiceBear already fill the box and only pop.</td></tr>
+<tr><th scope="row">Anything else</th><td><code translate="no">FillIcon</code> (<code translate="no">components/ui/fill-icon.tsx</code>) crops an svg to geometry plus half stroke, fits an image or canvas whole. App icons and favicons are runtime rasters with no measured ink. The context ring only takes the hover.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Exceptions</summary>
+<ul>
+<li>Send plane: grows to 18px like the other composer glyphs, and does not glide.</li>
+<li>Stop: 8 × 8px square in a 16px box.</li>
+<li>Trailing chevrons, menu checks: static lucide at 16px.</li>
+<li>Chip's sliding ×, capability marks, effort gauge and <code translate="no">?</code>, drop overlay's paperclip: their own sizes.</li>
+<li>Outside the composer a Solar glyph draws its whole view box (ink 20/24) and pops 1.12 (<code translate="no">HOVER_POP</code>).</li>
+</ul>
+</details>
+
+<h2 id="brand-marks">Brand marks</h2>
+<p>Provider logos (<code translate="no">public/images/providers</code>) and channel logos (<code translate="no">public/images/channels</code>) are drawn only by <code translate="no">BrandMark</code> (<code translate="no">apps/web/components/brand-mark</code>). One-colour logos are masks in text or brand colour; coloured logos are the picture. Outside the composer: <code translate="no">fit="contain"</code>, no hover motion.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Place</th><th scope="col">Size</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sidebar channel rows</th><td>14px</td></tr>
+<tr><th scope="row">Command palette, Chats page</th><td>16px</td></tr>
+<tr><th scope="row">Settings plate, logo 2px inside</th><td>20px lists, 16px routing overview, 40px provider page</td></tr>
+</tbody>
+</table>
+<p class="note">Add a logo: add the file, run <code translate="no">npm run generate:brand-ink-bounds --workspace apps/web</code>. One test fails on a stale table; another when a component outside <code translate="no">components/brand-mark</code> draws a logo file.</p>
+
+<h2 id="solar-in-the-execution-timeline">Execution timeline</h2>
+<p>Each row starts with a 24px tinted tile (20px nested) holding a 13px glyph (11px nested), static (<code translate="no">motionPreset="none"</code>) with no tooltip. <code translate="no">presentTool()</code> in <code translate="no">components/chat/messages/execution/tool-presentation.ts</code> picks the glyph; <code translate="no">StepRow</code> in <code translate="no">execution-strip.tsx</code> falls back by row kind.</p>
+<details>
+<summary>Timeline glyphs</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Row</th><th scope="col">Glyph</th></tr></thead>
+<tbody>
+<tr><th scope="row">Command (<code translate="no">bash</code>, <code translate="no">write_stdin</code>, <code translate="no">terminal_use</code>)</th><td><code translate="no">programming</code></td></tr>
+<tr><th scope="row">Execute code</th><td><code translate="no">code-square</code></td></tr>
+<tr><th scope="row">Edit, write, patch</th><td><code translate="no">pen-new-square</code></td></tr>
+<tr><th scope="row">Read file, PDF</th><td><code translate="no">file-text</code></td></tr>
+<tr><th scope="row">List folder</th><td><code translate="no">folder-open</code></td></tr>
+<tr><th scope="row">Find files (<code translate="no">glob</code>)</th><td><code translate="no">file-search</code></td></tr>
+<tr><th scope="row">Search (<code translate="no">grep</code>, code search)</th><td><code translate="no">magnifier</code></td></tr>
+<tr><th scope="row">Code intelligence (LSP)</th><td><code translate="no">structure</code></td></tr>
+<tr><th scope="row">Web search, fetch</th><td><code translate="no">global</code></td></tr>
+<tr><th scope="row">Browser control</th><td><code translate="no">cursor</code></td></tr>
+<tr><th scope="row">Generate, analyze image</th><td><code translate="no">gallery-add</code>, <code translate="no">gallery</code></td></tr>
+<tr><th scope="row">Canvas, send file, message an agent</th><td><code translate="no">plain-2</code></td></tr>
+<tr><th scope="row">Sub-agent tools</th><td><code translate="no">ghost</code></td></tr>
+<tr><th scope="row">Read conversation</th><td><code translate="no">book</code></td></tr>
+<tr><th scope="row">Ask the user</th><td><code translate="no">chat-round-question-mark</code></td></tr>
+<tr><th scope="row">Plan mode</th><td><code translate="no">map</code></td></tr>
+<tr><th scope="row">Scheduled jobs</th><td><code translate="no">calendar</code></td></tr>
+<tr><th scope="row">Run program</th><td><code translate="no">box</code></td></tr>
+<tr><th scope="row">Use skill</th><td><code translate="no">stars</code></td></tr>
+<tr><th scope="row">Resource, memory</th><td><code translate="no">database</code></td></tr>
+<tr><th scope="row">Todos</th><td><code translate="no">checklist</code></td></tr>
+<tr><th scope="row">Worktree</th><td><code translate="no">git-branch</code></td></tr>
+<tr><th scope="row">Self-update</th><td><code translate="no">refresh</code></td></tr>
+<tr><th scope="row">MCP</th><td><code translate="no">plug-circle</code></td></tr>
+<tr><th scope="row">Any other function</th><td><code translate="no">sledgehammer</code> (Solar has no wrench)</td></tr>
+<tr><th scope="row">Fallback: thinking, LLM, sub-agent, function</th><td><code translate="no">lightbulb-bolt</code>, <code translate="no">cpu</code>, <code translate="no">ghost</code>, <code translate="no">sledgehammer</code></td></tr>
+</tbody>
+</table>
+<p class="note">Not type glyphs: a failed row's small stroked ✗, and the lucide <code translate="no">ChevronRight</code>.</p>
+</details>
+
+<h2 id="motion-contract">Motion contract</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">Handle</th><td>All families share <code translate="no">AnimatedNavIconHandle</code> (<code translate="no">startAnimation</code>, <code translate="no">stopAnimation</code>)</td></tr>
+<tr><th scope="row">Hover target</th><td>The container, never the 16px glyph. A Solar icon with no ref follows its nearest clickable ancestor: button, link, any menu item, listbox option, chip</td></tr>
+<tr><th scope="row">Selector, pop scales, spring</th><td><code translate="no">components/ui/hover-pop.ts</code>, which Agent characters also use</td></tr>
+<tr><th scope="row">Reduced motion</th><td>All motion stops under <code translate="no">prefers-reduced-motion</code></td></tr>
+<tr><th scope="row">Wrapper</th><td><code translate="no">SolarIcon</code> renders the same <code translate="no">span.inline-flex</code> wrapper as the animated set</td></tr>
+</tbody>
+</table>
+<h3 id="motion-presets">Presets</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Preset</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">pop</code> (default)</th><td>Scale 1.12; 18/16 for a filled composer glyph</td></tr>
+<tr><th scope="row"><code translate="no">nudge</code></th><td>Caret slides 1.5px right</td></tr>
+<tr><th scope="row"><code translate="no">pulse</code></th><td>One-shot pop-in when a menu item becomes checked</td></tr>
+<tr><th scope="row"><code translate="no">none</code></th><td>Decorative glyphs: menu checks, warning triangles, capability marks</td></tr>
+</tbody>
+</table>
+<p class="note">The pqoqubbw icons redraw themselves (a wrench turns, an arrow bobs); a filled glyph cannot, hence the presets.</p>
+
+<h2 id="attribution">Attribution</h2>
+<p><a href="https://github.com/480-Design/Solar-Icon-Set">Solar Icons</a> © 480 Design, CC BY 4.0. The two Font Awesome glyphs: <a href="https://fontawesome.com/license/free">Font Awesome Free</a>, © Fonticons, CC BY 4.0. Noticed in the header of <code translate="no">bodies.ts</code> and here.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Composer on Solar (top-bar badges in <code translate="no">components/chat/top-bar</code> included), timeline tiles, the fill rule</td></tr>
+<tr><th scope="row">Not yet</th><td>Fast as a state-driven gauge (needle low when off, sweeps high and accent-red when on); Solar <code translate="no">question-circle</code> in the effort card; user-facing credits entry for Solar</td></tr>
+</tbody>
+</table>

@@ -1,0 +1,235 @@
+<title>斜杠命令</title>
+<meta name="description" content="统一的斜杠命令注册表：来源层、文件格式、模板语法、执行模式和 API。">
+<h1>斜杠命令</h1>
+
+<p>所有界面共用一个注册表、一种文件格式、一个菜单。别的项目怎么做：<a href="slash-commands-references.zh.html">参考实现</a>。</p>
+
+<h2 id="source-layers">来源层</h2>
+<table class="stack">
+<thead><tr><th scope="col">层，优先级从低到高</th><th scope="col">来源</th><th scope="col">作者</th><th scope="col">重新加载</th></tr></thead>
+<tbody>
+<tr><th scope="row">L0 builtin</th><td>源码</td><td>OpenProgram</td><td>重启</td></tr>
+<tr><th scope="row">L1 plugin</th><td><code translate="no">~/.openprogram/plugins/&lt;pkg&gt;/...</code> 下的 <code translate="no">entrypoints.commands</code></td><td>插件作者</td><td>插件重载</td></tr>
+<tr><th scope="row">L2 mcp</th><td>已连接服务器的 <code translate="no">list_prompts()</code></td><td>MCP 服务器</td><td>会话重连、<code translate="no">/api/commands?refresh=mcp</code></td></tr>
+<tr><th scope="row">L3 skill</th><td><code translate="no">~/.openprogram/skills/&lt;name&gt;/SKILL.md</code></td><td>skill 作者、用户</td><td>watcher</td></tr>
+<tr><th scope="row">L4 user</th><td><code translate="no">~/.openprogram/commands/**/*.md</code></td><td>当前用户</td><td>watcher</td></tr>
+<tr><th scope="row">L5 project</th><td><code translate="no">&lt;cwd&gt;/.openprogram/commands/**/*.md</code></td><td>项目维护者</td><td>watcher</td></tr>
+</tbody>
+</table>
+<ul>
+<li>同名时后面的层胜出。被覆盖的命令仍可用 <code translate="no">/(plugin)name</code>、<code translate="no">/(mcp:linear)name</code>、<code translate="no">/(skill)name</code>、<code translate="no">/(user)name</code>、<code translate="no">/(project)name</code> 调用。</li>
+<li>同一来源内，相同 realpath 只加载一次。</li>
+<li>菜单里的冲突：主条目标 <code translate="no">(+2 more)</code>；⇥ 切换来源。</li>
+<li>来源标签始终由 loader 写入；frontmatter 不能自称。</li>
+</ul>
+
+<h2 id="file-format">文件格式</h2>
+<pre translate="no" tabindex="0">---
+name: review              # 默认：文件名
+aliases: [r, rev]
+description: 按团队规范审查当前 diff
+when-to-use: |
+  用户想对未提交的修改做一轮风格和 bug 审查时使用。
+hidden: false
+arguments:
+  - name: target
+    description: 文件路径或目录；默认当前 diff
+    required: false
+argument-hint: "[target]"
+type: prompt
+context: inline
+agent: general-purpose    # 仅 context: fork 时生效
+model: inherit
+effort: medium
+allowed-tools: [Read, Grep]
+paths: ["src/**/*.{ts,tsx}", "**/*.py"]
+requires:
+  any-bins: [git]
+  config: [openai_api_key]
+hooks:
+  PreToolUse: ...
+version: 1.0.0
+---
+请审查 {{target}} 的代码。
+
+补充上下文：
+$ARGUMENTS
+
+最近提交：
+!`git log -5 --oneline`
+
+当前 diff：
+@`git diff --staged`</pre>
+
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">默认</th><th scope="col">含义</th><th scope="col">来自</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">name</code></th><td>string</td><td>文件名</td><td>命令名</td><td>通用</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code></th><td>string[]</td><td>[]</td><td>同样受覆盖规则约束</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">description</code></th><td>string</td><td>""</td><td>一行，显示在菜单</td><td>通用</td></tr>
+<tr><th scope="row"><code translate="no">when-to-use</code></th><td>string</td><td>""</td><td>详情面板</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">hidden</code></th><td>bool</td><td>false</td><td>不进补全，仍可触发</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">arguments</code></th><td>list</td><td>[]</td><td>位置参数声明。数字名被拒绝：与 <code translate="no">$0</code> 冲突</td><td>opencode</td></tr>
+<tr><th scope="row"><code translate="no">argument-hint</code></th><td>string</td><td>自动生成</td><td>菜单里的灰色提示</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">type</code></th><td>enum</td><td>prompt</td><td>执行模式</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td>enum</td><td>inline</td><td><code translate="no">inline</code> 或 <code translate="no">fork</code></td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">agent</code></th><td>string</td><td>general-purpose</td><td>fork 时的 <code translate="no">subagent_type</code></td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">model</code></th><td>string</td><td>inherit</td><td><code translate="no">inherit</code>、<code translate="no">opus</code>、<code translate="no">sonnet</code>、<code translate="no">haiku</code> 或完整 id</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">effort</code></th><td>enum、int</td><td>inherit</td><td><code translate="no">low</code>、<code translate="no">medium</code>、<code translate="no">high</code>、<code translate="no">max</code> 或数字</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">allowed-tools</code></th><td>string[]</td><td>inherit</td><td>fork 模式的工具白名单</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">paths</code></th><td>string[]</td><td>null</td><td>按 glob 条件激活</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">requires</code></th><td>object</td><td>{}</td><td>前置条件</td><td>openclaw</td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>object</td><td>{}</td><td>临时 hook</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">version</code></th><td>semver</td><td>null</td><td>用于升级提示</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">user-invocable</code></th><td>bool</td><td>true</td><td>false 时只有模型能调用</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">shell</code></th><td>enum</td><td>inherit</td><td><code translate="no">bash</code> 或 <code translate="no">powershell</code>，用于 <code translate="no">!</code> 块</td><td>claude-code</td></tr>
+</tbody>
+</table>
+<p class="note">未声明的字段进入 <code translate="no">extras</code> 字典，不报错。</p>
+
+<h2 id="template-syntax">正文模板</h2>
+<table class="stack">
+<thead><tr><th scope="col">语法</th><th scope="col">含义</th><th scope="col">来自</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">$ARGUMENTS</code></th><td>命令后的全部文本</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">$0</code>..<code translate="no">$9</code></th><td>第 N 个位置参数；缺失为空</td><td>opencode</td></tr>
+<tr><th scope="row"><code translate="no">{{name}}</code></th><td><code translate="no">arguments:</code> 声明的命名参数</td><td>opencode</td></tr>
+<tr><th scope="row"><code translate="no">${OPENPROGRAM_COMMAND_DIR}</code></th><td>命令文件所在目录</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">${OPENPROGRAM_SESSION_ID}</code></th><td>当前会话 id</td><td>claude-code</td></tr>
+<tr><th scope="row"><code translate="no">${OPENPROGRAM_CWD}</code></th><td>当前工作目录</td><td>OpenProgram</td></tr>
+<tr><th scope="row"><code translate="no">!&#96;cmd&#96;</code> 或 <code translate="no">&#96;&#96;&#96;!</code> 代码块</th><td>在宿主 shell 执行，stdout 拼入；2 秒超时</td><td>claude-code、hermes</td></tr>
+<tr><th scope="row"><code translate="no">@&#96;path&#96;</code></th><td>拼入文件内容</td><td>OpenProgram</td></tr>
+<tr><th scope="row"><code translate="no">&lt;&lt;command-name&gt;&gt;name&lt;&lt;/command-name&gt;&gt;</code></th><td>展开另一个命令，最多 3 层</td><td>OpenProgram</td></tr>
+</tbody>
+</table>
+<p class="note">参数按 shell 规则切分，失败时按空白切分。</p>
+
+<h2 id="execution-modes">执行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">模式</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">type: prompt</code>（默认）</th><td>渲染后的模板作为用户消息，走正常 agent 循环</td></tr>
+<tr><th scope="row"><code translate="no">type: local</code></th><td>调用宿主的 handler；用于 <code translate="no">/compact</code>、<code translate="no">/clear</code>、<code translate="no">/new</code>、<code translate="no">/web</code>、<code translate="no">/model</code> 等内建命令</td></tr>
+<tr><th scope="row"><code translate="no">type: local-jsx</code></th><td>接口预留给服务端推送的结构化事件</td></tr>
+<tr><th scope="row"><code translate="no">context: inline</code>（默认）</th><td>渲染结果进入当前会话</td></tr>
+<tr><th scope="row"><code translate="no">context: fork</code></th><td>作为一次 <code translate="no">agent(prompt=...)</code> 子 agent 运行：<code translate="no">agent</code> 决定 <code translate="no">subagent_type</code>，<code translate="no">allowed-tools</code> 决定工具。最终消息作为命令结果，主上下文保持干净</td></tr>
+</tbody>
+</table>
+<p class="note">MCP prompt 是 <code translate="no">prompt</code> 和 <code translate="no">inline</code>，在其服务器上渲染。</p>
+
+<h2 id="conditions">条件和 hook</h2>
+<p>条件不满足时命令从补全中隐藏。手动输入会再次检查，并给出明确错误。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">通过条件</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">paths</code></th><td>会话最近接触的文件或用 <code translate="no">@file</code> 指明的文件匹配</td></tr>
+<tr><th scope="row"><code translate="no">requires.any-bins</code></th><td><code translate="no">which</code> 至少找到一个；否则提示 “needs <code translate="no">git</code> / <code translate="no">rg</code>, please install first”</td></tr>
+<tr><th scope="row"><code translate="no">requires.config</code></th><td>profile 配置了该键</td></tr>
+<tr><th scope="row"><code translate="no">requires.platform</code></th><td>匹配，如 <code translate="no">[darwin, linux]</code></td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0">hooks:
+  PreToolUse:
+    - matcher: Bash
+      command: !`echo "blocked by /review" &gt;&amp;2; exit 2`
+  PostToolUse:
+    - matcher: Edit
+      handler: built-in:auto-stage</pre>
+<p class="note">只在该命令执行期间生效。事件名复用 <code translate="no">runtime/events/registry.py</code>。<code translate="no">!</code> 块：stdout 进日志，退出码决定放行或拒绝。<code translate="no">built-in:&lt;id&gt;</code>：已注册的 handler。schema 先固定，日后启用不算破坏性变更。</p>
+
+<h2 id="ui">菜单</h2>
+<pre translate="no" tabindex="0">/review                  按团队规范审查当前 diff                           [project]
+  [target]
+
+/review (project)                                                 ⇥ 详情面板
+─────────────────────────────────────
+按团队规范审查当前 diff
+
+Arguments: [target] (optional)
+Mode: inline · model: inherit · effort: medium
+Source: .openprogram/commands/review.md</pre>
+<p class="note">按来源分组（project、user、skill、mcp、plugin、builtin），组内按字母序。模糊搜索 name、description、when-to-use。</p>
+
+<h2 id="security">安全</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">输入</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令文件</th><td><code translate="no">realpath</code> 后必须落在所扫描的受信根内（<code translate="no">~/.openprogram/</code>、<code translate="no">$cwd/.openprogram/</code>）</td></tr>
+<tr><th scope="row">YAML</th><td><code translate="no">yaml.safe_load</code></td></tr>
+<tr><th scope="row">Glob</th><td><code translate="no">fnmatch</code>；禁用 <code translate="no">..</code> 和绝对路径</td></tr>
+<tr><th scope="row"><code translate="no">!</code> 块</th><td>除非 <code translate="no">commands.allow_shell: true</code> 否则关闭；MCP 上下文中关闭；2 秒超时；禁 fork 炸弹；stdout 上限 64 KB</td></tr>
+<tr><th scope="row"><code translate="no">@</code> 引用</th><td>在受信根内，或 <code translate="no">--allow-file &lt;abs&gt;</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="engineering">实现</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">openprogram/runtime/commands/ 下的文件</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">loader.py</code></th><td>扫描用户和项目目录</td></tr>
+<tr><th scope="row"><code translate="no">frontmatter.py</code></th><td>YAML 和字段解析</td></tr>
+<tr><th scope="row"><code translate="no">template.py</code></th><td>正文渲染</td></tr>
+<tr><th scope="row"><code translate="no">registry.py</code></th><td>合并表、冲突索引、MCP 同步</td></tr>
+<tr><th scope="row"><code translate="no">dispatch.py</code></th><td>解析并渲染；纯函数，结果由宿主执行</td></tr>
+<tr><th scope="row"><code translate="no">_plugin_adapter.py</code>、<code translate="no">_skill_adapter.py</code></th><td>把插件和 skill 投影到注册表</td></tr>
+</tbody>
+</table>
+<ol class="flow">
+  <li><strong>用户输入</strong><small><code translate="no">/review xxx</code></small></li>
+  <li><strong><code translate="no">dispatch.invoke(text, session_id, cwd)</code></strong><small><code translate="no">registry.resolve</code>，再渲染模板</small></li>
+  <li class="flow-end"><strong>按 kind 返回</strong><small><code translate="no">prompt</code>：宿主发送文本。<code translate="no">local</code>：运行 handler。<code translate="no">mcp_prompt</code>：从服务器获取。</small></li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">端点</th><th scope="col">返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/commands</code></th><td>合并列表；<code translate="no">?source=</code>、<code translate="no">?include_hidden=</code></td></tr>
+<tr><th scope="row"><code translate="no">GET /api/commands/{name}</code></th><td>单条，含正文</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/commands/invoke</code></th><td>请求体 <code translate="no">{text, session_id, cwd}</code>：解析并渲染，不发送</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/commands/reload</code></th><td>强制重扫</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/commands/conflicts</code></th><td>同名多来源</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/plugins/commands</code></th><td>旧的仅插件列表</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">前端</th><th scope="col">读取注册表的方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web composer（<code translate="no">use-slash-menu.ts</code>）</th><td><code translate="no">/api/commands</code>，<code translate="no">/api/plugins/commands</code> 作回退；渲染文本落入输入框</td></tr>
+<tr><th scope="row">Rich REPL（<code translate="no">repl/handlers.py</code>）</th><td><code translate="no">_handle_slash</code> 和 <code translate="no">dispatch.invoke</code>。<code translate="no">register_repl_builtins</code> 用标记字符串注册本地动作，<code translate="no">_LOCAL_ACTIONS</code> 映射回去。存在性、别名和 <code translate="no">/help</code> 读 <code translate="no">list_all()</code></td></tr>
+<tr><th scope="row">Ink TUI（<code translate="no">apps/cli/src/commands/registry.ts</code>）</th><td>只硬编码 TUI 本地动作。<code translate="no">GET /api/commands</code> 供补全、Ctrl+K 和 <code translate="no">/help</code>；<code translate="no">POST /api/commands/invoke</code> 展开</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>有意不做</summary>
+<table class="stack">
+<thead><tr><th scope="col">来源</th><th scope="col">设计</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw</th><td>i18n（<code translate="no">descriptionLocalizations</code>）</td><td>只有英文和简体中文</td></tr>
+<tr><th scope="row">openclaw</th><td>provider 路由（Slack、Mattermost）</td><td>单宿主</td></tr>
+<tr><th scope="row">hermes</th><td><code translate="no">platforms</code> 过滤</td><td>由 <code translate="no">requires.platform</code> 取代</td></tr>
+<tr><th scope="row">hermes</th><td>134 条提示注入检测</td><td>属于独立扫描器</td></tr>
+<tr><th scope="row">claude-code</th><td><code translate="no">local-jsx</code> React 组件</td><td>Web UI 用结构化事件；CLI 没有</td></tr>
+<tr><th scope="row">pi-mono</th><td>纯硬编码</td><td>反例</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>版本</summary>
+<ul>
+<li><code translate="no">version</code> 和来源仓库的 git hash（如有）一起存入注册表。</li>
+<li>L0 跟随 OpenProgram 版本。L1 走插件自动更新。L3 走 skill 发现差异。L4、L5 由用户编写，不自动更新。</li>
+<li>从参考项目发现的新设计作为字段加到这里。frontmatter 是稳定契约：上游改名时，<code translate="no">frontmatter.py</code> 里的别名让新旧写法都能解析。</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>六层来源、frontmatter 解析、<code translate="no">$ARGUMENTS</code>、位置、命名和 <code translate="no">OPENPROGRAM_*</code> 替换、覆盖和 <code translate="no">(source)name</code>、冲突表、API、三个前端</td></tr>
+<tr><th scope="row">已解析但未生效</th><td><code translate="no">paths</code>、<code translate="no">requires</code>、<code translate="no">hooks</code>、<code translate="no">allowed-tools</code> 限制、<code translate="no">context: fork</code>（<code translate="no">invoke</code> 返回，但不运行子 agent）</td></tr>
+<tr><th scope="row">未实现</th><td><code translate="no">!</code> 和 <code translate="no">@</code> 替换、<code translate="no">&lt;&lt;command-name&gt;&gt;</code> 展开、<code translate="no">commands.allow_shell</code>、watcher、<code translate="no">local-jsx</code>、⇥ 来源切换和详情面板、字段别名表、版本和 git hash 存储</td></tr>
+</tbody>
+</table>
+<p class="note">skill 以 <code translate="no">inline</code> 注册，并设好 <code translate="no">agent: general-purpose</code>，日后切到 fork 时落在正确的池。</p>

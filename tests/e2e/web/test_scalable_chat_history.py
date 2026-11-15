@@ -2,21 +2,23 @@
 from pathlib import Path
 import subprocess
 import pytest
+
+from tests.support.transcript.history_wire import history_wire_script
 ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.browser
 
 
 def test_large_history_fast_scroll_eviction_restore_and_latest(tmp_path):
     from playwright.sync_api import sync_playwright, expect
-    entry = r'''
+    entry = history_wire_script() + r'''
 import React from 'react';import {createRoot} from 'react-dom/client';
-import {MessageList} from './components/chat/messages/message-list';
+import {MessageList} from './components/chat/messages/list/message-list';
 import {useSessionStore} from './lib/session-store';
-import {registerSessionHistory,useSessionHistory} from './lib/chat/session-history';
-import {seedHistoryWindow,loadSessionHistoryWindow} from './lib/runtime-bridge/session-history-loader';
+import {registerSessionHistory,useSessionHistory} from './lib/chat/history/session-history';
+import {seedHistoryWindow,loadSessionHistoryWindow} from './lib/runtime-bridge/session/session-history-loader';
 import {runtimeState,setSocket} from './lib/runtime-bridge/state';
-import {heightsFor} from './lib/chat/message-window';
-import {readHistoryAnchor} from './lib/chat/history-viewport';
+import {heightsFor} from './lib/chat/history/message-window';
+import {readHistoryAnchor} from './lib/chat/history/history-viewport';
 const total=300000;
 const rows=(start,end)=>Array.from({length:end-start},(_,i)=>({id:`m${start+i}`,role:'user',content:`Message ${start+i}`,status:'completed'}));
 function result(start){const end=Math.min(total,start+50);return {messages:rows(start,end),history:{snapshot:'snapshot',head_id:'m299999',start,end,total,before:start?`m${start}`:null,after:end<total?`m${end-1}`:null}};}
@@ -25,17 +27,17 @@ class Socket extends EventTarget{static OPEN=1;readyState=1;send(wire){const req
  window.requests++;window.pending++;window.maxPending=Math.max(window.maxPending,window.pending);
  const index=v=>Number(v.slice(1));
  const start=req.history_before?Math.max(0,index(req.history_before)-50):req.history_after?index(req.history_after)+1:req.history_around?Math.max(0,index(req.history_around)-25):total-50;
- setTimeout(()=>{window.pending--;this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'session_history_page',data:{id:'large',action:'load_session',request_id:req.request_id,...result(start)}})}));},120);
+ setTimeout(()=>{window.pending--;this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'session_history_page',data:{id:'large',action:'load_session',request_id:req.request_id,...asWire(result(start))}})}));},120);
 }}
 window.WebSocket=Socket;window.latestRequests=0;window.requests=0;window.pending=0;window.maxPending=0;setSocket(new Socket());
 runtimeState.currentSessionId='large';const initial=result(total-50);runtimeState.conversations.large={id:'large',messages:initial.messages};
-useSessionStore.setState({currentSessionId:'large',activeChatKey:'large'});useSessionStore.getState().setMessages('large',initial.messages);
-seedHistoryWindow('large',initial.messages,initial.history);registerSessionHistory('large',initial.history);
+useSessionStore.setState({currentSessionId:'large',activeChatKey:'large'});useSessionStore.getState().applyRead('large',initial.messages);
+seedWire('large',initial);
 window.seek=id=>loadSessionHistoryWindow('large','around',id);
 window.stats=()=>({count:useSessionStore.getState().messageOrder.large.length,heights:heightsFor('large').size,...useSessionHistory.getState().pages.large});
-window.live=()=>{useSessionStore.getState().setMessages('large',[...useSessionStore.getState().messageOrder.large.map(id=>useSessionStore.getState().messagesById[id]),{id:'live',role:'assistant',status:'streaming',content:'Still generating'}]);};
+window.live=()=>{useSessionStore.getState().applyRead('large',[...useSessionStore.getState().messageOrder.large.map(id=>useSessionStore.getState().rowsByView.large[id]),{id:'live',role:'assistant',status:'streaming',content:'Still generating'}]);};
 window.anchor=()=>readHistoryAnchor('large');
-window.reopen=()=>{const initial=result(total-50);runtimeState.conversations.large.messages=initial.messages;seedHistoryWindow('large',initial.messages,initial.history);registerSessionHistory('large',initial.history);useSessionStore.getState().setMessages('large',initial.messages);};
+window.reopen=()=>{const initial=result(total-50);runtimeState.conversations.large.messages=initial.messages;seedWire('large',initial);useSessionStore.getState().applyRead('large',initial.messages);};
 window.remount=()=>{root.unmount();root=createRoot(document.getElementById('messages-mount'));root.render(<MessageList/>);};
 let root=createRoot(document.getElementById('messages-mount'));root.render(<MessageList/>);
 '''

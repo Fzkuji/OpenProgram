@@ -1,0 +1,52 @@
+<title>调整记忆</title>
+<meta name="description" content="所有记忆设置：后台写入、检索、项目记忆和上下文。">
+<h1>调整记忆</h1>
+<p><strong>设置 → 记忆</strong>。修改立即保存，下一轮生效；只有<strong>启用 Memory</strong> 需要重启。配置键见<a href="../reference/config-keys.zh.md">配置键</a>中的 <code translate="no">memory.*</code>。</p>
+<h2 id="background-writing">后台写入</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>写入模型</strong></th><td>写入并整理 Memory。<strong>自动</strong>：默认 Agent 的模型，没有时用最近使用的模型。</td></tr>
+<tr><th scope="row"><strong>自动写入</strong></th><td>把已结束的对话变成 Topic 记录</td></tr>
+<tr><th scope="row"><strong>写入频率</strong></th><td>累积约 8K、16K 或 32K token 后写入</td></tr>
+<tr><th scope="row"><strong>写入后校验</strong></th><td>针对刚记录的一条事实提问，在 Memory 副本中查找，找不到就修复 Topic。默认关闭：每次写入至少多三次模型调用，每次修复再多三次。</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">openprogram memory status</code> 在 <code translate="no">verification</code> 下报告：通过、已修复、未修复、出错的数量和最近一次。</p>
+<h2 id="recall">检索</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>检索方法</strong></th><td><strong>Agent</strong>：不自动加入，模型用工具读取。<strong>关键词</strong>：BM25。<strong>语义</strong>：embedding。<strong>混合</strong>：两者合并。</td></tr>
+<tr><th scope="row"><strong>混合权重</strong></th><td><strong>关键词优先</strong> 70/30，<strong>均衡</strong> 50/50，<strong>语义优先</strong> 30/70。<strong>自动</strong>：消息含日期、引号短语或名称时偏向关键词，否则均衡。仅混合时生效。</td></tr>
+<tr><th scope="row"><strong>同主题加权</strong></th><td>一个 Topic 有多段匹配时提高排名。默认开启。仅混合时生效。</td></tr>
+<tr><th scope="row"><strong>检索数量</strong></th><td>每轮最多加入的记录数：3、5、8 或 10</td></tr>
+</tbody>
+</table>
+<details>
+<summary>语义和混合所需的 Embedding 模型</summary>
+<p>需要模型以及 sentence-transformers 和 PyTorch，App 不自带。<strong>Embedding 模型</strong>旁的<strong>安装</strong>会一起下载：包约 1 GB，模型约 90 MB。包装在 <code translate="no">~/.openprogram/extras/embedding/</code>，App 更新后保留。</p>
+</details>
+<h2 id="project-memory">项目记忆</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>项目记忆</strong></th><td>项目内的会话同时读取 <code translate="no">~/.openprogram/projects/&lt;project&gt;/memory</code>。检索、Memory 工具和核心记忆覆盖两层，项目优先。默认开启。</td></tr>
+<tr><th scope="row"><strong>写入项目记忆</strong></th><td>项目会话写入项目 Memory 而非个人 Memory。需要开启项目记忆。默认开启。</td></tr>
+</tbody>
+</table>
+<ul>
+<li>项目之外的会话只读个人 Memory，即 home 项目的 <code translate="no">~/.openprogram/projects/default/memory</code>。</li>
+<li>项目 Memory 写入内容后才算存在。不会写进项目自己的文件夹。History 中在其 Memory 标签页显示。</li>
+<li>两层都在时，Memory 工具在路径中标明层：<code translate="no">project:topics/api.md</code>。</li>
+<li>一轮只写入一层，切换写入开关不会把会话复制到另一层。移到其他项目的会话只把之后的轮次写过去，已有记录留在原处。</li>
+</ul>
+<h2 id="context-and-history">上下文与历史</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>每次聊天注入核心记忆</strong></th><td>把精简的 Core 视图加入每个系统提示</td></tr>
+<tr><th scope="row"><strong>Recent 视图大小</strong></th><td>Recent 视图保留的最新记录数</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="memory.zh.html">查看和编辑 Memory</a></p>

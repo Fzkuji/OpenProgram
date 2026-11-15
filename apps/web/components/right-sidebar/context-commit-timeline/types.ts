@@ -48,9 +48,9 @@ export interface CommitDetail {
  *  rendered muted so non-trivial states (aged / cleared / summary)
  *  visually pop without being garish. */
 export const STATE_COLOR: Record<StateName, { bg: string; fg: string }> = {
-  full:       { bg: "rgba(255, 255, 255, 0.06)", fg: "var(--text-muted)" },
-  aged:       { bg: "rgba(227, 179, 65, 0.14)",  fg: "#e3b341" },
-  cleared:    { bg: "rgba(248, 81, 73, 0.14)",   fg: "#f85149" },
-  summarized: { bg: "rgba(110, 118, 129, 0.20)", fg: "var(--text-muted)" },
-  summary:    { bg: "rgba(86, 211, 100, 0.14)",  fg: "#56d364" },
+  full:       { bg: "var(--commit-state-full-bg)", fg: "var(--text-muted)" },
+  aged:       { bg: "var(--commit-state-aged-bg)", fg: "var(--commit-state-aged)" },
+  cleared:    { bg: "var(--commit-state-cleared-bg)", fg: "var(--commit-state-cleared)" },
+  summarized: { bg: "var(--commit-state-summarized-bg)", fg: "var(--text-muted)" },
+  summary:    { bg: "var(--commit-state-summary-bg)", fg: "var(--commit-state-summary)" },
 };

@@ -1,0 +1,53 @@
+<title>在另一台机器上运行会话</title>
+<meta name="description" content="本地、SSH 和 Docker 运行环境：会话在哪里运行命令、读写文件。">
+<h1>在另一台机器上运行会话</h1>
+<table class="stack">
+<thead><tr><th scope="col">运行环境</th><th scope="col">命令在哪运行</th><th scope="col">文件在哪读写</th></tr></thead>
+<tbody>
+<tr><th scope="row">本地（始终存在）</th><td>这台电脑</td><td>这台电脑</td></tr>
+<tr><th scope="row">SSH</th><td>远程主机，从它的远程文件夹开始</td><td>远程主机</td></tr>
+<tr><th scope="row">Docker</th><td>这个会话专属的容器</td><td>这台电脑；会话的文件夹按相同路径挂载进容器</td></tr>
+</tbody>
+</table>
+<p class="note"><a href="../integrations/channels.zh.html">渠道</a>只决定消息镜像到哪里，绑定渠道不会改变工具运行的位置。</p>
+<h2 id="pick-an-environment-for-a-new-chat">为新会话选择</h2>
+<p>消息框上方的第一个按钮。第一条消息发出后固定；想换地方就开新会话。新会话和早于运行环境功能的会话使用默认环境。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">按钮图标</th><th scope="col">与 worker 的连接</th></tr></thead>
+<tbody>
+<tr><th scope="row">黄色</th><td>连接中或已暂停</td></tr>
+<tr><th scope="row">红色</th><td>已断开</td></tr>
+</tbody>
+</table>
+<h2 id="add-an-environment">添加</h2>
+<p>在<strong>设置 → 运行环境</strong>，或在终端。页面上还有<strong>测试</strong>、<strong>设为默认</strong>、<strong>删除</strong>。<code translate="no">openprogram setup</code> 有 <strong>Default environment</strong> 步骤。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram environments add ssh devbox --target me@devbox --workdir ~/work</code></th><td><code translate="no">--target</code> 是 <code translate="no">user@host</code> 或 <code translate="no">~/.ssh/config</code> 里的主机名。<code translate="no">--workdir</code> 是绝对路径或 <code translate="no">~</code> 路径；留空为远程 home。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments add docker sandbox --image python:3.12 --default</code></th><td>默认镜像 <code translate="no">ubuntu:24.04</code>。<code translate="no">--default</code> 同时设为默认。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments list</code></th><td>列出全部并标记默认</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments test devbox</code></th><td>检查能否运行命令</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments default &lt;id&gt;</code></th><td>设为默认</td></tr>
+<tr><th scope="row"><code translate="no">openprogram environments rm &lt;id&gt;</code></th><td>删除</td></tr>
+</tbody>
+</table>
+<p class="note">ID 由小写字母、数字、<code translate="no">-</code> 或 <code translate="no">_</code> 组成。<code translate="no">--name</code> 设置显示名称。</p>
+<h2 id="ssh-requirements">要求</h2>
+<span id="docker-requirements"></span>
+<table class="stack fixed">
+<thead><tr><th scope="col"></th><th scope="col">需要与行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">SSH 登录</th><td>系统 <code translate="no">ssh</code> 加 <code translate="no">BatchMode=yes</code>：不能有任何提示。使用 SSH agent 或 <code translate="no">~/.ssh/config</code> 已提供的密钥。新主机密钥首次接受，之后校验。连接共享五分钟。</td></tr>
+<tr><th scope="row">SSH 主机</th><td>POSIX shell、<code translate="no">find</code>、<code translate="no">grep</code>；安装了 <code translate="no">rg</code> 时使用</td></tr>
+<tr><th scope="row">Docker</th><td><code translate="no">docker</code> 在 PATH 上，daemon 正在运行</td></tr>
+<tr><th scope="row">Docker 容器</th><td>每个会话一个，名为 <code translate="no">openprogram-&lt;environment&gt;-&lt;conversation&gt;</code>。第一条命令启动，后续复用，安装的包保留。会话文件夹变化时重建，删除会话时移除。</td></tr>
+</tbody>
+</table>
+<h2 id="limits">限制</h2>
+<ul>
+<li>一轮的撤销不覆盖 SSH 主机上改动的文件；这台电脑上的文件仍会恢复。</li>
+<li>SSH 中文件必须先读取再编辑；读取后主机上有变化时，编辑被拒绝。</li>
+<li>本地沙箱只作用于本地环境。SSH 和 Docker 的权限是远程账号或容器的权限。</li>
+<li>运行环境被删除后，工具报错停止，绝不回退到这台电脑。用相同 ID 加回来，或开新会话。</li>
+</ul>

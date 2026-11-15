@@ -5,21 +5,25 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.agent import authority
-from openprogram.self_update import UpdatePhase
-from openprogram.self_update.control.rollback_intent import RECOVERY_SECONDS
-from openprogram.self_update.verification.verification_channel import _digest
-from openprogram.self_update.verification.verifier_config import config_evidence
-from openprogram.self_update.verification.verifier_config import freeze_verifier_config
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.webui.settings.test_self_update_routes import api
+from openprogram.runtime.permissions import authority
+from openprogram.operations.self_update import UpdatePhase
+from openprogram.operations.self_update.control.rollback_intent import RECOVERY_SECONDS
+from openprogram.operations.self_update.verification.verification_channel import _digest
+from openprogram.operations.self_update.verification.verifier_config import config_evidence
+from openprogram.operations.self_update.verification.verifier_config import freeze_verifier_config
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.webui.settings import test_self_update_routes as _test_self_update_routes
 from tests.unit.self_update.test_store import _request
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+api = _test_self_update_routes.api
 
 
 @pytest.fixture
 def reopening(api, store_fixture, monkeypatch):
     client, headers, store = api
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed"))
     request = replace(_request(), session_id="p1", origin_assistant_id="a1")
     config = freeze_verifier_config(request, SimpleNamespace(
@@ -27,7 +31,7 @@ def reopening(api, store_fixture, monkeypatch):
         **authority.local_owner_authority()))
     request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(config)))
     store.create(request, verifier_config=config)
-    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+    for phase in (UpdatePhase.BUILDING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(request.update_id, phase, detail={
             "previous_system_gate": {"candidate_sha": request.base_sha},
         })
@@ -47,7 +51,7 @@ URL = "/api/self-updates/su_test/desktop-reopen"
 
 def test_authenticated_resolve_is_read_only_and_not_a_verifier(reopening, monkeypatch):
     client, headers, store, sessions, intent = reopening
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn",
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn",
                         lambda *a, **k: pytest.fail("reopen must not dispatch"))
     before = {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()}
     head = sessions._open("p1")[1].head_id
@@ -67,11 +71,11 @@ def test_authenticated_resolve_is_read_only_and_not_a_verifier(reopening, monkey
 
 
 def test_ack_is_exact_durable_and_idempotent(reopening, monkeypatch):
-    from openprogram.self_update import SelfUpdateStore
-    from openprogram.self_update.control.reopen import resolve_reopen
+    from openprogram.operations.self_update import SelfUpdateStore
+    from openprogram.operations.self_update.control.reopen import resolve_reopen
 
     client, headers, store, sessions, intent = reopening
-    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn",
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.process_user_turn",
                         lambda *a, **k: pytest.fail("ACK must not dispatch"))
     value = client.get(URL, headers=headers).json()
     body = {k: value[k] for k in ("session_id", "reopen_id")}
@@ -96,7 +100,7 @@ def test_ack_is_exact_durable_and_idempotent(reopening, monkeypatch):
 
 
 def test_activation_ack_cannot_acknowledge_rollback(reopening):
-    from openprogram.self_update.control.rollback_intent import begin_rollback
+    from openprogram.operations.self_update.control.rollback_intent import begin_rollback
 
     client, headers, store, _, _ = reopening
     initial = client.get(URL, headers=headers).json()
@@ -152,7 +156,7 @@ def test_missing_expired_and_foreign_owner_fall_back(reopening, monkeypatch, cas
     elif case == "intent":
         path.unlink()
     elif case == "expiry":
-        monkeypatch.setattr("openprogram.self_update.control.reopen.time.time", lambda: intent["expires_at"] + 1)
+        monkeypatch.setattr("openprogram.operations.self_update.control.reopen.time.time", lambda: intent["expires_at"] + 1)
     elif case == "owner":
         monkeypatch.setattr(authority, "owner_principal_id", lambda: "new-owner")
     elif case == "mode":
@@ -177,7 +181,7 @@ def test_ack_schema_rejects_navigation_and_extra_fields(reopening):
 
 
 def test_ack_write_failure_retries_without_changing_update(reopening, monkeypatch):
-    from openprogram.self_update import SelfUpdateStore
+    from openprogram.operations.self_update import SelfUpdateStore
 
     client, headers, store, _, _ = reopening
     value = client.get(URL, headers=headers).json()
@@ -212,17 +216,17 @@ def test_symlink_intent_does_not_read_or_change_target(reopening, tmp_path):
 
 
 def test_controller_prepares_once_before_activation(api, store_fixture, monkeypatch):
-    from openprogram.self_update.control.reopen import prepare_reopen
+    from openprogram.operations.self_update.control.reopen import prepare_reopen
 
     client, headers, store = api
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed"))
     request = replace(_request(), session_id="p1", origin_assistant_id="a1")
     config = freeze_verifier_config(request, SimpleNamespace(
         profile_snapshot={}, **authority.local_owner_authority()))
     request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(config)))
     store.create(request, verifier_config=config)
-    store.transition("su_test", UpdatePhase.STAGING)
+    store.transition("su_test", UpdatePhase.BUILDING)
     store.transition("su_test", UpdatePhase.READY)
     first = prepare_reopen(store, "su_test")
     path = store.root / "su_test" / "reopen-1.json"

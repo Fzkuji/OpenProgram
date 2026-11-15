@@ -4,19 +4,19 @@ import asyncio
 
 import pytest
 
-import openprogram.execution.store.commands as execution_store
-from openprogram.execution.attempts import AttemptConflict, AttemptStore
-from openprogram.execution.checkpoints import CheckpointFragment
-from openprogram.execution.control import RuntimeControlService
-from openprogram.execution.driver import ActivationInput, DriverBinding, DriverRegistry
-from openprogram.execution.effects import EffectClassification, EffectStatus, EffectStore
-from openprogram.execution.model import (
+import openprogram.runtime.execution.store.commands as execution_store
+from openprogram.runtime.execution.attempts import AttemptConflict, AttemptStore
+from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.control import RuntimeControlService
+from openprogram.runtime.execution.driver import ActivationInput, DriverBinding, DriverRegistry
+from openprogram.runtime.execution.effects import EffectClassification, EffectStatus, EffectStore
+from openprogram.runtime.execution.model import (
     CapabilitySet,
     CommandKind,
     CommandStatus,
     ExecutionStatus,
 )
-from openprogram.execution.store import ExecutionStore
+from openprogram.runtime.execution.store import ExecutionStore
 
 
 def _paused(tmp_path):
@@ -40,7 +40,6 @@ def _paused(tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="worker",
-        ttl_seconds=30,
         attempt_id="attempt_1",
     )
     active, running = attempts.activate(
@@ -113,7 +112,6 @@ def test_resume_rejects_an_existing_idle_owner_concurrently(tmp_path, operation)
         paused.execution_id,
         expected_version=paused.status_version,
         owner_id="worker_2",
-        ttl_seconds=30,
         attempt_id="attempt_2",
     )
 
@@ -151,7 +149,6 @@ def test_owner_loss_paused_idle_attempt_applies_pause_and_is_idempotent(
         paused.execution_id,
         expected_version=paused.status_version,
         owner_id="worker_2",
-        ttl_seconds=30,
         attempt_id="attempt_2",
     )
 
@@ -690,7 +687,9 @@ def test_late_step_safe_point_after_cancel_finishes_and_retries_cancel(tmp_path)
     assert store.get_execution("exec_1").current_attempt_id is None
 
 
-def test_late_step_safe_point_with_unresolved_effect_requires_reconciliation(tmp_path):
+def test_late_step_cancellation_preserves_unresolved_effect_until_explicit_resolution(tmp_path):
+    from openprogram.runtime.execution.state_machine import InvalidCommand
+
     store, attempts, service, paused = _paused(tmp_path)
     started = asyncio.run(
         service.request_step(
@@ -709,7 +708,7 @@ def test_late_step_safe_point_with_unresolved_effect_requires_reconciliation(tmp
         idempotency_key=None,
         metadata={},
     )
-    EffectStore(store).mark_dispatched(effect.effect_id, expected_status=effect.status)
+    unresolved = EffectStore(store).mark_dispatched(effect.effect_id, expected_status=effect.status)
     cancelling = asyncio.run(
         service.request_cancel(
             command_id="cancel_1",
@@ -731,9 +730,20 @@ def test_late_step_safe_point_with_unresolved_effect_requires_reconciliation(tmp
             control_step={"step_id": "late"},
         ),
     )
-    assert completion.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert completion.execution.status is ExecutionStatus.CANCELLED
+    assert completion.execution.current_attempt_id is None
     assert completion.command.status is CommandStatus.REJECTED
-    assert store.get_command("cancel_1").status is CommandStatus.APPLYING
+    assert store.get_command("cancel_1").status is CommandStatus.APPLIED
+    assert EffectStore(store).get(effect.effect_id) == unresolved
+    assert unresolved.status is EffectStatus.DISPATCHED
+    assert unresolved.receipt == {} and unresolved.resolved_at is None
+    assert EffectStore(store).list_unresolved(paused.execution_id) == [unresolved]
+    with pytest.raises(InvalidCommand, match="invalid while execution is cancelled"):
+        asyncio.run(service.request_continue(
+            command_id="must-not-replay", execution_id=paused.execution_id,
+            expected_version=completion.execution.status_version, actor={"surface": "test"},
+        ))
+    assert EffectStore(store).get(effect.effect_id) == unresolved
     resolved = service.resolve_effect(
         effect_id="effect_1",
         expected_status=EffectStatus.DISPATCHED,
@@ -741,8 +751,11 @@ def test_late_step_safe_point_with_unresolved_effect_requires_reconciliation(tmp
         receipt={"provider_message_id": "message_1"},
     )
     assert resolved.execution.status is ExecutionStatus.CANCELLED
-    assert resolved.command is not None
-    assert resolved.command.status is CommandStatus.APPLIED
+    assert resolved.command is None
+    assert EffectStore(store).get(effect.effect_id).status is EffectStatus.COMMITTED
+    assert EffectStore(store).get(effect.effect_id).receipt == {"provider_message_id": "message_1"}
+    assert EffectStore(store).list_unresolved(paused.execution_id) == []
+    assert store.get_command("cancel_1").status is CommandStatus.APPLIED
 
 
 def test_pause_and_step_applied_fast_paths_reject_cross_execution_command(tmp_path):
@@ -758,7 +771,6 @@ def test_pause_and_step_applied_fast_paths_reject_cross_execution_command(tmp_pa
         other.execution_id,
         expected_version=other.status_version,
         owner_id="other-worker",
-        ttl_seconds=30,
         attempt_id="other_attempt",
     )
     other_attempt, other_running = attempts.activate(
@@ -1221,3 +1233,69 @@ def test_pause_priority_still_closes_attempt_when_arrival_names_steer(tmp_path):
     assert completed.execution.status is ExecutionStatus.PAUSED
     assert store.get_command("pause_2").status is CommandStatus.APPLIED
     assert store.get_command("steer_1").status is CommandStatus.APPLIED
+
+
+def test_steer_with_attachments_stores_what_the_transport_saved_and_stays_idempotent(tmp_path, monkeypatch):
+    from openprogram.runtime.execution.control.submission import submit_execution_control
+
+    store, attempts, service, paused = _paused(tmp_path)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.execution.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.runtime.jobs.runner.runner_for_execution_store", lambda _store: None)
+    actor = {
+        "speaker_kind": "owner", "speaker_id": "owner/local", "speaker_display": "Owner",
+        "authority_tier": "owner", "principal_id": "owner/install/0123456789abcdef",
+        "interaction": "interactive",
+    }
+    prepared = []
+
+    async def prepare(session_id, payload):
+        prepared.append(session_id)
+        return {"message": payload["message"] + " [attachment: a.png @json \"/s/a.png\"]",
+                "images": [{"path": "/s/model-a.png", "media_type": "image/png"}]}
+
+    def command(command_id, attachments, message="look"):
+        return {
+            "type": "execution.command", "action": "execution.steer",
+            "command_id": command_id, "execution_id": paused.execution_id,
+            "expected_version": paused.status_version,
+            "payload": {"message": message, "attachments": attachments},
+        }
+
+    image = {"type": "image", "data": "aGk=", "media_type": "image/png"}
+    accepted, _ = asyncio.run(submit_execution_control(
+        command("steer-files", [image]), "steer", actor=actor, bound_session="session_1",
+        prepare_steer=prepare,
+    ))
+    assert accepted.status is CommandStatus.ACCEPTED
+    assert accepted.payload["images"] == [{"path": "/s/model-a.png", "media_type": "image/png"}]
+    assert "attachments" not in accepted.payload and accepted.payload["attachments_digest"]
+    assert prepared == ["session_1"]
+
+    retried, _ = asyncio.run(submit_execution_control(
+        command("steer-files", [image]), "steer", actor=actor, bound_session="session_1",
+        prepare_steer=prepare,
+    ))
+    assert retried.command_id == "steer-files" and prepared == ["session_1"]
+
+    collided, _ = asyncio.run(submit_execution_control(
+        command("steer-files", [{**image, "data": "aGV5"}]), "steer", actor=actor,
+        bound_session="session_1", prepare_steer=prepare,
+    ))
+    assert collided["rejection_code"] == "idempotency_collision"
+
+    no_transport, _ = asyncio.run(submit_execution_control(
+        command("steer-elsewhere", [image]), "steer", actor=actor, bound_session="session_1",
+    ))
+    assert no_transport["rejection_code"] == "unsupported_capability"
+
+    files_only, _ = asyncio.run(submit_execution_control(
+        command("steer-files-only", [image], message=""), "steer", actor=actor,
+        bound_session="session_1", prepare_steer=prepare,
+    ))
+    assert files_only.status is CommandStatus.ACCEPTED
+
+    empty, _ = asyncio.run(submit_execution_control(
+        command("steer-empty", [], message=" "), "steer", actor=actor, bound_session="session_1",
+    ))
+    assert empty["rejection_code"] == "invalid_payload"

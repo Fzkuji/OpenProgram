@@ -16,7 +16,7 @@
 }
 
 .title {
-  font-size: 18px;
+  font-size: var(--fs-title);
   font-weight: 600;
   color: var(--text-bright);
   margin: 0;
@@ -34,7 +34,7 @@
 
 .skel,
 .skelShort {
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg-tertiary);
   animation: shellSkelPulse 1.2s ease-in-out infinite;
 }

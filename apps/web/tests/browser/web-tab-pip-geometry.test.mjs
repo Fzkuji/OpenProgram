@@ -1,14 +1,16 @@
 import test from "node:test";
+import { readCenterTabStyles } from "../../scripts/testing/feature-source.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   PIP_CONTENT_ASPECT,
   PIP_HEADER_HEIGHT,
   PIP_RESIZE_DIRS,
+  anchorPipRect,
   clampPipRectAspect,
   pipContentAspect,
+  placePipRect,
   resizePipRect,
-} from "../../lib/browser/web-tab-pip-geometry.ts";
+} from "../../lib/browser/web-tab/web-tab-pip-geometry.ts";
 
 const HEADER = PIP_HEADER_HEIGHT;
 const MIN_W = 240;
@@ -92,33 +94,10 @@ function projectedWidth(origin, dx, dy) {
   return origin.width + (dx + dy / aspect) / (1 + 1 / (aspect * aspect));
 }
 
-test("store clamp forwards the shared min constants into geometry", () => {
-  const store = readFileSync(new URL("../../lib/browser/web-tab-pip-store.ts", import.meta.url), "utf8");
-  assert.match(store, /PIP_MIN_WIDTH = 240/);
-  assert.match(store, /PIP_MIN_HEIGHT = 160/);
-  assert.match(store, /clampPipRectAspect\(rect, box, PIP_MIN_WIDTH, PIP_MIN_HEIGHT\)/);
-  assert.match(store, /export \{\s*PIP_HEADER_HEIGHT,\s*PIP_RESIZE_DIRS,\s*clampPipRectAspect,\s*pipContentAspect,\s*resizePipRect,/);
-});
-
-test("css uses eight transparent handles and keeps 28px chrome", () => {
-  const css = readFileSync(new URL("../../components/center-tabs/center-tabs.module.css", import.meta.url), "utf8");
-  assert.match(css, /\.webPipChrome \{[\s\S]*?height: 28px/);
-  assert.match(css, /\.webPip \{[\s\S]*?border-radius: 10px/);
-  assert.doesNotMatch(css, /linear-gradient\(135deg/);
-  assert.doesNotMatch(css, /\.webPipResize::after/);
-  assert.match(css, /background: transparent/);
-  assert.match(css, /cursor: ns-resize/);
-  assert.match(css, /cursor: ew-resize/);
-  assert.match(css, /cursor: nwse-resize/);
-  assert.match(css, /cursor: nesw-resize/);
-  for (const dir of PIP_RESIZE_DIRS) {
-    assert.match(css, new RegExp(`data-dir="${dir}"`));
-  }
-  assert.match(css, /\.webPipResize \{[\s\S]*?z-index: 6/);
-  assert.match(css, /z-index: 7/);
-  assert.match(css, /\.webPipActions \{[\s\S]*?z-index: 5/);
-  assert.match(css, /\.webPipResize\[data-dir="n"\],\s*\.webPipResize\[data-dir="s"\] \{[\s\S]*?height: 5px/);
-  assert.match(css, /\.webPipResize\[data-dir="ne"\],[\s\S]*?width: 10px/);
+test("the PiP header in CSS is as tall as the geometry assumes", () => {
+  // Header height must equal PIP_HEADER_HEIGHT or the 16:9 page view
+  // letterboxes and leaves a strip down the right edge.
+  assert.match(readCenterTabStyles(), new RegExp(`\\.webPipChrome \\{[^}]*height: ${PIP_HEADER_HEIGHT}px`));
 });
 
 test("default and expanded windows are 16:9 content plus a 30px header", () => {
@@ -330,4 +309,98 @@ test("custom origin ratio is kept instead of resetting to 16:9", () => {
   assert.ok(next.width > origin.width);
   assertRatio(next, 320 / 180);
   assertOpposite(origin, next, "e");
+});
+
+// A pane box in its parent's coordinates: the left sidebar closing moves the
+// parent's left edge out, so the box keeps its x and grows by the sidebar.
+const PANE = { x: 22, y: 22, width: 956, height: 756 };
+const WIDER = { ...PANE, width: PANE.width + 280 };
+
+test("a window by the right edge keeps its distance to it when the box grows leftward", () => {
+  const rect = { x: 678, y: 22, width: 300, height: 198.75 };
+  const moved = anchorPipRect(rect, PANE, WIDER);
+  // +280 in a parent whose origin moved 280 to the left: still on screen.
+  assert.deepEqual(moved, { ...rect, x: 958 });
+  assert.equal(WIDER.x + WIDER.width - (moved.x + moved.width), PANE.x + PANE.width - (rect.x + rect.width));
+  assert.deepEqual(anchorPipRect(moved, WIDER, PANE), rect);
+});
+
+test("a window by the left edge keeps its distance to that edge instead", () => {
+  const rect = { x: 40, y: 500, width: 300, height: 198.75 };
+  assert.deepEqual(anchorPipRect(rect, PANE, WIDER), rect);
+  assert.deepEqual(anchorPipRect(rect, PANE, { ...PANE, x: 122, width: 856 }), { ...rect, x: 140 });
+});
+
+test("the same rule holds top and bottom", () => {
+  const taller = { ...PANE, height: PANE.height + 100 };
+  const low = { x: 40, y: 560, width: 300, height: 198.75 };
+  const high = { x: 40, y: 30, width: 300, height: 198.75 };
+  assert.deepEqual(anchorPipRect(low, PANE, taller), { ...low, y: 660 });
+  assert.deepEqual(anchorPipRect(high, PANE, taller), high);
+});
+
+// The right panel hiding and showing: the pane widens by 288px to the right
+// and narrows back, frame by frame; one frame on the way back is 6px
+// narrower than where the pane comes to rest.
+const REST = { x: 22, y: 22, width: 1838, height: 756 };
+const MIDWAY = { x: 789, y: 300, width: 300, height: 198.75 };
+const steps = (from, to, n) => Array.from({ length: n }, (_, i) => ({ ...REST, width: from + ((to - from) * (i + 1)) / n }));
+const ROUND = [...steps(1838, 2126, 12), ...steps(2126, 1832, 11), REST];
+const FIT = { minWidth: MIN_W, minHeight: MIN_H };
+
+test("re-deciding the side from each previous box makes the place depend on the path", () => {
+  // The preview's centre is 2px left of the pane's. Carried step by step,
+  // the 6px narrower frame puts the pane's centre left of it, the side
+  // flips to the right there, and the last frame carries it 6px right.
+  let rect = MIDWAY;
+  let box = REST;
+  for (const next of ROUND) { rect = anchorPipRect(rect, box, next); box = next; }
+  assert.equal(rect.x, 795);
+});
+
+test("a place derived from the placement returns exactly, on both axes and sides", () => {
+  const placements = [
+    MIDWAY,
+    { x: 1500, y: 520, width: 320, height: 210 },
+    { x: 30, y: 30, width: 400, height: 255 },
+    { x: 1400, y: 30, width: 300, height: 198.75 },
+  ];
+  const paths = [
+    ROUND,
+    // Out in big steps, back in small ones, both edges moving.
+    [{ ...REST, x: 300, width: 1560 }, { ...REST, x: 600, width: 1000, height: 400 }, ...steps(1000, 1838, 7)],
+    // Through a pane too small for the preview.
+    [{ ...REST, width: 200, height: 120 }, { ...REST, x: 900, width: 300 }, { ...REST, height: 100 }],
+  ];
+  for (const rect of placements) {
+    const placement = { rect, box: REST };
+    for (const path of paths) {
+      for (const box of path) {
+        const placed = placePipRect(placement, box, FIT);
+        assertFiniteRect(placed);
+        assertInside(placed, box);
+      }
+      assert.deepEqual(placePipRect(placement, REST, FIT), rect);
+      assert.deepEqual(placePipRect(placement, REST, null), rect);
+    }
+  }
+});
+
+test("the side is the one the window was placed nearer, however the box moves", () => {
+  const right = { x: 1400, y: 300, width: 300, height: 198.75 };
+  const placement = { rect: right, box: REST };
+  // The left edge travels past the window's centre: still right-anchored.
+  const narrow = { ...REST, x: 1300, width: 560 };
+  assert.equal(placePipRect(placement, narrow, null).x, right.x);
+  const left = { rect: { x: 300, y: 300, width: 300, height: 198.75 }, box: REST };
+  assert.equal(placePipRect(left, { ...REST, width: 400 }, null).x, 300);
+  assert.equal(placePipRect(left, { ...REST, x: 222, width: 1638 }, null).x, 500);
+});
+
+test("without a fit the place is carried but not clamped", () => {
+  const placement = { rect: { x: 1500, y: 520, width: 320, height: 210 }, box: REST };
+  const small = { ...REST, width: 300, height: 200 };
+  const placed = placePipRect(placement, small, null);
+  assert.equal(placed.width, 320);
+  assert.equal(placed.x, 1500 + 300 - 1838);
 });

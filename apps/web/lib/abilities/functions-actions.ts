@@ -5,6 +5,8 @@ import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 import { jsonFetch } from "@/lib/net/fetch-client";
 import { showToast } from "@/lib/format-utils/toast";
 import { translateText } from "@/lib/i18n";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { newSession } from "@/lib/runtime-bridge/session/conversations";
 
 let latestRefresh = 0;
 
@@ -32,14 +34,21 @@ let latestLaunch = 0;
 export async function openFunctionForm(name: string, signal?: AbortSignal): Promise<void> {
   const launch = ++latestLaunch;
   const owner = useSessionStore.getState().activeChatKey;
+  const ownerTab = useCenterTabs.getState().activeId;
   let fn = useFunctions.getState().functions.find((item) => item.name === name);
   let fetched: AgenticFunction[] | null = [];
   if (!fn) {
     fetched = await refreshFunctionsList(signal);
     fn = fetched?.find((item) => item.name === name);
   }
-  if (signal?.aborted || launch !== latestLaunch || useSessionStore.getState().activeChatKey !== owner) return;
+  if (signal?.aborted || launch !== latestLaunch || useSessionStore.getState().activeChatKey !== owner
+    || useCenterTabs.getState().activeId !== ownerTab) return;
   if (fn) {
+    const tabs = useCenterTabs.getState();
+    const active = tabs.tabs.find((tab) => tab.id === tabs.activeId);
+    // A /chat route can still display a new-tab page or another tab kind.
+    // Initialize its own draft before publishing a form that needs a composer.
+    if (active?.kind !== "session") newSession(tabs.openDraftSessionTab());
     useSessionStore.getState().openFnForm(fn);
     return;
   }

@@ -1,0 +1,46 @@
+<title>Interaction feedback</title>
+<meta name="description" content="The 0ms rule: every click slower than about 100ms shows optimistic state at once, is backfilled by real data, and rolls back on failure.">
+<h1 id="interaction-feedback-the-0ms-rule">Interaction feedback</h1>
+
+<p>A click that starts anything slower than about 100ms changes something visible at once.</p>
+
+<h2 id="the-three-layers">The three layers</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Layer</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">0ms optimistic</th><td>Before any network I/O the client shows a transitional state: spinner card, highlighted target, stopping, pending bubble. It is written into the session store as a typed local row, an overlay on a server row, or a flag; never as a change to a server row.</td></tr>
+<tr><th scope="row">Fast server confirm</th><td>The 0ms row is a typed local row carrying the send's <code translate="no">clientRequestId</code>. The server stores the same id on the user node or on the function run's pre-created node, so the first read or <code translate="no">turn_upsert</code> naming it replaces the local row in place, whichever arrives first, without flicker. An ack to a socket holding no view of the chat carries that read as <code translate="no">first_read</code>.</td></tr>
+<tr><th scope="row">Streaming backfill</th><td>Numbered <code translate="no">transcript_update</code> changes fill the row (tree, steps, status) and text frames add text by offset; the terminal <code translate="no">row_upsert</code> finishes it. A field shown ahead of the server is an overlay that ends on a stated event: the terminal status, the next read, the server's matching value, the row leaving, or the request failing.</td></tr>
+<tr><th scope="row">Failure rollback (required)</th><td>Backfill supersedes the state, or a timeout reverts it and shows an error toast: 10s for control actions, <code translate="no">OPTIMISTIC_TIMEOUT_MS</code>.</td></tr>
+</tbody>
+</table>
+
+<h2 id="shared-helper">Shared helper</h2>
+<p><code translate="no">optimisticAction({apply, settled, revert, onTimeoutMessage})</code> in <code translate="no">apps/web/lib/runtime-bridge/optimistic-action.ts</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Argument</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apply</code></th><td>Sets the 0ms state</td></tr>
+<tr><th scope="row"><code translate="no">settled()</code></th><td>True once real data supersedes it: message gone from the store, tree repopulated, <code translate="no">branch.active</code> flipped</td></tr>
+<tr><th scope="row"><code translate="no">revert</code></th><td>Runs with the toast on timeout while <code translate="no">settled()</code> is false</td></tr>
+</tbody>
+</table>
+<p class="note">Used where the confirm path is a <code translate="no">load_session</code> reload (retry, version switcher). A purely local transient (stop, fn-form placeholder, branch checkout) inlines the pattern.</p>
+
+<h2 id="per-surface-behaviour">Per-surface behaviour</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Surface</th><th scope="col">First 100ms after the click</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chat send</th><td>Welcome hides at 0ms; the user bubble lands as a pending local row once the socket takes the send, and <code translate="no">chat_ack</code> gives it the server id about one round trip later; the reply arrives with the server's turn</td></tr>
+<tr><th scope="row">Stop button</th><td><code translate="no">runningTask</code> cleared and a cancelled overlay set on the reply at 0ms, streamed text kept; the send queue drains at the same moment</td></tr>
+<tr><th scope="row">Function-call Retry</th><td>Card flips to a spinner body and running, switcher to N+1/N+1, at 0ms; reload backfills; 10s revert</td></tr>
+<tr><th scope="row">fn-form or welcome submit</th><td>Pending runtime card inserted at 0ms as a local row; the read that names its request id replaces it; a POST failure removes it and toasts</td></tr>
+<tr><th scope="row">Runtime <code translate="no">&lt; N/M &gt;</code> switcher</th><td>Current card becomes a spinner body with the target sibling index at 0ms; reload swaps content; 10s revert</td></tr>
+<tr><th scope="row">Chat message <code translate="no">&lt; N/M &gt;</code> switcher</th><td>Label advances to the target at 0ms; reload backfills; failure reverts the label and toasts</td></tr>
+<tr><th scope="row">Branches panel checkout</th><td>Clicked row highlighted active at 0ms; real <code translate="no">branch.active</code> supersedes it; 10s self-clear</td></tr>
+<tr><th scope="row">Chat Retry, Edit, Branch, Rewind</th><td><code translate="no">setBusy(true)</code> dims the buttons and <code translate="no">setRunActive</code> greys Edit and Retry</td></tr>
+<tr><th scope="row">Session switch in the sidebar</th><td><code translate="no">router.push</code>; cached messages render on route change</td></tr>
+<tr><th scope="row">Enable or disable models, tools, toggles</th><td>Local store flip</td></tr>
+</tbody>
+</table>
+<p class="note">New optimistic states use the store's own machinery: typed local changes (<code translate="no">applyLocalChange</code>) and overlays, <code translate="no">siblingIndex</code>, <code translate="no">setRunningTaskFor</code>. No parallel state.</p>

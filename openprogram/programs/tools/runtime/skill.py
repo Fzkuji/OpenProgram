@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 
 _DESC = (
     "Load a skill's instructions into this turn. Skills are the named "
@@ -24,7 +24,6 @@ _MAX_LISTED_FILES = 50
     name="skill",
     description=_DESC,
     toolset=["core"],
-    max_result_chars=60_000,
 )
 def skill(name: str = "") -> str:
     """Return a skill's SKILL.md body.
@@ -34,10 +33,10 @@ def skill(name: str = "") -> str:
             hierarchical path or any unambiguous short form (alias, last
             path segment, path suffix, or substring).
     """
-    from openprogram.skills.loader import (
+    from openprogram.extensions.skills.loader import (
         AmbiguousSkillError, get_skill, resolve, skill_resource_tree,
     )
-    from openprogram.skills.tool import invoke
+    from openprogram.extensions.skills.tool import invoke
 
     query = (name or "").strip()
     if not query:

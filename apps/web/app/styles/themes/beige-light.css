@@ -2,13 +2,13 @@
    主题文件即数据：每个文件把整套 token 契约填满一遍。
    新增主题就照抄一份改值，不需要动任何组件。 */
 [data-theme="beige-light"] {
-  --bg-primary: #faf9f5;
+  /* 中间页面是极淡的暖白，比两侧白色面板略暖；米色留在外框（--bg-secondary）。 */
+  --bg-primary: #fbfaf8;
   --bg-secondary: #f0eee5;
   --bg-tertiary: #e8e6dc;
   --bg-hover: rgba(20, 20, 19, 0.05);
   --bg-hover-contrast: #ffffff;
-  /* 纯白：composer 以 80% 透明度叠在米色页面上，要和 --bg-primary
-     (#faf9f5) 拉开明度差，偏米的白（#fdfcf9）几乎看不出来。 */
+  /* 纯白：composer 和用户气泡比极淡暖白的页面更亮，再靠阴影浮起来。 */
   --bg-input: #ffffff;
   --border: rgba(20, 20, 19, 0.08); /* subtle hairline */
   --border-light: #dedcd1;          /* strong hairline */
@@ -23,10 +23,11 @@
   --nav-color: #5e5d59;       /* lighter than text-primary so light-mode icons aren't black */
   --nav-color-hover: #141413; /* same as text-bright */
   --bg-selected: rgba(20, 20, 19, 0.08); /* selected row, one step above hover */
-  /* Claude chat surfaces: user bubble is the raised warm grey; the
-     assistant message sits flat on the page (no bubble tint). */
-  --user-msg-bg: #f0eee5;
-  --assistant-msg-bg: #faf9f5;
+  /* Chat surfaces: the sent user bubble is the same raised surface as
+     the composer (--bg-input + --composer-shadow); the assistant
+     message sits flat on the page (no bubble tint). */
+  --user-msg-bg: var(--bg-input);
+  --assistant-msg-bg: #fbfaf8;
   /* Claude light is flat: hairlines + tint carry elevation, shadows
      stay barely-there. */
   --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.04);
@@ -38,7 +39,7 @@
      ring——ring 反复被反馈"看不见"。0.12 比 pill 发丝线(0.1)深半档，
      浮层需要更明确的边界。shadow 只负责投影。 */
   --border-popover: rgba(10, 10, 10, 0.12);
-  --shadow-popover: 0 8px 24px rgba(20, 20, 19, 0.16);
+  --shadow-popover: var(--glass-shadow);
   --shadow-dialog: 0 10px 30px rgba(20, 20, 19, 0.10);
   --shadow-sidebar-left: 4px 0 16px rgba(20, 20, 19, 0.06);
   --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);
@@ -48,7 +49,8 @@
   --accent-orange: #c15f3c;
   --accent-fill: #c15f3c;
   --accent-orange-hover: #a94e30;
-  --accent-green: #6e9b76;
+  --tabrow-tint: 0%; /* plain tab strip; vivid themes tint it with the accent */
+  --accent-green: #3f7a4e; /* 4.86:1 as text on the light page; #6e9b76 was 3.0:1 */
   --accent-red: #c24e42;
   /* Deeper amber for the same reason — `#d4a346` is 2.18:1 as text
      on cream; this one is 3.60:1. */
@@ -73,19 +75,40 @@
   --focus-ring: color-mix(in srgb, var(--text-bright) 45%, transparent);
   --scrim: rgba(0, 0, 0, 0.45);
   --scrim-strong: rgba(0, 0, 0, 0.65);
-  /* 浅色主题下 tooltip 反色：深墨底白字（实测 Claude）。 */
-  --surface-tooltip: #141413;
-  --text-on-tooltip: #ffffff;
+  /* Tooltips are Nova's inverted badge (components/ui/tooltip.tsx). */
+  --surface-tooltip: var(--foreground);
+  --text-on-tooltip: var(--background);
   --composer-ring: rgba(10, 10, 10, 0.1);
   --composer-ring-focus: rgba(10, 10, 10, 0.18);
-  --composer-surface: color-mix(in srgb, var(--bg-input) 96%, transparent);
-  --composer-backdrop-filter: blur(12px);
-  --composer-shadow: 0 0 0 1px var(--composer-ring), var(--shadow-sm);
-  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
+  /* Input box = shadcn Luma Card surface with no border: shadow-sm
+     at rest, shadow-md on hover / focus. */
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --composer-shadow-focus: 0 4px 6px -1px rgb(0 0 0 / 0.16), 0 2px 4px -2px rgb(0 0 0 / 0.16);
   --chip-bg: #ffffff;
   --chip-ring: rgba(10, 10, 10, 0.1);
   --meter-fill: #3b82f6;
   --meter-track: var(--bg-tertiary);
   --provider-icon-bg: var(--bg-tertiary);
   --dag-ghost: #b9b7ae;
+}
+
+/* Pages inside the centre card (non-chat routes, Review, Agents and other
+   built-in tabs) use the chat's warm white: panels and headers are the
+   page colour, separated by hairlines, and controls sit on a light fill.
+   Tokens derived on :root (shadcn bridge, meters) are restated so they
+   resolve against the lighter values here. The window frame, the rails
+   and the chat pane keep the theme's own values. */
+[data-theme="beige-light"] .page-col,
+[data-theme="beige-light"] [data-page-surface] {
+  --bg-secondary: #fbfaf8;
+  --bg-tertiary: #f3f1ec;
+  --card: var(--bg-secondary);
+  --popover: var(--bg-input);
+  --secondary: var(--bg-tertiary);
+  --muted: var(--bg-tertiary);
+  --effort-off-bg: var(--bg-tertiary);
+  --meter-track: var(--bg-tertiary);
+  --provider-icon-bg: var(--bg-tertiary);
 }

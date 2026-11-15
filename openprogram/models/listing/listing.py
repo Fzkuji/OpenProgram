@@ -1,0 +1,580 @@
+"""Catalog listing — turn provider + model registry + config state into
+the JSON the UI consumes.
+
+Three public listing functions:
+
+* ``list_providers`` — left-hand provider sidebar (LLM Providers
+  settings page). Each row carries enable / configured / model-count
+  / setup hint state.
+* ``list_models_for_provider`` — right-hand model table for a single
+  provider. A LIVE query: the provider's official /v1/models list (when
+  credentialed) ⊕ models.dev, merged in memory and never persisted, with
+  the enabled flag read off the config spec rows. See ``_browse_models``.
+* ``list_enabled_models`` — flat picker for the chat composer. Reshapes
+  the runtime registry (``ENABLED_MODELS`` = the enabled config spec rows)
+  directly — no browse, no network.
+
+Plus ``spec_row_for`` (the enable-time copy of one listing row into the
+persisted spec-row shape — the bridge from this live view into
+``openprogram.models.providers.settings.storage``) and the small ``_model_to_dict``
+helper that produces the per-model JSON shape both the per-provider
+table and the flat picker emit.
+"""
+from __future__ import annotations
+
+import threading
+import time
+from typing import Any
+
+
+# Short-TTL in-memory cache for the live-browse rows, keyed by provider id.
+# Opening the LLM-Providers settings page repeatedly (or several models
+# expanding their thinking menu) must not hammer each provider's /v1/models.
+# force_refresh=True (the Fetch button) bypasses it.
+_BROWSE_TTL_SECONDS = 600  # 10 minutes
+_browse_lock = threading.Lock()
+_browse_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+
+
+def _reset_browse_cache() -> None:
+    """Test hook — drop every cached browse result."""
+    with _browse_lock:
+        _browse_cache.clear()
+
+
+def _enabled_ids(pcfg: dict[str, Any]) -> set[str]:
+    """Ids the user has enabled for a provider.
+
+    Spec rows (``providers.<p>.models``) are the source of truth — a row with
+    an explicit ``enabled: false`` (a disabled manual row, kept so the user's
+    hand-typed id survives the toggle) does NOT count. The legacy
+    ``enabled_models`` id list is a fallback only when the models field is absent
+    (a not-yet-migrated config). An explicit empty list stays empty.
+    """
+    rows = pcfg.get("models") or []
+    if "models" in pcfg:
+        return {
+            r.get("id") for r in rows
+            if r.get("id") and r.get("enabled") is not False
+        }
+    return set(pcfg.get("enabled_models") or [])
+
+
+def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[str, Any]]:
+    """Rows-only wrapper around :func:`_browse_models_with_error`."""
+    return _browse_models_with_error(provider_id, force_refresh)[0]
+
+
+def _browse_models_with_error(
+    provider_id: str, force_refresh: bool = False
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Live model list for a provider: official-API list (when credentialed)
+    ⊕ models.dev rows, merged in memory — NEVER persisted.
+
+    Degradation chain (never raises):
+      1. Provider has a credential → hit the official API (``fetch_and_normalize``).
+         models.dev fills the price/capability fields the API omits.
+      2. No key, or the official API errored → models.dev's full list for
+         the provider.
+      3. models.dev also unavailable → empty list (caller still layers in
+         config manual rows / enabled specs on top).
+
+    Returns ``(rows, error)`` — ``error`` is the official-API failure message
+    when a credentialed fetch errored (rows may still carry the models.dev
+    fallback), ``None`` otherwise. Cached for ``_BROWSE_TTL_SECONDS`` per
+    provider unless ``force_refresh``.
+    """
+    if not force_refresh:
+        with _browse_lock:
+            hit = _browse_cache.get(provider_id)
+            if hit and (time.time() - hit[0]) < _BROWSE_TTL_SECONDS:
+                return [dict(r) for r in hit[1]], None
+
+    from .provider_models import _models_dev_for
+    from openprogram.models.providers.catalog.metadata import is_configured
+    from .fetchers import fetch_and_normalize
+
+    from openprogram.models.providers.catalog.local import is_local_provider
+    md = {} if is_local_provider(provider_id) else _models_dev_for(provider_id)  # {id: normalised row} — {} on failure
+
+    official: list[dict[str, Any]] = []
+    fetch_failed = False
+    error: str | None = None
+    if is_configured(provider_id):
+        try:
+            res = fetch_and_normalize(provider_id)
+        except Exception as exc:
+            res = {"error": f"fetch failed: {type(exc).__name__}: {exc}"}
+        if isinstance(res, dict) and isinstance(res.get("models"), list):
+            official = res["models"]
+            if res.get("error"):
+                fetch_failed = True
+                error = str(res["error"])
+        else:
+            # Fetch errored (401 / unimplemented / raised). Distinguish this
+            # from "provider genuinely has zero models" so we don't cache the
+            # empty result as a success — after the user pastes a key the list
+            # must refresh, not stay empty until TTL expiry.
+            fetch_failed = True
+            error = (res.get("error") if isinstance(res, dict) else None) or "fetch failed"
+
+    rows: list[dict[str, Any]]
+    if official:
+        # Official API is authoritative on WHICH models + context; models.dev
+        # fills price / capability fields it doesn't return.
+        rows = []
+        for m in official:
+            mid = m.get("id")
+            if not mid:
+                continue
+            row = dict(md.get(mid, {}))
+            row.update({k: v for k, v in m.items() if v is not None})
+            row["id"] = mid
+            rows.append(row)
+    else:
+        # No key or official API failed → last successful subscription
+        # catalogue, then models.dev. This keeps newly discovered subscription
+        # models visible across restarts and temporary auth/network failures.
+        from openprogram.models.providers.catalog.subscription_catalog import SUBSCRIPTION_PROVIDERS, load_catalog
+
+        if provider_id in SUBSCRIPTION_PROVIDERS and not error:
+            error = "No current subscription catalogue is available"
+        cached, _ = load_catalog(provider_id)
+        rows = cached or [{**row, "id": mid} for mid, row in md.items()]
+
+    # Don't cache a failed fetch: an empty ``rows`` here is only trustworthy
+    # when the official API actually answered (or models.dev filled in). When
+    # the fetch failed and models.dev had nothing, caching [] would pin the
+    # provider empty for the whole TTL even after the user adds a key.
+    if not (fetch_failed and not rows):
+        with _browse_lock:
+            _browse_cache[provider_id] = (time.time(), [dict(r) for r in rows])
+    return rows, error
+
+
+def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
+    """Compatibility projection of the shared route capability."""
+    from openprogram.models.providers.settings.fast import fast_capability
+    return fast_capability(provider_id, model_id)["status"] == "supported"
+
+
+
+def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
+    inputs = list(getattr(model, "input", []) or [])
+    return {
+        "id": model.id,
+        "name": getattr(model, "name", model.id),
+        "api": model.api,
+        "context_window": getattr(model, "context_window", 0) or 0,
+        "max_tokens": getattr(model, "max_tokens", 0) or 0,
+        "vision": "image" in inputs,
+        "video": "video" in inputs,
+        "audio": "audio" in inputs,
+        "reasoning": bool(getattr(model, "reasoning", False)),
+        "structured_output": getattr(model, "structured_output", None),
+        # 高速档声明（enabled_models.default_fast）；False → UI 不显示开关。
+        "fast": bool(getattr(model, "fast", False)),
+        # Thinking UX capability (see providers/settings/thinking_spec.py).
+        # Empty `thinking_levels` → UI hides the menu for this model.
+        "thinking_levels": list(getattr(model, "thinking_levels", []) or []),
+        "default_thinking_level": getattr(model, "default_thinking_level", None),
+        "thinking_variant": getattr(model, "thinking_variant", None),
+        "tools": True,  # all HTTP providers route tool_calls
+        "enabled": enabled,
+    }
+
+
+def list_providers() -> list[dict[str, Any]]:
+    from openprogram.models.providers.catalog.metadata import credential_status_snapshot
+    with credential_status_snapshot():
+        return _list_providers()
+
+
+def _list_providers() -> list[dict[str, Any]]:
+    """Unified provider list with enable/configure status and model
+    counts.
+
+    Two source-of-truth tiers merged:
+
+      1. **Static tier** — every provider shipped as a
+         ``providers/adapters/<p>/provider.json`` dir (``_shipped_provider_ids``),
+         plus anything with rows in the runtime registry. Enumerated
+         from the shipped dirs, NOT from ``ENABLED_MODELS`` — the
+         registry is enabled-only since the enabled-models migration,
+         so a fresh install has it empty and the subscription providers
+         (openai-codex / claude-code / gemini-subscription, none of
+         which models.dev lists) must still get a sidebar row to log
+         into.
+
+      2. **Community catalogue** (``sources.models_dev``) — every
+         provider models.dev knows about, including ones we don't
+         have a static-registry entry for. The user can enable +
+         configure these too; clicking Fetch will hit the upstream
+         API and surface real models. Lets the user reach for e.g.
+         ``fireworks`` or ``together`` without us shipping a code
+         change first.
+
+    Static-registry entries take precedence on id collisions (so e.g.
+    our ``openai-codex`` keeps its OpenProgram-specific routing rather
+    than getting overwritten by models.dev's ``openai`` row).
+    """
+    from openprogram.models.providers import get_providers, get_models
+    from openprogram.models.auth.account.aliases import resolve as _resolve_alias
+    from openprogram.models.auth.login.login_method_registry import login_methods as _login_methods
+
+    from openprogram.models.providers.catalog.metadata import provider_base_url
+
+    from openprogram.models.providers.catalog.metadata import (
+        CLI_PROVIDERS,
+        FETCH_MODELS_PROVIDERS,
+        env_var_for,
+        is_configured,
+        label_for,
+        prettify_provider_id,
+        _shipped_provider_ids,
+        synthesized_env_var,
+    )
+    from .setup_hints import _setup_hint
+    from openprogram.models.providers.catalog.sources import models_dev
+    from openprogram.models.providers.settings.storage import _read_providers_cfg
+    from .fetchers import _load_fetcher
+
+    cfg = _read_providers_cfg()
+    result: list[dict[str, Any]] = []
+
+    # models.dev catalogue, keyed by id — shared by every tier (base-url /
+    # doc-url fill, the fetchable-by-generic-fetcher set, tier-2 enumeration).
+    md_provs: dict[str, dict[str, Any]] = {
+        p["id"]: p for p in models_dev.list_providers() if p.get("id")
+    }
+
+    def _entry(pid: str, pcfg: dict[str, Any], default_base_url: str) -> dict[str, Any]:
+        """Fields with ONE canonical computation across all tiers. A provider
+        can move tiers over its lifetime (enabling a community model promotes
+        it into tier 1; a custom provider's registered rows do the same), so
+        any field computed per-tier eventually diverges — that's the bug class
+        62483bac fixed twice and this helper closes for good."""
+        from openprogram.models.providers.catalog.local import is_local_provider
+        local = is_local_provider(pid)
+        custom = pcfg.get("source") == "custom"
+        e: dict[str, Any] = {
+            "id": pid,
+            # Custom providers carry the user's chosen label in config; every
+            # other id routes through the override map → models.dev → prettify.
+            "label": (pcfg.get("label") or prettify_provider_id(pid)) if custom else label_for(pid),
+            "kind": "api",
+            "local": local,
+            "enabled": bool(pcfg.get("enabled", False)),
+            "configured": is_configured(pid),
+            # Synthesised key label for custom providers (Detail shows
+            # AccountManager when api_key_env is truthy). Display only — keys
+            # resolve from the AuthStore by pid.
+            "api_key_env": env_var_for(pid) or (synthesized_env_var(pid) if custom else None),
+            "default_base_url": default_base_url,
+            "base_url": pcfg.get("base_url") or "",
+            "use_responses_api": bool(pcfg.get("use_responses_api", False)),
+            # A fetch path exists: a shipped/mapped fetcher, the OpenAI-compat
+            # allowlist, a custom provider (generic fetcher against its
+            # base_url), or a models.dev-known community endpoint.
+            "supports_fetch": bool(
+                custom
+                or pid in FETCH_MODELS_PROVIDERS
+                or _load_fetcher(pid) is not None
+                or pid in md_provs
+            ),
+        }
+        if custom:
+            e["custom"] = True
+        hint = _setup_hint(pid)
+        if hint:
+            e["setup_hint"] = hint
+        # Native login methods (OAuth / device-code / import-from-CLI) the web
+        # can drive — excluding plain api_key, which the ApiKey field already
+        # handles. Single source of truth: openprogram/models/auth/login/login_method_registry.py.
+        native = [
+            {"id": mid, "label": label}
+            for mid, label in _login_methods(pid)
+            if mid != "api_key"
+        ]
+        if native:
+            e["login_methods"] = native
+        doc = (md_provs.get(pid) or {}).get("doc_url")
+        if doc:
+            e["doc_url"] = doc
+        return e
+
+    # Tier 1: static tier — shipped provider dirs ∪ runtime-registry providers
+    # (the latter adds config-defined custom providers with registered rows).
+    seen: set[str] = set()
+    for pid in sorted(set(get_providers()) | _shipped_provider_ids()):
+        # An id that's a known alias of another provider (e.g. legacy
+        # ``chatgpt-subscription`` → ``openai-codex``) must not surface as its
+        # own sidebar row — it's the same service. The canonical id carries it.
+        if _resolve_alias(pid) != pid:
+            continue
+        seen.add(pid)
+        pcfg = cfg.get(pid, {})
+        models = get_models(pid)
+        custom_models = pcfg.get("custom_models") or []
+        enabled_ids = _enabled_ids(pcfg)
+        all_ids = {m.id for m in models} | {
+            c.get("id") for c in custom_models if c.get("id")
+        }
+        default_base = (
+            (models[0].base_url if models and models[0].base_url else "")
+            or provider_base_url(pid)
+            or (md_provs.get(pid) or {}).get("base_url")
+            or ""
+        )
+        entry = _entry(pid, pcfg, default_base)
+        entry.update({
+            # Enabled count when the user has enabled anything (get_models
+            # reads the enabled-only registry; the first screen is meta-only
+            # by design); pre-enable, fall back to the community catalogue
+            # count so "OpenRouter has 233 models" still reads at a glance.
+            "model_count": (len(models) + len(custom_models))
+            or len((md_provs.get(pid) or {}).get("model_ids") or []),
+            "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
+        })
+        result.append(entry)
+
+    # Tier 2: community-catalogue providers we don't ship a dir for.
+    # Configurable (paste key + Fetch); ``model_count`` is what models.dev
+    # says is available pre-fetch.
+    for pid, md_prov in md_provs.items():
+        if pid in seen:
+            continue
+        if _resolve_alias(pid) != pid:
+            continue
+        seen.add(pid)
+        pcfg = cfg.get(pid, {})
+        custom_models = pcfg.get("custom_models") or []
+        enabled_ids = _enabled_ids(pcfg)
+        community_ids = set(md_prov.get("model_ids") or [])
+        custom_ids = {c.get("id") for c in custom_models if c.get("id")}
+        entry = _entry(pid, pcfg, md_prov.get("base_url") or "")
+        entry.update({
+            "model_count": len(community_ids | custom_ids),
+            "enabled_model_count": sum(
+                1 for mid in (community_ids | custom_ids) if mid in enabled_ids
+            ),
+            "community_source": "models.dev",
+        })
+        result.append(entry)
+
+    # CLI-backed providers (currently empty, kept for forward-compat)
+    for cli in CLI_PROVIDERS:
+        if cli["id"] in seen:
+            continue
+        result.append({
+            "id": cli["id"],
+            "label": label_for(cli["id"]),
+            "kind": "cli",
+            "cli_binary": cli.get("cli_binary"),
+            "enabled": bool(cfg.get(cli["id"], {}).get("enabled", False)),
+            "configured": is_configured(cli["id"]),
+            "api_key_env": None,
+            "model_count": 0,
+            "enabled_model_count": 0,
+        })
+
+    result.sort(key=lambda x: x["label"].lower())
+
+    # Tier 3: config-only custom providers (``source: "custom"``) the user
+    # added from the settings page for an OpenAI-compatible endpoint we don't
+    # ship. They're not in tier 1/2, so surface them here — sorted among
+    # themselves, appended AFTER the alpha sort so they always sit at the end
+    # (flagged ``custom: true`` for the frontend badge + delete action).
+    custom_rows: list[dict[str, Any]] = []
+    for pid, pcfg in cfg.items():
+        if not isinstance(pcfg, dict) or pcfg.get("source") != "custom":
+            continue
+        if pid in seen:
+            continue
+        models_cfg = pcfg.get("models") or []
+        enabled_ids = _enabled_ids(pcfg)
+        all_ids = {r.get("id") for r in models_cfg if r.get("id")}
+        entry = _entry(pid, pcfg, pcfg.get("base_url") or "")
+        entry.update({
+            "model_count": len(all_ids),
+            "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
+        })
+        custom_rows.append(entry)
+    custom_rows.sort(key=lambda x: x["label"].lower())
+    result.extend(custom_rows)
+    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
+    return [row for row in result if row["id"] not in UNSUPPORTED_PROVIDERS]
+
+
+def list_models_for_provider(
+    provider_id: str, force_refresh: bool = False, *, cached_only: bool = False
+) -> list[dict[str, Any]]:
+    """All models for a provider + their enabled flag — a LIVE query,
+    never a persisted snapshot.
+
+    Sources merged in memory (see ``_browse_models``):
+      - the provider's official /v1/models list, when it has a credential;
+      - models.dev (fallback with no key, + field enrichment);
+      - config manual rows (``providers.<p>.models`` with source="manual",
+        plus legacy ``custom_models``) not present in the live result.
+
+    The ``enabled`` flag per row comes from the config spec rows
+    (``providers.<p>.models`` ids), falling back to the legacy
+    ``enabled_models`` id list. ``force_refresh`` bypasses the browse TTL
+    cache (the Fetch button).
+    """
+    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
+    if provider_id in UNSUPPORTED_PROVIDERS:
+        return []
+    from openprogram.models.providers.settings.thinking_spec import derive_thinking_fields
+
+    from openprogram.models.providers.catalog.metadata import default_api_for
+    from openprogram.models.providers.settings.storage import _read_providers_cfg, _resolve_base_url
+
+    cfg = _read_providers_cfg()
+    pcfg = cfg.get(provider_id, {})
+    # Enabled = ids with a stored spec row (new source of truth); fall back to
+    # the legacy id whitelist so a not-yet-migrated config still reads right.
+    enabled_ids = _enabled_ids(pcfg)
+    default_api = default_api_for(provider_id) or "openai-completions"
+    # Custom / dir-less providers have no static Model.base_url and no
+    # models.dev endpoint, so the browse rows carry no base_url. Stamp the
+    # provider config base_url onto every row (row value still wins) so a
+    # spec row copied from a browse row via ``spec_row_for`` — the toggle path
+    # — carries the endpoint the runtime needs to dispatch.
+    from openprogram.models.providers.catalog.local import is_local_provider
+    cfg_base_url = (
+        (_resolve_base_url(provider_id) or "")
+        if pcfg.get("source") == "custom" or is_local_provider(provider_id)
+        else (pcfg.get("base_url") or "")
+    )
+
+    out: list[dict[str, Any]] = []
+    if cached_only:
+        # Settings must render without waiting for an authenticated network
+        # request. Explicit Fetch remains the remote refresh entry point.
+        from .provider_models import _models_dev_for
+        from openprogram.models.providers.catalog.subscription_catalog import load_catalog
+
+        with _browse_lock:
+            cached = _browse_cache.get(provider_id)
+            cached_rows = [dict(row) for row in cached[1]] if cached else None
+        if cached_rows is not None:
+            all_rows = cached_rows
+        else:
+            saved, _ = load_catalog(provider_id)
+            all_rows = saved or ([] if is_local_provider(provider_id) else [
+                dict(row, id=mid) for mid, row in _models_dev_for(provider_id).items()
+            ])
+    else:
+        all_rows = _browse_models(provider_id, force_refresh=force_refresh)
+    present = {r.get("id") for r in all_rows}
+    # Config rows absent from the live browse result — layer them in, or
+    # they'd be invisible (and un-toggleable) whenever the provider's
+    # /v1/models is unreachable and models.dev doesn't know the endpoint
+    # (typical for custom providers). Covers manual rows, legacy
+    # custom_models, and enabled spec rows alike.
+    manual_sources = list(pcfg.get("models") or []) + list(
+        pcfg.get("custom_models") or []
+    )
+    for cm in manual_sources:
+        cmid = cm.get("id") or ""
+        if cmid and cmid not in present:
+            all_rows = all_rows + [cm]
+            present.add(cmid)
+    for raw in all_rows:
+        mid = raw.get("id") or ""
+        if not mid:
+            continue
+        reasoning = bool(raw.get("reasoning", False))
+        # Priority: a fetcher that read the provider's own account/models API
+        # (Codex's endpoint gives the real per-model effort picker) wins — it's
+        # the account's actual truth. Fall back to thinking.json derivation only
+        # when the fetcher supplied nothing.
+        if raw.get("thinking_levels"):
+            levels = list(raw["thinking_levels"])
+            default_lv = raw.get("default_thinking_level")
+            variant = raw.get("thinking_variant")
+        else:
+            levels, default_lv, variant = derive_thinking_fields(
+                provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
+            )
+        entry: dict[str, Any] = {
+            k: v for k, v in raw.items() if not k.startswith("_")
+        }
+        entry.update({
+            "id": mid,
+            "name": raw.get("name", mid),
+            "api": raw.get("api") or default_api,
+            "context_window": int(raw.get("context_window", 0)) or 0,
+            "max_tokens": int(raw.get("max_tokens", 0)) or 0,
+            "vision": bool(raw.get("vision", False)),
+            "reasoning": reasoning,
+            "thinking_levels": levels,
+            "default_thinking_level": default_lv,
+            "thinking_variant": variant,
+            "tools": raw.get("tools") if is_local_provider(provider_id) else bool(raw.get("tools", True)),
+            "enabled": mid in enabled_ids,
+        })
+        if not entry.get("base_url") and cfg_base_url:
+            entry["base_url"] = cfg_base_url
+        out.append(entry)
+
+    return out
+
+
+def list_enabled_models() -> list[dict[str, Any]]:
+    """Flat list of all enabled models across enabled providers — used
+    by the chat page model picker.
+
+    Reads the runtime registry (``ENABLED_MODELS`` = the config spec rows
+    the user enabled) DIRECTLY — no live browse, no network. The registry
+    is already exactly "the enabled models", so the picker just reshapes
+    each ``Model`` into the row dict the composer consumes and stamps the
+    provider label. Providers whose toggle is off are excluded.
+    """
+    from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
+
+    from openprogram.models.providers.catalog.metadata import label_for, prettify_provider_id
+    from openprogram.models.providers.settings.storage import _read_providers_cfg
+
+    cfg = _read_providers_cfg()
+    out: list[dict[str, Any]] = []
+    for key, model in ENABLED_MODELS.items():
+        provider = getattr(model, "provider", None) or (
+            key.split("/", 1)[0] if "/" in key else key
+        )
+        from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
+        if provider in UNSUPPORTED_PROVIDERS:
+            continue
+        pcfg = cfg.get(provider, {})
+        if not pcfg.get("enabled"):
+            continue
+        row = _model_to_dict(model, enabled=True)
+        row["provider"] = provider
+        # The same name the provider list gives it: a custom provider's is
+        # the label the user chose.
+        row["provider_label"] = (
+            (pcfg.get("label") or prettify_provider_id(provider))
+            if pcfg.get("source") == "custom" else label_for(provider)
+        )
+        out.append(row)
+    return out
+
+
+def spec_row_for(provider_id: str, model_id: str) -> dict[str, Any] | None:
+    """Full spec row for one model, as ``providers.<p>.models`` stores it.
+
+    Copied from ``list_models_for_provider`` (the canonical row shape) with the
+    UI-only ``enabled`` flag stripped, then normalized so the row carries the
+    Model-schema keys (``input``, nested ``cost``) the runtime reads — not just
+    the models.dev flat display keys. This is the enable-time bridge from the
+    live listing into the persisted config (``openprogram.models.providers.settings.storage``).
+    Returns ``None`` if the provider/listing can't resolve the id.
+    """
+    from openprogram.models.providers.settings.storage import _normalize_spec_row
+    for row in list_models_for_provider(provider_id):
+        if row.get("id") == model_id:
+            spec = {k: v for k, v in row.items() if k != "enabled"}
+            return _normalize_spec_row(spec)
+    return None

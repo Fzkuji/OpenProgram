@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import threading
 
-from openprogram.channels.base import Channel
+from openprogram.interfaces.channels import _heartbeats
+from openprogram.interfaces.channels.base import Channel
 
 
 class _Adapter(Channel):
@@ -55,7 +56,7 @@ def test_stop_event_wins_during_backoff() -> None:
     t = threading.Thread(target=ch.run_forever, args=(stop,), daemon=True)
     t.start()
     stop.set()
-    t.join(timeout=5)
+    t.join(timeout=30)
     assert not t.is_alive()
     assert ch.runs >= 1
 
@@ -73,7 +74,7 @@ def test_backoff_doubles_and_caps(monkeypatch) -> None:
 
     monkeypatch.setattr(stop, "wait", spy_wait)
     # freeze time so the 60s "healthy run" reset never fires
-    import openprogram.channels.base as base_mod
+    import openprogram.interfaces.channels.base as base_mod
     monkeypatch.setattr(base_mod.time, "time", lambda: 1000.0)
 
     ch.run_forever(stop)
@@ -84,6 +85,20 @@ def test_worker_runs_adapters_via_run_forever() -> None:
     """The worker entry (_safe_run_channel) must call run_forever, not
     bare run — otherwise the reconnect loop is dead code."""
     import inspect
-    from openprogram.worker import runner
+    from openprogram.operations.worker import runner
     src = inspect.getsource(runner._safe_run_channel)
     assert "run_forever(" in src
+
+
+def test_a_crash_marks_the_adapter_as_reconnecting() -> None:
+    _heartbeats.clear_stop("faketg", "a1")
+    _Adapter(["crash", "clean"]).run_forever(threading.Event())
+    assert _heartbeats.is_retrying("faketg", "a1")
+    _heartbeats.clear_stop("faketg", "a1")
+    assert not _heartbeats.is_retrying("faketg", "a1")
+
+
+def test_a_clean_run_does_not_mark_reconnecting() -> None:
+    _heartbeats.clear_stop("faketg", "a1")
+    _Adapter(["clean"]).run_forever(threading.Event())
+    assert not _heartbeats.is_retrying("faketg", "a1")

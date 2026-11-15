@@ -2,12 +2,12 @@
 OpenProgram from binding to it."""
 from __future__ import annotations
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.files.worktree.shared import (
     _current_session_id,
     clear_binding_if_no_active,
 )
-from openprogram.worktree.manager import WorktreeError, get_manager
+from openprogram.state.worktree.manager import WorktreeError, get_manager
 
 
 @function(

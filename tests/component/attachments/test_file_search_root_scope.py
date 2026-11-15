@@ -14,10 +14,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram import attachments
-from openprogram.store.session.git_session import GitSession
-from openprogram.store.session.migration import migrate_session
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state import attachments
+from openprogram.state.store.session.session_log import SessionLog
+from openprogram.state.store.session.migration import migrate_session
+from openprogram.state.store.session.session_store import SessionStore
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def project(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client(project):
-    from openprogram.webui.routes.files import file_search
+    from openprogram.interfaces.server.routes.files import file_search
     app = FastAPI()
     file_search.register(app)
     return TestClient(app)
@@ -100,6 +100,21 @@ def test_raw_refuses_a_path_outside_every_root(client, tmp_path):
                       params={"path": str(outside)}).status_code == 403
 
 
+def test_file_raw_streams_video_with_its_type_and_ranges(client, project):
+    # A reply plays sent video in place: <video> needs the real type, and
+    # seeking needs Range requests.
+    clip = project / "sub" / "cut.mp4"
+    clip.parent.mkdir(parents=True, exist_ok=True)
+    clip.write_bytes(b"0123456789")
+    r = client.get("/api/file-raw", params={"path": str(clip)})
+    assert r.headers["content-type"].startswith("video/mp4")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    part = client.get("/api/file-raw", params={"path": str(clip)},
+                      headers={"Range": "bytes=2-5"})
+    assert part.status_code == 206
+    assert part.content == b"2345"
+
+
 def test_attachment_routes_keep_allowed_missing_file_404(client, project):
     missing = project / "sub" / "missing.png"
     assert client.get("/api/file-raw", params={"path": str(missing)}).status_code == 404
@@ -160,23 +175,20 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     source = project / ".openprogram" / "sessions" / "s1"
     old_attachment = source / "workdir" / "attachments" / "report.pdf"
     old_attachment.parent.mkdir(parents=True)
-    GitSession(source)._ensure_init()
-    (source / "meta.json").write_text('{"id":"s1"}', encoding="utf-8")
+    log = SessionLog(source)
+    log.write_meta({"id": "s1"})
     marker = attachments.format_marker(
         "report.pdf", old_attachment, len(b"legacy"), mime="application/pdf",
     )
-    (source / "history" / "0001-u-u1.json").write_text(
-        json.dumps({"id": "u1", "role": "user", "content": marker}),
-        encoding="utf-8",
-    )
+    log.write_history(1, "user", "u1", {"id": "u1", "role": "user", "content": marker})
     old_attachment.write_bytes(b"legacy")
 
     monkeypatch.setenv("OPENPROGRAM_PROJECT_ROOT", str(project))
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
     monkeypatch.setattr(
-        "openprogram.store.session.migration._live_jobs", lambda _sid: False,
+        "openprogram.state.store.session.migration._live_jobs", lambda _sid: False,
     )
-    store = SessionStore(state / "sessions")
+    store = SessionStore(state / "projects")
     result = migrate_session(store, {
         "session_id": "s1",
         "project_id": "p1",
@@ -185,10 +197,10 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     })
     assert result == "done"
     assert not source.exists()
-    dest = state / "sessions" / "projects" / "p1" / "s1"
+    dest = state / "projects" / "p1" / "chats" / "s1"
     current_attachment = dest / "workdir" / "attachments" / "report.pdf"
     assert current_attachment.read_bytes() == b"legacy"
-    assert str(old_attachment) in (dest / "history" / "0001-u-u1.json").read_text()
+    assert str(old_attachment) in (dest / "main.jsonl").read_text()
 
     # A stale source copy may still exist after migration. The public route
     # must prefer the canonical session attachment rather than serving it.
@@ -196,7 +208,7 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     old_attachment.write_bytes(b"stale-source")
 
     app = FastAPI()
-    from openprogram.webui.routes.files import file_search
+    from openprogram.interfaces.server.routes.files import file_search
     file_search.register(app)
     client = TestClient(app)
     response = client.get("/api/file-raw", params={
@@ -206,11 +218,12 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     assert response.content == b"legacy"
 
     import asyncio
-    from openprogram.agent.run_control import (
-        reset_current_session_id, set_current_session_id,
+    from openprogram.runtime.execution.run_control import (
+        reset_current_session_id,
+        set_current_session_id,
     )
     from openprogram.programs.tools.files.read import read
-    from openprogram import sandbox
+    from openprogram.host import sandbox
     token = set_current_session_id("s1")
     try:
         read_result = asyncio.run(read.execute(
@@ -229,7 +242,7 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
             block.text for block in (denied_result.content or [])
             if getattr(block, "text", None) is not None
         )
-        assert denied_text.startswith("Error: sandbox policy: blocked")
+        assert denied_text.startswith("[blocked by sandbox]") and "blocked" in denied_text
     finally:
         reset_current_session_id(token)
 
@@ -268,3 +281,88 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
         "path": str(old_attachment), "session_id": "s1",
     })
     assert escaped_root.status_code == 403
+
+
+# --- @ mentions resolve in the chat's working directory --------------------
+
+def test_search_and_resolve_use_the_chats_working_directory(client, tmp_path, monkeypatch):
+    """A chat's ``@`` mentions name files where its agent works, not files
+    of the OpenProgram checkout the worker runs from."""
+    chat_dir = tmp_path / "work"
+    (chat_dir / "src").mkdir(parents=True)
+    (chat_dir / "src" / "main.py").write_text("print(1)", encoding="utf-8")
+    from openprogram.runtime.conversation import workdir
+    monkeypatch.setattr(
+        workdir, "runtime_location_for",
+        lambda sid, use_context=True: {"workdir": str(chat_dir) if sid == "s1" else None},
+    )
+    monkeypatch.setattr(workdir, "session_workdir_for", lambda _sid: None)
+
+    found = client.get("/api/file-search", params={"q": "main", "session_id": "s1"}).json()
+    assert found["root"] == str(chat_dir.resolve())
+    assert [m["path"] for m in found["matches"]] == ["src/main.py"]
+
+    resolved = client.get("/api/file-resolve", params={"path": "src/main.py", "session_id": "s1"})
+    assert resolved.status_code == 200
+    assert resolved.json()["path"] == str((chat_dir / "src" / "main.py").resolve())
+    escaped = client.get("/api/file-resolve", params={"path": "../outside.txt", "session_id": "s1"})
+    assert escaped.status_code == 400
+
+
+def test_a_chat_not_created_yet_searches_its_picked_project(client, tmp_path, monkeypatch):
+    picked = tmp_path / "picked"
+    picked.mkdir()
+    (picked / "notes.md").write_text("n", encoding="utf-8")
+    from types import SimpleNamespace
+    from openprogram.state.store.project import project_store
+    monkeypatch.setattr(
+        project_store, "get_project",
+        lambda pid: SimpleNamespace(path=str(picked)) if pid == "p1" else None,
+    )
+    found = client.get("/api/file-search", params={
+        "q": "notes", "session_id": "local_draft", "project_id": "p1",
+    }).json()
+    assert found["root"] == str(picked.resolve())
+    assert [m["path"] for m in found["matches"]] == ["notes.md"]
+
+
+def test_no_chat_keeps_the_default_root(client, project):
+    found = client.get("/api/file-search", params={"q": "hello"}).json()
+    assert found["root"] == str(project.resolve())
+
+
+# --- /api/file-paths: which paths in a reply name an openable file ---------
+
+def test_file_paths_answers_each_path_in_one_request(client, project, tmp_path, monkeypatch):
+    """A reply's paths are checked in one request: absolute and
+    chat-relative paths come back as absolute files; a folder, a missing
+    file and a file outside every root all come back null."""
+    deck = project / "sub" / "plan.pptx"
+    deck.write_bytes(b"PK")
+    outside = tmp_path / "secret.txt"
+    outside.write_text("nope")
+    from openprogram.runtime.conversation import workdir
+    monkeypatch.setattr(
+        workdir, "runtime_location_for",
+        lambda sid, use_context=True: {"workdir": str(project) if sid == "s1" else None},
+    )
+    monkeypatch.setattr(workdir, "session_workdir_for", lambda _sid: None)
+    asked = [str(deck), "sub/hello.txt", "sub", "sub/missing.pdf", str(outside), "../secret.txt"]
+    r = client.get("/api/file-paths", params={"path": asked, "session_id": "s1"})
+    assert r.status_code == 200
+    assert r.json()["files"] == {
+        str(deck): str(deck.resolve()),
+        "sub/hello.txt": str((project / "sub" / "hello.txt").resolve()),
+        "sub": None,
+        "sub/missing.pdf": None,
+        str(outside): None,
+        "../secret.txt": None,
+    }
+
+
+def test_file_paths_without_a_chat_checks_absolute_paths_only(client, project):
+    r = client.get("/api/file-paths", params={"path": [str(project / "sub" / "hello.txt"), "sub/hello.txt"]})
+    assert r.json()["files"] == {
+        str(project / "sub" / "hello.txt"): str((project / "sub" / "hello.txt").resolve()),
+        "sub/hello.txt": None,
+    }

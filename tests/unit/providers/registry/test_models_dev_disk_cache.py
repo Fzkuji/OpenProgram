@@ -2,7 +2,7 @@
 
 import json
 
-from openprogram.providers.sources import models_dev
+from openprogram.models.providers.catalog.sources import models_dev
 
 
 def _reset_mem_cache():
@@ -134,11 +134,11 @@ def test_successful_fetch_writes_disk_cache(tmp_path, monkeypatch):
 def test_structured_output_tri_state_survives_disk_model_and_web_listing(
     tmp_path, monkeypatch
 ):
-    from openprogram.providers.enabled_models import _build_model_from_row
-    import openprogram.providers.enabled_models as enabled_models
-    from openprogram.providers.sources import models_dev
-    from openprogram.providers import storage
-    from openprogram.webui._model_listing import listing
+    from openprogram.models.providers.catalog.enabled_models import _build_model_from_row
+    import openprogram.models.providers.catalog.enabled_models as enabled_models
+    from openprogram.models.providers.catalog.sources import models_dev
+    from openprogram.models.providers.settings import storage
+    from openprogram.models.listing import listing
 
     cache = tmp_path / "cache" / "models_dev.json"
     cache.parent.mkdir(parents=True)
@@ -192,11 +192,11 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
     tmp_path, monkeypatch
 ):
     import copy
-    import openprogram.providers._config_read as config_read
-    import openprogram.providers.enabled_models as enabled_models
-    import openprogram.setup as setup
-    from openprogram.providers import storage
-    from openprogram.webui._model_listing import listing, toggle
+    import openprogram.models.providers.settings.config_read as config_read
+    import openprogram.models.providers.catalog.enabled_models as enabled_models
+    from openprogram.state import config as user_config
+    from openprogram.models.providers.settings import storage
+    from openprogram.models.listing import listing, toggle
 
     cache = tmp_path / "cache" / "models_dev.json"
     store = {
@@ -250,9 +250,9 @@ def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
         lambda consumer: Client(),
     )
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
-    monkeypatch.setattr(setup, "_read_config", lambda: {"providers": copy.deepcopy(store)})
-    monkeypatch.setattr(setup, "_write_config", save)
-    monkeypatch.setattr(setup, "update_config", update)
+    monkeypatch.setattr(user_config, "read_config", lambda: {"providers": copy.deepcopy(store)})
+    monkeypatch.setattr(user_config, "write_config", save)
+    monkeypatch.setattr(user_config, "update_config", update)
     monkeypatch.setattr(config_read, "read_providers_config", lambda: copy.deepcopy(store))
     monkeypatch.setattr(storage, "_read_providers_cfg", lambda: copy.deepcopy(store))
     storage._reset_spec_migration()

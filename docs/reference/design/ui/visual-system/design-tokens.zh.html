@@ -1,0 +1,259 @@
+<title>设计 token</title>
+<meta name="description" content="Web 应用的所有尺寸、形状和文字颜色档位，哪个组件在哪一档，以及执行它们的守卫。">
+<h1>设计 token</h1>
+<p>组件只写档位名，不写具体数值。档位在 <code translate="no">apps/web/app/styles/design/</code>；<code translate="no">npm run check</code> 遇到手写数值就失败。放不进任何档位的数值属于设计变更：先加档位或表格行。</p>
+
+<h2 id="files">文件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">globals.css</code></th><td>入口：tailwindcss，然后 design、themes、styles</td></tr>
+<tr><th scope="row"><code translate="no">design/layout.css</code></th><td>侧栏宽度、聊天列、拖动层</td></tr>
+<tr><th scope="row"><code translate="no">design/controls.css</code></th><td>控件高度档、列表行、按钮圆角</td></tr>
+<tr><th scope="row"><code translate="no">design/composer.css</code></th><td>输入框自身的几何</td></tr>
+<tr><th scope="row"><code translate="no">design/type.css</code></th><td>字号档、字体栈</td></tr>
+<tr><th scope="row"><code translate="no">design/shape.css</code></th><td>间距单位、圆角档</td></tr>
+<tr><th scope="row"><code translate="no">design/color.css</code></th><td>强调色族、四种文字墨色、固定界面色</td></tr>
+<tr><th scope="row"><code translate="no">design/icons.css</code></th><td>图标尺寸档</td></tr>
+<tr><th scope="row"><code translate="no">design/motion.css</code></th><td>时长、缓动</td></tr>
+<tr><th scope="row"><code translate="no">design/layers.css</code></th><td>层叠层（<code translate="no">z-index</code>）</td></tr>
+<tr><th scope="row"><code translate="no">design/shadcn.css</code></th><td>shadcn 颜色名到应用角色的映射</td></tr>
+<tr><th scope="row"><code translate="no">design/tailwind.css</code></th><td>Tailwind 扫描路径、变体、工具类名</td></tr>
+<tr><th scope="row"><code translate="no">themes/</code></th><td>颜色值，每个主题一个文件，加一个回退</td></tr>
+<tr><th scope="row"><code translate="no">base/</code></th><td>文档、焦点、列表行、外壳布局、滚动条、侧栏、桌面框、动效</td></tr>
+<tr><th scope="row"><code translate="no">chat/</code>、<code translate="no">right-dock/</code>、<code translate="no">dag/</code></th><td>这些区域的全局样式</td></tr>
+</tbody>
+</table>
+<p class="note">除 <code translate="no">globals.css</code> 外都在 <code translate="no">apps/web/app/styles/</code> 下。组件样式放在组件旁的 <code translate="no">*.module.css</code>，读取 token，不加自己的数值。</p>
+
+<h2 id="control-heights">控件高度</h2>
+<table class="stack">
+<thead><tr><th scope="col">档位</th><th scope="col">高度</th><th scope="col">token</th><th scope="col">Button size</th><th scope="col">字号</th></tr></thead>
+<tbody>
+<tr><th scope="row">inline</th><td>20px</td><td><code translate="no">--ui-control-inline</code></td><td>无</td><td>无</td></tr>
+<tr><th scope="row">row</th><td>24px</td><td><code translate="no">--ui-button-h-xs</code></td><td>xs、icon-xs</td><td>12px</td></tr>
+<tr><th scope="row">menu</th><td>28px</td><td><code translate="no">--ui-button-h-sm</code></td><td>sm、icon-sm</td><td>13px</td></tr>
+<tr><th scope="row">standard</th><td>30px</td><td><code translate="no">--ui-button-h</code></td><td>default、icon</td><td>14px</td></tr>
+<tr><th scope="row">composer</th><td>32px</td><td><code translate="no">--ui-button-h-lg</code></td><td>lg、icon-lg</td><td>14px</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">--ui-button-h</code> 即 <code translate="no">--ui-list-h</code>：普通按钮和侧栏对话行一样高。</p>
+<ul>
+<li>Button 通过 <code translate="no">size</code> 选档，不用高度类。由类名字符串拼的控件用 <code translate="no">h-(--ui-button-h…)</code> 或 <code translate="no">size-(--ui-button-h…)</code>；Nova 测试扫描所有 <code translate="no">.ts</code> 和 <code translate="no">.tsx</code> 文件。</li>
+<li>样式表里手写的按钮把 <code translate="no">height</code>（方形时加 <code translate="no">width</code>）设为档位 token；测试扫描所有样式表。</li>
+</ul>
+<details>
+<summary>哪个组件在哪一档</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">档位</th><th scope="col">组件</th></tr></thead>
+<tbody>
+<tr><th scope="row">内嵌 20</th><td>画在别的控件里面的控件：中间标签页的 ×、图片标注的颜色块、Launchpad 卡片和新标签页快捷方式上的删除角标、图片小标签的移除、函数卡片的工具开关、用户气泡里的密文显示开关</td></tr>
+<tr><th scope="row">行内 24，对话</th><td>落在一行、一张卡片或一条消息上的操作：侧栏会话行的 ⋯、消息悬停操作（复制、重试……）、排队消息的操作、附件移除和预览关闭、输入框上方小窗的关闭、思考强度里的快速开关、Mermaid 源码切换、图片附件上的标注按钮</td></tr>
+<tr><th scope="row">行内 24，浏览器和文件</th><td>查找栏的上下箭头、地址栏的星标、diff 的整块操作和逐行评论、会话资源行操作、分支行操作、书签操作、分屏选择的关闭、DAG 缩放读数、文件搜索的匹配方式切换</td></tr>
+<tr><th scope="row">行内 24，目录和设置</th><td>项目编辑里的移除、Agent 目录的必填开关、设置和头像的颜色块、侧栏项目操作（置顶、新对话、选项）和刷新、最近会话筛选、Agents 视图菜单、技能目录的安装按钮、<code translate="no">ManageIconButton</code> 行操作和 <code translate="no">RailAction</code>、服务商账号行和模型行、应用行的 ⋯、Agent 卡片的菜单</td></tr>
+<tr><th scope="row">菜单 28，对话和标签</th><td>菜单和弹层里的行（<code translate="no">itemCls</code>），以及工具栏、标签行里的紧凑控件：输入框下方的环境标签（Local、渠道、文件夹）和角落菜单按钮、麦克风和发送、顶栏标签和菜单触发器、中间标签页及标签栏的 + / 总览 / 菜单按钮、对话视图控制、函数卡片"使用"、函数表单的标签</td></tr>
+<tr><th scope="row">菜单 28，工具界面</th><td>内置浏览器工具栏、下载和查找胶囊、终端操作、画中画标题栏按钮、Review 的菜单和翻页、DAG 工具栏、Programs 和 Memory 的视图切换、文件面板和设置里的图标按钮</td></tr>
+<tr><th scope="row">菜单 28，输入框</th><td>放在菜单或工具栏里的输入框：命令面板搜索、git 菜单输入框、书签标题、Launchpad 搜索、文件搜索选项、DAG 选择操作</td></tr>
+<tr><th scope="row">标准 30</th><td>其余所有按钮、输入框、下拉框、分段切换和搜索框——页头、卡片、对话框（确认框的取消 / 确认）、设置行、Agents、Applications、Projects、文件夹选择器；侧栏行和侧栏图标按钮（<code translate="no">ui-list-item</code>）；PDF 工具栏；编辑消息的按钮</td></tr>
+<tr><th scope="row">输入框 32</th><td>输入框四角按钮（<code translate="no">--composer-button-size</code>）、思考强度胶囊、函数表单的输入框，以及画布控件方块</td></tr>
+</tbody>
+</table>
+<p class="note">不分档（在 <code translate="no">apps/web/tests/ui/ui-kit-is-nova.test.mjs</code> 中列为豁免）：账户页脚行（64px）、Agents 设置宽度手柄（20 x 44px）、中间标签的激活态（28px 加 6px 底脚）、效果预览里的标签栏绘制、浏览器动作提示、标签徽记、Switch（Nova 的 32 x 18.4px 轨道）、开关圆钮、图标尺寸。</p>
+</details>
+
+<h2 id="type">字号</h2>
+<table class="stack">
+<thead><tr><th scope="col">档位</th><th scope="col">字号</th><th scope="col">行高</th><th scope="col">token</th><th scope="col">Tailwind</th></tr></thead>
+<tbody>
+<tr><th scope="row">2xs</th><td>11px</td><td>16px</td><td><code translate="no">--fs-2xs</code></td><td><code translate="no">text-fs-2xs</code></td></tr>
+<tr><th scope="row">xs</th><td>12px</td><td>16px</td><td><code translate="no">--fs-xs</code></td><td><code translate="no">text-fs-xs</code></td></tr>
+<tr><th scope="row">sm</th><td>13px</td><td>18px</td><td><code translate="no">--fs-sm</code></td><td><code translate="no">text-fs-sm</code></td></tr>
+<tr><th scope="row">base</th><td>14px</td><td>20px</td><td><code translate="no">--fs-base</code></td><td><code translate="no">text-fs-base</code></td></tr>
+<tr><th scope="row">chat</th><td>15px</td><td>24px</td><td><code translate="no">--fs-chat</code></td><td><code translate="no">text-fs-chat</code></td></tr>
+<tr><th scope="row">md</th><td>16px</td><td>24px</td><td><code translate="no">--fs-md</code></td><td><code translate="no">text-fs-md</code></td></tr>
+<tr><th scope="row">title</th><td>18px</td><td>28px</td><td><code translate="no">--fs-title</code></td><td><code translate="no">text-fs-title</code></td></tr>
+<tr><th scope="row">lg</th><td>20px</td><td>28px</td><td><code translate="no">--fs-lg</code></td><td><code translate="no">text-fs-lg</code></td></tr>
+<tr><th scope="row">display</th><td>30px</td><td>36px</td><td><code translate="no">--fs-display</code></td><td><code translate="no">text-fs-display</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>CSS 写 <code translate="no">font-size: var(--fs-*)</code>，类名写 <code translate="no">text-fs-*</code>，内联样式写 <code translate="no">fontSize: "var(--fs-*)"</code>。不用 px 或 rem 字面量、任意 <code translate="no">text-[…]</code> 或自带的 <code translate="no">text-xs</code> 到 <code translate="no">text-2xl</code>。<code translate="no">@theme</code> 仍把自带名称映射到 shadcn 文档的含义，粘贴的 registry 代码能正确显示。</li>
+<li>字重：400 正文，500 标签、控件和行标题，600 标题和强调，700 仅转录标题。</li>
+</ul>
+<details>
+<summary>哪种文字在哪一档</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">档位</th><th scope="col">文字</th></tr></thead>
+<tbody>
+<tr><th scope="row">2xs 11</th><td>徽标里的计数和圆点、标签计数、PiP 里的按键提示、详情页的大写分组标题、DAG 节点和面板的元信息、上下文提交时间线的元信息、文件夹大小、附件条的大小行、输入框芯片的小提示、模型列表标签</td></tr>
+<tr><th scope="row">xs 12</th><td>行旁或行下的次要信息：时间、路径、计数、账号栏副标题；菜单分组标题、菜单说明和快捷键提示（<code translate="no">GROUP_LABEL</code>、<code translate="no">MENU_NOTE</code>、<code translate="no">SHORTCUT</code>）；表单项说明；xs（24px）按钮</td></tr>
+<tr><th scope="row">sm 13</th><td>描述和辅助说明、中间标签页、页面标签（<code translate="no">manage-page</code> 标签、项目标签）、Agent 卡片的文字和胶囊、sm（28px）按钮和分段切换、对话框里的设置标签</td></tr>
+<tr><th scope="row">base 14</th><td>正文；侧边栏和列表的行；菜单和 Select 的行（<code translate="no">itemCls</code>）；默认（30px）和 lg（32px）按钮、输入框、多行输入框、下拉框、分段切换；对话框描述；网格里的卡片标题</td></tr>
+<tr><th scope="row">chat 15</th><td>对话正文、输入框、嵌入的对话卡片、运行面板标题、Markdown 文件预览</td></tr>
+<tr><th scope="row">md 16</th><td>页面内的分区标题（设置卡片标题、"All chats"）、对话框标题、Markdown h3/h4</td></tr>
+<tr><th scope="row">title 18</th><td>页头的页面标题（<code translate="no">manage-page</code>）、详情面板的标题：设置详情、Programs 条目、Agent 编辑器、项目、记忆编辑器；Markdown h2</td></tr>
+<tr><th scope="row">lg 20</th><td>侧边栏字标、大数字（用量合计）、图形方块（项目图标）、效果预览、Markdown h1</td></tr>
+<tr><th scope="row">display 30</th><td>Launchpad 文件夹标题</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="spacing-and-radius">间距和圆角</h2>
+<p>Tailwind 的间距单位在所有界面上都是 4px（<code translate="no">p-2</code> = 8px），因为默认的 <code translate="no">0.25rem</code> 在 14px 根字号上会落到半像素。手写 CSS 尽量用整数倍的 px。</p>
+<table class="stack">
+<thead><tr><th scope="col">档位</th><th scope="col">大小</th><th scope="col">用于</th></tr></thead>
+<tbody>
+<tr><th scope="row">2xs</th><td>2px</td><td>细条、进度轨、光标、提示箭头</td></tr>
+<tr><th scope="row">xs</th><td>4px</td><td>标签、kbd、复选框、行内代码、徽记</td></tr>
+<tr><th scope="row">sm</th><td>6px</td><td>行内的芯片和小控件</td></tr>
+<tr><th scope="row">md</th><td>8px</td><td>所有 Button、输入框、选择框、手写按钮</td></tr>
+<tr><th scope="row">lg</th><td>10px</td><td>列表行、菜单、弹层、Select 弹出、卡片</td></tr>
+<tr><th scope="row">xl</th><td>12px</td><td>中间卡片、分栏面板、页面面板、对话框</td></tr>
+<tr><th scope="row">2xl</th><td>16px</td><td>用户气泡、大型浮层</td></tr>
+<tr><th scope="row">full</th><td>9999px</td><td>胶囊、头像、圆点</td></tr>
+</tbody>
+</table>
+<p class="note">CSS（<code translate="no">var(--radius-lg)</code>）和 Tailwind（<code translate="no">rounded-lg</code>）用同样的名字。<code translate="no">--ui-button-radius</code> 是 md，<code translate="no">--ui-list-radius</code> 是 lg。允许按盒子比例（<code translate="no">50%</code>、方圆的 <code translate="no">26%</code>）和基于档位的同心 <code translate="no">calc()</code>。来自没有档位的表面的圆角用 <code translate="no">shape:</code> 注释说明。</p>
+
+<h2 id="text-inks">文字墨色</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">颜色</th><th scope="col">文字</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--text-bright</code></th><td>标题、悬停或选中的行、数值</td></tr>
+<tr><th scope="row"><code translate="no">--text-primary</code></th><td>正文、列表行、控件</td></tr>
+<tr><th scope="row"><code translate="no">--text-secondary</code></th><td>描述、辅助说明、未选中的标签、计数</td></tr>
+<tr><th scope="row"><code translate="no">--text-muted</code></th><td>元信息（时间、路径、占位符）、禁用文字</td></tr>
+</tbody>
+</table>
+<p class="note">Tailwind：<code translate="no">text-text-bright</code>、<code translate="no">-primary</code>、<code translate="no">-secondary</code>、<code translate="no">-muted</code>。<code translate="no">components/ui</code> 的部件保留 <code translate="no">text-foreground</code> 和 <code translate="no">text-muted-foreground</code>，解析到相同墨色；其他代码不用这些名字。强调色（<code translate="no">--accent-*</code>、<code translate="no">--theme-accent</code>）表示状态，不表示层级。</p>
+
+<h2 id="interface-colours">界面颜色</h2>
+<p>主题颜色在 <code translate="no">themes/</code>。所有主题都相同的颜色是 <code translate="no">color.css</code> 中 <code translate="no">:root</code> 上的命名 token；组件写 token。<code translate="no">light-dark(a, b)</code> 跟随使用元素的 color-scheme。</p>
+<details>
+<summary>token 分组</summary>
+<table class="stack">
+<thead><tr><th scope="col">分组</th><th scope="col">token</th><th scope="col">使用者</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话状态</th><td><code translate="no">--status-working</code> <code translate="no">--status-needs-input</code> <code translate="no">--status-failed</code> <code translate="no">--status-unread</code> <code translate="no">--status-refresh-done</code></td><td>侧栏的会话标记、刷新完成的闪色</td></tr>
+<tr><th scope="row">权限档</th><td><code translate="no">--permission-deny</code> <code translate="no">--permission-ask</code> <code translate="no">--permission-allow</code></td><td>项目权限的圆点</td></tr>
+<tr><th scope="row">错误文字</th><td><code translate="no">--error-form</code> <code translate="no">--error-message-edit</code> <code translate="no">--error-document</code></td><td>插件对话框、消息编辑器、文档窗口</td></tr>
+<tr><th scope="row">目录按钮</th><td><code translate="no">--pill-warn</code> <code translate="no">--pill-danger</code></td><td>技能目录按钮的悬停色</td></tr>
+<tr><th scope="row">提交时间线</th><td><code translate="no">--commit-state-*</code>（每种状态的 <code translate="no">-bg</code> 和文字色）、<code translate="no">--commit-error</code>、<code translate="no">--commit-anchor</code>、<code translate="no">--commit-refresh-done</code></td><td>上下文提交时间线</td></tr>
+<tr><th scope="row">ANSI</th><td><code translate="no">--ansi-red</code> <code translate="no">--ansi-green</code> <code translate="no">--ansi-yellow</code> <code translate="no">--ansi-blue</code> <code translate="no">--ansi-magenta</code> <code translate="no">--ansi-cyan</code></td><td>程序的进度日志</td></tr>
+<tr><th scope="row">色块上的文字</th><td><code translate="no">--ink-on-fill</code>、<code translate="no">--avatar-fallback-bg</code></td><td>彩色底上的文字（吸附标签、保存按钮、计数徽标、选中的自定义色井、字母头像）</td></tr>
+<tr><th scope="row">Agent 光标</th><td><code translate="no">--agent-cursor-keyline</code> <code translate="no">--agent-cursor-shadow</code> <code translate="no">--agent-light-pulse</code></td><td>Agent 光标和被控应用的窗口灯</td></tr>
+<tr><th scope="row">浏览器</th><td><code translate="no">--browser-control-surface</code> <code translate="no">--browser-control-ink</code>、<code translate="no">--browser-pane-active</code> <code translate="no">--browser-pane-yielding</code>、<code translate="no">--browser-glyph-*</code></td><td>浏览器控制浮块、浏览器标签页的窗格描边和首页图标</td></tr>
+<tr><th scope="row">画布控件</th><td><code translate="no">--pane-light-&lt;em&gt;</code>、<code translate="no">--pane-divider-&lt;/em&gt;</code></td><td>窗格的窗口灯和分隔条</td></tr>
+<tr><th scope="row">遮罩</th><td><code translate="no">--scrim-attachment-preview</code></td><td>放大的消息附件</td></tr>
+<tr><th scope="row">PDF 预览</th><td><code translate="no">--pdf-viewport-bg</code> <code translate="no">--pdf-thumb-shadow</code> <code translate="no">--pdf-thumb-current</code></td><td>PDF 页面底色和缩略图</td></tr>
+<tr><th scope="row">GUI 工具</th><td><code translate="no">--gui-tool-rule</code></td><td>GUI 工具活动卡片的发丝线</td></tr>
+<tr><th scope="row">侧栏</th><td><code translate="no">--nav-toggle-press</code> <code translate="no">--nav-item-press</code> <code translate="no">--new-chat-chip</code> <code translate="no">--new-chat-chip-hover</code> <code translate="no">--wordmark-from</code> <code translate="no">--wordmark-to</code></td><td>按下的导航行、新对话圆钮、字标</td></tr>
+<tr><th scope="row">服务商卡片</th><td><code translate="no">--provider-card-highlight</code></td><td>服务商的模型卡片</td></tr>
+<tr><th scope="row">主题场景</th><td><code translate="no">--theme-scene-rain-&lt;em&gt;</code> <code translate="no">--theme-scene-gradient-&lt;/em&gt;</code></td><td>设置里 Code rain 和 Gradient 的预览，Launchpad 背后的 Gradient 场景和它上面的玻璃控件</td></tr>
+<tr><th scope="row">Launchpad</th><td><code translate="no">--launchpad-*</code></td><td>应用图标和打开的文件夹下的阴影、编辑模式的删除角标、Gradient 场景上的标签阴影</td></tr>
+<tr><th scope="row">运行中光晕</th><td><code translate="no">--running-glow-blue</code> <code translate="no">--running-glow-violet</code> <code translate="no">--running-glow-green</code></td><td>侧栏里运行中对话那一行流动的光晕</td></tr>
+<tr><th scope="row">分支泳道</th><td><code translate="no">--lane-0</code> … <code translate="no">--lane-17</code></td><td>对话图的线、节点和标签，Activity 面板的分支行，浏览器新标签页磁贴的首字母（<code translate="no">lib/format-utils/lane-colors.ts</code> 给出 <code translate="no">var(--lane-N)</code>）</td></tr>
+<tr><th scope="row">代码高亮</th><td><code translate="no">--hl-keyword</code> <code translate="no">--hl-string</code> <code translate="no">--hl-number</code> <code translate="no">--hl-comment</code> <code translate="no">--hl-title</code> <code translate="no">--hl-type</code> <code translate="no">--hl-attr</code></td><td>消息代码块里的 highlight.js 记号</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">styles/tool-tones.css</code> 的步骤色（<code translate="no">--tool-tone-*</code>、<code translate="no">--timeline-*</code>）是同类 token。</p>
+</details>
+<ul>
+<li>shadcn 的每个角色都是完整颜色：读 <code translate="no">var(--ring)</code>。包一层 <code translate="no">hsl()</code> 会无效。半透明：<code translate="no">color-mix(in srgb, var(--muted) 34%, transparent)</code>。</li>
+<li><code translate="no">var(--role, literal)</code> 指向始终定义的角色（主题角色、<code translate="no">--accent</code>、<code translate="no">--destructive</code>、<code translate="no">--muted-foreground</code>），不带多余字面量。没有主题定义的角色（<code translate="no">--danger</code>、<code translate="no">--warning</code>、<code translate="no">--success</code>、<code translate="no">--red</code>、<code translate="no">--orange</code>、<code translate="no">--status-error</code>、<code translate="no">--border-color</code>）换成持有其字面量的 token。</li>
+</ul>
+
+<h2 id="icons">图标</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">大小</th><th scope="col">用在</th></tr></thead>
+<tbody>
+<tr><th scope="row">12</th><td>xs（24px）控件里、11–12px 文字旁边</td></tr>
+<tr><th scope="row">14</th><td>sm（28px）控件里、菜单行、芯片</td></tr>
+<tr><th scope="row">16</th><td>默认控件、工具栏、页面按钮</td></tr>
+<tr><th scope="row">20</th><td>侧栏导航、空状态、方块、页头图形</td></tr>
+<tr><th scope="row">24</th><td>空页面的主图形</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">size</code> 28 及以上是插图（头像、标志）。</p>
+
+<h2 id="motion">动效</h2>
+<table class="stack">
+<thead><tr><th scope="col">档位</th><th scope="col">值</th><th scope="col">用在</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--motion-fast</code></th><td>120ms</td><td>悬停、按下、颜色和边框变化</td></tr>
+<tr><th scope="row"><code translate="no">--motion-medium</code></th><td>160ms</td><td>展开、淡入淡出、小幅移动</td></tr>
+<tr><th scope="row"><code translate="no">--motion-slow</code></th><td>240ms</td><td>面板、抽屉、大幅移动</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">transition: opacity var(--motion-medium) var(--ease-standard)</code>。<code translate="no">--ease-standard</code> 是唯一缓动。循环动画和弹簧曲线保持自己的时序。脚本等待过渡时，超时不短于所等档位。</p>
+
+<h2 id="shadows">阴影</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">token</th><th scope="col">用于</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--shadow-sm</code></th><td>卡片、小的浮起部件</td></tr>
+<tr><th scope="row"><code translate="no">--shadow</code></th><td>浮起面板</td></tr>
+<tr><th scope="row"><code translate="no">--shadow-popover</code></th><td>菜单、浮动条、拖动预览</td></tr>
+<tr><th scope="row"><code translate="no">--shadow-dialog</code></th><td>对话框、全窗口覆盖层</td></tr>
+<tr><th scope="row"><code translate="no">--shadow-raised</code>、<code translate="no">--shadow-raised-hover</code></th><td>输入框、浮起按钮</td></tr>
+</tbody>
+</table>
+<p class="note">组件里不写 <code translate="no">rgba</code>。内嵌线和焦点环是边框，不算高度。</p>
+
+<h2 id="layers">层</h2>
+<table class="stack">
+<thead><tr><th scope="col">层级</th><th scope="col">值</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">--z-sticky</code></th><td>20</td><td>面板内的吸顶标题</td></tr>
+<tr><th scope="row"><code translate="no">--z-floating</code></th><td>50</td><td>面板内浮动的小面板</td></tr>
+<tr><th scope="row"><code translate="no">--z-drawer</code></th><td>100</td><td>窄屏时盖在内容上的侧栏</td></tr>
+<tr><th scope="row"><code translate="no">--z-overlay</code></th><td>110</td><td>对话框背后的遮罩</td></tr>
+<tr><th scope="row"><code translate="no">--z-dialog</code></th><td>120</td><td>Dialog、AlertDialog</td></tr>
+<tr><th scope="row"><code translate="no">--z-popover</code></th><td>130</td><td>Popover、DropdownMenu、ContextMenu、Select，高于对话框</td></tr>
+<tr><th scope="row"><code translate="no">--z-tooltip</code></th><td>140</td><td>Tooltip</td></tr>
+<tr><th scope="row"><code translate="no">--z-toast</code></th><td>300</td><td>toast</td></tr>
+<tr><th scope="row"><code translate="no">--z-fullscreen</code></th><td>10000</td><td>整窗编辑器和灯箱</td></tr>
+<tr><th scope="row"><code translate="no">--z-drag</code></th><td>100000</td><td>拖拽预览和拖拽表面</td></tr>
+</tbody>
+</table>
+<p class="note">组件内部 1 到 12 的值保持局部。Tailwind：<code translate="no">z-(--z-popover)</code>。CSS：<code translate="no">z-index: var(--z-popover)</code>，紧贴某层之上用 <code translate="no">calc(var(--z-drag) + 1)</code>。</p>
+
+<h2 id="which-layer-writes-what">哪一层写什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">写法</th><th scope="col">负责</th><th scope="col">不做</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">components/ui</code> 里的 shadcn 部件</th><td>所有控件：按钮、输入框、选择器、菜单、弹窗、开关、复选框</td><td>—</td></tr>
+<tr><th scope="row">JSX 里的 Tailwind 类</th><td>布局和间距（flex、grid、gap、padding、尺寸）、简单状态</td><td>复杂选择器</td></tr>
+<tr><th scope="row">组件旁边的 <code translate="no">*.module.css</code></th><td>Tailwind 表达不了的：伪元素（项目引导线）、<code translate="no">data-*</code> 和父级选择器、关键帧、分层层叠</td><td>手搓控件、写死数值</td></tr>
+</tbody>
+</table>
+<details>
+<summary>仍留在模块里的布局规则</summary>
+<p>约 280 条单类、纯布局规则保留。Tailwind 工具类在 <code translate="no">@layer utilities</code>，模块规则不分层，所以移走的规则会输给元素上每条不分层规则。</p>
+<p>以下情况留在模块：类名在样式表中更早出现、元素自己合并类名（<code translate="no">DialogContent</code> 保留 <code translate="no">sm:max-w-*</code>）、另一个模块类设置了相同属性、样式对象被重新导出或整体传递。组件被编辑时才移动；守卫确保数量只减不增。</p>
+</details>
+
+<h2 id="the-guard">守卫</h2>
+<p><code translate="no">apps/web/scripts/ui/check-design-tokens.mjs</code> 由 <code translate="no">npm run check</code> 运行，扫描所有样式表和 <code translate="no">.ts</code>、<code translate="no">.tsx</code> 文件。<code translate="no">apps/web/tests/ui/ui-kit-is-nova.test.mjs</code> 拒绝字面量控件高度。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类别</th><th scope="col">拒绝</th></tr></thead>
+<tbody>
+<tr><th scope="row">字体</th><td>不在 <code translate="no">--fs-*</code> 档位的字号、任意 <code translate="no">text-[…]</code>、自带 <code translate="no">text-xs</code> 到 <code translate="no">text-2xl</code>、手写字体、<code translate="no">font</code> 简写、强制 <code translate="no">tabular-nums</code>（字体和数字样式由设置决定）</td></tr>
+<tr><th scope="row">字重</th><td>400、500、600、700 以外的值</td></tr>
+<tr><th scope="row">圆角</th><td>px、任意 <code translate="no">rounded-[…]</code>、裸 <code translate="no">rounded</code>、<code translate="no">rounded-3xl</code> 及以上、<code translate="no">--radius</code>、非档位的 <code translate="no">--radius-*</code></td></tr>
+<tr><th scope="row">墨色</th><td><code translate="no">--text-tertiary</code>、<code translate="no">--text-dim</code>、<code translate="no">text-[var(--text-*)]</code>、<code translate="no">components/ui</code> 之外的 shadcn 墨色名</td></tr>
+<tr><th scope="row">图标</th><td>28 以下且不是档位的 <code translate="no">size</code></td></tr>
+<tr><th scope="row">颜色</th><td><code translate="no">app/styles/themes/</code>、<code translate="no">app/styles/design/</code> 和 <code translate="no">app/styles/</code> 的自定义属性行之外的 <code translate="no">#hex</code>、<code translate="no">rgb()</code>、<code translate="no">hsl()</code></td></tr>
+<tr><th scope="row">模块布局</th><td>超过 <code translate="no">apps/web/scripts/ui/module-layout-baseline.json</code> 允许的纯布局规则；新模块不能有。<code translate="no">node apps/web/scripts/ui/check-design-tokens.mjs --write-layout-baseline</code> 下调数字</td></tr>
+</tbody>
+</table>
+<details>
+<summary>具名例外</summary>
+<ul>
+<li>接受像素的 API：xterm、Mermaid、canvas、Electron 视图。</li>
+<li>Agent 卡片上 Framer Motion 的数字圆角。</li>
+<li>输入框：圆角、字重和图标保持原样。</li>
+<li>写有 <code translate="no">glyph:</code>、<code translate="no">shape:</code> 或 <code translate="no">mask:</code> 的行。</li>
+<li><code translate="no">COLOUR_DATA</code>：用户选择的调色板和图表系列、美术图（Launchpad 和记忆图标、代码雨、搜索引擎图形）、接受颜色字符串的 API（canvas、WebGL、xterm、Mermaid、pdf.js、web manifest）、用 <code translate="no">hsl()</code> 计算的努力度热度色。</li>
+</ul>
+</details>

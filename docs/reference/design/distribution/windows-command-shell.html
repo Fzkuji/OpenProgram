@@ -1,0 +1,132 @@
+<title>Windows command shell</title>
+<meta name="description" content="Which shell a command and a hook run in on Windows, what the model is told about it, and how permission rules read PowerShell.">
+<h1>Windows command shell</h1>
+<p><code translate="no">host/_platform/command_shell.resolve_shell</code> decides which shell a command runs in, for an execution environment and the sandbox in force. The command tool, hooks, the environment block, permission rules, <code translate="no">doctor</code> and <code translate="no">/api/system/features</code> read its profile; nothing else probes for a shell.</p>
+<p>A command runs sandboxed exactly when the profile says so, also for a caller that passes its own sandbox policy. The host part is cached per named bash path, so changing the setting takes effect on the next command; the sandbox is read on every call.</p>
+
+<h2 id="profiles">Profiles</h2>
+<table class="stack fixed" id="command-shell-profiles">
+<thead><tr><th scope="col">Shell</th><th scope="col">When</th><th scope="col">Promises it does not keep</th></tr></thead>
+<tbody>
+<tr><th scope="row">bash, sh</th><td>macOS and Linux; <code translate="no">/bin/sh</code> only without bash</td><td>None</td></tr>
+<tr><th scope="row">Git Bash</th><td>Windows, when <a href="#finding-bash">a bash is found</a></td><td>None</td></tr>
+<tr><th scope="row">PowerShell 7</th><td>Windows without bash, <code translate="no">pwsh.exe</code> in an absolute PATH folder</td><td>Recoverable delete; rule parsing is partial</td></tr>
+<tr><th scope="row">Windows PowerShell 5.1</th><td>Windows without either</td><td>Recoverable delete; UTF-8 file output is partial (<code translate="no">&gt;</code> writes UTF-8 with a byte order mark); rule parsing is partial</td></tr>
+<tr><th scope="row">bash in WSL</th><td>Windows with the sandbox in force and able to run</td><td>Recoverable delete; stopping reaches the tree only in part</td></tr>
+<tr><th scope="row">Remote</th><td>An SSH host or a Docker container</td><td>Recoverable delete; stopping reaches the tree only in part</td></tr>
+</tbody>
+</table>
+<p>The promises are recoverable delete, UTF-8 file output, the command's own exit code, stopping the whole process tree, and permission rules that can read the command. Each profile states all five as supported, partial or unsupported.</p>
+<p><code translate="no">doctor</code> prints the profile and runs <code translate="no">echo 你好; exit 3</code> through the command backend, sandbox included. The row is advice: OK when both come back, INFO with the reason when not, and it gates neither <code translate="no">openprogram upgrade</code> nor a self-update. It also names a sandbox that is on but cannot run, and a named bash that is not a file.</p>
+
+<h2 id="finding-bash">Finding bash</h2>
+<ol>
+<li>The path the owner named: <code translate="no">OPENPROGRAM_GIT_BASH_PATH</code>, then the setting <code translate="no">shell.windows_bash_path</code>. A path that is not a file is passed over, never an error.</li>
+<li>Git for Windows in Program Files or the user's programs.</li>
+<li>The bash inside the Git the runtime ships, when the base's <code translate="no">base.json</code> names it as <code translate="no">gitBash</code>.</li>
+<li><code translate="no">bin\bash.exe</code>, then <code translate="no">usr\bin\bash.exe</code>, beside each <code translate="no">git.exe</code> on PATH: scoop, portable and custom installs.</li>
+<li>A <code translate="no">bash</code> in an absolute PATH folder that is not the WSL launcher.</li>
+<li>Otherwise PowerShell: <code translate="no">pwsh</code> 7, then Windows PowerShell 5.1.</li>
+</ol>
+<p>The current directory and relative PATH entries are never searched, so a repository's own <code translate="no">bash.exe</code> never becomes the shell, and the answer does not depend on where the process started.</p>
+<p>The Windows base build checks the unpacked dugite Git for <code translate="no">bin\bash.exe</code> and <code translate="no">usr\bin\bash.exe</code> and writes the one it finds, relative to <code translate="no">&lt;base&gt;\git</code>, or <code translate="no">null</code>. No extra Git or coreutils is downloaded.</p>
+<details>
+<summary>Why this design</summary>
+<p>Peers split in two. Codex, OpenCode and Grok Build prefer PowerShell. Claude Code 2.1.321, Kimi Code, Pi and ZCode prefer bash. Oh My Pi embeds a bash engine written in Rust, which a Python runtime cannot reuse.</p>
+<ul>
+<li>Bash first, PowerShell second, as Claude Code does: only the bash shells keep all five promises. Codex prefers PowerShell because its rules and sandbox were written for it; ours were not.</li>
+<li>The bundled Git's bash costs no bytes when the archive has one. Downloading coreutils to make one would, and no peer does.</li>
+<li>Bash beside <code translate="no">git.exe</code> follows Kimi Code's order and its <code translate="no">usr\bin</code> candidate; Claude Code and OpenCode derive it the same way. The variable name follows Claude Code's <code translate="no">CLAUDE_CODE_GIT_BASH_PATH</code>.</li>
+<li>The PATH lookup stays: it reads only absolute folders and skips the WSL launcher, so removing it would only cost MSYS2 users a setting.</li>
+<li>A bad named path falls through instead of failing as in Pi, because a missing shell degrades and never halts.</li>
+</ul>
+</details>
+
+<h2 id="powershell">What runs in PowerShell</h2>
+<p>PowerShell source carries its own UTF-8 setup inside <code translate="no">try</code> and ends with <code translate="no">exit</code>, so in ConstrainedLanguage the setup fails quietly and the exit code still arrives. For 5.1 the setup also sets <code translate="no">$PSDefaultParameterValues['Out-File:Encoding']='utf8'</code>: <code translate="no">&gt;</code> writes UTF-8 with a byte order mark, which read and grep decode.</p>
+<table class="stack fixed" id="shell-rules">
+<caption>What the environment block tells the model (<code translate="no">ShellProfile.syntax</code>)</caption>
+<thead><tr><th scope="col">Shell</th><th scope="col">Rules</th></tr></thead>
+<tbody>
+<tr><th scope="row">Windows PowerShell 5.1</th><td>No <code translate="no">&amp;&amp;</code>, <code translate="no">||</code>, <code translate="no">?:</code> or <code translate="no">??</code>: chain with <code translate="no">;</code> and test <code translate="no">if ($?)</code>. No <code translate="no">2&gt;&amp;1</code> on native programs. Write files with the edit tools or <code translate="no">Set-Content -Encoding utf8</code></td></tr>
+<tr><th scope="row">PowerShell 7</th><td>Write PowerShell 7</td></tr>
+<tr><th scope="row">Both</th><td>Codex's three safety rules from <code translate="no">windows_shell_guidance</code>: quote paths with spaces, <code translate="no">-LiteralPath</code> for paths with brackets or stars, nothing deleted outside the working directory unasked</td></tr>
+<tr><th scope="row">Git Bash</th><td>Bash syntax; quote Windows paths or use forward slashes</td></tr>
+</tbody>
+</table>
+<p>The command tool's description is the same everywhere. A new shell changes only that line of the environment block, told once beside the next message (<a href="../context/composition.html#l2">Composition</a>).</p>
+<details>
+<summary>Why this design</summary>
+<ul>
+<li>One command tool with the rules in the environment block follows Codex, which appends its guidance by platform. Claude Code splits Bash and PowerShell into two tools; here that would change the tool list whenever the shell changes and break the cached prompt prefix.</li>
+<li>The 5.1 rules are what 5.1 rejects with a ParserError, which needs no measurement.</li>
+<li>The Out-File default follows Claude Code's prelude. UTF-16 makes read and grep see NUL bytes; the byte order mark is the one fix that needs nothing from the model. Codex sets only the console encoding, so its <code translate="no">&gt;</code> still writes UTF-16. <code translate="no">Set-Content</code> keeps its default, so one file never mixes two encodings.</li>
+</ul>
+</details>
+
+<h2 id="msys">Delete shims under MSYS</h2>
+<p>The bash puts the delete shims first on PATH again after MSYS prepends <code translate="no">/usr/bin</code>. <code translate="no">cygpath</code> spells their folder for the bash it sits beside (<code translate="no">/c/x</code> for Git Bash and MSYS2, <code translate="no">/cygdrive/c/x</code> for Cygwin); a bash without it gets the MSYS spelling made in Python.</p>
+
+<h2 id="hook-shell">Which shell runs a hook</h2>
+<table class="stack fixed" id="hook-shells">
+<thead><tr><th scope="col">Hook entry</th><th scope="col">Windows</th><th scope="col">macOS and Linux</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">"shell": "bash"</code> (default)</th><td>The host's bash; without one, PowerShell, and the conversation is told once (<code translate="no">hook_shell_fallback</code>)</td><td><code translate="no">/bin/sh</code></td></tr>
+<tr><th scope="row"><code translate="no">"shell": "powershell"</code></th><td>PowerShell, beside Git Bash too</td><td><code translate="no">pwsh</code></td></tr>
+<tr><th scope="row"><code translate="no">"args": [...]</code></th><td colspan="2"><code translate="no">[command, *args]</code> with no shell, so no quoting rule applies</td></tr>
+</tbody>
+</table>
+<p>The notice says how to fix it: install Git for Windows, declare the hook's shell, or use <code translate="no">command</code> with <code translate="no">args</code>. A hook that cannot run, or times out, still allows the action.</p>
+<details>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Compared</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code 2.1.321, followed</th><td>A <code translate="no">shell</code> field, a direct <code translate="no">command</code> plus <code translate="no">args</code> form, bash by default, PowerShell with one warning per session</td></tr>
+<tr><th scope="row">Codex</th><td><code translate="no">COMSPEC /C</code> with a <code translate="no">commandWindows</code> override, so an author writes every hook twice</td></tr>
+<tr><th scope="row">Grok Build</th><td>Rewrites <code translate="no">$VAR</code> for PowerShell</td></tr>
+</tbody>
+</table>
+<p>A declared language keeps <code translate="no">test -f .env &amp;&amp; exit 2</code> from failing to parse in 5.1 and being allowed unnoticed. The notice is a line in the conversation, not a gate.</p>
+</details>
+
+<h2 id="powershell-rules">Deny and ask rules for PowerShell</h2>
+<p>Where commands run in PowerShell, deny and ask rules also read the command lowered to POSIX words (<code translate="no">runtime/permissions/powershell_words.py</code>). Each pipeline element becomes an argv. Allow rules never read the lowered form: they match the command as written, and "Always allow" saves that exact text.</p>
+<table class="stack fixed" id="powershell-aliases">
+<thead><tr><th scope="col">Reads as</th><th scope="col">PowerShell</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">rm</code></th><td><code translate="no">Remove-Item, ri, rm, del, erase, rd, rmdir</code></td></tr>
+<tr><th scope="row"><code translate="no">mv</code></th><td><code translate="no">Move-Item, mi, mv, move</code></td></tr>
+<tr><th scope="row"><code translate="no">cp</code></th><td><code translate="no">Copy-Item, cp, cpi, copy</code></td></tr>
+<tr><th scope="row"><code translate="no">-r</code>, <code translate="no">-f</code></th><td><code translate="no">-Recurse</code>, <code translate="no">-Force</code>, or any prefix PowerShell accepts</td></tr>
+<tr><th scope="row">Operands</th><td>Positional words and the values of <code translate="no">-Path</code>, <code translate="no">-LiteralPath</code>, <code translate="no">-Destination</code></td></tr>
+</tbody>
+</table>
+<p>So <code translate="no">bash(rm -rf *)</code> stops <code translate="no">Remove-Item -Recurse -Force .</code>. A command the lowering cannot read for certain (variables, subexpressions, script blocks, arrays, redirections, <code translate="no">&amp;</code>, dot-sourcing, comments, backticks, Unicode quotes and dashes) is asked about, not refused, when it names one of those cmdlets or runs a computed command, and only if a deny rule names <code translate="no">rm</code>, <code translate="no">mv</code> or <code translate="no">cp</code>.</p>
+<details>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">Point</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex, followed</th><td>Its in-process tree-sitter lowering accepts plain words and literal strings and treats the rest as unreadable, with the same deletion alias table</td></tr>
+<tr><th scope="row">Claude Code</th><td>Parses PowerShell's AST and keeps Bash and PowerShell rules apart, suggesting the PowerShell tool be turned off when a Bash deny exists; with one command tool that turns off every command</td></tr>
+<tr><th scope="row">ZCode</th><td>Matches each dialect separately</td></tr>
+<tr><th scope="row">One rule, both shells</th><td>An owner who writes <code translate="no">bash(rm -rf *)</code> means "no recursive delete"</td></tr>
+<tr><th scope="row">No grammar</th><td>Codex's accepted subset reads exactly without one, and <code translate="no">tree-sitter-language-pack</code> 1.x downloads grammars on first use, which a permission check must not do</td></tr>
+<tr><th scope="row">Ask, not refuse</th><td>Prompts stay rare: only an owner who wrote such a deny rule sees the extra question</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tested</th><td>Resolution, the shim folder's spelling with a stand-in <code translate="no">cygpath</code>, the 5.1 prelude, rule lowering and hook shells, with injected machines and environments. None has run on Windows, Cygwin included; the ConstrainedLanguage exit code test runs only there</td></tr>
+<tr><th scope="row">Waiting on a build</th><td>Whether the dugite archive carries a bash is answered by the next Windows base build</td></tr>
+<tr><th scope="row">Not built</th><td>The Web page does not show <code translate="no">hook_shell_fallback</code>: it is logged and sent as a WebSocket frame no client handles yet</td></tr>
+<tr><th scope="row">Unmeasured</th><td>How often the model writes bash syntax into 5.1 or writes UTF-16 files; that baseline needs a Windows machine and real model calls. The byte order mark of <code translate="no">echo 你好 &gt; a.txt</code> is checked only as prelude text</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="windows-support.html">Windows support</a></p>

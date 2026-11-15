@@ -1,0 +1,72 @@
+<title>Agent 控制覆盖层</title>
+<meta name="description" content="画在 agent 控制对象上的辉光、标题栏指示灯和 agent 光标，以及让它们不碍事的规则。">
+<h1>Agent 控制覆盖层</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">目标</th><th scope="col">绘制</th><th scope="col">代码</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS 原生窗口（<code translate="no">computer_use</code> 窗口操作）</th><td>内侧辉光、强调色标题栏灯、光标。每个对话一个透明、可穿透点击、不可聚焦的窗口，边距 32pt。</td><td><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/computer_use/computer_use_agent/desktop/window_watch.py">window_watch.py</a> 报告；<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/main/worker/agent-control.js">agent-control.js</a> 放置；<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/app/menu-overlay/agent-control/page.tsx">menu-overlay/agent-control</a> 渲染</td></tr>
+<tr><th scope="row">App 内网页：标签页或悬浮预览</th><td>内侧辉光、光标。每个页面一个这样的窗口，边距 24pt，只在视图显示时显示。辉光贴合圆角：预览 10pt，标签页圆底角。</td><td><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/main/windows/action-cues.js">action-cues.js</a> 放置；<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/lib/desktop/bridge/bridge-events.ts">bridge-events.ts</a> 的 <code translate="no">subscribeAgentPageGlow</code> 报告</td></tr>
+<tr><th scope="row">聊天预览（PiP）、Web 版</th><td>预览图上 <code translate="no">pointer-events: none</code> 层里的光标</td><td><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser/toolbar/browser-control-bar.tsx">browser-control-bar.tsx</a> 的 <code translate="no">ActionCueTravel</code></td></tr>
+</tbody>
+</table>
+<p class="note">所有表面都绘制 <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/agent-cursor/agent-cursor.tsx">AgentCursor</a>。</p>
+
+<h2>网页何时发光</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">发光条件</th><td>控制状态表明 Agent 正在操作、正在停止或未确认已停止，且其对话的运行仍在进行</td></tr>
+<tr><th scope="row">运行结束后</th><td>无论状态如何页面都算空闲，因为后端在对账前会保持页面活跃（<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/lib/browser/control/browser-control.ts">browser-control.ts</a> 的 <code translate="no">presentedControlState</code>）</td></tr>
+<tr><th scope="row">不绘制</th><td>暂停状态、页面周围的边框</td></tr>
+<tr><th scope="row">页头和工具栏</th><td>只在需要你确认或状态未知时说话</td></tr>
+</tbody>
+</table>
+
+<h2>窗口位置</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row">持有</th><td>从首次读取或操作到最后一步后 20 秒，或 agent 转向别的窗口</td></tr>
+<tr><th scope="row">轮询</th><td>每 0.12 秒读 window server 的屏幕列表；有变化才报告</td></tr>
+<tr><th scope="row">报告</th><td>屏幕点坐标的框、相对窗口的按钮框（经辅助功能读一次）、边距内位于前方的窗口</td></tr>
+<tr><th scope="row">排除</th><td>标题为 <code translate="no">OpenProgram agent overlay</code> 的窗口</td></tr>
+<tr><th scope="row">结束</th><td>最后一次带 <code translate="no">active: false</code> 的报告</td></tr>
+<tr><th scope="row">传输</th><td><code translate="no">native.control</code> 和 <code translate="no">native.action</code> 帧，仅在<strong>显示操作</strong>开启时</td></tr>
+</tbody>
+</table>
+
+<h2>外观与动效</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">规格</th></tr></thead>
+<tbody>
+<tr><th scope="row">辉光形状</th><td>沿圆角边（10pt）的 18pt 强调色描边，模糊 11pt，不透明度 55%，裁剪到窗口内。边上无线，窗口外不画。</td></tr>
+<tr><th scope="row">辉光呼吸</th><td>每 2.6 秒在该强度的 60% 到 100% 之间</td></tr>
+<tr><th scope="row">遮挡</th><td>前方窗口从辉光和灯上挖掉</td></tr>
+<tr><th scope="row">指示灯</th><td>关闭、最小化、缩放按钮上的三个强调色圆，大半点。白层每 1.4 秒升到 40% 再落下，相隔 0.2 秒。没有按钮就没有灯。点击到达下方按钮。</td></tr>
+<tr><th scope="row">光标图形</th><td>Solar <code translate="no">cursor</code> bold duotone，26px，强调色，尾部半强度，垫 Solar <code translate="no">cursor-bold</code> 的白边露出 2px，加淡接触阴影</td></tr>
+<tr><th scope="row">热点</th><td>盒子以操作点为中心；箭头尖在其右下 2px，所以点击圆点显示在旁边。控件：操作前框的中心。坐标：截图点映射到屏幕。</td></tr>
+<tr><th scope="row">停留</th><td>桌面应用上停在上一步处并随窗口移动；第一步从窗口中央开始。持有的页面上步骤间停留；未持有的步骤 2.8 秒后淡出。</td></tr>
+<tr><th scope="row">移动</th><td>缓弧，弯曲距离的 16%、最多 56pt，ease-in-out，按距离 240–680 ms</td></tr>
+<tr><th scope="row">按下</th><td>点击、按压、选择、拖动或打开：箭头朝尖端缩到 82%，0.26 秒弹回；8px 强调色圆点带 2px 白环，1 秒内淡出。输入和滚动没有按下和圆点。</td></tr>
+<tr><th scope="row">减少动态</th><td>光标跳转；按下、圆点、呼吸和脉动关闭</td></tr>
+</tbody>
+</table>
+
+<h2 id="accent">强调色</h2>
+<p><code translate="no">--agent-accent</code> 即 <code translate="no">--theme-accent</code>（<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/app/styles/themes/fallback.css">themes/fallback.css</a>），用于辉光、灯、光标和点击圆点；白边、圆点环和灯的脉动是白色。覆盖层与 App 同源、共享主题设置，主题变化立即生效。</p>
+
+<h2>安全</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">无输入</th><td>忽略鼠标，不聚焦不激活。不移动系统指针。</td></tr>
+<tr><th scope="row">控制时可见</th><td>整个窗口会话都在，0.36 秒淡出。窗口最小化或在别的空间时隐藏，回来再显示。</td></tr>
+<tr><th scope="row">每对话一份</th><td>各对话显示自己的</td></tr>
+<tr><th scope="row">仅显示</th><td>失败被丢弃，操作继续</td></tr>
+<tr><th scope="row">没有停止控件</th><td>可点击区域会截获本该给应用的点击。停止在对话的停止控件和 Running 面板。网页悬浮控件只在等待确认时提供查看请求。</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<p>已在 macOS 和三个 Web 表面实现。macOS 实时捕获标记（标题栏按钮上的徽标、菜单栏图标）仍会请求，但截图里看不到，所以由强调色灯标记按钮。</p>

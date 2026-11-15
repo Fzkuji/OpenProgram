@@ -1,48 +1,35 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useRef } from "react";
 
-import { GoalChip } from "../../goal-chip";
+import { GoalChip } from "../../badges/goal-chip";
 import { ProjectBadge, WorkingDirChips } from "../../top-bar";
-import { ConnectionStatusChip } from "./chips/connection-status-chip";
-import { WebPreviewChip } from "./chips/web-preview-chip";
+import { ChannelChip } from "./chips/channel-chip";
+import { EnvironmentChip } from "./chips/environment-chip";
 import { WebSurfaceChip } from "./chips/web-surface-chip";
+import { WorktreeChip } from "./chips/worktree-chip";
 import { useCompactEnvironmentRow } from "./use-compact-environment-row";
 import styles from "./environment-row.module.css";
 
 interface EnvironmentRowProps {
   sessionId: string | null;
-  toolsEnabled: boolean;
-  owningStatusId: boolean;
-  onToggleAccess(): void;
-  trailingControls?: ReactNode;
 }
 
-export function EnvironmentRow({
-  sessionId,
-  toolsEnabled,
-  owningStatusId,
-  onToggleAccess,
-  trailingControls,
-}: EnvironmentRowProps) {
+export function EnvironmentRow({ sessionId }: EnvironmentRowProps) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   useCompactEnvironmentRow(rowRef);
 
   return (
     <div ref={rowRef} className={styles.envChips} data-environment-row>
-      <ConnectionStatusChip owningId={owningStatusId} />
-      <WebSurfaceChip
-        sessionId={sessionId}
-        toolsEnabled={toolsEnabled}
-        onToggleAccess={onToggleAccess}
-      />
-      <WebPreviewChip />
+      <EnvironmentChip />
+      {/* Checkout or the branch's own worktree (Codex's Local / Worktree). */}
+      <WorktreeChip />
+      <ChannelChip />
       <ProjectBadge />
       <WorkingDirChips />
       <GoalChip />
-      {trailingControls ? (
-        <div className={styles.trailingControls}>{trailingControls}</div>
-      ) : null}
+      {/* Web tab access; restores the floating preview: right-aligned (CSS). */}
+      <WebSurfaceChip sessionId={sessionId} />
     </div>
   );
 }

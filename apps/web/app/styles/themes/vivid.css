@@ -1,0 +1,91 @@
+/* vivid — 彩色深色：整套界面跟着标签栏颜色走。
+   标签栏直接用设置里选的 Chrome 同款颜色（--tabrow-seed，base/desktop-chrome.css），
+   面板是同一色相的深色，文字和强调色也从它派生，和 Chrome 彩色主题一样。 */
+[data-theme="vivid"] {
+  --bg-primary: oklch(from var(--tabrow-seed) 0.215 calc(c * 0.18) h);
+  --bg-secondary: oklch(from var(--tabrow-seed) 0.19 calc(c * 0.2) h);
+  --bg-tertiary: oklch(from var(--tabrow-seed) 0.27 calc(c * 0.22) h);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-hover-contrast: oklch(from var(--tabrow-seed) 0.16 calc(c * 0.2) h);
+  --bg-input: oklch(from var(--tabrow-seed) 0.275 calc(c * 0.22) h);
+  --border: rgba(255, 255, 255, 0.06);       /* subtle hairline */
+  --border-light: rgba(255, 255, 255, 0.10); /* strong hairline */
+  --text-primary: oklch(from var(--tabrow-seed) 0.79 calc(c * 0.12) h);
+  --text-secondary: oklch(from var(--tabrow-seed) 0.68 calc(c * 0.12) h);
+  --text-bright: oklch(from var(--tabrow-seed) 0.95 calc(c * 0.05) h);
+  --text-muted: oklch(from var(--tabrow-seed) 0.57 calc(c * 0.12) h);
+  --nav-color: oklch(from var(--tabrow-seed) 0.79 calc(c * 0.12) h);       /* nav default — same as text-primary in dark */
+  --nav-color-hover: oklch(from var(--tabrow-seed) 0.95 calc(c * 0.05) h); /* nav hover — same as text-bright */
+  --bg-selected: rgba(255, 255, 255, 0.10); /* selected row, one step above hover */
+  /* Chat surfaces: the sent user bubble is the same raised surface as
+     the composer (--bg-input + --composer-shadow); the assistant
+     message sits flat on the page (no bubble tint). */
+  --user-msg-bg: var(--bg-input);
+  --assistant-msg-bg: oklch(from var(--tabrow-seed) 0.215 calc(c * 0.18) h);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  /* Popover / menu surface — the ONE elevated card every floating menu
+     uses (see components/ui/menu/menu-styles.ts MENU_PANEL). The
+     shadow carries its own 1px ring, so panels need no border. */
+  --surface-popover: oklch(from var(--tabrow-seed) 0.27 calc(c * 0.22) h);
+  --border-popover: rgba(255, 255, 255, 0.12);
+  --shadow-popover: var(--glass-shadow);
+  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
+  --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
+  --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
+  /* Collapsed `off` effort-pill chip. Solid, a step above --bg-input
+     so it reads as a distinct chip on the dark composer. */
+  --effort-off-bg: oklch(from var(--tabrow-seed) 0.3 calc(c * 0.22) h);
+  --accent-orange: oklch(from var(--tabrow-seed) 0.78 calc(c * 1.4) h);
+  --accent-fill: oklch(from var(--tabrow-seed) 0.6 calc(c * 1.5) h);
+  --accent-orange-hover: oklch(from var(--tabrow-seed) 0.54 calc(c * 1.5) h);
+  /* The tab strip shows the colour picked in Settings (base/desktop-chrome.css
+     --tabrow-color) at full strength. */
+  --tabrow-tint: 100%;
+  --accent-green: #6e9b76;
+  --accent-red: #c24e42;
+  --accent-yellow: #d4a346;
+  --accent-purple: #a371f7;
+  --accent-cyan: #3bc9db;
+  /* Text colour on coral primary buttons — Claude uses white-on-coral
+     in both themes. */
+  --primary-foreground: #ffffff;
+  /* Soft danger-tier accents — used for the permission chip + menu so
+     the tier colour reads calm (a step lighter than the base
+     success/warning/danger) on the dark surface. */
+  --success-soft: #82a98a;
+  --warning-soft: #ddb25f;
+  --danger-soft: #d06a5f;
+  /* Stream-terminal text colours (chat.css .stream-terminal). Bright
+     accents read fine on the dark inset; light overrides below. */
+  --stream-tool: var(--accent-cyan);
+  --stream-info: var(--accent-yellow);
+  color-scheme: dark;
+
+  /* ===== Phase 2 语义 token（原本散在各 CSS 里的硬编码色） ===== */
+  --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+  --focus-ring: color-mix(in srgb, var(--text-bright) 50%, transparent);
+  /* 全屏/图片遮罩。深色主题下就是黑纱。 */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --scrim-strong: rgba(0, 0, 0, 0.75);
+  /* Tooltips are Nova's inverted badge (components/ui/tooltip.tsx). */
+  --surface-tooltip: var(--foreground);
+  --text-on-tooltip: var(--background);
+  /* 输入框（composer）外圈发丝线，常态 / 聚焦。 */
+  --composer-ring: rgba(255, 255, 255, 0.08);
+  --composer-ring-focus: rgba(255, 255, 255, 0.14);
+  /* Input box = shadcn Luma Card surface with no border: shadow-sm
+     at rest, shadow-md on hover / focus. */
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.25), 0 1px 2px -1px rgb(0 0 0 / 0.25);
+  --composer-shadow-focus: 0 4px 6px -1px rgb(0 0 0 / 0.35), 0 2px 4px -2px rgb(0 0 0 / 0.35);
+  /* 环境 pill 芯片底 + 描边。 */
+  --chip-bg: var(--bg-tertiary);
+  --chip-ring: var(--border-light);
+  /* 用量条（context breakdown）：蓝色刻意区别于珊瑚色动作色。 */
+  --meter-fill: #5b9cf8;
+  --meter-track: rgba(255, 255, 255, 0.08);
+  --provider-icon-bg: var(--bg-tertiary);
+  --dag-ghost: oklch(from var(--tabrow-seed) 0.45 calc(c * 0.15) h);
+}

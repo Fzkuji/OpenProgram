@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from openprogram.webui.user_errors import UserErrorRecord, UserErrorStore
+from openprogram.interfaces.server.user_errors import UserErrorRecord, UserErrorStore
 
 
 def _record(index: int, occurred_at_epoch: float) -> UserErrorRecord:
@@ -39,7 +39,7 @@ def _record(index: int, occurred_at_epoch: float) -> UserErrorRecord:
 
 
 def test_user_error_store_round_trips_safe_record(tmp_path) -> None:
-    path = tmp_path / "user_errors.db"
+    path = tmp_path / "user_errors.jsonl"
     store = UserErrorStore(path)
     now = time.time()
     record = _record(1, now)
@@ -55,10 +55,10 @@ def test_user_error_store_enforces_capacity_and_seven_day_retention(
     tmp_path,
     monkeypatch,
 ) -> None:
-    from openprogram.webui import user_errors
+    from openprogram.interfaces.server import user_errors
 
     monkeypatch.setattr(user_errors, "MAX_RECORDS_PER_PRINCIPAL", 3)
-    path = tmp_path / "user_errors.db"
+    path = tmp_path / "user_errors.jsonl"
     store = UserErrorStore(path)
     now = 2_000_000.0
 
@@ -81,11 +81,11 @@ def test_user_error_store_enforces_capacity_and_seven_day_retention(
 
 
 def test_user_error_store_keeps_exact_retention_boundary(tmp_path) -> None:
-    from openprogram.webui.user_errors import RETENTION_SECONDS
+    from openprogram.interfaces.server.user_errors import RETENTION_SECONDS
 
     now = 3_000_000.0
     record = _record(1, now - RETENTION_SECONDS)
-    store = UserErrorStore(tmp_path / "user_errors.db")
+    store = UserErrorStore(tmp_path / "user_errors.jsonl")
 
     store.record(record, now=now)
 
@@ -93,10 +93,10 @@ def test_user_error_store_keeps_exact_retention_boundary(tmp_path) -> None:
 
 
 def test_activity_for_one_principal_prunes_expired_other_principal(tmp_path) -> None:
-    from openprogram.webui.user_errors import RETENTION_SECONDS
+    from openprogram.interfaces.server.user_errors import RETENTION_SECONDS
 
     now = 4_000_000.0
-    store = UserErrorStore(tmp_path / "user_errors.db")
+    store = UserErrorStore(tmp_path / "user_errors.jsonl")
     expired = replace(
         _record(1, now - RETENTION_SECONDS - 0.001),
         principal_id="owner/install/expired-owner",
@@ -114,7 +114,7 @@ def test_activity_for_one_principal_prunes_expired_other_principal(tmp_path) -> 
 
 
 def test_user_error_store_isolates_authenticated_principals(tmp_path) -> None:
-    path = tmp_path / "user_errors.db"
+    path = tmp_path / "user_errors.jsonl"
     store = UserErrorStore(path)
     now = time.time()
     owner_record = _record(1, now)
@@ -138,7 +138,7 @@ def test_user_error_store_default_path_tracks_active_profile(
     tmp_path,
     monkeypatch,
 ) -> None:
-    from openprogram import paths
+    from openprogram.state import paths
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -150,7 +150,7 @@ def test_user_error_store_default_path_tracks_active_profile(
 
     store.record(_record(1, now), now=now)
 
-    expected = tmp_path / ".openprogram-error-test" / "user_errors.db"
+    expected = tmp_path / ".openprogram-error-test" / "user_errors.jsonl"
     assert store.path == expected
     assert expected.exists()
     if os.name != "nt":
@@ -160,7 +160,7 @@ def test_user_error_store_default_path_tracks_active_profile(
 def test_user_error_store_acknowledges_only_the_explicit_principal_record(
     tmp_path,
 ) -> None:
-    store = UserErrorStore(tmp_path / "user_errors.db")
+    store = UserErrorStore(tmp_path / "user_errors.jsonl")
     now = time.time()
     principal_id = "owner/install/test-owner"
     other_principal_id = "owner/install/other-owner"
@@ -237,7 +237,7 @@ def test_user_error_store_acknowledges_only_the_explicit_principal_record(
 def test_user_error_store_lists_open_records_newest_first_with_strict_cursor(
     tmp_path,
 ) -> None:
-    store = UserErrorStore(tmp_path / "user_errors.db")
+    store = UserErrorStore(tmp_path / "user_errors.jsonl")
     now = time.time()
     oldest = replace(
         _record(1, now),
@@ -296,7 +296,7 @@ def test_user_error_store_rejects_invalid_cursor(
     tmp_path,
     cursor: str,
 ) -> None:
-    store = UserErrorStore(tmp_path / "user_errors.db")
+    store = UserErrorStore(tmp_path / "user_errors.jsonl")
 
     with pytest.raises(ValueError, match="cursor"):
         store.list_open("owner/install/test-owner", cursor=cursor)

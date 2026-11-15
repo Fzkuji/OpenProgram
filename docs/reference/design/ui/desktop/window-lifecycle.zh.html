@@ -1,0 +1,60 @@
+<title>桌面窗口生命周期</title>
+<meta name="description" content="桌面壳为什么只有一个主窗口，以及启动、点 Dock、第二个副本如何到达它。">
+<h1>桌面窗口生命周期</h1>
+
+<p>一个进程，一个主窗口。拖出的窗口是额外且短命的。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 186" role="img" aria-label="app ready、macOS activate 和 second-instance 三个事件都经过 ensureMainWindow，它最多持有一个进行中的创建，得到一个主窗口。">
+  <defs><marker id="wl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-cmd" translate="no" x="0" y="34">app.whenReady()</text>
+  <text class="t-soft" x="0" y="54">首次启动</text>
+  <text class="t-cmd" translate="no" x="0" y="94">activate</text>
+  <text class="t-soft" x="0" y="114">点 Dock，启动中也算</text>
+  <text class="t-cmd" translate="no" x="0" y="154">second-instance</text>
+  <text class="t-soft" x="0" y="176">启动中的第二次点击</text>
+  <path class="ln" d="M236 34H264V86H304" marker-end="url(#wl-a)"/>
+  <path class="ln" d="M236 90H304" marker-end="url(#wl-a)"/>
+  <path class="ln" d="M236 150H264V94H304" marker-end="url(#wl-a)"/>
+  <rect class="tile" x="316" y="56" width="178" height="68" rx="8"/>
+  <text class="t-cmd mid" translate="no" x="405" y="86">ensureMainWindow</text>
+  <text class="t-soft mid" x="405" y="108">一个进行中的创建</text>
+  <line class="ln" x1="494" y1="90" x2="544" y2="90" marker-end="url(#wl-a)"/>
+  <text class="t-big" x="556" y="97">主窗口</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>app.whenReady、activate、second-instance</strong><small>启动、点 Dock、启动中再次点击</small></li>
+  <li><strong>ensureMainWindow</strong><small>一个进行中的创建</small></li>
+  <li class="flow-end"><strong>主窗口</strong></li>
+</ol>
+</figure>
+<p class="note"><code translate="no">createWindow</code> 是异步的。第一个 <code translate="no">BrowserWindow</code> 出现前，<code translate="no">getAllWindows()</code> 为空，不加保护的事件会各创建一个 id 为 <code translate="no">main</code> 的窗口，留下两个相同的窗口。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">事件</th><th scope="col">动作</th></tr></thead>
+<tbody>
+<tr><th scope="row">就绪，没有存活主窗口</th><td>创建一个</td></tr>
+<tr><th scope="row">三者之一，创建进行中</th><td>加入它</td></tr>
+<tr><th scope="row">已有存活主窗口</th><td>恢复、显示、聚焦</td></tr>
+<tr><th scope="row">主窗口已销毁</th><td>创建一个</td></tr>
+<tr><th scope="row">第二个系统进程</th><td>退出；第一个进程处理点击</td></tr>
+<tr><th scope="row">拖出的窗口</th><td>不是主窗口：自己的 id，不保存位置大小</td></tr>
+</tbody>
+</table>
+
+<h2>代码</h2>
+<dl class="pairs">
+<dt><code translate="no">windows.get("main")</code></dt><dd>存活的主窗口</dd>
+<dt><code translate="no">createMainWindowGate({ windows, createWindow })</code></dt><dd>返回 <code translate="no">ensureMainWindow</code>，创建或复用它的唯一入口</dd>
+<dt><code translate="no">registerSingleMainWindow({ app, BrowserWindow, ensureMainWindow, recoverErroredWindows, onReady })</code></dt><dd>获取单实例锁并绑定事件。<code translate="no">onReady</code>（IPC、菜单、主题）只运行一次，在第一次 <code translate="no">ensureMainWindow()</code> 之前。</dd>
+<dt><code translate="no">createWindow({ detached: true })</code></dt><dd>拖出路径</dd>
+</dl>
+<p class="note"><code translate="no">apps/desktop/main/windows/window-lifecycle.js</code>、<code translate="no">apps/desktop/main.js</code>。测试：<code translate="no">apps/desktop/tests/check-window-lifecycle.js</code>。</p>
+
+<h2>不是窗口</h2>
+<ul>
+<li>LaunchAgent <code translate="no">ai.openprogram.worker</code> 让 worker 保持在 18100 端口。worker 慢时可能闪现错误页再重载，仍是一个窗口。</li>
+<li>启动 worker、<code translate="no">ui.open_browser</code> 和打包 <code translate="no">.app</code> 都不创建主 <code translate="no">BrowserWindow</code>。桌面壳作 UI 时，不要用系统浏览器打开 <code translate="no">127.0.0.1:18100</code>。</li>
+</ul>
+
+<p class="next"><a href="window-state.zh.html">窗口状态</a> · <a href="window-tab-transfer.zh.html">在窗口间移动标签</a></p>

@@ -1,0 +1,88 @@
+<title>Linux 与 Windows 后端</title>
+<meta name="description" content="Linux 和 Windows 的操控电脑后端调用什么，以及 cua-driver 与它们的关系。">
+<h1>Linux 与 Windows 后端</h1>
+
+
+<h2 id="linux-后端">Linux 后端</h2>
+<p><code translate="no">LinuxComputer</code> 保持 <code translate="no">MacComputer</code> 的接口，工具、服务端的应用查询和测试都通过 <code translate="no">backends.backend()</code> 驱动任一后端。它只在 X11 会话里运行：Wayland 下任何客户端都不能读取别的客户端的画面或向其注入输入，<code translate="no">support()</code> 会如实说明。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">应用</th><td>AT-SPI 桌面下拥有窗口的子节点，加上所属进程不接入无障碍总线的顶层 X 窗口。X 窗口的所属进程取 <code translate="no">_NET_WM_PID</code>；Xt、Motif 客户端不设置它时，取名称或可执行文件名以窗口 WM_CLASS 实例名开头的最新进程。</td></tr>
+<tr><th scope="row">应用身份</th><td>每个应用按可执行文件或名称匹配桌面条目（<code translate="no">Gio.AppInfo</code>），由此得到标识（<code translate="no">org.gnome.Calculator</code>）、显示名，以及在 hicolor 主题里查到的图标。启动通过 <code translate="no">Gio.DesktopAppInfo.launch</code>，之后既等窗口也等应用的 AT-SPI 根节点，因为 GTK 4 应用在窗口映射之后才加入总线。</td></tr>
+<tr><th scope="row">窗口</th><td>顶层窗口取窗口管理器的 <code translate="no">_NET_CLIENT_LIST</code>（用 <code translate="no">xprop</code> 读取），这样排除了 GTK 10×10 的 client-leader 窗口；没有客户端列表时，跳过 10×10 及更小的窗口。AT-SPI 的 frame 先按标题、再按尺寸与 X 窗口配对。不在已映射集合里的窗口报告为最小化；<code translate="no">show_window</code> 重新映射它。</td></tr>
+<tr><th scope="row">树</th><td>角色是 AT-SPI 角色名（<code translate="no">push button</code>、<code translate="no">text</code>、<code translate="no">check box</code>），<code translate="no">role_name</code> 原样打印。子树在屏幕上时才读：GTK 3 设置 SHOWING，GTK 4 在窗口以下只设置 VISIBLE，所以窗口的子节点只要有一个报告 SHOWING 就按 SHOWING 遍历，否则按 VISIBLE。未展开组合框的弹出项和 GTK 的提示窗口跳过。</td></tr>
+<tr><th scope="row">树的过滤</th><td>无名的 filler、panel、section 是透明的。GTK 4 用类名给无名控件命名（<code translate="no">AdwGizmo</code>、<code translate="no">GtkMenuButton</code>），这类名字不当作标签。</td></tr>
+<tr><th scope="row">标志</th><td>标志来自状态（CHECKED 或 PRESSED、FOCUSED、SELECTED、EXPANDED、非 ENABLED/SENSITIVE），<code translate="no">settable</code> 来自 EditableText 或 Value，<code translate="no">secure</code> 来自 <code translate="no">password text</code> 角色。次要动作是元素的 Action 名称中除 click、press、activate、toggle、jump、open、select 以外的部分。</td></tr>
+<tr><th scope="row">后台的元素动作</th><td>点击执行元素的主动作；<code translate="no">set_value</code> 用 <code translate="no">EditableText.set_text_contents</code>、<code translate="no">Value.set_current_value</code>，复选框状态不一致时执行切换；<code translate="no">type_text</code> 和 <code translate="no">paste</code> 用 <code translate="no">EditableText.insert_text</code>（UTF-8 字节长度）在光标处插入并替换选区，换行执行输入框的 <code translate="no">activate</code> 动作；对输入框 <code translate="no">press_key Return</code> 执行 <code translate="no">activate</code></td></tr>
+<tr><th scope="row">选区、滚动、菜单</th><td><code translate="no">select_text</code> 用 <code translate="no">Text.set_selection</code> 或光标偏移（字符偏移，不是 UTF-16）；<code translate="no">copy</code> 读取 <code translate="no">Text.get_selection</code>，不经过剪贴板；按元素 <code translate="no">scroll</code> 把最近的滚动条的 Value 每页移动其长度的 90%；<code translate="no">menu</code> 遍历窗口的 <code translate="no">menu bar</code> 并执行叶子项的动作。</td></tr>
+<tr><th scope="row">焦点</th><td><code translate="no">Component.grab_focus</code> 会让 GTK 把窗口提到前台，所以凡是必须移动焦点的地方，都会把焦点还给原先活动的窗口。</td></tr>
+<tr><th scope="row">前台输入</th><td>GTK 和 Qt 通过 XInput 2 读取指针和按键，会忽略用 <code translate="no">XSendEvent</code> 发给未聚焦窗口的核心事件，所以按坐标点击、拖拽、滚轮、悬停和按键都通过 XTEST 发送：先激活窗口（<code translate="no">windowactivate</code>；没有 EWMH 窗口管理器时用 <code translate="no">windowraise</code> 加 <code translate="no">windowfocus</code>），执行输入，再恢复指针位置、原先排在它上面的窗口和原先活动的窗口；<code translate="no">hover</code> 让指针留在原处。</td></tr>
+<tr><th scope="row">组合键</th><td>组合键用 xdotool 名称，<code translate="no">cmd</code>、<code translate="no">command</code>、<code translate="no">meta</code>、<code translate="no">win</code> 映射为 <code translate="no">super</code>，<code translate="no">option</code> 映射为 <code translate="no">alt</code>。</td></tr>
+<tr><th scope="row">截图</th><td>对外部 X 窗口调用 <code translate="no">Gdk.pixbuf_get_from_window</code>，得到窗口自身按 X 分辨率的像素，长边缩到 1568 像素以内；最小化的窗口没有截图。截图像素通过 <code translate="no">xdotool getwindowgeometry</code> 给出的窗口位置换算为屏幕像素，与 AT-SPI 屏幕坐标用的是同一个参照系。</td></tr>
+<tr><th scope="row">OCR</th><td>稀疏窗口（以及 <code translate="no">find</code> 的回退）用 <code translate="no">tesseract --psm 11 tsv</code>，语言取 eng、chi_sim、chi_tra、jpn、kor 中已安装的；置信度 30 以上的词拼成行。Linux 上不检测轮廓形状。</td></tr>
+<tr><th scope="row">音频</th><td><code translate="no">pactl list sink-inputs</code> 给出每个音频流的 <code translate="no">application.process.id</code>；录音器轮询，直到出现该应用或其任一子孙进程的音频流（每次轮询都重新读取子孙进程，因为播放器通常是开始录音之后才启动的子进程），然后用 <code translate="no">parec --monitor-stream=&lt;index&gt;</code> 以 16 kHz 单声道浮点读取。读取持续到 parec 结束，所以停止时它还缓冲着的样本也会保留。</td></tr>
+<tr><th scope="row">音频延迟</th><td>PipeWire 下四分之一秒内就收到第一批样本；PulseAudio 的定时调度下，对一个音频流的首次监听会晚 1.2–1.7 秒开始，这段会丢失。</td></tr>
+<tr><th scope="row">拒绝</th><td><code translate="no">password text</code> 元素、Seahorse、KWallet、gcr 弹窗、polkit 代理以及 OpenProgram 自身的条目。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">应用指南</th><td>app 指南在发送时按 Linux 改写（<code translate="no">targets/app.py</code> 的 <code translate="no">_LINUX_GUIDE</code>）：哪些步骤会把窗口切到前台、纯文本 <code translate="no">paste</code>、不经剪贴板的 <code translate="no">copy</code>、Linux 上的拒绝列表。</td></tr>
+<tr><th scope="row">应用列表回复</th><td><code translate="no">computer_use_apps</code> 的 WebSocket 回复带上 worker 的 <code translate="no">platform</code>；在 Linux 上，审批卡片对按坐标输入、拖拽、悬停和回车以外的按键（<code translate="no">needsForeground</code>）说明这一步会把窗口切到前台。</td></tr>
+</tbody>
+</table>
+
+<h2 id="windows-后端">Windows 后端</h2>
+<p><code translate="no">WindowsComputer</code> 保持同一个接口。进程设为按显示器感知 DPI（<code translate="no">SetProcessDpiAwarenessContext(-4)</code>），所以窗口框、UI Automation 的边界和输入坐标都是物理屏幕像素。它调用的每个 Win32 函数都声明了 <code translate="no">restype</code> 和 <code translate="no">argtypes</code>，64 位句柄不会被截断。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">应用</th><td><code translate="no">EnumWindows</code> 给出的可见、无所有者、非工具窗口且有标题的顶层窗口，按进程分组。UWP 外框（<code translate="no">ApplicationFrameWindow</code>）属于 ApplicationFrameHost，它的应用是子窗口 <code translate="no">Windows.UI.Core.CoreWindow</code> 所在的进程。已安装应用来自 <code translate="no">Get-StartApps</code>（桌面应用和应用商店应用都在，缓存一分钟）；运行中的进程按可执行文件或名称对应到一行，启动时运行 <code translate="no">explorer.exe shell:AppsFolder\&lt;AppID&gt;</code>，再等新窗口出现。</td></tr>
+<tr><th scope="row">树</th><td>对窗口调用 <code translate="no">IUIAutomation.ElementFromHandle</code>，用控件视图遍历器遍历；屏幕外的子树跳过，菜单项除外。角色是控件类型（50000–50040）的小写名称（<code translate="no">button</code>、<code translate="no">edit</code>、<code translate="no">check box</code>）。没有名字、没有动作的 pane、group 和 custom 是透明的。</td></tr>
+<tr><th scope="row">标志</th><td>标志来自模式：Toggle 状态、<code translate="no">IsEnabled</code>、<code translate="no">HasKeyboardFocus</code>、SelectionItem、ExpandCollapse、可写的 Value 或 RangeValue（<code translate="no">settable</code>）、<code translate="no">IsPassword</code>（<code translate="no">secure</code>）。值取自 RangeValue、Value 或 Text 模式的文档范围。次要动作是 expand、collapse、scroll、select，以及 LegacyIAccessible 里不是 press、click、invoke、jump 的默认动作。</td></tr>
+<tr><th scope="row">后台元素动作</th><td>点击依次尝试 Invoke、Toggle、SelectionItem.Select、ExpandCollapse 和 LegacyIAccessible.DoDefaultAction，对输入框则是聚焦；<code translate="no">set_value</code> 用 Toggle、RangeValue、Value 或 LegacyIAccessible；<code translate="no">select_text</code> 按字符移动 Text 模式的范围；<code translate="no">copy</code> 读取 Text 模式的选区；按元素 <code translate="no">scroll</code> 用最近的 Scroll 模式按大步滚动；<code translate="no">menu</code> 遍历传统 <code translate="no">HMENU</code>（<code translate="no">GetMenu</code>）并投递 <code translate="no">WM_COMMAND</code>，或展开并调用 UI Automation 菜单项。</td></tr>
+<tr><th scope="row">投递输入</th><td>按坐标的点击、拖拽、滚轮和悬停，以鼠标消息投递给该点下最深的子窗口（<code translate="no">ChildWindowFromPointEx</code>），用它的客户区坐标；第二次点击是 <code translate="no">WM_LBUTTONDBLCLK</code>。不带命名修饰键的按键，以 <code translate="no">WM_KEYDOWN</code>/<code translate="no">WM_CHAR</code>/<code translate="no">WM_KEYUP</code> 发给该线程的焦点窗口（<code translate="no">GetGUIThreadInfo</code>）；<code translate="no">type_text</code> 每个 UTF-16 单元投递一个 <code translate="no">WM_CHAR</code>。向传统 edit 或 rich edit 控件 <code translate="no">paste</code> 时发送 <code translate="no">WM_PASTE</code>。</td></tr>
+<tr><th scope="row">前台输入</th><td>快捷键读的是 <code translate="no">GetKeyState</code>，投递消息改变不了它；UWP 外框、Chromium 和 Firefox 窗口读取原始输入。所以带修饰键的组合键、对这些窗口类的指针输入，以及其他情况下的 <code translate="no">paste</code>，都在 <code translate="no">_Forward</code> 里用 <code translate="no">SendInput</code>：它先接入前台线程的输入队列（<code translate="no">AttachThreadInput</code>）以便调用 <code translate="no">SetForegroundWindow</code>，执行输入，再把光标、原来的前台窗口，以及该窗口在原先上方窗口之下的位置还回去。</td></tr>
+<tr><th scope="row">截图</th><td><code translate="no">PrintWindow</code> 加 <code translate="no">PW_RENDERFULLCONTENT</code> 把窗口（无论是否被挡住）画进一张外框大小的位图；从中裁出可见框（<code translate="no">DWMWA_EXTENDED_FRAME_BOUNDS</code>），用 HALFTONE 模式的 <code translate="no">StretchBlt</code> 缩到长边 1568 像素，再由 <code translate="no">GetDIBits</code> 取出 BGRA 行，<code translate="no">png_encode</code> 不借助任何图像库写成 PNG。最小化的窗口没有截图；<code translate="no">show_window</code> 用 <code translate="no">SW_SHOWNOACTIVATE</code> 还原它。</td></tr>
+<tr><th scope="row">剪贴板</th><td><code translate="no">paste</code> 写入 <code translate="no">CF_UNICODETEXT</code>，md 和 html 还写入 "HTML Format"（头部偏移由 <code translate="no">cf_html</code> 计算），之后恢复原来的文字。</td></tr>
+<tr><th scope="row">OCR</th><td>与 Linux 相同，装了 tesseract 时使用。</td></tr>
+<tr><th scope="row">音频</th><td>对 <code translate="no">VAD\Process_Loopback</code> 调用 <code translate="no">ActivateAudioInterfaceAsync</code>，参数为 <code translate="no">PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE</code>，得到一个 <code translate="no">IAudioClient</code>，以共享回环模式初始化并自动转换为 16 kHz 单声道 float，在独立的 COM 线程上由事件驱动经 <code translate="no">IAudioCaptureClient</code> 读取。完成回调是 agile COM 对象，因为 Windows 在工作线程上调用它。</td></tr>
+<tr><th scope="row">拒绝</th><td><code translate="no">IsPassword</code> 元素、CredentialUIBroker、consent（UAC）、LogonUI、LockApp、credwiz、keymgr 和 OpenProgram。</td></tr>
+<tr><th scope="row">应用指南和卡片</th><td>app 指南在发送时按 Windows 改写（<code translate="no">_WINDOWS_GUIDE</code>）；对组合键和粘贴（<code translate="no">needsForeground(args, "windows")</code>），审批卡片说明这一步会把窗口切到前台。</td></tr>
+</tbody>
+</table>
+
+<h2 id="与-cua-driver-的关系">与 cua-driver 的关系</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">cua-driver</th><td>cua-driver（trycua/cua，MIT）是和这些后端最接近的开源驱动：一个 Rust 运行时覆盖 macOS、Windows 和 Linux，可以通过 MCP（<code translate="no">cua-driver mcp</code>）调用，也可以用它的 Python SDK（<code translate="no">cua_driver</code>，UniFFI 封装的原生库）在进程内调用。</td></tr>
+<tr><th scope="row">立场</th><td>这些后端保留自己的代码，从它那里借鉴做法，而不是把它嵌进来：</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">送达</th><td>macOS 的后台投递已经采用它的配方（<a href="computer-use-macos.zh.html">macOS 投递</a>），嵌入它不会改变点击送达的方式。</td></tr>
+<tr><th scope="row">速度</th><td>进程内 SDK 加载约 0.8 秒，窗口和 App 列表响应不到 10 毫秒，速度不是障碍。</td></tr>
+<tr><th scope="row">体积与变动</th><td>代价是体积和变动：macOS wheel 含 64 MB 库和 82 MB 可执行文件，该包在 0.x 经历了 40 多个小版本。</td></tr>
+<tr><th scope="row">光标与遥测</th><td>进程内运行时在 macOS 上不绘制 Agent 光标，且除非关闭否则发送产品遥测。</td></tr>
+<tr><th scope="row">驱动之上</th><td>这些后端调过的行为（稳定序号、找回被替换的元素、应用正忙、等待稳定、窗口标识、拒绝）在驱动之上，换不换都还是我们自己的。</td></tr>
+</tbody>
+</table>
+<p>cua-driver 能覆盖这些后端做不到的场景时，它是首选：Linux 后端拒绝 Wayland 会话，而 cua-driver 能在 Wayland 下驱动 Sway、niri、GNOME 和 KDE。把它用作 Wayland 下的 Linux 后端是计划中的采用方式（见实现状态）。</p>
+
+<h2 id="实现状态">实现状态</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>Linux（X11）后端。测试在 Debian 12 容器里进行，环境是 Xvfb、Openbox、AT-SPI 总线和 PipeWire，对象是一个 GTK 3 窗口（菜单栏、输入框、密码框、复选框、滑块、带滚动的文本视图、绘图区、一个由子进程放声音的按钮）、GNOME 计算器（GTK 4 加 libadwaita，从桌面条目启动，靠元素点击算出 7×6）以及 ImageMagick 的 <code translate="no">display</code>（不接入 AT-SPI 的 Xt 客户端，靠 OCR 读取）。与主机无关的部分有单元测试。</td></tr>
+<tr><th scope="row">已实现、尚未在 Windows 上运行</th><td>上文所述的 Windows 后端。构建它的 macOS 机器没有 Windows 客户机，所以只有与主机无关的部分（PNG 编码、按键映射、HTML 剪贴板内容、开始菜单解析、控件类型表、拒绝列表、录音格式）有单元测试。</td></tr>
+<tr><th scope="row">未实现</th><td>经 Responses 和 Anthropic API 的音频输入（这两个接口的模型不收音频）；把窗口从另一个桌面空间移过来，以及用按键向它输入（<a href="computer-use-macos.zh.html">macOS 投递</a>）；从轮廓直接认出图标的名字（模型看截图分辨）。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.zh.html">操控电脑与浏览器</a></p>

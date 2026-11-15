@@ -1,0 +1,98 @@
+<title>Desktop window state</title>
+<meta name="description" content="How the desktop main window saves normal bounds apart from maximize and fullscreen, so it always opens resizable.">
+<h1>Desktop window state</h1>
+
+<p>The main window stores its last normal size apart from maximize and fullscreen. A normal window never opens flush with the menu bar, Dock or screen sides, where no edge is left to grab.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Failure</th><th scope="col">Guard</th></tr></thead>
+<tbody>
+<tr><th scope="row">Quit while zoomed or filling the work area</th><td>Create a smaller normal window, then reapply maximize</td></tr>
+<tr><th scope="row">Old flush <code translate="no">{{x,y,width,height}}</code> file</th><td>Migrated as maximized plus the inset default</td></tr>
+<tr><th scope="row">Saved display unplugged</th><td>Centered default on the primary work area</td></tr>
+<tr><th scope="row">Corrupt or tiny file</th><td>Minimum size and centered default</td></tr>
+<tr><th scope="row">Tab row swallows the top edge</th><td>5px <code translate="no">no-drag</code> strips</td></tr>
+<tr><th scope="row">Torn-off window closed</th><td>Torn-off windows are not saved</td></tr>
+</tbody>
+</table>
+<p class="note">Code: <code translate="no">apps/desktop/main/windows/window-state.js</code>, <code translate="no">apps/desktop/main.js</code>, <code translate="no">apps/web/app/styles/base/desktop-chrome.css</code>, <code translate="no">apps/web/components/app-shell.tsx</code>. How many windows exist and who creates them: <a href="window-lifecycle.html">Window lifecycle</a>.</p>
+
+<h2 id="persisted-schema">Persisted schema</h2>
+<p><code translate="no">window-state.json</code> in the desktop userData directory (<code translate="no">app.getPath("userData")</code>, desktop name <code translate="no">openprogram-desktop</code>).</p>
+<pre translate="no" tabindex="0">{
+  "version": 2,
+  "x": 160, "y": 90, "width": 1280, "height": 800,
+  "isMaximized": false,
+  "isFullScreen": false,
+  "displayId": 1,
+  "displayWorkArea": { "x": 0, "y": 38, "width": 1512, "height": 851 }
+}</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">x,y,width,height</code></th><td>Last normal bounds; never a rectangle that fills the work area</td></tr>
+<tr><th scope="row"><code translate="no">isMaximized</code></th><td>Last zoom or maximize</td></tr>
+<tr><th scope="row"><code translate="no">isFullScreen</code></th><td>Last macOS native fullscreen</td></tr>
+<tr><th scope="row"><code translate="no">displayId</code></th><td>Electron display id, tried first while that screen is connected</td></tr>
+<tr><th scope="row"><code translate="no">displayWorkArea</code></th><td>Matches a reconnected display whose id changed</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Limit</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Minimum</th><td><code translate="no">800×500</code>; no maximum</td></tr>
+<tr><th scope="row">First run</th><td><code translate="no">1440×900</code>, centered on the primary work area</td></tr>
+<tr><th scope="row">Inset default</th><td>24px inside each edge when <code translate="no">1440×900</code> would fill the work area</td></tr>
+<tr><th scope="row">Filling</th><td>Within 8 CSS pixels of the work area; checked on save and restore</td></tr>
+<tr><th scope="row">Version 1</th><td>The old <code translate="no">{{x,y,width,height}}</code> object; migrates on load</td></tr>
+</tbody>
+</table>
+
+<h2 id="restore-algorithm">Restore</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. Read and migrate</th><td>Corrupt JSON, missing width or height, <code translate="no">NaN</code> or a tiny size: centered default</td></tr>
+<tr><th scope="row">2. Find the display</th><td><code translate="no">displayId</code>, then work area (2px tolerance), then bounds overlapping a work area. None: primary work area, centered default, maximize and fullscreen dropped</td></tr>
+<tr><th scope="row">3. Check for a filled work area</th><td>Saved rectangle fills a connected work area: treat as maximized, normal size becomes the inset default. <code translate="no">BrowserWindow</code> is never constructed at work-area size</td></tr>
+<tr><th scope="row">4. Clamp</th><td>The normal rectangle onto the work area</td></tr>
+<tr><th scope="row">5. Create hidden</th><td>At normal size with <code translate="no">minWidth</code> and <code translate="no">minHeight</code>. If maximized, <code translate="no">setBounds</code> to the work area, then <code translate="no">maximize()</code> or <code translate="no">setFullScreen(true)</code>, still hidden</td></tr>
+<tr><th scope="row">6. Show</th><td>On <code translate="no">ready-to-show</code>, so macOS never animates from the small first frame</td></tr>
+</tbody>
+</table>
+<p class="note">The green Zoom button therefore returns to the remembered normal size.</p>
+
+<h2 id="maximize-versus-a-filled-work-area">Stretched to the work area without Zoom</h2>
+<p>Saved as maximized. The normal size kept is the first that does not fill the work area: <code translate="no">getNormalBounds()</code>, the in-memory last good rectangle, the inset default.</p>
+
+<h2 id="save-timing">Save timing</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Event</th><th scope="col">Write</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">resize</code>, <code translate="no">move</code></th><td>Debounced 300ms</td></tr>
+<tr><th scope="row"><code translate="no">maximize</code>, <code translate="no">unmaximize</code>, <code translate="no">enter-full-screen</code>, <code translate="no">leave-full-screen</code>, <code translate="no">close</code></th><td>Written at once</td></tr>
+<tr><th scope="row">While maximized, fullscreen or filling</th><td>Only flags and display identity change; the normal rectangle stays</td></tr>
+</tbody>
+</table>
+
+<h2 id="detached-windows">Torn-off windows</h2>
+<p>Size <code translate="no">min(1100, normal width)</code> × <code translate="no">min(720, normal height)</code>, no parent <code translate="no">x/y</code>, no inherited maximize or fullscreen. Placed at the drop point by <code translate="no">centerHiddenWindowOnCursor</code>.</p>
+
+<h2 id="titlebar-hit-testing">Titlebar hit testing</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">40px tab row</th><td><code translate="no">-webkit-app-region: drag</code>, so empty space moves the window</td></tr>
+<tr><th scope="row">Top, left and right edges</th><td>5px <code translate="no">no-drag</code> strips (<code translate="no">.desktop-resize-edge</code>), corners included, for native resize</td></tr>
+<tr><th scope="row">macOS traffic lights</th><td><code translate="no">trafficLightPosition</code> centers them on the row: <code translate="no">{{x:13,y:12}}</code> at zoom 1</td></tr>
+<tr><th scope="row">Tabs</th><td>6px below the top; the strips do not cover them, the lights, <code translate="no">+</code> or the main menu</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Why a flush normal window cannot be resized</summary>
+<p>Electron's window stays resizable, but on a 1512-wide display <code translate="no">{x:0,y:38,width:1512,height:851}</code> leaves nothing to grab, and Zoom has no size to return to. A drag region running edge to edge also takes the top-edge and corner resize targets. Setting <code translate="no">resizable: true</code> or deleting the file changes neither; the stored model has to separate normal bounds from maximize.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented, checked by <code translate="no">apps/desktop/tests/check-window-state.js</code>. Window chrome colour follows the Web theme (<code translate="no">theme-chrome.js</code>, see <a href="../visual-system/unification-work.html">Unification work</a>); bounds persistence stores no background colour.</p>

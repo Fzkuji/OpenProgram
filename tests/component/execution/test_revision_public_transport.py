@@ -7,9 +7,9 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import openprogram.execution as execution_package
-from openprogram.execution import RevisionControlService
-from openprogram.execution.revision_public import (
+import openprogram.runtime.execution as execution_package
+from openprogram.runtime.execution import RevisionControlService
+from openprogram.runtime.execution.revision_public import (
     RevisionPublicError,
     submit_revision_request,
     validate_revision_request,
@@ -250,8 +250,8 @@ def test_rest_and_websocket_actions_expose_only_the_revision_envelope(
     monkeypatch.setattr(execution_package, "default_store", lambda: store)
     app = FastAPI()
     app.state.owner_auth = SimpleNamespace(authority=_actor("author"))
-    from openprogram.webui.routes.execution.lifecycle import register
-    from openprogram.webui.ws_actions.runtime import ACTIONS
+    from openprogram.interfaces.server.routes.execution.lifecycle import register
+    from openprogram.interfaces.server.ws_actions.runtime import ACTIONS
 
     register(app)
     assert set(ACTIONS) >= {

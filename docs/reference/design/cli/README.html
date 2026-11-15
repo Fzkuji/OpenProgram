@@ -1,0 +1,28 @@
+<title>CLI and TUI</title>
+<meta name="description" content="How the terminal front end shares one backend, settings schema and slash-command registry, and where each CLI design lives.">
+<h1>CLI and TUI</h1>
+<p><code translate="no">openprogram</code> runs the same agent as the desktop app and Web UI. Other capabilities have subcommands named by one rule, so a new command can be guessed from known ones.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">One of each</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Backend</th><td>A long-lived Python worker serves every front end on one port. The Ink terminal UI (<code translate="no">apps/cli/</code>), launched by <code translate="no">openprogram/interfaces/cli/ink.py</code>, finds it through <code translate="no">worker.pid</code> and <code translate="no">worker.port</code> and talks WebSocket, so a terminal chat is the session the Web UI shows.</td></tr>
+<tr><th scope="row">Settings schema</th><td>Each setting is declared once; <code translate="no">openprogram config</code>, the TUI panel and the Web UI use it. Every <code translate="no">config.json</code> write goes through one atomic, locked entry point.</td></tr>
+<tr><th scope="row">Slash-command registry</th><td>Built-ins, plugin commands, MCP prompts and skills merge into one format, so <code translate="no">/</code> lists the same in the TUI and Web composer.</td></tr>
+</tbody>
+</table>
+<p class="note">In the terminal, tool calls fold into one line, <code translate="no">ctrl+o</code> opens the transcript, edits render as diffs, and input during a run is queued.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Document</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="naming.html">naming</a></th><td>The naming rule for subcommands</td></tr>
+<tr><th scope="row"><a href="redesign.html">redesign</a></th><td>Command grammar, settings schema, TUI panel, transport</td></tr>
+<tr><th scope="row"><a href="config-write-safety.html">config-write-safety</a></th><td>The atomic entry point for <code translate="no">config.json</code></td></tr>
+<tr><th scope="row"><a href="headless-print.html">headless-print</a></th><td><code translate="no">--print</code> runs: the shared turn request, accounting by execution tree, how a run ended</td></tr>
+<tr><th scope="row"><a href="drop-run-command.html">drop-run-command</a></th><td>One execution path for <code translate="no">Agent</code> methods, user- or model-run</td></tr>
+<tr><th scope="row"><a href="single-port.html">single-port</a></th><td>One process, one port, the Python worker as only origin</td></tr>
+<tr><th scope="row"><a href="ports.html">ports</a></th><td>Choosing, configuring and defending the Web UI port</td></tr>
+<tr><th scope="row"><a href="slash-commands.html">slash-commands</a></th><td>The unified registry</td></tr>
+<tr><th scope="row"><a href="slash-commands-references.html">slash-commands-references</a></th><td>How five other projects do it</td></tr>
+<tr><th scope="row"><a href="tui-upgrade.html">tui-upgrade</a></th><td>Folding, <code translate="no">ctrl+o</code> transcript, diffs, queued input, keybindings</td></tr>
+</tbody>
+</table>

@@ -27,41 +27,41 @@
 
 <!-- worker 进程框 -->
 <rect class="frame" x="18" y="46" width="966" height="592" rx="14"/>
-<text class="lbl mono" x="36" y="74">WORKER 进程 · 单进程 · 多 DAEMON 线程</text>
+<text class="lbl mono" x="36" y="74">WORKER process · one process · multiple DAEMON threads</text>
 
 <!-- A 类源 -->
-<text class="lbl mono cy" x="48" y="118">A 类 · AGENT 活动</text>
+<text class="lbl mono cy" x="48" y="118">Type A · AGENT activity</text>
 <rect class="box" x="48" y="132" width="208" height="62" rx="8"/>
 <rect class="tagA" x="62" y="146" width="22" height="22" rx="5"/><text class="tg cy" x="69" y="161">A</text>
 <text class="bt" x="96" y="156">agent loop</text>
-<text class="bs" x="96" y="178">模型回复 · 工具前后 · 文件改</text>
+<text class="bs" x="96" y="178">Model response · tool start/end · file change</text>
 
 <rect class="box" x="48" y="208" width="208" height="56" rx="8"/>
 <rect class="tagA" x="62" y="222" width="22" height="22" rx="5"/><text class="tg cy" x="69" y="237">A</text>
 <text class="bt" x="96" y="232">task runner</text>
-<text class="bs" x="96" y="252">子任务起止</text>
+<text class="bs" x="96" y="252">Subtask start/end</text>
 
 <!-- B 类源 -->
-<text class="lbl mono vi" x="48" y="312">B 类 · 系统状态</text>
+<text class="lbl mono vi" x="48" y="312">Type B · system state</text>
 <rect class="box" x="48" y="326" width="208" height="52" rx="8"/>
 <rect class="tagB" x="62" y="340" width="22" height="22" rx="5"/><text class="tg vi" x="69" y="355">B</text>
 <text class="bt" x="96" y="348">auth</text>
-<text class="bs" x="96" y="368">凭据限流 / 轮换</text>
+<text class="bs" x="96" y="368">Credential rate limit / rotation</text>
 
 <rect class="box" x="48" y="392" width="208" height="52" rx="8"/>
 <rect class="tagB" x="62" y="406" width="22" height="22" rx="5"/><text class="tg vi" x="69" y="421">B</text>
 <text class="bt" x="96" y="414">context</text>
-<text class="bs" x="96" y="434">压缩阈值 70% / 80%</text>
+<text class="bs" x="96" y="434">Compaction threshold 70% / 80%</text>
 
 <rect class="box" x="48" y="458" width="208" height="52" rx="8"/>
 <rect class="tagB" x="62" y="472" width="22" height="22" rx="5"/><text class="tg vi" x="69" y="487">B</text>
 <text class="bt" x="96" y="480">channels</text>
-<text class="bs" x="96" y="500">外部消息进来</text>
+<text class="bs" x="96" y="500">Incoming external message</text>
 
 <rect class="box" x="48" y="524" width="208" height="52" rx="8"/>
 <rect class="tagB" x="62" y="538" width="22" height="22" rx="5"/><text class="tg vi" x="69" y="553">B</text>
 <text class="bt" x="96" y="546">memory</text>
-<text class="bs" x="96" y="566">空闲处理起止</text>
+<text class="bs" x="96" y="566">Idle processing start/end</text>
 
 <!-- 汇入流线 -->
 <path class="flowA" d="M256 163 C 340 163, 360 240, 432 280"/>
@@ -76,49 +76,49 @@
 <rect x="436" y="208" width="200" height="262" rx="16" fill="none" stroke="rgba(86,217,233,.25)" stroke-width="7" opacity=".6"/>
 <rect x="436" y="208" width="200" height="262" rx="16" fill="rgba(86,217,233,.05)" stroke="#56d9e9" stroke-width="1.6"/>
 <text class="mono cy" x="536" y="262" text-anchor="middle" font-size="21" font-weight="600">EventBus</text>
-<text class="bs" x="536" y="288" text-anchor="middle">进程级单例</text>
+<text class="bs" x="536" y="288" text-anchor="middle">Process-wide singleton</text>
 <text class="bs mono" x="536" y="312" text-anchor="middle">get_event_bus()</text>
 <line x1="458" y1="334" x2="614" y2="334" stroke="rgba(154,178,204,.25)"/>
 <text class="bs mono" x="536" y="362" text-anchor="middle">emit(Event)</text>
 <text class="bs mono" x="536" y="386" text-anchor="middle">subscribe(types=…)</text>
-<text class="bs faint" x="536" y="430" text-anchor="middle">源和消费者互不认识</text>
-<text class="bs faint" x="536" y="450" text-anchor="middle">只认总线</text>
+<text class="bs faint" x="536" y="430" text-anchor="middle">Sources and consumers are decoupled</text>
+<text class="bs faint" x="536" y="450" text-anchor="middle">Only the bus is shared</text>
 
 <!-- 观察出线 -->
-<text class="lbl mono cy" x="688" y="160">观察 · 异步 · 不挡 AGENT</text>
+<text class="lbl mono cy" x="688" y="160">Observe · asynchronous · does not block AGENT</text>
 <path class="flowA" d="M636 280 C 700 270, 706 212, 756 200"/>
 <path class="flowA" d="M636 320 C 700 320, 710 330, 756 334"/>
 <rect class="box" x="758" y="172" width="206" height="58" rx="8"/>
 <text class="bt" x="776" y="196">webui server</text>
-<text class="bs" x="776" y="216">订阅 → 转发前端 WebSocket</text>
+<text class="bs" x="776" y="216">Subscribe → forward to UI WebSocket</text>
 
 <rect class="box" x="758" y="306" width="206" height="58" rx="8" stroke="rgba(86,217,233,.55)"/>
 <text class="bt" x="776" y="330">proactive</text>
-<text class="bs" x="776" y="350">第一个消费者 · 规则层（另文设计）</text>
+<text class="bs" x="776" y="350">First consumer · policy layer (separate design)</text>
 
 <!-- 拦截 -->
-<text class="lbl mono am" x="660" y="486">拦截 · 同步 · 仅 TOOL.BEFORE</text>
+<text class="lbl mono am" x="660" y="486">Gate · synchronous · TOOL.BEFORE only</text>
 <path class="flowI" d="M636 430 C 690 470, 700 512, 752 528"/>
 <path class="flowI" d="M752 552 C 700 560, 660 540, 624 470"/>
 <rect class="box" x="756" y="500" width="208" height="74" rx="8" stroke="rgba(242,181,68,.6)"/>
-<text class="bt" x="774" y="526">tool.before 问询点</text>
-<text class="bs" x="774" y="546">复用 _approval · 拦下 / 确认 / 放行</text>
-<text class="bs faint" x="774" y="564">对 subagent 同样生效</text>
+<text class="bt" x="774" y="526">tool.before decision point</text>
+<text class="bs" x="774" y="546">Reuse _approval · deny / ask / allow</text>
+<text class="bs faint" x="774" y="564">Also applies to subagents</text>
 
 <!-- 前端（进程外） -->
 <path class="flowA" d="M964 200 C 1010 200, 1020 200, 1046 200"/>
 <text class="lbl mono" x="986" y="188">WS</text>
 <rect class="box" x="1048" y="166" width="160" height="66" rx="8" stroke-dasharray="4 5"/>
-<text class="bt" x="1068" y="194">前端 / TUI</text>
-<text class="bs" x="1068" y="214">浏览器 · 命令行</text>
-<text class="bs faint" x="1048" y="258" font-size="10.5">（worker 进程之外）</text>
+<text class="bt" x="1068" y="194">UI / TUI</text>
+<text class="bs" x="1068" y="214">Browser · terminal</text>
+<text class="bs faint" x="1048" y="258" font-size="10.5">(outside the worker process)</text>
 
 <!-- 图例 -->
 <line x1="36" y1="668" x2="1204" y2="668" stroke="rgba(154,178,204,.22)"/>
 <line x1="48" y1="694" x2="84" y2="694" stroke="#56d9e9" stroke-width="2" stroke-dasharray="6 6"/>
-<text class="bs mono" x="96" y="698">A 类事件 · 观察（异步）</text>
+<text class="bs mono" x="96" y="698">Type A events · observe (async)</text>
 <line x1="328" y1="694" x2="364" y2="694" stroke="#b79bf5" stroke-width="2" stroke-dasharray="6 6"/>
-<text class="bs mono" x="376" y="698">B 类事件 · 观察（异步）</text>
+<text class="bs mono" x="376" y="698">Type B events · observe (async)</text>
 <line x1="608" y1="694" x2="644" y2="694" stroke="#f2b544" stroke-width="2" stroke-dasharray="4 5"/>
-<text class="bs mono" x="656" y="698">拦截（同步，仅 tool.before）</text>
+<text class="bs mono" x="656" y="698">Gate (sync, tool.before only)</text>
 </svg>

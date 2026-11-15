@@ -1,0 +1,594 @@
+<title>网页界面</title>
+<meta name="description" content="聊天、分支、附件、运行记录、文件、项目以及 OpenProgram 浏览器界面的每个页面。">
+<h1>网页界面</h1>
+<pre translate="no"><code>openprogram web</code></pre>
+<dl class="pairs">
+<dt>地址</dt><dd><code translate="no">http://localhost:18100</code>：静态界面、<code translate="no">/api</code> 和 <code translate="no">/ws</code> 同一端口</dd>
+<dt>改端口</dt><dd><code translate="no">openprogram ports --port</code></dd>
+<dt>共享</dt><dd>与 TUI 和 CLI 共享会话：<a href="README.html">界面总览</a></dd>
+<dt>工具能做什么</dt><dd><a href="../capabilities/permissions.html">权限</a></dd>
+</dl>
+<figure><img src="../images/chat_hero.png" alt="OpenProgram 聊天页"></figure>
+
+<h2>页面</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路由</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/chat</code>、<code translate="no">/s/&lt;session-id&gt;</code></th><td>聊天；单个会话的直达链接。切换会话不重载页面和 WebSocket。</td></tr>
+<tr><th scope="row"><code translate="no">/pending</code></th><td>所有对话里常驻 Agent 的报告：先是等你决定的，然后是新的</td></tr>
+<tr><th scope="row"><code translate="no">/agents</code></th><td>创建、配置、开始对话：模型、能力、记忆、上下文</td></tr>
+<tr><th scope="row"><code translate="no">/applications</code></th><td>从本地文件夹安装；打开、启用、从新标签页隐藏、更新、卸载</td></tr>
+<tr><th scope="row"><code translate="no">/scheduler</code></th><td>一次性、循环、监控任务和<a href="../capabilities/reminders.html">提醒</a>，按类型筛选，列表或<a href="../capabilities/reminders.html#calendar-view">日历</a>；暂停、恢复、删除</td></tr>
+<tr><th scope="row"><code translate="no">/chats</code>、<code translate="no">/history</code></th><td>项目列表，主目录项目在最前；每个项目有聊天、记忆、设置、信息标签</td></tr>
+<tr><th scope="row"><code translate="no">/memory</code></th><td>打开记忆标签的 History：wiki、日志、核心记忆</td></tr>
+<tr><th scope="row"><code translate="no">/projects</code></th><td>打开聊天标签的 History；设置里有项目权限规则和默认值</td></tr>
+<tr><th scope="row"><code translate="no">/programs</code></th><td>Abilities 中心：Programs 目录，含 Tools 和 Applications 两个根（调用树、图）</td></tr>
+<tr><th scope="row"><code translate="no">/skills</code></th><td>已安装的 SKILL.md，发现、创建；详情页</td></tr>
+<tr><th scope="row"><code translate="no">/plugins</code></th><td>已安装、发现（市场）、问题</td></tr>
+<tr><th scope="row"><code translate="no">/mcp</code></th><td>从目录添加、编辑配置、各服务状态</td></tr>
+<tr><th scope="row"><code translate="no">/settings</code></th><td>进入 <code translate="no">/settings/general</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置标签</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">通用</th><td>语言、建议、用户、通知、运行时版本、桌面更新状态</td></tr>
+<tr><th scope="row">Provider</th><td><a href="../models/README.html">模型</a>、凭据、认证</td></tr>
+<tr><th scope="row">其他标签</th><td>外观、记忆、搜索、浏览器、语音、环境、频道、导入、用量、系统、版本</td></tr>
+</tbody>
+</table>
+<details>
+<summary>窄窗口</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">宽度</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">不超过 900px</th><td>左侧栏初始为图标栏，导航后关闭。History、Agents、设置的列表栏折叠为图标栏。</td></tr>
+<tr><th scope="row">低于 760px</th><td>这些栏初始为图标栏，调整到该宽度时折叠</td></tr>
+</tbody>
+</table>
+<p class="note">你自己的选择会保留。</p>
+</details>
+
+<h3 id="settings-versions">设置 → 版本</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">列出</th><td>正在运行的版本、它启动不了时自动回到的版本、保留在这台电脑上的版本。仅限能原地更新自己的安装；固定 App 或源码目录会说明不保留版本。</td></tr>
+<tr><th scope="row"><strong>回到此版本</strong></th><td>精确回到那个版本，去掉它之后的所有修改</td></tr>
+<tr><th scope="row"><strong>撤销修改</strong></th><td>只去掉那一次修改</td></tr>
+<tr><th scope="row"><strong>已保存但未生效的改动</strong></th><td>在运行中的版本里手动改过的文件。<strong>应用改动</strong>让 Agent 把它们做进新版本。</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>每个按钮</dt><dd>打开一个对话，由 Agent 调用 <code translate="no">self_update</code>，没有确认步骤</dd>
+<dt>其输出</dt><dd>构建、在单独副本上测试、等待另一个更新、切换、暂存的消息</dd>
+<dt>Windows</dt><dd>输出还说明测试没有系统级隔离</dd>
+<dt>toast，一次</dt><dd>OpenProgram 回到了上一个可用版本，或搁置了直接修改</dd>
+</dl>
+
+<h2 id="command-palette">命令面板</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开</th><td><strong>⌘K</strong>（<strong>Ctrl+K</strong>），任意位置，终端除外（归终端）；再按或 Escape 关闭</td></tr>
+<tr><th scope="row"><strong>操作</strong></th><td>新聊天；Agents、Skills、Applications、Projects、History、Memory、Scheduler、设置</td></tr>
+<tr><th scope="row"><strong>会话</strong></th><td>最多 300 个未归档会话，最近的在前，显示最后活动时间或<strong>运行中</strong>。已打开时选中其标签页。匹配标题、最新消息预览和项目名，不搜消息内容。</td></tr>
+</tbody>
+</table>
+
+<h2>快捷键</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">按键（Windows、Linux 用 Ctrl 代替 Cmd）</th><th scope="col">操作</th></tr></thead>
+<tbody>
+<tr><th scope="row">Cmd+N</th><td>新聊天</td></tr>
+<tr><th scope="row">Cmd+T、Cmd+W</th><td>新标签页、关闭标签页</td></tr>
+<tr><th scope="row">Cmd+Shift+T</th><td>重新打开刚关闭的标签页</td></tr>
+<tr><th scope="row">Cmd+Shift+] Cmd+Shift+[</th><td>下一个、上一个标签页</td></tr>
+<tr><th scope="row">Cmd+1 … Cmd+8、Cmd+9</th><td>该标签页、最后一个</td></tr>
+<tr><th scope="row">Cmd+F、Cmd+G、Shift+Cmd+G</th><td>查找、下一个、上一个；查找中也可用回车、Shift+回车</td></tr>
+<tr><th scope="row">首行按 ↑、越过最新按 ↓</th><td>调出历史消息、恢复草稿。编辑调出的文本开始新循环；带修饰键的方向键和选区正常编辑。</td></tr>
+</tbody>
+</table>
+<p class="note">在 App 中焦点在哪都有效。浏览器保留它自己的快捷键。</p>
+
+<h2>运行期间发送消息</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="运行期间发送的消息有两条路。回车是插话：打断响应，保留文本和推理，继续同一轮。Cmd+回车是排队：各自在上一轮结束后开始，可拖动该行或用 Alt+上、Alt+下调整顺序。">
+  <defs><marker id="st-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="92">消息</text>
+  <path class="ln" d="M84 85H130V40H236" marker-end="url(#st-a)"/>
+  <path class="ln" d="M130 85V130H236" marker-end="url(#st-a)"/>
+  <text class="t-cmd notranslate" translate="no" x="146" y="30">回车</text>
+  <text class="t-cmd notranslate" translate="no" x="146" y="120">Cmd+回车</text>
+  <text class="t-big" x="248" y="46">插话</text>
+  <text class="t-soft" x="248" y="70">打断响应，保留文本和推理，</text>
+  <text class="t-soft" x="248" y="90">继续同一轮</text>
+  <text class="t-big" x="248" y="136">排队</text>
+  <text class="t-soft" x="248" y="160">各自在上一轮结束后开始</text>
+  <text class="t-soft" x="248" y="180">拖动该行，或 Alt+↑ Alt+↓ 调整顺序</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>消息</strong></li>
+  <li class="via"><dl class="pairs">
+    <dt><code translate="no">Enter</code></dt><dd>插话：打断响应，保留文本和推理，继续同一轮</dd>
+    <dt><code translate="no">Cmd+Enter</code></dt><dd>排队：各自在上一轮结束后开始；拖动该行，或 Alt+↑ Alt+↓ 调整顺序</dd>
+  </dl></li>
+</ol>
+</figure>
+<details>
+<summary>插话规则</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">插话</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">还在写的工具调用</th><td>丢弃</td></tr>
+<tr><th scope="row">已开始的工具、结构化输出</th><td>在下一个安全点收到；已开始的工具不取消</td></tr>
+<tr><th scope="row">不变</th><td>模型、工具、权限</td></tr>
+<tr><th scope="row">关闭 <strong>Steer interrupts the current response</strong></th><td><code translate="no">execution.instant_steer</code>：指令等响应结束</td></tr>
+<tr><th scope="row">操作按钮</th><td>运行中始终是停止；草稿保留</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>队列标记与操作</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">队列项</th><th scope="col">含义或效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>下一轮</strong></th><td>等待中</td></tr>
+<tr><th scope="row"><strong>等待连接</strong></th><td>连接恢复后发送</td></tr>
+<tr><th scope="row"><strong>未发送</strong>、<strong>未确认</strong></th><td>失败后。不阻挡后面的消息。重试同一命令，绝不作为新轮次重发。</td></tr>
+<tr><th scope="row">悬停一行</th><td>时间和操作</td></tr>
+<tr><th scope="row">点文字</th><td>完整消息和附件；点附件预览</td></tr>
+<tr><th scope="row">编辑</th><td>文本和文件；保存保持位置，取消保持内容。完成前这条消息暂不发送。</td></tr>
+<tr><th scope="row"><strong>加入当前轮次</strong></th><td>与插话相同；显示在运行中回复末尾，此后不能编辑或移除</td></tr>
+<tr><th scope="row">移除、<strong>全部清除</strong></th><td>一条，或除正在编辑外的全部</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>斜杠命令、限制和恢复</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">斜杠命令</th><td>运行中或等待请求时按命令运行。<code translate="no">/compact</code>、<code translate="no">/rewind</code> 要求等待或先停止；<code translate="no">/task</code>、<code translate="no">/merge</code>、<code translate="no">/skill</code> 排到下一轮。</td></tr>
+<tr><th scope="row">插话长度</th><td>最多 4,096 字符，含每个附件的名称行；更长的留在队列</td></tr>
+<tr><th scope="row">插话附件</th><td>像已发送消息一样保存，按路径读取，支持图片的模型能看到</td></tr>
+<tr><th scope="row">排队文本</th><td>重新加载、关窗和重启后保留；下一个窗口在空闲时按序发送；两个窗口不会发送同一条</td></tr>
+<tr><th scope="row">排队附件</th><td>只在该窗口内存中</td></tr>
+<tr><th scope="row">待处理插话、未确认投递</th><td>同样恢复，并复用原命令。重试绑定原执行；原执行被替换时指令保持未发送。</td></tr>
+<tr><th scope="row">停止后</th><td>队列等释放后按序发送。被停止取消的指令留作未发送草稿。</td></tr>
+<tr><th scope="row">已消费的补充</th><td>显示在回复前后两段之间；没有边界记录的旧历史显示在回复之前</td></tr>
+<tr><th scope="row">删除运行中的对话</th><td>停止轮次，关闭待处理的问题和审批，丢弃队列</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>停止与重新连接</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">停止</th><td><strong>Cancel execution</strong>，或输入框里按 <strong>Esc</strong></td></tr>
+<tr><th scope="row">停止、刷新或失败后保留</th><td>thinking、部分回复、工具步骤；随运行保存</td></tr>
+<tr><th scope="row">失败</th><td>回复末尾有提示；<strong>错误详情</strong>里是原始信息</td></tr>
+</tbody>
+</table>
+<details>
+<summary>发送、恢复和历史读取</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">发送的消息</th><td>立即显示，确认前为待定。随后出现占位（双环标记，减少动态时静止）；文本、thinking 和工具块按序流式显示。非默认 Agent 的回复带其名称。</td></tr>
+<tr><th scope="row">断开时</th><td>发送的消息进入队列。确认前连接断开时不自动重发。</td></tr>
+<tr><th scope="row">刷新</th><td>恢复活动执行及其控件，包括审批等待后。没有输出不代表结束；过时的 Worker 注册不会让执行保持活动。</td></tr>
+<tr><th scope="row">历史读取失败</th><td>显示重试并保留缓存消息。读取 15 秒过期；重试不重新提交；迟到的响应不会替换更新的响应。</td></tr>
+<tr><th scope="row">快照过期</th><td><strong>Retry history</strong> 重读位置，<strong>Go to latest history</strong> 打开最新</td></tr>
+<tr><th scope="row">重连后</th><td>先加载所选对话；恢复用紧凑快照，一次一个。查看历史绝不恢复任务。</td></tr>
+<tr><th scope="row">取消</th><td>本地 shell 命令先停止进程组再报告。恢复的对话把助手记为已取消。等待页面锁的浏览器操作会重新检查取消；已发送的不撤销。</td></tr>
+<tr><th scope="row">长对话</th><td>先打开最近一小页。Activity 只在一次运行的行展开时读取它的事件。短暂刷新失败静默重试。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>阅读对话</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">功能</th><th scope="col">用法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Thinking</th><td>折叠块；流式时显示最新一行</td></tr>
+<tr><th scope="row"><strong>对话显示方式</strong>，⋯ 菜单</th><td><strong>普通</strong>把工具折成一行，<strong>显示思考</strong>展开并打开 thinking，<strong>详细</strong>打开每一步。<strong>设为默认显示方式</strong>，或设置 → 外观。按对话保存在此浏览器。</td></tr>
+<tr><th scope="row"><strong>聊天宽度</strong></th><td><strong>窄</strong>最多 900px，或<strong>全宽</strong>。设置 → 外观，按浏览器。</td></tr>
+<tr><th scope="row">专注模式</th><td>右上角全屏按钮：隐藏侧栏、标签栏和其他窗格及其网页。按钮或 <strong>Esc</strong> 返回。切到图视图仍保持。</td></tr>
+<tr><th scope="row">函数时间线</th><td>每步一个可展开行：参数、输出、错误、耗时。嵌套调用递归；子 Agent 也是步骤。点步骤在右侧栏打开详情。<code translate="no">/programs</code> 的运行也用它。</td></tr>
+<tr><th scope="row">查找</th><td>当前分支上你和 Agent 的文字，含未加载历史，不分大小写；不含工具输出和 thinking。从最接近阅读位置处开始。网页、终端或编辑器聚焦时 ⌘F 归它们。</td></tr>
+<tr><th scope="row">阅读位置</th><td>重启或刷新后：最新。同次运行一小时内回来：原位置；在底部则继续跟随。向上滚动取消跟随。失去焦点后同样适用。</td></tr>
+<tr><th scope="row">侧栏圆点</th><td>蓝：你离开时轮次结束。红：失败。琥珀：等待输入。打开后蓝和红在所有窗口清除。运行中：三个跳动的点，选中行另有扫光。</td></tr>
+<tr><th scope="row">文件改动摘要</th><td>已加载的回来时仍在；历史操作仍检查当前状态</td></tr>
+</tbody>
+</table>
+
+<h3 id="task-list">任务清单</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源</th><td><code translate="no">todo_create</code>、<code translate="no">todo_update</code>；在改动它的轮次回复下</td></tr>
+<tr><th scope="row">运行中</th><td>展开：已完成、进行中、待办</td></tr>
+<tr><th scope="row">这一轮结束</th><td>消失</td></tr>
+<tr><th scope="row">仍有子 Agent 在跑</th><td>保留，并在等待的那项显示数量</td></tr>
+<tr><th scope="row">停止或出错且有未完成任务</th><td>保留到你发下一条消息</td></tr>
+<tr><th scope="row">新轮次没有计划</th><td>显示未完成的清单，标为 <strong>你上一条消息之前的计划</strong></td></tr>
+<tr><th scope="row">长计划</th><td>显示十二项，其余显示数量</td></tr>
+</tbody>
+</table>
+
+<h3 id="message-navigation-and-chapters">消息导航与章节</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">左边缘刻度</th><td>你有两条以上消息时，每条一个。指向显示预览卡片；点击滚动。</td></tr>
+<tr><th scope="row"><strong>钉为章节</strong>，回复操作行</th><td>更粗的紫色刻度、实心书签、常显的操作行；在包含该消息的所有分支和窗口都有效</td></tr>
+<tr><th scope="row"><strong>取消章节</strong></th><td>移除</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>建议下一句</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">样子</th><td>空输入框里的灰字；Tab 变成可编辑草稿，绝不替你发送</td></tr>
+<tr><th scope="row">消失</th><td>输入、新轮次、切换</td></tr>
+<tr><th scope="row">成本</th><td>每条回复多一次对上次模型的简短调用。在 <strong>设置 → 通用</strong> 关闭。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>回复中的图</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">visual</code> 块</th><td>图比文字更清楚时模型写的 HTML 或 SVG，除非你要求纯文本</td></tr>
+<tr><th scope="row">范围</th><td>Web 和桌面。绑定频道的聊天不画图；频道只收到视图外的文字。</td></tr>
+<tr><th scope="row">沙箱</th><td>独立框架。不能读取 App、登录状态或其他聊天。库只来自 cdnjs、jsDelivr、unpkg、esm.sh；无其他网络。</td></tr>
+<tr><th scope="row">主题</th><td>使用 App 配色并随之切换</td></tr>
+<tr><th scope="row">按钮</th><td>把文字作为你的下一条消息发送，回复运行中则等待。链接在浏览器打开。</td></tr>
+<tr><th scope="row">流式、复制</th><td>完成前是占位；复制得到原文</td></tr>
+<tr><th scope="row"><code translate="no">a2ui</code> 块</th><td>较早的 <a href="https://a2ui.org">A2UI</a> v0.9 回复仍显示为卡片</td></tr>
+<tr><th scope="row"><code translate="no">mermaid</code> 块</th><td><a href="https://mermaid.js.org">Mermaid</a> 严格模式，随主题。<strong>源码</strong>和<strong>图表</strong>切换；无法解析时保持代码。首次使用时加载库。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>输入框</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">功能</th><th scope="col">用法</th></tr></thead>
+<tbody>
+<tr><th scope="row">收起按钮行</th><td>点框内文字之外（指针变手形）：上下行滑到框后。再点恢复。按浏览器；函数表单忽略。</td></tr>
+<tr><th scope="row">Markdown</th><td>边输入边显示样式；光标离开时隐藏标记。发送原文。</td></tr>
+<tr><th scope="row">长粘贴</th><td>超过 2,000 字符变成 <strong>Pasted · N lines</strong>：悬停预览，退格删除。全文发送；消息显示可展开的标记。<strong>lost</strong> 表示需重新粘贴。</td></tr>
+<tr><th scope="row"><code translate="no">@path</code></th><td>在工作目录搜索：worktree 或项目文件夹，否则默认项目；新聊天用所选项目。变成标记。</td></tr>
+<tr><th scope="row"><code translate="no">@</code> 标签页和应用</th><td>文件之上：匹配标题、地址、名称或 bundle id 的打开标签页和运行中应用。查询含 <code translate="no">/</code> 时只搜文件。Agent 永不操作的应用隐藏。</td></tr>
+<tr><th scope="row">密钥</th><td>token 和私钥遮蔽显示，有眼睛开关：GitHub、OpenAI 和 Anthropic <code translate="no">sk-</code>、AWS <code translate="no">AKIA</code>、Slack、Stripe、Google、Hugging Face、npm、GitLab、JWT、PEM。只影响显示：模型收到全文。</td></tr>
+<tr><th scope="row">引用</th><td>选中文字点 <strong>加入当前聊天</strong>：进入该窗格的草稿</td></tr>
+<tr><th scope="row"><strong>编辑消息</strong></th><td>文字、URL、附件、<code translate="no">@</code> 提及。Cmd/Ctrl+回车保存，Escape 取消；失败时保留修改。</td></tr>
+<tr><th scope="row"><strong>Copy link（复制链接）</strong>，对话菜单</th><td>只在成功时提示</td></tr>
+</tbody>
+</table>
+<details>
+<summary><code translate="no">@</code> 搜索按键、显示的密钥与重复发送</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">搜索等待中</th><td>回车和 Tab 继续编辑。Escape 关闭该查询，响应迟到也不再显示。</td></tr>
+<tr><th scope="row">结果为空或失败</th><td>回车发送，Tab 移动焦点。Shift+回车和输入法确认不受影响。</td></tr>
+<tr><th scope="row">显示的密钥</th><td>文本变化时重新隐藏。折叠预览先遮蔽。复制和编辑保留原文。</td></tr>
+<tr><th scope="row">准备提及时</th><td>重复提交同一草稿不会发送两次。改过的草稿不发送并给出提示，内容保留。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary><strong>自动命名（Auto rename）</strong>，⋯ 菜单</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">依据</th><td>用上次的模型按当前分支命名，忽略问候；不发消息也不运行工具</td></tr>
+<tr><th scope="row">手动输入的名称</th><td>不会被替换</td></tr>
+<tr><th scope="row">生成的名称</th><td>第 1、6、16、40 轮后更新；以闲聊开头的对话第 2、3 轮后也更新</td></tr>
+<tr><th scope="row">失败</th><td>保持原名</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3>附件</h3>
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">图片</th><td>发给支持图片的模型；保存原图。最大 32 MiB，发送版缩到最多 5 MiB。不支持的模型明确拒绝，不悄悄丢弃。</td></tr>
+<tr><th scope="row">文本、代码、数据、PDF、Office，在 App 中</th><td>按路径引用，需要时由工具读取，不加入提示词</td></tr>
+<tr><th scope="row">浏览器中没有路径的文件</th><td>由后端保存并引用</td></tr>
+<tr><th scope="row">文件夹</th><td>只含直接列表，最多 200 项或 8 KiB</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">添加</th><td>粘贴、拖放或用输入框菜单。每项显示名称、格式、大小；点击预览，× 移除。</td></tr>
+<tr><th scope="row">铅笔</th><td>标注图片：画笔、矩形、箭头、文字、七种颜色、⌘Z。<strong>完成</strong> 替换原图。</td></tr>
+<tr><th scope="row">草稿</th><td>读取完成后保留。后端确认后只清除已提交项。出错时保留。</td></tr>
+<tr><th scope="row">Agent 发的文件</th><td>在回复下：图片原位，音视频带控件，其余为预览卡片</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>输入框里的 Git</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">需要或效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">git 部分</th><td>文件夹位于 Git 检出中时：分支和行数。拥挤时缩短名称、隐藏分支，再显示半彩圆点。</td></tr>
+<tr><th scope="row">菜单</th><td>打开 Review，切换或创建分支，移到 worktree；已开始的聊天则作为附加文件夹加入</td></tr>
+<tr><th scope="row"><strong>创建 PR</strong></th><td><code translate="no">gh</code> 已登录，非默认分支。推送并运行 <code translate="no">gh pr create --fill</code>。</td></tr>
+<tr><th scope="row"><strong>让 agent 提交并创建 PR</strong></th><td>有未提交改动时；填入输入框，不发送</td></tr>
+<tr><th scope="row"><strong>查看 PR</strong></th><td>显示 CI 失败、运行中、通过的数量，打开时读取</td></tr>
+<tr><th scope="row"><strong>让 agent 修复未通过的检查</strong></th><td>填入输入框，不发送</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>分支与 DAG</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="回退到这里：没有文件会变化时立即回退。否则对话框显示文件数和增删行数，可选代码和对话、仅对话或仅代码。">
+  <defs><marker id="rw-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">回退到这里</text>
+  <path class="ln" d="M136 33H196" marker-end="url(#rw-a)"/>
+  <path class="ln" d="M160 33V120H196" marker-end="url(#rw-a)"/>
+  <text class="t-big" x="208" y="40">立即回退</text>
+  <text class="t-soft" x="208" y="62">没有文件会变化</text>
+  <text class="t-big" x="208" y="127">对话框</text>
+  <text class="t-soft" x="208" y="149">文件数、增删行数</text>
+  <line class="ln" x1="290" y1="120" x2="418" y2="120" marker-end="url(#rw-a)"/>
+  <text x="430" y="101">代码和对话</text>
+  <text x="430" y="126">仅对话</text>
+  <text x="430" y="151">仅代码</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>回退到这里</strong></li>
+  <li class="via"><dl class="pairs">
+    <dt>没有文件会变化</dt><dd>立即回退</dd>
+    <dt>否则</dt><dd>对话框显示文件数和增删行数</dd>
+  </dl></li>
+  <li class="flow-end"><strong>选择</strong><small>代码和对话</small><small>仅对话</small><small>仅代码</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">轮次运行中</th><td>正在运行的分支上，重新生成、保存并重新发送和回退要等它结束；其他分支照常操作，切换分支从不被拒绝。会改动文件的回退在另一个分支运行时被拒绝，并给出先停止那个分支的按钮。</td></tr>
+<tr><th scope="row"><strong>复制</strong></th><td>每条消息都有</td></tr>
+<tr><th scope="row"><strong>重新生成</strong></th><td>把用户轮次作为同级重新运行</td></tr>
+<tr><th scope="row"><strong>保存并重新发送</strong>，编辑消息后</th><td>分叉该轮。磁盘文件不变。</td></tr>
+<tr><th scope="row"><strong>回退到这里</strong>的可用性</th><td>每条已发送的用户消息都有；所在分支运行中或上传文件时不可用，提示里写明原因。消息和附件放回输入框，排在草稿之前。</td></tr>
+<tr><th scope="row">回退恢复什么</th><td>只恢复编辑工具的改动。只被 Shell 改过的文件和提交都保留。之后被另一段对话改过的文件不动，并会列出。</td></tr>
+<tr><th scope="row"><strong>已回退到这里</strong>、<strong>撤销回退</strong>、<strong>重做回退</strong></th><td>回退的轮次保留，这一行标出位置。再次发送在旁边新增版本。撤销和重做只移动对话。</td></tr>
+<tr><th scope="row"><strong>从这里分叉</strong></th><td>新对话，含到这条消息及其回复为止的历史；这段对话不变。它和回退也在右键菜单里。</td></tr>
+<tr><th scope="row">‹ N / M ›</th><td>切换版本；不删除</td></tr>
+<tr><th scope="row"><strong>复制会话</strong>，⋯ 菜单</th><td>到 HEAD 的独立对话，运行中则到最后完成的轮次；同项目、环境、Agent、模型和设置。标题加“(copy)”，并有来源横幅。</td></tr>
+<tr><th scope="row"><code translate="no">/branch &lt;name&gt;</code></th><td>命名分支；不带名称时按内容命名</td></tr>
+<tr><th scope="row"><code translate="no">/rewind</code></th><td>选一条消息，最早的在上，默认选中最新；之后同<strong>回退到这里</strong>。标着<strong>仅对话</strong>的消息没有可恢复的文件。</td></tr>
+<tr><th scope="row">错误卡片</th><td>对话过长或请求被拒：<strong>回退</strong>。请求被拒时还有<strong>回退并重试</strong>，把它放回输入框。</td></tr>
+<tr><th scope="row"><code translate="no">/doctor</code></th><td>在对话中显示报告，不发给模型</td></tr>
+</tbody>
+</table>
+<details>
+<summary>图工具</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">图</th><th scope="col">用法</th></tr></thead>
+<tbody>
+<tr><th scope="row">画布</th><td>每轮一个节点，按分支着色，可平移</td></tr>
+<tr><th scope="row">浏览（H）</th><td>单击折叠调用；双击非用户节点检出，双击用户轮次分叉并编辑；右键看卡片</td></tr>
+<tr><th scope="row">选择（V）、套索（L）</th><td>框选或套索选中所有接触的节点；Shift 追加；空格平移。Delete 删除（后续节点接到前一节点，回复的工具一并删除）；⌘Z 或撤销恢复。根、压缩摘要和运行中除外。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>审阅改动</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">列出</th><td>某轮、分支或文件夹改动的文件及差异</td></tr>
+<tr><th scope="row">改动块的 <strong>Revert</strong></th><td>内容仍与差异一致时恢复磁盘上这些行；否则刷新差异。可用文件历史撤销。轮次运行时等待。</td></tr>
+<tr><th scope="row"><strong>Revert</strong> 不适用</th><td>项目外、已暂存、跨页拆分、文件末尾无换行的块，整个新增或删除的文件</td></tr>
+<tr><th scope="row">行上的评论按钮</th><td><strong>加入消息</strong> 把文件、行号、引用和评论加到草稿。⌘回车添加，Escape 取消。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="conversation-activity">运行记录</h2>
+<table class="stack">
+<thead><tr><th scope="col">分区</th><th scope="col">列出</th><th scope="col">对应页面</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>等你处理</strong>，有内容时</th><td>常驻 Agent 留给你的报告</td><td>打开对应对话</td></tr>
+<tr><th scope="row"><strong>Agents</strong></th><td><strong>主 Agent</strong>，含状态和子 Agent 数；红色角标计等待项。每个分支一行，标记 <strong>Current</strong>。<a href="../capabilities/always-on-agents.html">常驻</a>时多一行状态。</td><td>它的运行，新的在前，每次运行里有它做的事；常驻时有 <strong>Always-on</strong> 一行；分支页有 <strong>Switch to this branch</strong></td></tr>
+<tr><th scope="row"><strong>Programs and commands</strong></th><td>运行中的命令、<strong>Interrupted</strong> 的命令、所有后台程序，运行中的在前</td><td>进度、命令、终端输出、<strong>Stop program</strong>，目录和环境在 <strong>Technical details</strong> 里；命令返回后显示输出</td></tr>
+<tr><th scope="row"><strong>Open work</strong>，有内容时</th><td><a href="../capabilities/agents.html#open-work">Agent 还欠你的事</a></td><td>备注、<strong>Mark done</strong> 或 <strong>Reopen</strong>、<strong>Remove</strong></td></tr>
+<tr><th scope="row"><strong>Scheduled tasks</strong></th><td>本对话设置的调度任务、<a href="../capabilities/reminders.html">提醒</a>、<a href="../capabilities/event-triggers.html">事件触发器</a></td><td><strong>Open in Scheduler</strong>；一行 <strong>Task</strong>，含提示或命令，webhook 另有地址和密钥及 <strong>Copy</strong>；最近 20 次运行</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>跟随</dt><dd>所选对话，仅当标签页、路由和聊天状态一致；草稿和其他页面显示空提示</dd>
+<dt>分区</dt><dd>空的隐藏</dd>
+<dt>行</dt><dd>打开一页，页内的行原地展开。顶部的 <strong>Activity</strong>、Esc 或侧栏轨道上的 Activity 返回</dd>
+<dt>宽度</dt><dd>拖动面板边缘，或聚焦后按左右方向键；按浏览器保存。够宽时运行和时间线并排，窄时用 <strong>Timeline</strong> 切换</dd>
+<dt>标题</dt><dd>可折叠，按浏览器保存</dd>
+<dt>Program 草稿</dt><dd>从 Abilities 打开 Program 会开一个草稿标签页，不产生执行历史</dd>
+<dt>分组</dt><dd>Agent 和运行按分支</dd>
+</dl>
+<details>
+<summary>子 Agent</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">位置</th><td>在启动它的运行里面，每往下一代缩进一层。显示运行中或用时；启动失败的显示 <strong>Failed · never started</strong>，并有错误和任务。</td></tr>
+<tr><th scope="row">展开后</th><td>它被问了什么、回复或错误、它又启动了什么、等待的问题（<strong>Answer in chat</strong>、<strong>Review in chat</strong>）、<strong>Open its conversation</strong>、它的控制项、<strong>Technical details</strong></td></tr>
+<tr><th scope="row">对话</th><td>不作为分支列出</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>运行与程序</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">一次运行</th><td>一行，带开始时间、时长和时间轴上的长条，每次 20 行（<strong>Show earlier</strong>）。原地展开后依次是提问、每一步的输入和结果、带错误的尝试、子 Agent 和回复。最新一次失败或仍在进行时自动展开。</td></tr>
+<tr><th scope="row">运行的操作</th><td>支持时有 Pause、Continue、Retry、<strong>Add instruction</strong>、Cancel；待答问题在列表末尾。<strong>Technical details</strong>：Step、<strong>Create branch</strong>、代码策略、ID、版本、检查点、原始事件。取到快照不代表 Agent 正在运行。</td></tr>
+<tr><th scope="row">调用、长内容</th><td>调用按其请求命名。长内容显示八行，<strong>Show all</strong> 展开。</td></tr>
+<tr><th scope="row">进度来源</th><td><code translate="no">##progress 45/100 samples</code>、OSC 9;4、tqdm 和 pip 进度条、<code translate="no">Epoch 3/10</code> 这样的计数。否则显示已运行时间和最后一行。</td></tr>
+<tr><th scope="row">输出</th><td>按终端方式显示，有上限，并标明截断。<strong>Stop program</strong> 只针对该进程组。</td></tr>
+<tr><th scope="row">等待后仍在运行的 <code translate="no">bash</code></th><td>变成程序。其监管进程跨 Worker 重启存活。分离到其他会话或框架外启动的进程不归入。</td></tr>
+<tr><th scope="row">更新</th><td>事件、打开面板和恢复时；没有刷新按钮。回退：快照 30 秒，程序 3 秒，打开的程序 1 秒。失败时保留最后数据并提示。只缺模型响应的已结束尝试显示为已结束。</td></tr>
+<tr><th scope="row">常驻行</th><td>在已检出分支的运行上方。展开后有 <strong>Wake now</strong>、目标、当前 Goal、频率、是否还在运行、上次和下次唤醒、花费、关于报告的要求。报告是运行列表里的行，带去向和 <strong>Don't report things like this</strong>。归档对话即停止；计划在 Agents → Always-on 设置。</td></tr>
+<tr><th scope="row"><strong>Branch with new instructions</strong></th><td>从保存点：准备、检查、确认、发布。编辑会产生新草稿并使校验失效。敏感改动需独立批准。</td></tr>
+<tr><th scope="row"><strong>Create branch</strong></th><td>独立的暂停子执行；<strong>Continue</strong> 启动</td></tr>
+<tr><th scope="row"><strong>Retry</strong></th><td>在该点用原版本创建独立的暂停执行</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>标签页与侧栏</h2>
+<details>
+<summary>标签页行为</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">前进和后退</th><td>按标签页，随之保存；新目标只替换前进步骤</td></tr>
+<tr><th scope="row">对话已在此窗口打开</th><td>选中其标签页，前进后退也如此。按 ID 判断。重新加载旧的重复项时保留活动的或第一个。</td></tr>
+<tr><th scope="row">轮次运行中</th><td>点其他聊天在新标签页打开。中键总是如此。</td></tr>
+<tr><th scope="row">删除对话</th><td>从所有历史移除；标签页返回或关闭，焦点右移或左移。最后一个标签页留下新聊天。</td></tr>
+<tr><th scope="row"><strong>新会话（New chat）</strong></th><td>复用打开的空聊天</td></tr>
+<tr><th scope="row">按住和拖动标签</th><td>不拖动松开即切换。拖出标签栏使用新窗口转移。</td></tr>
+<tr><th scope="row">拖窗格手柄</th><td>显示带图标和标题的完整标签</td></tr>
+<tr><th scope="row">分屏画布</th><td>点对话时 Files、Activity、资源跟随；响应限定在该对话</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>侧栏</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">侧栏</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">显示</th><td>有未归档聊天的项目；其余在选择器里</td></tr>
+<tr><th scope="row">分组</th><td><strong>分组 → 项目</strong>；拖标题，或 Alt+Up、Alt+Down。保存在此设备。</td></tr>
+<tr><th scope="row">项目排序</th><td>最新、最旧、名称、手动。聊天方向和 A–Z 独立。固定的在上。</td></tr>
+<tr><th scope="row">移动聊天</th><td>拖动，或<strong>移动到项目</strong>。记录随之移动；后续轮次用新文件夹和记忆；旧记忆留下。运行中不可。</td></tr>
+<tr><th scope="row">项目内放置</th><td>放下后保持位置，直到有新活动。其余按活动排序。</td></tr>
+<tr><th scope="row">多选</th><td>⌘ 点击、Shift 点击；右键移动或归档。单击或 Escape 清除。</td></tr>
+<tr><th scope="row">项目菜单</th><td>设置、新聊天、固定、编辑（名称、图标、描述、源文件夹）、自定义分区；显示文件夹、创建 worktree、归档聊天、从侧栏移除</td></tr>
+<tr><th scope="row">移除项目</th><td>保留文件和聊天；主目录项目不能移除</td></tr>
+<tr><th scope="row">Worktree</th><td>新分支和外部文件夹；未提交改动留在原处。检出时 <strong>停止</strong> 会删除半成品文件夹和分支。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="manage-project-files">文件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">列</th><td>名称、大小、修改日期、类型；窄栏只显示前两列。点表头排序；搜索保持相关性。</td></tr>
+<tr><th scope="row">工具栏</th><td>搜索、新建文件、新建文件夹、刷新、排序与显示（隐藏、Git 忽略、文件夹优先）、简介。设置按项目保存。</td></tr>
+<tr><th scope="row">移动</th><td>拖到文件夹或空白处。<strong>移动到…</strong>（⇧⌘M、Ctrl+Shift+M）：输入名称或路径，Tab 进入，<strong>新建“…”并移到这里</strong> 创建。每次有<strong>撤销</strong>；被拒绝时还原。</td></tr>
+<tr><th scope="row">选择</th><td>⌘ 点击、Shift 点击</td></tr>
+<tr><th scope="row">按键</th><td>⌘C ⌘X ⌘V，⌘退格或 Delete 确认后删除，F2 重命名</td></tr>
+<tr><th scope="row">新建、重命名</th><td>行内；回车或点开保留，Escape 或空名取消</td></tr>
+<tr><th scope="row">从系统添加</th><td>拖到树上，每个最大 1 GiB；已有文件不变并计数</td></tr>
+<tr><th scope="row">删除</th><td>可恢复：<code translate="no">openprogram trash list</code>、<code translate="no">openprogram trash restore &lt;entry_id&gt;</code>。恢复绝不覆盖。删除或重命名符号链接只作用于链接，不影响目标。</td></tr>
+<tr><th scope="row">未保存文件</th><td>删除时询问保存、导出或放弃。导出保留草稿；恢复后重新打开。</td></tr>
+<tr><th scope="row">复制、剪切</th><td>保留来源项目；只能粘贴到该项目</td></tr>
+<tr><th scope="row">导航</th><td>回到窗口时重读打开的文件夹。前进后退在位置间移动，恢复树和滚动。路径的复制按钮给完整路径；悬停大小看字节数。</td></tr>
+</tbody>
+</table>
+<details>
+<summary>简介与文件夹大小</summary>
+<dl class="pairs">
+<dt>简介</dt><dd>路径、字节、时间戳、只读权限</dd>
+<dt>扫描</dt><dd>可见文件夹，有界队列。样本持久保存，点<strong>刷新</strong>或 <strong>Recalculate</strong> 前不重扫；不是原子快照。</dd>
+<dt><code translate="no">≥</code></dt><dd>部分结果</dd>
+<dt>统计</dt><dd>逻辑字节，含隐藏文件；跳过符号链接和不可读项</dd>
+<dt>排序</dt><dd>完整样本参与；未知的排在最后</dd>
+</dl>
+</details>
+
+<h3>预览</h3>
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">打开方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">Markdown</th><td>类似 Obsidian 阅读视图：标题、<strong>属性</strong>表。相对图片和链接可用。原始 HTML 显示为文本。</td></tr>
+<tr><th scope="row">Obsidian 语法</th><td>标注 <code translate="no">&gt; [!note]</code>，折叠 <code translate="no">-</code>，展开 <code translate="no">+</code>；<code translate="no">==mark==</code>；<code translate="no">#tag</code>；<code translate="no">[[Note]]</code>、<code translate="no">[[Note#Heading]]</code>、<code translate="no">[[Note|label]]</code>；<code translate="no">![[image.png|300]]</code>。同文件夹或写明的路径，无全局搜索和大纲。</td></tr>
+<tr><th scope="row">HTML，在 App 中</th><td>通过 <code translate="no">file://</code> 在浏览器标签页打开网页；<strong>View page</strong> 和<strong>查看源文件</strong>切换。浏览器中或 Worker 在远程时：源文件。</td></tr>
+<tr><th scope="row">PDF</th><td>连续阅读，含缩略图、大纲、适配、搜索、下载。项目文件可加高亮和笔记，保存为标准注释。本地解码，最大 64 MiB。复制默认去掉版面换行。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">新回复</th><td>在聊天旁打开第一个支持的输出；历史和后台回复不打开</td></tr>
+<tr><th scope="row"><strong>File changed</strong></th><td>显示在可见的预览上。<strong>Refresh</strong> 失败时保留旧视图，并保留未保存的编辑。</td></tr>
+<tr><th scope="row">同一文件的多个标签页</th><td>共享编辑器和草稿；<strong>Show here</strong> 移动编辑器</td></tr>
+<tr><th scope="row">完成的 Goal</th><td>在回复下显示状态和时长</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Markdown 预览的链接和锚点</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">标题锚点</th><td>可见文字转小写；保留 Unicode 字母和数字；空格变连字符；重复的加数字后缀</td></tr>
+<tr><th scope="row"><code translate="no">#fragment</code>、<code translate="no">file.md#fragment</code></th><td>在文档内滚动；打开目标文件并在加载后滚动。重新打开后不恢复。</td></tr>
+<tr><th scope="row">链接协议</th><td>本地文件、页内片段、HTTP(S)、mailto。协议相对链接使用 HTTPS。</td></tr>
+<tr><th scope="row">不加载</th><td>Data 图片 URL、可执行或不支持的协议</td></tr>
+<tr><th scope="row">数学公式</th><td>排版前显示文本；行内和围栏代码保留原始定界符</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>项目与移动的文件夹</summary>
+<dl class="pairs">
+<dt>文件夹路径</dt><dd>在 Worker 所在机器上。没有显示环境的 Linux 使用手动路径对话框，由 Worker 检查目录。</dd>
+<dt>身份</dt><dd><code translate="no">&lt;project&gt;/.openprogram/project.json</code>；移动时保留。文件损坏时报错，绝不悄悄改变。</dd>
+</dl>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">移到已知父目录内</th><td>启动时找到，三层、4,000 项内</td></tr>
+<tr><th scope="row">移到别处</th><td>打开新位置一次；一起移动的相邻项目也重连</td></tr>
+<tr><th scope="row">原件仍在时打开副本</th><td>独立项目</td></tr>
+<tr><th scope="row">多个副本</th><td><strong>Locate folder</strong></td></tr>
+<tr><th scope="row">身份无法验证</th><td><strong>Use the folder at this location</strong></td></tr>
+<tr><th scope="row">定位到另一项目且缺失项无聊天</th><td>移除缺失条目</td></tr>
+<tr><th scope="row">不可用</th><td>历史可读；新任务等待</td></tr>
+<tr><th scope="row">同路径的不同文件夹</th><td>不继承</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>网页预览</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">浮动预览</th><td>同一活动页面，停靠在对话右上角，可拖动；可直接点击、滚动、输入。侧栏变化时保持距离。隐藏滚动条轨道。</td></tr>
+<tr><th scope="row">视口</th><td>1920 × 1080 CSS 像素；调整大小只改变缩放</td></tr>
+<tr><th scope="row"><strong>打开页面</strong></th><td>移到完整标签页并恢复正常尺寸</td></tr>
+<tr><th scope="row">隐藏</th><td>仍在资源里</td></tr>
+<tr><th scope="row">普通浏览器</th><td>沙箱 iframe，网站可能阻止，且不共享状态</td></tr>
+<tr><th scope="row"><strong>操作历史</strong></th><td>可键盘操作的菜单；页面关闭前一直可用</td></tr>
+</tbody>
+</table>
+
+<h2>外观</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>主题</strong></th><td>标准（默认）、代码雨，或彩色渐变（新标签页背后的靛蓝、紫和青色）。按浏览器保存。</td></tr>
+<tr><th scope="row">代码雨</th><td>空聊天在输入框后下雨；新消息从中解码；运行中的标签、加载图标和进度条显示为代码。历史、选择、复制和查找使用真实文字。减少动态时：静止一帧，无代码雨。</td></tr>
+<tr><th scope="row"><strong>代码雨密度</strong></th><td>10–100%，默认 40%</td></tr>
+<tr><th scope="row"><strong>标签拖动外观</strong></th><td>透明度 0–100%（20）、背景模糊 0–40px（16）、阴影强度 0–100%（25）。立即生效，按浏览器保存，只影响标签和分屏标题。<strong>恢复默认</strong>重置这些项。</td></tr>
+</tbody>
+</table>

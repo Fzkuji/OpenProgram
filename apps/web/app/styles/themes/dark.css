@@ -18,13 +18,13 @@
   --nav-color: #b6b6bb;
   --nav-color-hover: #ededf0;
   --bg-selected: rgba(255, 255, 255, 0.10);
-  --user-msg-bg: #252529;
+  --user-msg-bg: var(--bg-input); /* sent bubble = the composer surface */
   --assistant-msg-bg: #1e1e20;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   --surface-popover: #252529;
   --border-popover: rgba(255, 255, 255, 0.12);
-  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-popover: var(--glass-shadow);
   --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.4);
   --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.34);
   --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.34);
@@ -32,6 +32,7 @@
   --accent-orange: #6ea8fe;
   --accent-fill: #3b82f6;
   --accent-orange-hover: #2563eb;
+  --tabrow-tint: 0%; /* plain tab strip; vivid themes tint it with the accent */
   --accent-green: #6e9b76;
   --accent-red: #c24e42;
   --accent-yellow: #d4a346;
@@ -48,14 +49,16 @@
   --focus-ring: color-mix(in srgb, var(--text-bright) 50%, transparent);
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-strong: rgba(0, 0, 0, 0.75);
-  --surface-tooltip: #45454b;
-  --text-on-tooltip: #ffffff;
+  --surface-tooltip: var(--foreground);
+  --text-on-tooltip: var(--background);
   --composer-ring: rgba(255, 255, 255, 0.08);
   --composer-ring-focus: rgba(255, 255, 255, 0.16);
+  /* Input box = shadcn Luma Card surface with no border: shadow-sm
+     at rest, shadow-md on hover / focus. */
   --composer-surface: var(--bg-input);
   --composer-backdrop-filter: none;
-  --composer-shadow: 0 0 0 1px var(--composer-ring);
-  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus);
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.25), 0 1px 2px -1px rgb(0 0 0 / 0.25);
+  --composer-shadow-focus: 0 4px 6px -1px rgb(0 0 0 / 0.35), 0 2px 4px -2px rgb(0 0 0 / 0.35);
   --chip-bg: var(--bg-tertiary);
   --chip-ring: var(--border-light);
   --meter-fill: #5b9cf8;

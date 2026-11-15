@@ -1,0 +1,70 @@
+/* Voice input geometry mirrors the send button (.actionBtn in
+   composer.module.css): sized and placed by the composer tokens in
+   design/composer.css, centred in the last text line, pinned to the box's
+   bottom-left corner. */
+.micBtn {
+  position: absolute;
+  width: var(--composer-action-size);
+  height: var(--composer-action-size);
+  top: var(--composer-action-top);
+  left: var(--composer-action-inset);
+  z-index: 1;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+.micBtn svg {
+  /* The send button's 16px glyph (.actionBtn svg). */
+  width: 16px;
+  height: 16px;
+}
+.micBtn:hover {
+  background: var(--composer-action-hover);
+  color: var(--text-bright);
+}
+.micBtn[data-state="recording"],
+.micBtn[data-state="starting"] {
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+}
+.micBtn[data-state="recording"]:hover {
+  background: color-mix(in srgb, var(--accent-red) 22%, transparent);
+}
+
+/* Live level strip, docked just left of the send button. */
+.strip {
+  position: absolute;
+  top: var(--composer-action-top);
+  right: calc(var(--composer-action-inset) + var(--composer-action-size) + var(--composer-action-gap));
+  height: var(--composer-action-size);
+  width: 98px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2.5px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+.dot,
+.bar {
+  display: block;
+  flex: none;
+  width: 2.5px;
+  border-radius: var(--radius-2xs);
+  background: currentColor;
+}
+.dot {
+  height: 2.5px;
+  opacity: 0.45;
+}
+.bar {
+  transition: height 60ms linear;
+}
+.finishing {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar { transition: none; }
+}

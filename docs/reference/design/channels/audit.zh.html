@@ -1,0 +1,161 @@
+<title>渠道要求与约束</title>
+<meta name="description" content="渠道适配器遵守的契约、两条发送路径存在的原因，以及与 OpenClaw、Hermes 的对比。">
+<h1>渠道要求与约束</h1>
+<p class="note">结构和消息流：<a href="design.zh.html">渠道子系统设计</a>。</p>
+<h2 id="the-abstraction">契约</h2>
+<pre translate="no"><code>@dataclass(frozen=True)
+class MessageHandle:
+    platform: str
+    account_id: str
+    target: str
+    message_id: str
+
+    @property
+    def editable(self) -&gt; bool: ...
+
+
+class Channel(abc.ABC):
+    platform_id: str = ""
+
+    @abc.abstractmethod
+    def run(self, stop: threading.Event) -&gt; None: ...
+
+    def send_text(self, target, text) -&gt; Optional[MessageHandle]: ...
+    def send_text_full(self, target, text, thread_id=None) -&gt; SendResult: ...
+    def send_file(self, target, path, caption="", thread_id=None) -&gt; SendResult: ...
+    def edit_text(self, handle, new_text) -&gt; bool: ...
+    def edit_text_full(self, handle, new_text) -&gt; SendResult: ...</code></pre>
+<table class="stack fixed">
+<thead><tr><th scope="col">约束</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">run</code> 是唯一抽象方法</th><td>入站循环没有共同形状。出站有，所以发送和编辑在 <code translate="no">_transport</code> 上具体实现。只实现 <code translate="no">run</code> 的适配器就能完整收发和编辑；只有 SDK 带来额外能力（如提及解析、上传）才覆盖。强制 <code translate="no">send</code>/<code translate="no">edit</code>/<code translate="no">react</code> 会要求平台可能没有的能力。</td></tr>
+<tr><th scope="row"><code translate="no">MessageHandle</code> 全是字符串</th><td>可序列化：一个进程发送，另一个编辑</td></tr>
+<tr><th scope="row">两个入口，一个实现</th><td><code translate="no">outbound.send</code> 在进程内没有适配器时也能用；<code translate="no">adapter.send_text</code> 保留 id 以便编辑。只有 <code translate="no">_transport</code> 负责 HTTP、凭据和分块，所以新操作是一份实现，而不是八份。</td></tr>
+<tr><th scope="row">发送返回 <code translate="no">SendResult</code></th><td>bool 无法区分瞬态和永久失败。<code translate="no">error_kind</code>（<code translate="no">auth</code>、<code translate="no">rate_limit</code>、<code translate="no">bad_target</code>、<code translate="no">network</code>、<code translate="no">not_supported</code>、<code translate="no">format</code>、<code translate="no">unknown</code>）来自 <code translate="no">_classify_http_status</code>、<code translate="no">_telegram_kind_from_description</code>、<code translate="no">_slack_kind_from_error</code>。bool 形式保留。</td></tr>
+<tr><th scope="row">编辑能力是句柄属性</th><td>iLink 不能编辑。微信句柄 <code translate="no">editable == False</code>；<code translate="no">edit_text_full</code> 返回 <code translate="no">SendResult.fail("not_supported", ...)</code>，绝不用删除重发伪装。调用方不用针对平台名特判。</td></tr>
+<tr><th scope="row">拒绝跨平台编辑</th><td><code translate="no">handle.platform != self.platform_id</code> 时返回 <code translate="no">SendResult.fail("bad_target", ...)</code>。跨适配器协调由调用方负责。</td></tr>
+<tr><th scope="row">内置优先注册</th><td><code translate="no">_BUILTIN_CHANNEL_CLASSES</code> 优先于 <code translate="no">_PLUGIN_CHANNEL_CLASSES</code>。插件用 <code translate="no" data-claim="example">[project.entry-points."openprogram.channels"]</code> 或 <code translate="no">register_channel(name, cls)</code>。<code translate="no">CHANNEL_CLASSES</code> 是两者之上的类字典代理。</td></tr>
+</tbody>
+</table>
+<h2 id="neutral-inbound-message">中立入站消息</h2>
+<p><code translate="no">_message.py:ChannelMessage</code>，frozen：<code translate="no">text</code>、<code translate="no">chat_id</code>、<code translate="no">user_id</code>、<code translate="no">user_display</code>、<code translate="no">message_id</code>、<code translate="no">chat_type</code>、<code translate="no">ts</code>、<code translate="no">reply_to_id</code>、<code translate="no">quoted_text</code>、<code translate="no">thread_id</code>、<code translate="no">parent_chat_id</code>、<code translate="no">attachments</code>（<code translate="no">Attachment</code> 元组）、<code translate="no">mentioned</code>、<code translate="no">from_bot</code>。</p>
+<p class="note">管线把 <code translate="no">quoted_text</code> 作为 <code translate="no">&gt;</code> 块放在前面，下载 <code translate="no">attachments</code>，小图片作为视觉输入转发。<code translate="no">thread_id</code> 把占位、回复和文件发回原 thread，不参与会话路由。</p>
+<h2 id="inbound-dispatch">入站分发</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">动作</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. 路由</th><td><code translate="no">session_aliases</code> 和 <code translate="no">bindings</code> 决定 <code translate="no">agent_id</code></td></tr>
+<tr><th scope="row">2. 键</th><td>按 <code translate="no">agent.session_scope</code> 计算 <code translate="no">session_key</code></td></tr>
+<tr><th scope="row">3. 重置</th><td><code translate="no">daily_reset</code> 或 <code translate="no">idle_minutes</code></td></tr>
+<tr><th scope="row">4. 存储</th><td><code translate="no">_load_or_init_session</code> 写入会话存储</td></tr>
+<tr><th scope="row">5. 轮次</th><td><code translate="no">build_turn_request</code> 构造 <code translate="no">TurnRequest</code>，<code translate="no">CanonicalAgentAdapter</code> 接纳并运行</td></tr>
+<tr><th scope="row">6. 回复</th><td>追加</td></tr>
+<tr><th scope="row">7. 广播</th><td>向 Web UI 发 <code translate="no">channel_turn</code> 信封</td></tr>
+</tbody></table>
+<p class="note"><code translate="no">progress_stream=False</code> 返回回复由适配器发送。<code translate="no">True</code> 时驱动 <code translate="no">send_text</code>/<code translate="no">edit_text</code>，工具事件在回合中到达用户；分发器本来就发这些事件，流式只是基于 <code translate="no">MessageHandle</code> 和 <code translate="no">patch_message</code> 的接线。路由、存储、广播拆到 <code translate="no">_session_routing.py</code>、<code translate="no">_session_store.py</code>、<code translate="no">_broadcast.py</code>。</p>
+<h2 id="stateless-outbound">无状态入口存在的原因</h2>
+<table class="stack">
+<thead><tr><th scope="col">范式</th><th scope="col">谁驱动</th><th scope="col">入口</th></tr></thead>
+<tbody>
+<tr><th scope="row">A：Agentic Programming</th><td>Python 控制流；<code translate="no">Agent</code> 方法创建 Context 节点；<code translate="no">Runtime.exec</code> 只在调用时请求 LLM</td><td>程序员写的代码</td></tr>
+<tr><th scope="row">B：Agent 循环（渠道、Web UI 聊天）</th><td>LLM 选工具：<code translate="no">process_user_turn</code> → <code translate="no">agent_loop</code> → 工具流</td><td>外部消息</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">部署形式</th><th scope="col">适配器实例</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram</code> worker 运行中</th><td>在 worker 中</td></tr>
+<tr><th scope="row">导入 Agent 方法的脚本；独立进程中的任务；notebook；pytest</th><td>没有</td></tr>
+</tbody>
+</table>
+<ul>
+<li>渠道挂在 B 上，但 A 也要发送。A 是库模式，不假定有 worker。OpenClaw 和 Hermes 只经适配器发送，适合它们的单守护进程，定时任务可通过注入拿到适配器。</li>
+<li>任何异步优先的基类都要保留同步的模块级封装，让 <code translate="no">Agent</code> 方法不用 asyncio 也能发送。</li>
+<li>流式编辑在 A 中仍可用：<code translate="no">Agent</code> 方法可以持有 <code translate="no">MessageHandle</code> 并编辑。</li>
+</ul>
+<h2 id="three-way-comparison">对比</h2>
+<p class="note">OpenClaw 是 OpenProgram fork 的 TypeScript 来源；Hermes 是 Python 聊天机器人项目。opencode 和 Claude Code 没有渠道子系统。</p>
+<table class="stack">
+<thead><tr><th scope="col">方面</th><th scope="col">OpenProgram</th><th scope="col">OpenClaw</th><th scope="col">Hermes</th></tr></thead>
+<tbody>
+<tr><th scope="row">抽象方法</th><td>1 个（<code translate="no">run</code>），发送和编辑有具体实现</td><td>5+（SendAdapter、LiveAdapter、ApprovalAdapter...）</td><td>5+（<code translate="no">send</code>、<code translate="no">edit</code>、<code translate="no">draft</code>、<code translate="no">typing</code>、<code translate="no">handoff</code>）</td></tr>
+<tr><th scope="row">中立消息</th><td><code translate="no">ChannelMessage</code></td><td><code translate="no">ChannelMeta</code>，含媒体、富文本、组件</td><td><code translate="no">MessageEvent</code>, <code translate="no">SessionSource</code></td></tr>
+<tr><th scope="row">发送结果</th><td><code translate="no">SendResult</code> (ok, message_id, error_kind, retryable, retry_after)</td><td><code translate="no">DurableMessageSendResult</code> (message_id, edited_ids, retry policy)</td><td><code translate="no">SendResult</code> (message_id, retryable)</td></tr>
+<tr><th scope="row">分发</th><td>同步 → str，或 <code translate="no">progress_stream=True</code></td><td>异步管线：draft → live → final</td><td>异步流式事件</td></tr>
+<tr><th scope="row">会话隔离</th><td><code translate="no">session_scope</code>，4 个值</td><td><code translate="no">dmScope</code>、thread-bindings-policy</td><td>会话 × 用户 × thread</td></tr>
+<tr><th scope="row">进度</th><td>分发器驱动发送和编辑</td><td>三阶段，内置节流</td><td><code translate="no">edit_message</code>，自动溢出拆分</td></tr>
+<tr><th scope="row">审批</th><td>文本桥接（<code translate="no">_question_commands.py</code>）</td><td>表情 ✓/✗，onApprove、onDecline、onTimeout</td><td><code translate="no">/approve</code> 文本命令</td></tr>
+<tr><th scope="row">防抖合并</th><td>无</td><td>未知</td><td>0.35 秒延迟，1 秒上限</td></tr>
+<tr><th scope="row">健康检查</th><td>启动时无；心跳供状态使用</td><td><code translate="no">health-check-adapter.ts</code></td><td>未知</td></tr>
+<tr><th scope="row">回执跟踪</th><td>无</td><td>有</td><td>未知</td></tr>
+<tr><th scope="row">结构化回复</th><td>仅文本</td><td>embed、按钮、菜单</td><td>部分</td></tr>
+<tr><th scope="row">附件</th><td>状态目录，视觉输入</td><td>缓存</td><td>UUID 前缀，24 小时清理</td></tr>
+<tr><th scope="row">出站 API</th><td><code translate="no">outbound.send</code> 共用 <code translate="no">_transport</code></td><td>经适配器</td><td><code translate="no">DeliveryRouter(adapters: dict)</code></td></tr>
+<tr><th scope="row">进程模型</th><td>库、worker、脚本</td><td>单守护进程</td><td>单网关进程</td></tr>
+<tr><th scope="row">分块</th><td><code translate="no">_transport._chunk</code></td><td>在平台插件内</td><td><code translate="no">truncate_message</code></td></tr>
+<tr><th scope="row">注册</th><td>内置字典、entry points</td><td>Plugin SDK：manifest、动态加载</td><td>内置加注册表</td></tr>
+<tr><th scope="row">语言</th><td>Python</td><td>TypeScript</td><td>Python</td></tr>
+</tbody>
+</table>
+<details>
+<summary>OpenClaw 的做法</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">机制</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">结构</th><td><code translate="no">references/openclaw/src/channels/</code> 是细粒度文件；每个平台在 <code translate="no">extensions/{name}/</code>（discord 70+、slack 40+、telegram 35+ 个文件）</td></tr>
+<tr><th scope="row">Plugin SDK</th><td><code translate="no">src/plugin-sdk/channel-*.ts</code>，50+ 契约文件：<code translate="no">ChannelMessageSendAdapter</code>、<code translate="no">ChannelMessageLiveAdapterShape</code>、<code translate="no">ChannelApprovalAdapter</code>、<code translate="no">ChannelMessageActionAdapter</code>、<code translate="no">ChannelOutboundAdapter</code></td></tr>
+<tr><th scope="row">流式编辑</th><td>draft → live-preview（节流）→ final；节流在管线内</td></tr>
+<tr><th scope="row">表情审批</th><td>危险工具用 ✓/✗ 表情，含超时、重试、取消（<code translate="no">ack-reactions.ts</code>、<code translate="no">approval-native.ts</code>）</td></tr>
+<tr><th scope="row">健康检查</th><td>启动探测；一个平台故障不影响 worker</td></tr>
+<tr><th scope="row">注册</th><td><code translate="no">openclaw.plugin.json</code> manifest，核心加载器扫描 <code translate="no">extensions/*/</code> 或 npm，懒实例化</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>Hermes 的做法</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">机制</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">基类</th><td><code translate="no">BasePlatformAdapter</code>（1500 行），14+ 平台，每个适配器一个文件，异步 <code translate="no">send</code>、<code translate="no">edit_message</code>、<code translate="no">send_draft</code>、<code translate="no">send_typing</code>、<code translate="no">create_handoff_thread</code></td></tr>
+<tr><th scope="row">会话 key</th><td>私聊 <code translate="no">agent:main:{platform}:dm:{chat_id}[:{thread_id}]</code>；群 <code translate="no">agent:main:{platform}:group:{chat_id}[:{thread_id}][:{user_id}]</code>。thread 共享，群按用户，可按频道覆盖。</td></tr>
+<tr><th scope="row">进度</th><td><code translate="no">_edit_progress_message</code>；<code translate="no">_roll_progress_overflow_if_needed</code> 超过平台上限时开新气泡</td></tr>
+<tr><th scope="row">防抖</th><td><code translate="no">_queue_text_debounce</code> 把连续文本合并成一回合：0.35 秒，上限 1.0 秒</td></tr>
+<tr><th scope="row">快捷命令</th><td><code translate="no">/stop</code>、<code translate="no">/new</code>、<code translate="no">/reset</code>、<code translate="no">/approve</code> 绕过会话队列</td></tr>
+<tr><th scope="row">附件缓存</th><td><code translate="no">doc_{uuid12}_{name}</code>；Telegram URL 在一小时过期前下载；24 小时后清理</td></tr>
+<tr><th scope="row">投递</th><td><code translate="no">DeliveryRouter</code> 和 <code translate="no">DeliveryTarget</code>（origin、local、telegram:123...），经适配器</td></tr>
+<tr><th scope="row">审批</th><td><code translate="no">/approve</code> 设置工具线程等待的 Event；有表情但不在审批路径上</td></tr>
+<tr><th scope="row">注册</th><td><code translate="no">platform_registry</code> 中的 <code translate="no">PlatformEntry</code>；内置走硬编码快速路径</td></tr>
+</tbody>
+</table>
+</details>
+<h2 id="what-to-learn">借鉴什么</h2>
+<table class="stack">
+<thead><tr><th scope="col">主题</th><th scope="col">取自 OpenClaw</th><th scope="col">取自 Hermes</th></tr></thead>
+<tbody>
+<tr><th scope="row">方法签名、生命周期、返回结构</th><td>是，更完整</td><td>是</td></tr>
+<tr><th scope="row">流式</th><td>三状态</td><td>单次编辑</td></tr>
+<tr><th scope="row">审批生命周期</th><td>完整</td><td><code translate="no">/approve</code> 命令</td></tr>
+<tr><th scope="row">健康探测</th><td>是</td><td>—</td></tr>
+<tr><th scope="row">代码组织</th><td>否：50+ 契约和每平台 70+ 文件过度</td><td>是：一个基类文件，每平台一个</td></tr>
+</tbody>
+</table>
+<details>
+<summary>为什么不照搬 OpenClaw，以及暂缓的内容</summary>
+<ul>
+<li>没有 Python 可抄：OpenClaw 全是 TypeScript，仅有的 <code translate="no">.py</code> 是 CI 和 skill 工具。复用意味着重新实现设计；TS 接口对应 <code translate="no">Protocol</code>/<code translate="no">abc.ABC</code>，dataclass 和插件 manifest 可以迁移。</li>
+<li>50+ 契约文件靠静态类型才划算。Python <code translate="no">Protocol</code> 运行时不强制，mypy 也不是默认开启。所以不值得每个接口一个文件，但接口形状值得学。</li>
+<li>OpenClaw 和 Hermes 异步优先；这一层是同步加每适配器一线程。改异步要把 <code translate="no">dispatch_inbound</code> 变成异步生成器，并重接四个事件循环。</li>
+<li>Hermes 的防抖合并、快捷命令绕过和附件缓存来自生产流量，等问题出现再加。</li>
+</ul>
+</details>
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td><code translate="no">Channel</code> ABC、<code translate="no">MessageHandle</code>、具体的发送和编辑；两个入口共用 <code translate="no">_transport</code>，分块只在此处；<code translate="no">SendResult</code> 分类；<code translate="no">ChannelMessage</code>；entry point 注册；<code translate="no">progress_stream=True</code>；<code translate="no">_conversation.py</code> 拆分</td></tr>
+<tr><th scope="row">会话隔离</th><td>一维：<code translate="no">peer_id</code> 合并会话和用户；<code translate="no">session_scope</code> 为 main、per-peer、per-channel-peer 或 per-account-channel-peer。无法表达 Hermes 的 thread 共享模式。</td></tr>
+<tr><th scope="row"><code translate="no">account_id</code> 传两次</th><td>传给适配器构造函数和 <code translate="no">dispatch_inbound</code>，阻碍一个适配器在进程内服务多个账号</td></tr>
+<tr><th scope="row">按 thread 的会话</th><td><code translate="no">thread_id</code> 只用于路由回复</td></tr>
+<tr><th scope="row">启动探测、回执</th><td>未实现</td></tr>
+</tbody>
+</table>

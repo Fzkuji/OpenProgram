@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 
 def test_resource_discovery_session_binding_and_revocation(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram.webui.routes.catalog import applications
-    from openprogram.webui.routes.control import resources
-    from openprogram.resources import registry
+    from openprogram.interfaces.server.routes.catalog import applications
+    from openprogram.interfaces.server.routes.control import resources
+    from openprogram.host.resources import registry
     source = tmp_path / 'software'
     source.mkdir()
     (source / 'index.html').write_text('<h1>Resource</h1>')
@@ -26,7 +26,7 @@ def test_resource_discovery_session_binding_and_revocation(tmp_path, monkeypatch
         base = '/api/resources/application.test.resource/'
         opened = client.post(base + 'open', json={'session_id': 'session-a'}).json()
         assert opened['instance_id']
-        from openprogram.resources.application_bindings import list_bindings
+        from openprogram.programs._host.ui.bindings import list_bindings
         assert list_bindings('session-a')[0]['application_instance_id'] == opened['instance_id']
         assert list_bindings('session-b') == []
         observe = {'instance_id': opened['instance_id'], 'digest': opened['digest']}

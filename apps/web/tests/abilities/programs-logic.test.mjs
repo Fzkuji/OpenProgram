@@ -42,8 +42,8 @@ function logic(size) {
   const nodes = Array.from({ length: size }, (_, index) => ({
     id: `n${index}`,
     name: `n${index}`,
-    path: `workflow/n${index}`,
-    program_kind: "workflow",
+    path: `applications/n${index}`,
+    program_kind: "application",
     depth: index,
   }));
   const edges = [];
@@ -68,7 +68,7 @@ test("diamond DAG keeps the second shared child as a reference", () => {
   const result = buildCallTreeRows({
     root: "a",
     nodes: ["a", "b", "c", "d"].map((id) => ({
-      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
+      id, name: id, path: `applications/${id}`, program_kind: "application", depth: 0,
     })),
     edges: [
       { source: "a", target: "b" }, { source: "a", target: "c" },
@@ -84,7 +84,7 @@ test("call tree rows retain ancestor continuation lines", () => {
   const result = buildCallTreeRows({
     root: "a",
     nodes: ["a", "b", "c", "d"].map((id) => ({
-      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
+      id, name: id, path: `applications/${id}`, program_kind: "application", depth: 0,
     })),
     edges: [
       { source: "a", target: "b" }, { source: "a", target: "c" },
@@ -104,7 +104,7 @@ test("graph layout renders each Program once in dependency layers", () => {
   const layout = buildGraphLayout({
     root: "a",
     nodes: ["a", "b", "c", "d"].map((id) => ({
-      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
+      id, name: id, path: `applications/${id}`, program_kind: "application", depth: 0,
     })),
     edges: [
       { source: "a", target: "b" }, { source: "a", target: "c" },
@@ -125,7 +125,7 @@ test("graph layout ranks peer dependencies on later columns", () => {
   const layout = buildGraphLayout({
     root: "goal",
     nodes: ["goal", "refinement", "notices", "state"].map((id) => ({
-      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
+      id, name: id, path: `applications/${id}`, program_kind: "application", depth: 0,
     })),
     edges: [
       { source: "goal", target: "refinement" },
@@ -143,7 +143,7 @@ test("graph layout sits a node next to the neighbors it connects to", () => {
   const layout = buildGraphLayout({
     root: "goal",
     nodes: ["goal", "agent", "judge", "loop", "notices", "refinement", "llm", "state"].map((id) => ({
-      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
+      id, name: id, path: `applications/${id}`, program_kind: "application", depth: 0,
     })),
     edges: [
       { source: "goal", target: "agent" },
@@ -170,7 +170,7 @@ test("graph layout sits a node next to the neighbors it connects to", () => {
 
 test("a four-level graph fits the standard Programs detail width", () => {
   const nodes = ["workflow", "goal", "agent", "llm"].map((id, depth) => ({
-    id, name: id, path: `agentic_programming/${id}`, program_kind: "agentic_function", depth,
+    id, name: id, path: `agentic_programming/${id}`, program_kind: "runtime_primitive", depth,
   }));
   const layout = buildGraphLayout({
     root: "workflow",

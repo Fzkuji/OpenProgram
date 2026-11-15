@@ -1,0 +1,122 @@
+<title>队列与插话</title>
+<meta name="description" content="运行中输入的消息如何插入当前执行或排队成后续消息，以及投递如何保持精确。">
+<h1>队列与插话</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">按键</th><th scope="col">动作</th><th scope="col">去向</th></tr></thead>
+<tbody>
+<tr><th scope="row">回车、发送按钮</th><td>插话</td><td>当前这次执行，在支持的安全点</td></tr>
+<tr><th scope="row">Cmd/Ctrl+回车</th><td>排队</td><td>上一轮结束后的一条后续消息</td></tr>
+<tr><th scope="row">停止</th><td>取消</td><td>单独的控件；上面两个动作都不取消</td></tr>
+</tbody>
+</table>
+<p class="note">没有常驻偏好：发送时按的键决定。目标由当前会话及其运行中的执行决定，绝不选择其他会话或子 Agent。</p>
+
+<h2 id="delivery">投递</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 100" role="img" aria-label="排队文本绑定执行身份和版本，变成持久的 execution.steer 命令，等待下一个安全点，然后持久化成一条插话用户消息。">
+  <defs><marker id="sq-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">排队</text>
+  <text class="t-soft" x="0" y="66">保留该行</text>
+  <line class="ln" x1="72" y1="33" x2="124" y2="33" marker-end="url(#sq-a)"/>
+  <text class="t-big" x="136" y="40">绑定</text>
+  <text class="t-soft" x="136" y="66">执行、版本</text>
+  <line class="ln" x1="184" y1="33" x2="252" y2="33" marker-end="url(#sq-a)"/>
+  <text class="t-big" x="264" y="40">命令</text>
+  <text class="t-cmd" translate="no" x="264" y="66">execution.steer</text>
+  <line class="ln" x1="352" y1="33" x2="396" y2="33" marker-end="url(#sq-a)"/>
+  <text class="t-big" x="408" y="40">安全点</text>
+  <text class="t-soft" x="408" y="66">下一个</text>
+  <line class="ln" x1="508" y1="33" x2="556" y2="33" marker-end="url(#sq-a)"/>
+  <text class="t-big" x="568" y="40">已持久化</text>
+  <text class="t-soft" x="568" y="66">用户消息</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>排队</strong><small>保留该行</small></li>
+  <li><strong>绑定</strong><small>执行、版本</small></li>
+  <li><strong>命令</strong><small><code translate="no">execution.steer</code></small></li>
+  <li><strong>安全点</strong><small>下一个</small></li>
+  <li class="flow-end"><strong>已持久化</strong><small>用户消息</small></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">保留到</th><td>匹配的已应用回执确认用户消息已持久化；仅进入安全点仍算应用中</td></tr>
+<tr><th scope="row">命令携带</th><td>只有消息、精确执行身份、版本、幂等键。不改权限、模型、工具或程序</td></tr>
+<tr><th scope="row">发送前</th><td>客户端保留不可变的信封</td></tr>
+<tr><th scope="row">确认丢失</th><td>投递未确认：该行保持可见，普通排空不能重发，确认重试复用信封</td></tr>
+<tr><th scope="row">确认定时器</th><td>每行一个；1.5 秒，传输失败后退避到 30 秒。明确回执清除</td></tr>
+<tr><th scope="row">版本过期拒绝</th><td>针对同一执行的新快照发一个新信封</td></tr>
+<tr><th scope="row">目标</th><td>在用户请求时绑定。版本重试只刷新版本，不能换成另一个执行</td></tr>
+<tr><th scope="row">不支持或已结束</th><td>条目保持排队；空闲对账按 FIFO 排空普通后续消息。执行结束时未投递的插话被拒绝，这些行可恢复排队</td></tr>
+<tr><th scope="row">停止</th><td>把在途指令保留为未发送草稿，即使尚未接纳。不确定的命令在明确回执前不可变；停止不能抹掉它，也不能允许普通发送</td></tr>
+<tr><th scope="row">工具</th><td>不因插话到来跳过已完成的工具批次</td></tr>
+<tr><th scope="row">持有者过期</th><td>不能授权迟到的输入写入。执行关闭时解决未投递命令，即使在等待效果对账</td></tr>
+</tbody>
+</table>
+<p class="note">错误可见；传输失败后注入标记总是释放。参考：<a href="https://learn.chatgpt.com/docs/prompting#steering-and-queuing">Codex 提示</a>、<a href="https://learn.chatgpt.com/docs/app-server#steer-an-active-turn">App Server 插话</a>（绑定预期轮次，不接受运行时覆盖）。OpenProgram 用自己的执行命令服务和安全点，没有第二个会话收件箱、消息代理或模型专属传输。</p>
+
+<h2 id="queue-card">队列卡片</h2>
+<p>输入框上方停靠的一张浮起卡片。标题显示行数和有多少加入当前轮，并可折叠卡片。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">行部件</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">标签</th><td>插入当前轮（插话在途）、下一轮（等待）、未发送或待确认（失败后）</td></tr>
+<tr><th scope="row">文本</th><td>首行；点击展开完整消息和附件</td></tr>
+<tr><th scope="row">动作，悬停或键盘聚焦时显示</th><td>加入当前轮（不取消）、重试、编辑、投递确定时可移除</td></tr>
+<tr><th scope="row">全部清除</th><td>一次写入移除所有行，正在投递或编辑的除外，绝不排空将被移除的行</td></tr>
+<tr><th scope="row">限制</th><td>附件保持草稿行为；插话接受最多 4,096 个 Unicode 码点的文本</td></tr>
+</tbody>
+</table>
+
+<h2 id="storage">存储</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">数据</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">普通队列项、附件</th><td>渲染进程内存</td></tr>
+<tr><th scope="row">待确认的文本插话回执、已停止或结束的插话草稿</th><td>同窗口 session storage；刷新后恢复且不重放聊天；尽力而为，不是第二份命令日志</td></tr>
+<tr><th scope="row">已接受的命令</th><td>服务端规范接受</td></tr>
+<tr><th scope="row">已应用的输入</th><td>持久化的用户消息</td></tr>
+</tbody>
+</table>
+<p class="note">待确认的插话在解决前不能作为普通消息排空。读取或转录更新带来带有该插话命令 id 的行时，插话即确认；读取之后，未解决的命令用原身份确认。</p>
+
+<h2 id="history">历史</h2>
+<ul>
+<li>普通后续消息在更新服务端镜像前从持久会话头解析前驱，包含上一回复、工具结果和已投递的插话。显式分支前驱不变。</li>
+<li>已取消和中断的轮次保留部分内容并显示终止状态，包括空回复。取消提示不推断是谁取消的。</li>
+</ul>
+
+<h2 id="function-retry-acknowledgement">函数重试确认</h2>
+<p>每次重试带一个请求身份，由确认或拒绝回传。接受定时器在派发时结束，不等函数完成。拒绝或断线发送只恢复对应的待处理卡片，原因只报一次。缺失的确认保持不确定，不自动重发。历史和界面校验仍然权威。</p>
+
+<details id="audit-coverage">
+<summary>验收和审计覆盖</summary>
+<ul>
+<li>排队两条后续消息，各自在上一轮结束后开始。</li>
+<li>工具运行时加入文本：同一执行和工具继续；指令进入之后的模型上下文。</li>
+<li>确认丢失：保留该行，重放同一命令且不重复投递。</li>
+<li>已结束、不可用和不支持的目标保留输入并报告状态。</li>
+<li>切换范围不能插话到别的对话。</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">边界</th><th scope="col">行为</th><th scope="col">回归</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入准备</th><td>展开粘贴、附件、4,096 码点</td><td><code translate="no">submit-reliability.test.mjs</code></td></tr>
+<tr><th scope="row">目标归属</th><td>会话身份；快照替换；同执行版本重试</td><td><code translate="no">submit-reliability.test.mjs</code>、<code translate="no">test_execution_cursor_auth_audit.py</code></td></tr>
+<tr><th scope="row">重复和不确定命令</th><td>同信封重试；一个定时器；有界退避</td><td><code translate="no">submit-reliability.test.mjs</code></td></tr>
+<tr><th scope="row">接纳前停止</th><td>快照和版本拒绝竞争时保留草稿</td><td><code translate="no">submit-reliability.test.mjs</code></td></tr>
+<tr><th scope="row">刷新和存储</th><td>已接受、确认丢失和已停止的命令；精确重放；存储被拒</td><td><code translate="no">test_queue_steer.py</code>、<code translate="no">submit-reliability.test.mjs</code></td></tr>
+<tr><th scope="row">流式</th><td>文本、推理和静默等待被打断；部分内容保留</td><td><code translate="no">test_streaming_steer.py</code></td></tr>
+<tr><th scope="row">工具和暂停</th><td>整批工具完成；暂停时的输入进入继续执行</td><td><code translate="no">test_safe_points.py</code>、<code translate="no">test_continue_step_steer.py</code></td></tr>
+<tr><th scope="row">持久命令</th><td>接受顺序、幂等、检查点回滚、持有者过期</td><td><code translate="no">test_safe_points.py</code>、<code translate="no">test_continue_step_steer.py</code></td></tr>
+<tr><th scope="row">历史</th><td>取消的部分回复；显式下一轮前驱；会话头不回退</td><td><code translate="no">test_streaming_steer.py</code>、<code translate="no">test_queue_steer.py</code></td></tr>
+</tbody>
+</table>
+<p class="note">另外覆盖：多条已接受输入、模型静默等待、暂停和继续、冷历史、跨会话授权。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现：规范执行命令、不取消的队列控件、自动回执确认、助手终止状态提示、上述生命周期约定。静态检查不能替代 App 中的运行验收。</p>

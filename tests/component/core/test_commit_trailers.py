@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 import sys
 
 import pytest
 
-from openprogram.commands.commit_message import (
+from openprogram.runtime.commands.commit_message import (
     PR_FOOTER,
     RemoteWriteNotAuthorized,
     append_pr_footer,
@@ -46,11 +47,11 @@ def test_toggle_off_returns_none_and_leaves_message_untouched():
 
 
 def test_toggle_reads_git_co_author_config(monkeypatch: pytest.MonkeyPatch):
-    import openprogram.setup as setup
+    from openprogram.state import config as user_config
 
-    monkeypatch.setattr(setup, "_read_config", lambda: {"git": {"co_author": False}})
+    monkeypatch.setattr(user_config, "read_config", lambda: {"git": {"co_author": False}})
     assert co_author_trailer() is None
-    monkeypatch.setattr(setup, "_read_config", lambda: {})
+    monkeypatch.setattr(user_config, "read_config", lambda: {})
     assert co_author_trailer() is not None
 
 
@@ -181,9 +182,9 @@ def test_pr_creation_is_refused_without_authorization():
 
 def test_remote_write_defaults_to_refused(monkeypatch):
     """No explicit `allowed` and no config toggle means no remote write."""
-    from openprogram import setup as _setup
+    from openprogram.state import config as user_config
 
-    monkeypatch.setattr(_setup, "_read_config", lambda: {})
+    monkeypatch.setattr(user_config, "read_config", lambda: {})
     with pytest.raises(RemoteWriteNotAuthorized):
         git_push_argv(branch="topic")
     with pytest.raises(RemoteWriteNotAuthorized):
@@ -193,10 +194,10 @@ def test_remote_write_defaults_to_refused(monkeypatch):
 
 
 def test_config_toggle_authorizes_remote_write(monkeypatch):
-    from openprogram import setup as _setup
+    from openprogram.state import config as user_config
 
     monkeypatch.setattr(
-        _setup, "_read_config", lambda: {"git": {"allow_remote_write": True}},
+        user_config, "read_config", lambda: {"git": {"allow_remote_write": True}},
     )
     assert git_push_argv(branch="topic") == [
         "git", "push", "-u", "origin", "topic",
@@ -230,13 +231,21 @@ def test_dry_run_pr_argv_needs_no_authorization():
 
 def test_dry_run_plan_makes_no_remote_call(monkeypatch):
     """A full dry run must not invoke git or gh at all."""
-    def _explode(*a, **k):
-        raise AssertionError("dry run must not run a subprocess")
+    test_thread = threading.get_ident()
 
-    monkeypatch.setattr(subprocess, "run", _explode)
-    monkeypatch.setattr(subprocess, "Popen", _explode)
-    monkeypatch.setattr(subprocess, "check_output", _explode)
-    monkeypatch.setattr(os, "system", _explode)
+    def _explode(original):
+        # The dry run is synchronous; other threads in the process may still
+        # start their own subprocesses meanwhile.
+        def explode(*a, **k):
+            if threading.get_ident() != test_thread:
+                return original(*a, **k)
+            raise AssertionError("dry run must not run a subprocess")
+        return explode
+
+    monkeypatch.setattr(subprocess, "run", _explode(subprocess.run))
+    monkeypatch.setattr(subprocess, "Popen", _explode(subprocess.Popen))
+    monkeypatch.setattr(subprocess, "check_output", _explode(subprocess.check_output))
+    monkeypatch.setattr(os, "system", _explode(os.system))
 
     lines = dry_run_plan(
         default_branch="main", branch="topic", title="Add thing",

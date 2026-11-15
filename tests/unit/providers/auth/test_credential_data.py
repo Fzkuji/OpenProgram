@@ -1,5 +1,5 @@
-from openprogram.auth.types import (
-    Credential, CredentialData, CREDENTIAL_SCHEMA_VERSION,
+from openprogram.models.auth.types import (
+    Credential, CredentialData,
 )
 
 
@@ -40,7 +40,7 @@ def test_credential_roundtrip_oauth_data():
 
 
 def test_payload_dict_has_no_type_discriminator():
-    from openprogram.auth.types import _payload_to_dict
+    from openprogram.models.auth.types import _payload_to_dict
     d = _payload_to_dict(CredentialData(kind="api_key", auth_value="k"))
     assert "__type__" not in d
     assert d["kind"] == "api_key"

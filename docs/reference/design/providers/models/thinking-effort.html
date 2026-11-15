@@ -1,0 +1,129 @@
+<title>Thinking effort</title>
+<meta name="description" content="How one level picker maps to each provider's reasoning parameter.">
+<h1>Thinking effort</h1>
+<p>Catalog and provider configuration: <a href="overview.html">model catalog overview</a>.</p>
+
+<h2 id="vendor-parameters">Provider parameters</h2>
+<table class="stack">
+<thead><tr><th scope="col">Provider</th><th scope="col">Parameter</th><th scope="col">Type</th><th scope="col">Values</th></tr></thead>
+<tbody>
+<tr><th scope="row">Anthropic</th><td><code translate="no">output_config.effort</code></td><td>string</td><td>low, medium, high, xhigh, max; 3 to 5 by model</td></tr>
+<tr><th scope="row">Anthropic, older models</th><td><code translate="no">thinking.budget_tokens</code></td><td>token count</td><td>continuous</td></tr>
+<tr><th scope="row">OpenAI Responses</th><td><code translate="no">reasoning.effort</code></td><td>string</td><td>minimal, low, medium, high, xhigh</td></tr>
+<tr><th scope="row">OpenAI Chat</th><td><code translate="no">reasoning_effort</code></td><td>string</td><td>low, medium, high</td></tr>
+<tr><th scope="row">Google Gemini</th><td><code translate="no">thinkingConfig.thinkingBudget</code></td><td>token count</td><td>continuous</td></tr>
+<tr><th scope="row">DeepSeek V4</th><td><code translate="no">reasoning_effort</code></td><td>string</td><td>minimal, low, medium, high, max</td></tr>
+<tr><th scope="row">DeepSeek R1</th><td>none</td><td>none</td><td>always reasons at full force</td></tr>
+<tr><th scope="row">OpenRouter</th><td>the underlying model's</td><td>same</td><td>from <code translate="no">supported_parameters</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="unified-levels">Levels</h2>
+<pre translate="no"><code>ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max"</code></pre>
+<p class="note">Plus <code translate="no">off</code>. Framework names, unrelated to any API's. The picker shows only what the model supports.</p>
+
+<h2 id="data-flow">From picker to request</h2>
+<ol>
+<li><code translate="no">get_thinking_config_for_model</code> (<code translate="no">interfaces/server/thinking_effort.py</code>) builds the options from the model's <code translate="no">thinking_levels</code>.</li>
+<li><code translate="no">_normalize_thinking</code> (<code translate="no">runtime/conversation/session_config.py</code>) checks the choice against <code translate="no">VALID_THINKING</code>; it is stored per conversation branch. New branches inherit once; switching restores that branch’s choice.</li>
+<li><code translate="no">reasoning_from_config</code> hands it to the turn as <code translate="no">SimpleStreamOptions.reasoning</code>, kept inside the model's levels by <code translate="no">normalize_reasoning_level</code> (below).</li>
+<li>The provider's <code translate="no">stream_simple()</code> calls <code translate="no">translate_reasoning(provider, model, level)</code> and writes the answer into its request field, for example <code translate="no">{"output_config": {"effort": "high"}}</code>.</li>
+</ol>
+
+<h2 id="missing-level">A level the model lacks</h2>
+<p>A level saved for another model, or asked for with <code translate="no">--effort</code>, may not be in the model's <code translate="no">thinking_levels</code>. <code translate="no">normalize_reasoning_level</code> (<code translate="no">thinking_spec.py</code>) sends the nearest one it has:</p>
+<ul>
+<li>the next stronger level, else the next weaker: <code translate="no">minimal</code> on a model that starts at <code translate="no">low</code> sends <code translate="no">low</code>;</li>
+<li>a name outside the ladder: the model's default.</li>
+</ul>
+<p class="note">Follows Pi's <code translate="no">clampThinkingLevel</code>. Falling back to the default could turn the lightest effort into a middle one; <code translate="no">translate_reasoning</code> already maps Anthropic's <code translate="no">minimal</code> to <code translate="no">low</code> the same way.</p>
+
+<h2 id="deriving-levels">Which levels a model shows</h2>
+<p><code translate="no">list_models_for_provider()</code> in <code translate="no">models/listing/listing.py</code> takes the first that answers. The picker and <code translate="no">list_enabled_models</code> read through it.</p>
+<table class="stack">
+<thead><tr><th scope="col">Order</th><th scope="col">Source</th><th scope="col">Example</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td><code translate="no">thinking_levels</code> from Fetch: the provider's own models API</td><td>Anthropic capabilities, Codex's per-model picker</td></tr>
+<tr><th scope="row">2</th><td><code translate="no">model_overrides</code> in <code translate="no">provider.json</code> <code translate="no">thinking</code></td><td>Opus 4.5: 3 levels</td></tr>
+<tr><th scope="row">3</th><td>Provider-wide <code translate="no">effort_map</code> or <code translate="no">budget_map</code></td><td>DeepSeek V4: 5 levels</td></tr>
+<tr><th scope="row">4</th><td>No spec: OpenAI-compatible fallback, <code translate="no">effort_string</code> with low, medium, high</td><td>groq, mistral, openrouter</td></tr>
+<tr><th scope="row">5</th><td>Reasoning model still without levels: built-in ladder of <code translate="no">minimal</code> (not on gpt-5.5), low, medium, high, <code translate="no">xhigh</code> if supported, max</td><td>an override with an empty map</td></tr>
+</tbody>
+</table>
+<p class="note">A model with <code translate="no">reasoning=false</code> has no levels and no picker.</p>
+
+<h2 id="translate-reasoning">Level to API value</h2>
+<p><code translate="no">thinking_spec.translate_reasoning</code> answers the first match:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Answer</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">wire_format</code> missing or <code translate="no">none</code></th><td><code translate="no">None</code></td></tr>
+<tr><th scope="row">Level <code translate="no">off</code> (or <code translate="no">none</code>)</th><td>the override's <code translate="no">off</code> (<code translate="no">null</code>: <code translate="no">None</code>), else its map's, else the provider map's: <code translate="no">none</code> on OpenAI Responses, so thinking off sends <code translate="no">effort: "none"</code> as Pi and Codex do, instead of leaving the server at its default effort. Models older than <code translate="no">none</code> (o-series, gpt-5 to gpt-5-pro) map it to <code translate="no">null</code>. <code translate="no">off</code> is never a picker level</td></tr>
+<tr><th scope="row">Model override with an empty map</th><td><code translate="no">None</code>: reasons, but no effort parameter is sent</td></tr>
+<tr><th scope="row">Level in the override's map</th><td>that value</td></tr>
+<tr><th scope="row">Provider map's value for the level is in the override's values</th><td>that value, so Anthropic's <code translate="no">minimal</code> becomes <code translate="no">low</code></td></tr>
+<tr><th scope="row">Otherwise under an override</th><td>the default effort if the map has it, else the map's first value</td></tr>
+<tr><th scope="row"><code translate="no">effort_string</code></th><td>provider <code translate="no">effort_map</code>, else <code translate="no">default_effort</code></td></tr>
+<tr><th scope="row"><code translate="no">budget_tokens</code></th><td>provider <code translate="no">budget_map</code>, else <code translate="no">8192</code></td></tr>
+</tbody>
+</table>
+<p class="note">The framework passes depth and lets the API choose token use. Gemini and older Anthropic models need a count, hence <code translate="no">budget_map</code>.</p>
+
+<h2 id="probing">Finding out what a model supports</h2>
+<table class="stack">
+<thead><tr><th scope="col">Provider</th><th scope="col">Method</th><th scope="col">Precision</th></tr></thead>
+<tbody>
+<tr><th scope="row">anthropic</th><td><code translate="no">GET /v1/models/{id}</code>, <code translate="no">capabilities.effort.{level}.supported</code></td><td>each level</td></tr>
+<tr><th scope="row">deepseek</th><td>model id: <code translate="no">v4</code> reasons with effort, <code translate="no">reasoner</code> or <code translate="no">r1</code> without</td><td>reasoning, effort</td></tr>
+<tr><th scope="row">openai_codex</th><td>OpenAI models API plus model id (o1, o3, o4, gpt-5)</td><td>reasoning</td></tr>
+<tr><th scope="row">openai_completions</th><td>model id (o1, o3, o4, gpt-5)</td><td>reasoning</td></tr>
+<tr><th scope="row">openai_responses</th><td>OpenRouter <code translate="no">supported_parameters</code> contains <code translate="no">reasoning</code></td><td>reasoning</td></tr>
+<tr><th scope="row">google</th><td>model name</td><td>reasoning</td></tr>
+</tbody>
+</table>
+<p class="note">models.dev supplies <code translate="no">reasoning</code> too. Where only that is known, levels come from the provider map.</p>
+
+<details>
+<summary>How Fetch uses probes</summary>
+<ul>
+<li>Each provider folder may have a <code translate="no">probe_thinking.py</code> exposing <code translate="no">probe()</code>.</li>
+<li>During enrichment, <code translate="no">models/listing/fetchers/__init__.py</code> calls it through <code translate="no">_load_probe</code> when an entry has no <code translate="no">reasoning</code>.</li>
+<li>A provider without a probe, or a probe that fails, does not affect Fetch.</li>
+<li>Probes are read-only. <code translate="no">model_overrides</code> is edited by hand.</li>
+</ul>
+</details>
+
+<h2 id="actual-levels">Levels by model</h2>
+<table class="stack">
+<thead><tr><th scope="col">Provider</th><th scope="col">Model</th><th scope="col">Levels</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">anthropic</th><td>claude-opus-4-8, claude-fable-5</td><td>low to max (5)</td><td>override</td></tr>
+<tr><th scope="row">anthropic</th><td>claude-sonnet-4-6</td><td>low, medium, high, max</td><td>override</td></tr>
+<tr><th scope="row">anthropic</th><td>claude-opus-4-5</td><td>low, medium, high</td><td>override</td></tr>
+<tr><th scope="row">deepseek</th><td>v4-flash, v4-pro</td><td>minimal, low, medium, high, max</td><td>provider map</td></tr>
+<tr><th scope="row">openai-codex</th><td>gpt-5.5</td><td>low, medium, high, xhigh, max (sent as xhigh)</td><td>override</td></tr>
+<tr><th scope="row">minimax-cn, openrouter</th><td>models with reasoning</td><td>low, medium, high</td><td>fallback</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Files</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/adapters/&lt;provider&gt;/provider.json</code></th><td><code translate="no">thinking</code> key: <code translate="no">wire_format</code>, maps, <code translate="no">model_overrides</code>. A standalone <code translate="no">thinking.json</code> still loads with a deprecation warning.</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/adapters/&lt;provider&gt;/probe_thinking.py</code></th><td>Reasoning probe for Fetch</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/settings/thinking_spec.py</code></th><td>Loading, <code translate="no">translate_reasoning</code>, <code translate="no">derive_thinking_levels</code>, fallback</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/models.py</code></th><td>Fills thinking fields on built-in models at load</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/types.py</code></th><td><code translate="no">ThinkingLevel</code>, <code translate="no">SimpleStreamOptions.reasoning</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/thinking_effort.py</code></th><td>Picker, <code translate="no">apply_thinking_effort</code></td></tr>
+<tr><th scope="row"><code translate="no">models/listing/listing.py</code></th><td>The one derivation entry</td></tr>
+<tr><th scope="row"><code translate="no">models/listing/fetchers/__init__.py</code></th><td>Fetch enrichment</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/adapters/anthropic/list_models.py</code></th><td>Levels from capabilities</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/session_config.py</code></th><td><code translate="no">VALID_THINKING</code>, <code translate="no">reasoning_from_config</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Not built: trying a model with no information from max downward, skipping on a 400 and caching the result.</p>

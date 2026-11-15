@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   decideExecutionUpdateOrder,
   removeExecutionUpdateOrders,
-} from "../../lib/net/execution-update-order.ts";
+} from "../../lib/net/execution/execution-update-order.ts";
 
 function accept(
   orders,

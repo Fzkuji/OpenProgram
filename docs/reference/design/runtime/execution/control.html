@@ -1,0 +1,539 @@
+<title>Activity and control</title>
+<meta name="description" content="What Activity counts, what each execution control does, and what survives a restart.">
+<h1>Activity and control</h1>
+
+<p>Activity counts conversation branches. Sending another message on the same branch does not add a History item.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Object</th><th scope="col">Meaning</th><th scope="col">Appears</th></tr></thead>
+<tbody>
+<tr><th scope="row">Conversation branch</th><td>One path through a conversation; a real fork creates another</td><td>One counted Activity row</td></tr>
+<tr><th scope="row">Execution</th><td>One task run, such as producing a reply</td><td>In branch details; its id is the exact control target</td></tr>
+<tr><th scope="row">Managed process</th><td>A command started by a tool</td><td>Under its execution, with its own output and stop control</td></tr>
+</tbody>
+</table>
+
+<h2 id="activity-conversation-branches">How branches are counted</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">Example</th><th scope="col">Count</th><th scope="col">Details</th></tr></thead>
+<tbody>
+<tr><th scope="row">Send a message, then say "continue"</th><td>1</td><td>Both executions in one branch</td></tr>
+<tr><th scope="row">Create an alternative reply from an earlier point</th><td>2</td><td>One row each</td></tr>
+<tr><th scope="row">A later execution on the same branch fails</th><td>1</td><td>Kept in details</td></tr>
+<tr><th scope="row">Two branches share earlier messages</th><td>2</td><td>Shared executions may appear in both details and add no rows</td></tr>
+</tbody>
+</table>
+
+<p class="note">Branch details use a short heading and an execution count; the request appears only in its execution row. Membership comes from the conversation graph and message ids, and compaction keeps earlier associations. Missing records never produce a guessed branch.</p>
+
+<h2 id="provider-terminal-activity">Which status appears</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">Situation</th><th scope="col">Section</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Approval, question, pause or unresolved tool result</th><td>Needs attention</td><td>A new message does not dismiss it</td></tr>
+<tr><th scope="row">Execution, child task or owned process running</th><td>In progress</td><td>An Agent finishing its reply does not stop its background process</td></tr>
+<tr><th scope="row">Ended, nothing active or actionable</th><td>History</td><td>Failures and outputs stay in details</td></tr>
+<tr><th scope="row">Owner ended, only the model response record is missing, no active wait or non-cancel control</th><td>History</td><td>"Ended · response record incomplete". An old Cancel does not make it actionable; Cancel is offered only while a child is active. Does not claim success.</td></tr>
+</tbody>
+</table>
+
+<p class="note">Status comes from the branch's newest execution, plus real waits, active descendants and owned processes. Declined waits read Declined and open ones Waiting for your response; declining does not run the pending operation.</p>
+<p class="note">During first load, reconnect or cursor resync Activity shows no error: a notice needs a confirmed request failure owned by the current conversation. Failed reads keep saved records and retry.</p>
+
+<h2 id="branch-run-slots">Two branches running at once</h2>
+
+<p>Each branch of a conversation has its own run slot. The selected branch keeps the conversation's slot; a message that names another recorded branch (<code translate="no">branch_id</code>) takes that branch's slot, so it runs while the selected branch runs.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">Turn on the selected branch</th><th scope="col">Turn on another branch</th></tr></thead>
+<tbody>
+<tr><th scope="row">Slot</th><td>The conversation's, keyed by session</td><td>Its branch's, keyed by session and branch; refused while that branch has any unfinished execution, a scheduled run included</td></tr>
+<tr><th scope="row">Writes</th><td>Move the head and the selected branch</td><td>Go under the branch's tip and move only that branch's record; the head, selection and live mirror stay</td></tr>
+<tr><th scope="row">Model input</th><td>The selected branch</td><td>Its own branch's history and settings (Agent, model, permission)</td></tr>
+<tr><th scope="row">Conversation state</th><td>Status, unread dot, model, token count, title, channel reply</td><td>None of these; they stay the selected branch's</td></tr>
+<tr><th scope="row">Branch state</th><td colspan="2">Each turn compacts its own chain when over budget (the summary lands on that chain and the head stays) and records its last request's occupancy on its own branch record (<code translate="no">last_prompt_tokens</code>); the conversation's figure is the selected branch's. A background check-in does neither: it reads a bounded tail.</td></tr>
+<tr><th scope="row">Run state</th><td><code translate="no">running_task</code>, <code translate="no">run_active</code>, <code translate="no">run_task</code>: unchanged meaning</td><td><code translate="no">branch_running_task</code> and its clear, with <code translate="no">branch_id</code>; every frame of the turn names its branch</td></tr>
+<tr><th scope="row">Stop</th><td colspan="2">An exact command on one execution; it frees only that turn's slot</td></tr>
+<tr><th scope="row">Rewind point</th><td colspan="2">One per prompt, on any branch. A file's state before a turn first edits it is recorded in that turn's own point, not in the newest one.</td></tr>
+</tbody>
+</table>
+
+<p>The branch a turn runs on is fixed at admission (<code translate="no">branch_id</code>); whether that branch is the selected one is read when asked, against <code translate="no">active_branch_id</code>.</p>
+<p>Whether a turn may touch the conversation's state at all is frozen as <code translate="no">owns_conversation_effects</code>, false for a turn on another branch and for a background check-in, so a turn keeps its standing across a pause, a resume and a Worker restart. A request admitted before the flag existed derives it from <code translate="no">side_branch</code> and <code translate="no">background</code>.</p>
+
+<h3 id="branch-switch">Switching branches</h3>
+
+<p>Switching is a view change. It takes no slot and is never refused because a turn, a compaction or another operation runs on the branch left or the branch entered.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Part</th><th scope="col">What a switch does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Selection</th><td>Moves the head to the entered branch's tip (compare-and-set), then re-keys the slots: the operation of the branch left goes to that branch's own slot and is reported with <code translate="no">branch_running_task</code>; the entered branch's operation becomes the selected one and is reported with <code translate="no">running_task</code> (<code translate="no">switch_branch</code>)</td></tr>
+<tr><th scope="row">Running turn</th><td>Keeps its branch. Its user message, history and reply stay on that branch, and its end moves only that branch's record: the writes of the head and the selected branch's fields carry <code translate="no">expected_branch_id</code> and are skipped once another branch is selected</td></tr>
+<tr><th scope="row">Page and terminal UI</th><td>Draw and keep run state for the selected branch only. Every frame of a turn names its branch; a frame of another branch is not drawn. The checkout reply names the branch entered, and a load hands over that branch's running turn, so Stop reaches it after a reload</td></tr>
+<tr><th scope="row">Branch record</th><td>Switching back finds the branch's record by its tip, or, for a record whose tip fell behind its line, the nearest record on that line (<code translate="no">record_on_line</code>). Old data needs no migration</td></tr>
+<tr><th scope="row">Still refused</th><td>Deleting a tail that holds a running branch's tip, and a rewind on a running branch. A rewind that changes files stays conversation-wide</td></tr>
+</tbody>
+</table>
+
+<p>What a switch, starting again and a rewind each create, and which work keeps its branch after a switch: <a href="../dag/branch-collaboration.html#three-operations">Branch collaboration</a>.</p>
+
+<h3 id="branch-settings">Settings a turn runs with</h3>
+
+<p>Admission also freezes each setting's value, where it came from and the Agent it belongs to, and the turn writes them on its user message as <code translate="no">turn_settings</code>. That record is the conversation's own answer to which model, effort and permission a turn used.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Source</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">request</code></th><td>The caller sent the value with the turn</td></tr>
+<tr><th scope="row"><code translate="no">parent</code></th><td>Taken from the live turn that started this one in the same conversation</td></tr>
+<tr><th scope="row"><code translate="no">branch</code></th><td>Taken from the turn's branch record</td></tr>
+<tr><th scope="row"><code translate="no">agent</code></th><td>Left empty; the Agent or its fallback decides when the turn runs</td></tr>
+</tbody>
+</table>
+
+<p>Where each setting comes from when a branch leaves it unset, and which tool state belongs to a branch: <a href="branch-settings.html">Branch settings</a>.</p>
+
+<h3 id="branch-operations">One foreground operation per branch</h3>
+
+<p>A branch's run slot holds one foreground operation at a time. Every operation has an <code translate="no">op_id</code>, a kind and a version a Stop raises; a load, <code translate="no">running_task</code> and <code translate="no">branch_running_task</code> report the kind, so the run bar can say "Compacting context" with a Stop, also after a reload.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">What holds the slot</th><th scope="col">Stop</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">reply</code>, <code translate="no">retry</code>, <code translate="no">edit</code>, <code translate="no">function</code></th><td>A turn, from reservation to its end; after its <code translate="no">result</code> a request <a href="../../ui/turn-lifecycle/turn-occupancy.html#finishing">waits for the slot</a></td><td>On its execution, exact by version</td></tr>
+<tr><th scope="row"><code translate="no">compact</code></th><td><code translate="no">/compact</code>; the summary request ends at a Stop and nothing is written</td><td><code translate="no">operation.cancel</code> with its <code translate="no">op_id</code></td></tr>
+<tr><th scope="row"><code translate="no">rewind</code></th><td>A rewind, its undo and redo</td><td><code translate="no">operation.cancel</code></td></tr>
+<tr><th scope="row"><code translate="no">branch</code></th><td>A branch delete, for a moment; not shown while it runs. A switch takes no slot</td><td>None</td></tr>
+</tbody>
+</table>
+
+<p>Branches never block each other: an operation needs only its own branch to be free, and a second one there is refused (<code translate="no">run_active</code>) with the kind of what runs, which the client may queue. A delete of a tail holding the tip of a branch whose turn runs is refused naming that branch.</p>
+<p>A request that finds its own key on the slot is a repeat, not a second operation:</p>
+<table class="stack">
+<caption>A request repeated while the first holds the slot</caption>
+<thead><tr><th scope="col">Request</th><th scope="col">Key</th><th scope="col">The repeat</th></tr></thead>
+<tbody>
+<tr><th scope="row">Rewind apply</th><td><code translate="no">idempotency_key</code></td><td rowspan="2">Waits for the first to end (up to a minute, the store's lock budget), then takes the slot; the store returns the first's recorded outcome (<a href="../session/storage-consistency.html">storage consistency</a>), so files and head change once and both callers get one result, <code translate="no">head_changed</code> included</td></tr>
+<tr><th scope="row">Revert, reapply</th><td><code translate="no">idempotency_key</code> with the turn</td></tr>
+<tr><th scope="row">Head after a rewind</th><td><code translate="no">idempotency_key</code></td><td>The request that applies the rewind mirrors the new head in the server and re-measures the context before it frees the slot. A repeat mirrors it again only while the stored head is still the one the rewind left, so a conversation that has moved on is never pulled back</td></tr>
+<tr><th scope="row">Chat send, function run</th><td><code translate="no">client_request_id</code></td><td>Answered <code translate="no">request_admitted</code> with the running turn's ids, without <code translate="no">retry_query</code>: one send admits one execution, and a <code translate="no">run_active</code> would have the client queue it as a new turn</td></tr>
+<tr><th scope="row">Another key, or none</th><td>Any</td><td>Refused, <code translate="no">run_active</code>. The slot is checked before the store, so it has to know a repeat too</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<caption>What a branch delete removes</caption>
+<thead><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Removed</th><td>From the tip up to the fork point (the first message whose predecessor has another conversation child), the tool calls under it, and the branch's record</td></tr>
+<tr><th scope="row">Kept</th><td>The fork point and everything above it: other branches share them</td></tr>
+<tr><th scope="row">Which branch</th><td>Any message on it names it; none names the selected branch, which is switched away from first</td></tr>
+<tr><th scope="row">Refused</th><td>The conversation's only line (delete the conversation), or a message below which several branches continue</td></tr>
+<tr><th scope="row">Why</th><td>Git's <code translate="no">branch -d</code> also removes only what no other branch reaches. Deleting only the named message left the branch listed and its record taking messages</td></tr>
+</tbody>
+</table>
+<p>A turn that compacts its own context mid-run stays a <code translate="no">reply</code>; the page shows the step while <code translate="no">compaction_started</code> lasts.</p>
+
+<p>Only a rewind that changes files is conversation-wide:</p>
+<ul>
+<li>While any other branch runs, or a turn waits on an approval or a question, it is refused with <code translate="no">code: branch_running</code> and <code translate="no">blocking</code>: that branch's name, its execution id and version or its <code translate="no">op_id</code>.</li>
+<li>The rewind dialog then offers "Stop it, then rewind": it stops that run and applies the same rewind once the run has ended.</li>
+<li>While it runs, a durable record holds the conversation's files. No branch is admitted, and a new execution (a scheduled run, a queued Job, a turn admitted by another process) waits for it at admission.</li>
+</ul>
+
+<p>Each running operation is also recorded on disk (<code translate="no">state/store/session/operations.py</code>). After a restart the first reader marks the operations of a process that is gone as cancelled with <code translate="no">reason_code: restart</code>; none is resumed.</p>
+
+<p>Other operations hold only the branches they touch (<code translate="no">reserve_branches_operation</code>, taken in sorted order), and a refusal names the busy branch:</p>
+<ul>
+<li>Deleting messages and the turn-file history actions: every branch whose line holds the node; a common ancestor touches every branch below it.</li>
+<li>An Agent switch: its own branch.</li>
+<li>A scheduled run: it reads its branch's durable record before it starts and skips the run while that branch is busy.</li>
+<li>Commands, skills and Agent invocations: the branch the message names. Only <code translate="no">/clear</code>, <code translate="no">/rename</code> and starting a Goal change the whole conversation and stay with the selected branch.</li>
+</ul>
+
+<h3 id="branch-rewind">Rewinding beside another branch</h3>
+
+<p>A rewind takes back only what its own branch's turns wrote after the chosen prompt. A scheduled run on its own branch counts as another branch.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">The other branch edited the same file</th><th scope="col">What the rewind does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Not at all</th><td>Restores the file to its state at the prompt</td></tr>
+<tr><th scope="row">Before this branch's first edit</th><td>Restores the file to what the other branch left; its edit stays</td></tr>
+<tr><th scope="row">After, or between, this branch's edits</th><td>Leaves the file alone. The plan is blocked with <code translate="no">changed_since_edit</code> before any write; Conversation only stays available.</td></tr>
+<tr><th scope="row">After this branch's first edit, and a rewind on the other branch already took that edit back</th><td>The edit no longer counts; the file is restored as in the rows above</td></tr>
+</tbody>
+</table>
+
+<p>A sub-agent's turn records in the point of the turn that spawned it. A turn the runtime started records in the nearest earlier prompt on its branch. Such a turn may first edit a file after a later prompt's turn did; a rewind past both returns the file to the state from before either. Rules for one file: <a href="../operations/file-management.html#rewind">File management</a>.</p>
+
+<p class="note">Claude Code's rewind returns each tracked file to its checkpoint state, later Bash changes to it included. Codex has removed its undo; its <code translate="no">thread/rollback</code> drops turns from the context and leaves files as they are. Neither describes a check for a later edit by another session, so here such a file is left alone and named.</p>
+
+<p class="note">Claude Code and Codex branch by copying: a fork gets a new session or thread id and runs as its own conversation. Neither publishes a rule for two concurrent turns inside one session or thread; Claude Code bug reports describe concurrent resumes of one session writing interleaved branches without a lock.</p>
+
+<h2 id="commands">What each control does</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">Control</th><th scope="col">Result</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pause</th><td>Stop at the next safe point</td><td>The current action may finish; no arbitrary line is frozen</td></tr>
+<tr><th scope="row">Continue</th><td>Resume the same execution from saved progress</td><td>Only when saved state and capability permit</td></tr>
+<tr><th scope="row">Step</th><td>Run one declared step, then pause</td><td>A tool action or declared boundary, not a source line</td></tr>
+<tr><th scope="row">Steer</th><td>Add instructions for work not yet run</td><td>Completed work is unchanged</td></tr>
+<tr><th scope="row">Cancel</th><td>End the execution and what it waits on: a synchronous sub-agent and the turns under it</td><td>Cannot undo completed external actions; a managed process has its own control. A background sub-agent and a branch made from a saved point keep running. A turn another live process owns (a scheduled run) gets the request through its execution's function log and stops itself.</td></tr>
+<tr><th scope="row">Fork / Retry</th><td>Create an independent child from an allowed saved point</td><td>Original history stays. Agent chat children start paused and need Continue; others follow their scheduler.</td></tr>
+</tbody>
+</table>
+
+<p class="note">The UI offers only controls that execution supports. "Accepted" means saved; "applied" means it took effect. Command completion is idempotent when terminal reconciliation wins the race: after a compare-and-swap conflict the service accepts only an already applied command for the same execution and result version, keeps the stored receipt and propagates other conflicts.</p>
+
+<h2 id="stop">Stopping a turn</h2>
+
+<p>A Stop ends one branch's foreground operation and keeps what it already produced. Compared with Codex, Claude Code, OpenCode, Pi, KimiCode, Grok Build, Hermes Agent, ZCode and Cline; each topic names the one it follows.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Topic</th><th scope="col">What happens</th><th scope="col">Follows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stopped reply</th><td>Model calls that finished stay in the history with their reasoning signatures. Text cut while streaming is kept as one last unsigned call; its unsigned reasoning is shown, not sent; a tool call whose arguments had not all arrived is dropped. The kept text is the deltas that went out as stream frames; a reply cut by a steer is cut back to them too.</td><td>OpenCode</td></tr>
+<tr><th scope="row">Stopped reply's text</th><td>The text of its blocks (<a href="dispatcher-split.html#reply-text">a blank line between passages</a>), then the files it attached. The stored reply, the final <code translate="no">result</code> frame, <code translate="no">--print</code> and a channel all get that one value.</td><td>OpenCode</td></tr>
+<tr><th scope="row">Every call gets a result</th><td>A running call: its output so far, then <code translate="no">Stopped by the user after 3.2s.</code> A call sent but not started: <code translate="no">Not run: the turn was stopped before this call started.</code> A Worker restart: <code translate="no">Interrupted after 3.2s because the service restarted.</code> No conversation id reaches the model.</td><td>Codex, with OpenCode's kept output</td></tr>
+<tr><th scope="row">Note on the next message</th><td>The stop writes <code translate="no">interruption</code> (reason, phase, whether a call was cut) on the reply. The next message's turn block gets one sentence saying why the previous reply stopped, plus "A tool call that was stopped may have partly run." when one was cut. It is written once on the message's node, so every later request sends the same bytes.</td><td>Codex's wording, Grok Build's placement</td></tr>
+<tr><th scope="row">Empty stopped reply</th><td>Nothing is written in the assistant's place. Anthropic and Gemini requests join two adjacent plain user messages into one.</td><td>Codex</td></tr>
+<tr><th scope="row">Stop key in the terminal UI</th><td>Ctrl-C or Esc stops on the first press while a turn streams or a send waits for its ack; otherwise it stops the branch's <code translate="no">/compact</code> by its <code translate="no">op_id</code>. Later presses resend the same stop with the same command id and add no line. Idle, a double Ctrl-C still exits.</td><td>Claude Code; Codex for one key per task</td></tr>
+<tr><th scope="row">Stop before the id</th><td>A chat, a function run and a retry carry <code translate="no">client_request_id</code>; a Stop before the ack names it. The page keeps <code translate="no">_optimisticStops</code> so the ack does not show the stopped turn running again.</td><td>Claude Code's <code translate="no">queryGuard</code>; Codex for returning the id</td></tr>
+<tr><th scope="row">How the signal arrives</th><td>The stop sets the turn's plain Event and runs what is registered beside it (<code translate="no">run_control/wakeups.py</code>): the turn's loop is woken and the task reading the provider is cancelled at once. A 0.5 s check remains for a signal set without that call; the function log still carries a stop across processes.</td><td>Codex <code translate="no">or_cancel(&amp;token)</code></td></tr>
+<tr><th scope="row">Background agents</th><td>A Stop leaves them running. Stopping one from its own row queues "Background agent … was stopped by the user." for the conversation that started it.</td><td>Claude Code</td></tr>
+<tr><th scope="row">Queued messages</th><td>They are sent once the server has released the stopped turn.</td><td>Claude Code</td></tr>
+<tr><th scope="row">Stop before any reply</th><td>The message stays, with its "Stopped before it started" line. Taking it back is a rewind.</td><td>Codex, Pi, OpenCode</td></tr>
+<tr><th scope="row">Waits</th><td>A Stop replaces a pause, an open question and a pending reconciliation; they close.</td><td>Codex, Claude Code</td></tr>
+<tr><th scope="row"><code translate="no">--print</code> on Windows</th><td>Ctrl-C and Ctrl-Break take the stop path; closing the console does too, with a 3.5 s grace inside the time Windows allows.</td><td>Claude Code's Node signal mapping</td></tr>
+</tbody>
+</table>
+
+<h3 id="stop-why">Why this design</h3>
+<table class="stack">
+<thead><tr><th scope="col">Topic</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stopped reply</th><td>The model should see what the person saw: after a stop people say "continue" or "change that line", and dropping the cut text (Codex, Pi) makes the model start over. Finished calls are valid signed history. Anthropic refuses unsigned reasoning, so only the cut call's reasoning is left out.</td></tr>
+<tr><th scope="row">Stopped reply's text</th><td>A provider adds a delta to its partial before the loop reads its event, so at a stop or a steer the partial can be ahead of the stream; keeping it would store, and after a steer send the model, text no client was sent. OpenCode builds the stored part from the delta events it handled, so stream and store agree. The cut text joins the turn's text where the loop ends; no later step holds a second value.</td></tr>
+<tr><th scope="row">Call results</th><td>A call without a result makes the provider refuse the request. The elapsed time and the "not run" case let the model judge whether to run it again; a per-tool side-effect table (Hermes) costs upkeep the cut-call sentence already covers.</td></tr>
+<tr><th scope="row">Note placement</th><td>Text in the assistant's place gets repeated by the model (Hermes found this), so the note rides on the user's turn block, by the same mechanism as the rewind note. Writing it at stop time keeps the cached prefix stable.</td></tr>
+<tr><th scope="row">Stop key</th><td>Codex and Claude Code stop on the first press; a hint first reads as no response, and the second press then hit the exit flow. One line per stop is enough, but the resend stays because a first signal can be lost.</td></tr>
+<tr><th scope="row">Signal</th><td>Every peer is event-driven; two polls cost a median of about 160 ms and a thread per turn. The Event stays plain because request options holding it are deep-copied.</td></tr>
+<tr><th scope="row">Background agents</th><td>The person asked for them to keep running. Without the notice the model waits for a result that never comes.</td></tr>
+<tr><th scope="row">Queued messages</th><td>Codex and Pi put the queue back in the input because theirs cannot be edited; here queued messages are visible and editable above the input, as in Claude Code.</td></tr>
+<tr><th scope="row">Stop before any reply</th><td>A rewind is something the person does; taking the message back on a Stop would make one button do two things.</td></tr>
+<tr><th scope="row">Windows</th><td>Windows has no SIGTERM; scripts send Ctrl-Break, and a closed console allows about 5 s before the process is killed with its execution left running.</td></tr>
+</tbody>
+</table>
+
+<h2 id="checkpoint">What survives a restart</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">Record</th><th scope="col">Meaning</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Checkpoint</th><td>Next action after a model decision or tool result</td><td>Continue starts here; no frozen thread is restored</td></tr>
+<tr><th scope="row">Effect receipt</th><td>Whether a model or tool request finished and what was confirmed</td><td>Confirmed work is not repeated; an uncertain external action is checked first</td></tr>
+<tr><th scope="row">Attempt ownership</th><td>Which worker may update the execution</td><td>An old worker cannot overwrite a replacement</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Case</th><th scope="col">Recovery</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running Agent execution, Worker gone</th><td>Startup claims it once and activates the original execution, revision, turn and assistant reply from durable input and its latest continuation</td></tr>
+<tr><th scope="row">Interrupted model request</th><td>Regenerated from committed context; completed tools are skipped</td></tr>
+<tr><th scope="row">No first model response yet</th><td>Restarts from admission input within the original deadline</td></tr>
+<tr><th scope="row">External operation unresolved</th><td>Not repeated; stays reconciliation-required. A not-committed receipt is never fabricated.</td></tr>
+<tr><th scope="row">Manually paused, cancelling, cancelled, completed</th><td>Not continued automatically</td></tr>
+<tr><th scope="row">Interface closed or reconnected</th><td>Transcript preserved; worker-owned execution keeps running</td></tr>
+</tbody>
+</table>
+
+<p class="note">Worker interruption is not an assistant failure: no error reply and no restart or recovery messages. Real provider and tool failures appear as usual. No special save or graceful exit is required.</p>
+
+<h2 id="restart-window">Automatic continuation window</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution.auto_resume_window_seconds</code></th><td>Default <code translate="no">-1</code>, no time limit (a null deadline). <code translate="no">0</code> disables automatic restart. A positive value is a duration.</td></tr>
+<tr><th scope="row">Measured from</th><td>The orderly shutdown intent, or the abandoned attempt's last durable activity; not the next startup. Restarting again does not extend it; existing finite intents stay finite across upgrade.</td></tr>
+<tr><th scope="row">Orderly stop</th><td>Disables dispatch and restart reconciliation in the exiting runner, then asks the turns this process owns for a cooperative pause; a scheduled turn runs in its own process and is left alone. A racing checkpoint version is retried at most three times within the same attempt and deadline.</td></tr>
+<tr><th scope="row">Attempt already ended</th><td>Startup recovery takes the ending the turn's log recorded and rejects its pending commands. With no recorded ending it publishes no checkpoint: the run becomes <code translate="no">interrupted</code> and its pending pause is rejected.</td></tr>
+<tr><th scope="row">Resumes automatically</th><td>Only a pause owned by restart recovery</td></tr>
+<tr><th scope="row">Stays explicit</th><td>User pause, cancellation, unanswered approval, unresolved effects, stale checkpoints, incompatible runtime contracts, legacy paused records with no restart intent</td></tr>
+<tr><th scope="row">Expiry</th><td>Keeps the checkpoint for manual continuation and never deletes conversation data</td></tr>
+<tr><th scope="row">Self-update</th><td>Same duration, from the completed update's last persisted activity; deadline and expiry saved in the update directory. Resume, contract-repair planning and original-session follow-up honour it. A still-running update is not stopped. Maintenance still controls admission and verification.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Restart mechanics</summary>
+<ul>
+<li>Provider decisions and completed tool actions publish their checkpoint and effect receipt atomically during ordinary execution. The original execution id, immutable inputs, permissions, budgets and continuation commands stay authoritative; queued Jobs use the resource queue.</li>
+<li>Restart intents are canonical execution events stored with the transition, and fixed command identities make repeated startup idempotent. There is no second database, scheduler, process owner or permission path.</li>
+<li>Resume ownership records the exact inherited checkpoint; a second interruption before a new effect keeps it.</li>
+<li>New Jobs own stable user and assistant message ids at admission. Pause completion releases resources by the attempt and lease identities the Job waiter retained.</li>
+<li>Startup classifies abandoned ownership before the runner applies this policy. Provider-only or never-activated chat admissions can continue from immutable input inside the original activity deadline.</li>
+</ul>
+</details>
+
+<h2 id="resumed-turn-identity">Resuming the same turn</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Bindings</th><td>Restores the same session, turn, reply, runtime and tool bindings; releases them on completion, suspension or error</td></tr>
+<tr><th scope="row">Browser page capabilities</th><td>Stay bound to the original owner; another owner's token is never accepted. A rejection is an explicit tool error with its original reason.</td></tr>
+<tr><th scope="row">Iteration limit exhausted</th><td>The run ends unsuccessful, keeping its text and operation history</td></tr>
+<tr><th scope="row">Resolved wait</th><td>Considered only while its checkpoint is still the execution's current one, so an older answer cannot resume, fail or cancel a newer wait. Repeats are idempotent.</td></tr>
+<tr><th scope="row">Declined wait</th><td>Its checkpoint keeps the displayed text, reasoning and tool calls; the terminal projection publishes a session reload after saving</td></tr>
+<tr><th scope="row">Pending approval</th><td>Shows near its assistant message only when the authoritative execution update names that message in the same session. Reconnecting requests the canonical replay. Missing evidence never attaches another run's decision to a message.</td></tr>
+</tbody>
+</table>
+
+<h2 id="function-version-resume">Function versions</h2>
+
+<p><code translate="no">execution.code_change_policy</code> selects <code translate="no">keep_original</code> (default) or <code translate="no">use_latest</code>; Continue can override per execution. Relevant function and dependency identity decide whether code changed. A policy change is a version-fenced command and never creates a new call.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">A durable function records</th><td>Source and dependency identity, input, completed steps and results, next safe position, serializable state, outstanding effects</td></tr>
+<tr><th scope="row">Boundaries</th><td>Synchronous <code translate="no">step</code>, nested <code translate="no">workflow</code>, named <code translate="no">parallel</code>. Pure orchestration rebuilds local JSON state from committed results.</td></tr>
+<tr><th scope="row">Storage</th><td>Existing execution events, blobs, checkpoints and effect ledger</td></tr>
+<tr><th scope="row"><code translate="no">use_latest</code></th><td>Keeps completed results with their provenance and validates the rest. State conversion and step correspondence must be explicit; ambiguous edits stay paused with specific differences. A compatible candidate becomes the retained version before new work.</td></tr>
+<tr><th scope="row">Never degrades</th><td>A missing source, unavailable dependency, nonserializable state or unsupported boundary cannot fall back to fresh execution. An incompatible <code translate="no">use_latest</code> does not fall back to <code translate="no">keep_original</code>. Retry is a separate new execution.</td></tr>
+<tr><th scope="row">Effects</th><td>Completed effects are reused. An in-flight step with no confirmed result stays unresolved unless its protocol proves safe. Repeated resume and a second crash cannot duplicate accepted effects.</td></tr>
+<tr><th scope="row">Nesting</th><td>Nested calls keep parent identity, parallel branches keep separate progress</td></tr>
+<tr><th scope="row">Agent-owned call</th><td>Shares the mechanism with manual calls. The result returns to the original tool-call position; a stored result is delivered without re-execution. A manual call updates its original result record.</td></tr>
+<tr><th scope="row">Outside the contract</th><td>Native frames, asynchronous orchestration, live handles, and arbitrary Python functions. Helper-local imports and opaque non-standard-library dependencies are rejected before external steps.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Pause at a step boundary</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Handling</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pause accepted after a durable step checks its boundary, before effect registration or dispatch admission</th><td>Suspends the function through the pending Pause command</td></tr>
+<tr><th scope="row">Admission-closed conflict</th><td>Converted only when that real command is pending; other collisions keep their errors</td></tr>
+<tr><th scope="row">Planned intent that never dispatched</th><td>Records a not-started receipt before the pause</td></tr>
+<tr><th scope="row">Dispatched operation</th><td>Never classified as not started</td></tr>
+<tr><th scope="row">Cancellation</th><td>Takes precedence</td></tr>
+</tbody>
+</table>
+<p>Continue keeps the call cursor and reuses committed steps. Crash recovery uses the last durable boundary and fences the former owner. Function subprocess startup holds no history-wide write transaction, and sequence backfill belongs only to the migration that adds the column. Standalone function progress frames address the existing code node, and completion releases foreground occupancy before optional session naming.</p>
+</details>
+
+<h2 id="store-schema-ownership">Who owns run state</h2>
+
+<p>Run state is folded from each session's log into in-memory tables; no database file exists. See <a href="../session/storage.html">Session storage</a>. The process holding <code translate="no">worker.lock</code> owns the runs it starts. A function subprocess reads the tables and hands changes to its parent.</p>
+<p>A scheduled task's turn, and a turn in a stand-alone ACP or MCP process, belongs to that process, which writes that turn's rows to its own log. A sub-agent a scheduled task starts is admitted and run by the Worker, the only process that can claim a queued Job.</p>
+
+<h2 id="attempt-leases">Attempts and fencing</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner</th><td>An activated execution has one current attempt, owned by the <code translate="no">worker.lock</code> holder, with no heartbeat</td></tr>
+<tr><th scope="row">Turn run in another process</th><td>Its owner lease records that process's id and start time</td></tr>
+<tr><th scope="row">Process exits, lock released</th><td>A new Worker that takes the lock may close attempts the logs show as open, unless the recorded process is still running; it then reads how that turn ended once the process exits</td></tr>
+<tr><th scope="row">Orderly stop, self-update checkpoint</th><td>Never touch a turn another process owns</td></tr>
+<tr><th scope="row">Log recorded a turn's ending, a later line left it unfinished</th><td>Startup restores the recorded ending</td></tr>
+<tr><th scope="row">A pause or a stop wins against the starter</th><td>Each step of starting a turn is a compare-and-swap (lease, activate) or a hand-off the driver may refuse. Whichever loses, one check reads the execution again and gives way to the control intent it finds. Anything else is the starter's failure.</td></tr>
+<tr><th scope="row">What the starter finds when it loses</th><td>Paused with no checkpoint and no attempt: nothing is written, a later Continue starts the turn. Cancelling or cancelled with no attempt: the stop ends the queued turn itself. Cancelling under the starter's own attempt, which no driver heard: that attempt reports its own loss, the execution ends cancelled and the cancel is applied, with the attempt ended <code translate="no">cancelled_during_activation</code>.</td></tr>
+<tr><th scope="row">Turn stopped before it started</th><td>Activation returns no result. Every caller reports the turn as stopped before it started: a sub-agent, a merge, a check-in, a channel reply, an MCP call and a function call.</td></tr>
+<tr><th scope="row">Its reply</th><td>A chat turn opens its reply when it starts, so the stop writes it: empty and stopped, after the message. Live and after a reload the page shows a stopped reply, as for a stop just after the start. A turn that writes its message only when it starts leaves nothing to close.</td></tr>
+<tr><th scope="row">No reply row otherwise</th><td>A function call's row, written just after admission, can still arrive; a turn that started and left none has lost it. The stop logs an error and the event effect tries again, five times, then logs that it gave up.</td></tr>
+<tr><th scope="row">Every owner write (tool result, safe point, wait, steering delivery, finish)</th><td>Verifies inside its transaction that the attempt has not ended, its generation is current and the execution still names it. An owner that fails this check stops.</td></tr>
+</tbody>
+</table>
+
+<p>An attempt that fails keeps its readable error on the attempt row, with credential-shaped values scrubbed and at most 4000 characters. It stays out of snapshots and event payloads; only Activity's per-run events read it. An attempt closed by owner loss has no such text, and older rows read as none.</p>
+
+<h2 id="engine-hooks">How the control plane reaches the engines</h2>
+
+<p><code translate="no">openprogram.runtime.execution</code> imports no engine and no Program. What it must decode, it owns; to start or ask an engine, it calls a hook from <code translate="no">execution/hooks.py</code> that the engine registered at import.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Hook</th><th scope="col">Registered by</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent_activator</code></th><td>conversation, required</td><td>Build the production driver that activates an attempt</td></tr>
+<tr><th scope="row"><code translate="no">recovery_turn_starter</code></th><td>conversation, required</td><td>Admit the turn that continues an interrupted chat</td></tr>
+<tr><th scope="row"><code translate="no">permission_wait_reconciler</code></th><td>conversation, required</td><td>Re-run permission approval waits at recovery</td></tr>
+<tr><th scope="row"><code translate="no">session_goals</code></th><td>conversation, required</td><td>Session Goal owner lock for restart reconciliation; recoverable pause of a Workflow Goal</td></tr>
+<tr><th scope="row"><code translate="no">live_owner_signals</code></th><td>conversation, optional</td><td>Stop or kill a subprocess and exec runtime</td></tr>
+<tr><th scope="row"><code translate="no">terminal_settler</code></th><td>conversation, optional</td><td>Settle the chat Goal: usage, idle count, next turn. A Goal that is busy or whose usage is not in yet defers the accounting to the turn's owner and the next read of the Goal, and never raises. A stopped turn's cancelled reply and resource release run whatever the settlement does.</td></tr>
+<tr><th scope="row"><code translate="no">job_records</code></th><td>jobs, required</td><td>Find, list and settle Job records during cancellation</td></tr>
+<tr><th scope="row"><code translate="no">turn_request_fields</code></th><td>jobs, required</td><td>Fields a stored Job input may carry</td></tr>
+<tr><th scope="row"><code translate="no">job_runner</code></th><td>jobs, optional</td><td>Live runner bound to an execution store</td></tr>
+</tbody>
+</table>
+
+<p class="note">A missing required hook raises <code translate="no">EngineNotRegistered</code> (<code translate="no">engine_not_registered</code>), naming the hook and package; the work is never skipped silently. A missing optional hook is itself the answer: no such engine in this process. Loading conversations also loads Jobs.</p>
+
+<details>
+<summary>What the control plane owns</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution/agent_journal.py</code></th><td>Versioned Agent state payload, written as lines of the session log</td></tr>
+<tr><th scope="row"><code translate="no">execution/job_input.py</code></th><td>A Job's strict admission input envelope</td></tr>
+<tr><th scope="row"><code translate="no">execution/run_control/</code></th><td>Bound session and execution, cancellation tokens, live owners and grace period, exact cancel and child admission</td></tr>
+<tr><th scope="row"><code translate="no">conversation/run_control</code></th><td>The turn side: turn tokens, cancel events, active exec runtimes</td></tr>
+<tr><th scope="row"><code translate="no">execution/resource_saga.py</code></th><td>Takes its governor as an argument; the governor implements <code translate="no">ResourceGovernor</code></td></tr>
+</tbody>
+</table>
+<p>Goal hooks belong to conversations because a chat Goal runs as conversation turns; they import <code translate="no">openprogram.programs.tools.planning.goal</code> on first call, since that tool can load after startup recovery.</p>
+</details>
+
+<h2 id="workflow-questions">Workflow questions</h2>
+
+<ul>
+<li>A question from a running Python Workflow waits in its current process, bound to the exact execution, attempt and generation. It uses the canonical wait store and question UI, and neither checkpoints the Workflow nor restarts its call stack.</li>
+<li>The answer returns to the original call. A browser refresh reloads the pending request.</li>
+<li>Only the live current owner may create or answer one. Cancellation, execution end or loss of the process owner invalidates it. Worker restart does not replay the Workflow.</li>
+<li>The subprocess publishes through the existing queue bridge. Unexpected errors propagate rather than become an unanswered result. Agent tool questions with declared pre-wait checkpoints keep durable continuation.</li>
+</ul>
+
+<h2 id="decision-output">User decision panels and receipts</h2>
+
+<p>Questions, confirmations, forms and permission approvals are session-scoped panels above the composer. Terminal receipts stay in the conversation.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Composer</th><td>Keeps its draft, attachments, function form, focus and send or queue behaviour. New requests never capture it or move focus.</td></tr>
+<tr><th scope="row">Navigation</th><td>Back, Next and collapse keep drafts and send nothing</td></tr>
+<tr><th scope="row">Skip</th><td>Declines the whole question request</td></tr>
+<tr><th scope="row">Submit</th><td>Immediately shows the submitted answer and a sending state</td></tr>
+<tr><th scope="row">Applied</th><td>Answered receipt</td></tr>
+<tr><th scope="row">Delivery unknown</th><td>Retry keeps the same command identity and answer</td></tr>
+<tr><th scope="row">Rejected or expired</th><td>Cannot imply approval</td></tr>
+<tr><th scope="row">Several requests</th><td>Separate keyed cards, scoped to session and execution, including split views</td></tr>
+</tbody>
+</table>
+
+<p class="note">Cards reuse the shared question renderer, canonical question events and execution commands. Each card owns its answer fields, submission controls and delivery status. Receipts are not Workflow checkpoints; refresh reloads pending questions and does not add historical receipt persistence.</p>
+
+<details id="engineering">
+<summary>Identifiers and safety rules</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session_id</code></th><td>Conversation scope and authorization; never a control target</td></tr>
+<tr><th scope="row"><code translate="no">run_id</code></th><td>Groups related original, fork and retry executions</td></tr>
+<tr><th scope="row"><code translate="no">execution_id</code></th><td>Exact control target. Pause and Continue keep it; a fork or retry creates another.</td></tr>
+<tr><th scope="row"><code translate="no">attempt_id</code></th><td>One activation of a worker</td></tr>
+<tr><th scope="row"><code translate="no">revision_id</code></th><td>Immutable version of the program and its contract</td></tr>
+<tr><th scope="row"><code translate="no">command_id</code> + <code translate="no">expected_version</code></th><td>Prevent duplicate actions and reject stale commands. A cancel names its execution only: its version is recorded, never compared</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Command service</th><td>All transports use one command service, which saves the command before the owner applies it. UI state does not authorize an operation.</td></tr>
+<tr><th scope="row">Precedence</th><td>Cancellation takes precedence over pause, step, continue and steering. Only the current owner publishes progress or a final state.</td></tr>
+<tr><th scope="row">A stop and its version</th><td>A stop names its execution, not a version. A turn's version moves twice in its first tenth of a second (leased, then running), so a Stop pressed right after sending often carries an old one. The store takes the stop at the current version in one transaction and only logs the one the sender saw (<code translate="no">cancel.version_moved</code>).</td></tr>
+<tr><th scope="row">Other commands and their version</th><td>Pause, Continue, steering and answers still need the current version: they are decisions about a snapshot.</td></tr>
+<tr><th scope="row">One stop, answered by state</th><td>Every surface takes the same stop, internal or public, and its answer depends only on the state. Running: the execution moves to cancelling and its owner is told. Already cancelling: the stop in force comes back and its owner is told again, since a first signal may have been lost. Nothing new is written. Ended: the final state comes back with <code translate="no">already_terminal</code>, which is not a refusal.</td></tr>
+<tr><th scope="row">Same command id</th><td>The same command id stopping the same execution is the same stop, whatever reason it gives.</td></tr>
+<tr><th scope="row">Queued Job</th><td>A queued Job ends at once, so its dispatch is fenced first, for that exact snapshot; should the snapshot move before the stop is written, the fence goes to recovery.</td></tr>
+<tr><th scope="row">What stops with an execution</th><td>One finder answers what stops with an execution. An execution's parents are its canonical parent and, for a Job, the caller and parent Job its input names, in whichever conversation; the walk passes through executions that have ended.</td></tr>
+<tr><th scope="row">Public and internal stops</th><td>A public stop (the page, Activity, the terminal, <code translate="no">--print</code>, ACP and MCP clients) takes what the turn waits on: a synchronous sub-agent and the turns under it, not a background sub-agent or a branch. The internal stop (a channel's <code translate="no">/stop</code>, Goals, time limits) takes every descendant.</td></tr>
+<tr><th scope="row">Order</th><td>Children stop before their parent, deepest first, so a queued child is fenced before its parent's ending frees the pool slot it would take. A child admitted while the parent was being stopped is stopped after it.</td></tr>
+<tr><th scope="row">Delivery to an owner</th><td>An owner is handed a stop once. A repeated stop answers <code translate="no">already_delivered</code> without calling an owner that took it, whose handle may already be released; an owner that did not get it, or took over since, gets it now.</td></tr>
+<tr><th scope="row">Clients</th><td>Clients send a stop once. The page says "Stopped." when the execution's own frame reports it cancelled, not on the command's answer. A Stop on a turn the page knows by id but not by version goes out at once.</td></tr>
+<tr><th scope="row">What the Worker announces</th><td>On connect the Worker sends <code translate="no">worker_capabilities</code>: <code translate="no">cancel_ignores_version</code> (a stop is never refused as stale) and <code translate="no">cancel_by_request</code> (a stop may name a send). The terminal UI and <code translate="no">--print</code> resend a stale-refused stop, and name a send, only by what the Worker on their socket announced; an older Worker or remote server keeps the old behaviour.</td></tr>
+<tr><th scope="row">A stop before the id</th><td>A stop pressed before the client knows the turn's execution names the send: its <code translate="no">session_id</code> and <code translate="no">client_request_id</code>, which admission records with the execution, one execution per send in a session. One store transaction decides. If the send was admitted, its execution is stopped like any other. The page, the terminal UI and <code translate="no">--print</code> send it this way. A new terminal conversation gets its id when its first message is sent, as a page draft does.</td></tr>
+<tr><th scope="row">A stop mark</th><td>A stop of a send not yet admitted is written to the conversation's run log as a mark, answered <code translate="no">marked</code>. The send's admission takes it, and the turn ends cancelled when it activates, before an owner is leased, with its reply written as stopped before it started. A mark outlives a Worker restart and lapses after ten minutes.</td></tr>
+<tr><th scope="row">Model errors and tool outcomes</th><td>Known model errors and aborts get response records. Unknown tool outcomes stay unresolved; the History label does not clear them.</td></tr>
+<tr><th scope="row">Forks</th><td>Forks validate the saved point, immutable revision and permission. Program, model or tool contract changes keep their independent review.</td></tr>
+<tr><th scope="row">Jobs</th><td>For Jobs, <code translate="no">job_id</code> equals <code translate="no">execution_id</code>. Resource allocation stays separate from execution state.</td></tr>
+<tr><th scope="row">Project location</th><td>The current stored project location is read before loading a session. Reads and controls are restricted to the authorized conversation. Reconnect uses saved versions and event positions and creates no duplicate task.</td></tr>
+<tr><th scope="row">Managed processes</th><td>Managed processes keep identity, ownership and bounded output. Restart recovery checks the supervisor; a saved PID alone is not permission to send a signal.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="status">Implementation status</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">Area</th><th scope="col">Implementation</th><th scope="col">Acceptance</th></tr></thead>
+<tbody>
+<tr><th scope="row">Branch counts</th><td>One row per real branch</td><td>Linear conversation → History 1. Three tips → History 3.</td></tr>
+<tr><th scope="row">Attention</th><td>Provider-only missing records are told apart from real waits and uncertain effects</td><td>A real approval stays visible; an ended model request alone asks nothing</td></tr>
+<tr><th scope="row">Execution controls</th><td>Shared commands, checkpoints and revisions; capabilities differ by execution</td><td>Test only advertised controls. Forced-tool, spawn and merge paths keep restrictions.</td></tr>
+<tr><th scope="row">Processes and recovery</th><td>Ownership, separate stop, output retention and refresh on the default macOS App</td><td>Windows and Linux are not established by these checks</td></tr>
+<tr><th scope="row">Branch run slots</th><td>Server side: admission per branch, branch-owned writes, per-branch run state and stop</td><td>Two branches finish concurrently with their own heads; stopping one leaves the other running; a switch while a turn runs goes ahead, the turn finishes on its own branch and the selection stays</td></tr>
+<tr><th scope="row">Foreground operations</th><td>One slot table keyed by conversation and branch (<code translate="no">server_runtime/run_slots.py</code>); <code translate="no">reserve_operation</code> for compact, rewind, retry, edit, branch and function; <code translate="no">operation.cancel</code>; durable records and the file-rewind hold</td><td>Operations on one branch run beside another branch's turn; a file rewind is refused naming the running branch; a hold in another process refuses operations here; a rewind or revert repeated with its key while the first runs gets the first's result, another key is still refused, and a repeated send gets <code translate="no">request_admitted</code> (<code translate="no">tests/component/webui/chat/test_keyed_operation_repeat.py</code>)</td></tr>
+</tbody>
+</table>
+
+<p>Not yet for a turn on another branch:</p>
+<ul>
+<li>The web pane: it shows and sends to the selected branch only.</li>
+<li>Steer and queued page messages: they reach the selected branch's turn.</li>
+<li>Continue after a pause or a Worker restart: the resumed turn's context is not yet proven to read its own branch.</li>
+<li>Edit and retry while the selected branch's own turn runs: they wait, because the new branch would take the selected branch's slot.</li>
+<li>Scheduled runs: their process does not take the server's branch slot; a message is refused while a run is open on that branch, not the other way round.</li>
+</ul>
+
+<p>Not yet for branch settings and branch state:</p>
+<ul>
+<li>Merge holds the selected branch's slot, not its source and target.</li>
+<li>The menus' first item "Agent default (current: …)" and a badge beside the composer for runs on other branches: the data is sent (<code translate="no">inherited</code>, <code translate="no">wait_state</code>); the controls wait on an approved design.</li>
+<li>An entry that names no branch (a channel) continues on the selected branch; the branch written last is recorded (<code translate="no">last_branch_id</code>) and not yet used.</li>
+<li>Running the follow-the-Agent migration on real conversations.</li>
+<li>Run state read only from the execution store: the slot table is still the live record of reservations and executionless operations, with the execution store consulted for paused and scheduled turns.</li>
+<li>One branch record: names, turn counts and archive state still live in <code translate="no">meta.branches</code>, keyed by tip, beside <code translate="no">branch_refs</code>. Moving them needs a record for every tip a client names by message id (spawned branches, tips recorded before branch records existed) and a migration of the readers that key by tip.</li>
+<li>Stopping a rewind from the terminal UI: its stop key reaches turns and <code translate="no">/compact</code>.</li>
+</ul>
+
+<p>Not yet for a stop:</p>
+<table class="stack">
+<thead class="sr"><tr><th scope="col">Gap</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Resending a stale-version stop</th><td>The terminal UI and <code translate="no">--print</code> resend a stale-refused stop only to a Worker that does not announce <code translate="no">cancel_ignores_version</code>. The branch is deleted once both local Workers announce it; the remote-server branch stays until the next release.</td></tr>
+<tr><th scope="row">The Job runner's own stop</th><td>The Job runner's own stop (Activity's Job cancel, a Job's budget) still finds descendant Jobs by walking <code translate="no">parent_job_id</code> itself, because it keeps each Job's queue, inbox and resource bookkeeping; it does not yet take the shared finder. A function run with only a session-graph record stops the graph nodes it called through the graph's own caller links.</td></tr>
+<tr><th scope="row">Signal latency</th><td>With the two polls a stop reached cancelled in a median of about 160 ms on the dev Worker. The direct wakeup is not yet measured there.</td></tr>
+<tr><th scope="row">Effect of the stop note</th><td>Whether the model continues from the cut after "continue" is not yet measured on real requests; the wording follows the peers.</td></tr>
+<tr><th scope="row"><code translate="no">--print</code> on Windows</th><td>The Ctrl-Break test is written for Windows CI and has not run there yet.</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>Not available: arbitrary thread-stack restoration, automatic undo, reconstruction of process records never saved.</li>
+<li>Runtime calls that ask questions inside an ordinary function need a declared interaction boundary.</li>
+<li>Waiting deadlines and Job budgets are not yet connected to resource management.</li>
+</ul>
+
+<details id="reference">
+<summary>Source and references</summary>
+<ul>
+<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/execution/activity_branches.py">Branch membership</a></li>
+<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/tests/component/webui/execution/test_activity_branches.py">Branch membership tests</a></li>
+<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/tests/execution/activity-panel.test.mjs">Activity panel tests</a></li>
+<li><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/execution">Execution protocol and persistence</a></li>
+</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://microsoft.github.io/debug-adapter-protocol/">Debug Adapter Protocol</a></th><td>Separate observation from control; advertise supported controls</td></tr>
+<tr><th scope="row"><a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/workflow/workflow-execution/workflow-execution.mdx">Temporal Workflow Execution</a></th><td>Persist execution state</td></tr>
+<tr><th scope="row"><a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/workflow/workflow-pause.mdx">Temporal Workflow Pause</a></th><td>Pausing does not undo work already started</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/persistence">LangGraph persistence</a></th><td>Save progress at checkpoints</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/interrupts">LangGraph interrupts</a></th><td>Wait for input and resume at a defined boundary</td></tr>
+<tr><th scope="row"><a href="https://docs.langchain.com/oss/python/langgraph/use-time-travel">LangGraph time travel</a></th><td>Keep original history when creating alternatives</td></tr>
+<tr><th scope="row"><a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/">Kubernetes Pod lifecycle</a></th><td>Request termination, then confirm owner shutdown</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/checkpointing">Claude Code checkpointing</a></th><td>One checkpoint per prompt; another session's edits are captured only when they touch the same files</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs">Codex features</a></th><td>Undo is marked removed; rollback does not restore files</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="next"><a href="async-job-lifecycle.html">Background Jobs</a> · <a href="../reliability/agent-resource-governance.html">Resource allocation</a> · <a href="../../error-handling.html">Error handling</a></p>

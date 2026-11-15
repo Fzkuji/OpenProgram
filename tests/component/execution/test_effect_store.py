@@ -4,15 +4,15 @@ import time
 
 import pytest
 
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.effects import (
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.effects import (
     EffectClassification,
     EffectConflict,
     EffectStatus,
     EffectStore,
 )
-from openprogram.execution.model import CapabilitySet, ExecutionStatus
-from openprogram.execution.store import ExecutionStore
+from openprogram.runtime.execution.model import CapabilitySet, ExecutionStatus
+from openprogram.runtime.execution.store import ExecutionStore
 
 
 def _stores(tmp_path):
@@ -30,7 +30,6 @@ def _stores(tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="worker_1",
-        ttl_seconds=30,
         attempt_id="attempt_1",
     )
     _, running = attempts.activate(
@@ -123,23 +122,6 @@ def test_committed_effect_cannot_be_reopened(tmp_path) -> None:
             expected_status=EffectStatus.COMMITTED,
         )
     assert terminal.value.code == "terminal"
-
-
-def test_expired_attempt_cannot_register_an_effect(tmp_path) -> None:
-    executions, _, execution = _stores(tmp_path)
-    effects = EffectStore(executions, clock=lambda: time.time() + 60)
-
-    with pytest.raises(EffectConflict) as stale:
-        effects.register(
-            effect_id="effect_1",
-            execution_id=execution.execution_id,
-            attempt_id="attempt_1",
-            action_id="send_message",
-            classification=EffectClassification.NONREPEATABLE,
-            idempotency_key=None,
-            metadata={},
-        )
-    assert stale.value.code == "stale_attempt"
 
 
 @pytest.mark.parametrize(

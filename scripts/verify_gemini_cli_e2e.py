@@ -35,7 +35,7 @@ def main() -> int:
 
     # Force dispatcher to pick the Gemini-CLI provider by passing
     # ``model_override`` on TurnRequest. ``AGENTIC_PROVIDER`` env only
-    # influences create_runtime() (used by @agentic_function); dispatcher
+    # influences create_runtime() (used by Agent method); dispatcher
     # itself reads from the agent profile, so env-var pinning alone
     # silently still talks to the user's default provider.
     MODEL_OVERRIDE = "gemini-subscription/gemini-2.5-flash"
@@ -44,14 +44,17 @@ def main() -> int:
     db_path = tmp_dir / "verify.sqlite"
     print(f"== sandbox DB: {db_path}")
 
-    from openprogram.context.session_db import DagSessionDB
-    import openprogram.agent.session_db as sdb_mod
+    from openprogram.runtime.context.session_db import DagSessionDB
+    import openprogram.runtime.context.session_db as sdb_mod
     sdb_mod._default = DagSessionDB(db_path)
     print(f"== default_db patched")
 
-    from openprogram.agent.dispatcher import (
-        process_user_turn, TurnRequest, _resolve_model, _load_agent_profile,
+    from openprogram.runtime.conversation.turn_runtime import (
+        process_user_turn,
+        _resolve_model,
+        _load_agent_profile,
     )
+    from openprogram.runtime.agent.turn_request import TurnRequest
     _probe_model = _resolve_model(
         _load_agent_profile("main"), MODEL_OVERRIDE,
     )

@@ -2,9 +2,9 @@
 
 ``get_state_dir()`` reads ``Path.home()``, so an unisolated test that builds a
 SessionStore writes into live data — and ``SessionStore._startup_cleanup``
-``shutil.rmtree``s any session it judges an empty shell on every index load.
-A missing redirect is therefore not a tidiness issue, it deletes real
-conversations.
+rewrites ``index.json`` and quarantines directories it judges shells on every
+index load. A missing redirect is therefore not a tidiness issue, it alters
+real conversations.
 
 ``tests/conftest.py`` redirects HOME at import time. This asserts the redirect
 actually reaches the path layer, so the guard can't rot into a no-op.
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.paths import get_state_dir
+from openprogram.state.paths import get_state_dir
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("OPENPROGRAM_TEST_REAL_HOME") == "1",
@@ -46,7 +46,7 @@ def test_state_dir_follows_home_rather_than_the_passwd_entry():
 
 
 def test_session_store_root_is_a_throwaway():
-    from openprogram.agent.session_db import default_db
+    from openprogram.runtime.context.session_db import default_db
 
     root = str(getattr(default_db(), "root_path", ""))
     assert "openprogram-test-home" in root, (

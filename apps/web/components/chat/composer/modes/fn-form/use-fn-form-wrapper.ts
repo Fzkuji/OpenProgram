@@ -43,12 +43,7 @@ interface UseFnFormWrapperArgs {
   fnFormClosing: boolean;
   onCloseComplete: () => void;
   wrapperRef: RefObject<HTMLDivElement>;
-  /** A system decision (question/approval/form) occupies the input. It
-   *  uses the same header/body two-段 structure as fn-form, so the
-   *  wrapper-grow transition must run for it too. Identity changes
-   *  (one decision → next) re-run the open transition so the wrapper
-   *  re-measures the new content height. */
-  decisionKey: string | null;
+
 }
 
 export interface FnFormWrapperHook {
@@ -60,12 +55,8 @@ export function useFnFormWrapper({
   fnFormClosing,
   onCloseComplete,
   wrapperRef,
-  decisionKey,
 }: UseFnFormWrapperArgs): FnFormWrapperHook {
-  // Any morphed state (fn-form OR a system decision) needs the grow
-  // transition. fn-form keeps its closing/outgoing machinery; the
-  // decision path only needs open-transition + height cleanup.
-  const morphed = fnFormFunction !== null || decisionKey !== null;
+  const morphed = fnFormFunction !== null;
   const [outgoingFn, setOutgoingFn] = useState<AgenticFunction | null>(null);
   const prevFnRef = useRef<AgenticFunction | null>(null);
   const chatHeightRef = useRef<number>(98);
@@ -100,13 +91,18 @@ export function useFnFormWrapper({
     if (typeof ResizeObserver === "undefined") return;
     const el = wrapperRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    // The height comes from the observer's entry, measured with the
+    // layout: reading offsetHeight here laid the page out again whenever
+    // an earlier callback in the same frame had written a style (the tuck
+    // band's ring follows the input box in every frame a pane moves).
+    const ro = new ResizeObserver((entries) => {
       if (morphed || transitioning) return;
       const w = wrapperRef.current;
       if (!w || w.style.height) return;
-      chatHeightRef.current = w.offsetHeight;
+      const box = entries[entries.length - 1]?.borderBoxSize?.[0];
+      chatHeightRef.current = box ? Math.round(box.blockSize) : w.offsetHeight;
     });
-    ro.observe(el);
+    ro.observe(el, { box: "border-box" });
     return () => ro.disconnect();
   }, [morphed, transitioning, wrapperRef]);
 
@@ -123,13 +119,11 @@ export function useFnFormWrapper({
         onCloseComplete();
       }, setTransitioning);
     }
-    // fn-form OR a system decision: grow the wrapper to content height.
-    // decisionKey in deps so switching one decision → the next re-runs
-    // the open transition against the new content height.
-    if (fnFormFunction || decisionKey) {
+    // Grow the function form to its content height.
+    if (fnFormFunction) {
       return runOpenTransition(el, chatHeightRef.current, setTransitioning);
     }
-  }, [fnFormFunction, decisionKey, fnFormClosing, onCloseComplete, wrapperRef]);
+  }, [fnFormFunction, fnFormClosing, onCloseComplete, wrapperRef]);
 
   // After the form unmounts, drop the inline `height` we left behind
   // during the close transition so the wrapper can size itself
@@ -196,7 +190,7 @@ export function useFnFormWrapper({
       mo.disconnect();
       window.removeEventListener("resize", onResize);
     };
-  }, [morphed, fnFormClosing, fnFormFunction, decisionKey, wrapperRef]);
+  }, [morphed, fnFormClosing, fnFormFunction, wrapperRef]);
 
 
 
@@ -259,20 +253,9 @@ function runOpenTransition(
   }
   const natural = measureFnFormHeight(el);
   el.style.height = `${natural}px`;
-  // Decision body scrolls (overflow:auto) and its free-text input is
-  // autofocused BEFORE this effect runs — while the wrapper is still
-  // snapped at chat height the browser scrolls the input into view,
-  // carrying the prompt off-screen. Pin the scroll back, and again
-  // when the grow transition lands (the clamp mid-transition can
-  // re-scroll on focus).
-  const decisionBody = el.querySelector("[data-decision]")
-    ? (el.querySelector("[data-fn-form-body]") as HTMLElement | null)
-    : null;
-  if (decisionBody) decisionBody.scrollTop = 0;
   const onEnd = (ev: TransitionEvent) => {
     if (ev.target !== el || ev.propertyName !== "height") return;
     el.removeEventListener("transitionend", onEnd);
-    if (decisionBody) decisionBody.scrollTop = 0;
     setTransitioning(false);
   };
   el.addEventListener("transitionend", onEnd);
@@ -302,16 +285,9 @@ function measureFnFormHeight(el: HTMLDivElement): number {
   return targetFnFormHeight(el);
 }
 
-/** Decision cards have no textarea / field labels, so the fn-form
- *  chrome + 48px fallback under-counts. Measure the wrapper's real
- *  content: every in-flow child (header, body, attachment strips…),
- *  not just header + body — the wrapper is overflow:hidden, so a
- *  missed sibling means a cropped card. Body may be `flex:1` +
- *  overflow, so its box height reports the flex slot — release the
- *  constraint for the read. (No `minHeight: 0` here: that is the
- *  "allow smaller than content" signal, the opposite of what a
- *  natural-height read wants.) */
-function measureDecisionHeight(el: HTMLDivElement): number {
+/** Advanced fields require the full content height. Release the body flex
+ * constraint while measuring every in-flow child, then restore its styles. */
+function measureExpandedHeight(el: HTMLDivElement): number {
   const body = el.querySelector("[data-fn-form-body]") as HTMLElement | null;
   const wrapPad = parseFloat(getComputedStyle(el).paddingBottom) || 0;
   if (!body) return el.scrollHeight;
@@ -400,9 +376,9 @@ function formChromeHeight(el: HTMLDivElement): number {
 function targetFnFormHeight(el: HTMLDivElement): number {
   const host = hostViewHeight(el);
   const avail = availableComposerHeight(el);
-  // Decision (question/approval/form): size to header + body content.
-  if (el.querySelector("[data-decision], details[open]")) {
-    return Math.min(measureDecisionHeight(el), avail);
+  // Expanded advanced fields size to the header and full body content.
+  if (el.querySelector("details[open]")) {
+    return Math.min(measureExpandedHeight(el), avail);
   }
   const expanded = !!el.querySelector("[data-expanded]");
   const chrome = formChromeHeight(el);

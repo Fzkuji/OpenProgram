@@ -1,0 +1,224 @@
+<title>操控电脑与浏览器</title>
+<meta name="description" content="computer_use_agent 工具的目标、指南和代码，以及各后端的页面。">
+<h1>操控电脑与浏览器</h1>
+
+<p>模型通过一个工具操作 macOS、Linux、Windows 上的应用、网页和远程虚拟机。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 276" role="img" aria-label="一个入口。模型只有一个屏幕工具 computer_use_agent，每次调用选三个目标之一。app 操作应用的窗口，在用户的工作后面进行。browser 操作 App 里的标签页；够不到 App 窗口时用它自己的无窗口浏览器；点名时用用户的 Chrome 或 Edge。vm 操作虚拟机的屏幕。">
+  <defs><marker id="oe-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="130" translate="no">computer_use_agent</text>
+  <text class="t-soft" x="0" y="154">一个屏幕工具，</text>
+  <text class="t-soft" x="0" y="174">每次调用一个目标</text>
+  <path class="ln" d="M212 123H280" marker-end="url(#oe-a)"/>
+  <path class="ln" d="M246 123V23H280" marker-end="url(#oe-a)"/>
+  <path class="ln" d="M246 123V235H280" marker-end="url(#oe-a)"/>
+  <text class="t-big" x="292" y="30" translate="no">app</text>
+  <text class="t-soft" x="292" y="54">应用的窗口，</text>
+  <text class="t-soft" x="292" y="74">在用户的工作后面</text>
+  <text class="t-big" x="292" y="130" translate="no">browser</text>
+  <text class="t-soft" x="292" y="154">App 里的标签页</text>
+  <text class="t-soft" x="292" y="174">够不到 App 窗口：它自己的浏览器</text>
+  <text class="t-soft" x="292" y="194">点名 chrome 或 edge：用户的 Chrome、Edge</text>
+  <text class="t-big" x="292" y="242" translate="no">vm</text>
+  <text class="t-soft" x="292" y="266">虚拟机的屏幕</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong><code translate="no">computer_use_agent</code></strong><small>一个屏幕工具，每次调用一个目标</small></li>
+  <li><strong><code translate="no">app</code></strong><small>应用的窗口，在用户的工作后面</small></li>
+  <li><strong><code translate="no">browser</code></strong><small>App 里的标签页；够不到 App 窗口时用它自己的浏览器；点名时用用户的 Chrome、Edge</small></li>
+  <li class="flow-end"><strong><code translate="no">vm</code></strong><small>虚拟机的屏幕</small></li>
+</ol>
+</figure>
+
+<h2 id="页面">页面</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="computer-use-approval.zh.html">屏幕审批</a></th><td>授权、权限模式、页面脚本、规则和系统权限</td></tr>
+<tr id="应用后端"><th scope="row"><a href="computer-use-app-target.zh.html">应用目标</a></th><td>动作、结果、稳定序号、同一时间一个 agent、菜单、OCR 和音频</td></tr>
+<tr><th scope="row"><a href="computer-use-macos.zh.html">macOS 投递</a></th><td>后台输入、文件对话框、桌面空间、应用正忙和拒绝</td></tr>
+<tr><th scope="row"><a href="computer-use-linux-windows.zh.html">Linux 与 Windows 后端</a></th><td>各平台用什么，以及 cua-driver</td></tr>
+<tr id="界面工作"><th scope="row"><a href="computer-use-interface.zh.html">操控电脑的界面</a></th><td>Agent 光标、窗口标识、卡片、设置和指向目标</td></tr>
+<tr id="浏览器应用"><th scope="row"><a href="browser-application.zh.html">浏览器应用</a></th><td>模块、服务和程序的网页标签</td></tr>
+<tr id="浏览器目标标签页驱动"><th scope="row"><a href="browser-tab-driver.zh.html">浏览器标签页驱动</a></th><td>标签页、多个 agent、只发一次的写、坐标和预览</td></tr>
+<tr><th scope="row"><a href="browser-tab-actions.zh.html">浏览器标签页动作</a></th><td>读取、ref、操作、上传和页面脚本</td></tr>
+</tbody>
+</table>
+
+<h2 id="给模型一块屏幕的三种做法">给模型一块屏幕的三种做法</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Codex（ChatGPT.app）</th><th scope="col">Claude Code</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">入口</th><td>一个工具：<code translate="no">cua_repl</code> MCP 服务里的 <code translate="no">js</code>，针对 <code translate="no">sky</code>（Mac 应用）和 <code translate="no">agent.browsers</code>（App 内浏览器、Chrome）写 JavaScript</td><td>许多小工具：内置浏览器的 <code translate="no">navigate</code>、<code translate="no">read_page</code>、<code translate="no">find</code>、<code translate="no">computer</code>、<code translate="no">form_input</code> 等二十个左右；用户的 Chrome 另有一组</td><td>一个工具，所有目标同一份小 schema</td></tr>
+<tr><th scope="row">知识</th><td>skill：<code translate="no">computer-use</code>、<code translate="no">control-in-app-browser</code>、<code translate="no">control-chrome</code>，每个 3,200–3,400 token；上下文里每个 skill 一行；浏览器 skill 再运行 <code translate="no">documentation()</code></td><td>完整 schema 常驻上下文；Chrome 一组以名字延迟加载，直到 <code translate="no">ToolSearch</code></td><td>按目标的<a href="../function/tool-guides.zh.html">工具指南</a>随首次调用的结果和目标状态一起返回</td></tr>
+<tr><th scope="row">参数</th><td>代码</td><td>schema 校验的参数</td><td>结构化 <code translate="no">action</code> + <code translate="no">args</code>，最多 20 个 <code translate="no">actions</code>，或 Python <code translate="no">code</code></td></tr>
+<tr><th scope="row">代价</th><td>加载要两三次模型调用；跳过阅读的模型不知道 API</td><td>每个对话都占常驻上下文；两组同名动词容易选错</td><td>不多一次调用，不靠模型记得去读</td></tr>
+<tr><th scope="row">上下文</th><td>调用工具的 agent 自己操作屏幕；工具没有把任务交出去的参数</td><td>未比较</td><td>与 Codex 相同：调用方自己操作，工具不启动别的 agent</td></tr>
+<tr><th scope="row">定位</th><td>未比较</td><td>未比较</td><td>元素序号、页面 ref 或上一张截图的像素</td></tr>
+</tbody>
+</table>
+
+<h2 id="computer_use_agent"><code translate="no">computer_use_agent</code></h2>
+
+<h3 id="形态">形态</h3>
+<pre translate="no" tabindex="0"><code>computer_use_agent(target, action?, args?, actions?, code?, timeout?)</code></pre>
+<table class="stack fixed">
+<thead><tr><th scope="col">参数</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">target</code></th><td><code translate="no">app</code>、<code translate="no">browser</code> 或 <code translate="no">vm</code>，以本轮开始时本机能提供的为准；到不了的目标不在 schema 里，仍然点名它的调用会回答如何配置</td></tr>
+<tr><th scope="row"><code translate="no">action</code>、<code translate="no">args</code></th><td>一个步骤及其参数；省略时打开该目标</td></tr>
+<tr><th scope="row"><code translate="no">actions</code></th><td>同一目标上至多 20 个 <code translate="no">{action, args}</code> 步骤，遇到第一个错误即停止；状态只返回一次</td></tr>
+<tr><th scope="row"><code translate="no">code</code></th><td>在隔离解释器里运行的 Python（见“代码”）；只在沙箱能运行的系统（macOS）上出现在 schema 里</td></tr>
+<tr><th scope="row"><code translate="no">timeout</code></th><td>代码调用可运行的秒数，至多 120（默认 60）；随 <code translate="no">code</code> 一起出现</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>schema 如何生成</summary>
+<ul>
+<li>描述和 schema 在每轮解析工具时构建（<code translate="no">tool.describe</code>，经 <code translate="no">function()</code> 的 <code translate="no">describe</code> 钩子和 <code translate="no">current_tool</code>），因此只列出宿主具备的内容：
+<ul>
+<li><code translate="no">app</code>：平台后端可加载时</li>
+<li><code translate="no">browser</code>：浏览器应用启用时</li>
+<li><code translate="no">vm</code>：设置了 <code translate="no">computer_use.vm_url</code> 后</li>
+<li>用户的 Chrome 或 Edge：仅在安装了 Playwright Extension 时（<code translate="no">extension.installed</code> 查找浏览器数据目录中的 <code translate="no">&lt;profile&gt;/Extensions/&lt;id&gt;</code>，绝不碰浏览器）</li>
+<li><code translate="no">code</code>：仅在沙箱运行时</li>
+</ul>
+</li>
+<li>没有扩展时，浏览器那一行写明：用户 Chrome 或 Edge 里的页面按应用窗口来操作。</li>
+<li>因此模型不会靠一次拒绝才知道某个目标不存在。</li>
+<li>一个目标都没有时，<code translate="no">check_fn</code> 隐藏这个工具。</li>
+</ul>
+<p><code translate="no">action</code>、<code translate="no">actions</code> 和 <code translate="no">code</code> 互斥。参数由目标校验，出错时指出正确写法，因为 schema 不列出每个动作的参数。</p>
+</details>
+
+<h3 id="目标与指南">目标与指南</h3>
+<table class="stack">
+<thead><tr><th scope="col">目标</th><th scope="col">后端</th><th scope="col">打开时返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">app</code></th><td><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/</code>（macOS、Linux X11、Windows）</td><td>给了 <code translate="no">args.app</code>：它的状态（树和截图）；否则应用列表</td></tr>
+<tr><th scope="row"><code translate="no">browser</code></th><td><a href="browser-tab-driver.zh.html">标签页驱动</a>：网页开成 App 里的标签页，够不到 App 窗口时开在驱动自己的无窗口浏览器里；<code translate="no">args.browser</code> 为 <code translate="no">chrome</code> 或 <code translate="no">edge</code> 时，是连接到用户浏览器的扩展模式 Playwright MCP</td><td>标签页列表</td></tr>
+<tr><th scope="row"><code translate="no">vm</code></th><td><code translate="no">computer_use.vm_url</code> 指向的 OSWorld 兼容服务</td><td>一张截图</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>指南投递与用户的浏览器</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">指南</th><td>每个目标有一份指南（<code translate="no">guides/&lt;target&gt;.md</code>；app 指南按 macOS、Linux、Windows 改写）：它的动作、参数和结果长什么样。</td></tr>
+<tr><th scope="row">送达</th><td><code translate="no">tool.py</code> 把它们注册为随结果附带的工具指南：<code translate="no">computer_use_agent.&lt;target&gt;</code> 附在第一次操作该目标的调用结果里，<code translate="no">computer_use_agent.code</code> 附在第一次操作任意目标的调用结果里（只在代码能运行的系统上），所以模型在发出代码之前已经读过代码怎么用。</td></tr>
+<tr><th scope="row">不等待</th><td>没有任何调用要等指南：在两份指南都还没见过时就发来代码的调用照常执行，指南随它的结果一起回来。</td></tr>
+<tr><th scope="row">已知指南</th><td>指南是否已知取决于 agent loop 最近一次发出的请求，所以上下文压缩、工具结果被清理和 worker 重启都会让指南重新送达；另一个 agent 写的提示里带着的指南，是包在发言者的 JSON 信封里送到模型的，所以 <code translate="no">guides.known</code> 也认引号被转义后的标记。</td></tr>
+<tr><th scope="row">按需获取</th><td><code translate="no">action: "guide"</code> 和 <code translate="no">help("computer_use_agent.&lt;target&gt;")</code> 按需返回它们。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">动作</th><td><code translate="no">app</code> 的动作就是<a href="computer-use-app-target.zh.html">应用目标</a>的动作，参数相同；<code translate="no">browser</code> 的动作是标签页驱动的动作（<code translate="no">tabs</code>、<code translate="no">open</code>、<code translate="no">read</code>、<code translate="no">click</code>、<code translate="no">type</code>……，见<a href="browser-tab-driver.zh.html">浏览器目标：标签页驱动</a>）。</td></tr>
+<tr><th scope="row">先选浏览器</th><td>与 Codex 一样，先选浏览器，动作不随浏览器改变。</td></tr>
+<tr><th scope="row">按次生成指南</th><td>浏览器指南每次送达时按同一项检查生成：只列出装了扩展的用户浏览器，一个都没有时指明其中的页面用 <code translate="no">app</code> 目标操作。</td></tr>
+<tr><th scope="row">无扩展</th><td>点名了没装扩展的浏览器的调用会立刻得到这条建议，不询问审批，也不启动服务器。</td></tr>
+<tr><th scope="row">服务进程</th><td>对装了扩展的，<code translate="no">targets/browser.py</code> 把每一步交给浏览器应用的 <code translate="no">extension.py</code>，它通过自己的 MCP 客户端运行固定版本的 <code translate="no">@playwright/mcp --extension --browser chrome|msedge</code>，每个会话、每个浏览器一个服务器，在调用之间保持。</td></tr>
+<tr><th scope="row">连接</th><td>服务器在该浏览器里打开带有其中继地址的 <code translate="no">chrome-extension://&lt;id&gt;/connect.html</code>，Playwright Extension 回连，并为用户共享的标签页中继 CDP；设置了 <code translate="no">computer_use.chrome_extension_token</code> 时，服务器传入 <code translate="no">PLAYWRIGHT_MCP_EXTENSION_TOKEN</code>，扩展不再询问直接连接。</td></tr>
+<tr><th scope="row">动作映射</th><td><code translate="no">tabs</code>、<code translate="no">read</code>（<code translate="no">tab</code> 为序号时会选中那个标签页）、<code translate="no">open</code>、<code translate="no">close</code>、<code translate="no">screenshot</code>、<code translate="no">upload</code>、<code translate="no">evaluate</code> 和日志映射到服务器的标签页、快照、截图、文件、evaluate 和日志工具；所有元素和指针动作都经过 <code translate="no">OfficialMCPPageBackend._action_call</code>，即 <code translate="no">playwright_mcp</code> 后端对 App Page 使用的同一套翻译。</td></tr>
+<tr><th scope="row">ref</th><td>ref 是服务器快照里的 ref。</td></tr>
+<tr><th scope="row">代码模式</th><td>代码模式下，代码调用在 <code translate="no">args.browser</code> 里点名用户的浏览器时，<code translate="no">cu.browser</code> 操作的就是它。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="定位">定位</h3>
+<p>步骤用两种方式之一指向目标，都原样交给后端：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">给出</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">element_index</code>（app）/ <code translate="no">ref</code>（browser）</th><td>后端作用在元素上</td></tr>
+<tr><th scope="row"><code translate="no">x</code>、<code translate="no">y</code></th><td>该目标上一张截图的像素</td></tr>
+</tbody>
+</table>
+<p>虚拟机没有元素树，所以它的指针动作只接受 <code translate="no">x</code>、<code translate="no">y</code>。</p>
+
+<details id="代码">
+<summary>代码</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">解释器</th><td><code translate="no">code</code> 在 <code translate="no">computer_use_agent/sandbox/runner.py</code> 的常驻沙箱解释器里运行（macOS 上用 seatbelt，没有文件、网络和进程权限）。</td></tr>
+<tr><th scope="row">命名空间</th><td>命名空间里有 <code translate="no">cu.app</code>、<code translate="no">cu.browser</code> 和 <code translate="no">cu.vm</code>；<code translate="no">await cu.app.click(app="Numbers", element_index=3)</code> 就是带这些参数的结构化步骤 <code translate="no">click</code>，由宿主经同样的目标代码和检查派发，每一步一条 effect 回执（<code translate="no">computer_use_agent/sandbox/broker.py</code>）。</td></tr>
+<tr><th scope="row">文档字符串</th><td>前导代码把每个动作在指南里的那一行作为对应 <code translate="no">cu</code> 方法的 docstring，所以解释器里可以用 <code translate="no">dir(cu.app)</code> 和 <code translate="no">help(cu.app.click)</code>。</td></tr>
+<tr><th scope="row">参数说明</th><td><code translate="no">code</code> 参数自己的说明里为每个可用目标给出一条这样的调用，所以模型即使已经看不到代码指南，写出来的也是 <code translate="no">cu.browser.click(...)</code>，而不是光秃秃的 <code translate="no">click(...)</code>。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">屏幕</th><td>代码调用操作的是它点名的那块屏幕：<code translate="no">app</code> 是 <code translate="no">args.app</code>；<code translate="no">browser</code> 是 <code translate="no">args.browser</code> 指定的浏览器（不写就是内置浏览器）。</td></tr>
+<tr><th scope="row">授权</th><td>这次调用的授权覆盖这块屏幕，所以 <code translate="no">code._validator</code> 拒绝点名别的应用或别的浏览器的步骤，目标提供的其余动作一律放行，包括页面脚本和打开网站。</td></tr>
+<tr><th scope="row">上传</th><td>在代码里被拒绝：从内置浏览器上传文件会把本地文件发出去，要作为单独的动作来做。</td></tr>
+<tr><th scope="row">页面脚本</th><td>没有人看着这一轮时页面脚本不运行，从代码里发起和作为动作发起一样：<code translate="no">code.run</code> 在调用开始时从这一轮的请求里读到这一点。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">生命周期</th><td>一个解释器服务一次执行尝试，所以变量在本轮剩余时间里保留；失败或超时后解释器会被替换。</td></tr>
+<tr><th scope="row">持有方式</th><td>解释器按对话和执行保存，app 目标的窗口状态按对话和 Job 保存（<code translate="no">tool.operator</code>，取自调用所在的 Job）。</td></tr>
+<tr><th scope="row">共用键</th><td>对话自身的轮次共用一个键，所以一轮操作的是上一轮读取的窗口。对话启动的 Agent 作为独立 Job 运行，它的读取和代码绝不替换主轮次或其他 Agent 正在操作的内容。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">限制</th><td>每次调用最多运行 120 秒、100 步。</td></tr>
+<tr><th scope="row">打印文本</th><td>打印的文字保留到 256 KB，超出部分丢弃，并在结果里注明；步骤返回给代码的内容不计入这个额度。</td></tr>
+<tr><th scope="row">未发出</th><td>在输入到达应用之前就停下的步骤（<code translate="no">NotDispatched</code>：元素已不存在、元素被隐藏、找不到应用）返回 <code translate="no">action_dispatched: false</code>，代理把它记为未提交。</td></tr>
+<tr><th scope="row">输入后失败</th><td>输入可能已经发出之后才失败的步骤，在代码里抛出带目标报错信息的异常，它之前的步骤保持已执行。</td></tr>
+<tr><th scope="row">超时</th><td>超时或解释器停止的调用以错误结果返回：已执行的步骤保持已执行，正在执行的那一步可能生效也可能没生效，下一次代码调用会启动新的解释器，不带这次的变量。</td></tr>
+<tr><th scope="row">未关闭的回执</th><td>调用返回时，代理把结果一直未知的步骤的回执关闭（<code translate="no">GuiBroker.settle</code>，回执状态 <code translate="no">unknown</code>）：告诉模型的是调用结果，不会有悬着的回执留到调用之后。</td></tr>
+<tr><th scope="row">平台</th><td>代码模式需要 macOS 沙箱；在其他系统上代码调用会报告沙箱不可用。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="上下文">
+<summary>谁来操作</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">调用方</th><td>调用工具的 agent 自己操作屏幕，把任务做完。工具没有把任务交给另一个 agent 的参数，所以失败的步骤在原地重试。</td></tr>
+<tr><th scope="row">长任务</th><td><code translate="no">code</code> 在一次调用里运行多步，只返回它打印的内容，中间画面不进入对话。</td></tr>
+<tr><th scope="row">多块屏幕</th><td>同时操作几块互不相干的屏幕走 <code translate="no">agent</code> 工具；基础指令只在用户或项目说明要求子 agent 时才允许它。每个 agent 有自己的窗口状态、元素序号和代码解释器。</td></tr>
+<tr><th scope="row">时限</th><td>这个工具没有总时限：每个动作自有上限，代码到自己的超时就停。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="模块布局">
+<summary>工具模块</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">模块</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/tool.py</code></th><td>注册的工具：schema、目标清单、路由、指南注册、审批原因</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/guides/</code></th><td>各目标的指南</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/targets/app.py</code></th><td>基于 <code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/desktop/</code> 的应用动作</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/targets/browser.py</code></th><td>浏览器动作：标签页驱动（<code translate="no">browser</code> 服务的 <code translate="no">tabs</code>），或用户的浏览器（它的 <code translate="no">extension</code>）</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/targets/vm.py</code></th><td>经虚拟机服务 HTTP API 的截图和 pyautogui 输入</td></tr>
+<tr><th scope="row"><code translate="no">…/computer_use_agent/code.py</code></th><td>基于 <code translate="no">computer_use_agent/sandbox/runner.py</code> 和 <code translate="no">sandbox/broker.py</code> 的代码模式</td></tr>
+</tbody>
+</table>
+<p>没有单独的“规划 → 决策 → 执行 → 验证”循环：长任务由调用工具的 agent 自己做完，多步操作用一次代码调用。</p>
+</details>
+
+<h2 id="实现状态">实现状态</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td><code translate="no">computer_use_agent</code> 及 <code translate="no">app</code>、<code translate="no">browser</code>、<code translate="no">vm</code> 三个目标，首次使用时的目标指南，多个步骤，代码模式，经 OSWorld HTTP API 的虚拟机目标（作为 <code translate="no">computer_use.vm</code> consumer 走出站策略），以及 Web 展示；单元测试覆盖路由、指南、虚拟机脚本和审批，沙箱测试用替身目标运行代码。尚未连接真实虚拟机服务运行。</td></tr>
+<tr><th scope="row">已实现</th><td><code translate="no">browser</code> 目标里经 Playwright MCP 扩展模式接入的用户 Chrome 和 Edge，动作映射、Edge、遇错停止、标签页列表和审批主体有单元测试。尚未在真实浏览器中配合 Playwright Extension 运行过。</td></tr>
+</tbody>
+</table>

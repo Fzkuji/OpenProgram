@@ -1,0 +1,55 @@
+<title>Three template rules</title>
+<meta name="description" content="The three proactive rules, what each one matches, and which to copy when writing a new rule.">
+<h1>Three template rules</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Rule</th><th scope="col">Copy it when</th><th scope="col">Lane, watch, cooldown</th><th scope="col">Action</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">DangerousCommandGuard</code></th><td>Block before an action happens</td><td>gate, <code translate="no">tool.before</code>, 0</td><td><code translate="no">Gate.ask</code></td></tr>
+<tr><th scope="row"><code translate="no">TestGapWatcher</code></th><td>Remind once conditions accumulate, wary of false positives</td><td>observer, <code translate="no">model.response_completed</code>, 30 min</td><td><code translate="no">Notify</code>; design: <code translate="no">Prepare</code> first</td></tr>
+<tr><th scope="row"><code translate="no">UnvalidatedCompletionNudge</code></th><td>Correct the model without bothering the user</td><td>observer, <code translate="no">model.response_completed</code>, 15 min</td><td><code translate="no">Inject</code></td></tr>
+</tbody>
+</table>
+<p class="note">Three on purpose: proactive systems die of false positives, as Clippy and UAC prompts did. Rules are Python classes that pass code review, with no config file or DSL. Each is polished before a fourth is added.</p>
+
+<h2><code translate="no">DangerousCommandGuard</code></h2>
+<table class="stack">
+<thead><tr><th scope="col">Stops</th><th scope="col">Lets through</th></tr></thead>
+<tbody>
+<tr><td><code translate="no">rm -rf</code> on root, home, <code translate="no">/*</code>, <code translate="no">..</code>, or system directories</td><td><code translate="no">rm -rf /tmp/x</code>, <code translate="no">rm -rf node_modules</code></td></tr>
+<tr><td><code translate="no">git push --force</code> naming <code translate="no">main</code>, <code translate="no">master</code>, <code translate="no">release</code>, <code translate="no">prod</code>, <code translate="no">production</code></td><td>Force-push to your own branch</td></tr>
+<tr><td><code translate="no">kubectl delete namespace</code> or <code translate="no">ns</code></td><td><code translate="no">kubectl delete pod x</code></td></tr>
+<tr><td><code translate="no">terraform destroy</code>, <code translate="no">DROP DATABASE</code></td><td>Anything unsure: a miss beats a flood of prompts</td></tr>
+</tbody>
+</table>
+<p>Keyword matching produces false positives until people confirm by reflex, so the rule parses targets and branches. It catches slips only: <a href="_research_archive/threat-model.html">Threat model</a>.</p>
+<p class="note">Design: attach to the existing tool approval as a risk annotation, so one command gets one confirmation.</p>
+
+<h2><code translate="no">TestGapWatcher</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Fires when</th><td>The turn changed files, a core path changed and no test file did</td></tr>
+<tr><th scope="row">Core paths</th><td><code translate="no">/auth/</code>, <code translate="no">/billing</code>, <code translate="no">/payment</code>, <code translate="no">/security</code>; the agent, conversation, jobs, permissions, providers and proactive packages</td></tr>
+<tr><th scope="row">Test files</th><td><code translate="no">test_</code>, <code translate="no">_test</code>, <code translate="no">/tests/</code>, <code translate="no">spec.</code></td></tr>
+<tr><th scope="row">Checked</th><td>At wrap-up only, not per file change</td></tr>
+<tr><th scope="row">Design: false alarms</th><td>Comment edits, renames, config changes and dependency bumps would trigger it, so a read-only <code translate="no">Prepare</code> task confirms the gap first; notifies only when confident</td></tr>
+<tr><th scope="row">Design: cost</th><td>The UI shows today's count, spend and swallowed reminders, and can turn checks off</td></tr>
+<tr><th scope="row">Design: reminder</th><td>A “write the tests for me” button</td></tr>
+</tbody>
+</table>
+
+<h2><code translate="no">UnvalidatedCompletionNudge</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Fires when</th><td>The turn changed files and ran no verification. Tests and browser checks both count, or frontend work would be misjudged: <a href="events-and-state.html">what counts</a></td></tr>
+<tr><th scope="row">Why <code translate="no">Inject</code></th><td>This repository already requires self-verification, so nudging the model is cheaper than asking the user</td></tr>
+<tr><th scope="row">Design</th><td>Notify the user only if the nudge did not work; require the model to actually claim completion</td></tr>
+</tbody>
+</table>
+
+<h2>Implementation status</h2>
+<p>All three are in <code translate="no">openprogram/runtime/proactive/policies/</code> with tests. <code translate="no">install_mvp_policies()</code> is not called at worker start. The items marked Design are not built: <a href="execution-model.html">action state</a>.</p>
+
+<p class="next"><a href="invariants.html">Invariants</a></p>

@@ -1,0 +1,265 @@
+<title>Overview</title>
+<meta name="description" content="How the context layer selects what the model reads on each call: the assembly pipeline, the DAG, tool output, compaction, attach and merge, and occupancy.">
+<span id="context-the-context-layer"></span>
+<h1>Overview</h1>
+<p>Each call renders a selection of the session's execution DAG into a <code translate="no">Context</code> (system, messages, tools): the branch it continues, each tool result as its turn sent it, the oldest turns replaced by one summary once the window fills. This layer decides what to feed; the <a href="../providers/README.html">provider layer</a> decides how to send it.</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="process_user_turn calls engine.prepare, which renders history from the DAG and computes the token budget. At 80 percent of the budget engine.compact writes a summary inline. The agent loop then sends the Context to the provider. If the provider reports context overflow, reactive compaction runs and the request is retried once.">
+  <defs>
+    <marker id="ov-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="ov-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <text class="t-big" x="0" y="40">Prepare</text>
+  <text class="t-soft" x="0" y="66">history from the DAG,</text>
+  <text class="t-soft" x="0" y="86">token budget</text>
+  <line class="ln" x1="80" y1="33" x2="164" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="176" y="40">Compact</text>
+  <text class="t-soft" x="176" y="66">at 80% of budget,</text>
+  <text class="t-soft" x="176" y="86">inline summary</text>
+  <line class="ln" x1="262" y1="33" x2="344" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="356" y="40">Agent loop</text>
+  <text class="t-soft" x="356" y="66">system, messages,</text>
+  <text class="t-soft" x="356" y="86">tools</text>
+  <line class="ln" x1="460" y1="33" x2="544" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="556" y="40">Provider</text>
+  <path class="ln-no" d="M600 52V126H220V102" marker-end="url(#ov-n)"/>
+  <text class="t-no" x="240" y="150">Context overflow: reactive compaction, one retry</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Prepare</strong><small>history from the DAG, token budget</small></li>
+  <li><strong>Compact</strong><small>at 80% of budget, inline summary</small></li>
+  <li><strong>Agent loop</strong><small>system, messages, tools</small></li>
+  <li class="flow-end"><strong>Provider</strong><p class="refused">Context overflow: reactive compaction, one retry</p></li>
+</ol>
+</figure>
+<p class="note">The DAG render is the only pipeline. A render failure fails the turn visibly. Auxiliary calls (summarization, memory sleep, branch summary, mixture-of-agents) bypass <code translate="no">engine.prepare</code> and build a minimal <code translate="no">Context</code>: a system prompt and one user message, no tools.</p>
+
+<details>
+<summary>What <code translate="no">engine.prepare</code> does</summary>
+<p><code translate="no">process_user_turn</code> (<code translate="no">openprogram/runtime/conversation/turn_runtime/</code>) calls <code translate="no">openprogram/runtime/context/engine.py</code>:</p>
+<ol>
+<li>Scan references: <code translate="no">tool_use</code> ids cited later.</li>
+<li>Resolve the head, then <code translate="no">render_context</code>, then <code translate="no">render_dag_messages</code>.</li>
+<li>Take the system prompt the caller assembled (identity, <code translate="no">AGENTS.md</code> chain, skills, tools).</li>
+<li>Compute the token budget: system, history, tools, output reserve.</li>
+<li>Reconcile usage: the last provider measurement plus a local estimate of what was added since.</li>
+<li>Return <code translate="no">TurnPrep</code>.</li>
+</ol>
+</details>
+
+<h2 id="storage-model-dag">Storage: the DAG</h2>
+<p>A git-backed, append-only session store (<code translate="no">openprogram/state/store/session/</code>). No rule rewrites a node. Each turn is a commit and <code translate="no">predecessor</code> is what it responds to.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Operation</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">New message</th><td>Node under HEAD; HEAD advances</td></tr>
+<tr><th scope="row">Retry</th><td>Sibling with the same content</td></tr>
+<tr><th scope="row">Edit</th><td>Sibling with different content</td></tr>
+<tr><th scope="row">Switch version <code translate="no">&lt; N/M &gt;</code></th><td>Checkout to a sibling; re-renders only</td></tr>
+<tr><th scope="row">Copy conversation</th><td>New session holding the history up to HEAD</td></tr>
+</tbody>
+</table>
+<p class="note">Edit, retry and checkout are refused while an agent runs, so the active tree never hangs on a stale node. The workdir does not roll back with checkout.</p>
+
+<details>
+<summary><code translate="no">Call</code> node fields</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code>, <code translate="no">created_at</code>, <code translate="no">metadata</code></th><td>Identity, wall-clock time, extras</td></tr>
+<tr><th scope="row"><code translate="no">seq</code></th><td>Increases within a session; the sole ordering key</td></tr>
+<tr><th scope="row"><code translate="no">role</code></th><td><code translate="no">user</code>, <code translate="no">llm</code> or <code translate="no">code</code></td></tr>
+<tr><th scope="row"><code translate="no">name</code></th><td>Model id, function name or user name; <code translate="no">context/*</code> names are pipeline nodes</td></tr>
+<tr><th scope="row"><code translate="no">input</code></th><td>Prompt blocks or arguments</td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td>Reply, return value or user content. Permanent: compaction never touches it</td></tr>
+<tr><th scope="row"><code translate="no">caller</code></th><td>Call edge; top-level turns use <code translate="no">ROOT</code></td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code></th><td>Conversation edge: the turn this one continues</td></tr>
+<tr><th scope="row"><code translate="no">reads</code></th><td>Nodes that went into this call's prompt</td></tr>
+</tbody>
+</table>
+<p class="note">Pipeline nodes join the chain: <code translate="no">context/system_prompt</code> records the exact prompt whenever it changes; <code translate="no">context/summary</code> stands in for compacted turns.</p>
+</details>
+
+<h2 id="rendering-aging-and-compaction">Rendering and compaction</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Selection</th><td><code translate="no">render_context</code> walks the predecessor chain from the head and admits each turn's call subtree through the frame and <code translate="no">expose</code> rules. It writes nothing. <code translate="no">render_dag_messages</code> turns the chosen nodes into provider messages; a direct function call becomes a text pair.</td></tr>
+<tr><th scope="row">Finished turn</th><td>Rendered as its requests sent it: the stored turn block (recalled memory, run note) on the user message, then each provider response as one assistant message under the reply's own provider, api and model, then those calls' results. The message holds the response's reasoning, its text under the provider's message id, and its calls.</td></tr>
+<tr><th scope="row">Reasoning</th><td>A finished turn's reasoning items go back whole (shown only when they have a summary) to the model that wrote the reply. Another model gets none: it cannot use the items and would read a summary as something the assistant said.</td></tr>
+<tr><th scope="row">Response marks</th><td>The reply's ordered blocks mark where each response began (<code translate="no">round_start</code>); a turn resumed from a checkpoint takes them from its journal, one per decision. A reply without them (recorded earlier, or with spilled text) gives each call its own message and puts its text last.</td></tr>
+<tr><th scope="row">Old tool results</th><td>Sent whole, as their turn sent them, however many turns follow. Nothing ages them; only compaction replaces old turns. A <code translate="no">render_manifest</code> recorded by an earlier version is ignored, so such a turn renders whole too.</td></tr>
+<tr><th scope="row">Compaction</th><td>At <code translate="no">context.auto_compact_percent</code> (default 80), on <code translate="no">/compact</code>, or when the provider rejects a request as too long, <code translate="no">engine.compact</code> summarizes the oldest whole turns into one <code translate="no">context/summary</code> whose <code translate="no">covers_ids</code> lists them. Each branch reads the summary that lies wholly on its chain and reaches furthest, with its kept tail; a branch with none renders raw. The summary must be non-empty and strictly smaller; images are left out of what it summarizes. <a href="compaction.html">Compaction</a></td></tr>
+</tbody>
+</table>
+
+<h3 id="cross-turn-tool-context">Tool output</h3>
+<p>One rule throughout: a later request sends the bytes the turn sent. A result is cut once, where it is made, and history stores that form. Code: <code translate="no">runtime/agent/loop/tool_dispatch.py</code> (<code translate="no">_as_stored</code>), <code translate="no">state/store/session/spill.py</code>, <code translate="no">models/providers/shared/tool_attachments.py</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Result form</th><td>The turn sends a result as one text block, joined as its node stores it, with images where they were, so every later request sends the same bytes on every provider</td></tr>
+<tr><th scope="row">Result size</th><td>A weight (<code translate="no">state/store/session/weight.py</code>: a CJK or full-width character counts 1, anything else 0.25, so about a token). The cap is the model's <code translate="no">tool_output_weight</code>, default 10,000 (Codex's <code translate="no">truncation_policy</code>), at most 30% of its window, and at most the tool's own <code translate="no">max_result_weight</code> when it declares a smaller one (<code translate="no">spill.result_cap</code>). 10,000 Chinese characters or 40,000 English ones fit; an 8,000-token window gives 2,400</td></tr>
+<tr><th scope="row">One cut</th><td>A tool never cuts its own text: <code translate="no">@function(max_result_weight=…)</code> records the cap in <code translate="no">details["cap"]</code> and the loop applies it. The cut keeps the head (60%) and tail on line breaks, then names the whole text's path and the lines to read as a <code translate="no">read("…", offset, limit)</code> call. The note is measured before the tail is chosen, so the result never passes the cap and the range is exact</td></tr>
+<tr><th scope="row">Full text</th><td>Kept once, by its content, at <code translate="no">&lt;conversation&gt;/tool_results/&lt;sha256&gt;.txt</code>, deleted and backed up with the conversation. Outside a conversation it goes to the profile's <code translate="no">tool_results/</code>, which the Worker collects once a day: a file older than 24 hours that no conversation's records name is removed, and if any record cannot be read nothing is (<code translate="no">tool_output_gc.py</code>)</td></tr>
+<tr><th scope="row">Empty result</th><td>A result with neither text nor media reads <code translate="no">(name completed with no output)</code> or <code translate="no">failed</code>; media alone carries no empty text block</td></tr>
+<tr><th scope="row">Guides and AGENTS.md</th><td>Recorded on the result as <code translate="no">details["attachment"]</code> (<code translate="no">{text, paths, guides}</code>), bounded on their own, and sent as one message after each group of results: a text block in the same user message on Anthropic and Bedrock, a user message elsewhere. The AGENTS.md files already attached are read from the request's own messages, so a branch, a compaction or a restarted Worker each see their own set</td></tr>
+<tr><th scope="row">Read size</th><td><code translate="no">read</code> pages within the cap itself: a range too long for one result is a contiguous page ending on a whole line (a whole page for a PDF), with the offset to continue from. Attachments no longer share that room</td></tr>
+<tr><th scope="row">Media</th><td>An image, audio or video block a turn sent is kept by content at <code translate="no">&lt;conversation&gt;/media/&lt;sha256&gt;.&lt;ext&gt;</code>; the node records <code translate="no">metadata.media = [{sha, mime, index, path}]</code> and rendering puts each block back at its index. A person's pasted image is kept the same way</td></tr>
+<tr><th scope="row">Image budget</th><td>The last step of building a request (<code translate="no">media_budget.bound_images</code>): once the images pass 25 MiB the oldest become a short note until 15 MiB remain, so the cut moves once per 10 MiB, not every request. A person's image sent to a model without image input becomes a note</td></tr>
+<tr><th scope="row">A person's message</th><td>Never cut: sent whole in its turn and every later one. Over 1,048,576 characters the send is refused with <code translate="no">input_too_large</code> and the text stays in the input box; <code translate="no">--print</code> exits 2</td></tr>
+<tr><th scope="row">The card</th><td>Shows the head of the tool's own output (<code translate="no">details["preview"]</code>, 4,000 characters), not the note written for the model, with "N lines · full output saved"; opening it reads the saved file (<code translate="no">details["output"]</code>)</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">No aging</th><td>Turning old results into stubs rewrote the cached prefix each time its boundary moved, and the batching that softened it still cost a full uncached read every few turns. Codex, Claude Code, Pi and OpenCode 1.19 keep results until compaction; old output is a compaction question, not a rendering one</td></tr>
+<tr><th scope="row">One cut, by weight</th><td>Two caps (the tool's characters, then the loop's) cut some results twice and gave a Chinese result four times the tokens of an English one. Codex bounds once by tokens at the point a result is recorded; weight is that count without a tokenizer, so the same cap holds on every model</td></tr>
+<tr><th scope="row">Attachment beside the result</th><td>Joining guides and AGENTS.md to the result made <code translate="no">read</code> predict their length and let a long AGENTS.md cut a page. Claude Code sends them as their own message after the results. They are stored on the result rather than as a new node, so they live in the branch's history with no new node type and every adapter places them the same way</td></tr>
+<tr><th scope="row">Media in history</th><td>Without it a later request dropped the screenshots the turn sent, which changed the bytes and lost what the model saw. Codex and Claude Code keep images in history; the budget follows OpenCode's <code translate="no">boundImages</code> hysteresis so the cache survives between cuts</td></tr>
+<tr><th scope="row">Long messages</th><td>Cutting a person's paste at render sent different text from the turn's and hid part of it. Codex, Claude Code, OpenCode and Pi send input whole; Codex refuses past 1 MiB characters, and so does this</td></tr>
+<tr><th scope="row">Shared folder collection</th><td>A result's text names its file, and that name is sent on every later request, so a file is a record, not a cache. Hermes collects persisted results by reference and fails closed; a day's grace covers a run that wrote a file but not yet its node</td></tr>
+<tr><th scope="row">The card</th><td>A person reads what the tool did, the model reads the bounded copy; mixing them showed people a line telling the model to read a file. Claude Code and Pi show the tool's own output and strip the note.</td></tr>
+<tr><th scope="row">Empty result</th><td>Some providers refuse an empty tool result and some models read it as no reply; Claude Code, Pi and OpenCode fill in a line, and we use Claude Code's wording.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="pictures-and-pastes">Pictures and long messages</h3>
+<p>Every way a picture enters a conversation writes the same record, so the next request carries the picture the turn carried, on every adapter. Code: <code translate="no">state/store/session/media.py</code>, <code translate="no">runtime/conversation/branch_fork.py</code>, <code translate="no">models/providers/shared/google.py</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Path</th><th scope="col">What is kept</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sent message</th><td>The web, the desktop App and the TUI send pictures with <code translate="no">chat</code>; channels, ACP and <code translate="no">--print</code> go through the turn's preparation. Both record each image at the index the turn gave it: after the text, or from 0 when the message is pictures alone. A message of pictures alone renders with no text block</td></tr>
+<tr><th scope="row">Retry and edit</th><td>A retry copies the message's <code translate="no">media</code> to the new branch and sends the same pictures again, read from the kept files. An edit sends and keeps only the attachments the edit carries</td></tr>
+<tr><th scope="row">Steer</th><td>A message sent while a turn runs is delivered as its text, then its pictures; the node records them at those indexes</td></tr>
+<tr><th scope="row">Adapters</th><td>Every built-in wire format carries a kept picture, a person's or a tool's: Anthropic, OpenAI chat and Responses, Codex, Azure, Bedrock, Gemini and the Gemini subscription. The Gemini API adapter builds its contents through the shared Gemini conversion, so it also gets the image budget, the instructions after tool results and a tool result's pictures</td></tr>
+<tr><th scope="row">Older conversations</th><td>A message stored before pictures were kept has no <code translate="no">media</code> and is sent as its text, as it was. Its text names the saved upload's path, which the model can read again</td></tr>
+<tr><th scope="row">Long paste</th><td>Stored and sent whole on every request; only the 1,048,576-character limit refuses a send</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>Why this design</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">By content, beside the history</th><td>Codex (<code translate="no">ImageReference::Inline</code>), Pi's session file and OpenCode's <code translate="no">file</code> parts keep the base64 inline in history. Here a node is a history line that the search index also reads, so inline bytes would bloat both; the files are named by sha256 the way Claude Code's paste store names pasted text, so one screenshot sent on several branches or retried is one file</td></tr>
+<tr><th scope="row">When pictures are dropped</th><td>Compaction leaves them out of what it summarizes, as Claude Code does; past 25 MiB the oldest become a note (OpenCode's hysteresis); a model without image input gets a note (Codex). Nothing else removes them, so the prefix stays fixed between those points</td></tr>
+<tr><th scope="row">A retry resends its pictures</th><td>A retry's new branch is the same message again. Without its pictures the retried turn answered a different question, and its later requests would carry pictures its first request did not</td></tr>
+<tr><th scope="row">No backfill</th><td>The upload saved for an older message is the original file, not the copy the model was sent, which may have been scaled down; sending it would send something the turn never did. Those conversations already re-sent text only, so leaving them changes no bytes</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="attach-merge">Attach and merge</h2>
+<p>One mechanism: an attach pointer, a node with <code translate="no">function="attach"</code> hanging off a user turn as a side child. It renders as text between <code translate="no">[Attached from "label"]</code> and <code translate="no">[End of attached content]</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Use</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Attach</th><td>Passive: staged, read on the next model call</td></tr>
+<tr><th scope="row">Sub-agent report</th><td>Pointer holding the task, final reply and the <code translate="no">read_conversation(session_id, head_id)</code> address of the transcript. A synchronous spawn returns the reply in its <code translate="no">agent</code> tool result.</td></tr>
+<tr><th scope="row">Merge</th><td><code translate="no">process_merge_turn()</code> writes one pointer per peer after the target head, plus an instruction, and runs a normal turn. A base peer stays verbatim; others may be summarized. Merged heads are marked and a multi-parent context commit records the lineage.</td></tr>
+</tbody>
+</table>
+
+<h2 id="invariants">Invariants</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Subject</th><th scope="col">Invariant</th></tr></thead>
+<tbody>
+<tr><th scope="row">DAG</th><td>Append-only; compaction never changes node content</td></tr>
+<tr><th scope="row">Rendering</th><td>Writes nothing; spill happens on write. Reads only the stored nodes: a tool result the loop bounded, a person's message and a reply render whole; another node is cut at the cap its spill stamp recorded (32,000 for one without), never at the running cap or an environment variable; a tool result renders with its stored failure mark and media</td></tr>
+<tr><th scope="row">Finished turn</th><td>On the same model, the next turn's first request starts with the previous turn's last request, reasoning items and text ids included, except for the searches the provider ran, which the turn does not store. A tool result is sent again as stored, with its failure mark, attachment and media; only a node stamped by an earlier version keeps its stamped cut. A reply without response marks re-renders in a different order.</td></tr>
+<tr><th scope="row">Historical call</th><td>Re-renders byte for byte from its stored nodes; no policy that moves with time takes part</td></tr>
+<tr><th scope="row">Summary</th><td>At most one active per session; the next compaction absorbs it. Never moves HEAD or rewrites edges</td></tr>
+<tr><th scope="row">Branch</th><td>Never reads a sibling or a spawned sub-agent's internals; those arrive only through attach pointers</td></tr>
+<tr><th scope="row">Checkout</th><td>Does not re-run or roll back the workdir</td></tr>
+</tbody></table>
+
+<h2 id="ui">UI</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">View</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">History</th><td>The full DAG, one node shape per role: tool calls, retry branches, merges</td></tr>
+<tr><th scope="row">Context timeline</th><td>Recorded context commits, with siblings at one fork grouped; items, state badges, token counts. <code translate="no">apps/web/components/right-sidebar/context-commit-timeline/</code>, <code translate="no">ws_actions/context_commits.py</code></td></tr>
+<tr><th scope="row">Ring</th><td><code translate="no">apps/web/components/chat/badges/context-badge.tsx</code>: <code translate="no">total_used / window</code></td></tr>
+<tr><th scope="row"><code translate="no">/context</code> panel</th><td><code translate="no">context-breakdown-panel.tsx</code>: same fields; derives Free space</td></tr>
+</tbody>
+</table>
+
+<h3 id="occupancy">Occupancy: one record, two readers</h3>
+<pre translate="no" tabindex="0"><code>{"window": int, "total_used": int, "basis": "measured" | "estimated",
+ "estimated": int, "calibration": float}   # calibration only when measured</code></pre>
+<p class="note"><code translate="no">openprogram/runtime/context/session_stats.py</code> builds it; <code translate="no">server.session_context_stats</code> serves <code translate="no">/context</code>; <code translate="no">server._broadcast_context_stats</code> pushes the <code translate="no">context_stats</code> frame. <a href="occupancy-status.html">Occupancy and compaction</a></p>
+<table class="stack">
+<thead><tr><th scope="col">Basis</th><th scope="col">When</th><th scope="col"><code translate="no">total_used</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">measured</code></th><td>A real request just completed</td><td>What the provider billed for that prompt: <code translate="no">input_tokens + cache_read</code>. <code translate="no">calibration</code> is measured ÷ estimated for the same graph</td></tr>
+<tr><th scope="row"><code translate="no">estimated</code></th><td>The graph moved since</td><td>Recomputed from the current branch with the local tokenizer</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>What re-estimates, and the window</summary>
+<p><code translate="no">server.refresh_context_stats</code> re-estimates and broadcasts when the next request would change:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Change</th><th scope="col">Site, under <code translate="no">openprogram/interfaces/server/</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Compaction mid-turn</th><td><code translate="no">ws_actions/chat/context_usage.py</code></td></tr>
+<tr><th scope="row">Model switch</th><td><code translate="no">routes/execution/runtime.py</code>, <code translate="no">ws_actions/runtime.py</code></td></tr>
+<tr><th scope="row">Branch checkout, delete</th><td><code translate="no">ws_actions/branch.py</code></td></tr>
+<tr><th scope="row">Sibling checkout</th><td><code translate="no">routes/chat_branches.py</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>A measurement belongs to its branch; another head is re-estimated.</li>
+<li>Occupancy uses the last measured request, never the sum of a turn's requests. Empty terminal events keep the last measurement. With none, the UI uses a local estimate. Usage and calibration in the older cumulative format are invalidated; cumulative billing totals are unchanged.</li>
+<li>Window: the window of the Model the request ran on, resolved each time and never read back from a saved record; a model that does not resolve has none, and the UI then shows tokens without a limit (<a href="occupancy-status.html#window">The window</a>).</li>
+<li>The WebSocket chat runner records each request's prompt size as it finishes, so ring and panel update between tool calls. At turn end it refreshes the branch head and persists the final measurement.</li>
+<li>Session loading recovers a newer provider usage record from an older turn that never broadcast, unless a later session edit superseded it.</li>
+</ul>
+</details>
+
+<details>
+<summary><code translate="no">/context</code> panel levels</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">System prompt</th><td>Base prompt, output style, agent's own prompt, environment, <code translate="no">AGENTS.md</code>, skills index, workflows and tool notes, plan mode, with their text</td></tr>
+<tr><th scope="row">Tools</th><td>Loaded, on demand, MCP</td></tr>
+<tr><th scope="row">Memory</th><td><code translate="no">MEMORY.md</code> of each layer</td></tr>
+<tr><th scope="row">Conversation</th><td>By kind (<code translate="no">messages_detail.groups</code>) and largest messages (<code translate="no">messages_detail.top</code>), each linking to its transcript row</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Detail rows scale with their category, so they add up to it.</li>
+<li>A chat with no session reads <code translate="no">GET /api/context/draft?provider=&amp;model=</code> (<code translate="no">session_stats.compute_draft_breakdown</code>).</li>
+<li><code translate="no">context/system_prompt</code> metadata carries <code translate="no">sections: [{name, chars}]</code>, so the text is cut back into components exactly. An older node is split by locating a fresh build's blocks; the rest shows as Other.</li>
+</ul>
+</details>
+
+<h2 id="three-layer-composition">Where the three layers get their content</h2>
+<table class="stack">
+<thead><tr><th scope="col">Layer</th><th scope="col">Content</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">L0</th><td>Base prompt, output style, agent instructions, tool list</td><td>System-prompt assembly</td></tr>
+<tr><th scope="row">L1</th><td>Project blocks and history</td><td>System-prompt assembly; DAG render, compaction</td></tr>
+<tr><th scope="row">L2</th><td>This call's input and sections</td><td>The turn</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Authoritative</th><td><code translate="no">openprogram/runtime/context/engine.py</code>, <code translate="no">nodes.py</code>, <code translate="no">render.py</code>, <code translate="no">compaction/view.py</code>, <code translate="no">state/store/session/spill.py</code>, <code translate="no">media.py</code></td></tr>
+<tr><th scope="row">Partial</th><td>Context commits are written at turn finalization and by merge turns; they are not on the render path, and the timeline does not show an ordinary turn's rendered view</td></tr>
+<tr><th scope="row">Not yet</th><td>Summarization and branch summary use a fixed prompt (<code translate="no">compaction/prompts.py</code>) that does not follow the agent's <code translate="no">AGENTS.md</code>, identity or skills. No manual pin or unpin of context items. No model in the catalog declares <code translate="no">tool_output_weight</code> yet, so every model uses the default. The input box shows no hint of its own for <code translate="no">input_too_large</code> (the refusal shows as "Not sent"), and the card's "full output saved" line waits on a look at its styling.</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="composition.html">Composition: how each call is layered</a></p>

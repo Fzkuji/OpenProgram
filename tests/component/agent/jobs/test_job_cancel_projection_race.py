@@ -5,10 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.agent.job import runner as runner_module
-from openprogram.agent.job.store import load_job, save_job, update_job_status
-from openprogram.agent.job.types import Job, JobStatus
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
+from openprogram.runtime.jobs import runner as runner_module
+from openprogram.runtime.jobs.store import load_job, save_job, update_job_status
+from openprogram.runtime.jobs.types import Job, JobStatus
+from tests.component.agent import async_job_support as _async_job_support
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
 
 
 @pytest.mark.parametrize("outcome", [JobStatus.CANCELLED, JobStatus.COMPLETED, JobStatus.ERRORED])

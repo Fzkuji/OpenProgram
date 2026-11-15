@@ -27,15 +27,14 @@ def main() -> int:
 
     # Point default_db() at the sandbox so the dispatcher doesn't
     # touch the user's real ~/.agentic/dag_sessions.sqlite.
-    from openprogram.context.session_db import DagSessionDB
-    import openprogram.agent.session_db as sdb_mod
+    from openprogram.runtime.context.session_db import DagSessionDB
+    import openprogram.runtime.context.session_db as sdb_mod
     sdb_mod._default = DagSessionDB(db_path)
     print(f"== default_db patched")
 
     # Build a TurnRequest and drive process_user_turn directly.
-    from openprogram.agent.dispatcher import (
-        process_user_turn, TurnRequest,
-    )
+    from openprogram.runtime.conversation.turn_runtime import process_user_turn
+    from openprogram.runtime.agent.turn_request import TurnRequest
 
     session_id = "verify_session_001"
     events: list[dict] = []

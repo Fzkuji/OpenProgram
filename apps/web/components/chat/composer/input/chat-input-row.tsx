@@ -3,7 +3,8 @@
 /**
  * Chat-mode input row inside the composer wrapper.
  *
- * Stacks paste chips, the textarea itself, and the @-mention file
+ * Stacks the markdown editor (a textarea-compatible facade,
+ * see markdown-editor.tsx), and the @-mention file
  * popover into one cohesive block. Extracted from composer/index.tsx
  * so the main file stops growing every time a new chip kind or
  * caret-tracking handler lands on the textarea.
@@ -11,12 +12,12 @@
  * Pure presentation — every piece of state (input, caret, paste store,
  * file menu) comes through props, owned by the composer.
  */
+import { Kbd } from "@/components/ui/kbd";
 import type React from "react";
 
-import { FileMenu, type FileMatch } from "../attach/file-menu";
-import { useFileMention } from "../attach/use-file-mention";
-import { PasteChips } from "../paste/paste-chips";
-import type { PastedEntry } from "../paste/paste-store";
+import { FileMenu, type FileMatch } from "../attach/mention/file-menu";
+import { useFileMention } from "../attach/mention/use-file-mention";
+import { MarkdownEditor } from "./markdown-editor";
 import styles from "./chat-input-row.module.css";
 
 interface ChatInputRowProps {
@@ -31,15 +32,15 @@ interface ChatInputRowProps {
   setCaretPos: (n: number) => void;
   /** Placeholder hint (e.g. "type to steer the running task…" while busy). */
   placeholder?: string;
+  /** A suggested next message shown in the empty field; Tab takes it. */
+  suggestion?: string | null;
   /** DOM id for the textarea. Defaults to the singleton
    *  "composer-chat-input"; a split-view pane passes a per-session id so
    *  two mounted composers don't collide on one id. */
   inputId?: string;
-
-  /* ---- paste chips ------------------------------------------------- */
-  pastedEntries: PastedEntry[];
-  pasteMissing: Set<number>;
-  removePaste: (id: number) => void;
+  autoFocus?: boolean;
+  /** The chat whose draft this is; see MarkdownEditor's historyKey. */
+  historyKey?: string;
 
   /* ---- @-mention file popover -------------------------------------- */
   atToken: ReturnType<typeof useFileMention>["atToken"];
@@ -47,7 +48,7 @@ interface ChatInputRowProps {
   fileMenuIndex: number;
   setFileMenuIndex: (n: number | ((prev: number) => number)) => void;
   fileMenuLoading: boolean;
-  fileMenuPos: { left: number; top: number } | null;
+  fileMenuPos: { left: number; top: number; bottom?: number } | null;
   pickFile: (item: FileMatch) => void;
 }
 
@@ -61,10 +62,10 @@ export function ChatInputRow({
   onBlur,
   setCaretPos,
   placeholder,
+  suggestion,
   inputId = "composer-chat-input",
-  pastedEntries,
-  pasteMissing,
-  removePaste,
+  autoFocus,
+  historyKey,
   atToken,
   fileMatches,
   fileMenuIndex,
@@ -75,47 +76,35 @@ export function ChatInputRow({
 }: ChatInputRowProps) {
   return (
     <>
-      <PasteChips
-        entries={pastedEntries}
-        missing={pasteMissing}
-        onRemove={removePaste}
-      />
       <div key="top-half" className={styles.inputTopRow}>
-        <div className={styles.inputField}>
-          {input.length === 0 && (
-            <span className={styles.chatPlaceholder} aria-hidden="true">
-              create / run / edit or ask anything... (type / for commands)
+        <div className={styles.inputField} data-composer-text>
+          {input.length === 0 && (suggestion ? (
+            <span className={`${styles.chatPlaceholder} ${styles.chatSuggestion}`} aria-hidden="true">
+              <span className={styles.chatSuggestionText}>{suggestion}</span>
+              <Kbd>Tab</Kbd>
             </span>
-          )}
-          <textarea
-            ref={textareaRef}
+          ) : (
+            <span className={styles.chatPlaceholder} aria-hidden="true">
+              {placeholder || "create / run / edit or ask anything... (type / for commands)"}
+            </span>
+          ))}
+          <MarkdownEditor
+            textareaRef={textareaRef}
             id={inputId}
-            name="chat_input"
-            autoComplete="off"
-            aria-label="create / run / edit or ask anything... (type / for commands)"
-            placeholder=""
+            autoFocus={autoFocus}
+            historyKey={historyKey}
+            ariaLabel={suggestion ? `Suggested: ${suggestion}. Press Tab to use it.` : placeholder || "create / run / edit or ask anything... (type / for commands)"}
             className={styles.chatInput}
-            rows={1}
             value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setCaretPos(e.target.selectionStart ?? e.target.value.length);
+            onChange={(next, caret) => {
+              setInput(next);
+              setCaretPos(caret);
             }}
-            onSelect={(e) => setCaretPos(
-              e.currentTarget.selectionStart ?? 0,
-            )}
-            onKeyUp={(e) => setCaretPos(
-              e.currentTarget.selectionStart ?? 0,
-            )}
-            onClick={(e) => setCaretPos(
-              e.currentTarget.selectionStart ?? 0,
-            )}
+            onCaret={setCaretPos}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             // File drops are caught at the window level (see
-            // useComposerAttachments) so the textarea doesn't need its
-            // own onDragOver/onDrop — the window handler beats the
-            // textarea's default text-insert.
+            // useComposerAttachments), so the editor needs no drop handler.
             onFocus={onFocus}
             onBlur={onBlur}
           />

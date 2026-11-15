@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram import sandbox
-from openprogram.sandbox import (
+from openprogram.host import sandbox
+from openprogram.host.sandbox import (
     MODE_WORKSPACE_WRITE,
     resolve_policy,
     turn_policy,
@@ -14,7 +14,7 @@ from openprogram.sandbox import (
 @pytest.fixture
 def cfg(monkeypatch):
     state: dict = {}
-    monkeypatch.setattr("openprogram.setup._read_config", lambda: state)
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: state)
     monkeypatch.setattr(
         sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
     )

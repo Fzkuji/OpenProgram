@@ -6,8 +6,8 @@ import pytest
 
 
 def _mcp_request(authority: dict, **extra):
-    from openprogram.agent.dispatcher import TurnRequest
-    from openprogram.agent.session_config import PermissionRules
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.runtime.permissions.modes import PermissionRules
 
     return TurnRequest(
         session_id="mcp-session",
@@ -28,8 +28,8 @@ def _mcp_request(authority: dict, **extra):
 
 
 def _recording_tool(name: str, calls: list[dict]):
-    from openprogram.agent.types import AgentTool, AgentToolResult
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import AgentTool, AgentToolResult
+    from openprogram.models.providers.types import TextContent
 
     async def execute(_call_id, args, _cancel, _on_update):
         calls.append(dict(args))
@@ -50,8 +50,8 @@ def _run(tool, args):
 
 @pytest.fixture
 def mcp_authority(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.agent import authority
+    from openprogram.state import paths
+    from openprogram.runtime.permissions import authority
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority._reset_owner_cache_for_tests()
@@ -78,8 +78,8 @@ def test_mcp_outside_writes_are_denied_before_allow_and_bypass(
     tool_name,
     arguments,
 ):
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.worktree.context import reset_worktree, set_worktree
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.state.worktree.context import reset_worktree, set_worktree
 
     project = tmp_path / "project"
     project.mkdir()
@@ -97,7 +97,7 @@ def test_mcp_outside_writes_are_denied_before_allow_and_bypass(
         reset_worktree(token)
 
     assert result.is_error is True
-    assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED"
+    assert result.details["reason_code"] == "AUTHORITY_CAPABILITY_DENIED"
     assert calls == []
 
 
@@ -106,8 +106,8 @@ def test_mcp_write_in_additional_working_directory_reaches_authority_gate(
     monkeypatch,
     mcp_authority,
 ):
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.worktree.context import reset_worktree, set_worktree
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.state.worktree.context import reset_worktree, set_worktree
 
     project = tmp_path / "project"
     extra = tmp_path / "extra"
@@ -145,8 +145,8 @@ def test_mcp_relative_write_in_bound_worktree_reaches_authority_gate(
     monkeypatch,
     mcp_authority,
 ):
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.worktree.context import reset_worktree, set_worktree
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.state.worktree.context import reset_worktree, set_worktree
 
     project = tmp_path / "project"
     process_cwd = tmp_path / "process-cwd"
@@ -182,9 +182,9 @@ def test_mcp_cannot_keep_worktree_before_authority_or_bypass(
     mcp_authority,
     authority_kind,
 ):
-    from openprogram.agent import authority
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.agent.questions import get_question_registry
+    from openprogram.runtime.permissions import authority
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.runtime.agent.questions import get_question_registry
 
     request_authority = mcp_authority
     if authority_kind == "owner-shaped":
@@ -201,7 +201,8 @@ def test_mcp_cannot_keep_worktree_before_authority_or_bypass(
     result = _run(wrapped, {"worktree_id": "wt-1"})
 
     assert result.is_error is True
-    assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED"
+    expected = "AUTHORITY_CAPABILITY_DENIED" if authority_kind == "paired" else "IDENTITY_SCOPE"
+    assert result.details["reason_code"] == expected
     assert calls == []
     assert events == []
     assert get_question_registry().list_pending("mcp-session") == []

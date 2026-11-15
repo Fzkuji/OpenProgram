@@ -1,0 +1,89 @@
+<title>外部 Program 运行节点</title>
+<meta name="description" content="用户直接运行的函数在 DAG 和聊天记录中如何呈现。">
+<h1>外部 Program 运行节点</h1>
+
+<p>从 Programs、fn-form 或其他外部入口直接运行的函数，是 ROOT 下的一个节点和一条聊天记录。不为它虚构 User 或 LLM 节点。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">层</th><th scope="col">存储</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">持久化</th><td>一个 <code translate="no">role=code</code> 节点。<code translate="no">caller</code> 为空；<code translate="no">predecessor</code> 是创建时的 HEAD，或 ROOT</td><td>任何视图都不改动它</td></tr>
+<tr><th scope="row">归属</th><td>只由 <code translate="no">caller</code> 决定；<code translate="no">predecessor</code> 只记时间顺序</td><td>caller 为空或 ROOT：顶层 Program。caller 是 assistant：放进该消息的 <code translate="no">runtimeChildren</code></td></tr>
+<tr><th scope="row">DAG 总览</th><td>不新增任何内容</td><td><code translate="no">projectTopPrograms</code> 通过派生的 <code translate="no">_overview_parent</code> 把它放到 ROOT 泳道、tier 1；内部调用归入同一泳道</td></tr>
+<tr><th scope="row">重试</th><td><code translate="no">retry_of</code></td><td>保留分叉泳道，不做 ROOT 投影</td></tr>
+<tr><th scope="row">运行状态</th><td>开始和结束都更新同一节点</td><td>位置和节点不变，只变节点状态和状态文字</td></tr>
+</tbody>
+</table>
+<p class="note">节点就是<a href="layout.zh.html#states">布局规格</a>里普通的调用节点。参数和输出放在 Details。</p>
+
+<h2 id="chat-record">聊天记录</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分（按顺序）</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">头像 <code translate="no">ƒ</code></th><td>标明这是一次运行，不是 assistant 消息</td></tr>
+<tr><th scope="row">标题行</th><td><code translate="no">ExecutionStrip</code> 加一行摘要；切换执行区</td></tr>
+<tr><th scope="row">执行区</th><td>参数、执行树、用量。沿用现有 <code translate="no">RuntimeBlock</code> 和 <code translate="no">TreeStep</code>，Details、Copy、Retry、Edit &amp; re-run、版本导航不变</td></tr>
+<tr><th scope="row">答复</th><td>在折叠区之外，用普通聊天字体，没有引用样式</td></tr>
+<tr><th scope="row">页脚</th><td>始终在最后，不折叠；普通的时间和操作行</td></tr>
+</tbody>
+</table>
+<p class="note">折叠状态跟随会话的转录视图，读者点击后以点击为准，后续更新不覆盖。过长的标题保持一行并显示箭头，完整文字留给辅助技术。</p>
+
+<h2 id="title">标题行</h2>
+<p>函数名 · 状态 · 时长 · 结果。由现有字段生成，不调用模型。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">示例</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中</th><td><code translate="no">report_workflow · 运行中… · 00:08 · 2 步</code></td></tr>
+<tr><th scope="row">已完成</th><td><code translate="no">report_workflow · 已完成 · 02:46 · 2 files processed</code></td></tr>
+<tr><th scope="row">出错</th><td><code translate="no">report_workflow · 出错 · 01:22 · Permission denied</code></td></tr>
+<tr><th scope="row">已取消</th><td><code translate="no">report_workflow · 已取消 · 00:42 · 3 步</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>其他状态和结果位</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中</th><td>步数；第一步之前显示“正在启动”</td></tr>
+<tr><th scope="row">已完成</th><td>一行输出预览，最多 48 个字符；否则步数</td></tr>
+<tr><th scope="row">出错</th><td>错误预览；否则输出预览、步数</td></tr>
+<tr><th scope="row">已取消、已中断、已停止（capped）、已暂停</th><td>步数</td></tr>
+<tr><th scope="row"><code translate="no">gui_agent</code></th><td>内部结果替代状态：成功、失败、需要接手，并以摘要或接手说明作预览</td></tr>
+</tbody>
+</table>
+<p class="note">逻辑和测试：<code translate="no">apps/web/components/chat/messages/runtime/runtime-summary.ts</code>、<code translate="no">apps/web/tests/chat/messages/runtime-summary.test.mjs</code>。</p>
+</details>
+
+<h2 id="answer">答复</h2>
+<p><code translate="no">runtimeAnswer</code> 渲染运行持久化的内容，从不发起模型调用。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">输出</th><th scope="col">答复</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行中或已暂停</th><td>无</td></tr>
+<tr><th scope="row">空</th><td>错误（如有）</td></tr>
+<tr><th scope="row">带 <code translate="no">summary</code> 的对象</th><td>摘要，再加不同于它的 <code translate="no">handoff_instruction</code></td></tr>
+<tr><th scope="row">纯字符串</th><td>原样</td></tr>
+<tr><th scope="row">数字或布尔值</th><td>其文字</td></tr>
+<tr><th scope="row">其他 JSON</th><td>JSON 代码块</td></tr>
+</tbody>
+</table>
+
+<h2 id="model">直接运行使用的模型</h2>
+<p>运行属于当前会话。函数进程启动前，服务端解析出一组 provider 和 model 并传入；解析不到时以 <code translate="no">no_model</code> 拒绝。</p>
+<ol>
+<li>会话的 <code translate="no">provider_override</code> 和 <code translate="no">model_override</code></li>
+<li>会话 Agent 配置的模型</li>
+<li>最近使用的模型</li>
+</ol>
+
+<h2 id="scope">范围</h2>
+<dl class="pairs">
+<dt>沿用</dt><dd>调用节点、分支颜色、状态用语、<code translate="no">ExecutionStrip</code>、<code translate="no">RuntimeBlock</code></dd>
+<dt>新增</dt><dd>头像和更完整的标题</dd>
+<dt>不做</dt><dd>虚构 User 或 LLM 节点、新泳道、大卡片、百分比进度、工作流专用时间线、新的图形库</dd>
+<dt>不变</dt><dd>LLM 调用的工具留在执行层；嵌套函数渲染和普通 assistant 消息不变</dd>
+</dl>
+
+<h2 id="implementation-status">实现状态</h2>
+<p class="note">已实现：聊天记录（<code translate="no">runtime-block.tsx</code>、<code translate="no">execution-strip.css</code>）、标题、答复、ROOT 投影（<code translate="no">passes/project-programs.ts</code>）、会话模型解析（<code translate="no">runtime_management.py</code>）。</p>

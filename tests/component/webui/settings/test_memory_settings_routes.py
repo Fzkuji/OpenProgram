@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 def test_enabled_model_listing_runs_outside_the_event_loop():
     import inspect
 
-    from openprogram.webui.routes.identity.providers import register
+    from openprogram.interfaces.server.routes.identity.providers import register
 
     app = FastAPI()
     register(app)
@@ -19,11 +19,11 @@ def test_enabled_model_listing_runs_outside_the_event_loop():
 
 
 def test_memory_settings_scope_skips_dynamic_provider_and_tool_rows(monkeypatch):
-    from openprogram.webui.routes.settings.config import register
+    from openprogram.interfaces.server.routes.settings.config import register
 
-    monkeypatch.setattr("openprogram.setup._read_config", lambda: {})
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: {})
     monkeypatch.setattr(
-        "openprogram.providers.registry.check_providers",
+        "openprogram.models.providers.catalog.registry.check_providers",
         lambda: (_ for _ in ()).throw(
             AssertionError("memory settings must not inspect providers")
         ),
@@ -50,7 +50,7 @@ def test_memory_settings_scope_skips_dynamic_provider_and_tool_rows(monkeypatch)
 def test_settings_route_rejects_unavailable_embedding_method(monkeypatch):
     import asyncio
 
-    from openprogram.webui.routes.settings.config import register
+    from openprogram.interfaces.server.routes.settings.config import register
 
     saved = []
     inside_worker = False
@@ -65,11 +65,11 @@ def test_settings_route_rejects_unavailable_embedding_method(monkeypatch):
 
     monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
     monkeypatch.setattr(
-        "openprogram.memory.retrieval.embedding.default_model_is_available",
+        "openprogram.state.memory.retrieval.embedding.default_model_is_available",
         lambda: saved.append(("validate", inside_worker)) or False,
     )
     monkeypatch.setattr(
-        "openprogram.setup.update_config", lambda mutator: saved.append(mutator),
+        "openprogram.state.config.update_config", lambda mutator: saved.append(mutator),
     )
     app = FastAPI()
     register(app)
@@ -84,18 +84,45 @@ def test_settings_route_rejects_unavailable_embedding_method(monkeypatch):
     assert saved == [("validate", True)]
 
 
+def test_settings_route_reports_intel_macos_embedding_limitation(monkeypatch):
+    import platform
+    import sys
+
+    from openprogram.interfaces.server.routes.settings.config import register
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(
+        "openprogram.state.config.update_config",
+        lambda _mutator: (_ for _ in ()).throw(
+            AssertionError("an unavailable embedding method must not persist")
+        ),
+    )
+    app = FastAPI()
+    register(app)
+
+    response = TestClient(app).post(
+        "/api/settings",
+        json={"key": "memory.retrieval.method", "value": "hybrid"},
+    )
+
+    assert response.status_code == 400
+    assert "Intel macOS" in response.json()["error"]
+    assert "use BM25" in response.json()["error"]
+
+
 def test_settings_route_accepts_agent_recall_without_embedding(monkeypatch):
-    from openprogram.webui.routes.settings.config import register
+    from openprogram.interfaces.server.routes.settings.config import register
 
     saved = []
     monkeypatch.setattr(
-        "openprogram.memory.retrieval.embedding.default_model_is_available",
+        "openprogram.state.memory.retrieval.embedding.default_model_is_available",
         lambda: (_ for _ in ()).throw(
             AssertionError("Agent recall must not probe embedding")
         ),
     )
     monkeypatch.setattr(
-        "openprogram.setup.update_config", lambda mutator: saved.append(mutator),
+        "openprogram.state.config.update_config", lambda mutator: saved.append(mutator),
     )
     app = FastAPI()
     register(app)

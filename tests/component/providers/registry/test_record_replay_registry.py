@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.providers import api_registry
-from openprogram.providers.api_registry import (
+from openprogram.models.providers.catalog import api_registry
+from openprogram.models.providers.catalog.api_registry import (
     _register_builtin_api_providers,
     _replace_provider_transform,
     configure_provider_transform,
@@ -17,11 +17,11 @@ from openprogram.providers.api_registry import (
     register_api_provider,
     register_api_providers,
 )
-from openprogram.providers.recording import RecordingSink
-from openprogram.providers.recording import RecordingProvider, activate_record_replay_from_config
-from openprogram.providers.replay import ReplayProvider
-from openprogram.providers.replay import read_recording_file
-from openprogram.providers.types import Context, Model, SimpleStreamOptions, UserMessage
+from openprogram.models.providers.recording.recording import RecordingSink
+from openprogram.models.providers.recording.recording import RecordingProvider, activate_record_replay_from_config
+from openprogram.models.providers.recording.replay import ReplayProvider
+from openprogram.models.providers.recording.replay import read_recording_file
+from openprogram.models.providers.types import Context, Model, SimpleStreamOptions, UserMessage
 
 
 class Provider:
@@ -208,9 +208,9 @@ def test_record_activation_uses_one_sink_for_every_api(
     second = Provider("second")
     register_api_provider("first-api", first)
     register_api_provider("second-api", second)
-    monkeypatch.setattr("openprogram.paths.get_recordings_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_recordings_dir", lambda: tmp_path)
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"record_replay": {"mode": "record", "file": "calls"}},
     )
 
@@ -231,7 +231,7 @@ def test_replay_activation_uses_one_provider_for_every_api(
     register_api_provider("first-api", Provider("first"))
     register_api_provider("second-api", Provider("second"))
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"record_replay": {"mode": "replay", "file": str(recording)}},
     )
 
@@ -247,23 +247,23 @@ def test_invalid_startup_config_keeps_import_alive_and_blocks_live_provider(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    from openprogram.providers import recording as recording_module
+    from openprogram.models.providers.recording import recording as recording_module
 
     api = "activation-failure-api"
     register_api_provider(api, Provider("live"))
     missing = tmp_path / "missing.jsonl"
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"record_replay": {"mode": "replay", "file": str(missing)}},
     )
-    caplog.set_level(logging.ERROR, logger="openprogram.providers")
+    caplog.set_level(logging.ERROR, logger="openprogram.models.providers")
 
     recording_module.activate_record_replay_safely()
 
     blocked = get_api_provider(api)
     assert blocked is not None
     assert blocked.requires_credentials is False
-    stream_module = importlib.import_module("openprogram.providers.stream")
+    stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
         stream_module,
         "resolve_provider_key",
@@ -298,7 +298,7 @@ def test_invalid_startup_config_replaces_an_existing_transform_with_fail_closed(
     configure_provider_transform(transform)
     register_api_provider("existing-api", Provider("existing"))
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {
             "record_replay": {
                 "mode": "replay",
@@ -307,7 +307,7 @@ def test_invalid_startup_config_replaces_an_existing_transform_with_fail_closed(
         },
     )
 
-    from openprogram.providers.recording import activate_record_replay_safely
+    from openprogram.models.providers.recording.recording import activate_record_replay_safely
 
     activate_record_replay_safely()
     register_api_provider("future-api", Provider("future"))

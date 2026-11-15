@@ -1,0 +1,97 @@
+<title>Computer use interface</title>
+<meta name="description" content="The agent cursor, the window marker, how calls render, the approval card, settings and pointing at things.">
+<h1>Computer use interface</h1>
+
+
+<h2 id="agent-cursor">Agent cursor</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Step point</th><td>Before a step that names an element or a point, <code translate="no">MacComputer.act</code> computes where it lands (the element's centre from its <code translate="no">AXPosition</code> and <code translate="no">AXSize</code>, or the screenshot point mapped through the window origin and scale) and calls <code translate="no">native_window.note_action_point</code>, then waits <code translate="no">CUE_LEAD_SECONDS</code> (0.15 s) so the cursor arrives first.</td></tr>
+<tr><th scope="row">Coordinate space</th><td>The point is in screen points with the origin at the top left of the main display, the space Electron also uses.</td></tr>
+<tr><th scope="row">Frame</th><td>The worker broadcasts it as a <code translate="no">native.action</code> frame (<code translate="no">session_id</code>, <code translate="no">x</code>, <code translate="no">y</code>, <code translate="no">sequence</code>, <code translate="no">at</code>, <code translate="no">action</code>, <code translate="no">app_name</code>); an agentic subprocess forwards it through the same parent channel as operated windows (<code translate="no">kind: "action"</code>).</td></tr>
+<tr><th scope="row">Web client</th><td>In the web client <code translate="no">native-window-store.ts</code> hands the frame to <code translate="no">openprogramDesktop.nativeActionCue</code> unless <strong>Show actions</strong> is off.</td></tr>
+<tr><th scope="row">Drawing</th><td>The desktop main process (<code translate="no">main/worker/agent-control.js</code>) draws it in the conversation's control overlay: the cursor glides there and stays.</td></tr>
+<tr><th scope="row">Deduplication</th><td>Every App window receives the frame, so the main process drops a step it has already shown by <code translate="no">session_id</code>, <code translate="no">sequence</code> and <code translate="no">at</code>.</td></tr>
+<tr><th scope="row">Platforms</th><td>Linux and Windows do not emit points yet.</td></tr>
+</tbody>
+</table>
+
+<h2 id="window-marker">Window marker</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Marker</th><td>The operated window carries the macOS screen-sharing marker, as under Codex Computer Use: a badge over its title-bar buttons and the sharing icon in the menu bar. macOS draws both for any window under a live ScreenCaptureKit stream, so <code translate="no">window_watch.WindowWatch</code> keeps one open on it.</td></tr>
+<tr><th scope="row">Touch</th><td><code translate="no">MacComputer</code> touches it with the window id, the app's name and the frame of its title-bar buttons (read through Accessibility) on every <code translate="no">act</code> and every <code translate="no">get_state</code> that names a window.</td></tr>
+<tr><th scope="row">Stream</th><td>The stream filters to that one window (<code translate="no">SCContentFilter.initWithDesktopIndependentWindow</code>), asks for a 2x2 frame at one frame a second and attaches no output, so nothing is recorded.</td></tr>
+<tr><th scope="row">Release</th><td>Each session watches at most one window: moving to another window releases the previous one, and a window with no step for <code translate="no">IDLE_SECONDS</code> (20 s) is released by a sweep timer.</td></tr>
+<tr><th scope="row">Failure</th><td>Opening the stream runs on its own thread and its failures are ignored, so a step never waits on or fails because of the marker.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Place report</th><td>While a window is watched, a second thread reports its place every <code translate="no">REPORT_SECONDS</code> (0.12 s) when it changed: <code translate="no">window_place</code> reads the on-screen window list for the window's frame and the windows in front of it within <code translate="no">GLOW_MARGIN</code> (32 pt), leaving out windows titled <code translate="no">OVERLAY_TITLE</code> (the App's own overlays).</td></tr>
+<tr><th scope="row">Control frame</th><td>The report goes through <code translate="no">native_window.note_control</code> with the owner captured when the window was touched, as a <code translate="no">native.control</code> frame (<code translate="no">session_id</code>, <code translate="no">window_id</code>, <code translate="no">active</code>, <code translate="no">app_name</code>, <code translate="no">frame</code>, <code translate="no">buttons</code>, <code translate="no">occluders</code>); a subprocess forwards it as <code translate="no">kind: "control"</code>.</td></tr>
+<tr><th scope="row">End</th><td>Releasing the window sends <code translate="no">active: false</code>.</td></tr>
+<tr><th scope="row">Web client </th><td>The web client passes reports to <code translate="no">openprogramDesktop.nativeControl</code> while <strong>Show actions</strong> is on, and always passes the end.</td></tr>
+<tr><th scope="row">Overlay window</th><td>The desktop main process keeps one transparent, click-through, unfocusable window per conversation over the window plus the margin and loads <code translate="no">/menu-overlay/agent-control</code>, which draws the inward glow, the accent lights over the buttons and the cursor.</td></tr>
+<tr><th scope="row">Stacking</th><td>The overlay sits in the window stack directly above the controlled window (<code translate="no">moveAbove</code> with its window id, ordered again on every report because the stack changes whenever the user switches apps), so a window in front of the controlled one also covers the overlay; only when the window server refuses that order does it float above all windows.</td></tr>
+<tr><th scope="row">Covering windows</th><td>Either way covering windows are cut out of the glow and lights, and the cursor hides while its point lies under one.</td></tr>
+<tr><th scope="row">Look</th><td>Its look is set in <a href="../ui/browser/agent-control-overlay.html">Agent control overlay</a>.</td></tr>
+</tbody>
+</table>
+
+<h2 id="web-presentation">Web presentation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Reading a call</th><td><code translate="no">lib/computer-use/computer-use-agent-call.ts</code> reads a <code translate="no">computer_use_agent</code> call: <code translate="no">appStepArgs</code> turns an <code translate="no">app</code> call into the flat step the app renderers take (<code translate="no">{action, app, …}</code>; several steps become a batch and code its own action), and <code translate="no">screenStep</code> names a browser or VM call's action.</td></tr>
+<tr><th scope="row">App steps</th><td><code translate="no">tool-presentation.ts</code> renders <code translate="no">app</code> steps with the monitor icon and the system tone; the title names the action and the application ("Clicked in Calculator"), the target line shows the key, text, action name or window where one is given.</td></tr>
+<tr><th scope="row">Other calls</th><td>Browser calls show the action and URL, VM calls the action, and code "Ran code in &lt;app&gt;". A conversation recorded while the tool could pass a task on shows that call as "Handed to a new agent" with the brief's first line.</td></tr>
+<tr><th scope="row">Approval card</th><td>The approval card's scope buttons add "Allow this conversation" between once and always, and the answer summary prints "Allowed for this conversation".</td></tr>
+<tr><th scope="row">Old calls</th><td>Calls recorded by the earlier tools (<code translate="no">computer_use</code>, <code translate="no">web_use</code>, <code translate="no">gui_agent</code>) keep their renderers so old conversations read.</td></tr>
+</tbody>
+</table>
+
+<h2 id="interface-work">Interface work</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Card header</th><td>The approval card for an <code translate="no">app</code> call (<code translate="no">computer-use-approval.tsx</code>) leads with the application itself: its icon, display name and bundle id come from the <code translate="no">computer_use_apps</code> WebSocket action, which calls the backend's <code translate="no">app_info</code> and launches nothing, and the web caches them per name (<code translate="no">lib/net/computer-use-apps.ts</code>).</td></tr>
+<tr><th scope="row">Card body</th><td>Below it a chip names the step in words (<code translate="no">computer-use-step.ts</code>), two lines state that the step runs in the background (or, for audio, that only that application's sound is recorded) and what the offered scopes cover, and the arguments without empty values fold into "Execution details".</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Section</th><td>The project's Settings tab has a Computer use section (<code translate="no">computer-use-apps-section.tsx</code>) between the default settings and the permission rules.</td></tr>
+<tr><th scope="row">Rows</th><td>It lists the project's <code translate="no">computer_use_agent(&lt;app&gt;)</code> allow rules (and those saved as <code translate="no">computer_use(&lt;app&gt;)</code>) as one row per application with icon, name, bundle id and a remove control, and the generic rule list leaves those rules out.</td></tr>
+<tr><th scope="row">Removing</th><td>Removing a row removes the rule.</td></tr>
+<tr><th scope="row">Conversation grants</th><td>Conversation-scoped grants are session rules that end with their conversation, so the section does not list them.</td></tr>
+</tbody>
+</table>
+<p>The person points the agent at things the way Codex lets them:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Comment and region</th><td>In a web tab, <strong>Comment on the page…</strong> picks one element and adds its selector, text and the comment to the draft; <strong>Screenshot a region…</strong> lets them drag a rectangle and adds those pixels as a PNG attachment.</td></tr>
+<tr><th scope="row">Isolated world</th><td>Both run in one isolated world (<code translate="no">PICKER_WORLD</code> in <code translate="no">apps/desktop/main/web-views/web-views.js</code>) that shares a cancel hook, so one mode ends the other.</td></tr>
+<tr><th scope="row">Region overlay</th><td>The region overlay is removed and two frames are painted before <code translate="no">capturePage</code> takes the rectangle, scaled by the page zoom.</td></tr>
+<tr><th scope="row">Delivery</th><td>The file reaches the target conversation through <code translate="no">lib/chat/composer-inbox.ts</code>: the composer showing that conversation takes it as a dropped file, and it waits there until one does.</td></tr>
+<tr><th scope="row">@ menu</th><td>The composer's <code translate="no">@</code> menu lists open web tabs and running apps above the files (<code translate="no">attach/mention/mention-sources.ts</code>). A tab is written as a markdown link to its address and an app as its name and bundle id, so "this tab" resolves without the model guessing. Running apps come from <code translate="no">computer_use_apps</code> with <code translate="no">running: true</code>, which lists regular apps other than the refused ones and is kept for ten seconds in the page.</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>element comments and region screenshots in web tabs; <code translate="no">@</code>-mentions of open tabs and running apps.</td></tr>
+<tr><th scope="row">Implemented on macOS</th><td>the control overlay over desktop apps (inward glow, accent title-bar lights and agent cursor), with unit tests for the window place and step point frames and for the desktop overlay window. Not implemented: the Linux and Windows backends report neither window places nor step points, so no overlay shows there.</td></tr>
+<tr><th scope="row">Implemented on macOS</th><td>the window marker, with unit tests for watching, switching and idle release. Not implemented on Linux and Windows.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.html">Computer and browser use</a></p>

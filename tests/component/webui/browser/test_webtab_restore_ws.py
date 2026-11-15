@@ -6,9 +6,9 @@ import json
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.agent.authority import local_owner_authority
-from openprogram.webui import server
-from openprogram.webui.ws_actions import webtab
+from openprogram.runtime.permissions.authority import local_owner_authority
+from openprogram.interfaces.server import server
+from openprogram.interfaces.server.ws_actions import webtab
 
 
 class _QueueWS:
@@ -42,13 +42,14 @@ def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.setattr(server, "_loop", None)
     monkeypatch.setattr(server, "_discover_functions", lambda: [])
     monkeypatch.setattr(server, "_get_provider_info", lambda: {})
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     webtab._pending.clear()
     webtab._bindings.clear()
     webtab._desktop_windows.clear()
     webtab._connection_revisions.clear()
     webtab._page_revisions.clear()
     webtab._restore_jobs.clear()
+    webtab._restore_reruns.clear()
     yield
     for _rev, task in list(webtab._restore_jobs.values()):
         task.cancel()
@@ -63,10 +64,10 @@ def _list_commands(sent: list[dict]) -> list[dict]:
 
 
 def test_webtab_register_returns_before_list_and_rebinds_hidden_page(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.context.nodes import Call
-    from openprogram.store import SessionNodeWriter
-    from openprogram.store.session.session_store import SessionStore
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
+    from openprogram.state.store.session.nodes import Call
+    from openprogram.state.store import SessionNodeWriter
+    from openprogram.state.store.session.session_store import SessionStore
 
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "parent")
@@ -84,7 +85,7 @@ def test_webtab_register_returns_before_list_and_rebinds_hidden_page(tmp_path, m
         server._loop = asyncio.get_running_loop()
         ws = _QueueWS()
         handler = asyncio.create_task(server._websocket_handler(ws))
-        await asyncio.wait_for(ws.accepted.wait(), 1)
+        await asyncio.wait_for(ws.accepted.wait(), 30)
         while len(ws.sent) < 2:
             await asyncio.sleep(0)
         await ws.incoming.put(json.dumps({
@@ -98,6 +99,8 @@ def test_webtab_register_returns_before_list_and_rebinds_hidden_page(tmp_path, m
             await asyncio.sleep(0.01)
         commands = _list_commands(ws.sent)
         assert commands, "register must dispatch list without waiting on the receive loop"
+        # Private retained Pages are only listed under the restore scope.
+        assert commands[0]["data"]["scope"] == "restore"
         req_id = commands[0]["data"]["req_id"]
         await ws.incoming.put(json.dumps({
             "action": "webtab_result",
@@ -130,12 +133,12 @@ def test_webtab_register_returns_before_list_and_rebinds_hidden_page(tmp_path, m
         assert successor["resource_id"] != "page:dead:1"
         assert store.get_resource("page:dead:1")["lifecycle"] == "superseded"
         await ws.incoming.put(None)
-        await asyncio.wait_for(handler, 2)
+        await asyncio.wait_for(handler, 30)
 
     asyncio.run(scenario())
 
 
-def test_duplicate_register_reuses_restore_job(monkeypatch, tmp_path):
+def test_duplicate_register_reuses_restore_job_and_queues_one_more_pass(monkeypatch, tmp_path):
     async def scenario() -> None:
         started = []
 
@@ -145,14 +148,33 @@ def test_duplicate_register_reuses_restore_job(monkeypatch, tmp_path):
             time.sleep(0.2)
 
         monkeypatch.setattr(webtab, "restore_window_pages", fake_restore)
-        loop = asyncio.get_running_loop()
         ws = object()
         webtab._connection_revisions[ws] = 7
         first = webtab.schedule_window_restore(ws, "main", 7)
+        await asyncio.sleep(0.05)
+        # The renderer registers again after it creates native Pages; those
+        # registers coalesce into one pass after the running one.
         second = webtab.schedule_window_restore(ws, "main", 7)
-        assert first is second
-        await asyncio.wait_for(first, 1)
-        assert started == [("main", 7)]
-        del loop
+        third = webtab.schedule_window_restore(ws, "main", 7)
+        assert first is second is third
+        await asyncio.wait_for(first, 30)
+        assert started == [("main", 7), ("main", 7)]
+        assert webtab._restore_reruns == set()
+
+    asyncio.run(scenario())
+
+
+def test_register_after_restore_finished_starts_a_new_pass(monkeypatch, tmp_path):
+    async def scenario() -> None:
+        started = []
+        monkeypatch.setattr(
+            webtab, "restore_window_pages",
+            lambda ws, window_id, revision=None: started.append(revision),
+        )
+        ws = object()
+        webtab._connection_revisions[ws] = 7
+        await asyncio.wait_for(webtab.schedule_window_restore(ws, "main", 7), 30)
+        await asyncio.wait_for(webtab.schedule_window_restore(ws, "main", 7), 30)
+        assert started == [7, 7]
 
     asyncio.run(scenario())

@@ -1,51 +1,22 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Custom OpenAI-Compatible Provider</title>
-  <style>
-    body { max-width: 920px; margin: 40px auto; padding: 0 24px; font: 16px/1.55 system-ui, sans-serif; color: #202124; }
-    h1, h2 { line-height: 1.2; } code { background: #f1f3f4; padding: 2px 5px; border-radius: 4px; }
-    table { width: 100%; border-collapse: collapse; } th, td { padding: 9px; border: 1px solid #dadce0; text-align: left; }
-  </style>
-</head>
-<body>
-  <h1>Custom OpenAI-Compatible Provider</h1>
-  <p>A custom provider is an OpenAI Chat Completions-compatible service configured by name, Base URL, and API key. The provider type determines the wire protocol; model names do not.</p>
-
-  <h2>Resolved behavior</h2>
-  <p>The historical host-only behavior produced <code>/models</code> and <code>/chat/completions</code>, and a non-JSON 200 response was once accepted as a valid credential response. The current resolver adds <code>/v1</code> for a host-only custom Base URL, and the credential/model-listing path requires a JSON response.</p>
-
-  <h2>Address contract</h2>
-  <table>
-    <thead><tr><th>Configured value</th><th>Resolved API Base</th></tr></thead>
-    <tbody>
-      <tr><td><code>https://host</code></td><td><code>https://host/v1</code></td></tr>
-      <tr><td><code>https://host/</code></td><td><code>https://host/v1</code></td></tr>
-      <tr><td><code>https://host/v1</code></td><td><code>https://host/v1</code></td></tr>
-      <tr><td><code>https://host/compatible-mode/v1</code></td><td>unchanged</td></tr>
-    </tbody>
-  </table>
-  <p>The stored value remains the user's input. Model listing, credential validation, enabled-model registration, and inference use the resolved value.</p>
-
-  <h2>Data flow and failures</h2>
-  <p><code>GET {base}/models</code> validates credentials and lists models. A successful validation response must be JSON. Model rows are stored with <code>api=openai-completions</code> and the resolved Base URL. Runtime inference uses <code>POST {base}/chat/completions</code>.</p>
-  <p>Authentication rejection, balance errors, rate limits, transport failures, non-JSON success pages, malformed model envelopes, and empty model lists remain distinct observable outcomes. Error text must not include API keys or response bodies.</p>
-
-  <h2>Compatibility</h2>
-  <p>Existing custom providers and enabled model rows are interpreted at read time with the same resolver, so no configuration migration or re-creation is required. Built-in provider protocols retain their current resolution rules.</p>
-
-  <h2>Acceptance criteria</h2>
-  <ul>
-    <li>A custom provider configured as <code>https://nan.meta-api.vip</code> requests <code>https://nan.meta-api.vip/v1/models</code>.</li>
-    <li>An HTML 200 response is not reported as a valid credential result.</li>
-    <li>Fetched and manually added models use <code>openai-completions</code> and the resolved Base URL.</li>
-    <li>Previously stored host-only model rows resolve to <code>/v1</code> at runtime.</li>
-    <li>Inference uses the same resolved Base URL as model discovery.</li>
-  </ul>
-
-  <h2>Implementation evidence</h2>
-  <p>Implemented through the shared provider Base URL resolver, credential validator, generic OpenAI-compatible model fetcher, listing normalizer, and enabled-model registry. Focused provider tests cover host-only resolution, explicit-path preservation, legacy enabled rows, and non-JSON success responses. The packaged App resolved Yuanheng to <code>https://nan.meta-api.vip/v1</code> and fetched 10 remote models in the default profile.</p>
-</body>
-</html>
+<title>Custom OpenAI-compatible provider</title>
+<meta name="description" content="How a custom provider&#x27;s Base URL is resolved and which failures stay distinct.">
+<h1>Custom OpenAI-compatible provider</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Configured</th><th scope="col">Resolved</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">https://host</code></th><td><code translate="no">https://host/v1</code></td></tr>
+<tr><th scope="row"><code translate="no">https://host/</code></th><td><code translate="no">https://host/v1</code></td></tr>
+<tr><th scope="row"><code translate="no">https://host/v1</code></th><td><code translate="no">https://host/v1</code></td></tr>
+<tr><th scope="row"><code translate="no">https://host/compatible-mode/v1</code></th><td>unchanged</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">_resolve_base_url</code> in <code translate="no">providers/settings/storage.py</code>. The stored value stays as typed, so old rows resolve at read time with no migration. Built-in providers keep their own rules. The provider type sets the protocol; model names do not.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Request</th></tr></thead>
+<tbody>
+<tr><th scope="row">Validate and list</th><td><code translate="no">GET {base}/models</code>; a success must be JSON</td></tr>
+<tr><th scope="row">Model rows, fetched or manual</th><td><code translate="no">api=openai-completions</code>, resolved Base URL</td></tr>
+<tr><th scope="row">Inference</th><td><code translate="no">POST {base}/chat/completions</code></td></tr>
+</tbody>
+</table>
+<p class="note">Kept distinct: authentication rejection, balance errors, rate limits, transport failures, non-JSON success pages, malformed envelopes, empty lists. Error text never includes API keys or response bodies.</p>

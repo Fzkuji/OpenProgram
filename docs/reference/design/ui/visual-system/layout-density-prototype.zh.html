@@ -1,0 +1,24 @@
+<title>布局密度</title>
+<meta name="description" content="各类中间标签的纵向界面占用，以及原顶栏控件的去处。">
+<h1>布局密度</h1>
+
+<p>聊天标签的对话上方只有 40px 标签栏，比原来两条 48px 的栏多出 56px 内容高度。模型、权限和思考控件放在输入框里，与 Claude、ChatGPT 相同。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">标签</th><th scope="col">顶部占用</th><th scope="col">标签栏下方</th></tr></thead>
+<tbody>
+<tr><th scope="row">聊天</th><td>40px</td><td>对话，然后是输入框</td></tr>
+<tr><th scope="row">文件</th><td>40 + 40 = 80px</td><td>带面包屑的工具栏（属于内容），然后是查看器：行号、Markdown、图片、PDF</td></tr>
+<tr><th scope="row">网页</th><td>40 + 40 = 80px</td><td>后退、前进、刷新、地址栏、外部打开（属于内容），然后是网页</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>40px 标签栏，聊天标签下没有第二条栏；文件和网页 40px 工具栏；会话控件在输入框里</td></tr>
+<tr><th scope="row">未实现</th><td>侧栏没有固定区块（<code translate="no">New chat</code> 仍固定在顶部）；标签栏角落的连接状态点；网页标签用独立 Chrome 的 CDP 画面流（桌面端网页标签是原生视图）</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="surface-system.zh.html">界面表面体系</a></p>

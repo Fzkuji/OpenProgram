@@ -1,0 +1,105 @@
+<title>Git folder pills</title>
+<meta name="description" content="The git half of a folder pill: what it shows, how it squeezes, its menu, freshness and backend.">
+<h1>Git folder pills</h1>
+
+<p>A working folder inside a Git checkout gets a git half in its pill in the environment row: which branch, what changed, and the few Git actions a chat needs.</p>
+
+<h2>Which folders</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Folder</th><th scope="col">Git half</th></tr></thead>
+<tbody>
+<tr><th scope="row">Main project folder</th><td>Yes, for a real project. Not the default home-folder project: that repository is OpenProgram's storage.</td></tr>
+<tr><th scope="row">Each additional working folder</th><td>Yes</td></tr>
+<tr><th scope="row">Outside a Git checkout</th><td>None</td></tr>
+<tr><th scope="row">Two folders in one checkout</th><td>One git half: project first, then list order (<code translate="no">git-chip-registry.ts</code>). Separate worktrees have separate roots and keep their own.</td></tr>
+</tbody>
+</table>
+
+<h2>The pill</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Segment</th><th scope="col">Content</th></tr></thead>
+<tbody>
+<tr><th scope="row">Folder (left)</th><td>Icon, name; on a working folder a ✕ on hover or keyboard focus. Opens the project menu.</td></tr>
+<tr><th scope="row">Git (right)</th><td>Solar <code translate="no">git-branch</code>, the branch's last path segment (<code translate="no">claude/foo</code> shows <code translate="no">foo</code>; short commit id when detached), uncommitted <code translate="no">+N −N</code></td></tr>
+<tr><th scope="row">Divider</th><td>Full-height hairline with no width, so both hover fills meet; fades on hover or open</td></tr>
+<tr><th scope="row">Diff badge</th><td>Green and red halves, as on the file-change card. Untracked text files count as added. Only binary changes: neutral "N files", grey level-3 dot, never "+0 −0". Clean: branch alone.</td></tr>
+<tr><th scope="row">Tooltip</th><td>Repository, full branch, counts</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">components/chat/top-bar/chips/folder-pill.ts</code>. Squeeze levels: <a href="composer-responsive-controls.html">responsive composer controls</a>.</p>
+
+<h2>The menu</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Section</th><th scope="col">Content</th></tr></thead>
+<tbody>
+<tr><th scope="row">Header</th><td>Repository name, tagged <code translate="no">worktree</code> on a linked worktree</td></tr>
+<tr><th scope="row">Changes</th><td>"N uncommitted files +N −N" opens Review in its workspace scope; inert before the first message. Ahead/behind upstream when non-zero.</td></tr>
+<tr><th scope="row">Branch</th><td>Filter and local branches, newest commit first, up to 50. Tags: <code translate="no">current</code>; <code translate="no">worktree</code>, which a click opens. A new name offers "Create branch" or "… in a new worktree"; Enter does the same.</td></tr>
+<tr><th scope="row">Pull request</th><td>See below</td></tr>
+</tbody>
+</table>
+
+<h3>Where a branch click goes</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Folder</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Clean</th><td><code translate="no">git switch</code> in place</td></tr>
+<tr><th scope="row">Uncommitted changes</th><td>Opens in a new worktree and moves this slot there; the section header says so</td></tr>
+<tr><th scope="row">Slot cannot move</th><td>Always switches in place</td></tr>
+</tbody>
+</table>
+
+<h3>Moving a slot to a worktree</h3>
+<p>Created at <code translate="no">&lt;repo&gt;-worktrees/&lt;branch&gt;</code>, beside the repository, so the source folder's files stay put. No separate worktree list.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Slot</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Working folder</th><td>Replaced in the folder list</td></tr>
+<tr><th scope="row">Main folder, unsent draft</th><td>The draft's project re-points to the worktree (registered as a project)</td></tr>
+<tr><th scope="row">Main folder, started</th><td>Fixed: the worktree joins as an additional folder, and the menu says so</td></tr>
+</tbody>
+</table>
+
+<h3>Pull request</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Row</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open PR</th><td>"View pull request #N", in the system browser</td></tr>
+<tr><th scope="row">None</th><td>"Create pull request": <code translate="no">git push -u origin HEAD</code>, <code translate="no">gh pr create --fill</code> against the default branch, opens it</td></tr>
+<tr><th scope="row">Disabled</th><td>With the reason: no <code translate="no">gh</code>, no <code translate="no">origin</code>, detached HEAD, or on the default branch. The backend also refuses no commits ahead.</td></tr>
+<tr><th scope="row">Uncommitted changes</th><td>"Commit &amp; open PR with the agent…" places an instruction in the composer, unsent</td></tr>
+</tbody>
+</table>
+
+<h3>Errors</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Card</th></tr></thead>
+<tbody>
+<tr><th scope="row">Any error</th><td>At the bottom of the menu, which stays open: plain title, git output behind a "Show git output" text button</td></tr>
+<tr><th scope="row">Switch would overwrite changes</th><td>Names the files and offers <strong>Open in a worktree</strong> or <strong>Carry the changes over</strong></td></tr>
+<tr><th scope="row">Carry</th><td>Runs stash (untracked included), switch, pop</td></tr>
+<tr><th scope="row">Pop conflicts</th><td>The switch stands and the changes stay in the latest stash, which the card says</td></tr>
+<tr><th scope="row">Not offered</th><td>Force-switch or discard</td></tr>
+</tbody>
+</table>
+
+<h2>Freshness</h2>
+<p>Nothing polls. A pill reads on mount and folder change, when its menu opens (the only read that lists branches and looks up the PR), when a turn ends, on window focus, on project change, and after a mutation on the same checkout (<code translate="no">op:git-changed</code>).</p>
+
+<details>
+<summary>Backend</summary>
+<p><code translate="no">openprogram/state/worktree/folder_git.py</code> holds the logic; <code translate="no">ws_actions/folder_git.py</code> moves it off the event loop. Every reply echoes <code translate="no">path</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Action</th><th scope="col">Reply</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">git_folder_status</code></th><td><code translate="no">git_folder_status</code></td><td><code translate="no">status --porcelain=v2 --branch</code>, <code translate="no">diff --numstat HEAD</code>, <code translate="no">worktree list</code>, default branch, <code translate="no">origin</code>, <code translate="no">gh</code>; with <code translate="no">include_branches</code>, <code translate="no">include_pr</code>: branches, <code translate="no">gh pr view</code></td></tr>
+<tr><th scope="row"><code translate="no">git_switch_branch</code></th><td><code translate="no">git_switch_branch_result</code></td><td><code translate="no">git switch [-c] &lt;branch&gt;</code>; with <code translate="no">carry</code>, stash around it. Refusal: <code translate="no">code</code> (<code translate="no">overwrite</code> with <code translate="no">files</code>, or <code translate="no">stash_conflict</code>), <code translate="no">detail</code></td></tr>
+<tr><th scope="row"><code translate="no">git_create_worktree</code></th><td><code translate="no">git_worktree_created</code></td><td><code translate="no">git worktree add [-b]</code></td></tr>
+<tr><th scope="row"><code translate="no">git_create_pr</code></th><td><code translate="no">git_pr_created</code></td><td>Push, <code translate="no">gh pr create --fill</code>, returns the URL or the open PR</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">GIT_OPTIONAL_LOCKS=0</code> keeps status from contending with the user's git. <code translate="no">GIT_TERMINAL_PROMPT=0</code> makes a push needing credentials fail, not hang.</p>
+</details>
+
+<h2>Implementation status</h2>
+<p>Implemented, except: base-branch choice and draft PRs; pull, push and fetch controls; ahead/behind against the default branch when there is no upstream.</p>

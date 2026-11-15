@@ -4,12 +4,12 @@ import test from "node:test";
 import {
   matchingIndexes,
   visibleSearchPaths,
-} from "../../components/files/explorer-search.ts";
+} from "../../components/files/explorer/explorer-search.ts";
 
 test("fuzzy and exact matching return only matched character positions", () => {
   assert.deepEqual(matchingIndexes("paper_search", "pa", true), [0, 1]);
   assert.deepEqual(matchingIndexes("templates", "pa", true), [3, 5]);
-  assert.equal(matchingIndexes("research_pipeline", "pa", true), null);
+  assert.equal(matchingIndexes("sample_pipeline", "pa", true), null);
   assert.deepEqual(matchingIndexes("paper_search", "paper", false), [0, 1, 2, 3, 4]);
   assert.equal(matchingIndexes("templates", "pa", false), null);
 });
@@ -17,13 +17,13 @@ test("fuzzy and exact matching return only matched character positions", () => {
 test("filter mode retains matching paths and their ancestors", () => {
   const paths = [
     "tools",
-    "workflow",
-    "workflow/paper_search",
-    "workflow/research_pipeline",
+    "tools/web",
     "applications",
+    "applications/paper_search",
+    "applications/sample_pipeline",
   ];
   assert.deepEqual(
     [...visibleSearchPaths(paths, "pa", true)],
-    ["workflow", "workflow/paper_search", "applications"],
+    ["applications", "applications/paper_search"],
   );
 });

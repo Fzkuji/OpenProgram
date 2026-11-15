@@ -19,16 +19,16 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.session_store import SessionStore
 
 
 @pytest.fixture
 def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
     st = SessionStore(tmp_path / "sessions")
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db", lambda: st)
+        "openprogram.runtime.context.session_db.default_db", lambda: st)
     monkeypatch.setattr(
-        "openprogram.store.session.session_store.default_store", lambda: st)
+        "openprogram.state.store.session.session_store.default_store", lambda: st)
     return st
 
 
@@ -101,7 +101,7 @@ def test_fork_and_checkout_between_branches(store):
 # --- compaction ------------------------------------------------------
 
 def test_chat_continues_after_compaction(store):
-    from openprogram.context.persistence import Persister
+    from openprogram.runtime.context.persistence import Persister
 
     tip = _seed(store, "s", 5)
     msgs = store.get_messages("s")
@@ -120,11 +120,11 @@ def test_prompt_after_compaction_is_summary_plus_tail(store):
     """The §3 substitution end to end: the model's next context is
     [ROOT, summary, kept tail…] — covered turns absent, summary at the
     segment's position, subsequent turns unaffected."""
-    from openprogram.context.nodes import render_context
-    from openprogram.context.persistence import Persister, rendered_history
-    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    from openprogram.runtime.context.nodes import render_context
+    from openprogram.runtime.context.persistence import Persister, rendered_history
+    from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
-    tip = _seed(store, "s", 5)
+    _seed(store, "s", 5)
     msgs = store.get_messages("s")
     sid = Persister().insert_summary_node(
         "s", summary_text="recap", cut_idx=6, history=msgs)
@@ -146,9 +146,9 @@ def test_prompt_after_compaction_is_summary_plus_tail(store):
 
 
 def test_double_compaction_extends_coverage_and_keeps_one_active(store):
-    from openprogram.context.nodes import active_summary, render_context
-    from openprogram.context.persistence import Persister, rendered_history
-    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    from openprogram.runtime.context.nodes import active_summary_for_chain, render_context
+    from openprogram.runtime.context.persistence import Persister, rendered_history
+    from openprogram.state.store.session.session_node_writer import SessionNodeWriter
 
     tip = _seed(store, "s", 6)
     first = Persister().insert_summary_node(
@@ -162,7 +162,8 @@ def test_double_compaction_extends_coverage_and_keeps_one_active(store):
     assert second
 
     graph = SessionNodeWriter(store, "s").load()
-    assert active_summary(graph).id == second
+    chain = [m["id"] for m in store.get_branch("s")]
+    assert active_summary_for_chain(graph, chain).id == second
     covers = graph.nodes[second].metadata["covers_ids"]
     assert first not in covers, "coverage names real turns, not summaries"
     assert len(covers) == 8            # old 6 + 2 newly eaten
@@ -178,7 +179,7 @@ def test_head_refuses_to_land_on_a_summary(store):
     """A summary is a stand-in, never a tip: any set_head onto it (a
     stray checkout, a buggy caller) must be refused, not stored."""
     import pytest as _pytest
-    from openprogram.context.persistence import Persister
+    from openprogram.runtime.context.persistence import Persister
 
     tip = _seed(store, "s", 3)
     sid = Persister().insert_summary_node(
@@ -194,7 +195,7 @@ def test_head_refuses_to_land_on_a_summary(store):
 def test_head_survives_meta_save(store):
     """save_meta must never smuggle a stale head over the store's —
     the phantom head-move path (context/compaction.md §5)."""
-    from openprogram.webui.persistence import save_meta
+    from openprogram.interfaces.server.persistence import save_meta
 
     tip = _seed(store, "s", 2)
     save_meta("main", "s", {"head_id": "u0", "title": "t2"})
@@ -206,7 +207,7 @@ def test_head_survives_meta_save(store):
 
 def test_rewind_restores_an_earlier_tip(store):
     _seed(store, "s", 4)
-    from openprogram.agent._rewind import rewind_to
+    from openprogram.runtime.conversation.rewind import rewind_to
 
     res = rewind_to("s", "u2")          # undo turns 2 and 3
     assert not res.get("error"), res
@@ -228,7 +229,7 @@ def test_rewind_leaves_sibling_branches_alone(store):
                                "content": "fork answer", "predecessor": "f0"})
     # Work on the MAIN branch again and rewind its last turn.
     store.set_head("s", "u1_reply")
-    from openprogram.agent._rewind import rewind_to
+    from openprogram.runtime.conversation.rewind import rewind_to
     res = rewind_to("s", "u1")
     assert not res.get("error"), res
     _check(store, "s")

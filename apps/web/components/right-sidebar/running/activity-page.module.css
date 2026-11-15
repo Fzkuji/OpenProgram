@@ -1,0 +1,118 @@
+/* The second-level Activity page: one track, every line a left cell and a
+   right cell. Rows are level 1's row; the geometry variables --V --L --R
+   --track --P are written on .root by a ResizeObserver, so widening the
+   sidebar never re-renders. */
+.root { flex: 1; display: flex; flex-direction: column; height: 100%; min-height: 0; box-sizing: border-box; padding: 0 8px; font-family: var(--font-sans); font-size: 14px; line-height: 20px; font-weight: 400; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.fade { animation: fade .16s linear; }
+.opened { display: contents; }
+.opened > * { animation: fade .16s linear; }
+@keyframes fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .fade, .opened > * { animation: none; } }
+
+.root :focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; box-shadow: none; }
+
+/* Top line, outside the scroller. */
+.top { display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 0 8px; flex: none; }
+.bk, .tl, .sa, .moreButton { height: auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: inherit; font-weight: 400; text-align: left; cursor: pointer; }
+.bk:hover, .tl:hover, .sa:hover, .moreButton:hover { background: none; text-decoration: none; }
+.bk { display: inline-flex; align-items: center; gap: 2px; color: var(--text-secondary); opacity: .8; font-size: 14px; line-height: 20px; }
+.bk:hover { opacity: 1; color: var(--text-primary); }
+.tl { font-size: 13px; line-height: 18.2px; display: inline-flex; align-items: center; gap: 2px; color: var(--text-secondary); }
+.tl:hover { color: var(--text-primary); }
+.bk svg, .tl svg { flex: none; width: 14px; height: 14px; }
+
+.sc { flex: 1; min-height: 0; overflow: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; padding-bottom: 12px; }
+.sc::-webkit-scrollbar { display: none; }
+.track { width: var(--track); }
+.snap { scroll-snap-align: start; }
+
+/* One line. */
+.ln { display: flex; align-items: stretch; width: var(--track); }
+.lc { width: var(--L); flex: none; box-sizing: border-box; display: flex; align-items: center; justify-content: flex-start; gap: 10px; height: auto; min-height: 30px; padding: 7px 8px; border: 0; border-radius: var(--ui-list-radius); background: transparent; box-shadow: none; font: inherit; font-weight: 400; line-height: 1.4; color: inherit; text-align: left; white-space: normal; scroll-margin-top: 44px; transition: box-shadow .16s, background-color .16s; }
+.lc:hover { background: transparent; color: inherit; }
+.lc:disabled { opacity: 1; }
+.gp { width: 16px; flex: none; }
+.rc { position: relative; width: var(--R); flex: none; box-sizing: border-box; padding: 0 8px; border-radius: var(--ui-list-radius); display: flex; align-items: stretch; transition: box-shadow .16s, background-color .16s; }
+.ln[data-act] { cursor: pointer; }
+.ln[data-act] .lc:active { transform: translateY(1px); }
+.root:not([data-both="1"]) .ln[data-act]:hover .lc,
+.root:not([data-both="1"]) .ln[data-act]:not(.nor):hover .rc,
+.root[data-both="1"] .ln[data-act]:hover { background: var(--row-raised-bg); box-shadow: var(--composer-shadow-focus); }
+.root[data-both="1"] .ln { border-radius: var(--ui-list-radius); transition: box-shadow .16s, background-color .16s; }
+
+/* A page with no time axis has only the left half. */
+.root[data-timeline="0"] .gp, .root[data-timeline="0"] .rc { display: none; }
+
+.gs { width: 22px; height: 22px; display: grid; place-items: center; flex: none; margin-left: var(--indent, 0px); }
+.gs svg { display: block; flex: none; width: 22px; height: 22px; }
+.gs[data-action] { color: var(--text-secondary); }
+.avatar { display: grid; place-items: center; }
+.avatar svg { width: 20px; height: 20px; }
+.gs[data-action] svg { width: 18px; height: 18px; }
+.tx { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.t { color: var(--text-bright); font-size: 14px; line-height: 19.6px; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.t > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.s { font-size: 13px; line-height: 18.2px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s[data-tone="err"] { color: var(--accent-red); }
+.s[data-tone="warn"] { color: color-mix(in srgb, var(--accent-yellow) 85%, var(--text-primary)); }
+.s[data-tone="run"] { color: var(--accent-blue); }
+.pill { flex: none; padding: 0 6px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--accent-blue) 14%, transparent); color: color-mix(in srgb, var(--accent-blue) 80%, var(--text-primary)); font-size: 11px; line-height: 1.6; }
+.cs { width: 16px; height: 16px; flex: none; color: var(--text-muted); transition: transform .16s; }
+.cs svg { display: block; width: 16px; height: 16px; }
+.cs[data-open] { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .cs { transition: none; } }
+
+/* The right cell: time, then the plot. */
+.tm { width: 64px; flex: none; margin-right: 8px; font-size: 13px; line-height: 18.2px; align-self: center; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.plot { position: relative; flex: none; width: calc(var(--P) + 1px); margin-right: -1px; min-height: 18px; background-image: repeating-linear-gradient(to right, color-mix(in srgb, var(--text-primary) 6%, transparent) 0 1px, transparent 1px var(--g, 100%)); }
+.gbar, .tick { position: absolute; top: 50%; margin-right: 1px; transform: translateY(-50%); background: var(--text-muted); }
+.gbar { height: 6px; border-radius: var(--radius-full); min-width: 3px; }
+.gbar[data-flat] { border-radius: var(--radius-full) 0 0 var(--radius-full); }
+.tick { width: 3px; height: 12px; border-radius: 1.5px; }
+.gbar[data-mark="err"], .tick[data-mark="err"] { background: var(--accent-red); }
+.gbar[data-mark="warn"], .tick[data-mark="warn"] { background: color-mix(in srgb, var(--accent-yellow) 85%, var(--text-primary)); }
+.gbar[data-mark="run"], .tick[data-mark="run"] { background: var(--accent-blue); }
+.axl { position: absolute; bottom: 6px; font-size: 13px; line-height: 18.2px; white-space: nowrap; padding-left: 3px; }
+.axl[data-last] { transform: translateX(-100%); padding: 0 3px 0 0; }
+
+/* Day labels stay in view while their runs scroll. */
+.day { position: sticky; top: 0; z-index: 2; background: var(--color-sidebar); }
+.day .lc { padding: 16px 8px 6px; min-height: 0; }
+.sl { color: var(--text-secondary); opacity: .8; font-size: 14px; line-height: 20px; }
+.tmDay { align-self: flex-end; padding-bottom: 6px; }
+.root[data-both="1"] .tmDay { visibility: hidden; }
+
+/* At narrow widths the right half repeats the run's title above its bar. */
+.rn { position: absolute; left: 8px; right: 8px; top: 7px; font-size: 13px; line-height: 18.2px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; z-index: 1; }
+.root[data-both="1"] .rn { display: none; }
+.root:not([data-both="1"]) .hasn .tm { align-self: flex-end; padding-bottom: 7px; }
+.root:not([data-both="1"]) .hasn .gbar, .root:not([data-both="1"]) .hasn .tick { top: calc(100% - 16px); }
+
+/* A row opened in place: width L when narrow, V when both halves fit. */
+.root[data-both="1"] .dl .gp, .root[data-both="1"] .dl .rc { display: none; }
+.root[data-both="1"] .det { width: var(--V); }
+.det { width: var(--L); flex: none; box-sizing: border-box; padding: 0 8px 8px calc(40px + var(--indent, 0px)); display: grid; gap: 6px; container-type: inline-size; }
+.kv { display: grid; gap: 0; }
+.kv[data-bare] { display: block; }
+.vw { min-width: 0; }
+@container (min-width: 420px) { .kv { grid-template-columns: 120px minmax(0, 1fr); column-gap: 8px; } }
+.k, .v, .plain { font-size: 13px; line-height: 18.2px; color: var(--text-secondary); min-width: 0; }
+.v { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.root .v:focus-visible { outline: none; }
+.v[data-full] { display: block; }
+.v[data-mono] { font-family: var(--font-mono); font-size: 11px; line-height: 15.95px; }
+.plain { overflow-wrap: anywhere; margin: 0; }
+.plain[data-tone="err"] { color: var(--accent-red); }
+.link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--text-primary) 25%, transparent); text-underline-offset: 3px; }
+.barNote { flex: none; font-size: 13px; line-height: 18.2px; color: var(--text-secondary); }
+.programOutput pre { margin: 0; padding: 0; border-radius: 0; background: none; color: var(--text-secondary); font-size: 11px; line-height: 15.95px; }
+.sa { font-size: 13px; line-height: 18.2px; color: var(--text-secondary); }
+.sa:hover, .moreButton:hover { color: var(--text-primary); }
+.more { padding: 6px 8px 0 40px; width: var(--L); box-sizing: border-box; }
+.moreButton { font-size: 13px; line-height: 18.2px; color: var(--text-secondary); }
+
+/* Technical details reuse the inspector's parts at this page's two sizes. */
+.tech { --right-panel-text-size: 13px; --right-panel-meta-size: 13px; --right-panel-line-height: 18.2px; --right-panel-font-weight: 400; min-width: 0; display: grid; gap: 6px; font-size: 13px; line-height: 18.2px; }
+.tech code { font-size: 11px; line-height: 15.95px; }
+.tech strong, .tech button { font-weight: 400; }
+.tech .techEvents { max-height: none; }

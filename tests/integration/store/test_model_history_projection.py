@@ -9,10 +9,10 @@ import sys
 SCRIPT = r'''
 import json,sys
 from pathlib import Path
-from openprogram.store.project.project_store import resolve_project,get_project
-from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
-from openprogram.store.document_history import DocumentHistory
+from openprogram.state.store.project.project_store import resolve_project,get_project
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
+from openprogram.state.store.document_history import DocumentHistory
 mode,argument=sys.argv[1:]
 store=SessionStore()
 try:

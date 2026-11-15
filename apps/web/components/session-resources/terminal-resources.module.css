@@ -1,9 +1,24 @@
-.viewer { display: flex; flex-direction: column; flex: 1; min-height: 240px; min-width: 0; color: var(--terminal-fg); background: var(--terminal-bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; overflow: auto; }
+.viewer { display: flex; flex-direction: column; flex: 1; min-height: 240px; min-width: 0; color: var(--terminal-fg); background: var(--terminal-bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px; overflow: auto; }
 .viewer header, .viewer footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.viewer header span { margin-left: auto; font-size: 12px; }
-.viewer button { background: transparent; color: inherit; border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; cursor: pointer; }
-.viewer button:disabled { opacity: .4; cursor: default; }
-.location { font-size: 12px; overflow-wrap: anywhere; }
-.screen { flex: 1; min-height: 0; overflow: hidden; }
-.viewer footer { padding-top: 10px; font-size: 12px; }
+.viewer header span { margin-left: auto; font-size: var(--right-panel-meta-size, var(--fs-xs)); }
+.location { font-size: var(--right-panel-meta-size, var(--fs-xs)); overflow-wrap: anywhere; }
+.viewer footer { padding-top: 10px; font-size: var(--right-panel-meta-size, var(--fs-xs)); }
 .viewer footer span { margin-right: auto; }
+
+.viewer header strong { font-size: var(--right-panel-text-size, var(--fs-base)); font-weight: var(--right-panel-font-weight, 700); }
+
+/* Chat preview mirror: fills the preview stage, read-only. */
+.mirror {
+  position: absolute;
+  inset: 0;
+  background: var(--terminal-bg);
+}
+
+.mirrorError {
+  position: absolute;
+  inset: auto 8px 6px;
+  margin: 0;
+  font-size: var(--fs-2xs);
+  color: var(--terminal-fg);
+  opacity: 0.8;
+}

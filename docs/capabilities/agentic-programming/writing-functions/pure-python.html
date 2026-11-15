@@ -1,0 +1,36 @@
+<title>Pure Python</title>
+<meta name="description" content="Deterministic helpers that need no LLM reasoning.">
+<meta name="covers" content="openprogram/programs/_authoring/">
+<h1>Pure Python</h1><pre translate="no" tabindex="0"><code>def word_count(text: str) -&gt; int:
+    """Count the number of words in a text.
+
+    Args:
+        text: Input text.
+
+    Returns:
+        The word count.
+    """
+    return len(text.split())</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Operation</th><th scope="col">Implementation</th></tr></thead>
+<tbody>
+<tr><th scope="row">Fixed algorithm, data conversion, counting, file reading and writing, math</th><td>Ordinary Python helper or Agent method; no <code translate="no">llm()</code>, no <code translate="no">runtime</code> parameter, a standard Google-style docstring</td></tr>
+<tr><th scope="row">Natural-language generation, classification, reasoning</th><td>Explicit <code translate="no">agent()</code> or <code translate="no">self(...)</code> request</td></tr>
+</tbody>
+</table>
+<h2>In the session DAG</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class TextAgent(Agent):
+    def word_count(self, text: str) -&gt; int:
+        """Count words."""
+        return len(text.split())</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Function</th><th scope="col">Recording</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent method that starts an execution</th><td>Recorded; needs no model request or tool registration</td></tr>
+<tr><th scope="row">Helper nested in that execution, or in a managed Program source</th><td>Runs in the active call scope; no node of its own</td></tr>
+<tr><th scope="row">Arbitrary host function</th><td>Not captured</td></tr>
+</tbody>
+</table>
+<p class="note">Being deterministic does not decide recording. Set <code translate="no">tool=True</code> only when the model should be able to call it.</p>

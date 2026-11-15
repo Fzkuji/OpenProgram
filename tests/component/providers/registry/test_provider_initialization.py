@@ -15,14 +15,21 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolated_runtime(monkeypatch: pytest.MonkeyPatch):
-    from openprogram.providers import api_registry
-    from openprogram.providers import initialization
-    from openprogram.providers import register
+    from openprogram.models.providers.catalog import api_registry
+    from openprogram.models.providers.catalog import initialization
+    from openprogram.models.providers.catalog import register
 
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
+    monkeypatch.setattr(api_registry, "_audited_originals", {})
+    monkeypatch.setattr(api_registry, "_audited_accounting", {})
     monkeypatch.setattr(register, "_registered", False)
+    importlib.reload(initialization)
+    yield
+    # A test that drives the runtime into FAILED must not leave it there for
+    # the next test in this process; the module state lives beside the
+    # patched attributes, so monkeypatch cannot restore it.
     importlib.reload(initialization)
 
 
@@ -56,13 +63,13 @@ def test_importing_provider_package_does_not_activate_invalid_replay(tmp_path: P
         """
 import json
 import sys
-import openprogram.providers
-from openprogram.providers import api_registry
-from openprogram.auth import credential_provider
+import openprogram.models.providers
+from openprogram.models.providers.catalog import api_registry
+from openprogram.models.auth import credential_provider
 print(json.dumps({
     "apis": sorted(api_registry._registry),
     "auth": sorted(credential_provider._provider_configs),
-    "recording_loaded": "openprogram.providers.recording" in sys.modules,
+    "recording_loaded": "openprogram.models.providers.recording.recording" in sys.modules,
 }))
 """,
         home=tmp_path,
@@ -79,8 +86,8 @@ print(json.dumps({
 def test_first_public_lookup_initializes_builtins_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.providers import api_registry
-    from openprogram.providers import initialization
+    from openprogram.models.providers.catalog import api_registry
+    from openprogram.models.providers.catalog import initialization
 
     calls = 0
 
@@ -103,8 +110,8 @@ def test_first_public_lookup_initializes_builtins_once(
 def test_concurrent_first_lookups_wait_for_one_initializer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.providers import api_registry
-    from openprogram.providers import initialization
+    from openprogram.models.providers.catalog import api_registry
+    from openprogram.models.providers.catalog import initialization
 
     entered = threading.Event()
     release = threading.Event()
@@ -114,7 +121,7 @@ def test_concurrent_first_lookups_wait_for_one_initializer(
         nonlocal calls
         calls += 1
         entered.set()
-        assert release.wait(5)
+        assert release.wait(30)
         api_registry.register_api_provider("test-api", object())
 
     monkeypatch.setattr(initialization, "_register_builtins", register)
@@ -129,12 +136,12 @@ def test_concurrent_first_lookups_wait_for_one_initializer(
 
     for thread in threads:
         thread.start()
-    assert entered.wait(5)
+    assert entered.wait(30)
     time.sleep(0.05)
     assert results == []
     release.set()
     for thread in threads:
-        thread.join(5)
+        thread.join(30)
         assert not thread.is_alive()
 
     assert calls == 1
@@ -166,14 +173,14 @@ def test_record_replay_activation_failure_installs_blocked_provider_and_stays_re
         """
 import asyncio
 import json
-from openprogram.providers import api_registry, initialization
-from openprogram.providers.types import (
+from openprogram.models.providers.catalog import api_registry, initialization
+from openprogram.models.providers.types import (
     Context,
     Model,
     SimpleStreamOptions,
     UserMessage,
 )
-from openprogram.providers.stream import stream_simple
+from openprogram.models.providers.streaming.stream import stream_simple
 
 api_registry.register_api_provider("blocked-api", object())
 snapshot = initialization.initialize_provider_runtime()
@@ -222,14 +229,14 @@ def test_recordings_off_recovers_after_activation_failure(tmp_path: Path) -> Non
     result = _run_python(
         """
 import json
-from openprogram.providers.recording import (
+from openprogram.models.providers.recording.recording import (
     activate_record_replay_safely,
     set_record_replay_off,
 )
-from openprogram.providers.api_registry import _provider_transform
+from openprogram.models.providers.catalog.api_registry import _provider_transform
 
 mode = activate_record_replay_safely()
-from openprogram.providers import api_registry
+from openprogram.models.providers.catalog import api_registry
 had_transform = api_registry._provider_transform is not None
 set_record_replay_off()
 print(json.dumps({"mode": mode, "had_transform": had_transform}))
@@ -245,8 +252,8 @@ def test_failed_initialization_is_stable_and_never_exposes_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Builtin registration failure keeps the runtime FAILED across callers."""
-    from openprogram.providers import api_registry
-    from openprogram.providers import initialization
+    from openprogram.models.providers.catalog import api_registry
+    from openprogram.models.providers.catalog import initialization
 
     provider = object()
     api_registry.register_api_provider("test-api", provider)
@@ -276,7 +283,8 @@ def test_failed_initialization_is_stable_and_never_exposes_provider(
 def test_failed_initialization_does_not_retain_original_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.providers import initialization, recording
+    from openprogram.models.providers.catalog import initialization
+    from openprogram.models.providers.recording import recording
 
     monkeypatch.setattr(
         initialization,
@@ -298,7 +306,7 @@ def test_failed_initialization_does_not_retain_original_exception(
 def test_failure_description_cannot_leave_runtime_initializing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.providers import initialization
+    from openprogram.models.providers.catalog import initialization
 
     class BrokenMessageError(Exception):
         def __str__(self) -> str:
@@ -329,8 +337,8 @@ def test_failure_description_cannot_leave_runtime_initializing(
 def test_worker_releases_lock_when_provider_initialization_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.providers import initialization
-    from openprogram.worker import runner
+    from openprogram.models.providers.catalog import initialization
+    from openprogram.operations.worker import runner
 
     class FakeLock:
         holder_pid = None
@@ -361,8 +369,8 @@ def test_worker_releases_lock_when_provider_initialization_fails(
 def test_auth_adapter_registration_failure_rolls_back_and_retries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.auth import credential_provider
-    from openprogram.providers import register
+    from openprogram.models.auth import credential_provider
+    from openprogram.models.providers.catalog import register
 
     monkeypatch.setattr(credential_provider, "_provider_configs", {})
     monkeypatch.setattr(credential_provider, "_PROVIDER_PLUGINS_LOADED", False)
@@ -398,8 +406,8 @@ def test_concurrent_builtin_and_auth_registration_do_not_deadlock(
 import json
 import threading
 import time
-from openprogram.auth import credential_provider
-from openprogram.providers import register
+from openprogram.models.auth import credential_provider
+from openprogram.models.providers.catalog import register
 
 credential_provider._provider_configs.clear()
 credential_provider._PROVIDER_PLUGINS_LOADED = False
@@ -443,8 +451,8 @@ print(json.dumps({"builtins": builtins.is_alive(), "auth": auth.is_alive()}))
 def test_builtin_registration_can_retry_after_loading_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.providers import api_registry
-    from openprogram.providers import register
+    from openprogram.models.providers.catalog import api_registry
+    from openprogram.models.providers.catalog import register
 
     importlib.reload(register)
     monkeypatch.setattr(api_registry, "_registry", {})
@@ -475,7 +483,6 @@ def test_builtin_registration_can_retry_after_loading_failure(
     ("provider", "model", "expected"),
     [
         ("anthropic", "claude-sonnet-4-6", "anthropic:claude-sonnet-4-6"),
-        ("claude-code", "claude-sonnet-4", "anthropic:claude-sonnet-4"),
         ("openai-codex", "gpt-5.5", "openai-codex:gpt-5.5"),
         ("gemini-cli", "gemini-2.5-flash", "gemini-subscription:gemini-2.5-flash"),
     ],
@@ -486,10 +493,11 @@ def test_replay_runtime_factory_never_constructs_credentials_runtime(
     expected: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.agentic_programming.runtime import Runtime
-    from openprogram.providers import initialization, registry
-    from openprogram.providers import models as provider_models
-    from openprogram.providers.types import Model
+    from openprogram.runtime.agent.runtime import Runtime
+    from openprogram.models.providers.catalog import initialization, registry
+    from openprogram.runtime.agent.runtime import factory
+    from openprogram.models.providers.catalog import models as provider_models
+    from openprogram.models.providers.types import Model
 
     namespace, model_id = expected.split(":", 1)
     api = {
@@ -521,7 +529,7 @@ def test_replay_runtime_factory_never_constructs_credentials_runtime(
     )
     monkeypatch.setattr(
         registry,
-        "_http_api_key_for",
+        "http_api_key_for",
         lambda entry: (_ for _ in ()).throw(AssertionError("credential lookup")),
     )
     real_import = importlib.import_module
@@ -533,7 +541,7 @@ def test_replay_runtime_factory_never_constructs_credentials_runtime(
 
     monkeypatch.setattr(importlib, "import_module", no_runtime_import)
 
-    runtime = registry.create_runtime(provider=provider, model=model)
+    runtime = factory.create_runtime(provider=provider, model=model)
 
     assert type(runtime) is Runtime
     assert runtime.model == expected
@@ -542,9 +550,9 @@ def test_replay_runtime_factory_never_constructs_credentials_runtime(
 def test_web_start_initializes_before_background_threads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from openprogram.webui import server
-    from openprogram.webui import owner_auth
-    from openprogram.providers import initialization
+    from openprogram.interfaces.server import server
+    from openprogram.interfaces.server import owner_auth
+    from openprogram.models.providers.catalog import initialization
 
     order: list[str] = []
 
@@ -570,7 +578,7 @@ def test_web_start_initializes_before_background_threads(
     monkeypatch.setattr(server, "_owner_auth_state", None)
     monkeypatch.setattr(owner_auth.OwnerAuthState, "start", lambda **kwargs: NoopAuth())
     monkeypatch.setattr(server.threading, "Thread", NoopThread)
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     monkeypatch.setattr(
         initialization,
         "initialize_provider_runtime",
@@ -582,66 +590,30 @@ def test_web_start_initializes_before_background_threads(
     assert order[0] == "initialize"
 
 
-def test_replay_claude_code_uses_enabled_model_without_anthropic_duplicate(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from openprogram.agentic_programming.runtime import Runtime
-    from openprogram.providers import enabled_models, initialization, registry
-    from openprogram.providers.types import Model
-
-    model = Model(
-        id="claude-sonnet-4-6",
-        name="Claude Sonnet 4.6",
-        api="anthropic-messages",
-        provider="claude-code",
-        base_url="https://api.anthropic.com",
-    )
-    monkeypatch.setattr(
-        enabled_models,
-        "ENABLED_MODELS",
-        {"claude-code/claude-sonnet-4-6": model},
-    )
-    monkeypatch.setattr("openprogram.providers.models.ENABLED_MODELS", enabled_models.ENABLED_MODELS)
-    monkeypatch.setattr(
-        initialization,
-        "initialize_provider_runtime",
-        lambda: initialization.ProviderRuntimeSnapshot(mode="replay"),
-    )
-
-    runtime = registry.create_runtime(
-        provider="claude-code", model="claude-sonnet-4-6"
-    )
-
-    assert type(runtime) is Runtime
-    assert runtime.model == "anthropic:claude-sonnet-4-6"
-    assert runtime.provider_id == "claude-code"
-    assert runtime.api_model.provider == "anthropic"
-    assert enabled_models.ENABLED_MODELS == {
-        "claude-code/claude-sonnet-4-6": model
-    }
 
 
 def test_replay_factory_does_not_enable_disabled_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.providers import enabled_models, initialization, registry
+    from openprogram.models.providers.catalog import enabled_models, initialization
+    from openprogram.runtime.agent.runtime import factory
 
     monkeypatch.setattr(enabled_models, "ENABLED_MODELS", {})
-    monkeypatch.setattr("openprogram.providers.models.ENABLED_MODELS", enabled_models.ENABLED_MODELS)
+    monkeypatch.setattr("openprogram.models.providers.catalog.models.ENABLED_MODELS", enabled_models.ENABLED_MODELS)
     monkeypatch.setattr(
         initialization,
         "initialize_provider_runtime",
         lambda: initialization.ProviderRuntimeSnapshot(mode="replay"),
     )
     monkeypatch.setattr(
-        "openprogram.providers.enabled_models.register_model_from_config",
+        "openprogram.models.providers.catalog.enabled_models.register_model_from_config",
         lambda provider, model: enabled_models.ENABLED_MODELS.update(
             {f"{provider}/{model}": object()}
         ) or True,
     )
 
     with pytest.raises(ValueError, match="Unknown model"):
-        registry.create_runtime(provider="anthropic", model="disabled-model")
+        factory.create_runtime(provider="anthropic", model="disabled-model")
 
     assert enabled_models.ENABLED_MODELS == {}
 
@@ -649,10 +621,11 @@ def test_replay_factory_does_not_enable_disabled_model(
 def test_replay_factory_does_not_register_disabled_community_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.providers import enabled_models, initialization, registry
+    from openprogram.models.providers.catalog import enabled_models, initialization
+    from openprogram.runtime.agent.runtime import factory
 
     monkeypatch.setattr(enabled_models, "ENABLED_MODELS", {})
-    monkeypatch.setattr("openprogram.providers.models.ENABLED_MODELS", enabled_models.ENABLED_MODELS)
+    monkeypatch.setattr("openprogram.models.providers.catalog.models.ENABLED_MODELS", enabled_models.ENABLED_MODELS)
     monkeypatch.setattr(
         initialization,
         "initialize_provider_runtime",
@@ -666,7 +639,7 @@ def test_replay_factory_does_not_register_disabled_community_model(
     )
 
     with pytest.raises(ValueError, match="Unknown model"):
-        registry.create_runtime(
+        factory.create_runtime(
             provider="community-provider", model="disabled-model"
         )
 

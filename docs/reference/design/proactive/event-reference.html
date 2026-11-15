@@ -1,105 +1,123 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="OpenProgram 当前事件层 API 与实际调用核对。">
-<title>OpenProgram · 事件层 API Reference</title>
-<style>
-:root{--bg:#0a1322;--panel:#101d31;--panel2:#0d1828;--line:rgba(154,178,204,.24);--text:#d9e5f1;--muted:#8aa0b8;--faint:#5f7a90;--cyan:#56d9e9;--violet:#b79bf5;--amber:#f2b544;--red:#f07a6a;--green:#6fd98f;--serif:ui-serif,"Songti SC","Noto Serif CJK SC",serif;--sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB",sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Monaco,Consolas,monospace}
-*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}body{background:var(--bg);color:var(--text);font:15px/1.75 var(--sans)}a{color:var(--cyan)}code,.mono{font-family:var(--mono)}code{font-size:.88em;color:var(--cyan);background:rgba(86,217,233,.08);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere;word-break:break-word}
-body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(900px 480px at 88% -5%,rgba(86,217,233,.08),transparent 65%),radial-gradient(800px 500px at -10% 35%,rgba(183,155,245,.06),transparent 65%)}
-.side{position:fixed;inset:0 auto 0 0;width:236px;padding:30px 20px 28px 26px;border-right:1px solid var(--line);background:rgba(10,19,34,.95);overflow:auto;z-index:5}.brand{font:11px var(--mono);letter-spacing:.2em;color:var(--cyan)}.side h1{font:800 19px/1.35 var(--serif);margin:8px 0 20px}.side .grp{font:10px var(--mono);letter-spacing:.12em;color:var(--faint);margin:15px 0 4px}.side a{display:block;padding:4px 0 4px 11px;margin-left:-13px;border-left:2px solid transparent;color:var(--muted);font-size:12px;text-decoration:none}.side a:hover,.side a:focus-visible{color:var(--text);border-left-color:var(--cyan);outline:none}
-.mobile{display:none}main{margin-left:236px;padding:0 56px 100px}.wrap{max-width:1480px;margin:auto}header{padding:68px 0 24px}.sys,.kicker{font:11px var(--mono);letter-spacing:.2em;color:var(--cyan);overflow-wrap:anywhere;word-break:break-word}.sub,.lead{max-width:1000px;color:var(--muted);overflow-wrap:anywhere;word-break:break-word}h2{font:800 42px/1.3 var(--serif);margin:12px 0 15px;overflow-wrap:anywhere;word-break:break-word}h2 em{font-style:normal;color:var(--cyan)}section{padding-top:55px;scroll-margin-top:25px}h3{font:800 27px/1.35 var(--serif);margin:4px 0 8px}.v{color:var(--violet)}.a{color:var(--amber)}.g{color:var(--green)}
-.figure{margin-top:20px;border:1px solid var(--line);border-radius:13px;overflow:auto;background:var(--panel2)}svg{display:block;width:100%;height:auto}.cap{padding:10px 18px;border-top:1px solid var(--line);font:12px var(--mono);color:var(--faint)}.flow{fill:none;stroke:#56d9e9;stroke-width:1.5;stroke-dasharray:6 8;opacity:.65}.flow.v{stroke:#b79bf5}.flow.a{stroke:#f2b544;stroke-width:1.8}.node{fill:#101d31;stroke:rgba(154,178,204,.42);stroke-width:1.2}
-.note,.api{margin-top:14px;border:1px solid var(--line);border-radius:10px;background:rgba(16,29,49,.75);padding:15px 19px;color:var(--muted);font-size:13px;overflow-wrap:anywhere;word-break:break-word}.note{border-style:dashed}.note.warn{border-color:rgba(242,181,68,.6)}.note strong{color:var(--text)}.fileref{display:block;color:var(--faint);font:11px var(--mono);overflow-wrap:anywhere;margin-top:5px}.api .nm{font:600 15px var(--mono);color:var(--cyan);margin-bottom:5px;overflow-wrap:anywhere;word-break:break-word}
-pre{margin-top:13px;padding:15px 17px;border:1px solid var(--line);border-radius:9px;background:#0a1626;color:var(--muted);font:12.5px/1.75 var(--mono);overflow:auto;white-space:pre}
-.search{position:sticky;top:0;z-index:4;padding:15px 0 10px;margin-top:14px;background:linear-gradient(var(--bg) 75%,transparent)}.search input{display:block;width:100%;margin-top:7px;padding:11px 14px;border:1px solid rgba(154,178,204,.46);border-radius:9px;background:var(--panel);color:var(--text);outline:none;font:13px var(--mono)}.search input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(86,217,233,.14)}.hint{font:11px var(--mono);color:var(--faint);margin-top:5px}
-.group{margin-top:14px;border:1px solid var(--line);border-radius:13px;background:rgba(16,29,49,.55);overflow:visible;scroll-margin-top:70px}.group.hidden{display:none}.group-head{padding:16px 21px 12px;border-bottom:1px solid var(--line)}.group-title{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}.group-title h4{font:20px var(--serif)}.count{font:11px var(--mono);color:var(--faint)}details.ev{border-bottom:1px solid rgba(154,178,204,.1)}details.ev:last-child{border:0}details.ev[hidden]{display:none}.ev summary{display:flex;flex-wrap:wrap;gap:9px;align-items:center;padding:12px 21px;cursor:pointer;list-style:none;min-width:0}.ev summary::-webkit-details-marker{display:none}.ev summary:before{content:"＋";width:16px;color:var(--faint);font:14px var(--mono);flex:none}.ev[open] summary:before{content:"−";color:var(--cyan)}.ev summary:hover,.ev summary:focus-visible{background:rgba(86,217,233,.04);outline:none}.ev summary:focus-visible{box-shadow:inset 0 0 0 2px rgba(86,217,233,.45)}.etype{font:600 14px var(--mono);min-width:0;overflow-wrap:anywhere}.tag{font:700 9px var(--mono);padding:1px 6px;border:1px solid currentColor;border-radius:5px;flex:none}.notify{color:var(--green)}.gate{color:var(--red)}.warn{color:var(--amber)}.origin{margin-left:auto;min-width:0;max-width:100%;overflow-wrap:anywhere;color:var(--faint);font:10px var(--mono)}.purpose{padding:0 21px 8px 66px;color:var(--muted);font-size:13px;overflow-wrap:anywhere}.details{padding:0 21px 16px 66px;overflow-wrap:anywhere}.row{display:grid;grid-template-columns:78px minmax(0,1fr);gap:10px;margin-top:8px;font-size:13px}.key{color:var(--faint);font:10px var(--mono);padding-top:2px}.current{color:var(--green)}.registry{color:var(--amber)}
-.table-wrap{overflow-x:auto;margin-top:17px}.matrix{width:100%;min-width:720px;border-collapse:collapse;font-size:13px}.matrix th,.matrix td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.matrix th{font:11px var(--mono);color:var(--faint)}.matrix td:first-child{font:600 12px var(--mono);color:var(--cyan)}
-footer{display:flex;justify-content:space-between;gap:16px;margin-top:70px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font:11px var(--mono)}
-@media(max-width:1100px){.side{display:none}.mobile{display:block;position:sticky;top:0;z-index:6;margin:0 -24px;padding:10px 24px;border-bottom:1px solid var(--line);background:rgba(10,19,34,.96)}.mobile summary{cursor:pointer;list-style:none;color:var(--cyan);font:12px var(--mono)}.mobile summary::-webkit-details-marker{display:none}.mobile summary:before{content:"☰  ";color:var(--muted)}.mobile-links{display:grid;grid-template-columns:repeat(2,1fr);gap:4px 14px;padding-top:9px}.mobile-links a{font-size:12px;text-decoration:none;color:var(--muted)}main{margin:0;padding:0 24px 85px}header{padding-top:38px}h2{font-size:32px}}
-@media(max-width:620px){.mobile-links{grid-template-columns:1fr}.origin{flex-basis:100%;width:auto;margin-left:25px}.purpose{padding-left:40px;padding-right:14px}.details{padding-left:40px;padding-right:14px}.row{grid-template-columns:1fr;gap:2px}footer{display:block}footer span{display:block;margin-top:5px}}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.flow{stroke-dasharray:none}}
-</style>
-</head>
-<body>
-<nav class="side" aria-label="页面导航"><div class="brand">OPENPROGRAM</div><h1>事件层<br>API Reference</h1><a href="#overview">概述</a><a href="#map">系统框架图</a><a href="#model">Event 数据模型</a><div class="grp">当前 registry</div><a href="#registered">已注册事件 <span id="n"></span></a><a href="#unregistered">未注册观察项</a><div class="grp">接口与用法</div><a href="#api">总线 API</a><a href="#observe">观察与订阅</a><a href="#gate">同步 gate</a><a href="#debug">事件日志</a><a href="#appendix">边界说明</a></nav>
-<main><div class="wrap">
-<details class="mobile"><summary>页面导航</summary><nav class="mobile-links" aria-label="移动端页面导航"><a href="#overview">概述</a><a href="#map">系统框架图</a><a href="#model">Event 数据模型</a><a href="#registered">已注册事件</a><a href="#unregistered">未注册观察项</a><a href="#api">总线 API</a><a href="#observe">观察与订阅</a><a href="#gate">同步 gate</a><a href="#debug">事件日志</a><a href="#appendix">边界说明</a></nav></details>
-<header><div class="sys">API REFERENCE · EVENT LAYER</div><h2>事件层 <em>Event Layer</em><br>参考手册</h2><p class="sub">以当前 <code>openprogram/events/registry.py</code> 为 API 准入清单，再用 <code>emit_safe</code>、<code>emit_gate</code>、桥接和透传调用核对来源。registry 有 28 项；其中 26 项可在当前源码定位到调用，<code>branches.listed</code> 与 <code>sessions.listed</code> 目前只出现在 registry。未注册事件和 WebSocket frame 类型单独列出。</p></header>
-<section id="overview"><div class="kicker">OVERVIEW</div><h3>文档范围与读取方式</h3><p class="lead">事件层是进程级 <code>EventBus</code>。源构造 frozen <code>Event</code> 并发送到总线，消费者按类型订阅；<code>gate</code> 事件在发送方线程内同步执行。registry 给出名称、kind 和 payload 说明，调用点用于确认事件生产。名称、数量和源码路径以当前 checkout 为准。</p><div class="note"><strong>状态：</strong><span class="current">当前调用</span> 表示 registry 与 emit/bridge/gate 路径均可定位；<span class="registry">仅注册</span> 表示当前只声明在 registry，不能据此声称运行时必然产生。</div></section>
-<section id="map"><div class="kicker">SYSTEM MAP</div><h3>系统框架图</h3><p class="lead">多个源通过 <code>openprogram/events/</code> 进入总线。消费者可以订阅 typed event 或读取日志；WebUI 透传使用未注册的 <code>ws.frame</code> 信封。琥珀色路径是同步 gate，当前 registry 中的 gate 类型为 <code>tool.before</code> 和 <code>turn.stop</code>。</p><div class="figure"><svg viewBox="0 0 1200 540" role="img" aria-labelledby="mt md" xmlns="http://www.w3.org/2000/svg"><title id="mt">OpenProgram 事件层关系图</title><desc id="md">agent、工具、上下文、记忆、通道和 auth bridge 进入 EventBus；消费者订阅事件或写入日志，ws.frame 透传到 WebUI；tool.before 和 turn.stop 通过同步 gate 返回结果。</desc><rect width="1200" height="540" rx="13" fill="#0d1828"/><text x="38" y="35" fill="#56d9e9" font-size="12" class="mono">SOURCES</text><text x="500" y="35" fill="#56d9e9" font-size="12" class="mono">PROCESS BUS</text><text x="880" y="35" fill="#56d9e9" font-size="12" class="mono">CONSUMERS</text><g class="node"><rect x="38" y="65" width="250" height="92" rx="10"/><text x="58" y="95" fill="#d9e5f1" font-size="15">agent / dispatcher</text><text x="58" y="120" fill="#8aa0b8" font-size="11" class="mono">turn · model · tool · question</text><text x="58" y="140" fill="#8aa0b8" font-size="11" class="mono">user.prompt_submitted</text></g><g class="node"><rect x="38" y="180" width="250" height="92" rx="10"/><text x="58" y="210" fill="#d9e5f1" font-size="15">工具与协作</text><text x="58" y="235" fill="#8aa0b8" font-size="11" class="mono">file · subagent · branches</text><text x="58" y="255" fill="#8aa0b8" font-size="11" class="mono">agents.listed</text></g><g class="node"><rect x="38" y="295" width="250" height="92" rx="10"/><text x="58" y="325" fill="#d9e5f1" font-size="15">context / memory / channels</text><text x="58" y="350" fill="#8aa0b8" font-size="11" class="mono">compaction · ingest · inbound</text><text x="58" y="370" fill="#8aa0b8" font-size="11" class="mono">credential.* 未注册</text></g><path class="flow" d="M288 110C360 110 410 220 470 235M288 225C370 225 410 250 470 255M288 340C370 340 410 280 470 275"/><rect x="470" y="180" width="250" height="145" rx="15" fill="#101d31" stroke="#56d9e9" stroke-width="2"/><text x="595" y="225" text-anchor="middle" fill="#56d9e9" font-size="23" class="mono">EventBus</text><text x="595" y="253" text-anchor="middle" fill="#8aa0b8" font-size="12" class="mono">emit · subscribe</text><text x="595" y="277" text-anchor="middle" fill="#f2b544" font-size="11" class="mono">emit_gate · synchronous</text><text x="595" y="301" text-anchor="middle" fill="#8aa0b8" font-size="11" class="mono">registry admission boundary</text><path class="flow" d="M720 220C790 220 820 125 880 125M720 255C790 255 820 255 880 255M720 290C790 290 820 385 880 385"/><path class="flow v" d="M595 325C595 420 740 465 880 465"/><path class="flow a" d="M535 325C500 395 430 445 340 480"/><g class="node"><rect x="880" y="76" width="280" height="90" rx="10"/><text x="902" y="106" fill="#d9e5f1" font-size="15">typed subscribers</text><text x="902" y="131" fill="#8aa0b8" font-size="11" class="mono">subscribe(handler, types=…)</text><text x="902" y="151" fill="#8aa0b8" font-size="11" class="mono">notify handlers isolated</text></g><g class="node"><rect x="880" y="210" width="280" height="90" rx="10"/><text x="902" y="240" fill="#d9e5f1" font-size="15">event_log</text><text x="902" y="265" fill="#8aa0b8" font-size="11" class="mono">sessions/&lt;sid&gt;/events.jsonl</text><text x="902" y="285" fill="#8aa0b8" font-size="11" class="mono">logs/events.jsonl · 5 MB rotate</text></g><g class="node"><rect x="880" y="344" width="280" height="90" rx="10"/><text x="902" y="374" fill="#d9e5f1" font-size="15">ws.frame envelope</text><text x="902" y="399" fill="#8aa0b8" font-size="11" class="mono">未注册 typed event</text><text x="902" y="419" fill="#8aa0b8" font-size="11" class="mono">webui 订阅后转发浏览器</text></g><g class="node"><rect x="170" y="450" width="282" height="62" rx="10" stroke="#f2b544"/><text x="192" y="478" fill="#f2b544" font-size="14">tool.before / turn.stop gate</text><text x="192" y="498" fill="#8aa0b8" font-size="11" class="mono">allow 或 deny reason</text></g></svg><div class="cap">青色为 typed event；紫色为日志/观察方向；琥珀色为同步 gate。<code>ws.frame</code> 与 <code>credential.*</code> 未注册，不计入 28 项。</div></div></section>
-<section id="model"><div class="kicker v">DATA MODEL</div><h3>Event 数据模型</h3><p class="lead"><code>Event</code> 是 frozen dataclass；<code>make_event</code> 自动生成 id、时间戳，并从 store ContextVar 补齐 session/turn metadata。</p><pre>@dataclass(frozen=True)
-class Event:
-    id: str
-    ts: float
-    type: str
-    origin: str
-    payload: dict
-    metadata: dict</pre><span class="fileref">openprogram/events/bus.py:45-105</span></section>
-<div class="search"><label for="q" class="kicker">FILTER REGISTERED EVENTS</label><input id="q" type="search" placeholder="搜索事件名、payload、用途或源码…" autocomplete="off"><div id="hint" class="hint" aria-live="polite">按子系统查看当前 registry；点击事件展开详情。</div></div>
-<section id="registered"><div class="kicker g">REGISTRY · 28 ENTRIES</div><h3>当前已注册事件</h3><p class="lead">以下条目严格来自 <code>EVENTS</code>。未注册类型、WS frame 内部 type 和候选名称不计入本目录。</p><div id="events"></div></section>
-<section id="unregistered"><div class="kicker a">MIGRATION / BOUNDARY</div><h3>未注册但可观察到的类型</h3><p class="lead">这些类型在当前代码中会被构造或发送，但不在 <code>registry.EVENTS</code>。EventBus 会容忍它们并对每个类型记录一次 warning。</p><div class="table-wrap"><table class="matrix"><thead><tr><th>类型</th><th>来源</th><th>实际语义</th><th>状态</th></tr></thead><tbody><tr><td>ws.frame</td><td><code>openprogram/events/bus.py:122-136</code></td><td><code>emit_ws_frame</code> 把现成 WebSocket frame 放入 payload.frame；<code>question.replied</code>、<code>session_reload</code>、<code>programs:changed</code> 等是载荷字段，不是 registry typed event。</td><td class="registry">未注册透传信封</td></tr><tr><td>credential.cooldown<br>credential.rotated<br>credential.exhausted</td><td><code>openprogram/events/bridges.py:19-45</code></td><td>AuthEvent 桥接产生的三个 typed Event；当前 registry 没有对应条目。</td><td class="registry">未注册桥接事件</td></tr></tbody></table></div><div class="note warn"><strong>边界：</strong><code>question.replied</code> 与 <code>question.rejected</code> 目前只出现在 WS frame（<code>openprogram/agent/permissions/lifecycle.py:149-152</code>、<code>openprogram/agent/questions.py:232-237</code>），没有作为 registry typed event 发送。</div></section>
-<section id="api"><div class="kicker g">API · CORE</div><h3>总线 API 与 helper</h3><div class="api"><div class="nm">get_event_bus() → EventBus</div><div class="desc">返回当前 worker 进程的单例总线；<code>create_event_bus()</code> 提供不写盘的独立实例。</div><span class="fileref">openprogram/events/bus.py:353-374</span></div><div class="api"><div class="nm">make_event(...) → Event</div><div class="desc">构造 frozen Event，补齐 id/ts 和 ContextVar correlation。</div><span class="fileref">openprogram/events/bus.py:87-105</span></div><div class="api"><div class="nm">emit_safe(type, origin, payload=None, metadata=None)</div><div class="desc">构造并发送 typed event；事件层失败会被吞掉。</div><span class="fileref">openprogram/events/bus.py:108-119</span></div><div class="api"><div class="nm">emit_ws_frame(frame)</div><div class="desc">发送未注册的 <code>ws.frame</code> envelope；payload 为 <code>{frame: {type, data, …}}</code>。</div><span class="fileref">openprogram/events/bus.py:122-136</span></div><div class="api"><div class="nm">subscribe(handler, *, types=None) → unsubscribe()</div><div class="desc"><code>types=None</code> 接收全部 typed events，否则只接收指定类型；notify handler 异常被隔离。</div><span class="fileref">openprogram/events/bus.py:208-227</span></div><div class="api"><div class="nm">emit_gate(event, timeout_s=None) → GateOutcome</div><div class="desc">按注册顺序同步调用 gate；任一 reason 使 <code>allowed=False</code>。异常和软超时按当前实现 fail-open。</div><span class="fileref">openprogram/events/bus.py:249-300</span></div></section>
-<section id="observe"><div class="kicker">GUIDE · OBSERVE</div><h3>观察：订阅当前事件</h3><p class="lead">订阅是异步观察接口。handler 的返回值不改变 emit 方。</p><pre>from openprogram.events import get_event_bus
+<title>Event reference</title>
+<meta name="description" content="Every registered event type with its payload, origin and emit site, plus the bus calls and the unregistered types.">
+<h1>Event reference</h1>
+
+<p class="note">Source of truth: <code translate="no">EVENTS</code> in <code translate="no">openprogram/runtime/events/registry.py</code>. Paths are under <code translate="no">openprogram/</code>. The label under an event is its origin, after its kind unless it is notify.</p>
+
+<h2 id="turn">Turns and tools</h2>
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">Payload</th><th scope="col">When and from where</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tool.before</code><span class="arg">gate · agent</span></th><td><code translate="no">{tool, tool_call_id, args}</code></td><td>Before each tool executes. A deny reason becomes the model's error tool result.<br><code translate="no">runtime/agent/loop/tool_dispatch.py</code></td></tr>
+<tr><th scope="row"><code translate="no">tool.result</code><span class="arg">transform · tool</span></th><td><code translate="no">{tool, tool_call_id, args, is_error}; value: result text</code></td><td>Before the result enters the model's context; only when a rewriter exists. Images and audio are kept.<br><code translate="no">runtime/agent/loop/tool_dispatch.py</code></td></tr>
+<tr><th scope="row"><code translate="no">tool.after</code><span class="arg">tool</span></th><td><code translate="no">{tool, tool_call_id, is_error, result_text}</code></td><td>After a tool call finishes. Text channel only.<br><code translate="no">runtime/agent/loop/tool_dispatch.py</code></td></tr>
+<tr><th scope="row"><code translate="no">turn.start</code><span class="arg">system</span></th><td><code translate="no">{session_id, user_msg_id, assistant_msg_id}</code></td><td>User message persisted, Agent loop about to run.<br><code translate="no">runtime/conversation/turn_runtime/__init__.py</code></td></tr>
+<tr><th scope="row"><code translate="no">turn.end</code><span class="arg">system</span></th><td><code translate="no">{session_id, user_msg_id, assistant_msg_id, usage}</code></td><td>Finalize completed.<br><code translate="no">runtime/conversation/turn_runtime/__init__.py</code></td></tr>
+<tr><th scope="row"><code translate="no">turn.stop</code><span class="arg">gate · system</span></th><td><code translate="no">{session_id, user_msg_id, assistant_msg_id, last_text (≤4000), stop_hook_active}</code></td><td>After a completed top-level chat turn. A denial starts a continuation turn.<br><code translate="no">runtime/conversation/turn_runtime/stop_hook.py</code></td></tr>
+<tr><th scope="row"><code translate="no">user.prompt_submitted</code><span class="arg">user</span></th><td><code translate="no">{msg_id, chars}</code></td><td>User message row persisted.<br><code translate="no">runtime/conversation/turn_runtime/prep.py</code></td></tr>
+<tr><th scope="row"><code translate="no">model.response_started</code><span class="arg">agent</span></th><td><code translate="no">{request_id}</code></td><td>One provider request dispatched within the loop.<br><code translate="no">runtime/agent/loop/provider_lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">model.response_completed</code><span class="arg">agent</span></th><td><code translate="no">{request_id, status, is_error}</code></td><td>One response ended, on every exit. Per loop iteration, not per turn.<br><code translate="no">runtime/agent/loop/provider_lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">file.changed</code><span class="arg">tool</span></th><td><code translate="no">{path, op}</code></td><td>A file tool changed the tree. <code translate="no">op</code>: write, edit, patch; <code translate="no">apply_patch</code> also sends add, update, delete.<br><code translate="no">programs/tools/files/{write,edit,apply_patch,_remote}.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="sessions">Sessions and interaction</h2>
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">Payload</th><th scope="col">When and from where</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session.start</code><span class="arg">system</span></th><td><code translate="no">{session_id, agent_id, channel}</code></td><td>WebUI created a session.<br><code translate="no">interfaces/server/server_runtime/session_lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">chat.before_send</code><span class="arg">user</span></th><td><code translate="no">{session_id, msg_id, text, agent_id, attachments}</code></td><td>Chat message persisted, about to enter the runtime.<br><code translate="no">interfaces/server/ws_actions/chat/turn.py</code></td></tr>
+<tr><th scope="row"><code translate="no">question.asked</code><span class="arg">agent</span></th><td><code translate="no">{session_id, question, …}</code></td><td>The Agent asked through the question channel. Also sends a <code translate="no">ws.frame</code>.<br><code translate="no">runtime/agent/questions.py</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp.request.cancelled</code><span class="arg">system</span></th><td><code translate="no">{request_id, execution_id, session_id, client_id, reason}</code></td><td>An MCP prompt request was cancelled and cleaned up.<br><code translate="no">extensions/mcp/server/service.py</code></td></tr>
+<tr><th scope="row"><code translate="no">ws.frame</code><span class="arg">system</span></th><td><code translate="no">{frame}</code></td><td>Carries a rendered WebSocket frame to the WebUI without importing the server.<br><code translate="no">runtime/events/bus.py (emit_ws_frame)</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="extensions">Plugins, goals and scheduling</h2>
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">Payload</th><th scope="col">When and from where</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">plugin.enable</code><span class="arg">system</span></th><td><code translate="no">{plugin}</code></td><td>Plugin loaded, contributions and hooks registered.<br><code translate="no">extensions/plugins/loader.py</code></td></tr>
+<tr><th scope="row"><code translate="no">plugin.disable</code><span class="arg">system</span></th><td><code translate="no">{plugin}</code></td><td>About to unload; subscriptions still live.<br><code translate="no">extensions/plugins/loader.py</code></td></tr>
+<tr><th scope="row"><code translate="no">goal.update</code><span class="arg">system</span></th><td><code translate="no">{session_id, goal: {goal_id, revision, text, status, phase, checklist, budget, usage, pause_reason, last_reason}}</code></td><td>Goal state changed.<br><code translate="no">programs/tools/planning/goal/state.py</code></td></tr>
+<tr><th scope="row"><code translate="no">reminder.fired</code><span class="arg">system</span></th><td><code translate="no">{task_id, title, message, session_id, agent_id, wake, scheduled_for, fired_at}</code></td><td>A reminder came due; shown, and wakes the Agent when wake is true.<br><code translate="no">runtime/scheduler/reminders.py</code></td></tr>
+<tr><th scope="row"><code translate="no">skills.changed</code><span class="arg">system</span></th><td><code translate="no">{}</code></td><td>The skills watcher saw an install or update on disk.<br><code translate="no">interfaces/server/server.py</code></td></tr>
+<tr><th scope="row"><code translate="no">plugins.update_available</code><span class="arg">system</span></th><td><code translate="no">{count}</code></td><td>The update checker found newer versions. The registry documents <code translate="no">{plugin, current, latest}</code>.<br><code translate="no">interfaces/server/server.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="context">Context, memory and security</h2>
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">Payload</th><th scope="col">When and from where</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">context.compacted</code><span class="arg">system</span></th><td><code translate="no">{ok, tokens_before, tokens_after, reason}</code></td><td>A compaction run finished.<br><code translate="no">runtime/context/engine.py</code></td></tr>
+<tr><th scope="row"><code translate="no">memory.degraded</code><span class="arg">system</span></th><td><code translate="no">{reason_code}</code></td><td>Optional memory is unavailable for a turn.<br><code translate="no">runtime/conversation/memory_execution.py, state/memory/policy.py</code></td></tr>
+<tr><th scope="row"><code translate="no">memory.ingest_started</code><span class="arg">system</span></th><td><code translate="no">{messages}</code></td><td>The session watcher began a batch.<br><code translate="no">state/memory/session_watcher.py</code></td></tr>
+<tr><th scope="row"><code translate="no">memory.ingest_ended</code><span class="arg">system</span></th><td><code translate="no">{ok, retryable, reason, attempt?, next_attempt_at?}</code></td><td>Ingest finished. <code translate="no">retryable=false</code> stops offering that session until it changes; a retry carries its attempt and when it comes.<br><code translate="no">state/memory/session_watcher.py</code></td></tr>
+<tr><th scope="row"><code translate="no">security.risky_tool_delegated</code><span class="arg">system</span></th><td><code translate="no">{session_id, tool, source, authority}</code></td><td>A delegated risky-tool check was allowed by bypass or an allow rule. No argument content; not an execution receipt.<br><code translate="no">runtime/permissions/audit.py</code></td></tr>
+<tr><th scope="row"><code translate="no">security.path_violation</code><span class="arg">system</span></th><td><code translate="no">{session_id, tool, reason}</code></td><td>A delegated write-target check denied access. Fixed reason, no path.<br><code translate="no">runtime/permissions/audit.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="collaboration">Channels and collaboration</h2>
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">Payload</th><th scope="col">When and from where</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">channel.message_inbound</code><span class="arg">user</span></th><td><code translate="no">{channel, peer_kind, chars}</code></td><td>An external message arrived.<br><code translate="no">interfaces/channels/_conversation.py</code></td></tr>
+<tr><th scope="row"><code translate="no">branch.message_sent</code><span class="arg">agent</span></th><td><code translate="no">{from, to}</code></td><td>A message went to another session branch.<br><code translate="no">programs/tools/agents/send_message/send_message/send_message.py, programs/tools/agents/agent/agent/agent.py</code></td></tr>
+<tr><th scope="row"><code translate="no">agents.listed</code><span class="arg">agent</span></th><td><code translate="no">{sessions, branches}</code></td><td><code translate="no">list_agents</code> enumerated targets.<br><code translate="no">programs/tools/agents/send_message/list_agents/list_agents.py</code></td></tr>
+<tr><th scope="row"><code translate="no">subagent.started</code><span class="arg">system</span></th><td><code translate="no">{job_id, label}</code></td><td>A background Agent job entered running.<br><code translate="no">runtime/jobs/runner/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">subagent.ended</code><span class="arg">system</span></th><td><code translate="no">{job_id, status, error}</code></td><td>A background Agent job reached a terminal state.<br><code translate="no">runtime/jobs/runner/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">branches.listed</code><span class="arg">agent</span></th><td><code translate="no">{session, count}</code></td><td>Registry only: no emitter.<br><code translate="no">runtime/events/registry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">sessions.listed</code><span class="arg">agent</span></th><td><code translate="no">{count}</code></td><td>Registry only: no emitter.<br><code translate="no">runtime/events/registry.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="api">Bus calls</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Call</th><th scope="col">Note</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">get_event_bus() → EventBus</code></th><td>Worker singleton.</td></tr>
+<tr><th scope="row"><code translate="no">create_event_bus()</code></th><td>Independent instance; no disk writes.</td></tr>
+<tr><th scope="row"><code translate="no">make_event(type, origin, payload, metadata) → Event</code></th><td>Fills <code translate="no">id</code>, <code translate="no">ts</code>, session and turn.</td></tr>
+<tr><th scope="row"><code translate="no">emit_safe(type, origin, payload=None, metadata=None)</code></th><td>Builds and emits; event-layer failures are swallowed.</td></tr>
+<tr><th scope="row"><code translate="no">emit_ws_frame(frame)</code></th><td>Sends a <code translate="no">ws.frame</code>.</td></tr>
+<tr><th scope="row"><code translate="no">subscribe(handler, *, types=None) → unsubscribe</code></th><td><code translate="no">types=None</code> receives every typed event.</td></tr>
+<tr><th scope="row"><code translate="no">subscribe_gate(type, fn) → unregister</code></th><td>Python gate.</td></tr>
+<tr><th scope="row"><code translate="no">emit_gate(event, timeout_s=None) → GateOutcome</code></th><td>Asks every gate.</td></tr>
+<tr><th scope="row"><code translate="no">subscribe_transform(type, fn) → unregister</code></th><td>Rewriter.</td></tr>
+<tr><th scope="row"><code translate="no">emit_transform(event, value)</code></th><td>Returns the final value.</td></tr>
+<tr><th scope="row"><code translate="no">register_tool_gate(gate) → unregister</code></th><td>Shortcut for <code translate="no">tool.before</code>.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Examples</summary>
+<pre translate="no"><code>from openprogram.runtime.events import get_event_bus
 
 def on_file_changed(event):
     print(event.payload["path"], event.metadata.get("session"))
-
-unsubscribe = get_event_bus().subscribe(
-    on_file_changed, types={"file.changed"}
-)</pre></section>
-<section id="gate"><div class="kicker a">GUIDE · GATE</div><h3>同步 gate：工具和轮次停止判断</h3><p class="lead">registry 中的 gate 类型是 <code>tool.before</code> 和 <code>turn.stop</code>。gate 返回空值表示允许，返回字符串表示拒绝并携带理由；<code>tool.before</code> 也有 <code>register_tool_gate</code> 兼容入口。</p><pre>from openprogram.events import get_event_bus
+unsubscribe = get_event_bus().subscribe(on_file_changed, types={"file.changed"})
 
 def guard(event):
     if event.payload.get("tool") == "bash":
         return "policy denied this tool call"
     return None
+remove = get_event_bus().subscribe_gate("tool.before", guard)</code></pre>
+</details>
 
-remove = get_event_bus().subscribe_gate("tool.before", guard)</pre><div class="note warn"><strong>执行约束：</strong>gate 在同步路径上运行；避免 LLM 调用和慢速 I/O。当前 bus 对异常、软超时和同类型重入按 fail-open 处理。</div></section>
-<section id="debug"><div class="kicker a">DEBUG</div><h3>事件日志</h3><p class="lead">进程级单例总线为 typed dispatch 写入 JSONL：带 session 且对应目录存在时写入 <code>~/.openprogram/sessions/&lt;sid&gt;/events.jsonl</code>，否则写入 <code>~/.openprogram/logs/events.jsonl</code>；超过 5 MB 时轮转。gate verdict 写在同一条记录的 <code>gate</code> 字段中。</p><pre>tail -f ~/.openprogram/logs/events.jsonl</pre><div class="note">常见顶层 turn 的 registered typed events 包括 <code>user.prompt_submitted</code>、<code>turn.start</code>、<code>model.response_started</code>、<code>tool.before</code>、<code>tool.after</code>、<code>model.response_completed</code> 和 <code>turn.end</code>。实际顺序随失败、取消、工具调用和 stop hook 分支变化。</div></section>
-<section id="appendix"><div class="kicker">APPENDIX</div><h3>边界说明</h3><p class="lead"><code>origin</code> 当前约定为 <code>user</code>、<code>agent</code>、<code>tool</code>、<code>system</code>、<code>proactive</code>。registry 的 payload 文档和真实调用参数若有差异，页面保留差异并标出源码位置，不把推测字段写入 API。</p><div class="note"><strong>不在本文全集内：</strong>WebUI 直接广播的内部 frame、未注册的 auth bridge 类型、proactive 策略本身及候选事件名。只有进入 <code>EVENTS</code> 的类型属于“已注册事件”目录。</div></section>
-<footer><span>OpenProgram · docs/reference/design/proactive/event-reference.html · 源码为据</span><span><a href="event-layer.html">事件层设计 →</a></span></footer>
-</div></main>
-<script>
-const R={tb:"29-34",ta:"35-39",ts:"41-48",tstart:"49-53",tend:"54-58",ss:"59-63",cbs:"64-69",pe:"70-74",pd:"75-79",gu:"80-85",up:"86-90",mrs:"91-95",mrc:"96-100",fc:"101-105",qa:"106-110",mc:"111-115",cc:"121-125",mi:"126-130",me:"131-137",ci:"138-142",bl:"143-147",bms:"148-152",al:"153-157",sa:"158-162",se:"163-167",sl:"168-172",sc:"173-177",pua:"178-182"};
-const D=[
-["主循环与工具","tool.before","gate","agent","{tool, tool_call_id, args}；工具即将执行，deny reason 成为模型的 error tool result。","每次 tool.execute() 之前；同步 gate 可阻止动作。","openprogram/agent/agent_loop.py:1238 · openprogram/events/tool_gate.py:31-40","tb"],
-["主循环与工具","tool.after","notify","tool","{tool, tool_call_id, is_error, result_text}；工具调用完成。","工具执行完成后。","openprogram/agent/agent_loop.py:1377","ta"],
-["主循环与工具","turn.stop","gate","system","{session_id, user_msg_id, assistant_msg_id, last_text≤4000, stop_hook_active}。","普通顶层 chat turn 完成后；拒绝会启动 continuation turn。","openprogram/agent/dispatcher/stop_hook.py:62-73","ts"],
-["主循环与工具","turn.start","notify","system","{session_id, user_msg_id, assistant_msg_id}。","用户消息持久化后、agent loop 启动前。","openprogram/agent/dispatcher/__init__.py:491-496","tstart"],
-["主循环与工具","turn.end","notify","system","{session_id, user_msg_id, assistant_msg_id, usage}。","dispatcher finalize 完成后。","openprogram/agent/dispatcher/__init__.py:713-719","tend"],
-["主循环与工具","user.prompt_submitted","notify","user","{msg_id, chars}；用户消息行已持久化。","prepare_turn 持久化完成后。","openprogram/agent/dispatcher/prep.py:231-237","up"],
-["主循环与工具","model.response_started","notify","agent","{}。","provider stream 开始输出时。","openprogram/agent/agent_loop.py:1092","mrs"],
-["主循环与工具","model.response_completed","notify","agent","{is_error: bool}。","每个 loop iteration 的响应完成或出错时。","openprogram/agent/agent_loop.py:1117-1127","mrc"],
-["主循环与工具","file.changed","notify","tool","registry 为 {path, op: write|edit|patch}；apply_patch 实际还发送 add|update|delete。","write、edit、apply_patch 成功改动后。","openprogram/programs/tools/files/{write.py:95,edit.py:122,apply_patch.py:112-116}","fc"],
-["会话与交互","session.start","notify","system","{session_id, agent_id, channel}。","WebUI 创建 session 时。","apps/server/openprogram_server/server.py:797-804","ss"],
-["会话与交互","chat.before_send","notify","user","{session_id, msg_id, text, agent_id, attachments}。","WebUI 消息持久化后、进入 runtime 前。","apps/server/openprogram_server/_webui/ws_actions/chat.py:1067","cbs"],
-["会话与交互","question.asked","notify","agent","{session_id, question, …}；同时产生 ws.frame transport。","runtime.ask/confirm 发布问题时。","openprogram/agent/questions.py:220-228","qa"],
-["会话与交互","mcp.request.cancelled","notify","system","{request_id, session_id, client_id, reason}；当前 payload 还含 execution_id。","MCP service 审计取消时。","openprogram/mcp/server/service.py:620-640","mc"],
-["策略与插件","plugin.enable","notify","system","{plugin}。","插件加载、贡献和 hook 注册后。","openprogram/plugins/loader.py:392-404","pe"],
-["策略与插件","plugin.disable","notify","system","{plugin}。","插件释放 registrations 之前。","openprogram/plugins/loader.py:414-428","pd"],
-["策略与插件","goal.update","notify","system","{session_id, goal:{text,status,turns_used,max_turns,last_reason,last_question}}。","goal 状态变化时。","openprogram/programs/workflow/goal/state.py:376-380","gu"],
-["策略与插件","skills.changed","notify","system","{}。","skills watcher 检测到 SKILL.md 变化时。","apps/server/openprogram_server/server.py:1833-1842","sc"],
-["策略与插件","plugins.update_available","notify","system","{plugin, current, latest}；当前 watcher tap 还发送 {count}。","更新检查器发现新版时。","apps/server/openprogram_server/server.py:1846-1867","pua"],
-["上下文与记忆","context.compacted","notify","system","{ok, tokens_before, tokens_after, …}；当前调用还带 reason。","compact() 完成后。","openprogram/context/engine.py:447-454","cc"],
-["上下文与记忆","memory.ingest_started","notify","system","{messages: int}。","session watcher 开始处理空闲消息时。","openprogram/memory/session_watcher.py:284-287","mi"],
-["上下文与记忆","memory.ingest_ended","notify","system","{ok, retryable, reason}。","memory ingest 结束时。","openprogram/memory/session_watcher.py:235-242","me"],
-["通道与协作","channel.message_inbound","notify","user","{channel, peer_kind, chars}。","外部消息进入 dispatch 路由前。","openprogram/channels/_conversation.py:113-118","ci"],
-["通道与协作","branches.listed","notify","agent","{session, count}；当前源码扫描未找到 emit_safe/make_event 调用。","registry 声明为 branch 列举事件。","openprogram/events/registry.py:143-146","bl",1],
-["通道与协作","branch.message_sent","notify","agent","{from, to}。","向另一 session branch dispatch message 时。","openprogram/programs/tools/agents/send_message/{send_message.py:176-183,agent.py:458-464}","bms"],
-["通道与协作","agents.listed","notify","agent","{sessions, branches}。","list_agents 列举协作目标后。","openprogram/programs/tools/agents/send_message/list_agents/list_agents.py:132-135,170-173","al"],
-["通道与协作","subagent.started","notify","system","{job_id, label}。","后台 agent job 转入 RUNNING 时。","openprogram/agent/job/runner.py:280-287","sa"],
-["通道与协作","subagent.ended","notify","system","{job_id, status, error}。","后台 agent job 到达终止态时。","openprogram/agent/job/runner.py:288-293","se"],
-["通道与协作","sessions.listed","notify","agent","{count}；当前源码扫描未找到 emit_safe/make_event 调用。","registry 声明为 session 列举事件。","openprogram/events/registry.py:168-171","sl",1]
-];
-function esc(v){return String(v).replace(/[&<>\"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]})}
-document.getElementById("n").textContent="· "+D.length;
-const groups=[...new Set(D.map(x=>x[0]))],root=document.getElementById("events");
-groups.forEach(function(g,gi){const rows=D.filter(x=>x[0]===g);let html="<section class=\"group\" id=\"group-"+gi+"\"><div class=\"group-head\"><div class=\"group-title\"><h4>"+esc(g)+"</h4><span class=\"count\">"+rows.length+" 项</span></div><div class=\"fileref\">当前 registry 条目；搜索会收起无匹配组。</div></div>";rows.forEach(function(x){const only=x[8];html+="<details class=\"ev\" data-q=\""+esc(x.slice(1,7).join(" ").toLowerCase())+"\"><summary><span class=\"etype\">"+esc(x[1])+"</span><span class=\"tag "+x[2]+"\">"+x[2]+"</span>"+(only?"<span class=\"tag warn\">registry only</span>":"")+"<span class=\"origin\">origin: "+esc(x[3])+"</span></summary><div class=\"purpose\">"+esc(x[4])+"</div><div class=\"details\"><div class=\"row\"><span class=\"key\">状态</span><span class=\""+(only?"registry":"current")+"\">"+(only?"仅注册":"当前调用")+"</span></div><div class=\"row\"><span class=\"key\">触发</span><span>"+esc(x[5])+"</span></div><div class=\"row\"><span class=\"key\">源码</span><span class=\"fileref\">"+esc(x[6])+"<br>registry: openprogram/events/registry.py:"+R[x[7]]+"</span></div></div></details>"});root.insertAdjacentHTML("beforeend",html+"</section>")});
-const q=document.getElementById("q"),hint=document.getElementById("hint");q.addEventListener("input",function(){const v=q.value.trim().toLowerCase();let n=0;document.querySelectorAll(".group").forEach(function(g){let hits=0;g.querySelectorAll(".ev").forEach(function(e){const hit=!v||e.dataset.q.includes(v);e.hidden=!hit;if(hit){hits++;n++}if(v&&hit)e.open=true});g.classList.toggle("hidden",Boolean(v&&!hits))});hint.textContent=v?n+" 个已注册事件匹配":"按子系统查看当前 registry；点击事件展开详情。"});
-document.querySelectorAll(".mobile-links a").forEach(function(a){a.addEventListener("click",function(){const d=a.closest("details");if(d)d.open=false})});
-</script>
-</body>
-</html>
+<h2 id="unregistered">Unregistered types</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Type</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">credential.cooldown</code>, <code translate="no">credential.rotated</code>, <code translate="no">credential.exhausted</code></th><td>Translated from AuthEvent by <code translate="no">bridges.py</code>, payload <code translate="no">{provider, profile, credential, detail}</code>. The bus tolerates them and warns once per type.</td></tr>
+<tr><th scope="row"><code translate="no">proactive.inject</code>, <code translate="no">proactive.prepare_requested</code></th><td>Derived events of the proactive engine, which is not installed.</td></tr>
+<tr><th scope="row"><code translate="no">question.replied</code>, <code translate="no">question.rejected</code>, <code translate="no">programs:changed</code></th><td>Frame types inside <code translate="no">ws.frame</code>, not typed events. Spawns, attach cards, reports, notices, merges and deletions reach an open chat as <code translate="no">transcript_update</code>.</td></tr>
+</tbody>
+</table>
+
+<h2 id="log">Reading the log</h2>
+<pre translate="no"><code>tail -f ~/.openprogram/logs/events.jsonl</code></pre>
+<p>A top-level turn usually shows <code translate="no">user.prompt_submitted</code>, <code translate="no">turn.start</code>, <code translate="no">model.response_started</code>, <code translate="no">tool.before</code>, <code translate="no">tool.after</code>, <code translate="no">model.response_completed</code>, <code translate="no">turn.end</code>. Failure, cancellation, tool calls and stop hooks change the order.</p>
+
+<p class="next"><a href="event-layer.html">Event layer</a></p>

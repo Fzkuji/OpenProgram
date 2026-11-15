@@ -1,0 +1,68 @@
+<title>Authentication</title>
+<meta name="description" content="Where provider credentials come from, where they are stored, and how to import or rotate them.">
+<h1>Authentication</h1>
+<p>OpenProgram requires safe, lawful and compliant use of Anthropic services: the official API, legitimately obtained API keys, API-account billing, and calls that comply with Anthropic's terms of service and usage policy.</p>
+<h2>Storage</h2>
+<p><code translate="no">~/.openprogram/auth/&lt;provider&gt;/&lt;account&gt;.json</code>, mode 0600. With <code translate="no">--profile &lt;name&gt;</code> the root is <code translate="no">~/.openprogram-&lt;name&gt;/</code>.</p>
+<p>Runtime reads the store only. A key in an environment variable must be imported first, and later changes to the variable do not affect it. Exceptions, detected at runtime: Amazon Bedrock (<code translate="no">AWS_PROFILE</code>, access keys, bearer token and so on) and Google Vertex (ADC).</p>
+<h2>Sources</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">API key</th><td><code translate="no">openprogram providers login deepseek</code>, or <code translate="no">printf %s "$KEY" | openprogram providers login deepseek --api-key-stdin</code>. <code translate="no">--api-key</code> also works but lands in shell history.</td></tr>
+<tr><th scope="row">Anthropic</th><td><code translate="no">openprogram providers login anthropic</code>, then your Anthropic API key</td></tr>
+<tr><th scope="row"><code translate="no">openai-codex</code></th><td>ChatGPT subscription, browser PKCE; or import an existing <code translate="no">codex</code> login</td></tr>
+<tr><th scope="row"><code translate="no">gemini-subscription</code></th><td>Imports <code translate="no">~/.gemini/oauth_creds.json</code>; log in with the Gemini CLI first</td></tr>
+<tr><th scope="row"><code translate="no">google-gemini-cli</code></th><td>Reads <code translate="no">~/.gemini/oauth_creds.json</code> directly, without discover</td></tr>
+<tr><th scope="row"><code translate="no">github-copilot</code></th><td>GitHub device code in the browser, or import <code translate="no">COPILOT_GITHUB_TOKEN</code>, <code translate="no">GH_TOKEN</code> or <code translate="no">GITHUB_TOKEN</code>. The short-lived Copilot token is exchanged on demand and never written to disk.</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">login</code> picks the method; <code translate="no">--method</code> forces one.</p>
+<h3>Import from this machine</h3>
+<pre translate="no"><code>openprogram providers discover        # lists only, writes nothing
+openprogram providers adopt codex_cli # one entry; --all imports everything</code></pre>
+<table class="stack">
+<thead><tr><th scope="col">Source</th><th scope="col">Location</th><th scope="col">Imported into</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex CLI</th><td><code translate="no">~/.codex/auth.json</code></td><td><code translate="no">openai-codex</code></td></tr>
+<tr><th scope="row">Qwen CLI</th><td><code translate="no">~/.qwen/oauth_creds.json</code></td><td><code translate="no">qwen</code></td></tr>
+<tr><th scope="row">gh CLI</th><td><code translate="no">~/.config/gh/hosts.yml</code></td><td><code translate="no">github</code></td></tr>
+<tr><th scope="row">Environment</th><td><code translate="no">OPENAI_API_KEY</code>, <code translate="no">ANTHROPIC_API_KEY</code> and others</td><td>The matching provider</td></tr>
+</tbody>
+</table>
+<p class="note">While the external CLI is present a pointer is stored and its file re-read on every call. Otherwise the token is copied and OpenProgram refreshes it.</p>
+<h3>Helper command</h3>
+<p>For tokens issued by a CLI such as <code translate="no">aws</code>, <code translate="no">sso-helper</code> or <code translate="no">token-fetcher</code>: in Settings → Providers add type <code translate="no">credential_process</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col">Field</th><th scope="col">Meaning</th><th scope="col">Default</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">command</code></th><td>Argv list, run without a shell</td><td>required</td></tr>
+<tr><th scope="row"><code translate="no">parses</code></th><td><code translate="no">json</code>, or <code translate="no">text</code> for stripped stdout</td><td><code translate="no">json</code></td></tr>
+<tr><th scope="row"><code translate="no">json_key_path</code></th><td>Keys to walk, such as <code translate="no">["creds", "token"]</code>. Empty: the document must be a string</td><td><code translate="no">[]</code></td></tr>
+<tr><th scope="row"><code translate="no">cache_seconds</code></th><td>Token reuse. <code translate="no">0</code> runs on every call</td><td><code translate="no">300</code></td></tr>
+<tr><th scope="row"><code translate="no">timeout_seconds</code></th><td>Limit per run</td><td><code translate="no">60</code></td></tr>
+</tbody>
+</table>
+<p class="note">The login smoke test runs it once. A failure (non-zero exit, timeout, bad output, missing key path) fails the request with the command and its stderr, and never falls back to another credential. Fix the helper, or remove it to use another source.</p>
+<p class="note">Enterprise SSO (<code translate="no">sso</code>) is not implemented; the API and resolver reject it.</p>
+<h2>Manage</h2>
+<p>Commands: <a href="README.html">Configure models</a>.</p>
+<p>Every provider supports named accounts, and an account's pool can hold several API keys. A key returning 401, 402, 429 or 503 cools down and the next healthy key serves the following request. Strategies: <code translate="no">fill_first</code> (default, backup key), <code translate="no">round_robin</code>, <code translate="no">random</code>, <code translate="no">least_used</code>. Rotating across whole accounts is a separate per-provider switch, off by default.</p>
+<details>
+<summary>Codex sign-in</summary>
+<ul>
+<li>Program calls use the provider's active account, including one set with <code translate="no">openprogram providers use openai-codex &lt;account&gt;</code>. A script can pin another: <code translate="no">create_runtime(provider="openai-codex", profile="&lt;account&gt;")</code>.</li>
+<li>Terminal authentication failures and errors marked non-retryable stop after one request, keeping their category through the Program runtime. Other callback failures keep the Program's bounded recovery.</li>
+<li>The callback listener starts before the authorization page. Keep the provider panel open until it reports success.</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">Problem</th><th scope="col">Do</th></tr></thead>
+<tbody>
+<tr><th scope="row">Page does not open</th><td><strong>Open sign-in page</strong></td></tr>
+<tr><th scope="row">Callback cannot reach the app</th><td>Paste the callback URL into the login panel; it must belong to the current attempt</td></tr>
+<tr><th scope="row">Code expired or already used</th><td>Start a fresh sign-in</td></tr>
+<tr><th scope="row">Token exchange returns HTTP 403</th><td>OpenAI refused; account access or the network may be the cause. The panel names recognized authorization errors and shows connection retries.</td></tr>
+</tbody>
+</table>
+<p class="note">Cancelling or leaving the panel ends the attempt.</p>
+</details>

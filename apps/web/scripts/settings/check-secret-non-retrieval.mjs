@@ -1,60 +1,17 @@
+// Rule (security): credentials are never retrievable in plaintext by the web
+// app. Checked on the AST: no reveal identifiers or reveal URLs, key previews
+// and account views are masked-only types, MCP env/headers are masked maps,
+// and the MCP edit dialog opens with empty secret inputs. The runtime side
+// (masked getKey request, replacement guard) is tests/settings/secret-non-retrieval.test.mjs.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import { registerHooks } from "node:module";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import ts from "typescript";
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier.startsWith("@/")) {
-      const base = new URL(`../../${specifier.slice(2)}`, import.meta.url).href;
-      const tsFile = `${base}.ts`;
-      const tsxFile = `${base}.tsx`;
-      const url = existsSync(fileURLToPath(tsFile))
-        ? tsFile
-        : existsSync(fileURLToPath(tsxFile))
-          ? tsxFile
-          : `${base}/index.ts`;
-      return { url, shortCircuit: true };
-    }
-    if (specifier.startsWith(".") && !/\.[a-z]+$/.test(specifier)) {
-      const base = new URL(specifier, context.parentURL).href;
-      const tsFile = `${base}.ts`;
-      const tsxFile = `${base}.tsx`;
-      const url = existsSync(fileURLToPath(tsFile)) ? tsFile : tsxFile;
-      return { url, shortCircuit: true };
-    }
-    return nextResolve(specifier, context);
-  },
-});
-
-const fetchCalls = [];
-globalThis.fetch = async (url, init) => {
-  fetchCalls.push({ url, init });
-  return {
-    ok: true,
-    status: 200,
-    text: async () => JSON.stringify({ has_value: true, masked: "sk-…abc4" }),
-  };
-};
-
-const { api } = await import("../../lib/net/api.ts");
-const preview = await api.getKey("OPENAI_API_KEY", true);
-assert.deepEqual(preview, { has_value: true, masked: "sk-…abc4" });
-assert.deepEqual(
-  fetchCalls,
-  [{
-    url: "/api/config/key/OPENAI_API_KEY",
-    init: { headers: { "Content-Type": "application/json" } },
-  }],
-  "getKey must have one masked-only request shape even when an old caller passes a second argument",
-);
 
 const root = new URL("../../", import.meta.url);
 const targetPaths = [
-  "components/providers/provider-detail.tsx",
-  "components/settings/providers/api-key.tsx",
-  "components/settings/providers/account-manager.tsx",
+  "components/settings/providers/auth/api-key.tsx",
+  "components/settings/providers/detail/keys-panel.tsx",
+  "components/settings/providers/add/key-entry.tsx",
   "lib/net/api.ts",
 ];
 
@@ -214,20 +171,5 @@ for (const required of ["has_token", "masked_token", "has_client_secret"]) {
     }
   }
 }
-
-let replacement;
-try {
-  replacement = await import("../../lib/net/secret-replacement.ts");
-} catch (error) {
-  assert.fail(`secret replacement guard is missing: ${error}`);
-}
-
-const { normalizeSecretReplacement } = replacement;
-assert.equal(normalizeSecretReplacement("  sk-new-secret  ", "sk-…abc4"), "sk-new-secret");
-assert.equal(normalizeSecretReplacement("sk-…abc4", "sk-…abc4"), null);
-assert.equal(normalizeSecretReplacement("••••••••", "••••••••"), null);
-assert.equal(normalizeSecretReplacement(""), null);
-assert.equal(normalizeSecretReplacement("secret\nsecond-line"), null);
-assert.equal(normalizeSecretReplacement("密钥"), null);
 
 console.log("check-secret-non-retrieval: ok");

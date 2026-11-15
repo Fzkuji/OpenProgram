@@ -1,0 +1,10 @@
+#!/bin/sh
+# Installed into .git/hooks by scripts/git-hooks/install.sh. A merge or fast-forward
+# passes no pre-commit, so report what it brought in. Never blocks.
+test -f scripts/docs_site/check.py || exit 0
+common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+python="$(dirname "$common_dir")/.venv/bin/python"
+test -x "$python" || exit 0
+git rev-parse -q --verify ORIG_HEAD >/dev/null || exit 0
+"$python" -B -m scripts.docs_site.check --base ORIG_HEAD --report-only || true
+exit 0

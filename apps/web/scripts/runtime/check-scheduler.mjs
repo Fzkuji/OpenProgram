@@ -1,30 +1,16 @@
+// Rule: the Schedule-X calendar touches the DOM, so it is a "use client" module
+// loaded with dynamic(..., { ssr: false }); it never renders on the server.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-const page = readFileSync(new URL("../../components/scheduler/scheduler-page.tsx", import.meta.url), "utf8");
-const sidebarPrimaryNav = readFileSync(
-  new URL("../../components/sidebar/sidebar-primary-nav.tsx", import.meta.url),
-  "utf8",
-);
-const memory = readFileSync(new URL("../../components/memory/index.tsx", import.meta.url), "utf8");
 
-assert.match(page, /\/api\/scheduler\/tasks/);
-assert.match(page, /\/api\/memory\/refs/);
-assert.match(page, /"once" \| "recurring" \| "monitor"/);
-assert.match(page, /role="alert"/);
-assert.match(page, /if \(!response\.ok\)/);
-assert.match(page, /aria-label=/);
-assert.match(page, /loadedOnce/);
-assert.match(page, /ManagePageHeader/);
-assert.match(page, /ManageRow/);
-assert.match(page, /managePageStyles as shared/);
-assert.match(page, /styles\.layout/);
-assert.match(page, /taskIndex/);
-assert.match(page, /actionAccessibleName/);
-assert.match(page, /shouldShowSuggestions/);
-assert.doesNotMatch(page, /styles\.intro/);
-assert.match(sidebarPrimaryNav, /href:\s*"\/scheduler"/);
-assert.doesNotMatch(memory, /Commitments|commitments/);
+const read = (path) => readFileSync(new URL(`../../components/scheduler/${path}`, import.meta.url), "utf8");
+const page = read("scheduler-page.tsx");
+const calendar = read("scheduler-calendar.tsx");
 
-assert.equal((page.match(/form: \{/g) || []).length, 3);
+assert.match(page, /dynamic\(\(\) => import\("\.\/scheduler-calendar"\), \{\s*ssr: false/, "the calendar is imported with ssr: false");
+assert.match(calendar, /^"use client";/, "scheduler-calendar.tsx starts with \"use client\"");
+assert.match(calendar, /@schedule-x\/react/);
+// Hover help goes through HoverTip, never a native title attribute.
+assert.doesNotMatch(calendar, /\btitle=/);
 
 console.log("scheduler checks passed");

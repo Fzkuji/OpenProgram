@@ -1,0 +1,36 @@
+<title>右侧栏字体</title>
+<meta name="description" content="文件、活动、资源、执行详情和上下文记录共用的文字角色。">
+<h1>右侧栏字体</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">角色</th><th scope="col">用于</th><th scope="col">字号</th><th scope="col">行高</th></tr></thead>
+<tbody>
+<tr><th scope="row">主要</th><td>导航、分区标题、条目名、普通详情文字</td><td><code translate="no">--fs-base</code> 14px，常规字重</td><td>20px</td></tr>
+<tr><th scope="row">次要</th><td>状态、计数、时间、路径、文件大小、辅助说明</td><td><code translate="no">--fs-sm</code> 13px</td><td>20px</td></tr>
+<tr><th scope="row">代码</th><td>代码、标识符、终端输出</td><td>保持等宽字体</td><td>保持原样</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">.right-sidebar</code> 上的作用域变量（<code translate="no">--right-panel-text-size</code>、<code translate="no">--right-panel-meta-size</code>）决定角色。其他地方用到的组件保留回退样式。虚拟化文件行保持 30px 高。</p>
+
+<h2>实现</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">复用</th><td>应用的字体和字号 token、共用的 <code translate="no">SectionHeader</code>、原生文件树主题覆盖。资源和活动列表的内边距、标题与元信息间距一致。</td></tr>
+<tr><th scope="row">不做</th><td>全局元素重置、新的字体组件、强制大写、改动文档或终端内容</td></tr>
+<tr><th scope="row">不改变</th><td>资源归属、执行状态、导航、文件树虚拟化、持久化设置、Goal 和固定预览行为</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>验收</summary>
+<p>在 App 里填充文件、活动和资源，再打开执行详情和上下文记录：</p>
+<ul>
+<li>同一角色的计算样式一致，文件树的 shadow root 和普通 DOM 都要看。</li>
+<li>侧栏窄和宽时，控件都不被裁切，没有新的横向溢出。</li>
+<li>选中、展开和键盘焦点保持。</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现，包括文件树主题覆盖、执行和上下文元信息。</p>

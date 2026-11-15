@@ -1,0 +1,18 @@
+/* A path in a reply that names a file the chat can open
+   (components/chat/messages/bubbles/prose-file-links.tsx) is drawn as the
+   app's rendered-markdown links are (the file preview's `.document a`):
+   the link colour over a faint underline at rest that turns solid on
+   hover. A code span keeps its chip and takes the link colour and the
+   underline, so it reads as something to open, not code to copy, even in
+   a theme whose link colour is close to the code colour. Only decoration
+   changes: the paragraph's layout is the same as before the path became a
+   link. */
+.message-content a.md-file-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-blue) 40%, transparent);
+  text-underline-offset: 2px;
+}
+.message-content a.md-file-link:hover { text-decoration-color: currentColor; }
+.message-content a.md-file-link code { color: var(--accent-blue); }
+.message-content a.md-file-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-xs); }

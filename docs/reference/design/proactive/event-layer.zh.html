@@ -1,0 +1,149 @@
+<title>事件层</title>
+<meta name="description" content="框架统一的类型化事件总线：事件对象、三种分发方式、否决协议、事件日志和接线。">
+<h1>事件层</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="worker 进程内的事件源把事件发到进程唯一的 EventBus。事件源是 Agent 循环与工具、dispatcher、任务运行器，以及来自 auth、context、channels、memory 的系统状态。消费者订阅总线：通过 ws.frame 的 WebUI、插件和配置钩子、事件日志。事件源和消费者只认识总线。">
+  <defs><marker id="el-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-soft" x="0" y="20">事件源</text>
+  <text x="0" y="54">Agent 循环、工具</text>
+  <text x="0" y="84">dispatcher</text>
+  <text x="0" y="114">任务运行器</text>
+  <text x="0" y="144">auth、context</text>
+  <text x="0" y="174">channels、memory</text>
+  <line class="ln" x1="150" y1="104" x2="256" y2="104" marker-end="url(#el-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="200" y="94">emit</text>
+  <rect class="tile" x="268" y="56" width="150" height="96" rx="8"/>
+  <text class="t-big mid" x="343" y="98">EventBus</text>
+  <text class="t-soft mid" x="343" y="124">每进程一个</text>
+  <line class="ln" x1="418" y1="104" x2="516" y2="104" marker-end="url(#el-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="466" y="94">subscribe</text>
+  <text class="t-soft" x="528" y="20">消费者</text>
+  <text x="528" y="54">WebUI（ws.frame）</text>
+  <text x="528" y="84">插件</text>
+  <text x="528" y="114">配置钩子</text>
+  <text x="528" y="144">events.jsonl</text>
+  <text class="t-soft mid" x="343" y="214">事件源和消费者只认识总线。总线不导入 WebUI 的任何东西。</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>事件源</strong><small>Agent 循环、工具、dispatcher、任务运行器、auth、context、channels、memory</small></li>
+  <li class="via"><code translate="no">emit</code></li>
+  <li><strong>EventBus</strong><small>每进程一个；不导入 WebUI 的任何东西</small></li>
+  <li class="via"><code translate="no">subscribe</code></li>
+  <li class="flow-end"><strong>消费者</strong><small>WebUI（ws.frame）、插件、配置钩子、events.jsonl</small></li>
+</ol>
+</figure>
+
+<h2>分发</h2>
+<table class="stack">
+<thead><tr><th scope="col">方式</th><th scope="col">调用</th><th scope="col">效果</th><th scope="col">订阅者抛错</th></tr></thead>
+<tbody>
+<tr><th scope="row">notify</th><td><code translate="no">emit</code> / <code translate="no">subscribe(handler, types=…)</code></td><td>只观察；发送方从不等结果</td><td>记录；其余订阅者照常运行</td></tr>
+<tr><th scope="row">gate</th><td><code translate="no">emit_gate(event, timeout_s=None)</code> / <code translate="no">subscribe_gate</code></td><td>按注册顺序在发送方线程全部运行。任一理由即 <code translate="no">allowed=False</code>，理由累积。</td><td>记录，按放行处理</td></tr>
+<tr><th scope="row">transform</th><td><code translate="no">emit_transform(event, value)</code> / <code translate="no">subscribe_transform</code></td><td>每个接收上一个的值并返回下一个；<code translate="no">None</code> 保持原值</td><td>跳过，输入继续传下去</td></tr>
+</tbody>
+</table>
+<ul>
+<li>gate 是 <code translate="no">tool.before</code> 和 <code translate="no">turn.stop</code>；唯一的 transform 是 <code translate="no">tool.result</code>，shell 钩子不能订阅。其余都是 notify：<a href="event-reference.zh.html">事件参考</a>。</li>
+<li>gate 要快：不调 LLM，不做慢 I/O。</li>
+<li>同一线程内对同一类型嵌套 <code translate="no">emit_gate</code> 会立即放行并警告。</li>
+<li><code translate="no">timeout_s</code> 是软总预算；超过后其余 gate 被跳过并警告。</li>
+<li><code translate="no">tool.before</code> 在 <code translate="no">permission_mode</code> 审批包装之外，<code translate="no">bypass</code> 和子 Agent 都逃不开。</li>
+<li>notify 处理函数也在发送方线程运行；异步函数在有运行中事件循环时被调度到其上。</li>
+</ul>
+
+<h2>事件</h2>
+<pre translate="no"><code>@dataclass(frozen=True)
+class Event:
+    id: str
+    ts: float
+    type: str
+    origin: str      # user / agent / tool / system / proactive
+    payload: dict
+    metadata: dict   # {"session": …, "turn": …, "lane": …}</code></pre>
+<p><code translate="no">make_event</code> 填充 <code translate="no">id</code>、<code translate="no">ts</code>，并从 store 的 ContextVar 取 session 和 turn；显式传入的 <code translate="no">metadata</code> 键优先。session 和 turn 放在 metadata，因为它们是外部关联，对 auth、channels 等一半事件没有意义。框架没有 Turn 对象。</p>
+
+<h2>准入</h2>
+<p>只有真实消费者订阅时，一个类型才进入 <code translate="no">EVENTS</code>。新增类型只改发送点；新增载荷字段是安全的；改动已有字段可能破坏订阅者。</p>
+<p class="note">发送未注册类型时每种类型警告一次，绝不抛错。<code translate="no">test_every_emitted_type_is_registered</code> 覆盖所有 <code translate="no">emit_safe</code> 类型。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">事件源类别</th><th scope="col">接入方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">A：Agent 活动</th><td>turn、工具、任务路径上的发送点；metadata 通常带 session 和 turn</td></tr>
+<tr><th scope="row">B：系统状态，可能没有 Agent 在运行</th><td>auth 保留自己的 <code translate="no">subscribe</code>/<code translate="no">_emit</code>，经 <code translate="no">events/bridges.py</code> 单向桥接。context、channels、memory 和 WebUI watcher 用 <code translate="no">emit_safe</code> 直接接入。</td></tr>
+</tbody>
+</table>
+
+<h2>否决</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">订阅者</th><th scope="col">协议</th></tr></thead>
+<tbody>
+<tr><th scope="row">Python gate</th><td><code translate="no">None</code> 放行；字符串拒绝。<code translate="no">tool.before</code>：理由成为模型收到的错误工具结果。<code translate="no">turn.stop</code>：理由成为续跑提示，前缀 <code translate="no">[hook]</code>。</td></tr>
+<tr><th scope="row">Shell，事件以 JSON 从 stdin 传入</th><td>退出码 <code translate="no">0</code> 放行。<code translate="no">2</code> 拒绝，stderr 是理由。其他退出码或超时（默认 60 秒）放行并警告。</td></tr>
+</tbody>
+</table>
+
+<pre translate="no"><code>{"hooks": {"turn.stop": [{"command": "python check_done.py", "timeout": 30}]}}</code></pre>
+<p class="note"><code translate="no">config.json</code> 顶层的 <code translate="no">hooks</code> 键。<code translate="no">install_config_hooks()</code> 把 gate 类注册为同步 shell gate，notify 类注册为后台运行器（守护线程，忽略退出码）。修改在 worker 下次重启时生效。</p>
+<p class="note">命令在 macOS 和 Linux 上由 <code translate="no">/bin/sh</code> 运行，在 Windows 上由 bash 运行，没有 bash 时改用 PowerShell 并提示一次。条目可以写 <code translate="no">"shell": "powershell"</code>，或给出 <code translate="no">args</code>，不经 shell 直接运行 <code translate="no">command</code>（<a href="../distribution/windows-command-shell.zh.html#hook-shell">hook 用哪个 shell</a>）。事件以 UTF-8 JSON 从标准输入送入。</p>
+
+<details>
+<summary><code translate="no">turn.stop</code> 续跑循环</summary>
+<ul>
+<li>每个完成的顶层对话轮次后，<code translate="no">continue_stop_hook_turns</code> 询问 gate。失败或取消的轮次不询问。</li>
+<li>被拒绝时再启动一轮普通轮次（<code translate="no">dataclasses.replace</code>、<code translate="no">source="hook_continue"</code>、<code translate="no">INHERIT_PARENT</code>），然后再问 gate。</li>
+<li>没有次数上限：第一次之后的询问里 <code translate="no">stop_hook_active</code> 都为真，钩子据此放行结束，与 Claude Code、Codex 相同。</li>
+<li>Goal 轮次不走这条路径：<code translate="no">goal()</code> 自带完成判定，<code translate="no">/goal clear</code> 可以停止。</li>
+<li>Head 移动仍由正常的 <code translate="no">TurnWriter</code> 路径负责。</li>
+</ul>
+</details>
+
+<h2>事件日志</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话目录存在</th><td><code translate="no">~/.openprogram/projects/&lt;project-id&gt;/chats/&lt;sid&gt;/events.jsonl</code></td></tr>
+<tr><th scope="row">否则</th><td><code translate="no">~/.openprogram/logs/events.jsonl</code></td></tr>
+<tr><th scope="row">轮转</th><td>超过 5 MB 改名为 <code translate="no">.1</code>，覆盖旧的</td></tr>
+<tr><th scope="row">gate 裁决</th><td>写在事件同一行：<code translate="no">gate: {allowed, reasons, duration_ms, subscribers}</code></td></tr>
+<tr><th scope="row">写入者</th><td>只有单例；<code translate="no">create_event_bus()</code> 创建的总线不写</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>gate 事件与日志行</summary>
+<p>gate 事件经 <code translate="no">emit</code> 给类型观察者时推迟落盘；同一 Event 随后必须进入 <code translate="no">emit_gate</code>，写下带裁决的唯一一行。只调 <code translate="no">emit</code> 不写日志。只调 <code translate="no">emit_gate</code> 是完整分发，但不通知观察者，<code translate="no">turn.stop</code> 就是这样。</p>
+</details>
+
+<h2>接线</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">接口</th><th scope="col">实现</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">register_tool_gate</code>、<code translate="no">decide_tool_gate</code>、<code translate="no">ToolGateDenied</code></th><td><code translate="no">tool.before</code> gate 的薄封装（<code translate="no">tool_gate.py</code>）</td></tr>
+<tr><th scope="row">插件 <code translate="no">hooks</code></th><td><code translate="no">extensions/plugins/hooks.py</code> 读取 manifest，通过插件的 <code translate="no">ProgramContext</code> 挂载每条命令，禁用即退订。接受 <code translate="no">config.json</code> 形式或 Claude Code 的 <code translate="no">hooks/hooks.json</code>。</td></tr>
+<tr><th scope="row"><code translate="no">PreToolUse</code>、<code translate="no">PostToolUse</code>、<code translate="no">UserPromptSubmit</code>、<code translate="no">Stop</code>、<code translate="no">SessionStart</code></th><td><code translate="no">tool.before</code>、<code translate="no">tool.after</code>、<code translate="no">chat.before_send</code>、<code translate="no">turn.stop</code>、<code translate="no">session.start</code></td></tr>
+<tr><th scope="row"><code translate="no">/goal</code> 变化</th><td><code translate="no">_emit_goal_update</code> 发送 <code translate="no">goal.update</code></td></tr>
+<tr><th scope="row">worker 启动</th><td><code translate="no">install_event_bridges()</code>、<code translate="no">install_config_hooks()</code></td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>各部分的位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置，在 <code translate="no">openprogram/runtime/events/</code> 下</th></tr></thead>
+<tbody>
+<tr><th scope="row">注册表</th><td><code translate="no">registry.py</code></td></tr>
+<tr><th scope="row">事件、分发、订阅、进程单例</th><td><code translate="no">bus.py</code>（<code translate="no">get_event_bus()</code>，与 <code translate="no">get_store()</code> 一样的双重检查锁）</td></tr>
+<tr><th scope="row">shell 协议</th><td><code translate="no">shell_hooks.py</code></td></tr>
+<tr><th scope="row">日志</th><td><code translate="no">event_log.py</code></td></tr>
+<tr><th scope="row">桥接</th><td><code translate="no">bridges.py</code></td></tr>
+</tbody>
+</table>
+<p class="note">相关组件都是同一 worker 进程内的守护线程，因此没有跨进程桥。从 <code translate="no">openprogram.runtime.events</code> 导入。</p>
+</details>
+
+<h2>实现状态</h2>
+<p>以上全部已实现。已注册但没有发送点：<code translate="no">sessions.listed</code>、<code translate="no">branches.listed</code>。要消费总线的主动引擎未在 worker 启动时安装：<a href="overview.zh.html">主动层</a>。</p>
+
+<p class="next"><a href="event-reference.zh.html">事件参考</a></p>

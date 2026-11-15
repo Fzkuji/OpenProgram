@@ -1,0 +1,129 @@
+<title>思考强度</title>
+<meta name="description" content="一个档位选择器如何对应到各提供商的推理参数。">
+<h1>思考强度</h1>
+<p>目录和提供商配置：<a href="overview.html">模型目录总览</a>。</p>
+
+<h2 id="vendor-parameters">提供商参数</h2>
+<table class="stack">
+<thead><tr><th scope="col">提供商</th><th scope="col">参数</th><th scope="col">类型</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row">Anthropic</th><td><code translate="no">output_config.effort</code></td><td>字符串</td><td>low、medium、high、xhigh、max；按模型 3 到 5 档</td></tr>
+<tr><th scope="row">Anthropic 旧模型</th><td><code translate="no">thinking.budget_tokens</code></td><td>token 数</td><td>连续值</td></tr>
+<tr><th scope="row">OpenAI Responses</th><td><code translate="no">reasoning.effort</code></td><td>字符串</td><td>minimal、low、medium、high、xhigh</td></tr>
+<tr><th scope="row">OpenAI Chat</th><td><code translate="no">reasoning_effort</code></td><td>字符串</td><td>low、medium、high</td></tr>
+<tr><th scope="row">Google Gemini</th><td><code translate="no">thinkingConfig.thinkingBudget</code></td><td>token 数</td><td>连续值</td></tr>
+<tr><th scope="row">DeepSeek V4</th><td><code translate="no">reasoning_effort</code></td><td>字符串</td><td>minimal、low、medium、high、max</td></tr>
+<tr><th scope="row">DeepSeek R1</th><td>无</td><td>无</td><td>始终全力推理</td></tr>
+<tr><th scope="row">OpenRouter</th><td>底层模型的参数</td><td>相同</td><td>看 <code translate="no">supported_parameters</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="unified-levels">档位</h2>
+<pre translate="no"><code>ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max"</code></pre>
+<p class="note">另有 <code translate="no">off</code>。这是框架自己的名字，与任何 API 无关。选择器只显示模型支持的档位。</p>
+
+<h2 id="data-flow">从选择器到请求</h2>
+<ol>
+<li><code translate="no">get_thinking_config_for_model</code>（<code translate="no">interfaces/server/thinking_effort.py</code>）用模型的 <code translate="no">thinking_levels</code> 生成选项。</li>
+<li><code translate="no">_normalize_thinking</code>（<code translate="no">runtime/conversation/session_config.py</code>）按 <code translate="no">VALID_THINKING</code> 校验，按会话分支保存。新分支创建时继承一次，切换时恢复对应分支的选择。</li>
+<li><code translate="no">reasoning_from_config</code> 把它作为 <code translate="no">SimpleStreamOptions.reasoning</code> 交给本轮，由 <code translate="no">normalize_reasoning_level</code> 限制在模型的档位之内（见下）。</li>
+<li>提供商的 <code translate="no">stream_simple()</code> 调用 <code translate="no">translate_reasoning(provider, model, level)</code>，把结果写进请求字段，例如 <code translate="no">{"output_config": {"effort": "high"}}</code>。</li>
+</ol>
+
+<h2 id="missing-level">模型没有的档位</h2>
+<p>为别的模型保存的档位，或 <code translate="no">--effort</code> 要的档位，可能不在模型的 <code translate="no">thinking_levels</code> 里。<code translate="no">normalize_reasoning_level</code>（<code translate="no">thinking_spec.py</code>）发送它有的最近一档：</p>
+<ul>
+<li>先找更强的下一档，没有再找更弱的：在从 <code translate="no">low</code> 起步的模型上，<code translate="no">minimal</code> 发送 <code translate="no">low</code>；</li>
+<li>档位表以外的名字：用模型的默认档位。</li>
+</ul>
+<p class="note">照 Pi 的 <code translate="no">clampThinkingLevel</code>。回落到默认档位可能把最轻的档位变成中间档；<code translate="no">translate_reasoning</code> 对 Anthropic 的 <code translate="no">minimal</code> 也是这样映射到 <code translate="no">low</code>。</p>
+
+<h2 id="deriving-levels">模型显示哪些档位</h2>
+<p><code translate="no">models/listing/listing.py</code> 的 <code translate="no">list_models_for_provider()</code> 取第一个有结果的来源。选择器和 <code translate="no">list_enabled_models</code> 都经过它。</p>
+<table class="stack">
+<thead><tr><th scope="col">顺序</th><th scope="col">来源</th><th scope="col">例子</th></tr></thead>
+<tbody>
+<tr><th scope="row">1</th><td>Fetch 得到的 <code translate="no">thinking_levels</code>：提供商自己的模型 API</td><td>Anthropic capabilities、Codex 按模型的选择器</td></tr>
+<tr><th scope="row">2</th><td><code translate="no">provider.json</code> 的 <code translate="no">thinking</code> 下的 <code translate="no">model_overrides</code></td><td>Opus 4.5：3 档</td></tr>
+<tr><th scope="row">3</th><td>提供商级 <code translate="no">effort_map</code> 或 <code translate="no">budget_map</code></td><td>DeepSeek V4：5 档</td></tr>
+<tr><th scope="row">4</th><td>没有声明：OpenAI 兼容兜底，<code translate="no">effort_string</code> 加 low、medium、high</td><td>groq、mistral、openrouter</td></tr>
+<tr><th scope="row">5</th><td>推理模型仍没有档位：内置阶梯 <code translate="no">minimal</code>（gpt-5.5 没有）、low、medium、high、支持时的 <code translate="no">xhigh</code>、max</td><td>空映射的覆盖项</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">reasoning=false</code> 的模型没有档位，也没有选择器。</p>
+
+<h2 id="translate-reasoning">档位到 API 值</h2>
+<p><code translate="no">thinking_spec.translate_reasoning</code> 取第一个匹配：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">wire_format</code> 缺失或为 <code translate="no">none</code></th><td><code translate="no">None</code></td></tr>
+<tr><th scope="row">档位 <code translate="no">off</code>（或 <code translate="no">none</code>）</th><td>override 的 <code translate="no">off</code>（<code translate="no">null</code> 即 <code translate="no">None</code>），否则它映射表里的，否则服务商映射表里的：OpenAI Responses 上是 <code translate="no">none</code>，所以关掉思考会像 Pi 和 Codex 那样发 <code translate="no">effort: "none"</code>，而不是让服务端按默认强度推理。比 <code translate="no">none</code> 早的模型（o 系列、gpt-5 到 gpt-5-pro）映射为 <code translate="no">null</code>。<code translate="no">off</code> 从不作为选择器里的档位</td></tr>
+<tr><th scope="row">模型覆盖项的映射为空</th><td><code translate="no">None</code>：会推理，但不发强度参数</td></tr>
+<tr><th scope="row">档位在覆盖项映射里</th><td>对应的值</td></tr>
+<tr><th scope="row">提供商映射对该档位的值在覆盖项的值里</th><td>该值，所以 Anthropic 的 <code translate="no">minimal</code> 变成 <code translate="no">low</code></td></tr>
+<tr><th scope="row">覆盖项下的其他情况</th><td>映射含默认强度就用它，否则取映射第一个值</td></tr>
+<tr><th scope="row"><code translate="no">effort_string</code></th><td>提供商 <code translate="no">effort_map</code>，否则 <code translate="no">default_effort</code></td></tr>
+<tr><th scope="row"><code translate="no">budget_tokens</code></th><td>提供商 <code translate="no">budget_map</code>，否则 <code translate="no">8192</code></td></tr>
+</tbody>
+</table>
+<p class="note">框架只传深度，token 用量由 API 决定。Gemini 和 Anthropic 旧模型要具体数字，所以有 <code translate="no">budget_map</code>。</p>
+
+<h2 id="probing">探测模型能力</h2>
+<table class="stack">
+<thead><tr><th scope="col">提供商</th><th scope="col">方法</th><th scope="col">精度</th></tr></thead>
+<tbody>
+<tr><th scope="row">anthropic</th><td><code translate="no">GET /v1/models/{id}</code>，<code translate="no">capabilities.effort.{level}.supported</code></td><td>每一档</td></tr>
+<tr><th scope="row">deepseek</th><td>模型 id：<code translate="no">v4</code> 推理且有强度，<code translate="no">reasoner</code> 或 <code translate="no">r1</code> 推理无强度</td><td>推理、强度</td></tr>
+<tr><th scope="row">openai_codex</th><td>OpenAI 模型 API 加模型 id（o1、o3、o4、gpt-5）</td><td>推理</td></tr>
+<tr><th scope="row">openai_completions</th><td>模型 id（o1、o3、o4、gpt-5）</td><td>推理</td></tr>
+<tr><th scope="row">openai_responses</th><td>OpenRouter 的 <code translate="no">supported_parameters</code> 含 <code translate="no">reasoning</code></td><td>推理</td></tr>
+<tr><th scope="row">google</th><td>模型名</td><td>推理</td></tr>
+</tbody>
+</table>
+<p class="note">models.dev 也提供 <code translate="no">reasoning</code>。只知道这一项时，档位取提供商映射。</p>
+
+<details>
+<summary>Fetch 如何使用探测</summary>
+<ul>
+<li>每个提供商目录可有 <code translate="no">probe_thinking.py</code>，暴露 <code translate="no">probe()</code>。</li>
+<li>补全阶段，条目缺 <code translate="no">reasoning</code> 时，<code translate="no">models/listing/fetchers/__init__.py</code> 经 <code translate="no">_load_probe</code> 调用它。</li>
+<li>没有探测模块或探测失败都不影响 Fetch。</li>
+<li>探测只读。<code translate="no">model_overrides</code> 手工维护。</li>
+</ul>
+</details>
+
+<h2 id="actual-levels">各模型的档位</h2>
+<table class="stack">
+<thead><tr><th scope="col">提供商</th><th scope="col">模型</th><th scope="col">档位</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">anthropic</th><td>claude-opus-4-8、claude-fable-5</td><td>low 到 max（5 档）</td><td>覆盖项</td></tr>
+<tr><th scope="row">anthropic</th><td>claude-sonnet-4-6</td><td>low、medium、high、max</td><td>覆盖项</td></tr>
+<tr><th scope="row">anthropic</th><td>claude-opus-4-5</td><td>low、medium、high</td><td>覆盖项</td></tr>
+<tr><th scope="row">deepseek</th><td>v4-flash、v4-pro</td><td>minimal、low、medium、high、max</td><td>提供商映射</td></tr>
+<tr><th scope="row">openai-codex</th><td>gpt-5.5</td><td>low、medium、high、xhigh、max（发送为 xhigh）</td><td>覆盖项</td></tr>
+<tr><th scope="row">minimax-cn、openrouter</th><td>支持推理的模型</td><td>low、medium、high</td><td>兜底</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>文件</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/adapters/&lt;provider&gt;/provider.json</code></th><td><code translate="no">thinking</code> 键：<code translate="no">wire_format</code>、映射、<code translate="no">model_overrides</code>。独立的 <code translate="no">thinking.json</code> 仍能加载，但有弃用警告。</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/adapters/&lt;provider&gt;/probe_thinking.py</code></th><td>Fetch 用的推理探测</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/settings/thinking_spec.py</code></th><td>加载、<code translate="no">translate_reasoning</code>、<code translate="no">derive_thinking_levels</code>、兜底</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/catalog/models.py</code></th><td>加载时为内置模型填充思考字段</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/types.py</code></th><td><code translate="no">ThinkingLevel</code>、<code translate="no">SimpleStreamOptions.reasoning</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/thinking_effort.py</code></th><td>选择器、<code translate="no">apply_thinking_effort</code></td></tr>
+<tr><th scope="row"><code translate="no">models/listing/listing.py</code></th><td>唯一的推导入口</td></tr>
+<tr><th scope="row"><code translate="no">models/listing/fetchers/__init__.py</code></th><td>Fetch 补全</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/adapters/anthropic/list_models.py</code></th><td>从 capabilities 取档位</td></tr>
+<tr><th scope="row"><code translate="no">runtime/conversation/session_config.py</code></th><td><code translate="no">VALID_THINKING</code>、<code translate="no">reasoning_from_config</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>未实现：对毫无信息的模型从 max 逐档向下试，遇 400 跳过并缓存结果。</p>

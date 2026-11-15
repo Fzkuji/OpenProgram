@@ -1,0 +1,63 @@
+<title>CLI 命名约定</title>
+<meta name="description" content="每个 openprogram 子命令遵循的名词在前、动词在后的语法。">
+<h1>CLI 命名约定</h1>
+
+<pre translate="no" tabindex="0">openprogram &lt;noun&gt; [&lt;noun&gt; ...] &lt;verb&gt; [&lt;arg&gt; ...]</pre>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">动词</th><td>只有一个，在位置参数之前的最后，不夹在名词中间。一般现在时：<code translate="no">list</code>、<code translate="no">status</code>、<code translate="no">add</code>、<code translate="no">remove</code>、<code translate="no">login</code>、<code translate="no">logout</code>、<code translate="no">set</code>、<code translate="no">get</code>、<code translate="no">discover</code>、<code translate="no">adopt</code>、<code translate="no">doctor</code>、<code translate="no">setup</code>。</td></tr>
+<tr><th scope="row">名词</th><td>在前；多个名词逐层收窄命名空间。集合用复数（<code translate="no">providers</code>、<code translate="no">profiles</code>、<code translate="no">models</code>、<code translate="no">channels</code>）；只有绝不会有同级的东西才用单数。</td></tr>
+<tr><th scope="row">参数</th><td>在动词之后：<code translate="no">openprogram providers login codex</code> 里，<code translate="no">codex</code> 是 <code translate="no">login</code> 的目标。</td></tr>
+<tr><th scope="row">标志</th><td>双横线 kebab-case：<code translate="no">--profile</code>、<code translate="no">--display-name</code>、<code translate="no">--max-poll-seconds</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="examples">示例</h2>
+<table class="stack">
+<thead><tr><th scope="col">命令</th><th scope="col">状态</th><th scope="col">形态</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram providers login &lt;prov&gt;</code></th><td>现有</td><td>单名词</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers list</code></th><td>现有</td><td>单名词</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers status &lt;prov&gt;</code></th><td>现有</td><td>单名词</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers doctor</code></th><td>现有</td><td>单名词</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers setup</code></th><td>现有</td><td>交互向导</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers accounts list</code></th><td>现有</td><td>名词叠加</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers accounts create &lt;n&gt;</code></th><td>现有</td><td>名词叠加</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram providers models list</code></th><td>未来</td><td>同一模式</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers aliases add &lt;from&gt; &lt;to&gt;</code></th><td>未来</td><td>名词叠加</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram channels login discord</code></th><td>未来</td><td>另一领域</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram tools login github</code></th><td>未来</td><td>另一领域</td></tr>
+</tbody>
+</table>
+
+<h2 id="anti-patterns">不要这样写</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram login</code></th><td>动词在顶层，一有第二个登录目标就冲突</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram providerAuth login</code></th><td>camelCase；名词叠加是分开的词</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram list-providers</code></th><td>把动词锁进名词。用 <code translate="no">providers list</code></td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram providers listing</code></th><td>动词形式错误</td></tr>
+</tbody>
+</table>
+
+<h2 id="when-to-add-a-namespace-layer">何时加中间名词</h2>
+<p>只有父名词确实分成多个同级子组时才加。没有同级的中间名词是累赘。OpenClaw 保留 <code translate="no">openclaw models auth login</code>，因为 <code translate="no">models</code> 还有 <code translate="no">aliases</code>、<code translate="no">list</code>。OpenProgram 让 <code translate="no">providers login</code> 保持扁平，因为 <code translate="no">providers</code> 的直接动词都和凭据有关。</p>
+
+<h2 id="how-to-add-a-new-command">添加命令</h2>
+<ol>
+<li>选它所属的最深名词命名空间。与现有命令同级就复用。</li>
+<li>选动词。优先用 CLI 里已有的。</li>
+<li>接入：元数据和 argparse 在 <code translate="no">openprogram/interfaces/cli/parser.py</code>，逻辑放在 <code translate="no">openprogram/interfaces/cli/commands/</code> 下的主题模块，顶层分发在 <code translate="no">openprogram/interfaces/cli/application.py</code>。</li>
+</ol>
+
+<details>
+<summary>为什么这样定</summary>
+<ul>
+<li>可发现：<code translate="no">openprogram providers &lt;TAB&gt;</code> 列出该命名空间的全部操作。</li>
+<li>可扩展：新领域作为同级名词加入，不会冲突。</li>
+<li>成熟 CLI 都收敛到这里：<code translate="no">openclaw models auth login</code>、<code translate="no">openclaw models aliases add</code>、<code translate="no">gh auth login</code>、<code translate="no">gh repo create</code>、<code translate="no">docker container ls</code>、<code translate="no">docker image prune</code>、<code translate="no">kubectl get pods</code>、<code translate="no">kubectl delete service &lt;name&gt;</code>。</li>
+</ul>
+</details>

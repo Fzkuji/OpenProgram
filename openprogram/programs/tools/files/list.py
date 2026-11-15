@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 
 
 _DESCRIPTION = (
@@ -39,12 +39,20 @@ def list_dir(path: str, show_hidden: bool = False) -> str:
         path: Absolute path of the directory to list.
         show_hidden: Include dotfiles and dot-directories. Default false.
     """
+    from ._remote import remote_target
+    _remote_fs = remote_target()
+    if _remote_fs is not None:
+        from . import _remote
+        return _remote.list_dir(_remote_fs, path, show_hidden)
+    from openprogram.state.worktree.path_resolve import resolve_path
+    path, _outside = resolve_path(path)
     if not os.path.isabs(path):
         return f"Error: path must be absolute, got {path!r}"
-    from openprogram.sandbox import validate_read_path, read_denier
+    from openprogram.host.sandbox import validate_read_path, read_denier
     violation = validate_read_path(path)
     if violation:
-        return f"Error: sandbox policy: {violation}"
+        from openprogram.runtime.permissions import refusal
+        raise refusal.sandbox("list", violation)
     if not os.path.isdir(path):
         return f"Error: not a directory: {path}"
 

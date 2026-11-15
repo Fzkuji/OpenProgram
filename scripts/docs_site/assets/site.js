@@ -10,25 +10,7 @@
   const ROOT = document.documentElement;
   const BASE = ROOT.dataset.base || "/docs/"; // absolute mount prefix
 
-  // ── theme ──────────────────────────────────────────────────────────────
-  const pygLight = document.getElementById("pyg-light");
-  const pygDark = document.getElementById("pyg-dark");
-  function syncPygments(theme) {
-    if (pygLight) { pygLight.media = "all"; pygLight.disabled = theme === "dark"; }
-    if (pygDark) { pygDark.media = "all"; pygDark.disabled = theme !== "dark"; }
-  }
-  syncPygments(ROOT.getAttribute("data-theme"));
-
-  const themeBtn = document.getElementById("theme-toggle");
-  if (themeBtn) {
-    themeBtn.addEventListener("click", () => {
-      const next = ROOT.getAttribute("data-theme") === "dark" ? "light" : "dark";
-      ROOT.setAttribute("data-theme", next);
-      try { localStorage.setItem("op-docs-theme", next); } catch (e) {}
-      syncPygments(next);
-      window.dispatchEvent(new CustomEvent("documentThemeChange", { detail: { theme: next } }));
-    });
-  }
+  // Theme initialization and listeners live in the synchronous head script theme.js.
 
   // ── i18n (UI chrome; body language is per-document) ───────────────────
   const I18N = {
@@ -36,13 +18,13 @@
       search: "搜索文档", search_ph: "搜索标题或正文…", on_this_page: "本页内容",
       prev: "上一篇", next: "下一篇", updated: "最后更新", nav_filter: "过滤目录…",
       copy: "复制", copied: "已复制 ✓", copy_fail: "复制失败", search_empty: "无匹配结果",
-      table_scroll: "文档表格",
+      table_scroll: "文档表格", reading: "阅读进度", code: "代码", skip: "跳到正文",
     },
     en: {
       search: "Search docs", search_ph: "Search titles or text…", on_this_page: "On this page",
       prev: "Previous", next: "Next", updated: "Last updated", nav_filter: "Filter docs…",
       copy: "Copy", copied: "Copied ✓", copy_fail: "Copy failed", search_empty: "No results",
-      table_scroll: "Documentation table",
+      table_scroll: "Documentation table", reading: "Reading progress", code: "Code", skip: "Skip to content",
     },
   };
   let curLang = "en";
@@ -66,18 +48,24 @@
     if (label) label.textContent = lang === "zh" ? "中文" : "EN";
     document.querySelectorAll(".lang-opt").forEach((b) => {
       b.classList.toggle("active", b.getAttribute("data-lang") === lang);
+      b.disabled = b.getAttribute("data-lang") !== ROOT.getAttribute("data-page-lang") &&
+        !ROOT.getAttribute("data-alt-lang-url");
+      b.title = b.disabled ? (lang === "zh" ? "暂无此语言版本" : "Translation unavailable") : "";
     });
     // Bilingual-labelled elements (sidebar links, group headers, tabs,
     // breadcrumbs, callout heads) switch text; links switch href too.
     document.querySelectorAll("[data-title-zh]").forEach((el) => {
       if (el.dataset.titleEn == null) el.dataset.titleEn = el.textContent; // capture once
       el.textContent = lang === "zh" ? el.getAttribute("data-title-zh") : el.dataset.titleEn;
+    });
+    document.querySelectorAll("[data-href-en][data-href-zh]").forEach((el) => {
       const hrefZh = el.getAttribute("data-href-zh");
       const hrefEn = el.getAttribute("data-href-en");
       if (lang === "zh" && hrefZh) el.setAttribute("href", hrefZh);
       else if (lang !== "zh" && hrefEn) el.setAttribute("href", hrefEn);
     });
     document.querySelectorAll("article .copy-btn:not(.copied)").forEach((b) => { b.textContent = d.copy; });
+    window.dispatchEvent(new CustomEvent("documentLangChange", { detail: { lang } }));
   }
 
   const langBtn = document.getElementById("lang-toggle");
@@ -96,11 +84,11 @@
       opt.addEventListener("click", () => {
         closeLangMenu();
         const lang = opt.getAttribute("data-lang");
+        if (opt.disabled) return;
         if (lang === curLang) return;
         curLang = lang;
         try { localStorage.setItem("op-docs-lang", curLang); } catch (e) {}
         applyLang(curLang);
-        window.dispatchEvent(new CustomEvent("documentLangChange", { detail: { lang: curLang } }));
         const altUrl = ROOT.getAttribute("data-alt-lang-url");
         const pl = ROOT.getAttribute("data-page-lang");
         if (altUrl && pl && pl !== curLang) navigate(altUrl); // stay in-app
@@ -176,11 +164,92 @@
   });
 
   // ── per-page wiring (re-run after every SPA swap) ──────────────────────
-  let tocObserver = null;
+  let disposeReader = () => {};
+
+  let disposeRails = () => {};
+  let updateRails = () => {};
+
+  function initNavigationRails() {
+    disposeRails();
+    const groups = Array.from(document.querySelectorAll(".nav-sec, aside.toc .toc-list"));
+    let frame = 0;
+    const cleanups = [];
+    const paints = [];
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; paints.forEach((paint) => paint()); }); };
+    const resize = new ResizeObserver(schedule);
+    groups.forEach((group) => {
+      let hovered = null;
+      const isToc = group.classList.contains("toc-list");
+      const links = Array.from(group.querySelectorAll(isToc ? ":scope > li > a, :scope > li > details > summary > a" : "a"));
+      const paint = () => {
+        const visible = links.filter((link) => link.getClientRects().length && getComputedStyle(link).display !== "none"
+          && !(isToc && link.closest(".toc-list").closest("details:not([open])")));
+        const owns = (link, target) => isToc ? link.closest("li").contains(target) : link === target;
+        const active = visible.find((link) => link.classList.contains("active") || (isToc && link.closest("li").querySelector("a.active")));
+        const focused = visible.find((link) => owns(link, document.activeElement) && document.activeElement.matches(":focus-visible"));
+        const preview = focused || visible.find((link) => owns(link, hovered));
+        if (isToc) links.forEach((link) => link.classList.toggle("in-path", link === active));
+        const bounds = group.getBoundingClientRect();
+        const top = visible.length ? visible[0].getBoundingClientRect().top - bounds.top : 0;
+        const center = (link) => { const rect = link.getBoundingClientRect(); return rect.top - bounds.top + rect.height / 2; };
+        const activeEnd = active ? center(active) : top;
+        group.style.setProperty("--rail-top", top + "px");
+        group.style.setProperty("--rail-height", Math.max(0, activeEnd - top) + "px");
+        group.style.setProperty("--rail-visible", active && !(isToc && active.parentElement.tagName === "SUMMARY") ? "1" : "0");
+        if (isToc) group.style.setProperty("--guide-height", visible.length ? Math.max(0, center(visible[visible.length - 1]) - top) + "px" : "0px");
+        const previewEnd = preview ? center(preview) : top;
+        const previewTop = active && previewEnd > activeEnd ? activeEnd : top;
+        group.style.setProperty("--preview-top", previewTop + "px");
+        group.style.setProperty("--preview-height", Math.max(0, previewEnd - previewTop) + "px");
+        group.style.setProperty("--preview-visible", preview && preview !== active && !(isToc && preview.parentElement.tagName === "SUMMARY") ? "0.7" : "0");
+      };
+      const over = (event) => { hovered = event.target.closest("a"); schedule(); };
+      const leave = () => { hovered = null; schedule(); };
+      group.addEventListener("pointerover", over);
+      group.addEventListener("pointerleave", leave);
+      group.addEventListener("focusin", schedule);
+      group.addEventListener("focusout", schedule);
+      if (isToc) group.addEventListener("toggle", schedule, true);
+      resize.observe(group);
+      links.forEach((link) => resize.observe(link));
+      paints.push(paint);
+      cleanups.push(() => {
+        group.removeEventListener("pointerover", over);
+        group.removeEventListener("pointerleave", leave);
+        group.removeEventListener("focusin", schedule);
+        group.removeEventListener("focusout", schedule);
+        if (isToc) group.removeEventListener("toggle", schedule, true);
+      });
+    });
+    updateRails = schedule;
+    paints.forEach((paint) => paint());
+    disposeRails = () => {
+      cancelAnimationFrame(frame); resize.disconnect(); cleanups.forEach((cleanup) => cleanup());
+    };
+  }
 
   function initSidebar() {
     const active = document.querySelector("nav.sidebar a.navlink.active");
-    if (active) active.scrollIntoView({ block: "center" });
+    const filter = document.querySelector(".nav-filter");
+    const designNavigation = Boolean(document.querySelector("nav.sidebar .nav-disclosure"));
+    if (filter?.value && (designNavigation || filter.dataset.designNavigation === "true")) {
+      filter.value = "";
+      filter.dispatchEvent(new Event("input"));
+    }
+    if (filter) filter.dataset.designNavigation = String(designNavigation);
+    document.querySelectorAll("nav.sidebar a.navlink, nav.tabbar a").forEach((link) => {
+      if (link.classList.contains("active")) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
+    if (active) {
+      let group = active.closest("details.nav-disclosure");
+      while (group) {
+        group.open = true;
+        group = group.parentElement.closest("details.nav-disclosure");
+      }
+      const nav = sidebarEl();
+      nav.scrollTop += active.getBoundingClientRect().top - nav.getBoundingClientRect().top - nav.clientHeight / 2;
+    }
 
     const navFilter = document.querySelector(".nav-filter");
     if (navFilter && !navFilter.dataset.bound) {
@@ -188,13 +257,29 @@
       navFilter.addEventListener("input", () => {
         const q = navFilter.value.trim().toLowerCase();
         document.querySelectorAll("nav.sidebar a.navlink").forEach((a) => {
-          a.style.display = !q || a.textContent.toLowerCase().includes(q) ? "" : "none";
+          const labels = [a.textContent];
+          let group = a.closest("details.nav-disclosure");
+          while (group) {
+            labels.push(group.querySelector(":scope > summary .nav-sec-title")?.textContent || "");
+            group = group.parentElement.closest("details.nav-disclosure");
+          }
+          a.style.display = !q || labels.some((label) => label.toLowerCase().includes(q)) ? "" : "none";
         });
         // a section is visible iff it still has a visible link
-        document.querySelectorAll("nav.sidebar .nav-sec").forEach((sec) => {
+        document.querySelectorAll("nav.sidebar .nav-sec, nav.sidebar .nav-branch").forEach((sec) => {
           const hasMatch = !q || sec.querySelector('a.navlink:not([style*="display: none"])');
           sec.style.display = hasMatch ? "" : "none";
+          if (sec.matches("details.nav-disclosure")) {
+            if (q) {
+              if (!sec.hasAttribute("data-filter-open")) sec.dataset.filterOpen = String(sec.open);
+              sec.open = Boolean(hasMatch);
+            } else if (sec.hasAttribute("data-filter-open")) {
+              sec.open = sec.dataset.filterOpen === "true";
+              delete sec.dataset.filterOpen;
+            }
+          }
         });
+        updateRails();
       });
     }
   }
@@ -216,7 +301,8 @@
     // Markdown tables are emitted without a wrapper. Keep authored scroll
     // containers intact, and wrap each remaining table exactly once so a
     // narrow article can scroll the table without scrolling the whole page.
-    document.querySelectorAll("article table").forEach((table) => {
+    // HTML document tables reflow on narrow columns instead of scrolling.
+    document.querySelectorAll("article:not(.doc) table").forEach((table) => {
       const columns = Array.from(table.rows[0]?.cells || []).reduce((sum, cell) => sum + cell.colSpan, 0);
       if (columns > 2) table.style.minWidth = Math.max(parseFloat(getComputedStyle(table).minWidth) || 0, columns * 128) + "px";
       let scroller = table.parentElement;
@@ -235,59 +321,154 @@
       makeKeyboardReachable(el, "", false);
     });
 
-    // code-block copy buttons
+    // Keep controls outside the code's horizontal scroll area.
     document.querySelectorAll("article pre").forEach((pre) => {
-      if (pre.querySelector(".copy-btn")) return;
+      if (pre.closest(".code-frame") || pre.querySelector(".copy-btn")) return;
+      const code = pre.querySelector("code") || pre;
+      const frame = document.createElement("div");
+      frame.className = pre.closest("article.doc") ? "code-frame code-plain" : "code-frame";
+      const header = document.createElement("div");
+      header.className = "code-header";
+      const label = document.createElement("span");
+      const language = Array.from(code.classList).find((name) => name.startsWith("language-"));
+      label.textContent = language ? language.slice(9) : t("code");
+      if (!language) label.dataset.i18n = "code";
       const btn = document.createElement("button");
       btn.className = "copy-btn";
       btn.type = "button";
       btn.textContent = t("copy");
-      btn.addEventListener("click", () => {
-        const code = pre.querySelector("code") || pre;
-        navigator.clipboard.writeText(code.innerText).then(() => {
+      btn.setAttribute("aria-live", "polite");
+      btn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(code.textContent);
           btn.textContent = t("copied");
           btn.classList.add("copied");
           setTimeout(() => { btn.textContent = t("copy"); btn.classList.remove("copied"); }, 1500);
-        }).catch(() => { btn.textContent = t("copy_fail"); });
+        } catch (_) { btn.textContent = t("copy_fail"); }
       });
-      pre.appendChild(btn);
+      pre.replaceWith(frame);
+      header.append(label, btn);
+      frame.append(header, pre);
     });
+    initReader();
+  }
 
-    // toc scroll-spy
-    if (tocObserver) { tocObserver.disconnect(); tocObserver = null; }
-    const tocLinks = Array.from(document.querySelectorAll("aside.toc a"));
-    if (tocLinks.length) {
-      const map = new Map();
-      tocLinks.forEach((a) => {
-        const id = decodeURIComponent(a.getAttribute("href").slice(1));
-        const el = document.getElementById(id);
-        if (el) map.set(el, a);
+  // One reading state for desktop TOC and compact section navigation.
+  // Interaction references: rareui.com Hook Sidebar / Scroll Progress.
+  // Independently implemented for this static renderer; no component source.
+  function initReader() {
+    disposeReader();
+    const article = document.querySelector("main.content article");
+    const main = document.querySelector("main.content");
+    const tocLinks = Array.from(document.querySelectorAll("aside.toc a[href^='#']"));
+    const sections = tocLinks.map((link) => {
+      let target;
+      try { target = document.getElementById(decodeURIComponent(link.hash.slice(1))); } catch (_) {}
+      return { link, target };
+    }).filter((item) => item.target);
+    if (!article || !sections.length || article.querySelector(".viz-frame")) return;
+    const reader = document.createElement("details");
+    reader.className = "reader-progress";
+    const summary = document.createElement("summary");
+    summary.setAttribute("aria-label", t("reading"));
+    const ring = document.createElement("span");
+    ring.className = "reader-ring";
+    ring.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.className = "reader-label";
+    const percent = document.createElement("span");
+    percent.className = "reader-percent";
+    summary.append(ring, label, percent);
+    const menu = document.createElement("nav");
+    menu.className = "reader-sections";
+    menu.setAttribute("aria-label", t("on_this_page"));
+    const menuLinks = sections.map(({ link }) => {
+      const a = link.cloneNode(true);
+      a.removeAttribute("class");
+      a.addEventListener("click", () => { reader.open = false; });
+      menu.appendChild(a);
+      return a;
+    });
+    reader.append(summary, menu);
+    document.body.appendChild(reader);
+    let frame = 0;
+    let active = -1;
+    const update = () => {
+      frame = 0;
+      const fullscreen = ROOT.getAttribute("data-fs") === "1";
+      const scroller = fullscreen ? main : document.scrollingElement;
+      const offset = fullscreen ? 24 : 120;
+      const bottom = fullscreen ? main.clientHeight : window.innerHeight;
+      const rect = article.getBoundingClientRect();
+      const distance = Math.max(0, article.scrollHeight - (bottom - offset));
+      const progress = distance ? Math.min(1, Math.max(0, (offset - rect.top) / distance)) : 1;
+      const value = Math.round(progress * 100);
+      ring.style.setProperty("--read-progress", value + "%");
+      percent.textContent = value + "%";
+      let next = 0;
+      sections.forEach(({ target }, index) => {
+        if (target.getBoundingClientRect().top <= offset + 1) next = index;
       });
-      tocObserver = new IntersectionObserver((entries) => {
-        entries.forEach((e) => {
-          if (e.isIntersecting) {
-            tocLinks.forEach((l) => l.classList.remove("active"));
-            const a = map.get(e.target);
-            if (a) {
-              a.classList.add("active");
-              // keep the highlighted entry visible; hands off while the
-              // pointer is inside the toc (the user is scrolling it)
-              const toc = a.closest("aside.toc");
-              if (toc && toc.scrollHeight > toc.clientHeight && !toc.matches(":hover")) {
-                toc.scrollTo({ top: a.offsetTop - toc.clientHeight / 2 + a.offsetHeight / 2, behavior: "smooth" });
-              }
-            }
-          }
+      if (scroller.scrollHeight > scroller.clientHeight && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) next = sections.length - 1;
+      if (active === next) return;
+      active = next;
+      sections.forEach(({ link }, index) => {
+        const selected = index === active;
+        [link, menuLinks[index]].forEach((a) => {
+          a.classList.toggle("active", selected);
+          if (selected) a.setAttribute("aria-current", "location");
+          else a.removeAttribute("aria-current");
         });
-      }, { rootMargin: "-116px 0px -70% 0px", threshold: 0 });
-      map.forEach((_a, el) => tocObserver.observe(el));
-    }
+      });
+      label.textContent = sections[active].link.textContent;
+      updateRails();
+      let link = sections[active].link;
+      while (!link.getClientRects().length || link.closest(".toc-list").closest("details:not([open])")) {
+        const parent = link.closest(".toc-list").parentElement.closest("details.toc-disclosure");
+        if (!parent) break;
+        link = parent.querySelector(":scope > summary > a");
+      }
+      const toc = link.closest("aside.toc");
+      if (toc && toc.clientHeight && !toc.matches(":hover") && !toc.contains(document.activeElement)) {
+        const bounds = toc.getBoundingClientRect();
+        const item = link.getBoundingClientRect();
+        if (item.top < bounds.top || item.bottom > bounds.bottom) toc.scrollTop += item.top - bounds.top - toc.clientHeight / 2;
+      }
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    const dismiss = (e) => {
+      if (e.type === "keydown" && e.key !== "Escape") return;
+      if (e.type === "click" && reader.contains(e.target)) return;
+      if (reader.open && e.type === "keydown" && reader.contains(document.activeElement)) summary.focus();
+      reader.open = false;
+    };
+    window.addEventListener("scroll", schedule, { passive: true });
+    main.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    document.addEventListener("click", dismiss, true);
+    document.addEventListener("keydown", dismiss);
+    const resize = new ResizeObserver(schedule);
+    resize.observe(article);
+    const mode = new MutationObserver(schedule);
+    mode.observe(ROOT, { attributes: true, attributeFilter: ["data-fs"] });
+    update();
+    disposeReader = () => {
+      cancelAnimationFrame(frame);
+      resize.disconnect(); mode.disconnect();
+      window.removeEventListener("scroll", schedule);
+      main.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("click", dismiss, true);
+      document.removeEventListener("keydown", dismiss);
+      reader.remove();
+    };
   }
 
   function initPage() {
     initSidebar();
     initArticle();
     applyLang(curLang);
+    initNavigationRails();
   }
 
   // ── SPA navigation ─────────────────────────────────────────────────────
@@ -312,7 +493,7 @@
 
   function normalize(href) {
     const u = new URL(href, location.href);
-    return u.pathname + u.hash;
+    return u.pathname + u.search + u.hash;
   }
 
   function isInternalPage(href) {
@@ -341,6 +522,8 @@
   function swapFrom(doc, pathname) {
     // <html> metadata
     const newRoot = doc.documentElement;
+    const newLang = newRoot.getAttribute("data-page-lang");
+    if (newLang === "en" || newLang === "zh") curLang = newLang;
     ["data-page-lang", "data-alt-lang-url"].forEach((attr) => {
       const v = newRoot.getAttribute(attr);
       if (v == null) ROOT.removeAttribute(attr); else ROOT.setAttribute(attr, v);
@@ -392,7 +575,10 @@
     // main article + toc
     const curArticle = document.querySelector("main.content article");
     const newArticle = doc.querySelector("main.content article");
-    if (curArticle && newArticle) curArticle.innerHTML = newArticle.innerHTML;
+    if (curArticle && newArticle) {
+      curArticle.className = newArticle.className;
+      curArticle.innerHTML = newArticle.innerHTML;
+    }
     const curToc = document.querySelector("aside.toc");
     const newToc = doc.querySelector("aside.toc");
     if (curToc) curToc.innerHTML = newToc ? newToc.innerHTML : "";
@@ -406,10 +592,13 @@
       const el = document.getElementById(decodeURIComponent(hash));
       if (el) { el.scrollIntoView(); return; }
     }
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, behavior: "instant" });
+    const main = document.querySelector("main.content");
+    if (main) main.scrollTop = 0;
   }
 
   let navSeq = 0;
+  let renderedPage = location.pathname + location.search;
   function navigate(href, push) {
     if (push === undefined) push = true;
     const pathname = normalize(href);
@@ -417,16 +606,28 @@
     const seq = ++navSeq;
     fetchPage(clean).then((doc) => {
       if (seq !== navSeq) return; // a newer navigation superseded this one
+      // Redirect-only and standalone documents need a real document load.
+      // DOMParser does not execute their navigation scripts.
+      if (!doc.querySelector("main.content article")) {
+        if (pathname === location.pathname + location.search + location.hash) location.reload();
+        else location.href = pathname;
+        return;
+      }
       // Site was rebuilt underneath this tab → full load to pick up the new
       // assets and sidebar instead of mixing two builds.
       const nb = doc.documentElement.getAttribute("data-build");
       const cb = ROOT.getAttribute("data-build");
       if (nb && cb && nb !== cb) { location.href = pathname; return; }
-      const doSwap = () => { swapFrom(doc, pathname); afterSwap(pathname); };
+      const doSwap = () => {
+        if (seq !== navSeq) return;
+        swapFrom(doc, pathname); renderedPage = clean; afterSwap(pathname);
+      };
       if (push) history.pushState({ spa: true }, "", pathname);
       if (document.startViewTransition) document.startViewTransition(doSwap);
       else doSwap();
-    }).catch(() => { location.href = pathname; }); // graceful full-load fallback
+    }).catch(() => {
+      if (seq === navSeq) location.href = pathname; // graceful full-load fallback
+    });
   }
   window.opDocsNavigate = navigate;
 
@@ -440,7 +641,7 @@
     if (!isInternalPage(a.href)) return;
     e.preventDefault();
     const path = normalize(a.href);
-    if (path.split("#")[0] === location.pathname && path.includes("#")) {
+    if (path.split("#")[0] === location.pathname + location.search && path.includes("#")) {
       // same page, different anchor
       const el = document.getElementById(decodeURIComponent(path.split("#")[1]));
       if (el) { history.pushState({ spa: true }, "", path); el.scrollIntoView(); }
@@ -450,7 +651,12 @@
   });
 
   window.addEventListener("popstate", () => {
-    navigate(location.pathname + location.hash, false);
+    // Native fragment navigation must retain the current disclosure state.
+    if (location.pathname + location.search === renderedPage) {
+      ++navSeq; // Cancel any pending navigation back to a different document.
+      return;
+    }
+    navigate(location.pathname + location.search + location.hash, false);
   });
 
   // hover / touch prefetch: by the time the click lands, the page is cached
@@ -502,6 +708,7 @@
     const ql = q.toLowerCase();
     const scored = [];
     for (const doc of index) {
+      if (doc.lang && doc.lang !== curLang && doc.has_translation) continue;
       const tl = doc.title.toLowerCase();
       const bl = doc.text.toLowerCase();
       let score = 0, pos = -1;
@@ -548,6 +755,6 @@
   });
 
   // ── boot ───────────────────────────────────────────────────────────────
-  history.replaceState({ spa: true }, "", location.pathname + location.hash);
+  history.replaceState({ spa: true }, "", location.pathname + location.search + location.hash);
   initPage();
 })();

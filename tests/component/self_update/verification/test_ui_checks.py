@@ -13,12 +13,21 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from tests.component.programs.tools.test_self_update_tools import _isolated_owner
+from tests.component.programs.tools import test_self_update_tools as _test_self_update_tools
 from tests.component.self_update.verification.test_verification_plan import _plan, _public_prepare
-from tests.component.self_update.verification.test_native_checks import installed_cli
-from tests.component.self_update.delivery.test_package_protocol import package_factory
-from tests.component.self_update.verification.test_system_probe import live as http_live
-from tests.component.self_update.verification.test_verification_channel import consume, store_fixture, verifier
+from tests.component.self_update.verification import test_native_checks as _test_native_checks
+from tests.component.self_update.delivery import test_package_protocol as _test_package_protocol
+from tests.component.self_update.verification import test_system_probe as _test_system_probe
+from tests.component.self_update.verification.test_verification_channel import consume
+from tests.component.self_update.verification import test_verification_channel as _test_verification_channel
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+_isolated_owner = _test_self_update_tools._isolated_owner
+installed_cli = _test_native_checks.installed_cli
+package_factory = _test_package_protocol.package_factory
+http_live = _test_system_probe.live
+store_fixture = _test_verification_channel.store_fixture
+verifier = _test_verification_channel.verifier
 
 
 def _png():
@@ -30,12 +39,12 @@ def _png():
 
 @pytest.fixture
 def ui_install(package_factory, installed_cli, monkeypatch):
-    from openprogram.self_update.delivery import package_protocol
-    from openprogram.self_update.verification import ui_checks
-    from openprogram.webui import server
-    from openprogram.webui.routes.settings import misc
-    from openprogram.webui.routes import self_updates
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.operations.self_update.delivery import package_protocol
+    from openprogram.operations.self_update.verification import ui_checks
+    from openprogram.interfaces.server import server
+    from openprogram.interfaces.server.routes.settings import misc
+    from openprogram.interfaces.server.routes import self_updates
+    from openprogram.interfaces.server.ws_actions import webtab
     app = package_factory(ui=True, interaction=True, view=True)
     actual_package = package_protocol.validate_ui_package
     monkeypatch.setattr(package_protocol, "validate_ui_package", lambda _: actual_package(app))
@@ -134,7 +143,7 @@ def ui_install(package_factory, installed_cli, monkeypatch):
 
 @pytest.fixture
 def live(ui_install, http_live, monkeypatch):
-    from openprogram.agent.authority import owner_principal_id
+    from openprogram.runtime.permissions.authority import owner_principal_id
     # The HTTP fixture fixes owner identity; align the tool's imported alias.
     monkeypatch.setattr("openprogram.programs.tools.system.self_update.owner_principal_id", owner_principal_id)
     ui_install["state"] = http_live[2]
@@ -155,7 +164,7 @@ def test_capture_blocks_scoped_backend_mutations(verifier, ui_install):
     assert ui_install["bootstrap_guard_status"] == 409
     assert ui_install["ws_guard_error"]["code"] == "ui_verification_active"
     assert not ui_install.get("http_mutations") and not ui_install.get("ws_mutations")
-    from openprogram.webui import server
+    from openprogram.interfaces.server import server
     asyncio.run(server._handle_ws_command(ui_install["socket"], {"action": "test_ui_mutation"}))
     assert ui_install["ws_mutations"] == 1, "ordinary dispatch resumes after capture"
     state = ui_install["state"]
@@ -180,14 +189,14 @@ def _view_plan():
 
 
 def test_observe_ui_rejects_legacy_test_object_before_renderer_request():
-    from openprogram.self_update.verification.ui_checks import observe_ui
+    from openprogram.operations.self_update.verification.ui_checks import observe_ui
 
     with pytest.raises(ValueError, match="test_object UI interaction is no longer supported"):
         observe_ui(None, None, {"interaction": {"kind": "test_object"}}, None)
 
 
 def test_public_prepare_accepts_approved_perspective(tmp_path, monkeypatch, ui_install):
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
     result, _ = _public_prepare(tmp_path, monkeypatch, _view_plan())
     assert not result.is_error, result.content
@@ -229,8 +238,8 @@ def test_view_requires_new_packaged_capability(tmp_path, monkeypatch, ui_install
     old = package_factory("scroll-only", ui=True, interaction=True)
     package = ui_install["validate_package"](old)
     assert package["protocol"] == 2
-    monkeypatch.setattr("openprogram.self_update.delivery.package_protocol.validate_ui_package", lambda _: package)
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.operations.self_update.delivery.package_protocol.validate_ui_package", lambda _: package)
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
     result, store = _public_prepare(tmp_path, monkeypatch, _view_plan())
     assert result.is_error and "guarded UI" in result.content[0].text
@@ -238,7 +247,7 @@ def test_view_requires_new_packaged_capability(tmp_path, monkeypatch, ui_install
 
 
 def test_public_prepare_accepts_approved_scroll(tmp_path, monkeypatch, ui_install):
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
     result, _ = _public_prepare(tmp_path, monkeypatch, _scroll_plan())
     assert not result.is_error, result.content
@@ -273,8 +282,8 @@ def test_scroll_plan_requires_packaged_interaction_capability(tmp_path, monkeypa
     old = package_factory("capture-only", ui=True)
     package = ui_install["validate_package"](old)
     assert package["protocol"] == 1
-    monkeypatch.setattr("openprogram.self_update.delivery.package_protocol.validate_ui_package", lambda _: package)
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.operations.self_update.delivery.package_protocol.validate_ui_package", lambda _: package)
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
     result, store = _public_prepare(tmp_path, monkeypatch, _scroll_plan())
     assert result.is_error and "guarded UI" in result.content[0].text
@@ -282,14 +291,14 @@ def test_scroll_plan_requires_packaged_interaction_capability(tmp_path, monkeypa
 
 
 def test_public_prepare_accepts_main_window_capture_plan(tmp_path, monkeypatch, ui_install):
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
     result, _ = _public_prepare(tmp_path, monkeypatch, _ui_plan())
     assert not result.is_error, result.content
 
 
 def test_public_prepare_rejects_text_only_ui_verifier(tmp_path, monkeypatch, ui_install):
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text"]))
     result, store = _public_prepare(tmp_path, monkeypatch, _ui_plan())
     assert result.is_error
@@ -299,9 +308,9 @@ def test_public_prepare_rejects_text_only_ui_verifier(tmp_path, monkeypatch, ui_
 
 @pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
 def test_restart_rejects_lost_image_capability_before_job_admission(verifier, monkeypatch):
-    from openprogram.self_update.control.recovery import recover_pending_updates
-    from openprogram.agent.job.store import load_job
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    from openprogram.operations.self_update.control.recovery import recover_pending_updates
+    from openprogram.runtime.jobs.store import load_job
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text"]))
     assert recover_pending_updates() is False
     assert load_job(verifier.request.session_id, verifier.grant["job_id"]) is None
@@ -311,10 +320,10 @@ def test_restart_rejects_lost_image_capability_before_job_admission(verifier, mo
 
 @pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
 def test_restored_queue_checks_image_capability_before_model_execution(verifier, monkeypatch):
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.self_update.verification.verifier_config import load_verifier_config
-    from openprogram.self_update.verification.verifier_config import verifier_prompt
+    from openprogram.runtime.jobs.runner import JobRunner
+    from openprogram.runtime.jobs.types import JobStatus
+    from openprogram.operations.self_update.verification.verifier_config import load_verifier_config
+    from openprogram.operations.self_update.verification.verifier_config import verifier_prompt
     record = verifier.store.load(verifier.request.update_id)
     config = load_verifier_config(verifier.store, record)
     claim = verifier.store.claim_verifier(record.request.update_id, owner=f"worker:{os.getpid()}", lease_seconds=15)
@@ -325,12 +334,12 @@ def test_restored_queue_checks_image_capability_before_model_execution(verifier,
         creates_agent=False, defer_dispatch=True, **{key: config[key] for key in (
             "profile_snapshot", "model_override", "tools_override", "response_format", "authority")})
     verifier.runner.shutdown()
-    with verifier.runner._governor.ledger.immediate() as conn:
-        conn.execute("UPDATE job_admissions SET dispatch_ready = 1 WHERE job_id = ?", (claim.job_id,))
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+    with verifier.runner._governor.ledger.run_tables().transaction() as conn:
+        conn.update("job_admissions", {"dispatch_ready": 1}, job_id=claim.job_id)
+    monkeypatch.setattr("openprogram.runtime.conversation.model_tools.resolve_model",
                         lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text"]))
     recovered = JobRunner(max_workers=1, governor=verifier.runner._governor)
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: recovered)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: recovered)
     try:
         job = recovered.await_job(claim.job_id, timeout=5)
         assert job is not None and job.status is JobStatus.ERRORED
@@ -342,8 +351,8 @@ def test_restored_queue_checks_image_capability_before_model_execution(verifier,
 
 @pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
 def test_registered_ui_observer_returns_actual_image_block(verifier, ui_install):
-    from openprogram.self_update.verification import ui_checks
-    from openprogram.providers.types import ImageContent
+    from openprogram.operations.self_update.verification import ui_checks
+    from openprogram.models.providers.types import ImageContent
     verifier.run()
     result = verifier.control["tool_result"]
     assert not result.is_error, (result, {key: value for key, value in ui_install.items() if key != "state"})
@@ -361,7 +370,7 @@ def test_registered_ui_observer_returns_actual_image_block(verifier, ui_install)
     lambda b: b["identity"].update(route="/s/other"), lambda b: b["screenshot"].update(sha256="0" * 64),
     lambda b: b.update(observed_at=0)])
 def test_invalid_capture_cannot_pass(verifier, ui_install, mutation):
-    from openprogram.self_update.verification import ui_checks
+    from openprogram.operations.self_update.verification import ui_checks
     ui_install["mutation"] = mutation
     verifier.run()
     assert verifier.control["tool_result"].is_error
@@ -371,7 +380,7 @@ def test_invalid_capture_cannot_pass(verifier, ui_install, mutation):
 
 
 def test_packaged_ui_capability_is_bound_to_actual_files(package_factory):
-    from openprogram.self_update.delivery.package_protocol import validate_ui_package
+    from openprogram.operations.self_update.delivery.package_protocol import validate_ui_package
     with pytest.raises(ValueError, match="UI verification"):
         validate_ui_package(package_factory("old"))
     app = package_factory("new", ui=True)
@@ -384,7 +393,7 @@ def test_packaged_ui_capability_is_bound_to_actual_files(package_factory):
 
 @pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
 def test_cancelled_verifier_cannot_upload_capture(verifier, ui_install):
-    from openprogram.self_update.verification import ui_checks
+    from openprogram.operations.self_update.verification import ui_checks
     ui_install["mutation"] = lambda _: verifier.runner.cancel_execution(verifier.grant["job_id"], reason="owner stop")
     verifier.run()
     assert consume(verifier)["verdict"] == "inconclusive"

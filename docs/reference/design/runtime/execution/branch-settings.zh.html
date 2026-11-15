@@ -1,0 +1,82 @@
+<title>分支设置</title>
+<meta name="description" content="分支如何解析设置，以及哪些状态归分支。">
+<h1>分支设置</h1>
+
+<p>会话的每个分支用自己的设置和自己的状态运行，所以两个分支可以并行。</p>
+
+<h2 id="branch-settings">设置从哪里来</h2>
+
+<p>每个分支把设置存在自己的 <code translate="no">branch_refs</code> 记录里；会话顶层字段是选中分支的投影。<code translate="no">resolve_branch_settings(session, branch)</code> 返回每项设置的 <code translate="no">values</code>、<code translate="no">sources</code> 和 <code translate="no">inherited</code>（不设时跟随什么）。所有入口都经过它：网页、渠道、定时任务、always-on、Goal 和 <code translate="no">--print</code>。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">没设的项</th><th scope="col">回落到</th></tr></thead>
+<tbody>
+<tr><th scope="row">模型、联网搜索、Fast</th><td>分支 Agent 当前的值，再到产品默认</td></tr>
+<tr><th scope="row">Effort</th><td>Agent，再到项目，再到产品默认</td></tr>
+<tr><th scope="row">权限模式、沙箱</th><td>项目，再到产品默认</td></tr>
+<tr><th scope="row">Agent</th><td>默认 Agent</td></tr>
+</tbody>
+</table>
+
+<h2 id="follow-agent">跟随 Agent</h2>
+
+<ul>
+<li>新会话和切换 Agent 都不写模型，所以改了 Agent 的模型，下一轮就用新的。</li>
+<li>准入时把模型记进 <code translate="no">turn_settings</code>。Agent 让它和这条线上一轮不同时，用户消息带 <code translate="no">model_change</code>，页面显示一行说明，缓存断点报告记为 <code translate="no">model_switch</code>。</li>
+<li>换到窗口更小的模型时，先用旧模型压缩。</li>
+<li><code translate="no">scripts/migrate_branch_follow_agent.py</code> 清掉只是抄了 Agent 的模型和联网搜索开关。默认只演练，改动前先写备份。</li>
+</ul>
+
+<h2 id="writes">写设置</h2>
+
+<ul>
+<li><code translate="no">POST /api/sessions/{id}/branch_settings</code> 只存和 <code translate="no">inherited</code> 不同的部分；相同的值写成未设。<code translate="no">reset_fields</code> 也能恢复为继承。</li>
+<li>同一路径的 <code translate="no">GET</code> 和写入的回复都带解析后的值。</li>
+<li>发给已有会话的消息不带设置；新会话只带用户改过的控件。</li>
+</ul>
+
+<details>
+<summary>为什么这样设计</summary>
+<table class="stack">
+<thead><tr><th scope="col">决定</th><th scope="col">跟随</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">跟随 Agent</th><td>Claude Code 和 Hermes：没设就跟随上层。Codex：换模型时提示、换小窗口时压缩</td><td>Agent 是用户维护的身份，改了它的模型，用它的对话都应跟着变</td></tr>
+<tr><th scope="row">按字段回落</th><td>Claude Code：模型和 effort 跟 Agent，权限跟环境</td><td>权限是这个目录能做什么，属于项目边界；模型和 effort 是助手怎么工作。Codex 的统一层级会让项目覆盖 Agent 的模型，而这里的项目不设模型</td></tr>
+<tr><th scope="row">后台入口读自己的分支</th><td>Claude Code 把定时任务投递给归属方；OpenCode 触发时取会话的 Agent</td><td>挂在别的分支上的定时命令原来用选中分支的权限，主线放宽它也跟着放宽</td></tr>
+<tr><th scope="row">重试和编辑复制当前设置</th><td>Codex、Pi、OpenCode</td><td>取旧轮次的快照会把用户之后收紧的权限放宽回去；当前值就显示在控件上</td></tr>
+<tr><th scope="row">只写差异</th><td>Claude Code 的选择器选默认时什么都不写</td><td>“在此分支设置”才表示用户真的设过</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branch-tool-state">工具状态归谁</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">状态</th><th scope="col">按什么保存</th><th scope="col">其他分支上的轮次</th></tr></thead>
+<tbody>
+<tr><th scope="row">待办</th><td>分支（<code translate="no">todos.json</code> 每个分支一份）；新分支从父分支的复制一份开始</td><td>用自己的</td></tr>
+<tr><th scope="row">Goal</th><td>会话，绑定在开始时的分支上（旧 Goal 归读取时选中的分支）</td><td>不带 Goal 运行；Goal 自己的分支不论是否选中都带着它运行</td></tr>
+<tr><th scope="row">压缩摘要</th><td>链（摘要的 <code translate="no">covers_ids</code>）</td><td>允许</td></tr>
+<tr><th scope="row">占用（<code translate="no">last_prompt_tokens</code>）</th><td>分支记录；会话上保留选中分支的</td><td>允许</td></tr>
+<tr><th scope="row">读后写基线</th><td>分支历史：每次读取按所在轮次记在 <code translate="no">read_baselines.jsonl</code>（本地和 SSH 各用自己的键）</td><td>只算自己这条线上的读取，且不算这条线上最近一次压缩之前的</td></tr>
+<tr><th scope="row">plan mode、后台 shell、权限规则、溢出的工具输出、记忆写入</th><td colspan="2">尚未确定</td></tr>
+</tbody>
+</table>
+
+<p>加载和 <code translate="no">get_run_state</code> 返回 <code translate="no">running_branches</code>。<code translate="no">branch_running_task</code> 带分支名和 <code translate="no">wait_state</code>（<code translate="no">approval</code> 或 <code translate="no">input</code>），面板可以列出其他分支上的运行。</p>
+
+<details>
+<summary>为什么这样设计</summary>
+<table class="stack">
+<thead><tr><th scope="col">决定</th><th scope="col">跟随</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">从历史取读取基线</th><td>Claude Code 的 <code translate="no">extractReadFilesFromMessages</code></td><td>每个进程（Worker、CLI、定时任务）里都一样；分叉、回退和压缩不用额外记账</td></tr>
+<tr><th scope="row">待办按分支</th><td>Claude Code：每个执行上下文一份</td><td>旁支写会话级的看板会覆盖主线的</td></tr>
+<tr><th scope="row">Goal 绑定自己的分支</th><td>Codex：每个 thread 一个 goal</td><td>同样的原因；只有作用于整个会话的命令仍限定在选中分支</td></tr>
+<tr><th scope="row">操作只占用自己的分支</th><td>Codex：约束只落在被操作的 thread 上</td><td>每个分支一个前台操作；多条分支共有的节点要它们都空闲</td></tr>
+<tr><th scope="row">其他分支上的运行</th><td>Claude Code 输入框旁每个任务一个标签；状态种类来自 Codex <code translate="no">/side</code></td><td>等审批会卡住工作，所以放在输入框旁。目前只发送了数据</td></tr>
+</tbody>
+</table>
+</details>
+
+<p>还没做的部分：<a href="control.zh.html#status">活动与控制的实现状态</a>。</p>

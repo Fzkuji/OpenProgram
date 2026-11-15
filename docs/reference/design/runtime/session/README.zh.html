@@ -1,0 +1,19 @@
+<title>Session 设计</title>
+<meta name="description" content="Session 设计各部分的记录位置。">
+<h1 id="session-subsystem">Session 设计</h1>
+<p>一个 session 是用户和 Agent 之间的一段对话。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="storage.zh.html">数据模型</a></th><td>磁盘布局、日志行、字段、状态值、接口</td></tr>
+<tr><th scope="row"><a href="operations.zh.html">操作流程</a></th><td>启动、创建、写入、更新、命名、列举、删除、归档</td></tr>
+<tr><th scope="row"><a href="name.zh.html">LLM 标题生成</a></th><td>输入、提示词、模型、输出约定</td></tr>
+<tr><th scope="row"><a href="context.zh.html">Context</a></th><td><code translate="no">session_context</code> 管理器</td></tr>
+<tr><th scope="row"><a href="unified-session-context.zh.html">统一 session 上下文</a></th><td>为什么只要一个管理器，各入口迁移到了哪一步</td></tr>
+<tr><th scope="row"><a href="additional-working-directories.zh.html">附加工作目录</a></th><td>为单个 session 放宽围栏</td></tr>
+<tr><th scope="row"><a href="environments.zh.html">运行环境</a></th><td>本机、SSH、Docker 执行</td></tr>
+<tr><th scope="row"><a href="storage-consistency.zh.html">存储一致性</a></th><td>时间戳、快照和锁的约定</td></tr>
+<tr><th scope="row"><a href="external-import.zh.html">导入其他 agent</a></th><td>Claude Code 和 Codex 的对话成为原生会话</td></tr>
+<tr><th scope="row"><a href="comparison.zh.html">管理方案对比</a></th><td>Claude Code、OpenCode、OpenClaw、OpenProgram</td></tr>
+</tbody>
+</table>

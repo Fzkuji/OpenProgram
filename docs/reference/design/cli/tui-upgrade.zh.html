@@ -1,0 +1,162 @@
+<title>TUI 转录渲染</title>
+<meta name="description" content="Ink TUI 如何按工具渲染、折叠输出、在轮次运行时排队消息、附加图片和 PDF，以及让快捷键可查、可覆盖。">
+<meta name="covers" content="apps/cli/src/">
+<h1>TUI 转录渲染</h1>
+
+<p>每个工具读作一行标题加一行量化摘要，输出折叠并给出准确的剩余行数，一个键展开全部，编辑显示带行号的 diff，轮次运行时输入的消息排在输入框上方可见，图片和 PDF 可按路径或粘贴附加，所有按键来自一张可覆盖的表。运行中提问：<a href="../runtime/operations/user-input-requests.zh.html">用户输入请求</a>。</p>
+
+<h2 id="transcript">转录</h2>
+<pre translate="no" tabindex="0">● read(/src/app.py)
+  ⎿ Read 52 lines
+● edit(/src/app.py)
+  ⎿ Added 2 lines, removed 1 line
+    12   keep
+    13 - old
+    13 + new
+    14 + added
+● bash(pytest -q)
+  ⎿ ....F
+    1 failed, 4 passed
+    … +38 lines (ctrl+o to expand)
+● agent(Survey the parser)
+  ⎿ Done (2m 10s)
+● todo_update(#2)
+  ⎿ ☒ Read code
+    ◼ Write tests
+    ☐ Ship</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">工具</th><th scope="col">显示什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">所有工具</th><td>状态字形用主题的工具颜色（<code translate="no">◌</code> 运行、<code translate="no">●</code> 完成、<code translate="no">✗</code> 出错），粗体工具名，括号里是它作用的参数，内容在 <code translate="no">⎿</code> 下。其他 provider 的名字（<code translate="no">Bash</code>、<code translate="no">MultiEdit</code>、<code translate="no">TodoWrite</code>、<code translate="no">Task</code>）映射到同一套渲染</td></tr>
+<tr><th scope="row">bash</th><td>输出折叠到 3 行，然后 <code translate="no">… +N lines (ctrl+o to expand)</code>；帧是预览时 N 取服务端给的完整输出行数。只隐藏一行时直接显示这一行</td></tr>
+<tr><th scope="row">read、grep、glob、list</th><td>一行：<code translate="no">Read 52 lines</code>、<code translate="no">Found 8 files</code>、<code translate="no">Found 3 matches</code>、<code translate="no">No matches</code>；内容只在展开时显示</td></tr>
+<tr><th scope="row">edit、apply_patch、write</th><td><code translate="no">Added X lines, removed Y lines</code> 加 diff：绿色新增、红色删除、三行上下文，折叠段显示 <code translate="no">⋮</code>，超过 12 行才折叠。行号在结果到达时读一次被编辑的文件得到；文件不在本机时不显示行号，不给错的</td></tr>
+<tr><th scope="row">agent</th><td><code translate="no">Running…</code>，然后 <code translate="no">Done (2m 10s)</code> 和回复开头；后台 agent 显示 <code translate="no">Started in the background</code></td></tr>
+<tr><th scope="row">todo_*</th><td>最新一次 todo 调用画出 <code translate="no">todos_update</code> 帧里保存的清单：<code translate="no">☒</code> 完成并划线，<code translate="no">◼</code> 进行中加粗，<code translate="no">☐</code> 待办</td></tr>
+<tr><th scope="row">展开</th><td>Ctrl+O 展开或折叠整个转录里的工具输出；折叠提示写当前生效的键</td></tr>
+<tr><th scope="row">匹配</th><td>结果按 <code translate="no">tool_call_id</code> 找到自己的调用，同名工具并发时结果落在正确的行；没有 id 的帧退回到同名最新的运行中调用</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">按工具给摘要</th><td>Claude Code 的工具渲染给量化摘要（<code translate="no">Read N lines</code>、<code translate="no">Found N files</code>、编辑的增删数和 diff）；Codex 在 <code translate="no">└</code> 下印原始输出；opencode 把单行工具（读、搜索）和块工具（bash、编辑、task、todo）分开。摘要跟 Claude Code，因为模型拿到之后文件内容和文件列表对人是噪音；分法跟 opencode，混合运行每个工具两行。以前每个工具都印 6 行原文，编辑被淹没在文件内容里</td></tr>
+<tr><th scope="row">折叠到三行并计数</th><td>Claude Code 折叠到 3 行加 <code translate="no">+N lines</code>；Codex 保留头尾；Pi 显示 bash 的尾部。头部加准确总数能说清藏了多少；总数取服务端的预览元数据，只数预览会少算长输出</td></tr>
+<tr><th scope="row">一个全局展开</th><td>Claude Code 的 Ctrl+O 打开一个冻结的独立屏；Pi 原地切换 <code translate="no">app.tools.expand</code>。原地切换保持转录可滚动，不需要第二个屏和退出键，cell-grid 渲染器本来就整帧重绘</td></tr>
+<tr><th scope="row">diff 来自编辑的参数</th><td>Claude Code 用 <code translate="no">old_string</code> / <code translate="no">new_string</code> 生成 patch；Codex 用它应用的 patch。TUI 从调用里两者都有，不需要改服务端；参数里没有行号，所以读文件取，文件在别处（SSH 对话）时不显示</td></tr>
+<tr><th scope="row">清单来自已保存的 todo</th><td>Claude Code 用 TodoWrite 的参数画清单；我们的工具每次只改一项，所以清单取工具本来就广播的 <code translate="no">todos_update</code> 帧，TodoWrite 式调用仍按参数画</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="queue">轮次运行时输入的消息</h2>
+<pre translate="no" tabindex="0">  ↳ also update the changelog
+› and run the linter +2 lines
+╭──────────────────────────────────────────────╮
+│ &gt;  waiting for response    enter edit · x remove │
+╰──────────────────────────────────────────────╯</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">排队</th><td>轮次运行时输入框照常接收输入；Enter 把消息连同附件放进队列，在输入框上方暗色显示，每条一行 <code translate="no">↳</code></td></tr>
+<tr><th scope="row">选中</th><td>输入框为空时按 ↑ 选中最新一条；↑ / ↓ 移动，Esc 回到输入框，其他键回到输入</td></tr>
+<tr><th scope="row">编辑、删除</th><td>Enter 或 <code translate="no">e</code> 把这条取回输入框（含附件），再按 Enter 排到队尾。<code translate="no">x</code>、Delete 或 Backspace 删除</td></tr>
+<tr><th scope="row">发出</th><td>分支空闲后（完成、失败或被停止），最早的一条作为下一轮发出，然后下一条。Esc 仍然停止轮次</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">可见的行，而不是隐藏的缓冲</th><td>Codex 把排队消息显示成暗色 <code translate="no">↳</code> 行，用一个键取回最后一条；Claude Code 按 ↑ 把全部拉回输入框；Pi 用 Alt+↑ 恢复；opencode 只显示条数。Grok Build 的队列面板用 ↑ 选中任意一条编辑或删除。行和选中方式跟 Grok Build，因为网页输入框的排队气泡也能逐条编辑、删除，两边一致</td></tr>
+<tr><th scope="row">停止后照常发出</th><td>Claude Code 停止后发出队列；Codex 和 Pi 放回输入框，因为它们的队列不能编辑。我们的队列停止前后都能改，所以照常发出，和网页输入框一致</td></tr>
+<tr><th scope="row">一条一轮</th><td>Claude Code 把排队的多条合成一条；这里每行各成一轮，删改一行不影响别的行，每个分支仍只有一个前台操作</td></tr>
+<tr><th scope="row">在客户端排队</th><td>每个分支只有一个前台操作，服务端会拒绝第二次发送；在 TUI 里等分支空闲再发，不需要改服务端</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="attachments">图片和 PDF</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">粘贴或拖入路径</th><td>粘贴的每个片段都是已存在的图片（png、jpg、gif、webp）或 PDF 时——包括带引号、<code translate="no">\ </code> 转义、<code translate="no">file://</code> 和 <code translate="no">~</code> 的写法——插入 <code translate="no">[Image #1]</code> / <code translate="no">[PDF #2]</code> 而不是文字；其他情况保持文字</td></tr>
+<tr><th scope="row">剪贴板图片</th><td>Ctrl+V（Windows 上 Alt+V）或一次空粘贴，从剪贴板读图片：macOS 用 osascript，Linux 用 wl-paste 或 xclip，Windows 用 PowerShell</td></tr>
+<tr><th scope="row"><code translate="no">@path</code></th><td>发出的 <code translate="no">@path</code> 指向图片或 PDF 时同样附加</td></tr>
+<tr><th scope="row">发送</th><td>文本里还在的占位符变成网页输入框的 <code translate="no">[attachment: name (ext, N KB) @json "path"]</code> 标记；删掉的占位符连同文件一起丢弃。图片带源路径按字节发送；PDF 只发路径，交给 <code translate="no">pdf</code> 工具。超过 5 MB 的图片和超过 32 MB 的文件被拒绝，并用一行说明原因</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">占位符放在文字里</th><td>Claude Code 和 Codex 都在图片位置显示 <code translate="no">[Image #N]</code>，删掉占位符就丢弃图片；终端没有附件条，文字是唯一能显示和删除附件的地方</td></tr>
+<tr><th scope="row">粘贴时识别路径</th><td>终端把拖入的文件交成它的路径。Claude Code 和 Codex 把这种粘贴变成附件；要求每个片段都是存在的可附加文件，提到路径的一句话仍是文字</td></tr>
+<tr><th scope="row">网页输入框的标记</th><td>服务端已经为带源路径的 Electron 上传保存、改写和渲染这个标记，TUI 不需要新协议，消息在网页聊天里显示也一样</td></tr>
+<tr><th scope="row">不缩放</th><td>网页输入框用 canvas 缩小大图；TUI 没有图像库，所以超过模型 5 MB 上限时拒绝，而不是发一个会失败的请求</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="keybindings">快捷键</h2>
+<pre translate="no" tabindex="0">// ~/.openprogram/keybindings.json（当前 profile 的状态目录）
+{
+  "app.toolsExpand": "ctrl+t",
+  "app.commandPalette": "none",
+  "queue.remove": ["d", "delete"]
+}</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">动作表</th><td>每个可改的键都是一个只声明一次的动作，带作用范围（<code translate="no">global</code>、<code translate="no">input</code>、<code translate="no">queue</code>）、默认键和说明；处理函数问"这个动作是否匹配"，不直接判断原始按键</td></tr>
+<tr><th scope="row">覆盖</th><td>状态目录里 <code translate="no">keybindings.json</code> 的扁平对象 <code translate="no">action → key | [keys] | "none"</code>。用户绑定的键会从重叠范围内的默认动作上拿走</td></tr>
+<tr><th scope="row">问题</th><td>未知动作、读不懂的键、保留的动作或键（Ctrl+C）、用户自己把一个键绑给两个动作，启动时各在转录里出一行；文件其余部分照常生效，JSON 坏了就用默认</td></tr>
+<tr><th scope="row"><code translate="no">?</code> 帮助</th><td>空输入框按 <code translate="no">?</code>（以及 <code translate="no">/keybindings</code>）打开快捷键列表，由同一张表和当前生效的键生成；输入框上的提示和折叠提示也用当前的键</td></tr>
+</tbody>
+</table>
+
+<details open>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">扁平的动作表</th><td>Pi 的 <code translate="no">keybindings.json</code> 和 opencode 的 <code translate="no">keybinds</code> 是动作到键；Claude Code 按范围嵌套键到动作；Codex 在 <code translate="no">config.toml</code> 里按范围和动作嵌套；Grok Build 不能改键。扁平表最短，范围留在表里，用户不用写</td></tr>
+<tr><th scope="row">警告而不是报错</th><td>Codex 遇到冲突的键位拒绝启动；Claude Code 和 Pi 警告后继续。键位文件里的一个笔误不该让人进不了 TUI</td></tr>
+<tr><th scope="row">Ctrl+C 保留</th><td>Claude Code 保留 Ctrl+C 和 Ctrl+D，因为停止和双击退出依赖时间；这里 Ctrl+C 承担同样的停止和退出，所以固定</td></tr>
+<tr><th scope="row">帮助来自表</th><td>手写的列表会和处理函数脱节；从处理函数读的同一张表生成，两者永远一致，Claude Code 和 Codex 的快捷键面板也是这样</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="interaction">命令和交互</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">命令注册表</th><td>每个命令只声明一次（名称、标题、分类、快捷键、slash 名、是否可用）；驱动 Ctrl+K、slash 命令和页脚提示，注册表和处理函数不会脱节</td></tr>
+<tr><th scope="row">提问</th><td>提问和审批占用输入槽而不是弹窗；转录保持可滚动，esc 只有一个含义</td></tr>
+<tr><th scope="row">危险操作</th><td>选择器里的破坏性操作在行内确认：再按一次，行变红。没有嵌套确认层</td></tr>
+<tr><th scope="row">选择器</th><td>从 <code translate="no">pickerKind</code> 枚举逐个迁移到 ModalProvider 和 Form 组件</td></tr>
+<tr><th scope="row">Spinner</th><td>一条合成行，随宽度渐进取舍</td></tr>
+<tr><th scope="row">Markdown</th><td>marked-terminal，按流式状态、文本和宽度对每个文本段 memoize；cell-grid 渲染器每帧重绘</td></tr>
+</tbody>
+</table>
+<p class="note">保留 vendored hermes-ink 渲染器：已有鼠标跟踪和 ScrollBox，换 OpenTUI 没有收益。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">部分</th><th scope="col">内容</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">基础</th><td>hermes-ink、四个主题、BottomBar、Ctrl+K、自动补全建议、<code translate="no">@file</code>、按会话草稿、账号和渠道流程、Markdown memoize、运行中决定占用输入槽</td><td>已实现</td></tr>
+<tr><th scope="row">转录</th><td>按工具渲染、3 行折叠和准确计数、Ctrl+O 展开、edit / apply_patch / write 的 diff、子 agent 和 todo 视图、按 <code translate="no">tool_call_id</code> 匹配结果</td><td>已实现</td></tr>
+<tr><th scope="row">输入</th><td>排队消息（可见、可选中、可编辑、可删除、轮次后发出），按路径、粘贴、剪贴板和 <code translate="no">@path</code> 附加图片和 PDF</td><td>已实现</td></tr>
+<tr><th scope="row">按键</th><td>动作表、<code translate="no">keybindings.json</code> 覆盖和警告、由表生成的 <code translate="no">?</code> 帮助</td><td>已实现</td></tr>
+<tr><th scope="row">未实现</th><td><code translate="no">load_session</code> 回复带工具块（恢复的对话只显示文字）；<code translate="no">/diff</code> 走 diff 视图；子 agent 的 <code translate="no">Done</code> 行里的调用数和 token 数（流里没有）；图片缩放；合成 spinner 行、注册表统一、行内危险确认和选择器迁移</td><td>未实现</td></tr>
+</tbody>
+</table>

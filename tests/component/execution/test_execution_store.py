@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 
 import pytest
 
-from openprogram.execution._schema import SCHEMA_VERSION
-from openprogram.execution.model import (
+from openprogram.runtime.execution._schema import SCHEMA_VERSION
+from openprogram.runtime.execution.model import (
     CapabilitySet,
     CommandKind,
     CommandStatus,
     ExecutionStatus,
 )
-from openprogram.execution.store import (
+from openprogram.runtime.execution.store import (
     CommandConflict,
     ExecutionConflict,
     ExecutionStore,
@@ -49,40 +48,6 @@ def _execution(store: ExecutionStore, **overrides):
             manifest={"entrypoint": revision_id, "schema": 1},
         )
     return store.create_execution(**values)
-
-
-def _assert_root_source_constraint(connection: sqlite3.Connection) -> None:
-    sql = connection.execute(
-        "SELECT sql FROM sqlite_master WHERE type = 'table' "
-        "AND name = 'executions'"
-    ).fetchone()[0]
-    assert "CHECK(parent_execution_id IS NOT NULL OR source_checkpoint_id IS NULL)" in sql
-    assert "REFERENCES checkpoints(checkpoint_id)" in sql
-    with pytest.raises(sqlite3.IntegrityError):
-        connection.execute(
-            "INSERT INTO executions ("
-            "execution_id, run_id, session_id, parent_execution_id, "
-            "source_checkpoint_id, revision_id, status, status_version, "
-            "owner_lease_json, safe_point_json, capabilities_json, "
-            "effect_summary_json, created_at, updated_at) VALUES ("
-            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "invalid-root",
-                "run-invalid",
-                "session-invalid",
-                None,
-                "checkpoint-invalid",
-                "revision-invalid",
-                "queued",
-                1,
-                "{}",
-                "{}",
-                "{}",
-                "{}",
-                1.0,
-                1.0,
-            ),
-        )
 
 
 def test_revision_is_content_addressed_immutable_and_durable(tmp_path) -> None:
@@ -187,136 +152,6 @@ def test_create_is_durable_and_rebuildable_from_append_only_events(tmp_path) -> 
     assert [event.kind for event in events] == ["execution.created"]
     assert events[0].execution_version == 1
     assert events[0].schema_version == SCHEMA_VERSION
-
-
-def test_v1_store_migrates_legacy_capabilities_in_executions_and_events(
-    tmp_path,
-) -> None:
-    path = tmp_path / "runtime" / "executions.sqlite3"
-    path.parent.mkdir()
-    legacy_record = {
-        "execution_id": "exec_legacy",
-        "run_id": "run_legacy",
-        "session_id": "session_legacy",
-        "revision_id": "revision_legacy",
-        "status": "paused",
-        "status_version": 3,
-        "capabilities": ["pause", "step"],
-        "created_at": 1.0,
-        "updated_at": 2.0,
-        "terminal_at": None,
-    }
-    with sqlite3.connect(path) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE executions (
-                execution_id TEXT PRIMARY KEY,
-                run_id TEXT NOT NULL,
-                session_id TEXT NOT NULL,
-                parent_execution_id TEXT,
-                revision_id TEXT NOT NULL,
-                status TEXT NOT NULL,
-                status_version INTEGER NOT NULL,
-                reason_code TEXT,
-                current_attempt_id TEXT,
-                owner_lease_json TEXT NOT NULL,
-                checkpoint_head_id TEXT,
-                safe_point_json TEXT NOT NULL,
-                capabilities_json TEXT NOT NULL,
-                effect_summary_json TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL,
-                terminal_at REAL
-            );
-            CREATE TABLE commands (
-                command_id TEXT PRIMARY KEY,
-                execution_id TEXT NOT NULL,
-                expected_version INTEGER NOT NULL,
-                kind TEXT NOT NULL,
-                payload_json TEXT NOT NULL,
-                actor_json TEXT NOT NULL,
-                fingerprint TEXT NOT NULL,
-                status TEXT NOT NULL,
-                submitted_at REAL NOT NULL,
-                updated_at REAL NOT NULL,
-                result_version INTEGER,
-                rejection_code TEXT
-            );
-            CREATE TABLE execution_events (
-                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                execution_id TEXT NOT NULL,
-                execution_version INTEGER,
-                command_id TEXT,
-                kind TEXT NOT NULL,
-                payload_json TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                schema_version INTEGER NOT NULL
-            );
-            """
-        )
-        connection.execute(
-            "INSERT INTO executions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "exec_legacy",
-                "run_legacy",
-                "session_legacy",
-                None,
-                "revision_legacy",
-                "paused",
-                3,
-                None,
-                None,
-                "{}",
-                None,
-                "{}",
-                json.dumps(["pause", "step"]),
-                "{}",
-                1.0,
-                2.0,
-                None,
-            ),
-        )
-        connection.execute(
-            "INSERT INTO execution_events "
-            "(execution_id, execution_version, command_id, kind, payload_json, created_at, schema_version) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "exec_legacy",
-                3,
-                None,
-                "execution.updated",
-                json.dumps({"record": legacy_record}),
-                2.0,
-                1,
-            ),
-        )
-        connection.execute("PRAGMA user_version = 1")
-
-    store = ExecutionStore(path)
-
-    execution = store.get_execution("exec_legacy")
-    assert execution is not None
-    assert execution.capabilities == CapabilitySet(pause=True, step=True)
-    assert store.rebuild_execution("exec_legacy") == execution
-    assert store.get_run("run_legacy").session_id == "session_legacy"
-    assert store.get_revision("revision_legacy").manifest == {
-        "legacy_revision_id": "revision_legacy"
-    }
-    with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        _assert_root_source_constraint(connection)
-        assert json.loads(
-            connection.execute(
-                "SELECT capabilities_json FROM executions WHERE execution_id = ?",
-                ("exec_legacy",),
-            ).fetchone()[0]
-        ) == CapabilitySet(pause=True, step=True).to_dict()
-        assert json.loads(
-            connection.execute(
-                "SELECT payload_json FROM execution_events WHERE execution_id = ?",
-                ("exec_legacy",),
-            ).fetchone()[0]
-        )["record"]["capabilities"] == CapabilitySet(pause=True, step=True).to_dict()
 
 
 def test_transition_uses_version_cas_and_terminal_state_is_immutable(tmp_path) -> None:
@@ -535,7 +370,7 @@ def test_list_nonterminal_excludes_every_terminal_status(tmp_path) -> None:
 
 def test_default_store_follows_the_active_profile_path(tmp_path, monkeypatch) -> None:
     target = tmp_path / "profile" / "executions.db"
-    monkeypatch.setattr("openprogram.paths.get_execution_db_path", lambda: target)
+    monkeypatch.setattr("openprogram.state.paths.get_run_state_path", lambda: target)
     _store_for_path.cache_clear()
     try:
         first = default_store()
@@ -545,12 +380,3 @@ def test_default_store_follows_the_active_profile_path(tmp_path, monkeypatch) ->
     finally:
         _store_for_path.cache_clear()
 
-
-def test_reopening_current_store_does_not_rewrite_execution_history(tmp_path):
-    store = _store(tmp_path)
-    execution = _execution(store)
-    before = store.list_events(execution.execution_id)
-    with sqlite3.connect(store.path) as connection:
-        connection.execute("CREATE TRIGGER history_is_immutable BEFORE UPDATE ON execution_events BEGIN SELECT RAISE(ABORT, 'startup rewrote execution history'); END")
-    reopened = ExecutionStore(store.path)
-    assert reopened.list_events(execution.execution_id) == before

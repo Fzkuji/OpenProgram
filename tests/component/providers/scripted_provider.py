@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import json
 from typing import Any, AsyncGenerator, Literal
 
-from openprogram.providers.types import (
+from openprogram.models.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
     Context,
@@ -33,6 +33,7 @@ from openprogram.providers.types import (
 @dataclass(frozen=True)
 class ScriptedText:
     text: str
+    citations: list[dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -130,7 +131,7 @@ class ScriptedProvider:
             if isinstance(step, ScriptedText):
                 content.append(TextContent(text=""))
                 yield EventTextStart(content_index=index, partial=message())
-                content[index] = TextContent(text=step.text)
+                content[index] = TextContent(text=step.text, citations=step.citations)
                 yield EventTextDelta(content_index=index, delta=step.text, partial=message())
                 yield EventTextEnd(content_index=index, content=step.text, partial=message())
             elif isinstance(step, ScriptedThinking):

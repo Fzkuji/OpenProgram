@@ -1,0 +1,56 @@
+<title>Transcript model</title>
+<meta name="description" content="Server-shaped turns: one projection builds whole turns from store nodes, reads return them at a numbered revision, and the browser applies numbered changes without folding or merging.">
+<meta name="covers" content="openprogram/interfaces/server/transcript/ apps/web/lib/chat/transcript/ apps/web/components/chat/messages/list/">
+<h1 id="title">Transcript model</h1>
+<p>The server is the only code that decides what a transcript looks like. A package, <code translate="no">transcript/</code>, turns store nodes into Turns: a prompt plus everything it owns. Ownership is settled before any page is cut, so a page edge cannot separate a card from its reply.</p>
+<p>A Row is the existing <code translate="no">ChatMsg</code>, built on the server with the same field names, so components keep drawing what they draw. Reads return whole turns fresh from the store at a numbered revision.</p>
+<p>Later changes reach the browser in two forms only: text and thinking stay on the existing <code translate="no">stream_event</code> frame, and everything else is a numbered <code translate="no">transcript_update</code> built by the same projection functions that serve history. The CLI, ACP, channels, <code translate="no">worker_turn</code> and bound replies read the same projection as flat rows.</p>
+<p>The browser does not fold, does not mint rows from misses and does not merge. It draws each row by the <code translate="no">rowKind</code> the server sent. Nothing is stored beyond the existing append-only log.</p>
+<p class="note">Every delivery step is built; <a href="#status">Implementation status</a> lists them.</p>
+<h2 id="pages">Pages of this record</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Page</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="transcript-model-structure.html">Rows and ownership</a></th><td>View, TranscriptView, Turn, Row, Block, local rows, overlays, and who owns each fact</td></tr>
+<tr><th scope="row"><a href="transcript-model-reads.html">Reads and client rules</a></th><td>Cursor and text-frame rules, parking, first open, paging, reconnect, panes, non-web consumers</td></tr>
+<tr><th scope="row"><a href="transcript-model-live.html">Live updates</a></th><td>Live text, observer and publisher, Stop, trees, foreign writes, sends, optimistic writes, sub-agents</td></tr>
+<tr><th scope="row"><a href="transcript-model-wire.html">Wire protocol and modules</a></th><td>Frames, new and changed modules, what is deleted at which step</td></tr>
+<tr><th scope="row"><a href="transcript-model-delivery.html">Delivery steps</a></th><td>Approval gate, steps 0 to 10, and which step closes each finding</td></tr>
+<tr><th scope="row"><a href="transcript-model-limits.html">Limits and enforcement</a></th><td>Old data, contract and behaviour tests, remaining limits, alternatives not taken</td></tr>
+</tbody>
+</table>
+<h2 id="invariants">Invariants kept</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Invariant</th><th scope="col">How it holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">DAG meaning</th><td>The log stays append-only, <code translate="no">seq</code> stays the only sort key, <code translate="no">caller</code> and <code translate="no">predecessor</code> stay orthogonal. Display folding changes nothing in <code translate="no">render_context</code>, model replay, or <code translate="no">list_branches</code>.</td></tr>
+<tr><th scope="row">Stored history is never rewritten</th><td>Every old shape is read at display time (<a href="transcript-model-limits.html#old-data">Old data</a>).</td></tr>
+<tr><th scope="row">Row identity</th><td>Message ids, <code translate="no">tool_call_id</code> and <code translate="no">card_id</code> are stable. Anchors, measured heights, the arrival animation, the rail and saved reading positions keep working. A replaced window restores by message id before paint.</td></tr>
+<tr><th scope="row">Scroll ownership</th><td><code translate="no">useChatAreaStick</code> alone writes follow position. <code translate="no">history-viewport</code> alone restores anchors. Loaders and WebSocket handlers do not scroll.</td></tr>
+<tr><th scope="row">Sub-agent isolation</th><td><code translate="no">job_id</code> frames never enter the conversation. The store key stays <code translate="no">&lt;session_id&gt;#sub-agent:&lt;first job id&gt;</code>. Collapsed rows load nothing. Sub-agent transcripts are in branch order. HEAD never moves while a run is active.</td></tr>
+<tr><th scope="row">Reconnect contract</th><td>Transcript read first, then execution recovery, snapshot-only. Request-id correlation, the 15 s deadline with visible retry and cached rows kept, stale replies ignored, <code translate="no">run_seq</code> ordering, open questions and approvals replayed. Retry state stays live-only.</td></tr>
+<tr><th scope="row">Merge guarantees</th><td>Snapshot and replacement rules are in <a href="chat-turn-visual-spec.html#transcript-consistency">Transcript update ownership</a>. Failed sends and local rows survive a load. <a href="transcript-model-reads.html">Reads and client rules</a> and <a href="transcript-model-live.html">Live updates</a> state the mechanism for each.</td></tr>
+<tr><th scope="row">Bounds</th><td>Server pages: first read 6 turns or 128 KiB, later pages 25 turns or 512 KiB, one whole turn always allowed. Browser: 6 pages, 8 MiB, four cached conversations (<code translate="no">MAX_CACHED_SESSIONS = 4</code>). Page reads never run full hydration. Acceptance is a real server benchmark at 300,000 nodes plus the existing 300,000-row browser test, restated in turns at step 5.</td></tr>
+<tr><th scope="row">Delta batching</th><td>One animation frame per batch. Pending text of a row flushes before any item or terminal change for that row.</td></tr>
+<tr><th scope="row">No second store</th><td>No new runtime, database, event log or in-memory row source.</td></tr>
+</tbody>
+</table>
+<h2 id="status">Implementation status</h2>
+<p>All eleven delivery steps are done, and the pages of this record describe the running code. Every read and every live change comes from the projection, the browser draws what the server sent through one reducer and one row list, and the old history paths, the reload frame and the web mapper are gone.</p>
+<table class="stack">
+<thead><tr><th scope="col">Step</th><th scope="col">Scope</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">0</th><td>Harness and baselines (tests only)</td><td>Done</td></tr>
+<tr><th scope="row">1</th><td>Server data repairs, no wire change</td><td>Done</td></tr>
+<tr><th scope="row">2</th><td>Whole-turn pages, no wire change</td><td>Done</td></tr>
+<tr><th scope="row">3</th><td>Writers record ownership</td><td>Done</td></tr>
+<tr><th scope="row">4</th><td>Bubble owns data by id, old transport</td><td>Done</td></tr>
+<tr><th scope="row">5</th><td>Projection, turn index and read flip</td><td>Done</td></tr>
+<tr><th scope="row">6</th><td>Per-view rows and sub-agent reads</td><td>Done</td></tr>
+<tr><th scope="row">7</th><td>Observer, publisher, non-reply updates</td><td>Done</td></tr>
+<tr><th scope="row">8</th><td>Live through one path</td><td>Done</td></tr>
+<tr><th scope="row">9</th><td>Draw only what the server sent</td><td>Done</td></tr>
+<tr><th scope="row">10</th><td>Remove old paths and finish the records</td><td>Done</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="transcript-model-structure.html">Rows and ownership</a></p>

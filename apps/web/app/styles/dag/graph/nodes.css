@@ -1,0 +1,206 @@
+/* DAG 节点：图块色调、hover/HEAD 辉光/running 呼吸/ghost 灰、
+   旁注文字、缩远时的点与语义缩放。
+   对应来源：lib/runtime-bridge/dag/render/nodes.ts */
+
+.history-node { cursor: pointer; }
+
+/* Tiles (render/tiles.ts, dag/rendering.md §4): the execution timeline's
+   icon tile on the graph. --tone comes from the tile's kind
+   (app/styles/tool-tones.css); every state below changes the tone or the
+   fill, never the chip's shape. */
+.dag-tile { --tone: var(--tool-tone-function); color: var(--tone); }
+.dag-tile.t-user { --tone: var(--accent-blue); }
+.dag-tile.t-llm { --tone: var(--timeline-llm); }
+.dag-tile.t-root { --tone: var(--text-secondary); }
+.dag-tile.t-shell { --tone: var(--tool-tone-shell); }
+.dag-tile.t-edit { --tone: var(--tool-tone-edit); }
+.dag-tile.t-read { --tone: var(--tool-tone-read); }
+.dag-tile.t-search { --tone: var(--tool-tone-search); }
+.dag-tile.t-web { --tone: var(--tool-tone-web); }
+.dag-tile.t-agent { --tone: var(--tool-tone-agent); }
+.dag-tile.t-memory { --tone: var(--tool-tone-memory); }
+.dag-tile.t-plan { --tone: var(--tool-tone-plan); }
+.dag-tile.t-media { --tone: var(--tool-tone-media); }
+.dag-tile.t-system { --tone: var(--tool-tone-system); }
+.history-node.is-faded .dag-tile,
+.history-node.is-ghost .dag-tile { --tone: var(--dag-ghost); }
+
+/* The chip (dag/rendering.md §4): every node is the same round chip, a
+   tint of its own colour with the icon in full colour — your message, a
+   reply and a call alike. The tint is mixed into the canvas colour, so
+   the chip stays opaque and buries the belt ends running under it.
+   Every state below restyles the chip itself, the way a game button
+   lights up when pressed; nothing is drawn around it. */
+.dag-tile > [data-node-shape] {
+  fill: color-mix(in srgb, var(--tone) 18%, var(--bg-primary));
+  stroke: none;
+  transition: fill var(--motion-medium) var(--ease-standard);
+}
+.dag-tile { transform-box: fill-box; transform-origin: center; transition: transform var(--motion-medium) var(--ease-standard); }
+.dag-tile-icon { transition: opacity var(--motion-medium) var(--ease-standard), color var(--motion-medium) var(--ease-standard); }
+
+/* Not in the next request (§8): the whole chip steps back, still legible.
+   Aged out soon, a little; outside the window, more. */
+.history-node:not(.is-covered) .dag-tile > [data-node-shape] {
+  fill: color-mix(in srgb, var(--tone) 10%, var(--bg-primary));
+}
+.history-node:not(.is-covered) .dag-tile-icon { opacity: 0.6; }
+.dag-tile.t-root .dag-tile-icon { opacity: 1; }
+.history-node.is-covered.is-aged .dag-tile-icon { opacity: 0.75; }
+
+/* Hover: a stronger tint, the icon at full strength. */
+.history-node:hover .dag-tile > [data-node-shape] {
+  fill: color-mix(in srgb, var(--tone) 30%, var(--bg-primary));
+}
+.history-node:hover .dag-tile .dag-tile-icon { opacity: 1; }
+
+
+/* HEAD — "you are here": the chip glows in its colour on a slow breath
+   (§4), so it stands out without changing shape. */
+.history-node.is-head .dag-tile > [data-node-shape] {
+  fill: color-mix(in srgb, var(--tone) 24%, var(--bg-primary));
+  animation: dag-head-glow 2.4s ease-in-out infinite;
+}
+.history-node.is-head .dag-tile .dag-tile-icon { opacity: 1; }
+@keyframes dag-head-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--tone) 60%, transparent)); }
+  50% { filter: drop-shadow(0 0 8px color-mix(in srgb, var(--tone) 70%, transparent)); }
+}
+
+/* Selected: the chip fills solid in its colour and the icon turns to the
+   canvas colour, a little larger — a pressed button, no frame. Last, so it wins over HEAD and over
+   the faint state. */
+.history-node.is-selected .dag-tile { transform: scale(1.08); }
+.history-node.is-selected .dag-tile > [data-node-shape] { fill: var(--tone); }
+.history-node.is-selected .dag-tile .dag-tile-icon {
+  opacity: 1;
+  color: var(--bg-primary);
+}
+
+/* Zoomed far out (interaction/view/canvas.ts ``is-far``): an icon at a few
+   pixels is noise, so a chip becomes a dot of its colour — the map reads
+   by colour. The dot is a steady 7px on screen, so neighbours 14px apart
+   never touch, and the lines keep 1.5px. With something selected the
+   rest of the graph fades (``has-selection``, interaction/selection/selection.ts)
+   and the selected dots keep their full colour, so a selection reads at
+   a glance in either theme without growing or outlining anything. */
+.is-far .dag-tile-icon { display: none; }
+.is-far .dag-tile {
+  transform: scale(calc(var(--dag-marker-scale, 1) * 0.25));
+  transition: none; /* it follows the zoom, frame by frame */
+}
+.is-far .dag-tile > [data-node-shape] { fill: var(--tone); }
+.is-far .history-node:not(.is-covered) .dag-tile > [data-node-shape] {
+  fill: color-mix(in srgb, var(--tone) 40%, var(--bg-primary));
+}
+.is-far .history-node.is-head .dag-tile > [data-node-shape] { fill: var(--tone); }
+/* The press target stays about 10px, a little larger than the dot. */
+.is-far .history-node > .dag-hit {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(max(1, calc(var(--dag-marker-scale, 1) * 0.35)));
+}
+.is-far .history-node.is-selected .dag-tile { transform: scale(calc(var(--dag-marker-scale, 1) * 0.25)); }
+.is-far .history-node.is-selected .dag-tile > [data-node-shape] { fill: var(--tone); }
+.is-far.has-selection .history-node:not(.is-selected),
+.is-far.has-selection .history-edge,
+.is-far.has-selection .dag-caption,
+.is-far.has-selection .history-branch-tag { opacity: 0.25; }
+.is-far .history-edge { stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+
+/* Running: the icon breathes. */
+.history-node.is-running .dag-tile-icon {
+  animation: dag-icon-breathe 1.4s ease-in-out infinite;
+}
+@keyframes dag-icon-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* Agent dots (render/agents.ts): the Activity panel's status dot
+   (chat/indicator-dot.css) in the agent's branch colour, on the corner of
+   the tile it works on. It breathes while the agent works, rests steady. */
+.dag-agent-dot { stroke: var(--bg-primary); stroke-width: 2; paint-order: stroke; }
+.dag-agent-mark { transform: scale(var(--dag-marker-scale, 1)); }
+.dag-agent-token:not(.is-idle) .dag-agent-dot { animation: indicatorPulseOpacity 1.5s ease-in-out infinite; }
+/* Zoomed far out a tile is itself a 7px dot, and a status dot beside it
+   reads as a second, stray node; the bubble's own dot still marks the
+   working agent, so the corner dot goes with the icons. */
+.is-far .dag-agent-token { display: none; }
+/* An error: the Activity panel's red badge (running-panel.module.css
+   ``countBadge``) with a ``!``, on the tile's upper-right corner. */
+.dag-status-badge circle {
+  fill: var(--accent-red);
+  stroke: var(--bg-primary);
+  stroke-width: 2;
+  paint-order: stroke;
+}
+.dag-status-badge text {
+  fill: var(--destructive-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+}
+/* The bubble is words, no chip: brighter than a caption, with the same
+   canvas-colour halo. */
+.dag-agent-bubble text {
+  font-size: var(--fs-2xs);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  fill: var(--text-primary);
+  stroke: var(--bg-primary);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-node.is-head .dag-tile > [data-node-shape],
+  .history-node.is-running .dag-tile-icon,
+  .dag-agent-token .dag-agent-dot { animation: none; }
+  .history-node.is-head .dag-tile > [data-node-shape] { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--tone) 65%, transparent)); }
+}
+
+/* Next-message context range: nodes/edges outside the active branch
+   the next chat message will carry are faded. Transition so the range
+   updating after a turn reads as a soft change, not a flash. */
+/* Nodes keep a solid fill regardless of context / head membership —
+   sub-call nodes from nested Agent method calls should look the
+   same as top-level nodes. Edges still dim to convey context range. */
+.history-node.out-of-context { opacity: 1; }
+
+/* Ghosts do not brighten on hover: the whole point of the state is
+   that these nodes read as receded. They stay clickable. */
+.history-node.is-ghost:hover .dag-tile > [data-node-shape],
+.history-node.is-archived-failure:hover .dag-tile > [data-node-shape] {
+  fill: color-mix(in srgb, var(--tone) 10%, var(--bg-primary));
+}
+
+/* Captions (render/labels/captions.ts): what a call or message is, in
+   annotation grey to the right of its tile. Gone when an agent's bubble
+   speaks for the tile, and when zoomed too far out to read. */
+.dag-caption {
+  font-size: var(--fs-2xs);
+  font-family: var(--font-sans);
+  fill: var(--text-muted);
+  /* A halo in the canvas colour, like a label on a map: a line that
+     passes behind the caption breaks around the letters. */
+  stroke: var(--bg-primary);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.dag-caption.is-hidden,
+.is-far .dag-caption:not(.is-turn) { display: none; }
+/* Zoomed out, captions shrink only gently (``--dag-label-scale``: 12px
+   at 100%, about 8.5px at the least zoom), like place names on a map,
+   rather than shrinking with the graph and jumping back at the far
+   scale; interaction/view/far-labels.ts hides the ones that would crowd
+   another, keeping those nearest HEAD. Far out only the
+   opening words of your messages stay. */
+.dag-caption {
+  transform-box: fill-box;
+  transform-origin: left center;
+  transform: scale(var(--dag-label-scale, 1));
+}
+.dag-caption.is-culled { visibility: hidden; }

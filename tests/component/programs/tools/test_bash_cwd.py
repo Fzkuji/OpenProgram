@@ -9,8 +9,8 @@ from types import ModuleType
 
 import pytest
 
-from openprogram.backend.base import RunResult
-from openprogram.worktree.context import (
+from openprogram.host.backend.base import RunResult
+from openprogram.state.worktree.context import (
     current_worktree_path,
     reset_worktree,
     set_worktree,
@@ -25,7 +25,7 @@ def bash_module() -> ModuleType:
 
 def _execute(bash_module: ModuleType, command: str) -> str:
     result = asyncio.run(bash_module.bash.execute(
-        "cwd-contract", {"command": command, "timeout": 10_000}, None, None,
+        "cwd-contract", {"command": command}, None, None,
     ))
     text = "\n".join(
         block.text for block in result.content if hasattr(block, "text")
@@ -86,8 +86,8 @@ def test_bash_resolves_the_current_worktree_on_every_call(
 def test_local_bash_cd_and_exports_are_scoped_to_one_call(
     bash_module, monkeypatch, tmp_path, bound,
 ):
-    from openprogram import sandbox
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host import sandbox
+    from openprogram.host.backend.local import LocalBackend
 
     root = tmp_path / "workspace with spaces"
     child = root / "child with spaces"

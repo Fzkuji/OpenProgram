@@ -1,0 +1,59 @@
+<title>Accounting rules</title>
+<meta name="description" content="How the Context panel reports measured totals, mutually exclusive categories and the difference that cannot be reconstructed.">
+<h1>Accounting rules</h1>
+
+<h2 id="snapshot">One snapshot per response</h2>
+<ol>
+<li>Read the current branch: compacted rendered history, latest system prompt, frozen tool set.</li>
+<li>Categorize locally: message structure, tool schemas, Skills, Memory. Subtract nested items from their parents.</li>
+<li>Calibrate: combine the latest provider total for the same HEAD and compute the uncategorized difference.</li>
+</ol>
+<p class="note">The breakdown is computed once per API response. Rereading the dynamic tool registry within it would let the categories and <code translate="no">estimated</code> describe different moments.</p>
+
+<h2 id="categories">Mutually exclusive categories</h2>
+<table class="stack">
+<thead><tr><th scope="col">Category</th><th scope="col">Source</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row">Messages</th><td>Rendered history: visible text, thinking, tool input and result, memory prefetch. During a running turn, also the turn's own rounds (row "This turn so far")</td><td>Original images that were not persisted fall into the difference</td></tr>
+<tr><th scope="row">System prompt</th><td>Latest complete recorded system prompt</td><td>Full value first, then Skills, resident Memory and the deferred catalog are subtracted</td></tr>
+<tr><th scope="row">Skills, Memory</th><td>Indexes and resident blocks injected into the system prompt</td><td>Components of the system prompt; never added to the total again</td></tr>
+<tr><th scope="row">System tools, MCP tools</th><td>Provider schemas of the tool set frozen for the turn</td><td><code translate="no">_mcp_server</code> decides which of the two</td></tr>
+<tr><th scope="row">Deferred tools</th><td>Tool-name catalog: beside the user message on a conversation's own turn, inside the prompt of a call that has its own</td><td>The names actually sent, not full descriptions or schemas</td></tr>
+<tr><th scope="row">Other context (estimated)</th><td><code translate="no">provider total - classified estimate</code>, less a running turn's own rounds</td><td>Non-persisted images, provider wrapping overhead, temporary surface prompts. Shown, never hidden</td></tr>
+</tbody>
+</table>
+
+<h2 id="calculation">Calculation</h2>
+<pre translate="no"><code>classified = system_other + skills + memory + tools + mcp + deferred + messages
+other = max(0, provider_total - classified)
+displayed_used = provider_total if measured else classified
+free = max(0, window - displayed_used) if window else none</code></pre>
+<p>A request measured inside a running turn includes that turn's replies, tool calls and results, which reach the graph only when the turn ends. That part, the request's own estimate (<code translate="no">request_input_estimate</code>) less the graph's, counts as Messages, at most the whole difference; the rest (provider wrapping, estimator error) stays Other context.</p>
+<p>The window is the request model's (<a href="occupancy-status.html#window">The window</a>); without one there is no free space and no percentage.</p>
+<p>Measured input tokens win; local estimates are used only without a measurement. When local estimates exceed the measurement, the provider total stays and displayed categories scale down proportionally. The response keeps raw estimates and the calibration factor. The difference is never negative.</p>
+
+<h2 id="acceptance">Acceptance</h2>
+<ul>
+<li><code translate="no">estimated</code> and the raw category total come from the same calculation.</li>
+<li>Displayed categories sum to <code translate="no">total_used</code> when measured, <code translate="no">input_used</code> when estimated.</li>
+<li>A branch switch or graph change never reuses the old HEAD's measurement.</li>
+<li>A model switch applies its context window at once and replaces the old measurement with a fresh estimate; the next completed request supplies a new measurement.</li>
+<li>App and Web read the same <code translate="no">/api/sessions/{id}/context</code> and do not estimate on their own.</li>
+</ul>
+<p class="note">Not yet adjusted: <code translate="no">session_stats.py</code> still subtracts the catalog from the system prompt row, which a conversation's own turn no longer carries there since the catalog moved beside the message (<a href="../function/deferred-tools.html#catalog">Deferred tools</a>).</p>
+
+<details>
+<summary>Source map</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime/context/system_prompt_node.py</code></th><td>Actual system prompt by branch HEAD</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/tool_snapshot_node.py</code></th><td>Frozen tools of the turn and their cost</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/session_stats.py</code></th><td>Categorization, deduplication, calibration</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/budget.py</code></th><td>Frozen tool schema estimates</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/routes/files/tree.py</code></th><td>Computes the breakdown once for the response</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/chat/badges/context-breakdown-panel.tsx</code></th><td>Displays it in App and Web</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/test_session_stats_accuracy.py</code></th><td>Structured messages, uncategorized difference, overestimate calibration, branch ancestry, old snapshots, child Agents that do not advance HEAD, frozen tools, dynamic registries, model switches</td></tr>
+</tbody>
+</table>
+</details>

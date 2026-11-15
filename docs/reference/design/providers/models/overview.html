@@ -1,0 +1,106 @@
+<title>Model catalog</title>
+<meta name="description" content="The system remembers only the models the user enabled; browsing is live and enabling copies a spec into config.">
+<h1>Model catalog</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 130" role="img" aria-label="Browsing merges the official list and models.dev in memory. Enabling copies one row and provider.json into config.json. ENABLED_MODELS loads from it, and both get_model and the chat picker read that registry.">
+<defs><marker id="mo-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+<text class="t-big" x="0" y="40">Browse</text>
+<text class="t-soft" x="0" y="66">official list + models.dev</text>
+<text class="t-soft" x="0" y="86">memory only</text>
+<line class="ln" x1="176" y1="33" x2="238" y2="33" marker-end="url(#mo-a)"/>
+<text class="t-soft mid" x="207" y="24">enable</text>
+<text class="t-big" x="250" y="40">config.json</text>
+<text class="t-soft" x="250" y="66">full spec rows</text>
+<text class="t-soft" x="250" y="86">with provider.json fields</text>
+<line class="ln" x1="424" y1="33" x2="476" y2="33" marker-end="url(#mo-a)"/>
+<text class="t-big" x="488" y="40">ENABLED_MODELS</text>
+<text class="t-soft" x="488" y="66">get_model, chat picker,</text>
+<text class="t-soft" x="488" y="86">agents, failover</text>
+</svg>
+<ol class="flow fig-narrow">
+<li>Browse: official list and models.dev, memory only</li>
+<li class="via">enable</li>
+<li>config.json: full spec rows with provider.json fields</li>
+<li class="flow-end">ENABLED_MODELS: get_model, chat picker, agents, failover</li>
+</ol>
+</figure>
+<p class="note">Selectable in chat equals enabled equals resolvable: there is one list. No big files, nothing stale, and the package directory stays read-only.</p>
+<h2>Who writes what</h2>
+<table class="stack">
+<thead><tr><th scope="col">Author</th><th scope="col">Location</th><th scope="col">Content</th></tr></thead>
+<tbody>
+<tr><th scope="row">Humans, in git</th><td><code translate="no">providers/adapters/&lt;p&gt;/provider.json</code>, plus <code translate="no">&lt;p&gt;.py</code> for dedicated protocols</td><td>endpoints, thinking, cache, overrides</td></tr>
+<tr><th scope="row">The program</th><td><code translate="no">config.json</code> → <code translate="no">providers.&lt;p&gt;.models</code></td><td>enabled specs, keys, user state</td></tr>
+<tr><th scope="row">Network</th><td>models.dev, official <code translate="no">/v1/models</code></td><td>browsing only</td></tr>
+</tbody>
+</table>
+<p class="note">Providers with no directory work through models.dev. <code translate="no">catalog/enabled_models.py</code> is the registry, <code translate="no">settings/storage.py</code> persists config, <code translate="no">settings/thinking_spec.py</code> holds thinking, <code translate="no">models/listing/</code> is what interfaces read. Nothing else is named a catalog.</p>
+<h2><code translate="no">provider.json</code></h2>
+<p>Every field optional. If a machine can obtain a field, a human does not write it, so there is no model list.</p>
+<table class="stack">
+<thead><tr><th scope="col">Field</th><th scope="col">Purpose</th><th scope="col">Default</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">endpoints</code></th><td>named api and base_url groups</td><td>models.dev base_url, OpenAI-compatible</td></tr>
+<tr><th scope="row"><code translate="no">thinking</code></th><td>wire_format, effort maps, per-model levels: <a href="thinking-effort.html">Thinking effort</a></td><td>low, medium, high</td></tr>
+<tr><th scope="row"><code translate="no">cache</code></th><td>prompt caching</td><td>none</td></tr>
+<tr><th scope="row"><code translate="no">model_overrides</code></th><td>per-model headers, compat, <code translate="no">endpoint</code>, <code translate="no">key_prefix</code>; folded into the spec at enable time</td><td>none</td></tr>
+</tbody>
+</table>
+<p class="note">Directories use underscores (<code translate="no">amazon_bedrock/</code>); <code translate="no">id</code> keeps hyphens. One service with two protocols is two endpoints of one provider.</p>
+<h2>Browse</h2>
+<p>Provider list: <code translate="no">provider.json</code> providers plus the models.dev index, with names and status only. Model list: queried for one provider, by <code translate="no">_browse_models_with_error</code>: the official source when credentialed, models.dev filling gaps or standing in, else empty.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source shape</th><th scope="col">Fetcher</th></tr></thead>
+<tbody>
+<tr><th scope="row">Standard <code translate="no">/v1/models</code></th><td><code translate="no">listing/fetchers/openai_compat.py</code></td></tr>
+<tr><th scope="row">Anthropic, per-model capabilities</th><td><code translate="no">adapters/anthropic/list_models.py</code></td></tr>
+<tr><th scope="row">Account-level private</th><td><code translate="no">adapters/openai_codex/list_models.py</code>, <code translate="no">xai_subscription/list_models.py</code></td></tr>
+<tr><th scope="row">Vendor-specific</th><td><code translate="no">google</code> (query key), <code translate="no">amazon_bedrock</code> (SigV4), <code translate="no">github_copilot</code> (session bearer), <code translate="no">deepseek</code> (ids only, enriched)</td></tr>
+</tbody>
+</table>
+<p class="note">A provider that departs from standard ships <code translate="no">list_models.py</code> exposing <code translate="no">fetch(provider_id, timeout)</code>; <code translate="no">_load_fetcher</code> imports it by directory, no central edit. Success: <code translate="no">list[dict]</code> with id and name. Failure: <code translate="no">{"error": …}</code>. <code translate="no">fetch_and_normalize</code> is the one normalisation point.</p>
+<p>Ordinary results use a short memory cache. Subscription catalogues also keep an atomic last-known-good copy: a failed request can show stale rows, but only a non-empty official catalogue can retire models.</p>
+<h2>Enable, disable, refresh</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Enable (<code translate="no">toggle_model</code>)</th><td>Browse row, overrides, endpoint api and base_url, derived thinking levels go in <code translate="no">providers.&lt;p&gt;.models</code>; the registry reloads</td></tr>
+<tr><th scope="row">Disable</th><td>Deletes the row; a manual row stays with <code translate="no">enabled: false</code>. Subscription providers record the id in <code translate="no">disabled_models</code>.</td></tr>
+<tr><th scope="row">Refresh</th><td>Re-browses enabled models and overwrites their specs</td></tr>
+<tr><th scope="row">Manual model</th><td>Same list, <code translate="no">source: "manual"</code></td></tr>
+<tr><th scope="row">Subscription catalogue</th><td>After login, worker start when stale, every 6 h, manual Refresh: new ids enabled, changes refreshed, removed retired, disables kept. A change broadcasts <code translate="no">provider_models_changed</code>; web and desktop re-read, reconnecting clients too.</td></tr>
+</tbody>
+</table>
+<h2>Use</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Reader</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">Backend</th><td><code translate="no">ENABLED_MODELS</code>, key <code translate="no">&lt;prefix&gt;/&lt;id&gt;</code>, through <code translate="no">get_model</code>, <code translate="no">get_providers</code>, <code translate="no">get_models</code>; aliases on a miss</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/providers/list</code></th><td>Provider list</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/providers/{name}/models</code></th><td>That provider's cached browse and enabled flags; <code translate="no">POST …/fetch-models</code> queries now</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/models/enabled</code></th><td>Chat picker: <code translate="no">ENABLED_MODELS</code> as is</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/thinking_effort.py</code></th><td>Levels from enabled rows</td></tr>
+</tbody>
+</table>
+<p class="note">A failover or agent reference to a non-enabled model is a configuration error pointing at Settings. Old sessions keep their history but cannot continue on a deleted model.</p>
+<p>An unknown id is refused with the nearest ones (<code translate="no">catalog/suggestions.py</code>): "Unknown model 'openai-codex':'gpt6 sol'; did you mean openai-codex:gpt-6.1-sol, …?". Names compare by words: display-name word 4, id word 3; a version or provider id counts only beside those. Follows magpie (yetone/magpie, MIT).</p>
+<h2 id="invariants">Invariants</h2>
+<ol>
+<li>The only persisted model data is enabled specs in config, plus the subscription last-known-good copy.</li>
+<li>Ordinary browsing is never written to a file.</li>
+<li>Human data in git, program data in user config.</li>
+<li><code translate="no">provider.json</code> has only what machines cannot obtain.</li>
+<li><code translate="no">openprogram.models.providers</code> never imports <code translate="no">openprogram.interfaces.server</code>; the listing imports providers, never the reverse.</li>
+<li><code translate="no">&lt;prefix&gt;/&lt;id&gt;</code>, alias fallback and <code translate="no">key_prefix</code> are preserved; the registry stays one mutable dict.</li>
+<li>One each: <code translate="no">fetch_and_normalize</code> (row shape), <code translate="no">_upsert_spec_row</code> with <code translate="no">_normalize_spec_row</code> (into config), <code translate="no">_build_model_from_row</code> (into <code translate="no">Model</code>).</li>
+</ol>
+<details><summary>What a change must preserve</summary>
+<ul>
+<li>A config row resolves through <code translate="no">get_model</code> to the same <code translate="no">Model</code> for every provider.</li>
+<li><code translate="no">google-gemini-cli/*</code> and <code translate="no">gemini-subscription/*</code> are distinct keys; rows carry their own.</li>
+<li><code translate="no">cost</code>, multimodal <code translate="no">input</code>, <code translate="no">headers</code> (copilot) and <code translate="no">compat</code> travel in the spec.</li>
+<li>Multi-wire providers need one exec per <code translate="no">(api, base_url, headers, compat)</code>.</li>
+<li><code translate="no">test_provider_wire_invariants.py</code> and <code translate="no">test_model_fetch_routing.py</code> stay green.</li>
+</ul>
+</details>
+<p class="next"><a href="fast-tier.html">Fast tier</a></p>

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculator</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="app.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<main class="layout">
+<div class="stage">
+  <section class="calculator" aria-label="Calculator">
+    <div class="display">
+      <div class="display-bar">
+        <div class="segmented" role="radiogroup" aria-label="Angle unit">
+          <button type="button" role="radio" data-angle="deg" aria-checked="true">Deg</button>
+          <button type="button" role="radio" data-angle="rad" aria-checked="false">Rad</button>
+        </div>
+        <span class="hint" id="hint">Type an expression · <span class="kbd">Enter</span> to calculate</span>
+        <button type="button" class="btn ghost icon" id="copy" aria-label="Copy result" data-tip="Copy result (⌘C)">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>
+        </button>
+      </div>
+      <div class="expression-row">
+        <input id="expression" class="expression" autocomplete="off" spellcheck="false" aria-label="Expression">
+        <span class="ghost-parens" id="ghost" aria-hidden="true"></span>
+      </div>
+      <output id="result" class="result" aria-live="polite">0</output>
+    </div>
+    <div class="keypad" id="keypad">
+      <div class="keys sci">
+        <button type="button" data-insert="(">(</button>
+        <button type="button" data-insert=")">)</button>
+        <button type="button" data-insert="!" aria-label="Factorial">n!</button>
+        <button type="button" data-insert="sin(">sin</button>
+        <button type="button" data-insert="cos(">cos</button>
+        <button type="button" data-insert="tan(">tan</button>
+        <button type="button" data-insert="ln(">ln</button>
+        <button type="button" data-insert="log(">log</button>
+        <button type="button" data-insert="√(" aria-label="Square root">√</button>
+        <button type="button" data-insert="²" aria-label="Square">x²</button>
+        <button type="button" data-insert="^" aria-label="Power">x<sup>y</sup></button>
+        <button type="button" data-action="reciprocal" aria-label="Reciprocal">1/x</button>
+        <button type="button" data-insert="π">π</button>
+        <button type="button" data-insert="e">e</button>
+        <button type="button" data-insert="Ans">Ans</button>
+      </div>
+      <div class="keys main">
+        <button type="button" class="fn" data-action="clear" aria-label="All clear">AC</button>
+        <button type="button" class="fn" data-action="backspace" aria-label="Backspace">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="m16 9-5 5m0-5 5 5"/></svg>
+        </button>
+        <button type="button" class="fn" data-insert="%" aria-label="Percent">%</button>
+        <button type="button" class="op" data-insert="÷" aria-label="Divide">÷</button>
+        <button type="button" data-insert="7">7</button>
+        <button type="button" data-insert="8">8</button>
+        <button type="button" data-insert="9">9</button>
+        <button type="button" class="op" data-insert="×" aria-label="Multiply">×</button>
+        <button type="button" data-insert="4">4</button>
+        <button type="button" data-insert="5">5</button>
+        <button type="button" data-insert="6">6</button>
+        <button type="button" class="op" data-insert="−" aria-label="Subtract">−</button>
+        <button type="button" data-insert="1">1</button>
+        <button type="button" data-insert="2">2</button>
+        <button type="button" data-insert="3">3</button>
+        <button type="button" class="op" data-insert="+" aria-label="Add">+</button>
+        <button type="button" data-action="negate" aria-label="Change sign">±</button>
+        <button type="button" data-insert="0">0</button>
+        <button type="button" data-insert=".">.</button>
+        <button type="button" class="equals" data-action="equals" aria-label="Equals">=</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="history" aria-label="History">
+  <div class="history-inner">
+    <header class="history-head">
+      <h2>History</h2>
+      <button type="button" class="btn ghost" id="clear-history" disabled>Clear</button>
+    </header>
+    <ol id="history-list" class="history-list scroll"></ol>
+    <div class="history-empty" id="history-empty">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+      <p>Calculations you finish appear here.</p>
+    </div>
+    <footer class="shortcuts">
+      <span><span class="kbd">Enter</span> calculate</span>
+      <span><span class="kbd">Esc</span> clear</span>
+      <span><span class="kbd">↑</span><span class="kbd">↓</span> recall</span>
+    </footer>
+  </div>
+  </aside>
+</div>
+</main>
+<div class="toast" id="toast" role="status"></div>
+</body>
+</html>

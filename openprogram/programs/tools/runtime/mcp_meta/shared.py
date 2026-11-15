@@ -16,7 +16,7 @@ def ready_client(server: str):
     Returns ``(client, None)`` on success, ``(None, error_string)``
     when the server is unknown or not ready.
     """
-    from openprogram.mcp.registry import get_client
+    from openprogram.extensions.mcp.registry import get_client
 
     client = get_client(server)
     if client is None:
@@ -33,7 +33,7 @@ async def list_across_servers(server: Optional[str], method: str) -> str:
     ``server`` field. Servers without support return nothing and are
     skipped silently; per-server failures surface as ``_error`` rows.
     """
-    from openprogram.mcp.registry import list_clients
+    from openprogram.extensions.mcp.registry import list_clients
 
     if server:
         client, err = ready_client(server)

@@ -1,0 +1,87 @@
+<title>插件</title>
+<meta name="description" content="安装和管理声明式插件：技能、命令、Agent、hook、MCP 服务器和模型服务商。">
+<h1>插件</h1>
+<p>插件是一份清单，声明技能、斜杠命令、Agent、hook、MCP 服务器和模型服务商目录，格式沿用 Claude Code、Codex、OpenCode 或 Hermes。OpenProgram 自己挂载这些内容，不运行插件代码。要添加工具或自己的界面，用<a href="applications.zh.html">应用</a>。</p>
+<h2 id="install-and-manage">命令</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram plugins list</code></th><td>已安装的插件</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins search &lt;query&gt;</code></th><td>搜索已配置的市场</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins install git &lt;url&gt; --ref v1.2</code></th><td>克隆到 <code translate="no">~/.openprogram/plugins/</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins install npm &lt;package&gt;</code></th><td>装进它的 <code translate="no">node_modules/</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins install path /abs/path</code></th><td>链接过去，改动在 <code translate="no">reload</code> 时生效</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins update --all</code></th><td>重装 npm 插件，或指定一个名字</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins enable &lt;name&gt;</code>、<code translate="no">disable &lt;name&gt;</code></th><td>开关</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins reload &lt;name&gt;</code></th><td>重读清单和文件</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins uninstall &lt;name&gt;</code></th><td>链接的插件只删链接</td></tr>
+<tr><th scope="row"><code translate="no">openprogram plugins inspect</code></th><td>插件可包含什么、所有 hook 事件、什么被拒绝、每项的暴露级别；<code translate="no">--json</code></td></tr>
+</tbody></table>
+<table class="stack fixed">
+<thead><tr><th scope="col">信任</th><th scope="col">存于 <code translate="no">~/.openprogram/plugin-trust.json</code></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">verified</code>、<code translate="no">community</code></th><td>可以启用。本地 <code translate="no">path</code> 安装为 <code translate="no">community</code>。</td></tr>
+<tr><th scope="row"><code translate="no">untrusted</code></th><td>未列出插件的默认值。不启用，因为 hook 和 MCP 服务器会运行命令。</td></tr>
+</tbody></table>
+<p class="note">Web UI 通过插件路由使用同一套管理 API。</p>
+<h2 id="what-a-plugin-may-contain">内容</h2>
+<p>按此顺序查找清单：</p>
+<ol>
+<li><code translate="no">.claude-plugin/plugin.json</code>（Claude Code）、<code translate="no">.codex-plugin/plugin.json</code>（Codex）或根目录 <code translate="no">plugin.json</code></li>
+<li><code translate="no">pyproject.toml</code> 的 <code translate="no">[tool.openprogram.plugin]</code></li>
+<li><code translate="no">package.json</code> 的 <code translate="no">openprogram</code>、<code translate="no">opencode</code> 或 <code translate="no">hermes</code> 字段</li>
+<li><code translate="no">plugin.yaml</code> 或 <code translate="no">plugin.yml</code>（Hermes）</li>
+</ol>
+<p>字段：<code translate="no">name</code>、<code translate="no">version</code>、<code translate="no">description</code>、<code translate="no">trust</code>、<code translate="no">entrypoints</code>、<code translate="no">options</code>、<code translate="no">requires</code>。贡献键也可放顶层，和 Claude Code 写法一致。<code translate="no">requires</code> 决定拓扑加载顺序，缺失时报 <code translate="no">missing dependencies: ...</code>。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">键</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">skills</code></th><td><code translate="no">SKILL.md</code> 技能目录</td></tr>
+<tr><th scope="row"><code translate="no">commands</code></th><td><code translate="no">{name: {description, prompt}}</code>，或带 front matter 的 <code translate="no">.md</code> 文件目录</td></tr>
+<tr><th scope="row"><code translate="no">agents</code></th><td><code translate="no">{name, description, prompt, tools}</code> 列表，或 <code translate="no">.md</code> Agent 目录。创建为 <code translate="no">&lt;plugin&gt;-&lt;name&gt;</code>；禁用时保留，因为删除 Agent 会删除它的会话。</td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>事件触发的 shell 命令，内联或 <code translate="no">.json</code> 路径</td></tr>
+<tr><th scope="row"><code translate="no">mcpServers</code></th><td>内联 <code translate="no">{name: {command, args, env} | {url}}</code>，或 <code translate="no">.mcp.json</code> 路径。启用期间运行。</td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>子目录各含一个 <code translate="no">provider.json</code> 的目录</td></tr>
+</tbody></table>
+<p class="note">所有内容通过 <code translate="no">plugin:&lt;name&gt;</code> 拥有的一个上下文挂载，<code translate="no">disable</code> 和 <code translate="no">reload</code> 全部移除。</p>
+<h3>Hook</h3>
+<p>OpenProgram 的形式（与 <code translate="no">config.json</code> 的 <code translate="no">hooks</code> 相同），然后是 Claude Code 的 <code translate="no">hooks/hooks.json</code>：</p>
+<pre translate="no" tabindex="0"><code>{"tool.before": [{"command": "${CLAUDE_PLUGIN_ROOT}/check.sh", "timeout": 30}]}</code></pre>
+<pre translate="no" tabindex="0"><code>{"hooks": {"PreToolUse": [{"matcher": "bash|write", "hooks": [
+  {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/check.sh"}]}]}}</code></pre>
+<table class="stack fixed">
+<thead><tr><th scope="col">Claude Code</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">PreToolUse</code></th><td><code translate="no">tool.before</code></td></tr>
+<tr><th scope="row"><code translate="no">PostToolUse</code></th><td><code translate="no">tool.after</code></td></tr>
+<tr><th scope="row"><code translate="no">UserPromptSubmit</code></th><td><code translate="no">chat.before_send</code></td></tr>
+<tr><th scope="row"><code translate="no">Stop</code></th><td><code translate="no">turn.stop</code></td></tr>
+<tr><th scope="row"><code translate="no">SessionStart</code></th><td><code translate="no">session.start</code></td></tr>
+</tbody></table>
+<ul>
+<li><code translate="no">matcher</code> 是对工具名的正则表达式。</li>
+<li><code translate="no">${CLAUDE_PLUGIN_ROOT}</code> 替换为插件目录。命令在 worker 的工作目录运行，事件以 JSON 从 stdin 传入。</li>
+<li>门控事件（<code translate="no">tool.before</code>、<code translate="no">turn.stop</code>）退出码 2 表示拒绝，stderr 是原因；其他退出码放行。</li>
+</ul>
+<h3 id="what-is-refused">拒绝的内容</h3>
+<p><code translate="no">install</code> 拒绝声明代码的清单，并删除 git 克隆或 npm 包；手放进目录的会列出错误且永不加载。拒绝信息点名键，并让你添加 <code translate="no">application.json</code> 后运行 <code translate="no">openprogram programs install &lt;dir&gt;</code>。</p>
+<ul>
+<li><code translate="no">python</code>、<code translate="no">module</code>、<code translate="no">setup</code>、<code translate="no">main</code>、<code translate="no">tools</code>：Python 或 JavaScript 代码</li>
+<li><code translate="no">client</code>、<code translate="no">web</code>、<code translate="no">sidebar</code>：自己的界面</li>
+<li>写成 <code translate="no">module:name</code> 的 <code translate="no">hooks</code>：Python 处理函数映射</li>
+<li>带 <code translate="no">__init__.py</code> 的 Hermes <code translate="no">plugin.yaml</code></li>
+<li>pip 来源</li>
+</ul>
+<h2 id="write-a-plugin">写一个</h2>
+<pre translate="no" tabindex="0"><code>house-style/
+  .claude-plugin/plugin.json
+  skills/review/SKILL.md
+  commands/summarize.md
+  hooks/hooks.json</code></pre>
+<pre translate="no" tabindex="0"><code>{"name": "house-style", "version": "0.1.0", "skills": "./skills",
+ "commands": "./commands", "hooks": "./hooks/hooks.json"}</code></pre>
+<pre translate="no" tabindex="0"><code>openprogram plugins install path /abs/path/to/house-style   # 链接这个目录
+openprogram plugins enable house-style
+openprogram plugins reload house-style                      # 改完文件后</code></pre>
+<p class="note">Agent 有 <code translate="no">plugin</code> 工具（需要审批；聊天渠道和计划模式下不提供）。<code translate="no">guide</code> 返回运行版本生成的编写指南；<code translate="no">install</code> 传目录绝对路径，一步完成链接、信任和启用；<code translate="no">reload</code> 应用修改。声明代码的插件被拒绝，信息与 CLI 相同。</p>
+<p class="next"><a href="applications.zh.html">应用</a></p>

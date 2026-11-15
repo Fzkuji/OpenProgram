@@ -1,0 +1,51 @@
+<title>Token 统计</title>
+<meta name="description" content="统一的用量记录、各 Provider 报告的字段以及用量显示的位置。">
+<h1>Token 统计</h1>
+<p>每条助手消息带一条 <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/models/providers/types.py"><code translate="no">Usage</code></a> 记录。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">input</code></th><td>非缓存输入。与 Anthropic 一样不含缓存 token；包含缓存的厂商相减换算。</td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td>输出 token</td></tr>
+<tr><th scope="row"><code translate="no">cache_read</code></th><td>由提示词缓存提供</td></tr>
+<tr><th scope="row"><code translate="no">cache_write</code></th><td>写入提示词缓存（仅显式缓存）</td></tr>
+<tr><th scope="row"><code translate="no">total_tokens</code></th><td>厂商报告的总数</td></tr>
+<tr><th scope="row"><code translate="no">cost</code></th><td>美元，按已启用模型的每百万 token 价格计算</td></tr>
+</tbody>
+</table>
+<h2>各协议报告什么</h2>
+<p>取自厂商的最终事件或最后一个分块。</p>
+<table class="stack">
+<thead><tr><th scope="col">协议</th><th scope="col">Provider</th><th scope="col">原始字段</th><th scope="col">缓存</th></tr></thead>
+<tbody>
+<tr><th scope="row">Anthropic Messages</th><td><code translate="no">anthropic</code>，以及 <code translate="no">minimax</code>、<code translate="no">kimi_coding</code>、<code translate="no">vercel_ai_gateway</code> 等网关</td><td><code translate="no">input_tokens</code> <code translate="no">output_tokens</code> <code translate="no">cache_read_input_tokens</code> <code translate="no">cache_creation_input_tokens</code></td><td>读、写</td></tr>
+<tr><th scope="row">OpenAI Responses</th><td><code translate="no">openai</code> <code translate="no">openai_codex</code> <code translate="no">azure_openai_responses</code> <code translate="no">github_copilot</code></td><td><code translate="no">input_tokens</code>（已减缓存）<code translate="no">output_tokens</code> <code translate="no">input_tokens_details.cached_tokens</code> <code translate="no">total_tokens</code></td><td>读</td></tr>
+<tr><th scope="row">OpenAI Completions</th><td><code translate="no">deepseek</code> <code translate="no">groq</code> <code translate="no">mistral</code> <code translate="no">openrouter</code> 及其他兼容端点</td><td><code translate="no">prompt_tokens</code> <code translate="no">completion_tokens</code>（<code translate="no">completion_tokens_details</code> 的推理单列）<code translate="no">total_tokens</code></td><td>无</td></tr>
+<tr><th scope="row">Google Generative AI</th><td><code translate="no">google</code></td><td><code translate="no">prompt_token_count</code> <code translate="no">candidates_token_count</code> <code translate="no">total_token_count</code></td><td>无</td></tr>
+<tr><th scope="row">Cloud Code Assist</th><td><code translate="no">gemini_subscription</code> <code translate="no">google_gemini_cli</code></td><td><code translate="no">promptTokenCount</code> <code translate="no">candidatesTokenCount</code> <code translate="no">thoughtsTokenCount</code> <code translate="no">cachedContentTokenCount</code> <code translate="no">totalTokenCount</code></td><td>读</td></tr>
+<tr><th scope="row">Bedrock Converse Stream</th><td><code translate="no">amazon_bedrock</code></td><td><code translate="no">inputTokens</code> <code translate="no">outputTokens</code> <code translate="no">cacheReadInputTokens</code> <code translate="no">cacheWriteInputTokens</code> <code translate="no">totalTokens</code></td><td>读、写</td></tr>
+</tbody>
+</table>
+<p class="note">费用在提取后立即计算。OpenAI Responses 上返回的 <code translate="no">service_tier</code> 会调整费用，所以 <a href="fast-tier.html">Fast</a> 请求按 priority 费率计算。</p>
+<h2>显示在哪里</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">每条消息</th><td>自己的用量和费用，随会话保存</td></tr>
+<tr><th scope="row">聊天徽标</th><td>只显示最近一次调用，如 <code translate="no">11.2k in · 450 out</code>；这个输入数就是上下文占用。提示框：Claude 协议为基础、缓存写入、缓存命中；Codex 为基础、已缓存；其余为缓存百分比。过千显示 <code translate="no">1.2k</code>，过百万显示 <code translate="no">1.0m</code>。</td></tr>
+<tr><th scope="row">上下文条</th><td>填充百分比，来自每轮结束后的 <code translate="no">context_stats</code> WebSocket 事件</td></tr>
+<tr><th scope="row">函数卡片</th><td>按执行统计，来自函数自己的运行时，与聊天数字无关</td></tr>
+</tbody>
+</table>
+<h3>上下文面板</h3>
+<p>点圆环。新聊天发第一条消息前，显示那条消息将携带的内容，按所选模型的窗口计算。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">列出</th></tr></thead>
+<tbody>
+<tr><th scope="row">系统提示词</th><td>基础提示、环境、AGENTS.md、技能索引等</td></tr>
+<tr><th scope="row">工具</th><td>已加载、按需、MCP</td></tr>
+<tr><th scope="row">记忆</th><td>各层的 <code translate="no">MEMORY.md</code></td></tr>
+<tr><th scope="row">对话</th><td>按类型，并列出最大的消息</td></tr>
+</tbody>
+</table>
+<p class="note">点某部分或其色段打开它，点一行读取发送的文本，点消息跳转过去。<strong>Compact conversation</strong> 立即压缩；轮次运行中会拒绝，压缩结束前不启动新轮次。</p>

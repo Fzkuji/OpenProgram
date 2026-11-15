@@ -1,12 +1,13 @@
-import test, { after } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+
+import { scratchDir } from "../scratch-dir.mjs";
+
 const root = dirname(fileURLToPath(new URL("../../package.json", import.meta.url)));
-const dir = await mkdtemp(join(root, ".framework-test-"));
-after(() => rm(dir, { recursive: true, force: true }));
+const dir = scratchDir(root, "framework-test");
 await build({ stdin: { contents: `export {executeInterface, definitions} from './lib/framework/commands'; export {useCenterTabs} from './lib/tabs/center-tabs-store';`, resolveDir: root },
   bundle: true, format: "esm", platform: "node", packages: "external", outfile: join(dir, "entry.mjs"), tsconfig: join(root, "tsconfig.json"),
   loader: { ".css": "empty" },
@@ -33,9 +34,8 @@ test("profile operations update the same preferences used by General settings", 
   try {
     const profile = { name: "Operator", initial: "OP", color: "#123456" };
     await executeInterface("preferences.setUserProfile", [profile]);
-    await executeInterface("preferences.setAgentProfile", [{ ...profile, name: "Assistant" }]);
     assert.equal(JSON.parse(saved.get("user_profile")).name, "Operator");
-    assert.equal(JSON.parse(saved.get("agent_profile")).name, "Assistant");
+    assert.equal(definitions["preferences.setAgentProfile"], undefined);
   } finally { delete globalThis.window; }
 });
 test("framework view commands cannot operate a foreign private Page as human input", async () => {

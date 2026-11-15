@@ -7,10 +7,10 @@
 from __future__ import annotations
 
 from openprogram.programs import (
-    apply_default_deferral, agent_tools, install_loaded_deferred,
-    release_turn_tools, split_tools_for_dispatch,
+    apply_default_deferral, agent_tools, as_resident, note_request_loaded,
+    split_tools_for_dispatch,
 )
-from openprogram.context.breakdown import compute_call_breakdown
+from openprogram.runtime.context.breakdown import compute_call_breakdown
 
 # 实测（o200k_base）：defer 后常驻 21 工具 ≈4.6k token（描述+schema 都算），
 # 全量 59 工具若都常驻 ≈13k。断言"缩小到不足全常驻的一半"而不是钉死绝对值，
@@ -19,8 +19,7 @@ EXPECTED_MIN_DEFERRED = 22   # 实测 deferred 28 个，下浮
 
 
 def test_full_toolset_schema_shrunk_after_defer():
-    release_turn_tools()
-    install_loaded_deferred()
+    note_request_loaded(())
     apply_default_deferral()
     tools = agent_tools(toolset="full")
     b = compute_call_breakdown(
@@ -30,18 +29,14 @@ def test_full_toolset_schema_shrunk_after_defer():
         context_window=200_000,
     )
 
-    # 全部常驻时的价钱——defer 要真省下一大半才算生效。
-    for t in tools:
-        setattr(t, "_defer", False)
-    try:
-        all_resident = compute_call_breakdown(
-            system_prompt="sys",
-            history=[{"role": "user", "content": "hi"}],
-            tools=tools,
-            context_window=200_000,
-        )["tools_schema"]
-    finally:
-        apply_default_deferral()
+    # 全部常驻时的价钱——defer 要真省下一大半才算生效。常驻副本来自
+    # as_resident()，注册表里的工具不动。
+    all_resident = compute_call_breakdown(
+        system_prompt="sys",
+        history=[{"role": "user", "content": "hi"}],
+        tools=[as_resident(t) for t in tools],
+        context_window=200_000,
+    )["tools_schema"]
 
     assert b["tools_schema"] < all_resident / 2, (
         b["tools_schema"], all_resident)
@@ -52,8 +47,7 @@ def test_full_toolset_schema_shrunk_after_defer():
 def test_deferred_catalog_is_a_small_fraction_of_the_schema_cost():
     """目录只发裸名字，成本必须远小于常驻 schema——两者曾经反过来
     （目录估 4665、常驻估 588），错误互相抵消才显得总数合理。"""
-    release_turn_tools()
-    install_loaded_deferred()
+    note_request_loaded(())
     apply_default_deferral()
     tools = agent_tools(toolset="full")
     _, catalog = split_tools_for_dispatch(list(tools))

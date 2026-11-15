@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildProviderAccountsPicker } from '../src/screens/repl/pickers/providerAccounts.js';
+import { ProviderLoginFlow } from '../src/screens/repl/pickers/providerLoginFlow.js';
 import type { PickerCtx } from '../src/screens/repl/pickerRouter.js';
 import type { AccountsState, AddStarted } from '../src/utils/providerAccounts.js';
 
@@ -23,12 +24,12 @@ const labels = (el: any): string[] => items(el).map((i) => i.label);
 function makeCtx(over: Partial<PickerCtx> = {}): PickerCtx {
   const base = {
     pushSystem: vi.fn(),
-    accountsProviderId: 'claude-code',
+    accountsProviderId: 'anthropic',
     accountsState: {
       installed: true,
       ready: true,
       active: 'work@example.com',
-      add_mode: 'code_paste',
+      add_mode: 'api_key',
       accounts: [
         { name: 'work@example.com', email: 'work@example.com' },
         { name: 'alt', email: 'alt@example.com' },
@@ -95,7 +96,7 @@ describe('Provider accounts panel — list', () => {
 
   it('shows a "none yet" title and no Deactivate when empty', () => {
     const el = buildProviderAccountsPicker(
-      makeCtx({ accountsState: { installed: true, ready: true, active: null, add_mode: 'code_paste', accounts: [] } as AccountsState }),
+      makeCtx({ accountsState: { installed: true, ready: true, active: null, add_mode: 'api_key', accounts: [] } as AccountsState }),
       'acct_list',
     )!;
     expect(el.props.title).toContain('none yet');
@@ -136,14 +137,15 @@ describe('Provider accounts panel — action menu', () => {
   });
 });
 
-describe('Provider accounts panel — add-code & rename steps', () => {
-  it('add-code step shows the login URL and a paste prompt', () => {
-    const el = buildProviderAccountsPicker(
-      makeCtx({ accountPendingAdd: { session: 's1', url: 'https://claude.com/oauth/x', name: 'account-1' } }),
-      'acct_add_code',
-    )!;
-    expect(el.props.label).toContain('Paste the code');
-    expect(el.props.hint).toContain('https://claude.com/oauth/x');
+describe('Provider accounts panel — add & rename steps', () => {
+  it('API-key account add asks for an optional account label', () => {
+    const ctx = makeCtx();
+    const el = buildProviderAccountsPicker(ctx, 'acct_login_name')!;
+    expect(el.props.label).toContain('Add a anthropic account');
+    expect(el.props.hint).toContain('Optional label');
+    el.props.onSubmit(' Work ');
+    expect(ctx.setAccountLogin).toHaveBeenCalledWith({ name: 'Work', method: 'api_key' });
+    expect(ctx.setPickerKind).toHaveBeenCalledWith('acct_login');
   });
 
   it('rename step seeds the input with the current name', () => {
@@ -190,14 +192,14 @@ describe('Provider accounts panel — REST wiring', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('Add account (code_paste) POSTs to claude-code /accounts/add then advances to the code step', async () => {
+  it('Add API-key account enters the shared login flow without a network request', async () => {
     const ctx = makeCtx();
     const el = buildProviderAccountsPicker(ctx, 'acct_list')!;
     el.props.onSelect({ value: '__add__' });
     await flush();
-    expect(calls.some((c) => c.url.includes('/claude-code/accounts/add') && c.method === 'POST')).toBe(true);
-    expect(ctx.setAccountPendingAdd).toHaveBeenCalled();
-    expect(ctx.setPickerKind).toHaveBeenCalledWith('acct_add_code');
+    expect(calls).toEqual([]);
+    expect(ctx.setAccountLogin).toHaveBeenCalledWith({ name: '', method: 'api_key' });
+    expect(ctx.setPickerKind).toHaveBeenCalledWith('acct_login_name');
   });
 
   it('Deactivate row POSTs to /accounts/use with an empty stable id', async () => {
@@ -240,13 +242,14 @@ describe('Provider accounts panel — REST wiring', () => {
     expect(use?.url).toContain('/github-copilot/accounts/use');
   });
 
-  it('submitting the code POSTs session + code to /accounts/add/code', async () => {
-    const ctx = makeCtx({ accountPendingAdd: { session: 'sess9', url: 'https://auth.example.test/login' } });
-    const el = buildProviderAccountsPicker(ctx, 'acct_add_code')!;
-    el.props.onSubmit('MYCODE');
-    await flush();
-    const c = calls.find((x) => x.url.includes('/accounts/add/code'));
-    expect(c?.body).toEqual({ session: 'sess9', code: 'MYCODE' });
+  it('API-key login forwards the provider, method and account label to ProviderLoginFlow', () => {
+    const ctx = makeCtx({ accountLogin: { name: 'Work', method: 'api_key' } });
+    const el = buildProviderAccountsPicker(ctx, 'acct_login')!;
+    expect(el.type).toBe(ProviderLoginFlow);
+    expect(el.props.providerId).toBe('anthropic');
+    expect(el.props.method).toBe('api_key');
+    expect(el.props.accountLabel).toBe('Work');
+    expect(calls).toEqual([]);
   });
 
   it('rename submit keeps the stable id and sends a new label', async () => {

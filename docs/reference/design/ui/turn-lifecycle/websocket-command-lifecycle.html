@@ -1,0 +1,79 @@
+<title>WebSocket command lifecycle</title>
+<meta name="description" content="How one failed WebSocket command, a disconnect, and a legacy ask_user wait behave.">
+<h1>WebSocket command lifecycle</h1>
+
+<h2 id="data-flow">Command and disconnect flow</h2>
+<table class="stack">
+<thead><tr><th scope="col">Event</th><th scope="col">Response</th><th scope="col">Then</th></tr></thead>
+<tbody>
+<tr><th scope="row">Invalid JSON</th><td>Sanitized diagnostics; an error frame with no echo of the text</td><td>Keep receiving</td></tr>
+<tr><th scope="row">Unknown action</th><td><code translate="no">operation_error(code=unknown_action)</code>, echoing a valid <code translate="no">request_id</code></td><td>Keep receiving</td></tr>
+<tr><th scope="row">Handler exception</th><td>Logs only action, session and type; <code translate="no">code=handler_error</code> on the same socket</td><td>Keep receiving</td></tr>
+<tr><th scope="row">Transport disconnect</th><td>Remove the socket from the connection set</td><td>Check whether another connection still focuses its session</td></tr>
+<tr><th scope="row">No other connection, and a legacy follow-up queue exists</th><td>Enqueue <code translate="no">_FOLLOW_UP_DISCONNECTED</code></td><td>The waiter in <code translate="no">_web_follow_up</code> receives it</td></tr>
+<tr><th scope="row">Waiter gets the sentinel</th><td>Turns it into <code translate="no">None</code>; a real empty string stays <code translate="no">""</code></td><td>Its <code translate="no">finally</code> deletes the queue</td></tr>
+</tbody>
+</table>
+
+<h2 id="boundaries">Entry points</h2>
+<table class="stack">
+<thead><tr><th scope="col">Entry point</th><th scope="col">Behavior</th><th scope="col">Boundary</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_websocket_handler</code> (<code translate="no">server_runtime/websocket_dispatch.py</code>)</th><td>Isolates JSON parsing and handler exceptions; a handler failure returns <code translate="no">operation_error</code> and receiving continues</td><td><code translate="no">WebSocketDisconnect</code> and failure to send an error frame end the connection; socket writes never retry indefinitely</td></tr>
+<tr><th scope="row"><code translate="no">_handle_ws_command</code></th><td>Actions on one connection run in order, so a slow one delays every later frame on it. An action that takes 2 s or more is logged with its name and session, and says whether later frames waited. Unknown action returns <code translate="no">unknown_action</code>; registered handler exceptions propagate to the loop</td><td>Wire response holds only constrained action, session, request metadata and registered error categories</td></tr>
+<tr><th scope="row"><code translate="no">CONCURRENT_ACTIONS</code></th><td>Read-only actions whose reply the client matches by its own request id (<code translate="no">load_session</code>, <code translate="no">project_folder_size</code>, <code translate="no">project_file_info</code>, <code translate="no">project_file_tree</code>, <code translate="no">project_file_search</code>) each run as a task beside the ordered lane: after the frames before them and the previous frame of the same action. A slow folder walk, search or first read never holds a <code translate="no">chat</code> or <code translate="no">stop</code>. <code translate="no">list_projects</code> stays ordered: the web matches <code translate="no">projects_list</code> by type, so a listing answered after a later <code translate="no">create_project</code> would be read as the fresh list</td><td>Same-action replies keep their order; at most 32 side reads per connection are in flight, and a further one waits in the receive loop; the tasks are cancelled when the connection ends</td></tr>
+<tr><th scope="row"><code translate="no">load_session</code> beside a turn</th><td>The web matches <code translate="no">session_loaded</code> and history pages by request id; the conversation's row frames are parked until the read's frame is queued; run frames carry <code translate="no">run_seq</code>. After the frame, the running task and open questions go out before context is counted</td><td>A chat or stop sent during a first read starts at once</td></tr>
+<tr><th scope="row"><code translate="no">_web_follow_up</code> (<code translate="no">server_runtime/session_persistence.py</code>)</th><td>Waits on a session queue; <code translate="no">None</code> when the last observer disconnects or on cancel</td><td>Process-local; no durable recovery across worker restarts</td></tr>
+<tr><th scope="row">Stop, delete</th><td>Cancellation objects and sentinels are both non-answers; the owner's <code translate="no">finally</code> cleans the queue</td><td>Dispatcher never cleans by session. The action that acquired a resource rolls back with its own owner token, as <code translate="no">_release_run_reservation(session_id, msg_id)</code> does</td></tr>
+</tbody>
+</table>
+
+<h2 id="trust">Trust and compatibility</h2>
+<ul>
+<li>Client payloads are untrusted. Error frames never echo payloads, exception messages, paths, credentials or tracebacks; tracebacks go only to the local logger.</li>
+<li>The frontend still consumes an older server's <code translate="no">action_error</code>.</li>
+<li>Closing one tab does not cancel the question while another connection focuses the session.</li>
+<li><code translate="no">follow_up_answer</code>'s wire shape is unchanged; strings and real empty strings stay valid.</li>
+</ul>
+
+<details>
+<summary>Choices and exclusions</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Adopted</th><td>Command-level error frames (Starlette: <code translate="no">WebSocketDisconnect</code> ends the connection, cleanup in <code translate="no">finally</code>); a sentinel on last-observer disconnect; owner-scoped cleanup; "cancellation is not an answer" from <code translate="no">QuestionRegistry.cancel_session()</code>; a legacy queue that can return <code translate="no">None</code></td></tr>
+<tr><th scope="row">Rejected</th><td>Cancelling whenever any tab disconnects; dispatcher deleting reservations by session; closing the connection after an application exception; passing sentinels to business functions</td></tr>
+<tr><th scope="row">Out of scope</th><td>Moving legacy <code translate="no">set_ask_user</code> into QuestionRegistry; changing <code translate="no">runtime.ask</code>, ACP, channel questions, the send queue or the run reservation protocol; persistent error storage, acknowledgement and reconnect recovery</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="interaction-responsiveness">Interaction responsiveness</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Moment</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">After a successful socket write</th><td>Clears only the captured draft and renders a locally pending user message in its conversation. A New chat has no conversation id until <code translate="no">chat_ack</code>; the list draws its provisional <code translate="no">local_*</code> key meanwhile, so the message and the waiting reply show however late the acknowledgement comes. The reservation keeps text and attachments until acknowledgement. Not proof that execution started.</td></tr>
+<tr><th scope="row">Server acknowledgement</th><td>Reconciles the local identity without duplicating</td></tr>
+<tr><th scope="row">Rejection</th><td>Keeps a recoverable message without overwriting a newer draft</td></tr>
+<tr><th scope="row">Unrelated work</th><td>Resource projection and session or sidebar work cannot delay acceptance or block the event loop</td></tr>
+<tr><th scope="row">Resource close</th><td>Targets exact page and association identities, keeps generation and sequence ordering, scans no unrelated inputs. Local feedback is separate from native confirmation; failure or a newer generation cannot hide behind an old pending action</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Acceptance</summary>
+<table class="stack">
+<thead><tr><th scope="col">Entry point</th><th scope="col">Scenario</th><th scope="col">Assertion</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_websocket_handler</code></th><td>First action raises <code translate="no">KeyError</code>, second is ping</td><td>Same connection gets sanitized <code translate="no">operation_error</code>, then pong</td></tr>
+<tr><th scope="row"><code translate="no">_websocket_handler</code></th><td>Invalid JSON</td><td>Frame not echoed; next one processed</td></tr>
+<tr><th scope="row"><code translate="no">_web_follow_up</code> plus disconnect</th><td>Only focused connection disconnects</td><td>Waiter returns <code translate="no">None</code> within the test deadline, not after 300 seconds; queue deleted</td></tr>
+<tr><th scope="row">Disconnect</th><td>Another connection focuses the session</td><td>No sentinel; returns the other connection's answer</td></tr>
+<tr><th scope="row"><code translate="no">follow_up_answer</code></th><td>Empty string</td><td>Returns <code translate="no">""</code>, not read as a disconnect</td></tr>
+</tbody>
+</table>
+<p class="note">Regression: <code translate="no">tests/component/webui/runtime/test_websocket_command_lifecycle.py</code>. Controlled tests also cover delayed acknowledgement, rejection, session switching, bound composers, queue and steer, resource close ordering and event-loop progress. Production latency is not inferred from synthetic timings.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented: command-level isolation, sanitized <code translate="no">operation_error</code>, compatibility with old frames, follow-up disconnect semantics, interaction responsiveness.</p>

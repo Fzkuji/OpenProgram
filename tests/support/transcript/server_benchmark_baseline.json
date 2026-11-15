@@ -1,0 +1,29 @@
+{
+  "nodes": 300000,
+  "python": "3.13.13",
+  "machine": "arm64",
+  "system": "Darwin",
+  "results": {
+    "delta_latency_quiet_median_ms": 0.07,
+    "delta_latency_quiet_p95_ms": 0.11,
+    "delta_gap_quiet_median_ms": 0.383,
+    "delta_gap_quiet_p95_ms": 0.478,
+    "fsync_per_reply_quiet": 429,
+    "delta_latency_busy_median_ms": 0.49,
+    "delta_latency_busy_p95_ms": 1.13,
+    "delta_gap_busy_median_ms": 1.113,
+    "delta_gap_busy_p95_ms": 2.731,
+    "fsync_per_reply_busy": 425,
+    "long_turn_open_ms": 204.94,
+    "long_turn_reply_kib": 9934.7,
+    "populate_ms": 1242652.98,
+    "first_open_ms": 18470.28,
+    "page_read_median_ms": 1.12,
+    "page_read_max_ms": 2.02,
+    "evicted_open_ms": 17790.71,
+    "foreign_write_rebuild_ms": 14971.49,
+    "memory_per_view_kib": 38001.2,
+    "memory_open_peak_kib": 330499.3,
+    "process_peak_rss_mb": 4384.8
+  }
+}

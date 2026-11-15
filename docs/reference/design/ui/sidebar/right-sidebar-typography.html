@@ -1,0 +1,37 @@
+<title>Right sidebar typography</title>
+<meta name="description" content="The text roles shared by Files, Activity, Resources, execution details and context records.">
+<meta name="covers" content="apps/web/components/right-sidebar/">
+<h1>Right sidebar typography</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Role</th><th scope="col">Used for</th><th scope="col">Size</th><th scope="col">Line</th></tr></thead>
+<tbody>
+<tr><th scope="row">Primary</th><td>Navigation, section labels, item names, ordinary detail text</td><td><code translate="no">--fs-base</code> 14px, regular</td><td>20px</td></tr>
+<tr><th scope="row">Secondary</th><td>Status, counts, timestamps, paths, file sizes, helper text</td><td><code translate="no">--fs-sm</code> 13px</td><td>20px</td></tr>
+<tr><th scope="row">Code</th><td>Code, identifiers, terminal output</td><td>Keeps its monospace face</td><td>Keeps its own</td></tr>
+</tbody>
+</table>
+<p class="note">Scope variables on <code translate="no">.right-sidebar</code> (<code translate="no">--right-panel-text-size</code>, <code translate="no">--right-panel-meta-size</code>) set the roles. Components used elsewhere keep their fallback. Virtualized file rows stay 30px tall.</p>
+
+<h2>Implementation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reuses</th><td>The application font and size tokens, the shared <code translate="no">SectionHeader</code>, native tree theme overrides. Resource and Activity lists match padding and title/metadata spacing.</td></tr>
+<tr><th scope="row">Avoids</th><td>Global element resets, a new typography component, forced capitalization, changes to document or terminal content</td></tr>
+<tr><th scope="row">Does not change</th><td>Resource ownership, execution state, navigation, tree virtualization, persisted settings, Goal and fixed-preview behavior</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Acceptance</summary>
+<p>In the App with populated Files, Activity and Resources, then an execution detail and context records:</p>
+<ul>
+<li>Computed styles match per role, in the file tree's shadow root as well as ordinary DOM.</li>
+<li>No clipped controls or new horizontal overflow at narrow and wide sidebar sizes.</li>
+<li>Selection, disclosure and keyboard focus are preserved.</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented, including file-tree theme overrides and execution and context metadata.</p>

@@ -1,0 +1,72 @@
+<title>Agent control overlay</title>
+<meta name="description" content="The glow, title-bar lights and agent cursor drawn over what the agent controls, and the rules that keep them out of the way.">
+<h1>Agent control overlay</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Target</th><th scope="col">Drawn</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row">Native macOS window (<code translate="no">computer_use</code> window actions)</th><td>Inner glow, accent title-bar lights, cursor. One transparent, click-through, unfocusable window per conversation, 32pt margin.</td><td><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/programs/tools/computer_use/computer_use_agent/desktop/window_watch.py">window_watch.py</a> reports; <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/main/worker/agent-control.js">agent-control.js</a> places; <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/app/menu-overlay/agent-control/page.tsx">menu-overlay/agent-control</a> renders</td></tr>
+<tr><th scope="row">Webpage in the App: tab or floating preview</th><td>Inner glow, cursor. One such window per page, 24pt margin, shown only while the view is. Glow follows the corners: preview 10pt, tab rounded bottom.</td><td><a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/desktop/main/windows/action-cues.js">action-cues.js</a> places; <code translate="no">subscribeAgentPageGlow</code> in <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/lib/desktop/bridge/bridge-events.ts">bridge-events.ts</a> reports</td></tr>
+<tr><th scope="row">Chat preview (PiP), web build</th><td>Cursor in a <code translate="no">pointer-events: none</code> layer over the preview image</td><td><code translate="no">ActionCueTravel</code> in <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser/toolbar/browser-control-bar.tsx">browser-control-bar.tsx</a></td></tr>
+</tbody>
+</table>
+<p class="note">Every surface draws <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/agent-cursor/agent-cursor.tsx">AgentCursor</a>.</p>
+
+<h2>When a webpage glows</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Glows while</th><td>Control state is Agent operating, stopping, or not confirmed stopped, and its conversation's run is still going</td></tr>
+<tr><th scope="row">After the run ends</th><td>Idle whatever the state says, since the backend keeps it active until it reconciles (<code translate="no">presentedControlState</code> in <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/lib/browser/control/browser-control.ts">browser-control.ts</a>)</td></tr>
+<tr><th scope="row">Not drawn</th><td>A pausing state, a frame around the page</td></tr>
+<tr><th scope="row">Header and toolbar</th><td>Speak only for Needs your confirmation or an unknown state</td></tr>
+</tbody>
+</table>
+
+<h2>Where the window is</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Held</th><td>From the first read or step until 20 s after the last step, or until the agent moves on</td></tr>
+<tr><th scope="row">Polled</th><td>Window server's on-screen list every 0.12 s; reported when changed</td></tr>
+<tr><th scope="row">Reported</th><td>Frame in screen points, button frames relative to the window (read once through Accessibility), windows in front within the margin</td></tr>
+<tr><th scope="row">Excluded</th><td>Windows titled <code translate="no">OpenProgram agent overlay</code></td></tr>
+<tr><th scope="row">Ends</th><td>A last report with <code translate="no">active: false</code></td></tr>
+<tr><th scope="row">Transport</th><td><code translate="no">native.control</code> and <code translate="no">native.action</code> frames, only while <strong>Show actions</strong> is on</td></tr>
+</tbody>
+</table>
+
+<h2>Look and motion</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Element</th><th scope="col">Specification</th></tr></thead>
+<tbody>
+<tr><th scope="row">Glow shape</th><td>18pt accent stroke along the rounded edge (10pt corners), blurred 11pt, 55% opacity, clipped to the window. No line on the edge, nothing outside.</td></tr>
+<tr><th scope="row">Glow breathing</th><td>60% to 100% of that strength every 2.6 s</td></tr>
+<tr><th scope="row">Covered parts</th><td>Windows in front are cut out of glow and lights</td></tr>
+<tr><th scope="row">Lights</th><td>Three accent circles over close, minimize, zoom, half a point larger. A white layer rises to 40% and falls every 1.4 s, 0.2 s apart. No buttons, no lights. Clicks reach the button below.</td></tr>
+<tr><th scope="row">Cursor glyph</th><td>Solar <code translate="no">cursor</code>, bold duotone, 26px, accent, tail at half strength, on a white keyline from Solar <code translate="no">cursor-bold</code> showing 2px, plus a faint contact shadow</td></tr>
+<tr><th scope="row">Hot spot</th><td>Box centred on the action point; arrow tip 2px right and below, so the dot shows beside it. Element: centre of its frame before the action. Coordinates: screenshot point mapped to screen.</td></tr>
+<tr><th scope="row">Staying</th><td>Over a desktop app it stays where the last step left it and moves with the window; first step starts mid-window. Over a held page it stays between steps; a step without a hold fades after 2.8 s.</td></tr>
+<tr><th scope="row">Travel</th><td>Gentle arc, bend 16% of distance up to 56pt, ease-in-out, 240–680 ms by distance</td></tr>
+<tr><th scope="row">Press</th><td>Click, press, selection, drag or open: arrow dips to 82% toward its tip and springs back in 0.26 s; an 8px accent dot with 2px white ring settles and fades within 1 s. Typing and scrolling neither press nor leave a dot.</td></tr>
+<tr><th scope="row">Reduced motion</th><td>Cursor jumps; press, dot, breathing and pulsing off</td></tr>
+</tbody>
+</table>
+
+<h2 id="accent">Accent colour</h2>
+<p><code translate="no">--agent-accent</code> is <code translate="no">--theme-accent</code> (<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/app/styles/themes/fallback.css">themes/fallback.css</a>), used by glow, lights, cursor and click dot; keyline, dot ring and light pulse are white. The overlay shares the App's origin and theme settings, so a change reaches it at once.</p>
+
+<h2>Safety</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">No input</th><td>Ignores the mouse, never takes focus or activates. Nothing moves the system pointer.</td></tr>
+<tr><th scope="row">Visible in control</th><td>Up for the whole window session, fades in 0.36 s. A minimized window or another Space hides it until back.</td></tr>
+<tr><th scope="row">Per conversation</th><td>Each conversation shows its own</td></tr>
+<tr><th scope="row">Display only</th><td>Failures are dropped; the step goes on</td></tr>
+<tr><th scope="row">No Stop control</th><td>A clickable area would catch clicks meant for the app. Stopping is the conversation's stop control and the Running panel. The webpage floating control offers only Review request while confirmation waits.</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">Implementation status</h2>
+<p>Implemented on macOS and the three web surfaces. The macOS live-capture marker (a badge over the title-bar buttons, the menu-bar icon) is still requested but does not show in screenshots, so the accent lights mark the buttons.</p>

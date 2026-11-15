@@ -10,7 +10,8 @@
  * DISPATCH is independent of that: `runCommand` resolves the first word
  * against the registry, so `/compact 5000` still runs as a command with
  * the menu closed, while `/usr/local is missing` — a leading slash that
- * names nothing — falls through to a normal turn.
+ * names nothing — falls through to a normal turn. A command that changes
+ * the history (`needsIdle`) waits for an idle chat and says so.
  *
  * The matching close animation is debounced by `ANIM_MS` so the
  * filter list can fade out before unmount; `openMenu` cancels any
@@ -18,6 +19,7 @@
  * incoming filter.
  */
 
+import { appendLocalNotice } from "@/lib/chat/transcript/apply-read";
 import {
   useCallback,
   useEffect,
@@ -29,8 +31,12 @@ import {
 
 import { useSessionStore } from "@/lib/session-store";
 import { useSkills } from "@/lib/abilities/skills-store";
+import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { newSession } from "@/lib/runtime-bridge/session/conversations";
+import { showToast } from "@/lib/format-utils/toast";
+import { translateText } from "@/lib/i18n";
 
-import { SLASH_COMMANDS, type SlashCommand, type SlashContext } from "./slash-commands";
+import { SLASH_COMMANDS, type SlashCommand, type SlashContext, type SlashOutcome } from "./slash-commands";
 
 interface PluginCommand {
   plugin: string;
@@ -39,7 +45,7 @@ interface PluginCommand {
   prompt: string;
 }
 
-// Unified-registry view (see openprogram/commands). Phase-1 wires the
+// Unified-registry view (see openprogram/runtime/commands). Phase-1 wires the
 // file-backed user/project layers + plugin adapter through this list;
 // skills and MCP still come in through their own slash injection
 // paths until Phase 3-4 lands.
@@ -55,6 +61,9 @@ interface UnifiedCommand {
 }
 
 const ANIM_MS = 380;
+
+/** What the submitting composer supplies: its run state and send paths. */
+type Submitter = Pick<SlashContext, "busy" | "sendChat" | "sendCommand">;
 
 interface UseSlashMenuArgs {
   input: string;
@@ -80,19 +89,19 @@ export interface SlashMenuHook {
    *  is only shown while focused, and re-appears on re-focus if the
    *  input still holds a `/…` query. */
   setFocused: (focused: boolean) => void;
-  /** Dispatch `text` as a slash command, or return false when its
+  /** Dispatch `text` as a slash command, or return null when its
    *  leading word isn't a registered command name. This — not the menu's
    *  open/closed state — is what decides whether a submit is a command,
    *  so `/compact 5000` still runs after the space closed the menu while
-   *  prose that merely starts with `/` is sent as a normal turn. */
-  runCommand: (text: string) => boolean;
+   *  prose that merely starts with `/` is sent as a normal turn. The
+   *  submitter supplies the run state and its send path. */
+  runCommand: (text: string, submitter: Submitter) => SlashOutcome;
 }
 
 export function useSlashMenu({ input, textareaRef, send, openContextPanel, boundSessionId }: UseSlashMenuArgs): SlashMenuHook {
   const focusedSessionId = useSessionStore((s) => s.currentSessionId);
   // A split-view pane targets its own session; unbound follows focus.
   const currentSessionId = boundSessionId ?? focusedSessionId;
-  const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   const setComposerInputFor = useSessionStore((s) => s.setComposerInputFor);
   const setComposerInputUnbound = useSessionStore((s) => s.setComposerInput);
   const setComposerInput = useCallback(
@@ -210,19 +219,15 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
         description:
           c.description || `${c.source_label || c.source} command`,
         args: c.argument_hint || undefined,
-        run(rest, { setInput, sessionId, send }) {
+        run(rest, { setInput, sessionId, sendCommand }) {
           const text = "/" + c.name + (rest ? " " + rest : "");
           // Local builtins are stateful host actions. Send the original
           // command through the chat WS, whose backend owns the handler;
           // /api/commands/invoke is render-only and deliberately does not
-          // execute local handlers.
-          if (c.type === "local") {
-            return send({
-              action: "chat",
-              ...(sessionId ? { session_id: sessionId } : {}),
-              text,
-            });
-          }
+          // execute local handlers. They go out as this composer's
+          // conversation (a draft's own id and settings), never as a bare
+          // frame the server would give a conversation of its own.
+          if (c.type === "local") return sendCommand(text);
           void fetch("/api/commands/invoke", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -316,13 +321,14 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
     [matches.length],
   );
 
-  const slashContext = useMemo<SlashContext>(
+  const slashContext = useMemo<Omit<SlashContext, keyof Submitter>>(
     () => ({
       sessionId: currentSessionId,
       send,
+      // Same as the New chat button: a draft tab of its own, so the first
+      // message carries that draft's permission mode, Agent and project.
       newConversation: () => {
-        setCurrentConv(null);
-        setComposerInput("");
+        newSession(useCenterTabs.getState().openDraftSessionTab());
       },
       setInput: (value, focus) => {
         setComposerInput(value);
@@ -330,9 +336,19 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
           requestAnimationFrame(() => textareaRef.current?.focus());
         }
       },
+      showLocalReply: (content) => {
+        if (!currentSessionId) return;
+        appendLocalNotice(currentSessionId, {
+          id: "local_cmd_" + Date.now().toString(36),
+          role: "system",
+          rowKind: "system_text",
+          content,
+          status: "done",
+        });
+      },
       openContextPanel,
     }),
-    [currentSessionId, send, setCurrentConv, setComposerInput, textareaRef, openContextPanel],
+    [currentSessionId, send, setComposerInput, textareaRef, openContextPanel],
   );
 
   // Resolve `"/compact 5000"` → the `/compact` entry + `"5000"`. The
@@ -353,10 +369,18 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
   );
 
   const runCommand = useCallback(
-    (text: string): boolean => {
+    (text: string, submitter: Submitter): SlashOutcome => {
       const hit = resolve(text);
-      if (!hit) return false;
-      return hit.cmd.run(hit.rest, slashContext);
+      if (!hit) return null;
+      if (hit.cmd.ignoredWhileBusy && submitter.busy) return "failed";
+      if (hit.cmd.needsIdle && submitter.busy) {
+        showToast(translateText(
+          `${hit.cmd.name} changes this conversation's history. Run it when the current turn has finished, or stop the turn first.`,
+          `${hit.cmd.name} 会改动这段对话的历史。等当前这一轮结束，或先停止它，再执行。`,
+        ), { tone: "warn" });
+        return "failed";
+      }
+      return hit.cmd.run(hit.rest, { ...slashContext, ...submitter }) ? "ran" : "failed";
     },
     [slashContext, resolve],
   );

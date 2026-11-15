@@ -1,0 +1,96 @@
+<title>Agent 调用流程</title>
+<meta name="description" content="一次 LLM 调用的两个入口、共用的 Agent 循环，以及每次调用如何记录。">
+<h1>Agent 调用流程</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 216" role="img" aria-label="用户消息进入 dispatcher，直接到 agent_loop。Agent 方法体内的 runtime.exec 经 AgentSession 和 LoopDriver 到达同一个 agent_loop。agent_loop 运行的工具可以再次调用 runtime.exec，形成嵌套。">
+  <defs><marker id="cf-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="42">用户消息</text>
+  <line class="ln" x1="88" y1="36" x2="176" y2="36" marker-end="url(#cf-a)"/>
+  <text class="t-big" x="188" y="42">dispatcher</text>
+  <text class="t-soft" x="188" y="62">会话、用户节点、模型、工具</text>
+  <line class="ln" x1="290" y1="36" x2="496" y2="74" marker-end="url(#cf-a)"/>
+  <text class="t-big" x="0" y="130">Agent 方法体</text>
+  <line class="ln" x1="120" y1="124" x2="186" y2="124" marker-end="url(#cf-a)"/>
+  <text class="t-big" x="198" y="130">runtime.exec</text>
+  <text class="t-soft" x="198" y="150">llm 节点、上下文、AgentSession</text>
+  <line class="ln" x1="316" y1="124" x2="496" y2="92" marker-end="url(#cf-a)"/>
+  <rect class="tile" x="508" y="58" width="172" height="52" rx="8"/>
+  <text class="t-big mid" x="594" y="82">agent_loop</text>
+  <text class="t-soft mid" x="594" y="100">模型、工具、循环</text>
+  <path class="ln-acc" d="M594 112V190H70V142" marker-end="url(#cf-a)"/>
+  <text class="t-soft" x="240" y="208">工具体再次调用 runtime.exec：嵌套</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>用户消息 → dispatcher</strong><small>直接进入循环</small></li>
+  <li><strong>Agent 方法体 → runtime.exec</strong><small>经 AgentSession 和 LoopDriver</small></li>
+  <li class="flow-end"><strong>agent_loop</strong><small>工具体可再次调用 runtime.exec：嵌套</small></li>
+</ol>
+</figure>
+
+<h2>入口</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">A · dispatcher</th><th scope="col">B · runtime.exec</th><th scope="col">agent_loop</th></tr></thead>
+<tbody>
+<tr><th scope="row">职责</th><td>轮次生命周期</td><td>一次 LLM 调用</td><td>调用模型、运行工具、回填，直到纯文本</td></tr>
+<tr><th scope="row">顺序</th><td>创建或加载会话 · 写用户节点 · 挂接 Runtime · 解析模型（配置加覆盖）· 解析工具（通道、计划、审批）· 循环 · 持久化、标题、自动压缩</td><td>打开 llm 节点（外层超时重试）· 用 <code translate="no">render_context</code> 选节点 · 渲染消息和当前轮 · 解析工具集 · 组装系统提示和技能 · 创建 AgentSession · 循环 · 关闭 llm 节点</td><td>每轮之前：<code translate="no">convert_to_llm</code>、记忆预取、延迟工具重新拆分</td></tr>
+<tr><th scope="row">记录</th><td><code translate="no">insert_placeholder</code>，然后 <code translate="no">persist_assistant_message</code>：一个 <code translate="no">ROLE_LLM</code> 节点</td><td><code translate="no">_open_model_call_node</code>、<code translate="no">_close_model_call_node</code>：一个 <code translate="no">ROLE_LLM</code> 节点</td><td>工具 code 节点的 <code translate="no">caller</code> 为当前 llm 节点</td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">runtime/conversation/turn_runtime/</code></td><td><code translate="no">runtime/agent/runtime/</code></td><td><code translate="no">runtime/agent/loop/</code></td></tr>
+</tbody>
+</table>
+
+<p>一次 <code translate="no">exec</code> 就是一个 llm 节点：进入时 running，退出时写回复和 <code translate="no">completed</code>。内部的工具轮次不产生额外节点，所以每两个嵌套 code 节点之间都有 llm 节点。<code translate="no">exec</code> 位于循环之下，函数体才能调用模型；这也是<a href="agentic-self-recursion.zh.html">自递归</a>的来源。</p>
+<p class="note">提示词构建后，<code translate="no">_call_id</code> 切到 llm 节点（<code translate="no">test_tool_loop_subcall_attributes_to_llm_node</code>）。同步和异步路径一致。<code translate="no">agent_loop</code> 不知道 DAG。<code translate="no">tool.before</code> 只在 <code translate="no">_execute_tool_calls</code> 触发，任何路径都不丢失或重复事件。</p>
+
+<h2>为什么有两个入口</h2>
+<p>两边的外围互不重叠：一边是会话管理、WebSocket 广播、标题和压缩，另一边是 llm 节点和 AgentSession 重试。让 dispatcher 走 <code translate="no">exec</code> 有四个问题：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">冲突</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">模型</th><td>dispatcher 的 <code translate="no">_resolve_model(agent_profile, req.model_override)</code> 与挂接 Runtime 自动检测的 <code translate="no">api_model</code> 不同</td></tr>
+<tr><th scope="row">上下文</th><td>上下文引擎的 <code translate="no">prep.agent_messages</code> 与 <code translate="no">exec</code> 从 DAG 渲染相冲突</td></tr>
+<tr><th scope="row">流式</th><td><code translate="no">exec</code> 的扁平 <code translate="no">on_stream</code> 字典与 dispatcher 的 WebUI 信封不同</td></tr>
+<tr><th scope="row">重复节点</th><td>dispatcher 的回复本身就是记录；再加 llm 节点会得到 <code translate="no">[user, assistant, assistant]</code>（<code translate="no">test_dispatcher_integration.py::test_real_loop_text_only</code>）</td></tr>
+</tbody>
+</table>
+
+<p>循环驱动器 <code translate="no">LoopDriver</code> 位于 <code translate="no">exec</code> 之下（<code translate="no">exec → AgentSession → LoopDriver → agent_loop</code>），只在一处构造，不是并行路径。</p>
+
+<h2>Callable 路径</h2>
+<p><code translate="no">Runtime(call=fn)</code> 把 <code translate="no">fn</code> 包成替身 provider 模型（<code translate="no">callable_model.py</code>），像其他模型一样走 <code translate="no">_call_via_providers</code>，没有旧分支。适配器把消息转回 content，带 <code translate="no">response_format</code> 调用 <code translate="no">fn</code>，返回一条 assistant 消息，没有工具和工具循环。<code translate="no">stream_fn</code> 从 <code translate="no">exec</code> 经上下文变量传到 AgentSession（<code translate="no">test_exec_stream_fn_injection</code>）。</p>
+
+<details>
+<summary>与其他框架对比</summary>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">OpenCode</th><th scope="col">OpenClaw</th><th scope="col">Hermes</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">一次 LLM 调用</th><td><code translate="no">Step</code>，工具循环在内</td><td><code translate="no">runId</code> 配对</td><td>无层级</td><td>一个 llm 节点，工具循环在内</td></tr>
+<tr><th scope="row">记录</th><td><code translate="no">Step.Started</code> → <code translate="no">Step.Ended</code></td><td><code translate="no">llm_input</code> → <code translate="no">llm_output</code> hook</td><td>只追加</td><td>写 running，关闭时填充</td></tr>
+<tr><th scope="row">工具归属</th><td>Step 内的 ToolPart</td><td>嵌在 runId 下</td><td>平级消息</td><td>code 节点 <code translate="no">caller</code> 为 llm 节点</td></tr>
+<tr><th scope="row">聊天与编程调用</th><td>一条路径</td><td>一套 hook</td><td>一个 <code translate="no">run_conversation</code></td><td>两个入口，一个循环</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>实现状态</h2>
+<p>已完成：成对写 llm 节点、callable 路径、<code translate="no">stream_fn</code>，关闭时的 <code translate="no">usage</code>、<code translate="no">blocks</code>、<code translate="no">status</code>。记录由两对同样结构的写入完成；统一原语已设计，dispatcher 尚未采用。</p>
+<table class="stack">
+<thead><tr><th scope="col">必须保留</th><th scope="col">需要方</th><th scope="col">风险</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">extra.blocks</code>（思考、文本、工具卡片顺序）</th><td>回复气泡，<code translate="no">transcript/rows.py</code></td><td>最高</td></tr>
+<tr><th scope="row">Token 列、<code translate="no">token_model</code></th><td>计量 UI</td><td>高</td></tr>
+<tr><th scope="row"><code translate="no">predecessor</code> = 用户消息</th><td>分支、分叉、回退</td><td>高</td></tr>
+<tr><th scope="row"><code translate="no">cancelled</code> / <code translate="no">completed</code></th><td>停止时的部分输出</td><td>中</td></tr>
+</tbody>
+</table>
+
+<ol>
+<li>给 <code translate="no">_open_model_call_node</code> 增加可选 role 和 predecessor，<code translate="no">exec</code> 不变。</li>
+<li>让 <code translate="no">insert_placeholder</code> 调用它。</li>
+<li>让 <code translate="no">persist_assistant_message</code> 通过它关闭，只保留字段组装。</li>
+<li>删除 <code translate="no">turn_lifecycle.py</code> 中的重复写入（<code translate="no">fold_error_into_placeholder</code>）。</li>
+<li>端到端验证聊天：气泡、卡片、token、停止、分叉。</li>
+</ol>
+<p class="note">前端不受影响：<code translate="no">_node_to_msg</code>（<code translate="no">state/store/session/_msg_adapter.py</code>）仍返回 <code translate="no">assistant</code>；存储只有 <code translate="no">user</code>、<code translate="no">llm</code>、<code translate="no">code</code>。保持提示词缓存前缀稳定，并保留 <code translate="no">_run_loop_blocking</code> 作为测试接缝。</p>
+
+<p class="next"><a href="../dag/overview.zh.html">会话 DAG 设计</a></p>

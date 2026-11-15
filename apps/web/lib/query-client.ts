@@ -2,7 +2,7 @@
  * Handle on the app's react-query client for non-React callers.
  *
  * `app/providers.tsx` owns the instance and registers it here; plain
- * modules (`lib/net/use-ws.ts` invalidating caches on server pushes)
+ * modules (`lib/net/ws/use-ws.ts` invalidating caches on server pushes)
  * read it back instead of reaching through `window`.
  */
 import type { QueryClient } from "@tanstack/react-query";

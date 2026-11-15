@@ -1,0 +1,132 @@
+<title>Configuration reference</title>
+<meta name="description" content="config.json keys, what openprogram config can change, and environment variables.">
+<span id="configuration"></span>
+<h1>Configuration reference</h1>
+<pre translate="no"><code>openprogram config list              # value, group, apply mode
+openprogram config get ui.web_port
+openprogram config set ui.web_port 8101</code></pre>
+<p class="note">One registry, <code translate="no">openprogram/state/settings.py</code>, drives the setup wizard, TUI and Web settings. Every setting, generated from it: <a href="config-keys.md">Settings keys</a>. Everyday use: <a href="../server/configuration.html">Configuration and data directory</a>.</p>
+<h2 id="what-openprogram-config-can-read-and-write">Common settings</h2>
+<h3>Ports</h3>
+<table class="stack">
+<thead><tr><th scope="col">Key</th><th scope="col">Meaning</th><th scope="col">Default</th><th scope="col">Applies</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ui.web_port</code></th><td>Single worker port for API, WebSocket and Web UI</td><td>18100</td><td>next start</td></tr>
+<tr><th scope="row"><code translate="no">ui.open_browser</code></th><td><code translate="no">openprogram web</code> opens the browser</td><td>true</td><td>next start</td></tr>
+</tbody>
+</table>
+<h3>Search, memory, tools, agent</h3>
+<table class="stack">
+<thead><tr><th scope="col">Key</th><th scope="col">Meaning</th><th scope="col">Default</th><th scope="col">Applies</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">search.default_provider</code></th><td><code translate="no">auto</code> picks the highest-priority configured one</td><td>auto</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">memory.backend</code></th><td><code translate="no">local</code>, or <code translate="no">none</code>: no prompt memory, recall, automatic writes, organizer or memory threads</td><td>local</td><td>next start</td></tr>
+<tr><th scope="row"><code translate="no">memory.writer.model</code></th><td>Optional <code translate="no">provider/model</code> for background writing; empty uses the default chat agent's</td><td>empty</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">tools.disabled.&lt;name&gt;</code></th><td>Per-tool switch; members of the <code translate="no">tools.disabled</code> list</td><td>all enabled</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">agent.output_style</code></th><td>How replies are written; appends to the system prompt. <a href="output-styles.html">Output styles</a></td><td>default</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">providers.&lt;name&gt;</code></th><td>Read-only status row. Configure with <code translate="no">openprogram providers login</code> or the Web UI.</td><td>—</td><td>—</td></tr>
+</tbody>
+</table>
+<h3 id="sandbox">Sandbox</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">sandbox.mode</code></th><th scope="col">Local model-driven commands</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">off</code></th><td>Default. No sandbox unless a conversation turns it on in its composer menu.</td></tr>
+<tr><th scope="row"><code translate="no">auto</code></th><td>Sandboxed in every conversation when the backend is available; otherwise runs without one</td></tr>
+<tr><th scope="row"><code translate="no">workspace-write</code></th><td>Writes limited to the working directory and configured roots, deny-read paths blocked, network disabled</td></tr>
+<tr><th scope="row"><code translate="no">danger-full-access</code></th><td>Full user authority</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Key</th><th scope="col">Meaning</th><th scope="col">Default</th><th scope="col">Applies</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">sandbox.writable_roots</code></th><td>Extra writable directories, JSON list</td><td>[]</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.deny_read</code></th><td>Unreadable globs; defaults include credential paths. Linux cannot enforce middle wildcards such as <code translate="no">**/.env</code>: use an exact path or a directory deny such as <code translate="no">/absolute/path/to/secrets/**</code>.</td><td><code translate="no">openprogram config get sandbox.deny_read</code></td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.deny_write</code></th><td>Unwritable globs, on top of the function-watcher directory and protected startup files</td><td>[]</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.network</code></th><td>Network access</td><td>false</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.pass_env</code></th><td>Env names passed beyond the built-in allowlist</td><td>[]</td><td>live</td></tr>
+<tr><th scope="row"><code translate="no">sandbox.unavailable_policy</code></th><td><code translate="no">refuse</code> fails the command when the backend is missing or cannot isolate; <code translate="no">warn</code> runs it unsandboxed</td><td>refuse; warn on Windows</td><td>live</td></tr>
+</tbody>
+</table>
+<p class="note">Backends: Seatbelt on macOS, bubblewrap on Linux, bubblewrap through the default WSL2 distribution on Windows. Docker is not an automatic fallback.</p>
+<h2 id="top-level-keys-in-configjson">Top-level keys in config.json</h2>
+<p class="note">Do not edit by hand: use <code translate="no">openprogram config set</code>, the setup wizard or the Web UI.</p>
+<table class="stack">
+<thead><tr><th scope="col">Key</th><th scope="col">Holds</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ui</code></th><td><code translate="no">{web_port, open_browser}</code></td><td><code translate="no">openprogram/state/settings.py</code></td></tr>
+<tr><th scope="row"><code translate="no">search</code></th><td><code translate="no">{default_provider}</code></td><td><code translate="no">openprogram/state/preferences.py</code></td></tr>
+<tr><th scope="row"><code translate="no">memory</code></th><td><code translate="no">{backend, writer: {model}}</code></td><td><code translate="no">openprogram/state/settings.py</code>, <code translate="no">openprogram/state/memory/</code></td></tr>
+<tr><th scope="row"><code translate="no">tools</code></th><td><code translate="no">{disabled: [tool name, ...]}</code></td><td><code translate="no">openprogram/operations/setup.py</code>, <code translate="no">openprogram/state/settings.py</code></td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td><code translate="no">{mode, writable_roots, deny_read, deny_write, network, pass_env, unavailable_policy}</code></td><td><code translate="no">openprogram/host/sandbox/__init__.py</code>, <code translate="no">openprogram/state/settings.py</code></td></tr>
+<tr><th scope="row"><code translate="no">last_used_model</code></th><td><code translate="no">{provider, model}</code> a new conversation starts on. Empty on a fresh install.</td><td><code translate="no">openprogram/models/providers/catalog/last_used.py</code></td></tr>
+<tr><th scope="row"><code translate="no">default_workdir</code></th><td>Default agent working directory</td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>Per-provider subtree (enabled and custom models), managed by the Web UI model listing</td><td><code translate="no">openprogram/models/providers/settings/config_read.py</code>, <code translate="no">storage.py</code></td></tr>
+<tr><th scope="row"><code translate="no">api_keys</code></th><td>Env name → key, from the setup wizard, exported at worker startup. For web search and TTS; LLM keys live in the credential store.</td><td><code translate="no">openprogram/interfaces/cli/setup_sections/sections.py</code>, <code translate="no">openprogram/interfaces/server/server.py</code></td></tr>
+<tr><th scope="row"><code translate="no">spec_migration_version</code></th><td>One-time marker for the model-spec migration</td><td><code translate="no">openprogram/models/providers/settings/storage.py</code></td></tr>
+</tbody>
+</table>
+<h2 id="environment-variables">Environment variables</h2>
+<p class="note">Set them in the shell that launches <code translate="no">openprogram</code> or the worker.</p>
+<h3>Paths and instances</h3>
+<table class="stack">
+<thead><tr><th scope="col">Variable</th><th scope="col">Purpose</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROFILE</code></th><td>Same as <code translate="no">--profile</code>; <code translate="no">~/.openprogram-&lt;name&gt;/</code></td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_HOME</code></th><td>Alternative base directory for auth accounts</td><td><code translate="no">openprogram/models/auth/account/accounts.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_WORKDIR</code></th><td>Default agent working directory, above <code translate="no">default_workdir</code></td><td><code translate="no">openprogram/state/paths.py</code></td></tr>
+</tbody>
+</table>
+<h3>Ports and web</h3>
+<table class="stack">
+<thead><tr><th scope="col">Variable</th><th scope="col">Purpose</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_WEB_PORT</code></th><td>Single worker port (default 18100); below flags, above the stored preference</td><td><code translate="no">openprogram/operations/worker/lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_WEB</code></th><td><code translate="no">1</code>: worker skips the frontend build gate and serves no web UI</td><td><code translate="no">openprogram/operations/worker/runner.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DOCS_BASE</code></th><td>Docs mount path (default <code translate="no">/docs/</code>; must start and end with <code translate="no">/</code>). The publishing workflow sets it to the path of the site address</td><td><code translate="no">scripts/docs_site/build.py</code></td></tr>
+</tbody>
+</table>
+<h3>Behaviour switches</h3>
+<table class="stack">
+<thead><tr><th scope="col">Variable</th><th scope="col">Purpose</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_AUTO_WORKER</code></th><td><code translate="no">1</code>: TUI connects only to an existing worker</td><td><code translate="no">openprogram/interfaces/cli/ink.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_SLEEP</code></th><td><code translate="no">1</code>: no memory sleep-consolidation scheduler</td><td><code translate="no">openprogram/state/memory/scheduler.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NO_PROGRAMS_WATCH</code></th><td><code translate="no">1</code>: no file watcher on the programs directory</td><td><code translate="no">openprogram/programs/_host/watcher.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROJECT_AUTOCOMMIT</code></th><td><code translate="no">0</code>: no project auto-commit</td><td><code translate="no">openprogram/state/store/project/project_commit.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_WEBSEARCH_DISABLE</code></th><td>Disables a search provider by name, e.g. <code translate="no">ollama</code></td><td><code translate="no">openprogram/programs/tools/web/web_search/providers/ollama.py</code></td></tr>
+</tbody>
+</table>
+<h3>LLM calls</h3>
+<table class="stack">
+<thead><tr><th scope="col">Variable</th><th scope="col">Purpose</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">AGENTIC_PROVIDER</code>, <code translate="no">AGENTIC_MODEL</code></th><td>Picked first by <code translate="no">detect_provider()</code></td><td><code translate="no">openprogram/models/providers/catalog/registry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_MAX_RETRIES</code></th><td>Retries for transient failures (default 6)</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_BACKOFF_BASE</code></th><td>Backoff base seconds (default 1.5)</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_EXEC_TIMEOUT_S</code></th><td>Default wall-clock budget for <code translate="no">runtime.exec</code> (unset or <code translate="no">0</code>: unbounded)</td><td><code translate="no">openprogram/runtime/agent/runtime/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FALLBACK_MODELS</code></th><td>Overrides the <code translate="no">model_fallback</code> setting. Unset: that setting (default off). <code translate="no">same-provider</code>: up to two other enabled models of that provider. <code translate="no">off</code> or <code translate="no">none</code>: disabled. Comma-separated <code translate="no">provider/model</code> list: in order, may cross providers.</td><td><code translate="no">openprogram/models/providers/utils/failover.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></th><td>Attempts per streaming request, including the first (default 5). Connection retries have their own allowance of this minus one.</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>Wait for an unreachable endpoint after retries are spent, checking every 5 to 30 s (default 1800; <code translate="no">0</code> fails at once). Cancelling ends it.</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code></th><td>Longest <code translate="no">Retry-After</code> a retry sits through (default 300). Longer fails at once so a fallback model, another account or the user can take over. <code translate="no">0</code> lifts the cap.</td><td><code translate="no">openprogram/models/providers/utils/stream_retry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_WEBSOCKET</code></th><td><code translate="no">0</code>: ChatGPT-sign-in Codex turns use HTTP instead of the WebSocket, which is on by default and sends a continuing turn as its new input only</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/websocket_transport.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_ZSTD</code></th><td><code translate="no">0</code>: uncompressed Codex HTTP turns (zstd by default)</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/request_compression.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_STRICT_TOOLS</code></th><td><code translate="no">0</code>: strict tool schemas off (on by default)</td><td><code translate="no">openprogram/models/providers/schema/__init__.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td><code translate="no">1</code>: forces an IPv4 source address</td><td><code translate="no">openprogram/models/providers/utils/http_client.py</code></td></tr>
+</tbody>
+</table>
+<h3>Debugging</h3>
+<table class="stack">
+<thead><tr><th scope="col">Variable</th><th scope="col">Purpose</th><th scope="col">Code</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_LOG_LEVEL</code></th><td><code translate="no">DEBUG</code>, <code translate="no">INFO</code>, <code translate="no">WARNING</code>, <code translate="no">ERROR</code>, any case. Default <code translate="no">INFO</code> for worker, scheduler and foreground Server, <code translate="no">WARNING</code> for the CLI. Invalid values are ignored.</td><td><code translate="no">openprogram/host/process_logging.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_RUNTIME</code></th><td><code translate="no">1</code>: mirrors runtime logs to stderr</td><td><code translate="no">openprogram/interfaces/server/runtime_management.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_REGISTRY</code></th><td><code translate="no">1</code>: traceback on function-registry import failures</td><td><code translate="no">openprogram/programs/_host/registry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_DISPATCHER</code></th><td><code translate="no">1</code>: dispatcher logs at <code translate="no">INFO</code>, in the worker log</td><td><code translate="no">openprogram/runtime/conversation/turn_runtime/runtime_attach.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_PROVIDER</code></th><td><code translate="no">1</code>: provider-layer logs at <code translate="no">INFO</code>, in the worker log</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/openai_codex.py</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>Internal variables</summary>
+<p>HTTP and SSE timeouts <code translate="no">OPENPROGRAM_HTTPX_*</code>, <code translate="no">OPENPROGRAM_SSE_*</code>; TCP keepalive <code translate="no">OPENPROGRAM_TCP_*</code>; per-provider retries <code translate="no">OPENPROGRAM_&lt;PROVIDER&gt;_MAX_RETRIES</code>; <code translate="no">OPENPROGRAM_JOB_WORKERS</code>; <code translate="no">OPENPROGRAM_IMAGE_DIR</code>. Full list: <code translate="no">grep -rn "OPENPROGRAM_" openprogram/</code>.</p>
+</details>

@@ -1,0 +1,2138 @@
+"""Per-session exact file-mutation journal and recovery snapshots."""
+from __future__ import annotations
+
+import difflib
+import hashlib
+import json
+import logging
+import os
+import shutil
+import stat
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
+from openprogram.host._platform.filesystem import is_link_metadata
+
+from . import manifest
+from .paths import (
+    path_basename,
+    session_backup_root,
+    turn_backup_dir,
+    turn_manifest_path,
+)
+from .prompt_checkpoints import current_mutation_sequence, record_writer
+from openprogram.host._platform.filesystem import replace_file
+
+_log = logging.getLogger(__name__)
+
+
+_STATS_MAX_BYTES = 1024 * 1024
+_DIR_FD_APPLY_SUPPORTED = (
+    hasattr(os, "O_DIRECTORY")
+    and hasattr(os, "O_NOFOLLOW")
+    and os.open in os.supports_dir_fd
+    and os.stat in os.supports_dir_fd
+    and os.stat in os.supports_follow_symlinks
+    and os.rename in os.supports_dir_fd
+    and os.link in os.supports_dir_fd
+    and os.link in os.supports_follow_symlinks
+    and os.unlink in os.supports_dir_fd
+)
+
+
+class MutationJournalError(RuntimeError):
+    """A trusted mutation could not be recorded safely."""
+
+
+def _digest(path: Path) -> str:
+    value = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            value.update(chunk)
+    return f"sha256:{value.hexdigest()}"
+
+
+def _digest_fd(descriptor: int) -> str:
+    value = hashlib.sha256()
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    for chunk in iter(lambda: os.read(descriptor, 1024 * 1024), b""):
+        value.update(chunk)
+    return f"sha256:{value.hexdigest()}"
+
+
+def _file_kind(mode: int) -> str:
+    if stat.S_ISREG(mode):
+        return "regular"
+    if stat.S_ISLNK(mode):
+        return "symlink"
+    if stat.S_ISDIR(mode):
+        return "directory"
+    return "special"
+
+
+def _has_nul(path: Path) -> bool:
+    with path.open("rb") as handle:
+        return b"\0" in handle.read(8192)
+
+
+def _line_stats(before: Path | None, after: Path | None) -> tuple[dict, str]:
+    paths = [path for path in (before, after) if path is not None]
+    if any(path.stat().st_size > _STATS_MAX_BYTES for path in paths):
+        binary = any(_has_nul(path) for path in paths)
+        return {"added": None, "removed": None, "binary": binary}, (
+            "binary" if binary else "large"
+        )
+    raw_before = before.read_bytes() if before is not None else b""
+    raw_after = after.read_bytes() if after is not None else b""
+    if b"\0" in raw_before or b"\0" in raw_after:
+        return {"added": None, "removed": None, "binary": True}, "binary"
+    old = raw_before.decode("utf-8", errors="replace").splitlines()
+    new = raw_after.decode("utf-8", errors="replace").splitlines()
+    added = 0
+    removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+        a=old, b=new, autojunk=False,
+    ).get_opcodes():
+        if tag in {"insert", "replace"}:
+            added += j2 - j1
+        if tag in {"delete", "replace"}:
+            removed += i2 - i1
+    return {"added": added, "removed": removed, "binary": False}, "available"
+
+
+class CheckpointStore:
+    def __init__(
+        self, session_dir: Path | None = None, *, recovery_root: Path | None = None,
+    ):
+        if session_dir is None and recovery_root is None:
+            raise TypeError("session_dir or recovery_root is required")
+        self.session_dir = Path(session_dir) if session_dir is not None else None
+        self.recovery_root = Path(recovery_root) if recovery_root is not None else None
+
+    def _capture_regular(self, source: Path, destination: Path) -> dict:
+        """Publish a durable, immutable version before any manifest references it."""
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}")
+        try:
+            observed = os.lstat(source)
+            if (not stat.S_ISREG(observed.st_mode) or is_link_metadata(observed)
+                    or observed.st_nlink != 1):
+                raise OSError("snapshot source must be an ordinary non-linked file")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+            with os.fdopen(os.open(source, flags), "rb") as handle:
+                before = os.fstat(handle.fileno())
+                if (before.st_dev, before.st_ino) != (observed.st_dev, observed.st_ino):
+                    raise OSError("snapshot source changed before opening")
+                digest = hashlib.sha256()
+                size = 0
+                flags_out = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+                with os.fdopen(os.open(destination, flags_out, 0o600), "wb") as output:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        output.write(chunk)
+                        digest.update(chunk)
+                        size += len(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                after = os.fstat(handle.fileno())
+                current = os.lstat(source)
+                identity = lambda info: (info.st_dev, info.st_ino, info.st_size,
+                                         info.st_mtime_ns, info.st_ctime_ns, info.st_mode)
+                # Windows descriptor and pathname stat APIs can represent mode
+                # and timestamps differently. Compare each API to its own
+                # earlier observation; the open check binds their file identity.
+                if identity(before) != identity(after) or identity(observed) != identity(current):
+                    raise OSError("snapshot source changed while reading")
+                if size != after.st_size:
+                    raise OSError("snapshot size changed while reading")
+            if os.name != "nt":
+                directory = os.open(destination.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+            return {
+                "kind": "regular", "digest": f"sha256:{digest.hexdigest()}",
+                "blob_ref": destination.name,
+                "mode": f"{stat.S_IMODE(current.st_mode):04o}", "size": size,
+            }
+        except OSError as exc:
+            destination.unlink(missing_ok=True)
+            raise MutationJournalError(f"cannot snapshot {source}: {exc}") from exc
+
+    def backup_before_edit(
+        self,
+        turn_id: str,
+        abs_path: str,
+        *,
+        content_src: str | Path | None = None,
+        project_locator: dict | None = None,
+    ) -> None:
+        if not turn_id or not abs_path:
+            return
+        backup_name = path_basename(abs_path)
+        manifest_path = turn_manifest_path(self.session_dir, turn_id)
+        target = Path(abs_path)
+        try:
+            target_stat = os.lstat(target)
+        except FileNotFoundError:
+            target_stat = None
+        except OSError as exc:
+            raise MutationJournalError(f"cannot inspect {target}: {exc}") from exc
+
+        if target_stat is not None and not stat.S_ISREG(target_stat.st_mode):
+            raise MutationJournalError(
+                f"unsafe file type for exact mutation: {_file_kind(target_stat.st_mode)}",
+            )
+        if target_stat is not None and target_stat.st_nlink != 1:
+            raise MutationJournalError(
+                f"hardlinked file has {target_stat.st_nlink} links",
+            )
+        started = self._note_writer(abs_path, "started")
+        existing = manifest.load(manifest_path).get("files", {}).get(backup_name)
+        if existing and existing.get("status") != "aborted":
+            if existing.get("status") == "committed":
+                manifest.mark_pending(manifest_path, backup_name)
+            return
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        pre_existing = target_stat is not None
+        recoverability = "exact"
+        unavailable_reason = None
+        if not pre_existing:
+            before = {"kind": "absent"}
+        else:
+            source = Path(content_src) if content_src is not None else target
+            try:
+                source_stat = os.lstat(source)
+            except FileNotFoundError:
+                source_stat = None
+            if source_stat is None or not stat.S_ISREG(source_stat.st_mode):
+                before = {"kind": "unavailable"}
+                recoverability = "unavailable"
+                unavailable_reason = "missing_preimage"
+            else:
+                before = self._capture_regular(source, backup_dir / backup_name)
+
+        manifest.record_prepared(
+            manifest_path,
+            backup_name,
+            abs_path,
+            pre_existing=pre_existing,
+            before=before,
+            recoverability=recoverability,
+            unavailable_reason=unavailable_reason,
+            project_locator=project_locator,
+            first_sequence=started,
+        )
+
+    def commit_after_edit(
+        self, turn_id: str, abs_path: str, *, operation: str | None = None,
+    ) -> None:
+        if not turn_id or not abs_path:
+            return
+        backup_name = path_basename(abs_path)
+        manifest_path = turn_manifest_path(self.session_dir, turn_id)
+        value = manifest.load(manifest_path)
+        entry = value.get("files", {}).get(backup_name)
+        if not entry:
+            raise MutationJournalError(f"no prepared mutation for {abs_path}")
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        target = Path(abs_path)
+        try:
+            target_stat = os.lstat(target)
+        except FileNotFoundError:
+            target_stat = None
+        except OSError as exc:
+            raise MutationJournalError(f"cannot inspect {target}: {exc}") from exc
+
+        after_blob: Path | None = None
+        if target_stat is None:
+            after = {"kind": "absent"}
+        elif stat.S_ISREG(target_stat.st_mode):
+            after_blob = backup_dir / f"{backup_name}.after"
+            after = self._capture_regular(target, after_blob)
+            after_blob = backup_dir / after["blob_ref"]
+        else:
+            after = {"kind": _file_kind(target_stat.st_mode)}
+
+        before = entry.get("before") or {
+            "kind": "regular" if entry.get("pre_existing") else "absent",
+        }
+        before_blob = (
+            backup_dir / str(before.get("blob_ref"))
+            if before.get("kind") == "regular" and before.get("blob_ref")
+            else None
+        )
+        if before.get("kind") == "absent" and after.get("kind") == "regular":
+            canonical_operation = "create"
+        elif before.get("kind") == "regular" and after.get("kind") == "absent":
+            canonical_operation = "delete"
+        else:
+            canonical_operation = operation or "modify"
+            if canonical_operation in {"write", "edit", "update", "add"}:
+                canonical_operation = "modify"
+        stats, diff_state = _line_stats(before_blob, after_blob)
+        mutation_sequence = self._next_mutation_sequence(
+            path=abs_path, session=self.session_dir.name,
+        )
+        manifest.commit(
+            manifest_path,
+            backup_name,
+            operation=canonical_operation,
+            after=after,
+            stats=stats,
+            diff_state=diff_state,
+            mutation_sequence=mutation_sequence,
+        )
+
+    def _note_writer(self, path: str, stage: str) -> int | None:
+        try:
+            return self._next_mutation_sequence(path=path, session=self.session_dir.name, stage=stage)
+        except OSError:
+            # Attribution is advisory; it never stops the edit.
+            return None
+
+    @staticmethod
+    def _next_mutation_sequence(
+        *, path: str | None = None, session: str | None = None, stage: str = "finished",
+    ) -> int:
+        """Allocate one durable workspace-wide mutation order value."""
+        from openprogram.host._platform import locking
+
+        from openprogram.state.paths import get_state_dir
+
+        root = get_state_dir() / "mutation-locks"
+        root.mkdir(parents=True, exist_ok=True)
+        counter_path = root / "workspace-sequence"
+        with (root / "workspace-sequence.lock").open("a+") as lock:
+            locking.flock(lock.fileno(), locking.LOCK_EX)
+            try:
+                try:
+                    current = int(counter_path.read_text(encoding="ascii").strip())
+                except (FileNotFoundError, OSError, ValueError):
+                    current = 0
+                value = current + 1
+                tmp = root / ".workspace-sequence.tmp"
+                with tmp.open("w", encoding="ascii") as handle:
+                    handle.write(str(value))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                replace_file(tmp, counter_path)
+                try:
+                    self_descriptor = os.open(root, os.O_RDONLY)
+                    try:
+                        os.fsync(self_descriptor)
+                    finally:
+                        os.close(self_descriptor)
+                except OSError:
+                    pass  # Windows has no directory descriptor to sync
+                if path and session:
+                    try:
+                        record_writer(path, session, value, stage)
+                    except OSError:
+                        # Attribution is advisory; the edit itself is journaled.
+                        pass
+                return value
+            finally:
+                locking.flock(lock.fileno(), locking.LOCK_UN)
+
+    def abort_edit(self, turn_id: str, abs_path: str, error: str | None = None) -> None:
+        if turn_id and abs_path:
+            self._note_writer(abs_path, "aborted")
+            manifest.abort(
+                turn_manifest_path(self.session_dir, turn_id),
+                path_basename(abs_path),
+                error,
+            )
+
+    def list_mutations(self, turn_id: str) -> list[dict]:
+        rows: list[dict] = []
+        for _backup_name, entry in manifest.entries(
+            turn_manifest_path(self.session_dir, turn_id),
+        ):
+            if entry.get("status") == "committed":
+                row = dict(entry)
+                if row.get("pending"):
+                    row.update(recoverability="unavailable", unavailable_reason="mutation_incomplete",
+                               diff_state="unavailable")
+                rows.append(row)
+        return rows
+
+    def list_file_history(self, turn_id: str) -> list[dict]:
+        """Project incomplete intents as unknown, never as successful mutations."""
+        rows = []
+        for _, entry in manifest.entries(turn_manifest_path(self.session_dir, turn_id)):
+            status = entry.get("status")
+            if status == "aborted":
+                # Failure does not prove that the tool had no side effect.
+                if self._state_matches(self._inspect_state(entry["path"]), entry.get("before") or {}):
+                    continue
+            elif status not in {"prepared", "committed"}:
+                continue
+            row = dict(entry)
+            if status in {"prepared", "aborted"} or entry.get("pending"):
+                row.update(after={"kind": "unavailable"},
+                           stats={"added": None, "removed": None, "binary": False},
+                           diff_state="unavailable", recoverability="unavailable",
+                           unavailable_reason="mutation_incomplete")
+            rows.append(row)
+        return rows
+
+    def _inspect_state(self, path: str) -> dict:
+        try:
+            chain = self._capture_parent_chain(path)
+            if not _DIR_FD_APPLY_SUPPORTED:
+                parent = self._verify_parent_path(path, chain)
+            else:
+                descriptor = self._open_verified_parent(path, chain)
+        except (FileNotFoundError, NotADirectoryError):
+            return {"kind": "absent"}
+        except OSError:
+            return {"kind": "unsafe_parent"}
+        if not _DIR_FD_APPLY_SUPPORTED:
+            return self._inspect_state_path(parent / Path(path).name)
+        try:
+            return self._inspect_state_at(descriptor, Path(path).name)
+        finally:
+            os.close(descriptor)
+
+    @staticmethod
+    def _capture_parent_chain(path: str) -> dict:
+        target = Path(path)
+        if not target.is_absolute() or not target.name:
+            raise OSError(f"history path must be an absolute file path: {path}")
+        parts = target.parent.parts
+        if not parts:
+            raise OSError(f"history path has no parent: {path}")
+        current = Path(parts[0])
+        root_info = os.lstat(current)
+        if not stat.S_ISDIR(root_info.st_mode) or is_link_metadata(root_info):
+            raise OSError(f"unsafe root for history path: {path}")
+        components = []
+        for name in parts[1:]:
+            current = current / name
+            info = os.lstat(current)
+            if not stat.S_ISDIR(info.st_mode) or is_link_metadata(info):
+                raise OSError(f"unsafe parent for history path: {current}")
+            components.append({"name": name, "dev": info.st_dev, "ino": info.st_ino})
+        return {
+            "root": parts[0],
+            "root_dev": root_info.st_dev,
+            "root_ino": root_info.st_ino,
+            "components": components,
+        }
+
+    @staticmethod
+    def _verify_parent_path(path: str, chain: dict) -> Path:
+        # Windows has no equivalent dir_fd primitive. This fallback rechecks each
+        # parent with lstat but cannot prevent symlink-swap races; that weaker
+        # guarantee is an accepted tradeoff for making restore available there.
+        current = Path(str(chain["root"]))
+        info = os.lstat(current)
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or is_link_metadata(info)
+            or (info.st_dev, info.st_ino) != (
+                chain.get("root_dev"), chain.get("root_ino"),
+            )
+        ):
+            raise OSError(f"history root changed before apply: {path}")
+        for component in chain.get("components", []):
+            current = current / component["name"]
+            info = os.lstat(current)
+            if (
+                not stat.S_ISDIR(info.st_mode)
+                or is_link_metadata(info)
+                or (info.st_dev, info.st_ino) != (
+                    component.get("dev"), component.get("ino"),
+                )
+            ):
+                raise OSError(f"history parent changed before apply: {path}")
+        return current
+
+    @staticmethod
+    def _open_verified_parent(path: str, chain: dict) -> int:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(str(chain["root"]), flags | nofollow)
+        try:
+            info = os.fstat(descriptor)
+            if (info.st_dev, info.st_ino) != (
+                chain.get("root_dev"), chain.get("root_ino"),
+            ):
+                raise OSError(f"history root changed before apply: {path}")
+            for component in chain.get("components", []):
+                child = os.open(
+                    component["name"], flags | nofollow, dir_fd=descriptor,
+                )
+                child_info = os.fstat(child)
+                if (child_info.st_dev, child_info.st_ino) != (
+                    component.get("dev"), component.get("ino"),
+                ):
+                    os.close(child)
+                    raise OSError(f"history parent changed before apply: {path}")
+                os.close(descriptor)
+                descriptor = child
+            return descriptor
+        except Exception:
+            os.close(descriptor)
+            raise
+
+    @staticmethod
+    def _inspect_state_path(path: Path) -> dict:
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            return {"kind": "absent"}
+        if is_link_metadata(info):
+            return {"kind": "symlink"}
+        if not stat.S_ISREG(info.st_mode):
+            return {"kind": _file_kind(info.st_mode)}
+        if info.st_nlink != 1:
+            return {"kind": "hardlink", "links": info.st_nlink}
+        file_descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            return {
+                "kind": "regular",
+                "digest": _digest_fd(file_descriptor),
+                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+                "size": info.st_size,
+            }
+        finally:
+            os.close(file_descriptor)
+
+    @staticmethod
+    def _inspect_state_at(descriptor: int, name: str) -> dict:
+        try:
+            info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            return {"kind": "absent"}
+        if not stat.S_ISREG(info.st_mode):
+            return {"kind": _file_kind(info.st_mode)}
+        if info.st_nlink != 1:
+            return {"kind": "hardlink", "links": info.st_nlink}
+        file_descriptor = os.open(
+            name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=descriptor,
+        )
+        try:
+            return {
+                "kind": "regular",
+                "digest": _digest_fd(file_descriptor),
+                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+                "size": info.st_size,
+            }
+        finally:
+            os.close(file_descriptor)
+
+    @staticmethod
+    def _state_matches(actual: dict, expected: dict) -> bool:
+        if actual.get("kind") != expected.get("kind"):
+            return False
+        if expected.get("kind") == "regular":
+            return actual.get("digest") == expected.get("digest")
+        return expected.get("kind") == "absent"
+
+    @staticmethod
+    def _same_recorded_state(first: dict, second: dict) -> bool:
+        if first.get("kind") != second.get("kind"):
+            return False
+        if first.get("kind") == "regular":
+            return first.get("digest") == second.get("digest")
+        return first.get("kind") == "absent"
+
+    def _state_with_blob(self, turn_id: str, state: dict) -> dict:
+        value = dict(state)
+        if value.get("kind") == "regular":
+            value["blob_path"] = str(
+                turn_backup_dir(self.session_dir, turn_id)
+                / str(value.get("blob_ref") or "")
+            )
+        return value
+
+    @staticmethod
+    def _blob_is_exact(state: dict) -> bool:
+        if state.get("kind") != "regular":
+            return state.get("kind") == "absent"
+        blob = Path(str(state.get("blob_path") or ""))
+        if not blob.is_file():
+            return False
+        try:
+            return _digest(blob) == state.get("digest")
+        except OSError:
+            return False
+
+    def plan_history_operation(self, turn_id: str, direction: str) -> dict:
+        if direction not in {"revert", "reapply"}:
+            return {"status": "error", "error": f"unknown direction {direction!r}"}
+        mutations = self.list_mutations(turn_id)
+        if not mutations:
+            return {"status": "error", "error": "no committed mutations"}
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        actions = []
+        conflicts = []
+        unavailable = []
+        for mutation in mutations:
+            path = mutation.get("path") or ""
+            source = mutation.get("after") if direction == "revert" else mutation.get("before")
+            target = mutation.get("before") if direction == "revert" else mutation.get("after")
+            if (
+                not path
+                or mutation.get("recoverability") != "exact"
+                or not isinstance(source, dict)
+                or not isinstance(target, dict)
+                or source.get("kind") not in {"regular", "absent"}
+                or target.get("kind") not in {"regular", "absent"}
+            ):
+                unavailable.append(path)
+                continue
+            try:
+                parent_chain = self._capture_parent_chain(path)
+            except OSError:
+                unavailable.append(path)
+                continue
+            source = {**source, "parent_chain": parent_chain}
+            target = {**target, "parent_chain": parent_chain}
+            missing_blob = False
+            for state in (source, target):
+                if state.get("kind") != "regular":
+                    continue
+                blob = backup_dir / str(state.get("blob_ref") or "")
+                if not state.get("blob_ref") or not blob.is_file():
+                    missing_blob = True
+                    break
+            if missing_blob:
+                unavailable.append(path)
+                continue
+            current = self._inspect_state(path)
+            if not self._state_matches(current, source):
+                conflicts.append(path)
+                continue
+            actions.append({
+                "path": path,
+                "expected_current": source,
+                "target": target,
+                "rollback": source,
+                "state": "pending",
+                "error": None,
+            })
+        if unavailable:
+            return {
+                "status": "unavailable",
+                "actions": actions,
+                "conflicts": conflicts,
+                "unavailable": unavailable,
+                "error": "one or more mutations are not recoverable",
+            }
+        if conflicts:
+            return {
+                "status": "blocked",
+                "actions": actions,
+                "conflicts": conflicts,
+                "unavailable": [],
+                "error": "current file state does not match the recorded source",
+            }
+        return {
+            "status": "ready",
+            "actions": actions,
+            "conflicts": [],
+            "unavailable": [],
+        }
+
+    def plan_rewind_operation(
+        self,
+        turn_ids: list[str],
+        direction: str = "revert",
+    ) -> dict:
+        """Fold a related turn set into one reversible action per path."""
+        if direction not in {"revert", "reapply"}:
+            return {"status": "error", "error": f"unknown direction {direction!r}"}
+        folded: dict[str, dict] = {}
+        unavailable: list[str] = []
+        discontinuous: list[str] = []
+        ordered_turn_ids = list(dict.fromkeys(turn_ids))
+        records = [
+            (turn_id, mutation)
+            for turn_id in reversed(ordered_turn_ids)
+            for mutation in self.list_mutations(turn_id)
+        ]
+        if records and all(
+            isinstance(mutation.get("mutation_sequence"), int)
+            for _turn_id, mutation in records
+        ):
+            records.sort(key=lambda item: item[1]["mutation_sequence"])
+        for turn_id, mutation in records:
+            path = mutation.get("path") or ""
+            before = mutation.get("before")
+            after = mutation.get("after")
+            if (
+                not path
+                or mutation.get("recoverability") != "exact"
+                or not isinstance(before, dict)
+                or not isinstance(after, dict)
+                or before.get("kind") not in {"regular", "absent"}
+                or after.get("kind") not in {"regular", "absent"}
+            ):
+                unavailable.append(path)
+                continue
+            before = self._state_with_blob(turn_id, before)
+            after = self._state_with_blob(turn_id, after)
+            try:
+                parent_chain = self._capture_parent_chain(path)
+            except OSError:
+                unavailable.append(path)
+                continue
+            before["parent_chain"] = parent_chain
+            after["parent_chain"] = parent_chain
+            if not self._blob_is_exact(before) or not self._blob_is_exact(after):
+                unavailable.append(path)
+                continue
+            current = folded.get(path)
+            if current is None:
+                folded[path] = {
+                    "path": path,
+                    "expected_current": after,
+                    "target": before,
+                    "rollback": after,
+                    "turn_ids": [turn_id],
+                    "state": "pending",
+                    "error": None,
+                }
+                continue
+            if not self._same_recorded_state(current["expected_current"], before):
+                discontinuous.append(path)
+                continue
+            current["expected_current"] = after
+            current["rollback"] = after
+            current["turn_ids"].append(turn_id)
+
+        unavailable = sorted(set(filter(None, unavailable)))
+        discontinuous = sorted(set(filter(None, discontinuous)))
+        if unavailable or discontinuous:
+            return {
+                "status": "unavailable",
+                "actions": list(folded.values()),
+                "conflicts": [],
+                "unavailable": unavailable + discontinuous,
+                "error": (
+                    "one or more mutations are not recoverable"
+                    if unavailable else "mutation journal is discontinuous"
+                ),
+            }
+        actions = list(folded.values())
+        if direction == "reapply":
+            for action in actions:
+                source = action["target"]
+                target = action["expected_current"]
+                action["expected_current"] = source
+                action["target"] = target
+                action["rollback"] = source
+        conflicts = [
+            action["path"] for action in actions
+            if not self._state_matches(
+                self._inspect_state(action["path"]), action["expected_current"],
+            )
+        ]
+        if conflicts:
+            return {
+                "status": "blocked",
+                "actions": actions,
+                "conflicts": conflicts,
+                "unavailable": [],
+                "error": "current file state does not match the folded source",
+            }
+        return {
+            "status": "ready",
+            "actions": actions,
+            "conflicts": [],
+            "unavailable": [],
+        }
+
+    def _intent_path(self, turn_id: str, direction: str, key: str) -> Path:
+        digest = hashlib.sha256(f"{direction}\0{key}".encode()).hexdigest()[:24]
+        return turn_backup_dir(self.session_dir, turn_id) / "intents" / f"{digest}.json"
+
+    def _rewind_intent_path(self, key: str) -> Path:
+        digest = hashlib.sha256(f"rewind\0{key}".encode()).hexdigest()[:24]
+        return session_backup_root(self.session_dir) / "intents" / f"{digest}.json"
+
+    @contextmanager
+    def _rewind_intent_lock(self, key: str):
+        from openprogram.host._platform import locking
+
+        digest = hashlib.sha256(f"rewind\0{key}".encode()).hexdigest()[:24]
+        root = session_backup_root(self.session_dir) / "intent-locks"
+        root.mkdir(parents=True, exist_ok=True)
+        with (root / f"{digest}.lock").open("a+") as handle:
+            locking.flock(handle.fileno(), locking.LOCK_EX)
+            try:
+                yield
+            finally:
+                locking.flock(handle.fileno(), locking.LOCK_UN)
+
+    def _workspace_lock_path(self) -> Path:
+        from openprogram.state.paths import get_state_dir
+
+        root = get_state_dir() / "mutation-locks"
+        root.mkdir(parents=True, exist_ok=True)
+        return root / "history.lock"
+
+    @contextmanager
+    def _workspace_lock(self, _paths: list[str]):
+        from openprogram.host._platform import locking
+
+        with self._workspace_lock_path().open("a+") as handle:
+            locking.flock(handle.fileno(), locking.LOCK_EX)
+            try:
+                yield
+            finally:
+                locking.flock(handle.fileno(), locking.LOCK_UN)
+
+    def _apply_state(
+        self,
+        path: str,
+        state: dict,
+        backup_dir: Path,
+        transaction_id: str,
+        expected_current: dict | None = None,
+    ) -> str | None:
+        target = Path(path)
+        tmp_name = f".{target.name}.{transaction_id}.tmp"
+        guard_name = f".{target.name}.{transaction_id}.guard"
+        expected = expected_current or self._inspect_state(path)
+        chain = expected.get("parent_chain") or self._capture_parent_chain(path)
+        if not _DIR_FD_APPLY_SUPPORTED:
+            return self._apply_state_without_dir_fd(
+                target,
+                state,
+                backup_dir,
+                expected,
+                chain,
+                tmp_name,
+                guard_name,
+            )
+        parent_descriptor = self._open_verified_parent(path, chain)
+        try:
+            if state.get("kind") == "regular":
+                blob = Path(str(state.get("blob_path"))) \
+                    if state.get("blob_path") else (
+                        backup_dir / str(state.get("blob_ref") or "")
+                    )
+                if not blob.is_file():
+                    raise OSError(f"missing recovery blob for {path}")
+                if state.get("digest") and _digest(blob) != state.get("digest"):
+                    raise OSError(f"recovery blob digest mismatch for {path}")
+                tmp_descriptor = os.open(
+                    tmp_name,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                    dir_fd=parent_descriptor,
+                )
+                try:
+                    with blob.open("rb") as source:
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            view = memoryview(chunk)
+                            while view:
+                                written = os.write(tmp_descriptor, view)
+                                view = view[written:]
+                    os.fchmod(
+                        tmp_descriptor,
+                        int(str(state.get("mode") or "0644"), 8),
+                    )
+                    os.fsync(tmp_descriptor)
+                finally:
+                    os.close(tmp_descriptor)
+
+            if expected.get("kind") == "regular":
+                os.rename(
+                    target.name, guard_name,
+                    src_dir_fd=parent_descriptor, dst_dir_fd=parent_descriptor,
+                )
+                moved = self._inspect_state_at(parent_descriptor, guard_name)
+                if not self._state_matches(moved, expected):
+                    try:
+                        os.rename(
+                            guard_name, target.name,
+                            src_dir_fd=parent_descriptor,
+                            dst_dir_fd=parent_descriptor,
+                        )
+                    except FileExistsError:
+                        pass
+                    raise OSError(f"stale current state for {path}")
+            elif expected.get("kind") != "absent":
+                raise OSError(f"unsafe current state for {path}")
+
+            if state.get("kind") == "regular":
+                try:
+                    os.link(
+                        tmp_name, target.name,
+                        src_dir_fd=parent_descriptor,
+                        dst_dir_fd=parent_descriptor,
+                        follow_symlinks=False,
+                    )
+                except FileExistsError as exc:
+                    raise OSError(f"external writer created {path}") from exc
+                os.unlink(tmp_name, dir_fd=parent_descriptor)
+            elif state.get("kind") != "absent":
+                raise OSError(f"unsupported target state for {path}")
+
+            os.fsync(parent_descriptor)
+            guard_exists = self._inspect_state_at(
+                parent_descriptor, guard_name,
+            ).get("kind") != "absent"
+            return str(target.parent / guard_name) if guard_exists else None
+        finally:
+            try:
+                os.unlink(tmp_name, dir_fd=parent_descriptor)
+            except FileNotFoundError:
+                pass
+            os.close(parent_descriptor)
+
+    def _apply_state_without_dir_fd(
+        self,
+        target: Path,
+        state: dict,
+        backup_dir: Path,
+        expected: dict,
+        chain: dict,
+        tmp_name: str,
+        guard_name: str,
+    ) -> str | None:
+        parent = self._verify_parent_path(str(target), chain)
+        tmp_path = parent / tmp_name
+        guard_path = parent / guard_name
+        try:
+            if state.get("kind") == "regular":
+                blob = Path(str(state.get("blob_path"))) \
+                    if state.get("blob_path") else (
+                        backup_dir / str(state.get("blob_ref") or "")
+                    )
+                if not blob.is_file():
+                    raise OSError(f"missing recovery blob for {target}")
+                if state.get("digest") and _digest(blob) != state.get("digest"):
+                    raise OSError(f"recovery blob digest mismatch for {target}")
+                tmp_descriptor = os.open(
+                    tmp_path,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                    0o600,
+                )
+                try:
+                    with blob.open("rb") as source:
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            view = memoryview(chunk)
+                            while view:
+                                written = os.write(tmp_descriptor, view)
+                                view = view[written:]
+                    os.chmod(tmp_path, int(str(state.get("mode") or "0644"), 8))
+                    os.fsync(tmp_descriptor)
+                finally:
+                    os.close(tmp_descriptor)
+
+            if expected.get("kind") == "regular":
+                os.rename(target, guard_path)
+                moved = self._inspect_state_path(guard_path)
+                if not self._state_matches(moved, expected):
+                    try:
+                        os.rename(guard_path, target)
+                    except FileExistsError:
+                        pass
+                    raise OSError(f"stale current state for {target}")
+            elif expected.get("kind") != "absent":
+                raise OSError(f"unsafe current state for {target}")
+
+            if state.get("kind") == "regular":
+                try:
+                    os.link(tmp_path, target)
+                except FileExistsError as exc:
+                    raise OSError(f"external writer created {target}") from exc
+                os.unlink(tmp_path)
+            elif state.get("kind") != "absent":
+                raise OSError(f"unsupported target state for {target}")
+
+            self._fsync_directory(parent)
+            guard_exists = self._inspect_state_path(guard_path).get("kind") != "absent"
+            return str(guard_path) if guard_exists else None
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
+
+    def _restore_changed_guard(
+        self,
+        action: dict,
+        guard_path: str,
+        transaction_id: str,
+    ) -> None:
+        target = Path(action["path"])
+        guard = Path(guard_path)
+        applied_name = f".{target.name}.{transaction_id}.applied"
+        chain = action["expected_current"].get("parent_chain") \
+            or self._capture_parent_chain(action["path"])
+        if not _DIR_FD_APPLY_SUPPORTED:
+            self._restore_changed_guard_without_dir_fd(
+                action, guard, applied_name, chain,
+            )
+            return
+        descriptor = self._open_verified_parent(action["path"], chain)
+        try:
+            if self._inspect_state_at(descriptor, target.name).get("kind") != "absent":
+                os.rename(
+                    target.name, applied_name,
+                    src_dir_fd=descriptor, dst_dir_fd=descriptor,
+                )
+                action["recovery_artifact"] = str(target.parent / applied_name)
+            if self._inspect_state_at(descriptor, target.name).get("kind") != "absent":
+                raise OSError(f"external writer recreated {target}")
+            os.rename(
+                guard.name, target.name,
+                src_dir_fd=descriptor, dst_dir_fd=descriptor,
+            )
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _restore_changed_guard_without_dir_fd(
+        self,
+        action: dict,
+        guard: Path,
+        applied_name: str,
+        chain: dict,
+    ) -> None:
+        target = Path(action["path"])
+        parent = self._verify_parent_path(action["path"], chain)
+        applied_path = parent / applied_name
+        guard_path = parent / guard.name
+        if self._inspect_state_path(target).get("kind") != "absent":
+            os.rename(target, applied_path)
+            action["recovery_artifact"] = str(applied_path)
+        if self._inspect_state_path(target).get("kind") != "absent":
+            raise OSError(f"external writer recreated {target}")
+        os.rename(guard_path, target)
+        self._fsync_directory(parent)
+
+    @staticmethod
+    def _sibling(action: dict, transaction_id: str, suffix: str) -> Path:
+        target = Path(action["path"])
+        return target.parent / f".{target.name}.{transaction_id}.{suffix}"
+
+    def _unlink_sibling(self, action: dict, name: str) -> None:
+        chain = action["expected_current"].get("parent_chain") or self._capture_parent_chain(action["path"])
+        if not _DIR_FD_APPLY_SUPPORTED:
+            os.unlink(self._verify_parent_path(action["path"], chain) / name)
+            return
+        descriptor = self._open_verified_parent(action["path"], chain)
+        try:
+            os.unlink(name, dir_fd=descriptor)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _discard_guards(self, intent: dict, intent_path: Path) -> None:
+        """Remove what a finished transaction left beside the files it touched.
+
+        A guard goes only while it still holds the state the transaction moved
+        aside; anything else in its place is not ours to delete. The
+        transaction has already finished, so a failure here changes nothing.
+        """
+        transaction_id = str(intent.get("transaction_id") or "")
+        try:
+            for action in intent.get("actions") or []:
+                for candidate, expected in (
+                    (self._sibling(action, transaction_id, "guard"), action.get("rollback") or {}),
+                    (self._sibling(action, f"{transaction_id}_rollback", "guard"), action.get("target") or {}),
+                ):
+                    try:
+                        if expected.get("kind") == "regular" and self._state_matches(
+                            self._inspect_state(str(candidate)), expected,
+                        ):
+                            self._unlink_sibling(action, candidate.name)
+                    except OSError:
+                        _log.warning("could not remove %s", candidate, exc_info=True)
+                try:
+                    self._unlink_sibling(action, self._sibling(action, transaction_id, "tmp").name)
+                except OSError:
+                    # Absent unless the transaction was interrupted.
+                    pass
+            intent["guards_discarded"] = True
+            manifest.save(intent_path, intent)
+        except Exception:
+            _log.warning("could not finish guard removal for %s", transaction_id, exc_info=True)
+
+    def _put_guard_back(self, action: dict, guard: Path, expected: dict) -> bool:
+        """Return a file moved aside by an interrupted apply to its path."""
+        if expected.get("kind") != "regular" or not self._state_matches(
+            self._inspect_state(str(guard)), expected,
+        ):
+            return False
+        target = Path(action["path"])
+        chain = action["expected_current"].get("parent_chain") or self._capture_parent_chain(action["path"])
+        try:
+            if _DIR_FD_APPLY_SUPPORTED:
+                descriptor = self._open_verified_parent(action["path"], chain)
+                try:
+                    os.link(
+                        guard.name, target.name,
+                        src_dir_fd=descriptor, dst_dir_fd=descriptor,
+                        follow_symlinks=False,
+                    )
+                    os.unlink(guard.name, dir_fd=descriptor)
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            else:
+                parent = self._verify_parent_path(action["path"], chain)
+                os.link(parent / guard.name, target)
+                os.unlink(parent / guard.name)
+                self._fsync_directory(parent)
+        except OSError:
+            _log.warning("could not put back %s", guard, exc_info=True)
+            return False
+        return True
+
+    def _classify_interrupted_action(self, action: dict, transaction_id: str) -> str:
+        """Where one action of an interrupted rewind stands on disk.
+
+        An apply that stopped between moving the current file aside and
+        linking the new one leaves the path absent; the moved file is put back
+        and the action reads as it was before that step.
+        """
+        actual = self._inspect_state(action["path"])
+        if self._state_matches(actual, action["rollback"]):
+            return "source"
+        if self._state_matches(actual, action["target"]):
+            return "target"
+        if actual.get("kind") == "absent":
+            if self._put_guard_back(
+                action, self._sibling(action, transaction_id, "guard"), action["rollback"],
+            ):
+                return "source"
+            if self._put_guard_back(
+                action, self._sibling(action, f"{transaction_id}_rollback", "guard"), action["target"],
+            ):
+                return "target"
+        return "external"
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        try:
+            descriptor = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _intent_result(intent: dict) -> dict:
+        committed = intent.get("status") == "committed"
+        return {
+            "status": intent.get("status", "error"),
+            "transaction_id": intent.get("transaction_id"),
+            "idempotency_key": intent.get("idempotency_key"),
+            "restored_paths": [
+                action["path"] for action in intent.get("actions", [])
+            ] if committed else [],
+            "conflicts": intent.get("conflicts", []),
+            "unavailable": intent.get("unavailable", []),
+            "error_code": intent.get("error_code"),
+            "error": intent.get("error"),
+        }
+
+    @staticmethod
+    def _rewind_intent_result(intent: dict, *, replayed: bool = False) -> dict:
+        committed = intent.get("status") == "committed"
+        return {
+            "status": intent.get("status", "error"),
+            "transaction_id": intent.get("transaction_id"),
+            "idempotency_key": intent.get("idempotency_key"),
+            "restored_paths": [
+                action["path"] for action in intent.get("actions", [])
+            ] if committed else [],
+            "conflicts": intent.get("conflicts", []),
+            "unavailable": intent.get("unavailable", []),
+            "error_code": intent.get("error_code") or (
+                "RECOVERY_REQUIRED" if intent.get("status") == "recovery_required" else None
+            ),
+            "error": intent.get("error"),
+            "new_head_id": intent.get("target_head_id") if committed else None,
+            "source_head_id": intent.get("expected_head_id"),
+            "source_branch_id": intent.get("source_branch_id"),
+            "target_branch_id": intent.get("target_branch_id"),
+            "target_msg_id": intent.get("target_msg_id"),
+            "user_text": intent.get("user_text", ""),
+            "turn_ids": intent.get("turn_ids", []),
+            # The outcome of the rewind, the same on every answer for its
+            # key. ``replayed`` says this call did not apply it, for the
+            # work that is done once (``rewind.rewind_to``).
+            "head_changed": (
+                committed
+                and intent.get("target_head_id") != intent.get("expected_head_id")
+            ),
+            "replayed": replayed,
+            "mode": intent.get("mode", "code_and_conversation"),
+            "skipped": intent.get("skipped", []),
+        }
+
+    def read_rewind_intent(self, key: str) -> dict | None:
+        return self._read_intent(self._rewind_intent_path(key))
+
+    @staticmethod
+    def _read_intent(path: Path) -> dict | None:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(value, dict):
+            return None
+        if value.get("status") == "recovery_required" and not value.get("error_code"):
+            value["error_code"] = "RECOVERY_REQUIRED"
+            try:
+                manifest.save(path, value)
+            except OSError:
+                # The normalized result remains actionable even if a read-only
+                # or damaged profile prevents the migration write.
+                pass
+        return value
+
+    def read_history_intent(
+        self, turn_id: str, direction: str, key: str,
+    ) -> dict | None:
+        """Read one single-turn history receipt without applying it."""
+        return self._read_intent(self._intent_path(turn_id, direction, key))
+
+    def _recover_rewind_intent(
+        self,
+        intent_path: Path,
+        *,
+        get_head,
+        compare_and_set_head,
+    ) -> dict:
+        try:
+            initial = json.loads(intent_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"status": "error", "error": "invalid rewind intent"}
+        paths = [action["path"] for action in initial.get("actions", [])]
+        with self._workspace_lock(paths):
+            try:
+                intent = json.loads(intent_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return {"status": "error", "error": "invalid rewind intent"}
+            if intent.get("status") in {
+                "committed", "rolled_back", "recovery_required", "aborted",
+            }:
+                return self._rewind_intent_result(intent, replayed=True)
+            actions = intent.get("actions") or []
+            head = get_head()
+            expected_head = intent.get("expected_head_id")
+            target_head = intent.get("target_head_id")
+            transaction_id = str(intent.get("transaction_id") or "recovery")
+            states = [
+                self._classify_interrupted_action(action, transaction_id)
+                for action in actions
+            ]
+            if all(state == "target" for state in states) and head == target_head:
+                if expected_head == target_head and not compare_and_set_head(
+                    intent, expected_head, target_head,
+                ):
+                    intent["status"] = "recovery_required"
+                    intent["error_code"] = "RECOVERY_REQUIRED"
+                    intent["error"] = "same-head transaction finalization failed"
+                    manifest.save(intent_path, intent)
+                    return self._rewind_intent_result(intent, replayed=True)
+                intent["status"] = "committed"
+                intent["error"] = None
+                manifest.save(intent_path, intent)
+                self._discard_guards(intent, intent_path)
+                return self._rewind_intent_result(intent, replayed=True)
+            if head not in {expected_head, target_head} or "external" in states:
+                intent["status"] = "recovery_required"
+                intent["error_code"] = "RECOVERY_REQUIRED"
+                intent["error"] = "external state prevents deterministic recovery"
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent, replayed=True)
+            recovery_required = False
+            for action, state_name in reversed(list(zip(actions, states))):
+                if state_name == "source":
+                    action["state"] = "rolled_back"
+                    continue
+                try:
+                    action["state"] = "rolling_back"
+                    manifest.save(intent_path, intent)
+                    rollback_guard = self._apply_state(
+                        action["path"], action["rollback"], self.session_dir,
+                        str(intent.get("transaction_id") or "recovery") + "_rollback",
+                        action["target"],
+                    )
+                    if rollback_guard:
+                        action["rollback_guard_path"] = rollback_guard
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]), action["rollback"],
+                    ):
+                        raise OSError("rollback verification failed")
+                    action["state"] = "rolled_back"
+                    manifest.save(intent_path, intent)
+                except Exception as exc:
+                    recovery_required = True
+                    action["error"] = str(exc)
+            if not recovery_required and head == target_head:
+                if not compare_and_set_head(intent, target_head, expected_head, rollback=True):
+                    recovery_required = True
+            intent["status"] = (
+                "recovery_required" if recovery_required else "rolled_back"
+            )
+            if recovery_required:
+                intent["error_code"] = "RECOVERY_REQUIRED"
+            intent["error"] = (
+                "automatic rollback could not complete"
+                if recovery_required else "interrupted rewind rolled back"
+            )
+            manifest.save(intent_path, intent)
+            if not recovery_required:
+                self._discard_guards(intent, intent_path)
+            return self._rewind_intent_result(intent, replayed=True)
+
+    def recover_rewind_intents(self, *, get_head, compare_and_set_head) -> list[dict]:
+        root = session_backup_root(self.session_dir) / "intents"
+        if not root.is_dir():
+            return []
+        results = []
+        for path in sorted(root.glob("*.json")):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if value.get("status") in {"prepared", "applying"}:
+                results.append(self._recover_rewind_intent(
+                    path,
+                    get_head=get_head,
+                    compare_and_set_head=compare_and_set_head,
+                ))
+            elif (
+                value.get("status") in {"committed", "rolled_back"}
+                and value.get("actions")
+                and not value.get("guards_discarded")
+            ):
+                with self._workspace_lock([action["path"] for action in value["actions"]]):
+                    self._discard_guards(value, path)
+        return results
+
+    def restored_writes(self) -> dict[tuple[str, str], int]:
+        """Writes a committed rewind already took back.
+
+        Keys are ``(turn id, path)``; the value is the workspace sequence
+        through which that turn's writes to the path are gone from the file.
+        """
+        restored: dict[tuple[str, str], int] = {}
+        root = session_backup_root(self.session_dir) / "intents"
+        try:
+            paths = sorted(root.glob("*.json"))
+        except OSError:
+            return restored
+        for path in paths:
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(value, dict) or value.get("status") != "committed":
+                continue
+            through = int(value.get("restores_through") or 0)
+            for action in value.get("actions") or []:
+                for turn in action.get("turn_ids") or []:
+                    key = (str(turn), str(action.get("path")))
+                    restored[key] = max(restored.get(key, 0), through)
+        return restored
+
+    def recover_history_intents(self) -> list[dict]:
+        """Terminalize ordinary history intents left during a crash.
+
+        A single-turn intent has no separate recovery coordinator.  Startup
+        therefore preserves its manifest and records an explicit recovery
+        state instead of exposing it forever as an in-progress operation.
+        """
+        results = []
+        roots = (
+            session_backup_root(self.session_dir),
+            Path(self.session_dir) / "file_backups",
+        )
+        paths = sorted({path for root in roots for path in root.glob("*/intents/*.json")})
+        for path in paths:
+            try:
+                intent = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(intent, dict) or intent.get("status") not in {"prepared", "applying"}:
+                continue
+            intent["status"] = "recovery_required"
+            intent["error_code"] = "RECOVERY_REQUIRED"
+            intent["error"] = "incomplete history intent requires explicit recovery"
+            manifest.save(path, intent)
+            results.append(self._intent_result(intent))
+        return results
+
+    def _validate_custom_history_actions(self, actions: list[dict]) -> dict:
+        conflicts = []
+        unavailable = []
+        for action in actions:
+            path = action.get("path") or ""
+            if not path:
+                unavailable.append(path)
+                continue
+            if not self._state_matches(
+                self._inspect_state(path), action.get("expected_current") or {},
+            ):
+                conflicts.append(path)
+                continue
+            for state in (action.get("target") or {}, action.get("rollback") or {}):
+                if not self._blob_is_exact(state):
+                    unavailable.append(path)
+                    break
+        if unavailable:
+            return {
+                "status": "unavailable", "actions": actions,
+                "conflicts": conflicts, "unavailable": sorted(set(unavailable)),
+                "error": "custom history target is unavailable",
+            }
+        if conflicts:
+            return {
+                "status": "blocked", "actions": actions,
+                "conflicts": sorted(set(conflicts)), "unavailable": [],
+                "error": "current workspace does not match the source branch",
+            }
+        return {
+            "status": "ready", "actions": actions,
+            "conflicts": [], "unavailable": [],
+        }
+
+    @staticmethod
+    def _plan_hash(actions: list[dict]) -> str:
+        return "sha256:" + hashlib.sha256(
+            json.dumps(actions, sort_keys=True).encode(),
+        ).hexdigest()
+
+    def _execute_history_intent(
+        self, intent: dict, intent_path: Path, backup_dir: Path, *, preflight=None,
+    ) -> dict:
+        """Apply a prepared file intent using the shared guarded transaction."""
+        paths = [action["path"] for action in intent.get("actions", [])]
+        with self._workspace_lock(paths):
+            if preflight is not None:
+                current_plan = preflight()
+                if current_plan.get("status") != "ready":
+                    intent.update({
+                        "status": "aborted",
+                        "conflicts": current_plan.get("conflicts", []),
+                        "unavailable": current_plan.get("unavailable", []),
+                        "error": current_plan.get("error"),
+                    })
+                    manifest.save(intent_path, intent)
+                    return self._intent_result(intent)
+                if self._plan_hash(current_plan["actions"]) != intent.get("plan_hash"):
+                    intent.update({"status": "aborted", "error": "stale_plan"})
+                    manifest.save(intent_path, intent)
+                    return self._intent_result(intent)
+            conflicts = []
+            unavailable = []
+            for action in intent["actions"]:
+                if not self._state_matches(
+                    self._inspect_state(action["path"]),
+                    action.get("expected_current") or {},
+                ):
+                    conflicts.append(action["path"])
+                for state in (action.get("target") or {}, action.get("rollback") or {}):
+                    if state.get("kind") != "regular":
+                        continue
+                    blob = Path(str(state.get("blob_path") or backup_dir / str(state.get("blob_ref") or "")))
+                    if not blob.is_file() or (state.get("digest") and _digest(blob) != state.get("digest")):
+                        unavailable.append(action["path"])
+            current = {
+                "status": "unavailable" if unavailable else "blocked" if conflicts else "ready",
+                "conflicts": sorted(set(conflicts)), "unavailable": sorted(set(unavailable)),
+                "error": "custom history target is unavailable" if unavailable else "current file state does not match the recorded source",
+            }
+            if current.get("status") != "ready":
+                intent.update({
+                    "status": "aborted",
+                    "conflicts": current.get("conflicts", []),
+                    "unavailable": current.get("unavailable", []),
+                    "error": current.get("error"),
+                })
+                manifest.save(intent_path, intent)
+                return self._intent_result(intent)
+            intent["status"] = "applying"
+            manifest.save(intent_path, intent)
+            touched: list[dict] = []
+            try:
+                for action in intent["actions"]:
+                    touched.append(action)
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]),
+                        action["expected_current"],
+                    ):
+                        raise OSError(f"stale current state for {action['path']}")
+                    guard_path = self._apply_state(
+                        action["path"], action["target"], backup_dir,
+                        intent["transaction_id"], action["expected_current"],
+                    )
+                    if guard_path:
+                        action["guard_path"] = guard_path
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]), action["target"],
+                    ):
+                        raise OSError(f"verification failed for {action['path']}")
+                    if guard_path and not self._state_matches(
+                        self._inspect_state(guard_path), action["rollback"],
+                    ):
+                        self._restore_changed_guard(
+                            action, guard_path, intent["transaction_id"],
+                        )
+                        raise OSError(
+                            f"external writer changed moved inode for {action['path']}",
+                        )
+                    action["state"] = "verified"
+                    manifest.save(intent_path, intent)
+            except Exception as exc:
+                recovery_required = False
+                for action in reversed(touched):
+                    try:
+                        actual = self._inspect_state(action["path"])
+                        if self._state_matches(actual, action["rollback"]):
+                            action["state"] = "rolled_back"
+                            continue
+                        if not self._state_matches(actual, action["target"]):
+                            recovery_required = True
+                            action["error"] = "external change prevents rollback"
+                            continue
+                        rollback_guard = self._apply_state(
+                            action["path"], action["rollback"], backup_dir,
+                            intent["transaction_id"] + "_rollback", action["target"],
+                        )
+                        if rollback_guard:
+                            action["rollback_guard_path"] = rollback_guard
+                        if not self._state_matches(
+                            self._inspect_state(action["path"]), action["rollback"],
+                        ):
+                            raise OSError("rollback verification failed")
+                        action["state"] = "rolled_back"
+                    except Exception as rollback_error:
+                        recovery_required = True
+                        action["error"] = str(rollback_error)
+                intent["status"] = (
+                    "recovery_required" if recovery_required else "rolled_back"
+                )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
+                intent["error"] = str(exc)
+                manifest.save(intent_path, intent)
+                if not recovery_required:
+                    self._discard_guards(intent, intent_path)
+                return self._intent_result(intent)
+            try:
+                intent["status"] = "committed"
+                manifest.save(intent_path, intent)
+                self._discard_guards(intent, intent_path)
+            except Exception as exc:
+                # The target was changed, but durable completion was not recorded.
+                intent["status"] = "recovery_required"
+                intent["error_code"] = "RECOVERY_REQUIRED"
+                intent["error"] = f"history commit failed: {exc}"
+                try:
+                    manifest.save(intent_path, intent)
+                except Exception as save_error:
+                    intent["error"] = f"history commit failed: {exc}; state save failed: {save_error}"
+                return self._intent_result(intent)
+        return self._intent_result(intent)
+
+    def _manual_operation_path(self, operation_id: str) -> Path:
+        if self.recovery_root is None:
+            raise TypeError("recovery_root is required for manual document operations")
+        if (
+            not isinstance(operation_id, str)
+            or len(operation_id) != 32
+            or any(char not in "0123456789abcdef" for char in operation_id)
+        ):
+            raise ValueError("invalid operation_id")
+        return self.recovery_root / "operations" / operation_id
+
+    def _capture_manual_blob(self, source: Path, destination: Path) -> dict:
+        try:
+            info = os.lstat(source)
+        except FileNotFoundError as exc:
+            raise MutationJournalError(f"snapshot source is missing: {source}") from exc
+        if (not stat.S_ISREG(info.st_mode) or is_link_metadata(info)
+                or info.st_nlink != 1 or info.st_size > 64 * 1024 * 1024):
+            raise MutationJournalError("document source must be an ordinary file of at most 64 MiB")
+        state = self._capture_regular(source, destination)
+        state["sha256"] = state["digest"].removeprefix("sha256:")
+        return state
+
+    @staticmethod
+    def _manual_descriptor(state: dict) -> dict:
+        if state.get("kind") == "absent":
+            return {"kind": "absent", "sha256": None, "mode": None, "size": 0, "blob_ref": None}
+        return {
+            "kind": "regular", "blob_ref": state["blob_ref"],
+            "sha256": state["sha256"], "mode": state["mode"], "size": state["size"],
+        }
+
+    @contextmanager
+    def _manual_operation_lock(self, operation_id: str):
+        from openprogram.host._platform import locking
+
+        operation_dir = self._manual_operation_path(operation_id)
+        operation_dir.mkdir(parents=True, exist_ok=True)
+        with (operation_dir / ".lock").open("a+") as handle:
+            locking.flock(handle.fileno(), locking.LOCK_EX)
+            try:
+                yield
+            finally:
+                locking.flock(handle.fileno(), locking.LOCK_UN)
+
+    def publish_document(
+        self, operation_id: str, target_path: str | Path, source_path: str | Path,
+        *, expected_revision: str | None = None, expected_mtime: int | float | None = None,
+        fingerprint: str, metadata: dict | None = None,
+    ) -> dict:
+        with self._manual_operation_lock(operation_id):
+            return self._publish_document_locked(
+                operation_id, target_path, source_path,
+                expected_revision=expected_revision, expected_mtime=expected_mtime,
+                fingerprint=fingerprint, metadata=metadata,
+            )
+
+    def _publish_document_locked(
+        self, operation_id: str, target_path: str | Path, source_path: str | Path,
+        *, expected_revision: str | None = None, expected_mtime: int | float | None = None,
+        fingerprint: str, metadata: dict | None = None,
+    ) -> dict:
+        """Durably publish one bounded ordinary file and return its receipt."""
+        operation_dir = self._manual_operation_path(operation_id)
+        intent_path = operation_dir / "intent.json"
+        if not isinstance(fingerprint, str) or not fingerprint:
+            raise ValueError("fingerprint is required")
+        if intent_path.exists():
+            existing = self.read_document_operation(operation_id)
+            if existing.get("fingerprint") != fingerprint:
+                raise ValueError("operation fingerprint conflict")
+            if existing.get("status") != "prepared":
+                return existing
+            return existing
+        target = Path(target_path)
+        source = Path(source_path)
+        if not target.is_absolute() or not source.is_absolute():
+            raise ValueError("document paths must be absolute")
+        operation_dir.mkdir(parents=True, exist_ok=True)
+        before = {"kind": "absent"}
+        try:
+            target_info = os.lstat(target)
+        except FileNotFoundError:
+            target_info = None
+        if target_info is not None:
+            if (not stat.S_ISREG(target_info.st_mode) or is_link_metadata(target_info)
+                    or target_info.st_nlink != 1 or target_info.st_size > 64 * 1024 * 1024):
+                raise MutationJournalError("document target must be an ordinary file of at most 64 MiB")
+            before = self._capture_manual_blob(target, operation_dir / "before")
+        candidate = self._capture_manual_blob(source, operation_dir / "candidate")
+        # A publication changes bytes while retaining the target's existing
+        # permissions.  Source permissions are relevant only when creating a
+        # previously absent target.
+        if before.get("kind") == "regular":
+            candidate["mode"] = before["mode"]
+        current_revision = before.get("sha256") if before["kind"] == "regular" else "absent"
+        if expected_revision is not None and expected_revision != current_revision:
+            raise MutationJournalError("document baseline does not match")
+        if expected_mtime is not None and target_info is not None and target_info.st_mtime != expected_mtime:
+            raise MutationJournalError("document mtime does not match")
+        parent_chain = self._capture_parent_chain(str(target))
+        if before.get("kind") == "regular":
+            before["blob_path"] = str(operation_dir / before["blob_ref"])
+        before_state = {**before, "parent_chain": parent_chain}
+        target_state = {**candidate, "parent_chain": parent_chain, "blob_path": str(operation_dir / candidate["blob_ref"])}
+        if before["kind"] == "absent":
+            before_state["parent_chain"] = parent_chain
+        intent = {
+            "version": 1, "status": "prepared", "operation_id": operation_id,
+            "transaction_id": f"document_{uuid.uuid4().hex}", "fingerprint": fingerprint,
+            "metadata": metadata or {}, "expected_revision": expected_revision,
+            "expected_mtime": expected_mtime, "target_path": str(target),
+            "actions": [{"path": str(target), "expected_current": before_state,
+                          "target": target_state, "rollback": before_state, "state": "pending", "error": None}],
+            "before": self._manual_descriptor(before), "after": self._manual_descriptor(candidate),
+        }
+        manifest.save(intent_path, intent)
+        result = self._execute_history_intent(intent, intent_path, operation_dir)
+        if result.get("status") == "committed":
+            intent["mtime"] = target.stat().st_mtime if target.exists() else None
+            manifest.save(intent_path, intent)
+        result.update({"fingerprint": fingerprint, "before": intent["before"], "after": intent["after"],
+                       "revision": candidate["sha256"], "mtime": intent.get("mtime")})
+        return result
+
+    def read_document_operation(self, operation_id: str) -> dict:
+        path = self._manual_operation_path(operation_id) / "intent.json"
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
+            if isinstance(exc, FileNotFoundError):
+                return {"status": "not_found", "operation_id": operation_id}
+            return {"status": "recovery_required", "operation_id": operation_id,
+                    "error_code": "RECOVERY_REQUIRED", "error": "invalid document intent"}
+        if not isinstance(value, dict):
+            return {"status": "recovery_required", "operation_id": operation_id,
+                    "error_code": "RECOVERY_REQUIRED", "error": "invalid document intent"}
+        def valid_descriptor(descriptor: object) -> bool:
+            if not isinstance(descriptor, dict) or descriptor.get("kind") not in {"absent", "regular"}:
+                return False
+            if descriptor["kind"] == "absent":
+                return descriptor.get("size") == 0
+            return (
+                isinstance(descriptor.get("blob_ref"), str)
+                and bool(descriptor["blob_ref"])
+                and descriptor["blob_ref"] not in {".", ".."}
+                and Path(descriptor["blob_ref"]).name == descriptor["blob_ref"]
+                and isinstance(descriptor.get("sha256"), str)
+                and len(descriptor["sha256"]) == 64
+                and all(char in "0123456789abcdef" for char in descriptor["sha256"])
+                and isinstance(descriptor.get("mode"), str)
+                and isinstance(descriptor.get("size"), int)
+                and descriptor["size"] >= 0
+            )
+        invalid = (
+            value.get("operation_id") != operation_id
+            or not valid_descriptor(value.get("before"))
+            or not valid_descriptor(value.get("after"))
+        )
+        if invalid or value.get("status") in {"prepared", "applying"}:
+            value = {**value, "status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
+                     "error": "invalid or incomplete document operation requires recovery"}
+        after = value.get("after")
+        revision = after.get("sha256") if isinstance(after, dict) else None
+        return {"status": value.get("status", "error"), "transaction_id": value.get("transaction_id"),
+                "operation_id": value.get("operation_id", operation_id), "fingerprint": value.get("fingerprint"),
+                "before": value.get("before"), "after": value.get("after"),
+                "revision": revision, "mtime": value.get("mtime"),
+                "error_code": value.get("error_code"), "error": value.get("error")}
+
+    @staticmethod
+    def rewind_plan_hash(
+        turn_ids: list[str],
+        expected_head_id: str | None,
+        target_head_id: str | None,
+        actions: list[dict],
+        source_branch_id: str | None = None,
+    ) -> str:
+        return "sha256:" + hashlib.sha256(
+            json.dumps({
+                "turn_ids": turn_ids,
+                "expected_head_id": expected_head_id,
+                "target_head_id": target_head_id,
+                "actions": actions,
+                **({"source_branch_id": source_branch_id} if source_branch_id else {}),
+            }, sort_keys=True).encode(),
+        ).hexdigest()
+
+    def apply_history_operation(
+        self,
+        turn_id: str,
+        direction: str,
+        *,
+        idempotency_key: str | None = None,
+    ) -> dict:
+        key = idempotency_key or uuid.uuid4().hex
+        transaction_id = f"{direction}_{uuid.uuid4().hex}"
+        intent_path = self._intent_path(turn_id, direction, key)
+        if intent_path.exists():
+            try:
+                existing = json.loads(intent_path.read_text(encoding="utf-8"))
+                if existing.get("status") in {
+                    "committed", "rolled_back", "recovery_required", "aborted",
+                }:
+                    return self._intent_result(existing)
+                return self._intent_result({
+                    **existing,
+                    "status": "recovery_required",
+                    "error_code": "RECOVERY_REQUIRED",
+                    "error": "incomplete durable intent requires recovery",
+                })
+            except (OSError, json.JSONDecodeError):
+                pass
+        plan = self.plan_history_operation(turn_id, direction)
+        if plan.get("status") != "ready":
+            return {
+                **plan,
+                "transaction_id": None,
+                "restored_paths": [],
+            }
+        intent = {
+            "version": 1,
+            "transaction_id": transaction_id,
+            "idempotency_key": key,
+            "turn_id": turn_id,
+            "direction": direction,
+            "plan_hash": self._plan_hash(plan["actions"]),
+            "status": "prepared",
+            "actions": plan["actions"],
+            "conflicts": [],
+            "unavailable": [],
+            "error": None,
+        }
+        manifest.save(intent_path, intent)
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        current_plan = self.plan_history_operation(turn_id, direction)
+        if current_plan.get("status") != "ready":
+            intent.update({
+                "status": "aborted",
+                "conflicts": current_plan.get("conflicts", []),
+                "unavailable": current_plan.get("unavailable", []),
+                "error": current_plan.get("error"),
+            })
+            manifest.save(intent_path, intent)
+            return self._intent_result(intent)
+        if self._plan_hash(current_plan["actions"]) != intent["plan_hash"]:
+            intent.update({"status": "aborted", "error": "stale_plan"})
+            manifest.save(intent_path, intent)
+            return self._intent_result(intent)
+        return self._execute_history_intent(
+            intent, intent_path, backup_dir,
+            preflight=lambda: self.plan_history_operation(turn_id, direction),
+        )
+
+    def apply_rewind_operation(
+        self,
+        turn_ids: list[str],
+        *,
+        expected_head_id: str | None,
+        target_head_id: str | None,
+        get_head,
+        compare_and_set_head,
+        idempotency_key: str | None = None,
+        target_msg_id: str | None = None,
+        user_text: str = "",
+        source_branch_id: str | None = None,
+        target_branch_id: str | None = None,
+        expected_plan_hash: str | None = None,
+        custom_actions: list[dict] | None = None,
+        forward_meta_update: dict | None = None,
+        rollback_meta_update: dict | None = None,
+        action_planner=None,
+        intent_extra: dict | None = None,
+    ) -> dict:
+        key = idempotency_key or uuid.uuid4().hex
+        with self._rewind_intent_lock(key):
+            return self._apply_rewind_operation_locked(
+                turn_ids,
+                expected_head_id=expected_head_id,
+                target_head_id=target_head_id,
+                get_head=get_head,
+                compare_and_set_head=compare_and_set_head,
+                idempotency_key=key,
+                target_msg_id=target_msg_id,
+                user_text=user_text,
+                source_branch_id=source_branch_id,
+                target_branch_id=target_branch_id,
+                expected_plan_hash=expected_plan_hash,
+                custom_actions=custom_actions,
+                forward_meta_update=forward_meta_update,
+                rollback_meta_update=rollback_meta_update,
+                action_planner=action_planner,
+                intent_extra=intent_extra,
+            )
+
+    def _apply_rewind_operation_locked(
+        self,
+        turn_ids: list[str],
+        *,
+        expected_head_id: str | None,
+        target_head_id: str | None,
+        get_head,
+        compare_and_set_head,
+        idempotency_key: str,
+        target_msg_id: str | None,
+        user_text: str,
+        source_branch_id: str | None,
+        target_branch_id: str | None,
+        expected_plan_hash: str | None,
+        custom_actions: list[dict] | None,
+        forward_meta_update: dict | None,
+        rollback_meta_update: dict | None,
+        action_planner,
+        intent_extra: dict | None,
+    ) -> dict:
+        """Apply one file plan and move HEAD only after verification.
+
+        ``action_planner`` returns the actions for the current disk state; it
+        runs once before the intent is written and again under the workspace
+        lock, so a change in between aborts as a stale plan.
+        """
+        key = idempotency_key
+        intent_path = self._rewind_intent_path(key)
+        if intent_path.exists():
+            try:
+                existing = json.loads(intent_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                existing = None
+            if isinstance(existing, dict):
+                if (
+                    target_msg_id != existing.get("target_msg_id")
+                    or (
+                        expected_plan_hash
+                        and expected_plan_hash != existing.get("preview_plan_hash")
+                    )
+                ):
+                    return {
+                        "status": "idempotency_conflict",
+                        "transaction_id": existing.get("transaction_id"),
+                        "restored_paths": [],
+                        "conflicts": [],
+                        "unavailable": [],
+                        "error": "idempotency key is bound to another rewind request",
+                        "new_head_id": None,
+                        "head_changed": False,
+                    }
+                if existing.get("status") in {
+                    "committed", "rolled_back", "recovery_required", "aborted",
+                }:
+                    return self._rewind_intent_result(existing, replayed=True)
+                return self._recover_rewind_intent(
+                    intent_path,
+                    get_head=get_head,
+                    compare_and_set_head=(
+                        lambda _intent, expected, target, rollback=False:
+                        compare_and_set_head(expected, target, rollback=rollback)
+                    ),
+                )
+
+        def current_file_plan() -> dict:
+            if action_planner is not None:
+                planned = action_planner()
+                if isinstance(planned, dict):
+                    return planned
+                return self._validate_custom_history_actions(planned)
+            if custom_actions is not None:
+                return self._validate_custom_history_actions(custom_actions)
+            return self.plan_rewind_operation(turn_ids)
+
+        plan = current_file_plan()
+        if plan.get("status") != "ready":
+            return {
+                **plan,
+                "transaction_id": None,
+                "restored_paths": [],
+                "new_head_id": None,
+                "head_changed": False,
+            }
+        transaction_id = f"rewind_{uuid.uuid4().hex}"
+        plan_payload = {
+            "turn_ids": turn_ids,
+            "expected_head_id": expected_head_id,
+            "target_head_id": target_head_id,
+            "actions": plan["actions"],
+        }
+        preview_plan_hash = self.rewind_plan_hash(
+            turn_ids, expected_head_id, target_head_id, plan["actions"], source_branch_id,
+        )
+        if expected_plan_hash and expected_plan_hash != preview_plan_hash:
+            return {
+                "status": "aborted",
+                "transaction_id": None,
+                "restored_paths": [],
+                "conflicts": [],
+                "unavailable": [],
+                "error": "stale_plan",
+                "new_head_id": None,
+                "head_changed": False,
+            }
+        intent = {
+            "version": 1,
+            "transaction_id": transaction_id,
+            "idempotency_key": key,
+            **plan_payload,
+            "target_msg_id": target_msg_id,
+            "user_text": user_text,
+            "source_branch_id": source_branch_id,
+            "target_branch_id": target_branch_id,
+            "preview_plan_hash": preview_plan_hash,
+            "plan_hash": "sha256:" + hashlib.sha256(
+                json.dumps(plan_payload, sort_keys=True).encode(),
+            ).hexdigest(),
+            "status": "prepared",
+            "forward_meta_update": forward_meta_update,
+            "rollback_meta_update": rollback_meta_update,
+            "conflicts": [],
+            "unavailable": [],
+            "error": None,
+            **(intent_extra or {}),
+        }
+        manifest.save(intent_path, intent)
+        paths = [action["path"] for action in intent["actions"]]
+        with self._workspace_lock(paths):
+            if get_head() != expected_head_id:
+                intent.update({"status": "aborted", "error": "stale_head"})
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent)
+            current_plan = current_file_plan()
+            current_payload = {
+                "turn_ids": turn_ids,
+                "expected_head_id": expected_head_id,
+                "target_head_id": target_head_id,
+                "actions": current_plan.get("actions", []),
+            }
+            current_hash = "sha256:" + hashlib.sha256(
+                json.dumps(current_payload, sort_keys=True).encode(),
+            ).hexdigest()
+            if current_plan.get("status") != "ready":
+                intent.update({
+                    "status": "aborted",
+                    "conflicts": current_plan.get("conflicts", []),
+                    "unavailable": current_plan.get("unavailable", []),
+                    "error": current_plan.get("error"),
+                })
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent)
+            if current_hash != intent["plan_hash"]:
+                intent.update({"status": "aborted", "error": "stale_plan"})
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent)
+            intent["status"] = "applying"
+            # Every write up to here is one this restore takes back.
+            intent["restores_through"] = current_mutation_sequence()
+            manifest.save(intent_path, intent)
+            touched: list[dict] = []
+            head_moved = False
+            try:
+                for action in intent["actions"]:
+                    touched.append(action)
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]),
+                        action["expected_current"],
+                    ):
+                        raise OSError(f"stale current state for {action['path']}")
+                    action["state"] = "applying"
+                    manifest.save(intent_path, intent)
+                    guard_path = self._apply_state(
+                        action["path"], action["target"], self.session_dir,
+                        transaction_id, action["expected_current"],
+                    )
+                    if guard_path:
+                        action["guard_path"] = guard_path
+                    action["state"] = "applied"
+                    action["applied_digest"] = action["target"].get("digest")
+                    manifest.save(intent_path, intent)
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]), action["target"],
+                    ):
+                        raise OSError(f"verification failed for {action['path']}")
+                    if guard_path and not self._state_matches(
+                        self._inspect_state(guard_path), action["rollback"],
+                    ):
+                        self._restore_changed_guard(
+                            action, guard_path, transaction_id,
+                        )
+                        raise OSError(
+                            f"external writer changed moved inode for {action['path']}",
+                        )
+                    action["state"] = "verified"
+                    manifest.save(intent_path, intent)
+                if not compare_and_set_head(expected_head_id, target_head_id):
+                    raise OSError("stale_head")
+                head_moved = True
+                for action in intent["actions"]:
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]), action["target"],
+                    ):
+                        raise OSError(
+                            f"external change after apply for {action['path']}",
+                        )
+                intent["status"] = "committed"
+                manifest.save(intent_path, intent)
+                self._discard_guards(intent, intent_path)
+                return self._rewind_intent_result(intent)
+            except Exception as exc:
+                recovery_required = False
+                if head_moved and not compare_and_set_head(
+                    target_head_id, expected_head_id, rollback=True,
+                ):
+                    recovery_required = True
+                for action in reversed(touched):
+                    try:
+                        actual = self._inspect_state(action["path"])
+                        if self._state_matches(actual, action["rollback"]):
+                            action["state"] = "rolled_back"
+                            continue
+                        if not self._state_matches(actual, action["target"]):
+                            recovery_required = True
+                            action["error"] = "external change prevents rollback"
+                            continue
+                        rollback_guard = self._apply_state(
+                            action["path"], action["rollback"], self.session_dir,
+                            transaction_id + "_rollback", action["target"],
+                        )
+                        if rollback_guard:
+                            action["rollback_guard_path"] = rollback_guard
+                        if not self._state_matches(
+                            self._inspect_state(action["path"]), action["rollback"],
+                        ):
+                            raise OSError("rollback verification failed")
+                        action["state"] = "rolled_back"
+                    except Exception as rollback_error:
+                        recovery_required = True
+                        action["error"] = str(rollback_error)
+                intent["status"] = (
+                    "recovery_required" if recovery_required else "rolled_back"
+                )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
+                intent["error"] = str(exc)
+                manifest.save(intent_path, intent)
+                if not recovery_required:
+                    self._discard_guards(intent, intent_path)
+                return self._rewind_intent_result(intent)
+
+    def restore_turn(self, turn_id: str) -> list[str]:
+        """Legacy best-effort restore; task B replaces this execution path."""
+        restored: list[str] = []
+        manifest_path = turn_manifest_path(self.session_dir, turn_id)
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        for backup_name, entry in manifest.entries(manifest_path):
+            if entry.get("status") == "aborted":
+                continue
+            original = entry.get("path") or ""
+            pre_existing = bool(entry.get("pre_existing"))
+            if not original:
+                continue
+            try:
+                if not pre_existing:
+                    if Path(original).exists():
+                        Path(original).unlink()
+                        restored.append(original)
+                    continue
+                source = backup_dir / str((entry.get("before") or {}).get("blob_ref") or backup_name)
+                if not source.exists():
+                    continue
+                destination = Path(original)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                tmp = destination.with_suffix(destination.suffix + ".restore.tmp")
+                shutil.copy2(source, tmp)
+                mode = (entry.get("before") or {}).get("mode")
+                if mode is not None:
+                    os.chmod(tmp, int(mode, 8))
+                replace_file(tmp, destination)
+                restored.append(original)
+            except OSError:
+                continue
+        return restored
+
+    def list_backed_paths(self, turn_id: str) -> list[str]:
+        return [
+            entry.get("path", "")
+            for _name, entry in manifest.entries(
+                turn_manifest_path(self.session_dir, turn_id),
+            )
+            if entry.get("path") and entry.get("status") != "aborted"
+        ]
+
+
+BackupStore = CheckpointStore

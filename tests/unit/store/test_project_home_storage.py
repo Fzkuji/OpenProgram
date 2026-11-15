@@ -10,14 +10,14 @@ import shutil
 import uuid
 from pathlib import Path
 
-from openprogram.store.project import project_store as projects
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.project import project_store as projects
+from openprogram.state.store.session.session_store import SessionStore
 
 
 def _isolate(tmp_path: Path, monkeypatch) -> Path:
     state = tmp_path / "state"
     state.mkdir()
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
     return state
 
 
@@ -25,7 +25,7 @@ def _store(tmp_path: Path, monkeypatch) -> SessionStore:
     state = _isolate(tmp_path, monkeypatch)
     store = SessionStore(state / "sessions")
     monkeypatch.setattr(
-        "openprogram.store.session.session_store.default_store", lambda: store)
+        "openprogram.state.store.session.session_store.default_store", lambda: store)
     return store
 
 
@@ -36,9 +36,9 @@ def test_bound_session_is_not_written_into_workdir(tmp_path, monkeypatch):
     store.create_session("s1", "main", project_path=str(workdir), title="notes")
     proj = projects.project_for_session("s1")
     assert proj is not None and not proj.is_default
-    nested = store.root_path / "projects" / proj.id / "s1"
-    assert (nested / "meta.json").is_file()
-    assert (nested / "history").is_dir()
+    nested = store.root_path / proj.id / "chats" / "s1"
+    assert (nested / "main.jsonl").is_file()
+    assert (nested / "main.jsonl").is_file()
     assert not (workdir / ".openprogram" / "sessions" / "s1").exists()
     assert store.get_session("s1")["title"] == "notes"
 
@@ -79,9 +79,11 @@ def test_copied_session_markers_do_not_auto_adopt_after_original_gone(
     proj = projects.project_for_session("s1")
     copy = tmp_path / "copy"
     shutil.copytree(original, copy)
+    # Old session metadata alone is not a portable project identity.
+    (copy / '.openprogram' / 'project.json').unlink()
     marker = copy / ".openprogram" / "sessions" / "s1"
     marker.mkdir(parents=True, exist_ok=True)
-    (marker / "meta.json").write_text('{"id":"s1"}', encoding="utf-8")
+    (marker / "main.jsonl").touch()
     shutil.rmtree(original)
     other = projects.resolve_project(copy)
     assert other.id != proj.id
@@ -90,10 +92,10 @@ def test_copied_session_markers_do_not_auto_adopt_after_original_gone(
 
 def test_apply_default_workdir_does_not_fallback_when_bound_folder_missing(
         tmp_path, monkeypatch):
-    from openprogram.agent.internals import _workdir
+    from openprogram.runtime.conversation import workdir as _workdir
 
     store = _store(tmp_path, monkeypatch)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: store)
     folder = tmp_path / "paper"
     folder.mkdir()
     store.create_session("s1", "main", title="notes")
@@ -114,15 +116,15 @@ def test_apply_default_workdir_does_not_fallback_when_bound_folder_missing(
             self.workdir = path
 
     rt = Runtime()
-    assert (store.root_path / "s1" / "history").is_dir() or (
-        store.root_path / "projects" / proj.id / "s1" / "history").is_dir()
+    assert (store.root_path / "default" / "chats" / "s1" / "main.jsonl").is_file() or (
+        store.root_path / proj.id / "chats" / "s1" / "main.jsonl").is_file()
     assert _workdir.project_workdir_for("s1") is None
     assert _workdir.apply_default_workdir(rt, "s1") is None
     assert rt.workdir is None
 
 
 def test_default_discovery_does_not_scan_home(tmp_path, monkeypatch):
-    from openprogram.store.project import discovery as discovery_mod
+    from openprogram.state.store.project import discovery as discovery_mod
 
     _isolate(tmp_path, monkeypatch)
     fake_home = tmp_path / "home"

@@ -1,10 +1,10 @@
 """Image bytes have a separate budget from instructions and tool input."""
 import base64
 import pytest
-from openprogram.agent.production_driver import AgentDriverError, normalize_agent_turn_payload
-from openprogram.execution import AttemptStore, DriverRegistry, ExecutionStore, RuntimeControlService
-from openprogram.agent.dispatcher.types import TurnRequest
-from openprogram.agent.production_driver import CanonicalAgentAdapter
+from openprogram.runtime.conversation.production_driver import AgentDriverError, normalize_agent_turn_payload
+from openprogram.runtime.execution import AttemptStore, DriverRegistry, ExecutionStore, RuntimeControlService
+from openprogram.runtime.agent.turn_request import TurnRequest
+from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
 
 
 def payload(data, **extra):
@@ -23,14 +23,22 @@ def test_image_larger_than_text_budget_is_preserved_without_mutating_input():
     assert result is not original
 
 
-def test_image_does_not_exempt_large_instruction_or_metadata():
+def test_image_does_not_exempt_large_metadata():
     original = payload("eA==", filename="n" * (256 * 1024))
     with pytest.raises(AgentDriverError, match="size limit"):
         normalize_agent_turn_payload(original)
+
+
+def test_the_message_has_its_own_budget_beside_an_image():
+    """The person's message is measured against the one-message limit, not
+    the 256 KiB envelope: what the composer accepts is admitted."""
     original = payload("eA==")
     original["request"]["user_text"] = "t" * (256 * 1024)
-    with pytest.raises(AgentDriverError, match="size limit"):
+    assert normalize_agent_turn_payload(original)["request"]["user_text"] == "t" * (256 * 1024)
+    original["request"]["user_text"] = "t" * (1024 * 1024 + 1)
+    with pytest.raises(AgentDriverError, match="size limit") as refused:
         normalize_agent_turn_payload(original)
+    assert refused.value.code == "input_too_large"
 
 
 @pytest.mark.parametrize(
@@ -68,7 +76,7 @@ def test_forced_tool_input_keeps_its_original_budget():
 def test_canonical_admission_persists_image_above_text_budget(tmp_path, monkeypatch):
     store = ExecutionStore(tmp_path / "executions.sqlite3")
     control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
-    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: control)
+    monkeypatch.setattr("openprogram.runtime.execution.default_control_service", lambda: control)
     adapter = CanonicalAgentAdapter(store=store)
     data = base64.b64encode(b"x" * (1024 * 1024)).decode()
     request = TurnRequest(

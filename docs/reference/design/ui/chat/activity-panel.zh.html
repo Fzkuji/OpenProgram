@@ -1,0 +1,277 @@
+<title>Activity 面板</title>
+<meta name="description" content="右侧栏 Activity列出什么、代理和运行如何归组、每一页显示什么。">
+<h1>Activity 面板</h1>
+
+<p>右侧栏的 Activity 只看一个对话。一次运行在等的事不单独成组，而是落在相关那一行，字形角上显示红色计数。唯一的例外是“等你处理”，即各对话留给读者的报告。消息不作为行。</p>
+
+<h2 id="overview">总览</h2>
+<p>各组顺序固定。Agents 一直显示；其余各组为空时连同组头都不显示。只有等你处理的组头带计数；Agents 的组头加上助手的花费。悬停组头显示 <code translate="no">SectionHeader</code> 的箭头，点击折叠（按浏览器保存，<code translate="no">lib/prefs/activity-view.ts</code>）。</p>
+<table class="stack">
+<thead><tr><th scope="col">组</th><th scope="col">行</th><th scope="col">状态行</th></tr></thead>
+<tbody>
+<tr><th scope="row">等你处理</th><td>所有常驻对话里还在等读者的报告（<code translate="no">lib/agents/pending-inbox</code>）。每行打开对应对话。</td><td>“发现 · &lt;代理&gt; · &lt;时间&gt;”</td></tr>
+<tr><th scope="row">代理</th><td>主代理，总是列出，下面是<a href="#agent-roster">它启动的助手</a>：会话的回合没有留下执行记录时也有它，静止时显示会话最后活动时间，打开后从对话记录读取运行。有多个分支时，每个分支一行，地位相同。代理<a href="../../runtime/always-on-agents.zh.html">常驻</a>期间，已检出分支的行多一行，显示下次唤醒。</td><td>运行中（当前调用或“等待子代理”，加用时，蓝色）；“失败 · &lt;时间&gt;”（红色）；否则是最后消息时间。助手收起时加“· 3 个子代理进行中”。在自己 <a href="../../runtime/execution/agent-worktree.zh.html">worktree</a> 里的分支多一个“Worktree”标签和“worktree 中 3 个文件”</td></tr>
+<tr><th scope="row">程序和命令</th><td>运行中的 shell 调用、随运行中断的 shell 调用、所有后台程序。运行中在前，其余按新到旧；每次 20 条。<code translate="no">agent</code> 调用不在这里。</td><td>“命令 · 运行中 · 12 秒”；“命令 · 已中断 · 昨天”（灰色）；“45 / 100 samples · 3.4/s”；“已完成 · 10 / 10 epochs · 4 分 5 秒”；“在 62 / 200 失败 · 退出码 1”</td></tr>
+<tr><th scope="row">未完成事项</th><td><a href="../../../../capabilities/agents.zh.html#未完成事项">未完成事项</a>，每项一行；完成后离开总览</td><td>“未完成 · &lt;时间&gt;”</td></tr>
+<tr><th scope="row">定时任务</th><td>从本对话设置的 Scheduler 任务、提醒和 webhook（任务或其签名规格的 <code translate="no">session_id</code>），新的在前</td><td>“Webhook · 被调用时”；“循环 · 0 9 * * 1-5 · 检查结果变化时”</td></tr>
+</tbody>
+</table>
+<p class="note">状态词：运行中、已完成、失败、已取消、已中断、等你回答、等你授权。静止的行只显示时间。调用和程序在读取执行之后才归位，不会闪现成无主；未列出的算主代理的。</p>
+
+<details id="agent-roster">
+<summary>代理下面的助手</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">组头</th><td>“Agents · $0.14”：助手一共花了多少，只算价格已知的。有助手在进行时显示“全部停止”，取消每个最上层的助手，停止会传到它启动的助手。</td></tr>
+<tr><th scope="row">行</th><td>头像、名字、状态徽章，右侧是它整棵子树的成本；悬停显示成本、token 和工具调用数。一行放不下时先去掉成本，再截短名字。每深一层缩进 16。点击在聊天里显示它的对话，和它卡片上的“切换”一样。</td></tr>
+<tr><th scope="row">徽章</th><td>正在运行（实底，圆点呼吸）；等你授权、等你回答、无进展（描边，黄色圆点）；失败（红色）；等待中（排队等空位）和空闲（描边，弱化）。正在运行和等读者处理来自执行和聊天里未答的卡片，立即生效；无进展、排队、被限制停止来自名单读取。</td></tr>
+<tr><th scope="row">列出</th><td>正在进行、需要读者或失败的助手。已完成的助手只在它下面还有列出的助手时保留。</td></tr>
+<tr><th scope="row">“N 个已完成”</th><td>最后一行。原地展开成已完成的助手，每次 50 个，各带“空闲”和成本。</td></tr>
+<tr><th scope="row">“→ 名字”</th><td>发给另一个代理、还没答复的消息；对方开始处理前是“等待中”。点击打开那个对话。</td></tr>
+<tr><th scope="row">折叠</th><td>代理名字后的箭头，或在它的行上按左右键，收起和展开它的助手；在助手行上按左键收起整组，焦点回到代理的行。用键盘走到的行显示悬停时的底色。收起后这一行显示还在进行的助手数，红色计数保留。按对话和代理保存在本浏览器（<code translate="no">lib/prefs/activity-view.ts</code> 的 <code translate="no">foldedAgents</code>）。</td></tr>
+<tr><th scope="row">高度</th><td>名单在 360 像素内滚动，下面的组不被推走</td></tr>
+<tr><th scope="row">读取</th><td>面板显示时读 <code translate="no">GET /api/session/{id}/activity/roster</code>：进入时、收到 <code translate="no">op:execution-update</code> 和 <code translate="no">op:job-status</code> 时（每秒至多一次），以及每 30 秒</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>列表里的程序</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">标题</th><td>bash 调用的 <code translate="no">description</code>，否则是它运行的脚本或模块，跳过 <code translate="no">cd</code>、<code translate="no">mkdir</code> 这类准备步骤。命令以等宽字体列在下面。</td></tr>
+<tr><th scope="row">运行中，已知总量</th><td>进度加细进度条，末端显示剩余时间（“还剩 16 秒”）</td></tr>
+<tr><th scope="row">运行中，总量未知</th><td>已运行时间和最后一行输出，下面是往复进度条</td></tr>
+<tr><th scope="row">保留</th><td>结束后记录和输出保留一天（<code translate="no">openprogram/host/processes/store.py</code> 的 <code translate="no">RETENTION_SECONDS</code>），“状态未知”的从最后一次心跳起一天。之后 worker 的进程清理删除它，连同尚未发送的退出通知。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>代理组里的分支</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">来源</th><td>读者在 DAG 里做的分叉和编辑；状态和子代理行按该分支上的运行计算（<code translate="no">branches[].execution_ids</code>）。子代理属于其顶层运行所在分支。</td></tr>
+<tr><th scope="row">行</th><td>分支名、泳道色的幽灵图标，当前检出的带“当前”标记。没有运行时显示分支自身的时间。</td></tr>
+<tr><th scope="row">无主项</th><td>未列出的调用和程序，以及没启动子代理的调用，算当前检出分支的</td></tr>
+<tr><th scope="row">页面</th><td>该分支的代理页；非当前分支时有“切换到这个分支”（分支面板的检出）</td></tr>
+<tr><th scope="row">排除</th><td>旧会话内联的子代理回合：其链从派生根开始的末端，由 <code translate="no">build_branches_payload</code> 标记为 <code translate="no">sub_agent</code> 并排除</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>常驻、未完成事项和定时任务的读取</summary>
+<p>统一读 <code translate="no">GET /api/sessions/{id}/work</code>：面板打开时、收到 <code translate="no">always_on_update</code>、<code translate="no">always_on_report</code>、<code translate="no">open_work_update</code> 帧时、获得焦点时，以及每 30 秒一次（Scheduler 任务不发事件）。</p>
+</details>
+
+<h2 id="branches-runs-and-waits">分支、运行和等待</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">术语</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">子代理</th><td>显示类型为 <code translate="no">job_agent</code> 的执行；挂在上方最近的子代理下，否则挂在主代理下</td></tr>
+<tr><th scope="row">分支</th><td>每个执行属于一个：子代理的分支包含其下没有更深子代理拥有的一切；其余属于主代理</td></tr>
+<tr><th scope="row">运行</th><td>一条消息及为它做的一切，通常是一个顶层执行，其执行树包含子执行、未返回的函数调用和托管程序。较早的运行只以消息形式存在。是代理页里的一行，不在总览中出现。</td></tr>
+<tr><th scope="row">等读者处理</th><td>只有暂停在提问或授权上的运行（模型的 <code translate="no">issues</code> 过滤出暂停的执行）</td></tr>
+<tr><th scope="row">已中断</th><td>被重启截断的调用或运行。灰色历史，无需处理。</td></tr>
+<tr><th scope="row">状态未知</th><td>监管进程已消失的程序。灰色历史，无需处理。</td></tr>
+<tr><th scope="row">已结束</th><td>仅缺模型响应记录的执行（<code translate="no">provider_response_incomplete</code>）</td></tr>
+</tbody>
+</table>
+
+<h3 id="pairing"><code translate="no">agent</code> 调用与子代理的配对</h3>
+<p>服务端从转录读调用，不读 effect，因为其元数据带着完整的 provider 载荷。Job 记录派生它的回复（<code translate="no">spawn_caller</code>）和提示词。</p>
+<ol>
+<li>调用方和提示词相同的调用启动了它；未失败的调用优先配对，因为失败调用可能和重试共用提示词。</li>
+<li>提示词对不上时，若某调用方只剩一个 Job 和一个未失败的调用，就配对这两者。</li>
+<li>没有 Job：调用启动失败（结果为 <code translate="no">[agent error] …</code> 或结局为 <code translate="no">failed</code>）或未启动。</li>
+</ol>
+<p class="note">调用方决定分支：<code translate="no">j_…</code> 回复是子代理的，其余是主代理的。</p>
+
+<h2 id="pages">页面</h2>
+<p>总览里的一行打开一页。页面不再通向别的页面：属于某行的内容在它下面原地展开，直到被收起。顶部的“运行记录”、焦点在面板内时按 Esc、或点侧栏轨道上的“运行记录”都会返回，并恢复总览的滚动位置和焦点。</p>
+<p>页面像手机上那样移动，用的是 Launchpad 的弹簧；开启减少动效时直接切换。</p>
+<table class="stack">
+<thead><tr><th scope="col">动作</th><th scope="col">发生什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">打开</th><td>页面从右边滑入，盖住总览</td></tr>
+<tr><th scope="row">返回</th><td>页面滑出去；总览从偏左四分之一宽度的位置回来，并从半暗变亮</td></tr>
+<tr><th scope="row">朝总览方向滑动</th><td>页面自己的轨道在最左端时，页面跟着手指走。抬手时已经拉过三分之一宽度，或者是一次甩动，就完成返回；否则页面弹回原位。</td></tr>
+<tr><th scope="row">页面下面</th><td>只有页面移动时总览才在文档里</td></tr>
+</tbody>
+</table>
+<p>在 Agent 页面上，返回和 Esc 一次退一步：图表不在第一列时先退一列，然后才回总览。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">页面</th><th scope="col">从上到下</th></tr></thead>
+<tbody>
+<tr><th scope="row">代理或分支</th><td>顶部一行是名称。分支未检出时有“切换到这个分支”。下面是时间图，见下文。</td></tr>
+<tr><th scope="row">调用</th><td>取自描述的标题、状态、任务或命令，返回后有输出。被中断时显示“已中断”。</td></tr>
+<tr><th scope="row">程序</th><td>标题同列表行，带进度条和文字进度，或运行时间、时长和退出码。运行中有“停止程序”，然后在时间轴上依次是进度、命令、输出（自动展开）和技术详情。打开时每秒读取一次。</td></tr>
+<tr><th scope="row">未完成事项</th><td>事项、状态、标记完成（完成后为重新打开）、移除（之后回到总览）、这个列表的用途、备注、创建时间。没有时间轴。</td></tr>
+<tr><th scope="row">定时任务</th><td>标题和计划、“在调度器中打开”、一行 Task（含提示词、命令、备注、创建时间、ID、Copy 后面的 webhook 地址和密钥、监视命令，密钥从不显示），然后是任务记录里的最近运行，与代理页相同</td></tr>
+<tr><th scope="row">常驻</th><td>从时间图顶部的“下次唤醒”打开。内容：立即唤醒、常驻的含义、代理、常驻目标、Goal、唤醒计划、巡检模型、上次唤醒及花费、今日花费、下次唤醒；没有进入聊天的报告；关于报告的要求，每条展开后可删除。</td></tr>
+<tr><th scope="row">报告</th><td>消息 ID 以 <code translate="no">report_</code> 开头的运行，用刻度而不是长条。常驻记录里还有它时：正文、类型、链接、发送结果、“不要报告这类事情”。更早的显示消息本身。</td></tr>
+</tbody>
+</table>
+<p class="note">页面对应的项目已消失时显示“已不在这里”，直到读者离开。</p>
+
+<h3 id="agent-chart">Agent 时间图</h3>
+<p>一张竖着的时间图，最新的在上面，每一层一列：话题、消息、步骤、步骤里面。侧栏宽度决定显示几列，视野里的每一列都是完整的。</p>
+<table class="stack">
+<thead><tr><th scope="col">侧栏宽度</th><th scope="col">列</th></tr></thead>
+<tbody>
+<tr><th scope="row">288（默认，第一个吸附点）</th><td>一列，256 像素宽</td></tr>
+<tr><th scope="row">544（第二个吸附点）</th><td>两列，各 256</td></tr>
+<tr><th scope="row">800（第三个吸附点，最大）</th><td>三列，各 256</td></tr>
+<tr><th scope="row">两个吸附点之间</th><td>取较少的列数，拉宽填满</td></tr>
+</tbody>
+</table>
+<p>列数是图表宽度除以 256 向下取整，至少一列、最多三列（<code translate="no">columnsFor</code>）。宽度变化的那一帧就生效，所以拖动拖动条时，松手会落到的列数在拖动过程中就显示出来。</p>
+<p>每一块悬停都抬成卡片，都能点；被截断的标题或文字悬停时显示全文。下面还有内容的块往右移一列。只是一次调用、一次失败或没有步骤的消息的块原地展开：输入和结果，或者提问和回复，用运行列表里的写法。</p>
+<p>展开的块变高，下面的块往下让，左边几列里它的色条跟着变长。再点一次收起。展开和收起是一段 240 毫秒的标准曲线，收起时内容留到块合上为止。还在运行的调用没有可展开的内容。</p>
+<p>视野以读者去过的最深一列结尾，放得下时从话题开始。点开一块时，如果它的下一列已经在视野里，什么都不移动。列数少于层数时，视野一次移动一列：</p>
+<table class="stack">
+<thead><tr><th scope="col">动作</th><th scope="col">发生什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">点击一块</th><td>它的下一列滑进来，这一块在屏幕上的位置不动</td></tr>
+<tr><th scope="row">返回、Esc、在块上按左方向键</th><td>退回一列；已在第一列时回到总览</td></tr>
+<tr><th scope="row">左右滑动</th><td>图表跟着手指走，最多一列。移动途中再滑也会从当前位置接住。</td></tr>
+<tr><th scope="row">抬手</th><td>已经滑过 48 像素或是一次甩动，就继续到手指前往的那一列；否则退回。两种情况都只有一次移动，抬手后的惯性不再移动任何东西。</td></tr>
+<tr><th scope="row">滑过最后一列</th><td>图表最多让出 44 像素，随落定一起回来</td></tr>
+<tr><th scope="row">滑过第一列</th><td>整个页面跟着走：这就是返回</td></tr>
+<tr><th scope="row">横向转动的鼠标滚轮</th><td>每一格移动一列</td></tr>
+<tr><th scope="row">键盘焦点落到视野外的块</th><td>它所在的列移进视野</td></tr>
+</tbody>
+</table>
+<p>一次移动只是各列轨道靠 transform 滑动一次：</p>
+<ul>
+<li>整列 240 毫秒，剩下的一段更短（不少于 120 毫秒），曲线是 <code translate="no">--ease-standard</code>；开启减少动效时直接切换。</li>
+<li>移动开始前，条目已经按终点排好。滑进来的列已经是最终尺寸；被点的块或视野顶上的块在屏幕上保持不动。</li>
+<li>比终点那一列更深的列不绘制，滑出途中也一样。</li>
+<li>滑动结束后没有任何东西再变高、淡入或落定。</li>
+<li>图表容器从不横向滚动，只上下滚动。离视野上方超过一屏、下方超过两屏的条目不绘制。</li>
+</ul>
+<p>原因：这张图以前靠横向滚动翻列，每块的高度按滚动位置插值。三件事让移动不对劲：</p>
+<ul>
+<li>两段动画：高度在一列 256 像素的前 64 像素里就变完，过阻尼的弹簧还拖着长尾在滑，滑入的一列又按自己的曲线淡入。</li>
+<li>卡顿：每一帧都写所有块的 top 和 height、重设纵向滚动、改变哪些块绘制，等于每帧一次完整布局。</li>
+<li>半列：任何宽度下列都是 256 像素；不是滑动手势的横向滚动停下 160 毫秒后还要吸附到列边。</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">规则</th><th scope="col">做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">高度</th><td>由视野里最深的一列决定。父块盖住子块，所以各列同一高度是同一时间。</td></tr>
+<tr><th scope="row">时间</th><td>每块顶上写这一块最晚的时刻：话题和消息到分钟，步骤到秒。长时间空闲和换天是横跨各列的一行虚线：换天时每一列的时间列都写日期，长时间空闲在第一列注明空了多久。</td></tr>
+<tr><th scope="row">颜色</th><td>颜色只表示属于哪个话题，不表示结果好坏。每个话题按首次出现的顺序取一个主色，隔了很久回来的话题还是这个颜色。消息取主色下的不同色号，步骤和步骤里面继续往下延伸。没人发起的运行和还没分类的消息是灰色。失败和运行中写在文字里。</td></tr>
+<tr><th scope="row">步骤</th><td>连续调用同一个函数合成一行，每次调用在最后一列。失败的步骤单独一行，错误写在下面。子 Agent 自己的步骤在最后一列。最后一列的一组最多四行高，在自己的格子里滚动。</td></tr>
+<tr><th scope="row">按钮</th><td>只在运行中、暂停或等待的消息上。补充指令把按钮变成一个输入框，这一块高度不变。</td></tr>
+<tr><th scope="row">数据</th><td><code translate="no">activity/runs?chart=true</code> 返回这一页，带每个事件的简短形式（输入截断，结果只在步骤失败时保留）和每次运行的话题。已结束的运行按修订缓存。</td></tr>
+</tbody>
+</table>
+
+<h3 id="topics">话题</h3>
+<p>用户发的每条消息属于一个话题，存在会话消息旁边的 <code translate="no">topics.json</code> 里：话题按首次出现的顺序排列，以及每条消息的话题。不往消息里写任何东西。</p>
+<ul>
+<li>每轮结束后，后台任务给还没有话题的消息分类，用和聊天标题相同的后台模型，只看用户说的话。</li>
+<li>“继续”这样的短回复跟着上一条消息，不调用模型。</li>
+<li>旧会话第一次打开时间图时，同一个任务给它的消息分类，每次调用 40 条。在此之前显示“还没分类”。</li>
+<li>调用失败或没有可用模型时，消息保持未分类，画在上一条消息那里。下一条消息会再试，打开时间图过 10 分钟后也会再试。</li>
+</ul>
+
+<h3 id="run-rows">运行的内部</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行行</th><td>回复的第一行，没有回复时是提问内容，下面是“失败 · 02:00 · 1 分 44 秒”。一条从开始到结束的长条；重试是它自己的一次运行。</td></tr>
+<tr><th scope="row">自动展开</th><td>最新的运行，每页一次，仅当它失败、检查失败、在等待或在运行。用户收起后不再展开。</td></tr>
+<tr><th scope="row">事件</th><td>按时间顺序：提问或巡检；步骤，用聊天里的说法（<code translate="no">presentTool</code>），带输入和结果；已暂停或失败 · 第 N 次尝试，带保存的失败文字，没有时显示原因代码；子代理；回复</td></tr>
+<tr><th scope="row">子代理</th><td>嵌在启动它的运行里，每层缩进 16。提问、报错或回复、它启动的子代理、“打开它的对话”、它的控制项、技术详情。没有启动的显示“失败 · 没有启动”。</td></tr>
+<tr><th scope="row">等待</th><td>最后一个事件：问题，然后是“去聊天里回答”或“去聊天里授权”，转到输入框的卡片（<code translate="no">data-decision-output</code>）</td></tr>
+<tr><th scope="row">操作</th><td>暂停、继续、补充指令、取消，以运行允许的为准。运行结束就是停了，这些页面不提供重试。未连接时禁用，并在状态行说明。</td></tr>
+<tr><th scope="row">技术详情</th><td>单步、创建分支、恢复时的代码策略、说明、各种 ID、聊天卡片显示不了的等待表单、检查点检查器、资源等待、副作用、最近 50 条原始事件</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>读取</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">读取</th><th scope="col">时机</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/session/{id}/activity/runs</code></th><td>进入时、收到 <code translate="no">op:execution-update</code> 和 <code translate="no">op:job-status</code> 时、以及每 30 秒，数量等于当前显示的运行数。行按 id 替换，刷新不会收起或移动任何东西。回复到达时运行保留原来的行。</td></tr>
+<tr><th scope="row"><code translate="no">…/activity/runs/{run}/events</code></th><td>行展开时读取；修订变化或仍在运行时再读。未展开的行不读取。</td></tr>
+<tr><th scope="row">调试数据和最近 50 条事件</th><td>每个已展开且有执行的运行，版本变化时读取</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>左右两半和时间轴</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">轨道</th><td>一个滚动容器放下两半。卡片宽度为 C 时：V = C − 16，L = min(V, 256)，R = min(416, max(L, V − L − 16))，轨道 = L + 16 + R，绘图区 = R − 88。V ≥ 轨道时两半同时显示。</td></tr>
+<tr><th scope="row">时间线</th><td>左右吸附在两半之间；可滚动距离不足 48 时按钮隐藏，过半后按钮换向</td></tr>
+<tr><th scope="row">宽度</th><td><code translate="no">ResizeObserver</code> 写入 CSS 变量；标记用绘图区的百分比定位，拉宽不会重新渲染</td></tr>
+<tr><th scope="row">时间轴</th><td>覆盖列出的最长已结束运行和已展开运行的事件：60、180、300、600、1800 或 3600 秒。更长的运行占满宽度。右端平直表示没有保存结束时间或仍在运行。</td></tr>
+<tr><th scope="row">展开的行</th><td>窄时与左半同宽，两半都放得下时占满整宽。长内容在 8 行处截断，带自己的“展开全文”。</td></tr>
+<tr><th scope="row">面板宽度</th><td>右侧栏宽度按浏览器保存（<code translate="no">useResizableRail</code> 传 <code translate="no">storageKey</code>），首次绘制前恢复，拖动结束时写入。焦点在拖动条上时左右方向键每次改 24，双击或按 Enter 回到默认宽度。拖动经过 288、544、800 时会停住，正好放下一、二、三列完整的图表列。左侧栏相同，只有默认宽度一个吸附点。</td></tr>
+<tr><th scope="row">程序和任务的时间轴</th><td>程序的时间轴是它自己的时长：60 秒以内向上取 3 的倍数，更长时用上面的档位。未完成事项和调用没有时间轴，也没有右半。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>键盘</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">按键</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tab</th><td>所有行只占一个 Tab 停靠点（漫游 tabindex，保存在 DOM 上，刷新不会改变它）</td></tr>
+<tr><th scope="row">上、下、Home、End</th><td>在行之间移动。焦点从不改变横向滚动。</td></tr>
+<tr><th scope="row">右、左</th><td>展开和收起该行；加 Shift 在两半之间切换</td></tr>
+<tr><th scope="row">Enter、空格</th><td>等同点击</td></tr>
+<tr><th scope="row">Esc</th><td>仅当焦点在面板内：先离开对话框或文本框，再返回；在 Agent 页面上一次退一步</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>程序页和进度解析</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row">页头</th><td>进度条和文字进度</td></tr>
+<tr><th scope="row">“进度”行，运行时</th><td>展开后显示已用时间、速度和剩余时间</td></tr>
+<tr><th scope="row">“进度”行，结束后</th><td>展开后显示耗时、结束时间和退出码</td></tr>
+<tr><th scope="row">输出</th><td>按终端显示：用回车重绘的行保留最后一帧，颜色保留，读者在末尾时视图跟随新行（标记 Live）</td></tr>
+</tbody>
+</table>
+<p><code translate="no">openprogram/host/processes/progress.py</code> 从输出读取进度，可信度从高到低：</p>
+<ol>
+<li><code translate="no">##progress 45/100 samples</code> 行（bash 工具要求模型在长循环里打印）</li>
+<li>OSC 9;4 终端进度序列</li>
+<li>tqdm 和 pip 进度条</li>
+<li><code translate="no">Epoch 3/10</code>、<code translate="no">step 120 of 1000</code>、<code translate="no">[45/100]</code> 这类计数</li>
+</ol>
+<p>更可信的来源出现后，较低的来源被忽略，内层每批进度条不会覆盖样本计数。速度和剩余时间取进度条自身的，或从开始计数起测量。重绘的进度条只占 2,000 行上限中的一行，读取后台命令的代理每次重绘只收到一次。</p>
+</details>
+
+<h2 id="look">外观</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">元素</th><th scope="col">样式</th></tr></thead>
+<tbody>
+<tr><th scope="row">静止的行</th><td>无框：种类色的裸字形，名称下一行按语气着色的状态（无圆点），箭头</td></tr>
+<tr><th scope="row">悬停</th><td>抬成卡片：文件卡的阴影，加向文字色偏 4% 的实色底；面板本身就是输入表面，同色卡片看不出边。圆角用列表行的圆角，和左侧栏的行一样</td></tr>
+<tr><th scope="row">第二层</th><td>同一种行，只用一组字号（14 和 13，等宽和“当前”标签用 11），字重 400。标题用亮色，其余用次要色；红色只表示失败。动效只有新出现内容 160 毫秒淡入、箭头转动、页面移动用的弹簧，以及图表列之间 240 毫秒的滑动；开启减少动效时没有。</td></tr>
+<tr><th scope="row">长条和刻度</th><td>长条是一次运行或一个子代理，刻度是一个步骤。平时灰色，失败红色，检查失败或等待琥珀色，运行中蓝色。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>代码</summary>
+<p><code translate="no">apps/web/components/right-sidebar/running/running-panel.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/agent-roster.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-agent-roster.ts</code>、<code translate="no">apps/web/lib/execution/agent-roster.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/use-page-slide.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/sideways.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-page-geometry.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/activity-run-wording.ts</code>、<code translate="no">apps/web/components/right-sidebar/running/run-list.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/run-insides.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/sub-agent-row.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/execution-controls.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/program-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/command-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/scheduled-task-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/open-work-page.tsx</code>、<code translate="no">apps/web/components/right-sidebar/running/always-on-row.tsx</code>、<code translate="no">apps/web/lib/net/execution/activity-runs-client.ts</code>、<code translate="no">apps/web/lib/execution/activity-model.ts</code>、<code translate="no">apps/web/lib/prefs/activity-view.ts</code>、<code translate="no">apps/web/lib/chat/conversation-work.ts</code>、<code translate="no">openprogram/runtime/execution/activity_calls.py</code>、<code translate="no">openprogram/runtime/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/activity_runs.py</code>、<code translate="no">openprogram/interfaces/server/routes/execution/conversation_work.py</code></p>
+</details>
+
+<p class="next"><a href="../visual-system/indicator-dots.zh.html">状态圆点</a> · <a href="sub-agent-row.zh.html">子代理自己的对话</a></p>

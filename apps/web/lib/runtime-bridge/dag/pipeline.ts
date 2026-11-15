@@ -32,12 +32,14 @@ import { type GNode } from "./types";
 import { runtimeState } from "../state";
 import { computeGeometry } from "./layout/geometry";
 import { _branchColor, _svg } from "./render/shapes";
-import { attachCanvas, detachCanvas } from "./interaction/canvas";
+import { attachCanvas, detachCanvas } from "./interaction/view/canvas";
+import { paintSelection } from "./interaction/selection/selection";
+import "./interaction/selection/keys";
 import {
   hideTooltip as _hideTooltip,
   resetTooltip as _resetTooltip,
   showTooltip as _showTooltip,
-} from "./interaction/tooltip";
+} from "./interaction/node/tooltip";
 import { _collapseRuntimePairs } from "./passes/collapse-runtime-pairs";
 import { _mergeRuns } from "./passes/merge-runs";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
@@ -46,15 +48,15 @@ import { buildThreadModel } from "./passes/thread";
 import { projectTopPrograms } from "./passes/project-programs";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
-import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
+import { _assignLanes, _headAncestors, _stampPathLanes } from "./layout/assign-lanes";
 import {
   _recomputeVisibility,
-  _wireChatMutationSync,
-  _wireChatScrollSync,
 } from "./render/visibility";
 import { drawNodes, patchHistoryStatus } from "./render/nodes";
-import { drawBadges } from "./render/badges";
+import { drawBadges } from "./render/labels/badges";
 import { drawEdges } from "./render/edges";
+import { paintAgents } from "./render/agents";
+import { drawCaptions } from "./render/labels/captions";
 import {
   type DagSignatureInput,
   branchTagsSignature,
@@ -67,7 +69,6 @@ import {
 import {
   _contextSet,
   _coverageSet,
-  _highlightMode,
   _lastGraph,
   _lastHeadId,
   _lastSignature,
@@ -76,17 +77,16 @@ import {
   _threadSession,
   setCurrentHead,
   setHeadAncestorSet,
-  setInternalOwner,
-  setInternalSet,
   setLastGraph,
+  setLastThreadModel,
   setLastSignature,
   setLeafOfNode,
-  setParentOf,
   setSummaryExpanded,
   setThreadOpen,
   setThreadSession,
   setVisibleIds,
 } from "./store/globals";
+import { mainAgentShape } from "./render/agent-look";
 
 // Which session the panel currently shows (undefined = never rendered).
 // First render after a session switch gets the ``dag-enter`` fade-in;
@@ -154,6 +154,7 @@ function _signatureInput(graph: GNode[], headId: string | null): DagSignatureInp
     contextSet: _contextSet,
     coverageSet: _coverageSet,
     sessionId: sid,
+    agentLook: mainAgentShape(),
     branchTags: branchTagsSignature(
       sid
         ? (runtimeState._branchesByConv[sid] as Array<{
@@ -164,7 +165,6 @@ function _signatureInput(graph: GNode[], headId: string | null): DagSignatureInp
         }>)
         : null,
     ),
-    highlightMode: _highlightMode,
   };
 }
 
@@ -247,6 +247,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     }
   }
   const threadModel = buildThreadModel(graph, headId);
+  setLastThreadModel(threadModel);
   graph = threadModel.visible;
 
   // HEAD may point at a reply that merged into its anchor (a followup,
@@ -303,6 +304,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   _assignDepth(graph, tree.byId);
   const lanes = _assignLanes(tree.byId, headId);
   setLeafOfNode(lanes.leafOfNode);
+  _stampPathLanes(tree.byId, headId);
 
   const _colorMap: Record<string, string> = Object.create(null);
   Object.keys(tree.byId).forEach((id) => {
@@ -347,9 +349,10 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   });
   Object.keys(tree.byId).forEach((nid) => {
     const n = tree.byId[nid];
-    // spawn 分支根是对话层节点：caller 只是记录谁发起了它，不代表它是
-    // 发起轮的执行内部节点（否则点击变成"滚到 owner"而不是 checkout）。
-    if ((n as Record<string, unknown>).source === "agent_spawn" && !n.predecessor) {
+    // spawn 分支根和 send_message 送回的消息都是对话层节点：caller 只是
+    // 记录谁发出了它，不代表它是那一轮的执行内部节点（否则点击变成
+    // "滚到 owner"而不是 checkout）。
+    if ((n as Record<string, unknown>).source === "agent_spawn" && n.role === "user") {
       return;
     }
     const c = (n as { caller?: string }).caller;
@@ -363,15 +366,6 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       }
     }
   });
-  setInternalSet(internalSet);
-  setInternalOwner(internalOwner);
-
-  const parentOf: Record<string, string> = Object.create(null);
-  Object.keys(tree.byId).forEach((nid) => {
-    const pid = (tree.byId[nid] as { predecessor?: string }).predecessor;
-    if (pid) parentOf[nid] = pid;
-  });
-  setParentOf(parentOf);
 
   const fullById: Record<string, GNode> = Object.create(null);
   graphIn.forEach((m) => { fullById[m.id] = m; });
@@ -379,7 +373,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const geom = computeGeometry(tree.byId, threadModel);
 
   // The SVG fills the pane; everything is drawn inside ``world``, which
-  // carries the user's pan and zoom (``./interaction/canvas.ts``). Nothing here is
+  // carries the user's pan and zoom (``./interaction/view/canvas.ts``). Nothing here is
   // sized to the content — an infinite canvas has no content size, and
   // the graph is reached by moving the camera, not by scrolling a box.
   const svg = _svg("svg", { class: "history-svg" });
@@ -405,6 +399,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   drawBadges(world, tree, pos, stableLeafOfNode, runtimeState.currentSessionId,
     fullById, threadModel);
+  drawCaptions(world, nodeG);
+  paintAgents(nodeG, graphIn);
 
   // 会话切换后的首次绘制淡入（配合 transcript 的 session-enter），
   // 同会话的增量重绘原地替换，不闪。
@@ -413,16 +409,12 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   _lastRenderedSession = sess;
 
   attachCanvas(body, svg, world, sess);
+  paintSelection();
   _lastGeomSignature = geomSig;
   _resetTooltip();
   setVisibleIds(Object.create(null));
 
-  _wireChatScrollSync();
-  _wireChatMutationSync();
   _recomputeVisibility();
-  requestAnimationFrame(_recomputeVisibility);
-  setTimeout(_recomputeVisibility, 250);
-  setTimeout(_recomputeVisibility, 700);
 
   const bodyAny = body as any;
   if (!bodyAny._historyHoverWired) {

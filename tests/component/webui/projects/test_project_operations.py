@@ -1,10 +1,9 @@
 """Project menu actions preserve files, ownership, and the source Git checkout."""
 import asyncio
-import json
 import subprocess
 import pytest
-from openprogram.store.project import project_store as store
-from openprogram.webui.ws_actions import project as actions
+from openprogram.state.store.project import project_store as store
+from openprogram.interfaces.server.ws_actions import project as actions
 from .test_project_metadata import WS
 
 
@@ -34,7 +33,7 @@ def test_hide_restore_preserves_files_and_bindings(tmp_path, monkeypatch):
 
 
 def test_archive_persists_only_project_sessions_and_reports_partial_failure(tmp_path, monkeypatch):
-    from openprogram.agent import session_db
+    from openprogram.runtime.context import session_db
     monkeypatch.setattr(store, "_registry_path", lambda: tmp_path / "registry.json")
     p = store.resolve_project(tmp_path)
     for sid in ("a", "b", "gone"):
@@ -82,7 +81,7 @@ def test_worktree_real_git_and_retry(tmp_path, monkeypatch):
 
 
 def test_default_archive_includes_legacy_unbound_chats(tmp_path, monkeypatch):
-    from openprogram.agent import session_db
+    from openprogram.runtime.context import session_db
     monkeypatch.setattr(store, "_registry_path", lambda:tmp_path / "registry.json")
     home=store.get_default_project()
     project=store.resolve_project(tmp_path)
@@ -93,9 +92,28 @@ def test_default_archive_includes_legacy_unbound_chats(tmp_path, monkeypatch):
         def get_session(self, sid): return rows.get(sid)
         def update_session(self, sid, **fields): rows[sid].update(fields)
     monkeypatch.setattr(session_db, "default_db", lambda:DB())
+    stopped=[]
+    monkeypatch.setattr("openprogram.runtime.conversation.always_on.runtime.archive_changed", lambda sid, archived: stopped.append((sid, archived)))
     result=invoke("archive_project_chats", home.id)
     assert result["ok"] and result["session_ids"]==["unbound"]
     assert rows["unbound"]["archived"] and "archived" not in rows["other"]
+    assert stopped == [("unbound", True)]
+
+
+def test_archiving_a_project_again_does_not_stop_a_goal_someone_resumed(tmp_path, monkeypatch):
+    from openprogram.runtime.context import session_db
+    monkeypatch.setattr(store, "_registry_path", lambda:tmp_path / "registry.json")
+    home=store.get_default_project()
+    rows={"done":{"id":"done","archived":True}}
+    class DB:
+        def list_sessions(self, **kw): return list(rows.values())
+        def get_session(self, sid): return rows.get(sid)
+        def update_session(self, sid, **fields): rows[sid].update(fields)
+    monkeypatch.setattr(session_db, "default_db", lambda:DB())
+    stopped=[]
+    monkeypatch.setattr("openprogram.runtime.conversation.always_on.runtime.archive_changed", lambda sid, archived: stopped.append((sid, archived)))
+    assert invoke("archive_project_chats", home.id)["ok"]
+    assert stopped == []
 
 
 def test_subfolder_project_worktree_cannot_modify_containing_checkout(tmp_path, monkeypatch):
@@ -112,3 +130,44 @@ def test_subfolder_project_worktree_cannot_modify_containing_checkout(tmp_path, 
     assert not (repo / "new-worktree").exists()
     assert not git("branch", "--list", "codex/nested")
     assert git("status","--porcelain")==before
+
+
+def _repo_with_files(root):
+    root.mkdir()
+    def git(*args):
+        return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True).stdout.strip()
+    git("init")
+    for i in range(20):
+        (root / f"f{i}").write_text(str(i))
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-m", "initial")
+    return git
+
+
+def test_worktree_reports_its_stages(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "_registry_path", lambda: tmp_path / "registry.json")
+    _repo_with_files(tmp_path / "source")
+    p = store.resolve_project(tmp_path / "source")
+    seen = []
+    store.create_project_worktree(p.id, str(tmp_path / "copy"), "op/copy", progress=lambda stage, pct: seen.append((stage, pct)))
+    assert seen[0] == ("branch", None) and seen[-1] == ("open", None)
+    assert ("checkout", 0) in seen and ("checkout", 100) in seen
+    assert (tmp_path / "copy" / "f19").read_text() == "19"
+
+
+def test_stopping_a_worktree_removes_the_folder_and_branch(tmp_path, monkeypatch):
+    import threading
+    monkeypatch.setattr(store, "_registry_path", lambda: tmp_path / "registry.json")
+    git = _repo_with_files(tmp_path / "source")
+    p = store.resolve_project(tmp_path / "source")
+    cancel = threading.Event()
+
+    def progress(stage, pct):
+        if stage == "checkout":
+            cancel.set()
+
+    with pytest.raises(store.WorktreeStopped):
+        store.create_project_worktree(p.id, str(tmp_path / "copy"), "op/stopped", progress=progress, cancel=cancel)
+    assert not (tmp_path / "copy").exists()
+    assert not git("branch", "--list", "op/stopped")
+    assert "copy" not in git("worktree", "list")

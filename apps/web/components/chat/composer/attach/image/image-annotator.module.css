@@ -1,0 +1,86 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-wrap: wrap;
+}
+
+.colors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: var(--ui-control-inline);
+  height: var(--ui-control-inline);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+
+.swatch[aria-checked="true"] {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+}
+
+.frame {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+}
+
+.canvas {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 24px rgb(0 0 0 / 0.25);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.canvas[data-tool="text"] {
+  cursor: text;
+}
+
+.textInput {
+  position: absolute;
+  min-width: 120px;
+  padding: 2px 4px;
+  font-weight: 600;
+  font-size: var(--fs-md);
+  font-family: var(--font-sans);
+  background: rgb(0 0 0 / 0.35);
+  border: 1px dashed currentColor;
+  border-radius: var(--radius-xs);
+  outline: none;
+}

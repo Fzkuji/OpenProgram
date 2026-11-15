@@ -1,0 +1,200 @@
+/* Window overview (Mission Control): the center area recedes to the page
+   colour and every window floats on it as a card that keeps its split. */
+.overview {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  animation: overviewIn 180ms ease-out;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+/* Browsing opens by zooming, not fading; switching modes while open
+   (a drag picked up from a card, a drop on empty space) never fades it
+   again. */
+.overview[data-opened-as="browse"] {
+  animation: none;
+}
+.grid {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 32px 32px 0;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+button.card { cursor: pointer; }
+button.card:focus-visible { outline: none; }
+/* A lone window is the center card itself, so the card has its colour;
+   a split window's panes are cards of their own on open page. */
+.mini {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  transition: transform var(--motion-medium) var(--ease-standard);
+}
+.mini[data-split] {
+  overflow: visible;
+  background: transparent;
+}
+/* No frame and no shadow marks the current window: it zooms into its
+   card when the overview opens. A card under the pointer grows a little. */
+button.card:hover .mini,
+.card[data-hot] .mini {
+  transform: scale(1.025);
+}
+.zoomer[data-zoomed] .mini {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto !important;
+}
+.overview[data-canvas-overview="browse"] .card[data-zooming] .caption {
+  animation: captionIn 200ms 180ms both;
+}
+.overview[data-leaving] {
+  pointer-events: none;
+}
+/* !important: framer-motion leaves the card's opacity inline. */
+.overview[data-leaving] .card:not([data-zooming]) {
+  opacity: 0 !important;
+  transition: opacity var(--motion-medium) var(--ease-standard);
+}
+.overview[data-leaving] .hint,
+.overview[data-leaving] .card[data-zooming] .caption {
+  opacity: 0;
+  transition: opacity var(--motion-medium) var(--ease-standard);
+}
+/* A merge hands its zoom to the live canvas as soon as it commits (about
+   a tenth of a second in), so the other cards are gone by then. */
+.overview[data-landing] .card:not([data-zooming]),
+.overview[data-landing] .hint {
+  transition-duration: 80ms;
+}
+button.card:focus-visible .mini {
+  outline: 2px solid color-mix(in oklch, var(--accent-blue) 75%, transparent);
+  outline-offset: 2px;
+}
+.pane {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+.mini[data-split] .pane {
+  box-shadow: var(--composer-shadow);
+}
+.pane[data-shot] {
+  padding: 0;
+}
+.shot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+  pointer-events: none;
+}
+.mini .pane[data-empty] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-light);
+}
+.paneGlyph {
+  display: flex;
+  margin: auto;
+  color: var(--text-muted);
+  transform: scale(1.75);
+}
+.zone {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--accent-blue) 18%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--accent-blue) 75%, transparent);
+  pointer-events: none;
+  transition: left var(--motion-fast) var(--ease-standard), top var(--motion-fast) var(--ease-standard), width var(--motion-fast) var(--ease-standard), height var(--motion-fast) var(--ease-standard);
+}
+.caption {
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card[data-current] .caption,
+.card[data-hot] .caption { color: var(--text-bright); }
+.hint {
+  align-self: center;
+  max-width: calc(100% - 32px);
+  margin: 16px 0 20px;
+  padding: 6px 12px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  box-shadow: var(--composer-shadow);
+  color: var(--text-bright);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+@keyframes overviewIn { from { opacity: 0; } }
+@keyframes captionIn { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .overview, .card { animation: none; }
+  .mini, .zone { transition: none; }
+}
+
+/* Browsing keeps the hint's room so the cards never move between modes. */
+.hint[data-idle] {
+  visibility: hidden;
+}
+/* Over empty space the drop opens the tab on its own: the hint says so. */
+.hint[data-alone] {
+  background: color-mix(in oklch, var(--accent-blue) 12%, var(--bg-primary));
+}
+/* A card picked up while browsing, following the pointer. It is a copy
+   of the card's picture, which eases its transform on hover: the copy
+   must not, or it trails the pointer by that much. */
+.ghost {
+  z-index: calc(var(--z-drag) + 2);
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-standard) !important;
+  will-change: transform;
+  transform-origin: 0 0;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-dialog);
+  opacity: 0.94;
+}
+/* Full size, the card would hide the half it merges into: over a card it
+   lets that half show through. Only opacity eases, never the position. */
+.ghost[data-over] {
+  opacity: 0.55;
+}

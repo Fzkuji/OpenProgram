@@ -1,0 +1,19 @@
+<title>Conversation tab identity</title>
+<meta name="description" content="Within a window each conversation has one tab; how opening, history and transfers keep that true.">
+<meta name="covers" content="apps/web/lib/tabs/">
+<h1>Conversation tab identity</h1>
+
+<p>Within one window, each conversation ID has one current session tab. Titles do not determine identity; two same-title conversations stay distinct. Other content types and separate windows are independent.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Opening a displayed conversation</th><td>Selects its tab before replacing a session or launcher</td></tr>
+<tr><th scope="row">Back and Forward</th><td>Select the open tab when the destination is already open, leaving source history unchanged; otherwise restore normally</td></tr>
+<tr><th scope="row">Normalization</th><td>Keeps the active duplicate, or the first when none is active, with its history and group; other duplicate slots are removed without the close/ACK lifecycle</td></tr>
+<tr><th scope="row">Historical visits</th><td>Do not reserve a conversation</td></tr>
+<tr><th scope="row">Transfer into a window</th><td>Rejects session ID conflicts before insertion, preserving both slots</td></tr>
+</tbody>
+</table>
+
+<p class="note">DAG and draft state survive all of these.</p>

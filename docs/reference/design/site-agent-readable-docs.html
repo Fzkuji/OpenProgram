@@ -1,0 +1,17 @@
+<title>Agent-readable docs</title>
+<meta name="description" content="Every documentation page publishes a Markdown copy for Agents and advertises it.">
+<h1>Agent-readable docs</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Source</th><th scope="col">Published copy</th><th scope="col">Advertised by</th></tr></thead>
+<tbody>
+<tr><th scope="row">Markdown page</th><td><code translate="no">page.html.md</code>, byte for byte</td><td>Alternate link, <code translate="no">text/markdown</code></td></tr>
+<tr><th scope="row">HTML document</th><td><code translate="no">page.html.md</code>, generated from its article: each figure once, folds open, site links absolute</td><td>Alternate link, <code translate="no">text/markdown</code></td></tr>
+<tr><th scope="row">Docs index</th><td><code translate="no">index.html.md</code></td><td>Alternate link</td></tr>
+<tr><th scope="row">Older standalone visualization</th><td>None; HTML and readability assets only</td><td><code translate="no">llms.txt</code> guide only</td></tr>
+</tbody>
+</table>
+
+<p class="note">English and Chinese copies stay separate. The landing page, shells and raw pages advertise the site-root <code translate="no">llms.txt</code> through <code translate="no">rel=describedby</code>. No runtime API, authentication or network fetch.</p>
+
+<p class="note"><code translate="no">scripts/docs_site/build.py</code>, <code translate="no">html_source.py</code>, <code translate="no">template.py</code>, <code translate="no">check_landing.py</code>; <code translate="no">tests/unit/config/test_docs_agent_readable.py</code>, <code translate="no">test_docs_html_source.py</code>.</p>

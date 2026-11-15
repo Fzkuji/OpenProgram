@@ -1,0 +1,297 @@
+<title>Built-in browser</title>
+<meta name="description" content="The desktop App's built-in browser: toolbar, panes, data import, trust boundaries and how Agents use its pages.">
+<h1>Built-in browser</h1>
+
+<p>Pages render in Electron <code translate="no">WebContentsView</code>s on their own <code translate="no">persist:webtabs</code> profile, sharing no cookies or storage with the App. The Agent works on the same pages through the browser target of <code translate="no">computer_use_agent</code>: the user watches and can take over, and pages a session opens appear in that session's Resources.</p>
+
+<h2 id="toolbar">Toolbar and menus</h2>
+<table class="stack">
+<thead><tr><th scope="col">Pane width</th><th scope="col">720 px and up</th><th scope="col">560–719</th><th scope="col">520–559</th><th scope="col">Below 520</th></tr></thead>
+<tbody>
+<tr><th scope="row">Back, Reload/Stop, star, Browser <code translate="no">⋯</code></th><td>Shown</td><td>Shown</td><td>Shown</td><td>Shown</td></tr>
+<tr><th scope="row">Address bar</th><td>Fills the rest</td><td>Fills the rest</td><td>Fills the rest</td><td>Fills the rest, 160 px at least</td></tr>
+<tr><th scope="row">Forward</th><td>Shown</td><td>Shown</td><td>Shown</td><td>In <code translate="no">⋯</code></td></tr>
+<tr><th scope="row">Home, Bookmarks, Open externally</th><td>Shown</td><td>In <code translate="no">⋯</code></td><td>In <code translate="no">⋯</code></td><td>In <code translate="no">⋯</code></td></tr>
+<tr><th scope="row">Bookmarks bar</th><td>Shown</td><td>Shown</td><td>Hidden</td><td>Hidden</td></tr>
+</tbody>
+</table>
+<p class="note">Toolbar 40 px, bookmarks bar 30 px, no wrapping.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Level</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">Toolbar</th><td>Frequent current-page actions. The star only saves or removes this page; Bookmarks opens the manager. No split controls, no Settings gear.</td></tr>
+<tr><th scope="row">Browser <code translate="no">⋯</code></th><td>New browser tab, Collapse to floating window, Find, Comment on the page and Screenshot a region (where available), Zoom, Print, Bookmarks, History, Downloads, Show bookmarks bar, Import browser data, Clear browsing data, Browser settings</td></tr>
+<tr><th scope="row">Window menu</th><td>New pane or window, pane layout, OpenProgram Settings, Help, About</td></tr>
+<tr><th scope="row">Tab or pane controls</th><td>Splitting and arranging, which apply to Files, Chat, Browser and Terminal alike</td></tr>
+</tbody>
+</table>
+<p class="note">Both settings entries open one page and one store; Browser <code translate="no">⋯</code> deep-links to <code translate="no">/settings/browser</code>.</p>
+
+<details>
+<summary>Menu rules</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Placement</th><td>Each menu uses its own trigger's screen rectangle: right edges aligned, 4 px gap</td></tr>
+<tr><th scope="row">Zoom</th><td>Renderer CSS px convert to DIP by the sender's zoom, so menus stay beside triggers at 80, 100 and 125%</td></tr>
+<tr><th scope="row">Size</th><td>Desktop popovers report intrinsic size from <code translate="no">scrollWidth/scrollHeight</code>, never shrinking recursively to a clipped height</td></tr>
+<tr><th scope="row">Browser <code translate="no">⋯</code> icons</th><td>Solar Bold Duotone, named by <code translate="no">glyph</code> and drawn by <code translate="no">MenuIcon</code> in the overlay; the Web fallback uses the same <code translate="no">MenuRow</code></td></tr>
+<tr><th scope="row">Icon slot</th><td>Only when a row carries a glyph, folder or favicon. Text in rows without one starts at the row's <code translate="no">10px</code> padding.</td></tr>
+<tr><th scope="row">Checks</th><td>At the row end, after any key tag; unchecked rows keep that column empty</td></tr>
+<tr><th scope="row">Toolbar tips</th><td>Always above the control and one line, truncating long labels: the native page below would cover them</td></tr>
+<tr><th scope="row">Popovers near pages</th><td>A native page is suspended only when a visible popover intersects it; see <a href="web-tab-native-bounds.html">native page bounds</a></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="surfaces">Surfaces</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Content</th></tr></thead>
+<tbody>
+<tr><th scope="row">New pane</th><td>A Launchpad that only selects content: Files, New chat, Browser, Terminal, then enabled applications. No address bar, quick sites, Bookmarks or History.</td></tr>
+<tr><th scope="row">Browser home</th><td>Opens in place with the same address and bookmarks bars as a page. Back, Forward, Reload, Home, star and Open externally stay visible but disabled; address input, Bookmarks, Import and <code translate="no">⋯</code> work. Shows only user-maintained quick sites and the import entry.</td></tr>
+<tr><th scope="row">History</th><td>Grouped by local date. Row: time, favicon, title, domain, actions, 38 px. Up to 5000 records; search runs in main.</td></tr>
+<tr><th scope="row">Bookmarks manager</th><td>Title, search and page menu on top; folder tree on the left, current folder's direct children on the right. Row: icon, title, single <code translate="no">⋮</code>. Folders open. Narrow panes stack the tree above the list.</td></tr>
+<tr><th scope="row">Downloads</th><td>To the system Downloads folder. Live progress and final status; open, reveal in Finder, cancel, clear records.</td></tr>
+</tbody>
+</table>
+<p class="note">Manager sizes: header 52 px, rows 36, search 30, icon buttons 28, right list padding 16.</p>
+
+<h3 id="bookmarks">Bookmarks bar and menus</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Default</th><td>Visible on home and pages; off stays off (Browser <code translate="no">⋯</code> or Settings)</td></tr>
+<tr><th scope="row">Contents</th><td>Direct children of Chromium's <code translate="no">Bookmarks bar</code>, in order, plus ordinary root bookmarks. Then a <code translate="no">»</code> overflow menu, a divider and All bookmarks, which opens the manager with <code translate="no">Other bookmarks</code> and <code translate="no">Mobile bookmarks</code>.</td></tr>
+<tr><th scope="row">Overflow</th><td>One row, no scrollbar. Hidden items leave no clipped button; the last visible one keeps its full background and rounded ends.</td></tr>
+<tr><th scope="row">Menus</th><td>280 px, ellipsized titles, nested level by level (Folder icon and arrow), bounded by window height, mouse, trackpad and keyboard</td></tr>
+<tr><th scope="row">Desktop hover</th><td>Opens at once; moving to an adjacent folder switches without delay by replacing data in one view. Stays open from trigger into a panel, closes within 120 ms after leaving all of them. The overlay starts at the bar's lower edge, clear of its buttons.</td></tr>
+<tr><th scope="row">Icons</th><td>Saved image, then the origin's <code translate="no">/favicon.ico</code>, then the Bookmark or Lucide browser fallback, never an empty slot. HTTP(S) and image data only, no referrer, no third-party service. New bookmarks keep the page's icon; revisiting an exact URL refreshes it without erasing it during loading.</td></tr>
+</tbody>
+</table>
+
+<h2 id="decisions">Page behaviour</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Behaviour</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Loading</th><td>Reload becomes an accented Lucide X named Stop loading, over a thin indeterminate bar below the toolbar with no percentage and no height change. Static with reduced motion. Completion, failure and cancellation restore Reload.</td></tr>
+<tr><th scope="row">Unsaved pages</th><td>A blocked reload or navigation (<code translate="no">will-prevent-unload</code>) shows a native dialog on the owning window. Stay on page is the default and cancel; Leave page permits only that operation. Missing owner, destruction or dialog failure keeps the page. A page that is not on screen in the focused window leaves without the dialog, since nobody is there to answer and the dialog would come in front of what the user is doing. Tab close and App shutdown are outside this rule.</td></tr>
+<tr><th scope="row">Tab icons</th><td>Favicon when it decodes to visible pixels, else the animated Lucide browser icon. Main reads bytes through the page session: HTTP(S) and image data, 256 KiB, five seconds, returned as data URLs so the renderer can detect fully transparent icons. Navigation and destruction cancel reads; stale results cannot land. Snapshots carry the favicon; history keeps the original URL.</td></tr>
+<tr><th scope="row">Find, Zoom, Print</th><td>Target only the requesting window's exact WebTab. Find has previous, next, count and close, which clears selection. <code translate="no">⌘/Ctrl+F</code>, <code translate="no">⌘/Ctrl++/-/0</code> and <code translate="no">⌘/Ctrl+P</code> match the menu. An older shell lacking the IPC disables the action.</td></tr>
+<tr><th scope="row">Print</th><td>System printing first; on failure or with no destination, the owning window's Save PDF dialog. Cancelling writes nothing; a successful print makes no PDF. The PDF is written to a unique temporary file, then replaces the target; failure keeps existing files.</td></tr>
+</tbody>
+</table>
+
+<h3 id="navigation">Navigation, popups and the context menu</h3>
+<table class="stack">
+<thead><tr><th scope="col">Page intent</th><th scope="col">Main process</th><th scope="col">Renderer</th></tr></thead>
+<tbody>
+<tr><th scope="row">Link, form, script assignment, same-document navigation</th><td><code translate="no">did-navigate</code> / <code translate="no">did-navigate-in-page</code> report state; no popup event</td><td><code translate="no">updateWebTab</code> updates URL, title and favicon in place; id and active tab stay; History records it</td></tr>
+<tr><th scope="row"><code translate="no">target="_blank"</code>, <code translate="no">window.open</code></th><td><code translate="no">setWindowOpenHandler</code> rejects child windows and sends only valid HTTP(S) URLs and opener ids to the owning window</td><td><code translate="no">openPopupWebTab</code> creates a unique id and activates it. Already on <code translate="no">/chat</code> or <code translate="no">/s/&lt;id&gt;</code>, it does not push <code translate="no">/chat</code>, so route sync cannot overwrite the activation. A popup from the user's own page while an Agent holds it opens beside the page without activation or a route change.</td></tr>
+<tr><th scope="row">Context menu, Open Link in New Tab</th><td><code translate="no">context-menu</code> validates exact ownership and URL, then reuses the popup event</td><td>Same as a page popup; nothing runs after dismissal or with a stale owner</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Hit</th><th scope="col">Native menu</th></tr></thead>
+<tbody>
+<tr><th scope="row">HTTP(S) link</th><td>Open Link in New Tab, Copy Link Address</td></tr>
+<tr><th scope="row">Editable</th><td>Undo, Redo, Cut, Copy, Paste, Select All</td></tr>
+<tr><th scope="row">Ordinary page</th><td>Back, Forward, Reload</td></tr>
+<tr><th scope="row">Not offered</th><td>Save page, Save image, Download linked file, View source, Inspect element, extension entries: these need their own download, file-authorization and developer-mode boundaries</td></tr>
+</tbody>
+</table>
+
+<h3 id="floating-preview">Floating preview scope</h3>
+<table class="stack">
+<thead><tr><th scope="col">Active content</th><th scope="col">Preview</th><th scope="col">Native WebTab</th></tr></thead>
+<tbody>
+<tr><th scope="row">The chat that created it</th><td>Visible, at its previous position and size</td><td>PiP bounds and layout zoom; same <code translate="no">WebContentsView</code>, URL, scroll and form state, no reload</td></tr>
+<tr><th scope="row">Another chat or non-chat page</th><td>Hidden, no restore entry</td><td>Out of the <code translate="no">syncVisible</code> set; user zoom restored</td></tr>
+<tr><th scope="row">Regular Browser tab, or the same page in split</th><td>Hidden</td><td>The pane alone owns its bounds; PiP zoom does not persist</td></tr>
+<tr><th scope="row">User closed it in its chat</th><td>Hidden; that chat alone shows a restore entry</td><td>Kept in the background, not exposed to other sessions</td></tr>
+</tbody>
+</table>
+
+<h2 id="architecture">Import</h2>
+<p>From Chrome, Brave, Edge or Chromium, with source, profile and data types confirmed separately. Desktop only.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 16 680 180" role="img" aria-label="Files of the read-only source profile are copied to a temporary directory. History SQLite and Bookmarks JSON go through bounded parsers and merge into the History store and bookmark tree. Cookies are decrypted by a temporary source-browser process over CDP and written into persist:webtabs with Electron cookies.set.">
+  <defs><marker id="imp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="90">Source profile</text>
+  <text class="t-soft" x="0" y="114">read only, real paths</text>
+  <text class="t-soft" x="0" y="134">under found roots</text>
+  <line class="ln" x1="138" y1="83" x2="168" y2="83" marker-end="url(#imp-a)"/>
+  <text class="t-big" x="178" y="90">Temporary copy</text>
+  <text class="t-soft" x="178" y="114">directory 0700, files 0600</text>
+  <text class="t-soft" x="178" y="134">always deleted</text>
+  <path class="ln" d="M326 83H338V33H356" marker-end="url(#imp-a)"/>
+  <path class="ln" d="M338 83V133H356" marker-end="url(#imp-a)"/>
+  <text class="t-big" x="366" y="40">Bounded parsers</text>
+  <text class="t-soft" x="366" y="64">History SQLite</text>
+  <text class="t-soft" x="366" y="84">Bookmarks JSON</text>
+  <line class="ln" x1="512" y1="33" x2="546" y2="33" marker-end="url(#imp-a)"/>
+  <text class="t-big" x="556" y="40">Merged</text>
+  <text class="t-soft" x="556" y="64">History store</text>
+  <text class="t-soft" x="556" y="84">bookmark tree</text>
+  <text class="t-big" x="366" y="140">Source browser</text>
+  <text class="t-soft" x="366" y="164">temporary process</text>
+  <text class="t-soft" x="366" y="184">decrypts over CDP</text>
+  <line class="ln" x1="500" y1="133" x2="546" y2="133" marker-end="url(#imp-a)"/>
+  <text class="t-big" x="556" y="140">Cookies</text>
+  <text class="t-cmd notranslate" translate="no" x="553" y="164">persist:webtabs</text>
+  <text class="t-soft" x="556" y="184">one write each</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Source profile</strong><small>read only, real paths under found roots</small></li>
+  <li><strong>Temporary copy</strong><small>directory 0700, files 0600, always deleted</small></li>
+  <li><strong>Bounded parsers</strong><small>History SQLite and Bookmarks JSON, merged into the History store and bookmark tree</small></li>
+  <li class="flow-end"><strong>Temporary source browser</strong><small>decrypts Cookies over CDP, one write each into <code translate="no">persist:webtabs</code></small></li>
+</ol>
+</figure>
+
+<table class="stack">
+<thead><tr><th scope="col">Type</th><th scope="col">Read</th><th scope="col">Merge</th></tr></thead>
+<tbody>
+<tr><th scope="row">History</th><td>A copy of the SQLite file; http and https only; at most 5000</td><td>Deduplicated by URL and <code translate="no">visitedAt</code>; errors keep existing records</td></tr>
+<tr><th scope="row">Bookmarks</th><td>Roots, up to 64 folder levels, sibling order; invalid URLs dropped</td><td>No duplicate URLs or empty folders on repeat imports; hierarchy preserved</td></tr>
+<tr><th scope="row">Cookies</th><td>Decrypted in the temporary browser; the Cookie database is never copied in</td><td>Each item validated, then <code translate="no">cookies.set</code>. Values never reach IPC, logs, History or the renderer.</td></tr>
+</tbody>
+</table>
+<p class="note">Cookie import can reduce repeated logins; device binding, expiry, secondary verification or server revocation can still require one.</p>
+
+<h3 id="boundaries">Trust boundaries</h3>
+<table class="stack">
+<thead><tr><th scope="col">Boundary</th><th scope="col">Constraint</th><th scope="col">Failure</th></tr></thead>
+<tbody>
+<tr><th scope="row">Renderer to main</th><td>Opaque source and profile ids issued by main; allowlisted data types; no file or executable paths, no Cookie values</td><td>Request rejected</td></tr>
+<tr><th scope="row">Web content to main</th><td>Only resolved HTTP(S) URLs; actions bind to the exact WebTab owner. <code translate="no">file:</code>, <code translate="no">javascript:</code>, transferred or closed records and forged openers create nothing.</td><td>Deny, no-op</td></tr>
+<tr><th scope="row">Source profile</th><td>Read-only discovery; symlink escapes rejected</td><td><code translate="no">source_invalid</code></td></tr>
+<tr><th scope="row">Temporary data</th><td>Deleted after success, failure or timeout. Logs hold only source labels, types, counts and error codes.</td><td>Cleanup, stable error</td></tr>
+<tr><th scope="row">Target profile</th><td>History and Bookmarks merge; the target database is never replaced</td><td>Pre-import data kept</td></tr>
+<tr><th scope="row">Concurrency</th><td>One import across the App. Only the initiating renderer can cancel, by its bounded request id. Cancellation is checked at parser phases, during browser startup and CDP waits, and around each Cookie write.</td><td><code translate="no">import_busy</code>, <code translate="no">import_cancelled</code></td></tr>
+<tr><th scope="row">After cancelling</th><td>History and Bookmarks do not merge; the browser stops and temporary files go. Cookies written earlier remain, since the Cookie API has no transaction; none follow.</td><td>Cooperative stop</td></tr>
+</tbody>
+</table>
+<p class="note">While running, Import becomes Cancel and closing is disabled. Closing before starting changes nothing. Corrupt sources, missing browsers, timeouts and partial Cookie failures return stable codes and keep original data.</p>
+<details>
+<summary>Not imported or provided</summary>
+<ul>
+<li>Passwords, payment details, addresses, extensions, downloads, caches, localStorage, Service Workers</li>
+<li>Password manager, system Credential Store, autofill, remote debugging of the running source browser</li>
+<li>Extensions: Chrome Web Store and Edge Add-ons open as ordinary pages only; see <a href="browser-extensions.html">Browser extension support</a></li>
+<li>Web-only mode: import is not offered</li>
+</ul>
+</details>
+
+<h2 id="task-execution-control">Agents on these pages</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row" id="session-pages">Session pages</th><td>Grouped by session and collapsed in the session resources panel (<a href="../resources/session-resources.html">Session resources</a>). Records keep session ownership and pin state; manual pages and explicit splits stay top-level.</td></tr>
+<tr><th scope="row">Pausing</th><td>Clicks, scrolling, keys, navigation and closing a page never pause an Agent, from a user or automation, including automation of OpenProgram. Only conversation controls pause or cancel. Browser resources keep no separate write prohibition; dispatch guards, ownership checks and current-frame validation stay.</td></tr>
+<tr><th scope="row">Lost target</th><td>The session is discarded and the tool returns recovery information with the last URL. Recovery observes a new page at that exact URL, never replays a mutation or picks another tab. Missing authentication or unsaved state is reported.</td></tr>
+<tr><th scope="row">Shutdown</th><td>Screenshots keep their ToolReturn images and structured errors. A live server never submits to a closed default executor; recovery respects cancellation and unresolved external effects.</td></tr>
+</tbody>
+</table>
+
+<details id="browser-step-execution">
+<summary>Browser step execution and caller context</summary>
+<ul>
+<li>The workflow owns the observe, action and verify loop. Each planner request sets <code translate="no">stop_after_tool_round</code>: the shared Agent loop runs one validated, permission-checked tool round, keeps its receipts and returns without another model response. Default Agent calls continue to final output.</li>
+<li>Independent of the safety limit <code translate="no">max_iterations</code>. Exhausting a limit is non-retryable, so completed actions cannot replay. A structured final-output contract cannot be combined with this early return.</li>
+<li>Every <code translate="no">BrowserPageController</code> submission to its Playwright owner thread, including cleanup and final verification, carries the current ContextVars, copied per submission. Page isolation, binding validation, permissions and operation leases stay authoritative.</li>
+<li>A legacy browser task uses an explicitly bound current Page without reloading for a URL hint. A stale explicit binding fails rather than opening a replacement. With no explicit Page, URL and open behaviour are unchanged.</li>
+</ul>
+</details>
+
+<details id="browser-file-inputs">
+<summary>File selection and planner failures</summary>
+<ul>
+<li>The planner uploads with an approved local path and a fresh file-input ref, under sandbox reads, approval, Page ownership, cancellation and step limits. MCP-backed planners use the same controller.</li>
+<li>File inputs expose type and selected names, never bytes or local paths. Selecting is separate from server acceptance: <code translate="no">file_selected</code> checks the exact current input and final evidence is rechecked.</li>
+<li>Verification uses <code translate="no">value</code>, not typing text. Invalid calls return an actionable error; three consecutive failures on an unchanged frame stop with the concrete error. A planner can stop with a blocker, which never grants success. Operation counts are Page mutations, not model requests.</li>
+</ul>
+</details>
+
+<h2 id="favicon-lifetime">Icon and menu lifetime</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Bookmark menus</th><td>One detached cascade view per desktop window between openings; reopening attaches it and updates data without a new document. Window cleanup destroys visible and detached views; detached senders cannot dispatch actions.</td></tr>
+<tr><th scope="row">Favicon cache</th><td>Renderer-owned, deduplicates loads. Decoded 32 px surfaces for 30 minutes, failures for 5, at most 256 sources, 5-second load, no persistent icon database.</td></tr>
+<tr><th scope="row">Draw</th><td>Components draw cached surfaces without another request; a changed source selects another entry. Cross-origin images stay drawable without reading pixels. Repeated native events for the current source do not reload; navigation invalidates ownership.</td></tr>
+<tr><th scope="row">Owners</th><td><code translate="no">bookmark-bar.tsx</code> layout and menus, <code translate="no">browser-controls.tsx</code> commands, <code translate="no">favicon-cache.ts</code> loading and reuse, <code translate="no">tab-favicon.tsx</code> presentation</td></tr>
+</tbody>
+</table>
+
+<h2 id="web-tab-identity">How web tabs present themselves</h2>
+<p>As a current Chromium browser, consistently across headers and script. Nothing claims to be another browser.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">User-Agent</th><td><code translate="no">webtab-user-agent.js</code> drops only the App's token and keeps <code translate="no">Electron/x</code> with the full Chrome version: claiming plain Chrome while <code translate="no">navigator.userAgentData</code> lacks Google Chrome reads as forged and sticks in Cloudflare's challenge</td></tr>
+<tr><th scope="row">Clearance cookies</th><td><code translate="no">cf_clearance</code>, <code translate="no">__cf_bm</code> and <code translate="no">cf_chl_*</code> hold only for the User-Agent that earned them. When it differs from <code translate="no">webtab-user-agent.json</code>, the App removes them before any tab loads; other cookies stay.</td></tr>
+<tr><th scope="row">Client Hints</th><td>Electron sends no <code translate="no">Sec-CH-UA</code>. <code translate="no">webtab-client-hints.js</code> reads <code translate="no">getHighEntropyValues()</code> once from a loopback page, then sends <code translate="no">Sec-CH-UA</code>, <code translate="no">-Mobile</code> and <code translate="no">-Platform</code> to secure origins and the high-entropy hints an origin names in <code translate="no">Accept-CH</code></td></tr>
+<tr><th scope="row">Permissions</th><td><code translate="no">webtab-permissions.js</code> allows what Chrome allows silently (fullscreen, pointer lock, clipboard writes, external protocols), asks in a native dialog on the tab's window for camera, microphone, location, notifications and similar, denies the rest. Answers are kept per origin in <code translate="no">webtab-permissions.json</code>; clearing web tab cookies forgets them. An undecided permission reads <code translate="no">denied</code>, since Electron's check handler is yes or no.</td></tr>
+<tr><th scope="row">Permission asked by an unwatched page</th><td>A request from a page that is not on screen in the focused window is refused that once and not kept, so the user is asked when they open the page.</td></tr>
+<tr><th scope="row">Engine</th><td>The Electron in <code translate="no">apps/desktop/package.json</code> tracks Chrome stable (Electron 45 is Chromium 156); installed Apps take it as in <a href="../../distribution/dev-instance.html">Stable and development instances</a></td></tr>
+<tr><th scope="row">Not patched</th><td><code translate="no">window.chrome</code> is empty and there is no Widevine. Pages needing full Chrome are a separate design: the Agent working in the user's own Chrome.</td></tr>
+</tbody>
+</table>
+
+<h2 id="homepage-shortcut-editor">Homepage shortcut editor</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shape</th><td>The Add tile toggles a compact, non-modal popover from shared Popover, Input and Button, in the interface font and theme. Two labelled stacked fields; the name is optional.</td></tr>
+<tr><th scope="row">Dismiss</th><td>Cancel, Close, Escape, outside interaction or Add clears the draft. Keyboard dismissal returns focus to Add. Hides when its anchor is detached or hidden. Each homepage owns its editor; no global listener or App state.</td></tr>
+<tr><th scope="row">Submit</th><td>Enter from either field, except during input-method composition. Empty addresses cannot submit. Saving keeps the existing normalization, persistence and duplicate handling, then clears and closes.</td></tr>
+</tbody>
+</table>
+
+<details id="references">
+<summary>Reference behaviour</summary>
+<table class="stack">
+<thead><tr><th scope="col">Source</th><th scope="col">Behaviour</th><th scope="col">Here</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex pane entries</th><td>Files, New chat, Browser and Terminal are top-level; browser controls only inside Browser</td><td>Adopted</td></tr>
+<tr><th scope="row"><a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">OpenAI built-in browser</a></th><td>Independent state, Cookies and history cleared in App Settings</td><td>Adopted, plus a Browser <code translate="no">⋯</code> deep link and explicit import</td></tr>
+<tr><th scope="row"><a href="https://support.google.com/chrome/answer/188842">Chrome bookmarks</a></th><td>Star, toggled bar, separate manager; navigation versus popups</td><td>Adopted, with stricter split-pane collapse and popups as WebTabs</td></tr>
+<tr><th scope="row"><a href="https://support.google.com/chrome/answer/96816">Chrome import</a></th><td>Data-type selection and Imported Bookmarks merging</td><td>Informs the dialog</td></tr>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/menu">Electron Menu</a>, <a href="https://www.electronjs.org/docs/latest/api/web-contents">webContents</a>, <a href="https://www.electronjs.org/docs/latest/api/window-open">window.open</a></th><td>Link, selection, edit and frame hits; native popups; resolved popup URLs</td><td>A limited action set; no DevTools or arbitrary protocols</td></tr>
+<tr><th scope="row"><a href="https://www.electronjs.org/docs/latest/api/session">Electron session</a>, <a href="https://www.electronjs.org/docs/latest/api/cookies">Cookies</a>, <a href="https://www.electronjs.org/docs/latest/api/web-contents-view">WebContentsView</a></th><td>Persistent partitions, per-cookie writes</td><td>Used</td></tr>
+<tr><th scope="row"><a href="https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md">Chromium user data</a>, <a href="https://chromium.googlesource.com/chromium/src/+/refs/tags/145.0.7573.1/components/user_data_importer/">user_data_importer</a></th><td>Profile file locations; the C++ importer is not exposed to Electron and has no general Cookies import</td><td>Not duplicated</td></tr>
+<tr><th scope="row"><a href="https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/drawImage">Canvas drawImage</a></th><td>Drawing without reading pixels</td><td>Used by the favicon cache</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="verification">
+<summary>Code and verification</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Code and checks</th></tr></thead>
+<tbody>
+<tr><th scope="row">Surfaces</th><td><code translate="no">new-tab-page.tsx</code>, <code translate="no">browser-home-page.tsx</code>, <code translate="no">builtin-tab-pane.tsx</code>, <code translate="no">web-history.css</code>; <code translate="no">apps/web/tests/browser/</code></td></tr>
+<tr><th scope="row">Toolbar, menus</th><td><code translate="no">web-tab-pane.tsx</code>, <code translate="no">browser-controls.tsx</code>, <code translate="no">main-menu.tsx</code>, <code translate="no">menu-overlay/context-menu/page.tsx</code>; <code translate="no">check-web-split.mjs</code>, <code translate="no">check-center-tabs.mjs</code>, <code translate="no">check-webtab-zoom-bounds.js</code></td></tr>
+<tr><th scope="row">Navigation, Find, Print, downloads</th><td><code translate="no">apps/desktop/main.js</code>, <code translate="no">desktop-bridge.ts</code>; <code translate="no">check-webtab-navigation.js</code> (ownership, system-print and save cancellation, write failure, ownership lost during rendering)</td></tr>
+<tr><th scope="row">Preview scope</th><td><code translate="no">web-tab-pip-store.ts</code>, <code translate="no">web-tab-pip.tsx</code>; <code translate="no">check-web-split.mjs</code> (owner chat, inventory, switching without pointer-up), <code translate="no">check-webtab-navigation.js</code> (first commit, zoom after transfer)</td></tr>
+<tr><th scope="row">Import</th><td><code translate="no">browser-profile-import.js</code>, <code translate="no">browsing-history-store.js</code> self-checks; <code translate="no">apps/web/lib/tabs/browser/bookmarks.ts</code>, <code translate="no">bookmarks-store.test.mjs</code>; <code translate="no">check-no-browser-extensions.js</code></td></tr>
+<tr><th scope="row">Icons</th><td><code translate="no">favicon-cache.test.mjs</code> (coalescing, expiry, timeout, eviction); <code translate="no">check-bookmark-menu-cache.cjs</code> (reuse, hidden senders, disposal); <code translate="no">test_tab_favicons.py</code>, <code translate="no">bookmark-favicons.test.mjs</code> (rendering, remounts, reopening with <code translate="no">Cache-Control: no-store</code> issues no second request)</td></tr>
+<tr><th scope="row">Agent tasks</th><td>Real Runtime with a fake provider: one action then verification, no replay, same conversation identity on close, stale bindings rejected. Owned headless Chromium file-input fixture: corrective retries, denial, stale refs, sandbox reads, cancellation with zero transmission.</td></tr>
+<tr><th scope="row">Installed App</th><td>Visible checks use <code translate="no">/Applications/OpenProgram.app</code>, port 18100 and <code translate="no">~/.openprogram</code>. Covered: popup stays active and route unchanged; 3 Chrome profiles found; import cancellation releases the lease; 1000 of 5000 history rows at 38 px; download, cancel, open and reveal; Find, Zoom, and the Save PDF fallback.</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="acceptance">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Everything above</td></tr>
+<tr><th scope="row">Not yet</th><td>Installed-App acceptance of the homepage shortcut editor (headless checks cover it); default-App visual check of bookmark icons, overflow and manager access</td></tr>
+<tr><th scope="row">Limits</th><td>Full-screen terminal programs that depend on a PTY</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="web-tab-native-bounds.html">Native page bounds</a></p>

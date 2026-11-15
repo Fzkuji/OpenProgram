@@ -1,0 +1,94 @@
+<title>工具结果持久化</title>
+<meta name="description" content="OpenProgram 如何完整保存截图和长工具输出、如何上报工具失败，以及与 Codex、Claude Code、OpenCode 的对比。">
+<h1>工具结果持久化</h1>
+<p>正常截图和长文本完整保存；展示和模型输入分开管理。大小本身不会把成功的工具操作变成失败。可用资源的实际限制仍然存在。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">Codex</th><th scope="col">Claude Code</th><th scope="col">OpenCode</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">大截图</th><td>不占文字截断预算</td><td>受 MCP 输出 token 限制</td><td>未核实</td><td>完整保存图片。模型适配和局部查看另行设计。</td></tr>
+<tr><th scope="row">长日志</th><td>模型可见文字按预算截断</td><td>超限的非图片输出存文件并返回路径；默认 25,000 tokens，可配置</td><td>默认 2,000 行或 50 KiB，可配置；完整文本存文件，返回预览和路径</td><td>完整保存。统一预览、搜索、分段读取是后续方向。</td></tr>
+<tr><th scope="row">大结果的展示与事件</th><td>超过 1 MiB 的 MCP 事件副本转为文字预览，保持成功；不保证完整保留</td><td>超限的非图片结果变为会话 tool-results 引用</td><td>预览附完整输出路径</td><td>展示分页，大文字走引用，工具成功状态不变</td></tr>
+<tr><th scope="row">中断恢复</th><td>未核实</td><td>未核实</td><td>未核实</td><td>结果与完成记录原子发布；恢复已完成工具的位置，持久化失败不导致重复执行</td></tr>
+</tbody>
+</table>
+<p class="note">Codex 和 OpenCode 来自公开源码，Claude Code 来自官方文档，不能据此推断其未公开的持久化实现。未核实不表示不支持。阈值只对应所引用的路径。来源：<a href="https://github.com/openai/codex/blob/main/codex-rs/utils/output-truncation/src/lib.rs">Codex 输出</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs">Codex 事件</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/utils/pty/src/lib.rs">Codex 事件阈值</a>、<a href="https://code.claude.com/docs/en/mcp#mcp-output-limits-and-warnings">Claude Code MCP</a>、<a href="https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/tool/truncate.ts">OpenCode 输出</a>。</p>
+
+<h2>存储</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">助手回复、工具结果</th><td>按内容寻址的 blob，不受 64 KiB 执行流帧上限约束</td></tr>
+<tr><th scope="row">1 MiB</th><td>展示分页或生产者分块的目标。blob 存储不以此拒绝。</td></tr>
+<tr><th scope="row">保留</th><td>检查点元数据、引用计数、控制消息预算、内容哈希、执行所有权校验</td></tr>
+<tr><th scope="row">模型输入策略</th><td>不变</td></tr>
+</tbody>
+</table>
+
+<h2 id="effective-preview-cap">预览上限</h2>
+<ul>
+<li>上限取配置值（默认 30,000 字符）与 2,000 字符最小值中的较大者，先于截断和存文件的判断生效。</li>
+<li>未超上限的结果原样返回一次，不加标记，不建文件。</li>
+<li>更长的文本保留互不重叠的首部（默认 70%）和尾部，省略字符数为正。尾部长度为零时不追加文本。</li>
+<li>共享 normalizer 对已注册函数和 Agent 方法使用同一规则。</li>
+</ul>
+
+<h2 id="full-result-artifact-identity">完整结果文件</h2>
+<ul>
+<li>完整文字存在当前对话的目录里，路径是 <code translate="no">tool_results/&lt;sha256&gt;.txt</code>，按内容命名，随对话删除和备份。不在对话里时（一次性的 CLI 调用）存到配置档状态目录下的 <code translate="no">tool_results/</code>。</li>
+<li>同样的文字只存一份；不同的文字不会同名，不管是哪次调用、哪一层存的。Provider 原始 call ID 会重复，不参与命名。</li>
+<li>文件已存在就复用，因为名字说明了它存的就是这段文字。新文件先写到临时文件再移到位，所以完整写入后才返回路径。</li>
+<li>以前按别的名字写下的文件保持可读，不迁移。</li>
+</ul>
+
+<h2>失败信号</h2>
+<p>每个工具在自己的执行分支上给现有 <code translate="no">ToolReturn</code> 设置 <code translate="no">is_error</code>。公共 normalizer 不从文本推断失败，因此以 <code translate="no">Error:</code> 开头的成功结果仍是成功。</p>
+<table class="stack">
+<thead><tr><th scope="col">工具</th><th scope="col">报错情形</th><th scope="col">保持不变</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execute_code</code></th><td>Python 非零退出或超时，保留 stdout、stderr 和退出码或超时</td><td>成功结果；结构化沙箱拒绝；不重试、不重复子进程、后端选择不变。超时适配保留部分输出。</td></tr>
+<tr><th scope="row"><code translate="no">image_analyze</code>、<code translate="no">image_generate</code>、<code translate="no">mixture_of_agents</code></th><td>Provider 或模型不可用、显式模型引用无效、Provider 调用失败、保存失败、全部参考失败、汇总失败</td><td>部分参考失败保留其汇总或单参考回答。普通 <code translate="no">execute</code> 的签名和字符串返回不变；注册的工具是 <code translate="no">_execute_result</code>。</td></tr>
+<tr><th scope="row">Canvas</th><td>校验、路径策略、权限、块不存在</td><td>成功读取的块正文。普通 <code translate="no">execute</code> 同上。别名、路径准入、取消。</td></tr>
+<tr><th scope="row"><code translate="no">ask_user_question</code></th><td>问题无效、基础设施不可用、无交互前端，均保留原始文字</td><td>有效答案仍是字符串；拒绝和超时；同一个装饰后的 <code translate="no">AgentTool</code>、名称、schema、元数据和 interaction manifest。不自动回答，不改审批策略。</td></tr>
+</tbody>
+</table>
+<p class="note">schema、注册名称、后端选择、路径、重试预算、usage 标签和取消语义全部不变。</p>
+
+<h2>执行前暂停</h2>
+<ul>
+<li>在已完成操作之间接受的暂停，在下一次 Provider 或工具调用前处理。</li>
+<li>登记但未开始的操作记为 <code translate="no">not_started</code>，留在 Agent 恢复位置中待执行。</li>
+<li>首次操作前暂停的 live owner 从原有持久 admission 恢复，不生成虚构模型回复。</li>
+<li>结果持久化期间控制命令改变执行版本时，只在同一 attempt fence 下重试检查点发布，不重复外部操作。</li>
+</ul>
+
+<h2>达到委派上限时读取结果</h2>
+<ul>
+<li>达到 <code translate="no">agent.max_messages</code> 时，<code translate="no">read_conversation</code> 仍可发现，并能读取执行 id。读取不创建执行、分支或投递，不消耗额度。</li>
+<li>会话和祖先所有权检查仍然生效，且在等待之前。</li>
+<li>耗尽的链仍隐藏 <code translate="no">agent</code>；<code translate="no">send_message</code> 保留投递时的检查。没有单独的取消工具。</li>
+</ul>
+
+<details>
+<summary>验收方式</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">怎样验证</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execute_code</code></th><td>经 <code translate="no">AgentTool.execute</code> 调用已注册工具，运行真实的成功、失败和超时片段</td></tr>
+<tr><th scope="row"><code translate="no">read_conversation</code></th><td>在上限处解析公开工具目录，读取本会话已完成的 Job，在等待前拒绝其他会话的 Job</td></tr>
+<tr><th scope="row">辅助 Provider</th><td>已注册 wrapper 配合受控官方 Provider 传输和自有 PNG；未知引用、后端不可用、访问后端前的沙箱拒绝、取消</td></tr>
+<tr><th scope="row">Canvas</th><td>已注册工具操作自有文件；显式标记、文本不变、<code translate="no">Error:</code> 开头的成功数据、普通调用兼容</td></tr>
+<tr><th scope="row"><code translate="no">ask_user_question</code></th><td>经 <code translate="no">AgentTool.execute</code> 检查不可用输入和受控前端回答，不向真实用户提问</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>图片和文本完整保存、新建 store 后恢复、完成记录引用复用、损坏检测，以及上文全部内容</td></tr>
+<tr><th scope="row">未实现</th><td>模型侧统一预览和按需读取、图片局部查看；需先核实现有能力。已有的 <code translate="no">reconciliation_required</code> 执行不会自动修复。</td></tr>
+<tr><th scope="row">待验收</th><td>真实凭证与远程模型或图片能力；<code translate="no">execute_code</code>、Canvas 和完整结果文件的已安装 App 展示；预览上限的宿主与原生检查</td></tr>
+</tbody>
+</table>

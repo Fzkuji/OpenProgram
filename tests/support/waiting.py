@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from threading import Event
 from time import monotonic
-import sys
 
 
-_DEFAULT_TIMEOUT = 5.0 if sys.platform == "win32" else 1.0
+# The default only guards against a hang: polling returns as soon as the
+# predicate holds, so a generous ceiling costs nothing on a healthy run and
+# keeps a loaded machine from failing it. A caller asserting that something
+# does NOT happen passes its own short timeout.
+_DEFAULT_TIMEOUT = 30.0
 
 
 def wait_until(

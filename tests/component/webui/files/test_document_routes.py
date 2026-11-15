@@ -4,13 +4,12 @@ from __future__ import annotations
 import hashlib
 import types
 import uuid
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.store.project import project_store
-from openprogram.store.project.identity import capture_directory_identity
+from openprogram.state.store.project import project_store
+from openprogram.state.store.project.identity import capture_directory_identity
 
 
 def digest(raw: bytes) -> str:
@@ -23,13 +22,13 @@ def documents(tmp_path, monkeypatch):
     root.mkdir()
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    from openprogram.paths import get_state_dir
+    from openprogram.state.paths import get_state_dir
     state = get_state_dir()
     project = types.SimpleNamespace(id="p1", path=str(root),
                                     location_state="available", is_default=False,
                                     **capture_directory_identity(root))
     monkeypatch.setattr(project_store, "get_project", lambda key: project if key == "p1" else None)
-    from openprogram.webui.server import create_app
+    from openprogram.interfaces.server.server import create_app
     app = create_app()
     client = TestClient(app, base_url="http://127.0.0.1:18100",
                         headers={"Authorization": f"Bearer {app.state.owner_auth.token}"},
@@ -142,7 +141,7 @@ def test_publication_preserves_private_target_mode(documents):
 
 def test_restore_old_version_is_new_record_and_retry_survives_new_service(documents):
     client, root, state, _ = documents
-    from openprogram.store.document_history import DocumentHistory
+    from openprogram.state.store.document_history import DocumentHistory
     target = root / "a.txt"
     target.write_bytes(b"zero")
     assert put(client, "a.txt", b"zero", b"one", close=True).status_code == 200
@@ -167,7 +166,7 @@ def test_restore_old_version_is_new_record_and_retry_survives_new_service(docume
 
 def test_history_group_has_five_minute_upper_bound_and_external_edits_start_new_group(documents, monkeypatch):
     client, root, _, _ = documents
-    import openprogram.store.document_history as module
+    import openprogram.state.store.document_history as module
     now = [10_000.0]
     monkeypatch.setattr(module, "time", types.SimpleNamespace(time=lambda: now[0]))
     target = root / "a.txt"
@@ -184,7 +183,7 @@ def test_history_group_has_five_minute_upper_bound_and_external_edits_start_new_
 
 def test_prepare_failure_does_not_modify_target(documents, monkeypatch):
     client, root, _, _ = documents
-    from openprogram.store.snapshot.checkpoint.store import CheckpointStore
+    from openprogram.state.store.snapshot.checkpoint.store import CheckpointStore
     target = root / "a.txt"
     target.write_bytes(b"old")
     def fail(*args, **kwargs):
@@ -198,7 +197,7 @@ def test_prepare_failure_does_not_modify_target(documents, monkeypatch):
 
 def test_commit_failure_retains_before_and_exposes_unknown_history(documents, monkeypatch):
     client, root, _, _ = documents
-    from openprogram.store.snapshot.checkpoint import manifest
+    from openprogram.state.store.snapshot.checkpoint import manifest
     original = manifest.save
     failed = [False]
     def fail_once(path, value):
@@ -304,7 +303,7 @@ def test_outside_path_unknown_project_and_oversize_body_are_rejected(documents):
 
 def test_failed_autosave_keeps_previous_confirmed_version_visible(documents, monkeypatch):
     client, root, _, _ = documents
-    from openprogram.store.snapshot.checkpoint.store import CheckpointStore
+    from openprogram.state.store.snapshot.checkpoint.store import CheckpointStore
     (root / "a.txt").write_bytes(b"old")
     assert put(client, "a.txt", b"old", b"confirmed").status_code == 200
     confirmed = history(client, "a.txt")[0]["version_id"]
@@ -359,14 +358,14 @@ def test_empty_history_blob_reference_reports_corruption(documents):
 
 
 def test_authenticated_model_history_content_and_opaque_cursor(documents, monkeypatch):
-    from openprogram.store.document_history import DocumentHistory
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.store.snapshot.checkpoint import CheckpointStore
+    from openprogram.state.store.document_history import DocumentHistory
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.state.store.snapshot.checkpoint import CheckpointStore
     client, root, state, project = documents
     sessions = SessionStore(root_path=state / "sessions")
     try:
         sessions.create_session("model-http", agent_id="main")
-        monkeypatch.setattr("openprogram.store.default_store", lambda: sessions)
+        monkeypatch.setattr("openprogram.state.store.default_store", lambda: sessions)
         target = root / "model.docx"
         target.write_bytes(b"before\0")
         journal = CheckpointStore(sessions._session_dir("model-http"))
@@ -387,3 +386,38 @@ def test_authenticated_model_history_content_and_opaque_cursor(documents, monkey
         assert client.get("/api/documents/history/content",params=params,headers={"Authorization":"Bearer bad"}).status_code in (401,403)
     finally:
         sessions.close()
+
+
+def test_document_stat_tracks_changes_without_returning_content(documents):
+    client, root, _, _ = documents
+    target = root / 'preview.txt'
+    target.write_text('old')
+    params = {'project_id': 'p1', 'path': 'preview.txt'}
+    before = client.get('/api/documents/stat', params=params)
+    assert before.status_code == 200, before.text
+    assert set(before.json()) == {'version'}
+    content = client.get('/api/documents/content', params=params)
+    assert content.headers['x-document-version'] == before.json()['version']
+    assert before.headers['cache-control'] == 'no-store'
+    target.write_text('updated')
+    assert client.get('/api/documents/stat', params=params).json()['version'] != before.json()['version']
+    assert client.get('/api/documents/stat', params={**params, 'path': '../outside.txt'}).status_code in (400, 403)
+    assert client.get('/api/documents/stat', params={**params, 'path': 'missing.txt'}).status_code == 404
+    assert client.get('/api/documents/stat', params=params, headers={'Authorization': 'Bearer bad'}).status_code in (401, 403)
+
+
+def test_document_stat_uses_attachment_roots(documents, monkeypatch, tmp_path):
+    client, root, _, _ = documents
+    from openprogram.state import attachments
+    monkeypatch.setattr(attachments, 'readable_roots', lambda *args, **kw: [root])
+    target = root / 'preview.pdf'
+    target.write_bytes(b'%PDF')
+    params = {'session_id': 's', 'path': str(target)}
+    stat = client.get('/api/documents/stat', params=params)
+    assert stat.status_code == 200, stat.text
+    raw = client.get('/api/file-raw', params=params)
+    assert raw.headers['x-document-version'] == stat.json()['version']
+    assert raw.headers['cache-control'] == 'no-store'
+    outside = tmp_path / 'outside.pdf'
+    outside.write_bytes(b'%PDF')
+    assert client.get('/api/documents/stat', params={**params, 'path': str(outside)}).status_code == 403

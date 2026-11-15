@@ -1,10 +1,10 @@
 """Tool expansion must be DETERMINISTIC — the tools array sits at the prompt
-cache prefix root (providers/cache_policy.py), so if the same intent expands
+cache prefix root (providers/settings/cache_policy.py), so if the same intent expands
 to a different order/set across turns, the whole prompt cache misses every
 turn (silently, no error). These tests lock the property: same intent →
 byte-identical tool name sequence.
 
-Design: docs/design/runtime/tool-toggle-management.md §4.2 (hard constraint),
+Design: docs/reference/design/runtime/agent-configuration/tool-toggle-management.html §4.2 (hard constraint),
 §6 step 1.
 """
 from __future__ import annotations
@@ -22,10 +22,9 @@ def test_default_expansion_deterministic():
     assert a == b, "DEFAULT_TOOLS expansion must be order-stable across calls"
 
 
-def test_fresh_default_includes_playwright_browser_only():
+def test_fresh_default_has_no_browser_driver_tool():
     names = _names(agent_tools())
-    assert "playwright_browser" in names
-    assert "agent_browser" not in names
+    assert not {"playwright_browser", "agent_browser", "browser_agent"} & set(names)
 
 
 def test_default_names_arg_deterministic():

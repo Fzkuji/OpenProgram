@@ -5,20 +5,24 @@ from types import MappingProxyType
 
 import pytest
 
-from openprogram.security.safe_http import (
+from openprogram.host.security.safe_http import (
     CONSUMER_REGISTRY,
     SDKDisposition,
 )
-from openprogram.security.url_policy import URLTrustClass, evaluate_url
+from openprogram.host.security.url_policy import URLTrustClass, evaluate_url
+from openprogram.programs.applications.office_editor.install import OFFICE_DOWNLOAD_BYTES
 
 
 EXPECTED_CONSUMERS = {
     "tool.web_fetch",
+    "tool.web_fetch.owner",
     "tool.web_search.fixed_api",
     "tool.web_search.configured_api",
     "tool.image_api.fixed",
     "tool.image_api.configured",
+    "tool.voice_api.fixed",
     "tool.image_result.download",
+    "tool.image_result.download.owner",
     "channel.attachment.download",
     "channel.telegram.api",
     "channel.discord.api",
@@ -29,6 +33,7 @@ EXPECTED_CONSUMERS = {
     "channel.slack.generated_asset.upload",
     "channel.telegram.attachment",
     "channel.wechat.api",
+    "channel.wechat.cdn",
     "channel.feishu.api",
     "channel.matrix.configured",
     "channel.generated_asset.download",
@@ -38,6 +43,7 @@ EXPECTED_CONSUMERS = {
     "plugins.autoupdate",
     "updater.github",
     "office.assets",
+    "self_update.electron",
     "provider.fixed_api",
     "provider.configured_api",
     "provider.oauth.fixed",
@@ -55,6 +61,7 @@ EXPECTED_CONSUMERS = {
     "webui.model_listing.fixed",
     "webui.model_listing.configured",
     "runtime.local_probe",
+    "computer_use.vm",
 }
 
 EXPECTED_FIXED_ORIGINS = {
@@ -72,6 +79,7 @@ EXPECTED_FIXED_ORIGINS = {
             "https://chat-api.you.com",
             "https://export.arxiv.org",
             "https://google.serper.dev",
+            "https://html.duckduckgo.com",
             "https://kagi.com",
             "https://ollama.com",
             "https://s.jina.ai",
@@ -86,6 +94,9 @@ EXPECTED_FIXED_ORIGINS = {
             "https://queue.fal.run",
         }
     ),
+    "tool.voice_api.fixed": frozenset(
+        {"https://api.groq.com", "https://api.openai.com"}
+    ),
     "channel.telegram.api": frozenset({"https://api.telegram.org"}),
     "channel.discord.api": frozenset({"https://discord.com"}),
     "channel.discord.gateway_sdk": frozenset({"https://discord.com"}),
@@ -96,15 +107,19 @@ EXPECTED_FIXED_ORIGINS = {
     ),
     "channel.slack.generated_asset.upload": frozenset({"https://files.slack.com"}),
     "channel.telegram.attachment": frozenset({"https://api.telegram.org"}),
+    "channel.wechat.cdn": frozenset({"https://novac2c.cdn.weixin.qq.com"}),
     "channel.feishu.api": frozenset(
         {"https://open.feishu.cn", "https://open.larksuite.com"}
     ),
     "skills.github.catalog": frozenset(
         {"https://clawhub.ai", "https://codeload.github.com", "https://github.com"}
     ),
-    "plugins.autoupdate": frozenset({"https://pypi.org", "https://registry.npmjs.org"}),
+    "plugins.autoupdate": frozenset({"https://registry.npmjs.org"}),
     "updater.github": frozenset({"https://api.github.com"}),
     "office.assets": frozenset({"https://github.com", "https://release-assets.githubusercontent.com"}),
+    "self_update.electron": frozenset(
+        {"https://github.com", "https://release-assets.githubusercontent.com"}
+    ),
     "provider.fixed_api": frozenset(
         {
             "https://ai-gateway.vercel.sh",
@@ -187,7 +202,10 @@ def test_every_consumer_declares_finite_limits_and_mime_policy():
         assert 0 < spec.max_redirects <= 20
         if key == "office.assets":
             # The pinned optional archive streams to disk, not an in-memory API body.
-            assert spec.max_decoded_body_bytes == 732_695_641
+            assert spec.max_decoded_body_bytes == OFFICE_DOWNLOAD_BYTES
+        elif key == "self_update.electron":
+            # So does the pinned Electron archive a complete self-update build needs.
+            assert spec.max_decoded_body_bytes == 512 * 1024 * 1024
         else:
             assert 0 < spec.max_decoded_body_bytes <= 128 * 1024 * 1024
         assert spec.accepted_mime_prefixes

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import gzip
 import os
-from collections import deque
 from dataclasses import replace
 from types import MappingProxyType
 
@@ -11,13 +10,13 @@ import httpcore
 import httpx
 import pytest
 
-import openprogram.security.safe_http as safe_http
-from openprogram.security.safe_http import (
+import openprogram.host.security.safe_http as safe_http
+from openprogram.host.security.safe_http import (
     OutboundSecurityConfig,
     safe_async_client,
     safe_client,
 )
-from openprogram.security.url_policy import URLPolicyError
+from openprogram.host.security.url_policy import URLPolicyError
 
 
 _MALFORMED_CONTENT_LENGTHS = [b"+1", b"1_0", b"-0", b"", "١".encode()]
@@ -667,6 +666,34 @@ def test_overall_timeout_is_enforced_during_body_read(monkeypatch):
     assert exc.value.reason == "OVERALL_TIMEOUT"
 
 
+def test_a_body_still_moving_outlives_the_deadline_when_it_does_not_cover_the_body(
+    monkeypatch,
+):
+    """A large asset on a slow link is read whole however long it takes;
+    only a read that goes silent (the read timeout) ends it."""
+    monkeypatch.setattr(safe_http, "monotonic", lambda: 0.0)
+    client = _small_client(
+        monkeypatch,
+        httpcore.Response(
+            200, headers=[(b"content-type", b"text/plain")], content=[b"ok", b"ok"]
+        ),
+    )
+    spec = safe_http.CONSUMER_REGISTRY["tool.web_fetch"]
+    registry = dict(safe_http.CONSUMER_REGISTRY)
+    registry["tool.web_fetch"] = replace(spec, deadline_covers_body=False)
+    monkeypatch.setattr(safe_http, "CONSUMER_REGISTRY", MappingProxyType(registry))
+    later = iter((0.0, 0.0))
+    monkeypatch.setattr(safe_http, "monotonic", lambda: next(later, 10_000.0))
+
+    with client:
+        assert client.get("https://public.test/resource").content == b"okok"
+
+
+def test_the_office_pack_is_read_while_it_moves():
+    assert safe_http.CONSUMER_REGISTRY["office.assets"].deadline_covers_body is False
+    assert safe_http.CONSUMER_REGISTRY["tool.web_fetch"].deadline_covers_body is True
+
+
 def test_audit_events_retain_a_fixed_sanitized_recent_window():
     client = safe_client(
         "tool.web_fetch",
@@ -822,14 +849,22 @@ def test_fdopen_failure_closes_download_descriptor_and_removes_temp(
     monkeypatch, tmp_path, asynchronous
 ):
     descriptors: list[int] = []
+    closed_descriptors: list[int] = []
     real_mkstemp = safe_http.tempfile.mkstemp
+    real_close = safe_http.os.close
 
     def record_mkstemp(*args, **kwargs):
         descriptor, name = real_mkstemp(*args, **kwargs)
         descriptors.append(descriptor)
         return descriptor, name
 
+    def record_close(descriptor):
+        real_close(descriptor)
+        if descriptor in descriptors:
+            closed_descriptors.append(descriptor)
+
     monkeypatch.setattr(safe_http.tempfile, "mkstemp", record_mkstemp)
+    monkeypatch.setattr(safe_http.os, "close", record_close)
     monkeypatch.setattr(
         safe_http.os,
         "fdopen",
@@ -862,8 +897,9 @@ def test_fdopen_failure_closes_download_descriptor_and_removes_temp(
             client.download("https://public.test/resource", destination)
 
     assert len(descriptors) == 1
-    with pytest.raises(OSError):
-        os.fstat(descriptors[0])
+    # Observe the successful close, not the later state of its integer: an
+    # event loop or background thread may already have reused that number.
+    assert descriptors[0] in closed_descriptors
     assert list(tmp_path.iterdir()) == []
 
 
@@ -874,8 +910,8 @@ async def _empty_async():
 
 @pytest.mark.parametrize('explicit_limit', [None, 1800.0])
 def test_provider_stream_has_no_default_total_duration_limit(monkeypatch, explicit_limit):
-    from openprogram.providers.utils import timeouts
-    from openprogram.providers.utils.http_client import build_async_client
+    from openprogram.models.providers.utils import timeouts
+    from openprogram.models.providers.utils.http_client import build_async_client
     if explicit_limit is not None:
         monkeypatch.setattr(timeouts, 'STREAM_TOTAL_TIMEOUT_S', explicit_limit)
     now = [0.0]
@@ -911,7 +947,7 @@ def test_provider_stream_has_no_default_total_duration_limit(monkeypatch, explic
 
 @pytest.mark.parametrize('asynchronous', [False, True])
 def test_google_provider_uses_unbounded_stream_duration(monkeypatch, asynchronous):
-    from openprogram.providers.utils.http_client import build_google_http_options
+    from openprogram.models.providers.utils.http_client import build_google_http_options
     options = build_google_http_options('https://public.test')
     now = [0.0]
     monkeypatch.setattr(safe_http, 'monotonic', lambda: now[0])

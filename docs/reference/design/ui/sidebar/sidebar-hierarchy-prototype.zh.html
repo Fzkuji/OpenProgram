@@ -1,0 +1,39 @@
+<title>侧栏层级</title>
+<meta name="description" content="左侧栏里项目行和其下对话行的对齐方式。">
+<h1>侧栏层级</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 236" role="img" aria-label="项目行的图标位是文件夹，名称从 x 36 开始，右端是折叠箭头。下面的对话行文字同样从 x 36 开始。文件夹图标轴线 x 17 上的竖线连接各对话的标记。">
+  <line class="ln-acc" x1="62" y1="62" x2="62" y2="196"/>
+  <line class="ln-faint" x1="120" y1="20" x2="120" y2="214"/>
+  <text class="t-soft mid" x="62" y="14">x 17</text>
+  <text class="t-soft mid" x="120" y="14">x 36</text>
+  <rect class="tile" x="20" y="28" width="360" height="34" rx="8"/>
+  <text class="mid" x="62" y="50">文件夹</text>
+  <text x="128" y="50">OpenProgram</text>
+  <text class="t-soft" x="310" y="50">+</text>
+  <text class="t-soft" x="340" y="50">箭头</text>
+  <text class="t-soft" x="128" y="92">代理重构</text>
+  <text class="t-soft" x="128" y="132">文档样式</text>
+  <text class="t-soft" x="128" y="172">设计标签页</text>
+  <text x="404" y="50">项目行：30px，14px 文字</text>
+  <text class="t-soft" x="404" y="72">悬停显示 +：在此新建对话</text>
+  <text x="404" y="132">对话行：30px，13px 文字</text>
+  <text class="t-soft" x="404" y="154">竖线在每个标记前断开</text>
+</svg>
+<dl class="pairs fig-narrow">
+  <dt>项目行</dt><dd>30px，14px 文字，图标位是文件夹，名称在 x 36，末端是箭头；悬停显示 +，在此新建对话</dd>
+  <dt>对话行</dt><dd>30px，13px 文字，从 x 36 开始</dd>
+  <dt>竖线</dt><dd>1px，在 x 17，即文件夹轴线；在每个标记前断开</dd>
+</dl>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">分组方式</th><td>日期（默认）、状态和平铺是带标题的分区；项目是这棵文件夹树</td></tr>
+<tr><th scope="row">没有项目的对话</th><td>归入默认项目组，与后端 <code translate="no">project_for_session</code> 的回退一致</td></tr>
+<tr><th scope="row">展开状态</th><td>存在 <code translate="no">localStorage</code>；当前对话所在的项目自动展开</td></tr>
+</tbody>
+</table>
+<p class="note">行盒来自 <code translate="no">ui-list-item</code>；竖线画在 <code translate="no">sidebar.module.css</code>。</p>

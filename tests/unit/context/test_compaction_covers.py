@@ -18,22 +18,14 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.context.nodes import (
-    Call,
-    Graph,
-    ROLE_USER,
-    ROLE_LLM,
-    ROLE_CODE,
-    active_summary,
-    render_context,
-    summary_covers_ids,
-)
-from openprogram.context.persistence import (
+from openprogram.state.store.session.nodes import Call, Graph, ROLE_USER, ROLE_LLM, ROLE_CODE
+from openprogram.runtime.context.nodes import active_summary_for_chain, render_context, summary_covers_ids
+from openprogram.runtime.context.persistence import (
     Persister,
     SUMMARY_NODE_NAME,
     covered_chain_ids,
 )
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.session_store import SessionStore
 
 
 # --- render_context segment substitution ----------------------------
@@ -118,7 +110,7 @@ def test_only_the_newest_summary_substitutes():
     old = _summary(g, nodes[:2])
     new = _summary(g, nodes[:4])
 
-    assert active_summary(g).id == new.id
+    assert active_summary_for_chain(g, [n.id for n in nodes]).id == new.id
     ids = render_context(g, head_id=nodes[-1].id, frame_entry_seq=-1)
 
     assert new.id in ids
@@ -143,7 +135,7 @@ def test_summary_covers_ids_ignores_malformed_metadata():
 @pytest.fixture
 def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
     st = SessionStore(tmp_path / "sessions")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: st)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: st)
     return st
 
 
@@ -175,7 +167,7 @@ def test_persister_splices_summary_at_the_segment_start(store: SessionStore):
     assert node["predecessor"] == (covered[0].get("predecessor") or "")
     assert "the recap" in node["content"]
 
-    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    from openprogram.state.store.session.session_node_writer import SessionNodeWriter
     graph = SessionNodeWriter(store, "s1").load()
     assert graph.nodes[sid].metadata.get("covers_ids") == \
         [m["id"] for m in covered]
@@ -269,7 +261,7 @@ def test_recompaction_extends_the_covered_segment(store: SessionStore):
     )
     assert second
 
-    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    from openprogram.state.store.session.session_node_writer import SessionNodeWriter
     graph = SessionNodeWriter(store, "s8").load()
     covers = graph.nodes[second].metadata.get("covers_ids")
     assert covers == [m["id"] for m in msgs[:6]]

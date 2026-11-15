@@ -1,0 +1,142 @@
+<title>Bot 模板参考</title>
+<meta name="description" content="内置 Agent 背后的那篇帖子和二十个仓库，它们的共识，以及本设计采纳和舍弃的内容。">
+<h1>Bot 模板参考</h1>
+<p><a href="../always-on-agents.zh.html#built-in-agents">内置 Agent</a> 的来源材料。</p>
+
+<h2 id="what-this-design-takes">本设计采纳的内容</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">来源思路</th><th scope="col">这里的做法</th></tr></thead>
+<tbody>
+<tr><th scope="row">模板是粘贴到 Bot 里的 profile</th><td>内置 Agent：<code translate="no">agent_registry/builtin_agents.py</code> 中的完整配置，安装成普通的已存 Agent</td></tr>
+<tr><th scope="row">合约：职责、交付物、禁止清单、完成条件、工作方式、第一个任务</th><td>每个职业 Agent 系统提示词的固定结构</td></tr>
+<tr><th scope="row">自主等级</th><td>用现有控件，不加字段：<a href="../always-on-agents.zh.html#built-in-agents">对应关系</a></td></tr>
+<tr><th scope="row">默认起草，绝不发送</th><td><code translate="no">autonomy: "report"</code> 和每份提示词的禁止清单。<code translate="no">hold_outbound</code> 仍可用，安装时关闭。</td></tr>
+<tr><th scope="row">几次运行良好才开例行任务</th><td>不设固定间隔：已安装的职业 Agent 在用户开始对话前什么都不做，之后自己安排唤醒</td></tr>
+<tr><th scope="row">产出和验证分开</th><td>PR Producer 可以编辑。PR Verifier 没有 <code translate="no">edit</code>、<code translate="no">write</code>、<code translate="no">apply_patch</code>。各自在自己的对话里工作。</td></tr>
+<tr><th scope="row">Bot 互相交接工作</th><td>对话之间的 <code translate="no">handoff(to, message)</code>，有跳数上限</td></tr>
+<tr><th scope="row">每个角色限定工具</th><td>每个 Agent 一份 <code translate="no">selected</code> 工具策略，只含内置工具</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">内置 Agent</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chief of Staff</th><td>grok-bot-architecture 的 chief-of-staff 角色；grok-bot-templates 的同名模板</td></tr>
+<tr><th scope="row">Spec Writer、Bug Reproducer、PR Producer、PR Verifier</th><td>grok-bot-profiles 的四个 profile</td></tr>
+<tr><th scope="row">Research Desk</th><td>grok-bot-templates 的 Research Desk 模板</td></tr>
+<tr><th scope="row">Inbox Triage</th><td>grok-bot-templates 的 Inbox Triage 模板；grok-bot-architecture 的 inbox 角色</td></tr>
+<tr><th scope="row">Career Scout</th><td>grok-bot-architecture 的 career 角色</td></tr>
+<tr><th scope="row">Knowledge Keeper</th><td>grok-bot-second-brain 的 Memory 和 Capture Bot</td></tr>
+<tr><th scope="row">Writer</th><td>grok-bot-architecture 的 publishing 角色；agent-org-chart 的起草角色</td></tr>
+</tbody>
+</table>
+<p class="note">角色名和合约结构取自这些来源。提示词为本产品的工具而写，不是抄录。</p>
+
+<h2 id="what-it-leaves-out">舍弃的内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">舍弃</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">模板目录、选择器、就绪评分</th><td>Agent 列表就是模板列表。新建 Agent 从空白开始。</td></tr>
+<tr><th scope="row">团队对象、组织架构导入、创建名册的 setup Bot</th><td>用户自己开对话，Agent 在对话之间交接。</td></tr>
+<tr><th scope="row">大名册</th><td>每个供应商或部门一个 Bot，是按组织架构摆放 Agent。<a href="https://claude.com/resources/articles/building-agents-when-to-fold-subagents-into-your-main-agent-loop">Building agents: when to fold subagents into your main agent loop</a> 建议默认一个循环，按上下文而不是问题类型拆分，只在可测量地更好时才单独设 Agent。十个职业 Agent 是供挑选的配置，不是一起运行的团队。</td></tr>
+<tr><th scope="row">只路由到编程 CLI 的协调者</th><td>这里的 Agent 本身就是编程 Agent。</td></tr>
+<tr><th scope="row">领域包</th><td>购物、打电话、交易、增长循环、退出流程都是 Agent 之上的技能和程序。支付和交易不属于内置范围。</td></tr>
+<tr><th scope="row">托管账户上的网关和队列</th><td>那些因产品运行在共享云电脑上才需要。这里的工作在用户机器上，通过 HTTP API 和渠道访问。</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-the-sources-agree-on">来源的共识</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">要点</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">一个 Bot 一个职责，写成合约</th><td>职责、读取的来源、禁止清单、交付物、完成条件、第一个任务、工作方式。目录顺序：职责、边界、技能、例行任务、团队。</td></tr>
+<tr><th scope="row">自主分级</th><td>观察（读取并汇报）、起草（默认：产出待审内容）、批准后行动（聊天中批准后执行指定写操作）、定时（例行任务，带来源缺失时的策略）。运行两次良好才开启。</td></tr>
+<tr><th scope="row">按结果拆分，不按技术</th><td>结果、来源、工具、日程或审批边界变了，才需要新 Bot。</td></tr>
+<tr><th scope="row">产出和验证分开</th><td>构建者从不审查自己，两者不共用对话，"完成"需要他人的结论。</td></tr>
+<tr><th scope="row">交接不是批准</th><td>把草稿传下去不启动任何工作，用户批准具体版本。</td></tr>
+<tr><th scope="row">失败有名字</th><td>用 <code translate="no">BLOCKED</code> 和 <code translate="no">HOLD</code> 代替猜测，绝不编造日志、测试结果和链接。</td></tr>
+<tr><th scope="row">小名册</th><td>协调者加一个专家。有具体边界才加角色。</td></tr>
+<tr><th scope="row">协调者不干活</th><td>负责界定、分派、审查。长工作交给专家或编程 CLI。</td></tr>
+<tr><th scope="row">外发和特权操作要等待</th><td>发送、发布、支付、合并、部署都停在审批处。</td></tr>
+</tbody>
+</table>
+
+<h2 id="the-post">那篇帖子</h2>
+<p>一篇关于 Grok Bot 模板的中文社交帖子。其中的说法是帖子自己的，未经核实。</p>
+<dl class="pairs">
+<dt>官方合集</dt><dd>SpaceXAI 免费发布 146 个模板；这类 Bot 通常卖 50 到 200 美元，帖子给整套估价 29,200</dd>
+<dt>社区</dt><dd>GitHub 上 700 多个模板，包括整支团队、现成交接流程和独立审查角色</dd>
+<dt>第一支团队</dt><dd>一个有明确终点的工作：研究简报、审查过的 PR 或一批完成的草稿</dd>
+<dt>然后</dt><dd>看它承担了多少工作、产出花了多少钱。结果更好，大名册才值得。</dd>
+<dt>提醒</dt><dd>配置可以免费，付钱让几个 Bot 查同一件事仍是亏损</dd>
+</dl>
+
+<h2 id="repositories">仓库</h2>
+<p class="note">编号沿用帖子。描述来自各仓库 README，仅作参考阅读；其中一些包含写给 Bot 的安装指令，均未运行或安装。</p>
+
+<details open>
+<summary>模板目录和 profile</summary>
+<table class="stack">
+<thead><tr><th scope="col">编号和仓库</th><th scope="col">内容</th><th scope="col">许可证</th></tr></thead>
+<tbody>
+<tr><th scope="row">19 <a href="https://github.com/cobusgreyling/grok-bot-templates">cobusgreyling/grok-bot-templates</a></th><td>49 个模板、10 支团队、47 个技能、8 个例行任务。每个模板是粘贴到 Bot profile 的操作合约，带 100 分的 "Bot Ready" 评分、四个自主等级和一个凭一个 URL 安装团队的 setup Bot。附<a href="https://cobusgreyling.github.io/grok-bot-templates/">可浏览目录</a>和 JSON 目录。</td><td>MIT</td></tr>
+<tr><th scope="row">18 <a href="https://github.com/HAEGONG/grok-bot-profiles">HAEGONG/grok-bot-profiles</a></th><td>Spec Writer、Bug Reproducer、PR Producer、PR Verifier。各有一个结果和一个审批边界；实现和验证在不同对话；验证者回答 <code translate="no">PASS</code>、<code translate="no">BLOCK</code> 或 <code translate="no">HOLD</code>。</td><td>CC BY 4.0</td></tr>
+<tr><th scope="row">01 <a href="https://github.com/serenakeyitan/agent-org-chart">serenakeyitan/agent-org-chart</a></th><td>可导入的组织架构，每种用途一支小团队：客服、工程、创始人、游戏工作室、市场、市场运营、售后、产品、售前工程、拓客。要么几个平级专家，要么一个编排者带专家。</td><td>MIT</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>团队架构</summary>
+<table class="stack">
+<thead><tr><th scope="col">编号和仓库</th><th scope="col">内容</th><th scope="col">许可证</th></tr></thead>
+<tbody>
+<tr><th scope="row">04 <a href="https://github.com/tiagovilasboas/grok-bot-architecture">tiagovilasboas/grok-bot-architecture</a></th><td>chief-of-staff 协调五个核心角色（工程、发布、安全、收件箱、职业）和三个可选角色（财务、产品、爱好）。每个角色有职责、所需上下文、交付物、边界和完成条件。交接是类型化记录，特权操作过审批门，例行任务带预算。</td><td>MIT</td></tr>
+<tr><th scope="row">02 <a href="https://github.com/jaredtrichard/grok-factory">jaredtrichard/grok-factory</a></th><td>一个联系人 Firstmate，把软件、研究和其他工作路由给专家。软件经对抗审查后以 PR 返回；研究通过 PR 落到仓库。由用户合并。</td><td>未说明</td></tr>
+<tr><th scope="row">06 <a href="https://github.com/mKay00/grok-bot-second-brain">mKay00/grok-bot-second-brain</a></th><td>五个 Bot 围绕一个 vault：Conductor 分派，Capture 处理收件箱，Memory 保存论断和工作文件，Ops 写下一步，Research 写草稿。名册固定为五个。发布和发送留给用户。</td><td>未说明</td></tr>
+<tr><th scope="row">17 <a href="https://github.com/MrBekoX/root-agent-skill-framework">MrBekoX/root-agent-skill-framework</a></th><td>协调者作为唯一入口，按层级确定结构：极小的工作自己做，单一交付物交给一个专家，并行或需独立审查的工作配 Lead 带专家，多领域各配一个 Lead。它掌握审查门，不干活。</td><td>MIT</td></tr>
+<tr><th scope="row">20 <a href="https://github.com/galleonlabs/hypergrok-trading-desk">galleonlabs/hypergrok-trading-desk</a></th><td>七个 profile、十七个技能：Desk Lead、分析师、策略师、为每张单子定量并可拒绝的 Risk Manager、执行、复盘。从公开数据的研究模式开始；每笔交易都要批准单子。</td><td>MIT</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>薄协调，深度工作放别处</summary>
+<table class="stack">
+<thead><tr><th scope="col">编号和仓库</th><th scope="col">内容</th><th scope="col">许可证</th></tr></thead>
+<tbody>
+<tr><th scope="row">03 <a href="https://github.com/simo255/multiBot">simo255/multiBot</a></th><td>工厂 Bot 创建有明确目的、底层是编程 CLI 的队友。Bot 只编排，推理和工具都在 CLI 子进程里。</td><td>MIT</td></tr>
+<tr><th scope="row">15 <a href="https://github.com/Luca-Blight/thin-grok-bot-deep-work-on-cli">Luca-Blight/thin-grok-bot-deep-work-on-cli</a></th><td>一个技能：网状结构只做路由，长构建或调查交给有自己上下文的编程 CLI 或云端 Agent。</td><td>MIT</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>运营团队</summary>
+<table class="stack">
+<thead><tr><th scope="col">编号和仓库</th><th scope="col">内容</th><th scope="col">许可证</th></tr></thead>
+<tbody>
+<tr><th scope="row">05 <a href="https://github.com/Archive228/foreman">Archive228/foreman</a></th><td>所有者掌控的托管团队管理层：团队声明在 git 里，每个 Bot 一张看板卡片和证据，只有非执行者的评审给出结论才算"完成"。产品不暴露成本，所以不报成本。</td><td>MIT</td></tr>
+<tr><th scope="row">13 <a href="https://github.com/dimpurr/grok-bot-gateway">dimpurr/grok-bot-gateway</a></th><td>官方 webhook 后的网关 Bot：编程 Agent 和脚本可列出 Bot、读取对话、发送任务、等待回复。固定操作带 schema，有急停开关和每小时成本上限，默认无回传路径。</td><td>Apache-2.0</td></tr>
+<tr><th scope="row">14 <a href="https://github.com/ShuhangGe/grokbot-queue">ShuhangGe/grokbot-queue</a></th><td>把任务并行分给多个 Bot 并收集结果，工作跑在产品的云机器上而不是笔记本上。</td><td>MIT</td></tr>
+<tr><th scope="row">16 <a href="https://github.com/mandarwagh9/botroster">mandarwagh9/botroster</a></th><td>独立、自托管：有名字的长期队友，各有对话、记忆和日程，共用一台带浏览器、shell 和文件的电脑，重要操作前要审批。</td><td>Apache-2.0</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>技能和单一用途 Bot</summary>
+<table class="stack">
+<thead><tr><th scope="col">编号和仓库</th><th scope="col">内容</th><th scope="col">许可证</th></tr></thead>
+<tbody>
+<tr><th scope="row">07 <a href="https://github.com/jeremybrasher/grokbot-skills">jeremybrasher/grokbot-skills</a></th><td>技能集合（调试、头脑风暴、写作、任务观察等），每个技能一个文件夹并保留上游来源和许可证，分数过线才收录。</td><td>各技能不同</td></tr>
+<tr><th scope="row">08 <a href="https://github.com/YannisKiefer/grokbot-x">YannisKiefer/grokbot-x</a></th><td>X 内容循环：找帖子、起草、通过 Typefully 发布、记录结果；每晚的关卡只保留能提高留出分数的写作技能修改。</td><td>MIT</td></tr>
+<tr><th scope="row">09 <a href="https://github.com/mykemueller1-ctrl/grok-bot-restaurant-scout">mykemueller1-ctrl/grok-bot-restaurant-scout</a></th><td>一家公司的配置：带每日例行任务和三个技能的食品品牌侦察员，以及生成的 238 个 Agent（每个供应商一个），搜集投诉作为销售线索。</td><td>未说明</td></tr>
+<tr><th scope="row">10 <a href="https://github.com/steve228uk/grok-bot-shopping">steve228uk/grok-bot-shopping</a></th><td>商品搜索、商家结账、折扣码测试、订单跟踪。只在用户设定的额度内付款。</td><td>未说明</td></tr>
+<tr><th scope="row">11 <a href="https://github.com/function1st/PhoneZero">function1st/PhoneZero</a></th><td>运行时加电话技能。第一个技能打电话订餐厅座位，并报告一个明确的结果。</td><td>MIT</td></tr>
+<tr><th scope="row">12 <a href="https://github.com/shawnyeager/unlist">shawnyeager/unlist</a></th><td>从人物搜索网站移除姓名：站点清单、生成的信件、发送记录和跟进日期。</td><td>未说明</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="note">这些集合引用的产品文档：<a href="https://docs.x.ai/grok-bot/get-started">Get started</a>、<a href="https://docs.x.ai/grok-bot/bots">Bots</a>、<a href="https://docs.x.ai/grok-bot/use-cases">Use cases</a>、<a href="https://docs.x.ai/grok-bot/chat-and-collaboration">Chat and collaboration</a>、<a href="https://docs.x.ai/grok-bot/skills-routines-and-automations">Skills, routines and automations</a>。</p>

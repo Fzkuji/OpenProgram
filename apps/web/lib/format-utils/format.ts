@@ -146,7 +146,6 @@ export function buildUsageText(
   // callers branch on provider-specific behavior in the future. The
   // current formatter doesn't actually need it — the backend already
   // normalizes `input_tokens` to "new" tokens for every provider.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _provider: string | null | undefined,
 ): UsageText | null {
   // 只在 usage 完全没有时不渲染. 全零也照样显示 ("0 in · 0 out") —
@@ -193,8 +192,8 @@ export function formatUsageBadge(
   if (!result) return "";
   const tip = ' title="' + escAttr(result.tooltip) + '"';
   return (
-    '<span style="font-size:10px;color:var(--text-muted);' +
-    'font-family:var(--font-mono);margin-left:auto;padding-left:8px"' +
+    '<span style="font-size:var(--fs-2xs);color:var(--text-muted);' +
+    'margin-left:auto;padding-left:8px"' +
     tip +
     ">" +
     escHtml(result.text) +

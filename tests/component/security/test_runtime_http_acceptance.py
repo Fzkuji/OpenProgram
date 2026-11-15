@@ -12,14 +12,14 @@ import httpcore
 import httpx
 import pytest
 
-from openprogram.security import safe_http
-from openprogram.security.safe_http import (
+from openprogram.host.security import safe_http
+from openprogram.host.security.safe_http import (
     OutboundSecurityConfig,
     PolicyProxyConfig,
     configured_safe_client,
     safe_client,
 )
-from openprogram.security.url_policy import OwnerURLException, URLPolicyError
+from openprogram.host.security.url_policy import OwnerURLException, URLPolicyError
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -332,7 +332,7 @@ def test_provider_failover_clients_do_not_share_pool_or_credentials(local_server
     local_server.redirect_to = second_origin + "/api/leak"
 
     async def exercise():
-        from openprogram.providers.utils.http_client import (
+        from openprogram.models.providers.utils.http_client import (
             aclose_current_loop_clients,
             get_shared_async_client,
         )

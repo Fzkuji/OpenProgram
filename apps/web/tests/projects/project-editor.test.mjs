@@ -1,49 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { registerHooks } from 'node:module';
-import ts from 'typescript';
-import { parseHTML } from 'linkedom';
-const webRoot = new URL('../../', import.meta.url);
-registerHooks({
-  resolve(specifier, context, next) {
-    const base = specifier.startsWith('@/') ? new URL(specifier.slice(2),webRoot).href : specifier.startsWith('.') && !/\.[a-z]+$/i.test(specifier) ? new URL(specifier,context.parentURL).href : null;
-    if(base) for(const suffix of ['.ts','.tsx','/index.ts','/index.tsx']) if(existsSync(fileURLToPath(base+suffix))) return {url:base+suffix,shortCircuit:true};
-    return next(specifier,context);
-  },
-  load(url,context,next) {
-    let source;
-    if(url.endsWith(".module.css")) source='export default new Proxy({}, {get:(_, key)=>String(key)});';
-    if(url.endsWith('/lib/i18n/index.ts')) source='export const useTranslation=()=>({text:(en)=>en});';
-    if(url.endsWith('/components/ui/dialog.tsx')) source='export const Dialog=({open,children})=>open?children:null; export const DialogContent=({children})=>children; export const DialogHeader=DialogContent; export const DialogTitle=DialogContent; export const DialogDescription=DialogContent; export const DialogFooter=DialogContent;';
-    if(url.endsWith('/components/ui/button.tsx')) source='import {createElement as h} from "react"; export const Button=({variant,...props})=>h("button",props);';
-    if(url.endsWith('/components/ui/folder-picker.tsx')) source='export const useFolderPicker=()=>({pickFolder:async()=>"/extra",folderPickerDialog:null,manualOpen:false});';
-    if(url.endsWith('/lib/session-store/session-scope.tsx')) source='export const useOptionalScopedSessionId=()=>globalThis.projectScopedSession ?? null;';
-    if(url.endsWith('/lib/runtime-bridge/ui.ts')) source='export const closeAllPopovers=()=>{};';
-    if(url.endsWith('/components/ui/popover.tsx')) source='export const Popover=({children})=>children;export const PopoverTrigger=Popover;export const PopoverContent=()=>null;';
-    if(url.endsWith('/components/ui/tooltip.tsx')) source='export const HoverTip=({children})=>children;';
-    if(url.endsWith('/lib/session-store/index.ts')) source='import {useSyncExternalStore} from "react"; export const useSessionStore=selector=>useSyncExternalStore(fn=>{globalThis.projectStoreListeners.add(fn);return()=>globalThis.projectStoreListeners.delete(fn);},()=>selector(globalThis.projectStore));useSessionStore.getState=()=>globalThis.projectStore;';
-    if(url.endsWith('/lib/net/ws-request.ts')) source='export const wsRequest=(...args)=>globalThis.projectRequest(...args);';
-    if(url.includes('/@radix-ui/react-dropdown-menu/')) source=`import {createElement as h,createContext,useContext,useState,cloneElement} from "react";
+import { installLoader } from '../_support/load.mjs';
+import { installDom } from '../_support/dom.mjs';
+installLoader({
+  replace: {
+    "/lib/i18n/index.ts": 'export const useTranslation=()=>({text:(en)=>en});',
+    "/components/ui/dialog.tsx": 'export const Dialog=({open,children})=>open?children:null; export const DialogContent=({children})=>children; export const DialogHeader=DialogContent; export const DialogTitle=DialogContent; export const DialogDescription=DialogContent; export const DialogFooter=DialogContent;',
+    "/components/ui/button.tsx": 'import {createElement as h} from "react"; export const Button=({variant,size,...props})=>h("button",props); export const buttonVariants=()=>"";',
+    "/components/ui/folder-picker.tsx": 'export const useFolderPicker=()=>({pickFolder:async()=>"/extra",folderPickerDialog:null,manualOpen:false});',
+    "/lib/session-store/session-scope.tsx": 'export const useOptionalScopedSessionId=()=>globalThis.projectScopedSession ?? null;',
+    "/lib/runtime-bridge/ui.ts": 'export const closeAllPopovers=()=>{};',
+    "/components/ui/popover.tsx": 'export const Popover=({children})=>children;export const PopoverTrigger=Popover;export const PopoverContent=()=>null;',
+    "/components/ui/tooltip.tsx": 'export const HoverTip=({children})=>children; export const TipBody=()=>null;',
+    "/lib/session-store/index.ts": 'import {useSyncExternalStore} from "react"; export const useSessionStore=selector=>useSyncExternalStore(fn=>{globalThis.projectStoreListeners.add(fn);return()=>globalThis.projectStoreListeners.delete(fn);},()=>selector(globalThis.projectStore));useSessionStore.getState=()=>globalThis.projectStore;',
+    "/lib/net/ws/ws-request.ts": 'export const wsRequest=(...args)=>globalThis.projectRequest(...args);export const wsListen=()=>()=>{};export const wsFire=()=>true;',
+    "/@radix-ui/react-dropdown-menu/": `import {createElement as h,createContext,useContext,useState,cloneElement} from "react";
       const C=createContext(null);
       export const Root=({children,open,onOpenChange})=>{const [own,setOwn]=useState(false);return h(C.Provider,{value:{open:open??own,set:onOpenChange??setOwn}},children);};
       export const Trigger=({children})=>{const c=useContext(C);return cloneElement(children,{onPointerDown:e=>{children.props.onPointerDown?.(e);c.set(!c.open);}});};
       export const Content=({children})=>useContext(C).open?h("div",{role:"menu"},children):null;
       export const Item=({children,onSelect})=>{const c=useContext(C);return h("button",{onClick:()=>{onSelect?.();c.set(false);}},children);};
       export const Portal=({children})=>children;export const Sub=Portal;export const SubContent=Portal;
-      export const SubTrigger=({children})=>h("span",null,children);export const Separator=()=>h("hr");`;
-    if(source) return {format:'module',source,shortCircuit:true};
-    if(url.endsWith('.tsx')) return {format:'module',shortCircuit:true,source:ts.transpileModule(readFileSync(fileURLToPath(url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText};
-    return next(url,context);
+      export const SubTrigger=({children})=>h("span",null,children);export const Separator=()=>h("hr");`,
   },
 });
-const {window}=parseHTML('<html><body></body></html>');
-globalThis.window=window;globalThis.document=window.document;document.oninput=null;
-globalThis.Event=window.Event;globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+installDom({ html: '<html><body></body></html>' });
 const {createElement:h,act}=await import('react');
 const {createRoot}=await import('react-dom/client');
-const {ProjectEditor}=await import('../../components/sidebar/project-editor.tsx');
+const {ProjectEditor}=await import('../../components/sidebar/projects/project-editor.tsx');
 
 test('project editor saves selected icon and folders, retains input after a failed save, and cancels without writing',async()=>{
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
@@ -70,7 +54,7 @@ test('project editor saves selected icon and folders, retains input after a fail
 
 test('project menus open, pin, edit, create and rename sections without altering project membership',async()=>{
   const values=new Map();window.localStorage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v)};
-  const {ProjectMenu,ProjectSectionHeading}=await import('../../components/sidebar/project-menu.tsx');
+  const {ProjectMenu,ProjectSectionHeading}=await import('../../components/sidebar/projects/project-menu.tsx');
   const {getRecentsView}=await import('../../lib/prefs/recents-view.ts');
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);let opened=0,newChats=0;
   const project={id:'p',name:'Project',path:'/main'};
@@ -109,10 +93,10 @@ test('draft source chips follow the selected project until the user sets an over
   const state={currentSessionId:null,activeChatKey:'draft',conversations:{},pendingProjectsByChat:{draft:'a'},additionalWorkingDirsBySession:{},setAdditionalWorkingDirs:(key,dirs)=>{state.additionalWorkingDirsBySession={...state.additionalWorkingDirsBySession,[key]:dirs};for(const fn of listeners)fn();}};
   globalThis.projectStore=state;
   globalThis.projectRequest=async()=>({projects:[{id:'a',name:'A',path:'/a',source_folders:['/a-extra']},{id:'b',name:'B',path:'/b',source_folders:['/b-extra']},{id:'none',name:'None',path:'/none',source_folders:[]}],current_project_id:null,session_id:null});
-  const {WorkingDirChips}=await import('../../components/chat/top-bar/working-dir-chips.tsx');
+  const {WorkingDirChips}=await import('../../components/chat/top-bar/chips/working-dir-chips.tsx');
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
   await act(async()=>root.render(h(WorkingDirChips)));
-  const dirs=()=>[...host.querySelectorAll('.workdir-badge[title]')].map(el=>el.getAttribute('title'));
+  const dirs=()=>[...host.querySelectorAll('.workdir-badge[data-path]')].map(el=>el.getAttribute('data-path'));
   const select=async id=>act(async()=>{state.pendingProjectsByChat={draft:id};for(const fn of listeners)fn();});
   assert.deepEqual(dirs(),['/a-extra']);assert.equal(state.additionalWorkingDirsBySession.draft,undefined);
   await select('b');assert.deepEqual(dirs(),['/b-extra']);
@@ -144,7 +128,7 @@ test('acknowledged local-prefixed chats are real sessions for project directory 
   globalThis.projectStore.pendingProjectsByChat={};
   globalThis.projectStore.setAdditionalWorkingDirs=(key,dirs)=>{globalThis.projectStore.additionalWorkingDirsBySession={...globalThis.projectStore.additionalWorkingDirsBySession,[key]:dirs};for(const fn of globalThis.projectStoreListeners)fn();};
   globalThis.projectRequest=async(action,payload)=>{writes.push([action,payload]);return action==='list_projects'?{projects:[],current_project_id:null,session_id:'local_chat'}:{session_id:'local_chat',dirs:[]};};
-  const {WorkingDirChips}=await import('../../components/chat/top-bar/working-dir-chips.tsx');
+  const {WorkingDirChips}=await import('../../components/chat/top-bar/chips/working-dir-chips.tsx');
   await act(async()=>root.render(h(WorkingDirChips)));
   await act(async()=>host.querySelector('[aria-label="Remove folder"]').dispatchEvent(new Event('click',{bubbles:true})));
   assert.ok(writes.some(([action,payload])=>action==='set_working_dirs'&&payload.session_id==='local_chat'&&payload.dirs.length===0));
@@ -152,7 +136,7 @@ test('acknowledged local-prefixed chats are real sessions for project directory 
 });
 
 test('project operations confirm requests, retain errors, and close only after success',async()=>{
-  const {ProjectOperationDialog}=await import('../../components/sidebar/project-operation-dialog.tsx');
+  const {ProjectOperationDialog}=await import('../../components/sidebar/projects/project-operation-dialog.tsx');
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
   let closed=0;const saved=[];const calls=[];let fail=true;
   globalThis.projectRequest=async(...args)=>{calls.push(args);return fail?{ok:false,error:'disk failure'}:{ok:true,project_id:'p',project:{id:'p',name:'P',path:'/main',hidden:true}};};
@@ -180,7 +164,7 @@ test('project operations confirm requests, retain errors, and close only after s
 });
 
 test('project menu reaches reveal, worktree, archive, and remove dialogs',async()=>{
-  const {ProjectMenu}=await import('../../components/sidebar/project-menu.tsx');
+  const {ProjectMenu}=await import('../../components/sidebar/projects/project-menu.tsx');
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const calls=[];
   globalThis.projectRequest=async(...args)=>{calls.push(args);return {ok:true};};
   await act(async()=>root.render(h(ProjectMenu,{project:{id:'p',name:'P',path:'/main'},onOpen:()=>{},onNewSession:()=>{},onSaved:()=>{},children:trigger=>h('div',{'data-header':true},trigger)})));

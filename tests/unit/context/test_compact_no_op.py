@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from openprogram.context.engine import DefaultContextEngine
-from openprogram.context.summarize import Summary
-from openprogram.context.types import CompactResult
+from openprogram.runtime.context.engine import DefaultContextEngine
+from openprogram.runtime.context.compaction.summarize import Summary
+from openprogram.runtime.context.tokens import estimate_history_tokens
+from openprogram.runtime.context.types import CompactResult
 
 
 def _history(n: int) -> list[dict]:
@@ -24,7 +25,7 @@ def engine(monkeypatch):
     stamped = {}
     eng = DefaultContextEngine()
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db",
+        "openprogram.runtime.context.session_db.default_db",
         lambda: type("DB", (), {
             "get_session": staticmethod(lambda _sid: {}),
             "update_session": staticmethod(lambda *_a, **_k: None),
@@ -33,19 +34,19 @@ def engine(monkeypatch):
             ),
         })(),
     )
-    monkeypatch.setattr(eng, "_occupancy_tokens", lambda sid, hist: 40_737)
+    monkeypatch.setattr(eng, "_occupancy_tokens", lambda sid, hist, **_k: 40_737)
     from types import SimpleNamespace
-    from openprogram.context import persistence
+    from openprogram.runtime.context import persistence
 
-    def view(_db, sid):
+    def view(_db, sid, head_id=None, *, audience=None):
         history = persistence.rendered_history(_db, sid)
         return SimpleNamespace(
-            history=history, messages=history,
+            history=history, messages=history, head_id=head_id,
             unchanged=lambda *_a: True,
             candidate_messages=lambda *_a: [{"role": "assistant", "content": "recap"}],
         )
 
-    monkeypatch.setattr("openprogram.context.compaction_view.load_compaction_view", view)
+    monkeypatch.setattr("openprogram.runtime.context.compaction.view.load_compaction_view", view)
     eng._stamped = stamped
     return eng
 
@@ -53,7 +54,7 @@ def engine(monkeypatch):
 def test_already_folded_history_skips_the_summariser(engine, monkeypatch):
     hist = _history(12)
     monkeypatch.setattr(
-        "openprogram.context.persistence.rendered_history",
+        "openprogram.runtime.context.persistence.rendered_history",
         lambda *_a, **_k: hist,
     )
     monkeypatch.setattr(engine.summarizer, "find_cut_index", lambda *a, **k: 0)
@@ -79,7 +80,7 @@ def test_already_folded_history_skips_the_summariser(engine, monkeypatch):
 def test_empty_summary_is_no_op_not_success(engine, monkeypatch):
     hist = _history(20)
     monkeypatch.setattr(
-        "openprogram.context.persistence.rendered_history",
+        "openprogram.runtime.context.persistence.rendered_history",
         lambda *_a, **_k: hist,
     )
     monkeypatch.setattr(engine.summarizer, "find_cut_index", lambda *a, **k: 8)
@@ -115,7 +116,7 @@ def test_empty_summary_is_no_op_not_success(engine, monkeypatch):
 def test_success_stamps_token_metadata_on_summary(engine, monkeypatch):
     hist = _history(20)
     monkeypatch.setattr(
-        "openprogram.context.persistence.rendered_history",
+        "openprogram.runtime.context.persistence.rendered_history",
         lambda *_a, **_k: hist,
     )
     monkeypatch.setattr(engine.summarizer, "find_cut_index", lambda *a, **k: 8)
@@ -127,15 +128,23 @@ def test_success_stamps_token_metadata_on_summary(engine, monkeypatch):
         )
 
     monkeypatch.setattr(engine.summarizer, "summarise", _ok)
+    written = []
     monkeypatch.setattr(
         engine.persister, "insert_summary_node",
-        lambda *a, **k: "summary_abc",
+        lambda *a, **k: written.append(k["facts"]) or "summary_abc",
     )
     result = asyncio.run(engine.compact(
         agent=None, session_id="s1", model=None, user_initiated=True,
     ))
     assert result.no_op is False
-    assert engine._stamped["tokens_before"] == 40_737
-    assert engine._stamped["tokens_after"] == 40_737
-    assert engine._stamped["summarised_count"] == 8
-    assert engine._stamped["compacted_at"] > 0
+    # The node is written once with every fact; nothing is stamped after.
+    assert engine._stamped == {}
+    (facts,) = written
+    assert facts["trigger"] == "manual"
+    assert facts["tokens_before"] == 40_737
+    # The ring's reading less what the summary saves on this chain.
+    saved = estimate_history_tokens(hist) - estimate_history_tokens(
+        [{"role": "assistant", "content": "recap"}])
+    assert facts["tokens_after"] == result.tokens_after == 40_737 - saved
+    assert facts["summarised_count"] == 8
+    assert facts["compacted_at"] > 0

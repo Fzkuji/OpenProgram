@@ -1,0 +1,55 @@
+<title>三条模板规则</title>
+<meta name="description" content="三条主动规则各自匹配什么，以及写新规则时该照抄哪一条。">
+<h1>三条模板规则</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">规则</th><th scope="col">什么时候照抄</th><th scope="col">车道、监视、冷却</th><th scope="col">动作</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">DangerousCommandGuard</code></th><td>在动作发生前拦截</td><td>gate，<code translate="no">tool.before</code>，0</td><td><code translate="no">Gate.ask</code></td></tr>
+<tr><th scope="row"><code translate="no">TestGapWatcher</code></th><td>条件累积后提醒，又担心误报</td><td>observer，<code translate="no">model.response_completed</code>，30 分钟</td><td><code translate="no">Notify</code>；设计上先 <code translate="no">Prepare</code></td></tr>
+<tr><th scope="row"><code translate="no">UnvalidatedCompletionNudge</code></th><td>纠正模型，不打扰用户</td><td>observer，<code translate="no">model.response_completed</code>，15 分钟</td><td><code translate="no">Inject</code></td></tr>
+</tbody>
+</table>
+<p class="note">只有三条是有意的：主动系统死于误报，Clippy 和 UAC 弹窗都是如此。规则是要过代码评审的 Python 类，没有配置文件或 DSL。每条打磨好再加第四条。</p>
+
+<h2><code translate="no">DangerousCommandGuard</code></h2>
+<table class="stack">
+<thead><tr><th scope="col">拦截</th><th scope="col">放行</th></tr></thead>
+<tbody>
+<tr><td><code translate="no">rm -rf</code> 指向根、家目录、<code translate="no">/*</code>、<code translate="no">..</code> 或系统目录</td><td><code translate="no">rm -rf /tmp/x</code>、<code translate="no">rm -rf node_modules</code></td></tr>
+<tr><td><code translate="no">git push --force</code> 且提到 <code translate="no">main</code>、<code translate="no">master</code>、<code translate="no">release</code>、<code translate="no">prod</code>、<code translate="no">production</code></td><td>强推自己的分支</td></tr>
+<tr><td><code translate="no">kubectl delete namespace</code> 或 <code translate="no">ns</code></td><td><code translate="no">kubectl delete pod x</code></td></tr>
+<tr><td><code translate="no">terraform destroy</code>、<code translate="no">DROP DATABASE</code></td><td>任何不确定的情况：宁可漏报，不要刷屏</td></tr>
+</tbody>
+</table>
+<p>关键词匹配的误报会让人习惯性确认，所以规则解析目标和分支。它只防手滑：<a href="_research_archive/threat-model.zh.html">威胁模型</a>。</p>
+<p class="note">设计：作为风险标注并入现有的工具审批，同一命令只确认一次。</p>
+
+<h2><code translate="no">TestGapWatcher</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">触发条件</th><td>本轮改了文件、改了核心路径、没动测试文件</td></tr>
+<tr><th scope="row">核心路径</th><td><code translate="no">/auth/</code>、<code translate="no">/billing</code>、<code translate="no">/payment</code>、<code translate="no">/security</code>；agent、conversation、jobs、permissions、providers、proactive 包</td></tr>
+<tr><th scope="row">测试文件</th><td><code translate="no">test_</code>、<code translate="no">_test</code>、<code translate="no">/tests/</code>、<code translate="no">spec.</code></td></tr>
+<tr><th scope="row">检查时机</th><td>只在收尾时，不是每次文件变更</td></tr>
+<tr><th scope="row">设计：误报</th><td>改注释、重命名、改配置、升依赖都会触发，所以先由只读 <code translate="no">Prepare</code> 任务核实缺口，有把握才提醒</td></tr>
+<tr><th scope="row">设计：花费</th><td>界面显示今天的次数、花费和未发出的提醒，并可关闭</td></tr>
+<tr><th scope="row">设计：提醒</th><td>带“帮我写测试”按钮</td></tr>
+</tbody>
+</table>
+
+<h2><code translate="no">UnvalidatedCompletionNudge</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">触发条件</th><td>本轮改了文件且没有验证。跑测试和浏览器检查都算，否则前端工作会被误判：<a href="events-and-state.zh.html">什么算验证</a></td></tr>
+<tr><th scope="row">为什么用 <code translate="no">Inject</code></th><td>本仓库本来就要求自验，推模型一下比让用户确认便宜</td></tr>
+<tr><th scope="row">设计</th><td>推了仍不验证才通知用户；并要求模型确实声称完成</td></tr>
+</tbody>
+</table>
+
+<h2>实现状态</h2>
+<p>三条都在 <code translate="no">openprogram/runtime/proactive/policies/</code>，有测试。worker 启动时没有调用 <code translate="no">install_mvp_policies()</code>。标“设计”的项目尚未实现：<a href="execution-model.zh.html">动作状态</a>。</p>
+
+<p class="next"><a href="invariants.zh.html">不变式</a></p>

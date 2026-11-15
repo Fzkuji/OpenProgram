@@ -1,35 +1,47 @@
 {
   "name": "openprogram-desktop",
-  "version": "0.9.8",
+  "version": "1.3.0",
   "private": true,
   "description": "Electron desktop shell for OpenProgram",
-  "author": "Fzkuji",
+  "author": "FuzzyKuji",
   "license": "AGPL-3.0-or-later",
-  "homepage": "https://openprogram.io/",
-  "repository": "https://github.com/Fzkuji/OpenProgram",
-  "main": "main.js",
+  "homepage": "https://fuzzykuji.github.io/openprogram-site/",
+  "repository": "https://github.com/FuzzyKuji/OpenProgram",
+  "main": "shell/loader.js",
   "desktopName": "ai.openprogram.OpenProgram.desktop",
   "scripts": {
     "postinstall": "node scripts/check-native-dependencies.js",
     "dev": "electron .",
-    "check:native-menu": "node scripts/check-native-context-menu.js",
-    "check": "npm run check:native-menu && npm run check:webtabs && npm run check:no-browser-extensions && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:window-state && npm run check:window-lifecycle && npm run check:theme-chrome && npm run check:browser-import && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates && npm run check:windows && npm run check:agent-terminal && npm run check:terminal-resources",
-    "check:webtabs": "node scripts/check-webtab-navigation.js",
-    "check:no-browser-extensions": "node scripts/check-no-browser-extensions.js",
-    "check:webtab-zoom-bounds": "node scripts/check-webtab-zoom-bounds.js",
-    "check:tab-transfer-store": "node scripts/check-tab-transfer-store.js",
-    "check:window-state": "node scripts/check-window-state.js",
-    "check:window-lifecycle": "node scripts/check-window-lifecycle.js",
-    "check:theme-chrome": "node scripts/check-theme-chrome.js",
-    "check:browser-import": "node browser-profile-import.js",
-    "check:installed-transfer-client": "node scripts/check-installed-tab-transfer-client.js",
-    "check:worker-auth": "node scripts/check-worker-start-url.js && node scripts/check-self-update-reopen.js && node scripts/check-self-update-ui-guard.js && node scripts/check-self-update-ui.js",
-    "check:worker-recovery": "node scripts/check-worker-recovery.js",
-    "check:packaged-runtime": "node scripts/check-packaged-runtime.js",
-    "check:updates": "node scripts/check-update-service.js",
-    "check:windows": "node scripts/check-windows-desktop.js",
-    "check:agent-terminal": "node --test scripts/check-agent-terminal.cjs scripts/check-agent-terminal-lifecycle.cjs",
-    "check:terminal-resources": "node --test scripts/check-terminal-resources.cjs scripts/check-terminal-resource-ipc.cjs",
+    "check:shell-metadata": "node --test tests/check-shell-metadata.cjs",
+    "check:open-default": "node --test tests/check-open-default.cjs",
+    "check:shell-pty": "node --test tests/check-shell-pty.cjs",
+    "check:packaged-files": "node tests/check-packaged-files.js",
+    "check:native-menu": "node tests/check-native-context-menu.js && node --test tests/check-bookmark-menu-cache.cjs",
+    "check": "npm run check:packaged-files && npm run check:preload-fanout && npm run check:pointer-follow && npm run check:pane-recording && npm run check:agent-control && npm run check:native-menu && npm run check:webtabs && npm run check:webtab-user-agent && npm run check:no-browser-extensions && npm run check:webtab-zoom-bounds && npm run check:web-corners && npm run check:tab-transfer-store && npm run check:window-state && npm run check:tab-detach-placement && npm run check:window-lifecycle && npm run check:theme-chrome && npm run check:window-chrome && npm run check:browser-import && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates && npm run check:attention && npm run check:windows && npm run check:terminal-resources && npm run check:shell-metadata && npm run check:open-default",
+    "check:preload-fanout": "node tests/check-preload-fanout.js",
+    "check:pointer-follow": "node tests/check-pointer-follow.js",
+    "check:pane-recording": "node tests/check-pane-recording.js",
+    "check:agent-control": "node tests/check-agent-control.js",
+    "check:webtabs": "node tests/check-webtab-navigation.js",
+    "check:no-browser-extensions": "node tests/check-no-browser-extensions.js",
+    "check:webtab-user-agent": "node tests/check-webtab-user-agent.js && node tests/check-webtab-identity.js",
+    "check:webtab-zoom-bounds": "node tests/check-webtab-zoom-bounds.js",
+    "check:web-corners": "node tests/check-web-corners.js",
+    "check:tab-transfer-store": "node tests/check-tab-transfer-store.js",
+    "check:window-state": "node tests/check-window-state.js",
+    "check:tab-detach-placement": "node tests/check-tab-detach-placement.js",
+    "check:window-lifecycle": "node tests/check-window-lifecycle.js",
+    "check:window-chrome": "node tests/check-window-chrome.js",
+    "check:theme-chrome": "node tests/check-theme-chrome.js",
+    "check:browser-import": "node tests/check-browser-profile-import.js",
+    "check:installed-transfer-client": "node tests/check-installed-tab-transfer-client.js",
+    "check:worker-auth": "node tests/check-worker-start-url.js && node tests/check-self-update-reopen.js && node tests/check-self-update-ui-guard.js && node tests/check-self-update-ui.js",
+    "check:worker-recovery": "node tests/check-worker-recovery.js && node tests/check-web-port.js && node tests/check-install-lock.js",
+    "check:packaged-runtime": "node tests/check-packaged-runtime.js && node tests/check-instance.js && node tests/check-thin-shell.js && node tests/check-recovery-stop.js",
+    "check:updates": "node tests/check-update-service.js",
+    "check:attention": "node tests/check-attention-service.js && node tests/check-session-windows.js",
+    "check:windows": "node tests/check-windows-desktop.js && node tests/check-worker-tray.js",
+    "check:terminal-resources": "node --test tests/check-terminal-resources.cjs tests/check-terminal-resource-ipc.cjs",
     "icon:check": "bash scripts/check-icon.sh",
     "prepare:runtime": "bash ../../scripts/release/prepare-desktop-runtime.sh",
     "prepare:runtime:win": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ../../scripts/release/prepare-desktop-runtime.ps1",
@@ -37,10 +49,15 @@
     "app:install": "bash scripts/package-and-install-app.sh",
     "dist:mac": "npm run prepare:runtime && npm run icon:check && electron-builder --mac dmg zip",
     "dist:win": "npm run prepare:runtime:win && electron-builder --win nsis --x64",
-    "dist:win:arm64": "npm run prepare:runtime:win && electron-builder --win nsis --arm64"
+    "dist:win:arm64": "npm run prepare:runtime:win && electron-builder --win nsis --arm64",
+    "dist:thin:config": "python3 ../../scripts/release/thin-shell-config.py build/thin-shell.json build/seed || python ../../scripts/release/thin-shell-config.py build/thin-shell.json build/seed",
+    "dist:thin:mac": "npm run dist:thin:config && npm run icon:check && electron-builder --mac dmg zip --config build/thin-shell.json",
+    "dist:thin:win": "npm run dist:thin:config && electron-builder --win nsis --x64 --config build/thin-shell.json",
+    "dist:thin:win:arm64": "npm run dist:thin:config && electron-builder --win nsis --arm64 --config build/thin-shell.json",
+    "dist:thin:linux": "npm run dist:thin:config && electron-builder --linux AppImage deb --config build/thin-shell.json"
   },
   "devDependencies": {
-    "electron": "37.10.3",
+    "electron": "45.2.1",
     "electron-builder": "^26.0.12"
   },
   "build": {
@@ -50,37 +67,8 @@
     "afterPack": "scripts/write-reopen-protocol.cjs",
     "files": [
       "main.js",
-      "main/action-cues.js",
-      "main/control-overlays.js",
-      "main/downloads.js",
-      "main/menus.js",
-      "main/transfers.js",
-      "main/view-layout.js",
-      "main/web-views.js",
-      "menu-geometry.js",
-      "native-context-menu.js",
-      "worker-recovery-state.js",
-      "tab-transfer-validation.js",
-      "tab-transfer/page-history.js",
-      "preload.js",
-      "update-service.js",
-      "terminal-command.js",
-      "terminal-resource-manager.js",
-      "terminal-resource-ipc.js",
-      "windows-signature.js",
-      "packaged-runtime.js",
-      "worker-start-url.js",
-      "self-update-reopen.js",
-      "self-update-ui.js",
-      "self-update-ui-guard.js",
-      "self-update-ui-scroll.js",
-      "tab-transfer-store.js",
-      "window-state.js",
-      "window-lifecycle.js",
-      "theme-chrome.js",
-      "window-chrome.js",
-      "browsing-history-store.js",
-      "browser-profile-import.js"
+      "main/**",
+      "shell/**"
     ],
     "directories": {
       "output": "dist",
@@ -109,9 +97,22 @@
         "zip"
       ],
       "icon": "build/icon.icns",
+      "minimumSystemVersion": "13.5",
       "identity": null,
+      "signIgnore": [
+        "/Contents/Resources/runtime/assets/playwright/"
+      ],
       "hardenedRuntime": false,
-      "notarize": false
+      "notarize": false,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "OpenProgram controls applications on your Mac to carry out tasks you request.",
+        "NSCalendarsUsageDescription": "OpenProgram accesses your calendars to carry out tasks you request.",
+        "NSCalendarsFullAccessUsageDescription": "OpenProgram reads and updates calendar events when you request it.",
+        "NSRemindersUsageDescription": "OpenProgram accesses reminders to carry out tasks you request.",
+      "NSRemindersFullAccessUsageDescription": "OpenProgram reads and updates reminders when you request it.",
+      "NSMicrophoneUsageDescription": "OpenProgram accesses the microphone when you request audio tasks.",
+      "NSCameraUsageDescription": "OpenProgram accesses the camera when you request camera tasks."
+      }
     },
     "win": {
       "target": [
@@ -130,6 +131,63 @@
           "sha256"
         ]
       }
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.icns",
+      "executableName": "openprogram-desktop",
+      "syncDesktopName": true,
+      "category": "Development",
+      "synopsis": "Agent workspace",
+      "description": "Agent workspace",
+      "maintainer": "FuzzyKuji <9404270+FuzzyKuji@users.noreply.github.com>",
+      "desktop": {
+        "entry": {
+          "Name": "OpenProgram",
+          "Comment": "Agent workspace"
+        }
+      }
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "libgbm1",
+        "libasound2t64 | libasound2",
+        "libcurl4 | libcurl4t64",
+        "zlib1g",
+        "git"
+      ],
+      "recommends": [
+        "libappindicator3-1",
+        "bubblewrap"
+      ],
+      "desktop": {
+        "entry": {
+          "Name": "OpenProgram",
+          "Comment": "Agent workspace",
+          "Actions": "Recovery;"
+        },
+        "desktopActions": {
+          "Recovery": {
+            "Name": "Go back to a previous version",
+            "Exec": "/opt/OpenProgram/openprogram-desktop --recovery"
+          }
+        }
+      }
+    },
+    "toolsets": {
+      "appimage": "1.0.3"
     },
     "nsis": {
       "oneClick": false,

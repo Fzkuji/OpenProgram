@@ -1,0 +1,215 @@
+<title>Tool permissions</title>
+<meta name="description" content="Modes, rules, identity limits, approvals, Sandbox, macOS access and refusals for tool calls.">
+<h1>Tool permissions</h1>
+<p>Out of the box, every well-formed tool call in work you started runs without asking, attended or not.</p>
+<h2 id="modes">Modes</h2>
+<table class="grid">
+<thead><tr><th scope="col">Mode</th><th scope="col">Never needs a decision</th><th scope="col">Other calls</th><th scope="col">Tools that change things</th></tr></thead>
+<tbody>
+<tr><th scope="row">Bypass permissions (default)</th><td class="run">Runs</td><td class="run">Runs</td><td class="run">Runs</td></tr>
+<tr><th scope="row">Auto</th><td class="run">Runs</td><td class="review">Model reviews</td><td class="review">Model reviews</td></tr>
+<tr><th scope="row">Manual</th><td class="run">Runs</td><td class="ask">Asks you</td><td class="ask">Asks you</td></tr>
+<tr><th scope="row">Plan</th><td class="run">Runs</td><td class="ask">Asks you</td><td class="deny">Refused</td></tr>
+</tbody></table>
+<p class="note">Never needs a decision: safe read tools and a few calls that only look at state.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pick</th><td>Web, App: bottom of the message box. Terminal: <code translate="no">/permissions</code>; <code translate="no">Shift+Tab</code> cycles the four in this order.</td></tr>
+<tr><th scope="row">Which applies</th><td>The current branch's own mode, else its project's default (project settings), else Bypass permissions. Every turn uses it, attended or not.</td></tr>
+<tr><th scope="row">Bypass permissions</th><td>Stored as <code translate="no">bypass</code>, the word <code translate="no">--permission</code> and project settings files use. Does not override explicit deny or ask rules, <a href="#messages-an-agent-sends-for-you">held messages</a>, plugin restrictions or identity limits.</td></tr>
+<tr><th scope="row">Auto</th><td>A review that cannot run refuses the call.</td></tr>
+<tr><th scope="row">Manual</th><td>App access is asked on first touch and can be allowed for the conversation.</td></tr>
+<tr><th scope="row">Plan</th><td>Changing tools are also hidden from the model; allow and ask rules do not reach them. Approving <code translate="no">exit_plan_mode</code> returns to the mode selected before.</td></tr>
+<tr><th scope="row">Accept edits</th><td>Older mode. A conversation stored with it keeps it, shown as a fifth row only while current.</td></tr>
+</tbody></table>
+<h2 id="how-a-call-is-decided">How a call is decided</h2>
+<ol>
+<li><strong>Who is speaking.</strong> Anyone but the owner is <a href="#what-identity-limits">limited</a>, whatever the mode. Never fires for you.</li>
+<li><strong>Your rules.</strong> Empty by default. Global, project and conversation rules merge; <code translate="no">deny</code> beats <code translate="no">ask</code> beats <code translate="no">allow</code>. Deny applies in every mode. Plan is checked after deny and before ask and allow.</li>
+<li><strong>The mode.</strong></li>
+</ol>
+<p class="note">A call that would ask with no one to answer (a schedule, a sub-agent, an always-on turn) is refused, and the refusal says how to allow it. That happens only under Manual, Plan, an Auto fallback or an ask rule.</p>
+<h2 id="what-identity-limits">What identity limits</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Who</th><th scope="col">Gets</th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner: App, Web, terminal; bound contacts in direct messages; in group chats those contacts and anyone with full access; work you started</th><td>Everything above. An account with <code translate="no">sender_access</code> set to <code translate="no">paired</code> removes owner status from everyone on it.</td></tr>
+<tr><th scope="row">Chat-only access in a group</th><td>Replies and memory; no commands, files or screen. <a href="../integrations/channels.html#group-chats">Group chats</a></td></tr>
+<tr><th scope="row">Not listed for a group</th><td>No reaction at all</td></tr>
+<tr><th scope="row">External MCP client</th><td>Only the tools the MCP server exposes</td></tr>
+<tr><th scope="row">Work someone else started</th><td>No commands, no worktree changes, no writes outside its working directories. Page scripts run only in work you started.</td></tr>
+</tbody></table>
+<h2 id="approvals-and-questions">Approvals and questions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool approval card</th><td>Shows the current operation only, no before/after history. <strong>Allow once</strong> and <strong>Deny</strong> submit directly.</td></tr>
+<tr><th scope="row"><strong>Deny with a note</strong></th><td>Note button beside Deny; send with <code translate="no">Ctrl+Enter</code>. The model receives your note and follows it.</td></tr>
+<tr><th scope="row">Deny</th><td>The task continues: the refusal is the tool's result, the operation does not run, and the model is told to stop and ask you.</td></tr>
+<tr><th scope="row">Question card</th><td>Each question sits above its control. Multiple questions and form fields submit together with <strong>Submit answers</strong>; answers stay paired with their questions. Skipping tells the model it went unanswered.</td></tr>
+<tr><th scope="row">Discuss</th><td>What you write goes to the model in place of an answer, and it responds in the same turn. The card keeps your text.</td></tr>
+<tr><th scope="row">Message box</th><td>Stays available for ordinary messages.</td></tr>
+<tr><th scope="row"><strong>Allow this conversation</strong></th><td>Saves the rule in this session only. Offered today for <a href="computer-use.html#approval"><code translate="no">computer_use_agent</code></a>; the rule names the application, the virtual machine or your browser and covers everything done there, page scripts included.</td></tr>
+<tr><th scope="row"><strong>Always allow</strong></th><td>When offered, saves the exact supported operation rule in the current project. One-shot requests offer no persistent approval.</td></tr>
+</tbody></table>
+<details>
+<summary>Delivery, waiting and file freshness</summary>
+<ul>
+<li>An answer closes only after server confirmation; an unconfirmed one can retry the same decision. The card shows submitted answer, delivery progress and confirmation or retry. Confirmed receipts stay until reload; pending requests return on reconnect. A confirmed approval leaves the conversation and the tool row shows what happened.</li>
+<li>Human approvals have no default time limit. Waiting saves progress and releases the active execution attempt; reopening the App restores the request.</li>
+<li>Resuming uses the context saved for that turn, so later memory or date updates do not invalidate the approval. Tool, permission and working-directory checks still apply. If execution cannot resume, the conversation says the operation did not run. Cancelling the task withdraws its approval. Expired older requests are not reactivated.</li>
+<li><code translate="no">edit</code>, <code translate="no">write</code> and <code translate="no">apply_patch</code> record the target files' state at approval and check it before executing and again before writing. A deleted target is not recreated; a changed file must be read again first. Arbitrary shell commands do not declare their targets, so this does not cover their side effects.</li>
+<li>Allow once and Deny answer only the current request and create no project rule.</li>
+</ul>
+</details>
+<h2 id="messages-an-agent-sends-for-you">Messages an Agent sends for you</h2>
+<p>Off by default. Turn on <strong>Hold what it sends for my approval</strong> at the end of the Agent's <strong>Always-on</strong> tab; it works whether or not always-on is enabled. Without it, an Agent sends under its ordinary mode.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">With the hold on</th></tr></thead>
+<tbody>
+<tr><th scope="row">Asks</th><td>In every mode, Bypass permissions included, even when an allow rule names the tool. Each message on its own; never becomes an allow rule.</td></tr>
+<tr><th scope="row">Card</th><td>Full message. Allow once sends it. Deny with a note returns your changes and the Agent drafts again.</td></tr>
+<tr><th scope="row">Background run</th><td>Nobody to ask, so it cannot send.</td></tr>
+<tr><th scope="row">Counts as sending</th><td>A connected-service tool whose name starts with or contains send, reply, post, publish, forward, invite, share or comment, or that creates a message, email, comment or post, unless the server marks it read-only. Examples: <code translate="no">send_email</code>, <code translate="no">chat.postMessage</code>, <code translate="no">create_comment</code>.</td></tr>
+<tr><th scope="row">Does not ask</th><td>Reads (<code translate="no">list_messages</code>, <code translate="no">get_posts</code>) and drafts (<code translate="no">create_draft</code>)</td></tr>
+</tbody></table>
+<h2 id="change-permissions-during-a-task">Change permissions during a task</h2>
+<p>A change applies to the running task without stopping it; once the server confirms Bypass permissions, later tools in the same response no longer ask.</p>
+<details>
+<summary>What a live change touches</summary>
+<ul>
+<li>The selection is sent at once when the interface knows the confirmed session version, and shown as effective only after confirmation. The change holds even while the model reasons, streams or generates arguments.</li>
+<li>The new mode enters later model requests; text being generated is not rewritten. A tool already authorized keeps its authorization. Switching into Plan stops pending writes from being authorized.</li>
+<li>An ordinary approval no longer required resolves through the execution's durable wait and the task continues. Explicit ask rules, questions, forms and Sandbox escalation are not answered by a mode change. Repeated answers, cancellation, timeout and recovery cannot run a completed call again.</li>
+<li>Branch-specific. Other windows on that branch receive the confirmed mode; stale branch or version updates are rejected. A failed or disconnected update stays unconfirmed: reconnect, review the mode, then retry. An unsent draft stores its mode locally and sends it with the first message.</li>
+</ul>
+</details>
+<table class="stack fixed">
+<thead><tr><th scope="col">Work</th><th scope="col">Mode it uses</th></tr></thead>
+<tbody>
+<tr><th scope="row">Sub-agent of an authenticated owner Agent</th><td>Inherits the parent's effective mode and explicit rules at creation, so Manual means Manual all the way down. Keeps its own identity and non-interactive restrictions; explicit ask rules still stop operations needing an approver. Later changes do not rewrite admitted sub-agents.</td></tr>
+<tr><th scope="row">Owner work with no parent turn</th><td>Default mode</td></tr>
+<tr><th scope="row">Scheduled task</th><td>Its conversation's mode and Sandbox setting, read when it fires. A call that would ask is refused, so a task that must act alone needs Bypass permissions or allow rules.</td></tr>
+<tr><th scope="row">Bound chat contact, or a group member with full access</th><td>The chat session's own mode and rules; approvals arrive in the chat, answered with <code translate="no">/answer</code>. <a href="../integrations/channels.html">Chat channels</a></td></tr>
+</tbody></table>
+<h2 id="manage-project-rules-in-history">Project rules</h2>
+<p><strong>History → Projects →</strong> project <strong>→ Settings → Permission Rules</strong> holds Deny, Ask and Allow lists. Add <code translate="no">ToolName</code> or <code translate="no">ToolName(pattern)</code>; remove to revoke; replace by removing and adding. An empty list does not rule out session or global rules.</p>
+<details>
+<summary>Saving and timing</summary>
+<ul>
+<li>A submitted rule clears only after a project-specific server confirmation. Failed or unconfirmed saves keep the input and show a status. Success updates other open views of that project.</li>
+<li>The next operation in an authenticated interactive owner session reads current rules, including changes made mid-turn. Authorized operations keep their authorization; approval waits still need an answer; admitted sub-agents keep their captured policy.</li>
+<li>Removing a rule affects future authorization, not what already ran.</li>
+<li>Windows paths: forward slashes avoid escaping ambiguity, as in <code translate="no">read(C:/Users/me/project/**)</code>. Ordinary backslashes in drive paths are preserved. The syntax escapes its own characters with <code translate="no">\\</code>, <code translate="no">\(</code> and <code translate="no">\)</code>. JSON configuration adds JSON's own backslash escaping.</li>
+<li>A path rule matches however the same file is written: either slash, a short name, a link to the folder. Deny and Ask rules ignore letter case and also catch a relative path from the working directory; Allow rules compare the full path in the case stored on disk. A network share is written <code translate="no">//server/share/**</code>, or pasted with backslashes throughout.</li>
+<li>When commands run in PowerShell, a command containing <code translate="no">{</code>, <code translate="no">}</code> or <code translate="no">,</code> matches an Allow rule only by its exact text, as <strong>Always allow</strong> saves it. Deny and Ask rules read it as usual.</li>
+</ul>
+</details>
+<h2 id="understand-a-refusal">Refusals</h2>
+<pre translate="no" tabindex="0"><code>[blocked by &lt;layer&gt;] &lt;what&gt; did not run: &lt;why&gt;. To change this: &lt;change&gt;.</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">&lt;layer&gt;</code></th><td><code translate="no">identity</code>, <code translate="no">rule</code>, <code translate="no">mode</code>, <code translate="no">sandbox</code>, <code translate="no">hook</code> or <code translate="no">setting</code></td></tr>
+<tr><th scope="row">Tool result</th><td>Also carries <code translate="no">denied</code>, <code translate="no">reason_code</code>, <code translate="no">layer</code>, <code translate="no">rule</code>, <code translate="no">mode</code>, and <code translate="no">outcome</code> set to <code translate="no">not_started</code></td></tr>
+<tr><th scope="row"><code translate="no">AUTHORITY_TIER_MISSING</code></th><td>The request lacks an authenticated authority tier. Bypass permissions does not solve it. Resubmit older admitted executions through an authenticated interface; new chat submissions carry identity.</td></tr>
+</tbody></table>
+<p class="note">Missing or malformed arguments are not a refusal: they return to the model as an ordinary tool error.</p>
+<h2 id="sandbox">Sandbox</h2>
+<p>Off by default; turned on per branch in the composer Plus menu. Changes affect later turns.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Setting or case</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">sandbox.mode</code></th><td><code translate="no">auto</code>: on wherever its backend is available. <code translate="no">workspace-write</code>: required.</td></tr>
+<tr><th scope="row">Network</th><td>None unless <code translate="no">sandbox.network</code> is on</td></tr>
+<tr><th scope="row">Writes</th><td>The workspace only; with no project folder, the workspace is your home folder</td></tr>
+<tr><th scope="row">Always read-only</th><td>Shell startup files, <code translate="no">.git/hooks</code>, <code translate="no">.git/config</code>, editor task folders, OpenProgram's state folder; so <code translate="no">~/.zshrc</code>, <code translate="no">~/.ssh</code> and login agents stay out of reach</td></tr>
+<tr><th scope="row">Needs more (<code translate="no">git push</code>, <code translate="no">gh</code>, package install, write outside)</th><td>The Agent calls <code translate="no">bash</code> with <code translate="no">sandbox_permissions="require_escalated"</code> and a one-sentence justification. A card shows command and reason.</td></tr>
+<tr><th scope="row"><strong>Allow</strong></th><td>Once outside the sandbox; credential filtering still applies</td></tr>
+<tr><th scope="row"><strong>Allow this conversation</strong></th><td>The same command may leave again here without asking</td></tr>
+<tr><th scope="row">Blocked after running, including a failed name lookup</th><td>The explanation returns to the Agent so it asks this way instead of retrying</td></tr>
+<tr><th scope="row">Under Bypass permissions</th><td>Leaves without a card. In other modes an ordinary approval never authorizes it.</td></tr>
+</tbody></table>
+<details>
+<summary>Restrict commands to public network domains</summary>
+<p>macOS: set <code translate="no">sandbox.network</code> to <code translate="no">true</code> and <code translate="no">sandbox.network_domains</code> to a map.</p>
+<pre translate="no" tabindex="0"><code>{"example.com":"allow","*.example.org":"allow","blocked.example.org":"deny"}</code></pre>
+<ul>
+<li>Exact hosts and <code translate="no">*.example.org</code> (subdomains at any depth, excluding the root). Deny wins. An empty map blocks every destination; <code translate="no">null</code> keeps the existing network switch.</li>
+<li>Private, local, multicast and reserved IPs stay blocked even when a hostname is allowed. All DNS answers are checked and the connection uses a checked address.</li>
+<li>Each command gets an authenticated local proxy; the sandbox prevents direct connections, including clients ignoring proxy settings. HTTP on 80 and HTTPS CONNECT on 443; clients need ordinary HTTP proxy settings.</li>
+<li>Rules authorize destinations, not encrypted HTTPS methods or contents. No TLS interception, SOCKS/UDP, arbitrary ports, local network or upstream proxy chaining. No chunked HTTP uploads or plain HTTP Upgrade; HTTPS tunnels carry HTTPS and WSS.</li>
+<li>Proxy and connections close when the command ends or is cancelled.</li>
+<li>Linux and Windows/WSL reject a configured domain policy rather than run unrestricted. A missing sandbox also rejects it, even with the unavailable policy at <code translate="no">warn</code>. Turning Sandbox off disables its restrictions.</li>
+<li>Affects sandboxed commands, not the host's model-provider requests or other tool transports.</li>
+</ul>
+</details>
+<h2 id="auto">Auto review</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Input</th><td>The complete operation, shell commands included, up to 64 KiB. Oversized input or an unavailable classifier refuses rather than approving a truncated prefix.</td></tr>
+<tr><th scope="row">Timeout</th><td>30 seconds per model candidate</td></tr>
+<tr><th scope="row">Invalidated by</th><td>Changed arguments or live permission policy. Explicit deny rules keep precedence.</td></tr>
+<tr><th scope="row">Repeated risk refusals</th><td>Three consecutive or twenty cumulative offer an authenticated interactive owner approval of that exact operation: one operation, original arguments, working directory, permission version and file preconditions. Deny rules and hard restrictions still apply.</td></tr>
+<tr><th scope="row">Counts</th><td>Per session and permission version. An allowed or approved operation resets consecutive; approval after the cumulative threshold also resets the total. Classifier outages, invalid responses and cancellation do not count. Durable identities prevent double counting after resume; concurrent updates use the execution database transaction.</td></tr>
+<tr><th scope="row">Non-interactive task</th><td>Receives the refusal and may continue other allowed work</td></tr>
+<tr><th scope="row">Failure limit</th><td>Risk refusals do not consume the repeated execution-failure limit. Outcomes recorded by the host survive checkpoint recovery.</td></tr>
+</tbody></table>
+<h2 id="interrupted-operations">Interrupted operations</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control or case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stop</th><td>Interrupts pending model and asynchronous tool work. Once the producer exits the turn is stopped, even with an unknown external outcome, which stays visible in Activity.</td></tr>
+<tr><th scope="row">Pause</th><td>Waits for the current operation to reach a resumable boundary and reports the pending request</td></tr>
+<tr><th scope="row">New owner turn, Bypass permissions or Auto</th><td>Inherits no approval requirement from an interrupted turn. Old effects stay recorded as unknown and are not replayed. Explicit deny and ask rules still apply.</td></tr>
+<tr><th scope="row">Unknown earlier step</th><td>The next non-inspection tool result starts with a notice naming it, once per execution. Nothing is held back; the model decides what to check.</td></tr>
+<tr><th scope="row">Resuming the same execution</th><td>Still needs reconciliation or exact approval</td></tr>
+<tr><th scope="row">Screen step</th><td>An interrupted <a href="computer-use.html"><code translate="no">computer_use_agent</code></a> step tells the agent its outcome is unknown; it looks and goes on, and the step stays in Activity. A step that never reached the app (element hidden or gone) counts as not started.</td></tr>
+</tbody></table>
+<p class="note">None of this changes macOS access or makes a read-only volume writable.</p>
+<h2 id="host-capabilities-use-one-setup-path">System access</h2>
+<p>macOS permissions are separate from modes: a mode cannot grant them. One registry covers screen recording, Accessibility, Automation, Calendar, Reminders, file read and write, microphone and camera. Settings, the CLI/TUI doctor, GUI preflight, durable system-access waits and the HTTP endpoint read it. Each row has status, identity checked, the operation needing it and whether the platform can request it.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">granted</code></th><td>Fresh check by the current named executor</td></tr>
+<tr><th scope="row"><code translate="no">not_granted</code></th><td>Confirmed missing</td></tr>
+<tr><th scope="row"><code translate="no">unknown</code></th><td>The host could not prove the state; not a denial</td></tr>
+<tr><th scope="row"><code translate="no">unavailable</code></th><td>Native dependency missing; not a denial</td></tr>
+<tr><th scope="row"><code translate="no">unsupported</code></th><td>That backend has no implementation</td></tr>
+</tbody></table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Action</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/system/access</code></th><td>Non-prompting checks only</td></tr>
+<tr><th scope="row"><strong>Settings → System access</strong></th><td>Grouped rows. <strong>Set up all OpenProgram access</strong> is the one first-run action, returning one report; <strong>Request authorization</strong> and <strong>Open System Settings</strong> work per row. All need the local owner's click.</td></tr>
+<tr><th scope="row">Never prompts</th><td>Reconnects, polling, history replay, model output, startup checks, ordinary retries</td></tr>
+<tr><th scope="row">Missing capability</th><td>Pauses only the operation that declares it; browser, VM, headless and ordinary chat do not inherit it</td></tr>
+</tbody></table>
+<details>
+<summary>macOS asks for access again after an update</summary>
+<ul>
+<li>App and named backend are signed applications that macOS can record separately. A similarly named entry (<code translate="no">python3</code>, <code translate="no">node</code>, a cached app) proves nothing: installed products check and request through the signed runtime bundle <code translate="no">ai.openprogram.runtime</code>; the outer App is not a second executor.</li>
+<li>Automation is per target app, file access per selected path. Calendar, Reminders, microphone and camera can each need consent. Unselected apps or paths cannot be pre-authorized.</li>
+<li>App refresh, local packages and conversational self-update reuse a private identity in <code translate="no">~/Library/Application Support/OpenProgram/local-signing</code>. Keep it when cleaning: it holds the signing keychain. Missing or damaged state stops the build rather than creating a replacement.</li>
+<li>The first move from an old ad hoc build may need consent again; an old toggle can look on while macOS rejects the new signature. Use <strong>Request authorization</strong>. Accessibility and previously denied permissions may need System Settings.</li>
+<li>When a recorded grant belongs to an older verified identity, explicit setup renews that one capability once. Startup and ordinary checks never reset TCC records, accept dialogs or modify other applications.</li>
+<li>Local signing is for this computer's development builds; public apps need Developer ID signing and notarization.</li>
+</ul>
+</details>
+<h2 id="explain-and-test-permission-rules">Test rules</h2>
+<pre translate="no" tabindex="0"><code>openprogram permissions check --rules rules.json --tool bash --args '{"command":"git status"}' --expect allow
+openprogram permissions test --rules rules.json --cases cases.json</code></pre>
+<pre translate="no" tabindex="0"><code>{"allow":["bash(git:*)"],"ask":[],"deny":["bash(rm:*)"]}</code></pre>
+<pre translate="no" tabindex="0"><code>[{"tool":"bash","args":{"command":"git status"},"expected":"allow"}]</code></pre>
+<p class="note">Rule file, then cases file.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Output</th><td>JSON lists matching rules in enforcement order: deny, ask, allow. <code translate="no">unmatched</code>: no supplied rule applies.</td></tr>
+<tr><th scope="row">Exit status</th><td>0 match, 1 mismatch, 2 invalid input. <code translate="no">check</code> without <code translate="no">--expect</code> returns 0 for any valid decision.</td></tr>
+<tr><th scope="row">Scope</th><td>Only the supplied rules. No live configuration, risk classifier, approval, or bypass of hard restrictions and the OS sandbox. Nothing is executed.</td></tr>
+</tbody></table>
+<p class="next"><a href="tools.html">Tools</a> · <a href="../interfaces/web.html">Web</a> · <a href="../interfaces/tui.html">Terminal</a> · <a href="../reference/design/runtime/security/sandbox-architecture.html">Sandbox architecture</a></p>

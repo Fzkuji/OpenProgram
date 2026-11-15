@@ -121,7 +121,7 @@ def combine_race(
 def _collect(query, num_results, providers, timeout, *, race):
     names = _resolve_provider_names(providers)
     if not names:
-        raise LookupError("No providers available for combined search")
+        raise LookupError(_no_provider_message(providers))
     # Resolve backends before dispatch; background requests own no mutable registry lookup.
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(names))
     futures = {}
@@ -136,7 +136,10 @@ def _collect(query, num_results, providers, timeout, *, race):
                 try:
                     raw[name] = future.result()
                 except Exception as exc:
-                    failures.append(f"{name}: {type(exc).__name__}")
+                    # Only provider-authored fixed messages are shown; peer
+                    # text and URLs stay out of the aggregate error.
+                    detail = f" ({exc})" if getattr(exc, "safe_message", False) else ""
+                    failures.append(f"{name}: {type(exc).__name__}{detail}")
                     continue
                 if race and raw[name]:
                     return {name: raw[name]}
@@ -163,8 +166,30 @@ def _resolve_provider_names(providers: Iterable[str] | None) -> list[str]:
         wanted = [p.strip() for p in providers if p and p.strip()]
         # Drop unknown names rather than raising; the user might pass a
         # combo list and we want partial-success.
-        return list(dict.fromkeys(p for p in wanted if registry.has(p) and registry.get(p).is_available()))
+        return list(dict.fromkeys(p for p in wanted if registry.availability_problem(p) is None))
     return [p.name for p in registry.available()]
+
+
+def _no_provider_message(providers: Iterable[str] | None) -> str:
+    """Explain an empty combine selection: what was considered and why not."""
+    wanted = list(dict.fromkeys(p.strip() for p in providers or () if p and p.strip()))
+    considered = wanted or [p.name for p in registry.all()]
+    reasons = "; ".join(
+        f"{name}: {registry.availability_problem(name) or 'available'}"
+        for name in considered
+    )
+    usable = [p.name for p in registry.available()]
+    key_hint = "A missing key is added in the Web UI under Settings > Search."
+    if usable and wanted:
+        hint = (
+            f"Usable now: {', '.join(usable)}. Name one of those in `providers`, "
+            f"or omit `providers` to combine every usable backend. {key_hint}"
+        )
+    elif usable:
+        hint = f"Usable now: {', '.join(usable)}."
+    else:
+        hint = key_hint
+    return f"No usable web_search provider for combined search ({reasons}). {hint}"
 
 
 def _normalise_url(url: str) -> str:

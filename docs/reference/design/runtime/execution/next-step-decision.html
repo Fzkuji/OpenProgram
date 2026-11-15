@@ -1,0 +1,136 @@
+<title>Next-step decisions</title>
+<meta name="description" content="How code hands the model one validated choice from a fixed menu.">
+<h1>Next-step decisions</h1>
+
+<p>Code lists a fixed menu. The model answers with JSON naming one option. Only a validated answer runs; code stays in control. Source: <code translate="no">openprogram/runtime/agent/decision.py</code>.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Entry</th><th scope="col">Model does</th><th scope="col">Runtime</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">decision.make(prompt, options)</code></th><td>Picks, nothing else</td><td>The enclosing <code translate="no">Agent</code> method's (<code translate="no">_current_runtime</code>), or <code translate="no">runtime=</code> outside any Agent call</td></tr>
+<tr><th scope="row"><code translate="no">agent(prompt, choices=options)</code></th><td>Runs a full turn with tools, then picks as its wrap-up</td><td>Same</td></tr>
+</tbody>
+</table>
+
+<h2 id="difference-from-native-tool-call">Compared with a native tool call</h2>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Native tool call</th><th scope="col">Next-step decision</th></tr></thead>
+<tbody>
+<tr><th scope="row">Options reach the model</th><td>Provider <code translate="no">tools</code> field</td><td>Text menu in the prompt</td></tr>
+<tr><th scope="row">Choice arrives as</th><td>Protocol-level <code translate="no">ToolCall</code></td><td>JSON in the reply body</td></tr>
+<tr><th scope="row">Parsed by</th><td>Provider and <code translate="no">runtime/agent/loop</code></td><td><code translate="no">decision.py</code></td></tr>
+<tr><th scope="row">Non-function option</th><td>No</td><td>Yes</td></tr>
+<tr><th scope="row">Needs provider tool use</th><td>Yes</td><td>No, plain text is enough</td></tr>
+<tr><th scope="row">Each decision and retry</th><td>Part of the tool loop</td><td>Its own traceable DAG call</td></tr>
+</tbody>
+</table>
+
+<p class="note">An <code translate="no">Agent</code> method can be both a native tool for <code translate="no">exec(tools=[...])</code> and a decision option. See <a href="../../../../capabilities/agentic-programming/choosing-the-next-step/tool-calling.html">tool calling</a>.</p>
+
+<h2 id="entry-point-one">Pure decision: decision.make</h2>
+
+<pre translate="no" tabindex="0">from openprogram import Agent, decision
+
+class ExampleAgent(Agent):
+    method_options = {"route_message": {"tool": True}}
+
+    def route_message(self, msg: str) -&gt; str:
+        return decision.make("Pick a way to handle this message.", {
+            "analyze":  analyze_sentiment,    # function: run, return its result
+            "fallback": fallback_reply,
+            "done":     "CONVERSATION_OVER",  # value: returned as-is
+        })</pre>
+
+<p class="note">The decision is the branch: the caller writes no <code translate="no">if</code>.</p>
+
+<h2 id="entry-point-two">Work, then decide: agent(choices=)</h2>
+
+<pre translate="no" tabindex="0">from openprogram import Agent, agent
+
+class ExampleAgent(Agent):
+    method_options = {"handle_ticket": {"tool": True}}
+
+    def handle_ticket(self, ticket: str) -&gt; dict:
+        return agent(
+            f"Handle this ticket: {ticket}",
+            toolset="default",        # the work: tools and reasoning
+            choices={                 # the wrap-up: must pick one
+                "refund":   issue_refund,
+                "escalate": escalate_to_human,
+                "close":    {"status": "closed"},
+            },
+        )</pre>
+
+<p><code translate="no">choices</code> goes to <code translate="no">Runtime.exec</code>, which adds the menu and <code translate="no">DECISION_FINISH_INSTRUCTION</code> to the prompt and runs a normal turn. The last reply must be a <code translate="no">{"call": ...}</code> JSON, resolved by <code translate="no">resolve_decision</code>. <code translate="no">decision.make</code> is the same with no work before it.</p>
+
+<h2 id="option-containers">Options</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">Kind</th><th scope="col">When picked</th><th scope="col">Schema from</th></tr></thead>
+<tbody>
+<tr><th scope="row">Function</th><td>Runs it, returns its return value</td><td>Function signature</td></tr>
+<tr><th scope="row">Value</th><td>Returns the fixed value</td><td>None</td></tr>
+<tr><th scope="row">Schema</th><td>Model fills the schema; returns <code translate="no">{"decision": name, **fields}</code></td><td>Declared by you</td></tr>
+</tbody>
+</table>
+
+<pre translate="no" tabindex="0">decision.make("...", {
+    "retry":     retry_fn,                         # function
+    "skip":      "SKIPPED",                        # value
+    "abort":     (AbortSignal(), "pick when it can't continue"),  # value + description
+    "emit_plan": ("Produce a plan.", {             # schema: ("description", schema)
+        "steps": [{"action": str, "target": str}],
+        "rationale": str,
+    }),
+})</pre>
+
+<p class="note">A list works too. Each item: a callable, <code translate="no">(callable, "description")</code>, <code translate="no">"name"</code>, <code translate="no">("name", "description")</code> or <code translate="no">("name", "description", schema)</code>. A function's name comes from <code translate="no">__name__</code>.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Schema field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">field: str</code> (any Python type)</th><td>Scalar of that type</td></tr>
+<tr><th scope="row"><code translate="no">field: "description"</code></th><td><code translate="no">str</code> scalar with a description</td></tr>
+<tr><th scope="row"><code translate="no">field: [sub-schema]</code></th><td>List of matching elements</td></tr>
+<tr><th scope="row"><code translate="no">field: {sub-field: ...}</code></th><td>Nested object</td></tr>
+<tr><th scope="row"><code translate="no">field: {"type": T, "description": ..., "options": [...]}</code></th><td>Type, description and enum</td></tr>
+</tbody>
+</table>
+
+<p class="note">Always the same structure, no branching: a single-option <code translate="no">decision.make</code>, or <code translate="no">exec(response_format=...)</code>.</p>
+
+<h2 id="internal-steps">From reply to result</h2>
+
+<ol>
+<li><code translate="no">render_options</code> writes the menu: signature, description, arguments, one-line <code translate="no">Call:</code> JSON example. Only <code translate="no">source="llm"</code> arguments show.</li>
+<li>The model is called: <code translate="no">runtime.exec(prompt + menu)</code>, or the turn <code translate="no">agent</code> was already sending.</li>
+<li><code translate="no">parse_args</code> extracts and validates the JSON.</li>
+<li>On failure, one more pick (<code translate="no">max_retries=1</code>, 0 disables): <code translate="no">runtime.exec</code> sends the last reply, the error and the menu again. It lands in the DAG. Still invalid: <code translate="no">DecisionError</code>.</li>
+<li><code translate="no">resolve_decision</code> runs the function or looks up the value.</li>
+</ol>
+
+<details>
+<summary>Validation rules</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Check</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">JSON</th><td>From a <code translate="no">json</code> code block or raw text, with a key <code translate="no">call</code>, <code translate="no">action</code>, <code translate="no">function</code> or <code translate="no">tool</code></td></tr>
+<tr><th scope="row">Unknown option</th><td><code translate="no">_ParseError("unknown_call")</code>; no JSON is <code translate="no">no_action</code>; non-object args is <code translate="no">bad_args</code></td></tr>
+<tr><th scope="row">Field type</th><td><code translate="no">str int float bool list dict</code>, nested recursively. <code translate="no">bool</code> is not <code translate="no">int</code>; <code translate="no">float</code> accepts <code translate="no">int</code>. Enum through <code translate="no">options</code>.</td></tr>
+<tr><th scope="row">Function option</th><td>Fills <code translate="no">source="context"</code> from <code translate="no">context</code>, injects runtime arguments, drops extras, requires arguments with no default</td></tr>
+<tr><th scope="row">Value or schema option</th><td>All schema fields required, extras dropped</td></tr>
+<tr><th scope="row">Returns</th><td><code translate="no">(chosen, kwargs)</code>: the function, or the option name</td></tr>
+<tr><th scope="row">Menu placeholders</th><td>JSON literals: <code translate="no">0 false [] {} "&lt;str&gt;"</code>; enum values listed</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>DecisionError</summary>
+<p>Subclass of <code translate="no">ValueError</code>, carrying the last error type, message and reply head. <code translate="no">except DecisionError</code> catches only "the model never picked a valid option". The framework has no fallback; the caller decides.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+
+<p>All of this is implemented.</p>

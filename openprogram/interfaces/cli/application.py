@@ -1,0 +1,1435 @@
+"""
+OpenProgram CLI.
+
+Single-verb model (openclaw / gh / docker style). The top-level grammar
+is:
+
+    openprogram                           launch the terminal UI
+                                          (Ink when the terminal supports raw
+                                          input, otherwise Rich)
+    openprogram tui                       same as bare openprogram
+    openprogram chat                      alias for `openprogram tui`
+    openprogram --print "prompt"          one-shot — send prompt,
+                                          print reply, exit
+    openprogram --resume <session-id>     resume a prior chat session
+
+    openprogram <verb> ...                everything else (web, programs,
+                                          skills, providers, ...)
+
+Examples:
+
+    openprogram
+    openprogram tui
+    openprogram chat
+    openprogram tui --print "summarise this file"
+    openprogram tui --resume local_a1b2c3
+
+    openprogram web                       browser UI (frontend + backend)
+
+    openprogram programs list
+    openprogram programs run my_func --arg key=value
+
+    openprogram skills list
+    openprogram skills install --target claude
+
+    openprogram sessions list
+    openprogram sessions resume <id> "answer"
+
+    openprogram providers list
+    openprogram providers login anthropic
+
+Note on retired flags: ``--tui`` / ``--no-tui`` / ``--web`` / ``--cli``
+are gone. The chat mode is now implicit (``openprogram`` is chat); the
+    browser is a verb (``openprogram web``); the REPL is the line-oriented
+    fallback when Ink can't initialise. ``--no-tui`` had no good
+analogue (the verb-based design wins where the flag would have lost),
+so it's removed entirely.
+"""
+
+import logging
+import os
+import sys
+import json
+from pathlib import Path
+
+from openprogram.host._platform.environment import tui_child_requires_direct_stdio_inheritance
+from openprogram.interfaces.cli.parser import build_parser
+
+_log = logging.getLogger(__name__)
+
+
+# --- Validated TUI TTY redirect ---------------------------------------------
+# When the user is launching the Ink TUI (no subcommand or just `--resume`),
+# we want a clean terminal for startup output. main() performs this dup2 only
+# after argparse accepts the complete invocation and applies --profile, so CLI
+# errors stay visible and later startup noise lands in a log file. The original
+# tty fds are exposed as module attributes so cli_ink can hand them to Node.
+
+_TUI_TTY_OUT: int | None = None
+_TUI_TTY_ERR: int | None = None
+
+
+def _looks_like_tui_invocation(argv: list[str]) -> bool:
+    """Return True if argv corresponds to launching the Ink TUI.
+
+    Used by :func:`_maybe_redirect_for_tui` after argparse has accepted the
+    invocation to decide whether to dup2 stdio into a log file before the Ink
+    Node process takes over the terminal.
+
+    Bare ``openprogram`` and ``openprogram --resume <id>`` go to the TUI.
+    Any subcommand (``programs``, ``skills``,
+    ``web``, ...) and one-shot flags (``--print`` / ``-p``) keep stdio
+    plain — no TUI, no redirect.
+
+    This is intentionally capability-based rather than platform-based. Modern
+    Windows Terminal / ConPTY supports Ink raw input; terminals without it
+    fail quickly and ``run_cli_chat`` restores stdio before using Rich.
+    """
+    bypass_words = {
+        "agents", "sessions", "channels", "environments", "config", "permissions", "programs", "skills", "plugins", "doctor",
+        "providers", "web", "resume", "init", "doctor",
+        "worker", "update", "memory", "mcp", "trash", "backup",
+        "recordings", "stop", "status", "restart", "upgrade", "help",
+        "execution", "jobs", "scheduler-worker", "cron-worker", "self-update", "dev", "versions",
+    }
+    bypass_flags = {
+        "--print", "-p", "--help", "-h", "--version", "--print-prompt",
+    }
+    skip_value = False
+    for arg in argv:
+        if skip_value:
+            skip_value = False
+            continue
+        if arg in bypass_flags:
+            return False
+        if arg.startswith("--print=") or arg.startswith("-p="):
+            return False
+        # Values are data, not subcommands. A profile or session id named
+        # "web" must not disable the TUI startup redirect.
+        if arg in {"--profile", "--resume"}:
+            skip_value = True
+            continue
+        if arg.startswith("--profile=") or arg.startswith("--resume="):
+            continue
+        if arg in bypass_words:
+            return False
+    return True
+
+
+def _early_profile_from_argv(argv: list[str]) -> str | None:
+    """Read the top-level profile without reparsing so startup logs follow it."""
+    for index, arg in enumerate(argv):
+        if arg == "--profile" and index + 1 < len(argv):
+            return argv[index + 1]
+        if arg.startswith("--profile="):
+            return arg.partition("=")[2]
+    return None
+
+
+def _tui_startup_log_path(argv: list[str] | None = None) -> Path:
+    """Return the active profile's Ink startup log path."""
+    from openprogram.state.paths import get_logs_dir, set_active_profile
+
+    profile = _early_profile_from_argv(sys.argv[1:] if argv is None else argv)
+    if profile is not None:
+        set_active_profile(profile)
+    return get_logs_dir() / "ink-startup.log"
+
+
+def _maybe_redirect_for_tui() -> None:
+    global _TUI_TTY_OUT, _TUI_TTY_ERR
+    # Ink must receive the original Windows console handles by inheritance.
+    # The compatibility seam owns the platform decision; skipping this log
+    # redirect does not disable the TUI or its Rich fallback.
+    if tui_child_requires_direct_stdio_inheritance():
+        return
+    try:
+        if not sys.stdout.isatty():
+            return
+    except Exception:
+        return
+    if not _looks_like_tui_invocation(sys.argv[1:]):
+        return
+    try:
+        log_path = _tui_startup_log_path()
+        log_dir = log_path.parent
+        log_dir.mkdir(parents=True, exist_ok=True)
+        _TUI_TTY_OUT = os.dup(1)
+        _TUI_TTY_ERR = os.dup(2)
+        fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+        os.dup2(fd, 1)
+        os.dup2(fd, 2)
+        os.close(fd)
+    except Exception:
+        # If anything goes wrong with the redirect we'd rather have a noisy
+        # terminal than block the launch.
+        _TUI_TTY_OUT = None
+        _TUI_TTY_ERR = None
+
+
+def _is_cli_process() -> bool:
+    """Return whether this package was imported by an OpenProgram entry point."""
+    executable = Path(sys.argv[0]).name.lower()
+    if executable in {
+        "openprogram",
+        "openprogram.exe",
+        "openprogram-script.py",
+    }:
+        return True
+    if executable != "__main__.py":
+        return False
+    # `python -m openprogram` or `python -m openprogram.interfaces.cli`.
+    parent = Path(sys.argv[0]).parent
+    return parent.name == "openprogram" or parent.parts[-3:] == (
+        "openprogram", "interfaces", "cli",
+    )
+
+
+def _ensure_utf8_stdio() -> None:
+    """Force ``sys.stdout`` / ``sys.stderr`` to UTF-8 with replacement.
+
+    On Windows the console defaults to ``cp1252`` (or ``gbk``, depending
+    on locale) — both unable to encode the chat content that flows
+    through our ``print`` -based ``_log``. Non-ASCII traffic (Chinese
+    queries, em-dashes, …) raises ``UnicodeEncodeError`` mid-handler and
+    bubbles out as a 500. ``errors='replace'`` is intentionally lossy —
+    logs are diagnostic, not data: better a "?" placeholder than a
+    crashed request.
+
+    No-op on POSIX (stdout already utf-8) and on Python builds that
+    don't expose ``reconfigure``.
+    """
+    import sys as _sys
+    for stream in (_sys.stdout, _sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, OSError):
+            pass
+
+
+def _need_subcommand(parser) -> None:
+    """A container verb was run with no subcommand: print its help (the
+    subcommand list) and exit non-zero — the gh/opencode demandCommand
+    UX, applied uniformly so a bare ``openprogram <verb>`` never silently
+    does nothing or exits 0."""
+    parser.print_help()
+    sys.exit(2)
+
+
+def _memory_edit(root, path: str) -> int:
+    """Open one memory file in $EDITOR and land the result transactionally.
+
+    The editor is pointed at a scratch copy, never at the committed file.
+    A hand edit can drop a block ID or strand a footnote, and the check for
+    that runs against the tree as it was *before* the edit — so it has to be
+    read before anything is written. Editing the real file in place would
+    make the file its own baseline, which is how a deleted block ID used to
+    pass validation.
+
+    A rejected edit therefore changes nothing on disk, and the scratch copy
+    is left behind so the work that was rejected is not lost with it.
+    """
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    from openprogram.state.memory.management.transaction import (
+        TransactionError, staged_edit, validate_writable_path,
+    )
+    from openprogram.state.memory.workspace_layout import resolve_within
+
+    name = path if path.endswith(".md") else path + ".md"
+    target = resolve_within(root, name)
+    if target is None:
+        print(f"{path!r} is outside the memory workspace.")
+        return 1
+    relative = target.relative_to(Path(root).resolve()).as_posix()
+    try:
+        validate_writable_path(relative)
+    except TransactionError as exc:
+        print(f"Cannot edit {relative}: {exc.message}")
+        return 1
+    if not target.is_file():
+        print(f"No memory file at {relative!r}.")
+        return 1
+
+    before = target.read_text(encoding="utf-8")
+    scratch = Path(tempfile.mkdtemp(prefix="openprogram-memory-edit-"))
+    draft = scratch / target.name
+    draft.write_text(before, encoding="utf-8")
+    subprocess.call([os.environ.get("EDITOR", "vi"), str(draft)])
+    edited = draft.read_text(encoding="utf-8")
+    if edited == before:
+        shutil.rmtree(scratch, ignore_errors=True)
+        print(f"{relative} unchanged.")
+        return 0
+
+    ok, message = staged_edit(
+        root,
+        lambda stage: (stage / relative).write_text(edited, encoding="utf-8"),
+        commit_message=f"memory: edit {relative}",
+    )
+    if not ok:
+        print(f"Rejected: {message}")
+        print(f"{relative} is unchanged; your edit is kept at {draft}")
+        return 1
+    shutil.rmtree(scratch, ignore_errors=True)
+    print(f"{relative} validated and derived views rebuilt")
+    if message:
+        print(f"Warning: {message}")
+    return 0
+
+
+def _needs_first_run_setup() -> bool:
+    """True when no LLM provider is configured yet.
+
+    Lets a bare ``openprogram`` first run open the setup wizard automatically
+    instead of dropping the user into an unconfigured chat — the same
+    "configured?" test the doctor uses (an auth pool with ≥1 credential).
+    """
+    try:
+        from openprogram.models.auth.store import get_store
+        return not any(p.credentials for p in get_store().list_pools())
+    except Exception:
+        return False  # never block startup on a detection hiccup
+
+
+def _restore_tui_tty() -> bool:
+    """Point stdout/stderr back at the real terminal; True if it was redirected.
+
+    The pre-Ink redirect (:func:`_maybe_redirect_for_tui`) sends stdio to a log
+    file so Ink starts on a clean terminal. But the bare-``openprogram``
+    path runs INTERACTIVE steps before Ink — the first-run setup wizard and
+    the TUI-vs-web menu. With stdio still pointed at the log those prompts
+    were invisible on POSIX (the terminal just sat there), and ``isatty()``
+    being False skipped the surface menu entirely — macOS went straight to
+    the TUI while Windows (no redirect) asked. Restore the tty for the
+    interactive stretch; call :func:`_re_redirect_tui_log` before launching
+    Ink.
+    """
+    if _TUI_TTY_OUT is None or _TUI_TTY_ERR is None:
+        return False
+    try:
+        os.dup2(_TUI_TTY_OUT, 1)
+        os.dup2(_TUI_TTY_ERR, 2)
+        return True
+    except Exception:
+        return False
+
+
+def _re_redirect_tui_log() -> None:
+    """Re-point stdout/stderr at the profile's startup log before Ink."""
+    try:
+        log_path = _tui_startup_log_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+        os.dup2(fd, 1)
+        os.dup2(fd, 2)
+        os.close(fd)
+    except Exception:
+        # Ink then draws over a terminal that still shows startup output;
+        # cosmetic, never a reason to abort launch.
+        _log.debug("TUI startup log redirect failed", exc_info=True)
+
+
+def _choose_surface() -> str:
+    """Ask whether to open the terminal UI or the web UI; returns 'tui' or 'web'.
+
+    Only for a bare ``openprogram`` (no surface given). ``openprogram tui`` /
+    ``openprogram web`` skip this and launch directly. Non-interactive → 'tui'.
+    Caller must have restored the real tty first (:func:`_restore_tui_tty`).
+    """
+    try:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return "tui"
+    except Exception:
+        return "tui"
+    try:
+        import questionary
+        ans = questionary.select(
+            "Start OpenProgram in:",
+            choices=[
+                questionary.Choice("Terminal UI — chat right here", value="tui"),
+                questionary.Choice("Web UI — browser at http://localhost:18100", value="web"),
+            ],
+        ).ask()
+        return ans if ans in ("tui", "web") else "tui"
+    except Exception:
+        try:
+            print("Start OpenProgram in:\n  1) Terminal UI (default)\n  2) Web UI (browser)")
+            return "web" if input("Choice [1]: ").strip() == "2" else "tui"
+        except (EOFError, KeyboardInterrupt):
+            return "tui"
+
+
+def _parse_arguments():
+    """Build the parser and parse ``sys.argv`` into ``(parser, args)``."""
+    parser = build_parser()
+
+    # ``openprogram help`` → ``openprogram --help`` (bare ``help`` isn't a
+    # subcommand; users type it anyway). Only when it's the first token, so
+    # ``openprogram config help`` etc. still reach their own sub-parser.
+    if len(sys.argv) > 1 and sys.argv[1] == "help":
+        sys.argv[1] = "--help"
+
+    args = parser.parse_args()
+    printing = _runs_print(args)
+    if getattr(args, "json_schema", None) and not printing:
+        parser.error("--json-schema requires --print")
+    for flag, dest in (("--model", "print_model"), ("--effort", "print_effort"),
+                       ("--usage-file", "usage_file"),
+                       ("--transcript-file", "transcript_file"),
+                       ("--standalone", "standalone"), ("--output-format", "output_format"),
+                       ("--include-partial-messages", "include_partial_messages"),
+                       ("--permission-mode", "print_permission_mode"),
+                       ("--continue", "print_continue"), ("--session-id", "print_session_id"),
+                       ("--at", "print_at"), ("--no-project-binding", "no_project_binding"),
+                       ("--no-web", "no_web")):
+        if getattr(args, dest, None) and not printing:
+            parser.error(f"{flag} requires --print")
+    if (getattr(args, "include_partial_messages", False)
+            and getattr(args, "output_format", None) != "stream-json"):
+        parser.error("--include-partial-messages requires --output-format stream-json")
+    if getattr(args, "print_continue", False) and getattr(args, "resume", None):
+        parser.error("--continue and --resume cannot be used together")
+    if getattr(args, "print_session_id", None) and (
+            getattr(args, "resume", None) or getattr(args, "print_continue", False)):
+        parser.error("--session-id starts a new conversation: not with --resume or --continue")
+    if getattr(args, "print_at", None) and not (
+            getattr(args, "resume", None) or getattr(args, "print_continue", False)):
+        parser.error("--at requires --resume or --continue")
+    if getattr(args, "print_model", None):
+        from openprogram.interfaces.cli.print_turn import parse_model
+        try:
+            provider, model_id = parse_model(args.print_model)
+        except ValueError as exc:
+            parser.error(str(exc))
+        args.print_model = f"{provider}/{model_id}"
+    return parser, args
+
+
+def _prepare_environment(args) -> None:
+    """Activate ``--profile`` and, for the CLI process, the TUI stdio redirect."""
+    # --profile must land in the env BEFORE any later code reads a path
+    # (setup config, session dir, logs dir, ...). get_active_profile
+    # checks the env each call so setting it here is enough.
+    if args.profile:
+        from openprogram.state.paths import set_active_profile
+        set_active_profile(args.profile)
+
+    # Never redirect before argparse has accepted the complete invocation.
+    # Otherwise errors such as ``--bogus`` or a missing ``--profile`` value
+    # disappear into ink-startup.log and the terminal appears to do nothing.
+    # Module imports may be slightly noisier as a result, but CLI diagnostics
+    # must remain visible on the terminal that launched the process.
+    if _is_cli_process():
+        _maybe_redirect_for_tui()
+
+
+def _dispatch_maintenance_command(args) -> None:
+    """Run rescue, dev, self-update, logs, completion, doctor, diagnostics, trash and backup."""
+    if args.command == "rescue":
+        from openprogram.interfaces.cli.commands.rescue import _cmd_rescue
+        sys.exit(_cmd_rescue())
+
+    if args.command == "dev":
+        from openprogram.interfaces.cli.commands.dev import _cmd_dev
+        sys.exit(_cmd_dev(args))
+    if args.command == "versions":
+        from openprogram.interfaces.cli.commands.versions import _cmd_versions
+        sys.exit(_cmd_versions(args))
+    if args.command == "self-update":
+        from openprogram.interfaces.cli.commands.self_update import _cmd_self_update
+        sys.exit(_cmd_self_update(args))
+
+    if args.command == "logs":
+        from openprogram.interfaces.cli.commands.logs import (
+            _cmd_logs_list, _cmd_logs_path, _cmd_logs_tail,
+        )
+        verb = getattr(args, "logs_verb", None)
+        if verb == "list" or verb is None:
+            sys.exit(_cmd_logs_list())
+        if verb == "path":
+            sys.exit(_cmd_logs_path(args.name))
+        if verb == "tail":
+            sys.exit(_cmd_logs_tail(args.name, args.lines, args.follow))
+        _need_subcommand(args._cmd_parser)
+
+    if args.command == "completion":
+        from openprogram.interfaces.cli.commands.completion import _cmd_completion
+        sys.exit(_cmd_completion(args.shell))
+
+    if args.command == "doctor":
+        as_json = getattr(args, "json", False)
+        if getattr(args, "topic", None) == "credentials":
+            from openprogram.interfaces.cli.commands.doctor import _cmd_doctor_credentials
+            sys.exit(_cmd_doctor_credentials(
+                repair=getattr(args, "repair", False), as_json=as_json
+            ))
+        from openprogram.interfaces.cli.commands.doctor import _cmd_doctor
+        sys.exit(_cmd_doctor(as_json))
+
+    if args.command == "diagnostics":
+        from openprogram.interfaces.cli.commands.diagnostics import _cmd_diagnostics
+        sys.exit(_cmd_diagnostics(getattr(args, "output", None)))
+
+    if args.command == "trash":
+        from openprogram.interfaces.cli.commands.trash import _cmd_trash_list, _cmd_trash_restore
+
+        verb = getattr(args, "trash_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_trash_list())
+        if verb == "restore":
+            sys.exit(_cmd_trash_restore(args.entry_id))
+        _need_subcommand(args._cmd_parser)
+
+    if args.command == "backup":
+        from openprogram.interfaces.cli.commands.backup import (
+            _cmd_backup_create, _cmd_backup_list, _cmd_backup_prune,
+            _cmd_backup_restore,
+        )
+
+        verb = getattr(args, "backup_verb", None)
+        if verb == "create":
+            sys.exit(_cmd_backup_create(
+                include_credentials=getattr(args, "include_credentials", False)))
+        if verb == "list":
+            sys.exit(_cmd_backup_list())
+        if verb == "restore":
+            sys.exit(_cmd_backup_restore(
+                args.name,
+                dry_run=getattr(args, "dry_run", False),
+                yes=getattr(args, "yes", False),
+            ))
+        if verb == "prune":
+            sys.exit(_cmd_backup_prune(args.keep))
+        _need_subcommand(args._cmd_parser)
+
+
+def _runs_print(args) -> bool:
+    """Whether the invocation is a ``--print`` run. ``-p ""`` is one, with
+    an empty prompt (a usage error, exit 2), not the interactive chat: only
+    an absent ``-p`` leaves ``print_prompt`` ``None``."""
+    return getattr(args, "print_prompt", None) is not None
+
+
+def _run_print_prompt(args, parser, tui_enabled) -> None:
+    """Run one ``--print`` turn, with an optional ``--json-schema`` response format.
+
+    The prompt is the argument, standard input, or both
+    (``print_input.resolve_prompt``); a usage error exits 2."""
+    from openprogram.interfaces.cli.print_input import PromptInputError, resolve_prompt
+
+    response_format = None
+    schema_path = getattr(args, "json_schema", None)
+    try:
+        args.print_prompt = resolve_prompt(args.print_prompt,
+                                           schema_from_stdin=schema_path == "-")
+    except PromptInputError as exc:
+        parser.error(str(exc))
+    if schema_path:
+        from openprogram.models.providers.structured_output import (
+            StructuredOutputError,
+            StructuredOutputSchemaError,
+            StructuredOutputUnsupportedError,
+            normalize_response_format,
+        )
+        try:
+            if schema_path == "-":
+                raw_schema = sys.stdin.read()
+            else:
+                from pathlib import Path
+                try:
+                    raw_schema = Path(schema_path).read_text(encoding="utf-8")
+                except OSError as exc:
+                    raise StructuredOutputSchemaError(
+                        "JSON schema file could not be read",
+                        code="invalid_schema",
+                    ) from exc
+            try:
+                parsed_schema = json.loads(raw_schema)
+            except (
+                TypeError,
+                ValueError,
+                RecursionError,
+                json.JSONDecodeError,
+            ) as exc:
+                raise StructuredOutputSchemaError(
+                    "JSON schema file is not valid JSON", code="invalid_schema"
+                ) from exc
+            response_format = normalize_response_format(parsed_schema)
+            _cmd_cli_chat(
+                oneshot=args.print_prompt,
+                resume=args.resume,
+                tui=tui_enabled,
+                response_format=response_format,
+                no_alt_screen=args.no_alt_screen,
+                screen_reader=args.screen_reader,
+                **_print_options(args),
+            )
+        except StructuredOutputError as exc:
+            if isinstance(exc, StructuredOutputSchemaError):
+                print(
+                    f"{exc.code}: Structured output request is invalid",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2) from None
+            if isinstance(exc, StructuredOutputUnsupportedError):
+                print(
+                    f"{exc.code}: Structured output is unsupported",
+                    file=sys.stderr,
+                )
+                raise SystemExit(3) from None
+            print(
+                f"{exc.code}: Structured output generation failed",
+                file=sys.stderr,
+            )
+            raise SystemExit(4) from None
+    else:
+        _cmd_cli_chat(
+            oneshot=args.print_prompt,
+            resume=args.resume,
+            tui=tui_enabled,
+            no_alt_screen=args.no_alt_screen,
+            screen_reader=args.screen_reader,
+            **_print_options(args),
+        )
+
+
+def _print_options(args) -> dict:
+    """The options of a ``--print`` call that were given (``--model``,
+    ``--effort``, the files, the transport, output and session options)."""
+    options = {}
+    if getattr(args, "print_model", None):
+        options["model"] = args.print_model
+    if getattr(args, "print_effort", None):
+        options["effort"] = args.print_effort
+    if getattr(args, "usage_file", None):
+        options["usage_file"] = args.usage_file
+    if getattr(args, "transcript_file", None):
+        options["transcript_file"] = args.transcript_file
+    for dest, name in (("standalone", "standalone"), ("output_format", "output_format"),
+                       ("include_partial_messages", "include_partial_messages"),
+                       ("print_permission_mode", "permission_mode"),
+                       ("print_continue", "continue_last"), ("print_session_id", "new_session_id"),
+                       ("print_at", "at"), ("no_project_binding", "no_project_binding"),
+                       ("no_web", "no_web")):
+        if getattr(args, dest, None):
+            options[name] = getattr(args, dest)
+    return options
+
+
+def _run_interactive_chat(args, tui_enabled) -> None:
+    """Run first-run setup and the surface choice, then open the interactive chat."""
+    # Interactive pre-Ink stretch (first-run wizard + surface menu) needs
+    # the REAL terminal — the post-argparse redirect already pointed stdio
+    # at the ink-startup log, which otherwise hides prompts on POSIX.
+    restored = _restore_tui_tty()
+    # First-run onboarding: a brand-new user just types `openprogram`, not
+    # `openprogram setup`. If nothing is configured yet, run the setup
+    # wizard automatically, then open the chat — no separate command needed.
+    if not args.resume and _needs_first_run_setup():
+        try:
+            from openprogram.interfaces.cli.setup_sections import wizard as _sw
+            _sw.run_full_setup()
+        except KeyboardInterrupt:
+            print("\nSetup cancelled. Run `openprogram setup` any time.")
+            return
+    # Bare `openprogram` (no surface given) → let the user pick terminal vs web.
+    # The explicit `openprogram tui` / `openprogram chat` (here) and
+    # `openprogram web` (its own subcommand) skip the prompt and launch directly.
+    if args.command is None and not args.resume and _choose_surface() == "web":
+        # _cmd_web is imported at module scope (bottom of this file); a
+        # local `import` here would make it a function-local for all of
+        # main(), shadowing that global and breaking the `web` subcommand
+        # branch with UnboundLocalError.
+        _cmd_web(None, None)
+        return
+    # Ink takes the terminal next — put stray module noise back in the log.
+    if restored:
+        _re_redirect_tui_log()
+    _cmd_cli_chat(
+        oneshot=None,
+        resume=args.resume,
+        tui=tui_enabled,
+        no_alt_screen=args.no_alt_screen,
+        screen_reader=args.screen_reader,
+    )
+
+
+def _dispatch_catalog_command(args) -> None:
+    """Run the programs, skills, permissions and plugins commands."""
+    if args.command == "programs":
+        verb = getattr(args, "programs_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_list(as_json=args.json))
+        elif verb == "run":
+            if args.operation:
+                _cmd_run_operation(args.name, args.operation, args.input,
+                                   project=args.project, request_key=args.request_key)
+            else:
+                _cmd_run(args.name, args.arg, args.provider, args.model)
+        elif verb in ("status", "cancel"):
+            _cmd_run_status(args.run_id, cancel=verb == "cancel")
+        elif verb == "check":
+            sys.exit(_cmd_check(args.directory, message=args.message, as_json=args.json))
+        elif verb == "install":
+            _cmd_install(args.source, upgrade=args.upgrade, replace=args.replace, trust=args.trust)
+        elif verb == "uninstall":
+            _cmd_uninstall(args.name)
+        elif verb in ("enable", "disable"):
+            _cmd_enable(args.id, verb == "enable")
+        else:
+            _need_subcommand(args._cmd_parser)
+        return
+
+    if args.command == "skills":
+        verb = getattr(args, "skills_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_skills_list(args.dir, args.json))
+        elif verb == "doctor":
+            sys.exit(_cmd_skills_doctor(args.dir))
+        elif verb == "install":
+            if args.spec:
+                sys.exit(_cmd_skills_install(args.spec, source=args.source))
+            else:
+                _cmd_install_skills(args.target)
+        elif verb == "search":
+            sys.exit(_cmd_skills_search(args.query, source=args.source, limit=args.limit))
+        elif verb == "update":
+            sys.exit(_cmd_skills_update(args.all, args.name))
+        elif verb == "remove":
+            sys.exit(_cmd_skills_remove(args.name))
+        else:
+            _need_subcommand(args._cmd_parser)
+        return
+
+    if args.command == "permissions":
+        from openprogram.interfaces.cli.commands.permissions import run
+        sys.exit(run(args))
+
+    if args.command == "plugins":
+        from openprogram.interfaces.cli.commands.plugins import (
+            _cmd_plugins_list, _cmd_plugins_search, _cmd_plugins_install,
+            _cmd_plugins_uninstall, _cmd_plugins_update,
+            _cmd_plugins_enable, _cmd_plugins_disable,
+            _cmd_plugins_reload, _cmd_plugins_inspect,
+        )
+        verb = getattr(args, "plugins_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_plugins_list(args.json))
+        elif verb == "search":
+            sys.exit(_cmd_plugins_search(args.query))
+        elif verb == "install":
+            sys.exit(_cmd_plugins_install(args.source, args.spec, ref=args.ref))
+        elif verb == "uninstall":
+            sys.exit(_cmd_plugins_uninstall(args.name))
+        elif verb == "update":
+            sys.exit(_cmd_plugins_update(args.all, args.name))
+        elif verb == "enable":
+            sys.exit(_cmd_plugins_enable(args.name))
+        elif verb == "disable":
+            sys.exit(_cmd_plugins_disable(args.name))
+        elif verb == "reload":
+            sys.exit(_cmd_plugins_reload(args.name))
+        elif verb == "inspect":
+            sys.exit(_cmd_plugins_inspect(args.json))
+        else:
+            _need_subcommand(args._cmd_parser)
+        return
+
+
+def _dispatch_sessions_command(args) -> None:
+    """Run the sessions command and its verbs."""
+    if args.command == "sessions":
+        verb = getattr(args, "sessions_verb", None)
+        if verb == "list":
+            if getattr(args, "chat", False):
+                scope = ("archived" if args.archived
+                         else "all" if args.all_scope else "active")
+                _cmd_chat_sessions(scope)
+            else:
+                _cmd_sessions()
+        elif verb == "archive":
+            _cmd_session_archive(args.session_id, True)
+        elif verb == "unarchive":
+            _cmd_session_archive(args.session_id, False)
+        elif verb == "resume":
+            _cmd_resume(args.session_id, args.answer)
+        elif verb == "attach":
+            from openprogram.runtime.agent_registry import session_aliases as _a
+            from openprogram.interfaces.server import persistence as _persist
+            owner = _persist.resolve_agent_for_conv(args.session_id)
+            if owner is None:
+                print(f"[error] no session {args.session_id!r} found "
+                      f"under any agent.")
+                sys.exit(1)
+            # Also auto-start the persistent worker since the user has
+            # now explicitly asked for external routing.
+            from openprogram.operations.worker import current_worker_pid, spawn_detached
+            _row, replaced = _a.attach(
+                channel=args.channel, account_id=args.account,
+                peer_kind=args.peer_kind, peer_id=args.peer,
+                agent_id=owner, session_id=args.session_id,
+            )
+            print(f"Attached {args.channel}:{args.account}:"
+                  f"{args.peer_kind}:{args.peer} → agent={owner}, "
+                  f"session={args.session_id}")
+            if replaced is not None:
+                print(f"  (replaced previous binding "
+                      f"→ session {replaced.get('session_id')})")
+            if current_worker_pid() is None:
+                print("Starting openprogram worker in the background...")
+                spawn_detached()
+        elif verb == "detach":
+            from openprogram.runtime.agent_registry import session_aliases as _a
+            removed = _a.detach(
+                channel=args.channel, account_id=args.account,
+                peer_kind=args.peer_kind, peer_id=args.peer,
+            )
+            if removed:
+                print(f"Detached {args.channel}:{args.account}:"
+                      f"{args.peer_kind}:{args.peer}")
+            else:
+                print("No matching alias.")
+        elif verb == "export":
+            _cmd_sessions_export(args.session_id, args.export_format,
+                                 args.output)
+        elif verb == "import":
+            _cmd_sessions_import(args.paths, args.import_from, args.since,
+                                 args.list_only, args.dry_run)
+        elif verb == "aliases":
+            from openprogram.runtime.agent_registry import session_aliases as _a
+            rows = _a.list_all()
+            if not rows:
+                print("No session aliases. "
+                      "Inbound channel messages fall back to "
+                      "binding → session_scope routing.")
+                return
+            print(f"{'channel':10} {'account':12} {'peer':28} "
+                  f"{'agent':12} session")
+            for r in rows:
+                peer = r["peer"]
+                peer_str = f"{peer['kind']}:{peer['id']}"
+                print(f"{r['channel']:10} {r['account_id']:12} "
+                      f"{peer_str[:27]:28} {r['agent_id']:12} "
+                      f"{r['session_id']}")
+        else:
+            _need_subcommand(args._cmd_parser)
+        return
+
+
+def _dispatch_execution_command(args) -> None:
+    """Run the execution and jobs commands."""
+    if args.command == "execution":
+        from openprogram.interfaces.cli.commands.execution import _cmd_execution_control, _cmd_execution_wait
+
+        verb = getattr(args, "execution_verb", None)
+        if verb in {"pause", "continue", "step", "steer", "cancel", "fork", "retry"}:
+            payload = {}
+            if verb == "steer":
+                payload = {"message": args.message}
+            elif verb == "retry" and args.checkpoint_id:
+                payload = {"checkpoint_id": args.checkpoint_id}
+            elif verb == "fork":
+                payload = {
+                    "manifest_id": args.manifest_id,
+                    "checkpoint_id": args.checkpoint_id,
+                    "proof_hash": args.proof_hash,
+                }
+            sys.exit(_cmd_execution_control(
+                verb,
+                args.execution_id,
+                expected_version=args.expected_version,
+                command_id=args.command_id,
+                payload=payload,
+            ))
+        if verb in {"wait-answer", "wait-decline"}:
+            sys.exit(_cmd_execution_wait(
+                verb.replace("-", "_"), args.execution_id,
+                expected_version=args.expected_version, command_id=args.command_id,
+                wait_id=args.wait_id, generation=args.generation,
+                value=args.wait_value,
+            ))
+        _need_subcommand(args._cmd_parser)
+
+    if args.command == "jobs":
+        from openprogram.interfaces.cli.commands.jobs import _cmd_jobs_get, _cmd_jobs_list
+
+        verb = getattr(args, "jobs_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_jobs_list(args.session_id, as_json=args.json))
+        if verb == "get":
+            sys.exit(_cmd_jobs_get(args.job_id, as_json=args.json))
+        _need_subcommand(args._cmd_parser)
+
+
+def _dispatch_settings_command(args) -> None:
+    """Run the web, ports and config commands."""
+    if args.command == "web":
+        if getattr(args, "web_verb", None) == "auth-url":
+            from openprogram.interfaces.cli.commands.web import _cmd_web_auth_url
+
+            sys.exit(_cmd_web_auth_url(args.base_url))
+        _cmd_web(getattr(args, "web_port", None),
+                 False if args.no_browser else None)
+        return
+
+    if args.command == "ports":
+        from openprogram.state.preferences import set_ui_ports
+
+        def _valid(p):
+            return p is None or 1 <= p <= 65535
+
+        if not _valid(args.port):
+            print("Port must be in 1–65535.")
+            return
+        if args.port is None:
+            from openprogram.operations.worker.lifecycle import resolve_worker_port
+
+            print(f"web UI (API + WebSocket + frontend):  {resolve_worker_port()}")
+            print()
+            print("Change with:  openprogram ports --port <port>")
+            print("Override one run via env:  OPENPROGRAM_WEB_PORT")
+            return
+        prefs = set_ui_ports(web_port=args.port)
+        print("Saved. Takes effect on the next `openprogram web` / `openprogram worker` start.")
+        print(f"  web UI:  {prefs['web_port']}")
+        return
+
+    if args.command == "config":
+        from openprogram.state.settings import get_settings, set_setting
+        verb = getattr(args, "config_verb", None)
+        rows = get_settings()
+        by_key = {r["key"]: r for r in rows}
+
+        if verb in (None, "list"):
+            group = None
+            for r in rows:
+                if r["group"] != group:
+                    group = r["group"]
+                    print(f"\n{group}")
+                val = "(set)" if r.get("set") else r.get("value")
+                tag = "  · next start" if r["apply"] == "next_start" else ""
+                print(f"  {r['key']:24} {str(val):>10}{tag}")
+            print("\nChange with:  openprogram config set <key> <value>")
+            return
+
+        if verb == "get":
+            r = by_key.get(args.key)
+            if r is None:
+                print(f"unknown setting: {args.key}  (see `openprogram config list`)")
+                sys.exit(1)
+            print("(set)" if r.get("set") else r.get("value"))
+            return
+
+        if verb == "set":
+            from openprogram.operations.worker.ports import with_port_owner_note
+            res = with_port_owner_note(args.key, set_setting(args.key, args.value))
+            if res.get("error"):
+                print(f"error: {res['error']}")
+                sys.exit(1)
+            when = " (takes effect next start)" if res.get("applied") == "next_start" else ""
+            print(f"{args.key} = {res.get('value')}{when}")
+            if res.get("note"):
+                print(f"  note: {res['note']}")
+            return
+
+
+def _dispatch_memory_command(args) -> None:
+    """Run the recordings and memory commands."""
+    if args.command == "recordings":
+        from openprogram.models.providers.recording.recording import dispatch_recordings
+
+        sys.exit(dispatch_recordings(args))
+
+    if args.command == "memory":
+        from openprogram.state.memory import DISABLED_MESSAGE, is_enabled
+
+        if not is_enabled():
+            print(DISABLED_MESSAGE)
+            sys.exit(1)
+        verb = getattr(args, "memory_verb", None)
+        from openprogram.state.memory import store as _mstore
+        from openprogram.state.memory.retrieval import inspect as _inspect
+        if verb == "status":
+            root = _mstore.ensure()
+            import json as _json
+            print(f"memory root:     {root}")
+            # The local terminal is the owner's own surface, so the path
+            # belongs here — unlike the tool result a model can quote.
+            print(_json.dumps(
+                _inspect.status(root, include_path=True),
+                indent=2, ensure_ascii=False,
+            ))
+            sys.exit(0)
+        if verb == "recall":
+            root = _mstore.ensure()
+            q = " ".join(args.query)
+            found = _inspect.search(root, q, top_k=8)
+            results = found.get("results", [])
+            if not results:
+                print(f"No memories matched {q!r}.")
+                sys.exit(0)
+            for hit in results:
+                block = hit.get("event_id")
+                head = hit.get("path", "?") + (f"#^{block}" if block else "")
+                print(f"--- {head}")
+                print(hit.get("content", "").strip())
+                print()
+            sys.exit(0)
+        if verb == "show":
+            root = _mstore.ensure()
+            try:
+                found = _inspect.read_file(root, args.path)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Cannot read {args.path!r}: {exc}")
+                sys.exit(1)
+            print(found.get("content", ""))
+            sys.exit(0)
+        if verb == "edit":
+            sys.exit(_memory_edit(_mstore.ensure(), args.path))
+        if verb == "sleep":
+            import openprogram.runtime  # noqa: F401 - registers the memory writer agent
+            from openprogram.state.memory.scheduler import reorganize_projects
+            from openprogram.state.memory.writing import reorganize
+            import json as _json
+            model = getattr(args, "model", None)
+            report = reorganize(model=model)
+            projects = reorganize_projects(model=model)
+            if projects:
+                report = {**report, "projects": projects}
+            print(_json.dumps(report, indent=2, ensure_ascii=False))
+            sys.exit(0)
+        if verb == "export":
+            import datetime as _dt
+            import tarfile as _tar
+            out = getattr(args, "out", None) or (
+                f"./openprogram-memory-{_dt.date.today().isoformat()}.tar.gz"
+            )
+            with _tar.open(out, "w:gz") as t:
+                t.add(str(_mstore.root()), arcname="memory")
+            print(f"exported to {out}")
+            sys.exit(0)
+        _need_subcommand(args._cmd_parser)
+
+
+def _dispatch_worker_command(args) -> None:
+    """Run update, the background-service aliases and the worker command."""
+    if args.command == "update":
+        from openprogram.operations.self_update.github_release import (
+            apply_update, check_for_update, detect_install_method, is_disabled,
+        )
+        if is_disabled() and not args.force:
+            print("auto-update disabled by OPENPROGRAM_NO_AUTO_UPDATE.")
+            print("Use `openprogram update --force` to override.")
+            sys.exit(0)
+        method = detect_install_method()
+        info = check_for_update(force=args.force)
+        if info is None:
+            print(f"No update path for install method: {method.value}.")
+            sys.exit(0)
+        if not info.available:
+            print(f"openprogram {info.current} ({method.value}): {info.summary}.")
+            sys.exit(0)
+        print(f"update available: {info.current} → {info.target} ({info.summary})")
+        if args.check:
+            sys.exit(0)
+        ok, msg = apply_update(info)
+        if ok:
+            print(f"updated to {info.target}.")
+            print("Restart the worker so the new code takes effect:")
+            print("  openprogram worker restart")
+            sys.exit(0)
+        print(f"update failed: {msg}")
+        sys.exit(1)
+
+    # Top-level aliases for the background service — no "worker" noun.
+    if args.command == "stop":
+        from openprogram.operations import worker as _worker
+        sys.exit(_worker.stop_worker())
+    if args.command == "restart":
+        from openprogram.operations import worker as _worker
+        sys.exit(_worker.restart_worker())
+    if args.command == "upgrade":
+        from openprogram.interfaces.cli.commands.upgrade import _cmd_upgrade
+        sys.exit(_cmd_upgrade(args))
+    if args.command == "status":
+        from openprogram.interfaces.channels import list_status
+        from openprogram.operations import worker as _worker
+        from openprogram.operations.worker import services as _services
+        rc = _worker.print_status(channel_status=list_status)
+        service_rc = 0
+        if _services.is_supported():
+            print()
+            service_rc = _services.status()
+        sys.exit(rc or service_rc)
+
+    if args.command == "worker":
+        verb = getattr(args, "worker_verb", None)
+        from openprogram.operations import worker as _worker
+        if verb == "run":
+            sys.exit(_worker.run_foreground())
+        if verb == "start":
+            sys.exit(_worker.spawn_detached())
+        if verb == "stop":
+            sys.exit(_worker.stop_worker())
+        if verb == "restart":
+            sys.exit(_worker.restart_worker())
+        if verb == "status":
+            from openprogram.interfaces.channels import list_status
+            from openprogram.operations.worker import services as _services
+            rc = _worker.print_status(channel_status=list_status)
+            service_rc = 0
+            if _services.is_supported():
+                print()
+                service_rc = _services.status()
+            sys.exit(rc or service_rc)
+        if verb == "install":
+            from openprogram.operations.worker import services as _services
+            sys.exit(_services.install())
+        if verb == "uninstall":
+            from openprogram.operations.worker import services as _services
+            sys.exit(_services.uninstall())
+        _need_subcommand(args._cmd_parser)
+
+
+def _dispatch_integration_command(args) -> None:
+    """Run the environments, channels and mcp commands."""
+    if args.command == "environments":
+        from openprogram.interfaces.cli.commands.environments import dispatch
+        sys.exit(dispatch(args))
+
+    if args.command == "channels":
+        verb = getattr(args, "channels_verb", None)
+        if verb == "list":
+            from openprogram.interfaces.channels import list_status
+            rows = list_status()
+            if not rows:
+                print("No channel accounts configured. "
+                      "Run `openprogram channels accounts add <channel>`.")
+                return
+            print(f"{'channel':10} {'account':14} {'enabled':8} "
+                  f"{'configured':12} {'impl':6}")
+            for r in rows:
+                print(f"{r['platform']:10} {r['account_id']:14} "
+                      f"{str(r['enabled']):8} {str(r['configured']):12} "
+                      f"{str(r['implemented']):6}")
+            return
+        if verb == "setup":
+            from openprogram.interfaces.cli.commands import channels_setup as _ch_setup
+            sys.exit(_ch_setup.run())
+        if verb == "accounts":
+            _dispatch_accounts_verb(args, args._cmd_parser)
+            return
+        if verb == "access":
+            _dispatch_access_verb(args, args._cmd_parser)
+            return
+        if verb == "bindings":
+            _dispatch_bindings_verb(args, args._cmd_parser)
+            return
+        _need_subcommand(args._cmd_parser)
+        return
+
+    if args.command == "mcp":
+        verb = getattr(args, "mcp_verb", None)
+        if verb == "token":
+            token_verb = getattr(args, "mcp_token_verb", None)
+            if token_verb == "create":
+                sys.exit(_cmd_mcp_token_create())
+            _need_subcommand(args._cmd_parser)
+        if verb == "list":
+            sys.exit(_cmd_mcp_list())
+        if verb == "serve":
+            sys.exit(_cmd_mcp_serve())
+        if verb == "show":
+            sys.exit(_cmd_mcp_show(args.name))
+        if verb == "add":
+            sys.exit(_cmd_mcp_add(args.name, args.server_command,
+                                   env=args.env,
+                                   timeout=args.timeout,
+                                   enabled=not args.disabled))
+        if verb == "rm":
+            sys.exit(_cmd_mcp_rm(args.name))
+        if verb == "restart":
+            sys.exit(_cmd_mcp_restart(args.name))
+        if verb == "enable":
+            sys.exit(_cmd_mcp_enable(args.name))
+        if verb == "disable":
+            sys.exit(_cmd_mcp_disable(args.name))
+        if verb == "edit":
+            sys.exit(_cmd_mcp_edit_removed())
+        if verb == "test":
+            sys.exit(_cmd_mcp_test(args.name, args.server_command,
+                                    env=args.env, timeout=args.timeout))
+        _need_subcommand(args._cmd_parser)
+
+
+def _dispatch_agent_command(args) -> None:
+    """Run the acp, agents, subagent and scheduler-worker commands."""
+    if args.command == "acp":
+        from openprogram.interfaces.cli.commands.acp import _cmd_acp
+        sys.exit(_cmd_acp(getattr(args, "agent", "main"),
+                          getattr(args, "permission", "ask")))
+
+    if args.command == "agents":
+        _dispatch_agents_verb(args, args._cmd_parser)
+        return
+
+    if args.command == "subagent":
+        verb = getattr(args, "subagent_verb", None)
+        if verb == "spawn":
+            as_json = not getattr(args, "no_json", False)
+            context = getattr(args, "context", "inherit") or "inherit"
+            if getattr(args, "clean", False):
+                context = "clean"
+            sys.exit(_cmd_subagent_spawn(
+                session=args.session,
+                prompt=args.prompt,
+                parent_msg=getattr(args, "parent_msg", None),
+                label=getattr(args, "label", None),
+                agent_id=getattr(args, "agent", "main"),
+                context=context,
+                as_json=as_json,
+            ))
+        if verb == "merge":
+            as_json = not getattr(args, "no_json", False)
+            sys.exit(_cmd_subagent_merge(
+                target=args.target,
+                branches=list(getattr(args, "branch", []) or []),
+                message=getattr(args, "message", ""),
+                agent_id=getattr(args, "agent", "main"),
+                base_branch=getattr(args, "base", None),
+                as_json=as_json,
+            ))
+        if verb == "list":
+            sys.exit(_cmd_subagent_list(
+                session=args.session,
+                as_json=getattr(args, "json", False),
+            ))
+        if verb == "show":
+            sys.exit(_cmd_subagent_show(
+                job_id=args.job_id,
+                as_json=getattr(args, "json", False),
+            ))
+        _need_subcommand(args._cmd_parser)
+
+    if args.command in ("scheduler-worker", "cron-worker"):
+        _cmd_cron_worker(args.once, args.list)
+        return
+
+
+def _dispatch_setup_command(args) -> None:
+    """Run the providers/secrets and setup commands."""
+    if args.command in ("providers", "secrets"):
+        from openprogram.interfaces.cli.commands.providers import dispatch as _providers_dispatch
+        if getattr(args, "providers_cmd", None) is None:
+            args.providers_cmd = "list"
+            args.account = None
+            args.json = False
+            rc = _providers_dispatch(args)
+            print(
+                "\nMore commands:\n"
+                "  openprogram providers setup     # interactive first-time wizard\n"
+                "  openprogram providers doctor    # diagnose credentials\n"
+                "  openprogram providers aliases   # show short-name table\n"
+                "  openprogram providers login <prov>   # connect a provider\n"
+            )
+            sys.exit(rc)
+        sys.exit(_providers_dispatch(args))
+
+    if args.command == "setup":
+        from openprogram.interfaces.cli.setup_sections import wizard as _sw
+        target = getattr(args, "target", None)
+        if target == "menu":
+            # Interactive picker that loops back to itself between
+            # sections (old ``configure`` verb behaviour).
+            sys.exit(_sw.run_configure_menu())
+        if target:
+            # Jump straight to one section.
+            handlers = {
+                "model":    _sw.run_model_section,
+                "tools":    _sw.run_tools_section,
+                "agent":    _sw.run_agent_section,
+                "skills":   _sw.run_skills_section,
+                "ui":       _sw.run_ui_section,
+                "memory":   _sw.run_memory_section,
+                "profile":  _sw.run_profile_section,
+                "search":   _sw.run_search_section,
+                "tts":      _sw.run_tts_section,
+                "channels": _sw.run_channels_section,
+                "backend":  _sw.run_backend_section,
+            }
+            sys.exit(handlers[target]())
+        # Default: full first-run wizard.
+        sys.exit(_sw.run_full_setup())
+
+
+def _dispatch_transcript_command(args) -> None:
+    """``openprogram transcript``: rebuild a ``--print`` run's transcript
+    from its state (``print_turn.transcript_from_state``); exit 1 when the
+    state names no single run."""
+    from openprogram.interfaces.cli import print_turn
+
+    try:
+        with print_turn.state_directory(args.state):
+            records = print_turn.transcript_from_state(args.session)
+    except print_turn.PrintTurnError as exc:
+        print(f"[error] {exc}", file=sys.stderr)
+        sys.exit(1)
+    print_turn.write_transcript_records(args.output, records)
+
+
+# Subcommand name -> the helper that runs its family.
+_COMMAND_DISPATCH = {
+    "transcript": _dispatch_transcript_command,
+    "rescue": _dispatch_maintenance_command,
+    "dev": _dispatch_maintenance_command,
+    "versions": _dispatch_maintenance_command,
+    "self-update": _dispatch_maintenance_command,
+    "logs": _dispatch_maintenance_command,
+    "completion": _dispatch_maintenance_command,
+    "doctor": _dispatch_maintenance_command,
+    "diagnostics": _dispatch_maintenance_command,
+    "trash": _dispatch_maintenance_command,
+    "backup": _dispatch_maintenance_command,
+    "programs": _dispatch_catalog_command,
+    "skills": _dispatch_catalog_command,
+    "permissions": _dispatch_catalog_command,
+    "plugins": _dispatch_catalog_command,
+    "sessions": _dispatch_sessions_command,
+    "execution": _dispatch_execution_command,
+    "jobs": _dispatch_execution_command,
+    "web": _dispatch_settings_command,
+    "ports": _dispatch_settings_command,
+    "config": _dispatch_settings_command,
+    "recordings": _dispatch_memory_command,
+    "memory": _dispatch_memory_command,
+    "update": _dispatch_worker_command,
+    "stop": _dispatch_worker_command,
+    "restart": _dispatch_worker_command,
+    "upgrade": _dispatch_worker_command,
+    "status": _dispatch_worker_command,
+    "worker": _dispatch_worker_command,
+    "environments": _dispatch_integration_command,
+    "channels": _dispatch_integration_command,
+    "mcp": _dispatch_integration_command,
+    "acp": _dispatch_agent_command,
+    "agents": _dispatch_agent_command,
+    "subagent": _dispatch_agent_command,
+    "scheduler-worker": _dispatch_agent_command,
+    "cron-worker": _dispatch_agent_command,
+    "providers": _dispatch_setup_command,
+    "secrets": _dispatch_setup_command,
+    "setup": _dispatch_setup_command,
+}
+
+
+def main():
+    from openprogram.operations.self_update.versions.layout import apply_base_environment
+    from openprogram.operations.worker.lifecycle import use_named_runtime_for_cli
+    apply_base_environment()
+    use_named_runtime_for_cli()
+    _ensure_utf8_stdio()
+    parser, args = _parse_arguments()
+    _prepare_environment(args)
+    from openprogram.host.process_logging import configure_process_logging
+
+    configure_process_logging("WARNING")  # the chat shares this terminal: warnings and errors only
+
+    # -------- TUI launch (bare openprogram OR `openprogram tui/chat`) --
+    # Chat is the default experience on every platform. Ink is attempted when
+    # the invocation owns a TTY; its raw-mode startup check is the capability
+    # boundary. Unsupported terminals fall back to the Rich REPL with their
+    # stdio restored, including Git Bash / MinTTY on Windows.
+    tui_enabled = True
+
+    if args.command in (None, "tui", "chat"):
+        if _runs_print(args):
+            _run_print_prompt(args, parser, tui_enabled)
+            return
+        _run_interactive_chat(args, tui_enabled)
+        return
+
+    # -------- Subcommand dispatch --------
+    dispatch = _COMMAND_DISPATCH.get(args.command)
+    if dispatch is not None:
+        dispatch(args)
+
+
+# ---------------------------------------------------------------------------
+# Subcommand handlers live in this application's ``commands`` package. They are
+# re-exported here under the names tests / openprogram.interfaces.cli.chat /
+# openprogram.interfaces.cli.ink import directly off this module.
+# ---------------------------------------------------------------------------
+
+from openprogram.interfaces.cli.commands.programs import (  # noqa: E402,F401
+    _get_runtime,
+    _cmd_check,
+    _cmd_configure,
+    _cmd_enable,
+    _cmd_install,
+    _cmd_list,
+    _cmd_run,
+    _cmd_run_operation,
+    _cmd_run_status,
+    _cmd_uninstall,
+)
+from openprogram.interfaces.cli.commands.skills import (  # noqa: E402,F401
+    _cmd_skills_list,
+    _cmd_skills_doctor,
+    _cmd_install_skills,
+    _cmd_skills_search,
+    _cmd_skills_install,
+    _cmd_skills_update,
+    _cmd_skills_remove,
+)
+from openprogram.interfaces.cli.commands.subagent import (  # noqa: E402,F401
+    _cmd_subagent_spawn,
+    _cmd_subagent_merge,
+    _cmd_subagent_list,
+    _cmd_subagent_show,
+)
+
+from openprogram.interfaces.cli.commands.sessions import (  # noqa: E402,F401
+    _cmd_chat_sessions,
+    _cmd_resume,
+    _cmd_session_archive,
+    _cmd_sessions,
+    _cmd_sessions_export,
+    _cmd_sessions_import,
+)
+from openprogram.interfaces.cli.commands.agents import (  # noqa: E402,F401
+    _dispatch_agents_verb,
+)
+from openprogram.interfaces.cli.commands.channels import (  # noqa: E402,F401
+    _dispatch_access_verb,
+    _dispatch_accounts_verb,
+    _dispatch_bindings_verb,
+    _login_account,
+)
+from openprogram.interfaces.cli.commands.web import _cmd_web  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.chat import (  # noqa: E402,F401
+    _cmd_cli_chat,
+)
+from openprogram.interfaces.cli.commands.cron import _cmd_cron_worker  # noqa: E402,F401
+from openprogram.interfaces.cli.commands.mcp import (  # noqa: E402,F401
+    _cmd_mcp_serve,
+    _cmd_mcp_token_create,
+    _cmd_mcp_list,
+    _cmd_mcp_show,
+    _cmd_mcp_add,
+    _cmd_mcp_rm,
+    _cmd_mcp_restart,
+    _cmd_mcp_enable,
+    _cmd_mcp_disable,
+    _cmd_mcp_edit_removed,
+    _cmd_mcp_test,
+)
+
+
+
+if __name__ == "__main__":
+    main()

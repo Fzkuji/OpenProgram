@@ -1,12 +1,20 @@
+import type { FileSectionRequests } from "../panes/file-section-requests";
+import type { CanvasDockSide, CanvasLayout, LayoutNode } from "../canvas/canvas-layout";
 import type { CenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import type { BuiltinPage } from "@/lib/tabs/center-tab-ids";
 import { type TabPageHistory } from "../navigation/page-history";
 import { type SessionTabHistory } from "../navigation/session-history";
+import type { ClosedTabEntry } from "./closed-tabs";
 export type CenterTabKind = "session" | "file" | "web" | "ntp" | "builtin" | "application";
 
 export interface CenterTab {
+  /** Empty canvas layout tab; removed once real content occupies the layout. */
+  canvasAnchor?: boolean;
   applicationId?: string;
   applicationInstanceId?: string;
+  /** Application tabs: the chat whose window this is; its entries stay
+   *  resident for that chat until the tab closes. */
+  applicationSessionId?: string;
   id: string;
   kind: CenterTabKind;
   /** Session tabs: conversation title (may lag; synced from the
@@ -26,6 +34,9 @@ export interface CenterTab {
   projectId?: string;
   /** File tabs only — project-relative, "/"-separated. */
   path?: string;
+  readOnly?: boolean;
+  fileSessionId?: string;
+  previewOwnerSessionId?: string;
   /** File tabs only — the turn this file was opened FROM. Both set
    *  ⇒ the pane can fetch that turn's diff and defaults to showing
    *  it instead of the raw file. */
@@ -47,7 +58,7 @@ export interface CenterTab {
   agentSessionId?: string;
   agentBranchId?: string;
   agentExecutionId?: string;
-  /** Explicitly keep an agent page in the top strip. */
+  /** Explicit top-strip visibility: false retains a session Page only in Resources. */
   webPinned?: boolean;
   /** Web tabs only — favicon URL reported by the desktop shell; the
    *  strip falls back to the Chrome icon when absent or unloadable. */
@@ -83,6 +94,7 @@ export interface FileNavigationHistory {
 }
 
 export interface FileTabOptions {
+  section?: string;
   diffSessionId?: string;
   diffMsgId?: string;
   scrollToLine?: number;
@@ -90,6 +102,13 @@ export interface FileTabOptions {
 }
 
 export interface CenterTabsState {
+  fileSectionRequests: FileSectionRequests;
+  fileSectionSequence: number;
+  consumeFileSection: (id: string, sequence: number) => void;
+  setCanvas: (targetId: string, canvas: CanvasLayout) => void;
+  /** Live, unpersisted canvas tree while a divider is dragged. */
+  previewCanvas: (targetId: string, root: LayoutNode) => void;
+  dockCanvas: (sourceId: string | string[], targetId: string, paneId: string, side: CanvasDockSide) => void;
   navigationRoute?: string;
   recordRouteNavigation: (pathname: string) => void;
   canNavigateHistory: (direction: -1 | 1) => boolean;
@@ -120,8 +139,9 @@ export interface CenterTabsState {
   ) => boolean;
   ungroupTab: (id: string, beforeId?: string | null) => void;
   focusGroupMember: (groupId: string, memberId: string) => void;
-  /** Navigate the active session tab, otherwise create a session tab. */
-  openSessionTab: (sessionId: string, title: string) => void;
+  /** Navigate the active session tab, otherwise create a session tab.
+   *  ``newTab`` keeps the active tab and opens the session beside it. */
+  openSessionTab: (sessionId: string, title: string, options?: { newTab?: boolean }) => void;
   navigateSessionHistory: (direction: -1 | 1) => void;
   navigateFileHistory: (direction: -1 | 1) => void;
   canNavigateFile: (direction: -1 | 1) => boolean;
@@ -134,16 +154,25 @@ export interface CenterTabsState {
   claimDraftSessionTab: () => string;
   /** First acknowledgement: keep the same tab/id and clear draft state. */
   markSessionReady: (sessionId: string) => void;
+  /** A draft's first message left the client: until its acknowledgement the
+   *  draft is no longer an empty New chat that can be reused. ``false``
+   *  undoes it when the backend rejects that message. */
+  markSessionSent: (sessionId: string, sent?: boolean) => void;
   openFileTab: (
     projectId: string,
     path: string,
     options?: FileTabOptions,
   ) => void;
+  openFilePreview: (sessionId: string, target: { projectId: string; path: string; readOnly?: boolean; section?: string }, automatic?: boolean) => boolean;
+  /** Open a local page (an HTML file's file:// URL) in a browser tab beside the chat. */
+  openPagePreview: (sessionId: string, target: { url: string; title: string }, automatic?: boolean) => boolean;
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
   openWebTab: (url: string, agentRequest?: boolean) => void;
   /** Always append a distinct web tab for a native page popup. */
-  openPopupWebTab: (url: string, openerTabId: string) => string;
+  /** ``id`` is the desktop's, when it already made the popup's native Page. */
+  /** `behind` keeps the tab the user is on: the popup came from an Agent's step. */
+  openPopupWebTab: (url: string, openerTabId: string, id?: string, behind?: boolean) => string;
   /** Create or reuse a web tab without focusing it or opening a split. */
   markAgentWebTab: (id: string, sessionId?: string, attribution?: {
     branchId?: string; executionId?: string;
@@ -175,7 +204,7 @@ export interface CenterTabsState {
   retargetFileTab: (oldId: string, newProjectId: string, newPath: string) => void;
   /** Focus-or-create the singleton tab for a built-in page. */
   openBuiltinTab: (page: BuiltinPage) => void;
-  openApplicationTab: (appId: string, instanceId: string, title: string) => void;
+  openApplicationTab: (appId: string, instanceId: string, title: string, sessionId?: string) => void;
   openReviewTab: (
     sessionId: string,
     assistantMsgId?: string,
@@ -186,6 +215,12 @@ export interface CenterTabsState {
   openNewTabPage: () => void;
   /** Close a tab; closing the active one activates the right
    *  visible neighbor, else the left. The final tab leaves an empty view. */
-  closeTab: (id: string) => void;
+  closeTab: (id: string, options?: { retainSessionResources?: boolean }) => void;
+  /** The last closed tabs (newest last, at most 10) for Cmd+Shift+T. */
+  closedTabs: ClosedTabEntry[];
+  /** Reopen the most recently closed tab where it was. A session tab whose
+   *  conversation `sessionGone` reports deleted is skipped, never recreated
+   *  as an empty tab. Returns the reopened tab's id, or null. */
+  reopenClosedTab: (sessionGone?: (sessionId: string) => boolean) => string | null;
   renameSessionTab: (sessionId: string, title: string) => void;
 }

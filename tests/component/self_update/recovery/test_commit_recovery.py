@@ -7,21 +7,33 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.self_update import UpdatePhase
-from openprogram.self_update.control import supervisor
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.self_update.verification.test_system_probe import live
-from tests.component.self_update.verification.test_verification_channel import verifier
-from tests.component.self_update.delivery.test_install_transaction import installation, INSTALLER, prepare, phase, version
+from openprogram.operations.self_update import UpdatePhase
+from openprogram.operations.self_update.control import supervisor
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.self_update.verification import test_system_probe as _test_system_probe
+from tests.component.self_update.verification import test_verification_channel as _test_verification_channel
+from tests.component.self_update.delivery.test_install_transaction import (
+    INSTALLER,
+    prepare,
+    phase,
+    version,
+)
+from tests.component.self_update.delivery import test_install_transaction as _test_install_transaction
 from tests.component.config.test_distribution_release._support import MACOS_DESKTOP_INSTALL
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+live = _test_system_probe.live
+verifier = _test_verification_channel.verifier
+installation = _test_install_transaction.installation
 
 pytestmark = [pytest.mark.macos, MACOS_DESKTOP_INSTALL]
 
 
 @pytest.fixture
 def accepted(verifier, installation, monkeypatch):
-    from openprogram.self_update.verification import verification_channel as channel
-    from openprogram.webui.routes.settings import misc
+    from openprogram.operations.self_update.verification import verification_channel as channel
+    from openprogram.interfaces.server.routes.settings import misc
 
     v = verifier
     install, artifact, target, tmp = installation
@@ -111,7 +123,7 @@ def test_expired_decision_before_native_commit_does_not_authorize_late_deletion(
 
 
 def test_deadline_is_checked_after_durable_decision_before_first_native_commit(accepted, monkeypatch):
-    from openprogram.self_update.control import commit_intent
+    from openprogram.operations.self_update.control import commit_intent
     v = accepted
     begin = commit_intent.begin_commit
     def delayed(*args):

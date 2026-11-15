@@ -1,7 +1,7 @@
 import { homedir } from 'os';
 import { join } from 'path';
 
-/** Resolve the same per-profile state root as ``openprogram.paths``. */
+/** Resolve the same per-profile state root as ``openprogram.state.paths``. */
 export function tuiStateDir(
   environment: NodeJS.ProcessEnv = process.env,
   home: string = homedir(),

@@ -2,16 +2,16 @@ import asyncio
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from openprogram.agent.authority import local_owner_authority
-from openprogram.context.nodes import Call
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.checkpoints import CheckpointFragment
-from openprogram.execution.control import RuntimeControlService
-from openprogram.execution.driver import DriverAck, DriverBinding, DriverRegistry
-from openprogram.execution.model import CapabilitySet, ExecutionStatus
-from openprogram.execution.store import ExecutionStore
-from openprogram.store import SessionNodeWriter
-from openprogram.store.session.session_store import SessionStore
+from openprogram.runtime.permissions.authority import local_owner_authority
+from openprogram.state.store.session.nodes import Call
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.control import RuntimeControlService
+from openprogram.runtime.execution.driver import DriverAck, DriverBinding, DriverRegistry
+from openprogram.runtime.execution.model import CapabilitySet, ExecutionStatus
+from openprogram.runtime.execution.store import ExecutionStore
+from openprogram.state.store import SessionNodeWriter
+from openprogram.state.store.session.session_store import SessionStore
 
 
 class _PauseDriver:
@@ -58,7 +58,7 @@ def _running_execution(tmp_path):
     attempts = AttemptStore(executions)
     leased, reserved = attempts.lease(
         execution.execution_id, expected_version=execution.status_version,
-        owner_id="worker_1", ttl_seconds=30, attempt_id="attempt_live",
+        owner_id="worker_1", attempt_id="attempt_live",
     )
     active, running = attempts.activate(
         leased.attempt_id, generation=leased.generation,
@@ -68,15 +68,15 @@ def _running_execution(tmp_path):
 
 
 def test_page_pause_is_rejected_without_pausing_canonical_execution(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes.execution import processes
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
+    from openprogram.interfaces.server.routes.execution import processes
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "parent")
     writer.append(Call(id="u1", role="user", predecessor="ROOT", seq=1))
     writer.append(Call(id="a1", role="llm", predecessor="u1", seq=2))
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     executions, attempts, running, active = _running_execution(tmp_path)
     registry = DriverRegistry()
     driver = _PauseDriver(executions)
@@ -86,9 +86,9 @@ def test_page_pause_is_rejected_without_pausing_canonical_execution(tmp_path, mo
         handle={"execution_id": running.execution_id, "attempt_id": active.attempt_id},
     ))
     service = RuntimeControlService(executions, attempts, registry)
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: executions)
-    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
-    monkeypatch.setattr("openprogram.execution.control.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: executions)
+    monkeypatch.setattr("openprogram.runtime.execution.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.runtime.execution.control.default_control_service", lambda: service)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
         page_key="page:live", window_id="win", tab_id="tab-a", title="Plans",
@@ -151,15 +151,15 @@ def _safe_point(service, executions, running, attempt, command_id):
 def test_page_resume_is_rejected_without_resuming_canonical_execution(
     tmp_path, monkeypatch,
 ):
-    from openprogram.browser_resources import BrowserResourceStore, writes_fenced
-    from openprogram.webui.routes.execution import processes
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
+    from openprogram.interfaces.server.routes.execution import processes
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = SessionStore(tmp_path / "sessions")
     writer = SessionNodeWriter(db, "parent")
     writer.append(Call(id="u1", role="user", predecessor="ROOT", seq=1))
     writer.append(Call(id="a1", role="llm", predecessor="u1", seq=2))
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     executions, attempts, running, active = _running_execution(tmp_path)
     registry = DriverRegistry()
     driver = _PauseDriver(executions)
@@ -171,9 +171,9 @@ def test_page_resume_is_rejected_without_resuming_canonical_execution(
     service = RuntimeControlService(
         executions, attempts, registry, activator=driver.activate,
     )
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: executions)
-    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
-    monkeypatch.setattr("openprogram.execution.control.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: executions)
+    monkeypatch.setattr("openprogram.runtime.execution.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.runtime.execution.control.default_control_service", lambda: service)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
         page_key="page:live", window_id="win", tab_id="tab-a", title="Plans",
@@ -196,16 +196,15 @@ def test_page_resume_is_rejected_without_resuming_canonical_execution(
         stored = store.get_resource("page:live")
         assert stored["control_state"] == "idle"
         assert not stored.get("pause_command_id")
-        assert writes_fenced("page:live") is False
         current = executions.get_execution(running.execution_id)
         assert current.status is ExecutionStatus.RUNNING
 
 
 def test_retain_does_not_erase_title_when_binding_has_no_url(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore, retain_from_binding
-    from openprogram.webui.ws_actions import webtab
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore, retain_from_binding
+    from openprogram.interfaces.server.ws_actions import webtab
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     owner = object()
     webtab.ensure_connection_revision(owner)

@@ -1,0 +1,86 @@
+<title>Agent calls and methods</title>
+<meta name="description" content="Direct agent() requests, configured Agent methods, explicit tools and persistent turns.">
+<h1>Agent calls and methods</h1><pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class ReviewAgent(Agent):
+    tools = []
+    instructions = "Preserve facts. Return concise text."
+
+    def classify(self, review: str) -&gt; str:
+        """Classify review sentiment."""
+        return self(f"Classify as positive, negative, or neutral:\n{review}")
+
+    def summarize(self, review: str) -&gt; str:
+        """Summarize a review with its sentiment."""
+        sentiment = self.classify(review)
+        return self(f"Summarize this {sentiment} review in one sentence:\n{review}")
+
+reviewer = ReviewAgent(model="configured-model")
+summary = reviewer.summarize("The service was fast.")</code></pre>
+<p class="note"><code translate="no">self(...)</code> makes a model request through the existing Runtime. The docstring describes the function; the prompt carries instruction and data.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Thing</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent instance</th><td>Stores configuration; keeps no conversation between independent top-level calls</td></tr>
+<tr><th scope="row">Nested call, same Agent</th><td>Uses the active execution; no DAG node of its own</td></tr>
+<tr><th scope="row">Another Agent</th><td>Its own DAG; the parent stores the result and a <code translate="no">child_session_id</code> reference</td></tr>
+<tr><th scope="row">DAG contents</th><td>User messages, model requests and directly dispatched tools</td></tr>
+<tr><th scope="row">Permission, cancellation, file checkpoints</th><td>Stay with the originating execution</td></tr>
+<tr><th scope="row">Context</th><td>Selects permitted history and resolves configured content per request</td></tr>
+</tbody>
+</table>
+<h2>Direct and asynchronous calls</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import agent, agent_async
+
+answer = agent("Summarize this text", tools=[])
+# In an async function:
+# answer = await agent_async("Summarize this text", tools=[])
+# answer = await reviewer.arun("Summarize this text")</code></pre>
+<p class="note"><code translate="no">tools=[]</code>: no model tools. <code translate="no">tools=None</code>: the runtime resolves available tools under current authorization.</p>
+<h2>Method metadata and tools</h2>
+<pre translate="no" tabindex="0"><code>class TextAgent(Agent):
+    tools = []
+    method_options = {
+        "summarize": {
+            "tool": True,
+            "name": "summarize_notes",
+            "input": {"text": {"description": "Text to summarize"}},
+            "expose": "io",
+        },
+    }
+
+    def summarize(self, text: str) -&gt; str:
+        """Summarize text."""
+        return self(f"Summarize:\n{text}")</code></pre>
+<p class="note"><code translate="no">method_options</code> declares input form metadata, visibility, durable steps, authorization and tool registration; fields are in <a href="function-metadata.html">Function metadata</a>. Only <code translate="no">tool=True</code> makes a tool; recording does not. Name and signature supply the schema. Visibility controls history rendering, not permission.</p>
+<h2>Ordinary Program functions</h2>
+<p>The managed loader captures source-defined functions in authorized Program packages, not arbitrary host files or dependencies. List public entries in <code translate="no">PROGRAM_ENTRIES</code>; private helpers keep runtime access without DAG nodes or tool status. Compose deterministically in Python, or supply registered tools for <a href="../choosing-the-next-step/tool-calling.html">model-selected calls</a>.</p>
+<h2>Persistent conversations</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, Context, TurnRequest
+from openprogram.runtime.context.session_db import default_db
+
+context = Context.for_session(default_db(), "example-conversation",
+                              blocks={"reference": "User-supplied reference material"})
+worker = Agent(context=context)
+result = worker.run_turn(
+    TurnRequest(session_id="example-conversation", user_text="Summarize the reference",
+                agent_id="main", source="python"),
+    on_event=lambda event: print(event["type"]),
+)
+print(result.final_text)</code></pre>
+<p class="note"><code translate="no">ChatAgent</code> is the conversation subtype behind the App, Web, TUI and channel adapters. It and <code translate="no">Agent.run_turn()</code> share one turn runtime for history, permissions, tools, streaming, compression and final persistence.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Next turn</th><td>Reuse the session ID</td></tr>
+<tr><th scope="row"><code translate="no">Context.for_session</code></th><td>Selects the store; creates no provider. Optional <code translate="no">head_id</code> selects the predecessor branch.</td></tr>
+<tr><th scope="row"><code translate="no">Context(history=None)</code></th><td>Excludes past graph content, keeps the current prompt</td></tr>
+<tr><th scope="row">Named content and providers</th><td>Rendered as user content; cannot alter system instructions or tool permissions</td></tr>
+<tr><th scope="row"><code translate="no">arun_turn()</code>, <code translate="no">aresume_turn()</code></th><td>Async versions. Callbacks run on the execution thread, so hand off thread-safely to asyncio. Cancelling the awaiting task signals the turn and waits for its cooperative cleanup.</td></tr>
+<tr><th scope="row"><code translate="no">cancel_event</code></th><td>A <code translate="no">threading.Event</code>, for synchronous callers</td></tr>
+<tr><th scope="row"><code translate="no">resume_turn(continuation)</code></th><td>Consumes an existing continuation and its frozen request; adds no user message and reapplies no changed instance settings</td></tr>
+<tr><th scope="row">Pause, steering, continuation admission</th><td>The production driver's execution-control service; the Agent API adds no second job registry</td></tr>
+<tr><th scope="row">Tool deadline</th><td>Does not cancel the parent conversation</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../../../reference/api/agent.html">API reference</a> · <a href="function-metadata.html">Function metadata</a></p>

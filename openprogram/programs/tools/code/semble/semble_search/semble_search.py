@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.code.semble.shared import (
     _format_results,
     _get_or_build_index,
@@ -36,7 +36,7 @@ _DESCRIPTION = (
 @function(
     name="semble_search",
     description=_DESCRIPTION,
-    max_result_chars=20_000,
+    max_result_weight=5_000,
     toolset=["core", "research"],
 )
 def semble_search(query: str,

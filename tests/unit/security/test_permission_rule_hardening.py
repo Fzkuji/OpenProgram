@@ -5,15 +5,21 @@ import os
 
 import pytest
 
-from openprogram.agent.permissions.policy import _match_rule
-from openprogram.agent.session_config import PermissionRules, SessionRunConfig
-from openprogram.programs.permission_rule import (
+from openprogram.runtime.permissions.policy import match_rule
+
+from openprogram.runtime.permissions.modes import PermissionRules
+from openprogram.runtime.conversation.session_config import SessionRunConfig
+from openprogram.runtime.permissions.rule import (
     load_merged_rules,
     parse_command,
     pattern_matches,
     parse_rule,
 )
-from openprogram.store.project import project_store
+from openprogram.state.store.project import project_store
+
+
+def _match_rule(rules, tool_name, args):
+    return match_rule(rules, tool_name, args)[0]
 
 
 def test_raw_windows_path_rule_preserves_separators():
@@ -96,14 +102,10 @@ def test_list_jobs_is_not_a_path_tool():
 
 def _isolate_optional_layers(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.agent.session_config.load_session_run_config",
+        "openprogram.runtime.conversation.session_config.load_session_run_config",
         lambda _sid: SessionRunConfig(),
     )
-    try:
-        from openprogram.webui import _setup
-        monkeypatch.setattr(_setup, "_read_config", lambda: {})
-    except Exception:
-        pass
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: {})
 
 
 def test_load_merged_rules_raises_on_malformed_project_rules(

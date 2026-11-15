@@ -1,0 +1,26 @@
+<title>供应商元数据诊断</title>
+<meta name="description" content="哪些供应商元数据加载失败会记警告，警告包含什么。">
+<h1>供应商元数据诊断</h1>
+<table class="stack">
+<thead><tr><th scope="col">输入</th><th scope="col">返回</th><th scope="col">日志</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">provider.json</code> 不存在</th><td>现有的缺项或别名回退</td><td>无：有些供应商没有目录</td></tr>
+<tr><th scope="row"><code translate="no">provider.json</code> 读不了、非法或不是对象</th><td>空端点；调用方继续回退</td><td>一条警告</td></tr>
+<tr><th scope="row"><code translate="no">models_dev.json</code> 不存在</th><td>空缓存</td><td>无：首次拉取前属正常</td></tr>
+<tr><th scope="row"><code translate="no">models_dev.json</code> 读不了、非法或不是对象</th><td>空缓存，短失败 TTL</td><td>一条警告</td></tr>
+<tr><th scope="row">models.dev 网络失败</th><td>尝试磁盘缓存</td><td>无：离线属正常</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>warning("provider metadata load failed", extra={
+  "source": "provider_json" | "models_dev_cache",
+  "path": str(path) | "&lt;unresolved&gt;",
+  "error_type": type(error).__name__,
+})</code></pre>
+<p class="note">只有算缓存路径失败时才用 <code translate="no">&lt;unresolved&gt;</code>。不记 traceback、异常消息、文件内容、凭据或响应体。损坏的文件留在原处供检查。警告不改变回退和返回值。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">函数</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">providers/catalog/metadata.py</code></th><td>共用的 <code translate="no">provider.json</code> 读取器，<code translate="no">_endpoints()</code> 和 <code translate="no">shipped_provider_ids()</code> 使用</td></tr>
+<tr><th scope="row"><code translate="no">providers/catalog/sources/models_dev.py</code></th><td><code translate="no">_read_disk_cache()</code></td></tr>
+</tbody>
+</table>

@@ -14,13 +14,13 @@ There is no unarchive: to reuse an archived agent's memory, fork it.
 Any session may archive any branch. Archiving interrupts nothing that
 is running and deletes nothing, so it does not cancel an active execution.
 
-Design: docs/reference/design/runtime/agent-collaboration.md.
+Design: docs/reference/design/runtime/collaboration/agent-collaboration.html.
 """
 from __future__ import annotations
 
 import time
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.agents.send_message.shared import (
     _current_session,
     _db,
@@ -84,7 +84,9 @@ def _archive_agent_impl(to: str, reason: str = "") -> str:
     )
 
 
-@function(name="archive_agent", description=_DESCRIPTION, toolset=["core"])
+# close_agent took its place for the model (it also stops a running agent);
+# kept registered for programs and old transcripts.
+@function(name="archive_agent", description=_DESCRIPTION, toolset=["core"], expose=False)
 def archive_agent(to: str, reason: str = "") -> str:
     """Archive an agent branch: keep its history, revoke its right to
     be disturbed (no more send_message / agent(to=) deliveries)."""

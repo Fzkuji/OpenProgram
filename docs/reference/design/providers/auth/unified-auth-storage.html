@@ -1,0 +1,77 @@
+<title>Auth storage</title>
+<meta name="description" content="Provider credentials live in one store under ~/.openprogram, with one login registry for CLI, web and TUI.">
+<h1>Auth storage</h1>
+<p><code translate="no">AuthStore</code> (<code translate="no">models/auth/store.py</code>): <code translate="no">~/.openprogram/auth/&lt;provider_id&gt;/&lt;account_id&gt;.json</code>, atomic write, cross-process lock, reload when the file changes underneath. <code translate="no">CredentialProvider</code> serves what is on disk and never re-discovers; import is an explicit step.</p>
+<table class="stack">
+<thead><tr><th scope="col">Provider</th><th scope="col">Login method</th><th scope="col">Storage</th><th scope="col">Refresh</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai-codex</code></th><td><code translate="no">pkce_oauth</code>, or a copy of <code translate="no">~/.codex/auth.json</code></td><td>copy, or delegated pointer</td><td>OpenProgram through <code translate="no">~/.codex/auth.json</code> (see <a href="#refresh">Refresh</a>)</td></tr>
+<tr><th scope="row"><code translate="no">github-copilot</code></th><td><code translate="no">device_code</code></td><td>copy</td><td>OpenProgram</td></tr>
+<tr><th scope="row"><code translate="no">xai-subscription</code></th><td><code translate="no">pkce_oauth</code>, <code translate="no">import_from_cli</code> (<code translate="no">~/.grok/auth.json</code>), <code translate="no">paste_token</code></td><td>store</td><td>per method</td></tr>
+<tr><th scope="row"><code translate="no">anthropic</code></th><td><code translate="no">api_key</code></td><td>copy</td><td>none. Subscription credentials are refused.</td></tr>
+<tr><th scope="row"><code translate="no">gemini-subscription</code></th><td><code translate="no">import_from_cli</code> (<code translate="no">~/.gemini/oauth_creds.json</code>)</td><td>delegated pointer</td><td>external CLI; <code translate="no">gemini auth login</code> when stale</td></tr>
+<tr><th scope="row">other key providers</th><td><code translate="no">api_key</code></td><td>copy</td><td>none</td></tr>
+</tbody>
+</table>
+<p class="note">Bedrock and Vertex use the cloud SDK's own chain. <code translate="no">qwen</code> has a credential source but no runtime, so no login is offered. <code translate="no">claude-code</code> and related ids are unsupported.</p>
+<h2>Credential kinds</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">kind</code></th><th scope="col">Secret storage</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">api_key</code></th><td>copy of the key</td></tr>
+<tr><th scope="row"><code translate="no">oauth</code>, <code translate="no">device_code</code></th><td>copy: access, refresh, <code translate="no">expires_at_ms</code>, client id, token endpoint</td></tr>
+<tr><th scope="row"><code translate="no">cli_delegated</code></th><td>pointer only: <code translate="no">store_path</code> and key paths, re-read each use</td></tr>
+<tr><th scope="row"><code translate="no">credential_process</code></th><td>argv run on demand</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">methods/cli_import.py</code> has <code translate="no">mode="link"</code> (default) and <code translate="no">mode="copy"</code>, which builds a writable store-owned <code translate="no">oauth</code> credential.</p>
+<h2>Login registry</h2>
+<p><code translate="no">auth/login/login_method_registry.py</code> is the one <code translate="no">provider → [method]</code> table; the first entry is the default, and the CLI, web and TUI all render it. Handlers are in <code translate="no">auth/methods/</code> and <code translate="no">auth/login/</code>. Google's Code-Assist OAuth embeds a client secret OpenProgram cannot ship, so that provider stays delegated; Anthropic has no published third-party OAuth client.</p>
+<h2 id="refresh">Refresh</h2>
+<p>A refresh token rotates: the first holder to spend it gets a new pair, and any later spend of the old one is refused (<code translate="no">invalid_grant</code>), which signs that holder out. So a refresh is spent by one process at a time, and each process re-reads the login after it gets the lock.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Before sending</th><td><code translate="no">CredentialProvider.acquire</code> refreshes a login whose <code translate="no">expires_at_ms</code> is within 60 s; the request goes out with a token that has not expired</td></tr>
+<tr><th scope="row">Cross-process lock</th><td><code translate="no">refresh_lock.py</code>: an advisory lock on <code translate="no">&lt;file&gt;.refresh.lock</code> beside the credential file, separate from its write lock. Two workers, or a worker and its cron subprocess, take turns</td></tr>
+<tr><th scope="row">Inside the lock</th><td>Re-read the file. A login another process refreshed meanwhile is used as is; only a still-stale one is refreshed and saved</td></tr>
+<tr><th scope="row">Rejected before expiry</th><td>An HTTP 401 refreshes that login once and sends the same request again at once, without a transport retry. One <code translate="no">INFO</code> line records the refresh</td></tr>
+</tbody>
+</table>
+<h3 id="codex-shared-login">One ChatGPT login per machine</h3>
+<p>A ChatGPT sign-in is one refresh-token family, and on a machine it lives in the Codex CLI's <code translate="no">~/.codex/auth.json</code> (or <code translate="no">$CODEX_HOME</code>). The Codex CLI refreshes it, a <code translate="no">cli_delegated</code> credential reads it (the development instance has only this one), and an OpenProgram <code translate="no">oauth</code> login of the same account keeps a copy. All of them take that file's refresh lock.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Holder</th><th scope="col">Refresh</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">cli_delegated</code></th><td>Reads the file for every request. When the token's own <code translate="no">exp</code> is within 60 s, or the backend answers 401, it spends the file's refresh token and writes the new tokens back to the file, as the Codex CLI does</td></tr>
+<tr><th scope="row"><code translate="no">oauth</code> copy</th><td>Before each request, adopts a later login of the same account found in the file and saves it to the store. When it must refresh, it first re-reads the file under the lock and adopts a later login there instead of spending a refresh token another holder already spent; otherwise it refreshes and mirrors the result into the file</td></tr>
+<tr><th scope="row">Different account in the file</th><td>Neither adopted nor overwritten</td></tr>
+<tr><th scope="row">Writing the file</th><td>Created owner-only (<code translate="no">0600</code>), synced to disk, then renamed over the file: for a delegated reader it holds the only copy of the rotated refresh token. A write that fails is logged as a warning naming the path, never a token</td></tr>
+<tr><th scope="row">Saving an adoption</th><td>Only while the store still holds the token it was adopted over. A refresh that saved a newer login in between keeps it</td></tr>
+</tbody>
+</table>
+<p>A call that carries an older token of the same account (a Runtime passes its login's token to each call it makes) sends the login's current token instead. The token is resolved in a worker thread, never on the event loop, since it can wait for another process's refresh lock and a refresh request.</p>
+<h2 id="unreadable">Unreadable is not empty</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Write (<code translate="no">credentials/io._atomic_write</code>)</th><td>Keeps the replaced file as <code translate="no">&lt;file&gt;.bak</code> when it is valid JSON (<code translate="no">state/last_good.keep_previous</code>)</td></tr>
+<tr><th scope="row">Read of invalid JSON (<code translate="no">last_good.load_json</code>)</th><td>Copies the bytes once to <code translate="no">&lt;file&gt;.bad-&lt;UTC time&gt;-&lt;digest&gt;</code>, answers the valid <code translate="no">.bak</code>, else nothing</td></tr>
+<tr><th scope="row">Users</th><td><code translate="no">read_config</code>, <code translate="no">update_config</code>, the auth store</td></tr>
+<tr><th scope="row">Backups (<code translate="no">operations/backup.py</code>)</th><td>Leave out <code translate="no">.bak</code> and <code translate="no">.bad-</code> copies, so redaction cannot be bypassed</td></tr>
+</tbody>
+</table>
+<p class="note">Follows magpie's lastgood (yetone/magpie, MIT).</p>
+<details><summary>Peers</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Project</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">opencode</th><td>Own PKCE and <code translate="no">auth.json</code>, no adoption. <code translate="no">provider → AuthHook</code> with <code translate="no">method:"auto"</code> or <code translate="no">"code"</code>; on-demand single-flight refresh. Anthropic and Google are API key only.</td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">auth-profiles.json</code> by <code translate="no">&lt;provider&gt;:&lt;label&gt;</code>; rotation state in a sibling file; <code translate="no">oauth</code>, <code translate="no">api_key</code>, <code translate="no">token</code>; refresh under a cross-process lock that re-reads inside the lock (the part worth copying); one handler picks browser or paste. Reads other CLIs' files directly, which this design does not.</td></tr>
+</tbody>
+</table>
+</details>
+<details><summary>Implementation status</summary>
+<p>Not in place: copying the Gemini subscription token into the store as the default import.</p>
+</details>
+<p class="next"><a href="unified-account-management.html">Accounts and rotation</a></p>

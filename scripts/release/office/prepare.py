@@ -19,6 +19,25 @@ from pathlib import Path
 # Source-tree build tools use the same stdlib-only validator as installed workers.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+
+def _office_assets():
+    """The standard-library-only Office pack module, loaded by its path.
+
+    Importing it as ``openprogram.programs.applications.office_editor.assets``
+    would first import ``openprogram.programs``, which loads every Program.
+    """
+    import importlib.util
+    name = "openprogram_office_assets"
+    if name not in sys.modules:
+        package = Path(importlib.util.find_spec("openprogram").origin).parent
+        spec = importlib.util.spec_from_file_location(
+            name, package / "programs" / "applications" / "office_editor" / "assets.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
 SOURCE = "d15d12b6945be4d8b0f3aa1806120e740d2950ee"
 PACKAGE_VERSION = "0.3.34"
 HOST_BUILD_ID = "office-host-0.3.34-r1"
@@ -190,13 +209,12 @@ def prepare(args: argparse.Namespace) -> Path:
         for name in ("README.md", "prepare.py", "font_assets.py", "font-generation.mjs", "font-verification.mjs"):
             shutil.copy2(Path(__file__).with_name(name), materials / name)
         # Keep portable source names and digests, not the build machine's paths.
-        (materials / "font-provenance.json").write_text(json.dumps(font_provenance, indent=2) + "\n")
+        (materials / "font-provenance.json").write_text(json.dumps(font_provenance, indent=2) + "\n", encoding="utf-8")
         manifest = _manifest(pack_stage, source, patch, lock, runtime_manifest)
         manifest["assembly"]["fonts"] = font_provenance
 
         (pack_stage / "openprogram-office-assets.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        from openprogram.office_assets import install_office_pack
-        install_office_pack(pack_stage, output)
+        _office_assets().install_office_pack(pack_stage, output)
         return output
     except Exception:
         raise
@@ -212,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--font-input", type=Path)
     parser.add_argument("--patch", type=Path, default=Path(__file__).with_name("adoption.patch"))
     parser.add_argument("--lock", type=Path, default=Path(__file__).with_name("package-lock.json"))
-    parser.add_argument("--lock-sha256", default="7b71a099e703545a80d06454ae2af6f52e52f0c3f1fbe5ead31dfdf11faf2590")
+    parser.add_argument("--lock-sha256", default="aa72a0c6b7259945cbda7aa7fa8ba75d5fa709080cc62b2b08fe300ee3de6293")
     parser.add_argument("--npm", default="npm")
     parser.add_argument("--node", default="node")
     args = parser.parse_args(argv)

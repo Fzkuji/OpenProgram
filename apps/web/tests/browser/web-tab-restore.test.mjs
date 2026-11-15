@@ -52,12 +52,13 @@ const {
   showResourcePreview,
   getPreviewPreference,
   followPreviewBinding,
-} = await import("../../lib/chat/session-resources.ts");
+} = await import("../../lib/chat/resources/session-resources.ts");
 const {
   reconcileRestoredWebUrl,
   restoreRetainedWebViews,
   retryRestoreWebTab,
 } = await import("../../lib/desktop/desktop-bridge.ts");
+const { persistNativeWebTabState } = await import("../../lib/desktop/bridge/bridge-restoration.ts");
 
 test("native-confirmed tab URL wins over older SQLite display target", () => {
   assert.equal(
@@ -358,4 +359,38 @@ test("preview retry recovers a failed row without touching closed tabs", async (
   await retryRestoreWebTab(bridge, "w:fail");
   assert.ok(ensured.some((item) => item[0] === "w:fail"));
   assert.ok(!ensured.some((item) => item[0] === "w:closed"));
+});
+
+test("a recreated view's URL-as-title does not replace the tab's real title", async () => {
+  resetBrowserResources();
+  useCenterTabs.setState({
+    tabs: [{
+      id: "w:letter",
+      kind: "web",
+      title: "2026 Invitation Letter",
+      url: "https://neurips.cc/InvitationLetter",
+      urlNativeAt: 1_700_000_000_000,
+      agentSessionId: "parent",
+    }],
+    activeId: "s:parent",
+    groups: [],
+    splitWebTabId: null,
+  });
+  const title = () => useCenterTabs.getState().tabs[0].title;
+  persistNativeWebTabState({ id: "w:letter", url: "https://neurips.cc/InvitationLetter", title: "neurips.cc/InvitationLetter" });
+  assert.equal(title(), "2026 Invitation Letter");
+  persistNativeWebTabState({ id: "w:letter", title: "\u200e" });
+  assert.equal(title(), "2026 Invitation Letter");
+  const bridge = {
+    windowId: "main",
+    webTab: {
+      ensure() {},
+      inspect: async () => ({ url: "https://neurips.cc/InvitationLetter", title: "neurips.cc/InvitationLetter" }),
+      onState: () => () => {},
+    },
+  };
+  await restoreRetainedWebViews(bridge);
+  assert.equal(title(), "2026 Invitation Letter");
+  persistNativeWebTabState({ id: "w:letter", title: "Invitation Letter (updated)" });
+  assert.equal(title(), "Invitation Letter (updated)");
 });

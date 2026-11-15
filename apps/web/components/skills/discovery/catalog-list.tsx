@@ -1,20 +1,19 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { CatalogEntry } from "@/lib/abilities/skills-store";
 import { useSkills } from "@/lib/abilities/skills-store";
 import { useTranslation } from "@/lib/i18n";
-import {
-  type AnimatedNavIconHandle,
-  SearchIcon,
-  XIcon,
-} from "@/components/animated-icons";
+import { XIcon } from "@/components/animated-icons";
 
 import { fmtCount, hasStats, relTime } from "./helpers";
 import type { Source, SortKey } from "./types";
+import { SimpleSelect } from "@/components/ui/select";
+import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
 import { ManageCatalogCard, managePageStyles as shared } from "@/components/ui/manage-page";
+import { confirmAction } from "@/components/ui/confirm-dialog";
 
 // Pill-shaped action buttons. Design philosophy: every button looks
 // the same in its idle state — a subtle ``bg-tertiary`` chip that sits
@@ -25,21 +24,21 @@ import { ManageCatalogCard, managePageStyles as shared } from "@/components/ui/m
 // they reach for a control. Applies equally to the per-card pills here
 // and the source-row pills in ``index.tsx``.
 export const pillBase =
-  "inline-flex items-center justify-center h-7 rounded-full px-3 text-[12px] font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none border border-transparent";
+  "inline-flex items-center justify-center h-(--ui-button-h-xs) rounded-md px-3 text-fs-xs font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none border border-transparent";
 const pillIdle =
-  "bg-[var(--bg-tertiary)] text-[var(--text-secondary)]";
+  "bg-bg-tertiary text-text-secondary";
 export const pillPrimary =
   pillIdle +
-  " hover:bg-[color-mix(in_srgb,var(--accent-blue)_22%,transparent)] hover:text-[var(--accent-blue)]";
+  " hover:bg-[color-mix(in_srgb,var(--accent-blue)_22%,transparent)] hover:text-accent-blue";
 export const pillNeutral =
   pillIdle +
-  " hover:bg-[color-mix(in_srgb,var(--text-bright)_10%,var(--bg-tertiary))] hover:text-[var(--text-bright)]";
+  " hover:bg-[color-mix(in_srgb,var(--text-bright)_10%,var(--bg-tertiary))] hover:text-text-bright";
 export const pillWarn =
   pillIdle +
-  " hover:bg-[color-mix(in_srgb,#f59e0b_22%,transparent)] hover:text-[#f59e0b]";
+  " hover:bg-[color-mix(in_srgb,var(--pill-warn)_22%,transparent)] hover:text-[color:var(--pill-warn)]";
 export const pillDanger =
   pillIdle +
-  " hover:bg-[color-mix(in_srgb,#ef4444_18%,transparent)] hover:text-[#ef4444]";
+  " hover:bg-[color-mix(in_srgb,var(--pill-danger)_18%,transparent)] hover:text-[color:var(--pill-danger)]";
 
 export function CatalogList({
   entries, source, installedNames, outdatedNames, installingKey, onInstall,
@@ -61,7 +60,6 @@ export function CatalogList({
 }) {
   const { text, locale } = useTranslation();
   const { deleteSkill } = useSkills();
-  const searchIconRef = useRef<AnimatedNavIconHandle>(null);
   const [filter, setFilter] = useState("");
   const hasMeta = useMemo(() => hasStats(entries), [entries]);
   const [sort, setSort] = useState<SortKey>(hasMeta ? "downloads" : "default");
@@ -104,41 +102,34 @@ export function CatalogList({
     <div>
       <div className="mb-3 flex items-center gap-2">
         {externalFilter === undefined && (
-        <div
-          className="relative flex-1"
-          onMouseEnter={() => searchIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => searchIconRef.current?.stopAnimation?.()}
-        >
-          <SearchIcon
-            ref={searchIconRef}
-            size={14}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
-          />
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder={text(
-              `Search ${entries.length} skill${entries.length === 1 ? "" : "s"}...`,
-              `搜索 ${entries.length} 个技能...`,
-            )}
-            className="w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] h-[var(--ui-button-h)] pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
-          />
-        </div>
+        <SearchInput
+          className="flex-1"
+          value={filter}
+          onChange={setFilter}
+          placeholder={text(
+            `Search ${entries.length} skill${entries.length === 1 ? "" : "s"}...`,
+            `搜索 ${entries.length} 个技能...`,
+          )}
+        />
         )}
-        <select
+        <SimpleSelect
+          className="shrink-0"
+          aria-label={text("Sort", "排序")}
           value={sort}
-          onChange={(e) => setSort(e.target.value as SortKey)}
-          className="shrink-0 rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
-        >
-          <option value="default">{text("Sort", "排序")}：{hasMeta ? text("Trending", "热门") : text("Default", "默认")}</option>
-          <option value="name">{text("Name", "名称")}</option>
-          {hasMeta && <option value="downloads">{text("Most downloaded", "下载最多")}</option>}
-          {hasMeta && <option value="stars">{text("Most starred", "收藏最多")}</option>}
-          {hasMeta && <option value="updated">{text("Recently updated", "最近更新")}</option>}
-        </select>
+          onValueChange={setSort}
+          options={[
+            { value: "default" as SortKey, label: `${text("Sort", "排序")}：${hasMeta ? text("Trending", "热门") : text("Default", "默认")}` },
+            { value: "name" as SortKey, label: text("Name", "名称") },
+            ...(hasMeta ? [
+              { value: "downloads" as SortKey, label: text("Most downloaded", "下载最多") },
+              { value: "stars" as SortKey, label: text("Most starred", "收藏最多") },
+              { value: "updated" as SortKey, label: text("Recently updated", "最近更新") },
+            ] : []),
+          ]}
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className={shared.catalogGrid}>
         {shown.map((e) => {
           const key = `${source.url}::${e.name}`;
           const fullName = source.slug ? `${source.slug}/${e.name}` : e.name;
@@ -156,14 +147,14 @@ export function CatalogList({
                 {outdated && <span className={`${shared.badge} ${shared.badgeYellow}`}>{text("update", "可更新")}</span>}
               </>}
               meta={showStats ? <>
-                {(e.stars || 0) > 0 && <span title={text("stars", "星标")}>★ {fmtCount(e.stars)}</span>}
-                {(e.downloads || 0) > 0 && <span title={text("downloads", "下载")}>↓ {fmtCount(e.downloads)}</span>}
-                {(e.updated_at || 0) > 0 && <span title={text("last updated", "最近更新")}>{relTime(e.updated_at, locale)}</span>}
+                {(e.stars || 0) > 0 && <span data-tip={text("stars", "星标")}>★ {fmtCount(e.stars)}</span>}
+                {(e.downloads || 0) > 0 && <span data-tip={text("downloads", "下载")}>↓ {fmtCount(e.downloads)}</span>}
+                {(e.updated_at || 0) > 0 && <span data-tip={text("last updated", "最近更新")}>{relTime(e.updated_at, locale)}</span>}
               </> : undefined}
               actions={<>
                   <Button
-                    size="sm"
-                    variant={installed ? "outline" : "default"}
+                    variant={installed ? "elevated" : "default"}
+                    size="xs"
                     onClick={() => onInstall(source, e.name)}
                     disabled={installingKey === key || bulkBusy}
                   >
@@ -177,13 +168,17 @@ export function CatalogList({
                   </Button>
                   {installed && (
                     <Button
-                      size="sm"
-                      variant="outline"
+                      variant="elevated"
+                      size="xs"
                       title={text(`Uninstall ${fullName}`, `卸载 ${fullName}`)}
                       aria-label={text(`Uninstall ${fullName}`, `卸载 ${fullName}`)}
                       disabled={bulkBusy}
-                      onClick={() => {
-                        if (confirm(text(`Delete skill "${fullName}"?`, `删除技能“${fullName}”？`))) {
+                      onClick={async () => {
+                        if (await confirmAction({
+                          title: text(`Delete skill "${fullName}"?`, `删除技能“${fullName}”？`),
+                          confirmLabel: text("Delete", "删除"),
+                          destructive: true,
+                        })) {
                           void deleteSkill(fullName);
                         }
                       }}
@@ -199,7 +194,7 @@ export function CatalogList({
           );
         })}
         {shown.length === 0 && (
-          <div className="col-span-full text-xs text-[var(--text-tertiary)] py-2">{text("No matches.", "没有匹配结果。")}</div>
+          <div className="col-span-full text-fs-2xs text-text-secondary py-2">{text("No matches.", "没有匹配结果。")}</div>
         )}
       </div>
     </div>

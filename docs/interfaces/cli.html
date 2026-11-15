@@ -1,0 +1,42 @@
+<title>Use the CLI</title>
+<meta name="description" content="One-shot prompts, session resume, isolated profiles and scriptable OpenProgram commands.">
+<span id="cli"></span>
+<h1>Use the CLI</h1>
+<pre translate="no"><code>openprogram --print "Summarize what the python files in this directory do"</code></pre>
+<p>Prints one reply and exits, without the TUI. The conversation is saved and can be continued in the Web UI or TUI.</p>
+<table class="stack">
+<thead><tr><th scope="col">Worker for the profile</th><th scope="col">Runs in</th><th scope="col">Has</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running (Desktop App, <code translate="no">openprogram worker start</code>, foreground <code translate="no">openprogram web</code>)</th><td>That worker, live in its Web UI session</td><td>Built-in browser, channel bridges, the session's settings</td></tr>
+<tr><th scope="row">None, or <code translate="no">--standalone</code> (<code translate="no">OPENPROGRAM_PRINT_IN_PROCESS=1</code>)</th><td>This process</td><td>Neither browser nor channels</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">On the worker</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Follow-up question</th><td>Printed on stderr and answered in the terminal. With no terminal the turn continues unanswered.</td></tr>
+<tr><th scope="row">Ctrl-C or SIGTERM</th><td>Stops the turn on the worker, as the Web UI's stop button does, and waits up to 30 seconds for it to end (2 seconds once a second signal comes); exit code 130, or 143 for SIGTERM. A worker restart during that wait does not lose the stop: the command reconnects and stops the turn on the worker that comes back. If the worker did not confirm the stop, stderr says the turn may still be running</td></tr>
+<tr><th scope="row">Stopped in the Web UI</th><td><code translate="no">[cancelled]</code> on stderr, exit code 130; the partial reply stays in the session</td></tr>
+<tr><th scope="row">Worker error</th><td>Printed to stderr, exit code 1</td></tr>
+<tr><th scope="row">Worker restart (refresh, promote)</th><td>The command reconnects and follows the same turn to its end</td></tr>
+<tr><th scope="row">No worker back within three minutes, or the turn was interrupted</th><td>The command says so; the Web UI session shows where it stopped</td></tr>
+</tbody>
+</table>
+<p>Piped input goes along with the prompt as a <code translate="no">&lt;stdin&gt;</code> block; <code translate="no">-p</code> is short for <code translate="no">--print</code>, and with no prompt the prompt itself comes from stdin:</p>
+<pre translate="no"><code>cat &lt;file&gt; | openprogram -p "Review this code"
+echo "Summarize the README" | openprogram -p</code></pre>
+<p><code translate="no">--json-schema PATH</code> requires output matching a JSON Schema; <code translate="no">-</code> reads the schema from stdin.</p>
+<h2>Resume a session</h2>
+<pre translate="no"><code>openprogram sessions list
+openprogram --resume &lt;session-id&gt; --print "Given last time's conclusion, what is the next step"</code></pre>
+<p>Without <code translate="no">--print</code>, <code translate="no">--resume</code> opens that session in the <a href="tui.html">TUI</a>.</p>
+<h2>Isolate an environment</h2>
+<pre translate="no"><code>openprogram --profile ci --print "..."</code></pre>
+<p><code translate="no">--profile &lt;name&gt;</code> moves config, sessions and credentials to <code translate="no">~/.openprogram-&lt;name&gt;/</code>. Environment variable: <code translate="no">OPENPROGRAM_PROFILE</code>.</p>
+<h2>Other scriptable commands</h2>
+<pre translate="no"><code>openprogram sessions list
+openprogram providers list --json
+openprogram providers discover --json
+openprogram status
+openprogram programs run &lt;name&gt; --arg key=value</code></pre>
+<p class="note">Most subcommands support <code translate="no">--json</code>. <code translate="no">openprogram -h</code> and each subcommand's <code translate="no">-h</code> give the full list.</p>

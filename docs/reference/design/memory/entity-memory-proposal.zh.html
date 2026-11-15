@@ -1,0 +1,189 @@
+<title>基于 Git 的实体记忆</title>
+<meta name="description" content="暂缓的提案：用每对话一个 Git 仓库和项目提交，作为抽象记忆之下的事实记录。">
+<h1>基于 Git 的实体记忆</h1>
+<p>暂缓的提案。实体记忆是对实际发生之事的不可变记录，可逐步追溯：Session-Git 存“说了什么”，Project-Git 存“改了什么”。当前生效的 Memory 是 <a href="overview.zh.html">概览</a> 里的 Source、Topic、Core 工作区；当前持久化见 <a href="../runtime/session/storage.zh.html">会话存储</a>。</p>
+
+<table class="stack" id="proposed-and-built">
+<thead><tr><th scope="col"></th><th scope="col">提案</th><th scope="col">现状</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话记录</th><td>每个对话一个 Git 仓库，每轮一个提交</td><td>没有仓库。<code translate="no">&lt;state&gt;/projects/&lt;project-id&gt;/chats/&lt;session-id&gt;/main.jsonl</code>；<code translate="no">commit_turn</code> 让会话字段持久化。</td></tr>
+<tr><th scope="row">有效会话</th><td><code translate="no">meta.json</code> 存在且可解析</td><td><code translate="no">main.jsonl</code> 或 <code translate="no">agents/</code> 存在</td></tr>
+<tr><th scope="row">位置索引</th><td><code translate="no">locations.json</code></td><td>存储根下的 <code translate="no">.chats-locations.json</code>，旁边是 <code translate="no">.chats-index.json</code></td></tr>
+<tr><th scope="row">Agent 文件历史</th><td>提交进用户的仓库</td><td>影子 Git，位于 <code translate="no">~/.openprogram/shadow-git/&lt;project-hash&gt;/</code>，不碰用户的 <code translate="no">.git</code>。Project-Git 自动提交已有代码，但已弃用，默认关闭。</td></tr>
+<tr><th scope="row">工作区有改动</th><td>Agent 开始前不干净就跳过</td><td>每轮开始记下已改动路径；这些改动仍在时拒绝提交，并发 <code translate="no">project_commit_skipped</code> 提示</td></tr>
+<tr><th scope="row">项目注册表、面板、聊天指示</th><td>见下文</td><td>已实现：<code translate="no">projects.json</code>、WS <code translate="no">list_projects</code> 和 <code translate="no">create_project</code>、侧栏 Projects</td></tr>
+<tr><th scope="row">回放界面、会话 Git 的 WS 动作、回填</th><td>见下文</td><td>未实现</td></tr>
+</tbody>
+</table>
+
+<h2 id="storage-layout">存储布局</h2>
+<pre translate="no" tabindex="0">~/.openprogram/                        get_state_dir()
+├── sessions/
+│   ├── &lt;session_id&gt;/                  一个 Session-Git 仓库
+│   │   ├── .git/
+│   │   ├── meta.json                  title, agent_id, project_id, created_at
+│   │   ├── history/                   DAG 节点文件
+│   │   │   ├── 000001-u-&lt;id&gt;.json     用户消息
+│   │   │   ├── 000002-a-&lt;id&gt;.json     助手消息
+│   │   │   └── 000003-t-&lt;id&gt;.json     工具结果，called_by = assistant
+│   │   ├── context/commits/&lt;commit_id&gt;.json   每轮的 LLM 上下文视图
+│   │   └── workdir/                   临时工作目录
+│   └── locations.json                 项目内会话到真实路径
+├── projects/projects.json             项目注册表
+└── memory/                            抽象记忆
+
+&lt;用户工作目录&gt;/
+├── .git/                              Project-Git，复用或初始化
+└── .openprogram/sessions/&lt;id&gt;/        绑定到此项目的会话仓库</pre>
+
+<h2 id="session-git-lifecycle">Session-Git 生命周期</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">提案</th></tr></thead>
+<tbody>
+<tr><th scope="row">创建</th><td>第一条消息时惰性创建（<code translate="no">SessionStore._open(id, create_if_missing=True)</code>）：<code translate="no">git init</code>，写 <code translate="no">meta.json</code>，建 <code translate="no">history/</code>、<code translate="no">context/</code>、<code translate="no">workdir/</code>。指定工作目录则绑定真实项目，仓库放在项目内；否则 <code translate="no">project_id="default"</code>，放在主目录根下。</td></tr>
+<tr><th scope="row">有效性</th><td>目录存在且 <code translate="no">meta.json</code> 能解析为 JSON。其余（测试残留、无关目录、损坏）静默跳过。</td></tr>
+<tr><th scope="row">发现</th><td>扫描每个 <code translate="no">&lt;state&gt;/projects/&lt;project_id&gt;/chats/</code> 加位置索引；合并、去重，按 <code translate="no">updated_at</code> 降序。侧栏和 Chats 页用同一规则。</td></tr>
+<tr><th scope="row">写</th><td><code translate="no">append_message</code> 同步写 <code translate="no">history/NNNN-&lt;role&gt;-&lt;id&gt;.json</code> 并更新内存索引；<code translate="no">commit_turn</code> 在轮末提交一次。</td></tr>
+<tr><th scope="row">读</th><td><code translate="no">get_branch(session_id, head_id)</code> 沿 <code translate="no">parent_id</code> 得到消息列表；<code translate="no">get_nodes</code> 返回原始 <code translate="no">Call</code> 对象；<code translate="no">session_commits</code> 返回按轮的日志。</td></tr>
+<tr><th scope="row">分支、重试</th><td>DAG 重试对应 git 分支 <code translate="no">retry-&lt;assistant_id&gt;</code>；切换 DAG head 对应 git checkout。</td></tr>
+<tr><th scope="row">元数据、绑定</th><td><code translate="no">update_session(session_id, title=..., project_id=...)</code> 写 <code translate="no">meta.json</code> 和索引。绑定记在 <code translate="no">project_id</code>。</td></tr>
+<tr><th scope="row">缓存</th><td><code translate="no">SessionLog</code> 和 <code translate="no">SessionMemoryIndex</code> 的内存 LRU，上限 256（<code translate="no">OPENPROGRAM_SESSION_CACHE_CAP</code>），淘汰后从磁盘重建；每会话一把锁加一把存储锁。</td></tr>
+<tr><th scope="row">删除</th><td><code translate="no">delete_session</code>：移出缓存，关闭运行时，删除整个目录（含 <code translate="no">.git/</code>）和位置条目。入口是侧栏菜单；Chats 页右键待加。Provenance 指针悬空，查询时跳过，虚拟层无需清理。</td></tr>
+<tr><th scope="row">垃圾回收</th><td>没有 <code translate="no">meta.json</code>：跳过。空且标题是默认值：列出。长期不活跃：不自动删除；回收空间的策略属于用户配置，不在存储层。</td></tr>
+</tbody>
+</table>
+
+<h3 id="commit-timing">按轮提交</h3>
+<p><code translate="no">dispatcher.process_user_turn()</code> 返回 <code translate="no">TurnResult</code> 时提交一次：1 条用户消息、1 条助手消息、N 个工具结果。</p>
+<pre translate="no" tabindex="0">turn &lt;N&gt;: &lt;first 60 chars of user msg&gt;
+
+assistant: &lt;first 80 chars of reply&gt;
+tools: read, grep × 3, list
+
+[meta: turn took 12.3s, 18 tools, 4521 tokens]</pre>
+
+<h3 id="replay-ui">回放</h3>
+<pre translate="no" tabindex="0">[← prev turn]  Turn 7 / 12  [next turn →]    [view full history]</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">动作</th></tr></thead>
+<tbody>
+<tr><th scope="row">prev</th><td><code translate="no">git checkout HEAD~1</code>，回放界面</td></tr>
+<tr><th scope="row">next</th><td>沿 reflog 反向走</td></tr>
+<tr><th scope="row">view full history</th><td>时间线，每提交一行；点击看消息内容</td></tr>
+<tr><th scope="row">WS</th><td><code translate="no">git_history(session_id)</code>、<code translate="no">git_checkout(session_id, commit_sha)</code>。dispatcher 在该提交上继续下一条消息。</td></tr>
+</tbody>
+</table>
+
+<h3 id="dual-write-consistency">双写</h3>
+<p>dispatcher 写 DAG。一轮结束后，节点在后台线程序列化进仓库，因为一次提交要约 100 到 500 毫秒。每会话一个仓库、提交串行，冲突很少；文件锁兜底。启动时，没有仓库的会话按 <code translate="no">seq</code> 逐轮回填一次。</p>
+
+<h2 id="project-git-lifecycle">Project-Git 生命周期</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">提案</th></tr></thead>
+<tbody>
+<tr><th scope="row">创建</th><td>绑定目录时 <code translate="no">resolve_project(path, name)</code>：复用 <code translate="no">.git/</code> 或 <code translate="no">git init</code>，登记到 <code translate="no">projects.json</code>。</td></tr>
+<tr><th scope="row">自动提交</th><td>轮末，绑定会话的 Agent 改了文件就提交，用 Agent 的 <code translate="no">user.name</code> 与用户提交区分。用户同时编辑时，开始时干净并不能证明归属，所以必须识别 Agent 自己的改动。</td></tr>
+<tr><th scope="row">读</th><td><code translate="no">ProjectGit.log(limit)</code>；溯源层用 <code translate="no">project_commits(project_id)</code>。</td></tr>
+<tr><th scope="row">解绑</th><td>只移除登记。用户的 <code translate="no">.git/</code> 保留；会话的 <code translate="no">project_id</code> 作为历史指针保留；会话仓库留在项目内。</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0">git commit -c user.name="agent (&lt;model&gt; via OpenProgram)"
+           -m "[agent &lt;session_id&gt;] turn &lt;N&gt;: &lt;user msg first 60 chars&gt;"</pre>
+<details>
+<summary>已实现的自动提交，默认关闭</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">开启</th><td><code translate="no">config.json</code> 的 <code translate="no">project_auto_commit</code> 或 <code translate="no">OPENPROGRAM_PROJECT_AUTOCOMMIT=1</code></td></tr>
+<tr><th scope="row">提交说明</th><td><code translate="no">[agent &lt;会话 id 前 8 位&gt;] &lt;用户消息首行前 60 字符&gt;</code></td></tr>
+<tr><th scope="row">不是仓库</th><td>每轮开始时，先为现有文件做基线提交，让 Agent 提交是真实差异。若 <code translate="no">node_modules</code>、<code translate="no">.venv</code> 这类依赖或构建目录会撑大它，则拒绝并提示。</td></tr>
+<tr><th scope="row">有活动 worktree</th><td>让路；worktree 有自己的合并和丢弃流程。</td></tr>
+<tr><th scope="row">主目录项目</th><td>不做任何事；它没有绑定目录。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="project-metadata-and-presentation">项目元数据与展示</h2>
+<p>会话可以没有项目。有项目时，Agent 的文件提交落在项目仓库，会话元数据带 <code translate="no">project_id</code>。</p>
+<pre translate="no" tabindex="0">Project: id, name, workdir, sessions, status (active | paused | done), created_at</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">左侧栏 Projects 区</th><td>名称、会话数、状态、New Project</td></tr>
+<tr><th scope="row">项目页</th><td>名称、工作目录、会话、提交历史、抽象记忆入口</td></tr>
+<tr><th scope="row">新建项目</th><td>选目录，命名，创建或复用仓库，可选关联当前会话</td></tr>
+<tr><th scope="row">聊天顶部</th><td>项目名和缩写的工作目录，链接到项目页</td></tr>
+</tbody>
+</table>
+
+<h2 id="key-invariants">关键不变量</h2>
+<ul>
+<li>DAG 是事实来源，Git 是镜像。Git 失败不影响 DAG。有提交而 DAG 没写是脏数据。</li>
+<li>Session-Git 每轮一个提交，不按消息。</li>
+<li>Agent 不污染用户工作区：用户有未提交改动时跳过提交。</li>
+<li>回放是只读视图；checkout 后发新消息，从该提交在 DAG 上分叉。</li>
+<li>抽象记忆建在实体记忆之上，反之不成立。</li>
+</ul>
+<h3 id="project-registry">项目注册表的安全（已实现）</h3>
+<p>worker、CLI 和 Agent 子进程都写 <code translate="no">projects.json</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情形</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">读改写</th><td>全程持有跨进程锁 <code translate="no">&lt;state&gt;/projects/.locks/.projects-registry.lock</code></td></tr>
+<tr><th scope="row">发布</th><td>写唯一的临时文件再改名；读者看到的要么是完整旧文件，要么是完整新文件</td></tr>
+<tr><th scope="row">读取出错</th><td>抛出异常，因为空结果会被写回，抹掉所有绑定</td></tr>
+<tr><th scope="row">不是 JSON 对象</th><td>移到 <code translate="no">projects.json.unreadable-&lt;time&gt;-&lt;id&gt;</code>；注册表从空开始</td></tr>
+</tbody>
+</table>
+
+<h2 id="risks">风险</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">风险</th><th scope="col">缓解</th></tr></thead>
+<tbody>
+<tr><th scope="row">异步提交失败无人察觉</th><td>后台重试；启动时比较 DAG <code translate="no">seq</code> 和提交数，不符则回填</td></tr>
+<tr><th scope="row">工作目录不是仓库</th><td>Agent 第一次提交时 <code translate="no">git init</code>；已有则复用</td></tr>
+<tr><th scope="row">多个会话改同一项目</th><td>文件锁串行化项目提交；最坏情况是排队</td></tr>
+<tr><th scope="row">回到第 5 轮发新消息</th><td>分叉而不是覆盖：即 DAG 的重试，映射为 Git 分支</td></tr>
+</tbody>
+</table>
+
+<h2 id="relationships">关系</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">关系</th></tr></thead>
+<tbody>
+<tr><th scope="row">提交链</th><td>不冲突。DAG 节点镜像为 Git 提交，是实际发生的历史。ContextCommit 链是 LLM 看到的，派生且可重算，不进 Git；需要时可单独导出。</td></tr>
+<tr><th scope="row">抽象记忆</th><td>实体记忆是其唯一来源。蒸馏读取 Session-Git 节点和 Project-Git 提交，写入时间线和图。每条记忆带一个指回的 <code translate="no">Provenance</code>；见 <a href="virtual-memory.zh.html">虚拟记忆</a>。</td></tr>
+<tr><th scope="row">外部工具</th><td>本提案暴露 Git 日志和差异历史。与其他工具的功能对比须先核实，才能影响实现。</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0">@dataclass
+class Provenance:
+    project_id: str
+    session_id: str
+    node_ids: tuple[str, ...]
+    commit: str | None
+    event_time: float
+    ingestion_time: float</pre>
+
+<h2 id="session-titles">会话标题（已实现）</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">优先级</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. 用户命名</th><td><code translate="no">/rename</code> 或界面。不会被覆盖。“生成名称”会解除锁定，之后仍可自动改进。</td></tr>
+<tr><th scope="row">2. 模型标题</th><td>后台调用，3 到 7 个词，句首大写，与对话同语言，最多 80 字符，走结构化输出。在第 1、6、16、40 轮运行；以寒暄开场的对话在第 2、3 轮也运行。输入是当前分支的摘录，最多 1000 字符。失败只记日志。重新命名只替换它开始时的标题；侧栏经 <code translate="no">session_updated</code> 更新。</td></tr>
+<tr><th scope="row">3. 摘录</th><td>第一轮立即设置：首条用户消息的第一行，50 字符，模型工作时侧栏也不会空。</td></tr>
+<tr><th scope="row">4. 预览</th><td>列表时，没有可用标题的会话显示首条用户消息的预览。</td></tr>
+</tbody>
+</table>
+<p class="note">所有有效会话都列出，没有空占位过滤。</p>
+
+<details>
+<summary>提议的构建顺序</summary>
+<ol>
+<li>Session-Git：<code translate="no" data-claim="example">openprogram/state/memory/session_git/</code>（init、commit、log、checkout），<code translate="no">dispatcher.process_user_turn</code> 结束时的后台提交，回填脚本，WS <code translate="no">git_session_log</code> 和 <code translate="no">git_session_checkout</code>。</li>
+<li>项目模式与界面：注册表，会话元数据的 <code translate="no">project_id</code>，WS <code translate="no">list_projects</code>、<code translate="no">create_project</code>、<code translate="no">add_session_to_project</code>，侧栏 Projects。</li>
+<li>Project-Git 自动提交：绑定会话的轮后钩子，干净则提交，有改动则警告，加警告横幅。</li>
+<li>回放界面：聊天顶部的 prev、next，时间线视图，调用 checkout 的 WS 动作。</li>
+<li>数据迁移：回填现有会话；把现有 Git 项目导入为 Projects。</li>
+</ol>
+</details>

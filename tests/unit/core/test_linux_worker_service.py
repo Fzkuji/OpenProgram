@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.worker.services import systemd
+from openprogram.operations.worker.services import systemd
 
 
 def test_systemd_unit_identity_isolated_by_profile(
@@ -50,7 +50,7 @@ def test_systemd_profile_stop_never_targets_default_unit(
         lambda *args: calls.append(args) or (0, ""),
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid", lambda: None,
+        "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: None,
     )
 
     assert systemd.stop_if_installed() == 0
@@ -65,7 +65,7 @@ def test_systemd_unit_quotes_paths_flags_and_packaged_environment(
     python = "/opt/Open Program/50%/$runtime/python"
     log = tmp_path / "state 50%" / "worker.log"
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle._detached_worker_command",
+        "openprogram.operations.worker.lifecycle._detached_worker_command",
         lambda: [python, "-I", "-B", "-u", "-m", "openprogram", "worker", "run"],
     )
     monkeypatch.setattr(systemd.worker_paths, "log_path", lambda: log)
@@ -83,7 +83,7 @@ def test_systemd_unit_quotes_paths_flags_and_packaged_environment(
     assert f"StandardOutput=append:{str(log).replace('%', '%%')}\n" in unit
     assert f"StandardError=append:{str(log).replace('%', '%%')}\n" in unit
     assert 'Environment="PLAYWRIGHT_BROWSERS_PATH=/opt/Open Program/assets/playwright"' in unit
-    assert 'Environment="GPA_MODEL_PATH=/opt/Open Program/assets/gpa/model.pt"' in unit
+    assert "GPA_MODEL_PATH" not in unit
     assert 'Environment="OPENPROGRAM_IMMUTABLE_RUNTIME=1"' in unit
     assert 'Environment="OPENPROGRAM_STATE_DIR=/srv/Open Program/state"' in unit
     assert 'Environment="OPENPROGRAM_BIN_DIR=/srv/Open Program/bin"' in unit
@@ -101,7 +101,7 @@ def test_systemd_install_checks_user_bus_before_stopping_worker(
         lambda *args: (1, "Failed to connect to bus: No medium found"),
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid",
+        "openprogram.operations.worker.lifecycle.current_worker_pid",
         lambda: (_ for _ in ()).throw(AssertionError("worker was inspected")),
     )
 
@@ -134,7 +134,7 @@ def test_systemd_install_rejects_manager_probe_error_before_mutation(
     monkeypatch.setattr(systemd, "_unit_path", lambda: unit_file)
     monkeypatch.setattr(systemd, "_systemctl", fake_systemctl)
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid",
+        "openprogram.operations.worker.lifecycle.current_worker_pid",
         lambda: (_ for _ in ()).throw(AssertionError("worker was inspected")),
     )
 
@@ -147,13 +147,13 @@ def test_systemd_install_rejects_manager_probe_error_before_mutation(
 def test_cli_status_propagates_service_manager_failure(
     argv: list[str], monkeypatch,
 ) -> None:
-    import openprogram.cli as application
-    from openprogram import worker
-    from openprogram.worker import services
+    from openprogram.interfaces.cli import application
+    from openprogram.operations import worker
+    from openprogram.operations.worker import services
 
     calls: list[bool] = []
     monkeypatch.setattr(sys, "argv", ["openprogram", *argv])
-    monkeypatch.setattr(worker, "print_status", lambda: 0)
+    monkeypatch.setattr(worker, "print_status", lambda **_: 0)
     monkeypatch.setattr(services, "is_supported", lambda: True)
     monkeypatch.setattr(
         services,
@@ -192,13 +192,13 @@ def test_systemd_install_restores_unit_and_detached_worker_on_reload_failure(
     monkeypatch.setattr(systemd, "_unit_path", lambda: unit_file)
     monkeypatch.setattr(systemd, "_systemctl", fake_systemctl)
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid", lambda: 42,
+        "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: 42,
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.stop_worker", lambda **_kwargs: 0,
+        "openprogram.operations.worker.lifecycle.stop_worker", lambda **_kwargs: 0,
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.spawn_detached",
+        "openprogram.operations.worker.lifecycle.spawn_detached",
         lambda **_kwargs: restarted.append(True) or 0,
     )
 
@@ -231,7 +231,7 @@ def test_systemd_install_removes_new_unit_when_enable_fails(
     monkeypatch.setattr(systemd, "_unit_path", lambda: unit_file)
     monkeypatch.setattr(systemd, "_systemctl", fake_systemctl)
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid", lambda: None,
+        "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: None,
     )
 
     assert systemd.install() == 6
@@ -262,10 +262,10 @@ def test_systemd_write_failure_restarts_previous_active_service(
         lambda *_args: (_ for _ in ()).throw(OSError("read-only filesystem")),
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid", lambda: 42,
+        "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: 42,
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.stop_worker", lambda **_kwargs: 0,
+        "openprogram.operations.worker.lifecycle.stop_worker", lambda **_kwargs: 0,
     )
 
     assert systemd.install() == 1
@@ -311,10 +311,10 @@ def test_systemd_install_stops_active_unit_even_before_pid_lock_appears(
     monkeypatch.setattr(systemd, "_systemctl", fake_systemctl)
     monkeypatch.setattr(systemd, "_linger_enabled", lambda: True)
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid", lambda: None,
+        "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: None,
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.stop_worker",
+        "openprogram.operations.worker.lifecycle.stop_worker",
         lambda **_kwargs: (_ for _ in ()).throw(
             AssertionError("detached stop used")
         ),
@@ -346,7 +346,7 @@ def test_systemd_install_preserves_unit_when_active_service_will_not_stop(
     monkeypatch.setattr(systemd, "_unit_path", lambda: unit_file)
     monkeypatch.setattr(systemd, "_systemctl", fake_systemctl)
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid", lambda: None,
+        "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: None,
     )
 
     assert systemd.install() == 4
@@ -375,7 +375,7 @@ def test_systemd_start_and_restart_refresh_an_installed_unit(
 def test_lifecycle_service_failure_never_falls_back_to_detached(
     monkeypatch,
 ) -> None:
-    from openprogram.worker import lifecycle, services
+    from openprogram.operations.worker import lifecycle, services
 
     monkeypatch.setattr(services, "start_if_installed", lambda: 9)
     monkeypatch.setattr(
@@ -388,7 +388,7 @@ def test_lifecycle_service_failure_never_falls_back_to_detached(
 
 
 def test_lifecycle_restart_delegates_to_installed_service(monkeypatch) -> None:
-    from openprogram.worker import lifecycle, services
+    from openprogram.operations.worker import lifecycle, services
 
     monkeypatch.setattr(services, "restart_if_installed", lambda: 0)
     monkeypatch.setattr(
@@ -414,10 +414,10 @@ def test_systemd_stop_keeps_service_ownership_and_cleans_legacy_detached_worker(
         lambda *args: calls.append(args) or (0, ""),
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.current_worker_pid", lambda: 321,
+        "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: 321,
     )
     monkeypatch.setattr(
-        "openprogram.worker.lifecycle.stop_worker",
+        "openprogram.operations.worker.lifecycle.stop_worker",
         lambda **kwargs: raw_stops.append(kwargs["prefer_service"]) or 0,
     )
 

@@ -1,0 +1,58 @@
+<title>Proactive layer</title>
+<meta name="description" content="Rules that watch the event stream and step in: one worked scenario and the five concepts it uses.">
+<h1>Proactive layer</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="The model wants to run rm -rf on the home directory. Before it runs, a tool.before event is emitted. The framework wakes rules watching tool.before. DangerousCommandGuard evaluates the event and returns a gate action. The command is stopped and the reason goes back to the model.">
+  <defs><marker id="ov-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Model</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="66">rm -rf ~</text>
+  <line class="ln" x1="84" y1="33" x2="136" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="148" y="40">Event</text>
+  <text class="t-cmd notranslate" translate="no" x="148" y="66">tool.before</text>
+  <line class="ln" x1="252" y1="33" x2="304" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="316" y="40">Rule</text>
+  <text class="t-cmd notranslate" translate="no" x="316" y="66">DangerousCommandGuard</text>
+  <text class="t-soft" x="316" y="88">evaluate(event, state)</text>
+  <line class="ln" x1="500" y1="33" x2="552" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="564" y="40">Action</text>
+  <text class="t-cmd notranslate" translate="no" x="564" y="66">Gate.ask</text>
+  <text class="t-no" x="558" y="90">command stopped</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Model</strong><small><code translate="no">rm -rf ~</code></small></li>
+  <li><strong>Event</strong><small><code translate="no">tool.before</code></small></li>
+  <li><strong>Rule</strong><small><code translate="no">DangerousCommandGuard</code></small><small><code translate="no">evaluate(event, state)</code></small></li>
+  <li class="flow-end"><strong>Action</strong><small><code translate="no">Gate.ask</code></small><p class="refused">command stopped</p></li>
+</ol>
+<p class="note">Rules never watch Agent internals; they watch the event stream. Landing the action is the framework's job.</p>
+</figure>
+
+<table class="stack">
+<thead><tr><th scope="col">Concept</th><th scope="col">Is</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Event</th><td>A record that something just happened; append-only</td><td><a href="event-layer.html">Event layer</a></td></tr>
+<tr><th scope="row">Policy</th><td>A Python class: which events it watches, and how it decides. A new capability is a new class.</td><td><a href="execution-model.html">Rules and how they run</a></td></tr>
+<tr><th scope="row">Lane</th><td>Gate blocks before and must be fast; observer watches after and may be slow. Opposite timing, so they stay apart.</td><td><a href="execution-model.html">Rules and how they run</a></td></tr>
+<tr><th scope="row">Action</th><td>Fixed set: block, allow or ask; remind; inject a hint; prepare in the background</td><td><a href="policies-mvp.html">Three template rules</a></td></tr>
+<tr><th scope="row">State</th><td>The current situation, folded from events</td><td><a href="events-and-state.html">Events and state</a></td></tr>
+</tbody>
+</table>
+
+<p>State is why this is more than a hook. A rule that only looks at one moment needs nothing else. “Same tool failed three times in a row” needs memory, and with hooks every such rule hand-rolls a counter, its resets and session isolation.</p>
+
+<details>
+<summary>Left out on purpose</summary>
+<p>Each can be added without rework; research notes are in <code translate="no">_research_archive/</code>.</p>
+<ul>
+<li>Crash recovery and tamper resistance for persisted events</li>
+<li>Offline replay to measure a new rule's false-positive rate</li>
+<li>Adversarial security and secret redaction</li>
+<li>Interruption budgets and automatic breakers; <code translate="no">cooldown_s</code> carries the load</li>
+</ul>
+</details>
+
+<h2>Implementation status</h2>
+<p>The code is in <code translate="no">openprogram/runtime/proactive/</code>, tested but not installed at worker start. Per-action state: <a href="execution-model.html">Rules and how they run</a>.</p>
+
+<p class="next"><a href="events-and-state.html">Events and state</a></p>

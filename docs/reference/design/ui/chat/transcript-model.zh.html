@@ -1,0 +1,56 @@
+<title>会话记录模型</title>
+<meta name="description" content="由服务端塑形的轮次：一个投影把存储节点构建成完整轮次，读取按编号修订返回，浏览器应用带编号的变更，不再折叠或合并。">
+<meta name="covers" content="openprogram/interfaces/server/transcript/ apps/web/lib/chat/transcript/ apps/web/components/chat/messages/list/">
+<h1 id="title">会话记录模型</h1>
+<p>服务端是唯一决定会话记录长什么样的代码。一个包 <code translate="no">transcript/</code> 把存储节点变成 Turn，也就是一条提示加上它拥有的一切。归属在切页之前就已确定，所以页边界不可能把卡片和它的回复分开。</p>
+<p>Row 就是现有的 <code translate="no">ChatMsg</code>，在服务端构建，字段名不变，组件照旧绘制。读取按编号的修订号返回从存储新鲜读出的完整轮次。</p>
+<p>之后的变化只以两种形式到达浏览器：文本和思考留在现有的 <code translate="no">stream_event</code> 帧上，其余一切都是带编号的 <code translate="no">transcript_update</code>，由提供历史的同一组投影函数构建。CLI、ACP、频道、<code translate="no">worker_turn</code> 和绑定回复以平铺行读取同一个投影。</p>
+<p>浏览器不折叠，不因未命中而造行，也不合并。它按服务端发来的 <code translate="no">rowKind</code> 绘制每一行。除现有的只追加日志外不存储任何东西。</p>
+<p class="note">全部交付步骤都已实现，<a href="#status">实现状态</a>列出了它们。</p>
+<h2 id="pages">本记录的页面</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="transcript-model-structure.zh.html">行与归属</a></th><td>View、TranscriptView、Turn、Row、Block、本地行、覆盖层，以及各事实的归属</td></tr>
+<tr><th scope="row"><a href="transcript-model-reads.zh.html">读取与客户端规则</a></th><td>游标和文本帧规则、暂存、首次打开、翻页、重连、窗格、非 Web 消费方</td></tr>
+<tr><th scope="row"><a href="transcript-model-live.zh.html">实时更新</a></th><td>实时文本、观察者与发布器、停止、调用树、外部写入、发送、乐观写入、子代理</td></tr>
+<tr><th scope="row"><a href="transcript-model-wire.zh.html">通信协议与模块</a></th><td>帧、新增和变更的模块、各步骤删除的内容</td></tr>
+<tr><th scope="row"><a href="transcript-model-delivery.zh.html">交付步骤</a></th><td>批准关口、步骤 0 到 10，以及每个缺陷由哪一步关闭</td></tr>
+<tr><th scope="row"><a href="transcript-model-limits.zh.html">限制与约束</a></th><td>旧数据、契约和行为测试、仍然存在的限制、未采用的方案</td></tr>
+</tbody>
+</table>
+<h2 id="invariants">保持的不变量</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">不变量</th><th scope="col">如何保持</th></tr></thead>
+<tbody>
+<tr><th scope="row">DAG 含义</th><td>日志保持只追加，<code translate="no">seq</code> 仍是唯一排序键，<code translate="no">caller</code> 与 <code translate="no">predecessor</code> 仍相互正交。显示折叠不改变 <code translate="no">render_context</code>、模型回放或 <code translate="no">list_branches</code> 的任何内容。</td></tr>
+<tr><th scope="row">已存历史绝不改写</th><td>每种旧形状都在显示时读取（<a href="transcript-model-limits.zh.html#old-data">旧数据</a>）。</td></tr>
+<tr><th scope="row">行身份</th><td>消息 id、<code translate="no">tool_call_id</code> 和 <code translate="no">card_id</code> 保持稳定。锚点、测量高度、到达动画、导轨和保存的阅读位置继续工作。被替换的窗口在绘制前按消息 id 恢复。</td></tr>
+<tr><th scope="row">滚动归属</th><td>只有 <code translate="no">useChatAreaStick</code> 写跟随位置。只有 <code translate="no">history-viewport</code> 恢复锚点。加载器和 WebSocket 处理函数不滚动。</td></tr>
+<tr><th scope="row">子代理隔离</th><td><code translate="no">job_id</code> 帧绝不进入对话。存储键仍是 <code translate="no">&lt;session_id&gt;#sub-agent:&lt;first job id&gt;</code>。折叠的行不加载任何内容。子代理会话记录按分支顺序排列。运行进行中 HEAD 绝不移动。</td></tr>
+<tr><th scope="row">重连约定</th><td>先读会话记录，再恢复执行，且只用快照。请求 id 关联、15 秒期限配可见重试并保留缓存行、忽略过期回复、<code translate="no">run_seq</code> 排序、重放未决问题和授权。重试状态只存在于实时。</td></tr>
+<tr><th scope="row">合并保证</th><td>快照和替换规则见<a href="chat-turn-visual-spec.zh.html#transcript-consistency">会话记录更新归属</a>。发送失败的行和本地行在加载后保留。<a href="transcript-model-reads.zh.html">读取与客户端规则</a>和<a href="transcript-model-live.zh.html">实时更新</a>说明每项的机制。</td></tr>
+<tr><th scope="row">上限</th><td>服务端分页：首次读取 6 轮或 128 KiB，后续页 25 轮或 512 KiB，单个完整轮次总是允许。浏览器：6 页、8 MiB、四个缓存对话（<code translate="no">MAX_CACHED_SESSIONS = 4</code>）。页读取从不运行完整水合。验收是 300,000 节点的真实服务端基准，加上现有的 300,000 行浏览器测试，后者在步骤 5 改用轮次表述。</td></tr>
+<tr><th scope="row">增量批处理</th><td>每批一个动画帧。一行的待写文本先于该行的任何条目或终态变化刷新。</td></tr>
+<tr><th scope="row">没有第二份存储</th><td>没有新的运行时、数据库、事件日志或内存行源。</td></tr>
+</tbody>
+</table>
+<h2 id="status">实现状态</h2>
+<p>全部十一个交付步骤都已完成，本记录的各页描述的就是运行中的代码。每次读取和每个实时变化都来自投影，浏览器经一个归约器和一个行列表绘制服务端发来的内容，旧的历史路径、重新加载帧和 Web 映射器都已删除。</p>
+<table class="stack">
+<thead><tr><th scope="col">步骤</th><th scope="col">范围</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">0</th><td>测试装置和基线（只有测试）</td><td>已完成</td></tr>
+<tr><th scope="row">1</th><td>服务端数据修复，线路不变</td><td>已完成</td></tr>
+<tr><th scope="row">2</th><td>整轮分页，线路不变</td><td>已完成</td></tr>
+<tr><th scope="row">3</th><td>写入方记录归属</td><td>已完成</td></tr>
+<tr><th scope="row">4</th><td>气泡按 id 拥有数据，旧传输</td><td>已完成</td></tr>
+<tr><th scope="row">5</th><td>投影、轮次索引和读取切换</td><td>已完成</td></tr>
+<tr><th scope="row">6</th><td>每视图的行和子代理读取</td><td>已完成</td></tr>
+<tr><th scope="row">7</th><td>观察者、发布器、非回复更新</td><td>已完成</td></tr>
+<tr><th scope="row">8</th><td>实时走一条路径</td><td>已完成</td></tr>
+<tr><th scope="row">9</th><td>只画服务端发来的内容</td><td>已完成</td></tr>
+<tr><th scope="row">10</th><td>移除旧路径并完成记录</td><td>已完成</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="transcript-model-structure.zh.html">行与归属</a></p>

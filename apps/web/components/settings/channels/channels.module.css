@@ -1,14 +1,12 @@
 /* Channels settings — restyled to share the design language with the
    rest of /settings (Providers, Search, General). The previous file
-   used hard-coded colour literals (#1c1c1c, #888, etc.) that didn't
+   used hard-coded colour literals that didn't
    honour the theme tokens, which is why the page rendered as a
    "black hole" in the user's screenshot.
 
-   All colours now route through the design tokens from
-   apps/web/app/styles/base.css:
+   All colours are theme roles (app/styles/design/color.css):
      surface levels:  bg-primary < bg-secondary < bg-tertiary
-     text levels:     text-tertiary < text-muted < text-secondary
-                    < text-primary < text-bright
+     text inks:       text-muted < text-secondary < text-primary < text-bright
      border:          --border (single-source-of-truth divider colour)
 
    Layout mirrors settings-page.module.css's .detail / .detailHeader
@@ -38,44 +36,29 @@
 }
 
 .detailTitle {
-  font-size: 18px;
+  font-size: var(--fs-title);
   font-weight: 600;
   color: var(--text-bright);
   font-family: var(--font-sans);
 }
 
 .detailMeta {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   line-height: 1.55;
   max-width: 760px;
   font-family: var(--font-sans);
 }
 
-.detailSection {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* Section header — title block on the left, action button on the
-   right. Matches the proportions used in the Providers detail panel. */
-.sectionHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
 .sectionTitle {
-  font-size: 15px;
+  font-size: var(--fs-chat);
   font-weight: 600;
   color: var(--text-bright);
   font-family: var(--font-sans);
 }
 
 .sectionSub {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   line-height: 1.55;
   margin-top: 4px;
@@ -89,8 +72,8 @@
 .emptyHint {
   padding: 16px 18px;
   border: 1px dashed var(--border);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
   font-family: var(--font-sans);
   color: var(--text-secondary);
   line-height: 1.6;
@@ -100,19 +83,19 @@
   background: var(--bg-input);
   border: 1px solid var(--border);
   padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-xs);
   color: var(--text-bright);
 }
 
 .formHelp {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-family: var(--font-sans);
   line-height: 1.6;
   padding: 10px 14px;
   background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
   border-left: 3px solid var(--accent-blue);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text-primary);
 }
 .formHelp b {
@@ -126,17 +109,17 @@
 .rowTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-family: var(--font-sans);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 .rowTable th {
   text-align: left;
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
@@ -155,11 +138,11 @@
 }
 .rowTable code {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   background: var(--bg-input);
   border: 1px solid var(--border);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text-bright);
 }
 
@@ -173,8 +156,8 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 11px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-2xs);
   font-weight: 500;
   line-height: 1.5;
   font-family: var(--font-sans);
@@ -201,6 +184,13 @@
   margin-right: 8px;
   vertical-align: 1px;
 }
+.statusHint {
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 2px;
+  font-family: var(--font-sans);
+}
 .dotGreen {
   background: var(--accent-green);
   box-shadow: 0 0 6px color-mix(in srgb, var(--accent-green) 50%, transparent);
@@ -213,175 +203,41 @@
   background: var(--text-muted);
 }
 
-/* ----- Buttons -------------------------------------------------------
-   Pill-shaped, tinted-fill — same pattern as skills catalog buttons
-   (apps/web/components/skills/discovery/catalog-list.tsx). Three intents:
-   primary action, neutral secondary, destructive. */
-.primaryBtn,
-.secondaryBtn,
-.dangerBtn {
-  cursor: pointer;
-  border: none;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--font-sans);
-  padding: 6px 14px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  transition: background 0.15s, color 0.15s;
-}
-.primaryBtn {
-  background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
-  color: var(--accent-blue);
-}
-.primaryBtn:hover {
-  background: color-mix(in srgb, var(--accent-blue) 32%, transparent);
-}
-.primaryBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.secondaryBtn {
-  background: var(--bg-tertiary);
-  color: var(--text-bright);
-}
-.secondaryBtn:hover {
-  background: color-mix(in srgb, var(--text-bright) 10%, var(--bg-tertiary));
-}
-
-.dangerBtn {
-  background: color-mix(in srgb, var(--accent-red) 18%, transparent);
-  color: var(--accent-red);
-  padding: 4px 12px;
-  height: 28px;
-  font-size: 12px;
-}
-.dangerBtn:hover {
-  background: color-mix(in srgb, var(--accent-red) 28%, transparent);
-}
-.dangerBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.iconBtn {
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 18px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background 0.15s, color 0.15s;
-}
-.iconBtn:hover {
-  background: var(--bg-hover);
-  color: var(--text-bright);
-}
-
 /* ----- Modal --------------------------------------------------------- */
-.modalBackdrop {
-  position: fixed;
-  inset: 0;
-  background: var(--scrim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
 .modal {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  min-width: 440px;
-  max-width: 560px;
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-dialog);
-}
-.modalHeader {
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.modalTitle {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-bright);
-  font-family: var(--font-sans);
-}
-.modalBody {
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  overflow-y: auto;
-}
-.modalFooter {
-  padding: 12px 18px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-/* ----- Form --------------------------------------------------------- */
-.formRow {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 .formLabel {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--text-secondary);
   font-family: var(--font-sans);
 }
-.formInput {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--ui-button-radius);
-  padding: 8px 12px;
-  font-size: 13px;
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  width: 100%;
-  box-sizing: border-box;
-  transition: border-color 0.15s;
-}
-.formInput:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
 .formHint {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   font-family: var(--font-sans);
 }
 .formError {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--accent-red);
   padding: 8px 12px;
   background: color-mix(in srgb, var(--accent-red) 12%, transparent);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   line-height: 1.5;
   font-family: var(--font-sans);
 }
 .codeBlock {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   background: var(--bg-input);
   border: 1px solid var(--border);
   padding: 10px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   margin: 8px 0 0;
   overflow-x: auto;
   color: var(--text-bright);

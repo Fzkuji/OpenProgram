@@ -12,8 +12,6 @@ export interface BottomBarProps {
   busy?: boolean;
   /** Last context stats (input/output tokens). */
   tokens?: { input?: number; output?: number };
-  /** Tools available for next turn. */
-  toolsOn?: boolean;
   /** Permission tier for tool calls (the 5 modes, shift+tab cycles the
    *  safe four; /permissions reaches all five). */
   permissionMode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
@@ -59,7 +57,6 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   conversationId,
   busy,
   tokens,
-  toolsOn,
   permissionMode,
   thinkingEffort,
   connState,
@@ -91,7 +88,6 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   const inTokens = formatTokens(tokens?.input);
   const outTokens = formatTokens(tokens?.output);
 
-  const showToolsOn = cols >= 72;
   const showSession = cols >= 86;
   const showTokens = cols >= 96 && (inTokens || outTokens);
   const showContextPct = cols >= 112 && contextWindow && tokens?.input;
@@ -179,24 +175,17 @@ export const BottomBar: React.FC<BottomBarProps> = ({
     >
       <Box flexShrink={1}>
         <Text color={
-          permissionMode === 'bypass' ? colors.error
-          : permissionMode === 'auto' || permissionMode === 'acceptEdits' ? colors.warning
+          permissionMode === 'auto' || permissionMode === 'acceptEdits' ? colors.warning
           : permissionMode === 'plan' ? colors.primary
           : colors.muted
         }>
-          {permissionMode === 'bypass' ? '▸▸ bypass'
+          {permissionMode === 'bypass' ? '▸▸ bypass permissions'
             : permissionMode === 'auto' ? '▸▸ auto'
             : permissionMode === 'acceptEdits' ? '▸▸ accept edits'
             : permissionMode === 'plan' ? '⏸ plan'
-            : '▸▸ ask'}
+            : '▸▸ manual'}
         </Text>
         <Text color={colors.border}> · </Text>
-        {toolsOn === false ? (
-          <Text color={colors.warning}>tools off</Text>
-        ) : showToolsOn ? (
-          <Text color={colors.muted}>tools on</Text>
-        ) : null}
-        {toolsOn === false || showToolsOn ? <Text color={colors.border}> · </Text> : null}
         <Text color={
           thinkingEffort === 'xhigh' ? colors.bottomBar.effortXhigh
           : thinkingEffort === 'high' ? colors.primary

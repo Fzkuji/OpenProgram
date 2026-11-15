@@ -1,0 +1,50 @@
+/* composer 右下 context 用量徽章与圆环。
+   对应组件：components/chat/badges/context-badge.tsx、context-breakdown-panel.tsx */
+
+/* Per-conversation token-usage pill in the composer's bottom-right slot.
+   Rendered by <ContextBadge> (apps/web/components/chat/badges/context-badge.tsx) as a
+   global class. The rule lived in the old 05-chat.css and was dropped in
+   58e7709 along with the rest of the legacy composer CSS; restore it here
+   so the badge stops rendering as unstyled text. */
+.context-stats-label {
+  font-size: var(--fs-xs);
+  color: var(--text-bright);
+  height: 30px;
+  line-height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  white-space: nowrap;
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* context 用量圆环——点击弹 /context 面板。按钮外观（尺寸、圆形、底色、
+   悬停、聚焦）来自 shadcn Button（buttonVariants secondary icon-sm，
+   见 context-badge.tsx）；这里只留忙碌时的旋转。 */
+.context-ring-badge.is-busy svg {
+  animation: context-ring-spin 0.8s linear infinite;
+}
+@keyframes context-ring-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .context-ring-badge.is-busy svg { animation: none; }
+}
+
+/* Category colours are reused in the summary bar and detail meters. */
+.context-breakdown-panel {
+  --usage-track: var(--meter-track);
+  --context-system-prompt: var(--accent-purple);
+  --context-system-tools: var(--accent-cyan);
+  --context-system-tools-deferred: color-mix(in srgb, var(--accent-cyan) 60%, var(--text-bright));
+  --context-mcp-tools: var(--accent-yellow);
+  --context-mcp-tools-deferred: color-mix(in srgb, var(--accent-yellow) 65%, var(--accent-red));
+  --context-memory: var(--accent-green);
+  --context-skills: color-mix(in srgb, var(--accent-purple) 55%, var(--accent-red));
+  --context-messages: var(--meter-fill);
+  --context-other: var(--accent-red);
+}

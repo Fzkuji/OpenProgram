@@ -1,0 +1,50 @@
+<title>Configure models</title>
+<meta name="description" content="First-time model setup, provider commands and how enabled models work.">
+<h1>Configure models</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Goal</th><th scope="col">Command</th></tr></thead>
+<tbody>
+<tr><th scope="row">Full first-run wizard, also shown by the Web UI on first launch</th><td><code translate="no">openprogram setup</code></td></tr>
+<tr><th scope="row">Just the model section</th><td><code translate="no">openprogram setup model</code></td></tr>
+<tr><th scope="row">Pick a section</th><td><code translate="no">openprogram setup menu</code></td></tr>
+<tr><th scope="row">Credentials only: scan, log in, verify</th><td><code translate="no">openprogram providers setup</code></td></tr>
+</tbody>
+</table>
+<h2>Provider commands</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">openprogram providers</code></th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">login &lt;provider&gt;</code></th><td>Picks OAuth or API key. Scripts: <code translate="no">--api-key-stdin</code></td></tr>
+<tr><th scope="row"><code translate="no">logout &lt;provider&gt;</code></th><td>Deletes its credentials</td></tr>
+<tr><th scope="row"><code translate="no">status &lt;provider&gt;</code></th><td>Are the credentials usable?</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>Credential pools by account</td></tr>
+<tr><th scope="row"><code translate="no">available [QUERY]</code></th><td>The full configurable catalogue, including community entries</td></tr>
+<tr><th scope="row"><code translate="no">discover</code> <code translate="no">adopt</code></th><td>Scan and import credentials on this machine: <a href="auth.html">Authentication</a></td></tr>
+<tr><th scope="row"><code translate="no">use &lt;provider&gt; [account]</code></th><td>Which account the provider runs on</td></tr>
+<tr><th scope="row"><code translate="no">doctor</code></th><td>Expiry, refresh, cooldown, conflicts</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code> <code translate="no">accounts</code> <code translate="no">migrate</code></th><td>Short names, accounts, credential format migration</td></tr>
+</tbody>
+</table>
+<h2>Enabled models</h2>
+<p>Only enabled models appear in the chat picker; credentials alone are not enough.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Ways to enable</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Setup wizard</th><td>Tick them</td></tr>
+<tr><th scope="row">Settings → Providers</th><td>Tick them. <strong>Fetch models</strong> updates the catalogue.</td></tr>
+<tr><th scope="row">Subscription login</th><td>Enables a default set</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Fact</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stored in</th><td><code translate="no">~/.openprogram/config.json</code> (<code translate="no">~/.openprogram-&lt;name&gt;/</code> with <code translate="no">--profile</code>), <code translate="no">providers.&lt;id&gt;</code>: an <code translate="no">enabled</code> flag and <code translate="no">models</code> rows with context window, pricing and so on. Hand-added models carry <code translate="no">source: "manual"</code>.</td></tr>
+<tr><th scope="row">Read by</th><td><code translate="no">openprogram/models/providers/catalog/enabled_models.py</code>, at startup; config changes apply on reload</td></tr>
+<tr><th scope="row">Empty selection</th><td>Allowed, even for the last model; stays empty after reload and restart</td></tr>
+<tr><th scope="row">New chats</th><td>No default model. Starts on the top-level <code translate="no">last_used_model</code>, the one last picked or sent with. A fresh install asks. Disabling that model clears it.</td></tr>
+<tr><th scope="row">Other uses</th><td>Titles, memory writes, MCP sampling and Auto permission review use that model when they have no conversation of their own</td></tr>
+<tr><th scope="row">Provider settings</th><td>Open from saved models and cached catalogues, without waiting for the remote endpoint</td></tr>
+<tr><th scope="row">Brand icons</th><td>Bundled locally; custom or unrecognized providers show an initial</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="local-models.html">Local models</a> · <a href="providers.html">Providers</a> · <a href="auth.html">Authentication</a> · <a href="fast-tier.html">Fast mode</a> · <a href="thinking-effort.html">Thinking effort</a> · <a href="token-tracking.html">Token tracking</a></p>

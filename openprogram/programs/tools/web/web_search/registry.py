@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from openprogram.programs._providers import ProviderRegistry
+from openprogram.programs._authoring.providers import ProviderRegistry
 
 
 @dataclass

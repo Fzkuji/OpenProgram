@@ -4,7 +4,7 @@ Four related defects, one root pattern: the store HEAD and the webui's
 in-memory mirror (``_sessions[sid]["head_id"]`` / ``["messages"]``) must
 move together, and turn entry points must not race a run in flight.
 
-1. ``/merge`` (slash path, ``_execute._run_merge``): process_user_turn
+1. ``/merge`` (slash path, ``slash_actions.run_merge``): process_user_turn
    advanced the store HEAD but the mirror stayed pre-merge, so the
    ``_save_session`` right after execution flushed the old head back
    and orphaned the merge reply.
@@ -24,6 +24,11 @@ import types
 
 import pytest
 
+from tests.support.thread_scope import fake_threads_started_by
+
+# The module whose run thread these tests replace.
+TURN_LAUNCH_MODULE = "openprogram.interfaces.server.ws_actions.chat.turn_launch"
+
 
 class _FakeWS:
     def __init__(self) -> None:
@@ -36,7 +41,7 @@ class _FakeWS:
 @pytest.fixture
 def server_events(monkeypatch):
     """Record _set_active_head calls and broadcasts in arrival order."""
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
     events: list[tuple] = []
     monkeypatch.setattr(
         _s, "_set_active_head",
@@ -44,7 +49,7 @@ def server_events(monkeypatch):
     )
     monkeypatch.setattr(
         _s, "_broadcast",
-        lambda msg: events.append(("broadcast", json.loads(msg).get("type"))),
+        lambda msg, **_kw: events.append(("broadcast", json.loads(msg).get("type"))),
     )
     monkeypatch.setattr(_s, "refresh_context_stats", lambda sid: None)
     return events
@@ -60,6 +65,7 @@ def _merge_result(**overrides):
         failed=False,
         error=None,
         base_peer=None,
+        branch_id=None,
     )
     base.update(overrides)
     return types.SimpleNamespace(**base)
@@ -68,9 +74,9 @@ def _merge_result(**overrides):
 # --- 1. /merge slash path ---------------------------------------------------
 
 def test_run_merge_syncs_mirror_head_on_success(monkeypatch, server_events):
-    from openprogram.webui import server as _s
-    from openprogram.webui._execute import _run_merge
-    import openprogram.agent.internals._merge as merge_mod
+    from openprogram.interfaces.server import server as _s
+    from openprogram.runtime.conversation.turn_runtime.slash_actions import run_merge as _run_merge
+    import openprogram.runtime.conversation.merge as merge_mod
 
     responses: list[dict] = []
     monkeypatch.setattr(
@@ -92,9 +98,9 @@ def test_run_merge_syncs_mirror_head_on_success(monkeypatch, server_events):
 
 
 def test_run_merge_does_not_touch_head_on_failure(monkeypatch, server_events):
-    from openprogram.webui import server as _s
-    from openprogram.webui._execute import _run_merge
-    import openprogram.agent.internals._merge as merge_mod
+    from openprogram.interfaces.server import server as _s
+    from openprogram.runtime.conversation.turn_runtime.slash_actions import run_merge as _run_merge
+    import openprogram.runtime.conversation.merge as merge_mod
 
     monkeypatch.setattr(_s, "_broadcast_chat_response",
                         lambda sid, mid, resp: None)
@@ -113,13 +119,15 @@ def test_run_merge_does_not_touch_head_on_failure(monkeypatch, server_events):
 
 # --- 2. WS merge_branches ---------------------------------------------------
 
-def test_merge_branches_syncs_mirror_before_session_reload(
+def test_merge_branches_syncs_mirror_before_views_are_told(
     monkeypatch, server_events,
 ):
-    from openprogram.webui import server as _s
-    import openprogram.webui.ws_actions.merge as ws_merge
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.transcript import publisher
+    import openprogram.interfaces.server.ws_actions.merge as ws_merge
 
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
+    monkeypatch.setattr(publisher, "notice_merged", lambda sid: server_events.append(("merged", sid)))
     monkeypatch.setattr(
         ws_merge, "_run",
         lambda *a, **kw: {
@@ -142,10 +150,9 @@ def test_merge_branches_syncs_mirror_before_session_reload(
     assert not result["data"]["failed"]
     head_moves = [e for e in server_events if e[0] == "head"]
     assert head_moves == [("head", "t1", "asst1")]
-    # Mirror sync must precede the session_reload that makes clients
-    # re-pull — otherwise they reload the stale branch.
-    reload_idx = server_events.index(("broadcast", "session_reload"))
-    assert server_events.index(head_moves[0]) < reload_idx
+    # Mirror sync must precede the notice that sends open views to read
+    # again — otherwise they read the stale branch.
+    assert server_events.index(head_moves[0]) < server_events.index(("merged", "t1"))
 
 
 # --- 3. rewind partial failure ---------------------------------------------
@@ -161,9 +168,9 @@ def _rewind_payload(**overrides):
 
 
 def test_rewind_file_failure_does_not_sync_mirror(monkeypatch, server_events):
-    from openprogram.webui import server as _s
-    import openprogram.agent._rewind as rewind_mod
-    from openprogram.webui.ws_actions.chat import handle_rewind
+    from openprogram.interfaces.server import server as _s
+    import openprogram.runtime.conversation.rewind as rewind_mod
+    from openprogram.interfaces.server.ws_actions.chat import handle_rewind
 
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
     monkeypatch.setattr(
@@ -187,9 +194,9 @@ def test_rewind_file_failure_does_not_sync_mirror(monkeypatch, server_events):
 
 
 def test_rewind_full_failure_leaves_mirror_alone(monkeypatch, server_events):
-    from openprogram.webui import server as _s
-    import openprogram.agent._rewind as rewind_mod
-    from openprogram.webui.ws_actions.chat import handle_rewind
+    from openprogram.interfaces.server import server as _s
+    import openprogram.runtime.conversation.rewind as rewind_mod
+    from openprogram.interfaces.server.ws_actions.chat import handle_rewind
 
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
     # The _err path: nothing was rewound, head never moved.
@@ -214,15 +221,16 @@ def test_rewind_full_failure_leaves_mirror_alone(monkeypatch, server_events):
 # --- 4. chat run-active guard ----------------------------------------------
 
 def test_handle_chat_rejects_while_run_active(monkeypatch, server_events):
-    from openprogram.webui import server as _s
-    from openprogram.webui.ws_actions.chat import handle_chat
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat
 
     monkeypatch.setattr(_s, "_get_or_create_session",
                         lambda sid, **kw: {"id": sid})
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: True)
+    monkeypatch.setattr(_s, "_is_selected_run_active", lambda sid: True)
     appended: list = []
     monkeypatch.setattr(_s, "_append_msg",
-                        lambda conv, msg: appended.append(msg))
+                        lambda conv, msg, **_kw: appended.append(msg))
 
     ws = _FakeWS()
     asyncio.run(handle_chat(ws, {"text": "hi", "session_id": "s1"}))
@@ -238,7 +246,7 @@ def test_handle_chat_rejects_while_run_active(monkeypatch, server_events):
 
 
 def test_try_reserve_run_allows_only_one_concurrent_winner(monkeypatch):
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
 
     session_id = "reserve-race"
     with _s._running_tasks_lock:
@@ -261,7 +269,7 @@ def test_try_reserve_run_allows_only_one_concurrent_winner(monkeypatch):
 
 
 def test_activate_run_reservation_keeps_session_busy_during_handoff(monkeypatch):
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
 
     session_id = "reservation-handoff"
     runtime = object()
@@ -291,7 +299,7 @@ def test_activate_run_reservation_keeps_session_busy_during_handoff(monkeypatch)
 
 
 def test_registered_runtime_blocks_when_task_entry_is_temporarily_absent():
-    from openprogram.webui import server as _s
+    from openprogram.interfaces.server import server as _s
 
     session_id = "runtime-only-handoff"
     with _s._running_tasks_lock:
@@ -305,29 +313,33 @@ def test_registered_runtime_blocks_when_task_entry_is_temporarily_absent():
 
 
 def test_get_run_state_does_not_change_socket_focus(monkeypatch):
-    from openprogram.webui import server as _s
-    from openprogram.webui.ws_actions.session import handle_get_run_state
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions.session import handle_get_run_state
 
     ws = _FakeWS()
     ws._focused_session_id = "visible"
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: sid == "background")
+    monkeypatch.setattr(_s, "_is_selected_run_active", lambda sid: sid == "background")
+    monkeypatch.setattr(_s, "_running_branches", lambda sid: [])
 
     asyncio.run(handle_get_run_state(
         ws, {"session_id": "background"},
     ))
 
     assert ws._focused_session_id == "visible"
+    assert isinstance(ws.sent[0]["data"].pop("run_seq"), int)
     assert ws.sent == [{
         "type": "run_state",
-        "data": {"session_id": "background", "run_active": True},
+        "data": {"session_id": "background", "run_active": True, "run_task": None,
+                 "running_branches": []},
     }]
 
 
 def test_handle_chat_rejects_when_atomic_reservation_is_lost(
     monkeypatch, server_events,
 ):
-    from openprogram.webui import server as _s
-    from openprogram.webui.ws_actions.chat import handle_chat
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat
 
     monkeypatch.setattr(_s, "_get_or_create_session",
                         lambda sid, **kw: {"id": sid})
@@ -335,7 +347,7 @@ def test_handle_chat_rejects_when_atomic_reservation_is_lost(
     monkeypatch.setattr(_s, "_try_reserve_run", lambda sid, mid: False)
     appended: list = []
     monkeypatch.setattr(_s, "_append_msg",
-                        lambda conv, msg: appended.append(msg))
+                        lambda conv, msg, **_kw: appended.append(msg))
 
     ws = _FakeWS()
     asyncio.run(handle_chat(ws, {"text": "hi", "session_id": "s1"}))
@@ -347,9 +359,9 @@ def test_handle_chat_rejects_when_atomic_reservation_is_lost(
 
 
 def test_handle_chat_releases_reservation_when_setup_fails(monkeypatch):
-    from openprogram.webui import server as _s
-    from openprogram.webui.ws_actions.chat import handle_chat
-    import openprogram.agent.session_config as session_config
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat
+    import openprogram.runtime.conversation.session_config as session_config
 
     session_id = "setup-fails"
     with _s._running_tasks_lock:
@@ -376,14 +388,13 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
     monkeypatch, failure_phase,
 ):
     """A post-ACK thread failure must not leave a queued execution or task."""
-    from openprogram.webui import server as _s
-    from openprogram.webui.ws_actions import chat as chat_actions
-    from openprogram.webui.ws_actions.chat import handle_chat
-    import openprogram.agent.session_config as session_config
-    import openprogram.agent.session_db as session_db
-    import openprogram.agent.surface_context as surface_context
-    import openprogram.webui.ws_actions.session as session_actions
-    import threading
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat
+    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.context.session_db as session_db
+    import openprogram.runtime.conversation.surface_context as surface_context
+    import openprogram.interfaces.server.ws_actions.session as session_actions
 
     session_id = f"startup-failure-{failure_phase}"
     conv = {"id": session_id, "messages": []}
@@ -394,6 +405,9 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
     class _DB:
         def get_session(self, _sid):
             return {"extra_meta": {"_user_titled": True}}
+
+        def is_created(self, _sid):
+            return True
 
         def update_session(self, _sid, **_fields):
             return None
@@ -407,13 +421,13 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
             pass
 
         def admit(self, request, **kwargs):
-            from openprogram.agent.authority import decide_tool_authority
+            from openprogram.runtime.permissions.tool_authority import decide_tool_authority
             assert decide_tool_authority(request, "list", {}).allowed
             assert request.permission_mode == "bypass"
             assert request.permission_rules is not None
             return _Admission()
 
-        def fail_admission(self, admission, *, reason_code):
+        def fail_admission(self, admission, *, reason_code, failure_text=None):
             failures.append((admission.execution_id, reason_code))
 
     class _StartFailureThread:
@@ -422,16 +436,16 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
                 raise RuntimeError("thread start unavailable")
 
     monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
-    monkeypatch.setattr(chat_actions, "_db_agent_id", lambda _sid: "main")
-    monkeypatch.setattr(_s, "_append_msg", lambda target, msg: target["messages"].append(msg))
+    monkeypatch.setattr(chat_actions.turn, "_db_agent_id", lambda _sid: "main")
+    monkeypatch.setattr(_s, "_append_msg", lambda target, msg, **_kw: target["messages"].append(msg))
     monkeypatch.setattr(_s, "_emit_running_task_event", lambda _sid, **kw: events.append(kw))
     monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
     monkeypatch.setattr(session_db, "default_db", lambda: _DB())
     monkeypatch.setattr(
         session_config, "save_session_run_config",
         lambda *a, **kw: types.SimpleNamespace(
-            tools_enabled=True, tools_override=None, web_search=False,
-            toolset=None, thinking_effort="medium", permission_mode=None,
+            tools_override=None, web_search=False,
+            thinking_effort="medium", permission_mode=None,
             sandbox_enabled=None,
         ),
     )
@@ -439,10 +453,10 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
     monkeypatch.setattr(surface_context, "capture", lambda *_a, **_kw: {"window_id": "w1"})
     monkeypatch.setattr(surface_context, "release_bindings", lambda value: released.append(value))
     monkeypatch.setattr(
-        "openprogram.agent.production_driver.CanonicalAgentAdapter", _Adapter,
+        "openprogram.runtime.conversation.production_driver.CanonicalAgentAdapter", _Adapter,
     )
-    monkeypatch.setattr(
-        threading, "Thread",
+    fake_threads_started_by(
+        monkeypatch, TURN_LAUNCH_MODULE,
         (lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("thread constructor unavailable")))
         if failure_phase == "construct" else (lambda **_kwargs: _StartFailureThread()),
     )
@@ -460,33 +474,30 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
 
 
 def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch, tmp_path):
-    from openprogram.webui import server as _s
-    from openprogram.webui.ws_actions import chat as chat_actions
-    from openprogram.webui.ws_actions.chat import handle_chat
-    import openprogram.agent.session_config as session_config
-    import openprogram.agent.session_db as session_db
-    import openprogram.agent.internals._turn_lifecycle as turn_lifecycle
-    import openprogram.webui.ws_actions.session as session_actions
-    import threading
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat
+    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.context.session_db as session_db
+    import openprogram.runtime.conversation.turn_lifecycle as turn_lifecycle
+    import openprogram.interfaces.server.ws_actions.session as session_actions
 
     session_id = "ack-disconnected"
     conv = {"id": session_id, "messages": []}
     with _s._running_tasks_lock:
         _s._running_tasks.pop(session_id, None)
     monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
-    monkeypatch.setattr(chat_actions, "_db_agent_id", lambda sid: "main")
+    monkeypatch.setattr(chat_actions.turn, "_db_agent_id", lambda sid: "main")
     monkeypatch.setattr(_s, "_append_msg",
-                        lambda target, msg: target["messages"].append(msg))
+                        lambda target, msg, **_kw: target["messages"].append(msg))
     monkeypatch.setattr(_s, "_emit_running_task_event", lambda sid: None)
     monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
     monkeypatch.setattr(
         session_config,
         "save_session_run_config",
         lambda *a, **kw: types.SimpleNamespace(
-            tools_enabled=True,
             tools_override=None,
             web_search=False,
-            toolset=None,
             thinking_effort="medium",
             permission_mode="default",
             sandbox_enabled=None,
@@ -498,6 +509,9 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch, tmp_path):
         lambda: types.SimpleNamespace(
             root_path=tmp_path,
             get_session=lambda sid: {"extra_meta": {"_user_titled": True}},
+            get_branch=lambda sid: [],
+            update_session=lambda sid, **fields: None,
+            is_created=lambda sid: True,
         ),
     )
     monkeypatch.setattr(turn_lifecycle, "insert_placeholder", lambda *a, **k: True)
@@ -510,7 +524,7 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch, tmp_path):
         def start(self):
             started.append(self.payload)
 
-    monkeypatch.setattr(threading, "Thread", _Thread)
+    fake_threads_started_by(monkeypatch, TURN_LAUNCH_MODULE, _Thread)
 
     class _GoneWS:
         async def send_text(self, text: str) -> None:
@@ -537,17 +551,16 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch, tmp_path):
 def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     monkeypatch, tmp_path,
 ):
-    from openprogram.agent.authority import owner_authority
-    from openprogram.execution import default_store
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.webui import server as _s
-    from openprogram.webui.ws_actions import chat as chat_actions
-    from openprogram.webui.ws_actions.chat import handle_chat
-    import openprogram.agent.session_config as session_config
-    import openprogram.agent.session_db as session_db
-    import openprogram.store.session.session_store as store_module
-    import openprogram.webui.ws_actions.session as session_actions
-    import threading
+    from openprogram.runtime.permissions.authority import owner_authority
+    from openprogram.runtime.execution import default_store
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat
+    import openprogram.runtime.conversation.session_config as session_config
+    import openprogram.runtime.context.session_db as session_db
+    import openprogram.state.store.session.session_store as store_module
+    import openprogram.interfaces.server.ws_actions.session as session_actions
 
     session_id = "durable-chat-ack"
     store = SessionStore(tmp_path / "sessions-git")
@@ -556,7 +569,7 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     monkeypatch.setattr(session_db, "default_db", lambda: store)
     monkeypatch.setattr(store_module.shared, "_default_store", store)
     monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
-    monkeypatch.setattr(chat_actions, "_db_agent_id", lambda sid: "main")
+    monkeypatch.setattr(chat_actions.turn, "_db_agent_id", lambda sid: "main")
     running_frames: list[dict] = []
 
     def _emit_running_task_event(sid, **_kwargs):
@@ -575,10 +588,8 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
         session_config,
         "save_session_run_config",
         lambda *a, **kw: types.SimpleNamespace(
-            tools_enabled=True,
             tools_override=None,
             web_search=False,
-            toolset=None,
             thinking_effort="medium",
             permission_mode="default",
             sandbox_enabled=None,
@@ -592,7 +603,7 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
         def start(self):
             return None
 
-    monkeypatch.setattr(threading, "Thread", _Thread)
+    fake_threads_started_by(monkeypatch, TURN_LAUNCH_MODULE, _Thread)
     observed: dict = {}
 
     class _WS:
@@ -632,7 +643,7 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
             self.sent.append(json.loads(text))
 
     control_ws = _ControlWS()
-    from openprogram.webui.ws_actions import runtime
+    from openprogram.interfaces.server.ws_actions import runtime
     asyncio.run(runtime.ACTIONS["execution.cancel"](control_ws, {
         "type": "execution.command",
         "action": "execution.cancel",
@@ -645,17 +656,16 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     assert command["command"]["status"] == "applied"
 
 
-def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
+def test_chat_ack_echoes_the_default_when_missing_or_invalid(
     monkeypatch, tmp_path,
 ):
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.webui import server as _s
-    from openprogram.webui.ws_actions import chat as chat_actions
-    from openprogram.webui.ws_actions.chat import handle_chat
-    import openprogram.agent.session_db as session_db
-    import openprogram.store.session.session_store as store_module
-    import openprogram.webui.ws_actions.session as session_actions
-    import threading
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.ws_actions import chat as chat_actions
+    from openprogram.interfaces.server.ws_actions.chat import handle_chat
+    import openprogram.runtime.context.session_db as session_db
+    import openprogram.state.store.session.session_store as store_module
+    import openprogram.interfaces.server.ws_actions.session as session_actions
 
     session_id = "perm-ack"
     store = SessionStore(tmp_path / "sessions-git")
@@ -664,10 +674,12 @@ def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
     monkeypatch.setattr(session_db, "default_db", lambda: store)
     monkeypatch.setattr(store_module.shared, "_default_store", store)
     monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
-    monkeypatch.setattr(chat_actions, "_db_agent_id", lambda sid: "main")
+    monkeypatch.setattr(chat_actions.turn, "_db_agent_id", lambda sid: "main")
     monkeypatch.setattr(_s, "_emit_running_task_event", lambda sid: None)
     monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
-    monkeypatch.setattr(threading, "Thread", lambda **kwargs: types.SimpleNamespace(start=lambda: None))
+    fake_threads_started_by(
+        monkeypatch, TURN_LAUNCH_MODULE, lambda **kwargs: types.SimpleNamespace(start=lambda: None),
+    )
 
     def _ack_mode(cmd):
         observed: dict = {}
@@ -686,7 +698,7 @@ def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
             _s._unregister_active_runtime(session_id)
             # The fake thread never executes: finish its durable admission
             # before testing another independent mode in this same session.
-            from openprogram.execution import default_store, ExecutionStatus
+            from openprogram.runtime.execution import default_store, ExecutionStatus
             executions = default_store()
             for record in executions.list_nonterminal(session_id=session_id):
                 cancelling = executions.transition_execution(
@@ -699,10 +711,14 @@ def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
                 )
         return observed.get("permission_mode")
 
-    assert _ack_mode({"text": "hi", "session_id": session_id}) == "ask"
+    assert _ack_mode({"text": "hi", "session_id": session_id}) == "bypass"
     assert _ack_mode({
         "text": "hi", "session_id": session_id, "permission_mode": "nope",
+    }) == "bypass"
+    assert _ack_mode({
+        "text": "hi", "session_id": session_id, "permission_mode": "ask",
     }) == "ask"
+    # The mode above is saved on this session; inherit keeps it.
     assert _ack_mode({
         "text": "hi", "session_id": session_id, "permission_mode": "inherit",
     }) == "ask"

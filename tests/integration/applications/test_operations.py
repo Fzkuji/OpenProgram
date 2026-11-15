@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 def test_operation_state_question_deduplication_and_cancel(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from openprogram.webui.routes.catalog import applications
+    from openprogram.interfaces.server.routes.catalog import applications
 
     source = tmp_path / "source"
     source.mkdir()
@@ -31,8 +31,8 @@ operations = {'save': save, 'confirm': confirm}
     }))
     app = FastAPI()
     applications.register(app)
-    from openprogram.webui.routes.execution import lifecycle
-    from openprogram.agent.authority import owner_authority, owner_principal_id
+    from openprogram.interfaces.server.routes.execution import lifecycle
+    from openprogram.runtime.permissions.authority import owner_authority, owner_principal_id
     from types import SimpleNamespace
     lifecycle.register(app)
     app.state.owner_auth = SimpleNamespace(authority=owner_authority(owner_principal_id()))
@@ -81,7 +81,7 @@ operations = {'save': save, 'confirm': confirm}
         generic = submit('confirm', 'generic-cancel')
         pending = wait(generic['id'], lambda run: run['question'] is not None)
         process = app.state.applications.processes[generic['id']]
-        from openprogram.execution import default_store
+        from openprogram.runtime.execution import default_store
         record = default_store().get_execution(generic['id'])
         response = client.post('/api/execution/cancel', json={
             'type': 'execution.command', 'action': 'execution.cancel', 'command_id': 'generic-cancel-command',
@@ -107,14 +107,14 @@ operations = {'save': save, 'confirm': confirm}
 
 def test_model_runtime_binding_and_failure_are_recorded(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from openprogram.webui.routes.catalog import applications
+    from openprogram.interfaces.server.routes.catalog import applications
     source = tmp_path / 'model-source'
     source.mkdir()
     (source / 'index.html').write_text('<!doctype html><title>Model</title>')
     (source / 'backend.py').write_text('''
-from openprogram.providers import registry
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.agentic_programming import llm
+from openprogram.runtime.agent.runtime import factory
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.runtime.agent import llm
 
 def create_runtime(model=None):
     assert model == 'application-test-model'
@@ -123,7 +123,7 @@ def create_runtime(model=None):
             raise ValueError('fixture model failure')
         return 'fixture summary'
     return Runtime(call=call, model=model, max_retries=1)
-registry.create_runtime = create_runtime
+factory.create_runtime = create_runtime
 
 def summarize(value, context):
     return llm(value['text'])
@@ -155,8 +155,9 @@ operations = {'summarize': summarize}
             assert current['status'] == expected, current
             if expected == 'completed':
                 assert current['result'] == 'fixture summary'
-                history = tmp_path / '.openprogram' / 'applications' / 'runs' / run_id / 'history'
-                assert list(history.glob('*.json')), 'model calls must retain their framework trace'
+                from openprogram.state.store.session.session_log import SessionLog
+                session = tmp_path / '.openprogram' / 'programs' / '.runtime' / 'runs' / 'default' / 'chats' / run_id
+                assert SessionLog(session).list_history(), 'model calls must retain their framework trace'
             else:
                 assert 'fixture model failure' in current['error']
 
@@ -167,7 +168,7 @@ def test_install_from_named_desktop_runtime(tmp_path, monkeypatch):
     import sys
     import shlex
     import pytest
-    from openprogram.webui.routes.catalog import applications
+    from openprogram.interfaces.server.routes.catalog import applications
 
     monkeypatch.setenv('HOME', str(tmp_path))
     runtime = tmp_path / 'runtime'

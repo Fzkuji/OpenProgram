@@ -1,0 +1,191 @@
+<title>Docs governance</title>
+<meta name="description" content="One command that keeps the HTML docs in format, short, true and in step with the code.">
+<h1>Docs governance</h1>
+<p>Agents run one command. It fails on what a program can judge, and names the pages a change may have outdated.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 280" role="img" aria-label="Four callers run one command. The pre-commit hook passes staged pages. The test selector passes a worktree&#x27;s changed files or the paths it was given. A deploy passes the commits since the last deploy and only reports. Publishing checks everything. The command prints errors, which block, and warnings with affected pages, which only inform.">
+  <defs><marker id="g-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-cmd" translate="no" x="0" y="40">pre-commit</text>
+  <text class="t-soft" x="0" y="62">Staged pages</text>
+  <line class="ln" x1="240" y1="44" x2="316" y2="136" marker-end="url(#g-a)"/>
+  <text class="t-cmd" translate="no" x="0" y="102">affected_tests</text>
+  <text class="t-soft" x="0" y="124">Changed files</text>
+  <line class="ln" x1="240" y1="106" x2="316" y2="136" marker-end="url(#g-a)"/>
+  <text class="t-cmd" translate="no" x="0" y="164">refresh-dev-instance.sh</text>
+  <text class="t-soft" x="0" y="186">Since last deploy, report only</text>
+  <line class="ln" x1="240" y1="168" x2="316" y2="136" marker-end="url(#g-a)"/>
+  <text class="t-cmd" translate="no" x="0" y="226">publish-github.sh</text>
+  <text class="t-soft" x="0" y="248">Every page</text>
+  <line class="ln" x1="240" y1="230" x2="316" y2="136" marker-end="url(#g-a)"/>
+  <rect class="tile" x="320" y="100" width="168" height="76" rx="8"/>
+  <text class="t-cmd mid" translate="no" x="404" y="134">docs_site.check</text>
+  <text class="t-soft mid" x="404" y="156">One command</text>
+  <line class="ln-acc" x1="488" y1="138" x2="536" y2="60" marker-end="url(#g-a)"/>
+  <text class="t-big" x="544" y="60">Errors</text>
+  <text class="t-soft" x="544" y="82">file, line, fix</text>
+  <line class="ln-acc" x1="488" y1="138" x2="536" y2="138" marker-end="url(#g-a)"/>
+  <text class="t-big" x="544" y="138">Warnings</text>
+  <text class="t-soft" x="544" y="160">content band</text>
+  <line class="ln-acc" x1="488" y1="138" x2="536" y2="216" marker-end="url(#g-a)"/>
+  <text class="t-big" x="544" y="216">Affected pages</text>
+  <text class="t-soft" x="544" y="238">ask, or acknowledge</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><code translate="no">pre-commit</code><small>Staged pages</small></li>
+  <li><code translate="no">affected_tests</code><small>Changed files</small></li>
+  <li><code translate="no">refresh-dev-instance.sh</code><small>Since last deploy, report only</small></li>
+  <li><code translate="no">publish-github.sh</code><small>Every page</small></li>
+  <li class="via"><code translate="no">docs_site.check</code></li>
+  <li class="flow-end"><strong>Errors</strong><small>file, line, fix</small><small>Warnings: content band</small><small>Affected pages: ask, or acknowledge</small></li>
+</ol>
+</figure>
+<h2 id="entry">Entry point</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no" data-claim="example">python -m scripts.docs_site.check a.py docs/x.html</code></th><td>Named paths. Blocks.</td></tr>
+<tr><th scope="row"><code translate="no">… check</code></th><td>Changes against HEAD. Blocks in a worktree. Only reports in the shared checkout on <code translate="no">dev</code>.</td></tr>
+<tr><th scope="row"><code translate="no">… check --base REV</code></th><td>A revision range. Blocks.</td></tr>
+<tr><th scope="row"><code translate="no">… check --staged</code></th><td>The index, for the hook. Blocks.</td></tr>
+<tr><th scope="row"><code translate="no">… check --all</code></th><td>Every page, plus site-wide rules. Blocks.</td></tr>
+<tr><th scope="row"><code translate="no">--report-only</code></th><td>Exit 0 unless the tool itself failed</td></tr>
+<tr><th scope="row"><code translate="no">--json</code></th><td>Findings and impact, for scripts</td></tr>
+<tr><th scope="row"><code translate="no">--unfiltered</code></th><td>Turns the diff filter off: every page citing a changed file</td></tr>
+<tr><th scope="row"><code translate="no">--ack PAGE … --reason TEXT</code></th><td>Record that a page was checked for this change</td></tr>
+</tbody>
+</table>
+<p class="note">Budget: 5 s changed, 15 s everything. Standard library and the CLI parser only: no node, no site build, no network. Exit 0: no error in scope, or <code translate="no">--report-only</code>. Exit 1: an error in scope. Exit 2: the tool itself failed, or a usage error such as a bad <code translate="no">--ack</code>.</p>
+<h2 id="format">Format</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Fix</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">format.style-element</code> <code translate="no">format.script-element</code></th><td>Move to <code translate="no">site.css</code>, or delete</td></tr>
+<tr><th scope="row"><code translate="no">format.event-handler</code> <code translate="no">format.javascript-url</code> <code translate="no">format.embed</code></th><td>Delete it: a page runs and embeds no code</td></tr>
+<tr><th scope="row"><code translate="no">format.style-attribute</code> <code translate="no">format.stylesheet-link</code></th><td>Use a site class</td></tr>
+<tr><th scope="row"><code translate="no">format.missing-title</code> <code translate="no">format.missing-description</code> <code translate="no">format.missing-h1</code> <code translate="no">format.multiple-h1</code></th><td>Each page has exactly one of each</td></tr>
+<tr><th scope="row"><code translate="no">format.missing-pair</code> <code translate="no">format.orphan-zh</code></th><td>Add the other language</td></tr>
+<tr><th scope="row"><code translate="no">format.structure-mismatch</code></th><td>Same sequence of headings, tables, rows, list items, code, folds and figures in both languages</td></tr>
+<tr><th scope="row"><code translate="no">format.unregistered</code></th><td>Add to a section of <code translate="no">TAB_SECTIONS</code>; a design page's section title must be listed in <code translate="no">DESIGN_AREAS</code>. Editing <code translate="no">nav.py</code> rechecks every page.</td></tr>
+<tr><th scope="row"><code translate="no">format.cjk-in-english</code></th><td>Move the text to the <code translate="no">.zh.html</code></td></tr>
+<tr><th scope="row"><code translate="no">format.markdown-source</code></th><td>Convert to HTML. Only generated reference pages stay Markdown.</td></tr>
+<tr><th scope="row"><code translate="no">format.prototype-stale</code></th><td>A listed prototype has no script: remove it from the list</td></tr>
+<tr><th scope="row"><code translate="no">format.zh-stale</code></th><td>Warning: the English text changed and the Chinese page did not</td></tr>
+<tr><th scope="row"><code translate="no">links.broken</code> <code translate="no">links.fragment</code></th><td>Fix the source link. Checked in the sources, so no build is needed.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Failing page outside the list</th><td><code translate="no">build.py</code> raises <code translate="no">DocsFormatError</code>, with file, line and fix. There is no iframe fallback.</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DOCS_FORMAT=quarantine</code></th><td>Markup unsafe to show publishes as a visible error page, in that language only; other faults are logged and the page renders. Set only by deploys and self-update.</td></tr>
+<tr><th scope="row"><code translate="no">PROTOTYPE_PAGES</code></th><td>The list is in <code translate="no">governance/policy.py</code>. A new page there needs a reason in <code translate="no">LOOSENED_BECAUSE</code>.</td></tr>
+</tbody>
+</table>
+<h2 id="content">Content</h2>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">Measure</th><th scope="col">Measured on 363 English pages</th><th scope="col">Error</th><th scope="col">Warning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Words in a paragraph</th><td>p50 19, p95 48, p99 64, max 78</td><td>> 80</td><td>> 60</td></tr>
+<tr><th scope="row">Prose words on a page</th><td>p50 188, p95 1139, p99 1957, max 10199</td><td>> 2000</td><td>> 1500</td></tr>
+<tr><th scope="row">Prose share, at 150 or more prose words</th><td>27 pages above 0.60, 8 above 0.70</td><td>> 0.70</td><td>> 0.60</td></tr>
+<tr><th scope="row">Same sentence twice on a page</th><td>0</td><td>any</td><td>–</td></tr>
+<tr><th scope="row">Same sentence across pages: 6 or more content words, Jaccard 0.8</th><td>7 pairs</td><td>any</td><td>–</td></tr>
+<tr><th scope="row">Sentence covered by one table row, a table of up to 4 rows, or a figure: 6 or more content words; a row counts its column headers</th><td>0 at 0.8, 17 at 0.7, of 7077</td><td>≥ 0.8</td><td>≥ 0.7</td></tr>
+<tr><th scope="row">Words in a table cell</th><td>p50 6, p95 27, p99 42, max 138</td><td>> 140</td><td>> 80</td></tr>
+<tr><th scope="row">Section of bullets only, notes aside</th><td>115 sections, 21 with 6 or more, max 15</td><td>≥ 8 items</td><td>≥ 6 items</td></tr>
+<tr><th scope="row">One block sequence across a tab of 10 or more pages (<code translate="no">--all</code> only)</th><td>Highest: <code translate="no">reference</code> 8%, <code translate="no">capabilities</code> 3%, <code translate="no">design</code> 1%</td><td>> 25%</td><td>> 15%</td></tr>
+</tbody>
+</table>
+<p class="note">The repository holds 726 HTML sources, 363 pairs. Content rules read English; Chinese follows through structure. Prose means <code translate="no">p</code>, <code translate="no">li</code>, <code translate="no">dd</code>, <code translate="no">blockquote</code>, <code translate="no">figcaption</code> and any text sitting directly in a container, outside tables, figures, code and flow twins.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Baseline</th><th scope="col"><code translate="no">governance/baseline.json</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">What can enter</th><td>Content rules only, never format or claims</td></tr>
+<tr><th scope="row">Entry</th><td><code translate="no">rule</code>, <code translate="no">path</code>, <code translate="no">subject</code> hash and a <code translate="no">reason</code> of at least 20 characters; page-level rules also store <code translate="no">max</code>, the measured size</td></tr>
+<tr><th scope="row">Grows</th><td>An entry absent from the fixed reference (<code translate="no">refs/publish/last</code>, else the merge base with <code translate="no">stable</code>) is an error on every run, and never hides a finding</td></tr>
+<tr><th scope="row">Shrinks</th><td>An entry that no longer matches is an error: delete it</td></tr>
+<tr><th scope="row">Editing the text</th><td>A sentence or paragraph rule: the hash changes, so the finding returns. A page-level rule: the page may not exceed <code translate="no">max</code>, which only comes down.</td></tr>
+</tbody>
+</table>
+<h2 id="claims">Claims</h2>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">Reference</th><th scope="col">Verified against</th><th scope="col">Measured</th></tr></thead>
+<tbody>
+<tr><th scope="row">Commands and flags</th><td>Lines starting <code translate="no">openprogram</code>, split with <code translate="no">shlex</code>, walked through <code translate="no">build_parser()</code></td><td>505 commands, 113 flags</td></tr>
+<tr><th scope="row">Removed verbs and flags</th><td>A verb or flag the range removed, written as a whole code span. A flag other commands keep counts only on a page that names its command. A top-level verb counts where the page writes <code translate="no">openprogram</code> with it or lists it among two or more other top-level verbs, because such a word often names an application or a target too.</td><td>Only in a range that changes the parser</td></tr>
+<tr><th scope="row">Repository paths</th><td>Tracked file or directory; git-ignored build output counts; patterns skipped</td><td>1004</td></tr>
+<tr><th scope="row">Partial paths and bare file names</th><td>On product pages, a source suffix and a known top segment must resolve somewhere. On any page, one that resolved before this change and no longer does.</td><td>1310 and 1080; 7 product and 229 record hits unresolved before the rule</td></tr>
+<tr><th scope="row">Modules</th><td>Dotted <code translate="no">openprogram.*</code> that resolves to a file, or an attribute of one; domains excluded</td><td>134</td></tr>
+<tr><th scope="row">Routes</th><td><code translate="no">/api/*</code> and <code translate="no">/healthz</code> found in <code translate="no">interfaces/server</code>; a literal route wins, a parameter fits only if this change did not remove that literal, and only a reference ending <code translate="no">*</code> fits what is beneath</td><td>235</td></tr>
+<tr><th scope="row">Environment variables</th><td><code translate="no">OPENPROGRAM_*</code> present in tracked files</td><td>74 distinct</td></tr>
+<tr><th scope="row">Settings keys</th><td>Argument of <code translate="no">openprogram config</code>, or a key that vanished from <code translate="no">SETTINGS</code> in the range and a page still names</td><td>139 exact; 74 lookalikes are not settings</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Marker</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">&lt;code data-claim="example"&gt;</code></th><td>An illustrative path or command, or a name a design rejected. Not checked.</td></tr>
+<tr><th scope="row"><code translate="no">data-claim="invalid"</code></th><td>A command shown as deliberately wrong. A real command cannot be marked as an example.</td></tr>
+<tr><th scope="row"><code translate="no">references/</code></th><td>Git-ignored peer clones: path syntax only</td></tr>
+</tbody>
+</table>
+<h2 id="impact">Code to docs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reference</th><td>File path, or directory 3 or more levels deep, from the claims above. Bare file names count only if unique.</td></tr>
+<tr><th scope="row">Command, key, route</th><td>Mapped to their source: <code translate="no">cli/parser.py</code>, <code translate="no">state/settings.py</code>, <code translate="no">interfaces/server/routes/</code>. A code span equal to a key is a setting reference.</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="example">&lt;meta name="covers" content="openprogram/x/ scripts/y.py"&gt;</code></th><td>Explicit, English page only, always counts. Required where a page has no reference. <code translate="no">content="none"</code> declares an index or study that describes no code.</td></tr>
+<tr><th scope="row">Filter</th><td>With more than 3 pages on a file, a page counts only when a code word on it is an identifier on the changed lines, not a string, comment or call keyword. For <code translate="no">cli/parser.py</code> the parser diff decides: only pages with a command under a changed command path. For <code translate="no">state/settings.py</code>, the keys of the changed blocks count as changed. The output says how many pages were left out; <code translate="no">--unfiltered</code> turns the filter off.</td></tr>
+<tr><th scope="row">Reported</th><td>The English text of the page did not change and no acknowledgement; a page edited without visible change is shown as edited, please confirm; all of them, ranked</td></tr>
+</tbody>
+</table>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">Replay of 252 commits</th><th scope="col">Pages p50</th><th scope="col">Pages p90</th><th scope="col">Commits with none</th><th scope="col">Doc commits predicted, of 123</th></tr></thead>
+<tbody>
+<tr><th scope="row">Any directory reference</th><td>17</td><td>34</td><td>2</td><td>42</td></tr>
+<tr><th scope="row">Exact file, deep directory</th><td>7</td><td>23</td><td>21</td><td>40</td></tr>
+<tr><th scope="row">Plus diff filter on every file</th><td>5</td><td>17</td><td>37</td><td>38</td></tr>
+<tr><th scope="row">Plus diff filter above 3 pages (chosen)</th><td>6</td><td>17</td><td>24</td><td>40</td></tr>
+</tbody>
+</table>
+<p class="note">With the <code translate="no">covers</code> declarations in place: p50 6, p90 26, 12 commits with no page; 36 of the 41 commits that changed both code and docs were predicted.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Acknowledgement</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Key</th><td>Page, changed file, and the blobs the decision went from and to. A range counts only when acknowledged steps chain from its base to its tip.</td></tr>
+<tr><th scope="row">Store</th><td><code translate="no">&lt;git-common-dir&gt;/openprogram-docs/acknowledgements.jsonl</code>, shared by worktrees, appended</td></tr>
+<tr><th scope="row">Editing the file again</th><td>A new blob, so the page is asked again</td></tr>
+<tr><th scope="row">Limits</th><td>Each page is named and must be in this change's impact report; only files pointing at it are recorded; the shared checkout needs explicit paths. A script looping over <code translate="no">--json</code> can still do it blindly.</td></tr>
+<tr><th scope="row">Lost store</th><td>Warnings return. Nothing breaks, so it need not be versioned.</td></tr>
+</tbody>
+</table>
+<h2 id="wiring">Where it runs</h2>
+<table class="stack even">
+<thead class="sr"><tr><th scope="col">Point</th><th scope="col">Runs</th><th scope="col">Blocks</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Commit in the main checkout</th><td><code translate="no">pre-commit</code>, <code translate="no">--staged</code>, when docs, the baseline or the policy are staged</td><td>Errors on staged pages</td><td>The author is known; with <code translate="no">git commit -- &lt;paths&gt;</code> the index excludes other sessions' files</td></tr>
+<tr><th scope="row">Commit in a worktree</th><td><code translate="no">commit_gate.py</code>, a PreToolUse hook in the tracked <code translate="no">.claude/settings.json</code>, blocks <code translate="no">git commit</code> and <code translate="no">git merge</code>.</td><td>Errors in the branch</td><td><code translate="no">~/.git-hooks</code> cuts the <code translate="no">.git</code> path at its first space, so no Git hook runs here</td></tr>
+<tr><th scope="row">Merge or fast-forward in the main checkout</th><td><code translate="no">post-merge</code>: <code translate="no">--base ORIG_HEAD --report-only</code></td><td>Nothing</td><td>Runs no pre-commit; a cherry-pick runs nothing at all, so it is caught by the next deploy report or at publish</td></tr>
+<tr><th scope="row"><code translate="no">affected_tests --run</code></th><td>Every change</td><td>Errors on named paths or a worktree's own changes</td><td>Agents already run it</td></tr>
+<tr><th scope="row"><code translate="no">affected_tests --run</code>, shared checkout, no paths</th><td>Every change</td><td>Nothing: reports</td><td>The dirty tree holds other sessions' pages</td></tr>
+<tr><th scope="row"><code translate="no">refresh-dev-instance.sh</code></th><td><code translate="no">--base &lt;last deployed&gt; --report-only</code>, then quarantine build</td><td>Nothing</td><td>Commits there come from all sessions</td></tr>
+<tr><th scope="row"><code translate="no">publish-github.sh</code></th><td><code translate="no">--all</code>, before pushing</td><td>Every error</td><td>The whole product leaves the machine; rare and deliberate</td></tr>
+</tbody>
+</table>
+<p class="note">Affected pages and warnings only inform: whether a page needs rewriting takes judgement. Hooks are unversioned, so <code translate="no">scripts/git-hooks/install.sh</code> copies them on every deploy and publish, recording the commit beside them so an older checkout cannot downgrade them; the main checkout warns when one is stale. A hook without a venv, or exit 2, never blocks.</p>
+<h2 id="selection">Test selection</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">A change only under <code translate="no">apps/web</code></th><td>Any non-empty change builds the graph and runs all 27 contract files, 579 tests in 21 s</td></tr>
+<tr><th scope="row">A docs change</th><td><code translate="no">Selection.docs_check</code> runs the entry point. <code translate="no">checklinks</code> fails when <code translate="no">docs/_site</code> is missing.</td></tr>
+<tr><th scope="row">A code change</th><td>The entry point runs on every change for impact</td></tr>
+<tr><th scope="row">A worktree with no <code translate="no">node_modules</code></th><td><code translate="no">--run</code> clones both <code translate="no">node_modules</code> from the main checkout with <code translate="no">cp -c</code>, like <code translate="no">stage-release-assets.sh</code>: 10 s, 160 MB. Never links.</td></tr>
+<tr><th scope="row">A selected Python test that runs <code translate="no">node</code></th><td>Marked by its source; the clone runs for it too. If it cannot, it is left out and counted, exit 2</td></tr>
+<tr><th scope="row">No source to clone, or no <code translate="no">node</code></th><td>Exit 2, naming how many tests could not run and why</td></tr>
+<tr><th scope="row">A Web run reporting <code translate="no">tests 0</code>, or nothing selected for a real change</th><td>Failure, never success</td></tr>
+</tbody>
+</table>
+<h2 id="status">Implementation status</h2>
+<p>Everything above is implemented. The three pages in <code translate="no">baseline.json</code> still need an editorial split. Staged and range checks read <code translate="no">nav.py</code> and <code translate="no">parser.py</code> from the snapshot, but the provider verbs come from disk, so claims against a dirty copy of them only warn.</p>

@@ -1,7 +1,12 @@
 .surfaceChip {
   max-width: none;
-  cursor: pointer;
+  cursor: default;
   font: inherit;
+}
+
+/* Clickable only while it can bring the floating preview back. */
+button.surfaceChip {
+  cursor: pointer;
 }
 
 .surfaceChipLabel {
@@ -19,20 +24,32 @@
 .envChips {
   display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: min(calc(var(--chat-column-max) + 2px), calc(100% - 62px));
-  margin: 0 auto 10px;
+  /* Same 8px as the control row under the input box, so the two rows'
+     circles line up in columns. */
+  gap: 8px;
+  /* overflow-x: auto also clips the y axis, and the row is exactly as
+     tall as its pills, so the pills' drop shadow was cut off flat. The
+     6px padding is room for the shadow; the negative top margin, the
+     shortened bottom margin and the wider max-width give that room back
+     so the chips sit exactly where they did. */
+  max-width: min(calc(var(--chat-column-max) + 12px), calc(100% - 2 * var(--composer-column-gutter, var(--chat-column-gutter)) + 12px));
+  margin: -6px auto 4px;
+  padding: 6px;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
-  --env-pill-bg: var(--chip-bg);
-  --env-pill-ring: var(--chip-ring);
 }
 
 .envChips::-webkit-scrollbar { display: none; }
 .envChips > * { flex-shrink: 0; }
 
-/* Labels are either complete or hidden; they never flex into fragments. */
+/* Labels shrink in steps (use-compact-environment-row.ts), never by
+   flexing into fragments:
+     level 1  [data-squeeze]       long labels capped with an ellipsis,
+                                   the Local chip icon-only
+     level 2  [data-squeeze="2"]   git branch names hidden (icon + badge)
+     level 3  [data-compact=true]  every label hidden, the git diff badge
+                                   reduced to a half-green, half-red dot */
 .envChips > .surfaceChip,
 .envChips :global(.status-badge),
 .envChips :global(.runtime-badge.project-badge),
@@ -45,12 +62,13 @@
 .envChips :global(.status-badge .badge-short),
 .envChips :global(.project-badge .badge-short),
 .envChips :global(.workdir-badge .badge-short),
-.envChips :global(.dag-hud-chip > span),
-.envChips :global(.dag-hud-zoom) {
+.envChips :global(.git-seg-label),
+.envChips :global(.git-seg-badge) {
   flex: 0 0 auto;
   max-width: 40ch;
   opacity: 1;
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   transform: translateX(0);
   transition:
@@ -61,16 +79,28 @@
     transform 170ms ease;
 }
 
-.envChips :global(.dag-hud-zoom) {
-  max-width: 48px;
+.envChips :global(.git-seg-label) { max-width: 24ch; }
+.envChips :global(.git-seg-dot) {
+  transition: width 170ms ease, margin 170ms ease, opacity 130ms ease;
 }
 
+/* Level 1: long names capped. */
+.envChips[data-squeeze] .surfaceChipLabel,
+.envChips[data-squeeze] :global(.project-badge .badge-short),
+.envChips[data-squeeze] :global(.workdir-badge .badge-short),
+.envChips[data-squeeze] :global(.git-seg-label) {
+  max-width: 12ch;
+}
+
+/* Hidden labels: level 1 hides Local's, level 2 the branch names, level 3 all. */
+.envChips[data-squeeze] :global(.status-badge):not(.surfaceChip) :global(.badge-short),
+.envChips[data-squeeze="2"] :global(.git-seg-label),
 .envChips[data-compact="true"] .surfaceChipLabel,
 .envChips[data-compact="true"] :global(.status-badge .badge-short),
 .envChips[data-compact="true"] :global(.project-badge .badge-short),
 .envChips[data-compact="true"] :global(.workdir-badge .badge-short),
-.envChips[data-compact="true"] :global(.dag-hud-chip > span),
-.envChips[data-compact="true"] :global(.dag-hud-zoom) {
+.envChips[data-compact="true"] :global(.git-seg-label),
+.envChips[data-compact="true"] :global(.git-seg-badge) {
   max-width: 0;
   min-width: 0;
   padding-left: 0;
@@ -82,60 +112,44 @@
   transform: translateX(-2px);
 }
 
+.envChips[data-compact="true"] :global(.git-seg-dot) {
+  width: 8px;
+  margin-left: 0;
+  opacity: 1;
+}
+
+.envChips[data-squeeze] :global(.status-badge):not(.surfaceChip),
 .envChips[data-compact="true"] > .surfaceChip,
 .envChips[data-compact="true"] :global(.status-badge),
-.envChips[data-compact="true"] :global(.runtime-badge.project-badge),
-.envChips[data-compact="true"] :global(.runtime-badge.workdir-badge),
-.envChips[data-compact="true"] :global(button.dag-hud-chip) {
-  min-width: 24px;
-  padding-left: 5px;
-  padding-right: 5px;
+.envChips[data-compact="true"] :global(.workdir-add-badge) {
+  /* Icon-only chips are the same 28px circle as the icon pills under
+     the input box. */
+  min-width: 28px;
+  padding-left: 0;
+  padding-right: 0;
   gap: 0;
   justify-content: center;
 }
 
-.trailingControls {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
+
+/* Measuring pass: lay out every level instantly. */
+.envChips[data-measuring] *,
+.envChips[data-measuring] {
+  transition: none !important;
+}
+/* …and with the right-aligned chips packed left, so their auto margin
+   doesn't count as used width (use-compact-environment-row.ts). */
+/* …with every chip at its natural width, so the needs hold at any row
+   width… */
+.envChips[data-measuring] > * {
+  flex-shrink: 0 !important;
+}
+.envChips[data-measuring] > .surfaceChip {
+  margin-left: 0 !important;
 }
 
-/* Status, project, working-directory, and DAG controls share one pill. */
-.envChips :global(.status-badge),
-.envChips :global(.status-badge.connecting),
-.envChips :global(.status-badge.disconnected),
-.envChips :global(.status-badge.paused),
-.envChips :global(.runtime-badge.project-badge),
-.envChips :global(.runtime-badge.workdir-badge),
-.envChips :global(.dag-hud-chip) {
-  height: 24px;
-  min-height: 24px;
-  max-height: 24px;
-  box-sizing: border-box;
-  padding: 0 8px;
-  gap: 6px;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 22px;
-  background: var(--env-pill-bg);
-  box-shadow:
-    inset 0 0 0 1px var(--env-pill-ring),
-    var(--shadow-sm);
-  color: var(--ink-80);
-  transition:
-    padding 170ms ease,
-    gap 170ms ease,
-    background-color 130ms ease,
-    color 130ms ease;
-}
-
-.envChips :global(.status-badge) svg,
-.envChips :global(.runtime-badge.project-badge) svg,
-.envChips :global(.runtime-badge.workdir-badge) svg {
-  width: 14px;
-  height: 14px;
-}
+/* The web page chip is right-aligned: it takes the free space. */
+.envChips > .surfaceChip { margin-left: auto; }
 
 .envChips :global(.indicator-dot) {
   width: 8px;
@@ -143,20 +157,17 @@
 }
 
 .envChips :global(.badge-short) {
-  padding: 0 2px;
+  padding: 0 2px 0 0;
 }
 
-.envChips :global(.status-badge:hover),
-.envChips :global(.status-badge[aria-expanded="true"]),
-.envChips :global(.status-badge.connecting:hover),
-.envChips :global(.status-badge.connecting[aria-expanded="true"]),
-.envChips :global(.runtime-badge.project-badge:hover),
-.envChips :global(.runtime-badge.project-badge[aria-expanded="true"]),
-.envChips :global(.runtime-badge.workdir-badge:hover),
-.envChips :global(button.dag-hud-chip:hover),
-.envChips :global(.dag-hud-chip[aria-expanded="true"]) {
-  background: color-mix(in srgb, var(--text-bright) 6%, var(--env-pill-bg));
-  color: var(--text-bright);
+/* The same 16px glyph and 5px glyph–label gap as the control row below
+   (composer.module.css). A working folder's ✕ keeps its own size. */
+.envChips :is(button, [role="button"], :global(.folder-pill-seg)):not(:global(.workdir-remove)) svg {
+  width: 16px;
+  height: 16px;
+}
+.envChips :is(button, [role="button"], :global(.folder-pill-seg), :global(.folder-pill-name)) {
+  gap: 5px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -164,12 +175,13 @@
   .envChips :global(.status-badge .badge-short),
   .envChips :global(.project-badge .badge-short),
   .envChips :global(.workdir-badge .badge-short),
-  .envChips :global(.dag-hud-chip > span),
-  .envChips :global(.dag-hud-zoom),
   .envChips :global(.status-badge),
   .envChips :global(.runtime-badge.project-badge),
   .envChips :global(.runtime-badge.workdir-badge),
-  .envChips :global(.dag-hud-chip) {
+  .envChips :global(.git-seg-label),
+  .envChips :global(.git-seg-badge),
+  .envChips :global(.git-seg-dot),
+  .envChips :global(.folder-pill-seg) {
     transition: none;
   }
 }

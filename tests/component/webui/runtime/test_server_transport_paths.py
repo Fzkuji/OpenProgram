@@ -4,8 +4,8 @@ from pathlib import Path
 
 import openprogram
 
-from openprogram.webui.routes import chat, docs
-from openprogram.webui.routes.catalog import functions, programs
+from openprogram.interfaces.server.routes import chat, docs
+from openprogram.interfaces.server.routes.catalog import functions, programs
 
 
 ROOT = Path(__file__).resolve().parents[4]

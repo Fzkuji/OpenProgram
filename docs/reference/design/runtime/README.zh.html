@@ -1,0 +1,175 @@
+<title>运行时</title>
+<meta name="description" content="Agent 运行时如何组织，主要契约为什么这样定。">
+<h1>运行时</h1>
+
+<p class="note">API 用法见 <a href="../../api/runtime.zh.html">Runtime API</a>。</p>
+
+<h2 id="package-layout">包结构</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col"><code translate="no">openprogram/runtime/</code></th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent/</code></th><td>一次模型调用：<code translate="no">Agent</code> 类及其使用 <code translate="no">Context</code> 的方式、<code translate="no">agent()</code> 和 <code translate="no">llm()</code>、工具循环（<code translate="no">loop/</code>：<code translate="no">loop.py</code>、<code translate="no">driver.py</code> 中的 <code translate="no">LoopDriver</code>、<code translate="no">AgentSession</code>、工具和事件类型、重试）以及 <code translate="no">Runtime</code>。这是 Agentic Programming 的代码。</td></tr>
+<tr><th scope="row"><code translate="no">conversation/</code></th><td>建立在 <code translate="no">Agent</code> 上的对话和轮次：<code translate="no">turn_runtime/</code> 运行一轮，<code translate="no">chat.py</code> 是 <code translate="no">ChatAgent</code>，<code translate="no">production_driver/</code> 把一轮作为规范执行驱动，<code translate="no">run_control/</code> 跟踪运行中的轮次；还有会话设置、收件箱、未完工作、回退和常驻 Agent。</td></tr>
+<tr><th scope="row"><code translate="no">jobs/</code></th><td>后台运行：作业存储、运行池、<code translate="no">resource_governance/</code>（准入和限额）。</td></tr>
+<tr><th scope="row"><code translate="no">agent_registry/</code></th><td>保存的 Agent 配置：有哪些，各自的模型、工具和工作区。</td></tr>
+<tr><th scope="row"><code translate="no">permissions/</code></th><td>工具调用能做什么：<code translate="no">policy</code>（唯一决策）、<code translate="no">identity</code>（非所有者的限制）、<code translate="no">refusal</code>（拒绝文本的唯一来源）、审批、审计、<code translate="no">authority</code>（谁在请求）、<code translate="no">attended</code> 模式（无人值守时不提问）。</td></tr>
+<tr><th scope="row"><code translate="no">context/</code></th><td><code translate="no">Context</code> 类（<code translate="no">model.py</code>）和决定模型看到什么的一切：渲染、压缩、系统提示、<code translate="no">session_db.py</code>。</td></tr>
+<tr><th scope="row"><code translate="no">execution/</code></th><td>暂停、取消和恢复的控制面：执行存储、修订、等待、检查点。</td></tr>
+<tr><th scope="row"><code translate="no">events/</code></th><td>事件总线。</td></tr>
+<tr><th scope="row"><code translate="no">scheduler/</code>、<code translate="no">proactive/</code>、<code translate="no">commands/</code></th><td>定时运行、主动策略、斜杠命令。</td></tr>
+</tbody>
+</table>
+
+<figure>
+<img src="execution/agent-code-structure.svg" alt="按概念划分的运行时包">
+</figure>
+
+<h3 id="dependency-direction">依赖方向</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">功能</th><td><code translate="no">conversation</code>、<code translate="no">jobs</code>、<code translate="no">agent_registry</code>、<code translate="no">scheduler</code>、<code translate="no">proactive</code>、<code translate="no">commands</code> 建立在 <code translate="no">agent</code> 上</td></tr>
+<tr><th scope="row">调用核心</th><td><code translate="no">agent</code> 建立在下层包上，绝不导入功能包</td></tr>
+<tr><th scope="row">下层</th><td><code translate="no">execution</code>、<code translate="no">context</code>、<code translate="no">permissions</code>、<code translate="no">events</code> 不导入 <code translate="no">agent</code></td></tr>
+<tr><th scope="row">检查</th><td><code translate="no">tests/contracts/repository/test_runtime_layering.py</code>；违反方向的导入是只减不增的冻结清单。<code translate="no">context</code> 和 <code translate="no">permissions</code> 已完全遵守。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>下层包如何用到上层</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">注册</th><th scope="col">提供</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">conversation/context_registration.py</code></th><td><code translate="no">open_work</code> 系统提示段落和上下文分解用的 Agent 配置加载器</td></tr>
+<tr><th scope="row"><code translate="no">conversation/permission_registration.py</code></th><td><code translate="no">permissions/session_facts.py</code> 读取的会话和轮次事实</td></tr>
+<tr><th scope="row"><code translate="no">context/scope.py</code></th><td><code translate="no">Context</code> 读取的任务级调用状态（<code translate="no">_call_id</code>、工作流调用点）；调用核心从这里导入</td></tr>
+<tr><th scope="row"><code translate="no">runtime/agent/engine_link.py</code></th><td>调用核心需要引擎提供内容的唯一端口：运行持久轮次或保存的续跑（<code translate="no">Agent.run_turn</code> / <code translate="no">resume_turn</code>）及其 Agent 配置、保存 Agent 的工具、绑定恢复的工具调用的预批准问题等待、Worker 是否正在停止、运行中作业的活动和操作超时、可恢复工具循环写检查点的运行时契约</td></tr>
+<tr><th scope="row"><code translate="no">conversation/engine_registration.py</code></th><td>导入 <code translate="no">openprogram.runtime.conversation</code> 时实现该端口；Worker 和 Server 在启动时导入。同一导入带入 <code translate="no">conversation/run_control</code>，由它接管核心的取消检查。</td></tr>
+</tbody>
+</table>
+<ul>
+<li>什么都未注册时核心就是普通库：Worker 不在停止，没有后台作业，<code translate="no">Agent.run_turn</code> 抛出 <code translate="no">EngineUnavailable</code>。</li>
+<li>有无引擎都直接导入：绑定的会话和执行、嵌套调用准入和终态标记（<code translate="no">execution/run_control/</code>）、审批门（<code translate="no">permissions.approval.wrap_with_approval</code>）、预批准等待 id（<code translate="no">permissions.session_facts</code>）。</li>
+<li><code translate="no">TurnRequest</code> 和生效中的请求（<code translate="no">agent/turn_request.py</code>）是引擎构建并绑定的调用核心类型。</li>
+<li>模块只导出自己拥有的名字：执行绑定来自 <code translate="no">openprogram.runtime.execution.run_control</code>，权限词汇来自 <code translate="no">permissions/modes.py</code>，工具契约（<code translate="no">AgentTool</code>、<code translate="no">AgentToolResult</code>）来自 <code translate="no">openprogram.models.providers.types</code>，调用作用域 ContextVar 来自 <code translate="no">context/scope.py</code>。<code translate="no">tests/contracts/repository/test_no_transitional_reexports.py</code> 防止移走的名字回来。</li>
+<li>在子进程中运行轮次 Agent 方法工具的 <code translate="no">process_runner.py</code> 是引擎代码，位于 <code translate="no">conversation/</code>。</li>
+</ul>
+</details>
+
+<h2 id="runtime-design-rationale">一个运行时，一个会话</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">create_runtime()</code></th><td>打开会话</td></tr>
+<tr><th scope="row"><code translate="no">runtime.exec()</code></th><td>在其中发送一次请求</td></tr>
+<tr><th scope="row"><code translate="no">runtime.close()</code></th><td>关闭会话</td></tr>
+</tbody>
+</table>
+<p>没有 <code translate="no">reset()</code> 或 <code translate="no">new_session()</code>；新会话就是再调用 <code translate="no">create_runtime()</code>。两段独立对话需要两个运行时对象，这种情况很少。</p>
+<details>
+<summary>为什么一个 Runtime 不复用多个会话</summary>
+<ul>
+<li>CLI Provider 的会话状态在子进程里；复用要在 Runtime 上挂可变的当前会话 id，引入并发竞争。</li>
+<li>API Provider 本身无状态；多会话只是上层的一个 dict，没有新能力。</li>
+<li>ContextVar 注入依赖运行时绑定到当前函数树。</li>
+</ul>
+</details>
+
+<h2 id="contextvar-injection">运行时通过 ContextVar 注入</h2>
+<p>没有 <code translate="no">runtime=</code> 的 Agent 方法读取 <code translate="no">_current_runtime</code> ContextVar。入口函数两者都没有时调用 <code translate="no">create_runtime()</code>，并在退出时关闭。子函数继承父函数的运行时。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">未采用</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">每个签名显式写 <code translate="no">runtime: Runtime</code></th><td>与函数逻辑无关的传递代码，每层嵌套都要重复</td></tr>
+<tr><th scope="row">模块级单例</th><td>跨线程和协程共享，并发 Agent 互相干扰。ContextVar 按线程和协程隔离。</td></tr>
+</tbody>
+</table>
+
+<h2 id="provider-abstraction">会话型与 API 型 Provider 共用一个抽象</h2>
+<p>作者看到的是 <code translate="no">llm(...)</code> / <code translate="no">agent(...)</code>，最终都到 <code translate="no">runtime.exec</code>。<code translate="no">has_session</code> 决定内部路径。</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">会话型 Provider（CLI）</th><th scope="col">API Provider</th></tr></thead>
+<tbody>
+<tr><th scope="row">对话记忆</th><td>由子进程保存</td><td>无；每次 exec 独立</td></tr>
+<tr><th scope="row">上下文注入</th><td>跳过 DAG 渲染；只发 docstring 和当前内容</td><td>经 <code translate="no">render_context</code> + <code translate="no">render_dag_messages</code> 从 DAG 组装历史</td></tr>
+<tr><th scope="row"><code translate="no">render_range.subcalls</code></th><td>无效</td><td>限定注入历史的范围</td></tr>
+</tbody>
+</table>
+<p class="note">两个 Runtime 类意味着每个函数两份实现，破坏“函数描述任务，Provider 描述通道”的分层。代价只是一个条件分支。</p>
+
+<h2 id="retry">重试在运行时层</h2>
+<p><code translate="no">exec()</code> / <code translate="no">async_exec()</code> 带 <code translate="no">max_retries</code>，默认 3（<code translate="no">OPENPROGRAM_MAX_RETRIES</code>），对所有 Provider 生效。Provider 只管收发；重试、限流、缓存都在运行时。</p>
+<ul>
+<li>网络超时、限流和 5xx 共用一个策略。</li>
+<li>统一的失败格式：<code translate="no">Attempt N: ErrorType: msg</code>。</li>
+<li><code translate="no">TypeError</code>、<code translate="no">NotImplementedError</code> 和 <code translate="no">ImportError</code> 不重试：Provider 的 bug 或缺失的子系统不会因重试消失，走完退避只会推迟失败。</li>
+</ul>
+
+<h2 id="dag-writes">DAG 写入</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">时机</th><th scope="col">写入</th></tr></thead>
+<tbody>
+<tr><th scope="row">进入 Agent 方法</th><td>code 节点，<code translate="no">status=running</code>；<code translate="no">_call_id</code> 指向它</td></tr>
+<tr><th scope="row">函数体内 <code translate="no">runtime.exec()</code></th><td><code translate="no">_call_id</code> 下的 llm 节点，<code translate="no">caller = _call_id</code></td></tr>
+<tr><th scope="row">退出（return 或 except）</th><td>回填同一 code 节点的输出和状态</td></tr>
+<tr><th scope="row"><code translate="no">expose="hidden"</code></th><td>不写 code 节点；仍设幻影 <code translate="no">_call_id</code>，让内部 LLM 调用有帧可引用</td></tr>
+</tbody>
+</table>
+<p class="note">写两次而不是完成时写一次：可视化能立刻显示运行中的调用，异常退出也有节点记录错误。</p>
+
+<h2 id="embedding-seams">嵌入接缝</h2>
+<p>核心可运行在非 OpenProgram 的宿主中（<a href="../../../capabilities/agentic-programming/embedding-in-your-own-stack.zh.html">嵌入你自己的技术栈</a>）。<code translate="no">tests/component/runtime/test_standalone_embed.py</code> 执行该契约：</p>
+<ul>
+<li><code translate="no">import openprogram</code> 和完整的 <code translate="no">Runtime(call=...).exec()</code> 往返不引入 <code translate="no">webui</code>、FastAPI、Uvicorn 或 Textual。</li>
+<li>使用 <code translate="no">SessionStore(root_path=...)</code> + <code translate="no">session_scope(store, session_id)</code> 时，运行绝不查询 <code translate="no">openprogram.state.paths</code>；没有绑定存储时不持久化。</li>
+<li>独立运行开始时的主人身份每个进程生成一次、从不落盘，等级为 <code translate="no">owner</code>。调用方传入 profile 的 Runtime，或运行向 profile 的模型发出请求时，它成为 profile 的主人。使用宿主提供的 <code translate="no">call=</code> 的运行，无论宿主在哪里创建它，都不读 <code translate="no">owner.json</code>。</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">接缝</th><th scope="col">核心默认</th><th scope="col">平台注册</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">set_cancellation_check</code>（<code translate="no">openprogram.host.cancellation</code>）</th><td>空操作</td><td><code translate="no">openprogram.runtime.conversation.run_control</code> 在导入时注册精确的执行检查</td></tr>
+<tr><th scope="row"><code translate="no">set_session_id_provider</code></th><td><code translate="no">None</code>；<code translate="no">runtime.can_ask()</code> 为 <code translate="no">False</code></td><td><code translate="no">run_control</code> 提供活动会话 id</td></tr>
+<tr><th scope="row"><code translate="no">session_scope(store, id)</code></th><td>未设置；不持久化</td><td>调度器绑定每轮存储</td></tr>
+</tbody>
+</table>
+<p class="note">钩子与 <code translate="no">add_pre_invocation_hook</code> 同型，保持单向依赖，同时由 <code translate="no">run_control</code> 检查精确的执行令牌。</p>
+
+<details>
+<summary>实现文件</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/</code></th><td>Runtime 基类、<code translate="no">exec</code> / <code translate="no">_call</code> 协议、重试循环</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/call_state.py</code></th><td>装饰器、<code translate="no">_inject_runtime</code>、<code translate="no">_current_runtime</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/models/providers/catalog/registry.py</code></th><td><code translate="no">detect_provider</code>、内置 <code translate="no">PROVIDERS</code> 表</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/runtime/factory.py</code></th><td>根据该检测构建 Runtime 的 <code translate="no">create_runtime</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/provider_runtimes/</code></th><td>订阅和 CLI 凭据 Provider 的 Runtime 子类（<code translate="no">openai_codex.py</code>、<code translate="no">google_gemini_cli.py</code>）和 <code translate="no">PROVIDER_RUNTIMES</code>。其余用基类 Runtime；<code translate="no">openprogram/models/providers/adapters/&lt;vendor&gt;/</code> 只有模型、认证和线上协议代码。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/nodes.py</code></th><td><code translate="no">render_context</code>：DAG 到 reads（<code translate="no">render_range</code> 的实际语义）</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/render.py</code></th><td><code translate="no">render_dag_messages</code>：reads 到 Provider 消息</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="related-designs">相关设计</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="dag/overview.zh.html">执行记录</a></th><td>权威数据模型：一张图，节点角色 user、llm、code，caller 和 predecessor 边，<code translate="no">render_context</code></td></tr>
+<tr><th scope="row"><a href="dag/rendering.zh.html">DAG 渲染</a></th><td>权威：布局、边、图例、默认可见性，12 个场景</td></tr>
+<tr><th scope="row"><a href="dag/branch-collaboration.zh.html">分支协作</a></th><td>通信、派发、合并</td></tr>
+<tr><th scope="row"><a href="dag/nested-llm-node-content.zh.html">嵌套 LLM 节点内容</a></th><td>有序对话块</td></tr>
+<tr><th scope="row"><a href="execution/agent-call-flow.zh.html">调用流程</a></th><td>轮次和循环骨架，与节点模型正交</td></tr>
+<tr><th scope="row"><a href="execution/agent-worktree.zh.html">Agent worktree</a></th><td>Worktree</td></tr>
+<tr><th scope="row"><a href="execution/async-job-lifecycle.zh.html">异步作业生命周期</a></th><td>后台作业</td></tr>
+<tr><th scope="row"><a href="execution/control.zh.html">执行控制</a></th><td>权威：暂停、继续、单步、引导、取消、检查点、修订、恢复</td></tr>
+<tr><th scope="row"><a href="execution/dispatcher-split.zh.html">调度器拆分</a></th><td><code translate="no">conversation/turn_runtime/</code> 一职责一模块</td></tr>
+<tr><th scope="row"><a href="execution/agentic-llm-streaming.zh.html">嵌套 <code translate="no">llm()</code> 流式</a></th><td>按节点的 token：协议、缓冲、持久化、取消和重连，进程内和子进程</td></tr>
+<tr><th scope="row"><a href="operations/file-management.zh.html">文件管理</a></th><td>权威：归属、Review、Undo、Restore、分支对齐、多 Agent 所有权</td></tr>
+<tr><th scope="row"><a href="operations/streaming-resume.zh.html">流式恢复</a></th><td>重连运行中的流</td></tr>
+<tr><th scope="row"><a href="operations/user-input-requests.zh.html">用户输入请求</a></th><td><code translate="no">runtime.ask</code> / <code translate="no">confirm</code>、问题注册表、WS/REST 协议、子进程桥</td></tr>
+<tr><th scope="row"><a href="session/README.zh.html">会话</a></th><td>数据模型、存储、命名、列表、生命周期、广播</td></tr>
+<tr><th scope="row"><a href="collaboration/agent-collaboration.zh.html">Agent 协作</a></th><td>权威：一个跨分支原语、四个域、工具面、三个预算；<a href="collaboration/agent-collab-architecture.zh.html">工具面</a>、<a href="collaboration/agent-collab-comparison.zh.html">八个参考实现对比</a></td></tr>
+<tr><th scope="row"><a href="security/permission-decision.zh.html">权限决策</a></th><td>唯一决策路径、模式、拒绝契约</td></tr>
+<tr><th scope="row"><a href="security/sandbox-architecture.zh.html">沙箱架构</a></th><td>权限层级、权限模式和审批、强制执行、对比、证据</td></tr>
+</tbody>
+</table>

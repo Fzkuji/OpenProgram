@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from openprogram.operations.project_site import SITE_HOST, SITE_URL
 from scripts.docs_site.indexnow import (
     ENDPOINT,
     HOST,
@@ -39,22 +40,24 @@ def test_site_publish_notifies_indexnow_after_repository_publish() -> None:
 def test_indexnow_payload_is_deduplicated_and_protocol_complete(tmp_path: Path) -> None:
     sitemap = tmp_path / "sitemap.xml"
     sitemap.write_text(_sitemap([
-        "https://openprogram.io/",
-        "https://openprogram.io/docs/",
-        "https://openprogram.io/",
+        SITE_URL,
+        f"{SITE_URL}docs/",
+        SITE_URL,
     ]))
 
     assert payloads(sitemap) == [{
         "host": HOST,
         "key": KEY,
         "keyLocation": KEY_LOCATION,
-        "urlList": ["https://openprogram.io/", "https://openprogram.io/docs/"],
+        "urlList": [SITE_URL, f"{SITE_URL}docs/"],
     }]
 
 
 @pytest.mark.parametrize("url", [
-    "http://openprogram.io/",
+    SITE_URL.replace("https://", "http://", 1),
     "https://example.com/",
+    # The right host but outside the site, such as another project's pages.
+    f"https://{SITE_HOST}/elsewhere/",
 ])
 def test_indexnow_rejects_noncanonical_urls(tmp_path: Path, url: str) -> None:
     sitemap = tmp_path / "sitemap.xml"
@@ -65,7 +68,7 @@ def test_indexnow_rejects_noncanonical_urls(tmp_path: Path, url: str) -> None:
 
 
 def test_indexnow_splits_more_than_one_batch(tmp_path: Path) -> None:
-    urls = [f"https://openprogram.io/docs/{index}" for index in range(MAX_URLS + 1)]
+    urls = [f"{SITE_URL}docs/{index}" for index in range(MAX_URLS + 1)]
     sitemap = tmp_path / "sitemap.xml"
     sitemap.write_text(_sitemap(urls))
 
@@ -78,7 +81,7 @@ def test_indexnow_ignores_non_sitemap_loc_tags(tmp_path: Path) -> None:
     sitemap = tmp_path / "sitemap.xml"
     sitemap.write_text(
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-        '<evil-loc>https://openprogram.io/injected</evil-loc>'
+        f'<evil-loc>{SITE_URL}injected</evil-loc>'
         "</urlset>"
     )
 
@@ -90,11 +93,11 @@ def test_indexnow_removes_stale_batches_after_validating(tmp_path: Path) -> None
     sitemap = tmp_path / "sitemap.xml"
     output = tmp_path / "batches"
     sitemap.write_text(_sitemap([
-        f"https://openprogram.io/docs/{index}" for index in range(MAX_URLS + 1)
+        f"{SITE_URL}docs/{index}" for index in range(MAX_URLS + 1)
     ]))
     assert len(write_payloads(sitemap, output)) == 2
 
-    sitemap.write_text(_sitemap(["https://openprogram.io/current"]))
+    sitemap.write_text(_sitemap([f"{SITE_URL}current"]))
     paths = write_payloads(sitemap, output)
 
     assert [path.name for path in paths] == ["batch-1.json"]

@@ -1,0 +1,79 @@
+<title>设计理念</title>
+<meta name="description" content="Agentic Programming 解决什么问题、为什么反转控制权，以及三个基本元素。">
+<h1>设计理念</h1>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">传统 Agent</th><th scope="col">Agentic Programming</th></tr></thead>
+<tbody>
+<tr><th scope="row">流程</th><td>LLM 规划，循环运行到它说完成</td><td>Python 代码</td></tr>
+<tr><th scope="row">决策</th><td>LLM 判断每一步、工具和参数</td><td>Python 决定是否调用 LLM</td></tr>
+<tr><th scope="row">状态</th><td>塞进上下文</td><td>函数变量、返回值</td></tr>
+<tr><th scope="row">测试</th><td>提示词回归</td><td>单元测试</td></tr>
+</tbody>
+</table>
+<p>把控制权交给概率黑盒，去做确定性代码本可以完成的工作，轨迹每次不同，历史不断膨胀。无法保证完成，出错也分不清是提示词、工具还是幻觉。</p>
+<p>所以把任务拆成函数调用图，逐节点决定：用普通 Python，还是用调用 <code translate="no">llm(...)</code> 的 <code translate="no">Agent</code> 方法来做理解、生成或判断。LLM 成为你调用、约束和组合的东西。</p>
+<h2>三个基本元素</h2>
+<h3><code translate="no">Agent</code> 方法</h3>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+from openprogram.runtime.agent import llm
+
+class ExampleAgent(Agent):
+    method_options = {'summarize': {'tool': True}}
+
+    def summarize(self, text: str) -&gt; str:
+        """Summarize a text in one sentence, preserving the core point."""
+        return llm([{"type": "text", "text": (
+            f"Summarize in one sentence, preserving the core point:\n\n{text}"
+        )}])
+
+_example_agent = ExampleAgent()
+summarize = _example_agent.summarize</code></pre>
+<p class="note">docstring 作为描述性上下文随调用传递；<code translate="no">llm(...)</code> 在环境 Runtime 上发起一次模型调用。对调用者来说，<code translate="no">summarize(article)</code> 就是普通 Python 函数。</p>
+<h3><code translate="no">Runtime</code></h3>
+<p>打包对话历史，调用 Provider（Anthropic、OpenAI、Claude Code 等），把结果写回上下文。编排用 <code translate="no">llm()</code>；<code translate="no">Runtime.exec()</code> 是其下层的嵌入 API。</p>
+<h3><code translate="no">Context</code></h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">DAG</th><td>每次 Agent 执行拥有一个。对话记录用户消息、模型请求和直接派发的工具；普通帮助函数不产生持久节点。</td></tr>
+<tr><th scope="row">另一个 Agent</th><td>独立 DAG；父级保存结果和 <code translate="no">child_session_id</code> 引用</td></tr>
+<tr><th scope="row">归属</th><td>权限、取消和文件检查点仍属于发起的执行</td></tr>
+<tr><th scope="row"><code translate="no">llm()</code> 历史</th><td>从 DAG 渲染，所以上下文是在函数上声明的属性</td></tr>
+<tr><th scope="row"><code translate="no">expose</code></th><td>调用完成后向父级暴露什么。<code translate="no">"io"</code>（名称、输入、输出；工具默认），普通方法默认 <code translate="no">"full"</code>。</td></tr>
+<tr><th scope="row"><code translate="no">render_range</code></th><td>函数自身的调用读取多少历史。<code translate="no">{"callers": 0}</code> 得到隔离的草稿上下文。</td></tr>
+</tbody>
+</table>
+<p class="note">同一个 DAG 也是调试视图：可视化、Token 统计、回放失败路径。</p>
+<h2>衍生概念</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">概念</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row">LLM 也写代码</th><td>Agent 用普通文件编辑编写函数，不需要专门的 <code translate="no">create()</code> 或 <code translate="no">fix()</code>。通过 <code translate="no">openprogram programs check</code> 后，worker 无需重启即可从 <code translate="no">~/.openprogram/programs/</code> 加载。代码是数据，LLM 是编译器，函数是产物。</td></tr>
+<tr><th scope="row">双模式</th><td>既是可导入、手写的库，也是在 CLI 或 WebUI 里提需求的产品。得到的是可读的 Python，可以逐步理解。</td></tr>
+</tbody>
+</table>
+<h2>与传统框架对比</h2>
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">LangChain、AutoGPT</th><th scope="col">Agentic Programming</th></tr></thead>
+<tbody>
+<tr><th scope="row">抓取 10 个页面并逐个摘要</th><td>Agent 决定顺序和并行</td><td><code translate="no">for url in urls: summarize(fetch(url))</code></td></tr>
+<tr><th scope="row">跨 3 次对话记住上下文</th><td>记忆库，每次查询</td><td>一个 Python 局部变量</td></tr>
+<tr><th scope="row">让 LLM 决定调用哪个工具</th><td>函数调用加 agent loop</td><td><code translate="no">agent(prompt, tools=[...])</code> 或 <code translate="no">decision.make(prompt, options)</code></td></tr>
+<tr><th scope="row">出错重试</th><td>Agent 自行决定</td><td><code translate="no">try/except</code> 和代码门控：校验拦下无效选择，模型重新决定</td></tr>
+</tbody>
+</table>
+<p class="note">Agent 框架适合完全开放、目标模糊的任务。</p>
+<details>
+<summary>范式在代码中的位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram/runtime/agent/</code></th><td>引擎</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/runtime/context/</code></th><td>扁平 DAG 上下文</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/models/</code></th><td>LLM Provider</td></tr>
+<tr><th scope="row"><code translate="no">openprogram/programs/</code></th><td>按此范式写成的工具和应用</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/</code></th><td>不写代码也能运行的 Web UI</td></tr>
+</tbody>
+</table>
+</details>
+<p class="next"><a href="https://arxiv.org/abs/2606.15874">论文</a>，KDD 2026 AgenticSE workshop · <a href="../../start/GETTING_STARTED.zh.html">开始使用</a> · <a href="../../reference/API.zh.html">API 参考</a> · <a href="../../reference/design/README.zh.html">设计</a></p>

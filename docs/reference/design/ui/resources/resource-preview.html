@@ -1,0 +1,218 @@
+<title>Resources and operation preview</title>
+<meta name="description" content="How the right-sidebar Resources list, the chat preview and human use of Agent-operated Pages behave.">
+<h1>Resources and operation preview</h1>
+
+<p>Resources lists every target a conversation uses, by type. One chat preview follows the target the viewed branch operated on last. Agent-opened Pages stay in the background and add no top tabs.</p>
+<p class="note">Related: <a href="session-resources.html">Session resources</a>, <a href="resource-panel-preview-plan.html">Resource panel and preview interaction</a>, <a href="../browser/browser-control-surfaces.html">Browser control surfaces</a>, <a href="../browser/agent-control-overlay.html">Agent control overlay</a>.</p>
+
+<h2 id="experience">Actions on a resource</h2>
+<table class="stack">
+<thead><tr><th scope="col">Action</th><th scope="col">Preview</th><th scope="col">Page and tabs</th></tr></thead>
+<tbody>
+<tr><th scope="row">Click a row</th><td>Shows the target in chat. Auto or Fixed preview is unchanged.</td><td>Current tab stays</td></tr>
+<tr><th scope="row">Preview in conversation (icon)</th><td>Same as a row click; restores a hidden preview. From a webpage in the center, activates the owning session without changing the viewed branch.</td><td>Exact existing Page, no top tab</td></tr>
+<tr><th scope="row">Open page</th><td>Hides the preview and its reserved space. Returning to the conversation restores it unless the user hid it.</td><td>Same Page as an ordinary top tab; repeats reuse it</td></tr>
+<tr><th scope="row">Expand, drag, resize</th><td>Same target, new presentation</td><td>No copy, no reload; a native application is not raised</td></tr>
+<tr><th scope="row">Close preview (hide)</th><td>Stays hidden; later events cannot reopen it. There is no Show preview control.</td><td>Page, background work and rows stay; capture stops</td></tr>
+<tr><th scope="row">Close webpage</th><td>Unavailable state</td><td>Closes the real Page; lists affected references first</td></tr>
+</tbody>
+</table>
+<p class="note">Resources has no Pin control and no search field. Explicitly pinned or user-opened top pages remain ordinary views; migration does not close them.</p>
+
+<h2>Following</h2>
+<dl class="pairs">
+<dt>Scope</dt><dd>At most one preview per App window. Preferences belong to the viewed conversation and branch, and resource selection never changes that branch.</dd>
+<dt>Trigger</dt><dd>Only host-admitted operation events in that branch, including observe. Opening a resource, status polling or a screenshot does not switch.</dd>
+<dt>Auto preview</dt><dd>The More checkbox <em>Automatically show the page the Agent is using</em> turns it on and returns to the latest admitted operation. A clicked target stays until the next operated Page replaces it.</dd>
+<dt>Fixed preview</dt><dd>Checkbox off: the current Page stays. The Agent continues and cannot replace it. Not persisted across reloads.</dd>
+<dt>Child agents</dt><dd>A parent follows its own and its child executions in host dispatch order, naming the active agent. A child window follows only its branch.</dd>
+<dt>Changing branch</dt><dd>Restores that branch's preference; a new one follows its latest target, its unavailable state, or an empty state. Other branches keep running but cannot replace the preview.</dd>
+<dt>Closed target</dt><dd>Clears Operating and shows unavailable or last frame until a newer admitted operation or a new selection. It never falls back to an older resource.</dd>
+<dt>Other branch's resource</dt><dd>Inspecting neither checks that branch out nor grants write access.</dd>
+</dl>
+<details>
+<summary>Native windows and terminals</summary>
+<ul>
+<li>A function result naming <code translate="no">target</code> (<code translate="no">window_id</code>, <code translate="no">pid</code>, <code translate="no">app_name</code>) moves the preview to that app.</li>
+<li>The worker keeps only the latest window and screenshot per conversation, in memory, broadcasts <code translate="no">native.window</code> and serves <code translate="no">/api/session/{id}/native-window/frame</code>.</li>
+<li>A GUI step inside an agentic subprocess forwards the window to the worker, which attributes it to the owning conversation.</li>
+<li>The preview shows what the Agent last saw, not a live view.</li>
+<li>A terminal moves the preview when it starts running or receives input; the preview mirrors its screen read-only.</li>
+<li>Pinning keeps only Pages.</li>
+</ul>
+</details>
+
+<h2>Target types</h2>
+<table class="stack">
+<thead><tr><th scope="col">Target</th><th scope="col">Background and preview</th><th scope="col">Human entry</th><th scope="col">Limits</th></tr></thead>
+<tbody>
+<tr><th scope="row">Browser Page</th><td>Exact Page/CDP target with its document, login and navigation state; previewing does not activate it</td><td>The live tab: readable, scrollable, interactive</td><td>Closed pages, lost ownership and stale frames stop writes. Reopening a URL is a new resource.</td></tr>
+<tr><th scope="row">Native application window</th><td>Exact process and window; capture and verified background input where available. Shows Background control, Preview only or Foreground required.</td><td>The original application, even when background automation is unsupported</td><td>Background control of every application is not promised. Minimized, locked, missing permission and uncertain identity each explain themselves. Raising needs explicit selection.</td></tr>
+<tr><th scope="row">Host desktop</th><td>A display and its coordinates; no input environment independent of the user</td><td>The real keyboard and mouse</td><td>Global input can affect the user's work. Never labelled background control. Layout changes invalidate coordinates.</td></tr>
+<tr><th scope="row">VM display</th><td>Guest display and input without a foreground host console; VM, guest session and display service must run</td><td>OpenProgram guest console or an authorized VNC/RDP console</td><td>Missing session, locked guest or lost display have explicit states. Reconnecting never replays uncertain input. Docker is optional.</td></tr>
+<tr><th scope="row">External browser, read-only stream</th><td>Needs a verified tab binding; matching URLs do not identify a tab</td><td>Open in original browser, View only, Reconnect required or Closed</td><td>Screenshots are never input surfaces. Recreating a target is separate.</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Popups of a Page</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent Page's popup</th><td>Loads in the background, registers under the opener's conversation, branch and execution (<code translate="no">webtab_popup</code>)</td></tr>
+<tr><th scope="row">Telling the Agent</th><td>Listed in the result of the action that opened it; the Agent operates it by its tab id</td></tr>
+<tr><th scope="row">Following</th><td>Switches only when an operation targets it</td></tr>
+<tr><th scope="row">User Page's popup</th><td>Opens in front and is not adopted</td></tr>
+<tr><th scope="row">Desktop</th><td>Builds the popup's Page on the WebContents Chromium created, so <code translate="no">window.opener</code> keeps working</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="human-takeover">Live page and human use</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Exclusive surfaces</th><td>A Page shows as the live tab or the chat preview, never both: one native <code translate="no">WebContentsView</code> cannot occupy two rectangles. No screenshot beside or over the Page, no dimming, no blocking layer.</td></tr>
+<tr><th scope="row">Preview image</th><td>Read-only: never forwards clicks, keys or scrolling. Never cropped or zoomed to enlarge it.</td></tr>
+<tr><th scope="row">Human use</th><td>Clicking, typing, scrolling and navigating in the real page reach the page directly and do not pause the Agent. Only the task's Pause and Stop do.</td></tr>
+<tr><th scope="row">Old observations</th><td>A page the human changed, hover included, invalidates the Agent's earlier observation; it observes again before acting.</td></tr>
+<tr><th scope="row">Not claimed</th><td>Zero overlap: dispatched operations may not be retractable, and late results are recorded and observed again. Human changes are not undone.</td></tr>
+</tbody>
+</table>
+
+<table class="grid">
+<thead><tr><th scope="col">Internal state</th><th scope="col">Toolbar and preview text</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">active</code>, <code translate="no">yielding</code>, <code translate="no">stop_unconfirmed</code></th><td class="run">Active while the conversation runs, otherwise Ready to use</td></tr>
+<tr><th scope="row"><code translate="no">paused</code>, <code translate="no">idle</code>, <code translate="no">closed</code></th><td class="run">Ready to use</td></tr>
+<tr><th scope="row"><code translate="no">waiting</code></th><td class="ask">Needs your confirmation, with Review request</td></tr>
+<tr><th scope="row"><code translate="no">unknown</code></th><td class="review">Could not confirm status, or Connection lost when disconnected</td></tr>
+</tbody>
+</table>
+<p class="note">A stop request unacknowledged for 5 seconds becomes <code translate="no">stop_unconfirmed</code>; new Agent dispatch stays closed. That timeout does not prove stopping.</p>
+
+<details>
+<summary>Preview chrome</summary>
+<ul>
+<li>One row that never wraps, at the 240px minimum, the 300×198.75 default (300×168.75 image plus header) and the 720px expanded width: ellipsized title, status, Open page, More, Close preview.</li>
+<li>Show actions and Operation history are in More.</li>
+<li>Failure text is reachable through the status indicator, title tooltip and <code translate="no">aria-live</code>.</li>
+<li>Resizes from four edges and four corners.</li>
+<li>On narrow product layouts a Resources drawer selects the target while chat and preview stay reachable.</li>
+</ul>
+</details>
+<details>
+<summary>Capture and geometry</summary>
+<ul>
+<li>A never-shown Page starts with a 1920×1080 CSS-pixel viewport at normal page zoom. Preview bounds and layout zoom follow the preview size. A Page returned to the background keeps its last native bounds.</li>
+<li>Desktop preview is the native Page with live rendering, including while dragged. Plain-browser previews use a separate sandboxed iframe, under browser embedding limits.</li>
+<li>Only the visible preview subscribes to frames. Each frame carries resource ID, connection generation, sequence and capture time; frames from an old binding are rejected.</li>
+<li>Delayed or failed capture is labelled Last frame, with its age; no image shows No frame.</li>
+<li>Drag caches container bounds on pointer down and moves by transform on animation frames, without layout reads or state writes. Pointer up, cancel or lost capture writes one clamped position. Unmount, live-loss or a resource switch discards the drag.</li>
+<li>Capture pauses during a drag. A capture begun before the pause is discarded, and only one capture is ever in flight.</li>
+<li>Rapid target changes coalesce over about 200ms and render only the latest frame.</li>
+</ul>
+</details>
+
+<h2>Operation cues</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Cue</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Where</th><td>OpenProgram surfaces only: hosted webpage frame and toolbar, guest console, preview layer. Foreign applications, the host desktop and external VNC/RDP clients are never decorated.</td></tr>
+<tr><th scope="row">Edge</th><td>On the visible surface: subtle 1px outer glow, blue for Active, no glow otherwise. No dimming, layout or hit-area change, no flashing.</td></tr>
+<tr><th scope="row">Markers</th><td>Rings for clicks, paths for drags, arrows for scrolling; typing names the field without secrets; shortcuts as text. The user's cursor never moves. Reduced motion uses brief static marks.</td></tr>
+<tr><th scope="row">Show actions</th><td>On by default, most recent action only. Hides markers, not edges, execution or history.</td></tr>
+<tr><th scope="row">Operation history</th><td>Click, type, scroll, drag, navigation and verification, in order, from trusted host receipts: attempted, dispatched, acknowledged, failed, unknown.</td></tr>
+<tr><th scope="row">Coordinates</th><td>Bound to resource ID, generation, frame and viewport mapping, with content bounds, DPR, zoom, scroll and iframe offsets. Stale geometry removes live markers; history keeps old-frame labels. Without a precise point: element bounds or text.</td></tr>
+<tr><th scope="row">Layer</th><td>Host-owned, <code translate="no">pointer-events:none</code>; nothing injected into external pages. Yielding clears markers; late receipts go to history only.</td></tr>
+</tbody>
+</table>
+
+<h2 id="invocation">Ownership and concurrency</h2>
+<dl class="pairs">
+<dt>Descriptor</dt><dd>Resource ID, type, sanitized target, actual owner, lifecycle, connection generation, preview capability. Handles and leases stay in the host and are not restorable.</dd>
+<dt>Association</dt><dd>Originating invocation, branch, child agent, sharing mode, keyed on stable branch identity or verifiable fork lineage. Forking does not duplicate external page state.</dd>
+<dt>Identity</dt><dd>Distinct Pages with one URL stay distinct; rows for one actual Page merge. Titles and secret query values never establish ownership, and secret query parameters are not stored.</dd>
+<dt>Child agents</dt><dd>Listed under the originating parent branch with their actual owner. Later work cannot rewrite provenance, and a shared group grants no access.</dd>
+<dt>Branch writes</dt><dd>Ancestor resources show Referenced from. A browser write defaults to an independent Page, without claiming site or login isolation. Native windows and VMs need explicit transfer or another target.</dd>
+<dt>Write leases</dt><dd>Exclude conflicts at the input scope. A second writer gets <code translate="no">busy</code>, with no queueing or preemption. A child's lease ends with it; the parent does not inherit it.</dd>
+<dt>Events</dt><dd>Carry session, branch, resource, generation and monotonic sequence. Stale ones are discarded after branch change, reconnection or revocation.</dd>
+<dt>Legacy records</dt><dd>Without provable branch ownership they sit in Unassigned, with no guessed migration.</dd>
+</dl>
+
+<h2>Lifetime and closing</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Event</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Task completes</th><td>Python, input leases and temporary observations are released. Pages and VMs stay idle; declared temporary resources follow their policy.</td></tr>
+<tr><th scope="row">Disconnect window</th><td>Never quits the application, user-opened or agent-opened. Quit application is separate.</td></tr>
+<tr><th scope="row">Disconnect VM</th><td>Releases transport; guest and display keep running. Stop VM is separate and never follows from hiding.</td></tr>
+<tr><th scope="row">Remove reference</th><td>Detaches an idle association only</td></tr>
+<tr><th scope="row">Closing a used target</th><td>Shows affected executions, requests stopping, waits for lease release. Until confirmed it stays Stopping. Closed records collapse into an unavailable group, outside default counts.</td></tr>
+<tr><th scope="row">Disconnect, revocation</th><td>Last frame marked stale, remote input off. Unknown identity stops writes and clears Operating. Reconnection is read-only and only to a verifiable identical instance.</td></tr>
+<tr><th scope="row">App restart</th><td>Restores grouping and preview preferences, never remote input connections or write leases. Page crash and VM reboot need identity validation.</td></tr>
+<tr><th scope="row">Failed native focus or result check</th><td>Input failed: writes revoked, evidence kept, no background retry</td></tr>
+<tr><th scope="row">Legacy adapter</th><td>Executing, operation state unverified; no operating dot</td></tr>
+<tr><th scope="row">Memory pressure</th><td>Offers explicit release; forms and VMs are never silently dropped</td></tr>
+</tbody>
+</table>
+<p class="note">Operating runs from validated adapter dispatch to receipt, confirmed cancellation or failure. Idle targets keep their connection without high-frequency capture; host applications are not scanned.</p>
+
+<details>
+<summary>List and row appearance</summary>
+<ul>
+<li>Files, Activity and Resources stay the vertical navigation at the top of the right sidebar. No bordered card per resource.</li>
+<li>Group headings reuse the left sidebar's SectionHeader: 14px secondary text, a 16px chevron after the title, count as trailing action; Enter or Space folds that group only.</li>
+<li>Rows are about 44–48px: title, then type, state and child-agent name when needed. Long titles truncate; details show full title, sanitized origin and identity.</li>
+<li>Operating and selection are distinct, with text as well as colour.</li>
+<li>Webpage rows have three Lucide icon buttons: Preview in conversation, Open in tab, Close webpage (24px target, 14px glyph, PiP toolbar treatment).</li>
+</ul>
+</details>
+
+<details>
+<summary>Later review and learning</summary>
+<ul>
+<li>Existing receipts hold task, branch, resource, before and after observation, target, parameters, order, outcome and human corrections. Visible cues use the same source.</li>
+<li>With user approval a later task may read selected sanitized excerpts to analyze targeting errors or propose reusable rules.</li>
+<li>Record my next demonstration is a separate opt-in with explicit start, stop, scope, preview and deletion. Secret fields, passwords, secure input and credential-bearing URLs are never kept.</li>
+<li>Images persist only after permission and redaction checks; otherwise only content-free metadata stays.</li>
+<li>Task-local review, saved steps and model training are separate stages. Nothing trains or uploads automatically; proposed rules are validated on independent test targets.</li>
+</ul>
+</details>
+
+<h2 id="desktop-tool-trace">Tool activity in the conversation</h2>
+<p>A <code translate="no">computer_use_agent</code> call appears in the timeline by target and step: application and action, Page action and URL, VM action, code run in an application, or a handed-off task with its brief's first line. Calls from the earlier GUI tools (<code translate="no">gui_agent</code>, <code translate="no">computer_use</code>, <code translate="no">browser_use</code>, <code translate="no">vm_use</code>) open the Details panel with a GUI activity card above the raw parameters and output.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Content</th></tr></thead>
+<tbody>
+<tr><th scope="row">Outcome</th><td>Running, Action applied, Succeeded, Failed, Needs takeover, Cancelled, Interrupted, Paused or Result unavailable, shared by card and timeline. Replaces the transport Status badge. No explicit status: Result unavailable.</td></tr>
+<tr><th scope="row">Takeover</th><td>Recorded blocker and user action emphasized; a summary repeating them is omitted. Task text only in raw parameters.</td></tr>
+<tr><th scope="row">Steps</th><td>Capability, target, status, in recorded order; failed and stopped steps add a two-line reason. Taken from result history, or while running from visible capability children without nested planner calls. A direct capability call has no step list.</td></tr>
+<tr><th scope="row">Ownership</th><td>A detail carries its conversation id and never replaces one from another conversation with the same call path. A failed output fetch shows its error without failing the call.</td></tr>
+<tr><th scope="row">Screenshots</th><td>Not offered: capture paths are temporary and outside the readable attachment roots.</td></tr>
+</tbody>
+</table>
+
+<h2>Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">In place</th><td>Type grouping, click-to-preview, Preview in conversation, Auto and Fixed preview, closing semantics, exclusive surfaces, native window frames, edge cues, Show actions, receipt history</td></tr>
+<tr><th scope="row">Planned: joint display</th><td>A webpage tab and its small chat preview shown together, in sync on one Page</td></tr>
+<tr><th scope="row">Planned: adapters</th><td>Native application and VM control, each advertised only after real-target acceptance; zero-overlap automatic takeover</td></tr>
+<tr><th scope="row">Planned: learning</th><td>Demonstration recording, trace review</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Acceptance cases</summary>
+<ul>
+<li>One branch opens five pages: no extra top tabs, all listed, operations select the preview. Preview in conversation on a never-opened Page adds no tab and enters Fixed preview.</li>
+<li>Two branches and their children run concurrently: provenance kept, no rebinding.</li>
+<li>Inspecting A while the Agent operates B: A stays, B shows Operating, enabling automatic display returns to B, tab focus never moves.</li>
+<li>Close preview, resizing and group collapse neither reload pages, stop VMs, grant control nor destroy targets.</li>
+<li>Closing an active target, revocation, late frames, restart and disconnection have explicit states; unconfirmed stopping is not a confirmed pause.</li>
+<li>Opening a tab fills the content area; undimmed content stays interactive and focus alone does not pause.</li>
+<li>Markers never intercept input or draw from stale geometry.</li>
+<li>Same-process windows, concurrent user input and two VMs verify conflict scopes independently. Successful capture does not establish background input.</li>
+</ul>
+</details>
+<p class="note">Sources: <code translate="no">session-resources-panel.tsx</code>, <code translate="no">session-resources.ts</code>, <code translate="no">use-session-resources.ts</code>, <code translate="no">web-tab-pip-store.ts</code>, <code translate="no">web-tab-pane.tsx</code>, <code translate="no">web-tab-pip.tsx</code>, <code translate="no">desktop-bridge.ts</code>, <code translate="no">openprogram/host/resources/session.py</code>, <code translate="no">apps/desktop/main.js</code>.</p>

@@ -18,16 +18,26 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { Bookmark, Check, ChevronRight, Folder } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
-import { itemCls, MENU_PANEL, MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
-import { isThemeId } from "@/lib/prefs/theme-pref";
+import { TabFavicon } from "@/components/center-tabs/strip/tab-favicon";
+import { CHECK_SLOT_PAD, itemCls, MENU_PANEL, MENU_SEPARATOR } from "@/components/ui/menu/menu-styles";
+import { SolarIcon, SOLAR_BODIES } from "@/components/solar-icons";
+import { MenuIcon, MenuKey, type MenuGlyph, type MenuKeys } from "@/components/ui/menu/menu-parts";
+import { MenuOptionContent } from "@/components/ui/menu/option-content";
+import { isThemeId } from "@/lib/prefs/appearance/theme-pref";
+import { MenuCheck } from "@/components/ui/menu/menu-check";
 
 interface ContextMenuItem {
   id: string;
   label: string;
+  description?: string;
+  keepOpen?: boolean;
   iconUrl?: string;
+  iconFallbackUrl?: string;
   icon?: "folder";
+  glyph?: MenuGlyph;
+  keys?: MenuKeys;
   disabled?: boolean;
   checked?: boolean;
   separatorBefore?: boolean;
@@ -35,12 +45,12 @@ interface ContextMenuItem {
 }
 
 interface MainMenuBridge {
-  choose(id: string): void;
+  choose(id: string, options?: { keepOpen?: boolean }): void;
   close(): void;
   scheduleClose?(delay?: number): void;
   cancelClose?(): void;
   resize?(size: { width: number; height: number }): void;
-  onUpdate?(cb: (state: MenuState) => void): () => void;
+  onUpdate?(cb: (state: Partial<MenuState>) => void): () => void;
 }
 
 interface MenuState {
@@ -49,6 +59,7 @@ interface MenuState {
   y: number;
   theme?: string;
   width?: number;
+  reset?: boolean;
 }
 
 function mainMenuBridge(): MainMenuBridge | null {
@@ -80,24 +91,37 @@ function parseItems(raw: string | null): ContextMenuItem[] {
   }
 }
 
+/** The query is data from the opener: only a glyph the bundle has draws. */
+function isMenuGlyph(value: unknown): value is MenuGlyph {
+  return typeof value === "string" && Object.hasOwn(SOLAR_BODIES, value);
+}
+
 function ItemIcon({ item }: { item: ContextMenuItem }) {
-  const [broken, setBroken] = useState(false);
-  if (item.checked) return <Check size={13} aria-hidden="true" />;
-  if (item.icon === "folder") return <Folder size={13} fill="currentColor" aria-hidden="true" />;
+  if (isMenuGlyph(item.glyph)) return <MenuIcon glyph={item.glyph} />;
+  if (item.icon === "folder") return <SolarIcon name="folder" size={16} motionPreset="none" className="menu-row-icon text-[var(--folder-color)]" aria-hidden="true" />;
   if (!item.iconUrl) return null;
-  return broken ? <Bookmark size={13} aria-hidden="true" /> : (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={item.iconUrl} alt="" width={13} height={13} onError={() => setBroken(true)} />
-  );
+  return <TabFavicon url={item.iconUrl} fallbackUrl={item.iconFallbackUrl} />;
 }
 
 function hasItemIcon(item: ContextMenuItem) {
-  return Boolean(item.checked || item.icon === "folder" || item.iconUrl);
+  return Boolean(isMenuGlyph(item.glyph) || item.icon === "folder" || item.iconUrl);
 }
 
-function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
+/** A checkable row's check sits at the row's end, as in every app menu;
+ *  unchecked rows keep the column so labels stay aligned. */
+function ItemCheck({ item }: { item: ContextMenuItem }) {
+  if (typeof item.checked !== "boolean") return null;
+  return item.checked ? <MenuCheck /> : <span className={CHECK_SLOT_PAD} aria-hidden="true" />;
+}
+
+/** The row's key badge, when the opener gave one. */
+function ItemKeys({ item }: { item: ContextMenuItem }) {
+  return item.keys && typeof item.keys.key === "string" ? <MenuKey keys={item.keys} /> : null;
+}
+
+function NestedMenuItems({ items, persistent = false }: { items: ContextMenuItem[]; persistent?: boolean }) {
   const choose = (item: ContextMenuItem) => {
-    if (!item.disabled) mainMenuBridge()?.choose(item.id);
+    if (!item.disabled) mainMenuBridge()?.choose(item.id, { keepOpen: item.keepOpen });
   };
   return items.map((item) => (
     <div key={item.id}>
@@ -106,16 +130,16 @@ function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
         <DropdownMenuPrimitive.Sub>
           <DropdownMenuPrimitive.SubTrigger
             disabled={item.disabled}
-            className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright data-[state=open]:bg-bg-hover data-[state=open]:text-text-bright`}
+            className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-accent data-[highlighted]:text-text-bright data-[state=open]:bg-accent data-[state=open]:text-text-bright`}
             title={item.label}
           >
             {hasItemIcon(item) ? (
-              <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+              <span className="inline-flex w-[16px] shrink-0 items-center justify-center">
                 <ItemIcon item={item} />
               </span>
             ) : null}
             <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
-            <ChevronRight size={13} className="ml-auto shrink-0" aria-hidden="true" />
+            <ChevronRight className="menu-row-chevron ml-auto size-4 shrink-0 text-text-muted" aria-hidden="true" />
           </DropdownMenuPrimitive.SubTrigger>
           <DropdownMenuPrimitive.Portal>
             <DropdownMenuPrimitive.SubContent
@@ -124,25 +148,35 @@ function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
               collisionPadding={8}
               className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)] outline-none`}
               onPointerEnter={cancelHoverClose}
-              onPointerLeave={scheduleHoverClose}
+              onPointerLeave={persistent ? undefined : scheduleHoverClose}
             >
-              <NestedMenuItems items={item.children} />
+              <NestedMenuItems items={item.children} persistent={persistent} />
             </DropdownMenuPrimitive.SubContent>
           </DropdownMenuPrimitive.Portal>
         </DropdownMenuPrimitive.Sub>
       ) : (
         <DropdownMenuPrimitive.Item
           disabled={item.disabled}
-          className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright data-[disabled]:pointer-events-none data-[disabled]:opacity-55`}
-          title={item.label}
-          onSelect={() => choose(item)}
+          className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-accent data-[highlighted]:text-text-bright data-[disabled]:pointer-events-none data-[disabled]:opacity-55`}
+          role={typeof item.checked === "boolean" ? "menuitemcheckbox" : "menuitem"}
+          aria-checked={item.checked}
+          title={item.description ? undefined : item.label}
+          onSelect={event => {
+            if (item.keepOpen) event.preventDefault();
+            choose(item);
+          }}
         >
+          {item.description ? <MenuOptionContent glyph={isMenuGlyph(item.glyph) ? item.glyph : undefined}
+            label={item.label} description={item.description} checked={item.checked} /> : <>
           {hasItemIcon(item) ? (
-            <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+            <span className="inline-flex w-[16px] shrink-0 items-center justify-center">
               <ItemIcon item={item} />
             </span>
           ) : null}
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          <ItemKeys item={item} />
+          <ItemCheck item={item} /></>}
+
         </DropdownMenuPrimitive.Item>
       )}
     </div>
@@ -153,12 +187,16 @@ function NestedContextMenu({
   items,
   x,
   y,
+  width,
 }: {
   items: ContextMenuItem[];
   x: number;
   y: number;
+  width?: number;
+  reset?: boolean;
 }) {
   const close = () => mainMenuBridge()?.close();
+  const hoverClose = items.some(item => item.keepOpen) ? undefined : scheduleHoverClose;
   return (
     <DropdownMenuPrimitive.Root open modal={false} onOpenChange={(open) => { if (!open) close(); }}>
       <DropdownMenuPrimitive.Trigger asChild>
@@ -176,14 +214,14 @@ function NestedContextMenu({
           sideOffset={0}
           collisionPadding={8}
           className={`${MENU_PANEL} w-[280px] max-w-[calc(100vw-16px)] outline-none`}
-          style={{ width: NESTED_MENU_WIDTH }}
+          style={{ width: width || NESTED_MENU_WIDTH }}
           onEscapeKeyDown={close}
           onPointerDownOutside={close}
           onPointerEnter={cancelHoverClose}
-          onPointerLeave={scheduleHoverClose}
+          onPointerLeave={hoverClose}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          <NestedMenuItems items={items} />
+          <NestedMenuItems items={items} persistent={!hoverClose} />
         </DropdownMenuPrimitive.Content>
       </DropdownMenuPrimitive.Portal>
     </DropdownMenuPrimitive.Root>
@@ -201,6 +239,7 @@ function ContextMenuOverlayPage() {
     width: Math.max(0, Number(params.get("width")) || 0),
   }), [params]);
   const [menuState, setMenuState] = useState(initialState);
+  const [generation, setGeneration] = useState(0);
   const items = menuState.items;
 
   const firstEnabled = items.findIndex((item) => !item.disabled);
@@ -210,13 +249,12 @@ function ContextMenuOverlayPage() {
   const requestedWidth = menuState.width || 0;
 
   useEffect(() => mainMenuBridge()?.onUpdate?.((state) => {
-    setMenuState({
-      items: Array.isArray(state.items) ? state.items : [],
-      x: Number(state.x) || 0,
-      y: Number(state.y) || 0,
-      theme: state.theme,
-      width: Math.max(0, Number(state.width) || 0),
-    });
+    if (state.reset) setGeneration(value => value + 1);
+    setMenuState(previous => ({
+      ...previous,
+      ...state,
+      items: Array.isArray(state.items) ? state.items : previous.items,
+    }));
   }), []);
 
   useEffect(() => {
@@ -267,7 +305,7 @@ function ContextMenuOverlayPage() {
 
   const choose = (item: ContextMenuItem) => {
     if (item.disabled) return;
-    mainMenuBridge()?.choose(item.id);
+    mainMenuBridge()?.choose(item.id, { keepOpen: item.keepOpen });
   };
   const close = () => mainMenuBridge()?.close();
 
@@ -310,15 +348,16 @@ function ContextMenuOverlayPage() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", onDown);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, items, nested]);
 
   if (nested) {
     return (
       <NestedContextMenu
+        key={generation}
         items={items}
         x={menuState.x}
         y={menuState.y}
+        width={requestedWidth}
       />
     );
   }
@@ -358,8 +397,8 @@ function ContextMenuOverlayPage() {
           <div key={item.id}>
             {item.separatorBefore ? <div className={MENU_SEPARATOR} /> : null}
             <div
-              role="menuitemcheckbox"
-              aria-checked={item.checked || undefined}
+              role={typeof item.checked === "boolean" ? "menuitemcheckbox" : "menuitem"}
+              aria-checked={item.checked}
               aria-disabled={item.disabled || undefined}
               tabIndex={-1}
               className={itemCls(i === active && !item.disabled)}
@@ -373,8 +412,9 @@ function ContextMenuOverlayPage() {
               }}
               onClick={() => choose(item)}
             >
+              {item.description ? <MenuOptionContent glyph={isMenuGlyph(item.glyph) ? item.glyph : undefined} label={item.label} description={item.description} checked={item.checked} /> : <>
               {hasItemIcon(item) ? (
-                <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+                <span className="inline-flex w-[16px] shrink-0 items-center justify-center">
                   <ItemIcon item={item} />
                 </span>
               ) : null}
@@ -382,10 +422,12 @@ function ContextMenuOverlayPage() {
                 className={requestedWidth
                   ? "min-w-0 flex-1 truncate"
                   : "flex-1 whitespace-nowrap"}
-                title={item.label}
               >
                 {item.label}
               </span>
+              <ItemKeys item={item} />
+              <ItemCheck item={item} /></>}
+
             </div>
           </div>
         ))}

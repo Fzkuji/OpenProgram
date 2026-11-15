@@ -24,7 +24,7 @@ same technique as test_send_message.py / test_agent_dispatch.py):
     shared guard; read_conversation and agent(start_from="SID:MSG_ID")
     forks are unaffected
 
-See docs/reference/design/runtime/agent-collaboration.md.
+See docs/reference/design/runtime/collaboration/agent-collaboration.html.
 """
 from __future__ import annotations
 
@@ -49,13 +49,13 @@ def parent_turn(tmp_path, monkeypatch):
     """Isolated store, two sessions, parent turn bound on p1:a1.
     Async deliveries are captured at run_agent_turn_async; captured
     kwargs are exposed as ``store.async_calls``."""
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.agent import session_db as sdb_mod
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.runtime.context import session_db as sdb_mod
 
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: s)
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {"id": "u1", "role": "user", "content": "hi",
                             "timestamp": 0, "predecessor": None})
@@ -75,9 +75,9 @@ def parent_turn(tmp_path, monkeypatch):
                             "timestamp": 0, "predecessor": "u9"})
     s.commit_turn("p2", "init")
 
-    from openprogram.agent import run_control
-    from openprogram import store as store_mod
-    sid_tok = run_control._current_session_id.set("p1")
+    from openprogram.runtime.execution.run_control import binding as run_control_binding
+    from openprogram.state import store as store_mod
+    sid_tok = run_control_binding._current_session_id.set("p1")
     turn_tok = store_mod._current_turn_id.set("a1")
 
     calls: list[dict] = []
@@ -87,15 +87,16 @@ def parent_turn(tmp_path, monkeypatch):
         return "t_fake"
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn_async", fake_async)
+        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn_async", fake_async)
     monkeypatch.setattr(
-        'openprogram.agent.job.runner.shared._broadcast', lambda *a, **k: None)
+        'openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     s.async_calls = calls
 
     yield s
-    run_control._current_session_id.reset(sid_tok)
+    run_control_binding._current_session_id.reset(sid_tok)
     store_mod._current_turn_id.reset(turn_tok)
-    import openprogram.agent.job.runner as runner_mod
+    import openprogram.runtime.jobs.runner as runner_mod
+    from openprogram.runtime.execution.run_control import binding as run_control_binding
     runner_mod.shutdown_runner()
 
 
@@ -106,7 +107,7 @@ def test_sync_spawn_archive_when_done_archives_at_terminal(parent_turn, monkeypa
     branch after the result is in hand — and the result still flows
     back."""
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn",
+        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn",
         lambda **kw: SimpleNamespace(
             head_id="sp1", final_text="done", failed=False, error=None),
     )
@@ -121,7 +122,7 @@ def test_sync_spawn_default_keeps_agent_live(parent_turn, monkeypatch):
     """Default archive_when_done=False: the branch stays live and the
     spawn writes no archive meta at all."""
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run.run_agent_turn",
+        "openprogram.runtime.conversation.sub_agent_run.run_agent_turn",
         lambda **kw: SimpleNamespace(
             head_id="sp2", final_text="done", failed=False, error=None),
     )
@@ -131,7 +132,7 @@ def test_sync_spawn_default_keeps_agent_live(parent_turn, monkeypatch):
 
 def test_async_spawn_passes_archive_flag_to_runner(parent_turn):
     out = _agent_impl("do it", run_in_background=True, archive_when_done=True)
-    assert "[agent spawned async]" in out
+    assert out.startswith("[agent started in background]")
     kw = parent_turn.async_calls[-1]
     assert kw["archive_when_done"] is True
 
@@ -139,8 +140,8 @@ def test_async_spawn_passes_archive_flag_to_runner(parent_turn):
 def test_runner_terminal_hook_archives_spawn_branch(parent_turn):
     """The runner's terminal hook archives only when the spawn asked
     for it; a delivery (flag False) never touches meta."""
-    from openprogram.agent.job import get_runner
-    from openprogram.agent.job.types import Job
+    from openprogram.runtime.jobs import get_runner
+    from openprogram.runtime.jobs.types import Job
 
     runner = get_runner()
     runner._finalize_spawn_branch_meta(Job(
@@ -157,7 +158,7 @@ def test_runner_terminal_hook_archives_spawn_branch(parent_turn):
 
 
 def test_task_roundtrip_preserves_archive_fields(parent_turn):
-    from openprogram.agent.job.types import Job
+    from openprogram.runtime.jobs.types import Job
     t = Job(id="t_r", parent_session_id="p1", prompt="x", agent_id="main",
              archive_when_done=True)
     t2 = Job.from_dict(t.to_dict())
@@ -184,12 +185,12 @@ def test_archive_agent_own_toplevel_branch_allowed(parent_turn):
 
 def test_archive_agent_without_session_context_allowed(parent_turn, monkeypatch):
     """No session context (user / UI direct call) is not gated."""
-    from openprogram.agent import run_control
-    tok = run_control._current_session_id.set(None)
+    from openprogram.runtime.execution.run_control import binding as run_control_binding
+    tok = run_control_binding._current_session_id.set(None)
     try:
         out = _archive_agent_impl("p2:a9")
     finally:
-        run_control._current_session_id.reset(tok)
+        run_control_binding._current_session_id.reset(tok)
     assert "[archive_agent] archived p2:a9" in out
 
 
@@ -244,7 +245,7 @@ def test_auto_rename_writeback_keeps_archived(parent_turn, monkeypatch):
     """Read-modify-write timing: the auto-namer reads the branch meta,
     the branch is archived while the LLM generates a label, and the
     write-back must not bring the agent back."""
-    from openprogram.agent.dispatcher import titles
+    from openprogram.runtime.conversation.turn_runtime import titles
 
     _sync_threads(monkeypatch, titles)
 
@@ -253,8 +254,8 @@ def test_auto_rename_writeback_keeps_archived(parent_turn, monkeypatch):
         return "older topic"
 
     monkeypatch.setattr(
-        "openprogram.providers.default_llm.build_default_llm",
-        lambda: _llm_that_archives)
+        "openprogram.models.providers.streaming.background_llm.build_background_llm",
+        lambda call_kind=None: _llm_that_archives)
 
     titles.maybe_auto_name_branch(parent_turn, "p1", "a0")
 
@@ -267,7 +268,7 @@ def test_auto_rename_writeback_keeps_archived(parent_turn, monkeypatch):
 def test_auto_rename_skips_archived_branch(parent_turn, monkeypatch):
     """An archived branch needs no new name: no LLM call, no turn
     counter bump, no write."""
-    from openprogram.agent.dispatcher import titles
+    from openprogram.runtime.conversation.turn_runtime import titles
 
     _sync_threads(monkeypatch, titles)
     _archive_agent_impl("p1:a0")
@@ -279,7 +280,7 @@ def test_auto_rename_skips_archived_branch(parent_turn, monkeypatch):
         return "should not be used"
 
     monkeypatch.setattr(
-        "openprogram.providers.default_llm.build_default_llm", lambda: _llm)
+        "openprogram.models.providers.streaming.background_llm.build_background_llm", lambda call_kind=None: _llm)
 
     titles.maybe_auto_name_branch(parent_turn, "p1", "a0")
 
@@ -356,8 +357,8 @@ def test_archive_when_done_spawn_visible_after_merge(parent_turn):
     """End to end: a successful background spawn is absorbed by the
     runner's merge, and archive_when_done still leaves an agent that
     scope="archived" can show."""
-    from openprogram.agent.job import get_runner
-    from openprogram.agent.job.types import Job
+    from openprogram.runtime.jobs import get_runner
+    from openprogram.runtime.jobs.types import Job
 
     head = _merged_spawn(parent_turn)
     get_runner()._finalize_spawn_branch_meta(Job(
@@ -397,17 +398,9 @@ def test_send_message_to_archived_branch_errors(parent_turn):
     assert parent_turn.async_calls == []
 
 
-def test_agent_to_dispatch_to_archived_branch_errors(parent_turn):
-    _archive_agent_impl("p1:a0")
-    out = _agent_impl("do this", to="p1:a0")
-    assert "[agent error] agent p1:a0 is archived" in out
-    assert parent_turn.async_calls == []
-
-
-def test_agent_to_with_archive_when_done_errors(parent_turn):
+def test_agent_to_is_refused_and_points_at_send_message(parent_turn):
     out = _agent_impl("do this", to="p1:a0", archive_when_done=True)
-    assert "[agent error]" in out
-    assert "archive_when_done" in out
+    assert "[agent error]" in out and "send_message" in out
     assert parent_turn.async_calls == []
 
 
@@ -415,7 +408,7 @@ def test_read_conversation_still_reads_archived_branch(parent_turn):
     """read_conversation renders an archived branch — it never goes
     through the addressing guard, so the archive cannot hide history."""
     _archive_agent_impl("p1:a0")
-    from openprogram.store.session.transcript import render_session_transcript
+    from openprogram.state.store.session.transcript import render_session_transcript
 
     out = render_session_transcript("p1", head_id="a0", store=parent_turn)
     assert "older reply" in out
@@ -427,7 +420,7 @@ def test_fork_from_archived_node_still_works(parent_turn):
     _archive_agent_impl("p1:a0")
     out = _agent_impl("continue from here", start_from="p1:a0",
                       run_in_background=True)
-    assert "[agent spawned async]" in out
+    assert out.startswith("[agent started in background]")
     kw = parent_turn.async_calls[-1]
     assert kw["session_id"] == "p1"
     assert kw["branch_from"] == "a0"

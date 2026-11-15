@@ -49,7 +49,7 @@ globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
 globalThis.cancelAnimationFrame = clearTimeout;
 globalThis.fetch = window.fetch = async () => Response.json({});
 const routeListeners = new Set();
-let navigations = [], recovery, ctx, ackRequests, ackTasks;
+let navigations = [], routerNavigations = [], recovery, ctx, ackRequests, ackTasks;
 function navigate(path) {
   navigations.push(path);
   window.location.pathname = path;
@@ -57,24 +57,26 @@ function navigate(path) {
   for (const notify of routeListeners) notify();
 }
 window.history = { state: null, pushState: (_state, _title, path) => navigate(path),
-  replaceState: (_state, _title, path) => { window.location.pathname = path; window.location.hash = ""; } };
+  replaceState: (_state, _title, path) => { window.location.pathname = path; window.location.hash = ""; for (const notify of routeListeners) notify(); } };
 globalThis.history = window.history;
-globalThis.reopenRouter = { push: navigate };
-const { act, createElement, useSyncExternalStore } = await import("react");
+function routerNavigate(path) { routerNavigations.push(path); navigate(path); }
+globalThis.reopenRouter = { push: routerNavigate };
+const { act, createElement, useLayoutEffect, useSyncExternalStore } = await import("react");
 globalThis.reopenRouteHook = () => useSyncExternalStore(
   (notify) => { routeListeners.add(notify); return () => routeListeners.delete(notify); },
   () => window.location.pathname,
 );
 const { createRoot } = await import("react-dom/client");
-const { setNavigate } = await import("../../lib/navigate.ts");
-const { useTabLifecycle } = await import("../../components/center-tabs/use-tab-lifecycle.ts");
+const { setNavigate } = await import("../../lib/nav/navigate.ts");
+const { completeTabRouteNavigation } = await import("../../lib/tabs/navigation/route.ts");
+const { useTabLifecycle } = await import("../../components/center-tabs/tab-actions/use-tab-lifecycle.ts");
 const { useCenterTabs } = await import("../../lib/tabs/center-tabs-store.ts");
 const { readCenterTabsPayload, persistedState } = await import("../../lib/tabs/center-tabs-persistence.ts");
 const { useSessionStore } = await import("../../lib/session-store/index.ts");
 const { runtimeState } = await import("../../lib/runtime-bridge/state.ts");
-const { useWS } = await import("../../lib/net/use-ws.ts");
+const { useWS } = await import("../../lib/net/ws/use-ws.ts");
 const require = createRequire(import.meta.url);
-const { createSelfUpdateReopen } = require("../../../desktop/self-update-reopen.js");
+const { createSelfUpdateReopen } = require("../../../desktop/main/self-update/self-update-reopen.js");
 const origin = "http://127.0.0.1:18100";
 let sockets = [];
 class FixtureSocket {
@@ -97,6 +99,8 @@ globalThis.WebSocket = FixtureSocket;
 const noop = () => {};
 let lifecycle;
 function Receiver() {
+  const pathname = globalThis.reopenRouteHook();
+  useLayoutEffect(() => { completeTabRouteNavigation(pathname); }, [pathname]);
   const activeId = useCenterTabs((s) => s.activeId);
   lifecycle = useTabLifecycle({ activeId, cancelDrag: noop, setFocusedTabId: noop,
     freezeWidthsForMouseClose: noop, releaseFrozenWidths: noop });
@@ -107,7 +111,7 @@ function Receiver() {
 }
 
 async function setup(tabs, activeId, windowId = "main") {
-  localStorage.clear(); sessionStorage.clear(); sockets = []; navigations = []; ackRequests = []; ackTasks = [];
+  localStorage.clear(); sessionStorage.clear(); sockets = []; navigations = []; routerNavigations = []; ackRequests = []; ackTasks = [];
   window.location.pathname = "/chat";
   const intent = { schema: 1, update_id: "su_test", session_id: "origin", attempt: 1,
     reopen_id: "a".repeat(64), launch_kind: "activation", status: "pending", expires_at: Date.now() / 1000 + 60 };
@@ -119,7 +123,7 @@ async function setup(tabs, activeId, windowId = "main") {
       if (init.method === "POST") {
         ackRequests.push(JSON.parse(init.body));
         // Observe the actual reducer state at the outgoing ACK boundary.
-        assert.equal(useSessionStore.getState().messagesById["restored-message"]?.content, "restored transcript");
+        assert.equal(useSessionStore.getState().rowsByView.origin?.["restored-message"]?.content, "restored transcript");
         assert.deepEqual(useSessionStore.getState().messageOrder.origin, ["restored-message"]);
       }
       return Response.json({ ...intent, status: init.method === "POST" ? "acknowledged" : "pending" });
@@ -131,19 +135,20 @@ async function setup(tabs, activeId, windowId = "main") {
   } };
   localStorage.setItem(`centerTabs:${windowId}`, JSON.stringify({ version: 2, tabs, activeId, groups: [], splitWebTabId: null, splitRatio: .5 }));
   useCenterTabs.setState(persistedState(readCenterTabsPayload()));
-  useSessionStore.setState({ currentSessionId: null, activeChatKey: null, conversations: {}, messagesById: {}, messageOrder: {} });
+  useSessionStore.setState({ currentSessionId: null, activeChatKey: null, conversations: {}, rowsByView: {}, overlaysByView: {}, messageOrder: {} });
   runtimeState.conversations = {};
   runtimeState.currentSessionId = null;
 }
 function transcript(socket, id = "origin") {
-  socket.message("session_loaded", { id, title: "Original conversation", messages: [
-    { id: "restored-message", role: "user", content: "restored transcript", timestamp: 100 },
-  ], graph: [], settings: {}, head_id: "restored-message" });
+  socket.message("session_loaded", { id, request_id: socket.sent.findLast(request => request.action === "load_session" && request.session_id === id)?.request_id, title: "Original conversation", turns: [{ id: "restored-message", rows: [
+    { id: "restored-message", role: "user", rowKind: "user", content: "restored transcript", timestamp: 100 },
+  ] }], window: { head_id: "restored-message", revision: 1, before: null, after: null, start: 0, end: 1, total: 1 },
+  graph: [], settings: {}, head_id: "restored-message" });
 }
 async function mounted(check) {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
-  setNavigate(navigate);
+  setNavigate(routerNavigate);
   try {
     await act(async () => root.render(createElement(Receiver)));
     assert.equal(sockets.length, 1);
@@ -353,7 +358,7 @@ test("Back on /chat clears an acknowledged session and survives remount", async 
   });
 });
 
-test("returning from Files restores a sidebar route without launcher activation overriding it", async () => {
+test("returning from Files restores its launcher after visiting a management page", async () => {
   const home = { id: "ntp:route-origin", kind: "ntp", title: "" };
   await setup([home], home.id, "detached");
   useCenterTabs.setState({ navigationRoute: undefined });
@@ -367,27 +372,77 @@ test("returning from Files restores a sidebar route without launcher activation 
     await act(async () => useCenterTabs.getState().navigateHistory(-1));
     assert.equal(window.location.pathname, "/skills");
     assert.equal(useCenterTabs.getState().navigationRoute, "/skills");
-    await act(async () => useCenterTabs.getState().navigateHistory(-1));
-    assert.equal(window.location.pathname, "/chat");
     assert.equal(useCenterTabs.getState().activeId, home.id);
     await act(async () => useCenterTabs.getState().navigateHistory(1));
-    assert.equal(window.location.pathname, "/skills");
+    assert.equal(window.location.pathname, "/chat");
+    assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === useCenterTabs.getState().activeId).page, "files");
   });
 });
 
-
-test("clicking the current tab preserves its sidebar page; Back restores its conversation", async () => {
+const managementPaths = ["/agents", "/agents/main", "/settings/general", "/skills/second", "/programs", "/applications", "/chats", "/scheduler"];
+for (const path of managementPaths) test(`current tab stays on its current page ${path}`, async () => {
   await setup([other], other.id, "detached");
-  useCenterTabs.setState({ navigationRoute: undefined });
   await mounted(async () => {
-    await act(async () => {
-      useCenterTabs.getState().recordRouteNavigation("/skills");
-      navigate("/skills");
-    });
+    await act(async () => { useCenterTabs.getState().recordRouteNavigation(path); navigate(path); });
+    const before = structuredClone(useCenterTabs.getState().tabs);
     await act(async () => lifecycle.onTabClick(useCenterTabs.getState().tabs.find(tab => tab.id === other.id)));
-    assert.equal(window.location.pathname, "/skills");
-    assert.equal(useCenterTabs.getState().navigationRoute, "/skills");
+    assert.equal(window.location.pathname, path);
+    assert.equal(useCenterTabs.getState().navigationRoute, path);
+    assert.deepEqual(useCenterTabs.getState().tabs, before);
     await act(async () => useCenterTabs.getState().navigateHistory(-1));
     assert.equal(window.location.pathname, "/s/other");
+    await act(async () => useCenterTabs.getState().navigateHistory(1));
+    assert.equal(window.location.pathname, path);
   });
+});
+
+for (const entry of ["click", "activate"]) test(`retained Agents page restores through ${entry}`, async () => {
+  const agents = { ...other, navigationRoute: "/agents" };
+  await setup([agents, original], original.id, "detached");
+  await mounted(async () => {
+    if (entry === "activate") await act(async () => useCenterTabs.getState().setActive(agents.id));
+    else await act(async () => lifecycle.onTabClick(useCenterTabs.getState().tabs.find(tab => tab.id === agents.id)));
+    assert.equal(window.location.pathname, "/agents");
+    assert.equal(useCenterTabs.getState().navigationRoute, "/agents");
+  });
+});
+
+test("late provider route commit cannot override switching back to the chat tab", async () => {
+ const provider = { ...original, navigationRoute: "/settings/providers/ollama" };
+ await setup([other, provider], other.id, "detached");
+ await mounted(async () => {
+   await act(async () => navigate("/s/other"));
+   const requests = [];
+   setNavigate(path => requests.push(path));
+   const before = structuredClone(useCenterTabs.getState().tabs.find(t => t.id === other.id));
+   await act(async () => lifecycle.onTabClick(useCenterTabs.getState().tabs.find(t => t.id === provider.id)));
+   assert.deepEqual(requests, ["/settings/providers"]);
+   await act(async () => lifecycle.onTabClick(useCenterTabs.getState().tabs.find(t => t.id === other.id)));
+   await act(async () => routerNavigate(requests[0]));
+   assert.equal(window.location.pathname, "/s/other");
+   assert.equal(useCenterTabs.getState().activeId, other.id);
+   assert.deepEqual(useCenterTabs.getState().tabs.find(t => t.id === other.id), before);
+   setNavigate(routerNavigate);
+ });
+});
+
+test("Back before provider host commits preserves conversation history", async () => {
+ await setup([other], other.id, "detached");
+ await mounted(async () => {
+   await act(async () => navigate("/s/other"));
+   const requests = [];
+   setNavigate(path => requests.push(path));
+   await act(async () => {
+     useCenterTabs.getState().recordRouteNavigation("/settings/providers/ollama");
+     const { navigateTabRoute } = await import("../../lib/tabs/navigation/route.ts");
+     navigateTabRoute("/settings/providers/ollama");
+   });
+   assert.deepEqual(requests, ["/settings/providers"]);
+   await act(async () => useCenterTabs.getState().navigateHistory(-1));
+   const before = structuredClone(useCenterTabs.getState().tabs);
+   await act(async () => routerNavigate(requests[0]));
+   assert.equal(window.location.pathname, "/s/other");
+   assert.deepEqual(useCenterTabs.getState().tabs, before);
+   setNavigate(routerNavigate);
+ });
 });

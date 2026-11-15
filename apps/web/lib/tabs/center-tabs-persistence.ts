@@ -1,5 +1,6 @@
+import { holdsLayout, mapNode, leaves, rowLayout } from "./canvas/canvas-layout";
 import { normalizeTabPageHistory } from "./navigation/page-history";
-import { topLevelTabs } from "../browser/web-page-management";
+import { topLevelTabs } from "../browser/web-tab/web-page-management";
 import { normalizeSessionHistory } from "./navigation/session-history";
 /**
  * Center-tab persistence + payload normalization.
@@ -9,15 +10,16 @@ import { normalizeSessionHistory } from "./navigation/session-history";
  * the persisted payload. No zustand, no store instance — only localStorage,
  * the layout helpers, and the deterministic id helpers.
  */
-import { pendingTransfers } from "@/lib/tabs/pending-transfer-projection";
+import { pendingTransfers } from "@/lib/tabs/transfer/pending-transfer-projection";
 import {
   findCenterTabGroup,
   focusCenterTabGroupMember,
   groupCenterTabs,
   normalizeCenterTabLayout,
+  ungroupCenterTab,
 } from "@/lib/tabs/center-tab-groups";
 import type { CenterTabGroup } from "@/lib/tabs/center-tab-groups";
-import type { TransferJournalEntry } from "@/lib/tabs/tab-transfer-journal";
+import type { TransferJournalEntry } from "@/lib/tabs/transfer/tab-transfer-journal";
 import { nextDraftSessionId, sessionTabId } from "@/lib/tabs/center-tab-ids";
 import type { CenterTab } from "@/lib/tabs/center-tabs-store";
 
@@ -89,6 +91,7 @@ export function replaceGroupTabId(
 ): CenterTabGroup[] {
   return groups.map((group) => ({
     ...group,
+    canvas: group.canvas ? { ...group.canvas, root: leaves(group.canvas.root).reduce((root, p) => p.content === oldId ? mapNode(root, p.id, n => n.kind === "pane" ? { ...n, content: newId } : n) : root, group.canvas.root) } : undefined,
     memberIds: group.memberIds.map((id) => id === oldId ? newId : id),
     visibleIds: group.visibleIds.map((id) => id === oldId ? newId : id),
     focusedId: group.focusedId === oldId ? newId : group.focusedId,
@@ -139,10 +142,27 @@ export function normalizeCenterTabsPayload(
     }
   }
   tabs = tabs.filter(tab => tab.kind !== "session" || !tab.sessionId || sessionOwners.get(tab.sessionId) === tab);
+  const migratedGroups = (Array.isArray(input.groups) ? input.groups : []).map(group => {
+    if (!group.canvas) return { ...group, canvas: rowLayout(group.memberIds, typeof input.splitRatio === "number" ? clampSplitRatio(input.splitRatio) : 0.5) };
+    if (leaves(group.canvas.root).some(p => p.content && tabs.some(t => t.id === p.content))) return group;
+    let anchor = tabs.find(t => t.canvasAnchor && group.memberIds.includes(t.id));
+    if (!anchor) {
+      anchor = { id: `canvas-empty:${crypto.randomUUID()}`, kind:"ntp", title:"Layout", canvasAnchor:true };
+      tabs.push(anchor);
+    }
+    return { ...group, memberIds:[anchor.id],visibleIds:[anchor.id],focusedId:anchor.id };
+  });
   let layout = normalizeCenterTabLayout({
     tabIds: tabs.map((tab) => tab.id),
-    groups: Array.isArray(input.groups) ? input.groups : [],
+    groups: migratedGroups,
   });
+  // Management pages never live in a split: a grouped tab that carries a
+  // page route (persisted before pages opened their own tab) leaves its group.
+  for (const tab of tabs) {
+    if (tab.navigationRoute && findCenterTabGroup(layout.groups, tab.id)) {
+      layout = ungroupCenterTab(layout, tab.id);
+    }
+  }
   const activeId = layout.tabIds.includes(input.activeId ?? "")
     ? input.activeId ?? null
     : topLevelTabs(tabs, layout.groups)[0]?.id ?? null;
@@ -240,9 +260,9 @@ function normalizedRebasedGroup(
   visibleIds: string[],
   focusedId: string | undefined,
 ): CenterTabGroup | null {
-  if (memberIds.length < 2) return null;
+  if (memberIds.length < 2 && !holdsLayout(group.canvas)) return null;
   const visible = visibleIds.filter((id, index) =>
-    memberIds.includes(id) && visibleIds.indexOf(id) === index).slice(0, 2);
+    memberIds.includes(id) && visibleIds.indexOf(id) === index);
   return {
     ...group,
     memberIds,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 
-from openprogram.providers import subscription_catalog as catalog
+from openprogram.models.providers.catalog import subscription_catalog as catalog
 
 
 def test_catalog_round_trip_is_atomic_and_profile_local(monkeypatch, tmp_path):

@@ -1,0 +1,286 @@
+<title>Desktop App and built-in browser</title>
+<meta name="description" content="Windows, panes and tabs in the Desktop App, its built-in browser, session resources, restart behavior and notifications.">
+<h1>Desktop App and built-in browser</h1>
+<p>Each pane holds Files, a chat, the Browser or a Terminal. Panes split and move between windows without changing the session or browser tab.</p>
+<table class="stack">
+<thead><tr><th scope="col">Platform</th><th scope="col">Install</th><th scope="col">Terminal panes</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS</th><td>Architecture-matched DMG, copy <code translate="no">OpenProgram.app</code> to <code translate="no">/Applications</code>. Developer ID signed, notarized.</td><td>Login shell</td></tr>
+<tr><th scope="row">Windows</th><td>From v1.2.0: per-user <code translate="no">win-x64.exe</code> on a <a href="https://github.com/FuzzyKuji/OpenProgram/releases">GitHub Release</a> (<a href="../install/install.html#windows">steps</a>). Before that, use a source checkout and the browser UI.</td><td>PowerShell through ConPTY</td></tr>
+<tr><th scope="row">Linux</th><td><a href="../install/install.html#linux">deb or AppImage</a>, from v1.1.0.</td><td>Absolute <code translate="no">SHELL</code>, then <code translate="no">/bin/bash</code>, <code translate="no">/bin/sh</code>. Reports a missing shell before starting.</td></tr>
+</tbody>
+</table>
+<p class="note"><a href="../install/install.html">Full installation</a>. Packaged Apps start the worker from their embedded Python, needing no system Python or Node.js.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Startup message</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Waiting for backend to start...</strong></th><td>The App is starting the worker; it checks every second</td></tr>
+<tr><th scope="row"><strong>Updating OpenProgram...</strong></th><td>An installer is replacing the App and runtime; no worker is started and it reconnects by itself</td></tr>
+<tr><th scope="row"><strong>Port 18100 is in use</strong></th><td>A port you set (<code translate="no">ui.web_port</code>) is held by the program named on the page. Quit it and the App connects by itself, or set another port. A port OpenProgram chose itself never stops here: the App reopens on the next free one, which also gives each account on a shared PC its own worker. <a href="../reference/design/cli/ports.html#one-port-per-account">How the port is chosen</a></td></tr>
+</tbody>
+</table>
+<h2>Tabs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Situation</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pages</th><td>All, including Settings and management pages, open in the selected tab. The tab's name follows the page, and visiting a page does not rename the conversation.</td></tr>
+<tr><th scope="row">Back and Forward</th><td>Per tab, including the initial New tab page and saved with the tab. Switching tabs adds no history. A new destination after Back replaces only that tab's forward steps. Webpage URLs use the Browser's own controls.</td></tr>
+<tr><th scope="row">Same destination from another launcher</th><td>Independent tabs</td></tr>
+<tr><th scope="row">Conversation from a session tab</th><td>Reuses that tab, even if another tab shows it. From other page kinds, an existing session tab can be selected or a new one opened.</td></tr>
+<tr><th scope="row">Drafts, background title updates</th><td>Survive navigation and reload. Deleted sessions leave every history.</td></tr>
+<tr><th scope="row">Last tab closed</th><td>Tab bar and center stay empty; use the plus button</td></tr>
+<tr><th scope="row">Quit and reopen</th><td>Torn-off windows return with their tabs at their last place. Closed windows stay closed. Off-display places use the default.</td></tr>
+</tbody>
+</table>
+<h2>Move and tile panes</h2>
+<p>Drag a tab down out of the strip, or a pane's ••• handle, and the center becomes a window overview.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="Drop zones on a window card in the overview. The left quarter puts the tab to the left of that window, the right quarter to the right, the upper half of the middle above it and the lower half of the middle below it. A gap or empty space opens the tab on its own, outside the App opens a new window, and Escape cancels.">
+<rect class="tile" x="0" y="10" width="360" height="170" rx="8"/>
+<line class="ln-faint" x1="90" y1="10" x2="90" y2="180"/>
+<line class="ln-faint" x1="270" y1="10" x2="270" y2="180"/>
+<line class="ln-faint" x1="90" y1="95" x2="270" y2="95"/>
+<text class="mid" x="45" y="92">Left</text><text class="t-soft mid" x="45" y="112">beside</text>
+<text class="mid" x="315" y="92">Right</text><text class="t-soft mid" x="315" y="112">beside</text>
+<text class="mid" x="180" y="58">Above</text>
+<text class="mid" x="180" y="142">Below</text>
+<text class="t-soft" x="396" y="40">Gap or empty space</text><text x="396" y="62">tab opens on its own</text>
+<text class="t-soft" x="396" y="104">Outside the App</text><text x="396" y="126">new window</text>
+<text class="t-soft" x="396" y="164">Escape</text><text x="540" y="164">cancel</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>Left or right quarter of a card</dt><dd>beside that window</dd>
+<dt>Upper or lower half of its middle</dt><dd>above or below</dd>
+<dt>Gap or empty space</dt><dd>tab opens on its own</dd>
+<dt>Outside the App</dt><dd>new window</dd>
+<dt>Escape</dt><dd>cancel</dd>
+</dl>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Overview</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Open without dragging</th><td>Grid button at the right of the tab strip, or pinch in. On a web page at normal size pinching in opens it; pinching out magnifies the page.</td></tr>
+<tr><th scope="row">Close</th><td>Escape or pinch out; clicking a card switches to it</td></tr>
+<tr><th scope="row">Drag a card</th><td>Onto another's side to merge; onto empty space to move; drag one pane out of a split card to give it a window</td></tr>
+<tr><th scope="row">Merge</th><td>The target grows out of its card, keeps its strip place, and takes the dropped tab's name</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">••• handle</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Red</th><td>Closes the tab</td></tr>
+<tr><th scope="row">Yellow</th><td>Moves the pane back to the tab strip</td></tr>
+<tr><th scope="row">Green</th><td>Opens the tab on its own. Rest on it for <strong>Move and resize</strong> (halves, Option for quarters), <strong>Fill and arrange</strong>, <strong>Return to previous layout</strong>, <strong>Equalize sizes</strong>, <strong>More layouts</strong> (top and bottom, single, 9, 16, saved).</td></tr>
+<tr><th scope="row">macOS keys</th><td>Control+Option+arrow: half. With Shift: two panes side by side or stacked. Control+Option+F: Fill. Control+Option+R: previous layout.</td></tr>
+</tbody>
+</table>
+<p class="note">Dividers stick at a third, a half and two thirds, and stop before a pane is too small. Motion follows macOS; with Reduce Motion layouts change at once.</p>
+<h2>Browser</h2>
+<p>Create a pane and select <strong>Browser</strong>, or open a browser tab from the tab bar.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">Toolbar</th><td>Back, Forward, Reload or Stop, Home, address field with bookmark star, Bookmarks, open externally, Browser menu. The field dims all but the host; a lock marks HTTPS.</td></tr>
+<tr><th scope="row">Bookmarks bar</th><td>Shown by default. Hide from the Browser menu or <strong>Settings → Appearance → Show bookmarks bar</strong>.</td></tr>
+<tr><th scope="row">Narrow pane</th><td>Less frequent actions move into the menu; address, Back, Reload or Stop, star and menu remain</td></tr>
+<tr><th scope="row">Browser menu</th><td>New browser tab, Bookmarks, History, bar visibility, profile import, clear browsing data, Browser settings. Window and pane actions stay in the OpenProgram menu.</td></tr>
+<tr><th scope="row">Loading</th><td>Reload becomes <strong>Stop loading</strong>; a line runs under the toolbar, static with reduced motion</td></tr>
+<tr><th scope="row">Leave-page prompt</th><td><strong>Stay on page</strong> is the default; <strong>Leave page</strong> continues and may lose unsaved changes</td></tr>
+<tr><th scope="row">Favicon</th><td>In ordinary and split tabs; the browser icon while loading or if unusable. A retained page reopens with its icon, unreloaded.</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Key (Ctrl on Windows)</th><th scope="col">Action in the focused Browser tab</th></tr></thead>
+<tbody>
+<tr><th scope="row">⌘R, ⇧⌘R</th><td>Reload, bypassing cache with Shift. In other panes ⌘R reloads the App window and its webpages.</td></tr>
+<tr><th scope="row">⌘L</th><td>Address field</td></tr>
+<tr><th scope="row">⌘[ ⌘]</th><td>Back, Forward</td></tr>
+<tr><th scope="row">⌘F</th><td>Find in page</td></tr>
+<tr><th scope="row">⌘+ ⌘− ⌘0</th><td>Zoom</td></tr>
+<tr><th scope="row">⌘P</th><td>Print</td></tr>
+<tr><th scope="row">⌘K</th><td>The App's <a href="web.html#command-palette">command palette</a>, even with a webpage focused</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Page's ⋮ menu</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Comment on the page…</strong></th><td>Click an element, write, <strong>Add to message</strong>. The composer gets page title, address, CSS selector, visible text and comment. Nothing is sent, so several can be collected. Esc or X cancels.</td></tr>
+<tr><th scope="row"><strong>Screenshot a region…</strong></th><td>Drag an area; size shows while dragging, a click starts over. Adds a PNG named after the site and size.</td></tr>
+</tbody>
+</table>
+<p class="note">Both go to the conversation in focus, else the one whose agent opened the page, else the last you were in. Picking and the selection run in a script context the page cannot see, and the selection never appears in the image.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Page action</th><th scope="col">Behavior</th></tr></thead>
+<tbody>
+<tr><th scope="row">Links, forms, same-page navigation</th><td>Stay in the tab</td></tr>
+<tr><th scope="row"><code translate="no">target="_blank"</code>, <code translate="no">window.open()</code></th><td>New Browser tab, activated</td></tr>
+<tr><th scope="row">Right-click a link</th><td>Open in new Browser tab, copy address</td></tr>
+<tr><th scope="row">Right-click a page</th><td>Back, Forward, Reload</td></tr>
+<tr><th scope="row">Right-click a field</th><td>Undo, Redo, Cut, Copy, Paste, Select All, as the page reports them; only for that tab</td></tr>
+</tbody>
+</table>
+<h3>Bookmarks and History</h3>
+<ul>
+<li>The bar shows the direct contents of the Bookmarks bar; extras go in the double-chevron menu. <strong>All bookmarks</strong> opens the manager, with Other and Mobile bookmarks. Names, order and contents are unchanged. Nested menus open one level at a time and scroll within the window.</li>
+<li>The manager has a folder tree, current-folder list, search, favicons and item menus. History groups by local date.</li>
+<li>Favicons: saved icon, then the site's <code translate="no">/favicon.ico</code>, then a browser icon. No referrer or third-party service. Home shortcuts show <code translate="no">/favicon.ico</code> or the site's initial.</li>
+<li>Homepage shortcut: <strong>Add</strong>, address, optional name. Cancel, Close, Escape, clicking outside or Add again clears it.</li>
+<li>History and the persistent <code translate="no">webtabs</code> partition live in Electron's per-user data directory; chats, projects, Programs and worker configuration stay in <code translate="no">~/.openprogram/</code>. Clearing browser data leaves those.</li>
+</ul>
+<details>
+<summary>Icon cache</summary>
+<p>Decoded icons are shared across the bar, menus and tabs in each renderer. The cache is bounded, retries failed sources after five minutes and refreshes reused ones after thirty. Reopening a bookmark menu reuses its document. Closing the window releases it; restarting can reload through the browser cache.</p>
+</details>
+<h3>Import a browser profile</h3>
+<p>macOS and Windows; Chrome, Brave, Edge and Chromium. Always explicit: browser, profile, data types.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Data</th><th scope="col">Import</th></tr></thead>
+<tbody>
+<tr><th scope="row">History</th><td>HTTP and HTTPS visits up to the supported limit, merged</td></tr>
+<tr><th scope="row">Bookmarks</th><td>Bar, other, mobile and nested folders; invalid URLs and duplicates filtered</td></tr>
+<tr><th scope="row">Cookies</th><td>Decrypted by a temporary source-browser process, validated, written through Electron's API. Some sites still need a login.</td></tr>
+</tbody>
+</table>
+<p class="note">Never imported: passwords, payment or address autofill, downloads, cache, localStorage, Service Workers, extensions and their storage. The source profile is unchanged.</p>
+<h3>Extensions</h3>
+<p>Not supported; see <a href="../start/faq.html#browser-extensions">the FAQ</a>.</p>
+<p class="next">Design: <a href="../reference/design/ui/browser/built-in-browser.html">Built-in browser</a>, <a href="../reference/design/integrations/browser-application.html">Browser application</a></p>
+<h2>The Agent and a Browser pane</h2>
+<p>A visible built-in Browser pane in the same window attaches a bounded description of that exact tab before the first model response: title, origin, visible text, ARIA landmarks, and a browser-control tool. It works on either side or in picture-in-picture, without OS focus.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Targeting</th><td>Actions stay bound to the originating window and tab. DOM, ARIA, text and element references by default; one viewport screenshot only for a visual task or when structure fails. No OCR, object detection, iterative crops, component or vision memory, or workflow replay.</td></tr>
+<tr><th scope="row">Your actions</th><td>Clicking, scrolling, typing, navigating or closing does not pause the Agent. Agents may also operate OpenProgram's own interface. Pause with the task control by the composer.</td></tr>
+<tr><th scope="row">Page lost</th><td>The Agent reacquires or reopens the last address and re-reads state. Clicks and submissions are never replayed. Unrecoverable login or content is reported.</td></tr>
+<tr><th scope="row">Selected page</th><td>Reused without reloading or a replacement. Each action returns for a new observation and verification.</td></tr>
+<tr><th scope="row">Safety limit</th><td>Stops the task instead of retrying completed actions; cleanup keeps the conversation identity.</td></tr>
+</tbody>
+</table>
+<h3>Corner preview</h3>
+<p>Opens when the Agent opens a page while you stay in chat. Default 300×198.75 (16:9 image plus header).</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Close preview (X)</strong></th><td>Hides it; the page stays in <strong>Session resources</strong></td></tr>
+<tr><th scope="row"><strong>Open page</strong></th><td>Shows the same page as a regular tab, where another conversation can acquire it after exclusive control is released. The original preview stays.</td></tr>
+<tr><th scope="row">Header drag; edges and corners</th><td>Move; resize. No visible grip. The underlying page does not resize.</td></tr>
+<tr><th scope="row"><strong>More → Automatically show the page the Agent is using</strong></th><td>Auto preview tracks the Agent's page; off is Fixed preview. It does not change the Agent's target, start the Agent or change page lifetime.</td></tr>
+</tbody>
+</table>
+<p class="note">Each preview belongs to its conversation and switches with it. Retained pages are invisible to other Agents. It stays inside its owner pane, over its chat in a split, with controls outside adjacent webpages. The Web UI has no native view and falls back to an iframe or an open-in-new-tab control.</p>
+<details>
+<summary>Uploads and verification</summary>
+<ul>
+<li><code translate="no">upload</code> with a fresh file-input <code translate="no">ref</code> and <code translate="no">path</code>, up to 50 MiB, selects a user-approved file. It always uses the normal permission gate. File read restrictions apply.</li>
+<li>Observations expose filenames, not contents or paths. <code translate="no">file_selected</code> verifies selection only; check acceptance with a separate assertion. An uncertain upload is not repeated.</li>
+<li>Verification uses <code translate="no">assertion</code> and a non-empty <code translate="no">value</code>; <code translate="no">text</code> is for typing or reporting a blocker.</li>
+<li>Three consecutive failed actions or unmet assertions on one observation stop with the reason. A rejection stops without repeating. A blocker never counts as completion. Action counts measure Page mutations.</li>
+</ul>
+</details>
+<h2>Session resources</h2>
+<p><strong>Resources</strong> in the right sidebar lists what the selected session owns. Clicking a chat in a split selects it for Files, Activity and Resources; clicking a webpage keeps the last chat.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Topic</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Groups</th><td>Webpage, VM, Desktop, Terminal, Application, Container, Remote environment, Other resources. Empty ones hidden. Collapse is saved per session and type and only hides rows. Each heading is a full-row control.</td></tr>
+<tr><th scope="row">Listed</th><td>Complete software or environment objects. Commands, scripts and output belong in Activity, except a command left running, shown as a Background terminal. During <code translate="no">computer_use_agent</code>, its app or VM. Files stay separate. No search field; views without recorded ownership and new drafts show nothing.</td></tr>
+<tr><th scope="row">Attach a webpage</th><td>Keep the conversation visible and drag the tab or pane handle onto <strong>Resources</strong>. A split with several pages needs the page's handle. A blue preview says <strong>Release to add to Resources</strong>; failure shows a retry and leaves the page.</td></tr>
+<tr><th scope="row">Agent-created pages</th><td>Stay out of the top strip unless pinned or split. Pages without an owner stay in it.</td></tr>
+<tr><th scope="row">Closing</th><td>Closing a session page's tab hides the view; <strong>Open in tab</strong> reopens. <strong>Close webpage</strong> actually closes, with the row returning if unconfirmed. A standalone page closes outright.</td></tr>
+<tr><th scope="row">Collapsing</th><td>Leaves resources running</td></tr>
+</tbody>
+</table>
+<h3>Shared terminals</h3>
+<p>Select a Terminal resource to attach its view. Agent and user share shell, directory, environment and output; hiding the view leaves the shell running.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Control</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Terminate terminal</strong></th><td>Requests termination after confirmation; acknowledgement is not proof of exit</td></tr>
+<tr><th scope="row"><strong>Share terminal</strong></th><td>Discoverable to other sessions on this host; making it private revokes the Agent binding</td></tr>
+<tr><th scope="row"><strong>Reconnect view</strong></th><td>Re-reads output without replaying input</td></tr>
+<tr><th scope="row"><strong>Background terminal</strong> rows</th><td><code translate="no">bash</code> commands left running: read-only output and <strong>Stop</strong>. The Agent uses <code translate="no">write_stdin</code>.</td></tr>
+<tr><th scope="row">Terminal right-click</th><td><strong>Copy</strong>, <strong>Paste</strong> where input is allowed, <strong>Add selection to chat</strong>, which adds a code block to the focused draft</td></tr>
+</tbody>
+</table>
+<p class="note">Typing into, interrupting or closing a terminal tab follows the permission mode; the approval card names the tab, its directory, whether a command runs, and exact text. Input delivery is not command success. After an uncertain result nothing is resent. An unfinished human fragment or changed revision blocks Agent input until it observes again.</p>
+<details>
+<summary>Shell metadata and the resource tool</summary>
+<p>On macOS zsh and compatible Bash 3.2 login shells, <code translate="no">terminal_use(action="observe", ...)</code> and <code translate="no">resource(provider="terminal", action="observe", ...)</code> return <code translate="no">shell_integration</code>:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">status</code></th><td><code translate="no">starting</code> <code translate="no">ready</code> <code translate="no">unavailable</code> <code translate="no">ended</code></td></tr>
+<tr><th scope="row"><code translate="no">mode</code> <code translate="no">reason</code></th><td><code translate="no">zsh-hooks</code> or <code translate="no">bash-debug</code>; why unavailable</td></tr>
+<tr><th scope="row"><code translate="no">event_sequence</code></th><td>Latest accepted shell report</td></tr>
+<tr><th scope="row"><code translate="no">cwd</code></th><td>Directory in <code translate="no">value</code> with its sequence; <code translate="no">null</code> before a report</td></tr>
+<tr><th scope="row"><code translate="no">cycle</code></th><td>Foreground <code translate="no">id</code>, <code translate="no">phase</code> (<code translate="no">running</code> <code translate="no">finished</code> <code translate="no">unknown</code>), <code translate="no">exit_code</code>; <code translate="no">null</code> before the first command</td></tr>
+</tbody>
+</table>
+<ul>
+<li><code translate="no">start_cwd</code> is the starting directory; the top-level <code translate="no">exit_code</code> is the terminal process. A cycle's code appears only after its foreground completion. <code translate="no">command_complete</code> stays <code translate="no">null</code>.</li>
+<li>bash-preexec, custom DEBUG traps, prompt commands, readonly prompt configuration and incompatible tracing fall back to <code translate="no">unavailable</code> without touching your hooks. Missing or <code translate="no">unavailable</code> means unknown; reports grant no permission and can go stale.</li>
+<li><code translate="no">resource(action="describe")</code> returns providers and schemas. <code translate="no">web</code> and <code translate="no">terminal</code> keep their native identities and checks; <code translate="no">observe</code> returns generation, binding, input revision and output cursor.</li>
+<li>Web <code translate="no">release</code> ends control and keeps the Page; <code translate="no">close</code> closes the observed tab, reports <code translate="no">page_closed</code>, and errors if unconfirmed. Terminal <code translate="no">release</code> leaves the process; <code translate="no">close</code> requests termination. Local Terminal operations need a live execution in the originating window and cannot bypass a sandbox.</li>
+<li>Trusted Python: <code translate="no">openprogram.host.resources.registry.register(...)</code> for a <code translate="no">ResourceProvider</code> with a JSON Schema per operation and an adapter, which owns authorization and lifecycle. Duplicates are rejected and arguments validated. <code translate="no">openprogram.host.resources.session.resource_use(kind, title, target)</code> reports session usage inside a trusted runtime session and releases on exit. URL identities omit credentials, queries and fragments. Commands are never parsed into resources. Installed enabled applications register <code translate="no">application.&lt;id&gt;</code>.</li>
+</ul>
+</details>
+<h2>After a restart</h2>
+<table class="stack">
+<thead><tr><th scope="col">What</th><th scope="col">Comes back as</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running conversations</th><td>Continue automatically in place, using recorded input and results. No added message; one reply with a <strong>Worker restarted, continued</strong> step.</td></tr>
+<tr><th scope="row">Manually paused, cancelled, finished tasks; a task after you sent a newer message; unanswered approvals</th><td>Stay stopped. Continue the second from Activity.</td></tr>
+<tr><th scope="row">Pages not closed</th><td>In the background, same retained tab, session and branch ownership, last confirmed address and title, on a new live page. Site storage kept; unsaved form fields not. No second copy; closed pages and hidden previews stay so.</td></tr>
+<tr><th scope="row">Closing a tab or App window</th><td>Worker tasks keep running</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Row state</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>Restoring page…</strong></th><td>Coming back, in its group</td></tr>
+<tr><th scope="row"><strong>Could not restore page</strong></th><td>Failed, or an older record with no retained tab descriptor</td></tr>
+<tr><th scope="row"><strong>Reconnect</strong></th><td>The live page needs a new connection</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Continuation rules</summary>
+<ul>
+<li><code translate="no">execution.auto_resume_window_seconds</code>: <code translate="no">-1</code> no limit (default), <code translate="no">0</code> off, positive is seconds. A deadline persists, is not extended by restarts, and existing ones survive upgrades; after it the task pauses for manual continue.</li>
+<li>Tasks checkpoint at completed provider and tool boundaries. Continuation keeps task identity, permissions and resource admission and needs a compatible runtime contract. It restores durable checkpoints, not process memory. Confirmed tool results are reused; an unknown external result needs reconciliation.</li>
+<li>Self-update continuation, replanning after a changed contract and follow-ups use the same setting, measured from the update's last activity. A running update is not stopped by it.</li>
+<li>Conversations contain results of a requested update, but no update history, controls or recovery notices, and opening one starts no update polling.</li>
+<li>Restoring a page does not start an Agent; a new task observes and checks permission as usual.</li>
+</ul>
+</details>
+<details>
+<summary>The browser tool after a restart</summary>
+<ul>
+<li>Listing pages waits up to 20 seconds for an App that is restarting, then reports <code translate="no">desktop_unavailable</code> and asks to retry. If the window is gone, other windows' pages are listed. With the App closed there is no wait: a page an Agent opens goes into a background browser with no window and none of the App's sign-ins.</li>
+<li>An earlier session or page token leads back to the same tab with a fresh observation. The action is not repeated and closed pages are not reopened.</li>
+<li>An unknown tab returns the current pages with fresh tokens.</li>
+<li>A screenshot right after an action observes first, so it does not fail as stale.</li>
+</ul>
+</details>
+<h2>Notifications and keep-awake</h2>
+<p>Set in <strong>Settings → General → Notifications</strong>, per computer. The browser interface does neither.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Behavior</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">System notification</th><td>In the background, when a turn finishes, errors, asks a question or approval, or waits for system access. Once per event, none while a window is in front or when you stop a turn. Click opens that session.</td></tr>
+<tr><th scope="row">Keep awake</th><td>Prevents idle sleep while any session runs; the display can still turn off</td></tr>
+<tr><th scope="row"><strong>Notification sound</strong></th><td>System default, none, or a macOS system sound</td></tr>
+</tbody>
+</table>
+<h2>Programs</h2>
+<p>Abilities → Programs has two roots. <strong>Tools</strong>: <code translate="no">openprogram/programs/tools/</code> by category. <strong>Applications</strong>: built in from <code translate="no">openprogram/programs/applications/</code>, and installed in <code translate="no">~/.openprogram/programs/</code>. Each expands to entries and source files; details show disabled state and, for your packages, load failure or not callable. A catalogued application in another's directory is listed alone, naming that directory. Opens on the first application, else the first tool.</p>
+<p class="note">Tree, selection and graph are kept when you leave. They are checked every five seconds while visible and on focus; unchanged files reuse analysis. A failed check keeps the last content.</p>
+<details>
+<summary>Long conversations</summary>
+<ul>
+<li>History loads the latest page first and fetches nearby messages as you scroll, keeping position and streamed output. Failures retry automatically. Distant pages leave memory. Reopening restores the visible message if still on the branch.</li>
+<li><strong>Jump to latest</strong> in the main conversation and split panes appears while newer messages are unloaded. A failed jump stays retryable. Scrolling, clicking or a key cancels a pending jump or restoration. Closing a pane saves its position. Reconnecting skips old retry delays.</li>
+<li>The DAG loads when opened. Markdown uses a bounded cache. Stored history and model context are unchanged.</li>
+</ul>
+</details>
+<p class="note">Local App refresh preserves permissions of unpacked native dependencies and restores the node-pty helper's execute permission.</p>

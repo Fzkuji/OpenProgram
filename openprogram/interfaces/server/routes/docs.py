@@ -1,0 +1,144 @@
+"""Serve the static design-documentation site at /docs.
+
+The site is built by ``scripts.docs_site.build`` into ``docs/_site/``. We mount it
+as static files so every page, asset, and the search index are served from the
+same single port as the rest of the web UI.
+
+Auto-rebuild: when the worker registers the route, compare the newest mtime
+under ``docs/`` (sources) against ``docs/_site/`` (output) and start one
+background rebuild when needed. HTTP reads never scan or rebuild the tree.
+"""
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from pathlib import Path
+
+_log = logging.getLogger(__name__)
+
+
+def _repo_root() -> Path:
+    from openprogram.operations.self_update.github_release.detect import package_root, repo_root
+
+    return repo_root() or package_root().parent
+
+
+def _docs_dir() -> Path:
+    return _repo_root() / "docs"
+
+
+def _packaged_site_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "_frontend" / "docs"
+
+
+def _is_source_checkout() -> bool:
+    return (_repo_root() / "apps" / "web" / "package.json").is_file()
+
+
+def _site_dir() -> Path:
+    bundled = _packaged_site_dir()
+    if (bundled / "index.html").is_file() and not _is_source_checkout():
+        return bundled
+    return _docs_dir() / "_site"
+
+
+def _newest_mtime(root: Path, *, skip: set[str]) -> float:
+    """Newest mtime of any .md/.html under root, skipping named subdirs."""
+    newest = 0.0
+    for p in root.rglob("*"):
+        if p.suffix not in (".md", ".html"):
+            continue
+        if any(part in skip for part in p.relative_to(root).parts):
+            continue
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m > newest:
+            newest = m
+    return newest
+
+
+def _rebuild() -> None:
+    # Reload the build modules from disk each time so edits to the build
+    # scripts take effect without restarting the worker (otherwise the worker
+    # keeps running — and re-emitting — the code it imported at startup, which
+    # would overwrite freshly hand-built output with stale logic).
+    import importlib
+    from scripts.docs_site import nav, search, template, build as _build
+    for m in (nav, search, template, _build):
+        importlib.reload(m)
+    _build.build()
+
+
+# Debounce: don't re-scan the tree on every single asset request in a burst.
+_LAST_CHECK = 0.0
+_CHECK_INTERVAL = 2.0  # seconds
+# A full build takes ~10s; it must never run on the event loop (it would
+# freeze every route, not just /docs). Rebuild in a background thread and keep
+# serving the previous _site — build() swaps the new tree in atomically.
+_REBUILD_LOCK = threading.Lock()
+
+
+def _rebuild_in_background() -> None:
+    if not _REBUILD_LOCK.acquire(blocking=False):
+        return  # a rebuild is already running
+    def run() -> None:
+        try:
+            _rebuild()
+        except Exception as e:  # never let a build error 500 the whole route
+            _log.warning("auto-rebuild failed: %s", e, exc_info=True)
+        finally:
+            _REBUILD_LOCK.release()
+    threading.Thread(target=run, name="docs-rebuild", daemon=True).start()
+
+
+def _maybe_rebuild() -> None:
+    global _LAST_CHECK
+    if not _is_source_checkout():
+        return
+    now = time.time()
+    if now - _LAST_CHECK < _CHECK_INTERVAL:
+        return
+    _LAST_CHECK = now
+    docs = _docs_dir()
+    site = _site_dir()
+    src_mtime = _newest_mtime(
+        docs, skip={"_site", "_site.tmp", "_site.old", "images", "slides"})
+    # Compare against the built index.html (always regenerated on each build).
+    index = site / "index.html"
+    try:
+        out_mtime = index.stat().st_mtime
+    except OSError:
+        out_mtime = 0.0
+    if src_mtime > out_mtime:
+        _rebuild_in_background()
+
+
+def register(app) -> None:
+    from fastapi.staticfiles import StaticFiles
+
+    repo_root = _repo_root()
+    site = _site_dir()
+    site.mkdir(parents=True, exist_ok=True)  # ensure mountable even pre-build
+
+    # Make `tools` importable (it's a top-level package at the repo root).
+    import sys
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    _maybe_rebuild()
+
+    # Bare /docs never reaches the mount: Mount's path regex needs the
+    # trailing slash, and the SPA catch-all (registered last) fully matches
+    # "/docs" — so the router's usual add-a-slash redirect never fires and
+    # the chat shell came back instead of the docs site. Redirect explicitly.
+    from fastapi.responses import RedirectResponse
+
+    @app.api_route("/docs", methods=["GET", "HEAD"], include_in_schema=False)
+    async def _docs_slash_redirect():  # noqa: ANN202
+        return RedirectResponse(url="/docs/", status_code=307)
+
+    # html=True → /docs/ resolves to index.html; extensionless paths fall back
+    # to <name>.html.
+    app.mount("/docs", StaticFiles(directory=str(site), html=True), name="docs")

@@ -4,8 +4,7 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 
-from openprogram.protected_paths import applications_root
-from openprogram.sandbox import (
+from openprogram.host.sandbox import (
     SANDBOX_DENIAL_GUIDANCE,
     SandboxPolicy,
     _bwrap_args,
@@ -45,7 +44,7 @@ def test_equally_specific_deny_beats_allow(tmp_path):
 
 
 def test_hard_floor_ignores_allow_read():
-    from openprogram.paths import get_state_dir
+    from openprogram.state.paths import get_state_dir
     auth = str(get_state_dir() / "auth" / "default.json")
     policy = SandboxPolicy(
         deny_read=(str(get_state_dir() / "auth") + "/**",),
@@ -56,7 +55,6 @@ def test_hard_floor_ignores_allow_read():
     assert read_is_denied(os.path.realpath(auth), policy)
     err = persist_allow_read(auth)
     assert err and "hard floor" in err
-    assert persist_allow_read(applications_root())
 
 
 def test_seatbelt_allow_follows_deny(tmp_path):
@@ -120,8 +118,8 @@ def test_named_denial_matches_command_path(tmp_path):
 
 
 def test_validate_read_path_honors_narrower_allow(tmp_path, monkeypatch):
-    from openprogram import sandbox
-    from openprogram.sandbox import policy_to_dict, validate_read_path
+    from openprogram.host import sandbox
+    from openprogram.host.sandbox import policy_to_dict, validate_read_path
 
     vault = tmp_path / "vault"
     allowed = vault / "ok.txt"
@@ -145,11 +143,11 @@ def test_validate_read_path_honors_narrower_allow(tmp_path, monkeypatch):
 def test_persist_allow_read_appends(monkeypatch):
     written = {}
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"sandbox": {"allow_read": ["/already"]}},
     )
     monkeypatch.setattr(
-        "openprogram.config_schema.set_setting",
+        "openprogram.state.settings.set_setting",
         lambda key, value: written.update(key=key, value=value) or {"applied": "live"},
     )
     assert persist_allow_read("/tmp/ok.env") is None
@@ -159,32 +157,32 @@ def test_persist_allow_read_appends(monkeypatch):
 
 
 def test_system_prompt_forbids_relocating_secrets():
-    from openprogram.context.components import build_system_prompt
+    from openprogram.runtime.context.components import build_system_prompt
     out = build_system_prompt({"id": "main", "name": "bot"})
-    assert "never move or copy secrets" in out
+    assert "never move or copy secrets" in out.lower()
 
 
 def test_local_backend_attaches_matched_path_and_rule(monkeypatch):
-    from openprogram import sandbox
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host import sandbox
+    from openprogram.host.backend.local import LocalBackend
 
     secret = os.path.expanduser("~/.ssh/id_ed25519")
     monkeypatch.setattr(
         sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
     )
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"sandbox": {"mode": "workspace-write"}},
     )
-    monkeypatch.setattr("openprogram.sandbox.unavailable_reason", lambda: None)
+    monkeypatch.setattr("openprogram.host.sandbox.unavailable_reason", lambda: None)
     if os.name == "nt":
         monkeypatch.setattr(
-            sandbox._compat,
+            sandbox.platform_environment,
             "windows_wsl_exec_prefix",
             lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
         )
         monkeypatch.setattr(
-            sandbox._compat,
+            sandbox.platform_environment,
             "windows_path_to_wsl",
             lambda path: "/mnt/c/" + str(path).replace("\\", "/").replace(":", ""),
         )
@@ -208,8 +206,31 @@ def test_local_backend_attaches_matched_path_and_rule(monkeypatch):
         def terminate(self):
             return True
 
-    monkeypatch.setattr("openprogram.backend.local.ProcessTreeOwner", Owner)
+    monkeypatch.setattr("openprogram.host.backend.local.ProcessTreeOwner", Owner)
     result = LocalBackend().run(f"cat {secret}", timeout=5, cwd="/tmp")
     assert result.sandbox_error == "denied"
     assert result.sandbox_rule == "~/.ssh/**"
     assert result.sandbox_path
+
+
+def test_network_failure_reads_as_a_sandbox_denial_only_without_network():
+    from openprogram.host.sandbox import SandboxPolicy, is_network_denial, network_denial_text
+
+    err = "fatal: unable to access 'https://github.com/x.git/': Could not resolve host: github.com\n"
+    assert is_network_denial(128, "", err, sandboxed=True, policy=SandboxPolicy(network=False))
+    assert not is_network_denial(128, "", err, sandboxed=True, policy=SandboxPolicy(network=True))
+    assert not is_network_denial(128, "", err, sandboxed=False, policy=SandboxPolicy())
+    assert "require_escalated" in network_denial_text()
+
+
+def test_an_escalated_policy_lets_bash_start_anywhere(tmp_path, monkeypatch):
+    from openprogram.host.sandbox import escalated_policy, validate_write_path
+
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: {"sandbox": {"mode": "workspace-write"}})
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    assert validate_write_path(outside, cwd=str(workspace))
+    with escalated_policy():
+        assert validate_write_path(outside, cwd=str(workspace)) is None

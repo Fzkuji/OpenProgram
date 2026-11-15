@@ -9,21 +9,21 @@
 
 import { useSessionStore, type StatusTone } from "@/lib/session-store";
 import { pushStatusBadge, setLastStatus } from "@/lib/tabs/top-bar-sync";
-import { startChannelHealthPoll, stopChannelHealthPoll } from "./conversations";
+import { startChannelHealthPoll, stopChannelHealthPoll } from "./session/conversations";
 import { escAttr } from "./helpers";
 import { runtimeState } from "./state";
+import { channelBrand } from "@/lib/channels/channel-brands";
 
 /** The ONLY reason anything below still lives on `window`: this file
  *  generates HTML strings containing inline `onclick="…"` handlers,
  *  which resolve against `window` at click time. Every TS consumer
  *  imports the exports directly. Two generated-markup sites remain:
  *  `buildThinkingMenu` (→ `setThinkingEffort`) and
- *  `renderActiveToolChips` (→ `toggleToolsEnabled` /
- *  `toggleWebSearchEnabled` / `_updatePlusBtnIndicator`). */
+ *  `renderActiveToolChips` (→ `toggleWebSearchEnabled` /
+ *  `_updatePlusBtnIndicator`). */
 interface UiWindow {
   setThinkingEffort?: typeof setThinkingEffort;
   _updatePlusBtnIndicator?: typeof updatePlusBtnIndicator;
-  toggleToolsEnabled?: typeof toggleToolsEnabled;
   toggleWebSearchEnabled?: typeof toggleWebSearchEnabled;
 }
 
@@ -87,11 +87,8 @@ function renderStatusBadge(
   // label) but callers pass the fuller "connected · <source>" string.
   hoverTitle?: string,
 ): void {
-  // #statusBadge is owned by the React <TopBar> (StatusBadge → Laptop
-  // icon). Writing innerHTML here clobbered React's render and made the
-  // icon flicker back to the legacy dot. Push to the session store and
-  // let React render the chip instead — unconditionally, since the DOM
-  // element may not exist at all.
+  // The environment chip renders this from the session store; nothing
+  // here writes the DOM.
   const tone: StatusTone = dotKlass.includes("--ok")
     ? "ok"
     : dotKlass.includes("--warn")
@@ -107,15 +104,11 @@ function renderStatusBadge(
   });
 }
 
-export function setStatusDotHealth(state: string): void {
-  const mod = state === "ok" ? "--ok" : state === "warn" ? "--warn" : state === "err" ? "--err" : "--neutral";
-  const dot = document.getElementById("statusBadge")?.querySelector(".indicator-dot");
-  if (dot) dot.className = "indicator-dot sm " + mod;
-  const tone: StatusTone =
-    state === "ok" ? "ok" : state === "warn" ? "warn" : state === "err" ? "err" : "connecting";
+/** Record the bound channel account's health (channel status poll). */
+export function setChannelHealth(state: string): void {
+  const health = state === "ok" || state === "warn" || state === "err" ? state : "unknown";
   try {
-    const store = useSessionStore.getState();
-    store.setStatusBadge({ ...store.statusBadge, tone });
+    useSessionStore.getState().setChannelHealth(health);
   } catch {
     /* ignore */
   }
@@ -176,18 +169,6 @@ export function updateStatus(status: string, source?: string): void {
 }
 
 /* ===== Channel / title helpers =================================== */
-
-const CHANNEL_BRAND: Record<string, string> = {
-  wechat: "WeChat",
-  discord: "Discord",
-  telegram: "Telegram",
-  slack: "Slack",
-};
-
-function channelBrand(channel: string): string {
-  if (!channel) return "";
-  return CHANNEL_BRAND[String(channel).toLowerCase()] || channel;
-}
 
 function channelPrefixFor(channel: string, accountId?: string): string {
   if (!channel) return "";
@@ -312,11 +293,6 @@ const PLUS_CHECK_SVG =
   "</svg>";
 
 export function renderPlusMenu(): void {
-  const toolsItem = document.getElementById("plusMenuTools");
-  const check = document.getElementById("plusMenuToolsCheck");
-  if (toolsItem) toolsItem.classList.toggle("active", !!runtimeState._toolsEnabled);
-  if (check) check.innerHTML = runtimeState._toolsEnabled ? PLUS_CHECK_SVG : "";
-
   const wsItem = document.getElementById("plusMenuWebSearch");
   const wsCheck = document.getElementById("plusMenuWebSearchCheck");
   const wsSub = document.getElementById("plusMenuWebSearchSub");
@@ -333,8 +309,7 @@ export function renderPlusMenu(): void {
 
 export function updatePlusBtnIndicator(): void {
   const btn = document.getElementById("plusBtn");
-  const anyActive =
-    !!runtimeState._toolsEnabled || !!runtimeState._webSearchEnabled;
+  const anyActive = !!runtimeState._webSearchEnabled;
   if (btn) btn.classList.toggle("has-active", anyActive);
   renderActiveToolChips();
 }
@@ -343,17 +318,6 @@ function renderActiveToolChips(): void {
   const host = document.getElementById("activeToolChips");
   if (!host) return;
   let chips = "";
-  if (runtimeState._toolsEnabled) {
-    chips +=
-      '<div class="tool-chip" data-tooltip="Tools" onclick="toggleToolsEnabled(event); _updatePlusBtnIndicator();" title="">' +
-      '<span class="tool-chip-icon">' +
-      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>' +
-      "</span>" +
-      '<span class="tool-chip-close" aria-label="Remove">' +
-      '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg>' +
-      "</span>" +
-      "</div>";
-  }
   if (runtimeState._webSearchEnabled) {
     let label = runtimeState._webSearchProviderLabel
       ? "Web Search · " + runtimeState._webSearchProviderLabel
@@ -374,20 +338,6 @@ function renderActiveToolChips(): void {
       "</div>";
   }
   host.innerHTML = chips;
-}
-
-export function toggleToolsEnabled(e?: Event): void {
-  if (e) e.stopPropagation();
-  runtimeState._toolsEnabled = !runtimeState._toolsEnabled;
-  try {
-    localStorage.setItem(
-      "agentic_tools_enabled",
-      runtimeState._toolsEnabled ? "1" : "0",
-    );
-  } catch {
-    /* ignore */
-  }
-  updatePlusBtnIndicator();
 }
 
 export function toggleWebSearchEnabled(e?: Event): void {
@@ -454,8 +404,7 @@ function installClickOutside(): void {
   }
   if (
     !t.closest("#agentSelector") &&
-    !t.closest("#chatAgentBadge") &&
-    !t.closest("#execAgentBadge")
+    !t.closest("#chatAgentBadge")
   ) {
     document.getElementById("agentSelector")?.remove();
     }
@@ -464,12 +413,6 @@ function installClickOutside(): void {
 
 if (typeof document !== "undefined") {
   installClickOutside();
-  try {
-    runtimeState._toolsEnabled =
-      localStorage.getItem("agentic_tools_enabled") === "1";
-  } catch {
-    runtimeState._toolsEnabled = false;
-  }
   setTimeout(() => updatePlusBtnIndicator(), 0);
 }
 
@@ -479,5 +422,4 @@ if (typeof document !== "undefined") {
 
 W.setThinkingEffort = setThinkingEffort;
 W._updatePlusBtnIndicator = updatePlusBtnIndicator;
-W.toggleToolsEnabled = toggleToolsEnabled;
 W.toggleWebSearchEnabled = toggleWebSearchEnabled;

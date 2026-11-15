@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import os
 
-from openprogram.lsp import ServerUnavailable, get_server
-from openprogram.lsp.client import LanguageServer, uri_to_path
+from openprogram.host.lsp import ServerUnavailable, get_server
+from openprogram.host.lsp.client import LanguageServer, uri_to_path
 
 # Enough locations to see the shape of a symbol's use without burying
 # the turn. Beyond this the model should narrow the question.

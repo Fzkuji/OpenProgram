@@ -12,27 +12,46 @@ import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
 
+from openprogram.operations.project_site import DOCS_URL, INSTALL_SCRIPT_URL, SITE_URL
+
+from . import nav as navmod
+from .build import DEPLOY_BASE
 from .template import render_page
 
 
 ROOT = Path(__file__).resolve().parents[2]
 LANDING = ROOT / "website" / "index.html"
 README = ROOT / "README.md"
-DOCS_README = ROOT / "docs" / "README.md"
-DOCS_README_ZH = ROOT / "docs" / "README.zh.md"
+DOCS_DIR = ROOT / "docs"
+DOCS_README = next((p for p in (DOCS_DIR / "README.md", DOCS_DIR / "README.html") if p.is_file()),
+                   DOCS_DIR / "README.md")
+DOCS_README_ZH = next((p for p in (DOCS_DIR / "README.zh.md", DOCS_DIR / "README.zh.html") if p.is_file()),
+                      DOCS_DIR / "README.zh.md")
 PYPROJECT = ROOT / "pyproject.toml"
 BUILT_SITE = ROOT / "docs" / "_site"
 SITE_TITLE = "OpenProgram: Self-Programming AI Agent Framework"
 README_HERO = (
-    "Self-Programming AI Assistant. Capture, automate, and refine all your workflows."
+    "An open-source agent harness where agents are Python programs that improve themselves."
 )
 SITE_DESCRIPTION = (
     "Build self-programming AI agents that create and refine their own "
     "workflows with an open-source runtime for models, tools, memory, "
     "context, and multi-agent collaboration."
 )
-SOCIAL_IMAGE = "https://openprogram.io/docs/images/openprogram-social-card.png"
-RELEASE_FEED = "https://github.com/Fzkuji/OpenProgram/releases.atom"
+SOCIAL_IMAGE = DOCS_URL + "images/openprogram-social-card.png"
+RELEASE_FEED = "https://github.com/FuzzyKuji/OpenProgram/releases.atom"
+HERO_ALT = "OpenProgram workspace showing an agent session that ran two sub-agents"
+HERO_AVIFS = ("chat_hero-home.avif", "chat_hero-home-light.avif")
+HERO_AVIF_SIZE = (1600, 1000)
+THEME_COLORS = {
+    "(prefers-color-scheme: dark)": "#0e0f17",
+    "(prefers-color-scheme: light)": "#f8f9fc",
+}
+# The landing's indigo palettes, taken from the logo.
+PALETTE_BACKGROUNDS = {
+    "dark": ("#0e0f17", "#141622", "#1a1c2b"),
+    "light": ("#f8f9fc", "#f1f3f9", "#ffffff"),
+}
 
 
 class LandingParser(HTMLParser):
@@ -221,8 +240,8 @@ def main() -> int:
     failures: list[str] = []
     escaped_schema = render_page(
         title="</script><script>alert(1)</script>", body_html="", nav_html="",
-        toc_html="", base="/docs/", canonical_url="https://openprogram.io/docs/test.html",
-        docs_root_url="https://openprogram.io/docs/",
+        toc_html="", base="/docs/", canonical_url=DOCS_URL + "test.html",
+        docs_root_url=DOCS_URL,
     )
     require("\\u003c/script>" in escaped_schema and "</script><script>" not in escaped_schema,
             "breadcrumb JSON does not safely encode page titles", failures)
@@ -239,8 +258,10 @@ def main() -> int:
     docs_readme_zh = DOCS_README_ZH.read_text(encoding="utf-8")
     project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
 
-    require(("canonical", "https://openprogram.io/") in links,
+    require(("canonical", SITE_URL) in links,
             "missing canonical URL", failures)
+    require(("describedby", SITE_URL + "llms.txt") in links,
+            "missing llms.txt discovery link", failures)
     feed_links = [
         item
         for item in page.links
@@ -256,9 +277,9 @@ def main() -> int:
     )
     require(f"<title>{SITE_TITLE}</title>" in source,
             "landing title differs from the product title", failures)
-    require(("icon", "/favicon.ico") in links,
+    require(("icon", "favicon.ico") in links,
             "missing root ICO favicon", failures)
-    require(("icon", "/docs/assets/mark.svg") in links,
+    require(("icon", "docs/assets/mark.svg") in links,
             "missing SVG favicon", failures)
     require(property_meta.get("og:title") == SITE_TITLE,
             "Open Graph title differs from the landing title", failures)
@@ -281,42 +302,47 @@ def main() -> int:
             "Twitter image is not the canonical social card", failures)
     require(named_meta.get("twitter:card") == "summary_large_image",
             "missing large Twitter card", failures)
-    require(named_meta.get("theme-color") == "#07080a",
-            "missing dark browser theme color", failures)
-    hero = next(
-        (
-            image
-            for image in page.image_attrs
-            if image.get("alt")
-            == "OpenProgram Web UI showing an agent session with a conversation summary"
-        ),
-        None,
-    )
-    hero_picture = next(
-        (picture for picture in page.pictures if hero in picture["images"]),
-        None,
-    )
-    require(
-        hero_picture is not None
-        and any(
-            item.get("srcset") == "/docs/images/chat_hero-home.avif"
-            and item.get("type") == "image/avif"
-            and item.get("width") == "800"
-            and item.get("height") == "500"
-            for item in hero_picture["sources"]
-        ),
-        "landing hero does not offer the optimized AVIF image",
-        failures,
-    )
+    theme_colors = {
+        (item.get("media"), item.get("content"))
+        for item in page.meta if item.get("name") == "theme-color"
+    }
+    for media, color in THEME_COLORS.items():
+        require((media, color) in theme_colors,
+                f"missing {media} browser theme color", failures)
+    # The dark and light screenshots are separate pictures; the dark one comes
+    # first and is the page's one high-priority image.
+    heroes = [
+        image
+        for image in page.image_attrs
+        if image.get("alt") == HERO_ALT
+    ]
+    hero = heroes[0] if heroes else None
+    require(len(heroes) == len(HERO_AVIFS),
+            "landing hero needs one picture per theme", failures)
+    for image, avif in zip(heroes, HERO_AVIFS):
+        hero_picture = next(
+            (picture for picture in page.pictures if image in picture["images"]),
+            None,
+        )
+        require(
+            hero_picture is not None
+            and any(
+                item.get("srcset") == "docs/images/" + avif
+                and item.get("type") == "image/avif"
+                and item.get("width") == str(HERO_AVIF_SIZE[0])
+                and item.get("height") == str(HERO_AVIF_SIZE[1])
+                for item in hero_picture["sources"]
+            ),
+            f"landing hero does not offer the optimized AVIF image {avif}",
+            failures,
+        )
+        require(
+            image.get("width") == "3024" and image.get("height") == "1890",
+            "landing PNG fallback dimensions differ from its intrinsic dimensions",
+            failures,
+        )
     require(hero is not None and hero.get("fetchpriority") == "high",
             "landing LCP image is not high priority", failures)
-    require(
-        hero is not None
-        and hero.get("width") == "3024"
-        and hero.get("height") == "1890",
-        "landing PNG fallback dimensions differ from its intrinsic dimensions",
-        failures,
-    )
     require(sum(image.get("fetchpriority") == "high"
                 for image in page.image_attrs) == 1,
             "landing must have exactly one high-priority image", failures)
@@ -333,21 +359,21 @@ def main() -> int:
         "copy button accessible name overrides its visible text",
         failures,
     )
-    faint_match = re.search(r"--faint\s*:\s*(#[0-9a-fA-F]{6})", css)
-    require(faint_match is not None,
-            "landing secondary-text color is missing", failures)
-    if faint_match:
-        faint = faint_match.group(1)
-        for background in ("#07080a", "#0d1014", "#11151b"):
+    # The first --faint belongs to the dark base palette, the second to light.
+    faint_colors = re.findall(r"--faint\s*:\s*(#[0-9a-fA-F]{6})", css)
+    require(len(faint_colors) == len(PALETTE_BACKGROUNDS),
+            "landing secondary-text color is missing from a theme", failures)
+    for faint, (theme, backgrounds) in zip(faint_colors, PALETTE_BACKGROUNDS.items()):
+        for background in backgrounds:
             require(_contrast_ratio(faint, background) >= 4.5,
-                    f"secondary text fails 4.5:1 contrast on {background}", failures)
+                    f"{theme} secondary text fails 4.5:1 contrast on {background}", failures)
     require(f"<b>{README_HERO}</b>" in readme,
             "README hero differs from the canonical tagline", failures)
     require(f"<b>{SITE_TITLE}</b>" in docs_readme,
             "docs hero differs from the product title", failures)
     require("<b>OpenProgram：自编程 AI Agent 框架</b>" in docs_readme_zh,
             "Chinese docs hero differs from the product positioning", failures)
-    release_url = "https://github.com/Fzkuji/OpenProgram/releases"
+    release_url = "https://github.com/FuzzyKuji/OpenProgram/releases"
     for name, document in (("README", readme), ("docs README", docs_readme),
                            ("Chinese docs README", docs_readme_zh)):
         require(release_url in document,
@@ -355,11 +381,11 @@ def main() -> int:
     require(project.get("description") == SITE_TITLE,
             "package description differs from the product title", failures)
     project_urls = project.get("urls", {})
-    require(project_urls.get("Homepage") == "https://openprogram.io/",
-            "package homepage is not the canonical website", failures)
-    require(project_urls.get("Documentation") == "https://openprogram.io/docs/",
+    require(project_urls.get("Homepage") == SITE_URL,
+            "package homepage is not the configured website address", failures)
+    require(project_urls.get("Documentation") == DOCS_URL,
             "package documentation URL is not canonical", failures)
-    require(project_urls.get("Repository") == "https://github.com/Fzkuji/OpenProgram",
+    require(project_urls.get("Repository") == "https://github.com/FuzzyKuji/OpenProgram",
             "package repository URL is not canonical", failures)
     software = next((item for item in page.structured_data
                      if item.get("@type") == "SoftwareSourceCode"), None)
@@ -378,22 +404,17 @@ def main() -> int:
         "Build agents that program their own workflows.",
         "Use an agent or build your own.",
         "Everything you need to run agents.",
-        "GUI Agent", "Research Agent", "Wiki Agent",
     ):
         require(phrase in visible_text, f"missing product copy: {phrase}", failures)
     require('<span class="program-word">program</span>' in source,
             "program keyword is not visually emphasized", failures)
 
-    for harness_url in (
-        "https://github.com/Fzkuji/GUI-Agent-Harness",
-        "https://github.com/Fzkuji/Research-Agent-Harness",
-        "https://github.com/Fzkuji/Wiki-Agent-Harness",
-    ):
-        require(harness_url in page.anchors,
-                f"missing harness link {harness_url}", failures)
+    for removed in ("GUI-Agent-Harness", "Research-Agent-Harness"):
+        require(removed not in source,
+                f"landing page still links the removed {removed}", failures)
     for community_url in (
-        "https://github.com/Fzkuji/OpenProgram/discussions",
-        "https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md",
+        "https://github.com/FuzzyKuji/OpenProgram/discussions",
+        "https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md",
     ):
         require(community_url in page.anchors,
                 f"missing community link {community_url}", failures)
@@ -407,7 +428,7 @@ def main() -> int:
     require("KDD 2026 AgenticSE Workshop" not in visible_text,
             "landing page still emphasizes the workshop venue", failures)
 
-    install = "curl -fsSL https://openprogram.io/install | sh"
+    install = f"curl -fsSL {INSTALL_SCRIPT_URL} | sh"
     require(install in visible_text, "missing documented installer", failures)
     require('data-copy="openprogram web"' in source,
             "missing copyable openprogram run command", failures)
@@ -415,10 +436,16 @@ def main() -> int:
             "landing page still advertises unsupported pip install", failures)
 
     for image in (
-        "/docs/images/logo-lockup-dark.svg",
-        "/docs/images/code_hero.png",
-        "/docs/images/chat_hero.png",
-        "/docs/images/tui_hero.png",
+        "docs/images/logo-lockup-dark.svg",
+        "docs/images/code_hero.png",
+        "docs/images/chat_hero.png",
+        "docs/images/browser_hero.png",
+        "docs/images/chat_edit.png",
+        "docs/images/logo-lockup-light.svg",
+        "docs/images/code_hero_light.png",
+        "docs/images/chat_hero_light.png",
+        "docs/images/browser_hero_light.png",
+        "docs/images/chat_edit_light.png",
     ):
         require(image in page.images, f"missing product image {image}", failures)
 
@@ -436,12 +463,12 @@ def main() -> int:
     if sitemap_path.is_file():
         sitemap = sitemap_path.read_text(encoding="utf-8")
         for url in (
-            "https://openprogram.io/docs/capabilities/agentic-programming/self-programming-ai-agents.html",
-            "https://openprogram.io/docs/comparisons/ai-agent-frameworks.html",
+            DOCS_URL + "capabilities/agentic-programming/self-programming-ai-agents.html",
+            DOCS_URL + "reference/comparisons/ai-agent-frameworks.html",
         ):
             require(f"<loc>{url}</loc>" in sitemap,
                     f"sitemap is missing {url}", failures)
-        require("https://openprogram.io/docs/README.html" not in sitemap,
+        require(DOCS_URL + "README.html" not in sitemap,
                 "sitemap includes the duplicate docs README URL", failures)
     built_favicon = BUILT_SITE / "favicon.ico"
     require(built_favicon.is_file(), "docs build did not produce favicon.ico", failures)
@@ -455,33 +482,46 @@ def main() -> int:
         require(built_social_card.read_bytes()
                 == (ROOT / "docs/images/openprogram-social-card.png").read_bytes(),
                 "built social card differs from the source asset", failures)
-    optimized_hero = ROOT / "docs/images/chat_hero-home.avif"
-    require(optimized_hero.is_file(), "optimized landing hero is missing", failures)
-    if optimized_hero.is_file():
+    for avif in HERO_AVIFS:
+        optimized_hero = ROOT / "docs/images" / avif
+        require(optimized_hero.is_file(), f"optimized landing hero {avif} is missing", failures)
+        if not optimized_hero.is_file():
+            continue
         require(optimized_hero.stat().st_size < 150_000,
-                "optimized landing hero exceeds 150 KiB", failures)
-        require(_avif_dimensions(optimized_hero) == (800, 500),
-                "optimized landing hero dimensions differ from 800x500", failures)
-        built_optimized_hero = BUILT_SITE / "images/chat_hero-home.avif"
+                f"optimized landing hero {avif} exceeds 150 KiB", failures)
+        require(_avif_dimensions(optimized_hero) == HERO_AVIF_SIZE,
+                f"optimized landing hero {avif} dimensions differ from 1600x1000", failures)
+        built_optimized_hero = BUILT_SITE / "images" / avif
         require(built_optimized_hero.is_file(),
-                "docs build did not copy the optimized landing hero", failures)
+                f"docs build did not copy the optimized landing hero {avif}", failures)
         if built_optimized_hero.is_file():
             require(built_optimized_hero.read_bytes() == optimized_hero.read_bytes(),
-                    "built optimized hero differs from its source", failures)
+                    f"built optimized hero {avif} differs from its source", failures)
 
+    redirect_source = BUILT_SITE.parent / "redirects.json"
+    redirects = json.loads(redirect_source.read_text(encoding="utf-8")) if redirect_source.exists() else {}
     language_pairs: set[tuple[Path, Path]] = set()
     for html_path in BUILT_SITE.rglob("*.html"):
         if html_path.name.endswith(".raw.html"):
+            if html_path.relative_to(BUILT_SITE).as_posix() in redirects:
+                continue  # Retired raw URLs are redirects, not visualization pages.
+            raw_head = LandingParser()
+            raw_head.feed(html_path.read_text(encoding="utf-8").split("</head>", 1)[0])
+            require([link.get("href") for link in raw_head.links
+                     if "describedby" in link.get("rel", "").split()]
+                    == [SITE_URL + "llms.txt"],
+                    f"invalid raw-page llms.txt discovery in {html_path}", failures)
             continue
-        if html_path.name.endswith(".zh.html"):
-            en_path = html_path.with_name(html_path.name.replace(".zh.html", ".html"))
+        suffix = ".viz.html" if html_path.name.endswith(".viz.html") else ".html"
+        if html_path.name.endswith(".zh" + suffix):
+            en_path = html_path.with_name(html_path.name.removesuffix(".zh" + suffix) + suffix)
             zh_path = html_path
         elif html_path == BUILT_SITE / "index.html":
             en_path = html_path
             zh_path = BUILT_SITE / "README.zh.html"
         else:
             en_path = html_path
-            zh_path = html_path.with_name(html_path.stem + ".zh.html")
+            zh_path = html_path.with_name(html_path.name.removesuffix(suffix) + ".zh" + suffix)
 
         head = html_path.read_text(encoding="utf-8").split("</head>", 1)[0]
         head_page = LandingParser()
@@ -496,11 +536,35 @@ def main() -> int:
              if "canonical" in link.get("rel", "").split()),
             "",
         )
+        retired_target = redirects.get(html_path.relative_to(BUILT_SITE).as_posix())
+        if retired_target is not None:
+            require(canonical_url == DEPLOY_BASE + retired_target,
+                    f"incorrect redirect canonical URL in {html_path}", failures)
+            require(any(meta.get("name") == "robots" and meta.get("content") == "noindex"
+                        for meta in head_page.meta),
+                    f"redirect must be excluded from indexing in {html_path}", failures)
+            # Retired URLs are not articles or translated copies of articles.
+            continue
+        if canonical_url:
+            require([link.get("href") for link in head_page.links
+                     if "describedby" in link.get("rel", "").split()]
+                    == [SITE_URL + "llms.txt"],
+                    f"invalid llms.txt discovery in {html_path}", failures)
+        markdown_links = [link.get("href") for link in head_page.links
+                          if "alternate" in link.get("rel", "").split()
+                          and link.get("type", "").casefold() == "text/markdown"]
+        source_copy = html_path.with_suffix(html_path.suffix + ".md")
+        expected_markdown = []
+        if source_copy.is_file():
+            expected_markdown = [canonical_url + "index.html.md"
+                                 if canonical_url.endswith("/") else canonical_url + ".md"]
+        require(markdown_links == expected_markdown,
+                f"invalid Markdown discovery in {html_path}", failures)
         breadcrumbs = [
             item for item in head_page.structured_data
             if item.get("@type") == "BreadcrumbList"
         ]
-        is_docs_root = canonical_url.rstrip("/") == "https://openprogram.io/docs"
+        is_docs_root = canonical_url.rstrip("/") == DOCS_URL.rstrip("/")
         if canonical_url:
             require(len(breadcrumbs) == (0 if is_docs_root else 1),
                     f"invalid breadcrumb structured data count in {html_path}", failures)
@@ -510,7 +574,7 @@ def main() -> int:
                 len(items) == 2
                 and items[0].get("position") == 1
                 and items[0].get("name") == "OpenProgram Docs"
-                and items[0].get("item") == "https://openprogram.io/docs/"
+                and items[0].get("item") == DOCS_URL
                 and items[1].get("position") == 2
                 and bool(items[1].get("name")),
                 f"invalid breadcrumb trail in {html_path}", failures,
@@ -523,10 +587,10 @@ def main() -> int:
         language_pairs.add((en_path, zh_path))
         en_rel = en_path.relative_to(BUILT_SITE).as_posix()
         zh_rel = zh_path.relative_to(BUILT_SITE).as_posix()
-        en_url = "https://openprogram.io/docs/" + en_rel
-        zh_url = "https://openprogram.io/docs/" + zh_rel
+        en_url = DOCS_URL + en_rel
+        zh_url = DOCS_URL + zh_rel
         if en_path in (BUILT_SITE / "README.html", BUILT_SITE / "index.html"):
-            en_url = "https://openprogram.io/docs/"
+            en_url = DOCS_URL
         expected = {
             ("en", en_url),
             ("zh-Hans", zh_url),
@@ -535,16 +599,32 @@ def main() -> int:
         require(alternates == expected,
                 f"incomplete reciprocal hreflang cluster in {html_path}", failures)
     require(bool(language_pairs), "docs build contains no bilingual page pairs", failures)
+    for doc_page in navmod.discover(ROOT / "docs"):
+        for src, out in ((doc_page.src, doc_page.out), (doc_page.zh_src, doc_page.zh_out)):
+            if src is None or out is None or src.suffix != ".md":
+                continue
+            copy = (BUILT_SITE / out).with_suffix(out.suffix + ".md")
+            require(copy.is_file() and copy.read_bytes() == src.read_bytes(),
+                    f"missing or altered Markdown source: {copy}", failures)
+    index_markdown = BUILT_SITE / "index.html.md"
+    # An HTML overview publishes a generated copy; only a Markdown one is verbatim.
+    require(index_markdown.is_file()
+            and (DOCS_README.suffix != ".md" or index_markdown.read_bytes() == DOCS_README.read_bytes()),
+            "missing or altered index Markdown source", failures)
     llms = BUILT_SITE / "llms.txt"
     require(llms.is_file(), "docs build did not produce llms.txt", failures)
     if llms.is_file():
         llms_text = llms.read_text(encoding="utf-8")
+        for target in re.findall(re.escape(DOCS_URL) + r"([^\s)]+\.html\.md)", llms_text):
+            require((BUILT_SITE / target).is_file(),
+                    f"llms.txt Markdown target is missing: {target}", failures)
+
         for url in (
-            "https://openprogram.io/",
-            "https://openprogram.io/docs/",
-            "https://github.com/Fzkuji/OpenProgram",
-            "https://openprogram.io/docs/capabilities/agentic-programming/self-programming-ai-agents.html",
-            "https://openprogram.io/docs/comparisons/ai-agent-frameworks.html",
+            SITE_URL,
+            DOCS_URL,
+            "https://github.com/FuzzyKuji/OpenProgram",
+            DOCS_URL + "capabilities/agentic-programming/self-programming-ai-agents.html",
+            DOCS_URL + "reference/comparisons/ai-agent-frameworks.html",
         ):
             require(url in llms_text, f"llms.txt is missing {url}", failures)
 

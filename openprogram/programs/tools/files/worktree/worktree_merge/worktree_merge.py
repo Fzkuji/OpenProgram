@@ -1,12 +1,12 @@
 """worktree_merge — merge a worktree's branch back into its source repo."""
 from __future__ import annotations
 
-from openprogram.programs._runtime import function
+from openprogram.programs._host.runtime import function
 from openprogram.programs.tools.files.worktree.shared import (
     _current_session_id,
     clear_binding_if_no_active,
 )
-from openprogram.worktree.manager import WorktreeError, get_manager
+from openprogram.state.worktree.manager import WorktreeError, get_manager
 
 
 @function(
@@ -21,13 +21,15 @@ from openprogram.worktree.manager import WorktreeError, get_manager
         "  worktree_id: id from worktree_create / worktree_list.\n"
         "  strategy: 'ff-only' (default; fails when not "
         "fast-forward), 'squash' (squash all worktree commits into "
-        "one), or 'no-ff' (always create a merge commit).\n"
+        "one), 'no-ff' (always create a merge commit), or 'auto' "
+        "(fast-forward when possible, else a merge commit).\n"
         "  delete_branch: if true, delete the worktree's branch after "
         "merging. Default false — branch is preserved for later "
         "auditability."
     ),
     toolset=["core"],
-    requires_approval=True,
+    # Merging adds commits to the source repository and deletes nothing
+    # the user has; only discard asks first.
 )
 def worktree_merge(
     worktree_id: str,

@@ -1,6 +1,9 @@
 """Target addressing for send_message: parse the ``to`` argument and
 resolve branch names into ``(session_id, head_id)`` targets."""
 from __future__ import annotations
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 def _parse_to(to: str) -> tuple[str, str | None, str | None]:
@@ -43,7 +46,7 @@ def _normalize_existing_target(
       ("none", None)                      — node is on no branch of the
                                             session (or doesn't exist)
     """
-    from openprogram.agent.session_db import default_db
+    from openprogram.runtime.context.session_db import default_db
     db = default_db()
     tips = db.list_branches(session_id) or []
     # Fast path: the node already IS a branch tip.
@@ -55,7 +58,8 @@ def _normalize_existing_target(
         if node_id in db.merged_heads(session_id):
             return "ok", node_id
     except Exception:
-        pass
+        # Merged heads are an extra lookup; the containing-branch search still runs.
+        _log.debug("merged heads unavailable session=%s", session_id, exc_info=True)
     containing: list[tuple[str, str]] = []
     for t in tips:
         tip = t.get("head_msg_id")
@@ -72,6 +76,66 @@ def _normalize_existing_target(
     if len(containing) > 1:
         return "ambiguous", containing
     return "none", None
+
+
+def name_key(name: str) -> str:
+    """A name with case, spaces and punctuation folded away, so a name is
+    reached however it is spelled: with spaces as written, or with the
+    underscores older agent names were stored with."""
+    import re
+    return "_".join(re.split(r"[\W_]+", (name or "").casefold())).strip("_")
+
+
+def agent_tips(session_id: str) -> list[tuple[str, str]]:
+    """The agents spawned in this session, as ``(label, tip)``: the name
+    the ``agent`` call gave it and the current tip of its branch. A
+    finished agent's branch is retired from the branch list and may be
+    renamed by the auto-namer, yet the name it was spawned with stays
+    its address — as in Claude Code, a finished agent can be messaged
+    again by name. Newest first; archived agents are left out."""
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.runtime.jobs.store import list_jobs
+    db = default_db()
+    try:
+        jobs = [j for j in list_jobs(session_id)
+                if j.creates_agent and j.label and j.head_id]
+    except Exception:
+        return []
+    if not jobs:
+        return []
+    try:
+        live = [b.get("head_msg_id") for b in db.list_branches(session_id) or []
+                if b.get("head_msg_id")]
+    except Exception:
+        live = []
+    chains: dict[str, set[str]] = {}
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for job in sorted(jobs, key=lambda j: j.created_at or 0, reverse=True):
+        tip = job.head_id
+        # The branch may have run more turns since the job ended (a
+        # message delivered to it): its tip is the live branch that
+        # contains the job's head.
+        for t in live:
+            if t not in chains:
+                try:
+                    chains[t] = {m.get("id") for m in db.get_branch(session_id, t) or []}
+                except Exception:
+                    chains[t] = set()
+            if job.head_id in chains[t]:
+                tip = t
+                break
+        if tip in seen:
+            continue
+        try:
+            if db.get_branch_meta(session_id, tip).get("archived"):
+                continue
+        except Exception:
+            # Unknown archive state: keep the tip as a candidate.
+            _log.debug("branch meta unavailable session=%s tip=%s", session_id, tip, exc_info=True)
+        seen.add(tip)
+        out.append((str(job.label), str(tip)))
+    return out
 
 
 def resolve_existing_target(
@@ -91,7 +155,7 @@ def resolve_existing_target(
     where ``body`` is the message without a tool prefix (each caller
     prepends its own ``[send_message error]`` / ``[agent error]`` tag).
     """
-    from openprogram.agent.session_db import default_db
+    from openprogram.runtime.context.session_db import default_db
     db = default_db()
     _, tgt_sid, head = _parse_to(to)
     run_session = tgt_sid or current_session_id
@@ -166,13 +230,15 @@ def _resolve_branch_by_name(name: str) -> tuple[str, object]:
       ("ambiguous", [(name, session_id, head_id), ...])
       ("none", None)
     """
-    from openprogram.agent.session_db import default_db
+    from openprogram.runtime.context.session_db import default_db
     db = default_db()
     needle = (name or "").strip()
     if not needle:
         return "none", None
     try:
-        from openprogram.agent.run_control import _current_session_id
+        from openprogram.runtime.execution.run_control.binding import (
+            _current_session_id,
+        )
         cur = _current_session_id.get(None)
     except Exception:
         cur = None
@@ -185,7 +251,8 @@ def _resolve_branch_by_name(name: str) -> tuple[str, object]:
             if sid and sid not in sids:
                 sids.append(sid)
     except Exception:
-        pass
+        # The session list only widens the search; the current session is still tried.
+        _log.debug("session list unavailable for addressing", exc_info=True)
     candidates: list[tuple[str, str, str]] = []
     for sid in sids:
         try:
@@ -198,6 +265,17 @@ def _resolve_branch_by_name(name: str) -> tuple[str, object]:
             if bname and head:
                 candidates.append((bname, sid, head))
     exact = [c for c in candidates if c[0] == needle]
+    tips = agent_tips(cur) if cur and not exact else []
+    if not exact:
+        # The name an agent was spawned with (its branch may have been
+        # renamed since, or retired from the branch list when it ended).
+        exact = [(label, cur, tip) for label, tip in tips if label == needle]
+    if not exact and name_key(needle):
+        # Spelled another way: "Spell the word harbor" and the older
+        # identifier form "Spell_the_word_harbor" are one name.
+        key = name_key(needle)
+        exact = [c for c in candidates if name_key(c[0]) == key] or [
+            (label, cur, tip) for label, tip in tips if name_key(label) == key]
     if len(exact) == 1:
         return "ok", (exact[0][1], exact[0][2])
     if len(exact) > 1:
@@ -208,3 +286,111 @@ def _resolve_branch_by_name(name: str) -> tuple[str, object]:
     if len(prefix) > 1:
         return "ambiguous", prefix
     return "none", None
+
+
+# --- conversations and saved Agents ------------------------------------
+#
+# A conversation by its id, ``SID:HEAD`` on its current line, or exact
+# title; a saved Agent by name or id reaches its one conversation. This was
+# the always-on hand-off's addressing; send_message took it over with the
+# hand-off's job (design: agent-collaboration.html#tools).
+
+_TITLE_SCAN = 500
+
+
+class AddressRefused(ValueError):
+    """``to`` names no single conversation; the message says what does."""
+
+
+def _title(session: dict) -> str:
+    return str(session.get("title") or "").strip() or "Untitled conversation"
+
+
+def _listed(rows: list[dict]) -> str:
+    return ", ".join(f"“{_title(row)}” ({row['id']})" for row in rows[:10])
+
+
+def _takes_messages(session: dict | None) -> dict:
+    """``session`` when another agent may send it work: not archived,
+    imported, a sub-agent's or a Try chat."""
+    from openprogram.runtime.conversation.always_on.runtime import owner_conversation
+    if not owner_conversation(session):
+        raise AddressRefused("That conversation cannot take messages: it is archived, "
+                             "imported, a sub-agent's or a Try chat.")
+    return session  # type: ignore[return-value]
+
+
+def _at_head(session: dict, head: str, to: str) -> dict:
+    """``SID:HEAD``: the conversation, when ``head`` is on its current line."""
+    from openprogram.runtime.context.session_db import default_db
+    target = _takes_messages(session)
+    if not any(row.get("id") == head for row in default_db().get_branch(target["id"]) or []):
+        raise AddressRefused(f"{to!r} is not on the current line of “{_title(target)}”. Pass "
+                             "its id for that line, or a branch address from list_agents.")
+    return target
+
+
+def agents_named(to: str) -> list:
+    """Saved Agents whose id or name is ``to`` (any case)."""
+    from openprogram.runtime.agent_registry import manager
+    wanted = to.casefold()
+    return [spec for spec in manager.list_all()
+            if wanted in (str(spec.id).casefold(), str(spec.name or "").strip().casefold())]
+
+
+def _your_conversations(sender_id: str, rows: list[dict]) -> str:
+    known = "; ".join([f"{_title(row)} ({row['id']})" for row in rows if row["id"] != sender_id][:20])
+    return (f"Your conversations: {known or 'none'}. "
+            "list_agents scope=\"all\" shows every Agent's conversations.")
+
+
+def _conversation_of_agents(sender_id: str, agents: list, everyone: list[dict]) -> dict:
+    """The one conversation, other than the sender, of the Agent ``to`` names."""
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.runtime.conversation.always_on.runtime import owner_conversation
+    db = default_db()
+    # A list row can be older than the conversation's Try flag.
+    rows = [row for spec in agents for row in db.list_sessions(limit=_TITLE_SCAN, agent_id=spec.id)
+            if owner_conversation(row) and row["id"] != sender_id
+            and owner_conversation(db.get_session(row["id"]))]
+    if len(rows) == 1:
+        return rows[0]
+    name = str(agents[0].name or agents[0].id)
+    if rows:
+        raise AddressRefused(f"Agent “{name}” has several conversations: {_listed(rows)}. "
+                             "Pass the id of the one that should do this.")
+    raise AddressRefused(f"Agent “{name}” has no other conversation to send this to, and only the "
+                         f"user creates conversations. {_your_conversations(sender_id, everyone)}")
+
+
+def resolve_conversation(sender_id: str, to: str) -> dict:
+    """The conversation ``to`` names, in this order: its id, ``SID:HEAD``,
+    its exact title (any case), then a saved Agent's id or name (any case).
+    Raises :class:`AddressRefused` naming the choices."""
+    from openprogram.runtime.context.session_db import default_db
+    from openprogram.runtime.conversation.always_on.runtime import owner_conversation
+    to = (to or "").strip()
+    if not to:
+        raise AddressRefused("Name who to send this to: a conversation's id or title, "
+                             "an Agent's name or id, or SID:HEAD from list_agents scope=\"all\".")
+    db = default_db()
+    session = db.get_session(to)
+    if session is not None:
+        return _takes_messages(session)
+    conversation_id, colon, head = to.partition(":")
+    addressed = db.get_session(conversation_id) if colon and head else None
+    if addressed is not None:
+        return _at_head(addressed, head, to)
+    rows = [row for row in db.list_sessions(limit=_TITLE_SCAN) if owner_conversation(row)]
+    matches = [row for row in rows if _title(row).casefold() == to.casefold()
+               and owner_conversation(db.get_session(row["id"]))]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        listed = ", ".join(f"{row['id']}" for row in matches[:10])
+        raise AddressRefused(f"Several conversations are titled {to!r} ({listed}); pass the id instead.")
+    agents = agents_named(to)
+    if agents:
+        return _conversation_of_agents(sender_id, agents, rows)
+    raise AddressRefused(f"No conversation is titled {to!r} and no Agent has that name or id. "
+                         f"{_your_conversations(sender_id, rows)}")

@@ -1,0 +1,6 @@
+Chat-channel brand SVGs from simple-icons 13.21.0.
+Source: https://github.com/simple-icons/simple-icons
+License: CC0-1.0 (public domain dedication) for the icon data.
+Brand names and logos belong to their respective owners.
+slack.svg splits the single-colour mark's paths into Slack's four brand colours.
+The channel mapping (name, colour, file) is in lib/channels/channel-brands.ts.

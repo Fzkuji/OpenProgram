@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "../settings-page.module.css";
+import styles from "../providers/provider-pane.module.css";
 import { SearchProviderGlyph } from "./glyph";
 import type { SearchProvider } from "./types";
 import { useTranslation } from "@/lib/i18n";
@@ -36,7 +36,7 @@ export function SearchProviderItem({
               ? styles.off
               : styles.unconfigured)
         }
-        title={
+        data-tip={
           p.available
             ? text("Available", "可用")
             : p.configured

@@ -1,0 +1,56 @@
+<title>日常使用</title>
+<meta name="description" content="入口、恢复和绑定会话，以及 Web UI 中的消息、版本和分支操作。">
+<h1>日常使用</h1>
+
+<h2 id="entry-points">入口</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">打开</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>终端聊天</td></tr>
+<tr><th scope="row"><code translate="no">openprogram web</code></th><td>浏览器 <code translate="no">http://localhost:18100</code>，已登录</td></tr>
+<tr><th scope="row"><code translate="no">openprogram --print "…"</code></th><td>一问一答后退出</td></tr>
+<tr><th scope="row"><code translate="no">openprogram status</code>、<code translate="no">restart</code>、<code translate="no">stop</code></th><td>后台服务：状态、代码或配置改动后重启、停止</td></tr>
+</tbody>
+</table>
+<p class="note">两个界面共用一份历史，存放在 <code translate="no">~/.openprogram/projects/&lt;project-id&gt;/chats/&lt;session-id&gt;/</code>。没有项目的会话属于主项目（id 为 <code translate="no">default</code>，以你的主目录命名）。工作文件夹只放项目文件，不放对话仓库。</p>
+
+<h2 id="sessions">会话</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram sessions list</code></th><td>所有 agent 的所有会话</td></tr>
+<tr><th scope="row"><code translate="no">openprogram --resume &lt;session_id&gt;</code></th><td>在终端继续</td></tr>
+<tr><th scope="row"><code translate="no">openprogram sessions resume</code></th><td>回答正在等待输入的会话</td></tr>
+<tr><th scope="row"><code translate="no">openprogram sessions attach</code></th><td>把 channel 用户（Telegram、Discord、Slack、微信）的消息路由到某会话</td></tr>
+<tr><th scope="row"><code translate="no">openprogram sessions detach</code></th><td>回到默认路由</td></tr>
+<tr><th scope="row"><code translate="no">openprogram sessions aliases</code></th><td>列出会话与 channel 用户的绑定</td></tr>
+</tbody>
+</table>
+
+<h2 id="web-ui">Web UI 中</h2>
+<p>历史是对话 DAG，类似 git 的提交和分支。消息操作在悬停时出现。</p>
+<table class="stack">
+<thead><tr><th scope="col">操作</th><th scope="col">位置</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>复制</strong></th><td>全部</td><td>复制内容</td></tr>
+<tr><th scope="row"><strong>重新生成</strong></th><td>回复</td><td>生成回复的新版本</td></tr>
+<tr><th scope="row"><strong>固定为章节</strong></th><td>回复</td><td>左侧消息轨上的刻度变长、变粗、变色，并保持操作行显示。<strong>取消章节</strong>移除</td></tr>
+<tr><th scope="row"><strong>编辑消息</strong></th><td>你的消息</td><td>修改并重新生成；文件不变</td></tr>
+<tr><th scope="row"><strong>回退到这里</strong></th><td>你的消息</td><td>把对话、文件或两者退回到此消息之前，并填回输入框；<strong>撤销回退</strong>可找回对话</td></tr>
+<tr><th scope="row"><strong>从这里分叉</strong></th><td>你的消息</td><td>从这里开启新对话，这段对话不变</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">消息旁的上一个、下一个箭头</th><td>编辑或重新生成后切换版本</td></tr>
+<tr><th scope="row">顶栏分支菜单</th><td>列出并切换分支</td></tr>
+<tr><th scope="row">选中文本，<strong>添加到聊天</strong></th><td>引用消息的一部分</td></tr>
+<tr><th scope="row">右上 <code translate="no">⋯</code> 的<strong>复制对话</strong></th><td>新建同样历史的对话，之后独立运行</td></tr>
+<tr><th scope="row">右侧栏</th><td>DAG：用户消息、LLM 调用、函数调用。随聊天滚动；点节点滚动到对应消息</td></tr>
+</tbody>
+</table>
+<p class="note">涉及文件的分支在隔离的 git worktree 中运行，并行分支不会争抢同一份源码树。</p>
+
+<p class="next"><a href="features.zh.html">功能详解</a> · <a href="faq.zh.html">常见问题</a></p>
+

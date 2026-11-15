@@ -1,6 +1,6 @@
 """list_agents — the discovery tool for branch-to-branch communication.
 
-See docs/reference/design/runtime/agent-collaboration.md.
+See docs/reference/design/runtime/collaboration/agent-collaboration.html.
 """
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ from openprogram.programs.tools.agents.send_message.shared import _clip
 
 @pytest.fixture
 def two_sessions(tmp_path, monkeypatch):
-    from openprogram.store.session.session_store import SessionStore
-    from openprogram.agent import session_db as sdb_mod
+    from openprogram.state.store.session.session_store import SessionStore
+    from openprogram.runtime.context import session_db as sdb_mod
 
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: s)
 
     s.create_session("p1", "main", title="first")
     s.append_message("p1", {"id": "u1", "role": "user", "content": "hello one",
@@ -38,10 +38,10 @@ def two_sessions(tmp_path, monkeypatch):
                             "predecessor": "u2"})
     s.commit_turn("p2", "t2")
 
-    from openprogram.agent import run_control
-    tok = run_control._current_session_id.set("p1")
+    from openprogram.runtime.execution.run_control import binding as run_control_binding
+    tok = run_control_binding._current_session_id.set("p1")
     yield s
-    run_control._current_session_id.reset(tok)
+    run_control_binding._current_session_id.reset(tok)
 
 
 def test_clip():
@@ -91,7 +91,7 @@ def test_list_agents_stats_kilochars(two_sessions):
 
 
 def test_list_agents_emits_event(two_sessions):
-    from openprogram.events import get_event_bus
+    from openprogram.runtime.events import get_event_bus
     got = []
     unsub = get_event_bus().subscribe(lambda e: got.append(e),
                                       types={"agents.listed"})
@@ -136,3 +136,21 @@ def test_list_agents_unknown_scope_errors(two_sessions):
     assert "'archive'" in out
     for legal in ("session", "all", "archived"):
         assert f'"{legal}"' in out
+
+
+def test_list_agents_preview_comes_from_each_branch_itself(two_sessions):
+    """A branch whose tip has no text yet (a helper stopped mid-turn)
+    previews its own last text, not the latest message of another branch."""
+    s = two_sessions
+    s.append_message("p1", {"id": "hu", "role": "user", "content": "helper task text",
+                            "timestamp": 2, "predecessor": "a1"})
+    s.append_message("p1", {"id": "hu_reply", "role": "assistant", "content": "",
+                            "timestamp": 3, "predecessor": "hu"})
+    s.append_message("p1", {"id": "mu", "role": "user", "content": "main branch latest",
+                            "timestamp": 4, "predecessor": "a1"})
+    s.commit_turn("p1", "t4")
+    out = list_agents()
+    lines = out.splitlines()
+    helper = next(i for i, ln in enumerate(lines) if "to=p1:hu_reply" in ln)
+    assert "helper task text" in lines[helper + 1]
+    assert "main branch latest" not in lines[helper + 1]

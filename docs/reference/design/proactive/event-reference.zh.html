@@ -1,0 +1,123 @@
+<title>事件参考</title>
+<meta name="description" content="每个已注册事件类型的载荷、来源和发送位置，以及总线调用和未注册类型。">
+<h1>事件参考</h1>
+
+<p class="note">事实来源：<code translate="no">openprogram/runtime/events/registry.py</code> 的 <code translate="no">EVENTS</code>。路径相对 <code translate="no">openprogram/</code>。事件下的标记是来源；不是 notify 时前面加分发方式。</p>
+
+<h2 id="turn">轮次与工具</h2>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">载荷</th><th scope="col">时机与发送位置</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tool.before</code><span class="arg">gate · agent</span></th><td><code translate="no">{tool, tool_call_id, args}</code></td><td>每个工具执行前。拒绝理由成为模型收到的错误工具结果。<br><code translate="no">runtime/agent/loop/tool_dispatch.py</code></td></tr>
+<tr><th scope="row"><code translate="no">tool.result</code><span class="arg">transform · tool</span></th><td><code translate="no">{tool, tool_call_id, args, is_error}; value: result text</code></td><td>结果进入模型上下文前；仅在有改写者时发生。图片和音频保留。<br><code translate="no">runtime/agent/loop/tool_dispatch.py</code></td></tr>
+<tr><th scope="row"><code translate="no">tool.after</code><span class="arg">tool</span></th><td><code translate="no">{tool, tool_call_id, is_error, result_text}</code></td><td>工具调用结束后。只含文本通道。<br><code translate="no">runtime/agent/loop/tool_dispatch.py</code></td></tr>
+<tr><th scope="row"><code translate="no">turn.start</code><span class="arg">system</span></th><td><code translate="no">{session_id, user_msg_id, assistant_msg_id}</code></td><td>用户消息已持久化，Agent 循环即将运行。<br><code translate="no">runtime/conversation/turn_runtime/__init__.py</code></td></tr>
+<tr><th scope="row"><code translate="no">turn.end</code><span class="arg">system</span></th><td><code translate="no">{session_id, user_msg_id, assistant_msg_id, usage}</code></td><td>收尾完成。<br><code translate="no">runtime/conversation/turn_runtime/__init__.py</code></td></tr>
+<tr><th scope="row"><code translate="no">turn.stop</code><span class="arg">gate · system</span></th><td><code translate="no">{session_id, user_msg_id, assistant_msg_id, last_text (≤4000), stop_hook_active}</code></td><td>顶层对话轮次完成后。拒绝会启动续跑轮次。<br><code translate="no">runtime/conversation/turn_runtime/stop_hook.py</code></td></tr>
+<tr><th scope="row"><code translate="no">user.prompt_submitted</code><span class="arg">user</span></th><td><code translate="no">{msg_id, chars}</code></td><td>用户消息行已持久化。<br><code translate="no">runtime/conversation/turn_runtime/prep.py</code></td></tr>
+<tr><th scope="row"><code translate="no">model.response_started</code><span class="arg">agent</span></th><td><code translate="no">{request_id}</code></td><td>循环内发出一次服务商请求。<br><code translate="no">runtime/agent/loop/provider_lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">model.response_completed</code><span class="arg">agent</span></th><td><code translate="no">{request_id, status, is_error}</code></td><td>一次响应结束，任何退出路径都发送。按循环迭代，不按轮次。<br><code translate="no">runtime/agent/loop/provider_lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">file.changed</code><span class="arg">tool</span></th><td><code translate="no">{path, op}</code></td><td>文件工具修改了工作树。<code translate="no">op</code>：write、edit、patch；<code translate="no">apply_patch</code> 还发送 add、update、delete。<br><code translate="no">programs/tools/files/{write,edit,apply_patch,_remote}.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="sessions">会话与交互</h2>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">载荷</th><th scope="col">时机与发送位置</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session.start</code><span class="arg">system</span></th><td><code translate="no">{session_id, agent_id, channel}</code></td><td>WebUI 创建了会话。<br><code translate="no">interfaces/server/server_runtime/session_lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">chat.before_send</code><span class="arg">user</span></th><td><code translate="no">{session_id, msg_id, text, agent_id, attachments}</code></td><td>聊天消息已持久化，即将进入运行时。<br><code translate="no">interfaces/server/ws_actions/chat/turn.py</code></td></tr>
+<tr><th scope="row"><code translate="no">question.asked</code><span class="arg">agent</span></th><td><code translate="no">{session_id, question, …}</code></td><td>Agent 通过提问通道提问。同时发送 <code translate="no">ws.frame</code>。<br><code translate="no">runtime/agent/questions.py</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp.request.cancelled</code><span class="arg">system</span></th><td><code translate="no">{request_id, execution_id, session_id, client_id, reason}</code></td><td>MCP 提示请求被取消并清理。<br><code translate="no">extensions/mcp/server/service.py</code></td></tr>
+<tr><th scope="row"><code translate="no">ws.frame</code><span class="arg">system</span></th><td><code translate="no">{frame}</code></td><td>把已渲染的 WebSocket 帧送到 WebUI，无需导入服务器。<br><code translate="no">runtime/events/bus.py (emit_ws_frame)</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="extensions">插件、目标与调度</h2>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">载荷</th><th scope="col">时机与发送位置</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">plugin.enable</code><span class="arg">system</span></th><td><code translate="no">{plugin}</code></td><td>插件已加载，贡献和钩子已注册。<br><code translate="no">extensions/plugins/loader.py</code></td></tr>
+<tr><th scope="row"><code translate="no">plugin.disable</code><span class="arg">system</span></th><td><code translate="no">{plugin}</code></td><td>即将卸载；订阅仍然有效。<br><code translate="no">extensions/plugins/loader.py</code></td></tr>
+<tr><th scope="row"><code translate="no">goal.update</code><span class="arg">system</span></th><td><code translate="no">{session_id, goal: {goal_id, revision, text, status, phase, checklist, budget, usage, pause_reason, last_reason}}</code></td><td>目标状态变化。<br><code translate="no">programs/tools/planning/goal/state.py</code></td></tr>
+<tr><th scope="row"><code translate="no">reminder.fired</code><span class="arg">system</span></th><td><code translate="no">{task_id, title, message, session_id, agent_id, wake, scheduled_for, fired_at}</code></td><td>提醒到期；显示，wake 为真时唤醒 Agent。<br><code translate="no">runtime/scheduler/reminders.py</code></td></tr>
+<tr><th scope="row"><code translate="no">skills.changed</code><span class="arg">system</span></th><td><code translate="no">{}</code></td><td>skills 监视器发现磁盘上的安装或更新。<br><code translate="no">interfaces/server/server.py</code></td></tr>
+<tr><th scope="row"><code translate="no">plugins.update_available</code><span class="arg">system</span></th><td><code translate="no">{count}</code></td><td>更新检查发现新版本。注册表写的是 <code translate="no">{plugin, current, latest}</code>。<br><code translate="no">interfaces/server/server.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="context">上下文、记忆与安全</h2>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">载荷</th><th scope="col">时机与发送位置</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">context.compacted</code><span class="arg">system</span></th><td><code translate="no">{ok, tokens_before, tokens_after, reason}</code></td><td>一次压缩结束。<br><code translate="no">runtime/context/engine.py</code></td></tr>
+<tr><th scope="row"><code translate="no">memory.degraded</code><span class="arg">system</span></th><td><code translate="no">{reason_code}</code></td><td>本轮可选记忆不可用。<br><code translate="no">runtime/conversation/memory_execution.py, state/memory/policy.py</code></td></tr>
+<tr><th scope="row"><code translate="no">memory.ingest_started</code><span class="arg">system</span></th><td><code translate="no">{messages}</code></td><td>会话监视器开始处理一批。<br><code translate="no">state/memory/session_watcher.py</code></td></tr>
+<tr><th scope="row"><code translate="no">memory.ingest_ended</code><span class="arg">system</span></th><td><code translate="no">{ok, retryable, reason, attempt?, next_attempt_at?}</code></td><td>摄取结束。<code translate="no">retryable=false</code> 时不再提交该会话，直到它变化；重试带上第几次和下次时间。<br><code translate="no">state/memory/session_watcher.py</code></td></tr>
+<tr><th scope="row"><code translate="no">security.risky_tool_delegated</code><span class="arg">system</span></th><td><code translate="no">{session_id, tool, source, authority}</code></td><td>委托的高风险工具检查被 bypass 或允许规则放行。不含参数内容，也不是执行回执。<br><code translate="no">runtime/permissions/audit.py</code></td></tr>
+<tr><th scope="row"><code translate="no">security.path_violation</code><span class="arg">system</span></th><td><code translate="no">{session_id, tool, reason}</code></td><td>委托的写目标检查拒绝访问。固定理由，不含路径。<br><code translate="no">runtime/permissions/audit.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="collaboration">渠道与协作</h2>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">载荷</th><th scope="col">时机与发送位置</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">channel.message_inbound</code><span class="arg">user</span></th><td><code translate="no">{channel, peer_kind, chars}</code></td><td>收到外部消息。<br><code translate="no">interfaces/channels/_conversation.py</code></td></tr>
+<tr><th scope="row"><code translate="no">branch.message_sent</code><span class="arg">agent</span></th><td><code translate="no">{from, to}</code></td><td>消息发往另一会话分支。<br><code translate="no">programs/tools/agents/send_message/send_message/send_message.py, programs/tools/agents/agent/agent/agent.py</code></td></tr>
+<tr><th scope="row"><code translate="no">agents.listed</code><span class="arg">agent</span></th><td><code translate="no">{sessions, branches}</code></td><td><code translate="no">list_agents</code> 列出协作目标。<br><code translate="no">programs/tools/agents/send_message/list_agents/list_agents.py</code></td></tr>
+<tr><th scope="row"><code translate="no">subagent.started</code><span class="arg">system</span></th><td><code translate="no">{job_id, label}</code></td><td>后台 Agent 任务进入运行。<br><code translate="no">runtime/jobs/runner/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">subagent.ended</code><span class="arg">system</span></th><td><code translate="no">{job_id, status, error}</code></td><td>后台 Agent 任务到达终态。<br><code translate="no">runtime/jobs/runner/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">branches.listed</code><span class="arg">agent</span></th><td><code translate="no">{session, count}</code></td><td>仅注册：没有发送点。<br><code translate="no">runtime/events/registry.py</code></td></tr>
+<tr><th scope="row"><code translate="no">sessions.listed</code><span class="arg">agent</span></th><td><code translate="no">{count}</code></td><td>仅注册：没有发送点。<br><code translate="no">runtime/events/registry.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="api">总线调用</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">调用</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">get_event_bus() → EventBus</code></th><td>worker 单例。</td></tr>
+<tr><th scope="row"><code translate="no">create_event_bus()</code></th><td>独立实例；不写盘。</td></tr>
+<tr><th scope="row"><code translate="no">make_event(type, origin, payload, metadata) → Event</code></th><td>填充 <code translate="no">id</code>、<code translate="no">ts</code>、session 和 turn。</td></tr>
+<tr><th scope="row"><code translate="no">emit_safe(type, origin, payload=None, metadata=None)</code></th><td>构造并发送；事件层故障被吞掉。</td></tr>
+<tr><th scope="row"><code translate="no">emit_ws_frame(frame)</code></th><td>发送 <code translate="no">ws.frame</code>。</td></tr>
+<tr><th scope="row"><code translate="no">subscribe(handler, *, types=None) → unsubscribe</code></th><td><code translate="no">types=None</code> 接收所有类型事件。</td></tr>
+<tr><th scope="row"><code translate="no">subscribe_gate(type, fn) → unregister</code></th><td>Python gate。</td></tr>
+<tr><th scope="row"><code translate="no">emit_gate(event, timeout_s=None) → GateOutcome</code></th><td>询问所有 gate。</td></tr>
+<tr><th scope="row"><code translate="no">subscribe_transform(type, fn) → unregister</code></th><td>改写者。</td></tr>
+<tr><th scope="row"><code translate="no">emit_transform(event, value)</code></th><td>返回最终值。</td></tr>
+<tr><th scope="row"><code translate="no">register_tool_gate(gate) → unregister</code></th><td><code translate="no">tool.before</code> 的快捷入口。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>示例</summary>
+<pre translate="no"><code>from openprogram.runtime.events import get_event_bus
+
+def on_file_changed(event):
+    print(event.payload["path"], event.metadata.get("session"))
+unsubscribe = get_event_bus().subscribe(on_file_changed, types={"file.changed"})
+
+def guard(event):
+    if event.payload.get("tool") == "bash":
+        return "policy denied this tool call"
+    return None
+remove = get_event_bus().subscribe_gate("tool.before", guard)</code></pre>
+</details>
+
+<h2 id="unregistered">未注册类型</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">类型</th><th scope="col">情况</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">credential.cooldown</code>、<code translate="no">credential.rotated</code>、<code translate="no">credential.exhausted</code></th><td>由 <code translate="no">bridges.py</code> 从 AuthEvent 翻译而来，载荷 <code translate="no">{provider, profile, credential, detail}</code>。总线容忍并每类型警告一次。</td></tr>
+<tr><th scope="row"><code translate="no">proactive.inject</code>、<code translate="no">proactive.prepare_requested</code></th><td>主动引擎的派生事件；引擎当前未安装。</td></tr>
+<tr><th scope="row"><code translate="no">question.replied</code>、<code translate="no">question.rejected</code>、<code translate="no">programs:changed</code></th><td>只是 <code translate="no">ws.frame</code> 内的帧类型，不是类型事件。spawn、attach 卡片、报告、通知、合并和删除以 <code translate="no">transcript_update</code> 送达打开的对话。</td></tr>
+</tbody>
+</table>
+
+<h2 id="log">读日志</h2>
+<pre translate="no"><code>tail -f ~/.openprogram/logs/events.jsonl</code></pre>
+<p>一个顶层轮次通常依次出现 <code translate="no">user.prompt_submitted</code>、<code translate="no">turn.start</code>、<code translate="no">model.response_started</code>、<code translate="no">tool.before</code>、<code translate="no">tool.after</code>、<code translate="no">model.response_completed</code>、<code translate="no">turn.end</code>。实际顺序取决于失败、取消、工具调用和停止钩子。</p>
+
+<p class="next"><a href="event-layer.zh.html">事件层</a></p>

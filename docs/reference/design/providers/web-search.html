@@ -1,0 +1,97 @@
+<title>Web search</title>
+<meta name="description" content="Chat search uses the provider's server-side search when it has one and the local web_search tool otherwise.">
+<h1>Web search</h1>
+
+<p>A provider's own search runs in its infrastructure and returns citations; a scraper gets a bot challenge after a handful of requests. So each request resolves search from two facts: the session's Search switch (<code translate="no">web_search</code> on the session run config) and whether the API provider advertises <code translate="no">supports_web_search</code> (<code translate="no">_StreamFnProvider</code>, <code translate="no">ApiProviderSnapshot</code>).</p>
+
+<table class="stack">
+<thead><tr><th scope="col">API</th><th scope="col">Request tool</th><th scope="col">Advertised</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai-responses</code>, <code translate="no">openai-codex</code></th><td><code translate="no">{"type": "web_search"}</code></td><td>Yes</td></tr>
+<tr><th scope="row"><code translate="no">anthropic-messages</code></th><td><code translate="no">{"type": "web_search_20250305", "name": "web_search"}</code></td><td>Yes</td></tr>
+<tr><th scope="row"><code translate="no">google-generative-ai</code>, <code translate="no">gemini-subscription</code></th><td><code translate="no">{"google_search": {}}</code>, only in a request without function tools</td><td>No</td></tr>
+<tr><th scope="row">DeepSeek, Kimi, local models, OpenAI-compatible endpoints</th><td>None</td><td>No</td></tr>
+</tbody>
+</table>
+<p class="note">With the switch on and the capability advertised, the runtime sets the request option <code translate="no">web_search=True</code> and removes the local <code translate="no">web_search</code> tool. Otherwise the local tool stays. Gemini's <code translate="no">generateContent</code> rejects grounding next to function declarations (Gemini 3 combines them only on the Interactions API) and an agent request always carries function tools; a tool-free completion with <code translate="no">web_search=True</code> still uses grounding.</p>
+
+<h2 id="local-tool">Local tool</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Backends</th><td>Sixteen, for models without a provider search</td></tr>
+<tr><th scope="row">No key</th><td>Only the DuckDuckGo page scraper</td></tr>
+<tr><th scope="row">Unpinned fallback</th><td>Skips <code translate="no">arxiv</code>, a paper index; pinning still reaches it</td></tr>
+<tr><th scope="row">Every backend fails</th><td>The error tells the model a search key fixes it (Settings &gt; Search; Brave and Tavily have free tiers) and that it may open a search page with browser tools if it has them</td></tr>
+</tbody>
+</table>
+
+<h2 id="provider-search-flow">From provider item to transcript</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stage</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stream</th><td>Stream processors turn search items into a <code translate="no">ServerToolUse</code> block and <code translate="no">servertool_start</code> / <code translate="no">servertool_end</code> events.</td></tr>
+<tr><th scope="row">Agent loop</th><td>Forwards them without executing.</td></tr>
+<tr><th scope="row">Client</th><td><code translate="no">tool_use</code> / <code translate="no">tool_result</code> with <code translate="no">tool: "web_search"</code>, <code translate="no">provider_executed: true</code>, <code translate="no">input</code> <code translate="no">{"query": ...}</code>, <code translate="no">result</code> one <code translate="no">title — url</code> per line, or <code translate="no">completed</code> when the provider reports no sources.</td></tr>
+<tr><th scope="row">Persisted</th><td>Same shape in the reply's blocks, so a reloaded transcript shows “Searched the web: …” in place.</td></tr>
+<tr><th scope="row">Citations</th><td><code translate="no">url_citation</code> (Responses), <code translate="no">citations</code> (Anthropic), <code translate="no">groundingMetadata</code> (Gemini) become <code translate="no">citations: [{url, title, start, end}]</code> on <code translate="no">TextContent</code>, forwarded with <code translate="no">text_end</code>, persisted, rendered as a sources row under the answer.</td></tr>
+</tbody>
+</table>
+
+<h2 id="replay">Replay</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Next request goes to</th><th scope="col">The block</th></tr></thead>
+<tbody>
+<tr><th scope="row">Responses, same API</th><td>Resent as a <code translate="no">web_search_call</code> item</td></tr>
+<tr><th scope="row">Anthropic, same API</th><td>Resent as <code translate="no">server_tool_use</code> plus the raw <code translate="no">web_search_tool_result</code>, whose hits carry <code translate="no">encrypted_content</code> that must go back verbatim; a block without the raw result is dropped</td></tr>
+<tr><th scope="row">Gemini</th><td>Grounding blocks get synthetic ids and are never resent</td></tr>
+<tr><th scope="row">A different API</th><td>Dropped, like foreign thinking signatures</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Wire contract</summary>
+<p>Content block, <code translate="no">openprogram/models/providers/types.py</code>:</p>
+<pre translate="no" tabindex="0">class ServerToolUse(BaseModel):
+    type: Literal["serverToolUse"] = "serverToolUse"
+    id: str                 # provider item id
+    name: str               # "web_search"
+    input: dict             # {"query": str}
+    status: str             # "searching" | "completed" | "failed"
+    results: list[dict]     # [{"title": str, "url": str}]
+    raw: Any | None = None  # provider item, for replay</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Name</th><th scope="col">Shape</th></tr></thead>
+<tbody>
+<tr><th scope="row">Text block</th><td><code translate="no">TextContent.citations: list[Citation] | None</code>, <code translate="no">Citation(url, title, start, end)</code></td></tr>
+<tr><th scope="row">Message events</th><td><code translate="no">EventServerToolStart(type="servertool_start", content_index, partial)</code>, <code translate="no">EventServerToolEnd(type="servertool_end", content_index, server_tool: ServerToolUse, partial)</code></td></tr>
+<tr><th scope="row">Client events</th><td><code translate="no">apps/web/lib/net/ws/chat-stream.ts</code>: <code translate="no">citations</code> on the text block at <code translate="no">text_end</code>; the search block arrives in the reply row of a <code translate="no">transcript_update</code></td></tr>
+<tr><th scope="row">Persisted block</th><td><code translate="no">{"type": "tool", "tool": "web_search", "provider_executed": true, "input": "{\"query\": ...}", "result": ...}</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>What comes from other agents</summary>
+<table class="stack">
+<thead><tr><th scope="col">Agent</th><th scope="col">Its search</th><th scope="col">Taken</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>Provider <code translate="no">web_search</code> server tool, results with citations</td><td>Provider tool first, citations on the text</td></tr>
+<tr><th scope="row">Codex</th><td><code translate="no">--search</code> enables the Responses tool; one “Searched the web: query” line per search</td><td>One visible step per search</td></tr>
+<tr><th scope="row">Gemini CLI</th><td><code translate="no">google_web_search</code> is grounding; numbered sources at the end</td><td>A sources row under the answer</td></tr>
+<tr><th scope="row">OpenProgram adds</th><td colspan="2">The local tool, and a session-level switch that follows the session's model</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Capability flag</th><td><code translate="no">openai-responses</code>, <code translate="no">openai-codex</code>, <code translate="no">anthropic-messages</code></td></tr>
+<tr><th scope="row">Request builders</th><td>All five APIs</td></tr>
+<tr><th scope="row">Stream processing</th><td>Responses (shared processor), Anthropic, Gemini</td></tr>
+<tr><th scope="row">Runtime</th><td>Intent to request option, local tool removal, event projection, persistence, local tool error text and fallback order</td></tr>
+<tr><th scope="row">Client</th><td>Provider-executed search cards and citation rows</td></tr>
+</tbody>
+</table>

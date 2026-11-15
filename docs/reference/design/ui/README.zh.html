@@ -1,0 +1,89 @@
+<title>Web UI</title>
+<meta name="description" content="工作区界面概览和各界面设计的索引。">
+<h1>Web UI</h1>
+<p>只有一套工作区界面：React 和 Next.js 应用（<code translate="no">apps/web/</code>），预先构建，由 Python worker 在 API 同一端口提供，所以同样的页面运行在浏览器标签页、桌面 App 和远程服务器上。<code translate="no">apps/desktop/</code> 是 macOS 和 Windows 的 Electron 外壳；Linux 和服务器用浏览器。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">现状</th></tr></thead>
+<tbody>
+<tr><th scope="row">侧栏和页面</th><td>项目和聊天；Agents、Abilities（Programs、skills、plugins、MCP）、Applications、History、Scheduler。设置在用户菜单。列表页共用一个二级侧栏。</td></tr>
+<tr><th scope="row">中央标签页</th><td>聊天、文件、终端、网页。标签页可分屏；标签页和分组可在窗口间移动。</td></tr>
+<tr><th scope="row">转录</th><td>回复，工具调用折叠成行，文件修改摘要，子代理行，等待中的请求。跟随新输出，直到你滚开。</td></tr>
+<tr><th scope="row">输入框</th><td>附件、模型和强度选择、按文件夹的 git 胶囊、选项菜单。本地路径保留到模型上下文。</td></tr>
+<tr><th scope="row">视觉系统</th><td>颜色、尺寸和形状来自 token 和主题；图标、圆点和悬浮提示各有一套规则。</td></tr>
+</tbody>
+</table>
+<p class="note">改相关模块前先过一遍<a href="invariants.zh.html">跨模块 UI 不变量</a>。</p>
+
+<h2>聊天</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设计</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="chat/chat-transcript-follow.zh.html">转录跟随</a></th><td>发送、流式、跳到最新、切换会话和历史窗口共用一套吸附策略</td></tr>
+<tr><th scope="row"><a href="chat/chat-turn-visual-spec.zh.html">聊天轮次视觉规范</a></th><td>执行时间线、文件修改摘要、手动函数运行、小地图。文件历史：<a href="../runtime/operations/file-management.zh.html">运行时设计</a></td></tr>
+<tr><th scope="row"><a href="chat/tool-group-summary.zh.html">工具组摘要</a></th><td>折叠行标题：语法、+N −M 徽标、进行时、轮次摘要</td></tr>
+<tr><th scope="row"><a href="chat/activity-panel.zh.html">Activity 面板</a></th><td>子代理行、待你处理的事项、每行一页</td></tr>
+<tr><th scope="row"><a href="chat/sub-agent-row.zh.html">子代理行</a></th><td>状态、它自己的对话、带 <code translate="no">job_id</code> 的帧、分支转录加载</td></tr>
+<tr><th scope="row"><a href="chat/attachment-handling.zh.html">附件处理</a></th><td>存储、准入、交付、恢复、验收</td></tr>
+<tr><th scope="row"><a href="chat/chat-attachments.zh.html">聊天附件</a></th><td>转录显示什么、agent 如何交回文件、文件如何打开</td></tr>
+<tr><th scope="row"><a href="turn-lifecycle/turn-occupancy.zh.html">轮次占用</a></th><td>停止、发送队列和会话槽，在取消意图时释放</td></tr>
+</tbody>
+</table>
+
+<h2>输入框</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设计</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="composer/composer-interaction-modes.zh.html">交互模式</a></th><td>输入框模式</td></tr>
+<tr><th scope="row"><a href="composer/composer-options-menu.zh.html">选项菜单</a></th><td>共用菜单语法的 (+)；工具来自 Agent</td></tr>
+<tr><th scope="row"><a href="composer/composer-responsive-controls.zh.html">响应式控件</a></th><td>紧凑状态的交互约定</td></tr>
+<tr><th scope="row"><a href="composer/composer-local-attachment-paths.zh.html">本地附件路径</a></th><td>路径保留到模型上下文</td></tr>
+<tr><th scope="row"><a href="composer/effort-picker.zh.html">强度选择</a></th><td>级别名和 <code translate="no">?</code> 提示、最高级带动画的分段轨道、滑块提示、推荐说明</td></tr>
+<tr><th scope="row"><a href="composer/git-folder-pills.zh.html">Git 文件夹胶囊</a></th><td>分支、改动数、切分支、worktree、PR</td></tr>
+<tr><th scope="row"><a href="composer/hover-tips.zh.html">悬浮提示</a></th><td>统一的 <code translate="no">HoverTip</code> + <code translate="no">TipBody</code> 布局</td></tr>
+</tbody>
+</table>
+
+<h2>工作区与浏览器</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设计</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="workspace/center-tabs-and-split-layout.zh.html">中央标签页与分屏</a></th><td>单标签和组合标签的生命周期、渲染、持久化、转移</td></tr>
+<tr><th scope="row"><a href="workspace/integrated-terminal.zh.html">集成终端</a></th><td>真实 PTY、本地 Claude Code 启动器</td></tr>
+<tr><th scope="row"><a href="workspace/pane-recording.zh.html">面板录制</a></th><td>Agent 把一个面板录成视频：动作、规则、采集路线、文件</td></tr>
+<tr><th scope="row"><a href="browser/built-in-browser.zh.html">内置浏览器</a></th><td>主页、配置导入、紧凑历史、新建面板启动器</td></tr>
+<tr><th scope="row"><a href="browser/browser-extensions.zh.html">浏览器扩展</a></th><td>不支持、保留的能力、不再使用的旧数据</td></tr>
+<tr><th scope="row"><a href="browser/agent-control-overlay.zh.html">Agent 控制覆盖层</a></th><td>agent 控制对象上的辉光、指示灯和指针</td></tr>
+<tr><th scope="row"><a href="resources/resource-preview.zh.html">资源预览</a></th><td>资源列表、操作预览、人工接管页面</td></tr>
+<tr><th scope="row"><a href="programs/programs-source-categories.zh.html">Programs 分类</a></th><td>分组和来源分类</td></tr>
+<tr><th scope="row"><a href="sidebar/secondary-rail.zh.html">二级侧栏</a></th><td>唯一的列表列：行、折叠、按钮职责</td></tr>
+<tr><th scope="row"><a href="settings/settings-collapsible-columns.zh.html">设置分栏</a></th><td>独立的 49px 折叠；Providers 列表保持展开</td></tr>
+<tr><th scope="row"><a href="settings/avatar-randomization.zh.html">头像选择</a></th><td>先选类型，再选同风格变体或字母字段</td></tr>
+</tbody>
+</table>
+
+<h2>视觉系统</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设计</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="visual-system/theme-system.zh.html">主题系统</a></th><td>主题入口、token 约定、使用方式、覆盖层传播</td></tr>
+<tr><th scope="row"><a href="visual-system/design-tokens.zh.html">设计 token</a></th><td>所有尺寸、形状和墨色层级</td></tr>
+<tr><th scope="row"><a href="visual-system/surface-system.zh.html">表面系统</a></th><td>表面</td></tr>
+<tr><th scope="row"><a href="visual-system/icons.zh.html">图标</a></th><td>各图标族的位置、动效、署名</td></tr>
+<tr><th scope="row"><a href="visual-system/indicator-dots.zh.html">指示圆点</a></th><td>圆点</td></tr>
+<tr><th scope="row"><a href="visual-system/agent-avatars.zh.html">Agent 头像</a></th><td>角色、存储、显示位置、来源和许可</td></tr>
+<tr><th scope="row"><a href="visual-system/web-styles.zh.html">Web 样式</a></th><td>一个组件一个文件；目录对应组件树</td></tr>
+</tbody>
+</table>
+
+<h2>状态与桌面</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设计</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="interaction-feedback.zh.html">交互反馈</a></th><td>0 ms 规则：先乐观状态，数据回填</td></tr>
+<tr><th scope="row"><a href="state-layer.zh.html">状态层</a></th><td>每会话一个 store；共享数据全局</td></tr>
+<tr><th scope="row"><a href="desktop/window-state.zh.html">窗口状态</a></th><td>位置、最大化、全屏、标题栏命中</td></tr>
+<tr><th scope="row"><a href="desktop/window-lifecycle.zh.html">窗口生命周期</a></th><td>一个主窗口：启动、Dock 激活、第二实例共用一次创建</td></tr>
+<tr><th scope="row"><a href="desktop/window-tab-transfer.zh.html">窗口间移动标签页</a></th><td>一个事务、同一活页面、日志、回滚</td></tr>
+</tbody>
+</table>

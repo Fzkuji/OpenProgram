@@ -1,5 +1,5 @@
 import { showToast } from "@/lib/format-utils/toast";
-import { isWsRequestPending } from "@/lib/net/ws-request";
+import { isWsRequestPending } from "@/lib/net/ws/ws-request";
 
 export interface ActionErrorNotice {
   action: string;

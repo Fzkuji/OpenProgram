@@ -12,7 +12,7 @@ import zipfile
 
 import pytest
 
-from openprogram import paths
+from openprogram.state import paths
 
 # Fake credentials planted in config. Shapes chosen to cover both
 # redaction layers: key-name matching (opaque values under a sensitive
@@ -43,7 +43,7 @@ def isolated_home(tmp_path, monkeypatch):
     # The auth store is a process-wide singleton that binds its root at
     # first construction, so without this it keeps pointing at the real
     # ~/.openprogram no matter what HOME says.
-    from openprogram.auth.store import AuthStore, set_store_for_testing
+    from openprogram.models.auth.store import AuthStore, set_store_for_testing
     set_store_for_testing(AuthStore(root=home / ".openprogram"))
     yield home
     set_store_for_testing(None)
@@ -79,7 +79,7 @@ def _bundle_texts(zip_path):
 
 def test_no_secret_survives_into_the_bundle(isolated_home, tmp_path):
     """No planted credential appears verbatim anywhere in the zip."""
-    from openprogram.cli.commands.diagnostics import build_bundle
+    from openprogram.interfaces.cli.commands.diagnostics import build_bundle
 
     _write_config(isolated_home)
     # A log line carrying a secret with no dict key to match on.
@@ -105,7 +105,7 @@ def test_no_secret_survives_into_the_bundle(isolated_home, tmp_path):
 
 def test_credential_files_are_not_collected(isolated_home, tmp_path):
     """The auth store is reported by name and count, never by content."""
-    from openprogram.cli.commands.diagnostics import build_bundle
+    from openprogram.interfaces.cli.commands.diagnostics import build_bundle
 
     _write_config(isolated_home)
     auth = isolated_home / ".openprogram" / "auth" / "anthropic"
@@ -126,7 +126,7 @@ def test_credential_files_are_not_collected(isolated_home, tmp_path):
 
 
 def test_bundle_has_expected_files_and_manifest(isolated_home, tmp_path):
-    from openprogram.cli.commands.diagnostics import build_bundle
+    from openprogram.interfaces.cli.commands.diagnostics import build_bundle
 
     _write_config(isolated_home)
     out = tmp_path / "bundle.zip"
@@ -148,14 +148,14 @@ def test_bundle_has_expected_files_and_manifest(isolated_home, tmp_path):
 
 
 def test_redact_text_leaves_ordinary_text_alone():
-    from openprogram.cli.commands.diagnostics import redact_text
+    from openprogram.operations.diagnostics.redaction import redact_text
 
     line = "Traceback: FileNotFoundError: /Users/me/projects/app/main.py line 42"
     assert redact_text(line) == line
 
 
 def test_command_prints_contents_and_review_warning(isolated_home, tmp_path, capsys):
-    from openprogram.cli.commands.diagnostics import _cmd_diagnostics
+    from openprogram.interfaces.cli.commands.diagnostics import _cmd_diagnostics
 
     _write_config(isolated_home)
     out = tmp_path / "named.zip"
@@ -168,7 +168,7 @@ def test_command_prints_contents_and_review_warning(isolated_home, tmp_path, cap
 
 
 def test_parser_accepts_diagnostics_command():
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     args = build_parser().parse_args(["diagnostics", "--output", "/tmp/x.zip"])
     assert (args.command, args.output) == ("diagnostics", "/tmp/x.zip")

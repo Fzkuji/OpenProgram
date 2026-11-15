@@ -1,0 +1,111 @@
+<title>开发 checkout</title>
+<meta name="description" content="把源码 checkout 部署到开发版，晋升到稳定版，并为 macOS 构建签名。">
+<h1>开发 checkout</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 44 680 320" role="img" aria-label="提交后用 openprogram dev deploy 进开发版，再用 openprogram dev promote 进稳定版。晋升要求三项：开发版跑的正是这个提交、开发版健康、稳定版只往前走。任何一项不满足就被拒绝，回到开发版。全部通过后备份，再更新稳定版和 App。">
+  <defs>
+    <marker id="dv-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="dv-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head-no" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+  <text class="t-big" x="0" y="96">提交</text>
+  <line class="ln" x1="52" y1="89" x2="196" y2="89" marker-end="url(#dv-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="124" y="58">openprogram</text>
+  <text class="t-cmd mid notranslate" translate="no" x="124" y="78">dev deploy</text>
+  <text class="t-big" x="208" y="96">开发版</text>
+  <text class="t-soft" x="208" y="122">端口 18200</text>
+  <text class="t-soft" x="208" y="142">数据 ~/.openprogram-dev</text>
+  <line class="ln" x1="278" y1="89" x2="486" y2="89" marker-end="url(#dv-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="382" y="58">openprogram</text>
+  <text class="t-cmd mid notranslate" translate="no" x="382" y="78">dev promote</text>
+  <rect class="tile" x="498" y="52" width="182" height="112" rx="8"/>
+  <text class="t-big" x="514" y="96">稳定版</text>
+  <text class="t-soft" x="514" y="122">端口 18100</text>
+  <text class="t-soft" x="514" y="142">数据 ~/.openprogram</text>
+  <circle class="gate" cx="382" cy="89" r="5"/>
+  <line class="ln-faint" x1="382" y1="96" x2="382" y2="184"/>
+  <text class="t-soft" x="330" y="204">要求</text>
+  <text class="t-soft" x="512" y="204">不满足时</text>
+  <text x="330" y="236">开发版跑的正是这个提交</text>
+  <text class="t-soft" x="512" y="236">先部署这个提交</text>
+  <text x="330" y="268">开发版健康</text>
+  <text class="t-soft" x="512" y="268">修好开发版再晋升</text>
+  <text x="330" y="300">稳定版只往前走</text>
+  <text class="t-soft" x="512" y="300">先让提交包含稳定版</text>
+  <text class="t-soft" x="330" y="334">通过后：备份 ~/.openprogram（留最近 5 份）</text>
+  <text class="t-soft" x="330" y="354">再更新稳定版和 App</text>
+  <path class="ln-no" d="M318 230H310V294H318M310 262H250V162" marker-end="url(#dv-n)"/>
+  <text class="t-no" x="190" y="254">被拒绝</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>提交</strong></li>
+  <li class="via"><code translate="no">openprogram dev deploy</code></li>
+  <li><strong>开发版</strong><small>端口 18200</small><small>数据 <code translate="no">~/.openprogram-dev</code></small></li>
+  <li class="via"><code translate="no">openprogram dev promote</code>
+    <p class="refused">不满足任一项就被拒绝，回到开发版</p>
+    <dl class="pairs">
+      <dt>开发版跑的正是这个提交</dt><dd>否则先部署这个提交</dd>
+      <dt>开发版健康</dt><dd>否则修好开发版再晋升</dd>
+      <dt>稳定版只往前走</dt><dd>否则部署一个包含稳定版的提交</dd>
+    </dl>
+    <p class="note">通过后：备份 <code translate="no">~/.openprogram</code>（留最近 5 份），更新稳定版和 App</p>
+  </li>
+  <li class="flow-end"><strong>稳定版</strong><small>端口 18100</small><small>数据 <code translate="no">~/.openprogram</code></small></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram dev deploy</code><span class="arg"><code translate="no">[ref]</code> 默认 <code translate="no">dev</code></span></th><td>构建进 <code translate="no">~/.openprogram-dev/runtime</code>；在 macOS 上还更新 <code translate="no">/Applications/OpenProgram Dev.app</code>。稳定版 App 照常运行。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev open</code></th><td>在默认浏览器以已登录状态打开。每次部署都会让浏览器重新登录；OpenProgram Dev 自己重新登录。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev copy-models</code></th><td>复制稳定版的 provider 设置、API key 和委托给 CLI 的登录。OAuth 登录要单独进行。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev status</code></th><td>两个实例各自运行什么，晋升会带来哪些提交</td></tr>
+<tr><th scope="row"><code translate="no">openprogram dev promote</code></th><td>为该提交运行 <code translate="no">scripts/refresh-local-app.sh</code>，新版本健康后它把 <code translate="no">stable</code> 移到该提交。手动运行时脚本只安装 <code translate="no">refs/heads/stable</code></td></tr>
+</tbody>
+</table>
+<p>Agent 在源码仓库的 worktree 里用 <code translate="no">self_update(action="prepare")</code> 做同样的事。这一轮结束后，脱离的控制器等稳定版 App 跑完运行中的任务，晋升这个提交，结果回到发起的对话。晋升失败时，在 <code translate="no">dev</code> 上落 revert 并晋升它。</p>
+<p class="note">完整规则：<a href="../reference/design/distribution/dev-instance.zh.html">稳定版与开发版实例</a>。架构和信任边界：<a href="../reference/design/distribution/automatic-updates.zh.html">正式版本自动更新</a>。</p>
+
+<details>
+<summary>源码 checkout 中的 <code translate="no">openprogram upgrade</code></summary>
+<p>验证 Git 目标，仅在相关源文件变化时更新依赖和构建产物，probe 新 checkout，probe 成功后才重启 worker。<code translate="no">openprogram update</code>（<code translate="no">--check</code>、<code translate="no">--force</code>）是单独的遗留命令，目前会抛出 <code translate="no">ImportError</code>；更新只用 <code translate="no">upgrade</code>。</p>
+<pre translate="no"><code>openprogram upgrade --check
+openprogram upgrade --dry-run
+openprogram upgrade</code></pre>
+<p><a href="../server/upgrading.zh.html">源码 checkout 恢复</a></p>
+</details>
+
+<details>
+<summary><code translate="no">refresh-local-app.sh</code> 做了什么</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">构建</th><td>退出 App 前，在已安装的 App 旁边构建、校验并签名新 App，这里失败时什么都不变。切换后失败则放回之前的 App 和 worker，脚本写明失败的步骤。</td></tr>
+<tr><th scope="row">更新内容</th><td>PATH 和内置 Python 安装、内置 Node 与 Ink 资源、App 图标。</td></tr>
+<tr><th scope="row">探测</th><td>重新生成能力清单和重启默认 worker 前，先探测完整内置 runtime。这也会升级旧清单；探测失败则终止刷新。</td></tr>
+<tr><th scope="row">worker 解释器</th><td>内置 Python 和 <code translate="no">-I -B</code>；已有 launchd 服务重新绑定到它，独立启动也用它。健康检查后脚本核对真实进程的可执行文件和参数：包版本一致不等于解释器一致。</td></tr>
+<tr><th scope="row">检查点</th><td>保持严格的工具合同，切换 Python 路径可能使实现指纹失效。</td></tr>
+<tr><th scope="row">Node</th><td>副本必须能脱离原安装运行，在改动 App 前检查。PATH 中的 Node 依赖相邻库时，把 <code translate="no">OPENPROGRAM_NODE_BIN</code> 设为独立可执行文件。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="macos-signing">
+<summary>macOS 签名和正式发布</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">模式</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">本地迭代</th><td><code translate="no">scripts/refresh-local-app.sh</code> 使用固定的本地证书，不向 Apple 提交任何内容。签名状态保存在仓库外；不要为消除权限弹窗删除它。</td></tr>
+<tr><th scope="row">正式发布</th><td><code translate="no">Release</code> 工作流在 <code translate="no">v*</code> 标签时运行，或手动指定已有不可变标签。用 Developer ID 签名 App 和原生组件，等待公证，附加并验证票据，运行打包 runtime 检查，再发布带校验和的产物。分支推送不触发。</td></tr>
+</tbody>
+</table>
+<ul>
+<li>仓库 Secrets：<code translate="no">MAC_CSC_LINK</code>（加密 PKCS#12 的 base64）、<code translate="no">MAC_CSC_KEY_PASSWORD</code>、<code translate="no">APPLE_ID</code>、<code translate="no">APPLE_APP_SPECIFIC_PASSWORD</code>、<code translate="no">APPLE_TEAM_ID</code>。仓库变量：<code translate="no">MAC_SIGNING_IDENTITY</code>。只保存在 GitHub 设置中，不写入源码。CI 导入临时钥匙串，签名结束时删除。</li>
+<li>重建已审查的标签：<strong>Release → Run workflow</strong> 或 <code translate="no">gh workflow run release.yml -f tag=vX.Y.Z</code>。标签、包版本和发行说明必须一致。</li>
+<li>不要每次发布都重建证书或专用密码。过期或被撤销时，更新对应 Secret 后重试。</li>
+<li>申请编号在签名任务日志中。<code translate="no">In Progress</code>：Apple 未完成。<code translate="no">Accepted</code>：允许发布。其他状态停止发布。45 分钟等待超时不取消申请。</li>
+<li>用 <code translate="no">xcrun notarytool info SUBMISSION_ID --keychain-profile PROFILE</code> 和 <code translate="no">xcrun notarytool log SUBMISSION_ID --keychain-profile PROFILE</code> 查询。解决后重跑同一标签的失败工作流；新构建可能产生新的申请。</li>
+<li>Developer ID App 身份不同，本地刷新拒绝覆盖它。切换模式可能需要重新同意 macOS 权限。Agent 的 bypass 设置不控制 macOS 权限。</li>
+</ul>
+</details>

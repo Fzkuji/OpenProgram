@@ -21,9 +21,10 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.agent.session_db import SessionDB
-from openprogram.providers.types import (
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.models.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
     EventDone,
@@ -111,12 +112,12 @@ def make_text_stream_fn(chunks: list[str]):
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions-git")
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db",
+        "openprogram.runtime.context.session_db.default_db",
         lambda: db,
     )
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store",
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store",
                         lambda: db)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
     return db
 
 
@@ -152,7 +153,7 @@ def stub_agent_profile(monkeypatch: pytest.MonkeyPatch):
 # ---------------------------------------------------------------------------
 
 def test_frozen_verifier_profile_reaches_real_loop_and_blocks_injected_browser(tmp_db, monkeypatch):
-    from openprogram.agent.dispatcher import loop_runner
+    from openprogram.runtime.conversation.turn_runtime import loop_runner
     from openprogram.programs import get_agent_tool
     tmp_db.create_session("verifier", "main")
     tmp_db.append_message("verifier", {"id": "origin_u", "role": "user", "content": "update"})
@@ -161,7 +162,7 @@ def test_frozen_verifier_profile_reaches_real_loop_and_blocks_injected_browser(t
     })
     tmp_db.update_session("verifier", head_id="origin_a")
     profile = {"id": "main", "system_prompt": "Frozen verifier", "tools": []}
-    req = D.TurnRequest(
+    req = agent_turn_request.TurnRequest(
         session_id="verifier", user_text="check", agent_id="main", source="self_update_verify",
         profile_snapshot=profile, tools_override=[], model_override="frozen/model",
         branch_from=None, spawn_caller="origin_a", advance_head=False,
@@ -173,7 +174,7 @@ def test_frozen_verifier_profile_reaches_real_loop_and_blocks_injected_browser(t
         assert profile["system_prompt"] == "Frozen verifier"
         return original_model(profile, override)
     monkeypatch.setattr(D, "_resolve_model", resolve)
-    monkeypatch.setattr(loop_runner, "_configure_web_use_tools", lambda *_, **_kwargs: ([get_agent_tool("bash")], True))
+    monkeypatch.setattr(loop_runner, "_configure_browser_tool", lambda *_, **_kwargs: ([get_agent_tool("bash")], True))
     text_stream = make_text_stream_fn(["verified"])
     async def stream(model, context, options):
         assert not context.tools
@@ -189,6 +190,31 @@ def test_frozen_verifier_profile_reaches_real_loop_and_blocks_injected_browser(t
     assert not messages[result.user_msg_id]["predecessor"]
     assert messages[result.user_msg_id]["caller"] == "origin_a"
     assert messages[result.user_msg_id]["source"] == "self_update_verify"
+
+
+def test_verifier_tools_reach_the_provider_without_tool_search(tmp_db, monkeypatch):
+    from openprogram.runtime.conversation.turn_runtime import loop_runner
+    from openprogram.programs import get_agent_tool
+    observe = get_agent_tool("self_update_observe")
+    assert observe._defer, "The registry keeps the observer deferred for ordinary turns"
+    tmp_db.create_session("verifier", "main")
+    req = agent_turn_request.TurnRequest(
+        session_id="verifier", user_text="check", agent_id="main", source="self_update_verify",
+        profile_snapshot={"id": "main", "system_prompt": "Frozen verifier", "tools": []},
+        tools_override=[], model_override="frozen/model", branch_from=None, advance_head=False,
+    )
+    monkeypatch.setattr(loop_runner, "_configure_browser_tool",
+                        lambda *_, **_kwargs: ([get_agent_tool("read"), observe], False))
+    text_stream = make_text_stream_fn(["verified"])
+    async def stream(model, context, options):
+        assert {tool.name for tool in context.tools} == {"read", "self_update_observe"}
+        async for event in text_stream(model, context, options):
+            yield event
+    original_loop = D._run_loop_blocking
+    monkeypatch.setattr(D, "_run_loop_blocking", lambda **kwargs: original_loop(**kwargs, stream_fn=stream))
+    result = D.process_user_turn(req)
+    assert not result.failed, result.error
+    assert observe._defer, "Promotion copies the tool instead of changing the registry"
 
 
 def test_real_loop_text_only(tmp_db: SessionDB, captured, collector) -> None:
@@ -209,7 +235,7 @@ def test_real_loop_text_only(tmp_db: SessionDB, captured, collector) -> None:
 
     with patch.object(D, "_run_loop_blocking", _wrapped):
         result = D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
 
@@ -247,6 +273,57 @@ def test_real_loop_text_only(tmp_db: SessionDB, captured, collector) -> None:
     ]
     assert len(final) == 1
     assert final[0]["data"]["content"] == "Hello, world"
+    # The result carries the reply as a reload would show it.
+    assert final[0]["data"]["assistant_msg_id"] == msgs[1]["id"]
+    from openprogram.interfaces.server.persistence import aggregate_tool_messages
+    reloaded = aggregate_tool_messages(tmp_db.get_messages("c1"))[1]
+    assert final[0]["data"]["blocks"] == reloaded.get("blocks", [])
+    # Every stream frame of the reply is numbered in order.
+    seqs = [e["data"]["seq"] for e in captured
+            if e["type"] == "chat_response" and e["data"].get("type") == "stream_event"]
+    assert seqs == list(range(1, len(seqs) + 1))
+
+
+def test_stream_tap_records_the_seq_its_content_reflects(tmp_db: SessionDB) -> None:
+    """A reload mid-turn knows which stream frames its row already holds."""
+    import json
+    from openprogram.interfaces.server.persistence import aggregate_tool_messages
+    from openprogram.runtime.conversation.turn_runtime.stream_tap import make_stream_tap
+    from openprogram.state.store import SessionNodeWriter
+    from openprogram.state.store.session.nodes import Call
+
+    tmp_db.create_session("seq", "main")
+    writer = SessionNodeWriter(tmp_db, "seq")
+    writer.append(Call(id="u", role="user", output="hi"))
+    writer.append(Call(id="u_reply", role="llm", output="", predecessor="u"))
+    req = agent_turn_request.TurnRequest(
+        session_id="seq", user_text="hi", agent_id="main", source="web", user_msg_id="u")
+
+    def frame(event, msg_id="u", session_id="seq"):
+        return {"type": "chat_response", "data": {
+            "type": "stream_event", "session_id": session_id, "msg_id": msg_id,
+            "event": event}}
+
+    sent: list[dict] = []
+    tap = make_stream_tap(on_event=sent.append, req=req, assistant_msg_id="u_reply",
+                          placeholder_inserted=True, agentic_tool_names=set())
+    tap(frame({"type": "text", "text": "Hel"}))
+    tap(frame({"type": "text", "text": "x"}, msg_id="child", session_id="other"))
+    tap(frame({"type": "text", "text": "lo"}))
+
+    assert [f["data"].get("seq") for f in sent] == [1, None, 2]
+    row = next(m for m in aggregate_tool_messages(tmp_db.get_messages("seq"))
+               if m["id"] == "u_reply")
+    assert (row["content"], row["stream_seq"]) == ("Hello", 2)
+
+    # A resumed execution continues the reply's numbering.
+    resumed: list[dict] = []
+    tap = make_stream_tap(on_event=resumed.append, req=req, assistant_msg_id="u_reply",
+                          placeholder_inserted=True, agentic_tool_names=set())
+    tap(frame({"type": "text", "text": "!"}))
+    assert resumed[0]["data"]["seq"] == 3
+    node = next(n for n in tmp_db.get_nodes("seq") if n.id == "u_reply")
+    assert json.loads(node.metadata["extra"])["stream_seq"] == 3
 
 
 def test_real_loop_persists_session_meta(tmp_db: SessionDB) -> None:
@@ -267,7 +344,7 @@ def test_real_loop_persists_session_meta(tmp_db: SessionDB) -> None:
 
     with patch.object(D, "_run_loop_blocking", _w):
         result = D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                           source="wechat", peer_display="alice"),
         )
     sess = tmp_db.get_session("c1")
@@ -289,7 +366,7 @@ def test_real_loop_history_replay(tmp_db: SessionDB, captured, collector) -> Non
                     cancel_event=cancel_event, stream_fn=fake_stream)
     with patch.object(D, "_run_loop_blocking", _w1):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
         )
 
     # Second turn — capture context.messages length seen by stream_fn
@@ -310,7 +387,7 @@ def test_real_loop_history_replay(tmp_db: SessionDB, captured, collector) -> Non
                     cancel_event=cancel_event, stream_fn=_capturing_stream_fn)
     with patch.object(D, "_run_loop_blocking", _w2):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="follow up", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="follow up", agent_id="main", source="tui"),
         )
 
     # Context at LLM call time should have prior history (user, assistant)
@@ -336,7 +413,7 @@ def test_caller_forks_sibling_branch(
                     cancel_event=cancel_event, stream_fn=s1)
     with patch.object(D, "_run_loop_blocking", _w1):
         r1 = D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="ask one", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="ask one", agent_id="main", source="tui"),
         )
 
     # Turn 2: branch-fork from BEFORE turn 1's user message
@@ -349,7 +426,7 @@ def test_caller_forks_sibling_branch(
                     cancel_event=cancel_event, stream_fn=s2)
     with patch.object(D, "_run_loop_blocking", _w2):
         r2 = D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="ask one (retry)",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="ask one (retry)",
                           agent_id="main", source="tui",
                           branch_from=None),  # root-level fork
         )
@@ -371,18 +448,12 @@ def test_caller_forks_sibling_branch(
     assert r1.assistant_msg_id in by_id
 
 
-@pytest.mark.skip(
-    reason="context-engine commit path now pulls fresh history from "
-           "default_store() and ignores the caller's history_override — "
-           "pre-existing production behavior from the commit-chain "
-           "refactor, not a test-migration issue"
-)
-def test_history_override_skips_session_db_walk(
-    tmp_db: SessionDB, captured, collector,
+@pytest.mark.parametrize("override, sees_conversation", [([], False), (None, True)])
+def test_a_clean_run_does_not_read_the_conversation(
+    tmp_db: SessionDB, captured, collector, override, sees_conversation,
 ) -> None:
-    """When ``history_override`` is given, dispatcher should NOT pull
-    history from SessionDB. Webui's branch-walk lives in memory, this
-    is the seam it uses to inject it."""
+    """``history_override=[]`` (scheduled task, clean Job or sub-agent) starts
+    from nothing; without it the turn reads the conversation as before."""
     seen_messages: list = []
 
     async def _capturing(model, ctx, opts):
@@ -396,42 +467,28 @@ def test_history_override_skips_session_db_walk(
         return orig(req=req, history=history, on_event=on_event,
                     cancel_event=cancel_event, stream_fn=_capturing)
 
-    # Pre-seed SessionDB with a "wrong" history that the override
-    # should bypass.
     tmp_db.create_session("c1", "main", title="t")
     tmp_db.append_message("c1", {
-        "id": "x1", "role": "user", "content": "should NOT appear",
+        "id": "x1", "role": "user", "content": "earlier conversation",
         "timestamp": 1.0, "predecessor": None,
     })
-    tmp_db.set_head("c1", "x1")
+    tmp_db.append_message("c1", {
+        "id": "x2", "role": "assistant", "content": "earlier reply",
+        "timestamp": 2.0, "predecessor": "x1",
+    })
+    tmp_db.set_head("c1", "x2")
 
-    fake_history = [
-        {"id": "ov1", "role": "user", "content": "from override",
-         "timestamp": 100.0},
-        {"id": "ov2", "role": "assistant", "content": "ack",
-         "timestamp": 101.0},
-    ]
     with patch.object(D, "_run_loop_blocking", _w):
         D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="next",
+            agent_turn_request.TurnRequest(session_id="c1", user_text="next",
                           agent_id="main", source="tui",
-                          history_override=fake_history),
+                          history_override=override),
         )
 
-    # context.messages = override + the new prompt
     assert seen_messages
-    contents = []
-    for m in seen_messages[0]:
-        c = getattr(m, "content", None)
-        if isinstance(c, list):
-            for blk in c:
-                t = getattr(blk, "text", None)
-                if t:
-                    contents.append(t)
-    # "should NOT appear" is the SessionDB row — must be absent
-    assert not any("should NOT appear" in c for c in contents)
-    # "from override" is the injected history — must be present
-    assert any("from override" in c for c in contents)
+    rendered = repr(seen_messages[0])
+    assert ("earlier conversation" in rendered) is sees_conversation
+    assert "next" in rendered
 
 
 def test_user_already_persisted_skips_duplicate_user_msg(
@@ -449,7 +506,7 @@ def test_user_already_persisted_skips_duplicate_user_msg(
         "timestamp": 1.0, "predecessor": None,
     })
     tmp_db.set_head("c1", "uExt")
-    from openprogram.agent.internals._turn_lifecycle import insert_placeholder
+    from openprogram.runtime.conversation.turn_lifecycle import insert_placeholder
     assert insert_placeholder(
         tmp_db, "c1", "uExt_reply", "uExt", "web",
     )
@@ -469,7 +526,7 @@ def test_user_already_persisted_skips_duplicate_user_msg(
 
     with patch.object(D, "_run_loop_blocking", _w):
         result = D.process_user_turn(
-            D.TurnRequest(
+            agent_turn_request.TurnRequest(
                 session_id="c1", user_text="hello",
                 agent_id="main", source="web",
                 user_msg_id="uExt",
@@ -524,7 +581,7 @@ def test_provider_error_persists_as_system_message(
 
     with patch.object(D, "_run_loop_blocking", _w):
         result = D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
+            agent_turn_request.TurnRequest(session_id="c1", user_text="hi", agent_id="main", source="tui"),
             on_event=collector,
         )
 
@@ -542,7 +599,7 @@ def test_provider_error_persists_as_system_message(
 def make_error_stream_fn(error_message: str, *, error_reason: str | None = None):
     """A stream_fn that fails mid-stream the way a provider 4xx does:
     EventStart then EventError carrying stop_reason='error'."""
-    from openprogram.providers.types import EventError
+    from openprogram.models.providers.types import EventError
 
     async def _fn(model, context, options) -> AsyncGenerator[AssistantMessageEvent, None]:
         yield EventStart(partial=_build_partial(""))
@@ -580,7 +637,7 @@ def test_real_loop_stream_error_surfaces_to_client(
 
     with patch.object(D, "_run_loop_blocking", _wrapped):
         result = D.process_user_turn(
-            D.TurnRequest(session_id="cerr", user_text="hi",
+            agent_turn_request.TurnRequest(session_id="cerr", user_text="hi",
                           agent_id="main", source="tui"),
             on_event=collector,
         )

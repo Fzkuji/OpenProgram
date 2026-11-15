@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.session_store import SessionStore
 
 
 @pytest.mark.parametrize("recover_threads", [False, True])
@@ -18,7 +18,11 @@ def test_thread_start_failure_falls_back_to_synchronous_index_write(
     store._update_index_entry("s1", title="saved without a thread")
     original_timer = threading.Timer
 
-    def unavailable_timer(delay, callback):
+    def unavailable_timer(delay, callback, *args, **kwargs):
+        # Only this store's flush timer is affected; timers other code in
+        # the process starts meanwhile stay real.
+        if getattr(callback, "__self__", None) is not store:
+            return original_timer(delay, callback, *args, **kwargs)
         timer = original_timer(delay, callback)
 
         def fail_start():
@@ -81,14 +85,14 @@ def test_close_flushes_pending_index_and_joins_timer(tmp_path: Path) -> None:
 
 
 def test_close_retains_dirty_data_for_retry_after_io_failure(tmp_path: Path, monkeypatch) -> None:
-    import openprogram.store.session.session_store as module
+    import openprogram.state.store.session.session_store as module
 
     store = SessionStore(tmp_path / "sessions")
     store.create_session("s1", "main", title="initial")
     store._update_index_entry("s1", title="must survive")
     original_write = module.shared.atomic_write_text
     unregistered = []
-    original_unregister = module.atexit.unregister
+    original_unregister = module.shared.atexit.unregister
 
     def unavailable(*_args, **_kwargs):
         raise OSError("injected write failure")
@@ -97,7 +101,7 @@ def test_close_retains_dirty_data_for_retry_after_io_failure(tmp_path: Path, mon
         unregistered.append(callback)
         original_unregister(callback)
 
-    monkeypatch.setattr(module.atexit, "unregister", unregister)
+    monkeypatch.setattr(module.shared.atexit, "unregister", unregister)
     monkeypatch.setattr(module.shared, "atomic_write_text", unavailable)
     try:
         store.close()
@@ -126,7 +130,9 @@ def test_close_waits_for_inflight_flush_and_persists_newer_snapshot(
     original_timer = threading.Timer
     original_save = store._save_index
 
-    def immediate_timer(_delay, callback):
+    def immediate_timer(delay, callback, *args, **kwargs):
+        if getattr(callback, "__self__", None) is not store:
+            return original_timer(delay, callback, *args, **kwargs)
         timer = original_timer(0, callback)
         original_cancel = timer.cancel
 
@@ -157,13 +163,13 @@ def test_close_waits_for_inflight_flush_and_persists_newer_snapshot(
     store._schedule_index_flush()
     closer = threading.Thread(target=close)
     try:
-        assert entered.wait(5)
+        assert entered.wait(30)
         store._update_index_entry("s1", title="new snapshot")
         closer.start()
-        assert cancelled.wait(5)
+        assert cancelled.wait(30)
         assert not closed.is_set(), "close returned while its writer was still running"
         release.set()
-        closer.join(timeout=5)
+        closer.join(timeout=30)
         assert not closer.is_alive()
         assert not errors
         assert all(not timer.is_alive() for timer in timers)

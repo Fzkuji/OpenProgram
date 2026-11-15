@@ -3,20 +3,20 @@ import asyncio
 
 import pytest
 
-from openprogram.agent.agent_loop import _execute_tool_calls
-from openprogram.agent.authority import owner_authority
-from openprogram.agent.dispatcher.types import TurnRequest
-from openprogram.agent.permissions.approval import wrap_with_approval
-from openprogram.agent.session_config import PermissionRules
-from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.providers.types import AssistantMessage, ToolCall
-from openprogram.providers.utils.event_stream import EventStream
+from openprogram.runtime.agent.loop import _execute_tool_calls
+from openprogram.runtime.permissions.authority import owner_authority
+from openprogram.runtime.agent.turn_request import TurnRequest
+from openprogram.runtime.permissions.approval import wrap_with_approval
+from openprogram.runtime.permissions.modes import PermissionRules
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.models.providers.types import AssistantMessage, ToolCall
+from openprogram.models.providers.utils.event_stream import EventStream
 
 
 @pytest.mark.parametrize("blocked", [False, True])
 def test_review_precedes_dispatch_and_controls_bash(monkeypatch, blocked):
     order = []
-    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: None)
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _: None)
 
     async def classify(name, args, **kwargs):
         order.append("review")
@@ -32,7 +32,7 @@ def test_review_precedes_dispatch_and_controls_bash(monkeypatch, blocked):
         order.append(kind)
         return False
 
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     request = TurnRequest(session_id="preflight", user_text="inspect changes", agent_id="main",
         source="web", permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell",
@@ -50,7 +50,7 @@ def test_review_precedes_dispatch_and_controls_bash(monkeypatch, blocked):
 def test_rule_revoked_during_review_never_executes(monkeypatch, use_safe_point):
     rules = None
     called = []
-    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: rules)
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _: rules)
 
     async def classify(*args, **kwargs):
         nonlocal rules
@@ -61,7 +61,7 @@ def test_rule_revoked_during_review_never_executes(monkeypatch, use_safe_point):
         called.append(True)
         return AgentToolResult(content=[], details={})
 
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     req = TurnRequest(session_id="revocation", user_text="inspect", agent_id="main", source="web",
         permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), req, lambda _: None)
@@ -82,7 +82,7 @@ def test_rule_revoked_during_review_never_executes(monkeypatch, use_safe_point):
 def test_argument_mutation_during_review_never_executes(monkeypatch, with_manifest):
     args = {"command": "git status"}
     called = []
-    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: None)
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _: None)
 
     async def classify(name, reviewed, **kwargs):
         assert reviewed == {"command": "git status"}
@@ -93,7 +93,7 @@ def test_argument_mutation_during_review_never_executes(monkeypatch, with_manife
         called.append(values)
         return AgentToolResult(content=[], details={})
 
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     req = TurnRequest(session_id="mutation", user_text="inspect", agent_id="main", source="web",
         permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="bash", label="bash", description="shell", parameters={}, execute=execute), req, lambda _: None)
@@ -110,7 +110,7 @@ def test_argument_mutation_during_review_never_executes(monkeypatch, with_manife
 
 def test_preflight_uses_validated_operation(monkeypatch):
     seen = []
-    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _: None)
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules", lambda _: None)
 
     async def classify(name, args, **kwargs):
         seen.append(("review", args))
@@ -125,7 +125,7 @@ def test_preflight_uses_validated_operation(monkeypatch):
             seen.append(("dispatch", payload["arguments"]))
         return False
 
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     request = TurnRequest(session_id="canonical", user_text="test", agent_id="main", source="web",
         permission_mode="auto", **owner_authority("owner/install/0123456789abcdef"))
     tool = wrap_with_approval(AgentTool(name="probe", label="probe", description="test",
@@ -138,8 +138,8 @@ def test_preflight_uses_validated_operation(monkeypatch):
 
 
 def test_host_outcome_is_projected_to_live_event():
-    from openprogram.agent.types import AgentEventToolEnd
-    from openprogram.agent.internals._event_parsing import agent_event_to_envelope
+    from openprogram.runtime.agent.loop.types import AgentEventToolEnd
+    from openprogram.runtime.conversation.event_parsing import agent_event_to_envelope
     from types import SimpleNamespace
     event = AgentEventToolEnd(tool_call_id="c", tool_name="bash", is_error=True,
                              outcome="not_started", result=AgentToolResult(content=[], details={}))

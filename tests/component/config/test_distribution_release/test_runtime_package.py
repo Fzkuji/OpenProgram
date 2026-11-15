@@ -1,24 +1,25 @@
 """release runtime package tests."""
+
 from __future__ import annotations
+import importlib
+import os
+import platform
+import re
+import runpy
+import subprocess
+import zipfile
 from ._support import (
     POSIX_SHELL_INTEGRATION,
     Path,
     ROOT,
-    SimpleNamespace,
     _desktop_package,
     _fake_desktop_app,
     _fake_posix_cli_archive,
-    importlib,
     json,
-    os,
-    platform,
     plistlib,
     pytest,
-    re,
-    runpy,
     subprocess,
     sys,
-    zipfile,
 )
 
 
@@ -30,15 +31,31 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
         for target in build["mac"]["target"]
     }
     assert {"dmg", "zip"} <= mac_targets
-    assert "linux" not in build
+    assert build["linux"]["executableName"] == "openprogram-desktop"
+    assert {"AppImage", "deb"} == set(build["linux"]["target"])
     assert "dist:linux" not in package["scripts"]
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
     resources = {item["to"]: item["from"] for item in build["extraResources"]}
     assert resources["update/install-app.sh"] == "scripts/install-app.sh"
-    assert "worker-recovery-state.js" in build["files"]
-    assert "tab-transfer-validation.js" in build["files"]
+    # main.js, every module under main/ and the thin shell ship in app.asar.
+    assert build["files"] == ["main.js", "main/**", "shell/**"]
+    for module in ("worker/worker-recovery-state.js", "web-views/tab-transfer-validation.js", "self-update/packaged-runtime.js"):
+        assert (ROOT / "apps" / "desktop" / "main" / module).is_file()
     assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"
 
+
+def test_packaging_leaves_the_runtime_browser_bytes_alone() -> None:
+    # Self-update compares the packaged browser with the installed one byte for byte.
+    ignored = [re.compile(item) for item in _desktop_package()["build"]["mac"]["signIgnore"]]
+    app = "/build/mac-arm64/OpenProgram.app"
+    browser = f"{app}/Contents/Resources/runtime/assets/playwright/chromium-1223/chrome-mac-arm64/Chromium.app"
+    assert any(pattern.search(browser) for pattern in ignored)
+    for signed in (f"{app}/Contents/Resources/runtime/OpenProgram.app",
+                   f"{app}/Contents/Frameworks/Electron Framework.framework"):
+        assert not any(pattern.search(signed) for pattern in ignored)
+    staging = (ROOT / "scripts" / "release" / "build-base.sh").read_text(encoding="utf-8")
+    install = staging.index("playwright install chromium")
+    assert staging.index("codesign --force --deep --sign -", install) > install
 
 
 @POSIX_SHELL_INTEGRATION
@@ -69,7 +86,6 @@ def test_packaged_runtime_smoke_rejects_an_incomplete_app_before_install(
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
 
 
-
 def test_macos_icon_uses_the_apple_icon_source_format() -> None:
     desktop = ROOT / "apps" / "desktop"
     package = json.loads((desktop / "package.json").read_text(encoding="utf-8"))
@@ -83,15 +99,15 @@ def test_macos_icon_uses_the_apple_icon_source_format() -> None:
     assert not (desktop / "build" / "icon.iconset").exists()
 
 
-
-def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:
+def test_core_agent_methods_are_not_excluded_from_wheel() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert 'exclude = ["openprogram.programs.workflow.*"]' not in pyproject
 
 
-
 def test_packaged_worker_uses_isolated_embedded_python() -> None:
-    helper = (ROOT / "apps" / "desktop" / "packaged-runtime.js").read_text(encoding="utf-8")
+    helper = (ROOT / "apps" / "desktop" / "main" / "self-update" / "packaged-runtime.js").read_text(
+        encoding="utf-8"
+    )
     main = (ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
     assert '"-I", "-B", "-m", "openprogram", "worker", "start"' in helper
     assert "process.resourcesPath" in main
@@ -107,21 +123,19 @@ def test_packaged_worker_uses_isolated_embedded_python() -> None:
     assert 'env.OPENPROGRAM_IMMUTABLE_RUNTIME = "1"' in main
 
 
-
-def test_packaged_runtime_rejects_program_mutation(monkeypatch, capsys) -> None:
-    from openprogram.cli.commands.programs import _cmd_install, _cmd_uninstall
+def test_packaged_runtime_may_change_programs(monkeypatch, capsys) -> None:
+    """The packaged runtime goes on to the real install and reports what happens there."""
+    from openprogram.interfaces.cli.commands import programs
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
-    with pytest.raises(SystemExit) as install_exit:
-        _cmd_install("research")
-    assert install_exit.value.code == 1
-    assert "disabled in the packaged desktop runtime" in capsys.readouterr().out
+    monkeypatch.setattr(subprocess, "call", lambda *a, **k: 1)
+    with pytest.raises(SystemExit):
+        programs._cmd_install("owner/repo")
+    assert "disabled in the packaged desktop runtime" not in capsys.readouterr().out
 
-    with pytest.raises(SystemExit) as uninstall_exit:
-        _cmd_uninstall("research")
-    assert uninstall_exit.value.code == 1
-    assert "disabled in the packaged desktop runtime" in capsys.readouterr().out
-
+    with pytest.raises(SystemExit):
+        programs._cmd_uninstall("demo_harness")
+    assert "disabled in the packaged desktop runtime" not in capsys.readouterr().out
 
 
 @POSIX_SHELL_INTEGRATION
@@ -167,20 +181,16 @@ def test_failed_new_release_probe_is_cleanly_retryable(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
     )
-    assert (runtime_root / "current").resolve() == (
-        runtime_root / "releases" / "0.6.7"
-    )
-
+    assert (runtime_root / "current").resolve() == (runtime_root / "releases" / "0.6.7")
 
 
 def test_cli_exposes_distribution_version(capsys) -> None:
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     with pytest.raises(SystemExit) as version_exit:
         build_parser().parse_args(["--version"])
     assert version_exit.value.code == 0
     assert capsys.readouterr().out.startswith("openprogram ")
-
 
 
 def test_desktop_runtime_removes_absolute_python_aliases() -> None:
@@ -191,13 +201,10 @@ def test_desktop_runtime_removes_absolute_python_aliases() -> None:
     assert 'unlink "$python_alias"' in staging
 
 
-
 def test_product_runtime_verifier_probes_macos_window_dependencies(
     monkeypatch,
 ) -> None:
-    helper = runpy.run_path(
-        str(ROOT / "scripts/release/verify-product-runtime.py")
-    )
+    helper = runpy.run_path(str(ROOT / "scripts/release/verify-product-runtime.py"))
     imported: list[str] = []
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
     monkeypatch.setattr(importlib, "import_module", imported.append)
@@ -210,7 +217,6 @@ def test_product_runtime_verifier_probes_macos_window_dependencies(
         "Quartz",
         "ScreenCaptureKit",
     ]
-
 
 
 @POSIX_SHELL_INTEGRATION
@@ -243,11 +249,10 @@ def test_release_version_verifier_rejects_a_mismatched_built_wheel(
     assert f"wheel version 0.6.1 != source version {source_version}" in result.stderr
 
 
-
 def test_product_runtime_installs_complete_default_capabilities() -> None:
     staging = (ROOT / "scripts" / "release" / "build-product-runtime.sh").read_text(
         encoding="utf-8"
-    )
+    ) + (ROOT / "scripts" / "release" / "build-base.sh").read_text(encoding="utf-8")
     verifier = (ROOT / "scripts" / "release" / "verify-product-runtime.py").read_text(
         encoding="utf-8"
     )
@@ -259,12 +264,13 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "--extra embedding" not in staging
     assert "--require-hashes" in staging
     assert '--no-deps "$wheel"' in staging
-    assert '--no-deps "$program_dir"' in staging
+    assert '--no-deps "$program_dir"' not in staging
     assert '"${program_dir}[ocr]"' not in staging
     assert "playwright.sync_api" in verifier
     assert "playwright install chromium" in staging
     assert "easyocr.Reader" not in staging
-    assert '"${program_dir}[pdf]"' in staging
+    assert "program_dir" not in staging
+    assert "stage-program-source" not in staging
     assert "https://download.pytorch.org/whl/cpu" not in staging
     assert "torch==$torch_version" not in staging
     assert "2147483648" in (
@@ -273,8 +279,11 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     main_deps = pyproject.split("[project.optional-dependencies]")[0]
     assert "sentence-transformers" not in main_deps
-    assert 'embedding = ["sentence-transformers>=3.4,<4"]' in pyproject
-    assert '"pypdf>=5.0"' in pyproject
+    assert (
+        "\"sentence-transformers>=6.1,<7; sys_platform != 'darwin' "
+        "or platform_machine != 'x86_64'" in pyproject
+    )
+    assert '"pypdf>=6.19.0"' in pyproject
     assert '"rich>=13.0"' in pyproject
     assert '"sentence_transformers"' not in verifier
     assert "_reject_excluded_runtime_wheels()" in verifier
@@ -282,11 +291,11 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert '"pypdf",' in verifier
     assert "_probe_pdf_tools()" in verifier
     assert "_probe_rich_terminal()" in verifier
-    assert "Salesforce/GPA-GUI-Detector" in product_config
-    assert "GUI-Agent-Harness" in product_config
-    assert "Research-Agent-Harness" in product_config
-    assert "Wiki-Agent-Harness" in product_config
-
+    assert "GPA-GUI-Detector" not in product_config
+    assert "gpa_detector" not in verifier
+    assert "Research-Agent-Harness" not in product_config
+    assert "Wiki-Agent-Harness" not in product_config
+    assert "programs" not in json.loads(product_config)
 
 
 def test_posix_runtime_build_has_stable_python_and_bundled_tui_launchers() -> None:
@@ -294,6 +303,8 @@ def test_posix_runtime_build_has_stable_python_and_bundled_tui_launchers() -> No
         encoding="utf-8"
     )
     assert "for command_name in npm node git" in builder
+    assert "huggingface" not in builder
+    assert "assets/gpa" not in builder
     assert 'ln -s "../$python_relative" "$runtime_root/bin/python"' in builder
     assert 'cp "$(command -v node)" "$runtime_root/bin/node"' in builder
     assert '"$runtime_root/assets/tui/index.cjs"' in builder
@@ -306,23 +317,24 @@ def test_posix_runtime_build_has_stable_python_and_bundled_tui_launchers() -> No
     assert '"bin/smoke-ink-tui-pty.py"' in verifier
 
 
-
 def test_product_runtime_pdf_tool_probe() -> None:
-    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
+    verifier = runpy.run_path(
+        str(ROOT / "scripts" / "release" / "verify-product-runtime.py")
+    )
     verifier["_probe_pdf_tools"]()
 
 
-
 def test_product_runtime_rich_terminal_probe() -> None:
-    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
+    verifier = runpy.run_path(
+        str(ROOT / "scripts" / "release" / "verify-product-runtime.py")
+    )
     verifier["_probe_rich_terminal"]()
-
 
 
 def test_immutable_runtime_doctor_does_not_require_node_or_npm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.cli.commands import doctor
+    from openprogram.operations.diagnostics import checks as doctor
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
     monkeypatch.setattr(doctor.shutil, "which", lambda _name: None)
@@ -340,22 +352,26 @@ def test_immutable_runtime_doctor_does_not_require_node_or_npm(
     assert doctor._check_git() == (False, "git available", "not on PATH")
 
 
-
-def test_packaged_cli_resolves_bundled_tui_without_source(tmp_path, monkeypatch) -> None:
+def test_packaged_cli_resolves_bundled_tui_without_source(
+    tmp_path, monkeypatch
+) -> None:
     import tomllib
     import openprogram
-    from openprogram.cli import ink as cli_ink
+    from openprogram.interfaces.cli import ink as cli_ink
 
     config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert "dist/*.mjs" in config["tool"]["setuptools"]["package-data"]["openprogram_cli"]
-    package = tmp_path / "openprogram_cli"
+    assert (
+        "dist/*.mjs" in config["tool"]["setuptools"]["package-data"]["openprogram.interfaces.cli"]
+    )
+    package = tmp_path / "openprogram" / "interfaces" / "cli"
     entry = package / "dist" / "index.mjs"
     entry.parent.mkdir(parents=True)
     entry.write_text("// bundled terminal entry\n", encoding="utf-8")
-    monkeypatch.setattr(openprogram, "__file__", str(tmp_path / "openprogram" / "__init__.py"))
-    monkeypatch.setattr(cli_ink, "__file__", str(package / "_impl" / "ink.py"))
+    monkeypatch.setattr(
+        openprogram, "__file__", str(tmp_path / "openprogram" / "__init__.py")
+    )
+    monkeypatch.setattr(cli_ink, "__file__", str(package / "ink.py"))
     assert cli_ink._resolve_cli_entry() == entry
-
 
 
 def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
@@ -364,9 +380,9 @@ def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
 ) -> None:
     from types import SimpleNamespace
 
-    from openprogram.cli import chat as cli_chat
-    from openprogram.cli import ink as cli_ink
-    from openprogram.agent.management import manager
+    from openprogram.interfaces.cli import chat as cli_chat
+    from openprogram.interfaces.cli import ink as cli_ink
+    from openprogram.runtime.agent_registry import manager
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
     monkeypatch.setattr(cli_ink, "_has_interactive_tui_stdio", lambda: True)
@@ -402,7 +418,6 @@ def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
     assert "Goodbye" in output.out
 
 
-
 def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -422,7 +437,6 @@ def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
     ):
         assert "reinstall the complete OpenProgram release" in result
         assert "pip install" not in result
-
 
 
 @pytest.mark.parametrize(
@@ -446,7 +460,9 @@ def test_product_runtime_rejects_excluded_distributions(
     monkeypatch: pytest.MonkeyPatch,
     excluded_dist: str,
 ) -> None:
-    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
+    verifier = runpy.run_path(
+        str(ROOT / "scripts" / "release" / "verify-product-runtime.py")
+    )
 
     class _Dist:
         def __init__(self, name: str) -> None:
@@ -461,11 +477,12 @@ def test_product_runtime_rejects_excluded_distributions(
         verifier["_reject_excluded_runtime_wheels"]()
 
 
-
 def test_product_runtime_accepts_runtime_without_excluded_distributions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
+    verifier = runpy.run_path(
+        str(ROOT / "scripts" / "release" / "verify-product-runtime.py")
+    )
 
     class _Dist:
         def __init__(self, name: str) -> None:
@@ -479,11 +496,12 @@ def test_product_runtime_accepts_runtime_without_excluded_distributions(
     verifier["_reject_excluded_runtime_wheels"]()
 
 
-
 def test_product_runtime_rejects_installed_openprogram_version_mismatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
+    verifier = runpy.run_path(
+        str(ROOT / "scripts" / "release" / "verify-product-runtime.py")
+    )
     verify_version = verifier["_verify_openprogram_version"]
 
     monkeypatch.setattr("importlib.metadata.version", lambda _name: "0.6.1")
@@ -492,7 +510,6 @@ def test_product_runtime_rejects_installed_openprogram_version_mismatch(
         match=r"OpenProgram version mismatch: expected 0\.6\.6, got 0\.6\.1",
     ):
         verify_version("0.6.6")
-
 
 
 def test_search_runtime_dependency_supports_macos_x64() -> None:
@@ -506,18 +523,24 @@ def test_search_runtime_dependency_supports_macos_x64() -> None:
     )
 
 
-
-def test_memory_runtime_dependency_supports_macos_x64() -> None:
+def test_memory_runtime_keeps_macos_x64_core_without_embedding_torch() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
     assert "sys_platform == 'darwin' and platform_machine == 'x86_64'" in pyproject
-    assert re.search(r"torch-[^-]+-.*macosx_[^-]+_x86_64\.whl", lock)
-
+    assert (
+        "sentence-transformers>=6.1,<7; sys_platform != 'darwin' "
+        "or platform_machine != 'x86_64'" in pyproject
+    )
+    assert "torch==2.2.2" not in pyproject
+    assert "torch-2.2.2" not in lock
+    assert not re.search(r"torch-[^-]+-.*macosx_[^-]+_x86_64\.whl", lock)
 
 
 def test_product_manifest_requires_one_complete_capability_set() -> None:
     manifest = json.loads(
-        (ROOT / "scripts" / "release" / "product-runtime.json").read_text(encoding="utf-8")
+        (ROOT / "scripts" / "release" / "product-runtime.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert manifest["schema"] == 1
     assert set(manifest["capabilities"]) == {
@@ -529,19 +552,9 @@ def test_product_manifest_requires_one_complete_capability_set() -> None:
         "search",
         "tui.ink",
         "browser.playwright",
-        "model.gpa_detector",
-        "program.gui",
-        "program.research",
-        "program.wiki",
     }
-    assert set(manifest["programs"]) == {"gui", "research", "wiki"}
-    assert "torch" not in manifest["programs"]["gui"]
-    assert "torchvision" not in manifest["programs"]["gui"]
-    assert "numpy" not in manifest["programs"]["gui"]
-    assert "opencv" not in manifest["programs"]["gui"]
-    for program in manifest["programs"].values():
-        assert re.fullmatch(r"[0-9a-f]{40}", program["commit"])
-
+    assert "assets" not in manifest
+    assert "programs" not in manifest
 
 
 def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() -> None:
@@ -549,14 +562,14 @@ def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() 
         encoding="utf-8"
     )
     assert "workflow_dispatch:" in workflow
-    assert "schedule:" in workflow
+    assert "schedule:" not in workflow  # runs only when started by hand
     assert "environment: release" not in workflow
     assert "ubuntu-24.04-arm" in workflow
     assert "scripts/install-release.sh" in workflow
     assert "smoke-linux-runtime-baseline.sh" in workflow
     assert "Ubuntu 22.04 glibc baseline" in workflow
-    assert "AppImage" not in workflow
-    assert "electron-builder" not in workflow
+    assert "scripts/release/smoke-linux-desktop.sh" in workflow
+    assert "runner: ubuntu-22.04-arm" in workflow
 
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
@@ -570,16 +583,38 @@ def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() 
     assert '"$runtime/assets/tui/index.cjs" --probe' not in baseline
 
 
-
-def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
-    smoke = (ROOT / "scripts" / "release" / "smoke-packaged-runtime.sh").read_text(encoding="utf-8")
+def test_packaged_smoke_leaves_linux_to_its_own_script() -> None:
+    smoke = (ROOT / "scripts" / "release" / "smoke-packaged-runtime.sh").read_text(
+        encoding="utf-8"
+    )
     assert "AppImage" not in smoke
     assert "linux)" not in smoke
     assert "python3 -c" not in smoke
     assert "run_with_timeout" in smoke
     assert "timed out after" in smoke
     assert "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:=1" in smoke
+    desktop = (ROOT / "scripts/release/smoke-linux-desktop.sh").read_text(encoding="utf-8")
+    for image in ("ubuntu:22.04", "ubuntu:24.04"):
+        assert image in desktop
+    for check in ("/healthz", "/chat", "node-pty", "openprogram-launcher", "--force-depends git", ".desktop"):
+        assert check in desktop
 
+
+@POSIX_SHELL_INTEGRATION
+def test_packaged_smoke_recognises_a_thin_shell_and_checks_its_seed(tmp_path: Path) -> None:
+    seed = tmp_path / "dist" / "OpenProgram.app" / "Contents" / "Resources" / "seed"
+    seed.mkdir(parents=True)
+    (seed / "seed.json").write_text("{}\n", encoding="utf-8")
+    (seed / "base.tar.zst").write_bytes(b"base")
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "release" / "smoke-packaged-runtime.sh"), "mac", str(tmp_path / "dist")],
+        capture_output=True, text=True, check=False, env={**os.environ, "TMPDIR": str(tmp_path)},
+    )
+
+    assert result.returncode != 0
+    assert "the seed is missing version.tar.zst" in result.stderr
+    assert "packaged runtime manifest not found" not in result.stderr
 
 
 @POSIX_SHELL_INTEGRATION
@@ -615,11 +650,10 @@ def test_packaged_smoke_reads_formatted_runtime_manifest(tmp_path: Path) -> None
     assert "managed Python path missing" not in result.stderr
 
 
-
 def test_openclaw_source_checkout_uses_its_locked_environment() -> None:
     for relative_path in (
-        "docs/integrations/openclaw.md",
-        "docs/integrations/openclaw.zh.md",
+        "docs/integrations/openclaw.html",
+        "docs/integrations/openclaw.zh.html",
     ):
         source = (ROOT / relative_path).read_text(encoding="utf-8")
         assert "uv sync --locked" in source
@@ -630,45 +664,15 @@ def test_openclaw_source_checkout_uses_its_locked_environment() -> None:
         )
 
 
-
 def test_python_import_troubleshooting_distinguishes_managed_and_source() -> None:
     for relative_path in (
-        "docs/server/troubleshooting.md",
-        "docs/server/troubleshooting.zh.md",
+        "docs/server/troubleshooting.html",
+        "docs/server/troubleshooting.zh.html",
     ):
         source = (ROOT / relative_path).read_text(encoding="utf-8")
         assert "uv sync --locked" in source
         assert "uv run --project /path/to/OpenProgram python" in source
         assert "./scripts/install.sh" not in source
-
-
-
-def test_packaged_browser_install_does_not_modify_python_environment(
-    monkeypatch, capsys
-) -> None:
-    from openprogram.cli.commands.browser import _cmd_browser_install
-
-    monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
-    monkeypatch.setattr(
-        "openprogram.cli.commands.browser._pip_install",
-        lambda _spec: (_ for _ in ()).throw(AssertionError("pip invoked")),
-    )
-
-    assert _cmd_browser_install("playwright") == 1
-    output = capsys.readouterr().out.lower()
-    assert "complete release" in output
-    assert "source checkout" in output
-
-    help_output = subprocess.run(
-        [sys.executable, "-m", "openprogram", "browser", "install", "--help"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.lower()
-    help_output = " ".join(help_output.split())
-    assert "source checkout only" in help_output
-    assert "packaged releases reject this command" in help_output
-
 
 
 def test_release_manifest_records_hashes(tmp_path: Path) -> None:
@@ -697,25 +701,39 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
     )
 
 
-
 @POSIX_SHELL_INTEGRATION
 @pytest.mark.parametrize("deferred", [False, True])
 def test_packaged_smoke_passes_verifier_arguments_with_system_bash(
-    tmp_path: Path, deferred: bool,
+    tmp_path: Path,
+    deferred: bool,
 ) -> None:
-    runtime = tmp_path / "dist" / "OpenProgram.app" / "Contents" / "Resources" / "runtime"
+    runtime = (
+        tmp_path / "dist" / "OpenProgram.app" / "Contents" / "Resources" / "runtime"
+    )
     (runtime / "bin").mkdir(parents=True)
-    (runtime / "runtime-manifest.json").write_text(json.dumps({"python": "bin/python3"}, indent=2) + "\n")
+    (runtime / "runtime-manifest.json").write_text(
+        json.dumps({"python": "bin/python3"}, indent=2) + "\n"
+    )
     capture = tmp_path / "verifier-arguments"
     executable = runtime / "bin" / "python3"
     executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$CAPTURE"\nexit 37\n')
     executable.chmod(0o755)
     result = subprocess.run(
-        ["/bin/bash", str(ROOT / "scripts/release/smoke-packaged-runtime.sh"),
-         "mac", str(tmp_path / "dist")],
-        env={**os.environ, "TMPDIR": str(tmp_path), "CAPTURE": str(capture),
-             "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER": "1" if deferred else "0"},
-        capture_output=True, text=True, check=False,
+        [
+            "/bin/bash",
+            str(ROOT / "scripts/release/smoke-packaged-runtime.sh"),
+            "mac",
+            str(tmp_path / "dist"),
+        ],
+        env={
+            **os.environ,
+            "TMPDIR": str(tmp_path),
+            "CAPTURE": str(capture),
+            "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER": "1" if deferred else "0",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 37, result.stderr
     expected = ["-I", str(runtime / "bin/verify-product-runtime.py"), str(runtime)]
@@ -724,40 +742,36 @@ def test_packaged_smoke_passes_verifier_arguments_with_system_bash(
     assert capture.read_text().splitlines() == expected
 
 
-
 @pytest.mark.parametrize("symlink", [False, True])
-def test_package_cli_preserves_legacy_location_for_upgrade_and_uninstall(tmp_path, monkeypatch, symlink):
-    import openprogram
-    import openprogram.paths as paths
-    from openprogram.programs import _programs
-    from openprogram.cli.commands.programs import _cmd_install, _cmd_uninstall
+def test_package_cli_upgrades_and_uninstalls_a_recorded_clone_in_place(
+    tmp_path, monkeypatch, symlink
+):
+    import openprogram.state.paths as paths
+    from openprogram.programs._host import sources as program_sources
+    from openprogram.interfaces.cli.commands.programs import _cmd_install, _cmd_uninstall
 
-    package = tmp_path / "openprogram"
-    root = package / "programs"
-    old = root / "applications" / "research_harness"
-    old.parent.mkdir(parents=True)
-    (root / "packages").mkdir()
-    target = tmp_path / "owned-checkout" if symlink else old
+    state = tmp_path / "state"
+    clone = state / "programs" / "demo_harness"
+    clone.parent.mkdir(parents=True)
+    target = tmp_path / "owned-checkout" if symlink else clone
     target.mkdir()
     (target / ".git").mkdir()
-    agentics = target / "research_harness" / "agentics"
+    agentics = target / "demo_harness" / "agentics"
     agentics.mkdir(parents=True)
     (agentics.parent / "__init__.py").write_text("")
     (agentics / "__init__.py").write_text("")
     if symlink:
-        old.symlink_to(target, target_is_directory=True)
+        clone.symlink_to(target, target_is_directory=True)
     monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
-    monkeypatch.setattr(openprogram, "__file__", str(package / "__init__.py"))
-    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
-    _programs.record_program_source(old, source="fixture", base=str(old.parent))
+    monkeypatch.setattr(paths, "get_state_dir", lambda: state)
+    program_sources.record_program_source(clone, source="fixture")
     calls = []
     monkeypatch.setattr(subprocess, "call", lambda args: calls.append(args) or 0)
-    _cmd_install("research", upgrade=True)
-    assert calls == ([] if symlink else [["git", "-C", str(old), "pull", "--ff-only"]])
-    assert not (root / "packages" / "research_harness").exists()
-    _cmd_uninstall("research")
-    assert not old.exists()
-    assert _programs.owner_controlled_program_sources() == []
+    _cmd_install("owner/demo_harness", upgrade=True)
+    pull = [["git", "-C", str(clone), "pull", "--ff-only"]]
+    assert calls[1:] == ([] if symlink else pull)
+    _cmd_uninstall("demo_harness")
+    assert not clone.exists() and not clone.is_symlink()
+    assert program_sources.owner_controlled_program_sources() == []
     if symlink:
         assert (target / ".git").is_dir()
-

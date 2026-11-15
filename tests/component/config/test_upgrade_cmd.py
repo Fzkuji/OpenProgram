@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from openprogram.cli.commands import upgrade as up
+from openprogram.interfaces.cli.commands import upgrade as up
 
 
 # ------------------------------------------------------------ helpers
@@ -60,7 +60,7 @@ def test_resolve_channel_unknown_lists_known():
 
 
 def test_update_channel_is_a_registered_setting():
-    from openprogram.config_schema import SETTINGS
+    from openprogram.state.settings import SETTINGS
     spec = next(s for s in SETTINGS if s.key == "update.channel")
     assert spec.default == "stable"
     assert "stable" in spec.choices()
@@ -167,7 +167,7 @@ def test_chain_order_and_abort_on_probe_failure(repo, monkeypatch, capsys):
     monkeypatch.setattr(up, "_cold_start_probe", boom)
     restarted = []
     monkeypatch.setattr(
-        "openprogram.worker.restart_worker",
+        "openprogram.operations.worker.restart_worker",
         lambda *a, **kw: restarted.append(1) or 0, raising=False)
 
     rc = up.run_upgrade(channel="stable", as_json=True)
@@ -315,7 +315,7 @@ def test_sentinel_failure_never_breaks_upgrade(repo, monkeypatch, capsys):
 
 def test_persist_channel_rejects_unknown(monkeypatch):
     saved: list = []
-    monkeypatch.setattr("openprogram.config_schema.set_setting",
+    monkeypatch.setattr("openprogram.state.settings.set_setting",
                         lambda k, v: saved.append((k, v)))
     with pytest.raises(up.UpgradeError):
         up.persist_channel("beta")
@@ -324,7 +324,7 @@ def test_persist_channel_rejects_unknown(monkeypatch):
 
 def test_persist_channel_writes_known(monkeypatch):
     saved: list = []
-    monkeypatch.setattr("openprogram.config_schema.set_setting",
+    monkeypatch.setattr("openprogram.state.settings.set_setting",
                         lambda k, v: saved.append((k, v)))
     up.persist_channel("stable")
     assert saved == [(up.CONFIG_KEY, "stable")]
@@ -336,7 +336,7 @@ def test_persist_channel_writes_known(monkeypatch):
 def test_backend_poll_uses_challenge_revision_proof(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "openprogram._ports.backend_is_ours",
+        "openprogram.operations.worker.ports.backend_is_ours",
         lambda port, *, expected_revision=None: calls.append(
             (port, expected_revision)
         ) or True,
@@ -354,7 +354,7 @@ def test_backend_poll_uses_challenge_revision_proof(monkeypatch):
 
 
 def test_healthz_reports_sha(monkeypatch):
-    from openprogram.webui.routes.settings import misc
+    from openprogram.interfaces.server.routes.settings import misc
     monkeypatch.setattr(misc, "_HEAD_SHA", None)
     sha = misc._head_sha()
     assert isinstance(sha, str)
@@ -366,7 +366,7 @@ def test_healthz_reports_sha(monkeypatch):
 
 
 def test_head_sha_is_cached(monkeypatch):
-    from openprogram.webui.routes.settings import misc
+    from openprogram.interfaces.server.routes.settings import misc
     monkeypatch.setattr(misc, "_HEAD_SHA", "cached-value")
     monkeypatch.setattr(subprocess, "run", _explode)
     assert misc._head_sha() == "cached-value"

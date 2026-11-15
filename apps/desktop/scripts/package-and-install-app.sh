@@ -20,7 +20,7 @@ runtime_dir="$desktop_dir/build/runtime"
 python_build_dir="$repo_root/build"
 web_build_dir="$repo_root/apps/web/.next"
 web_output_dir="$repo_root/apps/web/out"
-frontend_stage_dir="$repo_root/apps/server/openprogram_server/_webui/_frontend"
+frontend_stage_dir="$repo_root/openprogram/interfaces/server/_frontend"
 lock_root="$HOME/Library/Caches/OpenProgram"
 lock_file="$lock_root/app-package.lock"
 lock_owned=0
@@ -95,7 +95,7 @@ cleanup() {
   [[ "$python_build_dir" == "$repo_root/build" ]] || { release_package_lock; exit "$status"; }
   [[ "$web_build_dir" == "$repo_root/apps/web/.next" ]] || { release_package_lock; exit "$status"; }
   [[ "$web_output_dir" == "$repo_root/apps/web/out" ]] || { release_package_lock; exit "$status"; }
-  [[ "$frontend_stage_dir" == "$repo_root/apps/server/openprogram_server/_webui/_frontend" ]] || { release_package_lock; exit "$status"; }
+  [[ "$frontend_stage_dir" == "$repo_root/openprogram/interfaces/server/_frontend" ]] || { release_package_lock; exit "$status"; }
   rm -rf "$work_dir" "$runtime_dir" "$python_build_dir" \
     "$web_build_dir" "$web_output_dir" "$frontend_stage_dir" || :
   release_package_lock
@@ -135,6 +135,12 @@ app_count="$(wc -l <"$app_list" | tr -d ' ')"
   exit 1
 }
 built_app="$(sed -n '1p' "$app_list")"
+# The next self-update diffs against this commit to rebuild only what changed.
+source_revision="$(git -C "$repo_root" rev-parse --verify HEAD)"
+if [[ -n "$(git -C "$repo_root" status --porcelain --untracked-files=no)" ]]; then
+  source_revision="$source_revision-dirty"
+fi
+printf '%s\n' "$source_revision" >"$built_app/Contents/Resources/openprogram-source-revision"
 if [[ -z "$output_app" ]]; then
   python3 "$repo_root/scripts/release/local-macos-signing.py" sign --app "$built_app"
 fi

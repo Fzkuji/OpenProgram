@@ -1,0 +1,67 @@
+<title>主动层接线</title>
+<meta name="description" content="主动层设计与 OpenProgram 代码的接合点：复用的机制、事件埋点、闸门挂载和安装现状。">
+<h1>把主动层接入代码</h1>
+
+<p>设计在 <a href="../proactive/README.zh.html">主动层</a>，冲突时以设计为准。<code translate="no">openprogram/runtime/events/bus.py</code> 是事件层；埋点放在本来就知道事情发生的源文件里。<code translate="no">Event</code> 有三个核心字段加开放的 <code translate="no">metadata</code>，<code translate="no">turn</code>、<code translate="no">session</code> 放在里面，没有轮次概念的来源无需编造。</p>
+
+<h2 id="reused">复用的机制</h2>
+<table class="stack">
+<thead><tr><th scope="col">设计角色</th><th scope="col">机制</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">事件分发</th><td><code translate="no">EventBus</code></td><td><code translate="no">runtime/events/bus.py</code></td></tr>
+<tr><th scope="row">闸门的 <code translate="no">ask</code></th><td><code translate="no">wrap_with_approval</code>；拒绝返回 <code translate="no">is_error</code> 工具结果</td><td><code translate="no">runtime/permissions/approval.py</code></td></tr>
+<tr><th scope="row"><code translate="no">Prepare</code> 后台任务</th><td><code translate="no">JobRunner.spawn_job</code></td><td><code translate="no">runtime/jobs/runner/</code></td></tr>
+<tr><th scope="row"><code translate="no">Inject</code> 落点</th><td>记忆预取和 steering 消息</td><td><code translate="no">runtime/agent/loop/</code></td></tr>
+<tr><th scope="row">因果、回退、分支</th><td>会话 DAG，节点带 <code translate="no">parent_id</code> 和 caller</td><td><code translate="no">runtime/context/git/</code></td></tr>
+<tr><th scope="row">硬执行点</th><td><code translate="no">_execute_tool_calls</code></td><td><code translate="no">runtime/agent/loop/tool_dispatch.py</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="taps">事件埋点</h2>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">user.prompt_submitted</code></th><td><code translate="no">runtime/conversation/turn_runtime/prep.py</code></td></tr>
+<tr><th scope="row"><code translate="no">model.response_started</code>、<code translate="no">model.response_completed</code></th><td><code translate="no">runtime/agent/loop/provider_lifecycle.py</code></td></tr>
+<tr><th scope="row"><code translate="no">tool.before</code></th><td><code translate="no">tool_dispatch.py</code>，每次执行前。一个事件同时供通知发送和闸门问询</td></tr>
+<tr><th scope="row"><code translate="no">tool.after</code></th><td><code translate="no">tool_dispatch.py</code>，每次调用后</td></tr>
+<tr><th scope="row"><code translate="no">subagent.started</code>、<code translate="no">subagent.ended</code></th><td><code translate="no">runtime/jobs/runner/shared.py</code></td></tr>
+<tr><th scope="row"><code translate="no">file.changed</code></th><td><code translate="no">programs/tools/files/</code> 写入成功后：<code translate="no">write.py</code>、<code translate="no">edit.py</code>、<code translate="no">apply_patch.py</code>、<code translate="no">_remote.py</code></td></tr>
+<tr><th scope="row">外部来源</th><td><code translate="no">runtime/context/engine.py</code>（压缩）、<code translate="no">interfaces/channels/_conversation.py</code>、<code translate="no">state/memory/session_watcher.py</code>、Web 服务的 skills 和 plugins 路由；auth 经 <code translate="no">runtime/events/bridges.py</code>，worker 启动时幂等安装</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">emit_ws_frame</code> 让 Web 帧走总线，由 <code translate="no">interfaces/server/server.py</code> 转发，所以 job runner、子 agent 运行、worktree 管理、functions 监视、频道广播都不导入 Web UI。</p>
+
+<h2 id="gate">闸门挂载</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">聊天路径</th><th scope="col">Agentic 嵌套路径</th></tr></thead>
+<tbody>
+<tr><th scope="row">挂载点</th><td><code translate="no">_execute_tool_calls</code> 中的 <code translate="no">decide_tool_gate</code>，在 <code translate="no">tool.execute</code> 之前</td><td><code translate="no">runtime/agent/call_state.py</code> 的 <code translate="no">_pre_invocation_hooks</code>，和取消检查并列</td></tr>
+<tr><th scope="row">保证</th><td>硬：每个聊天工具调用都经过</td><td>可选：只是挂载点，不声称全覆盖</td></tr>
+</tbody>
+</table>
+<p>闸门问询不读 <code translate="no">permission_mode</code>，因此任何模式的子 agent 轮次都受约束（<a href="../proactive/invariants.zh.html">不变式</a>、<a href="../proactive/execution-model.zh.html">执行模型</a>）。</p>
+
+<h2 id="prepare">Prepare</h2>
+<p>设计上用 <code translate="no">JobRunner.spawn_job</code>，白名单排除 bash、写入和网络工具，单独的 1–2 并发池，可被用户任务抢占，遇 429 让路。目前引擎只发出 <code translate="no">proactive.prepare_requested</code> 和 <code translate="no">proactive.inject</code> 事件，还没有真正启动任务或落地 steering 消息。</p>
+
+<h2 id="dag-gap">已知缺口</h2>
+<p><code translate="no">@function</code> 工具执行不写 DAG 节点，只有 <code translate="no">Agent</code> 方法写。DAG 作为因果记录不完整，审计依靠 <code translate="no">events.jsonl</code> 里的完整事件集。</p>
+
+<h2 id="verification">检查接线改动</h2>
+<p><code translate="no">py_compile</code>、相关单元测试、文档规定的本地刷新、<code translate="no">/healthz</code> 健康、通过 Web UI 发一条真实消息（前端改动先 <code translate="no">npm --prefix apps/web run build</code>）。顺序检查：跑一轮带工具调用的对话，读该会话的 <code translate="no">events.jsonl</code>：</p>
+<pre translate="no" tabindex="0"><code>user.prompt_submitted → model.response_started → tool.before → tool.after → model.response_completed</code></pre>
+<p class="note">每条的 metadata 都带 session 和 turn。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">总线、埋点、桥、Web UI 订阅</th><td>已实现</td></tr>
+<tr><th scope="row"><code translate="no">runtime/proactive/</code>、<code translate="no">engine.py::install_proactive</code>、<code translate="no">policies/</code></th><td>已实现，未安装：<code translate="no">operations/worker/runner.py</code> 只安装事件桥</td></tr>
+<tr><th scope="row">同步问询点</th><td><code translate="no">runtime/events/tool_gate.py</code> 的 <code translate="no">register_tool_gate</code>、<code translate="no">decide_tool_gate</code>、<code translate="no">ToolGateDenied</code></td></tr>
+<tr><th scope="row">测试</th><td><code translate="no">tests/component/agent/turns/test_event_bus.py</code>、<code translate="no">tests/unit/agent/execution/test_tool_gate.py</code>、<code translate="no">tests/unit/agent/behavior/test_event_bridges.py</code>、<code translate="no">test_proactive_engine.py</code>、<code translate="no">test_proactive_policies.py</code></td></tr>
+<tr><th scope="row">不声称</th><td>已安装 App 和实时 WebSocket 验收</td></tr>
+</tbody>
+</table>
+<p class="note">项目 skills 从进程工作目录解析；在主目录启动的 worker 读 <code translate="no">~/skills</code>。</p>

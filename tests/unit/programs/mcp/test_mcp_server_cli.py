@@ -5,12 +5,12 @@ import sys
 
 import pytest
 
-from openprogram import cli
-from openprogram.cli.commands import mcp as mcp_commands
+from openprogram.interfaces.cli import application as cli
+from openprogram.interfaces.cli.commands import mcp as mcp_commands
 
 
 def _auth():
-    return importlib.import_module("openprogram.mcp.server.auth")
+    return importlib.import_module("openprogram.extensions.mcp.server.auth")
 
 
 def test_nested_token_create_parser_contract():
@@ -226,9 +226,9 @@ def test_mcp_serve_parser_and_local_dispatch(monkeypatch):
 
 
 def test_mcp_serve_authenticates_before_stdio_and_sanitizes_failure(
-    monkeypatch, capsys
+    monkeypatch, capsys, caplog
 ):
-    from openprogram.mcp.server import server
+    from openprogram.extensions.mcp.server import server
 
     entered = []
     monkeypatch.setattr(
@@ -238,9 +238,11 @@ def test_mcp_serve_authenticates_before_stdio_and_sanitizes_failure(
     )
     monkeypatch.setattr(server.anyio, "run", lambda *_args: entered.append(True))
 
-    assert server.serve() == 1
+    with caplog.at_level("ERROR", logger="openprogram.extensions.mcp.server.server"):
+        assert server.serve() == 1
     output = capsys.readouterr()
     assert output.out == ""
-    assert output.err == "Error: MCP server authentication failed\n"
+    assert [r.getMessage() for r in caplog.records] == ["MCP server authentication failed"]
     assert entered == []
+    assert "secret-value" not in caplog.text
     assert "secret-value" not in output.err

@@ -1,4 +1,4 @@
-"""@agentic_function cache= / timeout= execute-wrapper semantics.
+"""Agent method cache= / timeout= execute-wrapper semantics.
 
 Both kwargs were copied from @function during the function-calling
 unification but the agentic execute wrapper never used them until the
@@ -12,17 +12,28 @@ from __future__ import annotations
 import asyncio
 import time
 
-from openprogram.agentic_programming.function import agentic_function
+from openprogram import Agent
 
 
 def test_cache_memoizes_on_name_and_args():
     counter = {"n": 0}
 
-    @agentic_function(cache=True, register_globally=False)
-    def cached_probe_fn(x: str, runtime=None) -> str:
-        """Cached test function."""
-        counter["n"] += 1
-        return f"r{counter['n']}"
+    class CachedProbeFnAgent(Agent):
+        method_options = {
+            "cached_probe_fn": {
+                "cache": True,
+                "register_globally": False,
+                "name": "cached_probe_fn",
+                "tool": True,
+            },
+        }
+
+        def cached_probe_fn(self, x: str, runtime=None) -> str:
+            """Cached test function."""
+            counter["n"] += 1
+            return f"r{counter['n']}"
+
+    cached_probe_fn = CachedProbeFnAgent().cached_probe_fn
 
     tool = cached_probe_fn._agent_tool
     r1 = asyncio.run(tool.execute("cid1", {"x": "a"}, None, None))
@@ -37,11 +48,21 @@ def test_cache_memoizes_on_name_and_args():
 def test_no_cache_runs_every_time():
     counter = {"n": 0}
 
-    @agentic_function(register_globally=False)
-    def uncached_probe_fn(x: str, runtime=None) -> str:
-        """Uncached test function."""
-        counter["n"] += 1
-        return "ok"
+    class UncachedProbeFnAgent(Agent):
+        method_options = {
+            "uncached_probe_fn": {
+                "register_globally": False,
+                "name": "uncached_probe_fn",
+                "tool": True,
+            },
+        }
+
+        def uncached_probe_fn(self, x: str, runtime=None) -> str:
+            """Uncached test function."""
+            counter["n"] += 1
+            return "ok"
+
+    uncached_probe_fn = UncachedProbeFnAgent().uncached_probe_fn
 
     tool = uncached_probe_fn._agent_tool
     asyncio.run(tool.execute("cid1", {"x": "a"}, None, None))
@@ -50,11 +71,22 @@ def test_no_cache_runs_every_time():
 
 
 def test_timeout_returns_error_result_for_sync_body():
-    @agentic_function(timeout=0.2, register_globally=False)
-    def slow_sync_fn(x: str, runtime=None) -> str:
-        """Slow sync test function."""
-        time.sleep(2.0)
-        return "never"
+    class SlowSyncFnAgent(Agent):
+        method_options = {
+            "slow_sync_fn": {
+                "timeout": 0.2,
+                "register_globally": False,
+                "name": "slow_sync_fn",
+                "tool": True,
+            },
+        }
+
+        def slow_sync_fn(self, x: str, runtime=None) -> str:
+            """Slow sync test function."""
+            time.sleep(2.0)
+            return "never"
+
+    slow_sync_fn = SlowSyncFnAgent().slow_sync_fn
 
     tool = slow_sync_fn._agent_tool
 
@@ -73,11 +105,22 @@ def test_timeout_returns_error_result_for_sync_body():
 
 
 def test_timeout_returns_error_result_for_async_body():
-    @agentic_function(timeout=0.2, register_globally=False)
-    async def slow_async_fn(x: str, runtime=None) -> str:
-        """Slow async test function."""
-        await asyncio.sleep(2.0)
-        return "never"
+    class SlowAsyncFnAgent(Agent):
+        method_options = {
+            "slow_async_fn": {
+                "timeout": 0.2,
+                "register_globally": False,
+                "name": "slow_async_fn",
+                "tool": True,
+            },
+        }
+
+        async def slow_async_fn(self, x: str, runtime=None) -> str:
+            """Slow async test function."""
+            await asyncio.sleep(2.0)
+            return "never"
+
+    slow_async_fn = SlowAsyncFnAgent().slow_async_fn
 
     tool = slow_async_fn._agent_tool
     result = asyncio.run(tool.execute("cid", {"x": "a"}, None, None))
@@ -86,10 +129,21 @@ def test_timeout_returns_error_result_for_async_body():
 
 
 def test_fast_body_unaffected_by_timeout():
-    @agentic_function(timeout=5.0, register_globally=False)
-    def fast_fn(x: str, runtime=None) -> str:
-        """Fast test function."""
-        return f"got {x}"
+    class FastFnAgent(Agent):
+        method_options = {
+            "fast_fn": {
+                "timeout": 5.0,
+                "register_globally": False,
+                "name": "fast_fn",
+                "tool": True,
+            },
+        }
+
+        def fast_fn(self, x: str, runtime=None) -> str:
+            """Fast test function."""
+            return f"got {x}"
+
+    fast_fn = FastFnAgent().fast_fn
 
     tool = fast_fn._agent_tool
     result = asyncio.run(tool.execute("cid", {"x": "a"}, None, None))

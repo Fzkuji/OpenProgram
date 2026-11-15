@@ -1,0 +1,126 @@
+<title>Working behind the user</title>
+<meta name="description" content="What of the user's screen an agent leaves as it is while it operates applications, browsers and the App, and how each way of taking the front is answered.">
+<meta name="covers" content="openprogram/host/_platform/front.py">
+<h1>Working behind the user</h1>
+
+<p>While an agent operates an application, a browser or a page, the user goes on working in something else. Seven things of theirs stay as they are.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Kept</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Front application</th><td>The application the user is in stays the one that takes their keys.</td></tr>
+<tr><th scope="row">Window order</th><td>No window moves in front of, or behind, where the user left it.</td></tr>
+<tr><th scope="row">Tab in view</th><td>The tab they are looking at, in their own browser and in the App, stays the one shown.</td></tr>
+<tr><th scope="row">Pointer</th><td>The real pointer does not move.</td></tr>
+<tr><th scope="row">Keyboard focus</th><td>What they type goes where they were typing.</td></tr>
+<tr><th scope="row">Clipboard</th><td>What they copied is still there.</td></tr>
+<tr><th scope="row">Space</th><td>No desktop switches, and no window changes Space.</td></tr>
+</tbody>
+</table>
+
+<h2 id="two-layers">Two layers</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Layer</th><th scope="col">What it covers</th></tr></thead>
+<tbody>
+<tr><th scope="row">Delivery that takes nothing</th><td>Each target sends its input so that nothing is activated or raised: Accessibility and per-process events for applications (<a href="computer-use-macos.html">macOS delivery</a>), trusted input into hidden pages for the built-in browser (<a href="browser-tab-driver.html">Browser tab driver</a>), background tabs in the user's Chrome or Edge.</td></tr>
+<tr><th scope="row">Giving back what is taken</th><td>An application that starts, or opens a page, a document or a dialog, may activate itself, and no option of the sender stops it. Measured on macOS 15: Chrome comes in front of every application whenever a tab opens in front, whether the tab was opened from the command line, by <code translate="no">open -g</code> or by AppleScript. <code translate="no">openprogram/host/_platform/front.py</code> answers all of these in one place.</td></tr>
+</tbody>
+</table>
+
+<h2 id="giving-the-front-back">Giving the front back</h2>
+<p>The window server changes the front application first and tells the applications afterwards, with events. An application brings its windows forward and draws its menu bar, and the one before it dims its title bars, only when its own event arrives. The events are held back, so nothing of the change is drawn.</p>
+<ol class="flow">
+<li>A step starts: <code translate="no">front.kept(operated)</code> records the front application and the window stack. One event tap serves every step that is running.</li>
+<li class="via">The event telling the user's application that it lost the front reaches the tap before the application.</li>
+<li>An operated application is in front: inside the tap the front goes back to the user's application, and the event is dropped.</li>
+<li>The events that follow are dropped too: the operated application's "gained" and "lost", and the user's "gained". Neither application learns of it.</li>
+<li class="via">For 0.5 s the window stack is read every 4 ms. An application that moved its own window forward anyway has the windows that stood over it raised again, deepest first.</li>
+<li class="flow-end">The step returns at once; the watch goes on for 0.8 s, since an application may activate itself a moment later.</li>
+</ol>
+<p class="note">Measured on macOS 15 against Calculator starting in front, Calculator activated while running, and Chrome opening a tab in front: the user's window was on top in every reading, its title bar did not change by one pixel, and the front was back within 2.8 ms of the event. With the events let through, Calculator's window stood on top and the title bar dimmed.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Whose change it is</th><td><code translate="no">operated(pid)</code> names the processes a step operates: the application of <code translate="no">args.app</code> (<code translate="no">front.named</code>), the user's Chrome or Edge, or the App for the built-in browser (<code translate="no">front.bundles</code>). Any other application that comes to the front is one the user switched to: it is left there and becomes the one the front is given back to.</td></tr>
+<tr><th scope="row">User already there</th><td>When the user is in the operated application as the step starts, nothing is watched.</td></tr>
+<tr><th scope="row">Bounded</th><td>A step that keeps taking the front is answered six times, then left.</td></tr>
+<tr><th scope="row">Events held back</th><td>An active tap on the annotated session for event types 19 (lost the front), 20 (gained it) and 13 with subtype 1 or 2 (the pair an application gets while it starts). An event is dropped only after the front has really been given back, so no application is left believing something untrue.</td></tr>
+<tr><th scope="row">Grant</th><td>The tap needs the Accessibility grant and is not asked for without it, since asking would put a prompt in front of the user.</td></tr>
+<tr><th scope="row">Without the tap</th><td>The front is read every 50 ms, given back, and the windows raised again; the operated application's window is then on screen for 15 to 43 ms. With the tap, this reading acts only on a theft it sees twice.</td></tr>
+<tr><th scope="row">Reading the front</th><td><code translate="no">GetFrontProcess</code>, 0.6 ms a call. <code translate="no">NSWorkspace</code> keeps its answer current from the main run loop, which a worker thread does not turn.</td></tr>
+<tr><th scope="row">Giving it back</th><td><code translate="no">SetFrontProcessWithOptions</code> with the front-window-only option, 2 ms. <code translate="no">NSRunningApplication.activateWithOptions</code> called from a worker thread waits one second before it takes effect.</td></tr>
+<tr><th scope="row">Window order</th><td><code translate="no">AXRaise</code> on each window, found by its window-server id; the windows are looked up as the step starts, so that raising is one call. Windows that touch none of the operated application's are left alone. A 0.25 s messaging timeout is set so that a busy application is not waited for. Without the Accessibility grant the front application is still given back and the order is left.</td></tr>
+<tr><th scope="row">Record</th><td>Each time is logged with the application's name, and kept in the block's <code translate="no">Watch.taken</code>.</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Entry</th><th scope="col">Used by</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">kept(operated)</code></th><td><code translate="no">targets/app.py</code> and <code translate="no">targets/browser.py</code> around every call, so structured steps and code mode are both covered.</td></tr>
+<tr><th scope="row"><code translate="no">watch_for(operated, seconds)</code></th><td>The self-update switch, for the 30 s in which the desktop shell relaunches.</td></tr>
+<tr><th scope="row"><code translate="no">front.py &lt;bundle path&gt; &lt;seconds&gt;</code></th><td><code translate="no">scripts/refresh-local-app.sh</code> and <code translate="no">scripts/install-dev-app.sh</code>, which run the file by itself; it needs only the standard library there, and without the Accessibility grant it reads the front every 50 ms.</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-can-take-the-screen">What can take the screen, and the answer</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Source</th><th scope="col">Answer</th></tr></thead>
+<tbody>
+<tr><th scope="row">An application is started for a step</th><td>Started with <code translate="no">open -g</code>; one that activates itself anyway gives the front back.</td></tr>
+<tr><th scope="row">A coordinate click orders the clicked window forward in its level</th><td>The windows stacked over it are raised again (<a href="computer-use-macos.html">macOS delivery</a>).</td></tr>
+<tr><th scope="row">The user's browser opens the extension's connect page</th><td>The front is given back. The page stays open as a tab of that browser.</td></tr>
+<tr><th scope="row">The extension focuses the browser's window once connected</th><td>The connect link carries the extension's own <code translate="no">background=true</code> when a token is set.</td></tr>
+<tr><th scope="row">Playwright opens tabs in front and brings a selected tab forward</th><td><code translate="no">playwright_background_tabs.cjs</code> opens them inactive and drops the call.</td></tr>
+<tr><th scope="row">Connecting without a token</th><td>The user approves the connection on that page, so the browser stays in front for that one call.</td></tr>
+<tr><th scope="row">An agent's Cmd/Ctrl+F, L, K or P in a built-in page</th><td>The App takes these as its own shortcuts only from a page that is on screen in the focused window and has the keyboard; otherwise the key stays in the page.</td></tr>
+<tr><th scope="row">A page asks to confirm leaving</th><td>A page nobody is looking at leaves without the dialog.</td></tr>
+<tr><th scope="row">A site asks for camera, location or notifications</th><td>From a page nobody is looking at: refused this time, not remembered, so the user is asked when they open it.</td></tr>
+<tr><th scope="row">An agent's click in the user's own tab opens a popup</th><td>The popup opens beside the tab; the tab in view and the route stay.</td></tr>
+<tr><th scope="row">The App is reinstalled or relaunched by an update</th><td>It reopens in front only when the user was in it as it closed.</td></tr>
+<tr><th scope="row">An MCP server needs a sign-in when the worker connects it by itself</th><td>No browser opens; the link stays in <code translate="no">/api/mcp/auth/pending</code>, and reconnecting the server opens it.</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-the-user-still-sees">What the user still sees</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Shown</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent cursor and window marker</th><td>Click-through overlays shown without activation, so the user can tell which window an agent holds (<a href="computer-use-interface.html">Computer use interface</a>).</td></tr>
+<tr><th scope="row">Page preview in the conversation</th><td>Inside the App, for the conversation on screen; hidden once the user hides it.</td></tr>
+<tr><th scope="row">Notifications</th><td>Only while no App window has the focus; the App comes forward when one is clicked.</td></tr>
+<tr><th scope="row">What a command opens</th><td>A shell command an agent runs to show something (<code translate="no">open report.html</code>) opens it in front, as asked.</td></tr>
+</tbody>
+</table>
+
+<h2 id="linux-and-windows">Linux and Windows</h2>
+<p>Neither system has a place where the events can be held, so the front is read, given back, and the windows put back in order.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col"></th><th scope="col">Windows</th><th scope="col">Linux, X11</th></tr></thead>
+<tbody>
+<tr><th scope="row">Reading the front</th><td><code translate="no">GetForegroundWindow</code> every 20 ms</td><td><code translate="no">xprop -spy</code> reports each change of the active window and the stacking order</td></tr>
+<tr><th scope="row">Giving it back</th><td><code translate="no">SetForegroundWindow</code> from the foreground thread's input queue</td><td><code translate="no">windowactivate</code></td></tr>
+<tr><th scope="row">Window order</th><td><code translate="no">SetWindowPos</code> without activating</td><td><code translate="no">windowraise</code>, which a window manager may decline</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Whose change it is</th><td>Applications are told apart by process. A backend names the process it resolved (<code translate="no">front.note</code>); while it starts one (<code translate="no">front.starting</code>), a process that had no window as the step began is the new one. Browsers are told by executable (<code translate="no">front.programs</code>).</td></tr>
+<tr><th scope="row">Forward on purpose</th><td>Input those systems give only to the front window brings the window forward for the step (<a href="computer-use-linux-windows.html">Linux and Windows backends</a>); the approval card says so. The guard stands aside (<code translate="no">front.forward</code>), and the backend puts back the front window, the pointer and the window's place in the order.</td></tr>
+<tr><th scope="row">Wayland</th><td>An application cannot take the focus without a token from the compositor; nothing runs.</td></tr>
+</tbody>
+</table>
+<p class="note">Measured in a Debian container with Xvfb and Openbox: a running application that activated itself lost the front after 8.6 ms and the stacking order read the same afterwards; a window brought forward on purpose was left alone; a user's own switch was left alone.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">State</th><th scope="col">Scope</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented on macOS</th><td>giving the front back unseen for application steps, the user's browser and the built-in browser, measured live against Calculator starting and activating and against Chrome opening a tab (front application, window order and the user's title bar); the App's reopening behind the user; the shortcut, leave-page, permission and popup rules of built-in pages; no browser for unattended MCP sign-ins. Unit tests cover the rules with a stand-in desktop.</td></tr>
+<tr><th scope="row">Implemented on Linux (X11)</th><td>giving the front back and the window order, measured as above.</td></tr>
+<tr><th scope="row">Implemented, not yet run on Windows</th><td>giving the front back and the window order. The macOS machines this is built on have no Windows guest; the rules have unit tests with a stand-in desktop.</td></tr>
+<tr><th scope="row">Not implemented</th><td>on Windows: <code translate="no">paste</code> restores only text to the clipboard.</td></tr>
+</tbody>
+</table>

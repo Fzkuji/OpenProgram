@@ -1,0 +1,255 @@
+/* Tailwind plumbing: where it scans, the shadcn state variants, and the
+   utility names for the design tokens. Imported right after tailwindcss
+   (app/globals.css), so its @theme overrides Tailwind's defaults. */
+
+/* v4 auto-detects sources from the CSS file's location, but this app is a
+   sub-package of a larger monorepo, so scope the scan explicitly to the
+   web/ source dirs (was `content: [...]` in tailwind.config.ts). */
+@source "../..";
+@source "../../../components";
+
+/* `dark:` follows the app theme: theme-bootstrap sets data-theme-mode on
+   <html>, and the :root defaults are the dark palette, so anything not
+   explicitly light is dark (shadcn components rely on this variant). */
+@custom-variant dark (&:where(:root:not([data-theme-mode="light"]), :root:not([data-theme-mode="light"]) *));
+
+/* shadcn/ui state variants, copied from the shadcn package's tailwind.css
+   (packages/shadcn/src/tailwind.css). The registry components write
+   data-open: / data-checked: … for Radix's data-state attributes. */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-checked {
+  &:where([data-state="checked"]),
+  &:where([data-checked]:not([data-checked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]),
+  &:where([data-unchecked]:not([data-unchecked="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-selected {
+  &:where([data-selected="true"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
+
+/* shadcn/tailwind.css utility the Nova registry parts use (Command list). */
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Design tokens → Tailwind utility names. The tokens live in this
+   folder's :root files; this block only hands Tailwind the utility
+   aliases. Spacing and radius are Tailwind's own names and live in
+   shape.css. */
+@theme {
+  /* generic shadcn-style slots */
+  --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  /* text / bg roles — auto theme-aware via var(--xxx) */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-bright: var(--text-bright);
+  --color-text-muted: var(--text-muted);
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-hover-contrast: var(--bg-hover-contrast);
+  --color-bg-input: var(--bg-input);
+  --color-bg-selected: var(--bg-selected);
+
+  /* Raised surface (input box, the Button's `elevated` variant): the
+     per-theme composer shadow pair, so small pills lift off the page
+     exactly like the box — shadow-sm at rest, shadow-md on hover. Rows
+     that scroll their pills keep 6px of padding so this is not clipped. */
+  --shadow-raised: var(--composer-shadow);
+  --shadow-raised-hover: var(--composer-shadow-focus);
+  --color-user-msg-bg: var(--user-msg-bg);
+  --color-assistant-msg-bg: var(--assistant-msg-bg);
+
+  /* fixed accents */
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-green: var(--accent-green);
+  --color-accent-red: var(--accent-red);
+  --color-accent-yellow: var(--accent-yellow);
+  --color-accent-purple: var(--accent-purple);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-orange: var(--accent-orange);
+
+  /* sidebar nav colors — diverge from text-* in light mode */
+  --color-nav-color: var(--nav-color);
+  --color-nav-color-hover: var(--nav-color-hover);
+
+  /* shadcn Sidebar shell (components/ui/sidebar.tsx). Both rails are
+     floating cards of the same raised material as the input box, so
+     the sidebar surface is --bg-input. */
+  --color-sidebar: var(--bg-input);
+  --color-sidebar-foreground: var(--nav-color);
+
+  --radius-composer-corner: var(--composer-corner);
+
+  /* families. type.css :root already defines --font-mono / --font-sans;
+     re-aliasing them here would self-reference, so inline the same stacks
+     (kept in sync with type.css). */
+  --font-mono: var(--font-mono-latin, "JetBrains Mono Variable"), "JetBrains Mono Variable", "JetBrains Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", ui-monospace, monospace;
+  --font-sans: var(--font-inter-latin, "Inter Variable"), "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+
+  /* font sizes → text-fs-*, one per tier of type.css, each with the
+     tier's line height (so a 14px menu row is 28px, as in the docs).
+     Source code names a tier (`scripts/ui/check-design-tokens.mjs` refuses the
+     stock text-xs … text-2xl). Those stay mapped onto the tiers at the
+     shadcn docs' meaning, so registry code pasted in renders at the
+     docs' size everywhere instead of 7/8 of it on the 14px root. */
+  --text-fs-2xs: var(--fs-2xs);
+  --text-fs-2xs--line-height: var(--lh-2xs);
+  --text-fs-xs: var(--fs-xs);
+  --text-fs-xs--line-height: var(--lh-xs);
+  --text-fs-sm: var(--fs-sm);
+  --text-fs-sm--line-height: var(--lh-sm);
+  --text-fs-base: var(--fs-base);
+  --text-fs-base--line-height: var(--lh-base);
+  --text-fs-chat: var(--fs-chat);
+  --text-fs-chat--line-height: var(--lh-chat);
+  --text-fs-md: var(--fs-md);
+  --text-fs-md--line-height: var(--lh-md);
+  --text-fs-title: var(--fs-title);
+  --text-fs-title--line-height: var(--lh-title);
+  --text-fs-lg: var(--fs-lg);
+  --text-fs-lg--line-height: var(--lh-lg);
+  --text-fs-display: var(--fs-display);
+  --text-fs-display--line-height: var(--lh-display);
+  --text-xs: var(--fs-xs);
+  --text-sm: var(--fs-base);
+  --text-base: var(--fs-md);
+  --text-lg: var(--fs-title);
+  --text-xl: var(--fs-lg);
+  --text-2xl: var(--fs-lg);
+
+  /* spacing aliases */
+  --spacing-composer-button: var(--composer-button-size);
+  --spacing-composer-offset: var(--composer-button-offset);
+  --spacing-composer-pad: var(--composer-bottom-row-pad);
+  --spacing-composer-row: var(--composer-bottom-row-h);
+  --spacing-sidebar-w: var(--sidebar-width);
+  --spacing-detail-w: var(--detail-width);
+
+  /* transition timing */
+  --ease-composer: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* animations */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-spin-refresh: spin-refresh 0.6s ease-in-out;
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+@keyframes spin-refresh {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* v4 compat: v4's default border colour is `currentColor` (v3 was
+   gray-200). ~43 bare `border` utilities across cards / inputs / dialogs /
+   popovers were written for the v3 default and now paint in text colour
+   (the orange picker ring, dark input outlines, etc.). Restore the app
+   hairline the v4-recommended way — the official `*` border shim — using
+   our own `--border` token as the value. CSS-module separators (sidebar,
+   tab strip, composer) already set `var(--border)` explicitly and are
+   unaffected; elements with an explicit `border-[...]` colour win on
+   specificity. */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--border);
+  }
+}
+
+/* One cursor rule for the whole app: anything clickable takes the hand,
+   a disabled control the arrow. Tailwind's preflight leaves buttons on
+   the arrow while links get the hand, so the two kinds disagreed side by
+   side. In the base layer, so any component's own cursor (a resize
+   handle, a utility class, an unlayered module rule) still wins. */
+@layer base {
+  :is(button, [role="button"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="combobox"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], summary, select, label[for], a[href]) {
+    cursor: pointer;
+  }
+  :is(button, [role="button"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="combobox"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], select):is(:disabled, [aria-disabled="true"], [data-disabled]) {
+    cursor: default;
+  }
+}

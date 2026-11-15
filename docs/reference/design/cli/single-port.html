@@ -1,0 +1,90 @@
+<title>Single-port architecture</title>
+<meta name="description" content="One process and one port, with the Python worker as the sole origin for the web UI, API and WebSocket.">
+<h1>Single-port architecture</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Path (in match order)</th><th scope="col">Served by the worker from</th><th scope="col">Cache</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/ws</code></th><td>Native WebSocket</td><td></td></tr>
+<tr><th scope="row"><code translate="no">/api/*</code></th><td>Native routers</td><td></td></tr>
+<tr><th scope="row"><code translate="no">/v1/*</code></th><td>OpenAI-compatible routers: <a href="../integrations/openai-compatible-endpoint.html">OpenAI-compatible endpoint</a></td><td></td></tr>
+<tr><th scope="row"><code translate="no">/files/raw</code>, <code translate="no">/docs/*</code></th><td>Static mounts</td><td></td></tr>
+<tr><th scope="row"><code translate="no">/_next/static</code></th><td><code translate="no">apps/web/out/</code></td><td>Immutable</td></tr>
+<tr><th scope="row"><code translate="no">/*</code></th><td>Files in <code translate="no">out/</code>; any other GET gets the shell <code translate="no">out/chat.html</code></td><td>No-cache for HTML</td></tr>
+</tbody>
+</table>
+<p class="note">The Electron shell loads the same origin. Ports and conflicts: <a href="ports.html">Web UI port</a>. Stable: <code translate="no">18100</code>, or the next free port the account chose at its first start; development <code translate="no">18200</code>.</p>
+
+<h2 id="invariants">Invariants</h2>
+<ul>
+<li><strong>The backend is the sole origin.</strong> Nothing proxies it and nothing bakes a port into the build. <code translate="no">/ws</code> is right by construction: it is the origin the page loaded from.</li>
+<li><strong>API routes beat static.</strong> The frontend mount registers last.</li>
+<li><strong>Node is build-time only.</strong> Runtime needs Python and the worker.</li>
+</ul>
+
+<h2 id="why">Why not a Next server</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">A Next server beside the worker would cost</th><th scope="col">Here</th></tr></thead>
+<tbody>
+<tr><th scope="row">The <code translate="no">/ws</code> proxy target fixed at build time; a build with the wrong profile env leaves every client disconnected</th><td>Relative <code translate="no">/ws</code>, <code translate="no">/api/...</code>; no <code translate="no">rewrites()</code></td></tr>
+<tr><th scope="row">Worker code for port reclaim, orphan killing, build watching, parent-PID watch</th><td>Worker starts no Node process</td></tr>
+<tr><th scope="row">Node at runtime for a UI that is all client-side</th><td>Static export</td></tr>
+</tbody>
+</table>
+<p>Merging is cheap: the shell loads through <code translate="no">next/dynamic</code> with <code translate="no">ssr: false</code>, every real page is <code translate="no">"use client"</code>, and there is no <code translate="no">middleware.ts</code>, server action or <code translate="no">next/image</code>. FastAPI has <code translate="no">docs_url=None</code>, so nothing collides with the docs mount.</p>
+
+<h2 id="frontend">Frontend export</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/web/next.config.mjs</code></th><td><code translate="no">output: "export"</code>: <code translate="no">next build</code> writes HTML, JS and CSS into <code translate="no">apps/web/out/</code></td></tr>
+<tr><th scope="row">Dynamic segments</th><td>Session, skill and provider-settings paths have no page files; static export would reject them without <code translate="no">generateStaticParams</code>. The SPA fallback serves the shell and the client routes from <code translate="no">pathname</code>. A segment that does real work keeps <code translate="no">generateStaticParams</code> with one placeholder.</td></tr>
+<tr><th scope="row">API route handlers</th><td>None; the worker serves those paths</td></tr>
+<tr><th scope="row">Serving</th><td><code translate="no">openprogram/interfaces/server/frontend.py</code>, mounted last in <code translate="no">create_app()</code></td></tr>
+<tr><th scope="row">Build gate</th><td><code translate="no">ensure_frontend_built</code>: if <code translate="no">out/index.html</code> is missing or older than the newest source, run <code translate="no">npm run build</code> once at startup. A packaged release ships <code translate="no">out/</code> and never invokes Node.</td></tr>
+</tbody>
+</table>
+
+<h2 id="process">Process and port</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Design</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry</th><td><code translate="no">operations/worker/runner.py</code> calls <code translate="no">interfaces.server.start_web</code> and <code translate="no">ensure_frontend_built</code></td></tr>
+<tr><th scope="row">Discovery</th><td>The <code translate="no">worker.port</code> file is the single source of truth</td></tr>
+<tr><th scope="row">Port knobs</th><td><code translate="no">OPENPROGRAM_WEB_PORT</code> and <code translate="no">ui.web_port</code> set the one port</td></tr>
+<tr><th scope="row">Electron</th><td><code translate="no">apps/desktop/main.js</code>: <code translate="no">WEB_PORT</code> is <code translate="no">OPENPROGRAM_WEB_PORT</code>, else the instance's port. Start URL, origin check and navigation guard use it</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">operations/worker/web.py</code> is leftover dual-port code outside the active call path, retained for a separate cleanup. It still names a watcher script that no longer exists.</p>
+
+<h2 id="trade-offs">Trade-offs</h2>
+<ul>
+<li>No <code translate="no">next dev</code> hot reload against the merged origin.</li>
+<li>A dynamic segment that really rendered content would lose its deep link once its page file is gone. The SPA fallback covers it.</li>
+<li><code translate="no">out/</code> can go stale after a pull. The startup gate covers it; run <code translate="no">openprogram restart</code> after <code translate="no">git pull</code>.</li>
+</ul>
+
+<details>
+<summary>Acceptance criteria</summary>
+<ol>
+<li><code translate="no">openprogram</code> (dev profile) starts exactly one listening port; <code translate="no">lsof</code> shows no <code translate="no">next-server</code>.</li>
+<li>Fresh loads on <code translate="no">/chat</code>, <code translate="no">/s/&lt;id&gt;</code>, <code translate="no">/settings/providers/&lt;id&gt;</code> and <code translate="no">/skills/&lt;name&gt;</code> render; <code translate="no">/ws</code> connects; <code translate="no">/api/pick-folder</code> works.</li>
+<li>Killing the worker leaves a loaded page showing disconnected; restarting reconnects. No orphan processes.</li>
+<li>A build with no profile env produces a working instance.</li>
+<li>Tests pass; desktop app repackaged and verified.</li>
+</ol>
+</details>
+
+<h2 id="distribution-boundary">Distribution</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Install</th><th scope="col">Python</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS desktop</th><td>CPython and core dependencies embedded in the signed bundle; nothing downloaded at first launch</td></tr>
+<tr><th scope="row">CLI, server</th><td>uv-managed environment</td></tr>
+<tr><th scope="row">Source checkout</th><td>Development build flow</td></tr>
+</tbody>
+</table>
+<p class="note">Authority: <a href="../distribution/installation-packaging.html">Installation, packaging, release, and upgrade</a>.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented in the current runner and frontend mount. Desktop supervision and distribution status live in the page linked above.</p>

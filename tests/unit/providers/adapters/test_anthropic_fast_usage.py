@@ -3,9 +3,9 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from openprogram.agent.internals._event_parsing import extract_usage
-from openprogram.providers.anthropic import anthropic
-from openprogram.providers.types import Model, Context, SimpleStreamOptions
+from openprogram.runtime.conversation.event_parsing import extract_usage
+from openprogram.models.providers.adapters.anthropic import anthropic
+from openprogram.models.providers.types import Model, Context, SimpleStreamOptions
 
 
 @pytest.mark.parametrize('tier', ['priority', 'default'])
@@ -32,9 +32,9 @@ def test_fast_request_without_reported_tier_is_unconfirmed(monkeypatch, tier):
         params.update(kwargs)
         return Stream()
 
-    monkeypatch.setattr('openprogram.auth.usage.acquire_pooled', lambda *args: None)
+    monkeypatch.setattr('openprogram.models.auth.usage.acquire_pooled', lambda *args: None)
     monkeypatch.setattr(anthropic, '_build_client', lambda *args, **kwargs: (NS(messages=NS(stream=stream)), False))
-    model = Model(id='claude-opus-4-6', name='test', provider='claude-code', api='anthropic-messages', base_url='https://api.anthropic.com', fast=True)
+    model = Model(id='claude-opus-4-6', name='test', provider='anthropic', api='anthropic-messages', base_url='https://api.anthropic.com', fast=True)
 
     async def run():
         return [event async for event in anthropic.stream_simple(model, Context(messages=[]), SimpleStreamOptions(api_key='test', service_tier=tier))]

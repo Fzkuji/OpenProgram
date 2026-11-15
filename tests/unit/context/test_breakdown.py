@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from openprogram.context.breakdown import compute_call_breakdown
+from openprogram.runtime.context.breakdown import compute_call_breakdown
 
 
 class _FakeTool:
@@ -38,7 +38,7 @@ def test_toolset_none_zero_tools():
 
 def test_recompute_from_node_matches_direct():
     """从节点里存的工具名重算，应与直接用工具对象算的一致。"""
-    from openprogram.context.breakdown import (
+    from openprogram.runtime.context.breakdown import (
         compute_call_breakdown,
         compute_breakdown_from_node,
     )
@@ -67,7 +67,7 @@ def test_recompute_from_node_matches_direct():
 def test_breakdown_for_branch_uses_latest_tools_available():
     """从一串分支消息里，取最近带 tools_available 的节点还原工具集，
     整条分支当 history。供 web /context 端点直接消费。"""
-    from openprogram.context.breakdown import compute_breakdown_for_branch
+    from openprogram.runtime.context.breakdown import compute_breakdown_for_branch
 
     class _T:
         def __init__(self, n):
@@ -94,7 +94,7 @@ def test_breakdown_for_branch_uses_latest_tools_available():
 
 
 def test_breakdown_for_branch_empty_when_no_tools():
-    from openprogram.context.breakdown import compute_breakdown_for_branch
+    from openprogram.runtime.context.breakdown import compute_breakdown_for_branch
     branch = [{"role": "user", "content": "hi", "metadata": {}}]
     b = compute_breakdown_for_branch(
         branch, system_prompt="s", context_window=128_000,

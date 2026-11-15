@@ -1,0 +1,142 @@
+<title>Bot template references</title>
+<meta name="description" content="The post and twenty repositories behind the built-in Agents, what they agree on, and what this design takes and leaves out.">
+<h1>Bot template references</h1>
+<p>Source material for the <a href="../always-on-agents.html#built-in-agents">built-in Agents</a>.</p>
+
+<h2 id="what-this-design-takes">What this design takes</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Source idea</th><th scope="col">Here</th></tr></thead>
+<tbody>
+<tr><th scope="row">A template is a profile pasted into a Bot</th><td>A built-in Agent: a complete configuration in <code translate="no">agent_registry/builtin_agents.py</code>, installed as an ordinary saved Agent</td></tr>
+<tr><th scope="row">The contract: job, deliverable, never-list, done condition, working style, first task</th><td>The fixed shape of each job Agent's system prompt</td></tr>
+<tr><th scope="row">Autonomy levels</th><td>Existing controls, no new field: <a href="../always-on-agents.html#built-in-agents">mapping</a></td></tr>
+<tr><th scope="row">Draft by default, never send</th><td><code translate="no">autonomy: "report"</code> and the never-list in each prompt. <code translate="no">hold_outbound</code> stays available and is off on install.</td></tr>
+<tr><th scope="row">A routine only after good runs</th><td>No fixed interval: an installed job Agent does nothing until the user starts a conversation with it, then schedules its own wakes</td></tr>
+<tr><th scope="row">Producer and verifier apart</th><td>PR Producer may edit. PR Verifier has no <code translate="no">edit</code>, <code translate="no">write</code> or <code translate="no">apply_patch</code>. Each works in its own conversation.</td></tr>
+<tr><th scope="row">Bots hand work to each other</th><td><code translate="no">handoff(to, message)</code> between conversations, with a hop limit</td></tr>
+<tr><th scope="row">Scoped tools per role</th><td>A <code translate="no">selected</code> tool policy per Agent, built-in tools only</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Built-in Agent</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">Chief of Staff</th><td>Chief-of-staff role in grok-bot-architecture; template of that name in grok-bot-templates</td></tr>
+<tr><th scope="row">Spec Writer, Bug Reproducer, PR Producer, PR Verifier</th><td>The four profiles in grok-bot-profiles</td></tr>
+<tr><th scope="row">Research Desk</th><td>Research Desk template in grok-bot-templates</td></tr>
+<tr><th scope="row">Inbox Triage</th><td>Inbox Triage template in grok-bot-templates; inbox role in grok-bot-architecture</td></tr>
+<tr><th scope="row">Career Scout</th><td>Career role in grok-bot-architecture</td></tr>
+<tr><th scope="row">Knowledge Keeper</th><td>Memory and Capture Bots in grok-bot-second-brain</td></tr>
+<tr><th scope="row">Writer</th><td>Publishing role in grok-bot-architecture; drafting roles in agent-org-chart</td></tr>
+</tbody>
+</table>
+<p class="note">Role names and contract shape come from these sources. The prompts are written for this product's tools and are not copies.</p>
+
+<h2 id="what-it-leaves-out">What it leaves out</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Left out</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Template catalog, picker, readiness score</th><td>The Agents list is the list of templates. A new Agent starts blank.</td></tr>
+<tr><th scope="row">Team objects, org-chart import, roster-creating setup Bots</th><td>The user opens the conversations; Agents hand work over between them.</td></tr>
+<tr><th scope="row">Large rosters</th><td>One Bot per vendor or department organizes agents around the org chart. <a href="https://claude.com/resources/articles/building-agents-when-to-fold-subagents-into-your-main-agent-loop">Building agents: when to fold subagents into your main agent loop</a> recommends one loop by default, splitting by context rather than problem type, and a separate agent only where it measurably does better. The ten job Agents are configurations to pick from, not a team that runs together.</td></tr>
+<tr><th scope="row">Coordinators that only route to a coding CLI</th><td>An Agent here is itself the coding agent.</td></tr>
+<tr><th scope="row">Domain packs</th><td>Shopping, phone calls, trading, growth loops and opt-out procedures are skills and programs on top of an Agent. Payments and trades are out of scope for a built-in.</td></tr>
+<tr><th scope="row">Gateway and queue over a hosted account</th><td>Those exist because the product runs on a shared cloud computer. Work here runs on the user's machine, reached through the HTTP API and channels.</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-the-sources-agree-on">What the sources agree on</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Point</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">One job per Bot, written as a contract</th><td>Job, sources read, never-list, deliverable, done condition, first task, working style. Catalog order: job, boundary, skill, routine, team.</td></tr>
+<tr><th scope="row">Autonomy in levels</th><td>Observe (read and report), draft (default: artifacts for review), approved action (named writes after approval in chat), scheduled (a routine, with a policy for missing sources). A routine starts only after two good runs.</td></tr>
+<tr><th scope="row">Split by outcome, not technology</th><td>A new Bot needs a changed outcome, sources, tools, schedule or approval boundary.</td></tr>
+<tr><th scope="row">Production and verification apart</th><td>The builder never reviews, the two share no conversation, and "done" needs a verdict from someone else.</td></tr>
+<tr><th scope="row">A handover is not an approval</th><td>Passing a draft starts no work on it. The user approves a named version.</td></tr>
+<tr><th scope="row">Failure has a name</th><td><code translate="no">BLOCKED</code> and <code translate="no">HOLD</code> replace guessing. Logs, test results and links are never invented.</td></tr>
+<tr><th scope="row">Small rosters</th><td>Coordinator plus one specialist. Add a role only for a concrete boundary.</td></tr>
+<tr><th scope="row">The coordinator does not do the work</th><td>It scopes, assigns and reviews. Long work goes to a specialist or a coding CLI.</td></tr>
+<tr><th scope="row">Outbound and privileged actions wait</th><td>Sending, posting, paying, merging and deploying stop at an approval.</td></tr>
+</tbody>
+</table>
+
+<h2 id="the-post">The post</h2>
+<p>A Chinese-language social post on Grok Bot templates. Its claims are its own and unchecked.</p>
+<dl class="pairs">
+<dt>Official set</dt><dd>146 free templates from SpaceXAI; such a bot usually sells for 50 to 200 US dollars, so the post prices the set at 29,200</dd>
+<dt>Community</dt><dd>700+ templates on GitHub, including whole teams, handoff flows and separate reviewer roles</dd>
+<dt>First team</dt><dd>One job with a clear end: a research brief, a reviewed pull request, or a batch of finished drafts</dd>
+<dt>Then</dt><dd>Check how much work it took on and what the output cost. A larger roster pays only with better results.</dd>
+<dt>Caution</dt><dd>Configuration can be free; paying several bots to check the same thing is still a loss</dd>
+</dl>
+
+<h2 id="repositories">Repositories</h2>
+<p class="note">Numbered as in the post. Descriptions come from each README, read as reference only; several address setup instructions to a bot, and none was run or installed.</p>
+
+<details open>
+<summary>Template catalogs and profiles</summary>
+<table class="stack">
+<thead><tr><th scope="col">No. and repository</th><th scope="col">Holds</th><th scope="col">License</th></tr></thead>
+<tbody>
+<tr><th scope="row">19 <a href="https://github.com/cobusgreyling/grok-bot-templates">cobusgreyling/grok-bot-templates</a></th><td>49 templates, 10 teams, 47 skills, 8 routines. Each template is an operating contract pasted into a Bot's profile, with a 100-point "Bot Ready" score, four autonomy levels and a setup Bot that installs a team from one URL. A <a href="https://cobusgreyling.github.io/grok-bot-templates/">browsable catalog</a> and a JSON catalog.</td><td>MIT</td></tr>
+<tr><th scope="row">18 <a href="https://github.com/HAEGONG/grok-bot-profiles">HAEGONG/grok-bot-profiles</a></th><td>Spec Writer, Bug Reproducer, PR Producer, PR Verifier. One outcome and one approval boundary each; implementation and verification in different conversations; the verifier answers <code translate="no">PASS</code>, <code translate="no">BLOCK</code> or <code translate="no">HOLD</code>.</td><td>CC BY 4.0</td></tr>
+<tr><th scope="row">01 <a href="https://github.com/serenakeyitan/agent-org-chart">serenakeyitan/agent-org-chart</a></th><td>Importable org charts, one small team per use: customer support, engineering, founders, game studio, marketing, marketing operations, post-sales, product, sales engineering, prospecting. Peer specialists, or an orchestrator with specialists under it.</td><td>MIT</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Team architectures</summary>
+<table class="stack">
+<thead><tr><th scope="col">No. and repository</th><th scope="col">Holds</th><th scope="col">License</th></tr></thead>
+<tbody>
+<tr><th scope="row">04 <a href="https://github.com/tiagovilasboas/grok-bot-architecture">tiagovilasboas/grok-bot-architecture</a></th><td>A chief-of-staff coordinating five core roles (engineering, publishing, security, inbox, career) and three optional (finance, product, hobby). Every role has a job, required context, deliverable, boundary and done condition. Handoffs are typed records, privileged actions pass an approval gate, routines carry a budget.</td><td>MIT</td></tr>
+<tr><th scope="row">02 <a href="https://github.com/jaredtrichard/grok-factory">jaredtrichard/grok-factory</a></th><td>One contact, the Firstmate, routes software, research and everything else to specialists. Software returns as a pull request after adversarial review; research lands in a repository through a pull request. The user merges.</td><td>Not stated</td></tr>
+<tr><th scope="row">06 <a href="https://github.com/mKay00/grok-bot-second-brain">mKay00/grok-bot-second-brain</a></th><td>Five Bots around one vault: Conductor assigns, Capture processes inboxes, Memory keeps claims and the working file, Ops writes next actions, Research writes drafts. The roster is fixed at five. Publishing and sending stay with the user.</td><td>Not stated</td></tr>
+<tr><th scope="row">17 <a href="https://github.com/MrBekoX/root-agent-skill-framework">MrBekoX/root-agent-skill-framework</a></th><td>A coordinator as the single entry point, sizing structure by tier: tiny work it does itself, one deliverable goes to one specialist, parallel or independently reviewed work gets a Lead with specialists, several domains get one Lead each. It holds the review gate and does not do the work.</td><td>MIT</td></tr>
+<tr><th scope="row">20 <a href="https://github.com/galleonlabs/hypergrok-trading-desk">galleonlabs/hypergrok-trading-desk</a></th><td>Seven profiles and seventeen skills: Desk Lead, analysts, strategist, a Risk Manager that sizes every ticket and can refuse it, execution, review. Starts in research mode on public data; every trade needs approval of a ticket.</td><td>MIT</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Thin coordination, deep work elsewhere</summary>
+<table class="stack">
+<thead><tr><th scope="col">No. and repository</th><th scope="col">Holds</th><th scope="col">License</th></tr></thead>
+<tbody>
+<tr><th scope="row">03 <a href="https://github.com/simo255/multiBot">simo255/multiBot</a></th><td>A factory Bot creates teammates with a stated purpose and a coding CLI underneath. The Bot only orchestrates; reasoning and tools run in the CLI subprocess.</td><td>MIT</td></tr>
+<tr><th scope="row">15 <a href="https://github.com/Luca-Blight/thin-grok-bot-deep-work-on-cli">Luca-Blight/thin-grok-bot-deep-work-on-cli</a></th><td>One skill: keep the mesh for routing, hand long builds or investigations to a coding CLI or cloud agent with its own context.</td><td>MIT</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Operating a team</summary>
+<table class="stack">
+<thead><tr><th scope="col">No. and repository</th><th scope="col">Holds</th><th scope="col">License</th></tr></thead>
+<tbody>
+<tr><th scope="row">05 <a href="https://github.com/Archive228/foreman">Archive228/foreman</a></th><td>An owner-controlled layer over a hosted crew: crews declared in git, one board card per Bot with its evidence, "done" only on a verdict from a grader that is not the worker. Reports no cost because the product exposes none.</td><td>MIT</td></tr>
+<tr><th scope="row">13 <a href="https://github.com/dimpurr/grok-bot-gateway">dimpurr/grok-bot-gateway</a></th><td>A gateway Bot behind the official webhook: coding agents and scripts list Bots, read a conversation, send a task, wait for a reply. Fixed operations with schemas, a kill switch, an hourly cost cap, no return path unless chosen.</td><td>Apache-2.0</td></tr>
+<tr><th scope="row">14 <a href="https://github.com/ShuhangGe/grokbot-queue">ShuhangGe/grokbot-queue</a></th><td>Spreads tasks over several Bots in parallel and collects results, so work runs on the product's cloud machine instead of the laptop.</td><td>MIT</td></tr>
+<tr><th scope="row">16 <a href="https://github.com/mandarwagh9/botroster">mandarwagh9/botroster</a></th><td>Independent, self-hosted: named long-lived teammates with their own conversation, memory and schedule, one shared computer with browser, shell and files, approval before consequential actions.</td><td>Apache-2.0</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Skills and single-purpose Bots</summary>
+<table class="stack">
+<thead><tr><th scope="col">No. and repository</th><th scope="col">Holds</th><th scope="col">License</th></tr></thead>
+<tbody>
+<tr><th scope="row">07 <a href="https://github.com/jeremybrasher/grokbot-skills">jeremybrasher/grokbot-skills</a></th><td>Skill collection (debugging, brainstorming, writing, task observation and others), one folder each with upstream source and license, admitted above a score threshold.</td><td>Per skill</td></tr>
+<tr><th scope="row">08 <a href="https://github.com/YannisKiefer/grokbot-x">YannisKiefer/grokbot-x</a></th><td>A content loop for X: find posts, draft, publish through Typefully, log results; a nightly gate keeps only writing-skill edits that improve a held-out score.</td><td>MIT</td></tr>
+<tr><th scope="row">09 <a href="https://github.com/mykemueller1-ctrl/grok-bot-restaurant-scout">mykemueller1-ctrl/grok-bot-restaurant-scout</a></th><td>One company's configurations: a food-brand scout with a daily routine and three skills, and a generated swarm of 238 agents, one per vendor, hunting complaints for sales leads.</td><td>Not stated</td></tr>
+<tr><th scope="row">10 <a href="https://github.com/steve228uk/grok-bot-shopping">steve228uk/grok-bot-shopping</a></th><td>Product search, merchant checkout, discount-code tests, order tracking. Payment only inside a user-set spend limit.</td><td>Not stated</td></tr>
+<tr><th scope="row">11 <a href="https://github.com/function1st/PhoneZero">function1st/PhoneZero</a></th><td>A runtime plus phone skills. The first books a restaurant table by phone and reports exactly one named outcome.</td><td>MIT</td></tr>
+<tr><th scope="row">12 <a href="https://github.com/shawnyeager/unlist">shawnyeager/unlist</a></th><td>Removing a name from people-search sites: site list, generated letters, log of what was sent, follow-up dates.</td><td>Not stated</td></tr>
+</tbody>
+</table>
+</details>
+
+<p class="note">Product documentation the collections cite: <a href="https://docs.x.ai/grok-bot/get-started">Get started</a>, <a href="https://docs.x.ai/grok-bot/bots">Bots</a>, <a href="https://docs.x.ai/grok-bot/use-cases">Use cases</a>, <a href="https://docs.x.ai/grok-bot/chat-and-collaboration">Chat and collaboration</a>, <a href="https://docs.x.ai/grok-bot/skills-routines-and-automations">Skills, routines and automations</a>.</p>

@@ -1,0 +1,66 @@
+<title>Replay as policy test</title>
+<meta name="description" content="Replaying persisted events through a policy to test it offline: modes, reproducibility, required details and report shape.">
+<meta name="covers" content="openprogram/runtime/proactive/">
+<h1>Replay as policy testing</h1>
+
+<p><code translate="no">evaluate(event, state)</code> is pure and <code translate="no">state</code> is a fold of <code translate="no">events.jsonl</code> (<a href="../events-and-state.html">events and state</a> §4), so replaying history tests a policy on real workloads with no mocks and no running agent. Research design: the command below is not implemented.</p>
+<pre translate="no" tabindex="0"><code data-claim="invalid">openprogram proactive replay --policy TestGapWatcher --sessions &lt;ids|all&gt;</code></pre>
+<dl class="pairs">
+<dt>Engineering</dt><dd>Every new policy is replayed before activation, exposing poor precision offline (the failure associated with Clippy). The tool comes before the decision engine.</dd>
+<dt>Paper</dt><dd>The would-have-fired report supplies samples for <a href="evaluation.html">precision annotation</a>.</dd>
+</dl>
+
+<h2 id="modes">Modes</h2>
+<p>A new policy's L2 inference never ran on history, so its <code translate="no">state.inferred</code> event is absent.</p>
+<table class="stack">
+<thead><tr><th scope="col">Mode</th><th scope="col">State allowed</th><th scope="col">Determinism</th><th scope="col">For</th></tr></thead>
+<tbody>
+<tr><th scope="row">strict</th><td>L0, L1, persisted <code translate="no">state.inferred</code></td><td>Bit-for-bit</td><td>L0/L1 regression, paper numbers. DangerousCommandGuard; TestGapWatcher's L1 part</td></tr>
+<tr><th scope="row">augmented</th><td>Strict plus newly computed L2</td><td>Reproducible through the cache</td><td>First run of an L2 policy. UnvalidatedCompletionNudge; TestGapWatcher's completion signal</td></tr>
+</tbody>
+</table>
+
+<h2 id="reproducibility">Augmented reproducibility</h2>
+<ul>
+<li>Fix <code translate="no">model</code>, version and <code translate="no">temperature=0</code>.</li>
+<li>Persist new L2 results as a cache and publish the <code translate="no">model fingerprint</code> with the report. Reproduction means reproducing the annotation set, without calling a model that may have changed.</li>
+<li>A second replay of one policy on one session reads the cache and is deterministic.</li>
+<li>Prepare policies stop at would-have-prepared: the reviewer sub-agent cannot rerun deterministically. Label TestGapWatcher's report “Notify precision: online-only” and measure it by A/B.</li>
+</ul>
+
+<h2 id="required-details">Three things replay must get right</h2>
+<table class="stack">
+<thead><tr><th scope="col">Detail</th><th scope="col">Without it</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Simulated cooldown</th><td>A new policy has no action history, so every match reports</td><td>Feed would-fire decisions back as virtual cooldown events</td></tr>
+<tr><th scope="row">Clock injection</th><td>An old session's cooldown computed against today is wrong</td><td>“Now” is the event's <code translate="no">ts</code>. Policies must not call <code translate="no">time.time()</code>; the framework injects the clock into <code translate="no">evaluate</code></td></tr>
+<tr><th scope="row">Branch-aware folding</th><td>Rewound branches read as continuous history</td><td>Rebuild the DAG path from current node to root by <code translate="no">node_id</code>, then fold (§5 of <a href="../events-and-state.html">events and state</a>). Interruption budgets are global across branches</td></tr>
+</tbody>
+</table>
+
+<h2 id="recall">Recall</h2>
+<p>A would-have-fired report lists only fires, so precision comes from replay and recall cannot. Recall needs a separately annotated should-have-fired set. The report claims none.</p>
+
+<h2 id="report">Report</h2>
+<pre translate="no" tabindex="0"><code>replay-report {
+  policy: "TestGapWatcher"
+  mode: "augmented"                      # strict | augmented
+  model_fingerprint: "claude-…"          # augmented only
+  sessions_scanned: 214
+  events_scanned: 51_320
+  fired: 38
+  per_session: [
+    { session_id, node_path: [...],      # DAG path used for folding
+      fires: [
+        { event_ref, state_snapshot_ref, # triggering context after redaction
+          action: "Prepare→Notify",
+          cooldown_suppressed: false,
+          notes: "Notify precision: online-only" }
+      ] }
+  ]
+  invariant_checks: { loop_free: pass, breaker_exempt: pass, ... }
+}</code></pre>
+<p class="note"><code translate="no">event_ref</code> and <code translate="no">state_snapshot_ref</code> let annotators judge each fire; redaction is in <a href="threat-model.html">threat model</a>. The report also asserts the four <a href="../invariants.html">invariants</a> (§5).</p>
+
+<h2 id="status">Implementation status</h2>
+<p><code translate="no" data-claim="invalid">openprogram proactive replay</code> is proposed and not built; the CLI has no <code translate="no">proactive</code> subcommand.</p>

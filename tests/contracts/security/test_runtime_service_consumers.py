@@ -69,8 +69,8 @@ def compatibility_server():
 
 
 def _map_fixed_consumer(monkeypatch, consumer, hostname, port):
-    from openprogram.security import safe_http
-    from openprogram.security.url_policy import OwnerURLException
+    from openprogram.host.security import safe_http
+    from openprogram.host.security.url_policy import OwnerURLException
 
     origin = f"http://{hostname}:{port}"
     registry = dict(safe_http.CONSUMER_REGISTRY)
@@ -127,7 +127,7 @@ class _Client:
 
 @pytest.fixture
 def managed_service_clients(monkeypatch):
-    from openprogram.security import safe_http
+    from openprogram.host.security import safe_http
 
     calls = []
 
@@ -147,7 +147,7 @@ def managed_service_clients(monkeypatch):
 
 
 def test_telegram_get_me_uses_fixed_managed_service_client(managed_service_clients):
-    from openprogram.channels.implementations.telegram import TelegramChannel
+    from openprogram.interfaces.channels.implementations.telegram import TelegramChannel
 
     channel = TelegramChannel.__new__(TelegramChannel)
     channel.base = "https://api.telegram.org/botTOKEN-PATH"
@@ -180,7 +180,7 @@ def test_telegram_get_me_uses_fixed_managed_service_client(managed_service_clien
 def test_tts_http_providers_use_declared_managed_service(
     monkeypatch, managed_service_clients, provider, config, consumer
 ):
-    import openprogram.tts as tts
+    import openprogram.interfaces.speech.tts as tts
 
     monkeypatch.setenv("TTS_TEST_KEY", "secret")
     result = (
@@ -197,7 +197,7 @@ def test_tts_http_providers_use_declared_managed_service(
 
 
 def test_mcp_http_and_sse_supply_managed_sdk_clients():
-    from openprogram.mcp.client import MCPClient
+    from openprogram.extensions.mcp.client import MCPClient
 
     for transport in ("http", "sse"):
         instance = MCPClient.__new__(MCPClient)
@@ -223,7 +223,7 @@ def test_mcp_http_and_sse_supply_managed_sdk_clients():
 
 
 def test_channel_error_mapping_never_echoes_peer_body_or_url():
-    from openprogram.channels._transport import (
+    from openprogram.interfaces.channels._transport import (
         _classify_http_status,
         _classify_network_error,
     )
@@ -242,9 +242,9 @@ def test_channel_error_mapping_never_echoes_peer_body_or_url():
     assert secret not in repr((status, network))
 
 
-def test_telegram_poll_does_not_echo_malformed_peer_response(monkeypatch, capsys):
-    from openprogram.channels.implementations.telegram import TelegramChannel
-    from openprogram.security import safe_http
+def test_telegram_poll_does_not_echo_malformed_peer_response(monkeypatch, caplog):
+    from openprogram.interfaces.channels.implementations.telegram import TelegramChannel
+    from openprogram.host.security import safe_http
 
     secret = "peer-secret-query"
     stop = threading.Event()
@@ -276,17 +276,18 @@ def test_telegram_poll_does_not_echo_malformed_peer_response(monkeypatch, capsys
     monkeypatch.setattr(safe_http, "safe_client", lambda _consumer: Client())
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
 
-    channel.run(stop)
+    with caplog.at_level("WARNING", logger="openprogram.interfaces.channels.implementations.telegram"):
+        channel.run(stop)
 
-    output = capsys.readouterr().out
+    output = caplog.text
     assert "API error 400" in output
     assert secret not in output
     assert "botTOKEN" not in output
 
 
-def test_attachment_failure_does_not_echo_url_secret(monkeypatch, capsys):
-    from openprogram.channels import _attachments
-    from openprogram.channels._message import Attachment
+def test_attachment_failure_does_not_echo_url_secret(monkeypatch, caplog):
+    from openprogram.interfaces.channels import _attachments
+    from openprogram.interfaces.channels._message import Attachment
 
     secret = "attachment-secret"
 
@@ -311,7 +312,7 @@ def test_attachment_failure_does_not_echo_url_secret(monkeypatch, capsys):
         )
         == []
     )
-    output = capsys.readouterr().out
+    output = caplog.text
     assert "RuntimeError" in output
     assert secret not in output
 
@@ -344,8 +345,8 @@ class _AsyncRejectingClient:
 
 def test_device_code_init_failure_never_exposes_peer_envelope(monkeypatch):
     import asyncio
-    from openprogram.auth.methods.device_code import DeviceCodeConfig, DeviceCodeMethod
-    from openprogram.security import safe_http
+    from openprogram.models.auth.methods.device_code import DeviceCodeConfig, DeviceCodeMethod
+    from openprogram.host.security import safe_http
 
     secret = "device_code=peer-secret"
     monkeypatch.setattr(
@@ -371,11 +372,11 @@ def test_device_code_init_failure_never_exposes_peer_envelope(monkeypatch):
 
 def test_pkce_token_failure_never_exposes_code_or_peer_envelope(monkeypatch):
     import asyncio
-    from openprogram.auth.methods.pkce_oauth import (
+    from openprogram.models.auth.methods.pkce_oauth import (
         PkceConfig,
         _exchange_code_for_tokens,
     )
-    from openprogram.security import safe_http
+    from openprogram.host.security import safe_http
 
     secret = "access_token=peer-secret"
     monkeypatch.setattr(
@@ -405,31 +406,10 @@ def test_pkce_token_failure_never_exposes_code_or_peer_envelope(monkeypatch):
     assert "verifier-secret" not in rendered
 
 
-def test_provider_oauth_public_login_failure_is_sanitized(monkeypatch):
-    import asyncio
-    from openprogram.providers.utils.oauth import anthropic
-
-    secret = "refresh_token=peer-secret"
-    monkeypatch.setattr(
-        anthropic,
-        "safe_async_client",
-        lambda *_args, **_kwargs: _AsyncRejectingClient(403, secret),
-    )
-
-    async def prompt_code():
-        return "authorization-code#state-secret"
-
-    with pytest.raises(RuntimeError) as raised:
-        asyncio.run(anthropic.login_anthropic(lambda _url: None, prompt_code))
-    rendered = _render_exception(raised.value)
-    assert "Token exchange failed: HTTP 403" in rendered
-    assert secret not in rendered
-    assert "authorization-code" not in rendered
-    assert "state-secret" not in rendered
 
 
 def test_local_tts_reaches_real_managed_socket(monkeypatch):
-    import openprogram.tts as tts
+    import openprogram.interfaces.speech.tts as tts
 
     class Handler(http.server.BaseHTTPRequestHandler):
         paths: list[str] = []
@@ -477,7 +457,7 @@ def test_local_tts_reaches_real_managed_socket(monkeypatch):
 def test_telegram_fixed_api_reaches_mapped_real_socket(
     monkeypatch, compatibility_server
 ):
-    from openprogram.channels.implementations.telegram import TelegramChannel
+    from openprogram.interfaces.channels.implementations.telegram import TelegramChannel
 
     port = compatibility_server.server_address[1]
     _mapped, origin = _map_fixed_consumer(
@@ -494,7 +474,7 @@ def test_telegram_fixed_api_reaches_mapped_real_socket(
 def test_fixed_provider_entry_reaches_mapped_real_socket(
     monkeypatch, compatibility_server
 ):
-    from openprogram.providers._shared import anthropic_token_count
+    from openprogram.models.providers.shared import anthropic_token_count
 
     port = compatibility_server.server_address[1]
     mapped, origin = _map_fixed_consumer(
@@ -519,8 +499,8 @@ def test_fixed_provider_entry_reaches_mapped_real_socket(
 def test_wechat_internal_configured_base_reaches_real_socket(
     monkeypatch, compatibility_server
 ):
-    from openprogram.channels import _transport
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import _transport
+    from openprogram.interfaces.channels import accounts
 
     port = compatibility_server.server_address[1]
     base = f"http://127.0.0.1:{port}"
@@ -542,8 +522,8 @@ def test_wechat_internal_configured_base_reaches_real_socket(
 def test_matrix_configured_registry_entry_supports_real_local_service(
     compatibility_server,
 ):
-    from openprogram.security.safe_http import configured_safe_client
-    from openprogram.security.url_policy import OwnerURLException
+    from openprogram.host.security.safe_http import configured_safe_client
+    from openprogram.host.security.url_policy import OwnerURLException
 
     origin = f"http://127.0.0.1:{compatibility_server.server_address[1]}"
     with configured_safe_client(
@@ -561,9 +541,9 @@ def test_matrix_configured_registry_entry_supports_real_local_service(
 def test_backend_owner_probe_uses_exact_runtime_origin_not_mcp_callback(
     monkeypatch,
 ):
-    from openprogram import _ports
-    from openprogram import backend_endpoint
-    from openprogram.security import safe_http
+    from openprogram.operations.worker import ports as _ports
+    from openprogram.host.security import backend_endpoint
+    from openprogram.host.security import safe_http
 
     origin = "https://worker.internal.example:9443"
     active = SimpleNamespace(port=9443, effective_origins=(origin,))

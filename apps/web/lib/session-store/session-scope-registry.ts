@@ -28,19 +28,15 @@ export interface SessionScopeState {
   setContextPanelOpen: (open: boolean) => void;
 }
 
-/** Mirrors the global store's defaults. A session with no persisted entry
- *  must still send tools — an empty tools array reads to the model as "I
- *  can't access your files". */
+/** Mirrors the global store's defaults. */
 export const DEFAULT_SCOPE_SETTINGS: ComposerSettings = {
   thinking: "",
-  tools: true,
-  webSearch: false,
+  webSearch: true,
   fast: false,
-  runningMessageMode: "queue",
   unattended: false,
   permission_mode: "",
   effective_permission: "",
-  sandbox: true,
+  sandbox: false,
 };
 
 /**

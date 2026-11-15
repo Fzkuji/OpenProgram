@@ -24,8 +24,8 @@ from typing import Any
 
 import httpx
 
-from openprogram.security import safe_http
-from openprogram.security.url_policy import OwnerURLException, normalize_origin
+from openprogram.host.security import safe_http
+from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
 
 
 class ProviderHTTPError(RuntimeError):

@@ -1,0 +1,26 @@
+<title>Capabilities</title>
+<meta name="description" content="What OpenProgram can do and which page covers each capability.">
+<h1>Capabilities</h1>
+<table class="stack">
+<thead><tr><th scope="col">Layer</th><th scope="col">What it is</th><th scope="col">Pages</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agentic Programming</th><td>The paradigm: Python controls the flow, the LLM reasons. Split a task into a function call graph; nodes needing no reasoning are plain Python, nodes needing understanding, generation or judgment are <code translate="no">Agent</code> methods that call <code translate="no">llm(...)</code>. Order, state and retries are ordinary, unit-testable code.</td><td><a href="agentic-programming/README.html">Guide</a>, <a href="agentic-programming/philosophy.html">design philosophy</a></td></tr>
+<tr><th scope="row">Agentic workflows</th><td>Complete workflows on that paradigm (harnesses or agentic programs in the code), each a git repository. Their functions run as tools in chat or directly.</td><td><a href="workflows/README.html">Overview</a>, <a href="installing-programs.html">installing programs</a></td></tr>
+<tr><th scope="row">Extensions</th><td>Add capabilities without writing a harness.</td><td>Below</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>openprogram programs install &lt;source&gt;
+openprogram programs list
+openprogram programs run &lt;name&gt;</code></pre>
+<h2>Extensions</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Page</th><th scope="col">Adds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="skills.html">Skills</a></th><td><code translate="no">SKILL.md</code> registry: domain knowledge and playbooks loaded on demand</td></tr>
+<tr><th scope="row"><a href="commit-push-pr.html">Commit, push, PR</a></th><td>No built-in command; which tools to use</td></tr>
+<tr><th scope="row"><a href="plugins.html">Plugins</a></th><td>Commands, skills, MCP servers and more, from pip, npm, git or a local path</td></tr>
+<tr><th scope="row"><a href="mcp.html">MCP</a></th><td>Any MCP server; its tools appear in chat</td></tr>
+<tr><th scope="row"><a href="tools.html">Built-in tools</a></th><td>Shell, files, web search, images, PDF and others, and the keys each needs</td></tr>
+<tr><th scope="row"><a href="agents.html">Configure an Agent</a></th><td>Models, instructions, capabilities, memory, trial conversations</td></tr>
+</tbody>
+</table>

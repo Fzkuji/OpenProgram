@@ -1,0 +1,65 @@
+<title>回放即策略测试</title>
+<meta name="description" content="把持久化事件回放给规则做离线测试：模式、可复现性、必须做对的细节和报告形状。">
+<h1>把回放当策略测试</h1>
+
+<p><code translate="no">evaluate(event, state)</code> 是纯函数，<code translate="no">state</code> 是 <code translate="no">events.jsonl</code> 的折叠（<a href="../events-and-state.zh.html">事件与状态</a> §4），所以回放历史就能在真实负载上测试规则，不需要 mock 和运行中的 agent。这是研究设计，下面的命令尚未实现。</p>
+<pre translate="no" tabindex="0"><code data-claim="invalid">openprogram proactive replay --policy TestGapWatcher --sessions &lt;ids|all&gt;</code></pre>
+<dl class="pairs">
+<dt>工程</dt><dd>新规则上线前都要回放，离线暴露精确率问题（Clippy 式的失败）。工具要先于决策引擎。</dd>
+<dt>论文</dt><dd>would-have-fired 报告提供<a href="evaluation.zh.html">精确率标注</a>样本。</dd>
+</dl>
+
+<h2 id="modes">模式</h2>
+<p>新规则的 L2 推断没在历史上运行过，所以没有它的 <code translate="no">state.inferred</code> 事件。</p>
+<table class="stack">
+<thead><tr><th scope="col">模式</th><th scope="col">允许的状态</th><th scope="col">确定性</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row">strict</th><td>L0、L1、已持久化的 <code translate="no">state.inferred</code></td><td>逐位一致</td><td>L0/L1 回归、论文数字。DangerousCommandGuard；TestGapWatcher 的 L1 部分</td></tr>
+<tr><th scope="row">augmented</th><td>strict 加新计算的 L2</td><td>靠缓存复现</td><td>L2 规则首次运行。UnvalidatedCompletionNudge；TestGapWatcher 的完成信号</td></tr>
+</tbody>
+</table>
+
+<h2 id="reproducibility">augmented 的可复现性</h2>
+<ul>
+<li>固定 <code translate="no">model</code>、版本和 <code translate="no">temperature=0</code>。</li>
+<li>把新 L2 结果持久化为缓存，随报告发布 <code translate="no">model fingerprint</code>。复现指复现标注集，不调用可能已变化的模型。</li>
+<li>同一规则同一会话第二次回放读缓存，是确定的。</li>
+<li>Prepare 规则止于 would-have-prepared：reviewer 子 agent 无法确定性重跑。TestGapWatcher 的报告标注“Notify precision: online-only”，用 A/B 测量。</li>
+</ul>
+
+<h2 id="required-details">回放必须做对的三件事</h2>
+<table class="stack">
+<thead><tr><th scope="col">细节</th><th scope="col">不做的后果</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">模拟冷却</th><td>新规则没有动作历史，每次匹配都上报</td><td>把 would-fire 决策作为虚拟冷却事件反馈</td></tr>
+<tr><th scope="row">时钟注入</th><td>用今天计算旧会话的冷却是错的</td><td>“现在”是事件的 <code translate="no">ts</code>。规则不能调用 <code translate="no">time.time()</code>，框架把时钟注入 <code translate="no">evaluate</code></td></tr>
+<tr><th scope="row">按分支折叠</th><td>被回退的分支被当成连续历史</td><td>用 <code translate="no">node_id</code> 重建当前节点到根的 DAG 路径再折叠（<a href="../events-and-state.zh.html">事件与状态</a> §5）。打断预算跨分支全局</td></tr>
+</tbody>
+</table>
+
+<h2 id="recall">召回</h2>
+<p>would-have-fired 报告只列触发点，所以回放能得出精确率，得不出召回。召回需要单独标注的 should-have-fired 集。报告不声称召回。</p>
+
+<h2 id="report">报告</h2>
+<pre translate="no" tabindex="0"><code>replay-report {
+  policy: "TestGapWatcher"
+  mode: "augmented"                      # strict | augmented
+  model_fingerprint: "claude-…"          # 仅 augmented
+  sessions_scanned: 214
+  events_scanned: 51_320
+  fired: 38
+  per_session: [
+    { session_id, node_path: [...],      # 折叠用的 DAG 路径
+      fires: [
+        { event_ref, state_snapshot_ref, # 脱敏后的触发上下文
+          action: "Prepare→Notify",
+          cooldown_suppressed: false,
+          notes: "Notify precision: online-only" }
+      ] }
+  ]
+  invariant_checks: { loop_free: pass, breaker_exempt: pass, ... }
+}</code></pre>
+<p class="note"><code translate="no">event_ref</code>、<code translate="no">state_snapshot_ref</code> 让标注者判断每次触发；脱敏见<a href="threat-model.zh.html">威胁模型</a>。报告还断言四条<a href="../invariants.zh.html">不变式</a>（§5）。</p>
+
+<h2 id="status">实现状态</h2>
+<p><code translate="no" data-claim="invalid">openprogram proactive replay</code> 只是提案，尚未实现；CLI 没有 <code translate="no">proactive</code> 子命令。</p>

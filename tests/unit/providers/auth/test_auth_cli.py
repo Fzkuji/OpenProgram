@@ -1,22 +1,20 @@
-"""Tests for openprogram.auth.cli — the auth command tree."""
+"""Tests for the ``openprogram providers`` command tree."""
 from __future__ import annotations
 
 import argparse
 import io
 import json
 import sys
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from openprogram.auth.cli import build_parser, dispatch
-from openprogram.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
-from openprogram.auth.account.accounts import DEFAULT_ACCOUNT_NAME
-from openprogram.auth.account.accounts import AccountManager
-from openprogram.auth.account.accounts import set_account_manager_for_testing
-from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import (
+from openprogram.interfaces.cli.commands.providers import build_parser, dispatch
+from openprogram.models.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
+from openprogram.models.auth.account.accounts import DEFAULT_ACCOUNT_NAME
+from openprogram.models.auth.account.accounts import AccountManager
+from openprogram.models.auth.account.accounts import set_account_manager_for_testing
+from openprogram.models.auth.store import AuthStore, set_store_for_testing
+from openprogram.models.auth.types import (
     Credential,
     CredentialData,
     CredentialPool,
@@ -25,7 +23,7 @@ from openprogram.auth.types import (
 
 @pytest.fixture
 def isolated(tmp_path, monkeypatch, capsys):
-    from openprogram.webui import _model_listing
+    from openprogram.models import listing as _model_listing
 
     store = AuthStore(root=tmp_path / "store")
     set_store_for_testing(store)
@@ -48,7 +46,7 @@ def isolated(tmp_path, monkeypatch, capsys):
 
 
 def _parse(argv):
-    """Build the same argparse tree openprogram.cli.main sets up, so
+    """Build the same argparse tree openprogram.interfaces.cli.application.main sets up, so
     the test drives the exact code path real invocations take.
 
     Shape: ``openprogram providers <verb> ...`` — `build_parser` wires
@@ -105,7 +103,7 @@ def test_list_respects_account_filter(isolated):
                 payload=CredentialData(kind="api_key", auth_value=f"sk-{tag}-11112222"),
             )],
         ))
-    rc = dispatch(_parse(["list", "--account", "work", "--json"]))
+    dispatch(_parse(["list", "--account", "work", "--json"]))
     body = json.loads(cap.readouterr().out)
     assert len(body) == 1
     assert body[0]["account_id"] == "work"
@@ -143,7 +141,7 @@ def test_adopt_env_var(isolated, monkeypatch):
 def _clear_provider_env(monkeypatch):
     """Wipe every env var discover() looks at so the dev machine's real
     keys don't leak into the test. Keeps only what the test sets."""
-    from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
+    from openprogram.models.providers.settings.env_api_keys import PROVIDER_ENV_VARS
     for v in set(PROVIDER_ENV_VARS.values()):
         monkeypatch.delenv(v, raising=False)
     for v in [
@@ -380,7 +378,7 @@ def test_account_create_duplicate(isolated):
 def test_login_codex_only_offers_pkce(isolated):
     """Codex has a real OAuth flow, so the CLI deliberately hides the
     api_key and import_from_cli methods. Matches OpenClaw's setup UX."""
-    from openprogram.auth.cli.login import _available_login_methods
+    from openprogram.interfaces.cli.commands.providers.login import _available_login_methods
     methods = _available_login_methods("openai-codex")
     assert [m[0] for m in methods] == ["pkce_oauth"]
 
@@ -421,9 +419,9 @@ def test_login_resolves_alias(isolated, monkeypatch):
     # secret prompt and stores into the anthropic pool, so it's the载体 here
     # for verifying the `claude` → `anthropic` alias resolution.
     store, _, _, cap = isolated
-    monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-ant-oat-from-alias")
+    monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-ant-api-from-alias")
     # Use an alias rather than the canonical id.
-    rc = dispatch(_parse(["login", "claude", "--method", "setup_token"]))
+    rc = dispatch(_parse(["login", "claude", "--method", "api_key"]))
     assert rc == 0
     # The pool must be stored under the canonical id, not the alias — on disk
     # under anthropic/, never a literal claude/ dir. (The store is now itself
@@ -433,7 +431,7 @@ def test_login_resolves_alias(isolated, monkeypatch):
     pool = store.find_pool("anthropic", "default")
     assert pool is not None
     assert pool.provider_id == "anthropic"
-    assert pool.credentials[0].payload.auth_value == "sk-ant-oat-from-alias"
+    assert pool.credentials[0].payload.auth_value == "sk-ant-api-from-alias"
 
 
 def test_status_resolves_alias(isolated):
@@ -557,3 +555,14 @@ def test_setup_wizard_adopts_detected_env_var(isolated, monkeypatch):
     pool = store.find_pool("openai", "default")
     assert pool is not None
     assert pool.credentials[0].payload.auth_value == "sk-wizard-adopted-12345"
+
+
+def test_bare_providers_command_lists_pools(isolated, monkeypatch):
+    from openprogram.interfaces.cli import application
+
+    _, _, _, cap = isolated
+    monkeypatch.setattr(sys, "argv", ["openprogram", "providers"])
+    with pytest.raises(SystemExit) as exited:
+        application.main()
+    assert exited.value.code in (0, None)
+    assert "No credential pools yet" in cap.readouterr().out

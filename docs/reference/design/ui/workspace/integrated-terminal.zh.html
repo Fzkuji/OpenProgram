@@ -1,0 +1,135 @@
+<title>集成终端</title>
+<meta name="description" content="桌面中心 Tab 里的真实 PTY 终端，并通过 terminal_use 与 Agent 共用。">
+<h1>集成终端与 Claude Code 启动</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="xterm.js 的 write 和 resize 经 preload 白名单到 Electron main 和 node-pty，运行登录 shell 或 Claude Code，data 和 exit 返回。terminal_use 经 worker 票据和桌面宿主到达同一个 PTY。">
+  <defs><marker id="tm-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40" translate="no">xterm.js</text>
+  <line class="ln" x1="80" y1="34" x2="216" y2="34" marker-end="url(#tm-a)"/><text class="t-soft mid" x="148" y="22">preload 白名单</text>
+  <text class="t-big" x="226" y="40" translate="no">Electron main</text>
+  <line class="ln" x1="350" y1="34" x2="426" y2="34" marker-end="url(#tm-a)"/>
+  <rect class="tile" x="436" y="10" width="244" height="110" rx="8"/>
+  <text class="t-big" x="452" y="42" translate="no">node-pty</text>
+  <text class="t-soft" x="452" y="70">登录 shell 或 claude</text>
+  <text class="t-soft" x="452" y="94">以 App 用户权限运行</text>
+  <text class="t-big" x="0" y="106" translate="no">terminal_use</text>
+  <line class="ln" x1="110" y1="100" x2="426" y2="100" marker-end="url(#tm-a)"/><text class="t-soft mid" x="268" y="88">worker 票据，桌面宿主</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong translate="no">xterm.js</strong><small>或 <code translate="no">terminal_use</code>，经 worker 票据</small></li>
+<li class="via">preload 白名单，或桌面宿主</li>
+<li><strong translate="no">Electron main</strong></li>
+<li class="flow-end"><strong translate="no">node-pty</strong><small>登录 shell 或 claude</small></li>
+</ol>
+</figure>
+<p class="note">仅桌面端。Web UI 不提供宿主命令执行。</p>
+
+<h2>选型</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部件</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://github.com/microsoft/node-pty">node-pty</a></th><td>真实 PTY，只在 Electron main（Windows 为 ConPTY）</td></tr>
+<tr><th scope="row"><a href="https://xtermjs.org/docs/">xterm.js</a> + FitAddon</th><td>终端序列、原始输入、按窗格算 cols/rows；不自造协议</td></tr>
+<tr><th scope="row"><a href="https://code.claude.com/docs/en/overview">Claude Code CLI</a></th><td>本机安装的 <code translate="no">claude</code>，PATH 经登录 shell 解析</td></tr>
+<tr><th scope="row">spawn + pipe（不用）</th><td><code translate="no">TERM=dumb</code>，无终端设备：交互程序失去光标、重绘、颜色、快捷键和 resize</td></tr>
+</tbody>
+</table>
+
+<h2>行为</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">Terminal Tab</th><td>项目目录下的登录 shell（macOS 为 zsh 或 bash，Windows 为 PowerShell）。切 Tab 只卸载视图；关闭 Tab、销毁渲染层或停止才释放 PTY。</td></tr>
+<tr><th scope="row">Claude Code Tab</th><td>在同一目录直接运行 <code translate="no">claude</code>。</td></tr>
+<tr><th scope="row">项目未解析</th><td>短暂等待后在主目录启动，不留空白页。迟到的响应不重启。</td></tr>
+<tr><th scope="row">不可用</th><td>桥接、PTY 模块或 CLI 缺失：Tab 显示明确错误。Web 模式没有交互控件。</td></tr>
+<tr><th scope="row">主题</th><td>背景、前景、光标、选区和 ANSI 16 色来自语义 token。主题或 Custom CSS 变化只更新 xterm，PTY 和缓冲不变。</td></tr>
+<tr><th scope="row">工具栏</th><td>预设、进程状态、实际 cwd；复制、粘贴、清屏、重启、停止。紧凑无边框。</td></tr>
+<tr><th scope="row">按键</th><td>有选区时 <code translate="no">Cmd+C</code> 或 <code translate="no">Ctrl+Shift+C</code> 复制。<code translate="no">Cmd+V</code> 或 <code translate="no">Ctrl+Shift+V</code> 粘贴到 PTY。<code translate="no">Ctrl+C</code> 中断。<code translate="no">Cmd+K</code> 只清当前视口。</td></tr>
+</tbody>
+</table>
+
+<h2>与 Agent 共用</h2>
+<p><code translate="no">terminal_use</code> 动作：<code translate="no">list</code>、<code translate="no">open</code>、<code translate="no">observe</code>、<code translate="no">input</code>、<code translate="no">interrupt</code>、<code translate="no">resize</code>、<code translate="no">share</code>、<code translate="no">release</code>、<code translate="no">close</code>。每次用 <code translate="no">openprogram/host/resources/terminal.py</code> 签发、桌面宿主兑换的一次性票据。</p>
+<ul>
+<li>需要批准；计划模式不可用；不能绕过任务沙箱。没有 Desktop 时明确返回不可用。</li>
+<li>输入是原始按键，不是命令 API。“已送达”只表示到了 shell。输出是不可信数据。</li>
+<li>人工输入不暂停 Agent，但输入版本变化必须重新 <code translate="no">observe</code>。不确定的输入绝不重试。</li>
+<li><code translate="no">release</code> 保留终端；<code translate="no">close</code> 结束 shell。</li>
+</ul>
+
+<h2>信任边界</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">边界</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">可执行文件</th><td>渲染层只能选预设 <code translate="no">shell</code> 或 <code translate="no">claude</code>，不能传任意 argv。</td></tr>
+<tr><th scope="row"><code translate="no">cwd</code></th><td>realpath 后必须是目录。PTY 绑定渲染层 sender 和终端 id。</td></tr>
+<tr><th scope="row">限制</th><td>Agent 输入 16 KiB，人工 64 KiB；工具的 cols 20–500、rows 5–200。被替换的进程不能写入新进程。</td></tr>
+<tr><th scope="row">权限</th><td>本地 App 用户的权限。没有远程沙箱。</td></tr>
+</tbody>
+</table>
+
+<h2 id="shell-observation">Shell 目录与前台命令</h2>
+<p class="note">仅作参考，适用于 macOS zsh 和兼容的 bash 3.2 登录 shell。退出码 0 不代表有外部效果或任务成功；后台作业可能继续。报告不改变归属、租约、批准、输入版本或取消。</p>
+<pre translate="no" tabindex="0">shell_integration?: {
+  status: "starting" | "ready" | "unavailable" | "ended",
+  mode: "zsh-hooks" | "bash-debug" | null,
+  reason: string | null, event_sequence: number,
+  cwd: { value: string, event_sequence: number } | null,
+  cycle: { id: number, phase: "running" | "finished" | "unknown",
+           exit_code: number | null } | null
+}</pre>
+<details>
+<summary>元数据语义</summary>
+<ul>
+<li>可选地附在现有读取和事件上，旧宿主可省略。<code translate="no">start_cwd</code> 不可变。顶层 <code translate="no">exit_code</code> 属 PTY 进程，嵌套的属匹配的命令周期。</li>
+<li>首个提示符：ready 和 cwd，<code translate="no">cycle=null</code>。进程退出：未完成周期变 unknown，集成结束。最后的值只是历史。输入仍返回 <code translate="no">phase=delivered</code> 或未确认且 <code translate="no">command_complete=null</code>。</li>
+<li>Web 类型接受元数据，不加渲染、提示符解析、命令 API 或 store。</li>
+</ul>
+</details>
+<details>
+<summary>启动与兼容</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Shell</th><th scope="col">集成</th></tr></thead>
+<tbody>
+<tr><th scope="row">zsh</th><td>原生 <code translate="no">-l</code>。私有的 <code translate="no">.zshenv</code>、<code translate="no">.zprofile</code>、<code translate="no">.zshrc</code>、<code translate="no">.zlogin</code> 转发在 source 用户文件前恢复 <code translate="no">ZDOTDIR</code>，最后追加 preexec/precmd。<code translate="no">RCS</code> 优先。已有钩子保留，只读数组放弃安装。不声称与全局脚本和插件等价。</td></tr>
+<tr><th scope="row">bash</th><td>原生 <code translate="no">-l</code>，仅在未设置时用一次性 <code translate="no">PROMPT_COMMAND</code>。启动脚本在 source 前捕获 DEBUG，再装最小的 DEBUG/prompt。自定义 DEBUG、只读 <code translate="no">PROMPT_COMMAND</code>、extdebug、functrace、替换过的 prompt 和 bash-preexec 不集成。根父进程 PID 检查阻止嵌套接管，回调拒绝子 shell 上报。</td></tr>
+<tr><th scope="row">其他</th><td>可用，报告 unavailable。不改写用户配置、shell 选项或历史策略。无 Windows 集成。</td></tr>
+</tbody>
+</table>
+</details>
+<details>
+<summary>协议与生命周期</summary>
+<pre translate="no" tabindex="0">ESC ] 777 ; OpenProgram ; 1 ; nonce ; rootPid ; eventSequence ; kind ; cycleId ; exitStatus ; cwdHex BEL</pre>
+<ul>
+<li>类型：ready、cwd、start、end。每次启动 128 位随机 nonce。解析器检查 PTY PID、递增的事件序号和周期、匹配的完成。</li>
+<li>cwd：UTF-8 绝对路径，用 printf/od/tr 转十六进制，上限 16 KiB，无 NUL 或非法 UTF-8。帧上限 36 KB。</li>
+<li>跨块增量解析，不完整候选 1 秒后释放。只有被接受的帧在投递和回放前移除，其余输出不变，游标按同一过滤流计数。</li>
+<li>候选的 BEL 之前出现完整新前缀时，前面字节作为普通输出保留，从新前缀重新解析，畸形输出吞不掉真正的完成。</li>
+<li>shell 能读取或伪造 nonce，所以元数据不授予权限。不含命令文本或环境。3 秒未 ready 则 unavailable，之后有效握手可恢复。根进程退出让运行中周期变 unknown，绝不是 finished。</li>
+<li>脚本经 Electron fs 解到每次启动的 0700 目录、0600 文件；启动失败或根进程退出时删除，重新附着或释放租约不删。旧代数据不能更新替换进程。资源失败时保留原始终端。</li>
+</ul>
+<p class="note"><code translate="no">apps/desktop/main/terminal/</code>: <code translate="no">terminal-shell-protocol.js</code>, <code translate="no">terminal-shell-integration.js</code>, <code translate="no">shell-integration/</code>, <code translate="no">terminal-resource-manager.js</code>, <code translate="no">terminal-resource-ipc.js</code>. <code translate="no">apps/web/lib/desktop/terminal-resources.ts</code> 加入类型。<code translate="no">package.json</code> 打包 <code translate="no">main/**</code>，含点文件。检查：<code translate="no">check-shell-metadata.cjs</code>（manager 和解析器），<code translate="no">check-shell-pty.cjs</code>（经生产 IPC 的真实 macOS PTY）。</p>
+</details>
+
+<h2>范围</h2>
+<p>不包含：远程云会话、通用终端会话管理器、shell 配置编辑器、持久命令历史、Web 宿主终端。其他 Tab 不受影响。</p>
+
+<details id="implementation-status">
+<summary>实现状态与验收</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">PTY 终端、启动入口、主题、工具栏、按键</th><td>macOS 和 Windows 已实现。</td></tr>
+<tr><th scope="row"><code translate="no">terminal_use</code></th><td>已实现；在 <code translate="no">terminal-resource-ipc.js</code> 兑换。</td></tr>
+<tr><th scope="row">Shell 观察</th><td>源码已实现，已安装 App 验收待做。任意全局配置和动态替换钩子未验证。</td></tr>
+</tbody>
+</table>
+<ol>
+<li>Terminal 能运行 <code translate="no">pwd</code>；cwd 为当前项目，或短暂等待后的主目录。</li>
+<li>Claude Code 显示本地 CLI；输入和 Ctrl+C 能到达；关闭它不影响 Terminal。</li>
+<li>窗格宽度变化同步 xterm 和 PTY 的 cols/rows。</li>
+<li>PTY pid 在切 Tab 和换主题时不变；ANSI 16 跟随深色、浅色、暖色和自定义主题。</li>
+<li>复制、粘贴、清屏、重启、停止可用；工具栏显示 running、exited、error。</li>
+</ol>
+</details>

@@ -4,17 +4,51 @@
    approved before this React migration. */
 
 .inputArea {
-  /* 底部留白实测 Claude = 13px（控件行到视口底），原 24 太空。 */
-  padding: 12px 24px 13px;
+  /* 底部留白 12px：和画布上所有浮动控件到边缘的距离一致
+     （dag/panels/tools.css、chat/center-pane.css）。原 24 太空。 */
+  padding: 12px 24px 12px;
+  /* The column's margin inside this box: the pane's
+     --chat-column-gutter less the 24px side padding above, so the box
+     lines up with the transcript column. */
+  --composer-column-gutter: calc(var(--chat-column-gutter) - 24px);
 }
-/* envChips（Local / 项目那排）的菜单开着时，把 inputArea 整个层叠
-   上下文临时提到 portal（z-50）之上：触发按钮画在菜单阴影之上，
-   不被覆盖。这排菜单向上弹、和 composer 不重叠，所以不会被反盖。
-   只限 envChips——controlsRow（模型/权限等）的菜单又高又罩在输入
-   框上方，提升会让输入框反盖菜单下缘。按钮的 z-index 单独抬没
-   用——它锁在本上下文（z:5）里，永远比不过 body 层的 portal。 */
-.inputArea:has([data-environment-row] [aria-expanded="true"]),
-.inputArea:has([data-effort-expanded="true"]) {
+/* 层级（从上到下）：输入框各组件 ≈ 弹出菜单 > 聊天遮罩 > 聊天内容。
+   inputArea 本身不建层叠上下文（z-index: auto），遮罩（::before/::after，
+   z 4）和组件（直接子元素，z 5）都直接排在聊天区的层叠里，所以遮罩永远
+   在组件和菜单之下，菜单的阴影能自然落在遮罩上。
+   envChips（Local / 项目那排）或 effort 的菜单开着时，只把组件提到
+   portal（z-50）之上：触发按钮画在菜单阴影之上，不被覆盖；遮罩不跟着
+   上去。controlsRow（模型/权限等）的菜单又高又罩在输入框上方，不提升，
+   否则输入框会反盖菜单下缘。 */
+.inputArea > * {
+  position: relative;
+  z-index: 5;
+}
+/* Tucked rows (use-tucked-controls.ts) slide behind the box. */
+.inputArea[data-tucked] > .composerStack {
+  z-index: 6;
+}
+/* The band along the box's edge, a little inside and outside it, is the
+   tuck switch (use-tucked-controls.ts): a hand there; the rest of the
+   box belongs to the text field. */
+.inputWrapper[data-tuckable] {
+  cursor: text;
+}
+.inputWrapper[data-tuckable] button {
+  cursor: pointer;
+}
+.inputArea[data-tuck-rim],
+.inputArea[data-tuck-rim] .inputWrapper[data-tuckable] {
+  cursor: pointer;
+}
+/* The band's outer half: a transparent ring RIM_OUT past the box on
+   every side (placed on the box's rectangle by use-tucked-controls.ts),
+   painted under the box because it comes earlier in the stack. */
+.tuckBand {
+  position: absolute;
+}
+.inputArea:has([data-environment-row] [aria-expanded="true"]) > *,
+.inputArea:has([data-effort-expanded="true"]) > * {
   z-index: 51;
 }
 .inputArea {
@@ -36,24 +70,33 @@
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 5;
+  z-index: auto;
 }
-/* Bottom fade mask: solid at the bottom (hides chat content scrolling
-   behind the composer) fading to transparent at the top — so there's no
-   hard black band, but content doesn't leak out around/under the input
-   box. Sits behind the composer wrapper (z-index 5 > this). */
+/* Chat mask in two layers at z 4: above the transcript, below the
+   composer components and every popup. ::before is solid from the
+   env-chip row down (hides transcript text behind the chips, box and
+   controls); ::after is the short fade above the chips. With the rows
+   tucked both start --composer-tuck-shift lower, 12px above the box
+   (use-tuck-backdrop.ts moves it on the rows' spring), so the strip the
+   tucked row leaves empty shows the transcript. */
 .inputArea::before {
   content: "";
   position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to top,
-    var(--bg-primary) 0%,
-    var(--bg-primary) 55%,
-    transparent 100%
-  );
+  inset: calc(12px + var(--composer-tuck-shift, 0px)) 0 0;
+  background: var(--bg-primary);
   pointer-events: none;
-  z-index: -1;
+  z-index: 4;
+}
+.inputArea::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(-16px + var(--composer-tuck-shift, 0px));
+  height: 28px;
+  background: linear-gradient(to bottom, transparent, var(--bg-primary));
+  pointer-events: none;
+  z-index: 4;
 }
 
 /* Wrapper — the rounded rectangle the textarea sits inside.
@@ -62,7 +105,7 @@
    transition padding here: padding flips instantly with the class, and
    the simultaneous height transition hides the snap. Two overlapping
    0.3s transitions used to cause visible jitter on every open / close. */
-/* All geometry tokens come from `app/styles/01-base.css` (:root).
+/* All geometry tokens come from `app/styles/design/composer.css`.
    Every circular button and every wrapper corner is laid out from the
    same `--composer-corner` value, so a single token change keeps the
    wrapper / send / stop / close / plus buttons concentric. */
@@ -81,25 +124,26 @@
      空间够就扩）；输入框右缘对齐消息头像列。紧凑时同列一样每侧留
      56px（inputArea 24px padding + 这里再收 32px），左侧车道让给
      消息刻度条。 */
-  max-width: min(var(--chat-column-max), calc(100% - 64px));
-  margin: 0 auto;
+
   background: var(--composer-surface);
   backdrop-filter: var(--composer-backdrop-filter);
   -webkit-backdrop-filter: var(--composer-backdrop-filter);
   border: none;
-  /* Claude Code measured: 10px box radius (was 32px concentric-corner
-     geometry — the corner buttons keep their own 50% radius). */
-  border-radius: 10px;
+  /* shadcn Nova input corner (rounded-lg), the same family as the
+     chips and buttons around it. */
+  border-radius: var(--radius-xl);
   /* Chat mode: the controls row lives OUTSIDE the wrapper now, so no
      bottom band is reserved. fn-form mode restores it (below). */
   padding: 0;
-  /* Claude Code measured ring: 1px hairline via box-shadow (no layout
-     shift), slightly stronger on focus. */
+  /* Surface / shadow tokens are per theme (app/styles/themes/*): the
+     borderless shadcn Luma Card look, shadow-sm at rest and shadow-md
+     on hover / focus. */
   box-shadow: var(--composer-shadow);
   overflow: hidden;
   transition: box-shadow 180ms ease,
     height var(--composer-height-transition);
 }
+.inputWrapper:hover,
 .inputWrapper:focus-within {
   box-shadow: var(--composer-shadow-focus);
 }
@@ -116,7 +160,7 @@
   pointer-events: none;
   z-index: 1;
   background: var(--surface-solid);
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   animation: outgoingLayerFade var(--composer-fade-duration) ease forwards;
 }
 /* Suppress the cloned header/body's own fadeIn animation — we want
@@ -126,7 +170,7 @@
   animation: none;
   opacity: 1;
 }
-/* Keyframes kept HERE (not base.css) so turbopack mangles the
+/* Keyframes kept HERE (not the global styles) so turbopack mangles the
    ``@keyframes`` name and the ``animation: <name>`` reference above
    with the same hash. Same fix as the slashOpen/slashClose pair
    further down — turbopack's CSS-module pass mangles ``animation:``
@@ -139,7 +183,7 @@
 
 /* Dark-mode override removed — `var(--text-bright)` already swaps
    between near-black (light) and near-white (dark) via the theme
-   tokens in 01-base.css, so a single rule covers both. */
+   tokens in design/composer.css, so a single rule covers both. */
 
 /* Left cluster of the controls row (permission / plus / tool chips). */
 .inputOptions {
@@ -153,168 +197,113 @@
      (Popovers/menus are portaled, so nothing here gets clipped.) */
   min-width: 0;
   overflow-x: auto;
+  /* Shadow room: overflow-x clips y too, and this row is exactly as
+     tall as its pills; the padding keeps their drop shadow whole and the
+     negative margin leaves the layout unchanged. */
+  padding: 6px;
+  margin: -6px;
   scrollbar-width: none;
 }
 .inputOptions::-webkit-scrollbar { display: none; }
 .inputOptions > * { flex-shrink: 0; }
 
-/* Permission control — Claude's borderless "Accept edits ⌄" text form.
-   The reused <PermissionBadge> keeps its popover + id; these overrides
-   only strip the chip look (border / bg / fixed height). Its tone
-   colour arrives as an INLINE style, so hover brightening uses filter
-   instead of a color override. */
-.inputOptions :global(.runtime-badge.permission-badge) {
-  border: none;
-  background: transparent;
-  padding: 0 2px;
-  height: auto;
-}
-.inputOptions :global(.runtime-badge.permission-badge:hover),
-.inputOptions :global(.runtime-badge.permission-badge[aria-expanded="true"]) {
-  background: transparent;
-  filter: brightness(1.2);
-}
+/* Permission control — an sm control-row Button (buttonVariants) that shows
+   only its label. */
 /* Text-only: drop the shield glyph (no chevron — plain text). 隐藏的
-   必须是图标的整个 wrapper——它带 mr-[4px]，只藏 svg 会留下 4px 幽灵
-   边距，把文本推离 768px 列左缘（Claude 实测文本缩进 = 6px padding）。 */
+   必须是图标的整个 wrapper——只藏 svg 会留下一个 gap 的幽灵边距，把文本
+   推离 768px 列左缘（Claude 实测文本缩进 = 6px padding）。 */
 .inputOptions :global(.permission-badge > :has(svg)) {
   display: none;
 }
 
-/* Agent-model cluster — right side of the bottom row, restyled into
-   Claude's quiet borderless text ("Opus 4.8"): no border / bg /
-   padding, muted colour, model name only (the role glyph is dropped
-   whenever a label exists; with no model picked the glyph stays so
-   the popover trigger remains visible). Scrolls in its own box when
-   narrow. */
+/* Agent-model cluster — right side of the bottom row: sm control-row Buttons
+   (buttonVariants) with the role glyph + model name. Scrolls in its own
+   box when narrow. */
 .agentChips {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
   overflow-x: auto;
+  /* Shadow room: overflow-x clips y too, and this row is exactly as
+     tall as its pills; the padding keeps their drop shadow whole and the
+     negative margin leaves the layout unchanged. */
+  padding: 6px;
+  margin: -6px;
   scrollbar-width: none;
 }
 .agentChips::-webkit-scrollbar { display: none; }
 .agentChips > * { flex-shrink: 0; }
-.agentChips :global(.runtime-badge.agent-badge) {
-  border: none;
-  background: transparent;
-  padding: 0;
-  height: auto;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.agentChips :global(.runtime-badge.agent-badge:hover),
-.agentChips :global(.runtime-badge.agent-badge[aria-expanded="true"]) {
-  background: transparent;
-  color: var(--text-primary);
-}
-/* 角色图标（chat=气泡 / 执行=终端）常驻——用户要求模型名旁保留 logo。 */
+/* 模型图标（气泡）常驻——用户要求模型名旁保留 logo。 */
 
 /* Send / stop button — a single absolute-positioned square anchored
-   to the wrapper. Its `top` is driven by inline style (set in
-   use-fn-form-wrapper.ts) so it interpolates linearly between the chat
-   position (top: 11) and the morphed position
-   (top: wrapper.height − 12 − own height), in sync with the wrapper's
-   own height transition. The result is one continuous motion instead
-   of a row-to-row teleport. */
+   to the wrapper's bottom-right corner in chat mode, so attachments
+   above and long text grow the box upward without moving it. `top`
+   (not `bottom`) carries the anchor so it still transitions into the
+   fn-form header slot below. */
 .actionBtn {
   position: absolute;
-  /* Claude Code measured: 24×24 square with 6px radius, 10px inset
-     from the box's right edge, vertically centered in the 46px
-     single-line row → (46−24)/2 = 11px top. ONE geometry for every
-     mode — the button keeps this identity inside fn-forms too; only
-     `top` glides (inline, from use-fn-form-wrapper.ts), and index.tsx
-     clears the inline value when returning to chat mode so this 11px
-     wins again. */
-  right: 10px;
-  top: 11px;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  box-sizing: border-box;
-  flex-shrink: 0;
+  /* Colours come from buttonVariants in index.tsx (default when there is
+     something to send, ghost when empty, destructive to stop); size and
+     place come from the composer tokens in design/composer.css, centred in the last
+     text line. ONE geometry for every mode — inside fn-forms only `top`
+     and `right` glide (.morphed below). */
+  width: var(--composer-action-size);
+  height: var(--composer-action-size);
+  right: var(--composer-action-inset);
+  top: var(--composer-action-top);
   transition: top var(--composer-height-transition),
     right var(--composer-height-transition),
-    background 0.15s,
+    background-color 0.15s,
+    color 0.15s,
     opacity 180ms ease;
   /* Above the form content during the wrapper height transition. */
   z-index: 2;
 }
 /* Morphed (fn-form) — the button sits in the 48px form header, beside
-   the close ✕: vertically centred (top 12) and one 24px button + 8px
-   gap left of the ✕ at right:12. `top`/`right` transition on the same
+   the close ✕: vertically centred (top 10) and 8px left of the 24px ✕
+   at right:12. `top`/`right` transition on the same
    curve as the wrapper height, so opening a form slides the button
    from the input row's corner into the header slot. */
 .morphed .actionBtn {
-  top: 12px;
+  top: calc((48px - var(--composer-action-size)) / 2);
   right: 44px;
 }
+/* In the chat composer the attachments share the text's column (the
+   chat-input-row's mic gutter + 2px text inset on the left, the send
+   gutter on the right), so cards line up with what you type and the mic
+   keeps the left gutter to itself. The message editor and queued rows
+   reuse the strip at its own padding. */
+.inputWrapper:not(.morphed) > :global([data-attachment-strip]) {
+  padding-left: calc(var(--composer-action-inset) + var(--composer-action-size) + var(--composer-action-gap));
+  padding-right: calc(var(--composer-action-inset) + var(--composer-action-size) + 5px);
+}
 .actionBtn svg {
-  width: 14px;
-  height: 14px;
   fill: currentColor;
+  /* 16px like the chip glyphs around the box; icon-sm would shrink an
+     unsized svg to 14px. */
+  width: 16px;
+  height: 16px;
 }
 
-/* Send glyph is a LINE icon (pqoqubbw arrow-up) — keep it stroked, not
-   filled, overriding .actionBtn's fill. (The Stop square stays filled.) */
-.sendBtn svg {
-  fill: none;
-}
 
-/* Claude 语义：空输入时发送键是安静的灰箭头（透明底），
-   有内容可发才亮珊瑚填充 + 白箭头。 */
-.sendBtn {
-  background: transparent;
-  color: var(--text-muted);
-}
-.sendBtn:disabled {
-  cursor: default;
-}
-.sendBtn:not(:disabled) {
-  background: var(--accent-fill, var(--accent-orange));
-  color: var(--primary-foreground);
-}
-.sendBtn:not(:disabled):hover {
-  background: var(--accent-orange-hover, var(--accent-orange));
-}
 .sendBtn[data-fn-missing="true"] {
   opacity: 0.58;
 }
 .sendBtn[data-fn-missing="true"]:hover {
   opacity: 0.72;
 }
-.sendBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
-.stopBtn {
-  background: var(--accent-red);
-  color: var(--destructive-foreground);
-  opacity: 0.85;
-}
-.stopBtn:hover {
-  opacity: 1;
-}
-
-/* Close button — same 24px-square family as the action button, solid
+/* Close button — same 24px circle family as the action button, solid
    tint fill. Pinned in the 48px form header at the content's 12px
    right inset, vertically centred (top 12). */
 .closeBtn {
   position: absolute;
   top: 12px;
   right: 12px;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: var(--ui-button-h-xs);
+  height: var(--ui-button-h-xs);
+  border-radius: var(--radius-md);
   border: none;
   background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
   color: var(--text-secondary);
@@ -354,7 +343,7 @@
 .plusBtn {
   width: var(--composer-button-size);
   height: var(--composer-button-size);
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   background: transparent;
   border: none;
   color: var(--text-secondary);
@@ -399,7 +388,7 @@
      with the × slot on hover. */
   padding-left: 8px;
   padding-right: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
   color: var(--accent-blue);
   cursor: pointer;
@@ -446,21 +435,16 @@
   margin-left: 4px;
   opacity: 1;
 }
-/* The animated XIcon draws at 24-viewBox / stroke 2; scaled to 12px the
-   line thins to 1px. 3 brings it back to ~1.5px rendered, matching the
-   weight of the chip's main glyph. The icon's wrapper div must not
-   flex-shrink inside the max-width-animated span. */
-.toolChipClose svg {
-  stroke-width: 3;
-}
-.toolChipClose > div {
+/* The icon's wrapper must not flex-shrink inside the max-width-animated
+   span. */
+.toolChipClose > span {
   flex-shrink: 0;
 }
 /* Disabled tool: muted circle, no accent, no × — click turns it on.
    Stays a fixed circle on hover (no width-expand, since there's no ×). */
 .toolChipOff {
   background: transparent;
-  color: var(--text-dim);
+  color: var(--text-secondary);
   opacity: 0.8;
 }
 .toolChipOff:hover {
@@ -484,16 +468,13 @@
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
-  /* Match the top-bar HoverTip exactly (.hover-tip in app/styles/chat.css):
-     a borderless solid badge a touch lighter than the surface, crisp
-     bright text — not the bordered default that read as "off". */
-  background: color-mix(in srgb, var(--text-primary) 14%, var(--bg-secondary));
-  color: var(--text-bright);
+  /* Same badge as every HoverTip (Nova's tooltip, components/ui/tooltip.tsx). */
+  background: var(--surface-tooltip);
+  color: var(--text-on-tooltip);
   border: none;
-  box-shadow: var(--shadow-popover);
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-xs);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease 0.1s;
@@ -514,80 +495,73 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  /* Same column as the box and the env pills, widened by 1px per side:
-     the box's hairline ring is an OUTSET box-shadow, so its visual
-     edge sits 1px outside the wrapper box. Matching that edge keeps
-     the first/last controls (and the popovers they anchor) flush with
-     the input's visible border instead of 1px inside it. */
-  max-width: min(calc(var(--chat-column-max) + 2px), calc(100% - 62px));
+  /* Exactly the box's column (.inputWrapper's width rule): the box has
+     no ring, only a soft shadow, so its visible edge is the wrapper
+     edge and the first/last controls sit flush with it. */
+  max-width: min(var(--chat-column-max), calc(100% - 2 * var(--composer-column-gutter)));
+  /* 10px to the box, the same as the env row above it (6px shadow
+     padding + 4px margin). No fixed height: the row is as tall as its
+     chips (the sm / icon-sm Button), so the chips' tops sit 10px under
+     the box just as the env chips' bottoms sit 10px over it, whatever
+     size the Button has. */
   margin: 10px auto 0;
   padding: 0;
-  min-height: 20px;
   position: relative;
 }
-/* Right cluster order is chat model · exec model · effort · ring
-   (JSX order); one 12px rhythm across both nesting levels, every
-   item 20px tall on the same centerline. */
+/* Right cluster order is chat model · effort · Agent · ring
+   (JSX order), on one 4px rhythm across both nesting levels. */
 .controlsRow .inputBottomRight,
 .controlsRow .agentChips {
-  gap: 12px;
+  gap: 4px;
 }
 
-/* Compact control metrics (measured from claude.ai/code): every text
-   control 20px tall, 12px font, 0 6px padding, 5px radius, transparent
-   bg, hover = subtle tint, 80%-ink text. The permission control's tone
-   colour arrives as an inline style, hence the !important. */
-.controlsRow :global(.runtime-badge.permission-badge),
-.controlsRow :global(.runtime-badge.agent-badge) {
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 5px;
-  font-size: 12px;
-  border: none;
-  background: transparent;
-  color: var(--ink-80) !important;
+/* Every control in this row is a shadcn Button (buttonVariants — the
+   app's `elevated` variant, the same borderless raised look as the box;
+   size sm / icon-sm): height, radius, padding, font and hover all come
+   from those classes. The legacy base rules above (.plusBtn, .toolChip,
+   .effortText — still used by the fn-form band) are unlayered and would
+   beat Tailwind's layered utilities, so this row reverts them to the
+   Button's values with revert-layer instead of restating a lookalike. */
+.controlsRow .plusBtn,
+.controlsRow .plusBtn:hover,
+.controlsRow .toolChip,
+.controlsRow .toolChip:hover,
+.controlsRow .effortText,
+.controlsRow .effortText:hover {
+  width: revert-layer;
+  height: revert-layer;
+  padding: revert-layer;
+  border: revert-layer;
+  border-radius: revert-layer;
+  background: revert-layer;
+  color: revert-layer;
+  font: revert-layer;
+  justify-content: revert-layer;
 }
-.controlsRow :global(.runtime-badge.permission-badge:hover),
-.controlsRow :global(.runtime-badge.permission-badge[aria-expanded="true"]),
-.controlsRow :global(.runtime-badge.agent-badge:hover),
-.controlsRow :global(.runtime-badge.agent-badge[aria-expanded="true"]) {
-  background: var(--bg-hover);
-  color: var(--text-bright) !important;
-  filter: none;
+/* One glyph size and one glyph–label gap for every chip in the row:
+   16px and 5px. The Button's sm and icon-sm sizes shrink an unsized svg
+   to 12.25px from the utilities layer; these unlayered rules win. The
+   effort card opened from the row keeps its own controls' sizes. */
+.controlsRow :is(button, [role="button"]):not(:global(.effort-pill-host) *) svg,
+.controlsRow .toolChipIcon svg {
+  width: 16px;
+  height: 16px;
 }
-
-/* Round buttons go quiet: 20px, 5px radius, no filled circles. */
-.controlsRow .plusBtn {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  color: var(--ink-80);
+.controlsRow :is(button, [role="button"]):not(:global(.effort-pill-host) *) {
+  gap: 5px;
 }
-.controlsRow .plusBtn svg {
-  width: 15px;
-  height: 15px;
+.controlsRow .effortText {
+  display: inline-flex;
 }
-.controlsRow .plusBtn.hasActive {
+/* State tints that are information, not chrome: the plus button and
+   an enabled tool chip show the accent while a tool is on. */
+.controlsRow .plusBtn.hasActive,
+.controlsRow .toolChip:not(.toolChipOff) {
   color: var(--accent-blue);
 }
-/* Active tool chips: transparent 20px squares in normal flow, icon
-   keeps the accent tint as the ON signal. The internal band's ×-slide
-   (hover width-expand) is suppressed here — it would shift the row's
-   neighbours on every hover; the chip body click already toggles the
-   tool off (ToolChip's onClick={onToggle}). */
-.controlsRow .toolChip {
-  width: 20px;
-  height: 20px;
-  padding-left: 2px;
-  padding-right: 2px;
-  border-radius: 5px;
-  background: transparent;
-}
-.controlsRow .toolChip:hover {
-  width: 20px;
-  padding-right: 2px;
-  background: var(--bg-hover);
-}
+/* The internal band's ×-slide is suppressed here — it would shift the
+   row's neighbours on every hover; the chip body click already toggles
+   the tool off (ToolChip's onClick={onToggle}). */
 .controlsRow .toolChip:hover .toolChipClose {
   max-width: 0;
   margin-left: 0;
@@ -610,50 +584,26 @@
   display: none;
   align-items: center;
   height: 20px;
-  padding: 0 6px;
+  padding: 0 8px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink-80);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   white-space: nowrap;
-}
-.controlsRow .effortText {
-  display: inline-flex;
-}
-.fastIndicator {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  width: 0;
-  opacity: 0;
-  overflow: hidden;
-  transform: translateX(-3px);
-  pointer-events: none;
-  transition: width 180ms ease-out, opacity 180ms ease-out, transform 180ms ease-out;
-}
-.fastIndicator[data-active="true"] {
-  width: 22px;
-  opacity: 1;
-  transform: translateX(0);
-}
-@media (prefers-reduced-motion: reduce) {
-  .fastIndicator { transition: none; }
-}
-.controlsRow .effortText:hover {
-  background: var(--bg-hover);
-  color: var(--text-bright);
 }
 /* The host is a zero-width anchor at the wrapper's right edge — the
    floating shell right-aligns to it. */
 .controlsRow :global(.effort-pill-host) {
-  height: 20px;
+  /* As tall as the row (its own h-[32px] is for the standalone pill). */
+  height: auto;
+  align-self: stretch;
   width: 0;
 }
 .controlsRow :global(.effort-pill-shell) {
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 /* Collapsed chip hidden — the text trigger replaces it (it still
    receives the trigger's programmatic .click(); display:none doesn't
@@ -663,265 +613,66 @@
 .controlsRow :global(.effort-pill-shell:not([data-expanded])) {
   display: none;
 }
-/* Single-option variant (no slider): quiet 20px icon chip. */
-.controlsRow :global(.effort-pill-fixed) {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  background-color: transparent !important;
-  color: var(--ink-80);
-}
-.controlsRow :global(.effort-pill-fixed .effort-pill-compact-icon),
-.controlsRow :global(.effort-pill-fixed) svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* Context ring: 12px svg in a 20px hit target (measured spec). The
-   ring is the LAST item of the row, flush with the box's right edge.
-   Colours (track var(--border) / progress var(--accent-orange)) are
-   painted by the component itself (context-badge.tsx). */
-.controlsRow :global(.context-ring-badge) {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-}
-.controlsRow :global(.context-ring-badge) svg {
-  width: 12px;
-  height: 12px;
-}
-
-/* Persistent composer control surfaces. Reuse only the environment-chip
-   fill; borders and inset rings reduce the perceived interior space of
-   these 20px controls. Hover/open increases the borderless fill. */
-.controlsRow :global(.runtime-badge.permission-badge),
-.controlsRow :global(.runtime-badge.agent-badge),
-.controlsRow .plusBtn,
-.controlsRow .toolChip,
-.controlsRow .effortText,
-.controlsRow :global(.context-ring-badge) {
-  background: var(--chip-bg);
-}
-
-.controlsRow :global(.runtime-badge.permission-badge:hover),
-.controlsRow :global(.runtime-badge.permission-badge[aria-expanded="true"]),
-.controlsRow :global(.runtime-badge.agent-badge:hover),
-.controlsRow :global(.runtime-badge.agent-badge[aria-expanded="true"]),
-.controlsRow .plusBtn:hover,
-.controlsRow .plusBtn[aria-expanded="true"],
-.controlsRow .toolChip:hover,
-.controlsRow .effortText:hover,
-.controlsRow .effortControl[aria-expanded="true"] .effortText,
-.controlsRow :global(.context-ring-badge:hover),
-.controlsRow :global(.context-ring-badge[aria-expanded="true"]) {
-  background: color-mix(in srgb, var(--text-bright) 8%, var(--chip-bg));
-}
-
-.controlsRow :global(.effort-pill-fixed) {
-  background-color: var(--chip-bg) !important;
-}
-.controlsRow :global(.effort-pill-fixed:hover) {
-  background-color: color-mix(in srgb, var(--text-bright) 8%, var(--chip-bg)) !important;
-}
-
-/* Narrow composer control labels collapse to their existing role icons.
-   The labels use the visually-hidden pattern instead of display:none so
-   each popover trigger keeps its accessible name. The unnamed query uses
-   the nearest inline-size container: .composer-bottom-row itself. */
-.compactEffortIcon {
-  display: none;
-}
-
-@container (max-width: 560px) {
-  .controlsRow :global(.permission-badge .badge-details),
-  .controlsRow :global(.agent-badge .badge-details),
-  .controlsRow .effortValue {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  .controlsRow :global(.permission-badge),
-  .controlsRow :global(.agent-badge),
-  .controlsRow .effortText {
-    width: 20px;
-    min-width: 20px;
-    padding: 0 !important;
-    justify-content: center;
-  }
-
-  .controlsRow :global(.permission-badge > :has(svg)) {
-    display: inline-flex !important;
-  }
-
-  .controlsRow :global(.permission-badge > :has(svg)),
-  .controlsRow :global(.agent-badge > :has(svg)) {
-    margin-right: 0 !important;
-  }
-
-  .controlsRow .effortText {
-    width: auto;
-  }
-
-  .controlsRow .compactEffortIcon {
-    display: inline-flex;
-  }
-
-  .controlsRow .fastIndicator[data-active="true"] {
-    width: 0;
-    opacity: 0;
-  }
-}
-
-/* Plus dropdown. Shadow stack mirrors shadcn's `shadow-md` (a soft 1-2px
-   ambient + a wider 12-24px diffuse) instead of one heavy 16px / 0.32 alpha
-   drop, which read as too dark on the light theme's beige surface. */
-.plusMenu {
+/* Narrow composer control labels collapse to their existing role icons
+   when the controls do not fit: controls/use-compact-controls-row.ts
+   measures the row's real need (it depends on the tool toggles and the
+   model names, so no fixed width is right) and sets data-compact. The
+   labels use the visually-hidden pattern instead of display:none so
+   each popover trigger keeps its accessible name. */
+.controlsRow[data-compact="true"] :global(.permission-badge .badge-details),
+.controlsRow[data-compact="true"] :global(.agent-badge .badge-details),
+.controlsRow[data-compact="true"] .effortValue {
   position: absolute;
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 4px;
-  min-width: 192px;
-  max-width: 320px;
-  /* 弹层统一配方：popover 白面 + 10px 圆角（=输入框刻度）+ 真 border。
-     行保持圆角"按钮"hover——四周 6px 衬。 */
-  background: var(--surface-popover);
-  border: 1px solid var(--border-popover);
-  border-radius: 10px;
-  box-shadow: var(--shadow-popover);
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  z-index: 100;
-}
-/* Wrapper for a base-ui Menu.Item / SubmenuTrigger. It carries no
-   visuals of its own — the inner <PlusMenuItem> paints the row — it just
-   strips the default focus outline and lets the item stretch full
-   width. Keyboard / hover navigation sets data-highlighted on THIS
-   element (not the inner div, which only reacts to real CSS :hover), and
-   an open submenu trigger gets data-popup-open — so mirror the hover
-   background onto the inner .plusMenuItem for both. */
-.plusMenuRow {
-  outline: none;
-  cursor: pointer;
-}
-.plusMenuRow[data-disabled] {
-  cursor: not-allowed;
-}
-.plusMenuRow[data-disabled] .plusMenuItem {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.plusMenuRow[data-highlighted] .plusMenuItem,
-.plusMenuRow[data-popup-open] .plusMenuItem {
-  background: var(--bg-hover);
-}
-.plusMenuSplitRow {
-  position: relative;
-}
-.plusMenuSplitRow:hover .plusMenuItem {
-  background: var(--bg-hover);
-}
-.plusMenuPrimary {
-  width: 100%;
-  min-width: 0;
-}
-.plusMenuPrimary .plusMenuItem {
-  width: 100%;
-}
-.plusMenuItem {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  /* 24 / 13px / 18px = claude.ai/code 菜单行实测高度；行保持圆角
-     "按钮"hover——与 itemCls 同刻度。 */
-  min-height: 24px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--text-primary);
-  cursor: pointer;
-  user-select: none;
-  transition: background 0.15s, color 0.15s;
-}
-.plusMenuItem:hover {
-  background: var(--bg-hover);
-}
-/* Selected = the label + its check turn the accent colour. No full-row
-   colour fill — Claude 语义：选中态唯一信号是右侧勾，标签不变色。 */
-.plusMenuItem.active {
-  color: var(--text-primary);
-}
-.plusMenuDivider {
+  width: 1px;
   height: 1px;
-  /* 负外边距抵掉面板 6px 衬——分隔线通铺，行保持内缩按钮。 */
-  margin: 6px -6px;
-  background: var(--border);
-}
-.plusMenuLeft {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-/* Fixed 16px icon column (Claude action-menu grammar: every row leads
-   with a 16px line icon) so labels align across rows regardless of a
-   glyph's intrinsic box. */
-.plusMenuIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  color: currentColor;
-}
-.plusMenuLabel {
-  color: currentColor;
-}
-.plusMenuRight {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: currentColor;
-}
-/* Tools 行勾左边的 ⚙ 按钮：点它才弹 Tool Profile 子面板。
-   按钮 22px、图标 14px 居中，比裸 14px 的勾多出 4px 衬——用负
-   右边距抵掉，让 ⚙ 图标和其他行的 ✓ 落在同一竖列上。 */
-.plusMenuGear {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-right: 0;
   padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
-.plusMenuSplitRow[data-tools-active] .plusMenuGear {
-  right: 24px;
+
+.controlsRow[data-compact="true"] :global(.permission-badge),
+.controlsRow[data-compact="true"] :global(.agent-badge),
+.controlsRow[data-compact="true"] .effortText {
+  /* Square icon chips at whatever height the Button size gives. */
+  width: auto;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0 !important;
+  justify-content: center;
 }
-.plusMenuGear:hover,
-.plusMenuGear[data-highlighted],
-.plusMenuGear[data-popup-open] {
-  background: color-mix(in srgb, var(--text-bright) 10%, transparent);
-  color: var(--text-bright);
+
+.controlsRow[data-compact="true"] :global(.permission-badge > :has(svg)) {
+  display: inline-flex !important;
 }
+
+.controlsRow[data-compact="true"] .effortText {
+  width: auto;
+}
+
+/* The lone effort glyph shows the level's colour while the label hides. */
+.controlsRow[data-compact="true"] .effortIcon {
+  color: var(--effort-color);
+}
+
+/* The hidden measuring copy (controls/use-compact-controls-row.ts): every
+   cluster lays out at its natural width, and nothing transitions, so the
+   copy reports full-size widths at once. */
+.controlsRow[data-measuring] > *,
+.controlsRow[data-measuring] > * > * {
+  flex-shrink: 0 !important;
+}
+.controlsRow[data-measuring],
+.controlsRow[data-measuring] * {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* The options (+) dropdown is the shared radix <DropdownMenu> on
+   MENU_PANEL / itemCls (components/ui/menu/menu-styles.ts) — no
+   module CSS lives here for it. */
 
 /* Thinking-effort pill (`<ThinkingEffortPill />` in composer/index.tsx)
    is fully Tailwind. The pill collapses to a `effort: {value} ⌄` chip
@@ -944,7 +695,7 @@
   /* .inputWrapper's width rule minus 48px per side — the menu docks
      onto the input box as a narrower centered tab, never flush with
      the box edges. absolute + left/right 0 + margin auto = centered. */
-  max-width: min(calc(var(--chat-column-max) - 96px), calc(100% - 160px));
+  max-width: min(calc(var(--chat-column-max) - 96px), calc(100% - 2 * var(--composer-column-gutter) - 96px));
   margin: 0 auto;
   /* Bottom edge of the clip = inputWrapper's top edge.
      No magic-number offset; no breakage when the wrapper grows
@@ -1004,12 +755,12 @@
 }
 /* Keyframes live HERE inside the module so turbopack mangles the
    ``@keyframes`` name and the ``animation: <name>`` reference with the
-   same hash. Before this they sat in app/styles/base.css unmangled
+   same hash. Before this they sat in the global styles unmangled
    while the reference above was mangled to
    ``composer-module__xxx__slashOpen``, which never matched anything —
    the slash menu jumped in/out with no transition.
 
-   ``base.css`` keeps duplicates for any non-module consumers; harmless. */
+   The global styles keep duplicates for any non-module consumers; harmless. */
 @keyframes slashOpen {
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
@@ -1026,7 +777,7 @@
      direction — no horizontal stretch that makes vertical
      spacing look pinched. */
   padding: 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   user-select: none;
   transition: background 0.12s;
@@ -1037,18 +788,16 @@
   background: var(--bg-hover);
 }
 .slashMenuName {
-  font-family: var(--font-mono, monospace);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-bright);
   font-weight: 600;
 }
 .slashMenuArgs {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 .slashMenuDesc {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
   margin-top: 3px;
   line-height: 1.4;
@@ -1063,3 +812,9 @@
 /* "Select a model first" hint — shown in the bottom-left controls slot
    (where the effort pill normally lives) when no chat model is picked.
    Muted/warning tone so it reads as guidance, not an error. */
+
+/* Pending requests and the input use one shared column width. */
+.inputWrapper, .decisionColumn {
+  max-width: min(var(--chat-column-max), calc(100% - 2 * var(--composer-column-gutter)));
+  margin: 0 auto;
+}

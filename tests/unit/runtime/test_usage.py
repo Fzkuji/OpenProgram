@@ -6,17 +6,17 @@ import asyncio
 
 import pytest
 
-from openprogram.usage.context import (
+from openprogram.models.usage.context import (
     UsageContext,
     apply_snapshot,
     current_usage_context,
     snapshot,
     usage_scope,
 )
-from openprogram.usage import context as _ctx_mod
-from openprogram.usage.event import UsageEvent
-from openprogram.usage.ledger import UsageLedger
-from openprogram.usage import recorder as _recorder
+from openprogram.models.usage import context as _ctx_mod
+from openprogram.models.usage.event import UsageEvent
+from openprogram.models.usage.ledger import UsageLedger
+from openprogram.models.usage import recorder as _recorder
 import sqlite3
 
 
@@ -161,7 +161,7 @@ def test_existing_usage_database_is_migrated_and_reopens(tmp_path):
         )
     }
     assert {"job_id", "budget_scope_id", "reservation_id"} <= columns
-    assert {"job_admissions", "budget_scopes", "usage_reservations"} <= tables
+    assert not {"job_admissions", "budget_scopes", "usage_reservations"} & tables
     assert reopened.connection().execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
@@ -240,9 +240,8 @@ def test_legacy_task_usage_schema_is_renamed_to_jobs(tmp_path):
     assert migrated.execute(
         "SELECT job_id FROM usage_events WHERE event_id = 'event'"
     ).fetchone()[0] == "t_1"
-    assert tuple(migrated.execute(
-        "SELECT scope_kind, job_id FROM budget_scopes WHERE budget_scope_id = 'scope'"
-    ).fetchone()) == ("job", "t_1")
+    scope = ledger.stored_run_table_rows()["budget_scopes"][0]
+    assert (scope["scope_kind"], scope["job_id"]) == ("job", "t_1")
     indexes = {
         row[0] for row in migrated.execute(
             "SELECT name FROM sqlite_master WHERE type = 'index'"
@@ -277,12 +276,12 @@ def test_usage_aggregation_tracks_unknown_cost_events(ledger):
 # contextvar scope
 
 def test_usage_scope_sets_and_resets():
-    assert current_usage_context().call_kind == "unknown"
+    assert current_usage_context().call_kind is None
     with usage_scope(call_kind="chat", agent_id="ag1"):
         c = current_usage_context()
         assert c.call_kind == "chat"
         assert c.agent_id == "ag1"
-    assert current_usage_context().call_kind == "unknown"
+    assert current_usage_context().call_kind is None
 
 
 def test_usage_scope_nesting_inherits():
@@ -295,7 +294,7 @@ def test_usage_scope_nesting_inherits():
 
 
 def test_snapshot_roundtrip():
-    from openprogram.usage.context import UsageContext, _current
+    from openprogram.models.usage.context import UsageContext, _current
     with usage_scope(call_kind="memory", parent_session_id="p1"):
         snap = snapshot()
     # apply_snapshot sets the process-global contextvar; restore the default
@@ -363,3 +362,39 @@ def test_recorder_never_raises_on_bad_input(ledger, monkeypatch):
     monkeypatch.setattr(_recorder, "default_ledger", ledger)
     assert _recorder.record_message(None, None) is None
     assert _recorder.record_message(_FakeModel(), _FakeMsg(None)) is None
+
+
+def test_recorder_names_the_execution_the_call_is_made_in(ledger, monkeypatch):
+    """A model call made while an execution is bound to the context is
+    recorded under that execution, so a run's usage can be read by its
+    execution tree; one made on a thread of its own (the title the Worker
+    writes beside a finished turn) is not."""
+    import contextvars
+
+    from openprogram.state import execution_facts
+
+    bound: contextvars.ContextVar = contextvars.ContextVar("bound_execution", default=None)
+    monkeypatch.setitem(execution_facts._providers, "current_execution_id", bound.get)
+    monkeypatch.setattr(_recorder, "default_ledger", ledger)
+    bound.set("exec_run")
+    with usage_scope(call_kind="chat", session_id="s1"):
+        turn = _recorder.record_message(_FakeModel(), _FakeMsg(_FakeUsage(10, 1)))
+        failed = _recorder.record_failed_request(_FakeModel())
+        # A new thread starts from an empty context, as this one does.
+        beside = contextvars.Context().run(
+            _recorder.record_message, _FakeModel(), _FakeMsg(_FakeUsage(5, 1)), session_id="s1")
+
+    assert (turn.execution_id, failed.execution_id) == ("exec_run", "exec_run")
+    assert beside.execution_id is None
+
+
+def test_a_query_by_execution_counts_those_executions_only(ledger):
+    ledger.append(_ev(execution_id="run", input_tokens=10))
+    ledger.append(_ev(execution_id="child", input_tokens=20))
+    ledger.append(_ev(execution_id="other_branch", input_tokens=400))
+    ledger.append(_ev(execution_id=None, input_tokens=8000))
+
+    assert ledger.query(execution_ids={"run", "child"})[0].input_tokens == 30
+    assert ledger.query(execution_ids=set())[0].events == 0
+    calls = ledger.calls(call_kinds=["chat"], execution_ids=["child"])
+    assert [(c["execution_id"], c["input_tokens"]) for c in calls] == [("child", 20)]

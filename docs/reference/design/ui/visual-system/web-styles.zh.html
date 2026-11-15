@@ -1,0 +1,53 @@
+<title>Web 样式组织</title>
+<meta name="description" content="Web 应用的全局 CSS 如何对应组件树，字号和字体如何保持一致。">
+<h1>Web 样式组织</h1>
+
+<p>全局 CSS 与组件树一一对应：改一个组件的样式，只打开一个以它命名的文件。</p>
+
+<pre translate="no" tabindex="0">apps/web/app/
+  globals.css       entry: tailwindcss → design → themes → styles
+  styles/
+    index.css       imports the global layer in cascade order
+    design/         design tokens and Tailwind's names for them
+    themes/         colour values, one file per theme (+ fallback.css)
+    base/           document, focus, list row, shell layout, scrollbar,
+                    sidebar, desktop chrome, motion, canvas drag
+    chat/           pane/ messages/ cards/ execution/ composer/ welcome/
+    dag/            graph/ panels/
+    right-dock/     right-sidebar panels</pre>
+<p class="note"><code translate="no">index.css</code> 层叠顺序：base、chat、right-dock、dag。令牌和档位见<a href="design-tokens.zh.html">设计令牌</a>。</p>
+
+<h2 id="rules">规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">一个组件一个文件</th><td>文件开头注释写明组件和源码路径。新组件建新文件。</td></tr>
+<tr><th scope="row">位置跟随组件树</th><td>绘制代码在 <code translate="no">lib/runtime-bridge/dag/render/nodes.ts</code> 的样式放 <code translate="no">dag/graph/nodes.css</code>；聊天气泡放 <code translate="no">chat/messages/bubbles.css</code></td></tr>
+<tr><th scope="row">全局的留在全局</th><td>令牌在 <code translate="no">design/</code>，主题值在 <code translate="no">themes/</code>，外壳在 <code translate="no">base/</code>。<code translate="no">chat/pane/layout.css</code>（<code translate="no">.main</code>、<code translate="no">#chatView</code>）是唯一有意跨组件的文件。</td></tr>
+<tr><th scope="row">Module CSS 不动</th><td>已用 <code translate="no">*.module.css</code> 的组件（输入框）继续用；这棵树只管全局层</td></tr>
+<tr><th scope="row">样式测试</th><td>通过 postcss 读取组件各自的文件，如 <code translate="no">apps/web/tests/tabs/canvas-css-geometry.test.mjs</code> 读 center-tabs 模块</td></tr>
+</tbody>
+</table>
+
+<h2 id="scrollbars">不用原生滚动条</h2>
+<p><code translate="no">base/scrollbar.css</code> 以零优先级隐藏原生滚动条，因为 macOS Chromium 在指针进入可滚动区域时会闪出一条。<code translate="no">lib/runtime-bridge/dom/scrollbar.ts</code> 在区域第一次滚动时装上细的浮动滑块。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">显示</th><td>只在区域滚动或滑块被按住时；900ms 后淡出。纵向，横向溢出时也有横向。</td></tr>
+<tr><th scope="row">不显示</th><td>悬停、尺寸变化、内容变化。淡出的滑块不接收指针事件。</td></tr>
+<tr><th scope="row">布局</th><td>不占宽度</td></tr>
+<tr><th scope="row">层级</th><td>在最上层，包括对话框。<code translate="no">data-scrollbar-layer="content"</code> 让它留在区域的行之上、边缘控件之下（Agent 列表、Agent 网格）。</td></tr>
+<tr><th scope="row">Shadow root</th><td>自己隐藏滚动条并调用 <code translate="no">attachOverlayScrollbar</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="type">字体与字号</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">字号</th><td><code translate="no">design/type.css</code> 九档，<code translate="no">--fs-2xs</code>（11px）到 <code translate="no">--fs-display</code>（30px）；分配见<a href="design-tokens.zh.html#type">字号</a>。<code translate="no">apps/web/scripts/ui/check-design-tokens.mjs</code>（在 <code translate="no">npm run check</code> 中）拒绝其他字号。</td></tr>
+<tr><th scope="row">字体</th><td>Inter 和 JetBrains Mono 的拉丁字符文件走 <code translate="no">next/font</code>（<code translate="no">app/fonts.ts</code>）：预加载，<code translate="no">display: block</code>，不会先用后备字体再重排。其他文字用 <code translate="no">@fontsource</code>。</td></tr>
+<tr><th scope="row">语言</th><td>导出的 HTML 是英文。其他语言时头部脚本标记 <code translate="no">&lt;html data-locale-pending&gt;</code> 隐藏正文；<code translate="no">useTranslation</code> 在 layout effect 中于绘制前切换并去掉标记。脚本没运行时 1.5s 后显示。</td></tr>
+</tbody>
+</table>

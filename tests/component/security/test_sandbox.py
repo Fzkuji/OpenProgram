@@ -1,4 +1,4 @@
-"""Tests for openprogram.sandbox — system-level sandbox."""
+"""Tests for openprogram.host.sandbox — system-level sandbox."""
 from __future__ import annotations
 
 import os
@@ -11,8 +11,8 @@ import threading
 
 import pytest
 
-from openprogram import sandbox
-from openprogram.sandbox import (
+from openprogram.host import sandbox
+from openprogram.host.sandbox import (
     DEFAULT_DENY_READ,
     MODE_AUTO,
     MODE_WORKSPACE_WRITE,
@@ -40,7 +40,7 @@ from openprogram.sandbox import (
 def cfg(monkeypatch):
     """A config the sandbox module reads, without touching the real one."""
     state: dict = {}
-    monkeypatch.setattr("openprogram.setup._read_config", lambda: state)
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: state)
     monkeypatch.setattr(
         sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
     )
@@ -53,13 +53,23 @@ def on(cfg: dict, **extra) -> None:
 
 # --- policy resolution -----------------------------------------------------
 
-def test_auto_default_uses_an_available_backend(cfg, monkeypatch):
+def test_default_is_off_until_a_conversation_turns_it_on(cfg, monkeypatch):
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
+    assert resolve_policy() is None
+    assert sandbox.ui_state(None)["sandbox"] is False
+    assert resolve_policy(session_enabled=True) is not None
+    assert sandbox.ui_state(True)["sandbox"] is True
+
+
+def test_auto_uses_an_available_backend(cfg, monkeypatch):
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
+    cfg["sandbox"] = {"mode": MODE_AUTO}
     assert resolve_policy() is not None
 
 
-def test_auto_default_keeps_commands_usable_without_a_backend(cfg, monkeypatch):
+def test_auto_keeps_commands_usable_without_a_backend(cfg, monkeypatch):
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "not installed")
+    cfg["sandbox"] = {"mode": MODE_AUTO}
     assert resolve_policy() is None
 
 
@@ -85,8 +95,6 @@ def test_mode_on_resolves_a_policy(cfg):
 def test_required_policy_stays_on_when_config_mode_is_off(cfg):
     pol = resolve_policy(required=True)
     assert pol is not None
-    assert any(p.endswith(os.path.join("applications", "**"))
-               for p in pol.deny_write)
 
 
 def test_policy_json_roundtrip_keeps_hash_and_hard_floor(cfg):
@@ -102,8 +110,6 @@ def test_policy_json_roundtrip_keeps_hash_and_hard_floor(cfg):
     assert policy_hash(restored) == policy_hash(policy_from_dict(encoded))
     assert restored.writable_roots == original.writable_roots
     assert restored.network is True
-    assert any(p.endswith(os.path.join("applications", "**"))
-               for p in restored.deny_write)
 
 
 def test_unknown_mode_reads_as_off(cfg):
@@ -111,12 +117,11 @@ def test_unknown_mode_reads_as_off(cfg):
     assert resolve_policy() is None
 
 
-def test_applications_directory_is_always_denied_write(cfg):
-    """A user emptying deny_write must not be able to unblock the one
-    directory whose contents get imported into the agent process."""
+def test_an_emptied_deny_write_leaves_nothing_on_it(cfg):
+    """No directory is written to the list behind the owner's back."""
     on(cfg, deny_write=[])
     pol = resolve_policy()
-    assert any(
+    assert not any(
         p.endswith(os.path.join("applications", "**")) for p in pol.deny_write
     )
 
@@ -197,7 +202,8 @@ def test_write_tool_enforces_process_policy(tmp_path, cfg, monkeypatch):
     ))
     result = "".join(block.text for block in tool_result.content)
 
-    assert result.startswith("Error: sandbox policy:")
+    assert result.startswith("[blocked by sandbox]")
+    assert tool_result.details["denied"] is True
     assert not (outside / "blocked.txt").exists()
 
 
@@ -251,7 +257,7 @@ def test_read_tool_refuses_denied_path(cfg, monkeypatch, secrets):
     _install_deny_read(monkeypatch, str(vault) + "/**")
 
     denied = _tool_text(read, {"file_path": str(vault / "id_rsa")})
-    assert denied.startswith("Error: sandbox policy:")
+    assert denied.startswith("[blocked by sandbox]")
     assert "PRIVATE KEY" not in denied
 
     allowed = _tool_text(read, {"file_path": str(work / "ok.txt")})
@@ -275,7 +281,7 @@ def test_list_tool_refuses_denied_directory(cfg, monkeypatch, secrets):
     _install_deny_read(monkeypatch, str(vault) + "/**")
 
     out = _tool_text(list_dir, {"path": str(vault)})
-    assert out.startswith("Error: sandbox policy:")
+    assert out.startswith("[blocked by sandbox]")
 
 
 def test_glob_tool_drops_denied_matches(cfg, monkeypatch, tmp_path):
@@ -312,7 +318,7 @@ def test_grep_tool_drops_denied_files(cfg, monkeypatch, tmp_path):
 def test_sandbox_module_does_not_import_function_registry():
     """A broken tool import must not be able to break policy construction."""
     import ast
-    source = Path(__file__).resolve().parents[3] / "openprogram/sandbox/__init__.py"
+    source = Path(__file__).resolve().parents[3] / "openprogram/host/sandbox/__init__.py"
     with open(source, encoding="utf-8") as handle:
         tree = ast.parse(handle.read())
     imported = {
@@ -528,12 +534,12 @@ def test_wsl_bwrap_translates_windows_roots_without_acl_changes(
     work.mkdir()
     secret.mkdir()
     monkeypatch.setattr(
-        sandbox._compat,
+        sandbox.platform_environment,
         "windows_wsl_exec_prefix",
         lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
     )
     monkeypatch.setattr(
-        sandbox._compat,
+        sandbox.platform_environment,
         "windows_path_to_wsl",
         lambda path: "/mnt/c/" + str(path).replace("\\", "/").replace(":", ""),
     )
@@ -583,12 +589,12 @@ def test_child_env_refuses_a_credential_named_extra():
 def test_wrap_command_returns_a_list(monkeypatch):
     if sys.platform == "win32":
         monkeypatch.setattr(
-            sandbox._compat,
+            sandbox.platform_environment,
             "windows_wsl_exec_prefix",
             lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
         )
         monkeypatch.setattr(
-            sandbox._compat,
+            sandbox.platform_environment,
             "windows_path_to_wsl",
             lambda path: "/mnt/c/" + str(path).replace("\\", "/").replace(":", ""),
         )
@@ -616,19 +622,20 @@ def _assert_unsandboxed_environment(env):
 
 
 def test_invocation_plain_when_off(cfg):
-    from openprogram.backend.local import _invocation
+    from openprogram.host.backend.local import _invocation
     cfg["sandbox"] = {"mode": "danger-full-access"}
     args, shell, env, sandboxed = _invocation("echo hi", cwd="/tmp")
     _assert_unsandboxed_environment(env)
     assert sandboxed is False
     if sys.platform != "win32":
-        assert (args, shell) == ("echo hi", True)
+        from openprogram.host._platform.command_shell import host_shell
+        assert (args, shell) == ([host_shell().path, "-c", "echo hi"], False)
 
 
 def test_invocation_auto_runs_plain_when_backend_is_unavailable(
     cfg, monkeypatch,
 ):
-    from openprogram.backend.local import _invocation
+    from openprogram.host.backend.local import _invocation
 
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "not installed")
     args, _shell, _env, sandboxed = _invocation("echo hi", cwd="/tmp")
@@ -637,7 +644,7 @@ def test_invocation_auto_runs_plain_when_backend_is_unavailable(
 
 
 def test_invocation_wraps_when_on(cfg):
-    from openprogram.backend.local import _invocation
+    from openprogram.host.backend.local import _invocation
     on(cfg)
     if not is_available():
         pytest.skip("no sandbox backend on this machine")
@@ -648,7 +655,7 @@ def test_invocation_wraps_when_on(cfg):
 
 
 def test_invocation_refuses_when_unavailable(cfg, monkeypatch):
-    from openprogram.backend.local import _invocation
+    from openprogram.host.backend.local import _invocation
     on(cfg)
     cfg["sandbox"]["unavailable_policy"] = "refuse"
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "no tool here")
@@ -659,7 +666,7 @@ def test_invocation_refuses_when_unavailable(cfg, monkeypatch):
 
 
 def test_invocation_warns_and_runs_when_configured_to(cfg, monkeypatch):
-    from openprogram.backend.local import _invocation
+    from openprogram.host.backend.local import _invocation
     on(cfg)
     cfg["sandbox"]["unavailable_policy"] = "warn"
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "no tool here")
@@ -669,10 +676,12 @@ def test_invocation_warns_and_runs_when_configured_to(cfg, monkeypatch):
 
 
 def test_run_reports_the_refusal_instead_of_raising(cfg, monkeypatch):
-    from openprogram.backend.local import LocalBackend
-    on(cfg)
+    from openprogram.host.backend.local import LocalBackend
+    # Windows defaults to warn (its sandbox needs WSL2), so ask for the
+    # refusal this test is about instead of relying on the POSIX default.
+    on(cfg, unavailable_policy="refuse")
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "no tool here")
-    r = LocalBackend().run("echo hi", timeout=5, cwd="/tmp")
+    r = LocalBackend().run("echo hi", timeout=5, cwd=str(Path.cwd()))
     assert r.exit_code == 1
     assert "no tool here" in r.stderr
     assert r.sandbox_error == "unavailable"
@@ -685,18 +694,18 @@ def test_run_reports_the_refusal_instead_of_raising(cfg, monkeypatch):
 def test_run_structures_only_likely_sandbox_denials(
     cfg, monkeypatch, stderr, sandbox_error,
 ):
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host.backend.local import LocalBackend
 
     on(cfg)
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
     if sys.platform == "win32":
         monkeypatch.setattr(
-            sandbox._compat,
+            sandbox.platform_environment,
             "windows_wsl_exec_prefix",
             lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
         )
         monkeypatch.setattr(
-            sandbox._compat,
+            sandbox.platform_environment,
             "windows_path_to_wsl",
             lambda path: "/mnt/c/" + str(path).replace("\\", "/").replace(":", ""),
         )
@@ -719,7 +728,7 @@ def test_run_structures_only_likely_sandbox_denials(
         def terminate(self):
             return True
 
-    monkeypatch.setattr("openprogram.backend.local.ProcessTreeOwner", Owner)
+    monkeypatch.setattr("openprogram.host.backend.local.ProcessTreeOwner", Owner)
     result = LocalBackend().run("false", timeout=5, cwd="/tmp")
     assert result.sandbox_error == sandbox_error
 
@@ -732,36 +741,36 @@ def test_escalated_policy_preserves_only_the_hard_floor(cfg):
     assert policy.network is True
     assert policy.deny_read == ()
     assert "/" in policy.writable_roots
-    assert any(p.endswith(os.path.join("applications", "**"))
-               for p in policy.deny_write)
+    assert not any(p.endswith(os.path.join("applications", "**"))
+                   for p in policy.deny_write)
 
 
 # --- config surface --------------------------------------------------------
 
 def test_sandbox_settings_are_registered():
-    from openprogram.config_schema import SETTINGS, _BY_KEY
+    from openprogram.state.settings import SETTINGS, _BY_KEY
     keys = {s.key for s in SETTINGS}
     assert {"sandbox.mode", "sandbox.deny_read", "sandbox.allow_read",
             "sandbox.deny_write",
             "sandbox.writable_roots", "sandbox.network",
             "sandbox.unavailable_policy", "sandbox.pass_env"} <= keys
-    assert _BY_KEY["sandbox.mode"].default == MODE_AUTO
+    assert _BY_KEY["sandbox.mode"].default == sandbox.MODE_OFF
 
 
 def test_deny_read_ships_loaded():
     """Both harnesses that inspired this ship the engine with an empty
     list. The memory writer is a network-free egress path, so ours does
     not."""
-    from openprogram.config_schema import _BY_KEY
+    from openprogram.state.settings import _BY_KEY
     assert "~/.ssh/**" in _BY_KEY["sandbox.deny_read"].default
     assert "~/.openprogram/auth/**" in _BY_KEY["sandbox.deny_read"].default
 
 
 def test_mode_setting_rejects_an_unknown_value(monkeypatch):
-    from openprogram import config_schema
-    monkeypatch.setattr(config_schema._setup, "update_config",
+    from openprogram.state import settings
+    monkeypatch.setattr(settings.user_config, "update_config",
                         lambda mutator: None)
-    assert "error" in config_schema.set_setting("sandbox.mode", "banana")
+    assert "error" in settings.set_setting("sandbox.mode", "banana")
 
 
 # --- end to end ------------------------------------------------------------
@@ -790,6 +799,48 @@ class TestSeatbeltEndToEnd:
             r = self._run(f"echo bad > {target}", td)
             assert r.returncode != 0
             assert not os.path.exists(target)
+
+    def test_linked_worktree_commits_but_cannot_move_other_branches(self, tmp_path):
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+        source = tmp_path / "source"
+        source.mkdir()
+        subprocess.run([*git, "init", "-q", "-b", "main", str(source)], check=True)
+        (source / "a.txt").write_text("a\n")
+        subprocess.run([*git, "-C", str(source), "add", "a.txt"], check=True)
+        subprocess.run([*git, "-C", str(source), "commit", "-qm", "a"], check=True)
+        worktree = tmp_path / "wt"
+        subprocess.run([*git, "-C", str(source), "worktree", "add", "-q", "-b", "op/wt/x",
+                        str(worktree)], check=True)
+        main = subprocess.run([*git, "-C", str(source), "rev-parse", "main"], check=True,
+                              capture_output=True, text=True).stdout.strip()
+        commit = " ".join(git) + " commit -qam b"
+        args, _ = wrap_command(f"echo b > a.txt && {commit} && git rev-parse HEAD",
+                               str(worktree), SandboxPolicy(), private_tmp=True)
+        result = subprocess.run(args, cwd=worktree, capture_output=True, text=True, timeout=20)
+        assert result.returncode == 0, result.stderr
+        branch = subprocess.run([*git, "-C", str(source), "rev-parse", "op/wt/x"], check=True,
+                                capture_output=True, text=True).stdout.strip()
+        assert result.stdout.strip() == branch != main
+        (source / "c.txt").write_text("c\n")
+        subprocess.run([*git, "-C", str(source), "add", "c.txt"], check=True)
+        subprocess.run([*git, "-C", str(source), "commit", "-qm", "c"], check=True)
+        main = subprocess.run([*git, "-C", str(source), "rev-parse", "main"], check=True,
+                              capture_output=True, text=True).stdout.strip()
+        args, _ = wrap_command(" ".join(git) + " rebase main", str(worktree), SandboxPolicy(),
+                               private_tmp=True)
+        rebase = subprocess.run(args, cwd=worktree, capture_output=True, text=True, timeout=20)
+        assert rebase.returncode == 0, rebase.stderr
+        # Finishing a rebase deletes its pseudo-refs, which takes packed-refs.lock.
+        assert "packed-refs.lock" not in rebase.stderr
+        assert not (source / ".git/worktrees/wt/CHERRY_PICK_HEAD").exists()
+        branch = subprocess.run([*git, "-C", str(source), "rev-parse", "op/wt/x"], check=True,
+                                capture_output=True, text=True).stdout.strip()
+        args, _ = wrap_command(f"git update-ref refs/heads/main {branch}", str(worktree),
+                               SandboxPolicy(), private_tmp=True)
+        assert subprocess.run(args, cwd=worktree, capture_output=True, text=True,
+                              timeout=20).returncode != 0
+        assert subprocess.run([*git, "-C", str(source), "rev-parse", "main"], check=True,
+                              capture_output=True, text=True).stdout.strip() == main
 
     def test_dev_null_redirect_works(self):
         with tempfile.TemporaryDirectory() as td:

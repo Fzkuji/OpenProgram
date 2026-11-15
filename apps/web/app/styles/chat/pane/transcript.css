@@ -1,0 +1,132 @@
+/* 聊天转录滚动区：.chat-area / .chat-messages 列宽与会话切换骨架。
+   对应组件：components/chat/messages/list/message-list.tsx */
+
+/* Chat messages */
+.chat-area {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* Native scroll anchoring keeps content BELOW an expansion stationary,
+     so clicking an execution strip appears to grow upward. Pinning is
+     handled by useChatAreaStick; disable the browser's own anchoring. */
+  overflow-anchor: none;
+  /* 让 minimap 能用 cqw 算出聊天区实际宽度，贴到右缘分割线。 */
+  container-type: inline-size;
+  /* No fade at the top edge: text scrolls under the pane edge at full
+     contrast (a fade read as a smudge over the first visible line). */
+}
+/* While the chat's width changes (a divider drag, a rail opening, a
+   window resize), rows off screen keep their last laid-out height and
+   skip layout, so each frame re-wraps only the rows in view. The size is
+   remembered all the time; content-visibility only applies mid-resize,
+   so find-in-page, the message rail and hover chrome are untouched at
+   rest. use-message-viewport.ts sets the attribute and keeps the reader's
+   place when it clears. */
+.chat-messages > .msg-slot,
+.chat-messages > .message,
+.chat-messages > div[style*="contents"] > .message {
+  contain-intrinsic-size: auto none;
+}
+.chat-area[data-width-settling] .chat-messages > .msg-slot,
+.chat-area[data-width-settling] .chat-messages > .message,
+.chat-area[data-width-settling] .chat-messages > div[style*="contents"] > .message {
+  content-visibility: auto;
+}
+/* The rows in view still re-wrap, and the ones partly above the top
+   edge move what is shown each frame. Mid-resize no row is expanding,
+   so the browser's own scroll anchoring may hold the first visible line
+   in place, in the same frame, as editors keep their top line across a
+   re-wrap. */
+.chat-area[data-width-settling] {
+  overflow-anchor: auto;
+}
+/* Lock scrolling while the welcome panel is up. Driven by the React
+   portal host: `<WelcomeScreen />` renders a child into `#welcome-mount`
+   when visible, so `:has(#welcome-mount > *)` is true exactly then — one
+   source of truth, no imperative `.welcome-visible` class. We key off
+   the mount's stable id, NOT `.welcome`: that class is CSS-Module-hashed
+   (`welcome-screen_welcome__…`), so a literal `.welcome` in this global
+   sheet never matches it. */
+.chat-area:has(#welcome-mount > *) { overflow: hidden; }
+
+
+
+.chat-messages {
+  flex: 1;
+  /* Content column matches the composer width and centers, so the
+     conversation and the input box share one column / center axis
+     (ChatGPT/Claude). 宽度随聊天区自适应，封顶 --chat-column-max；
+     左右留 48px 呼吸，别顶到聊天区边。 */
+  width: 100%;
+  /* 每侧最少 --chat-column-gutter 留白，和输入框同一条规则：右侧让开
+     右上角的浮动控件，左侧装下消息刻度条。宽窗口时列照样扩到
+     --chat-column-max，这个下限只在紧凑时起作用。 */
+  max-width: min(var(--chat-column-max), calc(100% - 2 * var(--chat-column-gutter)));
+  margin: 0 auto;
+  /* Bottom padding gives the latest message room to scroll up to the
+     top of the viewport so the assistant reply lands underneath it
+     (ChatGPT / Claude behaviour). Capped at 25vh — a full
+     `100vh - 220px` was so tall the chat-area could open with the
+     entire viewport empty below the last message even on a fresh
+     short conversation.
+     The composer floats OVER the transcript (absolute, bottom-anchored)
+     and can outgrow 25vh — question panel (goal 挂起 / ask)、attachment
+     chips、multi-line textarea. `--main-composer-height` is its measured
+     real height (published by a ResizeObserver in composer/index.tsx),
+     so the reserve follows whatever the composer stack currently is;
+     normal chats still get the plain 25vh. */
+  padding: 24px 0 max(25vh, calc(var(--main-composer-height, 0px) + 24px)) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+/* 会话切换：数据未到时的骨架占位（claude.ai 式）——右上一个用户气泡
+   占位块 + 若干渐短灰条脉冲；capture 到达后 #chatMessages 整体淡入
+   （.session-enter 由 MessageList 加、220ms 后移除）。 */
+.transcript-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 0;
+}
+.transcript-skeleton .skeleton-bubble {
+  align-self: flex-end;
+  width: 42%;
+  height: 40px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-tertiary);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  margin-bottom: 10px;
+}
+.transcript-skeleton .skeleton-bar {
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+#chatMessages.session-enter { animation: session-fade-in 180ms ease-out; }
+@keyframes session-fade-in { from { opacity: 0; } }
+
+/* Recycled off-screen rows keep a measured-height slot so scrollHeight
+   stays aligned with a fully mounted transcript. msgAppear is first-insert
+   only: a slot (or a plain .msg-row) gets data-appear when its message has just arrived, so a
+   transcript that mounts or comes back into view (a split, the chat shell
+   shown again, a recycled row) never fades its rows up from nothing. */
+.msg-slot {
+  flex-shrink: 0;
+  width: 100%;
+}
+.msg-slot:not([data-appear]) .message,
+.msg-row:not([data-appear]) .message,
+.msg-slot[data-seen="1"] .message {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}

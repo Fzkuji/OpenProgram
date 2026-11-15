@@ -20,9 +20,9 @@ import openprogram.programs.tools.files.write  # noqa: F401
 import openprogram.programs.tools.files.edit  # noqa: F401
 import openprogram.programs.tools.files.apply_patch  # noqa: F401
 
-from openprogram.programs._runtime import get as get_tool
-from openprogram.store import _store, _current_turn_id, SessionStore, SessionNodeWriter
-from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.programs._host.runtime import get as get_tool
+from openprogram.state.store import _store, _current_turn_id, SessionStore, SessionNodeWriter
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
 
 
 SESSION_ID = "op-fb-integ-test"
@@ -48,7 +48,7 @@ def session_root(tmp_path: Path):
 @pytest.fixture
 def turn_ctx(session_root, tmp_path):
     """Install per-turn ContextVars the way the dispatcher does."""
-    from openprogram.worktree.context import reset_worktree, set_worktree
+    from openprogram.state.worktree.context import reset_worktree, set_worktree
 
     shim = SessionNodeWriter(session_root, SESSION_ID)
     store_tok = _store.set(shim)
@@ -126,7 +126,7 @@ def test_apply_patch_add_then_restore_deletes(turn_ctx, tmp_path):
 def test_tools_noop_without_turn_context(tmp_path):
     """No ContextVars installed → tools still work, no backup recorded
     (and crucially, no crash)."""
-    from openprogram.worktree.context import reset_worktree, set_worktree
+    from openprogram.state.worktree.context import reset_worktree, set_worktree
 
     token = set_worktree(str(tmp_path))
     try:

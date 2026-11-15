@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from openprogram.agentic_programming.runtime import Runtime
+from openprogram.runtime.agent.runtime import Runtime
 
 pytestmark = pytest.mark.slow
 
@@ -29,7 +29,7 @@ skip_no_key = pytest.mark.skipif(
 def runtime_model() -> str:
     """First :free model the catalog still resolves — free-tier ids churn,
     so a hardcoded one rots into 'Unknown model'."""
-    from openprogram.providers import get_model
+    from openprogram.models.providers import get_model
     candidates = (
         "openai/gpt-oss-120b:free",
         "meta-llama/llama-3.3-70b-instruct:free",

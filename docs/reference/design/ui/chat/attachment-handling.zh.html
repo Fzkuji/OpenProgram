@@ -1,0 +1,134 @@
+<title>附件处理</title>
+<meta name="description" content="每种附件在输入框里显示什么、模型收到什么、之后还留下什么，以及附件条和排队消息。">
+<h1>附件处理</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">加入方式</th><th scope="col">输入框</th><th scope="col">模型收到</th><th scope="col">之后重新打开</th></tr></thead>
+<tbody>
+<tr id="case-1"><th scope="row">粘贴截图</th><td>图片，随聊天保存</td><td>图片内容，加上路径</td><td>同一张截图</td></tr>
+<tr id="case-2"><th scope="row">拖入图片</th><td>图片，已存聊天副本</td><td>立即收到图片内容</td><td>发送时的版本，原文件改动或消失也不受影响</td></tr>
+<tr id="case-3"><th scope="row">文本、代码、数据</th><td>原文件引用</td><td>路径，按任务读取。不上传、不复制、不把文本放入请求</td><td>原文件当前内容；文件不存在时明确报告</td></tr>
+<tr id="case-4"><th scope="row">PDF、Word、Excel</th><td>原文件引用</td><td>路径。助手选择按页读取、段落提取或表格分析。加入时不解析；缺工具或扫描件不可读时说明原因</td><td>默认无副本</td></tr>
+<tr id="case-5"><th scope="row">文件夹</th><td><code translate="no">project/</code> · 文件夹</td><td>第一层清单（最多 200 项、8 KB），再按需打开文件</td><td>清单文本，不是文件夹副本</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">限制或例外</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">图片大小</th><td>原图最多保留 32 MiB。发给模型的版本最多 5 MiB，超出时等比缩放。这是应用限制，不是自动发现的模型限制</td></tr>
+<tr><th scope="row">模型不支持图片输入</th><td>这一轮停止，并提示 “The selected model does not support image input. Choose a model that supports images.”</td></tr>
+<tr><th scope="row">浏览器选择、没有本机路径的文件</th><td>由后端保存：单文件 32 MB，单轮 64 MB</td></tr>
+</tbody>
+</table>
+<p class="note">文件在聊天中的显示以及 Agent 如何回传文件：<a href="chat-attachments.zh.html">聊天附件</a>。不涉及远程连接功能。</p>
+
+<h2 id="shared">所有附件共用的规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row">失败</th><td>发送确认前，文字和附件都保留。上传、读取和发送失败都说明原因。断线后先查上次结果，避免重复发送</td></tr>
+<tr><th scope="row">版本</th><td>引用会随编辑、移动和删除变化。保存的副本固定版本。清单和摘录都不是文件副本</td></tr>
+<tr><th scope="row">附件文本</th><td>是提供的材料，不是新的用户指令</td></tr>
+<tr><th scope="row">拖入的文件</th><td>进入它落在的那个窗格的输入框，拖放提示只盖住那个窗格。分屏时落在所有窗格之外，进入当前聚焦的窗格。排队消息或已发消息的编辑框保留拖到它上面的文件</td></tr>
+<tr><th scope="row">分开处理</th><td>聊天持久化、图片传递和文件读取分开处理。把所有图片压到执行输入上限并不够，复制所有本地文件也不是解法</td></tr>
+</tbody>
+</table>
+
+<h2 id="attachment-style">输入框附件条</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 118" role="img" aria-label="一行等高的附件项，按加入顺序排列。图片带缩略图、名称和 PNG 1.3 MB。Excel 文件带格式图标，大小后显示读取中。PDF 显示读取失败。每项都有移除按钮。">
+  <rect class="tile" x="1" y="10" width="212" height="46" rx="8"/>
+  <rect class="tile" x="8" y="17" width="32" height="32" rx="4"/>
+  <text x="48" y="30">Screenshot 3.43.png</text>
+  <text class="t-soft" x="48" y="48">PNG · 1.3 MB</text>
+  <text class="t-soft" x="196" y="30">×</text>
+  <rect class="tile" x="225" y="10" width="212" height="46" rx="8"/>
+  <text class="t-soft mid" x="248" y="38">XLSX</text>
+  <text x="272" y="30">Annual Report.xlsx</text>
+  <text class="t-soft" x="272" y="48">126 KB · 读取中…</text>
+  <text class="t-soft" x="420" y="30">×</text>
+  <rect class="tile" x="449" y="10" width="212" height="46" rx="8"/>
+  <text class="t-soft mid" x="472" y="38">PDF</text>
+  <text x="496" y="30">report.pdf</text>
+  <text class="t-no" x="496" y="48">842 KB · 读取失败</text>
+  <text class="t-soft" x="644" y="30">×</text>
+  <text class="t-no" x="449" y="74">无法读取 report.pdf。</text><text class="t-no" x="449" y="94">请重新添加或移除。</text>
+  <text class="t-soft" x="1" y="82">按加入顺序，不按类型分组</text>
+  <text class="t-soft" x="1" y="106">212 × 46，32 px 缩略图或格式图标</text>
+</svg>
+<dl class="pairs fig-narrow">
+  <dt>Screenshot 3.43.png</dt><dd>PNG · 1.3 MB</dd>
+  <dt>Annual Report.xlsx</dt><dd>126 KB · 读取中…</dd>
+  <dt>report.pdf</dt><dd>842 KB · 读取失败。请重新添加或移除。</dd>
+</dl>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">名称</th><td>单行截断；格式和大小始终可见</td></tr>
+<tr><th scope="row">第二行</th><td>已确认的格式，未知时写“文件”。文件夹写“文件夹”，不编造大小</td></tr>
+<tr><th scope="row">缩略图</th><td>图片等比显示，不大幅圆角裁切。其他文件用带格式文字的图标，不只靠颜色区分</td></tr>
+<tr><th scope="row">项目主体</th><td>打开预览或详情：完整名称、位置、大小、副本状态。移除始终可见，是单独的可键盘操作</td></tr>
+<tr><th scope="row">项目很多时</th><td>统一换行，最多两行（112 px），之后滚动，文本区始终可用</td></tr>
+<tr><th scope="row">读取中或失败</th><td>显示在该项上，高度不变。说明为什么不能发送；只需重新添加或移除失败项，其他项不动</td></tr>
+</tbody>
+</table>
+
+<h2 id="queued-composer">排队消息</h2>
+<p>运行中输入的消息集中在输入框上方的一张浮起卡片里，位于滚动对话之外。每条消息保留自己的身份、顺序、附件和设置。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">行</th><td>一行：标签（“下一轮”，或未发送的原因）、文字、悬停操作（加入本轮、重试、编辑、移除）。点击文字展开完整消息和附件</td></tr>
+<tr><th scope="row">卡片</th><td>高度有上限。标题可折叠；<strong>全部清除</strong>移除未在编辑的行。拖动或 Alt+↑/↓ 调整发送顺序</td></tr>
+<tr><th scope="row">捕获内容</th><td>文字、展开后的粘贴内容、附件字节或原始路径、发送设置。附件可以排队而不启动新的执行</td></tr>
+<tr><th scope="row">编辑</th><td>文字、选择文件、拖入文件、预览、移除单个附件。该行保持到<strong>保存</strong>（保留位置和原设置）或<strong>取消</strong>（保留原内容），期间不发送</td></tr>
+<tr><th scope="row">加入本轮</th><td>附件一起带上：保存到会话并以路径写入文字，图片保留到下一个安全点给模型。编辑或移除投递未确认的行时，先把消息从本轮收回；本轮已收到的保留</td></tr>
+<tr><th scope="row">发送</th><td>走普通聊天发送和附件封装，按顺序，使用编辑后的确切内容。失败或被拒时保留整条消息，被接受后才释放</td></tr>
+<tr><th scope="row">保留范围</th><td>刷新、关闭窗口、重启 App 后都在。行存 <code translate="no">localStorage</code>，字节存 IndexedDB；窗口在一把独占锁下接管无主的行。发送前先移除该行：崩溃可能丢这一次发送，但绝不重复</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>排队附件的预览和限制</summary>
+<ul>
+<li>未发送的预览使用捕获的本地内容，包括会话工作目录之外的本机路径：图片和文本直接渲染，有大小上限的 PDF 用本地 Blob URL。</li>
+<li>本机文档发送时仍是路径引用；预览字节不扩大后端文件访问范围。</li>
+<li>已持久化的附件沿用只读的 <code translate="no">DocumentWindow</code>。预览缺失或不支持时说明限制，附件保留。</li>
+<li>对话中的用户消息保留各自的控件和气泡，纵向间距收紧。历史编辑仍是分叉后重新发送。</li>
+<li>队列不删除历史、不改变模型行为、不合并指令、不修改审批决定。</li>
+<li>布局参照用户对 Codex 的描述：保留消息靠近输入框、占位小。不假设 Codex 未公开的存储或编辑行为。</li>
+</ul>
+</details>
+
+<details>
+<summary>未采用的方案</summary>
+<table class="stack">
+<thead><tr><th scope="col">场景</th><th scope="col">方案</th><th scope="col">取舍</th></tr></thead>
+<tbody>
+<tr><th scope="row">粘贴截图</th><td>保存后由工具按需读取</td><td>推迟读取，但多一步工具调用；没有工具就无法分析</td></tr>
+<tr><th scope="row">拖入图片</th><td>引用原文件，按需复制</td><td>省存储，但原文件移动或删除后可能打不开，之后读到的是编辑后的内容</td></tr>
+<tr><th scope="row">文本、代码、数据</th><td>直接放入文本</td><td>省去首次读取，适合短文件；长输入需要上限</td></tr>
+<tr><th scope="row">PDF、Word、Excel</th><td>先准备预览再继续读</td><td>方便但增加处理时间；要显示部分读取和失败；并非所有格式都支持</td></tr>
+<tr><th scope="row">文件夹</th><td>只加路径</td><td>不递归复制，但多一次列目录调用</td></tr>
+</tbody>
+</table>
+</details>
+
+<details id="sources">
+<summary>其他实现</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">观察结果</th></tr></thead>
+<tbody>
+<tr id="ref-codex"><th scope="row">Codex 公开终端，不是桌面 UI</th><td>选择文件时插入路径；可解码的图片成为图片输入；剪贴板图片写成临时 PNG。桌面端的长期副本策略未确认。有多种图片处理模式，按能力和配置选择；工具的默认尺寸不等于所有模型的限制。<a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/bottom_pane/chat_composer.rs">文件选择</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/clipboard_paste.rs">剪贴板</a> · <a href="https://learn.chatgpt.com/docs/image-inputs">图片指南</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/image_preparation.rs">图片准备</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs">图片输入</a></td></tr>
+<tr id="ref-opencode"><th scope="row">OpenCode V2</th><td>受支持的文本附件包含其文本；目录包含非递归清单；PNG、JPEG、GIF、WebP 成为图片媒体。SVG 按文本；PDF、音视频和其他二进制不直接进入模型请求。服务器可访问的文件可被引用。可配置的缩放不保证满足每个模型的限制。<a href="https://opencode.ai/v2/docs/attachments">附件指南</a></td></tr>
+<tr id="ref-openclaw"><th scope="row">OpenClaw</th><td>频道媒体下载到运行时。支持视觉的模型可收到图片；其他配置生成描述。文档可提取文本，扫描件有配置的页面图回退。交给工具需要可访问的保存路径。频道接收限制不是通用模型限制，也不等同于本地拖放。<a href="https://docs.openclaw.ai/nodes/images">媒体</a> · <a href="https://docs.openclaw.ai/nodes/media-understanding">理解</a></td></tr>
+</tbody>
+</table>
+<p class="note">临时存储、上传到运行时和聊天长期保留是不同的承诺；来源未说明的保留期限不做推断。</p>
+</details>
+
+<h2 id="status">实现状态</h2>
+<p>五种行为、附件条和排队消息都已实现。已安装 App 的检查确认了混合排序、格式和大小标签、完整图片预览、草稿恢复、文件夹清单、原图保留和模型直接识图。文档读取的端到端流程尚未验证，因为实际执行在请求读取后会等待。</p>
+<p class="note">代码：<a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/chat/composer/attach/use-composer-attachments.ts">添加文件</a> · <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/interfaces/server/ws_actions/chat/attachments.py">存储</a> · <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts">提交</a></p>

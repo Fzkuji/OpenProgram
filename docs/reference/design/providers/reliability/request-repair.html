@@ -1,0 +1,53 @@
+<title>Request repair</title>
+<meta name="description" content="Mending requests a provider refuses for their shape, and remembering what the refusal taught.">
+<h1>Request repair</h1>
+<p>Every provider stream passes through it: <code translate="no">streaming.stream._metered</code> calls <code translate="no">request_repair.prepared</code> before the provider and reads its events through <code translate="no">request_repair.repairing</code>.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Hook</th><th scope="col">When</th><th scope="col">Answers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">before_sending(model, context)</code></th><td>Before every request</td><td>The context with earlier lessons applied</td></tr>
+<tr><th scope="row"><code translate="no">after_refusal(model, context, refusal)</code></th><td>An attempt ended in an error before saying anything</td><td>The mended context, or <code translate="no">None</code> if unknown</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">REPAIRS</code>: <code translate="no">prefill</code>, then <code translate="no">body_cap</code>. The first mended request goes again, at most <code translate="no">MAX_RESENDS</code> (3) times.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Stream rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Events</th><td>Never held back; the consumer sees the reply begin once</td></tr>
+<tr><th scope="row">Resend</th><td>Its first <code translate="no">start</code> is dropped; the refusal is not passed on</td></tr>
+<tr><th scope="row">After anything beyond <code translate="no">start</code></th><td>Events pass through, nothing is resent</td></tr>
+<tr><th scope="row">Cancel</th><td><code translate="no">RepairingStream.cancel_producer</code> closes the current provider stream, with the same bounded wait</td></tr>
+<tr><th scope="row">Refusal no repair knows</th><td>Goes on to <a href="llm-fault-tolerance.html">retry and failover</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="repairs">The two repairs</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Body cap</th><th scope="col">Prefill</th></tr></thead>
+<tbody>
+<tr><th scope="row">Refusal</th><td>Status 413, or body, request, payload or entity too large; not a context overflow (<code translate="no">utils/overflow.py</code>)</td><td>"does not support assistant message prefill", "Requests ending with a model turn are not supported", "last message cannot be from the assistant"</td></tr>
+<tr><th scope="row">Seen on</th><td>Anthropic's 32 MB <code translate="no">request_too_large</code>, relays</td><td>Anthropic models behind some gateways, Volcengine Agent Plan, Gemini on Vertex AI</td></tr>
+<tr><th scope="row">Learns</th><td>The smallest size named below what was sent, else ¾ of what was sent</td><td>That this model refuses</td></tr>
+<tr><th scope="row">Remembered per</th><td>Provider and base URL</td><td>Provider, API and model</td></tr>
+<tr><th scope="row">Mends</th><td>Fits to ¾ of the cap: oldest history images replaced one by one with a note</td><td>Adds a user turn <code translate="no">Continue.</code></td></tr>
+<tr><th scope="row">Leaves alone</th><td>The latest user message's images, all text, a tool result's words</td><td>A conversation ending with a tool call</td></tr>
+<tr><th scope="row">Gives up</th><td>Every earlier image out and still too big: refusal goes on</td><td>–</td></tr>
+</tbody>
+</table>
+<p class="note">The note: <code translate="no">[An earlier image was left out: the request was over the provider's size limit.]</code> The ¾ margin lets a conversation grow a few turns before more images go, so its prompt cache is not broken every turn.</p>
+
+<details>
+<summary>Files</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">models/providers/utils/request_repair.py</code></th><td><code translate="no">prepared</code>, <code translate="no">repairing</code>, order</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/utils/body_cap.py</code></th><td>Size refusals, caps, fitting</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/utils/prefill.py</code></th><td>Prefill refusals, per-model memory</td></tr>
+<tr><th scope="row"><code translate="no">models/providers/streaming/stream.py</code></th><td><code translate="no">_metered</code></td></tr>
+</tbody>
+</table>
+<p>Both memories last for the process; <code translate="no">tests/conftest.py</code> clears them after each test. The repairs follow magpie's body cap and prefill memory (yetone/magpie, MIT).</p>
+</details>

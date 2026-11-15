@@ -1,0 +1,8 @@
+.officeLoading { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:24px; color:var(--text-secondary); background:var(--bg-primary); text-align:center; }
+.officeLoadingTitle { font-size:var(--fs-sm); color:var(--text-secondary); }
+.officeLoadingDetail { max-width:min(100%, 420px); font-size:var(--fs-xs); overflow-wrap:anywhere; }
+.officeSpinner { animation:officeSpin 1s linear infinite; }
+@keyframes officeSpin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .officeSpinner { animation:none; } }
+
+.officeRuntimeError { position:absolute; top:0; left:0; right:0; z-index:1; background:var(--bg-primary); }

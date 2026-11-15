@@ -3,15 +3,24 @@ import json
 
 import pytest
 
-from openprogram.self_update import UpdatePhase
-from openprogram.self_update.control import supervisor
-from openprogram.self_update.control.maintenance import maintenance_blocks
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.self_update.verification.test_system_probe import live
-from tests.component.self_update.verification.test_verification_channel import verifier
-from tests.component.self_update.delivery.test_install_transaction import installation, phase
-from tests.component.self_update.recovery.test_commit_recovery import accepted, run, interrupt, expire
+from openprogram.operations.self_update import UpdatePhase
+from openprogram.operations.self_update.control import supervisor
+from openprogram.operations.self_update.control.maintenance import maintenance_blocks
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.self_update.verification import test_system_probe as _test_system_probe
+from tests.component.self_update.verification import test_verification_channel as _test_verification_channel
+from tests.component.self_update.delivery.test_install_transaction import phase
+from tests.component.self_update.delivery import test_install_transaction as _test_install_transaction
+from tests.component.self_update.recovery.test_commit_recovery import run, interrupt, expire
+from tests.component.self_update.recovery import test_commit_recovery as _test_commit_recovery
 from tests.component.config.test_distribution_release._support import MACOS_DESKTOP_INSTALL
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+live = _test_system_probe.live
+verifier = _test_verification_channel.verifier
+installation = _test_install_transaction.installation
+accepted = _test_commit_recovery.accepted
 
 pytestmark = [pytest.mark.macos, MACOS_DESKTOP_INSTALL]
 
@@ -60,7 +69,7 @@ def test_terminal_controller_reentry_clears_only_after_fresh_verification(accept
 
 @pytest.mark.parametrize("damage", ["decision", "journal", "app", "doctor", "owner", "evidence_during_probe"])
 def test_terminal_cleanup_preserves_maintenance_on_changed_evidence(accepted, monkeypatch, damage):
-    from openprogram.self_update.verification import system_probe
+    from openprogram.operations.self_update.verification import system_probe
     v = accepted
     terminal(v, monkeypatch, "succeeded")
     state = (v.update / "state.json").read_bytes()
@@ -104,8 +113,8 @@ def test_manual_recovery_is_not_automatically_cleared(accepted, monkeypatch):
 def test_aborted_prepared_transaction_recovers_without_activation(live, installation, monkeypatch, reason):
     import hashlib
     import os
-    from openprogram.webui.routes.settings import misc
-    from openprogram.self_update import SelfUpdateStore
+    from openprogram.interfaces.server.routes.settings import misc
+    from openprogram.operations.self_update import SelfUpdateStore
     from tests.component.self_update.delivery.test_install_transaction import INSTALLER, prepare
     record, _, _ = live
     store = SelfUpdateStore()
@@ -116,19 +125,19 @@ def test_aborted_prepared_transaction_recovers_without_activation(live, installa
     store.transition(record.request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
     request = replace(record.request, update_id="su_aborted")
     store.create(request)
-    store.transition(request.update_id, UpdatePhase.STAGING)
+    store.transition(request.update_id, UpdatePhase.BUILDING)
     store.transition(request.update_id, UpdatePhase.READY, detail={"transaction_dir": str(transaction)})
-    from openprogram.self_update.control.maintenance import enter_maintenance
+    from openprogram.operations.self_update.control.maintenance import enter_maintenance
     enter_maintenance(request.update_id)
     if reason == "cancel":
         import asyncio
-        from openprogram.agent import authority
+        from openprogram.runtime.permissions import authority
         from openprogram.programs.tools.system import self_update as public_tools
         from tests.component.programs.tools.test_self_update_tools import _request
         monkeypatch.setattr(public_tools, "owner_principal_id", authority.owner_principal_id)
         turn = _request(session_id=request.session_id)
         monkeypatch.setattr(public_tools, "_turn_context", lambda: (turn, "a1"))
-        result = asyncio.run(public_tools.self_update_cancel.execute("cancel-recovery", {"update_id": request.update_id}, None, None))
+        result = asyncio.run(public_tools.self_update.execute("cancel-recovery", {"action": "cancel", "update_id": request.update_id}, None, None))
         assert not result.is_error
     else:
         supervisor._abort(store, request.update_id, UpdatePhase.READY, "quiescence timed out")

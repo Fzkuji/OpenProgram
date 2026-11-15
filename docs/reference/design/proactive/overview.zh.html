@@ -1,0 +1,58 @@
+<title>主动层</title>
+<meta name="description" content="监视事件流并在需要时出手的规则：一个完整场景和其中用到的五个概念。">
+<h1>主动层</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 170" role="img" aria-label="模型想运行 rm -rf 删除家目录。运行之前发出 tool.before 事件。框架唤醒监视 tool.before 的规则。DangerousCommandGuard 评估事件并返回 gate 动作。命令被拦下，理由回到模型。">
+  <defs><marker id="ov-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">模型</text>
+  <text class="t-cmd notranslate" translate="no" x="0" y="66">rm -rf ~</text>
+  <line class="ln" x1="84" y1="33" x2="136" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="148" y="40">事件</text>
+  <text class="t-cmd notranslate" translate="no" x="148" y="66">tool.before</text>
+  <line class="ln" x1="252" y1="33" x2="304" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="316" y="40">规则</text>
+  <text class="t-cmd notranslate" translate="no" x="316" y="66">DangerousCommandGuard</text>
+  <text class="t-soft" x="316" y="88">evaluate(event, state)</text>
+  <line class="ln" x1="500" y1="33" x2="552" y2="33" marker-end="url(#ov-a)"/>
+  <text class="t-big" x="564" y="40">动作</text>
+  <text class="t-cmd notranslate" translate="no" x="564" y="66">Gate.ask</text>
+  <text class="t-no" x="564" y="90">命令被拦下</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>模型</strong><small><code translate="no">rm -rf ~</code></small></li>
+  <li><strong>事件</strong><small><code translate="no">tool.before</code></small></li>
+  <li><strong>规则</strong><small><code translate="no">DangerousCommandGuard</code></small><small><code translate="no">evaluate(event, state)</code></small></li>
+  <li class="flow-end"><strong>动作</strong><small><code translate="no">Gate.ask</code></small><p class="refused">命令被拦下</p></li>
+</ol>
+<p class="note">规则不看 Agent 内部，只看事件流。动作如何落地由框架负责。</p>
+</figure>
+
+<table class="stack">
+<thead><tr><th scope="col">概念</th><th scope="col">是什么</th><th scope="col">详情</th></tr></thead>
+<tbody>
+<tr><th scope="row">事件</th><td>“刚发生了某事”的记录，只追加</td><td><a href="event-layer.zh.html">事件层</a></td></tr>
+<tr><th scope="row">规则（Policy）</th><td>一个 Python 类：盯哪些事件、如何决定。新能力就是新类。</td><td><a href="execution-model.zh.html">规则与运行方式</a></td></tr>
+<tr><th scope="row">车道</th><td>gate 事前拦截，必须快；observer 事后观察，可以慢。时序要求相反，所以分开。</td><td><a href="execution-model.zh.html">规则与运行方式</a></td></tr>
+<tr><th scope="row">动作</th><td>固定几种：拦截、放行或询问；提醒；注入提示；后台准备</td><td><a href="policies-mvp.zh.html">三条模板规则</a></td></tr>
+<tr><th scope="row">状态</th><td>由事件折叠出的当前状况</td><td><a href="events-and-state.zh.html">事件与状态</a></td></tr>
+</tbody>
+</table>
+
+<p>状态是它不止于钩子的原因。只看眼前一刻的规则什么都不需要。“同一工具连续失败三次”需要记忆，用钩子的话，每条这样的规则都要自己写计数器、重置逻辑和会话隔离。</p>
+
+<details>
+<summary>有意不做</summary>
+<p>都可以日后加上，无需返工；研究笔记在 <code translate="no">_research_archive/</code>。</p>
+<ul>
+<li>持久化事件的崩溃恢复和防篡改</li>
+<li>用离线回放衡量新规则的误报率</li>
+<li>对抗性安全和密钥脱敏</li>
+<li>打扰预算和自动熔断；由 <code translate="no">cooldown_s</code> 承担</li>
+</ul>
+</details>
+
+<h2>实现状态</h2>
+<p>代码在 <code translate="no">openprogram/runtime/proactive/</code>，有测试，但未在 worker 启动时安装。各动作的状态见<a href="execution-model.zh.html">规则与运行方式</a>。</p>
+
+<p class="next"><a href="events-and-state.zh.html">事件与状态</a></p>

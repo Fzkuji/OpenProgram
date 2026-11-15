@@ -11,15 +11,26 @@ export interface ContextBreakdown {
   classified_estimate?: number;
   classification_scale?: number;
   input_used?: number;
-  free_space?: number;
+  free_space?: number | null;
   total_used?: number;
-  window?: number;
+  /** ``null`` when the model's window is not known. */
+  window?: number | null;
   basis?: string;
-  tools?: Array<{ name: string; tokens: number; deferred: boolean }>;
+  tools?: Array<{ name: string; tokens: number; deferred: boolean; description?: string }>;
   skills_detail?: Array<{ name: string; source: string; tokens: number }>;
-  memory_detail?: Array<{ path: string; tokens: number }>;
-  mcp_detail?: Array<{ server: string; name: string; tokens: number; deferred: boolean }>;
-  context_window?: number;
+  /** Each layer's MEMORY.md, with the text injected. */
+  memory_detail?: Array<{ path: string; tokens: number; text?: string }>;
+  /** The System prompt row by component (base, environment, AGENTS.md…). */
+  system_detail?: Array<{ name: string; tokens: number; text?: string }>;
+  mcp_detail?: Array<{
+    server: string; name: string; tokens: number; deferred: boolean; description?: string;
+  }>;
+  /** Messages by kind, and the largest messages on the branch. */
+  messages_detail?: {
+    groups: Array<{ kind: string; tokens: number; count: number }>;
+    top: Array<{ id: string; kind: string; tokens: number; preview: string }>;
+  };
+  context_window?: number | null;
   model?: string;
   error?: string;
 }
@@ -72,6 +83,13 @@ export function readContextBreakdownCache(
   return latest ?? null;
 }
 
+/** Whether this branch has its own snapshot. ``readContextBreakdownCache``
+ *  also answers with the session's latest one, which may be another
+ *  branch's: counted against that branch's model and window. */
+export function hasContextBreakdown(sessionId: string, headId?: string | null): boolean {
+  return cache.has(JSON.stringify([sessionId, headId ?? null]));
+}
+
 export function writeContextBreakdownCache(
   sessionId: string,
   headId: string | null | undefined,
@@ -122,18 +140,84 @@ export async function refreshContextBreakdown(
   }
 }
 
+// Opening a conversation reaches this from several places within a moment;
+// one read serves them all.
+const FOCUS_READ_WINDOW_MS = 1500;
+const lastRead = new Map<string, number>();
+
 /** Background read/update for the panel snapshot.
  *
- *  Call on session focus and again when a turn finishes. Skips only when
- *  the same branch is already in flight — a cache hit is not a skip,
- *  because the graph may have moved.
+ *  Call on session focus and again when a turn finishes. Skips when the
+ *  same branch is already in flight, and for `focus` reads when it was just
+ *  read. A cache hit alone is not a skip, because the graph may have moved.
  */
 export function warmContextBreakdown(
   sessionId: string | null,
   headId?: string | null,
+  { focus = false }: { focus?: boolean } = {},
 ): void {
   if (!sessionId) return;
   const key = JSON.stringify([sessionId, headId ?? null]);
   if (latestRequest.has(key)) return;
+  const now = Date.now();
+  if (focus && now - (lastRead.get(key) ?? -Infinity) < FOCUS_READ_WINDOW_MS) return;
+  lastRead.set(key, now);
   void refreshContextBreakdown(sessionId, headId, new AbortController().signal);
+}
+
+/** A chat with no session yet: the agent's system prompt and tools against
+ *  the selected model, with the selected project's memory, from
+ *  GET /api/context/draft. Keyed by model and project, so switching either
+ *  refetches. */
+function draftKey(provider?: string, model?: string, projectId?: string | null): string {
+  return JSON.stringify(["__draft__", provider || "", model || "", projectId || ""]);
+}
+
+export function readDraftContextBreakdown(
+  provider?: string,
+  model?: string,
+  projectId?: string | null,
+): ContextBreakdown | null {
+  return cache.get(draftKey(provider, model, projectId)) ?? null;
+}
+
+/** A draft's first message was accepted and the draft became a session
+ *  (the server adopts the draft's key as the session id). The conversation
+ *  and its content are the same, so the draft's estimate stands for the
+ *  session until the session's own GET /context, started here, and then
+ *  its context_stats replace it: the ring never drops to 0 or loses its
+ *  window in between. A session that already has a snapshot keeps it. */
+export function adoptDraftContextBreakdown(
+  sessionId: string,
+  provider?: string,
+  model?: string,
+  projectId?: string | null,
+): void {
+  const draft = readDraftContextBreakdown(provider, model, projectId);
+  if (draft && !readContextBreakdownCache(sessionId)) {
+    writeContextBreakdownCache(sessionId, null, draft);
+  }
+  warmContextBreakdown(sessionId, null, { focus: true });
+}
+
+export function warmDraftContextBreakdown(
+  provider?: string,
+  model?: string,
+  projectId?: string | null,
+): void {
+  const key = draftKey(provider, model, projectId);
+  if (latestRequest.has(key)) return;
+  const token = Symbol();
+  latestRequest.set(key, token);
+  const qs = new URLSearchParams({ provider: provider || "", model: model || "" });
+  if (projectId) qs.set("project_id", projectId);
+  void fetch(`/api/context/draft?${qs}`)
+    .then((response) => response.json() as Promise<ContextBreakdown>)
+    .then((data) => {
+      if (latestRequest.get(key) === token && !data.error) touch(key, data);
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      if (latestRequest.get(key) === token) latestRequest.delete(key);
+    });
 }

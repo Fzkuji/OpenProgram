@@ -13,7 +13,7 @@ re-posts to the Responses API upstream got a 400
 """
 import re
 
-from openprogram.providers.types import (
+from openprogram.models.providers.types import (
     AssistantMessage,
     Context,
     Model,
@@ -67,7 +67,7 @@ def _history(tool_call_id: str, *, provider: str, api: str, model_id: str):
 # ---------------------------------------------------------------- completions
 
 def _completions_ids(history, target: Model) -> tuple[str, str]:
-    from openprogram.providers.openai_completions.openai_completions import (
+    from openprogram.models.providers.adapters.openai_completions.openai_completions import (
         _build_messages,
     )
     msgs = _build_messages(Context(messages=history), target)
@@ -108,7 +108,7 @@ def test_completions_hashes_overlong_flat_id_consistently():
 # ------------------------------------------------------------------ responses
 
 def _responses_items(history, target: Model):
-    from openprogram.providers._shared.openai_responses import (
+    from openprogram.models.providers.shared.openai_responses import (
         convert_responses_messages,
     )
     items = convert_responses_messages(target, Context(messages=history))

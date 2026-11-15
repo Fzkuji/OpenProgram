@@ -1,0 +1,61 @@
+<title>Browser extension support decision</title>
+<meta name="description" content="The built-in browser does not install Chrome or Edge extensions: what stays, why, and what the code guarantees.">
+<h1>The built-in browser does not install extensions</h1>
+
+<h2 id="user-impact">What users can do</h2>
+<table class="grid">
+<thead><tr><th scope="col">Capability</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Browse ordinary and store pages, with no injected install controls</th><td class="run">Kept</td></tr>
+<tr><th scope="row">Bookmarks, history, downloads, Home, data import</th><td class="run">Kept</td></tr>
+<tr><th scope="row">Agent observation and operation of a bound WebTab, under Web Use and Computer Use boundaries</th><td class="run">Kept</td></tr>
+<tr><th scope="row">Import cookies, bookmarks and history from Chrome or Edge (separate from extension code)</th><td class="run">Kept</td></tr>
+<tr><th scope="row">Install from Chrome Web Store or Edge Add-ons, CRX downloads</th><td class="deny">Removed</td></tr>
+<tr><th scope="row">Load unpacked extensions; directory picker, preload IPC</th><td class="deny">Removed</td></tr>
+<tr><th scope="row">Enable, disable, reload, update, recover; registry, package directory, startup recovery</th><td class="deny">Removed</td></tr>
+</tbody>
+</table>
+<p class="note">Removed in 0.7.0. No browser-engine replacement and no Chrome or Edge remote-control dependency.</p>
+
+<h2 id="reasoning">Why</h2>
+<p id="decision">Electron implements only some extension APIs, and keeping up with the rest is outside the goal of reliable browsing and Agent web operation.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Reason</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Missing APIs</th><td>Many store extensions depend on Manifest V3 service workers, <code translate="no">chrome.action</code>, account sync or browser-specific behaviour</td></tr>
+<tr><th scope="row">Partial failure</th><td>Downloading and loading can succeed while login, background tasks, popups or page injection fail</td></tr>
+<tr><th scope="row">Preflight limits</th><td>Labels cannot cover runtime APIs, background lifecycles, toolbar interaction or vendor browser detection</td></tr>
+<tr><th scope="row">Upkeep</th><td>Store protocols, CRX verification, permission explanations, API compatibility, updates and diagnostics</td></tr>
+</tbody>
+</table>
+
+<h2 id="architecture">Architecture</h2>
+<p><code translate="no">persist:webtabs</code> sessions handle only page state, cookies, downloads and DevTools or Agent control, and load no third-party code before startup. There is no manager, registry, CRX install IPC or Extensions page.</p>
+<p class="note">A future cleanup entry for <code translate="no">browser-extensions/</code> data must list its targets and be user-initiated.</p>
+
+<h2 id="implementation">Implementation</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Desktop</th><td>No extension manager, startup recovery, IPC, preload APIs or packaged files. Packaging removes the manager and its dependencies left in an old archive.</td></tr>
+<tr><th scope="row">Web</th><td>No Extensions page, Browser menu entry, store-detail install button, types, icons or URL recognizers</td></tr>
+<tr><th scope="row">State</th><td>Historical Extensions tabs are dropped when restoring window state</td></tr>
+<tr><th scope="row">Contract</th><td><code translate="no">apps/desktop/tests/check-no-browser-extensions.js</code> fixes the negative boundaries for Desktop, preload, Web menus, built-in pages, bridge and packaging manifests</td></tr>
+<tr><th scope="row">Docs</th><td>Changelog, release notes, Desktop documentation and FAQ say extensions are unsupported and list what stays</td></tr>
+</tbody>
+</table>
+
+<h2 id="evidence">Acceptance</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Item</th><th scope="col">Checked by</th></tr></thead>
+<tbody>
+<tr><th scope="row">No install or management entry</th><td><code translate="no">check:no-browser-extensions</code>, Web <code translate="no">npm run check</code>, Web TypeScript</td></tr>
+<tr><th scope="row">Desktop loads no third-party extensions</th><td>Negative main, preload and package contracts</td></tr>
+<tr><th scope="row">Legacy data neither read, executed nor deleted</th><td>Old-tab migration checks; no production path deletes <code translate="no">browser-extensions/</code></td></tr>
+<tr><th scope="row">Kept capabilities</th><td><code translate="no">check:webtabs</code>, <code translate="no">check:webtab-zoom-bounds</code>, Web <code translate="no">npm run check</code></td></tr>
+</tbody>
+</table>
+<p class="note">This establishes that OpenProgram exposes and executes no extension features. It claims nothing about Chrome-extension compatibility in Electron.</p>
+
+<h2>Implementation status</h2>
+<p>Implemented.</p>

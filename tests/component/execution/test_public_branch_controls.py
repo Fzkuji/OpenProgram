@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 
 def _paused_source(tmp_path):
-    from openprogram.execution import (
+    from openprogram.runtime.execution import (
         AttemptStore,
         CapabilitySet,
         CheckpointFragment,
@@ -25,7 +25,7 @@ def _paused_source(tmp_path):
         capabilities=CapabilitySet(pause=True, steer=True, fork=True, retry=True, safe_point_kinds=("after",)),
     )
     attempts = AttemptStore(store)
-    lease, reserved = attempts.lease(execution.execution_id, expected_version=1, owner_id="owner", ttl_seconds=30)
+    lease, reserved = attempts.lease(execution.execution_id, expected_version=1, owner_id="owner")
     active, running = attempts.activate(lease.attempt_id, generation=1, expected_execution_version=reserved.status_version)
     service = RuntimeControlService(store, attempts, DriverRegistry())
     pausing = asyncio.run(service.request_pause(
@@ -66,7 +66,7 @@ def _paused_source(tmp_path):
 
 
 def _fork_payload(store, source, checkpoint) -> dict[str, str]:
-    from openprogram.execution import RevisionControlService
+    from openprogram.runtime.execution import RevisionControlService
 
     revisions = RevisionControlService(store)
     artifact = revisions.put_artifact(
@@ -129,12 +129,12 @@ def _fork_payload(store, source, checkpoint) -> dict[str, str]:
 
 
 def test_public_branch_commands_use_control_service_and_exact_session_scope(tmp_path, monkeypatch) -> None:
-    from openprogram.webui.ws_actions.runtime import submit_execution_control
+    from openprogram.interfaces.server.ws_actions.runtime import submit_execution_control
 
     store, service, source, checkpoint = _paused_source(tmp_path)
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
-    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
-    monkeypatch.setattr("openprogram.agent.job.runner.runner_for_execution_store", lambda _store: None)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.execution.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.runtime.jobs.runner.runner_for_execution_store", lambda _store: None)
     actor = {
         "speaker_kind": "owner", "speaker_id": "owner/local", "speaker_display": "Owner",
         "authority_tier": "owner", "principal_id": "owner/install/0123456789abcdef",
@@ -209,12 +209,12 @@ def test_public_branch_commands_use_control_service_and_exact_session_scope(tmp_
 def test_rest_branch_command_returns_the_canonical_snapshot_and_cursor(tmp_path, monkeypatch) -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from openprogram.webui.routes.execution.lifecycle import register
+    from openprogram.interfaces.server.routes.execution.lifecycle import register
 
     store, service, source, checkpoint = _paused_source(tmp_path)
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
-    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
-    monkeypatch.setattr("openprogram.agent.job.runner.runner_for_execution_store", lambda _store: None)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.runtime.execution.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.runtime.jobs.runner.runner_for_execution_store", lambda _store: None)
     app = FastAPI()
     app.state.owner_auth = SimpleNamespace(authority={
         "speaker_kind": "owner", "speaker_id": "owner/local", "speaker_display": "Owner",

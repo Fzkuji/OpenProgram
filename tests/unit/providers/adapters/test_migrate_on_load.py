@@ -1,6 +1,6 @@
 import json
 
-from openprogram.auth.store import AuthStore
+from openprogram.models.auth.store import AuthStore
 
 
 def test_store_migrates_old_payload_on_first_load(tmp_path):

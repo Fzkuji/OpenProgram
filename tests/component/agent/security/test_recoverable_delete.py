@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import errno
 import json
 import os
@@ -15,9 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.run_control import (
-    begin_turn,
-    end_turn,
+from openprogram.runtime.conversation.run_control import begin_turn, end_turn
+from openprogram.runtime.execution.run_control import (
     reset_current_session_id,
     set_current_session_id,
 )
@@ -29,8 +29,8 @@ def agent_run(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
-    monkeypatch.setattr("openprogram.paths._migration_checked", True)
-    monkeypatch.setattr("openprogram.setup._read_config", lambda: {"sandbox": {"mode": "danger-full-access"}})
+    monkeypatch.setattr("openprogram.state.paths._migration_checked", True)
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: {"sandbox": {"mode": "danger-full-access"}})
     token = begin_turn("session/one", "turn:two")
     sid_token = set_current_session_id("session/one")
     try:
@@ -64,7 +64,7 @@ def _symlink_to_or_skip(
 
 
 def test_move_records_original_path_and_restore_refuses_to_overwrite(tmp_path, monkeypatch):
-    from openprogram.sandbox.recoverable_delete import move_to_trash, restore_deleted
+    from openprogram.host.sandbox.recoverable_delete import move_to_trash, restore_deleted
 
     trash = tmp_path / "trash"
     monkeypatch.setenv("OPENPROGRAM_RECOVERABLE_TRASH", str(trash))
@@ -89,7 +89,7 @@ def test_move_records_original_path_and_restore_refuses_to_overwrite(tmp_path, m
 
 
 def test_move_preserves_symlink_and_uses_copy_then_delete_on_exdev(tmp_path, monkeypatch):
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     trash = tmp_path / "trash"
     monkeypatch.setenv("OPENPROGRAM_RECOVERABLE_TRASH", str(trash))
@@ -126,7 +126,7 @@ def test_move_preserves_symlink_and_uses_copy_then_delete_on_exdev(tmp_path, mon
 
 
 def test_directory_cleanup_does_not_follow_a_swapped_symlink(tmp_path, monkeypatch):
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     if not rd._safe_rmtree_supported():
         pytest.skip("platform has no fd-relative symlink-safe directory removal")
@@ -178,7 +178,7 @@ def test_directory_cleanup_does_not_follow_a_swapped_symlink(tmp_path, monkeypat
 
 
 def test_exdev_cleanup_failure_keeps_a_manifest_for_the_complete_copy(tmp_path, monkeypatch):
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     trash = tmp_path / "trash"
     source = tmp_path / "source"
@@ -216,7 +216,7 @@ def test_exdev_deletion_records_one_manifest_line_and_drops_its_sidecar(
     """Every --bind under bubblewrap is its own mount, so the workspace ->
     trash rename always raises EXDEV there. The record format must not
     depend on which path ran."""
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     trash = tmp_path / "trash"
     target = tmp_path / "work" / "gone.txt"
@@ -245,7 +245,7 @@ def test_exdev_deletion_records_one_manifest_line_and_drops_its_sidecar(
 
 def test_a_deletion_interrupted_after_the_copy_is_still_listed(tmp_path, monkeypatch):
     """The sidecar is the crash-window record the manifest line replaced."""
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     base = tmp_path / "trash"
     trash = base / "session" / "run"
@@ -279,7 +279,7 @@ def test_a_deletion_interrupted_after_the_copy_is_still_listed(tmp_path, monkeyp
 
 
 def test_manifest_short_writes_are_serialized_within_the_process(tmp_path, monkeypatch):
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     root = tmp_path / "trash"
     root.mkdir()
@@ -310,7 +310,7 @@ def test_manifest_short_writes_are_serialized_within_the_process(tmp_path, monke
 
 
 def test_failed_manifest_append_truncates_its_partial_record(tmp_path, monkeypatch):
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     root = tmp_path / "trash"
     root.mkdir()
@@ -335,7 +335,7 @@ def test_failed_manifest_append_truncates_its_partial_record(tmp_path, monkeypat
 
 
 def test_manifest_uses_a_cross_process_lock_on_windows(tmp_path, monkeypatch):
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     class FakeMsvcrt:
         LK_LOCK = 1
@@ -359,7 +359,7 @@ def test_manifest_uses_a_cross_process_lock_on_windows(tmp_path, monkeypatch):
 
 
 def test_restore_skips_a_damaged_manifest_line(tmp_path, monkeypatch):
-    from openprogram.sandbox.recoverable_delete import move_to_trash, restore_deleted
+    from openprogram.host.sandbox.recoverable_delete import move_to_trash, restore_deleted
 
     trash = tmp_path / "trash"
     source = tmp_path / "source.txt"
@@ -375,7 +375,7 @@ def test_restore_skips_a_damaged_manifest_line(tmp_path, monkeypatch):
 
 
 def test_list_deleted_reads_run_manifests_and_reports_availability(tmp_path):
-    from openprogram.sandbox.recoverable_delete import list_deleted, move_to_trash
+    from openprogram.host.sandbox.recoverable_delete import list_deleted, move_to_trash
 
     trash_base = tmp_path / "state" / "trash"
     trash_root = trash_base / "session-one" / "turn-two"
@@ -393,7 +393,7 @@ def test_list_deleted_reads_run_manifests_and_reports_availability(tmp_path):
 
 
 def test_restore_deleted_anywhere_records_completion(tmp_path):
-    from openprogram.sandbox.recoverable_delete import (
+    from openprogram.host.sandbox.recoverable_delete import (
         list_deleted,
         move_to_trash,
         restore_deleted_anywhere,
@@ -414,7 +414,7 @@ def test_restore_deleted_anywhere_records_completion(tmp_path):
 
 
 def test_missing_targets_are_only_ignored_when_requested(tmp_path, monkeypatch):
-    from openprogram.sandbox.recoverable_delete import move_to_trash
+    from openprogram.host.sandbox.recoverable_delete import move_to_trash
 
     monkeypatch.setenv("OPENPROGRAM_RECOVERABLE_TRASH", str(tmp_path / "trash"))
     missing = tmp_path / "missing"
@@ -424,7 +424,7 @@ def test_missing_targets_are_only_ignored_when_requested(tmp_path, monkeypatch):
 
 
 def test_python_bytes_paths_are_recorded_as_text(tmp_path, monkeypatch):
-    from openprogram.sandbox.recoverable_delete import move_to_trash
+    from openprogram.host.sandbox.recoverable_delete import move_to_trash
 
     trash = tmp_path / "trash"
     monkeypatch.setenv("OPENPROGRAM_RECOVERABLE_TRASH", str(trash))
@@ -438,7 +438,7 @@ def test_python_bytes_paths_are_recorded_as_text(tmp_path, monkeypatch):
 
 
 def test_trash_contents_cannot_be_deleted_into_the_same_trash(tmp_path, monkeypatch):
-    from openprogram.sandbox.recoverable_delete import move_to_trash
+    from openprogram.host.sandbox.recoverable_delete import move_to_trash
 
     trash = tmp_path / "trash"
     item = trash / "existing"
@@ -458,8 +458,8 @@ def test_trash_contents_cannot_be_deleted_into_the_same_trash(tmp_path, monkeypa
 
 
 def test_sandbox_trash_exists_before_the_command_is_wrapped(agent_run, monkeypatch):
-    from openprogram import sandbox
-    from openprogram.backend.local import _invocation
+    from openprogram.host import sandbox
+    from openprogram.host.backend.local import _invocation
 
     policy = sandbox.SandboxPolicy()
     seen = []
@@ -479,19 +479,19 @@ def test_sandbox_trash_exists_before_the_command_is_wrapped(agent_run, monkeypat
 
 
 def test_agent_child_launch_fails_if_trash_cannot_be_resolved(agent_run, monkeypatch):
-    from openprogram.sandbox.recoverable_delete import prepare_child_env
+    from openprogram.host.sandbox.recoverable_delete import prepare_child_env
 
     def fail():
         raise OSError("state unavailable")
 
     with monkeypatch.context() as scoped:
-        scoped.setattr("openprogram.paths.get_state_dir", fail)
+        scoped.setattr("openprogram.state.paths.get_state_dir", fail)
         with pytest.raises(OSError, match="state unavailable"):
             prepare_child_env()
 
 
 def test_session_context_without_active_turn_does_not_inject():
-    from openprogram.sandbox.recoverable_delete import (
+    from openprogram.host.sandbox.recoverable_delete import (
         TRASH_ENV,
         current_trash_root,
         prepare_child_env,
@@ -508,27 +508,31 @@ def test_session_context_without_active_turn_does_not_inject():
 
 
 def test_execute_code_honors_sandbox_unavailable_refuse(agent_run, monkeypatch):
-    from openprogram import sandbox
-    from openprogram.programs.tools.code.execute_code import execute
+    from openprogram.host import sandbox
+    from openprogram.programs import get_agent_tool
 
     marker = agent_run / "must-not-exist"
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"sandbox": {"mode": sandbox.MODE_WORKSPACE_WRITE, "unavailable_policy": "refuse"}},
     )
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "sandbox binary missing")
 
-    result = execute(code=f"from pathlib import Path; Path({str(marker)!r}).write_text('unsafe')")
+    result = asyncio.run(get_agent_tool("execute_code").execute(
+        "sandbox-refuse", {"code": f"from pathlib import Path; Path({str(marker)!r}).write_text('unsafe')"},
+        None, None,
+    ))
 
     assert not marker.exists()
-    assert "sandbox binary missing" in result
+    assert result.is_error
+    assert "sandbox binary missing" in "\n".join(block.text for block in result.content)
 
 
 def test_execute_code_routes_interpreter_script_and_cwd_through_local_backend(
     tmp_path, monkeypatch,
 ):
-    from openprogram.backend.local import LocalBackend
-    from openprogram.backend.base import RunResult
+    from openprogram.host.backend.local import LocalBackend
+    from openprogram.host.backend.base import RunResult
     from openprogram.programs.tools.code.execute_code import execute
 
     seen = {}
@@ -550,7 +554,7 @@ def test_execute_code_routes_interpreter_script_and_cwd_through_local_backend(
 
 
 def test_shell_shim_update_does_not_replace_the_final_file_on_failure(tmp_path, monkeypatch):
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     root = tmp_path / "trash"
     rm = root / "shims" / "bin" / "rm"
@@ -569,7 +573,7 @@ def test_shell_shim_update_does_not_replace_the_final_file_on_failure(tmp_path, 
 
 
 def test_shell_shim_write_failure_leaves_no_partial_file(tmp_path, monkeypatch):
-    import openprogram.sandbox.recoverable_delete as rd
+    import openprogram.host.sandbox.recoverable_delete as rd
 
     root = tmp_path / "trash"
     rm = root / "shims" / "bin" / "rm"
@@ -589,14 +593,14 @@ def test_shell_shim_write_failure_leaves_no_partial_file(tmp_path, monkeypatch):
 
 
 def test_dir_fd_deletion_fails_safe_instead_of_re_resolving_the_path(tmp_path):
-    from openprogram.sandbox.recoverable_delete import _dir_fd_path
+    from openprogram.host.sandbox.recoverable_delete import _dir_fd_path
 
     with pytest.raises(NotImplementedError, match="dir_fd"):
         _dir_fd_path("target", 123)
 
 
 def test_agent_shell_rm_rmdir_and_unlink_are_recoverable(agent_run):
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host.backend.local import LocalBackend
 
     work = agent_run / "work"
     work.mkdir()
@@ -615,7 +619,7 @@ def test_agent_shell_rm_rmdir_and_unlink_are_recoverable(agent_run):
 
 
 def test_agent_python_and_execute_code_deletions_are_recoverable(agent_run):
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host.backend.local import LocalBackend
     from openprogram.programs.tools.code.execute_code import execute
 
     work = agent_run / "python-work"
@@ -645,7 +649,7 @@ def test_agent_python_and_execute_code_deletions_are_recoverable(agent_run):
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_agent_node_sync_callback_and_promises_deletions_are_recoverable(agent_run):
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host.backend.local import LocalBackend
 
     work = agent_run / "node-work"
     work.mkdir()
@@ -671,7 +675,7 @@ def test_agent_node_sync_callback_and_promises_deletions_are_recoverable(agent_r
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_agent_node_rejects_buffer_and_file_url_paths_without_deleting(agent_run):
-    from openprogram.backend.local import LocalBackend
+    from openprogram.host.backend.local import LocalBackend
 
     work = agent_run / "node-unsupported"
     work.mkdir()
@@ -701,25 +705,34 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     repo = Path(__file__).resolve().parents[4]
     config = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
     package_data = config["tool"]["setuptools"]["package-data"]["openprogram"]
-    assert "sandbox/shims/*.py" in package_data
-    assert "programs/workflow/browser/*.cjs" in package_data
+    assert "host/sandbox/shims/*.py" in package_data
+    assert "programs/applications/browser/*.cjs" in package_data
 
     project = tmp_path / "project"
-    (project / "openprogram" / "sandbox" / "shims").mkdir(parents=True)
+    (project / "openprogram" / "host" / "sandbox" / "shims").mkdir(parents=True)
     for relative in (
-        "pyproject.toml", "README.md", "LICENSE", "openprogram/__init__.py",
-        "openprogram/sandbox/__init__.py", "openprogram/sandbox/shims/sitecustomize.py",
-        "openprogram/sandbox/shims/node_preload.cjs",
+        "pyproject.toml", "setup.py", "README.md", "LICENSE", "openprogram/__init__.py",
+        "openprogram/interfaces/server/__init__.py", "openprogram/interfaces/cli/__init__.py",
+        "openprogram/host/__init__.py",
         "openprogram/programs/__init__.py",
-        "openprogram/programs/workflow/__init__.py",
-        "openprogram/programs/workflow/browser/__init__.py",
-        "openprogram/programs/workflow/browser/playwright_exact_page_mcp.cjs",
-        "openprogram/sandbox/recoverable_delete.py",
-        "openprogram/webui/__init__.py",
+        "openprogram/programs/applications/__init__.py",
+        "openprogram/programs/applications/browser/__init__.py",
+        "openprogram/programs/applications/browser/playwright_background_tabs.cjs",
     ):
         destination = project / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(repo / relative, destination)
+    shutil.copytree(repo / "openprogram/host/_platform", project / "openprogram/host/_platform")
+    # The shim imports the sandbox package, so the whole package is built: a
+    # hand-kept file list goes stale each time the package gains a module.
+    shutil.copytree(
+        repo / "openprogram/host/sandbox",
+        project / "openprogram/host/sandbox",
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    # Profile state an older installation left beside the package must not ship.
+    (project / "openprogram/webui").mkdir()
     (project / "openprogram/webui/functions_meta.json").write_text(
         '{"profiles": {"must-not-ship": []}}\n', encoding="utf-8"
     )
@@ -750,11 +763,10 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     wheel = next(wheel_dir.glob("*.whl"))
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())
-    assert "openprogram/sandbox/shims/sitecustomize.py" in names
-    assert "openprogram/sandbox/shims/node_preload.cjs" in names
+    assert "openprogram/host/sandbox/shims/sitecustomize.py" in names
+    assert "openprogram/host/sandbox/shims/node_preload.cjs" in names
     assert (
-        "openprogram/programs/workflow/browser/"
-        "playwright_exact_page_mcp.cjs"
+        "openprogram/programs/applications/browser/playwright_background_tabs.cjs"
     ) in names
     assert "openprogram/webui/functions_meta.json" not in names
     assert "openprogram/webui/programs_meta.json" not in names
@@ -772,12 +784,11 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         timeout=60,
     )
     assert install.returncode == 0, install.stdout + install.stderr
-    installed_shims = installed / "openprogram/sandbox/shims"
+    installed_shims = installed / "openprogram/host/sandbox/shims"
     assert (installed_shims / "sitecustomize.py").is_file()
-    assert (installed / "openprogram/sandbox/shims/node_preload.cjs").is_file()
+    assert (installed / "openprogram/host/sandbox/shims/node_preload.cjs").is_file()
     assert (
-        installed / "openprogram/programs/workflow/browser/"
-        "playwright_exact_page_mcp.cjs"
+        installed / "openprogram/programs/applications/browser/playwright_background_tabs.cjs"
     ).is_file()
 
     runtime_work = tmp_path / "runtime-work"
@@ -798,5 +809,6 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         timeout=30,
     )
     assert probe.returncode == 0, probe.stdout + probe.stderr
+    assert "Error in sitecustomize" not in probe.stderr, probe.stderr
     assert not target.exists()
     assert any((runtime_trash / "items").iterdir())

@@ -9,13 +9,14 @@
  * See ``./README.md`` for the directory layout and the pass pipeline.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 import { type GNode } from "./types";
 import { runtimeState } from "../state";
 import { flushPendingHistoryEmit, render } from "./pipeline";
 import { _recomputeVisibility } from "./render/visibility";
-import { _installInteractionHandlers } from "./interaction/nodes";
+import { setMainAgentShape } from "./render/agent-look";
+import { _installInteractionHandlers } from "./interaction/node/nodes";
 import {
   contextRangeUnchanged,
   type CoverageNode,
@@ -23,12 +24,10 @@ import {
 import {
   _contextSet,
   _coverageSet,
-  _highlightMode,
   _lastGraph,
   _lastHeadId,
   setContextSet,
   setCoverageSet,
-  setHighlightMode,
   setLastGraph,
   setLastSignature,
 } from "./store/globals";
@@ -61,6 +60,13 @@ if (typeof document !== "undefined"
 export function renderHistoryGraph(graph: GNode[], headId: string | null): void {
   setLastGraph(graph, headId);
   render(graph, headId);
+}
+
+/** The view reports the conversation's Agent character; its replies wear
+ *  it (render/agent-look.ts). A change repaints the graph. */
+export function setDagAgentLook(shape: string | null): void {
+  if (!setMainAgentShape(shape)) return;
+  if (_lastGraph) render(_lastGraph, _lastHeadId);
 }
 
 export function repaintBranchTags(): void {
@@ -105,7 +111,16 @@ export function setHistoryContextRange(
   }
 }
 
-export function refreshHistoryContextRange(sessionId: string | null): void {
+// Opening a conversation asks for its range from several places at once.
+const RANGE_READ_WINDOW_MS = 1500;
+let lastRangeRead: { url: string; at: number } | null = null;
+
+/** `changed`: the context just changed (a turn ended, a compaction), so a
+ *  range read a moment ago no longer holds. */
+export function refreshHistoryContextRange(
+  sessionId: string | null,
+  { changed = false }: { changed?: boolean } = {},
+): void {
   if (!sessionId) {
     setHistoryContextRange(null);
     return;
@@ -115,8 +130,12 @@ export function refreshHistoryContextRange(sessionId: string | null): void {
   // a race between checkout and repaint paints "out of the next
   // request" dashes under an in-context white fill.
   const head = _lastHeadId;
-  fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/context-range"
-    + (head ? "?head_id=" + encodeURIComponent(head) : ""))
+  const url = "/api/sessions/" + encodeURIComponent(sessionId) + "/context-range"
+    + (head ? "?head_id=" + encodeURIComponent(head) : "");
+  const now = Date.now();
+  if (!changed && lastRangeRead?.url === url && now - lastRangeRead.at < RANGE_READ_WINDOW_MS) return;
+  lastRangeRead = { url, at: now };
+  fetch(url)
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
       if (j) setHistoryContextRange(j.node_ids || [], j.nodes || null);
@@ -126,22 +145,16 @@ export function refreshHistoryContextRange(sessionId: string | null): void {
     });
 }
 
-export function recomputeHistoryVisibility(): void {
-  _recomputeVisibility();
-}
-
 /**
- * The graph is showing, and it owns its pane — a lone session tab gets
- * the chat shell plus this graph, and two session tabs split into two
- * `PeerSessionPane`s where the shell is not rendered at all. There is
- * therefore never a transcript beside the graph, so "which bubbles are
- * on screen" has no reading and the white fill means context coverage,
- * full stop (dag/rendering.md §8). No mode to offer, so no switch.
+ * The graph is showing: paint whatever was owed while it was hidden and
+ * fetch the coverage it fills in. The graph owns its pane — there is
+ * never a transcript beside it — so the fill means context coverage,
+ * full stop (dag/rendering.md §8); it never follows a transcript's
+ * scroll.
  *
  * Idempotent: safe to call on every render of the host.
  */
 export function enterExclusiveCoverageMode(): void {
-  if (_highlightMode !== "context") setHighlightMode("context");
   flushPendingHistoryEmit();
   const sid = runtimeState.currentSessionId;
   if (sid) refreshHistoryContextRange(sid);

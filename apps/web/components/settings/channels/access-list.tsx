@@ -1,8 +1,10 @@
 "use client";
 
+import { jsonFetch } from "@/lib/net/fetch-client";
 import { useState } from "react";
 
 import styles from "./channels.module.css";
+import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
 import { PLATFORM_LABEL } from "./types";
 import type { ChannelAccessAccount } from "./types";
@@ -22,23 +24,17 @@ export function AccessList({ access, onChange }: Props) {
     setBusyKey(key);
     setError(null);
     try {
-      const response = await fetch("/api/channels/access/approve", {
+      await jsonFetch("/api/channels/access/approve", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           channel: account.channel,
           account_id: account.account_id,
           code,
         }),
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        setError(body?.detail || text("Approval failed", "批准失败"));
-        return;
-      }
       await onChange();
-    } catch {
-      setError(text("Approval failed", "批准失败"));
+    } catch (e) {
+      setError((e as Error).message || text("Approval failed", "批准失败"));
     } finally {
       setBusyKey(null);
     }
@@ -52,17 +48,10 @@ export function AccessList({ access, onChange }: Props) {
       const path = [account.channel, account.account_id, userId]
         .map(encodeURIComponent)
         .join("/");
-      const response = await fetch(`/api/channels/access/${path}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        setError(body?.detail || text("Revoke failed", "撤销失败"));
-        return;
-      }
+      await jsonFetch(`/api/channels/access/${path}`, { method: "DELETE" });
       await onChange();
-    } catch {
-      setError(text("Revoke failed", "撤销失败"));
+    } catch (e) {
+      setError((e as Error).message || text("Revoke failed", "撤销失败"));
     } finally {
       setBusyKey(null);
     }
@@ -73,21 +62,21 @@ export function AccessList({ access, onChange }: Props) {
 
   return (
     <>
-      <div className={styles.sectionHeader}>
+      <div className="flex items-start justify-between gap-[16px]">
         <div>
           <div className={styles.sectionTitle}>
             {text("Step 2 - Paired senders", "步骤 2 - 已配对发送者")}
           </div>
           <div className={styles.sectionSub}>
             {text(
-              "Unknown senders receive an eight-character code and cannot reach the agent. Approve codes only here or in the local terminal.",
-              "陌生发送者只会收到八位配对码，消息不会进入 Agent。配对码只能在此处或本机终端批准。",
+              "In direct messages, unknown senders receive an eight-character code and cannot reach the agent. Approve codes only here or in the local terminal. A paired sender acts as you, in direct messages and in groups.",
+              "在私聊里，陌生发送者只会收到八位配对码，消息不会进入 Agent。配对码只能在此处或本机终端批准。已配对的发送者就是你本人，私聊和群聊都一样。",
             )}
           </div>
         </div>
-        <button className={styles.secondaryBtn} onClick={() => onChange()} type="button">
+        <Button variant="elevated" onClick={() => onChange()} type="button">
           {text("Refresh", "刷新")}
-        </button>
+        </Button>
       </div>
 
       {error && <div className={styles.formError} role="alert">{error}</div>}
@@ -119,15 +108,15 @@ export function AccessList({ access, onChange }: Props) {
                     <td>{sender.display || sender.user_id} · <code>{sender.user_id}</code></td>
                     <td><span className={styles.badgeWarn}>{sender.code}</span></td>
                     <td>
-                      <button
-                        className={styles.primaryBtn}
+                      <Button
+                        variant="default" size="xs"
                         disabled={busyKey !== null}
                         onClick={() => approve(account, sender.code)}
                         aria-label={text(`Approve ${sender.user_id}`, `批准 ${sender.user_id}`)}
                         type="button"
                       >
                         {busyKey === key ? text("Approving...", "批准中...") : text("Approve", "批准")}
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 );
@@ -140,15 +129,15 @@ export function AccessList({ access, onChange }: Props) {
                     <td>{sender.display || sender.user_id} · <code>{sender.user_id}</code></td>
                     <td><span className={styles.badgeOk}>{text("paired", "已配对")}</span></td>
                     <td>
-                      <button
-                        className={styles.dangerBtn}
+                      <Button
+                        variant="destructive" size="xs"
                         disabled={busyKey !== null}
                         onClick={() => revoke(account, sender.user_id)}
                         aria-label={text(`Revoke ${sender.user_id}`, `撤销 ${sender.user_id}`)}
                         type="button"
                       >
                         {busyKey === key ? text("Revoking...", "撤销中...") : text("Revoke", "撤销")}
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 );

@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text, useTerminalSize } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
 import { renderMarkdown } from '../utils/markdown.js';
+import { ToolRow } from './tools/ToolRow.js';
 
 export type Role = 'user' | 'assistant' | 'system';
 
@@ -11,6 +12,22 @@ export interface ToolCall {
   input?: string;
   result?: string;
   status: 'running' | 'done' | 'error';
+  /** The provider's call id; a result is matched to its call by it. */
+  callId?: string;
+  /** Wall clock at the call's start and its result. */
+  startedAt?: number;
+  endedAt?: number;
+  /** Whole output length when `result` is a preview of it. */
+  totalLines?: number;
+  /** File line an edit's first line sits on, when the file could be read. */
+  startLine?: number;
+  /** The todo board after this call (the `todos_update` frame). */
+  board?: TodoItem[];
+}
+
+export interface TodoItem {
+  subject: string;
+  status: string;
 }
 
 /** A piece of an assistant turn — either a text segment or a tool call. */
@@ -40,67 +57,6 @@ export interface Turn {
    * token gets expensive on long replies). */
   streaming?: boolean;
 }
-
-const ToolRow: React.FC<{ call: ToolCall }> = ({ call }) => {
-  const colors = useColors();
-  const arrow =
-    call.status === 'running' ? '◌' : call.status === 'error' ? '✗' : '●';
-  const color =
-    call.status === 'running'
-      ? colors.tool.running
-      : call.status === 'error'
-      ? colors.tool.error
-      : colors.tool.done;
-  return (
-    <Box flexDirection="column" paddingLeft={2}>
-      <Box>
-        <Text color={color}>{arrow} </Text>
-        <Text color={colors.text} bold>
-          {call.tool}
-        </Text>
-        {call.input ? (
-          <>
-            <Text color={colors.muted}> · </Text>
-            <Text color={colors.muted} wrap="truncate-end">
-              {call.input}
-            </Text>
-          </>
-        ) : null}
-      </Box>
-      {call.result ? (() => {
-        // Show up to MAX_LINES of the tool's stdout; collapse the rest
-        // into a "(+N more lines)" hint so long grep / file dumps don't
-        // walk off-screen. 1-line truncation hides too much; full output
-        // floods the transcript. 6 lines fit most file heads and grep
-        // results without overpowering the surrounding chat.
-        const MAX_LINES = 6;
-        const lines = call.result.split('\n');
-        const shown = lines.slice(0, MAX_LINES);
-        const extra = lines.length - shown.length;
-        return (
-          <Box flexDirection="column" paddingLeft={2}>
-            {shown.map((line, i) => (
-              <Box key={i}>
-                <Text color={colors.border}>{i === 0 ? '└ ' : '  '}</Text>
-                <Text color={colors.muted} wrap="truncate-end">
-                  {line || ' '}
-                </Text>
-              </Box>
-            ))}
-            {extra > 0 ? (
-              <Box>
-                <Text color={colors.border}>  </Text>
-                <Text color={colors.border}>
-                  (+{extra} more line{extra === 1 ? '' : 's'})
-                </Text>
-              </Box>
-            ) : null}
-          </Box>
-        );
-      })() : null}
-    </Box>
-  );
-};
 
 const UserRow: React.FC<{ turn: Turn }> = ({ turn }) => {
   const colors = useColors();

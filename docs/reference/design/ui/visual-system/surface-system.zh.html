@@ -1,0 +1,232 @@
+<title>界面表面体系</title>
+<meta name="description" content="应用的两类表面，以及行、按钮、菜单、输入框、对话框和卡片共用的做法。">
+<h1>界面表面体系</h1>
+
+<p>导航和内容各有自己的交互语言，浅色和深色主题都一样。</p>
+
+<svg class="fig-wide" viewBox="0 0 680 226" role="img" aria-label="窗口是 bg-secondary 的底层页面，上面浮着三张卡片：左右侧栏用 bg-input，中间列用 bg-primary。每张都是 rounded-lg，带输入框阴影，无边框。">
+  <rect class="tile" x="1" y="1" width="678" height="176" rx="10"/>
+  <rect class="tile" x="16" y="16" width="128" height="146" rx="8"/>
+  <rect class="tile" x="158" y="16" width="364" height="146" rx="8"/>
+  <rect class="tile" x="536" y="16" width="128" height="146" rx="8"/>
+  <text class="t-big mid" x="80" y="84">左侧栏</text>
+  <text class="t-soft t-cmd mid" translate="no" x="80" y="108">--bg-input</text>
+  <text class="t-big mid" x="340" y="84">中间列</text>
+  <text class="t-soft t-cmd mid" translate="no" x="340" y="108">--bg-primary</text>
+  <text class="t-big mid" x="600" y="84">右侧栏</text>
+  <text class="t-soft t-cmd mid" translate="no" x="600" y="108">--bg-input</text>
+  <text class="t-soft mid" x="340" y="200">卡片背后的底层页面：--bg-secondary</text>
+  <text class="t-soft mid" x="340" y="220">侧栏四周留 7px，中间卡片距上下边 7px</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>底层页面</dt><dd><code translate="no">--bg-secondary</code></dd>
+<dt>左右侧栏</dt><dd><code translate="no">--bg-input</code>，留 7px</dd>
+<dt>中间列</dt><dd><code translate="no">--bg-primary</code>，距上下边 7px</dd>
+</dl>
+
+<h2 id="the-two-surfaces">两类表面</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">底层：侧栏</th><th scope="col">面板：内容、对话框</th></tr></thead>
+<tbody>
+<tr><th scope="row">组件</th><td>列表行：对话、分支、收藏</td><td>按钮、胶囊、卡片</td></tr>
+<tr><th scope="row">静止</th><td>无边框、无 outline、无填充</td><td>变体外观（<a href="#button-variants">见下</a>）</td></tr>
+<tr><th scope="row">悬停、选中</th><td>可见的灰色，<code translate="no">--bg-hover</code> 或 <code translate="no">--bg-selected</code>；文字保持 <code translate="no">--text-primary</code> 或 <code translate="no">--text-secondary</code></td><td>变体的悬停效果</td></tr>
+<tr><th scope="row">品牌色</th><td>只用于很小的 <code translate="no">.indicator-dot</code>：密集、常被扫读的列表要保持安静</td><td>主操作</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>外壳几何</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">侧栏</th><td>shadcn Sidebar 的 <code translate="no">floating</code> 外壳（<code translate="no">components/ui/sidebar.tsx</code>）；中间列取其 <code translate="no">inset</code> 思路</td></tr>
+<tr><th scope="row">卡片</th><td><code translate="no">rounded-lg</code>（12px），各主题的 <code translate="no">--composer-shadow</code>，无边框、无 ring。分屏窗格和画布总览同用 <code translate="no">--radius-lg</code>。</td></tr>
+<tr><th scope="row">侧栏为何是白色</th><td>与输入框、用户气泡同一材质；这些元素在中间卡片上才有对比</td></tr>
+<tr><th scope="row">分屏</th><td><code translate="no">.center-col[data-split]</code>：中间卡片消失，每格是同材质的卡片，距侧栏和窗口边 7px，格间 8px。空格自己画卡片。</td></tr>
+<tr><th scope="row">收起的侧栏</th><td><code translate="no">--rail-collapsed-w</code> 62px；<code translate="no">components/layout/use-resizable-rail.ts</code> 用同一数值</td></tr>
+<tr><th scope="row">焦点</th><td>鼠标点击按钮无焦点环；键盘焦点只有轻微亮度变化。顶部标签栏的 <code translate="no">role="tab"</code> 用各主题的 <code translate="no">--focus-ring</code>。</td></tr>
+<tr><th scope="row">标签胶囊</th><td>管理页（Abilities、Programs、Plugins、Skills）选中的胶囊用 <code translate="no">--bg-input</code>，像搜索框；仅限此处</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="one-list-row-recipe">统一的列表行</h2>
+<p>侧栏导航和内容区列表行（MCP <code translate="no">drawio</code>、<code translate="no">+ Add server</code>）是同一个盒子。<code translate="no">+ Add server</code> 与 <code translate="no">+ New chat</code> 同款，文字略淡。</p>
+<dl class="pairs">
+<dt>高度</dt><dd><code translate="no">--ui-list-h</code>，30px</dd>
+<dt>内边距、间距</dt><dd>6px 8px，12px</dd>
+<dt>圆角</dt><dd><code translate="no">--ui-list-radius</code></dd>
+<dt>静止</dt><dd>透明</dd>
+<dt>悬停、选中</dt><dd><code translate="no">--bg-hover</code>，不用 <code translate="no">--bg-input</code>（白侧栏上的白行看不见）</dd>
+</dl>
+<p class="note">来源：<code translate="no">apps/web/app/styles/base/list-row.css</code> 的 <code translate="no">.ui-list-item</code>。页面列表列用 <code translate="no">RailItem</code>（<a href="../sidebar/secondary-rail.zh.html">二级侧栏</a>）；MCP <code translate="no">.serverItem</code> 与它同尺寸。</p>
+
+<h2 id="buttons">按钮</h2>
+<p><code translate="no">apps/web/components/ui/button.tsx</code> 是官方 registry 的 shadcn radix-nova Button。本地改动：import、React 18 的 <code translate="no">forwardRef</code>、固定 px 尺寸和统一外观：所有尺寸 <code translate="no">rounded-md</code>（8px）、无边框、输入框阴影对（<code translate="no">shadow-raised</code>、<code translate="no">shadow-raised-hover</code>）抬起。只靠颜色区分角色。档位表见<a href="design-tokens.zh.html">设计令牌</a>。</p>
+
+<table class="stack" id="button-variants">
+<thead><tr><th scope="col">变体</th><th scope="col">外观、悬停</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">default</code></th><td><code translate="no">bg-primary</code>；<code translate="no">primary/90</code></td><td>每个区域一个主操作：Run、Save、Test、Apply、Send、New</td></tr>
+<tr><th scope="row"><code translate="no">elevated</code></th><td><code translate="no">--bg-input</code>；阴影加深。按下、选中或开启：1.5px <code translate="no">primary</code> 环。</td><td>其余操作、筛选和选择；输入框触发器、环境胶囊</td></tr>
+<tr><th scope="row"><code translate="no">destructive</code></th><td><code translate="no">bg-destructive/10</code>；<code translate="no">/20</code></td><td>Delete、Remove、Stop、Clear history</td></tr>
+<tr><th scope="row"><code translate="no">ghost</code></th><td>透明无阴影；<code translate="no">bg-muted</code>（深色 <code translate="no">/50</code>）</td><td>悬停才显现的图标工具：关闭、更多、重命名</td></tr>
+<tr><th scope="row"><code translate="no">link</code></th><td>主色文字；下划线</td><td>行内</td></tr>
+</tbody>
+</table>
+<p class="note">按下时都下沉 1px，键盘焦点 3px <code translate="no">ring/50</code>，禁用 50% 透明度。侧栏行不是 Button：用 <code translate="no">.ui-list-item</code> 或 <code translate="no">nav-classes.ts</code>。不提供 <code translate="no">outline</code> 和 <code translate="no">secondary</code>。<code translate="no">Toggle</code>、<code translate="no">ToggleGroup</code> 有与 <code translate="no">elevated</code> 相同的外观。</p>
+<ul>
+<li>不能做成 <code translate="no">&lt;Button&gt;</code> 的元素（自带 ✕ 的 span、渲染成 span 的 Radix 触发器）用 <code translate="no">cn(buttonVariants({ variant, size }))</code>；<code translate="no">cn()</code> 合并才能解决 <code translate="no">border-transparent</code> 与变体边框的冲突。</li>
+<li>标题行（搜索、胶囊、图标按钮）里 1 到 2px 的高度差是 bug。</li>
+</ul>
+
+<h2 id="selects-and-menus">选择器和菜单</h2>
+<p>固定列表选择都用 radix-nova <code translate="no">Select</code>（<code translate="no">components/ui/select.tsx</code>）。没有原生 <code translate="no">&lt;select&gt;</code>，没有手写 listbox。<code translate="no">SimpleSelect</code> 是一行写法（<code translate="no">value</code>、<code translate="no">onValueChange</code>、<code translate="no">options</code>、<code translate="no">label</code>、<code translate="no">placeholder</code>、<code translate="no">size</code>；分组用 <code translate="no">{label, options}</code>）。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">触发器</th><td>Nova 字段：<code translate="no">rounded-lg</code>、<code translate="no">border-input</code>、<code translate="no">bg-transparent</code>、<code translate="no">dark:bg-input/30</code>、<code translate="no">h-8</code> 或 <code translate="no">h-7</code>。默认 <code translate="no">w-full max-w-48</code>；调用处只加宽度或错误边框。</td></tr>
+<tr><th scope="row">弹层</th><td>菜单框架内实色 <code translate="no">bg-popover</code>，<code translate="no">item-aligned</code>，<code translate="no">z-[130]</code> 高于对话框。淡色标题写明选什么（<code translate="no">label</code>，否则 <code translate="no">aria-label</code>），每组一个。选中行一个普通勾。</td></tr>
+<tr><th scope="row">空值</th><td>Radix 保留 <code translate="no">""</code>：取该值的选项在 <code translate="no">SimpleSelect</code> 内用哨兵值；否则 <code translate="no">""</code> 显示占位</td></tr>
+<tr><th scope="row">其他菜单</th><td>DropdownMenu、弹层选择器、侧栏底部、标签和函数上下文菜单都用 <code translate="no">components/ui/menu/menu-styles.ts</code> 的 <code translate="no">MENU_PANEL</code>、<code translate="no">itemCls</code>、<code translate="no">GROUP_LABEL</code>、<code translate="no">MENU_SEPARATOR</code>。CSS 模块只留定位。</td></tr>
+</tbody>
+</table>
+
+<p>小按钮或右键打开的操作菜单用 <code translate="no">MenuRow</code>（<code translate="no">components/ui/menu/menu-parts.tsx</code>）构建行，页面和桌面浮层相同（<code translate="no">DesktopContextMenuItem</code> 带 <code translate="no">glyph</code> 和 <code translate="no">keys</code>）。<code translate="no">apps/web/scripts/ui/check-menu-rows.mjs</code> 约束所有菜单文件。从左到右：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">图标</th><td>Solar Bold Duotone（<code translate="no">MenuIcon</code>，16px，淡色）。文件夹行用 <code translate="no">--folder-color</code>，危险行红色。</td></tr>
+<tr><th scope="row">文字</th><td>占满行</td></tr>
+<tr><th scope="row">按键</th><td>价签（<code translate="no">MenuKey</code>）：10px 尖端，是 Solar <code translate="no">tag-horizontal</code> 的圆头镜像朝左，接 shadcn <code translate="no">Kbd</code> 底板，高 18px，接尖端处方角，右侧 5px 圆角，内边距 1px 6px，文字至少 8px 宽。填充 <code translate="no">--menu-key-bg</code>，弹层上 12% 墨色。文字来自 <code translate="no">formatMenuKeys</code>：<code translate="no">⌘T</code>、<code translate="no">⇧⌘C</code>，或 <code translate="no">Ctrl+T</code>、<code translate="no">Ctrl+Shift+C</code>。只显示真能用的按键；不为填价签加全局快捷键。</td></tr>
+<tr><th scope="row">勾选</th><td><code translate="no">MenuCheck</code>；同组无勾的行保留这一列（<code translate="no">CHECK_SLOT_PAD</code>）</td></tr>
+<tr><th scope="row">子菜单</th><td>行尾箭头，可任意嵌套</td></tr>
+<tr><th scope="row">高亮行</th><td>悬停、键盘、展开子菜单或当前行：淡色图标、按键和箭头变亮，图标放大 1.12，按键底板 22% 墨色。着色图标保持颜色，只放大。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>菜单框架和几何</summary>
+<p>令牌在 <code translate="no">app/globals.css</code>，菜单、Select 弹层、<code translate="no">Popover</code>、命令面板和页面预览共用。浅色主题：<code translate="no">--popover-ring</code> 透明，<code translate="no">--popover-shadow</code> 即 <code translate="no">--composer-shadow</code>，<code translate="no">--popover-shadow-hover</code> 即 <code translate="no">--composer-shadow-focus</code>。深色主题弹层提亮一级，保留浅色细线和柔和深阴影，悬停不变。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">Nova，按文档比例</th></tr></thead>
+<tbody>
+<tr><th scope="row">面板</th><td><code translate="no">rounded-lg</code> <code translate="no">p-1</code> <code translate="no">min-w-32</code>，实色 <code translate="no">bg-popover</code></td></tr>
+<tr><th scope="row">行</th><td><code translate="no">min-h-7</code>（28px）、<code translate="no">rounded-md</code>、<code translate="no">px-1.5 py-1</code>、<code translate="no">text-fs-base</code>、<code translate="no">gap-1.5</code>、<code translate="no">size-4</code> 图标不偏移</td></tr>
+<tr><th scope="row">悬停</th><td><code translate="no">bg-accent</code>（9% 墨色）、<code translate="no">text-bright</code></td></tr>
+<tr><th scope="row">分组标题</th><td><code translate="no">px-1.5 py-1</code> <code translate="no">text-fs-xs</code> <code translate="no">font-medium</code>，淡色</td></tr>
+<tr><th scope="row">分隔线</th><td><code translate="no">-mx-1 my-1</code>，1px，<code translate="no">--border</code></td></tr>
+<tr><th scope="row">快捷键</th><td><code translate="no">MenuKey</code>，<code translate="no">text-[11px]</code>，淡色</td></tr>
+<tr><th scope="row">已选</th><td>行尾强调色 <code translate="no">MenuCheck</code>，不用填充</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">--popover</code> 即 <code translate="no">--bg-input</code>：浅色主题白色，深色主题比页面高一级。菜单、Select 弹层和对话框是同一表面；只有强调色的勾是应用自己的。</p>
+</details>
+
+<h2 id="inputs-and-borders">输入框和边框</h2>
+<p>设置、对话框、插件和 MCP 编辑器共用一层 1px 边（<code translate="no">border: 1px solid var(--border)</code>，填充 <code translate="no">--bg-input</code>）。悬停保留边框；聚焦不加 2px 光晕。</p>
+
+<h2 id="dialogs">对话框</h2>
+<p>所有模态都是 radix-nova <code translate="no">Dialog</code> 或 <code translate="no">AlertDialog</code>（<code translate="no">components/ui/</code>）。没有手写遮罩，没有浏览器 <code translate="no">confirm()</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">Nova，按文档比例</th></tr></thead>
+<tbody>
+<tr><th scope="row">遮罩</th><td><code translate="no">bg-black/10</code> <code translate="no">backdrop-blur-xs</code> <code translate="no">z-[110]</code>，<code translate="no">data-native-view-occluder</code></td></tr>
+<tr><th scope="row">内容</th><td><code translate="no">rounded-xl</code> <code translate="no">bg-popover</code> <code translate="no">ring-1 ring-foreground/10</code> <code translate="no">p-4</code> <code translate="no">gap-4</code> <code translate="no">max-w-sm</code> <code translate="no">z-[120]</code></td></tr>
+<tr><th scope="row">标题、描述</th><td><code translate="no">text-fs-md font-medium</code>；<code translate="no">text-fs-base</code> 淡色</td></tr>
+<tr><th scope="row">底部</th><td><code translate="no">-mx-4 -mb-4</code> <code translate="no">border-t</code> <code translate="no">bg-muted/50</code> <code translate="no">p-4</code>，右对齐，Cancel 在前，只放 Button：Cancel 或 Close 用 <code translate="no">elevated</code>，主操作用 <code translate="no">default</code></td></tr>
+<tr><th scope="row">关闭</th><td><code translate="no">ghost</code> <code translate="no">icon-sm</code>，<code translate="no">top-2 right-2</code>（仅 Dialog）</td></tr>
+<tr><th scope="row">动效</th><td>100ms 淡入和 <code translate="no">zoom-in-95</code>，不滑动</td></tr>
+<tr><th scope="row">确认</th><td><code translate="no">ConfirmDialog</code>，或经 <code translate="no">app/providers.tsx</code> 的 <code translate="no">&lt;ConfirmDialogHost /&gt;</code> 调用 <code translate="no">await confirmAction({...})</code>。删除或降低保护时用 <code translate="no">destructive</code>。Esc、点外部和 Cancel 都是取消。</td></tr>
+<tr><th scope="row">模块类</th><td>只定尺寸：宽度、<code translate="no">max-width: none</code>、max-height、overflow</td></tr>
+<tr><th scope="row">通栏</th><td>源码查看器、函数运行器、供应商设置：<code translate="no">p-0 gap-0</code>，自己加内边距，<code translate="no">DialogFooter</code> <code translate="no">m-0</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="settings-rows">设置行</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">块</th><th scope="col">形态</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">SettingsPage</code></th><td>标题（行尾可放操作）、描述、滚动内容</td></tr>
+<tr><th scope="row"><code translate="no">SettingsSection</code></th><td>一张 <code translate="no">Card</code> 上的带标题分组，细线分隔</td></tr>
+<tr><th scope="row"><code translate="no">SettingsRow</code></th><td>横向 <code translate="no">Field</code>：左边名称和描述，右边控件（单个 Select 宽 12rem）。<code translate="no">stacked</code> 把宽控件放到名称下方。</td></tr>
+</tbody>
+</table>
+<p class="note">在 <code translate="no">components/settings/settings-ui.tsx</code>。控件：<code translate="no">Switch</code>、<code translate="no">Input</code>、<code translate="no">Textarea</code>、<code translate="no">Slider</code>、<code translate="no">RadioGroup</code>、<code translate="no">ToggleGroup</code>、<code translate="no">Checkbox</code>、<code translate="no">Button</code>、<code translate="no">SimpleSelect</code>。标签页不写自己的行、标签或卡片 CSS。</p>
+<details>
+<summary>History 项目标签页</summary>
+<p>Settings 和 Info 用同样的块。Chats、Memory、Settings、Info 共用一种布局：头部和标签栏固定，面板通栏各自滚动（Settings 和 Info 留 24px 边）。Chats 按时间分组，每组一张带标题的 <code translate="no">Card</code>。Today、Last 7 days 和最新一组默认展开，更早的折叠；每组的选择记在当前浏览器。</p>
+<p>展开的组列 8 条，然后是“Show all N”（10 条以内全列）。工具栏按钮全部展开或折叠；搜索时全部展开。<code translate="no">apps/web/scripts/projects/check-project-tabs.mjs</code>（在 <code translate="no">npm run check</code> 中）守护这些规则。</p>
+</details>
+
+<h2 id="composer-controls">输入框控件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">环境胶囊</th><td>渠道、网页、项目、目录、DAG HUD：<code translate="no">elevated</code> <code translate="no">sm</code>；添加目录 <code translate="no">icon-sm</code></td></tr>
+<tr><th scope="row">底部行</th><td>权限、模型、Agent、力度、加号、工具、上下文圆环：<code translate="no">elevated</code>，<code translate="no">sm</code> 或 <code translate="no">icon-sm</code>；旧规则用 <code translate="no">revert-layer</code> 交还。高度随胶囊，距输入框 10px，与环境胶囊在上方的距离相同。</td></tr>
+<tr><th scope="row">两行的图标</th><td>16px，间距 5px，居中，文字 13px；在两行的模块 CSS 中不分层设置，否则 Button 尺寸会把无尺寸 svg 缩到 12.25px。力度卡片保持自身尺寸。</td></tr>
+<tr><th scope="row">发送、麦克风</th><td>颜色来自变体（发送 <code translate="no">default</code>，空时 <code translate="no">ghost</code>，停止时 <code translate="no">destructive</code>；麦克风 <code translate="no">ghost</code>）。尺寸来自 <code translate="no">app/styles/design/composer.css</code>：<code translate="no">--composer-action-size</code>（28px），在 <code translate="no">--composer-line-h</code>（46px）中居中，<code translate="no">--composer-action-inset</code>。麦克风悬停用 <code translate="no">--composer-action-hover</code>，因为 <code translate="no">--muted</code> 就是输入框的颜色。</td></tr>
+<tr><th scope="row">输入框</th><td><code translate="no">--composer-*</code> 令牌：<code translate="no">--bg-input</code>，无边框，<code translate="no">shadow-sm</code>，悬停或聚焦 <code translate="no">shadow-md</code>（浅色 alpha 0.1，深色 0.25），无 ring，<code translate="no">--radius-lg</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="web-page-preview">网页预览和浏览器工具栏</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">预览框</th><td><code translate="no">components/center-tabs/pip/web-tab-pip.tsx</code>：菜单框架内 <code translate="no">bg-popover</code>，10px 圆角，内容区同样裁剪。圆角与 <code translate="no">apps/desktop/main/web-views/web-views.js</code> 中原生视图的圆角绑定（DOM 裁不了原生视图），两者一起改。</td></tr>
+<tr><th scope="row">32px 头部</th><td>标题 <code translate="no">text-fs-base font-medium text-text-primary</code>，状态 <code translate="no">text-fs-xs text-text-muted</code>，<code translate="no">ghost</code> <code translate="no">icon-sm</code> 按钮，14px 图标，<code translate="no">HoverTip</code> + <code translate="no">TipBody</code>（<a href="../composer/hover-tips.zh.html">悬停提示</a>）。恢复错误是一行 <code translate="no">text-fs-xs text-destructive</code>。</td></tr>
+<tr><th scope="row">CSS 模块</th><td>只放几何：不分层的模块规则会盖过工具类</td></tr>
+<tr><th scope="row">浏览器工具栏</th><td><code translate="no">webToolbarButton()</code>（<code translate="no">components/center-tabs/browser/toolbar/toolbar-button.ts</code>）：<code translate="no">ghost</code> <code translate="no">icon-sm</code>，由 <code translate="no">.webToolbarBtn</code> 固定 26px，放在 40px 的行内</td></tr>
+</tbody>
+</table>
+
+<h2 id="agent-cards">Agent 卡片</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">卡片</th><td><code translate="no">--bg-input</code>，<code translate="no">--composer-shadow</code>（悬停加深），无边框，<code translate="no">xl</code> 圆角，内边距 14px</td></tr>
+<tr><th scope="row">网格</th><td>抬起的卡片，列宽至少 260px</td></tr>
+<tr><th scope="row">内容</th><td>头像（40px）、名称、默认 Agent 显示 <strong>Default</strong>、最多三行描述</td></tr>
+<tr><th scope="row">设置</th><td>在快捷面板，面板打开时卡片带 1.5px <code translate="no">--accent-blue</code> 环</td></tr>
+<tr><th scope="row">分组</th><td>按常驻开关分两组，各有 <code translate="no">md</code> 标题和一行淡色说明</td></tr>
+</tbody>
+</table>
+<details>
+<summary>常驻卡片的海浪</summary>
+<p>泡沫线沿对角线向右下漂移，每条是柔和的浪峰，朝海一侧有更宽的水痕，各自参差不齐。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">层</th><td>两层，卡片底色混入 14% 和 9% 的文字墨色，各由可无缝重复的 SVG 遮罩；每块 56s 和 72s，线条相互穿过</td></tr>
+<tr><th scope="row">同一片海</th><td><code translate="no">SheenField</code> 按卡片在网格中的位置偏移图层，尺寸变化时重算；漂移起点相同，线条跨卡片和间隙连续，并随滚动移动</td></tr>
+<tr><th scope="row">动效</th><td>每周期移动一整块，由合成器播放：不跳变、不重绘。减少动态时静止。</td></tr>
+<tr><th scope="row">限制</th><td>没有自己的颜色，不盖在文字上</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="donts">禁止</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">禁止</th><th scope="col">原因或替代</th></tr></thead>
+<tbody>
+<tr><th scope="row">新增悬停、选中、边框或胶囊样式</th><td>先写进本页。预算：底层灰色悬停、面板、品牌填充、标题标签的 <code translate="no">--bg-input</code>。</td></tr>
+<tr><th scope="row">在底层表面用品牌填充</th><td>品牌色胶囊看起来像警告</td></tr>
+<tr><th scope="row">MCP 或其他内容区列表用不同尺寸</th><td>所有内容区列表用同一套尺寸</td></tr>
+<tr><th scope="row">悬停位移（<code translate="no">translate-y</code>、<code translate="no">scale-105</code>）</th><td>任一表面都不用</td></tr>
+<tr><th scope="row">在调用处改 <code translate="no">button.tsx</code> 的类，或用 CSS 重写按钮</th><td>选变体和尺寸；旧规则覆盖时删除或用 <code translate="no">revert-layer</code></td></tr>
+<tr><th scope="row">设置描述溢出到控件列，或标签放控件上方</th><td>标签放控件上方只用于 <code translate="no">stacked</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td><code translate="no">components/ui</code> 全部是 radix-nova，原有 <code translate="no">&lt;select&gt;</code> 和下拉都已替换：<code translate="no">Command</code>、<code translate="no">Popover</code>、<code translate="no">Tooltip</code>（<code translate="no">--surface-tooltip</code>、<code translate="no">--text-on-tooltip</code> 是 <code translate="no">--foreground</code>、<code translate="no">--background</code> 的别名）、<code translate="no">Tabs</code>（Agent 编辑器用 <code translate="no">line</code>）、<code translate="no">Kbd</code>、<code translate="no">ScrollArea</code>、<code translate="no">Sidebar</code>。所有模态和确认。菜单面板和行、设置通用页、桌面注意力分区、输入框各部分、预览、浏览器工具栏。</td></tr>
+<tr><th scope="row">例外</th><td>附件灯箱保留自己的全屏查看器</td></tr>
+<tr><th scope="row">未完成</th><td>其他设置页（<code translate="no">settings-page.module.css</code> 的行）；设置以外的表单输入框在迁到 shadcn input 前保持 1px 规则</td></tr>
+</tbody>
+</table>

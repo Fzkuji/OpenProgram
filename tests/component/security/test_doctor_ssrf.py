@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from openprogram.cli.commands import doctor
-from openprogram.security import runtime_http_audit
+from openprogram.operations.diagnostics import checks as doctor
+from openprogram.host.security import runtime_http_audit
 
 
 def _inventory(**overrides):
@@ -134,10 +134,11 @@ def test_run_checks_reuses_one_runtime_http_inventory(monkeypatch):
         ]
 
     monkeypatch.setattr(doctor, "CHECKS", ())
-    monkeypatch.setattr("openprogram.system_access.doctor_rows", lambda: [])
+    monkeypatch.setattr("openprogram.host.system_access.doctor_rows", lambda: [])
     monkeypatch.setattr(doctor, "runtime_http_checks", fake_runtime_checks)
+    monkeypatch.setattr(doctor, "_check_command_shell", lambda: (True, "command shell", "bash"))
     monkeypatch.setattr(
-        "openprogram._compat.platform_environment_advisories", lambda _path: []
+        "openprogram.host._platform.environment.platform_environment_advisories", lambda _path: []
     )
 
     rows = doctor.run_checks()
@@ -149,4 +150,5 @@ def test_run_checks_reuses_one_runtime_http_inventory(monkeypatch):
         "runtime-http-policy-proxy",
         "runtime-http-recent-denials",
         "runtime-http-unmanaged-transport",
+        "command shell",
     ]

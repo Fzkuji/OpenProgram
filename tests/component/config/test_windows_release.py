@@ -27,8 +27,6 @@ def _write_fake_runtime(runtime: Path) -> None:
     python = Path(sys.executable).resolve()
     (runtime / "bin").mkdir(parents=True)
     (runtime / "assets" / "playwright").mkdir(parents=True)
-    (runtime / "assets" / "gpa").mkdir(parents=True)
-    (runtime / "assets" / "gpa" / "model.pt").write_bytes(b"test-model")
     (runtime / "bin" / "verify-product-runtime.py").write_text(
         "raise SystemExit(0)\n",
         encoding="utf-8",
@@ -84,15 +82,15 @@ def test_windows_archive_handles_paths_longer_than_legacy_max_path(
 
 
 def test_managed_release_target_includes_windows_zip() -> None:
-    from openprogram import _compat
+    from openprogram.host._platform import environment
 
-    assert _compat.managed_release_target("Windows", "AMD64") == (
+    assert environment.managed_release_target("Windows", "AMD64") == (
         "windows",
         "x86_64",
         ".zip",
         "install-release.ps1",
     )
-    assert _compat.managed_release_target("Windows", "ARM64") == (
+    assert environment.managed_release_target("Windows", "ARM64") == (
         "windows",
         "arm64",
         ".zip",
@@ -101,7 +99,7 @@ def test_managed_release_target_includes_windows_zip() -> None:
 
 
 def test_windows_versioned_installer_uses_immutable_tag(monkeypatch) -> None:
-    from openprogram.updater import github
+    from openprogram.operations.self_update.github_release import github
 
     installer = b'$ErrorActionPreference = "Stop"\nSet-StrictMode -Version Latest\n'
     seen: list[str] = []
@@ -115,7 +113,7 @@ def test_windows_versioned_installer_uses_immutable_tag(monkeypatch) -> None:
         "1.2.3", script_name="install-release.ps1"
     ) == installer
     assert seen == [
-        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/"
+        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/"
         "v1.2.3/scripts/install-release.ps1"
     ]
 
@@ -123,7 +121,7 @@ def test_windows_versioned_installer_uses_immutable_tag(monkeypatch) -> None:
 def test_managed_windows_upgrade_executes_tagged_powershell_installer(
     monkeypatch,
 ) -> None:
-    from openprogram.cli.commands import upgrade
+    from openprogram.interfaces.cli.commands import upgrade
     original_which = shutil.which
     monkeypatch.setattr(
         shutil, "which",
@@ -142,7 +140,7 @@ def test_managed_windows_upgrade_executes_tagged_powershell_installer(
     )
     requested: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "openprogram.updater.github.release_installer",
+        "openprogram.operations.self_update.github_release.github.release_installer",
         lambda version, *, script_name: (
             requested.append((version, script_name))
             or b'$ErrorActionPreference = "Stop"\n'
@@ -193,7 +191,8 @@ def test_windows_release_contract_has_public_bootstrap_and_ci_gate() -> None:
         marker not in installer
         for marker in ("icacls", "Set-Acl", "Add-MpPreference", "Set-MpPreference")
     )
-    matrix = runpy.run_path(str(ROOT / "scripts/release/release-matrix.py"))["release_matrices"](True)
+    selection = runpy.run_path(str(ROOT / "scripts/release/release-matrix.py"))
+    matrix = selection["release_matrices"](selection["Switches"](windows_arm64=True))
     windows = [row for row in matrix["runtime"] if row["platform"] == "windows"]
     assert {(row["runner"], row["arch"]) for row in windows} == {
         ("windows-2025", "x86_64"), ("windows-11-vs2026-arm", "arm64"),
@@ -207,7 +206,7 @@ def test_windows_release_contract_has_public_bootstrap_and_ci_gate() -> None:
     assert r'Join-Path $RuntimeRoot "assets\tui\index.cjs"' in builder
 
 
-def test_windows_desktop_release_requires_signed_installer_and_native_checks() -> None:
+def test_windows_desktop_release_signs_when_it_can_and_keeps_native_checks() -> None:
     package = json.loads(
         (ROOT / "apps" / "desktop" / "package.json").read_text(encoding="utf-8")
     )
@@ -215,13 +214,13 @@ def test_windows_desktop_release_requires_signed_installer_and_native_checks() -
         encoding="utf-8"
     )
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    updater = (ROOT / "apps" / "desktop" / "update-service.js").read_text(
+    updater = (ROOT / "apps" / "desktop" / "main" / "self-update" / "update-service.js").read_text(
         encoding="utf-8"
     )
-    signature = (ROOT / "apps" / "desktop" / "windows-signature.js").read_text(
+    signature = (ROOT / "apps" / "desktop" / "main" / "self-update" / "windows-signature.js").read_text(
         encoding="utf-8"
     )
-    terminal = (ROOT / "apps" / "desktop" / "terminal-command.js").read_text(
+    terminal = (ROOT / "apps" / "desktop" / "main" / "terminal" / "terminal-command.js").read_text(
         encoding="utf-8"
     )
     prepare = (
@@ -239,7 +238,9 @@ def test_windows_desktop_release_requires_signed_installer_and_native_checks() -
     assert package["build"]["nsis"]["perMachine"] is False
     assert "WINDOWS_CSC_LINK" in workflow
     assert "Get-AuthenticodeSignature" in workflow
-    assert "smoke-packaged-runtime.ps1" in workflow
+    assert '$Signature.Status -ne "NotSigned"' in workflow
+    assert 'throw "Windows Desktop publication requires' not in workflow
+    assert "the seed in the Windows App is missing" in workflow
     assert "windows-desktop:" in ci
     assert "runner: windows-2025" in ci
     assert "runner: windows-11-vs2026-arm" in ci
@@ -256,7 +257,8 @@ def test_windows_desktop_release_requires_signed_installer_and_native_checks() -
 
 
 def test_windows_environment_advisories_are_read_only(monkeypatch, tmp_path: Path) -> None:
-    from openprogram import _compat
+    from openprogram.host._platform import environment
+    from openprogram.host._platform import terminal as platform_terminal
 
     outputs = iter([
         "disabled\n",
@@ -268,10 +270,10 @@ def test_windows_environment_advisories_are_read_only(monkeypatch, tmp_path: Pat
         scripts.append(script)
         return next(outputs)
 
-    monkeypatch.setattr(_compat._sys, "platform", "win32")
-    monkeypatch.setattr(_compat, "_windows_powershell", fake_powershell)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(platform_terminal, "_windows_powershell", fake_powershell)
 
-    rows = _compat.platform_environment_advisories(tmp_path)
+    rows = environment.platform_environment_advisories(tmp_path)
 
     assert [row[1] for row in rows] == [
         "windows long paths",
@@ -288,7 +290,7 @@ def test_windows_environment_advisories_are_read_only(monkeypatch, tmp_path: Pat
 
 
 def test_windows_wsl_sandbox_probe_requires_working_bubblewrap(monkeypatch) -> None:
-    from openprogram import _compat
+    from openprogram.host._platform import environment
 
     calls: list[list[str]] = []
 
@@ -297,23 +299,23 @@ def test_windows_wsl_sandbox_probe_requires_working_bubblewrap(monkeypatch) -> N
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(
-        _compat,
+        environment,
         "windows_wsl_exec_prefix",
         lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
     )
-    monkeypatch.setattr(_compat._subprocess, "run", fake_run)
-    _compat.windows_wsl_sandbox_reason.cache_clear()
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    environment.windows_wsl_sandbox_reason.cache_clear()
 
-    assert _compat.windows_wsl_sandbox_reason() is None
+    assert environment.windows_wsl_sandbox_reason() is None
     assert calls[0][:6] == [
         "wsl.exe", "--distribution", "Ubuntu", "--exec", "sh", "-c",
     ]
     assert "bwrap --new-session" in calls[0][-1]
-    _compat.windows_wsl_sandbox_reason.cache_clear()
+    environment.windows_wsl_sandbox_reason.cache_clear()
 
 
 def test_windows_wsl_path_translation_uses_selected_distribution(monkeypatch) -> None:
-    from openprogram import _compat
+    from openprogram.host._platform import environment
 
     calls: list[list[str]] = []
 
@@ -322,16 +324,16 @@ def test_windows_wsl_path_translation_uses_selected_distribution(monkeypatch) ->
         return subprocess.CompletedProcess(command, 0, "/mnt/c/work\n", "")
 
     monkeypatch.setattr(
-        _compat,
+        environment,
         "windows_wsl_exec_prefix",
         lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
     )
-    monkeypatch.setattr(_compat._subprocess, "run", fake_run)
-    _compat.windows_path_to_wsl.cache_clear()
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    environment.windows_path_to_wsl.cache_clear()
 
-    assert _compat.windows_path_to_wsl(r"C:\work") == "/mnt/c/work"
+    assert environment.windows_path_to_wsl(r"C:\work") == "/mnt/c/work"
     assert calls[0][-4:-1] == ["wslpath", "-a", "-u"]
-    _compat.windows_path_to_wsl.cache_clear()
+    environment.windows_path_to_wsl.cache_clear()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell release installer is Windows-only")
@@ -396,7 +398,7 @@ def test_windows_release_install_upgrade_and_failed_upgrade_keep_active_launcher
         "OPENPROGRAM_RUNTIME_SHA256": checksum,
         "OPENPROGRAM_STATE_DIR": str(state),
         "OPENPROGRAM_BIN_DIR": str(bin_dir),
-        "OPENPROGRAM_REPOSITORY": "Fzkuji/OpenProgram",
+        "OPENPROGRAM_REPOSITORY": "FuzzyKuji/OpenProgram",
     }
     first_version = importlib.metadata.version("openprogram")
     first_env = {**base_env, "OPENPROGRAM_VERSION": first_version}
@@ -417,10 +419,10 @@ def test_windows_release_install_upgrade_and_failed_upgrade_keep_active_launcher
         timeout=90,
     )
     assert first.returncode == 0, first.stderr or first.stdout
-    launcher = bin_dir / "openprogram.ps1"
+    launcher = bin_dir / "openprogram.cmd"
+    assert not (bin_dir / "openprogram.ps1").exists()
     first_launcher = launcher.read_text(encoding="utf-8")
     assert str(state / "runtime" / "cli" / "releases" / first_version) in first_launcher
-    assert (bin_dir / "openprogram.cmd").is_file()
 
     second_version = "9.9.8"
     second = subprocess.run(
@@ -442,7 +444,7 @@ def test_windows_release_install_upgrade_and_failed_upgrade_keep_active_launcher
     assert second.returncode == 0, second.stderr or second.stdout
     second_launcher = launcher.read_text(encoding="utf-8")
     assert str(state / "runtime" / "cli" / "releases" / second_version) in second_launcher
-    assert (bin_dir / "openprogram.previous.ps1").read_text(
+    assert (bin_dir / "openprogram.previous.cmd").read_text(
         encoding="utf-8"
     ) == first_launcher
 

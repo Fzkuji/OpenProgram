@@ -5,15 +5,16 @@ from __future__ import annotations
 import hashlib
 import html as _html
 import json
+import posixpath
 from pathlib import Path
 
 
 def _asset_version() -> str:
-    """Short content hash of site.css + site.js, for cache-busting their URLs.
+    """Short content hash of shared docs assets, for cache-busting their URLs.
     Same content → same version (stable diffs); any edit → new version (browsers
     re-fetch instead of serving a stale cached copy)."""
     h = hashlib.md5()
-    for name in ("site.css", "site.js"):
+    for name in ("site.css", "site.js", "theme.js"):
         p = Path(__file__).parent / "assets" / name
         try:
             h.update(p.read_bytes())
@@ -47,6 +48,11 @@ _IC_SUN = (
     ' stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3.2"/>'
     '<path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3"/></svg>'
 )
+_IC_SYSTEM = (
+    '<svg class="ic-system" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"'
+    ' stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+    '<rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M8 11.5V14M5.5 14h5"/></svg>'
+)
 _IC_GLOBE = (
     '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"'
     ' stroke-width="1.4"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4" stroke-linecap="round"/>'
@@ -72,12 +78,6 @@ _IC_COLLAPSE = (
     '<path d="M2 6.2h4.2V2M14 6.2H9.8V2M2 9.8h4.2V14M14 9.8H9.8V14"/></svg>'
 )
 
-# Inline head script: set theme before first paint to avoid a flash.
-_THEME_BOOT = """
-(function(){try{var t=localStorage.getItem('op-docs-theme');
-if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
-document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
-"""
 
 
 def render_page(
@@ -98,6 +98,9 @@ def render_page(
     canonical_url: str = "",
     description: str = "",
     docs_root_url: str = "",
+    markdown_url: str = "",
+    llms_url: str = "",
+    article_class: str = "",
 ) -> str:
     """Assemble one full HTML document.
 
@@ -111,6 +114,15 @@ def render_page(
     canonical = (
         f'<link rel="canonical" href="{_html.escape(canonical_url, quote=True)}">'
         if canonical_url else ""
+    )
+    markdown_alternate = (
+        f'<link rel="alternate" type="text/markdown" '
+        f'href="{_html.escape(markdown_url, quote=True)}">'
+        if markdown_url else ""
+    )
+    describedby = (
+        f'<link rel="describedby" href="{_html.escape(llms_url, quote=True)}">'
+        if llms_url else ""
     )
     language_alternates = ""
     if canonical_url and alt_lang_canonical_url:
@@ -131,6 +143,10 @@ def render_page(
     )
     social_description = _html.escape(description, quote=True)
     social_url = _html.escape(canonical_url, quote=True)
+    # The site root holds favicon.ico; the docs are mounted one level below it.
+    site_root = posixpath.dirname(base.rstrip("/")).rstrip("/") + "/"
+    social_image = _html.escape(
+        (docs_root_url or base) + "images/openprogram-social-card.png", quote=True)
     breadcrumb_data = ""
     if canonical_url and docs_root_url and canonical_url.rstrip("/") != docs_root_url.rstrip("/"):
         payload = {
@@ -148,19 +164,22 @@ def render_page(
         }
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
         breadcrumb_data = f'<script type="application/ld+json">{encoded}</script>'
+    article_attr = f' class="{_html.escape(article_class, quote=True)}"' if article_class else ""
     alt_attr = f' data-alt-lang-url="{alt_lang_url}"' if alt_lang_url else ""
     if nav_html:
         layout_cls = ""
         sidebar_html = (
-            '<nav class="sidebar">\n'
+            '<nav class="sidebar" aria-label="Documentation">\n'
             '    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"\n'
-            '           placeholder="Filter docs…" autocomplete="off" spellcheck="false">\n'
+            '           aria-label="Filter docs" placeholder="Filter docs…" autocomplete="off" spellcheck="false">\n'
             f'    <div class="nav-tree">{nav_html}</div>\n'
             '  </nav>\n  '
         )
     else:
         layout_cls = " no-side"
         sidebar_html = ""
+    if not toc_html:
+        layout_cls += " no-toc"
     return f"""<!DOCTYPE html>
 <html lang="{page_lang}" data-base="{base}" data-page-lang="{page_lang}" data-build="{BUILD_STAMP}"{alt_attr}>
 <head>
@@ -169,6 +188,8 @@ def render_page(
 <title>{safe_title} · OpenProgram Docs</title>
 {description_meta}
 {canonical}
+{markdown_alternate}
+{describedby}
 {language_alternates}
 {breadcrumb_data}
 <meta property="og:type" content="article">
@@ -177,8 +198,8 @@ def render_page(
 <meta property="og:url" content="{social_url}">
 <meta property="og:title" content="{safe_title} · OpenProgram Docs">
 <meta property="og:description" content="{social_description}">
-<meta property="og:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
-<meta property="og:image:secure_url" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta property="og:image" content="{social_image}">
+<meta property="og:image:secure_url" content="{social_image}">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -186,17 +207,18 @@ def render_page(
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{safe_title} · OpenProgram Docs">
 <meta name="twitter:description" content="{social_description}">
-<meta name="twitter:image" content="https://openprogram.io/docs/images/openprogram-social-card.png">
+<meta name="twitter:image" content="{social_image}">
 <meta name="twitter:image:alt" content="OpenProgram: Self-Programming AI Agent Framework">
-<script>{_THEME_BOOT}</script>
-<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="{site_root}favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="{base}assets/mark.svg">
 <link rel="stylesheet" href="{base}assets/site.css?v={ASSET_VER}">
 <link rel="stylesheet" href="{base}assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
 <link rel="stylesheet" href="{base}assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<script src="{base}assets/theme.js?v={ASSET_VER}"></script>
 {extra_head}
 </head>
 <body>
+<a class="skip" href="#content" data-i18n="skip">Skip to content</a>
 <header class="topbar">
   <button class="icon hamburger" aria-label="Menu">{_IC_MENU}</button>
   <a class="brand" href="{base}index.html"><img class="mark" src="{base}assets/mark.svg" alt="">OpenProgram Docs</a>
@@ -213,13 +235,20 @@ def render_page(
       <button class="lang-opt" data-lang="zh" role="menuitem"><span>简体中文</span>{_IC_CHECK}</button>
     </div>
   </div>
-  <button class="icon" id="theme-toggle" aria-label="Toggle theme">{_IC_MOON}{_IC_SUN}</button>
+  <div class="theme-wrap">
+    <button class="icon" id="theme-toggle" aria-label="Theme" aria-haspopup="menu" aria-controls="theme-menu" aria-expanded="false">{_IC_SYSTEM}{_IC_MOON}{_IC_SUN}</button>
+    <div class="theme-menu" id="theme-menu" role="menu" aria-labelledby="theme-toggle">
+      <button class="theme-opt" data-theme-choice="system" role="menuitemradio" aria-checked="true"><span>Follow system</span>{_IC_CHECK}</button>
+      <button class="theme-opt" data-theme-choice="light" role="menuitemradio" aria-checked="false"><span>Light</span>{_IC_CHECK}</button>
+      <button class="theme-opt" data-theme-choice="dark" role="menuitemradio" aria-checked="false"><span>Dark</span>{_IC_CHECK}</button>
+    </div>
+  </div>
 </header>
 <nav class="tabbar">{tabbar_html}</nav>
 
 <div class="scrim"></div>
 <div class="layout{layout_cls}">
-  {sidebar_html}<main class="content"><button class="fs-toggle" aria-label="Fullscreen" title="Fullscreen (Esc to exit)">{_IC_EXPAND}{_IC_COLLAPSE}</button><article>{breadcrumb_html}{body_html}{meta_html}{prevnext_html}</article></main>
+  {sidebar_html}<main class="content" id="content"><button class="fs-toggle" aria-label="Fullscreen" title="Fullscreen (Esc to exit)">{_IC_EXPAND}{_IC_COLLAPSE}</button><article{article_attr}>{breadcrumb_html}{body_html}{meta_html}{prevnext_html}</article></main>
   <aside class="toc">{toc_html}</aside>
 </div>
 

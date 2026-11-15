@@ -21,10 +21,10 @@ const {buildSync}=require("esbuild");
 buildSync({stdin:{contents:`
 import React from "react";
 import {createRoot} from "react-dom/client";
-import {NewTabPage} from "./components/center-tabs/new-tab-page";
-import {PageNavigation} from "./components/center-tabs/page-navigation";
+import {NewTabPage} from "./components/center-tabs/pages/new-tab-page";
+import {PageNavigation} from "./components/center-tabs/browser/toolbar/page-navigation";
 import {useCenterTabs} from "./lib/tabs/center-tabs-store";
-import {setNavigate} from "./lib/navigate";
+import {setNavigate} from "./lib/nav/navigate";
 setNavigate(path=>window.history.pushState(null,"",path));
 useCenterTabs.getState().openNewTabPage();
 function App(){const tabs=useCenterTabs(s=>s.tabs); const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));
@@ -32,7 +32,7 @@ return <><button onClick={()=>useCenterTabs.getState().openNewTabPage()}>New tab
 createRoot(document.getElementById("root")).render(<App/>);`,resolveDir:process.argv[1],loader:"tsx"},
 bundle:true,format:"iife",platform:"browser",jsx:"automatic",loader:{".css":"empty"},outfile:process.argv[2],tsconfig:process.argv[1]+"/tsconfig.json"});
 ''', str(ROOT / "apps/web"), str(bundle)], cwd=ROOT, check=True, capture_output=True)
-    (tmp_path / "index.html").write_text('<div id="root"></div><script src="launcher.js"></script>')
+    (tmp_path / "index.html").write_text('<meta charset="utf-8"><div id="root"></div><script src="launcher.js"></script>')
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(tmp_path)))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -43,12 +43,12 @@ bundle:true,format:"iife",platform:"browser",jsx:"automatic",loader:{".css":"emp
                 page = browser.new_page()
                 page.add_init_script("localStorage.clear()")
                 page.route("**/api/providers", lambda route: route.fulfill(json={"providers": []}))
-                apps = [{"id": name.lower().replace(" ", "-"), "title": name, "scope": "global", "enabled": True} for name in ["Calculator", "Paper reader", "File analysis"]]
+                apps = [{"id": name.lower().replace(" ", "-"), "title": name, "scope": "global", "enabled": True} for name in ["Calculator", "PDF editor"]]
                 page.route("**/api/applications", lambda route: route.fulfill(json={"applications": apps}))
                 page.route("**/api/applications/*/open", lambda route: route.fulfill(json={"instance_id": "a" * 64}))
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
-                for name, destination in [("Files", "files"), ("New chat", "session"), ("Browser", "browser"), ("Terminal", "terminal"), ("Calculator", "application"), ("Paper reader", "application"), ("File analysis", "application")]:
+                for name, destination in [("Files", "files"), ("New chat", "session"), ("Browser", "browser"), ("Terminal", "terminal"), ("Calculator", "application"), ("PDF editor", "application")]:
                     page.goto(f"http://127.0.0.1:{server.server_port}/")
                     expect(page.get_by_role("button", name="Back", exact=True)).to_be_disabled()
                     page.get_by_role("button", name=name, exact=True).click()

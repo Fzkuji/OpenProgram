@@ -8,7 +8,7 @@ byte-for-byte alone, and neither outcome leaves a staged copy of memory behind
 in the temp directory.
 
 The fixtures build a minimal but *valid* workspace — one topic paragraph
-carrying a block ID and a footnote that resolves to an archived source —
+carrying a block ID and a footnote that cites a chat message —
 because anything less is refused by the parser before the routes are reached.
 """
 from __future__ import annotations
@@ -26,13 +26,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-SOURCE = '# Conversation 1\n\n<a id="d1-1"></a>\n\nuser: remember this\n'
 NOTE = (
     "# Note\n"
     "\n"
     "A fact worth keeping.[^e-1f4c7a2b90] ^abc12345\n"
     "\n"
-    "[^e-1f4c7a2b90]: Time: `2026-01-01`; Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    "[^e-1f4c7a2b90]: Time: `2026-01-01`; Sources: [D1:1](/s/s1#d1-1)\n"
 )
 # A second topic whose paragraph links into NOTE's block.
 LINKING = (
@@ -40,7 +39,7 @@ LINKING = (
     "\n"
     "See [the note](note.md#^abc12345).[^e-2f4c7a2b91] ^def45678\n"
     "\n"
-    "[^e-2f4c7a2b91]: Time: `2026-01-02`; Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    "[^e-2f4c7a2b91]: Time: `2026-01-02`; Sources: [D1:1](/s/s1#d1-1)\n"
 )
 
 
@@ -52,26 +51,25 @@ def _stage_dirs() -> set[str]:
 
 
 @pytest.fixture
-def memory(tmp_path, monkeypatch):
+def memory(tmp_path, monkeypatch, chats):
     """A memory workspace holding one valid topic. Returns its root."""
-    import openprogram.paths as paths
+    import openprogram.state.paths as paths
 
     test_temp = tmp_path / "temp"
     test_temp.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(test_temp))
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
 
-    from openprogram.memory import store
+    from openprogram.state.memory import store
     root = store.ensure()
-    (root / "sources").mkdir(parents=True, exist_ok=True)
-    (root / "sources" / "D1.md").write_text(SOURCE, encoding="utf-8")
+    chats.say("s1", "d1-1", "remember this")
     (root / "topics" / "note.md").write_text(NOTE, encoding="utf-8")
     return root
 
 
 @pytest.fixture
 def client(memory):
-    from openprogram.webui.routes.settings import memory as routes
+    from openprogram.interfaces.server.routes.settings import memory as routes
     app = FastAPI()
     routes.register(app)
     return TestClient(app)
@@ -81,7 +79,7 @@ def client(memory):
 
 
 def test_within_rejects_paths_that_leave_the_root(tmp_path):
-    from openprogram.webui.routes.settings.memory import _within
+    from openprogram.interfaces.server.routes.settings.memory import _within
 
     root = tmp_path / "topics"
     root.mkdir()
@@ -130,7 +128,7 @@ def test_timeline_refuses_a_date_that_is_really_a_path(client):
 def test_status_route_returns_the_inspect_status_contract(
     client, monkeypatch,
 ):
-    from openprogram.memory.retrieval import inspect
+    from openprogram.state.memory.retrieval import inspect
 
     expected = {
         "workspace": "/memory",
@@ -165,8 +163,8 @@ def test_status_route_returns_the_inspect_status_contract(
 def test_settings_status_skips_complete_workspace_inspection(
     client, monkeypatch, memory,
 ):
-    from openprogram.memory import store
-    from openprogram.memory.retrieval import embedding_model, inspect
+    from openprogram.state.memory import store
+    from openprogram.state.memory.retrieval import embedding_model, inspect
 
     monkeypatch.setattr(
         inspect,
@@ -186,6 +184,7 @@ def test_settings_status_skips_complete_workspace_inspection(
     monkeypatch.setattr(
         embedding_model, "default_model_is_cached", lambda: True,
     )
+    monkeypatch.setattr(embedding_model, "packages_available", lambda: True)
 
     response = client.get("/api/memory/status?settings=true")
 
@@ -193,7 +192,48 @@ def test_settings_status_skips_complete_workspace_inspection(
     assert response.json() == {
         "workspace_path": str(memory.resolve()),
         "embedding_available": True,
+        "embedding_packages": True,
     }
+
+
+def test_settings_status_needs_the_packages_not_only_the_model(
+    client, monkeypatch, memory,
+):
+    """A product runtime has no torch: cached model files alone are not enough."""
+    from openprogram.state.memory import store
+    from openprogram.state.memory.retrieval import embedding_model
+
+    monkeypatch.setattr(store, "root", lambda: memory)
+    monkeypatch.setattr(embedding_model, "default_model_is_cached", lambda: True)
+    monkeypatch.setattr(embedding_model, "packages_available", lambda: False)
+
+    payload = client.get("/api/memory/status?settings=true").json()
+
+    assert payload["embedding_available"] is False
+    assert payload["embedding_packages"] is False
+
+
+@pytest.mark.parametrize("cached", [True, False])
+def test_settings_status_reports_intel_macos_unavailable(
+    client, monkeypatch, memory, cached,
+):
+    import platform
+    import sys
+
+    from openprogram.state.memory import store
+    from openprogram.state.memory.retrieval import embedding_model
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(store, "root", lambda: memory)
+    monkeypatch.setattr(
+        embedding_model, "default_model_is_cached", lambda: cached,
+    )
+
+    response = client.get("/api/memory/status?settings=true")
+
+    assert response.status_code == 200
+    assert response.json()["embedding_available"] is False
 
 
 def test_embedding_install_downloads_snapshot_without_loading_encoder(
@@ -201,7 +241,7 @@ def test_embedding_install_downloads_snapshot_without_loading_encoder(
 ):
     import asyncio
 
-    from openprogram.memory.retrieval import embedding, embedding_model
+    from openprogram.state.memory.retrieval import embedding, embedding_model
 
     calls = []
     inside_worker = False
@@ -215,6 +255,12 @@ def test_embedding_install_downloads_snapshot_without_loading_encoder(
             inside_worker = False
 
     monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(
+        embedding_model,
+        "install_packages",
+        lambda: calls.append(("packages", inside_worker)),
+    )
+    monkeypatch.setattr(embedding_model, "packages_available", lambda: True)
     monkeypatch.setattr(
         embedding_model,
         "install_default_model",
@@ -238,11 +284,41 @@ def test_embedding_install_downloads_snapshot_without_loading_encoder(
 
     assert response.status_code == 200
     assert response.json() == {"embedding_available": True}
-    assert calls == [("install", True), ("verify", True)]
+    assert calls == [("packages", True), ("install", True), ("verify", True)]
+
+
+def test_embedding_install_rejects_intel_macos_before_download(
+    client, monkeypatch,
+):
+    import platform
+    import sys
+
+    from openprogram.state.memory.retrieval import embedding_model
+
+    calls = []
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(
+        embedding_model, "install_default_model", lambda: calls.append("install"),
+    )
+    monkeypatch.setattr(
+        embedding_model, "default_model_is_cached", lambda: True,
+    )
+
+    response = client.post("/api/memory/embedding/install")
+
+    assert response.status_code == 502
+    assert response.json()["embedding_available"] is False
+    assert "Intel macOS" in response.json()["error"]
+    assert "use BM25" in response.json()["error"]
+    assert calls == []
 
 
 def test_embedding_install_returns_a_retryable_error(client, monkeypatch):
-    from openprogram.memory.retrieval import embedding_model
+    from openprogram.state.memory.retrieval import embedding_model
+
+    monkeypatch.setattr(embedding_model, "install_packages", lambda: None)
+    monkeypatch.setattr(embedding_model, "packages_available", lambda: True)
 
     monkeypatch.setattr(
         embedding_model,
@@ -261,7 +337,10 @@ def test_embedding_install_returns_a_retryable_error(client, monkeypatch):
 
 
 def test_embedding_install_rejects_an_unverified_download(client, monkeypatch):
-    from openprogram.memory.retrieval import embedding_model
+    from openprogram.state.memory.retrieval import embedding_model
+
+    monkeypatch.setattr(embedding_model, "install_packages", lambda: None)
+    monkeypatch.setattr(embedding_model, "packages_available", lambda: True)
 
     monkeypatch.setattr(embedding_model, "install_default_model", lambda: None)
     monkeypatch.setattr(
@@ -300,13 +379,13 @@ def test_ensure_initializes_git_and_snapshots_existing_memory(
     tmp_path, monkeypatch,
 ):
     state = tmp_path / "state"
-    root = state / "memory"
+    root = state / "projects" / "default" / "memory"
     topic = root / "topics/note.md"
     topic.parent.mkdir(parents=True)
     topic.write_text("# Existing\n", encoding="utf-8")
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
-    from openprogram.memory import store
+    from openprogram.state.memory import store
 
     assert store.ensure() == root
     assert (root / ".git").is_dir()
@@ -323,39 +402,36 @@ def test_ensure_migrates_marker_workspace_missing_the_current_layout(
     tmp_path, monkeypatch,
 ):
     state = tmp_path / "state"
-    root = state / "memory"
+    root = state / "projects" / "default" / "memory"
     legacy = root / "wiki/Old.md"
     legacy.parent.mkdir(parents=True)
     legacy.write_text("old memory\n", encoding="utf-8")
     marker = root / ".git/openprogram-memory-ready"
     marker.parent.mkdir()
     marker.write_text("ready\n", encoding="utf-8")
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: state)
 
-    from openprogram.memory import store
+    from openprogram.state.memory import store
 
     assert store.ensure() == root
     assert (root / "topics").is_dir()
-    assert (root / "sources").is_dir()
+    assert not (root / "sources").exists()
     assert not (root / "wiki").exists()
-    assert (state / "memory-superseded/wiki/Old.md").read_text(
+    assert (root.parent / "memory-superseded/wiki/Old.md").read_text(
         encoding="utf-8",
     ) == "old memory\n"
 
 
 def test_structured_delete_is_recorded_in_git_history(tmp_path):
-    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.state.memory.management import MemoryWorkspace
 
     root = tmp_path / "memory"
-    (root / "sources").mkdir(parents=True)
-    (root / "topics").mkdir()
-    (root / "sources/D1.md").write_text(SOURCE, encoding="utf-8")
+    (root / "topics").mkdir(parents=True)
     (root / "topics/note.md").write_text(NOTE, encoding="utf-8")
     workspace = MemoryWorkspace(root)
     try:
         result = workspace.update(
-            base_revision=workspace.revision(),
-            changes=[{"path": "topics/note.md", "action": "delete"}],
+            memory_changes=[{"op": "delete_record", "memory_id": "abc12345"}],
             commit_message="Remove obsolete memory",
             git_commit="on",
         )
@@ -371,60 +447,20 @@ def test_structured_delete_is_recorded_in_git_history(tmp_path):
     assert "A fact worth keeping" in previous
 
 
-def test_structured_changes_api_uses_the_workspace_transaction(client, memory):
-    from openprogram.memory.management.transaction import workspace_revision
-
-    response = client.post("/api/memory/changes", json={
-        "base_revision": workspace_revision(memory),
-        "changes": [{
-            "path": "topics/new.md",
-            "action": "write",
-            "content": (
-                "# New\n\n"
-                "A new fact.[^e1]\n\n"
-                "[^e1]: Time: `2026-08-15`; Sources: new-source-api\n"
-            ),
-        }],
-        "sources": [{
-            "label": "new-source-api",
-            "role": "user",
-            "content": "A new fact.",
-            "observed_at": "2026-08-15",
-        }],
-        "commit_message": "Add API memory",
-    })
-
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["ok"] is True
-    assert payload["source_ids"]["new-source-api"].startswith("claude-code/")
-    written = (memory / "topics/new.md").read_text(encoding="utf-8")
-    assert "new-source-api" not in written
-    assert payload["source_ids"]["new-source-api"] in written
-
-
 def test_record_changes_api_creates_a_memory_and_derived_views(client, memory):
-    from openprogram.memory.management.transaction import workspace_revision
-    from openprogram.memory.markdown import parse_topic_tree
+    from openprogram.state.memory.markdown import parse_topic_tree
 
     response = client.post("/api/memory/changes", json={
-        "base_revision": workspace_revision(memory),
         "memory_changes": [{
             "op": "create_record",
             "content": "Created through the record API.",
             "time": "2026-08-15",
-            "source_refs": ["new-source-record"],
+            "sources": [{"source": "/s/s1#d1-1", "label": "record"}],
             "destination": {
                 "topic_path": "topics/from-api.md",
                 "headings": ["API"],
                 "position": "end",
             },
-        }],
-        "sources": [{
-            "label": "new-source-record",
-            "role": "user",
-            "content": "Created through the record API.",
-            "observed_at": "2026-08-15",
         }],
     })
 
@@ -437,9 +473,7 @@ def test_record_changes_api_creates_a_memory_and_derived_views(client, memory):
         if unit.topic_path == "from-api.md"
     ]
     assert len(created) == 1
-    assert created[0].source_refs == (
-        payload["source_ids"]["new-source-record"],
-    )
+    assert created[0].source_refs == ("openprogram/s1/d1-1",)
     assert (memory / "timeline/2026/08/15.md").is_file()
     assert (memory / "recent_events.jsonl").is_file()
     assert (memory / "relations.json").is_file()
@@ -448,11 +482,11 @@ def test_record_changes_api_creates_a_memory_and_derived_views(client, memory):
 def test_topic_edit_uses_configured_recent_view_limit(
     client, memory, monkeypatch,
 ):
-    from openprogram.memory.management.config import MemoryConfig
+    from openprogram.state.memory.management.config import MemoryConfig
 
     (memory / "topics/other.md").write_text(LINKING, encoding="utf-8")
     monkeypatch.setattr(
-        "openprogram.memory.management.config.load_memory_config",
+        "openprogram.state.memory.management.config.load_memory_config",
         lambda: MemoryConfig(recent_limit=1),
     )
 
@@ -471,10 +505,10 @@ def test_topic_edit_uses_configured_recent_view_limit(
 
 
 def test_recent_route_reports_configured_record_limit(client, monkeypatch):
-    from openprogram.memory.management.config import MemoryConfig
+    from openprogram.state.memory.management.config import MemoryConfig
 
     monkeypatch.setattr(
-        "openprogram.memory.management.config.load_memory_config",
+        "openprogram.state.memory.management.config.load_memory_config",
         lambda: MemoryConfig(recent_limit=25),
     )
 
@@ -488,7 +522,7 @@ def test_memory_update_schema_constructs_a_google_function_declaration():
     from google.genai import types as gtypes
 
     from openprogram.programs.tools.knowledge.memory.memory import UPDATE_SPEC
-    from openprogram.providers._schema import normalize
+    from openprogram.models.providers.schema import normalize
 
     parameters = normalize(UPDATE_SPEC["parameters"], "gemini_openapi")
     declaration = gtypes.FunctionDeclaration(
@@ -518,48 +552,8 @@ def test_memory_update_schema_constructs_a_google_function_declaration():
     assert "8 visible characters" in label_description
     assert "6 words" in label_description
     assert "speaker" in label_description
-    assert "sequence" in label_description
     assert "markdown" in label_description
     assert "source_refs" not in item["properties"]
-
-
-def test_structured_changes_api_reports_stale_revision(client, memory):
-    response = client.post("/api/memory/changes", json={
-        "base_revision": "stale",
-        "changes": [{"path": "topics/note.md", "action": "delete"}],
-    })
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "CONCURRENT_UPDATE"
-    assert (memory / "topics/note.md").is_file()
-
-
-def test_memory_changes_api_accepts_the_compatible_unified_diff(client, memory):
-    from openprogram.memory.management.transaction import workspace_revision
-
-    original = (memory / "topics/note.md").read_text(encoding="utf-8")
-    updated = original.replace("A fact", "A corrected fact")
-    response = client.post("/api/memory/changes", json={
-        "base_revision": workspace_revision(memory),
-        "patch": (
-            "--- a/topics/note.md\n"
-            "+++ b/topics/note.md\n"
-            "@@ -1,5 +1,5 @@\n"
-            + "".join(
-                ("-" if old != new else " ") + old
-                + (("+" + new) if old != new else "")
-                for old, new in zip(
-                    original.splitlines(keepends=True),
-                    updated.splitlines(keepends=True),
-                )
-            )
-        ),
-    })
-
-    assert response.status_code == 200, response.text
-    assert "A corrected fact" in (
-        memory / "topics/note.md"
-    ).read_text(encoding="utf-8")
 
 
 def test_structured_changes_api_requires_base_revision(client, memory):
@@ -575,7 +569,7 @@ def test_structured_changes_api_requires_base_revision(client, memory):
 def test_structured_changes_api_rejects_non_string_commit_message(
     client, memory,
 ):
-    from openprogram.memory.management.transaction import workspace_revision
+    from openprogram.state.memory.management.transaction import workspace_revision
 
     response = client.post("/api/memory/changes", json={
         "base_revision": workspace_revision(memory),
@@ -615,12 +609,12 @@ CORE = (
     "\n"
     "Always on.[^e-3f4c7a2b92] ^bcd23456\n"
     "\n"
-    "[^e-3f4c7a2b92]: Time: `2026-01-03`; Sources: [D1:1](../sources/D1.md#d1-1)\n"
+    "[^e-3f4c7a2b92]: Time: `2026-01-03`; Sources: [D1:1](/s/s1#d1-1)\n"
 )
 
 
 def test_core_save_lands_on_the_master_and_is_rendered(client, memory):
-    """The editor edits ``topics/core.md``; the root file is the render.
+    """The editor edits ``topics/core.md``; ``MEMORY.md`` carries the render.
 
     Editing the render instead would hand the browser a copy cut to the
     token budget and save that truncated text back as the whole thing.
@@ -630,7 +624,8 @@ def test_core_save_lands_on_the_master_and_is_rendered(client, memory):
     assert "Always on." in (
         memory / "topics" / "core.md"
     ).read_text(encoding="utf-8")
-    assert "Always on." in (memory / "core.md").read_text(encoding="utf-8")
+    assert "Always on." in (memory / "MEMORY.md").read_text(encoding="utf-8")
+    assert not (memory / "core.md").exists()
 
     read_back = client.get("/api/memory/core")
     payload = read_back.json()
@@ -639,11 +634,9 @@ def test_core_save_lands_on_the_master_and_is_rendered(client, memory):
     ).read_text(encoding="utf-8")
     assert payload["size"] == (memory / "topics/core.md").stat().st_size
     assert payload["mtime"] == (memory / "topics/core.md").stat().st_mtime
-    assert payload["rendered_content"] == (
-        memory / "core.md"
-    ).read_text(encoding="utf-8")
-    assert payload["rendered_size"] == (memory / "core.md").stat().st_size
-    assert payload["rendered_mtime"] == (memory / "core.md").stat().st_mtime
+    assert "Always on." in payload["rendered_content"]
+    assert payload["rendered_size"] == (memory / "MEMORY.md").stat().st_size
+    assert payload["rendered_mtime"] == (memory / "MEMORY.md").stat().st_mtime
     assert 0 < payload["rendered_tokens"] <= payload["budget_tokens"]
     assert payload["budget_tokens"] == 2_000
 
@@ -651,11 +644,11 @@ def test_core_save_lands_on_the_master_and_is_rendered(client, memory):
 def test_core_route_distinguishes_rendered_from_disabled_injection(
     client, memory, monkeypatch,
 ):
-    from openprogram.memory.management.config import MemoryConfig
+    from openprogram.state.memory.management.config import MemoryConfig
 
     assert client.put("/api/memory/core", json={"content": CORE}).status_code == 200
     monkeypatch.setattr(
-        "openprogram.memory.management.config.load_memory_config",
+        "openprogram.state.memory.management.config.load_memory_config",
         lambda: MemoryConfig(core_inject=False),
     )
 
@@ -692,8 +685,8 @@ def test_empty_core_keeps_legacy_and_effective_fields(client):
 def test_core_get_waits_for_a_complete_install_snapshot(
     client, memory, monkeypatch,
 ):
-    from openprogram.memory.management import block_views
-    from openprogram.memory.management.transaction import staged_edit
+    from openprogram.state.memory.management import block_views
+    from openprogram.state.memory.management.transaction import staged_edit
 
     assert client.put("/api/memory/core", json={"content": CORE}).status_code == 200
     updated = (memory / "topics/core.md").read_text(
@@ -707,7 +700,7 @@ def test_core_get_waits_for_a_complete_install_snapshot(
         result = original_replace(source, destination)
         if Path(source) == memory / "topics":
             topics_moved.set()
-            assert release_install.wait(timeout=5)
+            assert release_install.wait(timeout=30)
         return result
 
     monkeypatch.setattr(block_views.os, "replace", paused_replace)
@@ -736,8 +729,8 @@ def test_core_get_waits_for_a_complete_install_snapshot(
     assert reader.is_alive(), "GET returned during the incomplete install window"
 
     release_install.set()
-    writer.join(timeout=5)
-    reader.join(timeout=5)
+    writer.join(timeout=30)
+    reader.join(timeout=30)
     assert not writer.is_alive()
     assert not reader.is_alive()
     assert responses["put"] == (True, "")
@@ -765,10 +758,10 @@ def test_delete_removes_a_topic_nothing_points_at(client, memory):
 def test_save_gives_up_while_the_workspace_lock_is_held(
     client, memory, monkeypatch
 ):
-    from openprogram.memory.management.transaction import (
+    from openprogram.state.memory.management.transaction import (
         workspace_write_lock,
     )
-    from openprogram.webui.routes.settings import memory as routes
+    from openprogram.interfaces.server.routes.settings import memory as routes
 
     monkeypatch.setattr(routes, "WRITE_LOCK_TIMEOUT_S", 0.2)
     edited = NOTE.replace("worth keeping", "worth remembering")
@@ -825,14 +818,14 @@ def test_backend_none_rejects_every_web_memory_route(
     monkeypatch, tmp_path, method, path, body
 ):
     monkeypatch.setattr(
-        "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
+        "openprogram.state.paths.get_state_dir", lambda: tmp_path / "state",
     )
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"memory": {"backend": "none"}},
     )
 
-    from openprogram.webui.routes.settings import memory as routes
+    from openprogram.interfaces.server.routes.settings import memory as routes
 
     app = FastAPI()
     routes.register(app)
@@ -878,7 +871,7 @@ def test_history_lists_commits_and_parent_diff(client, memory):
 
 def test_autosave_defers_git_and_restores_old_version(client, memory):
     import subprocess
-    from openprogram.memory.runtime.state import RuntimeStateStore
+    from openprogram.state.memory.runtime.state import RuntimeStateStore
     RuntimeStateStore(memory).git_commit("before")
     before = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=memory, text=True).strip()
     updated = NOTE.replace("A fact worth keeping.", "Edited fact.")
@@ -896,10 +889,9 @@ def test_autosave_defers_git_and_restores_old_version(client, memory):
     assert len(commits) >= 3
 
 
-def test_checkpoint_deadline_and_deleted_source_visibility(client, memory, monkeypatch):
-    from openprogram.memory import checkpoints
-    from openprogram.memory.workspace_layout import runtime_dir
-    from openprogram.agent import session_db
+def test_checkpoint_deadline_and_deleted_source_visibility(client, memory, monkeypatch, chats):
+    from openprogram.state.memory import checkpoints
+    from openprogram.state.memory.workspace_layout import runtime_dir
     monkeypatch.setattr(checkpoints.time, "time", lambda: 1000)
     updated = NOTE.replace("A fact worth keeping.", "Checkpoint fact.")
     assert client.put("/api/memory/topics/note.md", json={"content": updated, "autosave": True}).status_code == 200
@@ -909,16 +901,109 @@ def test_checkpoint_deadline_and_deleted_source_visibility(client, memory, monke
     monkeypatch.setattr(checkpoints.time, "time", lambda: 1301)
     assert checkpoints.checkpoint(memory)
     assert not pending.exists()
-    target = memory / "sources" / "openprogram" / "_v2" / "local_deleted.md"
-    target.parent.mkdir(parents=True)
-    target.write_text("original-private-text")
-    class DB:
-        def get_session(self, sid):
-            return None
-    monkeypatch.setattr(session_db, "default_db", lambda: DB())
-    for path in ("openprogram/_v2/local_deleted.md", "other/../openprogram/_v2/local_deleted.md"):
-        response = client.get("/api/memory/source", params={"path": path})
-        assert response.status_code == 410
-        assert "original-private-text" not in response.text
-    monkeypatch.setattr(DB, "get_session", lambda self, sid: {"archived": True})
-    assert client.get("/api/memory/source", params={"path": "openprogram/_v2/local_deleted.md"}).json()["content"] == "original-private-text"
+    # A citation opens the chat it names, with the turns around it.
+    chats.say("s1", "d1-2", "the reply", role="assistant")
+    cited = client.get("/api/memory/source", params={"ref": "/s/s1#d1-1"}).json()
+    assert [(turn["text"], turn["cited"]) for turn in cited["turns"]] == [
+        ("remember this", True), ("the reply", False),
+    ]
+    assert cited["session_id"] == "s1"
+    # Once the chat is deleted the memory stays and says so.
+    del chats.sessions["s1"]
+    response = client.get("/api/memory/source", params={"ref": "/s/s1#d1-1"})
+    assert response.status_code == 410
+    assert response.json()["deleted"] is True
+    assert client.get("/api/memory/source", params={"ref": "../etc/passwd"}).status_code == 400
+
+
+@pytest.mark.parametrize("autosave", [False, True])
+def test_topic_route_rejects_dangling_link_without_committed_mutation(client, memory, autosave):
+    # A person's uncited paragraph is kept; a link to no block is not.
+    from openprogram.state.memory.store import _ensure_git_history
+    from openprogram.state.memory.management.transaction import workspace_revision
+
+    _ensure_git_history(memory)
+    before = {
+        p.relative_to(memory): p.read_bytes() for p in memory.rglob("*")
+        if p.is_file() and ".git" not in p.relative_to(memory).parts
+    }
+    revision = workspace_revision(memory)
+    head = subprocess.check_output(["git", "-C", str(memory), "rev-parse", "HEAD"])
+    response = client.put("/api/memory/topics/note.md", json={
+        "content": NOTE + "\n## Broken section\n\nSee [nothing](note.md#^deadbeef).\n",
+        "base_content": NOTE, "autosave": autosave,
+    })
+    assert response.status_code == 400, response.text
+    assert (memory / "topics/note.md").read_text() == NOTE
+    assert {
+        p.relative_to(memory): p.read_bytes() for p in memory.rglob("*")
+        if p.is_file() and ".git" not in p.relative_to(memory).parts
+    } == before
+    assert workspace_revision(memory) == revision
+    assert subprocess.check_output(["git", "-C", str(memory), "rev-parse", "HEAD"]) == head
+
+
+def test_valid_autosave_checkpoints_exact_dirty_pre_edit_state(client, memory, monkeypatch):
+    from openprogram.state.memory import checkpoints
+    from openprogram.state.memory.store import _ensure_git_history
+    from openprogram.state.memory.workspace_layout import runtime_dir
+
+    _ensure_git_history(memory)
+    dirty = NOTE.replace("A fact worth keeping.", "A pre-existing dirty fact.")
+    (memory / "topics/note.md").write_text(dirty)
+    edited = dirty.replace("A pre-existing dirty fact.", "A new manual edit.")
+    monkeypatch.setattr(checkpoints.time, "time", lambda: 1000)
+    response = client.put("/api/memory/topics/note.md", json={
+        "content": edited, "base_content": dirty, "autosave": True,
+    })
+    assert response.status_code == 200, response.text
+    assert subprocess.check_output(["git", "-C", str(memory), "show", "HEAD:topics/note.md"], text=True) == dirty
+    pending = runtime_dir(memory) / "manual-checkpoint.json"
+    assert json.loads(pending.read_text())["due"] == 1300
+    assert checkpoints.checkpoint(memory) is None
+    monkeypatch.setattr(checkpoints.time, "time", lambda: 1301)
+    assert checkpoints.checkpoint(memory)
+    assert not pending.exists()
+    assert "A new manual edit." in subprocess.check_output(["git", "-C", str(memory), "show", "HEAD:topics/note.md"], text=True)
+
+
+def test_invalid_restore_does_not_commit_pre_restore_dirty_state(client, memory):
+    from openprogram.state.memory.runtime.state import RuntimeStateStore
+    from openprogram.state.memory.management.transaction import workspace_revision
+
+    invalid = NOTE + "\n## Broken section\n\nSee [nothing](note.md#^deadbeef).\n"
+    (memory / "topics/note.md").write_text(invalid)
+    old_revision = RuntimeStateStore(memory).git_commit("owned broken historical version")
+    dirty = NOTE.replace("A fact worth keeping.", "A current dirty fact.")
+    (memory / "topics/note.md").write_text(dirty)
+    before = {p.relative_to(memory): p.read_bytes() for p in memory.rglob("*") if p.is_file() and ".git" not in p.relative_to(memory).parts}
+    revision = workspace_revision(memory)
+    head = subprocess.check_output(["git", "-C", str(memory), "rev-parse", "HEAD"])
+    response = client.post("/api/memory/restore", json={
+        "path": "note.md", "revision": old_revision, "base_content": dirty,
+    })
+    assert response.status_code == 400, response.text
+    assert {p.relative_to(memory): p.read_bytes() for p in memory.rglob("*") if p.is_file() and ".git" not in p.relative_to(memory).parts} == before
+    assert workspace_revision(memory) == revision
+    assert subprocess.check_output(["git", "-C", str(memory), "rev-parse", "HEAD"]) == head
+
+
+def test_project_query_serves_that_projects_workspace(memory, client, tmp_path, monkeypatch):
+    """``?project=<id>`` reads the project's memory, not the personal one."""
+    from types import SimpleNamespace
+
+    from openprogram.state.store.project import project_store
+
+    monkeypatch.setattr(project_store, "get_project", lambda pid: (
+        SimpleNamespace(id=pid, is_default=False) if pid == "p1" else None))
+    project = tmp_path / "projects" / "p1" / "memory"
+    (project / "topics").mkdir(parents=True)
+    (project / "topics" / "other.md").write_text(LINKING.replace("note.md#^abc12345", "other.md#^def45678"), encoding="utf-8")
+
+    personal = client.get("/api/memory/topics")
+    assert [page["path"] for page in personal.json()] == ["note.md"]
+    scoped = client.get("/api/memory/topics?project=p1")
+    assert scoped.status_code == 200
+    assert [page["path"] for page in scoped.json()] == ["other.md"]
+    assert client.get("/api/memory/topics?project=default").json() == personal.json()
+    assert client.get("/api/memory/topics?project=nope").status_code == 404

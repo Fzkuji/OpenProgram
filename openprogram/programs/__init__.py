@@ -1,66 +1,69 @@
-"""Function calling — registry, presets, policy.
+"""Programs: everything the Agent can call, and how a call is resolved.
 
-Every function the LLM can call is decorated with ``@function`` (see
-``_runtime.py``). The decorator builds an ``AgentTool`` and registers
-it into a single in-process registry; this module imports each
-subpackage so the side-effect registrations fire at import time, then
-exposes the resolution API (presets, allow/deny/source policy chain).
-
-Design synthesizes three external frameworks under ``references/``:
-
-  - Claude Code: the ``AgentTool`` shape, the
-    ``execute(call_id, args, cancel, on_update) -> AgentToolResult``
-    contract, and the search/read collapse semantics.
-  - Hermes: ``TOOLSETS`` with ``{tools, includes}`` composition,
-    ``_expand_preset`` recursive walk + first-occurrence dedupe.
-  - OpenClaw: per-channel ``unsafe_in`` filtering, allow/deny chain
-    layered on top of the toolset (``apply_tool_policy``).
-
-Beyond the references we add a dynamic per-call result ceiling, an
-LLM-controllable timeout, a bounded streaming on_update accumulator,
-and ``can_use()`` pre-flight gates — all wired through ``@function``
-kwargs. See ``_runtime.py`` for the decorator and the helpers it
-relies on.
+Importing this package registers every Program: ``tools/`` registers the
+built-in tools, then ``_host.registry.load_program_modules`` loads the
+built-in applications, the user's Programs and the installed harnesses,
+each through its own ``ProgramContext``. What this module exports is the
+resolution API on top of that registry: the named presets (``TOOLSETS``,
+``DEFAULT_TOOLS``), the resident/deferred split, and the policy chain
+(``agent_tools`` / ``apply_tool_policy``: preset, channel ``unsafe_in``,
+deny, allow, availability). Other code imports Programs from here; the
+``@function`` decorator and the registry itself live in
+``_host/runtime.py``.
 """
 
 from __future__ import annotations
 
-from ._helpers import (
+from ._authoring.helpers import (
     is_available_agent_tool as _is_available_agent_tool,
 )
-from ._runtime import (
+from ._host.runtime import (
     AgentTool,
     ToolReturn,
     all_tools as _all_agent_tools,
+    catalog_note,
+    deferred_catalog,
     deferred_catalog_text,
     filter_for as _filter_agent_tools,
-    freeze_turn_tools,
     function,
     get as _get_agent_tool,
     install_allowed_tool_names,
-    install_loaded_deferred,
-    release_turn_tools,
-    mark_deferred_loaded,
-    register as _register_agent_tool,
+    install_turn_tools,
+    loaded_tools,
+    note_request_loaded,
+    schema_not_sent_hint,
     split_tools_for_dispatch,
     tool_requires_approval,
     tool_search,
+    Tier,
+    as_resident,
+    current_tool as _current_tool,
 )
+from ._host.lower_layers import register as _register_lower_layer_ports
 
-# Side-effect imports — ``tools`` holds @function-decorated leaf
-# tools and ``workflow`` holds @agentic_function bodies. Each
-# subpackage's
-# ``__init__`` triggers the decorator side-effects so every shipped
-# function lands in the shared ``_registry`` by the time the parent
-# package finishes loading. The source tree split
-# mirrors the semantic split (deterministic leaf vs LLM-aware
-# composable); both end up in the same registry.
+# Models and state sit below Programs; they reach what only a Program has
+# (web-search backends, Agent tool names, the Goal tool, the browser's
+# argument form) through these ports rather than importing Programs.
+_register_lower_layer_ports()
+
+# Side-effect imports — importing ``tools`` registers every
+# @function-decorated tool; ``load_program_modules`` then registers the
+# ``PROGRAM_ENTRIES`` of the tool packages that carry them, the built-in
+# applications under ``applications/``, the user workflows and the
+# installed harnesses, each through its own ProgramContext. Every shipped
+# function lands in the shared ``_registry`` by the time this package
+# finishes loading.
 from . import tools as _tools_self_register  # noqa: F401
 from .tools.knowledge.memory import MEMORY_TOOL_NAMES
-from . import workflow as _workflow_self_register  # noqa: F401
+from ._host.registry import load_program_modules as _load_program_modules
+import logging
+
+_log = logging.getLogger(__name__)
+
+_load_program_modules()
 
 # Layer 2 — exposure is registration-driven: ``exposed_names()`` (see
-# ``_runtime.py``) is every registered tool minus the ones registered
+# ``_host/runtime.py``) is every registered tool minus the ones registered
 # with ``expose=False``. That set is the universe every preset and the
 # per-call cascade filter subsets of; there is no hand-maintained
 # whitelist to keep in sync, and a plugin / MCP tool that registers at
@@ -68,10 +71,11 @@ from . import workflow as _workflow_self_register  # noqa: F401
 
 
 # The safe default set: file ops + shell + search + multi-file patch +
-# transactional memory + the todo planning board. Omits ``process`` (long-lived
-# background sessions) — opt-in via toolset="coding" instead.
+# transactional memory + the todo planning board. ``write_stdin`` reaches the
+# command sessions ``bash`` leaves running.
 DEFAULT_TOOLS: list[str] = [
     "bash",
+    "write_stdin",
     "read",
     "write",
     "edit",
@@ -82,16 +86,21 @@ DEFAULT_TOOLS: list[str] = [
     "agent",
     # Branch-to-branch communication — an agent can see other agents
     # (sessions/branches) and message them
-    # (docs/reference/design/runtime/agent-collaboration.md).
+    # (docs/reference/design/runtime/collaboration/agent-collaboration.html).
     "send_message",
     "list_agents",
     # Outbound attachments — the agent hands a real file back to the
     # user (chip in web chat, native upload on a chat platform).
     # Hidden by ``unsafe_in`` wherever there is no attachment channel.
     "send_file",
+    # Speaking in a chat channel on the agent's own initiative: the only
+    # voice of an ambient room event, hidden outside channel sources.
+    "chat_send",
     "todo_create",
     "todo_update",
     "todo_list",
+    # What the Agent still owes the user, across its conversations.
+    "open_work",
     "create_goal",
     "get_goal",
     "update_goal",
@@ -100,16 +109,14 @@ DEFAULT_TOOLS: list[str] = [
     # Deferred (below) — the listing already names every skill, so the
     # schema only has to exist on the turn a skill is actually loaded.
     "skill",
-    "playwright_browser",
-    "browser_agent",
-    "web_use",
-    # Plan-mode gate — the LLM is allowed to enter plan mode on its
-    # own when it judges the task warrants it (mirrors claude-code's
-    # EnterPlanMode tool). The "plan" pseudo-channel filter in
-    # ``apply_tool_policy`` hides the write tools while in plan mode,
-    # but enter/exit themselves are never on any unsafe_in list — they
-    # stay visible across modes.
-    "enter_plan_mode",
+    # Reads a tool guide by name; results of guided tools point here.
+    "help",
+    # One entry for every screen: application windows, built-in browser
+    # Pages, a VM. Resident: its description is a short catalogue of
+    # targets, and each target's guide arrives with the first call to it.
+    "computer_use_agent",
+    # Offered only in a turn whose selector says Plan (see ``loop_runner``).
+    # Plan comes from the selector alone, so no enter tool is offered.
     "exit_plan_mode",
     # MCP meta — read resources / render prompts on any configured
     # MCP server. Lightweight (one read per call), and the LLM needs
@@ -123,14 +130,16 @@ DEFAULT_TOOLS: list[str] = [
     # only loads the full contracts when it needs to inspect or edit memory.
     *MEMORY_TOOL_NAMES,
     "scheduler",
-    # Agentic harness entry points — these are the user-facing
-    # programs (gui_agent / research_agent / wiki_agent) that the
-    # LLM should know about by default. Without them in DEFAULT_TOOLS
-    # the model has no idea these exist and resorts to bash-grepping
-    # the filesystem when asked to "use gui_agent" or similar.
-    "gui_agent",
-    "research_agent",
-    "wiki_agent",
+    # Resident: a reminder is asked for in passing ("remind me at 5"), so
+    # the model must see it without searching. The full scheduler stays
+    # deferred for listing and cancelling.
+    "remind",
+    # "Do this every Monday": turns the work just done into a Skill and,
+    # optionally, a waking reminder. Deferred below; asked for rarely.
+    "save_routine",
+    # The loader of the deferred tools above: a set that names them without
+    # it would list tools nothing can load.
+    "tool_search",
 ]
 
 
@@ -143,39 +152,40 @@ DEFAULT_TOOLS: list[str] = [
 DEFERRED_DEFAULT_TOOLS: set = {
     *MEMORY_TOOL_NAMES,
     "scheduler",
-    # 1052 tok。进 plan mode 有两条路：用户在 web chip / TUI 选 "Plan mode"
-    # 档位（agent/plan_mode.py sync_tier，不经此工具），或模型自己判断要规划。
-    # 后者罕见，且一旦 plan mode 激活，plan_mode 系统提示块会明确点名
-    # exit_plan_mode，模型据此 tool_search 加载即可。UI 入口不依赖它常驻。
-    "enter_plan_mode",
     # 644 tok。只在 plan mode 内有意义；plan 提示块已指名要调它。
     "exit_plan_mode",
-    # 1172 tok，最大单个 schema。浏览器自动化是明确的小众意图，用户说
-    # "打开网页/截图" 时模型再加载，日常编码会话完全用不到。
-    "playwright_browser",
-    "browser_agent",
     # 378 tok。跨 session/branch 通信，多分支协作场景才用得上。
     "send_message",
     # 技能加载动词。<available_skills> 每轮已经列了名字和描述，模型要用
     # 才需要这个 schema；不用的会话不该为它付费。catalog 一行即可。
     "skill",
+    # Saving a routine is rare; its catalog line says when to load it.
+    "save_routine",
 }
 
-# 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块，
-# 再加 tool_search 引导器（它是加载其余工具的唯一入口，永不 defer）。
+# 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块
+# （其中的 tool_search 引导器是加载其余工具的唯一入口，永不 defer）。
 # DEFAULT_TOOLS 之外的已曝光工具也默认 defer。
 # 这是治「exec 默认全塞 ~14000 token」的唯一旋钮 —— 保守取，宁多勿缺。
 RESIDENT_TOOLS: set = (
     (set(DEFAULT_TOOLS) - DEFERRED_DEFAULT_TOOLS)
-    | {"web_use", "tool_search"}
-    | {"job_output"}
+    | {"read_conversation"}
 )
+
+
+# Tools an Agent gets only by naming them (a selected list or a preset
+# that lists them), never through ``full``: an automatic Agent does not
+# carry them. ``mixture_of_agents`` asks several models for one answer;
+# that is a cross-model answer, not collaboration, and every tool in the
+# list costs prefix tokens (Pi keeps a small cache-stable list for the
+# same reason). Design: agent-collaboration.html#tools.
+OPT_IN_TOOLS: frozenset[str] = frozenset({"mixture_of_agents"})
 
 
 # Hermes-style named presets. ``default`` is the always-on minimal
 # safe set above; ``full`` is every exposed tool, computed live rather
 # than written down (see ``_preset_tool_names``). Every other preset
-# (research / browser / coding / …) is a curated subset of it.
+# (research / coding / …) is a curated subset of it.
 #
 # Composition: an entry can carry ``includes`` (Hermes pattern) that
 # names other presets to expand. ``_expand_preset`` walks them
@@ -199,12 +209,8 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
         "tools":    ["web_search", "web_fetch", "pdf", "image_analyze"],
         "includes": ["default"],
     },
-    "browser": {
-        "tools":    ["playwright_browser", "agent_browser", "web_search"],
-        "includes": ["default"],
-    },
     "coding": {
-        "tools":    ["execute_code", "process"],
+        "tools":    ["execute_code"],
         "includes": ["default"],
     },
     "vision": {
@@ -234,6 +240,11 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
         "tools":    [],
         "includes": ["research", "coding"],
     },
+    "mixture_of_agents": {
+        # The opt-in group for OPT_IN_TOOLS' cross-model answer.
+        "tools":    ["mixture_of_agents"],
+        "includes": ["default"],
+    },
 }
 
 
@@ -244,13 +255,14 @@ def _preset_tool_names(name: str, entry: dict[str, list[str]]) -> list[str]:
     the exception: it means "every exposed tool", so it is read from
     the live registry instead of being written down. A tool joins it by
     registering, and a private helper stays out of it by registering
-    with ``expose=False`` — neither needs an edit here.
+    with ``expose=False`` — neither needs an edit here. ``OPT_IN_TOOLS``
+    stay out of it: they are offered only where named.
     """
     if name == "full":
         exposed = _exposed_set()
         if exposed is None:      # exposure filter disabled by a test fixture
-            return sorted(t.name for t in _all_agent_tools())
-        return sorted(exposed)
+            exposed = {t.name for t in _all_agent_tools()}
+        return sorted(set(exposed) - OPT_IN_TOOLS)
     return list(entry.get("tools", []) or [])
 
 
@@ -294,7 +306,7 @@ def _exposed_set() -> set[str] | None:
     Returning ``None`` (only via monkey-patch in test fixtures) means "no
     exposure filter for this call".
     """
-    from openprogram.programs._runtime import exposed_names
+    from openprogram.programs._host.runtime import exposed_names
     return exposed_names()
 
 
@@ -311,10 +323,11 @@ def list_available() -> list[str]:
     """
     disabled: set[str] = set()
     try:
-        from openprogram.setup import read_disabled_tools
+        from openprogram.operations.setup import read_disabled_tools
         disabled = read_disabled_tools()
     except Exception:
-        pass
+        # tools.disabled is optional config; unreadable config hides nothing.
+        _log.debug("tools.disabled unreadable; no tool treated as disabled", exc_info=True)
     exposed = _exposed_set()
     return [
         t.name for t in _all_agent_tools()
@@ -332,7 +345,7 @@ def _resolve_folder_toolset(folder_name: str) -> list[str] | None:
     caller falls through to DEFAULT_TOOLS). New folders default to all
     exposed tools, so a fresh folder = full set."""
     try:
-        from .meta_storage import load_functions_meta
+        from ._host.meta_storage import load_functions_meta
 
         meta = load_functions_meta({})
         tools = meta.get("profiles", meta.get("folders", {})).get(folder_name)
@@ -430,15 +443,17 @@ def agent_tools(
     # the user can switch them back on).
     if not include_disabled:
         try:
-            from openprogram.setup import read_disabled_tools
+            from openprogram.operations.setup import read_disabled_tools
             disabled = read_disabled_tools()
             if disabled:
                 picked = [t for t in picked if t.name not in disabled]
         except Exception:
-            pass
+            # tools.disabled is optional config; unreadable config hides nothing.
+            _log.debug("tools.disabled unreadable; no tool hidden", exc_info=True)
     if only_available:
         picked = [t for t in picked if _is_available_agent_tool(t)]
-    return picked
+    # Each tool as it describes itself now (the ``describe`` hook).
+    return [_current_tool(t) for t in picked]
 
 
 def apply_tool_policy(
@@ -455,14 +470,14 @@ def apply_tool_policy(
     Same channel / allow / deny / availability filters as
     :func:`agent_tools`, applied post-construction. Use this when the
     caller already has a tool list (e.g. produced by an explicit
-    ``runtime.exec(tools=[...])`` call) and needs to enforce session
+    ``agent(..., tools=[...])`` call) and needs to enforce session
     or channel policy on top — mirrors how OpenClaw runs its tool
     builder once and then layers ``wrapTool*`` filters over the
     result.
 
     ``exposure_filter`` (default True) applies the Layer 2 exposure
     whitelist. Set it False for tools the CALLER supplied ad-hoc via
-    ``runtime.exec(tools=[...])``: those are self-authorized (the caller
+    ``agent(..., tools=[...])``: those are self-authorized (the caller
     decided to expose them) and are typically NOT in the framework's
     registered-tool whitelist, so applying the whitelist would silently
     drop every such tool — which broke ``call_with_schema`` /
@@ -493,7 +508,7 @@ def apply_tool_policy(
         out = [t for t in out if t.name in allowset]
     if only_available:
         out = [t for t in out if _is_available_agent_tool(t)]
-    return out
+    return [_current_tool(t) for t in out]
 
 
 def _unsafe_in_for(tool_name: str) -> set[str]:
@@ -502,7 +517,7 @@ def _unsafe_in_for(tool_name: str) -> set[str]:
     populates so the answer reflects whatever plugins are loaded right
     now.
     """
-    from openprogram.programs._runtime import _unsafe_in_channel
+    from openprogram.programs._host.runtime import _unsafe_in_channel
     return _unsafe_in_channel.get(tool_name, set())
 
 
@@ -511,7 +526,7 @@ def get_agent_tool(name: str) -> AgentTool | None:
 
     Honours the Layer 2 exposure whitelist: returns ``None`` for
     decorated-but-not-exposed names so internal helpers (e.g. private
-    @agentic_function bodies whose name is not in ``EXPOSED_TOOLS``)
+    Agent method bodies whose name is not in ``EXPOSED_TOOLS``)
     don't leak through this API. Internal Python code that needs to
     invoke a non-exposed helper directly should use the Python-level
     name (the function or class instance), not this registry lookup.
@@ -537,42 +552,27 @@ def list_registered_agent_tools() -> list[str]:
 
 
 def resolve_function_module(name: str):
-    """Return the imported Python module that defines an @agentic_function
-    of the given name.
-
-    Walks the agentic local registry (populated when @agentic_function
-    fires its side-effect on import) and returns the module the
-    callable belongs to. Used by the ``openprogram programs run <name>``
-    CLI path and the webui's function-source / function-edit endpoints.
-
-    Raises ``ImportError`` if the name isn't a registered agentic
-    function — the caller decides how to surface that.
-    """
-    from openprogram.agentic_programming.function import (
-        _registry as _agentic_local_registry,
-    )
+    """Resolve a registered Program's source module from shared tool metadata."""
     import importlib
-    instance = _agentic_local_registry.get(name)
-    if instance is not None and instance._fn is not None:
-        return importlib.import_module(instance._fn.__module__)
-    # Fallback: standard agentics layout — agentics/<name>/__init__.py
-    # might exist even if registration didn't fire (e.g. listed in
-    # AGENTIC_MODULES but skipped at load time).
-    try:
-        return importlib.import_module(
-            f"openprogram.programs.workflow.{name}"
-        )
-    except ImportError:
-        raise ImportError(
-            f"No @agentic_function named {name!r} found in the "
-            f"agentic registry or under openprogram/programs/workflow/."
-        )
+    tool = _get_agent_tool(name)
+    source = getattr(tool, "_source_module", None) if tool is not None else None
+    if source:
+        return importlib.import_module(source)
+    # Fallback: a built-in Program package whose registration did not
+    # fire (it failed at load time) is still found by its name.
+    from ._host.registry import builtin_program_modules
+    module_path = builtin_program_modules().get(name)
+    if module_path:
+        return importlib.import_module(module_path)
+    raise ImportError(
+        f"No Agent method named {name!r} found in the agentic registry "
+        f"or among the built-in Programs."
+    )
 
 
 __all__ = [
     "DEFAULT_TOOLS",
     "TOOLSETS",
-    "AgentTool",
     "ToolReturn",
     "agent_tools",
     "apply_tool_policy",
@@ -583,40 +583,61 @@ __all__ = [
     "list_registered_agent_tools",
     "tool_requires_approval",
     # Layer 6 — deferred loading helpers
+    "catalog_note",
+    "deferred_catalog",
     "deferred_catalog_text",
-    "freeze_turn_tools",
     "install_allowed_tool_names",
-    "install_loaded_deferred",
-    "mark_deferred_loaded",
-    "release_turn_tools",
+    "install_turn_tools",
+    "loaded_tools",
+    "note_request_loaded",
+    "schema_not_sent_hint",
     "split_tools_for_dispatch",
     "tool_search",
-    # Layer 6 — default deferral of cold full-toolset tools
+    # Exposure tiers
     "RESIDENT_TOOLS",
     "DEFERRED_DEFAULT_TOOLS",
+    "Tier",
     "apply_default_deferral",
+    "as_resident",
+    "default_tier",
 ]
 
 
+def default_tier(tool) -> "Tier":
+    """The tier a registered entry starts in (program-model.md §5).
+
+    An application entry (built-in or installed application, external
+    harness, user package) is deferred, open in a window or not: the model
+    loads it with ``tool_search``. A tool is resident when it
+    is in ``RESIDENT_TOOLS``, deferred otherwise. A hidden entry stays hidden.
+    """
+    from openprogram.programs._host.runtime import Tier, owner_kind, tool_owner, tool_tier
+    if tool_tier(tool) is Tier.HIDDEN:
+        return Tier.HIDDEN
+    if tool.name == "tool_search":
+        return Tier.RESIDENT  # the loader never defers itself
+    if owner_kind(tool_owner(tool)) == "application":
+        return Tier.DEFERRED
+    return Tier.RESIDENT if tool.name in RESIDENT_TOOLS else Tier.DEFERRED
+
+
 def apply_default_deferral() -> None:
-    """把已曝光工具里不在 RESIDENT_TOOLS 的标 _defer=True。幂等。
-    在本模块 import 末尾调一次（所有工具已注册）。best-effort：失败不影响 import。
+    """Give every registered entry its default tier. Idempotent.
 
-    效果：split_tools_for_dispatch 后，只有常驻工具带完整 schema（~2000 token），
-    其余退到 deferred catalog（每个一行描述）。治 exec 默认全塞 ~14000 的问题。"""
-    try:
-        for t in agent_tools(toolset="full", include_disabled=True):
-            name = getattr(t, "name", "")
-            should_defer = name not in RESIDENT_TOOLS
-            if name == "tool_search":
-                should_defer = False  # 引导器永不 defer 自己（双保险）
-            try:
-                setattr(t, "_defer", should_defer)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    Runs once at the end of this module's import, when every shipped entry
+    is registered; entries registered later (installed applications, MCP
+    tools, reloaded packages) get theirs at registration.
+    """
+    from openprogram.programs._host.runtime import set_tier
+    # ``full`` leaves out the opt-in tools; they get their tier too.
+    opt_in = [t for t in agent_tools(toolset="mixture_of_agents", include_disabled=True)
+              if t.name in OPT_IN_TOOLS]
+    for t in [*agent_tools(toolset="full", include_disabled=True), *opt_in]:
+        try:
+            set_tier(t, default_tier(t))
+        except Exception:
+            # One entry failing must not abort the registry's import.
+            _log.warning("default tier not applied to tool %s", t.name, exc_info=True)
 
 
-# 冷门工具默认 defer —— 见 RESIDENT_TOOLS / 论文仓库 spec §5 ④。
 apply_default_deferral()

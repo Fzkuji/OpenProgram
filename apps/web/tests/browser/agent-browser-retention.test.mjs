@@ -49,7 +49,6 @@ const { useCenterTabs } = await import("../../lib/tabs/center-tabs-store.ts");
 const { setSocket } = await import("../../lib/runtime-bridge/state.ts");
 const {
   installDesktopMenuHandlers,
-  subscribeBrowserHumanInput,
   ensureWebView,
   destroyStaleWebViews,
   surfaceRefForChat,
@@ -57,7 +56,6 @@ const {
   registerVisibleWebTabBounds,
   removeVisibleWebTabBounds,
   setWebTabReady,
-  setDesktopSplitLayoutAvailable,
 } = await import("../../lib/desktop/desktop-bridge.ts");
 
 function transferStub() {
@@ -127,7 +125,7 @@ test("agent-attributed opening and popups retain background Pages without steali
 
 
 test("a selected image mirror supplies exact Page context without native visibility or focus", async () => {
-  const { useWebTabPip } = await import("../../lib/browser/web-tab-pip-store.ts");
+  const { useWebTabPip } = await import("../../lib/browser/web-tab/web-tab-pip-store.ts");
   const page = { id: "w:mirror", kind: "web", title: "Mirror", url: "https://mirror.test/" };
   useCenterTabs.setState({ tabs: [
     { id: "s:origin", kind: "session", sessionId: "origin", title: "Origin" },
@@ -202,7 +200,7 @@ test("confirmed native destroy reports close only after success", async () => {
 });
 
 test("dispatch and receipt share one native cue and stale geometry cannot paint", async () => {
-  const { resetBrowserResources, setBrowserConnection } = await import("../../lib/chat/session-resources.ts");
+  const { resetBrowserResources, setBrowserConnection } = await import("../../lib/chat/resources/session-resources.ts");
   resetBrowserResources();
   setBrowserConnection(true);
   const calls = [];
@@ -229,13 +227,6 @@ test("dispatch and receipt share one native cue and stale geometry cannot paint"
   removeVisibleWebTabBounds(window.openprogramDesktop, "w:cue");
 });
 
-
-test("page interaction bridge does not subscribe or send pause messages", () => {
-  let subscriptions = 0;
-  const dispose = subscribeBrowserHumanInput({ webTab: { onHumanInput: () => { subscriptions++; } } });
-  assert.equal(subscriptions, 0);
-  dispose();
-});
 
 test("legacy destroy retires local registration once without claiming native confirmation", () => {
   const sent = [], destroyed = [];
@@ -272,7 +263,7 @@ test("private Page commands require their trusted conversation even when another
   const command = (session_id,req_id) => listeners.get("op:ws-message")({detail:{type:"webtab.command",data:{op:"resolve",session_id,tab_id:page.id,window_id:"main",req_id}}});
   command("owner","own"); await new Promise(resolve=>setImmediate(resolve));
   assert.equal(sent.find(message=>message.req_id==="own")?.ok,true);
-  const {revealExistingWebTab} = await import("../../lib/browser/web-page-management.ts");
+  const {revealExistingWebTab} = await import("../../lib/browser/web-tab/web-page-management.ts");
   revealExistingWebTab(page.id,useCenterTabs.getState());
   command("other","shared"); await new Promise(resolve=>setImmediate(resolve));
   assert.equal(sent.find(message=>message.req_id==="shared")?.ok,true);
@@ -287,7 +278,7 @@ test("private Page commands require their trusted conversation even when another
 });
 
 test("restoration does not activate or reload a Page whose public access was revoked while waiting", async () => {
-  const {ingestBrowserResource,resetBrowserResources} = await import("../../lib/chat/session-resources.ts");
+  const {ingestBrowserResource,resetBrowserResources} = await import("../../lib/chat/resources/session-resources.ts");
   resetBrowserResources();
   const page = {id:"w:restore-scope",kind:"web",url:"https://restore.test",title:"Restore",agentOpened:true,agentSessionId:"owner",webPinned:true};
   useCenterTabs.setState({tabs:[page],activeId:page.id,groups:[],splitWebTabId:null});
@@ -315,4 +306,37 @@ test("restoration does not activate or reload a Page whose public access was rev
     assert.deepEqual(native,[]);
     assert.equal(sent.find(message=>message.req_id==='restore-scoped')?.reason_code,'page_not_accessible');
   } finally { globalThis.fetch=originalFetch; resetBrowserResources(); }
+});
+
+test("human tab close keeps its native Page alive until explicit resource close", async () => {
+  const { revealExistingWebTab, topLevelTabs } = await import("../../lib/browser/web-tab/web-page-management.ts");
+  const sent = [], destroyed = [];
+  setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
+  const bridge = window.openprogramDesktop;
+  const previousDestroy = bridge.webTab.destroyConfirmed;
+  bridge.webTab.destroyConfirmed = async id => { destroyed.push(id); return true; };
+  useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+  const store = useCenterTabs.getState();
+  store.openSessionTab("retained-owner", "Conversation");
+  const id = store.ensureExclusiveWebTab("https://retained-native.test");
+  store.markAgentWebTab(id, "retained-owner");
+  ensureWebView(bridge, id, "https://retained-native.test");
+  revealExistingWebTab(id, useCenterTabs.getState());
+  store.updateWebTab(id, { url: "https://retained-native.test/user-navigation" });
+  store.closeTab(id, { retainSessionResources: true });
+  const hidden = useCenterTabs.getState();
+  destroyStaleWebViews(bridge, hidden.tabs.map(tab => tab.id));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(hidden.tabs.some(tab => tab.id === id));
+  assert.ok(!topLevelTabs(hidden.tabs, hidden.groups).some(tab => tab.id === id));
+  assert.ok(!destroyed.includes(id));
+  assert.deepEqual(sent.filter(message => message.tab_id === id && message.action === "webtab_closed"), []);
+  revealExistingWebTab(id, useCenterTabs.getState());
+  assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === id).url, "https://retained-native.test/user-navigation");
+  store.closeTab(id);
+  destroyStaleWebViews(bridge, useCenterTabs.getState().tabs.map(tab => tab.id));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(destroyed.filter(tabId => tabId === id).length, 1);
+  assert.equal(sent.filter(message => message.tab_id === id && message.action === "webtab_closed").length, 1);
+  bridge.webTab.destroyConfirmed = previousDestroy;
 });

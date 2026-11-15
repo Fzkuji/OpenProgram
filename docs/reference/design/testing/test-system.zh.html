@@ -1,0 +1,97 @@
+<title>OpenProgram 测试体系</title>
+<meta name="description" content="测试层级、目录、依赖边界、工具和 CI 任务。">
+<h1>测试体系</h1>
+<p>运行依赖决定层级；产品领域跟随 <code translate="no">openprogram/</code> 的模块名。一个测试符合多个层级时取依赖最强的。每个生产缺陷在最低公共边界有一个回归测试。</p>
+
+<h2>层级</h2>
+<table class="stack">
+<thead><tr><th scope="col">层级</th><th scope="col">可用</th><th scope="col">不可用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">contracts</code></th><td>AST、受跟踪文件、manifest、注册表、schema</td><td>外部服务；用源码文本代替行为</td></tr>
+<tr><th scope="row"><code translate="no">unit</code></th><td>内存对象、纯函数、本地 fake、单模块临时文件、生产模块内受控可清理的线程</td><td>TestClient、socket、子进程、测试创建的线程或线程池、固定 sleep</td></tr>
+<tr><th scope="row"><code translate="no">component</code></th><td><code translate="no">tmp_path</code>、临时 SQLite、TestClient、fake provider、受控线程</td><td>外部网络、真实凭据</td></tr>
+<tr><th scope="row"><code translate="no">integration</code></th><td>回环 HTTP 和 WS、真实子进程、多个生产模块</td><td>外部服务</td></tr>
+<tr><th scope="row"><code translate="no">e2e</code></th><td>公开 CLI、真实 worker、构建好的 Web、浏览器</td><td>开发者真实 HOME、已有构建产物</td></tr>
+<tr><th scope="row"><code translate="no">live</code></th><td>真实 provider、渠道、远程服务</td><td>普通 PR 检查；手动运行</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>tests/
+  contracts/{agent,core,execution,providers,repository,security}/
+  unit/&lt;product-domain&gt;/
+  component/&lt;product-domain&gt;/
+  integration/&lt;product-domain&gt;/
+  e2e/{agent,config,context,web}/
+  live/{app,providers}/
+  support/
+  conftest.py</code></pre>
+<p class="note">深度最多到层级和产品领域；层级根下没有受跟踪的测试。Marker 只描述能力：<code translate="no">slow</code>、<code translate="no">browser</code>、<code translate="no">sandbox</code>、<code translate="no">live</code>、<code translate="no">macos</code>。严格 marker、严格配置、严格 xfail；默认 <code translate="no">-m 'not live and not browser'</code>；单个测试超过 120 秒失败。</p>
+
+<h2>隔离</h2>
+<ul>
+<li>仓库契约只读 Git 受跟踪文件，所以干净检出和含忽略文件或嵌套仓库的检出结果相同。通用扫描器的根由调用方提供。</li>
+<li>顶层 <code translate="no">conftest.py</code> 只保留防止访问真实用户状态的隔离；领域 fixture 留在本地。临时 HOME 确定性清理。</li>
+<li>每个测试进程（包括每个 xdist worker）都清掉继承来的 <code translate="no">GIT_DIR</code> 一类变量，并装上审计钩子（<code translate="no">tests/support/host_guard.py</code>）。它拒绝会改动套件所在检出的 git 命令、对其 <code translate="no">.git</code> 或真实 <code translate="no">~/.openprogram*</code> 的任何写入，以及 HOME 未设或指向真实 home 的 Python 子进程。</li>
+<li>被拒绝的测试按名字失败；会话结束时检查 <code translate="no">.git/config</code> 和从本次 HOME 登记进来的 worktree，覆盖子进程。</li>
+<li>产品代码找仓库时从不退回进程的工作目录：worktree 只从调用传入的路径、本轮的 worktree、对话的项目文件夹或配置的默认文件夹创建。</li>
+<li>并发结果用 Event、Condition 或带截止时间的等待。</li>
+<li>测试不替换全局线程类，也不创建真实线程或线程池。生产模块内的后台资源在 teardown 时 join 或关闭。</li>
+</ul>
+<details>
+<summary>Unit 守卫</summary>
+<ul>
+<li>结构契约检测直接和别名的资源导入、直接的 sleep 导入和线程类替换。</li>
+<li>Autouse 运行时守卫拦截测试代码里的线程创建、线程池构造和固定等待。</li>
+<li>只允许模块限定的 <code translate="no">asyncio.sleep(0)</code>（位置或关键字参数）作为调度让出。</li>
+<li>合并轮次测试自有临时 SessionStore。fixture 构造后立即注册关闭，任何结果都会在守卫运行前排空索引写入并 join 定时器。</li>
+<li>历史页对象用本地名 <code translate="no">historyWindow</code>，让浏览器 <code translate="no">window</code> 的源码检查不产生歧义。</li>
+<li>本地刷新的测试仓库包含真实的 ASAR 权限恢复 helper，版本变更拒绝在 staging 之后运行。</li>
+</ul>
+</details>
+
+<h2>工具</h2>
+<table class="stack">
+<thead><tr><th scope="col">工具</th><th scope="col">用于</th><th scope="col">限制</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://docs.pytest.org/en/stable/explanation/goodpractices.html">pytest</a></th><td>所有 Python 层级</td><td>不跑 JavaScript，不保证 fixture 进程隔离</td></tr>
+<tr><th scope="row"><a href="https://pytest-xdist.readthedocs.io/">pytest-xdist</a></th><td>固定 <code translate="no">-n 4</code>，基础设施改动后手动连续跑三次</td><td>修不了共享状态。<code translate="no">-n auto</code> 只用于受影响测试选择，稳定性和发布运行不用。</td></tr>
+<tr><th scope="row"><a href="https://nodejs.org/api/test.html">node:test</a></th><td>纯 Web TypeScript 和 JavaScript，<code translate="no">apps/web/tests/*.test.mjs</code></td><td>没有 DOM</td></tr>
+<tr><th scope="row"><a href="https://vitest.dev/guide/">Vitest</a></th><td>仅 CLI</td><td>不为 Web 再装一份</td></tr>
+<tr><th scope="row"><a href="https://playwright.dev/docs/best-practices">Playwright</a></th><td><code translate="no">tests/e2e/web</code>、构建好的页面、公开行为；Python browser extra 和托管 Chromium</td><td>不替代低层测试</td></tr>
+<tr><th scope="row"><a href="https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs">GitHub Actions</a></th><td>按层级分任务，用本地相同命令</td><td>不定义测试语义</td></tr>
+</tbody>
+</table>
+<p class="note">拒绝：tox、nox、任意的全局覆盖率阈值。<code translate="no">apps/web/scripts/check-*.mjs</code> 的 Web 源码检查只在源码结构本身是契约时保留。</p>
+
+<h2 id="full-run">全量运行</h2>
+<p>日常改动只跑 <code translate="no">scripts/testing/affected_tests.py</code>。全量就是下面这些任务，在 <code translate="no">CI</code> workflow 里，发布前手动启动。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">任务</th><th scope="col">运行</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">quality</code></th><td>Ruff、发布脚本语法、契约、文档</td></tr>
+<tr><th scope="row"><code translate="no">unit</code></th><td>Python 3.11、3.12、3.13，不 fail-fast</td></tr>
+<tr><th scope="row"><code translate="no">component</code>、<code translate="no">integration</code></th><td>Python 3.12</td></tr>
+<tr><th scope="row"><code translate="no">e2e</code>、<code translate="no">browser</code></th><td>非浏览器 e2e；浏览器里的构建 Web</td></tr>
+<tr><th scope="row"><code translate="no">coverage</code></th><td>Unit 分支覆盖率，先上传 XML，再按六位精度执行 40 下限。下限不高于实测基线；提高需要有意义的测试。</td></tr>
+<tr><th scope="row"><code translate="no">web</code>、<code translate="no">cli</code>、<code translate="no">desktop</code></th><td>包脚本：Web 检查和构建；CLI 类型检查、Vitest、构建；桌面 <code translate="no">npm run check</code>（VM 和 fake Electron）</td></tr>
+<tr><th scope="row"><code translate="no">macos-desktop-install</code>、<code translate="no">macos-native-verification</code></th><td><code translate="no">-m macos</code> 分发测试；自更新原生进程</td></tr>
+<tr><th scope="row"><code translate="no">windows-core</code>、<code translate="no">windows-desktop</code></th><td>Windows 回归和桌面</td></tr>
+</tbody>
+</table>
+<p class="note">Python 命令用 <code translate="no">uv run --locked</code>。命令见 <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/.github/CONTRIBUTING.md#full-suite">Full suite</a>。</p>
+
+<h2>验收</h2>
+<ul>
+<li>没有未处理线程警告（警告即错误）；固定 worker 连续三次无 worker 崩溃。</li>
+<li>必需的 Python 套件零失败；已知缺陷不能留在完成状态。</li>
+<li>无前端产物的 component 行为和带构建 CSP 的 e2e 行为分别验证。</li>
+<li>迁移时记录测试数、skip 和 xfail 的变化。</li>
+<li>npm 风险按工作区审计，只用兼容升级，绝不 <code translate="no">npm audit fix --force</code>。</li>
+<li>顶层契约阻止根目录开发脚本、未声明目录和已删源码路径回到指南。</li>
+</ul>
+<details>
+<summary>修改测试体系</summary>
+<p>一次一批：经公共或共享边界复现，修最小的共同原因，跑受影响测试，通过独立规格和质量评审，提交。不实现 Python 控制流解释器，也不按行数拆测试。</p>
+</details>
+
+<h2>实现状态</h2>
+<p>已实现：层级优先目录、unit 守卫、覆盖率下限、上述任务。</p>

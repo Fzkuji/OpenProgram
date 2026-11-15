@@ -9,10 +9,10 @@ modern_icon_json="$modern_icon_dir/icon.json"
 packaged_icon="$desktop_dir/build/icon.icns"
 modern_assets_dir="$modern_icon_dir/Assets"
 modern_symbol_svgs=(
-  "$modern_assets_dir/01-orbit.svg"
-  "$modern_assets_dir/02-node-blue.svg"
-  "$modern_assets_dir/03-node-purple.svg"
-  "$modern_assets_dir/04-node-indigo.svg"
+  "$modern_assets_dir/01-cell.svg"
+  "$modern_assets_dir/02-disc-indigo.svg"
+  "$modern_assets_dir/03-disc-violet.svg"
+  "$modern_assets_dir/04-disc-sky.svg"
 )
 package_json="$desktop_dir/package.json"
 release_workflow="$repository_dir/scripts/release/release-matrix.py"
@@ -41,36 +41,21 @@ for modern_symbol_svg in "${modern_symbol_svgs[@]}"; do
   grep -q 'viewBox="0 0 1024 1024"' "$modern_symbol_svg" \
     || fail "Apple icon artwork must use a 1024 x 1024 viewBox: ${modern_symbol_svg##*/}"
 done
-node_count="$(grep -hEo 'id="op-node-[abc]"' "${modern_symbol_svgs[@]}" | wc -l | tr -d ' ')"
-[[ "$node_count" == "3" ]] \
-  || fail "Apple icon artwork must contain exactly three brand nodes"
-grep -q 'id="op-orbit"' "${modern_symbol_svgs[0]}" \
-  || fail "Apple icon artwork must preserve the brand orbit"
-grep -q 'r="326"' "${modern_symbol_svgs[0]}" \
-  || fail "Apple icon orbit must use the approved larger footprint"
-grep -q '<radialGradient id="op-ring-depth" cx="512" cy="512" r="354" gradientUnits="userSpaceOnUse">' "${modern_symbol_svgs[0]}" \
-  || fail "Apple icon orbit must use the approved convex cross-section shading"
-grep -q 'id="op-orbit-depth"' "${modern_symbol_svgs[0]}" \
-  || fail "Apple icon orbit must apply its convex cross-section shading"
-grep -q 'stroke="url(#op-ring-depth)"' "${modern_symbol_svgs[0]}" \
-  || fail "Apple icon orbit must render the approved convex depth overlay"
-if grep -Eqi 'stop-color="(#fff|#ffffff|white)"' "${modern_symbol_svgs[0]}"; then
-  fail "Apple icon orbit depth shading must not introduce a white circular halo"
-fi
-grep -q 'r="140"' "${modern_symbol_svgs[1]}" \
-  || fail "Apple icon blue node must use the approved larger footprint"
-grep -q 'r="105"' "${modern_symbol_svgs[2]}" \
-  || fail "Apple icon purple node must use the approved larger footprint"
-grep -q 'r="55"' "${modern_symbol_svgs[3]}" \
-  || fail "Apple icon indigo node must use the approved larger footprint"
-node_gradient_ids=(op-node-blue op-node-purple op-node-indigo)
+disc_count="$(grep -hEo 'id="op-disc-[abc]"' "${modern_symbol_svgs[@]}" | wc -l | tr -d ' ')"
+[[ "$disc_count" == "3" ]] \
+  || fail "Apple icon artwork must contain exactly three brand discs"
+grep -q 'id="op-cell"' "${modern_symbol_svgs[0]}" \
+  || fail "Apple icon artwork must preserve the brand cell"
+grep -q 'fill="url(#op-cell-fill)"' "${modern_symbol_svgs[0]}" \
+  || fail "Apple icon cell must use its lavender window fill"
+disc_colors=("#4F46E5" "#8B5CF6" "#38BDF8")
 for index in 1 2 3; do
-  node_svg="${modern_symbol_svgs[$index]}"
-  gradient_id="${node_gradient_ids[$((index - 1))]}"
-  grep -q "<radialGradient id=\"$gradient_id\" cx=\"35%\" cy=\"28%\" r=\"72%\"" "$node_svg" \
-    || fail "Apple icon node must use the approved upper-left convex lighting: ${node_svg##*/}"
-  grep -q "fill=\"url(#$gradient_id)\"" "$node_svg" \
-    || fail "Apple icon node must use its approved convex gradient: ${node_svg##*/}"
+  disc_svg="${modern_symbol_svgs[$index]}"
+  grep -q "fill=\"${disc_colors[$((index - 1))]}\"" "$disc_svg" \
+    || fail "Apple icon disc must stay a flat approved colour: ${disc_svg##*/}"
+  if grep -q 'Gradient' "$disc_svg"; then
+    fail "Apple icon discs must stay flat, without sphere lighting: ${disc_svg##*/}"
+  fi
 done
 
 if grep -Eqi 'squircle|rounded|clipPath|mask|filter|shadow|sheen|rim|<rect' "${modern_symbol_svgs[@]}"; then
@@ -94,29 +79,33 @@ if (pkg.scripts?.["icon:check"] !== "bash scripts/check-icon.sh") {
 if (pkg.scripts?.["icon:build"] !== undefined) {
   throw new Error("the removed hand-drawn icon build must not return");
 }
-if (!icon.fill?.["automatic-gradient"]) {
-  throw new Error("AppIcon.icon must delegate its background treatment to Icon Composer");
+if (icon.fill?.["linear-gradient"]?.length !== 2) {
+  throw new Error("AppIcon.icon must fill the tile with the indigo linear gradient");
 }
+// Icon Composer lists groups front to back.
 const expectedLayers = [
-  "01-orbit.svg",
-  "02-node-blue.svg",
-  "03-node-purple.svg",
-  "04-node-indigo.svg",
+  "04-disc-sky.svg",
+  "03-disc-violet.svg",
+  "02-disc-indigo.svg",
+  "01-cell.svg",
 ];
 if (icon.groups?.length !== expectedLayers.length) {
   throw new Error("AppIcon.icon must use four ordered depth groups");
 }
 for (let index = 0; index < expectedLayers.length; index += 1) {
-  if (icon.groups[index]?.specular !== false) {
-    throw new Error(`AppIcon.icon depth group ${index + 1} must disable the circular specular halo`);
+  const group = icon.groups[index];
+  if (group?.specular !== false) {
+    throw new Error(`AppIcon.icon depth group ${index + 1} must disable the specular halo`);
   }
-  const shadow = icon.groups[index]?.shadow;
-  if (shadow?.kind !== "neutral" || shadow?.opacity !== 0.42) {
-    throw new Error(`AppIcon.icon depth group ${index + 1} must use the approved neutral shadow`);
+  if (group?.translucency?.enabled !== false) {
+    throw new Error(`AppIcon.icon depth group ${index + 1} must stay opaque`);
   }
-  const layers = icon.groups[index]?.layers;
-  if (layers?.length !== 1 || layers[0]?.["image-name"] !== expectedLayers[index]) {
-    throw new Error(`AppIcon.icon depth group ${index + 1} must reference ${expectedLayers[index]}`);
+  if (group?.shadow?.kind !== "neutral") {
+    throw new Error(`AppIcon.icon depth group ${index + 1} must use a neutral shadow`);
+  }
+  const layers = group?.layers;
+  if (layers?.length !== 1 || layers[0]?.["image-name"] !== expectedLayers[index] || layers[0]?.glass !== false) {
+    throw new Error(`AppIcon.icon depth group ${index + 1} must reference ${expectedLayers[index]} without glass`);
   }
 }
 if (icon["supported-platforms"]?.squares !== "shared") {

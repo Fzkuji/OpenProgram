@@ -4,7 +4,9 @@ import { useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/abilities/plugins-store";
 import { useTranslation } from "@/lib/i18n";
-import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 interface Props {
   name: string;
@@ -31,17 +33,10 @@ export function PluginTrustWarning({ name, currentLevel, onDone, onCancel }: Pro
     }
   };
 
-  // Escape / Tab-trap / focus restore for this hand-rolled panel.
-  const modal = useModalA11y(onCancel, text(`Raise trust level for ${name}`, `提升 ${name} 的 trust 等级`));
-
   return (
-    <div className={styles.dialogBackdrop} onClick={onCancel}>
-      <div
-        {...modal}
-        className={styles.dialog}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.dialogTitle}>{text(`Raise trust level for ${name}`, `提升 ${name} 的 trust 等级`)}</div>
+    <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <DialogContent className={styles.dialog} aria-describedby={undefined}>
+        <DialogHeader><DialogTitle>{text(`Raise trust level for ${name}`, `提升 ${name} 的 trust 等级`)}</DialogTitle></DialogHeader>
         <div className={styles.dialogBody}>
           <p>
             {text("Current level: ", "当前等级 ")}
@@ -51,32 +46,28 @@ export function PluginTrustWarning({ name, currentLevel, onDone, onCancel }: Pro
               "。首次启用前必须升级到 community 或 verified。verified 会以 in-process 方式加载，community 未来将走 subprocess 沙箱（当前仍 in-process）。",
             )}
           </p>
-          <div style={{ marginTop: 12 }}>
-            <label>
-              <input
-                type="radio"
-                checked={level === "community"}
-                onChange={() => setLevel("community")}
-              />
-              {" "}community
+          <RadioGroup
+            className="mt-3 flex gap-4"
+            value={level}
+            onValueChange={(value) => setLevel(value as typeof level)}
+          >
+            <label className="flex items-center gap-2">
+              <RadioGroupItem value="community" />
+              community
             </label>
-            <label style={{ marginLeft: 16 }}>
-              <input
-                type="radio"
-                checked={level === "verified"}
-                onChange={() => setLevel("verified")}
-              />
-              {" "}verified
+            <label className="flex items-center gap-2">
+              <RadioGroupItem value="verified" />
+              verified
             </label>
-          </div>
+          </RadioGroup>
         </div>
-        <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onCancel} disabled={busy}>{t("sidebar.cancel")}</button>
-          <button className={styles.btnPrimary} onClick={submit} disabled={busy}>
+        <DialogFooter>
+          <Button variant="elevated" onClick={onCancel} disabled={busy}>{t("sidebar.cancel")}</Button>
+          <Button onClick={submit} disabled={busy}>
             {busy ? text("Saving...", "保存中...") : text("Save", "保存")}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

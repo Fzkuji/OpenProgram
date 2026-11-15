@@ -1,0 +1,138 @@
+<title>嵌套 LLM 节点内容</title>
+<meta name="description" content="展开的 LLM 节点如何按执行顺序显示文字、推理、函数引用、并行组和重试。">
+<h1>嵌套 LLM 节点内容</h1>
+
+<p>展开的 LLM 节点按执行顺序显示所有可显示内容。没有固定的 Reply 或 Reasoning 分区。流本身见 <a href="../execution/agentic-llm-streaming.zh.html">Agentic LLM 流式传输</a>。</p>
+
+<figure>
+<table class="stack fixed">
+<thead><tr><th scope="col">块（按顺序）</th><th scope="col">显示为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">reasoning_summary</code></th><td>折叠行，位于发生的位置；只在模型返回时显示，绝不生成</td></tr>
+<tr><th scope="row"><code translate="no">text</code></th><td>Markdown，无标题</td></tr>
+<tr><th scope="row"><code translate="no">parallel_group</code></th><td><code translate="no">read_config</code> 已完成、<code translate="no">run_tests</code> 运行中：一组，按调用顺序</td></tr>
+<tr><th scope="row"><code translate="no">text</code></th><td>组之后作为新块继续</td></tr>
+<tr><th scope="row"><code translate="no">tool_ref</code></th><td><code translate="no">analyze_repository</code>；展开为它内部的 LLM 内容</td></tr>
+<tr><th scope="row"><code translate="no">text</code></th><td>最后的文字</td></tr>
+</tbody>
+</table>
+</figure>
+
+<h2 id="views">执行树与内容</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">视图</th><th scope="col">回答</th></tr></thead>
+<tbody>
+<tr><th scope="row">执行树</th><td>调用关系、并行分支、状态、时长、失败位置</td></tr>
+<tr><th scope="row">节点内容</th><td>一个 LLM 节点内有序的文字、推理和函数引用</td></tr>
+<tr><th scope="row">折叠卡片</th><td>名称、状态、时长、短预览</td></tr>
+<tr><th scope="row">展开卡片、右侧详情</th><td>同一组件 <code translate="no">LlmNodeContent</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>函数行在调用时出现，参数、进度、结果和错误都读自对应 DAG 节点。点击即在树中定位该节点。提前完成不会移动行。</li>
+<li>内部签名不是内容。</li>
+<li>所有可显示内容都能访问。大结果可以折叠或按需加载，但截断的预览绝不是唯一副本。</li>
+</ul>
+
+<h2 id="recursion">函数内的模型调用</h2>
+<dl class="pairs">
+<dt>默认</dt><dd>展开选中的 LLM；其函数显示为摘要行</dd>
+<dt>上限</dt><dd>内联八层（<code translate="no">MAX_LLM_CONTENT_DEPTH</code>），之后显示明确边界和操作，在详情中把该节点作为新内容根打开。执行树、工具状态和历史不变</dd>
+<dt>展开状态</dt><dd>按节点、attempt、块保存，流式更新和重新挂载不会重置</dd>
+<dt>代码函数</dt><dd>参数、状态、日志、返回值；只有调用了模型才嵌套模型内容</dd>
+</dl>
+
+<h2 id="protocol">块协议</h2>
+<p>每个 LLM 节点在 <code translate="no">execution_stream.v1</code> 上按 attempt 维护有序 <code translate="no">blocks</code>。顺序由执行层通过 <code translate="no">block_id</code> 和 <code translate="no">block_index</code> 决定，与 WebSocket 到达时间无关。</p>
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">text</code></th><td><code translate="no">block_id</code>、内容、状态</td><td>流式 Markdown</td></tr>
+<tr><th scope="row"><code translate="no">reasoning_summary</code></th><td>同 <code translate="no">text</code>，另加保留策略</td><td>策略可不持久化</td></tr>
+<tr><th scope="row"><code translate="no">tool_ref</code></th><td><code translate="no">block_id</code>、<code translate="no">tool_call_id</code>、<code translate="no">occurrence_id</code>、<code translate="no">ref_node_id</code>，可选 <code translate="no">group_id</code></td><td>指向 DAG 节点；不内联结果</td></tr>
+<tr><th scope="row"><code translate="no">tool_arguments</code></th><td>参数增量</td><td>参数生成时的预览；终态显示以执行树为准</td></tr>
+<tr><th scope="row"><code translate="no">parallel_group</code></th><td><code translate="no">group_id</code>、有序的 <code translate="no">tool_ref</code> id</td><td>仅用于明确的并发批次</td></tr>
+<tr><th scope="row"><code translate="no">refusal</code>、<code translate="no">unsupported</code></th><td>沿用</td><td>按自身显示</td></tr>
+</tbody>
+</table>
+<details>
+<summary>事件示例</summary>
+<pre translate="no" tabindex="0">{
+  "type": "execution_stream",
+  "schema_version": 1,
+  "op": "block_started",
+  "node_id": "call_9f3e",
+  "attempt_id": "att_2",
+  "block_id": "blk_tool_7",
+  "block_index": 4,
+  "kind": "tool_ref",
+  "tool_call_id": "call_abc",
+  "occurrence_id": "occ_7e4c",
+  "ref_node_id": "exec_read_file_01",
+  "group_id": "par_1"
+}</pre>
+</details>
+
+<h3 id="tool-identity">工具身份</h3>
+<ul>
+<li>一个限定的 <code translate="no">occurrence_id</code> 恰好一行。原始 <code translate="no">tool_call_id</code> 可在不同 provider 轮次重复；重复事件不新增行。缺少 occurrence 只接受旧记录。</li>
+<li>DAG 工具节点同时保存两个 id；流发布 <code translate="no">occurrence_id → ref_node_id</code>。节点尚不可见时先发带稳定 id 的占位，再用同一 <code translate="no">block_id</code> 补全。不产生第二行，不虚构完成。</li>
+</ul>
+
+<h3 id="attempts">Attempt</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事件</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">正常工具结果后的模型请求</th><td>同一 attempt，继续追加块。<code translate="no">turn_end</code> 只表示一轮 provider 结束</td></tr>
+<tr><th scope="row">传输或结构化输出失败</th><td><code translate="no">start_attempt(reason=...)</code>：显示边界；旧 attempt 保持折叠；新输出绝不接到未完成的 Markdown 上</td></tr>
+</tbody>
+</table>
+
+<h3 id="parallel">并行调用</h3>
+<ul>
+<li>组需要成员已知的真实并发批次。Python 调度器逐个执行调用，所以不发布 <code translate="no">group_id</code>；前端绝不根据相邻行推断分组。</li>
+<li>每个成员从第一个事件起带组 id；id 晚创建时为先前成员重新发布。</li>
+<li>顺序即调用顺序。完成只改变状态。</li>
+</ul>
+
+<h2 id="streaming">流式与滚动</h2>
+<ul>
+<li>沿用聊天的 <code translate="no">renderMarkdown</code>、ThinkingStep、FunctionStep 呈现和安全策略。</li>
+<li>只更新活动块。未闭合的代码块、表格或链接不会让区域消失。</li>
+<li>大内容按块虚拟化或按需加载。</li>
+<li>在底部时跟随，向上滚动即停止。展开和语法高亮保持阅读位置。</li>
+<li>Copy text 不同于 Copy full execution record，后者可含推理和工具参数。</li>
+</ul>
+
+<h2 id="recovery">刷新与失败</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">刷新、owner 消失、worker 重启</th><td>从 checkpoint、<code translate="no">metadata.stream</code> 和快照恢复相同的顺序、引用和终态。绝不调用模型</td></tr>
+<tr><th scope="row">未完成的文字</th><td>保留，并标记中断、取消或失败</td></tr>
+<tr><th scope="row">未保存的推理</th><td>显示“此内容未保存”，不显示空的成功态</td></tr>
+<tr><th scope="row">旧记录</th><td>由 <code translate="no">metadata.blocks</code> 构建单个 legacy attempt；无法解析的引用显示未解析并保留 <code translate="no">tool_call_id</code></td></tr>
+</tbody>
+</table>
+<p class="note">实时和持久快照保存完整块内容；只有兼容预览字段可被截断。</p>
+
+<details>
+<summary>验收场景</summary>
+<p>模型输出 Markdown，并行调用两个函数，其中一个用 <code translate="no">read_file</code> 调用内部模型，外层模型继续。执行中断开并刷新。之后：</p>
+<ul>
+<li>块顺序、函数状态和层级与实时视图一致；工具状态来自持久化 DAG 节点。</li>
+<li>没有 Reply 或 Reasoning 标题栏。</li>
+<li>并行成员不按完成顺序重排。</li>
+<li>重试显示边界，不接到未完成的 Markdown 上。</li>
+<li><code translate="no">tool_ref</code> 与树节点一一对应，结果不重复。</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>有序块、<code translate="no">tool_ref</code>、attempt 和版本恢复（<code translate="no">CallStreamState</code>、reducer）；卡片和详情共用 <code translate="no">LlmNodeContent</code>；投影前做权限过滤，<code translate="no">io/llm</code> 只显示允许的后代；展开状态和深度上限；持久恢复</td></tr>
+<tr><th scope="row">尚未</th><td>在默认 App 中用真实模型跑验收场景。并发调度，因此 <code translate="no">parallel_group</code> 还没有产生者</td></tr>
+</tbody>
+</table>

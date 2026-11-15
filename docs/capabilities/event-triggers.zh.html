@@ -1,0 +1,43 @@
+<title>有事发生时运行任务</title>
+<meta name="description" content="在命令输出变化或其他服务调用 webhook 时运行任务。">
+<h1>有事发生时运行任务</h1>
+<p>直接用自然语言说，agent 用 <code translate="no">scheduler</code> 工具设置。按时间运行见<a href="reminders.zh.html">提醒</a>。</p>
+<table class="stack">
+<thead><tr><th scope="col">触发器</th><th scope="col">例子</th><th scope="col">何时触发</th></tr></thead>
+<tbody>
+<tr><th scope="row">定期或监控任务上的 <code translate="no">watch</code></th><td>“每 10 分钟查一次 <code translate="no">gh pr list --repo me/app</code>，有新 PR 告诉我。”</td><td>命令输出与上次检查不同。cron 决定检查频率。</td></tr>
+<tr><th scope="row"><code translate="no">webhook</code> 任务</th><td>“给我一个 webhook，用来分拣我们跟踪系统里的新 issue。”</td><td>其他服务调用它。没有时间表。</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">运行内容</th><th scope="col">如何收到事件</th><th scope="col">审批</th></tr></thead>
+<tbody>
+<tr><th scope="row">agent 提示词</th><td>围栏文本并标记为数据；要求只做你的任务，忽略其中的请求</td><td>后台运行没人可问：需要审批的调用被拒绝</td></tr>
+<tr><th scope="row">在本会话唤醒 agent 的提醒</th><td>标记为外部内容的文本</td><td>会话自己的权限模式</td></tr>
+<tr><th scope="row">shell 命令</th><td><code translate="no">OPENPROGRAM_EVENT</code>，<code translate="no">OPENPROGRAM_EVENT_SOURCE</code> 为 <code translate="no">webhook</code> 或 <code translate="no">watch</code></td><td>—</td></tr>
+</tbody>
+</table>
+<h2 id="when-something-changes">有变化时</h2>
+<ul>
+<li>第一次检查记录基线，不运行；改命令会重新建立基线。</li>
+<li>运行收到输出的 diff。</li>
+<li>命令在任务的沙箱里运行，须在 2 分钟内结束。失败或超时的检查不运行，保留基线，并显示为一次失败的运行。</li>
+<li>上一次运行还没结束时发现的变化不会丢：下一次检查还会看到它。</li>
+</ul>
+<h2 id="when-a-service-calls">被服务调用时</h2>
+<pre translate="no" tabindex="0"><code>POST http://127.0.0.1:18100/hooks/&lt;task id&gt;
+X-OpenProgram-Key: &lt;key&gt;</code></pre>
+<p class="note">key 也可以作为 GitHub webhook 的 secret。GitHub 用它签名（<code translate="no">X-Hub-Signature-256</code>），运行会得知事件名称。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">响应</th><th scope="col">何时</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">202</code></th><td>已启动</td></tr>
+<tr><th scope="row"><code translate="no">404</code></th><td>key 错误或任务不存在</td></tr>
+<tr><th scope="row"><code translate="no">409</code></th><td>任务已暂停，或 <code translate="no">previous_run_active</code>：上一次运行还没结束，稍后再调用</td></tr>
+<tr><th scope="row"><code translate="no">413</code></th><td>请求体超过 64 KB</td></tr>
+<tr><th scope="row"><code translate="no">429</code></th><td>距上次启动不到 10 秒</td></tr>
+</tbody>
+</table>
+<p class="note">运行收到请求体的前 8,000 个字符。URL 在这台电脑上；互联网上的服务需要隧道或<a href="../server/configuration.zh.html#who-can-reach-the-server">公开 Web 地址</a>。</p>
+<h2 id="see-pause-or-delete">查看、暂停或删除</h2>
+<p>在 <strong>Scheduler</strong> 里，或让 agent 做。webhook 任务的时间表显示<strong>被调用时</strong>。每次运行的日志（含触发事件）在 scheduler 的 <code translate="no">logs</code> 文件夹。</p>

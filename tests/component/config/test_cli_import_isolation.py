@@ -33,7 +33,7 @@ def test_interactive_library_import_does_not_redirect_stdio() -> None:
         sys.stdout = InteractiveStdout()
         pathlib.Path.mkdir = reject_mkdir
 
-        import openprogram.cli.chat  # noqa: F401
+        import openprogram.interfaces.cli.chat  # noqa: F401
 
         raise SystemExit(0 if not events else 7)
         """

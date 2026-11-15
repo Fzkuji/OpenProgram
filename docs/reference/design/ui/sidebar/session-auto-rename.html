@@ -1,0 +1,38 @@
+<title>Session auto rename</title>
+<meta name="description" content="How Auto rename asks the title model for a session name, and what happens on failure, races and later background titling.">
+<meta name="covers" content="apps/web/lib/chat/session-auto-rename.ts">
+<h1>Session auto rename</h1>
+<p>Auto rename sits directly after Rename in the session menu and asks the title model for a concise title from the conversation. The sidebar native menu, sidebar web menu and conversation menu share one client action, <code translate="no">autoRenameSession</code>.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Case</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running</th><td>Progress shown; old title and content stay visible; in-flight clicks deduplicated per session</td></tr>
+<tr><th scope="row">Success</th><td>Saved before <code translate="no">session_updated</code> is broadcast; loaded conversation and all clients see the same title</td></tr>
+<tr><th scope="row">Failure</th><td>Old title stays; retryable message</td></tr>
+<tr><th scope="row">Transport timeout</th><td>Reports an unconfirmed result and asks to reload to check the title; the operation is not replayed</td></tr>
+<tr><th scope="row">Conversation renamed or deleted meanwhile</th><td>Rechecked after generation; stale result discarded</td></tr>
+<tr><th scope="row">Requesting socket lost</th><td>A saved title stays</td></tr>
+<tr><th scope="row">Manual Rename</th><td>Unchanged; a typed title is locked against background titling</td></tr>
+<tr><th scope="row">Generated name</th><td>Does not lock: clears <code translate="no">_user_titled</code>, so background titling can still improve it</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Server path</summary>
+<ul>
+<li><code translate="no">rename_session</code> without a title (<code translate="no">handle_rename_session</code>) runs the no-tools title generator in a worker thread, from the branch context background titling uses (<code translate="no">build_title_context</code>).</li>
+<li>A retained background task owns the call, so the WebSocket receive loop is released at once; the task is removed when it completes.</li>
+<li>Providers without verified native JSON Schema support use the prompt fallback, with the same local schema validation and no tools.</li>
+<li>Chat history supplies text; function-only conversations supply call title and result.</li>
+</ul>
+</details>
+
+<details>
+<summary>Scope and verification</summary>
+<p>No change to operating-system permissions, approval modes, automatic first-turn titling or other applications.</p>
+<p>Verify the public rename commands for chat and function-only histories, failures, manual-name races, deletion and persistence; menu actions and disconnected feedback; then in the App that the sidebar action generates a title, updates the sidebar and tab, and survives a full reload.</p>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented: menu, shared client action, background rename handler.</p>

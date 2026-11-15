@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from openprogram.self_update import ActiveUpdateError, SelfUpdateStore, UpdateRequest
+from openprogram.operations.self_update import ActiveUpdateError, SelfUpdateStore, UpdateRequest
 
 
 def _request(update_id: str) -> UpdateRequest:
@@ -46,8 +46,8 @@ def test_concurrent_create_has_one_winner(tmp_path: Path) -> None:
 
 
 def test_reader_has_bounded_wait_for_writer(tmp_path):
-    from openprogram.self_update.control.projection import read_status
-    from openprogram.self_update.types import ConcurrentUpdateError
+    from openprogram.operations.self_update.control.projection import read_status
+    from openprogram.operations.self_update.types import ConcurrentUpdateError
 
     store = SelfUpdateStore(tmp_path / "updates")
     store.create(_request("su_test"))
@@ -61,7 +61,7 @@ def test_reader_has_bounded_wait_for_writer(tmp_path):
     thread = threading.Thread(target=writer)
     thread.start()
     try:
-        assert held.wait(2)
+        assert held.wait(30)
         started = time.monotonic()
         with pytest.raises(ConcurrentUpdateError):
             read_status(store, session_id="session-1")

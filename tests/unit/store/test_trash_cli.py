@@ -1,10 +1,10 @@
 def _record_one_deletion(tmp_path, monkeypatch):
-    from openprogram.sandbox.recoverable_delete import move_to_trash
+    from openprogram.host.sandbox.recoverable_delete import move_to_trash
 
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setattr("openprogram.paths._migration_checked", True)
+    monkeypatch.setattr("openprogram.state.paths._migration_checked", True)
     source = tmp_path / "deleted.txt"
     source.write_text("recover")
     trash_root = home / ".openprogram" / "trash" / "session-one" / "turn-two"
@@ -12,7 +12,7 @@ def _record_one_deletion(tmp_path, monkeypatch):
 
 
 def test_trash_list_reports_records_and_capture_limit(tmp_path, monkeypatch, capsys):
-    from openprogram.cli.commands.trash import _cmd_trash_list
+    from openprogram.interfaces.cli.commands.trash import _cmd_trash_list
 
     source, entry = _record_one_deletion(tmp_path, monkeypatch)
 
@@ -26,7 +26,7 @@ def test_trash_list_reports_records_and_capture_limit(tmp_path, monkeypatch, cap
 
 
 def test_trash_restore_finds_record_without_overwriting(tmp_path, monkeypatch, capsys):
-    from openprogram.cli.commands.trash import _cmd_trash_restore
+    from openprogram.interfaces.cli.commands.trash import _cmd_trash_restore
 
     source, entry = _record_one_deletion(tmp_path, monkeypatch)
 
@@ -39,7 +39,7 @@ def test_trash_restore_finds_record_without_overwriting(tmp_path, monkeypatch, c
 
 
 def test_trash_parser_exposes_list_and_restore_verbs():
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     list_args = build_parser().parse_args(["trash", "list"])
     restore_args = build_parser().parse_args(["trash", "restore", "entry-id"])

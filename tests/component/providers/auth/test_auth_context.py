@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from openprogram.auth.context import (
+from openprogram.models.auth.context import (
     auth_scope,
     auth_scope_async,
     capture,
@@ -15,7 +15,7 @@ from openprogram.auth.context import (
     get_credential_override,
     get_subprocess_env,
 )
-from openprogram.auth.types import Credential, CredentialData
+from openprogram.models.auth.types import Credential, CredentialData
 
 
 def _fake_cred(provider_id: str) -> Credential:

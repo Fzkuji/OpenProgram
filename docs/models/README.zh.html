@@ -1,0 +1,50 @@
+<title>配置模型</title>
+<meta name="description" content="首次配置模型、Provider 命令以及已启用模型的工作方式。">
+<h1>配置模型</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">目标</th><th scope="col">命令</th></tr></thead>
+<tbody>
+<tr><th scope="row">完整首次向导，Web UI 首次打开时也会显示</th><td><code translate="no">openprogram setup</code></td></tr>
+<tr><th scope="row">只配模型部分</th><td><code translate="no">openprogram setup model</code></td></tr>
+<tr><th scope="row">选择一个部分</th><td><code translate="no">openprogram setup menu</code></td></tr>
+<tr><th scope="row">只配凭据：扫描、登录、验证</th><td><code translate="no">openprogram providers setup</code></td></tr>
+</tbody>
+</table>
+<h2>Provider 命令</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">openprogram providers</code></th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">login &lt;provider&gt;</code></th><td>自动选择 OAuth 或 API 密钥。脚本用 <code translate="no">--api-key-stdin</code></td></tr>
+<tr><th scope="row"><code translate="no">logout &lt;provider&gt;</code></th><td>删除它的凭据</td></tr>
+<tr><th scope="row"><code translate="no">status &lt;provider&gt;</code></th><td>凭据能用吗？</td></tr>
+<tr><th scope="row"><code translate="no">list</code></th><td>按账户列出凭据池</td></tr>
+<tr><th scope="row"><code translate="no">available [QUERY]</code></th><td>完整的可配置目录，含社区条目</td></tr>
+<tr><th scope="row"><code translate="no">discover</code> <code translate="no">adopt</code></th><td>扫描并导入本机已有凭据：<a href="auth.html">认证</a></td></tr>
+<tr><th scope="row"><code translate="no">use &lt;provider&gt; [account]</code></th><td>该 Provider 用哪个账户</td></tr>
+<tr><th scope="row"><code translate="no">doctor</code></th><td>过期、刷新、冷却、冲突</td></tr>
+<tr><th scope="row"><code translate="no">aliases</code> <code translate="no">accounts</code> <code translate="no">migrate</code></th><td>短名、账户、凭据格式迁移</td></tr>
+</tbody>
+</table>
+<h2>已启用模型</h2>
+<p>聊天里的模型选择器只显示已启用的模型；只有凭据还不够。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">启用方式</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">设置向导</th><td>勾选</td></tr>
+<tr><th scope="row">设置 → Provider</th><td>勾选。<strong>Fetch models</strong> 更新目录。</td></tr>
+<tr><th scope="row">订阅登录</th><td>自动启用一组默认模型</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">事项</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">存放在</th><td><code translate="no">~/.openprogram/config.json</code>（用 <code translate="no">--profile</code> 时为 <code translate="no">~/.openprogram-&lt;name&gt;/</code>）的 <code translate="no">providers.&lt;id&gt;</code>：<code translate="no">enabled</code> 标志和 <code translate="no">models</code> 行（上下文窗口、价格等）。手动添加的模型带 <code translate="no">source: "manual"</code>。</td></tr>
+<tr><th scope="row">读取方</th><td><code translate="no">openprogram/models/providers/catalog/enabled_models.py</code>，启动时读取；配置变更在重新加载时生效</td></tr>
+<tr><th scope="row">空选择</th><td>允许，包括关掉最后一个模型；重新加载和重启后仍为空</td></tr>
+<tr><th scope="row">新聊天</th><td>没有默认模型。从顶层 <code translate="no">last_used_model</code> 开始，即上次选择或发消息用的模型。全新安装时会询问。关掉该模型会清除记录。</td></tr>
+<tr><th scope="row">其他用途</th><td>标题、记忆写入、MCP sampling 和 Auto 权限审查在没有自己的对话时使用该模型</td></tr>
+<tr><th scope="row">Provider 设置</th><td>打开时用已保存的模型和缓存目录，不等远端接口</td></tr>
+<tr><th scope="row">品牌图标</th><td>随产品打包；自定义或未识别的 Provider 显示首字母</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="local-models.html">本地模型</a> · <a href="providers.html">Provider</a> · <a href="auth.html">认证</a> · <a href="fast-tier.html">Fast 模式</a> · <a href="thinking-effort.html">思考强度</a> · <a href="token-tracking.html">Token 统计</a></p>

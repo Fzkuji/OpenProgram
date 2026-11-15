@@ -1,9 +1,9 @@
 """list_jobs — list this session's background agent tasks."""
 from __future__ import annotations
 
-from openprogram.agent.types import AgentToolResult
-from openprogram.programs._runtime import function
-from openprogram.providers.types import TextContent
+from openprogram.models.providers.types import AgentToolResult
+from openprogram.programs._host.runtime import function
+from openprogram.models.providers.types import TextContent
 
 _ROW_LIMIT = 50
 _SUBJECT_CLIP = 80
@@ -17,6 +17,8 @@ _SUBJECT_CLIP = 80
         "canonical nested resource view."
     ),
     toolset=["core"],
+    # list_agents shows running work now; kept for programs.
+    expose=False,
 )
 def list_jobs() -> str | AgentToolResult:
     """Render the current session's task table as text."""
@@ -25,11 +27,11 @@ def list_jobs() -> str | AgentToolResult:
 
 def _list_jobs_impl() -> str | AgentToolResult:
     """Implementation body kept separate for direct tests."""
-    from openprogram.agent.run_control import _current_session_id
+    from openprogram.runtime.execution.run_control.binding import _current_session_id
     sid = _current_session_id.get(None)
     if not sid:
         return "[list_jobs error] no active session context"
-    from openprogram.agent.job import get_runner
+    from openprogram.runtime.jobs import get_runner
     runner = get_runner()
     tasks = runner.list_jobs(sid, limit=_ROW_LIMIT)
     if not tasks:

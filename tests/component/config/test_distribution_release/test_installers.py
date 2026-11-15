@@ -1,5 +1,6 @@
 """release installers tests."""
 from __future__ import annotations
+import os
 from ._support import (
     POSIX_SHELL_INTEGRATION,
     Path,
@@ -7,7 +8,6 @@ from ._support import (
     _copied_public_installer,
     _fake_posix_cli_archive,
     json,
-    os,
     pytest,
     subprocess,
     sys,
@@ -594,7 +594,10 @@ done
 printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
 case "$url" in
   */releases/latest)
-    printf 'https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.1'
+    printf 'https://github.com/FuzzyKuji/OpenProgram/releases/tag/v0.6.1'
+    ;;
+  */release-manifest.json)
+    exit 22
     ;;
   */v*/scripts/install-release.sh)
     cp "$FAKE_INSTALLER" "$output"
@@ -621,10 +624,11 @@ esac
         "FAKE_CURL_LOG": str(curl_log),
     }
     subprocess.run(["sh", str(bootstrap)], check=True, env=env)
-    assert result.read_text(encoding="utf-8") == "0.6.1|Fzkuji/OpenProgram\n"
+    assert result.read_text(encoding="utf-8") == "0.6.1|FuzzyKuji/OpenProgram\n"
     assert curl_log.read_text(encoding="utf-8").splitlines() == [
-        "https://github.com/Fzkuji/OpenProgram/releases/latest",
-        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v0.6.1/scripts/install-release.sh",
+        "https://github.com/FuzzyKuji/OpenProgram/releases/latest",
+        "https://github.com/FuzzyKuji/OpenProgram/releases/download/v0.6.1/release-manifest.json",
+        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/v0.6.1/scripts/install-release.sh",
     ]
 
     result.unlink()
@@ -634,9 +638,10 @@ esac
         check=True,
         env=env | {"OPENPROGRAM_VERSION": "1.2.3"},
     )
-    assert result.read_text(encoding="utf-8") == "1.2.3|Fzkuji/OpenProgram\n"
+    assert result.read_text(encoding="utf-8") == "1.2.3|FuzzyKuji/OpenProgram\n"
     assert curl_log.read_text(encoding="utf-8").splitlines() == [
-        "https://raw.githubusercontent.com/Fzkuji/OpenProgram/v1.2.3/scripts/install-release.sh"
+        "https://github.com/FuzzyKuji/OpenProgram/releases/download/v1.2.3/release-manifest.json",
+        "https://raw.githubusercontent.com/FuzzyKuji/OpenProgram/v1.2.3/scripts/install-release.sh",
     ]
 
 
@@ -645,12 +650,11 @@ def test_source_development_installer_adds_to_complete_product() -> None:
     installer = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
     assert 'PIP install -e "$HOST_ROOT[all,search]"' in installer
     assert '"$PY" -m playwright install chromium' in installer
-    assert '"$PY" -m openprogram programs install all' in installer
-    assert 'bash "$gui_installer" --no-host --python "$PY"' in installer
-    assert 'get_program("research").clone_dir()' in installer
-    assert 'PIP install -e "$research_source[pdf]"' in installer
+    assert "openprogram programs install research" not in installer
+    assert "programs install all" not in installer
+    assert "get_program" not in installer
     assert "prompt_programs_menu" not in installer
     assert "--minimal was removed" in installer
-    assert "WITH_STEALTH" in installer
-    assert "WITH_AGENT_BROWSER" in installer
+    assert "WITH_STEALTH" not in installer
+    assert "WITH_AGENT_BROWSER" not in installer
 

@@ -1,17 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
-import { CenterTabStrip } from "./center-tabs/center-tab-strip";
-import { WebTabPip } from "./center-tabs/web-tab-pip";
-import { BrowserResourceProjection } from "@/lib/browser/browser-resource-projection";
+import { ControlTips } from "./control-tips";
+import { CenterTabStrip } from "./center-tabs/strip/center-tab-strip";
+import { CanvasControls } from "./center-tabs/canvas/canvas-controls";
+import { CanvasOverview } from "./center-tabs/canvas/canvas-overview";
+import { playCanvasTransition } from "@/lib/tabs/canvas/canvas-transition";
+import { sessionForShellReturn } from "@/lib/tabs/navigation/shell-session";
+import { canvasCssGeometry, leaves, rowLayout } from "@/lib/tabs/canvas/canvas-layout";
+import { smallCanvasPanes, useCenterBodySize, watchCenterBodySize } from "@/lib/tabs/canvas/center-body-size";
+import { WebTabPip } from "./center-tabs/pip/web-tab-pip";
+import { AppPreviewPip } from "./center-tabs/pip/app-preview-pip";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
-import { topLevelTabs } from "@/lib/browser/web-page-management";
+import { topLevelTabs } from "@/lib/browser/web-tab/web-page-management";
 import {
   findCenterTabGroup,
   resolveCenterTabPanes,
@@ -22,75 +29,83 @@ import {
   setDesktopSplitLayoutAvailable,
 } from "@/lib/desktop/desktop-bridge";
 import { ToastHost } from "./ui/toast-host";
+import { VersionNotices } from "./settings/version-notices";
+import { RewindDialog } from "./chat/rewind/rewind-dialog";
+import { RewindPicker } from "./chat/rewind/rewind-picker";
+import { CommandPalette } from "./command-palette";
 import { Composer } from "./chat/composer";
 import { LegacyTopbarBridge } from "./chat/top-bar";
-import { WelcomeScreen } from "./chat/welcome-screen";
-import { MessageList } from "./chat/messages/message-list";
-import { PeerSessionPane } from "./chat/peer-session-pane";
-import { DagView } from "./chat/dag-view";
-import { ViewControls } from "./chat/view-controls";
+import { WelcomeScreen } from "./chat/welcome/welcome-screen";
+import { MessageList } from "./chat/messages/list/message-list";
+import { PeerSessionPane } from "./chat/pane/peer-session-pane";
+import { DagView } from "./chat/dag/dag-view";
+import { ViewControls } from "./chat/pane/view-controls";
 import { useSessionStore } from "@/lib/session-store";
 import { SessionScopeProvider } from "@/lib/session-store/session-scope";
 import { useColResize } from "@/lib/hooks/use-col-resize";
 import { useTranslation } from "@/lib/i18n";
-import {
-  clampSplitRatioForWidth,
-  createSplitLayoutMeasureScheduler,
-  isSplitLayoutAvailable,
-} from "@/lib/tabs/split-layout";
+import { isSplitLayoutAvailable } from "@/lib/tabs/canvas/split-layout";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
-import { setNavigate } from "@/lib/navigate";
-import { setLastChatPath } from "@/lib/tabs/last-chat-path";
+import { newSession } from "@/lib/runtime-bridge/session/conversations";
+import { markSessionReadLocally, windowVisibilityChanged } from "@/lib/runtime-bridge/session/chat-handlers";
+import { completeTabRouteNavigation } from "@/lib/tabs/navigation/route";
+import { setNavigate } from "@/lib/nav/navigate";
+import { startAttentionBridge } from "@/lib/desktop/attention";
+import { openSession, reopenActiveSessionRoute } from "@/lib/tabs/navigation/open-session";
+import { setLastChatPath } from "@/lib/tabs/navigation/last-chat-path";
 import { enterExclusiveCoverageMode, renderHistoryGraph } from "@/lib/runtime-bridge/dag";
-import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
-import { hostPaintsRows } from "@/lib/chat/message-window";
+import { initOverlayScrollbars } from "@/lib/runtime-bridge/dom/scrollbar";
+import { hostPaintsRows } from "@/lib/chat/history/message-window";
 
 function DeferredPaneLoading() {
   return (
-    <div className="flex h-full items-center justify-center text-sm text-text-muted">
+    <div className="flex h-full items-center justify-center text-fs-xs text-text-muted">
       Loading…
     </div>
   );
 }
 
 const BuiltinTabPane = dynamic(
-  () => import("./center-tabs/builtin-tab-pane").then((module) => module.BuiltinTabPane),
+  () => import("./center-tabs/pages/builtin-tab-pane").then((module) => module.BuiltinTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const BrowserHomePage = dynamic(
-  () => import("./center-tabs/browser-home-page").then((module) => module.BrowserHomePage),
+  () => import("./center-tabs/browser/browser-home-page").then((module) => module.BrowserHomePage),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const ApplicationTabPane = dynamic(
-  () => import("./center-tabs/application-tab-pane").then((module) => module.ApplicationTabPane),
+  () => import("./center-tabs/pages/application-tab-pane").then((module) => module.ApplicationTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const FileTabPane = dynamic(
-  () => import("./center-tabs/file-tab-pane").then((module) => module.FileTabPane),
+  () => import("./center-tabs/files/file-tab-pane").then((module) => module.FileTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const ReviewTabPane = dynamic(
-  () => import("./center-tabs/review-tab-pane").then((module) => module.ReviewTabPane),
+  () => import("./center-tabs/review/review-tab-pane").then((module) => module.ReviewTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const FilesPage = dynamic(
-  () => import("./center-tabs/files-page").then((module) => module.FilesPage),
+  () => import("./center-tabs/files/files-page").then((module) => module.FilesPage),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const NewTabPage = dynamic(
-  () => import("./center-tabs/new-tab-page").then((module) => module.NewTabPage),
+  () => import("./center-tabs/pages/new-tab-page").then((module) => module.NewTabPage),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const TerminalPage = dynamic(
-  () => import("./center-tabs/terminal-page").then((module) => module.TerminalPage),
+  () => import("./center-tabs/pages/terminal-page").then((module) => module.TerminalPage),
   { ssr: false, loading: DeferredPaneLoading },
 );
 const WebTabPane = dynamic(
-  () => import("./center-tabs/web-tab-pane").then((module) => module.WebTabPane),
+  () => import("./center-tabs/browser/web-tab-pane").then((module) => module.WebTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
 
-import { PersistentFilePanes } from "./center-tabs/persistent-file-panes";
+import { PersistentFilePanes } from "./center-tabs/files/persistent-file-panes";
+import { CodeRainArrivals } from "./chat/welcome/code-rain-arrivals";
+
+const LONE_PANE = { left: "0px", top: "0px", width: "100%", height: "100%" };
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -131,13 +146,19 @@ function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
 }
 
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  useEffect(() => { useCenterTabs.getState().recordRouteNavigation(pathname); }, [pathname]);
+  useLayoutEffect(() => {
+    if (completeTabRouteNavigation(pathname)) return;
+    useCenterTabs.getState().recordRouteNavigation(pathname);
+  }, [pathname]);
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
-  const { t } = useTranslation();
+
+  // Desktop notifications open their session; keep-awake follows running sessions.
+  useEffect(() => startAttentionBridge(openSession), []);
 
   // Background route warm-up. After AppShell paints and the main
   // thread goes idle, prefetch each commonly-used route in priority
@@ -161,6 +182,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       "/settings/providers",
       "/memory",
       "/scheduler",
+      "/settings/environments",
+      "/settings/voice",
+      "/settings/appearance",
       "/settings/channels",
       "/settings/search",
       "/mcp",
@@ -259,6 +283,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [pathname]);
 
+  // A split that dissolves hands its remaining session back to the chat
+  // shell, which sat hidden on whichever session was focused last. The
+  // route reaches the shell renders later (activeId → URL → store), so
+  // switch it in the same tick as the layout; otherwise its first frames
+  // show the session that just left.
+  useEffect(() => {
+    document.addEventListener("visibilitychange", windowVisibilityChanged);
+    return () => document.removeEventListener("visibilitychange", windowVisibilityChanged);
+  }, []);
+
+  useEffect(() => useCenterTabs.subscribe((s, prev) => {
+    const sid = sessionForShellReturn(prev, s);
+    if (!sid || !isChatRoute(window.location.pathname)) return;
+    runtimeState.currentSessionId = sid;
+    useSessionStore.getState().setCurrentConv(sid);
+  }), []);
+
   // Sync `.active` on sidebar nav items to the current route and close any
   // open popover when navigating. The functions page inline script also sets
   // `.active` on mount, but nothing removes it on navigation — we own that.
@@ -273,6 +314,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const el = document.getElementById(id);
       if (el) el.classList.toggle("active", pathname === path);
     }
+    // /chat under a tab that holds a conversation: the route is handed back
+    // to that conversation and this effect runs again for it.
+    if (pathname === "/chat" && reopenActiveSessionRoute()) return;
     // Remember the last chat route so a `/functions → run` hand-off can
     // return to the conversation the user came from, not a blank /chat.
     // It must survive leaving the chat route entirely (the store's
@@ -311,6 +355,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // client-side routing — this is the only "seen" signal the server gets.
       // (On first load the socket may not be open yet; use-ws's onopen
       // re-sends this for the current conv.)
+      if (sid && document.visibilityState !== "hidden") markSessionReadLocally(sid);
       const sock = getSocket();
       if (sock && sock.readyState === WebSocket.OPEN) {
         sock.send(JSON.stringify({ action: "mark_session_read", session_id: sid }));
@@ -336,7 +381,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // The React `<Sidebar />` renders nav items synchronously on mount,
     // so depending on `pathname` alone is sufficient now — no need to
     // wait for an async HTML inject before the first .active sync.
-  }, [pathname, router, t]);
+  }, [pathname]);
 
   useEffect(() => {
     // Publish client-side navigation for non-React callers, which would
@@ -408,36 +453,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ? findCenterTabGroup(groups, activeId)
     : undefined;
   const splitRatio = useCenterTabs((s) => s.splitRatio);
-  const setSplitRatio = useCenterTabs((s) => s.setSplitRatio);
   const centerBodyRef = useRef<HTMLDivElement | null>(null);
-  const [centerBodyWidth, setCenterBodyWidth] = useState(0);
+  // The body's size, from its ResizeObserver's entries: no layout read in
+  // the frames of a rail's move (lib/tabs/canvas/center-body-size.ts).
   useEffect(() => {
     const node = centerBodyRef.current;
-    if (!node) return;
-    const measureScheduler = createSplitLayoutMeasureScheduler(() => {
-      setCenterBodyWidth(node.getBoundingClientRect().width);
-    });
-    const layoutRoot = node.closest(".app");
-    measureScheduler.schedule();
-    const observer = new ResizeObserver(measureScheduler.schedule);
-    observer.observe(node);
-    window.addEventListener("resize", measureScheduler.schedule);
-    layoutRoot?.addEventListener("transitionend", measureScheduler.schedule);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", measureScheduler.schedule);
-      layoutRoot?.removeEventListener(
-        "transitionend",
-        measureScheduler.schedule,
-      );
-      measureScheduler.cancel();
-    };
+    return node ? watchCenterBodySize(node) : undefined;
   }, []);
-  const splitAvailable = isSplitLayoutAvailable(centerBodyWidth);
-  const effectiveSplitRatio = clampSplitRatioForWidth(
-    splitRatio,
-    centerBodyWidth,
-  );
+  const splitAvailable = useCenterBodySize((size) => isSplitLayoutAvailable(size.width));
   const compoundPanes = resolveCenterTabPanes(activeGroup, tabs, activeId);
   const focusedPanes = resolveCenterTabPanes(
     undefined,
@@ -452,8 +475,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // so fall back to the focused tab alone.
   const panes = topLevelTabs(tabs, groups).length === 0
     ? []
-    : activeGroup && splitAvailable ? compoundPanes : focusedPanes;
-  const showDivider = panes.length === 2;
+    : activeGroup ? compoundPanes : focusedPanes;
+  const canvas = useMemo(() => activeGroup?.canvas ?? rowLayout(activeId ? [activeId] : [], splitRatio), [activeGroup?.canvas, activeId, splitRatio]);
+  const canvasLeaves = leaves(canvas.root);
+  const smallPanes = new Set(useCenterBodySize((size) => smallCanvasPanes(canvas.root, size.width, size.height)).split(" "));
+  // Panes sit in the canvas as shares of it (calc(% + px)), so the browser
+  // sizes them in the same layout pass as the canvas; the measured size
+  // above only decides whether a pane is too small to show.
+  const canvasInset = canvasLeaves.length > 1 ? 1 : 0;
+  const cssGeometry = useMemo(() => canvasCssGeometry(canvas.root, canvasInset), [canvas.root, canvasInset]);
+  const webIds = panes.flatMap(p => p.kind !== "session" && tabs.find(t => t.id === p.tabId)?.kind === "web" ? [p.tabId] : []);
+  const liveWebIds = new Set([...(activeId && webIds.includes(activeId) ? [activeId] : []), ...webIds.filter(id => id !== activeId)].slice(0, 8));
   const sessionPaneIndex = panes.findIndex((pane) => pane.kind === "session");
   const showChat = isChatRoute(pathname);
   const paintRows = hostPaintsRows(showChat, sessionPaneIndex, activeTabDagView);
@@ -471,22 +503,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }, [isDesktop, activeKind, splitAvailable]);
 
-  function updateSplitRatio(ratio: number) {
-    const rect = centerBodyRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
-    setSplitRatio(clampSplitRatioForWidth(ratio, rect.width));
-  }
+  // A layout change the canvas buttons announced (red, yellow, green, the
+  // tiling menu) animates from here, before its first frame paints.
+  useLayoutEffect(() => { playCanvasTransition(); });
 
-  function centerPaneClassName(index: number) {
-    if (!showDivider) return "center-single-pane";
-    return index === 0 ? "center-split-primary" : "center-split-secondary";
-  }
-
-  function centerPaneStyle(index: number) {
-    if (!showDivider) return undefined;
-    return index === 0
-      ? { order: 0, width: `${effectiveSplitRatio * 100}%` }
-      : { order: 2 };
+  function centerPaneClassName(_index: number) { return "center-canvas-content"; }
+  function centerPaneStyle(index: number): CSSProperties {
+    const item = panes[index];
+    const tabId = item?.kind === "session" ? item.activeTabId : item?.tabId;
+    const p = canvasLeaves.find(p => p.content === tabId);
+    if (!p) return { display: "none" };
+    const zoomed = canvas.zoomedPaneId === p.id;
+    const hidden = (canvas.zoomedPaneId && !zoomed) || smallPanes.has(zoomed ? "viewport" : p.id);
+    // No per-pane title bar: content fills its pane. In a multi-pane layout
+    // every pane is its own floating card (see `.center-col[data-split]` in
+    // styles/base/layout.css), so it keeps a 1px inset and the cards' 16px corners; a lone
+    // pane is flush inside the centre card, whose rounded clip then holds
+    // its content. A web tab's native view escapes that clip, so its page
+    // meets the card edge with square corners, as a browser window does.
+    const css = !canvasInset ? LONE_PANE : zoomed ? cssGeometry.viewport : cssGeometry.panes.get(p.id)!;
+    return { position:"absolute",...css,minWidth:0,minHeight:0,overflow:"hidden",borderRadius:canvasInset ? 16 : undefined,display:hidden?"none":"flex",flexDirection:"column" };
   }
 
   function renderTabPane(tabId: string, kind: "peer" | "tab") {
@@ -498,14 +534,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           tabId={tab.id}
           sessionId={tab.sessionId ?? null}
           title={tab.title}
+          showTitle={false}
         />
       );
     }
-    if (tab.kind === "file" && tab.projectId && tab.path) {
-      return <FileTabPane projectId={tab.projectId} path={tab.path} />;
+    if (tab.kind === "file" && tab.path && (tab.projectId || (tab.readOnly && tab.fileSessionId))) {
+      return <FileTabPane projectId={tab.projectId || ""} path={tab.path} sessionId={tab.fileSessionId} readOnly={tab.readOnly} previewSessionId={tab.previewOwnerSessionId} />;
     }
     if (tab.kind === "web") {
-      return <WebTabPane tabId={tab.id} url={tab.url ?? ""} />;
+      return <WebTabPane tabId={tab.id} url={tab.url ?? ""} suspended={!liveWebIds.has(tab.id)} />;
     }
     if (tab.kind === "application" && tab.applicationInstanceId) {
       return <ApplicationTabPane instanceId={tab.applicationInstanceId} />;
@@ -555,12 +592,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
       <div className="app">
       <Sidebar />
+      <ControlTips />
       {/* Center column: browser-style tab strip over the active tab's
          pane. `order: 2` slots it where `.app .main` used to sit (the
          chat .main is now a grandchild, flexing inside .center-body).
          Hidden (not unmounted) on non-chat routes. */}
       <div
         className="center-col"
+        data-split={canvasLeaves.length > 1 && !canvas.zoomedPaneId ? "" : undefined}
         style={{
           display: showChat ? "flex" : "none",
           flexDirection: "column",
@@ -573,6 +612,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div
           ref={centerBodyRef}
           className="center-body"
+          data-canvas-root="true"
           style={{ flex: 1, minHeight: 0, display: "flex", position: "relative" }}
         >
           {/* Chat shell is mounted ONCE at the layout level and kept
@@ -590,6 +630,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ? "center-single-pane"
                 : centerPaneClassName(sessionPaneIndex)) + " center-pane-chat"
             }
+            data-center-tab-id={panes[sessionPaneIndex]?.kind === "session" ? panes[sessionPaneIndex].activeTabId : undefined}
             data-center-view={activeTabDagView ? "dag" : "session"}
             style={
               sessionPaneIndex < 0
@@ -601,39 +642,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <DagView visible={activeTabDagView} />
             <ViewControls />
           </div>
-          {showChat && showDivider ? (
-            <div
-              className="center-split-divider"
-              style={{ order: 1 }}
-              role="separator"
-              aria-orientation="vertical"
-              aria-valuenow={Math.round(effectiveSplitRatio * 100)}
-              tabIndex={0}
-              onPointerDown={(e) => {
-                if (e.button !== 0) return;
-                e.currentTarget.setPointerCapture(e.pointerId);
-                e.preventDefault();
-              }}
-              onPointerMove={(e) => {
-                if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-                const rect = centerBodyRef.current?.getBoundingClientRect();
-                if (!rect || rect.width <= 0) return;
-                updateSplitRatio((e.clientX - rect.left) / rect.width);
-              }}
-              onPointerUp={(e) => {
-                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                  e.currentTarget.releasePointerCapture(e.pointerId);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-                e.preventDefault();
-                updateSplitRatio(
-                  effectiveSplitRatio + (e.key === "ArrowLeft" ? -0.02 : 0.02),
-                );
-              }}
-            />
-          ) : null}
+          {showChat && activeId && panes.length > 0 ? <CanvasControls layout={canvas} targetId={activeId} /> : null}
           {showChat
             ? panes.map((pane, index) => {
                 if (pane.kind === "session") return null;
@@ -644,6 +653,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 return (
                   <div
                     key={pane.key}
+                    data-center-tab-id={pane.tabId}
+                    data-page-surface={pane.kind === "peer" ? undefined : ""}
+                    onPointerDownCapture={() => useCenterTabs.getState().setActive(pane.tabId)}
                     className={centerPaneClassName(index)}
                     style={centerPaneStyle(index)}
                   >
@@ -654,11 +666,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             : null}
           <PersistentFilePanes tabs={tabs} layouts={new Map(panes.flatMap((pane, index) => pane.kind === "session" ? [] : [[pane.tabId, { className: centerPaneClassName(index), style: centerPaneStyle(index) }]]))} activeFileIds={new Set(panes.flatMap((pane) => pane.kind === "session" ? [] : tabs.find((tab) => tab.id === pane.tabId)?.kind === "file" ? [pane.tabId] : []))} />
           {showChat ? <WebTabPip /> : null}
+          {showChat ? <AppPreviewPip /> : null}
+          {showChat && tabs.length === 0 ? <EmptyCenter /> : null}
+          {showChat ? <CanvasOverview /> : null}
         </div>
       </div>
-      {/* Non-chat routes render their own page content via the router. */}
-      <BrowserResourceProjection />
-      {!showChat && children}
+      {/* Non-chat routes render their own page content via the router,
+         inside the same centre card the chat column uses. */}
+      {!showChat && (
+        <div
+          className="center-col page-col"
+          style={{ display: "flex", flex: "1 1 auto", minWidth: 0, order: 2 }}
+        >
+          {children}
+        </div>
+      )}
       {/* Right sidebar — persistent across conversations. Hidden (not
          unmounted) on non-chat routes so its state survives. */}
       <div style={{ display: showChat ? "contents" : "none" }}>
@@ -667,6 +689,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {composerMount && createPortal(<FocusedComposer />, composerMount)}
       {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}
       {messagesMount && createPortal(<MessageList paintRows={paintRows} />, messagesMount)}
+      {messagesMount && <CodeRainArrivals mount={messagesMount} />}
       {/* Headless — keeps the legacy topbar-updater wrappers installed
          (status / branch / agent state → zustand store) now that the
          visible topbar row is gone. Must live outside the chat-route
@@ -675,7 +698,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* App-wide transient toasts — mounted at the shell so they show on
          every route (chat AND settings), not just where the TopBar is. */}
       <ToastHost />
+      <VersionNotices />
+      <RewindDialog />
+      <RewindPicker />
+      <CommandPalette />
       </div>
+    </div>
+  );
+}
+
+/** Shown when every center tab is closed, so the column is never blank. */
+function EmptyCenter() {
+  const { text } = useTranslation();
+  return (
+    <div className="center-empty">
+      <p>{text("No open tabs", "没有打开的标签页")}</p>
+      <button
+        type="button"
+        className="center-empty-btn"
+        onClick={() => newSession(useCenterTabs.getState().openDraftSessionTab())}
+      >
+        {text("New chat", "新建对话")}
+      </button>
     </div>
   );
 }

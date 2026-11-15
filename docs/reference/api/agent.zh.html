@@ -1,0 +1,276 @@
+<title>Agent 与 Context</title>
+<meta name="description" content="模型调用、Agent 类、Context、方法配置、持久步骤和会话回合的 Python API。">
+<h1>Agent 与 Context</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent()</code> / <code translate="no">agent_async()</code></th><td>执行模型工具循环</td></tr>
+<tr><th scope="row"><code translate="no">Agent</code></th><td>保存可复用配置，为普通子类方法建立作用域</td></tr>
+<tr><th scope="row"><code translate="no">Context</code></th><td>提供命名内容和历史选择</td></tr>
+</tbody>
+</table>
+<pre translate="no"><code>from openprogram import Agent, agent, agent_async
+
+answer = agent("Summarize this text", tools=[])
+
+class Researcher(Agent):
+    instructions = "Return a short, factual answer."
+    tools = []
+
+    def prepare(self, question):
+        """Remove surrounding whitespace."""
+        return question.strip()
+
+    def research(self, question):
+        """Answer the prepared question."""
+        return self(self.prepare(question))
+
+researcher = Researcher(model="configured-model")
+answer = researcher.research("A question")
+# In async code: answer = await researcher.arun("A question")
+# Or: answer = await agent_async("A question", tools=[])</code></pre>
+<p class="note">所有入口复用现有 Runtime 和 Session DAG。普通调用不用手动构造 Context。</p>
+<h2 id="direct-calls-and-agent-classes">直接调用与 Agent 类</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">选项</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">prompt</code></th><td>字符串或内容块</td></tr>
+<tr><th scope="row"><code translate="no">model</code>, <code translate="no">effort</code>, <code translate="no">runtime</code></th><td>常用选项。工具执行选项见 <a href="runtime.zh.html">Runtime</a></td></tr>
+<tr><th scope="row"><code translate="no">tools</code></th><td><code translate="no">None</code> 解析可用工具，<code translate="no">[]</code> 表示不要工具</td></tr>
+<tr><th scope="row"><code translate="no">choices</code></th><td>结束回复变成<a href="../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.zh.html">下一步决策</a>，返回解析后的选择</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Agent(model=, instructions=, context=, tools=, runtime=, effort=, **options)</code></th><td>实例设置覆盖类默认值，单次调用选项覆盖实例设置。<code translate="no">**options</code> 接受 <code translate="no">agent()</code> 的关键字选项。</td></tr>
+<tr><th scope="row"><code translate="no">Agent.from_spec(spec, **overrides)</code></th><td>使用 AgentSpec 配置，不创建已保存的 Agent 条目</td></tr>
+<tr><th scope="row">构造</th><td>不发模型请求，不建执行会话</td></tr>
+<tr><th scope="row">调用</th><td>继承活动中的执行，否则自有一个独立执行并释放其资源。重用实例不会接续之前的独立对话。</td></tr>
+<tr><th scope="row">方法</th><td>实例、静态和类方法自动获得调用作用域，包括单下划线辅助方法。排除双下划线方法和生成器。记录不会注册模型工具。</td></tr>
+</tbody>
+</table>
+<p class="note">类与方法接口受 <a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents">NVIDIA-labs OO Agents</a> 启发。OpenProgram 不声明与 NOOA API 兼容。</p>
+<h2 id="context-content-and-visibility">Context</h2>
+<pre translate="no"><code>from openprogram import Agent, Context
+
+context = Context(
+    {"notes": "Use the project terminology."},
+    providers={"current_topic": lambda current: "Agent context"},
+)
+researcher = Agent(context=context, tools=[])</code></pre>
+<p class="note">框架自动派生并绑定 Context，上面的配置是可选的。内容与系统指令、工具权限相互独立。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">名称</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Context(blocks=None, *, parent=None, providers=None, history=, call_id=, store=None, head_id=None)</code></th><td>可变的命名内容映射</td></tr>
+<tr><th scope="row"><code translate="no">derive()</code></th><td>派生内容独立的子 Context</td></tr>
+<tr><th scope="row"><code translate="no">Context.current()</code></th><td>当前任务绑定，或 <code translate="no">None</code></td></tr>
+<tr><th scope="row"><code translate="no">merge(other)</code></th><td>叠加命名内容和显式选择，保留作用域调用身份</td></tr>
+<tr><th scope="row"><code translate="no">bind()</code></th><td>供需要显式绑定的宿主集成使用</td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>接收当前 Context 的同步可调用对象，每次模型请求都运行。失败则中止该请求。绝不执行表达式字符串。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">history</code></th><th scope="col">请求看到</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">None</code></th><td>无历史</td></tr>
+<tr><th scope="row"><code translate="no">"thread"</code></th><td>仅同一个 Context 对象之前的请求</td></tr>
+<tr><th scope="row"><code translate="no">"chat"</code></th><td>可见对话（Context 默认）</td></tr>
+<tr><th scope="row">可调用对象</th><td><code translate="no">(node, context)</code>，在可见性检查之后过滤对话节点</td></tr>
+<tr><th scope="row">Workflow 角色调用未设置</th><td>无历史</td></tr>
+</tbody>
+</table>
+<p class="note">这些设置不能扩大工具权限。模型交互保留在执行会话中。</p>
+<h2 id="explicit-session-lifetime">显式会话生命周期</h2>
+<p>要让多次独立调用接续同一会话，传入现有的 <code translate="no">SessionNodeWriter</code>。</p>
+<pre translate="no"><code>from openprogram import Agent, Context
+from openprogram.state.store import SessionStore, SessionNodeWriter
+
+store = SessionStore(root_path="/var/lib/myapp/sessions")
+store.create_session("research", agent_id="main")
+writer = SessionNodeWriter(store, "research")
+researcher = Agent(context=Context(store=writer), tools=[])
+try:
+    first = researcher("List the project requirements.")
+    second = researcher("Review the requirements from the previous call.")
+finally:
+    store.close()</code></pre>
+<ul>
+<li><code translate="no">head_id</code> 选择现有分支末端；<code translate="no">None</code> 接续当前 head。</li>
+<li>store 由调用方持有并关闭，执行作用域不会关闭它。</li>
+<li>这提供了 NOOA 风格重复实例调用所需的事件生命周期。Agent 仍只保存配置，默认调用仍相互独立。</li>
+</ul>
+<h2 id="method-behavior">方法配置</h2>
+<pre translate="no"><code>from openprogram import Agent
+from openprogram.runtime.agent import llm
+
+class ExampleAgent(Agent):
+    method_options = {
+        'f': {'tool': True},
+    }
+
+    def f(self, x: str) -&gt; str:
+        """One-line summary of what f does."""
+        return llm([{"type": "text", "text": f"...{x}..."}])
+
+_example_agent = ExampleAgent()
+f = _example_agent.f</code></pre>
+<p class="note">签名和 docstring 提供名称、类型、默认值和摘要，其余由 <code translate="no">method_options</code> 提供，无需装饰器。Agent 负责方法执行和注册，Context 解析请求内容和可见历史。</p>
+<h3 id="execution-and-context-settings">执行与 Context</h3>
+<table class="stack">
+<thead><tr><th scope="col">参数</th><th scope="col">类型</th><th scope="col">默认值</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">capture_io</code></th><td><code translate="no">bool</code></td><td>方法 <code translate="no">False</code>，工具 <code translate="no">True</code></td><td>记录参数和返回值。不记录时结构性调用身份仍可用。</td></tr>
+<tr><th scope="row"><code translate="no">resumable</code></th><td><code translate="no">bool</code></td><td><code translate="no">False</code></td><td>启用<a href="#durable-steps-and-code-selection">持久步骤</a></td></tr>
+<tr><th scope="row"><code translate="no">expose</code></th><td><code translate="no">str</code></td><td>方法 <code translate="no">"full"</code>，工具 <code translate="no">"io"</code></td><td>别的函数在 DAG 中能看到它的什么（见下表）。其他值抛出 <code translate="no">ValueError</code>。</td></tr>
+<tr><th scope="row"><code translate="no">render_range</code></th><td><code translate="no">dict</code></td><td><code translate="no">None</code></td><td>此函数内 <code translate="no">llm()</code> 读多少历史节点：<code translate="no">{"callers": N, "subcalls": M}</code>，按 <code translate="no">seq</code> 切片</td></tr>
+<tr><th scope="row"><code translate="no">input</code></th><td><code translate="no">dict</code></td><td><code translate="no">None</code></td><td>WebUI 表单的逐参数元数据：<code translate="no">description</code>、<code translate="no">placeholder</code>、<code translate="no">multiline</code>、<code translate="no">options</code>（下拉框和 JSON-schema <code translate="no">enum</code>）、<code translate="no">hidden</code>（不进表单和工具 schema）</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td><code translate="no">str</code></td><td><code translate="no">None</code></td><td>此函数 LLM 调用的系统提示，调用后恢复</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">expose</code></th><th scope="col">名称和返回值</th><th scope="col">LLM 交互</th><th scope="col">嵌套代码调用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">"io"</code></th><td>可见</td><td>隐藏</td><td>隐藏</td></tr>
+<tr><th scope="row"><code translate="no">"llm"</code></th><td>隐藏</td><td>可见</td><td>隐藏</td></tr>
+<tr><th scope="row"><code translate="no">"full"</code></th><td>可见，含 docstring 和参数</td><td>可见</td><td>可见</td></tr>
+<tr><th scope="row"><code translate="no">"hidden"</code></th><td>不写 DAG 节点</td><td>不写 DAG 节点</td><td>不写 DAG 节点</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">render_range</code> 键</th><th scope="col">统计的节点</th><th scope="col">默认</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">callers</code></th><td>此帧开始前写入的，取最新 N 个</td><td><code translate="no">None</code>，不限</td><td><code translate="no">0</code> 完全隔断</td></tr>
+<tr><th scope="row"><code translate="no">subcalls</code></th><td>此帧开始后写入的，取最新 N 个</td><td><code translate="no">-1</code>，不限，帧能看到自身进展</td><td><code translate="no">N&gt;=0</code> 截断；<code translate="no">0</code> 隔断本帧</td></tr>
+</tbody>
+</table>
+<details>
+<summary>工具注册参数</summary>
+<p><code translate="no">tool=True</code> 时，方法注册为 <code translate="no">openprogram.programs</code> 中可由 LLM 调用的工具，与 <code translate="no">@function</code> 工具并列，名称和语义与 <code translate="no">@function</code> 相同。</p>
+<table class="stack">
+<thead><tr><th scope="col">参数</th><th scope="col">类型</th><th scope="col">默认值</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tool</code> / <code translate="no">as_tool</code></th><td><code translate="no">bool</code></td><td><code translate="no">False</code></td><td>注册为工具。<code translate="no">False</code>：只能 Python 直接调用</td></tr>
+<tr><th scope="row"><code translate="no">name</code></th><td><code translate="no">str</code></td><td><code translate="no">None</code></td><td>覆盖，默认 <code translate="no">__name__</code></td></tr>
+<tr><th scope="row"><code translate="no">description</code></th><td><code translate="no">str</code></td><td><code translate="no">None</code></td><td>覆盖，默认 docstring</td></tr>
+<tr><th scope="row"><code translate="no">parameters</code></th><td><code translate="no">dict</code></td><td><code translate="no">None</code></td><td>JSON-schema 覆盖；默认由类型注解和 <code translate="no">input</code> 生成，排除运行时注入和 <code translate="no">hidden</code> 参数</td></tr>
+<tr><th scope="row"><code translate="no">label</code></th><td><code translate="no">str</code></td><td><code translate="no">None</code></td><td>工具界面中的标签</td></tr>
+<tr><th scope="row"><code translate="no">toolset</code></th><td><code translate="no">tuple</code></td><td><code translate="no">()</code></td><td>所属工具集，供 <code translate="no">exec(toolset=...)</code> 使用</td></tr>
+<tr><th scope="row"><code translate="no">unsafe_in</code></th><td><code translate="no">tuple</code></td><td><code translate="no">()</code></td><td>过滤此工具的渠道来源</td></tr>
+<tr><th scope="row"><code translate="no">check_fn</code></th><td><code translate="no">Callable</code></td><td><code translate="no">None</code></td><td>分发前的单次门禁；假值阻止调用</td></tr>
+<tr><th scope="row"><code translate="no">requires_env</code></th><td><code translate="no">tuple</code></td><td><code translate="no">()</code></td><td>必须设置才提供此工具的环境变量</td></tr>
+<tr><th scope="row"><code translate="no">can_use</code></th><td><code translate="no">Callable</code></td><td><code translate="no">None</code></td><td>解析工具时的可用性判断</td></tr>
+<tr><th scope="row"><code translate="no">max_result_weight</code></th><td><code translate="no">int</code></td><td><code translate="no">None</code></td><td>这个工具结果比模型上限更小的上限，按权重计（中日韩字符算 1，其余算 0.25）。工具从不自己截断：由 agent 循环截一次，完整文字存在对话的 <code translate="no">tool_results/</code></td></tr>
+<tr><th scope="row"><code translate="no">requires_approval</code></th><td>—</td><td><code translate="no">None</code></td><td>转给工具注册表，形式同 <code translate="no">@function</code></td></tr>
+<tr><th scope="row"><code translate="no">cache</code></th><td><code translate="no">bool</code></td><td><code translate="no">False</code></td><td>按 <code translate="no">(name, args)</code> 缓存工具分发调用</td></tr>
+<tr><th scope="row"><code translate="no">cache_ttl</code></th><td><code translate="no">float</code></td><td><code translate="no">300.0</code></td><td><code translate="no">cache=True</code> 时的秒数</td></tr>
+<tr><th scope="row"><code translate="no">timeout</code></th><td><code translate="no">float</code></td><td><code translate="no">None</code></td><td>硬性墙钟超时（秒）；模型收到错误结果</td></tr>
+<tr><th scope="row"><code translate="no">available_if</code></th><td><code translate="no">Callable</code></td><td><code translate="no">None</code></td><td>假值或抛异常时跳过注册，方法作用域仍有效</td></tr>
+<tr><th scope="row"><code translate="no">defer</code></th><td><code translate="no">bool</code></td><td><code translate="no">False</code></td><td>延迟工具：按需加载 schema</td></tr>
+<tr><th scope="row"><code translate="no">register_globally</code></th><td><code translate="no">bool</code></td><td><code translate="no">True</code></td><td><code translate="no">False</code> 时不进全局注册表</td></tr>
+</tbody>
+</table>
+</details>
+<h3 id="choosing-the-runtime">方法使用的 Runtime</h3>
+<p>方法运行在其 Agent 的 Runtime 上，Agent 没有时用调用方的：<code translate="no">ExampleAgent(runtime=rt).f("x")</code> 让 <code translate="no">f</code>、其中的模型请求和它调用的 Agent 方法都用 <code translate="no">rt</code>。在程序入口配置 Runtime，不要通过方法参数传递。一个工作流用两个模型时，给第二个角色单独的 Agent 实例。</p>
+<details>
+<summary>旧函数：Runtime 注入</summary>
+<p>名为 <code translate="no">runtime</code>、<code translate="no">exec_runtime</code> 或 <code translate="no">review_runtime</code> 的参数在调用方未传时自动填充：取自当前调用链；入口调用则用 <code translate="no">create_runtime()</code> 创建，函数返回时关闭。多个这样的参数得到同一个 runtime。它们不出现在工具 schema 和 WebUI 表单里。新方法不声明它们。</p>
+</details>
+<details>
+<summary>内省与安全</summary>
+<ul>
+<li><code translate="no">fn.spec</code>：生成的工具 spec <code translate="no">{"name", "description", "parameters"}</code>。<code translate="no">fn.execute(**kwargs)</code> 以 LLM 提供的参数调用。</li>
+<li>自身重入超过 5 层抛出 <code translate="no">RecursionError</code>；注入的情境提示也会引导模型避免自调用。</li>
+<li><code translate="no">add_pre_invocation_hook</code> / <code translate="no">remove_pre_invocation_hook</code>：钩子在每次调用开始时运行，可抛 <code translate="no">CancelledError</code> 中止，WebUI 停止按钮即如此。</li>
+</ul>
+</details>
+<details>
+<summary>写入 DAG</summary>
+<table class="stack fixed">
+<thead><tr><th scope="col">时机</th><th scope="col">写入</th></tr></thead>
+<tbody>
+<tr><th scope="row">进入函数</th><td><code translate="no">code</code> 节点（<code translate="no">output=None</code>，<code translate="no">status="running"</code>）；docstring 存入 <code translate="no">metadata.doc</code>，渲染时放在 <code translate="no">function_name(args)</code> 之前</td></tr>
+<tr><th scope="row">函数体内每次 <code translate="no">llm()</code></th><td>一个 <code translate="no">llm</code> 节点</td></tr>
+<tr><th scope="row">退出</th><td>回填同一 <code translate="no">code</code> 节点的 <code translate="no">output</code> 和 <code translate="no">status</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">expose="hidden"</code> 不写任何节点。没有安装 DAG 存储时，记录为空操作。</p>
+</details>
+<h2 id="durable-steps-and-code-selection">持久步骤与代码选择</h2>
+<pre translate="no"><code>from openprogram import Agent
+from openprogram.runtime.agent.durable_steps import step
+
+class ExampleAgent(Agent):
+    method_options = {
+        'report': {'tool': True, 'resumable': True},
+    }
+
+    def report(self, topic: str):
+        research = step("research", collect_research, topic)
+        return step("write", write_report, research)
+
+_example_agent = ExampleAgent()
+report = _example_agent.report</code></pre>
+<p class="note">执行在显式步骤处恢复，而不是任意 Python 栈帧。<code translate="no">collect_research</code> 和 <code translate="no">write_report</code> 是普通的源码定义函数。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">构造</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">step(name, fn, *args, **kwargs)</code></th><td>输入和结果须兼容 JSON。已完成的步骤返回保存的结果，不再调用动作。重复名称按出现次序区分；保持顺序和已完成输入稳定。</td></tr>
+<tr><th scope="row"><code translate="no">workflow(name, fn, *args, **kwargs)</code></th><td>嵌套编排</td></tr>
+<tr><th scope="row"><code translate="no">parallel({"branch": (fn, args, kwargs)})</code></th><td>具名工作流并发运行，各有独立的持久进度；所有分支结束才释放所有权</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">execution.code_change_policy</code></th><th scope="col">重启后</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">keep_original</code>（默认）</th><td>运行保留的源码。采用 B 后，之后重启仍保留 B，即使已安装的是 C。</td></tr>
+<tr><th scope="row"><code translate="no">use_latest</code></th><td>已完成结果保留，当前函数运行其余兼容步骤</td></tr>
+</tbody>
+</table>
+<p class="note">任务的“继续”控件可以覆盖此策略。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">结果</th><th scope="col">情形</th></tr></thead>
+<tbody>
+<tr><th scope="row">暂停</th><td>已记录步骤被删除或重排、已完成输入改变、固定依赖不可用或已改变</td></tr>
+<tr><th scope="row">保留当前版本</th><td>在采用任何剩余步骤之前未通过兼容性检查的候选</td></tr>
+<tr><th scope="row">仍要检查</th><td>权限和工具参数契约的变化</td></tr>
+<tr><th scope="row">步骤运行前拒绝</th><td>保留的辅助函数内的 import、动态 import API、生成代码、作为不透明依赖的第三方和用户包对象（仅支持固定的标准库）</td></tr>
+<tr><th scope="row">不支持</th><td>步骤外的调用和外部修改、异步编排、生成器、活动句柄、非 JSON 结果</td></tr>
+<tr><th scope="row">需要对账</th><td>外部动作开始后、结果提交前进程崩溃；恢复时不能假定动作失败</td></tr>
+<tr><th scope="row">绝不自动重试</th><td>显式暂停、取消、未答复的审批、不确定的外部结果</td></tr>
+</tbody>
+</table>
+<details>
+<summary>编写要点</summary>
+<ul>
+<li>持久状态经 JSON 步骤输入和结果传递。步骤之间不要共享可变全局变量、闭包或默认值。</li>
+<li>在模块作用域导入步骤依赖。源码定义的 Python 辅助函数会被递归保留。</li>
+<li>如果 B 需要不同的本地状态形状，在其剩余步骤之前用对已保存 JSON 的纯编排完成转换。</li>
+<li>手动调用恢复同一执行和函数记录。聊天调用把最终结果返回给原来待处理的工具调用。</li>
+<li>重启导致的中断遵循 <code translate="no">execution.auto_resume_window_seconds</code>（默认 <code translate="no">-1</code> 不限；<code translate="no">0</code> 关闭自动重启）。</li>
+<li>函数运行对话框会区分声明此契约的函数和中断后需要重新运行的普通函数。</li>
+</ul>
+</details>
+<h2 id="managed-program-sources">受管 Program 源码</h2>
+<table class="stack">
+<thead><tr><th scope="col">捕获</th><th scope="col">不捕获</th></tr></thead>
+<tbody>
+<tr><th scope="row">授权包根内源码定义的函数、子模块和嵌套定义：选定的第一方源码、已安装和已编目的 Program 包、所有者记录的外部 harness、已发布的 Program、保留的源码快照</th><td>任意宿主文件、无关依赖、lambda、生成代码、不可用的源码</td></tr>
+</tbody>
+</table>
+<p class="note">包在 <code translate="no">PROGRAM_ENTRIES</code> 中列出公开入口，普通入口可带 <code translate="no">__agent_options__</code> 映射。被捕获的辅助函数不会变成工具。显式方法元数据保留，生成器排除。</p>
+<h2 id="session-turns-and-continuation">会话回合与继续</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">名称</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Agent.run_turn(request, *, context=None, on_event=None, cancel_event=None, execution_context=None)</code></th><td>返回 <code translate="no">TurnResult</code>。全新回合之前应用实例配置。<code translate="no">TurnRequest</code> 和 <code translate="no">TurnResult</code> 从 <code translate="no">openprogram</code> 导入。</td></tr>
+<tr><th scope="row"><code translate="no">arun_turn(request, **options)</code></th><td>同上，异步，支持协作式取消</td></tr>
+<tr><th scope="row"><code translate="no">resume_turn(continuation, **options)</code>, <code translate="no">aresume_turn(...)</code></th><td>复用检查点的请求，不重复准入</td></tr>
+<tr><th scope="row"><code translate="no">Context.for_session(store, session_id, head_id=, blocks=, providers=)</code></th><td>绑定持久 store 和分支。针对其他会话的请求被拒绝。<code translate="no">Context.session_id</code> 暴露图身份。</td></tr>
+<tr><th scope="row"><code translate="no">ChatAgent</code></th><td>生产对话类型，继承此契约。覆盖回合入口方法不会把它们包装成辅助调用。</td></tr>
+</tbody>
+</table>
+<p class="note">事件回调接收 runtime 事件字典，在执行线程上运行。持久暂停和转向沿用现有执行控制所有者和安全点协议。</p>
+<p class="next"><a href="runtime.zh.html">Runtime</a></p>

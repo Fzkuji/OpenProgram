@@ -1,0 +1,138 @@
+<title>Installing programs</title>
+<meta name="description" content="Install, upgrade, verify and remove program packages, and write an installable harness.">
+<h1>Installing programs</h1>
+<p>A release bundles no programs: everything beyond the built-in tools and applications is installed this way. When a user asks for a program the agent lacks, this page is the procedure to follow.</p>
+<pre translate="no" tabindex="0"><code>openprogram programs install https://github.com/&lt;owner&gt;/&lt;repo&gt;
+openprogram programs install &lt;owner&gt;/&lt;repo&gt;
+openprogram programs install ~/work/my-program
+openprogram programs install file:///path/to/checkout
+
+openprogram programs list
+openprogram programs install &lt;source&gt; --upgrade
+openprogram programs uninstall &lt;name&gt;</code></pre>
+<p class="note">The running worker picks up a clone; a fresh process loads it at start. Installed programs appear under <strong>Abilities → Programs → Applications</strong> as a folder named by its directory, holding its Agent entries.</p>
+<h2 id="what-a-source-can-be">What a source can be</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Source</th><th scope="col">What happens</th></tr></thead>
+<tbody>
+<tr><th scope="row">Git URL (<code translate="no">https://</code>, <code translate="no">ssh://</code>, <code translate="no">git@</code>, <code translate="no">file://</code>)</th><td>Shallow-cloned into the Programs directory, then inspected</td></tr>
+<tr><th scope="row">GitHub <code translate="no">owner/repo</code></th><td>Expanded to <code translate="no">https://github.com/owner/repo</code> and cloned</td></tr>
+<tr><th scope="row">Local application directory (<code translate="no">application.json</code>)</th><td>Recorded in the catalog and loaded in place; nothing is copied</td></tr>
+<tr><th scope="row">Local package repository (<code translate="no">__init__.py</code> and <code translate="no">.git</code>)</th><td>Cloned like a git URL. Commit first; a directory that is not a Git repository is refused.</td></tr>
+<tr><th scope="row">A package already in the Programs directory</th><td>Nothing to install; <code translate="no">openprogram programs check &lt;directory&gt;</code> makes it callable</td></tr>
+</tbody>
+</table>
+<p class="note">Programs directory: <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code>, or <code translate="no">~/.openprogram-&lt;profile&gt;/programs/&lt;name&gt;/</code> under a named profile. Checkouts in the older <code translate="no" data-claim="example">openprogram/programs/packages/</code> or <code translate="no">openprogram/programs/applications/</code> move there on the worker's first start on a newer version, keeping names and sources.</p>
+<h2 id="what-the-clone-becomes">What the clone becomes</h2>
+<p>A repository can be more than one of these. One that is none is reported, loads nothing and never breaks other programs.</p>
+<table class="stack">
+<thead><tr><th scope="col">Shape</th><th scope="col">Detected by</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Package</th><td><code translate="no">__init__.py</code> at the clone's root</td><td>Named after the repository as a valid import name (<code translate="no">My-Tools</code> → <code translate="no">my_tools</code>). Loads once <code translate="no">openprogram programs check</code> has passed. See <a href="workflows/README.html#self-programming-workflows">Workflow automation</a> for <code translate="no">PROGRAM_ENTRIES</code> and the check.</td></tr>
+<tr><th scope="row">Application</th><td><code translate="no">application.json</code></td><td>Recorded in the catalog; see <a href="applications.html">Applications</a>. <code translate="no">--trust</code> authorizes a reviewed Python backend; <code translate="no">--replace</code> accepts a changed digest.</td></tr>
+<tr><th scope="row">Harness</th><td><code translate="no">&lt;package&gt;/agentics/__init__.py</code></td><td>Installs its own declared dependencies from <code translate="no">pyproject.toml</code>/<code translate="no">setup.py</code> (preferred) or <code translate="no">requirements.txt</code> and records an owner-approved source. On the next scan its <code translate="no">PROGRAM_ENTRIES</code> appear in chat, on the Programs page and in <code translate="no">openprogram programs run</code>.</td></tr>
+</tbody>
+</table>
+<h2 id="upgrade-and-uninstall">Upgrade, uninstall, verify</h2>
+<span id="verify-an-install"></span>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram programs install &lt;source&gt; --upgrade</code></th><td><code translate="no">git pull --ff-only</code>, re-resolves dependencies</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs uninstall &lt;name&gt;</code></th><td>A directory name moves the clone to <code translate="no">~/.openprogram/programs/.removed/</code>, restorable by hand and never deleted. An application id unregisters it and keeps data, so a compatible reinstall restores it.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs list [--json]</code></th><td>Every Program with its state, harnesses included</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list</code></th><td>Shows why a broken harness did not load. PowerShell: <code translate="no">$env:OPENPROGRAM_DEBUG_REGISTRY=1; openprogram programs list</code></td></tr>
+<tr><th scope="row"><code translate="no">openprogram programs run &lt;fn&gt; -a key=value</code></th><td>Runs a function; it is also callable in chat</td></tr>
+</tbody>
+</table>
+<p class="note">A dev symlink of the same name: <code translate="no">install</code> verifies the harness contract and records the link without touching its target. A same-named directory that is not a git clone is refused. <code translate="no">uninstall</code> on a symlink moves only the link.</p>
+<details>
+<summary>Without GitHub access, or developing a program</summary>
+<p>Mirror:</p>
+<pre translate="no" tabindex="0"><code>git clone &lt;repo-url&gt; /path/to/Program-Name
+openprogram programs install file:///path/to/Program-Name</code></pre>
+<p>The command clones into the Programs directory and records it; only recorded directories meeting the contract load.</p>
+<p>Your own checkout: install it, add it as a remote, then <code translate="no">git pull work main</code>. Pulled commits take effect on the next restart.</p>
+<pre translate="no" tabindex="0"><code>openprogram programs install file:///path/to/your/Program-Checkout
+cd ~/.openprogram/programs/Program-Checkout &amp;&amp; git remote add work /path/to/your/Program-Checkout</code></pre>
+</details>
+<details>
+<summary>Platform notes</summary>
+<ul>
+<li>CLI and server releases run on macOS and Linux, and on Windows x64 from v1.2.0, as does the Windows App. Sandboxed commands on Windows use optional WSL2 plus bubblewrap.</li>
+<li>No symlinks are needed: the installer records a real checkout.</li>
+<li>A program can be platform-specific in its own code; check its README and dependencies.</li>
+<li>OpenProgram's tooling is UTF-8 and <code translate="no">os.path</code>-based; a program should be too.</li>
+</ul>
+</details>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Symptom</th><th scope="col">Fix</th></tr></thead>
+<tbody>
+<tr><th scope="row">Harness functions missing after restart</th><td>Confirm <code translate="no">&lt;pkg&gt;/agentics/__init__.py</code> exists and exports <code translate="no">PROGRAM_ENTRIES</code>. Run with <code translate="no">OPENPROGRAM_DEBUG_REGISTRY=1</code>.</td></tr>
+<tr><th scope="row"><code translate="no">[!] … neither a package (__init__.py), an application (application.json) nor a harness</code></th><td>The repository holds none of the three shapes</td></tr>
+<tr><th scope="row"><code translate="no">ModuleNotFoundError</code> for the harness's dependencies</th><td>Their install failed. Rerun <code translate="no">openprogram programs install &lt;source&gt; --upgrade</code> and read its error.</td></tr>
+<tr><th scope="row"><code translate="no">from &lt;pkg&gt;.x import y</code> fails inside the harness</th><td>The package folder name must equal the import name, with an <code translate="no">__init__.py</code></td></tr>
+<tr><th scope="row">An existing dev symlink does not load</th><td>Run <code translate="no">openprogram programs install &lt;git-source&gt;</code> once to verify and record it</td></tr>
+<tr><th scope="row">Fails to install or run on Windows</th><td>Check the program's README and dependency markers; it may provide only macOS/Linux backends</td></tr>
+</tbody>
+</table>
+<h2 id="writing-your-own-installable-harness">Write an installable harness</h2>
+<span id="the-contract"></span>
+<pre translate="no" tabindex="0"><code>&lt;Harness-Name&gt;/                repository, any name
+├── pyproject.toml             the harness's OWN dependencies only
+└── &lt;package&gt;/                 importable package, ascii name
+    ├── __init__.py            kept dependency-light
+    └── agentics/
+        └── __init__.py        PROGRAM_ENTRIES = [...]</code></pre>
+<p class="note">At startup OpenProgram imports <code translate="no">&lt;package&gt;.agentics</code> and registers <code translate="no">PROGRAM_ENTRIES</code>. The root may vendor other packages: discovery finds the one with <code translate="no">agentics/</code> and puts the root on <code translate="no">sys.path</code>, so <code translate="no">from &lt;package&gt;.foo import bar</code> resolves.</p>
+<pre translate="no" tabindex="0"><code># &lt;package&gt;/agentics/__init__.py
+from openprogram import Agent
+
+
+class ExampleAgent(Agent):
+    method_options = {
+        'my_tool': {'tool': True},
+    }
+
+    def my_tool(self, text: str = "") -&gt; str:
+        "One line: what this does (shown in catalogs)."
+        return text.upper()
+
+
+_example_agent = ExampleAgent()
+my_tool = _example_agent.my_tool
+
+PROGRAM_ENTRIES = [my_tool]</code></pre>
+<pre translate="no" tabindex="0"><code># pyproject.toml
+[project]
+name = "my-harness"
+version = "0.1.0"
+requires-python = "&gt;=3.10"
+dependencies = []          # the harness's own deps, NEVER openprogram</code></pre>
+<h3 id="two-hard-rules">Two hard rules</h3>
+<ol>
+<li><strong>Never declare <code translate="no">openprogram</code> as a dependency</strong>, in <code translate="no">pyproject.toml</code> or <code translate="no">requirements.txt</code>. <code translate="no">openprogram @ git+…</code> would make pip reinstall the host from git over the user's install.</li>
+<li><strong>Keep <code translate="no">&lt;package&gt;/__init__.py</code> dependency-light and guard heavy imports.</strong> Discovery imports <code translate="no">&lt;package&gt;.agentics</code> on every startup, including machines without your optional dependencies. A top-level <code translate="no">cv2</code> or <code translate="no">torch</code> breaks the whole registry load. Import them inside function bodies and guard the entry:</li>
+</ol>
+<pre translate="no" tabindex="0"><code># agentics/__init__.py
+try:
+    from my_package.main import my_tool
+    PROGRAM_ENTRIES = [my_tool]
+except ImportError:
+    PROGRAM_ENTRIES = []</code></pre>
+<h3 id="test-locally-before-publishing">Test and publish</h3>
+<span id="publish"></span>
+<pre translate="no" tabindex="0"><code>cd /path/to/My-Harness &amp;&amp; git add -A &amp;&amp; git commit -m wip
+openprogram programs install file:///path/to/My-Harness
+openprogram programs list             # lists My-Harness under Harnesses
+OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list   # functions present?
+openprogram programs run my_tool -a text=hello           # smoke test
+openprogram programs uninstall My-Harness                # set it aside</code></pre>
+<ul>
+<li><code translate="no">&lt;package&gt;/agentics/__init__.py</code> exposes <code translate="no">PROGRAM_ENTRIES</code></li>
+<li>No <code translate="no">openprogram</code> in pyproject or requirements</li>
+<li><code translate="no">python -c "import &lt;package&gt;.agentics"</code> succeeds in a bare venv with only OpenProgram installed</li>
+<li>The <code translate="no">file://</code> round trip above passes</li>
+</ul>
+<p>Push to GitHub. Users run <code translate="no">openprogram programs install &lt;owner&gt;/&lt;Harness-Name&gt;</code>; nothing else to register.</p>

@@ -4,6 +4,8 @@ import time
 
 import pytest
 
+from openprogram.programs.applications.browser.app_endpoint import attach_to_app
+
 
 pytestmark = pytest.mark.live
 
@@ -128,7 +130,7 @@ def test_packaged_app_opens_real_terminal_and_claude_code():
 
     playwright = pytest.importorskip("playwright.sync_api")
     with playwright.sync_playwright() as runtime:
-        browser = runtime.chromium.connect_over_cdp("http://127.0.0.1:9223")
+        browser = attach_to_app(runtime, "http://127.0.0.1:9223")
         page = None
         live_pids: set[int] = set()
         try:

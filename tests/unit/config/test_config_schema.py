@@ -1,4 +1,4 @@
-from openprogram.config_schema import get_settings, set_setting
+from openprogram.state.settings import get_settings, set_setting
 
 
 def _setting(key: str) -> dict:
@@ -6,7 +6,7 @@ def _setting(key: str) -> dict:
 
 
 def test_mcp_exposed_tools_missing_config_is_default_empty(monkeypatch):
-    monkeypatch.setattr("openprogram.setup._read_config", lambda: {})
+    monkeypatch.setattr("openprogram.state.config.read_config", lambda: {})
 
     row = _setting("mcp_server.exposed_tools")
 
@@ -33,14 +33,14 @@ def test_mcp_exposed_tools_validates_before_persistence(monkeypatch):
         mutator(config)
         saved.append(config)
 
-    monkeypatch.setattr("openprogram.setup.update_config", capture_update)
+    monkeypatch.setattr("openprogram.state.config.update_config", capture_update)
 
-    accepted = set_setting("mcp_server.exposed_tools", '["read", "memory_status"]')
+    accepted = set_setting("mcp_server.exposed_tools", '["read", "memory_get"]')
     assert accepted == {
         "applied": "next_start",
-        "value": ["read", "memory_status"],
+        "value": ["read", "memory_get"],
     }
-    assert saved == [{"mcp_server": {"exposed_tools": ["read", "memory_status"]}}]
+    assert saved == [{"mcp_server": {"exposed_tools": ["read", "memory_get"]}}]
 
     for invalid in ('{"read": true}', '["read", 7]', "null"):
         assert "error" in set_setting("mcp_server.exposed_tools", invalid)

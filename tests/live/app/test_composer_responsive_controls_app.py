@@ -3,6 +3,8 @@ import re
 
 import pytest
 
+from openprogram.programs.applications.browser.app_endpoint import attach_to_app
+
 
 pytestmark = pytest.mark.live
 
@@ -20,7 +22,7 @@ def test_real_composer_controls_compact_and_keep_their_popovers():
         pytest.skip("set OPENPROGRAM_E2E_CDP_URL to the default App CDP endpoint")
 
     with playwright.sync_playwright() as runtime:
-        browser = runtime.chromium.connect_over_cdp(cdp_url)
+        browser = attach_to_app(runtime, cdp_url)
         page = next(
             (
                 page

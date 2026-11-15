@@ -1,0 +1,42 @@
+<title>Fixed-order calls</title>
+<meta name="description" content="An Agent method that calls sub-functions in the order written in its source.">
+<h1>Fixed-order calls</h1>
+<p>An Agent method calls sub-methods in the order its source gives: survey, find gap, generate ideas; draft, review, revise; collect, clean, analyze.</p>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+from openprogram.runtime.agent import llm
+
+class ExampleAgent(Agent):
+    method_options = {'survey_pipeline': {'tool': True}}
+
+    def survey_pipeline(self, task: str) -> str:
+        survey = survey_topic(topic=task)
+        if not survey or "error" in survey.lower():
+            return "Survey failed"                     # check between steps
+
+        key_points = extract_key_points(survey)        # plain Python between steps
+        filtered = [p for p in key_points if p["relevance"] > 0.5]
+
+        gaps = identify_gaps(survey="\n".join(filtered))  # a Python variable carries the data
+        ideas = generate_ideas(gaps=gaps)
+
+        return llm(f"Gaps:\n{gaps}\n\nIdeas:\n{ideas}")  # optional model call
+
+_example_agent = ExampleAgent()
+survey_pipeline = _example_agent.survey_pipeline</code></pre>
+<pre translate="no" tabindex="0"><code>survey_pipeline
+├── survey_topic       ← step 1
+├── identify_gaps      ← step 2
+└── generate_ideas     ← step 3</code></pre>
+<dl class="pairs">
+<dt>Model calls</dt><dd>None (delete the <code translate="no">llm</code> line, return a dict), or any number of <code translate="no">llm()</code> calls, each a child node</dd>
+<dt>Runtime</dt><dd>Sub-methods run on the calling method's Runtime; nothing passes it along</dd>
+</dl>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Fixed-order</th><th scope="col">LLM-chosen</th></tr></thead>
+<tbody>
+<tr><th scope="row">Decides the order</th><td>Python code</td><td>The LLM</td></tr>
+<tr><th scope="row">Sub-functions run</th><td>All of them</td><td>The one chosen</td></tr>
+<tr><th scope="row">Function registry</th><td>Not required</td><td>Required</td></tr>
+<tr><th scope="row">Flexibility</th><td>Fixed flow</td><td>Varies with the task</td></tr>
+</tbody>
+</table>

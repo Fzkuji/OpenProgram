@@ -1,13 +1,14 @@
 import asyncio
 from types import SimpleNamespace
 
-from openprogram.browser_resources import sanitize_operation
+from openprogram.programs.applications.browser.pages import sanitize_operation
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from openprogram.context.nodes import Call
-from openprogram.store import SessionNodeWriter
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.nodes import Call
+from openprogram.state.store.session.branch_config import branch_identity
+from openprogram.state.store import SessionNodeWriter
+from openprogram.state.store.session.session_store import SessionStore
 
 
 def _conversation(tmp_path):
@@ -32,12 +33,12 @@ def _exec(eid, session_id, parent=None):
 
 
 def test_retained_browser_page_survives_invocation_and_is_listed(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes.execution import processes
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
+    from openprogram.interfaces.server.routes.execution import processes
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
         page_key="page:1", window_id="win", tab_id="tab-a",
@@ -48,13 +49,13 @@ def test_retained_browser_page_survives_invocation_and_is_listed(tmp_path, monke
     )
     store.clear_execution_use("exec-1")
     monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: None)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
+        "openprogram.runtime.execution.conversation_scope.conversation_executions",
         lambda *args: [_exec("exec-1", "parent")],
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
         lambda *args: {"exec-1": None},
     )
     app = FastAPI()
@@ -72,22 +73,22 @@ def test_retained_browser_page_survives_invocation_and_is_listed(tmp_path, monke
     assert row["kind"] == "web"
     assert "token=" not in row["target"]
     assert "secret" not in row["target"]
-    assert row["branch_id"].endswith(":u1")
+    assert row["branch_id"] == branch_identity("parent", None)
     assert body["current_branch_id"] != row["branch_id"]
-    assert body["current_branch_id"].endswith(":a2retry")
+    assert body["current_branch_id"] == branch_identity("parent", "a2retry")
     assert row["branch_name"] is None
     assert body["current_branch_name"] is None
 
 
 def test_listed_resource_keeps_origin_name_after_head_moves(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes.execution import processes
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
+    from openprogram.interfaces.server.routes.execution import processes
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     db.set_branch_name("parent", "a1", "五页计数器发布验收")
     db.set_branch_name("parent", "a2retry", "retry-fork")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
         page_key="page:1", window_id="win", tab_id="tab-a",
@@ -98,13 +99,13 @@ def test_listed_resource_keeps_origin_name_after_head_moves(tmp_path, monkeypatc
     )
     store.clear_execution_use("exec-1")
     monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: None)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
+        "openprogram.runtime.execution.conversation_scope.conversation_executions",
         lambda *args: [_exec("exec-1", "parent")],
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
         lambda *args: {"exec-1": None},
     )
     app = FastAPI()
@@ -114,16 +115,16 @@ def test_listed_resource_keeps_origin_name_after_head_moves(tmp_path, monkeypatc
     assert result.status_code == 200
     body = result.json()
     row = next(item for item in body["items"] if item.get("source") == "browser")
-    assert row["branch_id"].endswith(":u1")
+    assert row["branch_id"] == branch_identity("parent", None)
     assert row["branch_name"] == "五页计数器发布验收"
-    assert body["current_branch_id"].endswith(":a2retry")
+    assert body["current_branch_id"] == branch_identity("parent", "a2retry")
     assert body["current_branch_name"] == "retry-fork"
 
 
 def test_same_url_does_not_merge_distinct_pages(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     url = "https://example.test/shared"
@@ -146,10 +147,71 @@ def test_same_url_does_not_merge_distinct_pages(tmp_path, monkeypatch):
     assert {row["resource_id"] for row in rows} == {"page:1", "page:2"}
 
 
-def test_child_execution_projects_to_parent_origin_branch_not_checkout(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
+def test_resource_endpoint_reuses_branch_graph_within_each_request(tmp_path, monkeypatch):
+    import openprogram.programs.applications.browser.pages as resources
+    from openprogram.interfaces.server.routes.execution import processes
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    db = _conversation(tmp_path)
+    db.set_branch_name("parent", "a1", "original")
+    db.set_branch_name("parent", "a2retry", "retry")
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
+    monkeypatch.setattr("openprogram.runtime.execution.conversation_scope.conversation_executions", lambda *args: ())
+    monkeypatch.setattr(processes, "_authorize", lambda *args: None)
+    store = resources.BrowserResourceStore()
+    writer = SessionNodeWriter(db, "parent")
+    for index in range(40):
+        anchor = f"resource-anchor-{index}"
+        writer.append(Call(
+            id=anchor, role="llm", seq=10 + index,
+            predecessor=f"resource-anchor-{index - 1}" if index else "a2",
+        ))
+        store.retain(
+            page_key=f"page:{index}", window_id="win", tab_id=f"tab:{index}",
+            title="Page", target="https://example.test", connection_generation=1,
+            session_id="parent", user_message_id="u1", assistant_message_id=anchor,
+            conversation_session_id="parent",
+        )
+    db.set_head("parent", "a2retry")
+    calls = {"load": 0, "index": 0}
+    load, index_nodes = resources._load_nodes, resources._children_by_predecessor
+
+    def counted_load(*args, **kwargs):
+        calls["load"] += 1
+        return load(*args, **kwargs)
+
+    def counted_index(*args, **kwargs):
+        calls["index"] += 1
+        return index_nodes(*args, **kwargs)
+
+    monkeypatch.setattr(resources, "_load_nodes", counted_load)
+    monkeypatch.setattr(resources, "_children_by_predecessor", counted_index)
+    app = FastAPI()
+    processes.register(app)
+    with TestClient(app) as client:
+        for name in ("original", "renamed"):
+            db.set_branch_name("parent", "a1", name)
+            calls.update(load=0, index=0)
+            response = client.get("/api/session/parent/resources")
+            assert response.status_code == 200
+            body = response.json()
+            rows = [row for row in body["items"] if row.get("source") == "browser"]
+            assert len(rows) == 40
+            assert {row["branch_name"] for row in rows} == {name}
+            # The turns written under a2 continue the conversation's first
+            # branch: its record (head a2) is reused, not a new one minted.
+            assert {row["branch_id"] for row in rows} == {branch_identity("parent", None)}
+            assert body["current_branch_id"] == branch_identity("parent", "a2retry")
+            assert body["current_branch_name"] == "retry"
+            assert calls["load"] <= 2, "resource count must not multiply DAG reads"
+            assert calls["index"] <= 2, "branch lookup must share its predecessor index"
+
+
+def test_child_execution_projects_to_parent_origin_branch_not_checkout(tmp_path, monkeypatch):
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
+
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
@@ -174,14 +236,14 @@ def test_child_execution_projects_to_parent_origin_branch_not_checkout(tmp_path,
     assert len(rows) == 1
     assert rows[0]["session_id"] == "child"
     assert rows[0]["conversation_session_id"] == "parent"
-    assert rows[0]["branch_id"].endswith(":u1")
-    assert not rows[0]["branch_id"].endswith(":a2retry")
+    assert rows[0]["branch_id"] == branch_identity("parent", None)
+    assert rows[0]["branch_id"] != branch_identity("parent", "a2retry")
 
 
 def test_legacy_page_without_anchor_is_unassigned(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
@@ -197,9 +259,9 @@ def test_legacy_page_without_anchor_is_unassigned(tmp_path, monkeypatch):
 
 
 def test_disconnect_leaves_unavailable_descriptor_without_live_lease(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
@@ -220,10 +282,10 @@ def test_disconnect_leaves_unavailable_descriptor_without_live_lease(tmp_path, m
 
 
 def test_resource_route_denies_other_conversation_before_reading(tmp_path, monkeypatch):
-    from openprogram.webui.routes.execution import processes
+    from openprogram.interfaces.server.routes.execution import processes
 
     monkeypatch.setattr(processes, "_actor_and_session", lambda request: ({}, "allowed"))
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     app = FastAPI()
     processes.register(app)
     with TestClient(app) as client:
@@ -239,12 +301,12 @@ def test_resource_route_denies_other_conversation_before_reading(tmp_path, monke
 def test_control_rejects_stale_generation_and_does_not_label_paused_from_request(
     tmp_path, monkeypatch,
 ):
-    from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes.execution import processes
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
+    from openprogram.interfaces.server.routes.execution import processes
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
         page_key="page:1", window_id="win", tab_id="tab-a", title="Plans",
@@ -255,13 +317,13 @@ def test_control_rejects_stale_generation_and_does_not_label_paused_from_request
     )
     monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
     monkeypatch.setattr(processes, "_actor_and_session", lambda request: ({"authority_tier": "owner"}, None))
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: None)
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: None)
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
+        "openprogram.runtime.execution.conversation_scope.conversation_executions",
         lambda *args: [_exec("exec-1", "parent")],
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
         lambda *args: {"exec-1": None},
     )
     pauses = []
@@ -282,7 +344,7 @@ def test_control_rejects_stale_generation_and_does_not_label_paused_from_request
         def executions(self):
             return SimpleNamespace(get_execution=lambda eid: _exec(eid, "parent"))
 
-    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: _Service())
+    monkeypatch.setattr("openprogram.runtime.execution.default_control_service", lambda: _Service())
     app = FastAPI()
     processes.register(app)
     with TestClient(app) as client:
@@ -334,13 +396,13 @@ def test_click_receipt_uses_viewport_dimensions_and_target_center():
 def test_operation_event_uses_operating_execution_branch_not_first_association(
     tmp_path, monkeypatch,
 ):
-    from openprogram.browser_resources import (
+    from openprogram.programs.applications.browser.pages import (
         BrowserResourceStore, report_browser_operation, sanitize_operation,
     )
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     store = BrowserResourceStore()
     store.retain(
         page_key="page:shared", window_id="win", tab_id="tab-a", title="Shared",
@@ -361,9 +423,9 @@ def test_operation_event_uses_operating_execution_branch_not_first_association(
     def _emit(row, *, page_key):
         captured.append(dict(row))
 
-    monkeypatch.setattr("openprogram.browser_resources.emit_browser_resource", _emit)
+    monkeypatch.setattr("openprogram.programs.applications.browser.pages.emit_browser_resource", _emit)
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
+        "openprogram.runtime.execution.conversation_scope.conversation_executions",
         lambda *args: [
             SimpleNamespace(
                 execution_id="exec-old", session_id="parent", parent_execution_id=None,
@@ -376,11 +438,11 @@ def test_operation_event_uses_operating_execution_branch_not_first_association(
         ],
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
         lambda *args: {"exec-old": None, "exec-new": None},
     )
     monkeypatch.setattr(
-        "openprogram.execution.default_store",
+        "openprogram.runtime.execution.default_store",
         lambda: SimpleNamespace(
             get_execution_input=lambda eid: SimpleNamespace(
                 user_message_id="u1" if eid == "exec-old" else "u2",
@@ -399,20 +461,19 @@ def test_operation_event_uses_operating_execution_branch_not_first_association(
     )
     assert len(captured) == 1
     assert captured[0]["execution_id"] == "exec-new"
-    assert str(captured[0].get("branch_id") or "").endswith(":a2retry")
+    assert captured[0].get("branch_id") == branch_identity("parent", "a2retry")
 
 
 def test_completed_owner_becomes_idle_when_page_is_released_and_effects_are_clear(
     tmp_path, monkeypatch,
 ):
-    from openprogram.browser_resources import (
-        BrowserResourceStore, fence_page_writes, project_conversation_resources,
-        writes_fenced,
+    from openprogram.programs.applications.browser.pages import (
+        BrowserResourceStore, project_conversation_resources,
     )
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     store = BrowserResourceStore()
     store.retain(
         page_key="page:term", window_id="win", tab_id="tab-a", title="Done",
@@ -421,28 +482,27 @@ def test_completed_owner_becomes_idle_when_page_is_released_and_effects_are_clea
         user_message_id="u1", assistant_message_id="a1",
         conversation_session_id="parent", live=True,
     )
-    fence_page_writes("page:term", input_seq=1)
     store.set_control_state("page:term", "yielding", command_id="pause-term")
     completed = SimpleNamespace(
         execution_id="exec-term", session_id="parent", parent_execution_id=None,
         status=SimpleNamespace(value="completed"),
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
+        "openprogram.runtime.execution.conversation_scope.conversation_executions",
         lambda *args: [completed],
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
         lambda *args: {"exec-term": None},
     )
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: SimpleNamespace(
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: SimpleNamespace(
         get_execution_input=lambda eid: SimpleNamespace(
             user_message_id="u1", assistant_message_id="a1",
         ),
         get_execution=lambda eid: completed if eid == "exec-term" else None,
     ))
     monkeypatch.setattr(
-        "openprogram.execution.default_control_service",
+        "openprogram.runtime.execution.default_control_service",
         lambda: SimpleNamespace(effects=SimpleNamespace(list_unresolved=lambda eid: [])),
     )
     rows, _, _ = project_conversation_resources("parent")
@@ -451,20 +511,18 @@ def test_completed_owner_becomes_idle_when_page_is_released_and_effects_are_clea
     assert row["control_state"] == "idle"
     assert stored["control_state"] == "idle"
     assert not stored.get("pause_command_id")
-    assert writes_fenced("page:term") is False
 
 
-def test_terminal_unknown_effects_stay_stop_unconfirmed_and_keep_fence(
+def test_terminal_unknown_effects_stay_stop_unconfirmed(
     tmp_path, monkeypatch,
 ):
-    from openprogram.browser_resources import (
-        BrowserResourceStore, fence_page_writes, project_conversation_resources,
-        writes_fenced,
+    from openprogram.programs.applications.browser.pages import (
+        BrowserResourceStore, project_conversation_resources,
     )
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     store = BrowserResourceStore()
     store.retain(
         page_key="page:fail", window_id="win", tab_id="tab-a", title="Failed",
@@ -473,21 +531,20 @@ def test_terminal_unknown_effects_stay_stop_unconfirmed_and_keep_fence(
         user_message_id="u1", assistant_message_id="a1",
         conversation_session_id="parent", live=True,
     )
-    fence_page_writes("page:fail", input_seq=1)
     store.set_control_state("page:fail", "yielding", command_id="pause-fail")
     failed = SimpleNamespace(
         execution_id="exec-fail", session_id="parent", parent_execution_id=None,
         status=SimpleNamespace(value="failed"),
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
+        "openprogram.runtime.execution.conversation_scope.conversation_executions",
         lambda *args: [failed],
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
         lambda *args: {"exec-fail": None},
     )
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: SimpleNamespace(
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: SimpleNamespace(
         get_execution_input=lambda eid: SimpleNamespace(
             user_message_id="u1", assistant_message_id="a1",
         ),
@@ -499,7 +556,7 @@ def test_terminal_unknown_effects_stay_stop_unconfirmed_and_keep_fence(
             raise RuntimeError("effects unavailable")
 
     monkeypatch.setattr(
-        "openprogram.execution.default_control_service",
+        "openprogram.runtime.execution.default_control_service",
         lambda: SimpleNamespace(effects=_Boom()),
     )
     rows, _, _ = project_conversation_resources("parent")
@@ -507,7 +564,6 @@ def test_terminal_unknown_effects_stay_stop_unconfirmed_and_keep_fence(
     stored = store.get_resource("page:fail")
     assert row["control_state"] == "stop_unconfirmed"
     assert stored["control_state"] == "stop_unconfirmed"
-    assert writes_fenced("page:fail") is False
 
 
 def _paused_wait_open(eid, session_id="parent"):
@@ -521,12 +577,12 @@ def _paused_wait_open(eid, session_id="parent"):
 
 
 def test_wait_open_projects_waiting_and_resume_does_not_continue(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore
-    from openprogram.webui.routes.execution import processes
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore
+    from openprogram.interfaces.server.routes.execution import processes
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     store = BrowserResourceStore(tmp_path / "session-resources.db")
     store.retain(
         page_key="page:wait", window_id="win", tab_id="tab-a", title="Plans",
@@ -549,21 +605,21 @@ def test_wait_open_projects_waiting_and_resume_does_not_continue(tmp_path, monke
             del command_id
             return None
 
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: _Store())
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: _Store())
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
+        "openprogram.runtime.execution.conversation_scope.conversation_executions",
         lambda *args: [paused],
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
         lambda *args: {"exec-wait": None},
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.authorize_conversation_execution",
+        "openprogram.runtime.execution.conversation_scope.authorize_conversation_execution",
         lambda *args, **kwargs: None,
     )
     monkeypatch.setattr(
-        "openprogram.execution.default_control_service",
+        "openprogram.runtime.execution.default_control_service",
         lambda: SimpleNamespace(effects=SimpleNamespace(list_unresolved=lambda eid: [])),
     )
 
@@ -571,7 +627,7 @@ def test_wait_open_projects_waiting_and_resume_does_not_continue(tmp_path, monke
         continues.append(kwargs)
         raise AssertionError("continue must not run for wait_open")
 
-    monkeypatch.setattr("openprogram.browser_resources._submit_owner_command", _no_continue)
+    monkeypatch.setattr("openprogram.programs.applications.browser.pages._submit_owner_command", _no_continue)
     monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         processes, "_actor_and_session",
@@ -596,77 +652,12 @@ def test_wait_open_projects_waiting_and_resume_does_not_continue(tmp_path, monke
     assert continues == []
 
 
-def test_human_input_while_wait_open_does_not_mint_pause_id(tmp_path, monkeypatch):
-    from openprogram.browser_resources import handle_human_page_input, BrowserResourceStore
-
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
-    db = _conversation(tmp_path)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    store = BrowserResourceStore(tmp_path / "session-resources.db")
-    store.retain(
-        page_key="page:wait", window_id="win", tab_id="tab-a", title="Plans",
-        target="https://example.test/", connection_generation=1,
-        session_id="parent", execution_id="exec-wait",
-        user_message_id="u1", assistant_message_id="a1",
-        conversation_session_id="parent", live=True,
-    )
-    paused = _paused_wait_open("exec-wait")
-    pauses = []
-
-    class _Store:
-        def get_execution(self, eid):
-            return paused if eid == "exec-wait" else None
-
-        def get_execution_input(self, eid):
-            return SimpleNamespace(user_message_id="u1", assistant_message_id="a1")
-
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: _Store())
-    monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
-        lambda *args: [paused],
-    )
-    monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
-        lambda *args: {"exec-wait": None},
-    )
-    monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.authorize_conversation_execution",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        "openprogram.execution.default_control_service",
-        lambda: SimpleNamespace(effects=SimpleNamespace(list_unresolved=lambda eid: [])),
-    )
-
-    async def _no_pause(**kwargs):
-        pauses.append(kwargs)
-        return paused
-
-    monkeypatch.setattr("openprogram.browser_resources.request_page_pause", _no_pause)
-    monkeypatch.setattr(
-        "openprogram.browser_resources.page_keys_for_socket_tab",
-        lambda *args, **kwargs: ["page:wait"],
-    )
-    monkeypatch.setattr(
-        "openprogram.browser_resources.emit_browser_resource",
-        lambda *args, **kwargs: None,
-    )
-    asyncio.run(handle_human_page_input(
-        ws=SimpleNamespace(scope={}), window_id="win", tab_id="tab-a",
-        input_seq=3, kind="pointer",
-    ))
-    stored = store.get_resource("page:wait")
-    assert stored["control_state"] == "idle"
-    assert not stored.get("pause_command_id")
-    assert pauses == []
-
-
 def test_ordinary_paused_execution_still_projects_paused(tmp_path, monkeypatch):
-    from openprogram.browser_resources import BrowserResourceStore, project_conversation_resources
+    from openprogram.programs.applications.browser.pages import BrowserResourceStore, project_conversation_resources
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     store = BrowserResourceStore()
     store.retain(
         page_key="page:paused", window_id="win", tab_id="tab-a", title="Plans",
@@ -683,21 +674,21 @@ def test_ordinary_paused_execution_still_projects_paused(tmp_path, monkeypatch):
         reason_code=None,
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_executions",
+        "openprogram.runtime.execution.conversation_scope.conversation_executions",
         lambda *args: [paused],
     )
     monkeypatch.setattr(
-        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        "openprogram.runtime.execution.conversation_scope.conversation_parent_ids",
         lambda *args: {"exec-paused": None},
     )
-    monkeypatch.setattr("openprogram.execution.default_store", lambda: SimpleNamespace(
+    monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: SimpleNamespace(
         get_execution_input=lambda eid: SimpleNamespace(
             user_message_id="u1", assistant_message_id="a1",
         ),
         get_execution=lambda eid: paused if eid == "exec-paused" else None,
     ))
     monkeypatch.setattr(
-        "openprogram.execution.default_control_service",
+        "openprogram.runtime.execution.default_control_service",
         lambda: SimpleNamespace(effects=SimpleNamespace(list_unresolved=lambda eid: [])),
     )
     rows, _, _ = project_conversation_resources("parent")

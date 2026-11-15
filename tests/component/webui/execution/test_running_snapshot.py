@@ -5,14 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
-agent_loop = importlib.import_module("openprogram.agent.agent_loop")
-from openprogram_server._webui.routes.execution import lifecycle, running
+agent_loop = importlib.import_module("openprogram.runtime.agent.loop")
+from openprogram.interfaces.server.routes.execution import lifecycle, running
 
 
 @pytest.fixture(autouse=True)
 def _runner_lifecycle():
     """Close the singleton created while collecting the running snapshot."""
-    from openprogram.agent.job import runner as runner_mod
+    from openprogram.runtime.jobs import runner as runner_mod
 
     runner_mod.shutdown_runner()
     yield
@@ -40,22 +40,25 @@ def test_collect_includes_running_tool_calls():
 
 
 def test_collect_includes_canonical_ui_projection(monkeypatch):
-    from openprogram.execution.projections import ExecutionProjectionRecord
+    from openprogram.runtime.execution.event_effects import RunningExecution
 
-    projection = ExecutionProjectionRecord(
-        projection_kind="ui",
-        event_sequence=7,
+    projection = RunningExecution(
         execution_id="exec-canonical",
         session_id="session-canonical",
         status="running",
         payload={
             "execution": {"created_at": 123.0},
             "ui": {"label": "workflow.run"},
+            "event_cursor": {
+                "execution_id": "exec-canonical",
+                "next_sequence": 8,
+                "snapshot_status_version": 7,
+            },
         },
-        created_at=123.0,
+        updated_at=123.0,
     )
     monkeypatch.setattr(
-        "openprogram.execution.projections.list_running_execution_projections",
+        "openprogram.runtime.execution.event_effects.list_running_executions",
         lambda: [projection],
     )
     snapshot = {
@@ -92,7 +95,7 @@ def test_collect_includes_canonical_ui_projection(monkeypatch):
 
 
 def test_collect_embeds_only_the_nested_job_resource(monkeypatch):
-    from openprogram.agent.job.types import JobStatus
+    from openprogram.runtime.jobs.types import JobStatus
 
     resource = {"resource_state": "active", "usage": {"tokens": {"actual": 1}}}
     job = SimpleNamespace(
@@ -112,9 +115,9 @@ def test_collect_embeds_only_the_nested_job_resource(monkeypatch):
         get_job_resource_view=lambda _job_id: view,
     )
     execution = SimpleNamespace(execution_id=job.id)
-    monkeypatch.setattr("openprogram.agent.job.runner.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.runner.get_runner", lambda: runner)
     monkeypatch.setattr(
-        "openprogram.execution.default_store",
+        "openprogram.runtime.execution.default_store",
         lambda: SimpleNamespace(get_execution=lambda _execution_id: execution),
     )
 
@@ -130,7 +133,7 @@ def test_collect_embeds_only_the_nested_job_resource(monkeypatch):
         })
 
     monkeypatch.setattr(
-        "openprogram.execution.public.execution_snapshot", fake_snapshot,
+        "openprogram.runtime.execution.public.execution_snapshot", fake_snapshot,
     )
 
     item = next(item for item in running._collect() if item["id"] == job.id)
@@ -142,12 +145,12 @@ def test_execution_payload_embeds_only_the_nested_job_resource(monkeypatch):
     resource = {"resource_state": "active"}
     execution = SimpleNamespace(execution_id="job-resource")
     view = SimpleNamespace(resource=resource)
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: SimpleNamespace(
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: SimpleNamespace(
         get_job_resource_view=lambda _job_id: view,
         get_job=lambda _job_id: None,
     ))
     monkeypatch.setattr(
-        "openprogram.execution.default_store", lambda: SimpleNamespace(),
+        "openprogram.runtime.execution.default_store", lambda: SimpleNamespace(),
     )
 
     def fake_snapshot(_execution, **kwargs):
@@ -155,7 +158,7 @@ def test_execution_payload_embeds_only_the_nested_job_resource(monkeypatch):
         return SimpleNamespace(to_dict=lambda: {"resource": kwargs["resource"]})
 
     monkeypatch.setattr(
-        "openprogram.execution.public.execution_snapshot", fake_snapshot,
+        "openprogram.runtime.execution.public.execution_snapshot", fake_snapshot,
     )
     assert lifecycle._execution_payload(execution) == {"resource": resource}
 

@@ -1,0 +1,39 @@
+<title>cache_control 透传</title>
+<meta name="description" content="调用方放在内容块上的 cache_control 标记如何原样到达 Anthropic Messages 请求。">
+<h1>cache_control 透传</h1>
+
+<p>调用方有一段固定的长规则加动态尾部，想把断点放在规则之后。调用方的 <code translate="no">cache_control</code> 是不透明字典，例如 <code translate="no">{"type": "ephemeral"}</code>，可带 <code translate="no">ttl</code>，不解析直接交给 Anthropic。只针对 anthropic 类：原生 API 和任何 anthropic-messages 接口。OpenAI、codex 类用自动前缀缓存。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">层</th><th scope="col">位置</th><th scope="col">做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">内容类型</th><td><code translate="no">models/providers/types.py</code></td><td><code translate="no">TextContent</code>、<code translate="no">ImageContent</code> 带 <code translate="no">cache_control: dict | None</code>。视频、音频没有。</td></tr>
+<tr><th scope="row">上下文</th><td><code translate="no">runtime/agent/runtime/</code> 的 <code translate="no">_build_pi_context</code></td><td>把每个 <code translate="no">content</code> 块的标记复制到对象上。<code translate="no">role == "system"</code> 的块变成 <code translate="no">system_text</code>，没有逐块断点。</td></tr>
+<tr><th scope="row">缓存策略</th><td><code translate="no">models/providers/settings/cache_policy.py</code></td><td><code translate="no">apply_cache_policy</code> 给最后一个工具、最新用户消息的最后文本块各加一个标记。不动调用方标记，已有标记的消息跳过。</td></tr>
+<tr><th scope="row">请求体</th><td><code translate="no">adapters/anthropic/anthropic.py</code> 的 <code translate="no">_build_messages</code></td><td>把标记写入块字典，只针对 list 内容的 <code translate="no">UserMessage</code>。自动的最后一块断点也会落在结尾的工具结果批上。</td></tr>
+</tbody>
+</table>
+<p class="note">没有标记时，请求体与没有该字段时逐字节相同。</p>
+
+<h2 id="automatic-breakpoint">自动断点与调用方断点</h2>
+<p><code translate="no">_mark_final_message</code> 把自动断点放在请求的最后一块：一轮对话的第一次请求是用户消息，之后每次是那批工具结果，所以每次请求都能从缓存读到整段历史。</p>
+<p>这条消息里任一块有标记，就不加自动断点。否则会多占一个名额，并把缓存边界钉在变化内容之后。</p>
+<p>1h 断点不会排在 5m 断点之后，否则 Anthropic 拒绝请求：策略层只在系统断点带 <code translate="no">1h</code> 时才用它；一旦出现 5m 断点（包括调用方自己标的），之后的断点都改成 5m。</p>
+
+<h2 id="boundaries">调用方要遵守的边界</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">边界</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">最小前缀</th><td>标记前不足 1024 token（Haiku 2048）时 Anthropic 静默忽略：<code translate="no">cache_read</code> 一直是 0，不是透传的问题</td></tr>
+<tr><th scope="row">每请求四个断点</th><td>第五个返回 400。系统块、最后工具、最新用户消息、最后一块可能已占满。调用方标记使总数超过四个时，先去掉最早的消息断点，最后一块保留自己的断点</td></tr>
+<tr><th scope="row">代理</th><td>剥掉 <code translate="no">cache_control</code> 的代理会让 <code translate="no">cache_read</code> 保持 0。发送两次相同固定前缀，检查第二次 <code translate="no">cache_read &gt; 0</code></td></tr>
+<tr><th scope="row">其他 provider</th><td>块构造只读 <code translate="no">.text</code>、<code translate="no">.data</code>；两处 <code translate="no">model_dump()</code> 导出的是选项而非内容，字段不会泄漏。<code translate="no">TextContent.model_dump()</code> 可往返，持久化不受影响</td></tr>
+</tbody>
+</table>
+
+<h2 id="caller-side">调用方的工作</h2>
+<p>把固定规则放进第一个文本块并标记。OpenAI、codex 只需把稳定前缀放在最前。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现。<code translate="no">tests/unit/programs/tools/test_cache_control_passthrough.py</code> 覆盖运行时到请求体的透传、图片、无标记时请求体相同、无标记时自动断点、不覆盖已标记的最后一块、前面有标记时抑制自动断点。<code translate="no">tests/unit/providers/adapters/test_anthropic_cache_breakpoints.py</code> 覆盖后续轮次的工具结果断点、四个断点上限、非 api.anthropic.com 时统一有效期，以及调用方的 5m 标记让之后的断点变成 5m。</p>
+<p>非 Anthropic 不泄漏靠读代码核实。经真实代理的透传未验证。</p>

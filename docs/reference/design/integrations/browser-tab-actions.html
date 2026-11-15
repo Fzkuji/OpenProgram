@@ -1,0 +1,89 @@
+<title>Browser tab actions</title>
+<meta name="description" content="What the tab driver does for read, refs, acting, upload and evaluate.">
+<meta name="covers" content="openprogram/programs/applications/browser/tabs.py">
+<h1>Browser tab actions</h1>
+
+
+<h2 id="reading">Reading</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Snapshot</th><td><code translate="no">read</code> returns Playwright's AI snapshot: the ARIA tree with a ref on each element (<code translate="no">e12</code>, and <code translate="no">f1e3</code> inside a frame).</td></tr>
+<tr><th scope="row">Playwright versions</th><td>Playwright 1.60 serves it as <code translate="no">Frame.ariaSnapshot(mode="ai", track)</code>, one text that is incremental when the same document has an earlier tracked snapshot; earlier versions serve <code translate="no">Page.snapshotForAI</code>, which returns both.</td></tr>
+<tr><th scope="row">Whole or changes</th><td>The driver asks for the whole page when the document is new or a full read is wanted, and otherwise only for the changes.</td></tr>
+<tr><th scope="row">Marks</th><td>Changed lines are marked <code translate="no">&lt;changed&gt;</code> and <code translate="no">[unchanged]</code> stands for what was already sent.</td></tr>
+<tr><th scope="row">Limits</th><td>Password field values are redacted from both, and a page is cut at 40,000 characters.</td></tr>
+</tbody>
+</table>
+
+<h2 id="refs">Refs</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Lifetime</th><td>Playwright resolves <code translate="no">aria-ref=&lt;ref&gt;</code> against its latest snapshot, and a ref stays the same for as long as its element exists, so refs survive any number of actions and turns.</td></tr>
+<tr><th scope="row">Kept</th><td>The driver keeps each ref's role and name from the snapshots.</td></tr>
+<tr><th scope="row">Lookup</th><td>A ref that no longer resolves is looked up by that role and name, and so is an element named directly by <code translate="no">role</code> and <code translate="no">name</code>.</td></tr>
+<tr><th scope="row">Failure</th><td>If that still finds nothing, the action fails with <code translate="no">element_gone</code> and the page as it is now.</td></tr>
+<tr><th scope="row">User's browser</th><td>In the user's Chrome or Edge a ref goes to Playwright MCP as it is, and <code translate="no">role</code> with <code translate="no">name</code> goes as the locator <code translate="no">getByRole(role, { name, exact: true })</code>, which its <code translate="no">target</code> accepts beside a ref. A locator that matches several elements fails with <code translate="no">ambiguous_element</code>, one that matches none with <code translate="no">element_gone</code>, and an element action that names nothing with <code translate="no">target_required</code> before anything is sent.</td></tr>
+</tbody>
+</table>
+
+<h2 id="acting">Acting</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Input</th><td>Clicks, hovers, key presses, typing (<code translate="no">fill</code>, or <code translate="no">insert_text</code> with <code translate="no">clear: false</code>), <code translate="no">select_option</code>, <code translate="no">drag_to</code> and <code translate="no">set_input_files</code> are Playwright's own trusted input.</td></tr>
+<tr><th scope="row">Background tabs</th><td>They reach a tab in the background without bringing it forward, which was checked against the App: a background tab receives <code translate="no">isTrusted</code> pointer, mouse and click events.</td></tr>
+<tr><th scope="row">Scrolling and paste</th><td>Scrolling uses <code translate="no">page_actions.SCROLL_SCRIPT</code>, and <code translate="no">paste</code> uses <code translate="no">PASTE_SCRIPT</code>.</td></tr>
+<tr><th scope="row">Coordinates</th><td>A click by <code translate="no">x</code>,<code translate="no">y</code> maps screenshot pixels to CSS pixels with the ratio measured when the screenshot was taken, if the screenshot is still current (<a href="browser-tab-driver.html#coordinates">Coordinates</a>).</td></tr>
+<tr><th scope="row">Cursor</th><td>Before a click, the App's agent cursor is armed and placed on the element.</td></tr>
+<tr><th scope="row">Navigation</th><td>After an action, the driver waits up to 0.3 s for a navigation to start.</td></tr>
+<tr><th scope="row">Load</th><td>If one starts, it waits for <code translate="no">domcontentloaded</code>.</td></tr>
+<tr><th scope="row">Requests</th><td>It then waits up to 2 s for fetch/XHR requests the action started.</td></tr>
+<tr><th scope="row">Return</th><td>Then it returns the changes, or the whole page when the URL changed or the document is new.</td></tr>
+<tr><th scope="row">Exception</th><td>An exception becomes a result with a reason code and the page as it is now, never a raw error.</td></tr>
+</tbody>
+</table>
+
+<p><strong>Approval.</strong> The App's tabs need none: opening or navigating to any site, acting on it and running a script in it ask nothing. <code translate="no">upload</code> asks in the modes that ask, and code mode's validator refuses it; the read-only actions (<code translate="no">tabs</code>, <code translate="no">read</code>, <code translate="no">wait</code>, <code translate="no">screenshot</code>, <code translate="no">console</code>, <code translate="no">network</code>) are marked as reads for the broker.</p>
+
+<h2 id="file-upload">File upload</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Hidden inputs</th><td>Pages rarely show their file input: it sits behind a styled upload button with <code translate="no">display: none</code>, so the outline has only the button, or the page creates the input when the button is clicked.</td></tr>
+<tr><th scope="row">Approach</th><td>The driver therefore uploads the way a person does, as Playwright MCP does.</td></tr>
+<tr><th scope="row">Listener</th><td>Every write action runs with a <code translate="no">filechooser</code> listener on the page (<code translate="no">_catch_choosers</code>), which makes Chromium hand the chooser to the driver instead of opening a window on the user's screen; the listener is removed when the action has settled, so the user's own clicks open the usual window.</td></tr>
+<tr><th scope="row">Caught chooser</th><td>A chooser caught that way is kept on the tab and the result carries <code translate="no">file_chooser</code> (<code translate="no">multiple</code>, <code translate="no">accept</code>); <code translate="no">upload(path)</code> without a ref answers it, a bad path leaves it waiting, and any other write drops it.</td></tr>
+<tr><th scope="row">One step</th><td><code translate="no">upload(ref, path)</code> is the one-step form.</td></tr>
+<tr><th scope="row">Set or click</th><td>When the ref is a file input or the label of one (<code translate="no">FILE_INPUT_SCRIPT</code>), the file is set on that input, hidden or not; anything else is clicked inside <code translate="no">expect_file_chooser</code> and the chooser it opens takes the file, or the call fails with <code translate="no">no_file_chooser</code> after 3 s.</td></tr>
+<tr><th scope="row">No guessing</th><td>The driver never guesses an input near a button: a page with a second hidden input would take the file into the wrong field and report success, which is also why Codex exposes uploads only through the chooser.</td></tr>
+<tr><th scope="row">Causes</th><td>The page may be stuck in an earlier upload, or open its input only after an <code translate="no">await</code> that spent the click's user activation.</td></tr>
+<tr><th scope="row">Error</th><td>So the error says what the button reads now and whether it is disabled (<code translate="no">ELEMENT_STATE_SCRIPT</code>), and lists the page's enabled file inputs, numbered (<code translate="no">FILE_FIELDS_SCRIPT</code>).</td></tr>
+<tr><th scope="row">Entry</th><td>Each entry gives its id or name, <code translate="no">accept</code>, <code translate="no">multiple</code>, the text it sits in, and whether it is the only one in the button's section.</td></tr>
+<tr><th scope="row">Choice</th><td>The model picks one with <code translate="no">upload(field=n, path)</code>, which sets the file on that input (<code translate="no">Tab.file_fields</code>).</td></tr>
+<tr><th scope="row">Dropped</th><td>Any other write action, or a new page, drops the list, and the user's own browser does not support <code translate="no">field</code>.</td></tr>
+<tr><th scope="row">Text result</th><td>The text result names a caught chooser and its <code translate="no">accept</code>, so the model knows to answer it.</td></tr>
+<tr><th scope="row">User's browser</th><td>The user's Chrome or Edge follows the same model through Playwright MCP's own file-chooser state: <code translate="no">upload</code> with a ref clicks it first, without a ref it answers the chooser the last click opened.</td></tr>
+<tr><th scope="row">Drop zones</th><td>Drop zones with no file input at all are not covered.</td></tr>
+</tbody>
+</table>
+
+<h2 id="evaluate"><code translate="no">evaluate</code></h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Reach</th><td><code translate="no">evaluate</code> reads everything a signed-in page holds, including what snapshots redact.</td></tr>
+<tr><th scope="row">Grant</th><td>It is part of operating its browser: in the built-in browser it runs under the Page grant, and in the user's Chrome or Edge under that browser's grant (<code translate="no">computer_use_agent(browser:chrome)</code>).</td></tr>
+<tr><th scope="row">Mark</th><td><code translate="no">page_script</code> marks a <code translate="no">computer_use_agent</code> browser call with an <code translate="no">evaluate</code> step (single or in <code translate="no">actions</code>); the policy uses the mark for one thing, refusing such a call in a turn someone other than the owner started (<code translate="no">IDENTITY_PAGE_SCRIPT</code>: outside MCP clients, agents or schedules someone else set up).</td></tr>
+<tr><th scope="row">Code mode</th><td>Code mode's validator applies the same test (<code translate="no">identity.unattended</code>) to an <code translate="no">evaluate</code> step of a code call.</td></tr>
+<tr><th scope="row">Card</th><td>A card that asks about a call with a script shows the arguments untruncated.</td></tr>
+<tr><th scope="row">Redaction</th><td>The result passes the same password redaction.</td></tr>
+<tr><th scope="row">Element</th><td>With <code translate="no">ref</code> (or <code translate="no">role</code> and <code translate="no">name</code>), a function script receives that element as its argument.</td></tr>
+<tr><th scope="row">Forms</th><td>A function script is called; any other script runs as a console runs it, parsed first as an expression, else as statements whose last value is the result, else (with <code translate="no">await</code>) as the body of an async function whose <code translate="no">return</code> is the result, so it runs once; a promise it returns gets 30 s (<code translate="no">SCRIPT_SECONDS</code>).</td></tr>
+<tr><th scope="row">Errors</th><td>A script that throws fails with <code translate="no">script_error</code> and the page's own message.</td></tr>
+<tr><th scope="row">Caps</th><td>Scripts are capped at 8000 characters and results at 20,000.</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.html">Computer and browser use</a></p>

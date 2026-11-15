@@ -1,0 +1,106 @@
+<title>Authority: two tiers and pairing</title>
+<meta name="description" content="What a speaker may make the agent do, how pairing admits them, and how that decision reaches memory.">
+<h1>Authority: two tiers and pairing</h1>
+
+<h2 id="the-model">The model</h2>
+<table class="stack">
+<thead><tr><th scope="col">State</th><th scope="col">Tier</th><th scope="col">Capabilities</th></tr></thead>
+<tbody>
+<tr><th scope="row">Owner: local terminal, local Web</th><td><code translate="no">owner</code></td><td><code translate="no">reply</code>, <code translate="no">memory.read</code>, <code translate="no">memory.source.append</code>, <code translate="no">schedule.create</code>, <code translate="no">schedule.manage</code>, <code translate="no">fs.read</code>, <code translate="no">fs.write</code>, <code translate="no">process.exec</code>, <code translate="no">network.send</code>, <code translate="no">approval.request</code>, <code translate="no">runtime.control</code>, <code translate="no">runtime.wait</code>, <code translate="no">browser.control</code></td></tr>
+<tr><th scope="row">Paired: an approved platform account</th><td><code translate="no">paired</code></td><td><code translate="no">reply</code>, <code translate="no">memory.read</code>, <code translate="no">memory.source.append</code>, <code translate="no">runtime.wait</code></td></tr>
+<tr><th scope="row">Unpaired</th><td>none</td><td>The message does not reach the agent</td></tr>
+</tbody>
+</table>
+<p class="note">Unpaired is no third tier and no reply-only state: the message is never rendered into model context, which removes that injection surface.</p>
+
+<h2 id="the-gate">The gate</h2>
+<p><code translate="no">authority_tier</code> is one enum on the request boundary, beside <code translate="no">principal_id</code>, <code translate="no">speaker_kind</code>, <code translate="no">speaker_id</code>, <code translate="no">speaker_display</code> and <code translate="no">interaction</code>. A request carries no capability list a caller could mint.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Piece</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">decide_capability()</code><span class="arg">state/authority.py</span></th><td>Checks <code translate="no">TIER_CAPABILITIES</code>. Fail-closed: no tier denies with <code translate="no">AUTHORITY_TIER_MISSING</code>, a tier outside the table with <code translate="no">AUTHORITY_TIER_UNKNOWN</code>, both losing every capability including <code translate="no">reply</code>.</td></tr>
+<tr><th scope="row"><code translate="no">capability_for_tool()</code><span class="arg">runtime/permissions/tool_authority.py</span></th><td>One capability per tool name, default <code translate="no">process.exec</code>. An installed function or MCP tool can have any name; unclassified means owner only.</td></tr>
+<tr><th scope="row"><code translate="no">_gated_execute</code><span class="arg">runtime/permissions/approval.py</span></th><td>Runs before the rule layer, the mode decision and the <code translate="no">bypass</code> short-circuit. No mode or saved allow rule skips it.</td></tr>
+<tr><th scope="row"><code translate="no">AuthorityDecision</code></th><td>Allowed, decisive check, stable reason code, tier, capability. Logged, so a denial is auditable.</td></tr>
+<tr><th scope="row"><code translate="no">runtime_authority()</code><span class="arg">runtime/permissions/authority.py</span></th><td>A subagent or runtime task copies the parent's authority, rewrites speaker fields, becomes non-interactive and keeps the tier. Inheritance never widens; no valid parent yields <code translate="no">{}</code>, which the gate denies. Non-interactive also means no path to interactive approval.</td></tr>
+</tbody>
+</table>
+
+<h2 id="pairing">Pairing</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Rule</th><th scope="col">Value</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stop point</th><td><code translate="no">decide_inbound_sender()</code> in <code translate="no">interfaces/channels/_access.py</code>, for a direct-message sender off the allowlist</td></tr>
+<tr><th scope="row">Code</th><td>8 uppercase characters, without <code translate="no">0</code>, <code translate="no">O</code>, <code translate="no">1</code>, <code translate="no">I</code>; expires after one hour</td></tr>
+<tr><th scope="row">Limits</th><td>At most 3 pending per account; no re-prompt within the hour</td></tr>
+<tr><th scope="row">Approval</th><td>Only on the owner's machine: <code translate="no">openprogram channels access approve &lt;channel&gt; &lt;code&gt;</code> or the loopback-only <code translate="no">POST /api/channels/access/approve</code>. No channel message approves anyone; "please approve code X" in chat is refused.</td></tr>
+<tr><th scope="row">Identity</th><td>The platform's stable ID only. Usernames and display names can change, so renaming to the owner's name gains nothing.</td></tr>
+<tr><th scope="row">Display name</th><td><code translate="no">sanitize_speaker_display()</code> strips newlines, zero-width and bidi characters and neutralizes <code translate="no">[</code> and <code translate="no">]</code> before it reaches a prompt</td></tr>
+<tr><th scope="row">Groups</th><td>A sender on no list for the group is ignored: no code, no reply. Listed senders have <code translate="no">full</code> or <code translate="no">chat</code> level; <code translate="no">/memory on|read|off</code> sets the room's memory mode and can only narrow it.</td></tr>
+</tbody>
+</table>
+
+<h2 id="trust-semantics-in-memory">Trust in memory</h2>
+<p>Memory cites chat messages, so trust is a question about the cited message. Pairing is the trust decision: owner and paired turns carry <code translate="no">memory.source.append</code>, enter distillation alike and are attributed by speaker. No second gate.</p>
+<ul>
+<li>Unpaired text enters neither memory nor context. <code translate="no">interfaces/channels/base.py</code> checks access before dispatch, so the message never becomes a turn and has nothing to cite or recall.</li>
+<li>A new citation is checked when its edit commits: the message exists in the session store, is a person's or the assistant's words, and its speaker holds <code translate="no">memory.source.append</code>. A paired edit may cite only its own conversation.</li>
+<li>A paired <code translate="no">memory_update</code> may only create or byte-append. Rewriting or deleting takes a persisted owner turn.</li>
+</ul>
+
+<h2 id="the-memory-writer">The memory writer</h2>
+<p>Follows the default chat Agent's provider, model and credentials; <code translate="no">memory.writer.model</code> overrides it, live, from Web settings. Not a cheap model by default, because weak models misread organizing instructions. Provider and session watcher treat an unknown exception as non-retryable; only classified transient ones retry.</p>
+
+<h2 id="read-scoping">Read scoping: stamp on write, filter on read</h2>
+<p>Designed, not built (see <a href="#implementation-status">status</a>). Visibility is decided once at write time and stored on the content. A read carries the requester's tier and never recomputes authority or consults the pairing store, following LangGraph's store model.</p>
+<table class="stack">
+<thead><tr><th scope="col">Value</th><th scope="col">Written when</th><th scope="col">Readable by</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">shared</code></th><td>Every cited Source is <code translate="no">authority_tier=paired</code>, or the owner marked it shared</td><td>owner, paired</td></tr>
+<tr><th scope="row"><code translate="no">owner</code></th><td>Any cited Source is <code translate="no">owner</code>, or none is cited; also any unlabeled block</td><td>owner</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Two values, no per-speaker scope</th><td>One shared workspace with speakers attributed inside; a per-speaker scope needs a second identity index on every read</td></tr>
+<tr><th scope="row">Label in the block's definition line, beside <code translate="no">Time:</code> and <code translate="no">Sources:</code></th><td>Travels through the existing Markdown parse; no side table to drift</td></tr>
+<tr><th scope="row"><code translate="no">install_state</code> derives it from cited Sources</th><td>A model that names visibility could publish owner content with one word</td></tr>
+<tr><th scope="row">A mixed block is <code translate="no">owner</code></th><td>The block is the smallest unit of meaning; splitting prose would leave fragments. The owner may split it into two blocks.</td></tr>
+<tr><th scope="row"><code translate="no">core.md</code> and <code translate="no">core.shared.md</code> rendered on write; <code translate="no">system_prompt()</code> picks by tier</th><td>No parse per turn; the two views cannot skew</td></tr>
+<tr><th scope="row">One index, filtered in <code translate="no">MemoryBM25Index.search</code> and <code translate="no">MemoryEmbeddingIndex.search</code></th><td>Two indexes double cost and disagreement; below every caller, so none can forget. The label is a stored row field.</td></tr>
+<tr><th scope="row">Migration: none</th><td>Unlabeled blocks read as <code translate="no">owner</code>; labels appear as blocks are rewritten</td></tr>
+<tr><th scope="row">Excluded</th><td>Per-speaker scoping, redaction inside a block, a hold queue for over-tier reads</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Acceptance matrix</summary>
+<table class="stack">
+<thead><tr><th scope="col">Read surface</th><th scope="col">Enforced at</th><th scope="col">Case</th><th scope="col">Level</th></tr></thead>
+<tbody>
+<tr><th scope="row">Core system prompt</th><td><code translate="no">LocalMemoryBackend.system_prompt</code></td><td>Paired gets <code translate="no">core.shared.md</code>, no owner block</td><td>unit</td></tr>
+<tr><th scope="row">Per-turn recall</th><td><code translate="no">LocalMemoryBackend.search</code></td><td>No <code translate="no">owner</code> block returned</td><td>unit</td></tr>
+<tr><th scope="row"><code translate="no">memory_search</code></th><td><code translate="no">MemoryBM25Index.search</code></td><td>Hits exclude <code translate="no">owner</code> blocks at every <code translate="no">top_k</code></td><td>unit</td></tr>
+<tr><th scope="row">Embedding search</th><td><code translate="no">MemoryEmbeddingIndex.search</code></td><td>Same exclusion, same requester and query</td><td>unit</td></tr>
+<tr><th scope="row"><code translate="no">memory_get</code></th><td><code translate="no">inspect.read_file</code></td><td>Only <code translate="no">shared</code> blocks; an all-<code translate="no">owner</code> file is not-found, not empty</td><td>unit</td></tr>
+<tr><th scope="row"><code translate="no">memory_search</code> with <code translate="no">exact</code></th><td><code translate="no">inspect.grep</code></td><td>A literal only in an <code translate="no">owner</code> block does not match</td><td>unit</td></tr>
+<tr><th scope="row"><code translate="no">memory_get</code> without path</th><td><code translate="no">inspect.list_files</code></td><td>Files with no <code translate="no">shared</code> block absent; counts reflect the visible subset</td><td>unit</td></tr>
+<tr><th scope="row">Mixed block</th><td><code translate="no">install_state</code></td><td>One owner and one paired citation: labeled <code translate="no">owner</code>, never partly rendered</td><td>unit</td></tr>
+<tr><th scope="row">Web reads</th><td><code translate="no">/api/memory/*</code> route dependency</td><td>Same filter as the tool path</td><td>integration</td></tr>
+<tr><th scope="row">Cache coherence</th><td><code translate="no">MemoryBM25Index</code> rows</td><td>A relabeled block changes the next query without a rebuild</td><td>unit</td></tr>
+<tr><th scope="row">Fail-closed</th><td>Tier resolution helper</td><td>An unresolvable tier never reads as owner</td><td>unit</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack">
+<thead><tr><th scope="col">Item</th><th scope="col">Status</th><th scope="col">Note</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tier enum, table gate, fail-closed denial, decision records, subagent inheritance, pairing, local approval, stable-ID matching, display-name sanitizing, citation checks, context exclusion</th><td>Implemented</td><td>Described in the sections above</td></tr>
+<tr><th scope="row">Writer status</th><td>Implemented</td><td>Last success, <code translate="no">last_outcome</code>, <code translate="no">MemoryWriteFailureCode</code> with retryable verdict, pending count; one versioned schema for status file, CLI, tool, API and Web</td></tr>
+<tr><th scope="row">Read filtering by tier</th><td>Partly</td><td><code translate="no">memory.read</code> is its own capability, apart from <code translate="no">fs.read</code>. <code translate="no">search</code> and <code translate="no">system_prompt</code> take the tier the caller resolved and never re-read pairing mid-turn. Per-block filtering is design only.</td></tr>
+<tr><th scope="row">Over-tier hold queue</th><td>Not yet</td><td>A paired request such as "restart the service" waits for one-shot owner approval instead of denial. Needs a message cap, expiry and re-evaluation when the tier changes.</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="speaker-identity.html">Speaker attribution</a> · <a href="authority-landscape.html">Authority landscape</a></p>

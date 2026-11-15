@@ -1,0 +1,86 @@
+<title>二级侧栏</title>
+<meta name="description" content="主侧栏和页面内容之间唯一的列表列组件：部件、状态、折叠、页面和按钮。">
+<h1>二级侧栏</h1>
+<p>主侧栏和页面内容之间的列表列。全部是 <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/apps/web/components/ui/secondary-rail.tsx"><code translate="no">SecondaryRail</code></a>，页面不自己写侧栏行样式。</p>
+
+<h2 id="anatomy">部件</h2>
+<table class="stack">
+<thead><tr><th scope="col">部件</th><th scope="col">基于</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">RailSplit</code></th><td>CSS grid</td><td>侧栏列宽 <code translate="no">--sidebar-width - 1px</code>，与主侧栏对齐；收起时为 <code translate="no">--rail-collapsed-w</code>。</td></tr>
+<tr><th scope="row"><code translate="no">SecondaryRail</code></th><td><code translate="no">nav</code> 或 <code translate="no">aside</code></td><td>8px 内边距，行间 1px，右侧细线，自身不设背景。</td></tr>
+<tr><th scope="row"><code translate="no">RailSearch</code></th><td><code translate="no">ui/search-input</code></td><td>全站唯一的搜索框。收起时隐藏。可选的 <code translate="no">action</code> 放在旁边。</td></tr>
+<tr><th scope="row"><code translate="no">RailGroupLabel</code></th><td><code translate="no">menu-styles.ts</code> 的 <code translate="no">GROUP_LABEL</code></td><td>与菜单相同的分组标题。可选的 <code translate="no">action</code> 放在右端。</td></tr>
+<tr><th scope="row"><code translate="no">RailAction</code></th><td><code translate="no">ui/button</code> <code translate="no">ghost</code> <code translate="no">icon-xs</code></td><td>放进搜索框或分组标题 <code translate="no">action</code> 位的图标操作（记忆的刷新），带 <code translate="no">HoverTip</code>。</td></tr>
+<tr><th scope="row"><code translate="no">RailItem</code></th><td><code translate="no">.ui-list-item</code></td><td>主侧栏的行：30px，内边距 6px 8px，间距 12px，文字 <code translate="no">--nav-color</code>。传 <code translate="no">description</code> 变成两行（最少 48px，最多两行）。<code translate="no">depth</code> 每层缩进 16px。传 <code translate="no">href</code> 渲染 <code translate="no">Link</code>，否则是 <code translate="no">button</code>。</td></tr>
+<tr><th scope="row"><code translate="no">RailBadge</code></th><td><code translate="no">ui/badge</code> outline</td><td>名称后的小标签（“默认”“已隐藏”）。</td></tr>
+<tr><th scope="row"><code translate="no">RailCount</code></th><td>文字</td><td>尾部的浅色计数。</td></tr>
+<tr><th scope="row"><code translate="no">RailSeparator</code></th><td><code translate="no">ui/separator</code></td><td>放在“添加…”行上方。</td></tr>
+</tbody>
+</table>
+<p class="note">从上到下：搜索、分组标题、行、分隔线、低调的“添加……”行。页面顶栏（<code translate="no">ManagePageHeader</code>，64px）横跨侧栏和内容。</p>
+
+<h2 id="states">行状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">样式</th></tr></thead>
+<tbody>
+<tr><th scope="row">悬停、键盘焦点</th><td><code translate="no">--bg-hover</code></td></tr>
+<tr><th scope="row">选中</th><td><code translate="no">--bg-hover</code> 加 <code translate="no">--text-bright</code>；所有侧栏同一种选中色</td></tr>
+<tr><th scope="row">“添加……”行</th><td><code translate="no">quiet</code>：弱化文字</td></tr>
+</tbody>
+</table>
+<p class="note">配方：<a href="../visual-system/surface-system.html">表面体系</a>。</p>
+
+<h3 id="folders">文件夹图标</h3>
+<p>主侧栏的 Solar <code translate="no">folder</code> 和 <code translate="no">folder-open</code>（双色，<code translate="no">--folder-color</code>，亮暗各一个值），用于项目列、记忆主题树、Programs 树和文件面板树（它的 Pierre 图标集和根路径）。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col">图标</th></tr></thead>
+<tbody>
+<tr><th scope="row">展开的树文件夹、选中的项目</th><td>打开的文件夹</td></tr>
+<tr><th scope="row">页面</th><td>Solar <code translate="no">file-text</code></td></tr>
+<tr><th scope="row">缺失的文件夹</th><td>Solar <code translate="no">danger-triangle</code></td></tr>
+<tr><th scope="row">分区行（记忆的主题、时间线等）</th><td>主侧栏的线性导航图标</td></tr>
+</tbody>
+</table>
+
+<h2 id="collapse">折叠</h2>
+<p>带 <code translate="no">railKey</code> 的侧栏可折叠成图标列。<code translate="no">RailToggle</code> 在页面顶栏标题之前（<code translate="no">ManagePageHeader</code> 的 <code translate="no">railToggle</code>），与行图标同一竖轴。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">折叠时隐藏</th><td>搜索、分组标题、文字、行尾内容、嵌套行</td></tr>
+<tr><th scope="row">顶层行</th><td>32px 正方形；名称移到 <code translate="no">HoverTip</code></td></tr>
+<tr><th scope="row">保存位置</th><td><code translate="no">localStorage["&amp;lt;railKey&amp;gt;NavOpen"]</code>：<code translate="no">settingsNavOpen</code>、<code translate="no">projectsNavOpen</code>、<code translate="no">agentsNavOpen</code></td></tr>
+<tr><th scope="row">没有保存过</th><td>窗口小于 760px 时默认折叠</td></tr>
+<tr><th scope="row">窗口缩到 760px 以下</th><td>折叠但不保存；放宽不会自动展开</td></tr>
+</tbody>
+</table>
+
+<h2 id="pages">页面</h2>
+<table class="stack">
+<thead><tr><th scope="col">页面</th><th scope="col">侧栏</th><th scope="col">可收起</th></tr></thead>
+<tbody>
+<tr><th scope="row">历史</th><td>项目（<code translate="no">PROJECTS_RAIL</code>）</td><td>是，按钮在历史页顶栏</td></tr>
+<tr><th scope="row">Agents</th><td>带搜索的 Agent 列表，两行行；随完整编辑区出现（页面先显示卡片）</td><td>是</td></tr>
+<tr><th scope="row">设置</th><td>分类（<code translate="no">Link</code> 行）</td><td>是</td></tr>
+<tr><th scope="row">能力 → Programs</th><td>目录树（<code translate="no">depth</code>）</td><td>否；能力页顶栏属于四个标签共用</td></tr>
+<tr><th scope="row">历史 → 项目 → 记忆</th><td>分区、主题树（文件夹、与文件夹不同时显示类型标签、日期）、时间线（年 › 月 › 日）</td><td>否；它在项目页内部</td></tr>
+<tr><th scope="row">独立的会话列表</th><td>带计数的时间筛选</td><td>否</td></tr>
+</tbody>
+</table>
+<p class="note">没有列表列的页面（定时任务、应用、能力页的插件、技能和 MCP）用页面顶栏的标签和 <code translate="no">ManageSubnav</code>。</p>
+
+<h2 id="buttons">按钮</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">角色</th><th scope="col">变体</th></tr></thead>
+<tbody>
+<tr><th scope="row">页面的主操作（新建、添加、安装、打开）</th><td><code translate="no">default</code></td></tr>
+<tr><th scope="row">次要操作（更新、重试、记忆设置）</th><td><code translate="no">outline</code></td></tr>
+<tr><th scope="row">行内图标操作（暂停、删除），经 <code translate="no">ManageIconButton</code></th><td><code translate="no">ghost</code>、<code translate="no">icon-xs</code>，带 <code translate="no">HoverTip</code></td></tr>
+<tr><th scope="row">移除类操作（卸载）</th><td><code translate="no">destructive</code></td></tr>
+</tbody>
+</table>
+<p class="note">只用 Nova 的 <code translate="no">ui/button</code> 变体，不做页面级覆盖。纯图标按钮用 <code translate="no">aria-label</code> 命名并显示 <code translate="no">HoverTip</code>，不用原生 <code translate="no">title</code>。页面菜单是用 <code translate="no">menu-styles.ts</code> 样式的 <code translate="no">ui/dropdown-menu</code>。</p>
+
+<h2 id="guard">守卫</h2>
+<p><code translate="no">apps/web/scripts/ui/check-secondary-rail.mjs</code> 由 <code translate="no">npm run check</code> 运行。侧栏页面不再用 <code translate="no">SecondaryRail</code>、样式表重新定义侧栏行、或可折叠侧栏与顶栏开关的 key 不一致时失败。</p>

@@ -1,0 +1,50 @@
+<title>自编程 AI Agent</title>
+<meta name="description" content="OpenProgram 的 Agent 可以编写、检查并调用自己的可执行工作流。">
+<h1>自编程 AI Agent</h1>
+<ol>
+<li>Agent 用普通文件工具在 <code translate="no">~/.openprogram/programs/&lt;name&gt;/</code> 写一个 Workflow 包。</li>
+<li><code translate="no">openprogram programs check</code> 测试、提交并记录为已检查。</li>
+<li>worker 无需重启即可加载；之后的回合从与现有工具相同的注册表调用其入口。</li>
+</ol>
+<p>写入包目录不会被拒绝；能否运行取决于检查。编辑或普通的 <code translate="no">git commit</code> 在检查通过前都不会生效。</p>
+<h2>Agent 写什么</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, Context
+
+reviewer = Agent(instructions="You find concrete defects.", tools=[])
+editor = Agent(instructions="You revise drafts.", tools=[])
+
+
+def review_then_revise(draft: str) -&gt; str:
+    """Review a draft, then revise it against the review."""
+    ctx = Context({"draft": draft})
+    review = reviewer("Identify concrete defects in this draft", context=ctx)
+    return editor("Revise the draft using the review",
+                  context=ctx.derive({"review": review}))
+
+
+PROGRAM_ENTRIES = [review_then_revise]</code></pre>
+<p class="note">Python 固定顺序；两个角色完成语义步骤，各自只看到自己 Context 里的内容块。</p>
+<h2>让它写一个</h2>
+<pre translate="no" tabindex="0"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh
+openprogram</code></pre><pre translate="no" tabindex="0"><code>Create a Workflow named review_then_revise. It must review a draft, revise it
+against the review, return only the final text, and include a behavior test.</code></pre>
+<h2>仍然生效的控制</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控制</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具权限</th><td>每个角色的 <code translate="no">tools</code> 和配置的审批策略</td></tr>
+<tr><th scope="row">记录</th><td>每次角色调用及其确切请求，记入会话图</td></tr>
+<tr><th scope="row">资源限制、取消、结构化输出校验、Provider 计费</th><td>运行时</td></tr>
+<tr><th scope="row">源码</th><td>普通文件，有自己的 Git 历史：可检查、可测试、可回退。只加载通过检查的提交，从解出的副本运行，之后的编辑影响不到它。导入失败时之前的版本继续运行，Program 显示 <code translate="no">error</code>，备注写明两个版本。</td></tr>
+</tbody>
+</table>
+<h2>何时使用</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">任务</th><th scope="col">使用</th></tr></thead>
+<tbody>
+<tr><th scope="row">重复出现，需要可复用、可检查的流程，语义步骤需要模型判断</th><td>自编程</td></tr>
+<tr><th scope="row">完全确定性</th><td>普通函数</td></tr>
+<tr><th scope="row">已有稳定实现</th><td>现有工具</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../workflows/authoring.zh.html">编写并检查 Workflow</a> · <a href="README.zh.html">Agentic Programming 指南</a> · <a href="../../reference/api/agent.zh.html"><code translate="no">Agent</code> 参考</a> · <a href="philosophy.zh.html">设计理念</a></p>

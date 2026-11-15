@@ -9,11 +9,11 @@ from fastapi.testclient import TestClient
 
 def test_framework_preserves_application_agent_exposure(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
-    from openprogram.programs._applications.scaffold import create
-    from openprogram.webui.routes.catalog import applications
-    from openprogram.webui.routes.control import framework as routes
+    from openprogram.programs._host.ui.scaffold import create
+    from openprogram.interfaces.server.routes.catalog import applications
+    from openprogram.interfaces.server.routes.control import framework as routes
     from openprogram.programs.tools.runtime.framework import framework
-    from openprogram.agent import turn_request_context
+    from openprogram.runtime.agent import turn_request as agent_turn_request
     source = tmp_path / 'notes'
     create(str(source), 'test.private', 'Private')
     manifest = source / 'application.json'
@@ -35,11 +35,11 @@ def test_framework_preserves_application_agent_exposure(tmp_path, monkeypatch):
             def request(self, method, url, **kwargs):
                 return client.request(method, url, **kwargs)
         monkeypatch.setattr('httpx.Client', lambda **_kwargs: Proxy())
-        monkeypatch.setattr('openprogram.backend_endpoint.resolve_backend_endpoint', lambda: SimpleNamespace(
+        monkeypatch.setattr('openprogram.host.security.backend_endpoint.resolve_backend_endpoint', lambda: SimpleNamespace(
             base_url='http://testserver', authorization_header='Bearer test', origin='http://testserver'))
-        monkeypatch.setattr('openprogram.backend.get_active_backend', lambda: SimpleNamespace(backend_id='local'))
-        monkeypatch.setattr('openprogram.sandbox.resolve_policy', lambda: None)
-        token = turn_request_context.set_turn_request(SimpleNamespace(authority_tier='owner'))
+        monkeypatch.setattr('openprogram.host.backend.get_active_backend', lambda: SimpleNamespace(backend_id='local'))
+        monkeypatch.setattr('openprogram.host.sandbox.resolve_policy', lambda: None)
+        token = agent_turn_request.set_turn_request(SimpleNamespace(authority_tier='owner'))
         try:
             for extra in ({}, {'agent': False}):
                 result = asyncio.run(framework.execute('exposure', {'action': 'invoke',
@@ -50,4 +50,4 @@ def test_framework_preserves_application_agent_exposure(tmp_path, monkeypatch):
                 assert result.is_error
             assert client.get('/api/application-instances/' + opened['instance_id'] + '/state').json()['version'] == 0
         finally:
-            turn_request_context.reset_turn_request(token)
+            agent_turn_request.reset_turn_request(token)

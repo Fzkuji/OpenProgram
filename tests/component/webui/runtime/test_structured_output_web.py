@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.webui.ws_actions.chat import handle_chat
+from openprogram.interfaces.server.ws_actions.chat import handle_chat
+from tests.support.thread_scope import fake_threads_started_by
 
 
 SCHEMA = {
@@ -30,15 +30,20 @@ def test_invalid_schema_is_rejected_before_web_dispatch(monkeypatch):
     ws = FakeWebSocket()
     calls = []
     monkeypatch.setattr(
-        "openprogram.webui.server._get_or_create_session",
+        "openprogram.interfaces.server.server._get_or_create_session",
         lambda *args, **kwargs: calls.append((args, kwargs)),
     )
 
-    asyncio.run(handle_chat(ws, {
-        "action": "chat",
-        "text": "answer",
-        "response_format": {"type": "not-a-json-schema-type"},
-    }))
+    asyncio.run(
+        handle_chat(
+            ws,
+            {
+                "action": "chat",
+                "text": "answer",
+                "response_format": {"type": "not-a-json-schema-type"},
+            },
+        )
+    )
 
     assert calls == []
     assert ws.frames[0]["data"]["type"] == "error"
@@ -47,10 +52,11 @@ def test_invalid_schema_is_rejected_before_web_dispatch(monkeypatch):
 
 
 def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ):
-    from openprogram.agent import run_control
-    from openprogram.webui import server as web_server
+    from openprogram.runtime.conversation import run_control
+    from openprogram.interfaces.server import server as web_server
 
     ws = FakeWebSocket()
     captured = {}
@@ -63,46 +69,70 @@ def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
             return None
 
     # The fake thread never consumes its reservation; keep it local to this test.
-    monkeypatch.setattr("openprogram.webui.server._running_tasks", {})
-    monkeypatch.setattr("openprogram.webui.ws_actions.chat.threading.Thread", Thread)
+    monkeypatch.setattr("openprogram.interfaces.server.server._running_tasks", {})
+    fake_threads_started_by(monkeypatch, 'openprogram.interfaces.server.ws_actions.chat.turn_launch', Thread)
     # The inert thread never runs dispatch cleanup; isolate its real registration.
-    monkeypatch.setattr(run_control, "_active_exec_runtimes", {})
+    monkeypatch.setattr(run_control.active_runtimes, "_active_exec_runtimes", {})
     monkeypatch.setattr(web_server, "_running_tasks", {})
-    monkeypatch.setattr("openprogram.webui.server._is_run_active", lambda _sid: False)
-    monkeypatch.setattr("openprogram.webui.server._append_msg", lambda *args: None)
-    monkeypatch.setattr("openprogram.webui.server._emit_running_task_event", lambda *args: None)
-    monkeypatch.setattr("openprogram.webui.server._get_or_create_session", lambda *args, **kwargs: {"id": "s1"})
-    monkeypatch.setattr("openprogram.webui.ws_actions.chat._db_agent_id", lambda _sid: "main")
+    monkeypatch.setattr("openprogram.interfaces.server.server._is_run_active", lambda _sid: False)
+    monkeypatch.setattr("openprogram.interfaces.server.server._append_msg", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        "openprogram.agent.session_config.save_session_run_config",
-        lambda *args, **kwargs: type("Cfg", (), {
-            "tools_enabled": None,
-            "tools_override": None,
-            "web_search": False,
-            "toolset": None,
-            "thinking_effort": None,
-            "permission_mode": "ask",
-            "sandbox_enabled": None,
-        })(),
+        "openprogram.interfaces.server.server._emit_running_task_event", lambda *args: None
     )
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db",
-        lambda: type("DB", (), {"root_path": tmp_path, "get_session": lambda self, _sid: {"extra_meta": {}}, "update_session": lambda *args, **kwargs: None})(),
+        "openprogram.interfaces.server.server._get_or_create_session",
+        lambda *args, **kwargs: {"id": "s1"},
+    )
+    monkeypatch.setattr(
+        "openprogram.interfaces.server.ws_actions.chat.turn._db_agent_id", lambda _sid: "main"
+    )
+    monkeypatch.setattr(
+        "openprogram.runtime.conversation.session_config.save_session_run_config",
+        lambda *args, **kwargs: type(
+            "Cfg",
+            (),
+            {
+                "tools_override": None,
+                "web_search": False,
+                "toolset": None,
+                "thinking_effort": None,
+                "permission_mode": "ask",
+                "sandbox_enabled": None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "openprogram.runtime.context.session_db.default_db",
+        lambda: type(
+            "DB",
+            (),
+            {
+                "root_path": tmp_path,
+                "get_session": lambda self, _sid: {"extra_meta": {}},
+                "is_created": lambda self, _sid: True,
+                "update_session": lambda *args, **kwargs: None,
+            },
+        )(),
     )
 
-    asyncio.run(handle_chat(ws, {
-        "action": "chat",
-        "text": "answer",
-        "session_id": "s1",
-        "response_format": SCHEMA,
-    }))
+    asyncio.run(
+        handle_chat(
+            ws,
+            {
+                "action": "chat",
+                "text": "answer",
+                "session_id": "s1",
+                "response_format": SCHEMA,
+            },
+        )
+    )
 
     assert captured["kwargs"]["response_format"].schema == SCHEMA
     assert ws.frames[-1]["type"] == "chat_ack"
 
 
 def test_function_http_preflights_schema_and_keeps_async_ack(monkeypatch):
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     app = FastAPI()
     routes_chat.register(app)
@@ -112,7 +142,7 @@ def test_function_http_preflights_schema_and_keeps_async_ack(monkeypatch):
         seen.update(name=name, kwargs=kwargs, response_format=response_format)
         return {"session_id": "s1", "msg_id": "m1"}
 
-    monkeypatch.setattr(routes_chat, "run_agentic_function_call", run)
+    monkeypatch.setattr(routes_chat, "run_agent_method_call", run)
     response = TestClient(app).post(
         "/api/function/demo",
         json={"kwargs": {"value": 1}, "response_format": SCHEMA},
@@ -125,14 +155,14 @@ def test_function_http_preflights_schema_and_keeps_async_ack(monkeypatch):
 
 
 def test_function_http_rejects_invalid_schema_before_dispatch(monkeypatch):
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     app = FastAPI()
     routes_chat.register(app)
     calls = []
     monkeypatch.setattr(
         routes_chat,
-        "run_agentic_function_call",
+        "run_agent_method_call",
         lambda *args, **kwargs: calls.append((args, kwargs)),
     )
     response = TestClient(app).post(
@@ -147,7 +177,7 @@ def test_function_http_rejects_invalid_schema_before_dispatch(monkeypatch):
 
 
 def test_function_http_forwards_pending_project_before_dispatch(monkeypatch):
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     app = FastAPI()
     routes_chat.register(app)
@@ -164,7 +194,7 @@ def test_function_http_forwards_pending_project_before_dispatch(monkeypatch):
         seen.update(project_id=project_id)
         return {"session_id": "s1", "msg_id": "m1"}
 
-    monkeypatch.setattr(routes_chat, "run_agentic_function_call", run)
+    monkeypatch.setattr(routes_chat, "run_agent_method_call", run)
     response = TestClient(app).post(
         "/api/function/auto_workflow",
         json={"kwargs": {"task": "research"}, "project_id": "project-1"},
@@ -175,7 +205,7 @@ def test_function_http_forwards_pending_project_before_dispatch(monkeypatch):
 
 
 def test_function_http_forwards_exact_origin_page(monkeypatch):
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     app = FastAPI()
     routes_chat.register(app)
@@ -185,7 +215,7 @@ def test_function_http_forwards_exact_origin_page(monkeypatch):
         seen.update(options)
         return {"session_id": "s1", "msg_id": "m1"}
 
-    monkeypatch.setattr(routes_chat, "run_agentic_function_call", run)
+    monkeypatch.setattr(routes_chat, "run_agent_method_call", run)
     response = TestClient(app).post(
         "/api/function/gui_agent",
         json={
@@ -209,7 +239,7 @@ def test_function_http_forwards_exact_origin_page(monkeypatch):
 
 
 def test_function_http_keeps_legacy_top_level_surface_argument(monkeypatch):
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     app = FastAPI()
     routes_chat.register(app)
@@ -219,7 +249,7 @@ def test_function_http_keeps_legacy_top_level_surface_argument(monkeypatch):
         seen.update(kwargs=kwargs, options=options)
         return {"session_id": "s1", "msg_id": "m1"}
 
-    monkeypatch.setattr(routes_chat, "run_agentic_function_call", run)
+    monkeypatch.setattr(routes_chat, "run_agent_method_call", run)
     response = TestClient(app).post(
         "/api/function/gui_agent",
         json={"task": "inspect", "surface": "browser"},
@@ -231,14 +261,14 @@ def test_function_http_keeps_legacy_top_level_surface_argument(monkeypatch):
 
 
 def test_function_http_rejects_surface_from_another_window(monkeypatch):
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     app = FastAPI()
     routes_chat.register(app)
     calls = []
     monkeypatch.setattr(
         routes_chat,
-        "run_agentic_function_call",
+        "run_agent_method_call",
         lambda *args, **kwargs: calls.append((args, kwargs)),
     )
     response = TestClient(app).post(
@@ -256,24 +286,28 @@ def test_function_http_rejects_surface_from_another_window(monkeypatch):
 
 
 def test_function_dispatch_propagates_schema_to_nested_runtime(monkeypatch):
-    from openprogram.agent.dispatcher.forced_tool import dispatch_forced_tool_call
-    from openprogram.providers.structured_output import normalize_response_format
+    from openprogram.runtime.conversation.turn_runtime.forced_tool import dispatch_forced_tool_call
+    from openprogram.models.providers.structured_output import normalize_response_format
 
-    tool = type("Tool", (), {"name": "demo", "_is_agentic": True})()
+    tool = type("Tool", (), {"name": "demo", "_is_agent_method": True})()
     seen = {}
     monkeypatch.setattr("openprogram.programs.agent_tools", lambda names=None: [tool])
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *a, **k: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
-        "openprogram.agent.process_runner.run_agentic_in_subprocess",
+        "openprogram.runtime.conversation.process_runner.run_agent_method_in_subprocess",
         lambda **kwargs: seen.update(kwargs) or {"ok": True, "runtime_msg_id": None},
     )
 
     response_format = normalize_response_format(SCHEMA)
     dispatch_forced_tool_call(
-        "s1", "", "demo", {}, response_format=response_format,
+        "s1",
+        "",
+        "demo",
+        {},
+        response_format=response_format,
     )
 
     assert seen["response_format"] == response_format

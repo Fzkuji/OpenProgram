@@ -1,4 +1,4 @@
-"""Shared invoke/timeout helper used by @function and @agentic_function."""
+"""Shared invoke/timeout helper used by @function and Agent method."""
 from __future__ import annotations
 
 import asyncio
@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from openprogram.programs._execution_common import (
+from openprogram.programs._host.execution import (
     invoke_callable,
     timeout_tool_result,
 )
@@ -52,3 +52,16 @@ def test_timeout_tool_result_text() -> None:
     assert result.is_error is True
     assert result.content[0].text == "[error] function probe timed out after 1.5s"
     assert result.details == {"timeout": True}
+
+
+def test_full_result_paths_are_exclusive_safe_and_keep_legacy_files(tmp_path):
+    from openprogram.programs._host.execution import _persist_full_result
+
+    legacy = tmp_path / "old-call.txt"
+    legacy.write_text("legacy", encoding="utf-8")
+    paths = [_persist_full_result(call_id, str(index), results_dir=tmp_path)
+             for index, call_id in enumerate(["../same", ".._same", "../same"])]
+    assert len(set(paths)) == 3
+    assert all(path.parent == tmp_path for path in paths)
+    assert [path.read_text() for path in paths] == ["0", "1", "2"]
+    assert legacy.read_text() == "legacy"

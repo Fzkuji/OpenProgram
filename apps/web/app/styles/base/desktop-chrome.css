@@ -1,0 +1,95 @@
+/* ===== Desktop (Electron) window chrome =====
+   Chrome-style layout: the center tab strip becomes a full-width title row.
+   macOS traffic lights live at its left end; Windows caption controls use
+   Window Controls Overlay at its right end. AppShell renders CenterTabStrip inside
+   .desktop-tab-row when the preload bridge exists; the three columns
+   (.app) sit below it. The strip's own height/background come from
+   strip/tab-strip.module.css — the row only reserves the traffic-light
+   zone and repeats the strip's background so the 76px gap isn't
+   transparent. */
+/* Tab-row surface colour. --tabrow-base is the plain frame colour:
+   browser mode uses --bg-secondary as is; desktop mode goes one step
+   darker than the panels below, like Chrome's frame vs. toolbar.
+   --tabrow-bg then mixes --tabrow-color into it by the theme's
+   --tabrow-tint share: 0% everywhere except the vivid pair (100%), so
+   only Vivid shows a coloured strip. --tabrow-seed is the colour the
+   user picked in Settings (an inline var on <html>, one of Chrome's
+   dark-mode frame colours); dark mode uses it as is, light mode a pale
+   tone of the same hue, like Chrome's light frame. Declared on html
+   (same element as [data-theme]), so the vars resolve per theme. */
+:root {
+  --tabrow-base: var(--bg-secondary);
+  --tabrow-seed: #3d475c;
+  --tabrow-color: var(--tabrow-seed);
+  /* oklab, not oklch: the frame's warm hue and a blue strip colour sit
+     far apart on the hue wheel, and oklch's shorter-arc hue blend swings
+     through red. */
+  --tabrow-bg: color-mix(in oklab, var(--tabrow-base), var(--tabrow-color) var(--tabrow-tint));
+  /* Inactive tab text: text-primary on a coloured strip (Chrome's
+     on-surface-subtle), the usual text-secondary on a plain one. */
+  --tabrow-fg: color-mix(in oklab, var(--text-secondary), var(--text-primary) var(--tabrow-tint));
+}
+:root[data-theme-mode="light"] {
+  --tabrow-color: oklch(from var(--tabrow-seed) 0.91 calc(c * 0.5) h);
+}
+html.is-desktop {
+  /* Mix toward a warm brown-black in oklch, not srgb+black: the theme is a
+     warm cream palette, and srgb-mixing pure black drags chroma down with
+     lightness — the frame goes muddy grey. oklch keeps the hue/chroma, so
+     the cream base just steps down to a warm beige-grey. */
+  --tabrow-base: color-mix(in oklch, var(--bg-secondary) 88%, #2a2117 12%);
+}
+html.is-desktop[data-theme-mode="dark"] {
+  /* In dark themes that brown-black is lighter than the surface, so the mix above
+     lands on the panels' own colour and the strip/content boundary
+     disappears. Step toward black instead, like Chrome's dark frame. */
+  --tabrow-base: color-mix(in oklch, var(--bg-secondary) 60%, #000 40%);
+}
+.desktop-tab-row {
+  display: flex;
+  flex-shrink: 0;
+  position: relative;
+  /* Reserve the existing native-control zone. Native button top/left margins
+     follow the scaled tab row; tab horizontal spacing stays unchanged. */
+  padding-left: 88px;
+  /* 右缘不留 padding：最右 49px（= 右栏收起轨全宽）由 .strip 的
+     padding-right 整列预留，主菜单 ⋮ 钮占据这一列（＋号已解放，回到
+     紧跟末位 tab 的自然流）—— 见 strip/tab-strip.module.css。 */
+  background: var(--tabrow-bg); /* same as .strip — covers the 76px gap */
+  -webkit-app-region: drag;
+}
+/* Full screen (lib/tabs/canvas/canvas-fullscreen.ts): the strip fades
+   out (center-tabs/strip/tab-strip.module.css) and the row's own tint goes
+   with it, to the page colour the window's other gaps show (base/layout.css
+   .app), so no theme's strip colour is left as a band along the top. */
+.desktop-tab-row {
+  transition: background-color 0.32s cubic-bezier(0.65, 0, 0.35, 1);
+}
+html[data-canvas-fullscreen] .desktop-tab-row {
+  background-color: var(--bg-secondary);
+  transition-duration: 0.4s;
+}
+.desktop-windows .desktop-tab-row {
+  /* Three 46px Windows caption buttons overlay the right side. Keep tab,
+     new-tab and app-menu hit targets out from under minimize/maximize/close.
+     Unlike macOS, Windows has no traffic-light inset on the left. */
+  padding-left: 0;
+  padding-right: 138px;
+}
+.desktop-tab-row > *:not(.desktop-resize-edge) { flex: 1; min-width: 0; }
+/* 5px no-drag inset on the window's top/left/right edges (and corners)
+   so macOS can still hit-test native resize. Traffic lights start at
+   equal visible top/left margins, with their center synchronized to the scaled tab row;
+   tabs sit 6px below the top — the inset does not cover
+   those targets. */
+html.is-desktop .desktop-resize-edge {
+  position: absolute;
+  z-index: 5;
+  -webkit-app-region: no-drag;
+}
+html.is-desktop .desktop-resize-n { top: 0; left: 0; right: 0; height: 5px; }
+html.is-desktop .desktop-resize-w { top: 0; left: 0; bottom: 0; width: 5px; }
+html.is-desktop .desktop-resize-e { top: 0; right: 0; bottom: 0; width: 5px; }
+/* Inside the desktop-frame column, .app fills the height left over
+   under the tab row instead of forcing its own 100vh. */
+html.is-desktop .app { height: auto; flex: 1 1 auto; min-height: 0; }

@@ -1,0 +1,17 @@
+<title>Context engine</title>
+<meta name="description" content="Reading guide to the design records for how working context is assembled, committed, merged and compacted.">
+<meta name="covers" content="none">
+<h1 id="context">Context engine</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Page</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="overview.html">Overview</a></th><td>Pipeline, DAG storage, ContextCommit, compaction and rendering, attach and merge, cross-turn tool context</td></tr>
+<tr><th scope="row"><a href="compaction.html">Compaction</a></th><td>Rolling summary node, segment substitution, HEAD integrity, DAG contract</td></tr>
+<tr><th scope="row"><a href="compaction-diagram.html">Compaction tiers</a></th><td>What runs when, and its status</td></tr>
+<tr><th scope="row"><a href="composition.html">Composition</a></th><td>Per-call layering (L0, L1, L2) and situational context</td></tr>
+<tr><th scope="row"><a href="cache-prefix.html">Prompt cache prefix</a></th><td>Request capture, where a cached prefix broke and why, the request bytes contract</td></tr>
+<tr><th scope="row"><a href="comparison.html">Design comparison</a></th><td>Context components against other frameworks</td></tr>
+<tr><th scope="row"><a href="claude-code-compaction.html">Claude Code compaction</a></th><td>Research note: official API docs and third-party reverse engineering</td></tr>
+<tr><th scope="row"><a href="memory-introspection.html">Memory introspection</a></th><td>How an agent learns what it remembers: the memory block marker, the tools it is offered, and empty or broken memory</td></tr>
+</tbody>
+</table>

@@ -1,0 +1,67 @@
+{
+ "id": "openai-responses",
+ "thinking": {
+  "wire_format": "effort_string",
+  "effort_map": {
+   "off": "none",
+   "minimal": "minimal",
+   "low": "low",
+   "medium": "medium",
+   "high": "high",
+   "xhigh": "xhigh",
+   "max": "xhigh"
+  },
+  "default_effort": "xhigh",
+  "model_overrides": {
+   "o1": {
+    "off": null
+   },
+   "o1-mini": {
+    "off": null
+   },
+   "o1-pro": {
+    "off": null
+   },
+   "o3": {
+    "off": null
+   },
+   "o3-mini": {
+    "off": null
+   },
+   "o3-pro": {
+    "off": null
+   },
+   "o3-deep-research": {
+    "off": null
+   },
+   "o4-mini": {
+    "off": null
+   },
+   "o4-mini-deep-research": {
+    "off": null
+   },
+   "codex-mini-latest": {
+    "off": null
+   },
+   "gpt-5": {
+    "off": null
+   },
+   "gpt-5-mini": {
+    "off": null
+   },
+   "gpt-5-nano": {
+    "off": null
+   },
+   "gpt-5-codex": {
+    "off": null
+   },
+   "gpt-5-pro": {
+    "off": null
+   }
+  }
+ },
+ "cache": {
+  "mode": "auto",
+  "cache_key_param": "prompt_cache_key"
+ }
+}

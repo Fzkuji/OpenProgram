@@ -69,7 +69,11 @@ export function deriveStatusBadge(): StatusBadgeInfo {
     return { label: "paused", tone: "warn", paused: true, title: "Paused" };
   }
   if (runtimeState.isRunning) {
-    return { label: "running", tone: "ok", title: "Running" };
+    // The chip names where the session runs; the stop button and the
+    // sidebar spinner already say it is running, so keep the channel
+    // label and only mention the run in the tooltip.
+    const source = lastStatusSource || "Local";
+    return { label: badgeLabelFromSource(source), tone: "ok", title: `Running · ${source}` };
   }
   const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) {

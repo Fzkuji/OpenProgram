@@ -4,7 +4,7 @@
 import { useEffect } from "react";
 import { openFunctionForm } from "@/lib/abilities/functions-actions";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
-import { newSession } from "@/lib/runtime-bridge/conversations";
+import { newSession } from "@/lib/runtime-bridge/session/conversations";
 
 export interface PendingRunFunction {
   name: string;

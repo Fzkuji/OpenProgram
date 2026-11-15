@@ -1,0 +1,27 @@
+<title>Agentic Programming 指南</title>
+<meta name="description" content="OpenProgram 的编程模型：阅读顺序和三种选择下一步的方式。">
+<h1>Agentic Programming 指南</h1>
+<ol>
+<li><a href="philosophy.zh.html">设计理念</a>：为什么是这个模型。</li>
+<li><a href="writing-functions/agent.zh.html">Agent 调用与方法</a>：直接 <code translate="no">agent()</code> 调用、配置化 <code translate="no">Agent</code> 方法、方法元数据。</li>
+<li><a href="writing-functions/function-metadata.zh.html">函数元数据</a>：参数描述、占位符、隐藏参数、<code translate="no">render_range</code>。</li>
+<li><a href="writing-functions/pure-python.zh.html">纯 Python</a>：确定性帮助函数。</li>
+<li><a href="embedding-in-your-own-stack.zh.html">嵌入</a>：把模型当库放进自己的应用，用自己的 LLM 调用和状态目录。</li>
+</ol>
+<h2>选择下一步</h2>
+<p>按任务选对机制是核心技能。</p>
+<table class="stack">
+<thead><tr><th scope="col">机制</th><th scope="col">谁来选</th><th scope="col">适用于</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="choosing-the-next-step/fixed-order-calls.zh.html">固定顺序调用</a></th><td>Python 按既定顺序调用子函数</td><td>顺序事先已知：起草、评审、修改</td></tr>
+<tr><th scope="row"><a href="choosing-the-next-step/tool-calling.zh.html">工具调用</a></th><td>模型每轮通过 Provider 原生工具调用选择，直到用文本回答</td><td>开放式工作：由模型决定调用什么、调用多少次</td></tr>
+<tr><th scope="row"><a href="choosing-the-next-step/next-step-decision.zh.html">下一步决策</a></th><td>模型从文本菜单选择：<code translate="no">decision.make(prompt, options)</code> 或 <code translate="no">agent(prompt, choices=...)</code>。选择直接解析成下一步结果。</td><td>路由和有限分支；选项可以是普通值；不依赖 Provider 工具调用</td></tr>
+</tbody>
+</table>
+<h2>参考</h2>
+<ul>
+<li><a href="../../reference/api/agent.zh.html">Agent、Context 与函数 API</a>：编写和校验约定</li>
+<li><a href="../../reference/api/runtime.zh.html"><code translate="no">Runtime.exec()</code></a>：参数和行为</li>
+<li><a href="../../reference/design/function/calling-unification.zh.html">函数调用设计</a>：内部实现，编写函数时不需要</li>
+<li><a href="https://arxiv.org/abs/2606.15874">LLM-as-Code: Agentic Programming for Agent Harness</a>：论文，已被 KDD 2026 AgenticSE workshop 接收</li>
+</ul>

@@ -1,0 +1,175 @@
+<title>Program model</title>
+<meta name="description" content="What a Program is, its two kinds, ProgramContext, plugins, exposure tiers, the user directory and the CLI.">
+<h1>Program model</h1>
+<p>Everything the Agent can use is a Program. A Program lists callable entries in <code translate="no">PROGRAM_ENTRIES</code> (optional <code translate="no">ENTRY_OPTIONS</code>); each becomes one tool in the shared registry. Unlisted plain functions are not recorded.</p>
+
+<h2 id="1-programs-and-their-directory">Directory</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Under openprogram/programs/</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools/</code></th><td>Shipped with the core; always given to the Agent</td></tr>
+<tr><th scope="row"><code translate="no">applications/</code></th><td>Enabled one by one; may carry a UI</td></tr>
+<tr><th scope="row"><code translate="no">_authoring/</code></th><td>What Program code imports: errors, JSON parsing, reports, tool helpers, provider registries, guides, prechecks, application client</td></tr>
+<tr><th scope="row"><code translate="no">_host/runtime.py</code></th><td><code translate="no">@function</code> and the shared registry</td></tr>
+<tr><th scope="row"><code translate="no">_host/context.py</code></th><td><code translate="no">ProgramContext</code></td></tr>
+<tr><th scope="row"><code translate="no">_host/services.py</code></th><td>Named services shared between Programs and plugins</td></tr>
+<tr><th scope="row"><code translate="no">_host/registry.py</code></th><td>Loads every Program, keeps its context</td></tr>
+<tr><th scope="row"><code translate="no">_host/packages.py</code></th><td>Python packages: entry registration, the user's packages</td></tr>
+<tr><th scope="row"><code translate="no">_host/sources.py</code></th><td>Harness catalogue, owner-recorded program sources</td></tr>
+<tr><th scope="row"><code translate="no">_host/check.py</code></th><td><code translate="no">openprogram programs check</code></td></tr>
+<tr><th scope="row"><code translate="no">_host/ui/</code></th><td>Application loader, catalog, UI, operation runtime</td></tr>
+</tbody>
+</table>
+
+<h2 id="2-two-kinds-tools-and-applications">Tools and applications</h2>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col"><code translate="no">tools/</code></th><th scope="col"><code translate="no">applications/</code></th></tr></thead>
+<tbody>
+<tr><th scope="row">Ships with</th><td>The core</td><td>The core, or installed</td></tr>
+<tr><th scope="row">Given to the Agent</th><td>Always</td><td>Only while enabled</td></tr>
+<tr><th scope="row">Disabled alone</th><td>No</td><td>Yes</td></tr>
+<tr><th scope="row">UI</th><td>None</td><td>May carry one, in an App window</td></tr>
+<tr><th scope="row"><code translate="no">setup(ctx)</code></th><td>No</td><td>Optional</td></tr>
+<tr><th scope="row">Entries</th><td>At least one. Resident, the cold ones deferred</td><td>May be none. Deferred, also while open in a window</td></tr>
+<tr><th scope="row">Belongs here when</th><td>The Agent loses a basic ability without it and it needs no screen</td><td>Everything else: browser, user workflows, installed applications, external harnesses</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">Location</th><th scope="col">Built-in</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools/interaction/ask_user.py</code></th><td><code translate="no">ask_user</code>: a running Program asks the user and waits</td></tr>
+<tr><th scope="row"><code translate="no">tools/planning/goal/</code></th><td>Chat Goals: <code translate="no">create_goal</code>, <code translate="no">get_goal</code>, <code translate="no">update_goal</code>, the <code translate="no">goal</code> Program</td></tr>
+<tr><th scope="row"><code translate="no">applications/browser/</code></th><td>No entries; service <code translate="no">browser</code> behind <code translate="no">computer_use_agent(target="browser")</code></td></tr>
+<tr><th scope="row"><code translate="no">applications/workflow_recording/</code></th><td>No entries; service <code translate="no">workflow_recording</code></td></tr>
+<tr><th scope="row"><code translate="no">applications/office_editor/</code></th><td>No entries; service <code translate="no">office_editor</code> behind the document window's Office routes</td></tr>
+<tr><th scope="row"><code translate="no">_authoring/</code></th><td><code translate="no">errors</code>, <code translate="no">json_parsing</code>, <code translate="no">reports</code>, imported as <code translate="no">openprogram.programs._authoring.&lt;module&gt;</code></td></tr>
+</tbody>
+</table>
+<p class="note">Most tools register with <code translate="no">@function</code> on importing <code translate="no">openprogram.programs.tools</code>. A tool package with <code translate="no">PROGRAM_ENTRIES</code> is named in <code translate="no">registry.TOOL_PROGRAMS</code> (only <code translate="no">goal</code>) and registers through its own context.</p>
+
+<details id="application-packages"><summary>Application packages</summary>
+<p>Either form, or both in one directory:</p>
+<ul>
+<li>Python: <code translate="no">__init__.py</code> with <code translate="no">PROGRAM_ENTRIES</code>, <code translate="no">ENTRY_OPTIONS</code>, optional <code translate="no">setup(ctx)</code>.</li>
+<li>Declarative: <code translate="no">application.json</code>, UI (<code translate="no">index.html</code> or <code translate="no">ui/</code>), optional <code translate="no">backend.py</code> whose operations the manifest declares.</li>
+</ul>
+<p><code translate="no">programs/_host/ui/loader.py</code> <code translate="no">mount(ctx, root)</code> mounts a declarative package, built in (manifest id is the directory name) or installed. It reads the manifest, digests the directory and registers:</p>
+<ul>
+<li>The UI, served from the application's own directory under that digest.</li>
+<li>Resource provider <code translate="no">application.&lt;id&gt;</code>.</li>
+<li>One entry per operation marked <code translate="no">agent: true</code>, named <code translate="no">&lt;id&gt;__&lt;operation&gt;</code>, other than <code translate="no">[A-Za-z0-9_-]</code> replaced by <code translate="no">_</code>. Takes <code translate="no">input</code> (and <code translate="no">project_id</code> if project-scoped), runs through the worker's application service, one process per operation with manifest capability checks, and returns the finished run. Deferred, needs approval, not in <code translate="no">DEFAULT_TOOLS</code>. <code translate="no">agent: false</code> gets no entry.</li>
+</ul>
+<p>Installed: recorded in <code translate="no">~/.openprogram/programs/catalog.json</code> by source directory, nothing copied. Loads in the worker at start, after install, enable and disable, and when the watcher sees a change. Disabling disposes the context; a changed source is disposed and reloaded with a new digest.</p>
+<p>Built in: a <code translate="no">builtin-application</code> row (<code translate="no">{"id": "browser", "enabled": false}</code>), read by <code translate="no">catalog.builtin_enabled</code>. <code translate="no">registry.sync_builtin_application</code> matches it on every load, so the setting holds in every process and across restarts; <code translate="no">PATCH /api/applications/&lt;id&gt;</code> applies it live. A re-enabled entry is the same tool with its toolsets and tier.</p>
+</details>
+
+<h2 id="3-programcontext">ProgramContext</h2>
+<p>The single registration interface; one per application package and plugin. Every registration records its undo; <code translate="no">ctx.dispose()</code> runs them newest first and restores the host. It writes into the registries the host already has.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Method</th><th scope="col">Registers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ctx.tool(fn)</code>, <code translate="no">ctx.tools_from(module)</code></th><td><code translate="no">PROGRAM_ENTRIES</code> as tools, owned by <code translate="no">ctx.owner</code></td></tr>
+<tr><th scope="row"><code translate="no">ctx.on</code>, <code translate="no">ctx.gate</code>, <code translate="no">ctx.transform</code></th><td>Event-bus subscriptions</td></tr>
+<tr><th scope="row"><code translate="no">ctx.context(name, build, ...)</code></th><td>Context section <code translate="no">&lt;owner&gt;:&lt;name&gt;</code>: system prompt (<code translate="no">L0</code>, <code translate="no">L1</code>) or one call's prompt (<code translate="no">L2</code>)</td></tr>
+<tr><th scope="row"><code translate="no">ctx.provide</code>, <code translate="no">ctx.service</code></th><td>Named service. The core uses <code translate="no">services.lookup(name)</code>, <code translate="no">None</code> without it</td></tr>
+<tr><th scope="row"><code translate="no">ctx.resource(provider)</code></th><td>Provider for the <code translate="no">resource</code> tool; <code translate="no">application.&lt;id&gt;</code> is reserved</td></tr>
+<tr><th scope="row"><code translate="no">ctx.command</code>, <code translate="no">ctx.skills</code>, <code translate="no">ctx.mcp_server</code>, <code translate="no">ctx.provider_root</code>, <code translate="no">ctx.api_provider</code></th><td>Slash commands, skill roots, MCP servers, provider directories, model wire implementations</td></tr>
+<tr><th scope="row"><code translate="no">ctx.effect(dispose)</code></th><td>Anything else, with the given undo</td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>def setup(ctx):
+    @ctx.tool
+    def word_count(text: str) -> int:
+        '''Count the words in a text.'''
+        return len(text.split())
+
+    ctx.on("tool.after", lambda event: ctx.log.info(event.payload["tool"]))</code></pre>
+<details><summary>Owners and reload</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Owner (<code translate="no">_program_owner</code>)</th><th scope="col">For</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tool:&lt;name&gt;</code></th><td>Tool package in <code translate="no">TOOL_PROGRAMS</code></td></tr>
+<tr><th scope="row"><code translate="no">application:&lt;name&gt;</code></th><td>Built-in application</td></tr>
+<tr><th scope="row">Package name</th><td>User Program</td></tr>
+<tr><th scope="row"><code translate="no">external:&lt;package&gt;</code></th><td>External harness</td></tr>
+<tr><th scope="row"><code translate="no">plugin:&lt;name&gt;</code></th><td>Plugin</td></tr>
+</tbody>
+</table>
+<p>Every owner other than <code translate="no">tool:</code> and <code translate="no">plugin:</code> is an application; entries registered through its context start deferred.</p>
+<p>The registry keeps owner → context. Loading again reuses it and records nothing twice. Unloading or hot reload (<code translate="no">programs/_host/watcher.py</code>) calls <code translate="no">dispose_program(owner)</code>; a reload registers through a fresh context.</p>
+</details>
+
+<h2 id="4-plugins">Plugins</h2>
+<p>Only a declarative package in the Claude Code, Codex, OpenCode or Hermes format: skills, slash commands, agents, hooks, MCP servers and provider directories named by a manifest. <code translate="no">plugins/manifest.py</code> reads them and mounts through a context owned by <code translate="no">plugin:&lt;name&gt;</code>. Hooks are shell commands subscribed through <code translate="no">ctx.gate</code> and <code translate="no">ctx.on</code>. No plugin code runs in the worker.</p>
+<p>A manifest naming code (<code translate="no">python</code>, <code translate="no">module</code>, <code translate="no">setup</code>, <code translate="no">main</code>, <code translate="no">tools</code>, <code translate="no">client</code>, <code translate="no">web</code>, <code translate="no">sidebar</code>, a <code translate="no">module:name</code> hook mapping, a Hermes <code translate="no">__init__.py</code>) is refused at install and load: package it as an application with <code translate="no">openprogram programs install &lt;dir&gt;</code> and <code translate="no">application.json</code>. <a href="../integrations/plugin-runtime.html">Plugin runtime</a></p>
+
+<h2 id="5-exposure-tiers">Exposure tiers</h2>
+<table class="stack">
+<thead><tr><th scope="col">Tier</th><th scope="col">The model sees</th><th scope="col">Assigned to</th></tr></thead>
+<tbody>
+<tr><th scope="row">resident</th><td>Schema in every tools array</td><td>Tools in <code translate="no">RESIDENT_TOOLS</code>: the default set, which holds the loader <code translate="no">tool_search</code>, minus cold large-schema members, plus <code translate="no">read_conversation</code></td></tr>
+<tr><th scope="row">deferred</th><td>Name only; <code translate="no">tool_search</code> loads the schema</td><td>Other tools, tools registered <code translate="no">defer=True</code>, and application entries (<code translate="no">ProgramContext._adopt_tools</code>): built-in, installed, external harnesses, user packages</td></tr>
+<tr><th scope="row">hidden</th><td>Nothing; Python only</td><td><code translate="no">expose=False</code></td></tr>
+</tbody>
+</table>
+<p class="note">Kept as <code translate="no">_tier</code>, set with <code translate="no">set_tier</code> (<code translate="no">programs._host.runtime.Tier</code>). Approval (<code translate="no">requires_approval</code>, possibly a function of the arguments) is independent: a deferred entry can need approval, and a resident one can run without it. <code translate="no">_defer</code> mirrors the tier for readers that price and persist the tools array. <code translate="no">openprogram programs list</code> and <code translate="no">/api/plugins/inspect</code> show tiers.</p>
+<details><summary>Open in a window</summary>
+<p>The signal is the session's application bindings (<code translate="no">programs/_host/ui/bindings.py</code>, table <code translate="no">resource_bindings</code>). An <code translate="no">open</code> naming the session binds an instance: the App's window through <code translate="no">POST /api/applications/&lt;id&gt;/open</code> with <code translate="no">session_id</code>, or the Agent's call through <code translate="no">application.&lt;id&gt;</code>. <code translate="no">release</code> or <code translate="no">POST /api/applications/&lt;id&gt;/close</code> removes it.</p>
+<p>Each turn <code translate="no">TurnBindings</code> reads <code translate="no">open_application_ids(session_id)</code> and installs it (<code translate="no">_runtime.install_open_applications</code>). Opening loads nothing: the catalog line of an open application says so and ends with <code translate="no">activation_note</code>, and the model loads its tools by name (<a href="deferred-tools.html">Deferred tools</a>).</p>
+<p><code translate="no">split_tools_for_dispatch</code> and <code translate="no">tool_search</code> read <code translate="no">resident_now</code>: a resident entry or a deferred entry loaded with <code translate="no">tool_search</code> enters the tools array. The registered tier never changes; the copy for one request is <code translate="no">as_resident</code>.</p>
+</details>
+
+<h2 id="6-user-directory">User directory</h2>
+<p>One per profile, resolved by <code translate="no">openprogram/state/program_directory.py</code> without importing the registry. Named profiles use <code translate="no">~/.openprogram-&lt;profile&gt;/programs/</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Under ~/.openprogram/programs/</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">&lt;name&gt;/</code></th><td>Program source: Python package, application directory, or both. Names starting with <code translate="no">.</code> or <code translate="no">_</code>, symlinks and files are not scanned</td></tr>
+<tr><th scope="row"><code translate="no">catalog.json</code></th><td>Applications by source directory, with settings. Sources elsewhere (such as <code translate="no">examples/applications/</code>) keep <code translate="no">enabled</code>, <code translate="no">hidden</code>, <code translate="no">display_title</code></td></tr>
+<tr><th scope="row"><code translate="no">.runtime/</code></th><td><code translate="no">data/</code>, <code translate="no">runs/</code>, <code translate="no">environments/</code>, <code translate="no">staging/</code>, <code translate="no">state.sqlite</code>, <code translate="no">versions/</code> (read only when an application's source is gone)</td></tr>
+<tr><th scope="row"><code translate="no">.removed/</code></th><td>Set aside by <code translate="no">openprogram programs uninstall</code></td></tr>
+</tbody>
+</table>
+<p class="note">Files under <code translate="no">.runtime/</code> and <code translate="no">.removed/</code> are not source: role calls from them carry no call site.</p>
+<details><summary>How each kind loads</summary>
+<ul>
+<li><strong>Package</strong>: <code translate="no">_host/packages.py</code>, under its directory name (a Python identifier shadowing no module). Its own Git repository; only a clean, committed checkout loads, so a passing <code translate="no">openprogram programs check</code> makes a change callable. Uncommitted edits keep serving the last loaded version.</li>
+<li><strong>Application</strong>: <code translate="no">loader.mount</code> in the worker. A directory without a catalog row is recorded on the next <code translate="no">loader.sync</code> (<code translate="no">catalog.adopt_user_applications</code>), unless it needs trust (a Python backend or <code translate="no">files.project.write</code>): that waits for <code translate="no">openprogram programs install &lt;dir&gt; --trust</code>. An uninstalled row is never re-recorded.</li>
+<li><strong>Harness clone</strong> (a repository with <code translate="no">&lt;package&gt;/agentics/__init__.py</code>) installed from git: recorded in <code translate="no">program-sources.json</code>, owned by <code translate="no">external:&lt;package&gt;</code>.</li>
+</ul>
+<p>One scan (<code translate="no">program_directory.program_dirs</code>) serves both loaders. The watcher fingerprints the top level, the files and Git state of every package and the catalog with each enabled application's source; a change re-runs discovery.</p>
+</details>
+<details><summary>Migration from the older layout</summary>
+<p><code translate="no">program_directory.migrate_user_directory</code> runs at worker start, before anything loads, for that profile:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">From</th><th scope="col">To</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">workflows/&lt;entry&gt;</code></th><td><code translate="no">programs/&lt;entry&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">applications/catalog.json</code> and lock</th><td><code translate="no">programs/</code></td></tr>
+<tr><th scope="row">Rest of <code translate="no">applications/</code></th><td><code translate="no">programs/.runtime/</code></td></tr>
+<tr><th scope="row">Clones under <code translate="no" data-claim="example">openprogram/programs/packages/</code> or <code translate="no">applications/</code> (running package, or checkout recorded as <code translate="no">catalog_root</code>)</th><td><code translate="no">programs/&lt;name&gt;</code>, rewriting its <code translate="no">program-sources.json</code> and <code translate="no">catalog.json</code> rows</td></tr>
+</tbody>
+</table>
+<p>Renamed, never copied. An item whose destination exists stays and is logged. Emptied directories are removed; catalog rows pointing into them are rewritten. Each move logs one line; a second start does nothing. No settings key names either directory.</p>
+</details>
+
+<h2 id="7-cli">CLI</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">openprogram programs</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">list [--json]</code></th><td>Every Program: kind, owner, load state, directory, enabled, entries and tiers</td></tr>
+<tr><th scope="row"><code translate="no">run NAME [--arg k=v]</code></th><td>Calls an entry in this process</td></tr>
+<tr><th scope="row"><code translate="no">run APP OPERATION [--input JSON] [--project ID] [--request-key KEY]</code></th><td>Starts an Agent-visible operation in the worker; the key makes a retried start safe</td></tr>
+<tr><th scope="row"><code translate="no">status RUN_ID</code>, <code translate="no">cancel RUN_ID</code></th><td>Inspect or cancel an operation run</td></tr>
+<tr><th scope="row"><code translate="no">check DIRECTORY [-m MSG] [--json]</code></th><td>Package: validates, tests in the OS sandbox, commits. Application: validates</td></tr>
+<tr><th scope="row"><code translate="no">install SOURCE [--upgrade] [--replace] [--trust]</code></th><td>Records a local application directory; clones a local package repository, git URL or <code translate="no">owner/repo</code> into <code translate="no">~/.openprogram/programs/&lt;name&gt;</code></td></tr>
+<tr><th scope="row"><code translate="no">uninstall NAME</code></th><td>Unregisters an application (data kept), or moves a directory into <code translate="no">.removed/</code></td></tr>
+<tr><th scope="row"><code translate="no">enable ID</code>, <code translate="no">disable ID</code></th><td>Loads or removes an application's UI, resource, services and entries; a tool is refused</td></tr>
+</tbody>
+</table>
+<p class="note">State-changing application verbs go through the owner API (<code translate="no">/api/applications/*</code>); <code translate="no">list</code> and <code translate="no">check</code> need no worker. The REPL's <code translate="no">/programs</code> lists the same rows. Code: <code translate="no">openprogram/interfaces/cli/commands/programs.py</code>.</p>
+
+<h2>Implementation status</h2>
+<p>Everything above is implemented. The browser core reaches <code translate="no">browser</code> only through the service and runs without it (<a href="../integrations/computer-and-browser-use.html#the-browser-application">browser application</a>). Applications gained capability <code translate="no">files.project.write</code>. Tool names, toolsets and options are unchanged, and the Programs page keeps <code translate="no">workflow/&lt;name&gt;</code> explorer paths, used by the Web app with the owner API's <code translate="no">/api/applications/*</code> routes. User packages import reports from <code translate="no">openprogram.programs._authoring.reports</code>.</p>
+<p>Removed: <code translate="no">programs/workflow/</code> and its import path; <code translate="no">agent_browser</code>, <code translate="no">browser_agent</code>, <code translate="no">playwright_browser</code>, CLI <code translate="no">/browser</code>; <code translate="no" data-claim="invalid">openprogram workflows</code>, <code translate="no" data-claim="invalid">openprogram apps</code>, <code translate="no">programs apps</code>, <code translate="no">programs available</code>, <code translate="no">gui</code> and <code translate="no">all</code> install selectors; pip as a plugin source; plugin Web modules, pages and sidebar rows.</p>
+<p class="next"><a href="calling-unification.html">Function calling</a></p>

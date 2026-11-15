@@ -1,0 +1,221 @@
+/** Attachment marker protocol plus desktop attachment envelope construction. */
+
+export interface LocalFilePathBridge {
+  getPathForFile?(file: File): string;
+}
+
+interface PendingImageForEnvelope {
+  order?: number;
+  sourcePath?: string;
+  sizeBytes: number;
+  attachment: {
+    type: "image" | "document";
+    data: string;
+    media_type: string;
+    filename?: string;
+  };
+}
+
+interface PendingDocForEnvelope {
+  order?: number;
+  filename: string;
+  ext: string;
+  sourcePath?: string;
+  dataB64?: string | null;
+  directoryListing?: string;
+  mediaType?: string;
+  sizeBytes: number;
+}
+
+export interface ExtractedAttachmentMention {
+  raw?: string;
+  filename: string;
+  ext: string;
+  kb: string;
+  count: string;
+  path: string;
+  previewPath: string;
+}
+
+const MARKER_UNSAFE = /[\[\]()]+/g;
+
+export function safeMarkerText(value: string): string {
+  return (value || "").trim().replace(MARKER_UNSAFE, "_") || "file";
+}
+
+export function localSourcePath(
+  file: File,
+  bridge: LocalFilePathBridge | null,
+): string | undefined {
+  try {
+    const path = bridge?.getPathForFile?.(file);
+    return path === "" || path === undefined ? undefined : path;
+  } catch {
+    return undefined;
+  }
+}
+
+export function localAttachmentMention(
+  filename: string,
+  extension: string,
+  sizeBytes: number,
+  sourcePath: string,
+): string {
+  const safeName = safeMarkerText(filename);
+  const safeExtension = safeMarkerText(extension || "file");
+  const meta = `${safeExtension}, ${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+  return `[attachment: ${safeName} (${meta}) @json ${JSON.stringify(sourcePath)}]`;
+}
+
+export const JSON_ATTACHED_MENTION =
+  /\[attach(?:ed|ment):\s*([^()\[\]]+?)\s*\(([^,)]+),\s*([\d.]+)\s*KB(?:,\s*([^)]+))?\)\s*@json\s*("(?:\\.|[^"\\])*")(?:\s*@previewjson\s*("(?:\\.|[^"\\])*"))?\]/g;
+// Model-only first-level listing that follows a folder marker. Each entry is a
+// JSON string; the two bare lines are the empty and truncated notes.
+const FOLDER_LISTING =
+  /\n?First-level directory listing for "(?:\\.|[^"\\])*":(?:\n(?:"(?:\\.|[^"\\])*"|\(empty folder\)|… \(first level truncated\)))+/g;
+// The server's own lexicon (``state/attachments.py``), name class included:
+// a reply's markers are checked there, so nothing it would not match may
+// turn into a card here.
+const LEGACY_ATTACHED_MENTION =
+  /\[attach(?:ed|ment):\s*([^()\[\]]+?)\s*\(([^,)]+),\s*([\d.]+)\s*KB(?:,\s*([^)]+))?\)(?:\s*@(?!json\s)\s*([^\]]+))?\]/g;
+
+export function extractAttachmentMentions(content: string, includeRaw = false): {
+  mentions: ExtractedAttachmentMention[];
+  text: string;
+} {
+  const found: Array<{
+    start: number;
+    end: number;
+    mention: ExtractedAttachmentMention;
+  }> = [];
+  for (const match of content.matchAll(JSON_ATTACHED_MENTION)) {
+    let path = "";
+    let previewPath = "";
+    try {
+      const decoded: unknown = JSON.parse(match[5] || '""');
+      if (typeof decoded === "string") path = decoded;
+      const decodedPreview: unknown = JSON.parse(match[6] || '""');
+      if (typeof decodedPreview === "string") previewPath = decodedPreview;
+    } catch {
+      continue;
+    }
+    found.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      mention: {
+        ...(includeRaw ? { raw: match[0] } : {}),
+        filename: match[1].trim() || "file",
+        ext: match[2].trim(),
+        kb: match[3],
+        count: (match[4] || "").trim(),
+        path,
+        previewPath,
+      },
+    });
+  }
+  for (const match of content.matchAll(LEGACY_ATTACHED_MENTION)) {
+    found.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      mention: {
+        ...(includeRaw ? { raw: match[0] } : {}),
+        filename: match[1].trim() || "file",
+        ext: match[2].trim(),
+        kb: match[3],
+        count: (match[4] || "").trim(),
+        path: (match[5] || "").trim(),
+        previewPath: "",
+      },
+    });
+  }
+  found.sort((left, right) => left.start - right.start);
+  // The listing belongs to its folder chip: hidden from the prose, and kept in
+  // the chip's raw marker so an edited message still sends it.
+  const removed: Array<{ start: number; end: number }> = found.map(({ start, end }) => ({ start, end }));
+  for (const match of content.matchAll(FOLDER_LISTING)) {
+    const end = match.index + match[0].length;
+    const owner = found.find((item) => item.end === match.index);
+    if (owner) {
+      owner.end = end;
+      removed[found.indexOf(owner)].end = end;
+      if (includeRaw) owner.mention.raw = content.slice(owner.start, end);
+    } else {
+      removed.push({ start: match.index, end });
+    }
+  }
+  removed.sort((left, right) => left.start - right.start);
+  let text = content;
+  for (const item of [...removed].reverse()) {
+    text = text.slice(0, item.start) + text.slice(item.end);
+  }
+  return { mentions: found.map((item) => item.mention), text };
+}
+
+export function buildAttachmentEnvelope(
+  pendingImages: PendingImageForEnvelope[],
+  pendingDocs: PendingDocForEnvelope[],
+) {
+  const mentions: string[] = [];
+  const groups: { order: number; text: string[] }[] = [];
+  const imagesPayload = pendingImages.map((image, index) => {
+    const start = mentions.length;
+    const payload = {
+      ...image.attachment,
+      ...(image.sourcePath ? { source_path: image.sourcePath } : {}),
+    };
+    if (image.sourcePath) {
+      const filename = image.attachment.filename || "image";
+      const dot = filename.lastIndexOf(".");
+      const extension = dot > 0
+        ? filename.slice(dot + 1).toLowerCase()
+        : image.attachment.media_type.split("/").pop() || "image";
+      mentions.push(localAttachmentMention(
+        filename,
+        extension,
+        image.sizeBytes,
+        image.sourcePath,
+      ));
+    }
+    if (!image.sourcePath) {
+      const filename = image.attachment.filename || `image-${index + 1}.${image.attachment.media_type.split("/").pop() || "png"}`;
+      const ext = filename.includes(".") ? filename.split(".").pop()! : "image";
+      mentions.push(`[attachment: ${safeMarkerText(filename)} (${safeMarkerText(ext)}, ${Math.max(1, Math.round(image.sizeBytes / 1024))} KB)]`);
+    }
+    groups.push({ order: image.order ?? index, text: mentions.slice(start) });
+    return payload;
+  });
+  const docsPayload: Array<{
+    type: "document";
+    data: string;
+    media_type: string;
+    filename: string;
+    source_path?: string;
+  }> = [];
+  for (const [index, doc] of pendingDocs.entries()) {
+    const start = mentions.length;
+    const safeName = safeMarkerText(doc.filename);
+    const safeExt = safeMarkerText(doc.ext || "file");
+    const meta = `${safeExt}, ${Math.max(1, Math.round(doc.sizeBytes / 1024))} KB`;
+    mentions.push(
+      doc.sourcePath
+        ? localAttachmentMention(doc.filename, doc.ext, doc.sizeBytes, doc.sourcePath)
+        : typeof doc.dataB64 === "string"
+          ? `[attachment: ${safeName} (${meta})]`
+          : `[attachment: ${safeName} (${meta}, too large — not sent)]`,
+    );
+    if (doc.ext === "folder" && doc.directoryListing) {
+      mentions.push(`First-level directory listing for ${JSON.stringify(doc.sourcePath)}:\n${doc.directoryListing}`);
+    }
+    if (!doc.sourcePath && typeof doc.dataB64 === "string") {
+      docsPayload.push({
+        type: "document",
+        data: doc.dataB64,
+        media_type: doc.mediaType || "application/octet-stream",
+        filename: doc.filename,
+        ...(doc.sourcePath ? { source_path: doc.sourcePath } : {}),
+      });
+    }
+    groups.push({ order: doc.order ?? pendingImages.length + index, text: mentions.slice(start) });
+  }
+  return { mentions: groups.sort((a, b) => a.order - b.order).flatMap((group) => group.text), imagesPayload, docsPayload };
+}

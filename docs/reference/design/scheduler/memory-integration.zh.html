@@ -1,0 +1,119 @@
+<title>Memory 接口</title>
+<meta name="description" content="Scheduler 任务如何用稳定 ID 引用 Memory 记录，而不共享状态或事务。">
+<span id="commitments-migration"></span><span id="commitments-迁移"></span>
+<h1>Memory 接口</h1>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="Scheduler 负责时间、执行、状态和结果。Memory 在 Git 仓库中负责长期语义事实。由 workspace_id 和 memory_id 组成的 MemoryRef 连接两者：每次执行读取当前内容。提示词任务只通过现有 memory 工具写回。两者不共享状态文件和写事务。">
+  <defs><marker id="mi-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <rect class="tile" x="0" y="10" width="190" height="124" rx="8"/>
+  <text class="t-big" x="16" y="48">Scheduler</text>
+  <text class="t-soft" x="16" y="76">时间、执行</text>
+  <text class="t-soft" x="16" y="96">状态、结果</text>
+  <rect class="tile" x="490" y="10" width="190" height="124" rx="8"/>
+  <text class="t-big" x="506" y="48">Memory</text>
+  <text class="t-soft" x="506" y="76">长期事实</text>
+  <text class="t-soft" x="506" y="96">Git 事务</text>
+  <line class="ln" x1="478" y1="52" x2="202" y2="52" marker-end="url(#mi-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="340" y="42">MemoryRef 每次运行读取</text>
+  <line class="ln" x1="202" y1="104" x2="478" y2="104" marker-end="url(#mi-a)"/>
+  <text class="t-cmd mid notranslate" translate="no" x="340" y="94">memory_update，由 agent 调用</text>
+  <text class="t-soft mid" x="340" y="170">不共享状态文件和写事务</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Scheduler</strong><small>时间、执行、状态、结果</small></li>
+  <li class="via"><code translate="no">MemoryRef</code> 每次运行读取；<code translate="no">memory_update</code> 由 agent 调用</li>
+  <li class="flow-end"><strong>Memory</strong><small>长期事实、Git 事务</small></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">任务类型</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">一次性</th><td>带时区的 <code translate="no">run_at</code>，运行一次</td></tr>
+<tr><th scope="row">周期</th><td>五段 cron、用户签名、冻结的沙箱策略、非交互执行</td></tr>
+<tr><th scope="row">监控</th><td>按 cron 运行观察提示词；记录日志和状态，不保证跨渠道恰好一次通知</td></tr>
+</tbody>
+</table>
+<p class="note">不做：Memory writer 推断任务、Memory 页显示 Commitments、服务隐式改 Memory、跨存储事务、外部令牌权限模型、已删记录的占位或转发、第二个执行器、项目管理、依赖、子任务。</p>
+
+<h2>一次运行的过程</h2>
+<ol>
+<li>用户 Web 界面、Agent 工具或外部 API 创建任务。</li>
+<li>运行时签名提示词或命令、cwd、权限、沙箱和 MemoryRef。</li>
+<li>常驻 worker 每分钟检查一次性和 cron 计划。</li>
+<li>每次运行先按 <code translate="no">workspace_id + memory_id</code> 载入记忆的当前内容。</li>
+<li>在冻结的非交互边界内执行，并写 Scheduler 日志和状态。</li>
+</ol>
+<details>
+<summary>Tick 异常</summary>
+<ul>
+<li><code translate="no">@reboot</code> tick 或普通 tick 的 <code translate="no">Exception</code> 以警告和完整 traceback 写入 stderr；守护进程在下一分钟继续，不重放。初次失败后，之后的 tick 用 <code translate="no">reboot=False</code>。</li>
+<li>常驻 worker：stderr 进全局 worker 日志。前台 <code translate="no">scheduler-worker</code>：终端。两者都不是任务执行日志。</li>
+<li><code translate="no">run_once</code>、<code translate="no">KeyboardInterrupt</code>、<code translate="no">SystemExit</code> 等 <code translate="no">BaseException</code> 保持立即失败。</li>
+<li><code translate="no">scheduler-worker</code> 及其别名 <code translate="no">cron-worker</code>，连同 <code translate="no">--once</code> 和 <code translate="no">--list</code>，绕过为 Ink TUI 启动准备的 stdio 重定向。</li>
+</ul>
+</details>
+
+<h2>MemoryRef</h2>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">规则</th><th scope="col">失败</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">workspace_id</code></th><td>当前 Memory 工作区的稳定 ID</td><td>拒绝隐式跨工作区读取</td></tr>
+<tr><th scope="row"><code translate="no">memory_id</code></th><td>创建和更新时解析到唯一 Topic 块；每次执行重读内容</td><td>写入时：缺失、重复、跨工作区或格式错误被拒。执行前：任务失败，不回退旧快照。多个引用超限时，保留全部 ID 和 Topic 路径，只截断内容并标记。</td></tr>
+<tr><th scope="row">写权限</th><td>引用不授予权限。本地用户的提示词任务可用 <code translate="no">memory_search</code>、<code translate="no">memory_get</code>、<code translate="no">memory_update</code>，走现有引用检查、格式校验、派生视图和 Git 事务。</td><td>Memory 事务失败不影响 Scheduler 状态</td></tr>
+</tbody>
+</table>
+
+<h2>Agent 协议</h2>
+<table class="stack">
+<thead><tr><th scope="col">阶段</th><th scope="col">Agent</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">规划</th><td>只有值得长期保留的任务才 <code translate="no">memory_update.create_record</code>，再把返回的 <code translate="no">memory_id</code> 作为 <code translate="no">memory_refs</code> 附上</td><td>依次调用，非原子；任一失败都报告。临时提醒不需要 Memory。</td></tr>
+<tr><th scope="row">执行</th><td>读取原记录，再用 <code translate="no">update_record</code> 写状态、结果或下次需要的内容</td><td>其他工具按对话权限模式。只有非用户设置的计划会被拒绝 Memory 生命周期工具。</td></tr>
+<tr><th scope="row">收尾</th><td>标记完成或关闭；没有保留价值时 <code translate="no">delete_record</code>。交互式 agent 可禁用或删除任务。</td><td>旧 ID 返回 <code translate="no">NOT_FOUND</code>；仍引用它的任务下次失败，所以先移除任务。</td></tr>
+</tbody>
+</table>
+<p class="note">已提交、仓库仍在且历史未改写时，删除的内容可从可达的 Git 历史恢复。<code translate="no">memory_get</code> 只查 HEAD，所以 API 查不到旧 ID。</p>
+
+<h2>旧 Commitments</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">记录</th><th scope="col">变成</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">open</code>，有日期</th><td>当日本地 09:00 的已启用一次性任务</td></tr>
+<tr><th scope="row"><code translate="no">open</code>，无日期</th><td>暂停的一次性草稿，保留文字和来源，等用户设时间</td></tr>
+<tr><th scope="row">原文件</th><td><code translate="no">commitments.jsonl</code> 移到 Scheduler 迁移归档；重复启动不产生重复</td></tr>
+<tr><th scope="row">Memory writer</th><td>没有 <code translate="no">record_commitments</code> 工具和提示词。旧解析器只为迁移保留。</td></tr>
+</tbody>
+</table>
+
+<h2>Scheduler 页面</h2>
+<ul>
+<li>共用页头和主题 token；<code translate="no">ManagePageHeader</code>、<code translate="no">ManageRow</code>。搜索和主操作在 64px 顶栏同一行。</li>
+<li>页头下一排四个紧凑筛选，没有侧栏；窄时换行。任务行保留计划、状态和操作，按可见顺序编号。</li>
+<li>空状态：介绍和创建任务居中；三张建议卡在最宽 960px 的居中网格里，窄时单列，每张有标题、计划、提示词和使用。</li>
+<li>创建和使用打开现有表单，不创建任务；Escape 返回。</li>
+</ul>
+
+<details>
+<summary>取舍</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">定时任务产品参考</th><td>独立页面、创建、搜索、一次性/周期/监控分类。不要重复大标题和大片留白。</td></tr>
+<tr><th scope="row">现有 cron</th><td>保留执行安全和 cron 兼容入口；改名 Scheduler，并入常驻 worker</td></tr>
+<tr><th scope="row">Commitments、heartbeat</th><td>不作为 Memory 类型；只保留迁移读取，没有标签页、状态字段或特殊 heartbeat</td></tr>
+<tr><th scope="row">自动双写</th><td>拒绝。由 agent 组合两个现有工具。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>验收</h2>
+<ul>
+<li>三个 Memory 工具能从 Scheduler 提示词 worker 执行，deny 和 ask 规则仍优先，脚本化运行更新 Topic 并产生 Memory Git 提交。</li>
+<li>回归覆盖初次和普通 tick、等待、超时睡眠、日志、CLI 入口和两种立即失败边界。</li>
+<li>容器宽 360、768、1440 px 无横向溢出；四个筛选都可达；加载、搜索和错误状态不变。</li>
+</ul>
+
+<h2>实现状态</h2>
+<p>已实现：内部 agent 生命周期、tick 隔离、页面布局。推迟：外部令牌权限模型。</p>

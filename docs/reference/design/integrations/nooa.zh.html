@@ -1,0 +1,227 @@
+<title>直接调用、Agent 类和自动 DAG 上下文</title>
+<meta name="description" content="agent()、Agent 类和 Context 如何共用一个执行核心，并自动管理 DAG 上下文。">
+<h1>直接调用、Agent 类和自动 DAG 上下文</h1>
+
+<table class="stack fixed" id="scope">
+<thead class="sr"><tr><th scope="col">名称</th><th scope="col">定义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Agent</code></th><td>可复用的模型配置，不拥有默认对话</td></tr>
+<tr><th scope="row"><code translate="no">Context</code></th><td>父级、命名内容、动态提供者、历史可见性。由框架构造，应用无需手建</td></tr>
+<tr><th scope="row">原样复用</th><td>Runtime、AgentSpec、工具策略、执行控制、Session DAG</td></tr>
+</tbody>
+</table>
+
+<h2 id="api">用法</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import agent
+answer = agent("Analyze this paper", model="configured-model")</code></pre>
+<p class="note">使用当前执行会话，没有时开一次独立执行。</p>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+bot = Agent(model="configured-model")
+first = bot("Investigate this topic")
+second = bot(first)</code></pre>
+<p class="note">复用配置，不复用历史：连续性由执行作用域决定，独立的顶层调用互不共享。</p>
+<pre translate="no" tabindex="0"><code>class Researcher(Agent):
+    model = "configured-model"
+    def research(self, question):
+        text = self.prepare(question)
+        return self(text)
+    def prepare(self, text):
+        return text.strip()
+result = Researcher().research("A topic")</code></pre>
+<p class="note">方法上不用装饰器。<code translate="no">research</code> 是入口，<code translate="no">prepare</code> 是不记录的辅助方法。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">入口</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent()</code>、<code translate="no">Agent.__call__</code></th><td>同步。两者委托同一个内部执行函数</td></tr>
+<tr><th scope="row"><code translate="no">await bot.arun(...)</code>、<code translate="no">await agent_async(...)</code></th><td>用于活动事件循环内的调用</td></tr>
+<tr><th scope="row">构造</th><td>只解析配置：不发模型请求，不建持久会话。首次执行时才解析会话</td></tr>
+<tr><th scope="row">全局状态</th><td>没有保存历史的进程级默认 Bot</td></tr>
+</tbody>
+</table>
+
+<h2 id="lifecycle">Context 生命周期</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">触发</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Program 或顶层入口</th><td>建立作用域并绑定 Context；继承环境会话和显式分支</td></tr>
+<tr><th scope="row">函数或方法入口</th><td>按祖先和可见性规则派生作用域，不复制历史</td></tr>
+<tr><th scope="row">每次模型请求前</th><td>解析 DAG 来源、实例内容、动态内容、调用覆盖；选择、去重、预算</td></tr>
+<tr><th scope="row">模型返回</th><td>更新执行状态，后续构造按规则可见</td></tr>
+<tr><th scope="row">返回、错误、取消</th><td>恢复父级。已完成的交互遵循 <code translate="no">expose</code> 和 <code translate="no">render_range</code>，子上下文不无条件合并</td></tr>
+<tr><th scope="row">顶层退出</th><td>解绑任务本地状态，关闭自有资源</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">关系</th><th scope="col">决定</th></tr></thead>
+<tbody>
+<tr><th scope="row">调用祖先</th><td>继承和可见性</td></tr>
+<tr><th scope="row">前驱</th><td>对话顺序</td></tr>
+<tr><th scope="row">每次 Agent 执行</th><td>拥有自己的 DAG。记录用户消息、模型请求、直接派发的工具；普通辅助函数不产生持久节点</td></tr>
+<tr><th scope="row">调用另一个 Agent</th><td>独立 DAG；父级保存结果和 <code translate="no">child_session_id</code></td></tr>
+<tr><th scope="row">权限、取消、文件检查点</th><td>留在发起执行，和图归属无关</td></tr>
+</tbody>
+</table>
+<p class="note">Context 是运行时构造对象；中间值不要求完整复制或持久化。会话持久化和 Trace 导出另行处理。</p>
+
+<h2 id="context">统一的 Context 模型</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">父级</th><td>子级继承当前 Context；退出作用域恢复父级</td></tr>
+<tr><th scope="row">内容</th><td>命名的指令和业务数据。子级可覆盖名字而不改父级。实例绑定就是这种内容，在调用派生 Context 时加入</td></tr>
+<tr><th scope="row">求值</th><td>Python 提供者接收当前 Context，在构造请求时运行。不求值表达式字符串</td></tr>
+<tr><th scope="row">可见性</th><td>Session DAG 规则按分支、调用作用域、<code translate="no">expose</code>、<code translate="no">render_range</code> 选择交互</td></tr>
+<pre translate="no" tabindex="0"><code>parent Context + Agent configuration + call content
+    → derive current Context
+    → evaluate named content and select visible DAG interactions
+    → apply existing budget and compaction
+    → Runtime.exec model request</code></pre>
+</tbody>
+</table>
+<ul>
+<li>历史选择和内容替换是两件事。文本相同不代表同一次交互；选中的 DAG 身份在实际请求时记录。</li>
+<li>没有第二个历史数据库或 provider 运行时。工具授权和历史可见性相互独立。</li>
+</ul>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">API</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">Context.current()</code></th><td>当前绑定</td></tr>
+<tr><th scope="row"><code translate="no">Context.derive()</code></th><td>子 Context</td></tr>
+<tr><th scope="row"><code translate="no">bind()</code></th><td>发布任务上下文和显式 writer，拒绝冲突的环境 writer，退出时恢复</td></tr>
+<tr><th scope="row"><code translate="no">Context(store=writer, head_id=None)</code></th><td>为重复调用绑定现有 <code translate="no">SessionNodeWriter</code>：把 NOOA 式实例事件生命周期变成显式绑定。<code translate="no">head_id</code> 选分支末端，默认会话 head。store 归调用方所有</td></tr>
+</tbody>
+</table>
+
+<h2 id="functions">普通函数捕获</h2>
+<pre translate="no" tabindex="0"><code>def research(question):
+    data = prepare(question)
+    return analyze(data)
+def prepare(question):
+    return question.strip()
+def analyze(data):
+    return agent(data)</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">代码</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">已注册的 Program 源码</th><td>托管加载器保留 Runtime 注入和入口适配；辅助函数用轻量作用域，不逐次持久化</td></tr>
+<tr><th scope="row">Agent 方法，包括 <code translate="no">_</code> 辅助方法</th><td>自动作用域；不追加 DAG 节点，也不成为工具。实例、静态、类方法遵循 Agent 归属</td></tr>
+<tr><th scope="row">宿主文件、依赖包、lambda、动态生成代码、无源码</th><td>不捕获。<code translate="no">agent()</code> 仍可用；Python 祖先不持久化</td></tr>
+<tr><th scope="row">全部</th><td>签名、返回值、异常、导入保持 Python 语义。入口注册和工具暴露保持显式。创建生成器不产生已完成的调用记录</td></tr>
+</tbody>
+</table>
+
+<h2 id="config">配置和权限</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">归属</th></tr></thead>
+<tbody>
+<tr><th scope="row">model、effort、instructions、tools</th><td>调用覆盖 → 实例 → 类默认 → 环境会话 → 产品默认。省略和显式空值不同</td></tr>
+<tr><th scope="row"><code translate="no">expose</code>、<code translate="no">render_range</code></th><td>沿用默认；由 <code translate="no">method_options</code> 或显式元数据设置</td></tr>
+<tr><th scope="row">工具可见性、审批</th><td>和 DAG 可见性分开。内层配置不能扩大外层权限</td></tr>
+<tr><th scope="row">AgentSpec、会话</th><td>保存的 Bot 复用 AgentSpec。Python 对象不产生侧栏 Bot 或日程</td></tr>
+</tbody>
+</table>
+<p class="note">默认构造需要模型交互和调用关系，不需要普通参数或局部变量。显式内容有界；<code translate="no">self</code> 用身份或类型表示；方法名按模块和类限定。调用记录不等于批准任意 Python 副作用，它们仍受沙箱约束。</p>
+
+<h2 id="concurrency">并发和失败</h2>
+<ul>
+<li>当前 Context、调用身份和生效配置按任务绑定，退出时恢复。继承不复制历史或可变分支配置。允许嵌套重入。</li>
+<li>共享 Agent 配置不代表共享历史。可变实例内容和共享会话需要定义同步规则。</li>
+<li>错误、超时、取消恢复父级并保留已完成交互。恢复依靠安全点和显式步骤，从不恢复任意 Python 栈。独立调用复用权限上下文和非交互审批规则。</li>
+<li>没有外层执行时，入口自行持有环境并在退出时释放。</li>
+<li>可恢复函数在调用和续跑间使用同一个持久节点 ID；provider 工具调用身份留在节点元数据里。</li>
+</ul>
+
+<h2 id="contract">实现契约</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置和方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">公开入口</th><td><code translate="no">Agent</code>、<code translate="no">Context</code>、<code translate="no">agent</code>、<code translate="no">agent_async</code></td></tr>
+<tr><th scope="row">Context</th><td><code translate="no">openprogram/runtime/context/model.py</code></td></tr>
+<tr><th scope="row">Agent</th><td><code translate="no">openprogram/runtime/agent/agent_class.py</code></td></tr>
+<tr><th scope="row"><code translate="no">CallScope</code></th><td><code translate="no">openprogram/runtime/agent/call_scope.py</code>。区分记录的操作和轻量函数，同时处理显式元数据和自动作用域</td></tr>
+<tr><th scope="row">历史选择</th><td><code translate="no">openprogram/runtime/agent/runtime/history.py</code></td></tr>
+<tr><th scope="row">托管加载</th><td><code translate="no">openprogram/programs/_host/source_loader.py</code>，<code translate="no">programs/_host/runtime.py</code> 的 <code translate="no">_registry</code></td></tr>
+<tr><th scope="row">内部调用状态</th><td><code translate="no">openprogram/runtime/agent/call_state.py</code></td></tr>
+<tr><th scope="row">请求</th><td><code translate="no">Runtime.exec</code>，现有 provider、授权、预算、压缩</td></tr>
+<tr><th scope="row">英文界面文字</th><td>ASD-STE100 句式，术语一致</td></tr>
+</tbody>
+</table>
+
+<h3 id="decorator-removal">没有函数装饰器</h3>
+<ul>
+<li>已移除的公开装饰器没有适配层，也没有替代品。<code translate="no">Agent.method_options</code> 保留输入元数据、Runtime 注入、注册和 schema、可用性、权限、可见性、重试、执行控制和显式步骤恢复。</li>
+<li>托管源码声明 <code translate="no">PROGRAM_ENTRIES</code> 和 <code translate="no">__agent_options__</code>。方法带 <code translate="no">_is_agent_method</code> 标记。已存储的节点 schema 和历史仍可读。</li>
+<li>第一方工作流、生成的程序、扫描器和分发器都用普通 Agent 类。</li>
+<li>Harness 包在各自仓库迁移，保留 <code translate="no">agentics</code> 路径；运行时不捆绑。六个本地发布的工作流已隔离迁移，这不算上游发布。</li>
+</ul>
+
+<details id="behavior-host">
+<summary>行为测试宿主和取消显示</summary>
+<ul>
+<li>宿主在 OS 沙箱之前初始化标准 SessionStore。运行器通过 Context 绑定 <code translate="no">SessionNodeWriter</code>，Agent 调用复用它。候选测试不能启动进程、写源码快照、读宿主密钥或联网。</li>
+<li>取消关闭规范执行；未决的外部副作用仍可查看。</li>
+<li>节点或存储不可用时，助手投影经持久 DAG outbox 重试。显示失败不会否定已生效的取消。</li>
+<li>取消暂停的续跑错误时，错误显示换成已取消，清除错误元数据，保留内容。</li>
+<li>资源释放观察者的失败对控制调用方可见。正常完成的 Job 保留带结果的投影所有者；在它提供结果和错误字段前，取消通知不发布其他终态 Job 行。</li>
+</ul>
+</details>
+
+<details id="acceptance">
+<summary>验收</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">场景</th><th scope="col">可观察结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">非模型父级</th><td>research → prepare、analyze → agent 作用域正确；模型输入、输出、失败可归属</td></tr>
+<tr><th scope="row">继承和求值</th><td>父级继承、实例块、每次请求刷新动态值、覆盖顺序、去重且保留不同的重复交互</td></tr>
+<tr><th scope="row">等价性</th><td>相同 DAG、分支、策略下新旧入口历史相同；在实际请求时记录出处</td></tr>
+<tr><th scope="row">会话生命周期</th><td>构造无副作用；无关任务中的同一实例相互隔离；同一任务中的不同 Agent 共享允许的上下文；现有会话需显式延续</td></tr>
+<tr><th scope="row">预算和压缩</th><td>沿用压缩并保留出处；摘要用量计量；失败不丢历史</td></tr>
+<tr><th scope="row">并发和资源</th><td>兄弟隔离、共享实例状态有显式策略、重入、恢复父级、只清理自有资源</td></tr>
+<tr><th scope="row">加载和身份</th><td>只捕获授权源码；递归和导入别名保留记录；同名方法不冲突；元数据不重复节点</td></tr>
+<tr><th scope="row">策略和显示</th><td>记录不暴露工具；副作用前拒绝；独立入口执行策略；默认 App 显示函数、模型、工具调用和终态</td></tr>
+</tbody>
+</table>
+<p class="note">还覆盖对话投影、Goal 生命周期、取消、恢复和随产品发布的 Program。记录保留 DAG 关系，不改变内容、归属或权限。检查只取最小受影响集合。</p>
+</details>
+
+<h2 id="reference">和 NOOA 的关系</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">领域</th><th scope="col">选择</th></tr></thead>
+<tbody>
+<tr><th scope="row">类和方法</th><td>采用类声明、普通调用、框架托管方法</td></tr>
+<tr><th scope="row">Context 建模</th><td>采用基于类的实例内容、动态解析、作用域覆盖；增加 DAG 来源。生效上下文归执行作用域</td></tr>
+<tr><th scope="row">历史过滤</th><td>NOOA 按 <code translate="no">call_id</code> 过滤并支持嵌套策略继承。OpenProgram 保留 DAG 分支和帧规则</td></tr>
+<tr><th scope="row">Trace 和模型上下文</th><td>NOOA 分离事件和 trace。OpenProgram 保持一个 DAG，分显示视图和输入视图</td></tr>
+<tr><th scope="row">不采用</th><td>逐函数手建上下文、进程级历史、整解释器追踪、第二个 provider 或事件数据库</td></tr>
+</tbody>
+</table>
+<p class="note">公开文档署名 NVIDIA-labs OO Agents 并引用其仓库和论文。复用源码时保留适用许可。</p>
+
+<h2 id="implementation">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">公开入口、共享作用域、托管源码、移除装饰器</th><td>已实现</td></tr>
+<tr><th scope="row">安装版 App</th><td>在默认 App 上单独验证，不以源码检查代替（<code translate="no">default</code> profile，端口 18100，<code translate="no">~/.openprogram</code>，<code translate="no">/Applications/OpenProgram.app</code>）</td></tr>
+<tr><th scope="row">NOOA Predict、CodeAct、类型化返回、持久 cell</th><td>以后单独做。不声称兼容上游 API 或达到基准结果</td></tr>
+</tbody>
+</table>
+
+<details id="sources">
+<summary>参考</summary>
+<ul>
+<li><a href="https://arxiv.org/abs/2607.20709">NVIDIA-labs OO Agents: Native Python Object-Oriented Agents</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/src/nooa/runtime/context_manager.py">NOOA ContextManager</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/src/nooa/runtime/context_builder.py">NOOA 上下文构造</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/docs/architecture.md">NOOA 执行架构</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/docs/concepts/prompts-and-context.md">NOOA 上下文生命周期</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/src/nooa/runtime/event_query.py">NOOA 事件选择</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/src/nooa/runtime/event_manager.py">NOOA 事件标记</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/docs/concepts/tracing.md">NOOA tracing</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/src/nooa/strategies/codeact_v2.py">NOOA CodeAct 参考</a></li>
+<li><a href="https://github.com/NVIDIA-NeMo/labs-OO-Agents/blob/main/LICENSE">NOOA 源码许可</a></li>
+<li><a href="https://github.com/danyuchn/asd-ste100-skill">ASD-STE100 skill</a></li>
+<li><a href="../runtime/execution/llm-and-agent.zh.html">OpenProgram 执行契约</a></li>
+<li><a href="../runtime/agent-configuration/agent-configuration-ui.zh.html">OpenProgram Agent 配置契约</a></li>
+</ul>
+</details>

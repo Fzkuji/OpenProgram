@@ -1,0 +1,197 @@
+<title>后台 Job 生命周期</title>
+<meta name="description" content="子 Agent 调用如何成为持久 Job：状态、worker 池、取消和结果返回。">
+<h1>后台 Job 生命周期</h1>
+
+<p>每个派生的子 Agent 都是 <code translate="no">openprogram/runtime/jobs/</code> 中的 Job，<code translate="no">job_id</code> 等于 <code translate="no">execution_id</code>。控制走<a href="control.zh.html">执行控制面</a>；Job 增加的是准入、worker 池和结果投递。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 190" role="img" aria-label="Job 从 pending 到 queued 再到 running，以 completed、cancelled 或 errored 结束。pending 和 queued 也可以不运行就以 cancelled 或 errored 结束。">
+  <defs><marker id="jb-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" translate="no" x="0" y="80">pending</text>
+  <text class="t-soft" x="0" y="104">记录已保存</text>
+  <line class="ln" x1="84" y1="73" x2="146" y2="73" marker-end="url(#jb-a)"/>
+  <text class="t-big" translate="no" x="158" y="80">queued</text>
+  <text class="t-soft" x="158" y="104">等待 worker</text>
+  <line class="ln" x1="236" y1="73" x2="298" y2="73" marker-end="url(#jb-a)"/>
+  <text class="t-big" translate="no" x="310" y="80">running</text>
+  <text class="t-soft" x="310" y="104">轮次进行中</text>
+  <line class="ln" x1="392" y1="66" x2="510" y2="32" marker-end="url(#jb-a)"/>
+  <line class="ln" x1="392" y1="73" x2="510" y2="73" marker-end="url(#jb-a)"/>
+  <line class="ln" x1="392" y1="80" x2="510" y2="114" marker-end="url(#jb-a)"/>
+  <rect class="tile" x="520" y="8" width="160" height="128" rx="8"/>
+  <text class="t-big" translate="no" x="536" y="38">completed</text>
+  <text class="t-big" translate="no" x="536" y="80">cancelled</text>
+  <text class="t-big" translate="no" x="536" y="122">errored</text>
+  <text class="t-soft" x="0" y="172">pending 和 queued 也可以不运行就结束为 cancelled 或 errored</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong><code translate="no">pending</code></strong><small>记录已保存</small></li>
+  <li><strong><code translate="no">queued</code></strong><small>等待 worker</small></li>
+  <li><strong><code translate="no">running</code></strong><small>轮次进行中</small></li>
+  <li class="flow-end"><strong><code translate="no">completed</code> · <code translate="no">cancelled</code> · <code translate="no">errored</code></strong><small>终态；pending 和 queued 也可直接结束为 cancelled 或 errored</small></li>
+</ol>
+</figure>
+
+<p class="note">终态不再变化，非法转换抛 <code translate="no">ValueError</code>。规范执行不镜像 running 转换，因此投影也可能 <code translate="no">pending → running</code>、<code translate="no">queued → completed</code>。</p>
+
+<h2 id="entry-points">入口</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agent(prompt, description, agent?, start_from="fresh", run_in_background=False, isolation?)</code></th><td>模型工具。前台返回结果块；后台返回执行 id。<code translate="no">send_message</code> 以 Job 投递给已有 Agent。</td></tr>
+<tr><th scope="row"><code translate="no">read_conversation(execution_id)</code></th><td>模型工具。不等待，返回 Job 的状态，结束后还返回回复。<code translate="no">job_output(job_id, block, timeout)</code> 仍为程序注册，对模型隐藏。</td></tr>
+<tr><th scope="row"><code translate="no">list_agents()</code></th><td>模型工具。在分支旁列出当前会话运行中或排队的 Job，最新在前，最多 20 个。<code translate="no">list_jobs()</code> 对模型隐藏。</td></tr>
+<tr><th scope="row"><code translate="no">/task</code>, <code translate="no">/task --async</code>, <code translate="no">/spawn</code></th><td>在聊天中输入。阻塞，或写入运行中占位后返回。</td></tr>
+<tr><th scope="row"><code translate="no">spawn_job</code>, <code translate="no">list_jobs</code>, <code translate="no">get_job</code> (WS)</th><td>创建和读取。回复：<code translate="no">spawn_job_result</code>、<code translate="no">jobs_list</code>、<code translate="no">job</code>。<code translate="no">list_jobs</code> 不带 <code translate="no">session_id</code> 表示所有会话。</td></tr>
+<tr><th scope="row"><code translate="no">execution.cancel</code> (WS)</th><td>取消；Job 动作不另设取消</td></tr>
+</tbody>
+</table>
+
+<p class="note">客户端跟随 <code translate="no">job_status</code> 广播。分支视图显示 Job 状态，没有单独的 Tasks 面板。</p>
+
+<h2 id="scenarios">场景</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">情形</th><th scope="col">运行时</th><th scope="col">结果如何返回</th><th scope="col">停止和失败</th></tr></thead>
+<tbody>
+<tr><th scope="row">单个前台调用</th><td>调用方阻塞；attach 卡直接到最终状态</td><td>回复作为工具结果</td><td>停止会话会取消子 Agent 和父轮次；返回部分输出</td></tr>
+<tr><th scope="row">单个后台调用</th><td>调用方继续；显示运行中卡片</td><td>以统一结果形状的通知轮次告知；<code translate="no">read_conversation</code> 可提前读取</td><td>从界面取消或 <code translate="no">close_agent</code>；用户停止会告知调用方</td></tr>
+<tr><th scope="row">多个后台调用</th><td>按池宽运行，其余 <code translate="no">queued</code>，先进先出</td><td>各自返回；一轮内同时结束的合并为一条通知</td><td>各有状态和错误；父 Agent 自行处理部分结果</td></tr>
+<tr><th scope="row">长任务被取消</th><td>占用槽位直到 worker 退出</td><td>部分输出</td><td>30 秒后升级</td></tr>
+</tbody>
+</table>
+
+<h2 id="pool">Worker 池</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">池</th><td><code translate="no">ThreadPoolExecutor</code>，与聊天运行相同的线程模型。<code translate="no">process_user_turn</code> 自己开事件循环，不会嵌套冲突。</td></tr>
+<tr><th scope="row">宽度</th><td><code translate="no">OPENPROGRAM_JOB_WORKERS</code>，默认 8</td></tr>
+<tr><th scope="row">准入</th><td>资源治理负责准入和限制，见<a href="../reliability/agent-resource-governance.html">资源分配</a></td></tr>
+<tr><th scope="row">每会话限制</th><td>无</td></tr>
+</tbody>
+</table>
+
+<h2 id="persistence">持久化和恢复</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">存储</th><td>每会话一个 <code translate="no">jobs.json</code>，<code translate="no">{"jobs": {id: Job}, "version": 1}</code>；每次写入是会话日志中的一行</td></tr>
+<tr><th scope="row">加锁</th><td>每会话一把锁：读、改、写</td></tr>
+<tr><th scope="row">worker 丢失</th><td>没有当前 attempt 或已接受命令的非终态 Job 变为 <code translate="no">errored</code>，<code translate="no">worker died before completion</code>。有规范 attempt 的按<a href="control.zh.html#restart-window">重启恢复</a>处理。</td></tr>
+<tr><th scope="row">通知</th><td>待发通知在 <code translate="no">&lt;caller-session-dir&gt;/notices.json</code>，重启不丢；入队前崩溃的情况见<a href="#handoffs">跨崩溃的交接</a></td></tr>
+</tbody>
+</table>
+
+<h2 id="handoffs">跨崩溃的交接</h2>
+
+<p>一个子 agent 请求在父 agent 和运行之间经过三次交接。每次交接先写下要做的事再动手，下一步是幂等的，Worker 的资源对账（启动时和每 5 秒）把死掉的进程留下的半截做完。共用部分在 <code translate="no">openprogram/runtime/jobs/handoff.py</code>。</p>
+
+<figure>
+<ol class="flow">
+  <li><strong>已准入</strong><small>Job 和它的意图已保存</small></li>
+  <li><strong>已交出</strong><small>inbox 条目或 attach 卡，然后发布</small></li>
+  <li><strong>已运行</strong><small>规范执行及其恢复</small></li>
+  <li class="flow-end"><strong>已告知父 agent</strong><small>工具结果或通知</small></li>
+</ol>
+</figure>
+
+<table class="stack">
+<thead><tr><th scope="col">窗口</th><th scope="col">先写下的意图</th><th scope="col">幂等的一步</th><th scope="col">下一个 Worker</th></tr></thead>
+<tbody>
+<tr><th scope="row">目标繁忙时的 <code translate="no">send_message</code>：已准入，未入队</th><td>inbox 条目作为 <code translate="no">deferred_inbox</code> 随 Job 一起在准入时保存</td><td><code translate="no">inbox.enqueue</code> 每个 <code translate="no">job_id</code> 只留一条</td><td>补回丢失的条目；还在的条目保持原样</td></tr>
+<tr><th scope="row">inbox 排空：已发布，条目未删除</th><td>准入行记录 Job 已离开延迟状态</td><td>再次投递已发布的 Job 直接返回它的 id</td><td>排空时删掉残留条目；Job 只运行一次</td></tr>
+<tr><th scope="row">spawn 已 held 准入，attach 卡或发布未完成</th><td><code translate="no">Job.submitter</code> 记下提交它的进程；<code translate="no">attach_pointer_id</code> 记下卡片</td><td>卡片节点不存在时才写</td><td>提交方进程不在后，补写缺失的卡片并发布 Job</td></tr>
+<tr><th scope="row">已写终态，通知未入队</th><td>终态写入把 <code translate="no">notice_pending</code> 设为写入它的进程</td><td><code translate="no">notices.queue</code> 每个 Job 只留一条</td><td>重放写入方已不在的标记，然后清除</td></tr>
+<tr><th scope="row">等待方已死的同步 spawn</th><td><code translate="no">Job.submitter</code> 就是等待方</td><td>同上</td><td>结束的 Job 用通知告诉父 agent，回复直接写在通知里，因为它的卡片不进上下文</td></tr>
+</tbody>
+</table>
+
+<p class="note"><code translate="no">agent</code> 调用中途被切断的父轮次，会把这次调用读作“已中断、结果未知”（<a href="control.zh.html#restart-window">重启恢复</a>）；attach 卡和之后的通知告诉它这个请求的去向。提交方仍在运行（本进程或别的进程）的 held Job 交给它自己处理。</p>
+
+<h3 id="handoffs-why">为什么这样设计</h3>
+<table class="stack">
+<thead><tr><th scope="col">主题</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">先写意图再动手</th><td>Exo 的 <code translate="no">beginTurn</code> 在执行器动手前先持久接受输入；Maka 在工具运行前提交 dispatch（T1），在发布结果前提交 outcome（T2）。两者都让记录做权威、动作只是结果。这里的那份记录就是 Job：下一步需要的东西都随它保存，恢复读一行即可，不用猜。</td></tr>
+<tr><th scope="row">按 Job id 幂等</th><td>Maka 的图调度预分配运行身份，已有运行就观察它而不是再启动一次；Codex 在子线程存在之前先发布 spawn 边。按 Job id 做的重放可以在每次对账时运行，而不会多出 inbox 条目、卡片、运行或通知，所以恢复不需要额外状态来记住自己做过没有。</td></tr>
+<tr><th scope="row">提交方是否还活着</th><td>held spawn 和同步等待的结果在提交方进程活着时归它所有；只有它死了才交给恢复。进程身份是 pid 加启动令牌，和执行租约已有的记录相同，复用的 pid 不会被当成原来的等待方。</td></tr>
+<tr><th scope="row">等待方死后的结果</th><td>Claude Code 和 Codex 的前台子 agent 结果随进程丢失；Maka 会重投 supervisor 唤醒，直到根运行完成。用后台 agent 已有的通知告诉父 agent，不新增机制，工作也不会丢或重做。</td></tr>
+<tr><th scope="row">运行请求而不是取消</th><td>请求已带着预算准入；丢掉它会让模型去猜，而被中断的调用已经提示结果未知。运行一次再报告，正是父 agent 要的结果。</td></tr>
+</tbody>
+</table>
+
+<h2 id="cancel">取消</h2>
+
+<ol>
+<li><code translate="no">JobRunner.cancel_execution</code> 持久化一条 <code translate="no">execution.cancel</code> 命令，并级联到子 Job。</li>
+<li>所属 worker 消费命令并设置 <code translate="no">cancel_event</code>，<code translate="no">process_user_turn</code> 把它桥接进 Agent 循环；provider 流在下一个分块停止。</li>
+<li>活跃子进程和 exec 运行时按确切执行 id 收到信号。Agent 方法在调用前钩子处检查。</li>
+<li><code translate="no">_CANCEL_ESCALATION_SECS</code>（30 秒）后 owner 的宽限结束。</li>
+</ol>
+
+<p class="note">工具自身的原子操作会先完成。已取消或出错的 Job 不能作为同一工作继续；重试就是新的派生。</p>
+
+<h2 id="attach">会话和 attach 卡</h2>
+
+<ul>
+<li>Job 只在一个会话中运行，即 <code translate="no">parent_session_id</code>，且不变。其他会话的调用方记为 <code translate="no">caller_session_id</code>，并有链接镜像用于可见性和所有权校验。</li>
+<li>输出落为该会话的分支；<code translate="no">context="clean"</code> 时是新的根。</li>
+<li>attach 节点（<code translate="no">function="attach"</code>）在准入后写入，状态 <code translate="no">running</code>，带 <code translate="no">job_id</code>。runner 在终态更新同一节点。跨会话卡片存于来源会话并指明目标。</li>
+<li>同步调用方在等待结束时也写这张卡片。每个写入方只把自己的字段合并进会话写锁内读到的卡片（<code translate="no">SessionStore.merge_node</code>），从不写回早先读到的副本。</li>
+<li>这个等待在本进程的 runner 把 Job 处理完（状态、卡片、通知）后才结束，而不是状态刚写入时，因此工具结果和卡片一致。</li>
+<li>上下文渲染跳过运行中的卡片。完成的卡片变成一条子 Agent 报告，含任务、最终回复和转录地址。</li>
+</ul>
+
+<details>
+<summary>Job 字段</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">身份</th><td><code translate="no">id</code>, <code translate="no">parent_session_id</code>, <code translate="no">caller_session_id</code>, <code translate="no">parent_job_id</code>, <code translate="no">parent_msg_id</code>, <code translate="no">caller_msg_id</code>, <code translate="no">agent_id</code></td></tr>
+<tr><th scope="row">工作</th><td><code translate="no">prompt</code>, <code translate="no">subject</code>, <code translate="no">description</code>, <code translate="no">label</code>, <code translate="no">context_mode</code> (<code translate="no">inherit</code>, <code translate="no">clean</code>), <code translate="no">wait</code>, <code translate="no">source</code>, <code translate="no">model_override</code>, <code translate="no">tools_override</code>, <code translate="no">thinking_effort</code></td></tr>
+<tr><th scope="row">时间</th><td><code translate="no">status</code>, <code translate="no">created_at</code>, <code translate="no">queued_at</code>, <code translate="no">started_at</code>, <code translate="no">completed_at</code>, <code translate="no">cancel_requested_at</code></td></tr>
+<tr><th scope="row">结果</th><td><code translate="no">head_id</code>, <code translate="no">result_text</code>, <code translate="no">error</code>, <code translate="no">reason_code</code>, <code translate="no">attempt</code>, <code translate="no">attach_pointer_id</code>, <code translate="no">target_branch_head_id</code></td></tr>
+<tr><th scope="row">协作</th><td><code translate="no">chain_messages</code>, <code translate="no">chain_generations</code>, <code translate="no">caller_chain_generations</code>, <code translate="no">archive_when_done</code>, <code translate="no">deferred_inbox</code>, <code translate="no">relation</code>, <code translate="no">worktree_id</code></td></tr>
+<tr><th scope="row">交接</th><td><code translate="no">submitter</code>, <code translate="no">notice_pending</code></td></tr>
+<tr><th scope="row">权限和预算</th><td><code translate="no">speaker_*</code>, <code translate="no">principal_id</code>, <code translate="no">authority_tier</code>, <code translate="no">admission_id</code>, <code translate="no">budget_scope_id</code>, <code translate="no">effective_limits</code>, <code translate="no">project_id</code></td></tr>
+</tbody>
+</table>
+<p class="note">取消事件等运行时对象放在 runner 的映射里，不进记录。<code translate="no">JobRunner</code> 可注入 governor 和 driver 工厂，因此状态机可脱离真实模型运行。</p>
+</details>
+
+<h2 id="invariants">不变量</h2>
+
+<ul>
+<li>每个 Job 恰好以一个终态结束。</li>
+<li>状态只前进。</li>
+<li>attach 卡随记录变化。</li>
+<li><code translate="no">parent_session_id</code> 不可变。</li>
+<li>runner 的映射由锁保护。</li>
+</ul>
+
+<h2 id="out-of-scope">范围之外</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">不提供</th></tr></thead>
+<tbody>
+<tr><th scope="row">调度</th><td>跨进程或多主机 worker；优先级和抢占；自动重试（由 Agent 决定）</td></tr>
+<tr><th scope="row">Job 关系</th><td>一个 Job 多个目标会话；Job 依赖图；父 Agent 中途订阅子 Agent 输出</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>记录和状态机、持久存储、worker 准入和执行、查询和等待、<code translate="no">JobRunner</code> 取消、WS 创建/列表/读取和状态、完成通知、跨崩溃的交接及在每个窗口杀进程的测试</td></tr>
+<tr><th scope="row">部分</th><td>所有恢复路径上的 attach 卡生命周期；token、成本、运行时间和空闲限制的资源治理；完整的派生和并发取消测试矩阵</td></tr>
+<tr><th scope="row">未完成</th><td>恢复补写的卡片不知道原来的 <code translate="no">tool_call_id</code>，因此不会和被中断的工具调用配对</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="control.zh.html">活动与控制</a></p>

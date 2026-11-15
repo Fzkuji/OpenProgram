@@ -1,16 +1,11 @@
-/* QuestionMode / FormMode —— 输入框里的"问用户"形态。视觉与 fn-form
-   （函数参数表单）完全对齐：同一套主题变量、同一套字段/选项/按钮几何，
-   这样三种输入框变形（fn-form / question / form）读起来是一个家族。
-   参考 ../fn-form/fn-form.module.css。 */
-
-/* 顶部条 = fn-form 的 .header：锁定与底部发送行同高、带下分割线。 */
+/* Current-question flow using the existing theme and typography. */
 .header {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 12px;
+  padding: 12px 16px;
   min-height: 48px;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
   box-sizing: border-box;
   flex-shrink: 0;
 }
@@ -23,30 +18,77 @@
   color: var(--text-primary);
 }
 
-/* 主体 = fn-form 的 .body：纵向 gap、与发送行间的下分割线。左右 12px 与
-   header / 函数表单内边距对齐。 */
 .body {
   display: flex;
   flex-direction: column;
-  /* 与 fn-form 的 .body 完全统一：问题/选项/输入框 是并列组件，
-     gap 12px；「上一题/下一题」就是 body 的最后一行（.actions）。 */
   gap: 12px;
-  padding: 12px;
-  box-sizing: border-box;
-  /* Wrapper height is content-sized (capped by availableComposerHeight).
-     flex + min-height:0 lets this pane take the leftover and scroll
-     when the card hits that cap. */
-  flex: 1 1 auto;
+  padding: 0 16px 16px;
+  overflow-y: auto;
   min-height: 0;
-  overflow: auto;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
-.prompt {
-  font-weight: 600;
+.questionList {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.questionItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.groupPrompt {
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.summaryPrompt,
+.summaryAnswer {
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   line-height: 1.5;
-  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.summaryPrompt { color: var(--text-secondary); }
+.summaryAnswer { color: var(--text-primary); }
+
+.submissionStatus {
+  padding: 12px 16px 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.prompt {
+  font-weight: 400;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .detail {
@@ -58,80 +100,20 @@
   max-height: 160px;
   overflow: auto;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-primary);
   border: 1px solid var(--border);
 }
 
-/* 选项 = fn-form 的 .chip / .options（圆角矩形、tinted-fill、无边框）。 */
+/* Choices remain readable on separate rows, including long labels. */
 .options {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
   gap: 6px;
 }
 
-.opt {
-  padding: 0 12px;
-  height: 28px;
-  line-height: 1.5;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  border: none;
-  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-  cursor: pointer;
-  transition: background 180ms ease, color 180ms ease;
-  user-select: none;
-  box-sizing: border-box;
-}
-
-.opt:hover {
-  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
-  color: var(--text-primary);
-}
-
-.optPicked {
-  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
-  color: var(--accent-blue);
-}
-
-.optPicked:hover {
-  background: color-mix(in srgb, var(--accent-blue) 26%, transparent);
-}
-
-/* 单行输入 = fn-form 的 .input（bg-primary + border + 32px + 8 radius）。 */
-.input {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0 12px;
-  height: 32px;
-  line-height: 30px;
-  color: var(--text-bright);
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-  outline: none;
-  transition: border-color 180ms ease;
-}
-
-.input:focus {
-  border-color: var(--accent-blue);
-}
-
-.input::placeholder {
-  color: var(--text-muted);
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-}
-
-/* 操作行 —— body 的最后一行：单步 [发送]；多步 [‹上一题, 下一题›]，
-   靠右。 */
+/* One submit action sends the complete set of answers. */
 .actions {
   display: flex;
   align-items: center;
@@ -149,53 +131,7 @@
   margin-left: auto;
 }
 
-/* 次按钮（上一题）：中性 tint 圆角矩形。 */
-.navBtn {
-  height: 28px;
-  line-height: 1.5;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: none;
-  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-  cursor: pointer;
-  transition: background 180ms ease, color 180ms ease, opacity 180ms ease;
-  box-sizing: border-box;
-  white-space: nowrap;
-}
-.navBtn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text-secondary) 20%, transparent);
-  color: var(--text-primary);
-}
-.navBtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-/* 主按钮（下一题 / 发送）：淡橙 tint，跟发送按钮一个调子。 */
-.navBtnPrimary {
-  background: color-mix(in srgb, var(--accent-orange) 16%, transparent);
-  color: var(--accent-orange);
-  font-weight: 600;
-}
-.navBtnPrimary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent-orange) 24%, transparent);
-  color: var(--accent-orange);
-}
-
-.opt:focus-visible,
-.navBtn:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-}
-
-.approvalOptions .opt {
-  white-space: nowrap;
-}
+/* Primary action follows the existing submit accent. */
 
 /* Give the discussion editor more space than the read-only operation context. */
 .discussionInput {
@@ -205,9 +141,25 @@
   resize: vertical;
 }
 
-/* Keep decisions anchored while the independently scrolling body grows. */
+/* Actions follow the complete question list. */
 .footer {
   flex: 0 0 auto;
-  padding: 0 12px 12px;
+  padding: 0 16px 16px;
   margin-top: auto;
 }
+
+.panel { display: flex; flex-direction: column; max-height: min(64dvh, 640px); min-width: 0; }
+.badge { min-width: 0; overflow-wrap: anywhere; flex: 1; line-height: 1.5; }
+.headerActions { display: flex; gap: 4px; flex-shrink: 0; }
+.optionContent { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.optionTitle { color: var(--text-primary); font-weight: 500; }
+.optionDescription, .choiceHint { color: var(--text-secondary); line-height: 1.5; }
+.customOption { display: flex; flex-direction: column; gap: 8px; }
+.customTitle { display: flex; justify-content: space-between; gap: 12px; font-size: var(--fs-base); }
+@media (max-width: 480px) {
+  .header { padding: 10px 12px; gap: 6px; }
+  .body { padding: 0 12px 12px; }
+  .footer { padding: 0 12px 12px; }
+}
+
+.badge { max-height: 4.5em; overflow-y: auto; }

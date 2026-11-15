@@ -1,0 +1,49 @@
+<title>外发暂扣</title>
+<meta name="description" content="Agent 把哪些 MCP 工具调用暂扣成待用户批准的草稿，以及暂扣在权限判定中的位置。">
+<h1>外发暂扣</h1>
+
+<p>邮件、聊天消息、评论会送到没有向 Agent 提过任何要求的人面前。暂扣打开后，这类调用在任何权限模式下都先作为草稿，等用户批准。</p>
+
+<h2 id="which-calls-are-held">哪些调用被暂扣</h2>
+<p><code translate="no">mcp/adapter.py</code>（<code translate="no">sends_on_behalf</code>）在注册时对每个 MCP 工具判定一次，结果存为 AgentTool 上的 <code translate="no">_sends_on_behalf</code>。原始名称按标点和驼峰拆词。</p>
+<table class="stack">
+<thead><tr><th scope="col">按顺序检查</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">服务器声明 <code translate="no">readOnlyHint: true</code></th><td>不算发送</td></tr>
+<tr><th scope="row">首词是 <code translate="no">get</code> <code translate="no">list</code> <code translate="no">read</code> <code translate="no">search</code> <code translate="no">fetch</code> <code translate="no">find</code> <code translate="no">query</code> <code translate="no">view</code> <code translate="no">describe</code> <code translate="no">count</code> <code translate="no">check</code> <code translate="no">lookup</code></th><td>不算发送</td></tr>
+<tr><th scope="row">任一词是 <code translate="no">send</code> <code translate="no">reply</code> <code translate="no">respond</code> <code translate="no">post</code> <code translate="no">publish</code> <code translate="no">forward</code> <code translate="no">invite</code> <code translate="no">share</code> <code translate="no">comment</code> <code translate="no">tweet</code> <code translate="no">broadcast</code> <code translate="no">notify</code> <code translate="no">dm</code></th><td>发送</td></tr>
+<tr><th scope="row">首词是 <code translate="no">create</code> <code translate="no">add</code> <code translate="no">new</code> <code translate="no">write</code> <code translate="no">compose</code>，后面的词有 message、email、mail、comment、reply、post、tweet、invite、invitation 或 dm（含 message、email、comment、post 的复数）</th><td>发送</td></tr>
+<tr><th scope="row">其余</th><td>不算发送</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>暂扣</dt><dd><code translate="no">send_email</code>、<code translate="no">chat.postMessage</code>、<code translate="no">create_comment</code></dd>
+<dt>不暂扣</dt><dd><code translate="no">list_messages</code>、<code translate="no">get_posts</code>、<code translate="no">create_draft</code></dd>
+<dt>不使用</dt><dd><code translate="no">openWorldHint</code>：默认为 true，多数服务器不设，无法区分发送和读取</dd>
+<dt>内置工具</dt><dd>不暂扣。<code translate="no">chat_send</code> 在对话自己的聊天里说话；<code translate="no">send_message</code> 与其他 OpenProgram 会话通信。</dd>
+</dl>
+
+<h2 id="where-the-hold-applies">暂扣生效的位置</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">顺序</th><td>在 <code translate="no">permission_decision</code> 中，位于 deny 规则、Plan 拒绝和 ask 规则之后，allow 规则和模式之前。见<a href="permission-decision.zh.html">权限判定与拒绝</a>。</td></tr>
+<tr><th scope="row">结果</th><td><code translate="no">ask</code>，代码 <code translate="no">RULE_OUTBOUND_HOLD</code>，与模式无关，有 allow 规则也一样。无法批准的轮次得到 <code translate="no">NO_ONE_TO_APPROVE</code>。</td></tr>
+<tr><th scope="row">哪个 Agent</th><td>该轮的 <code translate="no">req.agent_id</code>，缺省为 <code translate="no">main</code>。未知 Agent 不暂扣。带 <code translate="no">profile_snapshot</code> 的轮次（如试运行未保存的草稿）在快照开启暂扣时同样暂扣；快照不能解除已保存 Agent 的暂扣。</td></tr>
+<tr><th scope="row">批准</th><td><code translate="no">one_shot_approval</code> 覆盖所有发送工具，无论是否暂扣：不提供“始终允许”，不写 allow 规则。每条消息单独批准。</td></tr>
+<tr><th scope="row">草稿</th><td>审批卡片上的工具名和完整参数；<code translate="no">approval._approval_detail</code> 不截断一次性调用。</td></tr>
+<tr><th scope="row">拒绝并附言</th><td>附言作为工具结果返回模型。模型的下一次调用是新草稿，再次询问。</td></tr>
+</tbody>
+</table>
+
+<h2 id="configuration">配置</h2>
+<p><code translate="no">agent.json</code> 顶层布尔值 <code translate="no">hold_outbound</code>，由 Agent 常驻标签页的最后一个复选框设置，<code translate="no">PATCH /api/agents/{id}</code> 也接受。只有显式 <code translate="no">true</code> 才打开；<code translate="no">AgentSpec.hold_outbound</code> 默认 <code translate="no">false</code>。关闭时调用和其他工具一样遵循对话的模式和规则。Worker 的一次性迁移把存量 <code translate="no">true</code>（来自早期默认值）改写为 <code translate="no">false</code>。</p>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>MCP 工具分类、所有模式下的暂扣、一次性批准、通过常驻标签页、<code translate="no">agent.json</code> 和 HTTP API 的按 Agent 设置</td></tr>
+<tr><th scope="row">未实现</th><td>暂扣通过 computer use 或浏览器完成的操作：从调用上认不出点击页面 Send 按钮是一次发送。</td></tr>
+</tbody>
+</table>

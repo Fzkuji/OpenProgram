@@ -1,0 +1,31 @@
+<title>Invariants</title>
+<meta name="description" content="The two rules the proactive framework enforces whatever its rules do: no self-triggered loops, and no automatic silencing of guardrails.">
+<meta name="covers" content="openprogram/runtime/proactive/">
+<h1>Invariants</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">Invariant</th><th scope="col">Rule</th><th scope="col">Otherwise</th></tr></thead>
+<tbody>
+<tr><th scope="row">No self-triggered loop</th><td>An event the framework caused cannot start another action</td><td><code translate="no">Prepare</code> feeds <code translate="no">Prepare</code>: endless cost and noise</td></tr>
+<tr><th scope="row">No auto-silencing of guardrails</th><td>Any future auto-silencing applies to observer alerts only</td><td>Repeated rejections switch off the guard before the dangerous command that matters</td></tr>
+</tbody>
+</table>
+<p class="note">Enforced by the framework core. Rules cannot disable or work around them. Adversarial safety: <a href="_research_archive/threat-model.html">Threat model</a>.</p>
+
+<h2>The one allowed chain</h2>
+<ol>
+<li>A normal event (user, Agent or tool) reaches an observer.</li>
+<li>The observer starts one <code translate="no">Prepare</code>.</li>
+<li><code translate="no">Prepare</code> finishes with a ready event.</li>
+<li>That event may only decide whether to <code translate="no">Notify</code> once. No further <code translate="no">Prepare</code> or injection.</li>
+</ol>
+
+<pre translate="no"><code>def allow_action(event, action):
+    if event.started_by_framework:
+        return action is Notify and chain_within_one_hop
+    return True</code></pre>
+
+<h2>Implementation status</h2>
+<p>The engine drops every event with <code translate="no">origin="proactive"</code> or <code translate="no">metadata["root_origin"]="proactive"</code> before rules see it, so the loop cannot form. The one-hop <code translate="no">Notify</code> is not built, since <code translate="no">Prepare</code> has no runner yet. The only interruption control is <code translate="no">cooldown_s</code>, with <code translate="no">DangerousCommandGuard</code> at 0.</p>
+
+<p class="next"><a href="policies-mvp.html">Three template rules</a></p>

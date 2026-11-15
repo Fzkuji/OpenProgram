@@ -10,17 +10,15 @@ work right when the ``_current_worktree_path`` ContextVar is set.
 from __future__ import annotations
 
 import os
-import subprocess
-from pathlib import Path
 
 import pytest
 
-from openprogram.worktree.context import (
+from openprogram.state.worktree.context import (
     clear_worktree,
     current_worktree_path,
     set_worktree,
 )
-from openprogram.worktree.path_resolve import resolve_path
+from openprogram.state.worktree.path_resolve import resolve_path
 
 
 @pytest.fixture
@@ -31,7 +29,7 @@ def worktree_root(tmp_path):
     token = set_worktree(str(root))
     yield root
     try:
-        from openprogram.worktree.context import reset_worktree
+        from openprogram.state.worktree.context import reset_worktree
         reset_worktree(token)
     except Exception:
         clear_worktree()
@@ -110,7 +108,7 @@ def test_bash_uses_worktree_cwd(worktree_root, monkeypatch):
 
         def run(self, command, timeout, cwd=None):
             seen_kwargs["cwd"] = cwd
-            from openprogram.backend.base import RunResult
+            from openprogram.host.backend.base import RunResult
             return RunResult(0, f"cwd={cwd}", "")
 
     monkeypatch.setattr(
@@ -148,14 +146,17 @@ def test_edit_resolves_relative_inside_worktree(worktree_root):
     assert (worktree_root / "inside.txt").read_text() == "world\n"
 
 
-def test_write_outside_worktree_is_blocked_by_default_sandbox(worktree_root, tmp_path):
-    from openprogram.sandbox import is_available
+def test_write_outside_worktree_is_blocked_when_the_sandbox_is_on(worktree_root, tmp_path):
+    # The sandbox is off by default; a conversation turns it on with its
+    # Sandbox switch, which the turn binds as its policy.
+    from openprogram.host.sandbox import is_available, turn_policy
     if not is_available():
         pytest.skip("default sandbox backend is unavailable")
     from openprogram.programs.tools.files.write import write as write_tool
     target = tmp_path / "elsewhere.txt"
-    out = _exec_tool(write_tool, file_path=str(target), content="x")
-    assert "Error: sandbox policy: path is outside writable roots" in out
+    with turn_policy(session_enabled=True):
+        out = _exec_tool(write_tool, file_path=str(target), content="x")
+    assert "Sandbox is on and path is outside writable roots" in out
     assert not target.exists()
 
 

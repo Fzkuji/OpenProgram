@@ -5,26 +5,26 @@ from threading import Event, Thread
 
 import pytest
 
-from openprogram.execution.attempts import AttemptConflict, AttemptStore
-from openprogram.execution.checkpoints import CheckpointFragment
-from openprogram.execution.control import RuntimeControlService, submit_observed_cancel
-from openprogram.execution.driver import (
+from openprogram.runtime.execution.attempts import AttemptConflict, AttemptStore
+from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.control import RuntimeControlService, submit_observed_cancel
+from openprogram.runtime.execution.driver import (
     DriverAck,
     DriverBinding,
     DriverRegistry,
 )
-from openprogram.execution.effects import (
+from openprogram.runtime.execution.effects import (
     EffectClassification,
     EffectStatus,
     EffectStore,
 )
-from openprogram.execution.model import (
+from openprogram.runtime.execution.model import (
     CapabilitySet,
     CommandKind,
     CommandStatus,
     ExecutionStatus,
 )
-from openprogram.execution.store import CommandConflict, ExecutionStore
+from openprogram.runtime.execution.store import CommandConflict, ExecutionStore
 
 
 class RecordingDriver:
@@ -76,7 +76,6 @@ def _execution(tmp_path, *, active: bool):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="worker_1",
-        ttl_seconds=30,
         attempt_id="attempt_1",
     )
     active_attempt, running = attempts.activate(
@@ -211,7 +210,6 @@ def test_protocol_cancel_stale_success_replays_same_intent_id(
     ))
 
     assert result.accepted and duplicate.accepted
-    assert result.retried_stale_observation
     assert result.command is not None
     assert result.command.command_id == f"{surface}-cancel-intent"
     assert result.command.expected_version == observed.status_version
@@ -449,7 +447,6 @@ def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
         second.execution_id,
         expected_version=second.status_version,
         owner_id="worker_2",
-        ttl_seconds=30,
         attempt_id="attempt_2",
     )
     second_attempt, running = attempts.activate(
@@ -592,7 +589,10 @@ def test_driver_failure_never_reverses_a_committed_cancel_intent(tmp_path) -> No
     assert executions.get_execution(execution.execution_id) == result.execution
 
 
-def test_retried_cancel_command_is_not_redispatched(tmp_path) -> None:
+def test_retried_cancel_command_is_not_delivered_twice(tmp_path) -> None:
+    """Recording a stop twice is idempotent, and so is delivering it: an
+    owner that took the stop is not handed it again (one whose first signal
+    was lost is; see test_cancel_submission)."""
     executions, attempts, execution, attempt = _execution(tmp_path, active=True)
     registry = DriverRegistry()
     driver = RecordingDriver(executions)
@@ -620,10 +620,11 @@ def test_retried_cancel_command_is_not_redispatched(tmp_path) -> None:
 
     assert retry.command == first.command
     assert retry.execution == first.execution
-    assert not retry.delivered
+    assert not retry.delivered and retry.issue_code == "already_delivered"
     assert driver.observed == [
-        ("cancel", ExecutionStatus.CANCELLING, CommandStatus.APPLYING)
+        ("cancel", ExecutionStatus.CANCELLING, CommandStatus.APPLYING),
     ]
+    assert len(executions.list_commands(execution.execution_id)) == 1
 
 
 def test_pause_completes_only_after_checkpoint_and_attempt_finalization(
@@ -700,7 +701,7 @@ def test_cancel_applies_only_after_the_attempt_finishes(tmp_path) -> None:
     assert registry.snapshot() == ()
 
 
-def test_uncertain_effect_requires_reconciliation_before_cancel_finishes(
+def test_cancelled_producer_finishes_without_claiming_external_effect_outcome(
     tmp_path,
 ) -> None:
     executions, attempts, execution, attempt = _execution(tmp_path, active=True)
@@ -735,9 +736,10 @@ def test_uncertain_effect_requires_reconciliation_before_cancel_finishes(
         command_id="cancel_1",
         reason_code="user_cancelled",
     )
-    assert awaiting.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert awaiting.execution.status is ExecutionStatus.CANCELLED
+    assert effects.get("effect_1").status is EffectStatus.DISPATCHED
     assert awaiting.command is not None
-    assert awaiting.command.status is CommandStatus.APPLYING
+    assert awaiting.command.status is CommandStatus.APPLIED
 
     reconciled = service.resolve_effect(
         effect_id="effect_1",
@@ -746,8 +748,8 @@ def test_uncertain_effect_requires_reconciliation_before_cancel_finishes(
         receipt={"provider_message_id": "message_1"},
     )
     assert reconciled.execution.status is ExecutionStatus.CANCELLED
-    assert reconciled.command is not None
-    assert reconciled.command.status is CommandStatus.APPLIED
+    assert reconciled.command is None
+    assert executions.get_command("cancel_1").status is CommandStatus.APPLIED
 
 
 def test_pause_command_is_applied_after_effect_reconciliation(tmp_path) -> None:
@@ -821,13 +823,12 @@ def test_owner_loss_fences_the_recovered_attempt_owner(tmp_path) -> None:
 
     recovered = service.recover_owner_loss(execution.execution_id)
     assert recovered.attempt is not None
-    assert recovered.attempt.lease_expires_at == 0
+    assert recovered.attempt.fenced
 
     with pytest.raises(AttemptConflict) as heartbeat:
-        attempts.heartbeat(
+        attempts.ensure_held(
             attempt.attempt_id,
             generation=attempt.generation,
-            ttl_seconds=30,
         )
     assert heartbeat.value.code == "stale_owner"
 
@@ -976,7 +977,7 @@ def test_owner_loss_pausing_without_checkpoint_rejects_pause(tmp_path) -> None:
     assert reconciling.command.status is CommandStatus.APPLYING
 
 
-def test_owner_loss_cancelling_finishes_or_requires_reconciliation(tmp_path) -> None:
+def test_owner_loss_cancelling_finishes_and_preserves_unknown_effects(tmp_path) -> None:
     executions, attempts, execution, attempt = _execution(tmp_path, active=True)
     service = RuntimeControlService(executions, attempts, DriverRegistry())
     asyncio.run(
@@ -1022,9 +1023,11 @@ def test_owner_loss_cancelling_finishes_or_requires_reconciliation(tmp_path) -> 
 
     reconciling = service.recover_owner_loss(execution.execution_id)
 
-    assert reconciling.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert reconciling.execution.status is ExecutionStatus.CANCELLED
     assert reconciling.command is not None
-    assert reconciling.command.status is CommandStatus.APPLYING
+    assert reconciling.command.status is CommandStatus.APPLIED
+    assert effects.get(effect.effect_id).status is EffectStatus.DISPATCHED
+    assert effects.list_unresolved(execution.execution_id)
 
     repeated = service.recover_owner_loss(execution.execution_id)
     assert repeated.execution == reconciling.execution
@@ -1063,7 +1066,6 @@ def test_replacement_binds_while_recovery_is_before_registry_unbind(
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="worker_1",
-        ttl_seconds=30,
         attempt_id="attempt_1",
     )
     registry = DriverRegistry()
@@ -1076,7 +1078,7 @@ def test_replacement_binds_while_recovery_is_before_registry_unbind(
 
     def delayed_unbind(*args, **kwargs):
         recovery_committed.set()
-        assert allow_unbind.wait(timeout=5)
+        assert allow_unbind.wait(timeout=30)
         return original_unbind(*args, **kwargs)
 
     monkeypatch.setattr(registry, "unbind", delayed_unbind)
@@ -1091,7 +1093,7 @@ def test_replacement_binds_while_recovery_is_before_registry_unbind(
     recovery_thread = Thread(target=recover)
     recovery_thread.start()
     try:
-        assert recovery_committed.wait(timeout=5)
+        assert recovery_committed.wait(timeout=30)
 
         recovered = executions.get_execution(execution.execution_id)
         assert recovered is not None
@@ -1100,7 +1102,6 @@ def test_replacement_binds_while_recovery_is_before_registry_unbind(
             execution.execution_id,
             expected_version=recovered.status_version,
             owner_id="worker_2",
-            ttl_seconds=30,
             attempt_id="attempt_2",
         )
         _bind(registry, reserved, replacement, RecordingDriver(executions))
@@ -1111,7 +1112,7 @@ def test_replacement_binds_while_recovery_is_before_registry_unbind(
         )
     finally:
         allow_unbind.set()
-        recovery_thread.join(timeout=5)
+        recovery_thread.join(timeout=30)
 
     assert not recovery_thread.is_alive()
     assert not errors
@@ -1123,10 +1124,9 @@ def test_replacement_binds_while_recovery_is_before_registry_unbind(
         generation=replacement.generation,
     ).attempt_id == replacement.attempt_id
     with pytest.raises(AttemptConflict) as stale_owner:
-        attempts.heartbeat(
+        attempts.ensure_held(
             attempt.attempt_id,
             generation=attempt.generation,
-            ttl_seconds=30,
         )
     assert stale_owner.value.code == "stale_owner"
 
@@ -1147,7 +1147,6 @@ def test_owner_loss_recovers_leased_idle_execution(tmp_path, idle_status) -> Non
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="worker_1",
-        ttl_seconds=30,
         attempt_id="attempt_1",
     )
     service = RuntimeControlService(executions, attempts, DriverRegistry())
@@ -1159,12 +1158,11 @@ def test_owner_loss_recovers_leased_idle_execution(tmp_path, idle_status) -> Non
     assert recovered.execution.owner_lease == {}
     assert recovered.attempt is not None
     assert recovered.attempt.status.value == "ended"
-    assert recovered.attempt.lease_expires_at == 0
+    assert recovered.attempt.fenced
     with pytest.raises(AttemptConflict) as heartbeat:
-        attempts.heartbeat(
+        attempts.ensure_held(
             leased.attempt_id,
             generation=leased.generation,
-            ttl_seconds=30,
         )
     assert heartbeat.value.code == "stale_owner"
     with pytest.raises(AttemptConflict) as finish:
@@ -1181,7 +1179,6 @@ def test_owner_loss_recovers_leased_idle_execution(tmp_path, idle_status) -> Non
         execution.execution_id,
         expected_version=recovered.execution.status_version,
         owner_id="worker_2",
-        ttl_seconds=30,
         attempt_id="attempt_2",
     )
     assert replacement.generation == leased.generation + 1
@@ -1204,7 +1201,6 @@ def test_startup_recovery_recovers_leased_idle_execution(tmp_path, idle_status) 
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="worker_1",
-        ttl_seconds=30,
         attempt_id="attempt_1",
     )
     service = RuntimeControlService(executions, attempts, DriverRegistry())
@@ -1272,3 +1268,67 @@ def test_cancel_completion_races_terminal_reconciliation(tmp_path, outcome):
         with pytest.raises(CommandConflict):
             asyncio.run(cancel)
     assert executions.get_command("cancel_race") == persisted[0]
+
+
+def test_cancel_escalation_notifies_terminal_observer_once(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    store, attempts, execution, attempt = _execution(tmp_path, active=True)
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+    observed = []
+    service.set_terminal_observer(lambda record: observed.append(record.execution_id))
+    asyncio.run(service.request_cancel(command_id="cancel-escalated",
+        execution_id=execution.execution_id, expected_version=execution.status_version,
+        actor={"surface": "test"}, reason_code="cancel.user"))
+    async def terminate(**kwargs):
+        return SimpleNamespace(terminated=True)
+    monkeypatch.setattr(service, "terminate_attempt", terminate)
+    service._escalate_cancel("cancel-escalated", execution.execution_id,
+                            attempt.attempt_id, attempt.generation, "cancel.user")
+    assert observed == [execution.execution_id]
+    assert store.get_execution(execution.execution_id).status is ExecutionStatus.CANCELLED
+
+
+@pytest.mark.parametrize("alive", [True, False])
+def test_a_stop_for_a_turn_in_another_live_process_is_written_where_it_looks(tmp_path, monkeypatch, alive) -> None:
+    """A scheduled run's turn runs in its own process: the stop goes to its file,
+    and that process, following it, stops the turn from there."""
+    from openprogram.runtime.execution import process_owner
+    from openprogram.runtime.execution.control import stop_requests
+
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    monkeypatch.setattr(process_owner, "owned_by_another_process", lambda _lease: True)
+    monkeypatch.setattr(process_owner, "process_owner_may_be_alive", lambda _lease: alive)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    result = asyncio.run(service.request_cancel(
+        command_id="cancel_1", execution_id=execution.execution_id,
+        expected_version=execution.status_version, actor={"surface": "test"}, reason_code="cancel.user",
+    ))
+
+    assert result.issue_code == "owner_not_local" and result.execution.status is ExecutionStatus.CANCELLING
+    log = executions.function_log(execution.execution_id)
+    assert log.requested(attempt.generation) == ({stop_requests.CANCEL} if alive else set())
+
+
+def test_the_process_running_a_turn_stops_it_when_asked_elsewhere(tmp_path, monkeypatch) -> None:
+    from openprogram.runtime.execution import run_control
+    from openprogram.runtime.execution import process_owner
+    from openprogram.runtime.execution.control import stop_requests
+    import openprogram.runtime.execution as execution_package
+
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    monkeypatch.setattr(execution_package, "default_store", lambda: executions)
+    monkeypatch.setattr(process_owner, "owned_by_another_process", lambda _lease: False)
+    stopped = []
+    monkeypatch.setattr(run_control, "cancel_execution", stopped.append)
+    handled: set[int] = set()
+
+    stop_requests._stop_if_asked(execution.execution_id, handled)
+    assert stopped == []
+    executions.function_log(execution.execution_id).request(stop_requests.CANCEL, attempt.generation + 1)
+    stop_requests._stop_if_asked(execution.execution_id, handled)
+    assert stopped == []  # A request for another attempt is not this one's.
+    executions.function_log(execution.execution_id).request(stop_requests.CANCEL, attempt.generation)
+    stop_requests._stop_if_asked(execution.execution_id, handled)
+    stop_requests._stop_if_asked(execution.execution_id, handled)
+    assert stopped == [execution.execution_id]

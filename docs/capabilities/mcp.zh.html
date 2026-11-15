@@ -1,0 +1,73 @@
+<title>MCP</title>
+<meta name="description" content="连接 MCP server、配置位置、传输方式、OAuth，以及通过 MCP 提供 OpenProgram。">
+<h1>MCP</h1>
+<p>每个已连接 server 的工具在聊天中显示为 <code translate="no">&lt;name&gt;__&lt;tool&gt;</code>。其资源和 prompt 通过<a href="tools.zh.html">内置工具</a>中的 <code translate="no">mcp_meta</code> 工具提供给模型。</p>
+<pre translate="no" tabindex="0"><code>openprogram mcp add drawio -- npx -y @drawio/mcp
+openprogram mcp list
+openprogram mcp show drawio</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram mcp add NAME COMMAND…</code></th><td>添加 stdio server，立即生效。<code translate="no">--env KEY=VALUE</code>（可重复）、<code translate="no">--timeout</code>（启动和单次调用秒数）、<code translate="no">--disabled</code>（只写配置不启动）。</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp list</code></th><td>每个 server 的状态</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp show NAME</code></th><td>其工具和完整 schema</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp rm NAME</code></th><td>停止并删除配置</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp restart NAME</code></th><td>停止后重新启动</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp enable</code>、<code translate="no">disable NAME</code></th><td>切换；禁用保留配置</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp test</code></th><td>启动临时 server，确认能返回工具列表，不写磁盘</td></tr>
+<tr><th scope="row"><code translate="no">openprogram mcp edit</code></th><td>仅为兼容：提示原始编辑已移除，因为会暴露存储的密钥。请用 <code translate="no">add</code>、<code translate="no">rm</code> 或 MCP 设置页。</td></tr>
+</tbody>
+</table>
+<p class="note">管理命令与后台 worker 通信：<code translate="no">openprogram worker start</code>、<code translate="no">openprogram status</code>。worker 启动时 server 在后台连接，App 和核心 API 不受影响。就绪前其工具不可用，<code translate="no">mcp list</code> 和设置页显示状态。</p>
+<h2 id="where-the-config-lives">配置</h2>
+<p><code translate="no">~/.openprogram/mcp_servers.json</code>（使用 <code translate="no">--profile &lt;name&gt;</code> 时为 <code translate="no">~/.openprogram-&lt;name&gt;/mcp_servers.json</code>）：</p>
+<pre translate="no" tabindex="0"><code>{
+  "servers": {
+    "drawio": {
+      "type": "local",
+      "command": ["npx", "-y", "@drawio/mcp"],
+      "env": {},
+      "enabled": true,
+      "timeout_seconds": 30
+    },
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "auth": {"kind": "oauth", "client_name": "OpenProgram"},
+      "enabled": true
+    }
+  }
+}</code></pre>
+<h2 id="transports-and-auth">传输与认证</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">type</code></th><th scope="col">传输</th><th scope="col">字段</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">local</code></th><td>stdio 子进程</td><td><code translate="no">command</code>、<code translate="no">env</code></td></tr>
+<tr><th scope="row"><code translate="no">http</code></th><td>Streamable HTTP</td><td><code translate="no">url</code>、<code translate="no">headers</code>、<code translate="no">auth</code></td></tr>
+<tr><th scope="row"><code translate="no">sse</code></th><td>旧版 SSE</td><td><code translate="no">url</code>、<code translate="no">headers</code>、<code translate="no">auth</code></td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">auth.kind</code></th><th scope="col">需要</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">none</code></th><td>无</td></tr>
+<tr><th scope="row"><code translate="no">bearer</code></th><td><code translate="no">token</code></td></tr>
+<tr><th scope="row"><code translate="no">oauth</code></th><td>OAuth 2.1 PKCE。支持动态客户端注册的 server 无需配置，其他需要 <code translate="no">client_id</code> 和 <code translate="no">client_secret</code>。</td></tr>
+</tbody>
+</table>
+<h3 id="oauth-sign-in-happens-once">OAuth 只需授权一次</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">时机</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">首次连接</th><td>打开授权页，并在 localhost 捕获回调</td></tr>
+<tr><th scope="row">保存</th><td>令牌、客户端注册和发现的端点，存到 <code translate="no">~/.openprogram/mcp_tokens/&lt;server&gt;.json</code>（权限 <code translate="no">0600</code>）</td></tr>
+<tr><th scope="row">之后的连接</th><td>直接复用，过期令牌静默续期</td></tr>
+<tr><th scope="row">refresh token 被拒绝</th><td>再次打开浏览器，管理界面显示该 server 需要重新认证</td></tr>
+<tr><th scope="row">切换账号</th><td><code translate="no">POST /api/mcp/servers/{name}/auth/clear</code> 清除状态并重启 server</td></tr>
+</tbody>
+</table>
+<h2 id="serve-openprogram-over-mcp">通过 MCP 提供 OpenProgram</h2>
+<pre translate="no" tabindex="0"><code>openprogram mcp token create
+export OPENPROGRAM_MCP_TOKEN="&lt;粘贴上面打印的 token&gt;"
+openprogram mcp serve</code></pre>
+<p class="note"><code translate="no">token create</code> 把 token 打印成一行原文，不设置环境变量。已有 token 时复用。<code translate="no">serve</code> 拒绝缺失或不匹配的 token。</p>

@@ -1,4 +1,5 @@
 import { jsonFetch } from "./fetch-client";
+import { branchTarget } from "@/lib/agents/branch-target";
 import type {
   Provider,
   Model,
@@ -14,6 +15,31 @@ import type {
   DiscoveredCredential,
   PoolView,
 } from "@/lib/types";
+import type { PickerProvider } from "@/lib/settings/provider-status.generated";
+
+/** ``/api/model``'s answer: the branch written (``branch_id``), the one
+ *  selected, that branch's stored settings and the model's own controls. */
+export interface ModelPickReply {
+  switched?: boolean;
+  provider?: string;
+  model?: string;
+  branch_id?: string | null;
+  active_branch_id?: string | null;
+  settings?: Record<string, unknown>;
+  chat?: Record<string, unknown>;
+}
+
+export interface GoalControls {
+  can_resume: boolean;
+  can_verify: boolean;
+  can_end: boolean;
+  can_pause: boolean;
+  reasons: Partial<Record<"resume" | "verify" | "end" | "pause", string | null>>;
+  operations: { effect_id: string; execution_id: string; status: string; tool_name?: string | null; created_at: number; dispatched_at?: number | null }[];
+  waits: { wait_id: string; execution_id: string; kind: string; created_at: number }[];
+  active_children: string[];
+  processes: { id: string; execution_id: string; status: string; started_at: number }[];
+}
 
 interface RawModel {
   id: string;
@@ -26,6 +52,7 @@ interface RawModel {
   enabled?: boolean;
   custom?: boolean;
   provider?: string;
+  provider_label?: string;
 }
 
 function mapModel(m: RawModel, provider: string): Model {
@@ -39,6 +66,7 @@ function mapModel(m: RawModel, provider: string): Model {
     id: m.id,
     name: m.name || m.id,
     provider: m.provider || provider,
+    ...(m.provider_label ? { providerLabel: m.provider_label } : {}),
     enabled: m.enabled ?? false,
     capabilities: caps,
     context: m.context_window,
@@ -59,6 +87,14 @@ export const api = {
     jsonFetch<{ models: RawModel[] }>("/api/models/enabled").then((d) =>
       d.models.map((m) => mapModel(m, m.provider ?? ""))
     ),
+
+  /** The model picker's read: the enabled models plus, per provider, what
+   *  the picker shows beside them (state, fix, quota left, balance). */
+  listPickerModels: () =>
+    jsonFetch<{ models: RawModel[]; providers?: Record<string, PickerProvider> }>("/api/models/enabled").then((d) => ({
+      models: d.models.map((m) => mapModel(m, m.provider ?? "")),
+      providers: d.providers ?? {},
+    })),
 
   toggleProvider: (provider: string, enabled: boolean) =>
     jsonFetch<{ ok: true }>(`/api/providers/${provider}/toggle`, {
@@ -131,14 +167,23 @@ export const api = {
     sessionId: string,
     body: { action: string; prompt?: string; [key: string]: unknown },
   ) =>
-    jsonFetch<{ goal: Record<string, unknown>; execution?: Record<string, unknown>; resume_error?: string; stop_error?: string }>(
+    jsonFetch<{ goal: Record<string, unknown>; execution?: Record<string, unknown>; stop_error?: string }>(
       `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
       { method: "POST", body: JSON.stringify(body) },
     ),
 
+  /** Tell the server a queued message waits for this conversation's next
+   *  turn, so an automatic Goal continuation yields to it. */
+  setGoalQueueWaiting: (sessionId: string, waiting: boolean) =>
+    jsonFetch<{ ok: true }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/goal/queue`,
+      { method: "POST", body: JSON.stringify({ waiting }) },
+    ),
+
   getGoal: (sessionId: string, signal?: AbortSignal) => jsonFetch<{
     goal: Record<string, unknown>;
-    execution?: { execution_id?: string | null; status?: string; finished?: boolean | null };
+    controls?: GoalControls;
+    execution?: { execution_id?: string | null; status?: string; finished?: boolean | null; can_start_new_turn?: boolean; provider_response_incomplete?: boolean; recovery_mode?: string | null; recovery_reason?: string | null };
   }>(
     `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
     { signal },
@@ -151,10 +196,12 @@ export const api = {
   // required — without it the backend only updates the global default
   // and the active conversation keeps using its old runtime (the bug
   // where "switching to Opus" silently kept routing to Sonnet).
-  switchModel: (provider: string, model: string, session_id?: string) =>
-    jsonFetch<{ ok: true }>("/api/model", {
+  /** Pin a conversation's model on the branch the pane shows (``branchId``),
+   *  like every other branch setting; see ``branchTarget``. */
+  switchModel: (provider: string, model: string, session_id?: string, branchId?: string | null) =>
+    jsonFetch<ModelPickReply>("/api/model", {
       method: "POST",
-      body: JSON.stringify({ provider, model, session_id }),
+      body: JSON.stringify({ provider, model, session_id, ...branchTarget(branchId) }),
     }),
 
   getAgentSettings: () => jsonFetch<Record<string, unknown>>("/api/agent_settings"),

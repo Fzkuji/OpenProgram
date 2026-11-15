@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.agent.authority import owner_authority
-from openprogram.execution import (
+from openprogram.runtime.permissions.authority import owner_authority
+from openprogram.runtime.execution import (
     CapabilitySet,
     CommandKind,
     CommandStatus,
@@ -69,7 +69,7 @@ def test_event_replay_requires_snapshot_for_an_invalid_or_expired_cursor(tmp_pat
 
 
 def test_execution_authorization_hides_cross_scope_and_allows_exact_owner_scope(tmp_path):
-    from openprogram.execution.authorization import (
+    from openprogram.runtime.execution.authorization import (
         ExecutionAuthorizationError,
         authorize_execution_action,
     )
@@ -98,7 +98,7 @@ def test_execution_authorization_hides_cross_scope_and_allows_exact_owner_scope(
 
 
 def test_command_audit_redacts_secrets_and_query_requires_execution_read_scope(tmp_path):
-    from openprogram.execution.authorization import ExecutionAuthorizationError
+    from openprogram.runtime.execution.authorization import ExecutionAuthorizationError
 
     store = _store(tmp_path)
     execution = _admit(store, "exec-1", "session-1")
@@ -149,3 +149,4 @@ def test_control_command_appends_accepted_and_terminal_audit_records(tmp_path):
     assert [event.result for event in events] == ["accepted", "rejected"]
     assert events[0].command_id == command.command_id
     assert events[0].redacted_payload["prompt"]["redacted"] is True
+

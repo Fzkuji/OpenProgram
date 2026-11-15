@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from openprogram.context.nodes import Call
-from openprogram.store import SessionNodeWriter
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.nodes import Call
+from openprogram.state.store import SessionNodeWriter
+from openprogram.state.store.session.session_store import SessionStore
 
 
 def _conversation(tmp_path):
@@ -15,9 +15,9 @@ def _conversation(tmp_path):
 
 
 def test_incarnation_marks_live_pages_restoring_not_closed(tmp_path, monkeypatch):
-    import openprogram.browser_resources as br
+    import openprogram.programs.applications.browser.pages as br
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     store = br.BrowserResourceStore()
     store.retain(
         page_key="page:oldinc:1", window_id="win", tab_id="tab-a",
@@ -52,9 +52,9 @@ def test_incarnation_marks_live_pages_restoring_not_closed(tmp_path, monkeypatch
 
 
 def test_adopt_transfers_associations_and_hides_predecessor(tmp_path, monkeypatch):
-    import openprogram.browser_resources as br
+    import openprogram.programs.applications.browser.pages as br
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = br.BrowserResourceStore()
     store.retain(
@@ -90,9 +90,9 @@ def test_adopt_transfers_associations_and_hides_predecessor(tmp_path, monkeypatc
 
 
 def test_closed_and_missing_tab_are_not_adopted(tmp_path, monkeypatch):
-    import openprogram.browser_resources as br
+    import openprogram.programs.applications.browser.pages as br
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = br.BrowserResourceStore()
     store.retain(
@@ -114,9 +114,9 @@ def test_closed_and_missing_tab_are_not_adopted(tmp_path, monkeypatch):
 
 
 def test_same_url_distinct_tabs_stay_distinct(tmp_path, monkeypatch):
-    import openprogram.browser_resources as br
+    import openprogram.programs.applications.browser.pages as br
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     store = br.BrowserResourceStore()
     store.retain(
         page_key="page:old:a", window_id="win", tab_id="tab-a",
@@ -145,9 +145,9 @@ def test_same_url_distinct_tabs_stay_distinct(tmp_path, monkeypatch):
 
 
 def test_adopt_keeps_association_id_and_advances_generation(tmp_path, monkeypatch):
-    import openprogram.browser_resources as br
+    import openprogram.programs.applications.browser.pages as br
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = br.BrowserResourceStore()
     store.retain(
@@ -162,7 +162,7 @@ def test_adopt_keeps_association_id_and_advances_generation(tmp_path, monkeypatc
         connection_generation=40, session_id="child",
         conversation_session_id="child", execution_id="exec-child", live=True,
     )
-    pred = store.get_resource("page:oldinc:1")
+    store.get_resource("page:oldinc:1")
     store.set_control_state("page:oldinc:1", "idle")
     # Force listed generation 40
     with store.connect() as dbn:
@@ -195,9 +195,9 @@ def test_adopt_keeps_association_id_and_advances_generation(tmp_path, monkeypatc
 
 
 def test_two_executions_same_branch_one_card_before_and_after_restore(tmp_path, monkeypatch):
-    import openprogram.browser_resources as br
+    import openprogram.programs.applications.browser.pages as br
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = br.BrowserResourceStore()
     store.retain(
@@ -227,9 +227,9 @@ def test_two_executions_same_branch_one_card_before_and_after_restore(tmp_path, 
 
 
 def test_restore_failed_status(tmp_path, monkeypatch):
-    import openprogram.browser_resources as br
+    import openprogram.programs.applications.browser.pages as br
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     db = _conversation(tmp_path)
     store = br.BrowserResourceStore()
     store.retain(
@@ -241,3 +241,63 @@ def test_restore_failed_status(tmp_path, monkeypatch):
     rows = store.list_rows("parent", executions=[], parents={}, session_store=db)
     assert rows[0]["status"] == "restore_failed"
     assert rows[0]["control_state"] == "idle"
+
+
+def test_every_earlier_record_of_a_tab_moves_to_the_successor(tmp_path, monkeypatch):
+    import openprogram.programs.applications.browser.pages as br
+
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    store = br.BrowserResourceStore()
+    for key, execution in (("page:a:1", "exec-1"), ("page:b:1", "exec-2")):
+        store.retain(
+            page_key=key, window_id="win", tab_id="tab-a", title="Visa",
+            connection_generation=1, session_id="parent",
+            conversation_session_id="parent", execution_id=execution, live=True,
+        )
+        store.mark_restoring(key)
+
+    store.adopt_successor(
+        successor_id="page:new:1", window_id="win", tab_id="tab-a",
+        connection_generation=2,
+    )
+
+    assert store.get_resource("page:a:1")["lifecycle"] == "superseded"
+    assert store.get_resource("page:b:1")["lifecycle"] == "superseded"
+    executions = {
+        assoc["execution_id"] for assoc in store.associations_for_page("page:new:1")
+    }
+    assert {"exec-1", "exec-2"} <= executions
+
+
+def test_a_failed_restore_pass_is_retried_then_settled(tmp_path, monkeypatch):
+    import asyncio
+
+    import openprogram.programs.applications.browser.pages as br
+    from openprogram.interfaces.server.ws_actions import webtab
+
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
+    store = br.BrowserResourceStore()
+    store.retain(
+        page_key="page:a:1", window_id="win", tab_id="tab-a",
+        connection_generation=1, session_id="parent", live=True,
+    )
+    store.mark_restoring("page:a:1")
+    calls = []
+
+    def failing_pass(ws, window_id, revision):
+        calls.append(window_id)
+        raise RuntimeError("database is locked")
+
+    async def no_wait(_seconds):
+        return None
+
+    monkeypatch.setattr(webtab, "restore_window_pages", failing_pass)
+    monkeypatch.setattr(webtab.asyncio, "sleep", no_wait)
+
+    async def run():
+        await webtab.schedule_window_restore(object(), "win", 1)
+
+    asyncio.run(run())
+
+    assert calls == ["win", "win", "win"]
+    assert store.get_resource("page:a:1")["lifecycle"] == "restore_failed"

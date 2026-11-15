@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 import httpx
 
 from openprogram.programs.tools.web.web_search._http import post_json
-from openprogram.security.safe_http import safe_client
-from openprogram.security.url_policy import normalize_origin
+from openprogram.host.security.safe_http import safe_client
+from openprogram.host.security.url_policy import normalize_origin
+from openprogram.programs.tools.web._owner_fetch import owner_open
 
 from .._encode import detect_raster_mime, read_b64
 from ..registry import ImageInput
@@ -36,7 +36,7 @@ class GeminiVisionProvider:
 
     @staticmethod
     def _resolve_key() -> str:
-        from openprogram.providers.env_api_keys import resolve_provider_key
+        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
         return resolve_provider_key("google") or ""
 
     def analyze(
@@ -86,7 +86,9 @@ def _url_to_b64(url: str) -> tuple[str, str]:
 
     safe_error: RuntimeError | None = None
     try:
-        with safe_client("tool.image_result.download") as client:
+        client_context = (safe_client("tool.image_result.download.owner") if owner_open()
+                          else safe_client("tool.image_result.download"))
+        with client_context as client:
             with client.stream("GET", url, timeout=30) as response:
                 response.raise_for_status()
                 data = response.read()

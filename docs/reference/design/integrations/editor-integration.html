@@ -1,0 +1,61 @@
+<title>Editor integration</title>
+<meta name="description" content="LSP tools for the agent, the ACP server for editors, and what is deliberately not built.">
+<h1>Editor integration</h1>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">LSP tools</th><th scope="col">ACP server</th></tr></thead>
+<tbody>
+<tr><th scope="row">Serves</th><td>The agent: language servers run as background analysis</td><td>Editors such as Zed driving OpenProgram sessions</td></tr>
+<tr><th scope="row">Gives</th><td>Live diagnostics against the unsaved working tree, which a pre-built index such as CodeGraph cannot</td><td>Driving through ACP; selection and open-file context with each request; an editor entry point without a self-built extension</td></tr>
+<tr><th scope="row">Code</th><td><code translate="no">openprogram/host/lsp/</code> (JSON-RPC over stdio), <code translate="no">openprogram/programs/tools/code/lsp/</code></td><td><code translate="no">openprogram/interfaces/acp/</code>: <code translate="no">jsonrpc.py</code> (ndjson transport), <code translate="no">server.py</code> (mapping)</td></tr>
+<tr><th scope="row">User docs</th><td><a href="../../../capabilities/lsp.html">Language server tools</a></td><td><a href="../../../interfaces/acp.html">Editor (ACP)</a>, <code translate="no">openprogram acp</code></td></tr>
+<tr><th scope="row">Status</th><td>Implemented</td><td>Implemented, protocol version 1</td></tr>
+</tbody>
+</table>
+
+<h2 id="lsp-tools">LSP tools</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tool</th><th scope="col">Returns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">lsp_diagnostics(file)</code></th><td>Compiler-grade errors and warnings the moment an edit ends, without running tests</td></tr>
+<tr><th scope="row"><code translate="no">lsp_references(file, line, column)</code></th><td>Every real call site; grep misses dynamic calls and matches same-named strings</td></tr>
+<tr><th scope="row"><code translate="no">lsp_definition(file, line, column)</code></th><td>The true location across files and packages</td></tr>
+</tbody>
+</table>
+<ul>
+<li>Python (pyright) and TypeScript (typescript-language-server), the two languages of this repository.</li>
+<li>One server per language per workspace, started on first use, cached, shut down at process exit.</li>
+<li>A missing binary gives an "unavailable: install X" result. The tools stay registered so the model learns what is possible.</li>
+<li>Server processes use the sandbox-wrapping entry of every other child, so <code translate="no">sandbox.mode</code> applies.</li>
+</ul>
+
+<h2 id="acp-server">ACP server</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Direction</th><th scope="col">Methods</th></tr></thead>
+<tbody>
+<tr><th scope="row">From the editor</th><td><code translate="no">initialize</code>, <code translate="no">session/new</code>, <code translate="no">session/load</code>, <code translate="no">session/prompt</code>, <code translate="no">session/cancel</code></td></tr>
+<tr><th scope="row">To the editor</th><td><code translate="no">session/update</code>, <code translate="no">session/request_permission</code></td></tr>
+</tbody>
+</table>
+<ul>
+<li>Sits on <code translate="no">dispatcher.process_user_turn</code>, the non-HTTP entry of the webui thread, sub-agents and the task runner, so tool gating, authority and persistence are shared.</li>
+<li>Turns carry <code translate="no">local_owner_authority()</code>: an editor on this machine is the owner speaking interactively, which makes <code translate="no">approval.request</code> available.</li>
+<li>An approval suspends the execution on a wait. The server takes it from the prompt's <code translate="no">question.asked</code> frame, from the event bus for a resumed round, and from the execution's open waits, then answers with the canonical execution wait command; the gate, its rules and "always allow" persistence are untouched.</li>
+<li><code translate="no">session/prompt</code> stays open until the execution ends, so the rounds after an answer belong to the same prompt. A wait the editor cannot answer is declined; a state the editor cannot move on ends the prompt with an error.</li>
+<li>The first prompt creates the conversation and binds the session's <code translate="no">cwd</code> as its project, the same binding <code translate="no">--print</code> uses, so tools run in the editor's folder.</li>
+</ul>
+
+<h2 id="non-goals">Not built</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Self-built IDE extension</th><td>ACP replaces it</td></tr>
+<tr><th scope="row">Inline completion</th><td>A different product</td></tr>
+<tr><th scope="row">Inline chat, CodeLens, status-bar actions</th><td>Depend on a self-built extension</td></tr>
+<tr><th scope="row">Terminal shortcut auto-configuration</th><td>Return too small</td></tr>
+<tr><th scope="row"><code translate="no">session/set_mode</code>, <code translate="no">session/set_model</code></th><td>Agent id and permission mode are process flags</td></tr>
+<tr><th scope="row">Client <code translate="no">fs/*</code>, <code translate="no">terminal/*</code></th><td>OpenProgram's own tools read and write the working tree</td></tr>
+<tr><th scope="row">MCP servers passed in <code translate="no">session/new</code></th><td>OpenProgram uses its own MCP configuration</td></tr>
+</tbody>
+</table>
+<p class="note">These rows stay open in the feature matrix by choice.</p>

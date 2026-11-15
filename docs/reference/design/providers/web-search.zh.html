@@ -1,0 +1,97 @@
+<title>网页搜索</title>
+<meta name="description" content="聊天搜索在 Provider 有服务端搜索时用它，否则用本地 web_search 工具。">
+<h1>网页搜索</h1>
+
+<p>Provider 自己的搜索在它的基础设施上运行并返回引用；抓取器请求几次就会遇到机器人验证。所以每个请求根据两件事决定搜索方式：会话的搜索开关（会话运行配置上的 <code translate="no">web_search</code>），以及 API Provider 是否声明 <code translate="no">supports_web_search</code>（<code translate="no">_StreamFnProvider</code>、<code translate="no">ApiProviderSnapshot</code>）。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">API</th><th scope="col">请求中的工具</th><th scope="col">声明能力</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai-responses</code>、<code translate="no">openai-codex</code></th><td><code translate="no">{"type": "web_search"}</code></td><td>是</td></tr>
+<tr><th scope="row"><code translate="no">anthropic-messages</code></th><td><code translate="no">{"type": "web_search_20250305", "name": "web_search"}</code></td><td>是</td></tr>
+<tr><th scope="row"><code translate="no">google-generative-ai</code>、<code translate="no">gemini-subscription</code></th><td><code translate="no">{"google_search": {}}</code>，仅用于不带函数工具的请求</td><td>否</td></tr>
+<tr><th scope="row">DeepSeek、Kimi、本地模型、OpenAI 兼容端点</th><td>无</td><td>否</td></tr>
+</tbody>
+</table>
+<p class="note">开关打开且声明了能力时，运行时设置请求选项 <code translate="no">web_search=True</code> 并移除本地 <code translate="no">web_search</code> 工具，否则保留本地工具。Gemini 的 <code translate="no">generateContent</code> 拒绝 grounding 与函数声明同时出现（Gemini 3 只在 Interactions API 上可组合），而 Agent 请求总带函数工具；不带工具的补全设 <code translate="no">web_search=True</code> 时仍使用 grounding。</p>
+
+<h2 id="local-tool">本地工具</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">后端</th><td>十六个，供没有 Provider 搜索的模型使用</td></tr>
+<tr><th scope="row">没有密钥</th><td>只有 DuckDuckGo 页面抓取</td></tr>
+<tr><th scope="row">未固定后端的回退</th><td>跳过 <code translate="no">arxiv</code>（论文索引），固定后仍可用</td></tr>
+<tr><th scope="row">所有后端都失败</th><td>错误信息告诉模型配置搜索密钥可以解决（设置 &gt; 搜索；Brave 和 Tavily 有免费额度），并且有浏览器工具时可以打开搜索页</td></tr>
+</tbody>
+</table>
+
+<h2 id="provider-search-flow">从 Provider 条目到对话记录</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">流处理</th><td>流处理器把搜索条目转成 <code translate="no">ServerToolUse</code> 块和 <code translate="no">servertool_start</code> / <code translate="no">servertool_end</code> 事件。</td></tr>
+<tr><th scope="row">Agent 循环</th><td>只转发，不执行。</td></tr>
+<tr><th scope="row">客户端</th><td><code translate="no">tool_use</code> / <code translate="no">tool_result</code>，带 <code translate="no">tool: "web_search"</code>、<code translate="no">provider_executed: true</code>，<code translate="no">input</code> 为 <code translate="no">{"query": ...}</code>，<code translate="no">result</code> 每行一个 <code translate="no">title — url</code>，Provider 未报告来源时为 <code translate="no">completed</code>。</td></tr>
+<tr><th scope="row">持久化</th><td>回复块里是同样的形状，重新加载时在原位显示“Searched the web: …”。</td></tr>
+<tr><th scope="row">引用</th><td><code translate="no">url_citation</code>（Responses）、<code translate="no">citations</code>（Anthropic）、<code translate="no">groundingMetadata</code>（Gemini）汇成 <code translate="no">TextContent</code> 上的 <code translate="no">citations: [{url, title, start, end}]</code>，随 <code translate="no">text_end</code> 转发并持久化，在回答下方显示为来源行。</td></tr>
+</tbody>
+</table>
+
+<h2 id="replay">重放</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">下一个请求发往</th><th scope="col">该块</th></tr></thead>
+<tbody>
+<tr><th scope="row">Responses，同一 API</th><td>作为 <code translate="no">web_search_call</code> 条目重发</td></tr>
+<tr><th scope="row">Anthropic，同一 API</th><td>作为 <code translate="no">server_tool_use</code> 加原始 <code translate="no">web_search_tool_result</code> 重发，其命中项带的 <code translate="no">encrypted_content</code> 必须原样返回；没有原始结果的块被丢弃</td></tr>
+<tr><th scope="row">Gemini</th><td>grounding 块使用合成 id，从不重发</td></tr>
+<tr><th scope="row">其他 API</th><td>丢弃，与外来 thinking 签名相同</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>线上协议</summary>
+<p>内容块，<code translate="no">openprogram/models/providers/types.py</code>：</p>
+<pre translate="no" tabindex="0">class ServerToolUse(BaseModel):
+    type: Literal["serverToolUse"] = "serverToolUse"
+    id: str                 # provider item id
+    name: str               # "web_search"
+    input: dict             # {"query": str}
+    status: str             # "searching" | "completed" | "failed"
+    results: list[dict]     # [{"title": str, "url": str}]
+    raw: Any | None = None  # provider item, for replay</pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">名称</th><th scope="col">形状</th></tr></thead>
+<tbody>
+<tr><th scope="row">文本块</th><td><code translate="no">TextContent.citations: list[Citation] | None</code>，<code translate="no">Citation(url, title, start, end)</code></td></tr>
+<tr><th scope="row">消息事件</th><td><code translate="no">EventServerToolStart(type="servertool_start", content_index, partial)</code>、<code translate="no">EventServerToolEnd(type="servertool_end", content_index, server_tool: ServerToolUse, partial)</code></td></tr>
+<tr><th scope="row">客户端事件</th><td><code translate="no">apps/web/lib/net/ws/chat-stream.ts</code>：<code translate="no">text_end</code> 时文本块上的 <code translate="no">citations</code>；搜索块随 <code translate="no">transcript_update</code> 的回复行到达</td></tr>
+<tr><th scope="row">持久化块</th><td><code translate="no">{"type": "tool", "tool": "web_search", "provider_executed": true, "input": "{\"query\": ...}", "result": ...}</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>从其他 Agent 借鉴了什么</summary>
+<table class="stack">
+<thead><tr><th scope="col">Agent</th><th scope="col">它的搜索</th><th scope="col">采纳</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code</th><td>Provider 的 <code translate="no">web_search</code> 服务端工具，结果带引用</td><td>优先用 Provider 工具，引用挂在文本上</td></tr>
+<tr><th scope="row">Codex</th><td><code translate="no">--search</code> 启用 Responses 工具；每次搜索一行“Searched the web: query”</td><td>每次搜索一个可见步骤</td></tr>
+<tr><th scope="row">Gemini CLI</th><td><code translate="no">google_web_search</code> 即 grounding；末尾带编号来源</td><td>回答下方的来源行</td></tr>
+<tr><th scope="row">OpenProgram 额外有</th><td colspan="2">本地工具，以及跟随会话模型的会话级开关</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">能力标志</th><td><code translate="no">openai-responses</code>、<code translate="no">openai-codex</code>、<code translate="no">anthropic-messages</code></td></tr>
+<tr><th scope="row">请求构建</th><td>全部五种 API</td></tr>
+<tr><th scope="row">流处理</th><td>Responses（共用处理器）、Anthropic、Gemini</td></tr>
+<tr><th scope="row">运行时</th><td>开关到请求选项、移除本地工具、事件投影、持久化、本地工具错误文本与回退顺序</td></tr>
+<tr><th scope="row">客户端</th><td>Provider 执行的搜索卡片和引用行</td></tr>
+</tbody>
+</table>

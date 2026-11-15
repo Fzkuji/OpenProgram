@@ -13,10 +13,10 @@ from types import SimpleNamespace
 import pytest
 from rich.console import Console
 
-from openprogram.cli.repl import handlers
-from openprogram.commands import registry as _reg
-from openprogram.commands.dispatch import invoke
-from openprogram.commands.frontmatter import ParsedCommand
+from openprogram.interfaces.cli.repl import handlers
+from openprogram.runtime.commands import registry as _reg
+from openprogram.runtime.commands.dispatch import invoke
+from openprogram.runtime.commands.frontmatter import ParsedCommand
 
 
 class _FakeAgent:
@@ -29,8 +29,8 @@ def clean_registry(monkeypatch):
     ~/.openprogram/commands and project commands dirs."""
     monkeypatch.setattr(_reg, "load_user", lambda: [])
     monkeypatch.setattr(_reg, "load_project", lambda cwd=None: [])
-    import openprogram.commands._plugin_adapter as _pa
-    import openprogram.commands._skill_adapter as _sa
+    import openprogram.runtime.commands._plugin_adapter as _pa
+    import openprogram.runtime.commands._skill_adapter as _sa
     monkeypatch.setattr(_pa, "sync_into_registry", lambda: None)
     monkeypatch.setattr(_sa, "sync_into_registry", lambda: None)
     _reg.clear_all()
@@ -67,8 +67,8 @@ def test_invoke_local_carries_marker_and_raw_args(clean_registry):
 
 
 def test_rich_repl_goal_starts_ordinary_chat(clean_registry, monkeypatch):
-    import openprogram.programs.workflow.goal as goal_pkg
-    from openprogram.programs.workflow.goal import chat
+    import openprogram.programs.tools.planning.goal as goal_pkg
+    from openprogram.programs.tools.planning.goal import chat
 
     calls = []
     runtime = object()
@@ -87,8 +87,8 @@ def test_rich_repl_goal_starts_ordinary_chat(clean_registry, monkeypatch):
 @pytest.mark.parametrize("command,send", [("resume", True), ("answer q yes", True),
                                          ("pause", False), ("", False), ("answer q yes", False)])
 def test_rich_goal_only_starts_when_command_requests_work(clean_registry, monkeypatch, command, send):
-    import openprogram.programs.workflow.goal as goal_pkg
-    from openprogram.programs.workflow.goal import chat
+    import openprogram.programs.tools.planning.goal as goal_pkg
+    from openprogram.programs.tools.planning.goal import chat
     calls = []
     monkeypatch.setattr(goal_pkg, "handle_goal_command", lambda sid, raw:
                         {"text": "saved", "send_text": "continue" if send else None})
@@ -117,7 +117,7 @@ def test_jobs_list_prints_canonical_resource_dto(clean_registry, monkeypatch):
             to_dict=lambda: expected,
         ),
     )
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     console = _console()
 
     assert handlers._handle_slash(
@@ -137,7 +137,7 @@ def test_jobs_get_prints_canonical_resource_dto(clean_registry, monkeypatch):
             to_dict=lambda: expected,
         ),
     )
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     console = _console()
 
     assert handlers._handle_slash(
@@ -168,7 +168,7 @@ def test_prompt_command_expands_into_turn(clean_registry, monkeypatch):
         sent.update(agent=agent.id, session_id=session_id, message=message)
         return "ok"
 
-    import openprogram.cli.repl.turn as _turn
+    import openprogram.interfaces.cli.repl.turn as _turn
     monkeypatch.setattr(_turn, "_run_turn_with_history", _fake_turn)
 
     console = _console()

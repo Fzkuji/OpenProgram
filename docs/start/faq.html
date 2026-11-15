@@ -1,0 +1,90 @@
+<title>FAQ</title>
+<meta name="description" content="Common OpenProgram questions on ports, providers, sign-in, data, updates, logs, extensions and sessions.">
+<h1>FAQ</h1>
+
+<h2 id="running">Running</h2>
+<details>
+<summary>Port 18100 is in use</summary>
+<p>Unless you set a port, OpenProgram takes the next free one by itself, so another program or another account on the same computer on 18100 needs nothing from you. A port you set is never moved: the App and <code translate="no">openprogram web</code> name the program holding it.</p>
+<pre translate="no"><code>openprogram worker status         # this account's port, or who holds it
+openprogram ports --port 18110    # persistent, next start
+lsof -ti:18100 | xargs kill       # free it from a leftover process, then restart</code></pre>
+<p>For one run: <code translate="no">OPENPROGRAM_WEB_PORT</code>.</p>
+</details>
+<details id="empty-lists">
+<summary>The page opens, but providers, models and agents are empty</summary>
+<p>The page is not signed in: reached by typing the address, every list is empty, the <strong>Local</strong> chip is red and a notice says so. Nothing is missing. Run <code translate="no">openprogram web</code>. For another browser, <code translate="no">openprogram web auth-url</code> prints a sign-in link. Each service start makes a new sign-in, so open it through <code translate="no">openprogram web</code> again after a stop or restart.</p>
+</details>
+<details>
+<summary>The page from <code translate="no">openprogram web</code> will not load</summary>
+<p>Open <code translate="no">http://localhost:18100</code>. A release wheel contains the Web export; reinstall the exact release if it is missing. In a source checkout, run the development installer to rebuild it.</p>
+</details>
+<details>
+<summary>The service is down or behaves oddly</summary>
+<pre translate="no"><code>openprogram status
+openprogram restart
+openprogram doctor
+openprogram rescue     # diagnoses and prints the fix commands</code></pre>
+</details>
+<details>
+<summary>Reading the logs</summary>
+<pre translate="no"><code>openprogram logs list
+openprogram logs tail            # last 50 lines of the worker log
+openprogram logs tail -f
+openprogram logs tail runtime    # worker, runtime or ink</code></pre>
+</details>
+<details>
+<summary>Two OpenPrograms on one machine</summary>
+<p>Yes: <a href="../install/profiles.html">profiles</a> separate state and ports.</p>
+</details>
+
+<h2 id="providers">Providers</h2>
+<details id="no-provider">
+<summary>Provider not detected, or "No provider available"</summary>
+<pre translate="no"><code>openprogram providers            # stored credentials
+openprogram providers discover   # Claude Code, Codex, Gemini CLI and others
+openprogram providers doctor     # expiry, refresh, cooldown, conflicts
+openprogram setup                # re-run the wizard</code></pre>
+<p>A key in the environment must be imported: <a href="GETTING_STARTED.html#env-key">Key already in your environment</a>. Restarting the service does not import it.</p>
+</details>
+<details>
+<summary>Several accounts or keys for one provider</summary>
+<p><a href="features.html#multi-account">Multiple accounts and key rotation</a>. <code translate="no">openprogram providers list</code> marks the active one.</p>
+</details>
+
+<h2 id="data-and-updates">Data and updates</h2>
+<details>
+<summary>Where my data is</summary>
+<p><code translate="no">~/.openprogram/</code>, or <code translate="no">~/.openprogram-&lt;name&gt;/</code> with <code translate="no">--profile</code>: <code translate="no">config.json</code>, <code translate="no">projects/</code> (conversations and memory), <code translate="no">logs/</code>, <code translate="no">usage.db</code> (token usage). <a href="../server/configuration.html#state-directory">Full list</a>.</p>
+</details>
+<details>
+<summary>Getting an earlier conversation back</summary>
+<p><code translate="no">openprogram sessions list</code>, then <code translate="no">openprogram --resume &lt;session_id&gt;</code>, or the Web sidebar.</p>
+</details>
+<details>
+<summary>Updating</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Installation</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">Desktop</th><td>Later releases appear in Settings</td></tr>
+<tr><th scope="row">CLI, server, source checkout</th><td><code translate="no">openprogram upgrade</code>, which picks the path from the installation type</td></tr>
+</tbody>
+</table>
+<p>Stable installations move only to a published version. Version 0.7.0 is the one-time move from v0.6.6. <a href="../install/upgrade.html">Upgrade</a>.</p>
+</details>
+<details>
+<summary>Why the release download is large</summary>
+<p>It includes managed Python and Playwright Chromium. It does not include PyTorch or EasyOCR. A normal install downloads no further product components.</p>
+</details>
+
+<h2 id="extending">Extending</h2>
+<details>
+<summary>An installed agent program does not show up</summary>
+<p><code translate="no">openprogram programs list</code>, then restart OpenProgram or use Refresh on the Programs page. If it lists no entries, <code translate="no">OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list</code> shows why. <a href="../capabilities/installing-programs.html">Directory contract</a>.</p>
+</details>
+<details id="browser-extensions">
+<summary>Chrome or Edge browser extensions</summary>
+<p>Not supported. Store pages open as ordinary webpages: no install button, CRX download, browser import or extension manager. Electron/Chromium supports only part of the Chrome Extensions API, and OpenProgram maintains no fork or second browser runtime for it. The shipped Playwright Chromium is an automation backend: it hosts neither the Desktop Browser Pane nor extensions.</p>
+<p>To extend OpenProgram itself: <a href="../capabilities/plugins.html">Plugins</a>, Skills, MCP servers, Programs or agent tools.</p>
+</details>
+

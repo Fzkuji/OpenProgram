@@ -18,8 +18,8 @@ pytestmark = pytest.mark.browser
 
 def test_install_manage_launch_and_reinstall_preserves_data(tmp_path, monkeypatch):
     from playwright.sync_api import sync_playwright, expect
-    from openprogram.webui.routes.catalog import applications
-    from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.interfaces.server.routes.catalog import applications
+    from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
     monkeypatch.setenv('HOME', str(tmp_path))
     source = tmp_path / 'software'
     source.mkdir()
@@ -32,11 +32,11 @@ let version=0;openprogramApp.load().then(s=>{version=s.version;note.value=s.valu
     entry = '''import React,{useState} from 'react'; import {createRoot} from 'react-dom/client';
 import {AppRouterContext} from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import {ApplicationsPage} from './components/applications/applications-page';
-import {NewTabPage} from './components/center-tabs/new-tab-page';
-import {ApplicationTabPane} from './components/center-tabs/application-tab-pane';
+import {NewTabPage} from './components/center-tabs/pages/new-tab-page';
+import {ApplicationTabPane} from './components/center-tabs/pages/application-tab-pane';
 import {useCenterTabs} from './lib/tabs/center-tabs-store';
 function App(){const[manage,setManage]=useState(true);const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));return <AppRouterContext.Provider value={{push:()=>setManage(false)}}><button onClick={()=>setManage(true)}>Manage software</button><button onClick={()=>setManage(false)}>Launcher</button>{manage?<ApplicationsPage/>:<><NewTabPage/>{tab?.applicationInstanceId&&<ApplicationTabPane instanceId={tab.applicationInstanceId}/>}</>}</AppRouterContext.Provider>;}createRoot(document.getElementById('root')).render(<App/>);'''
-    subprocess.run(['node', '-e', '''require('esbuild').buildSync({stdin:{contents:process.argv[3],resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});''', str(ROOT / 'apps/web'), str(bundle), entry], cwd=ROOT, check=True, capture_output=True)
+    subprocess.run(['node', '-e', '''require('esbuild').buildSync({stdin:{contents:process.argv[3],resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',define:{'process.env':'{}'},loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});''', str(ROOT / 'apps/web'), str(bundle), entry], cwd=ROOT, check=True, capture_output=True)
     app = FastAPI()
     applications.register(app)
     @app.get('/applications')
@@ -61,9 +61,10 @@ function App(){const[manage,setManage]=useState(true);const tab=useCenterTabs(s=
                 context.add_cookies([{'name': auth.cookie_name, 'value': auth.cookie_value, 'url': f'http://127.0.0.1:{port}', 'httpOnly': True, 'sameSite': 'Strict'}])
                 page = context.new_page()
                 page.goto(f'http://127.0.0.1:{port}/applications')
+                page.get_by_role('button', name='Install…', exact=True).click()
                 page.get_by_label('Application directory', exact=True).fill(str(source))
                 page.get_by_role('button', name='Install application', exact=True).click()
-                row = page.get_by_role('region', name='Managed notes')
+                row = page.get_by_role('group', name='Managed notes', exact=True)
                 expect(row).to_be_visible()
                 row.get_by_role('button', name='Open', exact=True).click()
                 frame = page.frame_locator('iframe')
@@ -71,16 +72,19 @@ function App(){const[manage,setManage]=useState(true);const tab=useCenterTabs(s=
                 frame.get_by_role('button', name='Save', exact=True).click()
                 expect(frame.locator('output')).to_have_text('Saved')
                 page.get_by_role('button', name='Manage software', exact=True).click()
-                row.get_by_label('Enabled', exact=True).click()
-                expect(row.get_by_label('Enabled', exact=True)).not_to_be_checked()
+                row.get_by_label('Enable Managed notes', exact=True).click()
+                expect(row.get_by_label('Enable Managed notes', exact=True)).not_to_be_checked()
                 expect(row.get_by_role('button', name='Open', exact=True)).to_be_disabled()
                 page.get_by_role('button', name='Launcher', exact=True).click()
                 expect(page.get_by_role('button', name='Managed notes', exact=True)).to_have_count(0)
                 page.get_by_role('button', name='Manage software', exact=True).click()
-                row.get_by_label('Enabled', exact=True).click()
-                expect(row.get_by_label('Enabled', exact=True)).to_be_checked()
-                row.get_by_role('button', name='Uninstall', exact=True).click()
+                row.get_by_label('Enable Managed notes', exact=True).click()
+                expect(row.get_by_label('Enable Managed notes', exact=True)).to_be_checked()
+                row.get_by_role('button', name='More for Managed notes', exact=True).click()
+                page.get_by_role('menuitem', name='Uninstall', exact=True).click()
+                page.get_by_role('alertdialog').get_by_role('button', name='Uninstall', exact=True).click()
                 expect(row).to_have_count(0)
+                page.get_by_role('button', name='Install…', exact=True).click()
                 page.get_by_label('Application directory', exact=True).fill(str(source))
                 page.get_by_role('button', name='Install application', exact=True).click()
                 row.get_by_role('button', name='Open', exact=True).click()

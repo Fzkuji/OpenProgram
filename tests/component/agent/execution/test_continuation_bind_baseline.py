@@ -6,25 +6,25 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.agent.dispatcher.turn_context import TurnBindings
-from openprogram.agent.dispatcher.types import TurnRequest
-from openprogram.agent.session_db import SessionDB
-from openprogram.store.project.project_store import ProjectGit
+from openprogram.runtime.conversation.turn_runtime.turn_context import TurnBindings
+from openprogram.runtime.agent.turn_request import TurnRequest
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.state.store.project.project_store import ProjectGit
 
 
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     monkeypatch.setattr(
-        "openprogram.store.session.session_store.default_store", lambda: db,
+        "openprogram.state.store.session.session_store.default_store", lambda: db,
     )
-    monkeypatch.setattr("openprogram.store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
     return db
 
 
 def _bind_nonrepo_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from openprogram.store.project import project_commit
+    from openprogram.state.store.project import project_commit
 
     proj_dir = tmp_path / "user-project"
     proj_dir.mkdir()

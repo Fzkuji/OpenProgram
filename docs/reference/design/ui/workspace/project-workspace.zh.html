@@ -1,0 +1,88 @@
+<title>项目工作区</title>
+<meta name="description" content="应用即浏览器：中央 Tab，左侧按项目分组的会话，右侧文件树。">
+<h1>项目工作区：文件、Tab 与会话</h1>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 220" role="img" aria-label="三列。左：按项目分组的会话。中：会话和文件共用一条 Tab 条，当前 Tab 的工具栏，然后是内容。右：文件树。">
+  <rect class="tile" x="0" y="4" width="160" height="212" rx="8"/>
+  <text class="t-big" x="14" y="34">会话</text>
+  <text class="t-soft" x="14" y="62">按项目分组</text>
+  <text class="t-soft" x="14" y="84">名字、路径、新建</text>
+  <text class="t-soft" x="14" y="106">末组：未绑定项目</text>
+  <rect class="tile" x="172" y="4" width="336" height="212" rx="8"/>
+  <text class="t-big" x="188" y="34">Tab 条  ·  ＋ 新标签页</text>
+  <line class="ln-faint" x1="172" y1="48" x2="508" y2="48"/>
+  <text class="t-soft" x="188" y="72">当前 Tab 的工具栏</text>
+  <line class="ln-faint" x1="172" y1="86" x2="508" y2="86"/>
+  <text class="t-soft" x="188" y="120">聊天、文件查看器或其他 Tab 内容</text>
+  <rect class="tile" x="520" y="4" width="160" height="212" rx="8"/>
+  <text class="t-big" x="534" y="34">文件树</text>
+  <text class="t-soft" x="534" y="62">每次请求一层</text>
+  <text class="t-soft" x="534" y="84">点击：打开 Tab</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>会话</strong><small>按项目分组</small></li>
+<li><strong>Tab</strong><small>Tab 条、当前 Tab 工具栏、内容</small></li>
+<li class="flow-end"><strong>文件树</strong><small>每次请求一层</small></li>
+</ol>
+</figure>
+<p class="note">只有一种布局，没有工作区模式，也没有单独路由：新东西都是 Tab，不是窗格。各栏都在持久的 AppShell 内。可点击草图：<a href="project-workspace-prototype.html">原型</a>。</p>
+
+<h2>Tab 模型</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Tab</th><th scope="col">工具栏与内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">session</code></th><td>项目、模型、thinking 和权限设置跟着 Tab。是聊天单例上的书签，切 Tab 走会话切换路径。</td></tr>
+<tr><th scope="row"><code translate="no">file</code></th><td>面包屑和查看控件。代码和文本带行号和高亮，Markdown 渲染或源码，图片、PDF 经 <code translate="no">/files/raw</code> 内联，其余下载。</td></tr>
+<tr><th scope="row"><code translate="no">run</code> （计划）</th><td>由已记录事件（<code translate="no">openprogram/runtime/execution/dag.py</code>、<code translate="no">openprogram/state/store/session/graph/builder.py</code>）派生的 program 或 workflow 活视图。workflow 保持纯 Python：无图 DSL、无埋点；点节点看输入输出。</td></tr>
+</tbody>
+</table>
+<ul>
+<li>＋ 打开新标签页：新会话、运行 Agent、项目设置。</li>
+<li>Tab 持久化到 <code translate="no">localStorage</code>。</li>
+<li>transcript 工具调用里的文件路径在中心 Tab 打开。</li>
+<li>History、Context、Executions 在会话工具栏打开的覆盖层里；legacy DOM 挂载点和 <code translate="no">window.rightDock</code> shim 保留在下层。</li>
+</ul>
+
+<h2 id="file-api">项目文件 API</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">动作</th><th scope="col">请求与应答</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">project_file_tree</code></th><td><code translate="no">project_id</code>, <code translate="no">path</code> （相对路径，<code translate="no">""</code> 为根）。一层目录。</td></tr>
+<tr><th scope="row"><code translate="no">project_file_search</code></th><td>按名字和相对路径搜索，不透明游标在不可变快照上分页；跳过忽略的构建目录，不跟软链。</td></tr>
+<tr><th scope="row"><code translate="no">project_file_read</code></th><td><code translate="no">{content, size, mtime, truncated}</code>，或 <code translate="no">binary</code> / <code translate="no">too_large</code></td></tr>
+<tr><th scope="row"><code translate="no">project_file_write</code></th><td>UTF-8 文本，上限 5 MB，父目录须存在。<code translate="no">expected_mtime</code> 不符时回 <code translate="no">conflict</code>。</td></tr>
+<tr><th scope="row"><code translate="no">project_file_create</code> <code translate="no">rename</code> <code translate="no">copy</code> <code translate="no">delete</code> <code translate="no">reveal</code></th><td>文件管理；另有 <code translate="no">project_file_info</code>、<code translate="no">project_folder_size</code>、<code translate="no">project_file_operation_status</code>。</td></tr>
+<tr><th scope="row"><code translate="no">GET /files/raw</code></th><td><code translate="no">?project_id=&amp;path=</code> 图片、PDF 内联，其余下载。<code translate="no">nosniff</code>；除 PDF 外 <code translate="no">CSP: sandbox</code>。</td></tr>
+</tbody>
+</table>
+<p class="note">所有路径都经 <code translate="no">_resolve</code>：项目已知、位置检查、拒绝绝对路径、<code translate="no">realpath</code> 落在项目根内。读取上限 1 MB。二进制：前 8 KiB 含 NUL。点文件照列；<code translate="no">.git/</code>、<code translate="no">node_modules/</code>、<code translate="no">.venv/</code>、<code translate="no">__pycache__/</code> 不预取。代码：<code translate="no">openprogram/interfaces/server/ws_actions/files/</code>。</p>
+
+<h2>复用部件</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部件</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">项目存储、settings.json</th><td><code translate="no">openprogram/state/store/project/project_store.py</code></td></tr>
+<tr><th scope="row">项目动作，含 <code translate="no">list_project_sessions</code>、<code translate="no">set_session_project</code></th><td><code translate="no">openprogram/interfaces/server/ws_actions/project.py</code></td></tr>
+<tr><th scope="row">项目页</th><td><code translate="no">apps/web/components/projects/projects-page.tsx</code></td></tr>
+<tr><th scope="row">聊天、右侧栏</th><td><code translate="no">apps/web/components/chat/</code>, <code translate="no">apps/web/components/right-sidebar/</code></td></tr>
+<tr><th scope="row"><code translate="no">wsRequest</code></th><td><code translate="no">apps/web/lib/net/ws/ws-request.ts</code></td></tr>
+<tr><th scope="row"><code translate="no">/api/pick-folder</code></th><td><code translate="no">openprogram/interfaces/server/routes/files/workdir.py</code></td></tr>
+</tbody>
+</table>
+
+<h2>非目标</h2>
+<ul>
+<li>不做 git 面板：Agent 在聊天里完成。</li>
+<li>文件树不接 fs-events；已展开文件夹在窗口聚焦时重列（见<a href="project-location.html">项目位置</a>）。</li>
+</ul>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件 API、文件树、查看器、文件 Tab、写入路径</th><td>已实现</td></tr>
+<tr><th scope="row">会话 Overview 面板</th><td>计划。右侧栏视图，由 <code translate="no">session_artifacts</code> 加实时事件驱动：Outputs（<code translate="no">write</code>/<code translate="no">edit</code> 碰过的文件，去重，新在前，点击打开）、Subagents（标签、状态，点击聚焦分支）、Sources（读过的文件、<code translate="no">web_search</code>/<code translate="no">fetch</code> 的 URL，去重）。由已持久化的 tool call 派生，不加存储。</td></tr>
+<tr><th scope="row">项目列表表格</th><td>计划。Name、Sources、Updated；行内展开会话；操作：打开、新会话、⋯（重命名、设置、移除）。需要 <code translate="no">updated_at</code>（会话时间戳最大值，兜底注册表 ctime）和 <code translate="no">rename_project</code>。置顶以后再说。</td></tr>
+<tr><th scope="row"><code translate="no">run</code> Tab</th><td>计划</td></tr>
+</tbody>
+</table>

@@ -37,7 +37,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
 }
 .codeContent code { font: inherit; }
 .codeTools {
@@ -50,7 +50,6 @@
   height: 1.5em;
   color: var(--text-muted);
   font: inherit;
-  font-family: var(--font-mono, ui-monospace, monospace);
 }
 .copyButton {
   display: inline-flex;

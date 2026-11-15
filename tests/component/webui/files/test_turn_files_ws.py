@@ -9,9 +9,10 @@ import subprocess
 
 import pytest
 
-from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
-from openprogram.webui.ws_actions import turn_files as tf
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
+from openprogram.interfaces.server.ws_actions import turn_files as tf
+from openprogram.interfaces.server.ws_actions.turn_files import scope as turn_files_scope
 
 
 class FakeWS:
@@ -28,16 +29,16 @@ class FakeWS:
 def store(tmp_path: Path, monkeypatch) -> SessionStore:
     s = SessionStore(root_path=tmp_path / "sessions")
     monkeypatch.setattr(
-        'openprogram.store.session.session_store.shared._default_store', s, raising=False,
+        'openprogram.state.store.session.session_store.shared._default_store', s, raising=False,
     )
     monkeypatch.setattr(
-        'openprogram.store.session.session_store.shared._default_store', s,
+        'openprogram.state.store.session.session_store.shared._default_store', s,
         raising=False,
     )
     # See test_finalize_shadow_git: other suites shadow the lazy
-    # `openprogram.store.default_store` re-export with a real attribute.
+    # `openprogram.state.store.default_store` re-export with a real attribute.
     monkeypatch.setattr(
-        "openprogram.store.default_store", lambda: s, raising=False,
+        "openprogram.state.store.default_store", lambda: s, raising=False,
     )
     return s
 
@@ -96,15 +97,17 @@ def test_revert_turn_action_reports_error(store):
 
 def test_actions_registered():
     assert set(tf.ACTIONS) == {
-        "review_scope", "review_file_diff",
+        "review_scope", "review_file_diff", "review_revert_hunk",
         "turn_history_state", "turn_operation_status", "revert_turn", "reapply_turn",
     }
 
 
 def test_revert_turn_rejects_active_run(store, monkeypatch):
-    from openprogram.webui import server as _server
+    from openprogram.interfaces.server import server as _server
 
-    monkeypatch.setattr(_server, "_is_run_active", lambda _session_id: True)
+    # Only the branches whose line holds the turn have to be free: here the
+    # selected one, which is running.
+    monkeypatch.setattr(_server, "_is_selected_run_active", lambda _session_id: True)
     ws = FakeWS()
     _run(tf.handle_revert_turn(ws, {
         "session_id": "busy", "msg_id": "u1_reply",
@@ -117,7 +120,7 @@ def test_revert_turn_rejects_active_run(store, monkeypatch):
 
 
 def test_reapply_turn_restores_after_image(store, tmp_path, monkeypatch):
-    from openprogram.webui import server as _server
+    from openprogram.interfaces.server import server as _server
 
     monkeypatch.setattr(_server, "_is_run_active", lambda _session_id: False)
     session_id, msg_id = "s_ws_redo", "u1_reply"
@@ -180,6 +183,45 @@ def test_turn_scope_uses_summary_embedded_on_history_node(store, tmp_path):
     assert data["source"] == "mutation_journal"
     assert data["file_count"] == 1
     assert data["files"][0]["added"] == 3
+
+
+def test_turn_scope_reads_journal_when_embedded_summary_is_bounded(store, tmp_path):
+    """Regression: a 3-row summary counting 12 files listed only 3 rows."""
+    session_id, msg_id = "s_bounded", "u1_reply"
+    _seed(store, session_id, msg_id)
+    journal = CheckpointStore(store._session_dir(session_id))
+    targets = []
+    for number in range(12):
+        target = tmp_path / f"f{number:02d}.py"
+        target.write_text("before\n", encoding="utf-8")
+        journal.backup_before_edit(msg_id, str(target))
+        target.write_text("after\n", encoding="utf-8")
+        journal.commit_after_edit(msg_id, str(target), operation="edit")
+        targets.append(target)
+    _git, index = store._open(session_id)
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "turn_files": {
+            "version": 2, "file_count": 12, "added": 12, "removed": 12,
+            "files": [{
+                "path": str(target), "op": "modify", "added": 1, "removed": 1,
+                "binary": False, "diff_state": "available",
+                "recoverability": "exact", "unavailable_reason": None,
+            } for target in targets[:3]],
+        },
+    }
+
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": session_id, "scope": "turn", "assistant_msg_id": msg_id,
+    }))
+
+    data = ws.sent[0]["data"]
+    assert data["status"] == "ready"
+    assert data["file_count"] == 12
+    assert sorted(row["path"] for row in data["files"]) == sorted(
+        str(target) for target in targets
+    )
 
 
 def test_branch_scope_excludes_sibling_turn_receipt(store, tmp_path):
@@ -510,7 +552,7 @@ def test_workspace_review_snapshot_rejects_worktree_content_change(store, tmp_pa
 
 
 def test_workspace_review_page_stales_after_workspace_change(store, tmp_path, monkeypatch):
-    from openprogram.webui.ws_actions.turn_files import diff as turn_files_diff
+    from openprogram.interfaces.server.ws_actions.turn_files import diff as turn_files_diff
     original_git_output = turn_files_diff._git_output
     git_calls = []
 
@@ -623,7 +665,7 @@ def test_review_scope_rejects_raw_offset_cursor(store, tmp_path):
 
 
 def test_review_scope_snapshot_stales_when_recovery_blob_changes(store, tmp_path):
-    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+    from openprogram.state.store.snapshot.checkpoint.paths import turn_backup_dir
 
     session_id, msg_id = "s_blob_snapshot", "u1_reply"
     _seed(store, session_id, msg_id)
@@ -700,7 +742,7 @@ def test_evicted_snapshot_cursor_is_stale_after_same_hash_rebuild(monkeypatch):
 
 def test_expired_snapshot_rebuild_advances_epoch_for_scope_and_diff(monkeypatch):
     now = [100.0]
-    monkeypatch.setattr(tf.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(turn_files_scope.time, "monotonic", lambda: now[0])
     tf._REVIEW_SNAPSHOTS.clear()
     tf._REVIEW_CURSORS.clear()
     tf._REVIEW_SNAPSHOT_EPOCHS.clear()
@@ -749,7 +791,7 @@ def test_expired_snapshot_id_rejects_no_cursor_diff_after_rebuild(store, tmp_pat
         }]},
     }
     now = [100.0]
-    monkeypatch.setattr(tf.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(turn_files_scope.time, "monotonic", lambda: now[0])
     monkeypatch.setattr(tf, "_REVIEW_SNAPSHOT_TTL", 5.0)
     first_ws = FakeWS()
     _run(tf.handle_review_scope(first_ws, {
@@ -882,6 +924,30 @@ def test_latest_file_turn_remains_undo_after_later_chat_only_reply(store, tmp_pa
     assert result["latest_file_turn_id"] == "a1"
 
 
+def test_history_state_frame_names_operation_apart_from_ws_action(store, tmp_path, monkeypatch):
+    from openprogram.interfaces.server import server as _server
+
+    monkeypatch.setattr(_server, "_is_run_active", lambda _session_id: False)
+    session_id, msg_id = "s_history_frame", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "frame.py"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+
+    ws = FakeWS()
+    _run(tf.handle_turn_history_state(ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+    }))
+
+    data = ws.sent[0]["data"]
+    assert data["action"] == "turn_history_state"
+    assert data["status"] == "ready"
+    assert data["operation"] == "undo"
+
+
 def test_history_action_hidden_when_current_digest_changed(store, tmp_path):
     session_id, msg_id = "s_history_conflict", "u1_reply"
     _seed(store, session_id, msg_id)
@@ -897,11 +963,12 @@ def test_history_action_hidden_when_current_digest_changed(store, tmp_path):
 
     assert result["status"] == "blocked"
     assert result["action"] is None
+    assert result["reason"] == "files_changed"
     assert result["conflicts"] == [str(target)]
 
 
 def test_branch_net_stats_declines_large_repetitive_line_sets(store):
-    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+    from openprogram.state.store.snapshot.checkpoint.paths import turn_backup_dir
 
     session_id = "s_stats_budget"
     _seed(store, session_id, "a1")
@@ -929,7 +996,7 @@ def test_branch_net_stats_declines_large_repetitive_line_sets(store):
 
 
 def test_turn_diff_rejects_symlinked_session_recovery_root(store, tmp_path):
-    from openprogram.store.snapshot.checkpoint.paths import session_backup_root
+    from openprogram.state.store.snapshot.checkpoint.paths import session_backup_root
 
     session_id = "s_symlink_recovery"
     _seed(store, session_id, "a1")
@@ -949,3 +1016,169 @@ def test_turn_diff_rejects_symlinked_session_recovery_root(store, tmp_path):
 
     with pytest.raises(OSError):
         tf._state_bytes(session_dir, "a1", state)
+
+
+# ------------------------------------------------------------ hunk revert
+
+def test_reverse_hunk_matches_nearest_block_and_keeps_line_endings():
+    from openprogram.interfaces.server.ws_actions.turn_files.hunk import reverse_hunk
+
+    text = "a\r\nX\r\nc\r\nd\r\nX\r\nc\r\n"
+    # The diff names line 5; the identical block at line 2 is farther away.
+    assert reverse_hunk(text, ["b", "c"], ["X", "c"], 5) == "a\r\nX\r\nc\r\nd\r\nb\r\nc\r\n"
+    # Lines moved down since the diff was taken: still found, nearest first.
+    assert reverse_hunk("0\n1\nnew\n", ["old"], ["new"], 1) == "0\n1\nold\n"
+    # A last line without a newline keeps it missing.
+    assert reverse_hunk("keep\nnew", ["old1", "old2"], ["new"], 2) == "keep\nold1\nold2"
+    # Pure insertion of context-free lines reverts to nothing.
+    assert reverse_hunk("a\nadded\nb\n", ["a", "b"], ["a", "added", "b"], 1) == "a\nb\n"
+    assert reverse_hunk("a\nb\n", ["x"], ["gone"], 1) is None
+
+
+def _hunks(diff: str) -> list[dict]:
+    import re
+    hunks = []
+    for line in diff.splitlines():
+        match = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)", line)
+        if match:
+            hunks.append({"new_start": int(match.group(1)), "old_lines": [], "new_lines": []})
+        elif hunks and line[:1] in " -+":
+            if line[:1] != "+":
+                hunks[-1]["old_lines"].append(line[1:])
+            if line[:1] != "-":
+                hunks[-1]["new_lines"].append(line[1:])
+    return hunks
+
+
+def test_review_revert_hunk_restores_one_hunk_through_document_history(store, tmp_path, monkeypatch):
+    import types
+    from openprogram.state.store.project import project_store
+    from openprogram.state.store.project.identity import capture_directory_identity
+
+    root = tmp_path / "hunk-repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    target = root / "tracked.py"
+    lines = [f"line {i}" for i in range(1, 21)]
+    # newline="\n": a Windows text write would turn every line into a change.
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    edited = list(lines)
+    edited[1] = "first change"
+    edited[17] = "second change"
+    target.write_text("\n".join(edited) + "\n", encoding="utf-8", newline="\n")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+    project = types.SimpleNamespace(id="p1", path=str(root), **capture_directory_identity(root))
+    monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)
+    monkeypatch.setattr(project_store, "get_project", lambda pid: project if pid == "p1" else None)
+
+    scope = tf._workspace_scope("session")
+    diff = tf._workspace_file_diff("session", str(target), scope["snapshot_id"])["diff"]
+    first, second = _hunks(diff)
+    request = {
+        "session_id": "session", "scope": "workspace", "path": str(target),
+        "snapshot_id": scope["snapshot_id"], "request_id": "r1", "idempotency_key": "k1",
+    }
+
+    ws = FakeWS()
+    _run(tf.handle_review_revert_hunk(ws, {**request, "hunk": second}))
+    data = ws.sent[0]["data"]
+    assert data["action"] == "review_revert_hunk" and data["request_id"] == "r1"
+    assert data["status"] == "ready", data
+    restored = target.read_text(encoding="utf-8").splitlines()
+    assert restored[1] == "first change" and restored[17] == "line 18"
+
+    # The file changed, so the scope snapshot the client holds is stale.
+    ws = FakeWS()
+    _run(tf.handle_review_revert_hunk(ws, {**request, "hunk": first, "idempotency_key": "k2"}))
+    assert ws.sent[0]["data"]["error_code"] == "STALE_SNAPSHOT"
+    assert target.read_text(encoding="utf-8").splitlines()[1] == "first change"
+
+    # With a fresh snapshot, a hunk that is no longer in the file is a conflict.
+    fresh = tf._workspace_scope("session")["snapshot_id"]
+    ws = FakeWS()
+    _run(tf.handle_review_revert_hunk(ws, {**request, "snapshot_id": fresh, "hunk": second, "idempotency_key": "k3"}))
+    assert ws.sent[0]["data"]["status"] == "conflict"
+    ws = FakeWS()
+    _run(tf.handle_review_revert_hunk(ws, {**request, "snapshot_id": fresh, "hunk": first, "idempotency_key": "k4"}))
+    assert ws.sent[0]["data"]["status"] == "ready"
+    assert target.read_text(encoding="utf-8") == "\n".join(lines) + "\n"
+
+
+def _crlf_repo(tmp_path, monkeypatch, autocrlf):
+    import types
+    from openprogram.state.store.project import project_store
+    from openprogram.state.store.project.identity import capture_directory_identity
+
+    root = tmp_path / f"crlf-{autocrlf}"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    for key, value in (("user.email", "t@example.com"), ("user.name", "T"), ("core.autocrlf", autocrlf)):
+        subprocess.run(["git", "-C", str(root), "config", key, value], check=True)
+    target = root / "tracked.py"
+    lines = [f"line {i}" for i in range(1, 21)]
+    target.write_bytes(("\n".join(lines) + "\n").encode())
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+    project = types.SimpleNamespace(id="p1", path=str(root), **capture_directory_identity(root))
+    monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)
+    monkeypatch.setattr(project_store, "get_project", lambda pid: project if pid == "p1" else None)
+    return target, lines
+
+
+def test_review_diff_of_a_crlf_checkout_shows_only_the_edited_lines(store, tmp_path, monkeypatch):
+    # Windows checks an LF blob out with CRLF when core.autocrlf is true.
+    target, lines = _crlf_repo(tmp_path, monkeypatch, "true")
+    edited = list(lines)
+    edited[1] = "first change"
+    edited[17] = "second change"
+    target.write_bytes(("\r\n".join(edited) + "\r\n").encode())
+
+    scope = tf._workspace_scope("session")
+    diff = tf._workspace_file_diff("session", str(target), scope["snapshot_id"])["diff"]
+    first, second = _hunks(diff)
+    assert first["old_lines"][1] == "line 2" and first["new_lines"][1] == "first change"
+    assert "\r" not in diff
+
+    ws = FakeWS()
+    _run(tf.handle_review_revert_hunk(ws, {
+        "session_id": "session", "scope": "workspace", "path": str(target),
+        "snapshot_id": scope["snapshot_id"], "request_id": "r1", "idempotency_key": "crlf-k1",
+        "hunk": second,
+    }))
+    assert ws.sent[0]["data"]["status"] == "ready", ws.sent[0]["data"]
+    # The working file keeps its CRLF line endings.
+    restored = target.read_bytes().decode()
+    assert restored.count("\r\n") == 20 and restored.split("\r\n")[17] == "line 18"
+
+
+def test_review_diff_keeps_line_ending_changes_without_eol_conversion(store, tmp_path, monkeypatch):
+    target, lines = _crlf_repo(tmp_path, monkeypatch, "false")
+    target.write_bytes(("\r\n".join(lines) + "\r\n").encode())
+
+    scope = tf._workspace_scope("session")
+    diff = tf._workspace_file_diff("session", str(target), scope["snapshot_id"])["diff"]
+    (hunk,) = _hunks(diff)
+    assert len(hunk["new_lines"]) == 20
+
+
+def test_review_revert_hunk_refuses_paths_outside_scope_and_active_runs(store, tmp_path, monkeypatch):
+    from openprogram.interfaces.server import server as _server
+
+    ws = FakeWS()
+    _run(tf.handle_review_revert_hunk(ws, {
+        "session_id": "s", "scope": "workspace", "path": str(tmp_path / "x"),
+        "snapshot_id": "nope", "hunk": {"new_start": 1, "old_lines": [], "new_lines": []},
+    }))
+    assert ws.sent[0]["data"]["status"] == "error"
+    monkeypatch.setattr(_server, "_is_run_active", lambda _sid: True)
+    ws = FakeWS()
+    _run(tf.handle_review_revert_hunk(ws, {
+        "session_id": "s", "scope": "workspace", "path": str(tmp_path / "x"),
+        "snapshot_id": "nope", "hunk": {"new_start": 1, "old_lines": [], "new_lines": []},
+    }))
+    assert ws.sent[0]["data"]["error_code"] == "RUN_ACTIVE"

@@ -1,0 +1,28 @@
+<title>API reference</title>
+<meta name="description" content="Core Python components, imports and a short example.">
+<h1>API reference</h1>
+<table class="stack">
+<thead><tr><th scope="col">Component</th><th scope="col">Source</th><th scope="col">What it is</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="api/agent.html"><code translate="no">Agent</code> <code translate="no">Context</code> <code translate="no">agent</code> <code translate="no">agent_async</code></a></th><td><code translate="no">runtime/agent/</code>, <code translate="no">runtime/context/model.py</code></td><td>Direct calls, configured Agent methods, automatic execution context</td></tr>
+<tr><th scope="row"><a href="api/runtime.html"><code translate="no">Runtime</code></a></th><td><code translate="no">runtime/agent/runtime/</code></td><td>Computes context from the DAG, calls the LLM, writes the response back</td></tr>
+<tr><th scope="row"><a href="api/providers.html"><code translate="no">create_runtime</code> and providers</a></th><td><code translate="no">runtime/agent/runtime/factory.py</code>, <code translate="no">models/providers/</code></td><td>Detect or explicitly create a Runtime</td></tr>
+</tbody>
+</table>
+<p class="note">Paths are under <a href="https://github.com/FuzzyKuji/OpenProgram/tree/main/openprogram/"><code translate="no">openprogram/</code></a>. The session context is a flat DAG of user messages, LLM calls and function calls: <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/runtime/context/README.md">architecture</a>.</p>
+<h2>Imports</h2>
+<pre translate="no"><code>from openprogram import Agent, Context, agent, agent_async, Runtime, Session, decision
+from openprogram import ChatAgent, TurnRequest, TurnResult
+from openprogram.runtime.agent.runtime.factory import create_runtime</code></pre>
+<h2>Example</h2>
+<pre translate="no"><code>from openprogram import Agent
+
+class Observer(Agent):
+    tools = []
+
+    def observe(self, task: str) -&gt; str:
+        """Identify the requested UI element."""
+        return self(f"Find the UI element for: {task}. Reply with its label only.")
+
+print(Observer().observe("login button"))</code></pre>
+<p class="note">There are no meta functions like <code translate="no">create()</code> or <code translate="no">fix()</code>. Write, change and validate Agent methods and Program functions with ordinary file-editing tools.</p>

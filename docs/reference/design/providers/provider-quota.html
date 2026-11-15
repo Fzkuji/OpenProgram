@@ -1,0 +1,120 @@
+<title>Provider quota</title>
+<meta name="description" content="How OpenProgram reads each provider's plan windows, balances and rate limits, keeps 30 days of spend, and names the cause of a failed reply.">
+<h1>Provider quota</h1>
+
+<p>One status per connected provider: health, quota, 30-day spend, default model and key health. Quota comes first from the replies OpenProgram already receives; an endpoint is read only on a few events, never on a timer.</p>
+<p>A provider is connected when it is enabled or holds a credential: one in OpenProgram's store, its CLI on <code translate="no">PATH</code>, the Codex CLI's auth file, or a satisfied cloud chain.</p>
+<p>A provider that signs in only through OpenProgram, such as Grok Subscription, counts once its sign-in is stored, so a fresh install lists none: the Providers page shows <strong>Connect a model provider</strong> and <code translate="no">openprogram providers status</code> prints "No connected providers".</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Model and store</th><td><code translate="no">openprogram/models/usage/quota.py</code></td></tr>
+<tr><th scope="row">Endpoint readers</th><td><code translate="no">openprogram/models/usage/quota_fetchers/</code>, one module per source</td></tr>
+<tr><th scope="row">Status</th><td><code translate="no">openprogram/models/usage/provider_status.py</code>, wire types generated to <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
+<tr><th scope="row">Route</th><td><code translate="no">GET /api/providers/status</code>, <code translate="no">POST /api/providers/status/refresh</code>, WebSocket frame <code translate="no">provider_quota</code></td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram providers status [--refresh] [--json]</code>: asks the running Worker for the route's payload (each key's use count and last use live in its memory), and builds it itself when none answers</td></tr>
+</tbody>
+</table>
+
+<h2 id="model">One model, four kinds</h2>
+<p>A <code translate="no">QuotaLimit</code> is one limit of one account: key, label, unit (<code translate="no">percent</code>, <code translate="no">usd</code>, <code translate="no">tokens</code>, <code translate="no">requests</code>), used, limit, remaining, window, reset time, plus its <code translate="no">source</code> (<code translate="no">headers</code>, <code translate="no">frame</code>, <code translate="no">endpoint</code>) and <code translate="no">fetched_at</code>. A provider's report has one kind:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Kind</th><th scope="col">When</th><th scope="col">Example</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">windowed</code></th><td>A percent unit, or a window longer than a minute</td><td>Codex 5 h and weekly windows</td></tr>
+<tr><th scope="row"><code translate="no">balance</code></th><td>A money limit</td><td>OpenRouter key limit</td></tr>
+<tr><th scope="row"><code translate="no">rate_limit</code></th><td>Per-minute requests or tokens</td><td>OpenAI and Anthropic API headers</td></tr>
+<tr><th scope="row"><code translate="no">none</code></th><td>Nothing observed</td><td>Mistral</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>Status</dt><dd>Warning at 80 % used, danger at 95 %, exhausted at 100 % or nothing remaining. A windowed limit warns early only when usage runs ahead of the time elapsed in its window.</dd>
+<dt>Stale</dt><dd>A value older than 15 minutes is marked stale; it is still shown, with its age.</dd>
+<dt>Account</dt><dd>The stored credential id, or empty for an environment key. A bearer token is matched to its credential by digest; the token itself is never stored.</dd>
+</dl>
+
+<h2 id="capture">Captured from replies</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Provider</th><th scope="col">Read from</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenAI Codex</th><td><code translate="no">x-codex-*</code> headers of every answer, a 429 included, every limit family; the <code translate="no">codex.rate_limits</code> WebSocket frame</td></tr>
+<tr><th scope="row">OpenAI-compatible APIs</th><td><code translate="no">x-ratelimit-*</code> headers (Chat Completions and Responses adapters)</td></tr>
+<tr><th scope="row">Anthropic</th><td><code translate="no">anthropic-ratelimit-*</code> headers, only with an API key on <code translate="no">api.anthropic.com</code></td></tr>
+</tbody>
+</table>
+<p>Values stay in memory and reach disk at most every 30 s per account. The old Codex parser's only caller looked for headers Codex does not send; it is replaced by one that follows codex-rs.</p>
+
+<h2 id="fetch">Reading an endpoint</h2>
+<p>An endpoint is read only when:</p>
+<ul>
+<li>the status page opens and the last read of that account is older than 10 minutes, whatever it answered (after answering, in the background). A refused read (401, 5xx, a body that does not parse) counts: otherwise an endpoint that rejects the key would be asked again on every open;</li>
+<li>the user asks for a refresh;</li>
+<li>a reply failed with 402, 429 or a quota message (at most once per account per 10 minutes);</li>
+<li>a key was just added.</li>
+</ul>
+<p>One read per account at a time; a 429 from the quota endpoint holds that account for its Retry-After, or 5 minutes. Reads use the configured safe HTTP client, pinned to the endpoint's origin, and are logged as probe kind <code translate="no">quota</code>.</p>
+<p>Each read is recorded per provider and account in <code translate="no">usage.db</code> (<code translate="no">quota_reads</code>), and the Worker and every CLI run decide from that record:</p>
+<ul>
+<li>kept: when it was sent, its HTTP status, why it failed, the 429 hold, the last read a failed reply asked for;</li>
+<li>so a refused read is not sent again by the next <code translate="no">providers status</code> or after a Worker restart;</li>
+<li>a failed read leaves the earlier values with their own observed time; the status names the failure once below them (<code translate="no">read_error</code>, <code translate="no">read_at</code>) until a read answers.</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">Source</th><th scope="col">State</th><th scope="col">Shape taken from</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenRouter <code translate="no">/key</code></th><td>On; keeps the remaining amount, not a yes/no</td><td>OpenRouter docs, Hermes</td></tr>
+<tr><th scope="row">Codex usage</th><td>Off until verified</td><td>Oh My Pi, codex-rs</td></tr>
+<tr><th scope="row">Z.ai</th><td>Off until verified</td><td>Oh My Pi, ZCode</td></tr>
+<tr><th scope="row">MiniMax, OpenCode Go, GitHub Copilot</th><td>Off until verified</td><td>Oh My Pi</td></tr>
+</tbody>
+</table>
+
+<h2 id="spend">Spend</h2>
+<p>From the usage ledger, per provider over 30 days: calls, cost, list price, tokens by part, cache share (cache reads over prompt tokens) and a daily series of 30 points. A subscription provider reports its spend as Included, with the list price kept beside it. The default model is the last one used, else the most used.</p>
+<p>A DeepSeek reply could show more cached tokens than total tokens. The cause: the recorder's fallback wrote <code translate="no">total_tokens = input + output</code>, leaving cached tokens out. The recorder now keeps the larger of the reported total and the parts summed, and every aggregate sums the parts, so rows written before the fix read correctly.</p>
+<p><code translate="no">usage.db</code> gains <code translate="no">quota_snapshots</code> (the latest value per provider, account and limit), <code translate="no">quota_samples</code> (one sample per 15 minutes, kept 90 days) and <code translate="no">quota_reads</code> (the last endpoint read per provider and account).</p>
+
+<h2 id="health">Health and failure causes</h2>
+<p>Two records speak about a key: its credential status, written when a call failed (<code translate="no">status_at</code>, the pool's <code translate="no">updated_at</code>), and the last read of its quota endpoint (<code translate="no">read_at</code>). The newer one decides; at the same time a 401 outranks a stored billing stop or throttle.</p>
+<ul>
+<li>A 401 read newer than the status: <code translate="no">invalid_key</code> ("quota endpoint answered 401"), until a read answers or a call with the key succeeds.</li>
+<li>A read that answered after a <code translate="no">billing_blocked</code> stop overrules the stop; that read's balance decides.</li>
+<li>A sign-in whose refresh token the token endpoint refuses (<code translate="no">invalid_grant</code>, already used) is <code translate="no">needs_reauth</code>, read as <code translate="no">signed_out</code> with the Sign in again fix. That holds for a stored sign-in and for one delegated to the Codex CLI's file; the delegated one is not asked again until the file holds another login.</li>
+</ul>
+<p>Health is the best key's state, overridden by a spent limit: <code translate="no">ready</code>, <code translate="no">rate_limited</code> (with the reset time), <code translate="no">no_credit</code>, <code translate="no">invalid_key</code>, <code translate="no">signed_out</code> or <code translate="no">unknown</code>. A provider with no key reads <code translate="no">not_configured</code>; a local server that does not answer reads <code translate="no">not_running</code>. Each state that needs action carries its fix; see <a href="provider-management.html">Provider management</a>.</p>
+<p>A throttle lasts as long as its cooldown. The pool keeps a key's <code translate="no">rate_limited</code> status until its next success but picks the key again once the cooldown has passed, so health reads such a key as <code translate="no">ready</code>, not as rate limited until a time already gone.</p>
+<p>The CLI table prints only coming times (<code translate="no">until 14:05</code>, <code translate="no">resets Nov 19 02:22</code>); a time already passed is left out. It fits the terminal width: a bar gives up cells, down to 5, and then its reset time moves to a line of its own. Output to a pipe without <code translate="no">COLUMNS</code> is not wrapped.</p>
+<p>A failed reply carries a cause beside its error reason, from the provider error to the turn result, the event (<code translate="no">cause</code>) and the stored placeholder (<code translate="no">error_cause</code>):</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Cause</th><th scope="col">From</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">quota_exhausted</code></th><td>402, <code translate="no">usage_limit_reached</code>, or a billing body under any status (<code translate="no">insufficient_quota</code>, 401 <code translate="no">CreditsError</code> "Insufficient balance"); names the spent limit, its reset time, the key (<code translate="no">account</code>) and that key's other windows (<code translate="no">other_limits</code>) when known</td></tr>
+<tr><th scope="row"><code translate="no">invalid_key</code></th><td>401 or a rejected key message</td></tr>
+<tr><th scope="row"><code translate="no">not_available</code></th><td>Region or plan refusal (403 JSON, model not on the plan)</td></tr>
+<tr><th scope="row"><code translate="no">unreachable</code></th><td>DNS or connection failure anywhere in the exception chain</td></tr>
+</tbody>
+</table>
+<p class="note">An ordinary 429, a 5xx, a timeout and a 403 web page from a network edge carry no cause; the error card is drawn as before.</p>
+
+<h2 id="decisions">Decisions</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Choice</th><th scope="col">Follows</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Limit record</th><td>Oh My Pi <code translate="no">UsageLimit</code></td><td>The most complete of the 21: windows, money and request counts in one record</td></tr>
+<tr><th scope="row">Labels, "% left", stale mark</th><td>Codex</td><td>Subscription users already read its 5h / Weekly rows</td></tr>
+<tr><th scope="row">Time-aware warning</th><td>Claude Code</td><td>Usage against elapsed window time warns earlier and less often than a fixed line</td></tr>
+<tr><th scope="row">Replies first, no timer</th><td>Codex, Claude Code</td><td>A timer spends requests while nobody looks; replies already refresh busy providers</td></tr>
+<tr><th scope="row">429 hold on the quota endpoint</th><td>Oh My Pi</td><td>Never retries into its own rate limit</td></tr>
+<tr><th scope="row">OpenRouter remaining amount</th><td>Hermes</td><td>A yes/no hid how close a key was to its limit</td></tr>
+<tr><th scope="row">Unverified readers off</th><td>&mdash;</td><td>Written only from a peer's documented response; switched on after a real check</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li>No web UI reads the status route yet; the pages that will are in <a href="provider-management.html">Provider management</a>.</li>
+<li>No reader for Kimi Coding (its payload is not settled), DeepSeek or Moonshot balances, or OpenRouter <code translate="no">/credits</code> (no peer documents their responses).</li>
+<li>The unverified readers above are off.</li>
+<li>Not built: a REPL <code translate="no">/status</code>. A top-level <code translate="no">openprogram status</code> alias is not possible: that name is the background service's.</li>
+</ul>

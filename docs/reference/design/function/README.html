@@ -1,0 +1,24 @@
+<title>Function design</title>
+<meta name="description" content="Design records for the function and tool-calling framework.">
+<h1>Function design</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Record</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="program-model.html">Program model</a></th><td>Tools and applications, <code translate="no">ProgramContext</code>, plugins, exposure tiers, user directory, CLI</td></tr>
+<tr><th scope="row"><a href="calling-unification.html">Function calling</a></th><td><code translate="no">@function</code> and Agent methods, shared registry, gating, deferred loading</td></tr>
+<tr><th scope="row"><a href="deferred-tools.html">Deferred tools</a></th><td>Catalog, <code translate="no">tool_search</code> ranking and loading per provider, unavailable tools, tool-array epochs</td></tr>
+<tr><th scope="row"><a href="tool-guides.html">Tool guides</a></th><td>Instructions delivered when a call needs them, <code translate="no">help</code>, single-entry tools</td></tr>
+<tr><th scope="row"><a href="agentic-program.html">Agent classes, Programs and tools</a></th><td>Agent classes and what each shape is for</td></tr>
+<tr><th scope="row"><a href="calling/code-call.html">Fixed-order calls</a></th><td>A method calling sub-functions in source order</td></tr>
+</tbody>
+</table>
+<p class="note">Decorator usage, metadata, the tool-call loop and pure-Python helpers live only in the <a href="../../../capabilities/agentic-programming/README.html">Agentic programming guide</a>.</p>
+
+<h2>Implementation</h2>
+<ul>
+<li><code translate="no">openprogram/runtime/agent/call_state.py</code></li>
+<li><code translate="no">openprogram/runtime/agent/runtime/</code></li>
+<li><code translate="no">openprogram/runtime/agent/decision.py</code></li>
+<li><code translate="no">openprogram/programs/tools/&lt;group&gt;/&lt;name&gt;/</code></li>
+</ul>

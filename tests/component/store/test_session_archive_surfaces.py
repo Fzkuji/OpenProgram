@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store.session.session_store import SessionStore
 
 NOW = time.time()
 
@@ -17,7 +17,7 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
     s = SessionStore(tmp_path / "sessions")
     s.create_session("alpha", "main", title="Alpha", updated_at=NOW - 60)
     s.create_session("beta", "main", title="Beta", updated_at=NOW)
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: s)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: s)
     return s
 
 
@@ -25,7 +25,7 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
 
 
 def test_cli_archive_then_unarchive_round_trips(store, capsys) -> None:
-    from openprogram.cli.commands.sessions import _cmd_session_archive
+    from openprogram.interfaces.cli.commands.sessions import _cmd_session_archive
 
     _cmd_session_archive("beta", True)
     assert "Archived session beta" in capsys.readouterr().out
@@ -37,7 +37,7 @@ def test_cli_archive_then_unarchive_round_trips(store, capsys) -> None:
 
 
 def test_cli_archive_of_an_unknown_session_exits_nonzero(store, capsys) -> None:
-    from openprogram.cli.commands.sessions import _cmd_session_archive
+    from openprogram.interfaces.cli.commands.sessions import _cmd_session_archive
 
     with pytest.raises(SystemExit) as exc:
         _cmd_session_archive("nope", True)
@@ -46,12 +46,26 @@ def test_cli_archive_of_an_unknown_session_exits_nonzero(store, capsys) -> None:
     assert "no session" in capsys.readouterr().out
 
 
+def test_cli_archive_goes_through_a_running_worker(store, capsys, monkeypatch) -> None:
+    from openprogram.interfaces.cli.commands import execution
+    from openprogram.interfaces.cli.commands.sessions import _cmd_session_archive
+    calls = []
+    monkeypatch.setattr("openprogram.host.security.backend_endpoint.resolve_backend_endpoint", lambda: object())
+    monkeypatch.setattr(execution, "_worker_request",
+                        lambda method, path, body: calls.append((method, path, body)) or (200, {}))
+
+    _cmd_session_archive("beta", True)
+
+    assert calls == [("POST", "/api/sessions/archive", {"session_id": "beta"})]
+    assert "Archived session beta" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     ("scope", "expected"),
     [("active", ["alpha"]), ("archived", ["beta"]), ("all", ["beta", "alpha"])],
 )
 def test_cli_list_scopes(store, capsys, scope, expected) -> None:
-    from openprogram.cli.commands.sessions import _cmd_chat_sessions
+    from openprogram.interfaces.cli.commands.sessions import _cmd_chat_sessions
 
     store.set_archived("beta", True)
     _cmd_chat_sessions(scope)
@@ -64,7 +78,7 @@ def test_cli_list_scopes(store, capsys, scope, expected) -> None:
 
 def test_cli_parser_exposes_archive_verbs() -> None:
     """The verbs have to reach the dispatch, not just exist as functions."""
-    from openprogram.cli import build_parser
+    from openprogram.interfaces.cli.application import build_parser
 
     parser = build_parser()
     args = parser.parse_args(["sessions", "archive", "beta"])
@@ -83,8 +97,8 @@ def client(store, monkeypatch: pytest.MonkeyPatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from openprogram.webui import server as _s
-    from openprogram.webui.routes import chat as chat_routes
+    from openprogram.interfaces.server import server as _s
+    from openprogram.interfaces.server.routes import chat as chat_routes
 
     monkeypatch.setattr(_s, "_sessions", {}, raising=False)
     monkeypatch.setattr(_s, "_broadcast", lambda *a, **k: None, raising=False)
@@ -100,6 +114,30 @@ def test_archive_endpoint_hides_the_session(client, store) -> None:
     assert r.status_code == 200
     assert r.json() == {"session_id": "beta", "archived": True}
     assert [x["id"] for x in store.list_sessions()] == ["alpha"]
+
+
+def test_archive_endpoints_stop_and_restore_automatic_goals_once(client, store, monkeypatch) -> None:
+    from openprogram.runtime.conversation.always_on import runtime
+    calls = []
+    monkeypatch.setattr(runtime, "archive_changed", lambda sid, archived: calls.append((sid, archived)))
+
+    client.post("/api/sessions/archive", json={"session_id": "beta"})
+    client.post("/api/sessions/archive", json={"session_id": "beta"})  # already archived
+    client.post("/api/sessions/unarchive", json={"session_id": "beta"})
+
+    assert calls == [("beta", True), ("beta", False)]
+
+
+def test_cli_archive_without_a_worker_stops_automatic_goals(store, monkeypatch, capsys) -> None:
+    from openprogram.interfaces.cli.commands.sessions import _cmd_session_archive
+    from openprogram.runtime.conversation.always_on import runtime
+    calls = []
+    monkeypatch.setattr(runtime, "archive_changed", lambda sid, archived: calls.append((sid, archived)))
+
+    _cmd_session_archive("beta", True)
+    _cmd_session_archive("beta", False)
+
+    assert calls == [("beta", True), ("beta", False)]
 
 
 def test_unarchive_endpoint_restores_the_session(client, store) -> None:

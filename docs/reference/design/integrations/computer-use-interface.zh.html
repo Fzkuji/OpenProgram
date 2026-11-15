@@ -1,0 +1,97 @@
+<title>操控电脑的界面</title>
+<meta name="description" content="Agent 光标、窗口标识、调用如何展示、审批卡片、设置和指向目标。">
+<h1>操控电脑的界面</h1>
+
+
+<h2 id="agent-光标">Agent 光标</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">步骤落点</th><td>在一个点名元素或坐标的步骤执行前，<code translate="no">MacComputer.act</code> 先算出它落在哪里（元素的中心取自它的 <code translate="no">AXPosition</code> 和 <code translate="no">AXSize</code>，截图坐标则按窗口原点和缩放换算），调用 <code translate="no">native_window.note_action_point</code>，再等待 <code translate="no">CUE_LEAD_SECONDS</code>（0.15 秒），让光标先到。</td></tr>
+<tr><th scope="row">坐标系</th><td>这个点以屏幕点为单位、原点在主显示器左上角，与 Electron 的坐标空间相同。</td></tr>
+<tr><th scope="row">帧</th><td>worker 把它作为 <code translate="no">native.action</code> 帧广播（<code translate="no">session_id</code>、<code translate="no">x</code>、<code translate="no">y</code>、<code translate="no">sequence</code>、<code translate="no">at</code>、<code translate="no">action</code>、<code translate="no">app_name</code>）；agentic 子进程通过与被操作窗口相同的父进程通道转发（<code translate="no">kind: "action"</code>）。</td></tr>
+<tr><th scope="row">Web 客户端</th><td>Web 客户端里 <code translate="no">native-window-store.ts</code> 在<strong>显示操作</strong>没有关闭时把帧交给 <code translate="no">openprogramDesktop.nativeActionCue</code>。</td></tr>
+<tr><th scope="row">绘制</th><td>桌面主进程（<code translate="no">main/worker/agent-control.js</code>）把它画进这个对话的控制提示层：光标滑过去并停在那里。</td></tr>
+<tr><th scope="row">去重</th><td>每个 App 窗口都会收到这一帧，所以主进程按 <code translate="no">session_id</code>、<code translate="no">sequence</code> 和 <code translate="no">at</code> 丢掉已显示过的步骤。</td></tr>
+<tr><th scope="row">平台</th><td>Linux 和 Windows 还不发出这些点。</td></tr>
+</tbody>
+</table>
+
+<h2 id="窗口标识">窗口标识</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">标识</th><td>被操作的窗口带有 macOS 的屏幕共享标识，与 Codex Computer Use 下一样：标题栏按钮上的徽标和菜单栏的共享图标。macOS 会给任何处在 ScreenCaptureKit 实时流下的窗口画这两样，所以 <code translate="no">window_watch.WindowWatch</code> 在它上面保持一个流。</td></tr>
+<tr><th scope="row">触碰</th><td><code translate="no">MacComputer</code> 在每次 <code translate="no">act</code> 和每次指明窗口的 <code translate="no">get_state</code> 时，用窗口 id、应用名和标题栏按钮的位置（通过辅助功能读取）触碰它。</td></tr>
+<tr><th scope="row">流</th><td>流只过滤这一个窗口（<code translate="no">SCContentFilter.initWithDesktopIndependentWindow</code>），请求每秒一帧的 2x2 画面且不挂任何输出，因此不录下任何内容。</td></tr>
+<tr><th scope="row">释放</th><td>每个会话最多监视一个窗口：转到另一个窗口会释放前一个，<code translate="no">IDLE_SECONDS</code>（20 秒）内没有步骤的窗口由清理定时器释放。</td></tr>
+<tr><th scope="row">失败</th><td>打开流在单独线程上进行，失败被忽略，所以步骤不会因标识而等待或失败。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">位置上报</th><td>窗口被监视期间，另一个线程每 <code translate="no">REPORT_SECONDS</code>（0.12 秒）在有变化时上报它的位置：<code translate="no">window_place</code> 读取屏幕窗口列表，得到窗口的位置和 <code translate="no">GLOW_MARGIN</code>（32pt）范围内挡在它前面的窗口，标题为 <code translate="no">OVERLAY_TITLE</code> 的窗口（App 自己的提示层）不计入。</td></tr>
+<tr><th scope="row">控制帧</th><td>上报经 <code translate="no">native_window.note_control</code> 发出，归属取触碰窗口时记下的对话，帧类型为 <code translate="no">native.control</code>（<code translate="no">session_id</code>、<code translate="no">window_id</code>、<code translate="no">active</code>、<code translate="no">app_name</code>、<code translate="no">frame</code>、<code translate="no">buttons</code>、<code translate="no">occluders</code>）；子进程以 <code translate="no">kind: "control"</code> 转发。</td></tr>
+<tr><th scope="row">结束</th><td>释放窗口时发出 <code translate="no">active: false</code>。</td></tr>
+<tr><th scope="row">Web 客户端</th><td>Web 客户端在<strong>显示操作</strong>打开时把上报交给 <code translate="no">openprogramDesktop.nativeControl</code>，控制结束的上报总会交过去。</td></tr>
+<tr><th scope="row">覆盖窗口</th><td>桌面主进程为每个对话在窗口加边距的范围上放一个透明、点击穿透、不可聚焦的窗口，加载 <code translate="no">/menu-overlay/agent-control</code>，画出向内发光、按钮上的强调色红绿灯和光标。</td></tr>
+<tr><th scope="row">层级</th><td>提示层在窗口层叠里紧贴在被控窗口之上（用窗口 id 调 <code translate="no">moveAbove</code>，每次上报都重新排一次，因为用户切换应用时层叠会变），所以挡在被控窗口前面的窗口也会挡住提示层；只有窗口服务器拒绝这样排序时，它才浮在所有窗口之上。</td></tr>
+<tr><th scope="row">遮挡窗口</th><td>两种情况下发光和红绿灯都会挖掉挡在前面的窗口，光标的落点在这些窗口下面时光标隐藏。</td></tr>
+<tr><th scope="row">外观</th><td>外观见 <a href="../ui/browser/agent-control-overlay.zh.html">Agent 控制提示层</a>。</td></tr>
+</tbody>
+</table>
+
+<h2 id="web-展示">Web 展示</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">读取调用</th><td><code translate="no">lib/computer-use/computer-use-agent-call.ts</code> 解读 <code translate="no">computer_use_agent</code> 调用：<code translate="no">appStepArgs</code> 把 <code translate="no">app</code> 调用变成应用渲染器接受的扁平步骤（<code translate="no">{action, app, …}</code>；多个步骤成为 batch，代码自成一个动作），<code translate="no">screenStep</code> 给出浏览器或虚拟机调用的动作。</td></tr>
+<tr><th scope="row">应用步骤</th><td><code translate="no">tool-presentation.ts</code> 用显示器图标和 system 色调渲染 <code translate="no">app</code> 步骤；标题写动作和应用（"在 Calculator 中点击"），目标行在给了按键、文本、动作名或窗口时显示它们。</td></tr>
+<tr><th scope="row">其他调用</th><td>浏览器调用显示动作和 URL，虚拟机调用显示动作，代码显示"在 &lt;app&gt; 中运行代码"。工具还能把任务交出去时录下的对话，把那种调用显示为"交给新代理"及简报首行。</td></tr>
+<tr><th scope="row">审批卡片</th><td>审批卡片的范围按钮在"允许一次"和"始终允许"之间加入"允许此对话"，答案摘要打印"允许此对话"。</td></tr>
+<tr><th scope="row">旧调用</th><td>早先工具（<code translate="no">computer_use</code>、<code translate="no">web_use</code>、<code translate="no">gui_agent</code>）记录的调用保留各自的渲染器，旧对话照常可读。</td></tr>
+</tbody>
+</table>
+
+<h2 id="界面工作">界面工作</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">卡片头部</th><td><code translate="no">app</code> 调用的审批卡片（<code translate="no">computer-use-approval.tsx</code>）先展示应用本身：图标、显示名和 bundle id 来自 <code translate="no">computer_use_apps</code> WebSocket 动作，它调用后端的 <code translate="no">app_info</code>，不启动任何东西，Web 按名字缓存结果（<code translate="no">lib/net/computer-use-apps.ts</code>）。</td></tr>
+<tr><th scope="row">卡片正文</th><td>其下一个标签用文字说明这一步（<code translate="no">computer-use-step.ts</code>），两行分别说明这一步在后台进行（录音则说明只录该应用的声音）以及可选范围的含义，去掉空值的参数折叠在"查看执行详情"里。</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">设置分区</th><td>项目设置页在默认设置和权限规则之间有一个"操控电脑"分区（<code translate="no">computer-use-apps-section.tsx</code>）。</td></tr>
+<tr><th scope="row">行</th><td>它把项目的 <code translate="no">computer_use_agent(&lt;app&gt;)</code> 允许规则（以及以 <code translate="no">computer_use(&lt;app&gt;)</code> 保存的规则）列成每个应用一行，带图标、名字、bundle id 和移除按钮，通用规则列表不再重复这些规则。</td></tr>
+<tr><th scope="row">移除</th><td>移除一行即删除该规则。</td></tr>
+<tr><th scope="row">对话级授权</th><td>对话级授权是随对话结束的会话规则，所以这里不列出。</td></tr>
+</tbody>
+</table>
+<p>人可以像在 Codex 里那样给 agent 指东西：</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">评论与框选</th><td>在 Web 标签中，<strong>Comment on the page…</strong> 选中一个元素，把选择器、文本和评论加入草稿；<strong>Screenshot a region…</strong> 让用户拖出矩形，把这些像素作为 PNG 附件加入。</td></tr>
+<tr><th scope="row">隔离世界</th><td>两者运行在同一 isolated world（<code translate="no">apps/desktop/main/web-views/web-views.js</code> 中的 <code translate="no">PICKER_WORLD</code>），共享取消钩子，一个模式会结束另一个。</td></tr>
+<tr><th scope="row">框选遮罩</th><td><code translate="no">capturePage</code> 取矩形前先移除区域遮罩并绘制两帧，按页面缩放换算。</td></tr>
+<tr><th scope="row">送达</th><td>文件经 <code translate="no">lib/chat/composer-inbox.ts</code> 到达目标对话：显示该对话的输入框把它当作拖入文件，否则一直等到有输入框显示。</td></tr>
+<tr><th scope="row">@ 菜单</th><td>输入框的 <code translate="no">@</code> 菜单在文件之前列出已打开的网页标签和正在运行的应用（<code translate="no">attach/mention/mention-sources.ts</code>）。标签页写成指向其地址的 markdown 链接，应用写成名称加 bundle id，所以「这个标签页」不用模型去猜。正在运行的应用来自带 <code translate="no">running: true</code> 的 <code translate="no">computer_use_apps</code>，它列出被拒应用之外的常规应用，页面里缓存十秒。</td></tr>
+</tbody>
+</table>
+
+<h2 id="实现状态">实现状态</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">范围</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现</th><td>网页标签里的元素评论和区域截图；对已打开标签页和正在运行应用的 <code translate="no">@</code> 提及。</td></tr>
+<tr><th scope="row">macOS 上已实现</th><td>桌面应用上的控制提示层（向内发光、强调色红绿灯和 agent 光标），窗口位置帧、步骤坐标帧和桌面提示层窗口有单元测试。未实现：Linux 和 Windows 后端不上报窗口位置和步骤坐标，那里不会显示提示层。</td></tr>
+<tr><th scope="row">macOS 上已实现</th><td>窗口标识，监视、切换和空闲释放有单元测试。Linux 和 Windows 上未实现。</td></tr>
+</tbody>
+</table>
+
+<p class="next"><a href="computer-and-browser-use.zh.html">操控电脑与浏览器</a></p>

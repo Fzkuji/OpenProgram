@@ -29,6 +29,29 @@ export function _headAncestors(
   return out;
 }
 
+function isCallNode(n: GNode): boolean {
+  return n.role === "tool" || n.display === "runtime" || (n.role === "assistant" && !!n.function);
+}
+
+/** Stamp ``_pathLane``: every turn on the road to HEAD, and the calls
+ *  those turns made, wear HEAD's lane colour; the rest keep their own.
+ *  A turn shared by several branches belongs to whichever you are on. */
+export function _stampPathLanes(byId: Record<string, GNode>, headId: string | null): void {
+  const road = new Set(_headAncestors(byId, headId));
+  const headLane = headId ? byId[headId]?._lane : undefined;
+  Object.keys(byId).forEach((id) => {
+    const n = byId[id];
+    delete n._pathLane;
+    if (headLane === undefined) return;
+    if (road.has(id)) { n._pathLane = headLane; return; }
+    if (!isCallNode(n)) return;
+    // A call takes the colour of the turn that made it.
+    let cur: GNode | undefined = n;
+    for (let i = 0; cur && isCallNode(cur) && i < 10000; i++) cur = cur.caller ? byId[cur.caller] : undefined;
+    if (cur && road.has(cur.id) && cur._lane === n._lane) n._pathLane = headLane;
+  });
+}
+
 export function _assignLanes(
   byId: Record<string, GNode>,
   headId: string | null,

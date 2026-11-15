@@ -1,11 +1,13 @@
 """Coverage for the @tool decorator + runtime layer.
 
 Verifies the parts that govern how every future tool will behave:
-schema generation, sync/async wrap, error wrap, char cap + persist,
+schema generation, sync/async wrap, error wrap, the declared result cap,
 approval gate evaluation, cache, cancel/on_update injection, and
 registry filtering.
 """
 from __future__ import annotations
+
+from openprogram.runtime.agent import Agent
 
 import asyncio
 import importlib
@@ -17,30 +19,23 @@ from typing import Optional
 import pytest
 from mcp.types import CallToolResult, TextContent as MCPTextContent
 
-from openprogram.agent.types import AgentToolResult
-from openprogram.backend import RunResult
-from openprogram.programs import _runtime as R
-from openprogram.programs._runtime import (
-    DEFAULT_HEAD_RATIO,
-    DEFAULT_MAX_RESULT_CHARS,
-    MIN_KEEP_CHARS,
+from openprogram.models.providers.types import AgentToolResult
+from openprogram.host.backend import RunResult
+from openprogram.programs._host import runtime as R
+from openprogram.programs._host.runtime import (
     ToolReturn,
     _build_parameters_schema,
-    _cap_result_text,
-    _evaluate_approval,
     _parse_docstring,
-    all_tools,
     filter_for,
     get,
-    register,
     reset_registry,
     restore_registry,
     snapshot_registry,
     function,
     tool_requires_approval,
 )
-from openprogram.mcp.adapter import convert_call_result
-from openprogram.providers.types import ImageContent, TextContent
+from openprogram.extensions.mcp.adapter import convert_call_result
+from openprogram.models.providers.types import ImageContent, TextContent
 
 
 @pytest.fixture(autouse=True)
@@ -140,31 +135,6 @@ def test_schema_skips_framework_kwargs() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Result truncation
-# ---------------------------------------------------------------------------
-
-def test_cap_short_text_unchanged() -> None:
-    assert _cap_result_text("hi", 100) == "hi"
-
-
-def test_cap_long_text_head_tail() -> None:
-    text = "A" * 500 + "B" * 500
-    capped = _cap_result_text(text, max_chars=200, head_ratio=0.5)
-    # MIN_KEEP_CHARS = 2000 enforces a floor; we asked for 200 but get 2000+
-    assert len(capped) >= 2000
-    assert "elided" in capped
-
-
-def test_cap_respects_min_floor() -> None:
-    text = "X" * 10_000
-    capped = _cap_result_text(text, max_chars=100)
-    assert len(capped) >= MIN_KEEP_CHARS
-    assert "elided" in capped
-    assert capped.startswith("X")
-    assert capped.endswith("X")
-
-
-# ---------------------------------------------------------------------------
 # Decorator: schema + name + description
 # ---------------------------------------------------------------------------
 
@@ -244,37 +214,60 @@ def test_agent_tool_result_bridges_legacy_details_error_bit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Char cap + persist-to-disk
+# The declared result cap: recorded by the tool, applied once by the loop
 # ---------------------------------------------------------------------------
 
-def test_long_result_truncates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _stored(result, call_id: str = "c1"):
+    from types import SimpleNamespace
+    from openprogram.runtime.agent.loop.tool_dispatch import _as_stored
+    return _as_stored(SimpleNamespace(id=call_id, name="big", arguments={}), result)
+
+
+def test_the_tool_never_cuts_its_own_text_and_records_its_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(R, "_tool_results_dir", lambda: tmp_path)
 
-    @function(max_result_chars=200, persist_full=False)
+    @function(max_result_weight=200)
     def big() -> str:
         """Huge."""
         return "Z" * 50_000
 
     result = _run(big.execute("c1", {}, None, None))
-    text = result.content[0].text
-    assert len(text) >= MIN_KEEP_CHARS
-    assert "elided" in text
+    assert result.content[0].text == "Z" * 50_000
+    assert result.details["cap"] == 200
+    assert list(tmp_path.iterdir()) == []
 
 
-def test_persist_full_writes_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_result_within_the_declared_cap_is_stored_whole(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(R, "_tool_results_dir", lambda: tmp_path)
 
-    @function(max_result_chars=100, persist_full=True)
+    @function(max_result_weight=200)
+    def small() -> str:
+        return "A" * 800                      # weight 200
+
+    stored = _stored(_run(small.execute("c1", {}, None, None)))
+    assert stored.content[0].text == "A" * 800
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_the_loop_bounds_once_to_the_declared_cap_and_keeps_the_whole_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.state.store.session.weight import weight
+    monkeypatch.setattr(R, "_tool_results_dir", lambda: tmp_path)
+
+    @function(max_result_weight=200)
     def big() -> str:
         """Persist everything."""
-        return "Q" * 50_000
+        return "\n".join(f"line {i}" for i in range(10_000))
 
-    result = _run(big.execute("c123", {}, None, None))
-    text = result.content[0].text
-    assert "saved at" in text
-    persisted = tmp_path / "c123.txt"
-    assert persisted.exists()
-    assert persisted.read_text() == "Q" * 50_000
+    whole = "\n".join(f"line {i}" for i in range(10_000))
+    stored = _stored(_run(big.execute("c123", {}, None, None)), "c123")
+    text = stored.content[0].text
+    assert weight(text) <= 200 < weight(whole)
+    persisted, = tmp_path.glob("*.txt")
+    assert str(persisted) in text and persisted.read_text() == whole
+    assert stored.details["output"]["full_path"] == str(persisted)
+    assert stored.details["preview"] == whole[:4_000]
 
 
 # ---------------------------------------------------------------------------
@@ -487,14 +480,14 @@ def test_governed_async_tool_uses_task_deadline_and_records_activity(
         return 0.01
 
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_operation_timeout", bounded,
+        "openprogram.runtime.jobs.runner.current_job_operation_timeout", bounded,
     )
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.record_current_job_activity",
+        "openprogram.runtime.jobs.runner.record_current_job_activity",
         lambda kind: activity.append(kind) or True,
     )
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_operation_timeout_reason",
+        "openprogram.runtime.jobs.runner.current_job_operation_timeout_reason",
         lambda _timeout: "budget.runtime_exhausted",
     )
 
@@ -518,14 +511,14 @@ def test_governed_sync_tool_without_process_boundary_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A wait_for timeout cannot terminate the executor thread of a sync tool."""
-    from openprogram.agent.job.runner import NonPreemptibleOperation
+    from openprogram.runtime.jobs.runner import NonPreemptibleOperation
 
     def reject(_timeout, *, preemptibility):
         assert preemptibility == "none"
         raise NonPreemptibleOperation("error.nonpreemptible_operation")
 
     monkeypatch.setattr(
-        "openprogram.agent.job.runner.current_job_operation_timeout", reject,
+        "openprogram.runtime.jobs.runner.current_job_operation_timeout", reject,
     )
 
     @function
@@ -632,6 +625,7 @@ def test_bash_execution_failures_use_typed_error(
                 "error": "agentic subprocess timed out after 90 seconds",
                 "killed": True,
                 "timed_out": True,
+                "progress": {"events": 2, "steps": ["plan: completed"]},
             },
             "agentic subprocess timed out after 90 seconds",
             "agentic_subprocess_timeout",
@@ -643,16 +637,16 @@ def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
 ) -> None:
     from contextlib import nullcontext
 
-    import openprogram.agent.process_runner as process_runner
-    import openprogram.agent.session_db as session_db
-    import openprogram.webui._exec_dag as exec_dag
-    from openprogram.agent import AgentSession
-    from openprogram.agent.dispatcher.runtime_attach import (
+    import openprogram.runtime.conversation.process_runner as process_runner
+    import openprogram.runtime.context.session_db as session_db
+    import openprogram.runtime.execution.dag as exec_dag
+    from openprogram.runtime.agent.loop.session import AgentSession
+    from openprogram.runtime.conversation.turn_runtime.runtime_attach import (
         _wrap_agentic_runtime_block,
     )
-    from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agent.types import AgentTool
-    from openprogram.providers.types import (
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.models.providers.types import AgentTool
+    from openprogram.models.providers.types import (
         AssistantMessage,
         EventDone,
         EventStart,
@@ -675,10 +669,10 @@ def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
         label="probe",
         execute=original_execute,
     )
-    setattr(tool, "_is_agentic", True)
+    setattr(tool, "_is_agent_method", True)
     monkeypatch.setattr(
         process_runner,
-        "run_agentic_in_subprocess",
+        "run_agent_method_in_subprocess",
         lambda **kwargs: subprocess_result,
     )
     monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
@@ -755,19 +749,20 @@ def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
         assert results[0].details["signal"] == subprocess_result["signal"]
     if subprocess_result.get("timed_out"):
         assert results[0].details["timed_out"] is True
+        assert results[0].details["progress"] == subprocess_result["progress"]
 
 
 def test_worker_resident_agentic_tool_does_not_spawn(monkeypatch) -> None:
     from contextlib import nullcontext
 
-    import openprogram.agent.process_runner as process_runner
-    import openprogram.agent.session_db as session_db
-    import openprogram.webui._exec_dag as exec_dag
-    from openprogram.agent.dispatcher.runtime_attach import (
+    import openprogram.runtime.conversation.process_runner as process_runner
+    import openprogram.runtime.context.session_db as session_db
+    import openprogram.runtime.execution.dag as exec_dag
+    from openprogram.runtime.conversation.turn_runtime.runtime_attach import (
         _wrap_agentic_runtime_block,
     )
-    from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agent.types import AgentTool
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.models.providers.types import AgentTool
 
     class FakeDB:
         def invalidate_cache(self, session_id):
@@ -786,11 +781,11 @@ def test_worker_resident_agentic_tool_does_not_spawn(monkeypatch) -> None:
         label="probe",
         execute=original_execute,
     )
-    setattr(tool, "_is_agentic", True)
+    setattr(tool, "_is_agent_method", True)
     setattr(tool, "_run_in_worker", True)
     monkeypatch.setattr(
         process_runner,
-        "run_agentic_in_subprocess",
+        "run_agent_method_in_subprocess",
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("spawned")),
     )
     monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
@@ -812,98 +807,6 @@ def test_worker_resident_agentic_tool_does_not_spawn(monkeypatch) -> None:
 
     assert result.content[0].text == "worker"
     assert calls == [("call-1", {})]
-
-
-def test_gui_agent_browser_surface_is_captured_for_subprocess(monkeypatch) -> None:
-    from contextlib import nullcontext
-
-    import openprogram.agent.process_runner as process_runner
-    import openprogram.agent.session_db as session_db
-    import openprogram.webui._exec_dag as exec_dag
-    from openprogram.agent import surface_context
-    from openprogram.agent.dispatcher.runtime_attach import (
-        _wrap_agentic_runtime_block,
-    )
-    from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agent.types import AgentTool
-
-    class FakeDB:
-        def invalidate_cache(self, session_id):
-            pass
-
-    async def original_execute(call_id, args, cancel, on_update):
-        raise AssertionError("browser gui_agent should run in the subprocess")
-
-    tool = AgentTool(
-        name="gui_agent",
-        description="probe",
-        parameters={"type": "object", "properties": {}},
-        label="probe",
-        execute=original_execute,
-    )
-    setattr(tool, "_is_agentic", True)
-    captured = {"context_id": "page_ctx_live", "surfaces": []}
-    released = []
-    seen = {}
-    monkeypatch.setattr(surface_context, "capture_pages", lambda: captured)
-    monkeypatch.setattr(
-        surface_context,
-        "release_bindings",
-        lambda context: released.append(context),
-    )
-
-    def run_subprocess(**kwargs):
-        seen.update(kwargs)
-        return {"text": "browser result"}
-
-    monkeypatch.setattr(
-        process_runner, "run_agentic_in_subprocess", run_subprocess,
-    )
-    monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
-    monkeypatch.setattr(exec_dag, "live_progress", lambda *a, **kw: nullcontext())
-    monkeypatch.setattr(exec_dag, "build_exec_dag", lambda *a, **kw: None)
-
-    wrapped = _wrap_agentic_runtime_block(
-        tool,
-        TurnRequest(
-            session_id="browser-surface",
-            user_text="",
-            agent_id="main",
-            source="web",
-        ),
-        lambda event: None,
-        "assistant-1",
-    )
-    result = _run(wrapped.execute(
-        "call-1",
-        {"task": "read title", "surface": "browser"},
-        None,
-        None,
-    ))
-
-    assert result.content[0].text == "browser result"
-    assert seen["surface_context_snapshot"] is captured
-    assert seen["timeout_seconds"] == 300
-    assert released == [captured]
-
-    fallback = surface_context.window_context()
-    monkeypatch.setattr(
-        surface_context,
-        "capture_pages",
-        lambda: (_ for _ in ()).throw(RuntimeError("desktop unavailable")),
-    )
-    monkeypatch.setattr(surface_context, "window_context", lambda: fallback)
-    seen.clear()
-    released.clear()
-    result = _run(wrapped.execute(
-        "call-2",
-        {"task": "read title", "surface": "browser"},
-        None,
-        None,
-    ))
-    assert result.content[0].text == "browser result"
-    assert seen["surface_context_snapshot"] is fallback
-    assert released == [fallback]
 
 
 @pytest.mark.parametrize("reports_runtime_id", [True, False])
@@ -930,16 +833,16 @@ def test_gui_agent_parent_cleanup_failure_reaches_message_result(
 ) -> None:
     from contextlib import nullcontext
 
-    import openprogram.agent.process_runner as process_runner
-    import openprogram.agent.session_db as session_db
-    import openprogram.webui._exec_dag as exec_dag
-    from openprogram.agent.dispatcher.runtime_attach import (
+    import openprogram.runtime.conversation.process_runner as process_runner
+    import openprogram.runtime.context.session_db as session_db
+    import openprogram.runtime.execution.dag as exec_dag
+    from openprogram.runtime.conversation.turn_runtime.runtime_attach import (
         _wrap_agentic_runtime_block,
     )
-    from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agent.types import AgentTool
-    from openprogram.agentic_programming.function import create_pending_call_node
-    from openprogram.store import SessionNodeWriter, SessionStore
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.models.providers.types import AgentTool
+    from openprogram.runtime.agent.call_state import create_pending_call_node
+    from openprogram.state.store import SessionNodeWriter, SessionStore
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("gui-cleanup", "main", title="t")
@@ -955,7 +858,7 @@ def test_gui_agent_parent_cleanup_failure_reaches_message_result(
         label="probe",
         execute=original_execute,
     )
-    setattr(tool, "_is_agentic", True)
+    setattr(tool, "_is_agent_method", True)
     cleanup_result = {
         "status": "infeasible",
         "success": False,
@@ -1006,7 +909,7 @@ def test_gui_agent_parent_cleanup_failure_reaches_message_result(
 
     monkeypatch.setattr(
         process_runner,
-        "run_agentic_in_subprocess",
+        "run_agent_method_in_subprocess",
         run_subprocess,
     )
     monkeypatch.setattr(session_db, "default_db", lambda: store)
@@ -1049,72 +952,10 @@ def test_gui_agent_parent_cleanup_failure_reaches_message_result(
         assert persisted.metadata["finished_at"] > 0
 
 
-def test_gui_agent_max_seconds_bounds_the_subprocess(monkeypatch) -> None:
-    from contextlib import nullcontext
-
-    import openprogram.agent.process_runner as process_runner
-    import openprogram.agent.session_db as session_db
-    import openprogram.webui._exec_dag as exec_dag
-    from openprogram.agent.dispatcher.runtime_attach import (
-        _wrap_agentic_runtime_block,
-    )
-    from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agent.types import AgentTool
-
-    class FakeDB:
-        def invalidate_cache(self, session_id):
-            pass
-
-    async def original_execute(call_id, args, cancel, on_update):
-        raise AssertionError("gui_agent should run in the subprocess")
-
-    tool = AgentTool(
-        name="gui_agent",
-        description="probe",
-        parameters={"type": "object", "properties": {}},
-        label="probe",
-        execute=original_execute,
-    )
-    setattr(tool, "_is_agentic", True)
-    seen = {}
-
-    def run_subprocess(**kwargs):
-        seen.update(kwargs)
-        return {"text": "done"}
-
-    monkeypatch.setattr(
-        process_runner, "run_agentic_in_subprocess", run_subprocess,
-    )
-    monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
-    monkeypatch.setattr(exec_dag, "live_progress", lambda *a, **kw: nullcontext())
-    monkeypatch.setattr(exec_dag, "build_exec_dag", lambda *a, **kw: None)
-
-    wrapped = _wrap_agentic_runtime_block(
-        tool,
-        TurnRequest(
-            session_id="gui-timeout",
-            user_text="",
-            agent_id="main",
-            source="web",
-        ),
-        lambda event: None,
-        "assistant-1",
-    )
-    result = _run(wrapped.execute(
-        "call-1",
-        {"task": "inspect", "max_seconds": 12},
-        None,
-        None,
-    ))
-
-    assert result.content[0].text == "done"
-    assert seen["timeout_seconds"] == 12
-
-
 def test_approval_wrapper_preserves_worker_resident_marker() -> None:
-    from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agent.permissions.approval import wrap_with_approval
-    from openprogram.agent.types import AgentTool
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.models.providers.types import AgentTool
 
     async def execute(call_id, args, cancel, on_update):
         return AgentToolResult(content=[TextContent(text="worker")])
@@ -1126,7 +967,7 @@ def test_approval_wrapper_preserves_worker_resident_marker() -> None:
         label="probe",
         execute=execute,
     )
-    setattr(tool, "_is_agentic", True)
+    setattr(tool, "_is_agent_method", True)
     setattr(tool, "_run_in_worker", True)
 
     wrapped = wrap_with_approval(
@@ -1231,9 +1072,7 @@ def test_defer_sidecar_set() -> None:
 
 
 def test_split_partitions_provider_vs_catalog() -> None:
-    from openprogram.programs._runtime import (
-        split_tools_for_dispatch, install_loaded_deferred,
-    )
+    from openprogram.programs._host.runtime import split_tools_for_dispatch
 
     @function(name="common")
     def common() -> str:
@@ -1245,16 +1084,15 @@ def test_split_partitions_provider_vs_catalog() -> None:
         """Only loaded on demand."""
         return "x"
 
-    install_loaded_deferred()
-    provider, catalog = split_tools_for_dispatch([get("common"), get("rare2")])
+    provider, catalog = split_tools_for_dispatch([get("common"), get("rare2")], ())
     assert [t.name for t in provider] == ["common"]
     assert catalog == [("rare2", "Only loaded on demand.")]
 
 
 def test_tool_search_promotes_deferred_into_provider_list() -> None:
-    from openprogram.programs._runtime import (
-        split_tools_for_dispatch, install_loaded_deferred,
-        tool_search,
+    from openprogram.models.providers.types import ToolResultMessage
+    from openprogram.programs._host.runtime import (
+        loaded_tools, split_tools_for_dispatch, tool_search,
     )
 
     @function(name="lazy_tool", defer=True)
@@ -1262,34 +1100,61 @@ def test_tool_search_promotes_deferred_into_provider_list() -> None:
         """Loaded only when asked."""
         return "x"
 
-    install_loaded_deferred()
     result = _run(tool_search.execute(
         "c1", {"select": "select:lazy_tool"}, None, None
     ))
     assert "Loaded 1 deferred tool" in result.content[0].text
 
-    provider, catalog = split_tools_for_dispatch([get("lazy_tool")])
+    # The next request reads the load from the search result in its messages.
+    message = ToolResultMessage(tool_call_id="c1", tool_name="tool_search",
+                                content=result.content, details=result.details, timestamp=0)
+    assert split_tools_for_dispatch([get("lazy_tool")], ())[0] == []
+    provider, catalog = split_tools_for_dispatch([get("lazy_tool")], loaded_tools([message]))
     assert [t.name for t in provider] == ["lazy_tool"]
-    assert catalog == []
+    # Still named in the prompt: loading a tool must not change the prompt.
+    assert catalog == [("lazy_tool", "Loaded only when asked.")]
 
 
 def test_tool_search_handles_unknown_names() -> None:
-    from openprogram.programs._runtime import (
-        install_loaded_deferred, tool_search,
-    )
-    install_loaded_deferred()
+    from openprogram.programs._host.runtime import tool_search
     result = _run(tool_search.execute(
         "c1", {"select": "select:no_such_tool"}, None, None
     ))
     text = result.content[0].text
-    assert "Loaded 0" in text
-    assert "no_such_tool" in text
+    assert "Loaded" not in text
+    assert text.startswith("No tool named no_such_tool is offered")
+    # The same words travel as the note, for a wire that sends no text.
+    assert result.details == {"note": text}
+
+
+def test_tool_search_capitalized_names_use_only_current_scope() -> None:
+    from openprogram.programs._host import runtime
+    from openprogram.programs._host.runtime import install_allowed_tool_names, tool_search
+
+    @function(name="bash")
+    def bash() -> str:
+        return "ok"
+
+    @function(name="read")
+    def read() -> str:
+        return "ok"
+
+    token = install_allowed_tool_names({"tool_search", "bash", "read"})
+    try:
+        text = _run(tool_search.execute(
+            "c1", {"select": "select:Bash,Read,Write"}, None, None
+        )).content[0].text
+    finally:
+        runtime._allowed_tool_names.reset(token)
+
+    assert "`bash` is already callable" in text
+    assert "`read` is already callable" in text
+    assert "No tool named Write is offered" in text and "`write`" not in text
 
 
 def test_tool_search_cannot_load_program_outside_resolved_scope() -> None:
-    from openprogram.programs._runtime import (
+    from openprogram.programs._host.runtime import (
         install_allowed_tool_names,
-        install_loaded_deferred,
         tool_search,
     )
 
@@ -1301,7 +1166,6 @@ def test_tool_search_cannot_load_program_outside_resolved_scope() -> None:
     def private_report() -> str:
         return "private"
 
-    install_loaded_deferred()
     token = install_allowed_tool_names({"tool_search", "allowed_report"})
     try:
         explicit = _run(tool_search.execute(
@@ -1313,21 +1177,72 @@ def test_tool_search_cannot_load_program_outside_resolved_scope() -> None:
     finally:
         R._allowed_tool_names.reset(token)
 
-    assert "Loaded 0" in explicit
+    assert explicit.startswith("No tool named private_report is offered")
     assert "private_report" not in keyword
     assert "allowed_report" in keyword
 
 
+def test_a_loaded_tool_whose_server_disconnects_stays_and_says_why() -> None:
+    """Deferred-tools A5: the array keeps the loaded definition, a call says
+    the server is disconnected, and a reconnect brings the real tool back."""
+    from openprogram.models.providers.shared.tool_loads import loaded_records
+    from openprogram.models.providers.types import ToolResultMessage
+    from openprogram.programs._host.runtime import (
+        _departed, mark_unavailable, split_tools_for_dispatch, tool_search, unregister,
+    )
+
+    @function(name="linear__create_issue", defer=True)
+    def create_issue(title: str) -> str:
+        """Create a Linear issue."""
+        return f"created {title}"
+
+    real = get("linear__create_issue")
+    result = _run(tool_search.execute("c1", {"select": "select:linear__create_issue"}, None, None))
+    messages = [ToolResultMessage(tool_call_id="c1", tool_name="tool_search", content=result.content,
+                                  details=result.details, timestamp=0)]
+    records = loaded_records(messages)
+    names = list(records)
+    before, _ = split_tools_for_dispatch([real], names, records)
+
+    mark_unavailable(["linear__create_issue"], "MCP server 'linear' is disconnected")
+    unregister("linear__create_issue")
+    after, catalog = split_tools_for_dispatch([], names, records)
+    assert [(t.name, t.description, t.parameters) for t in after] == \
+        [(t.name, t.description, t.parameters) for t in before]
+    assert catalog == []
+    called = _run(after[0].execute("c2", {"title": "x"}, None, None))
+    assert called.is_error
+    assert called.content[0].text == ("Tool linear__create_issue is unavailable: "
+                                      "MCP server 'linear' is disconnected.")
+
+    R.register(real)
+    assert "linear__create_issue" not in _departed
+    again, _ = split_tools_for_dispatch([get("linear__create_issue")], names, records)
+    assert again == [real]
+
+
+def test_a_stopped_or_failed_search_loads_nothing() -> None:
+    from openprogram.models.providers.shared.tool_loads import loaded_tools
+    from openprogram.models.providers.types import TextContent as TC, ToolResultMessage
+
+    record = {"loads": [{"name": "cron", "definition": {"name": "cron", "description": "",
+                                                        "parameters": {"type": "object"}}}]}
+    stopped = ToolResultMessage(tool_call_id="c1", tool_name="tool_search", content=[TC(text="stopped")],
+                                details={**record, "stopped": {"reason_code": "cancel.user"}}, timestamp=0)
+    failed = ToolResultMessage(tool_call_id="c2", tool_name="tool_search", content=[TC(text="x")],
+                               details=record, is_error=True, timestamp=0)
+    assert loaded_tools([stopped, failed]) == []
+
+
 def test_deferred_catalog_text_format() -> None:
-    """Turn-start context discloses only a count and search guidance."""
-    from openprogram.programs._runtime import deferred_catalog_text
+    """Turn-start context names the deferred tools, without descriptions."""
+    from openprogram.programs._host.runtime import deferred_catalog_text
     block = deferred_catalog_text([("CronCreate", "Create a cron job"),
                                     ("WebFetch",   "Fetch a URL")])
     assert "deferred tools" in block
     assert "tool_search" in block, "must name the actual registered tool"
     assert "2" in block
-    assert "CronCreate" not in block
-    assert "WebFetch" not in block
+    assert "CronCreate, WebFetch" in block
     assert "Create a cron job" not in block
     assert "keyword" in block.lower()
 
@@ -1336,27 +1251,27 @@ def test_deferred_catalog_text_format() -> None:
 
 
 # ---------------------------------------------------------------------------
-# @agentic_function bridge — shared registry
+# Agent method bridge — shared registry
 # ---------------------------------------------------------------------------
 
-def test_agentic_function_registers_into_shared_registry() -> None:
-    """An @agentic_function should produce an AgentTool entry in
-    ``openprogram.programs._runtime._registry`` so the dispatcher
+def test_agent_method_registers_into_shared_registry() -> None:
+    """An Agent method should produce an AgentTool entry in
+    ``openprogram.programs._host.runtime._registry`` so the dispatcher
     treats it identically to @function-decorated tools (toolset
     membership, 6 gating layers, deferred loading)."""
-    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.runtime.agent import Agent
 
-    @agentic_function(
-        as_tool=True,
-        toolset=["core"],
-        description="Test agentic function registered as a tool.",
-    )
-    def my_agentic_tool(question: str) -> str:
-        """One-line description for the LLM."""
-        return f"answered: {question}"
+    class _MyAgenticToolAgent(Agent):
+        method_options = {'my_agentic_tool': {'toolset': ["core"], 'description': "Test agentic function registered as a tool.", 'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'my_agentic_tool'}}
+
+        def my_agentic_tool(self, question: str) -> str:
+            """One-line description for the LLM."""
+            return f"answered: {question}"
+
+    _MyAgenticToolAgent().my_agentic_tool
 
     t = get("my_agentic_tool")
-    assert t is not None, "agentic_function should appear in _registry"
+    assert t is not None, "agent_method should appear in _registry"
     assert t.description.startswith("Test agentic"), \
         "description override should win over docstring"
     # Sidecar attrs forwarded from agentic kwargs
@@ -1366,29 +1281,37 @@ def test_agentic_function_registers_into_shared_registry() -> None:
     assert t in filter_for(toolset="core")
 
 
-def test_agentic_function_as_tool_false_skips_registration() -> None:
+def test_agent_method_as_tool_false_skips_registration() -> None:
     """``as_tool=False`` keeps the agentic semantics (DAG, inner agent
     loop) but does NOT expose the function to the LLM."""
-    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.runtime.agent import Agent
 
-    @agentic_function(as_tool=False, name="private_helper")
-    def private_helper(x: str) -> str:
-        """Should NOT appear in tool registry."""
-        return x
+    class _PrivateHelperAgent(Agent):
+        method_options = {'private_helper': {'name': "private_helper", 'tool': False, 'expose': 'io', 'capture_io': True}}
+
+        def private_helper(self, x: str) -> str:
+            """Should NOT appear in tool registry."""
+            return x
+
+    _PrivateHelperAgent().private_helper
 
     assert get("private_helper") is None
 
 
-def test_agentic_function_register_globally_false() -> None:
+def test_agent_method_register_globally_false() -> None:
     """``register_globally=False`` skips the shared AgentTool registry
     but still attaches the wrapper to the instance (so Python-direct
     invoke still works). Mirror of @function's ``register_globally`` kwarg."""
-    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.runtime.agent import Agent
 
-    @agentic_function(register_globally=False, name="off_grid")
-    def off_grid(x: str) -> str:
-        """Should not appear in shared _registry."""
-        return f"local-{x}"
+    class _OffGridAgent(Agent):
+        method_options = {'off_grid': {'register_globally': False, 'name': "off_grid", 'tool': True, 'expose': 'io', 'capture_io': True}}
+
+        def off_grid(self, x: str) -> str:
+            """Should not appear in shared _registry."""
+            return f"local-{x}"
+
+    off_grid = _OffGridAgent().off_grid
 
     # Not in the shared registry — dispatcher can't find it
     assert get("off_grid") is None
@@ -1398,41 +1321,49 @@ def test_agentic_function_register_globally_false() -> None:
     assert off_grid._agent_tool.name == "off_grid"
 
 
-def test_agentic_function_tool_visible_false_registers_unexposed() -> None:
+def test_agent_method_tool_visible_false_registers_unexposed() -> None:
     """``tool_visible=False`` wires Layer-2 exposure through the
     decorator: the tool registers (Python-callable, in _registry) but
     stays out of ``exposed_names()`` — the "user-visible, agent-tool
     invisible" contract auto_workflow needs."""
-    from openprogram.agentic_programming.function import agentic_function
-    from openprogram.programs._runtime import exposed_names
+    from openprogram.runtime.agent import Agent
+    from openprogram.programs._host.runtime import exposed_names
 
-    @agentic_function(tool_visible=False, name="user_only_probe")
-    def user_only_probe(x: str) -> str:
-        return x
+    class _UserOnlyProbeAgent(Agent):
+        method_options = {'user_only_probe': {'tool_visible': False, 'name': "user_only_probe", 'tool': True, 'expose': 'io', 'capture_io': True}}
+
+        def user_only_probe(self, x: str) -> str:
+            return x
+
+    _UserOnlyProbeAgent().user_only_probe
 
     assert get("user_only_probe") is not None
     assert "user_only_probe" not in exposed_names()
 
-    @agentic_function(name="default_visible_probe")
-    def default_visible_probe(x: str) -> str:
-        return x
+    class _DefaultVisibleProbeAgent(Agent):
+        method_options = {'default_visible_probe': {'name': "default_visible_probe", 'tool': True, 'expose': 'io', 'capture_io': True}}
+
+        def default_visible_probe(self, x: str) -> str:
+            return x
+
+    _DefaultVisibleProbeAgent().default_visible_probe
 
     assert "default_visible_probe" in exposed_names()
 
 
-def test_agentic_function_available_if_false_returns_raw_fn() -> None:
-    """Layer 1 gating on the with-parens form: when ``available_if``
-    returns False, the decorator returns the raw fn unchanged so
-    module-level callers don't end up with a half-built agentic
-    instance. Confirms ``__call__`` honors the Layer 1 early-exit."""
-    from openprogram.agentic_programming.function import agentic_function
+def test_agent_method_available_if_false_remains_callable_without_registration() -> None:
+    """An unavailable method remains callable and does not register a tool."""
+    from openprogram.runtime.agent import Agent
 
-    @agentic_function(available_if=lambda: False, name="gated_agentic")
-    def gated(x: str) -> str:
-        return x
+    class _GatedAgent(Agent):
+        method_options = {'gated': {'available_if': lambda: False, 'name': "gated_agentic", 'tool': True, 'expose': 'io', 'capture_io': True}}
 
-    # Returned object should be the raw fn, not an agentic_function instance
-    assert not hasattr(gated, "_wrapper")
+        def gated(self, x: str) -> str:
+            return x
+
+    gated = _GatedAgent().gated
+
+    assert gated('value') == 'value'
     assert get("gated_agentic") is None
 
 
@@ -1470,7 +1401,7 @@ def test_full_preset_is_exactly_the_exposed_universe() -> None:
     ``exposed_names()``, so a freshly registered tool is in it with no
     edit to any list."""
     import openprogram.programs as F
-    from openprogram.programs._runtime import exposed_names
+    from openprogram.programs._host.runtime import exposed_names
 
     @function(name="full_preset_probe")
     def p() -> str:
@@ -1484,18 +1415,18 @@ def test_full_preset_is_exactly_the_exposed_universe() -> None:
 
 def test_full_preset_leaks_no_private_helper(monkeypatch) -> None:
     """Private helpers stay out of ``full``: leaf tools opt out with
-    ``expose=False``, and internal @agentic_functions with
+    ``expose=False``, and internal Agent methods with
     ``as_tool=False`` never enter the shared registry at all. Deleting
     the hand-written whitelist must not let either reach the LLM."""
     import openprogram.programs as F
-    module = importlib.import_module("openprogram.agentic_programming.function")
-    # This invariant must not depend on another test having registered a
-    # private helper in the same xdist worker.
-    monkeypatch.setattr(module, "_registry", dict(module._registry))
 
-    @module.agentic_function(as_tool=False)
-    def full_preset_agentic_private_probe() -> str:
-        return "private"
+    class _FullPresetAgenticPrivateProbeAgent(Agent):
+        method_options = {'full_preset_agentic_private_probe': {'tool': False, 'expose': 'io', 'capture_io': True, 'name': 'full_preset_agentic_private_probe'}}
+
+        def full_preset_agentic_private_probe(self, ) -> str:
+            return "private"
+
+    full_preset_agentic_private_probe = _FullPresetAgenticPrivateProbeAgent().full_preset_agentic_private_probe
 
     @function(name="full_preset_private_probe", expose=False)
     def p() -> str:
@@ -1504,9 +1435,9 @@ def test_full_preset_leaks_no_private_helper(monkeypatch) -> None:
     resolved = {t.name for t in F.agent_tools(toolset="full",
                                               include_disabled=True)}
     assert "full_preset_private_probe" not in resolved
-    internal = {n for n, f in module._registry.items() if not f.as_tool}
-    assert internal, "expected at least one as_tool=False agentic helper"
-    assert not (internal & resolved)
+    assert full_preset_agentic_private_probe() == 'private'
+    assert 'full_preset_agentic_private_probe' not in resolved
+    assert get('full_preset_agentic_private_probe') is None
 
 
 def test_exposure_disabled_via_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1524,3 +1455,25 @@ def test_exposure_disabled_via_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(F, "_exposed_set", lambda: None)
     # Filter disabled → even an expose=False tool resolves.
     assert F.get_agent_tool("probe_hidden_expose_false") is not None
+
+
+@pytest.mark.parametrize("expose", ["hidden", "io", "llm", "full"])
+@pytest.mark.parametrize("live_permission", [True, False])
+def test_dispatcher_wrappers_preserve_tool_dag_exposure(expose, live_permission):
+    from openprogram.runtime.conversation.turn_runtime.runtime_attach import _wrap_agentic_runtime_block
+    from openprogram.runtime.agent.turn_request import TurnRequest
+    from openprogram.runtime.permissions.approval import wrap_with_approval
+    from openprogram.models.providers.types import AgentTool
+
+    async def execute(call_id, args, cancel, on_update):
+        raise AssertionError("Wrapping must not execute the tool")
+
+    tool = AgentTool(name="private_probe", description="probe", label="probe",
+                     parameters={"type": "object", "properties": {}}, execute=execute)
+    tool._is_agent_method = True
+    tool._dag_expose = expose
+    request = TurnRequest(session_id="exposure", user_text="", agent_id="main", source="web")
+    approved = wrap_with_approval(tool, request, lambda event: None, _live=live_permission)
+    wrapped = _wrap_agentic_runtime_block(approved, request, lambda event: None, "assistant")
+    assert getattr(approved, "_dag_expose", None) == expose
+    assert getattr(wrapped, "_dag_expose", None) == expose

@@ -24,9 +24,9 @@ def _source(path: str) -> str:
 
 def test_legacy_job_lifecycle_controls_are_removed_from_public_surfaces() -> None:
     public_sources = (
-        "openprogram/agent/job/runner.py",
+        "openprogram/runtime/jobs/runner.py",
         "openprogram/programs/tools/agents/agent/agent/agent.py",
-        "apps/server/openprogram_server/_webui/ws_actions/job.py",
+        "openprogram/interfaces/server/ws_actions/job.py",
         "apps/cli/src/ws/client.ts",
         "apps/cli/src/screens/repl/useWsEvents.ts",
     )
@@ -41,14 +41,14 @@ def test_legacy_job_lifecycle_controls_are_removed_from_public_surfaces() -> Non
 
 
 def test_job_runner_delegates_activation_to_agent_production_driver() -> None:
-    runner = _source("openprogram/agent/job/runner.py")
+    runner = _source("openprogram/runtime/jobs/runner.py")
     assert "AgentProductionDriver" in runner
     assert "_execute_agent_turn" not in runner
-    assert not (ROOT / "openprogram/agent/job/driver.py").exists()
+    assert not (ROOT / "openprogram/runtime/jobs/driver.py").exists()
 
 
 def test_execution_cli_declares_the_four_canonical_control_verbs() -> None:
-    from openprogram.cli.parser import build_parser
+    from openprogram.interfaces.cli.parser import build_parser
 
     parser = build_parser()
     for verb in ("pause", "continue", "step", "cancel"):
@@ -63,7 +63,7 @@ def test_execution_cli_declares_the_four_canonical_control_verbs() -> None:
 def test_rest_registers_every_canonical_execution_control_route() -> None:
     from fastapi import FastAPI
 
-    from openprogram.webui.routes.execution import lifecycle
+    from openprogram.interfaces.server.routes.execution import lifecycle
 
     app = FastAPI()
     lifecycle.register(app)
@@ -86,8 +86,7 @@ def test_job_surface_sources_use_execution_envelope_and_cursor() -> None:
         "apps/cli/src/screens/repl/pickerRouter.tsx",
         "apps/cli/src/screens/repl/useWsEvents.ts",
         "apps/web/lib/execution/job-resource.ts",
-        "apps/web/lib/net/ws-events.ts",
-        "apps/web/components/right-sidebar/branches/branch-item.tsx",
+        "apps/web/lib/net/ws/ws-events.ts",
     ):
         source = _source(path)
         assert "execution_id" in source, path
@@ -96,9 +95,9 @@ def test_job_surface_sources_use_execution_envelope_and_cursor() -> None:
 
 def test_non_transport_adapters_preserve_a_job_execution_mapping() -> None:
     for path in (
-        "openprogram/acp/server.py",
-        "openprogram/channels/_conversation.py",
-        "openprogram/scheduler/service.py",
+        "openprogram/interfaces/acp/server.py",
+        "openprogram/interfaces/channels/_conversation.py",
+        "openprogram/runtime/scheduler/service.py",
     ):
         source = _source(path)
         assert "execution" in source, path

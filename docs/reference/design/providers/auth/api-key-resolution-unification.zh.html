@@ -1,0 +1,56 @@
+<title>API key 解析</title>
+<meta name="description" content="LLM provider 的凭据从哪里来：AuthStore、云凭据链，以及环境变量名现在的用途。">
+<h1>API key 解析</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Provider</th><th scope="col">凭据来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">使用 key 的 LLM provider</th><td><code translate="no">~/.openprogram</code> 下的 AuthStore，由设置页或 <code translate="no">openprogram providers login &lt;provider&gt; --api-key</code> 写入</td></tr>
+<tr><th scope="row">Amazon Bedrock</th><td>AWS 凭据链；返回哨兵值 <code translate="no">"&lt;authenticated&gt;"</code>，没有 bearer key</td></tr>
+<tr><th scope="row">Google Vertex</th><td>GCP ADC 加项目和区域；同样的哨兵值</td></tr>
+<tr><th scope="row">环境变量、<code translate="no">config.json</code></th><td>LLM key 绝不读取。<code translate="no">config.json</code> 的 <code translate="no">api_keys</code> 只用于网页搜索和 TTS。</td></tr>
+</tbody>
+</table>
+<p class="note">单一来源让运行时、目录和状态检查不会互相矛盾，设置页保存的 key 在 worker 重启后仍然有效。</p>
+
+<h2>调用</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">函数</th><th scope="col">回答</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">resolve_provider_key(provider)</code></th><td>运行时路径：API key 形状的凭据或哨兵值，否则 <code translate="no">None</code>。不含 OAuth 令牌，因为这些线路用 <code translate="no">x-api-key</code> 或 Bearer，放访问令牌会 401。</td></tr>
+<tr><th scope="row"><code translate="no">is_configured(provider_id)</code></th><td>有 key，或云凭据链满足</td></tr>
+<tr><th scope="row"><code translate="no">resolve_api_key_with_auth_store(provider_id)</code></th><td>模型列表和探测：经 <code translate="no">resolve_api_key_sync</code> 取 AuthStore 能给出的任何 bearer</td></tr>
+<tr><th scope="row"><code translate="no">env_vars_for(provider_id)</code></th><td>key 名称，作标签和标识；回退到 models.dev</td></tr>
+<tr><th scope="row"><code translate="no">provider_id_for_env_var(env_var)</code></th><td>反查，按表顺序取第一个；非 LLM key 返回 <code translate="no">None</code></td></tr>
+</tbody>
+</table>
+<p class="note">位于 <code translate="no">openprogram/models/providers/settings/env_api_keys.py</code>，运行时和服务端都能导入，不成环。<code translate="no">credentials.provider_id_for_env_var</code> 转出反查表。</p>
+
+<details>
+<summary><code translate="no">resolve_api_key_sync</code> 的顺序</summary>
+<ol>
+<li><code translate="no">get_credential_override</code>，供测试或中间件</li>
+<li><code translate="no">CredentialProvider.acquire_sync</code>：从池中取刷新后的令牌或 key</li>
+<li><code translate="no">resolve_provider_key</code>：云哨兵值</li>
+</ol>
+<p>返回 <code translate="no">None</code> 时，调用方显示登录提示，或对本地端点无 key 继续。<code translate="no">AuthCredentialProcessError</code> 总是向上抛：损坏的 helper 要点名显示，不用过期 key 顶替。</p>
+</details>
+
+<details>
+<summary>两张名称表</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">表</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">_PROVIDER_ENV_VARS</code></th><td>每个 provider 的全部名称：设置页标签和 <code translate="no">add_mode</code> 分类。例如 google 有三个；<code translate="no">anthropic</code> 把 <code translate="no">ANTHROPIC_OAUTH_TOKEN</code> 放第一；<code translate="no">github-copilot</code> 有三个令牌名。</td></tr>
+<tr><th scope="row"><code translate="no">PROVIDER_ENV_VARS</code></th><td>扁平，每个 provider 一个名称，<code translate="no">models/auth/adoption.py</code> 和 <code translate="no">openprogram providers</code> 命令用作“有 key 名称的 provider”列表。有意不含 anthropic 和 copilot，从上表派生会改变登录流程。</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2>验证</h2>
+<p><code translate="no">tests/unit/providers/auth/test_api_key_resolution.py</code> 固定环境变量名不生效、云哨兵值、反查表和 key 标签。</p>
+
+<h2>实现状态</h2>
+<p>以上全部就位。未实现：<code translate="no">Provider</code> 元数据 dataclass（id、env_vars、kind、base_url、default_api），把这张表和<a href="credential-validation-unification.html">凭据校验</a>的 KIND 表、<code translate="no">_PROVIDER_DEFAULT_API</code> 合到一起。</p>
+
+<p class="next"><a href="credential-validation-unification.html">凭据校验</a></p>

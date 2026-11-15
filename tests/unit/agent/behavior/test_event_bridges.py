@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.events import bridges as event_bridges
-from openprogram.events import create_event_bus
-from openprogram.events.bridges import (
+from openprogram.runtime.events import bridges as event_bridges
+from openprogram.runtime.events import create_event_bus
+from openprogram.runtime.events.bridges import (
     install_event_bridges,
     translate_auth_event,
 )
-from openprogram.auth.types import AuthEvent, AuthEventType
+from openprogram.models.auth.types import AuthEvent, AuthEventType
 
 
 @pytest.fixture(autouse=True)

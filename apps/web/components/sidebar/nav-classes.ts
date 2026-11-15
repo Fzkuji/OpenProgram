@@ -12,7 +12,7 @@
  * Pixel-y values are explicit (`gap-[12px]`, `px-[8px]`) because
  * this project's `html { font-size: 14px }` makes Tailwind's
  * rem-based scale 0.875× off. Height + corner come from the LIST
- * set in docs/design/ui/surface-system.md
+ * set in docs/reference/design/ui/visual-system/surface-system.html
  * (--ui-list-h, --ui-list-radius) so future size adjustments
  * happen in one place.
  */
@@ -20,16 +20,16 @@
 /** Header button — toggle / collapse the rail. 32×32 round-corner. */
 export const sidebarToggleClass = [
   // Legacy global class — used by .sidebar.collapsed CSS selectors
-  // in app/styles/base.css. Without it those rules silently miss
+  // in app/styles/base/sidebar.css. Without it those rules silently miss
   // the React-rendered DOM. Keep the descriptive name + the Tailwind
   // utilities side by side.
   "sidebar-toggle",
   "flex h-[var(--ui-list-h)] w-[var(--ui-list-h)] shrink-0 cursor-pointer items-center justify-center",
-  "rounded-[var(--ui-list-radius)] border-none bg-transparent p-0",
+  "rounded-lg border-none bg-transparent p-0",
   "text-nav-color",
   "transition-colors duration-150 ease-out",
   "hover:bg-bg-hover hover:text-nav-color-hover",
-  "active:bg-[rgba(0,0,0,0.2)]",
+  "active:bg-[color:var(--nav-toggle-press)]",
 ].join(" ");
 
 /**
@@ -39,17 +39,17 @@ export const sidebarToggleClass = [
  * fire when the row is hovered.
  */
 export const sidebarNavItemClass = [
-  // `ui-list-item` (global, app/styles/base.css) is the single source for
+  // `ui-list-item` (global, app/styles/base/list-row.css) is the single source for
   // the row box — height, corner, padding, gap, colour-transition, and the
   // hover --bg-hover tint. Only sidebar-specific bits live here.
   // `sidebar-nav-item` stays for the legacy `.sidebar.collapsed
-  // .sidebar-nav-item` rules in base.css that force a 32×32 centered square
+  // .sidebar-nav-item` rules in styles/base/ that force a 32×32 centered square
   // when collapsed.
   "ui-list-item sidebar-nav-item",
   "group w-full shrink-0",
   "font-normal text-nav-color no-underline",
   "hover:text-nav-color-hover",
-  "active:bg-[rgba(0,0,0,0.15)]",
+  "active:bg-[color:var(--nav-item-press)]",
 ].join(" ");
 
 /** Active variant — appended to `.sidebarNavItemClass` when current route matches. */
@@ -102,7 +102,13 @@ export const sidebarNavActionClass = [
 
 /** Consistent hover surfaces for the pin, new-chat and project-options actions. */
 export const sidebarProjectActionClass = [
-  "inline-flex size-[20px] shrink-0 items-center justify-center",
-  "rounded-[5px] border-0 p-0 leading-none",
-  "hover:bg-bg-hover",
+  "inline-flex size-(--ui-button-h-xs) shrink-0 items-center justify-center",
+  "rounded-sm border-0 p-0 leading-none",
+  // The row under it already shows --bg-hover, so the button's own hover
+  // (and open) tint is one step stronger, as on a chat row's ⋯.
+  "hover:bg-[var(--bg-selected)]",
 ].join(" ");
+
+/** Glyph size inside a sidebarProjectActionClass button — the project
+ *  row's ＋ and ⋯ and a chat row's ⋯ all use it, so they match. */
+export const SIDEBAR_ROW_ACTION_ICON = 15;

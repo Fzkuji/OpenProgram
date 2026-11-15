@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-import os
 import re
 from types import SimpleNamespace
 import subprocess
 import sys
-import textwrap
 
 import openprogram
 
-from openprogram.cli import ink
-from openprogram.cli.commands import rescue
-from openprogram.cli.commands import web as cli_web
-from openprogram.worker import web as worker_web
+from openprogram.interfaces.cli import ink
+from openprogram.interfaces.cli.commands import rescue
+from openprogram.operations.worker import web as worker_web
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -47,75 +44,60 @@ def test_ink_cold_build_always_verifies_root_workspace(tmp_path, monkeypatch) ->
     assert calls[1][1] == tmp_path
 
 
-def test_python_cli_application_is_owned_by_apps_workspace() -> None:
-    app = ROOT / "apps/cli/python/openprogram_cli"
+def test_python_cli_application_lives_in_the_core_package() -> None:
+    app = ROOT / "openprogram/interfaces/cli"
     assert (app / "__init__.py").is_file()
     assert (app / "__main__.py").is_file()
-    assert (app / "_impl/application.py").is_file()
-    assert (app / "_impl/commands").is_dir()
-    assert (app / "_impl/repl").is_dir()
-    assert (app / "_impl/setup_sections").is_dir()
-
-    compatibility_files = {
-        path.removeprefix("openprogram/cli/")
-        for path in subprocess.run(
-            ["git", "ls-files", "--", "openprogram/cli"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.splitlines()
-    }
-    assert compatibility_files == {"README.md", "__init__.py", "__main__.py"}
+    assert (app / "application.py").is_file()
+    assert (app / "commands").is_dir()
+    assert (app / "repl").is_dir()
+    assert (app / "setup_sections").is_dir()
 
 
-def test_python_cli_canonical_entry_matches_the_compatibility_entry() -> None:
-    import openprogram_cli
-    import openprogram.cli as compatibility_cli
-
-    assert openprogram_cli.main is compatibility_cli.main
-    assert openprogram_cli.build_parser is compatibility_cli.build_parser
-
-
-def test_python_cli_rejects_an_already_loaded_foreign_canonical_package(
-    tmp_path: Path,
-) -> None:
-    stale = tmp_path / "openprogram_cli"
-    stale.mkdir()
-    (stale / "__init__.py").write_text("STALE = True\n", encoding="utf-8")
-    script = textwrap.dedent(
-        f"""
-        import sys
-        import openprogram_cli as stale
-        sys.path.insert(0, {str(ROOT)!r})
-        try:
-            import openprogram.cli
-        except ImportError as exc:
-            assert 'foreign openprogram_cli package' in str(exc)
-        else:
-            raise AssertionError('foreign package was accepted')
-        assert sys.modules['openprogram_cli'] is stale
-        """
-    )
-
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=tmp_path,
-        env={**os.environ, "PYTHONPATH": str(tmp_path)},
-        text=True,
+def test_apps_holds_only_the_non_python_clients() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "apps"],
+        cwd=ROOT,
+        check=True,
         capture_output=True,
-        timeout=30,
-    )
+        text=True,
+    ).stdout.splitlines()
+    assert {path.split("/")[1] for path in tracked} == {"cli", "desktop", "web"}
+    assert [path for path in tracked if path.endswith(".py")] == []
 
-    assert result.returncode == 0, result.stderr
+
+def test_core_package_has_no_server_or_cli_compatibility_namespace() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "openprogram/cli", "openprogram/webui"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert tracked == []
+    for directory in ("cli", "webui"):
+        assert not (ROOT / "openprogram" / directory / "__init__.py").exists()
+
+
+def test_every_python_cli_entry_runs_the_application_main() -> None:
+    import openprogram.interfaces.cli
+    from openprogram.interfaces.cli import application
+
+    assert openprogram.interfaces.cli.main is application.main
+    assert openprogram.interfaces.cli.build_parser is application.build_parser
+    for entry in ("openprogram/__main__.py", "openprogram/interfaces/cli/__main__.py"):
+        source = (ROOT / entry).read_text(encoding="utf-8")
+        assert re.search(r"^from openprogram.interfaces.cli(\.application)? import main$", source, re.M)
 
 
 def test_python_cli_process_detection_includes_every_module_entry(monkeypatch) -> None:
-    import openprogram.cli as cli
+    from openprogram.interfaces.cli import application as cli
 
-    for parent in ("openprogram", "cli", "openprogram_cli"):
+    for parent in ("openprogram", "openprogram/interfaces/cli"):
         monkeypatch.setattr(sys, "argv", [f"/tmp/{parent}/__main__.py"])
         assert cli._is_cli_process()
+    monkeypatch.setattr(sys, "argv", ["/tmp/python/__main__.py"])
+    assert not cli._is_cli_process()
 
 
 def test_python_cli_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
@@ -130,14 +112,21 @@ def test_python_cli_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
     assert ink._resolve_cli_entry() == bundle
 
 
-def test_rescue_probe_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
+def _source_checkout(tmp_path, monkeypatch) -> None:
     package_init = tmp_path / "openprogram" / "__init__.py"
-    bundle = tmp_path / "apps" / "cli" / "dist" / "index.js"
     package_init.parent.mkdir(parents=True)
-    bundle.parent.mkdir(parents=True)
     package_init.touch()
-    bundle.touch()
+    (tmp_path / "apps" / "web").mkdir(parents=True)
+    (tmp_path / "apps" / "web" / "package.json").touch()
     monkeypatch.setattr(openprogram, "__file__", str(package_init))
+    monkeypatch.setattr(ink, "packaged_tui", lambda: None)
+
+
+def test_rescue_probe_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
+    _source_checkout(tmp_path, monkeypatch)
+    bundle = tmp_path / "apps" / "cli" / "dist" / "index.js"
+    bundle.parent.mkdir(parents=True)
+    bundle.touch()
 
     finding = rescue._probe_tui_bundle()
 
@@ -145,19 +134,20 @@ def test_rescue_probe_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> Non
     assert finding.detail == str(bundle)
 
 
-def test_rescue_probe_reports_the_apps_web_bundle_path(tmp_path, monkeypatch) -> None:
-    package_init = tmp_path / "openprogram" / "__init__.py"
-    package_init.parent.mkdir(parents=True)
-    package_init.touch()
-    monkeypatch.setattr(openprogram, "__file__", str(package_init))
+def test_rescue_probe_reports_the_apps_web_export_path(tmp_path, monkeypatch) -> None:
+    from openprogram.interfaces.server import frontend
+
+    _source_checkout(tmp_path, monkeypatch)
+    out = tmp_path / "apps" / "web" / "out"
+    monkeypatch.setattr(frontend, "out_dir", lambda: out)
 
     finding = rescue._probe_web_bundle()
 
     assert finding.level == "WARN"
-    assert str(tmp_path / "apps" / "web" / ".next") in finding.detail
+    assert str(out) in finding.detail
     assert finding.fix == (
-        "Auto-built on first `openprogram web` launch. Or manually: "
-        "npm install && npm run build --workspace apps/web"
+        "Built when the worker starts. "
+        "Or build it now: npm install && npm run build --workspace apps/web"
     )
 
 
@@ -177,22 +167,17 @@ def test_desktop_is_owned_by_apps_workspace() -> None:
     assert not (ROOT / "desktop/package.json").exists()
 
 
-def test_server_application_assembly_is_owned_by_apps_workspace() -> None:
-    from openprogram_server import server as canonical_server
-    from openprogram.webui import server as compatibility_server
+def test_server_application_assembly_lives_in_the_core_package() -> None:
+    from openprogram.interfaces.server import server
 
-    assert canonical_server is compatibility_server
-    assert canonical_server.__file__ is not None
-    assert Path(canonical_server.__file__).resolve() == (
-        ROOT / "apps/server/openprogram_server/server.py"
+    assert server.__file__ is not None
+    assert Path(server.__file__).resolve() == (
+        ROOT / "openprogram/interfaces/server/server.py"
     )
-    assert (ROOT / "openprogram/webui/server.py").read_text(
-        encoding="utf-8"
-    ).count("sys.modules[__name__] = _server") == 1
 
 
-def test_server_transport_implementation_is_owned_by_apps_workspace() -> None:
-    implementation = ROOT / "apps/server/openprogram_server/_webui"
+def test_server_transport_implementation_lives_in_the_core_package() -> None:
+    implementation = ROOT / "openprogram/interfaces/server"
 
     assert (implementation / "routes/files/tree.py").is_file()
     assert (implementation / "ws_actions/webtab.py").is_file()
@@ -200,22 +185,15 @@ def test_server_transport_implementation_is_owned_by_apps_workspace() -> None:
     assert (implementation / "owner_auth.py").is_file()
 
 
-def test_legacy_server_transport_imports_load_the_apps_sources() -> None:
-    from openprogram.webui import frontend, owner_auth
-    from openprogram.webui.routes.files import tree
-    from openprogram.webui.ws_actions import webtab
+def test_server_transport_imports_load_the_core_package_sources() -> None:
+    from openprogram.interfaces.server import frontend, owner_auth
+    from openprogram.interfaces.server.routes.files import tree
+    from openprogram.interfaces.server.ws_actions import webtab
 
-    implementation = ROOT / "apps/server/openprogram_server/_webui"
+    implementation = ROOT / "openprogram/interfaces/server"
     for module in (frontend, owner_auth, tree, webtab):
         assert module.__file__ is not None
         assert Path(module.__file__).resolve().is_relative_to(implementation)
-
-
-def test_removed_legacy_static_ui_does_not_return() -> None:
-    assert not any(
-        path.is_file() for path in (ROOT / "openprogram/webui/static").rglob("*")
-    )
-    assert (ROOT / "apps/web/app").is_dir()
 
 
 def test_mutable_profile_state_is_not_tracked_in_the_core_package() -> None:
@@ -241,122 +219,16 @@ def test_mutable_profile_state_is_not_tracked_in_the_core_package() -> None:
         )
 
 
-def test_source_checkout_server_wins_over_an_older_installed_package(
-    tmp_path,
-) -> None:
-    stale_package = tmp_path / "openprogram_server"
-    stale_package.mkdir()
-    (stale_package / "__init__.py").write_text("", encoding="utf-8")
-    (stale_package / "server.py").write_text("STALE = True\n", encoding="utf-8")
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(tmp_path)
-    code = """
-import pathlib
-import openprogram.webui.server as legacy
-import openprogram_server.server as canonical
-assert canonical is legacy
-assert not hasattr(canonical, 'STALE')
-assert pathlib.Path(canonical.__file__).resolve() == pathlib.Path(
-    'apps/server/openprogram_server/server.py'
-).resolve()
-"""
-
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-
-    assert result.returncode == 0, result.stderr
-
-
-def test_legacy_server_rejects_an_already_loaded_foreign_package(tmp_path) -> None:
-    stale_package = tmp_path / "openprogram_server"
-    stale_package.mkdir()
-    (stale_package / "__init__.py").write_text("", encoding="utf-8")
-    (stale_package / "server.py").write_text("STALE = True\n", encoding="utf-8")
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(tmp_path)
-    code = """
-import sys
-import openprogram_server.server as stale
-try:
-    import openprogram.webui.server
-except ImportError as exc:
-    assert 'already imported from a different location' in str(exc)
-else:
-    raise AssertionError('foreign package was silently replaced')
-assert sys.modules['openprogram_server.server'] is stale
-assert stale.STALE is True
-"""
-
-    result = subprocess.run(
-        [sys.executable, "-c", code, str(tmp_path)],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-
-    assert result.returncode == 0, result.stderr
-
-
-def test_legacy_server_rejects_an_already_loaded_namespace_package(tmp_path) -> None:
-    stale_package = tmp_path / "openprogram_server"
-    stale_package.mkdir()
-    (stale_package / "server.py").write_text("STALE = True\n", encoding="utf-8")
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(tmp_path)
-    code = """
-import importlib.machinery
-import importlib.util
-import sys
-# Restrict namespace discovery to the fixture. A regular installed package
-# otherwise takes precedence over namespace portions on PYTHONPATH.
-spec = importlib.machinery.PathFinder.find_spec('openprogram_server', [sys.argv[1]])
-assert spec is not None and spec.loader is None
-parent = importlib.util.module_from_spec(spec)
-sys.modules['openprogram_server'] = parent
-import openprogram_server.server as stale
-assert parent.__file__ is None
-try:
-    import openprogram.webui.server
-except ImportError as exc:
-    assert 'already imported from an unknown location' in str(exc)
-else:
-    raise AssertionError('foreign namespace package was silently replaced')
-assert sys.modules['openprogram_server'] is parent
-assert sys.modules['openprogram_server.server'] is stale
-assert stale.STALE is True
-"""
-
-    result = subprocess.run(
-        [sys.executable, "-S", "-c", code, str(tmp_path)],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-
-    assert result.returncode == 0, result.stderr
-
-
 def test_current_developer_commands_use_apps_workspaces() -> None:
     current_docs = (
         "AGENTS.md",
         ".github/CONTRIBUTING.md",
         "apps/desktop/README.md",
         "scripts/docs_site/README.md",
-        "docs/reference/design/integrations/web-use-implementation.html",
-        "docs/reference/design/ui/browser-extensions.html",
-        "docs/reference/design/ui/theme-system.html",
-        "docs/reference/design/ui/center-tabs-and-split-layout.html",
-        "docs/reference/design/ui/send-queue-reliability.html",
+        "docs/reference/design/ui/browser/browser-extensions.html",
+        "docs/reference/design/ui/visual-system/theme-system.html",
+        "docs/reference/design/ui/workspace/center-tabs-and-split-layout.html",
+        "docs/reference/design/ui/turn-lifecycle/send-queue-reliability.html",
         "docs/reference/design/distribution/installation-packaging.html",
     )
     removed_commands = (

@@ -1,7 +1,7 @@
 """ContextCommit multi-parent round-trip (task D)."""
 from __future__ import annotations
 
-from openprogram.context.commit.types import ContextCommit
+from openprogram.state.store.session.context_commit.types import ContextCommit
 
 
 def _make(**kw):
@@ -43,7 +43,7 @@ def test_none_parent_first_commit():
 
 
 def test_legacy_payload_loads():
-    from openprogram.context.commit.store import _payload_to_commit
+    from openprogram.state.store.session.context_commit.store import _payload_to_commit
     payload = {
         "id": "commit_old",
         "session_id": "s1",
@@ -60,7 +60,7 @@ def test_legacy_payload_loads():
 
 
 def test_new_payload_loads():
-    from openprogram.context.commit.store import _payload_to_commit
+    from openprogram.state.store.session.context_commit.store import _payload_to_commit
     payload = {
         "id": "commit_new",
         "session_id": "s1",

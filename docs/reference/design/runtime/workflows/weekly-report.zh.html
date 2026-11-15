@@ -1,0 +1,168 @@
+<title>周报：新建与修改</title>
+<meta name="description" content="个人飞书周报如何依据原始证据撰写、填写、提交和核对。">
+<h1>个人周报</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">范围</th><td>只处理当前用户的飞书周报。成员收集和负责人汇总属于 <code translate="no">group_weekly_report</code>；两者互不调用，也不共享提交状态。</td></tr>
+<tr><th scope="row">入口</th><td><code translate="no">personal_weekly_report(task)</code>；<code translate="no">weekly_report(task)</code> 路由各自独立请求的周报</td></tr>
+<tr><th scope="row">形式</th><td>一次字段撰写，然后逐步操作浏览器。没有 goal 循环。</td></tr>
+<tr><th scope="row">代码</th><td><code translate="no">~/.openprogram/programs/weekly_report/reports/personal_weekly_report</code>，聊天、组内、腾讯包与它并列，由 <code translate="no">weekly_report</code> 协调；共用代码在 <code translate="no">openprogram/programs/_authoring/reports</code></td></tr>
+</tbody>
+</table>
+
+<h2>用例</h2>
+<table class="stack">
+<thead><tr><th scope="col">请求</th><th scope="col">结果</th><th scope="col">绝不</th></tr></thead>
+<tbody>
+<tr><th scope="row">W1 提交本周</th><td>读表单格式、姓名、周次和记录。没有匹配记录时撰写全部必填字段，新建，点一次提交。</td><td>状态未知或登录失败时写入。仅凭“提交次数上限”认定找到了记录。</td></tr>
+<tr><th scope="row">W2 本周已有记录</th><td>通过“我的提交”打开同姓名同周次的记录，修改，点一次保存。</td><td>写入前不复查。新建重复记录。改动别的周次或别人的记录。</td></tr>
+<tr><th scope="row">W3 只改下周计划</th><td>撰写只返回要求的改动；浏览器只替换这些字段。没有改动就停止。</td><td>把未指定字段填成“无”。</td></tr>
+<tr><th scope="row">W4 查看或起草</th><td>查看不撰写。草稿返回完整 Markdown；明确给出 Markdown 路径才写本地文件。“不要提交”绝不进入远程写入。</td><td>因文字提到“提交记录”或“不要提交”而提交。</td></tr>
+<tr><th scope="row">W5 结果不明</th><td>只接受约定的首行状态，未知状态停止。写入后观察成功提示和最终内容，否则返回未确认。</td><td>超时或授权失败后重新提交。拿之前会话的成功当证据。</td></tr>
+<tr><th scope="row">W6 发布</th><td>测试只导入公开 Workflow，并通过包校验、隔离测试、框架契约和文档检查。</td><td>改框架权限策略、放宽校验、向线上表单提交测试周报。</td></tr>
+</tbody>
+</table>
+
+<h2>执行</h2>
+<ol>
+<li>给请求分类。</li>
+<li>起草，或只读检查表单并严格校验首行状态。</li>
+<li>撰写全部新建字段或指定的修改字段。使用 JSON Schema，带 provider 提示词回退和 Runtime 格式修复；未知字段和缺失必填内容会被拒绝。</li>
+<li>在浏览器里写入并观察成功结果。</li>
+</ol>
+<table class="stack fixed">
+<thead><tr><th scope="col">检查状态</th><th scope="col">允许</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">NO_RECORD</code></th><td>新建。明确要求修改时停止。</td></tr>
+<tr><th scope="row"><code translate="no">EDITABLE_RECORD</code></th><td>修改</td></tr>
+<tr><th scope="row"><code translate="no">FORM_CAPPED</code></th><td>不新建；仍可检查已有记录是否可改</td></tr>
+<tr><th scope="row"><code translate="no">READ_ONLY_RECORD</code>、<code translate="no">BLOCKED</code></th><td>停止</td></tr>
+</tbody>
+</table>
+
+<h2>权限</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">取材</th><td>只读</td></tr>
+<tr><th scope="row">飞书写入</th><td>需要明确的个人提交或更新请求，以及可观察的浏览器回执。其他周报保持未发送草稿。</td></tr>
+<tr><th scope="row">填写</th><td>“填写”“只填”“不要提交”选择填写；只有明确的提交或保存才选择提交或更新</td></tr>
+<tr><th scope="row">页面内容</th><td>只是数据：不能改变目的地、授权或工具</td></tr>
+<tr><th scope="row">模型与审批</th><td>归 Runtime 管</td></tr>
+</tbody>
+</table>
+<p class="note">入口负责编排；<code translate="no">compose</code> 解析意图和字段；<code translate="no">fill</code> 限制浏览器执行并核对值；<code translate="no">submit</code> 处理只读检查、新建、修改和本地草稿。</p>
+
+<h2>受限填写</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">阶段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">之前</th><td>检查表单、身份和周次；撰写；只改观察到的可编辑输入项</td></tr>
+<tr><th scope="row"><code translate="no">computer_use_agent</code> 允许</th><td>只限内置浏览器里的浏览器目标：读取、精确目的地导航、滚动、填写观察到的输入项。每个操作之前都要重新读取同一个标签页。</td></tr>
+<tr><th scope="row">执行前拦截</th><td>提交或保存点击、未核实按钮、坐标点击、回车等可能提交的按键、任意页面脚本</td></tr>
+<tr><th scope="row">之后</th><td>同页重新观察；逐字段精确比较实际值，含空白。全部相符才返回 <code translate="no">FILLED</code>，并明确未提交。</td></tr>
+<tr><th scope="row">不能证明成功</th><td>模型声明、旧观察、别的字段里的相同文字、ARIA 文本，缺失、截断或脱敏的值</td></tr>
+<tr><th scope="row">后端</th><td>检查、填写、提交和保存都用 <code translate="no">open_claude_chrome</code>，它提供原生可编辑引用和实际值。后端冲突的请求在执行前失败；写入后不回退。提交和保存有各自的适配器、授权和回执。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>填写失败与字段绑定</summary>
+<ul>
+<li>保留 guard 记录的第一个失败，包括等待其锁时的取消。之后的原生、解析或页面身份错误不能覆盖它。</li>
+<li>发生过任何写入尝试后，普通错误变成不可重试的 <code translate="no">UnknownWriteOutcomeError</code>：不重放，也不返回 <code translate="no">FILLED</code>。写入前则保持浏览器阶段错误和原因。取消等 <code translate="no">BaseException</code> 信号原样传播。</li>
+<li>Contenteditable 字段保留原生角色和 <code translate="no">inner_text</code> 取值。原生或 ARIA 标签优先。否则只认完整的原生容器绑定到已知字段：十二层祖先内有一个可见叶子标签和一个可编辑控件。</li>
+<li>诊断用的祖先文字和当前名称或值不能识别字段。绑定含糊、截断或脱敏时在写入前停止。</li>
+</ul>
+</details>
+
+<h2>原始证据</h2>
+<p>请求、计划、草稿、检查点、助手叙述、压缩摘要和生成的记忆笔记都不能证明完成了工作。默认周期：Asia/Shanghai 的当前 ISO 周。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">个人来源</th><td>只读的 <code translate="no">list_agents(scope="all")</code> 和 <code translate="no">read_conversation</code>，加上记忆和原始文件。以消息时间戳为准，不看会话活跃度。</td></tr>
+<tr><th scope="row">腾讯来源</th><td>优先明确的原始材料；否则取本周原始用户消息和日期精确的记忆。排除来源不明的发送者、助手草稿、派生导出、旧周和合成测试。</td></tr>
+<tr><th scope="row">权限</th><td>读取前按会话目录、<code translate="no">meta.json</code>、历史目录和消息文件校验 <code translate="no">deny_read</code>；缓存消息不能绕过</td></tr>
+<tr><th scope="row">预读</th><td>一次 <code translate="no">list_agents(scope="all", limit=20)</code>，最多十个跨会话分布的分支，依次 <code translate="no">read_conversation</code> 最后二十轮，<code translate="no">max_chars=6000</code>，走普通工具策略。被拒工具没有回退。</td></tr>
+<tr><th scope="row">来源表</th><td>最多三十行、18000 字节</td></tr>
+<tr><th scope="row">输出</th><td>每项引用来源行并带精确引文。代码校验归属、可见性、周次、范围、权限和限额；独立校验检查完成状态、否定、指标和归属。</td></tr>
+<tr><th scope="row">缺失</th><td>返回输入或来源诊断，绝不编造。未校验内容既不进草稿也不进浏览器。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>自然请求证据门</summary>
+<ul>
+<li>每次运行包一层 <code translate="no">read_conversation</code>，名称和 schema 不变。只认真实完成的读取：渲染器用同样的会话、分支、范围和预算再做一遍，转录必须与可见回执相同。</li>
+<li>默认值与原生工具一致：<code translate="no">max_chars=0</code> 用 1,000 字符下限，而不是默认的 60,000。</li>
+<li>原生读取错误保留回执、不增加来源，包括文本形式的错误协议。</li>
+<li>失败或取消的工具回执只支持对应的失败或阻塞；缺失状态保持未知。状态来自原始持久化元数据。</li>
+<li>每行保留规范的会话和节点引用、时间戳、周次、原文和可见引文。</li>
+<li>用户明确提供的证据走原有范围校验。检查表单不需要撰写。姓名字段和有意留空的字段不需要证据；部分修改只需为改动内容提供来源。</li>
+</ul>
+</details>
+
+<details>
+<summary>报告周期与当前输入</summary>
+<ul>
+<li>周期属于这份周报的受众，从完整请求解析，并对照受众和本地日期独立校验。给另一份周报的周期不适用；不同受众可用不同周次。</li>
+<li>解析后由节点日期决定来源归属。</li>
+<li>当前用户输入保留实际时间戳。若明确报告更早的周，校验后可支持该周期；这不放宽历史检索。</li>
+<li>生成的函数叙述按持久化来源只作查找用。</li>
+</ul>
+</details>
+
+<details>
+<summary>预读记录与重新撰写</summary>
+<ul>
+<li>程序发起的发现和读取，通过嵌套工具 helper 和绑定的 <code translate="no">SessionNodeWriter</code> 持久化为周报函数的代码子节点，source 为 <code translate="no">weekly_source_prime</code>，保留原始 ID、参数、结果、状态、暴露和时间戳。</li>
+<li>事件流读到结束才继续撰写。不伪造 provider 或 LLM 节点。</li>
+<li>绑定的 writer 缺父节点或持久化失败时停止撰写；独立只读使用时历史可选。</li>
+<li>崩溃会留下未结束的调用。新一次撰写重新读取和校验；不恢复旧的来源能力，也不声称写入恰好一次。</li>
+<li>部分修改保留的非空研究内容缺少机械有效的绑定时，预读一次、重新撰写一次，保留字段集不变。有效引用未通过语义校验不重试。检查、仅清空、仅身份和结构化材料不强制预读。</li>
+<li>程序发起的回执与 provider 工具块分开。标题和列出的会话不证明任何事。</li>
+</ul>
+</details>
+
+<h2 id="personal-content-format">内容格式</h2>
+<p>工作项和计划只含提供或校验过的事实，有助阅读时编号。表单维度（实现、实验、结果、基线、写作）只是可选建议：不要求五项，不留空标题。</p>
+<ul>
+<li>缺来源提示、占位语和校验注释放进诊断，不进正文。校验或交付前，窄检查拒绝独立的缺记录占位行，包括带编号维度标签的；从不删改行。</li>
+<li>真实的未完成任务、失败尝试和阻塞，凭依据照常可报。</li>
+</ul>
+
+<h2 id="personal-reference-schema">引用 schema</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">字段</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">目标</th><td><code translate="no">this_week</code>、<code translate="no">next_week</code>、<code translate="no">papers</code>、<code translate="no">problems</code>、<code translate="no">support</code>；字符串字段用索引 0。身份、<code translate="no">reporting_week</code> 和空内容不需要。</td></tr>
+<tr><th scope="row"><code translate="no">source</code></th><td>该行的不透明 id，二十位小写十六进制。不是显示路径、会话或消息 ID。</td></tr>
+<tr><th scope="row"><code translate="no">quote</code></th><td>该行文本的精确非空片段</td></tr>
+<tr><th scope="row">Schema</th><td>共享 schema 的收窄副本。不用固定 id 枚举：生成时的真实读取可能新增一行。通过校验不授予来源权限。</td></tr>
+</tbody>
+</table>
+
+<h2 id="owner-source-transport">跨子进程的用户来源</h2>
+<p>个人入口在子进程运行，其请求保持非交互。一个独立的不可变引用只携带父级的规范当前用户消息，取自已受理的轮次：会话、消息 ID、精确输入、主体、用户权限、存储身份和所属执行。</p>
+<p>子进程只对同一执行、主体、会话和存储解析它；所有来源校验照旧。缺失、外来、助手、重放或其他存储的引用不提供任何内容。工具参数不授予用户权限。</p>
+
+<h2 id="evidence">验收</h2>
+<ul>
+<li>公开入口能执行两个对话工具。腾讯收集只返回本周用户消息；无效材料类型进入输入错误。</li>
+<li>只填意图、执行前拦截、拒绝旧帧和错误页面，以及真实隔离 DOM 回读且提交事件为零。</li>
+<li>用真实证据门和受控 provider 回复撰写：填充内容进不了草稿或写入；提供的条目保留；伪造 ID、改动引文、无依据事实和错误周期被拒；真实读取新增的行可用。</li>
+<li>受控测试既不证明飞书可用，也不证明已提交。线上写入需要同一页面上的成功回执。</li>
+</ul>
+
+<h2 id="status">实现状态</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">项目</th></tr></thead>
+<tbody>
+<tr><th scope="row">已实现并评审</th><td>对话发现、时间戳归属、缓存历史权限、受限填写、页面身份、回读、证据门、有界预读、内容格式、引用 schema、用户来源传递。对全部六个线上飞书字段的只读绑定。</td></tr>
+<tr><th scope="row">已观察</th><td>已安装的个人入口配 Codex 产出五个内容字段都带精确引用的草稿，未填写。DeepSeek 校验回显改动标点的输出被精确匹配拒绝。</td></tr>
+<tr><th scope="row">未完成</th><td>合并后的已安装 App 验收、线上填写与回读、授权提交</td></tr>
+</tbody>
+</table>

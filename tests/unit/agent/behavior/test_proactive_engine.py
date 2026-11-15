@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.events import Event, make_event
-from openprogram.proactive import (
+from openprogram.runtime.events import Event, make_event
+from openprogram.runtime.proactive import (
     Gate, Notify, Policy, clear_policies, register_policy,
 )
-from openprogram.proactive import engine as E
-from openprogram.proactive.state import get_state_store
+from openprogram.runtime.proactive import engine as E
+from openprogram.runtime.proactive.state import get_state_store
 
 
 @pytest.fixture(autouse=True)

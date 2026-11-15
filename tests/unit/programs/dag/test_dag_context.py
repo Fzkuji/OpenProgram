@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.context.nodes import (
+from openprogram.state.store.session.nodes import (
     Call,
     Graph,
     ROLE_USER,
@@ -23,6 +23,8 @@ from openprogram.context.nodes import (
     UserMessage,
     ModelCall,
     FunctionCall,
+)
+from openprogram.runtime.context.nodes import (
     last_user_message,
     linear_back_to,
     branch_terminals,
@@ -114,7 +116,7 @@ def test_graph_iter_is_seq_ordered(graph):
 
 
 def test_graph_last_returns_max_seq(graph):
-    a = graph.add(Call(role=ROLE_USER))
+    graph.add(Call(role=ROLE_USER))
     b = graph.add(Call(role=ROLE_LLM))
     assert graph.last().id == b.id
     assert graph._last_id == b.id
@@ -135,7 +137,7 @@ def test_graph_convenience_builders(graph):
 
 
 def test_graph_update_existing_node(graph):
-    """Used by the @agentic_function exit path: append on entry with
+    """Used by the Agent method exit path: append on entry with
     output=None, update output on exit."""
     n = graph.add(Call(role=ROLE_CODE, name="fn", output=None))
     graph.update(n.id, output="final_result")
@@ -173,7 +175,7 @@ def chat_graph() -> Graph:
     n1 = g.add_user_message("q1")
     n2 = g.add_model_call(model="x", reads=[n1.id], output="a1")
     n3 = g.add_user_message("q2")
-    n4 = g.add_model_call(model="x", reads=[n1.id, n2.id, n3.id],
+    g.add_model_call(model="x", reads=[n1.id, n2.id, n3.id],
                           output="a2")
     return g
 

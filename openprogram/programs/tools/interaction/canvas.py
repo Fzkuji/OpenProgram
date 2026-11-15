@@ -33,9 +33,11 @@ import os
 import re
 from typing import Any
 
-from openprogram.programs._helpers import read_string_param
-from openprogram.programs._runtime import function
+from openprogram.programs._authoring.helpers import read_string_param
+from openprogram.programs._host.runtime import ToolReturn, function
 
+
+from openprogram.runtime.permissions import refusal
 
 NAME = "canvas"
 
@@ -100,10 +102,10 @@ def _resolve_path(path: str | None) -> str:
 
 
 def _read(path: str) -> str:
-    from openprogram.sandbox import validate_read_path
+    from openprogram.host.sandbox import validate_read_path
     violation = validate_read_path(path)
     if violation:
-        raise PermissionError(f"sandbox policy: {violation}")
+        raise refusal.sandbox(NAME, violation)
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
@@ -112,10 +114,10 @@ def _read(path: str) -> str:
 
 
 def _write(path: str, text: str) -> None:
-    from openprogram.sandbox import validate_write_path
+    from openprogram.host.sandbox import validate_write_path
     violation = validate_write_path(path)
     if violation:
-        raise PermissionError(f"sandbox policy: {violation}")
+        raise refusal.sandbox(NAME, violation)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
@@ -139,37 +141,38 @@ def _valid_id(block_id: str) -> bool:
     return bool(block_id) and all(ch not in block_id for ch in '"\n<>')
 
 
-def execute(
+def _execute_result(
     action: str | None = None,
     block_id: str | None = None,
     content: str | None = None,
     path: str | None = None,
     **kw: Any,
-) -> str:
+) -> ToolReturn:
     action = action or read_string_param(kw, "action", "op", "mode")
     block_id = block_id or read_string_param(kw, "block_id", "blockId", "id", "name")
-    content = content or read_string_param(kw, "content", "body", "text")
+    if content is None:
+        content = read_string_param(kw, "content", "body", "text")
     path_arg = path or read_string_param(kw, "path", "file", "canvas_path")
 
     if not action:
-        return "Error: `action` is required (one of set/append/get/list/delete)."
+        return ToolReturn(text="Error: `action` is required (one of set/append/get/list/delete).", is_error=True)
     action = action.lower()
     if action not in {"set", "append", "get", "list", "delete"}:
-        return f"Error: unknown action {action!r}. Expected set/append/get/list/delete."
+        return ToolReturn(text=f"Error: unknown action {action!r}. Expected set/append/get/list/delete.", is_error=True)
 
     resolved = _resolve_path(path_arg)
-    from openprogram.sandbox import validate_read_path, validate_write_path
+    from openprogram.host.sandbox import validate_read_path, validate_write_path
     violation = validate_read_path(resolved)
     if violation:
-        return f"Error: sandbox policy: {violation}"
+        raise refusal.sandbox(NAME, violation)
     if action in {"set", "append", "delete"}:
         violation = validate_write_path(resolved)
         if violation:
-            return f"Error: sandbox policy: {violation}"
+            raise refusal.sandbox(NAME, violation)
     try:
         current = _read(resolved)
     except PermissionError as e:
-        return f"Error: {e}"
+        return ToolReturn(text=f"Error: {e}", is_error=True)
 
     if action == "list":
         rows = [
@@ -177,34 +180,34 @@ def execute(
             for m in _BLOCK_RE.finditer(current)
         ]
         if not rows:
-            return f"Canvas `{resolved}` is empty (no blocks)."
-        return f"Blocks in `{resolved}`:\n" + "\n".join(rows)
+            return ToolReturn(text=f"Canvas `{resolved}` is empty (no blocks).")
+        return ToolReturn(text=f"Blocks in `{resolved}`:\n" + "\n".join(rows))
 
     if not block_id:
-        return f"Error: `block_id` is required for action {action!r}."
+        return ToolReturn(text=f"Error: `block_id` is required for action {action!r}.", is_error=True)
     if not _valid_id(block_id):
-        return f"Error: invalid block id {block_id!r} (no quotes, newlines, or angle brackets)."
+        return ToolReturn(text=f"Error: invalid block id {block_id!r} (no quotes, newlines, or angle brackets).", is_error=True)
 
     existing = _find(current, block_id)
 
     if action == "get":
         if not existing:
-            return f"Error: block {block_id!r} not found in `{resolved}`."
-        return existing.group("body")
+            return ToolReturn(text=f"Error: block {block_id!r} not found in `{resolved}`.", is_error=True)
+        return ToolReturn(text=existing.group("body"))
 
     if action == "delete":
         if not existing:
-            return f"Error: block {block_id!r} not found in `{resolved}`."
+            return ToolReturn(text=f"Error: block {block_id!r} not found in `{resolved}`.", is_error=True)
         start, end = existing.span()
         new_text = current[:start] + current[end:]
         # Tidy surrounding blank lines left behind by the removal.
         new_text = re.sub(r"\n{3,}", "\n\n", new_text).strip() + "\n"
         _write(resolved, new_text)
-        return f"Deleted block {block_id!r} from `{resolved}`."
+        return ToolReturn(text=f"Deleted block {block_id!r} from `{resolved}`.")
 
     # set / append need content
     if content is None:
-        return f"Error: `content` is required for action {action!r}."
+        return ToolReturn(text=f"Error: `content` is required for action {action!r}.", is_error=True)
 
     if action == "set":
         new_block = _format_block(block_id, content)
@@ -214,7 +217,7 @@ def execute(
         else:
             new_text = (current.rstrip("\n") + "\n\n" + new_block + "\n") if current else (new_block + "\n")
         _write(resolved, new_text)
-        return f"Set block {block_id!r} in `{resolved}` ({len(content)} chars)."
+        return ToolReturn(text=f"Set block {block_id!r} in `{resolved}` ({len(content)} chars).")
 
     # append
     if existing:
@@ -226,8 +229,21 @@ def execute(
         new_block = _format_block(block_id, content)
         new_text = (current.rstrip("\n") + "\n\n" + new_block + "\n") if current else (new_block + "\n")
     _write(resolved, new_text)
-    return f"Appended to block {block_id!r} in `{resolved}` (+{len(content)} chars)."
+    return ToolReturn(text=f"Appended to block {block_id!r} in `{resolved}` (+{len(content)} chars).")
 
+
+
+def execute(
+    action: str | None = None,
+    block_id: str | None = None,
+    content: str | None = None,
+    path: str | None = None,
+    **kw: Any,
+) -> str:
+    """Keep plain calls returning text; registered calls preserve failure signals."""
+    return _execute_result(
+        action=action, block_id=block_id, content=content, path=path, **kw,
+    ).text or ""
 
 
 # Register as an AgentTool. ``execute`` stays a plain callable so any
@@ -239,6 +255,6 @@ function(
     parameters=SPEC["parameters"],
     toolset=['core'],
     path_params={"path": "write"},
-)(execute)
+)(_execute_result)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION"]

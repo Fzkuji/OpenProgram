@@ -1,7 +1,7 @@
 /** Small pure helpers shared by the timeline subcomponents. */
 
 import type { CommitMeta } from "./types";
-import { getSocket } from "@/lib/runtime-bridge/state";
+import { sendRuntimeCommand } from "@/lib/runtime-bridge/session/session-load";
 
 export function fmtRelTime(ts: number): string {
   const now = Date.now() / 1000;
@@ -14,11 +14,8 @@ export function fmtRelTime(ts: number): string {
 
 /** Fire-and-forget WS send. No-op if the socket isn't connected;
  *  the caller re-fires on reconnect via the auto-refresh path. */
-export function wsSend(obj: unknown): void {
-  const sock = getSocket();
-  if (sock && sock.readyState === WebSocket.OPEN) {
-    sock.send(JSON.stringify(obj));
-  }
+export function wsSend(obj: unknown): boolean {
+  return sendRuntimeCommand(obj);
 }
 
 /** Bucket commits sharing a turn_group_id into one row. Preserves

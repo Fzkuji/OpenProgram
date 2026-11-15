@@ -5,12 +5,27 @@ from pathlib import Path
 
 import pytest
 
-from tests.component.programs.tools.test_self_update_tools import _isolated_owner, _git, _Manager
-from tests.component.self_update.verification.test_native_checks import _app, _cli_plan, installed_cli, native_verifier, native_sandbox
+from tests.component.programs.tools.test_self_update_tools import _git, _Manager
+from tests.component.programs.tools import test_self_update_tools as _test_self_update_tools
+from tests.component.self_update.verification.test_native_checks import (
+    _app,
+    _cli_plan,
+    native_sandbox,
+)
+from tests.component.self_update.verification import test_native_checks as _test_native_checks
 from tests.component.self_update.verification.test_verification_plan import _public_prepare, _candidate
-from tests.component.self_update.verification.test_system_probe import live as http_live
-from tests.component.self_update.verification.test_verification_channel import consume, store_fixture, verifier
-from openprogram.self_update.verification import native_checks
+from tests.component.self_update.verification import test_system_probe as _test_system_probe
+from tests.component.self_update.verification.test_verification_channel import consume
+from tests.component.self_update.verification import test_verification_channel as _test_verification_channel
+from openprogram.operations.self_update.verification import native_checks
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+_isolated_owner = _test_self_update_tools._isolated_owner
+installed_cli = _test_native_checks.installed_cli
+native_verifier = _test_native_checks.native_verifier
+http_live = _test_system_probe.live
+store_fixture = _test_verification_channel.store_fixture
+verifier = _test_verification_channel.verifier
 
 
 def _test_plan():
@@ -22,7 +37,7 @@ def _test_plan():
 @pytest.fixture
 def live(http_live, tmp_path, monkeypatch, installed_cli, request):
     from openprogram.programs.tools.system import self_update as tool
-    from openprogram.webui.routes.settings import misc
+    from openprogram.interfaces.server.routes.settings import misc
     original, flags, state = http_live
     worktree, base, _ = _candidate(tmp_path)
     worktree.parent_session = "p1"
@@ -61,7 +76,7 @@ def test_public_prepare_freezes_candidate_test_arguments(tmp_path, monkeypatch):
     monkeypatch.setattr(native_checks, "runtime_identity", lambda _app, **kw: actual(app, **kw))
     result, store = _public_prepare(tmp_path, monkeypatch, _test_plan())
     assert not result.is_error, result.content
-    from openprogram.self_update.verification.verifier_config import load_verifier_config
+    from openprogram.operations.self_update.verification.verifier_config import load_verifier_config
     record = store.load(json.loads(result.content[0].text)["update_id"])
     assert load_verifier_config(store, record)["verification_plan"] == _test_plan()
 
@@ -88,7 +103,7 @@ def test_actual_candidate_script_has_source_bound_receipt(native_verifier):
 @pytest.mark.parametrize("verifier", [_test_plan()], indirect=True)
 @pytest.mark.parametrize("failure", ["before", "after", "nonzero", "raw_args"])
 def test_candidate_failure_cannot_pass(native_verifier, monkeypatch, failure):
-    from openprogram.self_update.repair import repair_candidate
+    from openprogram.operations.self_update.repair import repair_candidate
     v = native_verifier
     if failure == "before":
         (v.flags["candidate"] / "feature.py").write_text("VALUE = 'changed'\n")

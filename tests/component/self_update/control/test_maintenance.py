@@ -5,16 +5,17 @@ import threading
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
-from openprogram.self_update.control.maintenance import enter_maintenance
-from openprogram.self_update.control.maintenance import leave_maintenance
-from openprogram.self_update.control.maintenance import maintenance_blocks
-from openprogram.self_update.control.maintenance import turn_admission
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
+from openprogram.operations.self_update.control.maintenance import enter_maintenance
+from openprogram.operations.self_update.control.maintenance import leave_maintenance
+from openprogram.operations.self_update.control.maintenance import maintenance_blocks
+from openprogram.operations.self_update.control.maintenance import turn_admission
 
 
 def _ready(profile: Path, monkeypatch) -> None:
-    from openprogram import paths
+    from openprogram.state import paths
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
     store = SelfUpdateStore()
@@ -35,7 +36,7 @@ def _ready(profile: Path, monkeypatch) -> None:
             assertions=("Behavior works",),
         )
     )
-    store.transition("su_maintenance", UpdatePhase.STAGING)
+    store.transition("su_maintenance", UpdatePhase.BUILDING)
     store.transition("su_maintenance", UpdatePhase.READY)
 
 
@@ -66,7 +67,7 @@ def test_dispatcher_rejects_new_turn_without_persisting_it(tmp_path, monkeypatch
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("model must not run")),
     )
     events: list[dict] = []
-    request = D.TurnRequest(
+    request = agent_turn_request.TurnRequest(
         session_id="new-session",
         user_text="start work",
         agent_id="main",
@@ -78,6 +79,7 @@ def test_dispatcher_rejects_new_turn_without_persisting_it(tmp_path, monkeypatch
     assert result.failed is True
     assert result.error_reason == "SELF_UPDATE_MAINTENANCE"
     assert events[-1]["data"]["reason_code"] == "SELF_UPDATE_MAINTENANCE"
+    assert "did not run" in result.error and "approved update" not in result.error
 
 
 def test_maintenance_symlink_fails_closed(tmp_path, monkeypatch) -> None:
@@ -93,7 +95,7 @@ def test_maintenance_symlink_fails_closed(tmp_path, monkeypatch) -> None:
 
 def test_new_update_cannot_replace_terminal_maintenance_owner(tmp_path, monkeypatch):
     from dataclasses import replace
-    from openprogram.self_update.types import ActiveUpdateError
+    from openprogram.operations.self_update.types import ActiveUpdateError
     _ready(tmp_path / "profile", monkeypatch)
     store = SelfUpdateStore()
     request = store.load("su_maintenance").request
@@ -129,14 +131,14 @@ def test_maintenance_cannot_enter_during_turn_admission(tmp_path, monkeypatch) -
 
 
 def test_dispatcher_marks_running_before_maintenance_can_enter(tmp_path, monkeypatch) -> None:
-    from openprogram.agent.session_db import SessionDB
+    from openprogram.runtime.context.session_db import SessionDB
 
     profile = tmp_path / "profile"
     _ready(profile, monkeypatch)
     db = SessionDB(tmp_path / "sessions")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    monkeypatch.setattr("openprogram.store.default_store", lambda: db)
-    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
+    monkeypatch.setattr("openprogram.state.store.session.session_store.default_store", lambda: db)
     prepared = threading.Event()
     release_prepare = threading.Event()
     release_loop = threading.Event()
@@ -156,7 +158,7 @@ def test_dispatcher_marks_running_before_maintenance_can_enter(tmp_path, monkeyp
 
     def run_turn():
         try:
-            D._process_turn_once(D.TurnRequest(
+            D._process_turn_once(agent_turn_request.TurnRequest(
                 session_id="foreground", user_text="work", agent_id="main", source="web",
             ))
         except BaseException as exc:

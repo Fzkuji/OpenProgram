@@ -1,31 +1,51 @@
+import { hasPendingUserText } from "@/lib/chat/send/pending-user-text";
 import type { CenterTabGroup } from "@/lib/tabs/center-tab-groups";
 import { MAX_CENTER_TAB_GROUP_MEMBERS, findCenterTabGroup } from "@/lib/tabs/center-tab-groups";
+import { holdsLayout } from "@/lib/tabs/canvas/canvas-layout";
 import type { CenterTabsPersistedPayload } from "@/lib/tabs/center-tabs-persistence";
 import { normalizeCenterTabsPayload, orderTabs, persistCenterTabsPayload, persistedState } from "@/lib/tabs/center-tabs-persistence";
-import type { DesktopTransferPayload, TabDropPlacement } from "@/lib/tabs/tab-transfer-journal";
+import type { DesktopTransferPayload, TabDropPlacement } from "@/lib/tabs/transfer/tab-transfer-journal";
 import type { StoreApi } from "zustand";
 import { pageHistory } from "../navigation/page-history";
 import { fileHistoryFor } from "../navigation/selectors";
 import { sessionHistory } from "../navigation/session-history";
 import type { CenterTab, CenterTabsState } from "./types";
 
-export function bindTransfers(useCenterTabs: StoreApi<CenterTabsState>, closedSessionAckTombstones: Set<string>) {
+export function bindTransfers(useCenterTabs: StoreApi<CenterTabsState>, closedSessionAckTombstones: Set<string>, sentDraftSessions: Set<string>) {
   function restoreState(payload: CenterTabsPersistedPayload) {
     const active = payload.tabs.find(tab => tab.id === payload.activeId);
     return {
+      fileSectionRequests: {},
       ...persistedState(payload), navigationRoute: active?.navigationRoute,
       fileNavigationHistory: fileHistoryFor(active), fileNavigationRestore: active?.fileNavigationSnapshot ?? null
     };
   }
 
-  function sessionAckIsActive(sessionId: string): boolean {
+  function shownOrClaimed(sessionId: string): boolean | null {
     const state = useCenterTabs.getState();
     const active = state.tabs.find(tab => tab.id === state.activeId);
     if (active?.kind === "session" && active.sessionId === sessionId) return true;
     if (closedSessionAckTombstones.has(sessionId)) return false;
     const hasTab = state.tabs.some(tab => [tab, ...(tab.pageHistory?.entries ?? [])].some(page => page.kind === "session"
       && sessionHistory(page).entries.some(entry => entry.sessionId === sessionId)));
-    return !hasTab && !sessionId.startsWith("local_");
+    return hasTab ? false : null;
+  }
+
+  /** Whether the reply to this client's own request (a function dispatch's
+   *  HTTP response) may take over the active tab: the active tab's chat, or
+   *  a new conversation no tab holds yet. */
+  function sessionAckIsActive(sessionId: string): boolean {
+    return shownOrClaimed(sessionId) ?? !sessionId.startsWith("local_");
+  }
+
+  /** Whether a chat_ack frame may take over the active tab. Only the tab
+   *  that sent the turn may: the active tab's own chat (a draft included).
+   *  Acks reach every socket, so a turn from a channel (WeChat, Slack…) or
+   *  another window names a session no tab here sent; without this client's
+   *  own pending text for it, it never moves focus. */
+  function chatAckIsActive(sessionId: string): boolean {
+    return shownOrClaimed(sessionId)
+      ?? (!sessionId.startsWith("local_") && hasPendingUserText(sessionId));
   }
 
   function snapshotCenterTabsPayload(): CenterTabsPersistedPayload {
@@ -54,10 +74,11 @@ export function bindTransfers(useCenterTabs: StoreApi<CenterTabsState>, closedSe
     const memberIds = payload.source.kind === "segment"
       ? sourceMemberIds.filter((id) => transferred.has(id))
       : sourceMemberIds;
-    if (memberIds.length < 2) return null;
+    if (memberIds.length < 2 && !holdsLayout(payload.source.canvas)) return null;
     const visibleIds = (payload.source.visibleIds ?? memberIds.slice(0, 2))
       .filter((id) => transferred.has(id));
     return {
+      canvas: payload.source.canvas,
       id: payload.source.groupId ?? `g:transfer:${memberIds.join(":")}`,
       memberIds,
       visibleIds,
@@ -79,7 +100,8 @@ export function bindTransfers(useCenterTabs: StoreApi<CenterTabsState>, closedSe
    * replaces it in place rather than adding a tab.
    */
   function isConsumablePlaceholder(tab: CenterTab): boolean {
-    return tab.kind === "ntp" || (tab.kind === "session" && tab.draft === true);
+    return tab.kind === "ntp" || (tab.kind === "session" && tab.draft === true
+      && !(tab.sessionId && sentDraftSessions.has(tab.sessionId)));
   }
 
   function transferredPayloadAfter(
@@ -335,5 +357,5 @@ export function bindTransfers(useCenterTabs: StoreApi<CenterTabsState>, closedSe
     return persistCenterTabsPayload(snapshotCenterTabsPayload());
   }
 
-  return { sessionAckIsActive, snapshotCenterTabsPayload, validateTransferredTabs, insertTransferredTabs, removeTransferredTabs, replaceCenterTabsPayload, persistCurrentCenterTabsPayload };
+  return { sessionAckIsActive, chatAckIsActive, snapshotCenterTabsPayload, validateTransferredTabs, insertTransferredTabs, removeTransferredTabs, replaceCenterTabsPayload, persistCurrentCenterTabsPayload };
 }

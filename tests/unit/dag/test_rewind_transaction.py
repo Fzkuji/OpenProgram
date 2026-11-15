@@ -6,20 +6,20 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.checkpoint import CheckpointStore
-from openprogram.store.snapshot.checkpoint import manifest
+from openprogram.state.store.session.session_store import SessionStore
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
+from openprogram.state.store.snapshot.checkpoint import manifest
 
 
 @pytest.fixture
 def store(tmp_path: Path, monkeypatch):
     value = SessionStore(tmp_path / "sessions")
     monkeypatch.setattr(
-        'openprogram.store.session.session_store.shared._default_store', value,
+        'openprogram.state.store.session.session_store.shared._default_store', value,
         raising=False,
     )
     monkeypatch.setattr(
-        "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
+        "openprogram.state.paths.get_state_dir", lambda: tmp_path / "state",
     )
     return value
 
@@ -63,7 +63,7 @@ def _seed_three_turns(
 
 
 def test_rewind_folds_three_turns_into_one_target_state(store, tmp_path):
-    from openprogram.agent._rewind import rewind_to
+    from openprogram.runtime.conversation.rewind import rewind_to
 
     target = tmp_path / "work" / "same.py"
     _seed_three_turns(store, "s-fold", target)
@@ -78,7 +78,8 @@ def test_rewind_folds_three_turns_into_one_target_state(store, tmp_path):
     assert store.get_session("s-fold")["head_id"] == "ROOT"
     _git, index = store._open("s-fold")
     refs = index.meta["branch_refs"]
-    assert refs[result["source_branch_id"]]["head_id"] == "a3"
+    assert result["source_branch_id"] == result["target_branch_id"]
+    assert len(refs) == 1
     assert refs[result["target_branch_id"]]["head_id"] == "ROOT"
     assert index.meta["active_branch_id"] == result["target_branch_id"]
     assert not any((node.metadata or {}).get("rewound") for node in index.all_nodes())
@@ -87,7 +88,7 @@ def test_rewind_folds_three_turns_into_one_target_state(store, tmp_path):
 def test_file_apply_failure_rolls_back_and_does_not_move_head(
     store, tmp_path, monkeypatch,
 ):
-    from openprogram.agent._rewind import rewind_to
+    from openprogram.runtime.conversation.rewind import rewind_to
 
     first = tmp_path / "work" / "first.py"
     assistants, journal = _seed_three_turns(store, "s-apply-fail", first)
@@ -122,7 +123,7 @@ def test_file_apply_failure_rolls_back_and_does_not_move_head(
 def test_stale_folded_plan_writes_no_planned_file_and_keeps_head(
     store, tmp_path, monkeypatch,
 ):
-    from openprogram.agent._rewind import rewind_to
+    from openprogram.runtime.conversation.rewind import rewind_to
 
     target = tmp_path / "work" / "same.py"
     assistants, journal = _seed_three_turns(store, "s-stale", target)
@@ -184,7 +185,7 @@ def test_incomplete_intent_recovers_committed_state(store, tmp_path):
         expected_head_id=assistants[-1],
         target_head_id="ROOT",
         get_head=lambda: store.get_session("s-recover")["head_id"],
-        compare_and_set_head=lambda expected, new: store.compare_and_set_head(
+        compare_and_set_head=lambda expected, new, rollback=False: store.compare_and_set_head(
             "s-recover", expected, new,
         ),
         idempotency_key=key,
@@ -205,7 +206,7 @@ def test_head_compare_and_set_rejects_stale_source(store, tmp_path):
 
 
 def test_rewind_keeps_sibling_nodes_and_points_out_of_active_plan(store, tmp_path):
-    from openprogram.agent._rewind import list_rewind_points, rewind_to
+    from openprogram.runtime.conversation.rewind import list_rewind_points, rewind_to
 
     target = tmp_path / "work" / "same.py"
     _seed_three_turns(store, "s-sibling", target)
@@ -238,7 +239,7 @@ def test_rewind_keeps_sibling_nodes_and_points_out_of_active_plan(store, tmp_pat
 
 
 def test_parent_symlink_swap_cannot_redirect_rewind(store, tmp_path, monkeypatch):
-    from openprogram.agent._rewind import plan_rewind, rewind_to
+    from openprogram.runtime.conversation.rewind import plan_rewind, rewind_to
 
     parent = tmp_path / "work" / "safe"
     target = parent / "same.py"
@@ -277,7 +278,7 @@ def test_parent_symlink_swap_cannot_redirect_rewind(store, tmp_path, monkeypatch
 def test_head_meta_write_failure_keeps_memory_and_files_at_source(
     store, tmp_path, monkeypatch,
 ):
-    from openprogram.agent._rewind import rewind_to
+    from openprogram.runtime.conversation.rewind import rewind_to
 
     target = tmp_path / "work" / "same.py"
     assistants, _journal = _seed_three_turns(store, "s-meta-fail", target)
@@ -306,7 +307,7 @@ def test_head_cas_reads_durable_head_across_store_instances(store, tmp_path):
 
 
 def test_mixed_interrupted_intent_is_automatically_rolled_back(store, tmp_path):
-    from openprogram.agent._rewind import recover_session_rewinds
+    from openprogram.state.store.session.rewind_recovery import recover_session_rewinds
 
     first = tmp_path / "work" / "first.py"
     assistants, journal = _seed_three_turns(store, "s-mixed-recovery", first)
@@ -347,7 +348,7 @@ def test_fresh_public_session_open_recovers_prepared_rewind_before_head_use(
     store, tmp_path,
 ):
     """A reopened public SessionStore repairs its journal before exposing HEAD."""
-    from openprogram.agent._rewind import recover_session_rewinds
+    from openprogram.state.store.session.rewind_recovery import recover_session_rewinds
 
     first = tmp_path / "work" / "first.py"
     assistants, journal = _seed_three_turns(store, "s-lazy-recovery", first)
@@ -390,7 +391,7 @@ def test_fresh_public_session_open_recovers_prepared_rewind_before_head_use(
 def test_failed_lazy_recovery_withdraws_session_cache_and_retries(
     tmp_path, monkeypatch,
 ):
-    from openprogram.agent import _rewind
+    from openprogram.state.store.session import rewind_recovery as _rewind
 
     store = SessionStore(tmp_path / "sessions")
     store.create_session("s-recovery-retry", "main")
@@ -415,7 +416,7 @@ def test_failed_lazy_recovery_withdraws_session_cache_and_retries(
 
 
 def test_recovery_scope_isolated_by_store_identity(tmp_path, monkeypatch):
-    from openprogram.agent import _rewind
+    from openprogram.state.store.session import rewind_recovery as _rewind
 
     root = tmp_path / "sessions"
     first = SessionStore(root)
@@ -435,7 +436,7 @@ def test_recovery_scope_isolated_by_store_identity(tmp_path, monkeypatch):
 
 
 def test_idempotent_replay_is_bound_to_original_target(store, tmp_path):
-    from openprogram.agent._rewind import plan_rewind, rewind_to
+    from openprogram.runtime.conversation.rewind import plan_rewind, rewind_to
 
     target = tmp_path / "work" / "same.py"
     _seed_three_turns(store, "s-idempotent", target)
@@ -459,7 +460,10 @@ def test_idempotent_replay_is_bound_to_original_target(store, tmp_path):
     assert first["status"] == "committed"
     assert replay["status"] == "committed"
     assert replay["replayed"] is True
-    assert replay["head_changed"] is False
+    # A repeat reports the outcome the first answer reported.
+    assert first["head_changed"] is True and first["new_head_id"] == "a1"
+    assert {key: replay[key] for key in ("head_changed", "new_head_id", "turns_reverted", "user_text")} == {
+        key: first[key] for key in ("head_changed", "new_head_id", "turns_reverted", "user_text")}
     assert conflict["status"] == "idempotency_conflict"
     assert store.get_session("s-idempotent")["head_id"] == "a1"
     assert target.read_text(encoding="utf-8") == "v1\n"

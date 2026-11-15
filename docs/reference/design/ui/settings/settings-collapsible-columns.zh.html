@@ -1,0 +1,47 @@
+<title>设置导航</title>
+<meta name="description" content="设置页头和可收起的分类栏。">
+<h1>设置导航</h1>
+
+<p>设置使用所有带列表列的页面共用的页头和<a href="../sidebar/secondary-rail.zh.html">二级导航栏</a>。列宽沿用现有侧栏，不支持拖动调整。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">列</th><th scope="col">展开</th><th scope="col">收起</th><th scope="col">保存于</th><th scope="col">页头</th></tr></thead>
+<tbody>
+<tr><th scope="row">分类</th><td><code translate="no">--sidebar-width</code> − 1px</td><td>49px</td><td><code translate="no">settingsNavOpen</code></td><td><code translate="no">ManagePageHeader</code>：导航栏切换按钮，然后是“设置”</td></tr>
+<tr><th scope="row">内容</th><td>剩余宽度；控件换行</td><td>相同</td><td>不保存</td><td>一个页面标题；记忆不加重复标题</td></tr>
+</tbody>
+</table>
+
+<h2>分类</h2>
+<p>通用、外观、LLM Provider、记忆、网络搜索、浏览器、语音、运行环境、频道、导入对话、Token 用量、系统。链接、图标、选中状态和键盘顺序都来自这一个数组。</p>
+<dl class="pairs">
+<dt>切换按钮</dt><dd>原生按钮，带 <code translate="no">aria-expanded</code>、<code translate="no">aria-controls</code> 和明确名称，图标与下方分类图标同轴</dd>
+<dt>窄窗口</dt><dd>低于 760px 且没有保存选择时默认收起，缩窄时收起但不保存。变宽绝不展开：以保存的选择为准。</dd>
+<dt>行</dt><dd>y 位置、32px 行高和 1px 间距与主侧栏的行相同</dd>
+<dt>标题</dt><dd>“设置”和内容标题使用 <code translate="no">--fs-title</code>（18px），行高 1.2，避免下伸部被裁切</dd>
+</dl>
+
+<p>LLM Provider 是单列页面，没有自己的列表列：它的列表、添加供应商和每个供应商的页面见<a href="../../providers/provider-management.zh.html">供应商管理</a>。</p>
+
+<details>
+<summary>参考与不做的事</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">来源</th><th scope="col">用途</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/">WAI-ARIA APG Disclosure</a></th><td>按钮语义和 Enter 或 Space。不涉及列宽和标题。</td></tr>
+<tr><th scope="row"><a href="https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-expanded">MDN aria-expanded</a></th><td>状态与可见列一致；不用 <code translate="no">aria-pressed</code>。</td></tr>
+<tr><th scope="row">不做</th><td>拖动调整列宽、断点覆盖用户选择、改动记忆、Provider 或模型数据、改动主侧栏</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>没有单独的全局设置顶栏。</li>
+<li>分类行与主侧栏前几行对齐；收起时第一个图标的 y 不变。</li>
+<li>分类顺序、URL、图标、选中状态和键盘顺序一致。</li>
+<li>记忆没有重复标题。</li>
+<li>图标操作带 <code translate="no">aria-label</code>。</li>
+</ul>
+</details>

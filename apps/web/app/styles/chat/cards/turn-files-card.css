@@ -1,0 +1,36 @@
+/* Compact file-change summary. Diff content lives in the center Review tab.
+   Same material as the composer input box: borderless input surface with
+   the raised shadow (deeper on hover); the file list is an inset well. */
+.turn-files-card{container:turn-files/inline-size;margin-top:9px;padding:6px;border-radius:var(--radius-2xl);background:var(--bg-input);box-shadow:var(--composer-shadow);transition:box-shadow var(--motion-medium);color:var(--text-secondary);font-family:var(--font-sans)}
+.turn-files-card:hover{box-shadow:var(--composer-shadow-focus)}
+.turn-files-failed-note{margin-top:6px;font-size:var(--fs-xs);color:var(--text-secondary);opacity:.85}
+.turn-files-load-error{display:flex;align-items:center;gap:7px;margin-top:6px;color:var(--text-secondary);font-size:var(--fs-xs);line-height:1.3}.turn-files-load-error button{border:0;padding:1px 2px;background:transparent;color:var(--text-secondary);font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}.turn-files-load-error button:hover{color:var(--text-primary)}.turn-files-load-error button:focus-visible{border-radius:var(--radius-2xs);outline:2px solid var(--accent-blue);outline-offset:2px}
+.turn-files-probe{height:1px;margin-top:1px}
+.turn-files-card[data-reverting="1"]{opacity:.68}.turn-files-card[data-reverted="1"] .turn-files-list{opacity:.55}.turn-files-card[data-reverted="1"] .turn-files-name{text-decoration:line-through}
+.turn-files-summary{min-height:30px;display:flex;align-items:center;gap:10px;padding:0 0 6px 10px}
+.turn-files-logo{width:18px;height:18px;display:grid;place-items:center;flex:0 0 auto;color:var(--text-muted)}
+.turn-files-heading{display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden}.turn-files-count{min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:var(--fs-base);line-height:1;font-weight:600;color:var(--text-bright);white-space:nowrap}.turn-files-summary-stats{min-width:0}
+.turn-files-summary-actions{margin-left:auto;display:flex;align-items:center;gap:6px;flex:0 0 auto}
+/* The card itself deepens its shadow on hover, so the buttons need a
+   clearly brighter fill of their own to read as the hover target. */
+/* Revert / Review are elevated Buttons: hover only deepens the shadow; no grey fill, which in light themes matched the shadow colour. */.turn-files-action:hover:not(:disabled):not([aria-disabled="true"]),.turn-files-review:hover{background:var(--bg-input);color:var(--text-bright)}
+.turn-files-action-icon{display:inline-flex;align-items:center;justify-content:center;line-height:0}.turn-files-redo-icon{transform:scaleX(-1)}
+.turn-files-action[aria-disabled="true"]{opacity:.5;cursor:default}.turn-files-action[aria-disabled="true"]:active{translate:none}
+.turn-files-list{padding:3px;border-radius:var(--radius-lg);background:var(--bg-primary)}.turn-files-row{width:100%;height:30px;display:grid;grid-template-columns:auto minmax(0,1fr) max-content;align-items:center;column-gap:8px;padding:0 10px;border:0;border-radius:var(--radius-md);background:transparent;color:inherit;text-align:left;cursor:pointer}.turn-files-row:hover{background:var(--bg-hover)}
+/* Rows carry the Files panel's per-type icon (FileTypeIcon colours itself);
+   the 16px box keeps the 15px glyph aligned with the overflow row's eye. */
+.turn-files-file-icon{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-muted)}
+/* Counted files the card does not list: one row that opens Review. */
+.turn-files-overflow .turn-files-name{grid-column:2/-1;color:var(--text-secondary)}.turn-files-overflow:hover .turn-files-name{color:var(--text-primary)}.turn-files-card[data-reverted="1"] .turn-files-overflow .turn-files-name{text-decoration:none}
+.turn-files-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-sm);line-height:1.2}.turn-files-dir{color:var(--text-muted)}.turn-files-base{color:var(--text-bright)}
+/* +N −N diff badge, the Claude app's DiffIndicator pill: two tinted halves,
+   a sign and its count 1px apart. .diff-badge in the top bar shares it. */
+.turn-files-diff{display:inline-flex;height:18px;border-radius:var(--radius-xs);overflow:hidden;flex-shrink:0;justify-self:end;font-weight:500;font-size:var(--fs-2xs);line-height:14px;font-family:var(--font-sans)}.turn-files-stat{display:flex;align-items:center;gap:1px;padding:0 6px}.turn-files-stat.is-add{color:var(--git-added);background:color-mix(in srgb,var(--git-added) 20%,transparent)}.turn-files-stat.is-del{color:var(--git-removed);background:color-mix(in srgb,var(--git-removed) 20%,transparent)}.turn-files-op{grid-column:3/-1;text-align:right;font-size:var(--fs-xs);color:var(--text-muted)}
+/* A file row's counts are bare green and red numbers, as in the Claude
+   app's file-edit card; only the summary above keeps the tinted pill. */
+.turn-files-diff.is-plain{height:auto;column-gap:6px;border-radius:0;overflow:visible;font-size:var(--fs-xs);line-height:16px}.turn-files-diff.is-plain .turn-files-stat{padding:0;background:none}
+.turn-files-more{display:block;width:100%;height:30px;margin-top:6px;padding:0 13px;border:0;border-radius:var(--radius-md);background:transparent;color:var(--text-secondary);font-size:var(--fs-sm);text-align:left;cursor:pointer}.turn-files-more:hover{background:var(--bg-hover);color:var(--text-primary)}
+.turn-files-reverted{padding:6px 10px 2px;color:var(--text-muted);font-size:var(--fs-2xs)}
+@media(max-width:420px){.turn-files-summary{gap:6px;padding-left:6px}.turn-files-heading{gap:5px}.turn-files-count{font-size:0}.turn-files-count::after{content:attr(data-short);font-size:var(--fs-sm)}.turn-files-summary-actions{gap:4px}}
+@container turn-files (max-width:420px){.turn-files-summary{gap:6px;padding-left:6px}.turn-files-heading{gap:5px}.turn-files-count{font-size:0}.turn-files-count::after{content:attr(data-short);font-size:var(--fs-sm)}.turn-files-summary-actions{gap:4px}}
+.workspace-alignment-banner{width:min(100%,680px);margin:4px 0 10px;padding:10px 11px;border:1px solid color-mix(in srgb,var(--accent-orange) 55%,var(--border));border-radius:var(--radius-md);background:color-mix(in srgb,var(--accent-orange) 6%,var(--bg-secondary));color:var(--text-muted);font-size:var(--fs-2xs)}.workspace-alignment-banner b{display:block;margin-bottom:2px;color:var(--accent-orange);font-size:var(--fs-xs)}.workspace-alignment-banner>span{display:block}.workspace-alignment-banner>div{display:flex;align-items:center;gap:6px;margin-top:8px}.workspace-alignment-banner button{height:var(--ui-button-h-sm);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0 8px;background:var(--bg-tertiary);color:var(--text-primary);font-size:var(--fs-2xs);cursor:pointer}.workspace-alignment-banner small{margin-left:auto;color:var(--accent-orange);font-size:var(--fs-2xs);line-height:1;font-family:var(--font-sans)}

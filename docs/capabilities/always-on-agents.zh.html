@@ -1,0 +1,158 @@
+<title>常驻 Agent</title>
+<meta name="description" content="让 Agent 的会话在你离开时继续工作：唤醒、巡检、报告、交接与限制。">
+<h1>常驻 Agent</h1>
+<p>使用常驻 Agent 的每个会话，在关注的事到点时醒来，推进常驻目标，空闲时用只读工具巡检新情况，只在值得时才来找你。</p>
+<p>常驻是 <a href="agents.zh.html">Agent</a> 配置的一部分。和这个 Agent 的每个会话都是一个独立的常驻助手，各有自己的目标、巡检和报告。想要两个互不相干的助手，就开两个会话。</p>
+<h2 id="turn-it-on">开启</h2>
+<span id="built-in-agents"></span>
+<p><strong>管家</strong>和内置职能 Agent 已经开启：在输入框的 Agent 按钮或 Agents 页面的卡片上开一个会话，告诉它要盯什么或接着做什么。你自己的 Agent：</p>
+<ol>
+<li>在侧栏打开 <strong>Agents</strong>，选中它。</li>
+<li>在<strong>常驻</strong>标签页勾选<strong>让使用此 Agent 的会话常驻</strong>。</li>
+<li>可选：<strong>常驻目标</strong>、固定唤醒间隔，以及<strong>何时唤醒</strong>下的唤醒日子和<strong>安静时段</strong>。</li>
+<li><strong>保存修改</strong>。</li>
+<li>和它对话：Agents 页面的<strong>新对话</strong>，或 Agent 按钮。</li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">设置</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>常驻目标</strong></th><td>写要达成的结果（“让文档站没有死链”），不写例行动作（“每小时检查链接”）。要求满足后 Goal 结束；之后再看是巡检的事。</td></tr>
+<tr><th scope="row">固定唤醒间隔</th><td>5 到 10080 分钟。留空时 agent 自己安排唤醒。巡检关闭时，它不能安排巡检。草稿的<strong>试用</strong>对话不会被唤醒。</td></tr>
+<tr><th scope="row"><strong>唤醒的日子</strong></th><td>定时唤醒发生在星期几，至少留一天。</td></tr>
+<tr><th scope="row"><strong>安静时段</strong></th><td>每天的<strong>开始</strong>和<strong>结束</strong>，例如 22:00 到 08:00。结束早于开始表示跨午夜。</td></tr>
+</tbody>
+</table>
+<p class="note">唤醒日子和安静时段按这台电脑的时钟和时区。默认任何时候都可以唤醒。<strong>立即唤醒</strong>、来自其他会话的消息和已在运行的 Goal 不受影响。</p>
+<h2 id="when-it-wakes">何时醒来</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">下次唤醒</th></tr></thead>
+<tbody>
+<tr><th scope="row">agent 知道事情何时到点</th><td>安排在那时巡检，并在下次唤醒旁显示简短理由</td></tr>
+<tr><th scope="row">没有安排</th><td>你上次发言后 1 小时，之后间隔 2、5、10、20、50、100 小时，再往后每 100 小时。你一发言就从 1 小时重来。</td></tr>
+<tr><th scope="row">设了固定间隔</th><td>每个间隔</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">会话</th><th scope="col">会唤醒吗</th></tr></thead>
+<tbody>
+<tr><th scope="row">新对话、你发过消息的旧对话、用 Agent 按钮切到该 Agent 的对话</th><td>会。首次唤醒在一个间隔之后（没有间隔时为一小时后），不打断刚打开的对话。</td></tr>
+<tr><th scope="row">开启常驻后没用过</th><td>不会</td></tr>
+<tr><th scope="row">子 Agent 或导入的会话</th><td>永不</td></tr>
+<tr><th scope="row">已归档</th><td>停止，Agent 在这里自己发起的 Goal 也一起停：正在跑的一轮跑完，不再开下一轮。取消归档后 Goal 继续。你自己发起的 Goal 不受影响。</td></tr>
+<tr><th scope="row">关闭该 Agent 的常驻</th><td>全部停止，Agent 自己发起的 Goal 也一起停。重新开启后，这些 Goal 继续，曾参与的会话从那一刻起算间隔。</td></tr>
+</tbody>
+</table>
+<h3>每次唤醒最多做一件事</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">定时唤醒落在安静时段或非唤醒日</th><td>不做事；下次唤醒移到安静时间结束</td></tr>
+<tr><th scope="row">已有一轮或巡检在运行</th><td>不做事；五分钟后再试</td></tr>
+<tr><th scope="row">有尚未开始的常驻目标</th><td>在会话中作为 <a href="goal.zh.html">Goal</a> 启动</td></tr>
+<tr><th scope="row">Goal 进行中或被你暂停</th><td>不做事；Goal 自己继续，你的暂停保持</td></tr>
+<tr><th scope="row">Agent 启动的 Goal 失败或被重启打断</th><td>重新启动它，连续最多三次；有一轮成功完成就重新计数</td></tr>
+<tr><th scope="row">Agent 启动的 Goal 的一轮被人停止、因其他原因停下，或重启次数用完</th><td>发一条汇报请你决定，巡检继续</td></tr>
+<tr><th scope="row">你启动的 Goal 失败、停滞或预算耗尽</th><td>不重启也不汇报；巡检继续</td></tr>
+<tr><th scope="row">没有 Goal，巡检开启</th><td>巡检，除非没什么可查</td></tr>
+<tr><th scope="row">其他</th><td>不做事</td></tr>
+</tbody>
+</table>
+<p class="note">没有常驻目标、没有未完成的待办或开放工作、上次巡检后也没有新消息时，定时巡检不调用模型直接跳过。失败或被重启打断、还没汇报的巡检不算上次巡检。</p>
+<p class="note">你没发过言的会话不会被巡检。agent 自己安排的巡检和<strong>立即唤醒</strong>总会运行。另一个 Goal 未结束时修改的目标，等它结束才启动；<code translate="no">/goal clear</code> 可立即切换。</p>
+<p>固定时间的事（“每天 9 点总结收件箱”）请改用定时任务。</p>
+<details>
+<summary>定时任务</summary>
+<ul>
+<li>在后台运行，不进分支列表。每次运行都从头开始：只看任务和上一次的结果，不看会话内容。没有新内容就不打扰；有变化时在会话里发一条普通消息并通知。</li>
+<li>连续失败三次时告诉你一次。</li>
+<li>运行记录面板显示每个任务最近的结果和最近 20 次运行，每次都能原地展开看它做了什么。Agent 能看到任务并读取结果。</li>
+</ul>
+</details>
+<h2 id="check-ins">巡检</h2>
+<p>巡检查看记忆、会话的<a href="agents.zh.html#未完成事项">开放工作</a>和会话本身里没收尾的事，并寻找新情况。过程不出现在会话里：你可以继续输入，侧栏位置不变。无论会话多长，巡检只读摘要和最新一段，需要时才往前翻，也绝不压缩会话。</p>
+<p>每次巡检都能看到以前的报告，除非有变化不重复；选了渠道的 Agent 还能看到它其他会话的报告标题。网页、文件和以前的报告都只是数据，它不会照其中的指令做。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具</th><td>只读：读取和搜索文件、网页搜索和抓取、读取会话和记忆、待办、开放工作和 Goal 的读取。你为对话或 Agent 关闭网页搜索后，检查也不会使用它。不能运行命令、改文件或调用 MCP server。<code translate="no">~/.ssh</code>、<code translate="no">.env</code> 这类凭据和配置，以及私有网络地址，一律拒绝。</td></tr>
+<tr><th scope="row"><strong>只报告发现</strong>（默认）</th><td>在报告里提议工作，由你决定</td></tr>
+<tr><th scope="row"><strong>可自行开始目标</strong></th><td>可以把发现变成 Goal，或交给负责这类工作的会话。Goal 作为会话的普通轮次运行，使用正常工具和权限，但其中以及交接轮次里的页面脚本和破坏性删除会被拒绝；它会说明原因，由你自己操作。巡检不能等待批准：权限模式需要询问时，它改为在报告里提议这项工作</td></tr>
+<tr><th scope="row"><strong>没有目标时进行巡检</strong></th><td>关闭后只为常驻目标唤醒</td></tr>
+<tr><th scope="row">权限</th><td>使用会话的模式和规则，但没人审批：需要审批的步骤被拒绝，改在报告里请求。它启动的 Goal 和其他 Goal 一样等你审批。</td></tr>
+<tr><th scope="row">巡检失败时</th><td>不算看过：下一次仍覆盖上次完成以来的全部内容，节奏不变。连续失败三次，或模型账号被拒绝时立刻，发一条报告告诉你；之后，没有固定唤醒间隔时，尝试间隔越来越长。被重启打断或被人停止的不计入。</td></tr>
+<tr><th scope="row">巡检模型</th><td>可在常驻标签页选更便宜的模型。默认用会话的模型。</td></tr>
+<tr><th scope="row">每日预算</th><td>每个 Agent 的美元额度。花完后定时巡检等到第二天；<strong>立即唤醒</strong>仍可运行。由巡检、交接或定时任务启动的 Goal 只能花当天剩余额度，费用计入当日合计，额度用完就不再启动。运行记录面板显示每次巡检的 token 和费用，以及当日合计。</td></tr>
+<tr><th scope="row">设了预算时</th><td>同一 Agent 的定时巡检一次只运行一个，其余巡检和自动轮次留下的 Goal 五分钟后重试。价格未知的模型触不到这个上限，运行记录面板会在它的巡检上注明。</td></tr>
+</tbody>
+</table>
+<h2 id="reports-and-notifications">报告</h2>
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><strong>发现</strong></th><td>你可能想知道的事</td></tr>
+<tr><th scope="row"><strong>待决定</strong></th><td>需要你决定</td></tr>
+<tr><th scope="row"><strong>已完成</strong></th><td>一项工作完成了</td></tr>
+</tbody>
+</table>
+<p>报告有标题、一到三句话的正文和可选链接，以 Agent 的消息出现，你的下一条消息可以直接回复。有一轮在运行时排在它之后。巡检没有可报告的内容时不在会话里留痕，运行记录面板仍显示结果。</p>
+<p>App 里，消息只有正文和链接，网页链接显示为站点名；标题留在列表和通知里。聊天视图里，上方的时间行说明它为什么来：例行查看时发现、后台做完了、请你决定，或定时任务的名字。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">位置</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话和未读圆点</th><td>总是有；会话正在屏幕上时没有圆点。最小化或在后台的窗口不算在屏幕上</td></tr>
+<tr><th scope="row">桌面 App 通知</th><td>没有 App 窗口获得焦点时；点击打开会话。没有打开 App 时，电脑仍会弹出通知，除非会话正显示在浏览器里。按类型设置，默认开。</td></tr>
+<tr><th scope="row">渠道</th><td>按类型设置，默认开</td></tr>
+<tr><th scope="row">侧栏的<strong>待处理</strong></th><td>带计数。<strong>等你决定</strong>：待决定的报告，直到你在该会话发言；交接、提醒或 Goal 继续运行都不算，关闭常驻也不会清空。<strong>新发现</strong>：发现和已完成的工作，直到你打开会话。也在每个运行记录面板顶部显示为<strong>等你处理</strong>。<strong>打开</strong>跳到会话。超过七天不再列出。</td></tr>
+</tbody>
+</table>
+<p><strong>告诉它报告什么</strong>：直接在会话里说（“通过的构建不用告诉我”）。每条规则成为该 Agent 的报告偏好，之后的巡检和定时运行都遵守。只有你自己的轮次能添加，巡检和定时运行不能。运行记录面板列出它们可删除，每条报告也能停掉同类报告。</p>
+<details>
+<summary>把报告发到渠道</summary>
+<ul>
+<li>在<strong>同时把报告发到</strong>下勾选最多 10 个<a href="../integrations/channels.zh.html">聊天渠道</a>会话：Telegram、Slack、Discord 或微信。对这个 Agent 所有会话的报告生效。绑定了渠道的聊天不用勾选，报告也会发到那里，只发一次；<strong>渠道</strong>设置可同时关闭这两条路径。</li>
+<li>列表包含该 Agent 已有的渠道会话，以及用 peer 绑定的人和群：<code translate="no">openprogram channels bindings add &lt;agent&gt; --channel telegram --account &lt;id&gt; --peer &lt;id&gt;</code>。绑定到整个渠道或账号的 Agent 只列出和它说过话的人。</li>
+<li>每条报告在 App 保存后向每个选中的会话发一次。运行记录面板在报告下显示结果；发送失败（例如账号已退出）会显示在那里，报告保留。</li>
+<li>该渠道已有自己的会话时，报告也作为消息出现在那个会话里，所以直接在手机上回复就有上下文；在那里回复也算答复了这条待决定的报告。</li>
+</ul>
+</details>
+<h2 id="hand-work-to-another-conversation">把工作交给另一个会话</h2>
+<p>会话可以组队，一件事一个负责人。agent 用 <code translate="no">send_message</code> 按标题或 ID 给你的另一个会话发消息，也可以写 Agent 的名称（该 Agent 只有一个会话时）；对方可用任何 Agent。给每个会话清楚的标题和职责，并告诉负责规划的会话谁做什么。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">环节</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">投递</th><td>作为下一轮到达，标明来自发送方的会话而不是你。有一轮在运行时等它结束，从不打断。</td></tr>
+<tr><th scope="row">回复</th><td>那一轮结束后，答复作为自动通知回到发送方，附带用时和花费。这一轮失败或被停止时，发送方收到的是这件事和原因。</td></tr>
+<tr><th scope="row">转交</th><td>接收方再给第三个会话发消息时，每个答复回到发出那条消息的一方：接收方拿到第三方的答复后可以继续跟进。</td></tr>
+<tr><th scope="row">地址</th><td>会话的标题或 ID、Agent 的名称，或 <code translate="no">list_agents</code> 给出的分支地址。空会话把这条消息作为第一轮。</td></tr>
+<tr><th scope="row">权限</th><td>每轮用各自会话的 Agent、模式和规则。</td></tr>
+<tr><th scope="row">拒绝</th><td>给自己正在运行的一轮发消息；一条链超过四跳；同一会话每小时超过 20 条消息；接收方是已归档的会话或分支</td></tr>
+<tr><th scope="row">重启</th><td>消息是可追踪的 Job：服务重启后，等待忙碌会话的消息只投递一次，答复仍会送回</td></tr>
+</tbody>
+</table>
+<h2 id="in-the-conversations-activity-panel">运行记录面板</h2>
+<details>
+<summary>Activity 面板中的一行</summary>
+<p>在会话的<a href="../interfaces/web.zh.html#conversation-activity">运行记录面板</a>里，主 agent 的行多一条<strong>常驻</strong>：是否有巡检在运行，以及安静时段之后的下次唤醒；agent 自己安排时附理由。</p>
+<p>它的页面在运行列表上方有<strong>常驻</strong>一行：常驻目标、当前 Goal、唤醒计划、是否还在运行（上次何时唤醒、24 小时内的唤醒和失败次数，或早该发生却没发生的唤醒）、上次唤醒的结果和费用、今日巡检花费和报告偏好。报告是运行列表里的行。</p>
+<p><strong>立即唤醒</strong>现在运行一次，有回合在运行时 5 分钟后再试，也用来重试失败或被重启打断的巡检。Agent 给自己定好的后续巡检不受影响。</p>
+</details>
+<p>新建的常驻 Agent 空会话会列出三句可以对它说的话。点击只会填入输入框；输入框有内容后这些句子就消失。</p>
+<p>使用常驻 Agent 的会话读起来像和机器人聊天：短段落各占一个气泡（最多四个，代码、表格和列表与前后文字留在一起），间隔 30 分钟或跨天后再显示时间。思考、工具步骤和消息按钮不绘制；Agent 说完一段后继续工作时显示三个点。</p>
+<p>回复失败或没发完时，下方有一行说明；被重启打断的回复接着显示为同一条；网页来源只在最后一个气泡下显示一次。内容没有删除；旧会话同样如此，关闭常驻后恢复完整视图。</p>
+<p>在 Telegram、Discord、Slack 和微信里，Agent 写得更短，用编号列表给出选项；表格写完后才发送，每行变成一行文字。</p>
+<h2 id="limits">限制</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">限制</th></tr></thead>
+<tbody>
+<tr><th scope="row">运行位置</th><td>工作在这台电脑上，在会话的文件夹和沙箱里进行。worker 必须在运行。</td></tr>
+<tr><th scope="row">停止</th><td>关闭常驻或归档会话会停止唤醒，会话、报告、记忆和设置都会保留。</td></tr>
+<tr><th scope="row">发送的内容</th><td>通过已连接服务发出的内容遵循会话的权限模式。想逐条审阅，在<strong>常驻</strong>标签页末尾勾选<a href="permissions.zh.html#agent-替你发出的消息"><strong>发送前等我批准</strong></a>。巡检时无人可问，被拦下的消息会以草稿形式出现在报告里。</td></tr>
+<tr><th scope="row">复制 Agent</th><td>复制出来的 Agent 默认关闭常驻。</td></tr>
+<tr><th scope="row">时间限制</th><td>巡检超过 15 分钟会被停止，最近一次唤醒会写明原因。用<strong>立即唤醒</strong>重试。</td></tr>
+<tr><th scope="row">报告和重启</th><td>等待运行中一轮的报告在那一轮之后加入。服务重启后，一小时内的报告仍会加入，聊天应用的发送也会继续，所以聊天应用偶尔可能收到两次；更早的报告留在运行记录面板，没发完的发送显示为被重启中断。</td></tr>
+<tr><th scope="row">你的浏览器</th><td>检查、定时运行、自动 Goal 的轮次、交接或聊天应用消息，以及它们启动的工作，都不会占用你正在看的浏览器页面。它在你的工作后面打开自己的标签页，或使用从页面列表里点名的页面。App 关闭时，它的页面开在一个没有窗口的后台浏览器里：屏幕上不出现任何东西，也没有你在 App 里的登录状态。</td></tr>
+<tr><th scope="row">它打开的页面</th><td>定时运行或检查打开的页面在它结束时关闭。一个对话最多保留 8 个由它的 Agent 打开的页面；再开一个会关掉最久没用的那个。</td></tr>
+<tr><th scope="row">学习</th><td>它靠记忆改进：在 Agent 的<strong>长期记忆</strong>标签页设为<strong>读写</strong>，纠正才会保存并使用。否则常驻标签页会提醒。你对汇报的回复会被学习，汇报本身不会；定时运行只有你在它的分支上继续对话时才会。</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../reference/design/runtime/always-on-agents.zh.html">工程设计</a></p>

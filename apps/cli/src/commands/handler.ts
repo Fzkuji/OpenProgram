@@ -28,15 +28,13 @@ export interface SlashContext {
   /** Apply a theme by name. Returns true on success, false on unknown name. */
   setTheme?: (name: string) => boolean;
   /** Toggle (or set) the "tools-on" flag passed with the next chat turn. */
-  toggleTools: () => void;
   /** Current thinking budget shown on the bottom bar and sent with chat turns. */
   currentThinkingEffort?: ThinkingEffort;
   /** Set the thinking budget for subsequent chat turns. */
   setThinkingEffort?: (effort: ThinkingEffort) => void;
   /** Current permission tier shown on the bottom bar and sent with chat turns. */
   currentPermissionMode?: PermissionMode;
-  /** Set the permission tier. handleSlash routes bypass through the
-   *  confirm picker instead of calling this directly. */
+  /** Set the permission tier. */
   setPermissionMode?: (mode: PermissionMode) => void;
   /** Toggle the terminal-bell-on-long-turn-complete flag. */
   toggleBell: () => boolean;
@@ -182,11 +180,13 @@ const normalizeThinkingEffort = (raw: string): ThinkingEffort | null => {
   return null;
 };
 
-const PERMISSION_MODES: PermissionMode[] = ['ask', 'acceptEdits', 'plan', 'auto', 'bypass'];
+const PERMISSION_MODE_NAMES = ['bypass', 'auto', 'manual', 'plan'];
 
 const normalizePermissionMode = (raw: string): PermissionMode | null => {
   const v = raw.toLowerCase();
   if (v === 'acceptedits' || v === 'accept-edits' || v === 'accept' || v === 'edits') return 'acceptEdits';
+  if (v === 'unrestricted') return 'bypass';
+  if (v === 'manual') return 'ask';
   if (v === 'ask' || v === 'plan' || v === 'auto' || v === 'bypass') return v;
   return null;
 };
@@ -452,13 +452,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       }
       const mode = normalizePermissionMode(args[0]!);
       if (!mode) {
-        ctx.pushSystem(`Unknown permission mode '${args[0]}'. Use one of: ${PERMISSION_MODES.join(', ')}`);
-        return true;
-      }
-      if (mode === 'bypass') {
-        // bypass never lands silently — route through the same confirm
-        // the picker uses.
-        ctx.openPicker('permission_bypass_confirm');
+        ctx.pushSystem(`Unknown permission mode '${args[0]}'. Use one of: ${PERMISSION_MODE_NAMES.join(', ')}`);
         return true;
       }
       ctx.setPermissionMode(mode);
@@ -502,8 +496,9 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         return true;
       }
       if (args[0] === 'delete') {
+        // The outcome (or the refusal) arrives as branch_deleted.
         ctx.client.send({ action: 'delete_branch', session_id: sid });
-        ctx.pushSystem('Deleted current branch.');
+        ctx.pushSystem('Deleting the current branch…');
         return true;
       }
       ctx.client.send({ action: 'list_branches', session_id: sid });
@@ -536,11 +531,6 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
-    case 'tools': {
-      ctx.toggleTools();
-      return true;
-    }
-
     case 'channel': {
       // /channel rm <chan> <account_id>  → 删除一个 channel account
       //   (及其所有 binding). 之前要回 CLI 跑
@@ -562,44 +552,6 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       // No-arg: multi-step picker → channel → account → bind action.
       ctx.client.send({ action: 'list_channel_accounts' });
       ctx.openPicker('channel');
-      return true;
-    }
-
-    case 'browser': {
-      // Drive the attached Chrome from inside the TUI:
-      //   /browser                       → status
-      //   /browser <url>                 → open(url) (auto-bootstrap if needed)
-      //   /browser <verb> <args…>        → arbitrary tool call (advanced)
-      // Result is rendered as a system note when browser_result arrives.
-      const sub = args[0] ?? '';
-      const looksLikeUrl =
-        /^https?:\/\//i.test(sub) || sub.startsWith('localhost') || sub.includes('.');
-      if (!sub) {
-        ctx.client.send({
-          action: 'browser', verb: 'list', args: {},
-        } as never);
-        ctx.pushSystem('Asking the server for current browser sessions…');
-        return true;
-      }
-      if (looksLikeUrl) {
-        const url = sub.startsWith('http') ? sub : `https://${sub}`;
-        ctx.client.send({
-          action: 'browser', verb: 'open', args: { url },
-        } as never);
-        ctx.pushSystem(`Opening ${url} in attached Chrome…`);
-        return true;
-      }
-      // Treat as <verb> + key=value pairs.
-      const verb = sub;
-      const kvArgs: Record<string, string> = {};
-      for (const a of args.slice(1)) {
-        const eq = a.indexOf('=');
-        if (eq > 0) kvArgs[a.slice(0, eq)] = a.slice(eq + 1);
-      }
-      ctx.client.send({
-        action: 'browser', verb, args: kvArgs,
-      } as never);
-      ctx.pushSystem(`browser ${verb}…`);
       return true;
     }
 
@@ -835,13 +787,6 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     case 'sandbox': {
       const conv = ctx.currentConversation;
       ctx.client.send({ action: 'sandbox', session_id: conv ?? '' });
-      return true;
-    }
-
-    case 'rewind': {
-      const conv = ctx.currentConversation;
-      if (!conv) { ctx.pushSystem('No active session to rewind.'); return true; }
-      ctx.client.send({ action: 'rewind', session_id: conv });
       return true;
     }
 

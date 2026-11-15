@@ -5,10 +5,10 @@ import asyncio
 
 import pytest
 
-from openprogram import sandbox
-from openprogram.programs import _runtime as R
-from openprogram.programs._runtime import function, reset_registry, restore_registry, snapshot_registry
-from openprogram.sandbox import SandboxPolicy, policy_to_dict
+from openprogram.host import sandbox
+from openprogram.programs._host import runtime as R
+from openprogram.programs._host.runtime import function, reset_registry, restore_registry, snapshot_registry
+from openprogram.host.sandbox import SandboxPolicy, policy_to_dict
 
 
 @pytest.fixture(autouse=True)
@@ -62,7 +62,7 @@ def test_declared_read_path_blocks_and_skips_body(tmp_path):
 
     result = _run(probe_read.execute("c", {"path": str(target)}, None, None))
     assert result.is_error is True
-    assert _text(result).startswith("Error: sandbox policy:")
+    assert _text(result).startswith("[blocked by sandbox]")
     assert called == []
 
 
@@ -123,12 +123,12 @@ def test_undeclared_path_param_falls_back_to_write(tmp_path):
 
     result = _run(custom_helper.execute("c", {"path": str(target)}, None, None))
     assert result.is_error is True
-    assert _text(result).startswith("Error: sandbox policy:")
+    assert _text(result).startswith("[blocked by sandbox]")
     assert called == []
 
 
 def test_relative_write_anchors_to_worktree(tmp_path):
-    from openprogram.worktree.context import clear_worktree, set_worktree
+    from openprogram.state.worktree.context import clear_worktree, set_worktree
 
     work = tmp_path / "wt"
     work.mkdir()
@@ -148,7 +148,7 @@ def test_relative_write_anchors_to_worktree(tmp_path):
         assert called == ["inside.txt"]
     finally:
         try:
-            from openprogram.worktree.context import reset_worktree
+            from openprogram.state.worktree.context import reset_worktree
             reset_worktree(token)
         except Exception:
             clear_worktree()

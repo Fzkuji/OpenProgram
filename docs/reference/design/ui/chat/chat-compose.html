@@ -1,0 +1,49 @@
+<title>Chat quotes and message editing</title>
+<meta name="description" content="How selected text becomes a quote in the draft, and how a sent user message is edited and resent.">
+<h1>Chat quotes and message editing</h1>
+
+<h2 id="quotes">Quote a selection</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Shows</th><td><strong>Add to chat</strong> above the selection, after the pointer is released or a keyboard selection completes</td></tr>
+<tr><th scope="row">Hides</th><td>During dragging, on a new pointer press, on a cancelled selection</td></tr>
+<tr><th scope="row">Result</th><td>Appends a Markdown blockquote to that conversation's draft and focuses its composer. Drafts and attachments stay; sending is explicit</td></tr>
+<tr><th scope="row">Only route</th><td>The message action row has no Quote action</td></tr>
+<tr><th scope="row">Owner</th><td>Each pane names its own session, so a quote lands in the pane it came from. Separate side-chat windows are out of scope</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Toolbar look and icon</summary>
+<ul>
+<li>One compact action, 3 px outer padding, 8 px corners, subtle border and shadow, opaque theme-aware popover background.</li>
+<li>Hover and pressed states mix solid theme colours, never a translucent overlay. Keyboard focus has a visible outline.</li>
+<li><code translate="no">QuoteIcon</code> is in the shared animated-icons set. The upstream <a href="https://github.com/pqoqubbw/icons/tree/main/icons">catalog</a> has no Quote, so it uses the official Lucide glyph with the shared start/stop interface and the <code translate="no">CopyIcon</code> spring and translation.</li>
+<li>The whole button drives the animation on hover and keyboard focus; it resets when neither remains. Disabled controls and reduced motion get a static icon.</li>
+</ul>
+</details>
+
+<h2 id="editing">Edit a sent message</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Editor</th><td>Inline, with the bottom composer's text field, file mention picker, attachment processing and preview strip</td></tr>
+<tr><th scope="row">Attachments</th><td>Existing ones can be removed; images and documents can be picked, pasted or dropped. URLs stay editable text</td></tr>
+<tr><th scope="row"><strong>Cancel</strong></th><td>Discards only the edit</td></tr>
+<tr><th scope="row"><strong>Save and resend</strong></th><td>Creates a sibling branch through <code translate="no">POST /api/chat/edit</code></td></tr>
+<tr><th scope="row">Failure</th><td>Keeps the edit and shows a retryable message</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Storage and permissions</summary>
+<ul>
+<li>Uploaded bytes use the bounded attachment persistence and image dispatch path. Retained image copies are read through the authorized raw-file API; retained legacy attachment blocks stay lossless.</li>
+<li>No automatic submission and no new permission modes.</li>
+</ul>
+</details>
+
+<h2 id="status">Implementation status</h2>
+<p>Implemented. Browser tests cover quote draft preservation, split-pane ownership, inline attachment editing, failure retention and the icon under normal and reduced motion; REST tests cover edit attachment validation and dispatch.</p>
+<p class="note">The selection action follows a user-supplied Codex screenshot; no parity with another product is claimed.</p>

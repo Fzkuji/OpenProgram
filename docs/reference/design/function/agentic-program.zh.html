@@ -1,0 +1,35 @@
+<title>Agent 类、Program 与工具</title>
+<meta name="description" content="Agent 类、方法如何成为工具，以及什么是 Program。">
+<h1>Agent 类、Program 与工具</h1>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+def prepare(text):                                   # 普通 Python，不产生 DAG 节点
+    return text.strip()
+
+class Researcher(Agent):
+    model = "configured-model"
+    method_options = {"research": {"tool": True}}    # 把这个方法登记为工具
+
+    def research(self, question):                    # 记入 DAG
+        answer = self(prepare(question))             # 一次模型调用
+        if "TODO" in answer:                         # 用代码写的检查
+            answer = self(f"Finish this answer: {answer}")
+        return answer
+
+result = Researcher().research("A topic")</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">概念</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent</th><td>只持有配置：<code translate="no">model</code>、<code translate="no">effort</code>、<code translate="no">instructions</code>、<code translate="no">tools</code>。不拥有对话；历史是否延续由执行作用域决定</td></tr>
+<tr><th scope="row">Agent 方法</th><td>子类上的每个函数。无需装饰器：调用时进入作用域，记入会话 DAG，并为其中的模型调用派生 Context</td></tr>
+<tr><th scope="row"><code translate="no">self(...)</code></th><td>一次模型调用。周围的分支、循环、重试、检查都是普通 Python</td></tr>
+<tr><th scope="row">Context</th><td>父继承、命名内容、求值、历史可见性</td></tr>
+<tr><th scope="row"><code translate="no">method_options</code></th><td>按方法配置：<code translate="no">tool=True</code>、公开名称、描述、输入形式、可见性、入口元数据、持久步骤（<code translate="no">resumable</code>）。没有选项的方法仍被记录，但不是工具</td></tr>
+<tr><th scope="row">Program</th><td>由这样的类和函数组成的包。已登记源码在 <code translate="no">PROGRAM_ENTRIES</code> 列出公开入口；显式元数据保留名称与输入形式</td></tr>
+<tr><th scope="row"><code translate="no">@function</code> 工具</th><td>确定性，同一个注册表。授权与调用记录、历史可见性分别处理</td></tr>
+<tr><th scope="row">Skill</th><td>只提供指令，不创建可执行入口</td></tr>
+<tr><th scope="row">模块级帮助函数</th><td>普通 Python：签名、返回值、异常和 import 不变，没有 DAG 节点</td></tr>
+</tbody>
+</table>
+<p class="note">实现在 <code translate="no">openprogram/runtime/agent/agent_class.py</code> 和 <code translate="no">agent_method.py</code>。类 API、执行生命周期和验证状态见 <a href="../integrations/nooa.zh.html#contract">Agent 与 Context 契约</a>、<a href="../integrations/nooa.zh.html#implementation">实现状态</a>。</p>
+<p class="next"><a href="calling-unification.zh.html">函数调用</a></p>

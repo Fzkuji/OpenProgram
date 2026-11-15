@@ -17,7 +17,7 @@ import type {
   ReactNode,
   RefAttributes,
 } from "react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import type {
   AnimatedNavIconHandle,
@@ -26,6 +26,7 @@ import type {
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { HoverTip } from "@/components/ui/tooltip";
 import { isManageActionIcon } from "./manage-action-icon";
 import styles from "./manage-page.module.css";
 
@@ -64,10 +65,16 @@ function ManageTabButton({
   ariaControls?: string;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // Narrow tab rows scroll horizontally; keep the selected tab visible.
+  useEffect(() => {
+    if (active) buttonRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [active]);
   const Icon = tab.icon;
   const label = tab.count === undefined ? tab.label : `${tab.label} (${tab.count})`;
   return (
     <button
+      ref={buttonRef}
       type="button"
       id={id}
       role="tab"
@@ -110,14 +117,12 @@ export interface ManageAction {
 function ManageActionButton({ a }: { a: ManageAction }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   const Icon = isManageActionIcon(a.icon) ? a.icon as ManageTabIcon : null;
-  return (
+  const button = (
     <Button
-      size={a.iconOnly ? "icon" : "sm"}
-      variant={a.primary ? "default" : "outline"}
-      className={a.primary ? undefined : "border border-[var(--border)] text-[var(--text-primary)]"}
+      size={a.iconOnly ? "icon" : "default"}
+      variant={a.primary ? "default" : "elevated"}
       onClick={a.onClick}
       disabled={a.disabled}
-      title={a.iconOnly ? a.label : undefined}
       aria-label={a.iconOnly ? a.label : undefined}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
@@ -125,6 +130,96 @@ function ManageActionButton({ a }: { a: ManageAction }) {
       {Icon ? <Icon ref={iconRef} size={16} /> : a.icon as ReactNode}
       {!a.iconOnly && a.label}
     </Button>
+  );
+  return a.iconOnly ? <HoverTip label={a.label}>{button}</HoverTip> : button;
+}
+
+/**
+ * Outer frame of every top-level management page (Agents, Abilities,
+ * Applications, History, Scheduler): the shell's `.main` column plus the
+ * full-height flex view. Pages render a ManagePageHeader as the first
+ * child so all of them start at the same width, height and padding.
+ */
+export function ManagePage({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
+      <div className={cn(styles.view, className)}>{children}</div>
+    </div>
+  );
+}
+
+/** Quiet count / status text shown before the header's search and actions. */
+export function ManageSummary({ children }: { children: ReactNode }) {
+  return <span className={styles.headerSummary} aria-live="polite">{children}</span>;
+}
+
+/**
+ * One empty / first-run state for every management page: a framed icon,
+ * a heading, one line of explanation and an optional call to action.
+ * `compact` drops the vertical centering for empty states inside a list.
+ */
+export function ManageEmptyState({
+  icon,
+  title,
+  description,
+  action,
+  compact = false,
+  children,
+}: {
+  icon?: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  action?: ReactNode;
+  compact?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={cn(styles.emptyState, compact && styles.emptyStateCompact)}>
+      {icon && <span className={styles.emptyIcon} aria-hidden>{icon}</span>}
+      <h2 className={styles.emptyTitle}>{title}</h2>
+      {description && <p className={styles.emptyDescription}>{description}</p>}
+      {action && <div className={styles.emptyAction}>{action}</div>}
+      {children}
+    </div>
+  );
+}
+
+/** The loading state that comes before a management page's list or ManageEmptyState. */
+export function ManageLoadingState({ children }: { children: ReactNode }) {
+  return <div className={styles.empty} role="status">{children}</div>;
+}
+
+/** Icon-only row action (pause, delete, ...): a ghost Button with a tooltip. */
+export function ManageIconButton({
+  label,
+  tooltip,
+  onClick,
+  children,
+  disabled,
+  danger = false,
+}: {
+  /** Accessible name; include the target ("Pause Daily brief"). */
+  label: string;
+  /** Short hover text; defaults to the accessible name. */
+  tooltip?: string;
+  onClick: () => void;
+  children: ReactNode;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <HoverTip label={tooltip ?? label}>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        className={cn("text-text-secondary", danger && "hover:text-destructive")}
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+      >
+        {children}
+      </Button>
+    </HoverTip>
   );
 }
 
@@ -135,6 +230,7 @@ function ManageActionButton({ a }: { a: ManageAction }) {
  */
 export function ManagePageHeader({
   title,
+  railToggle,
   tabs,
   activeTab,
   onTabChange,
@@ -144,6 +240,8 @@ export function ManagePageHeader({
   actions = [],
 }: {
   title: string;
+  /** The page's <RailToggle>, shown before the title. */
+  railToggle?: ReactNode;
   tabs?: ManageTab[];
   activeTab?: string;
   onTabChange?: (id: string) => void;
@@ -166,10 +264,11 @@ export function ManagePageHeader({
   }
 
   return (
-    <div className={styles.topbar}>
+    <div className={cn(styles.topbar, railToggle !== undefined && styles.topbarWithToggle)}>
+      {railToggle}
       <span className={styles.title}>{title}</span>
       {tabs && tabs.length > 0 && (
-        <div className={styles.tabs} role="tablist" aria-label={tabLabel}>
+        <div className={cn(styles.tabs, "max-[760px]:order-2 max-[760px]:w-full max-[760px]:ml-0 max-[760px]:overflow-x-auto")} role="tablist" aria-label={tabLabel}>
           {tabs.map((tb, index) => (
             <ManageTabButton
               key={tb.id}
@@ -208,6 +307,7 @@ export function ManageSubnav({
   action,
   ariaLabel,
   panelId,
+  className,
 }: {
   tabs: ManageTab[];
   activeTab: string;
@@ -216,6 +316,8 @@ export function ManageSubnav({
   action?: ManageAction;
   ariaLabel: string;
   panelId: string;
+  /** Extra class on the bar, e.g. to sit flush inside a padded page body. */
+  className?: string;
 }) {
   function moveTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
     let next = index;
@@ -230,7 +332,7 @@ export function ManageSubnav({
   }
 
   return (
-    <div className={styles.subnav}>
+    <div className={cn(styles.subnav, className)}>
       <div className={styles.subnavTabs} role="tablist" aria-label={ariaLabel}>
         {tabs.map((tb, index) => (
           <ManageTabButton
@@ -246,12 +348,14 @@ export function ManageSubnav({
           />
         ))}
       </div>
-      <div className={styles.subnavEnd}>
-        {summary !== undefined && (
-          <div className={styles.subnavSummary} aria-live="polite">{summary}</div>
-        )}
-        {action && <ManageActionButton a={action} />}
-      </div>
+      {(summary !== undefined || action) && (
+        <div className={styles.subnavEnd}>
+          {summary !== undefined && (
+            <div className={styles.subnavSummary} aria-live="polite">{summary}</div>
+          )}
+          {action && <ManageActionButton a={action} />}
+        </div>
+      )}
     </div>
   );
 }
@@ -269,7 +373,6 @@ export function ManageRow({
   count,
   actions,
   onClick,
-  title,
   className,
 }: {
   icon?: ReactNode;
@@ -279,7 +382,6 @@ export function ManageRow({
   count?: ReactNode;
   actions?: ReactNode;
   onClick?: () => void;
-  title?: string;
   className?: string;
 }) {
   const content = (
@@ -297,7 +399,6 @@ export function ManageRow({
   );
   return (
     <div
-      title={title}
       className={cn(styles.row, !onClick && styles.rowStatic, className)}
     >
       {onClick ? (

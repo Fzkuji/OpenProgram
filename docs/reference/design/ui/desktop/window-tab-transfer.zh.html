@@ -1,0 +1,128 @@
+<title>在窗口之间移动标签页</title>
+<meta name="description" content="把桌面标签页移到另一个窗口的事务：携带什么、如何提交、如何恢复或回滚。">
+<h1>在窗口之间移动标签页</h1>
+
+<p>桌面标签页可以移到另一个 OpenProgram 窗口，或松手处新建的窗口。移动结束时标签页只存在于一个窗口；任何失败都让源窗口保持原样。</p>
+
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 396" role="img" aria-label="源渲染进程、主进程和目标渲染进程之间的时序。源提交负载并拿到令牌。目标检视并接受，主进程锁定并重新挂载视图。目标插入标签并报告就绪，此后源才移除自己那份，主进程随后持久化 committed 决议并显示窗口。">
+  <defs><marker id="tt-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big mid" x="90" y="22">源渲染进程</text><text class="t-big mid" x="340" y="22">主进程</text><text class="t-big mid" x="590" y="22">目标渲染进程</text>
+  <path class="ln-faint" d="M90 36V394M340 36V394M590 36V394"/>
+  <line class="ln" x1="90" y1="70" x2="332" y2="70" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="215" y="61">prepare(payload)</text>
+  <text class="t-soft" x="352" y="75">校验，签发令牌：prepared</text>
+  <line class="ln" x1="590" y1="112" x2="348" y2="112" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="465" y="103">inspect(token)</text>
+  <line class="ln" x1="590" y1="154" x2="348" y2="154" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="465" y="145">accept(placement)</text>
+  <text class="t-soft mid" x="215" y="159">锁定视图，重新挂载</text>
+  <line class="ln" x1="340" y1="196" x2="582" y2="196" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="465" y="187">插入标签，写日志</text>
+  <text class="t-soft mid" x="215" y="201">destination-staged</text>
+  <line class="ln" x1="590" y1="238" x2="348" y2="238" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="465" y="229">destination-ready</text>
+  <text class="t-soft mid" x="215" y="243">awaiting-source</text>
+  <line class="ln" x1="340" y1="280" x2="98" y2="280" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="215" y="271">remove-source</text>
+  <line class="ln" x1="90" y1="322" x2="332" y2="322" marker-end="url(#tt-a)"/>
+  <text class="t-cmd mid" translate="no" x="215" y="313">source-removed</text>
+  <text class="t-soft" x="352" y="327">持久化 committed 决议</text>
+  <text class="t-soft" x="352" y="369">显示窗口：committed</text>
+</svg>
+<ol class="flow fig-narrow">
+<li><strong>源</strong><small><code translate="no">prepare(payload)</code></small></li>
+<li><strong>主进程</strong><small>校验，签发令牌：<code translate="no">prepared</code></small></li>
+<li><strong>目标</strong><small><code translate="no">inspect(token)</code>、<code translate="no">accept(placement)</code></small></li>
+<li><strong>主进程</strong><small>锁定视图，重新挂载：<code translate="no">destination-staged</code></small></li>
+<li><strong>目标</strong><small>插入标签，写日志，<code translate="no">destination-ready</code></small></li>
+<li><strong>主进程</strong><small><code translate="no">awaiting-source</code>，然后 <code translate="no">remove-source</code></small></li>
+<li><strong>源</strong><small>移除标签，写日志，<code translate="no">source-removed</code></small></li>
+<li class="flow-end"><strong>主进程</strong><small>持久化决议，显示窗口：<code translate="no">committed</code></small></li>
+</ol>
+</figure>
+<p class="note">目标先插入，源后移除，任何时刻都有一个活的标签页。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">令牌</th><td>不透明、一次性；15 秒内未完成即过期</td></tr>
+<tr><th scope="row">准备</th><td>拖拽离开标签栏时同步申请</td></tr>
+<tr><th scope="row">检视</th><td>只有指针下方的窗口；源窗口和第二个窗口都不行</td></tr>
+<tr><th scope="row">拒绝</th><td><code translate="no">duplicate</code>（目标聚焦自己那份）或 <code translate="no">group-full</code>：通知源，什么都不变。目标无法校验的负载不接受，其令牌到期失效。</td></tr>
+<tr><th scope="row">提交</th><td>报告成功前，用原子替换把 <code translate="no">committed</code> 写入应用数据目录的 <code translate="no">tab-transfers.json</code>。持久性不确定：以 100 ms 到 5 s 的退避重写同一决议。写不进去：回滚。</td></tr>
+<tr><th scope="row">新窗口</th><td>在所有窗口外松手时，在松手处创建隐藏的拖出窗口。它认领令牌，像普通目标一样接受，标签就位后才淡入。并发拖出共用一次窗口启动。</td></tr>
+<tr><th scope="row">源窗口变空</th><td>日志完成后关闭</td></tr>
+<tr><th scope="row">悬停</th><td>指针下方的窗口收到进入和离开事件，只在此时显示落点</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-moves">移动的内容</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">来源类型</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tab</code></th><td>一个未分组的标签页</td></tr>
+<tr><th scope="row"><code translate="no">segment</code></th><td>复合分组的一个成员；其余留下</td></tr>
+<tr><th scope="row"><code translate="no">group</code></th><td>整个复合分组，含成员、可见成员和焦点成员</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">取值</th></tr></thead>
+<tbody>
+<tr><th scope="row">标签类型</th><td>会话、文件、网页、新标签页、应用、内置页面</td></tr>
+<tr><th scope="row">位置</th><td>分组 id、成员序号和顺序、可见成员、焦点成员、画布布局</td></tr>
+<tr><th scope="row">同时携带</th><td>未保存的文件草稿；每个对话的输入框草稿和设置、待定项目、渠道选择、是否活动；每个标签页的页面历史</td></tr>
+<tr><th scope="row">上限</th><td>负载 20 MiB；文件草稿每次 3 份、每份 2 MiB、合计 6 MiB；字符串和嵌套值有界。格式不对的负载拿不到令牌。</td></tr>
+</tbody>
+</table>
+
+<h2 id="web-pages-keep-their-state">网页保留状态</h2>
+<p>网页标签页是 Electron <code translate="no">WebContentsView</code>。协调器在窗口之间移动同一个对象，从不调用 <code translate="no">loadURL</code>，所以重定向、登录、表单值、滚动位置、页面内存和 DevTools 目标都保留。目标报告新边界前保持隐藏。</p>
+<p>重新挂载前：清除 agent 操作提示和控制叠层，记录每个视图的边界和可见性，确认源窗口仍拥有每个视图。进行中的转移锁定其视图，第二个转移或 agent 命令不能占用。</p>
+
+<h2 id="journals-and-recovery">日志与恢复</h2>
+<ol>
+<li>修改标签 store 之前，每个渲染进程在以窗口为键的本地存储（<code translate="no" data-claim="example">openprogram.tabTransferJournal:&lt;windowId&gt;</code>）写日志：前后布局、会话状态、文件草稿、原生视图簿记。</li>
+<li>主进程记录哪些角色打开了日志；持久化的决议把它们列为必需角色。</li>
+<li>重载后，渲染进程查询待处理决议，应用 <code translate="no">committed</code> 或 <code translate="no">rolled-back</code>，完成自己的角色。</li>
+<li>窗口已不在：另一个活着的窗口接管孤立角色。</li>
+<li>必需角色全部完成：删除决议。</li>
+</ol>
+
+<h2 id="rollback">回滚</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">触发</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">过期，或目标、源失败</th><td>回滚</td></tr>
+<tr><th scope="row">Escape，或拖拽结束时没有目标</th><td>回滚</td></tr>
+<tr><th scope="row">参与窗口被销毁或正在关闭</th><td>回滚</td></tr>
+<tr><th scope="row">提交决议写不进去</th><td>回滚</td></tr>
+<tr><th scope="row">已提交</th><td>永不回滚</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">阶段</th><th scope="col">回滚内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">还没有日志</th><td>丢弃令牌，通知源</td></tr>
+<tr><th scope="row">日志已打开</th><td>写入 <code translate="no">rolled-back</code>；目标撤销插入（限时 2 秒）；每个视图按原边界和可见性回到源；为这次移动创建的拖出窗口关闭，状态丢弃</td></tr>
+<tr><th scope="row">源窗口已不在</th><td>关闭转移中的视图，绝不留成无主</td></tr>
+</tbody>
+</table>
+<p class="note">普通关闭规则不适用：移除源那份不产生关闭记录，不删除草稿，目标确认前也不打开兜底新标签页。</p>
+
+<h2 id="routing-after-a-move">移动后的路由</h2>
+<p>菜单命令和 agent 网页标签命令只发给获得焦点的窗口。原生视图消息只接受来自拥有该视图的窗口的渲染进程。</p>
+
+<details>
+<summary>代码与相关页面</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">路径</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apps/desktop/main/web-views/transfers.js</code></th><td>主进程协调器</td></tr>
+<tr><th scope="row"><code translate="no">tab-transfer-validation.js</code>、<code translate="no">tab-transfer-store.js</code></th><td>桌面端校验与持久决议</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/tabs/transfer/</code></th><td>渲染进程拖拽协调器与日志</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/lib/tabs/store/transfers.ts</code></th><td>标签 store 的插入与移除</td></tr>
+</tbody>
+</table>
+<p>单窗口内的<a href="../workspace/center-tabs-and-split-layout.zh.html">标签栏、分组与分屏</a>；<a href="window-lifecycle.zh.html">主窗口与拖出的窗口</a>。</p>
+</details>

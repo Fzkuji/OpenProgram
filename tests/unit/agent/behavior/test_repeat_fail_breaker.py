@@ -4,10 +4,10 @@ from __future__ import annotations
 import asyncio
 import time
 
-from openprogram.agent.agent_loop import _execute_tool_calls
-from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.providers.types import AssistantMessage, TextContent, ToolCall
-from openprogram.providers.utils.event_stream import EventStream
+from openprogram.runtime.agent.loop import _execute_tool_calls
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.models.providers.types import AssistantMessage, TextContent, ToolCall
+from openprogram.models.providers.utils.event_stream import EventStream
 
 
 def _asst(call_id: str, name: str, args: dict) -> AssistantMessage:
@@ -89,7 +89,7 @@ def test_changed_args_are_not_tripped():
 
 
 def test_many_distinct_failures_keep_safe_point_payload_valid():
-    from openprogram.agent.continuation import MAX_AGENT_REPEAT_FAILURES
+    from openprogram.runtime.execution.runtime_contract import MAX_AGENT_REPEAT_FAILURES
 
     async def execute(call_id, args, cancel, on_update):
         return AgentToolResult(content=[TextContent(text="failed")], details={}, is_error=True)
@@ -132,3 +132,43 @@ def test_bash_description_changes_do_not_reset_repeat_detection():
             )
     asyncio.run(run())
     assert len(calls) == 2
+
+
+def test_serial_tool_batch_has_no_parallel_group_and_reused_raw_id_is_qualified():
+    async def execute(call_id, args, cancel, on_update):
+        return AgentToolResult(content=[TextContent(text=args["value"])], details={})
+
+    tool = AgentTool(
+        name="echo",
+        description="echo",
+        parameters={"type": "object", "properties": {"value": {"type": "string"}}},
+        label="echo",
+        execute=execute,
+    )
+    assistant = AssistantMessage(
+        content=[
+            ToolCall(id="call_1", name="echo", arguments={"value": "a"}),
+            ToolCall(id="call_2", name="echo", arguments={"value": "b"}),
+        ],
+        api="openai-completions", provider="openai", model="fake",
+        stop_reason="toolUse", timestamp=int(time.time() * 1000),
+    )
+    ev = EventStream()
+
+    async def run():
+        await _execute_tool_calls(
+            [tool], assistant, None, ev, round_id="round-1",
+        )
+        await _execute_tool_calls(
+            [tool],
+            _asst("call_1", "echo", {"value": "next"}),
+            None,
+            ev,
+            round_id="round-2",
+        )
+
+    asyncio.run(run())
+    starts = [item for item in list(ev._queue._queue) if getattr(item, "type", None) == "tool_execution_start"]
+    assert len(starts) == 3
+    assert all(item.group_id is None for item in starts)
+    assert starts[0].occurrence_id != starts[2].occurrence_id

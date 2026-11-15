@@ -1,0 +1,178 @@
+<title>供应商管理</title>
+<meta name="description" content="OpenProgram 如何列出已连接的供应商、三步添加一个、用一行话报告密钥检查结果、只在模型选择器里显示供应商状态，并在额度用尽时提供另一个模型。">
+<h1>供应商管理</h1>
+
+<p>设置 → LLM Providers 列出已连接的供应商，三步添加一个（选择、密钥或登录、默认模型），并显示每个供应商的健康、额度和花费。对话里只在模型选择器和额度用尽的回复卡片上显示供应商状态。额度和健康来自<a href="provider-quota.zh.html">供应商额度</a>。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">常用供应商、密钥页和账单页</th><td><code translate="no">openprogram/models/providers/catalog/consoles.py</code></td></tr>
+<tr><th scope="row">环境里的密钥、本地服务</th><td><code translate="no">openprogram/models/listing/detected.py</code></td></tr>
+<tr><th scope="row">密钥检查、连接</th><td><code translate="no">openprogram/models/listing/key_check.py</code></td></tr>
+<tr><th scope="row">选择器状态、用量、替代模型</th><td><code translate="no">openprogram/models/usage/provider_views.py</code></td></tr>
+<tr><th scope="row">模型选择器状态、额度用尽卡片</th><td><code translate="no">apps/web/lib/models/provider-state.ts</code>, <code translate="no">apps/web/lib/models/fallback.ts</code>, <code translate="no">apps/web/components/chat/top-bar/menus/agent-selector.tsx</code>, <code translate="no">apps/web/components/chat/messages/bubbles/quota-reply-card.tsx</code></td></tr>
+<tr><th scope="row">设置页面</th><td><code translate="no">apps/web/components/settings/providers/</code>（<code translate="no">status/</code> 列表、<code translate="no">add/</code> 对话框、<code translate="no">detail/</code> 面板）、<code translate="no">apps/web/lib/prefs/providers-view.ts</code>、<code translate="no">apps/web/components/settings/token-usage/</code></td></tr>
+<tr><th scope="row">线上类型</th><td>由 <code translate="no">scripts/generate_provider_status_types.py</code> 生成到 <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="list">供应商列表</h2>
+<ul>
+<li>列表只放已连接的供应商：存有密钥或已登录，或已启用的本地服务。目录（约 236 个供应商）放在添加供应商里。</li>
+<li>卡片和紧凑行是同一个列表的两种视图。页头的分段控件切换它们；选择按用户记住，默认是卡片。</li>
+<li>一张卡片有顶行（标志、名称、计费标签、健康标签）、一个额度块（窗口、余额、速率限制或"No quota data"）和底栏（30 天迷你图、花费或 Included、缓存占比、默认模型）。</li>
+<li>紧凑行把同样的信息放在一行：最先用完的那个限额的进度条，然后是"62% 5h · 14:30 · 15% Week"、"$18.42 balance · ≈ 26 wk"或"46/50 rpm · no balance data"；30 天花费或 Included、走势、token、缓存占比和默认模型。</li>
+<li>紧凑行列宽固定：每个单元格在自己的列里以省略号结尾，悬停看完整文字，所以再长的状态、额度文字或模型 id 在 640 px 及以上的窗格里也不会让表格横向滚动；窄于 880 px 时先隐藏 Tokens 和 Cache。</li>
+<li>美元余额在有三天花费后显示可用时长（"≈ 26 weeks at this pace"）。</li>
+<li>已登出或已停止的供应商数字变淡；超过 15 分钟的快照在两种视图里都变淡，卡片写"Updated 3 h ago"。</li>
+<li>供应商只报告有这个限额而不给数字时（Codex 不限量的 credits、Copilot 不限量的高级请求）写"Unlimited"。额度端点读取失败时写"Couldn't read the quota"，原因放在悬停提示里。</li>
+<li>计费标签写 API key、Local 或 Subscription。知道套餐的订阅在这个标签里写套餐名（“Plus”“Pro”）；紧凑行在原本写 Included 的位置显示同一个标签，悬停显示“Included in the Plus plan”和按 API 价的金额。不知道套餐时不变。</li>
+<li>页头有 Providers | Routing、最近更新时间、刷新、卡片 | 列表切换和添加供应商。没有说明段落。</li>
+<li>刷新按顺序重新读取每个供应商：先读登录所在的位置，再读额度端点；健康状态由两者得出。结果替换卡片之前，按钮上的图标一直转，更新时间也算上这次读取。</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">健康</th><th scope="col">修复</th><th scope="col">打开</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">ready</code></th><td>无</td><td>&mdash;</td></tr>
+<tr><th scope="row"><code translate="no">rate_limited</code></th><td>无；标签显示何时解除</td><td>&mdash;</td></tr>
+<tr><th scope="row"><code translate="no">signed_out</code></th><td><code translate="no">sign_in</code></td><td>供应商的登录流程</td></tr>
+<tr><th scope="row"><code translate="no">no_credit</code></th><td><code translate="no">top_up</code></td><td>供应商的账单页</td></tr>
+<tr><th scope="row"><code translate="no">invalid_key</code></th><td><code translate="no">replace_key</code></td><td>供应商的页面，正在使用的密钥直接展开替换输入框（添加供应商会在被拒的密钥旁再存一把）</td></tr>
+<tr><th scope="row"><code translate="no">not_configured</code></th><td><code translate="no">connect</code></td><td>添加供应商的第 2 步</td></tr>
+<tr><th scope="row"><code translate="no">not_running</code></th><td><code translate="no">start_server</code></td><td>&mdash;</td></tr>
+</tbody>
+</table>
+<p class="note">只有供应商自己公开的页面才会链接（<code translate="no">CONSOLES</code>）；否则修复按钮不带链接，而不是猜一个。</p>
+
+<h2 id="add">添加供应商</h2>
+<p>什么都没连接时，页面直接显示添加供应商里的同样选项，没有说明文字：</p>
+<ol>
+<li><strong>环境里的密钥</strong>排在最前，每个带 Use。变量按供应商的密钥名（先静态表，再 models.dev 的 <code translate="no">env</code>）匹配目录。页面只拿到变量名和打码的尾部；Use 让 Worker 自己读取并保存，密钥不经过网络传给页面。OAuth 令牌变量从不提供。</li>
+<li><strong>常用</strong>：八个一格，点一下进入第 2 步：OpenAI（ChatGPT 登录，旁边有 API 密钥）、Anthropic（只用 API 密钥）、Google Gemini、xAI、DeepSeek、OpenRouter、Kimi / Moonshot（附 Kimi Coding 和中国站）、Z.ai（附编程套餐和智谱）。</li>
+<li><strong>本机</strong>：Ollama、LM Studio、vLLM 和 llama.cpp，在回环地址上半秒内应答不带密钥的 <code translate="no">GET /models</code> 时显示。模型选择器把这个结果沿用 30 秒，打开它不会再探测。</li>
+<li><strong>全部供应商</strong>：在整个目录里搜索。</li>
+<li>常用供应商读取中时格子处显示加载图标；读取失败时用一行说明并给重试。</li>
+</ol>
+<p>第 2 步是一个打码的密钥输入框加"Get a key"链接，或者登录。如果这个供应商的密钥已经在 Worker 的环境变量里（从图块、搜索结果或 <code translate="no">?add=&lt;id&gt;</code> 进入），第 2 步先给出它，和选择列表同样的一行（变量名、打码尾号、Use），下面是"Or paste a key"。</p>
+<p>环境变量里的密钥被拒时，显示那一行结果，下面仍是粘贴框。</p>
+<p>粘贴后立即检查：先免费读取供应商的模型列表或密钥端点，只有这次读取证明不了密钥可用时才发一个 token 的测试请求。结果是一行：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">结果</th><th scope="col">情况</th><th scope="col">保存密钥</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">works</code></th><td>密钥已证明可用（密钥端点还有余额、测试请求有应答，或模型只是繁忙）</td><td>是</td></tr>
+<tr><th scope="row"><code translate="no">unverified</code></th><td>密钥被接受，但没有东西证明它能应答</td><td>是</td></tr>
+<tr><th scope="row"><code translate="no">no_credit</code></th><td>402 或没有余额的应答；链接账单页</td><td>是</td></tr>
+<tr><th scope="row"><code translate="no">not_available</code></th><td>写明地区或套餐的 403</td><td>是</td></tr>
+<tr><th scope="row"><code translate="no">unreachable</code></th><td>主机没有应答；重试会再检查已保存的密钥</td><td>是</td></tr>
+<tr><th scope="row"><code translate="no">rejected</code></th><td>401，或没写地区或套餐的 403；链接密钥页</td><td>否</td></tr>
+</tbody>
+</table>
+<p>保存的密钥通过该供应商已验证的额度读取器读一次余额。</p>
+<p>一个供应商第一个 <code translate="no">works</code>、<code translate="no">no_credit</code> 的密钥，或供应商以 HTTP 200 接受的 <code translate="no">unverified</code> 密钥，会启用这个供应商（5xx 或没有应答说明不了密钥，什么都不启用），第一次登录也一样；没有单独的启用步骤。它的模型一个都没开启时，开启三个推荐模型。</p>
+<p>第 2 步把同一厂商的几种接入方式做成标签页（ChatGPT 登录旁边是 OpenAI API 密钥）；Advanced 收起 Base URL。正在运行的本地服务一个按钮就能接入，没运行的显示如何启动。Custom 打开自定义供应商表单。</p>
+<p>第 3 步提供这三个：已开启的排前，其次是支持工具调用的最新模型，附上下文和价格。Start chatting 把其中一个设为输入框的模型。</p>
+
+<h2 id="detail">供应商详情</h2>
+<p>页头有返回列表、健康标签、这个供应商上次读取的时间（额度，或一次刷新）、刷新（只刷新这个供应商：登录、额度和健康状态）和启用开关。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">面板</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">用量</th><td>7、30 或 90 天，按花费或 token（订阅默认按 token；它的花费视图坐标轴不印美元，某天的 API 价只在悬停时显示）；Spent、Tokens、Cache read 和最先用完的限额；每天的柱状图，用量最多的模型叠在其他模型上，美元密钥限额或余额允许的每日用量画成虚线</td></tr>
+<tr><th scope="row">密钥</th><td>每个密钥或登录一行：正在使用的那个、名称、打码尾部和密钥池给出的健康。检查、重命名、更换密钥和删除放在行的 ⋯ 里。添加密钥，登录类供应商是登录。有两个以上密钥时，轮换（关、按顺序、均匀、最少使用）把每行变成参与轮换的复选框。下面是和卡片相同的额度行；Base URL 在 Advanced 里</td></tr>
+<tr><th scope="row">模型</th><td>启用开关、id（悬停看元数据）、上下文、每百万 token 的输入 / 输出 / 缓存读取价格、工具、视觉和推理图标、这个供应商每个模型 30 天的花费（订阅显示 Included，悬停看 API 价）和默认星标；搜索、"N of M enabled"，⋯ 里有获取模型、全部启用、全部停用</td></tr>
+</tbody>
+</table>
+<p>移除供应商只确认一次（破坏性确认）。自定义供应商被删除；其他供应商删除保存的密钥和登录信息并停用，于是离开列表。本地和自定义供应商还能按 id 添加模型。</p>
+
+<h2 id="chat">对话里</h2>
+<p>对话里关于供应商的一切都在模型选择器里（触发按钮和菜单）。输入框里项目文件夹旁没有标签或按钮，也没有弹出提示。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">供应商行</th><th scope="col">显示</th><th scope="col">点击</th></tr></thead>
+<tbody>
+<tr><th scope="row">正常，用量不到一半</th><td>当前模型名，或模型数</td><td>打开它的模型</td></tr>
+<tr><th scope="row">窗口或密钥限额用到一半</th><td>16 px 的剩余环；提示写“5h · 剩 8% · 14:30 重置”</td><td>打开它的模型</td></tr>
+<tr><th scope="row">限流</th><td>警告色的“限流中 · 14:02”</td><td>打开它的模型</td></tr>
+<tr><th scope="row">未配置</th><td>灰色的“未配置”</td><td>设置里这个供应商的页面，停在填密钥或登录那一步</td></tr>
+<tr><th scope="row">已登出、密钥无效、未运行</th><td>“需登录”“Key 无效”“未运行”</td><td>设置里这个供应商的页面</td></tr>
+<tr><th scope="row">没有余额</th><td>危险色的“没有余额”</td><td>充值（供应商公开了账单页时）和打开服务商</td></tr>
+</tbody>
+</table>
+<ul>
+<li>环和进度条用上下文用量表的颜色：用到 80% 起是警告色，95% 或用尽是危险色；超过 15 分钟的数值画成半透明。</li>
+<li>子菜单开头是这个供应商的额度行，最紧的在前：窗口或密钥限额是 <code translate="no">label [bar] NN% · reset</code>，余额或点数是金额。什么都不报告的供应商没有这一段。</li>
+<li>菜单最后是 Manage providers，打开设置 → LLM Providers。一个供应商都没接入时，菜单写明这一点并提供 Add provider，打开同一个页面的空状态。</li>
+<li>只有所选模型的供应商需要处理或额度预警时，触发按钮的供应商图标上才有一个小点（Worker 的 <code translate="no">attention</code>：用到 95% 以上，或用到 80% 以上且用量跑在窗口已过时间前面）。它的提示写明供应商和状态或窗口剩余。</li>
+</ul>
+<p>状态随模型一起送达（<code translate="no">GET /api/models/enabled</code>）；打开菜单时读状态路由取额度行，状态路由会在后台读取超过十分钟的接口。每个 <code translate="no">provider_quota</code> 帧更新这两份数据，并作为窗口事件 <code translate="no">op:provider-quota</code> 转发。</p>
+<p>回复因额度用尽而失败时（<code translate="no">errorCause.cause</code> 是 <code translate="no">quota_exhausted</code>），回复卡片写“OpenAI Codex 5h 额度已用完”，下面是“14:30 重置 · Week 剩 71%”。余额用尽（402，或供应商状态是没有余额）写“Kimi 没有余额了”，下面是余额。原始错误留在折叠的详情里。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">按钮</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">改用 &lt;模型&gt; 继续</th><td>另一个健康供应商上的同一个模型 id；没有的话，是最近 7 天用得最多、工具、视觉和推理能力相同、上下文窗口放得下这段对话的健康模型</td></tr>
+<tr><th scope="row">其他模型…</th><td>先列出最多四个还有额度的模型，然后是完整的选择器</td></tr>
+<tr><th scope="row">等待</th><td>保留当前模型，收起按钮；余额用尽时这个位置是充值</td></tr>
+</tbody>
+</table>
+<p>选中的模型只固定在当前窗格显示的分支上，并在那里重新发送失败的这一轮；其他分支和对话保持原来的模型。不会自动切换；故障转移链仍把额度用尽当作终止。</p>
+
+<h2 id="usage">Token 用量</h2>
+<ul>
+<li>花费按计费方式拆开：已计费（按 token 计费的供应商、有价格的调用）、已包含（订阅调用按标价计，只在提示里显示），以及按 token 计费却没有价格的调用数。一个没有价格的调用不再让总数消失。</li>
+<li>花费卡片显示已计费的总数，标签旁写"N calls unpriced"，悬停显示订阅按 API 价覆盖了多少。By model 里订阅的行写 Included，悬停显示标价；By source 和 By function 的行也这样拆分花费，调用全由订阅覆盖时写 Included。</li>
+<li>套餐供应商（OpenAI Codex、SuperGrok、OpenCode Go、Kimi Coding、GitHub Copilot、Gemini 订阅）或 id 写明编程套餐、token 套餐的供应商算作订阅。</li>
+<li>所有 token 总数都含缓存 token：存下的总数漏掉缓存的旧行按各部分之和读取。</li>
+</ul>
+
+<h2 id="routes">路由</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">路由</th><th scope="col">返回</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/providers/status</code></th><td>每个已连接供应商：健康、修复、密钥页、额度、30 天花费和迷你图、计费方式、套餐名、上次刷新读取的时间、默认模型</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/providers/{id}/refresh</code></th><td>立即重新读取这个供应商的登录和额度端点；返回它的状态</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/providers/{id}/usage</code></th><td>1 到 90 天内按天和模型的花费，带额度样本</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/providers/detected</code></th><td>环境里的密钥、本地服务、常用供应商、目录大小</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/providers/{id}/accounts/keys</code></th><td>保存粘贴的密钥；带 <code translate="no">validate</code> 时返回一行检查结果、余额、模型以及供应商是否被启用</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/providers/{id}/accounts/env</code></th><td>同上，密钥由 Worker 从自己的环境读取</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/models/enabled</code></th><td>选择器的模型和每个供应商的选择器状态</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/providers/fallback</code></th><td>额度用尽卡片推荐的模型，另加最多四个</td></tr>
+<tr><th scope="row">WebSocket <code translate="no">provider_quota</code></th><td>一个密钥的新额度和它所属供应商的选择器状态</td></tr>
+</tbody>
+</table>
+
+<h2 id="decisions">决定</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">选择</th><th scope="col">采用</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">常用列表写在代码里</th><td>OpenCode <code translate="no">popularProviders</code></td><td>目录没有热度字段；人扫一眼的是一个短的固定顺序</td></tr>
+<tr><th scope="row">按目录的密钥名识别环境密钥</th><td>OpenCode</td><td>已设好的密钥不用问就能认出，一次 Use 就能连接</td></tr>
+<tr><th scope="row">保存前免费只读检查</th><td>Hermes</td><td>坏密钥当场发现；证明不了更多时如实说"unverified"</td></tr>
+<tr><th scope="row">以选择模型结束</th><td>OpenCode</td><td>连接在开始对话的地方结束</td></tr>
+<tr><th scope="row">每个供应商的计费方式和修复</th><td>ZCode</td><td>每个状态都带着消除它的那一个动作</td></tr>
+<tr><th scope="row">卡片和行是两种视图</th><td>所有者的修改</td><td>同一份数据两种密度，由人来选</td></tr>
+<tr><th scope="row">供应商状态只在模型选择器里</th><td>所有者的修改</td><td>输入框保持三段；选模型的地方就是选择器</td></tr>
+<tr><th scope="row">空状态显示常用供应商</th><td>所有者的修改</td><td>只显示一个供应商，看起来像唯一的选择</td></tr>
+<tr><th scope="row">额度用尽时推荐，不自动切换</th><td>OpenCode、Codex</td><td>由人决定；卡片写明模型和重置时间</td></tr>
+<tr><th scope="row">紧凑行：最先用完的限额，数剩下多少</th><td>Codex</td><td>一眼看出哪个窗口卡住了、何时重置</td></tr>
+<tr><th scope="row">卡片：一个额度块，最紧的窗口颜色最重</th><td>Oh My Pi</td><td>用尽的窗口不用逐个读数字就能看出</td></tr>
+<tr><th scope="row">用应用自己的组件搭建</th><td>项目规则</td><td>两个分段控件用 Tabs，复用 Dialog、RadioGroup、SearchInput、HoverTip、菜单样式、ProviderIcon、ProviderLogin、BaseUrl、SetupHint、自定义供应商表单和 Routing；Token 用量的堆叠图和用量面板共用。只有 30 天迷你图是新写的。同类产品的界面代码绑定各自的组件库和类型，所以采用它们的结构，不搬代码</td></tr>
+<tr><th scope="row">Anthropic 只用 API 密钥</th><td>项目规则</td><td>Anthropic 只通过官方 API 和 API 密钥使用</td></tr>
+<tr><th scope="row">套餐名取自已有的数据</th><td>Codex CLI</td><td>回复的限额帧里写的套餐，否则是登录 token 的 <code translate="no">chatgpt_plan_type</code> 声明。不为一个标签发请求，用现有的计费标签显示</td></tr>
+<tr><th scope="row">刷新先读登录</th><td>所有者的修改</td><td>供应商注册 <code translate="no">reread_login</code>：快过期的 token 先刷新，刷新不了的标记出来，重新登录过的恢复使用。读取器关闭的供应商只读额度时什么都不会变</td></tr>
+<tr><th scope="row">用完的委托登录按 refresh token 标记</th><td>已存登录的规则</td><td>被拒的 token 的摘要记在凭据上。Codex CLI 的文件里还是这个 token 时不再请求；文件里换了登录就清除标记。网络失败不标记</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">部分</th><th scope="col">现状</th></tr></thead>
+<tbody>
+<tr><th scope="row">模型选择器</th><td>Add provider 和未配置的行打开供应商页面和该供应商的页面，还不直接打开添加供应商对话框</td></tr>
+<tr><th scope="row">套餐名</th><td>只读 OpenAI Codex 的；其他订阅写 Subscription</td></tr>
+<tr><th scope="row">刷新时的 Codex 额度</th><td>它的用量读取器在验证前关闭，所以刷新重新读取登录和健康状态，窗口保留上一次回复带来的值</td></tr>
+<tr><th scope="row">环境密钥</th><td>只看 Worker 自己的环境；只在没有启动 Worker 的 shell 里设置的密钥看不到</td></tr>
+<tr><th scope="row">地区或套餐拒绝</th><td>只从正文写明它的 403 识别</td></tr>
+<tr><th scope="row">密钥页和账单页</th><td>列了 15 个供应商；其他供应商不带链接</td></tr>
+<tr><th scope="row">余额</th><td>只在有已验证额度读取器的地方读取（目前是 OpenRouter）；见<a href="provider-quota.zh.html">供应商额度</a></td></tr>
+</tbody>
+</table>

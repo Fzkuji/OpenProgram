@@ -1,0 +1,6 @@
+/* History draws its dividers (topbar, project rail, section tabs, the
+   Sort/Status selects) with the strong hairline: the subtle one vanishes
+   against the main surface on the dark themes. */
+.page {
+  --border: var(--border-light);
+}

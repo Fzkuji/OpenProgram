@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from openprogram.auth._migrate_payload import migrate_payload_dict, migrate_store
-from openprogram.auth.store import AuthStore
-from openprogram.auth.types import CREDENTIAL_SCHEMA_VERSION
+from openprogram.models.auth._migrate_payload import migrate_payload_dict, migrate_store
+from openprogram.models.auth.store import AuthStore
+from openprogram.models.auth.types import CREDENTIAL_SCHEMA_VERSION
 
 
 def _write_private(path: Path, payload: dict) -> None:

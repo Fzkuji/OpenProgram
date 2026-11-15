@@ -1,9 +1,9 @@
 """Parent-side pre-creation of a function run's top-level code node.
 
 To move the UI to a new run in ~0.2s (decoupled from the spawned child's
-~1s import), ``run_agentic_function_call`` pre-creates the run's top-level
+~1s import), ``run_agent_method_call`` pre-creates the run's top-level
 code node in the PARENT before spawning, and threads its id to the child so
-the @agentic_function wrapper REUSES it instead of appending a duplicate.
+the Agent method wrapper REUSES it instead of appending a duplicate.
 
 These lock:
   1. parent pre-creates the node + advances head before dispatch returns,
@@ -15,13 +15,15 @@ These lock:
 """
 from __future__ import annotations
 
+from openprogram.runtime.agent import Agent
+
 import threading
 from types import SimpleNamespace
 
 import pytest
 
-from openprogram.store import SessionNodeWriter, _store as _store_var
-from openprogram.store.session.session_store import SessionStore
+from openprogram.state.store import SessionNodeWriter, _store as _store_var
+from openprogram.state.store.session.session_store import SessionStore
 
 
 def _store(tmp_path) -> SessionStore:
@@ -37,8 +39,8 @@ def _head(store) -> str | None:
 # ---- 1. parent pre-creates + head moves before dispatch returns --------
 
 def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_path):
-    from openprogram.webui.routes import chat as routes_chat
-    from openprogram.webui import server as web_server
+    from openprogram.interfaces.server.routes import chat as routes_chat
+    from openprogram.interfaces.server import server as web_server
 
     with web_server._running_tasks_lock:
         web_server._running_tasks.pop("s1", None)
@@ -46,27 +48,27 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     store = _store(tmp_path)
     real_is_run_active = web_server._is_run_active
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db", lambda: store)
+        "openprogram.runtime.context.session_db.default_db", lambda: store)
     monkeypatch.setattr(
-        "openprogram.webui.server._get_or_create_session",
+        "openprogram.interfaces.server.server._get_or_create_session",
         lambda sid=None, **k: {"id": sid or "s1"})
     monkeypatch.setattr(
-        "openprogram.webui.server._default_agent_id", lambda: "main")
+        "openprogram.interfaces.server.server._default_agent_id", lambda: "main")
     monkeypatch.setattr(
-        "openprogram.webui.server._is_run_active", lambda sid: False)
+        "openprogram.interfaces.server.server._is_run_active", lambda sid: False)
     monkeypatch.setattr(
-        "openprogram.webui.server._emit_running_task_event", lambda *a, **k: None)
+        "openprogram.interfaces.server.server._emit_running_task_event", lambda *a, **k: None)
     monkeypatch.setattr(
-        "openprogram.webui.ws_actions.session.broadcast_sessions_list",
+        "openprogram.interfaces.server.ws_actions.session.broadcast_sessions_list",
         lambda *a, **k: None)
 
     class _Tool:
         name = "word_count"
-        _is_agentic = True
+        _is_agent_method = True
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *a, **k: _Tool() if name == _Tool.name else None,
     )
 
@@ -77,10 +79,10 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         def _resolve_session_provider_model(self, conv):
             assert conv["id"] == "s1"
             return "minimax-cn-coding-plan", "MiniMax-M3"
-    monkeypatch.setattr("openprogram.webui.server._runtime_management", _RM())
+    monkeypatch.setattr("openprogram.interfaces.server.server.runtime_management", _RM())
 
     captured = {}
-    monkeypatch.setattr("openprogram.agent.dispatcher.titles.fn_form_llm_title",
+    monkeypatch.setattr("openprogram.runtime.conversation.turn_runtime.titles.fn_form_llm_title",
                         lambda *_args: captured.update(active_while_titling=real_is_run_active("s1")))
 
     def _stop_dispatch(**kw):
@@ -98,11 +100,11 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         return {"runtime_msg_id": None, "ok": True}
 
     monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch,
+        "openprogram.runtime.conversation.turn_runtime.dispatch_forced_tool_call", _stop_dispatch,
     )
 
-    from openprogram.agent import production_driver
-    from openprogram.execution.model import ExecutionStatus
+    from openprogram.runtime.conversation import production_driver
+    from openprogram.runtime.execution.model import ExecutionStatus
     real_adapter = production_driver.CanonicalAgentAdapter
 
     class _Adapter:
@@ -131,7 +133,6 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
                 admission.execution_id,
                 expected_version=admission.status_version,
                 owner_id="unit-test",
-                ttl_seconds=30,
             )
             active, running = service.attempts.activate(
                 attempt.attempt_id,
@@ -142,7 +143,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
                 admission.execution_id,
             ) or {}
             try:
-                from openprogram.agent.dispatcher import dispatch_forced_tool_call
+                from openprogram.runtime.conversation.turn_runtime import dispatch_forced_tool_call
 
                 result = dispatch_forced_tool_call(
                     session_id=admission.session_id,
@@ -203,10 +204,11 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         routes_chat, "threading", SimpleNamespace(Thread=_inline_thread)
     )
 
-    res = routes_chat.run_agentic_function_call(
+    res = routes_chat.run_agent_method_call(
         "word_count",
         {"text": "hi"},
         "s1",
+        client_request_id="req-function",
         origin_window_id="window-2",
         surface_ref={
             "version": 1,
@@ -226,6 +228,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     node = tops[0]
     assert (node.metadata or {}).get("status") == "running"
     assert node.input == {"text": "hi"}
+    assert node.metadata["client_request_id"] == "req-function"
     assert node.metadata["surface_origin"] == {
         "version": 1,
         "window_id": "window-2",
@@ -248,7 +251,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     assert captured["surface_context_snapshot"]["origin_window_id"] == "window-2"
     assert captured["surface_context_snapshot"]["origin_tab_id"] == "tab-submitted"
 
-    res = routes_chat.run_agentic_function_call(
+    res = routes_chat.run_agent_method_call(
         "word_count",
         {"text": "window only"},
         "s1",
@@ -270,7 +273,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         "window_id": "window-2",
     }
 
-    from openprogram.agentic_programming import function as function_module
+    from openprogram.runtime.agent import call_state as function_module
 
     hidden = SimpleNamespace(
         expose="hidden",
@@ -278,23 +281,24 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         render_range=None,
         _fn=lambda: None,
     )
-    monkeypatch.setitem(function_module._registry, "hidden_probe", hidden)
 
     class _HiddenTool:
         name = "hidden_probe"
-        _is_agentic = True
+        _is_agent_method = True
+        _method_options = hidden
+        _dag_expose = 'hidden'
 
     monkeypatch.setattr(
         "openprogram.programs.agent_tools",
         lambda names=None: [_HiddenTool()],
     )
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *a, **k: _HiddenTool() if name == _HiddenTool.name else None,
     )
     captured.clear()
 
-    res = routes_chat.run_agentic_function_call(
+    res = routes_chat.run_agent_method_call(
         "hidden_probe", {"secret": "do-not-persist"}, "s1",
     )
 
@@ -302,7 +306,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     assert res["execution_id"] == hidden_id
     assert hidden_id.startswith("exec_")
     assert captured["record_exists"] is False
-    from openprogram.execution import default_store
+    from openprogram.runtime.execution import default_store
     assert default_store().get_execution(hidden_id) is not None
     hidden_node = next(
         n for n in store.get_nodes("s1")
@@ -314,8 +318,8 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     assert "do-not-persist" not in (store.get_session("s1") or {}).get("title", "")
     assert "do-not-persist" not in str(store.get_messages("s1"))
     assert hidden_node.metadata["expose"] == "hidden"
-    from openprogram.webui.graph_builder import build_session_graph
-    from openprogram.webui._exec_dag import build_exec_dag_by_id
+    from openprogram.state.store.session.graph.builder import build_session_graph
+    from openprogram.runtime.execution.dag import build_exec_dag_by_id
     graph = build_session_graph("s1")
     assert all(row["id"] != hidden_id for row in graph)
     assert "do-not-persist" not in str(graph)
@@ -325,7 +329,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *a, **k: _Tool() if name == _Tool.name else None,
     )
 
@@ -340,12 +344,12 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         return original_precreate(**kwargs)
 
     monkeypatch.setattr(
-        "openprogram.agentic_programming.function.create_pending_call_node",
+        "openprogram.runtime.agent.call_state.create_pending_call_node",
         _fail_precreate_once,
     )
     captured.clear()
 
-    res = routes_chat.run_agentic_function_call(
+    res = routes_chat.run_agent_method_call(
         "word_count", {"text": "again"}, "s1",
     )
     assert "error" not in res
@@ -365,17 +369,17 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     )
     captured.clear()
 
-    res = routes_chat.run_agentic_function_call(
+    res = routes_chat.run_agent_method_call(
         "word_count", {"text": "thread cannot start"}, "s1",
     )
     assert res["code"] == "function_start_failed"
     assert res["status_code"] == 500
     assert captured["execution_id"].startswith("exec_")
-    from openprogram.execution import default_store as _execution_store
+    from openprogram.runtime.execution import default_store as _execution_store
     assert _execution_store().get_execution(
         captured["execution_id"]
     ).status.value == "failed"
-    from openprogram.webui import server as _server
+    from openprogram.interfaces.server import server as _server
     with _server._running_tasks_lock:
         assert "s1" not in _server._running_tasks
     failed_node = next(
@@ -394,11 +398,11 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         raise ImportError("dispatcher unavailable")
 
     monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
+        "openprogram.runtime.conversation.turn_runtime.dispatch_forced_tool_call",
         _fail_dispatch,
     )
     captured.clear()
-    res = routes_chat.run_agentic_function_call(
+    res = routes_chat.run_agent_method_call(
         "word_count", {"text": "dispatcher cannot import"}, "s1",
     )
 
@@ -419,44 +423,44 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         raise RuntimeError("persistent pre-create failure")
 
     monkeypatch.setattr(
-        "openprogram.agentic_programming.function.create_pending_call_node",
+        "openprogram.runtime.agent.call_state.create_pending_call_node",
         _always_fail_precreate,
     )
     captured.clear()
 
-    res = routes_chat.run_agentic_function_call(
+    res = routes_chat.run_agent_method_call(
         "word_count", {"text": "never starts"}, "s1",
     )
     assert res["code"] == "execution_record_failed"
     assert captured == {}
-    from openprogram.webui import server as _server
+    from openprogram.interfaces.server import server as _server
     with _server._running_tasks_lock:
         assert "s1" not in _server._running_tasks
     _server._unregister_active_runtime("s1")
 
 
 def test_missing_session_model_refuses_before_dispatch(monkeypatch):
-    from openprogram.webui.routes import chat as routes_chat
+    from openprogram.interfaces.server.routes import chat as routes_chat
 
     monkeypatch.setattr(
-        "openprogram.webui.server._get_or_create_session",
+        "openprogram.interfaces.server.server._get_or_create_session",
         lambda sid=None, **kwargs: {"id": sid or "s1"},
     )
     monkeypatch.setattr(
-        "openprogram.webui.server._is_run_active",
+        "openprogram.interfaces.server.server._is_run_active",
         lambda session_id: False,
     )
 
     class Tool:
         name = "word_count"
-        _is_agentic = True
+        _is_agent_method = True
 
     monkeypatch.setattr(
         "openprogram.programs.agent_tools",
         lambda names=None: [Tool()],
     )
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *a, **k: Tool() if name == Tool.name else None,
     )
 
@@ -468,22 +472,22 @@ def test_missing_session_model_refuses_before_dispatch(monkeypatch):
             return None, None
 
     monkeypatch.setattr(
-        "openprogram.webui.server._runtime_management",
+        "openprogram.interfaces.server.server.runtime_management",
         RuntimeManagement(),
     )
     dispatched = []
     monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
+        "openprogram.runtime.conversation.turn_runtime.dispatch_forced_tool_call",
         lambda **kwargs: dispatched.append(kwargs),
     )
 
-    result = routes_chat.run_agentic_function_call(
+    result = routes_chat.run_agent_method_call(
         "word_count", {}, "s1",
     )
     assert result["status_code"] == 409
     assert result["code"] == "no_model"
     assert dispatched == []
-    from openprogram.webui import server as web_server
+    from openprogram.interfaces.server import server as web_server
     with web_server._running_tasks_lock:
         assert "s1" not in web_server._running_tasks
 
@@ -491,8 +495,8 @@ def test_missing_session_model_refuses_before_dispatch(monkeypatch):
 # ---- 2. child reuse: wrapper with _forced_node_id set does not dupe -----
 
 def test_child_reuse_leaves_single_node_and_finalizes(tmp_path):
-    from openprogram.agentic_programming.function import (
-        agentic_function, _forced_node_id, create_pending_call_node,
+    from openprogram.runtime.agent.call_state import (
+ _forced_node_id, create_pending_call_node,
     )
 
     store = SessionStore(tmp_path / "sessions-git")
@@ -508,9 +512,13 @@ def test_child_reuse_leaves_single_node_and_finalizes(tmp_path):
     shim.append(node)
     assert _head(store) == nid
 
-    @agentic_function
-    def wc(text):
-        return len(text.split())
+    class _WcAgent(Agent):
+        method_options = {'wc': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'wc'}}
+
+        def wc(self, text):
+            return len(text.split())
+
+    wc = _WcAgent().wc
 
     # Simulate the child: _store installed + _forced_node_id set (as
     # runtime_attach would after decoding the anchor). No real spawn.
@@ -536,15 +544,19 @@ def test_child_reuse_leaves_single_node_and_finalizes(tmp_path):
 # ---- in-process run with NO forced id: single node, no leftover --------
 
 def test_in_process_run_without_forced_id_single_node(tmp_path):
-    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.runtime.agent import Agent
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("s1", "main", title="t")
     shim = SessionNodeWriter(store, "s1")
 
-    @agentic_function
-    def wc2(text):
-        return len(text)
+    class _Wc2Agent(Agent):
+        method_options = {'wc2': {'tool': True, 'expose': 'io', 'capture_io': True, 'name': 'wc2'}}
+
+        def wc2(self, text):
+            return len(text)
+
+    wc2 = _Wc2Agent().wc2
 
     store_token = _store_var.set(shim)
     try:
@@ -561,7 +573,7 @@ def test_in_process_run_without_forced_id_single_node(tmp_path):
 # ---- 3. helper builds the same shape the wrapper writes ----------------
 
 def test_create_pending_call_node_matches_wrapper_shape(tmp_path):
-    from openprogram.agentic_programming.function import create_pending_call_node
+    from openprogram.runtime.agent.call_state import create_pending_call_node
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("s1", "main", title="t")
@@ -590,8 +602,8 @@ def test_create_pending_call_node_matches_wrapper_shape(tmp_path):
 # ---- 4. child error is reported to the canonical driver ------------------
 
 def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
-    from openprogram.agent.dispatcher import forced_tool
-    from openprogram.agentic_programming.function import create_pending_call_node
+    from openprogram.runtime.conversation.turn_runtime import forced_tool
+    from openprogram.runtime.agent.call_state import create_pending_call_node
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("s1", "main", title="t")
@@ -602,27 +614,27 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
     shim.append(node)
 
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db", lambda: store)
+        "openprogram.runtime.context.session_db.default_db", lambda: store)
 
     class _Tool:
         name = "wc"
-        _is_agentic = True
+        _is_agent_method = True
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *a, **k: _Tool() if name == _Tool.name else None,
     )
     # Child crashes before its wrapper could finalize → returns an error.
     monkeypatch.setattr(
-        "openprogram.agent.process_runner.run_agentic_in_subprocess",
+        "openprogram.runtime.conversation.process_runner.run_agent_method_in_subprocess",
         lambda **kw: {"error": "kwargs pickle failed"})
     monkeypatch.setattr(
-        "openprogram.agent.run_control.set_current_session_id", lambda sid: None)
+        "openprogram.runtime.execution.run_control.set_current_session_id", lambda sid: None)
     monkeypatch.setattr(
-        "openprogram.agent.run_control.reset_current_session_id", lambda t: None)
+        "openprogram.runtime.execution.run_control.reset_current_session_id", lambda t: None)
     monkeypatch.setattr(
-        "openprogram.agent.run_control.clear_cancel", lambda sid: None)
+        "openprogram.runtime.conversation.run_control.clear_cancel", lambda sid: None)
 
     out = forced_tool.dispatch_forced_tool_call(
         session_id="s1", anchor_msg_id="|node:stuck1", tool_name="wc",
@@ -653,16 +665,16 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
 def test_parent_page_cleanup_failure_preserves_terminal_metadata(
     monkeypatch, tmp_path, initial_status, subprocess_out, expected_status,
 ):
-    from openprogram.agent.dispatcher import forced_tool
-    from openprogram.agentic_programming.function import create_pending_call_node
+    from openprogram.runtime.conversation.turn_runtime import forced_tool
+    from openprogram.runtime.agent.call_state import create_pending_call_node
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("s1", "main", title="t")
     shim = SessionNodeWriter(store, "s1")
     node = create_pending_call_node(
         pending_id="gui-cleanup",
-        function_name="gui_agent",
-        arguments={"task": "inspect", "surface": "browser"},
+        function_name="browser_agent",
+        arguments={"task": "inspect"},
         expose="io",
         caller="",
         store=shim,
@@ -693,19 +705,19 @@ def test_parent_page_cleanup_failure_preserves_terminal_metadata(
     }
 
     monkeypatch.setattr(
-        "openprogram.agent.session_db.default_db", lambda: store,
+        "openprogram.runtime.context.session_db.default_db", lambda: store,
     )
 
     class _Tool:
-        name = "gui_agent"
-        _is_agentic = True
+        name = "browser_agent"
+        _is_agent_method = True
 
     monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
+        "openprogram.programs._host.runtime.get",
         lambda name, *args, **kwargs: _Tool() if name == _Tool.name else None,
     )
     monkeypatch.setattr(
-        "openprogram.agent.process_runner.run_agentic_in_subprocess",
+        "openprogram.runtime.conversation.process_runner.run_agent_method_in_subprocess",
         lambda **kwargs: {
             "page_cleanup_failed": True,
             "page_cleanup_result": cleanup_result,
@@ -713,17 +725,17 @@ def test_parent_page_cleanup_failure_preserves_terminal_metadata(
         },
     )
     monkeypatch.setattr(
-        "openprogram.agent.run_control.set_current_session_id", lambda _sid: None,
+        "openprogram.runtime.execution.run_control.set_current_session_id", lambda _sid: None,
     )
     monkeypatch.setattr(
-        "openprogram.agent.run_control.reset_current_session_id", lambda _token: None,
+        "openprogram.runtime.execution.run_control.reset_current_session_id", lambda _token: None,
     )
 
     result = forced_tool.dispatch_forced_tool_call(
         session_id="s1",
         anchor_msg_id="|node:gui-cleanup",
-        tool_name="gui_agent",
-        tool_input={"task": "inspect", "surface": "browser"},
+        tool_name="browser_agent",
+        tool_input={"task": "inspect"},
         surface_context_snapshot={"context_id": "ctx", "surfaces": []},
     )
 
@@ -744,47 +756,3 @@ def test_parent_page_cleanup_failure_preserves_terminal_metadata(
         assert persisted.metadata["finished_at"] == 123.0
     else:
         assert "finished_at" not in persisted.metadata
-
-
-def test_browser_surface_capture_error_defers_to_child_handoff(monkeypatch):
-    from openprogram.agent import surface_context
-    from openprogram.agent.dispatcher import forced_tool
-
-    class _Tool:
-        name = "gui_agent"
-        _is_agentic = True
-
-    monkeypatch.setattr(
-        "openprogram.programs._runtime.get",
-        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
-    )
-    monkeypatch.setattr(
-        surface_context,
-        "capture_pages",
-        lambda: (_ for _ in ()).throw(RuntimeError("Page capture unavailable")),
-    )
-    seen = {}
-    monkeypatch.setattr(
-        "openprogram.agent.process_runner.run_agentic_in_subprocess",
-        lambda **kwargs: seen.update(kwargs) or {"ok": True},
-    )
-    monkeypatch.setattr(
-        "openprogram.agent.run_control.set_current_session_id", lambda _sid: None,
-    )
-    monkeypatch.setattr(
-        "openprogram.agent.run_control.reset_current_session_id", lambda _token: None,
-    )
-    monkeypatch.setattr(
-        "openprogram.agent.run_control.clear_cancel", lambda _sid: None,
-    )
-
-    result = forced_tool.dispatch_forced_tool_call(
-        session_id="s1",
-        anchor_msg_id="|node:gui-agent",
-        tool_name="gui_agent",
-        tool_input={"task": "inspect", "surface": "browser"},
-    )
-
-    assert result["ok"] is True
-    assert seen["surface_context_snapshot"]["surfaces"] == []
-    assert seen["surface_context_snapshot"]["origin_window_id"] == ""

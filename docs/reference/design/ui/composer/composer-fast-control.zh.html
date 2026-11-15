@@ -1,0 +1,69 @@
+<title>输入框速度控制</title>
+<meta name="description" content="思考面板里的 Fast 开关：按连接判断能力、请求映射、请求档位与实际档位。">
+<h1>思考面板里的 Fast</h1>
+
+<p>展开的思考面板标题行依次是思考深度标题、靠右的 Gauge 按钮和<a href="effort-picker.zh.html">帮助提示</a>。没有单独的速度胶囊或菜单项，收起的深度控件只显示深度标签。思考深度保持独立。</p>
+
+<h2>连接</h2>
+<table class="stack">
+<thead><tr><th scope="col">连接</th><th scope="col">能力</th><th scope="col">请求</th></tr></thead>
+<tbody>
+<tr><th scope="row">xAI API，Grok 4.6</th><td>只对 <code translate="no">https://api.x.ai/v1</code> 上的 <code translate="no">grok-4.6</code> 支持，绝不按名称前缀</td><td>Fast：<code translate="no">service_tier: priority</code>。Standard：<code translate="no">default</code>。</td></tr>
+<tr><th scope="row">Grok 订阅，Grok 4.6</th><td>CLI chat proxy 接受相同取值。其他订阅模型保持未知。</td><td>相同</td></tr>
+<tr><th scope="row">自定义网关</th><td>不凭模型名继承。连接配置可以声明支持；显式 <code translate="no">false</code> 优先。</td><td>仅在支持时使用配置的适配器映射</td></tr>
+<tr><th scope="row">Codex、Claude</th><td>沿用现有证据来源；UI 与派发用同一能力结果</td><td>沿用现有 priority 或 speed 加 beta 映射</td></tr>
+</tbody>
+</table>
+<p class="note">由 <code translate="no">openprogram/models/providers/settings/fast.py</code> 的 <code translate="no">fast_capability()</code> 解析：supported、unsupported 或 unknown，并带来源。<code translate="no">chat.fast</code> 是兼容投影。优先级：官方账户数据、连接配置、静态声明、目录；网络失败不清除有效的缓存声明。</p>
+
+<h2>行为</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">默认</th><td>Standard。按对话分支保存，切换和发送时都会写入，并按连接/模型保存。没见过的连接从 Standard 开始，换模型不会开启付费档位。</td></tr>
+<tr><th scope="row">关闭</th><td>显式发送 Standard，覆盖 Agent 的 priority 默认值。省略字段会继承它。</td></tr>
+<tr><th scope="row">生效范围</th><td>下一次提交的轮次。排队消息保留自己的设置；运行中的请求不变。</td></tr>
+<tr><th scope="row">授权</th><td>后端按轮次实际的提供商和模型解析，派发前再校验。其他执行模型解析自己的能力。</td></tr>
+<tr><th scope="row">未验证的连接</th><td>可见、可聚焦、不可用的控件，附说明。不支持与未知是两种状态；不说成模型没有 Fast。</td></tr>
+<tr><th scope="row">没有深度滑轨</th><td>同一弹层，有速度控件，无滑轨</td></tr>
+<tr><th scope="row">面板打开时</th><td>隐藏“跳到最新”，避免叠放。切换后面板不关，滑轨不动。</td></tr>
+</tbody>
+</table>
+
+<h2>请求速度与实际速度</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">响应档位</th><th scope="col">显示</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">priority</code></th><td>按 Fast 处理</td></tr>
+<tr><th scope="row"><code translate="no">default</code></th><td>按 Standard 处理，即使请求的是 priority</td></tr>
+<tr><th scope="row">缺失</th><td>未确认，不算加速</td></tr>
+<tr><th scope="row">priority 失败</th><td>沿用错误处理；不自动发第二次计费请求</td></tr>
+</tbody>
+</table>
+<p class="note">xAI 文档写明 2 倍<a href="https://docs.x.ai/developers/pricing">优先档溢价</a>，使用前显示对应提供商的说明。计费按返回档位和提供商上报的用量。不给其他厂商套统一倍率，也不承诺延迟。</p>
+
+<h2>仪表图标</h2>
+<dl class="pairs">
+<dt>图标</dt><dd>线框 <code translate="no">GaugeIcon</code>，弹簧 stiffness 160、damping 17、mass 1。指针静止表示关，前进表示开。</dd>
+<dt>开启</dt><dd><code translate="no">--accent-red</code>。没有边框、光晕或火焰。</dd>
+<dt>悬停</dt><dd>指针动画，24px 点击区着色</dd>
+<dt>焦点</dt><dd>只在键盘聚焦时有焦点环；暴露状态和用量说明</dd>
+</dl>
+
+<details>
+<summary>参考与否决方案</summary>
+<p>采用：xAI 的<a href="https://docs.x.ai/developers/advanced-api-usage/priority-processing">请求档位与实际档位分离</a>，走 OpenProgram 现有的 OpenAI 兼容 xAI 适配器。否决：全局按 Grok 名称前缀覆盖、用降低推理代替 Fast、固定速度倍率。</p>
+</details>
+
+<details>
+<summary>验收</summary>
+<ul>
+<li>能力：xAI API 和 Grok 4.6 订阅与未知订阅模型分开；切换连接更新原因；目录失败保留已知支持。</li>
+<li>输入框：键盘和指针都能选择速度，重载后保留，换模型从 Standard 开始，窄布局可用。</li>
+<li>派发：只有所选的受支持连接发送 priority；排队设置稳定；推理参数不变。</li>
+<li>响应：合成的 priority、default、缺失、错误、取消响应状态准确，没有重复请求或捏造的价格。</li>
+</ul>
+</details>
+
+<h2>实现状态</h2>
+<p>仪表、能力、请求偏好、保存响应档位和 xAI 实际费用已实现。真实付费调用不在自动验证范围内。</p>

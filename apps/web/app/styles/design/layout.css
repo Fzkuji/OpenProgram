@@ -1,0 +1,32 @@
+/* Page geometry shared by the shell's columns. */
+:root {
+  --transition: var(--motion-slow) var(--ease-standard);
+  --sidebar-width: 288px;
+  --detail-width: 300px;
+  /* Collapsed rail: a 46px card (8px, a 30px square row, 8px) inside the
+     shell's two 8px gutters — components/layout/use-resizable-rail.ts
+     carries the same number. */
+  --rail-collapsed-w: 62px;
+  /* 聊天列（消息列 + 输入框三条带共用）：空间够就扩，封顶 900。
+     消息正文左右不再内缩，文字边缘与输入框边缘对齐。 */
+  --chat-column-max: 900px;
+  /* The column's least side margin, the same on both sides: the
+     floating controls at the pane's top right take 16px edge + 36px
+     strip + 16px gap, so a narrow column ends where the side column of
+     boxes under them ends (dag/panels/tools.css .dag-side-column), and
+     the left margin holds the message rail. */
+  --chat-column-gutter: 68px;
+
+  /* Persisted appearance applies to dragged tabs inside/outside the strip and pane labels. */
+  --drag-surface-opacity: 80%;
+  --drag-backdrop-blur: 16px;
+  --drag-shadow-scale: 0.25;
+  --drag-surface-background: color-mix(in oklch, var(--bg-tertiary) var(--drag-surface-opacity), transparent);
+  --drag-surface-backdrop: blur(var(--drag-backdrop-blur)) saturate(1.2);
+  --drag-surface-shadow: 0 2px 4px rgba(0, 0, 0, calc(0.14 * var(--drag-shadow-scale))),
+    0 12px 28px rgba(0, 0, 0, calc(0.24 * var(--drag-shadow-scale)));
+}
+
+/* Settings > Chat width "Full width": the column takes the whole chat
+   area; each column keeps its own side margin through its min(). */
+html[data-chat-width="full"] { --chat-column-max: 100vw; }

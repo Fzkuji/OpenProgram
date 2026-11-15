@@ -1,0 +1,22 @@
+<title>Gating: not built</title>
+<meta name="description" content="Extensions to the gating model considered and deliberately not built, with what would reopen each.">
+<h1>Gating: not built</h1>
+<p>Default to parity with Claude Code, opencode and hermes; add a mechanism only for a concrete user pain. Each item below fails that test.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Idea</th><th scope="col">Why it comes up</th><th scope="col">Why not</th><th scope="col">Revisit when</th></tr></thead>
+<tbody>
+<tr id="1-per-session-gating-toggle"><th scope="row">Per-session gating toggle: override the profile for one conversation</th><td>A role is too tight for a one-off task; editing the profile feels heavy</td><td>Claude Code's <code translate="no">permissionMode</code> and opencode's ruleset are per agent; hermes has no such escape. Editing <code translate="no">agent.json</code> applies next turn. An override raises state questions: where it lives, whether it survives reload, whether it leaks across WebSocket reconnects</td><td>Users keep editing <code translate="no">agent.json</code> back and forth for one task</td></tr>
+<tr id="2-plugin-subprocess-sandbox"><th scope="row">Plugin subprocess sandbox: restricted file system and network</th><td>Plugins ship arbitrary Python; a malicious one could take API keys or delete the workspace</td><td>The references load plugins in-process. Trust levels already gate dangerous capabilities: <code translate="no">plugin.json</code> declares <code translate="no">trust</code>, <code translate="no">~/.openprogram/plugin-trust.json</code> stores <code translate="no">verified</code>, <code translate="no">community</code> or <code translate="no">untrusted</code> (default). OS sandboxes are per-platform: seccomp Linux, App Sandbox macOS. Install is an explicit user action with manifest review</td><td>Automatic plugin install exists, such as a model installing one mid-conversation</td></tr>
+<tr id="3-skill-requires-chain"><th scope="row">Skill <code translate="no">requires</code> chain in frontmatter</th><td>Skills depend on other skills' context; users chain <code translate="no">/skill A /skill B</code></td><td>No reference has it, nor the SKILL.md spec. The fix is merging skills or stating it in the description. Dependencies add ordering, conflict and version questions found nowhere else here</td><td>Authors repeatedly write "use together with X"</td></tr>
+<tr id="4-hook-level-gating"><th scope="row">Hook-level gating: hooks scoped to one agent profile</th><td>Plugin hooks in <code translate="no">openprogram/extensions/plugins/hooks.py</code> subscribe on the process-wide bus; no per-agent choice</td><td>Few plugins register hooks. Claude Code's per-agent hooks are mostly used through plugins. Gating answers what the model can use; hooks answer how a call goes through</td><td>A plugin must behave differently per agent</td></tr>
+<tr id="5-single-ruleset-migration-opencode-style"><th scope="row">Single ruleset: one <code translate="no">permission: [{pattern, action}]</code> list</th><td>One source of truth, easier new types</td><td>A pure refactor with no new capability. Every profile under <code translate="no">~/.openprogram/agents/</code> needs migration. First-match-wins makes order matter; separate blocks do not</td><td>A fifth or sixth gated type bloats the schema</td></tr>
+</tbody>
+</table>
+
+<h2 id="how-to-revisit-any-of-these">Revisiting</h2>
+<ol>
+<li>Find the symptom: complaint, incident or a concrete use case.</li>
+<li>Check it against the reason here.</li>
+<li>If the reason no longer holds, implement and update this page. If it holds, this page is the answer.</li>
+</ol>

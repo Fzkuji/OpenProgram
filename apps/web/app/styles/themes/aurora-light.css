@@ -15,13 +15,13 @@
   --nav-color: #625d78;
   --nav-color-hover: #171421;
   --bg-selected: rgba(79, 70, 120, 0.1);
-  --user-msg-bg: #f3f0fb;
+  --user-msg-bg: var(--bg-input); /* sent bubble = the composer surface */
   --assistant-msg-bg: #fbfaff;
   --shadow-sm: 0 1px 2px rgba(32, 24, 58, 0.05);
   --shadow: 0 2px 8px rgba(32, 24, 58, 0.07);
   --surface-popover: #ffffff;
   --border-popover: rgba(50, 39, 90, 0.14);
-  --shadow-popover: 0 8px 24px rgba(32, 24, 58, 0.16);
+  --shadow-popover: var(--glass-shadow);
   --shadow-dialog: 0 10px 30px rgba(32, 24, 58, 0.12);
   --shadow-sidebar-left: 4px 0 16px rgba(32, 24, 58, 0.07);
   --shadow-sidebar-right: -4px 0 16px rgba(32, 24, 58, 0.07);
@@ -29,6 +29,7 @@
   --accent-orange: #0f766e;
   --accent-fill: #0f766e;
   --accent-orange-hover: #115e59;
+  --tabrow-tint: 0%; /* plain tab strip; vivid themes tint it with the accent */
   --accent-green: #4f8a6b;
   --accent-red: #b7475b;
   --accent-yellow: #8a6b1f;
@@ -44,14 +45,16 @@
   --focus-ring: color-mix(in srgb, var(--accent-cyan) 48%, transparent);
   --scrim: rgba(16, 12, 30, 0.44);
   --scrim-strong: rgba(16, 12, 30, 0.64);
-  --surface-tooltip: #211c32;
-  --text-on-tooltip: #ffffff;
+  --surface-tooltip: var(--foreground);
+  --text-on-tooltip: var(--background);
   --composer-ring: rgba(50, 39, 90, 0.11);
   --composer-ring-focus: rgba(8, 127, 140, 0.28);
-  --composer-surface: color-mix(in srgb, var(--bg-input) 90%, transparent);
-  --composer-backdrop-filter: blur(12px);
-  --composer-shadow: 0 0 0 1px var(--composer-ring), var(--shadow-sm);
-  --composer-shadow-focus: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
+  /* Input box = shadcn Luma Card surface with no border: shadow-sm
+     at rest, shadow-md on hover / focus. */
+  --composer-surface: var(--bg-input);
+  --composer-backdrop-filter: none;
+  --composer-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --composer-shadow-focus: 0 4px 6px -1px rgb(0 0 0 / 0.16), 0 2px 4px -2px rgb(0 0 0 / 0.16);
   --chip-bg: #ffffff;
   --chip-ring: rgba(50, 39, 90, 0.11);
   --meter-fill: #0d9488;

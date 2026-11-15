@@ -5,7 +5,7 @@ import socket
 
 import pytest
 
-from openprogram.security.url_policy import (
+from openprogram.host.security.url_policy import (
     OwnerURLException,
     URLPolicyError,
     URLTrustClass,
@@ -365,7 +365,7 @@ def test_configured_service_never_allows_metadata_through_owner_exception():
 
 @pytest.mark.parametrize("address", ["169.254.1.2", "fe80::1234"])
 def test_configured_origin_exception_never_allows_link_local_dns(address):
-    from openprogram.config_schema import parse_outbound_url_settings
+    from openprogram.state.settings import parse_outbound_url_settings
 
     origin = "https://catalog.example.test"
     security = parse_outbound_url_settings(
@@ -445,6 +445,120 @@ def test_untrusted_public_url_still_rejects_transparent_proxy_fake_ip():
         )
 
 
+def evaluate_proxied(url: str, resolver=answers("198.18.0.104")):
+    return evaluate_url(
+        "tool.web_fetch",
+        "GET",
+        url,
+        trust_class=URLTrustClass.UNTRUSTED_PUBLIC,
+        allowed_methods=PUBLIC_METHODS,
+        allowed_ports=PUBLIC_PORTS,
+        resolver=resolver,
+        proxy_resolves=True,
+    )
+
+
+@pytest.mark.parametrize("answer", ["198.18.0.104", "198.19.255.1", PUBLIC_IP])
+def test_proxy_resolved_public_hostname_accepts_fake_ip_and_requires_proxy(answer):
+    decision = evaluate_proxied(
+        "https://github.com/example-org/ctxpress", resolver=answers(answer)
+    )
+
+    assert decision.requires_proxy
+    assert decision.hostname == "github.com"
+    assert decision.resolved_ips == (ipaddress.ip_address(answer),)
+
+
+def test_proxy_resolved_hostname_tolerates_failed_local_lookup():
+    def resolver(_hostname, _port):
+        raise socket.gaierror(socket.EAI_NONAME, "unknown")
+
+    decision = evaluate_proxied("https://github.com/", resolver=resolver)
+
+    assert decision.requires_proxy
+    assert decision.resolved_ips == ()
+
+
+@pytest.mark.parametrize(
+    ("answer", "reason"),
+    [
+        ("127.0.0.1", "NON_GLOBAL_ADDRESS"),
+        ("10.1.2.3", "NON_GLOBAL_ADDRESS"),
+        ("192.168.1.1", "NON_GLOBAL_ADDRESS"),
+        ("100.64.0.1", "NON_GLOBAL_ADDRESS"),
+        ("::1", "NON_GLOBAL_ADDRESS"),
+        ("fe80::1", "NON_GLOBAL_ADDRESS"),
+        ("169.254.169.254", "METADATA_ADDRESS"),
+    ],
+)
+def test_proxy_resolved_hostname_still_refuses_real_private_answers(answer, reason):
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_proxied("https://rebind.example/", resolver=answers(answer))
+
+    assert exc.value.reason == reason
+
+
+@pytest.mark.parametrize(
+    ("url", "reason"),
+    [
+        ("http://127.0.0.1/", "NON_GLOBAL_ADDRESS"),
+        ("http://192.168.0.1/", "NON_GLOBAL_ADDRESS"),
+        ("http://198.18.0.104/", "NON_GLOBAL_ADDRESS"),
+        ("http://[::1]/", "NON_GLOBAL_ADDRESS"),
+        ("http://169.254.169.254/", "METADATA_ADDRESS"),
+        ("http://localhost/", "NON_GLOBAL_ADDRESS"),
+        ("http://app.localhost/", "NON_GLOBAL_ADDRESS"),
+        ("http://printer.local/", "NON_GLOBAL_ADDRESS"),
+        ("http://router.lan/", "NON_GLOBAL_ADDRESS"),
+        ("http://nas.home.arpa/", "NON_GLOBAL_ADDRESS"),
+        ("http://service.internal/", "NON_GLOBAL_ADDRESS"),
+        ("http://intranet/", "NON_GLOBAL_ADDRESS"),
+        ("http://metadata.google.internal/", "METADATA_ADDRESS"),
+    ],
+)
+def test_proxy_resolution_never_covers_literals_or_local_names(url, reason):
+    calls = []
+
+    def resolver(hostname, port):
+        calls.append(hostname)
+        return ("198.18.0.104",)
+
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_proxied(url, resolver=resolver)
+
+    assert exc.value.reason == reason
+    assert calls == []
+
+
+def test_proxy_resolved_lookup_rejects_malformed_answers():
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_proxied("https://github.com/", resolver=answers("fe80::1%en0"))
+    assert exc.value.reason == "DNS_ERROR"
+
+    def broken(_hostname, _port):
+        raise RuntimeError("resolver bug")
+
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_proxied("https://github.com/", resolver=broken)
+    assert exc.value.reason == "DNS_ERROR"
+
+
+def test_proxy_resolution_does_not_relax_configured_services():
+    with pytest.raises(URLPolicyError) as exc:
+        evaluate_url(
+            "skills.configured.catalog",
+            "GET",
+            "https://catalog.example/index.json",
+            trust_class=URLTrustClass.CONFIGURED_SERVICE,
+            allowed_methods=PUBLIC_METHODS,
+            configured_origin="https://catalog.example",
+            resolver=answers("198.18.0.104"),
+            proxy_resolves=True,
+        )
+
+    assert exc.value.reason == "NON_GLOBAL_ADDRESS"
+
+
 def test_callback_rejects_https_before_dns_when_registry_allows_only_http():
     calls: list[tuple[str, int]] = []
 
@@ -512,3 +626,23 @@ def test_loopback_callback_rejects_a_non_loopback_exact_origin():
             **kwargs,
         )
     assert exc.value.reason == "CALLBACK_ADDRESS_MISMATCH"
+
+
+@pytest.mark.parametrize("url, addresses", [
+    ("http://127.0.0.1:8080/x", ("127.0.0.1",)),
+    ("http://169.254.169.254/latest/meta-data", ("169.254.169.254",)),
+    ("http://10.1.2.3:9000/", ("10.1.2.3",)),
+    ("http://printer.local/", ("192.168.1.9",)),
+    ("https://example.com:8443/", (PUBLIC_IP,)),
+])
+def test_an_owner_tool_fetch_reaches_any_address(url, addresses):
+    decision = evaluate_url(
+        "tool.web_fetch.owner",
+        "DELETE",
+        url,
+        trust_class=URLTrustClass.OWNER_TOOL,
+        allowed_methods=frozenset({"GET", "DELETE"}),
+        allowed_ports=None,
+        resolver=answers(*addresses),
+    )
+    assert decision is not None

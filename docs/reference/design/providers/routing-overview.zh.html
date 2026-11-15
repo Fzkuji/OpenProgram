@@ -1,0 +1,62 @@
+<title>路由概览</title>
+<meta name="description" content="Providers 的 Routing 视图如何把会话和分支对应到模型，并显示故障切换。">
+<h1>路由概览</h1>
+
+<p>设置 → LLM Providers → Routing（页头里 Providers 旁边）显示哪个会话的哪条分支在和哪个模型对话，以及模型失败时发生了什么。只有故障切换是为它单独记录的，其余都来自已有记录。</p>
+
+<h2 id="sources">数据来源</h2>
+<p><code translate="no">GET /api/routing/overview?window=&lt;seconds&gt;</code>（<code translate="no">openprogram/interfaces/server/routes/settings/routing.py</code>）合并：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">来源</th><th scope="col">提供</th></tr></thead>
+<tbody>
+<tr><th scope="row">会话索引（<code translate="no">list_sessions</code>）</th><td>标题、<code translate="no">source</code> / <code translate="no">channel</code>、当前轮次的 <code translate="no">running</code> 状态</td></tr>
+<tr><th scope="row">会话节点图（<code translate="no">list_branches</code>、<code translate="no">SessionNodeWriter.load</code>）</th><td>每个打开的分支末端、其最后一次回复的模型、末端是否从子 Agent 派生根开始</td></tr>
+<tr><th scope="row">用量账本 <code translate="no">usage_events</code></th><td>时间窗内按会话和模型统计的 Provider 调用；<code translate="no">parent_session_id</code> 指向另一会话即为子会话</td></tr>
+<tr><th scope="row">用量账本 <code translate="no">route_events</code></th><td>每次故障切换一行：调用会话、失败的 <code translate="no">provider/model</code>、下一个 <code translate="no">provider/model</code>、原因</td></tr>
+<tr><th scope="row">凭据存储</th><td>在用 Provider 的每个账号：状态、限流冷却结束时间</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>列出条件</dt><dd>轮次正在运行、会话在时间窗内更新过，或账本在时间窗内有它的调用</dd>
+<dt>上限</dt><dd>8 个会话，运行中优先，再按最近活动；其余计为空闲。每个会话 4 条分支，活动分支优先</dd>
+</dl>
+
+<h2 id="lanes">通道</h2>
+<p>会话的每一行是一条通道，连到一个模型。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">通道</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">branch</code></th><td>打开的分支末端。最长的链是主干，标为 <code translate="no">main</code>；其余用分支名。</td></tr>
+<tr><th scope="row"><code translate="no">sub_agent</code></th><td>链从子 Agent 派生根开始的末端</td></tr>
+<tr><th scope="row"><code translate="no">children</code></th><td>按所调用模型分组的子会话，带数量</td></tr>
+<tr><th scope="row"><code translate="no">calls</code></th><td>有账本调用但没有回复节点的会话（程序直接调用模型）</td></tr>
+<tr><th scope="row"><code translate="no">background</code></th><td>任何列出的会话都解释不了的账本调用：有自己 <code translate="no">op-…</code> id 的程序运行、起标题、记忆维护。按模型归到一个“后台调用”条目下，所以图上的数能和上方的调用总数对上。</td></tr>
+</tbody>
+</table>
+<p class="note">活跃：运行中轮次的活动末端，或最近 90 秒内有账本调用。</p>
+
+<details>
+<summary>如何保持请求够快</summary>
+<p>打开会话要逐个文件读节点图。每次读都会释放 GIL，其他服务器线程繁忙时要等着拿回来，所以冷打开可能要几秒。</p>
+<ul>
+<li>会话及其通道按 <code translate="no">(session, index updated_at)</code> 缓存，没变的会话不再打开。</li>
+<li>冷会话在一个后台线程上打开，请求最多等 1.5 秒。</li>
+<li>到时没准备好的会话用索引行和账本调用显示，响应带 <code translate="no">partial: true</code>，客户端两秒后再请求。</li>
+</ul>
+</details>
+
+<h2 id="failover-switches">故障切换</h2>
+<p><code translate="no">stream_with_failover</code> 每次换到下一个候选时追加一行 <code translate="no">route_events</code>，用用量上下文里的会话打标。当会话最近一次切换落在某通道的模型上时，图上从活动通道画一条虚线到失败模型，标出原因，并在下方列出最近的切换。</p>
+<p class="note">只有配置了备用模型才会有切换。直接展示给用户、没有发生切换的失败不记录在这里。</p>
+
+<h2 id="client">客户端</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">组件</th><td><code translate="no">apps/web/components/settings/providers/routing-overview.tsx</code>：两列 HTML，后面一层 SVG</td></tr>
+<tr><th scope="row">连线</th><td>端点在布局后和尺寸变化时从实际渲染的行测量，名称可以任意长</td></tr>
+<tr><th scope="row">切换时间窗</th><td>取消上一个请求；新数据到达前已显示内容变暗</td></tr>
+<tr><th scope="row">动态</th><td>活跃连线上有移动的点；悬停通道或模型时保留其连线，其余变暗</td></tr>
+<tr><th scope="row">面板宽度小于 560 px</th><td>隐藏图，提示用户收起侧栏或加宽窗口</td></tr>
+</tbody>
+</table>

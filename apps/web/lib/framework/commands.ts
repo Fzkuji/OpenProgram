@@ -1,15 +1,14 @@
 /** Explicit product commands: never arbitrary JavaScript or an IPC channel. */
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
-import { desktopBridge } from "@/lib/desktop/bridge-api";
-import * as appearance from "@/lib/prefs/theme-pref";
-import { setFont } from "@/lib/prefs/font-pref";
+import { desktopBridge } from "@/lib/desktop/bridge/bridge-api";
+import * as appearance from "@/lib/prefs/appearance/theme-pref";
+import { setFont } from "@/lib/prefs/appearance/font-pref";
 import { setShowBookmarksBar } from "@/lib/browser/browser-prefs";
-import * as bookmarks from "@/lib/tabs/bookmarks";
+import * as bookmarks from "@/lib/tabs/browser/bookmarks";
 import { setLocale } from "@/lib/i18n";
 import { setUserProfile, getUserProfile } from "@/lib/prefs/user-profile";
-import { setAgentProfile, getAgentProfile } from "@/lib/format-utils/agent-style";
-import { agentCanAccessWebTab } from "@/lib/browser/web-page-management";
-import definitions from "../../../../openprogram/framework/interface_commands.json" with { type: "json" };
+import { agentCanAccessWebTab } from "@/lib/browser/web-tab/web-page-management";
+import definitions from "../../../../openprogram/programs/_host/framework/interface_commands.json" with { type: "json" };
 
 export { definitions };
 export type PageAuthority = { tab_id: string; window_id: string; session_id: string; target_id: string };
@@ -34,8 +33,8 @@ export async function executeInterface(operation: string, args: unknown[], page?
     return (action as (...values: unknown[]) => unknown)(...args);
   }
   if (group === "preferences") {
-    if (method === "get") return { theme: appearance.activeThemeId(), customCss: appearance.getCustomCss(), userProfile: getUserProfile(), agentProfile: getAgentProfile() };
-    const handlers = { ...appearance, setFont, setLocale, setShowBookmarksBar, setUserProfile, setAgentProfile };
+    if (method === "get") return { theme: appearance.activeThemeId(), customCss: appearance.getCustomCss(), userProfile: getUserProfile() };
+    const handlers = { ...appearance, setFont, setLocale, setShowBookmarksBar, setUserProfile };
     const action = handlers[method as keyof typeof handlers];
     if (typeof action !== "function") throw new Error("unsupported_preference_operation");
     return (action as (...values: unknown[]) => unknown)(...args);
@@ -54,7 +53,7 @@ export async function executeInterface(operation: string, args: unknown[], page?
   if (group === "resources") {
     const { useResourceSelection } = await import("./resource-selection");
     const { useSessionStore } = await import("@/lib/session-store");
-    const { sessionResourceView, resourceSessionId, terminalResourceRows, hideResourcePreview } = await import("@/lib/chat/session-resources");
+    const { sessionResourceView, resourceSessionId, terminalResourceRows, hideResourcePreview } = await import("@/lib/chat/resources/session-resources");
     const { useTerminalResources } = await import("@/lib/desktop/terminal-resources");
     const tabs = useCenterTabs.getState();
     const sessionId = resourceSessionId(tabs.tabs.find(tab => tab.id === tabs.activeId));
@@ -73,7 +72,7 @@ export async function executeInterface(operation: string, args: unknown[], page?
   if (typeof action !== "function") throw new Error("native_capability_unavailable");
   const result = await (action as (...values: unknown[]) => unknown).apply(target, args);
   if (method === "browserImport" && nativeMethod === "run" && result && typeof result === "object") {
-    const imported = result as { ok?: boolean; bookmarks?: import("@/lib/tabs/bookmarks").ImportedBookmarkNode[] };
+    const imported = result as { ok?: boolean; bookmarks?: import("@/lib/tabs/browser/bookmarks").ImportedBookmarkNode[] };
     if (imported.ok && imported.bookmarks) bookmarks.importBookmarkTree(imported.bookmarks);
   }
   return result;

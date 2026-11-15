@@ -14,8 +14,8 @@ import pytest
 def test_merge_secret_map_rejects_a_bare_mask_written_back() -> None:
     from fastapi import HTTPException
 
-    from openprogram.webui.routes.identity._credential_secrets import mask_credential
-    from openprogram.webui.routes.catalog.mcp import _merge_secret_map
+    from openprogram.host.security.credential_mask import mask_credential
+    from openprogram.interfaces.server.routes.catalog.mcp import _merge_secret_map
 
     real = "sk-abcdefghijklmnop"
     masked = mask_credential(real)
@@ -29,7 +29,7 @@ def test_merge_secret_map_rejects_a_bare_mask_written_back() -> None:
 def test_merge_secret_map_rejects_short_value_mask() -> None:
     from fastapi import HTTPException
 
-    from openprogram.webui.routes.catalog.mcp import _merge_secret_map
+    from openprogram.interfaces.server.routes.catalog.mcp import _merge_secret_map
 
     with pytest.raises(HTTPException) as caught:
         _merge_secret_map({"API_KEY": "short"}, {"API_KEY": "•" * 8})
@@ -40,7 +40,7 @@ def test_merge_secret_map_rejects_short_value_mask() -> None:
 def test_merge_secret_map_rejects_redacted_sentinels() -> None:
     from fastapi import HTTPException
 
-    from openprogram.webui.routes.catalog.mcp import _merge_secret_map
+    from openprogram.interfaces.server.routes.catalog.mcp import _merge_secret_map
 
     for sentinel in ("REDACTED", "<redacted>", "[redacted]", "***REDACTED***"):
         with pytest.raises(HTTPException) as caught:
@@ -49,7 +49,7 @@ def test_merge_secret_map_rejects_redacted_sentinels() -> None:
 
 
 def test_merge_secret_map_keeps_omit_replace_delete_semantics() -> None:
-    from openprogram.webui.routes.catalog.mcp import _merge_secret_map
+    from openprogram.interfaces.server.routes.catalog.mcp import _merge_secret_map
 
     stored = {"KEEP": "a", "SWAP": "b", "DROP": "c"}
 
@@ -61,8 +61,8 @@ def test_merge_secret_map_keeps_omit_replace_delete_semantics() -> None:
 def test_merge_auth_rejects_masked_token_and_client_secret() -> None:
     from fastapi import HTTPException
 
-    from openprogram.webui.routes.identity._credential_secrets import mask_credential
-    from openprogram.webui.routes.catalog.mcp import _merge_auth
+    from openprogram.host.security.credential_mask import mask_credential
+    from openprogram.interfaces.server.routes.catalog.mcp import _merge_auth
 
     token = "tok-abcdefghijklmnop"
     secret = "cs-abcdefghijklmnop"
@@ -82,7 +82,7 @@ def test_merge_auth_rejects_masked_token_and_client_secret() -> None:
 
 
 def test_merge_auth_still_replaces_and_deletes_real_values() -> None:
-    from openprogram.webui.routes.catalog.mcp import _merge_auth
+    from openprogram.interfaces.server.routes.catalog.mcp import _merge_auth
 
     stored = {"kind": "oauth", "token": "old", "client_secret": "keep"}
 
@@ -99,7 +99,7 @@ def test_merge_auth_still_replaces_and_deletes_real_values() -> None:
 
 def test_mcp_cli_has_no_raw_file_editor() -> None:
     """The product must not hand the raw secret file to $EDITOR."""
-    from openprogram.cli.commands import mcp as mcp_cmd
+    from openprogram.interfaces.cli.commands import mcp as mcp_cmd
 
     assert not hasattr(mcp_cmd, "_cmd_mcp_edit")
 
@@ -107,7 +107,7 @@ def test_mcp_cli_has_no_raw_file_editor() -> None:
 def test_mcp_edit_verb_reports_the_structured_alternative(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from openprogram.cli.commands.mcp import _cmd_mcp_edit_removed
+    from openprogram.interfaces.cli.commands.mcp import _cmd_mcp_edit_removed
 
     code = _cmd_mcp_edit_removed()
 
@@ -119,7 +119,7 @@ def test_mcp_edit_verb_reports_the_structured_alternative(
 
 
 def test_legacy_account_key_reveal_returns_stable_deprecation() -> None:
-    from openprogram.webui.routes.identity.accounts import reveal_deprecation_response
+    from openprogram.interfaces.server.routes.identity.accounts import reveal_deprecation_response
 
     payload, status = reveal_deprecation_response()
 
@@ -136,14 +136,20 @@ def test_channel_delete_reports_failure_when_files_survive(
 ) -> None:
     import shutil
 
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
 
     folder = tmp_path / "channels" / "slack" / "accounts" / "acct"
     folder.mkdir(parents=True)
     (folder / "credentials.json").write_text('{"token": "xoxb-real"}')
     monkeypatch.setattr(accounts, "account_dir", lambda c, a: folder)
 
-    def failing_rmtree(*args: object, **kwargs: object) -> None:
+    original_rmtree = shutil.rmtree
+
+    def failing_rmtree(path: object, *args: object, **kwargs: object) -> None:
+        # Only this account folder fakes success; other callers in the
+        # process (temp-dir cleanup, background writers) keep the real one.
+        if Path(path) != folder:
+            return original_rmtree(path, *args, **kwargs)
         return None  # pretend success, leave the tree in place
 
     monkeypatch.setattr(shutil, "rmtree", failing_rmtree)
@@ -155,7 +161,7 @@ def test_channel_delete_reports_failure_when_files_survive(
 def test_channel_delete_succeeds_and_verifies_absence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
 
     folder = tmp_path / "channels" / "slack" / "accounts" / "acct"
     folder.mkdir(parents=True)
@@ -170,7 +176,7 @@ def test_channel_delete_succeeds_and_verifies_absence(
 def test_channel_delete_is_idempotent_when_already_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
 
     folder = tmp_path / "channels" / "slack" / "accounts" / "gone"
     monkeypatch.setattr(accounts, "account_dir", lambda c, a: folder)
@@ -182,9 +188,9 @@ def test_deleting_a_credential_clears_the_runtime_token_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A deleted credential must not keep answering from process memory."""
-    from openprogram.auth.methods import credential_process
-    from openprogram.auth.store import AuthStore
-    from openprogram.auth.types import Credential, CredentialData
+    from openprogram.models.auth.methods import credential_process
+    from openprogram.models.auth.store import AuthStore
+    from openprogram.models.auth.types import Credential, CredentialData
 
     store = AuthStore(root=tmp_path / "auth")
     store.add_credential(
@@ -206,9 +212,9 @@ def test_deleting_a_credential_clears_the_runtime_token_cache(
 def test_removing_one_credential_clears_the_runtime_token_cache(
     tmp_path: Path,
 ) -> None:
-    from openprogram.auth.methods import credential_process
-    from openprogram.auth.store import AuthStore
-    from openprogram.auth.types import Credential, CredentialData
+    from openprogram.models.auth.methods import credential_process
+    from openprogram.models.auth.store import AuthStore
+    from openprogram.models.auth.types import Credential, CredentialData
 
     store = AuthStore(root=tmp_path / "auth")
     cred = Credential(
@@ -233,14 +239,18 @@ def test_channel_delete_surfaces_the_underlying_error(
     """A refused removal raises rather than reporting a phantom success."""
     import shutil
 
-    from openprogram.channels import accounts
+    from openprogram.interfaces.channels import accounts
 
     folder = tmp_path / "accounts" / "acct"
     folder.mkdir(parents=True)
     (folder / "credentials.json").write_text('{"token": "xoxb-real"}')
     monkeypatch.setattr(accounts, "account_dir", lambda c, a: folder)
 
+    original_rmtree = shutil.rmtree
+
     def denied(path: object, ignore_errors: bool = False, **kwargs: object) -> None:
+        if Path(path) != folder:
+            return original_rmtree(path, ignore_errors=ignore_errors, **kwargs)
         if ignore_errors:
             return  # the swallowing call reports nothing, as it always did
         raise PermissionError(13, "Permission denied", str(path))

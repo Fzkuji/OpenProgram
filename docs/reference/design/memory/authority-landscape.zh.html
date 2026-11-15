@@ -1,0 +1,59 @@
+<title>权限全景</title>
+<meta name="description" content="谁能做什么，消息经过的顺序，以及 OpenProgram 从其他 Agent 框架学了什么。">
+<h1>权限全景</h1>
+<p>本地界面和 Telegram、Discord 等渠道共用一个 Agent 和记忆工作区。规则见<a href="authority-handoff.zh.html">设计</a>。</p>
+
+<h2 id="who-can-do-what">谁能做什么</h2>
+<table class="grid">
+<thead><tr><th scope="col"></th><th scope="col">Owner<br>终端、本机 Web</th><th scope="col">Paired<br>已批准的稳定 ID</th><th scope="col">Unpaired<br>未批准</th></tr></thead>
+<tbody>
+<tr><th scope="row">到达 Agent，得到回复</th><td class="run">可以</td><td class="run">可以</td><td class="deny">不可以</td></tr>
+<tr><th scope="row">被记录并追加记忆</th><td class="run">可以</td><td class="run">可以</td><td class="deny">不可以</td></tr>
+<tr><th scope="row">改写或删除记忆</th><td class="run">可以</td><td class="deny">不可以</td><td class="deny">不可以</td></tr>
+<tr><th scope="row">命令、文件、发送</th><td class="run">可以</td><td class="deny">不可以</td><td class="deny">不可以</td></tr>
+</tbody></table>
+<p class="note">未配对的私聊收到 8 位配对码，一小时一次。未配对的群消息被忽略。改名冒充 owner 没有用。</p>
+
+<h2 id="message-order">消息到达后的顺序</h2>
+<ol>
+<li><strong>渠道入口。</strong>发言人 ID 和显示名来自平台元数据，不来自消息文本。</li>
+<li><strong>配对。</strong>查稳定 ID，未配对的消息到此为止。批准只来自本地 CLI 或回环 Web 请求。</li>
+<li><strong>归因。</strong><code translate="no">speaker_*</code>、owner principal 和 <code translate="no">authority_tier</code> 作为独立字段持久化。</li>
+<li><strong>能力。</strong><code translate="no">_gated_execute</code> 查固定表，规则和 bypass 跳不过。</li>
+<li><strong>执行或记忆。</strong>工作区强制已配对的 <code translate="no">memory_update</code> 只能新建或按字节追加。</li>
+</ol>
+
+<h2 id="reference-systems">参考系统</h2>
+<p class="note">前四行对照本地源码核实。文档调研还覆盖 Claude Code、MCP 规范、LangGraph、OpenAI Agents SDK、AutoGen 和 Letta；只有能在本地代码核实的机制算证据。</p>
+<table class="stack">
+<thead><tr><th scope="col">系统</th><th scope="col">机制</th><th scope="col">采用</th><th scope="col">不同</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenClaw<span class="arg">src/pairing/pairing-store.ts</span></th><td>8 位配对码，不含 <code translate="no">0O1I</code>，一小时过期，每渠道账号 3 个待处理。未知私聊不处理。私聊准入、命令 owner 和群授权是分开的状态。</td><td>配对常量、稳定 ID 授权、进 Agent 前拒绝</td><td>这里配对还确定工具档位，绝不等于 owner</td></tr>
+<tr><th scope="row">Codex<span class="arg">codex-rs/memories/README.md</span></th><td>提取用租约和退避认领有界 rollout 任务。单一写入者整合并记录结果。线程级水位，同一会话图内没有分支来源。</td><td>有界批次、单一写入者、失败分类</td><td>不要任务数据库：已有节点标记、Source 引用和工作区 revision</td></tr>
+<tr><th scope="row">Hermes Agent<span class="arg">agent/memory_manager.py</span></th><td><code translate="no">sync_all</code> 在一轮后调用所有 provider；<code translate="no">MemoryProvider.on_session_switch</code> 通知切换。没有持久的待处理游标。</td><td>统一 provider 入口、轮后触发</td><td>模型写入在 token 阈值或空闲时运行，不是每轮</td></tr>
+<tr><th scope="row">OpenCode、pi-mono、WeClaw</th><td>没有对等的长期记忆流程。pi-mono：只追加的 <code translate="no">label</code> 和 <code translate="no">leaf</code> 记录。OpenCode：线性消息，用 revert 管尾部。WeClaw：下游会话 ID 或有限的进程内历史。</td><td>pi-mono 用稳定节点 ID 做关联记录</td><td>都没有同时具备可信 Source、Topic 事务、回填和写入器状态</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">决定</th><th scope="col">设计</th></tr></thead>
+<tbody>
+<tr><th scope="row">采用</th><td>稳定 ID 准入、固定能力表、统一写入入口、持久状态、有界回填</td></tr>
+<tr><th scope="row">改造：OpenClaw 的回填和状态</th><td>回填只选没有 Topic 引用的可信 Source。状态在本地只读统计，不加载模型，不修复。</td></tr>
+<tr><th scope="row">拒绝</th><td>独立任务数据库、每轮同步、回填预览里的外部归档：文件锁和现有记录够用，模型只在阈值或空闲时运行，外部归档不进可信综合</td></tr>
+</tbody>
+</table>
+
+<h2 id="what-changes-for-people">用户能感觉到的</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">陌生私聊发信人</th><td>收到配对码，owner 一条命令批准。没有迁移：非 owner 账号首次联系时配对。</td></tr>
+<tr><th scope="row">已配对成员说“记住这个”</th><td>被记录并归因</td></tr>
+<tr><th scope="row">未配对的群消息</th><td>不会变成一轮，记忆不记录也不引用</td></tr>
+<tr><th scope="row">拒绝</th><td>结构化原因码</td></tr>
+<tr><th scope="row"><code translate="no">memory.backend=none</code></th><td>在创建工作区前拒绝所有 CLI 记忆动词和 <code translate="no">/api/memory/*</code></td></tr>
+<tr><th scope="row">集成测试覆盖</th><td>SessionDB、默认模型解析、托管工具、暂存事务、Topic、标记、监视器状态</td></tr>
+<tr><th scope="row">计划</th><td>已配对的越权请求转给 owner，批准后执行一次；非 owner 读取不再看到 owner 私有内容。见<a href="authority-handoff.zh.html#implementation-status">状态</a>。</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="authority-handoff.zh.html">权限：两个档位与配对</a></p>

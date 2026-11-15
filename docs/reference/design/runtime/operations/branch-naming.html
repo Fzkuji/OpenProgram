@@ -1,65 +1,94 @@
-<style>
-.runtime-doc { max-width: 100%; }
-.runtime-doc .lead, .runtime-doc .toc { background: var(--bg-code); border: 1px solid var(--bd); border-radius: 8px; padding: 14px 18px; margin: 18px 0; }
-.runtime-doc .doc-intro { border-left: 3px solid var(--acc); padding: 4px 0 4px 18px; margin: 18px 0 28px; }
-.runtime-doc .doc-scroll { max-width: 100%; overflow-x: auto; margin: 16px 0; }
-.runtime-doc .doc-scroll:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; }
-.runtime-doc table { min-width: 720px; }
-.runtime-doc code { overflow-wrap: anywhere; word-break: break-word; }
-.runtime-doc h2 { scroll-margin-top: 16px; }
-.runtime-doc blockquote { border-left: 3px solid var(--bd); padding: 8px 16px; margin: 16px 0; }
-@media (max-width: 680px) {
-  .runtime-doc table { min-width: 640px; font-size: 13px; }
-  .runtime-doc h1 { font-size: 26px; }
-}
-</style>
-<div class="runtime-doc">
+<title>Branch naming</title>
+<meta name="description" content="How DAG branches get a name, from short id to progressive LLM label, and what locks it.">
 <h1>Branch naming</h1>
-<p>Status: <strong>current design and implementation reference</strong></p>
-<blockquote>Branches use their own name when one exists and otherwise expose a short identifier. Automatic naming is progressive and must not overwrite a user-controlled name.</blockquote>
-<blockquote>The canonical implementation is in <code>openprogram/store/session/session_store.py</code>, <code>openprogram/agent/dispatcher/titles.py</code>, <code>openprogram/agent/dispatcher/finalize.py</code>, and <code>apps/server/openprogram_server/_webui/ws_actions/branch.py</code>.</blockquote>
 
-<h2 id="branch-contract">1. Current contract</h2>
-<ul>
-<li>The trunk has no synthesized <code>main</code> special case. An unnamed branch uses the short hexadecimal identifier; a named branch uses its own name.</li>
-<li>Manual branch naming is handled by the branch WebSocket actions. The short identifier is the fallback when no name is stored.</li>
-<li>Automatic naming is a background operation triggered from turn finalization at the configured thresholds. It reads the branch context and rechecks the lock before writing.</li>
-<li>Automatic naming must not replace a name that the user has locked. A stale background result is discarded when the stored branch metadata no longer matches the operation's preconditions.</li>
-</ul>
+<p>A branch name follows its current conversation endpoint; an explicit fork uses another endpoint. Rewind preserves the current branch identity and name, even when its endpoint temporarily rests on a shared ancestor of an existing sibling. The trunk has no synthesized <code translate="no">main</code> name and follows the same rules.</p>
 
-<h2 id="branch-paths">2. Implemented paths</h2>
-<div class="doc-scroll" role="region" tabindex="0" aria-label="Branch naming evidence tables"><table><thead><tr><th>Concern</th><th>Current source</th><th>Evidence</th></tr></thead><tbody>
-<tr><td>Stored branch name and fallback</td><td><code>openprogram/store/session/session_store.py</code></td><td>Branch metadata is read without a synthesized main name; unnamed entries fall back to a short id.</td></tr>
-<tr><td>Progressive LLM naming</td><td><code>openprogram/agent/dispatcher/titles.py</code></td><td><code>maybe_auto_name_branch</code> performs threshold checks, background generation, and write-back guards.</td></tr>
-<tr><td>Turn-end trigger</td><td><code>openprogram/agent/dispatcher/finalize.py</code></td><td>Finalization invokes automatic branch naming after the turn.</td></tr>
-<tr><td>Manual and WebSocket actions</td><td><code>apps/server/openprogram_server/_webui/ws_actions/branch.py</code></td><td>Rename, short-id fallback, lock handling, and on-demand naming are exposed through the current branch actions.</td></tr>
-<tr><td>Composer command</td><td><code>apps/web/components/chat/composer/slash/slash-commands.ts</code></td><td><code>/branch</code> and <code>auto_name_branch</code> are registered as current commands.</td></tr>
-</tbody></table></div>
+<h2 id="branch-policy">Who wins</h2>
 
-<h2 id="branch-policy">3. Naming policy</h2>
-<div class="doc-scroll" role="region" tabindex="0" aria-label="Branch naming evidence tables"><table><thead><tr><th>Source</th><th>Priority</th><th>May automatic naming overwrite it?</th></tr></thead><tbody>
-<tr><td>User rename</td><td>Highest</td><td>No; it sets the stored lock.</td></tr>
-<tr><td>Existing stored branch name</td><td>Stored value</td><td>Only when the current automatic operation passes its lock and stale-write checks.</td></tr>
-<tr><td>Automatic LLM result</td><td>Background refinement</td><td>No when the branch is locked or the precondition changed.</td></tr>
-<tr><td>Short identifier</td><td>Fallback</td><td>Replaced only after a valid name is stored.</td></tr>
-</tbody></table></div>
+<table class="stack">
+<thead><tr><th scope="col">Tier</th><th scope="col">Source</th><th scope="col">Locks</th><th scope="col">Automatic naming may overwrite</th></tr></thead>
+<tbody>
+<tr><th scope="row">Highest</th><td>User rename (<code translate="no">rename_branch</code>, Branches panel, <code translate="no">/branch &lt;name&gt;</code>) or user-requested LLM name (<code translate="no">auto_name_branch</code>, <code translate="no">/branch</code>, TUI <code translate="no">/branch rename</code>)</td><td>Sets <code translate="no">name_locked</code></td><td>No</td></tr>
+<tr><th scope="row">Spawn</th><td>Label of a spawned task, recorded at admission on the reply the run will write (<code translate="no">&lt;job&gt;_user_reply</code>), so the agent list and Activity name the branch while it runs; written again at the end only if the branch has no name</td><td>No</td><td>Only if the write-back passes its checks</td></tr>
+<tr><th scope="row">Automatic</th><td>Background LLM label at thresholds</td><td>No</td><td>Yes</td></tr>
+<tr><th scope="row">Fallback</th><td>First 8 hex digits of <code translate="no">head_msg_id</code></td><td>No</td><td>Replaced by any stored name</td></tr>
+</tbody>
+</table>
 
-<h2 id="branch-lifecycle">4. State and lifecycle</h2>
-<ol>
-<li>A branch is created with its metadata and can be displayed immediately through its short id if no name exists.</li>
-<li>At turn finalization, the branch's own context and turn count are checked against the progressive naming thresholds.</li>
-<li>The LLM generation runs in the background. Before writing, it rereads the branch/session state and abandons the result when a manual lock or stale precondition is detected.</li>
-<li>WebSocket consumers receive the branch update through the current branch/session update path; the UI must keep the short-id fallback while generation is pending.</li>
+<p class="note">Whether a name is protected depends on whether the user asked for it, not on whether an LLM wrote it.</p>
+
+<h2 id="branch-lifecycle">One turn on a branch</h2>
+
+<ol class="flow">
+<li><strong><code translate="no">finalize_turn</code></strong><small>Skipped for background turns; their branches are hidden when they end.</small></li>
+<li><strong><code translate="no">carry_branch_entry</code></strong><small>A recorded branch's entry has already moved with each message the turn wrote (<code translate="no">follow_line</code> for the selected branch, <code translate="no">carry_branch</code> for another), merged with any entry written at the new tip, so a rename mid-turn keeps the counter. For a line without a branch record, this moves the entry from the tip this turn extended to the new head, so name, lock and counter follow the branch. An ordinary fork point stays put; the fork starts fresh. Continuing after Rewind carries the current entry even when a sibling exists, preserving its name, lock and counter.</small></li>
+<li><strong><code translate="no">maybe_auto_name_branch</code></strong><small>Stops if archived. Otherwise <code translate="no">turns</code> + 1, locked or not; a locked branch gets no automatic label.</small></li>
+<li><strong><code translate="no">turns</code> in 1, 6, 16, 40</strong><small>Background thread: last 6 messages, at most 2000 characters, 2 to 6 words, capped at 40 characters.</small></li>
+<li class="flow-end"><strong>Write back</strong><small>Rereads the entry and discards the label if it is now locked or archived (the lock is checked again on the record inside the write lock); otherwise stores it and refreshes <code translate="no">branches_list</code>.</small></li>
 </ol>
 
-<h2 id="branch-boundaries">5. Boundaries</h2>
+<h2 id="branch-contract">State</h2>
+
+<pre translate="no" tabindex="0">branches: {
+  &lt;head_msg_id&gt;: {
+    name, created_at, updated_at,
+    auto_named: bool,
+    name_locked: bool,
+    name_gen_count: int,
+    turns: int,
+  }
+}</pre>
+
+<p class="note">In session <code translate="no">meta.json</code>, written by <code translate="no">set_branch_name</code>, which merges so a name-only write keeps the lock and counters. Every writer merges on disk under the session write lock (<a href="../session/storage-consistency.html#branch-records">branch records</a>). A write addressed to a tip the branch has since moved past (the previous reply, or this turn's own message) goes to the branch's record at its tip now.</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">Display</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Branches panel</th><td>Name, else the short id (<code translate="no">graph/branches.py</code>)</td></tr>
+<tr><th scope="row">DAG badge</th><td>Name, else the text the user asked on that branch, else the short id (<code translate="no">dag/render/labels/badges.ts</code>)</td></tr>
+</tbody>
+</table>
+
+<p class="note">The transcript goes inside <code translate="no">&lt;branch&gt;</code> tags with an instruction to treat it as data, so a message cannot rename the branch.</p>
+
+<details>
+<summary>Compared with session titles</summary>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Session</th><th scope="col">Branch</th></tr></thead>
+<tbody>
+<tr><th scope="row">Placeholder</th><td>First line, 50 characters (<code translate="no">_title_from_text</code>)</td><td>Short id: a branch is another possibility at the same position</td></tr>
+<tr><th scope="row">Prompt</th><td><code translate="no">_TITLE_SYSTEM_PROMPT</code>, 3 to 7 words</td><td><code translate="no">build_branch_name_prompt</code>, 2 to 6 words; separate semantics, so separate prompts</td></tr>
+<tr><th scope="row">Thresholds</th><td><code translate="no">_RETITLE_AT_TURNS</code></td><td>Same constant</td></tr>
+<tr><th scope="row">Turn count</th><td>Assistant messages across the whole session</td><td>The branch's own <code translate="no">turns</code>: unaffected by other branches, no walk to the fork point</td></tr>
+<tr><th scope="row">Lock</th><td><code translate="no">_user_titled</code>, top level of <code translate="no">meta.json</code></td><td><code translate="no">name_locked</code>, in the branch entry</td></tr>
+<tr><th scope="row">Broadcast</th><td><code translate="no">session_updated</code></td><td><code translate="no">branches_list</code> refresh</td></tr>
+<tr><th scope="row">Background thread</th><td><code translate="no">_bg()</code> in <code translate="no">titles.py</code></td><td>Own thread; write-back targets differ, so nothing is shared</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Where it lives</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Concern</th><th scope="col">Source</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry, carry, counter</th><td><code translate="no">openprogram/state/store/session/session_store/branches.py</code></td></tr>
+<tr><th scope="row">Thresholds, prompt, background naming</th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/titles.py</code></td></tr>
+<tr><th scope="row">Turn-end trigger</th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/finalize.py</code></td></tr>
+<tr><th scope="row">Rename and on-demand actions</th><td><code translate="no">openprogram/interfaces/server/ws_actions/branch.py</code>. Both default to the session's <code translate="no">head_id</code>. On-demand naming is synchronous and uses the chat runtime.</td></tr>
+<tr><th scope="row">Composer command</th><td><code translate="no">apps/web/components/chat/composer/slash/slash-commands.ts</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="branch-boundaries">Boundaries</h2>
+
 <ul>
-<li>The design does not introduce a second branch entity, a second naming store, or a new special trunk name.</li>
-<li>Branch naming does not change the session title contract or the DAG parent relationships.</li>
-<li>The exact prompt wording and future threshold changes remain implementation details; any change must update the canonical Markdown page and this visualization together.</li>
-<li>Cross-function naming coordination, cross-session naming policy, and historical migration of old branch metadata are not claimed by this page.</li>
+<li>Labels remain in session metadata and branch references; no separate naming registry.</li>
+<li>Branch naming changes neither the session title nor the DAG parent edges.</li>
 </ul>
 
-<h2 id="branch-verification">6. Verification notes</h2>
-<p>The implementation evidence above is a source-path contract, not a claim that every browser state or race has been exhaustively tested. Validation should cover manual rename versus a concurrent automatic result, unnamed trunk fallback, fork branch progression, and the WebSocket update received after background naming.</p>
-</div>
+<h2 id="branch-verification">Implementation status</h2>
+
+<p>Implemented. Worth testing when this changes: manual rename against a concurrent automatic result, unnamed trunk, fork progression, and the WebSocket update after background naming.</p>

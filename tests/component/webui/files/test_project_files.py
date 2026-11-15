@@ -28,9 +28,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.store.project import project_store
-from openprogram.store.project.identity import capture_directory_identity
-from openprogram.webui.ws_actions import files as ws_files
+from openprogram.state.store.project import project_store
+from openprogram.state.store.project.identity import capture_directory_identity
+from openprogram.interfaces.server.ws_actions import files as ws_files
+from openprogram.interfaces.server.ws_actions.files import mutations as files_mutations
+from openprogram.interfaces.server.ws_actions.files import query as files_query
 
 
 class _FakeWS:
@@ -92,6 +94,7 @@ def test_tree_root_dirs_first_case_insensitive(project_root):
     assert "error" not in data
     names = [(e["name"], e["type"]) for e in data["entries"]]
     expected = [
+        (".openprogram", "dir"),
         ("Alpha_dir", "dir"),
         ("src", "dir"),
         (".hidden", "file"),
@@ -151,7 +154,7 @@ def test_tree_pages_use_opaque_stable_cursor(project_root):
     })["data"]
     assert second["snapshot_id"] == first["snapshot_id"]
     assert [e["name"] for e in second["entries"]] == [
-        "item-096.txt", "item-097.txt", "item-098.txt", "item-099.txt",
+        "item-095.txt", "item-096.txt", "item-097.txt", "item-098.txt", "item-099.txt",
         "item-100.txt", "item-101.txt", "item-102.txt",
         "item-103.txt", "item-104.txt",
         *(["sneaky_link"] if (project_root / "sneaky_link").is_symlink() else []),
@@ -221,6 +224,20 @@ def test_project_search_finds_unexpanded_nested_paths_and_ignores_build_dirs(pro
         "unexpanded/nested/needle.py",
     ]
     assert data["snapshot_id"]
+
+
+def test_project_search_lists_office_documents_by_extension(project_root):
+    # The ONLYOFFICE window asks exactly this for each Office extension.
+    (project_root / "reports").mkdir()
+    (project_root / "reports" / "q3.docx").write_bytes(b"PK")
+    (project_root / "notes.docx.txt").write_text("x", encoding="utf-8")
+    (project_root / "docx-folder").mkdir()
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": ".docx", "mode": "contains",
+        "type": "file", "page_size": 100,
+    })["data"]
+    assert data["error_code"] is None
+    assert {row["path"] for row in data["results"]} == {"reports/q3.docx", "notes.docx.txt"}
 
 
 def test_project_search_cursor_is_stable_and_invalidated(project_root):
@@ -304,7 +321,7 @@ def test_project_query_reports_permission_without_partial_snapshot(project_root,
     def denied(path):
         raise PermissionError(errno.EACCES, "permission denied")
 
-    monkeypatch.setattr(ws_files.os, "scandir", denied)
+    monkeypatch.setattr(files_query.os, "scandir", denied)
     data = _run(ws_files.handle_project_file_search, {
         "project_id": "p1", "path": "", "query": "needle",
     })["data"]
@@ -334,7 +351,7 @@ def test_project_search_does_not_follow_directory_replaced_by_symlink(project_ro
     external = project_root.parent / "raced-external"
     external.mkdir()
     (external / "needle.txt").write_text("secret", encoding="utf-8")
-    from openprogram.webui.ws_actions.files import query as files_query
+    from openprogram.interfaces.server.ws_actions.files import query as files_query
     original_open = files_query.directory_child
 
     def racing_open(parent, path):
@@ -494,7 +511,7 @@ def test_global_snapshot_quota_bounds_items_bytes_and_cursors(project_root, monk
 
 
 def test_query_page_barrier_does_not_return_cursor_for_evicted_snapshot(project_root, monkeypatch):
-    from openprogram.webui.ws_actions.files import query as files_query
+    from openprogram.interfaces.server.ws_actions.files import query as files_query
 
     first = _run(ws_files.handle_project_file_tree, {
         "project_id": "p1", "path": "", "page_size": 1,
@@ -531,7 +548,8 @@ def test_zero_match_search_counts_full_candidate_basis_and_evicts_old_snapshot(
         ws_files._QUERY_CURSOR_TOKENS.clear()
     monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_ITEMS", 15_000)
     monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_BYTES", 8 * 1024 * 1024)
-    for index in range(ws_files._QUERY_MAX_SNAPSHOT_ITEMS - 6):
+    # Include the portable identity directory and its marker in the budget.
+    for index in range(ws_files._QUERY_MAX_SNAPSHOT_ITEMS - 8):
         (project_root / f"candidate-{index:05d}.txt").write_text(
             "x", encoding="utf-8",
         )
@@ -1030,16 +1048,26 @@ def test_delete_escape_rejected(project_root):
 @pytest.fixture
 def popen_spy(monkeypatch):
     calls: list[list[str]] = []
-    monkeypatch.setattr(ws_files.subprocess, "Popen",
+    monkeypatch.setattr(files_mutations.subprocess, "Popen",
                         lambda argv: calls.append(argv))
     return calls
 
 
-def test_reveal_per_platform(project_root, popen_spy, monkeypatch):
+@pytest.fixture
+def linux_desktop(monkeypatch):
+    """A Linux graphical session with xdg-open, whatever this machine has."""
+    from openprogram.host._platform import file_manager
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setattr(file_manager.shutil, "which", lambda name: name)
+
+
+def test_reveal_per_platform(project_root, popen_spy, monkeypatch, linux_desktop):
+    import ntpath
     target = os.path.realpath(str(project_root / "apple.txt"))
     for platform, argv in (
         ("darwin", ["open", "-R", target]),
-        ("win32", ["explorer", "/select," + target]),
+        # One command line: Explorer parses /select,"<path>" itself.
+        ("win32", f'explorer.exe /select,"{ntpath.normpath(target)}"'),
         ("linux", ["xdg-open", os.path.dirname(target)]),
     ):
         popen_spy.clear()
@@ -1051,7 +1079,7 @@ def test_reveal_per_platform(project_root, popen_spy, monkeypatch):
         assert popen_spy == [argv], platform
 
 
-def test_reveal_dir_on_linux_opens_dir_itself(project_root, popen_spy, monkeypatch):
+def test_reveal_dir_on_linux_opens_dir_itself(project_root, popen_spy, monkeypatch, linux_desktop):
     monkeypatch.setattr(ws_files.sys, "platform", "linux")
     data = _run(ws_files.handle_project_file_reveal,
                 {"project_id": "p1", "path": "src"})["data"]
@@ -1076,7 +1104,7 @@ def test_reveal_missing(project_root, popen_spy):
 def test_reveal_launch_failure_reported_not_raised(project_root, monkeypatch):
     def boom(argv):
         raise OSError("no file manager")
-    monkeypatch.setattr(ws_files.subprocess, "Popen", boom)
+    monkeypatch.setattr(files_mutations.subprocess, "Popen", boom)
     data = _run(ws_files.handle_project_file_reveal,
                 {"project_id": "p1", "path": "apple.txt"})["data"]
     assert "no file manager" in data["error"]
@@ -1087,7 +1115,7 @@ def test_reveal_launch_failure_reported_not_raised(project_root, monkeypatch):
 
 @pytest.fixture
 def client(project_root):
-    from openprogram.webui.server import create_app
+    from openprogram.interfaces.server.server import create_app
     # 不进 lifespan（不用 with）——只测路由，避免启动钩子副作用。
     app = create_app()
     return TestClient(
@@ -1180,7 +1208,7 @@ def test_mutation_operates_on_symlink_entry(project_root, action, target_kind):
 
 
 def test_deleted_file_can_be_restored(project_root):
-    from openprogram.sandbox.recoverable_delete import restore_deleted_anywhere
+    from openprogram.host.sandbox.recoverable_delete import restore_deleted_anywhere
     data = _run(ws_files.handle_project_file_delete,
                 {'project_id': 'p1', 'path': 'apple.txt'})['data']
     assert data.get('trash_entry_id'), data
@@ -1211,3 +1239,30 @@ def test_case_only_rename_dangling_link(project_root):
     assert 'ALIAS' in os.listdir(project_root)
     assert 'alias' not in os.listdir(project_root)
     assert (project_root / 'ALIAS').is_symlink()
+
+
+# ---- POST /api/files/upload ------------------------------------------------
+
+def _upload(client, path, body=b"data"):
+    return client.post("/api/files/upload", params={"project_id": "p1", "path": path},
+                       content=body, headers={"Origin": "http://127.0.0.1:18100"})
+
+
+def test_upload_writes_a_dropped_file_and_its_folders(client, project_root):
+    response = _upload(client, "drop/inner/note.bin", b"\x00\x01bytes")
+    assert response.status_code == 200, response.text
+    assert (project_root / "drop/inner/note.bin").read_bytes() == b"\x00\x01bytes"
+    assert not [p for p in (project_root / "drop/inner").iterdir() if p.name.startswith(".upload-")]
+
+
+def test_upload_never_overwrites(client, project_root):
+    response = _upload(client, "apple.txt", b"new")
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "EXISTS"
+    assert (project_root / "apple.txt").read_text() == "aaa"
+
+
+@pytest.mark.parametrize("path", ["../outside/x.txt", "/etc/x", "sneaky_link/x", "src/"])
+def test_upload_stays_inside_the_project(client, project_root, path):
+    assert _upload(client, path).status_code in {400, 403, 409}
+    assert not (project_root.parent / "outside" / "x.txt").exists()

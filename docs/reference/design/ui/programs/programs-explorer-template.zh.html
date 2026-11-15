@@ -1,0 +1,58 @@
+<title>Programs 浏览器</title>
+<meta name="description" content="Programs 浏览器的目录树、搜索控件和增量加载。">
+<h1>Programs 浏览器</h1>
+
+<p>Programs 页面左栏：一棵文件夹树，搜索面板收在工具栏按钮后。</p>
+<pre translate="no" tabindex="0">tools/
+  files/  web/  knowledge/  planning/  …
+applications/
+  browser/  meeting/  office_editor/  workflow_recording/</pre>
+<p class="note">行与分类：<a href="programs-source-categories.zh.html">Programs 源码分类</a>。</p>
+
+<h2 id="search">搜索</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">控件</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">工具栏搜索按钮</th><td>打开或关闭面板；关闭时清空查询</td></tr>
+<tr><th scope="row">过滤（默认）</th><td>保留匹配项及其祖先；搜索时折叠的文件夹展开；无匹配时显示空提示</td></tr>
+<tr><th scope="row">高亮</th><td>保留所有行，标出匹配字符</td></tr>
+<tr><th scope="row">模糊（默认开）</th><td>字符按序匹配；关闭时为连续子串</td></tr>
+<tr><th scope="row">匹配对象</th><td>行名或目录标签，不分大小写</td></tr>
+<tr><th scope="row">计数</th><td>当前和总数，如 <code translate="no">2 / 5</code></td></tr>
+<tr><th scope="row">上一个、下一个、ArrowUp、ArrowDown</th><td>移动当前匹配，循环</td></tr>
+<tr><th scope="row">清除</th><td>清空查询，面板保持打开</td></tr>
+<tr><th scope="row">Escape</th><td>关闭面板</td></tr>
+</tbody>
+</table>
+
+<h2 id="tree">目录树</h2>
+<p>分支行用点击、Enter 或空格切换，文件夹图标随之变化。刷新会重新扫描 Programs。</p>
+
+<h2 id="incremental-loading">增量加载</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">客户端</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">导航间保留</th><td>已加载目录、选中项、展开的文件夹、调用图</td></tr>
+<tr><th scope="row">重新校验</th><td>可见文件夹和选中的图，后台每五秒一次，聚焦或手动刷新时也校验</td></tr>
+<tr><th scope="row">未变化的响应</th><td>只有版本确认</td></tr>
+<tr><th scope="row">失败</th><td>保留可用内容，允许重试</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">服务端</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">依赖</th><td>构建响应时记录文件和目录元数据；重新校验时检查它们以及注册表和目录身份</td></tr>
+<tr><th scope="row">已解析模块</th><td>按文件身份、大小、纳秒级修改和变更时间失效</td></tr>
+<tr><th scope="row">新增或删除的条目</th><td>使父目录失效</td></tr>
+<tr><th scope="row">限制</th><td>现有的包含检查和源码限制仍然生效</td></tr>
+<tr><th scope="row">存储</th><td>有界进程内存；不加文件系统监听，不加持久用户数据缓存</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>验收</summary>
+<p>预热导航立即渲染；未变化的源码不读取也不解析；编辑、新增、删除更新受影响的视图；刷新保留选中和展开。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+<p>已实现：<code translate="no">apps/web/components/programs/programs-page.tsx</code>、<code translate="no">programs-cache.ts</code> 和 <code translate="no">openprogram/interfaces/server/routes/catalog/programs_cache.py</code>。</p>

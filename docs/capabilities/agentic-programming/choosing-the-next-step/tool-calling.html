@@ -1,0 +1,64 @@
+<title>Tool calling</title>
+<meta name="description" content="How the model picks a function or finishes on every round of one call.">
+<h1 id="tool-call-loop">Tool calling</h1><figure>
+<svg class="fig-wide" viewBox="0 0 680 150" role="img" aria-label="Each round the model returns one assistant message. If it contains a ToolCall, the framework executes it, adds the result to the history, and the model picks again. If it is text only, that text is the final reply.">
+  <defs><marker id="tl-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="40">Run tools</text>
+  <line class="ln" x1="262" y1="33" x2="110" y2="33" marker-end="url(#tl-a)"/>
+  <text class="t-soft" x="122" y="22">contains ToolCall</text>
+  <text class="t-big" x="274" y="40">Model turn</text>
+  <text class="t-soft" x="274" y="66">one assistant message</text>
+  <line class="ln" x1="392" y1="33" x2="528" y2="33" marker-end="url(#tl-a)"/>
+  <text class="t-soft" x="404" y="22">text only</text>
+  <text class="t-big" x="540" y="40">Finish</text>
+  <text class="t-soft" x="540" y="66">text is the reply</text>
+  <path class="ln" d="M40 54V116H320V80" marker-end="url(#tl-a)"/>
+  <text class="t-soft" x="56" y="138">results join the history, the model picks again</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Model turn</strong><small>one assistant message</small></li>
+  <li class="via">contains <code translate="no">ToolCall</code></li>
+  <li><strong>Run tools</strong><small>results join the history, the model picks again</small></li>
+  <li class="via">text only, no <code translate="no">ToolCall</code></li>
+  <li class="flow-end"><strong>Finish</strong><small>text is the reply</small></li>
+</ol>
+</figure>
+<p class="note">Choosing is the <code translate="no">ToolCall</code>-or-text split in the provider's message; the framework only parses and branches. Loop: <code translate="no">_run_loop</code> in <code translate="no">openprogram/runtime/agent/loop/loop.py</code>.</p>
+<h2>Entry point</h2><pre translate="no" tabindex="0"><code>runtime.exec(content, tools=..., tool_choice=..., max_iterations=...)</code></pre><table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Parameter</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools</code></th><td>The menu: <code translate="no">Agent</code> methods, <code translate="no">{"spec":..., "execute":...}</code> dicts, or objects with <code translate="no">.spec</code> and <code translate="no">.execute</code></td></tr>
+<tr><th scope="row"><code translate="no">toolset</code></th><td>Neither this nor <code translate="no">tools</code>: the full registry, so tools are on by default. <code translate="no">toolset="none"</code> or <code translate="no">tools=[]</code>: text only. A nested <code translate="no">exec</code> in a tool body inherits the outer <code translate="no">tools=</code> list (<code translate="no">_current_tools</code> contextvar).</td></tr>
+<tr><th scope="row"><code translate="no">tools_source</code>, <code translate="no">tools_allow</code>, <code translate="no">tools_deny</code></th><td>Trim the menu</td></tr>
+<tr><th scope="row"><code translate="no">tool_choice</code></th><td><code translate="no">"auto"</code> (default), <code translate="no">"required"</code>, <code translate="no">"none"</code>, or <code translate="no">{"type": "function", "name": "X"}</code>. Mapped by the provider (OpenAI, Anthropic, Gemini, Bedrock).</td></tr>
+<tr><th scope="row"><code translate="no">parallel_tool_calls=False</code></th><td>One pick per round, where the provider supports it</td></tr>
+<tr><th scope="row"><code translate="no">max_iterations</code></th><td>Round cap, effective <code translate="no">max(1, max_iterations)</code>. <code translate="no">runtime.exec</code> defaults to 20; chat turns have none.</td></tr>
+<tr><th scope="row"><code translate="no">choices</code></th><td>A forced, structured ending: <a href="next-step-decision.html">next-step decision</a></td></tr>
+</tbody>
+</table>
+<h2>Running the picks</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Outcome</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool not found</th><td><code translate="no">is_error</code> result</td></tr>
+<tr><th scope="row"><code translate="no">validate_tool_arguments</code> fails</th><td><code translate="no">is_error</code> result</td></tr>
+<tr><th scope="row"><code translate="no">tool.execute</code> raises</th><td>Exception text as <code translate="no">is_error</code> result</td></tr>
+<tr><th scope="row">Success</th><td><code translate="no">ToolResultMessage</code></td></tr>
+</tbody>
+</table>
+<p class="note">Errors go back to the model so it can correct itself; they do not break the loop. Several picks in one round run in order, by <code translate="no">_execute_tool_calls</code>. A message you queue meanwhile waits until that round's calls finish, then joins the next model decision.</p>
+<h2 id="termination">Termination</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Condition</th><th scope="col">End</th></tr></thead>
+<tbody>
+<tr><th scope="row">Text only</th><td>Normal; the text is the result</td></tr>
+<tr><th scope="row"><code translate="no">stop_reason</code> is <code translate="no">error</code> or <code translate="no">aborted</code></th><td>Error or cancel, at once</td></tr>
+<tr><th scope="row">Rounds exceed the cap</th><td>Only when a cap is set</td></tr>
+</tbody>
+</table>
+<details>
+<summary>What keeps the loop going after text</summary>
+<p>The inner <code translate="no">while</code> also runs on <code translate="no">pending_messages</code>, so queued user messages continue it after a pure-text reply. After it exits, <code translate="no">get_follow_up_messages</code> may supply messages for another round; otherwise the run ends and pushes <code translate="no">AgentEventAgentEnd</code>.</p>
+</details>
+<p>An <code translate="no">Agent</code> method in <code translate="no">tools</code> is one pickable function. If its body calls <code translate="no">runtime.exec</code>, another layer of the same loop opens.</p>
+<p class="next"><a href="../../../reference/design/function/calling-unification.html">Function-calling design</a>: registry, gating, deferred loading</p>

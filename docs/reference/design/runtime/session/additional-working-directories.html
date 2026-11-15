@@ -1,0 +1,78 @@
+<title>Additional working directories</title>
+<meta name="description" content="How a session widens its write fence with extra folders, without changing its cwd or storage.">
+<h1>Additional working directories</h1>
+<p>Same meaning as Claude Code's <code translate="no">additionalWorkingDirectories</code>.</p>
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">Main directory</th><th scope="col">Additional directory</th></tr></thead>
+<tbody>
+<tr><th scope="row">Model cwd (system prompt, <code translate="no">--cd</code>, tool ContextVar)</th><td>Project path</td><td>Unchanged</td></tr>
+<tr><th scope="row">Conversation storage</th><td><code translate="no">projects/&lt;id&gt;/chats/</code></td><td>Unchanged</td></tr>
+<tr><th scope="row">acceptEdits fence allowlist</th><td>Yes</td><td>Added</td></tr>
+<tr><th scope="row">Told to the model</th><td>Working directory</td><td>“Also writable: /a, /b”</td></tr>
+<tr><th scope="row">Stored in</th><td>Project binding</td><td><code translate="no">SessionRunConfig</code>, session metadata</td></tr>
+<tr><th scope="row">Change mid-session</th><td>Frozen on the first turn; <a href="operations.html#main-project-binding">move or repair only</a></td><td>Any time, from the next turn</td></tr>
+</tbody>
+</table>
+<p class="note">The main directory links through <code translate="no">project_workdir_for</code>; the fence side is in <a href="../security/sandbox-architecture.html">Sandbox architecture</a> §3.5. A session with no stored list starts from its project's source folders.</p>
+
+<details>
+<summary>Out of scope and extension points</summary>
+<ul>
+<li>CLAUDE.md and project settings are not loaded from additional directories. Permission rules follow the main project.</li>
+<li>No per-directory read-only grading: once listed, a directory is a writable safe zone.</li>
+<li>No global additional directories. Cross-session needs are served by projects.</li>
+<li>Attributed entries: change only <code translate="no">_as_str_list</code> and <code translate="no">check_path_safety</code>; schemaless storage needs no migration.</li>
+<li>MCP roots or multi-root IDE workspaces would use the same field as single source of truth.</li>
+</ul>
+</details>
+
+<h2 id="data-path">Data path</h2>
+<table class="stack">
+<thead><tr><th scope="col">Stage</th><th scope="col">Code</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pick</th><td><code translate="no">WorkingDirChips</code>, <code translate="no">POST /api/pick-folder</code></td><td>Recent projects, or “Choose folder…” in the native picker</td></tr>
+<tr><th scope="row">Send</th><td><code translate="no">set_working_dirs {session_id, dirs}</code></td><td>Whole list. A draft has no id yet, so the list rides on its first <code translate="no">chat</code> frame</td></tr>
+<tr><th scope="row">Validate and save</th><td><code translate="no">handle_set_working_dirs</code> in <code translate="no">ws_actions/session/run_config.py</code></td><td>Each <code translate="no">expanduser()</code> must be a directory; one bad entry rejects the frame with a reason. Stores the expanded path, not the realpath. Broadcasts <code translate="no">working_dirs</code></td></tr>
+<tr><th scope="row">Persist</th><td><code translate="no">save_session_run_config</code></td><td><code translate="no">None</code> leaves the list unchanged, so a chat frame never clears it</td></tr>
+<tr><th scope="row">Reload</th><td><code translate="no">session_loaded.data.settings</code></td><td>Restores the list after a refresh or client switch</td></tr>
+<tr><th scope="row">Each turn</th><td><code translate="no">load_session_run_config</code> → <code translate="no">TurnRequest.additional_working_dirs</code></td><td></td></tr>
+<tr><th scope="row">Fence</th><td><code translate="no">_path_is_safe</code> in <code translate="no">runtime/permissions/identity.py</code> → <code translate="no">check_path_safety</code></td><td><code translate="no">[current_worktree_path() or getcwd(), *dirs]</code></td></tr>
+<tr><th scope="row">Prompt</th><td><code translate="no">runtime/context/components.py</code></td><td>Line present only when the list is non-empty</td></tr>
+</tbody>
+</table>
+<p class="note">The dispatcher binds the real cwd into <code translate="no">current_worktree_path</code> each turn; <code translate="no">getcwd</code> is only a fallback.</p>
+
+<h2 id="composer">Composer</h2>
+<pre translate="no" tabindex="0"><code>[my-project]  [foo ✕]  [bar ✕]  [＋]</code></pre>
+<ul>
+<li>Project chip, then one chip per additional directory and an icon-only add button (<code translate="no">apps/web/components/chat/top-bar/chips/working-dir-chips.tsx</code>).</li>
+<li>Add and ✕ update local state optimistically; the <code translate="no">working_dirs</code> broadcast wins.</li>
+<li>State is <code translate="no">additionalWorkingDirsBySession</code> in the session store, fed by <code translate="no">session_loaded</code>, the broadcast and optimistic updates. Not in <code translate="no">ComposerSettings</code> or localStorage: it is server data.</li>
+<li>When <code translate="no">list_projects</code> reports <code translate="no">path_missing</code> for the session's project, the project chip turns to the orange warning palette with a Solar <code translate="no">danger-triangle</code> and offers “Locate folder…”.</li>
+</ul>
+
+<h2 id="invariants">Invariants</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Because</th></tr></thead>
+<tbody>
+<tr><th scope="row">Only the fence and the prompt</th><td>Wiring into cwd or storage breaks the table above</td></tr>
+<tr><th scope="row">Fence and prompt cwd share <code translate="no">current_worktree_path()</code></th><td>Otherwise the model thinks it can write, the fence blocks, and approvals loop</td></tr>
+<tr><th scope="row">Whole-list replacement</th><td>Idempotent; no “already added” cases and no partial write</td></tr>
+<tr><th scope="row">Schemaless session metadata</th><td>Old sessions read an empty list, no migration</td></tr>
+<tr><th scope="row">Editable for the session's whole life</th><td>The only mid-session way to widen the fence</td></tr>
+<tr><th scope="row">A missing main project resolves to <code translate="no">None</code></th><td>Another directory would be a plausible cwd the user never chose</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Tests</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Covers</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tests/unit/store/test_session_config.py</code></th><td>Round trip, “None leaves it unchanged”, <code translate="no">_as_str_list</code> sanitizing</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/security/test_permission_rules.py</code></th><td><code translate="no">_path_is_safe</code>: inside, outside, and inside the ContextVar cwd</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/webui/test_ws_working_dirs.py</code></th><td>Valid write and broadcast, whole-frame rejection, <code translate="no">session_loaded</code> round trip</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/store/test_session_main_workdir.py</code></th><td>Freeze, missing-directory resolution, relocate node, and editing additional directories after the freeze</td></tr>
+</tbody>
+</table>
+</details>

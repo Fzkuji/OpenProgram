@@ -1,7 +1,7 @@
 """Memory sync runs AFTER the turn it is meant to count.
 
 ``write`` is the "a turn finished" trigger in
-docs/reference/design/memory/overview.md. The provider deliberately
+docs/reference/design/memory/overview.html. The provider deliberately
 reads the turn back out of the session store rather than trusting the
 arguments — the store is durable and ordered, which is what the write
 cursor needs. That makes *when* the hook fires load-bearing: called
@@ -17,9 +17,10 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent import dispatcher as D
-from openprogram.agent.session_db import SessionDB
-from openprogram.providers.types import (
+from openprogram.runtime.conversation import turn_runtime as D
+from openprogram.runtime.agent import turn_request as agent_turn_request
+from openprogram.runtime.context.session_db import SessionDB
+from openprogram.models.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
     EventDone,
@@ -56,7 +57,7 @@ async def _stream(model, context, options) -> AsyncGenerator[AssistantMessageEve
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     return db
 
 
@@ -79,7 +80,7 @@ def _run_turn(text: str, *, session_id: str):
                     cancel_event=cancel_event, stream_fn=_stream)
 
     with patch.object(D, "_run_loop_blocking", _wrapped):
-        return D.process_user_turn(D.TurnRequest(
+        return D.process_user_turn(agent_turn_request.TurnRequest(
             session_id=session_id, user_text=text, agent_id="main",
             source="tui",
         ))
@@ -101,7 +102,7 @@ def spy(tmp_db: SessionDB, monkeypatch: pytest.MonkeyPatch) -> list[dict]:
                 "branch": tmp_db.get_branch(session_id),
             })
 
-    monkeypatch.setattr("openprogram.memory.get_backend", lambda: _Provider())
+    monkeypatch.setattr("openprogram.state.memory.get_backend", lambda: _Provider())
     return calls
 
 
@@ -140,5 +141,5 @@ def test_no_session_id_no_memory_call(monkeypatch: pytest.MonkeyPatch):
     def _boom():
         raise AssertionError("memory must not be consulted without a session")
 
-    monkeypatch.setattr("openprogram.memory.get_backend", _boom)
+    monkeypatch.setattr("openprogram.state.memory.get_backend", _boom)
     D._memory_write("")

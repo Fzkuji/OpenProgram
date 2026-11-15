@@ -1,0 +1,86 @@
+<title>Agent 调用与方法</title>
+<meta name="description" content="直接 agent() 请求、配置化 Agent 方法、显式工具和持久回合。">
+<h1>Agent 调用与方法</h1><pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class ReviewAgent(Agent):
+    tools = []
+    instructions = "Preserve facts. Return concise text."
+
+    def classify(self, review: str) -&gt; str:
+        """Classify review sentiment."""
+        return self(f"Classify as positive, negative, or neutral:\n{review}")
+
+    def summarize(self, review: str) -&gt; str:
+        """Summarize a review with its sentiment."""
+        sentiment = self.classify(review)
+        return self(f"Summarize this {sentiment} review in one sentence:\n{review}")
+
+reviewer = ReviewAgent(model="configured-model")
+summary = reviewer.summarize("The service was fast.")</code></pre>
+<p class="note"><code translate="no">self(...)</code> 通过现有 Runtime 发起模型请求。docstring 描述函数；提示词承载指令和数据。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">对象</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent 实例</th><td>保存配置；独立的顶层调用之间不保留对话</td></tr>
+<tr><th scope="row">同一 Agent 的嵌套调用</th><td>使用当前执行，没有自己的 DAG 节点</td></tr>
+<tr><th scope="row">另一个 Agent</th><td>自己的 DAG；父级保存结果和 <code translate="no">child_session_id</code> 引用</td></tr>
+<tr><th scope="row">DAG 内容</th><td>用户消息、模型请求和直接派发的工具</td></tr>
+<tr><th scope="row">权限、取消、文件检查点</th><td>仍属于发起的执行</td></tr>
+<tr><th scope="row">Context</th><td>为每次请求选择允许的历史并解析配置内容</td></tr>
+</tbody>
+</table>
+<h2>直接调用和异步调用</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import agent, agent_async
+
+answer = agent("Summarize this text", tools=[])
+# In an async function:
+# answer = await agent_async("Summarize this text", tools=[])
+# answer = await reviewer.arun("Summarize this text")</code></pre>
+<p class="note"><code translate="no">tools=[]</code>：没有模型工具。<code translate="no">tools=None</code>：运行时按当前授权解析可用工具。</p>
+<h2>方法元数据和工具</h2>
+<pre translate="no" tabindex="0"><code>class TextAgent(Agent):
+    tools = []
+    method_options = {
+        "summarize": {
+            "tool": True,
+            "name": "summarize_notes",
+            "input": {"text": {"description": "Text to summarize"}},
+            "expose": "io",
+        },
+    }
+
+    def summarize(self, text: str) -&gt; str:
+        """Summarize text."""
+        return self(f"Summarize:\n{text}")</code></pre>
+<p class="note"><code translate="no">method_options</code> 声明输入表单元数据、可见性、持久步骤、授权和工具注册；字段见<a href="function-metadata.zh.html">函数元数据</a>。只有 <code translate="no">tool=True</code> 才会注册为工具，被记录不算。名称和签名提供 schema。可见性控制历史渲染，不授予权限。</p>
+<h2>普通 Program 函数</h2>
+<p>托管加载器捕获已授权 Program 包内源码定义的函数，不包括任意宿主文件或依赖。把公开入口列入 <code translate="no">PROGRAM_ENTRIES</code>；私有帮助函数保留运行时访问，但不产生 DAG 节点，也不成为工具。确定性组合用 Python；<a href="../choosing-the-next-step/tool-calling.zh.html">由模型选择的调用</a>要提供已注册的工具。</p>
+<h2>持久对话</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent, Context, TurnRequest
+from openprogram.runtime.context.session_db import default_db
+
+context = Context.for_session(default_db(), "example-conversation",
+                              blocks={"reference": "User-supplied reference material"})
+worker = Agent(context=context)
+result = worker.run_turn(
+    TurnRequest(session_id="example-conversation", user_text="Summarize the reference",
+                agent_id="main", source="python"),
+    on_event=lambda event: print(event["type"]),
+)
+print(result.final_text)</code></pre>
+<p class="note"><code translate="no">ChatAgent</code> 是 App、Web、TUI 和频道适配器使用的对话子类型。它和 <code translate="no">Agent.run_turn()</code> 共用同一回合运行时：历史、权限、工具、流式、压缩和最终持久化。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">下一回合</th><td>沿用会话 ID</td></tr>
+<tr><th scope="row"><code translate="no">Context.for_session</code></th><td>选择 store，不创建 Provider。可选 <code translate="no">head_id</code> 选择前驱分支。</td></tr>
+<tr><th scope="row"><code translate="no">Context(history=None)</code></th><td>排除历史图内容，保留当前提示词</td></tr>
+<tr><th scope="row">命名内容和 Provider</th><td>作为用户内容渲染，不能改变系统指令或工具权限</td></tr>
+<tr><th scope="row"><code translate="no">arun_turn()</code>、<code translate="no">aresume_turn()</code></th><td>异步版本。回调在执行线程运行，更新 asyncio 消费者要线程安全地转交。取消等待任务会通知回合并等待其协作清理。</td></tr>
+<tr><th scope="row"><code translate="no">cancel_event</code></th><td><code translate="no">threading.Event</code>，供同步调用者使用</td></tr>
+<tr><th scope="row"><code translate="no">resume_turn(continuation)</code></th><td>消费已有的 continuation 及其冻结请求；不追加用户消息，也不重新应用已改的实例设置</td></tr>
+<tr><th scope="row">暂停、插话、continuation 准入</th><td>由生产驱动的执行控制服务负责；Agent API 不新增任务注册表</td></tr>
+<tr><th scope="row">工具超时</th><td>不取消父对话</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="../../../reference/api/agent.zh.html">API 参考</a> · <a href="function-metadata.zh.html">函数元数据</a></p>

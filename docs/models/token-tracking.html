@@ -1,0 +1,51 @@
+<title>Token tracking</title>
+<meta name="description" content="The unified usage record, what each provider reports, and where usage appears.">
+<h1>Token tracking</h1>
+<p>Each assistant message carries one <a href="https://github.com/FuzzyKuji/OpenProgram/blob/main/openprogram/models/providers/types.py"><code translate="no">Usage</code></a> record.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">input</code></th><td>Non-cached input. Excludes cached tokens, as Anthropic does; inclusive vendors are converted by subtraction.</td></tr>
+<tr><th scope="row"><code translate="no">output</code></th><td>Output tokens</td></tr>
+<tr><th scope="row"><code translate="no">cache_read</code></th><td>Served from the prompt cache</td></tr>
+<tr><th scope="row"><code translate="no">cache_write</code></th><td>Written to the prompt cache (explicit caching only)</td></tr>
+<tr><th scope="row"><code translate="no">total_tokens</code></th><td>Vendor-reported total</td></tr>
+<tr><th scope="row"><code translate="no">cost</code></th><td>USD, from the enabled model's per-million prices</td></tr>
+</tbody>
+</table>
+<h2>What each protocol reports</h2>
+<p>Taken from the vendor's final event or last chunk.</p>
+<table class="stack">
+<thead><tr><th scope="col">Protocol</th><th scope="col">Providers</th><th scope="col">Raw fields</th><th scope="col">Cache</th></tr></thead>
+<tbody>
+<tr><th scope="row">Anthropic Messages</th><td><code translate="no">anthropic</code>, gateways such as <code translate="no">minimax</code>, <code translate="no">kimi_coding</code>, <code translate="no">vercel_ai_gateway</code></td><td><code translate="no">input_tokens</code> <code translate="no">output_tokens</code> <code translate="no">cache_read_input_tokens</code> <code translate="no">cache_creation_input_tokens</code></td><td>read, write</td></tr>
+<tr><th scope="row">OpenAI Responses</th><td><code translate="no">openai</code> <code translate="no">openai_codex</code> <code translate="no">azure_openai_responses</code> <code translate="no">github_copilot</code></td><td><code translate="no">input_tokens</code> (cached subtracted) <code translate="no">output_tokens</code> <code translate="no">input_tokens_details.cached_tokens</code> <code translate="no">total_tokens</code></td><td>read</td></tr>
+<tr><th scope="row">OpenAI Completions</th><td><code translate="no">deepseek</code> <code translate="no">groq</code> <code translate="no">mistral</code> <code translate="no">openrouter</code>, other compatible endpoints</td><td><code translate="no">prompt_tokens</code> <code translate="no">completion_tokens</code> (<code translate="no">completion_tokens_details</code> reasoning split out) <code translate="no">total_tokens</code></td><td>none</td></tr>
+<tr><th scope="row">Google Generative AI</th><td><code translate="no">google</code></td><td><code translate="no">prompt_token_count</code> <code translate="no">candidates_token_count</code> <code translate="no">total_token_count</code></td><td>none</td></tr>
+<tr><th scope="row">Cloud Code Assist</th><td><code translate="no">gemini_subscription</code> <code translate="no">google_gemini_cli</code></td><td><code translate="no">promptTokenCount</code> <code translate="no">candidatesTokenCount</code> <code translate="no">thoughtsTokenCount</code> <code translate="no">cachedContentTokenCount</code> <code translate="no">totalTokenCount</code></td><td>read</td></tr>
+<tr><th scope="row">Bedrock Converse Stream</th><td><code translate="no">amazon_bedrock</code></td><td><code translate="no">inputTokens</code> <code translate="no">outputTokens</code> <code translate="no">cacheReadInputTokens</code> <code translate="no">cacheWriteInputTokens</code> <code translate="no">totalTokens</code></td><td>read, write</td></tr>
+</tbody>
+</table>
+<p class="note">Cost is computed right after extraction. On OpenAI Responses the returned <code translate="no">service_tier</code> adjusts it, so <a href="fast-tier.html">Fast</a> requests cost the priority rate.</p>
+<h2>Where it shows</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Place</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row">Each message</th><td>Its own usage and cost, saved with the session</td></tr>
+<tr><th scope="row">Chat badge</th><td>Latest call only, such as <code translate="no">11.2k in · 450 out</code>; that input count is what the context occupies. Tooltip: base, cache write, cache hit for Claude-protocol; base, cached for Codex; a percent cached otherwise. <code translate="no">1.2k</code> above a thousand, <code translate="no">1.0m</code> above a million.</td></tr>
+<tr><th scope="row">Context bar</th><td>Fill percent, from the <code translate="no">context_stats</code> WebSocket event after each turn</td></tr>
+<tr><th scope="row">Function card</th><td>Per execution, from the function's own runtime, independent of the chat numbers</td></tr>
+</tbody>
+</table>
+<h3>Context panel</h3>
+<p>Click the ring. Before a new chat's first message it shows what that message would carry, against the selected model's window.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Lists</th></tr></thead>
+<tbody>
+<tr><th scope="row">System prompt</th><td>Base prompt, environment, AGENTS.md, skills index and so on</td></tr>
+<tr><th scope="row">Tools</th><td>Loaded, on demand, MCP</td></tr>
+<tr><th scope="row">Memory</th><td>Each layer's <code translate="no">MEMORY.md</code></td></tr>
+<tr><th scope="row">Conversation</th><td>By kind, with its largest messages</td></tr>
+</tbody>
+</table>
+<p class="note">Click a part or its bar segment to open it, a row to read the text sent, a message to jump to it. <strong>Compact conversation</strong> compacts now; refused during a turn, and no turn starts until it ends.</p>

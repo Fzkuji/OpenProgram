@@ -11,7 +11,7 @@ After the fix the CLI:
     placeholder and phase 2 (background, LLM) can rename later — the
     same hook the dispatcher's ``finalize_turn`` uses.
 
-These tests mock ``build_default_llm`` to None so the phase-2 daemon
+These tests mock ``build_background_llm`` to None so the phase-2 daemon
 thread no-ops; we assert phase-1 behavior synchronously.
 """
 from __future__ import annotations
@@ -21,14 +21,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.cli.repl.turn import _run_turn_with_history
-from openprogram.agent.session_db import SessionDB
+from openprogram.interfaces.cli.repl.turn import _run_turn_with_history
+from openprogram.runtime.context.session_db import SessionDB
 
 
 @pytest.fixture
 def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     return db
 
 
@@ -37,17 +37,17 @@ def _stub_runtime_and_llm(monkeypatch: pytest.MonkeyPatch):
     # rt.exec returns a fixed reply; no real provider call.
     fake_rt = SimpleNamespace(exec=lambda *, content: "ack", on_stream=None)
     monkeypatch.setattr(
-        "openprogram.agent.management.runtime_registry.get_runtime_for",
+        "openprogram.runtime.agent_registry.runtime_registry.get_runtime_for",
         lambda agent: fake_rt,
     )
     monkeypatch.setattr(
-        "openprogram.context.system_prompt.build_system_prompt",
+        "openprogram.runtime.context.components.build_system_prompt",
         lambda agent: "",
     )
     # Phase-2 LLM unavailable → background thread no-ops, leaving the
     # phase-1 truncated title in place for a deterministic assertion.
     monkeypatch.setattr(
-        "openprogram.providers.default_llm.build_default_llm",
+        "openprogram.models.providers.streaming.background_llm.build_background_llm",
         lambda: None,
     )
 

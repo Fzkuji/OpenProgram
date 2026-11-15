@@ -33,12 +33,13 @@ def office_window_bundle(tmp_path_factory):
 def office_window(tmp_path, monkeypatch, office_window_bundle):
     import uvicorn
     from playwright.sync_api import sync_playwright
-    from openprogram.office_assets import validate_prepared_office_pack
-    from openprogram.store.project import project_store
-    from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
-    from openprogram.webui.routes.files.documents import register as register_documents
-    from openprogram.webui.routes.files.office_assets import register as register_office
-    from openprogram.webui.routes.files.file_search import register as register_files
+    from openprogram.programs.applications.office_editor.assets import validate_prepared_office_pack
+    from openprogram.programs.applications.office_editor.service import OfficeEditorService
+    from openprogram.state.store.project import project_store
+    from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.interfaces.server.routes.files.documents import register as register_documents
+    from openprogram.interfaces.server.routes.files.office_assets import register as register_office
+    from openprogram.interfaces.server.routes.files.file_search import register as register_files
 
     configured = os.environ.get("OPENPROGRAM_TEST_OFFICE_PACK")
     if not configured:
@@ -50,7 +51,7 @@ def office_window(tmp_path, monkeypatch, office_window_bundle):
         shutil.copy2(Path(__file__).parent / "fixtures" / f"office-baseline.{ext}", project_root / f"baseline.{ext}")
     for ext in ("doc", "ppt", "xls"):
         shutil.copy2(Path(__file__).parent / "fixtures" / f"office-legacy.{ext}", project_root / f"legacy.{ext}")
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path / "state")
     project = types.SimpleNamespace(id="p", path=str(project_root), is_default=True)
     monkeypatch.setattr(project_store, "get_project", lambda key: project if key == "p" else None)
     sock = socket.socket()
@@ -60,25 +61,25 @@ def office_window(tmp_path, monkeypatch, office_window_bundle):
                                          bind_host="127.0.0.1", port=port, allowed_origins=())
     app = FastAPI()
     app.state.owner_auth = state
-    app.state.office_assets = pack
     # Reuse the real download route without entering the worker lifespan.
-    from openprogram.webui.server import create_app
+    from openprogram.interfaces.server.server import create_app
     raw_app = create_app(owner_auth=state, port=port)
     app.router.routes.extend(route for route in raw_app.routes if getattr(route, "path", None) == "/files/raw")
     register_documents(app)
-    register_office(app)
+    service = OfficeEditorService(pack)
+    register_office(app, office=lambda: service)
     register_files(app)
-    monkeypatch.setattr("openprogram.attachments.readable_roots", lambda session=None: [project_root])
+    monkeypatch.setattr("openprogram.state.attachments.readable_roots", lambda session=None: [project_root])
 
     @app.get("/")
     async def index():
-        return HTMLResponse('<style>:root{--bg-primary:#1e1e20;--text-secondary:#a1a1aa;--text-tertiary:#71717a;--border-subtle:#333}</style><style>' + Path('apps/web/components/files/office-surface.module.css').read_text() + '</style>' + '''<style>html,body,#root{height:100%;margin:0}.fixture-pane{height:100%;min-height:0}.window{flex:1;min-width:0;width:100%;height:100%;display:flex;flex-direction:column}.body{flex:1;min-height:0;overflow:auto}.toolbar{min-height:40px;display:flex;gap:8px}.history{max-height:150px;overflow:auto}</style><div id="root"></div><script src="/_next/static/office-window.js"></script>''')
+        return HTMLResponse('<style>:root{--bg-primary:#1e1e20;--text-secondary:#a1a1aa;--text-tertiary:#71717a;--border-subtle:#333}</style><style>' + Path('apps/web/components/files/surfaces/office-surface.module.css').read_text() + '</style>' + '''<style>html,body,#root{height:100%;margin:0}.fixture-pane{height:100%;min-height:0}.window{flex:1;min-width:0;width:100%;height:100%;display:flex;flex-direction:column}.body{flex:1;min-height:0;overflow:auto}.toolbar{min-height:40px;display:flex;gap:8px}.history{max-height:150px;overflow:auto}</style><div id="root"></div><script src="/_next/static/office-window.js"></script>''')
 
     @app.get("/_next/static/office-window.js")
     async def bundle():
         return Response(office_window_bundle, media_type="text/javascript")
 
-    server = uvicorn.Server(uvicorn.Config(OwnerAuthMiddleware(app, state, office_assets=pack), log_level="error"))
+    server = uvicorn.Server(uvicorn.Config(OwnerAuthMiddleware(app, state, office=lambda: service), log_level="error"))
     thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
     thread.start()
     deadline = time.monotonic() + 10

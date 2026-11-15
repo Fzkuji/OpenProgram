@@ -27,12 +27,14 @@ import {
   MonitorIcon,
   SettingsIcon,
 } from "@/components/animated-icons";
+import { cn } from "@/lib/utils";
+import { MENU_PANEL, MENU_SEPARATOR, itemCls } from "@/components/ui/menu/menu-styles";
 import styles from "./user-menu-footer.module.css";
 
 export function UserMenuFooter() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   // The footer is the local account chip → show the User profile
   // (name + avatar from /settings/general → User), not the agent's.
   const profile = useUserProfile();
@@ -156,14 +158,16 @@ export function UserMenuFooter() {
           name={profile.name}
           config={profile.avatar}
         />
-        <span className={`${styles.info} user-menu-footer-info`}>
+        <span className={`[flex:1_1_auto] min-w-0 flex flex-col items-start ml-[12px] pr-[4px] user-menu-footer-info`}>
           <span className={styles.name}>{profile.name}</span>
           <span className={styles.subtitle}>{t("user.local_instance")}</span>
         </span>
         <ChevronsUpDownIcon
           ref={chevronIconRef}
           size={14}
-          className={styles.chevron}
+          // user-menu-footer-chevron: the collapsed sidebar fades it
+          // (styles/base/sidebar.css).
+          className={`${styles.chevron} user-menu-footer-chevron`}
           aria-hidden="true"
         />
       </button>
@@ -171,7 +175,7 @@ export function UserMenuFooter() {
         const menuBody = (
           <div
             ref={menuRef}
-            className={styles.menu}
+            className={cn(MENU_PANEL, styles.menu)}
             role="menu"
             style={collapsed && menuPos ? {
               position: "fixed",
@@ -185,16 +189,16 @@ export function UserMenuFooter() {
           >
             <button
               type="button"
-              className={styles.item}
+              className={cn(itemCls(false), styles.item)}
               onClick={goSettings}
               onMouseEnter={() => settingsIconRef.current?.startAnimation?.()}
               onMouseLeave={() => settingsIconRef.current?.stopAnimation?.()}
             >
-              <SettingsIcon ref={settingsIconRef} size={18} />
+              <SettingsIcon ref={settingsIconRef} size={16} />
               {t("user.settings")}
             </button>
             <a
-              className={styles.item}
+              className={cn(itemCls(false), styles.item)}
               href="/docs"
               target="_blank"
               rel="noopener"
@@ -202,30 +206,30 @@ export function UserMenuFooter() {
               onMouseEnter={() => docsIconRef.current?.startAnimation?.()}
               onMouseLeave={() => docsIconRef.current?.stopAnimation?.()}
             >
-              <BookTextIcon ref={docsIconRef} size={18} />
+              <BookTextIcon ref={docsIconRef} size={16} />
               Docs
             </a>
             <button
               type="button"
-              className={styles.item}
+              className={cn(itemCls(false), styles.item)}
               onClick={toggleFullscreen}
               onMouseEnter={() => fsIconRef.current?.startAnimation?.()}
               onMouseLeave={() => fsIconRef.current?.stopAnimation?.()}
             >
-              <MonitorIcon ref={fsIconRef} size={18} />
-              {isFullscreen ? "退出全屏" : "全屏"}
+              <MonitorIcon ref={fsIconRef} size={16} />
+              {isFullscreen ? text("Exit Full Screen", "退出全屏") : text("Full Screen", "全屏")}
             </button>
-            <div className={styles.sep} />
+            <div className={MENU_SEPARATOR} />
             <a
-              className={styles.item}
-              href="https://github.com/Fzkuji/Agentic-Programming"
+              className={cn(itemCls(false), styles.item)}
+              href="https://github.com/FuzzyKuji/OpenProgram"
               target="_blank"
               rel="noopener"
               onClick={() => setOpen(false)}
               onMouseEnter={() => aboutIconRef.current?.startAnimation?.()}
               onMouseLeave={() => aboutIconRef.current?.stopAnimation?.()}
             >
-              <CircleHelpIcon ref={aboutIconRef} size={18} />
+              <CircleHelpIcon ref={aboutIconRef} size={16} />
               {t("user.about")}
             </a>
           </div>

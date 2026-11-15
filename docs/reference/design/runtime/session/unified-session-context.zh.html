@@ -1,0 +1,51 @@
+<title>统一 session 上下文</title>
+<meta name="description" content="为什么所有入口都要通过同一个管理器建立 session 上下文，缺了会失效什么，以及迁移状态。">
+<h1>统一 session 上下文</h1>
+<p>安装之后，同一个函数从命令行和 Web 运行应当行为一致。多项能力读取每轮的 session 上下文，调用方没建立时它们不报错，直接失效。</p>
+
+<h2 id="silent-failures">没有 session 时（<code translate="no">_store=None</code>）</h2>
+<table class="stack">
+<thead><tr><th scope="col">能力</th><th scope="col">失效点</th><th scope="col">现象</th></tr></thead>
+<tbody>
+<tr><th scope="row">docstring 进 prompt</th><td><code translate="no">render.py</code> 走不到</td><td>函数说明到不了模型，Agent 退化成“What would you like to do”对话</td></tr>
+<tr><th scope="row">DAG 持久化</th><td>追加节点是空操作</td><td>运行不进 session 历史</td></tr>
+<tr><th scope="row">从 DAG 渲染历史</th><td><code translate="no">_render_history_messages</code> 返回 None</td><td>每次 exec 看不到前面的步骤</td></tr>
+<tr><th scope="row"><code translate="no">ask_user</code> 跟踪</th><td>不写占位和完成节点</td><td>提问不进历史</td></tr>
+<tr><th scope="row">嵌套 <code translate="no">called_by</code></th><td><code translate="no">_call_id=None</code></td><td>节点归属丢失</td></tr>
+</tbody>
+</table>
+<p class="note">写法都是 <code translate="no">store=_store.get(); if store is None: return</code>。</p>
+
+<h2 id="what-it-is-made-of">上下文的组成</h2>
+<pre translate="no" tabindex="0"><code>SessionDB (default_db / SessionStore)
+  └─ ~/.openprogram/projects/&lt;project-id&gt;/chats/&lt;session_id&gt;/
+SessionNodeWriter(db, session_id)      追加 / 更新 / 加载 DAG 节点
+ContextVar，成对 set 和 reset：
+  _store            SessionNodeWriter  深层代码写 DAG、渲染文档
+  _current_turn_id                     文件备份归属哪条消息
+  _current_runtime  create_runtime()   Agent 方法自动注入
+  _call_id          Agent 包装器       called_by 归属</code></pre>
+<p class="note">工作目录（文献综述、想法、论文等研究产出）和 session（对话 DAG）彼此独立，建立 session 不碰工作目录。</p>
+
+<h2 id="design">设计</h2>
+<p>一个上下文管理器 <a href="context.zh.html"><code translate="no">session_context</code></a> 保证 set 和 reset 成对。什么都不传的调用方也拿到真实 session，并能取得它的 id。</p>
+<pre translate="no" tabindex="0"><code>r1 = run_research("survey agent reliability")        # None：新 session
+r2 = run_research("now turn it into a paper",
+                  session_id=r1.session_id)           # 同一 session，历史延续
+r3 = run_research("unrelated: GUI agent benchmark")   # 独立 session</code></pre>
+<ul>
+<li>一次调用不等于一个 session：连续性由调用方传 id 表达，和 <code translate="no">openprogram --resume &lt;id&gt;</code>、Web 客户端一致。</li>
+<li>清理归 session 管理（列举、删除），不归每次调用。</li>
+<li>阶段说明写在 docstring。上下文装好后，命令行运行不必把说明挪进 <code translate="no">content</code>，阶段函数不用改。</li>
+</ul>
+
+<h2 id="implementation-status">实现状态</h2>
+<table class="stack">
+<thead><tr><th scope="col">步骤</th><th scope="col">验证</th><th scope="col">状态</th></tr></thead>
+<tbody>
+<tr><th scope="row">新增管理器</th><td>进入时变量已设置，退出后已重置</td><td>完成</td></tr>
+<tr><th scope="row">Harness 的 <code translate="no">main.py</code> 包住 <code translate="no">paper_agent</code></th><td>抓取的命令行 prompt 含 docstring</td><td>完成</td></tr>
+<tr><th scope="row">Dispatcher 切换</th><td>现有 dispatcher 测试通过</td><td>未完成：<code translate="no">TurnBindings.bind</code> 仍自行绑定</td></tr>
+<tr><th scope="row"><code translate="no">process_runner</code> 和测试收敛</th><td>子进程 DAG 跟踪和 fixture 仍正常</td><td>未完成：<code translate="no">process_runner</code> 仍自行设置</td></tr>
+</tbody>
+</table>

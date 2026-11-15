@@ -1,0 +1,105 @@
+<title>Git 文件夹胶囊</title>
+<meta name="description" content="文件夹胶囊的 git 半边：显示内容、收缩方式、菜单、刷新时机和后端。">
+<h1>Git 文件夹胶囊</h1>
+
+<p>Git 检出内的工作文件夹，在环境行的胶囊里有一个 git 半边：哪个分支、改了什么，以及聊天需要的几个 Git 操作。</p>
+
+<h2>哪些文件夹</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件夹</th><th scope="col">git 半边</th></tr></thead>
+<tbody>
+<tr><th scope="row">主项目文件夹</th><td>真实项目才有。默认主目录项目没有：那个仓库是 OpenProgram 的存储。</td></tr>
+<tr><th scope="row">每个附加工作文件夹</th><td>有</td></tr>
+<tr><th scope="row">不在 Git 检出内</th><td>无</td></tr>
+<tr><th scope="row">同一检出内的两个文件夹</th><td>只有一个 git 半边：项目优先，然后按列表顺序（<code translate="no">git-chip-registry.ts</code>）。不同 worktree 根不同，各有各的。</td></tr>
+</tbody>
+</table>
+
+<h2>胶囊</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">分段</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件夹（左）</th><td>图标、名称；工作文件夹在悬停或键盘聚焦时显示 ✕。打开项目菜单。</td></tr>
+<tr><th scope="row">Git（右）</th><td>Solar <code translate="no">git-branch</code>、分支名最后一段（<code translate="no">claude/foo</code> 显示 <code translate="no">foo</code>；分离 HEAD 时显示短提交 id）、未提交的 <code translate="no">+N −N</code></td></tr>
+<tr><th scope="row">分隔</th><td>全高发丝线，不占宽度，两侧悬停填充相接；悬停或打开时淡出</td></tr>
+<tr><th scope="row">diff 徽标</th><td>绿红两半，与文件改动卡片一致。未跟踪文本文件算新增。只有二进制改动：中性“N 个文件”，3 级圆点为灰色，绝不显示“+0 −0”。干净：只显示分支。</td></tr>
+<tr><th scope="row">提示</th><td>仓库、完整分支、计数</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">components/chat/top-bar/chips/folder-pill.ts</code>。收缩级别见<a href="composer-responsive-controls.zh.html">输入框响应式控件</a>。</p>
+
+<h2>菜单</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row">标题</th><td>仓库名，链接 worktree 时标 <code translate="no">worktree</code></td></tr>
+<tr><th scope="row">改动</th><td>“N 个未提交文件 +N −N”，打开 Review 的工作区范围；第一条消息前不可点。非零时显示相对上游的 ahead/behind。</td></tr>
+<tr><th scope="row">分支</th><td>筛选框和本地分支，按最新提交排序，最多 50 个。标签：<code translate="no">current</code>；<code translate="no">worktree</code>，点击打开它。不存在的名称提供“创建分支”或“在新 worktree 中……”，Enter 相同。</td></tr>
+<tr><th scope="row">拉取请求</th><td>见下</td></tr>
+</tbody>
+</table>
+
+<h3>点分支去哪里</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件夹</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">干净</th><td>原地 <code translate="no">git switch</code></td></tr>
+<tr><th scope="row">有未提交改动</th><td>在新 worktree 打开，并把这个槽位移过去；分区标题会说明</td></tr>
+<tr><th scope="row">槽位不能移动</th><td>总是原地切换</td></tr>
+</tbody>
+</table>
+
+<h3>把槽位移到 worktree</h3>
+<p>创建在仓库旁的 <code translate="no">&lt;repo&gt;-worktrees/&lt;branch&gt;</code>，源文件夹的文件不动。没有单独的 worktree 列表。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">槽位</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">工作文件夹</th><td>在文件夹列表中替换</td></tr>
+<tr><th scope="row">未发送草稿的主文件夹</th><td>草稿项目改指向 worktree（注册为项目）</td></tr>
+<tr><th scope="row">已开始对话的主文件夹</th><td>固定：worktree 作为附加文件夹加入，菜单会说明</td></tr>
+</tbody>
+</table>
+
+<h3>拉取请求</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">状态</th><th scope="col">行</th></tr></thead>
+<tbody>
+<tr><th scope="row">已有打开的 PR</th><td>“查看拉取请求 #N”，在系统浏览器打开</td></tr>
+<tr><th scope="row">没有</th><td>“创建拉取请求”：<code translate="no">git push -u origin HEAD</code>，对默认分支 <code translate="no">gh pr create --fill</code>，然后打开</td></tr>
+<tr><th scope="row">禁用</th><td>附原因：没有 <code translate="no">gh</code>、没有 <code translate="no">origin</code>、分离 HEAD、在默认分支。后端还拒绝没有领先提交的分支。</td></tr>
+<tr><th scope="row">有未提交改动</th><td>“提交并让 Agent 开 PR……”把指令放进输入框，不发送</td></tr>
+</tbody>
+</table>
+
+<h3>错误</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">卡片</th></tr></thead>
+<tbody>
+<tr><th scope="row">任何错误</th><td>在菜单底部，菜单保持打开：标题直白，git 输出在“显示 git 输出”文字按钮后</td></tr>
+<tr><th scope="row">切换会覆盖改动</th><td>列出文件并提供<strong>在 worktree 中打开</strong>或<strong>带上改动</strong></td></tr>
+<tr><th scope="row">带上改动</th><td>依次 stash（含未跟踪）、切换、pop</td></tr>
+<tr><th scope="row">pop 冲突</th><td>切换保留，改动留在最新 stash，卡片会说明</td></tr>
+<tr><th scope="row">不提供</th><td>强制切换或丢弃</td></tr>
+</tbody>
+</table>
+
+<h2>刷新时机</h2>
+<p>不轮询。胶囊在挂载和文件夹变化、菜单打开（唯一列分支和查 PR 的读取）、轮次结束、窗口获得焦点、项目变化，以及同一检出发生变更（<code translate="no">op:git-changed</code>）时读取。</p>
+
+<details>
+<summary>后端</summary>
+<p>逻辑在 <code translate="no">openprogram/state/worktree/folder_git.py</code>；<code translate="no">ws_actions/folder_git.py</code> 把它移出事件循环。每个回复都带 <code translate="no">path</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">Action</th><th scope="col">回复</th><th scope="col">做什么</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">git_folder_status</code></th><td><code translate="no">git_folder_status</code></td><td><code translate="no">status --porcelain=v2 --branch</code>、<code translate="no">diff --numstat HEAD</code>、<code translate="no">worktree list</code>、默认分支、<code translate="no">origin</code>、<code translate="no">gh</code>；带 <code translate="no">include_branches</code>、<code translate="no">include_pr</code> 时列分支、<code translate="no">gh pr view</code></td></tr>
+<tr><th scope="row"><code translate="no">git_switch_branch</code></th><td><code translate="no">git_switch_branch_result</code></td><td><code translate="no">git switch [-c] &lt;branch&gt;</code>；带 <code translate="no">carry</code> 时前后 stash。拒绝帧：<code translate="no">code</code>（<code translate="no">overwrite</code> 加 <code translate="no">files</code>，或 <code translate="no">stash_conflict</code>）、<code translate="no">detail</code></td></tr>
+<tr><th scope="row"><code translate="no">git_create_worktree</code></th><td><code translate="no">git_worktree_created</code></td><td><code translate="no">git worktree add [-b]</code></td></tr>
+<tr><th scope="row"><code translate="no">git_create_pr</code></th><td><code translate="no">git_pr_created</code></td><td>推送、<code translate="no">gh pr create --fill</code>，返回 URL 或已打开的 PR</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">GIT_OPTIONAL_LOCKS=0</code> 让状态读取不与用户的 git 争用。<code translate="no">GIT_TERMINAL_PROMPT=0</code> 让需要凭据的推送失败而不是挂起。</p>
+</details>
+
+<h2>实现状态</h2>
+<p>已实现，除了：PR 基础分支选择和草稿 PR；pull、push、fetch 控件；没有上游时相对默认分支的 ahead/behind。</p>

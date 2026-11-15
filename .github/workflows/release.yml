@@ -6,41 +6,120 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing immutable release tag to rebuild
+        description: Release tag (vX.Y.Z); an existing one, or with rehearse the one about to be made
         required: true
         type: string
+      rehearse:
+        description: Build and check everything from this branch without publishing; the tag need not exist
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  # A rehearsal builds the commit it was started on, before its tag exists.
+  RELEASE_REF: ${{ inputs.rehearse && github.sha || inputs.tag || github.ref_name }}
 
 jobs:
-  platforms:
+  # The App downloads the pinned Office archive from its own version's release,
+  # so every release carries it, once. It cannot be rebuilt here (its fonts and
+  # editor build are the owner's inputs): the newest published release's copy is
+  # carried forward, or for the first release the copy the owner put on the
+  # tag's draft (scripts/release/office-archive.py seed). Without one, nothing
+  # else runs.
+  office:
     runs-on: ubuntu-24.04
-    outputs:
-      runtime: ${{ steps.select.outputs.runtime }}
-      desktop: ${{ steps.select.outputs.desktop }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_REF }}
+      - name: Fetch the Office archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="$(python scripts/release/office-archive.py name)"
+          mkdir -p office-assets
+          status=0
+          python scripts/release/office-archive.py fetch "office-assets/$name" || status=$?
+          if [ "$status" = 3 ]; then
+            gh release download "$RELEASE_TAG" --pattern "$name" --dir office-assets || true
+          elif [ "$status" != 0 ]; then
+            exit "$status"
+          fi
+          python scripts/release/office-archive.py verify "office-assets/$name" --tag "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: office-assets
+          path: office-assets/*.zip
+          compression-level: 0
+
+  platforms:
+    needs: office
+    runs-on: ubuntu-24.04
+    outputs:
+      runtime: ${{ steps.select.outputs.runtime }}
+      seed: ${{ steps.select.outputs.seed }}
+      seed_count: ${{ steps.select.outputs.seed_count }}
+      desktop: ${{ steps.select.outputs.desktop }}
+      desktop_count: ${{ steps.select.outputs.desktop_count }}
+      plan: ${{ steps.select.outputs.plan }}
+      update_key: ${{ steps.update-key.outputs.trusted }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.11.16"
+      # A key the released code does not trust is as good as none: an App built
+      # against it could never accept an update.
+      - name: Check the update signing key
+        id: update-key
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.OPENPROGRAM_UPDATE_SIGNING_KEY }}
+        run: |
+          trusted=false
+          if [ -n "$UPDATE_SIGNING_KEY" ]; then
+            key_file="$RUNNER_TEMP/update-signing-key.pem"
+            (umask 077 && printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key_file")
+            if public_key="$(uv run --no-project --with zstandard --with cryptography \
+                python scripts/release/create-update-assets.py public-key --signing-key "$key_file")" \
+              && [ -n "$public_key" ] \
+              && grep -qF "$public_key" openprogram/operations/self_update/official/assets.py \
+              && grep -qF "$public_key" apps/desktop/main/self-update/update-service.js; then
+              trusted=true
+            else
+              echo "::warning::The update signing key is not listed in RELEASE_PUBLIC_KEYS in both official/assets.py and update-service.js, so Apps that need it are left out."
+            fi
+            rm -f "$key_file"
+          fi
+          echo "trusted=$trusted" >> "$GITHUB_OUTPUT"
       - name: Select release platforms
         id: select
         env:
-          WINDOWS_ENABLED: ${{ vars.OPENPROGRAM_RELEASE_WINDOWS }}
-        run: |
-          flags=()
-          if [ "$WINDOWS_ENABLED" = true ]; then flags+=(--windows); fi
-          python3 scripts/release/release-matrix.py "${flags[@]}" >> "$GITHUB_OUTPUT"
+          # Each leg is on unless its variable says false; these three are off
+          # unless it says true. Credentials pick signed or unsigned builds.
+          OPENPROGRAM_RELEASE_WINDOWS_RUNTIME: ${{ vars.OPENPROGRAM_RELEASE_WINDOWS_RUNTIME }}
+          OPENPROGRAM_RELEASE_DESKTOP_MAC: ${{ vars.OPENPROGRAM_RELEASE_DESKTOP_MAC }}
+          OPENPROGRAM_RELEASE_DESKTOP_WINDOWS: ${{ vars.OPENPROGRAM_RELEASE_DESKTOP_WINDOWS }}
+          OPENPROGRAM_RELEASE_DESKTOP_LINUX: ${{ vars.OPENPROGRAM_RELEASE_DESKTOP_LINUX }}
+          OPENPROGRAM_RELEASE_WINDOWS_ARM64: ${{ vars.OPENPROGRAM_RELEASE_WINDOWS_ARM64 }}
+          OPENPROGRAM_RELEASE_MAC_THIN: ${{ vars.OPENPROGRAM_RELEASE_MAC_THIN }}
+          OPENPROGRAM_RELEASE_CLI_SEEDS: ${{ vars.OPENPROGRAM_RELEASE_CLI_SEEDS }}
+          OPENPROGRAM_MAC_SIGNING_AVAILABLE: ${{ secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' && vars.MAC_SIGNING_IDENTITY != '' }}
+          OPENPROGRAM_WINDOWS_SIGNING_AVAILABLE: ${{ secrets.WINDOWS_CSC_LINK != '' && secrets.WINDOWS_CSC_KEY_PASSWORD != '' }}
+          OPENPROGRAM_UPDATE_KEY_TRUSTED: ${{ steps.update-key.outputs.trusted }}
+        run: python3 scripts/release/release-matrix.py select >> "$GITHUB_OUTPUT"
 
   python:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_REF }}
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -58,19 +137,18 @@ jobs:
           uv build
       - name: Verify wheel contents
         run: |
-          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/_webui/_frontend/index.html'
-          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/server.py'
-          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/_webui/routes/files/tree.py'
-          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/_webui/ws_actions/webtab.py'
-          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_cli/_impl/application.py'
+          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/interfaces/server/_frontend/index.html'
+          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/interfaces/server/server.py'
+          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/interfaces/server/routes/files/tree.py'
+          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/interfaces/server/ws_actions/webtab.py'
+          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/interfaces/cli/application.py'
           wheel_path="$(realpath "$(find dist -name 'openprogram-*.whl' -print -quit)")"
           checkout_path="$GITHUB_WORKSPACE"
           probe_dir="$(mktemp -d)"
-          (cd "$probe_dir" && OPENPROGRAM_CHECKOUT="$checkout_path" uv run --with "$wheel_path" --no-project -- python -P -c 'from pathlib import Path; import os, openprogram, openprogram_cli, openprogram.cli as legacy_cli, openprogram_server.server as canonical; import openprogram.webui.server as legacy; import openprogram.webui.frontend as frontend; checkout = Path(os.environ["OPENPROGRAM_CHECKOUT"]).resolve(); modules = (openprogram, openprogram_cli, canonical, legacy, frontend); assert canonical is legacy; assert openprogram_cli.main is legacy_cli.main; assert all(not Path(module.__file__).resolve().is_relative_to(checkout) for module in modules); assert (frontend.out_dir() / "index.html").is_file(); assert openprogram_cli.build_parser().prog == "openprogram"')
+          (cd "$probe_dir" && OPENPROGRAM_CHECKOUT="$checkout_path" uv run --with "$wheel_path" --no-project -- python -P -c 'from pathlib import Path; import os, openprogram, openprogram.interfaces.cli, openprogram.interfaces.server.server as server; import openprogram.interfaces.server.frontend as frontend; checkout = Path(os.environ["OPENPROGRAM_CHECKOUT"]).resolve(); modules = (openprogram, openprogram.interfaces.cli, server, frontend); assert all(not Path(module.__file__).resolve().is_relative_to(checkout) for module in modules); assert (frontend.out_dir() / "index.html").is_file(); assert openprogram.interfaces.cli.build_parser().prog == "openprogram"')
           (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- openprogram --version)
           (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- python -P -m openprogram --version)
-          (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- python -P -m openprogram.cli --version)
-          (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- python -P -m openprogram_cli --version)
+          (cd "$probe_dir" && uv run --with "$wheel_path" --no-project -- python -P -m openprogram.interfaces.cli --version)
       - uses: actions/upload-artifact@v7
         with:
           name: developer-python-distributions
@@ -85,7 +163,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -100,11 +179,28 @@ jobs:
       - name: Verify version on Windows
         if: matrix.platform == 'windows'
         run: python scripts/release/verify-release-version.py --tag "$env:RELEASE_TAG"
+      # What this runner gave the build, so a failure below can be read from one run.
+      - name: Show the Windows toolchain
+        if: matrix.platform == 'windows'
+        continue-on-error: true
+        shell: pwsh
+        run: ./scripts/release/show-windows-toolchain.ps1
       - name: Install Linux runtime test dependencies
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes xvfb xauth libgl1 libglib2.0-0
+      # Every package the runtime installs has a wheel for this target's oldest
+      # supported system, or is one of the few this leg builds from source.
+      - name: Check the lock has every runtime wheel
+        shell: bash
+        run: >-
+          uv run --no-project --python 3.12 --with packaging
+          python scripts/release/runtime-wheels.py check
+          --target "${{ matrix.platform }}-${{ matrix.arch }}"
+      - name: Prepare static OpenSSL for the Intel Mac runtime
+        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        run: scripts/release/prepare-macos-native-deps.sh
       - name: Build complete product runtime
         if: matrix.platform != 'windows'
         env:
@@ -155,159 +251,385 @@ jobs:
         with:
           name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/runtime-artifacts/*
+      # Python 3.12 or newer: the build reads tomllib and, on Windows,
+      # os.path.isjunction; without --python uv takes whatever the image
+      # puts first on PATH.
+      - name: Build official update assets
+        if: needs.platforms.outputs.update_key == 'true'
+        shell: bash
+        run: |
+          uv run --no-project --python 3.12 --with zstandard --with cryptography \
+            python scripts/release/create-update-assets.py platform \
+            --repository . --commit "$(git rev-parse HEAD)" \
+            --root "$RUNNER_TEMP/update-store" \
+            --platform "${{ matrix.platform }}-${{ matrix.arch }}" \
+            --output "$RUNNER_TEMP/update-assets"
+      - uses: actions/upload-artifact@v7
+        if: needs.platforms.outputs.update_key == 'true'
+        with:
+          name: update-assets-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/update-assets/*
 
-  desktop:
-    needs: [platforms, product-runtime]
+  seed:
+    needs: platforms
+    if: ${{ !cancelled() && needs.platforms.result == 'success' && needs.platforms.outputs.seed_count != '0' }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.platforms.outputs.desktop) }}
+      matrix: ${{ fromJSON(needs.platforms.outputs.seed) }}
     runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_REF }}
+          # The seed carries a Git bundle of this history.
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
-      - uses: actions/download-artifact@v8
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
-          name: product-runtime-${{ matrix.runtime_platform }}-${{ matrix.arch }}
-          path: runtime-artifact
+          version: "0.11.16"
       - name: Verify version
-        if: matrix.platform != 'win'
-        run: python3 scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
-      - name: Verify version on Windows
-        if: matrix.platform == 'win'
-        run: python scripts/release/verify-release-version.py --tag "$env:RELEASE_TAG"
-      - name: Install desktop dependencies
-        run: npm ci --workspace apps/desktop --include-workspace-root
-      - name: Prepare embedded runtime from release archive
-        if: matrix.platform != 'win'
-        shell: bash
+        run: python scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
+      - name: Confirm zstd
         run: |
-          archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
-          test -n "$archive"
-          OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/release/prepare-desktop-runtime.sh
-      - name: Prepare embedded Windows runtime from release archive
-        if: matrix.platform == 'win'
-        shell: pwsh
-        run: |
-          $env:OPENPROGRAM_RUNTIME_ARCHIVE = (
-            Get-ChildItem -LiteralPath "$env:GITHUB_WORKSPACE\runtime-artifact" -Filter "*.zip" |
-            Select-Object -First 1
-          ).FullName
-          if (-not $env:OPENPROGRAM_RUNTIME_ARCHIVE) {
-            throw "Windows runtime ZIP was not downloaded"
-          }
-          scripts/release/prepare-desktop-runtime.ps1
-      - name: Build staged macOS application
-        if: matrix.platform != 'win'
-        working-directory: apps/desktop
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: |
-          npm run icon:check
-          npx electron-builder --mac --dir --${{ matrix.builder_arch }} --publish never
-      - name: Sign and notarize macOS artifacts
-        if: matrix.platform != 'win'
+          if ! command -v zstd >/dev/null 2>&1; then
+            case "${{ matrix.platform }}" in
+              linux) sudo apt-get update && sudo apt-get install --no-install-recommends --yes zstd ;;
+              macos) brew install zstd ;;
+              windows) choco install zstandard --yes --no-progress ;;
+            esac
+          fi
+          zstd --version
+      - name: Prepare static OpenSSL for the Intel Mac base
+        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        run: scripts/release/prepare-macos-native-deps.sh
+      - name: Check the first install with a small seed
+        if: matrix.platform != 'windows'
+        run: bash scripts/release/smoke-thin-shell.sh
+      - name: Prepare macOS signing keychain
+        if: matrix.signing == 'signed'
         env:
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python scripts/release/ci-sign-macos.py setup
+      - name: Build the seed
+        env:
+          OPENPROGRAM_RELEASE_SIGN_IDENTITY: ${{ matrix.signing == 'signed' && vars.MAC_SIGNING_IDENTITY || '' }}
+        run: bash scripts/release/build-release-seed.sh "$RUNNER_TEMP/seed-build"
+      - name: Remove macOS signing keychain
+        if: always() && matrix.signing == 'signed'
+        run: python scripts/release/ci-sign-macos.py cleanup
+      # A tar keeps the launcher's mode and the helper's links, which an
+      # Actions artifact would lose.
+      - name: Pack the seed for the App build
+        run: |
+          mkdir -p "$RUNNER_TEMP/seed-artifact"
+          cd "$RUNNER_TEMP/seed-build/seed"
+          COPYFILE_DISABLE=1 tar -cf "../seed-${{ matrix.platform }}-${{ matrix.arch }}.tar" .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: seed-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/seed-build/seed-${{ matrix.platform }}-${{ matrix.arch }}.tar
+      - name: Pack the command-line seed
+        if: matrix.cli_asset == 'true'
+        run: |
+          name="OpenProgram-${RELEASE_TAG#v}-seed-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz"
+          cd "$RUNNER_TEMP/seed-build/cli"
+          COPYFILE_DISABLE=1 tar -czf "../$name" seed
+          cd ..
+          python -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest() + "  " + sys.argv[1])' "$name" > "$name.sha256"
+      - uses: actions/upload-artifact@v7
+        if: matrix.cli_asset == 'true'
+        with:
+          name: cli-seed-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/seed-build/OpenProgram-*-seed-*
+
+  desktop:
+    needs: [platforms, product-runtime, seed]
+    if: ${{ !cancelled() && needs.platforms.result == 'success' && needs.platforms.outputs.desktop_count != '0' }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.platforms.outputs.desktop) }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      THIN_CONFIG: ${{ matrix.layout == 'thin' && '--config build/thin-shell.json' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/download-artifact@v8
+        if: matrix.layout == 'full'
+        with:
+          name: product-runtime-${{ matrix.runtime_platform }}-${{ matrix.arch }}
+          path: runtime-artifact
+      - uses: actions/download-artifact@v8
+        if: matrix.layout == 'thin'
+        with:
+          name: seed-${{ matrix.runtime_platform }}-${{ matrix.arch }}
+          path: seed-artifact
+      - name: Verify version
+        shell: bash
+        run: python scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
+      # A thin App updates only from its platform's update files, and publish
+      # leaves it out without them. Say so here, before the build, rather than
+      # at the end of the run.
+      - uses: actions/download-artifact@v8
+        id: update-files
+        if: matrix.layout == 'thin'
+        continue-on-error: true
+        with:
+          name: update-assets-${{ matrix.runtime_platform }}-${{ matrix.arch }}
+          path: update-files-check
+      # Said here, before the build, rather than at the end of the run. The
+      # build and its checks still run, so one run shows every problem;
+      # publish leaves the App out and names why.
+      - name: Require this platform's update files
+        id: update-files-required
+        if: matrix.layout == 'thin' && steps.update-files.outcome != 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "::error::No update files for ${{ matrix.runtime_platform }}-${{ matrix.arch }}: the product-runtime leg's 'Build official update assets' step failed or did not run, so this App could never update and would be left out of the release. Fix that leg first."
+          exit 1
+      - uses: astral-sh/setup-uv@v10.0.1
+        if: matrix.platform == 'win'
+        with:
+          version: "0.11.16"
+      - name: Show the Windows toolchain
+        if: matrix.platform == 'win'
+        continue-on-error: true
+        shell: pwsh
+        run: ./scripts/release/show-windows-toolchain.ps1
+      - name: Prepare native Windows ARM64 OpenSSL
+        if: matrix.platform == 'win' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: scripts/release/prepare-windows-native-deps.ps1 -Architecture arm64
+      # A failure keeps only this Windows package out (the gate before the
+      # upload); the installer is still built and smoke-tested, so one run
+      # reports both.
+      - name: Windows platform contracts
+        id: contracts
+        if: matrix.platform == 'win'
+        continue-on-error: true
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          uv sync --locked --extra dev
+          if ($LASTEXITCODE -ne 0) { throw "uv sync exited with code $LASTEXITCODE" }
+          $Tests = @(Get-Content -LiteralPath scripts/release/windows-contracts.txt |
+            Where-Object { $_.Trim() -and -not $_.TrimStart().StartsWith("#") } |
+            ForEach-Object { $_.Trim() })
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\windows-diagnostics" | Out-Null
+          uv run --locked --extra dev python -m pytest -q -rfEs `
+            --junitxml "$env:RUNNER_TEMP\windows-diagnostics\windows-contracts.xml" @Tests
+          if ($LASTEXITCODE -ne 0) { throw "the Windows platform contracts failed" }
+      - name: Install desktop dependencies
+        run: npm ci --workspace apps/desktop --include-workspace-root
+      - name: Prepare embedded runtime from release archive
+        if: matrix.platform == 'mac' && matrix.layout == 'full'
+        shell: bash
+        run: |
+          archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
+          test -n "$archive"
+          OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/release/prepare-desktop-runtime.sh
+      - name: Unpack the seed and write the thin shell configuration
+        if: matrix.layout == 'thin'
+        shell: bash
+        run: |
+          mkdir -p apps/desktop/build/seed
+          tar -xf seed-artifact/seed-${{ matrix.runtime_platform }}-${{ matrix.arch }}.tar -C apps/desktop/build/seed
+          cd apps/desktop
+          python ../../scripts/release/thin-shell-config.py build/thin-shell.json build/seed
+      - name: Build staged macOS application
+        if: matrix.platform == 'mac'
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm run icon:check
+          npx electron-builder --mac --dir --${{ matrix.builder_arch }} --publish never $THIN_CONFIG
+      - name: Prepare macOS signing keychain
+        if: matrix.platform == 'mac' && matrix.signing == 'signed'
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python3 scripts/release/ci-sign-macos.py setup
+      - name: Sign and notarize macOS artifacts
+        if: matrix.platform == 'mac' && matrix.signing == 'signed'
+        env:
           OPENPROGRAM_SIGNING_IDENTITY: ${{ vars.MAC_SIGNING_IDENTITY }}
         run: |
           app="$(find apps/desktop/dist -maxdepth 2 -name OpenProgram.app -type d -print -quit)"
           test -n "$app"
-          python3 scripts/release/ci-sign-macos.py --app "$app" --output apps/desktop/dist --arch ${{ matrix.builder_arch }}
-      - name: Require Windows signing credentials
-        if: matrix.platform == 'win'
-        shell: pwsh
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          python3 scripts/release/ci-sign-macos.py sign --app "$app" --output apps/desktop/dist --arch ${{ matrix.builder_arch }}
+      - name: Remove macOS signing keychain
+        if: always() && matrix.platform == 'mac' && matrix.signing == 'signed'
+        run: python3 scripts/release/ci-sign-macos.py cleanup
+      - name: Ad-hoc sign unsigned macOS artifacts
+        if: matrix.platform == 'mac' && matrix.signing == 'unsigned'
         run: |
-          if (-not $env:CSC_LINK -or -not $env:CSC_KEY_PASSWORD) {
-            throw "Windows Desktop publication requires WINDOWS_CSC_LINK and WINDOWS_CSC_KEY_PASSWORD"
-          }
-      - name: Build signed Windows installer
+          app="$(find apps/desktop/dist -maxdepth 2 -name OpenProgram.app -type d -print -quit)"
+          test -n "$app"
+          python3 scripts/release/ci-sign-macos.py adhoc --app "$app" --output apps/desktop/dist --arch ${{ matrix.builder_arch }}
+      - name: Build Windows installer
         if: matrix.platform == 'win'
         working-directory: apps/desktop
+        shell: pwsh
         env:
-          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
-          WIN_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
-        run: npx electron-builder --win nsis --${{ matrix.builder_arch }} --publish never
+          CSC_LINK: ${{ matrix.signing == 'signed' && secrets.WINDOWS_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.signing == 'signed' && secrets.WINDOWS_CSC_KEY_PASSWORD || '' }}
+          WIN_CSC_LINK: ${{ matrix.signing == 'signed' && secrets.WINDOWS_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.signing == 'signed' && secrets.WINDOWS_CSC_KEY_PASSWORD || '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.signing == 'signed' && 'true' || 'false' }}
+        run: |
+          npx electron-builder --win nsis --${{ matrix.builder_arch }} --publish never --config build/thin-shell.json
+          if ($LASTEXITCODE -ne 0) { throw "electron-builder exited with code $LASTEXITCODE" }
       - name: Verify Windows Authenticode signatures
         if: matrix.platform == 'win'
         shell: pwsh
+        env:
+          SIGNING: ${{ matrix.signing }}
         run: |
           $Unpacked = Get-ChildItem -LiteralPath apps/desktop/dist -Directory |
             Where-Object { $_.Name -match '^win(?:-arm64)?-unpacked$' } |
             Select-Object -First 1
           if (-not $Unpacked) { throw "unpacked Windows application is missing" }
           $Files = @(
-            Get-ChildItem -LiteralPath apps/desktop/dist -Filter "*.exe" -File
+            Get-ChildItem -LiteralPath apps/desktop/dist -Filter "OpenProgram-*.exe" -File
             Get-ChildItem -LiteralPath $Unpacked.FullName -Filter "OpenProgram.exe" -File
           )
-          if ($Files.Count -lt 2) { throw "signed installer or application executable is missing" }
+          if ($Files.Count -lt 2) { throw "installer or application executable is missing" }
           foreach ($File in $Files) {
             $Signature = Get-AuthenticodeSignature -LiteralPath $File.FullName
-            if ($Signature.Status -ne "Valid" -or -not $Signature.SignerCertificate) {
-              throw "invalid Authenticode signature: $($File.FullName) ($($Signature.Status))"
+            if ($env:SIGNING -eq "signed") {
+              if ($Signature.Status -ne "Valid" -or -not $Signature.SignerCertificate) {
+                throw "invalid Authenticode signature: $($File.FullName) ($($Signature.Status))"
+              }
+            } elseif ($Signature.Status -ne "NotSigned") {
+              # An unsigned build must be plainly unsigned; a broken signature means it was altered.
+              throw "unsigned build has a damaged signature: $($File.FullName) ($($Signature.Status))"
             }
           }
-      - name: Verify embedded complete runtime
-        if: matrix.platform != 'win'
-        run: scripts/release/smoke-packaged-runtime.sh mac apps/desktop/dist
-      - name: Verify embedded complete Windows runtime
+      - name: Name the unsigned Windows installer
+        if: matrix.platform == 'win' && matrix.signing == 'unsigned'
+        shell: pwsh
+        run: |
+          # Listed in full first: a renamed file still matches the filter and
+          # must not be picked up again while the folder is being read.
+          @(Get-ChildItem -LiteralPath apps/desktop/dist -Filter "OpenProgram-*.exe" -File) |
+            Where-Object { $_.BaseName -notlike "*-unsigned" } |
+            ForEach-Object { Rename-Item -LiteralPath $_.FullName -NewName ($_.BaseName + "-unsigned.exe") }
+      - name: Check the Windows seed is in the App
         if: matrix.platform == 'win'
         shell: pwsh
-        run: scripts/release/smoke-packaged-runtime.ps1 apps/desktop/dist
-      - name: Create SHA-256 checksums
-        if: matrix.platform != 'win'
+        run: |
+          $Unpacked = Get-ChildItem -LiteralPath apps/desktop/dist -Directory |
+            Where-Object { $_.Name -match '^win(?:-arm64)?-unpacked$' } |
+            Select-Object -First 1
+          foreach ($Name in "seed.json", "base.tar.zst", "version.tar.zst", "repo.bundle", "openprogram-launcher.exe") {
+            if (-not (Test-Path -LiteralPath (Join-Path $Unpacked.FullName "resources\seed\$Name") -PathType Leaf)) {
+              throw "the seed in the Windows App is missing $Name"
+            }
+          }
+      # What a new user does with the installer, on this runner: install,
+      # first launch to a healthy worker, one real tool call through it, and
+      # an uninstall that keeps the data. A failure keeps this App out, as
+      # the macOS and Linux checks below do for theirs.
+      - name: Verify the Windows App
+        if: matrix.platform == 'win'
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          $Installer = (Get-ChildItem -LiteralPath apps/desktop/dist -Filter "OpenProgram-*.exe" -File |
+            Select-Object -First 1).FullName
+          if (-not $Installer) { throw "the Windows installer is missing" }
+          ./scripts/release/smoke-windows-desktop.ps1 -Installer $Installer `
+            -ExpectedVersion $env:RELEASE_TAG.Substring(1) -ToolCall -Uninstall `
+            -LogDirectory "$env:RUNNER_TEMP\windows-diagnostics\app-smoke"
+      - name: Keep the Windows App out when its contracts failed
+        if: matrix.platform == 'win' && steps.contracts.outcome == 'failure'
         shell: bash
         run: |
-          cd apps/desktop/dist
-          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' \) -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
-      - name: Create Windows SHA-256 checksums
-        if: matrix.platform == 'win'
-        shell: pwsh
+          echo "::error::The Windows platform contracts failed (see that step and the diagnostics-windows-desktop artifact), so this App is not uploaded."
+          exit 1
+      - name: Install Linux packaging tools
+        if: matrix.platform == 'linux'
         run: |
-          $Lines = Get-ChildItem -LiteralPath apps/desktop/dist -Filter "*.exe" -File |
-            Sort-Object Name |
-            ForEach-Object {
-              $Algorithm = [Security.Cryptography.SHA256]::Create()
-              $Stream = [IO.File]::OpenRead($_.FullName)
-              try {
-                $Hash = ([BitConverter]::ToString($Algorithm.ComputeHash($Stream))).Replace("-", "").ToLowerInvariant()
-              } finally {
-                $Stream.Dispose()
-                $Algorithm.Dispose()
-              }
-              "$Hash  $($_.Name)"
-            }
-          [IO.File]::WriteAllLines(
-            "apps/desktop/dist/SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}",
-            $Lines,
-            [Text.UTF8Encoding]::new($false)
-          )
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes zstd
+          # electron-builder's own fpm only runs on x86_64.
+          if [ "${{ matrix.arch }}" = arm64 ]; then
+            sudo apt-get install --no-install-recommends --yes ruby ruby-dev build-essential
+            sudo gem install fpm --no-document
+            echo "USE_SYSTEM_FPM=true" >> "$GITHUB_ENV"
+          fi
+      - name: Build Linux deb package
+        if: matrix.platform == 'linux'
+        working-directory: apps/desktop
+        run: npx electron-builder --linux deb --${{ matrix.builder_arch }} --publish never --config build/thin-shell.json
+      # A failed AppImage must not cost the deb: the leg ships what it built and
+      # the release notes say the AppImage is missing.
+      - name: Build Linux AppImage
+        id: appimage
+        if: matrix.platform == 'linux'
+        continue-on-error: true
+        working-directory: apps/desktop
+        run: npx electron-builder --linux AppImage --${{ matrix.builder_arch }} --publish never --config build/thin-shell.json
+      - name: Discard an incomplete AppImage
+        if: matrix.platform == 'linux' && steps.appimage.outcome == 'failure'
+        run: rm -f apps/desktop/dist/*.AppImage
+      - name: Verify embedded complete runtime
+        if: matrix.platform == 'mac'
+        run: scripts/release/smoke-packaged-runtime.sh mac apps/desktop/dist
+      - name: Verify the Linux App in clean Ubuntu containers
+        if: matrix.platform == 'linux'
+        run: bash scripts/release/smoke-linux-desktop.sh apps/desktop/dist "${{ matrix.arch }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          name: desktop-${{ matrix.layout }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             apps/desktop/dist/*.dmg
             apps/desktop/dist/*.zip
-            apps/desktop/dist/*.exe
-            apps/desktop/dist/SHA256SUMS-*
+            apps/desktop/dist/OpenProgram-*.exe
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.deb
+      # The contracts' report and the App smoke's logs, kept whenever the leg
+      # failed or its contracts did, so one run is enough to diagnose it.
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && matrix.platform == 'win' && (failure() || steps.contracts.outcome == 'failure') }}
+        with:
+          name: diagnostics-windows-desktop-${{ matrix.arch }}
+          path: ${{ runner.temp }}/windows-diagnostics
+          if-no-files-found: ignore
 
   cli-installer:
     needs: [platforms, product-runtime]
+    if: ${{ !cancelled() && needs.platforms.result == 'success' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.platforms.outputs.runtime) }}
@@ -315,7 +637,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
+        if: matrix.platform == 'windows'
+        with:
+          python-version: "3.12"
       - uses: actions/download-artifact@v8
         with:
           name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
@@ -332,9 +658,18 @@ jobs:
           OPENPROGRAM_BIN_DIR="$RUNNER_TEMP/openprogram-bin" \
             scripts/install-release.sh
           "$RUNNER_TEMP/openprogram-bin/openprogram" --version
+      # A server or container has none of Chromium's system libraries; the
+      # install must still finish there and leave a working command.
+      - name: Install on a bare Linux system
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
+          bash scripts/release/smoke-linux-bare-install.sh "$archive" "${RELEASE_TAG#v}"
+      # Windows PowerShell 5.1, because that is what the public installer hands off to.
       - name: Install the same complete Windows runtime archive
         if: matrix.platform == 'windows'
-        shell: pwsh
+        shell: powershell
         run: |
           $env:OPENPROGRAM_VERSION = $env:RELEASE_TAG.Substring(1)
           $env:OPENPROGRAM_RUNTIME_ARCHIVE = (
@@ -345,23 +680,49 @@ jobs:
           $env:OPENPROGRAM_BIN_DIR = "$env:RUNNER_TEMP\openprogram-bin"
           scripts/install-release.ps1
           & "$env:RUNNER_TEMP\openprogram-bin\openprogram.cmd" --version
+          if ($LASTEXITCODE -ne 0) { throw "the installed command does not run" }
+          # One real tool call through the installed command, in the shell it resolves.
+          python scripts/release/smoke-tool-call.py `
+            --openprogram "$env:RUNNER_TEMP\openprogram-bin\openprogram.cmd" `
+            --home "$env:RUNNER_TEMP\openprogram-home"
+          if ($LASTEXITCODE -ne 0) { throw "one tool call through the installed command failed" }
+      # The publish job ships only runtimes that got this far.
+      - name: Record the verified install
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/cli-verified"
+          date -u > "$RUNNER_TEMP/cli-verified/verified.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-verified-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/cli-verified/verified.txt
+      - uses: actions/upload-artifact@v7
+        if: ${{ failure() && matrix.platform == 'windows' }}
+        with:
+          name: diagnostics-windows-cli-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/openprogram-home/.openprogram/**/*.log
+            ${{ runner.temp }}/openprogram-state/**/*.log
+          if-no-files-found: ignore
 
   publish:
-    needs: [python, product-runtime, desktop, cli-installer]
+    needs: [office, platforms, python, product-runtime, seed, desktop, cli-installer]
+    # A failed platform leaves its files out; only this job's own checks refuse.
+    # The platforms job runs only after the Office archive was found.
+    if: ${{ !cancelled() && needs.platforms.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           path: release-artifacts
-      - name: Create release manifest
-        run: |
-          python scripts/release/create-release-manifest.py release-artifacts \
-            --version "$RELEASE_TAG" \
-            --output release-artifacts/release-manifest.json
-      - name: Publish GitHub Release
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.11.16"
+      - name: Check release notes
         run: |
           notes_file=".github/release-notes/$RELEASE_TAG.md"
           release_version="${RELEASE_TAG#v}"
@@ -383,6 +744,63 @@ jobs:
           if re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", notes):
               raise SystemExit(f"release notes must be English: {notes_path}")
           PY
+      - name: Sign official update assets
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.OPENPROGRAM_UPDATE_SIGNING_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/official-update"
+          for directory in release-artifacts/update-assets-*; do
+            [ -d "$directory" ] || continue
+            mv "$directory"/* "$RUNNER_TEMP/official-update/"
+            rmdir "$directory"
+          done
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            # The platforms job leaves these out without a key, so getting here
+            # with them means something is wrong: they could never update.
+            if [ -n "$(find release-artifacts -maxdepth 1 -type d \( -name 'desktop-thin-*' -o -name 'cli-seed-*' \) -print -quit)" ]; then
+              echo "this release has thin App or seed assets but no update signing key; add OPENPROGRAM_UPDATE_SIGNING_KEY and run it again" >&2
+              exit 1
+            fi
+            echo "no signing key: this release carries no official update assets" >&2
+            exit 0
+          fi
+          key_file="$RUNNER_TEMP/update-signing-key.pem"
+          (umask 077 && printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key_file")
+          # A failure here costs the Apps that depend on these files, which the
+          # next step leaves out and names; it does not cost the release.
+          if uv run --no-project --with zstandard --with cryptography \
+            python scripts/release/create-update-assets.py finalize \
+            --directory "$RUNNER_TEMP/official-update" \
+            --release "$RELEASE_TAG" \
+            --commit "$(git rev-parse HEAD)" \
+            --repository . \
+            --signing-key "$key_file"; then
+            mv "$RUNNER_TEMP/official-update" release-artifacts/official-update
+          else
+            echo "::warning::The official update files could not be built for this release."
+          fi
+          rm -f "$key_file"
+      - name: Assemble what this release carries
+        env:
+          RELEASE_PLAN: ${{ needs.platforms.outputs.plan }}
+        run: |
+          python scripts/release/release-matrix.py assemble release-artifacts \
+            --version "$RELEASE_TAG" \
+            --plan "$RELEASE_PLAN" \
+            --notes ".github/release-notes/$RELEASE_TAG.md" \
+            --notes-output "$RUNNER_TEMP/release-notes.md" \
+            --incomplete-output "$RUNNER_TEMP/release-incomplete.txt"
+      - name: Create release manifest
+        run: |
+          python scripts/release/create-release-manifest.py release-artifacts \
+            --version "$RELEASE_TAG" \
+            --output release-artifacts/release-manifest.json
+      - name: Publish GitHub Release
+        if: ${{ !inputs.rehearse }}
+        run: |
+          final_notes="$RUNNER_TEMP/release-notes.md"
+          release_version="${RELEASE_TAG#v}"
+          # Each file once, under its versioned name; release-manifest.json lists them all.
           mapfile -d '' files < <(find release-artifacts -type f -print0)
           if draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
             test "$draft" = true || {
@@ -391,18 +809,20 @@ jobs:
             }
             gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
             gh release edit "$RELEASE_TAG" --draft=false --latest \
-              --title "OpenProgram $release_version Release" --notes-file "$notes_file"
+              --title "OpenProgram $release_version Release" --notes-file "$final_notes"
           else
             gh release create "$RELEASE_TAG" "${files[@]}" \
               --verify-tag \
               --title "OpenProgram $release_version Release" \
-              --notes-file "$notes_file"
+              --notes-file "$final_notes"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Verify public latest Release entry
+        if: ${{ !inputs.rehearse }}
         run: |
           api="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest"
+          office="$(python scripts/release/office-archive.py name)"
           for attempt in $(seq 1 12); do
             if curl --disable --proto '=https' --tlsv1.2 -fsS \
               --connect-timeout 5 --max-time 15 --max-filesize 2097152 \
@@ -415,9 +835,11 @@ jobs:
               draft="$(jq -r '.draft' latest.json)"
               prerelease="$(jq -r '.prerelease' latest.json)"
               manifest_count="$(jq '[.assets[] | select(.name == "release-manifest.json")] | length' latest.json)"
+              # The installed App downloads Office from this exact file of its release.
+              office_count="$(jq --arg name "$office" '[.assets[] | select(.name == $name)] | length' latest.json)"
               if [ "$tag" = "$RELEASE_TAG" ] && \
                  [ "$draft" = false ] && [ "$prerelease" = false ] && \
-                 [ "$manifest_count" = 1 ]; then
+                 [ "$manifest_count" = 1 ] && [ "$office_count" = 1 ]; then
                 exit 0
               fi
             fi
@@ -427,3 +849,27 @@ jobs:
           exit 1
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: List what a release of this commit would carry
+        if: ${{ inputs.rehearse }}
+        run: |
+          {
+            echo "### Rehearsal of $RELEASE_TAG at $(git rev-parse --short HEAD): nothing was published"
+            echo
+            echo '```'
+            find release-artifacts -type f -printf '%12s  %f\n' | sort -k2
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The release above is public with what was built. This step makes the
+      # job red and names each planned package that is not in it.
+      - name: Check every planned package is in the release
+        run: |
+          incomplete="$RUNNER_TEMP/release-incomplete.txt"
+          if [ -s "$incomplete" ]; then
+            {
+              echo "### Planned for $RELEASE_TAG but not in the release"
+              echo
+              sed 's/^/- /' "$incomplete"
+            } >> "$GITHUB_STEP_SUMMARY"
+            sed 's/^/::error::Not in this release: /' "$incomplete"
+            exit 1
+          fi

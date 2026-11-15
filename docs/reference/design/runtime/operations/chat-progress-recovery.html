@@ -1,7 +1,33 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><title>Chat progress recovery</title><body>
+<title>Chat progress recovery</title>
+<meta name="description" content="How partial thinking, text and tool blocks survive reloads, errors and retries.">
+<meta name="covers" content="apps/web/lib/session-store/ openprogram/runtime/conversation/run_control/">
 <h1>Chat progress recovery</h1>
-<p>The dispatcher persists ordered thinking, text and tool blocks on the owning assistant placeholder while generation continues. Session loading reads the same blocks as completed turns. Errors retain those blocks and display an additional error notice.</p>
-<h2>Scope and data flow</h2><p>The stream tap accepts only the owning session and message identity. Nested runtime events retain their existing storage. Text deltas coalesce within adjacent blocks; tool results update their matching block. Existing final persistence remains authoritative on success. Error metadata merges with stored progress. No provider reasoning is generated or exposed beyond the thinking events already displayed live.</p>
-<h2>Reference and choices</h2><p>The repository streaming-resume design, dispatcher stream tap, session node writer and assistant bubble define the contract. Reuse extra.blocks and the existing session load path; do not add browser-only storage or replay a truncated event buffer. External frameworks are not dependencies of this repair.</p>
-<h2>Acceptance</h2><p>Through process_user_turn, reload persisted progress before returning from the provider loop and after a provider failure. Preserve text/thinking/tool order and exclude child events. Render the AssistantBubble with a failed status and verify both prior progress and the failure notice. Existing successful, cancelled and approval behavior remains compatible.</p>
-<h2>Implementation status</h2><p>Implemented. Independent specification and quality reviews pass. The affected Python suites pass with 255 tests and one skip; all 713 Web tests, 513 repository contracts, Web static checks and documentation link checks pass. Tests cover fresh-store recovery during generation, provider failure, continuation, cancellation, child identity isolation and error rendering.</p></body></html>
+
+<p>The dispatcher persists ordered thinking, text and tool blocks in <code translate="no">extra.blocks</code> on the owning assistant placeholder while generation runs. Session loading reads them the same way as completed turns.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Stream tap</th><td>Accepts only the owning session and message identity; nested runtime events keep their own storage</td></tr>
+<tr><th scope="row">Text deltas</th><td>Coalesce within adjacent blocks</td></tr>
+<tr><th scope="row">Tool results</th><td>Update their matching block</td></tr>
+<tr><th scope="row">Success</th><td>Final persistence stays authoritative</td></tr>
+<tr><th scope="row">Error</th><td>Metadata merges with stored progress; blocks stay, with an error notice added</td></tr>
+<tr><th scope="row">During a read</th><td><code translate="no">stream_event</code> and <code translate="no">transcript_update</code> frames for that session wait behind the read's reply and arrive in order, so a read captured earlier cannot undo an error. The error reaches the row as a transcript update; the terminal <code translate="no">chat_response</code> only ends the run</td></tr>
+<tr><th scope="row">Reasoning</th><td>Only thinking events already shown live</td></tr>
+</tbody>
+</table>
+
+<h2>Retry visibility</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Event</th><td>Every automatic continuation or provider retry emits a correlated stream event with attempt, limit, reason and delay when known</td></tr>
+<tr><th scope="row">Display</th><td>Retrying state on the assistant bubble while the turn is active, even after earlier text</td></tr>
+<tr><th scope="row">Cleared by</th><td>A later success, terminal failure or cancellation</td></tr>
+<tr><th scope="row">Never</th><td>Creates a second user turn or marks the turn complete</td></tr>
+</tbody>
+</table>
+
+<p class="note">No browser-only storage and no replay of a truncated event buffer.</p>

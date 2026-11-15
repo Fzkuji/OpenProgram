@@ -1,0 +1,63 @@
+<title>CLI naming convention</title>
+<meta name="description" content="The noun-first, verb-last grammar every openprogram subcommand follows.">
+<h1>CLI naming convention</h1>
+
+<pre translate="no" tabindex="0">openprogram &lt;noun&gt; [&lt;noun&gt; ...] &lt;verb&gt; [&lt;arg&gt; ...]</pre>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Verb</th><td>Exactly one, last before positional arguments, never among the nouns. Simple present: <code translate="no">list</code>, <code translate="no">status</code>, <code translate="no">add</code>, <code translate="no">remove</code>, <code translate="no">login</code>, <code translate="no">logout</code>, <code translate="no">set</code>, <code translate="no">get</code>, <code translate="no">discover</code>, <code translate="no">adopt</code>, <code translate="no">doctor</code>, <code translate="no">setup</code>.</td></tr>
+<tr><th scope="row">Nouns</th><td>First; more nouns narrow the namespace. Plural for a collection (<code translate="no">providers</code>, <code translate="no">profiles</code>, <code translate="no">models</code>, <code translate="no">channels</code>); singular only for something that can never have siblings.</td></tr>
+<tr><th scope="row">Arguments</th><td>After the verb: in <code translate="no">openprogram providers login codex</code>, <code translate="no">codex</code> is the target of <code translate="no">login</code>.</td></tr>
+<tr><th scope="row">Flags</th><td>Double-dash kebab-case: <code translate="no">--profile</code>, <code translate="no">--display-name</code>, <code translate="no">--max-poll-seconds</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="examples">Examples</h2>
+<table class="stack">
+<thead><tr><th scope="col">Command</th><th scope="col">State</th><th scope="col">Shape</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram providers login &lt;prov&gt;</code></th><td>Current</td><td>One noun</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers list</code></th><td>Current</td><td>One noun</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers status &lt;prov&gt;</code></th><td>Current</td><td>One noun</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers doctor</code></th><td>Current</td><td>One noun</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers setup</code></th><td>Current</td><td>Interactive wizard</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers accounts list</code></th><td>Current</td><td>Nouns stack</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers accounts create &lt;n&gt;</code></th><td>Current</td><td>Nouns stack</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram providers models list</code></th><td>Future</td><td>Same pattern</td></tr>
+<tr><th scope="row"><code translate="no">openprogram providers aliases add &lt;from&gt; &lt;to&gt;</code></th><td>Future</td><td>Nouns stack</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram channels login discord</code></th><td>Future</td><td>Another domain</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram tools login github</code></th><td>Future</td><td>Another domain</td></tr>
+</tbody>
+</table>
+
+<h2 id="anti-patterns">Do not write</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram login</code></th><td>Verb at top level; clashes with the second login target</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram providerAuth login</code></th><td>camelCase; a noun stack is separate words</td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram list-providers</code></th><td>Locks the verb into the noun. Use <code translate="no">providers list</code></td></tr>
+<tr><th scope="row"><code translate="no" data-claim="invalid">openprogram providers listing</code></th><td>Wrong verb form</td></tr>
+</tbody>
+</table>
+
+<h2 id="when-to-add-a-namespace-layer">Adding a middle noun</h2>
+<p>Only when the parent splits into several sibling subgroups. A middle noun with no siblings is dead weight. OpenClaw keeps <code translate="no">openclaw models auth login</code> because <code translate="no">models</code> also has <code translate="no">aliases</code> and <code translate="no">list</code>. OpenProgram keeps <code translate="no">providers login</code> flat because every direct verb on <code translate="no">providers</code> is about credentials.</p>
+
+<h2 id="how-to-add-a-new-command">Adding a command</h2>
+<ol>
+<li>Pick the deepest noun namespace it belongs to. Reuse one if the command is a sibling of existing commands.</li>
+<li>Pick the verb. Prefer one already in the CLI.</li>
+<li>Wire it in: metadata and argparse in <code translate="no">openprogram/interfaces/cli/parser.py</code>, logic in a topic module under <code translate="no">openprogram/interfaces/cli/commands/</code>, top-level dispatch in <code translate="no">openprogram/interfaces/cli/application.py</code>.</li>
+</ol>
+
+<details>
+<summary>Why this rule</summary>
+<ul>
+<li>Discoverability: <code translate="no">openprogram providers &lt;TAB&gt;</code> lists every action on that namespace.</li>
+<li>Extensibility: new domains slot in as sibling nouns without colliding.</li>
+<li>Mature CLIs converged on it: <code translate="no">openclaw models auth login</code>, <code translate="no">openclaw models aliases add</code>, <code translate="no">gh auth login</code>, <code translate="no">gh repo create</code>, <code translate="no">docker container ls</code>, <code translate="no">docker image prune</code>, <code translate="no">kubectl get pods</code>, <code translate="no">kubectl delete service &lt;name&gt;</code>.</li>
+</ul>
+</details>

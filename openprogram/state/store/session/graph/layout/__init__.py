@@ -1,0 +1,121 @@
+"""DAG layout pipeline. See README.md for stage breakdown.
+
+Public entry point:
+
+    annotate_graph(graph_entries, head_id) -> graph_entries
+
+Reads ``predecessor`` (conv edge) + ``caller`` (sub-call edge) from each
+entry, writes ``_depth`` / ``_lane`` / ``_tier`` back into the same
+dicts. Returns the same list (mutated) — except entries filtered out
+in stage 1 (microcompact noise), which are dropped from the result so
+the frontend never sees them.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from .filter import filter_visible, bridge_hidden
+from .topology import build_children
+from .tier import compute_tier
+from .depth import compute_depth
+from .lane import compute_lane
+
+
+def annotate_graph(
+    graph_entries: list[dict],
+    head_id: Optional[str],
+    *, include_layout: bool = True,
+) -> list[dict]:
+    bridge_hidden(graph_entries)
+    visible = filter_visible(graph_entries)
+    if not include_layout:
+        return visible
+    by_id: dict[str, dict] = {m["id"]: m for m in visible}
+
+    call_children, fork_siblings = build_children(by_id)
+    tier = compute_tier(by_id)
+    depth = compute_depth(by_id, call_children, fork_siblings)
+    lane, alloc = compute_lane(by_id, call_children, fork_siblings, head_id)
+
+    # Column offset per lane. A fork lane starts ONE column right of the
+    # ENTIRE base lane it diverged from — i.e. right of the base lane's
+    # rightmost occupied column (its deepest node, sub-tree included), so
+    # the two branches never overlap. Collapsed sub-calls don't exist in
+    # ``tier``, so they take no column — the fork packs tight against
+    # what's actually visible.
+    from ._common import predecessor_of, caller_of
+
+    # nodes grouped by lane; first node = the lane's earliest (by depth).
+    lane_nodes: dict[int, list[str]] = {}
+    lane_first: dict[int, str] = {}
+    for nid, ln in lane.items():
+        lane_nodes.setdefault(ln, []).append(nid)
+        cur = lane_first.get(ln)
+        if cur is None or depth.get(nid, 0) < depth.get(cur, 0):
+            lane_first[ln] = nid
+
+    lane_offset: dict[int, int] = {}
+    lane_width = {ln: max((tier.get(n, 0) for n in nodes), default=0)
+                  for ln, nodes in lane_nodes.items()}
+    placed_right = -1
+
+    def _rightmost_col(ln: int) -> int:
+        """Rightmost occupied column of a lane (offset + max tier)."""
+        base = _offset(ln)
+        return base + lane_width.get(ln, 0)
+
+    def _offset(ln: int) -> int:
+        nonlocal placed_right
+        if ln in lane_offset:
+            return lane_offset[ln]
+        if ln == 0:
+            lane_offset[ln] = 0
+            placed_right = max(placed_right, lane_width.get(ln, 0))
+            return 0
+        first = lane_first.get(ln)
+        # base lane = the lane this branch diverged from. A retry fork
+        # diverges along ``predecessor``; a spawn branch root has no
+        # predecessor and hangs off its ``caller`` (the spawn node)
+        # instead — same geometry, so resolve either edge.
+        forked_from = None
+        if first:
+            forked_from = (
+                predecessor_of(by_id, by_id[first])
+                or caller_of(by_id, by_id[first])
+            )
+        base_lane = lane.get(forked_from) if forked_from else None
+        first_tier = tier.get(first, 0) if first else 0
+        if base_lane is not None:
+            # A fork lane has its OWN vertical trunk column (like the
+            # main branch hangs off the ROOT trunk). So it needs TWO
+            # columns past the base lane: +1 for the fork's trunk line,
+            # +1 for the fork's nodes. The fork's nodes therefore sit at
+            #   rightmost_col(base) + 2
+            # and the trunk line lives one column to their left (drawn by
+            # edges.ts as forkPos.x - COL_W), clear of the base lane.
+            #
+            # MUST also clear every ALREADY-PLACED lane: with multiple
+            # fork siblings off the same point, each one must go past the
+            # previous sibling's columns, not just past the base lane —
+            # otherwise the 2nd and 3rd forks collide in the same column.
+            base_right = _rightmost_col(base_lane)
+            off = max(base_right, placed_right) + 2 - first_tier
+        else:
+            off = placed_right + 2
+        lane_offset[ln] = off
+        placed_right = max(placed_right, off + lane_width.get(ln, 0))
+        return off
+
+    # Place lanes in lane-number order (= seq order of branch starts), so
+    # each fork sibling is positioned after the ones that appeared before.
+    for ln in sorted(set(lane.values())):
+        _offset(ln)
+    for nid in lane:
+        lane[nid] = lane_offset.get(lane[nid], lane[nid])
+
+    for m in visible:
+        nid = m["id"]
+        m["_depth"] = depth.get(nid, 0)
+        m["_lane"] = lane.get(nid, 0)
+        m["_tier"] = tier.get(nid, 0)
+    return visible

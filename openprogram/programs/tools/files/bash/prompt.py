@@ -1,18 +1,33 @@
 """Prompt text for the bash tool (description shown to the LLM).
 
-The description follows the one-shot backend contract. It must not promise
-persistent shell state; dedicated managed sessions have a different lifecycle.
+Each call starts a new shell. A command still running after its yield time
+keeps running as a session that write_stdin reaches; shell state such as cd
+and exported variables never carries over to the next call.
 """
 
 from __future__ import annotations
 
+# Only for a call outside a conversation, which runs to completion.
 DEFAULT_MAX_TIMEOUT_MS = 10 * 60 * 1000   # 10 min
-DEFAULT_TIMEOUT_MS = 2 * 60 * 1000        # 2 min
 
 DESCRIPTION = (
-    "Execute a host shell command and return its starting directory, stdout, "
-    "stderr, and exit code. macOS/Linux use their shell; Windows uses Git Bash "
-    "when available and otherwise Windows PowerShell.\n"
+    "Execute a host shell command and return its starting directory, output "
+    "(stdout and stderr together) and exit code. macOS/Linux use bash (sh on a "
+    "host without it); Windows uses Git Bash when available and otherwise "
+    "PowerShell. The environment section names the one in use. In bash, echo "
+    "prints backslash escapes such as \\n as written; use printf for them.\n"
+    "\n"
+    "The call waits up to yield_time_ms (default 30000, at most 30000). A "
+    "command that is still running then keeps running in the background and "
+    "the result says `Process running with session ID <id>`: call write_stdin "
+    "with that session_id and empty chars to wait for more output and the exit "
+    "code, or with \"\\u0003\" to interrupt it. Use this for servers, watchers "
+    "and long builds. When a background command ends and you have not seen "
+    "its exit, you are told in a later message. Set tty=true for programs "
+    "you will type into (REPLs, prompts; macOS and Linux only); without it "
+    "stdin is closed. At most "
+    "64 commands run at once per conversation; starting another stops the "
+    "least recently used one.\n"
     "\n"
     "Each call starts a new shell subprocess. Use workdir to choose the "
     "starting directory for this call only. With workdir omitted, use the "
@@ -38,7 +53,22 @@ DESCRIPTION = (
     "cannot be used together.\n"
     "- Emit independent commands as parallel tool calls in one turn. When "
     "chaining is necessary, use syntax supported by the active host shell.\n"
-    "- To wait on a process, poll with a check command rather than sleep.\n"
+    "- To wait on a background command, call write_stdin with empty chars "
+    "rather than running sleep.\n"
+    "- For a long command, pass description (\"Evaluate 100 samples\") so the "
+    "user can tell what is running. If it works through a known number of "
+    "items, have it print `##progress <done>/<total> <what>` lines (for "
+    "example `##progress 45/100 samples`) as it goes; the user sees them as a "
+    "progress bar. tqdm bars and `Epoch 3/10`-style counters are picked up "
+    "too.\n"
     "- For git, prefer new commits over amending, and never skip hooks "
     "(--no-verify) unless explicitly asked.\n"
+    "\n"
+    "When the sandbox is on, commands have no network and can write only the "
+    "workspace. A command that needs more — git push/pull/fetch/clone, gh, "
+    "package installs, curl, writes outside the workspace — should be called "
+    "with sandbox_permissions=\"require_escalated\" and a one-sentence "
+    "justification from the start: the user is asked before it runs and, once "
+    "approved, it runs outside the sandbox. Do the same when a result says the "
+    "sandbox blocked a command; never retry a blocked command unchanged.\n"
 )

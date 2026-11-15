@@ -1,0 +1,35 @@
+<title>纯 Python</title>
+<meta name="description" content="不需要 LLM 推理的确定性帮助函数。">
+<h1>纯 Python</h1><pre translate="no" tabindex="0"><code>def word_count(text: str) -&gt; int:
+    """Count the number of words in a text.
+
+    Args:
+        text: Input text.
+
+    Returns:
+        The word count.
+    """
+    return len(text.split())</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">操作</th><th scope="col">实现</th></tr></thead>
+<tbody>
+<tr><th scope="row">固定算法、数据转换、计数、读写文件、数学</th><td>普通 Python 帮助函数或 Agent 方法；不用 <code translate="no">llm()</code>，没有 <code translate="no">runtime</code> 参数，使用标准 Google 风格 docstring</td></tr>
+<tr><th scope="row">自然语言生成、分类、推理</th><td>显式的 <code translate="no">agent()</code> 或 <code translate="no">self(...)</code> 请求</td></tr>
+</tbody>
+</table>
+<h2>在会话 DAG 中</h2>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class TextAgent(Agent):
+    def word_count(self, text: str) -&gt; int:
+        """Count words."""
+        return len(text.split())</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">函数</th><th scope="col">记录</th></tr></thead>
+<tbody>
+<tr><th scope="row">启动一次执行的 Agent 方法</th><td>会记录；不需要模型请求或工具注册</td></tr>
+<tr><th scope="row">嵌套在该执行内、或托管 Program 源码内的帮助函数</th><td>在当前调用作用域运行，没有自己的节点</td></tr>
+<tr><th scope="row">任意宿主函数</th><td>不捕获</td></tr>
+</tbody>
+</table>
+<p class="note">是否确定性不决定是否记录。只有要让模型调用时才设 <code translate="no">tool=True</code>。</p>

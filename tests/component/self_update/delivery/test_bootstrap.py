@@ -11,21 +11,32 @@ from types import SimpleNamespace
 import pytest
 
 from tests.component.self_update.control.test_launcher import _request, _trusted_installer, _ready
-from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.self_update.verification.test_system_probe import live
-from tests.component.self_update.verification.test_verification_channel import verifier
-from tests.component.self_update.delivery.test_install_transaction import installation, version
-from tests.component.self_update.recovery.test_commit_recovery import accepted
-from tests.component.self_update.recovery.test_owner_repair import recoverable, manual
+from tests.component.agent import async_job_support as _async_job_support
+from tests.component.self_update.verification import test_system_probe as _test_system_probe
+from tests.component.self_update.verification import test_verification_channel as _test_verification_channel
+from tests.component.self_update.delivery.test_install_transaction import version
+from tests.component.self_update.delivery import test_install_transaction as _test_install_transaction
+from tests.component.self_update.recovery import test_commit_recovery as _test_commit_recovery
+from tests.component.self_update.recovery.test_owner_repair import manual
+from tests.component.self_update.recovery import test_owner_repair as _test_owner_repair
 from tests.component.config.test_distribution_release._support import MACOS_DESKTOP_INSTALL
-from tests.component.self_update.control.test_controller_bundle import native_workspace
+from tests.component.self_update.control import test_controller_bundle as _test_controller_bundle
+
+# Shared pytest fixtures, bound at module level so pytest collects them here.
+store_fixture = _async_job_support.store_fixture
+live = _test_system_probe.live
+verifier = _test_verification_channel.verifier
+installation = _test_install_transaction.installation
+accepted = _test_commit_recovery.accepted
+recoverable = _test_owner_repair.recoverable
+native_workspace = _test_controller_bundle.native_workspace
 
 pytestmark = [pytest.mark.macos, MACOS_DESKTOP_INSTALL]
 
 
 def test_public_launcher_publishes_independent_recovery_before_submit(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import launcher
     profile = tmp_path / "profile"
     store = _request(profile)
     _, digest = _trusted_installer(tmp_path, monkeypatch)
@@ -54,9 +65,9 @@ def test_public_launcher_publishes_independent_recovery_before_submit(tmp_path, 
 
 @pytest.fixture
 def bootstrap_request(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.self_update.delivery import bootstrap
-    from openprogram.self_update.delivery import controller_bundle
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import bootstrap
+    from openprogram.operations.self_update.delivery import controller_bundle
     store = _request(tmp_path / "profile")
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
     source, digest = _trusted_installer(tmp_path, monkeypatch)
@@ -69,13 +80,13 @@ def bootstrap_request(tmp_path, monkeypatch):
 
 
 def invoke(v, mode):
-    from openprogram.self_update.delivery import bootstrap
+    from openprogram.operations.self_update.delivery import bootstrap
     return bootstrap.main(["--state-root", str(v.store.root), "--installer-sha256", v.bundle.installer_sha256,
                            "--mode", mode, v.directory.name])
 
 
 def test_status_is_read_only_and_repreparation_keeps_bound_files(bootstrap_request, capsys):
-    from openprogram.self_update.delivery import bootstrap
+    from openprogram.operations.self_update.delivery import bootstrap
     v = bootstrap_request
     files = [v.directory / name for name in ("request.json", "state.json", "bootstrap.json", "recover.sh")]
     files.append(v.plist)
@@ -90,7 +101,7 @@ def test_status_is_read_only_and_repreparation_keeps_bound_files(bootstrap_reque
 
 @pytest.mark.parametrize("damage", ["script", "binding", "plist", "symlink", "fifo", "permissions", "parent", "runtime"])
 def test_changed_bootstrap_rejects_resume_before_any_supervisor(bootstrap_request, monkeypatch, damage):
-    from openprogram.self_update.control import supervisor
+    from openprogram.operations.self_update.control import supervisor
     v = bootstrap_request
     if damage in {"script", "binding", "plist"}:
         target = {"script": v.directory / "recover.sh", "binding": v.directory / "bootstrap.json", "plist": v.plist}[damage]
@@ -117,8 +128,8 @@ def test_changed_bootstrap_rejects_resume_before_any_supervisor(bootstrap_reques
 
 @pytest.mark.parametrize("changed", [False, True])
 def test_completed_update_cleans_only_its_exact_login_file(bootstrap_request, changed):
-    from openprogram.self_update.delivery import bootstrap
-    from openprogram.self_update import UpdatePhase
+    from openprogram.operations.self_update.delivery import bootstrap
+    from openprogram.operations.self_update import UpdatePhase
     v = bootstrap_request
     v.store.transition(v.directory.name, UpdatePhase.ABORTED)
     before = (v.directory / "state.json").read_bytes()
@@ -139,8 +150,8 @@ def test_completed_update_cleans_only_its_exact_login_file(bootstrap_request, ch
 
 
 def bind_native(v):
-    from openprogram.self_update.delivery import bootstrap
-    from openprogram.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update.delivery import bootstrap
+    from openprogram.operations.self_update.delivery import controller_bundle
     bundle = controller_bundle._load_bundle(v.update / "controller")
     with v.v.store._locked():
         bootstrap.prepare_bootstrap(v.v.store, v.v.store._load_unlocked(v.v.request.update_id), bundle)
@@ -149,7 +160,7 @@ def bind_native(v):
 
 
 def test_bootstrap_restores_missing_app_with_original_native_transaction(recoverable):
-    from openprogram.self_update import UpdatePhase
+    from openprogram.operations.self_update import UpdatePhase
     v = recoverable
     entry = bind_native(v)
     # Simulate controller loss with a missing canonical App and unusable verification.
@@ -180,10 +191,10 @@ def test_bootstrap_manual_state_still_requires_interactive_consent(recoverable, 
 
 @pytest.mark.timeout(300)
 def test_saved_runtime_script_and_native_login_survive_original_app_removal(native_workspace, monkeypatch):
-    from openprogram import paths
-    from openprogram.self_update.delivery import bootstrap
-    from openprogram.self_update.delivery import controller_bundle
-    from openprogram.self_update import UpdatePhase
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import bootstrap
+    from openprogram.operations.self_update.delivery import controller_bundle
+    from openprogram.operations.self_update import UpdatePhase
     from tests.support.waiting import wait_until
     from tests.component.self_update.delivery.test_install_transaction import INSTALLER
     tmp = native_workspace
@@ -192,12 +203,14 @@ def test_saved_runtime_script_and_native_login_survive_original_app_removal(nati
         pytest.skip("requires the installed macOS standalone runtime")
     resources = tmp / "fixture-resources"
     runtime = resources / "runtime"
-    shutil.copytree(installed, runtime, symlinks=True)
+    _test_controller_bundle.copy_installed_runtime(installed, runtime)
     package = next((runtime / "python").glob("*/lib/python*/site-packages/openprogram"))
-    shutil.copytree(Path(bootstrap.__file__).parent.parent, package / "self_update", dirs_exist_ok=True,
+    shutil.copytree(Path(bootstrap.__file__).parent.parent, package / "operations" / "self_update", dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns("__pycache__"))
-    command = Path(__file__).resolve().parents[4] / "apps/cli/python/openprogram_cli/_impl/commands/self_update.py"
-    shutil.copy2(command, package.parent / "openprogram_cli/_impl/commands/self_update.py")
+    # The checkout's self_update picks archives through this module, which an
+    # installed runtime older than it does not have yet.
+    architecture = Path(bootstrap.__file__).parents[3] / "host" / "_platform" / "architecture.py"
+    shutil.copy2(architecture, package / "host" / "_platform" / "architecture.py")
     (resources / "update").mkdir()
     shutil.copy2(INSTALLER, resources / "update/install-app.sh")
     owner_home = tmp / "owner"
@@ -250,9 +263,9 @@ def test_saved_runtime_script_and_native_login_survive_original_app_removal(nati
 
 
 def test_initial_conflict_does_not_overwrite_existing_login_file(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.self_update.delivery import bootstrap
-    from openprogram.self_update.delivery import launcher
+    from openprogram.state import paths
+    from openprogram.operations.self_update.delivery import bootstrap
+    from openprogram.operations.self_update.delivery import launcher
     store = _request(tmp_path / "profile")
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
     _trusted_installer(tmp_path, monkeypatch)
@@ -269,8 +282,8 @@ def test_initial_conflict_does_not_overwrite_existing_login_file(tmp_path, monke
 
 
 def test_cleanup_diagnostic_failure_does_not_change_original_result(bootstrap_request, monkeypatch, capsys):
-    from openprogram.self_update.delivery import bootstrap
-    from openprogram.self_update import UpdatePhase
+    from openprogram.operations.self_update.delivery import bootstrap
+    from openprogram.operations.self_update import UpdatePhase
     v = bootstrap_request
     v.store.transition(v.directory.name, UpdatePhase.ABORTED)
     original = (v.directory / "state.json").read_bytes()
@@ -284,9 +297,9 @@ def test_cleanup_diagnostic_failure_does_not_change_original_result(bootstrap_re
 
 @pytest.mark.parametrize("mode", ["status", "repair", "resume", "cleanup"])
 def test_unsafe_state_root_is_rejected_before_store_normalizes_permissions(bootstrap_request, monkeypatch, mode):
-    from openprogram.self_update.delivery import bootstrap
-    from openprogram.self_update.control import supervisor
-    from openprogram.self_update import UpdatePhase
+    from openprogram.operations.self_update.delivery import bootstrap
+    from openprogram.operations.self_update.control import supervisor
+    from openprogram.operations.self_update import UpdatePhase
     v = bootstrap_request
     if mode == "cleanup":
         v.store.transition(v.directory.name, UpdatePhase.ABORTED)
@@ -303,12 +316,12 @@ def test_unsafe_state_root_is_rejected_before_store_normalizes_permissions(boots
 
 @pytest.mark.parametrize("interruption", ["journal", "active"])
 def test_status_preserves_interrupted_store_evidence(bootstrap_request, interruption):
-    from openprogram.self_update import UpdatePhase
+    from openprogram.operations.self_update import UpdatePhase
     v = bootstrap_request
     journal = v.directory / "events.jsonl"
     if interruption == "journal":
         before_transition = journal.read_bytes()
-        v.store.transition(v.directory.name, UpdatePhase.STAGING)
+        v.store.transition(v.directory.name, UpdatePhase.BUILDING)
         journal.write_bytes(before_transition)
     else:
         (v.store.root / "active.json").unlink()

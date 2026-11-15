@@ -6,33 +6,33 @@ import asyncio
 
 import pytest
 
-import openprogram.execution as execution_module
-from openprogram.events import WS_FRAME_EVENT, create_event_bus
-from openprogram.agent.questions import (
+import openprogram.runtime.execution as execution_module
+from openprogram.runtime.events import WS_FRAME_EVENT, create_event_bus
+from openprogram.runtime.agent.questions import (
     QuestionRegistry,
     _pending_from_wait,
     emit_question_asked,
     get_question_registry,
 )
-from openprogram.agent.run_control import (
+from openprogram.runtime.execution.run_control import (
     reset_current_execution_id,
     reset_current_session_id,
     set_current_execution_id,
     set_current_session_id,
 )
-from openprogram.agentic_programming.runtime import Runtime
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.checkpoints import CheckpointFragment
-from openprogram.execution.control import RuntimeControlService
-from openprogram.execution.driver import DriverRegistry
-from openprogram.execution.model import CapabilitySet
-from openprogram.execution.store import ExecutionStore
-from openprogram.execution.waits import DurableWaitStore, WaitStatus
+from openprogram.runtime.agent.runtime import Runtime
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.control import RuntimeControlService
+from openprogram.runtime.execution.driver import DriverRegistry
+from openprogram.runtime.execution.model import CapabilitySet
+from openprogram.runtime.execution.store import ExecutionStore
+from openprogram.runtime.execution.waits import DurableWaitStore, WaitStatus
 
 
 @pytest.fixture
 def fresh(monkeypatch, tmp_path):
-    import openprogram.agent.questions as Q
+    import openprogram.runtime.agent.questions as Q
 
     store = ExecutionStore(tmp_path / "questions-e2e.db")
     revision = store.create_revision(manifest={"entrypoint": "questions-e2e"})
@@ -52,7 +52,6 @@ def fresh(monkeypatch, tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="questions-e2e",
-        ttl_seconds=30,
     )
     active, running = attempts.activate(
         leased.attempt_id,
@@ -71,7 +70,7 @@ def fresh(monkeypatch, tmp_path):
     monkeypatch.setattr(Q, "_registry", QuestionRegistry())
     # 隔离总线，抓 ws.frame
     bus = create_event_bus()
-    import openprogram.events.bus as EB
+    import openprogram.runtime.events.bus as EB
     monkeypatch.setattr(EB, "_event_bus", bus)
     session_token = set_current_session_id("sess-e2e")
     execution_token = set_current_execution_id(execution.execution_id)
@@ -160,8 +159,8 @@ def test_ask_emits_frame_then_resumes_on_reply(fresh):
     assert asked["session_id"] == "sess-e2e"
 
     # 通过 canonical execution.wait.answer command 模拟前端答复；这会恢复 execution。
-    from openprogram.agent.authority import owner_authority
-    from openprogram.execution import submit_wait_command
+    from openprogram.runtime.permissions.authority import owner_authority
+    from openprogram.runtime.execution import submit_wait_command
 
     current = store.get_execution(execution_id)
     assert current is not None
@@ -189,7 +188,7 @@ def test_ask_emits_frame_then_resumes_on_reply(fresh):
     assert resumed is not None and resumed.status.value == "running"
 
     # 只有在真实 durable wait 已解析后，runtime.ask 才能消费它。
-    from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
+    from openprogram.runtime.conversation.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
 
     token = set_preapproved_wait_id(qid)
     try:

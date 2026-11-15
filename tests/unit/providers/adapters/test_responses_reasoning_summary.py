@@ -11,7 +11,7 @@ strip, live or after refresh.
 import asyncio
 from types import SimpleNamespace
 
-from openprogram.providers._shared.openai_responses import process_responses_stream
+from openprogram.models.providers.shared.openai_responses import process_responses_stream
 
 
 class _Stream:

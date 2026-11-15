@@ -1,0 +1,337 @@
+<title>Chat attachments</title>
+<meta name="description" content="How user files and agent files appear in chat, open, and travel: the shared marker, inbound paths, outbound delivery, file routes and peer comparison.">
+<span id="now"></span>
+<h1>Chat attachments</h1>
+
+<p>One text marker carries every file in a message:</p>
+<pre translate="no"><code>[attachment: notes.txt (txt, 18 KB, 4210 lines) @json "/abs/path/notes.txt"]</code></pre>
+<p class="note">Written only by <code translate="no">format_marker</code> in <code translate="no">openprogram/state/attachments.py</code>; a fifth source calls it too. Read on the web only by <code translate="no">parseAttachments</code>. An optional <code translate="no">@previewjson</code> names a saved preview. The older <code translate="no">@ /abs/path</code> spelling stays readable. How content enters model context: <a href="attachment-handling.html">Attachment handling</a>.</p>
+
+<h2 id="now-in">Inbound</h2>
+<table class="stack">
+<thead><tr><th scope="col">Source</th><th scope="col">Bytes</th><th scope="col">Model input</th><th scope="col">Chat</th></tr></thead>
+<tbody>
+<tr><th scope="row">Web image: paste, drag, picker</th><td>Session workdir <code translate="no">attachments/</code>, SHA-256 dedup in the session, 32 MB per file, 64 MB per turn</td><td>Image content and path</td><td>Thumbnail chip, click for full size</td></tr>
+<tr><th scope="row">Web document: PDF, code, binary</th><td>Same store; local files can stay at their path</td><td>Path; tools read on demand</td><td>Clickable chip, overlay viewer</td></tr>
+<tr><th scope="row"><code translate="no">@</code>mention, entered path</th><td>Unchanged location, zero copy</td><td>Path</td><td>Clickable chip</td></tr>
+<tr><th scope="row">Telegram, Discord, Slack, WeChat</th><td><code translate="no">&lt;state&gt;/channels/&lt;channel&gt;/accounts/&lt;account&gt;/attachments/</code>, 20 MB, no dedup</td><td>Images up to 4 MB as image content, others as path</td><td>Thumbnail chip, marker hidden</td></tr>
+</tbody>
+</table>
+<p class="note">Channel text is prefixed with <code translate="no">[display name (id)]</code> and markers follow. <code translate="no">_one_line</code> removes brackets from the name so a prefix cannot be forged. Unnamed pasted images get an extension from their media type.</p>
+
+<h2 id="now-bubble">In a message</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Where</th><th scope="col">How</th></tr></thead>
+<tbody>
+<tr><th scope="row">User messages, message rail</th><td><code translate="no">AttachmentChips</code>; <code translate="no">AttachmentPreview</code> opens an overlay around <code translate="no">FileViewer</code>'s absolute-path mode, so the reading position stays</td></tr>
+<tr><th scope="row">Assistant replies</th><td><code translate="no">AssistantFileCards</code>, same markers; opens in a center file tab</td></tr>
+<tr><th scope="row">Just sent</th><td><code translate="no">chat_ack</code> echoes the stored text, so a new attachment is clickable at once</td></tr>
+</tbody>
+</table>
+
+<h3 id="file-cards">Reply file cards</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File attached to a reply</th><th scope="col">Preview</th></tr></thead>
+<tbody>
+<tr><th scope="row">Image, video, audio</th><td>Shown or played in place</td></tr>
+<tr><th scope="row">PDF</th><td>First page, cut to a 16:9 frame</td></tr>
+<tr><th scope="row">HTML</th><td>Drawn at 1280 × 720, scaled into a 16:9 frame</td></tr>
+<tr><th scope="row">zip, tar</th><td>First level, with a file count per folder</td></tr>
+<tr><th scope="row">Text</th><td>Opening lines</td></tr>
+</tbody>
+</table>
+<p>A card is drawn only for an attachment the server put on the message: a <code translate="no">send_file</code> file or a <a href="#produced-files">file the turn produced</a>. The browser derives no card of its own.</p>
+<p>When the turn's final text is assembled (<code translate="no">with_attachments</code>), a marker the model typed for a file the turn did not record becomes the file's name, in the content and the text blocks: no card, path or automatic preview, live or after a reload. Upload and mention markers in the person's message stay.</p>
+<ul>
+<li>A marker stays only when its path and any <code translate="no">@previewjson</code> path were both recorded.</li>
+<li>The text a reply stores while streaming, kept by a reply a restart cut off, and an always-on report get the same treatment.</li>
+<li><code translate="no">parseAttachments</code> reads only the forms the server checks.</li>
+</ul>
+<p>A script the reply links (<code translate="no">[build.py](/abs/build.py)</code>) or a file the agent only read stays a link in the prose (<a href="#prose-paths">Paths in a reply</a>).</p>
+<p>When a reply finishes in the focused chat, its first attachment not already shown in the reply opens in the preview beside it: the deliverable the turn just made.</p>
+<p class="note">Below the preview: file-type icon, name, type and size (plus page or file count), then <strong>Open</strong> and <strong>Reveal in Finder</strong> (File Explorer, File Manager by platform). A file the app cannot show puts <strong>Download</strong> in the open slot; when the worker is not on the user's machine, the reveal slot downloads. Previews load as the card nears the screen.</p>
+
+<details>
+<summary>HTML sandbox and archives</summary>
+<ul>
+<li><code translate="no">GET /api/file-page</code> serves only .html and .htm, with <code translate="no">sandbox allow-scripts</code> and no <code translate="no">allow-same-origin</code>. A <code translate="no">srcdoc</code> frame would inherit the app's <code translate="no">script-src 'self'</code> and a script-drawn page would be blank.</li>
+<li>The page has an opaque origin: no access to the app or its storage, its <code translate="no">Origin: null</code> requests are refused, it cannot navigate or open windows. Relative files are missing from the strip because the strict cookie is not sent; the page opened in a browser tab has them.</li>
+<li><code translate="no">FileViewer</code> sends a zip or tar to <code translate="no">ArchivePreview</code>: full tree on the left, the selected member on the right through the same <code translate="no">FileViewer</code>. Nothing is extracted to disk.</li>
+</ul>
+</details>
+
+<h3 id="prose-paths">Paths in a reply</h3>
+<p>A file the reply only names, as <code translate="no">`exports/plan.pptx`</code> or <code translate="no">[plan](/Users/me/exports/plan.pptx:3)</code>, is a link to that file. A click opens it in the preview beside the chat: an office file in the document editor, a PDF in the PDF viewer, a web page as a page.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Candidates</th><td>Inline code spans and markdown link targets of a settled reply (never code blocks, never while it streams). A path-shaped string: a folder separator or a name with an extension, absolute, <code translate="no">~</code> or relative; a <code translate="no">:12</code> or <code translate="no">#L12</code> suffix is dropped. Commands, web addresses and links to the app's own pages (<code translate="no">/s/…</code>, <code translate="no">/settings</code>) are not candidates</td></tr>
+<tr><th scope="row">Confirmed by the worker</th><td><code translate="no">GET /api/file-paths</code> answers which candidates are files: absolute and <code translate="no">~</code> paths against <code translate="no">readable_roots</code>, relative ones joined to the chat's working directory first. Only confirmed paths become links, so a code span that looks like a name never turns into a dead link</td></tr>
+<tr><th scope="row">Cost</th><td>The candidates of every reply on screen go out in one request per chat (64 paths each, <code translate="no">stat</code> only), answers are kept five minutes (a missing file twenty seconds, since the agent may still make it). The text is drawn first and never waits</td></tr>
+<tr><th scope="row">Not a route</th><td>A markdown link that can only be a local path (<code translate="no">/…</code> that is not an app page, <code translate="no">~/</code>, <code translate="no">./</code>, <code translate="no">../</code>, <code translate="no">file://</code>, a drive) is stopped before the shell's router, which would take <code translate="no">/Users/…</code> for a page. Not confirmed yet, it is looked up on click; a file that is not there says so. A bare target (<code translate="no">notes/plan.md</code>, or <code translate="no">docs.example.ai</code>, a web address without its scheme) becomes a file link only once confirmed, and until then keeps its own click</td></tr>
+<tr><th scope="row">Look</th><td>Drawn as the app's rendered-markdown links are (the file preview's): the link colour over a faint underline that turns solid on hover. A code span keeps its chip and takes the colour and the underline, so it is told apart from plain code at rest even where the link colour is close to the code colour. Only decoration changes, so the paragraph keeps its layout when a path becomes a link. Enter opens it</td></tr>
+</tbody>
+</table>
+
+<h3 id="file-menu">File menu</h3>
+<p>A right-click on a path in a reply, on a reply file card or on a row of the turn's changed files opens one menu, from <code translate="no">FilePathMenuContent</code>:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Open preview</th><td>The click's action; left out on a card whose file nothing here can show</td></tr>
+<tr><th scope="row">Copy ›</th><td>Absolute path, Relative path (to the chat's project; disabled outside it), Filename</td></tr>
+<tr><th scope="row">Reveal in Finder</th><td>File Explorer or File Manager by platform, through <code translate="no">POST /api/file-reveal</code>; only when the worker runs on this machine</td></tr>
+<tr><th scope="row">Open in default app</th><td>The desktop app's <code translate="no">files:open-default</code>: the system opens the file as a double-click would, so a deck opens in Keynote or PowerPoint. Refuses a folder, an executable and anything the system would run (scripts, apps, installers, shortcuts). Absent in a browser or on another machine</td></tr>
+<tr><th scope="row">Attach as context</th><td>Adds an <code translate="no">@</code> mention of the file to the chat's message box</td></tr>
+</tbody>
+</table>
+<p class="note">Right-click elsewhere in a reply keeps the browser's own menu, and a card inside a reply keeps its own. A deleted file in the changed-files card has no menu.</p>
+
+<h2 id="now-out">Outbound</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 216" role="img" aria-label="send_file checks the path and reports success, delivering nothing. At turn end the runtime reads recorded send_file calls, including before a pause, adds the deliverables the turn produced, checks each path again and appends markers to final_text. The web shows a file card. A channel extracts the marker and calls post_file: on success the marker is removed, otherwise it becomes a readable note with the path.">
+  <defs><marker id="ca-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-cmd notranslate" translate="no" x="0" y="40">send_file(path)</text>
+  <text class="t-soft" x="0" y="66">resolve symlinks,</text>
+  <text class="t-soft" x="0" y="86">check allowed roots,</text>
+  <text class="t-soft" x="0" y="106">report; no delivery</text>
+  <line class="ln" x1="150" y1="34" x2="212" y2="34" marker-end="url(#ca-a)"/>
+  <text class="t-big" x="224" y="40">Turn end</text>
+  <text class="t-soft" x="224" y="66">send_file calls and</text>
+  <text class="t-soft" x="224" y="86">produced files, checked;</text>
+  <text class="t-soft" x="224" y="106">markers to final_text</text>
+  <path class="ln" d="M372 34H416" marker-end="url(#ca-a)"/>
+  <path class="ln" d="M394 34V152H416" marker-end="url(#ca-a)"/>
+  <text class="t-big" x="428" y="40">Web</text>
+  <text class="t-soft" x="428" y="66">file card under the reply</text>
+  <text class="t-big" x="428" y="158">Channel</text>
+  <text class="t-soft" x="428" y="184">post_file, marker removed</text>
+  <text class="t-no" x="428" y="206">Fails: note with the path</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong><code translate="no">send_file(path)</code></strong><small>resolve symlinks, check allowed roots, report; no delivery</small></li>
+  <li><strong>Turn end</strong><small>recorded <code translate="no">send_file</code> calls plus the files the turn produced, checked again, as markers on <code translate="no">final_text</code></small></li>
+  <li class="flow-end"><strong>Web</strong><small>file card under the reply</small><strong>Channel</strong><small><code translate="no">post_file</code>, marker removed</small><p class="refused">Fails: note with the path</p></li>
+</ol>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Limit</th><td>32 MB per file</td></tr>
+<tr id="approval"><th scope="row">Approval</th><td>None, in any mode. Attaching a file to the turn's own conversation is replying, so <code translate="no">send_file</code> is a no-decision tool (<code translate="no">SAFE_TOOL</code>) and needs <code translate="no">fs.read</code>, not <code translate="no">network.send</code>. Model review would judge an attachment a disclosure and refuse it, and after one refusal a model stops attaching for the rest of the chat. A paired chat-app speaker has no <code translate="no">fs.read</code>, so the owner's files are not sent to them</td></tr>
+<tr id="produced"><th scope="row">Files the turn produced</th><td>Attached without a <code translate="no">send_file</code> call (see below)</td></tr>
+<tr><th scope="row">Where the tool exists</th><td>Not in <code translate="no">cli</code>, <code translate="no">tui</code> or <code translate="no">plan</code> (<code translate="no">unsafe_in</code>): the model cannot try and fail. Elsewhere it is a resident tool, a function of every request, never one to search for; a <code translate="no">tool_search</code> for it answers that it is already callable (<a href="../../function/deferred-tools.html#codex">Deferred tools</a>)</td></tr>
+<tr><th scope="row">What the prompt says</th><td>Call <code translate="no">send_file</code> for each deliverable when it is in the tools list, with no search first. Say that a file was not sent only when a <code translate="no">send_file</code> call refused it, with its reason, and never conclude it from a tool search. Not "never say it": the tool does refuse (a home file in a platform chat, a file over the limit), and hiding that leaves the user waiting for a file</td></tr>
+<tr><th scope="row">Pause</th><td>The record is the source, so a resumed turn keeps its files</td></tr>
+<tr><th scope="row">Refused path</th><td>An error to the model that says the path is outside and names this conversation's own folders: its working folder, its project folder and its chat folder. Every other project's <code translate="no">chats/</code> folder is also a root, but only counted ("40 other folders"), so the message stays short however many projects there are</td></tr>
+<tr><th scope="row">Boundary</th><td>In-process Python, outside <code translate="no">openprogram/host/sandbox/</code>, which governs shell commands. The path check is the whole boundary</td></tr>
+<tr><th scope="row">Why a tool</th><td>A <code translate="no">MEDIA:</code> line leaks to the user when extraction fails. A tool can report a missing file. Mentioning a path the turn did not modify sends nothing</td></tr>
+<tr><th scope="row">Marker the turn did not attach</th><td>Nothing uploads. The channel checks the marker's path against the files the turn attached (its <code translate="no">send_file</code> calls and the files it produced), because a marker is text the model can also write. The turn's final text already reads such a marker as the file's name; one in text streamed before that becomes a Chinese note without the path</td></tr>
+<tr><th scope="row"><code translate="no">post_file</code> not supported or failed</th><td>The marker becomes a Chinese note with the path, and failures are logged. Clickable links would need an externally reachable web URL</td></tr>
+</tbody>
+</table>
+
+<h3 id="produced-files">Files the turn produced</h3>
+<p>A model that builds a deck with a script and answers “done, it is at <code translate="no">exports/plan.pptx</code>” has attached nothing. At turn end, <code translate="no">produced_files</code> attaches such files itself, with the same marker, so the same card appears and a channel uploads them.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Candidates</th><td>Paths the reply names: markdown link targets (also <code translate="no">&lt;…&gt;</code> and <code translate="no">%20</code>), code spans and bare tokens; absolute, <code translate="no">~</code>, or relative to the project and then the session workdir; a <code translate="no">:12</code> or <code translate="no">#L12</code> suffix is dropped. Plus files <code translate="no">write</code> wrote and <code translate="no">image_generate</code> saved</td></tr>
+<tr><th scope="row">Kept when</th><td>A regular file inside <code translate="no">sendable_roots</code>, at most 32 MB, modified at or after the turn started (one second of slack); a resumed turn uses its user message's time. Not a file the user sent in (<code translate="no">workdir/attachments/</code>, <code translate="no">steer-images/</code>): its mtime falls inside the turn too</td></tr>
+<tr><th scope="row">Formats</th><td>Office and other documents, PDF, images, audio, video, archives; and HTML, Markdown, CSV, TSV, SVG and notebooks unless the edit tools changed them, since the edit card already shows those with their diff. The rule is the same for every candidate, whether the reply named it or <code translate="no">write</code> or <code translate="no">image_generate</code> saved it, so the script that built a deck stays out. Source code and logs never, nor <code translate="no">.key</code>, which is also a private key's extension</td></tr>
+<tr><th scope="row">Limits</th><td>At most 64 candidates looked at with <code translate="no">stat</code> only, at most 8 attached, each once, after the <code translate="no">send_file</code> files. Any failure attaches nothing and never reaches the turn</td></tr>
+<tr><th scope="row">Where</th><td>Only where <code translate="no">send_file</code> exists (not <code translate="no">cli</code> or <code translate="no">tui</code>) and for a speaker with <code translate="no">fs.read</code></td></tr>
+</tbody>
+</table>
+<p class="note">The modification time is the guard: a file the model only read or mentioned is older than the turn and stays put.</p>
+<p class="note">The base guide asks the model to name each file it produced as a markdown link to its absolute path and to attach deliverables with <code translate="no">send_file</code>; the <code translate="no">send_file</code> description says it is for any file the user should see, office files a script made included.</p>
+
+<h2 id="now-parts">File access</h2>
+<table class="grid">
+<thead><tr><th scope="col">Root</th><th scope="col">Display<small translate="no">readable_roots</small></th><th scope="col">Send<small translate="no">sendable_roots</small></th></tr></thead>
+<tbody>
+<tr><th scope="row">Conversation folders <code translate="no">projects/*/chats</code></th><td class="run">Allowed</td><td class="run">Allowed</td></tr>
+<tr><th scope="row">Project bound to the session</th><td class="run">Allowed</td><td class="run">Allowed</td></tr>
+<tr><th scope="row">OpenProgram checkout</th><td class="run">Allowed</td><td class="deny">Refused</td></tr>
+<tr><th scope="row">Channel <code translate="no">attachments</code> folders</th><td class="run">Allowed</td><td class="deny">Refused</td></tr>
+<tr><th scope="row">Folder of a chat with no project (the default project's, often home)</th><td class="run">Guarded, for that chat</td><td class="run">Guarded, while the chat stays in the App</td></tr>
+<tr><th scope="row">Default project folder for any other request</th><td class="deny">Refused</td><td class="deny">Refused</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">resolve_within</code> resolves symlinks before testing containment, so a link to <code translate="no">~/.ssh</code> fails. Every session is auto-bound to the default project, so only non-default bindings count as a project. Channels are globbed down to the <code translate="no">attachments</code> leaf because <code translate="no">credentials.json</code> is a sibling.</p>
+<h3 id="no-project-folder">A chat with no project</h3>
+<p>Such a chat works in the default project's folder, often the home directory, so a deck it builds lands there. That folder is a root only as a <code translate="no">WorkdirRoot</code>, for a conversation that exists and has no real project. A folder that is the filesystem root is never one, or the whole disk would be a root. The rules:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Preview, path links, file cards, reveal (<code translate="no">readable_roots</code>)</th><td>Allowed for that chat's own requests. These are local to the owner's App</td></tr>
+<tr><th scope="row"><code translate="no">send_file</code> and turn-end attach (<code translate="no">sendable_roots</code>)</th><td>Allowed while the conversation does not deliver to a chat platform. An owner chat bound to one (its meta names a <code translate="no">channel</code>), or one that arrived from a platform contact (its meta names a <code translate="no">peer_id</code>, kept after unbinding since the contact's next message returns there), keeps the narrow roots: the tool refuses a home file, and the turn-end check refuses it again, so nothing from home is uploaded to WeChat or Telegram</td></tr>
+<tr><th scope="row">Always refused under that folder</th><td>Any path through a dot-folder or dot-file (<code translate="no">~/.ssh</code>, <code translate="no">~/.aws</code>, <code translate="no">~/.openprogram*</code>, <code translate="no">.env</code>); any path through a folder named <code translate="no">Library</code> or <code translate="no">AppData</code>, where macOS and Windows keep keychains, browser profiles and cookies; key and keystore files (<code translate="no">.key</code>, <code translate="no">.pem</code>, <code translate="no">.p12</code>, <code translate="no">.kdbx</code> and similar); names such as <code translate="no">id_ed25519</code>, <code translate="no">credentials.json</code>, <code translate="no">token</code>; and the state directory, whose conversation folders are roots of their own. Uploads and steer images stay out of turn-end attach as before</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Choice</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Not a plain root</th><td>The folder may be <code translate="no">$HOME</code>, and <code translate="no">send_file</code> can reach a chat platform</td></tr>
+<tr><th scope="row">Not left out</th><td>A chat with no project could neither send, link nor open what it built. Claude Code desktop, Codex, Hermes, MiniMax Code and KimiCode all open files the turn wrote from the reply, wherever the working directory is</td></tr>
+<tr><th scope="row">No per-file journal</th><td>Files the turn's tools wrote outside every root are not opened: the working folder covers where they land, and a journal would be a second rule</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Route</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /files/raw</code></th><td>Project and relative path for the file panel and center tabs. Always refuses absolute paths; keep this invariant</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/file-raw</code></th><td>Absolute path against <code translate="no">readable_roots</code>; <code translate="no">nosniff</code>, CSP <code translate="no">sandbox</code>, PDF exempted from it for the browser viewer</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/file-read</code></th><td>Text. A relative path under a root, or an absolute path against <code translate="no">readable_roots</code></td></tr>
+<tr><th scope="row"><code translate="no">GET /api/archive-list</code></th><td>Entries from the zip central directory or tar headers, at most 5000, flagged when cut</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/archive-member</code></th><td>One member up to 32 MB with <code translate="no">/api/file-raw</code>'s headers. The name is only looked up in the archive index, so <code translate="no">../</code> reaches nothing</td></tr>
+<tr><th scope="row"><code translate="no">POST /api/file-reveal</code></th><td>Selects the path in the worker's file manager after the same check. Never opens or runs it; opening in the default app is the desktop app's, which checks the file itself (<a href="#file-menu">File menu</a>)</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/file-paths</code></th><td>Many <code translate="no">path</code> parameters, at most 64; each mapped to the absolute file it names inside <code translate="no">readable_roots</code> or <code translate="no">null</code>, without saying whether it was missing, a folder or outside. Relative paths are joined to the chat's working directory. <code translate="no">stat</code> only</td></tr>
+<tr><th scope="row">On the event loop</th><td><code translate="no">/api/file-paths</code>, <code translate="no">/api/file-search</code> and <code translate="no">/api/file-resolve</code> find the chat's working directory under its conversation lock, and the search walks folders. That lookup runs in a worker thread in that conversation's lane, so a turn holding the conversation delays only these requests, never the Worker. The search's folder walk runs in a plain worker thread after it, outside the lane, so an @-mention typed while a large folder is walked never queues a Send or Stop of the same chat</td></tr>
+</tbody>
+</table>
+<p class="note">Both archive routes take an absolute path or a project id and relative path. <code translate="no">FileViewer</code> has one <code translate="no">abs</code> switch, so image, PDF, Markdown, line-numbered code and download-card rendering stay in one implementation.</p>
+
+<h2 id="plan">Deferred</h2>
+<table class="stack">
+<thead><tr><th scope="col">Item</th><th scope="col">Why not now</th><th scope="col">When</th></tr></thead>
+<tbody>
+<tr><th scope="row">Center tab for user attachments</th><td>The overlay covers a quick look; project-keyed tabs would need new handling. Reply cards already use tabs</td><td>When someone reads an attachment at length</td></tr>
+<tr><th scope="row"><code translate="no">send_file</code> caption</th><td>The marker has no caption field and reply text already accompanies the file</td><td>When a platform needs text attached to the file</td></tr>
+<tr><th scope="row">Outbound tool allowlist</th><td><code translate="no">send_file</code> is the only outbound entry and checks roots</td><td>When plugins or MCP tools can trigger delivery</td></tr>
+<tr><th scope="row">Short-lived signed tokens</th><td>Local listener, same-origin guard, root checks</td><td>First addition once the web UI leaves localhost</td></tr>
+<tr><th scope="row">Syntax highlighting</th><td>Line-numbered <code translate="no">pre</code> is enough; docs-site highlighting is build-time only</td><td>When users report a need</td></tr>
+</tbody>
+</table>
+<p class="note">Also absent: multiresolution thumbnails for large images.</p>
+
+<h2 id="ideal">Target design</h2>
+<p>Any file, from any source, opens through the same viewer in every interface. User and agent files differ only in their source field.</p>
+<table class="stack" id="gaps">
+<thead><tr><th scope="col">Capability</th><th scope="col">Solves</th><th scope="col">Today</th><th scope="col">Why deferred</th></tr></thead>
+<tbody>
+<tr><th scope="row">One attachment record (id, SHA-256, name, MIME, location, count, source, session, message); text holds only <code translate="no">[attachment:&lt;id&gt;]</code></th><td>Rename, dedup and cross-session references become queries</td><td>A text marker holds everything</td><td>Needs a schema change and history migration; wait for cross-session references</td></tr>
+<tr><th scope="row">One parser, every interface, including inline terminal images (iTerm2, kitty; file card elsewhere)</th><td>One rendering decision per resource</td><td>True on the web. The TUI has no attachment concept and cannot paste images</td><td>Independent of the web. Peers show the practical gain is modest</td></tr>
+<tr><th scope="row">Full symmetry</th><td>One data model and UI for user and agent files</td><td>Grammar, parser, chips and viewer are shared; only fallbacks differ</td><td>Partly done; all four platforms upload</td></tr>
+<tr><th scope="row">Output as a live page</th><td>Watch a document develop</td><td><code translate="no">canvas</code> writes Markdown blocks with ids; no panel renders them</td><td>Wire format settled. The most valuable next addition; three peers built it</td></tr>
+</tbody>
+</table>
+<p class="note">Excluded: global content-addressed blob storage. Each session workdir is committed every turn and stays replayable, so large binaries staying in git history is the accepted cost.</p>
+
+<h3 id="canvas-content">Canvas file content</h3>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Call</th><th scope="col">Result</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">set</code>, <code translate="no">append</code> with <code translate="no">content=""</code></th><td>Empty string is content; the block keeps an empty body and <code translate="no">get</code> returns the empty string</td></tr>
+<tr><th scope="row">Content omitted or null</th><td>Error, file unchanged</td></tr>
+<tr><th scope="row"><code translate="no">content</code> with <code translate="no">body</code> or <code translate="no">text</code></th><td>Explicit <code translate="no">content</code> wins, even when empty</td></tr>
+</tbody>
+</table>
+<p class="note">The plain callable and registered tool share this, with the same block format and sandbox path checks.</p>
+
+<details id="others">
+<summary>Eight peers compared</summary>
+<table class="stack">
+<thead><tr><th scope="col">Repository</th><th scope="col">Into context</th><th scope="col">Display</th><th scope="col">Agent sends files</th><th scope="col">Viewing, cleanup</th></tr></thead>
+<tbody>
+<tr><th scope="row">claude-code (TUI)</th><td>Inline base64; bytes in <code translate="no">~/.claude/image-cache/&lt;session&gt;/</code>, 0600. 5 MB, 2000 px, sharp resize, JPEG steps 80/60/40/20. Bridged web and mobile inject paths</td><td><code translate="no">[Image #N]</code> with OSC-8 link to the system viewer. Non-images: <code translate="no">Read &lt;path&gt; (N lines)</code></td><td><code translate="no">SendUserMessage</code> <code translate="no">attachments: string[]</code>; upload returns file_uuid; 30 MB</td><td>TUI Markdown and highlighting. PDFs as document blocks or per-page JPEGs. Each session start removes others' caches; 200-entry path LRU</td></tr>
+<tr><th scope="row">codex-cli (TUI)</th><td>Base64 <code translate="no">input_image</code> in an <code translate="no">&lt;image name path&gt;</code> tag. Bytes stay in place. 2048 px, SHA-1 64 MB LRU. Remote URLs rejected</td><td><code translate="no">[Image #N]</code>, not clickable. Kitty and sixel only for the mascot</td><td>No general tool. Image generation prints <code translate="no">file://</code> and claims it was shown</td><td>Markdown, syntect. <code translate="no">file_opener</code> rewrites references to editor URIs</td></tr>
+<tr><th scope="row">openclaw (web, TUI)</th><td>Vision models get base64; others get a <code translate="no">media://inbound/&lt;id&gt;</code> receipt. Store 0700. Images 6 MB, audio/video 16 MB, documents 100 MB. EXIF normalised, JPEG re-encoded</td><td>Web thumbnails open a new tab; cards; audio player with status badges. TUI labels</td><td><code translate="no">MEDIA:</code> line and a <code translate="no">message</code> tool. Only allowlisted core tools may send local paths</td><td>Markdown-it, DOMPurify. Documents extracted for the model only. Two-minute TTL</td></tr>
+<tr><th scope="row">opencode (web, TUI)</th><td>Base64 data URLs in SQLite. <code translate="no">@</code> runs read on submit and injects two synthetic plain-text parts. 5 MB, 2000 px, Lanczos3</td><td>Image cards with a lightbox; non-images not clickable; <code translate="no">@</code> highlighted in text</td><td>No; tool attachments go to model context</td><td><code translate="no">GET /file/content</code>; images, audio, SVG, tabs, diffs. Deleted with session rows</td></tr>
+<tr><th scope="row">hermes-agent (channels)</th><td>Per-turn routing: native base64 plus a path hint, or <code translate="no">vision_analyze</code> text. Documents as paths, text inlined. No first limit; compress to 4 MB after rejection</td><td>Native on Telegram and Discord; CLI, TUI and xterm web not clickable</td><td>Most complete: <code translate="no">MEDIA:</code>, <code translate="no">send_message</code>, symlink-first root check, per-platform prompts; <code translate="no">![alt](url)</code> extracted</td><td>Rich Markdown. 24-hour TTL</td></tr>
+<tr><th scope="row">pi-mono (TUI)</th><td><code translate="no">@file</code> inlined with a <code translate="no">&lt;file name&gt;</code> marker. Clipboard writes a temp file and inserts its path. 2000 px, 4.5 MB, can be disabled</td><td>The only real inline terminal images (Kitty, iTerm2), off under tmux and screen; tool results only, user images not echoed</td><td>No</td><td>Markdown, diffs; no PDF, no cleanup of temp images</td></tr>
+<tr><th scope="row">pi-ai (protocol)</th><td>Read-only copy of the pi-mono package. Image blocks removed when the model declares no image input; tool-result images split into text and a synthetic user message</td><td>No</td><td>No</td><td>No</td></tr>
+<tr><th scope="row">weclaw (WeChat)</th><td>Images intercepted, saved, “Saved: filename”; agent cannot see them. Voice uses WeChat's transcript. No limit</td><td>WeChat is the client</td><td>Implicit: bare absolute-path lines or <code translate="no">![](url)</code> uploaded and replaced with “Attachment sent”. Roots default to <code translate="no">~/.weclaw/workspace</code>, extension allowlist</td><td>Markdown stripped to plain text</td></tr>
+</tbody>
+</table>
+<h3 id="out4">Four ways to send a file</h3>
+<table class="stack">
+<thead><tr><th scope="col">Design</th><th scope="col">Used by</th><th scope="col">Gains</th><th scope="col">Costs</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool parameter</th><td>claude-code, OpenProgram</td><td>Typed, existence checked at the tool</td><td>One tool call; speech and files are separate actions</td></tr>
+<tr><th scope="row">Instruction line</th><td>openclaw, hermes</td><td>Sent with speech, no extra round trip; per-channel prompt</td><td>Bad paths need checks; partial extraction leaks the line</td></tr>
+<tr><th scope="row">Implicit scan</th><td>weclaw</td><td>Nothing to learn, no prompt cost</td><td>Mentioning a path can send it</td></tr>
+<tr><th scope="row">Host attaches what the turn produced</th><td>Claude Code desktop, hermes Deliverable Mode, OpenProgram</td><td>Works when the model forgets the tool or a script made the file</td><td>Needs a rule for what counts as produced</td></tr>
+<tr><th scope="row">None</th><td>codex-cli, opencode, pi-mono, pi-ai</td><td>Nothing to build</td><td>The model can only paste a path</td></tr>
+</tbody>
+</table>
+<p class="note">Instruction-line and implicit designs all keep paths inside allowed roots, resolving symlinks first.</p>
+<h3 id="produced-peers">Delivering produced files: peers and choices</h3>
+<p>Among the 21 harnesses on frontierharness.org/live, none of the strong ones relies on the model remembering to attach every file. They layer a host step, actionable paths in the reply, and a prompt line, with the send tool as a backup.</p>
+<table class="stack">
+<thead><tr><th scope="col">Peer</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code desktop, Cowork</th><td>Presents files <code translate="no">Write</code> and <code translate="no">Edit</code> produced by itself; <code translate="no">SendUserFile</code> is for files a script made. A setting opens HTML, images, PDF and video it writes</td></tr>
+<tr><th scope="row">hermes Deliverable Mode</th><td>Scans the reply for absolute or <code translate="no">~</code> paths ending in .pptx, .docx, .xlsx or .pdf and uploads them; its docs admit the agent does not reach for files by default</td></tr>
+<tr><th scope="row">Codex app, MiniMax Code</th><td>Opens a generated file after the task; lists files generated or referenced as results</td></tr>
+<tr><th scope="row">Codex, Antigravity prompts</th><td>Ask the model to write file paths as clickable links and never to say a report is ready without its link</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Choice</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Attach at turn end, not only through the tool</th><td>Claude Code desktop's split. Office files and PDFs come from scripts, which no edit journal records, and a model whose attachment was refused stops trying</td></tr>
+<tr><th scope="row">Require a modification during the turn</th><td>hermes' scan has no such test, so naming an input file sends it back. The time test is one <code translate="no">stat</code> and separates a result from a mention</td></tr>
+<tr><th scope="row">Accept relative paths and links</th><td>Models write <code translate="no">exports/plan.pptx</code> and markdown links more often than bare absolute paths, which are all hermes reads</td></tr>
+<tr><th scope="row">Same roots as <code translate="no">send_file</code></th><td>The host step must not reach further than the tool. A file outside the roots is still opened from the link in the reply</td></tr>
+<tr><th scope="row"><code translate="no">fs.read</code>, not <code translate="no">reply</code></th><td>Attaching is replying, but it shows a file's bytes. <code translate="no">reply</code> would let a paired speaker, who may not read the owner's files, have them sent</td></tr>
+<tr><th scope="row">No new prompt, no <code translate="no">MEDIA:</code> tag</th><td>Fewer prompts is the product direction, and a tag still depends on the model remembering</td></tr>
+</tbody>
+</table>
+<h3 id="prose-paths-peers">Paths in a reply: peers and choices</h3>
+<table class="stack">
+<thead><tr><th scope="col">Peer</th><th scope="col">What it does</th></tr></thead>
+<tbody>
+<tr><th scope="row">Claude Code desktop</th><td>A path in a reply opens the file pane or browser pane; right-click gives Attach as context, Copy (absolute, relative, filename), Open in, Show in Finder</td></tr>
+<tr><th scope="row">KimiCode</th><td>Click opens File Preview; right-click gives Copy path and Reveal</td></tr>
+<tr><th scope="row">OpenCode v2</th><td>Links inline-code paths only after confirming the file exists, after unchecked guesses gave dead links</td></tr>
+<tr><th scope="row">Codex app</th><td>Prompts for <code translate="no">[app.py](/abs/path/app.py:12)</code> links and opens them in its editor</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Choice</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Link only what the worker confirms</th><td>OpenCode v2's fix. A code span like <code translate="no">os.path.join</code> has a path's shape; asking costs one batched <code translate="no">stat</code> request and no dead link is drawn</td></tr>
+<tr><th scope="row">One batched route, not <code translate="no">/api/file-resolve</code> per path</th><td><code translate="no">file-resolve</code> answers one root-relative path and refuses absolute ones outside the chat's folder; <code translate="no">documents/stat</code> answers one path without its absolute form. A reply names many paths, and the menu's Copy needs the real path</td></tr>
+<tr><th scope="row">Claude Code desktop's menu, in the app's own menu parts</th><td>The menu the user named. Built from <code translate="no">ContextMenu</code> and <code translate="no">MenuRow</code> so it looks like every other right-click menu; one component for paths, cards and changed-file rows</td></tr>
+<tr><th scope="row">Open in default app in the desktop app, not the worker</th><td>The desktop app runs where the user sits; the worker route stays read-only and never runs a file. The app refuses anything the system would run, so the item cannot start a script the agent wrote</td></tr>
+<tr><th scope="row">Scan settled replies only</th><td>A streaming reply redraws its last block on every delta; links would flicker and the questions would repeat</td></tr>
+</tbody>
+</table>
+
+<h3 id="tricks">Other techniques</h3>
+<ul>
+<li>Output as a page: openclaw serves canvas documents embedded with <code translate="no">[embed ref=…]</code>; Codex materialises <code translate="no">::codex-inline-vis{</code> in a sandboxed viewer (2 MB, strict CSP); pi-mono's <code translate="no">/share</code> publishes a session as a private gist.</li>
+<li>Signed tokens: openclaw's <code translate="no">mediaTicket</code>, <code translate="no">v1.&lt;payload&gt;.&lt;signature&gt;</code>, five-minute TTL.</li>
+<li>Chips as editing units: claude-code sends an image only while its <code translate="no">[Image #N]</code> stays in the text.</li>
+<li>Hermes rewrites host cache paths to container paths. Codex has <code translate="no">view_image</code>.</li>
+</ul>
+</details>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Status</th></tr></thead>
+<tbody>
+<tr><th scope="row">Marker grammar, root policy, inbound paths, chips, overlay, reply cards, file routes, <code translate="no">send_file</code> with no review, files the turn produced, paths in a reply as links, the file menu, channel delivery on all four platforms, canvas content rules</th><td>Implemented</td></tr>
+<tr><th scope="row">Center tab for user attachments, caption, outbound allowlist, signed tokens, highlighting, multiresolution thumbnails</th><td>Not implemented</td></tr>
+<tr><th scope="row">Attachment record, TUI inline images, live canvas panel</th><td>Not implemented</td></tr>
+<tr><th scope="row"><code translate="no">document</code> modality (model <code translate="no">input</code> in <code translate="no">openprogram/models/providers/types.py</code>) and a delivery-choice capability switch</th><td>Not implemented</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Code locations</summary>
+<dl class="pairs">
+<dt>Marker, roots</dt><dd><code translate="no">openprogram/state/attachments.py</code></dd>
+<dt>Web persistence</dt><dd><code translate="no">openprogram/interfaces/server/ws_actions/chat/attachments.py</code></dd>
+<dt>Channel inbound</dt><dd><code translate="no">openprogram/interfaces/channels/_attachments.py</code></dd>
+<dt>Channel delivery</dt><dd><code translate="no">openprogram/interfaces/channels/_conversation.py</code>, <code translate="no">_transport.py</code></dd>
+<dt>Tool, turn end</dt><dd><code translate="no">openprogram/programs/tools/interaction/send_file.py</code>, <code translate="no">openprogram/runtime/conversation/turn_runtime/__init__.py</code></dd>
+<dt>Routes</dt><dd><code translate="no">openprogram/interfaces/server/routes/files/file_search.py</code>, <code translate="no">archives.py</code></dd>
+<dt>Chips, cards</dt><dd><code translate="no">apps/web/components/chat/messages/attachments/</code></dd>
+<dt>Paths in a reply, file menu</dt><dd><code translate="no">apps/web/components/chat/messages/bubbles/prose-file-links.tsx</code>, <code translate="no">apps/web/lib/files/prose-file-paths.ts</code>, <code translate="no">file-path-lookup.ts</code>, <code translate="no">apps/web/components/files/file-path-menu.tsx</code>, <code translate="no">apps/desktop/main/files/open-default.js</code></dd>
+<dt>Viewer</dt><dd><code translate="no">apps/web/components/files/file-viewer.tsx</code>, <code translate="no">preview/archive-preview.tsx</code></dd>
+</dl>
+</details>

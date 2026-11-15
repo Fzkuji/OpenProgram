@@ -1,0 +1,92 @@
+<title>Branch collaboration</title>
+<meta name="description" content="The three ways DAG branches work together, messaging, dispatch and merge, and what each writes to the graph.">
+<h1>Branch collaboration</h1>
+
+<p>A branch is a <code translate="no">(session_id, head_id)</code> pair, the same within a session and across sessions. Branching is not a special operation: checkout moves HEAD, and the next user turn becomes a sibling.</p>
+
+<table class="stack">
+<thead><tr><th scope="col">Mode</th><th scope="col">Entry</th><th scope="col">What is written</th><th scope="col">In the DAG</th></tr></thead>
+<tbody>
+<tr><th scope="row">Messaging: A delivers into B</th><td><code translate="no">send_message(message, to)</code></td><td>A turn on B's tip; a busy target queues it in the inbox</td><td>Dotted <code translate="no">1 5</code> line, target branch colour, shown on hover; no effect on lanes or depth</td></tr>
+<tr><th scope="row">Dispatch: B works for A and reports back</th><td><code translate="no">agent(prompt, ...)</code></td><td>Sub-branch B, plus an attach pointer in A at the spawning node</td><td>Spawn edge from the task node to B's root; B is its own lane, starting one column right of A's rightmost</td></tr>
+<tr><th scope="row">Merge: branches converge</th><td><code translate="no">/merge</code> or WebSocket action <code translate="no">merge_branches</code></td><td>One attach pointer per peer, one merge assistant node, a multi-parent commit</td><td>Double ring, the only convergence shape, in the base branch's lane; convergence lines drawn, attach pointers not</td></tr>
+</tbody>
+</table>
+<p class="note">Line styles, colours and shapes: <a href="rendering.html">DAG rendering</a> section 3; scenarios 8 (merge), 9 (messaging), 10 (dispatch). Addressing, delivery and limits: <a href="../collaboration/agent-collaboration.html">Agent collaboration</a>.</p>
+
+<h2 id="merge">Merge</h2>
+<dl class="pairs">
+<dt>Syntax</dt><dd><code translate="no">/merge sid_a sid_b:head_b: message</code>; a <code translate="no">*</code> before a peer makes it the base</dd>
+<dt>Without a base</dt><dd>Peers are equal; the merge produces a new tip</dd>
+<dt>With a base</dt><dd>The other peers are supplemental context and the reply continues the base; the multi-peer form of dispatch</dd>
+<dt>Omitted <code translate="no">head_id</code></dt><dd>That session's current HEAD</dd>
+</dl>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Node</th><th scope="col">Fields</th></tr></thead>
+<tbody>
+<tr><th scope="row">Merge node</th><td><code translate="no">role=assistant</code>, synthesized from each branch's output</td></tr>
+<tr><th scope="row">Attach pointer, one per peer</th><td><code translate="no">function=attach</code>, <code translate="no">predecessor=target_head</code>, <code translate="no">attach.session_id</code>, <code translate="no">attach.head_id=peer tip</code>, <code translate="no">attach.is_base</code>, <code translate="no">attach.merge_temp</code></td></tr>
+<tr><th scope="row">Commit</th><td><code translate="no">commit_parents = [target prior commit, *peer commit ids]</code></td></tr>
+</tbody>
+</table>
+<p class="note">Attach is the embedding primitive: one branch's content enters another point as a pointer. A worktree merge is unrelated: a git fast-forward of files, by <code translate="no">worktree_merge</code>.</p>
+
+<details>
+<summary>Code</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Merge engine</th><td><code translate="no">openprogram/runtime/conversation/merge.py</code> <code translate="no">process_merge_turn</code></td></tr>
+<tr><th scope="row">WebSocket action</th><td><code translate="no">openprogram/interfaces/server/ws_actions/merge.py</code></td></tr>
+<tr><th scope="row">Slash command</th><td><code translate="no">openprogram/runtime/conversation/turn_runtime/slash_actions.py</code></td></tr>
+<tr><th scope="row">Attach parsing</th><td><code translate="no">openprogram/state/store/session/graph/branches.py</code> <code translate="no">_attach_info</code></td></tr>
+<tr><th scope="row">DAG edges and shapes</th><td><code translate="no">apps/web/lib/runtime-bridge/dag/render/edges.ts</code>, <code translate="no">shapes.ts</code></td></tr>
+<tr><th scope="row">Merge node lane</th><td><code translate="no">openprogram/state/store/session/graph/layout/lane.py</code></td></tr>
+<tr><th scope="row">Check a graph</th><td><code translate="no">scripts/dag_dump.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="three-operations">Switch, start again, rewind</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">Operation</th><th scope="col">What it creates</th><th scope="col">While a branch runs</th></tr></thead>
+<tbody>
+<tr><th scope="row">Switch to an existing branch</th><td>Nothing; the view and the head move to that branch's tip</td><td>Always allowed</td></tr>
+<tr><th scope="row">Start again from an old point: edit and resend, retry, send from a message selected in the graph</th><td>A new branch beside the original, with its own record (<code translate="no">branch_identity</code> of the new message). Both stay and both can run. A retry of a prompt that never got a reply reruns that prompt instead</td><td>Allowed from any point while other branches run; waits while the selected branch's own turn runs</td></tr>
+<tr><th scope="row">Rewind</th><td>Nothing. The tail of the current branch is retracted in place: same branch id, name, settings and usage; the tip moves back before the chosen prompt, which returns to the composer</td><td>Refused while that branch runs; one that changes files, while any branch runs</td></tr>
+</tbody>
+</table>
+
+<p>The DAG is append-only, so a rewind deletes nothing. It lists the retracted nodes in the session meta (<code translate="no">rewind_hidden_nodes</code>; the old tip in <code translate="no">rewind_hidden_heads</code>), written in the head's compare-and-set by <code translate="no">rewind_view.view_update</code>. Every reader skips them:</p>
+<ul>
+<li>transcript, message reads and search;</li>
+<li>branch list and version counts, so a message sent after a rewind continues the branch instead of adding a version;</li>
+<li>the request's context, which walks back from the tip;</li>
+<li>compaction: a summary of retracted turns is retracted too, and the summary before it applies again (<code translate="no">active_summary_for_chain</code> skips the graph's <code translate="no">retracted</code> set);</li>
+<li>the context-commit timeline.</li>
+</ul>
+<p>Undo and Redo of a rewind take the nodes off and back on the list. A switch to a retracted tip is refused and points to Undo. Conversations whose earlier rewinds left an extra branch keep it; nothing is migrated. File restoration: <a href="../operations/file-management.html#shared-workspace-contract">File management</a>.</p>
+
+<p class="note">Peers agree that a rewind removes recent turns from the current line rather than starting a new one. Claude Code's <code translate="no">/rewind</code> slices the conversation in place and gives the prompt back; forking copies the session. Codex writes <code translate="no">ThreadRolledBack</code> with a turn count; the turns stay in the rollout file, leave the history and cannot anchor a fork.</p>
+<p class="note">The retracted list plays the part of Codex's rollback marker and keeps an Undo, which neither peer has in-session. Starting again stays a separate operation, so a person never loses the original by rewinding, and never gets a stray version by retracting.</p>
+
+<h2 id="branch-owned-work">Work that belongs to a branch</h2>
+
+<p>Work started on a branch keeps acting on it after the person selects another:</p>
+<ul>
+<li>A Goal records the branch it was started on (<code translate="no">branch_id</code>). Its check-ins and verification continue and read that branch; a turn on another branch gets neither its instructions nor its accounting. A Goal saved before this follows the selected branch.</li>
+<li><code translate="no">/merge</code> and <code translate="no">merge_branches</code> write the reply to the branch they started on (<code translate="no">target_branch_id</code>) and move the head only while that branch is still selected.</li>
+<li>A <code translate="no">send_message</code> queued for a busy conversation continues the branch it addressed, from that branch's tip.</li>
+</ul>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Fork and checkout; merge backend and <code translate="no">/merge</code>; attach; spawn and attach edges; <code translate="no">send_message</code>; <code translate="no">agent</code> dispatch with report back; worktree merge</td></tr>
+<tr><th scope="row">Not yet</th><td>The messaging line: <code translate="no">send_message</code> writes no source-branch metadata for the renderer to read. A graphical merge dialog: the web client only reports <code translate="no">merge_branches</code> failures.</td></tr>
+<tr><th scope="row">Open</th><td>Whether a send-several-then-merge workflow is needed; whether auto-merge needs confirmation</td></tr>
+</tbody>
+</table>

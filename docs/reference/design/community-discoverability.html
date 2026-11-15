@@ -1,37 +1,26 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Community discoverability design · OpenProgram</title>
-</head>
-<body>
-<h1>Community discoverability design</h1>
-<p>This change converts repository visitors into useful questions, reports, and contributions without adding a separate community platform.</p>
-<h2>Current gaps</h2>
-<p>The repository uses the canonical <code>Fzkuji/OpenProgram</code> contribution links, a public security policy, structured issue forms, and a link to GitHub Security Advisories for private vulnerability reports. These repository-visible contracts are implemented in <code>.github/CONTRIBUTING.md</code>, <code>.github/SECURITY.md</code>, <code>.github/ISSUE_TEMPLATE/</code>, and the pull-request template. Whether the external GitHub advisory setting is enabled is not established by repository files.</p>
-<h2>Reference behavior and decisions</h2>
+<title>Community discoverability</title>
+<meta name="description" content="Which GitHub surfaces turn repository visitors into questions, reports and contributions.">
+<h1>Community discoverability</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Role</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">.github/CONTRIBUTING.md</code></th><td>One canonical guide with setup and validation commands</td></tr>
+<tr><th scope="row"><code translate="no">.github/ISSUE_TEMPLATE/</code></th><td>Bug and feature forms; blank public issues off; questions go to Discussions</td></tr>
+<tr><th scope="row"><code translate="no">.github/SECURITY.md</code></th><td>Private reports through GitHub Security Advisories, never public Issues</td></tr>
+<tr><th scope="row">Contributor Covenant, support routing, pull-request template</th><td>Complete community profile; same verification prompts for every contributor</td></tr>
+<tr><th scope="row">Landing page footer</th><td>Links to Discussions and the contribution guide</td></tr>
+</tbody>
+</table>
+
+<p class="note">No forum, chat server, form service or bot: GitHub already covers this, without another moderation channel.</p>
+
+<details>
+<summary>Contract</summary>
 <ul>
-<li>GitHub surfaces <code>.github/CONTRIBUTING.md</code> in repository contribution flows. Adopt one canonical guide with current setup and validation commands.</li>
-<li>GitHub recognizes issue forms under <code>.github/ISSUE_TEMPLATE</code>. Adopt separate bug and feature forms, route questions to Discussions, and disable blank public issues.</li>
-<li>GitHub recognizes <code>.github/SECURITY.md</code> and private vulnerability reporting. Adopt both so security reports are not disclosed in public Issues.</li>
-<li>Add a Contributor Covenant, support routing file, and pull-request template so GitHub can surface a complete community profile and contributors receive the same verification prompts.</li>
-<li>The public landing page links directly to Discussions and the contribution guide from its footer.</li>
-<li>Reject a new forum, chat server, form service, or bot; the existing GitHub surfaces cover the requirement and avoid another moderation channel.</li>
+<li>Every repository URL uses <code translate="no">FuzzyKuji/OpenProgram</code>.</li>
+<li>Issue form YAML parses, has the name and description GitHub requires, and routes support and security reports to the right surface.</li>
+<li>Contribution, security and issue-template links resolve.</li>
+<li>Private vulnerability reporting is on in repository settings, which repository files alone cannot show.</li>
 </ul>
-<h2>Acceptance</h2>
-<ul>
-<li>Every repository URL uses the canonical <code>Fzkuji/OpenProgram</code> path.</li>
-<li>Issue form YAML parses, contains the GitHub-required name and description fields, and routes support and security reports to the correct existing surfaces.</li>
-<li>Contribution, security, and issue-template links return successful responses.</li>
-<li>Private vulnerability reporting is enabled in repository settings.</li>
-</ul>
-<h2>Implementation evidence</h2>
-<ul>
-<li>Pull request <a href="https://github.com/Fzkuji/OpenProgram/pull/4">#4</a> merged to <code>main</code> as <code>ac07ac5f</code> after documentation, Web, and Python 3.11–3.13 CI passed.</li>
-<li>The publish workflow completed successfully, and the live landing page exposes Discussions and contribution links.</li>
-<li>GitHub reports a 100% community profile with the code of conduct, contribution guide, pull-request template, README, and license present.</li>
-<li>Private vulnerability reporting is enabled. The issue chooser routes bugs and feature requests through structured forms, questions to Discussions, and security reports to private advisories.</li>
-</ul>
-</body>
-</html>
+</details>

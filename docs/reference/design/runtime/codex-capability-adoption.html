@@ -1,0 +1,165 @@
+<title>Codex capability audit</title>
+<meta name="description" content="Which Codex capabilities OpenProgram adopted, which overlap existing ones, and how every flag, CLI subcommand and tool handler was classified.">
+<h1>Codex capability audit</h1>
+<p>Rule: add only an independent missing capability. A different flag, tool name or implementation does not make one; overlaps stay unchanged.</p>
+<dl class="pairs">
+<dt>147</dt><dd>feature flags</dd><dt>30</dt><dd>CLI subcommands</dd><dt>38</dt><dd>tool-handler modules</dd>
+</dl>
+<p class="note">All classified, including experimental, removed and internal entries, so these are not counts of independent capabilities. An overlap classification does not assert identical behaviour.</p>
+
+<h2 id="adopted">Adopted</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Subsystem</th><th scope="col">Decision and reason</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openprogram permissions check</code>, <code translate="no">test</code></th><td>Read-only explanation and self-test of permission rules with the original matcher. Enforcement unchanged.</td></tr>
+<tr><th scope="row">Command network domains</th><td>Optional, macOS: authenticated local proxy plus Seatbelt. Default networking unchanged. Private destinations rejected. Linux and WSL refuse execution in domain mode.</td></tr>
+<tr><th scope="row"><code translate="no">execution.prevent_idle_sleep</code></th><td>Off by default. One handle per active execution, released on completion, error or cancellation: an IOKit assertion on macOS, a system-required power request on Windows, a <code translate="no">systemd-inhibit</code> lock on idle and sleep on Linux. Display sleep is unaffected; on Linux a suspend the user asks for waits too. Read at the next execution. Failure to acquire logs a warning; the task continues. A resource lifecycle around dispatcher execution only.</td></tr>
+<tr><th scope="row"><code translate="no">bash</code> sessions</th><td>See <code translate="no">execution</code> below.</td></tr>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">bash</code> follows unified_exec's exec_command: it yields after <code translate="no">yield_time_ms</code> and a running command continues as a session that <code translate="no">write_stdin</code> polls, interrupts or types into (tty), with Codex's 64-session cap and LRU pruning. Sessions run on the existing managed-process supervisor, so they survive worker restarts. zsh forks and shell snapshots are not adopted. See <a href="execution/command-sessions.html">command sessions</a>.</td></tr>
+<tr><th scope="row"><code translate="no">network</code></th><td>Baseline shell sandbox has a network boolean; safe_http protects managed HTTP clients, not arbitrary command sockets. Per-command OS-enforced destination domains are missing. Retain optional macOS managed proxy; default network modes remain unchanged.</td></tr>
+<tr><th scope="row"><code translate="no">power</code></th><td>No baseline power assertion or sleep inhibitor found in runtime, desktop or scripts. Separate opt-in runtime power assertion is an independent missing capability; no display wake or permanent power-setting changes.</td></tr>
+</tbody>
+</table>
+<p class="note">Not added: context, patching, environment filtering, project instruction hierarchy, context-remaining tools. Existing implementations stay.</p>
+
+<h2 id="overlaps">Overlaps, left unchanged</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Subsystem</th><th scope="col">Decision and reason</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">context</code></th><td>Context projection, summaries, budgets and occupancy already exist. Different algorithms or provider endpoints are overlapping implementations; leave them unchanged.</td></tr>
+<tr><th scope="row"><code translate="no">patch</code></th><td>Patch editing, file-change receipts and worktrees already exist. Move syntax, fuzzy matching, line-ending preservation and streaming patch progress are extensions of existing behavior; excluded.</td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td>Durable execution, programmatic calls and cancellation already exist. A JavaScript/V8 runtime or different execution transport would overlap, not fill a missing product function.</td></tr>
+<tr><th scope="row"><code translate="no">history</code></th><td>Persistence, branches, resumable effects and transcript UI already exist. Codex rollout migration and compression concern a different storage format; no storage rewrite.</td></tr>
+<tr><th scope="row"><code translate="no">memory</code></th><td>Persistent memory, archived sources and consolidation exist. Foreign memory formats and passive screen memory expand that existing system and are excluded under the no-overlap rule.</td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td>Existing rule enforcement, approval and model review remain unchanged. Only a separate read-only rule explanation/self-test CLI is retained.</td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td>Existing Seatbelt and bubblewrap/WSL enforcement overlaps these mechanisms. Native Windows and Landlock are alternate implementations, not adopted.</td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>Model discovery, credential sources, proxy-aware HTTP, failover and transport already exist. OpenAI-specific payload compression and infinite retry policies are overlapping/provider-specific behavior; no replacement.</td></tr>
+<tr><th scope="row"><code translate="no">multiagent</code></th><td>Child agents, message delivery, durable jobs and goals already exist. Do not add a second collaboration or goal subsystem.</td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td>MCP tools/resources/auth and resource interfaces exist. Protocol revisions, MCP Apps and endpoint overrides extend overlapping integrations; not automatically migrated.</td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td>Tool discovery, marketplace installs, plugin hooks and skills already exist. Recommendations, sharing and dependency convenience features overlap these systems; leave them unchanged.</td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td>Questions, owner responses, queued follow-ups and messaging exist. Async variants and mention UI are overlapping interaction behavior.</td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td>Web search, image viewing, browser tools and GUI control exist. Provider-specific external/full-CDP variants are not new standalone gaps.</td></tr>
+<tr><th scope="row"><code translate="no">media</code></th><td>Images, attachments, speech output, dictation and canvas/artifacts exist. Full realtime duplex voice and image-budget algorithms overlap media subsystems; no rewrite or parity claim.</td></tr>
+<tr><th scope="row"><code translate="no">desktop</code></th><td>Worker supervision, chat, scheduled work and updates already exist. Transport/daemon variants remain unchanged.</td></tr>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td>Usage accounting, execution observation and health diagnostics exist. Plan-allowance history and internal Responses metadata are provider-specific or overlapping.</td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>Existing hook/gate system remains unchanged; no new compaction gate in this scoped migration.</td></tr>
+<tr><th scope="row"><code translate="no">guidance</code></th><td>Agent workspace instructions, time/environment context, rendering guidance and bundled document dependencies exist. Project-rule hierarchy and a context-capacity tool overlap these existing abilities and are removed from the candidate.</td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td>Waiting/polling/scheduling already exists; no duplicate sleep tool.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Source paths</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Subsystem</th><th scope="col">Paths</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">openprogram/programs/tools/files/bash/session.py</code><br><code translate="no">openprogram/programs/tools/files/write_stdin.py</code><br><code translate="no">openprogram/host/processes/</code><br><code translate="no">openprogram/host/resources/terminal.py</code></td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td><code translate="no">openprogram/runtime/context/compaction/request.py</code><br><code translate="no">openprogram/runtime/context/engine.py</code><br><code translate="no">openprogram/runtime/context/session_stats.py</code><br><code translate="no">openprogram/runtime/context/compaction/bounded_summary.py</code></td></tr>
+<tr><th scope="row"><code translate="no">patch</code></th><td><code translate="no">openprogram/programs/tools/files/apply_patch.py</code><br><code translate="no">openprogram/state/store/snapshot/checkpoint</code><br><code translate="no">openprogram/state/worktree</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td><code translate="no">openprogram/runtime/agent/runtime</code><br><code translate="no">openprogram/programs/tools/code/execute_code.py</code><br><code translate="no">openprogram/runtime/execution</code></td></tr>
+<tr><th scope="row"><code translate="no">history</code></th><td><code translate="no">openprogram/state/store/session</code><br><code translate="no">openprogram/runtime/execution</code><br><code translate="no">apps/web/components/chat</code></td></tr>
+<tr><th scope="row"><code translate="no">memory</code></th><td><code translate="no">openprogram/state/memory/store.py</code><br><code translate="no">openprogram/state/memory/scheduler.py</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">openprogram/runtime/permissions/policy.py</code><br><code translate="no">openprogram/runtime/permissions/approval.py</code><br><code translate="no">openprogram/runtime/permissions/auto_review.py</code></td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td><code translate="no">openprogram/host/sandbox/__init__.py</code><br><code translate="no">openprogram/host/_platform/environment.py</code></td></tr>
+<tr><th scope="row"><code translate="no">network</code></th><td><code translate="no">openprogram/host/sandbox/__init__.py</code><br><code translate="no">openprogram/host/security/safe_http.py</code><br><code translate="no">openprogram/host/security/url_policy.py</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td><code translate="no">openprogram/models/providers</code><br><code translate="no">openprogram/models/auth</code><br><code translate="no">openprogram/host/security/safe_http.py</code></td></tr>
+<tr><th scope="row"><code translate="no">multiagent</code></th><td><code translate="no">openprogram/programs/tools/agents</code><br><code translate="no">openprogram/runtime/jobs</code><br><code translate="no">openprogram/programs/tools/planning/goal</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td><code translate="no">openprogram/extensions/mcp/client.py</code><br><code translate="no">openprogram/extensions/mcp/oauth_flow.py</code><br><code translate="no">openprogram/host/resources</code></td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td><code translate="no">openprogram/programs/__init__.py</code><br><code translate="no">openprogram/extensions/plugins/marketplace.py</code><br><code translate="no">openprogram/extensions/plugins/installer.py</code><br><code translate="no">openprogram/extensions/plugins/hooks.py</code><br><code translate="no">openprogram/extensions/skills/discovery.py</code><br><code translate="no">openprogram/extensions/skills/loader.py</code></td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td><code translate="no">openprogram/programs/tools/interaction/clarify.py</code><br><code translate="no">openprogram/programs/tools/interaction/ask_user.py</code><br><code translate="no">openprogram/runtime/agent/loop/</code><br><code translate="no">openprogram/interfaces/channels</code></td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td><code translate="no">openprogram/programs/tools/web</code><br><code translate="no">openprogram/programs/tools/computer_use/computer_use_agent/sandbox/isolation.py</code><br><code translate="no">openprogram/programs/applications/browser</code><br><code translate="no">apps/desktop</code></td></tr>
+<tr><th scope="row"><code translate="no">media</code></th><td><code translate="no">openprogram/programs/tools/web/image_generate</code><br><code translate="no">openprogram/programs/tools/web/image_analyze</code><br><code translate="no">openprogram/interfaces/speech/tts.py</code><br><code translate="no">openprogram/state/attachments.py</code><br><code translate="no">openprogram/programs/tools/interaction/canvas.py</code><br><code translate="no">apps/web</code></td></tr>
+<tr><th scope="row"><code translate="no">desktop</code></th><td><code translate="no">openprogram/operations/worker</code><br><code translate="no">openprogram/runtime/scheduler</code><br><code translate="no">openprogram/runtime/proactive</code><br><code translate="no">openprogram/operations/self_update</code><br><code translate="no">apps/desktop</code><br><code translate="no">apps/cli</code></td></tr>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td><code translate="no">openprogram/models/usage</code><br><code translate="no">openprogram/runtime/events</code><br><code translate="no">openprogram/runtime/execution</code><br><code translate="no">openprogram/interfaces/cli/commands/doctor.py</code></td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td><code translate="no">openprogram/runtime/events/bus.py</code><br><code translate="no">openprogram/runtime/events/shell_hooks.py</code><br><code translate="no">openprogram/extensions/plugins/hooks.py</code></td></tr>
+<tr><th scope="row"><code translate="no">guidance</code></th><td><code translate="no">openprogram/runtime/context/components.py</code><br><code translate="no">openprogram/runtime/agent_registry/workspace.py</code><br><code translate="no">openprogram/programs/applications/office_editor/assets.py</code></td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td><code translate="no">openprogram/runtime/agent/runtime</code><br><code translate="no">openprogram/runtime/scheduler</code><br><code translate="no">openprogram/host/processes</code></td></tr>
+<tr><th scope="row"><code translate="no">power</code></th><td><code translate="no">openprogram/host/_platform</code><br><code translate="no">openprogram/runtime/conversation/turn_runtime/loop_runner.py</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Feature flags (147)</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Subsystem</th><th scope="col">Status: flags</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td>Experimental: <code translate="no">analytics_plan_history</code><br>Stable: <code translate="no">content_item_kinds</code><br>Under development: <code translate="no">executed_tool_call_metadata</code>, <code translate="no">runtime_metrics</code>, <code translate="no">concurrent_reasoning_summaries</code><br>Removed: <code translate="no">workspace_owner_usage_nudge</code></td></tr>
+<tr><th scope="row"><code translate="no">desktop</code></th><td>Experimental: <code translate="no">daemon_auto_start</code><br>Stable: <code translate="no">in_app_chat</code>, <code translate="no">in_app_local_automation</code>, <code translate="no">in_app_updates</code><br>Removed: <code translate="no">remote_control</code>, <code translate="no">tui_app_server</code></td></tr>
+<tr><th scope="row"><code translate="no">history</code></th><td>Under development: <code translate="no">transcript_v2</code>, <code translate="no">local_thread_store_compression</code>, <code translate="no">background_paginated_rollout_migration</code><br>Removed: <code translate="no">sqlite</code>, <code translate="no">local_thread_store_shared_compression</code>, <code translate="no">item_ids</code></td></tr>
+<tr><th scope="row"><code translate="no">patch</code></th><td>Removed: <code translate="no">undo</code>, <code translate="no">codex_git_commit</code>, <code translate="no">apply_patch_freeform</code><br>Under development: <code translate="no">cwd_relative_turn_diffs</code>, <code translate="no">apply_patch_streaming_events</code>, <code translate="no">apply_patch_preserve_line_endings</code><br>Stable: <code translate="no">worktrees</code></td></tr>
+<tr><th scope="row"><code translate="no">execution</code></th><td>Stable: <code translate="no">shell_tool</code>, <code translate="no">unified_exec</code>, <code translate="no">unified_exec_tty</code>, <code translate="no">shell_snapshot</code><br>Under development: <code translate="no">shell_zsh_fork</code>, <code translate="no">powershell_shell_version</code>, <code translate="no">shell_snapshot_v2</code>, <code translate="no">deferred_executor</code>, <code translate="no">executor_capability_discovery</code><br>Removed: <code translate="no">unified_exec_zsh_fork</code></td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td>Stable: <code translate="no">view_image</code>, <code translate="no">in_app_browser</code>, <code translate="no">browser_use</code>, <code translate="no">browser_use_full_cdp_access</code>, <code translate="no">browser_use_external</code>, <code translate="no">computer_use</code><br>Deprecated: <code translate="no">web_search_request</code>, <code translate="no">web_search_cached</code><br>Under development: <code translate="no">standalone_web_search</code><br>Removed: <code translate="no">search_tool</code></td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td>Stable: <code translate="no">sleep_tool</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td>Stable: <code translate="no">secret_auth_storage</code>, <code translate="no">enable_request_compression</code>, <code translate="no">unbounded_connection_retries</code>, <code translate="no">fast_mode</code><br>Removed: <code translate="no">remote_models</code>, <code translate="no">responses_websockets</code>, <code translate="no">responses_websockets_v2</code><br>Under development: <code translate="no">api_key_model_discovery</code>, <code translate="no">respect_system_proxy</code>, <code translate="no">use_xaa</code>, <code translate="no">reasoning_effort_override</code>, <code translate="no">bedrock_setup_wizard</code>, <code translate="no">step_model_switching</code>, <code translate="no">use_agent_identity</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td>Removed: <code translate="no">js_repl</code>, <code translate="no">code_mode_buffered_exec</code>, <code translate="no">js_repl_tools_only</code><br>Under development: <code translate="no">code_mode</code>, <code translate="no">code_mode_prewarm</code>, <code translate="no">code_mode_interrupt</code>, <code translate="no">code_mode_only</code><br>Stable: <code translate="no">code_mode_host</code></td></tr>
+<tr><th scope="row"><code translate="no">guidance</code></th><td>Removed: <code translate="no">terminal_resize_reflow</code>, <code translate="no">personality</code><br>Under development: <code translate="no">terminal_visualization_instructions</code>, <code translate="no">current_time_reminder</code>, <code translate="no">nonfatal_clock_read_errors</code><br>Stable: <code translate="no">workspace_dependencies</code></td></tr>
+<tr><th scope="row"><code translate="no">memory</code></th><td>Stable: <code translate="no">memories</code><br>Under development: <code translate="no">external_agent_memory_import</code>, <code translate="no">chronicle</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td>Under development: <code translate="no">exec_permission_approvals</code>, <code translate="no">write_stdin_approval</code>, <code translate="no">request_permissions_tool</code>, <code translate="no">guardianv2.thread_context</code>, <code translate="no">guardian_reuse_parent_compaction</code>, <code translate="no">guardian_enhanced_node_repl_transcripts</code>, <code translate="no">guardian_node_repl_transcript_images</code>, <code translate="no">guardianv2</code><br>Removed: <code translate="no">request_rule</code>, <code translate="no">guardian_ext</code><br>Stable: <code translate="no">guardian_approval</code></td></tr>
+<tr><th scope="row"><code translate="no">hooks</code></th><td>Stable: <code translate="no">hooks</code></td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td>Removed: <code translate="no">use_linux_sandbox_bwrap</code>, <code translate="no">experimental_windows_sandbox</code>, <code translate="no">elevated_windows_sandbox</code><br>Deprecated: <code translate="no">use_legacy_landlock</code><br>Under development: <code translate="no">windows_sandbox_service</code></td></tr>
+<tr><th scope="row"><code translate="no">network</code></th><td>Experimental: <code translate="no">network_proxy</code></td></tr>
+<tr><th scope="row"><code translate="no">multiagent</code></th><td>Stable: <code translate="no">multi_agent</code>, <code translate="no">multi_agent_v2</code>, <code translate="no">goals</code><br>Removed: <code translate="no">multi_agent_mode</code>, <code translate="no">enable_fanout</code>, <code translate="no">send_async_message</code>, <code translate="no">collaboration_modes</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td>Stable: <code translate="no">apps</code>, <code translate="no">tool_call_mcp_elicitation</code>, <code translate="no">auth_elicitation</code><br>Under development: <code translate="no">psp</code>, <code translate="no">enable_mcp_apps</code>, <code translate="no">mcp_2026_07_28</code>, <code translate="no">codex_apps_mcp_2026_07_28</code>, <code translate="no">mcp_oauth_refresh_coordination</code>, <code translate="no">non_prefixed_mcp_tool_names</code><br>Removed: <code translate="no">apps_mcp_path_override</code></td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td>Removed: <code translate="no">tool_search</code>, <code translate="no">tool_search_always_defer_mcp_tools</code>, <code translate="no">unavailable_dummy_tools</code>, <code translate="no">plugin_hooks</code>, <code translate="no">external_migration</code>, <code translate="no">skill_env_var_dependency_prompt</code><br>Under development: <code translate="no">deferred_tool_world_state</code>, <code translate="no">skip_host_skill_discovery</code><br>Stable: <code translate="no">tool_suggest</code>, <code translate="no">recommended_plugins</code>, <code translate="no">plugins</code>, <code translate="no">remote_plugin</code>, <code translate="no">plugin_sharing</code>, <code translate="no">skill_mcp_dependency_install</code>, <code translate="no">skill_search</code></td></tr>
+<tr><th scope="row"><code translate="no">media</code></th><td>Stable: <code translate="no">in_app_dictation</code>, <code translate="no">image_generation</code>, <code translate="no">realtime_conversation</code><br>Under development: <code translate="no">omit_app_server_notification_media</code>, <code translate="no">image_resize_notice</code>, <code translate="no">unified_image_budget</code>, <code translate="no">artifact</code><br>Removed: <code translate="no">resize_all_images</code>, <code translate="no">image_detail_original</code></td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td>Stable: <code translate="no">mentions_v2</code><br>Removed: <code translate="no">steer</code><br>Under development: <code translate="no">default_mode_request_user_input</code>, <code translate="no">send_message_to_user_async</code></td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td>Under development: <code translate="no">token_budget</code>, <code translate="no">context_management</code>, <code translate="no">rollout_budget</code>, <code translate="no">retain_client_developer_messages</code><br>Removed: <code translate="no">remote_compaction_v2</code><br>Stable: <code translate="no">compaction_image_budget</code></td></tr>
+<tr><th scope="row"><code translate="no">power</code></th><td>Experimental: <code translate="no">prevent_idle_sleep</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>CLI subcommands (30)</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Class</th><th scope="col">Entries</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">history</code></th><td><code translate="no">Agents</code>, <code translate="no">Resume</code>, <code translate="no">Queue</code>, <code translate="no">Archive</code>, <code translate="no">Delete</code>, <code translate="no">MigrateRollouts</code>, <code translate="no">Unarchive</code>, <code translate="no">Fork</code></td></tr>
+<tr><th scope="row"><code translate="no">internal</code></th><td><code translate="no">TcpTunnel</code>, <code translate="no">ResponsesApiProxy</code>, <code translate="no">StdioToUds</code></td></tr>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">Exec</code>, <code translate="no">Review</code>, <code translate="no">ExecServer</code></td></tr>
+<tr><th scope="row"><code translate="no">providers</code></th><td><code translate="no">Login</code>, <code translate="no">Logout</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td><code translate="no">Mcp</code></td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td><code translate="no">Plugin</code></td></tr>
+<tr><th scope="row"><code translate="no">desktop</code></th><td><code translate="no">AppServer</code>, <code translate="no">RemoteControl</code>, <code translate="no">App</code>, <code translate="no">Completion</code>, <code translate="no">Update</code></td></tr>
+<tr><th scope="row"><code translate="no">diagnostics</code></th><td><code translate="no">Doctor</code>, <code translate="no">Debug</code>, <code translate="no">Features</code></td></tr>
+<tr><th scope="row"><code translate="no">sandbox</code></th><td><code translate="no">Sandbox</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">Execpolicy</code></td></tr>
+<tr><th scope="row"><code translate="no">patch</code></th><td><code translate="no">Apply</code></td></tr>
+<tr><th scope="row"><code translate="no">external</code></th><td><code translate="no">Cloud</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>Tool handlers (38)</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Class</th><th scope="col">Entries</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">patch</code></th><td><code translate="no">apply_patch</code>, <code translate="no">apply_patch_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">guidance</code></th><td><code translate="no">current_time</code>, <code translate="no">get_context_remaining</code>, <code translate="no">get_context_remaining_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">discovery</code></th><td><code translate="no">dynamic</code>, <code translate="no">extension_tools</code>, <code translate="no">list_available_plugins_to_install</code>, <code translate="no">list_available_plugins_to_install_spec</code>, <code translate="no">request_plugin_install</code>, <code translate="no">request_plugin_install_spec</code>, <code translate="no">tool_search</code>, <code translate="no">tool_search_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">mcp</code></th><td><code translate="no">mcp</code>, <code translate="no">mcp_resource</code>, <code translate="no">mcp_resource_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">multiagent</code></th><td><code translate="no">multi_agents</code>, <code translate="no">multi_agents_common</code>, <code translate="no">multi_agents_spec</code>, <code translate="no">multi_agents_v2</code>, <code translate="no">plan</code>, <code translate="no">plan_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">context</code></th><td><code translate="no">new_context_window</code>, <code translate="no">new_context_window_spec</code></td></tr>
+<tr><th scope="row"><code translate="no">permissions</code></th><td><code translate="no">request_permissions</code></td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td><code translate="no">request_user_input</code>, <code translate="no">request_user_input_async</code>, <code translate="no">request_user_input_spec</code>, <code translate="no">send_message_to_user_async</code></td></tr>
+<tr><th scope="row"><code translate="no">execution</code></th><td><code translate="no">shell_spec</code>, <code translate="no">unified_exec</code></td></tr>
+<tr><th scope="row"><code translate="no">wait</code></th><td><code translate="no">sleep</code>, <code translate="no">wait_for_environment</code></td></tr>
+<tr><th scope="row"><code translate="no">internal</code></th><td><code translate="no">test_sync</code>, <code translate="no">test_sync_spec</code>, <code translate="no">permission_preapproval_tests</code></td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td><code translate="no">view_image</code>, <code translate="no">view_image_spec</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">external</code>: depends on an OpenAI-hosted service. <code translate="no">internal</code>: transport or test infrastructure, not a portable product gap.</p>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<p>Through the public entries: CLI rule explanations and assertions, sandbox command restrictions, configuration and the real dispatcher lifecycle. Covers disabled defaults, cleanup on failure, independent concurrent assertions and unsupported platforms.</p>
+</details>
+
+<h2 id="sources">Sources and limits</h2>
+<p><a href="https://github.com/openai/codex">Official Codex source</a>: <code translate="no">codex-rs/features/src/lib.rs</code>, <code translate="no">codex-rs/cli/src/main.rs</code>, <code translate="no">codex-rs/core/src/tools/handlers/mod.rs</code>, <code translate="no">codex-rs/utils/sleep-inhibitor</code>. Covers public capability entry points of a pinned snapshot, not every Rust crate or closed service, and claims no parity with current Codex products.</p>
+
+<h2 id="implementation-status">Implementation status</h2>
+<p>Permission CLI, macOS domain restrictions and idle-sleep prevention are in place. Native assertion acquire and release are verified.</p>

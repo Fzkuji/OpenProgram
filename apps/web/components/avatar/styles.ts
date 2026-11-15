@@ -1,54 +1,40 @@
-/**
- * DiceBear style registry.
- *
- * Runtime handles for every shipped DiceBear style. Adding a new
- * style requires the package import and runtime entry here, plus its
- * UI entry in ``style-options.ts``:
- *
- *   1. ``npm install @dicebear/<style>``
- *   2. Add ``import * as <name> from "@dicebear/<name>";`` below.
- *   3. Add an entry to ``STYLES`` and ``style-options.ts``.
- */
-
+/** Optional generators load per selected style; default shapes stays synchronous. */
 import * as shapes from "@dicebear/shapes";
-import * as avataaars from "@dicebear/avataaars";
-import * as adventurer from "@dicebear/adventurer";
-import * as micah from "@dicebear/micah";
-import * as openPeeps from "@dicebear/open-peeps";
-import * as personas from "@dicebear/personas";
-import * as bigSmile from "@dicebear/big-smile";
-import * as funEmoji from "@dicebear/fun-emoji";
-import * as bottts from "@dicebear/bottts";
-import * as thumbs from "@dicebear/thumbs";
-import * as pixelArt from "@dicebear/pixel-art";
-import * as identicon from "@dicebear/identicon";
-import * as rings from "@dicebear/rings";
-import * as initials from "@dicebear/initials";
-
 import type { AvatarStyle } from "./types";
-
-/** Runtime: ``style -> DiceBear namespace``. ``<Avatar>`` looks the
- *  style up here when ``createAvatar`` needs a Style object.
- *
- *  Earlier bundles shipped notionists / lorelei here too, but those
- *  styles draw their characters into only a fraction of the viewBox
- *  and rendered as visually blank tiles at the 40-px picker size. The
- *  styles kept here all fill their viewBox cleanly so they read
- *  correctly at every size we use. Keys are camelCase even where the
- *  npm package is hyphenated (open-peeps → ``openPeeps``). */
+type Generator = typeof shapes;
 export const STYLES = {
-  shapes,
-  avataaars,
-  adventurer,
-  micah,
-  openPeeps,
-  personas,
-  bigSmile,
-  funEmoji,
-  bottts,
-  thumbs,
-  pixelArt,
-  identicon,
-  rings,
-  initials,
-} as const satisfies Record<AvatarStyle, unknown>;
+  shapes: () => Promise.resolve(shapes),
+  avataaars: () => import("@dicebear/avataaars"),
+  adventurer: () => import("@dicebear/adventurer"),
+  micah: () => import("@dicebear/micah"),
+  openPeeps: () => import("@dicebear/open-peeps"),
+  personas: () => import("@dicebear/personas"),
+  bigSmile: () => import("@dicebear/big-smile"),
+  funEmoji: () => import("@dicebear/fun-emoji"),
+  bottts: () => import("@dicebear/bottts"),
+  thumbs: () => import("@dicebear/thumbs"),
+  pixelArt: () => import("@dicebear/pixel-art"),
+  identicon: () => import("@dicebear/identicon"),
+  rings: () => import("@dicebear/rings"),
+  initials: () => import("@dicebear/initials"),
+} as const;
+const ready = new Map<AvatarStyle, Generator>([["shapes", shapes]]);
+const inflight = new Map<AvatarStyle, Promise<Generator>>();
+export function loadedAvatarStyle(style: AvatarStyle): Generator | undefined {
+  return ready.get(style);
+}
+export function loadAvatarStyle(style: AvatarStyle): Promise<Generator> {
+  const hit = ready.get(style);
+  if (hit) return Promise.resolve(hit);
+  const loading = inflight.get(style);
+  if (loading) return loading;
+  const loader = STYLES[style];
+  if (typeof loader !== "function") return Promise.reject(new Error("Unknown avatar style"));
+  const request = Promise.resolve().then(loader).then(module => {
+    const generator = module as Generator;
+    ready.set(style, generator);
+    return generator;
+  }).finally(() => inflight.delete(style));
+  inflight.set(style, request);
+  return request;
+}

@@ -1,0 +1,133 @@
+<title>Layout specification</title>
+<meta name="description" content="How DAG nodes are placed in each scenario, what a branch tip is, and how the renderer is divided.">
+<h1>Layout specification</h1>
+
+<p>Position = (lane start + tier, row). The rules are in <a href="rendering.html">DAG rendering</a>; these scenes are what they produce.</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Letter</th><th scope="col">Node</th></tr></thead>
+<tbody>
+<tr><th scope="row">R</th><td>ROOT</td></tr>
+<tr><th scope="row">U</th><td>Your message</td></tr>
+<tr><th scope="row">A</th><td>Agent reply</td></tr>
+<tr><th scope="row">F</th><td>Function call or Program run</td></tr>
+<tr><th scope="row">M</th><td>Merge</td></tr>
+</tbody>
+</table>
+<p class="note">Letters stand in for the icons on the real round chips. Lane 0 is filled, other lanes outlined. The narrow view lists each node as column,row.</p>
+
+<h2 id="conversation">Conversation</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 544" role="img" aria-label="One message, two turns, and a manual function with its calls open."><g transform="translate(0 0)"><text x="0" y="16">One message</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">Hello</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">Reply</text></g><g transform="translate(340 0)"><text x="0" y="16">Two turns</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M22 44 V164 H62"/><path class="ln" d="M62 164 V204 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">Hello</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">Reply 1</text><circle class="tile" cx="62" cy="164" r="13"/><text class="t-soft mid" x="62" y="168">U</text><text class="t-soft" x="80" y="168">Weather</text><circle class="tile" cx="102" cy="204" r="13"/><text class="t-soft mid" x="102" y="208">A</text><text class="t-soft" x="120" y="208">Reply 2</text></g><g transform="translate(0 252)"><text x="0" y="16">Manual function, open</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M22 44 V164 H62"/><path class="ln" d="M62 164 V204 H102 M62 204 V244 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">Hello</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">Reply</text><circle class="tile" cx="62" cy="164" r="13"/><text class="t-soft mid" x="62" y="168">F</text><text class="t-soft" x="80" y="168">gui_agent</text><circle class="tile" cx="102" cy="204" r="13"/><text class="t-soft mid" x="102" y="208">F</text><text class="t-soft" x="120" y="208">gui_step</text><circle class="tile" cx="102" cy="244" r="13"/><text class="t-soft mid" x="102" y="248">F</text><text class="t-soft" x="120" y="248">conclusion</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>One message</strong><small>ROOT 0,0 · Hello 1,1 · Reply 2,2</small></li>
+<li><strong>Two turns</strong><small>ROOT 0,0 · Hello 1,1 · Reply 1 2,2 · Weather 1,3 · Reply 2 2,4</small></li>
+<li><strong>Manual function, open</strong><small>ROOT 0,0 · Hello 1,1 · Reply 2,2 · gui_agent 1,3 · gui_step 2,4 · conclusion 2,5</small></li>
+</ol>
+</figure>
+<ul>
+<li>Every turn and every manual Program hangs off ROOT, not off the previous reply.</li>
+<li>Calls inside a function are one flat, time-ordered column, however deep they nest.</li>
+</ul>
+
+<h2 id="retry">Retry</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 344" role="img" aria-label="A retry opens a new lane on the same row, and three versions of a turn sit in three lanes."><g transform="translate(0 0)"><text x="0" y="16">Retry</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">Hello</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">Reply 1</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">Edited</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">Reply 1′</text></g><g transform="translate(0 172)"><text x="0" y="16">Three versions of one turn</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln-acc" d="M222 84 H382" stroke-dasharray="6 4"/><path class="ln-acc" d="M382 84 H422"/><path class="ln-acc" d="M422 84 V124 H462"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">v1</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">r1</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft mid" x="222" y="67">v2</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">r2</text><circle class="gate" cx="422" cy="84" r="13"/><text class="t-soft mid" x="422" y="88">U</text><text class="t-soft" x="440" y="88">v3</text><circle class="gate" cx="462" cy="124" r="13"/><text class="t-soft mid" x="462" y="128">A</text><text class="t-soft" x="480" y="128">r3</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>Retry</strong><small>ROOT 0,0 · Hello 1,1 · Reply 1 2,2 · Edited 5,1 · Reply 1′ 6,2</small></li>
+<li><strong>Three versions of one turn</strong><small>ROOT 0,0 · v1 1,1 · r1 2,2 · v2 5,1 · r2 6,2 · v3 10,1 · r3 11,2</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Column</th><th scope="col">Use</th></tr></thead>
+<tbody>
+<tr><th scope="row">3</th><td>Gap: the branch is a parallel version</td></tr>
+<tr><th scope="row">4</th><td>The fork lane's empty spine, where the dashed bridge lands</td></tr>
+<tr><th scope="row">5, 6</th><td>The fork's turn and reply</td></tr>
+</tbody>
+</table>
+
+<h2 id="threads">Call threads</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 584" role="img" aria-label="A turn&#x27;s calls fold into a count; opening inserts rows without moving lanes."><g transform="translate(0 0)"><text x="0" y="16">Folded</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">Weather</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="114" y="114">3</text><text class="t-soft" x="120" y="128">Reply</text></g><g transform="translate(340 0)"><text x="0" y="16">Open</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M102 124 V244 H142 M102 164 H142 M102 204 H142"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">Weather</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">Reply</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text><text class="t-soft" x="160" y="168">bash</text><circle class="tile" cx="142" cy="204" r="13"/><text class="t-soft mid" x="142" y="208">F</text><text class="t-soft" x="160" y="208">web_fetch</text><circle class="tile" cx="142" cy="244" r="13"/><text class="t-soft mid" x="142" y="248">F</text><text class="t-soft" x="160" y="248">open_meteo</text></g><g transform="translate(0 292)"><text x="0" y="16">Folded: the default</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln" d="M22 44 V164 H62"/><path class="ln" d="M62 164 V204 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">Question</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="114" y="114">1</text><text class="t-soft" x="120" y="128">Reply</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">Edited</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">A′</text><circle class="tile" cx="62" cy="164" r="13"/><text class="t-soft mid" x="62" y="168">U</text><text class="t-soft" x="80" y="168">Follow-up</text><circle class="tile" cx="102" cy="204" r="13"/><text class="t-soft mid" x="102" y="208">A</text><text class="t-soft" x="120" y="208">Reply 2</text></g><g transform="translate(340 292)"><text x="0" y="16">Open: rows insert, columns stay</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln" d="M22 44 V204 H62"/><path class="ln" d="M62 204 V244 H102"/><path class="ln" d="M102 124 V164 H142"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">Question</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">Reply</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">Edited</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">A′</text><circle class="tile" cx="62" cy="204" r="13"/><text class="t-soft mid" x="62" y="208">U</text><text class="t-soft" x="80" y="208">Follow-up</text><circle class="tile" cx="102" cy="244" r="13"/><text class="t-soft mid" x="102" y="248">A</text><text class="t-soft" x="120" y="248">Reply 2</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text><text class="t-soft" x="160" y="168">web_search</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>Folded</strong><small>ROOT 0,0 · Weather 1,1 · Reply 2,2</small></li>
+<li><strong>Open</strong><small>ROOT 0,0 · Weather 1,1 · Reply 2,2 · bash 3,3 · web_fetch 3,4 · open_meteo 3,5</small></li>
+<li><strong>Folded: the default</strong><small>ROOT 0,0 · Question 1,1 · Reply 2,2 · Edited 5,1 · A′ 6,2 · Follow-up 1,3 · Reply 2 2,4</small></li>
+<li><strong>Open: rows insert, columns stay</strong><small>ROOT 0,0 · Question 1,1 · Reply 2,2 · Edited 5,1 · A′ 6,2 · Follow-up 1,4 · Reply 2 2,5 · web_search 3,3</small></li>
+</ol>
+</figure>
+<p class="note">Thread items reserve no lane width. Closing a thread gives back its rows.</p>
+
+<h2 id="branches">Branches talking</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 704" role="img" aria-label="A merge, messages between branches, and an agent spawned on a call thread."><g transform="translate(0 0)"><text x="0" y="16">Merge</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln" d="M102 124 V164"/><path class="ln-acc" d="M262 124 V164 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">Question</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">Reply A</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">Edited</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">B</text><circle class="tile" cx="102" cy="164" r="13"/><text class="t-soft mid" x="102" y="168">M</text><text class="t-soft mid" x="102" y="193">merge</text></g><g transform="translate(340 0)"><text x="0" y="16">send_message</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M102 124 V164 H142"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222 M182 84 V164 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><path class="ln-acc" d="M222 164 V204 H262"/><path class="ln-acc" d="M142 164 H222" stroke-dasharray="1 5"/><path class="ln-acc" d="M262 204 V244 H62" stroke-dasharray="1 5"/><path class="ln" d="M22 44 V244 H62"/><path class="ln" d="M62 244 V284 H102"/><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">Question</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">A</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text><text class="t-soft mid" x="142" y="193">send</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">Branch B</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text><text class="t-soft" x="280" y="128">B</text><circle class="gate" cx="222" cy="164" r="13"/><text class="t-soft mid" x="222" y="168">U</text><circle class="gate" cx="262" cy="204" r="13"/><text class="t-soft mid" x="262" y="208">A</text><circle class="tile" cx="62" cy="244" r="13"/><text class="t-soft mid" x="62" y="248">U</text><text class="t-soft mid" x="62" y="227">From B</text><circle class="tile" cx="102" cy="284" r="13"/><text class="t-soft mid" x="102" y="288">A</text><text class="t-soft" x="120" y="288">A answers</text></g><g transform="translate(0 332)"><text x="0" y="16">Agent spawned on a thread, both open</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M102 124 V324 H142 M102 164 H142 M102 204 H142"/><path class="ln-acc" d="M142 204 V284 H182 M142 244 H182"/><rect class="tile" x="164" y="193" width="86" height="22" rx="6"/><text class="t-soft" x="172" y="208">Researcher</text><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">Question</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="120" y="128">A</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text><text class="t-soft" x="160" y="168">read</text><circle class="tile" cx="142" cy="204" r="13"/><text class="t-soft mid" x="142" y="208">F</text><circle class="gate" cx="182" cy="244" r="13"/><text class="t-soft mid" x="182" y="248">A</text><circle class="gate" cx="182" cy="284" r="13"/><text class="t-soft mid" x="182" y="288">F</text><text class="t-soft" x="200" y="288">bash</text><circle class="tile" cx="142" cy="324" r="13"/><text class="t-soft mid" x="142" y="328">F</text><text class="t-soft" x="160" y="328">write</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>Merge</strong><small>ROOT 0,0 · Question 1,1 · Reply A 2,2 · Edited 5,1 · B 6,2 · merge 2,3</small></li>
+<li><strong>send_message</strong><small>ROOT 0,0 · Question 1,1 · A 2,2 · send 3,3 · Branch B 5,1 · B 6,2 · U 5,3 · A 6,4 · From B 1,5 · A answers 2,6</small></li>
+<li><strong>Agent spawned on a thread, both open</strong><small>ROOT 0,0 · Question 1,1 · A 2,2 · read 3,3 · F 3,4 · A 4,5 · bash 4,6 · write 3,7</small></li>
+</ol>
+</figure>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Scene</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Merge</th><td>One node with several parents, in the base lane. Each peer tip feeds it with a thick line in the peer's colour.</td></tr>
+<tr><th scope="row"><code translate="no">send_message</code></th><td>Returns at once; neither branch blocks. The message lands at the end of the target branch. The answer comes back as a new user-tier turn labelled with the sender's name. Dotted lines appear only on hover.</td></tr>
+<tr><th scope="row">Spawn</th><td>A square on its caller's thread, at the moment it happened, with a name tag. Its own thread is one column further right and pushes later items down. No return line: the follow-up reply merges into the same anchor.</td></tr>
+</tbody>
+</table>
+
+<h2 id="states">Node states and marks</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">State</th><th scope="col">Drawn as</th></tr></thead>
+<tbody>
+<tr><th scope="row">Running</th><td>The chip's own icon animates, and beads ride the belt leading to it. No placeholder node.</td></tr>
+<tr><th scope="row">Error</th><td>A red <code translate="no">!</code> on the chip's upper-right edge; the rest of the turn is unchanged.</td></tr>
+<tr><th scope="row">Cancelled</th><td>The whole node fades, shape kept.</td></tr>
+<tr><th scope="row">Count</th><td>Digits on the upper-right shoulder: how many events are folded. Not a node.</td></tr>
+<tr><th scope="row"><code translate="no">↗</code></th><td>Cross-session spawn, on both sides: the source node and the target branch root.</td></tr>
+</tbody>
+</table>
+
+<h2 id="badges">Branch-name badges</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 424" role="img" aria-label="A badge sits beside its branch&#x27;s deepest visible node and slides down a row on collision."><g transform="translate(0 0)"><text x="0" y="16">Beside the deepest visible node</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><rect class="tile" x="124" y="113" width="60" height="22" rx="6"/><text class="t-soft" x="132" y="128">Hello</text><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">Question</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><text class="t-soft" x="114" y="114">1</text></g><g transform="translate(340 0)"><text x="0" y="16">Follows an open thread</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln" d="M102 124 V164 H142"/><rect class="tile" x="164" y="153" width="60" height="22" rx="6"/><text class="t-soft" x="172" y="168">Hello</text><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft" x="80" y="88">Question</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><circle class="tile" cx="142" cy="164" r="13"/><text class="t-soft mid" x="142" y="168">F</text></g><g transform="translate(0 212)"><text x="0" y="16">Collision: the later name slides down a row</text><path class="ln" d="M22 44 V84 H62"/><path class="ln" d="M62 84 V124 H102"/><path class="ln-acc" d="M62 84 H182" stroke-dasharray="6 4"/><path class="ln-acc" d="M182 84 H222"/><path class="ln-acc" d="M222 84 V124 H262"/><rect class="ln-faint" x="124" y="113" width="190" height="22" rx="6"/><rect class="tile" x="124" y="153" width="190" height="22" rx="6"/><text class="t-soft" x="132" y="168">Weather in Shanghai tomorrow</text><rect class="tile" x="284" y="113" width="34" height="22" rx="6"/><text class="t-soft" x="292" y="128">B</text><circle class="tile" cx="22" cy="44" r="13"/><text class="t-soft mid" x="22" y="48">R</text><text class="t-soft" x="40" y="48">ROOT</text><circle class="tile" cx="62" cy="84" r="13"/><text class="t-soft mid" x="62" y="88">U</text><text class="t-soft mid" x="62" y="67">Question</text><circle class="tile" cx="102" cy="124" r="13"/><text class="t-soft mid" x="102" y="128">A</text><circle class="gate" cx="222" cy="84" r="13"/><text class="t-soft mid" x="222" y="88">U</text><text class="t-soft" x="240" y="88">Edited</text><circle class="gate" cx="262" cy="124" r="13"/><text class="t-soft mid" x="262" y="128">A</text></g></svg>
+<ol class="flow fig-narrow">
+<li><strong>Beside the deepest visible node</strong><small>ROOT 0,0 · Question 1,1 · A 2,2</small></li>
+<li><strong>Follows an open thread</strong><small>ROOT 0,0 · Question 1,1 · A 2,2 · F 3,3</small></li>
+<li><strong>Collision: the later name slides down a row</strong><small>ROOT 0,0 · Question 1,1 · A 2,2 · Edited 5,1 · A 6,2</small></li>
+</ol>
+</figure>
+<ul>
+<li>Collisions use measured pixel boxes, and every visible node counts as an obstacle.</li>
+<li>Badges come only from active <code translate="no">list_branches</code> rows. A merged branch loses its badge; its name moves to the merge node's tooltip.</li>
+</ul>
+
+<h2 id="branch-tips">What counts as a branch tip</h2>
+<p><code translate="no">SessionStore.list_branches()</code> in <code translate="no">openprogram/state/store/session/session_store/branches.py</code> returns only true leaves of the conversation predecessor graph, plus the head.</p>
+<table class="stack">
+<thead><tr><th scope="col">Continues the conversation</th><th scope="col">Does not</th></tr></thead>
+<tbody>
+<tr><td>User and reply nodes; top-level Programs (empty or ROOT caller); runtime-scheduled user rows</td><td>Internal execution children, other runtime rows, structural and root rows, <code translate="no">attach</code>, <code translate="no">context/*</code></td></tr>
+</tbody>
+</table>
+<p class="note">Sequential top-level Programs leave one tip, the last. Parallel siblings each stay a tip.</p>
+
+<h2 id="retry-projection">Retry and lanes</h2>
+<p>Top-level Programs under ROOT stay on the ROOT lane in time order. Only a persisted <code translate="no">metadata.retry_of</code> opens a fork lane. The Retry entry point writes it; <code translate="no">build_session_graph()</code> exposes it to layout.</p>
+
+<h2 id="modules">Frontend modules</h2>
+<p>Under <code translate="no">apps/web/lib/runtime-bridge/dag/</code>:</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Folder</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">passes/</code></th><td>Data projection</td></tr>
+<tr><th scope="row"><code translate="no">layout/</code></th><td>Geometry</td></tr>
+<tr><th scope="row"><code translate="no">render/</code></th><td>Drawing</td></tr>
+<tr><th scope="row"><code translate="no">interaction/</code></th><td>Interaction and camera</td></tr>
+<tr><th scope="row">Root</th><td>Public entry points, types, paint gate, pipeline</td></tr>
+</tbody>
+</table>
+<p class="note">Tooltip content is separate from its DOM lifecycle, graph preparation from SVG commit, node classification from ownership. A file stays within about 500 lines. Splitting one must not change public entry points, DOM classes, SVG structure, test-visible state or camera behaviour.</p>
+
+<p class="next"><a href="live-layout.html">Try the layout algorithm on sample data</a></p>

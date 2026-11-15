@@ -1,0 +1,136 @@
+<title>下一步决策</title>
+<meta name="description" content="代码把一次选择交给模型，模型只能从固定菜单里选，结果经过校验。">
+<h1>下一步决策</h1>
+
+<p>代码列出固定菜单，模型回一段 JSON 选一项，通过校验才执行，控制权留在代码。源码：<code translate="no">openprogram/runtime/agent/decision.py</code>。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">入口</th><th scope="col">模型做什么</th><th scope="col">Runtime</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">decision.make(prompt, options)</code></th><td>只选择</td><td>外层 <code translate="no">Agent</code> 方法的（<code translate="no">_current_runtime</code>）；不在 Agent 调用内时传 <code translate="no">runtime=</code></td></tr>
+<tr><th scope="row"><code translate="no">agent(prompt, choices=options)</code></th><td>先用工具跑完整一轮，收尾时选择</td><td>同上</td></tr>
+</tbody>
+</table>
+
+<h2 id="difference-from-native-tool-call">和原生工具调用的区别</h2>
+
+<table class="stack">
+<thead><tr><th scope="col"></th><th scope="col">原生工具调用</th><th scope="col">下一步决策</th></tr></thead>
+<tbody>
+<tr><th scope="row">选项如何给模型</th><td>provider 的 <code translate="no">tools</code> 字段</td><td>prompt 里的文本菜单</td></tr>
+<tr><th scope="row">选择的形式</th><td>协议层 <code translate="no">ToolCall</code></td><td>回复正文里的 JSON</td></tr>
+<tr><th scope="row">解析者</th><td>provider 和 <code translate="no">runtime/agent/loop</code></td><td><code translate="no">decision.py</code></td></tr>
+<tr><th scope="row">选项可以不是函数</th><td>不可以</td><td>可以</td></tr>
+<tr><th scope="row">依赖 provider 的 tool use</th><td>依赖</td><td>不依赖，纯文本即可</td></tr>
+<tr><th scope="row">每次决策和重试</th><td>属于工具循环</td><td>单独的可追踪 DAG 调用</td></tr>
+</tbody>
+</table>
+
+<p class="note">同一个 <code translate="no">Agent</code> 方法既可作 <code translate="no">exec(tools=[...])</code> 的原生工具，也可作决策选项。见<a href="../../../../capabilities/agentic-programming/choosing-the-next-step/tool-calling.zh.html">工具调用</a>。</p>
+
+<h2 id="entry-point-one">纯决策：decision.make</h2>
+
+<pre translate="no" tabindex="0">from openprogram import Agent, decision
+
+class ExampleAgent(Agent):
+    method_options = {"route_message": {"tool": True}}
+
+    def route_message(self, msg: str) -&gt; str:
+        return decision.make("选一种方式处理这条消息。", {
+            "analyze":  analyze_sentiment,    # 函数：执行并返回结果
+            "fallback": fallback_reply,
+            "done":     "CONVERSATION_OVER",  # 值：原样返回
+        })</pre>
+
+<p class="note">决策本身就是分支，调用方不写 <code translate="no">if</code>。</p>
+
+<h2 id="entry-point-two">先做事，再决策：agent(choices=)</h2>
+
+<pre translate="no" tabindex="0">from openprogram import Agent, agent
+
+class ExampleAgent(Agent):
+    method_options = {"handle_ticket": {"tool": True}}
+
+    def handle_ticket(self, ticket: str) -&gt; dict:
+        return agent(
+            f"处理这个工单： {ticket}",
+            toolset="default",        # 做事：工具和推理
+            choices={                 # 收尾：必须选一项
+                "refund":   issue_refund,
+                "escalate": escalate_to_human,
+                "close":    {"status": "closed"},
+            },
+        )</pre>
+
+<p><code translate="no">choices</code> 交给 <code translate="no">Runtime.exec</code>，它把菜单和 <code translate="no">DECISION_FINISH_INSTRUCTION</code> 加进 prompt，跑一轮普通对话。最后一条回复必须是 <code translate="no">{"call": ...}</code> JSON，由 <code translate="no">resolve_decision</code> 解析。<code translate="no">decision.make</code> 相当于前面没有做事的这一过程。</p>
+
+<h2 id="option-containers">选项</h2>
+
+<table class="stack">
+<thead><tr><th scope="col">类型</th><th scope="col">选中后</th><th scope="col">schema 来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">函数</th><td>执行，返回其返回值</td><td>函数签名</td></tr>
+<tr><th scope="row">值</th><td>返回固定值</td><td>无</td></tr>
+<tr><th scope="row">schema</th><td>模型按 schema 填写，返回 <code translate="no">{"decision": name, **fields}</code></td><td>自己声明</td></tr>
+</tbody>
+</table>
+
+<pre translate="no" tabindex="0">decision.make("...", {
+    "retry":     retry_fn,                         # 函数
+    "skip":      "SKIPPED",                        # 值
+    "abort":     (AbortSignal(), "pick when it can't continue"),  # 值 + 说明
+    "emit_plan": ("Produce a plan.", {             # schema： ("description", schema)
+        "steps": [{"action": str, "target": str}],
+        "rationale": str,
+    }),
+})</pre>
+
+<p class="note">也可用列表。每项是可调用对象、<code translate="no">(callable, "说明")</code>、<code translate="no">"name"</code>、<code translate="no">("name", "说明")</code> 或 <code translate="no">("name", "说明", schema)</code>。函数选项的名字取 <code translate="no">__name__</code>。</p>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">schema 字段</th><th scope="col">含义</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">field: str</code>（任意 Python 类型）</th><td>该类型的标量</td></tr>
+<tr><th scope="row"><code translate="no">field: "说明"</code></th><td>带说明的 <code translate="no">str</code> 标量</td></tr>
+<tr><th scope="row"><code translate="no">field: [子 schema]</code></th><td>列表，元素符合子 schema</td></tr>
+<tr><th scope="row"><code translate="no">field: {子字段: ...}</code></th><td>嵌套对象</td></tr>
+<tr><th scope="row"><code translate="no">field: {"type": T, "description": ..., "options": [...]}</code></th><td>类型、说明和枚举</td></tr>
+</tbody>
+</table>
+
+<p class="note">不需要分支、总是同一结构：用单选项的 <code translate="no">decision.make</code>，或 <code translate="no">exec(response_format=...)</code>。</p>
+
+<h2 id="internal-steps">从回复到结果</h2>
+
+<ol>
+<li><code translate="no">render_options</code> 生成菜单：签名、说明、参数、一行 <code translate="no">Call:</code> JSON 示例。只显示 <code translate="no">source="llm"</code> 的参数。</li>
+<li>调用模型：<code translate="no">runtime.exec(prompt + menu)</code>，或 <code translate="no">agent</code> 本来要发的那一轮。</li>
+<li><code translate="no">parse_args</code> 提取并校验 JSON。</li>
+<li>失败时再选一次（<code translate="no">max_retries=1</code>，设 0 关闭）：<code translate="no">runtime.exec</code> 发送上次回复、错误原因和菜单，同样进 DAG。仍无效则抛 <code translate="no">DecisionError</code>。</li>
+<li><code translate="no">resolve_decision</code> 执行函数或查出值。</li>
+</ol>
+
+<details>
+<summary>校验规则</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">检查</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">JSON</th><td>来自 <code translate="no">json</code> 代码块或原文，键为 <code translate="no">call</code>、<code translate="no">action</code>、<code translate="no">function</code> 或 <code translate="no">tool</code></td></tr>
+<tr><th scope="row">未知选项</th><td><code translate="no">_ParseError("unknown_call")</code>；没有 JSON 是 <code translate="no">no_action</code>；args 不是对象是 <code translate="no">bad_args</code></td></tr>
+<tr><th scope="row">字段类型</th><td><code translate="no">str int float bool list dict</code>，递归校验嵌套。<code translate="no">bool</code> 不算 <code translate="no">int</code>，<code translate="no">float</code> 接受 <code translate="no">int</code>。枚举用 <code translate="no">options</code>。</td></tr>
+<tr><th scope="row">函数选项</th><td>从 <code translate="no">context</code> 填 <code translate="no">source="context"</code> 参数，注入 runtime 参数，丢弃多余字段，要求无默认值的参数都在</td></tr>
+<tr><th scope="row">值或 schema 选项</th><td>schema 字段全部必填，多余字段丢弃</td></tr>
+<tr><th scope="row">返回</th><td><code translate="no">(chosen, kwargs)</code>：函数，或选项名</td></tr>
+<tr><th scope="row">菜单占位</th><td>JSON 字面量：<code translate="no">0 false [] {} "&lt;str&gt;"</code>；枚举列出可选值</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary>DecisionError</summary>
+<p>继承 <code translate="no">ValueError</code>，带最后的错误类型、消息和回复开头。<code translate="no">except DecisionError</code> 只捕获“模型始终没选出有效项”。框架不做兜底，由调用方决定。</p>
+</details>
+
+<h2 id="implementation-status">实现状态</h2>
+
+<p>以上全部已实现。</p>

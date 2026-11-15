@@ -1,0 +1,41 @@
+<title>Session export</title>
+<meta name="description" content="Export a conversation as Markdown or a self-contained HTML file, with secrets scrubbed.">
+<h1>Session export</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">From</th><th scope="col">Do</th></tr></thead>
+<tbody>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram sessions export &lt;session-id&gt;</code><span class="arg"><code translate="no">--format md|html</code>, default <code translate="no">md</code></span><span class="arg"><code translate="no">--output PATH</code>, default <code translate="no">./&lt;session-id&gt;.&lt;format&gt;</code></span></td></tr>
+<tr><th scope="row">Web UI</th><td>Right-click a conversation in the sidebar, or its <code translate="no">⋯</code> button, then <strong>Export</strong> and a format</td></tr>
+<tr><th scope="row">HTTP</th><td><code translate="no">GET /api/sessions/{session_id}/export?format=md|html</code>, owner-authenticated, answers with <code translate="no">Content-Disposition: attachment</code></td></tr>
+</tbody>
+</table>
+<p class="note">Session ids: <code translate="no">openprogram sessions list</code> or the Web sidebar.</p>
+
+<h2>What lands in the file</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Scope</th><td>The active branch only, walked back from its head as in the Web transcript</td></tr>
+<tr><th scope="row">Each turn</th><td>Role, local timestamp, text, not truncated</td></tr>
+<tr><th scope="row">Tool calls, under their turn</th><td>Name, ok or failed, arguments, result</td></tr>
+<tr><th scope="row">Arguments</th><td>Cut at 1,000 characters, marked <code translate="no">… [+N chars truncated]</code></td></tr>
+<tr><th scope="row">Tool results</th><td>Cut at 4,000 characters, marked the same way</td></tr>
+<tr><th scope="row">HTML</th><td>One file: inline styles, no scripts or external requests, follows light or dark through <code translate="no">prefers-color-scheme</code></td></tr>
+</tbody>
+</table>
+
+<h2>Redaction</h2>
+<p>Title, session id, role label, tool name, turn text, arguments and results all pass through <code translate="no">remove_secret_values</code> (<code translate="no">openprogram/models/providers/recording/recording.py</code>), before clipping. The stored conversation is not changed.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Matches</th><th scope="col">Becomes</th></tr></thead>
+<tbody>
+<tr><th scope="row">Secret-named fields: <code translate="no">api_key</code>, <code translate="no">authorization</code>, <code translate="no">token</code>, <code translate="no">password</code>, …</th><td><code translate="no">[secret removed]</code></td></tr>
+<tr><th scope="row">In free text: bearer tokens, <code translate="no">sk-</code> keys, credentials in URL query or userinfo</th><td><code translate="no">[secret removed]</code></td></tr>
+<tr><th scope="row">Arguments nested too deeply to redact safely</th><td><code translate="no">[arguments omitted: nesting too deep]</code></td></tr>
+</tbody>
+</table>
+<p class="note">This covers known credential shapes only. Read an export before sending it somewhere public.</p>
+
+<p class="next"><a href="cli.html">CLI commands</a> · <a href="API.html">API</a></p>
+

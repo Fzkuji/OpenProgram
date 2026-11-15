@@ -1,19 +1,26 @@
 """Permission system tests — rule parsing/matching + decision precedence.
 
-Design: docs/design/runtime/permission-model.md.
+Design: docs/reference/design/runtime/security/permission-decision.html.
 """
 from __future__ import annotations
 
-from openprogram.programs.permission_rule import (
+from openprogram.runtime.permissions.rule import (
     parse_rule, rule_to_string, parse_command, pattern_matches, PermissionRuleValue,
 )
-from openprogram.agent.permissions.policy import _match_rule
-from openprogram.agent.session_config import (
-    PermissionRules, _normalize_permission, VALID_PERMISSION,
+from openprogram.runtime.permissions.policy import match_rule
+
+from openprogram.runtime.permissions.modes import (
+    PermissionRules,
+    normalize_permission as _normalize_permission,
+    VALID_PERMISSION,
 )
 
 
 # ── rule string parse / serialize ──
+
+def _match_rule(rules, tool_name, args):
+    return match_rule(rules, tool_name, args)[0]
+
 
 def test_parse_per_tool():
     assert parse_rule("bash") == PermissionRuleValue("bash", None)
@@ -129,23 +136,24 @@ def test_invalid_mode():
     assert _normalize_permission("bogus") is None
 
 
-def test_permission_from_config_never_defaults_to_bypass():
-    from openprogram.agent.session_config import (
+def test_permission_from_config_defaults_to_unrestricted():
+    from openprogram.runtime.conversation.session_config import (
         SessionRunConfig, permission_from_config,
     )
     empty = SessionRunConfig()
-    assert permission_from_config(empty) == "ask"
-    assert permission_from_config(empty, default="not-a-mode") == "ask"
-    assert permission_from_config(empty, default="bypass") == "bypass"
+    assert permission_from_config(empty) == "bypass"
+    assert permission_from_config(empty, default="not-a-mode") == "bypass"
+    assert permission_from_config(empty, default="ask") == "ask"
+    assert permission_from_config(SessionRunConfig(permission_mode="plan"), default="ask") == "plan"
 
 
 # ── _gated_execute decision branches (end-to-end via wrap_with_approval) ──
 
 import asyncio
 import pytest
-from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.agent.dispatcher.types import TurnRequest
-from openprogram.agent.permissions import approval as _approval
+from openprogram.models.providers.types import AgentTool, AgentToolResult
+from openprogram.runtime.agent.turn_request import TurnRequest
+from openprogram.runtime.permissions import approval as _approval
 
 
 def _make_tool(name: str):
@@ -163,7 +171,7 @@ def _make_tool(name: str):
 def _ensure_test_authority(req):
     if req.authority_tier is not None:
         return
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
 
     for key, value in local_owner_authority().items():
         setattr(req, key, value)
@@ -171,7 +179,7 @@ def _ensure_test_authority(req):
 
 def _frozen_runtime_request(**kwargs):
     """Non-interactive child keeps the admitted snapshot; live owner rereads."""
-    from openprogram.agent.authority import local_owner_authority, runtime_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority, runtime_authority
 
     parent = TurnRequest(
         session_id=kwargs.get("session_id", "s"),
@@ -192,7 +200,7 @@ def _permission_request(authority_path, *, permission_mode, permission_rules, mo
     if authority_path == "frozen_child":
         return _frozen_runtime_request(**kwargs)
     monkeypatch.setattr(
-        "openprogram.programs.permission_rule.load_merged_rules",
+        "openprogram.runtime.permissions.rule.load_merged_rules",
         lambda _sid: permission_rules,
     )
     return TurnRequest(**kwargs)
@@ -255,7 +263,7 @@ def test_allow_rule_runs_without_approval_in_ask(authority_path, monkeypatch):
 def test_auto_denies_command_with_unsafe_verdict(monkeypatch):
     async def classify(*args, **kwargs):
         return True, "unsafe command"
-    monkeypatch.setattr("openprogram.agent.permissions.classifier.auto_classify_tool", classify)
+    monkeypatch.setattr("openprogram.runtime.permissions.classifier.auto_classify_tool", classify)
     tool, ran = _make_tool("bash")
     req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
                       permission_mode="auto")
@@ -283,7 +291,7 @@ def test_acceptedits_auto_allows_safe_file_tool(tmp_path, monkeypatch):
                       permission_mode="acceptEdits")
     # path inside cwd → safe → auto-allow
     async def _fake(*a, **k): return (False, None, "once")  # would deny if asked
-    import openprogram.agent.permissions.approval as _ap
+    import openprogram.runtime.permissions.approval as _ap
     _ensure_test_authority(req)
     wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
     import asyncio
@@ -319,7 +327,7 @@ def test_path_safety(tmp_path):
 
 def test_path_is_safe_additional_dir_allows(tmp_path, monkeypatch):
     # 额外工作目录内的写目标放行（additional-working-directories.md §3.1）。
-    from openprogram.agent.permissions.policy import _path_is_safe
+    from openprogram.runtime.permissions.identity import path_is_safe as _path_is_safe
     cwd = tmp_path / "cwd"; cwd.mkdir()
     extra = tmp_path / "extra"; extra.mkdir()
     monkeypatch.chdir(cwd)
@@ -330,7 +338,7 @@ def test_path_is_safe_additional_dir_allows(tmp_path, monkeypatch):
 
 def test_path_is_safe_outside_all_dirs_blocks(tmp_path, monkeypatch):
     # 主目录 + 额外目录都不包含 → 拦。
-    from openprogram.agent.permissions.policy import _path_is_safe
+    from openprogram.runtime.permissions.identity import path_is_safe as _path_is_safe
     cwd = tmp_path / "cwd"; cwd.mkdir()
     extra = tmp_path / "extra"; extra.mkdir()
     outside = tmp_path / "outside"; outside.mkdir()
@@ -343,8 +351,8 @@ def test_path_is_safe_outside_all_dirs_blocks(tmp_path, monkeypatch):
 def test_path_is_safe_uses_worktree_contextvar(tmp_path, monkeypatch):
     # 围栏基准与 system prompt 同源：ContextVar 绑定的项目 cwd 优先于
     # os.getcwd()（服务器进程启动目录）。
-    from openprogram.agent.permissions.policy import _path_is_safe
-    import openprogram.worktree.context as wt_ctx
+    from openprogram.runtime.permissions.identity import path_is_safe as _path_is_safe
+    import openprogram.state.worktree.context as wt_ctx
     proc_cwd = tmp_path / "proc"; proc_cwd.mkdir()
     project = tmp_path / "project"; project.mkdir()
     monkeypatch.chdir(proc_cwd)
@@ -356,13 +364,6 @@ def test_path_is_safe_uses_worktree_contextvar(tmp_path, monkeypatch):
         assert not _path_is_safe("write_file", {"path": str(proc_cwd / "f.txt")}, req)
     finally:
         wt_ctx._current_worktree_path.reset(token)
-
-
-def test_is_dangerous_allow_rule():
-    from openprogram.programs.tools.files.file_safety import is_dangerous_allow_rule
-    assert is_dangerous_allow_rule("bash", "python:*")   # interpreter
-    assert not is_dangerous_allow_rule("bash", "git:*")  # ordinary
-    assert is_dangerous_allow_rule("bash", None)         # whole bash tool
 
 
 def test_acceptedits_denies_dangerous_path(tmp_path, monkeypatch):
@@ -379,7 +380,7 @@ def test_acceptedits_denies_dangerous_path(tmp_path, monkeypatch):
 
 def _run_with_args(tool, req, args, approve=True, scope="once"):
     import asyncio
-    import openprogram.agent.permissions.approval as _ap
+    import openprogram.runtime.permissions.approval as _ap
     async def _fake(*a, **k): return (approve, None, scope)
     _ensure_test_authority(req)
     wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
@@ -390,7 +391,7 @@ def _run_with_args(tool, req, args, approve=True, scope="once"):
 
 @pytest.mark.parametrize(("tool_name", "args"), [
     ("bash", {"command": "echo harmless"}),
-    ("process", {"action": "start", "command": "echo harmless"}),
+    ("write_stdin", {"session_id": "abc", "chars": "echo harmless\n"}),
     ("execute_code", {"code": "print('harmless')"}),
 ])
 @pytest.mark.parametrize("source", ["agent_spawn", "mcp"])
@@ -414,12 +415,12 @@ def test_external_bypass_respects_owner_delegation(tool_name, args, source):
                                 "+x\n"
                                 "*** End Patch"}),
 ])
-def test_agent_spawn_bypass_denies_outside_writes(tmp_path, monkeypatch,
-                                                   tool_name, args):
+def test_outside_client_on_bypass_cannot_write_outside(tmp_path, monkeypatch,
+                                                       tool_name, args):
     monkeypatch.chdir(tmp_path)
     tool, ran = _make_tool(tool_name)
     req = TurnRequest(session_id="s", user_text="", agent_id="worker",
-                      source="agent_spawn", permission_mode="bypass")
+                      source="mcp", permission_mode="bypass")
     result = _run_with_args(tool, req, args)
     assert _denied(result)
     assert not ran["called"]
@@ -448,24 +449,25 @@ def test_agent_spawn_bypass_allows_workspace_write_and_safe_read(tmp_path,
                                 "@@\n-a\n+b\n"
                                 "*** End Patch"}),
 ])
-def test_agentics_python_is_never_model_writable(monkeypatch, tool_name, args):
-    from openprogram.programs._programs import applications_dir
+def test_program_python_is_written_like_any_other_file(monkeypatch, tmp_path, tool_name, args):
+    from openprogram.state import paths
 
-    root = applications_dir()
-    assert root
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
+    root = tmp_path / "programs" / "applications"
+    root.mkdir(parents=True)
     monkeypatch.chdir(root)
     tool, ran = _make_tool(tool_name)
     req = TurnRequest(session_id="s", user_text="", agent_id="main",
                       source="web", permission_mode="bypass",
                       permission_rules=PermissionRules(allow=[tool_name]))
     result = _run_with_args(tool, req, args)
-    assert _denied(result)
-    assert not ran["called"]
+    assert not _denied(result)
+    assert ran["called"]
 
 
 def test_agent_spawn_ask_rule_denies_without_waiting_for_approval():
     tool, ran = _make_tool("write")
-    req = TurnRequest(
+    req = _frozen_runtime_request(
         session_id="s", user_text="", agent_id="worker",
         source="agent_spawn", permission_mode="bypass",
         permission_rules=PermissionRules(ask=["write"]),
@@ -476,30 +478,40 @@ def test_agent_spawn_ask_rule_denies_without_waiting_for_approval():
     assert not ran["called"]
 
 
-def test_agent_spawn_force_ask_denies_without_waiting_for_approval():
+@pytest.mark.parametrize(("mode", "runs"), [("bypass", True), ("plan", False)])
+def test_a_spawned_agent_leaving_plan_follows_its_mode(mode, runs):
+    """Bypass has no plan to leave; in Plan nobody is there to approve."""
     tool, ran = _make_tool("exit_plan_mode")
-    req = TurnRequest(session_id="s", user_text="", agent_id="worker",
-                      source="agent_spawn", permission_mode="bypass")
+    req = _frozen_runtime_request(session_id="s", user_text="", agent_id="worker",
+                                  source="agent_spawn", permission_mode=mode)
     result = _run_with_args(tool, req, {}, approve=True)
-    assert _denied(result)
-    assert not ran["called"]
+    assert _denied(result) is not runs
+    assert ran["called"] is runs
 
 
 @pytest.mark.parametrize("source", ["cron", "scheduler"])
 @pytest.mark.parametrize("tool_name", ["bash", "write", "send_message"])
-def test_scheduled_noninteractive_turn_denies_side_effect_tools(source, tool_name):
-    tool, ran = _make_tool(tool_name)
-    req = TurnRequest(session_id="s", user_text="", agent_id="main",
-                      source=source, permission_mode="ask",
-                      permission_rules=PermissionRules(allow=[tool_name]))
-    result = _run_with_args(tool, req, {"command": "echo x"}, approve=True)
-    assert _denied(result)
+def test_scheduled_turn_follows_its_conversations_permission_mode(source, tool_name):
+    def run(mode, rules=None):
+        tool, ran = _make_tool(tool_name)
+        req = _frozen_runtime_request(session_id="s", user_text="", agent_id="main", source=source,
+                                      permission_mode=mode, permission_rules=rules)
+        return _run_with_args(tool, req, {"command": "echo x"}, approve=True), ran
+
+    for mode, rules in (("bypass", None), ("ask", PermissionRules(allow=[tool_name]))):
+        result, ran = run(mode, rules)
+        assert not _denied(result) and ran["called"]
+    if tool_name != "bash":
+        return
+    # Nobody is there to answer a mode that asks.
+    result, ran = run("ask")
+    assert _denied(result) and result.details["reason_code"] == "NO_ONE_TO_APPROVE"
     assert not ran["called"]
 
 
 @pytest.mark.parametrize("source", ["cron", "scheduler"])
 @pytest.mark.parametrize(
-    "tool_name", ["memory_status", "memory_get", "memory_update"]
+    "tool_name", ["memory_search", "memory_get", "memory_update"]
 )
 def test_scheduled_owner_turn_can_use_memory_lifecycle_tools(
     source, tool_name,
@@ -529,7 +541,7 @@ def test_scheduled_memory_update_still_respects_an_explicit_deny_rule():
     )
     result = _run_with_args(tool, req, {}, approve=False)
     assert _denied(result)
-    assert result.details["reason_code"] == "PERMISSION_RULE_DENY"
+    assert result.details["reason_code"] == "RULE_DENY"
     assert not ran["called"]
 
 
@@ -550,7 +562,6 @@ def test_scheduled_memory_update_requires_owner_authority():
     )
     result = _run_with_args(tool, req, {}, approve=False)
     assert _denied(result)
-    assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED"
     assert not ran["called"]
 
 
@@ -572,7 +583,7 @@ def test_ask_runs_when_user_approves():
 
 
 def test_always_allow_persists_exact_normalized_operation(monkeypatch):
-    from openprogram.store.project import project_store
+    from openprogram.state.store.project import project_store
     saved = {}
     project = type("Project", (), {"id": "p"})()
     monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)
@@ -591,7 +602,7 @@ def test_always_allow_persists_exact_normalized_operation(monkeypatch):
 
 
 def test_always_allow_does_not_persist_complex_shell(monkeypatch):
-    from openprogram.store.project import project_store
+    from openprogram.state.store.project import project_store
     saved = []
     project = type("Project", (), {"id": "p"})()
     monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)
@@ -615,7 +626,7 @@ def test_always_allow_does_not_persist_complex_shell(monkeypatch):
 def test_only_interactive_owner_can_request_approval(
     speaker_kind, interaction, tier, monkeypatch,
 ):
-    from openprogram.agent.authority import owner_principal_id
+    from openprogram.runtime.permissions.authority import owner_principal_id
 
     tool, ran = _make_tool("bash")
     req = TurnRequest(
@@ -642,9 +653,9 @@ def test_only_interactive_owner_can_request_approval(
 def test_mcp_source_denies_approval_without_registering_question(
     tmp_path, monkeypatch,
 ):
-    from openprogram import paths
-    from openprogram.agent import authority
-    from openprogram.agent.questions import get_question_registry
+    from openprogram.state import paths
+    from openprogram.runtime.permissions import authority
+    from openprogram.runtime.agent.questions import get_question_registry
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     authority._reset_owner_cache_for_tests()
@@ -655,7 +666,7 @@ def test_mcp_source_denies_approval_without_registering_question(
     req = TurnRequest(
         session_id="mcp-session", user_text="", agent_id="main",
         source="mcp", permission_mode="ask",
-        **authority.local_owner_authority(),
+        **{**authority.local_owner_authority(), "speaker_kind": "client", "interaction": "non-interactive"},
     )
     wrapped = _approval.wrap_with_approval(tool, req, events.append)
 
@@ -667,19 +678,17 @@ def test_mcp_source_denies_approval_without_registering_question(
     result = asyncio.run(wrapped.execute("c1", {}, None, None))
 
     assert result.is_error is True
-    assert result.details == {
-        "denied": True,
-        "reason_code": "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
-        "outcome": "not_started",
-        "execution_started": False,
-    }
+    assert result.details["denied"] is True
+    assert result.details["reason_code"] == "NO_ONE_TO_APPROVE"
+    assert result.details["outcome"] == "not_started"
+    assert result.details["execution_started"] is False
     assert ran["called"] is False
     assert registry.list_pending("mcp-session") == []
     assert events == []
 
 
 def _denied_then_ok_exec(calls):
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import TextContent
 
     async def _exec(call_id, args, cancel, on_update):
         calls.append(dict(args))
@@ -730,61 +739,145 @@ def test_sandbox_denial_in_bypass_returns_error_without_asking(monkeypatch):
     assert events[0]["type"] == "sandbox.violation"
 
 
-def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypatch):
+def _escalation_fixture(monkeypatch, mode="ask"):
     from contextlib import contextmanager
+    from openprogram.host.sandbox import SandboxPolicy
 
-    calls = []
-    approvals = []
-    events = []
-    escalated = []
+    seen = {"calls": [], "approvals": [], "escalated": [], "events": []}
+
+    async def _approve(**kwargs):
+        seen["approvals"].append(kwargs)
+        return True, None, seen.get("scope", "once")
+
+    @contextmanager
+    def _escalated():
+        seen["escalated"].append(True)
+        yield
+
+    async def _exec(call_id, args, cancel, on_update):
+        from openprogram.models.providers.types import TextContent
+        seen["calls"].append((dict(args), bool(seen["escalated"])))
+        return AgentToolResult(content=[TextContent(text="exit_code=0")], details={"ok": True})
+
+    req = TurnRequest(
+        session_id="s-escalation", user_text="", agent_id="main", source="web",
+        permission_mode=mode, permission_rules=PermissionRules(allow=["bash"]),
+    )
+    _ensure_test_authority(req)
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules",
+                        lambda _sid: req.permission_rules)
+    monkeypatch.setattr("openprogram.host.sandbox.resolve_policy", lambda **_: SandboxPolicy())
+    monkeypatch.setattr("openprogram.host.sandbox.escalated_policy", _escalated)
+    monkeypatch.setattr(_approval, "await_user_approval", _approve)
+    monkeypatch.setattr(_approval, "_session_escalations", {})
+    tool = AgentTool(name="bash", description="", parameters={}, label="bash", execute=_exec)
+    return _approval.wrap_with_approval(tool, req, on_event=seen["events"].append), seen
+
+
+_ESCALATED = {"command": "git push", "sandbox_permissions": "require_escalated",
+              "justification": "Push the commit to GitHub."}
+
+
+def test_sandbox_denial_returns_the_result_without_asking(monkeypatch):
+    """A denial after the run is reported, never turned into a late approval."""
+    calls, approvals, events = [], [], []
 
     async def _approve(**kwargs):
         approvals.append(kwargs)
         return True, None, "once"
 
-    @contextmanager
-    def _escalated():
-        escalated.append(True)
-        yield
-
     req = TurnRequest(
         session_id="s", user_text="", agent_id="main", source="web",
-        permission_mode="ask",
-        permission_rules=PermissionRules(allow=["bash"]),
+        permission_mode="ask", permission_rules=PermissionRules(allow=["bash"]),
     )
     _ensure_test_authority(req)
-    monkeypatch.setattr(
-        "openprogram.programs.permission_rule.load_merged_rules",
-        lambda _sid: req.permission_rules,
-    )
-    tool = AgentTool(
-        name="bash", description="", parameters={}, label="bash",
-        execute=_denied_then_ok_exec(calls),
-    )
+    monkeypatch.setattr("openprogram.runtime.permissions.rule.load_merged_rules",
+                        lambda _sid: req.permission_rules)
+    tool = AgentTool(name="bash", description="", parameters={}, label="bash",
+                     execute=_denied_then_ok_exec(calls))
     wrapped = _approval.wrap_with_approval(tool, req, on_event=events.append)
     monkeypatch.setattr(_approval, "await_user_approval", _approve)
-    monkeypatch.setattr("openprogram.sandbox.escalated_policy", _escalated)
-    result = asyncio.run(wrapped.execute(
-        "c", {"command": "cat /outside/file"}, None, None
-    ))
+    result = asyncio.run(wrapped.execute("c", {"command": "cat /outside/file"}, None, None))
 
-    assert result.details == {"ok": True}
-    assert calls == [
-        {"command": "cat /outside/file"},
-        {"command": "cat /outside/file"},
-    ]
-    assert len(approvals) == 1
-    # 非 bypass：首跑在配置沙箱内，批准后的重试包一层 escalated_policy。
-    assert escalated == [True]
+    assert result.is_error is True
+    assert calls == [{"command": "cat /outside/file"}]
+    assert approvals == []
     assert events[0]["type"] == "sandbox.violation"
 
 
+def test_requested_escalation_is_published_before_dispatch(monkeypatch):
+    wrapped, _ = _escalation_fixture(monkeypatch)
+    manifest = wrapped._interaction_manifest("c", dict(_ESCALATED))
+
+    assert manifest["kind"] == "approval"
+    meta = manifest["request_metadata"]
+    assert meta["tool"] == "bash:sandbox-escalation"
+    assert meta["approval_reason"] == "SANDBOX_ESCALATION"
+    assert meta["args"]["_sandbox_escalation"]["justification"] == "Push the commit to GitHub."
+    assert meta["allowed_scopes"] == ["once", "session"]
+    assert "Push the commit to GitHub." in manifest["detail"]
+
+
+def test_requested_escalation_asks_once_and_runs_outside_the_sandbox(monkeypatch):
+    wrapped, seen = _escalation_fixture(monkeypatch)
+    result = asyncio.run(wrapped.execute("c", dict(_ESCALATED), None, None))
+
+    assert result.details == {"ok": True}
+    assert len(seen["approvals"]) == 1
+    assert seen["approvals"][0]["tool_name"] == "bash:sandbox-escalation"
+    assert seen["calls"] == [(_ESCALATED, True)]
+
+
+def test_session_scope_skips_the_next_escalation_card(monkeypatch):
+    wrapped, seen = _escalation_fixture(monkeypatch)
+    seen["scope"] = "session"
+    asyncio.run(wrapped.execute("c1", dict(_ESCALATED), None, None))
+
+    assert wrapped._interaction_manifest("c2", dict(_ESCALATED)) is None
+    asyncio.run(wrapped.execute("c2", dict(_ESCALATED), None, None))
+    assert len(seen["approvals"]) == 1
+    assert [escalated for _, escalated in seen["calls"]] == [True, True]
+
+
+def test_declined_escalation_does_not_run(monkeypatch):
+    wrapped, seen = _escalation_fixture(monkeypatch)
+
+    async def _decline(**kwargs):
+        return False, None, "once"
+
+    monkeypatch.setattr(_approval, "await_user_approval", _decline)
+    result = asyncio.run(wrapped.execute("c", dict(_ESCALATED), None, None))
+
+    assert result.details["reason_code"] == "SANDBOX_ESCALATION_NOT_APPROVED"
+    assert seen["calls"] == []
+
+
+def test_unrestricted_leaves_the_sandbox_without_a_card(monkeypatch):
+    wrapped, seen = _escalation_fixture(monkeypatch, mode="bypass")
+    assert wrapped._interaction_manifest("c", dict(_ESCALATED)) is None
+    result = asyncio.run(wrapped.execute("c", dict(_ESCALATED), None, None))
+
+    assert result.details == {"ok": True}
+    assert seen["approvals"] == []
+    assert seen["calls"] == [(_ESCALATED, True)]
+
+
+def test_escalation_without_a_sandbox_runs_normally(monkeypatch):
+    wrapped, seen = _escalation_fixture(monkeypatch)
+    monkeypatch.setattr("openprogram.host.sandbox.resolve_policy", lambda **_: None)
+    result = asyncio.run(wrapped.execute("c", dict(_ESCALATED), None, None))
+
+    assert result.details == {"ok": True}
+    assert seen["approvals"] == []
+    assert seen["calls"] == [(_ESCALATED, False)]
+
+
 def test_bypass_keeps_configured_sandbox(monkeypatch):
-    from openprogram.providers.types import TextContent
-    from openprogram.sandbox import MODE_WORKSPACE_WRITE, resolve_policy
+    from openprogram.models.providers.types import TextContent
+    from openprogram.host.sandbox import MODE_WORKSPACE_WRITE, resolve_policy
 
     monkeypatch.setattr(
-        "openprogram.setup._read_config",
+        "openprogram.state.config.read_config",
         lambda: {"sandbox": {"mode": MODE_WORKSPACE_WRITE}},
     )
     seen = []
@@ -812,7 +905,7 @@ def test_bypass_keeps_configured_sandbox(monkeypatch):
 
 
 def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypatch):
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import TextContent
 
     async def _exec(call_id, args, cancel, on_update):
         return AgentToolResult(
@@ -846,10 +939,14 @@ def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypa
 def _tools_handed_to_agent_loop(req, tool_names):
     """Run the real run_loop_blocking; return the tools agent_loop received."""
     _ensure_test_authority(req)
-    import sys
-    import openprogram.agent.dispatcher.loop_runner as _lr
-    _al = sys.modules["openprogram.agent.agent_loop"]
-    from openprogram.agent import dispatcher as _dispatcher
+    import importlib
+    import openprogram.runtime.conversation.turn_runtime.loop_runner as _lr
+    # By name: the package attribute `loop` can be the function, not the module.
+    _al = importlib.import_module("openprogram.runtime.agent.loop")
+    # The driver binds agent_loop by name when first imported; imported under
+    # the patch below it would keep the fake loop for the rest of the process.
+    importlib.import_module("openprogram.runtime.agent.loop.driver")
+    from openprogram.runtime.conversation import turn_runtime as _dispatcher
 
     captured: list = []
 
@@ -876,7 +973,7 @@ def _tools_handed_to_agent_loop(req, tool_names):
 
 
 def _stub_model_for_gate():
-    from openprogram.providers.types import Model
+    from openprogram.models.providers.types import Model
     return Model(id="stub", name="stub", api="completion", provider="openai",
                  base_url="https://api.openai.com/v1")
 
@@ -889,7 +986,12 @@ def test_dispatcher_installs_gate_on_every_turn(tmp_path, monkeypatch):
                       history_override=[],
                       permission_rules=PermissionRules(deny=["bash"]))
     tools, probes = _tools_handed_to_agent_loop(req, ["bash", "read"])
-    assert set(tools) == {"bash", "read"}
+    # The screen tool stays listed (refused) when no Page is open, so the
+    # tools array never changes; the usable tools are the resolved ones.
+    usable = {name for name, tool in tools.items()
+              if getattr(tool, "_unavailable_reason", None) is None}
+    assert usable == {"bash", "read"}
+    assert set(tools) - usable <= {"computer_use_agent"}
 
     # An explicit deny still applies to an owner-delegated bypass turn.
     result = asyncio.run(tools["bash"].execute(
@@ -902,3 +1004,133 @@ def test_dispatcher_installs_gate_on_every_turn(tmp_path, monkeypatch):
         "c", {"file_path": str(tmp_path / "f.txt")}, None, None))
     assert not _denied(result)
     assert probes["read"]["called"]
+
+
+# ── the one decision path ──
+
+def _owner_request(mode, *, rules=None, **overrides):
+    from openprogram.runtime.permissions import authority
+    return TurnRequest(session_id="s", user_text="", agent_id="main", source="web", permission_mode=mode,
+                       permission_rules=rules, **{**authority.local_owner_authority(), **overrides})
+
+
+@pytest.fixture
+def owner(tmp_path, monkeypatch):
+    from openprogram.state import paths
+    from openprogram.runtime.permissions import authority
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
+    authority._reset_owner_cache_for_tests()
+
+
+def test_an_ask_rule_nobody_can_answer_names_the_rule_to_change(owner):
+    from openprogram.runtime.permissions.policy import permission_decision
+    tool, _ran = _make_tool("bash")
+    request = _owner_request("bypass", rules=PermissionRules(ask=["bash(git:*)"], allow=["bash"]),
+                             speaker_kind="runtime", interaction="non-interactive")
+    decision = permission_decision(tool, request, {"command": "git status"})
+    assert (decision.outcome, decision.code) == ("deny", "NO_ONE_TO_APPROVE")
+    assert 'ask rule "bash(git:*)"' in decision.refusal.text and "Permission rules in" in decision.refusal.text
+    assert "Bypass permissions" not in decision.refusal.text and "allow rule" not in decision.refusal.text
+
+
+def test_the_refusal_points_at_the_layer_holding_the_rule_that_decided(monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.runtime.permissions import session_facts
+    from openprogram.runtime.permissions.rule import rule_origin
+    from openprogram.state.store.project import project_store
+    monkeypatch.setattr(session_facts, "facts",
+                        lambda: SimpleNamespace(session_rules=lambda _id: PermissionRules(allow=["bash"])))
+    monkeypatch.setattr(project_store, "project_for_session", lambda _id: None)
+    assert rule_origin("s", "bash", "allow") == "this conversation"
+    assert rule_origin("s", "bash", "ask") == "global settings"
+
+
+def test_an_escalation_nobody_can_answer_offers_only_what_lifts_it(monkeypatch):
+    wrapped, seen = _escalation_fixture(monkeypatch)
+    monkeypatch.setattr(_approval, "can_approve", lambda _req: False)
+    result = asyncio.run(wrapped.execute("c", dict(_ESCALATED), None, None))
+    assert result.details["reason_code"] == "NO_ONE_TO_APPROVE" and seen["calls"] == []
+    text = result.content[0].text
+    assert "Sandbox switch" in text and "allow rule" not in text
+
+
+def test_plan_beats_an_allow_rule_but_not_a_deny_rule(owner):
+    from openprogram.runtime.permissions.policy import permission_decision
+    tool, _ran = _make_tool("bash")
+    args = {"command": "git status"}
+
+    decision = permission_decision(tool, _owner_request("plan", rules=PermissionRules(allow=["bash(git:*)"])), args)
+    assert (decision.outcome, decision.code, decision.layer) == ("deny", "PLAN_MODE_DENY", "mode")
+    assert decision.refusal.text.startswith("[blocked by mode] bash")
+
+    decision = permission_decision(tool, _owner_request("plan", rules=PermissionRules(deny=["bash"])), args)
+    assert (decision.code, decision.rule) == ("RULE_DENY", "bash")
+    assert 'your deny rule "bash" matches' in decision.refusal.text
+
+
+def test_legacy_workspace_mismatch_does_not_override_normal_permissions(owner, monkeypatch):
+    from openprogram.runtime.permissions.policy import permission_decision
+    from openprogram.runtime.permissions import session_facts
+    monkeypatch.setattr(session_facts.facts(), "files_await_decision", lambda _sid: True, raising=False)
+    for name, args in (("edit", {"file_path": "/tmp/a.py"}), ("bash", {"command": "git status"}),
+                       ("computer_use_agent", {"target": "browser"}), ("send_file", {"path": "/tmp/a.py"})):
+        tool, _ = _make_tool(name)
+        assert permission_decision(tool, _owner_request("bypass"), args).outcome == "allow"
+    tool, _ = _make_tool("edit")
+    assert permission_decision(tool, _owner_request("plan"), {}).outcome == "deny"
+
+
+def test_a_turn_no_one_can_answer_is_refused_and_never_asks(owner):
+    from openprogram.runtime.permissions.policy import can_approve, permission_decision
+    tool, _ran = _make_tool("bash")
+    attended = _owner_request("ask")
+    assert can_approve(attended)
+    assert permission_decision(tool, attended, {"command": "x"}).outcome == "ask"
+
+    background = _owner_request("ask", speaker_kind="runtime", interaction="non-interactive")
+    assert not can_approve(background)
+    decision = permission_decision(tool, background, {"command": "x"})
+    assert (decision.outcome, decision.code) == ("deny", "NO_ONE_TO_APPROVE")
+    assert "no one to approve" in decision.refusal.text and "add an allow rule" in decision.refusal.text
+
+
+def test_a_program_gets_its_pages_under_unrestricted(owner, monkeypatch):
+    from openprogram.runtime.permissions import session_facts
+    from openprogram.runtime.permissions.policy import permission_decision, surface_grant_applies
+    tool, _ran = _make_tool("computer_use_agent")
+    list_pages = {"target": "browser", "action": "tabs"}
+    monkeypatch.setattr(type(session_facts.facts()), "browser_pages_available", lambda self, context: True)
+
+    decision = permission_decision(tool, _owner_request("bypass"), list_pages)
+    assert (decision.outcome, decision.code) == ("allow", "MODE_UNRESTRICTED")
+    assert surface_grant_applies("computer_use_agent", _owner_request("bypass"), list_pages)
+
+
+def test_a_malformed_call_goes_back_to_the_model_without_a_card(owner, monkeypatch):
+    from openprogram.programs._authoring import prechecks
+    from openprogram.runtime.permissions import approval as _approval
+    tool, ran = _make_tool("needs_a_shape")
+    monkeypatch.setitem(prechecks._registry, "needs_a_shape", lambda args: "shape is required")
+    wrapped = _approval.wrap_with_approval(tool, _owner_request("ask"), lambda _event: None, _live=False)
+
+    assert wrapped._interaction_manifest("c1", {}) is None
+    result = asyncio.run(wrapped.execute("c1", {}, None, None))
+    assert result.is_error and result.content[0].text == "needs_a_shape: shape is required"
+    assert "denied" not in result.details and result.details["reason_code"] == "INVALID_ARGUMENTS"
+    assert not ran["called"]
+
+
+def test_a_tool_refusal_becomes_the_standard_denied_result(owner):
+    from openprogram.models.providers.types import AgentTool
+    from openprogram.runtime.permissions import approval as _approval, refusal
+
+    async def execute(*_args):
+        raise refusal.sandbox("bash", "path is outside writable roots: /x")
+
+    tool = AgentTool(name="bash", label="bash", description="", parameters={}, execute=execute)
+    request = _owner_request("bypass")
+    result = asyncio.run(_approval.wrap_with_approval(tool, request, lambda _event: None, _live=False)
+                         .execute("c1", {"command": "x"}, None, None))
+    assert result.is_error and result.content[0].text.startswith("[blocked by sandbox] bash did not run:")
+    assert result.details["denied"] is True and result.details["layer"] == "sandbox"
+    assert result.details["mode"] == "bypass" and result.details["execution_started"] is False

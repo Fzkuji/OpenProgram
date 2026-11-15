@@ -1,0 +1,5 @@
+Provider brand SVGs from @lobehub/icons-static-svg 1.95.1.
+Source: https://github.com/lobehub/lobe-icons
+Copyright (c) 2023 LobeHub. MIT license: LICENSE in this directory.
+Brand names and logos belong to their respective owners.
+The provider mapping is in components/settings/providers/icons/provider-icons.json.

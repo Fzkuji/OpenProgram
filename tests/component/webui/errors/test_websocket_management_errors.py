@@ -9,8 +9,8 @@ import re
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.agent.authority import owner_authority
-from openprogram.webui import server
+from openprogram.runtime.permissions.authority import owner_authority
+from openprogram.interfaces.server import server
 
 
 class _SequenceWS:
@@ -84,43 +84,43 @@ def _assert_operation_error_data(
     ("module_name", "attribute", "command", "scope"),
     [
         (
-            "openprogram.agent.management.manager",
+            "openprogram.runtime.agent_registry.manager",
             "list_all",
             {"action": "list_agents"},
             "agent",
         ),
         (
-            "openprogram.agent.management.manager",
+            "openprogram.runtime.agent_registry.manager",
             "delete",
             {"action": "delete_agent", "id": "agent-1"},
             "agent",
         ),
         (
-            "openprogram.agent.management.manager",
+            "openprogram.runtime.agent_registry.manager",
             "create",
             {"action": "add_agent", "id": "agent-1"},
             "agent",
         ),
         (
-            "openprogram.agent.management.manager",
+            "openprogram.runtime.agent_registry.manager",
             "set_default",
             {"action": "set_default_agent", "id": "agent-1"},
             "agent",
         ),
         (
-            "openprogram.channels.accounts",
+            "openprogram.interfaces.channels.accounts",
             "list_all_accounts",
             {"action": "list_channel_accounts"},
             "channel",
         ),
         (
-            "openprogram.channels.bindings",
+            "openprogram.interfaces.channels.bindings",
             "list_all",
             {"action": "list_channel_bindings"},
             "channel",
         ),
         (
-            "openprogram.channels.accounts",
+            "openprogram.interfaces.channels.accounts",
             "create",
             {
                 "action": "add_channel_account",
@@ -131,7 +131,7 @@ def _assert_operation_error_data(
             "channel",
         ),
         (
-            "openprogram.channels.bindings",
+            "openprogram.interfaces.channels.bindings",
             "remove_for_account",
             {
                 "action": "remove_channel_account",
@@ -141,31 +141,31 @@ def _assert_operation_error_data(
             "channel",
         ),
         (
-            "openprogram.channels.bindings",
+            "openprogram.interfaces.channels.bindings",
             "add",
             {"action": "add_binding", "agent_id": "agent-1"},
             "channel",
         ),
         (
-            "openprogram.channels.bindings",
+            "openprogram.interfaces.channels.bindings",
             "remove",
             {"action": "remove_binding", "binding_id": "binding-1"},
             "channel",
         ),
         (
-            "openprogram.agent.management.session_aliases",
+            "openprogram.runtime.agent_registry.session_aliases",
             "list_all",
             {"action": "list_session_aliases"},
             "channel",
         ),
         (
-            "openprogram.agent.management.session_aliases",
+            "openprogram.runtime.agent_registry.session_aliases",
             "detach",
             {"action": "detach_session", "channel": "wechat"},
             "channel",
         ),
         (
-            "openprogram.agent.management.session_aliases",
+            "openprogram.runtime.agent_registry.session_aliases",
             "attach",
             {
                 "action": "attach_session",
@@ -175,13 +175,13 @@ def _assert_operation_error_data(
             "channel",
         ),
         (
-            "openprogram.config_schema",
+            "openprogram.state.settings",
             "get_settings",
             {"action": "get_settings"},
             "settings",
         ),
         (
-            "openprogram.config_schema",
+            "openprogram.state.settings",
             "set_setting",
             {"action": "set_setting", "key": "language", "value": "en"},
             "settings",

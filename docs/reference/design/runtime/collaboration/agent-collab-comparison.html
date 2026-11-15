@@ -1,0 +1,320 @@
+<title>Agent collaboration compared</title>
+<meta name="description" content="How eight agent implementations delegate work, message each other, track and cancel it, stop loops and restrict tools, compared with OpenProgram.">
+<span id="layers"></span>
+<h1>Agent collaboration compared</h1>
+
+<p>How does one agent delegate to another, and can it still control that work? Our design: <a href="agent-collaboration.html">Agent collaboration</a>; our tool surface: <a href="agent-collab-architecture.html">architecture</a>.</p>
+
+<details>
+<summary>How this was checked</summary>
+<p>Seven repositories were read directly, with file paths and line numbers. Claude Code findings come only from its <a href="https://code.claude.com/docs/en/overview">public documentation</a>; a mechanism it does not describe reads “Undocumented”. For the other systems, an empty or “none” entry means the mechanism is absent, not unchecked.</p>
+</details>
+
+<h2 id="matrix">Overview</h2>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Spawning</th><th scope="col">Direct messages</th><th scope="col">Tracking</th><th scope="col">Cascading cancel</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td>In-process; depth optional</td><td>Any to any</td><td><code translate="no">execution_id</code>, two tools</td><td>Yes</td></tr>
+<tr><th scope="row">Claude Code</th><td>Within the session, depth 3</td><td>Yes, across machines</td><td><code translate="no">agentId</code>, <code translate="no">ListAgents</code>, <code translate="no">TaskStop</code></td><td>Undocumented</td></tr>
+<tr><th scope="row">codex-cli</th><td>In-process; V1 depth 1, V2 unlimited</td><td>Yes, siblings</td><td>ThreadId, four tools</td><td>Partial</td></tr>
+<tr><th scope="row">openclaw</th><td>In-process or external, depth 1</td><td>Yes, if enabled</td><td>runId, list only</td><td>Yes</td></tr>
+<tr><th scope="row">opencode</th><td>In-process, implicit depth 1</td><td>No</td><td>Child session id</td><td>Yes</td></tr>
+<tr><th scope="row">hermes-agent</th><td>In-process pool, depth 1</td><td>Not in the tree; through the board</td><td>None for the model</td><td>Yes</td></tr>
+<tr><th scope="row">pi-mono</th><td>Child process, unlimited</td><td>No</td><td>None</td><td>One level</td></tr>
+<tr><th scope="row">pi-ai</th><td>None</td><td>None</td><td>None</td><td>Not applicable</td></tr>
+<tr><th scope="row">weclaw</th><td>None</td><td>No</td><td>None</td><td>Not applicable</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Loop controls</th><th scope="col">Tool restriction</th><th scope="col">Addressing</th><th scope="col">Lines</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td>4 on, 3 optional</td><td>Remove by remaining allowance</td><td>Branch name or <code translate="no">SID:HEAD</code></td><td>9.3k</td></tr>
+<tr><th scope="row">Claude Code</th><td>7</td><td>Withheld at the depth limit; a fork gets an error at call</td><td>Name or agent ID</td><td>Undocumented</td></tr>
+<tr><th scope="row">codex-cli</th><td>2</td><td>Remove; V1 also rejects</td><td>Path, <code translate="no">/root/x</code></td><td>7k</td></tr>
+<tr><th scope="row">openclaw</th><td>8</td><td>Remove, recheck at spawn</td><td>Session key</td><td>17k</td></tr>
+<tr><th scope="row">opencode</th><td>3</td><td>Remove or reject, by rule shape</td><td>Agent type name</td><td>0.4k</td></tr>
+<tr><th scope="row">hermes-agent</th><td>5</td><td>Remove whole toolsets</td><td>Anonymous, one-shot</td><td>2.9k</td></tr>
+<tr><th scope="row">pi-mono</th><td>2</td><td>Remove by allowlist</td><td>Name of an on-disk <code translate="no">.md</code></td><td>1.3k</td></tr>
+<tr><th scope="row">pi-ai</th><td>None</td><td>Not applicable</td><td>None</td><td>0</td></tr>
+<tr><th scope="row">weclaw</th><td>1</td><td>Not applicable</td><td><code translate="no">@name</code></td><td>1.1k</td></tr>
+</tbody>
+</table>
+
+<h2 id="spawn">Spawning children</h2>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Runs as</th><th scope="col">Depth limit and where it is enforced</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours: <code translate="no">agent</code></th><td>In-process pool, 8 workers by default; 6 running per conversation, the rest queued</td><td><code translate="no">agent.max_spawn_depth</code>, 1 by default; past it, “do the work yourself”. <code translate="no">agent.max_spawn_fanout</code> per turn, off by default.</td></tr>
+<tr><th scope="row">Claude Code: <code translate="no">Agent</code>, formerly <code translate="no">Task</code></th><td>Subagents in the session, optionally <code translate="no">isolation: worktree</code>; teammates in-process or in tmux or iTerm2 panes</td><td>Depth 3 by default, set by <code translate="no">CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>; concurrency 20 by default, set by <code translate="no">CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code>.</td></tr>
+<tr><th scope="row">codex-cli: <code translate="no">spawn_agent</code></th><td>Tokio tasks on one thread manager</td><td>V1 depth 1. V2 computes child depth and never checks it; disabled by default; only concurrency caps it.</td></tr>
+<tr><th scope="row">openclaw: <code translate="no">sessions_spawn</code></th><td><code translate="no">subagent</code> in-process; <code translate="no">acp</code> external host process, off in sandboxes</td><td>Depth 1, up to 5, counted from <code translate="no">:subagent:</code> segments of the session key</td></tr>
+<tr><th scope="row">opencode: <code translate="no">task</code></th><td>Re-enters the prompt loop in a child session</td><td>No number. A <code translate="no">task: * deny</code> rule removes the tool from the child, giving depth 1; an agent declaring <code translate="no">permission.task=allow</code> is unlimited.</td></tr>
+<tr><th scope="row">hermes-agent: <code translate="no">delegate_task</code></th><td>Thread pool; external ACP CLI; one process per board card</td><td><code translate="no">MAX_DEPTH=1</code>, clamped to 1–3</td></tr>
+<tr><th scope="row">pi-mono: example extension; core omits it</th><td>One new <code translate="no">pi --mode json -p --no-session</code> per child</td><td>None. Children reload the extension, and <code translate="no">worker</code> declares no allowlist, so recursion is unbounded.</td></tr>
+<tr><th scope="row">pi-ai</th><td>Read-only snapshot of pi-mono's LLM transport; neither compiled nor imported</td><td>Not applicable</td></tr>
+<tr><th scope="row">weclaw</th><td>Starts user-configured agent CLIs as top-level agents</td><td>No nesting</td></tr>
+</tbody>
+</table>
+<p class="note">Subprocess paths give isolation, not depth control.</p>
+<details>
+<summary>Code locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td><code translate="no">programs/tools/agents/agent/agent/agent.py; defaults in state/settings.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>Public documentation: <a href="https://code.claude.com/docs/en/sub-agents">Subagents</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">core/src/config/mod.rs:284; V1 check handlers/multi_agents/spawn.rs:65-71; V2 calculation multi_agents_v2/spawn.rs:62</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">config/agent-limits.ts:8; check agents/subagent-spawn.ts:784-791</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">tool/task.ts:133-135; agent/subagent-permissions.ts:18,25</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/delegate_tool.py:133,136-137; check :1958-1972</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">README.md:476 "No sub-agents"; examples/extensions/subagent/index.ts:329-333; agents/worker.md:1-5</code></td></tr>
+<tr><th scope="row">pi-ai</th><td><code translate="no">README.md:1-19</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">agent/cli_agent.go:140,159; four-method interface agent/agent.go:79-95</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="talk">Direct communication</h2>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 196" role="img" aria-label="Three topologies. No channel: a human reaches agents A and B, which cannot reach each other; weclaw and pi-ai. Through the parent: a parent talks to A and B, siblings have no addresses; opencode, pi-mono, hermes-agent. Direct: siblings address each other and other sessions; ours, Claude Code, codex-cli, openclaw.">
+  <defs><marker id="cmp-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="20">No channel</text>
+  <rect class="tile" x="60" y="34" width="72" height="30" rx="6"/><text class="t-note mid" x="96" y="54">Human</text>
+  <rect class="tile" x="10" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="32" y="124">A</text>
+  <rect class="tile" x="138" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="160" y="124">B</text>
+  <line class="ln" x1="84" y1="64" x2="42" y2="102" marker-end="url(#cmp-a)"/><line class="ln" x1="108" y1="64" x2="150" y2="102" marker-end="url(#cmp-a)"/>
+  <line class="ln-no" x1="58" y1="119" x2="134" y2="119"/>
+  <text class="t-soft" x="0" y="166">weclaw, pi-ai</text>
+  <text class="t-big" x="232" y="20">Through the parent</text>
+  <rect class="tile" x="292" y="34" width="72" height="30" rx="6"/><text class="t-note mid" x="328" y="54">Parent</text>
+  <rect class="tile" x="242" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="264" y="124">A</text>
+  <rect class="tile" x="370" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="392" y="124">B</text>
+  <line class="ln" x1="316" y1="66" x2="274" y2="102" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/><line class="ln" x1="340" y1="66" x2="382" y2="102" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/>
+  <line class="ln-no" x1="290" y1="119" x2="366" y2="119"/>
+  <text class="t-soft" x="232" y="166">opencode, pi-mono,</text>
+  <text class="t-soft" x="232" y="186">hermes-agent</text>
+  <text class="t-big" x="464" y="20">Direct</text>
+  <rect class="tile" x="514" y="34" width="72" height="30" rx="6"/><text class="t-note mid" x="550" y="54">Parent</text>
+  <rect class="tile" x="474" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="496" y="124">A</text>
+  <rect class="tile" x="582" y="104" width="44" height="30" rx="6"/><text class="t-note mid" x="604" y="124">B</text>
+  <line class="ln" x1="540" y1="66" x2="506" y2="102" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/><line class="ln" x1="560" y1="66" x2="594" y2="102" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/>
+  <line class="ln-acc" x1="522" y1="119" x2="578" y2="119" marker-start="url(#cmp-a)" marker-end="url(#cmp-a)"/>
+  <text class="t-soft" x="464" y="166">Ours, Claude Code,</text>
+  <text class="t-soft" x="464" y="186">codex-cli, openclaw</text>
+</svg>
+<dl class="pairs fig-narrow">
+<dt>No channel</dt><dd>weclaw, pi-ai</dd>
+<dt>Through the parent</dt><dd>opencode, pi-mono, hermes-agent</dd>
+<dt>Direct</dt><dd>Ours, Claude Code, codex-cli, openclaw</dd>
+</dl>
+</figure>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Connection and delivery</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td><code translate="no">send_message(to=)</code> from any agent to any unarchived branch, same path across sessions, no ownership check. Busy targets queue in the session inbox.</td></tr>
+<tr><th scope="row">Claude Code</th><td><code translate="no">SendMessage</code>. <code translate="no">to</code>: teammate or subagent name, <code translate="no">main</code>, an agent ID, or another session’s name; a local session’s inbox address starts with <code translate="no">uds:</code>. No broadcast: one message per recipient. Teammates use file mailboxes <code translate="no">~/.claude/teams/{team}/inboxes/{name}.json</code>. Sending to a finished subagent resumes it.</td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">send_message</code>, <code translate="no">followup_task</code>, straight to the target thread. Absolute paths let siblings address each other. Delivery queues, or wakes the recipient for one turn.</td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">sessions_send</code>, off by default: a config switch and pairwise allowlist. A bounded back-and-forth loop. Children cannot use it and return through the parent's announcement queue.</td></tr>
+<tr><th scope="row">opencode</th><td>Parent to child only, which may append to a running child. No messaging tool in the registry.</td></tr>
+<tr><th scope="row">hermes-agent</th><td>Children report to parents only; <code translate="no">send_message</code> is on the never-for-children list. Board workers, one process per card, exchange card comments in a shared database; the root card holds a conventional shared area.</td></tr>
+<tr><th scope="row">pi-mono</th><td>One prompt at spawn, stdout on exit. Sequential mode substitutes the previous output into the next task, the only sibling channel.</td></tr>
+<tr><th scope="row">pi-ai</th><td>No agents</td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">@a @b message</code> sends one message to several agents, each replying to the human with a prefix. Agents cannot see each other.</td></tr>
+</tbody>
+</table>
+<p class="note">Beyond one process: Claude Code reaches other local sessions and machines, ours any session, openclaw by session key.</p>
+<details>
+<summary>Code locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td><code translate="no">programs/tools/agents/send_message/send_message/send_message.py; addressing.py; runtime/conversation/inbox.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>Public documentation: <a href="https://code.claude.com/docs/en/agent-teams">Agent teams</a>, <a href="https://code.claude.com/docs/en/cross-session-messaging">Cross-session messaging</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">handlers/multi_agents_v2/message_tool.rs:11-24,51-131; absolute paths protocol/src/agent_path.rs:59-71; delivery core/src/agent/control.rs:171</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">agents/tools/sessions-send-tool.ts:193,249-256; back-and-forth sessions-send-tool.a2a.ts:94; child restriction agents/pi-tools.policy.ts:49-50</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">tool/registry.ts:217-236 (whole built-in registry); parent-to-child tool/task.ts:242-257</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">denylist tools/delegate_tool.py:50; board toolsets.py:252-269; shared area hermes_cli/kanban_swarm.py:11-14,26,226-268</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">examples/extensions/subagent/index.ts:530,569; parallel isolation :618-639</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">messaging/handler.go:456-486; command registry (7 entries) :686-698</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="track">Tracking and cancellation</h2>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Id to the model</th><th scope="col">Status</th><th scope="col">Result returns</th><th scope="col">Model cancels</th><th scope="col">Cascade</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td><code translate="no">j_</code> prefix</td><td><code translate="no">list_agents</code>, <code translate="no">read_conversation</code></td><td>Completion notice in the dispatcher's conversation, one result shape</td><td><code translate="no">close_agent</code>; UI or API <code translate="no">execution.cancel</code></td><td>Yes, breadth-first over <code translate="no">parent_job_id</code>, visited set</td></tr>
+<tr><th scope="row">Claude Code</th><td><code translate="no">agentId</code></td><td><code translate="no">ListAgents</code>; <code translate="no">/tasks</code></td><td>Returned to the caller on completion; background tasks are read from their output file</td><td><code translate="no">TaskStop</code></td><td>Undocumented</td></tr>
+<tr><th scope="row">codex-cli</th><td>ThreadId and path</td><td><code translate="no">list_agents</code>, <code translate="no">get_status</code>, push subscriptions</td><td>Monitor synthesizes a parent message; <code translate="no">wait_agent</code>, default 30 s, at most 1 h</td><td><code translate="no">interrupt_agent</code>; V1 <code translate="no">close_agent</code></td><td><code translate="no">close_agent</code> cascades, <code translate="no">interrupt_agent</code> stops one; V2 has only the latter</td></tr>
+<tr><th scope="row">openclaw</th><td>runId</td><td><code translate="no">subagents</code>, list only</td><td>Pushed: <code translate="no">sessions_yield</code> ends the turn, result arrives next</td><td>No; <code translate="no">/subagents kill</code>, HTTP endpoint</td><td>Yes, recursive; each child clears its queue and writes an abort marker</td></tr>
+<tr><th scope="row">opencode</th><td>Child session id, reusable to resume</td><td>No; the prompt forbids polling</td><td>Tool result, or a synthetic parent message</td><td>No; host-side</td><td>Yes, abort signals and metadata traversal to a fixed point; deletion too</td></tr>
+<tr><th scope="row">hermes-agent</th><td>No; index, status, summary, usage</td><td>Gateway RPC</td><td>Blocking, all together</td><td>Gateway RPC</td><td>Yes, cooperative, no thread kill</td></tr>
+<tr><th scope="row">pi-mono</th><td>No; id discarded</td><td>No; UI callbacks</td><td>Child stdout, final text, 50KB per task</td><td>Environment abort only</td><td>One level: SIGTERM, SIGKILL after 5 s; children not in cleanup registry, so a forced kill orphans them</td></tr>
+<tr><th scope="row">pi-ai</th><td>None</td><td>None</td><td>None</td><td>None</td><td>One flat abort per HTTP request</td></tr>
+<tr><th scope="row">weclaw</th><td>None</td><td>None</td><td>Synchronous, by WeChat user id</td><td>No</td><td>No hierarchy; global cancel at shutdown</td></tr>
+</tbody>
+</table>
+<p class="note">Cascading systems walk parent links with a visited set; they differ in walking memory or durable records.</p>
+<details>
+<summary>Code locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td><code translate="no">runtime/jobs/runner/cancellation.py; return runtime/jobs/notices.py; ownership programs/tools/agents/agent/_ownership.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>Undocumented</td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">cascade core/src/agent/control/legacy.rs:86-101, descendants control.rs:732-756; non-cascade control.rs:247-257</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">agents/subagent-control.ts:205,232,238,256; kill auto-reply/reply/commands-subagents/action-kill.ts:27</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">session/run-state.ts:116-148; tool/task.ts:296-306; tests test/tool/task.test.ts:870</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">result fields tools/delegate_tool.py:1684-1720; recursion run_agent.py:1690-1730</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">discarded id examples/extensions/subagent/index.ts:466; termination :393-403; compare src/utils/shell.ts:172</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">messaging/handler.go:541-556; command registry :686-698</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="loop">Loop prevention</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">System</th><th scope="col">Controls</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td>On: 4 concurrent, inbox 50 with oldest evicted, 60 s duplicate window, self-delivery rejected. Optional, off by default: depth, per-chain messages, per-turn fan-out. No tool-round cap on chat turns.</td></tr>
+<tr><th scope="row">Claude Code</th><td>Depth 3 and concurrency 20 by default, no total spawn cap; a fork cannot fork; teammates cannot spawn teammates. Cross-session messages: rate-limited per sender, identical repeats dropped within a short window, at most 50 queued.</td></tr>
+<tr><th scope="row">codex-cli</th><td>Depth (V1 1, V2 none); concurrency 6 global, 4 per V2 session. No dedup, count, rate limit or cycle detection, so with sibling addressing nothing stops two agents delegating forever.</td></tr>
+<tr><th scope="row">openclaw</th><td>Depth 1 (to 5); 5 children per agent (to 20); concurrency 8 and 4; conversations 5 rounds (to 20); 2 s steering limit; 3 announcement retries; child-key dedup; tool-loop detector, off by default.</td></tr>
+<tr><th scope="row">opencode</th><td>Depth by injected permission. Same tool with identical arguments 3 times prompts for permission. Steps unlimited by default.</td></tr>
+<tr><th scope="row">hermes-agent</th><td>Depth 1 (to 3); 3 concurrent; 50 iterations per child; 600 s timeout plus heartbeat; a global spawn pause; delegation toolset removed from leaves. No dedup or count.</td></tr>
+<tr><th scope="row">pi-mono</th><td>Fan-out 8, concurrency 4, 50KB output per task. No depth, dedup, rate or round cap; recursion is unbounded.</td></tr>
+<tr><th scope="row">pi-ai</th><td>No tool loop</td></tr>
+<tr><th scope="row">weclaw</th><td>Dedup: WeChat ids for 5 minutes, names within a broadcast. No return channel, so no cycles.</td></tr>
+</tbody>
+</table>
+<p class="note">Depth limits are nearly universal; only three systems count messages.</p>
+<details>
+<summary>Code locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td><code translate="no">programs/tools/agents/send_message/send_message/depth.py; programs/tools/agents/agent/agent/agent.py; runtime/conversation/inbox.py; self-delivery guard send_message.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>Public documentation: <a href="https://code.claude.com/docs/en/sub-agents">Subagents</a>, <a href="https://code.claude.com/docs/en/agent-teams">Agent teams</a>, <a href="https://code.claude.com/docs/en/cross-session-messaging">Cross-session messaging</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">core/src/config/mod.rs:212-213,284; concurrency core/src/agent/control/execution.rs:68-76</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">config/agent-limits.ts:3-8; rounds agents/tools/sessions-send-helpers.ts:15-16; rate limit agents/subagent-control.ts:45,507-516; retries agents/subagent-registry-helpers.ts:35</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">DOOM_LOOP_THRESHOLD=3 session/processor.ts:35, check :519-546; steps session/prompt.ts:1281</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/delegate_tool.py:132-133,136-137,512-523; pause switch :149-172; toolset removal :672-680</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">examples/extensions/subagent/index.ts:27-30; main loop packages/agent/src/agent-loop.ts:170</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">messaging/handler.go:273,63-64; name deduplication :246-253</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="tools">Restricting child tools</h2>
+<dl class="pairs">
+<dt>A: remove from the list</dt><dd>The model never sees it. Definitions differ by level, so prompt caches split.</dd>
+<dt>B: keep, reject at call</dt><dd>Definitions stay byte-identical and caches hit. An attempted call wastes a turn.</dd>
+</dl>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Approach</th><th scope="col">What and when</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td>A by remaining allowance, then refusal</td><td>Only <code translate="no">agent</code>, only when the message budget is out (<code translate="no">delegation_budget_left</code>), since every dispatch costs a message. Spent generations do not remove it: work can still go to existing agents. Everything else stays. Deliberately binary: a per-level set would shred the prompt cache.</td></tr>
+<tr><th scope="row">Claude Code</th><td>A and B</td><td><code translate="no">Agent</code> is withheld at the depth limit; a fork keeps it and gets an error at call.</td></tr>
+<tr><th scope="row">codex-cli</th><td>V1 A+B, V2 A</td><td>Tool list omits collaboration tools at the limit; V1 handlers also reject. Roles overlay configuration files, not allowlists.</td></tr>
+<tr><th scope="row">openclaw</th><td>A+B</td><td>All children lose gateway, agent listing, session status, scheduled tasks and cross-agent messaging. Leaves also lose subagent listing, session listing, history and spawning. Spawn rechecks depth.</td></tr>
+<tr><th scope="row">opencode</th><td>A or B</td><td>Deny with <code translate="no">"*"</code> removes from the schema; a specific pattern keeps it and throws at call, returning the matched rule.</td></tr>
+<tr><th scope="row">hermes-agent</th><td>A, per toolset</td><td>Requested ∩ parent-owned, minus delegation, user-question, memory and code execution. Gap: the never-for-children list only generates docs, so a child inheriting the messaging set still gets <code translate="no">send_message</code>.</td></tr>
+<tr><th scope="row">pi-mono</th><td>A</td><td>Allowlist becomes child arguments; the child filters its registry and rebuilds its prompt.</td></tr>
+<tr><th scope="row">pi-ai</th><td>Not applicable</td><td>No tool executor</td></tr>
+<tr><th scope="row">weclaw</th><td>Not applicable</td><td>Tools are opaque inside the wrapped CLI</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Code locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td><code translate="no">programs/tools/agents/send_message/send_message/depth.py delegation_budget_left; can_use on programs/tools/agents/agent/agent/agent.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>Public documentation: <a href="https://code.claude.com/docs/en/sub-agents">Subagents</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">core/src/tools/spec_plan.rs:561-572,1099; V1 rejection handlers/multi_agents/spawn.rs:67-71; roles core/src/agent/role.rs:37,249</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">agents/pi-tools.policy.ts:42-51,57-62,170-175; recheck agents/subagent-spawn.ts:786</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">removal permission/index.ts:215-225, session/llm/request.ts:198-204; rejection permission/index.ts:86-90, message packages/core/src/v1/permission.ts:84-90</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">tools/delegate_tool.py:945-961,672-680; list :45-53; gap compared with toolsets.py:190</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">core/agent-session.ts:2253-2342; allowlist core/sdk.ts:280-286; arguments examples/extensions/subagent/index.ts:290</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">the only tool mention, for display: agent/acp_agent.go:139</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="name">Identity and addressing</h2>
+<table class="stack">
+<thead><tr><th scope="col">System</th><th scope="col">Named</th><th scope="col">Finding existing agents</th><th scope="col">Address</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td>Yes: about 24-character placeholder, then LLM titles at turns 1, 6, 16, 40</td><td><code translate="no">list_agents</code>: session, all, archived; each with address, turns, size, preview</td><td><code translate="no">SID:HEAD</code>, name or unique prefix; resolves to the tip, so old heads stay valid</td></tr>
+<tr><th scope="row">Claude Code</th><td>Names for subagents and teammates; <code translate="no">main</code> is the main conversation</td><td><code translate="no">ListAgents</code>: subagents, teammates, local sessions; cloud and other-machine sessions while connected to Remote Control</td><td>Name, <code translate="no">main</code>, agent ID; when local names collide, the identifier from the listing</td></tr>
+<tr><th scope="row">codex-cli</th><td>Path from <code translate="no">/root</code>; nicknames from 101 scientists</td><td><code translate="no">list_agents</code> by path prefix; live children also in environment context</td><td>Path or ThreadId</td></tr>
+<tr><th scope="row">openclaw</th><td>Yes, in configuration files</td><td><code translate="no">agents_list</code>, removed from children</td><td><code translate="no">agent:&lt;id&gt;:…:subagent:…</code>, or label plus agentId</td></tr>
+<tr><th scope="row">opencode</th><td>Types, not instances</td><td>Names in the <code translate="no">task</code> description; running agents undiscoverable; ids only reconnect one's own child</td><td>Bare name</td></tr>
+<tr><th scope="row">hermes-agent</th><td>Anonymous, one-shot</td><td>No tool; internal <code translate="no">sa-index-random</code> ids are operations-only</td><td>None; board cards use profile names</td></tr>
+<tr><th scope="row">pi-mono</th><td>On-disk definitions, not processes</td><td>Rescans the directory; children leave nothing</td><td>Name by linear scan; learned from error messages</td></tr>
+<tr><th scope="row">pi-ai</th><td>None</td><td>None</td><td>None</td></tr>
+<tr><th scope="row">weclaw</th><td>Config keys and aliases</td><td>No tool; <code translate="no">/info</code> is a human command</td><td><code translate="no">@name</code> or <code translate="no">/name</code></td></tr>
+</tbody>
+</table>
+<details>
+<summary>Code locations</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">System</th><th scope="col">Location</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ours</th><td><code translate="no">programs/tools/agents/send_message/list_agents/list_agents.py; programs/tools/agents/send_message/send_message/addressing.py; runtime/conversation/turn_runtime/titles.py</code></td></tr>
+<tr><th scope="row">Claude Code</th><td>Public documentation: <a href="https://code.claude.com/docs/en/cross-session-messaging">Cross-session messaging</a>, <a href="https://code.claude.com/docs/en/tools-reference">Tools reference</a></td></tr>
+<tr><th scope="row">codex-cli</th><td><code translate="no">protocol/src/agent_path.rs:15-19,54-71,129-146; names core/src/agent/agent_names.txt; listing core/src/agent/control.rs:383-395,361-381</code></td></tr>
+<tr><th scope="row">openclaw</th><td><code translate="no">sessions/session-key-utils.ts:108-126; agents-list-tool.ts:37; child restriction pi-tools.policy.ts:45</code></td></tr>
+<tr><th scope="row">opencode</th><td><code translate="no">tool/task.ts:46,116; names tool/registry.ts:252-265; definitions agent/agent.ts:35-55</code></td></tr>
+<tr><th scope="row">hermes-agent</th><td><code translate="no">parameters tools/delegate_tool.py:2675-2751; internal id :920-922; board hermes_cli/kanban_db.py:5674-5679</code></td></tr>
+<tr><th scope="row">pi-mono</th><td><code translate="no" data-claim="example">examples/extensions/subagent/agents.ts:52-56,97-116; arguments index.ts:288; parsing index.ts:272-286</code></td></tr>
+<tr><th scope="row">weclaw</th><td><code translate="no">config/config.go:16-33; parsing messaging/handler.go:206-265; aliases :169,187</code></td></tr>
+</tbody>
+</table>
+</details>
+
+<h3 id="size">Code size</h3>
+<table class="stack fixed">
+<thead><tr><th scope="col">System and lines</th><th scope="col">Measured</th></tr></thead>
+<tbody>
+<tr><th scope="row">openclaw, 17,240</th><td>73 non-test TypeScript files, including UI commands and registries</td></tr>
+<tr><th scope="row">Ours, about 9,300</th><td>Agent tools 2,526; jobs package without resource governance 5,541; inbox 511; <code translate="no">sub_agent_run</code> 750</td></tr>
+<tr><th scope="row">codex-cli, 7,059</th><td>Multi-agent core; plus 3,676 supporting and 13,114 test lines</td></tr>
+<tr><th scope="row">hermes-agent, 2,900</th><td>Delegation; plus about 1,600 for the Kanban path</td></tr>
+<tr><th scope="row">pi-mono, 1,310</th><td>Whole example extension; the mechanism is about 190</td></tr>
+<tr><th scope="row">weclaw, 1,050</th><td>All agent code; routing core about 150</td></tr>
+<tr><th scope="row">opencode, 415</th><td>Delegation; plus about 365 of reused background-task code</td></tr>
+<tr><th scope="row">pi-ai, 0</th><td>No implementation</td></tr>
+</tbody>
+</table>
+<p class="note">Boundaries differ; compare orders of magnitude only. Tests excluded.</p>
+
+<h2 id="plan">What we took from this</h2>
+<table class="stack">
+<thead><tr><th scope="col">Domain</th><th scope="col">Tools</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row">Plan</th><td><code translate="no">todo_create</code>, <code translate="no">todo_update</code>, <code translate="no">todo_list</code></td><td>A checklist; editing runs nothing</td></tr>
+<tr><th scope="row">Execution</th><td><code translate="no">read_conversation</code>, <code translate="no">close_agent</code></td><td>One id, one status, guaranteed return, cascading cancel</td></tr>
+<tr><th scope="row">Entity</th><td><code translate="no">agent</code>, <code translate="no">list_agents</code>, <code translate="no">send_message</code></td><td>An agent is a branch in the session graph</td></tr>
+<tr><th scope="row">Communication</th><td><code translate="no">send_message</code>, <code translate="no">read_conversation</code></td><td>Messages without task records; any branch's transcript</td></tr>
+</tbody>
+</table>
+<table class="stack">
+<thead><tr><th scope="col">Choice</th><th scope="col">Against</th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tool names <code translate="no">agent</code>, <code translate="no">list_agents</code>, <code translate="no">send_message</code></th><td>Claude Code</td><td>Models already know them</td></tr>
+<tr><th scope="row">Planning is <code translate="no">todo_*</code></th><td>Differs from Claude Code</td><td>Its <code translate="no">TaskList</code> is a plan board; ours keeps running work and plans apart</td></tr>
+<tr><th scope="row">Address a branch, not a process</th><td>Like codex-cli paths, openclaw keys</td><td>(session, head) identifies it without an agent table</td></tr>
+<tr><th scope="row">Any agent may message any agent</th><td>Looser than openclaw; like codex-cli V2, Claude Code</td><td>A message makes no task and cannot cascade; the worst outcome is silence</td></tr>
+<tr><th scope="row">One message tool: <code translate="no">send_message</code> always makes a Job</th><td>Codex <code translate="no">send_input</code>, Claude Code <code translate="no">SendMessage</code></td><td>Return, cancel and cascade belong to Jobs; one tool removes the choice between three addressing forms</td></tr>
+<tr><th scope="row">Per-chain message budget; 8 when set, counting return flow</th><td>Only openclaw also counts</td><td>Depth alone cannot stop existing agents delegating to each other. 8 sits between openclaw's 5 and 20 because we also charge spawns and dispatches. A return rebinds the count, so one round trip costs 1; generations restore to the dispatcher's, so a coordinator can dispatch the next batch.</td></tr>
+<tr><th scope="row">Depth 1 when set, not 3</th><td>openclaw, codex-cli V1, hermes, opencode</td><td>Depth 3 suits nesting with a human watching. Our unattended path is <code translate="no">run_in_background=True</code>.</td></tr>
+<tr><th scope="row">Per-turn fan-out; 8 when set</th><td>Only openclaw has a true fan-out cap</td><td>A spawn leaves the parent's counters alone, so neither chain counter sees siblings. openclaw's 5 live children (1–20) is the reusable unit; hermes's 3 and pi-mono's 8 are batch arguments and <code translate="no">agent</code> makes one child. 8 is two pool widths: fill it, queue a batch, then refuse the ninth and name the existing eight.</td></tr>
+<tr><th scope="row">No steering rate limit or child hard timeout</th><td>openclaw 2 s; hermes 600 s</td><td>openclaw's limit guards steer, which aborts the child's turn; ours queues and interrupts nothing. Hermes's timeout is a caller-side wait that abandons the thread. <code translate="no">job_output(timeout=)</code> is that wait, and <code translate="no">execution.cancel</code> also terminates the runtime and forces a terminal state after 30 s.</td></tr>
+<tr><th scope="row">Remove tools by allowance, binary</th><td>Others remove always or by depth tier</td><td>Tiers invalidate prompt caches</td></tr>
+<tr><th scope="row">Extra tools <code translate="no">close_agent</code>, <code translate="no">read_conversation</code></th><td>Codex <code translate="no">close_agent</code>; Claude Code <code translate="no">TaskStop</code></td><td>Stop and retire a helper in one call, read history without raw session files</td></tr>
+</tbody>
+</table>
+<p class="note">Rationale for each number sits beside its constant. Limits ship off, so the job pool bounds concurrency and the owner chooses depth. Open gaps: <a href="agent-collaboration.html#implementation-status">implementation status</a>.</p>

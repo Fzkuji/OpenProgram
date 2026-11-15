@@ -1,0 +1,117 @@
+<title>Codex 传输</title>
+<meta name="description" content="Codex 一轮请求如何到达后端：保持的 WebSocket、增量续接和压缩的 HTTP。">
+<h1>Codex 传输</h1>
+<table class="stack">
+<thead><tr><th scope="col">这一轮</th><th scope="col">传输</th><th scope="col">请求体</th></tr></thead>
+<tbody>
+<tr><th scope="row">ChatGPT 登录，接着上一个回复</th><td>保持的 WebSocket</td><td>只发新输入，带 <code translate="no">previous_response_id</code></td></tr>
+<tr><th scope="row">ChatGPT 登录，其他情况</th><td>保持的 WebSocket</td><td>完整</td></tr>
+<tr><th scope="row">ChatGPT 登录，socket 不可用</th><td>HTTP</td><td>zstd 3 级，无校验和，<code translate="no">Content-Encoding: zstd</code></td></tr>
+<tr><th scope="row">API key</th><td>HTTP</td><td>不压缩</td></tr>
+</tbody>
+</table>
+<p class="note">端点 <code translate="no">chatgpt.com/backend-api/codex/responses</code>。两条路都进同一个消费者 <code translate="no">openai_codex._consume</code>，受 <code translate="no">read_budget.ReadBudget</code> 约束：<code translate="no">STREAM_IDLE_TIMEOUT_S</code> 内没有字节、<code translate="no">STREAM_DATA_STALL_TIMEOUT_S</code> 内没有数据，调用方期限和停止按钮以 4 Hz 轮询。</p>
+<h2>WebSocket</h2>
+<p><code translate="no">open_turn</code> 带 HTTP 请求头和 <code translate="no">OpenAI-Beta: responses_websockets=2026-02-06</code> 拨号，发送一条 <code translate="no">{"type":"response.create", …body}</code>，读取的帧就是 SSE 事件的 JSON。<code translate="no">codex.rate_limits</code> 交给<a href="provider-quota.html">额度存储</a>，不进回复；跳过 <code translate="no">codex.response.metadata</code>、<code translate="no">responsesapi.websocket_timing</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">增量规则</th><th scope="col">值</th></tr></thead>
+<tbody>
+<tr><th scope="row">Socket 键</th><td>事件循环、URL、authorization、账号、<code translate="no">prompt_cache_key</code></td></tr>
+<tr><th scope="row">记住的内容</th><td>形状（除 <code translate="no">input</code> 外全部）；每个输入项和回复输出项的摘要</td></tr>
+<tr><th scope="row">走增量的条件</th><td>形状相同，且输入开头正好是这些项</td></tr>
+<tr><th scope="row">摘要忽略</th><td>id、status、消息的 <code translate="no">phase</code>、空 annotations 和 logprobs；<code translate="no">arguments</code> 按解析后的 JSON 比较</td></tr>
+<tr><th scope="row">换新 socket 重发完整内容</th><td><code translate="no">previous_response_not_found</code>，或复用的 socket 在回复开始前失败</td></tr>
+</tbody>
+</table>
+<h2>缓存路由</h2>
+<p>后端把提示前缀缓存在一个副本上。新连接只有在请求的 <code translate="no">session_id</code> 和 <code translate="no">conversation_id</code> 请求头以及 <code translate="no">prompt_cache_key</code> 中都写明所属对话时，才会落到那个副本（<code translate="no">CONVERSATION_HEADERS</code>）。只有请求体里的键时，新 socket 会整段错过前缀。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">请求</th><th scope="col">键</th></tr></thead>
+<tbody>
+<tr><th scope="row">属于某个对话</th><td>会话 id</td></tr>
+<tr><th scope="row">Runtime 调用（标题、话题归类、程序运行）</th><td><code translate="no">op-</code> 加 provider、模型、系统提示和工具名的摘要，发同样内容的每个 Runtime 都一样。以前每次调用新建 Runtime 得到随机键，约 3,000 个 token 缓存 0 个；现在第二次调用缓存约 2,800 个</td></tr>
+<tr><th scope="row">不属于对话（记忆、后台调用）</th><td><code translate="no">op-</code> 加 provider、模型、instructions 和工具名的摘要（<code translate="no">providers.shared.cache_key</code>，Runtime 调用也用这一推导），重复的旁路调用能找到自己的前缀</td></tr>
+<tr><th scope="row">改道的重试</th><td><code translate="no">op-retry-</code> 键；请求头跟着改</td></tr>
+<tr><th scope="row">调用方已设请求头</th><td>保留</td></tr>
+</tbody>
+</table>
+<h2 id="deferred-tools">加载延迟工具</h2>
+<p>后端把 tools 数组渲染在指令和对话之前。数组的任何改动，包括在末尾追加一个工具，都会让它把整个请求当作未缓存重读。所以延迟工具在搜索它的位置加载，与 Responses API 客户端执行的 tool search 放置方式一致。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">线上形式</th></tr></thead>
+<tbody>
+<tr><th scope="row">tools 里的 <code translate="no">tool_search</code></th><td><code translate="no">{"type":"tool_search","execution":"client"}</code>，带它自己的参数</td></tr>
+<tr><th scope="row">模型的搜索</th><td>一个 <code translate="no">tool_search_call</code> 条目，作为 <code translate="no">tool_search</code> 工具运行，回传时不带 id</td></tr>
+<tr><th scope="row">搜索结果</th><td>一个 <code translate="no">tool_search_output</code> 条目，带结果的加载记录 <code translate="no">details["loads"]</code> 里的定义：每个工具一项 <code translate="no">{name, definition}</code>，由 <code translate="no">record_loads</code> 在加载时写入。不读结果文字，所以之后每次请求这个条目的字节都相同；加载后 schema 改了也不影响它。这一轮不再提供的工具仍留在条目里，调用时和这一轮没有的其他工具一样被拒绝</td></tr>
+<tr><th scope="row">没加载的部分</th><td>这个条目放不了文字，只有 <code translate="no">tools: []</code> 读起来就是“没有这个工具”。搜索的说明 <code translate="no">details["note"]</code>（数组里已有的工具可以直接调用、名字不存在、没有匹配）作为紧随其后的一条 user 项发出，包在 <code translate="no">&lt;tool-search-result&gt;</code> 里（<a href="../function/deferred-tools.zh.html#codex">延迟工具</a>）</td></tr>
+<tr><th scope="row">存下的结果</th><td>工具节点把加载记录存在 metadata 里、放在文字旁边；从历史渲染时放回工具结果上，所以从历史构建的请求和工具运行那一轮构建的相同</td></tr>
+<tr><th scope="row">哪些请求</th><td>provider 在 <code translate="no">provider.json</code> 的 <code translate="no">tool_search</code> 下为请求的 API 声明了 <code translate="no">responses</code> 形式，且模型没有退出（<code translate="no">Model.tool_search = False</code>）。只有 <code translate="no">openai-codex</code> 声明了；其他 provider 和 API，包括 Bedrock Converse 和兼容 Anthropic 的那些，都把搜到的工具放进数组</td></tr>
+<tr><th scope="row">已加载集合</th><td>每个 provider 都从本次请求自己的消息读出（<code translate="no">loaded_tools</code>）：工具结果上的加载记录，加上其中压缩摘要带着的工具名。没有别处保存它，所以嵌套运行、另一个分支、回到搜索之前的编辑都看不到这次加载</td></tr>
+<tr><th scope="row">已加载的工具</th><td>输入里有 <code translate="no">tool_search_output</code> 带着它时不进数组</td></tr>
+<tr><th scope="row">压缩之后</th><td>摘要节点存 <code translate="no">carried_tool_names</code>：被覆盖的轮次加载过的工具，最近加载或调用的在前，定义总量超过窗口 5% 的部分截掉。Codex 上在摘要前放一对 <code translate="no">tool_search_call</code> / <code translate="no">tool_search_output</code>，call id 由工具名算出，每个定义取对话第一次发出的那份，所以数组不变；其他 provider 把带过去的工具放进数组</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead><tr><th scope="col">请求，同一段真实对话</th><th scope="col">数组里的工具</th><th scope="col">未缓存 / 缓存输入</th></tr></thead>
+<tbody>
+<tr><th scope="row">搜索后紧接的请求，工具加进数组</th><td>变了</td><td>8,664 / 0</td></tr>
+<tr><th scope="row">搜索后紧接的请求，工具在 <code translate="no">tool_search_output</code> 里</th><td>不变</td><td>896 / 7,040</td></tr>
+<tr><th scope="row">下一轮，提示只列未加载的工具</th><td>不变</td><td>3,211 / 6,144</td></tr>
+<tr><th scope="row">下一轮，提示列出全部延迟工具</th><td>不变</td><td>309 / 8,320</td></tr>
+<tr><th scope="row">关键词加载三个工具后的下一轮，存下的结果截在 4,000 字符</th><td>两个工具放回数组</td><td>9,398 / 0</td></tr>
+<tr><th scope="row">同样加载后的下一轮，存下的结果完整</th><td>不变</td><td>311 / 9,088</td></tr>
+</tbody>
+</table>
+<p class="note">整段对话的每次请求 tools 数组、指令和保留 socket 的形状都相同，所以 WebSocket 增量能跨过一次加载继续。提示里的延迟列表列出全部延迟工具，加载与否都在。</p>
+<p class="note">另有两种加载方式仍把工具放进数组、排在对话之前：指南送达时激活的工具（<code translate="no">self_update</code> 指南激活 <code translate="no">worktree_create</code>），加载记录写在送达指南的那条结果上，以及对话里打开的应用，它的工具从下一轮起常驻。</p>
+<p class="note">两者都不写 <code translate="no">tool_search_output</code>，所以各自带来一次整段重读，与之前的工具搜索一样。稳定版最近 30 天有 77 次工具搜索，没有 <code translate="no">self_update</code> 调用。</p>
+<h2>回退到 HTTP</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"><code translate="no">SocketUnavailable</code> 的原因</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_WEBSOCKET=0</code></th><td>测试会设置，传输自身的测试除外，它们用本地服务器</td></tr>
+<tr><th scope="row">握手失败</th><td>该主机避开 <code translate="no">SHUN_S</code>，10 分钟；401、429、5xx 除外</td></tr>
+<tr><th scope="row">关闭码 1009，消息过大</th><td>按主机记住</td></tr>
+<tr><th scope="row">连接数上限</th><td>后端拒绝</td></tr>
+</tbody>
+</table>
+<p>经 HTTP 代理时，握手先发 <code translate="no">CONNECT</code>：</p>
+<ul>
+<li>代理拒绝、超时或断开连接，和其他握手失败一样，这一轮走 HTTP；</li>
+<li>隧道内 TLS 握手期间对端重置或关闭隧道，同样是握手失败；</li>
+<li>代理回答前放弃拨号（轮次被停止），代理连接立即关闭，别的不变。</li>
+</ul>
+<p>websockets 16 本身会让这条连接留着，迟到的回答到达时记录 <code translate="no">InvalidStateError</code>；代理不回答就关闭时，它还会把回答流结束两次，所以 <code translate="no">_install_proxy_protocol</code> 换掉了它的代理协议。</p>
+<p>websockets 还在 WebSocket 连接建立之前就在隧道里开始 TLS，而 asyncio 已把这条连接当作建立；此时隧道断开会对它调用 <code translate="no">connection_lost</code>，<code translate="no">_Connection</code> 因为什么都没建立而忽略这次调用。</p>
+<p class="note">回复开始后 socket 断开，按普通可重试的流中断处理。<code translate="no">OPENPROGRAM_CODEX_ZSTD=0</code> 关闭压缩。</p>
+<dl class="pairs">
+<dt>空闲上限</dt><dd><code translate="no">KEEP_IDLE_S</code>，10 分钟</dd>
+<dt>存活上限</dt><dd><code translate="no">KEEP_AGE_S</code>，55 分钟</dd>
+<dt>最多保持</dt><dd><code translate="no">KEEP_MAX</code>，32 个</dd>
+<dt>关闭方式</dt><dd><code translate="no">drain()</code>，经 <code translate="no">http_client.register_loop_closer</code>，在轮次结束后于单独线程执行，回复和最终状态不等它</dd>
+<dt>回复中途被停止</dt><dd>直接关闭，不保留；关闭在同一线程里、循环关闭之前结束（<a href="reliability/error-and-timeout-mechanism.zh.html#stopping">停止一次调用</a>）</dd>
+<dt>关闭结束</dt><dd>后端回应本端的 close 帧即结束；随后由本端断开 TCP，不再等后端约 2 秒后断开</dd>
+</dl>
+<details><summary>代码</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai_codex/openai_codex.py</code></th><td><code translate="no">_run</code>、共用消费者</td></tr>
+<tr><th scope="row"><code translate="no">shared/openai_responses.py</code></th><td><code translate="no">tool_search_call</code> 与 <code translate="no">tool_search_output</code> 的收发、<code translate="no">carried_tool_names</code>、<code translate="no">native_tool_search</code></td></tr>
+<tr><th scope="row"><code translate="no">shared/tool_loads.py</code></th><td>加载记录：格式、读取、工具节点保留的 details</td></tr>
+<tr><th scope="row"><code translate="no">settings/tool_search_spec.py</code></th><td><code translate="no">tool_search_form(provider, api, model)</code></td></tr>
+<tr><th scope="row"><code translate="no">openai_codex/websocket_transport.py</code></th><td>拨号、保持的 socket、增量、避开主机</td></tr>
+<tr><th scope="row"><code translate="no">openai_codex/read_budget.py</code></th><td>读取预算</td></tr>
+<tr><th scope="row"><code translate="no">openai_codex/request_compression.py</code></th><td><code translate="no">encode_turn</code></td></tr>
+<tr><th scope="row"><code translate="no">providers/utils/http_proxy.py</code></th><td><code translate="no">proxy_for_url</code>，与 HTTP 共用</td></tr>
+</tbody>
+</table>
+<p class="note">增量和 zstd 已对真实后端的普通轮次和工具轮次确认。沿用 magpie 的 Codex WebSocket 支持（yetone/magpie，MIT）。</p>
+</details>
+<h2 id="status">实现状态</h2>
+<ul>
+<li>有 <code translate="no">carried_tool_names</code> 之前写下的摘要，带过去的是它覆盖的轮次加载过的全部工具，不截断；在 Codex 上，这次改动后的第一次请求发新的那一对，而不是原来保留的搜索，前缀会断一次。</li>
+<li>续跑日志里还留着 <code translate="no">loaded_deferred_tools</code> 字段；加载已经不读它，下一个版本删掉。</li>
+<li>Codex 上压缩后第一次请求的缓存量，还没有对照指令加工具的 token 数实测。</li>
+<li>加载记录出现之前存下的结果没有记录，所以在 Codex 上它们的条目不带工具，模型会重新搜索。</li>
+</ul>

@@ -1,0 +1,72 @@
+<title>Memory settings UI</title>
+<meta name="description" content="The Memory page, the Settings Memory page, their controls and loading contract.">
+<h1>Memory settings UI</h1>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Route</th><th scope="col">Shows</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">/memory</code></th><td>Standard 64px title bar with a <strong>Memory settings</strong> link. Topics, Timeline, Recent and Core above the Topic tree. No Topics yet: an empty state linking to settings.</td></tr>
+<tr><th scope="row"><code translate="no">/settings/memory</code></th><td>Lifecycle summary, then the controls below, on the shared Settings header, gutter, section and row styles. The summary is the only Memory-specific structure.</td></tr>
+</tbody>
+</table>
+<p class="note">Lifecycle summary: Capture, Write (writer model), Store (Local + Git, or Disabled), Recall (method, warning when it needs an embedding that is missing). At 720px the section list, tree and content stack and Memory navigation stays.</p>
+
+<h2 id="controls">Controls</h2>
+<table class="stack">
+<thead><tr><th scope="col">Control</th><th scope="col">Key</th><th scope="col">Values, <strong>default</strong></th></tr></thead>
+<tbody>
+<tr><th scope="row">Enable Memory</th><td><code translate="no">memory.backend</code></td><td><strong>on</strong> (<code translate="no">local</code>), off (<code translate="no">none</code>). Needs a restart.</td></tr>
+<tr><th scope="row">Storage</th><td></td><td>Read-only: Topic Markdown, derived views, Git history</td></tr>
+<tr><th scope="row">Writer model</th><td><code translate="no">memory.writer.model</code></td><td><strong>Automatic</strong> (default Agent's model, else last used) or an enabled model</td></tr>
+<tr><th scope="row">Automatic writing</th><td><code translate="no">memory.writer.enabled</code></td><td><strong>on</strong></td></tr>
+<tr><th scope="row">Write frequency</th><td><code translate="no">memory.writer.trigger_tokens</code></td><td>8K, <strong>16K</strong>, 32K</td></tr>
+<tr><th scope="row">Verify after writing</th><td><code translate="no">memory.writer.verify</code></td><td><strong>off</strong></td></tr>
+<tr><th scope="row">Recall method</th><td><code translate="no">memory.retrieval.method</code></td><td>Agent, <strong>Keyword (BM25)</strong>, Semantic, Hybrid</td></tr>
+<tr><th scope="row">Embedding model</th><td></td><td>Status, plus <strong>Install</strong> while missing: about 1 GB with the packages, about 90 MB without</td></tr>
+<tr><th scope="row">Hybrid weighting</th><td><code translate="no">memory.retrieval.hybrid.weighting</code></td><td>Weights: <a href="../../../capabilities/memory-settings.html">Memory settings</a>. Default <strong>Automatic</strong>. Hybrid only.</td></tr>
+<tr><th scope="row">Favour well-matched Topics</th><td><code translate="no">memory.retrieval.hybrid.file_boost</code></td><td><strong>on</strong>. Hybrid only.</td></tr>
+<tr><th scope="row">Recall depth</th><td><code translate="no">memory.retrieval.top_k</code></td><td>3, <strong>5</strong>, 8, 10. Off in Agent mode.</td></tr>
+<tr><th scope="row">Project memory</th><td><code translate="no">memory.layers.project</code></td><td><strong>on</strong></td></tr>
+<tr><th scope="row">Write to project memory</th><td><code translate="no">memory.layers.project_writes</code></td><td><strong>on</strong>. Needs Project memory.</td></tr>
+<tr><th scope="row">Core Memory in every chat</th><td><code translate="no">memory.core.inject</code></td><td><strong>on</strong>; independent of the recall method</td></tr>
+<tr><th scope="row">Recent view size</th><td><code translate="no">memory.recent.limit</code></td><td>25, <strong>50</strong>, 100</td></tr>
+<tr><th scope="row">Workspace</th><td></td><td>Read-only path; Runtime-managed files stay read-only</td></tr>
+</tbody>
+</table>
+<ul>
+<li>One schema for Settings, CLI and TUI.</li>
+<li>Each change posts to <code translate="no">POST /api/settings</code> at once; there is no Save button. A rejected write restores the old value and shows an inline error.</li>
+<li>Enable Memory explains the restart in its description, with no "Next start" badge: the API has no pending-restart state.</li>
+<li>No external API permission controls.</li>
+</ul>
+
+<h2 id="agent-mode">Agent mode</h2>
+<p><strong>Agent · On demand</strong> runs no automatic BM25, embedding or hybrid query. The Agent reads with <code translate="no">memory_get</code>, and <code translate="no">memory_search</code> falls back to exact line matching.</p>
+
+<h2 id="embedding-install">Embedding install</h2>
+<ol>
+<li><code translate="no">POST /api/memory/embedding/install</code> refuses at once on Intel macOS, with a message naming BM25 or a supported platform.</li>
+<li>In a worker thread, install <code translate="no">sentence-transformers</code> and torch, then download the fixed encoder configuration, tokenizer and safetensors weights.</li>
+<li>Verify the packages resolve and every required file exists and is non-empty, without constructing the encoder.</li>
+</ol>
+<p>A failure returns 502 with the error and leaves the recall method alone. Semantic and Hybrid stay disabled until packages and snapshot are present; saving either repeats the full availability check. See <a href="overview.html#recall">Recall</a>.</p>
+
+<h2 id="loading">Loading</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">Request on entry</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">GET /api/settings?scope=memory</code></th><td>The <code translate="no">memory.*</code> rows. Its failure shows an error and leaves controls disabled.</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/memory/status?settings=true</code></th><td><code translate="no">workspace_path</code>, <code translate="no">embedding_available</code>, <code translate="no">embedding_packages</code>. Skips <code translate="no">store.ensure()</code> and the workspace inspector; checks files and package specs without importing numerical code or loading weights.</td></tr>
+<tr><th scope="row"><code translate="no">/api/models/enabled</code></th><td>Writer choices. Runs in FastAPI's worker thread, off the event loop.</td></tr>
+</tbody>
+</table>
+<p class="note">The page appears once, whole, after all three settle. A failed status or model request does not block the settings rows. No agent runtime settings are requested.</p>
+<details>
+<summary>Layout and neighbouring pages</summary>
+<ul>
+<li>Lifecycle cards keep their intrinsic height in the scrolling column and never flex-shrink behind <code translate="no">overflow: hidden</code>.</li>
+<li>A long writer-model label shrinks inside the control cluster, not the left title or description.</li>
+<li>Entering Settings prefetches only Token Usage and System. Providers, Search and Channels request their data when opened.</li>
+</ul>
+</details>
+<p class="next"><a href="overview.html">Memory overview</a></p>

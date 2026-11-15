@@ -1,0 +1,46 @@
+<title>交互反馈</title>
+<meta name="description" content="0ms 规则：耗时超过约 100ms 的点击立即显示乐观状态，由真实数据替换，失败时回滚。">
+<h1 id="interaction-feedback-the-0ms-rule">交互反馈</h1>
+
+<p>点击启动的操作只要超过约 100ms，界面就立即有可见变化。</p>
+
+<h2 id="the-three-layers">三个层次</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">层次</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">0ms 乐观状态</th><td>任何网络 I/O 之前，客户端显示过渡状态：加载卡片、高亮目标、正在停止、待处理消息。以有类型的本地行、服务端行上的覆盖层或标志写入 session store，从不改写服务端行。</td></tr>
+<tr><th scope="row">服务端快速确认</th><td>0ms 的行是带本次发送 <code translate="no">clientRequestId</code> 的有类型本地行。服务端把同一个 id 存在用户节点或函数运行预先创建的节点上，所以第一个带这个 id 的读取或 <code translate="no">turn_upsert</code>，无论哪个先到，都原位替换本地行，不闪烁。发给还没有该聊天视图的 socket 的确认，把这次读取作为 <code translate="no">first_read</code> 带上。</td></tr>
+<tr><th scope="row">流式更新</th><td>编号的 <code translate="no">transcript_update</code> 变化填充行（树、步骤、状态），文字帧按偏移追加文字；终态 <code translate="no">row_upsert</code> 收尾。先于服务端显示的字段是覆盖层，在约定事件发生时结束：终态、下一次读取、服务端给出相同值、行离开，或请求失败。</td></tr>
+<tr><th scope="row">失败回滚（必需）</th><td>真实数据替换状态，或超时恢复并显示错误提示：控制操作为 10s，<code translate="no">OPTIMISTIC_TIMEOUT_MS</code>。</td></tr>
+</tbody>
+</table>
+
+<h2 id="shared-helper">共享辅助函数</h2>
+<p><code translate="no">apps/web/lib/runtime-bridge/optimistic-action.ts</code> 中的 <code translate="no">optimisticAction({apply, settled, revert, onTimeoutMessage})</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">参数</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">apply</code></th><td>设置 0ms 状态</td></tr>
+<tr><th scope="row"><code translate="no">settled()</code></th><td>真实数据替代后为 true：消息已从 store 移除、树已重新填充、<code translate="no">branch.active</code> 已切换</td></tr>
+<tr><th scope="row"><code translate="no">revert</code></th><td>超时且 <code translate="no">settled()</code> 仍为 false 时运行，并显示提示</td></tr>
+</tbody>
+</table>
+<p class="note">用于确认路径是 <code translate="no">load_session</code> 重载的界面（重试、版本切换）。纯本地短暂状态（停止、fn-form 占位、分支切换）内联这一模式。</p>
+
+<h2 id="per-surface-behaviour">各界面的行为</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">界面</th><th scope="col">点击后的前 100ms</th></tr></thead>
+<tbody>
+<tr><th scope="row">聊天发送</th><td>欢迎页 0ms 隐藏；socket 接下发送后，用户消息作为待处理的本地行加入，约一次往返后 <code translate="no">chat_ack</code> 给它服务端 id；回复随服务端的轮次到达</td></tr>
+<tr><th scope="row">停止按钮</th><td>0ms 清除 <code translate="no">runningTask</code>，在回复上设置已取消的覆盖层并保留已流出的文本；同时处理发送队列</td></tr>
+<tr><th scope="row">函数调用重试</th><td>0ms 卡片变为加载状态并显示运行中，切换器变为 N+1/N+1；重载后填充；10s 回滚</td></tr>
+<tr><th scope="row">fn-form 或欢迎页提交</th><td>0ms 以本地行插入待处理运行卡片；带其请求 id 的读取替换它；POST 失败则移除并提示</td></tr>
+<tr><th scope="row">Runtime <code translate="no">&lt; N/M &gt;</code> 切换器</th><td>0ms 当前卡片变为加载状态并显示目标同级索引；重载替换内容；10s 回滚</td></tr>
+<tr><th scope="row">聊天消息 <code translate="no">&lt; N/M &gt;</code> 切换器</th><td>0ms 标签更新到目标；重载填充；失败时恢复标签并提示</td></tr>
+<tr><th scope="row">分支面板切换</th><td>0ms 高亮所点的行；真实 <code translate="no">branch.active</code> 替换；10s 自行清除</td></tr>
+<tr><th scope="row">聊天重试、编辑、分支、回退</th><td><code translate="no">setBusy(true)</code> 使按钮变暗，<code translate="no">setRunActive</code> 禁用编辑和重试</td></tr>
+<tr><th scope="row">侧栏切换会话</th><td><code translate="no">router.push</code>；路由切换时渲染缓存消息</td></tr>
+<tr><th scope="row">启用或禁用模型、工具、开关</th><td>立即更新本地 store</td></tr>
+</tbody>
+</table>
+<p class="note">新的乐观状态使用 store 的既有机制：类型化的本地变更（<code translate="no">applyLocalChange</code>）和覆盖层、<code translate="no">siblingIndex</code>、<code translate="no">setRunningTaskFor</code>。不建并行状态。</p>

@@ -1,0 +1,131 @@
+/* The recording tile in the composer and the recording card in a message. */
+
+.glyph {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: var(--radius-xs);
+  display: grid;
+  place-items: center;
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 14%, var(--bg-tertiary));
+}
+
+.card {
+  margin: 0 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  overflow: hidden;
+  max-width: 560px;
+}
+
+.cardHead {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cardHead:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.cardTitle {
+  display: block;
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  color: var(--text-primary);
+}
+
+.cardMeta {
+  display: block;
+  font-size: var(--fs-2xs);
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+.chevron {
+  color: var(--text-muted);
+  transition: transform var(--motion-medium) var(--ease-standard);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--border);
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 0;
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  color: var(--text-secondary, var(--text-primary));
+}
+
+.step + .step {
+  border-top: 1px dashed color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.time {
+  color: var(--text-muted);
+}
+
+.said {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.thumbButton {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  cursor: zoom-in;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.thumbButton img {
+  width: 72px;
+  height: 45px;
+  object-fit: cover;
+  display: block;
+}
+
+.note {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.viewer {
+  max-width: min(1100px, 92vw);
+  width: auto;
+}
+
+.viewer img {
+  display: block;
+  max-width: 100%;
+  max-height: 78vh;
+  border-radius: var(--radius-sm);
+}

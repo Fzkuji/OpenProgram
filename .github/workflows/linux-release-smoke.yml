@@ -1,9 +1,9 @@
 name: Linux release smoke
 
+# Runs only when started by hand: pushes, pull requests and schedules start
+# nothing, so publishing a version does not set off CI runs.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "23 3 * * 1"
 
 concurrency:
   group: linux-release-smoke-${{ github.ref }}
@@ -85,3 +85,56 @@ jobs:
           OPENPROGRAM_BIN_DIR="$RUNNER_TEMP/openprogram-bin" \
             scripts/install-release.sh
           "$RUNNER_TEMP/openprogram-bin/openprogram" --version
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+            builder_arch: x64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+            builder_arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.11.16"
+      - name: Install Linux packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes zstd
+          if [ "${{ matrix.arch }}" = arm64 ]; then
+            sudo apt-get install --no-install-recommends --yes ruby ruby-dev build-essential
+            sudo gem install fpm --no-document
+            echo "USE_SYSTEM_FPM=true" >> "$GITHUB_ENV"
+          fi
+      - name: Build the seed
+        run: bash scripts/release/build-release-seed.sh "$RUNNER_TEMP/seed-build"
+      - name: Install desktop dependencies
+        run: npm ci --workspace apps/desktop --include-workspace-root
+      - name: Build the deb and the AppImage
+        working-directory: apps/desktop
+        run: |
+          mkdir -p build
+          cp -R "$RUNNER_TEMP/seed-build/seed" build/seed
+          python ../../scripts/release/thin-shell-config.py build/thin-shell.json build/seed
+          npx electron-builder --linux deb --${{ matrix.builder_arch }} --publish never --config build/thin-shell.json
+          npx electron-builder --linux AppImage --${{ matrix.builder_arch }} --publish never --config build/thin-shell.json || \
+            echo "::warning::The AppImage did not build; checking the deb package alone."
+      - name: Verify the Linux App in clean Ubuntu containers
+        run: bash scripts/release/smoke-linux-desktop.sh apps/desktop/dist "${{ matrix.arch }}"

@@ -1,0 +1,121 @@
+<title>主题系统</title>
+<meta name="description" content="主题是完整的令牌取值集合，组件只读语义令牌。">
+<h1>主题系统</h1>
+
+<p id="contract">CSS 自定义属性是唯一的运行时机制。每个内置主题提供同一套令牌，组件不按主题名分支。</p>
+
+<table class="stack">
+<thead><tr><th scope="col">涵盖</th><th scope="col">不涉及</th></tr></thead>
+<tbody>
+<tr><td>设置里的外观和字体</td><td>组件尺寸、布局、交互</td></tr>
+<tr><td>首帧、React 水合、系统配色变化</td><td>已保存的用户 CSS 覆盖层（除选择器迁移外不自动改写）</td></tr>
+<tr><td>主窗口、桌面浮层、新窗口</td><td>业务逻辑</td></tr>
+<tr><td>表面、文字、边框、状态、焦点、输入框、DAG</td><td>语法高亮、网站内容</td></tr>
+</tbody>
+</table>
+
+<h2 id="flow">从设置到组件</h2>
+<ol>
+<li><strong>选择。</strong>外观：模式（自动、浅色、深色）、主题包、强调色、CSS 覆盖层。字体选项来自 <code translate="no">font-pref.ts</code>。</li>
+<li><strong>保存。</strong>Schema 3：<code translate="no">agentic_theme_style</code> + <code translate="no">agentic_theme_mode</code>；<code translate="no">agentic_theme_accent</code>；<code translate="no">agentic_custom_css_enabled</code>；<code translate="no">agentic_tabrow_color</code>。字体另存 cookie 供首帧使用。</li>
+<li><strong>应用。</strong>首帧脚本和 hook 设置 <code translate="no">data-theme</code>、<code translate="no">data-custom-css</code>、强调色令牌和 <code translate="no">--font-sans</code>。</li>
+<li><strong>解析。</strong>主题包的令牌文件。强调色覆盖三个令牌；覆盖层叠在最上面。</li>
+<li><strong>使用。</strong>Tailwind 桥接、CSS 模块和桌面浮层都读令牌。</li>
+</ol>
+<p class="note">入口：<code translate="no">apps/web/lib/prefs/appearance/theme-pref.ts</code>、<code translate="no">apps/web/app/globals.css</code>、<code translate="no">apps/web/app/styles/themes/</code>。</p>
+
+<h2 id="preview">主题包</h2>
+<table class="stack">
+<thead><tr><th scope="col">主题包</th><th scope="col"><code translate="no">data-theme</code></th><th scope="col"><code translate="no">--bg-primary</code></th><th scope="col"><code translate="no">--accent-fill</code></th><th scope="col">主色</th></tr></thead>
+<tbody>
+<tr><th scope="row">Beige</th><td><code translate="no">beige-dark</code><br><code translate="no">beige-light</code></td><td><code translate="no">#191918</code><br><code translate="no">#fbfaf8</code></td><td><code translate="no">#d97757</code><br><code translate="no">#c15f3c</code></td><td>橙色</td></tr>
+<tr><th scope="row">Neutral</th><td><code translate="no">dark</code><br><code translate="no">light</code></td><td><code translate="no">#1e1e20</code><br><code translate="no">#ffffff</code></td><td><code translate="no">#3b82f6</code><br><code translate="no">#2563eb</code></td><td>蓝色</td></tr>
+<tr><th scope="row">Aurora</th><td><code translate="no">aurora</code><br><code translate="no">aurora-light</code></td><td><code translate="no">#171528</code><br><code translate="no">#fbfaff</code></td><td><code translate="no">#35b8a4</code><br><code translate="no">#0f766e</code></td><td>青色，填充上用深色前景</td></tr>
+<tr><th scope="row">Vivid</th><td><code translate="no">vivid</code><br><code translate="no">vivid-light</code></td><td colspan="2"><code translate="no">--tabrow-seed</code> 的 <code translate="no">oklch</code> 色调</td><td>跟随标签栏颜色</td></tr>
+</tbody>
+</table>
+<p class="note">Vivid 用 Beige 的面板结构。标签栏颜色是单独的设置，取自 Chrome 的配色集，浅色模式用同色相的淡色。<code translate="no">custom</code>、<code translate="no">custom-light</code> 保留为旧片段的兜底 id 和 CSS 文件，不显示卡片；<code translate="no">custom-light.css</code> 与 beige-light 取值相同。</p>
+
+<h2 id="tokens">令牌合同</h2>
+<p>主题文件给取值，组件定用途，同一用途在所有主题里同名。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">分组</th><th scope="col">令牌</th></tr></thead>
+<tbody>
+<tr><th scope="row">表面</th><td><code translate="no">--bg-primary/secondary/tertiary</code> <code translate="no">--bg-input/hover/selected</code> <code translate="no">--surface-popover/tooltip</code></td></tr>
+<tr><th scope="row">文字</th><td><code translate="no">--text-bright/primary/secondary/muted</code> <code translate="no">--nav-color/hover</code></td></tr>
+<tr><th scope="row">边界与层次</th><td><code translate="no">--border</code> <code translate="no">--border-light</code> <code translate="no">--border-popover</code> <code translate="no">--shadow-*</code> <code translate="no">--scrim-*</code></td></tr>
+<tr><th scope="row">操作与状态</th><td><code translate="no">--theme-accent</code> <code translate="no">--theme-accent-fill/fill-hover</code> <code translate="no">--accent-green/red/yellow</code> <code translate="no">--success-soft</code> <code translate="no">--warning-soft</code> <code translate="no">--danger-soft</code></td></tr>
+<tr><th scope="row">交互</th><td><code translate="no">--selection-bg</code> <code translate="no">--focus-ring</code> <code translate="no">--chip-bg/ring</code> <code translate="no">--meter-fill/track</code></td></tr>
+<tr><th scope="row">组件角色</th><td><code translate="no">--composer-surface/shadow</code> <code translate="no">--provider-icon-bg</code> <code translate="no">--dag-ghost</code></td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<thead><tr><th scope="col">设置</th><th scope="col">写入</th><th scope="col">影响</th><th scope="col">禁止</th></tr></thead>
+<tbody>
+<tr><th scope="row">外观</th><td><code translate="no">data-theme</code></td><td>背景、文字、边框、阴影、状态、标签焦点、输入框、弹层、DAG、桌面浮层</td><td>组件级 <code translate="no">[data-theme="light"]</code></td></tr>
+<tr><th scope="row">强调色</th><td><code translate="no">--accent-orange</code> <code translate="no">--accent-fill</code> <code translate="no">--accent-orange-hover</code></td><td>主操作、选中边框、桌面错误页和目录列表的链接色。留空用主题包默认值。</td><td>第四个强调色令牌</td></tr>
+<tr><th scope="row">字体</th><td><code translate="no">--font-sans</code></td><td>body、button、input、select、textarea、optgroup，明确的等宽区域除外</td><td>普通组件重新声明系统字体栈</td></tr>
+<tr><th scope="row">CSS 覆盖层</th><td><code translate="no">#user-custom-css</code> + <code translate="no">data-custom-css</code></td><td>叠在当前主题包上，受启用开关控制；未写的值来自主题包。旧 <code translate="no">[data-theme=custom]</code> 选择器改写为 <code translate="no">data-custom-css</code>。</td><td>单独的皮肤卡片</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary id="focus">焦点、活动标签、中间卡片里的页面</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">文本输入、原生 select</th><td>聚焦时现有边框变强调色：不加 outline、偏移环或 box-shadow，尺寸不变。搜索框和输入框由外层持有边框，内部编辑区无边框。导航、复选框、单选、滑块和嵌入的第三方界面保留各自的键盘焦点样式。</td></tr>
+<tr><th scope="row">桌面活动标签</th><td>深色模式下 <code translate="no">--tab-active-bg</code> 为内容背景混 12% 白色，普通标签和分屏组共用，悬停不变。浅色模式和浏览器标签用内容背景。</td></tr>
+<tr><th scope="row">中间卡片里的页面</th><td>外壳标记非聊天路由（<code translate="no">.page-col</code>）和窗格（<code translate="no">[data-page-surface]</code>）。主题可在这些范围内重设 <code translate="no">--bg-secondary</code>、<code translate="no">--bg-tertiary</code> 及派生令牌：beige-light 用 <code translate="no">#fbfaf8</code> 和 <code translate="no">#f3f1ec</code>，页面观感与聊天一致，窗口框架、侧栏和聊天窗格仍用主题值。</td></tr>
+<tr><th scope="row">桌面窗口</th><td>所有主题 id 原样传给浮层；有强调色覆盖时窗口背景仍是主题包的 <code translate="no">--bg-primary</code>。</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary id="diagnostics">排查偶发的主题切换</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方面</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row">桌面端依据</th><td>主界面保存的完整有效 <code translate="no">theme-prefs.json</code>。只有文件缺失或 mode、style 无效时才做旧浏览器存储迁移。直接扫描浏览器数据库找不出最新记录，不得覆盖它，也不得恢复已清除的强调色。</td></tr>
+<tr><th scope="row">加载后</th><td>以网页自己的 localStorage 为准，并同步桌面缓存</td></tr>
+<tr><th scope="row">“自动”跟随什么</th><td>桌面 App 里是主进程读到的系统设置（<code translate="no">theme.systemDark</code>，变化时推送）。附着到页面的调试器可以覆盖 <code translate="no">prefers-color-scheme</code>，Playwright 会把它接管的每个页面强制成浅色，所以 App 不读它。浏览器里用媒体查询。</td></tr>
+<tr><th scope="row">事件日志</th><td>桌面 userData 下的 <code translate="no">theme-events.json</code>，最多 64 条：消息发送、首屏初始化、设置变更、系统配色事件、跨窗口同步、HTML 属性变化</td></tr>
+<tr><th scope="row">日志内容</th><td>时间戳、固定事件名、主题枚举、系统明暗。不含聊天内容、URL、CSS 和用户路径。写入失败不影响渲染。</td></tr>
+<tr><th scope="row">局限</th><td>日志用于定位来源，不代表未知触发源已修复</td></tr>
+</tbody>
+</table>
+</details>
+
+<details>
+<summary id="frameworks">方案对比</summary>
+<table class="stack">
+<thead><tr><th scope="col">方案</th><th scope="col">结论</th><th scope="col">原因与不足</th></tr></thead>
+<tbody>
+<tr><th scope="row">CSS 自定义属性 + <code translate="no">data-theme</code></th><td>采用</td><td>原生层叠覆盖 Web、CSS 模块、Tailwind 任意值和同源浮层。查不出缺失令牌，因此加静态检查。</td></tr>
+<tr><th scope="row">Tailwind <code translate="no">@theme</code></th><td>仅作桥接</td><td>把令牌暴露为工具类，不另存一份取值。不能生成 import，由脚本对齐主题文件和 TS id。</td></tr>
+<tr><th scope="row">JS 主题对象、Context</th><td>否决</td><td>取值重复；覆盖不到原生 CSS、首帧和 Electron 浮层</td></tr>
+<tr><th scope="row">组件级 <code translate="no">[data-theme]</code> 分支</th><td>否决</td><td>每加一个主题都会漏改</td></tr>
+<tr><th scope="row"><code translate="no">light-dark()</code></th><td>否决</td><td>只能表达明暗，表达不了具名主题包</td></tr>
+</tbody>
+</table>
+<p class="note">依据：<a href="https://www.w3.org/TR/css-variables-1/">CSS Custom Properties Level 1</a>、<a href="https://www.w3.org/TR/css-color-adjust-1/#color-scheme-prop">CSS Color Adjustment color-scheme</a>。</p>
+</details>
+
+<h2 id="acceptance">验收</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">范围</th><th scope="col">要求</th></tr></thead>
+<tbody>
+<tr><th scope="row">设置</th><td>列出 Beige、Neutral、Aurora、Vivid</td></tr>
+<tr><th scope="row">Web 检查</th><td><code translate="no">apps/web/scripts/settings/check-theme-contract.mjs</code> 保证 CSS import、主题文件和允许的浮层取值一致，所有内置主题令牌相同</td></tr>
+<tr><th scope="row">组件 CSS</th><td>主题文件之外，不按内置主题名分支</td></tr>
+<tr><th scope="row">字体</th><td>普通文字和原生表单控件继承同一个 <code translate="no">--font-sans</code></td></tr>
+<tr><th scope="row">强调色</th><td>主题包默认值来自 CSS 文件</td></tr>
+<tr><th scope="row">已安装的 App</th><td>用 dark、light 和 aurora 检查主窗口、标签、输入框、弹层和浮层</td></tr>
+<tr><th scope="row">Windows 测试</th><td>用 Node 的 <code translate="no">fileURLToPath</code> 转换模块 URL，避免盘符前多一个斜杠</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">实现状态</h2>
+<p>已实现：模式 × 主题包 × 强调色 × 覆盖层，<code translate="no">THEME_STYLE_PAIRS</code> 是明暗矩阵。已存的 <code translate="no">custom</code>、<code translate="no">custom-light</code> 迁到 beige，已保存的 CSS 会打开覆盖层。输入框、供应商图标和 DAG 只用角色令牌。桌面首帧细节见<a href="unification-work.zh.html#desktop-chrome">桌面窗口外观</a>。</p>

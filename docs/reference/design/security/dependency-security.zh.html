@@ -1,0 +1,69 @@
+<title>依赖安全设计</title>
+<meta name="description" content="npm 和 Python 依赖如何避开公告范围，以及用什么证明。">
+<h1>依赖安全</h1>
+<p>每条公告要么在解析后的依赖图里修复，要么写明其父链。不忽略任何告警。</p>
+
+<h2>当前版本及原因</h2>
+<table class="stack">
+<thead><tr><th scope="col">领域</th><th scope="col">现状</th><th scope="col">决定</th></tr></thead>
+<tbody>
+<tr><th scope="row">Next.js</th><td>16.4.4、<code translate="no">eslint</code> 9、直接的 lint 脚本</td><td>保持静态导出：<code translate="no">output: "export"</code>，manifest 路由 <code translate="no">dynamic = "force-static"</code>，<code translate="no">next build --webpack</code>。打包路径里没有 Next 服务器。</td></tr>
+<tr><th scope="row">Electron</th><td>45.2.1，最低 macOS 13</td><td>本地 App 验收前，打包必须替换已安装的 Electron</td></tr>
+<tr><th scope="row">图片标注</th><td>直接使用 Fabric 7.4.0，作为原生画布上的透明层</td><td>取代 <code translate="no">tui-image-editor</code> 及其有漏洞的 Fabric 4 链。裁剪和旋转会压平标注；导出前仍可选择、移动、缩放和编辑文字。</td></tr>
+<tr><th scope="row">React</th><td>根和 Web 用 18，CLI 用 19</td><td>安全升级不改变</td></tr>
+<tr><th scope="row">Node</th><td><code translate="no">&gt;=22.12.0</code>，npm <code translate="no">&gt;=10</code></td><td>根 engines、CI 和开发环境使用同一下限</td></tr>
+<tr><th scope="row">npm 传递依赖</th><td><code translate="no">apps/web</code>、<code translate="no">apps/desktop</code>、<code translate="no">apps/cli</code> 共用根 lockfile</td><td>刷新兼容路径；移除没有修复版本的失修链（<code translate="no">tar</code>、<code translate="no">form-data</code>、<code translate="no">postcss</code>、<code translate="no">extract-zip</code>、旧 HTTP 包）</td></tr>
+<tr><th scope="row">Python</th><td><code translate="no">uv.lock</code>，独立工作线</td><td>同一清单、证据和门禁。Intel macOS 支持 BM25，可选 embedding wheel 在 Intel 上不可用，macOS arm64 的 embedding wheel 需要 Python 3.14 或更新。</td></tr>
+</tbody>
+</table>
+
+<h2>规则</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">规则</th><th scope="col">细节</th></tr></thead>
+<tbody>
+<tr><th scope="row">修复版本</th><td>公告的首个修复版本或之后兼容的稳定版，来自 GitHub 公告和 <code translate="no">npm view</code></td></tr>
+<tr><th scope="row">核对</th><td>同时用 <code translate="no">npm audit --json</code> 和公告范围清单。GitHub 逗号分隔的范围按 semver 交集处理；解析错误即失败。包已不存在的记录也要核对。</td></tr>
+<tr><th scope="row">绝不</th><td><code translate="no">npm audit fix --force</code>，它可能选无关的大版本。因页面静态或依赖仅开发用而忽略告警。</td></tr>
+<tr><th scope="row">没有修复版本</th><td>追踪每个父依赖，尽量移除整条链，否则记录父链、原因和测试过的替代</td></tr>
+<tr><th scope="row">失败</th><td>干净安装、审计、类型检查、构建或受影响测试失败都阻止完成，并记录命令。在最小源码改动被证明前，旧 manifest 留在 Git。</td></tr>
+<tr><th scope="row">证据</th><td><code translate="no">reports/content-security/</code> 下被忽略的报告，含确切公告、范围、版本和命令</td></tr>
+</tbody>
+</table>
+
+<h2>边界</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">边界</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">解析</th><td>全部经根 lockfile。只有父依赖要求时才有嵌套条目。</td></tr>
+<tr><th scope="row">构建</th><td><code translate="no">npm ci --ignore-scripts</code>，然后工作区检查</td></tr>
+<tr><th scope="row">运行</th><td>导出的 Web 资源、Electron main 和 preload、提供这些资源的 Python worker。不可信输入只有经过产品校验才能到达包 CLI 和解压器。</td></tr>
+<tr><th scope="row">已安装 App</th><td>解析依赖不会更新 <code translate="no">/Applications/OpenProgram.app</code>。验收检查其实际的 <code translate="no">process.versions.electron</code>；源码检查不能证明。</td></tr>
+</tbody>
+</table>
+
+<h2>门禁</h2>
+<pre translate="no"><code>npm ci --ignore-scripts
+npm audit --json                       # 零漏洞，并做范围核对
+npm run build --workspace apps/web
+npm run typecheck --workspace apps/cli
+npm test --workspace apps/cli
+npm test --workspace apps/web
+npm run check:web
+npm run check:desktop
+npm run check:cli
+git diff --check</code></pre>
+<p class="note">从干净安装开始。还要 manifest 与 lockfile 一致、工作区干净，报告区分既有源码失败和依赖引起的失败。diff 只含 manifest、lockfile、必要的兼容源码、本设计和被忽略的证据规则。</p>
+
+<details>
+<summary>参考</summary>
+<ul>
+<li><a href="https://nextjs.org/docs/app/guides/upgrading/version-16">Next.js 16 升级指南</a></li>
+<li><a href="https://github.com/vercel/next.js/releases/tag/v16.3.5">Next.js 16.3.5 发布</a></li>
+<li><a href="https://www.electronjs.org/blog/electron-44-0">Electron 44 发布</a></li>
+<li><a href="https://github.com/fabricjs/fabric.js/security/advisories/GHSA-hfvx-25r5-qc3w">Fabric 公告 GHSA-hfvx-25r5-qc3w</a></li>
+<li><a href="https://github.com/fabricjs/fabric.js/security/advisories/GHSA-w22m-hvvm-xmwx">Fabric 公告 GHSA-w22m-hvvm-xmwx</a></li>
+</ul>
+</details>
+
+<h2>实现状态</h2>
+<p>上述版本已在 manifest 和 lockfile 中。源码检查覆盖静态导出、直接 lint、桌面接口，以及图片编辑器的裁剪、旋转、绘制、标注、保存、撤销、重做和销毁。Python 仍是围绕 <code translate="no">uv.lock</code> 的协作边界。</p>

@@ -1,0 +1,59 @@
+<title>统计口径</title>
+<meta name="description" content="Context 面板如何报告实测总量、互斥分类，以及无法还原的差额。">
+<h1>统计口径</h1>
+
+<h2 id="snapshot">每次响应一份快照</h2>
+<ol>
+<li>读取当前分支：压缩后的渲染历史、最新系统提示词、冻结的工具集。</li>
+<li>本地分类：消息结构、工具 schema、Skills、Memory；从父类中减去嵌套项。</li>
+<li>校准：结合同一 HEAD 的最新供应商总量，算出未分类差额。</li>
+</ol>
+<p class="note">每次 API 响应只计算一次分类。若在一次响应内重读动态工具注册表，分类与 <code translate="no">estimated</code> 可能描述不同时刻。</p>
+
+<h2 id="categories">互斥分类</h2>
+<table class="stack">
+<thead><tr><th scope="col">分类</th><th scope="col">来源</th><th scope="col">边界</th></tr></thead>
+<tbody>
+<tr><th scope="row">Messages</th><td>渲染历史：可见文本、思考、工具输入与结果、记忆预取。轮次进行中还包括这一轮自己的各次往返（“本轮进行中”一行）</td><td>未持久化的原始图片计入差额</td></tr>
+<tr><th scope="row">System prompt</th><td>最新记录的完整系统提示词</td><td>先算全量，再减去 Skills、常驻 Memory 和延迟目录</td></tr>
+<tr><th scope="row">Skills、Memory</th><td>注入系统提示词的索引和常驻块</td><td>属于系统提示词的组成部分，不再重复计入总量</td></tr>
+<tr><th scope="row">System tools、MCP tools</th><td>本轮冻结工具集的供应商 schema</td><td>由 <code translate="no">_mcp_server</code> 决定归入哪一类</td></tr>
+<tr><th scope="row">Deferred tools</th><td>工具名目录：对话自己的回合放在用户消息旁，自带提示词的调用写在那份提示词里</td><td>只计实际发送的名称，不计完整描述或 schema</td></tr>
+<tr><th scope="row">Other context（估算）</th><td><code translate="no">provider total - classified estimate</code>，减去运行中轮次自己的往返</td><td>未持久化图片、供应商包装开销、临时界面提示词。显示出来，不隐藏</td></tr>
+</tbody>
+</table>
+
+<h2 id="calculation">计算</h2>
+<pre translate="no"><code>classified = system_other + skills + memory + tools + mcp + deferred + messages
+other = max(0, provider_total - classified)
+displayed_used = provider_total if measured else classified
+free = max(0, window - displayed_used) if window else none</code></pre>
+<p>运行中的轮次里实测的请求包含这一轮的回复、工具调用和结果，它们在轮次结束时才写进图。这部分按请求自己的估算（<code translate="no">request_input_estimate</code>）减去图的估算计入 Messages，最多等于全部差额；其余差额（供应商包装、估算误差）仍是 Other context。</p>
+<p>窗口取请求所用模型的窗口（<a href="occupancy-status.zh.html#window">窗口</a>）；没有窗口时不算剩余空间，也不显示百分比。</p>
+<p>优先用实测输入 token，没有实测时才用本地估算。本地估算超过实测时，保留供应商总量，显示的分类按比例缩小；响应保留原始估算和校准系数。差额不会为负。</p>
+
+<h2 id="acceptance">验收</h2>
+<ul>
+<li><code translate="no">estimated</code> 与原始分类总和来自同一次计算。</li>
+<li>实测时显示的分类之和等于 <code translate="no">total_used</code>，估算时等于 <code translate="no">input_used</code>。</li>
+<li>切换分支或图变化后，不沿用旧 HEAD 的实测值。</li>
+<li>切换模型后立即使用其上下文窗口，并以新估算替换旧实测；下一次请求完成后使用新实测。</li>
+<li>App 和 Web 读取同一个 <code translate="no">/api/sessions/{id}/context</code>，不各自估算。</li>
+</ul>
+<p class="note">尚未调整：<code translate="no">session_stats.py</code> 仍从系统提示词一行里减去目录，而目录移到消息旁后，对话自己的回合在那里已经不带它（<a href="../function/deferred-tools.zh.html#catalog">延迟工具</a>）。</p>
+
+<details>
+<summary>代码位置</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">runtime/context/system_prompt_node.py</code></th><td>按分支 HEAD 取实际系统提示词</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/tool_snapshot_node.py</code></th><td>本轮冻结工具及其开销</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/session_stats.py</code></th><td>分类、去重、校准</td></tr>
+<tr><th scope="row"><code translate="no">runtime/context/budget.py</code></th><td>冻结工具 schema 估算</td></tr>
+<tr><th scope="row"><code translate="no">interfaces/server/routes/files/tree.py</code></th><td>为响应计算一次分类</td></tr>
+<tr><th scope="row"><code translate="no">apps/web/components/chat/badges/context-breakdown-panel.tsx</code></th><td>在 App 和 Web 中显示</td></tr>
+<tr><th scope="row"><code translate="no">tests/unit/context/test_session_stats_accuracy.py</code></th><td>结构化消息、未分类差额、高估校准、分支祖先、旧快照、不推进 HEAD 的子 Agent、冻结工具、动态注册表、模型切换</td></tr>
+</tbody>
+</table>
+</details>

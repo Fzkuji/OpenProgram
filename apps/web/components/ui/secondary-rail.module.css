@@ -1,0 +1,152 @@
+/* The secondary rail: the list column between the main sidebar and a page's
+   content (Settings tabs, History projects, Agents, the Programs catalog).
+   Rows are the main sidebar's rows (`ui-list-item`, --nav-color text,
+   --bg-hover on hover and when selected), so the two columns read as one
+   family. Every page that shows such a column uses these classes through
+   components/ui/secondary-rail.tsx; none styles its own rows. */
+
+.split {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* The main sidebar's inner width, so both columns line up. */
+  grid-template-columns: calc(var(--sidebar-width) - 1px) minmax(0, 1fr);
+  overflow: hidden;
+  transition: grid-template-columns var(--motion-medium) cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+.split[data-rail="collapsed"] {
+  /* The main sidebar's collapsed card: 46px plus this rail's border, which
+     leaves a 30px square row with its icon where the open row has it. */
+  grid-template-columns: 47px minmax(0, 1fr);
+}
+
+.rail {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.withAction {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.groupLabel:first-child {
+  padding-top: 4px;
+}
+
+.item {
+  composes: ui-list-item from global;
+  width: 100%;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--nav-color);
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.item:hover,
+.item:focus-visible {
+  background: var(--bg-hover);
+  color: var(--nav-color-hover);
+}
+.item.active {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.item.quiet {
+  color: var(--text-muted);
+}
+.item.quiet:hover,
+.item.quiet:focus-visible {
+  color: var(--nav-color-hover);
+}
+/* A row with a second line of description. */
+.item.tall {
+  height: auto;
+  min-height: 48px;
+  align-items: flex-start;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* A 20px glyph overflows the 16px slot evenly, as in the main sidebar. */
+.icon > svg {
+  flex-shrink: 0;
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  line-height: 20px;
+}
+.labelText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 1px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.count {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.separator {
+  flex: none;
+  margin: 6px 0;
+}
+
+/* A collapsible rail never rearranges its rows. The column narrows and each
+   row, already 100% wide, narrows with it and covers its own text. The text
+   keeps its full width so it is cut off rather than re-wrapped or ellipsized. */
+.rail[data-collapsible] .item {
+  overflow: hidden;
+}
+.rail[data-collapsible] .text {
+  flex: none;
+  width: calc(var(--sidebar-width) - 66px);
+}
+
+/* Collapsed: an icon column like the main sidebar's. Search, group labels
+   and nested rows go. */
+.rail[data-collapsed] .search,
+.rail[data-collapsed] .groupLabel,
+.rail[data-collapsed] .nested {
+  display: none;
+}
+.rail[data-collapsed] .item {
+  height: var(--ui-list-h);
+  min-height: 0;
+  align-items: center;
+}

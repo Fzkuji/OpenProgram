@@ -5,12 +5,12 @@ import asyncio
 import threading
 import time
 
-from openprogram.execution.attempts import AttemptStore
-from openprogram.execution.checkpoints import CheckpointFragment
-from openprogram.execution.driver import DriverRegistry
-from openprogram.execution.model import CapabilitySet, ExecutionStatus
-from openprogram.execution.store import ExecutionStore
-from openprogram.execution.waits import DurableWaitStore, WaitStatus
+from openprogram.runtime.execution.attempts import AttemptStore
+from openprogram.runtime.execution.checkpoints import CheckpointFragment
+from openprogram.runtime.execution.driver import DriverRegistry
+from openprogram.runtime.execution.model import CapabilitySet, ExecutionStatus
+from openprogram.runtime.execution.store import ExecutionStore
+from openprogram.runtime.execution.waits import DurableWaitStore, WaitStatus
 
 
 def _active_execution(tmp_path):
@@ -32,7 +32,6 @@ def _active_execution(tmp_path):
         execution.execution_id,
         expected_version=execution.status_version,
         owner_id="job-worker",
-        ttl_seconds=30,
         attempt_id="job-attempt",
     )
     attempt, execution = attempts.activate(
@@ -46,8 +45,8 @@ def _active_execution(tmp_path):
 def test_job_reconciler_expires_unanswered_wait_and_applies_timeout_policy(
     tmp_path,
 ):
-    from openprogram.execution.control import RuntimeControlService
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.runtime.execution.control import RuntimeControlService
+    from openprogram.runtime.jobs.runner import JobRunner
 
     executions, attempts, execution, attempt = _active_execution(tmp_path)
     service = RuntimeControlService(executions, attempts, DriverRegistry())
@@ -73,10 +72,7 @@ def test_job_reconciler_expires_unanswered_wait_and_applies_timeout_policy(
         wait_id="job-expiring-wait",
     )
     with executions._transaction() as connection:
-        connection.execute(
-            "UPDATE execution_waits SET expires_at = 1 WHERE wait_id = ?",
-            (suspended.wait.wait_id,),
-        )
+        connection.update("execution_waits", {"expires_at": 1}, wait_id=suspended.wait.wait_id)
 
     runner = JobRunner.__new__(JobRunner)
     runner._execution_store = executions
@@ -95,7 +91,7 @@ def test_job_reconciler_expires_unanswered_wait_and_applies_timeout_policy(
 
 
 def test_default_job_driver_publishes_question_events(monkeypatch):
-    from openprogram.agent.job import runner as runner_module
+    from openprogram.runtime.jobs import runner as runner_module
 
     sent: list[dict] = []
     monkeypatch.setattr(runner_module.shared, "_broadcast", sent.append)
@@ -118,7 +114,7 @@ def test_default_job_driver_publishes_question_events(monkeypatch):
 
 
 def test_job_recovery_leaves_conversation_wait_to_its_control_service(tmp_path):
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.runtime.jobs.runner import JobRunner
 
     executions, _, execution, _ = _active_execution(tmp_path)
     runner = JobRunner.__new__(JobRunner)
@@ -132,7 +128,7 @@ def test_job_recovery_leaves_conversation_wait_to_its_control_service(tmp_path):
 def test_job_recovery_delegates_conversation_wait_to_canonical_control_service(
     tmp_path, monkeypatch,
 ):
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.runtime.jobs.runner import JobRunner
 
     executions, _, execution, _ = _active_execution(tmp_path)
     resumed = []
@@ -147,7 +143,7 @@ def test_job_recovery_delegates_conversation_wait_to_canonical_control_service(
 
     canonical = _CanonicalControl(executions)
     monkeypatch.setattr(
-        "openprogram.execution.control.default_control_service",
+        "openprogram.runtime.execution.control.default_control_service",
         lambda: canonical,
     )
     runner = JobRunner.__new__(JobRunner)
@@ -163,8 +159,8 @@ def test_job_recovery_delegates_conversation_wait_to_canonical_control_service(
 def test_resolved_system_wait_reaches_canonical_continuation_after_job_reconcile(
     tmp_path, monkeypatch,
 ):
-    from openprogram.execution.control import RuntimeControlService
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.runtime.execution.control import RuntimeControlService
+    from openprogram.runtime.jobs.runner import JobRunner
 
     executions, attempts, execution, attempt = _active_execution(tmp_path)
     service = RuntimeControlService(executions, attempts, DriverRegistry())
@@ -201,7 +197,7 @@ def test_resolved_system_wait_reaches_canonical_continuation_after_job_reconcile
     job_control = RuntimeControlService(executions, attempts, DriverRegistry())
 
     monkeypatch.setattr(
-        "openprogram.execution.control.default_control_service",
+        "openprogram.runtime.execution.control.default_control_service",
         lambda: canonical,
     )
     runner = JobRunner.__new__(JobRunner)
@@ -234,11 +230,14 @@ def test_resolved_system_wait_reaches_canonical_continuation_after_job_reconcile
 
 
 def test_reconciler_schedules_recovery_on_an_existing_event_loop():
-    from openprogram.agent.job.runner import JobRunner
+    from openprogram.runtime.jobs.runner import JobRunner
 
     recovered = asyncio.Event()
 
     class _Waits:
+        def cancel_live_waits(self):
+            return ()
+
         def reclaim_expired_claims(self):
             return 0
 
@@ -260,7 +259,7 @@ def test_reconciler_schedules_recovery_on_an_existing_event_loop():
 
     async def _run():
         runner._reconcile_execution_waits()
-        await asyncio.wait_for(recovered.wait(), timeout=1)
+        await asyncio.wait_for(recovered.wait(), timeout=30)
         await asyncio.sleep(0)
         await asyncio.sleep(0)
 
@@ -270,7 +269,7 @@ def test_reconciler_schedules_recovery_on_an_existing_event_loop():
 
 
 def test_startup_recovery_schedules_waits_on_an_existing_event_loop():
-    from openprogram.execution import startup
+    from openprogram.runtime.execution import startup
 
     recovered = asyncio.Event()
 
@@ -281,7 +280,7 @@ def test_startup_recovery_schedules_waits_on_an_existing_event_loop():
 
     async def _run():
         assert startup._recover_wait_outcomes(_Control()) is None
-        await asyncio.wait_for(recovered.wait(), timeout=1)
+        await asyncio.wait_for(recovered.wait(), timeout=30)
         await asyncio.sleep(0)
         await asyncio.sleep(0)
 

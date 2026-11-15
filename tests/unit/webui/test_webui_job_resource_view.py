@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.cli.commands.jobs import job_resource_payload
+from openprogram.interfaces.cli.commands.jobs import job_resource_payload
 from openprogram.programs.tools.agents.agent.list_jobs.list_jobs import _list_jobs_impl
-from openprogram.agent.run_control import _current_session_id
-from openprogram.agent.job.types import JobStatus
-from openprogram.execution import EventCursor, JobResourceDTO
-from openprogram.webui.ws_actions import job as ws_job
+from openprogram.runtime.execution.run_control.binding import _current_session_id
+from openprogram.runtime.jobs.types import JobStatus
+from openprogram.runtime.execution import EventCursor, JobResourceDTO
+from openprogram.interfaces.server.ws_actions import job as ws_job
 
 
 class _WS:
@@ -108,7 +108,7 @@ def test_web_job_surfaces_embed_canonical_resource_view(
     monkeypatch, handler, command, frame_type, resource_path,
 ) -> None:
     runner = _Runner()
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
     ws = _WS()
 
     asyncio.run(handler(ws, command))
@@ -125,7 +125,7 @@ def test_web_job_surfaces_embed_canonical_resource_view(
 def test_web_model_and_cli_share_the_same_resource_dto(monkeypatch) -> None:
     runner = _Runner()
     expected = runner.get_job_resource_view("t1").to_dict()
-    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.runtime.jobs.get_runner", lambda: runner)
 
     ws = _WS()
     asyncio.run(ws_job.handle_list_jobs(ws, {"session_id": "s1"}))

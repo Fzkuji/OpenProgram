@@ -3,8 +3,8 @@ from fastapi.testclient import TestClient
 
 
 def test_doctor_route_contract(monkeypatch):
-    from openprogram.cli.commands import doctor
-    from openprogram.webui.routes.settings import misc
+    from openprogram.operations.diagnostics import checks as doctor
+    from openprogram.interfaces.server.routes.settings import misc
 
     results = [
         {"ok": True, "label": "python", "detail": "3.14"},
@@ -21,7 +21,7 @@ def test_doctor_route_contract(monkeypatch):
 
 
 def test_mcp_list_route_contract(monkeypatch):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     status = {
         "name": "local-tools",
@@ -51,7 +51,7 @@ def test_mcp_list_route_contract(monkeypatch):
 
 
 def test_mcp_detail_route_contract_and_missing_status(monkeypatch):
-    from openprogram.webui.routes.catalog import mcp
+    from openprogram.interfaces.server.routes.catalog import mcp
 
     detail = {
         "name": "remote-tools",

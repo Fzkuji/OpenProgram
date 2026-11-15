@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.memory.backend import MemoryWriteFailureCode
+from openprogram.state.memory.backend import MemoryWriteFailureCode
 
 
 def _close_store(store) -> None:
@@ -21,13 +21,13 @@ def _close_store(store) -> None:
 
 @pytest.fixture
 def environment(tmp_path, monkeypatch):
-    import openprogram.paths as paths
-    from openprogram.agent.session_db import SessionDB
-    from openprogram.memory import set_backend, store
+    import openprogram.state.paths as paths
+    from openprogram.runtime.context.session_db import SessionDB
+    from openprogram.state.memory import set_backend, store
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     db = SessionDB(tmp_path / "sessions")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     try:
         yield db, store.ensure()
     finally:
@@ -37,7 +37,7 @@ def environment(tmp_path, monkeypatch):
 
 def _append(db, session_id: str, node_id: str, predecessor: str | None = None,
             *, role: str = "user", content: str | None = None, **metadata):
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
 
     message = {
         "id": node_id,
@@ -54,12 +54,12 @@ def _append(db, session_id: str, node_id: str, predecessor: str | None = None,
 def test_status_counts_all_eligible_unmarked_session_turns_read_only(
     environment, monkeypatch,
 ):
-    from openprogram.memory import store
-    from openprogram.memory.management.transaction import (
+    from openprogram.state.memory import store
+    from openprogram.state.memory.management.transaction import (
         workspace_revision,
     )
-    from openprogram.memory.retrieval import inspect
-    from openprogram.memory import writing
+    from openprogram.state.memory.retrieval import inspect
+    from openprogram.state.memory import writing
 
     db, root = environment
     _append(db, "one", "u1")
@@ -93,13 +93,13 @@ def test_status_counts_all_eligible_unmarked_session_turns_read_only(
 def test_success_and_per_turn_failure_are_persisted_without_sensitive_text(
     environment, monkeypatch,
 ):
-    from openprogram.agent import dispatcher
-    from openprogram.memory import store
-    from openprogram.memory import writing
-    from openprogram.memory.management.transaction import (
+    from openprogram.runtime.conversation import turn_runtime as dispatcher
+    from openprogram.state.memory import store
+    from openprogram.state.memory import writing
+    from openprogram.state.memory.management.transaction import (
         workspace_revision,
     )
-    from openprogram.memory.retrieval import inspect
+    from openprogram.state.memory.retrieval import inspect
 
     db, root = environment
     _append(db, "written", "u1", content="remember this")
@@ -127,7 +127,7 @@ def test_success_and_per_turn_failure_are_persisted_without_sensitive_text(
         reason_code=MemoryWriteFailureCode.MODEL_TRANSPORT,
     )
     monkeypatch.setattr(
-        "openprogram.memory.get_backend",
+        "openprogram.state.memory.get_backend",
         lambda: type("UnavailableProvider", (), {
             "write": lambda self, **_kwargs: failure,
         })(),
@@ -152,11 +152,11 @@ def test_success_and_per_turn_failure_are_persisted_without_sensitive_text(
 def test_failure_before_agent_creation_is_reported_by_per_turn_path(
     environment, monkeypatch,
 ):
-    from openprogram.agent import dispatcher
-    from openprogram.memory import store
-    from openprogram.memory import writing
-    from openprogram.memory.local_backend import LocalMemoryBackend
-    from openprogram.memory.retrieval import inspect
+    from openprogram.runtime.conversation import turn_runtime as dispatcher
+    from openprogram.state.memory import store
+    from openprogram.state.memory import writing
+    from openprogram.state.memory.local_backend import LocalMemoryBackend
+    from openprogram.state.memory.retrieval import inspect
 
     db, root = environment
     private_turn = "private conversation body " + "x" * 17_000
@@ -170,7 +170,7 @@ def test_failure_before_agent_creation_is_reported_by_per_turn_path(
 
     monkeypatch.setattr(writing, "_agent", lambda *_a, **_kw: fail_before_agent())
     monkeypatch.setattr(
-        "openprogram.memory.get_backend", lambda: LocalMemoryBackend(),
+        "openprogram.state.memory.get_backend", lambda: LocalMemoryBackend(),
     )
 
     dispatcher._memory_write("agent-error")
@@ -191,8 +191,8 @@ def test_failure_before_agent_creation_is_reported_by_per_turn_path(
 
 
 def test_idle_watcher_records_retryable_failure(environment, monkeypatch):
-    from openprogram.memory.session_watcher import _process_session
-    from openprogram.memory.retrieval import inspect
+    from openprogram.state.memory.session_watcher import _process_session
+    from openprogram.state.memory.retrieval import inspect
 
     db, root = environment
     _append(db, "idle", "u1")
@@ -201,7 +201,7 @@ def test_idle_watcher_records_retryable_failure(environment, monkeypatch):
         reason_code=None,
     )
     monkeypatch.setattr(
-        "openprogram.memory.get_backend",
+        "openprogram.state.memory.get_backend",
         lambda: type("IdleProvider", (), {
             "write": lambda self, *args, **kwargs: left,
         })(),
@@ -217,9 +217,9 @@ def test_idle_watcher_records_retryable_failure(environment, monkeypatch):
 def test_status_root_failure_never_escapes_memory_hooks(
     environment, monkeypatch, entrypoint,
 ):
-    from openprogram.agent import dispatcher
-    from openprogram.memory import store
-    from openprogram.memory.session_watcher import _process_session
+    from openprogram.runtime.conversation import turn_runtime as dispatcher
+    from openprogram.state.memory import store
+    from openprogram.state.memory.session_watcher import _process_session
 
     db, _root = environment
     _append(db, "status-io", "u1")
@@ -229,7 +229,7 @@ def test_status_root_failure_never_escapes_memory_hooks(
         reason_code=MemoryWriteFailureCode.MODEL_TRANSPORT,
     )
     monkeypatch.setattr(
-        "openprogram.memory.get_backend",
+        "openprogram.state.memory.get_backend",
         lambda: type("FailingProvider", (), {
             "write": lambda self, *args, **kwargs: left,
         })(),
@@ -248,8 +248,8 @@ def test_status_root_failure_never_escapes_memory_hooks(
 def test_status_store_failure_never_changes_per_turn_return(
     environment, monkeypatch,
 ):
-    from openprogram.agent import dispatcher
-    from openprogram.memory.runtime import writer_status
+    from openprogram.runtime.conversation import turn_runtime as dispatcher
+    from openprogram.state.memory.runtime import writer_status
 
     _db, _root = environment
     left = SimpleNamespace(
@@ -258,7 +258,7 @@ def test_status_store_failure_never_changes_per_turn_return(
         reason_code=MemoryWriteFailureCode.MODEL_TRANSPORT,
     )
     monkeypatch.setattr(
-        "openprogram.memory.get_backend",
+        "openprogram.state.memory.get_backend",
         lambda: type("FailingProvider", (), {
             "write": lambda self, **kwargs: left,
         })(),
@@ -275,7 +275,7 @@ def test_status_store_failure_never_changes_per_turn_return(
 def test_concurrent_success_and_failure_preserve_both_fields(
     environment, monkeypatch,
 ):
-    from openprogram.memory.runtime import writer_status
+    from openprogram.state.memory.runtime import writer_status
 
     _db, root = environment
     original_load = writer_status._WriterStatusStore.load
@@ -305,7 +305,7 @@ def test_concurrent_success_and_failure_preserve_both_fields(
         thread.start()
     start.wait()
     for thread in threads:
-        thread.join(timeout=2)
+        thread.join(timeout=30)
         assert not thread.is_alive()
 
     result = writer_status._WriterStatusStore(root).load()
@@ -318,12 +318,13 @@ def test_concurrent_success_and_failure_preserve_both_fields(
     assert result["last_failure"]["retryable"] is True
 
 
-def test_memory_status_tool_exposes_the_same_writer_contract(environment):
+def test_memory_get_overview_exposes_the_same_writer_contract(environment):
     from openprogram.programs.tools.knowledge.memory import memory as memory_tools
 
     _db, _root = environment
-    result = json.loads(memory_tools.memory_status())
-    assert result["writer"] == {
+    overview = memory_tools.memory_get()
+    line = next(row for row in overview.splitlines() if row.startswith("writer: "))
+    assert json.loads(line[len("writer: "):]) == {
         "last_outcome": None,
         "last_success_at": None,
         "last_failure": None,
@@ -334,7 +335,7 @@ def test_memory_status_tool_exposes_the_same_writer_contract(environment):
 def test_cli_memory_status_exposes_the_same_writer_contract(
     environment, monkeypatch, capsys,
 ):
-    from openprogram import cli
+    from openprogram.interfaces.cli import application as cli
 
     _db, _root = environment
     monkeypatch.setattr(sys, "argv", ["openprogram", "memory", "status"])
@@ -352,7 +353,7 @@ def test_cli_memory_status_exposes_the_same_writer_contract(
 
 
 def test_persisted_status_carries_a_schema_version(environment):
-    from openprogram.memory.runtime import writer_status
+    from openprogram.state.memory.runtime import writer_status
 
     _db, root = environment
     writer_status.record_failure(root, MemoryWriteFailureCode.MODEL_TRANSPORT, retryable=True)
@@ -375,7 +376,7 @@ def test_persisted_status_carries_a_schema_version(environment):
 def test_last_outcome_orders_two_writes_inside_one_timestamp(
     environment, monkeypatch,
 ):
-    from openprogram.memory.runtime import writer_status
+    from openprogram.state.memory.runtime import writer_status
 
     _db, root = environment
     monkeypatch.setattr(

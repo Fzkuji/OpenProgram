@@ -1,0 +1,60 @@
+<title>Memory design</title>
+<meta name="description" content="Map of the Memory subsystem records: the current Source and Topic workspace, and the proposed entity layer.">
+<meta name="covers" content="none">
+<span id="memory-memory-system-design"></span>
+<h1>Memory design</h1>
+<table class="stack">
+<thead><tr><th scope="col">Layer</th><th scope="col">Contents</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td>Append-only evidence, with Runtime-owned authority provenance</td><td>Implemented</td></tr>
+<tr><th scope="row">Topic</th><td>Model-written blocks linking to Source frames</td><td>Implemented</td></tr>
+<tr><th scope="row">Derived views</th><td>Core, Timeline, Recent, Relations, built by Runtime</td><td>Implemented</td></tr>
+<tr><th scope="row">Entity memory (proposed)</th><td>Session-Git, one repository per session and one commit per turn; Project-Git, auto-commit on agent edits. Raw, immutable, complete</td><td>Deferred</td></tr>
+<tr><th scope="row">Abstract memory (proposed)</th><td>Timeline, Graph, <code translate="no">Core.md</code> up to 2 KB, distilled from entities in five stages with provenance. Recall injects only this layer; the model navigates back by tool</td><td>Graph view and entity recall deferred</td></tr>
+</tbody>
+</table>
+<p class="note">Memory is a Markdown workspace. The proposed layers are not the source of truth and the writer does not need them.</p>
+
+<h2 id="principles">Principles</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Principle</th><th scope="col">Meaning</th></tr></thead>
+<tbody>
+<tr><th scope="row">Provenance-linked</th><td>Topics link to Source frames. An entity layer would add <code translate="no">(project, session, commit, timestamp)</code></td></tr>
+<tr><th scope="row">Bi-temporal</th><td>Each memory records <code translate="no">event_time</code> and <code translate="no">ingestion_time</code>, for time-travel queries and contradiction detection</td></tr>
+<tr><th scope="row">Scoped recall</th><td>Runtime injects the active Core and offers memory tools over Source and Topic. Git navigation is proposed</td></tr>
+<tr><th scope="row">Git-native</th><td>Proposed entity layer only</td></tr>
+</tbody>
+</table>
+
+<h2 id="documents">Documents</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Document</th><th scope="col">Content</th></tr></thead>
+<tbody>
+<tr><th scope="row"><a href="overview.html">Overview</a></th><td>Current architecture, writer, authority boundary, transactions, failure behavior</td></tr>
+<tr><th scope="row"><a href="written-marker.html">Written marker</a></th><td>How memory knows which turns are written: replaced cursor, eight frameworks, mark on the node, deferred event-driven design</td></tr>
+<tr><th scope="row"><a href="architecture.html">Architecture</a></th><td>Write entry points and steps, staged transaction, write cursor, always-on block, provider hooks, failure contract</td></tr>
+<tr><th scope="row"><a href="comparison.html">Comparison</a></th><td>Eight reference frameworks across eight dimensions</td></tr>
+<tr><th scope="row"><a href="adoption.html">Adoption</a></th><td>Four moves borrowed or not: three adopted, one rejected on per-turn latency</td></tr>
+<tr><th scope="row"><a href="speaker-identity.html">Speaker identity</a></th><td>Several people in one session, and the field that closes the two remaining gaps</td></tr>
+<tr><th scope="row"><a href="authority-landscape.html">Authority landscape</a></th><td>Owner and paired authority, framework evidence, decisions, execution order</td></tr>
+<tr><th scope="row"><a href="authority-handoff.html">Authority handoff</a></th><td>Settled authority and writer rules, deferred boundaries</td></tr>
+<tr><th scope="row"><a href="entity-memory-proposal.html">Entity memory on Git</a></th><td>Proposed lifecycle, replay, consistency, project integration</td></tr>
+<tr><th scope="row"><a href="virtual-memory.html">Virtual memory</a></th><td>Timeline, Graph, Core, by type and lifecycle</td></tr>
+<tr><th scope="row"><a href="editor.html">Reading, editing and history</a></th><td>The memory editor</td></tr>
+<tr><th scope="row"><a href="settings-ui.html">Settings UI proposal</a></th><td>Memory settings</td></tr>
+</tbody>
+</table>
+
+<h2 id="status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Area</th><th scope="col">State</th></tr></thead>
+<tbody>
+<tr><th scope="row">Authority provenance</th><td>SessionDB writer and <code translate="no">memory_update</code> build it from persisted turn authority, never from a payload. A Source without it fails closed</td></tr>
+<tr><th scope="row">Automatic writer</th><td>Reads SessionDB branches, records handling on source nodes, uses the default chat provider and model unless <code translate="no">memory.writer.model</code> is set, installs through a staged transaction</td></tr>
+<tr><th scope="row">Surfaces</th><td>Memory tools, CLI, Web UI, writer status, one-shot trusted-Source backfill, <code translate="no">memory.backend=none</code> guards, a composed test from SessionDB to watcher state</td></tr>
+<tr><th scope="row">Citations</th><td>A new Topic reference must resolve to a <code translate="no">trusted</code> Source frame in the transaction's own evidence, so no tool path cites a <code translate="no">pending</code> Source</td></tr>
+<tr><th scope="row">Failures</th><td>One closed <code translate="no">MemoryWriteFailureCode</code> taxonomy across status file, CLI, tool, API, Web UI. The idle watcher persists each outcome under a cross-process lock. Unpaired group archival has rate and storage ceilings</td></tr>
+<tr><th scope="row">Read filtering</th><td><code translate="no">memory.read</code> is its own capability, the read path takes the caller's tier, and blocks resting on pending evidence reach neither recall nor Core</td></tr>
+<tr><th scope="row">Designed only</th><td>Per-tier redaction of block content, hold-and-approve requests, branch-semantic provenance, cross-session spawn relations, entity Git layer, Graph view, event-driven writer notification</td></tr>
+</tbody>
+</table>

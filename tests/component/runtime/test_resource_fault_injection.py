@@ -9,25 +9,24 @@ reserve/start/settle, and terminal finalization.
 """
 from __future__ import annotations
 
-import multiprocessing
 import threading
 
 import pytest
 
-from openprogram.agent.resource_governance import (
+from openprogram.runtime.jobs.resource_governance import (
     ResourceGovernor,
     ResourceLimits,
     resolve_resource_limits,
 )
-from openprogram.agent.job.types import Job
-from openprogram.usage.event import UsageEvent
-from openprogram.usage.ledger import UsageLedger
+from openprogram.runtime.jobs.types import Job
+from openprogram.models.usage.event import UsageEvent
+from openprogram.models.usage.ledger import UsageLedger
 
 
 @pytest.fixture(autouse=True)
 def _worker_lock_is_held(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.worker.lock.is_held_by", lambda _pid: True, raising=False,
+        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True, raising=False,
     )
 
 
@@ -50,16 +49,15 @@ def _admit(governor, job_id, session="s1", **kw):
 
 
 def _live_count(ledger):
-    return ledger.connection().execute(
-        "SELECT COUNT(*) FROM job_admissions WHERE state IN ('live','stopping')"
-    ).fetchone()[0]
+    return ledger.run_tables().handle.count("job_admissions", state=("live", "stopping"))
 
 
 def _reserved_tokens(ledger):
-    return ledger.connection().execute(
-        "SELECT COALESCE(SUM(reserved_tokens), 0) FROM usage_reservations "
-        "WHERE kind = 'token' AND state IN ('reserved','started')"
-    ).fetchone()[0]
+    return sum(row["reserved_tokens"] for row in ledger.run_tables().handle.rows(
+        "usage_reservations",
+        kind="token",
+        state=("reserved", "started"),
+    ))
 
 
 # --- admission boundary ----------------------------------------------------
@@ -77,12 +75,8 @@ def test_persist_failure_rolls_back_admission_and_scope(tmp_path):
     with pytest.raises(OSError):
         governor.admit_job(job, persist=explode)
 
-    assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM job_admissions"
-    ).fetchone()[0] == 0
-    assert ledger.connection().execute(
-        "SELECT COUNT(*) FROM budget_scopes WHERE scope_kind = 'job'"
-    ).fetchone()[0] == 0
+    assert ledger.run_tables().handle.count("job_admissions") == 0
+    assert ledger.run_tables().handle.count("budget_scopes", scope_kind="job") == 0
 
 
 # --- dispatch claim boundary ----------------------------------------------
@@ -117,41 +111,29 @@ def test_concurrent_claims_never_hand_one_job_to_two_owners(tmp_path):
     assert _live_count(governor.ledger) == len(ids)
 
 
-def test_claim_is_capped_by_scheduler_capacity_across_processes(tmp_path):
-    """Separate processes contend through SQLite, not shared memory."""
-    db_path = tmp_path / "usage.db"
-    governor = _governor(db_path)
+def test_claim_is_capped_by_scheduler_capacity_under_contention(tmp_path):
+    """Claims from many threads meet under the run tables' one lock."""
+    governor = _governor(tmp_path / "usage.db")
     for index in range(6):
         _admit(governor, f"t{index}", session=f"s{index}")
 
-    start = multiprocessing.Event()
-    output: multiprocessing.Queue = multiprocessing.Queue()
-    procs = [
-        multiprocessing.Process(
-            target=_claim_process, args=(db_path, index, start, output),
-        )
-        for index in range(6)
-    ]
-    for proc in procs:
-        proc.start()
-    start.set()
-    for proc in procs:
-        proc.join(timeout=30)
+    start = threading.Barrier(6)
+    claimed: list[str | None] = []
 
-    claimed = [output.get() for _ in range(6)]
+    def claim(index: int) -> None:
+        start.wait()
+        got = governor.claim_next(owner_instance_id=f"worker_{index}")
+        claimed.append(got.job_id if got is not None else None)
+
+    threads = [threading.Thread(target=claim, args=(index,)) for index in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
     won = [job_id for job_id in claimed if job_id is not None]
-    assert len(won) == len(set(won)), "two processes claimed the same job"
+    assert len(won) == len(set(won)), "two threads claimed the same job"
     assert len(won) <= 4
-
-
-def _claim_process(db_path, index, start, output) -> None:
-    start.wait()
-    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=4)
-    governor = ResourceGovernor(
-        UsageLedger(db_path), limit_resolver=lambda _sid, _job: resolved,
-    )
-    claim = governor.claim_next(owner_instance_id=f"worker_{index}")
-    output.put(claim.job_id if claim is not None else None)
 
 
 # --- provider reserve / settle boundary -----------------------------------
@@ -175,17 +157,16 @@ def test_crash_before_settle_holds_exposure_and_recovers_once(tmp_path):
     )
     governor.start_provider_request(started.reservation_id)
 
-    ledger.connection().execute("UPDATE usage_reservations SET expires_at = 0")
-    ledger.connection().commit()
+    with ledger.run_tables().transaction() as tables:
+        tables.update("usage_reservations", {"expires_at": 0})
 
     # Only the never-started legs are reclaimed (one token + one cost row
     # would be two, but this model has no known price, so token only).
     reclaimed = governor.recover_provider_reservations(now=1)
     assert reclaimed >= 1
     states = {
-        row[0]: row[1] for row in ledger.connection().execute(
-            "SELECT reservation_id, state FROM usage_reservations"
-        )
+        row["reservation_id"]: row["state"]
+        for row in ledger.run_tables().handle.rows("usage_reservations")
     }
     assert states[never_started.reservation_id + ":token"] == "released"
     assert states[started.reservation_id + ":token"] == "started"
@@ -222,9 +203,7 @@ def test_settlement_failure_leaves_no_partial_usage(tmp_path, monkeypatch):
     assert ledger.connection().execute(
         "SELECT COUNT(*) FROM usage_events"
     ).fetchone()[0] == 0
-    assert ledger.connection().execute(
-        "SELECT DISTINCT state FROM usage_reservations"
-    ).fetchone()[0] == "started"
+    assert {row["state"] for row in ledger.run_tables().handle.rows("usage_reservations")} == {"started"}
     assert _reserved_tokens(ledger) > 0
 
 
@@ -375,9 +354,7 @@ def test_concurrent_finalize_writes_the_terminal_state_once(tmp_path):
     assert results.count(True) >= 1
     assert len(mutations) == 1, "the terminal store write ran twice"
     assert _live_count(governor.ledger) == 0
-    assert governor.ledger.connection().execute(
-        "SELECT COUNT(*) FROM job_admissions WHERE state = 'released'"
-    ).fetchone()[0] == 1
+    assert governor.ledger.run_tables().handle.count("job_admissions", state="released") == 1
 
 
 def test_stale_lease_generation_cannot_release_a_reclaimed_job(tmp_path):

@@ -1,0 +1,81 @@
+<title>Harness standard</title>
+<meta name="description" content="The contract a self-contained agentic program satisfies to be discovered by OpenProgram with no host edits.">
+<h1>Harness standard</h1>
+
+<p>A harness is a self-contained agentic program in its own repository. Anything in <code translate="no">~/.openprogram/programs/</code> exposing functions through <code translate="no">&lt;pkg&gt;/agentics/__init__.py</code> is one. No host file is edited; OpenProgram bundles none, and the host names none.</p>
+<pre translate="no" tabindex="0"><code>&lt;Harness-Repo&gt;/          what openprogram programs install puts in programs/
+└── &lt;pkg&gt;/               importable package; folder name == import name
+    ├── __init__.py      marks it a package
+    └── agentics/
+        └── __init__.py  entry point, exposes PROGRAM_ENTRIES</code></pre>
+<p class="note">A folder that does not match is silently ignored. Install from a directory, Git URL or GitHub <code translate="no">owner/repo</code>: <a href="../../../capabilities/installing-programs.html">Installing programs</a>. Loader: <code translate="no">openprogram/programs/_host/registry.py</code>. Recorded sources: <code translate="no">openprogram/programs/_host/sources.py</code>.</p>
+
+<h2 id="the-entry-point">Entry point</h2>
+<pre translate="no" tabindex="0"><code>"""Entry point for the Foo harness."""
+try:
+    from .foo_agent import foo_agent, foo_helper
+    PROGRAM_ENTRIES = [foo_agent, foo_helper]
+except Exception:          # missing optional dep, unsupported platform
+    PROGRAM_ENTRIES = []</code></pre>
+<p class="note">Importing fires the <code translate="no">Agent</code> method decorators, which register into the shared tool registry; the list is also the declared public surface. Cause of a failed load: <code translate="no">OPENPROGRAM_DEBUG_REGISTRY=1</code>.</p>
+
+<h2 id="conformance-checklist">Conformance</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Detail</th></tr></thead>
+<tbody>
+<tr><th scope="row">Package</th><td>Inner <code translate="no">&lt;pkg&gt;/</code> folder name equals import name; the harness root goes on <code translate="no">sys.path</code>. A hyphenated repository folder is fine.</td></tr>
+<tr><th scope="row"><code translate="no">PROGRAM_ENTRIES</code></th><td>Always defined, even as <code translate="no">[]</code></td></tr>
+<tr><th scope="row"><code translate="no">try</code>/<code translate="no">except</code></th><td>Mandatory: imports that fail yield <code translate="no">[]</code>, never a raised error. Lets a harness be cloned before its dependencies.</td></tr>
+<tr><th scope="row">Import cost</th><td>No model download, network or GUI grab at import</td></tr>
+<tr><th scope="row">Runtime</th><td>From the host: a method runs on the Runtime of its call, uses <code translate="no">llm()</code> / <code translate="no">agent()</code>, and declares no <code translate="no">runtime</code> parameter. A second model is a second Agent instance configured where the run starts. Never build a provider or read <code translate="no">ANTHROPIC_API_KEY</code> on the in-host path. A separate standalone CLI may call <code translate="no">create_runtime(...)</code>.</td></tr>
+<tr><th scope="row">Configuration</th><td>Works with zero configuration; no required file, wizard or first-run prompt</td></tr>
+<tr><th scope="row">State</th><td><code translate="no">get_state_dir() / "harnesses" / "&lt;pkg&gt;"</code> from <code translate="no">openprogram.state.paths</code>. Never the retired <code translate="no">~/.agentic</code> or another hardcoded home path.</td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>Not a Git dependency: <code translate="no">pip install &lt;harness&gt;</code> would re-fetch and possibly downgrade the host. Document it as an assumption.</td></tr>
+<tr><th scope="row">Own dependencies</th><td>Declared in <code translate="no">pyproject.toml</code> or <code translate="no">requirements.txt</code>; installed by the harness's install step, never automatically by the host. Heavy or native ones behind an extra.</td></tr>
+<tr><th scope="row">Platform</th><td>Unsupported here is <code translate="no">PROGRAM_ENTRIES = []</code>, through the <code translate="no">except</code> or a <code translate="no">platform.system()</code> check, never <code translate="no">NotImplementedError</code> at import. Detect backends at runtime (<code translate="no">shutil.which</code>, <code translate="no">importlib.util.find_spec</code>); per-OS setup in the README.</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Configuration convention</summary>
+<p>The standard is the mechanism, not the parameters.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Kind</th><th scope="col">Where</th></tr></thead>
+<tbody>
+<tr><th scope="row">Varies per call</th><td>Function argument with a default</td></tr>
+<tr><th scope="row">Machine-level</th><td>Environment variable with the harness's prefix, documented in its README, such as <code translate="no">WAH_VAULT</code></td></tr>
+</tbody>
+</table>
+<pre translate="no" tabindex="0"><code>from openprogram import Agent
+
+class HarnessAgent(Agent):
+    method_options = {"foo_agent": {"tool": True, "name": "foo_agent"}}
+
+    def foo_agent(self, task: str, max_steps: int = 15) -&gt; dict:
+        ...</code></pre>
+<pre translate="no" tabindex="0"><code>[project.optional-dependencies]
+ocr = ["easyocr"]</code></pre>
+</details>
+
+<details>
+<summary>Vendored packages</summary>
+<p>A harness may vendor sibling packages such as <code translate="no">third_party/</code>. The host takes the one package with an <code translate="no">agentics/</code> sub-package as the entry; the others ride along on <code translate="no">sys.path</code>.</p>
+</details>
+
+<h2 id="discovery-and-hot-reload">Discovery</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">When</th><th scope="col">What</th></tr></thead>
+<tbody>
+<tr><th scope="row">Startup</th><td>Imports every matching folder</td></tr>
+<tr><th scope="row">While running</th><td>The web worker polls the Programs directory and recorded sources every 2 seconds and runs the same discovery; <code translate="no">POST /api/programs/refresh</code> is the same path. New tools broadcast <code translate="no">programs:changed</code>, so UIs list them without a restart.</td></tr>
+<tr><th scope="row">Removing or replacing</th><td>Needs a worker restart: rescanning only adds harness tools</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Harness</th><th scope="col">Gap</th></tr></thead>
+<tbody>
+<tr><th scope="row">Wiki</th><td>Entry point, <code translate="no">PROGRAM_ENTRIES</code> and <code translate="no">try</code>/<code translate="no">except</code> are present. Default vault path still uses the retired <code translate="no">~/.agentic/memory/wiki</code>. Still declares <code translate="no">openprogram @ git+…</code>.</td></tr>
+</tbody>
+</table>

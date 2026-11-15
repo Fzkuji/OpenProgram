@@ -1,0 +1,1 @@
+.duplicate { display:flex; flex-direction:column; justify-content:center; align-items:center; gap:12px; height:100%; padding:24px; color:var(--text-secondary); font-size:var(--fs-sm); text-align:center; }

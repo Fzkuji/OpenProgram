@@ -16,12 +16,13 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
-import shellStyles from "../settings-page.module.css";
+import { SettingsPage } from "../settings-ui";
 import styles from "./channels.module.css";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 import { AccountsList } from "./accounts-list";
 import { AccessList } from "./access-list";
+import { GroupUsersList } from "./group-users-list";
 import { BindingsList } from "./bindings-list";
 import type {
   ChannelAccessAccount, ChannelAccount, ChannelBinding,
@@ -109,32 +110,32 @@ export function ChannelsSection() {
   }, [accounts, refreshStatuses]);
 
   return (
-    <div className={`${shellStyles.page} ${styles.channelsPage}`}>
-      <div className={shellStyles.pageHeader}>
-        <h2 className={shellStyles.pageTitle}>{t("settings.tab.channels")}</h2>
-        <p className={shellStyles.pageMeta}>
-          {text(
-            "Let your agents send and receive messages on Telegram / Discord / Slack / WeChat. Three steps: add a bot account, approve senders, then route them to an agent.",
-            "让 Agent 在 Telegram / Discord / Slack / WeChat 上收发消息。共三步：添加 bot 账号、批准发送者，再把他们路由到 Agent。",
-          )}
-        </p>
-      </div>
-      <div className={shellStyles.pageBody}>
+    <SettingsPage
+      title={t("settings.tab.channels")}
+      description={text(
+        "Let your agents send and receive messages on Telegram / Discord / Slack / WeChat. Three steps: add a bot account, approve senders, then route them to an agent.",
+        "让 Agent 在 Telegram / Discord / Slack / WeChat 上收发消息。共三步：添加 bot 账号、批准发送者，再把他们路由到 Agent。",
+      )}
+      bodyClassName={styles.channelsPage}
+    >
         {loading ? (
           <div className={styles.emptyHint}>{text("Loading...", "加载中...")}</div>
         ) : (
           <>
-            <div className={styles.detailSection}>
+            <div className="flex flex-col gap-[12px]">
               <AccountsList
                 accounts={accounts}
                 statuses={statuses}
                 onChange={() => reload(true)}
               />
             </div>
-            <div className={styles.detailSection}>
+            <div className="flex flex-col gap-[12px]">
               <AccessList access={access} onChange={() => reload(true)} />
             </div>
-            <div className={styles.detailSection}>
+            <div className="flex flex-col gap-[12px]">
+              <GroupUsersList access={access} onChange={() => reload(true)} />
+            </div>
+            <div className="flex flex-col gap-[12px]">
               <BindingsList
                 bindings={bindings}
                 accounts={accounts}
@@ -143,7 +144,6 @@ export function ChannelsSection() {
             </div>
           </>
         )}
-      </div>
-    </div>
+    </SettingsPage>
   );
 }

@@ -1,0 +1,112 @@
+<title>Programs source categories</title>
+<meta name="description" content="How the Programs explorer derives its two roots and rows from the installed source tree and the registry.">
+<h1>Programs source categories</h1>
+
+<p>The explorer has two roots, <code translate="no">tools</code> and <code translate="no">applications</code>, and follows the installed source hierarchy under each. The browser never invents category paths.</p>
+
+<h2 id="classification-contract">Rows</h2>
+<table class="stack">
+<thead><tr><th scope="col">Row</th><th scope="col">Evidence</th><th scope="col">Shows</th><th scope="col">Actions</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">tools</code></th><td>Directories beneath the installed package</td><td>The 11 purpose directories below</td><td>Read-only catalog</td></tr>
+<tr><th scope="row"><code translate="no">tools/&lt;purpose&gt;/&lt;source&gt;</code></th><td>Python source plus registration metadata</td><td>One callable: one row. Several callables: one expandable group of them.</td><td>Favorite and Use act on the callable</td></tr>
+<tr><th scope="row"><code translate="no">tools/&lt;purpose&gt;/&lt;package&gt;</code> with entries</th><td>Packages in <code translate="no">registry.TOOL_PROGRAMS</code> (<code translate="no">tools/planning/goal</code>)</td><td>Expandable: registered entries and supporting source files</td><td>Favorite and Use act on the entry</td></tr>
+<tr><th scope="row"><code translate="no">applications</code></th><td><code translate="no">registry.builtin_application_names()</code>, <code translate="no">program_directory.program_dirs()</code>, <code translate="no">catalog.records()</code>, <code translate="no">sources.owner_controlled_program_sources()</code></td><td>One row per application, sorted by name; <code translate="no">origin</code> <code translate="no">builtin</code> or <code translate="no">installed</code>; <code translate="no">enabled</code> where tracked; <code translate="no">load_state</code> for a user package</td><td>Favorite and Use act on the entry; settings on the Applications page or <code translate="no">openprogram programs enable|disable</code></td></tr>
+<tr><th scope="row"><code translate="no">applications/&lt;name&gt;/…</code></th><td>Registered entries under the catalog path, then top-level Python files</td><td>Entries of kind <code translate="no">application</code>; supporting files as source rows. A harness clone has no children; its call logic is the repository analysis.</td><td>Existing call tree and graph</td></tr>
+</tbody>
+</table>
+<p class="note">A catalogued application whose source is a user package directory is that package's row; one inside another application's directory is its own row with <code translate="no">part_of</code>.</p>
+
+<h2 id="physical-source">Tool directories</h2>
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">openprogram/programs/tools/</code></th><th scope="col">Modules</th><th scope="col">Packages</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">agents</code></th><td>mixture_of_agents</td><td>agent, send_message</td></tr>
+<tr><th scope="row"><code translate="no">code</code></th><td>execute_code</td><td>lsp, semble</td></tr>
+<tr><th scope="row"><code translate="no">computer_use</code></th><td></td><td>computer_use_agent</td></tr>
+<tr><th scope="row"><code translate="no">files</code></th><td>apply_patch, edit, glob, grep, list, read, terminal_use, write, write_stdin</td><td>bash, worktree</td></tr>
+<tr><th scope="row"><code translate="no">interaction</code></th><td>always_on_preference, always_on_report, always_on_schedule, ask_user, canvas, chat_send, clarify, handoff, send_file</td><td></td></tr>
+<tr><th scope="row"><code translate="no">jobs</code></th><td>routine</td><td>cron</td></tr>
+<tr><th scope="row"><code translate="no">knowledge</code></th><td>read_conversation</td><td>memory</td></tr>
+<tr><th scope="row"><code translate="no">planning</code></th><td></td><td>goal, open_work, plan_mode, todo</td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td>framework, help, plugin, program, resource, skill</td><td>mcp_meta</td></tr>
+<tr><th scope="row"><code translate="no">system</code></th><td></td><td>self_update</td></tr>
+<tr><th scope="row"><code translate="no">web</code></th><td>pdf, web_fetch</td><td>image_analyze, image_generate, web_search</td></tr>
+</tbody>
+</table>
+<p class="note">One implementation file is a module. Providers, prompts, actions, workers, shared state or several cooperating entries make a package, and one package may register several callables. Public callable names are unaffected by location.</p>
+
+<h2 id="behavior">Behaviour</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Expansion</th><td>Lazy, one level per <code translate="no">GET /api/programs/explorer</code> request, with <code translate="no">tools/…</code> and <code translate="no">applications/&lt;name&gt;/…</code> as callable-first rows</td></tr>
+<tr><th scope="row">First selection</th><td>Root response <code translate="no">default_selection</code>: the first application, or the first tool</td></tr>
+<tr><th scope="row">Singleton</th><td><code translate="no">computer_use/computer_use_agent/</code> has many files and one callable, so it is one row, not a wrapper plus that callable</td></tr>
+<tr><th scope="row">Refresh</th><td>Rescans Programs and reloads the same endpoint</td></tr>
+<tr><th scope="row"><code translate="no">GET /api/tools</code></th><td>Runtime callables with MCP tools and display groups; defines no Programs folders</td></tr>
+<tr><th scope="row">MCP</th><td>Rows with source <code translate="no">mcp</code> never appear; MCP Servers is their only page</td></tr>
+<tr><th scope="row">Agentic Functions</th><td>Listed by public callable name; source path is only for static call analysis</td></tr>
+<tr><th scope="row"><code translate="no">program_kind</code></th><td><code translate="no">tool</code>, <code translate="no">application</code>, <code translate="no">runtime_primitive</code> (the <code translate="no">agent</code> and <code translate="no">llm</code> call-graph nodes), or null for a supporting file. Use passes it as the launcher's <code translate="no">cat</code>.</td></tr>
+<tr><th scope="row">Both roots</th><td>Favorites, chat launch, call tree and graph work the same</td></tr>
+</tbody>
+</table>
+
+<h2 id="application-function-calls">Application function calls</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Behaviour</th></tr></thead>
+<tbody>
+<tr><th scope="row">Source</th><td>Current package source on each request; starts at decorated public functions, follows local calls and package imports</td></tr>
+<tr><th scope="row">Excluded</th><td>Tests, benchmarks, unrelated files, external libraries and object methods</td></tr>
+<tr><th scope="row">Conditional calls</th><td>Labelled conditional, not a fixed sequence; tree and graph share the same nodes</td></tr>
+<tr><th scope="row">Unresolved calls, limits</th><td>Reported. Package code is never executed for analysis.</td></tr>
+<tr><th scope="row">Refresh</th><td>While the page is visible</td></tr>
+<tr><th scope="row">Call tree</th><td>First three levels expanded; branch rows toggle with click, Enter or Space; choices survive refreshes for the selected Program; leaves and repeated references have no toggle</td></tr>
+</tbody>
+</table>
+
+<h2 id="application-discovery">Application discovery and import</h2>
+<ul>
+<li>A built-in or user directory is an application only with <code translate="no">__init__.py</code> or <code translate="no">application.json</code>. A symbolic link resolving outside its root is skipped. Registered nested entries stay visible through their category paths.</li>
+<li>User packages in <code translate="no">~/.openprogram/programs/</code> import built-ins at <code translate="no">openprogram.programs.tools.*</code> and <code translate="no">openprogram.programs.applications.*</code>, and helpers from <code translate="no">openprogram.programs._authoring</code>. <code translate="no" data-claim="example">openprogram.programs.Agents</code> and <code translate="no" data-claim="example">openprogram.programs.workflow</code> do not exist.</li>
+<li>App refresh keeps a valid explicit owner Programs catalog across build checkouts. A missing configured catalog needs repair and is never replaced by an empty build directory. Explicit relocation remains; first installation may establish the catalog.</li>
+</ul>
+
+<h2 id="direct-function-replies-and-input">Direct function replies and input</h2>
+<p>A manually run function keeps its execution tree, with its persisted final answer as a Markdown body below, visible even with the tree collapsed. This adds no model call or conversation node. Summaries and takeover instructions stay readable; other values show as text or JSON; nested calls are unchanged. The selected execution detail follows status updates without opening the sidebar.</p>
+<p>Empty function forms size from visible fields: a closed Advanced section contributes only its summary row.</p>
+
+<details>
+<summary>Alternatives and references</summary>
+<table class="stack">
+<thead><tr><th scope="col">Reference</th><th scope="col">Model</th><th scope="col">Here</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenProgram registry</th><td>Regular and agentic functions in one callable surface with source metadata</td><td>Keep one runtime catalog; read-only source filters only in the management UI</td></tr>
+<tr><th scope="row">Hermes toolsets</th><td>Named toolsets mean selection, not ownership</td><td>Tool profiles stay separate from source categories</td></tr>
+<tr><th scope="row"><a href="https://github.com/anthropics/claude-code">Claude Code</a></th><td>Its internal tool tree is not published</td><td>Do not copy an unverifiable one-folder-per-tool assumption</td></tr>
+<tr><th scope="row"><a href="https://github.com/openai/codex/tree/main/codex-rs/core/src/tools">OpenAI Codex</a></th><td>Handler files and submodules both appear</td><td>Same complexity-based split, no Rust-specific names</td></tr>
+</tbody>
+</table>
+<p>Rejected: every callable in a directory, every source in one file, frontend-only categories, a second category registry, compatibility copies at old import paths, raw source-file browsing, duplicating MCP tools in Programs.</p>
+</details>
+
+<details>
+<summary>Acceptance</summary>
+<ul>
+<li>Every shipped tool source lives under exactly one purpose directory, with no old top-level source.</li>
+<li><code translate="no">computer_use_agent</code> is directly visible, with logic path <code translate="no">tools/computer_use/computer_use_agent</code>.</li>
+<li>The built-in browser is an application. Every application is listed under <code translate="no">applications/</code>.</li>
+<li>All registered callable names remain available.</li>
+<li>The packaged <code translate="no">gui_agent</code> entry begins a desktop run without an import error; application packages import no removed namespace.</li>
+<li>Covered by explorer and registry tests, an import smoke test, the Programs UI check, TypeScript compile and build.</li>
+</ul>
+</details>
+
+<h2 id="implementation-status">Implementation status</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
+<tbody>
+<tr><th scope="row">Implemented</th><td>Purpose directories, mixed module and package discovery, singleton rows, source tracing, conditional edges, visible-page refresh. Regression tests cover source edits, entry selection and unresolved aliases.</td></tr>
+<tr><th scope="row">Not verified</th><td>Installed-App visual check of the call view</td></tr>
+</tbody>
+</table>

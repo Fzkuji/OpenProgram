@@ -1,4 +1,4 @@
-import { desktopBridge } from "@/lib/desktop/bridge-api";
+import { desktopBridge } from "@/lib/desktop/bridge/bridge-api";
 import { executeInterface } from "./commands";
 
 export function interfaceWindowId(): string {

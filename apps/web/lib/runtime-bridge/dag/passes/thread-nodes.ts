@@ -67,8 +67,16 @@ export function isChainNode(
   );
 }
 
+/** Runtime notices the agent answers without the user typing: an async
+ *  agent's return (job_followup) and a background command ending
+ *  (process_exit). Mirrors FOLLOWUP_SOURCES in graph_layout/filter.py. */
+const FOLLOWUP_SOURCES = new Set(["job_followup", "process_exit"]);
+
+/** A reply that merges into its anchor instead of drawing its own node:
+ *  a runtime-notice reply, or a ``resumed`` one — the rest of a reply a
+ *  restart cut off, stamped by ``bridge_hidden`` in graph_layout/filter.py. */
 export function isFollowup(node: GNode | undefined): boolean {
-  return !!node
-    && (node as Record<string, unknown>).source === "job_followup"
-    && node.role === "assistant";
+  if (!node || node.role !== "assistant") return false;
+  const row = node as Record<string, unknown>;
+  return row.resumed === true || FOLLOWUP_SOURCES.has(row.source as string);
 }

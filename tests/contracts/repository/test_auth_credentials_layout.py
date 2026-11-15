@@ -21,9 +21,9 @@ def test_credential_file_helpers_live_inside_auth() -> None:
     tracked = set(_tracked_paths())
 
     assert {
-        "openprogram/auth/credentials/__init__.py",
-        "openprogram/auth/credentials/inventory.py",
-        "openprogram/auth/credentials/io.py",
+        "openprogram/models/auth/credentials/__init__.py",
+        "openprogram/models/auth/credentials/inventory.py",
+        "openprogram/models/auth/credentials/io.py",
     } <= tracked
     assert not any(path.startswith("openprogram/credential_files/") for path in tracked)
 
@@ -34,7 +34,8 @@ def test_repository_does_not_import_the_removed_credential_files_package() -> No
         if relative == "tests/contracts/repository/test_auth_credentials_layout.py":
             continue
         path = ROOT / relative
-        if path.suffix not in {".py", ".disabled"}:
+        # A tracked file deleted in the working tree has nothing left to import.
+        if path.suffix != ".py" or not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
         if (

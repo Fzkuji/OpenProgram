@@ -1,0 +1,19 @@
+/* A video player is the picture; the bar floats on its foot in the
+   theme's raised surface colour, translucent so the picture shows
+   through, and only while the pointer or focus is on the player. Like
+   the card, it rests on --composer-shadow and deepens to
+   --composer-shadow-focus while the pointer is on the bar itself. */
+.player video { display:block; cursor:pointer; }
+.player[data-full] { display:flex; align-items:center; justify-content:center; background:var(--bg-primary); }
+.player[data-full] video { width:100%; height:100%; max-height:none; object-fit:contain; }
+.bar { position:absolute; left:8px; right:8px; bottom:8px; display:flex; align-items:center; gap:4px; min-width:0; padding:2px 6px 2px 2px; border-radius:var(--radius-lg); background:color-mix(in srgb, var(--bg-input) 86%, transparent); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); box-shadow:var(--composer-shadow); color:var(--text-primary); transition:opacity var(--motion-medium), box-shadow var(--motion-medium); }
+.player[data-kind="video"] .bar:hover { box-shadow:var(--composer-shadow-focus); }
+.player[data-kind="video"] .bar { opacity:0; }
+.player[data-kind="video"]:hover .bar, .player[data-kind="video"]:focus-within .bar, .player[data-full] .bar { opacity:1; }
+@media (hover: none) { .player[data-kind="video"] .bar { opacity:1; } }
+/* An audio file is only its bar: it sits in the flow, always shown. */
+.player[data-kind="audio"] .bar { position:static; backdrop-filter:none; -webkit-backdrop-filter:none; background:var(--bg-primary); box-shadow:none; }
+.time { flex-shrink:0; padding:0 6px 0 2px; color:var(--text-secondary); font-size:var(--fs-xs); white-space:nowrap; }
+.video video { width:100%; height:auto; object-fit:contain; background:var(--bg-primary); }
+.video { width:100%; border-radius:var(--radius-xl); clip-path:inset(0 round var(--radius-xl)); }
+.audio { max-width:560px; border-radius:var(--radius-lg); overflow:hidden; }

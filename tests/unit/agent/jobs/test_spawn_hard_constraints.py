@@ -18,8 +18,8 @@ import pytest
 
 @pytest.fixture
 def owner_authority(tmp_path, monkeypatch):
-    from openprogram import paths
-    from openprogram.agent import authority
+    from openprogram.state import paths
+    from openprogram.runtime.permissions import authority
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     authority._reset_owner_cache_for_tests()
@@ -27,7 +27,7 @@ def owner_authority(tmp_path, monkeypatch):
 
 
 def _request(source: str, authority: dict, **extra):
-    from openprogram.agent.dispatcher import TurnRequest
+    from openprogram.runtime.agent.turn_request import TurnRequest
     return TurnRequest(
         session_id="s1", user_text="", agent_id="main", source=source,
         permission_mode="bypass", **authority, **extra,
@@ -35,8 +35,8 @@ def _request(source: str, authority: dict, **extra):
 
 
 def _echo_tool(name: str):
-    from openprogram.agent.types import AgentTool, AgentToolResult
-    from openprogram.providers.types import TextContent
+    from openprogram.models.providers.types import AgentTool, AgentToolResult
+    from openprogram.models.providers.types import TextContent
 
     async def _execute(_call_id, _args, _cancel, _on_update):
         return AgentToolResult(content=[TextContent(text="RAN")])
@@ -60,23 +60,18 @@ def _text(result) -> str:
 @pytest.mark.parametrize("tool_name", [
     "worktree_create", "worktree_merge", "worktree_discard",
 ])
-def test_agent_spawn_cannot_run_worktree_tools_even_on_bypass(
+def test_an_owners_agent_runs_worktree_tools_on_bypass(
     owner_authority, tool_name,
 ):
-    from openprogram.agent.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approval import wrap_with_approval
 
     req = _request("agent_spawn", owner_authority)
     wrapped = wrap_with_approval(_echo_tool(tool_name), req, lambda _e: None)
-    result = _run(wrapped, {"name": "wt"})
-
-    assert result.details["denied"] is True
-    assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED"
-    assert tool_name in _text(result)
-    assert "RAN" not in _text(result)
+    assert _text(_run(wrapped, {"name": "wt"})) == "RAN"
 
 
 def test_worktree_tools_still_run_for_an_interactive_owner_turn(owner_authority):
-    from openprogram.agent.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approval import wrap_with_approval
 
     req = _request("web", owner_authority)
     wrapped = wrap_with_approval(_echo_tool("worktree_create"), req,
@@ -86,13 +81,13 @@ def test_worktree_tools_still_run_for_an_interactive_owner_turn(owner_authority)
 
 
 @pytest.mark.parametrize("tool_name", [
-    "bash", "exec", "shell", "execute_code", "process",
+    "bash", "exec", "shell", "execute_code", "write_stdin",
     "worktree_create", "worktree_merge", "worktree_discard",
 ])
 def test_mcp_cannot_run_risky_or_worktree_tools_even_on_bypass(
     owner_authority, tool_name,
 ):
-    from openprogram.agent.permissions.approval import wrap_with_approval
+    from openprogram.runtime.permissions.approval import wrap_with_approval
 
     authority = {**owner_authority, "authority_tier": "paired"}
     authority.update({
@@ -106,15 +101,17 @@ def test_mcp_cannot_run_risky_or_worktree_tools_even_on_bypass(
 
     result = _run(wrapped, {"command": "id"})
 
-    assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED"
+    assert result.details["reason_code"] == "AUTHORITY_CAPABILITY_DENIED"
     assert "RAN" not in _text(result)
 
 
 # --- inner AgentSession inherits the outer execution context ----------------
 
 def test_inner_request_inherits_source_and_authority(owner_authority):
-    from openprogram.agent.turn_request_context import (
-        inner_turn_request, set_turn_request, reset_turn_request,
+    from openprogram.runtime.agent.turn_request import (
+        inner_turn_request,
+        set_turn_request,
+        reset_turn_request,
     )
 
     outer = _request("agent_spawn", owner_authority)
@@ -134,15 +131,16 @@ def test_inner_request_inherits_source_and_authority(owner_authority):
 
 
 def test_inner_request_is_none_without_an_outer_turn():
-    from openprogram.agent.turn_request_context import inner_turn_request
+    from openprogram.runtime.agent.turn_request import inner_turn_request
     assert inner_turn_request("program") is None
 
 
 def _gate(tool_names, outer_req):
     """Run Runtime._gate_inner_tools under a bound outer request."""
-    from openprogram.agentic_programming.runtime import Runtime
-    from openprogram.agent.turn_request_context import (
-        set_turn_request, reset_turn_request,
+    from openprogram.runtime.agent.runtime import Runtime
+    from openprogram.runtime.agent.turn_request import (
+        set_turn_request,
+        reset_turn_request,
     )
 
     runtime = Runtime.__new__(Runtime)
@@ -154,23 +152,20 @@ def _gate(tool_names, outer_req):
 
 
 def test_inner_tools_are_gated_by_the_outer_hard_constraints(owner_authority):
-    outer = _request("agent_spawn", owner_authority)
+    outer = _request("mcp", owner_authority)
     gated = _gate(["bash", "worktree_create", "read"], outer)
 
     by_name = {t.name: t for t in gated}
-    # Owner-delegated shell calls follow the admitted permission policy;
-    # worktree operations remain a hard constraint even under Bypass.
-    assert _text(_run(by_name["bash"], {"command": "id"})) == "RAN"
-    for blocked in ("worktree_create",):
+    for blocked in ("bash", "worktree_create"):
         result = _run(by_name[blocked], {"command": "id"})
-        assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED", blocked
+        assert result.details["reason_code"] == "IDENTITY_SCOPE", blocked
         assert "RAN" not in _text(result), blocked
 
     assert _text(_run(by_name["read"], {"file_path": "/etc/hosts"})) == "RAN"
 
 
 def test_inner_tools_are_gated_by_the_outer_deny_rules(owner_authority):
-    from openprogram.agent.session_config import PermissionRules
+    from openprogram.runtime.permissions.modes import PermissionRules
 
     outer = _request(
         "web", owner_authority,
@@ -179,12 +174,12 @@ def test_inner_tools_are_gated_by_the_outer_deny_rules(owner_authority):
     gated = _gate(["read"], outer)
     result = _run(gated[0], {"file_path": "/etc/hosts"})
 
-    assert result.details["reason_code"] == "PERMISSION_RULE_DENY"
+    assert result.details["reason_code"] == "RULE_DENY"
     assert "RAN" not in _text(result)
 
 
 def test_inner_tools_are_untouched_without_an_outer_turn():
-    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.runtime.agent.runtime import Runtime
 
     runtime = Runtime.__new__(Runtime)
     tools = [_echo_tool("bash")]

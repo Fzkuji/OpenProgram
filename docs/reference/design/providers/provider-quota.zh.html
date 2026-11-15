@@ -1,0 +1,120 @@
+<title>供应商额度</title>
+<meta name="description" content="OpenProgram 如何读取每个供应商的套餐窗口、余额和速率限制，保留 30 天花费，并给失败的回复标明原因。">
+<h1>供应商额度</h1>
+
+<p>每个已连接供应商一份状态：健康、额度、30 天花费、默认模型和密钥健康。额度先从 OpenProgram 已经收到的回复里取；端点只在少数事件上读取，从不定时。</p>
+<p>供应商已启用或持有凭据时算已连接：凭据在 OpenProgram 的存储里、它的 CLI 在 <code translate="no">PATH</code> 上、有 Codex CLI 的登录文件，或云凭据链已满足。</p>
+<p>只能通过 OpenProgram 登录的供应商（例如 Grok Subscription）要在登录保存后才算，所以新安装一个都不列出：Providers 页显示<strong>连接一个模型 Provider</strong>，<code translate="no">openprogram providers status</code> 打印 "No connected providers"。</p>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
+<tbody>
+<tr><th scope="row">模型和存储</th><td><code translate="no">openprogram/models/usage/quota.py</code></td></tr>
+<tr><th scope="row">端点读取</th><td><code translate="no">openprogram/models/usage/quota_fetchers/</code>，每个来源一个模块</td></tr>
+<tr><th scope="row">状态</th><td><code translate="no">openprogram/models/usage/provider_status.py</code>，线上类型生成到 <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
+<tr><th scope="row">路由</th><td><code translate="no">GET /api/providers/status</code>、<code translate="no">POST /api/providers/status/refresh</code>，WebSocket 帧 <code translate="no">provider_quota</code></td></tr>
+<tr><th scope="row">CLI</th><td><code translate="no">openprogram providers status [--refresh] [--json]</code>：向正在运行的 Worker 要路由的结果（每把 key 的使用次数和上次使用只在它的内存里），没有 Worker 回应时自己构建</td></tr>
+</tbody>
+</table>
+
+<h2 id="model">一个模型，四种类型</h2>
+<p>一条 <code translate="no">QuotaLimit</code> 是一个账户的一项限制：键、标签、单位（<code translate="no">percent</code>、<code translate="no">usd</code>、<code translate="no">tokens</code>、<code translate="no">requests</code>）、已用、上限、剩余、窗口、重置时间，以及来源 <code translate="no">source</code>（<code translate="no">headers</code>、<code translate="no">frame</code>、<code translate="no">endpoint</code>）和 <code translate="no">fetched_at</code>。一个供应商的报告属于一种类型：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">类型</th><th scope="col">条件</th><th scope="col">例子</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">windowed</code></th><td>单位是百分比，或窗口长于一分钟</td><td>Codex 5 小时和每周窗口</td></tr>
+<tr><th scope="row"><code translate="no">balance</code></th><td>金额限制</td><td>OpenRouter 密钥上限</td></tr>
+<tr><th scope="row"><code translate="no">rate_limit</code></th><td>每分钟请求数或 token 数</td><td>OpenAI 和 Anthropic API 响应头</td></tr>
+<tr><th scope="row"><code translate="no">none</code></th><td>什么都没观察到</td><td>Mistral</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>状态</dt><dd>用到 80 % 警告，95 % 危险，100 % 或没有剩余为用尽。窗口类限制只有在用量跑在窗口已过时间前面时才提前警告。</dd>
+<dt>过期</dt><dd>超过 15 分钟的值标为过期，仍然显示，并带上时间。</dd>
+<dt>账户</dt><dd>存储的凭据 id；环境变量密钥为空。bearer token 按摘要匹配到凭据，token 本身不存。</dd>
+</dl>
+
+<h2 id="capture">从回复中获取</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">供应商</th><th scope="col">来源</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenAI Codex</th><td>每个回答的 <code translate="no">x-codex-*</code> 响应头（含 429），所有限制族；WebSocket 帧 <code translate="no">codex.rate_limits</code></td></tr>
+<tr><th scope="row">OpenAI 兼容 API</th><td><code translate="no">x-ratelimit-*</code> 响应头（Chat Completions 和 Responses 适配器）</td></tr>
+<tr><th scope="row">Anthropic</th><td><code translate="no">anthropic-ratelimit-*</code> 响应头，仅限 <code translate="no">api.anthropic.com</code> 上的 API 密钥</td></tr>
+</tbody>
+</table>
+<p>值保存在内存里，每个账户最多每 30 秒写一次盘。旧的 Codex 解析器唯一的调用方查的是 Codex 不发的响应头；换成按 codex-rs 规则解析的新解析器。</p>
+
+<h2 id="fetch">读取端点</h2>
+<p>只在以下情况读取端点：</p>
+<ul>
+<li>打开状态页，且这个账户上次读取超过 10 分钟，不管当时回了什么（先应答，再在后台读）。被拒的读取（401、5xx、解析不了的响应体）也算：否则拒绝这个密钥的端点每次打开都会被再问一遍；</li>
+<li>用户要求刷新；</li>
+<li>回复因 402、429 或额度消息失败（每个账户每 10 分钟最多一次）；</li>
+<li>刚添加了密钥。</li>
+</ul>
+<p>每个账户同时只有一个读取；额度端点返回 429 时，该账户按 Retry-After 暂停，没有就暂停 5 分钟。读取用已配置的安全 HTTP 客户端，固定在端点的源上，以探测类型 <code translate="no">quota</code> 记录。</p>
+<p>每次读取按供应商和账户记在 <code translate="no">usage.db</code>（<code translate="no">quota_reads</code>），Worker 和每次 CLI 运行都按这条记录判断：</p>
+<ul>
+<li>记下：发出时间、HTTP 状态、失败原因、429 暂停、失败回复上次触发读取的时间；</li>
+<li>所以被拒的读取不会在下一次 <code translate="no">providers status</code> 或 Worker 重启后再发；</li>
+<li>读取失败时，之前的值保留各自的观测时间；状态在它们下面写一次失败原因（<code translate="no">read_error</code>、<code translate="no">read_at</code>），直到有一次读取成功。</li>
+</ul>
+<table class="stack fixed">
+<thead><tr><th scope="col">来源</th><th scope="col">状态</th><th scope="col">响应结构依据</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenRouter <code translate="no">/key</code></th><td>开启；保留剩余金额，而不只是有或没有</td><td>OpenRouter 文档、Hermes</td></tr>
+<tr><th scope="row">Codex 用量</th><td>验证前关闭</td><td>Oh My Pi、codex-rs</td></tr>
+<tr><th scope="row">Z.ai</th><td>验证前关闭</td><td>Oh My Pi、ZCode</td></tr>
+<tr><th scope="row">MiniMax、OpenCode Go、GitHub Copilot</th><td>验证前关闭</td><td>Oh My Pi</td></tr>
+</tbody>
+</table>
+
+<h2 id="spend">花费</h2>
+<p>来自用量账本，每个供应商 30 天：调用数、费用、标价、各部分 token、缓存占比（缓存读取除以提示 token）以及 30 个点的每日序列。订阅供应商的花费显示为 Included，旁边保留标价。默认模型是最后用过的，否则是用得最多的。</p>
+<p>DeepSeek 的回复曾显示缓存 token 多于总 token。原因：记录器的兜底路径写了 <code translate="no">total_tokens = input + output</code>，漏掉了缓存 token。现在记录器取上报总数和各部分之和中较大的一个，所有汇总都按各部分相加，修复前写入的行也读得正确。</p>
+<p><code translate="no">usage.db</code> 新增 <code translate="no">quota_snapshots</code>（每个供应商、账户、限制的最新值）、<code translate="no">quota_samples</code>（每 15 分钟一个样本，保留 90 天）和 <code translate="no">quota_reads</code>（每个供应商、账户最近一次端点读取）。</p>
+
+<h2 id="health">健康和失败原因</h2>
+<p>关于一个密钥有两份记录：调用失败时写下的凭据状态（<code translate="no">status_at</code>，即凭据池的 <code translate="no">updated_at</code>），和它额度端点的最近一次读取（<code translate="no">read_at</code>）。较新的那份说了算；时间相同时，401 优先于已存的欠费停用或限流。</p>
+<ul>
+<li>比状态新的 401 读取：<code translate="no">invalid_key</code>（"quota endpoint answered 401"），直到读取成功或用这个密钥的调用成功。</li>
+<li>在 <code translate="no">billing_blocked</code> 停用之后成功的读取推翻这个停用，由这次读取的余额决定。</li>
+<li>refresh token 被 token 端点拒绝（<code translate="no">invalid_grant</code>、已被使用）的登录是 <code translate="no">needs_reauth</code>，读作 <code translate="no">signed_out</code>，带“重新登录”修复按钮。已存的登录和委托给 Codex CLI 文件的登录都一样；委托的那个在文件换成另一个登录之前不再请求。</li>
+</ul>
+<p>健康取最好那个密钥的状态，被用尽的限制覆盖：<code translate="no">ready</code>、<code translate="no">rate_limited</code>（带重置时间）、<code translate="no">no_credit</code>、<code translate="no">invalid_key</code>、<code translate="no">signed_out</code> 或 <code translate="no">unknown</code>。没有密钥的供应商是 <code translate="no">not_configured</code>；不应答的本地服务是 <code translate="no">not_running</code>。每个需要处理的状态都带着它的修复动作，见<a href="provider-management.zh.html">供应商管理</a>。</p>
+<p>限流只持续到冷却结束。凭据池在下次成功前保留密钥的 <code translate="no">rate_limited</code> 状态，但冷却一过就会再选它，所以健康把这样的密钥读成 <code translate="no">ready</code>，不会显示“限流到一个已经过去的时间”。</p>
+<p>CLI 表格只打印将来的时间（<code translate="no">until 14:05</code>、<code translate="no">resets Nov 19 02:22</code>），已经过去的时间不打印。表格适应终端宽度：进度条先减少格数，最少 5 格，再把重置时间移到下一行。输出到管道且没有 <code translate="no">COLUMNS</code> 时不折行。</p>
+<p>失败的回复在错误原因旁带一个 cause，从供应商错误一路传到轮次结果、事件（<code translate="no">cause</code>）和保存的占位消息（<code translate="no">error_cause</code>）：</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">原因</th><th scope="col">来自</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">quota_exhausted</code></th><td>402、<code translate="no">usage_limit_reached</code>，或任何状态码下的计费正文（<code translate="no">insufficient_quota</code>、401 <code translate="no">CreditsError</code> "Insufficient balance"）；已知时写明用尽的限制、重置时间、所用密钥（<code translate="no">account</code>）和这个密钥的其他窗口（<code translate="no">other_limits</code>）</td></tr>
+<tr><th scope="row"><code translate="no">invalid_key</code></th><td>401 或密钥被拒的消息</td></tr>
+<tr><th scope="row"><code translate="no">not_available</code></th><td>地区或套餐拒绝（403 JSON、套餐不含该模型）</td></tr>
+<tr><th scope="row"><code translate="no">unreachable</code></th><td>异常链中任何一处的 DNS 或连接失败</td></tr>
+</tbody>
+</table>
+<p class="note">普通 429、5xx、超时和网络边缘返回的 403 网页不带原因；错误卡片照旧绘制。</p>
+
+<h2 id="decisions">决定</h2>
+<table class="stack fixed">
+<thead><tr><th scope="col">选择</th><th scope="col">采用</th><th scope="col">原因</th></tr></thead>
+<tbody>
+<tr><th scope="row">限制记录</th><td>Oh My Pi <code translate="no">UsageLimit</code></td><td>21 个框架里最完整的：窗口、金额、请求数在一条记录里</td></tr>
+<tr><th scope="row">标签、"剩余 %"、过期标记</th><td>Codex</td><td>订阅用户已经熟悉它的 5h / Weekly 两行</td></tr>
+<tr><th scope="row">按时间的警告</th><td>Claude Code</td><td>拿用量和窗口已过时间比，比固定一条线警告得更早也更少误报</td></tr>
+<tr><th scope="row">先读回复，不用定时器</th><td>Codex、Claude Code</td><td>定时器在没人看时也花请求；忙的供应商已由回复刷新</td></tr>
+<tr><th scope="row">额度端点 429 暂停</th><td>Oh My Pi</td><td>不在自己的速率限制里重试</td></tr>
+<tr><th scope="row">OpenRouter 剩余金额</th><td>Hermes</td><td>只有有或没有，看不出密钥离上限多近</td></tr>
+<tr><th scope="row">未验证读取器关闭</th><td>&mdash;</td><td>只按同类框架记录的响应编写；对照真实响应后才开启</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+<ul>
+<li>还没有网页界面读取状态路由；会读取它的页面见<a href="provider-management.zh.html">供应商管理</a>。</li>
+<li>没有 Kimi Coding（响应结构不稳定）、DeepSeek 或 Moonshot 余额、OpenRouter <code translate="no">/credits</code>（没有同类框架记录其响应）的读取器。</li>
+<li>上面未验证的读取器处于关闭。</li>
+<li>未做：REPL <code translate="no">/status</code>。顶层 <code translate="no">openprogram status</code> 别名做不了：这个名字属于后台服务。</li>
+</ul>

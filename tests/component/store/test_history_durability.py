@@ -1,17 +1,16 @@
 """Failure and reopen contracts at the shared file-history boundary."""
 import asyncio
 import json
-from pathlib import Path
 
 import pytest
 
-from openprogram import sandbox
+from openprogram.host import sandbox
 from openprogram.programs.tools.files.read import read
 from openprogram.programs.tools.files.write import write
-from openprogram.store import SessionNodeWriter, SessionStore, _current_turn_id, _store
-from openprogram.store.snapshot.checkpoint import CheckpointStore
-from openprogram.store.snapshot.checkpoint import manifest
-from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir, turn_manifest_path
+from openprogram.state.store import SessionNodeWriter, SessionStore, _current_turn_id, _store
+from openprogram.state.store.snapshot.checkpoint import CheckpointStore
+from openprogram.state.store.snapshot.checkpoint import manifest
+from openprogram.state.store.snapshot.checkpoint.paths import turn_backup_dir, turn_manifest_path
 
 
 @pytest.fixture
@@ -22,8 +21,8 @@ def history(tmp_path, monkeypatch):
     sid, tid = 'durability', 'a1'
     store.create_session(sid, agent_id='main', title='history')
     store.append_message(sid, {'id': tid, 'role': 'assistant', 'content': 'edit', 'timestamp': 1.0})
-    monkeypatch.setattr('openprogram.store.default_store', lambda: store)
-    monkeypatch.setattr('openprogram.store.session.session_store.default_store', lambda: store)
+    monkeypatch.setattr('openprogram.state.store.default_store', lambda: store)
+    monkeypatch.setattr('openprogram.state.store.session.session_store.default_store', lambda: store)
     st = _store.set(SessionNodeWriter(store, sid))
     tt = _current_turn_id.set(tid)
     target = tmp_path / 'document.docx'
@@ -32,7 +31,7 @@ def history(tmp_path, monkeypatch):
     try:
         yield store, sid, tid, target
     finally:
-        from openprogram.store.snapshot.read_tracking import forget_session
+        from openprogram.state.store.snapshot.read_tracking import forget_session
         forget_session(sid)
         _current_turn_id.reset(tt)
         _store.reset(st)
@@ -91,7 +90,7 @@ def test_corrupt_manifest_blocks_public_write_without_erasing_history(history, r
         sent = []
         async def send_text(self, text):
             self.sent.append(json.loads(text))
-    from openprogram.webui.ws_actions.turn_files import handle_review_scope
+    from openprogram.interfaces.server.ws_actions.turn_files import handle_review_scope
     ws = WS()
     asyncio.run(handle_review_scope(ws, {'session_id': sid, 'assistant_msg_id': tid, 'scope': 'turn'}))
     assert ws.sent[0]['data']['status'] == 'error'
@@ -106,13 +105,13 @@ def test_interrupted_write_is_visible_after_reopen(history, monkeypatch):
     assert 'commit failed' in publish(target, b'changed\0')
     store.close()
     reopened = SessionStore(root_path=store.root_path)
-    monkeypatch.setattr('openprogram.store.default_store', lambda: reopened)
-    monkeypatch.setattr('openprogram.store.session.session_store.default_store', lambda: reopened)
+    monkeypatch.setattr('openprogram.state.store.default_store', lambda: reopened)
+    monkeypatch.setattr('openprogram.state.store.session.session_store.default_store', lambda: reopened)
     class WS:
         sent = []
         async def send_text(self, text):
             self.sent.append(json.loads(text))
-    from openprogram.webui.ws_actions.turn_files import handle_review_scope
+    from openprogram.interfaces.server.ws_actions.turn_files import handle_review_scope
     ws = WS()
     try:
         asyncio.run(handle_review_scope(ws, {'session_id': sid, 'assistant_msg_id': tid, 'scope': 'turn'}))
@@ -126,11 +125,19 @@ def test_interrupted_write_is_visible_after_reopen(history, monkeypatch):
 
 
 def test_snapshot_sync_failure_prevents_public_target_write(history, monkeypatch):
+    import contextvars
     import os
     store, sid, tid, target = history
     original = os.fsync
     calls = []
+    # Only the publish under test (and the worker threads it hands its
+    # context to) loses its disk sync; background writers of other tests in
+    # this process keep the real one.
+    under_test = contextvars.ContextVar('snapshot_sync_under_test', default=False)
+    under_test.set(True)
     def fail_sync(fd):
+        if not under_test.get():
+            return original(fd)
         calls.append(fd)
         raise OSError('disk sync failed')
     monkeypatch.setattr(os, 'fsync', fail_sync)

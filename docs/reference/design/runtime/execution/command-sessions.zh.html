@@ -1,0 +1,118 @@
+<title>命令会话</title>
+<meta name="description" content="Agent 如何用 bash 和 write_stdin 运行 shell 命令，以及它们与 terminal_use 的关系。">
+<h1>命令会话</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">类别</th><th scope="col">工具</th><th scope="col">进程属于</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agent 命令</th><td><code translate="no">bash</code>, <code translate="no">write_stdin</code></td><td>Agent。结果只到 Agent。</td></tr>
+<tr><th scope="row">终端面板</th><td><code translate="no">terminal_use</code></td><td>终端标签页，由 Agent（<code translate="no">terminal-resource:</code> id）或用户打开</td></tr>
+</tbody>
+</table>
+
+<p class="note">按风险划分：用户的标签页里有登录状态和正在进行的工作。模型沿用 Codex 的 <code translate="no">exec_command</code> / <code translate="no">write_stdin</code> 和 Claude Code 的后台任务通知；Codex 对用户终端只读，Claude Code 有 <code translate="no">Bash</code> 和面板工具。</p>
+
+<h2 id="bash">bash</h2>
+
+<p><code translate="no">bash(command, workdir, yield_time_ms, tty, description)</code></p>
+
+<ol>
+<li><code translate="no">prepare_command</code> 解析 <code translate="no">workdir</code>（worktree、沙箱检查、远程 <code translate="no">cd</code> 防护）。</li>
+<li><code translate="no">session.run</code> 检查会话上限，<code translate="no">processes.start</code> 在独立的 supervisor 下启动命令。</li>
+<li><code translate="no">collect</code> 每 50 毫秒把输出读入 1 MiB 的首尾缓冲，直到命令结束或等待时间到。</li>
+<li>已结束：<code translate="no">Process exited with code N</code> 加输出，记录移除。仍在运行：记录设 <code translate="no">background=True</code>，回复 <code translate="no">Process running with session ID &lt;id&gt;</code>。</li>
+</ol>
+
+<details>
+<summary>回复和边界情况</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">头部</th><td><code translate="no">Wall time</code>、退出或会话行、<code translate="no">Output:</code>，以及 <code translate="no">cwd=</code> 和非本地的 <code translate="no">backend=</code>。stdout 和 stderr 合为一个流。</td></tr>
+<tr><th scope="row">非零退出、supervisor 失败</th><td>错误结果；运行中的会话不是</td></tr>
+<tr><th scope="row">沙箱命令的输出匹配 <code translate="no">is_sandbox_denial</code></th><td>追加沙箱说明</td></tr>
+<tr><th scope="row">第一次等待期间取消轮次</th><td>停止命令（<code translate="no">check_cancelled</code>）。已转后台的会话不受之后取消影响。</td></tr>
+<tr><th scope="row">没有可信会话（脚本或测试）</th><td>经 <code translate="no">backend.run</code> 运行一次，限时十分钟，用 <code translate="no">exit_code=</code> 格式</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="write_stdin">write_stdin</h2>
+
+<p><code translate="no">write_stdin(session_id, chars, yield_time_ms)</code> 在会话中查找（相同 <code translate="no">session_id</code> 或其范围内的执行）。</p>
+
+<table class="stack">
+<thead><tr><th scope="col"><code translate="no">chars</code></th><th scope="col">tty</th><th scope="col">管道</th></tr></thead>
+<tbody>
+<tr><th scope="row">空</th><td>轮询</td><td>轮询</td></tr>
+<tr><th scope="row"><code translate="no">"\x03"</code></th><td>写入终端，由行规程发送 SIGINT</td><td><code translate="no">interrupt</code> 命令：向进程组发 SIGINT</td></tr>
+<tr><th scope="row">其他</th><td><code translate="no">write</code> 命令，原始字节，读取前等 100 毫秒</td><td>拒绝：stdin 已关闭</td></tr>
+</tbody>
+</table>
+
+<table class="stack fixed">
+<thead><tr><th scope="col">调用</th><th scope="col">等待（毫秒）</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">bash</code></th><td>默认 30000，250–30000</td></tr>
+<tr><th scope="row"><code translate="no">write_stdin</code> 写入</th><td>默认 250，250–30000</td></tr>
+<tr><th scope="row"><code translate="no">write_stdin</code> 空轮询</th><td>5000–300000</td></tr>
+</tbody>
+</table>
+
+<p class="note">显示退出的回复会把记录标为 <code translate="no">reported</code>。</p>
+
+<h2 id="cap">会话上限</h2>
+
+<p>每会话最多 64 个活跃会话。到达上限时，停止最近八个之外最久未用的会话并标为 <code translate="no">reported</code>，新回复会指明它。没有空闲超时。</p>
+
+<h2 id="exit-notices">退出通知</h2>
+
+<p><code translate="no">run_exit_notices</code> 在 worker 中运行，每 2 秒扫描。</p>
+
+<ol>
+<li><code translate="no">unreported_exits()</code>：<code translate="no">background</code>、未 <code translate="no">reported</code>、状态 <code translate="no">exited</code> 或 <code translate="no">failed</code>。<code translate="no">stopped</code> 的命令不发通知。</li>
+<li>会话有运行中轮次或非终态执行时跳过，之后重试。</li>
+<li>克隆最新的聊天请求，设 <code translate="no">source="process_exit"</code>、新的用户消息 id 和通知文本（命令、退出码、耗时、最后 2000 字符），以键 <code translate="no">process_exit:&lt;id&gt;</code> 准入。没有聊天执行时直接标记已报告，不发通知。</li>
+<li>用户节点为 <code translate="no">display="runtime"</code>，记忆跳过它。</li>
+</ol>
+
+<h2 id="approvals">审批</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">write_stdin</code>，空或 <code translate="no">"\x03"</code></th><td>无需决定（<code translate="no">SESSION_POLL</code>）；<code translate="no">bash</code> 已批准该命令</td></tr>
+<tr><th scope="row"><code translate="no">write_stdin</code>，其他输入</th><td>按模式处理，同 <code translate="no">bash</code>。在 Auto、MCP 和委托约束、危险允许规则中算高风险工具。</td></tr>
+<tr><th scope="row"><code translate="no">terminal_use</code> <code translate="no">input</code>, <code translate="no">interrupt</code>, <code translate="no">close</code></th><td>任何标签页都按模式处理。卡片（<code translate="no">TerminalApproval</code>）显示标签页、目录、是否有命令运行、未完成的人工输入，以及拼写出控制字符的确切输入。</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>进程层</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">部分</th><th scope="col">行为</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">group_guard</code>，管道</th><td>以 <code translate="no">/dev/null</code> 作 stdin 运行命令</td></tr>
+<tr><th scope="row"><code translate="no">group_guard</code>，tty</th><td>打开 pty 作为自身会话的控制终端，把进程组置前台，设 30×120，并泵送 master 与 supervisor 管道。进程组和会话里其他进程组（<code translate="no">set -m</code> 的作业、调用过 setpgid 的子进程）都空了以后停止读取，最晚在进程组结束两秒后：macOS 上 guard 持有终端时不会报告输出结束，而完全关闭的 pty 会丢弃未读输出</td></tr>
+<tr><th scope="row"><code translate="no">group_guard</code>，信号</th><td>忽略 SIGINT 和 SIGTERM，因此中断到达命令</td></tr>
+<tr><th scope="row">Supervisor</th><td><code translate="no">write</code> 不加换行；<code translate="no">interrupt</code> 向进程组发 SIGINT（Windows：终止进程树）</td></tr>
+<tr><th scope="row"><code translate="no">ProcessStore</code></th><td>记录 <code translate="no">tty</code>、<code translate="no">sandboxed</code>、<code translate="no">background</code>、<code translate="no">reported</code>、<code translate="no">last_used</code>。<code translate="no">take()</code> 返回未读输出和读取前丢弃的字节数。</td></tr>
+<tr><th scope="row">tty 支持</th><td>macOS 或 Linux 的本地后端</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="interface">界面</h2>
+
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col"></th><th scope="col"></th></tr></thead>
+<tbody>
+<tr><th scope="row">Activity</th><td>只列后台会话；第一次等待中的命令是活动工具调用</td></tr>
+<tr><th scope="row">Resources</th><td>运行中的后台会话列在 Terminal 组的 Background terminal；保留的输出在 xterm 中只读显示，带停止；随 3 秒的托管进程轮询刷新</td></tr>
+<tr><th scope="row">工具行</th><td><code translate="no">write_stdin</code>：“等待输出”“中断命令”“输入”。<code translate="no">terminal_use</code> 输入：“在终端输入”。</td></tr>
+</tbody>
+</table>
+
+<h2 id="implementation-status">实现状态</h2>
+
+<p>按上述实现。未采用 Codex 的：zsh fork、shell 快照、<code translate="no">shell</code>、<code translate="no">login</code>、<code translate="no">max_output_tokens</code> 参数，以及策略漂移时的 stdin 审批。</p>

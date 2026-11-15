@@ -1,0 +1,61 @@
+<title>Agent 循环防护</title>
+<meta name="description" content="Agent 循环中拦截重复文字、重复工具轮次、重复失败和写成文字的工具调用的防护。">
+<h1>Agent 循环防护</h1>
+
+<table class="stack">
+<thead><tr><th scope="col">卡在</th><th scope="col"><code translate="no">openprogram/runtime/agent/loop/</code> 中的防护</th><th scope="col">起作用的位置</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">重复文字</th><td><code translate="no">guards._RepeatedTextGuard</code></td><td>流消费者，<code translate="no">streaming.py</code></td><td>丢弃这条回复，重新请求</td></tr>
+<tr><th scope="row">重复工具轮次</th><td><code translate="no">tool_loop_guard.ToolLoopGuard</code></td><td>每个工具轮次之后，<code translate="no">loop.py</code></td><td>以一条提示结束本轮</td></tr>
+<tr><th scope="row">写成文字的工具调用</th><td><code translate="no">text_tool_calls.recover_text_tool_calls</code></td><td>回复结束时，<code translate="no">streaming.py</code></td><td>写出的调用变成真的调用</td></tr>
+<tr><th scope="row">反复失败的调用</th><td><code translate="no">failure_policy</code> 和工具执行器</td><td>每次工具调用，<code translate="no">tool_dispatch.py</code></td><td>第三次相同的失败不再执行，用一条提示回应</td></tr>
+<tr><th scope="row">长时间没有任何可见内容</th><td><code translate="no">progress_note.QuietStretch</code></td><td>有人在看的轮次里，每个工具轮次之后，<code translate="no">loop.py</code></td><td>连续 6 轮只有工具调用后，给本轮加一条提示，请模型用几个字说明进度；不结束任何东西</td></tr>
+</tbody>
+</table>
+<p class="note">正常的轮次不受影响。这里不限制输出长度、轮数或耗时。</p>
+
+<h2>重复文字</h2>
+<dl class="pairs">
+<dt>检查对象</dt><dd>提供了工具的回复；其文字的一段有界尾部</dd>
+<dt>触发条件</dt><dd>尾部以同一段 32–1024 个字符的文字结尾，重复至少 8 次且总共至少 2 KB</dd>
+<dt>抛出</dt><dd><code translate="no">RepetitiveOutputError</code></dd>
+<dt>循环</dt><dd>关闭 provider 效果，保留所有已完成的工具结果，附一条用户提示让模型继续且不要重复，然后重新请求。消耗本轮共享的恢复额度。</dd>
+<dt>额度用完</dt><dd>错误上抛且不可重试，<code translate="no">Runtime.exec</code> 因此不会在新会话里重放已完成的工具效果</dd>
+</dl>
+
+<h2>重复工具轮次</h2>
+<p><code translate="no">ToolLoopGuard</code> 统计连续多少个轮次的调用、参数和结果都相同。到 <code translate="no">TOOL_LOOP_REPEATS</code>（8）时，在下一次请求之前结束本轮，留下一条点名该调用的错误。用户的下一条消息让对话继续。</p>
+<pre translate="no" tabindex="0"><code translate="no">Stopped: the agent made the same tool call 8 times in a row and got the same result every time …</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">比较项</th><th scope="col">方式</th></tr></thead>
+<tbody>
+<tr><th scope="row">调用</th><td>名称和参数，键按统一顺序（<code translate="no">failure_policy.repeat_key</code>）；忽略 <code translate="no">bash</code> 仅用于展示的 <code translate="no">description</code></td></tr>
+<tr><th scope="row">结果</th><td>错误标记、文字和图片内容。关于运行本身的文字先归一化：<code translate="no">elapsed 1.2s</code>、<code translate="no">Wall time</code>、<code translate="no">duration_seconds</code></td></tr>
+<tr><th scope="row">计数清零</th><td>结果变了；用户在本轮中途说的任何话（steering）</td></tr>
+<tr><th scope="row">永远不算循环</th><td>全是等待的轮次：工具名里有 sleep、wait、delay、pause 或 poll（<code translate="no">clock__sleep</code>、<code translate="no">waitForCi</code>），或参数只有一个时长</td></tr>
+</tbody>
+</table>
+
+<h2>写成文字的工具调用</h2>
+<p>长对话深处，模型可能按聊天模板的样子把调用写进文字而不真的调用；什么都没执行，本轮结束，被要求继续时，它读到自己写的调用，又照样写下一个。</p>
+<p>回复对应的请求提供了工具、回复结束时没有调用，<code translate="no">text_tool_calls.read_written_calls</code> 就从第一个形如调用的标签开始读取。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">模型家族</th><th scope="col">读取的形状</th></tr></thead>
+<tbody>
+<tr><th scope="row">Hermes、Qwen</th><td><code translate="no">&lt;tool_call&gt;{"name": …, "arguments": {…}}&lt;/tool_call&gt;</code>；参数是对象或 JSON 字符串</td></tr>
+<tr><th scope="row">GLM</th><td><code translate="no">&lt;tool_call&gt;name&lt;arg_key&gt;k&lt;/arg_key&gt;&lt;arg_value&gt;v&lt;/arg_value&gt;&lt;/tool_call&gt;</code></td></tr>
+<tr><th scope="row">Claude、MiniMax</th><td><code translate="no">&lt;invoke name="…"&gt;&lt;parameter name="k"&gt;v&lt;/parameter&gt;&lt;/invoke&gt;</code>，单独出现或在 <code translate="no">&lt;function_calls&gt;</code>、<code translate="no">&lt;minimax:tool_call&gt;</code> 之内</td></tr>
+<tr><th scope="row">DeepSeek DSML</th><td>同样的 invoke，每个标签带 <code translate="no">｜DSML｜</code>，一或两个任意宽度的竖线</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
+<tbody>
+<tr><th scope="row">每个块都点名提供过的工具，参数可读</th><td>块变成 <code translate="no">ToolCall</code>，回复以工具调用结束</td></tr>
+<tr><th scope="row">调用之前的文字</th><td>保留</td></tr>
+<tr><th scope="row">调用之后的文字</th><td>丢弃：那是编造的结果，真实结果随后到来</td></tr>
+<tr><th scope="row">参数值</th><td>是 JSON 就按 JSON 取，除非 DSML 标了 <code translate="no">string="true"</code></td></tr>
+<tr><th scope="row">未知工具、参数读不了、正文里提到标签</th><td>回复保持原样</td></tr>
+</tbody>
+</table>
+<p class="note">恢复在流消费者里、回复提交之前运行，上下文、持久记录和 UI 看到的都是真实调用。工具循环防护和文字调用恢复参照 magpie（yetone/magpie，MIT）。</p>

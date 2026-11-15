@@ -1,0 +1,148 @@
+<title>Installation and distribution implementation plan</title>
+<meta name="description" content="What each install path contains, what the release pipeline and local App installers enforce, and how changes are verified.">
+<h1>Installation and distribution implementation plan</h1>
+
+<p>The contracts implementation holds to. Design: <a href="installation-packaging.html">Installation and packaging</a>. Update architecture: <a href="automatic-updates.html">Automatic updates</a>. Windows: <a href="windows-support.html">Windows support</a>.</p>
+
+<h2 id="product-boundary">Product boundary</h2>
+<table class="stack">
+<thead><tr><th scope="col">Who</th><th scope="col">Gets</th><th scope="col">Never</th></tr></thead>
+<tbody>
+<tr><th scope="row">Ordinary users</th><td>Complete GitHub Release artifacts; the same capability set per platform and architecture</td><td><code translate="no">pip install openprogram</code>, <code translate="no">pipx</code>, <code translate="no">uv tool install</code> or the PyPI page as a product entry; PyPI resolution, repository clone, npm build or first-use Chromium download at install</td></tr>
+<tr><th scope="row">Developers</th><td>The complete product plus editable sources, tests, diagnostics, local frontend builds, and explicitly configured perception, OCR or browser overlays that own their model assets</td><td>Implicit installation of excluded dependencies</td></tr>
+<tr><th scope="row">Release assembly, source checkouts, third-party extension environments</th><td>May build or install wheels</td><td>Presented as a user path</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Where repair messages point</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Surface</th><th scope="col">Points to</th></tr></thead>
+<tbody>
+<tr><th scope="row">Site index, onboarding, troubleshooting, examples, runtime dependency errors</th><td>The formal installer or a complete reinstall</td></tr>
+<tr><th scope="row">Missing PDF dependencies</th><td>A complete reinstall</td></tr>
+<tr><th scope="row">Troubleshooting</th><td>Separates the managed private runtime from <code translate="no">uv run</code> or <code translate="no">.venv</code> source development</td></tr>
+<tr><th scope="row">OpenClaw skill</th><td>Runs through <code translate="no">uv run --project</code> for its cloned checkout</td></tr>
+</tbody>
+</table>
+<p class="note">Out of scope: a Python-free rewrite, removing <code translate="no">pyproject.toml</code>, and changing plugin or third-party Program formats.</p>
+</details>
+
+<h2 id="artifacts">Artifacts per platform</h2>
+<table class="stack">
+<thead><tr><th scope="col">Platform</th><th scope="col">CLI and server</th><th scope="col">Desktop</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS arm64, x86_64</th><td>Runtime archive</td><td>DMG and ZIP; signed and notarized when Apple credentials exist, otherwise <code translate="no">-unsigned</code></td></tr>
+<tr><th scope="row">Linux x86_64, arm64</th><td>Runtime archive, with Web UI and TUI</td><td>Thin deb and AppImage</td></tr>
+<tr><th scope="row">Windows x64; arm64 behind a switch</th><td>Runtime archive</td><td>Thin NSIS installer; <code translate="no">-unsigned.exe</code> without a certificate</td></tr>
+</tbody>
+</table>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">macOS App</th><td>The byte-identical runtime archive; only the Electron shell differs</td></tr>
+<tr><th scope="row">Windows and Linux Apps</th><td>A seed built from the same lock</td></tr>
+<tr><th scope="row">Also in a release</th><td>Checksums, developer wheel and sdist files, <code translate="no">release-manifest.json</code></td></tr>
+<tr><th scope="row">Failed complete entry</th><td>The artifact is absent, never reduced</td></tr>
+<tr><th scope="row">Local refresh, self-update</th><td>Re-sign with the local development certificate; the production signature is not preserved</td></tr>
+</tbody>
+</table>
+
+<h2 id="runtime-contents">Runtime contents</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Item</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">Capabilities</th><td><code translate="no">web</code>, <code translate="no">providers</code>, <code translate="no">mcp</code>, <code translate="no">memory</code>, <code translate="no">channels</code>, <code translate="no">search</code>, <code translate="no">tui.ink</code>, <code translate="no">browser.playwright</code></td></tr>
+<tr><th scope="row">Pinned</th><td>CPython 3.12.10 and uv 0.11.16 in <code translate="no">scripts/release/product-runtime.json</code></td></tr>
+<tr><th scope="row">Programs</th><td>None bundled. Computer use is a built-in tool and needs no bundled model.</td></tr>
+<tr><th scope="row">Rejected distributions</th><td>PyTorch, torchvision, OpenCV, EasyOCR, sentence-transformers, triton, <code translate="no">nvidia-*</code>, <code translate="no">cuda-*</code></td></tr>
+<tr><th scope="row">Host requirement</th><td>System Git for Session and Memory history; no launcher bundles Git</td></tr>
+<tr><th scope="row">Excluded</th><td>OS credential-store integration; Chrome or Edge extension installation; distro-native deb or rpm packages</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>What <code translate="no">verify-product-runtime.py</code> checks</summary>
+<ul>
+<li>Launches a headless Chromium page; an artifact may record <code translate="no">browser_probe</code> as deferred only under <code translate="no">--allow-deferred-browser</code>. The terminal installer passes that flag on a Linux machine without Chromium's system libraries, so the launch waits for the browser tool's first use.</li>
+<li>While building (<code translate="no">--write</code>, <code translate="no">--probe-only</code>), reads every Mach-O and ELF file's load commands: a library loaded from outside the runtime and the system (a runner's Homebrew OpenSSL, say), or a macOS file needing a newer macOS than <code translate="no">macosMinimum</code>, fails the build. It parses the files itself, so it needs no <code translate="no">otool</code>.</li>
+<li>Imports channel and search dependencies; checks Web assets.</li>
+<li>Runs both built-in PDF extraction paths on a generated PDF; probes Rich rendering.</li>
+<li>Requires installed OpenProgram metadata to equal the runtime manifest version.</li>
+<li>Manifest schema 2 records each capability's <code translate="no">present</code> and <code translate="no">verified</code>, the product-manifest and lock hashes, exact distributions, platform and architecture.</li>
+</ul>
+</details>
+
+<h2 id="release-acceptance">Release acceptance</h2>
+<p>Each target is built on its native runner, on tag push <code translate="no">v*</code> or manual dispatch for an existing tag.</p>
+<ol>
+<li>Source, lockfile, Desktop and installer versions agree.</li>
+<li>Runtime archives are assembled, archived and verified per platform and architecture.</li>
+<li>Desktop jobs embed the same runtime, sign, and verify it before upload.</li>
+<li>CLI installer jobs verify checksum, extraction, capabilities, worker cold start, atomic <code translate="no">current</code> activation and launcher version.</li>
+<li>The publish job writes the release manifest and requires <code translate="no">.github/release-notes/&lt;tag&gt;.md</code>, in English, with the expected heading. It never overwrites a public release.</li>
+</ol>
+<details>
+<summary>Packaging facts each pipeline depends on</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Fact</th><th scope="col">Handling</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">semble</code></th><td><code translate="no">&gt;=0.5.3</code>, whose <code translate="no">semble-grammars</code> publishes the native wheels every target needs</td></tr>
+<tr><th scope="row">Wheel target</th><td><code translate="no">build-base.sh</code> and <code translate="no">.ps1</code> install with <code translate="no">--only-binary :all:</code> and <code translate="no">--python-platform</code> for the oldest supported system (<code translate="no">macosMinimum</code> 13.5 through <code translate="no">MACOSX_DEPLOYMENT_TARGET</code>, <code translate="no">glibcMinimum</code> 2.35), never the runner's. <code translate="no">runtime-wheels.py check</code> proves from <code translate="no">uv.lock</code>, before any build, that each target has every wheel. The target is the packaging Python's own build, not the runner's machine: x64 Python on Windows on Arm and an x86_64 build under Rosetta install x86_64 wheels, and the bundled Git follows the same answer (<code translate="no">runtime-wheels.py target</code>)</td></tr>
+<tr><th scope="row">Reused base</th><td>A base whose Python pin is unchanged is copied and brought to the new lock with <code translate="no">uv pip sync</code>, which takes the requirements file as an argument: the pinned uv refuses <code translate="no">--requirements</code> there, while <code translate="no">uv pip install</code> needs it. A component test runs both scripts' package step against that uv, offline, into a throwaway environment, and CI installs that uv.</td></tr>
+<tr><th scope="row">Build profile</th><td>The self-update build runs with its own <code translate="no">HOME</code>, <code translate="no">USERPROFILE</code>, <code translate="no">LOCALAPPDATA</code> and <code translate="no">APPDATA</code>; without the last two PowerShell writes its module cache into the worktree, and the next build refuses it as uncommitted</td></tr>
+<tr><th scope="row">Source builds</th><td>Only what <code translate="no">sourceBuilds</code> in <code translate="no">product-runtime.json</code> names, each against a static library its leg prepares: cryptography on Intel macOS (no x86_64 wheel; <code translate="no">prepare-macos-native-deps.sh</code> builds static OpenSSL with vcpkg for macOS 13.5) and four packages on Windows on Arm. A listed package that gains a wheel fails the check</td></tr>
+<tr><th scope="row">Oldest macOS</th><td>13.5, because Playwright's bundled Node needs it; the App's <code translate="no">LSMinimumSystemVersion</code> (electron-builder <code translate="no">minimumSystemVersion</code>) and the install page say the same, and the terminal installer refuses an older Mac with where to update. The local App refresh assembles its runtime in place from this machine's own packages, so it passes <code translate="no">--this-machine</code> and its native files are held to this Mac's macOS; a release build never passes it</td></tr>
+<tr><th scope="row">Intel macOS and torch</th><td>No patched torch wheel exists, so the <code translate="no">embedding</code> extra excludes that platform</td></tr>
+<tr><th scope="row">Architecture names</th><td>Runtime archives use <code translate="no">x86_64</code>; electron-builder takes <code translate="no">x64</code> (<code translate="no">release-matrix.py</code>)</td></tr>
+<tr><th scope="row">Runtime manifest</th><td>Formatted JSON; shell parsers tolerate whitespace</td></tr>
+<tr><th scope="row"><code translate="no">pypdf</code>, <code translate="no">rich</code></th><td>Locked base dependencies; an Ink startup failure enters the bundled Rich REPL</td></tr>
+<tr><th scope="row">Packaged Electron</th><td>Resolves Python only from <code translate="no">process.resourcesPath</code> and runs <code translate="no">-I -B -m openprogram worker start</code>; no <code translate="no">PATH</code> fallback, no bytecode in the signed App</td></tr>
+<tr><th scope="row">Wheel</th><td>Built after asset staging; holds <code translate="no">openprogram/interfaces/server/_frontend</code>, so it serves <code translate="no">/chat</code> without Node.js</td></tr>
+<tr><th scope="row">Linux smoke</th><td><code translate="no">linux-release-smoke.yml</code> runs by hand only, needs no signing or PyPI credentials and keeps artifacts in CI</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="public-installer">Public installer</h2>
+<pre><code translate="no">curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">Root script</th><td>Resolves the latest stable release, validates a three-part numeric version, downloads the immutable tagged installer and forwards the version. No second installer; checksum, capability and cold-start checks unchanged.</td></tr>
+<tr><th scope="row">Pinning</th><td><code translate="no">OPENPROGRAM_VERSION=X.Y.Z</code> on the <code translate="no">sh</code> process</td></tr>
+<tr><th scope="row">Scripts</th><td><code translate="no">scripts/install-release.sh</code> is the published compatibility URL; it downloads <code translate="no">scripts/release/install-release.sh</code> from the same tag</td></tr>
+<tr><th scope="row">Publication</th><td><code translate="no">docs/_static_root/install.sh</code> is renamed to the site root as <code translate="no">/install</code>; <code translate="no">/docs/install/</code> stays the documentation directory</td></tr>
+</tbody>
+</table>
+
+<h2 id="local-app">Local App</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Contract</th></tr></thead>
+<tbody>
+<tr><th scope="row">Entry</th><td><code translate="no">npm --prefix apps/desktop run dist</code> builds one complete temporary App, verifies it with the packaged-runtime smoke and replaces only <code translate="no">/Applications/OpenProgram.app</code></td></tr>
+<tr><th scope="row">Refresh versions</th><td><code translate="no">scripts/refresh-local-app.sh</code> requires bundle, runtime manifest, Python metadata, Python source and Desktop source versions to match, except an upgrade to a newer source</td></tr>
+<tr><th scope="row">Downgrade</th><td><code translate="no">install-app.sh</code> rejects an older candidate before locking and again on the staged copy, before worker shutdown or file changes. Numeric segments compare as arbitrary-precision decimals; no override, no prerelease ordering.</td></tr>
+<tr><th scope="row">Invalid App at the path</th><td>Preserved and rejected, never treated as absent</td></tr>
+<tr><th scope="row">Failed activation</th><td>The old App's only copy is kept; a failure after Launch Services registration restores and re-registers it, keeping the original error</td></tr>
+<tr><th scope="row">launchd</th><td>A genuine unload failure stops before App changes; a stale plist can be replaced</td></tr>
+<tr><th scope="row">Concurrency</th><td>One per-user packaging lock across worktrees (<code translate="no">~/Library/Caches/OpenProgram/app-package.lock</code>); an atomic install lock in the target Applications directory. A competitor fails before any change.</td></tr>
+<tr><th scope="row">Cleanup</th><td>Removes the random App directory, staged runtime, wheel build, Web output, copied frontend and lock; keeps App data, sources, dependencies and user state</td></tr>
+<tr><th scope="row">Icon</th><td><code translate="no">apps/desktop/build/AppIcon.icon</code> is the layered source: four 1024 x 1024 vector SVGs on a transparent canvas, one cell and three flat discs, no drawn outer shape. <code translate="no">icon.icns</code> is checked in as Electron's input. <code translate="no">check-icon.sh</code> enforces both.</td></tr>
+</tbody>
+</table>
+
+<h2 id="verification">Verification</h2>
+<p>On top of the <a href="../testing/test-system.html#full-run">affected tests</a>:</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Changed</th><th scope="col">Run</th></tr></thead>
+<tbody>
+<tr><th scope="row">Release, install, refresh</th><td><code translate="no">python -m pytest tests/component/config/test_distribution_release</code></td></tr>
+<tr><th scope="row">Desktop packaging</th><td><code translate="no">python -m pytest tests/unit/webui/test_desktop_packaged_files.py</code>; <code translate="no">npm --prefix apps/desktop run check</code></td></tr>
+<tr><th scope="row">Web frontend serving</th><td><code translate="no">python -m pytest tests/component/webui/runtime/test_webui_frontend.py</code>; <code translate="no">npm --prefix apps/web run check</code></td></tr>
+<tr><th scope="row">Documentation</th><td><code translate="no">python -m scripts.docs_site.build</code>; <code translate="no">python -m scripts.docs_site.checklinks</code></td></tr>
+<tr><th scope="row">Shell scripts</th><td><code translate="no">bash -n</code> on the changed scripts</td></tr>
+<tr><th scope="row">Every change</th><td><code translate="no">git diff --check</code></td></tr>
+<tr><th scope="row">Platform artifacts</th><td>Native release runners only: one host cannot validate another platform's runtime</td></tr>
+</tbody>
+</table>

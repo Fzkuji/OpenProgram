@@ -1,0 +1,48 @@
+<title>快速开始</title>
+<meta name="description" content="安装 OpenProgram，连接 provider，打开界面，发送第一条消息并添加 Program。">
+<h1>快速开始</h1>
+
+<h2 id="install">1. 安装</h2>
+<pre translate="no"><code>curl -fsSL https://fuzzykuji.github.io/openprogram-site/install | sh        # macOS、Linux
+irm https://fuzzykuji.github.io/openprogram-site/install.ps1 | iex          # Windows x64，PowerShell</code></pre>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">主题</th><th scope="col">事实</th></tr></thead>
+<tbody>
+<tr><th scope="row">已包含</th><td>Python、Node.js、Git 和 Web UI；不用另装别的</td></tr>
+<tr><th scope="row">App</th><td>macOS 是 DMG，Linux 是 deb 或 AppImage，Windows 是安装程序：<a href="../install/install.zh.html#choose">安装</a></td></tr>
+<tr><th scope="row">Windows 沙箱</th><td>执行是单独的</td></tr>
+</tbody>
+</table>
+<p class="note">平台、App 和开发 checkout：<a href="../install/install.zh.html">安装</a>。</p>
+
+<h2 id="connect-a-provider">2. 连接 provider</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">在哪</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row">App 或 Web：<strong>设置 → 大模型 Provider → 添加 Provider</strong></th><td>三步：选服务商，登录或粘贴它的密钥（环境变量里已有的密钥会直接列出），再选默认模型，点<strong>开始对话</strong></td></tr>
+<tr><th scope="row"><code translate="no">openprogram</code></th><td>首次运行打开设置向导：导入 Claude Code、Codex 或 Gemini CLI 登录，或粘贴 API key，结束后进入终端聊天</td></tr>
+<tr><th scope="row"><code translate="no">openprogram setup</code></th><td>重新运行向导</td></tr>
+</tbody>
+</table>
+<details id="env-key">
+<summary>密钥已在环境变量里</summary>
+<pre translate="no"><code>export OPENAI_API_KEY=sk-...
+openprogram providers discover
+openprogram providers adopt env:OPENAI_API_KEY</code></pre>
+<p>其他 provider 用对应的 <code translate="no">env:&lt;VARIABLE&gt;</code>，或把密钥通过管道传给 <code translate="no">openprogram providers login &lt;provider&gt; --api-key-stdin</code>。<code translate="no">openprogram providers</code> 列出已存内容。</p>
+</details>
+
+<h2 id="open-the-web-ui">3. 打开 Web UI</h2>
+<p><code translate="no">openprogram web</code> 启动 worker 并以已登录状态打开 <code translate="no">http://localhost:18100</code>。总是用这种方式打开：手动输入的地址未登录，列表都是空的。用 <code translate="no">openprogram ports --port &lt;p&gt;</code> 改端口。</p>
+
+<h2 id="send-a-message">4. 发送消息</h2>
+<p>在终端聊天或 Web 输入框里输入，或在 shell 中：</p>
+<pre translate="no"><code>openprogram --print "用一句话介绍你自己"
+openprogram --resume &lt;session_id&gt;           # id 来自 openprogram sessions list 或 Web 侧栏</code></pre>
+
+<h2 id="add-programs">5. 添加 Program</h2>
+<p>release 不捆绑 agent Program。</p>
+<pre translate="no"><code>openprogram programs install &lt;目录、git URL 或 owner/repo&gt;
+openprogram programs list</code></pre>
+<p class="next"><a href="daily-use.zh.html">日常使用</a> · <a href="../models/README.zh.html">模型与 provider</a> · <a href="../capabilities/agentic-programming/README.zh.html">Agentic Programming</a> · <a href="../interfaces/README.zh.html">界面</a> · <a href="../capabilities/installing-programs.zh.html">安装 Program</a></p>
+
